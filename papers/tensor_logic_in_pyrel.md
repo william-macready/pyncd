@@ -12,7 +12,7 @@ In PyRel, a tensor is a **relation** whose columns are the index values plus a v
 S = model.Relationship(f"{Integer:i} {Integer:j} {Float:val}")
 ```
 
-Each row `(i, j, val)` stores one entry S[i,j] = val; the size of the matrix is determined by the tuples that populate the relation. Index columns are typed (`Integer`, `String`, etc.); `val` is a convention, not a special column.
+Each row `(i, j, val)` stores one entry S[i,j] = val and the size of the matrix is determined by the tuples that populate the relation. Index columns are typed (`Integer`, `String`, etc.) and `val` is a convention, not a special column.
 
 PyRel also offers `model.Concept`, which creates objects with named attributes:
 
