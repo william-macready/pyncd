@@ -21,7 +21,7 @@ R = model.Concept("result")
 R.new(i=i, k=k, val=sum(vs*vs2).per(i,k))
 ```
 
-`Relationship` and `Concept` are semantically equivalent; `Concept` is more convenient when the output schema is computed.
+`Relationship` and `Concept` are semantically equivalent; `Concept` is more convenient when the output schema is computed as properties can be added dynamically.
 
 ---
 
