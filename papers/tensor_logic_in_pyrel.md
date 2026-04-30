@@ -14,7 +14,7 @@ S = model.Relationship(f"{Integer:i} {Integer:j} {Float:val}")
 
 Each row `(i, j, val)` stores one entry S[i,j] = val and the size of the matrix is determined by the tuples that populate the relation. Index columns are typed (`Integer`, `String`, etc.) and `val` is a convention, not a special column.
 
-PyRel also offers `model.Concept`, which creates objects with named attributes:
+PyRel also offers `model.Concept`, which creates objects with named properties (attributes):
 
 ```python
 R = model.Concept("result")
