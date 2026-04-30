@@ -1,5 +1,14 @@
 # pyncd
 
+## Diagram Usage Guide
+
+For a practical walkthrough of Makefile commands and HTML visualization workflows, see [README_DIAGRAMS.md](README_DIAGRAMS.md). This includes:
+
+- `make` targets for server/frontend/check/export workflows
+- Running `minimum_working_example.py` for live browser rendering via `tsncd`
+- Running `minimum_working_example_html.py` for standalone HTML exports
+- Troubleshooting common setup issues
+
 ```python
 import construction_helpers as ch # Needed for algebraic manipulation
 import data_structure.Category as cat

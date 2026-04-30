@@ -8,6 +8,8 @@ import websocket_transfer.websockets_transfer as wst
 
 import subprocess
 import asyncio
+import socket
+import sys
 
 from typing import (
     Callable,
@@ -180,11 +182,24 @@ async def ask_input() -> None | Literal['Quit']:
             print('Invalid choice. Please enter a valid command number, or q to quit.')
 
 if __name__ == '__main__':
-    server = subprocess.Popen(['python', 'run_server.py'])
-    print('Server started.')
+    def server_is_running(host: str = '127.0.0.1', port: int = 8765) -> bool:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(0.5)
+            return sock.connect_ex((host, port)) == 0
+
+    started_server_here = False
+    server = None
+    if server_is_running():
+        print('Using existing server at ws://localhost:8765')
+    else:
+        server = subprocess.Popen([sys.executable, 'run_server.py'])
+        started_server_here = True
+        print('Server started.')
+
     while True:
         command = asyncio.run(ask_input())
         if command == 'Quit':
             print('Exiting.')
-            server.kill()
+            if started_server_here and server is not None:
+                server.kill()
             break

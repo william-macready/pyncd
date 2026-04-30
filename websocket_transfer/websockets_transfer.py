@@ -1,6 +1,7 @@
 import asyncio
 from dataclasses import dataclass, field
 import websockets
+from websockets.exceptions import ConnectionClosed
 from typing import TypedDict, Literal, Any
 import json
 import data_transfer.json as dtj
@@ -63,9 +64,11 @@ class DataServer:
                     handlerInformation)
                 self.connected_clients[randomKey] = handlerInformation
                 await self.send_to_one(websocket, json.dumps(response))
+        except ConnectionClosed:
+            # Browser refreshes and tab closes are expected disconnect events.
+            pass
         finally:
-            del self.connected_clients[randomKey]
-            print('Client disconnected.')
+            self.connected_clients.pop(randomKey, None)
 
     async def send_to_one(self, client, message: str):
         await client.send(message)
