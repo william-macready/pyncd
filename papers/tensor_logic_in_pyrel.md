@@ -41,6 +41,8 @@ R.new(i=i, k=k, val=sum(vs*vs2).per(i,k))
 
 ## Worked Examples
 
+Each example shows the tensor logic expression first, followed by the PyRel equivalent.
+
 ### 1. Trace — `S[i,i]`
 
 ```text
@@ -91,6 +93,10 @@ R[i] = sigm(S[i,j] U[j])
 ```
 
 ```python
+from relationalai.semantics.std.math import exp
+
+def sigm(x): return 1.0 / (1.0 + exp(-x))
+
 j, vs, vu = Integer.ref(), Float.ref(), Float.ref()
 where(S(i,j,vs), U(j,vu)).define(
     R.new(i=i, val=sigm(sum(vs*vu).per(i)))
