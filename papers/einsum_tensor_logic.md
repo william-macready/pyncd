@@ -251,5 +251,5 @@ The formal equivalence has several practical consequences:
 
 ## References
 
-- Domingos, P. *Tensor Logic: The Language of AI*. arXiv:2510.12269v3, 2025.
-- Wenig, M., Rump, P.G., Blacher, M., Giesen, J. *The Syntax and Semantics of einsum*. arXiv:2509.20020v3, 2025.
+- Domingos, P. [*Tensor Logic: The Language of AI*](https://arxiv.org/abs/2510.12269). arXiv:2510.12269v3, 2025.
+- Wenig, M., Rump, P.G., Blacher, M., Giesen, J. [*The Syntax and Semantics of einsum*](https://arxiv.org/abs/2509.20020). arXiv:2509.20020v3, 2025.
