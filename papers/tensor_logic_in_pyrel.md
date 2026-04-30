@@ -1,6 +1,6 @@
 # Tensor Logic in PyRel
 
-PyRel is an extension of Datalog that subsumes tensor logic: every tensor logic program can be expressed as a PyRel program, and PyRel adds recursive rules, aggregation, and arithmetic that go beyond what tensor logic specifies. This document describes the systematic translation from tensor logic equations to PyRel, using the examples in `einsum.py`.
+[PyRel](https://docs.relational.ai) is an extension of Datalog that subsumes tensor logic: every tensor logic program can be expressed as a PyRel program, and PyRel adds recursive rules, aggregation, and arithmetic that go beyond what tensor logic specifies. This document describes the systematic translation from tensor logic equations to PyRel, using the examples in `einsum.py`.
 
 ---
 
