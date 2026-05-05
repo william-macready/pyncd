@@ -1,0 +1,517 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Convolution Full</title>
+  <style>
+    :root {
+      --bg: #f7f5ee;
+      --panel: #fffdf6;
+      --ink: #1b1f23;
+      --muted: #5f6b7a;
+      --line: #c9c3b5;
+      --accent: #2364aa;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Iowan Old Style", "Palatino Linotype", Palatino, serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 15% 0%, #fdf6df 0%, rgba(253, 246, 223, 0) 35%),
+        radial-gradient(circle at 100% 80%, #e3f0ff 0%, rgba(227, 240, 255, 0) 30%),
+        var(--bg);
+      min-height: 100vh;
+      padding: 28px 20px;
+    }
+
+    .wrap {
+      max-width: 980px;
+      margin: 0 auto;
+      display: grid;
+      gap: 14px;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 12px;
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.06);
+      overflow: hidden;
+    }
+
+    .header {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: baseline;
+      flex-wrap: wrap;
+    }
+
+    .title {
+      margin: 0;
+      font-size: clamp(1.2rem, 2vw, 1.5rem);
+      line-height: 1.2;
+      letter-spacing: 0.01em;
+    }
+
+    .meta {
+      color: var(--muted);
+      font-family: "Menlo", "Consolas", "Liberation Mono", monospace;
+      font-size: 0.82rem;
+    }
+
+    .panel {
+      padding: 16px 18px;
+    }
+
+    .section-title {
+      margin: 0 0 8px;
+      font-size: 0.95rem;
+      color: var(--accent);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      font-family: "Helvetica Neue", "Arial", sans-serif;
+      font-weight: 700;
+    }
+
+    pre {
+      margin: 0;
+      white-space: pre;
+      overflow-x: auto;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #faf8f0;
+      font-size: 0.86rem;
+      line-height: 1.33;
+      font-family: "Menlo", "Consolas", "Liberation Mono", monospace;
+    }
+
+    .footnote {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.4;
+      font-family: "Helvetica Neue", "Arial", sans-serif;
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="card">
+      <header class="header">
+        <h1 class="title">Convolution Full</h1>
+        <span class="meta">Generated: 2026-04-30T10:36:13</span>
+      </header>
+      <div class="panel">
+        <h2 class="section-title">Diagram (Text Form)</h2>
+        <pre>x ──eta     (x&#x27;      ──x&#x27; x&#x27;─&lt;0            ──x&#x27;
+ci──         w       ──w  w ~~~    (x&#x27;)    ~~co
+Re           ci)     ──ci ci~~~ &gt; Linear &gt;   Re
+        &gt; Identity &gt;   Re Re                   </pre>
+      </div>
+      <div class="panel">
+        <h2 class="section-title">JSON Payload</h2>
+        <pre>{
+  &quot;uid_repository&quot;: {
+    &quot;1515721912&quot;: {
+      &quot;__type__&quot;: &quot;FreeNumeric&quot;,
+      &quot;uid&quot;: {
+        &quot;__type__&quot;: &quot;UID&quot;,
+        &quot;_type&quot;: {
+          &quot;__registered__&quot;: &quot;type&quot;,
+          &quot;repr&quot;: &quot;FreeNumeric&quot;
+        },
+        &quot;_id&quot;: 1515721912,
+        &quot;_name&quot;: {
+          &quot;__type__&quot;: &quot;DynamicName&quot;,
+          &quot;body&quot;: &quot;x&#x27;&quot;,
+          &quot;subscript&quot;: null,
+          &quot;settings&quot;: {
+            &quot;__type__&quot;: &quot;DynamicNameSettings&quot;,
+            &quot;bold&quot;: false,
+            &quot;overline&quot;: false,
+            &quot;absolute&quot;: true
+          }
+        }
+      }
+    },
+    &quot;1987956281&quot;: {
+      &quot;__type__&quot;: &quot;RawAxis&quot;,
+      &quot;uid&quot;: {
+        &quot;__type__&quot;: &quot;UID&quot;,
+        &quot;_type&quot;: {
+          &quot;__registered__&quot;: &quot;type&quot;,
+          &quot;repr&quot;: &quot;RawAxis&quot;
+        },
+        &quot;_id&quot;: 1987956281,
+        &quot;_name&quot;: {
+          &quot;__type__&quot;: &quot;DynamicName&quot;,
+          &quot;body&quot;: &quot;x&#x27;&quot;,
+          &quot;subscript&quot;: null,
+          &quot;settings&quot;: null
+        }
+      },
+      &quot;_size&quot;: {
+        &quot;__ref__&quot;: 1515721912
+      }
+    },
+    &quot;386125992&quot;: {
+      &quot;__type__&quot;: &quot;FreeNumeric&quot;,
+      &quot;uid&quot;: {
+        &quot;__type__&quot;: &quot;UID&quot;,
+        &quot;_type&quot;: {
+          &quot;__registered__&quot;: &quot;type&quot;,
+          &quot;repr&quot;: &quot;FreeNumeric&quot;
+        },
+        &quot;_id&quot;: 386125992,
+        &quot;_name&quot;: {
+          &quot;__type__&quot;: &quot;DynamicName&quot;,
+          &quot;body&quot;: &quot;w&quot;,
+          &quot;subscript&quot;: null,
+          &quot;settings&quot;: {
+            &quot;__type__&quot;: &quot;DynamicNameSettings&quot;,
+            &quot;bold&quot;: false,
+            &quot;overline&quot;: false,
+            &quot;absolute&quot;: true
+          }
+        }
+      }
+    },
+    &quot;241389963&quot;: {
+      &quot;__type__&quot;: &quot;RawAxis&quot;,
+      &quot;uid&quot;: {
+        &quot;__type__&quot;: &quot;UID&quot;,
+        &quot;_type&quot;: {
+          &quot;__registered__&quot;: &quot;type&quot;,
+          &quot;repr&quot;: &quot;RawAxis&quot;
+        },
+        &quot;_id&quot;: 241389963,
+        &quot;_name&quot;: {
+          &quot;__type__&quot;: &quot;DynamicName&quot;,
+          &quot;body&quot;: &quot;w&quot;,
+          &quot;subscript&quot;: null,
+          &quot;settings&quot;: null
+        }
+      },
+      &quot;_size&quot;: {
+        &quot;__ref__&quot;: 386125992
+      }
+    },
+    &quot;1571489266&quot;: {
+      &quot;__type__&quot;: &quot;FreeNumeric&quot;,
+      &quot;uid&quot;: {
+        &quot;__type__&quot;: &quot;UID&quot;,
+        &quot;_type&quot;: {
+          &quot;__registered__&quot;: &quot;type&quot;,
+          &quot;repr&quot;: &quot;FreeNumeric&quot;
+        },
+        &quot;_id&quot;: 1571489266,
+        &quot;_name&quot;: {
+          &quot;__type__&quot;: &quot;DynamicName&quot;,
+          &quot;body&quot;: &quot;x&quot;,
+          &quot;subscript&quot;: null,
+          &quot;settings&quot;: {
+            &quot;__type__&quot;: &quot;DynamicNameSettings&quot;,
+            &quot;bold&quot;: false,
+            &quot;overline&quot;: false,
+            &quot;absolute&quot;: true
+          }
+        }
+      }
+    },
+    &quot;1362121684&quot;: {
+      &quot;__type__&quot;: &quot;RawAxis&quot;,
+      &quot;uid&quot;: {
+        &quot;__type__&quot;: &quot;UID&quot;,
+        &quot;_type&quot;: {
+          &quot;__registered__&quot;: &quot;type&quot;,
+          &quot;repr&quot;: &quot;RawAxis&quot;
+        },
+        &quot;_id&quot;: 1362121684,
+        &quot;_name&quot;: {
+          &quot;__type__&quot;: &quot;DynamicName&quot;,
+          &quot;body&quot;: &quot;x&quot;,
+          &quot;subscript&quot;: null,
+          &quot;settings&quot;: null
+        }
+      },
+      &quot;_size&quot;: {
+        &quot;__ref__&quot;: 1571489266
+      }
+    },
+    &quot;2079212840&quot;: {
+      &quot;__type__&quot;: &quot;FreeNumeric&quot;,
+      &quot;uid&quot;: {
+        &quot;__type__&quot;: &quot;UID&quot;,
+        &quot;_type&quot;: {
+          &quot;__registered__&quot;: &quot;type&quot;,
+          &quot;repr&quot;: &quot;FreeNumeric&quot;
+        },
+        &quot;_id&quot;: 2079212840,
+        &quot;_name&quot;: null
+      }
+    },
+    &quot;36347832&quot;: {
+      &quot;__type__&quot;: &quot;RawAxis&quot;,
+      &quot;uid&quot;: {
+        &quot;__type__&quot;: &quot;UID&quot;,
+        &quot;_type&quot;: {
+          &quot;__registered__&quot;: &quot;type&quot;,
+          &quot;repr&quot;: &quot;RawAxis&quot;
+        },
+        &quot;_id&quot;: 36347832,
+        &quot;_name&quot;: {
+          &quot;__type__&quot;: &quot;DynamicName&quot;,
+          &quot;body&quot;: &quot;c&quot;,
+          &quot;subscript&quot;: {
+            &quot;__type__&quot;: &quot;DynamicName&quot;,
+            &quot;body&quot;: &quot;in&quot;,
+            &quot;subscript&quot;: null,
+            &quot;settings&quot;: null
+          },
+          &quot;settings&quot;: null
+        }
+      },
+      &quot;_size&quot;: {
+        &quot;__ref__&quot;: 2079212840
+      }
+    },
+    &quot;1544965674&quot;: {
+      &quot;__type__&quot;: &quot;FreeNumeric&quot;,
+      &quot;uid&quot;: {
+        &quot;__type__&quot;: &quot;UID&quot;,
+        &quot;_type&quot;: {
+          &quot;__registered__&quot;: &quot;type&quot;,
+          &quot;repr&quot;: &quot;FreeNumeric&quot;
+        },
+        &quot;_id&quot;: 1544965674,
+        &quot;_name&quot;: null
+      }
+    },
+    &quot;1807935072&quot;: {
+      &quot;__type__&quot;: &quot;RawAxis&quot;,
+      &quot;uid&quot;: {
+        &quot;__type__&quot;: &quot;UID&quot;,
+        &quot;_type&quot;: {
+          &quot;__registered__&quot;: &quot;type&quot;,
+          &quot;repr&quot;: &quot;RawAxis&quot;
+        },
+        &quot;_id&quot;: 1807935072,
+        &quot;_name&quot;: {
+          &quot;__type__&quot;: &quot;DynamicName&quot;,
+          &quot;body&quot;: &quot;c&quot;,
+          &quot;subscript&quot;: {
+            &quot;__type__&quot;: &quot;DynamicName&quot;,
+            &quot;body&quot;: &quot;out&quot;,
+            &quot;subscript&quot;: null,
+            &quot;settings&quot;: null
+          },
+          &quot;settings&quot;: null
+        }
+      },
+      &quot;_size&quot;: {
+        &quot;__ref__&quot;: 1544965674
+      }
+    }
+  },
+  &quot;data&quot;: {
+    &quot;__type__&quot;: &quot;Composed&quot;,
+    &quot;content&quot;: [
+      {
+        &quot;__type__&quot;: &quot;Broadcasted&quot;,
+        &quot;operator&quot;: {
+          &quot;__type__&quot;: &quot;Identity&quot;,
+          &quot;name&quot;: {
+            &quot;__type__&quot;: &quot;DynamicName&quot;,
+            &quot;body&quot;: &quot;\\sigma&quot;,
+            &quot;subscript&quot;: null,
+            &quot;settings&quot;: null
+          },
+          &quot;operator&quot;: null
+        },
+        &quot;input_weaves&quot;: [
+          {
+            &quot;__type__&quot;: &quot;Weave&quot;,
+            &quot;datatype&quot;: {
+              &quot;__type__&quot;: &quot;Reals&quot;
+            },
+            &quot;_shape&quot;: [
+              {
+                &quot;__registered__&quot;: &quot;enum&quot;,
+                &quot;type&quot;: &quot;WeaveMode&quot;,
+                &quot;name&quot;: &quot;TILED&quot;
+              },
+              {
+                &quot;__registered__&quot;: &quot;enum&quot;,
+                &quot;type&quot;: &quot;WeaveMode&quot;,
+                &quot;name&quot;: &quot;TILED&quot;
+              }
+            ]
+          }
+        ],
+        &quot;output_weaves&quot;: [
+          {
+            &quot;__type__&quot;: &quot;Weave&quot;,
+            &quot;datatype&quot;: {
+              &quot;__type__&quot;: &quot;Reals&quot;
+            },
+            &quot;_shape&quot;: [
+              {
+                &quot;__registered__&quot;: &quot;enum&quot;,
+                &quot;type&quot;: &quot;WeaveMode&quot;,
+                &quot;name&quot;: &quot;TILED&quot;
+              },
+              {
+                &quot;__registered__&quot;: &quot;enum&quot;,
+                &quot;type&quot;: &quot;WeaveMode&quot;,
+                &quot;name&quot;: &quot;TILED&quot;
+              },
+              {
+                &quot;__registered__&quot;: &quot;enum&quot;,
+                &quot;type&quot;: &quot;WeaveMode&quot;,
+                &quot;name&quot;: &quot;TILED&quot;
+              }
+            ]
+          }
+        ],
+        &quot;reindexings&quot;: [
+          {
+            &quot;__type__&quot;: &quot;ProductOfMorphisms&quot;,
+            &quot;content&quot;: [
+              {
+                &quot;__type__&quot;: &quot;StrideMorphism&quot;,
+                &quot;_dom&quot;: [
+                  {
+                    &quot;__ref__&quot;: 1987956281
+                  },
+                  {
+                    &quot;__ref__&quot;: 241389963
+                  }
+                ],
+                &quot;_cod_stride&quot;: [
+                  [
+                    {
+                      &quot;__ref__&quot;: 1362121684
+                    },
+                    [
+                      {
+                        &quot;__type__&quot;: &quot;Integer&quot;,
+                        &quot;_value&quot;: 1
+                      },
+                      {
+                        &quot;__type__&quot;: &quot;Integer&quot;,
+                        &quot;_value&quot;: 1
+                      }
+                    ]
+                  ]
+                ],
+                &quot;name&quot;: {
+                  &quot;__type__&quot;: &quot;DynamicName&quot;,
+                  &quot;body&quot;: &quot;+&quot;,
+                  &quot;subscript&quot;: null,
+                  &quot;settings&quot;: null
+                }
+              },
+              {
+                &quot;__type__&quot;: &quot;Rearrangement&quot;,
+                &quot;mapping&quot;: [
+                  0
+                ],
+                &quot;_dom&quot;: [
+                  {
+                    &quot;__ref__&quot;: 36347832
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        &quot;__type__&quot;: &quot;Broadcasted&quot;,
+        &quot;operator&quot;: {
+          &quot;__type__&quot;: &quot;Linear&quot;,
+          &quot;name&quot;: {
+            &quot;__type__&quot;: &quot;DynamicName&quot;,
+            &quot;body&quot;: &quot;L&quot;,
+            &quot;subscript&quot;: null,
+            &quot;settings&quot;: {
+              &quot;__type__&quot;: &quot;DynamicNameSettings&quot;,
+              &quot;bold&quot;: true,
+              &quot;overline&quot;: false,
+              &quot;absolute&quot;: false
+            }
+          },
+          &quot;bias&quot;: false
+        },
+        &quot;input_weaves&quot;: [
+          {
+            &quot;__type__&quot;: &quot;Weave&quot;,
+            &quot;datatype&quot;: {
+              &quot;__type__&quot;: &quot;Reals&quot;
+            },
+            &quot;_shape&quot;: [
+              {
+                &quot;__registered__&quot;: &quot;enum&quot;,
+                &quot;type&quot;: &quot;WeaveMode&quot;,
+                &quot;name&quot;: &quot;TILED&quot;
+              },
+              {
+                &quot;__ref__&quot;: 241389963
+              },
+              {
+                &quot;__ref__&quot;: 36347832
+              }
+            ]
+          }
+        ],
+        &quot;output_weaves&quot;: [
+          {
+            &quot;__type__&quot;: &quot;Weave&quot;,
+            &quot;datatype&quot;: {
+              &quot;__type__&quot;: &quot;Reals&quot;
+            },
+            &quot;_shape&quot;: [
+              {
+                &quot;__registered__&quot;: &quot;enum&quot;,
+                &quot;type&quot;: &quot;WeaveMode&quot;,
+                &quot;name&quot;: &quot;TILED&quot;
+              },
+              {
+                &quot;__ref__&quot;: 1807935072
+              }
+            ]
+          }
+        ],
+        &quot;reindexings&quot;: [
+          {
+            &quot;__type__&quot;: &quot;Rearrangement&quot;,
+            &quot;mapping&quot;: [
+              0
+            ],
+            &quot;_dom&quot;: [
+              {
+                &quot;__ref__&quot;: 1987956281
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}</pre>
+      </div>
+      <div class="panel">
+        <p class="footnote">This HTML file is a standalone export from pyncd. For full graphical rendering, run the tsncd frontend and send this same term to the websocket server.</p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

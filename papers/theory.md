@@ -71,7 +71,6 @@ The type parameters $L$ and $M$ are filled in differently for each concrete cate
 
 An object in $\mathbf{St}$ is thus a tuple of axes, e.g. $(\mathtt{batch}, \mathtt{seq}, \mathtt{dim})$; an object in $\mathbf{Br}$ is a tuple of typed arrays, each indexed by one axis.
 
-
 ### Objects in ProdCategory
 
 **Objects** $A \in \mathrm{Ob}\,\mathcal{C}$ are finite products of lone objects $A_i \in L$:
@@ -195,9 +194,19 @@ In Python, `Array[B, A]` stores `datatype: B` and `_shape: Prod[A]`. `Reals()` a
 
 A broadcasted operation is built from four ingredients (Definition 13):
 
-1. **A base operation** — the core computation, provided as an `Operator` subclass (e.g., `Linear`, `Einops`, `SoftMax`).
+1. **A base operation** — the core computation, provided as an `Operator` subclass (e.g., `Linear`, `Einops`, `SoftMax`, `Elementwise`, `Normalize`, `Embedding`, `AdditionOp`, `WeightedTriangularLower`).
 
-2. **Reindexings** $(\eta_i)_{i \in I}$ from **St** — affine transforms $\eta_i : P \to Q_i$ that relate the *degree* shape $P$ (the shared batch/tiling shape) to each input's tiled coordinate shape $Q_i$. Stored as `reindexings: Prod[StrideCategory[A]]` on `Broadcasted`.
+2. **Reindexings** $(\eta_i)_{i \in I}$ from **St** — the base operation runs once per coordinate $p \in P$, where $P$ is the *degree* shape (the same loop index for every input). The reindexing $\eta_i : P \to Q_i$ is an affine transform that says, for each loop coordinate $p$, which coordinate $\eta_i(p) \in Q_i$ to read from input $i$'s tiling axes. All inputs share the same loop $P$; the reindexings let them access their data differently:
+
+   | Case | Tensor equation | $P$ | $\eta$ |
+   | --- | --- | --- | --- |
+   | **Identity** — both inputs batched the same way | $C[b,i,j] = A[b,i,k]\, B[b,k,j]$ | $(b)$ | $\eta_A = \eta_B = \mathrm{id}$ |
+   | **Deletion** — $B$ broadcast across batches | $C[b,i,j] = A[b,i,k]\, B[k,j]$ | $(b)$ | $\eta_A = \mathrm{id}$ <br> $\eta_B = ()$ |
+   | **Duplication** — diagonal slice | $Y[p,j] = X[p,p,j]$ | $(p)$ | $\eta_X(p) = (p,p)$ |
+   | **Projection** — outer product, each input indexed by one output axis | $C[i,j] = A[i]\, B[j]$ | $(i,j)$ | $\eta_A(i,j) = i$ <br> $\eta_B(i,j) = j$ |
+   | **Affine scaling** — strided 1-D convolution; $s \in \mathbb{N}$ is a fixed stride constant baked into the `StrideMorphism` coefficient matrix, not an axis | $Y[b,p] = \textstyle\sum_w X[b,\, s{\cdot}p+w]\, W[w]$ | $(b,p)$ | $\eta_X(b,p) = (b,\, s{\cdot}p)$ <br> $\eta_W = ()$ |
+
+   In Python, the tuple of reindexings is stored as the `reindexings: Prod[StrideCategory[A]]` field on the `Broadcasted` dataclass — the root morphism of **Br** that packages all four ingredients together. On a GPU, the loop $P$ is what gets tiled: each processor is assigned a small chunk of $P$'s coordinates, loads only the corresponding slice of each input, and works entirely in fast on-chip memory.
 
 3. **Input weaves** $(s_i)_{i \in I}$ — for each input array, a **weave** partitions its axes into *target* axes ($w = 1$, front, operated on by the base function) and *tiling* axes ($w = 0$, back, the broadcasted batch dimensions). In Python, `Weave[B, A]` stores `_shape: Prod[A | WeaveMode]` where `WeaveMode.TILED` marks tiled positions and actual `Axis` objects mark target positions.
 

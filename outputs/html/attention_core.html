@@ -1,0 +1,820 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Attention Core</title>
+  <style>
+    :root {
+      --bg: #f7f5ee;
+      --panel: #fffdf6;
+      --ink: #1b1f23;
+      --muted: #5f6b7a;
+      --line: #c9c3b5;
+      --accent: #2364aa;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Iowan Old Style", "Palatino Linotype", Palatino, serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 15% 0%, #fdf6df 0%, rgba(253, 246, 223, 0) 35%),
+        radial-gradient(circle at 100% 80%, #e3f0ff 0%, rgba(227, 240, 255, 0) 30%),
+        var(--bg);
+      min-height: 100vh;
+      padding: 28px 20px;
+    }
+
+    .wrap {
+      max-width: 980px;
+      margin: 0 auto;
+      display: grid;
+      gap: 14px;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 12px;
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.06);
+      overflow: hidden;
+    }
+
+    .header {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: baseline;
+      flex-wrap: wrap;
+    }
+
+    .title {
+      margin: 0;
+      font-size: clamp(1.2rem, 2vw, 1.5rem);
+      line-height: 1.2;
+      letter-spacing: 0.01em;
+    }
+
+    .meta {
+      color: var(--muted);
+      font-family: "Menlo", "Consolas", "Liberation Mono", monospace;
+      font-size: 0.82rem;
+    }
+
+    .panel {
+      padding: 16px 18px;
+    }
+
+    .section-title {
+      margin: 0 0 8px;
+      font-size: 0.95rem;
+      color: var(--accent);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      font-family: "Helvetica Neue", "Arial", sans-serif;
+      font-weight: 700;
+    }
+
+    pre {
+      margin: 0;
+      white-space: pre;
+      overflow-x: auto;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #faf8f0;
+      font-size: 0.86rem;
+      line-height: 1.33;
+      font-family: "Menlo", "Consolas", "Liberation Mono", monospace;
+    }
+
+    .footnote {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.4;
+      font-family: "Helvetica Neue", "Arial", sans-serif;
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="card">
+      <header class="header">
+        <h1 class="title">Attention Core</h1>
+        <span class="meta">Generated: 2026-04-30T10:57:25</span>
+      </header>
+      <div class="panel">
+        <h2 class="section-title">Diagram (Text Form)</h2>
+        <pre>╔═════════════════════════════════════════════════════════════════════════════════════════════════════════╗
+║ Attention Core                                                                                          ║
+║q ─&lt;1                                                                                                    ║
+║h ─&lt;0                                                                                                    ║
+║k ~~~    (h      ──h  h ─&lt;0             ──h  h ─&lt;0                             ──h  h ─&lt;1                ║
+║Re        q      ──q  q ─&lt;1    (h       ──q  q ~~~            (h )             ~~q  q ─&lt;0                ║
+║-----     x )    ──x  x ~~~     q )     ~~x  x ~~~ &gt; WeightedTriangularLower &gt; ~~x  x ~~~                ║
+║x ─&lt;2 &gt; Einops &gt;   Re Re    &gt; SoftMax &gt;   Re Re                                  Re Re       (q      ──q ║
+║h ─&lt;0                                                                               -----     h      ──h ║
+║k ~~~                                                                               x ~~~     k )    ──k ║
+║Re                                                                                  h ─&lt;1 &gt; Einops &gt;   Re║
+║----------------------------------------------------------------------------------- k ─&lt;2                ║
+║x ──                                                                        [0]──x  Re                   ║
+║h ──                                                                           ──h                       ║
+║k ──                                                                           ──k                       ║
+║Re                                                                             Re                        ║
+╚═════════════════════════════════════════════════════════════════════════════════════════════════════════╝</pre>
+      </div>
+      <div class="panel">
+        <h2 class="section-title">JSON Payload</h2>
+        <pre>{
+  &quot;uid_repository&quot;: {
+    &quot;1305241336&quot;: {
+      &quot;__type__&quot;: &quot;FreeNumeric&quot;,
+      &quot;uid&quot;: {
+        &quot;__type__&quot;: &quot;UID&quot;,
+        &quot;_type&quot;: {
+          &quot;__registered__&quot;: &quot;type&quot;,
+          &quot;repr&quot;: &quot;FreeNumeric&quot;
+        },
+        &quot;_id&quot;: 1305241336,
+        &quot;_name&quot;: {
+          &quot;__type__&quot;: &quot;DynamicName&quot;,
+          &quot;body&quot;: &quot;k&quot;,
+          &quot;subscript&quot;: null,
+          &quot;settings&quot;: {
+            &quot;__type__&quot;: &quot;DynamicNameSettings&quot;,
+            &quot;bold&quot;: false,
+            &quot;overline&quot;: false,
+            &quot;absolute&quot;: true
+          }
+        }
+      }
+    },
+    &quot;739338539&quot;: {
+      &quot;__type__&quot;: &quot;RawAxis&quot;,
+      &quot;uid&quot;: {
+        &quot;__type__&quot;: &quot;UID&quot;,
+        &quot;_type&quot;: {
+          &quot;__registered__&quot;: &quot;type&quot;,
+          &quot;repr&quot;: &quot;RawAxis&quot;
+        },
+        &quot;_id&quot;: 739338539,
+        &quot;_name&quot;: {
+          &quot;__type__&quot;: &quot;DynamicName&quot;,
+          &quot;body&quot;: &quot;k&quot;,
+          &quot;subscript&quot;: null,
+          &quot;settings&quot;: null
+        }
+      },
+      &quot;_size&quot;: {
+        &quot;__ref__&quot;: 1305241336
+      }
+    },
+    &quot;493423841&quot;: {
+      &quot;__type__&quot;: &quot;FreeNumeric&quot;,
+      &quot;uid&quot;: {
+        &quot;__type__&quot;: &quot;UID&quot;,
+        &quot;_type&quot;: {
+          &quot;__registered__&quot;: &quot;type&quot;,
+          &quot;repr&quot;: &quot;FreeNumeric&quot;
+        },
+        &quot;_id&quot;: 493423841,
+        &quot;_name&quot;: {
+          &quot;__type__&quot;: &quot;DynamicName&quot;,
+          &quot;body&quot;: &quot;h&quot;,
+          &quot;subscript&quot;: null,
+          &quot;settings&quot;: {
+            &quot;__type__&quot;: &quot;DynamicNameSettings&quot;,
+            &quot;bold&quot;: false,
+            &quot;overline&quot;: false,
+            &quot;absolute&quot;: true
+          }
+        }
+      }
+    },
+    &quot;589379991&quot;: {
+      &quot;__type__&quot;: &quot;RawAxis&quot;,
+      &quot;uid&quot;: {
+        &quot;__type__&quot;: &quot;UID&quot;,
+        &quot;_type&quot;: {
+          &quot;__registered__&quot;: &quot;type&quot;,
+          &quot;repr&quot;: &quot;RawAxis&quot;
+        },
+        &quot;_id&quot;: 589379991,
+        &quot;_name&quot;: {
+          &quot;__type__&quot;: &quot;DynamicName&quot;,
+          &quot;body&quot;: &quot;h&quot;,
+          &quot;subscript&quot;: null,
+          &quot;settings&quot;: null
+        }
+      },
+      &quot;_size&quot;: {
+        &quot;__ref__&quot;: 493423841
+      }
+    },
+    &quot;1718700153&quot;: {
+      &quot;__type__&quot;: &quot;FreeNumeric&quot;,
+      &quot;uid&quot;: {
+        &quot;__type__&quot;: &quot;UID&quot;,
+        &quot;_type&quot;: {
+          &quot;__registered__&quot;: &quot;type&quot;,
+          &quot;repr&quot;: &quot;FreeNumeric&quot;
+        },
+        &quot;_id&quot;: 1718700153,
+        &quot;_name&quot;: {
+          &quot;__type__&quot;: &quot;DynamicName&quot;,
+          &quot;body&quot;: &quot;q&quot;,
+          &quot;subscript&quot;: null,
+          &quot;settings&quot;: {
+            &quot;__type__&quot;: &quot;DynamicNameSettings&quot;,
+            &quot;bold&quot;: false,
+            &quot;overline&quot;: false,
+            &quot;absolute&quot;: true
+          }
+        }
+      }
+    },
+    &quot;2037976017&quot;: {
+      &quot;__type__&quot;: &quot;RawAxis&quot;,
+      &quot;uid&quot;: {
+        &quot;__type__&quot;: &quot;UID&quot;,
+        &quot;_type&quot;: {
+          &quot;__registered__&quot;: &quot;type&quot;,
+          &quot;repr&quot;: &quot;RawAxis&quot;
+        },
+        &quot;_id&quot;: 2037976017,
+        &quot;_name&quot;: {
+          &quot;__type__&quot;: &quot;DynamicName&quot;,
+          &quot;body&quot;: &quot;q&quot;,
+          &quot;subscript&quot;: null,
+          &quot;settings&quot;: null
+        }
+      },
+      &quot;_size&quot;: {
+        &quot;__ref__&quot;: 1718700153
+      }
+    },
+    &quot;584302935&quot;: {
+      &quot;__type__&quot;: &quot;FreeNumeric&quot;,
+      &quot;uid&quot;: {
+        &quot;__type__&quot;: &quot;UID&quot;,
+        &quot;_type&quot;: {
+          &quot;__registered__&quot;: &quot;type&quot;,
+          &quot;repr&quot;: &quot;FreeNumeric&quot;
+        },
+        &quot;_id&quot;: 584302935,
+        &quot;_name&quot;: {
+          &quot;__type__&quot;: &quot;DynamicName&quot;,
+          &quot;body&quot;: &quot;x&quot;,
+          &quot;subscript&quot;: null,
+          &quot;settings&quot;: {
+            &quot;__type__&quot;: &quot;DynamicNameSettings&quot;,
+            &quot;bold&quot;: false,
+            &quot;overline&quot;: false,
+            &quot;absolute&quot;: true
+          }
+        }
+      }
+    },
+    &quot;1046685758&quot;: {
+      &quot;__type__&quot;: &quot;RawAxis&quot;,
+      &quot;uid&quot;: {
+        &quot;__type__&quot;: &quot;UID&quot;,
+        &quot;_type&quot;: {
+          &quot;__registered__&quot;: &quot;type&quot;,
+          &quot;repr&quot;: &quot;RawAxis&quot;
+        },
+        &quot;_id&quot;: 1046685758,
+        &quot;_name&quot;: {
+          &quot;__type__&quot;: &quot;DynamicName&quot;,
+          &quot;body&quot;: &quot;x&quot;,
+          &quot;subscript&quot;: null,
+          &quot;settings&quot;: null
+        }
+      },
+      &quot;_size&quot;: {
+        &quot;__ref__&quot;: 584302935
+      }
+    },
+    &quot;1515019499&quot;: {
+      &quot;__type__&quot;: &quot;FreeNumeric&quot;,
+      &quot;uid&quot;: {
+        &quot;__type__&quot;: &quot;UID&quot;,
+        &quot;_type&quot;: {
+          &quot;__registered__&quot;: &quot;type&quot;,
+          &quot;repr&quot;: &quot;FreeNumeric&quot;
+        },
+        &quot;_id&quot;: 1515019499,
+        &quot;_name&quot;: {
+          &quot;__type__&quot;: &quot;DynamicName&quot;,
+          &quot;body&quot;: &quot;k&quot;,
+          &quot;subscript&quot;: null,
+          &quot;settings&quot;: {
+            &quot;__type__&quot;: &quot;DynamicNameSettings&quot;,
+            &quot;bold&quot;: false,
+            &quot;overline&quot;: false,
+            &quot;absolute&quot;: true
+          }
+        }
+      }
+    },
+    &quot;2028235603&quot;: {
+      &quot;__type__&quot;: &quot;RawAxis&quot;,
+      &quot;uid&quot;: {
+        &quot;__type__&quot;: &quot;UID&quot;,
+        &quot;_type&quot;: {
+          &quot;__registered__&quot;: &quot;type&quot;,
+          &quot;repr&quot;: &quot;RawAxis&quot;
+        },
+        &quot;_id&quot;: 2028235603,
+        &quot;_name&quot;: {
+          &quot;__type__&quot;: &quot;DynamicName&quot;,
+          &quot;body&quot;: &quot;k&quot;,
+          &quot;subscript&quot;: null,
+          &quot;settings&quot;: null
+        }
+      },
+      &quot;_size&quot;: {
+        &quot;__ref__&quot;: 1515019499
+      }
+    },
+    &quot;2013677242&quot;: {
+      &quot;__type__&quot;: &quot;BlockTag&quot;,
+      &quot;uid&quot;: {
+        &quot;__type__&quot;: &quot;UID&quot;,
+        &quot;_type&quot;: {
+          &quot;__registered__&quot;: &quot;type&quot;,
+          &quot;repr&quot;: &quot;BlockTag&quot;
+        },
+        &quot;_id&quot;: 2013677242,
+        &quot;_name&quot;: null
+      },
+      &quot;repetition&quot;: {
+        &quot;__type__&quot;: &quot;Integer&quot;,
+        &quot;_value&quot;: 1
+      },
+      &quot;aesthetics&quot;: {
+        &quot;__type__&quot;: &quot;BlockAesthetics&quot;,
+        &quot;title&quot;: &quot;Attention Core&quot;,
+        &quot;description&quot;: null,
+        &quot;fill_color&quot;: &quot;#C5BEDF&quot;
+      }
+    }
+  },
+  &quot;data&quot;: {
+    &quot;__type__&quot;: &quot;Block&quot;,
+    &quot;body&quot;: {
+      &quot;__type__&quot;: &quot;Composed&quot;,
+      &quot;content&quot;: [
+        {
+          &quot;__type__&quot;: &quot;ProductOfMorphisms&quot;,
+          &quot;content&quot;: [
+            {
+              &quot;__type__&quot;: &quot;Composed&quot;,
+              &quot;content&quot;: [
+                {
+                  &quot;__type__&quot;: &quot;Broadcasted&quot;,
+                  &quot;operator&quot;: {
+                    &quot;__type__&quot;: &quot;Einops&quot;,
+                    &quot;name&quot;: {
+                      &quot;__type__&quot;: &quot;DynamicName&quot;,
+                      &quot;body&quot;: &quot;q h k, x h k -&gt; h q x&quot;,
+                      &quot;subscript&quot;: null,
+                      &quot;settings&quot;: null
+                    },
+                    &quot;signature&quot;: [
+                      [
+                        0
+                      ],
+                      [
+                        0
+                      ]
+                    ]
+                  },
+                  &quot;input_weaves&quot;: [
+                    {
+                      &quot;__type__&quot;: &quot;Weave&quot;,
+                      &quot;datatype&quot;: {
+                        &quot;__type__&quot;: &quot;Reals&quot;
+                      },
+                      &quot;_shape&quot;: [
+                        {
+                          &quot;__registered__&quot;: &quot;enum&quot;,
+                          &quot;type&quot;: &quot;WeaveMode&quot;,
+                          &quot;name&quot;: &quot;TILED&quot;
+                        },
+                        {
+                          &quot;__registered__&quot;: &quot;enum&quot;,
+                          &quot;type&quot;: &quot;WeaveMode&quot;,
+                          &quot;name&quot;: &quot;TILED&quot;
+                        },
+                        {
+                          &quot;__ref__&quot;: 739338539
+                        }
+                      ]
+                    },
+                    {
+                      &quot;__type__&quot;: &quot;Weave&quot;,
+                      &quot;datatype&quot;: {
+                        &quot;__type__&quot;: &quot;Reals&quot;
+                      },
+                      &quot;_shape&quot;: [
+                        {
+                          &quot;__registered__&quot;: &quot;enum&quot;,
+                          &quot;type&quot;: &quot;WeaveMode&quot;,
+                          &quot;name&quot;: &quot;TILED&quot;
+                        },
+                        {
+                          &quot;__registered__&quot;: &quot;enum&quot;,
+                          &quot;type&quot;: &quot;WeaveMode&quot;,
+                          &quot;name&quot;: &quot;TILED&quot;
+                        },
+                        {
+                          &quot;__ref__&quot;: 739338539
+                        }
+                      ]
+                    }
+                  ],
+                  &quot;output_weaves&quot;: [
+                    {
+                      &quot;__type__&quot;: &quot;Weave&quot;,
+                      &quot;datatype&quot;: {
+                        &quot;__type__&quot;: &quot;Reals&quot;
+                      },
+                      &quot;_shape&quot;: [
+                        {
+                          &quot;__registered__&quot;: &quot;enum&quot;,
+                          &quot;type&quot;: &quot;WeaveMode&quot;,
+                          &quot;name&quot;: &quot;TILED&quot;
+                        },
+                        {
+                          &quot;__registered__&quot;: &quot;enum&quot;,
+                          &quot;type&quot;: &quot;WeaveMode&quot;,
+                          &quot;name&quot;: &quot;TILED&quot;
+                        },
+                        {
+                          &quot;__registered__&quot;: &quot;enum&quot;,
+                          &quot;type&quot;: &quot;WeaveMode&quot;,
+                          &quot;name&quot;: &quot;TILED&quot;
+                        }
+                      ]
+                    }
+                  ],
+                  &quot;reindexings&quot;: [
+                    {
+                      &quot;__type__&quot;: &quot;Rearrangement&quot;,
+                      &quot;mapping&quot;: [
+                        1,
+                        0
+                      ],
+                      &quot;_dom&quot;: [
+                        {
+                          &quot;__ref__&quot;: 589379991
+                        },
+                        {
+                          &quot;__ref__&quot;: 2037976017
+                        },
+                        {
+                          &quot;__ref__&quot;: 1046685758
+                        }
+                      ]
+                    },
+                    {
+                      &quot;__type__&quot;: &quot;Rearrangement&quot;,
+                      &quot;mapping&quot;: [
+                        2,
+                        0
+                      ],
+                      &quot;_dom&quot;: [
+                        {
+                          &quot;__ref__&quot;: 589379991
+                        },
+                        {
+                          &quot;__ref__&quot;: 2037976017
+                        },
+                        {
+                          &quot;__ref__&quot;: 1046685758
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  &quot;__type__&quot;: &quot;Broadcasted&quot;,
+                  &quot;operator&quot;: {
+                    &quot;__type__&quot;: &quot;SoftMax&quot;,
+                    &quot;name&quot;: {
+                      &quot;__type__&quot;: &quot;DynamicName&quot;,
+                      &quot;body&quot;: &quot;SoftMax&quot;,
+                      &quot;subscript&quot;: null,
+                      &quot;settings&quot;: null
+                    },
+                    &quot;contracted&quot;: false
+                  },
+                  &quot;input_weaves&quot;: [
+                    {
+                      &quot;__type__&quot;: &quot;Weave&quot;,
+                      &quot;datatype&quot;: {
+                        &quot;__type__&quot;: &quot;Reals&quot;
+                      },
+                      &quot;_shape&quot;: [
+                        {
+                          &quot;__registered__&quot;: &quot;enum&quot;,
+                          &quot;type&quot;: &quot;WeaveMode&quot;,
+                          &quot;name&quot;: &quot;TILED&quot;
+                        },
+                        {
+                          &quot;__registered__&quot;: &quot;enum&quot;,
+                          &quot;type&quot;: &quot;WeaveMode&quot;,
+                          &quot;name&quot;: &quot;TILED&quot;
+                        },
+                        {
+                          &quot;__ref__&quot;: 1046685758
+                        }
+                      ]
+                    }
+                  ],
+                  &quot;output_weaves&quot;: [
+                    {
+                      &quot;__type__&quot;: &quot;Weave&quot;,
+                      &quot;datatype&quot;: {
+                        &quot;__type__&quot;: &quot;Reals&quot;
+                      },
+                      &quot;_shape&quot;: [
+                        {
+                          &quot;__registered__&quot;: &quot;enum&quot;,
+                          &quot;type&quot;: &quot;WeaveMode&quot;,
+                          &quot;name&quot;: &quot;TILED&quot;
+                        },
+                        {
+                          &quot;__registered__&quot;: &quot;enum&quot;,
+                          &quot;type&quot;: &quot;WeaveMode&quot;,
+                          &quot;name&quot;: &quot;TILED&quot;
+                        },
+                        {
+                          &quot;__ref__&quot;: 1046685758
+                        }
+                      ]
+                    }
+                  ],
+                  &quot;reindexings&quot;: [
+                    {
+                      &quot;__type__&quot;: &quot;Rearrangement&quot;,
+                      &quot;mapping&quot;: [
+                        0,
+                        1
+                      ],
+                      &quot;_dom&quot;: [
+                        {
+                          &quot;__ref__&quot;: 589379991
+                        },
+                        {
+                          &quot;__ref__&quot;: 2037976017
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  &quot;__type__&quot;: &quot;Broadcasted&quot;,
+                  &quot;operator&quot;: {
+                    &quot;__type__&quot;: &quot;WeightedTriangularLower&quot;,
+                    &quot;name&quot;: {
+                      &quot;__type__&quot;: &quot;DynamicName&quot;,
+                      &quot;body&quot;: &quot;wtril&quot;,
+                      &quot;subscript&quot;: null,
+                      &quot;settings&quot;: null
+                    }
+                  },
+                  &quot;input_weaves&quot;: [
+                    {
+                      &quot;__type__&quot;: &quot;Weave&quot;,
+                      &quot;datatype&quot;: {
+                        &quot;__type__&quot;: &quot;Reals&quot;
+                      },
+                      &quot;_shape&quot;: [
+                        {
+                          &quot;__registered__&quot;: &quot;enum&quot;,
+                          &quot;type&quot;: &quot;WeaveMode&quot;,
+                          &quot;name&quot;: &quot;TILED&quot;
+                        },
+                        {
+                          &quot;__ref__&quot;: 2037976017
+                        },
+                        {
+                          &quot;__ref__&quot;: 1046685758
+                        }
+                      ]
+                    }
+                  ],
+                  &quot;output_weaves&quot;: [
+                    {
+                      &quot;__type__&quot;: &quot;Weave&quot;,
+                      &quot;datatype&quot;: {
+                        &quot;__type__&quot;: &quot;Reals&quot;
+                      },
+                      &quot;_shape&quot;: [
+                        {
+                          &quot;__registered__&quot;: &quot;enum&quot;,
+                          &quot;type&quot;: &quot;WeaveMode&quot;,
+                          &quot;name&quot;: &quot;TILED&quot;
+                        },
+                        {
+                          &quot;__ref__&quot;: 2037976017
+                        },
+                        {
+                          &quot;__ref__&quot;: 1046685758
+                        }
+                      ]
+                    }
+                  ],
+                  &quot;reindexings&quot;: [
+                    {
+                      &quot;__type__&quot;: &quot;Rearrangement&quot;,
+                      &quot;mapping&quot;: [
+                        0
+                      ],
+                      &quot;_dom&quot;: [
+                        {
+                          &quot;__ref__&quot;: 589379991
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              &quot;__type__&quot;: &quot;Rearrangement&quot;,
+              &quot;mapping&quot;: [
+                0
+              ],
+              &quot;_dom&quot;: [
+                {
+                  &quot;__type__&quot;: &quot;Array&quot;,
+                  &quot;datatype&quot;: {
+                    &quot;__type__&quot;: &quot;Reals&quot;
+                  },
+                  &quot;_shape&quot;: [
+                    {
+                      &quot;__ref__&quot;: 1046685758
+                    },
+                    {
+                      &quot;__ref__&quot;: 589379991
+                    },
+                    {
+                      &quot;__ref__&quot;: 2028235603
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          &quot;__type__&quot;: &quot;Broadcasted&quot;,
+          &quot;operator&quot;: {
+            &quot;__type__&quot;: &quot;Einops&quot;,
+            &quot;name&quot;: {
+              &quot;__type__&quot;: &quot;DynamicName&quot;,
+              &quot;body&quot;: &quot;h q x, x h k -&gt; q h k&quot;,
+              &quot;subscript&quot;: null,
+              &quot;settings&quot;: null
+            },
+            &quot;signature&quot;: [
+              [
+                0
+              ],
+              [
+                0
+              ]
+            ]
+          },
+          &quot;input_weaves&quot;: [
+            {
+              &quot;__type__&quot;: &quot;Weave&quot;,
+              &quot;datatype&quot;: {
+                &quot;__type__&quot;: &quot;Reals&quot;
+              },
+              &quot;_shape&quot;: [
+                {
+                  &quot;__registered__&quot;: &quot;enum&quot;,
+                  &quot;type&quot;: &quot;WeaveMode&quot;,
+                  &quot;name&quot;: &quot;TILED&quot;
+                },
+                {
+                  &quot;__registered__&quot;: &quot;enum&quot;,
+                  &quot;type&quot;: &quot;WeaveMode&quot;,
+                  &quot;name&quot;: &quot;TILED&quot;
+                },
+                {
+                  &quot;__ref__&quot;: 1046685758
+                }
+              ]
+            },
+            {
+              &quot;__type__&quot;: &quot;Weave&quot;,
+              &quot;datatype&quot;: {
+                &quot;__type__&quot;: &quot;Reals&quot;
+              },
+              &quot;_shape&quot;: [
+                {
+                  &quot;__ref__&quot;: 1046685758
+                },
+                {
+                  &quot;__registered__&quot;: &quot;enum&quot;,
+                  &quot;type&quot;: &quot;WeaveMode&quot;,
+                  &quot;name&quot;: &quot;TILED&quot;
+                },
+                {
+                  &quot;__registered__&quot;: &quot;enum&quot;,
+                  &quot;type&quot;: &quot;WeaveMode&quot;,
+                  &quot;name&quot;: &quot;TILED&quot;
+                }
+              ]
+            }
+          ],
+          &quot;output_weaves&quot;: [
+            {
+              &quot;__type__&quot;: &quot;Weave&quot;,
+              &quot;datatype&quot;: {
+                &quot;__type__&quot;: &quot;Reals&quot;
+              },
+              &quot;_shape&quot;: [
+                {
+                  &quot;__registered__&quot;: &quot;enum&quot;,
+                  &quot;type&quot;: &quot;WeaveMode&quot;,
+                  &quot;name&quot;: &quot;TILED&quot;
+                },
+                {
+                  &quot;__registered__&quot;: &quot;enum&quot;,
+                  &quot;type&quot;: &quot;WeaveMode&quot;,
+                  &quot;name&quot;: &quot;TILED&quot;
+                },
+                {
+                  &quot;__registered__&quot;: &quot;enum&quot;,
+                  &quot;type&quot;: &quot;WeaveMode&quot;,
+                  &quot;name&quot;: &quot;TILED&quot;
+                }
+              ]
+            }
+          ],
+          &quot;reindexings&quot;: [
+            {
+              &quot;__type__&quot;: &quot;Rearrangement&quot;,
+              &quot;mapping&quot;: [
+                1,
+                0
+              ],
+              &quot;_dom&quot;: [
+                {
+                  &quot;__ref__&quot;: 2037976017
+                },
+                {
+                  &quot;__ref__&quot;: 589379991
+                },
+                {
+                  &quot;__ref__&quot;: 2028235603
+                }
+              ]
+            },
+            {
+              &quot;__type__&quot;: &quot;Rearrangement&quot;,
+              &quot;mapping&quot;: [
+                1,
+                2
+              ],
+              &quot;_dom&quot;: [
+                {
+                  &quot;__ref__&quot;: 2037976017
+                },
+                {
+                  &quot;__ref__&quot;: 589379991
+                },
+                {
+                  &quot;__ref__&quot;: 2028235603
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    &quot;block_tag&quot;: {
+      &quot;__ref__&quot;: 2013677242
+    }
+  }
+}</pre>
+      </div>
+      <div class="panel">
+        <p class="footnote">This HTML file is a standalone export from pyncd. For full graphical rendering, run the tsncd frontend and send this same term to the websocket server.</p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
