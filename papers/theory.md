@@ -34,7 +34,7 @@ Terms are of two kinds:
 
 - **Root terms** $G_r$ — the atoms of the term system. A root term is not assembled from smaller recoverable inputs; instead it carries **metadata** tags from which all relevant core properties can be computed directly. Root terms represent primitive, irreducible concepts — the specific choices of lone objects and root morphisms that distinguish one product category from another. In pyncd, `Axis` (carrying a UID and a size), `StrideMorphism` (carrying domain, coefficient matrix, and bias), and `Broadcasted` (carrying operator, weaves, and reindexings) are all root terms.
 
-- **Construction rules** $T_c : G_{c,i} \to G_{c,f}$ build terms from smaller pieces. The output term is a **data wrapper around its inputs**: $G_{c,f}$ literally embeds $G_{c,i}$ inside itself, which is what the paper calls *contravariant* — the output contains the input rather than being derived from it. This guarantees a **recovery function** $\hat{T}_c : \mathrm{img}(T_c) \to G_{c,i}$ satisfying $\hat{T}_c \circ T_c = \mathrm{Id}$: the inputs can always be unwrapped from the output. In pyncd, `Composed`, `ProductOfMorphisms`, `Rearrangement`, and `Block` are construction rules common to  every product category.
+- **Construction rules** $T_c : G_{c,i} \to G_{c,f}$ build terms from smaller pieces. The output term is a **data wrapper around its inputs**: $G_{c,f}$ literally embeds $G_{c,i}$ inside itself, which is what the paper calls *contravariant* — the output contains the input rather than being derived from it. This guarantees a **recovery function** $\hat{T}_c : \mathrm{img}(T_c) \to G_{c,i}$ satisfying $\hat{T}_c \circ T_c = \mathrm{Id}$: the inputs can always be unwrapped from the output. In pyncd, `Composed`, `ProductOfMorphisms`, `Rearrangement`, and `Block` are construction rules common to every product category.
 
 A **UTerm** (uniquely-identified term) is a term that carries a **UID** — a randomly-generated integer identifier — as one of its fields. The UID is the term's identity: two UTerms with the same UID are treated as the same entity everywhere in an expression, regardless of other field values. Plain `Term`s have no UID because their identity is fully determined by their contents. UTerms include `Axis`, `BlockTag`, and `FreeNumeric` — things whose identity must be tracked independently of their current field values.
 
@@ -67,13 +67,13 @@ The type parameters $L$ and $M$ are filled in differently for each concrete cate
 | Category | $L$ (lone object) | $M$ (root morphism) |
 | --- | --- | --- |
 | $\mathbf{St}$ | `Axis` — a named axis with a UID and a size | `StrideMorphism` |
-| $\mathbf{Br}$ | `Array` — a pair $[a, A]$ of a `Datatype` $a$ and a shape $A \in \mathrm{Ob}\,\mathbf{St}$ | `Broadcasted` |
+| $\mathbf{Br}$ | `Array` — a pair $[a, A]$ of a `Datatype` $a$ and a shape $A \in \mathrm{Ob} \mathbf{St}$ | `Broadcasted` |
 
 An object in $\mathbf{St}$ is thus a tuple of axes, e.g. $(\mathtt{batch}, \mathtt{seq}, \mathtt{dim})$; an object in $\mathbf{Br}$ is a tuple of typed arrays, each indexed by one axis.
 
 ### Objects in ProdCategory
 
-**Objects** $A \in \mathrm{Ob}\,\mathcal{C}$ are finite products of lone objects $A_i \in L$:
+**Objects** $A \in \mathrm{Ob} \mathcal{C}$ are finite products of lone objects $A_i \in L$:
 
 $$A = \Pi_{i \in I} A_i$$
 
@@ -88,11 +88,11 @@ of morphism forms:
 
 ```python
 type ProdCategory[L, M: Morphism] = (
-    M
-    | Rearrangement[L]
-    | Composed[L, ProdCategory[L, M]]
-    | ProductOfMorphisms[L, ProdCategory[L, M]]
-    | Block[L, ProdCategory[L, M]]
+ M
+ | Rearrangement[L]
+ | Composed[L, ProdCategory[L, M]]
+ | ProductOfMorphisms[L, ProdCategory[L, M]]
+ | Block[L, ProdCategory[L, M]]
 )
 ```
 
@@ -131,7 +131,7 @@ With this infrastructure for **product categories** we turn to specific instanti
 **Objects** in **St** are **axes** and products of axes:
 
 - A lone object is an **axis** $A$ — a UTerm carrying a UID and a size $|A| \in \mathbb{N}$. The UID serves as the axis's identity across an expression; the size is itself a `FreeNumeric` (another UTerm) until configured.
-- A product object $\Pi_{i \in I} A_i \in \mathrm{Ob}\,\mathbf{St}$ is a **shape** — the ordered set of multi-index coordinates $(a_i)_{i \in I}$ of an array.
+- A product object $\Pi_{i \in I} A_i \in \mathrm{Ob} \mathbf{St}$ is a **shape** — the ordered set of multi-index coordinates $(a_i)_{i \in I}$ of an array.
 - The unit object $\mathbf{1}$ is the empty product, corresponding to a scalar shape.
 
 In Python, `Axis` is the abstract base (`UTerm`); `RawAxis` is the concrete subclass used for unspecialized axes. `Axis.named('h')` creates an axis whose UID carries the name $h$ and whose size is a free numeric also named $|h|$.
@@ -140,7 +140,7 @@ In Python, `Axis` is the abstract base (`UTerm`); `RawAxis` is the concrete subc
 
 **Morphisms** in **St** are **finite affine transforms**: maps $\eta : \Pi_{i \in I} A_i \to \Pi_{j \in J} B_j$ that describe how input coordinates relate to output coordinates. Each output coordinate $j$ is a linear combination of input coordinates plus a bias:
 
-$$\left(\Pi_{i \in I}\, a_i\right) \mathbin{;} \eta \;=\; \Pi_{j \in J}\!\left(v^\eta_j + \sum_{i \in I} \Lambda^\eta_{ij} \cdot a_i\right)$$
+$$\left(\Pi_{i \in I} a_i\right) \mathbin{;} \eta = \Pi_{j \in J}\left(v^\eta_j + \sum_{i \in I} \Lambda^\eta_{ij} \cdot a_i\right)$$
 
 where $\Lambda^\eta \in \mathbb{N}^{I \times J}$ is the coefficient matrix and $v^\eta \in \mathbb{N}^J$ is the bias vector. The image must land within the codomain.
 
@@ -148,10 +148,10 @@ In Python, `StrideMorphism` stores `_dom: Prod[Axis]` and `_cod_stride: Prod[tup
 
 ```python
 StrideMorphism.from_matrix(
-    (1, 1), 
-    dom_names=("x'", "w"),
-    cod_names=("x",),
-    name="+"
+ (1, 1), 
+ dom_names=("x'", "w"),
+ cod_names=("x",),
+ name="+"
 ).
 ```
 
@@ -159,10 +159,10 @@ Similarly, duplication $\eta(p) = (p, p)$ (mapping one input axis to two output 
 
 ```python
 StrideMorphism.from_matrix(
-    (1,),  # first output = 1·p
-    (1,),  # second output = 1·p
-    dom_names=("p",),
-    cod_names=("p", "p")
+ (1,), # first output = 1·p
+ (1,), # second output = 1·p
+ dom_names=("p",),
+ cod_names=("p", "p")
 )
 ```
 
@@ -181,7 +181,7 @@ The identity, permutation, duplication, and deletion ($\eta = ()$) are all speci
 **Objects** in **Br** are **arrays** $[a, A]$:
 
 - $a \in \mathbf{Dt}$ is a **datatype** — the kind of value stored at each coordinate. Common datatypes are `Reals` ($\mathbb{R}$, continuous and differentiable) and `Natural(max_value)` ($\mathbb{N}_{<v}$, discrete, used for token indices in embeddings).
-- $A \in \mathrm{Ob}\,\mathbf{St}$ is a **shape** — a product of axes that indexes the array's coordinates.
+- $A \in \mathrm{Ob} \mathbf{St}$ is a **shape** — a product of axes that indexes the array's coordinates.
 - An array $[a, A]$ has an $\mathrm{El}(A)$-family of values $x_{i_A} \in a$ for each coordinate $i_A \in \mathrm{El}(A)$. Here $\mathrm{El}(A)$ is the **set of elements** of the shape $A$ — the set of all valid index tuples. For $A = (a_1, \ldots, a_n)$ with axis sizes $s_1, \ldots, s_n$, this is the Cartesian product $\{0,\ldots,s_1{-}1\} \times \cdots \times \{0,\ldots,s_n{-}1\}$. Categorically, $\mathrm{El}(A)$ is the set of morphisms $\mathbf{1} \to A$ (global elements). An array is therefore a function from index tuples to values: $x : \mathrm{El}(A) \to a$.
 
 A product object $\Pi_{i \in I} [a_i, A_i]$ in **Br** is a tuple of arrays — the inputs or outputs of an operation.
@@ -200,11 +200,11 @@ A broadcasted operation is built from four ingredients (Definition 13):
 
    | Case | Tensor equation | $P$ | $\eta$ |
    | --- | --- | --- | --- |
-   | **Identity** — both inputs batched the same way | $C[b,i,j] = A[b,i,k]\, B[b,k,j]$ | $(b)$ | $\eta_A = \eta_B = \mathrm{id}$ |
-   | **Deletion** — $B$ broadcast across batches | $C[b,i,j] = A[b,i,k]\, B[k,j]$ | $(b)$ | $\eta_A = \mathrm{id}$ <br> $\eta_B = ()$ |
+   | **Identity** — both inputs batched the same way | $C[b,i,j] = A[b,i,k] B[b,k,j]$ | $(b)$ | $\eta_A = \eta_B = \mathrm{id}$ |
+   | **Deletion** — $B$ broadcast across batches | $C[b,i,j] = A[b,i,k] B[k,j]$ | $(b)$ | $\eta_A = \mathrm{id}$ <br> $\eta_B = ()$ |
    | **Duplication** — diagonal slice | $Y[p,j] = X[p,p,j]$ | $(p)$ | $\eta_X(p) = (p,p)$ |
-   | **Projection** — outer product, each input indexed by one output axis | $C[i,j] = A[i]\, B[j]$ | $(i,j)$ | $\eta_A(i,j) = i$ <br> $\eta_B(i,j) = j$ |
-   | **Affine scaling** — strided 1-D convolution; $s \in \mathbb{N}$ is a fixed stride constant baked into the `StrideMorphism` coefficient matrix, not an axis | $Y[b,p] = \textstyle\sum_w X[b,\, s{\cdot}p+w]\, W[w]$ | $(b,p)$ | $\eta_X(b,p) = (b,\, s{\cdot}p)$ <br> $\eta_W = ()$ |
+   | **Projection** — outer product, each input indexed by one output axis | $C[i,j] = A[i] B[j]$ | $(i,j)$ | $\eta_A(i,j) = i$ <br> $\eta_B(i,j) = j$ |
+   | **Affine scaling** — strided 1-D convolution; $s \in \mathbb{N}$ is a fixed stride constant baked into the `StrideMorphism` coefficient matrix, not an axis | $Y[b,p] = \textstyle\sum_w X[b, s{\cdot}p+w] W[w]$ | $(b,p)$ | $\eta_X(b,p) = (b, s{\cdot}p)$ <br> $\eta_W = ()$ |
 
    In Python, the tuple of reindexings is stored as the `reindexings: Prod[StrideCategory[A]]` field on the `Broadcasted` dataclass — the root morphism of **Br** that packages all four ingredients together. On a GPU, the loop $P$ is what gets tiled: each processor is assigned a small chunk of $P$'s coordinates, loads only the corresponding slice of each input, and works entirely in fast on-chip memory.
 
@@ -214,17 +214,17 @@ A broadcasted operation is built from four ingredients (Definition 13):
 
 The full type of the broadcasted operation is:
 
-$$F : \Pi_{i \in I}\left[a_i,\, \mathrm{dom}\left([\Omega_{s_i}]_{A_i \otimes Q_i}\right)\right] \;\longrightarrow\; \Pi_{j \in J}\left[b_j,\, \mathrm{dom}\left([\Omega_{t_j}]_{B_j \otimes P}\right)\right]$$
+$$F : \Pi_{i \in I}\left[a_i, \mathrm{dom}\left([\Omega_{s_i}]_{A_i \otimes Q_i}\right)\right] \longrightarrow \Pi_{j \in J}\left[b_j, \mathrm{dom}\left([\Omega_{t_j}]_{B_j \otimes P}\right)\right]$$
 
 In Python:
 
 ```python
 @dataclass(frozen=True)
 class Broadcasted[B: Datatype, A: Axis, O: Operator](Morphism[Array[B, A]]):
-    operator:       O
-    input_weaves:   Prod[Weave[B, A]]
-    output_weaves:  Prod[Weave[B, A]]
-    reindexings:    Prod[StrideCategory[A]]
+ operator: O
+ input_weaves: Prod[Weave[B, A]]
+ output_weaves: Prod[Weave[B, A]]
+ reindexings: Prod[StrideCategory[A]]
 ```
 
 `dom()` is computed from input weaves and reindexing codomains; `cod()` from output weaves and the shared degree $P$ (= `reindexings[i].dom()`, equal for all $i$).
@@ -287,25 +287,25 @@ The transformer is built by composing the operators above:
 ```python
 # Attention core: qk multiply → softmax → mask → sv multiply
 qk_matmul = ops.Einops.template('q h k, x h k -> h q x')
-softmax   = ops.SoftMax.template()
-mask      = ops.WeightedTriangularLower().template()
+softmax = ops.SoftMax.template()
+mask = ops.WeightedTriangularLower().template()
 sv_matmul = ops.Einops.template('h q x, x h k -> q h k')
 _attention_core = Block.template(
-    qk_matmul @ softmax @ mask @ sv_matmul,
-    title='Attention Core', fill_color='#C5BEDF'
+ qk_matmul @ softmax @ mask @ sv_matmul,
+ title='Attention Core', fill_color='#C5BEDF'
 )
 
 # Attention layer: project Q, K, V → attention core → project output
-Lq = ops.Linear.template(('m',), 2, 'q')      # [x, m] → [x, h, k]  (2 output axes)
+Lq = ops.Linear.template(('m',), 2, 'q') # [x, m] → [x, h, k] (2 output axes)
 Lk = ops.Linear.template(('m',), 2, 'k')
 Lv = ops.Linear.template(('m',), 2, 'v')
-Lo = ops.Linear.template(2, ('m',), 'o')       # [h, k] → [m]
+Lo = ops.Linear.template(2, ('m',), 'o') # [h, k] → [m]
 _attention_layer = (Lq * Lk * Lv) @ _attention_core @ Lo
 
 # Transformer layer: attention + FFN, each with residual + norm, repeated 6 times
 _transformer = Block.template(
-    res(_attention_layer) @ res(ffn_layer()),
-    title='Transformer Layer', repetition=6
+ res(_attention_layer) @ res(ffn_layer()),
+ title='Transformer Layer', repetition=6
 )
 
 # Full model: embedding → 6× transformer → aggregator
