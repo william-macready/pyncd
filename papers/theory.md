@@ -214,7 +214,7 @@ A broadcasted operation is built from four ingredients (Definition 13):
 
 The full type of the broadcasted operation is:
 
-$$F : \Pi_{i \in I}\!\left[a_i,\, \mathrm{dom}\!\left([\Omega_{s_i}]_{A_i \otimes Q_i}\right)\right] \;\longrightarrow\; \Pi_{j \in J}\!\left[b_j,\, \mathrm{dom}\!\left([\Omega_{t_j}]_{B_j \otimes P}\right)\right]$$
+$$F : \Pi_{i \in I}\left[a_i,\, \mathrm{dom}\!\left([\Omega_{s_i}]_{A_i \otimes Q_i}\right)\right] \;\longrightarrow\; \Pi_{j \in J}\left[b_j,\, \mathrm{dom}\!\left([\Omega_{t_j}]_{B_j \otimes P}\right)\right]$$
 
 In Python:
 
