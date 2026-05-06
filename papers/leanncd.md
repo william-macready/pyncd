@@ -64,7 +64,7 @@ The PROP typeclass earns its keep in three ways.
 
 2. **The St → Br relationship.** The `reindexings` field inside a `Broadcasted` root morphism is exactly a family of **St** morphisms living inside a **Br** morphism. This is the data of a lax monoidal functor `St → Br`, expressible generically once both are PROP instances.
 
-3. **Interchange.** The law $(f \, ; \, g) \otimes (h \, ; \, k) = (f \otimes h) \, ; \, (g \otimes k)$ holds in any PROP and can be proved once from `tensorHom` and `assoc`.
+3. **Interchange.** The law $(f  ;  g) \otimes (h  ;  k) = (f \otimes h)  ;  (g \otimes k)$ holds in any PROP and can be proved once from `tensorHom` and `assoc`.
 
 ---
 
@@ -108,7 +108,7 @@ abbrev StObj := List Axis  -- a shape = an ordered list of axes
 
 A morphism `dom → cod` in **St** is a matrix $\Lambda \in \mathbb{N}^{|cod| \times |dom|}$ of `Numeric` coefficients (plus an optional bias vector). Each row $j$ gives the linear combination of input coordinates that produces output coordinate $j$:
 
-$$\bigl(\Pi_{i} a_i\bigr) \, ; \, \eta = \Pi_{j}\Bigl(v^\eta_j + \textstyle\sum_{i} \Lambda^\eta_{ji} \cdot a_i\Bigr)$$
+$$\bigl(\Pi_{i} a_i\bigr)  ;  \eta = \Pi_{j}\Bigl(v^\eta_j + \textstyle\sum_{i} \Lambda^\eta_{ji} \cdot a_i\Bigr)$$
 
 ```lean
 structure StMat (dom cod : StObj) where
@@ -326,7 +326,7 @@ A grammar of `Term` and `UTerm` subclasses in [data_structure/Term.py](../data_s
 
 ### StMat vs StrideMorphism
 
-Both represent the same affine coordinate transform $(\Pi_i a_i) \,;\, \eta = \Pi_j(v^\eta_j + \sum_i \Lambda^\eta_{ji} \cdot a_i)$.
+Both represent the same affine coordinate transform $(\Pi_i a_i) ; \eta = \Pi_j(v^\eta_j + \sum_i \Lambda^\eta_{ji} \cdot a_i)$.
 
 | Aspect | Python `StrideMorphism` | Lean `StMat` |
 | --- | --- | --- |
@@ -383,9 +383,9 @@ The paper defines $\mathbf{Prod}[L, M]$ as a monoidal category whose objects are
 | Strict associativity $(A \otimes B) \otimes C = A \otimes (B \otimes C)$ | `PROP.tensor_assoc` | Proved by `simp [List.append_assoc]` |
 | Strict unitality $\mathbf{1} \otimes A = A$ | `PROP.tensor_unit_l` | Proved by `simp` |
 | Root morphism $m \in M$ | `BrBase a b` / `StMat a b` | The concrete payload type; one per category |
-| Sequential composition $f \, ; \, g$ | `SmallCategory.comp f g` | The `comp` field of the `SmallCategory` typeclass |
+| Sequential composition $f  ;  g$ | `SmallCategory.comp f g` | The `comp` field of the `SmallCategory` typeclass |
 | Parallel product $f \otimes g$ | `PROP.tensorHom f g` | A typeclass operation; for St it builds a block-diagonal matrix |
-| Bifunctoriality $(f \, ; \, g) \otimes (h \, ; \, k) = (f \otimes h) \, ; \, (g \otimes k)$ | Theorem from `tensorHom` + `assoc` | Not a typeclass field — derivable |
+| Bifunctoriality $(f  ;  g) \otimes (h  ;  k) = (f \otimes h)  ;  (g \otimes k)$ | Theorem from `tensorHom` + `assoc` | Not a typeclass field — derivable |
 | Rearrangement $[\mu]_{(A_i)} : \Pi_I A_i \to \Pi_J A_{\mu(j)}$ | `PROP.swap` (binary); permutation `StMat` (St) | For St, $[\mu]$ is the matrix with $\Lambda_{ji} = \mathbb{1}[\mu(j) = i]$ and $v = 0$ |
 | Identity morphism $\text{id}_A$ | `SmallCategory.id a` | `BrMorph.nil a` for Br; `StMat.id a` for St |
 | Category axioms (id, assoc) | `id_comp`, `comp_id`, `assoc` | Propositions proved by tactics; `rfl`/induction for Br, `ring` for St |
@@ -398,13 +398,13 @@ Def 8 introduces **St** as a Cartesian product category. Its objects are axes an
 
 **Objects.** An axis $A$ carries a UID and a size $|A| \in \mathbb{N}$ (itself a symbolic `Numeric`). In Lean, the UID is dropped (it belongs to the representation layer) and an axis is just a name–size pair:
 
-$$A \in \text{Ob}\,\mathbf{St} \;\longleftrightarrow\; \texttt{a : Axis}$$
+$$A \in \text{Ob}\mathbf{St} \;\longleftrightarrow\; \texttt{a : Axis}$$
 
 A shape $\Pi_{i \in I} A_i$ is $\texttt{List Axis}$, with $|I|$ given by `List.length`.
 
 **Morphisms.** A finite affine transform $\eta : \Pi_{i \in I} A_i \to \Pi_{j \in J} B_j$ is specified by a coefficient matrix $\Lambda^\eta \in \mathbb{N}^{J \times I}$ and a bias $v^\eta \in \mathbb{N}^J$:
 
-$$\bigl(\Pi_i a_i\bigr) \, ; \, \eta = \Pi_j\Bigl(v^\eta_j + \textstyle\sum_i \Lambda^\eta_{ji} \cdot a_i\Bigr)$$
+$$\bigl(\Pi_i a_i\bigr)  ;  \eta = \Pi_j\Bigl(v^\eta_j + \textstyle\sum_i \Lambda^\eta_{ji} \cdot a_i\Bigr)$$
 
 In Lean this becomes:
 
@@ -414,7 +414,7 @@ In Lean this becomes:
 | $\Lambda^\eta \in \mathbb{N}^{J \times I}$ | `coeffs : Fin cod.length → Fin dom.length → Numeric` | `Fin` bounds make out-of-range indexing a type error |
 | $v^\eta \in \mathbb{N}^J$ | `bias : Fin cod.length → Numeric` | Same indexing discipline |
 | $\text{id}_A$ (identity transform) | `StMat.id` with $\Lambda_{ji} = \delta_{ji}$, $v = 0$ | Diagonal coefficients; identity is a `StMat` not a special case |
-| $\eta \, ; \, \theta$ (composition) | `StMat.comp f g` | Matrix multiply: $\Lambda^{\eta;\theta}_{ki} = \sum_j \Lambda^\theta_{kj} \Lambda^\eta_{ji}$, $v^{\eta;\theta}_k = v^\theta_k + \sum_j \Lambda^\theta_{kj} v^\eta_j$ |
+| $\eta  ;  \theta$ (composition) | `StMat.comp f g` | Matrix multiply: $\Lambda^{\eta;\theta}_{ki} = \sum_j \Lambda^\theta_{kj} \Lambda^\eta_{ji}$, $v^{\eta;\theta}_k = v^\theta_k + \sum_j \Lambda^\theta_{kj} v^\eta_j$ |
 | Associativity of $;$ | `PROP.assoc` proved by `ring` | Follows from associativity of matrix multiplication over `CommSemiring Numeric` |
 
 **What Lean adds.** The paper states the composition formula and asserts associativity. Lean requires a proof: `assoc` discharges to `funext i j; simp [StMat.comp]; ring`. This proof is contingent on `CommSemiring Numeric` — an instance the paper assumes silently but which in Lean must be constructed (by quotienting `Numeric` by the semiring equations, or by interpreting into $\mathbb{Z}$).
@@ -462,7 +462,7 @@ and a well-formedness condition `b.inferDom = dom`.
 
 Def 13 assembles Defs 9–12 into the root morphism of **Br**:
 
-$$F : \Pi_{i \in I}\!\left[a_i,\,\text{dom}\!\left([\Omega_{s_i}]_{A_i \otimes Q_i}\right)\right] \longrightarrow \Pi_{j \in J}\!\left[b_j,\,\text{dom}\!\left([\Omega_{t_j}]_{B_j \otimes P}\right)\right]$$
+$$F : \Pi_{i \in I}\!\left[a_i,\text{dom}\!\left([\Omega_{s_i}]_{A_i \otimes Q_i}\right)\right] \longrightarrow \Pi_{j \in J}\!\left[b_j,\text{dom}\!\left([\Omega_{t_j}]_{B_j \otimes P}\right)\right]$$
 
 | Paper ingredient | Lean field in `BrBase` | Type |
 | --- | --- | --- |
