@@ -8,7 +8,13 @@
       "Bash(rtk ls *)",
       "WebFetch(domain:sholtzen.dev)",
       "Bash(rtk curl *)",
-      "Bash(grep -v '^[[:space:]]*$')"
+      "Bash(grep -v '^[[:space:]]*$')",
+      "Bash(rtk npx *)",
+      "Bash(sed -n '180,185p' /Users/williammacready/code/python/pyncd/papers/leanncd.md)",
+      "Bash(sed -n '235,240p' /Users/williammacready/code/python/pyncd/papers/leanncd.md)",
+      "Bash(sed -n '273,278p' /Users/williammacready/code/python/pyncd/papers/leanncd.md)",
+      "Bash(sed -n '514,518p' /Users/williammacready/code/python/pyncd/papers/leanncd.md)",
+      "Bash(sed -n '730,734p' /Users/williammacready/code/python/pyncd/papers/leanncd.md)"
     ]
   }
 }
