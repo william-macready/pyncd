@@ -6,6 +6,8 @@ This document examines the relationship between Tensor Logic (Domingos 2025) and
 
 ## 1. Background: Tensor Logic
 
+For a detailed treatment of tensor logic and its foundations in einsum see [einsum_tensor_logic.md](einsum_tensor_logic.md). The subsections below summarise the concepts relevant to the pyncd integration.
+
 ### 1.1 Core idea
 
 Pedro Domingos (2025) proposes **tensor logic** as a programming language whose sole primitive is the **tensor equation** — a named tensor defined as an einsum of other tensors with an optional nonlinearity applied to the result:
@@ -123,6 +125,8 @@ Wenig, Rump, Blacher, and Giesen (2025) formally prove commutativity, associativ
 
 ## 3. Background: pyncd
 
+For a detailed treatment of the pyncd categorical framework see [theory.md](theory.md). The subsections below summarise the concepts relevant to the tensor logic integration.
+
 ### 3.1 The product category framework
 
 pyncd represents neural network computations as morphisms in a **product category** `ProdCategory[L, M]`. Morphisms take one of five forms:
@@ -143,7 +147,7 @@ The framework specialises to two concrete categories.
 
 ### 3.2 Broadcasted: the base morphism
 
-A `Broadcasted[B, A, O]` encodes a single operator application:
+In pyncd, `Array[B, A]` is the object type in `BroadcastedCategory` — it is pyncd's name for what tensor logic calls a tensor: a typed, multi-dimensional data structure with datatype `B` and a shape given by a list of `Axis` objects. A `Broadcasted[B, A, O]` encodes a single operator application over one or more such arrays:
 
 ```python
 @dataclass(frozen=True)
@@ -154,7 +158,18 @@ class Broadcasted[B: Datatype, A: Axis, O: Operator]:
     reindexings: Prod[StrideCategory[A]]   # index rewriting for each input
 ```
 
-The **degree** is the shared index space across all inputs — the axes retained in the output (those not contracted). The `Weave` separates **degree axes** (shared, tiled across inputs) from **target axes** (private to each array). The `reindexings` are stride morphisms specifying how each input's axes map into the degree.
+A `Weave` is a **shape template** for one array (i.e. an `Array[B, A]`). Each position is one of two kinds:
+
+- **Degree position** (`WeaveMode.TILED`) — a placeholder filled with a degree axis at runtime. The **degree** is the output index space: the axes the operation sweeps over to produce each output value. For most operators every output index appears in at least one input, so the degree equals the output index space; `Embedding` is the exception (degree is empty, and the embedding dimension is a produced target axis in the output weave).
+- **Target position** (a concrete `Axis` object) — an axis private to that array, not shared with the degree.
+
+The domain of each input array is reconstructed by filling its weave's TILED positions with `reindexing.cod()` and leaving target positions in place. The **reindexing** is a `Rearrangement` with `_dom = degree` whose mapping selects which subset of degree axes that input contributes — for `Y[i,j] = W[i,k] X[k,j]`, W's reindexing selects `i` and X's selects `j`. The contracted index `k` appears as a concrete target axis in each input's weave and is summed over by the operator.
+
+| Index role | Weave position | Example (`Y[i,j] = W[i,k] X[k,j]`) |
+| --- | --- | --- |
+| Degree / output index | `WeaveMode.TILED` | `i`, `j` — TILED in W's and X's weaves respectively |
+| Contracted input index | Concrete `Axis` in input weave | `k` — concrete Axis in both W's and X's weaves |
+| Produced output index | Concrete `Axis` in output weave | embedding dim in `Embedding` |
 
 ### 3.3 Operators
 
@@ -168,6 +183,15 @@ The **degree** is the shared index space across all inputs — the axes retained
 | `Embedding` | Lookup table: `Natural → Reals` |
 | `AdditionOp` | Elementwise sum of matching arrays |
 | `Normalize` | RMSNorm / LayerNorm |
+
+The following terms are proposed as part of the tensor logic integration and are discussed in detail in §5:
+
+| Class | Superclass | Produces | Scope |
+| --- | --- | --- | --- |
+| `TensorEquation` | `Operator` | `Broadcasted` via `bc_signature()` | one equation = one base morphism |
+| `TensorProgram` | `Term` | `Composed` via `to_morphism()` | many equations = sequential composition |
+
+`Operator` is the type parameter stored in `Broadcasted.operator` and represents a single atomic computation. A multi-equation tensor program spans multiple steps with intermediate outputs and cannot fit into a single `Broadcasted`. `TensorProgram` is not an `Operator` (as it wraps multiple equations) and `to_morphism()` produces a `Composed` — a sequence of `Broadcasted` base morphisms.
 
 Because `Operator` is a `Term`, any `Operator` subclass participates in `deep_reconstruct` and `Context.apply` traversal. This is the hook that makes the tensor logic integration possible: `TensorEquation` is an `Operator` subclass, so its internal structure — including its `Axis` index fields — is reachable by the standard `Term` machinery.
 
@@ -193,33 +217,39 @@ This section maps tensor logic concepts onto pyncd and identifies where the corr
 
 ### 4.1 What tensor logic covers
 
-**Einsum → `Einops`.** A tensor logic equation `Y[i,j] = W[i,k] X[k,j]` corresponds directly to an `Einops` operator with index annotation `i k, k j -> i j`. The contraction over `k` is encoded in the `reindexings`, and the retained indices `i, j` become target axes in `output_weaves`.
+**Einsum → `Einops`.** A tensor logic equation `Y[i,j] = W[i,k] X[k,j]` corresponds directly to an `Einops` operator with index annotation `i k, k j -> i j`. The retained indices `i, j` form the degree and occupy `WeaveMode.TILED` positions in both input weaves and the output weave. The contracted index `k` occupies target (non-TILED) positions in each input weave, and the `Einops` operator performs the summation over it. The reindexings are `Rearrangement` terms selecting which degree axes each input contributes: W contributes `i` and X contributes `j`.
 
 **Elementwise nonlinearity → `Elementwise` / `ReLU` / `SoftMax`.** The optional nonlinearity in `Y[i] = relu(W[i,k] X[k])` selects the `Operator` subclass. The `.`-suffixed normalization axis maps to `SoftMax` or `Normalize`.
 
-**Contraction structure → degree and reindexings.** Contracted indices (those on the RHS but not the LHS) become the degree axes of the `Broadcasted`, shared across all `reindexings`. Retained indices become the target axes in the corresponding `Weave`.
+**Contraction structure → degree and reindexings.** Retained indices (those on the LHS) form the degree of the `Broadcasted`. Contracted indices (those on the RHS but not the LHS) become target axes in the corresponding input `Weave`, and the `Einops` operator sums over them. The reindexings record which degree axes each input participates in.
+
+**Execution layout → weaves and reindexings.** The weave structure is fully derivable from the tensor equation's index structure: retained indices become `WeaveMode.TILED` positions; contracted indices become target positions in input weaves; per-input `Rearrangement` reindexings follow directly from which degree axes each input carries. Tensor logic thus covers execution layout implicitly. pyncd makes it explicit by reifying it as typed `Weave` and `Rearrangement` objects that code generation can consume directly.
 
 **Sequential composition → `Composed`.** A tensor logic program where one equation feeds the next maps to `Composed([m1, m2, ...])` in pyncd. With the term-based integration, `TensorProgram.to_morphism()` constructs this automatically.
 
-### 4.2 What tensor logic does not cover
+### 4.2 Gaps closed by the integration (§5)
 
-**Parallel product.** Tensor logic has no notion of running two computations independently in parallel and combining their outputs as a product. In pyncd, `ProductOfMorphisms([m1, m2])` applies two morphisms to disjoint inputs and concatenates the outputs as a `ProdObject`. This is the categorical product structure — essential for expressing multi-head attention, where each head operates independently — and has no counterpart in tensor logic.
+The following gaps in tensor logic are addressed by the term-based embedding described in §5.
 
 **Axis identity.** In tensor logic, index variables are syntactic: two equations sharing a letter `k` share that index by convention, with no semantic identity machinery. This is a gap at the language level. The term-based embedding closes it by representing index variables as `Axis(UTerm)` objects: sharing is object sharing tracked by UID, not name matching. The choice of `Axis(UTerm)` as the representation for index variables in §5 is what makes this work — `Context` can then operate directly on `TensorEquation` values without any name-to-UID translation step.
 
-**Datatypes.** pyncd distinguishes `Reals` (continuous-valued arrays) from `Natural(max_value=n)` (discrete token indices). This distinction is load-bearing: `Embedding` maps `Natural → Reals` and the `max_value` field carries the vocabulary size as a `Numeric` expression. Tensor logic treats all tensors uniformly as elements of a semiring with no type-level separation between discrete and continuous domains.
+**Degree as a first-class object.** The `degree()` method on `Broadcasted` returns the contraction index space as a `ProdObject[A]`. This enables checking, at construction time, that all input reindexings agree on which axes are contracted. Tensor logic has no type-level representation of contraction structure; `bc_signature()` in §5.3 derives and reifies the degree from the equation's UID graph.
 
-**Symbolic shape inference.** Axis sizes in pyncd are `Numeric` expressions — formal terms subject to symbolic manipulation. The size of a composed expression is derived algebraically from its components. Tensor logic operates on concrete tensors with fixed shapes; symbolic shape propagation is outside its scope.
+### 4.3 What tensor logic does not cover
 
-**Degree as a first-class object.** The `degree()` method on `Broadcasted` returns the shared index space as a `ProdObject[A]`. This enables checking, at construction time, that all input reindexings agree on which axes are contracted. Tensor logic has no type-level representation of contraction structure.
+**Parallel product.** Tensor logic has no notion of running two computations independently in parallel and combining their outputs as a product. In pyncd, `ProductOfMorphisms([m1, m2])` applies two morphisms to disjoint inputs and concatenates the outputs as a `ProdObject`. This is the categorical product structure — essential for expressing multi-head attention, where each head operates independently — and has no counterpart in tensor logic. A tensor logic program must either write one equation per head or add a head index to the single equation, flattening the structure.
 
-**Block structure.** `Block[L, M]` in pyncd names a sub-expression with a `BlockTag` and optional aesthetics. This supports structured display and selective substitution. Tensor logic programs are flat sets of equations with no hierarchical grouping.
+**Datatypes.** pyncd distinguishes `Reals` (continuous-valued arrays) from `Natural(max_value=n)` (discrete token indices). The canonical example is an embedding layer: a lookup table that maps a discrete token index (an integer in `[0, vocab_size)`) to a continuous real-valued vector. The input type is fundamentally different from a real-valued tensor — it cannot be added or multiplied, only used to index into the table. pyncd captures this at the type level: `Embedding.template('vocab', output_size=d_model)` produces a morphism with domain type `Natural(max_value=vocab)` and codomain type `Reals`, carrying the vocabulary size as a `Numeric` expression through the type system. Tensor logic treats all tensors uniformly as elements of a semiring — the equation `Y[i, d] = W[i, d]` looks identical whether `i` is a discrete token index or a real-valued sequence position. `TensorEquation` carries no datatype information; datatypes must be supplied as arguments to `bc_signature()` when constructing the `Weave` objects.
 
-### 4.3 Summary
+**Symbolic shape inference.** Axis sizes in pyncd are `Numeric` expressions — formal terms subject to symbolic manipulation. The size of a composed expression is derived algebraically from its components. `TensorProgram.to_morphism()` produces a morphism with symbolically-typed domain and codomain; tensor logic programs carry no shape information.
+
+**Block structure.** `Block[L, M]` in pyncd names a sub-expression with a `BlockTag` and optional aesthetics. This supports structured display and selective substitution. `TensorProgram` is flat; hierarchical grouping is imposed by the surrounding pyncd expression.
+
+### 4.4 Summary
 
 | Concept | Tensor logic | pyncd |
 | --- | --- | --- |
-| Single einsum | `Y[i,k] = W[i,j] X[j,k]` | `TensorEquation` → `Broadcasted` via `bc_signature()` |
+| Single einsum | `Y[i,j] = W[i,k] X[k,j]` | `TensorEquation` → `Broadcasted` via `bc_signature()` |
 | Elementwise nonlinearity | `relu(...)` in equation | `operator` field on `TensorEquation` |
 | Normalization axis | `t.` suffix | `SoftMax` / `Normalize` operator |
 | Sequential composition | Feed-forward equation chain | `TensorProgram.to_morphism()` → `Composed` |
@@ -305,9 +335,9 @@ eq = TensorEquation(
 
 `Operator` declares `bc_signature() → Broadcasted` as the standard construction pathway. `TensorEquation` implements it by reading the contraction structure from the UID graph:
 
-1. **Contracted axes**: collect `Axis` values whose UIDs appear in `rhs` but not in `lhs_indices` — these form the degree.
-2. **Retained axes**: `Axis` values in `lhs_indices` — these become target axes in `output_weaves`.
-3. **Per-input reindexing**: build a `StrideMorphism` mapping each input's index space into the degree.
+1. **Retained axes** (`Axis` values whose UIDs appear in `lhs_indices`) — these form the degree; they occupy `WeaveMode.TILED` positions in every weave where they appear.
+2. **Contracted axes** (`Axis` values whose UIDs appear in `rhs` but not in `lhs_indices`) — these become target (non-TILED) positions in their respective input weaves; the operator sums over them.
+3. **Per-input reindexing**: build a `Rearrangement` with `_dom=degree` whose mapping selects which degree axes this input participates in.
 4. **Return** `Broadcasted(operator=self, input_weaves=..., output_weaves=..., reindexings=...)`.
 
 The result is `Broadcasted[B, A, TensorEquation]` — the operator field IS the equation.
@@ -349,17 +379,94 @@ class TensorProgram(Term):
 
 `topological_sort` orders equations so that each tensor is defined before it is used. The `name_to_axes` map translates tensor logic's implicit name-sharing into UID unification: when equation B refers to tensor `Hidden` that was defined by equation A, `ctx.append_iter` unifies A's `lhs_indices` with B's corresponding `rhs` entry. `ctx.apply(eq)` then substitutes canonical UIDs into both the equation and its resulting `Broadcasted`.
 
-### 5.6 What pyncd provides above `TensorProgram`
+### 5.6 What pyncd provides above `TensorProgram` and how we might represent even these aspects in tensor logic
 
-At and below `TensorProgram`, the tensor logic term representation covers sequential composition, einsum structure, nonlinearities, normalization axes, and axis identity. Above that level, pyncd provides structure that tensor logic does not express:
+At and below `TensorProgram`, the tensor logic term representation covers sequential composition, einsum structure, nonlinearities, normalization axes, and axis identity. The remaining gaps — parallel product, datatypes, symbolic shapes, and block structure — are the caller's responsibility above `TensorProgram.to_morphism()` and are catalogued in §4.3.
 
-**Parallel product.** `ProductOfMorphisms([m1, m2])` applies two morphisms to disjoint inputs and concatenates the outputs as a `ProdObject`. Multi-head attention, where each head operates independently, requires this construct. A tensor logic program must either write one equation per head or add a head index to the single equation, flattening the structure.
+The following are initial ideas on closing the gaps that tensor logic does not represent.
 
-**Datatypes.** `Embedding.template('vocab', output_size=d_model)` produces a morphism with domain type `Natural(max_value=vocab)` and codomain type `Reals`. The vocabulary size is a `Numeric` expression carried through the type system. `TensorEquation` carries datatypes on its `Axis` objects but tensor logic itself is semiring-uniform.
+#### Parallel product from dependency analysis
 
-**Symbolic shapes.** Axis sizes are `Numeric` expressions in pyncd. Sequence length, head count, and key dimension are formal terms that propagate algebraically through composition. `TensorProgram.to_morphism()` produces a morphism with symbolically-typed domain and codomain; tensor logic programs carry no shape information.
+A `TensorProgram`'s dependency DAG encodes parallelism implicitly: two equations with no directed path between them are independent and could be composed as `ProductOfMorphisms` rather than sequentially. The full program decomposes into alternating sequential steps and parallel blocks by finding **fork-join pairs** in the DAG — a fork where one tensor feeds multiple independent chains, a join where those chains reconverge. Between fork and join, the chains become the arguments of a `ProductOfMorphisms`; finding these pairs is a standard dominators/post-dominators analysis on the DAG.
 
-**Block structure.** `Block[L, M]` with `BlockTag` names a sub-expression for display and selective substitution. `TensorProgram` is flat; hierarchical grouping is imposed by the surrounding pyncd expression.
+The main complication is shared inputs: parallel branches often read from the same tensor (both attention heads read from the same embedded sequence). Since `ProductOfMorphisms` requires disjoint domain objects, shared inputs must be fanned out via a `Rearrangement` (copy mode) before the parallel block and outputs concatenated via another `Rearrangement` at the join. The UID-based `Axis` representation makes shared-input detection straightforward — the same `Axis` objects appearing in multiple branches are immediately identifiable.
+
+This analysis is the inverse of tensor logic's conventional head-index trick, which encodes multi-head attention as a single batched equation with an explicit head dimension `h`. The two representations are semantically equivalent; the DAG analysis recovers the `ProductOfMorphisms` structure automatically from either form, exposing the parallelism explicitly to the pyncd type system.
+
+#### Symbolic Shape Inference
+
+Tensor logic equations carry no size information. Closing the symbolic shape gap (§4.3) requires a way to introduce sizes without cluttering the equation syntax. The natural approach is **tensor type signatures**: input tensors declare their shape as a tuple of named size variables, separate from the equations themselves.
+
+```text
+W_O   : (512, 64)
+Stream : (32, 128, 64)
+
+Y[b, p, t.] = softmax(W_O[t, d] Stream[b, p, d])
+```
+
+Sizes are recovered by position: `W_O : (512, 64)` combined with `W_O[t, d]` in the equation binds index `t` to size 512 and index `d` to size 64. From `Stream : (32, 128, 64)` and `Stream[b, p, d]`, index `b` gets size 32, `p` gets size 128, and `d` is confirmed as 64. The output shape of `Y`, inferred automatically, is then `(32, 128, 512)`.
+
+In the pyncd embedding this becomes a shape propagation pass that runs alongside `TensorProgram.to_morphism()`. Type signatures populate the `_size` field on `Axis` objects for the input tensors. As the topological sort proceeds and `Context.append_iter` unifies UIDs across equations, it also unifies the associated sizes: when two axes merge their `SizeVar`s resolve to the same `Numeric` expression. Equations whose inputs are all sized then produce fully-typed output `Axis` objects, propagating shapes forward through the program exactly as UIDs are propagated now.
+
+In theory, tensor logic equations already encode the information needed to propagate sizes — the index structure fully determines which axes must be equal. Type signatures on input tensors are only needed for *static* inference at the point when concrete tensors are not yet available. At runtime, sizes could simply be read from the actual tensor arguments and propagated dynamically through the same pass, with no annotations at all — exactly as NumPy's `einsum` works. The type signature approach is the minimum annotation needed to recover full static shape inference without changing the equation syntax. Whether static shape information is worth the annotation cost, or whether shapes should simply flow dynamically as tensors are passed to `to_morphism()`, is an open design question.
+
+#### Embedding datatypes
+
+The core issue is that tensor logic's contraction `Σ_i A[i,...] B[i,...]` requires *summing* over `i` — but an embedding lookup is *selection*, not summation. Given a token ID, the correct operation is to retrieve the corresponding row of the embedding matrix; summing all rows is meaningless. A token index is an opaque pointer into a table, not a position in a continuous space that can participate in arithmetic. Tensor logic, treating all indices uniformly as positions in a semiring, has no way to express this distinction — the equation `Y[b, p, d] = W[i, d] Token[b, p, i]` looks syntactically identical whether `i` is a contractable continuous index or a discrete token selector.
+
+A minimal extension uses distinct bracket conventions to separate the two operations. Square brackets remain the contraction notation; parentheses denote selection:
+
+```text
+Y[b, p, d] = W(Token[b, p], d)
+```
+
+Here `Token[b, p]` is a 2D tensor of integer token IDs — `b` is batch, `p` is sequence position, and `Token[b, p]` retrieves the token ID (e.g. the integer 4291) at that position. `W(Token[b, p], d)` then uses that ID as a row index into the embedding matrix W, returning the `d`-dimensional vector stored at that row. No summation occurs — `Token[b, p]` is a pointer, not a weight. The full equation says: for each position in the sequence, look up its token ID and retrieve the corresponding embedding vector.
+
+The contrast with square bracket notation makes the distinction sharp:
+
+```text
+Y[b, p, d] = W[i, d] Token[b, p, i]   -- wrong: sums W over all vocab rows
+Y[b, p, d] = W(Token[b, p], d)        -- correct: selects one row per position
+```
+
+The first line produces a weighted sum over the entire vocabulary — semantically nonsensical for a lookup. The second selects exactly one row per `(b, p)` position. `W[i, d]` would contract over `i`; `W(i, d)` selects row `i` without summing. The distinction is visible at a glance and requires no new annotation — just a reserved meaning for two already-distinct notations. In the pyncd embedding, a parenthesised index position maps to a `Natural(max_value=n)` domain type rather than a continuous `Axis`, and the operator becomes `Embedding` rather than `Einops`. Any equation that uses square-bracket notation on a parenthesised index is a static type error: you cannot contract over a discrete token index.
+
+#### Predicate and numeric tensors
+
+Tensor logic's unification claim rests on the observation that neural and symbolic computation share the same einsum structure under different semirings — arithmetic `(ℝ, +, ×)` for neural, Boolean `(𝔹, ∨, ∧)` for symbolic. But the notation does not make this distinction visible. The Datalog rule `Aunt(x,z) ← Sister(x,y), Parent(y,z)` and the matrix product `Y[i,j] = W[i,k] X[k,j]` look like the same kind of equation; a reader or type checker cannot tell from the syntax alone which semiring applies.
+
+The core issue is that contracting over a Boolean tensor is *existential quantification* — does any witness `y` exist? — while contracting over a real-valued tensor is *summation*. The two operations have different semantics, different gradient behaviour, and the Boolean case requires the Heaviside step H to collapse a count of witnesses back to 0 or 1. Treating them identically at the notation level obscures a distinction that matters for both execution and the neural-symbolic integration that tensor logic is designed to express.
+
+Extending the bracket convention from the embedding section naturally captures this: curly braces `{}` for predicate (Boolean) tensors, square brackets `[]` for numeric:
+
+```text
+Aunt{x, z} = Sister{x, y} Parent{y, z}    -- Boolean: AND + existential
+Y[i, j]    = W[i, k] X[k, j]              -- numeric: multiply + sum
+```
+
+The `{}` notation signals Boolean semiring with an implicit Heaviside at the output; `[]` signals arithmetic semiring. A single program can mix both, and the type checker can reject any equation that combines Boolean and numeric tensors without an explicit conversion. In the pyncd embedding, a `{}` tensor maps to a `Bool` datatype and contracted indices become existential quantifications rather than sums.
+
+The three bracket forms together give tensor logic a lightweight type system that mirrors pyncd's `Reals` / `Natural` / `Bool` distinction without requiring a separate type declaration:
+
+| Notation | Semantics | pyncd datatype |
+| --- | --- | --- |
+| `T[i, j]` | contraction — sum over shared indices | `Reals` |
+| `T(i, d)` | selection — lookup row `i` | `Natural(max_value=n)` |
+| `T{x, y}` | predicate — existential over shared indices | `Bool` |
+
+**Unifying bracket types with shape signatures.** The bracket type (how an index is used) and the size annotation (what range it covers) are both attributes of the same thing: the dimension type of a tensor. Placing this information on tensor signatures rather than in equations keeps equations uncluttered and makes the type information authoritative. Using arrow notation to separate the **index space** (how you address into the tensor) from the **value type** (what you get back) makes the signatures fully explicit:
+
+```text
+Token  : (ℝ_32, ℝ_128) -> ℕ_50000    -- at each (batch, seq) position, a token ID
+W      : ℕ_50000 -> ℝ_512             -- lookup: token ID → embedding vector
+W_O    : (ℝ_512, ℝ_64) -> ℝ          -- weight matrix: standard real-valued tensor
+Y      : (ℝ_32, ℝ_128) -> ℝ_512      -- at each (batch, seq) position, an embedding vector
+Sister : (ℕ_n, ℕ_m) -> 𝔹             -- predicate over entity pairs
+```
+
+`W : ℕ_50000 -> ℝ_512` reads directly as "given a token ID from a vocabulary of 50,000, return a 512-dimensional real vector" — exactly what an embedding is, with no ambiguity about which axis is the selection axis. The domain of the arrow is always the lookup key; the codomain is always the value type.
+
+Bracket notation in equations is then fully derivable from the signature: a `ℕ` in the domain means parenthesis notation; an `ℝ` in the domain means square bracket notation; a `𝔹` codomain means curly bracket notation on the LHS. `W(Token[b,p], d)` is accepted because W's domain is declared `ℕ_50000`; `W[Token[b,p], d]` is a type error — you cannot contract over a categorical axis. The shape inference pass from §5.7 and the datatype propagation pass collapse into one: as sizes propagate forward through equations, their kinds propagate alongside, and an output index that flows from an `ℕ_n` input stays categorical while one from `ℝ_n` stays real. Shape inference and type inference become the same single pass.
 
 ---
 
@@ -368,6 +475,8 @@ At and below `TensorProgram`, the tensor logic term representation covers sequen
 Tensor Logic (Domingos 2025) provides a compact notation for individual operator applications in which the index structure is made explicit. `TensorEquation(Operator)` embeds this notation into pyncd's `Term` hierarchy: each equation is a frozen dataclass whose `Axis` index fields carry UID identity, whose `bc_signature()` method produces the corresponding `Broadcasted[B, A, TensorEquation]`, and whose structure remains accessible and traversable throughout the expression's lifetime. `TensorProgram(Term)` collects equations, topologically sorts them, and produces a `Composed` morphism via `Context`-mediated axis unification — converting tensor logic's implicit name-sharing into pyncd's explicit UID identity.
 
 The integration boundary is clean: `TensorProgram.to_morphism()` produces a morphism in `BroadcastedCategory`; above that level, `ProductOfMorphisms`, type-level datatypes, symbolic shape propagation, and `Block` structure are the caller's responsibility — categorical structures that tensor logic deliberately omits.
+
+Beyond this core integration, §5.6 explores how the remaining gaps might themselves be closed by extending the tensor logic interface: extracting parallel product structure from the program's dependency DAG, adding symbolic shape inference via tensor type signatures, distinguishing embedding selection from contraction with a bracket convention, and separating predicate (Boolean) tensors from numeric ones — with all three distinctions unified into a single arrow-notation type signature that encodes index space, value type, and operation kind together.
 
 ---
 

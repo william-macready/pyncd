@@ -270,6 +270,10 @@ $$F : \Pi_{i \in I}\left[a_i,\, \text{dom}([\Omega_{s_i}]_{A_i \otimes Q_i})\rig
 
 Here $\Omega_{s_i}$ is the unweave rearrangement in **St** associated with input weave $s_i$: it maps from the actual interleaved input shape (target and tiling axes in the positions specified by the weave) to the canonical split form $A_i \otimes Q_i$ (all target axes $A_i$ first, then all tiling axes $Q_i$). Taking its domain recovers the actual shape of input array $i$. The output side is analogous: $\Omega_{t_j}$ unweaves output $j$ from its interleaved shape to $B_j \otimes P$.
 
+The subscript $A_i \otimes Q_i$ on $[\Omega_{s_i}]$ follows the standard rearrangement notation $[\mu]_{(A_i)_{i \in I}}$, where the subscript specifies the **domain** objects. The domain of $[\Omega_{s_i}]_{A_i \otimes Q_i}$ is the canonical split form $A_i \otimes Q_i$; the permutation $\Omega_{s_i}$ maps it to the actual interleaved axis order. The $\text{dom}(\cdot)$ in the formula therefore extracts $A_i \otimes Q_i$ as the shape of input $i$ — target axes first, tiling axes after.
+
+**Relation to covariant and contravariant indices.** The input/output weave structure is the pyncd analogue of the covariant/contravariant index distinction in classical tensor analysis. A target axis appearing in an **input weave** is being *consumed* by the operator — it plays the role of a contravariant (upper) index that is contracted against a matching lower index. A target axis appearing in an **output weave** is being *produced* — it plays the role of a covariant (lower) index. Composition enforces the matching rule: `Context.append_iter` unifies the output (covariant) axes of one morphism with the input (contravariant) axes of the next, exactly as classical contraction requires one upper and one lower index. The degree axes — `TILED` positions shared across both input and output weaves — correspond to the free indices that appear on both sides of a tensor equation and are neither contracted nor produced.
+
 In Python:
 
 ```python
