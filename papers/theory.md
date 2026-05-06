@@ -108,7 +108,7 @@ The first two are the core primitives; the remaining three are structural.
 
 - **Python:** `Composed[L, M]` with `content: Prod[M]`.
 
-**4. Parallel product** — morphisms $f_1 \otimes f_2 \otimes \cdots \otimes f_n$ applied simultaneously on disjoint sub-products. $\mathrm{dom}()$ and $\mathrm{cod}()$ are the concatenations of the individual domains and codomains. Satisfies **bifunctoriality**: $(f \mathbin{;} g) \otimes (h \mathbin{;} k) \equiv (f \otimes h) \mathbin{;} (g \otimes k)$.
+**4. Parallel product** — morphisms $f_1 \otimes f_2 \otimes \cdots \otimes f_n$ applied simultaneously on disjoint sub-products. $\mathrm{dom}()$ and $\mathrm{cod}()$ are the concatenations of the individual domains and codomains. Satisfies **bifunctoriality**: $(f ; g) \otimes (h ; k) \equiv (f \otimes h) ; (g \otimes k)$.
 
 - **Python:** `ProductOfMorphisms[L, M]` with `content: Prod[M]`.
 
@@ -140,7 +140,7 @@ In Python, `Axis` is the abstract base (`UTerm`); `RawAxis` is the concrete subc
 
 **Morphisms** in **St** are **finite affine transforms**: maps $\eta : \Pi_{i \in I} A_i \to \Pi_{j \in J} B_j$ that describe how input coordinates relate to output coordinates. Each output coordinate $j$ is a linear combination of input coordinates plus a bias:
 
-$$\left(\Pi_{i \in I} a_i\right) \mathbin{;} \eta = \Pi_{j \in J}\left(v^\eta_j + \sum_{i \in I} \Lambda^\eta_{ij} \cdot a_i\right)$$
+$$\left(\Pi_{i \in I} a_i\right) ; \eta = \Pi_{j \in J}\left(v^\eta_j + \sum_{i \in I} \Lambda^\eta_{ij} \cdot a_i\right)$$
 
 where $\Lambda^\eta \in \mathbb{N}^{I \times J}$ is the coefficient matrix and $v^\eta \in \mathbb{N}^J$ is the bias vector. The image must land within the codomain.
 
@@ -204,7 +204,7 @@ A broadcasted operation is built from four ingredients (Definition 13):
    | **Deletion** — $B$ broadcast across batches | $C[b,i,j] = A[b,i,k] B[k,j]$ | $(b)$ | $\eta_A = \mathrm{id}$ <br> $\eta_B = ()$ |
    | **Duplication** — diagonal slice | $Y[p,j] = X[p,p,j]$ | $(p)$ | $\eta_X(p) = (p,p)$ |
    | **Projection** — outer product, each input indexed by one output axis | $C[i,j] = A[i] B[j]$ | $(i,j)$ | $\eta_A(i,j) = i$ <br> $\eta_B(i,j) = j$ |
-   | **Affine scaling** — strided 1-D convolution; $s \in \mathbb{N}$ is a fixed stride constant baked into the `StrideMorphism` coefficient matrix, not an axis | $Y[b,p] = \textstyle\sum_w X[b, s{\cdot}p+w] W[w]$ | $(b,p)$ | $\eta_X(b,p) = (b, s{\cdot}p)$ <br> $\eta_W = ()$ |
+   | **Affine scaling** — strided 1-D convolution; $s \in \mathbb{N}$ is a fixed stride constant baked into the `StrideMorphism` coefficient matrix, not an axis | $Y[b,p] = \sum_w X[b, s{\cdot}p+w] W[w]$ | $(b,p)$ | $\eta_X(b,p) = (b, s{\cdot}p)$ <br> $\eta_W = ()$ |
 
    In Python, the tuple of reindexings is stored as the `reindexings: Prod[StrideCategory[A]]` field on the `Broadcasted` dataclass — the root morphism of **Br** that packages all four ingredients together. On a GPU, the loop $P$ is what gets tiled: each processor is assigned a small chunk of $P$'s coordinates, loads only the corresponding slice of each input, and works entirely in fast on-chip memory.
 
@@ -220,7 +220,7 @@ A broadcasted operation is built from four ingredients (Definition 13):
 - A **target axis** is loaded fully into a single core's SMEM and operated on directly by the base operation. Its total size must fit within the core's memory budget.
 
 FlashAttention (Abbott & Zardini, 2025, §3.2) computes
-$$O[b,h,q,d] = \sum_x \mathrm{SoftMax}_x\!\left(\sum_k Q[b,h,q,k]\, K[h,x,k]\right) V[h,x,d]$$
+$$O[b,h,q,d] = \sum_x \operatorname{SoftMax}_x\!\left(\sum_k Q[b,h,q,k]\, K[h,x,k]\right) V[h,x,d]$$
 where $Q[b,h,q,k]$, $K[h,x,k]$, and $V[h,x,d]$ are the query, key, and value tensors: $b$ is the batch axis, $h$ indexes attention heads, $q$ and $x$ index query and key/value positions respectively, and $k$, $d$ are the head dimensions. The query axis $q$ is tiled across GPU cores — each core processes a $g_q$-sized block of query positions in SMEM — while the head dimensions $k$ and $d$ are target axes loaded fully per core. Streaming the key/value position axis $x$ through in tiles avoids materialising the full $q \times x$ attention score matrix in DRAM, achieving a ×6 throughput gain over standard PyTorch. A **weave** records this classification axis-by-axis for every array so the compiler can determine, for each tile of $P$, which slice of each array to load.
 
 Formally (Definition 12), a **weave** is a boolean family $(w_i)_{i \in I}$ indexed by the axes of an array: $w_i = 1$ marks a **target** axis; $w_i = 0$ marks a **tiling** axis. From this family the paper derives a permutation $\Omega_w : I \to I$ that gathers all target axes at the front and all tiling axes at the back. The inverse permutation $\Omega_w^{-1}$ recovers the original interleaved axis order from the canonical partition (needed to compute the domain of a broadcast morphism).
@@ -264,7 +264,9 @@ In Python, `Weave[B, A]` stores `datatype: B` and `_shape: Prod[A | WeaveMode]`.
 
 The full type of the broadcasted operation is:
 
-$$F : \Pi_{i \in I}\left[a_i, \mathrm{dom}\left([\Omega_{s_i}]_{A_i \otimes Q_i}\right)\right] \longrightarrow \Pi_{j \in J}\left[b_j, \mathrm{dom}\left([\Omega_{t_j}]_{B_j \otimes P}\right)\right]$$
+$$F : \Pi_{i \in I}\left[a_i,\, \mathrm{dom}([\Omega_{s_i}]_{A_i \otimes Q_i})\right]
+\longrightarrow
+\Pi_{j \in J}\left[b_j,\, \mathrm{dom}([\Omega_{t_j}]_{B_j \otimes P})\right]$$
 
 Here $\Omega_{s_i}$ is the unweave rearrangement in **St** associated with input weave $s_i$: it maps from the actual interleaved input shape (target and tiling axes in the positions specified by the weave) to the canonical split form $A_i \otimes Q_i$ (all target axes $A_i$ first, then all tiling axes $Q_i$). Taking its domain recovers the actual shape of input array $i$. The output side is analogous: $\Omega_{t_j}$ unweaves output $j$ from its interleaved shape to $B_j \otimes P$.
 
@@ -364,7 +366,7 @@ _transformer = Block.template(
 _transformer_model = embedding @ _transformer @ aggregator
 ```
 
-Each `*` creates a `ProductOfMorphisms` ($\otimes$, parallel); each `@` creates a `Composed` ($\mathbin{;}$, sequential) with autoalignment. The result is a single algebraic term that can be:
+Each `*` creates a `ProductOfMorphisms` ($\otimes$, parallel); each `@` creates a `Composed` ($;$, sequential) with autoalignment. The result is a single algebraic term that can be:
 
 - Sent as JSON via WebSocket to the TypeScript renderer (`wst.send_term(...)`)
 - Printed as a category diagram (`dpl.print_category(...)`)
@@ -385,7 +387,7 @@ Each `*` creates a `ProductOfMorphisms` ($\otimes$, parallel); each `@` creates 
 | Product category $\mathbf{Prod}[L,M]$ | `ProdCategory[L, M]` | `data_structure/ProductCategory.py` |
 | Product object $\Pi_{i \in I} L_i$ | `ProdObject[L]` | `data_structure/ProductCategory.py` |
 | Root morphism $m \in M$ | `Morphism[L]` (abstract) | `data_structure/ProductCategory.py` |
-| Sequential composition $\mathbin{;}$ | `Composed[L, M]` | `data_structure/ProductCategory.py` |
+| Sequential composition $;$ | `Composed[L, M]` | `data_structure/ProductCategory.py` |
 | Parallel product $\otimes$ | `ProductOfMorphisms[L, M]` | `data_structure/ProductCategory.py` |
 | Rearrangement $[\mu]$ | `Rearrangement[L]` | `data_structure/ProductCategory.py` |
 | Block $B$ | `Block[L, M]` | `data_structure/ProductCategory.py` |
@@ -397,6 +399,6 @@ Each `*` creates a `ProductOfMorphisms` ($\otimes$, parallel); each `@` creates 
 | Weave $w_i \in \{0,1\}$ (Def 12) | `Weave[B, A]`, `WeaveMode` | `data_structure/BroadcastedCategory.py` |
 | Broadcasted operation $F$ (Def 13) | `Broadcasted[B, A, O]` | `data_structure/BroadcastedCategory.py` |
 | Base operator $f$ | `Operator` subclass | `data_structure/Operators.py` |
-| Autoalignment $\mathbin{@}$ | `composition`, `align_composed` | `construction_helpers/composition.py` |
+| Autoalignment $@$ | `composition`, `align_composed` | `construction_helpers/composition.py` |
 | Batch lift $[f, P]$ (Def 11) | Product structure of `Broadcasted` | `data_structure/BroadcastedCategory.py` |
 | Reindexing $[a, \eta]$ (Def 10) | `reindexings` field of `Broadcasted` | `data_structure/BroadcastedCategory.py` |
