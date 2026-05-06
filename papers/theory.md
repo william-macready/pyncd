@@ -220,7 +220,7 @@ A broadcasted operation is built from four ingredients (Definition 13):
 - A **target axis** is loaded fully into a single core's SMEM and operated on directly by the base operation. Its total size must fit within the core's memory budget.
 
 FlashAttention (Abbott & Zardini, 2025, §3.2) computes
-$$O[b,h,q,d] = \sum_x \text{SoftMax}_x\!\left(\sum_k Q[b,h,q,k]\, K[h,x,k]\right) V[h,x,d]$$
+$$O[b,h,q,d] = \sum_x \text{SoftMax}_x\left(\sum_k Q[b,h,q,k]\, K[h,x,k]\right) V[h,x,d]$$
 where $Q[b,h,q,k]$, $K[h,x,k]$, and $V[h,x,d]$ are the query, key, and value tensors: $b$ is the batch axis, $h$ indexes attention heads, $q$ and $x$ index query and key/value positions respectively, and $k$, $d$ are the head dimensions. The query axis $q$ is tiled across GPU cores — each core processes a $g_q$-sized block of query positions in SMEM — while the head dimensions $k$ and $d$ are target axes loaded fully per core. Streaming the key/value position axis $x$ through in tiles avoids materialising the full $q \times x$ attention score matrix in DRAM, achieving a ×6 throughput gain over standard PyTorch. A **weave** records this classification axis-by-axis for every array so the compiler can determine, for each tile of $P$, which slice of each array to load.
 
 Formally (Definition 12), a **weave** is a boolean family $(w_i)_{i \in I}$ indexed by the axes of an array: $w_i = 1$ marks a **target** axis; $w_i = 0$ marks a **tiling** axis. From this family the paper derives a permutation $\Omega_w : I \to I$ that gathers all target axes at the front and all tiling axes at the back. The inverse permutation $\Omega_w^{-1}$ recovers the original interleaved axis order from the canonical partition (needed to compute the domain of a broadcast morphism).
