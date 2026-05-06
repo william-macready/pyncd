@@ -26,7 +26,7 @@ Mathematical entities are distinct from the concrete terms used to represent the
 
 ### Mathematical Encoding
 
-$\Gamma$ is a set of **mathematical entities**. These entities are objects, morphisms, or products of either. $\Gamma$ has a family of $k$-indexed **core properties** $\pi_k : \Gamma_{k,i} \to \Gamma_{k,f}$, the basic structure maps that define what entities can do. These include $k = \operatorname{dom}$, $k = \operatorname{cod}$, $k = \operatorname{composition}$, $k = {\otimes}$ (monoidal product), etc.
+$\Gamma$ is a set of **mathematical entities**. These entities are objects, morphisms, or products of either. $\Gamma$ has a family of $k$-indexed **core properties** $\pi_k : \Gamma_{k,i} \to \Gamma_{k,f}$, the basic structure maps that define what entities can do. These include $k = \text{dom}$, $k = \text{cod}$, $k = \text{composition}$, $k = {\otimes}$ (monoidal product), etc.
 
 A **constructed term system** is the representation layer: a set $G$ of terms and an **interpretation function** $V_G : G \to \Gamma$ that says which mathematical entity each term denotes (we also have $V_G^{-1} :\Gamma \to G$). For each core property $\pi_k$, the term system provides an internal counterpart $p_k : G_{k,i} \to G_{k,f}$ such that evaluating inside the term system agrees with evaluating in $\Gamma$ after interpretation (soundness).
 
@@ -34,11 +34,11 @@ Terms are of two kinds:
 
 - **Root terms** $G_r$ — the atoms of the term system. A root term is not assembled from smaller recoverable inputs; instead it carries **metadata** tags from which all relevant core properties can be computed directly. Root terms represent primitive, irreducible concepts — the specific choices of lone objects and root morphisms that distinguish one product category from another. In pyncd, `Axis` (carrying a UID and a size), `StrideMorphism` (carrying domain, coefficient matrix, and bias), and `Broadcasted` (carrying operator, weaves, and reindexings) are all root terms.
 
-- **Construction rules** $T_c : G_{c,i} \to G_{c,f}$ build terms from smaller pieces. The output term is a **data wrapper around its inputs**: $G_{c,f}$ literally embeds $G_{c,i}$ inside itself, which is what the paper calls *contravariant* — the output contains the input rather than being derived from it. This guarantees a **recovery function** $\hat{T}_c : \operatorname{img}(T_c) \to G_{c,i}$ satisfying $\hat{T}_c \circ T_c = \operatorname{Id}$: the inputs can always be unwrapped from the output. In pyncd, `Composed`, `ProductOfMorphisms`, `Rearrangement`, and `Block` are construction rules common to every product category.
+- **Construction rules** $T_c : G_{c,i} \to G_{c,f}$ build terms from smaller pieces. The output term is a **data wrapper around its inputs**: $G_{c,f}$ literally embeds $G_{c,i}$ inside itself, which is what the paper calls *contravariant* — the output contains the input rather than being derived from it. This guarantees a **recovery function** $\hat{T}_c : \text{img}(T_c) \to G_{c,i}$ satisfying $\hat{T}_c \circ T_c = \text{Id}$: the inputs can always be unwrapped from the output. In pyncd, `Composed`, `ProductOfMorphisms`, `Rearrangement`, and `Block` are construction rules common to every product category.
 
 A **UTerm** (uniquely-identified term) is a term that carries a **UID** — a randomly-generated integer identifier — as one of its fields. The UID is the term's identity: two UTerms with the same UID are treated as the same entity everywhere in an expression, regardless of other field values. Plain `Term`s have no UID because their identity is fully determined by their contents. UTerms include `Axis`, `BlockTag`, and `FreeNumeric` — things whose identity must be tracked independently of their current field values.
 
-**Placeholder terms** are partially-instantiated terms with open slots represented by UIDs. A UID acts as a free variable in an expression: imposing $\operatorname{uid}_a = \operatorname{uid}_b$ unifies the two slots and propagates the substitution through the term. This is the mechanism behind autoalignment: two terms composed via `@` have their boundary axes unified by merging UIDs.
+**Placeholder terms** are partially-instantiated terms with open slots represented by UIDs. A UID acts as a free variable in an expression: imposing $\text{uid}_a = \text{uid}_b$ unifies the two slots and propagates the substitution through the term. This is the mechanism behind autoalignment: two terms composed via `@` have their boundary axes unified by merging UIDs.
 
 Terms are represent in pyncd as follows:
 
@@ -67,13 +67,13 @@ The type parameters $L$ and $M$ are filled in differently for each concrete cate
 | Category | $L$ (lone object) | $M$ (root morphism) |
 | --- | --- | --- |
 | $\mathbf{St}$ | `Axis` — a named axis with a UID and a size | `StrideMorphism` |
-| $\mathbf{Br}$ | `Array` — a pair $[a, A]$ of a `Datatype` $a$ and a shape $A \in \operatorname{Ob} \mathbf{St}$ | `Broadcasted` |
+| $\mathbf{Br}$ | `Array` — a pair $[a, A]$ of a `Datatype` $a$ and a shape $A \in \text{Ob} \mathbf{St}$ | `Broadcasted` |
 
 An object in $\mathbf{St}$ is thus a tuple of axes, e.g. $(\mathtt{batch}, \mathtt{seq}, \mathtt{dim})$; an object in $\mathbf{Br}$ is a tuple of typed arrays, each indexed by one axis.
 
 ### Objects in ProdCategory
 
-**Objects** $A \in \operatorname{Ob} \mathcal{C}$ are finite products of lone objects $A_i \in L$:
+**Objects** $A \in \text{Ob} \mathcal{C}$ are finite products of lone objects $A_i \in L$:
 
 $$A = \Pi_{i \in I} A_i$$
 
@@ -104,15 +104,15 @@ The first two are the core primitives; the remaining three are structural.
 
 - **Python:** `Rearrangement[L]` with `mapping: Prod[int]` and `_dom: Prod[L]`.
 
-**3. Sequential composition** — a tuple of morphisms $f_1, f_2, \ldots, f_n$ applied left-to-right (diagrammatic order). $\operatorname{dom}()$ is the domain of the first; $\operatorname{cod}()$ is the codomain of the last.
+**3. Sequential composition** — a tuple of morphisms $f_1, f_2, \ldots, f_n$ applied left-to-right (diagrammatic order). $\text{dom}()$ is the domain of the first; $\text{cod}()$ is the codomain of the last.
 
 - **Python:** `Composed[L, M]` with `content: Prod[M]`.
 
-**4. Parallel product** — morphisms $f_1 \otimes f_2 \otimes \cdots \otimes f_n$ applied simultaneously on disjoint sub-products. $\operatorname{dom}()$ and $\operatorname{cod}()$ are the concatenations of the individual domains and codomains. Satisfies **bifunctoriality**: $(f ; g) \otimes (h ; k) \equiv (f \otimes h) ; (g \otimes k)$.
+**4. Parallel product** — morphisms $f_1 \otimes f_2 \otimes \cdots \otimes f_n$ applied simultaneously on disjoint sub-products. $\text{dom}()$ and $\text{cod}()$ are the concatenations of the individual domains and codomains. Satisfies **bifunctoriality**: $(f ; g) \otimes (h ; k) \equiv (f \otimes h) ; (g \otimes k)$.
 
 - **Python:** `ProductOfMorphisms[L, M]` with `content: Prod[M]`.
 
-**5. Block** — a morphism decorated with display metadata (`title`, `fill_color`) and a `repetition` count (e.g., $\times 6$ for a stacked transformer layer). Transparent to the categorical semantics; passes $\operatorname{dom}()$ and $\operatorname{cod}()$ through from the body.
+**5. Block** — a morphism decorated with display metadata (`title`, `fill_color`) and a `repetition` count (e.g., $\times 6$ for a stacked transformer layer). Transparent to the categorical semantics; passes $\text{dom}()$ and $\text{cod}()$ through from the body.
 
 - **Python:** `Block[L, M]` with `body: M` and `block_tag: BlockTag`.
 
@@ -131,7 +131,7 @@ With this infrastructure for **product categories** we turn to specific instanti
 **Objects** in **St** are **axes** and products of axes:
 
 - A lone object is an **axis** $A$ — a UTerm carrying a UID and a size $|A| \in \mathbb{N}$. The UID serves as the axis's identity across an expression; the size is itself a `FreeNumeric` (another UTerm) until configured.
-- A product object $\Pi_{i \in I} A_i \in \operatorname{Ob} \mathbf{St}$ is a **shape** — the ordered set of multi-index coordinates $(a_i)_{i \in I}$ of an array. (Convention used throughout: $I$ is the ordered index set of an array's axes, so $i \in I$ ranges over axis positions.)
+- A product object $\Pi_{i \in I} A_i \in \text{Ob} \mathbf{St}$ is a **shape** — the ordered set of multi-index coordinates $(a_i)_{i \in I}$ of an array. (Convention used throughout: $I$ is the ordered index set of an array's axes, so $i \in I$ ranges over axis positions.)
 - The unit object $\mathbf{1}$ is the empty product, corresponding to a scalar shape.
 
 In Python, `Axis` is the abstract base (`UTerm`); `RawAxis` is the concrete subclass used for unspecialized axes. `Axis.named('h')` creates an axis whose UID carries the name $h$ and whose size is a free numeric also named $|h|$.
@@ -181,8 +181,8 @@ The identity, permutation, duplication, and deletion ($\eta = ()$) are all speci
 **Objects** in **Br** are **arrays** $[a, A]$:
 
 - $a \in \mathbf{Dt}$ is a **datatype** — the kind of value stored at each coordinate. Common datatypes are `Reals` ($\mathbb{R}$, continuous and differentiable) and `Natural(max_value)` ($\mathbb{N}_{<v}$, discrete, used for token indices in embeddings).
-- $A \in \operatorname{Ob} \mathbf{St}$ is a **shape** — a product of axes that indexes the array's coordinates.
-- An array $[a, A]$ has an $\operatorname{El}(A)$-family of values $x_{i_A} \in a$ for each coordinate $i_A \in \operatorname{El}(A)$. Here $\operatorname{El}(A)$ is the **set of elements** of the shape $A$ — the set of all valid index tuples. For $A = (a_1, \ldots, a_n)$ with axis sizes $s_1, \ldots, s_n$, this is the Cartesian product $\{0,\ldots,s_1{-}1\} \times \cdots \times \{0,\ldots,s_n{-}1\}$. Categorically, $\operatorname{El}(A)$ is the set of morphisms $\mathbf{1} \to A$ (global elements). An array is therefore a function from index tuples to values: $x : \operatorname{El}(A) \to a$.
+- $A \in \text{Ob} \mathbf{St}$ is a **shape** — a product of axes that indexes the array's coordinates.
+- An array $[a, A]$ has an $\text{El}(A)$-family of values $x_{i_A} \in a$ for each coordinate $i_A \in \text{El}(A)$. Here $\text{El}(A)$ is the **set of elements** of the shape $A$ — the set of all valid index tuples. For $A = (a_1, \ldots, a_n)$ with axis sizes $s_1, \ldots, s_n$, this is the Cartesian product $\{0,\ldots,s_1{-}1\} \times \cdots \times \{0,\ldots,s_n{-}1\}$. Categorically, $\text{El}(A)$ is the set of morphisms $\mathbf{1} \to A$ (global elements). An array is therefore a function from index tuples to values: $x : \text{El}(A) \to a$.
 
 A product object $\Pi_{i \in I} [a_i, A_i]$ in **Br** is a tuple of arrays — the inputs or outputs of an operation.
 
@@ -200,8 +200,8 @@ A broadcasted operation is built from four ingredients (Definition 13):
 
    | Case | Tensor equation | $P$ | $\eta$ |
    | --- | --- | --- | --- |
-   | **Identity** — both inputs batched the same way | $C[b,i,j] = A[b,i,k] B[b,k,j]$ | $(b)$ | $\eta_A = \eta_B = \operatorname{id}$ |
-   | **Deletion** — $B$ broadcast across batches | $C[b,i,j] = A[b,i,k] B[k,j]$ | $(b)$ | $\eta_A = \operatorname{id}$ <br> $\eta_B = ()$ |
+   | **Identity** — both inputs batched the same way | $C[b,i,j] = A[b,i,k] B[b,k,j]$ | $(b)$ | $\eta_A = \eta_B = \text{id}$ |
+   | **Deletion** — $B$ broadcast across batches | $C[b,i,j] = A[b,i,k] B[k,j]$ | $(b)$ | $\eta_A = \text{id}$ <br> $\eta_B = ()$ |
    | **Duplication** — diagonal slice | $Y[p,j] = X[p,p,j]$ | $(p)$ | $\eta_X(p) = (p,p)$ |
    | **Projection** — outer product, each input indexed by one output axis | $C[i,j] = A[i] B[j]$ | $(i,j)$ | $\eta_A(i,j) = i$ <br> $\eta_B(i,j) = j$ |
    | **Affine scaling** — strided 1-D convolution; $s \in \mathbb{N}$ is a fixed stride constant baked into the `StrideMorphism` coefficient matrix, not an axis | $Y[b,p] = \sum_w X[b, s{\cdot}p+w] W[w]$ | $(b,p)$ | $\eta_X(b,p) = (b, s{\cdot}p)$ <br> $\eta_W = ()$ |
@@ -220,7 +220,7 @@ A broadcasted operation is built from four ingredients (Definition 13):
 - A **target axis** is loaded fully into a single core's SMEM and operated on directly by the base operation. Its total size must fit within the core's memory budget.
 
 FlashAttention (Abbott & Zardini, 2025, §3.2) computes
-$$O[b,h,q,d] = \sum_x \operatorname{SoftMax}_x\!\left(\sum_k Q[b,h,q,k]\, K[h,x,k]\right) V[h,x,d]$$
+$$O[b,h,q,d] = \sum_x \text{SoftMax}_x\!\left(\sum_k Q[b,h,q,k]\, K[h,x,k]\right) V[h,x,d]$$
 where $Q[b,h,q,k]$, $K[h,x,k]$, and $V[h,x,d]$ are the query, key, and value tensors: $b$ is the batch axis, $h$ indexes attention heads, $q$ and $x$ index query and key/value positions respectively, and $k$, $d$ are the head dimensions. The query axis $q$ is tiled across GPU cores — each core processes a $g_q$-sized block of query positions in SMEM — while the head dimensions $k$ and $d$ are target axes loaded fully per core. Streaming the key/value position axis $x$ through in tiles avoids materialising the full $q \times x$ attention score matrix in DRAM, achieving a ×6 throughput gain over standard PyTorch. A **weave** records this classification axis-by-axis for every array so the compiler can determine, for each tile of $P$, which slice of each array to load.
 
 Formally (Definition 12), a **weave** is a boolean family $(w_i)_{i \in I}$ indexed by the axes of an array: $w_i = 1$ marks a **target** axis; $w_i = 0$ marks a **tiling** axis. From this family the paper derives a permutation $\Omega_w : I \to I$ that gathers all target axes at the front and all tiling axes at the back. The inverse permutation $\Omega_w^{-1}$ recovers the original interleaved axis order from the canonical partition (needed to compute the domain of a broadcast morphism).
@@ -264,9 +264,9 @@ In Python, `Weave[B, A]` stores `datatype: B` and `_shape: Prod[A | WeaveMode]`.
 
 The full type of the broadcasted operation is:
 
-$$F : \Pi_{i \in I}\left[a_i,\, \operatorname{dom}([\Omega_{s_i}]_{A_i \otimes Q_i})\right]
+$$F : \Pi_{i \in I}\left[a_i,\, \text{dom}([\Omega_{s_i}]_{A_i \otimes Q_i})\right]
 \longrightarrow
-\Pi_{j \in J}\left[b_j,\, \operatorname{dom}([\Omega_{t_j}]_{B_j \otimes P})\right]$$
+\Pi_{j \in J}\left[b_j,\, \text{dom}([\Omega_{t_j}]_{B_j \otimes P})\right]$$
 
 Here $\Omega_{s_i}$ is the unweave rearrangement in **St** associated with input weave $s_i$: it maps from the actual interleaved input shape (target and tiling axes in the positions specified by the weave) to the canonical split form $A_i \otimes Q_i$ (all target axes $A_i$ first, then all tiling axes $Q_i$). Taking its domain recovers the actual shape of input array $i$. The output side is analogous: $\Omega_{t_j}$ unweaves output $j$ from its interleaved shape to $B_j \otimes P$.
 
@@ -301,7 +301,7 @@ class Broadcasted[B: Datatype, A: Axis, O: Operator](Morphism[Array[B, A]]):
 
 **Paper:** Section 5.1.1 — **Python:** [construction_helpers/composition.py](../construction_helpers/composition.py)
 
-The `@` operator overloads `Morphism.__matmul__` to compose two morphisms $f; g$ (the left and right operands) with automatic axis alignment. When $\operatorname{cod}(f)$ and $\operatorname{dom}(g)$ differ in the number of axes, identity morphisms are inserted via `morphism_object_lift` to reconcile the mismatch. Once both sides have the same number of axes, a `Context` is built by pairing axes positionally and adding equality classes. Applying the context substitutes canonical UIDs throughout the composed expression, unifying named axes.
+The `@` operator overloads `Morphism.__matmul__` to compose two morphisms $f; g$ (the left and right operands) with automatic axis alignment. When $\text{cod}(f)$ and $\text{dom}(g)$ differ in the number of axes, identity morphisms are inserted via `morphism_object_lift` to reconcile the mismatch. Once both sides have the same number of axes, a `Context` is built by pairing axes positionally and adding equality classes. Applying the context substitutes canonical UIDs throughout the composed expression, unifying named axes.
 
 For example:
 
