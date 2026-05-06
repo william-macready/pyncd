@@ -131,7 +131,7 @@ With this infrastructure for **product categories** we turn to specific instanti
 **Objects** in **St** are **axes** and products of axes:
 
 - A lone object is an **axis** $A$ — a UTerm carrying a UID and a size $|A| \in \mathbb{N}$. The UID serves as the axis's identity across an expression; the size is itself a `FreeNumeric` (another UTerm) until configured.
-- A product object $\Pi_{i \in I} A_i \in \mathrm{Ob} \mathbf{St}$ is a **shape** — the ordered set of multi-index coordinates $(a_i)_{i \in I}$ of an array.
+- A product object $\Pi_{i \in I} A_i \in \mathrm{Ob} \mathbf{St}$ is a **shape** — the ordered set of multi-index coordinates $(a_i)_{i \in I}$ of an array. (Convention used throughout: $I$ is the ordered index set of an array's axes, so $i \in I$ ranges over axis positions.)
 - The unit object $\mathbf{1}$ is the empty product, corresponding to a scalar shape.
 
 In Python, `Axis` is the abstract base (`UTerm`); `RawAxis` is the concrete subclass used for unspecialized axes. `Axis.named('h')` creates an axis whose UID carries the name $h$ and whose size is a free numeric also named $|h|$.
@@ -208,13 +208,65 @@ A broadcasted operation is built from four ingredients (Definition 13):
 
    In Python, the tuple of reindexings is stored as the `reindexings: Prod[StrideCategory[A]]` field on the `Broadcasted` dataclass — the root morphism of **Br** that packages all four ingredients together. On a GPU, the loop $P$ is what gets tiled: each processor is assigned a small chunk of $P$'s coordinates, loads only the corresponding slice of each input, and works entirely in fast on-chip memory.
 
-3. **Input weaves** $(s_i)_{i \in I}$ — for each input array, a **weave** partitions its axes into *target* axes ($w = 1$, front, operated on by the base function) and *tiling* axes ($w = 0$, back, the broadcasted batch dimensions). In Python, `Weave[B, A]` stores `_shape: Prod[A | WeaveMode]` where `WeaveMode.TILED` marks tiled positions and actual `Axis` objects mark target positions.
+3. **Input weaves** $(s_i)_{i \in I}$ — for each input array, a **weave** partitions its axes into *target* axes (operated on by the base operation) and *tiling* axes (the broadcasted batch dimensions, looped over by $P$). For each $p \in P$ the reindexing $\eta_i(p)$ supplies the concrete tiling coordinates, selecting the slice of input $i$ that the base operation sees at that iteration. Different inputs can have different tiling shapes $Q_i$ — connected to the shared loop $P$ through possibly non-trivial reindexings — which is what allows one input to be broadcast across all of $P$ while another is indexed into normally. See [Weaves](#weaves) below.
 
-4. **Output weaves** $(t_j)_{j \in J}$ — same structure for outputs, specifying which output axes are tiling (from degree $P$) and which are target (from the base operation's output shape).
+4. **Output weaves** $(t_j)_{j \in J}$ — same structure for outputs. The degree loop $P$ also drives the outputs: for each $p \in P$ the base operation produces one output tile, which is written into the output array at tiling position $p$. Unlike inputs (which can each have a distinct tiling shape $Q_i$ via the reindexings), every output tiles over exactly $P$, so the canonical split is $B_j \otimes P$ rather than $B_j \otimes Q_i$. The output weave $t_j$ records where in the output array's memory layout the $P$ positions sit relative to the target axes $B_j$.
+
+#### Weaves
+
+**Motivation.** GPUs achieve efficiency by splitting an operation's work across many parallel cores, each with a small fast on-chip memory (SMEM) and access to slow global DRAM. The key strategy is *tiling*: partition a large axis into small tiles, assign one tile per core, and have each core load only its tile from DRAM and run the base operation entirely in SMEM. For this to work, every axis of every array must be classified as one of two kinds:
+
+- A **tiling axis** is distributed across cores. Each core is responsible for one tile of coordinates along this axis and loads only that slice from DRAM. It is never seen by the base operation directly; the reindexing $\eta_i$ tells each core which slice to load.
+- A **target axis** is loaded fully into a single core's SMEM and operated on directly by the base operation. Its total size must fit within the core's memory budget.
+
+FlashAttention (Abbott & Zardini, 2025, §3.2) computes
+$$O[b,h,q,d] = \sum_x \mathrm{SoftMax}_x\!\left(\sum_k Q[b,h,q,k]\, K[h,x,k]\right) V[h,x,d]$$
+where $Q[b,h,q,k]$, $K[h,x,k]$, and $V[h,x,d]$ are the query, key, and value tensors: $b$ is the batch axis, $h$ indexes attention heads, $q$ and $x$ index query and key/value positions respectively, and $k$, $d$ are the head dimensions. The query axis $q$ is tiled across GPU cores — each core processes a $g_q$-sized block of query positions in SMEM — while the head dimensions $k$ and $d$ are target axes loaded fully per core. Streaming the key/value position axis $x$ through in tiles avoids materialising the full $q \times x$ attention score matrix in DRAM, achieving a ×6 throughput gain over standard PyTorch. A **weave** records this classification axis-by-axis for every array so the compiler can determine, for each tile of $P$, which slice of each array to load.
+
+Formally (Definition 12), a **weave** is a boolean family $(w_i)_{i \in I}$ indexed by the axes of an array: $w_i = 1$ marks a **target** axis; $w_i = 0$ marks a **tiling** axis. From this family the paper derives a permutation $\Omega_w : I \to I$ that gathers all target axes at the front and all tiling axes at the back. The inverse permutation $\Omega_w^{-1}$ recovers the original interleaved axis order from the canonical partition (needed to compute the domain of a broadcast morphism).
+
+In pyncd the boolean family is encoded directly in the weave's `_shape` field: a sequence — one entry per axis of array $i$ — where each entry is either:
+
+- A concrete **`Axis` object** — a **target axis**. The base operation acts on this axis directly: it may contract over it (like the $k$ dimension in a dot product), pass it through as a free index, or produce it as output. The base operation sees exactly the sub-array formed by all target axes.
+- **`WeaveMode.TILED`** — a **tiling axis**. This axis is not seen by the base operation at all. It is provided externally by the reindexing loop: at each degree coordinate $p \in P$, the reindexing $\eta_i(p)$ supplies the concrete index values for every `TILED` slot in the weave.
+
+**Simple example — `Linear` applied row-wise:** $Y[b, s, j] = \sum_i X[b, s, i]\, W[i, j]$, base op `'i -> j'`, $P = (b, s)$.
+
+| Array | Shape | Weave `_shape` | Axis roles |
+| --- | --- | --- | --- |
+| $X[b,s,i]$ | $(b, s, i)$ | `(TILED, TILED, i)` | $b,s$ tiling — looped by $P$; $i$ target — contracted |
+| $W[i,j]$ | $(i, j)$ | `(i, j)` | all target — no tiling axes, same $W$ for all $(b,s)$ |
+| $Y[b,s,j]$ | $(b, s, j)$ | `(TILED, TILED, j)` | $b,s$ tiling — filled from $P$; $j$ target — produced by Linear |
+
+$j$ is a target axis on the output side because it is produced by the base op, not by the broadcast loop.
+
+**Complex example — multi-head attention with broadcast K and V:** The full attention computation (ignoring softmax and mask) runs in two broadcasted operations sharing degree $P = (b)$.
+
+**Step 1 — QK score:** $S[b, h, q, x] = \sum_k Q[b, h, q, k]\, K[h, x, k]$, base op `'h q k, h x k -> h q x'`.
+
+| Array | Shape | Weave `_shape` | Axis roles |
+| --- | --- | --- | --- |
+| $Q[b,h,q,k]$ | $(b,h,q,k)$ | `(TILED, h, q, k)` | $b$ tiling — looped by $P$, reindexed by identity; $h,q$ target free; $k$ target contracted |
+| $K[h,x,k]$ | $(h,x,k)$ | `(h, x, k)` | all target — no tiling axes, same $K$ reused for every $b$ |
+| $S[b,h,q,x]$ | $(b,h,q,x)$ | `(TILED, h, q, x)` | $b$ tiling — filled from $P$; $h,q,x$ target — produced by Einops |
+
+**Step 2 — value aggregation:** $O[b, h, q, d] = \sum_x S[b, h, q, x]\, V[h, x, d]$, base op `'h q x, h x d -> h q d'`.
+
+| Array | Shape | Weave `_shape` | Axis roles |
+| --- | --- | --- | --- |
+| $S[b,h,q,x]$ | $(b,h,q,x)$ | `(TILED, h, q, x)` | $b$ tiling — looped by $P$, reindexed by identity; $h,q$ target free; $x$ target contracted |
+| $V[h,x,d]$ | $(h,x,d)$ | `(h, x, d)` | all target — no tiling axes, same $V$ reused for every $b$ |
+| $O[b,h,q,d]$ | $(b,h,q,d)$ | `(TILED, h, q, d)` | $b$ tiling — filled from $P$; $h,q,d$ target — produced by Einops |
+
+The single `TILED` entry at position 0 of $Q$'s (and $S$'s) weave means: "the first axis in memory is a batch axis — supply its index from the reindexing loop, not from the base op." $K$ and $V$ have no `TILED` entries: both are shared across all batch coordinates, loaded once per core into SMEM. The contraction axis $k$ (step 1) and $x$ (step 2) appear in input weaves but not in the output weave — they are consumed by the base op.
+
+In Python, `Weave[B, A]` stores `datatype: B` and `_shape: Prod[A | WeaveMode]`. `WeaveMode` is a single-member enum (`WeaveMode.TILED`) used as a typed sentinel: the union `A | WeaveMode` means each position in `_shape` holds either a concrete `Axis` object (target) or the `TILED` placeholder (tiling).
 
 The full type of the broadcasted operation is:
 
 $$F : \Pi_{i \in I}\left[a_i, \mathrm{dom}\left([\Omega_{s_i}]_{A_i \otimes Q_i}\right)\right] \longrightarrow \Pi_{j \in J}\left[b_j, \mathrm{dom}\left([\Omega_{t_j}]_{B_j \otimes P}\right)\right]$$
+
+Here $\Omega_{s_i}$ is the unweave rearrangement in **St** associated with input weave $s_i$: it maps from the actual interleaved input shape (target and tiling axes in the positions specified by the weave) to the canonical split form $A_i \otimes Q_i$ (all target axes $A_i$ first, then all tiling axes $Q_i$). Taking its domain recovers the actual shape of input array $i$. The output side is analogous: $\Omega_{t_j}$ unweaves output $j$ from its interleaved shape to $B_j \otimes P$.
 
 In Python:
 
@@ -247,7 +299,7 @@ class Broadcasted[B: Datatype, A: Axis, O: Operator](Morphism[Array[B, A]]):
 
 **Paper:** Section 5.1.1 — **Python:** [construction_helpers/composition.py](../construction_helpers/composition.py)
 
-The `@` operator overloads `Morphism.__matmul__` to compose two morphisms with automatic axis alignment. When $\mathrm{cod}(f)$ and $\mathrm{dom}(g)$ differ in the number of axes, identity morphisms are inserted via `morphism_object_lift` to reconcile the mismatch. Once both sides have the same number of axes, a `Context` is built by pairing axes positionally and adding equality classes. Applying the context substitutes canonical UIDs throughout the composed expression, unifying named axes.
+The `@` operator overloads `Morphism.__matmul__` to compose two morphisms $f; g$ (the left and right operands) with automatic axis alignment. When $\mathrm{cod}(f)$ and $\mathrm{dom}(g)$ differ in the number of axes, identity morphisms are inserted via `morphism_object_lift` to reconcile the mismatch. Once both sides have the same number of axes, a `Context` is built by pairing axes positionally and adding equality classes. Applying the context substitutes canonical UIDs throughout the composed expression, unifying named axes.
 
 For example:
 
@@ -302,7 +354,7 @@ Lv = ops.Linear.template(('m',), 2, 'v')
 Lo = ops.Linear.template(2, ('m',), 'o') # [h, k] → [m]
 _attention_layer = (Lq * Lk * Lv) @ _attention_core @ Lo
 
-# Transformer layer: attention + FFN, each with residual + norm, repeated 6 times
+# Transformer layer: attention + FFN (feed-forward network: Linear → ReLU → Linear), each with residual + norm, repeated 6 times
 _transformer = Block.template(
  res(_attention_layer) @ res(ffn_layer()),
  title='Transformer Layer', repetition=6

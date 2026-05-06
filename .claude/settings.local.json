@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(which markdownlint-cli2 *)",
+      "Read(//Users/williammacready/.local/**)",
+      "Bash(node /Users/williammacready/.npm/_npx/10f54a790ecaa614/node_modules/markdownlint-cli/markdownlint.js papers/theory.md)"
+    ]
+  }
+}
