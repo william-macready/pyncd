@@ -32,7 +32,7 @@ A **constructed term system** is the representation layer: a set $G$ of terms an
 
 Terms are of two kinds:
 
-- **Root terms** $G_r$ — the atoms of the term system. A root term is not assembled from smaller recoverable inputs; instead it carries **metadata** tags from which all relevant core properties can be computed directly. Root terms represent primitive, irreducible concepts — the specific choices of lone objects and root morphisms that distinguish one product category from another. In pyncd, `Axis` (carrying a UID and a size), `StrideMorphism` (carrying domain, coefficient matrix, and bias), and `Broadcasted` (carrying operator, weaves, and reindexings) are all root terms.
+- **Root terms** $G_r$ — the atoms of the term system. A root term is not assembled from smaller recoverable inputs; instead it carries **metadata** tags from which all relevant core properties can be computed directly. Root terms represent primitive, irreducible concepts — the specific choices of lone objects and root morphisms that distinguish one product category from another. In pyncd, `Axis` (carrying a UID and a size), `StrideMorphism` (carrying domain and coefficient matrix), and `Broadcasted` (carrying operator, weaves, and reindexings) are all root terms.
 
 - **Construction rules** $T_c : G_{c,i} \to G_{c,f}$ build terms from smaller pieces. The output term is a **data wrapper around its inputs**: $G_{c,f}$ literally embeds $G_{c,i}$ inside itself, which is what the paper calls *contravariant* — the output contains the input rather than being derived from it. This guarantees a **recovery function** $\hat{T}_c : \text{img}(T_c) \to G_{c,i}$ satisfying $\hat{T}_c \circ T_c = \text{Id}$: the inputs can always be unwrapped from the output. In pyncd, `Composed`, `ProductOfMorphisms`, `Rearrangement`, and `Block` are construction rules common to every product category.
 
@@ -138,11 +138,11 @@ In Python, `Axis` is the abstract base (`UTerm`); `RawAxis` is the concrete subc
 
 ### Morphisms in St
 
-**Morphisms** in **St** are **finite affine transforms**: maps $\eta : \Pi_{i \in I} A_i \to \Pi_{j \in J} B_j$ that describe how input coordinates relate to output coordinates. Each output coordinate $j$ is a linear combination of input coordinates plus a bias:
+**Morphisms** in **St** are **finite linear transforms**: maps $\eta : \Pi_{i \in I} A_i \to \Pi_{j \in J} B_j$ that describe how input coordinates relate to output coordinates. Each output coordinate $j$ is a linear combination of input coordinates:
 
-$$\left(\Pi_{i \in I} a_i\right) ; \eta = \Pi_{j \in J}\left(v^\eta_j + \sum_{i \in I} \Lambda^\eta_{ij} \cdot a_i\right)$$
+$$\left(\Pi_{i \in I} a_i\right) ; \eta = \Pi_{j \in J}\left(\sum_{i \in I} \Lambda^\eta_{ij} \cdot a_i\right)$$
 
-where $\Lambda^\eta \in \mathbb{N}^{I \times J}$ is the coefficient matrix and $v^\eta \in \mathbb{N}^J$ is the bias vector. The image must land within the codomain.
+where $\Lambda^\eta \in \mathbb{N}^{I \times J}$ is the coefficient matrix. The image must land within the codomain.
 
 In Python, `StrideMorphism` stores `_dom: Prod[Axis]` and `_cod_stride: Prod[tuple[Axis, Prod[Numeric]]]`. `_cod_stride` bundles the codomain axes and the coefficient matrix into a single field: each entry is a pair of one codomain axis and a tuple of coefficients — one per domain axis — forming one row of $\Lambda^\eta$. Keeping them paired ensures the two are always in lockstep. `cod()` recovers the codomain by stripping the coefficients: `ProdObject.from_iter(axis for axis, _ in self._cod_stride)`. An optional `name` field carries display metadata. For example, the convolution-shift $x = x' + w$ is
 
@@ -166,7 +166,7 @@ StrideMorphism.from_matrix(
 )
 ```
 
-The identity, permutation, duplication, and deletion ($\eta = ()$) are all special cases of affine transforms and appear as `Rearrangement` morphisms in **St**.
+The identity, permutation, duplication, and deletion ($\eta = ()$) are all special cases of linear transforms and appear as `Rearrangement` morphisms in **St**.
 
 ---
 
@@ -196,7 +196,7 @@ A broadcasted operation is built from four ingredients (Definition 13):
 
 1. **A base operation** — the core computation, provided as an `Operator` subclass (e.g., `Linear`, `Einops`, `SoftMax`, `Elementwise`, `Normalize`, `Embedding`, `AdditionOp`, `WeightedTriangularLower`).
 
-2. **Reindexings** $(\eta_i)_{i \in I}$ from **St** — the base operation runs once per coordinate $p \in P$, where $P$ is the *degree* shape (the same loop index for every input). The reindexing $\eta_i : P \to Q_i$ is an affine transform that says, for each loop coordinate $p$, which coordinate $\eta_i(p) \in Q_i$ to read from input $i$'s tiling axes. All inputs share the same loop $P$; the reindexings let them access their data differently:
+2. **Reindexings** $(\eta_i)_{i \in I}$ from **St** — the base operation runs once per coordinate $p \in P$, where $P$ is the *degree* shape (the same loop domain for every input, equal to `reindexings[i].dom()` for all $i$). For `Einops`, $P$ equals the retained (output) index space of the signature — all output indices become degree axes, with contracted indices as the only target axes in the input weaves. For `Elementwise`, $P$ equals the full array shape with all positions TILED. For `Linear`, `SoftMax`, `Embedding`, `Normalize`, `AdditionOp`, and `WeightedTriangularLower`, $P$ is empty and all input/output axes are target positions in the weaves. (The examples below show $P$ as a batch dimension for illustrative clarity; calling `Einops.template()` with a full batched signature, e.g. `'b i k, b k j -> b i j'`, produces $P = (b,i,j)$.) The reindexing $\eta_i : P \to Q_i$ is a linear transform that says, for each loop coordinate $p$, which coordinate $\eta_i(p) \in Q_i$ to read from input $i$'s tiling axes. All inputs share the same loop $P$; the reindexings let them access their data differently:
 
    | Case | Tensor equation | $P$ | $\eta$ |
    | --- | --- | --- | --- |
@@ -223,7 +223,7 @@ FlashAttention (Abbott & Zardini, 2025, §3.2) computes
 $$O[b,h,q,d] = \sum_x \text{SoftMax}_x\left(\sum_k Q[b,h,q,k]\, K[h,x,k]\right) V[h,x,d]$$
 where $Q[b,h,q,k]$, $K[h,x,k]$, and $V[h,x,d]$ are the query, key, and value tensors: $b$ is the batch axis, $h$ indexes attention heads, $q$ and $x$ index query and key/value positions respectively, and $k$, $d$ are the head dimensions. The query axis $q$ is tiled across GPU cores — each core processes a $g_q$-sized block of query positions in SMEM — while the head dimensions $k$ and $d$ are target axes loaded fully per core. Streaming the key/value position axis $x$ through in tiles avoids materialising the full $q \times x$ attention score matrix in DRAM, achieving a ×6 throughput gain over standard PyTorch. A **weave** records this classification axis-by-axis for every array so the compiler can determine, for each tile of $P$, which slice of each array to load.
 
-Formally (Definition 12), a **weave** is a boolean family $(w_i)_{i \in I}$ indexed by the axes of an array: $w_i = 1$ marks a **target** axis; $w_i = 0$ marks a **tiling** axis. From this family the paper derives a permutation $\Omega_w : I \to I$ that gathers all target axes at the front and all tiling axes at the back. The inverse permutation $\Omega_w^{-1}$ recovers the original interleaved axis order from the canonical partition (needed to compute the domain of a broadcast morphism).
+Formally (Definition 12), a **weave** is a boolean family $(w_i)_{i \in I}$ indexed by the axes of an array: $w_i = 1$ marks a **target** axis; $w_i = 0$ marks a **tiling** axis. From this family the paper derives a permutation $\Omega_w : I \to I$ with the **canonical** split form (all target axes first, then all tiling axes) as its **domain**, mapping to the actual **interleaved** axis order of the array. The inverse permutation $\Omega_w^{-1}$ maps from the interleaved order to canonical form (needed to recover the target/tiling partition from an array's memory layout).
 
 In pyncd the boolean family is encoded directly in the weave's `_shape` field: a sequence — one entry per axis of array $i$ — where each entry is either:
 
@@ -268,9 +268,7 @@ $$F : \Pi_{i \in I}\left[a_i,\, \text{dom}([\Omega_{s_i}]_{A_i \otimes Q_i})\rig
 \longrightarrow
 \Pi_{j \in J}\left[b_j,\, \text{dom}([\Omega_{t_j}]_{B_j \otimes P})\right]$$
 
-Here $\Omega_{s_i}$ is the unweave rearrangement in **St** associated with input weave $s_i$: it maps from the actual interleaved input shape (target and tiling axes in the positions specified by the weave) to the canonical split form $A_i \otimes Q_i$ (all target axes $A_i$ first, then all tiling axes $Q_i$). Taking its domain recovers the actual shape of input array $i$. The output side is analogous: $\Omega_{t_j}$ unweaves output $j$ from its interleaved shape to $B_j \otimes P$.
-
-The subscript $A_i \otimes Q_i$ on $[\Omega_{s_i}]$ follows the standard rearrangement notation $[\mu]_{(A_i)_{i \in I}}$, where the subscript specifies the **domain** objects. The domain of $[\Omega_{s_i}]_{A_i \otimes Q_i}$ is the canonical split form $A_i \otimes Q_i$; the permutation $\Omega_{s_i}$ maps it to the actual interleaved axis order. The $\text{dom}(\cdot)$ in the formula therefore extracts $A_i \otimes Q_i$ as the shape of input $i$ — target axes first, tiling axes after.
+Here $\Omega_{s_i}$ is the unweave rearrangement in **St** associated with input weave $s_i$. The subscript $A_i \otimes Q_i$ follows the standard rearrangement notation $[\mu]_{(A_i)_{i \in I}}$, where the subscript specifies the **domain** objects. The domain of $[\Omega_{s_i}]_{A_i \otimes Q_i}$ is therefore the **canonical** split form $A_i \otimes Q_i$ (all target axes $A_i$ first, then all tiling axes $Q_i$); the permutation $\Omega_{s_i}$ maps it to the actual **interleaved** axis order of the array. The $\text{dom}(\cdot)$ in the formula extracts $A_i \otimes Q_i$ as the canonical shape of input $i$. The output side is analogous: $\Omega_{t_j}$ maps from the canonical split form $B_j \otimes P$ to the interleaved output shape.
 
 **Relation to covariant and contravariant indices.** The input/output weave structure is the pyncd analogue of the covariant/contravariant index distinction in classical tensor analysis. A target axis appearing in an **input weave** is being *consumed* by the operator — it plays the role of a contravariant (upper) index that is contracted against a matching lower index. A target axis appearing in an **output weave** is being *produced* — it plays the role of a covariant (lower) index. Composition enforces the matching rule: `Context.append_iter` unifies the output (covariant) axes of one morphism with the input (contravariant) axes of the next, exactly as classical contraction requires one upper and one lower index. The degree axes — `TILED` positions shared across both input and output weaves — correspond to the free indices that appear on both sides of a tensor equation and are neither contracted nor produced.
 
@@ -330,7 +328,7 @@ Operators are `Operator` subclasses (frozen dataclasses) that implement `templat
 | `SoftMax.template()` | Normalization along one target axis |
 | `Elementwise.template()` | Elementwise nonlinearity ($\sigma$, ReLU, etc.) |
 | `Normalize.template()` | RMSNorm; same shape in and out |
-| `Embedding.template(vocab_size)` | Discrete $\to$ real; input datatype is `Natural` |
+| `Embedding.template(embedding_size)` | Discrete $\to$ real; input datatype is `Natural` |
 | `AdditionOp.template()` | Elementwise addition of two arrays of the same shape |
 | `WeightedTriangularLower.template()` | Causal mask; used in attention |
 

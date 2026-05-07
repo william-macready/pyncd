@@ -141,7 +141,7 @@ ProdCategory[L, M] = M                         -- atomic base morphism
 
 The framework specialises to two concrete categories.
 
-**St (StrideCategory):** objects are lists of `Axis` terms (each carrying a `Numeric` size); morphisms are affine stride matrices mapping one list of axes to another. Composition is matrix multiplication. This is the **semantic** layer — it tracks how index spaces are linearly related.
+**St (StrideCategory):** objects are lists of `Axis` terms (each carrying a `Numeric` size); morphisms are `StrideMorphism` objects — linear coordinate transforms mapping one list of axes to another. Composition is matrix multiplication. This is the **semantic** layer — it tracks how index spaces are linearly related.
 
 **Br (BroadcastedCategory):** objects are lists of `Array[Datatype, Axis]`; base morphisms are `Broadcasted[B, A, O]` values. The full morphism type is the same recursive `ProdCategory[Array, Broadcasted]` union — `Broadcasted`, `Composed`, `ProductOfMorphisms`, `Rearrangement`, and `Block`. This is the **computational** layer — each `Broadcasted` is one operator application with its index structure fully specified.
 
@@ -160,7 +160,7 @@ class Broadcasted[B: Datatype, A: Axis, O: Operator]:
 
 A `Weave` is a **shape template** for one array (i.e. an `Array[B, A]`). Each position is one of two kinds:
 
-- **Degree position** (`WeaveMode.TILED`) — a placeholder filled with a degree axis at runtime. The **degree** $P$ is the shared loop domain of all reindexings (`reindexings[i].dom()`, equal for all inputs). For most operators $P$ equals the retained (output) index space; `Embedding` is the exception, where $P$ is empty and the output axes are all target positions in the output weave.
+- **Degree position** (`WeaveMode.TILED`) — a placeholder filled with a degree axis at runtime. The **degree** $P$ is the shared loop domain of all reindexings (`reindexings[i].dom()`, equal for all inputs). For `Einops`, $P$ equals the retained (output) index space of the einsum signature; for all other operators $P$ is empty and the output axes are all target positions in the output weave.
 - **Target position** (a concrete `Axis` object) — an axis private to that array, not shared with the degree.
 
 The domain of each input array is reconstructed by filling its weave's TILED positions with `reindexing.cod()` and leaving target positions in place. The **reindexing** is a `StrideCategory` morphism with `dom() = degree` whose mapping selects which subset of degree axes that input contributes — for `Y[i,j] = W[i,k] X[k,j]`, W's reindexing selects `i` and X's selects `j`. For pure einsums a `Rearrangement` suffices; strided convolutions require a full `StrideMorphism`. The contracted index `k` appears as a concrete target axis in each input's weave and is summed over by the operator.
@@ -312,13 +312,13 @@ For an equation with a nonlinearity,
 Y[b, p, t.] = softmax(W_O[t, d] Stream[b, p, d])
 ```
 
-the `operator` field carries the `SoftMax` instance and the `.`-suffixed axis `t` is an `Axis` appearing in `lhs_indices` with a `NormAxis` annotation:
+the `operator` field carries the `SoftMax` instance and the `.`-suffixed axis `t` requires a way to distinguish it from a plain retained index. This would be handled by a proposed new `Axis` subclass, `NormAxis`, not currently in the codebase, that marks the normalisation dimension:
 
 ```python
 b      = RawAxis.named('b')   # batch
 p      = RawAxis.named('p')   # sequence position
 d      = RawAxis.named('d')   # model dimension (contracted)
-t_norm = NormAxis.named('t')  # vocabulary / output dimension, normalization axis (proposed new Axis subclass)
+t_norm = NormAxis.named('t')  # proposed new RawAxis subclass — marks the normalisation dimension
 
 eq = TensorEquation(
     lhs_name=DynamicName('Y'),
