@@ -296,3 +296,10 @@ def test_topological_sort_independent_equations():
     result = _topological_sort((eq_a, eq_b))
     assert set(r.lhs_name for r in result) == {fd.DynamicName('A'), fd.DynamicName('B')}
     assert len(result) == 2
+
+
+def test_exports_from_category():
+    from data_structure.Category import NormAxis, TensorEquation, TensorProgram
+    assert NormAxis is not None
+    assert TensorEquation is not None
+    assert TensorProgram is not None

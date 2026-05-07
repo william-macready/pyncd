@@ -28,6 +28,11 @@ from data_structure.BroadcastedCategory import (
     Operator,
     Broadcasted,
 )
+from data_structure.TensorLogic import (
+    NormAxis,
+    TensorEquation,
+    TensorProgram,
+)
 __all__ = [
     'ProdCategory',
     'ProdObject',
@@ -53,4 +58,7 @@ __all__ = [
     'Weave',
     'Operator',
     'Broadcasted',
+    'NormAxis',
+    'TensorEquation',
+    'TensorProgram',
 ]
