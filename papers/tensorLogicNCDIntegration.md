@@ -461,13 +461,13 @@ The bracket type (how an index is used) and the size annotation (what range it c
 
 ```text
 Token  : (ℝ_32, ℝ_128) -> ℕ_50000    -- at each (batch, seq) position, a token ID
-W      : ℕ_50000 -> ℝ_512             -- lookup: token ID → embedding vector
+W      : ℕ_50000 -> ℝ_512            -- lookup: token ID → embedding vector
 W_O    : (ℝ_512, ℝ_64) -> ℝ          -- weight matrix: standard real-valued tensor
 Y      : (ℝ_32, ℝ_128) -> ℝ_512      -- at each (batch, seq) position, an embedding vector
 Sister : (ℕ_n, ℕ_m) -> 𝔹             -- predicate over entity pairs
 ```
 
-`W : ℕ_50000 -> ℝ_512` reads directly as "given a token ID from a vocabulary of 50,000, return a 512-dimensional real vector" — exactly what an embedding is, with no ambiguity about which axis is the selection axis. The domain of the arrow is always the lookup key; the codomain is always the value type.
+`W : ℕ_50000 -> ℝ_512` reads directly as "given a token ID from a vocabulary of 50,000, return a 512-dimensional real vector" — exactly what an embedding is, with no ambiguity about which axis is the selection axis. The domain of the arrow is always the lookup key; the codomain is always the value type. Such declarations are easily expressible in PyRel when the Relationships representing the tensor are defined.
 
 Bracket notation in equations is then fully derivable from the signature: a `ℕ` in the domain means parenthesis notation; an `ℝ` in the domain means square bracket notation; a `𝔹` codomain means curly bracket notation on the LHS. `W(Token[b,p], d)` is accepted because W's domain is declared `ℕ_50000`; `W[Token[b,p], d]` is a type error — you cannot contract over a categorical axis. The shape inference pass from §5.6 (Symbolic Shape Inference) and the datatype propagation pass collapse into one: as sizes propagate forward through equations, their kinds propagate alongside, and an output index that flows from an `ℕ_n` input stays categorical while one from `ℝ_n` stays real. Shape inference and type inference become the same single pass.
 
