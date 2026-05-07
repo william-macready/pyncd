@@ -1,6 +1,3 @@
-import sys
-sys.path.insert(0, '.')
-
 from data_structure.TensorLogic import NormAxis
 from data_structure.StrideCategory import RawAxis, Axis
 
