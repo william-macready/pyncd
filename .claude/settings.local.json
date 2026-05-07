@@ -15,7 +15,19 @@
       "Bash(sed -n '273,278p' /Users/williammacready/code/python/pyncd/papers/leanncd.md)",
       "Bash(sed -n '514,518p' /Users/williammacready/code/python/pyncd/papers/leanncd.md)",
       "Bash(sed -n '730,734p' /Users/williammacready/code/python/pyncd/papers/leanncd.md)",
-      "Bash(rtk find *)"
+      "Bash(rtk find *)",
+      "Bash(uv add *)",
+      "Bash(uv run *)",
+      "Bash(rtk git *)",
+      "Bash(python3)",
+      "Bash(python3 -c \"from data_structure.Category import NormAxis, TensorEquation, TensorProgram; print\\('✓ Import successful'\\); print\\(f'NormAxis: {NormAxis}'\\); print\\(f'TensorEquation: {TensorEquation}'\\); print\\(f'TensorProgram: {TensorProgram}'\\)\")",
+      "Bash(python3 -c \"from data_structure.Category import *; print\\(f'Total exports: {len\\([x for x in dir\\(\\) if not x.startswith\\(\\\\\"_\\\\\"\\)]\\)}'\\); import data_structure.Category as cat; print\\(f'__all__ length: {len\\(cat.__all__\\)}'\\)\")",
+      "Bash(rtk pytest *)",
+      "Bash(rtk proxy *)",
+      "Bash(python -c ' *)",
+      "Bash(python -c \"import minimum_working_example_tl as tl; print\\(type\\(tl.attention_core\\(\\)\\).__name__\\)\")",
+      "Bash(rtk read *)",
+      "Bash(python minimum_working_example_tl_static.py)"
     ]
   }
 }
