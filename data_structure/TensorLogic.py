@@ -76,3 +76,36 @@ class TensorEquation(bc.Operator):
             output_weaves=(output_weave,),
             reindexings=reindexings,
         )
+
+
+def _topological_sort(
+    equations: fd.Prod['TensorEquation'],
+) -> list['TensorEquation']:
+    name_to_eq: dict[fd.DynamicName, TensorEquation] = {
+        eq.lhs_name: eq for eq in equations
+    }
+    deps: dict[fd.DynamicName, set[fd.DynamicName]] = {
+        eq.lhs_name: {
+            name for name, _ in eq.rhs
+            if name in name_to_eq
+        }
+        for eq in equations
+    }
+    result: list[TensorEquation] = []
+    ready: list[TensorEquation] = [
+        eq for eq in equations if not deps[eq.lhs_name]
+    ]
+    processed_names: set[fd.DynamicName] = set()
+    ready_names: set[fd.DynamicName] = {eq.lhs_name for eq in ready}
+    while ready:
+        eq = ready.pop(0)
+        result.append(eq)
+        processed_names.add(eq.lhs_name)
+        ready_names.discard(eq.lhs_name)
+        for other in equations:
+            if other.lhs_name not in processed_names and other.lhs_name not in ready_names:
+                deps[other.lhs_name].discard(eq.lhs_name)
+                if not deps[other.lhs_name]:
+                    ready.append(other)
+                    ready_names.add(other.lhs_name)
+    return result

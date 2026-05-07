@@ -1,7 +1,7 @@
 import data_structure.Term as fd
 import data_structure.BroadcastedCategory as bc
 import data_structure.ProductCategory as pc
-from data_structure.TensorLogic import NormAxis, TensorEquation
+from data_structure.TensorLogic import NormAxis, TensorEquation, _topological_sort
 from data_structure.StrideCategory import RawAxis, Axis
 from data_structure.Operators import Identity, SoftMax
 
@@ -149,3 +149,64 @@ def test_bc_signature_cod_is_output_shape():
     br = eq.bc_signature()
     cod = br.cod()
     assert cod[0] == bc.Array(bc.Reals(), (i, j))
+
+
+def _chain_equations():
+    """eq1: Hidden[i,j] = W1[i,k] X[k,j];  eq2: Y[i,m] = W2[i,j] Hidden[j,m]"""
+    i = RawAxis.named('i')
+    j = RawAxis.named('j')
+    k = RawAxis.named('k')
+    eq1 = TensorEquation(
+        lhs_name=fd.DynamicName('Hidden'),
+        lhs_indices=(i, j),
+        rhs=(
+            (fd.DynamicName('W1'), (i, k)),
+            (fd.DynamicName('X'), (k, j)),
+        ),
+        operator=Identity(),
+    )
+    m = RawAxis.named('m')
+    eq2 = TensorEquation(
+        lhs_name=fd.DynamicName('Y'),
+        lhs_indices=(i, m),
+        rhs=(
+            (fd.DynamicName('W2'), (i, j)),
+            (fd.DynamicName('Hidden'), (j, m)),
+        ),
+        operator=Identity(),
+    )
+    return eq1, eq2
+
+
+def test_topological_sort_already_ordered():
+    eq1, eq2 = _chain_equations()
+    result = _topological_sort((eq1, eq2))
+    assert result[0] is eq1
+    assert result[1] is eq2
+
+
+def test_topological_sort_reversed_input():
+    eq1, eq2 = _chain_equations()
+    result = _topological_sort((eq2, eq1))
+    assert result[0] is eq1
+    assert result[1] is eq2
+
+
+def test_topological_sort_independent_equations():
+    i = RawAxis.named('i')
+    k = RawAxis.named('k')
+    eq_a = TensorEquation(
+        lhs_name=fd.DynamicName('A'),
+        lhs_indices=(i,),
+        rhs=((fd.DynamicName('X'), (i, k)),),
+        operator=Identity(),
+    )
+    eq_b = TensorEquation(
+        lhs_name=fd.DynamicName('B'),
+        lhs_indices=(i,),
+        rhs=((fd.DynamicName('Y'), (i, k)),),
+        operator=Identity(),
+    )
+    result = _topological_sort((eq_a, eq_b))
+    assert set(r.lhs_name for r in result) == {fd.DynamicName('A'), fd.DynamicName('B')}
+    assert len(result) == 2
