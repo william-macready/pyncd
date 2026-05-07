@@ -94,6 +94,13 @@ class TL:
     def to_program(self) -> TensorProgram:
         return TensorProgram(equations=tuple(self._equations))
 
+    def to_morphism(self):
+        decl_shapes = {
+            fd.DynamicName(name): decl.shape
+            for name, decl in self._declarations.items()
+        }
+        return self.to_program().to_morphism(declarations=decl_shapes)
+
     def bc_signature[B: bc.Datatype](
         self,
         signature: str = '',

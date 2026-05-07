@@ -433,97 +433,51 @@ This analysis is the inverse of tensor logic's conventional head-index trick, wh
 
 #### Symbolic Shape Inference
 
-Partially implemented. Tensor logic equations carry no size information. The DSL addresses this through **explicit axis annotation** rather than a full inference pass: `nat_axis('v', 50257)` and `real_axis('d', 512)` attach `Integer(n)` directly to the `_size` field of each axis at construction time, and tensor declarations carry this information positionally:
+Implemented. Tensor logic equations carry no size information. The DSL addresses this through **explicit axis annotation** and a **shape propagation pass**: `nat_axis('v', 50257)` and `real_axis('d', 512)` attach `Integer(n)` directly to the `_size` field of each axis at construction time, and tensor declarations carry this information positionally:
 
 ```python
 tl.W_in.tensor(real_axis('d_ff', 2048), real_axis('d', 512))
 ```
 
-This records that `W_in`'s first axis has size 2048 and its second has size 512, without requiring a separate annotation pass. Type-only declarations (no concrete size) are equally valid and record only the kind:
+This records that `W_in`'s first axis has size 2048 and its second has size 512. Type-only declarations (no concrete size) are equally valid and record only the kind:
 
 ```python
 tl.W_in.tensor(real_axis('d_ff'), real_axis('d'))
 ```
 
-Declaration axes are separate objects from the equation-level axes (which are always created via `axes()`), so the size annotations are metadata on the declaration and do not affect the computation graph or `bc_signature()` output. A full shape propagation pass — which would unify declaration sizes with equation axes via `Context.append_iter` and propagate sizes forward through `TensorProgram.to_morphism()` — has not yet been implemented.
+Declaration axes are separate objects from the equation-level axes (always created via `axes()`). The **shape propagation pass** in `TensorProgram.to_morphism()` unifies them: before processing each equation in the topological sort, if a declaration exists for that tensor its axes are unified with the equation's `lhs_indices` via `ctx.append_iter((decl_ax, eq_ax))`. This fires the same `Context` machinery as inter-equation unification, so declared sizes propagate through `bc_signature()` and downstream into `dom()` and `cod()` types.
 
-The longer-term design target is **tensor type signatures** that bind index names to sizes positionally:
+`TL.to_morphism()` is the convenience entry point: it collects `TL._declarations` into a `declarations` dict and passes it to `TensorProgram.to_morphism(declarations=...)`. Calling `to_program().to_morphism()` without declarations remains valid and leaves all behaviour unchanged.
 
-```text
-W_O    : (512, 64)
-Stream : (32, 128, 64)
+#### Tensor kind declarations
 
-Y[b, p, t.] = softmax(W_O[t, d] Stream[b, p, d])
-```
-
-In the pyncd embedding this would become a shape propagation pass that runs alongside `TensorProgram.to_morphism()`. As the topological sort proceeds and `Context.append_iter` unifies UIDs, it would also unify sizes: when two axes merge their size variables resolve to the same `Numeric` expression, propagating shapes forward through the program exactly as UIDs are propagated now.
-
-#### Embedding datatypes
-
-Declaration annotation implemented; lookup equations deferred. The `.selection()` declaration is implemented and records that a tensor is a selection table indexed by a ℕ dimension. For example:
+The three-way distinction between contraction, selection, and predicate tensors is implemented in the Python DSL via tensor declarations. Each tensor is declared with a kind and a positional shape before it appears in equations:
 
 ```python
-tl.E.selection(nat_axis('v', 50257), real_axis('d', 512))
+tl.W_in.tensor(real_axis('d_ff', 2048), real_axis('d', 512))   # ℝ: sum over shared indices
+tl.E.selection(nat_axis('v', 50257), real_axis('d', 512))       # ℕ → ℝ: lookup by token ID
+tl.Mask.predicate(real_axis('q'), real_axis('x'))               # 𝔹: existential over shared indices
 ```
 
-annotates `E` as an embedding matrix of vocabulary size 50,257 producing 512-dimensional real vectors. At indexing time, positional slots declared as `NatAxis` are promoted, distinguishing token-index dimensions from real-valued ones. This annotation is currently **decorative**: the actual lookup computation is still expressed via `ops.Embedding.template(vocab_size)`, not as a DSL equation.
+Kind and shape together record what the tensor *is* independently of how it appears in any particular equation. This is the Python realisation of the arrow-notation design target — `.tensor()` for `ℝ → ℝ` weights, `.selection()` for `ℕ → ℝ` embedding tables, `.predicate()` for `(ℕ,ℕ) → 𝔹` relations — with size either concrete (`Integer(n)`) or left symbolic (`FreeNumeric`).
 
-Expressing the lookup as a first-class equation is deferred. The intended DSL syntax, working at the per-token level to match pyncd's point-level transformer architecture, would be:
+At indexing time, declarations enforce arity and promote axis types: PREDICATE tensors promote all indices to `PredAxis`; SELECTION tensors promote `NatAxis`-declared slots to `NatAxis`. TENSOR declarations carry shape and size metadata only, with no promotion. The type distinction survives through `bc_signature()` and `Context`-mediated unification and is visible in `TensorEquation.rhs` axis types.
 
-```python
-tl.Out[d] = tl.E[tl.token, d]
-```
+The three kinds map to the following equation-level notation and pyncd datatypes:
 
-where `tl.token` (unsubscripted) represents the Natural-typed morphism domain — a single token ID — rather than a positionally-indexed tensor. The core issue is that tensor logic's contraction `Σ_i A[i,...] B[i,...]` requires *summing* over `i`, but an embedding lookup is *selection*: a token index is an opaque pointer into a table, not a position in a continuous space. In the pyncd embedding, pyncd already represents this correctly: `ops.Embedding.template(vocab_size)` produces a `Broadcasted` whose input weave has `Natural(vocab_size)` as its datatype and empty shape, encoding the vocabulary axis as a *type* rather than a *shape axis*. A `TensorLookup.bc_signature()` method could produce the same structure without any changes to pyncd; only `TensorDSL.py` and `TensorLogic.py` would need to be extended. The full scope of motivations and implementation issues is recorded in `docs/dsl_embedding_lookup_extension.md`.
+| Declaration | Equation syntax | Python mechanism | Semantics | pyncd datatype | Status |
+| --- | --- | --- | --- | --- | --- |
+| `.tensor(...)` | `T[i, j]` | `__getitem__` | contraction — sum over shared indices | `Reals` | implemented |
+| `.predicate(...)` | `T(x, y)` | `__call__` | predicate — existential over shared indices | `Bool` | not yet implemented |
+| `.selection(...)` | `T.lookup(d)` | method | selection — lookup row by token ID | `Natural(max_value=n)` | deferred |
 
-The notation-level distinction proposed earlier — parentheses for selection vs square brackets for contraction — remains the right long-term design target:
+The notation is chosen to align with Python's overloading protocol. `__getitem__` (`[]`) and `__call__` (`()`) are both overloadable on `TensorProxy`; the curly-brace literal (`{}`) is not overloadable in Python and is therefore avoided. `.lookup(...)` is an explicit method call, unambiguous even without a declaration present.
 
-```text
-Y[b, p, d] = W[i, d] Token[b, p, i]   -- wrong: sums W over all vocab rows
-Y[b, p, d] = W(Token[b, p], d)        -- correct: selects one row per position
-```
+At the call site this gives an immediate visual signal of the tensor kind: subscript brackets indicate a contraction whose indices will be summed or retained; parentheses indicate a predicate whose indices filter rather than aggregate; `.lookup` indicates a discrete selection with no summation at all. Because each notation maps to a distinct Python code path — `__getitem__`, `__call__`, or a named method — the DSL can cross-validate usage against the declaration: using `tl.Mask[i, j]` when `Mask` is declared as predicate, or `tl.W[i, k]` when `W` is declared as selection, produces a clear error at construction time rather than a silently wrong `Broadcasted`.
 
-but its realisation in the Python DSL awaits the `TensorLookup` implementation.
+**Selection (embedding lookup).** The core distinction for selection is that tensor logic's contraction `Σ_i A[i,...] B[i,...]` *sums* over `i`, whereas a lookup *selects* one row — a token index is a pointer into a table, not a summable weight. The `.selection()` declaration captures this at the type level: positional slots declared as `NatAxis` are promoted at indexing time, flagging the vocabulary dimension as ℕ rather than ℝ. The lookup equation itself is deferred: pyncd already encodes it correctly via `ops.Embedding.template(vocab_size)`, whose input weave has `Natural(vocab_size)` as its datatype and empty shape, encoding the vocabulary axis as a type rather than a shape axis. Extending the DSL to express this as a first-class equation requires no pyncd changes; the full scope of issues is recorded in [dsl_embedding_lookup_extension.md](../docs/dsl_embedding_lookup_extension.md).
 
-#### Predicate and numeric tensors
-
-Axis-level distinction implemented; semiring-level distinction not yet implemented. The ℕ vs ℝ vs predicate distinction is implemented at the axis level. `NatAxis` marks a natural-number index dimension; `PredAxis` marks a predicate (Boolean-filter) dimension. Both are zero-field frozen dataclass subclasses of `RawAxis`, following the `NormAxis` pattern. The `.predicate()` declaration promotes all indices of the declared tensor to `PredAxis` at indexing time; `.selection()` promotes `NatAxis`-declared slots to `NatAxis`. The type distinction is therefore visible in the `TensorEquation.rhs` axis types and survives through `bc_signature()` and `Context`-mediated unification.
-
-What is not yet implemented is the **semiring distinction** at the `Datatype` level. A `Bool` datatype subclass analogous to `Reals` and `Natural` does not exist; contracted indices over predicate tensors are not yet distinguished from summation. The longer-term design has curly braces for predicate (Boolean) tensors:
-
-```text
-Aunt{x, z} = Sister{x, y} Parent{y, z}    -- Boolean: AND + existential
-Y[i, j]    = W[i, k] X[k, j]              -- numeric: multiply + sum
-```
-
-In the pyncd embedding, a `{}` tensor would map to a `Bool` datatype and contracted indices would become existential quantifications rather than sums. This requires both a new `Bool` datatype in pyncd and a corresponding treatment in `TensorEquation.bc_signature()`.
-
-The three-way distinction across kinds is summarised as:
-
-| Notation | Semantics | pyncd datatype | DSL status |
-| --- | --- | --- | --- |
-| `T[i, j]` | contraction — sum over shared indices | `Reals` | implemented |
-| `T(i, d)` | selection — lookup row `i` | `Natural(max_value=n)` | deferred |
-| `T{x, y}` | predicate — existential over shared indices | `Bool` | not yet implemented |
-
-#### Unifying kind and shape in tensor declarations
-
-Partially implemented via Python method API. The bracket type (kind) and the size annotation are both attributes of the same tensor dimension. In the Python DSL these are unified in tensor declarations, which record both together:
-
-```python
-tl.W.tensor(real_axis('d_ff', 2048), real_axis('d', 512))   # ℝ₂₀₄₈ × ℝ₅₁₂
-tl.E.selection(nat_axis('v', 50257), real_axis('d', 512))   # ℕ₅₀₀₀₀ → ℝ₅₁₂
-tl.Mask.predicate(real_axis('q'), real_axis('x'))            # 𝔹, sizes deferred
-```
-
-This is the Python realisation of the arrow-notation design target:
-
-```text
-W   : (ℝ_2048, ℝ_512)          -- contraction tensor
-E   : ℕ_50000 -> ℝ_512          -- selection: token ID → embedding vector
-```
-
-The domain of the arrow maps to the positional shape tuple; the codomain maps to the kind (`tensor`, `predicate`, or `selection`). Size can be specified (`Integer(n)`) or left symbolic (`FreeNumeric`). As with the bracket notation, kind is fully derivable from the declaration — no per-index annotation in equations is needed. The remaining gap is that the Python declarations currently serve as metadata only; the shape inference pass that would propagate declared sizes into equation axes via `Context` unification is not yet implemented.
+**Predicate tensors.** The semiring distinction — Boolean `(𝔹, ∨, ∧)` vs arithmetic `(ℝ, +, ×)` — is implemented at the axis level via `PredAxis` and `.predicate()`, but not yet at the `Datatype` level. A `Bool` datatype subclass analogous to `Reals` and `Natural` does not exist; contracted indices over predicate tensors are not yet distinguished from summation in `bc_signature()`. Realising the full semiring distinction requires adding `Bool` to pyncd and updating `TensorEquation.bc_signature()` accordingly.
 
 ---
 
@@ -533,7 +487,7 @@ Tensor Logic (Domingos 2025) provides a compact notation for individual operator
 
 The integration boundary is clean: `TensorProgram.to_morphism()` produces a morphism in `BroadcastedCategory`; above that level, `ProductOfMorphisms`, type-level datatypes, symbolic shape propagation, and `Block` structure are the caller's responsibility — categorical structures that tensor logic deliberately omits.
 
-Beyond this core integration, §5.6 explores how the remaining gaps might themselves be closed by extending the tensor logic interface: extracting parallel product structure from the program's dependency DAG, adding symbolic shape inference via tensor type signatures, distinguishing embedding selection from contraction with a bracket convention, and separating predicate (Boolean) tensors from numeric ones — with all three distinctions unified into a single arrow-notation type signature that encodes index space, value type, and operation kind together.
+Beyond this core integration, §5.6 describes the Python DSL layer that has been implemented on top of `TensorProgram` and the remaining gaps. The DSL introduces tensor declarations (`.tensor()`, `.selection()`, `.predicate()`) that record kind and positional shape for each tensor, promoting axis subtypes (`NatAxis`, `PredAxis`) at indexing time and enforcing arity. What remains: extracting parallel product structure from the program's dependency DAG; extending the DSL to express embedding lookups as first-class equations (deferred, design recorded separately); and realising the full Boolean semiring distinction at the `Datatype` level.
 
 ---
 

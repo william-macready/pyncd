@@ -144,12 +144,20 @@ class TensorEquation(bc.Operator):
 class TensorProgram(fd.Term):
     equations: fd.Prod[TensorEquation] = ()
 
-    def to_morphism(self) -> pc.Composed:
+    def to_morphism(
+        self,
+        declarations: dict[fd.DynamicName, tuple[sc.RawAxis, ...]] | None = None,
+    ) -> pc.Composed:
         ctx = fd.Context()
         morphisms = []
         name_to_axes: dict[fd.DynamicName | None, fd.Prod[sc.RawAxis]] = {}
+        declarations = declarations or {}
 
         for eq in _topological_sort(self.equations):
+            # Unify declaration axes with lhs axes to propagate concrete sizes.
+            if eq.lhs_name in declarations:
+                for decl_ax, eq_ax in zip(declarations[eq.lhs_name], eq.lhs_indices):
+                    ctx.append_iter((decl_ax, eq_ax))
             for tensor_name, input_axes in eq.rhs:
                 if tensor_name in name_to_axes:
                     for prior_ax, eq_ax in zip(name_to_axes[tensor_name], input_axes):
