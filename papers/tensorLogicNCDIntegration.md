@@ -143,7 +143,7 @@ The framework specialises to two concrete categories.
 
 **St (StrideCategory):** objects are lists of `Axis` terms (each carrying a `Numeric` size); morphisms are affine stride matrices mapping one list of axes to another. Composition is matrix multiplication. This is the **semantic** layer — it tracks how index spaces are linearly related.
 
-**Br (BroadcastedCategory):** objects are lists of `Array[Datatype, Axis]`; base morphisms are `Broadcasted[B, A, O]` values. The full morphism type is a free list of base morphisms. Composition is list concatenation. This is the **computational** layer — each `Broadcasted` is one operator application with its index structure fully specified.
+**Br (BroadcastedCategory):** objects are lists of `Array[Datatype, Axis]`; base morphisms are `Broadcasted[B, A, O]` values. The full morphism type is the same recursive `ProdCategory[Array, Broadcasted]` union — `Broadcasted`, `Composed`, `ProductOfMorphisms`, `Rearrangement`, and `Block`. This is the **computational** layer — each `Broadcasted` is one operator application with its index structure fully specified.
 
 ### 3.2 Broadcasted: the base morphism
 
@@ -160,10 +160,10 @@ class Broadcasted[B: Datatype, A: Axis, O: Operator]:
 
 A `Weave` is a **shape template** for one array (i.e. an `Array[B, A]`). Each position is one of two kinds:
 
-- **Degree position** (`WeaveMode.TILED`) — a placeholder filled with a degree axis at runtime. The **degree** is the output index space: the axes the operation sweeps over to produce each output value. For most operators every output index appears in at least one input, so the degree equals the output index space; `Embedding` is the exception (degree is empty, and the embedding dimension is a produced target axis in the output weave).
+- **Degree position** (`WeaveMode.TILED`) — a placeholder filled with a degree axis at runtime. The **degree** $P$ is the shared loop domain of all reindexings (`reindexings[i].dom()`, equal for all inputs). For most operators $P$ equals the retained (output) index space; `Embedding` is the exception, where $P$ is empty and the output axes are all target positions in the output weave.
 - **Target position** (a concrete `Axis` object) — an axis private to that array, not shared with the degree.
 
-The domain of each input array is reconstructed by filling its weave's TILED positions with `reindexing.cod()` and leaving target positions in place. The **reindexing** is a `Rearrangement` with `_dom = degree` whose mapping selects which subset of degree axes that input contributes — for `Y[i,j] = W[i,k] X[k,j]`, W's reindexing selects `i` and X's selects `j`. The contracted index `k` appears as a concrete target axis in each input's weave and is summed over by the operator.
+The domain of each input array is reconstructed by filling its weave's TILED positions with `reindexing.cod()` and leaving target positions in place. The **reindexing** is a `StrideCategory` morphism with `dom() = degree` whose mapping selects which subset of degree axes that input contributes — for `Y[i,j] = W[i,k] X[k,j]`, W's reindexing selects `i` and X's selects `j`. For pure einsums a `Rearrangement` suffices; strided convolutions require a full `StrideMorphism`. The contracted index `k` appears as a concrete target axis in each input's weave and is summed over by the operator.
 
 | Index role | Weave position | Example (`Y[i,j] = W[i,k] X[k,j]`) |
 | --- | --- | --- |
@@ -177,12 +177,13 @@ The domain of each input array is reconstructed by filling its weave's TILED pos
 
 | Operator | Description |
 | --- | --- |
-| `Einops` | General einsum; degree = contracted indices |
-| `Elementwise` / `ReLU` / `SoftMax` | Pointwise and normalisation nonlinearities |
+| `Einops` | General einsum; degree = retained (output) indices |
+| `Elementwise` (e.g. ReLU, σ) / `SoftMax` | Pointwise and normalisation nonlinearities |
 | `Linear` | Weight matrix application |
 | `Embedding` | Lookup table: `Natural → Reals` |
 | `AdditionOp` | Elementwise sum of matching arrays |
 | `Normalize` | RMSNorm / LayerNorm |
+| `WeightedTriangularLower` | Causal mask; used in attention |
 
 The following terms are proposed as part of the tensor logic integration and are discussed in detail in §5:
 
@@ -191,7 +192,7 @@ The following terms are proposed as part of the tensor logic integration and are
 | `TensorEquation` | `Operator` | `Broadcasted` via `bc_signature()` | one equation = one base morphism |
 | `TensorProgram` | `Term` | `Composed` via `to_morphism()` | many equations = sequential composition |
 
-`Operator` is the type parameter stored in `Broadcasted.operator` and represents a single atomic computation. A multi-equation tensor program spans multiple steps with intermediate outputs and cannot fit into a single `Broadcasted`. `TensorProgram` is not an `Operator` (as it wraps multiple equations) and `to_morphism()` produces a `Composed` — a sequence of `Broadcasted` base morphisms.
+`TensorProgram` is not an `Operator`: `Operator` is the type parameter stored in `Broadcasted.operator` and represents a single atomic computation, whereas `TensorProgram` wraps multiple equations and `to_morphism()` produces a `Composed` — a sequence of `Broadcasted` base morphisms spanning multiple steps with intermediate outputs.
 
 Because `Operator` is a `Term`, any `Operator` subclass participates in `deep_reconstruct` and `Context.apply` traversal. This is the hook that makes the tensor logic integration possible: `TensorEquation` is an `Operator` subclass, so its internal structure — including its `Axis` index fields — is reachable by the standard `Term` machinery.
 
@@ -221,9 +222,7 @@ This section maps tensor logic concepts onto pyncd and identifies where the corr
 
 **Elementwise nonlinearity → `Elementwise` / `ReLU` / `SoftMax`.** The optional nonlinearity in `Y[i] = relu(W[i,k] X[k])` selects the `Operator` subclass. The `.`-suffixed normalization axis maps to `SoftMax` or `Normalize`.
 
-**Contraction structure → degree and reindexings.** Retained indices (those on the LHS) form the degree of the `Broadcasted`. Contracted indices (those on the RHS but not the LHS) become target axes in the corresponding input `Weave`, and the `Einops` operator sums over them. The reindexings record which degree axes each input participates in.
-
-**Execution layout → weaves and reindexings.** The weave structure is fully derivable from the tensor equation's index structure: retained indices become `WeaveMode.TILED` positions; contracted indices become target positions in input weaves; per-input `Rearrangement` reindexings follow directly from which degree axes each input carries. Tensor logic thus covers execution layout implicitly. pyncd makes it explicit by reifying it as typed `Weave` and `Rearrangement` objects that code generation can consume directly.
+**Contraction structure and execution layout → degree, weaves, and reindexings.** Retained indices (those on the LHS) form the degree of the `Broadcasted` and occupy `WeaveMode.TILED` positions in every weave where they appear. Contracted indices (those on the RHS but not the LHS) become concrete target positions in input weaves, and the `Einops` operator sums over them. Per-input `Rearrangement` reindexings follow directly from which degree axes each input carries. The full weave structure is therefore derivable from the equation's index structure — tensor logic covers execution layout implicitly. pyncd makes it explicit by reifying it as typed `Weave` and `Rearrangement` objects that code generation can consume directly.
 
 **Sequential composition → `Composed`.** A tensor logic program where one equation feeds the next maps to `Composed([m1, m2, ...])` in pyncd. With the term-based integration, `TensorProgram.to_morphism()` constructs this automatically.
 
@@ -265,7 +264,7 @@ The following gaps in tensor logic are addressed by the term-based embedding des
 
 ### 5.1 The integration boundary
 
-The coverage analysis locates a natural boundary: **one tensor equation corresponds to one `Broadcasted` (one `BrBase`)**. A tensor equation specifies exactly what `Broadcasted` encodes:
+The coverage analysis locates a natural boundary: **one tensor equation corresponds to one `Broadcasted`**. A tensor equation specifies exactly what `Broadcasted` encodes:
 
 1. Which tensors are combined (the inputs)
 2. Which indices are contracted (the degree)
@@ -282,6 +281,7 @@ class TensorEquation(Operator):
     lhs_name:    DynamicName
     lhs_indices: Prod[Axis]                             # retained — identified by UID
     rhs:         Prod[tuple[DynamicName, Prod[Axis]]]   # (tensor_name, indices) per input
+    operator:    Operator                               # nonlinearity, e.g. SoftMax(); Identity() if none
 ```
 
 The index variables in `lhs_indices` and `rhs` are `Axis` objects — `UTerm` subclasses carrying UIDs. The same `Axis` object appearing in multiple positions encodes index sharing. An index is **contracted** if its UID appears in any `rhs` entry but not in `lhs_indices`; it is **retained** if its UID appears in `lhs_indices`. No string matching is involved: identity is UID identity.
@@ -318,7 +318,7 @@ the `operator` field carries the `SoftMax` instance and the `.`-suffixed axis `t
 b      = RawAxis.named('b')   # batch
 p      = RawAxis.named('p')   # sequence position
 d      = RawAxis.named('d')   # model dimension (contracted)
-t_norm = NormAxis.named('t')  # vocabulary / output dimension, normalization axis
+t_norm = NormAxis.named('t')  # vocabulary / output dimension, normalization axis (proposed new Axis subclass)
 
 eq = TensorEquation(
     lhs_name=DynamicName('Y'),
@@ -337,7 +337,7 @@ eq = TensorEquation(
 
 1. **Retained axes** (`Axis` values whose UIDs appear in `lhs_indices`) — these form the degree; they occupy `WeaveMode.TILED` positions in every weave where they appear.
 2. **Contracted axes** (`Axis` values whose UIDs appear in `rhs` but not in `lhs_indices`) — these become target (non-TILED) positions in their respective input weaves; the operator sums over them.
-3. **Per-input reindexing**: build a `Rearrangement` with `_dom=degree` whose mapping selects which degree axes this input participates in.
+3. **Per-input reindexing**: build a `StrideCategory` morphism with `dom()=degree` selecting which degree axes this input participates in (a `Rearrangement` suffices for pure einsum).
 4. **Return** `Broadcasted(operator=self, input_weaves=..., output_weaves=..., reindexings=...)`.
 
 The result is `Broadcasted[B, A, TensorEquation]` — the operator field IS the equation.
@@ -370,7 +370,8 @@ class TensorProgram(Term):
             # of whichever prior equation defined each input tensor
             for tensor_name, input_axes in eq.rhs:
                 if tensor_name in name_to_axes:
-                    ctx.append_iter(zip(name_to_axes[tensor_name], input_axes))
+                    for prior_axis, eq_axis in zip(name_to_axes[tensor_name], input_axes):
+                        ctx.append_iter((prior_axis, eq_axis))
             br = ctx.apply(eq).bc_signature()
             morphisms.append(br)
             name_to_axes[eq.lhs_name] = eq.lhs_indices
@@ -379,7 +380,7 @@ class TensorProgram(Term):
 
 `topological_sort` orders equations so that each tensor is defined before it is used. The `name_to_axes` map translates tensor logic's implicit name-sharing into UID unification: when equation B refers to tensor `Hidden` that was defined by equation A, `ctx.append_iter` unifies A's `lhs_indices` with B's corresponding `rhs` entry. `ctx.apply(eq)` then substitutes canonical UIDs into both the equation and its resulting `Broadcasted`.
 
-### 5.6 What pyncd provides above `TensorProgram` and how we might represent even these aspects in tensor logic
+### 5.6 Beyond `TensorProgram` — Extending the Tensor Logic Interface
 
 At and below `TensorProgram`, the tensor logic term representation covers sequential composition, einsum structure, nonlinearities, normalization axes, and axis identity. The remaining gaps — parallel product, datatypes, symbolic shapes, and block structure — are the caller's responsibility above `TensorProgram.to_morphism()` and are catalogued in §4.3.
 
@@ -444,7 +445,7 @@ Aunt{x, z} = Sister{x, y} Parent{y, z}    -- Boolean: AND + existential
 Y[i, j]    = W[i, k] X[k, j]              -- numeric: multiply + sum
 ```
 
-The `{}` notation signals Boolean semiring with an implicit Heaviside at the output; `[]` signals arithmetic semiring. A single program can mix both, and the type checker can reject any equation that combines Boolean and numeric tensors without an explicit conversion. In the pyncd embedding, a `{}` tensor maps to a `Bool` datatype and contracted indices become existential quantifications rather than sums.
+The `{}` notation signals Boolean semiring with an implicit Heaviside at the output; `[]` signals arithmetic semiring. A single program can mix both, and the type checker can reject any equation that combines Boolean and numeric tensors without an explicit conversion. In the pyncd embedding, a `{}` tensor maps to a `Bool` datatype — a proposed new `Datatype` subclass analogous to `Reals` and `Natural`, which would need to be added alongside them — and contracted indices become existential quantifications rather than sums.
 
 The three bracket forms together give tensor logic a lightweight type system that mirrors pyncd's `Reals` / `Natural` / `Bool` distinction without requiring a separate type declaration:
 
@@ -454,7 +455,9 @@ The three bracket forms together give tensor logic a lightweight type system tha
 | `T(i, d)` | selection — lookup row `i` | `Natural(max_value=n)` |
 | `T{x, y}` | predicate — existential over shared indices | `Bool` |
 
-**Unifying bracket types with shape signatures.** The bracket type (how an index is used) and the size annotation (what range it covers) are both attributes of the same thing: the dimension type of a tensor. Placing this information on tensor signatures rather than in equations keeps equations uncluttered and makes the type information authoritative. Using arrow notation to separate the **index space** (how you address into the tensor) from the **value type** (what you get back) makes the signatures fully explicit:
+#### Unifying bracket types with shape signatures
+
+The bracket type (how an index is used) and the size annotation (what range it covers) are both attributes of the same thing: the dimension type of a tensor. Placing this information on tensor signatures rather than in equations keeps equations uncluttered and makes the type information authoritative. Using arrow notation to separate the **index space** (how you address into the tensor) from the **value type** (what you get back) makes the signatures fully explicit:
 
 ```text
 Token  : (ℝ_32, ℝ_128) -> ℕ_50000    -- at each (batch, seq) position, a token ID
@@ -466,7 +469,7 @@ Sister : (ℕ_n, ℕ_m) -> 𝔹             -- predicate over entity pairs
 
 `W : ℕ_50000 -> ℝ_512` reads directly as "given a token ID from a vocabulary of 50,000, return a 512-dimensional real vector" — exactly what an embedding is, with no ambiguity about which axis is the selection axis. The domain of the arrow is always the lookup key; the codomain is always the value type.
 
-Bracket notation in equations is then fully derivable from the signature: a `ℕ` in the domain means parenthesis notation; an `ℝ` in the domain means square bracket notation; a `𝔹` codomain means curly bracket notation on the LHS. `W(Token[b,p], d)` is accepted because W's domain is declared `ℕ_50000`; `W[Token[b,p], d]` is a type error — you cannot contract over a categorical axis. The shape inference pass from §5.7 and the datatype propagation pass collapse into one: as sizes propagate forward through equations, their kinds propagate alongside, and an output index that flows from an `ℕ_n` input stays categorical while one from `ℝ_n` stays real. Shape inference and type inference become the same single pass.
+Bracket notation in equations is then fully derivable from the signature: a `ℕ` in the domain means parenthesis notation; an `ℝ` in the domain means square bracket notation; a `𝔹` codomain means curly bracket notation on the LHS. `W(Token[b,p], d)` is accepted because W's domain is declared `ℕ_50000`; `W[Token[b,p], d]` is a type error — you cannot contract over a categorical axis. The shape inference pass from §5.6 (Symbolic Shape Inference) and the datatype propagation pass collapse into one: as sizes propagate forward through equations, their kinds propagate alongside, and an output index that flows from an `ℕ_n` input stays categorical while one from `ℝ_n` stays real. Shape inference and type inference become the same single pass.
 
 ---
 
