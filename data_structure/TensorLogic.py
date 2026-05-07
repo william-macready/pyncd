@@ -78,6 +78,28 @@ class TensorEquation(bc.Operator):
         )
 
 
+@dataclass(frozen=True)
+class TensorProgram(fd.Term):
+    equations: fd.Prod[TensorEquation] = ()
+
+    def to_morphism(self) -> pc.Composed:
+        ctx = fd.Context()
+        morphisms = []
+        name_to_axes: dict[fd.DynamicName, fd.Prod[sc.Axis]] = {}
+
+        for eq in _topological_sort(self.equations):
+            for tensor_name, input_axes in eq.rhs:
+                if tensor_name in name_to_axes:
+                    for prior_ax, eq_ax in zip(name_to_axes[tensor_name], input_axes):
+                        ctx.append_iter((prior_ax, eq_ax))
+            applied_eq = ctx.apply(eq)
+            br = applied_eq.bc_signature()
+            morphisms.append(br)
+            name_to_axes[eq.lhs_name] = applied_eq.lhs_indices
+
+        return pc.Composed(content=tuple(morphisms))
+
+
 def _topological_sort(
     equations: fd.Prod['TensorEquation'],
 ) -> list['TensorEquation']:

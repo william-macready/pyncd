@@ -1,7 +1,8 @@
 import data_structure.Term as fd
 import data_structure.BroadcastedCategory as bc
 import data_structure.ProductCategory as pc
-from data_structure.TensorLogic import NormAxis, TensorEquation, _topological_sort
+from data_structure.TensorLogic import NormAxis, TensorEquation, TensorProgram, _topological_sort
+from data_structure.ProductCategory import Composed
 from data_structure.StrideCategory import RawAxis, Axis
 from data_structure.Operators import Identity, SoftMax
 
@@ -190,6 +191,91 @@ def test_topological_sort_reversed_input():
     result = _topological_sort((eq2, eq1))
     assert result[0] is eq1
     assert result[1] is eq2
+
+
+def test_tensor_program_single_equation():
+    i = RawAxis.named('i')
+    k = RawAxis.named('k')
+    j = RawAxis.named('j')
+    eq = TensorEquation(
+        lhs_name=fd.DynamicName('Y'),
+        lhs_indices=(i, j),
+        rhs=(
+            (fd.DynamicName('W'), (i, k)),
+            (fd.DynamicName('X'), (k, j)),
+        ),
+        operator=Identity(),
+    )
+    prog = TensorProgram(equations=(eq,))
+    morphism = prog.to_morphism()
+    assert isinstance(morphism, Composed)
+    assert len(morphism.content) == 1
+
+
+def test_tensor_program_two_equation_chain():
+    """Two equations in sequence; to_morphism() produces a Composed of length 2."""
+    i = RawAxis.named('i')
+    k = RawAxis.named('k')
+    j = RawAxis.named('j')
+    eq1 = TensorEquation(
+        lhs_name=fd.DynamicName('Hidden'),
+        lhs_indices=(i, j),
+        rhs=(
+            (fd.DynamicName('W1'), (i, k)),
+            (fd.DynamicName('X'), (k, j)),
+        ),
+        operator=Identity(),
+    )
+    # eq2 uses fresh axes that will be unified with eq1's lhs_indices
+    i2 = RawAxis.named('i')
+    j2 = RawAxis.named('j')
+    m = RawAxis.named('m')
+    eq2 = TensorEquation(
+        lhs_name=fd.DynamicName('Y'),
+        lhs_indices=(i2, m),
+        rhs=(
+            (fd.DynamicName('W2'), (i2, j2)),
+            (fd.DynamicName('Hidden'), (j2, m)),
+        ),
+        operator=Identity(),
+    )
+    prog = TensorProgram(equations=(eq1, eq2))
+    morphism = prog.to_morphism()
+    assert isinstance(morphism, Composed)
+    assert len(morphism.content) == 2
+
+
+def test_tensor_program_cod_has_correct_rank():
+    i = RawAxis.named('i')
+    k = RawAxis.named('k')
+    j = RawAxis.named('j')
+    eq1 = TensorEquation(
+        lhs_name=fd.DynamicName('Hidden'),
+        lhs_indices=(i, j),
+        rhs=(
+            (fd.DynamicName('W1'), (i, k)),
+            (fd.DynamicName('X'), (k, j)),
+        ),
+        operator=Identity(),
+    )
+    i2 = RawAxis.named('i')
+    j2 = RawAxis.named('j')
+    m = RawAxis.named('m')
+    eq2 = TensorEquation(
+        lhs_name=fd.DynamicName('Y'),
+        lhs_indices=(i2, m),
+        rhs=(
+            (fd.DynamicName('W2'), (i2, j2)),
+            (fd.DynamicName('Hidden'), (j2, m)),
+        ),
+        operator=Identity(),
+    )
+    prog = TensorProgram(equations=(eq1, eq2))
+    morphism = prog.to_morphism()
+    cod = morphism.cod()
+    # Final output is Y[i2, m] — one Array with 2 axes
+    assert len(cod) == 1
+    assert len(cod[0]._shape) == 2
 
 
 def test_topological_sort_independent_equations():
