@@ -384,11 +384,48 @@ class TensorProgram(Term):
 
 At and below `TensorProgram`, the tensor logic term representation covers sequential composition, einsum structure, nonlinearities, normalization axes, and axis identity. The remaining gaps — parallel product, datatypes, symbolic shapes, and block structure — are the caller's responsibility above `TensorProgram.to_morphism()` and are catalogued in §4.3.
 
-The following are initial ideas on closing the gaps that tensor logic does not represent.
+This section describes what has been implemented in the Python DSL layer (`data_structure/TensorDSL.py`) and what remains as future work.
+
+#### Python DSL: Implemented
+
+`TensorDSL.py` provides a Python front-end for constructing `TensorEquation` and `TensorProgram` objects without manually populating dataclass fields. The core of the DSL is the `TL` registry:
+
+```python
+tl = TL()
+i, j, k = axes('i j k')
+tl.Y[i, j] = tl.W[i, k] * tl.X[k, j]
+eq = tl.to_equation()        # TensorEquation
+sig = tl.bc_signature()      # Broadcasted
+```
+
+`TL.__getattr__` returns a `TensorProxy` for any tensor name. Subscripting a proxy (`tl.W[i, k]`) returns an `IndexedTensor`. The `*` operator accumulates factors into an `RHSExpression`. Assignment (`tl.Y[i,j] = ...`) captures a `TensorEquation` in the registry. `relu()` and `softmax()` wrap an expression with the corresponding `Operator`. Multiple equations in one `TL` instance are collected and extracted as a `TensorProgram` via `tl.to_program()`. Calling `to_morphism()` on the result converts each `TensorEquation` to a `Broadcasted` via `bc_signature()` and assembles them into a `Composed` — the pyncd representation of sequential composition. Axis consistency across equations is established beforehand by a `Context` that unifies shared tensor UIDs as it walks the topological sort, playing the same role that `@`'s auto-alignment plays when morphisms are composed interactively.
+
+**Tensor declarations** attach kind and shape metadata to a named tensor before it is used in equations:
+
+```python
+tl.W_in.tensor(real_axis('d_ff', 2048), real_axis('d', 512))
+tl.Mask.predicate(real_axis('q'), real_axis('x'))
+tl.E.selection(nat_axis('v', 50257), real_axis('d', 512))
+```
+
+Declarations are registered via `.tensor()`, `.predicate()`, and `.selection()` on a `TensorProxy` and stored in `TL._declarations`. They have two effects at indexing time: **arity checking** (the number of indices must match the declared shape) and **axis promotion** for non-contraction kinds. PREDICATE tensors promote all indices to `PredAxis`; SELECTION tensors promote indices at positions declared as `NatAxis` to `NatAxis`. TENSOR declarations perform no promotion — they carry shape and size metadata only.
+
+**Typed axes** encode the ℕ vs ℝ distinction and optional concrete sizes directly on `Axis` objects:
+
+```python
+nat_axis('v', 50257)   # NatAxis with _size = Integer(50257)
+nat_axis('v')          # NatAxis with _size = FreeNumeric  (type only, no size)
+real_axis('d', 512)    # RawAxis with _size = Integer(512)
+real_axis('d')         # RawAxis with _size = FreeNumeric  (type only, no size)
+```
+
+`NatAxis` and `PredAxis` are frozen zero-field dataclass subclasses of `RawAxis`, following the same pattern as the existing `NormAxis`. The type distinction is carried by the Python class; size is carried by the `_size` field inherited from `Axis`. Both are optional: a declaration without concrete sizes is valid and serves as a kind annotation without binding sizes.
+
+Declarations are **entirely optional**. When absent, all existing behaviour — contraction detection, UID-based axis unification, `bc_signature()`, `to_morphism()` — is completely unchanged.
 
 #### Parallel product from dependency analysis
 
-A `TensorProgram`'s dependency DAG encodes parallelism implicitly: two equations with no directed path between them are independent and could be composed as `ProductOfMorphisms` rather than sequentially. The full program decomposes into alternating sequential steps and parallel blocks by finding **fork-join pairs** in the DAG — a fork where one tensor feeds multiple independent chains, a join where those chains reconverge. Between fork and join, the chains become the arguments of a `ProductOfMorphisms`; finding these pairs is a standard dominators/post-dominators analysis on the DAG.
+Not yet implemented. A `TensorProgram`'s dependency DAG encodes parallelism implicitly: two equations with no directed path between them are independent and could be composed as `ProductOfMorphisms` rather than sequentially. The full program decomposes into alternating sequential steps and parallel blocks by finding **fork-join pairs** in the DAG — a fork where one tensor feeds multiple independent chains, a join where those chains reconverge. Between fork and join, the chains become the arguments of a `ProductOfMorphisms`; finding these pairs is a standard dominators/post-dominators analysis on the DAG.
 
 The main complication is shared inputs: parallel branches often read from the same tensor (both attention heads read from the same embedded sequence). Since `ProductOfMorphisms` requires disjoint domain objects, shared inputs must be fanned out via a `Rearrangement` (copy mode) before the parallel block and outputs concatenated via another `Rearrangement` at the join. The UID-based `Axis` representation makes shared-input detection straightforward — the same `Axis` objects appearing in multiple branches are immediately identifiable.
 
@@ -396,80 +433,97 @@ This analysis is the inverse of tensor logic's conventional head-index trick, wh
 
 #### Symbolic Shape Inference
 
-Tensor logic equations carry no size information. Closing the symbolic shape gap (§4.3) requires a way to introduce sizes without cluttering the equation syntax. The natural approach is **tensor type signatures**: input tensors declare their shape as a tuple of named size variables, separate from the equations themselves.
+Partially implemented. Tensor logic equations carry no size information. The DSL addresses this through **explicit axis annotation** rather than a full inference pass: `nat_axis('v', 50257)` and `real_axis('d', 512)` attach `Integer(n)` directly to the `_size` field of each axis at construction time, and tensor declarations carry this information positionally:
+
+```python
+tl.W_in.tensor(real_axis('d_ff', 2048), real_axis('d', 512))
+```
+
+This records that `W_in`'s first axis has size 2048 and its second has size 512, without requiring a separate annotation pass. Type-only declarations (no concrete size) are equally valid and record only the kind:
+
+```python
+tl.W_in.tensor(real_axis('d_ff'), real_axis('d'))
+```
+
+Declaration axes are separate objects from the equation-level axes (which are always created via `axes()`), so the size annotations are metadata on the declaration and do not affect the computation graph or `bc_signature()` output. A full shape propagation pass — which would unify declaration sizes with equation axes via `Context.append_iter` and propagate sizes forward through `TensorProgram.to_morphism()` — has not yet been implemented.
+
+The longer-term design target is **tensor type signatures** that bind index names to sizes positionally:
 
 ```text
-W_O   : (512, 64)
+W_O    : (512, 64)
 Stream : (32, 128, 64)
 
 Y[b, p, t.] = softmax(W_O[t, d] Stream[b, p, d])
 ```
 
-Sizes are recovered by position: `W_O : (512, 64)` combined with `W_O[t, d]` in the equation binds index `t` to size 512 and index `d` to size 64. From `Stream : (32, 128, 64)` and `Stream[b, p, d]`, index `b` gets size 32, `p` gets size 128, and `d` is confirmed as 64. The output shape of `Y`, inferred automatically, is then `(32, 128, 512)`.
-
-In the pyncd embedding this becomes a shape propagation pass that runs alongside `TensorProgram.to_morphism()`. Type signatures populate the `_size` field on `Axis` objects for the input tensors. As the topological sort proceeds and `Context.append_iter` unifies UIDs across equations, it also unifies the associated sizes: when two axes merge their `SizeVar`s resolve to the same `Numeric` expression. Equations whose inputs are all sized then produce fully-typed output `Axis` objects, propagating shapes forward through the program exactly as UIDs are propagated now.
-
-In theory, tensor logic equations already encode the information needed to propagate sizes — the index structure fully determines which axes must be equal. Type signatures on input tensors are only needed for *static* inference at the point when concrete tensors are not yet available. At runtime, sizes could simply be read from the actual tensor arguments and propagated dynamically through the same pass, with no annotations at all — exactly as NumPy's `einsum` works. The type signature approach is the minimum annotation needed to recover full static shape inference without changing the equation syntax. Whether static shape information is worth the annotation cost, or whether shapes should simply flow dynamically as tensors are passed to `to_morphism()`, is an open design question.
+In the pyncd embedding this would become a shape propagation pass that runs alongside `TensorProgram.to_morphism()`. As the topological sort proceeds and `Context.append_iter` unifies UIDs, it would also unify sizes: when two axes merge their size variables resolve to the same `Numeric` expression, propagating shapes forward through the program exactly as UIDs are propagated now.
 
 #### Embedding datatypes
 
-The core issue is that tensor logic's contraction `Σ_i A[i,...] B[i,...]` requires *summing* over `i` — but an embedding lookup is *selection*, not summation. Given a token ID, the correct operation is to retrieve the corresponding row of the embedding matrix; summing all rows is meaningless. A token index is an opaque pointer into a table, not a position in a continuous space that can participate in arithmetic. Tensor logic, treating all indices uniformly as positions in a semiring, has no way to express this distinction — the equation `Y[b, p, d] = W[i, d] Token[b, p, i]` looks syntactically identical whether `i` is a contractable continuous index or a discrete token selector.
+Declaration annotation implemented; lookup equations deferred. The `.selection()` declaration is implemented and records that a tensor is a selection table indexed by a ℕ dimension. For example:
 
-A minimal extension uses distinct bracket conventions to separate the two operations. Square brackets remain the contraction notation; parentheses denote selection:
-
-```text
-Y[b, p, d] = W(Token[b, p], d)
+```python
+tl.E.selection(nat_axis('v', 50257), real_axis('d', 512))
 ```
 
-Here `Token[b, p]` is a 2D tensor of integer token IDs — `b` is batch, `p` is sequence position, and `Token[b, p]` retrieves the token ID (e.g. the integer 4291) at that position. `W(Token[b, p], d)` then uses that ID as a row index into the embedding matrix W, returning the `d`-dimensional vector stored at that row. No summation occurs — `Token[b, p]` is a pointer, not a weight. The full equation says: for each position in the sequence, look up its token ID and retrieve the corresponding embedding vector.
+annotates `E` as an embedding matrix of vocabulary size 50,257 producing 512-dimensional real vectors. At indexing time, positional slots declared as `NatAxis` are promoted, distinguishing token-index dimensions from real-valued ones. This annotation is currently **decorative**: the actual lookup computation is still expressed via `ops.Embedding.template(vocab_size)`, not as a DSL equation.
 
-The contrast with square bracket notation makes the distinction sharp:
+Expressing the lookup as a first-class equation is deferred. The intended DSL syntax, working at the per-token level to match pyncd's point-level transformer architecture, would be:
+
+```python
+tl.Out[d] = tl.E[tl.token, d]
+```
+
+where `tl.token` (unsubscripted) represents the Natural-typed morphism domain — a single token ID — rather than a positionally-indexed tensor. The core issue is that tensor logic's contraction `Σ_i A[i,...] B[i,...]` requires *summing* over `i`, but an embedding lookup is *selection*: a token index is an opaque pointer into a table, not a position in a continuous space. In the pyncd embedding, pyncd already represents this correctly: `ops.Embedding.template(vocab_size)` produces a `Broadcasted` whose input weave has `Natural(vocab_size)` as its datatype and empty shape, encoding the vocabulary axis as a *type* rather than a *shape axis*. A `TensorLookup.bc_signature()` method could produce the same structure without any changes to pyncd; only `TensorDSL.py` and `TensorLogic.py` would need to be extended. The full scope of motivations and implementation issues is recorded in `docs/dsl_embedding_lookup_extension.md`.
+
+The notation-level distinction proposed earlier — parentheses for selection vs square brackets for contraction — remains the right long-term design target:
 
 ```text
 Y[b, p, d] = W[i, d] Token[b, p, i]   -- wrong: sums W over all vocab rows
 Y[b, p, d] = W(Token[b, p], d)        -- correct: selects one row per position
 ```
 
-The first line produces a weighted sum over the entire vocabulary — semantically nonsensical for a lookup. The second selects exactly one row per `(b, p)` position. `W[i, d]` would contract over `i`; `W(i, d)` selects row `i` without summing. The distinction is visible at a glance and requires no new annotation — just a reserved meaning for two already-distinct notations. In the pyncd embedding, a parenthesised index position maps to a `Natural(max_value=n)` domain type rather than a continuous `Axis`, and the operator becomes `Embedding` rather than `Einops`. Any equation that uses square-bracket notation on a parenthesised index is a static type error: you cannot contract over a discrete token index.
+but its realisation in the Python DSL awaits the `TensorLookup` implementation.
 
 #### Predicate and numeric tensors
 
-Tensor logic's unification claim rests on the observation that neural and symbolic computation share the same einsum structure under different semirings — arithmetic `(ℝ, +, ×)` for neural, Boolean `(𝔹, ∨, ∧)` for symbolic. But the notation does not make this distinction visible. The Datalog rule `Aunt(x,z) ← Sister(x,y), Parent(y,z)` and the matrix product `Y[i,j] = W[i,k] X[k,j]` look like the same kind of equation; a reader or type checker cannot tell from the syntax alone which semiring applies.
+Axis-level distinction implemented; semiring-level distinction not yet implemented. The ℕ vs ℝ vs predicate distinction is implemented at the axis level. `NatAxis` marks a natural-number index dimension; `PredAxis` marks a predicate (Boolean-filter) dimension. Both are zero-field frozen dataclass subclasses of `RawAxis`, following the `NormAxis` pattern. The `.predicate()` declaration promotes all indices of the declared tensor to `PredAxis` at indexing time; `.selection()` promotes `NatAxis`-declared slots to `NatAxis`. The type distinction is therefore visible in the `TensorEquation.rhs` axis types and survives through `bc_signature()` and `Context`-mediated unification.
 
-The core issue is that contracting over a Boolean tensor is *existential quantification* — does any witness `y` exist? — while contracting over a real-valued tensor is *summation*. The two operations have different semantics, different gradient behaviour, and the Boolean case requires the Heaviside step H to collapse a count of witnesses back to 0 or 1. Treating them identically at the notation level obscures a distinction that matters for both execution and the neural-symbolic integration that tensor logic is designed to express.
-
-Extending the bracket convention from the embedding section naturally captures this: curly braces `{}` for predicate (Boolean) tensors, square brackets `[]` for numeric:
+What is not yet implemented is the **semiring distinction** at the `Datatype` level. A `Bool` datatype subclass analogous to `Reals` and `Natural` does not exist; contracted indices over predicate tensors are not yet distinguished from summation. The longer-term design has curly braces for predicate (Boolean) tensors:
 
 ```text
 Aunt{x, z} = Sister{x, y} Parent{y, z}    -- Boolean: AND + existential
 Y[i, j]    = W[i, k] X[k, j]              -- numeric: multiply + sum
 ```
 
-The `{}` notation signals Boolean semiring with an implicit Heaviside at the output; `[]` signals arithmetic semiring. A single program can mix both, and the type checker can reject any equation that combines Boolean and numeric tensors without an explicit conversion. In the pyncd embedding, a `{}` tensor maps to a `Bool` datatype — a proposed new `Datatype` subclass analogous to `Reals` and `Natural`, which would need to be added alongside them — and contracted indices become existential quantifications rather than sums.
+In the pyncd embedding, a `{}` tensor would map to a `Bool` datatype and contracted indices would become existential quantifications rather than sums. This requires both a new `Bool` datatype in pyncd and a corresponding treatment in `TensorEquation.bc_signature()`.
 
-The three bracket forms together give tensor logic a lightweight type system that mirrors pyncd's `Reals` / `Natural` / `Bool` distinction without requiring a separate type declaration:
+The three-way distinction across kinds is summarised as:
 
-| Notation | Semantics | pyncd datatype |
-| --- | --- | --- |
-| `T[i, j]` | contraction — sum over shared indices | `Reals` |
-| `T(i, d)` | selection — lookup row `i` | `Natural(max_value=n)` |
-| `T{x, y}` | predicate — existential over shared indices | `Bool` |
+| Notation | Semantics | pyncd datatype | DSL status |
+| --- | --- | --- | --- |
+| `T[i, j]` | contraction — sum over shared indices | `Reals` | implemented |
+| `T(i, d)` | selection — lookup row `i` | `Natural(max_value=n)` | deferred |
+| `T{x, y}` | predicate — existential over shared indices | `Bool` | not yet implemented |
 
-#### Unifying bracket types with shape signatures
+#### Unifying kind and shape in tensor declarations
 
-The bracket type (how an index is used) and the size annotation (what range it covers) are both attributes of the same thing: the dimension type of a tensor. Placing this information on tensor signatures rather than in equations keeps equations uncluttered and makes the type information authoritative. Using arrow notation to separate the **index space** (how you address into the tensor) from the **value type** (what you get back) makes the signatures fully explicit:
+Partially implemented via Python method API. The bracket type (kind) and the size annotation are both attributes of the same tensor dimension. In the Python DSL these are unified in tensor declarations, which record both together:
 
-```text
-Token  : (ℝ_32, ℝ_128) -> ℕ_50000    -- at each (batch, seq) position, a token ID
-W      : ℕ_50000 -> ℝ_512            -- lookup: token ID → embedding vector
-W_O    : (ℝ_512, ℝ_64) -> ℝ          -- weight matrix: standard real-valued tensor
-Y      : (ℝ_32, ℝ_128) -> ℝ_512      -- at each (batch, seq) position, an embedding vector
-Sister : (ℕ_n, ℕ_m) -> 𝔹             -- predicate over entity pairs
+```python
+tl.W.tensor(real_axis('d_ff', 2048), real_axis('d', 512))   # ℝ₂₀₄₈ × ℝ₅₁₂
+tl.E.selection(nat_axis('v', 50257), real_axis('d', 512))   # ℕ₅₀₀₀₀ → ℝ₅₁₂
+tl.Mask.predicate(real_axis('q'), real_axis('x'))            # 𝔹, sizes deferred
 ```
 
-`W : ℕ_50000 -> ℝ_512` reads directly as "given a token ID from a vocabulary of 50,000, return a 512-dimensional real vector" — exactly what an embedding is, with no ambiguity about which axis is the selection axis. The domain of the arrow is always the lookup key; the codomain is always the value type. Such declarations are easily expressible in PyRel when the Relationships representing the tensor are defined.
+This is the Python realisation of the arrow-notation design target:
 
-Bracket notation in equations is then fully derivable from the signature: a `ℕ` in the domain means parenthesis notation; an `ℝ` in the domain means square bracket notation; a `𝔹` codomain means curly bracket notation on the LHS. `W(Token[b,p], d)` is accepted because W's domain is declared `ℕ_50000`; `W[Token[b,p], d]` is a type error — you cannot contract over a categorical axis. The shape inference pass from §5.6 (Symbolic Shape Inference) and the datatype propagation pass collapse into one: as sizes propagate forward through equations, their kinds propagate alongside, and an output index that flows from an `ℕ_n` input stays categorical while one from `ℝ_n` stays real. Shape inference and type inference become the same single pass.
+```text
+W   : (ℝ_2048, ℝ_512)          -- contraction tensor
+E   : ℕ_50000 -> ℝ_512          -- selection: token ID → embedding vector
+```
+
+The domain of the arrow maps to the positional shape tuple; the codomain maps to the kind (`tensor`, `predicate`, or `selection`). Size can be specified (`Integer(n)`) or left symbolic (`FreeNumeric`). As with the bracket notation, kind is fully derivable from the declaration — no per-index annotation in equations is needed. The remaining gap is that the Python declarations currently serve as metadata only; the shape inference pass that would propagate declared sizes into equation axes via `Context` unification is not yet implemented.
 
 ---
 
