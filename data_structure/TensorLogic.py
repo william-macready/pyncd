@@ -130,4 +130,6 @@ def _topological_sort(
                 if not deps[other.lhs_name]:
                     ready.append(other)
                     ready_names.add(other.lhs_name)
+    if len(result) < len(equations):
+        raise ValueError("TensorProgram has cyclic equation dependencies")
     return result

@@ -298,6 +298,27 @@ def test_topological_sort_independent_equations():
     assert len(result) == 2
 
 
+def test_topological_sort_raises_on_cycle():
+    i = RawAxis.named('i')
+    k = RawAxis.named('k')
+    # A depends on B, B depends on A — cycle
+    eq_a = TensorEquation(
+        lhs_name=fd.DynamicName('A'),
+        lhs_indices=(i,),
+        rhs=((fd.DynamicName('B'), (i, k)),),
+        operator=Identity(),
+    )
+    eq_b = TensorEquation(
+        lhs_name=fd.DynamicName('B'),
+        lhs_indices=(i,),
+        rhs=((fd.DynamicName('A'), (i, k)),),
+        operator=Identity(),
+    )
+    import pytest
+    with pytest.raises(ValueError, match="cyclic"):
+        _topological_sort((eq_a, eq_b))
+
+
 def test_exports_from_category():
     from data_structure.Category import NormAxis, TensorEquation, TensorProgram
     assert NormAxis is not None
