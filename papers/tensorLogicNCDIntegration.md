@@ -398,7 +398,15 @@ eq = tl.to_equation()        # TensorEquation
 sig = tl.bc_signature()      # Broadcasted
 ```
 
-`TL.__getattr__` returns a `TensorProxy` for any tensor name. Subscripting a proxy (`tl.W[i, k]`) returns an `IndexedTensor`. The `*` operator accumulates factors into an `RHSExpression`. Assignment (`tl.Y[i,j] = ...`) captures a `TensorEquation` in the registry. `relu()` and `softmax()` wrap an expression with the corresponding `Operator`. Multiple equations in one `TL` instance are collected and extracted as a `TensorProgram` via `tl.to_program()`. Calling `to_morphism()` on the result converts each `TensorEquation` to a `Broadcasted` via `bc_signature()` and assembles them into a `Composed` — the pyncd representation of sequential composition. Axis consistency across equations is established beforehand by a `Context` that unifies shared tensor UIDs as it walks the topological sort, playing the same role that `@`'s auto-alignment plays when morphisms are composed interactively.
+`TL.__getattr__` returns a `TensorProxy` for any tensor name. Subscripting a proxy (`tl.W[i, k]`) returns an `IndexedTensor`. The `*` operator accumulates factors into an `RHSExpression`. Assignment (`tl.Y[i,j] = ...`) captures a `TensorEquation` in the registry. `relu()` and `softmax()` wrap an expression with the corresponding `Operator`. `softmax` normalizes over the axis in the LHS constructed with `norm_axis()` — that axis is typed as `NormAxis`, a frozen zero-field subclass of `RawAxis`, and its presence in `lhs_indices` signals the normalization dimension to downstream display and code generation:
+
+```python
+x = norm_axis('x')           # NormAxis — marks the softmax dimension
+q, h, k = axes('q h k')
+tl.Comp[h, q, x] = softmax(tl.Query[q, h, k] * tl.Key[x, h, k])
+```
+
+Multiple equations in one `TL` instance are collected and extracted as a `TensorProgram` via `tl.to_program()`. Calling `to_morphism()` on the result converts each `TensorEquation` to a `Broadcasted` via `bc_signature()` and assembles them into a `Composed` — the pyncd representation of sequential composition. Axis consistency across equations is established beforehand by a `Context` that unifies shared tensor UIDs as it walks the topological sort, playing the same role that `@`'s auto-alignment plays when morphisms are composed interactively.
 
 **Tensor declarations** attach kind and shape metadata to a named tensor before it is used in equations:
 
@@ -477,7 +485,7 @@ At the call site this gives an immediate visual signal of the tensor kind: subsc
 
 **Selection (embedding lookup).** The core distinction for selection is that tensor logic's contraction `Σ_i A[i,...] B[i,...]` *sums* over `i`, whereas a lookup *selects* one row — a token index is a pointer into a table, not a summable weight. The `.selection()` declaration captures this at the type level: positional slots declared as `NatAxis` are promoted at indexing time, flagging the vocabulary dimension as ℕ rather than ℝ. The lookup equation itself is deferred: pyncd already encodes it correctly via `ops.Embedding.template(vocab_size)`, whose input weave has `Natural(vocab_size)` as its datatype and empty shape, encoding the vocabulary axis as a type rather than a shape axis. Extending the DSL to express this as a first-class equation requires no pyncd changes; the full scope of issues is recorded in [dsl_embedding_lookup_extension.md](../docs/dsl_embedding_lookup_extension.md).
 
-**Predicate tensors.** The semiring distinction — Boolean `(𝔹, ∨, ∧)` vs arithmetic `(ℝ, +, ×)` — is implemented at the axis level via `PredAxis` and `.predicate()`, but not yet at the `Datatype` level. A `Bool` datatype subclass analogous to `Reals` and `Natural` does not exist; contracted indices over predicate tensors are not yet distinguished from summation in `bc_signature()`. Realising the full semiring distinction requires adding `Bool` to pyncd and updating `TensorEquation.bc_signature()` accordingly.
+**Predicate tensors.** The semiring distinction — Boolean `(𝔹, ∨, ∧)` vs arithmetic `(ℝ, +, ×)` — is implemented at the axis level via `PredAxis` and `.predicate()`, but not yet at the `Datatype` level. A `Bool` datatype subclass analogous to `Reals` and `Natural` does not exist; contracted indices over predicate tensors are not yet distinguished from summation in `bc_signature()`. Realising the full semiring distinction requires adding `Bool` to pyncd, adding a `semiring` field to `Einops`, updating `TensorEquation.bc_signature()` to emit `Broadcasted[Bool, ...]` for predicate equations, and adding `Bool` rendering support in tsncd. The full design is recorded in [bool_semiring_extension.md](../docs/bool_semiring_extension.md).
 
 ---
 

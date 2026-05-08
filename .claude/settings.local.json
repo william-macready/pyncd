@@ -27,7 +27,11 @@
       "Bash(python -c ' *)",
       "Bash(python -c \"import minimum_working_example_tl as tl; print\\(type\\(tl.attention_core\\(\\)\\).__name__\\)\")",
       "Bash(rtk read *)",
-      "Bash(python minimum_working_example_tl_static.py)"
+      "Bash(python minimum_working_example_tl_static.py)",
+      "Bash(find /Users/williammacready/code/python/tsncd -type f -name \"*.py\" | head -20)",
+      "Read(//Users/williammacready/code/python/tsncd/**)",
+      "Bash(find /Users/williammacready/code/python -name \"*.py\" -type f | grep -E \"\\(tsncd|example\\)\" | head -30)",
+      "Read(//Users/williammacready/code/python/**)"
     ]
   }
 }
