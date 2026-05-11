@@ -125,7 +125,7 @@ With this infrastructure for **product categories** we turn to specific instanti
 
 A product category is **elemental** if each object $X$ has a distinguished set of **elements** $\text{El}(X) \subseteq \mathcal{C}(\mathbf{1}, X)$ — morphisms from the unit object (which is the terminal object in a Cartesian category) — rich enough to uniquely determine morphisms: if $x \mathbin{;} f = x \mathbin{;} g$ for all $x \in \text{El}(X)$, then $f = g$. Elements of a product are tuples of elements of the factors:
 
-$$\text{El}\!\left(\Pi_{i \in I} A_i\right) = \left\{ \Pi_{i \in I} a_i \;\middle|\; a_i \in \text{El}(A_i) \right\}.$$
+$$\text{El}(\Pi_{i \in I} A_i) = \{ \Pi_{i \in I} a_i \mid a_i \in \text{El}(A_i) \}.$$
 
 In particular, $|\text{El}(\Pi_{i \in I} A_i)| = \prod_{i \in I} |\text{El}(A_i)|$, and $|\text{El}(\mathbf{1})| = 1$.
 
@@ -153,7 +153,7 @@ In Python, `Axis` is the abstract base (`UTerm`); `RawAxis` is the concrete subc
 
 **Morphisms** in **St** are **finite linear transforms**: maps $\eta : \Pi_{i \in I} A_i \to \Pi_{j \in J} B_j$ that describe how input coordinates relate to output coordinates. Each output coordinate $j$ is a linear combination of input coordinates:
 
-$$\left(\Pi_{i \in I} a_i\right) ; \eta = \Pi_{j \in J}\left(\sum_{i \in I} \Lambda^\eta_{ij} \cdot a_i\right)$$
+$$(\Pi_{i \in I} a_i) ; \eta = \Pi_{j \in J}(\sum_{i \in I} \Lambda^\eta_{ij} \cdot a_i)$$
 
 where $\Lambda^\eta \in \mathbb{N}^{I \times J}$ is the coefficient matrix. The image must land within the codomain.
 
@@ -213,13 +213,13 @@ Before jumping into the details we first consider broadcasting in general.
 
 **Broadcasting** describes how a base operation is lifted to run in parallel over additional axes. The key property is compositionality: lifting an operation over an additional axis is a systematic transformation, and broadcasts over shared axes compose predictably. 
 
-A broadcasted operation separates two concerns: the *base operation* (what computation is performed on a single tile) and the *broadcasting structure* (which axes are looped over and how each input is indexed at each step). The loop domain is called the **degree** $P \in \text{Ob}\,\mathbf{St}$. A **tiling axis** is an axis of an input array that is looped over by $P$ rather than operated on directly by the base operation. For each input $i$, a reindexing morphism $\eta_i : P \to Q_i$ in **St** specifies, for each degree coordinate $p \in P$, which coordinate $\eta_i(p) \in Q_i$ to read from that input's tiling axes — selecting the slice the base operation sees at that step. Different inputs can have different tiling shapes $Q_i$: an input with $\eta_i = \text{id}$ is indexed normally across all of $P$, while an input with $\eta_i = ()$ (the constant map to the empty shape) is broadcast across all of $P$ — its single value is reused at every step.
+A broadcasted operation separates two concerns: the *base operation* (what computation is performed on a single tile) and the *broadcasting structure* (which axes are looped over and how each input is indexed at each step). The loop domain is called the **degree** $P \in \text{Ob} \mathbf{St}$. A **tiling axis** is an axis of an input array that is looped over by $P$ rather than operated on directly by the base operation. For each input $i$, a reindexing morphism $\eta_i : P \to Q_i$ in **St** specifies, for each degree coordinate $p \in P$, which coordinate $\eta_i(p) \in Q_i$ to read from that input's tiling axes — selecting the slice the base operation sees at that step. Different inputs can have different tiling shapes $Q_i$: an input with $\eta_i = \text{id}$ is indexed normally across all of $P$, while an input with $\eta_i = ()$ (the constant map to the empty shape) is broadcast across all of $P$ — its single value is reused at every step.
 
 A broadcasted operation is built from four ingredients (Definition 13):
 
 1. **A base operation** — the core computation, provided as an `Operator` subclass (e.g., `Linear`, `Einops`, `SoftMax`, `Elementwise`, `Normalize`, `Embedding`, `AdditionOp`, `WeightedTriangularLower`).
 
-2. **Reindexings** $(\eta_i)_{i \in I}$ from **St** — the base operation runs once per coordinate $p \in P$, where $P \in \text{Ob}\,\mathbf{St}$ is the *degree* shape (the same loop domain for every input, equal to `reindexings[i].dom()` for all $i$). For `Einops`, $P$ equals the retained (output) index space of the signature — all output indices become degree axes, with contracted indices as the only target axes in the input weaves. For `Elementwise`, $P$ equals the full array shape with all positions TILED. For `Linear`, `SoftMax`, `Embedding`, `Normalize`, `AdditionOp`, and `WeightedTriangularLower`, $P$ is empty and all input/output axes are target positions in the weaves. (The examples below show $P$ as a batch dimension for illustrative clarity; calling `Einops.template()` with a full batched signature, e.g. `'b i k, b k j -> b i j'`, produces $P = (b,i,j)$.) The reindexing $\eta_i : P \to Q_i$ is a linear transform that says, for each loop coordinate $p$, which coordinate $\eta_i(p) \in Q_i$ to read from input $i$'s tiling axes. All inputs share the same loop $P$; the reindexings let them access their data differently:
+2. **Reindexings** $(\eta_i)_{i \in I}$ from **St** — the base operation runs once per coordinate $p \in P$, where $P \in \text{Ob} \mathbf{St}$ is the *degree* shape (the same loop domain for every input, equal to `reindexings[i].dom()` for all $i$). For `Einops`, $P$ equals the retained (output) index space of the signature — all output indices become degree axes, with contracted indices as the only target axes in the input weaves. For `Elementwise`, $P$ equals the full array shape with all positions TILED. For `Linear`, `SoftMax`, `Embedding`, `Normalize`, `AdditionOp`, and `WeightedTriangularLower`, $P$ is empty and all input/output axes are target positions in the weaves. (The examples below show $P$ as a batch dimension for illustrative clarity; calling `Einops.template()` with a full batched signature, e.g. `'b i k, b k j -> b i j'`, produces $P = (b,i,j)$.) The reindexing $\eta_i : P \to Q_i$ is a linear transform that says, for each loop coordinate $p$, which coordinate $\eta_i(p) \in Q_i$ to read from input $i$'s tiling axes. All inputs share the same loop $P$; the reindexings let them access their data differently:
 
    | Case | Tensor equation | $P$ | $\eta$ |
    | --- | --- | --- | --- |
@@ -243,7 +243,7 @@ A broadcasted operation is built from four ingredients (Definition 13):
 - A **target axis** is loaded fully into a single core's SMEM and operated on directly by the base operation. Its total size must fit within the core's memory budget.
 
 FlashAttention (Abbott & Zardini, 2025, §3.2) computes
-$$O[b,h,q,d] = \sum_x \text{SoftMax}_x\left(\sum_k Q[b,h,q,k]\, K[h,x,k]\right) V[h,x,d]$$
+$$O[b,h,q,d] = \sum_x \text{SoftMax}_x(\sum_k Q[b,h,q,k]  K[h,x,k]) V[h,x,d]$$
 where $Q[b,h,q,k]$, $K[h,x,k]$, and $V[h,x,d]$ are the query, key, and value tensors: $b$ is the batch axis, $h$ indexes attention heads, $q$ and $x$ index query and key/value positions respectively, and $k$, $d$ are the head dimensions. The query axis $q$ is tiled across GPU cores — each core processes a $g_q$-sized block of query positions in SMEM — while the head dimensions $k$ and $d$ are target axes loaded fully per core. Streaming the key/value position axis $x$ through in tiles avoids materialising the full $q \times x$ attention score matrix in DRAM, achieving a ×6 throughput gain over standard PyTorch. A **weave** records this classification axis-by-axis for every array so the compiler can determine, for each tile of $P$, which slice of each array to load.
 
 Formally (Definition 12), a **weave** is a boolean family $(w_i)_{i \in I}$ indexed by the axes of an array: $w_i = 1$ marks a **target** axis; $w_i = 0$ marks a **tiling** axis. From this family the paper derives a permutation $\Omega_w : I \to I$ with the **canonical** split form (all target axes first, then all tiling axes) as its **domain**, mapping to the actual **interleaved** axis order of the array. The inverse permutation $\Omega_w^{-1}$ maps from the interleaved order to canonical form (needed to recover the target/tiling partition from an array's memory layout).
@@ -253,7 +253,7 @@ In pyncd the boolean family is encoded directly in the weave's `_shape` field: a
 - A concrete **`Axis` object** — a **target axis**. The base operation acts on this axis directly: it may contract over it (like the $k$ dimension in a dot product), pass it through as a free index, or produce it as output. The base operation sees exactly the sub-array formed by all target axes.
 - **`WeaveMode.TILED`** — a **tiling axis**. This axis is not seen by the base operation at all. It is provided externally by the reindexing loop: at each degree coordinate $p \in P$, the reindexing $\eta_i(p)$ supplies the concrete index values for every `TILED` slot in the weave.
 
-**Simple example — `Linear` applied row-wise:** $Y[b, s, j] = \sum_i X[b, s, i]\, W[i, j]$, base op `'i -> j'`, $P = (b, s)$.
+**Simple example — `Linear` applied row-wise:** $Y[b, s, j] = \sum_i X[b, s, i]  W[i, j]$, base op `'i -> j'`, $P = (b, s)$.
 
 | Array | Shape | Weave `_shape` | Axis roles |
 | --- | --- | --- | --- |
@@ -265,7 +265,7 @@ $j$ is a target axis on the output side because it is produced by the base op, n
 
 **Complex example — multi-head attention with broadcast K and V:** The full attention computation (ignoring softmax and mask) runs in two broadcasted operations sharing degree $P = (b)$.
 
-**Step 1 — QK score:** $S[b, h, q, x] = \sum_k Q[b, h, q, k]\, K[h, x, k]$, base op `'h q k, h x k -> h q x'`.
+**Step 1 — QK score:** $S[b, h, q, x] = \sum_k Q[b, h, q, k]  K[h, x, k]$, base op `'h q k, h x k -> h q x'`.
 
 | Array | Shape | Weave `_shape` | Axis roles |
 | --- | --- | --- | --- |
@@ -273,7 +273,7 @@ $j$ is a target axis on the output side because it is produced by the base op, n
 | $K[h,x,k]$ | $(h,x,k)$ | `(h, x, k)` | all target — no tiling axes, same $K$ reused for every $b$ |
 | $S[b,h,q,x]$ | $(b,h,q,x)$ | `(TILED, h, q, x)` | $b$ tiling — filled from $P$; $h,q,x$ target — produced by Einops |
 
-**Step 2 — value aggregation:** $O[b, h, q, d] = \sum_x S[b, h, q, x]\, V[h, x, d]$, base op `'h q x, h x d -> h q d'`.
+**Step 2 — value aggregation:** $O[b, h, q, d] = \sum_x S[b, h, q, x]  V[h, x, d]$, base op `'h q x, h x d -> h q d'`.
 
 | Array | Shape | Weave `_shape` | Axis roles |
 | --- | --- | --- | --- |
@@ -287,9 +287,9 @@ In Python, `Weave[B, A]` stores `datatype: B` and `_shape: Prod[A | WeaveMode]`.
 
 The full type of the broadcasted operation is:
 
-$$F : \Pi_{i \in I}\left[a_i,\, \text{dom}([\Omega_{s_i}]_{A_i \otimes Q_i})\right]
+$$F : \Pi_{i \in I}[a_i,  \text{dom}([\Omega_{s_i}]_{A_i \otimes Q_i})]
 \longrightarrow
-\Pi_{j \in J}\left[b_j,\, \text{dom}([\Omega_{t_j}]_{B_j \otimes P})\right]$$
+\Pi_{j \in J}[b_j,  \text{dom}([\Omega_{t_j}]_{B_j \otimes P})]$$
 
 Here $\Omega_{s_i}$ is the unweave rearrangement in **St** associated with input weave $s_i$. The subscript $A_i \otimes Q_i$ follows the standard rearrangement notation $[\mu]_{(A_i)_{i \in I}}$, where the subscript specifies the **domain** objects. The domain of $[\Omega_{s_i}]_{A_i \otimes Q_i}$ is therefore the **canonical** split form $A_i \otimes Q_i$ (all target axes $A_i$ first, then all tiling axes $Q_i$); the permutation $\Omega_{s_i}$ maps it to the actual **interleaved** axis order of the array. The $\text{dom}(\cdot)$ in the formula extracts $A_i \otimes Q_i$ as the canonical shape of input $i$. The output side is analogous: $\Omega_{t_j}$ maps from the canonical split form $B_j \otimes P$ to the interleaved output shape.
 
