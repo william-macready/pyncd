@@ -119,6 +119,18 @@ deletion of input $i$ is expressed by having $\text{count}[\mu](i)=0$ and copyin
 
 With this infrastructure for **product categories** we turn to specific instantiations.
 
+### Elemental Categories
+
+**Paper:** Definition 6
+
+A product category is **elemental** if each object $X$ has a distinguished set of **elements** $\text{El}(X) \subseteq \mathcal{C}(\mathbf{1}, X)$ — morphisms from the unit object (which is the terminal object in a Cartesian category) — rich enough to uniquely determine morphisms: if $x \mathbin{;} f = x \mathbin{;} g$ for all $x \in \text{El}(X)$, then $f = g$. Elements of a product are tuples of elements of the factors:
+
+$$\text{El}\!\left(\Pi_{i \in I} A_i\right) = \left\{ \Pi_{i \in I} a_i \;\middle|\; a_i \in \text{El}(A_i) \right\}.$$
+
+In particular, $|\text{El}(\Pi_{i \in I} A_i)| = \prod_{i \in I} |\text{El}(A_i)|$, and $|\text{El}(\mathbf{1})| = 1$.
+
+Both **St** and **Br** are elemental categories. Elements are diagrammed as left-pointing pentagons and notated inline as $\langle x | : \mathbf{1} \to X$. The co-versions are right-pointing pentagons and notated inline as $| x \rangle : X \to \mathbf{1}$.
+
 ---
 
 ## The Axis-Stride Category **St**
@@ -177,6 +189,8 @@ The identity, permutation, duplication, and deletion ($\eta = ()$) are all speci
 
 **Br** is the category of deep learning models. It is a deletion product category, capturing both deterministic (**Set**) and probabilistic (**Stoch**) computation.
 
+In this section we introduce the diagrammatic conventions (following from string diagrams) for representing **Br**.
+
 ### Objects in Br
 
 **Objects** in **Br** are **arrays** $[a, A]$:
@@ -191,13 +205,21 @@ In Python, `Array[B, A]` stores `datatype: B` and `_shape: Prod[A]`. `Reals()` a
 
 ### Morphisms in Br
 
-**Morphisms** in **Br** are **broadcasted operations** $F : \Pi_{i \in I} [a_i, A_i] \to \Pi_{j \in J} [b_j, B_j]$.
+**Morphisms** in **Br** are **broadcasted operations** $F : \Pi_{i \in I} [a_i, A_i] \to \Pi_{j \in J} [b_j, B_j]$. Diagrammatically, we illustrate a morphism $f$ taking array inputs $[a, A_0]$ and $[b, \mathbb{1}]$ (a scalar-shaped array with datatype $b$) to produce output $[c, C_0C_1]$ (an array with datatype $c$ and shape $C_0C_1$). <img src="images/morphism-diagram.png" alt="Morphism diagram: function f with inputs A₀, a, b and outputs C₁, C₀, c" width="100" style="float: right; margin-left: 1em;"/> The dashed line on the input side groups $[a, A_0]$ and $[b, \mathbb{1}]$ into an array product (a tuple of inputs), while the output wires $C_1$, $C_0$, and $c$ represent the shape axes and base datatype of the codomain. When the base datatype is $\mathbb{R}$, the datatype (line with arrow) may be omitted
+
+Before jumping into the details we first consider broadcasting in general.
+
+### Broadcasting
+
+**Broadcasting** describes how a base operation is lifted to run in parallel over additional axes. The key property is compositionality: lifting an operation over an additional axis is a systematic transformation, and broadcasts over shared axes compose predictably. 
+
+A broadcasted operation separates two concerns: the *base operation* (what computation is performed on a single tile) and the *broadcasting structure* (which axes are looped over and how each input is indexed at each step). The loop domain is called the **degree** $P \in \text{Ob}\,\mathbf{St}$. A **tiling axis** is an axis of an input array that is looped over by $P$ rather than operated on directly by the base operation. For each input $i$, a reindexing morphism $\eta_i : P \to Q_i$ in **St** specifies, for each degree coordinate $p \in P$, which coordinate $\eta_i(p) \in Q_i$ to read from that input's tiling axes — selecting the slice the base operation sees at that step. Different inputs can have different tiling shapes $Q_i$: an input with $\eta_i = \text{id}$ is indexed normally across all of $P$, while an input with $\eta_i = ()$ (the constant map to the empty shape) is broadcast across all of $P$ — its single value is reused at every step.
 
 A broadcasted operation is built from four ingredients (Definition 13):
 
 1. **A base operation** — the core computation, provided as an `Operator` subclass (e.g., `Linear`, `Einops`, `SoftMax`, `Elementwise`, `Normalize`, `Embedding`, `AdditionOp`, `WeightedTriangularLower`).
 
-2. **Reindexings** $(\eta_i)_{i \in I}$ from **St** — the base operation runs once per coordinate $p \in P$, where $P$ is the *degree* shape (the same loop domain for every input, equal to `reindexings[i].dom()` for all $i$). For `Einops`, $P$ equals the retained (output) index space of the signature — all output indices become degree axes, with contracted indices as the only target axes in the input weaves. For `Elementwise`, $P$ equals the full array shape with all positions TILED. For `Linear`, `SoftMax`, `Embedding`, `Normalize`, `AdditionOp`, and `WeightedTriangularLower`, $P$ is empty and all input/output axes are target positions in the weaves. (The examples below show $P$ as a batch dimension for illustrative clarity; calling `Einops.template()` with a full batched signature, e.g. `'b i k, b k j -> b i j'`, produces $P = (b,i,j)$.) The reindexing $\eta_i : P \to Q_i$ is a linear transform that says, for each loop coordinate $p$, which coordinate $\eta_i(p) \in Q_i$ to read from input $i$'s tiling axes. All inputs share the same loop $P$; the reindexings let them access their data differently:
+2. **Reindexings** $(\eta_i)_{i \in I}$ from **St** — the base operation runs once per coordinate $p \in P$, where $P \in \text{Ob}\,\mathbf{St}$ is the *degree* shape (the same loop domain for every input, equal to `reindexings[i].dom()` for all $i$). For `Einops`, $P$ equals the retained (output) index space of the signature — all output indices become degree axes, with contracted indices as the only target axes in the input weaves. For `Elementwise`, $P$ equals the full array shape with all positions TILED. For `Linear`, `SoftMax`, `Embedding`, `Normalize`, `AdditionOp`, and `WeightedTriangularLower`, $P$ is empty and all input/output axes are target positions in the weaves. (The examples below show $P$ as a batch dimension for illustrative clarity; calling `Einops.template()` with a full batched signature, e.g. `'b i k, b k j -> b i j'`, produces $P = (b,i,j)$.) The reindexing $\eta_i : P \to Q_i$ is a linear transform that says, for each loop coordinate $p$, which coordinate $\eta_i(p) \in Q_i$ to read from input $i$'s tiling axes. All inputs share the same loop $P$; the reindexings let them access their data differently:
 
    | Case | Tensor equation | $P$ | $\eta$ |
    | --- | --- | --- | --- |

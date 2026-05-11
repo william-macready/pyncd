@@ -31,7 +31,21 @@
       "Bash(find /Users/williammacready/code/python/tsncd -type f -name \"*.py\" | head -20)",
       "Read(//Users/williammacready/code/python/tsncd/**)",
       "Bash(find /Users/williammacready/code/python -name \"*.py\" -type f | grep -E \"\\(tsncd|example\\)\" | head -30)",
-      "Read(//Users/williammacready/code/python/**)"
+      "Read(//Users/williammacready/code/python/**)",
+      "Bash(sips --getProperty pixelWidth --getProperty pixelHeight /tmp/wwm_page-12.png)",
+      "Bash(sips --cropOffset 1180 200 --cropToHeightWidth 240 480 /tmp/wwm_page-12.png --out /tmp/fig1_crop.png)",
+      "Bash(sips --cropOffset 1320 330 --cropToHeightWidth 160 360 /tmp/wwm_page-12.png --out /tmp/fig1_crop.png)",
+      "Bash(sips --cropOffset 370 1260 --cropToHeightWidth 130 420 /tmp/wwm_page-12.png --out /tmp/fig1_crop.png)",
+      "Bash(pdftoppm -r 300 -png -f 12 -l 12 /Users/williammacready/code/python/pyncd/papers/weavesWiresMorphisms.pdf /tmp/wwm_hires)",
+      "Bash(sips --getProperty pixelWidth --getProperty pixelHeight /tmp/wwm_hires-12.png)",
+      "Bash(sips --cropOffset 570 1880 --cropToHeightWidth 220 630 /tmp/wwm_hires-12.png --out /tmp/fig1_crop.png)",
+      "Bash(sips --cropOffset 590 0 --cropToHeightWidth 300 2550 /tmp/wwm_hires-12.png --out /tmp/fig1_strip.png)",
+      "Bash(mkdir -p /Users/williammacready/code/python/pyncd/papers/images)",
+      "Bash(cp \"/Users/williammacready/Desktop/Screenshot 2026-05-11 at 1.14.52 PM.png\" /Users/williammacready/code/python/pyncd/papers/images/morphism-diagram.png)",
+      "Bash(mkdir -p /Users/williammacready/code/python/pyncd/papers/images && cp /tmp/test.png /Users/williammacready/code/python/pyncd/papers/images/morphism-diagram.png && echo \"done\")"
+    ],
+    "additionalDirectories": [
+      "/private/tmp"
     ]
   }
 }
