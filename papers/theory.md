@@ -66,8 +66,8 @@ The type parameters $L$ and $M$ are filled in differently for each concrete cate
 
 | Category | $L$ (lone object) | $M$ (root morphism) |
 | --- | --- | --- |
-| $\mathbf{St}$ | `Axis` — a named axis with a UID and a size | `StrideMorphism` |
-| $\mathbf{Br}$ | `Array` — a pair $[a, A]$ of a `Datatype` $a$ and a shape $A \in \text{Ob} \mathbf{St}$ | `Broadcasted` |
+| $\mathbf{St}$ | `Axis` — a named axis with a UID and size $\in\mathbb{N}$ (axis $i$ is often denoted as $A_i$)| `StrideMorphism` |
+| $\mathbf{Br}$ | `Array` — a pair $[a, A]$ of a `Datatype` $a$ ($\mathbb{N}$, $\mathbb{R}$, or $\mathbb{N}_n$, i.e. 1..$n$, in pyncd) and a shape $A \in \text{Ob} \mathbf{St}$ | `Broadcasted` |
 
 An object in $\mathbf{St}$ is thus a tuple of axes, e.g. $(\mathtt{batch}, \mathtt{seq}, \mathtt{dim})$; an object in $\mathbf{Br}$ is a tuple of typed arrays, each indexed by one axis.
 
@@ -100,7 +100,8 @@ The first two are the core primitives; the remaining three are structural.
 
 **1. Root morphisms** $m \in M$ — the category-specific primitive operations. Abstract in `ProductCategory`; concretely `StrideMorphism` in **St** and `Broadcasted` in **Br**.
 
-**2. Rearrangements** — given a domain $A = \Pi_{i \in I} A_i$ and a mapping $\mu : J \to I$, a rearrangement $[\mu]_{(A_i)_{i \in I}} : \Pi_{i \in I} A_i \to \Pi_{j \in J} A_{\mu(j)}$ takes the $\mu(j)$-th input as its $j$-th output. Deletion is expressed by omitting an index; copying by repeating it.
+**2. Rearrangements** — given a domain $A = \Pi_{i \in I} A_i$ and a mapping $\mu : J \to I$, a rearrangement $[\mu]_{(A_i)_{i \in I}} : \Pi_{i \in I} A_i \to \Pi_{j \in J} A_{\mu(j)}$ selects the $\mu(j)$-th input as its $j$-th output. Defining $\text{count}[\mu](i) = \#\{j \in J |\mu(j) = i\}$
+deletion of input $i$ is expressed by having $\text{count}[\mu](i)=0$ and copying by having $\text{count}[\mu](i)>1$.
 
 - **Python:** `Rearrangement[L]` with `mapping: Prod[int]` and `_dom: Prod[L]`.
 
