@@ -215,6 +215,26 @@ Before jumping into the details we first consider broadcasting in general.
 
 A broadcasted operation separates two concerns: the *base operation* (what computation is performed on a single tile) and the *broadcasting structure* (which axes are looped over and how each input is indexed at each step). The loop domain is called the **degree** $P \in \text{Ob}(\mathbf{St})$. A **tiling axis** is an axis of an input array that is looped over by $P$ rather than operated on directly by the base operation. For each input $i$, a reindexing morphism $\eta_i : P \to Q_i$ in **St** specifies, for each degree coordinate $p \in P$, which coordinate $\eta_i(p) \in Q_i$ to read from that input's tiling axes — selecting the slice the base operation sees at that step. Different inputs can have different tiling shapes $Q_i$: an input with $\eta_i = \text{id}$ is indexed normally across all of $P$, while an input with $\eta_i = ()$ (the constant map to the empty shape) is broadcast across all of $P$ — its single value is reused at every step.
 
+Given a stride morphism $\eta : P \to Q$ in **St** and a base datatype $a$, the **identity reindexing** $[a, \eta] : [a, Q] \to [a, P]$ is a morphism in **Br** whose action on elements $(a_i)_{i \in \text{El}(Q)}$ is:
+
+$$(a_i)_{i \in \text{El}(Q)} ; [a, \eta] = (a_{\eta(p)})_{p \in \text{El}(P)}$$
+
+<img src="images/reindexing-diagram.png" alt="Reindexing diagram: hexagon passing over base operation" width="220" style="float: right; margin-left: 1em;"/> In other words, $[a, \eta]$ relabels coordinates without changing any data values — it reads from position $\eta(p)$ of the input for each output position $p$. Diagramatically, reindexing is represented with a hexagon. This is the categorical counterpart of array indexing: a stride morphism $\eta$ in **St** lifts to a pure reindexing in **Br**. <img src="images/slice-diagram.png" alt="Slice diagram: reindexings built from elements and identities" width="100" style="float: right; margin-left: 1em;"/> When $\eta$ is an element $\langle q | : \mathbf{1} \to Q$ (a single coordinate), $[a, q]$ recovers the **index** morphism $[a, q] : [a, Q] \to [a, \mathbf{1}]$, selecting a single slice. As an example the figure corresponds to a slice `X[i,:,j]`.
+
+**Batch lifting** Given a morphism $f : X \to Y$ in **Br** and a shape $P \in \text{Ob}(\mathbf{St})$, the batch lift $[f, P] : [X, P] \to [Y, P]$ runs $f$ independently once for each coordinate in $P$ (where $[X, P]$ and $[Y, P]$ are the inputs and outputs of $f$ each extended by the extra batch shape $P$ — concretely, every array in $X$ (resp. $Y$) gains $P$ as an additional set of axes). The defining property is:
+
+$$[f, P] ; [Y, p] = [X, p] ; f$$
+
+<img src="images/batch-lift-diagram.png" alt="Batch lifting diagram: F = [f,P] on the left equals slicing at p then applying f on the right" width="195" style="float: right; margin-left: 1em;"/> That is: applying the batch-lifted operation and then slicing the output at index $|p\rangle$ gives the same result as slicing the input at $|p\rangle$ first and then applying $f$ directly. There is no interaction between different positions in $P$ — the batch lift is exactly $f$ run independently at each index, and this equation is the formal statement that slicing commutes with $f$ and diagrammed as shown for $X=[a,A]$, $Y=[b,B]$, and $F=[f,P]$.
+
+**Definition 11** formalizes batch lifting using the copy remapping $\delta^P : P \to \mathbf{1}$ as
+$$[f, P] ; [\delta^P]_{[Y,P]} ; \prod_{p \in \text{El}(P)} [Y, p] = [\delta^P]_{[X,P]} ; \left(\prod_{p \in \text{El}(P)} [X, p] ; f\right)$$
+This is most easily understood with the following diagramatic example where
+<img src="images/def11-equation.png" alt="Definition 11 equation: batch lift composed with copy remapping" width="320" style="float: right; margin-left: 1em;"/>
+$P$ is a single axis of size 3. We see how $f$ is commuted through the copy operation creating 3 independent copies (executed on separate GPU cores).
+
+To describe such operations generally we specify which axes from a set $I$ are to be copied. A set of Boolean values $(w_i)_{i\in I}$ is used for this and is called a **weave**.
+
 A broadcasted operation is built from four ingredients (Definition 13):
 
 1. **A base operation** — the core computation, provided as an `Operator` subclass (e.g., `Linear`, `Einops`, `SoftMax`, `Elementwise`, `Normalize`, `Embedding`, `AdditionOp`, `WeightedTriangularLower`).
