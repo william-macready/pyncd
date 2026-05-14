@@ -66,7 +66,7 @@ The type parameters $L$ and $M$ are filled in differently for each concrete cate
 
 | Category | $L$ (lone object) | $M$ (root morphism) |
 | --- | --- | --- |
-| $\mathbf{St}$ | `Axis` — a named axis with a UID and size $\in\mathbb{N}$ (axis $i$ is often denoted as $A_i$)| `StrideMorphism` |
+| $\mathbf{St}$ | `Axis` — a named axis with a UID and size $\in\mathbb{N}$ (axis $i$ is often denoted as $A_i$) | `StrideMorphism` |
 | $\mathbf{Br}$ | `Array` — a pair $[a, A]$ of a `Datatype` $a$ ($\mathbb{N}$, $\mathbb{R}$, or $\mathbb{N}_n$, i.e. 1..$n$, in pyncd) and a shape $A \in \text{Ob}(\mathbf{St})$ | `Broadcasted` |
 
 An object in $\mathbf{St}$ is thus a tuple of axes, e.g. $(\mathtt{batch}, \mathtt{seq}, \mathtt{dim})$; an object in $\mathbf{Br}$ is a tuple of typed arrays, each indexed by one axis.
@@ -205,13 +205,13 @@ In Python, `Array[B, A]` stores `datatype: B` and `_shape: Prod[A]`. `Reals()` a
 
 ### Morphisms in Br
 
-**Morphisms** in **Br** are **broadcasted operations** $F : \Pi_{i \in I} [a_i, A_i] \to \Pi_{j \in J} [b_j, B_j]$. Diagrammatically, we illustrate a morphism $f$ taking array inputs $[a, A_0]$ and $[b, \mathbb{1}]$ (a scalar-shaped array with datatype $b$) to produce output $[c, C_0C_1]$ (an array with datatype $c$ and shape $C_0C_1$). <img src="images/morphism-diagram.png" alt="Morphism diagram: function f with inputs A₀, a, b and outputs C₁, C₀, c" width="100" style="float: right; margin-left: 1em;"/> The dashed line on the input side groups $[a, A_0]$ and $[b, \mathbb{1}]$ into an array product (a tuple of inputs), while the output wires $C_1$, $C_0$, and $c$ represent the shape axes and base datatype of the codomain. When the base datatype is $\mathbb{R}$, the datatype (line with arrow) may be omitted
+**Morphisms** in **Br** are **broadcasted operations** $F : \Pi_{i \in I} [a_i, A_i] \to \Pi_{j \in J} [b_j, B_j]$. Diagrammatically, we illustrate a morphism $f$ taking array inputs $[a, A_0]$ and $[b, \mathbf{1}]$ (a scalar-shaped array with datatype $b$) to produce output $[c, C_0C_1]$ (an array with datatype $c$ and shape $C_0C_1$). <img src="images/morphism-diagram.png" alt="Morphism diagram: function f with inputs A₀, a, b and outputs C₁, C₀, c" width="100" style="float: right; margin-left: 1em;"/> The dashed line on the input side groups $[a, A_0]$ and $[b, \mathbf{1}]$ into an array product (a tuple of inputs), while the output wires $C_1$, $C_0$, and $c$ represent the shape axes and base datatype of the codomain. When the base datatype is $\mathbb{R}$, the datatype (line with arrow) may be omitted
 
 Before jumping into the details we first consider broadcasting in general.
 
 ### Broadcasting
 
-**Broadcasting** describes how a base operation is lifted to run in parallel over additional axes. The key property is compositionality: lifting an operation over an additional axis is a systematic transformation, and broadcasts over shared axes compose predictably. 
+**Broadcasting** describes how a base operation is lifted to run in parallel over additional axes. The key property is compositionality: lifting an operation over an additional axis is a systematic transformation, and broadcasts over shared axes compose predictably.
 
 A broadcasted operation separates two concerns: the *base operation* (what computation is performed on a single tile) and the *broadcasting structure* (which axes are looped over and how each input is indexed at each step). The loop domain is called the **degree** $P \in \text{Ob}(\mathbf{St})$. A **tiling axis** is an axis of an input array that is looped over by $P$ rather than operated on directly by the base operation. For each input $i$, a reindexing morphism $\eta_i : P \to Q_i$ in **St** specifies, for each degree coordinate $p \in P$, which coordinate $\eta_i(p) \in Q_i$ to read from that input's tiling axes — selecting the slice the base operation sees at that step. Different inputs can have different tiling shapes $Q_i$: an input with $\eta_i = \text{id}$ is indexed normally across all of $P$, while an input with $\eta_i = ()$ (the constant map to the empty shape) is broadcast across all of $P$ — its single value is reused at every step.
 
@@ -227,13 +227,13 @@ $$[f, P] ; [Y, p] = [X, p] ; f$$
 
 <img src="images/batch-lift-diagram.png" alt="Batch lifting diagram: F = [f,P] on the left equals slicing at p then applying f on the right" width="195" style="float: right; margin-left: 1em;"/> That is: applying the batch-lifted operation and then slicing the output at index $|p\rangle$ gives the same result as slicing the input at $|p\rangle$ first and then applying $f$ directly. There is no interaction between different positions in $P$ — the batch lift is exactly $f$ run independently at each index, and this equation is the formal statement that slicing commutes with $f$ and diagrammed as shown for $X=[a,A]$, $Y=[b,B]$, and $F=[f,P]$.
 
-**Definition 11** formalizes batch lifting using the copy remapping $\delta^P : P \to \mathbf{1}$ as
+**Definition 11** formalizes batch lifting using the **copy remapping** $\delta^P : P \to \mathbf{1}$, the unique morphism in **St** that deletes all axes of $P$ (the stride morphism with empty codomain). Applied to $[Y, P]$ in **Br**, the rearrangement $[\delta^P]_{[Y,P]}$ produces one copy of $[Y, P]$ for each coordinate $p \in \text{El}(P)$ — the product structure turns the single deletion into $|\text{El}(P)|$ independent copies. The formal statement is:
 $$[f, P] ; [\delta^P]_{[Y,P]} ; \prod_{p \in \text{El}(P)} [Y, p] = [\delta^P]_{[X,P]} ; \left(\prod_{p \in \text{El}(P)} [X, p] ; f\right)$$
 This is most easily understood with the following diagramatic example where
 <img src="images/def11-equation.png" alt="Definition 11 equation: batch lift composed with copy remapping" width="320" style="float: right; margin-left: 1em;"/>
 $P$ is a single axis of size 3. We see how $f$ is commuted through the copy operation creating 3 independent copies (executed on separate GPU cores).
 
-To describe such operations generally we specify which axes from a set $I$ are to be copied. A set of Boolean values $(w_i)_{i\in I}$ is used for this and is called a **weave**.
+To describe a general broadcasted operation we specify, for each input axis, whether it is a **tiling axis** (looped over by the degree $P$) or a **target axis** (operated on directly by the base operation). A **weave** is a Boolean vector $(w_i)_{i \in I}$ that makes this assignment: $w_i = 1$ marks axis $i$ as a target axis; $w_i = 0$ marks it as a tiling axis. An associated permutation $\Omega_w$ reorganises the axes so that all tiling axes appear first and all target axes second.
 
 A broadcasted operation is built from four ingredients (Definition 13):
 
@@ -251,7 +251,7 @@ A broadcasted operation is built from four ingredients (Definition 13):
 
    In Python, the tuple of reindexings is stored as the `reindexings: Prod[StrideCategory[A]]` field on the `Broadcasted` dataclass — the root morphism of **Br** that packages all four ingredients together. On a GPU, the loop $P$ is what gets tiled: each processor is assigned a small chunk of $P$'s coordinates, loads only the corresponding slice of each input, and works entirely in fast on-chip memory.
 
-3. **Input weaves** $(s_i)_{i \in I}$ — for each input array, a **weave** partitions its axes into *target* axes (operated on by the base operation) and *tiling* axes (the broadcasted batch dimensions, looped over by $P$). For each $p \in P$ the reindexing $\eta_i(p)$ supplies the concrete tiling coordinates, selecting the slice of input $i$ that the base operation sees at that iteration. Different inputs can have different tiling shapes $Q_i$ — connected to the shared loop $P$ through possibly non-trivial reindexings — which is what allows one input to be broadcast across all of $P$ while another is indexed into normally. See [Weaves](#weaves) below.
+3. **Input weaves** $(w_i)_{i \in I}$ — for each input array, a **weave** partitions its axes into *target* axes (operated on by the base operation) and *tiling* axes (the broadcasted batch dimensions, looped over by $P$). For each $p \in P$ the reindexing $\eta_i(p)$ supplies the concrete tiling coordinates, selecting the slice of input $i$ that the base operation sees at that iteration. Different inputs can have different tiling shapes $Q_i$ — connected to the shared loop $P$ through possibly non-trivial reindexings — which is what allows one input to be broadcast across all of $P$ while another is indexed into normally. See [Weaves](#weaves) below.
 
 4. **Output weaves** $(t_j)_{j \in J}$ — same structure for outputs. The degree loop $P$ also drives the outputs: for each $p \in P$ the base operation produces one output tile, which is written into the output array at tiling position $p$. Unlike inputs (which can each have a distinct tiling shape $Q_i$ via the reindexings), every output tiles over exactly $P$, so the canonical split is $B_j \otimes P$ rather than $B_j \otimes Q_i$. The output weave $t_j$ records where in the output array's memory layout the $P$ positions sit relative to the target axes $B_j$.
 
@@ -307,11 +307,11 @@ In Python, `Weave[B, A]` stores `datatype: B` and `_shape: Prod[A | WeaveMode]`.
 
 The full type of the broadcasted operation is:
 
-$$F : \Pi_{i \in I}[a_i,  \text{dom}([\Omega_{s_i}]_{A_i \otimes Q_i})]
+$$F : \Pi_{i \in I}[a_i,  \text{dom}([\Omega_{w_i}]_{A_i \otimes Q_i})]
 \longrightarrow
 \Pi_{j \in J}[b_j,  \text{dom}([\Omega_{t_j}]_{B_j \otimes P})]$$
 
-Here $\Omega_{s_i}$ is the unweave rearrangement in **St** associated with input weave $s_i$. The subscript $A_i \otimes Q_i$ follows the standard rearrangement notation $[\mu]_{(A_i)_{i \in I}}$, where the subscript specifies the **domain** objects. The domain of $[\Omega_{s_i}]_{A_i \otimes Q_i}$ is therefore the **canonical** split form $A_i \otimes Q_i$ (all target axes $A_i$ first, then all tiling axes $Q_i$); the permutation $\Omega_{s_i}$ maps it to the actual **interleaved** axis order of the array. The $\text{dom}(\cdot)$ in the formula extracts $A_i \otimes Q_i$ as the canonical shape of input $i$. The output side is analogous: $\Omega_{t_j}$ maps from the canonical split form $B_j \otimes P$ to the interleaved output shape.
+Here $\Omega_{w_i}$ is the unweave rearrangement in **St** associated with input weave $w_i$. The subscript $A_i \otimes Q_i$ follows the standard rearrangement notation $[\mu]_{(A_i)_{i \in I}}$, where the subscript specifies the **domain** objects. The domain of $[\Omega_{w_i}]_{A_i \otimes Q_i}$ is therefore the **canonical** split form $A_i \otimes Q_i$ (all target axes $A_i$ first, then all tiling axes $Q_i$); the permutation $\Omega_{w_i}$ maps it to the actual **interleaved** axis order of the array. The $\text{dom}(\cdot)$ in the formula extracts $A_i \otimes Q_i$ as the canonical shape of input $i$. The output side is analogous: $\Omega_{t_j}$ maps from the canonical split form $B_j \otimes P$ to the interleaved output shape.
 
 **Relation to covariant and contravariant indices.** The input/output weave structure is the pyncd analogue of the covariant/contravariant index distinction in classical tensor analysis. A target axis appearing in an **input weave** is being *consumed* by the operator — it plays the role of a contravariant (upper) index that is contracted against a matching lower index. A target axis appearing in an **output weave** is being *produced* — it plays the role of a covariant (lower) index. Composition enforces the matching rule: `Context.append_iter` unifies the output (covariant) axes of one morphism with the input (contravariant) axes of the next, exactly as classical contraction requires one upper and one lower index. The degree axes — `TILED` positions shared across both input and output weaves — correspond to the free indices that appear on both sides of a tensor equation and are neither contracted nor produced.
 
@@ -447,3 +447,359 @@ Each `*` creates a `ProductOfMorphisms` ($\otimes$, parallel); each `@` creates 
 | Autoalignment $@$ | `composition`, `align_composed` | `construction_helpers/composition.py` |
 | Batch lift $[f, P]$ (Def 11) | Product structure of `Broadcasted` | `data_structure/BroadcastedCategory.py` |
 | Reindexing $[a, \eta]$ (Def 10) | `reindexings` field of `Broadcasted` | `data_structure/BroadcastedCategory.py` |
+
+---
+
+## Pyncd Code Representations
+
+Concrete pyncd code for each mathematical object and construction in the paper. All examples use the actual class APIs.
+
+### Term System (§2)
+
+```python
+from data_structure.Term import UTerm, UID, Context, EqualityClass
+from data_structure.StrideCategory import RawAxis, StrideMorphism
+
+# UTerm: a term whose identity is its UID, not its field values.
+# RawAxis is a UTerm; .named() creates an axis whose UID carries the name.
+batch = RawAxis.named('batch')   # uid.name = 'batch'; size = FreeNumeric named '|batch|'
+head  = RawAxis.named('h')
+
+# UID: accessed directly
+batch.uid          # UID[RawAxis] — randomly-generated integer with name='batch'
+
+# Context: union-find over UIDs. Used to unify axes after @ composition.
+# Build a simple stride morphism f; g to demonstrate UID unification.
+f = StrideMorphism.from_matrix((1,), dom_names=('p',), cod_names=('q',))
+g = StrideMorphism.from_matrix((1,), dom_names=('q',), cod_names=('r',))
+composed_term = (f, g)  # illustrative tuple; f.cod() and g.dom() carry matching axes
+
+axis_from_f_cod = list(f.cod())[0]   # RawAxis named 'q' (codomain of f)
+axis_from_g_dom = list(g.dom())[0]   # RawAxis named 'q' (domain of g)
+
+ctx = Context()
+ctx.append_iter([axis_from_f_cod, axis_from_g_dom])  # declares these two UIDs equal
+unified = ctx.apply(composed_term)  # rewrites all UIDs to canonical form throughout
+
+# EqualityClass: one group of unified UIDs with a chosen canonical representative
+axis_a = RawAxis.named('a')
+axis_b = RawAxis.named('b')
+axis_c = RawAxis.named('c')
+ec = EqualityClass.from_iter([axis_a, axis_b, axis_c])
+# ec.canonical is the axis with the largest UID (the canonical representative)
+# ec.bucket   is {axis_a.uid, axis_b.uid, axis_c.uid}
+```
+
+### Product Category (§3)
+
+```python
+from data_structure.ProductCategory import ProdObject, Rearrangement, Block
+from data_structure.StrideCategory import RawAxis
+import data_structure.Operators as ops
+
+batch  = RawAxis.named('batch')
+seq    = RawAxis.named('seq')
+dim    = RawAxis.named('dim')
+p_axis = RawAxis.named('p')
+
+# Product object Π_{i∈I} A_i
+shape = ProdObject(content=(batch, seq, dim))       # explicit
+shape = ProdObject.from_iter([batch, seq, dim])     # from iterable
+
+# Identity morphism on a shape → Rearrangement(mapping=(0,1,2), _dom=(...))
+id_morph = shape.identity()
+
+# Rearrangement [μ]: mapping[j] = i means output j reads input i
+# Swap first two axes: (batch, seq, dim) → (seq, batch, dim)
+swap = Rearrangement(mapping=(1, 0, 2), _dom=(batch, seq, dim))
+
+# Copy axis 0 to both outputs: (p,) → (p, p)
+copy = Rearrangement(mapping=(0, 0), _dom=(p_axis,))
+
+# Delete axis 0 (empty codomain): (p,) → ()
+delete = Rearrangement(mapping=(), _dom=(p_axis,))
+
+# Sequential composition (;) via @ operator
+f = ops.Linear.template(1, 1, 'f')
+g = ops.Linear.template(1, 1, 'g')
+fg = f @ g      # → Composed[L, M]
+
+# Parallel product (⊗) via * operator
+f_times_g = f * g   # → ProductOfMorphisms[L, M]
+
+# Block: decorates a morphism with display metadata
+attn = ops.Einops.template('q h k, x h k -> h q x')
+ffn  = ops.Linear.template(1, 1, 'ffn')
+block = Block.template(
+    attn @ ffn,             # first positional argument (named 'target')
+    title='Transformer Layer',
+    fill_color='#C5BEDF',
+    repetition=6           # renders as ×6
+)
+```
+
+### Axis-Stride Category St (Def 8)
+
+```python
+from data_structure.StrideCategory import RawAxis, StrideMorphism
+
+# Axis (lone object of St): UTerm with UID and symbolic size
+batch = RawAxis.named('batch')   # size = FreeNumeric; configured later
+seq   = RawAxis.named('s')
+dim   = RawAxis.named('d')
+
+# Shape (product object in St)
+shape = ProdObject.from_iter([batch, seq, dim])   # (batch, s, d) ∈ Ob(St)
+
+# StrideMorphism η: affine map Π_i A_i → Π_j B_j
+# Each row of from_matrix() is one output coordinate's coefficient vector.
+
+# Identity on p: (p,) → (p,)
+id_η = StrideMorphism.from_matrix(
+    (1,), dom_names=('p',), cod_names=('p',)
+)
+
+# Duplication η(p) = (p, p): (p,) → (p, p)  [diagonal-slice reindexing]
+dup_η = StrideMorphism.from_matrix(
+    (1,),   # first output  = 1·p
+    (1,),   # second output = 1·p
+    dom_names=('p',), cod_names=('p', 'p')
+)
+
+# Projection onto i from (i,j): (i,j) → (i,)  [outer-product reindexing for A]
+proj_i = StrideMorphism.from_matrix(
+    (1, 0), dom_names=('i', 'j'), cod_names=('i',)
+)
+
+# Projection onto j from (i,j): (i,j) → (j,)  [outer-product reindexing for B]
+proj_j = StrideMorphism.from_matrix(
+    (0, 1), dom_names=('i', 'j'), cod_names=('j',)
+)
+
+# Convolution shift x = x' + w: (x', w) → (x,)
+conv_shift = StrideMorphism.from_matrix(
+    (1, 1), dom_names=("x'", "w"), cod_names=("x",), name="+"
+)
+
+# Strided convolution with stride s baked into the coefficient:
+# y[p] = x[s·p + w]  →  η(p, w) = s·p + w, but p and w are separate
+# (used inside a Broadcasted with degree P=(p,) and target axes w)
+strided_η = StrideMorphism.from_matrix(
+    (s, 1), dom_names=('p', 'w'), cod_names=('x',)
+    # note: s must be Integer(stride_value) for a fixed stride constant
+)
+```
+
+### Array-Broadcasted Category Br (Def 9)
+
+```python
+from data_structure.BroadcastedCategory import Array, Reals, Natural
+
+# Datatype a ∈ Dt
+real  = Reals()                           # ℝ — continuous, differentiable
+token = Natural.template('vocab')         # ℕ_{<vocab}; 'vocab' is FreeNumeric placeholder
+token = Natural(max_value=Integer(50257)) # ℕ_{<50257} — concrete
+
+# Array [a, A] (lone object of Br)
+x = Array(datatype=Reals(), _shape=(batch, seq, dim))     # [ℝ, (batch,s,d)]
+e = Array(datatype=Natural.template('v'), _shape=(seq,))  # [ℕ_{<v}, (s,)]
+
+# Objects are rarely constructed directly; normally recovered from morphism endpoints:
+f.dom()   # → ProdObject[Array]: one Array per input wire
+f.cod()   # → ProdObject[Array]: one Array per output wire
+```
+
+### Weave (Def 12)
+
+```python
+from data_structure.BroadcastedCategory import Weave, WeaveMode
+
+# Weave: _shape entries are Axis (target, w_i=1) or WeaveMode.TILED (tiling, w_i=0).
+# Entry order matches the array's actual memory axis order.
+
+# X[b, s, i]: b and s are tiling axes; i is a target axis
+weave_X = Weave(datatype=Reals(), _shape=(WeaveMode.TILED, WeaveMode.TILED, i_axis))
+
+# W[i, j]: no tiling axes — same weights used for every (b, s)
+weave_W = Weave(datatype=Reals(), _shape=(i_axis, j_axis))
+
+# Y[b, s, j]: b and s are tiling (filled from degree P); j is a target output
+weave_Y = Weave(datatype=Reals(), _shape=(WeaveMode.TILED, WeaveMode.TILED, j_axis))
+
+# Extract just the target axes
+weave_X.target()                    # Array(Reals(), _shape=(i_axis,))
+
+# Fill TILED slots with concrete degree axes P = (batch, seq)
+weave_X.imprint_to_degree([batch, seq])
+# → Array(Reals(), _shape=(batch, seq, i_axis))  ← full array shape in memory
+```
+
+### Reindexing $[a, \eta]$ (Def 10)
+
+For an array product $X = \Pi_{i \in I}[a_i, A_i] \in \text{ObBr}$ and a stride morphism $\eta : P \to Q \in \text{MoSt}$:
+
+$$[X, \eta] = \Pi_{i \in I}[a_i, A_i \otimes \eta], \qquad [X, \eta] : [X, Q] \to [X, P]$$
+
+where each component $[a_i, \eta] : [a_i, Q] \to [a_i, P]$ acts on elements by $(a_k)_{k \in \text{El}(Q)} \mathbin{;} [a_i, \eta] = (a_{\eta(p)})_{p \in \text{El}(P)}$.
+
+```python
+from construction_helpers.lift import object_morphism_lift
+
+# The reindexings field of a Broadcasted stores one η_i : P → Q_i per input.
+# These are StrideMorphisms in St; they are applied during compilation to select
+# the input slice that the base operator sees at each degree coordinate p ∈ P.
+
+# Direct construction: object_morphism_lift lifts η into a Br morphism [a,η]
+# [a, η] : [a, Q] → [a, P]
+reindexing = object_morphism_lift(
+    base=Array(Reals(), _shape=(q_axis,)),   # source array [a, Q]
+    lift_by=stride_η                          # η : P → Q in St
+)
+# result: a Broadcasted that permutes coordinates without changing values
+
+# Slice morphism [a, q] : [a, Q] → [a, 1]  — selects a single coordinate q
+# Element q is a Rearrangement with mapping selecting one index
+element_q = Rearrangement(mapping=(0,), _dom=(q_axis,))  # 1 → Q picks index 0
+slice_morph = object_morphism_lift(
+    base=Array(Reals(), _shape=(q_axis,)),
+    lift_by=element_q
+)
+```
+
+### Object-Object Lift $[X, P]$ and Batch Lift $[f, P]$ (Def 11)
+
+For an array product $X = \Pi_{i \in I}[a_i, A_i] \in \text{ObBr}$ and a shape $P \in \text{ObSt}$:
+
+$$[X, P] = \Pi_{i \in I}[a_i, A_i \otimes P]$$
+
+For a morphism $f : X \to Y \in \text{ObBr}$ and a shape $P \in \text{ObSt}$, the batch lift $[f, P] : [X, P] \to [Y, P]$ satisfies:
+
+$$[f, P] \mathbin{;} [Y, q] = [X, q] \mathbin{;} f$$
+
+```python
+from construction_helpers.lift import object_object_lift, morphism_object_lift
+from data_structure.BroadcastedCategory import Array, Reals
+from data_structure.StrideCategory import RawAxis
+from data_structure.ProductCategory import ProdObject
+import data_structure.Operators as ops
+
+batch = RawAxis.named('batch')
+seq   = RawAxis.named('s')
+dim   = RawAxis.named('d')
+
+# Object-object lift [X, P]: prepend shape P to every array in X
+# [X, P] = Π_i [a_i, A_i ⊗ P]
+batch_shape = ProdObject.from_iter([batch])
+X = ProdObject.from_iter([Array(Reals(), _shape=(seq, dim))])   # X = [ℝ, (s,d)]
+
+X_batched = object_object_lift(base=X, lift_by=batch_shape)
+# → ProdObject([Array(Reals(), _shape=(batch, seq, dim))])       # [X, P] = [ℝ, (b,s,d)]
+
+# Batch lift [f, P]: lift morphism f over shape P
+# [f, P] : [X, P] → [Y, P]
+f = ops.Linear.template(1, 1, 'f')
+f_batched = morphism_object_lift(base=f, lift_by=batch_shape)
+# equivalently, using the >> operator (P >> f lifts f over P):
+f_batched = batch_shape >> f
+
+# The defining property [f,P] ; [Y,p] = [X,p] ; f is satisfied by construction:
+# applying f_batched and then slicing at coordinate p
+# gives the same result as slicing first and then applying f.
+```
+
+### Broadcasted-Stride Lift
+
+For a broadcasted operation $F$ (Def 13) with degree $P$ and a stride morphism $\eta : P' \to Q$ in **St**, the broadcasted-stride lift extends $F$ to degree $P' \otimes P$:
+
+- **Input/output weaves**: prepend $|\text{cod}(\eta)|$ tiling segments — the new axes are tiling axes pushed to the front of each weave's `_shape`.
+- **Reindexings**: $\eta_i' = \eta \otimes \eta_i$ — the new stride morphism is prepended to each existing reindexing $\eta_i$.
+
+This corresponds to weaving an additional tiling axis $P'$ around the entire broadcasted expression, so that the base operation now runs once per coordinate in $P' \otimes P$ rather than just $P$.
+
+```python
+from construction_helpers.lift import broadcasted_stride_lift
+
+# Extend broadcasted operation F (degree P) by stride morphism η : P' → Q
+F_lifted = broadcasted_stride_lift(base=F, lift_by=stride_η)
+# → F with each weave prepended by TILED entries for cod(η),
+#   and each reindexing η_i replaced by η ⊗ η_i
+#
+# Equivalently, using >> on a Broadcasted:
+F_lifted = F >> stride_η
+```
+
+### Broadcasted Operation (Def 13)
+
+```python
+from data_structure.Operators import Einops, Linear, SoftMax, Elementwise
+from data_structure.Operators import Normalize, Embedding, AdditionOp, WeightedTriangularLower
+from data_structure.BroadcastedCategory import Broadcasted
+
+# Operators are constructed via .template() which returns a Broadcasted
+# with placeholder UIDs for all axes.
+
+# Einops: degree P = retained (output) indices; contracted indices are target-only in inputs
+matmul  = Einops.template('b i k, b k j -> b i j')   # P=(b,i,j); η_A=η_B=id on b
+# broadcast B across batches (deletion reindexing for B)
+bcast   = Einops.template('b i k, k j -> b i j')     # P=(b,i,j); η_B=()
+# outer product: each input indexed by one output axis
+outer   = Einops.template('i, j -> i j')              # P=(i,j); η_A projects i, η_B projects j
+# QK attention score
+qk_score = Einops.template('q h k, x h k -> h q x')
+
+# Other operators: P = empty (all axes target), scalar degree
+linear    = Linear.template(('m',), 2, 'q')           # [x,m] → [x,h,k]; P=1
+softmax   = SoftMax.template()
+normalize = Normalize.template()
+elementwise = Elementwise.template()
+embedding = Embedding.template(embedding_size=64)      # input datatype Natural
+addition  = AdditionOp.template()
+mask      = WeightedTriangularLower().template()
+
+# degree P: the shared loop domain over all inputs
+op = Einops.template('b i k, b k j -> b i j')
+op.degree()      # ProdObject({b, i, j}) — axes looped over
+op.dom()         # ProdObject([Array(ℝ,(b,i,k)), Array(ℝ,(b,k,j))])
+op.cod()         # ProdObject([Array(ℝ,(b,i,j))])
+
+# Direct construction (normally done by Operator.template()):
+b = Broadcasted(
+    operator=my_op,
+    input_weaves=(weave_X, weave_W),
+    output_weaves=(weave_Y,),
+    reindexings=(identity_η, deletion_η)  # one StrideMorphism η_i : P → Q_i per input
+)
+```
+
+### Autoalignment via @ (§5.1.1)
+
+```python
+# @ calls align_axes then align_composed automatically.
+# Fresh UIDs from one template() are unified with named UIDs from the adjacent term.
+
+# Multi-step chain: UIDs propagate through all boundaries
+attention = qk_score @ SoftMax.template() @ mask @ sv_score
+
+# When arities differ, identity morphisms are inserted on the smaller side
+# before the Context is built:
+(Lq * Lk * Lv) @ attention_core   # Lq*Lk*Lv has 3 outputs; core may have fewer inputs
+```
+
+### Numeric Configuration (§2, Def 8)
+
+```python
+from term_utilities.generate_config import NumericConfig
+
+# All axes created by .named() or Operator.template() carry FreeNumeric sizes.
+# NumericConfig collects them and substitutes concrete Integers.
+
+model = embedding @ transformer @ aggregator    # all sizes are FreeNumeric
+
+config = NumericConfig.template(model)          # scan model tree, collect FreeNumerics
+config.assign_values(                           # assign by axis name
+    batch=32, s=512, d=768, h=12, k=64, v=50257
+)
+
+concrete_model = config(model)    # config(x) = config.apply_context(x)
+# now all FreeNumerics matching those names are replaced by Integer values
+```
