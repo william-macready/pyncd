@@ -12,7 +12,7 @@ PyTorch's broadcasting semantics, inherited from NumPy, are informal and difficu
 - **Diagrammatic rendering** as Neural Circuit Diagrams (via tsncd)
 - **Algebraic manipulation** using category-theoretic rewriting
 
-The key insight formalizes broadcasting — running an operation in parallel over additional axes — as a categorical construction expressible in terms of the axis-stride category **St** and the array-broadcasted category **Br**.
+Broadcasting — running an operation in parallel over additional axes — is formalized as a categorical construction expressible in terms of two product categories, the axis-stride category **St** and the array-broadcasted category **Br**. We start from product categories rather than **Vect** as we need to decompose arrays into their constituent axes.
 
 ---
 
@@ -22,11 +22,11 @@ The key insight formalizes broadcasting — running an operation in parallel ove
 
 A term language provides a representational interface to the categorical ingredients (entities). Every object in this language is a **term**, and terms are constructed compositionally from simpler terms.
 
-Mathematical entities are distinct from the concrete terms used to represent them so that the same underlying entity can be expressed as notation, a diagram, or code.
+Mathematical entities are distinct from the terms used to represent them so that the same underlying entity can be expressed as notation, a diagram, or code.
 
 ### Mathematical Encoding
 
-$\Gamma$ is a set of **mathematical entities**. These entities are objects, morphisms, or products of either. $\Gamma$ has a family of $k$-indexed **core properties** $\pi_k : \Gamma_{k,i} \to \Gamma_{k,f}$, the basic structure maps that define what entities can do. These include $k = \text{dom}$, $k = \text{cod}$, $k = \text{composition}$, $k = {\otimes}$ (monoidal product), etc.
+$\Gamma$ is a set of **mathematical entities**. These entities are objects, morphisms, or products of either. $\Gamma$ has a family of $k$-indexed **core properties** $\pi_k : \Gamma_{k,i} \to \Gamma_{k,f}$, the basic structure maps that define what entities can refer to. These include $k = \text{dom}$, $k = \text{cod}$, $k = \text{composition}$, $k = {\otimes}$ (monoidal product), etc.
 
 A **constructed term system** is the representation layer: a set $G$ of terms and an **interpretation function** $V_G : G \to \Gamma$ that says which mathematical entity each term denotes (we also have $V_G^{-1} :\Gamma \to G$). For each core property $\pi_k$, the term system provides an internal counterpart $p_k : G_{k,i} \to G_{k,f}$ such that evaluating inside the term system agrees with evaluating in $\Gamma$ after interpretation (soundness).
 
@@ -46,7 +46,7 @@ Terms are represent in pyncd as follows:
 | --- | --- | --- |
 | Construction rule / term | `Term` | Frozen `@dataclass`; reconstructable from fields |
 | UTerm (term with identity) | `UTerm` | Adds `uid: UID[Self]` field |
-| Unique identifier | `UID[T]` | unique id + optional name (for readability); `T` is the `UTerm` subclass being identified (e.g. `UID[Axis]`), stored as `_type: Type[T]` |
+| Unique identifier | `UID[T]` | class for UIDs containing unique id + optional name (for readability); `T` is the `UTerm` subclass being identified (e.g. `UID[Axis]`), stored as `_type: Type[T]` |
 | Immutable sequence $\Pi_i T$ | `Prod[T]` | Type alias for `tuple[T, ...]`; `T` is a static type annotation only, with no runtime representation |
 | Equality / axis alignment | `EqualityClass`, `Context` | Merges UIDs to declare axes equal |
 
@@ -58,28 +58,28 @@ A `Context` is a collection of UID equality declarations. When two axes are iden
 
 **Paper:** Section 3 — **Python:** [data_structure/ProductCategory.py](../data_structure/ProductCategory.py)
 
-A **product category** is a monoidal category whose monoidal product is the categorical product. Both $\mathbf{St}$ and $\mathbf{Br}$ are product categories: their objects are (possibly empty) tuples of lone objects, and the monoidal product is tuple concatenation. The construction rules — $\mathbf{Composed}$, $\mathbf{ProductOfMorphisms}$, $\mathbf{Rearrangement}$, $\mathbf{Block}$ — are generic across any product category so that a single parametric framework covers both.
+A **product category** is a monoidal category whose monoidal product is the categorical product (which therefore has projection morphisms into elements of the product). Both $\mathbf{St}$ and $\mathbf{Br}$ are product categories: their objects are (possibly empty) tuples of lone objects, and the monoidal product is tuple concatenation. The construction rules, $\mathbf{Composed}$, $\mathbf{ProductOfMorphisms}$, $\mathbf{Rearrangement}$, $\mathbf{Block}$, are generic across any product category so that a single parametric framework covers both.
 
-$\mathbf{Prod}[L, M]$ denotes the product category (objects, morphisms, and categorical axioms). In Python this is split across two types: `ProdObject[L]` for objects and `ProdCategory[L, M]` for morphisms. Every morphism carries explicit `dom: ProdObject[L]` and `cod: ProdObject[L]` fields, so the same `L` parameter determines both what lone objects are and what the endpoints of morphisms look like. (Note that `Prod[T]` (from the term system) is unrelated, it is simply a type alias for `tuple[T, ...]` used as a generic sequence type inside `ProdObject` and elsewhere)
+$\mathbf{Prod}[L, M]$ denotes the product category (objects, morphisms, and categorical axioms). In Python this is split across two types: `ProdObject[L]` for objects and `ProdCategory[L, M]` for morphisms. Every morphism carries explicit `dom: ProdObject[L]` and `cod: ProdObject[L]` fields, so the same `L` parameter determines both what lone objects are and what the endpoints of morphisms look like. (`Prod[T]` is unrelated, it is simply a type alias for `tuple[T, ...]` used as a generic sequence type inside `ProdObject` and elsewhere)
 
-The type parameters $L$ and $M$ are filled in differently for each concrete category. $L$ is always a UTerm — it needs a UID for alignment — and is always the smallest irreducible unit of the domain:
+The type parameters $L$ and $M$ are filled in differently for each concrete category. $L$ is always a UTerm  (it needs a UID for alignment) and is the smallest irreducible unit of the domain:
 
 | Category | $L$ (lone object) | $M$ (root morphism) |
 | --- | --- | --- |
 | $\mathbf{St}$ | `Axis` — a named axis with a UID and size $\in\mathbb{N}$ (axis $i$ is often denoted as $A_i$) | `StrideMorphism` |
 | $\mathbf{Br}$ | `Array` — a pair $[a, A]$ of a `Datatype` $a$ ($\mathbb{N}$, $\mathbb{R}$, or $\mathbb{N}_n$, i.e. 1..$n$, in pyncd) and a shape $A \in \text{Ob}(\mathbf{St})$ | `Broadcasted` |
 
-An object in $\mathbf{St}$ is thus a tuple of axes, e.g. $(\mathtt{batch}, \mathtt{seq}, \mathtt{dim})$; an object in $\mathbf{Br}$ is a tuple of typed arrays, each indexed by one axis.
+An object in $\mathbf{St}$ is thus a tuple of axes; an object in $\mathbf{Br}$ is a tuple of typed arrays, each indexed by one axis.
 
 ### Objects in ProdCategory
 
-**Objects** $A \in \text{Ob} \mathcal{C}$ are finite products of lone objects $A_i \in L$:
+**Objects** $A \in \text{Ob}(\mathcal{C})$ are finite products of lone objects $A_i \in L$:
 
 $$A = \Pi_{i \in I} A_i$$
 
 The **unit object** is the empty product $\mathbf{1} = \Pi_{i \in \emptyset} A_i$. The identity morphism on any object is a `Rearrangement` with mapping $(0, 1, 2, \ldots)$.
 
-A Python `ProdObject[L]` object is a thin wrapper whose sole field, `content: Prod[L]` = `tuple[L, ...]`, stores a tuple of lone objects. The sequence $A_1, A_2, \ldots, A_n \in L$ constitutes the product $A = A_1 \times A_2 \times \cdots \times A_n$. The wrapper exists so that an empty tuple is a valid object (the unit $\mathbf{1}$) and so that the type system can distinguish a product object from a bare tuple. For example, in $\mathbf{St}$ a `ProdObject[Axis]` representing $(\mathtt{batch}, \mathtt{seq}, \mathtt{dim})$ holds `content = (batch_axis, seq_axis, dim_axis)` where each entry is an `Axis` instance.
+A Python `ProdObject[L]` object is a thin wrapper whose sole field, `content: Prod[L]`, stores a tuple of lone objects. The sequence $A_1, A_2, \ldots, A_n \in L$ constitutes the product $A = A_1 \times A_2 \times \cdots \times A_n$. The wrapper exists so that an empty tuple is a valid object (the unit $\mathbf{1}$) and so that the type system can distinguish a product object from a bare tuple. For example, in $\mathbf{St}$ a `ProdObject[Axis]` representing $(\mathtt{batch}, \mathtt{seq}, \mathtt{dim})$ holds `content = (batch_axis, seq_axis, dim_axis)` where each entry is an `Axis` instance.
 
 ### Morphisms in ProdCategory
 
@@ -117,13 +117,13 @@ deletion of input $i$ is expressed by having $\text{count}[\mu](i)=0$ and copyin
 
 - **Python:** `Block[L, M]` with `body: M` and `block_tag: BlockTag`.
 
-With this infrastructure for **product categories** we turn to specific instantiations.
+After describing one more ingredient for the **product categories** we're interested in we turn to specific instantiations.
 
 ### Elemental Categories
 
 **Paper:** Definition 6
 
-A product category is **elemental** if each object $X$ has a distinguished set of **elements** $\text{El}(X) \subseteq \mathcal{C}(\mathbf{1}, X)$ — morphisms from the unit object (which is the terminal object in a Cartesian category) — rich enough to uniquely determine morphisms: if $x \mathbin{;} f = x \mathbin{;} g$ for all $x \in \text{El}(X)$, then $f = g$. Elements of a product are tuples of elements of the factors:
+A product category is **elemental** if each object $X$ has a distinguished set of **elements** $\text{El}(X) \subseteq \mathcal{C}(\mathbf{1}, X)$ — morphisms from the unit object (which is terminal in a Cartesian category) — rich enough to uniquely determine morphisms: if $x \mathbin{;} f = x \mathbin{;} g$ for all $x \in \text{El}(X)$, then $f = g$. Elements of a product are tuples of elements of the factors:
 
 $$\text{El}(\Pi_{i \in I} A_i) = \{ \Pi_{i \in I} a_i \mid a_i \in \text{El}(A_i) \}.$$
 
@@ -143,8 +143,8 @@ Both **St** and **Br** are elemental categories. Elements are diagrammed as left
 
 **Objects** in **St** are **axes** and products of axes:
 
-- A lone object is an **axis** $A$ — a UTerm carrying a UID and a size $|A| \in \mathbb{N}$. The UID serves as the axis's identity across an expression; the size is itself a `FreeNumeric` (another UTerm) until configured.
-- A product object $\Pi_{i \in I} A_i \in \text{Ob}(\mathbf{St})$ is a **shape** — the ordered set of multi-index coordinates $(a_i)_{i \in I}$ of an array. (Convention used throughout: $I$ is the ordered index set of an array's axes, so $i \in I$ ranges over axis positions.)
+- A lone object is an **axis** $A$; a UTerm carrying a UID and a size $|A| \in \mathbb{N}$. The UID serves as the axis's identity across an expression; the size is itself a `FreeNumeric` (another UTerm indicating an indeterminate size) until configured.
+- A product object $\Pi_{i \in I} A_i \in \text{Ob}(\mathbf{St})$ is a **shape** — the ordered set of multi-index coordinates $(a_i)_{i \in I}$ of an array. $I$ is the ordered index set of an array's axes, so $i \in I$ ranges over axis positions.
 - The unit object $\mathbf{1}$ is the empty product, corresponding to a scalar shape.
 
 In Python, `Axis` is the abstract base (`UTerm`); `RawAxis` is the concrete subclass used for unspecialized axes. `Axis.named('h')` creates an axis whose UID carries the name $h$ and whose size is a free numeric also named $|h|$.
@@ -155,9 +155,9 @@ In Python, `Axis` is the abstract base (`UTerm`); `RawAxis` is the concrete subc
 
 $$(\Pi_{i \in I} a_i) ; \eta = \Pi_{j \in J}(\sum_{i \in I} \Lambda^\eta_{ij} \cdot a_i)$$
 
-where $\Lambda^\eta \in \mathbb{N}^{I \times J}$ is the coefficient matrix. The image must land within the codomain.
+where $\Lambda^\eta \in \mathbb{N}^{I \times J}$ is the coefficient matrix (keep in mind the notation for elements: $(\Pi_{i \in I} a_i)$ represents a morphism $\mathbf{1}\to \Pi_{i \in I} A_i$ denoted $\langle \Pi_{i\in I} a_i |$). A rearrangement $\eta$ has $\Lambda^\eta_{i,j} = 1$ iff $\mu(j)=i$. The identity morphism of object $\Pi_{i \in I} A_i$ has $\Lambda^\eta$ equal to the identity matrix.
 
-In Python, `StrideMorphism` stores `_dom: Prod[Axis]` and `_cod_stride: Prod[tuple[Axis, Prod[Numeric]]]`. `_cod_stride` bundles the codomain axes and the coefficient matrix into a single field: each entry is a pair of one codomain axis and a tuple of coefficients — one per domain axis — forming one row of $\Lambda^\eta$. Keeping them paired ensures the two are always in lockstep. `cod()` recovers the codomain by stripping the coefficients: `ProdObject.from_iter(axis for axis, _ in self._cod_stride)`. An optional `name` field carries display metadata. For example, the convolution-shift $x = x' + w$ is
+In Python, `StrideMorphism` stores `_dom: Prod[Axis]` and `_cod_stride: Prod[tuple[Axis, Prod[Numeric]]]`. `_cod_stride` bundles the codomain axes and the coefficient matrix into a single field: each entry is a pair of one codomain axis and a tuple of coefficients — one per domain axis — forming one column of $\Lambda^\eta$. Keeping them paired ensures the two are always in lockstep. `cod()` recovers the codomain by stripping the coefficients: `ProdObject.from_iter(axis for axis, _ in self._cod_stride)`. An optional `name` field carries display metadata. For example, the convolution-shift $x = x' + w$ is
 
 ```python
 StrideMorphism.from_matrix(
@@ -187,17 +187,19 @@ The identity, permutation, duplication, and deletion ($\eta = ()$) are all speci
 
 **Paper:** Definitions 9–13 — **Python:** [data_structure/BroadcastedCategory.py](../data_structure/BroadcastedCategory.py), [data_structure/Operators.py](../data_structure/Operators.py)
 
-**Br** is the category of deep learning models. It is a deletion product category, capturing both deterministic (**Set**) and probabilistic (**Stoch**) computation.
+**Br** is the category of deep learning models. Its objects represent products of arrays (tensors) with each array represented as a collection of axes $A=\{A_i\}_{i \in I}$ (an object/shape in **St**) with an output datatype $a$.
 
-In this section we introduce the diagrammatic conventions (following from string diagrams) for representing **Br**.
+**Br** is a deletion product category, capturing both deterministic (**Set**) and probabilistic (**Stoch**) computation.
+
+In this section we also introduce the diagrammatic conventions (following string diagrams) for representing **Br**.
 
 ### Objects in Br
 
 **Objects** in **Br** are **arrays** $[a, A]$:
 
-- $a \in \mathbf{Dt}$ is a **datatype** — the kind of value stored at each coordinate. Common datatypes are `Reals` ($\mathbb{R}$, continuous and differentiable) and `Natural(max_value)` ($\mathbb{N}_{<v}$, discrete, used for token indices in embeddings).
+- $a \in \mathbf{Dt}$ is a **datatype** — the kind of value stored at each coordinate. Common datatypes are `Reals` ($\mathbb{R}$, continuous and differentiable) and `Natural(max_value)` ($\mathbb{N}_{<v}$, discrete values used as token indices in embeddings).
 - $A \in \text{Ob}(\mathbf{St})$ is a **shape** — a product of axes that indexes the array's coordinates.
-- An array $[a, A]$ has an $\text{El}(A)$-family of values $x_{i_A} \in a$ for each coordinate $i_A \in \text{El}(A)$. Here $\text{El}(A)$ is the **set of elements** of the shape $A$ — the set of all valid index tuples. For $A = (a_1, \ldots, a_n)$ with axis sizes $s_1, \ldots, s_n$, this is the Cartesian product $\{0,\ldots,s_1{-}1\} \times \cdots \times \{0,\ldots,s_n{-}1\}$. Categorically, $\text{El}(A)$ is the set of morphisms $\mathbf{1} \to A$ (global elements). An array is therefore a function from index tuples to values: $x : \text{El}(A) \to a$.
+- An array $[a, A]$ has an $\text{El}([a,A])$-family of values $x_{i_A} : \mathbf{1} \to [a,A]$ supplying an output value in $a$ and an index in $A$. An array is therefore a function from index tuples to values. As previously noted, $\text{El}(A)$ is the **set of elements** of the shape $A$ (the set of index tuples). For $A = (a_1, \ldots, a_n)$ with axis sizes $s_1, \ldots, s_n$, this is the Cartesian product $\{0,\ldots,s_1{-}1\} \times \cdots \times \{0,\ldots,s_n{-}1\}$. Categorically, $\text{El}(A)$ is the set of morphisms $\mathbf{1} \to A$ (global elements). 
 
 A product object $\Pi_{i \in I} [a_i, A_i]$ in **Br** is a tuple of arrays — the inputs or outputs of an operation.
 
@@ -205,9 +207,20 @@ In Python, `Array[B, A]` stores `datatype: B` and `_shape: Prod[A]`. `Reals()` a
 
 ### Morphisms in Br
 
-**Morphisms** in **Br** are **broadcasted operations** $F : \Pi_{i \in I} [a_i, A_i] \to \Pi_{j \in J} [b_j, B_j]$. Diagrammatically, we illustrate a morphism $f$ taking array inputs $[a, A_0]$ and $[b, \mathbf{1}]$ (a scalar-shaped array with datatype $b$) to produce output $[c, C_0C_1]$ (an array with datatype $c$ and shape $C_0C_1$). <img src="images/morphism-diagram.png" alt="Morphism diagram: function f with inputs A₀, a, b and outputs C₁, C₀, c" width="100" style="float: right; margin-left: 1em;"/> The dashed line on the input side groups $[a, A_0]$ and $[b, \mathbf{1}]$ into an array product (a tuple of inputs), while the output wires $C_1$, $C_0$, and $c$ represent the shape axes and base datatype of the codomain. When the base datatype is $\mathbb{R}$, the datatype (line with arrow) may be omitted
+**Morphisms** in **Br** are **broadcasted operations** $F : \Pi_{i \in I} [a_i, A_i] \to \Pi_{j \in J} [b_j, B_j]$. Diagrammatically, we illustrate an example morphism $f$ taking array inputs $[a, A_0]$ and $[b, \mathbf{1}]$ (a scalar-shaped array with datatype $b$) to produce output $[c, C_0C_1]$ (an array with datatype $c$ and shape $C_0C_1$). <img src="images/morphism-diagram.png" alt="Morphism diagram: function f with inputs A₀, a, b and outputs C₁, C₀, c" width="100" style="float: right; margin-left: 1em;"/> The dashed line on the input side groups $[a, A_0]$ and $[b, \mathbf{1}]$ into an array product (a tuple of inputs), while the output wires $C_1$, $C_0$, and $c$ represent the shape axes and base datatype of the codomain. When the base datatype is $\mathbb{R}$, the datatype (line with arrow) may be omitted
 
-Before jumping into the details we first consider broadcasting in general.
+Before describing broadcasting in detail, we observe that the bracket notation $[a, \cdot]$ defines a structured relationship between **St** and **Br**: it sends shapes to arrays and sends rearrangements to reindexing morphisms — contravariantly.
+
+### $[a, \cdot]$ as a Contravariant Functor
+
+The bracket notation is overloaded: for a fixed datatype $a \in \mathbf{Dt}$, it denotes both objects and morphisms of **Br** depending on what occupies its second slot.
+
+- **Objects** (Def 9): $[a,\cdot]$ acting on **St** object $A$ yields the **Br** object $[a, A]$ — an array with datatype $a$ and shape $A$.
+- **Morphisms** (Def 10): $[a,\cdot]$ acting on **St** morphism $\eta : P \to Q$ yields the **Br** morphism $[a, \eta] : [a, Q] \to [a, P]$ — a reindexing that pulls values back along $\eta$.
+
+Together these make $[a, \cdot]$ a **contravariant functor** $\mathbf{St}^{\mathrm{op}} \to \mathbf{Br}$. The two functoriality conditions are proved in [functor_proof.md](../functor_proof.md): contravariant composition $[a, \eta \mathbin{;} \mu] = [a, \mu] \mathbin{;} [a, \eta]$ is the primary result, and identity preservation $[a, \text{id}_A] = \text{id}_{[a,A]}$ follows as a corollary. Since $a$ plays no role in either proof (it labels values but is never touched by the index arithmetic), functoriality holds for every $a \in \mathbf{Dt}$, yielding a family $\{[a, \cdot]\}_{a \in \mathbf{Dt}}$. Arrays with mixed datatypes $\Pi_{i \in I} [a_i, A_i]$ are reindexed componentwise, one $[a_i, \eta]$ per factor, via the product structure of **Br**. The family $\{[a, \cdot]\}_{a \in \mathbf{Dt}}$ can be unified into a single bifunctor $[\cdot, \cdot] : \mathbf{Dt} \times \mathbf{St}^{\mathrm{op}} \to \mathbf{Br}$, covariant in the first slot; this is cleanest when $\mathbf{Dt}$ is treated as a discrete category (no non-identity morphisms) so that the datatype slot contributes no additional functoriality obligations.
+
+The contravariancy is the categorical expression of **pullback**: a stride morphism $\eta : P \to Q$ maps coordinates forward ($P \to Q$), so it pulls array values backward ($[a, Q] \to [a, P]$), reading from position $\eta(p)$ in the source for each output position $p \in P$.
 
 ### Broadcasting
 
@@ -339,6 +352,72 @@ class Broadcasted[B: Datatype, A: Axis, O: Operator](Morphism[Array[B, A]]):
 | Einsum contraction | `Einops` operator with matching weaves |
 | Linear layer | `Linear` operator; target axes = input/output axes |
 | Convolution | `StrideMorphism` shift $(x' + w)$ composed with `Linear` |
+
+---
+
+## Lift Operations
+
+**Paper:** Definitions 10–11, pp. 12–13 — **Python:** [construction_helpers/lift.py](../construction_helpers/lift.py)
+
+Operations in **Br** are defined at a fixed shape, but in practice the same operation must run at many shapes: a linear layer over one token must extend to a sequence, then to a batch, then across heads. A **lift** performs this axis extension without changing what the operation computes on any individual input — and does so compositionally, distributing over sequential composition and parallel products so that lifting twice equals lifting once by the combined shape.
+
+A lift extends an object or morphism in **Br** by a shape or morphism from **St**, adding new axes to an existing expression in a principled way. The four lifts correspond to the four combinations of what is being extended and what it is extended by:
+
+| | Extended by $P \in \text{Ob}(\mathbf{St})$ | Extended by $\eta : P \to Q \in \text{Hom}(\mathbf{St})$ |
+|---|---|---|
+| Array product $X \in \text{Ob}(\mathbf{Br})$ | Object-object lift $[X, P]$ | Object-morphism lift $[X, \eta]$ |
+| Morphism $f \in \text{Hom}(\mathbf{Br})$ | Batch lift $[f, P]$ (Def 11) | Broadcasted-stride lift |
+
+These are not independent. The batch lift maps between object lifts: $[f, P] : [X, P] \to [Y, P]$.
+
+### Object-Object Lift $[X, P]$
+
+For an array product $X = \Pi_{i \in I}[a_i, A_i] \in \text{Ob}(\mathbf{Br})$ and a shape $P \in \text{Ob}(\mathbf{St})$:
+
+$$[X, P] = \Pi_{i \in I}[a_i,\, A_i \otimes P]$$
+
+The lift prepends the axes of $P$ to each array's shape. It is a purely object-level construction — no morphism is produced. Its primary role is to name the domain and codomain that the batch lift $[f, P]$ maps between.
+
+### Object-Morphism Lift $[X, \eta]$ (Def 10)
+
+Defs 9 and 10 together make $[a, \cdot]$ a contravariant functor $\mathbf{St} \to \mathbf{Br}$: it sends **St** objects $A$ to **Br** objects $[a, A]$ (arrays), and **St** morphisms $\eta : P \to Q$ to **Br** morphisms $[a, \eta] : [a, Q] \to [a, P]$ (reindexings), reversing the direction. Functoriality — $[a, \text{id}_A] = \text{id}_{[a,A]}$ and $[a, \eta \mathbin{;} \mu] = [a, \mu] \mathbin{;} [a, \eta]$ — follows directly from the element-action equation in Def 10. The object-morphism lift uses the morphism half of this functor.
+
+For an array product $X = \Pi_{i \in I}[a_i, A_i] \in \text{Ob}(\mathbf{Br})$ and a stride morphism $\eta : P \to Q \in \text{Hom}(\mathbf{St})$:
+
+$$[X, \eta] = \Pi_{i \in I}[a_i,\, \text{id}_{A_i} \otimes \eta], \qquad [X, \eta] : [X, Q] \to [X, P]$$
+
+Here $\text{id}_{A_i} \otimes \eta : A_i \otimes P \to A_i \otimes Q$ is a **St** morphism, so each bracket $[a_i, \text{id}_{A_i} \otimes \eta]$ is a **Br** morphism (reindexing) $[a_i, A_i \otimes Q] \to [a_i, A_i \otimes P]$. It leaves the $A_i$ coordinates unchanged and pulls back along $\eta$ in the $P$/$Q$ coordinates:
+
+$$(a_{k,\,\ell})_{k \in \text{El}(A_i),\,\ell \in \text{El}(Q)} \mathbin{;} [a_i, \text{id}_{A_i} \otimes \eta] = (a_{k,\,\eta(p)})_{k \in \text{El}(A_i),\,p \in \text{El}(P)}$$
+
+The lift produces a reindexing morphism in **Br** that permutes coordinates without touching data values. It is **contravariant** in $\eta$: a stride morphism $\eta : P \to Q$ yields a **Br** morphism going $[X, Q] \to [X, P]$, reading from position $\eta(p)$ of the source for each output position $p$.
+
+The special case $\eta = \langle q | : \mathbf{1} \to Q$ (a single element of $Q$) recovers the **index** morphism $[X, q] : [X, Q] \to [X, \mathbf{1}]$, selecting one slice of each array.
+
+### Batch Lift $[f, P]$ (Def 11)
+
+For a morphism $f : X \to Y$ in **Br** and a shape $P \in \text{Ob}(\mathbf{St})$, the **batch lift** $[f, P] : [X, P] \to [Y, P]$ runs $f$ once independently for each coordinate in $P$. The defining property is:
+
+$$[f, P] \mathbin{;} [Y, q] = [X, q] \mathbin{;} f \qquad \forall\, q : \mathbf{1} \to |P| \tag{Eq. 3}$$
+
+Slicing the output at $q$ after applying $[f, P]$ gives the same result as slicing the input at $q$ first and then applying $f$ directly. The computation at each position $q \in P$ depends only on the $q$-th input slice.
+
+The full structural definition (Def 11) makes the independence of positions explicit via the copy remapping $\delta^P : P \to \mathbf{1}$, the unique morphism in **St** that deletes all axes of $P$:
+
+$$[f, P] \mathbin{;} [\delta^P]_{[Y,P]} \mathbin{;} \prod_{p \in \text{El}(P)} [Y, p] \;=\; [\delta^P]_{[X,P]} \mathbin{;} \left(\prod_{p \in \text{El}(P)} [X, p] \mathbin{;} f\right) \tag{Eq. 2}$$
+
+Eq. 2 shows that $[f, P]$ factors into $|\text{El}(P)|$ independent copies of $f$ — one per degree coordinate — with no data flow between positions. This independence is exactly what makes the batch axis suitable for parallel GPU execution.
+
+The batch lift is defined recursively on the structure of $f$, using the fact that lifting distributes over composition and products: $[f \mathbin{;} g,\, P] = [f, P] \mathbin{;} [g, P]$ and $[f \otimes g,\, P] = [f, P] \otimes [g, P]$. When $f$ is a broadcasted operation (Def 13), lifting reduces to the broadcasted-stride lift below.
+
+### Broadcasted-Stride Lift
+
+Given a broadcasted operation $F$ (Def 13) with degree $P$ and reindexings $(\eta_i : P \to Q_i)_{i \in I}$, and a stride morphism $\eta : P' \to Q$ in $\text{Hom}(\mathbf{St})$, the broadcasted-stride lift extends $F$'s degree from $P$ to $P' \otimes P$:
+
+- **Reindexings**: each $\eta_i : P \to Q_i$ is replaced by $\eta \otimes \eta_i : P' \otimes P \to Q \otimes Q_i$, prepending $\eta$ so the loop now runs over $P' \otimes P$ and threads the new coordinates through $\eta$.
+- **Weaves**: each input and output weave gains $|\text{cod}(\eta)|$ additional tiling entries prepended — one per axis of $Q$ — marking the new axes as tiling axes.
+
+The base operation $f$ is unchanged; the lift only enlarges the loop domain and extends the tiling structure.
 
 ---
 
@@ -636,11 +715,13 @@ weave_X.imprint_to_degree([batch, seq])
 
 ### Reindexing $[a, \eta]$ (Def 10)
 
-For an array product $X = \Pi_{i \in I}[a_i, A_i] \in \text{ObBr}$ and a stride morphism $\eta : P \to Q \in \text{MoSt}$:
+For an array product $X = \Pi_{i \in I}[a_i, A_i] \in \text{Ob}(\mathbf{Br})$ and a stride morphism $\eta : P \to Q \in \text{Hom}(\mathbf{St})$:
 
-$$[X, \eta] = \Pi_{i \in I}[a_i, A_i \otimes \eta], \qquad [X, \eta] : [X, Q] \to [X, P]$$
+$$[X, \eta] = \Pi_{i \in I}[a_i, \text{id}_{A_i} \otimes \eta], \qquad [X, \eta] : [X, Q] \to [X, P]$$
 
-where each component $[a_i, \eta] : [a_i, Q] \to [a_i, P]$ acts on elements by $(a_k)_{k \in \text{El}(Q)} \mathbin{;} [a_i, \eta] = (a_{\eta(p)})_{p \in \text{El}(P)}$.
+where each component $[a_i, \text{id}_{A_i} \otimes \eta] : [a_i, A_i \otimes Q] \to [a_i, A_i \otimes P]$ acts on elements by $(a_{k,\ell})_{k \in \text{El}(A_i),\,\ell \in \text{El}(Q)} \mathbin{;} [a_i, \text{id}_{A_i} \otimes \eta] = (a_{k,\,\eta(p)})_{k \in \text{El}(A_i),\,p \in \text{El}(P)}$.
+
+`object_morphism_lift(base=X, lift_by=η)` builds `Identity.template(segment, η)` for each array segment of `X`. `Identity` is an `Operator` that represents the reindexing as a `Broadcasted` with $\eta$ as its reindexing and the identity on target axes.
 
 ```python
 from construction_helpers.lift import object_morphism_lift
@@ -668,13 +749,15 @@ slice_morph = object_morphism_lift(
 
 ### Object-Object Lift $[X, P]$ and Batch Lift $[f, P]$ (Def 11)
 
-For an array product $X = \Pi_{i \in I}[a_i, A_i] \in \text{ObBr}$ and a shape $P \in \text{ObSt}$:
+For an array product $X = \Pi_{i \in I}[a_i, A_i] \in \text{Ob}(\mathbf{Br})$ and a shape $P \in \text{Ob}(\mathbf{St})$:
 
 $$[X, P] = \Pi_{i \in I}[a_i, A_i \otimes P]$$
 
-For a morphism $f : X \to Y \in \text{ObBr}$ and a shape $P \in \text{ObSt}$, the batch lift $[f, P] : [X, P] \to [Y, P]$ satisfies:
+For a morphism $f : X \to Y \in \text{Ob}(\mathbf{Br})$ and a shape $P \in \text{Ob}(\mathbf{St})$, the batch lift $[f, P] : [X, P] \to [Y, P]$ satisfies:
 
 $$[f, P] \mathbin{;} [Y, q] = [X, q] \mathbin{;} f$$
+
+`object_object_lift` promotes bare `Datatype` inputs to scalar arrays (`_shape=()`, i.e. shape $\mathbf{1}$) before prepending. `morphism_object_lift` implements $[f, P]$ by structural recursion: `Rearrangement` → lift the domain; `Composed`/`ProductOfMorphisms` → distribute; `Block` → recurse into body; `Broadcasted` → delegate to `broadcasted_stride_lift`.
 
 ```python
 from construction_helpers.lift import object_object_lift, morphism_object_lift
@@ -715,6 +798,8 @@ For a broadcasted operation $F$ (Def 13) with degree $P$ and a stride morphism $
 - **Reindexings**: $\eta_i' = \eta \otimes \eta_i$ — the new stride morphism is prepended to each existing reindexing $\eta_i$.
 
 This corresponds to weaving an additional tiling axis $P'$ around the entire broadcasted expression, so that the base operation now runs once per coordinate in $P' \otimes P$ rather than just $P$.
+
+`lift_by` accepts either a `StrideMorphism` or a `ProdObject` of axes; the latter is treated as the identity stride morphism, so the reindexings gain an identity prefix and the weaves gain correspondingly many `TILED` entries. The `>>` operator dispatches to all four lifts based on operand types: `ProdObject >> ProdObject` → `object_object_lift`; `StrideMorphism >> ProdObject` → `object_morphism_lift`; `ProdObject >> Morphism` → `morphism_object_lift`; `StrideMorphism >> Broadcasted` → `broadcasted_stride_lift`.
 
 ```python
 from construction_helpers.lift import broadcasted_stride_lift
