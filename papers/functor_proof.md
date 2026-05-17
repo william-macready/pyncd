@@ -1,5 +1,47 @@
 # Functoriality of $[a, \cdot] : \mathbf{St}^{\mathrm{op}} \to \mathbf{Br}$
 
+$[a, \cdot]$ is a contravariant functor from **St** to **Br**. Before validating the functor laws we motivate why the contravariance arises.
+
+## Why $[a, \cdot]$ is Contravariant
+
+The morphism action of $[a,\cdot]$ reverses arrows: a stride morphism $\Lambda : P \to Q$ in **St** induces $[a,\Lambda] : [a,Q] \to [a,P]$ in **Br**. The examples below show why no other direction is possible. The remainder of this document then verifies that this reversal is functorial — preserving composition and identities.
+
+**Simplest case.** Ignore $\text{El}$ entirely and think of objects as plain index sets and morphisms as plain functions $f : I \to J$. Then $[a, I]$ is just an array of length $|I|$, and $[a, f]$ is defined by:
+
+$$([a, f](X))[i] = X[f(i)]$$
+
+where $X \in [a, J]$. To evaluate $X[f(i)]$ you need $X$ indexed by $J$ (the codomain of $f$), and you get back something indexed by $I$ (the domain). Contravariance is the direction forced by precomposition.
+
+The coordinate machinery introduced in Setup below replaces the scalar index $i \in I$ with a coordinate tuple $p \in \text{El}(P)$ and the function $f$ with matrix multiplication $p \mapsto p\Lambda$; every argument goes through unchanged.
+
+---
+
+**Example 1: $I = \{0,1,2,3\}$, $J = \{0,1\}$.** The rearrangement $\eta : P \to Q$ is defined by $\mu(0) = 1$, $\mu(1) = 3$, so the element action contracts 4D to 2D:
+
+$$p\Lambda = (p_1,\, p_3) \qquad p \in \text{El}(P)$$
+
+The induced morphism $[a, \eta] : [a, Q] \to [a, P]$ expands in the opposite direction:
+
+$$Y[p_0, p_1, p_2, p_3] = X[p_1, p_3]$$
+
+$Y$ broadcasts $X$ over the two unused axes; $p_0$ and $p_2$ are ignored. A covariant map $[a, P] \to [a, Q]$ would need to assign a value to each $q = (q_0, q_1)$ from $Y$, but all of $(p_0, q_0, p_2, q_1)$ for arbitrary $p_0, p_2$ share the same image — so infinitely many $Y$-values compete for each slot in $X$ with no canonical way to combine them. The element action is many-to-one; the covariant direction is undefined.
+
+---
+
+**Example 2: $I = \{0,1\}$, $J = \{0,1,2\}$.** The rearrangement $\eta : P \to Q$ is defined by $\mu(0) = 0$, $\mu(1) = 1$, $\mu(2) = 0$ — slot 2 of $Q$ duplicates slot 0 of $P$ — so the element action expands 2D to 3D:
+
+$$p\Lambda = (p_0,\, p_1,\, p_0) \qquad p \in \text{El}(P)$$
+
+The induced morphism $[a, \eta] : [a, Q] \to [a, P]$ contracts in the opposite direction:
+
+$$Y[p_0, p_1] = X[p_0,\, p_1,\, p_0]$$
+
+This is a *diagonal restriction*: $Y$ sees only the slice of $X$ where the third index equals the first. A covariant map $[a, P] \to [a, Q]$ would need to assign a value to each $q \in \text{El}(Q)$ from $Y$. But the image of the element action is only the diagonal $\{q : q_2 = q_0\}$; for $q$ off it — say $q = (0, 1, 1)$ — there is no $p$ with $p\Lambda = q$, so the assignment $X[q_0, q_1, q_2] \mathrel{:=} Y[\,?\,]$ is undefined. The element action is injective but not surjective; the covariant direction is again undefined.
+
+**Why precomposition is the only well-typed direction.** The element action $p \mapsto p\Lambda$ is a total function $\text{El}(P) \to \text{El}(Q)$: for any $p$, the index $p\Lambda$ is a valid element of $\text{El}(Q)$, so $X[p\Lambda]$ is always defined. This makes the pullback $Y[p] \mathrel{:=} X[p\Lambda]$ well-typed for every $X \in [a, Q]$, producing output in $[a, P]$ — the arrow reverses. Any covariant assignment would require inverting $p\Lambda$, but a stride morphism need be neither injective (Example 1) nor surjective (Example 2). Contravariance is not a design choice; it is the only direction that is always well-defined.
+
+---
+
 ## Setup
 
 A stride morphism $\Lambda : P \to Q$ in **St** is a finite linear transform. Treating elements as row vectors, the induced coordinate map is
@@ -99,30 +141,6 @@ The element action is $Y[p] = X[p\Lambda]$ for all $p \in \text{El}(P)$, which i
 - **Translation** $\Lambda = (1\ \ 1) : (x', w) \mapsto x' + w$ — unfolds a sliding window: $Y[x', w] = X[x' + w]$.
 
 In practice, a stride morphism $\Lambda$ with coefficients $> 1$ rarely appears as a standalone `Broadcasted`; it more commonly appears as the reindexing $\eta_i$ *within* a `Broadcasted` that has a non-trivial operator (e.g. the affine scaling case $Y[b,p] = \sum_w X[b, s{\cdot}p + w]\, W[w]$ where $\Lambda$ is the reindexing $\eta_X(b,p) = (b,\, s{\cdot}p)$). In that role, $\Lambda$ specifies which slice of the input each iteration of the base operator sees, while the operator itself performs the value computation.
-
----
-
-## Why $[a, \cdot]$ is Contravariant
-
-**A stride morphism $\eta$ specifies where to *look*, not where to *write*.**
-
-Consider the rearrangement $\eta : P \to Q$ in **St** where $P$ has 4 axis slots ($I = \{0,1,2,3\}$) and $Q$ has 2 axis slots ($J = \{0,1\}$), defined by $\mu : J \to I$ with
-
-$$\mu(0) = 1, \qquad \mu(1) = 3$$
-
-That is, output slot 0 draws from input slot 1, and output slot 1 draws from input slot 3. The coefficient matrix is $\Lambda \in \mathbb{N}^{4 \times 2}$ with $\Lambda_{ij} = [\mu(j)=i]$, so the element action contracts 4D to 2D:
-
-$$p\Lambda = (p_{\mu(0)},\, p_{\mu(1)}) = (p_1,\, p_3) \qquad p \in \text{El}(P)$$
-
-In **St**, the morphism flows $P \to Q$ — a contraction. The induced morphism in **Br** flows the *opposite* way, $[a, \eta] : [a, Q] \to [a, P]$: it takes a 2D array $X$ indexed over $\text{El}(Q)$ and produces a 4D array $Y$ indexed over $\text{El}(P)$:
-
-$$Y[p_0, p_1, p_2, p_3] = X[p_1, p_3]$$
-
-$Y$ is a broadcasting of $X$ over the two unused axes — it does not depend on $p_0$ or $p_2$ at all. So $\eta$ contracts (4D $\to$ 2D in **St**) while $[a,\eta]$ expands (2D $\to$ 4D in **Br**); the direction reverses.
-
-**Why?** The morphism $\eta : P \to Q$ is a lookup recipe: given position $p \in \text{El}(P)$, it tells you which position $p\Lambda \in \text{El}(Q)$ to read from. To *execute* that recipe you must already have an array on $Q$ — and the result is an array on $P$. So $[a, \eta]$ consumes an input indexed by $Q$ and produces an output indexed by $P$, reversing the arrow.
-
-**Two perspectives on the same rearrangement.** The function $\mu : J \to I$ maps output index positions to input index positions (output $\to$ input), while the element action $p\Lambda$ maps $\text{El}(P) \to \text{El}(Q)$ (input $\to$ output in **St**). These are the same data viewed from opposite ends: the identity $(p\Lambda)_j = p_{\mu(j)}$ says "the $j$-th output coordinate is the $\mu(j)$-th input coordinate." $\mu$ traces back which slot to pull from; $p\Lambda$ assembles the result. The reversal in **Br** is not a coincidence — it is exactly what it means for $\eta$ to be a lookup rather than a write.
 
 ---
 

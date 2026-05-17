@@ -149,6 +149,8 @@ Both **St** and **Br** are elemental categories. Elements are diagrammed as left
 
 In Python, `Axis` is the abstract base (`UTerm`); `RawAxis` is the concrete subclass used for unspecialized axes. `Axis.named('h')` creates an axis whose UID carries the name $h$ and whose size is a free numeric also named $|h|$.
 
+In summary, **St** objects represent axes index sets of a given shape. Each index can be represented as a vector of length $I$ whose elements are integer-valued.
+
 ### Morphisms in St
 
 **Morphisms** in **St** are **finite linear transforms**: maps $\eta : \Pi_{i \in I} A_i \to \Pi_{j \in J} B_j$ that describe how input coordinates relate to output coordinates. Each output coordinate $j$ is a linear combination of input coordinates:
@@ -181,6 +183,8 @@ StrideMorphism.from_matrix(
 
 The identity, permutation, duplication, and deletion ($\eta = ()$) are all special cases of linear transforms and appear as `Rearrangement` morphisms in **St**.
 
+In summary, **St** morphisms represent linear transformations between the index vectors of the domain and codomain. In addition to copy and deletion of axes these linear transformation allow for arithmetic to be performed as indices are transformed. Convolution (where filters are slid over a two dimensional array) is one example of where this arithmetic structure is used. Another example is the one dimensional representation of arrays in computer memory. Slices of the array are recovered as loops of different stride through the one dimensional arrangment.
+
 ---
 
 ## The Array-Broadcasted Category **Br**
@@ -204,6 +208,8 @@ In this section we also introduce the diagrammatic conventions (following string
 A product object $\Pi_{i \in I} [a_i, A_i]$ in **Br** is a tuple of arrays — the inputs or outputs of an operation.
 
 In Python, `Array[B, A]` stores `datatype: B` and `_shape: Prod[A]`. `Reals()` and `Natural.template('v')` are the concrete datatypes. Objects are generally not constructed directly; they are computed from morphism `dom()` and `cod()` methods.
+
+In summary, objects of **Br** represent the set of arrays indexed by shape `A` mapping to datatype `B`. The elements of the object representing the array are index tuples paired with an element of the datatype `B` which indicates the array value at that index.
 
 ### Morphisms in Br
 
