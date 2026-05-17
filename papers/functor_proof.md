@@ -123,3 +123,110 @@ $Y$ is a broadcasting of $X$ over the two unused axes — it does not depend on 
 **Why?** The morphism $\eta : P \to Q$ is a lookup recipe: given position $p \in \text{El}(P)$, it tells you which position $p\Lambda \in \text{El}(Q)$ to read from. To *execute* that recipe you must already have an array on $Q$ — and the result is an array on $P$. So $[a, \eta]$ consumes an input indexed by $Q$ and produces an output indexed by $P$, reversing the arrow.
 
 **Two perspectives on the same rearrangement.** The function $\mu : J \to I$ maps output index positions to input index positions (output $\to$ input), while the element action $p\Lambda$ maps $\text{El}(P) \to \text{El}(Q)$ (input $\to$ output in **St**). These are the same data viewed from opposite ends: the identity $(p\Lambda)_j = p_{\mu(j)}$ says "the $j$-th output coordinate is the $\mu(j)$-th input coordinate." $\mu$ traces back which slot to pull from; $p\Lambda$ assembles the result. The reversal in **Br** is not a coincidence — it is exactly what it means for $\eta$ to be a lookup rather than a write.
+
+---
+
+## Lean 4 Proof: Functoriality of $[a, \cdot]$
+
+The definitions below use `StMat`, `Numeric`, and `BrMorph` from [leanncd.md](./leanncd.md). All types are Layer 1.
+
+### Syntactic vs semantic equality
+
+`BrMorph` is the **free category** on `BrBase` — morphisms are linked lists and composition is list concatenation. As a result, `[a, Λ ; M]` (a single-element list) and `[a, M] ; [a, Λ]` (a two-element list) are not definitionally equal as `BrMorph` values, even though they compute the same output on every input array.
+
+Functoriality is therefore stated and proved at the **element-action level**: we exhibit the semantic function each side computes and prove the functions equal. This matches the mathematical proof, which uses the elemental criterion to reduce equality of morphisms to equality of their actions on elements.
+
+### Element and array types
+
+```lean
+/-- A shape element: a symbolic coordinate tuple, one `Numeric` entry per axis. -/
+def El (P : StObj) : Type := Fin P.length → Numeric
+
+/-- An array of type `a` indexed by shape `P`. -/
+def Arr (a : Type) (P : StObj) : Type := El P → a
+```
+
+`El P` uses `Numeric` coordinates rather than `ℕ` so that symbolic axis sizes need not be made concrete at proof time.
+
+### Element action of a stride matrix
+
+```lean
+/-- `applyStMat Λ p` applies stride matrix `Λ : StMat P Q` to coordinate `p ∈ El P`,
+    yielding coordinate `pΛ ∈ El Q`.
+    Formula: `(pΛ)_i = Λ.bias i + Σ_j p j * Λ.coeffs i j`. -/
+def applyStMat {P Q : StObj} (Λ : StMat P Q) (p : El P) : El Q :=
+  fun i => Λ.bias i + ∑ j : Fin P.length, p j * Λ.coeffs i j
+```
+
+The sum matches the affine formula from [leanncd.md §4](papers/leanncd.md): `coeffs i j` is the $(i,j)$ entry of the coefficient matrix with $i$ indexing the codomain and $j$ the domain.
+
+### Composition and identity of applyStMat
+
+```lean
+/-- Applying `Λ.comp M` equals applying `Λ` then `M`.
+    Proof: unfold both sides; the goal is a polynomial identity over `Numeric`,
+    closed by `ring` given `CommSemiring Numeric`. -/
+theorem applyStMat_comp {P Q R : StObj}
+    (Λ : StMat P Q) (M : StMat Q R) (p : El P) :
+    applyStMat (StMat.comp Λ M) p = applyStMat M (applyStMat Λ p) := by
+  funext i
+  simp only [applyStMat, StMat.comp,
+             Finset.sum_add_distrib, Finset.mul_sum,
+             Finset.sum_mul, ← Finset.sum_comm]
+  ring   -- requires CommSemiring Numeric (see leanncd.md §9.6)
+
+/-- `StMat.id` acts as the identity coordinate map. -/
+theorem applyStMat_id {P : StObj} (p : El P) :
+    applyStMat (StMat.id P) p = p := by
+  funext i
+  simp only [applyStMat, StMat.id,
+             Finset.sum_ite_eq', Finset.mem_univ, if_true]
+  ring
+```
+
+`applyStMat_comp` is the coordinate-level content of matrix multiplication associativity — the same fact that closes Step 2 of the mathematical proof via $p(\Lambda M) = (p\Lambda)M$.
+
+### Pullback: the morphism action of $[a, \cdot]$
+
+```lean
+/-- `pullback Λ x` pulls array `x : Arr a Q` back along `Λ : StMat P Q`
+    to produce an array on `P`. This is the element action of `[a, Λ] : [a, Q] → [a, P]`:
+    for each output position `p ∈ El P`, read from input position `applyStMat Λ p ∈ El Q`. -/
+def pullback {a : Type} {P Q : StObj}
+    (Λ : StMat P Q) (x : Arr a Q) : Arr a P :=
+  fun p => x (applyStMat Λ p)
+```
+
+### Functoriality theorems
+
+```lean
+/-- Identity law: pulling back along the identity stride morphism is the identity on arrays.
+    Element-level content of `[a, id_P] = id_{[a, P]}`. -/
+theorem pullback_id {a : Type} {P : StObj} (x : Arr a P) :
+    pullback (StMat.id P) x = x := by
+  funext p
+  simp [pullback, applyStMat_id]
+
+/-- Contravariant composition law: pulling back along `Λ.comp M` equals
+    pulling back along `M` then along `Λ`.
+    Element-level content of `[a, Λ ; M] = [a, M] ; [a, Λ]`. -/
+theorem pullback_comp {a : Type} {P Q R : StObj}
+    (Λ : StMat P Q) (M : StMat Q R) (x : Arr a R) :
+    pullback (StMat.comp Λ M) x = pullback Λ (pullback M x) := by
+  funext p
+  simp only [pullback, applyStMat_comp]
+```
+
+`pullback_comp` is a one-liner once `applyStMat_comp` is established: unfolding both sides reduces the goal to `x (applyStMat (Λ.comp M) p) = x (applyStMat M (applyStMat Λ p))`, which is immediate from `applyStMat_comp` and congruence. This mirrors Step 3 of the mathematical proof (the elemental criterion step).
+
+### Proof obligations
+
+| Theorem | Status | Dependency |
+| --- | --- | --- |
+| `applyStMat_id` | **Closed** by `simp` + `ring` | `CommSemiring Numeric` |
+| `applyStMat_comp` | **Closed** by `simp` + `ring` | `CommSemiring Numeric` |
+| `pullback_id` | **Closed** by `simp` + `applyStMat_id` | — |
+| `pullback_comp` | **Closed** by `simp` + `applyStMat_comp` | — |
+| `CommSemiring Numeric` | **Open** (`sorry`) | See [leanncd.md §9.6](papers/leanncd.md) |
+
+The only open obligation is `CommSemiring Numeric`, which is shared with `StMat.assoc` in the PROP instance for **St**. Every other step is either a definitional unfolding or a `ring` call.
