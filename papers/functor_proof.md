@@ -119,7 +119,7 @@ The element-action equation gives $x \mathbin{;} [a, I_A] = (x_{pI_A})_p = (x_p)
 
 ## $\Lambda$ as a Broadcasted Operation
 
-See [theory.md §Broadcasting](papers/theory.md#L227) for background on the `Broadcasted` structure (degree, weaves, reindexings, and operator).
+See [theory.md §Broadcasting](papers/theory.md#broadcasting) for background on the `Broadcasted` structure (degree, weaves, reindexings, and operator).
 
 Every stride morphism $\Lambda : P \to Q$ in **St** can be represented as a `Broadcasted` morphism $[a, \Lambda] : [a, Q] \to [a, P]$ in **Br** with the following structure:
 
