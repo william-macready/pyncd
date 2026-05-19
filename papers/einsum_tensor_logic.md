@@ -1,5 +1,32 @@
 # Tensor Logic and Einsum
 
+## Contents
+
+1. [Tensor Logic](#tensor-logic)
+   - [Motivation](#motivation)
+   - [The Two Core Equivalences](#the-two-core-equivalences)
+   - [Tensor Operations as Logical Operations](#tensor-operations-as-logical-operations)
+   - [The Language](#the-language)
+   - [Neural Networks in Tensor Logic](#neural-networks-in-tensor-logic)
+   - [Inference and Learning](#inference-and-learning)
+   - [Reasoning in Embedding Space](#reasoning-in-embedding-space)
+   - [Implementation in PyRel](#implementation-in-pyrel)
+   - [Einsum as the Foundation](#einsum-as-the-foundation)
+2. [Einsum](#einsum)
+   - [What It Is](#what-it-is)
+   - [Syntax](#syntax)
+   - [Formal Semantics](#formal-semantics)
+   - [Algebraic Properties](#algebraic-properties)
+   - [Nesting, Denesting, and Contraction Paths](#nesting-denesting-and-contraction-paths)
+3. [The Connection](#the-connection)
+   - [Einsum Is the Primitive Operation of Both](#einsum-is-the-primitive-operation-of-both)
+   - [The Semiring Perspective](#the-semiring-perspective)
+   - [The Language Question](#the-language-question)
+   - [Practical Implications](#practical-implications)
+4. [References](#references)
+
+---
+
 ## Tensor Logic
 
 ### Motivation

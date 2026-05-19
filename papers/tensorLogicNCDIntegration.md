@@ -4,6 +4,41 @@ This document examines the relationship between Tensor Logic (Domingos 2025) and
 
 ---
 
+## Contents
+
+1. [Background: Tensor Logic](#1-background-tensor-logic)
+   - [Core idea](#11-core-idea)
+   - [The two-way equivalence](#12-the-two-way-equivalence)
+   - [Tensor operations as logical operations](#13-tensor-operations-as-logical-operations)
+   - [LHS index notation](#14-lhs-index-notation)
+   - [Neural networks in tensor logic](#15-neural-networks-in-tensor-logic)
+   - [Learning is free](#16-learning-is-free)
+2. [Background: Einsum](#2-background-einsum)
+   - [Syntax](#21-syntax)
+   - [Formal semantics](#22-formal-semantics)
+   - [Algebraic properties](#23-algebraic-properties)
+3. [Background: pyncd](#3-background-pyncd)
+   - [The product category framework](#31-the-product-category-framework)
+   - [Broadcasted: the base morphism](#32-broadcasted-the-base-morphism)
+   - [Operators](#33-operators)
+   - [UID and Context: axis identity](#34-uid-and-context-axis-identity)
+4. [Coverage Analysis](#4-coverage-analysis)
+   - [What tensor logic covers](#41-what-tensor-logic-covers)
+   - [Gaps closed by the integration](#42-gaps-closed-by-the-integration-5)
+   - [What tensor logic does not cover](#43-what-tensor-logic-does-not-cover)
+   - [Summary](#44-summary)
+5. [The Term-Based Integration](#5-the-term-based-integration)
+   - [The integration boundary](#51-the-integration-boundary)
+   - [`TensorEquation` as an `Operator` subclass](#52-tensorequation-as-an-operator-subclass)
+   - [`bc_signature()`: conversion to `Broadcasted`](#53-bc_signature-conversion-to-broadcasted)
+   - [Round-trip: equation and categorical structure stay in sync](#54-round-trip-equation-and-categorical-structure-stay-in-sync)
+   - [`TensorProgram(Term)` and `to_morphism()`](#55-tensorprogramterm-and-to_morphism)
+   - [Beyond `TensorProgram` — Extending the Tensor Logic Interface](#56-beyond-tensorprogram--extending-the-tensor-logic-interface)
+6. [Summary](#6-summary)
+7. [References](#references)
+
+---
+
 ## 1. Background: Tensor Logic
 
 For a detailed treatment of tensor logic and its foundations in einsum see [einsum_tensor_logic.md](einsum_tensor_logic.md). The subsections below summarise the concepts relevant to the pyncd integration.

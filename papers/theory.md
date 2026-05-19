@@ -4,6 +4,29 @@ Abbott & Zardini (MIT LIDS), arXiv:2604.07242v2, April 2026.
 
 ---
 
+## Contents
+
+1. [Motivation](#motivation)
+2. [Terms and UIDs](#the-term-system)
+3. [Product Categories](#the-product-category-framework)
+4. [The Stride Category St](#the-axis-stride-category-st)
+   - [Objects](#objects-in-st)
+   - [Morphisms](#morphisms-in-st)
+5. [The Broadcasted Category Br](#the-array-broadcasted-category-br)
+   - [Objects](#objects-in-br)
+   - [Morphisms](#morphisms-in-br)
+   - [Broadcasting and Weaves](#broadcasting)
+   - [Lift Operations](#lift-operations)
+   - [Autoalignment](#autoalignment)
+   - [Operators](#concrete-operators)
+6. [A Contravariant Functor Connecting St and Br](#a-contravariant-functor-connecting-st-and-br)
+7. [End-to-End Example: Transformer](#end-to-end-example-transformer)
+8. [Math-to-Python Reference](#math-to-python-reference)
+9. [Code Examples](#code-examples)
+10. [Further Reading](#further-reading)
+
+---
+
 ## Motivation
 
 PyTorch's broadcasting semantics, inherited from NumPy, are informal and difficult to reason about mathematically. This paper provides a categorical framework in which deep learning models are **algebraic terms** — formal expressions built from a small set of construction rules. The same term simultaneously supports:
@@ -215,18 +238,7 @@ In summary, objects of **Br** represent the set of arrays indexed by shape `A` m
 
 **Morphisms** in **Br** are **broadcasted operations** $F : \Pi_{i \in I} [a_i, A_i] \to \Pi_{j \in J} [b_j, B_j]$. Diagrammatically, we illustrate an example morphism $f$ taking array inputs $[a, A_0]$ and $[b, \mathbf{1}]$ (a scalar-shaped array with datatype $b$) to produce output $[c, C_0C_1]$ (an array with datatype $c$ and shape $C_0C_1$). <img src="images/morphism-diagram.png" alt="Morphism diagram: function f with inputs A₀, a, b and outputs C₁, C₀, c" width="100" style="float: right; margin-left: 1em;"/> The dashed line on the input side groups $[a, A_0]$ and $[b, \mathbf{1}]$ into an array product (a tuple of inputs), while the output wires $C_1$, $C_0$, and $c$ represent the shape axes and base datatype of the codomain. When the base datatype is $\mathbb{R}$, the datatype (line with arrow) may be omitted
 
-Before describing broadcasting in detail, we observe that the bracket notation $[a, \cdot]$ defines a structured relationship between **St** and **Br**: it sends shapes to arrays and sends rearrangements to reindexing morphisms — contravariantly.
-
-### $[a, \cdot]$ as a Contravariant Functor
-
-The bracket notation is overloaded: for a fixed datatype $a \in \mathbf{Dt}$, it denotes both objects and morphisms of **Br** depending on what occupies its second slot.
-
-- **Objects** (Def 9): $[a,\cdot]$ acting on **St** object $A$ yields the **Br** object $[a, A]$ — an array with datatype $a$ and shape $A$.
-- **Morphisms** (Def 10): $[a,\cdot]$ acting on **St** morphism $\eta : P \to Q$ yields the **Br** morphism $[a, \eta] : [a, Q] \to [a, P]$ — a reindexing that pulls values back along $\eta$.
-
-Together these make $[a, \cdot]$ a **contravariant functor** $\mathbf{St}^{\mathrm{op}} \to \mathbf{Br}$. The two functoriality conditions are proved in [functor_proof.md](../functor_proof.md): contravariant composition $[a, \eta \mathbin{;} \mu] = [a, \mu] \mathbin{;} [a, \eta]$ is the primary result, and identity preservation $[a, \text{id}_A] = \text{id}_{[a,A]}$ follows as a corollary. Since $a$ plays no role in either proof (it labels values but is never touched by the index arithmetic), functoriality holds for every $a \in \mathbf{Dt}$, yielding a family $\{[a, \cdot]\}_{a \in \mathbf{Dt}}$. Arrays with mixed datatypes $\Pi_{i \in I} [a_i, A_i]$ are reindexed componentwise, one $[a_i, \eta]$ per factor, via the product structure of **Br**. The family $\{[a, \cdot]\}_{a \in \mathbf{Dt}}$ can be unified into a single bifunctor $[\cdot, \cdot] : \mathbf{Dt} \times \mathbf{St}^{\mathrm{op}} \to \mathbf{Br}$, covariant in the first slot; this is cleanest when $\mathbf{Dt}$ is treated as a discrete category (no non-identity morphisms) so that the datatype slot contributes no additional functoriality obligations.
-
-The contravariancy is the categorical expression of **pullback**: a stride morphism $\eta : P \to Q$ maps coordinates forward ($P \to Q$), so it pulls array values backward ($[a, Q] \to [a, P]$), reading from position $\eta(p)$ in the source for each output position $p \in P$.
+Before describing broadcasting in detail, we note that the bracket notation $[a, \cdot]$ defines a structured relationship between **St** and **Br**: it sends shapes to arrays and sends rearrangements to reindexing morphisms — contravariantly. This is developed in its own section after **Br** is fully defined.
 
 ### Broadcasting
 
@@ -359,9 +371,7 @@ class Broadcasted[B: Datatype, A: Axis, O: Operator](Morphism[Array[B, A]]):
 | Linear layer | `Linear` operator; target axes = input/output axes |
 | Convolution | `StrideMorphism` shift $(x' + w)$ composed with `Linear` |
 
----
-
-## Lift Operations
+### Lift Operations
 
 **Paper:** Definitions 10–11, pp. 12–13 — **Python:** [construction_helpers/lift.py](../construction_helpers/lift.py)
 
@@ -376,7 +386,7 @@ A lift extends an object or morphism in **Br** by a shape or morphism from **St*
 
 These are not independent. The batch lift maps between object lifts: $[f, P] : [X, P] \to [Y, P]$.
 
-### Object-Object Lift $[X, P]$
+#### Object-Object Lift $[X, P]$
 
 For an array product $X = \Pi_{i \in I}[a_i, A_i] \in \text{Ob}(\mathbf{Br})$ and a shape $P \in \text{Ob}(\mathbf{St})$:
 
@@ -384,7 +394,7 @@ $$[X, P] = \Pi_{i \in I}[a_i,\, A_i \otimes P]$$
 
 The lift prepends the axes of $P$ to each array's shape. It is a purely object-level construction — no morphism is produced. Its primary role is to name the domain and codomain that the batch lift $[f, P]$ maps between.
 
-### Object-Morphism Lift $[X, \eta]$ (Def 10)
+#### Object-Morphism Lift $[X, \eta]$ (Def 10)
 
 Defs 9 and 10 together make $[a, \cdot]$ a contravariant functor $\mathbf{St} \to \mathbf{Br}$: it sends **St** objects $A$ to **Br** objects $[a, A]$ (arrays), and **St** morphisms $\eta : P \to Q$ to **Br** morphisms $[a, \eta] : [a, Q] \to [a, P]$ (reindexings), reversing the direction. Functoriality — $[a, \text{id}_A] = \text{id}_{[a,A]}$ and $[a, \eta \mathbin{;} \mu] = [a, \mu] \mathbin{;} [a, \eta]$ — follows directly from the element-action equation in Def 10. The object-morphism lift uses the morphism half of this functor.
 
@@ -400,7 +410,7 @@ The lift produces a reindexing morphism in **Br** that permutes coordinates with
 
 The special case $\eta = \langle q | : \mathbf{1} \to Q$ (a single element of $Q$) recovers the **index** morphism $[X, q] : [X, Q] \to [X, \mathbf{1}]$, selecting one slice of each array.
 
-### Batch Lift $[f, P]$ (Def 11)
+#### Batch Lift $[f, P]$ (Def 11)
 
 For a morphism $f : X \to Y$ in **Br** and a shape $P \in \text{Ob}(\mathbf{St})$, the **batch lift** $[f, P] : [X, P] \to [Y, P]$ runs $f$ once independently for each coordinate in $P$. The defining property is:
 
@@ -416,7 +426,7 @@ Eq. 2 shows that $[f, P]$ factors into $|\text{El}(P)|$ independent copies of $f
 
 The batch lift is defined recursively on the structure of $f$, using the fact that lifting distributes over composition and products: $[f \mathbin{;} g,\, P] = [f, P] \mathbin{;} [g, P]$ and $[f \otimes g,\, P] = [f, P] \otimes [g, P]$. When $f$ is a broadcasted operation (Def 13), lifting reduces to the broadcasted-stride lift below.
 
-### Broadcasted-Stride Lift
+#### Broadcasted-Stride Lift
 
 Given a broadcasted operation $F$ (Def 13) with degree $P$ and reindexings $(\eta_i : P \to Q_i)_{i \in I}$, and a stride morphism $\eta : P' \to Q$ in $\text{Hom}(\mathbf{St})$, the broadcasted-stride lift extends $F$'s degree from $P$ to $P' \otimes P$:
 
@@ -425,9 +435,7 @@ Given a broadcasted operation $F$ (Def 13) with degree $P$ and reindexings $(\et
 
 The base operation $f$ is unchanged; the lift only enlarges the loop domain and extends the tiling structure.
 
----
-
-## Autoalignment via `@`
+### Autoalignment
 
 **Paper:** Section 5.1.1 — **Python:** [construction_helpers/composition.py](../construction_helpers/composition.py)
 
@@ -441,9 +449,7 @@ qk_matmul @ softmax @ mask @ sv_matmul
 
 At each `@`, the codomain axes of the left term are aligned with the domain axes of the right. Fresh unnamed axes generated by `SoftMax.template()` are renamed by the alignment context to match named axes from adjacent operations.
 
----
-
-## Concrete Operators
+### Concrete Operators
 
 **Python:** [data_structure/Operators.py](../data_structure/Operators.py)
 
@@ -459,6 +465,19 @@ Operators are `Operator` subclasses (frozen dataclasses) that implement `templat
 | `Embedding.template(embedding_size)` | Discrete $\to$ real; input datatype is `Natural` |
 | `AdditionOp.template()` | Elementwise addition of two arrays of the same shape |
 | `WeightedTriangularLower.template()` | Causal mask; used in attention |
+
+---
+
+## A Contravariant Functor Connecting St and Br
+
+The bracket notation is overloaded: for a fixed datatype $a \in \mathbf{Dt}$, it denotes both objects and morphisms of **Br** depending on what occupies its second slot.
+
+- **Objects** (Def 9): $[a,\cdot]$ acting on **St** object $A$ yields the **Br** object $[a, A]$ — an array with datatype $a$ and shape $A$.
+- **Morphisms** (Def 10): $[a,\cdot]$ acting on **St** morphism $\eta : P \to Q$ yields the **Br** morphism $[a, \eta] : [a, Q] \to [a, P]$ — a reindexing that pulls values back along $\eta$.
+
+Together these make $[a, \cdot]$ a **contravariant functor** $\mathbf{St}^{\mathrm{op}} \to \mathbf{Br}$. The two functoriality conditions are proved in [functor_proof.md](../functor_proof.md): contravariant composition $[a, \eta \mathbin{;} \mu] = [a, \mu] \mathbin{;} [a, \eta]$ is the primary result, and identity preservation $[a, \text{id}_A] = \text{id}_{[a,A]}$ follows as a corollary. Since $a$ plays no role in either proof (it labels values but is never touched by the index arithmetic), functoriality holds for every $a \in \mathbf{Dt}$, yielding a family $\{[a, \cdot]\}_{a \in \mathbf{Dt}}$. Arrays with mixed datatypes $\Pi_{i \in I} [a_i, A_i]$ are reindexed componentwise, one $[a_i, \eta]$ per factor, via the product structure of **Br**. The family $\{[a, \cdot]\}_{a \in \mathbf{Dt}}$ can be unified into a single bifunctor $[\cdot, \cdot] : \mathbf{Dt} \times \mathbf{St}^{\mathrm{op}} \to \mathbf{Br}$, covariant in the first slot; this is cleanest when $\mathbf{Dt}$ is treated as a discrete category (no non-identity morphisms) so that the datatype slot contributes no additional functoriality obligations.
+
+The contravariancy is the categorical expression of **pullback**: a stride morphism $\eta : P \to Q$ maps coordinates forward ($P \to Q$), so it pulls array values backward ($[a, Q] \to [a, P]$), reading from position $\eta(p)$ in the source for each output position $p \in P$.
 
 ---
 
@@ -535,7 +554,7 @@ Each `*` creates a `ProductOfMorphisms` ($\otimes$, parallel); each `@` creates 
 
 ---
 
-## Pyncd Code Representations
+## Code Examples
 
 Concrete pyncd code for each mathematical object and construction in the paper. All examples use the actual class APIs.
 
@@ -894,3 +913,9 @@ config.assign_values(                           # assign by axis name
 concrete_model = config(model)    # config(x) = config.apply_context(x)
 # now all FreeNumerics matching those names are replaced by Integer values
 ```
+
+---
+
+## Further Reading
+
+**Acset representation.** The categories **St** and **Br** described above can also be represented as attributed C-sets (acsets) in the sense of Patterson et al. (2022) — a tabular, schema-driven alternative to the term representation. This is not part of pyncd; it is an analytical layer built on top of it. See [acset.md](acset.md).

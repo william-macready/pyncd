@@ -54,6 +54,10 @@ class StrideMorphism[A:Axis](pc.Morphism[A]):
     def cod(self) -> pc.ProdObject[A]:
         return pc.ProdObject.from_iter(
             axis for axis, _ in self._cod_stride)
+    @property
+    def cod_strides(self) -> fd.Prod[tuple[A, fd.Prod[nm.Numeric]]]:
+        """Codomain axes paired with their coefficient rows."""
+        return self._cod_stride
     
     @classmethod
     def from_matrix(cls, 

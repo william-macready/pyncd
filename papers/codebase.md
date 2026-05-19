@@ -6,6 +6,28 @@ Cross-references to the paper (Abbott & Zardini, arXiv:2604.07242) are given as 
 
 ---
 
+## Contents
+
+1. [Architecture at a Glance](#architecture-at-a-glance)
+2. [data\_structure/](#data_structure)
+3. [construction\_helpers/](#construction_helpers)
+4. [torch\_compile/](#torch_compile)
+5. [display/](#display)
+6. [graphs/](#graphs)
+7. [websocket\_transfer/](#websocket_transfer)
+8. [data\_transfer/](#data_transfer)
+9. [term\_utilities/](#term_utilities)
+10. [utilities/](#utilities)
+11. [data\_structure\_kernels/](#data_structure_kernels)
+12. [tests/](#tests)
+13. [Key Data Flows](#key-data-flows)
+    - [Building a model](#building-a-model)
+    - [Compiling to PyTorch](#compiling-to-pytorch)
+    - [Serialisation and visualisation](#serialisation-and-visualisation)
+14. [Paper-to-Code Summary](#paper-to-code-summary)
+
+---
+
 ## Architecture at a Glance
 
 ```

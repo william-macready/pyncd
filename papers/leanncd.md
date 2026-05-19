@@ -2,6 +2,31 @@
 
 This document describes a Lean 4 formalisation of the categorical framework introduced in *Weaves, Wires, and Morphisms* (Abbott & Zardini, 2026). The goal is to show how the core structures — the product category framework, the axis-stride category **St**, and the array-broadcasted category **Br** — can be expressed as inhabitants of a small typeclass hierarchy built around two definitions: `SmallCategory` and `PROP`.
 
+## Contents
+
+1. [Two-layer architecture](#two-layer-architecture)
+2. [Layer 1 — Mathematical Encoding](#layer-1--mathematical-encoding)
+   - [1. SmallCategory](#1-smallcategory)
+   - [2. PROP](#2-prop)
+   - [3. Numeric](#3-numeric)
+   - [4. St — Semantic Category via Stride Matrices](#4-st--semantic-category-via-stride-matrices)
+   - [5. Br — Free Category over Broadcasted Base Morphisms](#5-br--free-category-over-broadcasted-base-morphisms)
+   - [6. Design Contrast](#6-design-contrast)
+   - [7. The St → Br Embedding](#7-the-st--br-embedding)
+   - [8. Correspondence with the Python Implementation](#8-correspondence-with-the-python-implementation)
+   - [9. Paper Definitions in Lean](#9-paper-definitions-in-lean)
+3. [Layer 2 — Representation](#layer-2--representation)
+   - [1. `DynamicName`](#1-dynamicname)
+   - [2. `UID` and the `TermM` monad](#2-uid-and-the-termm-monad)
+   - [3. `WithUID` — the generic decoration](#3-withuid--the-generic-decoration)
+   - [4. `TermTraversable` — replacing `deep_reconstruct`](#4-termtraversable--replacing-deep_reconstruct)
+   - [5. `Context` — pure functional union-find](#5-context--pure-functional-union-find)
+   - [6. Correspondence with the Python Term System](#6-correspondence-with-the-python-term-system)
+   - [7. What Layer 2 leaves unchanged](#7-what-layer-2-leaves-unchanged)
+4. [Summary](#summary)
+
+---
+
 ## Two-layer architecture
 
 The formalisation separates into two independent layers that address different concerns. Understanding this separation is the key to reading everything that follows.

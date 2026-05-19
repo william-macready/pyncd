@@ -2,6 +2,26 @@
 
 $[a, \cdot]$ is a contravariant functor from **St** to **Br**. Before validating the functor laws we motivate why the contravariance arises.
 
+---
+
+## Contents
+
+1. [Why $[a, \cdot]$ is Contravariant](#why-a-cdot-is-contravariant)
+2. [Setup](#setup)
+3. [Proof: $[a, \cdot]$ Preserves Composition (Contravariantly)](#proof-a-cdot-preserves-composition-contravariantly)
+4. [Corollary: $[a, \cdot]$ Preserves Identities](#corollary-a-cdot-preserves-identities)
+5. [$\Lambda$ as a Broadcasted Operation](#lambda-as-a-broadcasted-operation)
+6. [Lean 4 Proof: Functoriality of $[a, \cdot]$](#lean-4-proof-functoriality-of-a-cdot)
+   - [Syntactic vs semantic equality](#syntactic-vs-semantic-equality)
+   - [Element and array types](#element-and-array-types)
+   - [Element action of a stride matrix](#element-action-of-a-stride-matrix)
+   - [Composition and identity of applyStMat](#composition-and-identity-of-applystmat)
+   - [Pullback: the morphism action of $[a, \cdot]$](#pullback-the-morphism-action-of-a-cdot)
+   - [Functoriality theorems](#functoriality-theorems)
+   - [Proof obligations](#proof-obligations)
+
+---
+
 ## Why $[a, \cdot]$ is Contravariant
 
 The morphism action of $[a,\cdot]$ reverses arrows: a stride morphism $\Lambda : P \to Q$ in **St** induces $[a,\Lambda] : [a,Q] \to [a,P]$ in **Br**. The examples below show why no other direction is possible. The remainder of this document then verifies that this reversal is functorial — preserving composition and identities.

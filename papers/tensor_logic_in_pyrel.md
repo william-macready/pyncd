@@ -4,6 +4,23 @@
 
 ---
 
+## Contents
+
+1. [Representing Tensors](#representing-tensors)
+2. [Core Translation Rules](#core-translation-rules)
+3. [Worked Examples](#worked-examples)
+   - [1. Trace — `S[i,i]`](#1-trace--sii)
+   - [2. Matrix Self-Product — `R[i,k] = S[i,j] S[k,j]`](#2-matrix-self-product--rik--sij-skj)
+   - [3. Single Neural Net Layer — `R[i] = sigm(S[i,j] U[j])`](#3-single-neural-net-layer--ri--sigmsij-uj)
+   - [4. Broadcast Addition — `R[i,j,k] = T[i,j,k] + S[i,j] + U[k]`](#4-broadcast-addition--rijk--tijk--sij--uk)
+   - [5. Convolution — `R[x,y] = S[x,y] + S[x+i,y+j] K[i,j]`](#5-convolution--rxy--sxy--sxiyj-kij)
+   - [6. Complex Contraction with Intermediates](#6-complex-contraction-with-intermediates--rik--tijk--logsijuj)
+4. [Translating `*`-Indexed Equations (Virtual Indices)](#translating--indexed-equations-virtual-indices)
+5. [Translating `.`-Indexed Equations (Normalization Axes)](#translating--indexed-equations-normalization-axes)
+6. [Limitations and Differences](#limitations-and-differences)
+
+---
+
 ## Representing Tensors
 
 In PyRel, a tensor is a **relation** whose columns are the index values plus a value column. A matrix S is declared as:
