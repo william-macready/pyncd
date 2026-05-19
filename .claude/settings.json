@@ -3,7 +3,33 @@
     "allow": [
       "Read(//Users/williammacready/Desktop/**)",
       "Bash(cp \"/Users/williammacready/Desktop/Screenshot 2026-05-11 at 2.09.25 PM.png\" /Users/williammacready/code/python/pyncd/papers/images/reindexing-diagram.png)",
-      "Bash(cp \"/Users/williammacready/Desktop/Screenshot 2026-05-11 at 2.09.41 PM.png\" /Users/williammacready/code/python/pyncd/papers/images/slice-diagram.png)"
+      "Bash(cp \"/Users/williammacready/Desktop/Screenshot 2026-05-11 at 2.09.41 PM.png\" /Users/williammacready/code/python/pyncd/papers/images/slice-diagram.png)",
+      "Bash(npx markdownlint-cli *)",
+      "Bash(pdftotext *)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c \"import json,os,sys; f=json.loads(os.environ.get('CLAUDE_TOOL_INPUT','{}')).get('file_path',''); print('Blocked: manage uv.lock and .python-version via uv, not directly') or sys.exit(2) if any(f.endswith(x) for x in ['uv.lock','.python-version']) else None\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c \"import json,os,subprocess,sys; inp=json.loads(os.environ.get('CLAUDE_TOOL_INPUT','{}')); f=inp.get('file_path',''); r=subprocess.run(['uv','run','pyright',f],capture_output=True,text=True,cwd=os.environ.get('CLAUDE_PROJECT_DIR','.')) if f.endswith('.py') else None; print(r.stdout) if r and r.returncode!=0 else None; sys.exit(2) if r and r.returncode!=0 else None\""
+          }
+        ]
+      }
     ]
   }
 }
