@@ -13,7 +13,7 @@ import data_structure.Operators as ops
 
 from acset.instances import (
     OpTag, DataTag, EntryRow, SStInstance,
-    ArrayRow, ArrayAxisRow, SampleRow, SBrInstance,
+    EquationRow, ArrayRow, ArrayAxisRow, SampleRow, SBrInstance,
 )
 
 
@@ -78,6 +78,68 @@ def from_stride_morphism(m: StrideMorphism) -> SStInstance:
     return inst
 
 
+def _add_equation(
+    inst: SBrInstance,
+    eq_idx: int,
+    eq: TensorEquation,
+    datatypes: dict[fd.DynamicName, bc.Datatype],
+) -> None:
+    """Append all rows for one equation into inst, tagged with eq_idx."""
+    retained = eq.retained_uids()
+    op = _operator_fields(eq.operator)
+    out_datatype_tag, out_max_value = _dt_fields(datatypes.get(eq.lhs_name))
+
+    inst.equations.append(EquationRow(equation_idx=eq_idx, lhs_name=eq.lhs_name))
+    inst.arrays.append(ArrayRow(
+        equation_idx=eq_idx,
+        slot=0,
+        name=eq.lhs_name,
+        is_input=False,
+        operator_tag=op.tag,
+        norm_axis=next((ax.uid for ax in eq.lhs_indices if isinstance(ax, NormAxis)), None),
+        datatype_tag=out_datatype_tag,
+        max_value=out_max_value,
+        bias=op.bias,
+        elementwise_fn=op.elementwise_fn,
+    ))
+    for pos, ax in enumerate(eq.lhs_indices):
+        inst.axis_sizes[ax.uid] = ax.local_size()
+        inst.array_axes.append(ArrayAxisRow(
+            equation_idx=eq_idx, array_slot=0, axis_uid=ax.uid, is_target=False, position=pos
+        ))
+
+    for rhs_slot, (tensor_name, input_axes) in enumerate(eq.rhs, start=1):
+        in_datatype_tag, in_max_value = _dt_fields(datatypes.get(tensor_name))
+        inst.arrays.append(ArrayRow(
+            equation_idx=eq_idx,
+            slot=rhs_slot,
+            name=tensor_name,
+            is_input=True,
+            datatype_tag=in_datatype_tag,
+            max_value=in_max_value,
+        ))
+        for pos, ax in enumerate(input_axes):
+            inst.axis_sizes[ax.uid] = ax.local_size()
+            inst.array_axes.append(ArrayAxisRow(
+                equation_idx=eq_idx,
+                array_slot=rhs_slot,
+                axis_uid=ax.uid,
+                is_target=ax.uid not in retained,
+                position=pos,
+            ))
+        for ax in input_axes:
+            if ax.uid in retained:
+                # src_uid == tgt_uid: TensorEquation retained axes are the same
+                # objects on lhs and rhs, so sampling is always an identity map.
+                inst.samples.append(SampleRow(
+                    equation_idx=eq_idx,
+                    reindexing_slot=rhs_slot,
+                    src_uid=ax.uid,
+                    tgt_uid=ax.uid,
+                    coeff=nm.Integer(1),
+                ))
+
+
 def from_tensor_equation(
     eq: TensorEquation,
     array_datatypes: dict[fd.DynamicName, bc.Datatype] | None = None,
@@ -100,68 +162,23 @@ def from_tensor_equation(
     by a single datatype.
     """
     inst = SBrInstance()
-    retained = eq.retained_uids()
-    datatypes = array_datatypes or {}
-
-    op = _operator_fields(eq.operator)
-    out_datatype_tag, out_max_value = _dt_fields(datatypes.get(eq.lhs_name))
-    inst.arrays.append(ArrayRow(
-        slot=0,
-        name=eq.lhs_name,
-        is_input=False,
-        operator_tag=op.tag,
-        norm_axis=next((ax.uid for ax in eq.lhs_indices if isinstance(ax, NormAxis)), None),
-        datatype_tag=out_datatype_tag,
-        max_value=out_max_value,
-        bias=op.bias,
-        elementwise_fn=op.elementwise_fn,
-    ))
-    for pos, ax in enumerate(eq.lhs_indices):
-        inst.axis_sizes[ax.uid] = ax.local_size()
-        inst.array_axes.append(ArrayAxisRow(
-            array_slot=0, axis_uid=ax.uid, is_target=False, position=pos
-        ))
-
-    for rhs_slot, (tensor_name, input_axes) in enumerate(eq.rhs, start=1):
-        in_datatype_tag, in_max_value = _dt_fields(datatypes.get(tensor_name))
-        inst.arrays.append(ArrayRow(
-            slot=rhs_slot,
-            name=tensor_name,
-            is_input=True,
-            datatype_tag=in_datatype_tag,
-            max_value=in_max_value,
-        ))
-        for pos, ax in enumerate(input_axes):
-            inst.axis_sizes[ax.uid] = ax.local_size()
-            inst.array_axes.append(ArrayAxisRow(
-                array_slot=rhs_slot,
-                axis_uid=ax.uid,
-                is_target=ax.uid not in retained,
-                position=pos,
-            ))
-        for ax in input_axes:
-            if ax.uid in retained:
-                # src_uid == tgt_uid by design: TensorEquation retained axes are
-                # the same axis objects on both lhs and rhs, so sampling is always
-                # an identity map. SampleRow supports src_uid != tgt_uid for
-                # stride-style reindexing, but that path is not exercised here.
-                inst.samples.append(SampleRow(
-                    src_uid=ax.uid,
-                    tgt_uid=ax.uid,
-                    coeff=nm.Integer(1),
-                    reindexing_slot=rhs_slot,
-                ))
-
+    _add_equation(inst, 0, eq, array_datatypes or {})
     return inst
 
 
 def from_tensor_program(
     prog: TensorProgram,
     array_datatypes: dict[fd.DynamicName, bc.Datatype] | None = None,
-) -> list[SBrInstance]:
-    """Convert a TensorProgram to one SBrInstance per equation.
+) -> SBrInstance:
+    """Convert a TensorProgram to a single SBrInstance.
 
-    Instances are independent; shared axes are identified by UID across them.
-    array_datatypes is forwarded to each from_tensor_equation call.
+    Equations are processed in topological order and assigned equation_idx values
+    matching their position in that order. Shared axes are identified by UID across
+    all equations in the single axis_sizes dict.
+    array_datatypes is applied to every equation.
     """
-    return [from_tensor_equation(eq, array_datatypes) for eq in topological_sort(prog.equations)]
+    inst = SBrInstance()
+    datatypes = array_datatypes or {}
+    for eq_idx, eq in enumerate(topological_sort(prog.equations)):
+        _add_equation(inst, eq_idx, eq, datatypes)
+    return inst

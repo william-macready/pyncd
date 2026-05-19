@@ -11,7 +11,7 @@ from data_structure.Operators import (
 )
 from data_structure.TensorDSL import NormAxis
 from acset.convert import from_stride_morphism, from_tensor_equation, from_tensor_program
-from acset.instances import SStInstance, SBrInstance, OpTag, DataTag
+from acset.instances import SStInstance, SBrInstance, EquationRow, OpTag, DataTag
 
 
 def _identity_morphism():
@@ -285,38 +285,39 @@ def _two_equation_program():
     return TensorProgram(equations=(eq1, eq2)), i, j, k, m
 
 
-def test_from_tensor_program_returns_list():
-    """from_tensor_program returns a list."""
+def test_from_tensor_program_returns_sbr_instance():
+    """from_tensor_program returns a single SBrInstance."""
     prog, *_ = _two_equation_program()
     result = from_tensor_program(prog)
-    assert isinstance(result, list)
+    assert isinstance(result, SBrInstance)
 
 
-def test_from_tensor_program_one_instance_per_equation():
-    """Two-equation program produces two SBrInstances."""
+def test_from_tensor_program_has_two_equations():
+    """Two-equation program produces an SBrInstance with two EquationRows."""
     prog, *_ = _two_equation_program()
-    result = from_tensor_program(prog)
-    assert len(result) == 2
-    assert all(isinstance(r, SBrInstance) for r in result)
+    inst = from_tensor_program(prog)
+    assert len(inst.equations) == 2
+    assert all(isinstance(r, EquationRow) for r in inst.equations)
 
 
 def test_from_tensor_program_each_has_three_arrays():
     """Each equation in the two-equation program has three Array rows."""
     prog, *_ = _two_equation_program()
-    instances = from_tensor_program(prog)
-    assert all(len(inst.arrays) == 3 for inst in instances)
+    inst = from_tensor_program(prog)
+    for eq_row in inst.equations:
+        arrays = [a for a in inst.arrays if a.equation_idx == eq_row.equation_idx]
+        assert len(arrays) == 3
 
 
 def test_from_tensor_program_shared_axis_same_uid():
-    """Axis i appears in both instances under the same UID (via object identity, not unification)."""
+    """Axis i appears in the single inst.axis_sizes under the same UID."""
     prog, i, *_ = _two_equation_program()
-    instances = from_tensor_program(prog)
-    assert i.uid in instances[0].axis_sizes
-    assert i.uid in instances[1].axis_sizes
+    inst = from_tensor_program(prog)
+    assert i.uid in inst.axis_sizes
 
 
 def test_from_tensor_program_does_not_unify_fresh_axes():
-    """from_tensor_program converts equations independently; fresh axes in eq2 are not unified with eq1's axes."""
+    """from_tensor_program preserves distinct UIDs; fresh axes in eq2 are not merged with eq1's."""
     i1 = RawAxis.named('i')
     j1 = RawAxis.named('j')
     k1 = RawAxis.named('k')
@@ -335,12 +336,12 @@ def test_from_tensor_program_does_not_unify_fresh_axes():
         rhs=((fd.DynamicName('W2'), (i2, m2)), (fd.DynamicName('H'), (m2, k2))),
         operator=Identity(),
     )
-    instances = from_tensor_program(TensorProgram(equations=(eq1, eq2)))
+    inst = from_tensor_program(TensorProgram(equations=(eq1, eq2)))
     # i2 and i1 are distinct objects — from_tensor_program never calls ctx.apply(),
     # so their UIDs are not merged (contrast with to_morphism() which does merge them).
     assert i1.uid != i2.uid
-    assert i2.uid not in instances[0].axis_sizes
-    assert i1.uid not in instances[1].axis_sizes
+    assert i1.uid in inst.axis_sizes
+    assert i2.uid in inst.axis_sizes
 
 
 # ── array_datatypes parameter ────────────────────────────────────────────────

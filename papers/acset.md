@@ -103,17 +103,19 @@ $\mathcal{S}_{Br}$ shares the `Axis`-centred reindexing structure of $\mathcal{S
 
 In $\mathcal{S}_{St}$, the analogous entity type is called `Entry` because each row is a nonzero entry of a coefficient matrix. In $\mathcal{S}_{Br}$, the same structure plays a different role: each row specifies one axis-component of how a particular input array is **sampled** at each step of the degree loop. The triple (`src`, `tgt`, `coeff`) says "for array $X$, the index into axis `tgt` equals `coeff` times the degree index along axis `src`" — it is a sampling rule, not a matrix entry in the abstract algebraic sense. The name `Sample` reflects this: each row is one component of the sampling pattern that determines which slice of an input the base operation sees at each loop iteration.
 
+$$\texttt{Equation} \xleftarrow{\texttt{equation}} \texttt{Array} \xrightarrow{\texttt{norm\_axis}} \texttt{Axis}$$
+
 $$\texttt{Sample} \underset{\texttt{tgt}}{\overset{\texttt{src}}{\rightrightarrows}} \texttt{Axis} \xleftarrow{\texttt{axis}} \texttt{ArrayAxis} \xrightarrow{\texttt{array\_slot}} \texttt{Array}$$
 
-$$\texttt{Sample} \xrightarrow{\texttt{reindexing\_slot}} \texttt{Array} \qquad \texttt{Array} \xrightarrow{\texttt{norm\_axis}} \texttt{Axis}$$
+$$\texttt{Sample} \xrightarrow{\texttt{reindexing\_slot}} \texttt{Array}$$
 
-$$\texttt{Sample} \xrightarrow{\texttt{coeff}} \mathbb{N} \qquad \texttt{Axis} \xrightarrow{\texttt{size}} \mathbb{N}_{>0} \qquad \texttt{ArrayAxis} \xrightarrow{\texttt{is\_target}} \mathbb{B} \qquad \texttt{ArrayAxis} \xrightarrow{\texttt{position}} \mathbb{N}$$
+$$\texttt{Equation} \xrightarrow{\texttt{lhs\_name}} \texttt{String} \qquad \texttt{Sample} \xrightarrow{\texttt{coeff}} \mathbb{N} \qquad \texttt{Axis} \xrightarrow{\texttt{size}} \mathbb{N}_{>0} \qquad \texttt{ArrayAxis} \xrightarrow{\texttt{is\_target}} \mathbb{B} \qquad \texttt{ArrayAxis} \xrightarrow{\texttt{position}} \mathbb{N}$$
 
 $$\texttt{Array} \xrightarrow{\texttt{is\_input}} \mathbb{B} \qquad \texttt{Array} \xrightarrow{\texttt{datatype\_tag}} \texttt{DataTag} \qquad \texttt{Array} \xrightarrow{\texttt{max\_value}} \mathbb{N} \qquad \texttt{Array} \xrightarrow{\texttt{operator\_tag}} \texttt{OpTag}$$
 
 $$\texttt{Array} \xrightarrow{\texttt{bias}} \mathbb{B} \qquad \texttt{Array} \xrightarrow{\texttt{elementwise\_fn}} \texttt{String} \qquad \texttt{Array} \xrightarrow{\texttt{slot}} \mathbb{N} \qquad \texttt{Array} \xrightarrow{\texttt{name}} \texttt{String}$$
 
-Four entity types, six attribute types ($\mathbb{N}$, $\mathbb{N}_{>0}$, $\mathbb{B}$, $\texttt{OpTag}$, $\texttt{DataTag}$, $\texttt{String}$), eighteen maps. `max_value` is a partial map defined only for `Natural`-typed arrays. `operator_tag`, `norm_axis`, `bias`, and `elementwise_fn` are partial maps defined only for output arrays (`is_input = False`); `norm_axis` is further restricted to operators in $\{\texttt{SoftMax}, \texttt{Normalize}\}$; `bias` is restricted to `Linear` output arrays; `elementwise_fn` is restricted to `Elementwise` output arrays.
+Five entity types, six attribute types ($\mathbb{N}$, $\mathbb{N}_{>0}$, $\mathbb{B}$, $\texttt{OpTag}$, $\texttt{DataTag}$, $\texttt{String}$), twenty maps. `max_value` is a partial map defined only for `Natural`-typed arrays. `operator_tag`, `norm_axis`, `bias`, and `elementwise_fn` are partial maps defined only for output arrays (`is_input = False`); `norm_axis` is further restricted to operators in $\{\texttt{SoftMax}, \texttt{Normalize}\}$; `bias` is restricted to `Linear` output arrays; `elementwise_fn` is restricted to `Elementwise` output arrays. `lhs_name` is partial — may be `None` for anonymous equations.
 
 `norm_axis` is necessary even though the source representation (a `TensorEquation`) marks the normalisation axis via the `NormAxis` subtype of `RawAxis` in `lhs_indices`. Once converted to an instance, all axes in `lhs_indices` appear as `ArrayAxis` rows with `is_target = False` — degree axes and the norm axis are indistinguishable without the explicit pointer. `norm_axis` is what preserves this distinction in the standalone instance.
 
@@ -123,7 +125,7 @@ Four entity types, six attribute types ($\mathbb{N}$, $\mathbb{N}_{>0}$, $\mathb
 | --- | --- | --- |
 | `size` | `Axis → ℕ_{>0}` | axis size |
 | `coeff` | `Sample → ℕ` | reindexing coefficient |
-| `is_target` | `ArrayAxis → Bool` | True = axis handled by the base operation rather than the outer degree loop (contracted for sum operations; normalized for SoftMax/Normalize); False = tiling axis iterated by the outer degree loop |
+| `is_target` | `ArrayAxis → Bool` | For input arrays: True = axis consumed by the base operation (contracted for sum operations, normalized for SoftMax/Normalize); False = degree axis supplied by the outer loop. For output arrays: always False — every axis in `lhs_indices` is a degree axis produced by the outer loop; the normalization dimension is identified separately by `norm_axis` on `Array` |
 | `position` | `ArrayAxis → ℕ` | 0-indexed dimension position within the array's physical layout; encodes the axis interleaving of `Weave._shape` |
 | `is_input` | `Array → Bool` | input array (True) or output array (False) |
 | `datatype_tag` | `Array → DataTag` | total map; `REALS` for floating-point arrays, `NATURAL` for discrete vocabulary arrays |
@@ -131,14 +133,15 @@ Four entity types, six attribute types ($\mathbb{N}$, $\mathbb{N}_{>0}$, $\mathb
 | `operator_tag` | `Array → OpTag` | base operation type; partial — defined only for output arrays (`is_input = False`) |
 | `bias` | `Array → Bool` | whether `Linear` applies a bias term; partial — defined only for `Linear` output arrays |
 | `elementwise_fn` | `Array → String` | name of the pointwise function; partial — defined only for `Elementwise` output arrays |
-| `slot` | `Array → ℕ` | 0-indexed argument position: 0 for the output array, 1..N for input arrays in rhs order; the primary key for `Array` within an instance, unambiguous under self-joins |
+| `slot` | `Array → ℕ` | 0-indexed argument position within an equation: 0 for the output array, 1..N for input arrays in rhs order; primary key for `Array` within its equation, unambiguous under self-joins |
 | `name` | `Array → String` | tensor name; metadata carried alongside `slot` for display and traceability; partial — may be `None` for anonymous arrays |
+| `lhs_name` | `Equation → String` | output tensor name for the equation; metadata only; partial — may be `None` for anonymous equations |
 
-The **C-set part** (structure) = the reindexing multigraph on `Axis` (analogous to `Entry ⇉ Axis` in $\mathcal{S}_{St}$), the bipartite graph linking each `ArrayAxis` to its `Array` and its `Axis`, the `reindexing_slot` map assigning each `Sample` to the array whose reindexing it belongs to (by slot integer), and the `norm_axis` map pointing each SoftMax/Normalize output array to its normalisation axis (partial — undefined for all other arrays).
+The **C-set part** (structure) = the `equation` map assigning each `Array` to its containing `Equation`, the reindexing multigraph on `Axis` (analogous to `Entry ⇉ Axis` in $\mathcal{S}_{St}$), the bipartite graph linking each `ArrayAxis` to its `Array` and its `Axis`, the `reindexing_slot` map assigning each `Sample` to the array whose reindexing it belongs to (by slot integer), and the `norm_axis` map pointing each SoftMax/Normalize output array to its normalisation axis (partial — undefined for all other arrays).
 
 The **degree** of a `Broadcasted` morphism is the tuple of loop axes — the axes iterated in the outer degree loop, shared across all inputs. In tabular form the degree is the image of `src` across all `Sample` rows.
 
-**Example instance** — batched attention scores $Y[b,j] = \mathrm{SoftMax}_j\!\left(\sum_i X[b,i]\,W[b,i,j]\right)$, degree $P = (b)$, reindexings $\eta_X = \mathrm{id}_{(b)}$ and $\eta_W = \mathrm{id}_{(b)}$ (both inputs sliced along $b$ at each loop step); the base operation is a SoftMax along $j$:
+**Example instance** — batched attention scores $Y[b,j] = \mathrm{SoftMax}_j\!\left(\sum_i X[b,i]\,W[b,i,j]\right)$, degree $P = (b, j)$, reindexing $\eta_X = \mathrm{id}_{(b)}$ ($X$ is sliced along $b$ only) and $\eta_W = \mathrm{id}_{(b,j)}$ ($W$ is sliced along both $b$ and $j$); the base operation is a SoftMax along $j$, which is contracted by the SoftMax (not by the outer loop) and identified by the `norm_axis` FK on the output array:
 
 | `Axis` | `size` |
 | --- | --- |
@@ -146,28 +149,33 @@ The **degree** of a `Broadcasted` morphism is the tuple of loop axes — the axe
 | $a_i$ | 64 |
 | $a_j$ | 128 |
 
-| `Array` | `slot` | `is_input` | `operator_tag` | `norm_axis` | `datatype_tag` | `max_value` | `bias` | `elementwise_fn` |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| $Y$ | 0 | False | SOFTMAX | $a_j$ | REALS | — | — | — |
-| $X$ | 1 | True | — | — | REALS | — | — | — |
-| $W$ | 2 | True | — | — | REALS | — | — | — |
+| `Equation` | `equation_idx` | `lhs_name` |
+| --- | --- | --- |
+| $e_0$ | 0 | $Y$ |
 
-| `ArrayAxis` | `array_slot` | `axis` | `is_target` | `position` |
-| --- | --- | --- | --- | --- |
-| $xa_b$ | 1 | $a_b$ | False | 0 |
-| $xa_i$ | 1 | $a_i$ | True | 1 |
-| $wa_b$ | 2 | $a_b$ | False | 0 |
-| $wa_i$ | 2 | $a_i$ | True | 1 |
-| $wa_j$ | 2 | $a_j$ | True | 2 |
-| $ya_b$ | 0 | $a_b$ | False | 0 |
-| $ya_j$ | 0 | $a_j$ | True | 1 |
+| `Array` | `equation_idx` | `slot` | `is_input` | `operator_tag` | `norm_axis` | `datatype_tag` | `max_value` | `bias` | `elementwise_fn` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| $Y$ | 0 | 0 | False | SOFTMAX | $a_j$ | REALS | — | — | — |
+| $X$ | 0 | 1 | True | — | — | REALS | — | — | — |
+| $W$ | 0 | 2 | True | — | — | REALS | — | — | — |
 
-| `Sample` | `src` | `tgt` | `coeff` | `reindexing_slot` |
-| --- | --- | --- | --- | --- |
-| $s_0$ | $a_b$ | $a_b$ | 1 | 1 |
-| $s_1$ | $a_b$ | $a_b$ | 1 | 2 |
+| `ArrayAxis` | `equation_idx` | `array_slot` | `axis` | `is_target` | `position` |
+| --- | --- | --- | --- | --- | --- |
+| $xa_b$ | 0 | 1 | $a_b$ | False | 0 |
+| $xa_i$ | 0 | 1 | $a_i$ | True | 1 |
+| $wa_b$ | 0 | 2 | $a_b$ | False | 0 |
+| $wa_i$ | 0 | 2 | $a_i$ | True | 1 |
+| $wa_j$ | 0 | 2 | $a_j$ | False | 2 |
+| $ya_b$ | 0 | 0 | $a_b$ | False | 0 |
+| $ya_j$ | 0 | 0 | $a_j$ | False | 1 |
 
-Both $\eta_X$ and $\eta_W$ are the identity on $b$, so each contributes one sample. The two rows are identical in `src`, `tgt`, and `coeff` — only `reindexing_slot` distinguishes them (1 for $X$, 2 for $W$). The degree here is $P = (b)$, confirming that $b$ is the image of `src`. Tiling axes of each array are the `ArrayAxis` rows where `is_target = False`; their reindexing coordinates are supplied by the `Sample` rows with matching `reindexing_slot` via `tgt`.
+| `Sample` | `equation_idx` | `src` | `tgt` | `coeff` | `reindexing_slot` |
+| --- | --- | --- | --- | --- | --- |
+| $s_0$ | 0 | $a_b$ | $a_b$ | 1 | 1 |
+| $s_1$ | 0 | $a_b$ | $a_b$ | 1 | 2 |
+| $s_2$ | 0 | $a_j$ | $a_j$ | 1 | 2 |
+
+$X$ has one retained axis ($b$) → one Sample. $W$ has two retained axes ($b$ and $j$) → two Samples, both with `reindexing_slot = 2`. $s_1$ and $s_2$ share `reindexing_slot` but differ in `src`/`tgt` — together they express that at each degree step $(b, j)$, $W$ is indexed as $W[b, \cdot, j]$ with the remaining axis $i$ left to the base operation. The degree is $P = (b, j)$, confirmed by the image of `src` across all three rows. Tiling axes of each array are the `ArrayAxis` rows where `is_target = False`; their reindexing coordinates are supplied by the `Sample` rows with matching `reindexing_slot` via `tgt`. Note that $j$ is `is_target = False` on both $W$ and $Y$: it is a degree axis iterated by the outer loop; its role as the SoftMax normalization dimension is recorded separately by `norm_axis = a_j` on the $Y$ row in the `Array` table.
 
 **Example instance** — stride-2 convolution $Y[p] = \sum_k W[k]\, X[2p + k]$, degree $P = (p)$, reindexing $\eta_X$ maps $p$ to $X$'s physical axis $n$ with coefficient 2; $W$ is not reindexed by the degree ($W[k]$ is the same slice at every step $p$):
 
@@ -177,21 +185,25 @@ Both $\eta_X$ and $\eta_W$ are the identity on $b$, so each contributes one samp
 | $k$ | 3 |
 | $n$ | 11 |
 
-| `Array` | `slot` | `is_input` | `operator_tag` | `norm_axis` | `datatype_tag` | `max_value` | `bias` | `elementwise_fn` |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| $Y$ | 0 | False | IDENTITY | — | REALS | — | — | — |
-| $W$ | 1 | True | — | — | REALS | — | — | — |
-| $X$ | 2 | True | — | — | REALS | — | — | — |
+| `Equation` | `equation_idx` | `lhs_name` |
+| --- | --- | --- |
+| $e_0$ | 0 | $Y$ |
 
-| `ArrayAxis` | `array_slot` | `axis` | `is_target` | `position` |
-| --- | --- | --- | --- | --- |
-| $ya_p$ | 0 | $p$ | False | 0 |
-| $wa_k$ | 1 | $k$ | True | 0 |
-| $xa_n$ | 2 | $n$ | True | 0 |
+| `Array` | `equation_idx` | `slot` | `is_input` | `operator_tag` | `norm_axis` | `datatype_tag` | `max_value` | `bias` | `elementwise_fn` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| $Y$ | 0 | 0 | False | IDENTITY | — | REALS | — | — | — |
+| $W$ | 0 | 1 | True | — | — | REALS | — | — | — |
+| $X$ | 0 | 2 | True | — | — | REALS | — | — | — |
 
-| `Sample` | `src` | `tgt` | `coeff` | `reindexing_slot` |
-| --- | --- | --- | --- | --- |
-| $s_0$ | $p$ | $n$ | 2 | 2 |
+| `ArrayAxis` | `equation_idx` | `array_slot` | `axis` | `is_target` | `position` |
+| --- | --- | --- | --- | --- | --- |
+| $ya_p$ | 0 | 0 | $p$ | False | 0 |
+| $wa_k$ | 0 | 1 | $k$ | True | 0 |
+| $xa_n$ | 0 | 2 | $n$ | True | 0 |
+
+| `Sample` | `equation_idx` | `src` | `tgt` | `coeff` | `reindexing_slot` |
+| --- | --- | --- | --- | --- | --- |
+| $s_0$ | 0 | $p$ | $n$ | 2 | 2 |
 
 $W$ has no `Sample` row — it does not depend on the degree. $X$ contributes one `Sample` with `coeff` $= 2$: at degree step $p$, $X$'s physical axis $n$ starts at $2p$. The contracted axis $k$ then adds positions $0, 1, 2$ within that slice, so the full access is $n = 2p + k$.
 
@@ -205,31 +217,35 @@ Three structural differences from the batched attention example stand out. First
 | $a_j$ | 8 |
 | $a_k$ | 64 |
 
-The two occurrences of $H$ in the rhs are assigned distinct slots (1 and 2). `name` is metadata; `slot` is the entity identifier.
+The two occurrences of $H$ in the rhs are assigned distinct slots (1 and 2). `name` is metadata; `(equation_idx, slot)` is the entity identifier.
 
-| `Array` | `slot` | `is_input` | `operator_tag` | `norm_axis` | `datatype_tag` | `max_value` | `bias` | `elementwise_fn` |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| $Y$ | 0 | False | IDENTITY | — | REALS | — | — | — |
-| $H$ | 1 | True | — | — | REALS | — | — | — |
-| $H$ | 2 | True | — | — | REALS | — | — | — |
+| `Equation` | `equation_idx` | `lhs_name` |
+| --- | --- | --- |
+| $e_0$ | 0 | $Y$ |
 
-Two rows in the Array table share `name = H` with distinct `slot` values; `ArrayAxis` and `Sample` rows reference these by slot integer.
+| `Array` | `equation_idx` | `slot` | `is_input` | `operator_tag` | `norm_axis` | `datatype_tag` | `max_value` | `bias` | `elementwise_fn` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| $Y$ | 0 | 0 | False | IDENTITY | — | REALS | — | — | — |
+| $H$ | 0 | 1 | True | — | — | REALS | — | — | — |
+| $H$ | 0 | 2 | True | — | — | REALS | — | — | — |
 
-| `ArrayAxis` | `array_slot` | `axis` | `is_target` | `position` |
-| --- | --- | --- | --- | --- |
-| $ya_i$ | 0 | $a_i$ | False | 0 |
-| $ya_j$ | 0 | $a_j$ | False | 1 |
-| $h1a_i$ | 1 | $a_i$ | False | 0 |
-| $h1a_k$ | 1 | $a_k$ | True | 1 |
-| $h2a_j$ | 2 | $a_j$ | False | 0 |
-| $h2a_k$ | 2 | $a_k$ | True | 1 |
+Two rows in the Array table share `name = H` with distinct `slot` values; `ArrayAxis` and `Sample` rows reference these by `(equation_idx, slot)`.
+
+| `ArrayAxis` | `equation_idx` | `array_slot` | `axis` | `is_target` | `position` |
+| --- | --- | --- | --- | --- | --- |
+| $ya_i$ | 0 | 0 | $a_i$ | False | 0 |
+| $ya_j$ | 0 | 0 | $a_j$ | False | 1 |
+| $h1a_i$ | 0 | 1 | $a_i$ | False | 0 |
+| $h1a_k$ | 0 | 1 | $a_k$ | True | 1 |
+| $h2a_j$ | 0 | 2 | $a_j$ | False | 0 |
+| $h2a_k$ | 0 | 2 | $a_k$ | True | 1 |
 
 The first $H$ reference (slot 1) is indexed by degree axis $a_i$ (position 0) and contracted axis $a_k$ (position 1). The second $H$ reference (slot 2) is indexed by degree axis $a_j$ (position 0) and the same contracted axis $a_k$ (position 1). Crucially, $a_i$ and $a_j$ have distinct UIDs — they are different axis objects — while the single $a_k$ object appears in both: it is the axis that is summed over by the base operation, shared between both references.
 
-| `Sample` | `src` | `tgt` | `coeff` | `reindexing_slot` |
-| --- | --- | --- | --- | --- |
-| $s_0$ | $a_i$ | $a_i$ | 1 | 1 |
-| $s_1$ | $a_j$ | $a_j$ | 1 | 2 |
+| `Sample` | `equation_idx` | `src` | `tgt` | `coeff` | `reindexing_slot` |
+| --- | --- | --- | --- | --- | --- |
+| $s_0$ | 0 | $a_i$ | $a_i$ | 1 | 1 |
+| $s_1$ | 0 | $a_j$ | $a_j$ | 1 | 2 |
 
 Each degree axis contributes exactly one `Sample` row: $s_0$ assigns $a_i$ to the first $H$ reference (slot 1), and $s_1$ assigns $a_j$ to the second (slot 2). The contracted axis $a_k$ has no `Sample` row — it appears only as `is_target = True` in both `ArrayAxis` entries, indicating it is handled by the summation rather than the outer degree loop. `reindexing_slot` disambiguates the two occurrences without requiring tensor names to be unique, and corresponds directly to the positional structure of `Broadcasted`: the two input weaves for slots 1 and 2 are distinct positional entries in the same `Broadcasted` morphism.
 
@@ -377,13 +393,14 @@ These fields map to the four tables of `SBrInstance`: `arrays: list[ArrayRow]`, 
 
 | `TensorEquation` field | `SBrInstance` table entry |
 | --- | --- |
-| `lhs_name` | One `Array` row with `is_input = False`, `slot = 0`, `name = lhs_name` |
-| Each `(name, indices)` in `rhs` at position $p$ (1-indexed) | One `Array` row with `is_input = True`, `slot = p`, `name = name` |
-| `(tensor, axis)` pair where `axis ∈ lhs_indices` | `ArrayAxis` row with `is_target = False` (retained / degree axis) |
-| `(tensor, axis)` pair where `axis ∉ lhs_indices` | `ArrayAxis` row with `is_target = True` (contracted) |
+| The equation itself | One `Equation` row with `equation_idx = 0` (single equation) or the equation's topological position (multi-equation program), `lhs_name = lhs_name` |
+| `lhs_name` | One `Array` row with `equation_idx` from above, `slot = 0`, `is_input = False`, `name = lhs_name` |
+| Each `(name, indices)` in `rhs` at position $p$ (1-indexed) | One `Array` row with the same `equation_idx`, `slot = p`, `is_input = True`, `name = name` |
+| `(tensor, axis)` pair where `axis ∈ lhs_indices` | `ArrayAxis` row with the same `equation_idx`, `is_target = False` (retained / degree axis) |
+| `(tensor, axis)` pair where `axis ∉ lhs_indices` | `ArrayAxis` row with the same `equation_idx`, `is_target = True` (contracted) |
 | Index of `axis` in its containing tuple (`lhs_indices` or `rhs` axes) | `position` attribute on the `ArrayAxis` row |
 | `ArrayAxis` belonging to the $p$-th `Array` | `array_slot = p` on the `ArrayAxis` row |
-| Retained axis $i \in$ `lhs_indices` appearing in input $X$ at slot $p$ | `Sample` row: `src` $= i$, `tgt` $= i$, `coeff` $= 1$, `reindexing_slot` $= p$ |
+| Retained axis $i \in$ `lhs_indices` appearing in input $X$ at slot $p$ | `Sample` row: `equation_idx` from above, `src` $= i$, `tgt` $= i$, `coeff` $= 1$, `reindexing_slot` $= p$ |
 | `operator` field | `operator_tag` attribute on the output `Array` row |
 | `operator.bias` (when `Linear`) | `bias` attribute on the output `Array` row |
 | `operator.operator` (when `Elementwise`) | `elementwise_fn` attribute on the output `Array` row |
@@ -401,35 +418,89 @@ These fields map to the four tables of `SBrInstance`: `arrays: list[ArrayRow]`, 
 | $j$ | `FreeNumeric` |
 | $k$ | `FreeNumeric` |
 
+**Equation table:**
+
+| `Equation` | `equation_idx` | `lhs_name` |
+| --- | --- | --- |
+| $e_0$ | 0 | $Y$ |
+
 **Array table:**
 
-| `Array` | `slot` | `is_input` | `operator_tag` | `norm_axis` | `datatype_tag` | `max_value` | `bias` | `elementwise_fn` |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| $Y$ | 0 | False | IDENTITY | — | REALS | — | — | — |
-| $W$ | 1 | True | — | — | REALS | — | — | — |
-| $X$ | 2 | True | — | — | REALS | — | — | — |
+| `Array` | `equation_idx` | `slot` | `is_input` | `operator_tag` | `norm_axis` | `datatype_tag` | `max_value` | `bias` | `elementwise_fn` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| $Y$ | 0 | 0 | False | IDENTITY | — | REALS | — | — | — |
+| $W$ | 0 | 1 | True | — | — | REALS | — | — | — |
+| $X$ | 0 | 2 | True | — | — | REALS | — | — | — |
 
 **ArrayAxis table:**
 
-| `ArrayAxis` | `array_slot` | `axis` | `is_target` | `position` |
-| --- | --- | --- | --- | --- |
-| $ya_i$ | 0 | $i$ | False | 0 |
-| $ya_j$ | 0 | $j$ | False | 1 |
-| $wa_i$ | 1 | $i$ | False | 0 |
-| $wa_k$ | 1 | $k$ | True | 1 |
-| $xa_k$ | 2 | $k$ | True | 0 |
-| $xa_j$ | 2 | $j$ | False | 1 |
+| `ArrayAxis` | `equation_idx` | `array_slot` | `axis` | `is_target` | `position` |
+| --- | --- | --- | --- | --- | --- |
+| $ya_i$ | 0 | 0 | $i$ | False | 0 |
+| $ya_j$ | 0 | 0 | $j$ | False | 1 |
+| $wa_i$ | 0 | 1 | $i$ | False | 0 |
+| $wa_k$ | 0 | 1 | $k$ | True | 1 |
+| $xa_k$ | 0 | 2 | $k$ | True | 0 |
+| $xa_j$ | 0 | 2 | $j$ | False | 1 |
 
 **Sample table:**
 
-| `Sample` | `src` | `tgt` | `coeff` | `reindexing_slot` |
-| --- | --- | --- | --- | --- |
-| $s_0$ | $i$ | $i$ | 1 | 1 |
-| $s_1$ | $j$ | $j$ | 1 | 2 |
+| `Sample` | `equation_idx` | `src` | `tgt` | `coeff` | `reindexing_slot` |
+| --- | --- | --- | --- | --- | --- |
+| $s_0$ | 0 | $i$ | $i$ | 1 | 1 |
+| $s_1$ | 0 | $j$ | $j$ | 1 | 2 |
 
 $W$ contributes degree axis $i$ (Sample $s_0$); $X$ contributes degree axis $j$ (Sample $s_1$). The contracted axis $k$ has no `Sample` rows — it is not part of any reindexing. Its `is_target = True` entries in the `ArrayAxis` table mark it as a target axis summed over by the base operation.
 
-**Multi-equation programs.** A `TensorProgram` with multiple equations produces one `SBrInstance` per equation. The instances are linked by shared `Axis` UIDs: when `to_morphism()` calls `ctx.append_iter` to unify the `lhs_indices` of one equation with the corresponding `rhs` input axes of the next, both the term and the acset tables carry the same canonical UIDs. The acset representation of a `TensorProgram` is therefore a sequence of `SBrInstance` values connected by UID-shared `Axis` rows — exactly as `Composed` connects `Broadcasted` morphisms through shared domain and codomain objects.
+**Multi-equation programs.** A `TensorProgram` with multiple equations produces a single `SBrInstance` carrying all equations. Each equation is recorded as one `EquationRow` and assigned an `equation_idx` equal to its position in topological order. Every `Array`, `ArrayAxis`, and `Sample` row carries its equation's `equation_idx` as a foreign key; the composite primary key for `Array` within the instance is `(equation_idx, slot)`. The `axis_sizes` dict is naturally flat: axis UIDs are globally unique, so a shared axis used by multiple equations appears once with its single canonical size.
+
+**Example: two-layer MLP**, $H[p, d_{ff}] = \mathrm{relu}(W_{in}[d_{ff}, d]\, X[p, d])$ followed by $Y[p, d] = W_{out}[d, d_{ff}]\, H[p, d_{ff}]$. Axis objects $p$, $d$, $d_{ff}$ are shared across both equations via UID identity.
+
+| `Axis` | `size` |
+| --- | --- |
+| $p$ | `FreeNumeric` |
+| $d$ | `FreeNumeric` |
+| $d_{ff}$ | `FreeNumeric` |
+
+| `Equation` | `equation_idx` | `lhs_name` |
+| --- | --- | --- |
+| $e_0$ | 0 | $H$ |
+| $e_1$ | 1 | $Y$ |
+
+| `Array` | `equation_idx` | `slot` | `name` | `is_input` | `operator_tag` | `elementwise_fn` |
+| --- | --- | --- | --- | --- | --- | --- |
+| | 0 | 0 | $H$ | False | ELEMENTWISE | relu |
+| | 0 | 1 | $W_{in}$ | True | — | — |
+| | 0 | 2 | $X$ | True | — | — |
+| | 1 | 0 | $Y$ | False | IDENTITY | — |
+| | 1 | 1 | $W_{out}$ | True | — | — |
+| | 1 | 2 | $H$ | True | — | — |
+
+(Columns `norm_axis`, `datatype_tag`, `max_value`, `bias` omitted; all `REALS` / `—`.)
+
+| `ArrayAxis` | `equation_idx` | `array_slot` | `axis` | `is_target` | `position` |
+| --- | --- | --- | --- | --- | --- |
+| | 0 | 0 | $p$ | False | 0 |
+| | 0 | 0 | $d_{ff}$ | False | 1 |
+| | 0 | 1 | $d_{ff}$ | False | 0 |
+| | 0 | 1 | $d$ | True | 1 |
+| | 0 | 2 | $p$ | False | 0 |
+| | 0 | 2 | $d$ | True | 1 |
+| | 1 | 0 | $p$ | False | 0 |
+| | 1 | 0 | $d$ | False | 1 |
+| | 1 | 1 | $d$ | False | 0 |
+| | 1 | 1 | $d_{ff}$ | True | 1 |
+| | 1 | 2 | $p$ | False | 0 |
+| | 1 | 2 | $d_{ff}$ | True | 1 |
+
+| `Sample` | `equation_idx` | `reindexing_slot` | `src` | `tgt` | `coeff` |
+| --- | --- | --- | --- | --- | --- |
+| $s_0$ | 0 | 1 | $d_{ff}$ | $d_{ff}$ | 1 |
+| $s_1$ | 0 | 2 | $p$ | $p$ | 1 |
+| $s_2$ | 1 | 1 | $d$ | $d$ | 1 |
+| $s_3$ | 1 | 2 | $p$ | $p$ | 1 |
+
+$H$ appears as output in equation 0 (`equation_idx=0`, `slot=0`) and as input in equation 1 (`equation_idx=1`, `slot=2`): these are distinct `Array` rows despite sharing the name $H$. Axis $d_{ff}$ is retained in equation 0 (a tiling axis there, `is_target=False`) but contracted in equation 1 (summed over, `is_target=True`) — the same UID serving different roles across equations is expected and requires no renaming. The `axis_sizes` dict holds all three UIDs exactly once, shared across both equations.
 
 **Strided convolutions.** For non-einsum reindexings (strided convolution, diagonal slice), `coeff` $\neq 1$ in the `Sample` rows, as illustrated by the stride-2 convolution example in the Br section. No schema extension is needed; `Sample.coeff` already captures arbitrary integer strides.
 
@@ -450,6 +521,46 @@ The `TensorEquation.operator` field — which distinguishes an `Identity` reinde
 
 Adding a new operator subclass means adding one row to this table.
 
+### CSV Serialization
+
+`SStInstance` and `SBrInstance` can be written to and read from CSV via `acset.csv_io`:
+
+```python
+from acset.csv_io import write_sst, read_sst, write_sbr, read_sbr
+
+write_sbr(inst, Path('out/my_program'))   # writes five CSV files into the directory
+inst = read_sbr(Path('out/my_program'))   # reconstructs from those files
+```
+
+**SSt layout.** Two files, both inside the given directory:
+
+| File | Columns |
+| --- | --- |
+| `axis_sizes.csv` | `axis_uid`, `size` |
+| `entries.csv` | `src_uid`, `tgt_uid`, `coeff` |
+
+**SBr layout.** Five files:
+
+| File | Columns |
+| --- | --- |
+| `axis_sizes.csv` | `axis_uid`, `size` |
+| `equations.csv` | `equation_idx`, `lhs_name` |
+| `arrays.csv` | `equation_idx`, `slot`, `name`, `is_input`, `operator_tag`, `norm_axis`, `datatype_tag`, `max_value`, `bias`, `elementwise_fn` |
+| `array_axes.csv` | `equation_idx`, `array_slot`, `axis_uid`, `is_target`, `position` |
+| `samples.csv` | `equation_idx`, `reindexing_slot`, `src_uid`, `tgt_uid`, `coeff` |
+
+**Encoding decisions.**
+
+- *UIDs* are written as `TypeName:integer_id` (e.g. `NormAxis:1038335474`). The type tag preserves the axis subclass (`RawAxis`, `NormAxis`, `NatAxis`, `PredAxis`) so that downstream consumers can distinguish, for example, a normalization axis from a plain axis without inspecting the `norm_axis` foreign key. Files written by older versions of the library omit the tag; the reader falls back to `RawAxis` for untagged entries.
+- *Numerics* are written as a plain integer for `Integer` values and as `?integer_id` for `FreeNumeric` variables.
+- *Booleans* use `true`/`false` for required fields (`is_input`, `is_target`) and `true`/`false`/`` (empty) for optional fields (`bias`).
+- *Names* (`lhs_name`, array `name`) use `_` as the subscript separator, matching `DynamicName.from_str`. Display metadata (`DynamicName.settings`: bold, overline, absolute) is not preserved — names serve as labels for Lean interop and display rendering is not needed.
+
+**Known limitations.**
+
+- `FreeNumeric` sizes created by `RawAxis.named()` carry a display name on their `uid._name`. Only `uid._id` is serialized, so the display name is lost. As a consequence, `original_size == deserialized_size` returns `False` for such sizes: `FreeNumeric.__eq__` hashes `uid` including `_name`, and the reconstructed uid has `_name=None`. Internal consistency within a round-tripped instance is unaffected — all reconstructed UIDs are mutually consistent — but cross-instance comparison with the original fails. The correct fix is to base `FreeNumeric.numeric_hash()` on `uid._id` alone, which is a change to `data_structure/Numeric.py` deferred for now.
+- Compound `Numeric` expressions (`Addition`, `Multiplication`, `Power`) cannot be serialized. These do not appear in acset instances produced by `convert.py`: axis sizes are always `Integer` or `FreeNumeric`, and all coefficients are `Integer`.
+
 ### The Dual-View Pipeline
 
 With the tensor logic integration in place, the natural architecture is:
@@ -463,16 +574,18 @@ With the tensor logic integration in place, the natural architecture is:
           with shared Axis UIDs)
               ╱             ╲
              ▼               ▼
-          Terms          SBrInstances
-  (Composed of          (one per equation,
-   Broadcasted)          linked by Axis UIDs)
+          Terms          SBrInstance
+  (Composed of          (one per TensorProgram;
+   Broadcasted)          flat tables with
+                         equation_idx FK;
+                         Axis UIDs shared)
              │               │
-  ┌──────────┴──────┐  ┌─────┴─────────────────┐
+  ┌──────────┴──────┐  ┌─────┴──────────────────┐
   │ compilation     │  │ shape inference (Πφ)   │
   │ rendering       │  │ structural matching    │
   │ parallel        │  │ data migration         │
   │   composition   │  │ serialization          │
-  │ block structure │  └───────────────────────┘
+  │ block structure │  └────────────────────────┘
   └─────────────────┘
 ```
 
