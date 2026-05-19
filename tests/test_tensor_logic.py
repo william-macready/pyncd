@@ -1,7 +1,10 @@
+import pytest
 import data_structure.Term as fd
 import data_structure.BroadcastedCategory as bc
+from data_structure.BroadcastedCategory import WeaveMode
 import data_structure.ProductCategory as pc
-from data_structure.TensorLogic import NormAxis, TensorEquation, TensorProgram, _topological_sort
+from data_structure.TensorLogic import TensorEquation, TensorProgram, topological_sort
+from data_structure.TensorDSL import NormAxis
 from data_structure.ProductCategory import Composed
 from data_structure.StrideCategory import RawAxis, Axis
 from data_structure.Operators import Identity, SoftMax
@@ -181,14 +184,14 @@ def _chain_equations():
 
 def test_topological_sort_already_ordered():
     eq1, eq2 = _chain_equations()
-    result = _topological_sort((eq1, eq2))
+    result = topological_sort((eq1, eq2))
     assert result[0] is eq1
     assert result[1] is eq2
 
 
 def test_topological_sort_reversed_input():
     eq1, eq2 = _chain_equations()
-    result = _topological_sort((eq2, eq1))
+    result = topological_sort((eq2, eq1))
     assert result[0] is eq1
     assert result[1] is eq2
 
@@ -293,7 +296,7 @@ def test_topological_sort_independent_equations():
         rhs=((fd.DynamicName('Y'), (i, k)),),
         operator=Identity(),
     )
-    result = _topological_sort((eq_a, eq_b))
+    result = topological_sort((eq_a, eq_b))
     assert set(r.lhs_name for r in result) == {fd.DynamicName('A'), fd.DynamicName('B')}
     assert len(result) == 2
 
@@ -370,9 +373,8 @@ def test_topological_sort_raises_on_cycle():
         rhs=((fd.DynamicName('A'), (i, k)),),
         operator=Identity(),
     )
-    import pytest
     with pytest.raises(ValueError, match="cyclic"):
-        _topological_sort((eq_a, eq_b))
+        topological_sort((eq_a, eq_b))
 
 
 def test_exports_from_category():
@@ -380,3 +382,187 @@ def test_exports_from_category():
     assert NormAxis is not None
     assert TensorEquation is not None
     assert TensorProgram is not None
+
+
+# ---------------------------------------------------------------------------
+# Self-join on a computed intermediate  (Gram matrix: Y[i,j] = H[i,k] H[j,k])
+# ---------------------------------------------------------------------------
+
+def _gram_program():
+    """
+    H[a, b] = W[a, k] X[k, b]      -- standard matmul, intermediate
+    Y[i, j] = H[i, k] H[j, k]      -- Gram matrix, self-join on H
+
+    All axis objects are fresh; k is shared between both H references in Y
+    so the contraction is coupled.  i and j are independent — they are the
+    two 'row' aliases that a self-join requires.
+    """
+    a = RawAxis.named('a')
+    b = RawAxis.named('b')
+    k_h = RawAxis.named('k')   # contracted inside H's definition
+
+    h_eq = TensorEquation(
+        lhs_name=fd.DynamicName('H'),
+        lhs_indices=(a, b),
+        rhs=(
+            (fd.DynamicName('W'), (a, k_h)),
+            (fd.DynamicName('X'), (k_h, b)),
+        ),
+        operator=Identity(),
+    )
+
+    i = RawAxis.named('i')
+    j = RawAxis.named('j')
+    k_y = RawAxis.named('k')   # contracted across both H references in Y
+
+    y_eq = TensorEquation(
+        lhs_name=fd.DynamicName('Y'),
+        lhs_indices=(i, j),
+        rhs=(
+            (fd.DynamicName('H'), (i, k_y)),
+            (fd.DynamicName('H'), (j, k_y)),
+        ),
+        operator=Identity(),
+    )
+
+    return TensorProgram(equations=(h_eq, y_eq)), i, j, k_y, a, b
+
+
+def test_self_join_composed_length():
+    prog, *_ = _gram_program()
+    morphism = prog.to_morphism()
+    assert isinstance(morphism, Composed)
+    assert len(morphism.content) == 2
+
+
+def test_self_join_row_axes_are_distinct():
+    """After to_morphism(), i and j must not have been merged into one UID."""
+    prog, i, j, k_y, a, b = _gram_program()
+    prog.to_morphism()
+    # If the bug were present, ctx.apply would have unified i and j through
+    # H's canonical row axis, making them the same UID.
+    assert i.uid != j.uid
+
+
+def test_self_join_y_morphism_has_two_h_input_weaves():
+    """bc_signature() of Y must produce two input weaves, one per H reference."""
+    prog, *_ = _gram_program()
+    morphism = prog.to_morphism()
+    y_br = morphism.content[1]   # second Broadcasted = Y equation
+    assert len(y_br.input_weaves) == 2
+
+
+def test_self_join_y_degree_has_two_axes():
+    """Y[i, j]: degree must have exactly two axes (i and j)."""
+    prog, *_ = _gram_program()
+    morphism = prog.to_morphism()
+    y_br = morphism.content[1]
+    assert len(y_br.degree()) == 2
+
+
+def test_self_join_contracted_axis_shared_between_h_references():
+    """k appears in both H weaves as the same concrete target axis (same UID)."""
+    prog, i, j, k_y, a, b = _gram_program()
+    morphism = prog.to_morphism()
+    y_br = morphism.content[1]
+    # Each input weave has one TILED slot and one concrete axis (the contracted k).
+    # The concrete axis in weave[0] and weave[1] must share a UID.
+    def contracted_axis(weave):
+        concretes = [s for s in weave._shape if s is not WeaveMode.TILED]
+        assert len(concretes) == 1, "expected exactly one contracted axis per H weave"
+        return concretes[0]
+
+    k_in_first  = contracted_axis(y_br.input_weaves[0])
+    k_in_second = contracted_axis(y_br.input_weaves[1])
+    assert k_in_first.uid == k_in_second.uid
+
+
+def test_self_join_h_morphism_cod_rank():
+    """H's Broadcasted produces one output array with two axes."""
+    prog, *_ = _gram_program()
+    morphism = prog.to_morphism()
+    h_br = morphism.content[0]
+    cod = h_br.cod()
+    assert len(cod) == 1
+    assert len(cod[0]._shape) == 2
+
+
+def test_self_join_topological_order():
+    """H must be processed before Y even when equations are given reversed."""
+    prog_fwd, *_ = _gram_program()
+    h_eq, y_eq = prog_fwd.equations
+    prog_rev = TensorProgram(equations=(y_eq, h_eq))
+    # to_morphism() must not raise and must still produce length-2 Composed.
+    morphism = prog_rev.to_morphism()
+    assert len(morphism.content) == 2
+
+
+# ── declarations parameter ───────────────────────────────────────────────────
+
+def test_to_morphism_declarations_accepted():
+    """Providing a correctly-ranked declaration for a known lhs_name raises no error."""
+    i = RawAxis.named('i')
+    j = RawAxis.named('j')
+    k = RawAxis.named('k')
+    eq = TensorEquation(
+        lhs_name=fd.DynamicName('Y'),
+        lhs_indices=(i, j),
+        rhs=((fd.DynamicName('W'), (i, k)), (fd.DynamicName('X'), (k, j))),
+        operator=Identity(),
+    )
+    d_i = RawAxis.named('i')
+    d_j = RawAxis.named('j')
+    morphism = TensorProgram(equations=(eq,)).to_morphism(
+        declarations={fd.DynamicName('Y'): (d_i, d_j)}
+    )
+    assert isinstance(morphism, Composed)
+    assert len(morphism.content) == 1
+
+
+def test_to_morphism_unknown_declaration_is_ignored():
+    """A declaration key that matches no lhs_name is silently ignored."""
+    eq, *_ = _matmul_eq()
+    morphism = TensorProgram(equations=(eq,)).to_morphism(
+        declarations={fd.DynamicName('UNKNOWN'): (RawAxis.named('z'),)}
+    )
+    assert isinstance(morphism, Composed)
+
+
+# ── bug-exposing tests (expected to fail until bugs are fixed) ───────────────
+
+def test_topological_sort_raises_on_duplicate_lhs_name():
+    """Two equations sharing lhs_name should raise ValueError; currently silently drops one."""
+    i = RawAxis.named('i')
+    k = RawAxis.named('k')
+    eq_a = TensorEquation(
+        lhs_name=fd.DynamicName('Y'),
+        lhs_indices=(i,),
+        rhs=((fd.DynamicName('X'), (i, k)),),
+        operator=Identity(),
+    )
+    eq_b = TensorEquation(
+        lhs_name=fd.DynamicName('Y'),
+        lhs_indices=(i,),
+        rhs=((fd.DynamicName('Z'), (i, k)),),
+        operator=Identity(),
+    )
+    with pytest.raises(ValueError, match="duplicate"):
+        topological_sort((eq_a, eq_b))
+
+
+def test_to_morphism_declaration_rank_mismatch_raises():
+    """A declaration whose length != len(lhs_indices) should raise ValueError; currently truncates silently."""
+    import pytest
+    i = RawAxis.named('i')
+    j = RawAxis.named('j')
+    k = RawAxis.named('k')
+    eq = TensorEquation(
+        lhs_name=fd.DynamicName('Y'),
+        lhs_indices=(i, j),   # rank 2
+        rhs=((fd.DynamicName('W'), (i, k)), (fd.DynamicName('X'), (k, j))),
+        operator=Identity(),
+    )
+    with pytest.raises(ValueError, match="rank"):
+        TensorProgram(equations=(eq,)).to_morphism(
+            declarations={fd.DynamicName('Y'): (RawAxis.named('i'),)}  # rank 1
+        )

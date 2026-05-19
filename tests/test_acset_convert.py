@@ -5,8 +5,11 @@ import data_structure.BroadcastedCategory as bc
 from data_structure.StrideCategory import RawAxis, StrideMorphism
 from data_structure.Numeric import Integer
 from data_structure.TensorLogic import TensorEquation, TensorProgram
-from data_structure.Operators import Identity, SoftMax, Linear, Elementwise
-from data_structure.TensorLogic import NormAxis
+from data_structure.Operators import (
+    Identity, SoftMax, Linear, Elementwise,
+    Normalize, Embedding, AdditionOp, WeightedTriangularLower,
+)
+from data_structure.TensorDSL import NormAxis
 from acset.convert import from_stride_morphism, from_tensor_equation, from_tensor_program
 from acset.instances import SStInstance, SBrInstance, OpTag, DataTag
 
@@ -59,6 +62,14 @@ def test_conv_shift_entries():
     inst = from_stride_morphism(_conv_shift_morphism())
     assert len(inst.entries) == 2
     assert all(e.coeff == Integer(1) for e in inst.entries)
+
+
+def test_stride_morphism_non_unit_coeff():
+    """Stride-2 mapping p → n produces an EntryRow with coeff=Integer(2)."""
+    m = StrideMorphism.from_matrix((2,), dom_names=('p',), cod_names=('n',))
+    inst = from_stride_morphism(m)
+    assert len(inst.entries) == 1
+    assert inst.entries[0].coeff == Integer(2)
 
 
 # ── from_tensor_equation ────────────────────────────────────────────────────
@@ -146,19 +157,17 @@ def test_matmul_output_positions():
     """Y[i,j]: lhs_indices=(i,j), so ya_i→position 0, ya_j→position 1."""
     eq, i, j, _k = _matmul_eq()
     inst = from_tensor_equation(eq)
-    output_rows = {r.axis_uid: r.position for r in inst.array_axes if r.array_name == eq.lhs_name}
+    output_rows = {r.axis_uid: r.position for r in inst.array_axes if r.array_slot == 0}
     assert output_rows[i.uid] == 0
     assert output_rows[j.uid] == 1
 
 
 def test_matmul_input_positions():
-    """W[i,k]: i→0, k→1; X[k,j]: k→0, j→1."""
+    """W[i,k]: i→0, k→1 (slot 1); X[k,j]: k→0, j→1 (slot 2)."""
     eq, i, j, k = _matmul_eq()
     inst = from_tensor_equation(eq)
-    w_name = fd.DynamicName('W')
-    x_name = fd.DynamicName('X')
-    w_rows = {r.axis_uid: r.position for r in inst.array_axes if r.array_name == w_name}
-    x_rows = {r.axis_uid: r.position for r in inst.array_axes if r.array_name == x_name}
+    w_rows = {r.axis_uid: r.position for r in inst.array_axes if r.array_slot == 1}
+    x_rows = {r.axis_uid: r.position for r in inst.array_axes if r.array_slot == 2}
     assert w_rows[i.uid] == 0
     assert w_rows[k.uid] == 1
     assert x_rows[k.uid] == 0
@@ -178,6 +187,70 @@ def test_softmax_operator_tag():
     output = next(a for a in inst.arrays if not a.is_input)
     assert output.operator_tag == OpTag.SOFTMAX
     assert output.norm_axis == i.uid
+
+
+def test_norm_axis_is_none_for_regular_output():
+    """Output arrays with no NormAxis in lhs_indices have norm_axis=None."""
+    eq, *_ = _matmul_eq()
+    inst = from_tensor_equation(eq)
+    output = next(a for a in inst.arrays if not a.is_input)
+    assert output.norm_axis is None
+
+
+def test_normalize_operator_tag():
+    """Normalize operator maps to OpTag.NORMALIZE."""
+    i = RawAxis.named('i')
+    eq = TensorEquation(
+        lhs_name=fd.DynamicName('Y'),
+        lhs_indices=(i,),
+        rhs=((fd.DynamicName('X'), (i,)),),
+        operator=Normalize(),
+    )
+    inst = from_tensor_equation(eq)
+    output = next(a for a in inst.arrays if not a.is_input)
+    assert output.operator_tag == OpTag.NORMALIZE
+
+
+def test_embedding_operator_tag():
+    """Embedding operator maps to OpTag.EMBEDDING."""
+    i = RawAxis.named('i')
+    eq = TensorEquation(
+        lhs_name=fd.DynamicName('Y'),
+        lhs_indices=(i,),
+        rhs=((fd.DynamicName('E'), (i,)),),
+        operator=Embedding(),
+    )
+    inst = from_tensor_equation(eq)
+    output = next(a for a in inst.arrays if not a.is_input)
+    assert output.operator_tag == OpTag.EMBEDDING
+
+
+def test_addition_op_operator_tag():
+    """AdditionOp operator maps to OpTag.ADDITION_OP."""
+    i = RawAxis.named('i')
+    eq = TensorEquation(
+        lhs_name=fd.DynamicName('Y'),
+        lhs_indices=(i,),
+        rhs=((fd.DynamicName('X'), (i,)), (fd.DynamicName('Z'), (i,))),
+        operator=AdditionOp(),
+    )
+    inst = from_tensor_equation(eq)
+    output = next(a for a in inst.arrays if not a.is_input)
+    assert output.operator_tag == OpTag.ADDITION_OP
+
+
+def test_weighted_triangular_lower_operator_tag():
+    """WeightedTriangularLower operator maps to OpTag.WEIGHTED_TRIANGULAR_LOWER."""
+    i = RawAxis.named('i')
+    eq = TensorEquation(
+        lhs_name=fd.DynamicName('Y'),
+        lhs_indices=(i,),
+        rhs=((fd.DynamicName('X'), (i,)),),
+        operator=WeightedTriangularLower(),
+    )
+    inst = from_tensor_equation(eq)
+    output = next(a for a in inst.arrays if not a.is_input)
+    assert output.operator_tag == OpTag.WEIGHTED_TRIANGULAR_LOWER
 
 
 # ── from_tensor_program ─────────────────────────────────────────────────────
@@ -235,11 +308,39 @@ def test_from_tensor_program_each_has_three_arrays():
 
 
 def test_from_tensor_program_shared_axis_same_uid():
-    """Axis i appears in both instances under the same UID."""
+    """Axis i appears in both instances under the same UID (via object identity, not unification)."""
     prog, i, *_ = _two_equation_program()
     instances = from_tensor_program(prog)
     assert i.uid in instances[0].axis_sizes
     assert i.uid in instances[1].axis_sizes
+
+
+def test_from_tensor_program_does_not_unify_fresh_axes():
+    """from_tensor_program converts equations independently; fresh axes in eq2 are not unified with eq1's axes."""
+    i1 = RawAxis.named('i')
+    j1 = RawAxis.named('j')
+    k1 = RawAxis.named('k')
+    eq1 = TensorEquation(
+        lhs_name=fd.DynamicName('H'),
+        lhs_indices=(i1, k1),
+        rhs=((fd.DynamicName('W1'), (i1, j1)), (fd.DynamicName('X'), (j1, k1))),
+        operator=Identity(),
+    )
+    i2 = RawAxis.named('i')
+    k2 = RawAxis.named('k')
+    m2 = RawAxis.named('m')
+    eq2 = TensorEquation(
+        lhs_name=fd.DynamicName('Y'),
+        lhs_indices=(i2, k2),
+        rhs=((fd.DynamicName('W2'), (i2, m2)), (fd.DynamicName('H'), (m2, k2))),
+        operator=Identity(),
+    )
+    instances = from_tensor_program(TensorProgram(equations=(eq1, eq2)))
+    # i2 and i1 are distinct objects — from_tensor_program never calls ctx.apply(),
+    # so their UIDs are not merged (contrast with to_morphism() which does merge them).
+    assert i1.uid != i2.uid
+    assert i2.uid not in instances[0].axis_sizes
+    assert i1.uid not in instances[1].axis_sizes
 
 
 # ── array_datatypes parameter ────────────────────────────────────────────────
@@ -264,7 +365,7 @@ def test_default_datatype_tag_is_reals():
 
 def test_natural_datatype_tag():
     """Supplying a Natural datatype sets DataTag.NATURAL and max_value on that array."""
-    eq, i = _embedding_eq()
+    eq, _i = _embedding_eq()
     vocab_size = Integer(32000)
     datatypes = {fd.DynamicName('E'): bc.Natural(max_value=vocab_size)}
     inst = from_tensor_equation(eq, array_datatypes=datatypes)
@@ -275,7 +376,7 @@ def test_natural_datatype_tag():
 
 def test_output_datatype_tag_from_caller():
     """Output array datatype_tag is set when output name is in array_datatypes."""
-    eq, i = _embedding_eq()
+    eq, _i = _embedding_eq()
     datatypes = {fd.DynamicName('Y'): bc.Reals()}
     inst = from_tensor_equation(eq, array_datatypes=datatypes)
     y_row = next(a for a in inst.arrays if a.name == fd.DynamicName('Y'))
@@ -339,3 +440,106 @@ def test_non_natural_arrays_have_no_max_value():
     eq, *_ = _matmul_eq()
     inst = from_tensor_equation(eq)
     assert all(a.max_value is None for a in inst.arrays)
+
+
+# ── slot indexing ────────────────────────────────────────────────────────────
+
+def test_output_array_has_slot_zero():
+    """Output array is always assigned slot=0."""
+    eq, *_ = _matmul_eq()
+    inst = from_tensor_equation(eq)
+    output = next(a for a in inst.arrays if not a.is_input)
+    assert output.slot == 0
+
+
+def test_input_arrays_have_sequential_slots():
+    """rhs inputs are assigned slots 1, 2, ... in rhs order."""
+    eq, *_ = _matmul_eq()
+    inst = from_tensor_equation(eq)
+    inputs = [a for a in inst.arrays if a.is_input]
+    assert sorted(a.slot for a in inputs) == [1, 2]
+
+
+def test_array_axes_reference_by_slot():
+    """ArrayAxisRow.array_slot is an integer, not a name."""
+    eq, *_ = _matmul_eq()
+    inst = from_tensor_equation(eq)
+    assert all(isinstance(r.array_slot, int) for r in inst.array_axes)
+
+
+def test_samples_reference_by_slot():
+    """SampleRow.reindexing_slot is an integer matching the input array's slot."""
+    eq, *_ = _matmul_eq()
+    inst = from_tensor_equation(eq)
+    input_slots = {a.slot for a in inst.arrays if a.is_input}
+    assert all(s.reindexing_slot in input_slots for s in inst.samples)
+
+
+# ── self-join ────────────────────────────────────────────────────────────────
+
+def _gram_eq():
+    """Y[i,j] = H[i,k] H[j,k] — H appears twice in the rhs."""
+    i = RawAxis.named('i')
+    j = RawAxis.named('j')
+    k = RawAxis.named('k')
+    h_name = fd.DynamicName('H')
+    eq = TensorEquation(
+        lhs_name=fd.DynamicName('Y'),
+        lhs_indices=(i, j),
+        rhs=(
+            (h_name, (i, k)),
+            (h_name, (j, k)),
+        ),
+        operator=Identity(),
+    )
+    return eq, i, j, k
+
+
+def test_self_join_produces_three_arrays():
+    """Y + two H references = three Array rows, all with distinct slots."""
+    eq, *_ = _gram_eq()
+    inst = from_tensor_equation(eq)
+    assert len(inst.arrays) == 3
+    assert len({a.slot for a in inst.arrays}) == 3
+
+
+def test_self_join_both_inputs_share_name():
+    """Both input Array rows carry name='H' but have different slots."""
+    eq, *_ = _gram_eq()
+    inst = from_tensor_equation(eq)
+    inputs = [a for a in inst.arrays if a.is_input]
+    assert all(a.name == fd.DynamicName('H') for a in inputs)
+    assert inputs[0].slot != inputs[1].slot
+
+
+def test_self_join_degree_axes_are_in_separate_slots():
+    """The two retained axes i and j are assigned to different array_slot buckets."""
+    eq, i, j, _k = _gram_eq()
+    inst = from_tensor_equation(eq)
+    inputs = [a for a in inst.arrays if a.is_input]
+    slot1, slot2 = inputs[0].slot, inputs[1].slot
+    uids_slot1 = {r.axis_uid for r in inst.array_axes if r.array_slot == slot1}
+    uids_slot2 = {r.axis_uid for r in inst.array_axes if r.array_slot == slot2}
+    assert i.uid in uids_slot1 and j.uid not in uids_slot1
+    assert j.uid in uids_slot2 and i.uid not in uids_slot2
+
+
+def test_self_join_each_h_reference_gets_own_slot_in_array_axes():
+    """ArrayAxis rows for the two H inputs reference different array_slots."""
+    eq, i, j, k = _gram_eq()
+    inst = from_tensor_equation(eq)
+    inputs = [a for a in inst.arrays if a.is_input]
+    slot1, slot2 = inputs[0].slot, inputs[1].slot
+    axes_slot1 = {r.axis_uid for r in inst.array_axes if r.array_slot == slot1}
+    axes_slot2 = {r.axis_uid for r in inst.array_axes if r.array_slot == slot2}
+    # slot1 references i and k; slot2 references j and k
+    assert i.uid in axes_slot1 and k.uid in axes_slot1
+    assert j.uid in axes_slot2 and k.uid in axes_slot2
+
+
+def test_self_join_samples_point_to_distinct_slots():
+    """The two Sample rows point to different reindexing_slots (one per H reference)."""
+    eq, *_ = _gram_eq()
+    inst = from_tensor_equation(eq)
+    assert len(inst.samples) == 2
+    assert inst.samples[0].reindexing_slot != inst.samples[1].reindexing_slot

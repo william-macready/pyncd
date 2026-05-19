@@ -43,9 +43,10 @@ class SStInstance:
 @dataclass
 class ArrayRow:
     """One tensor (input or output) in a Broadcasted morphism."""
-    name:            fd.DynamicName | None
+    slot:            int                    # 0 = output; 1..N = inputs in rhs order
+    name:            fd.DynamicName | None  # metadata only; not the entity key
     is_input:        bool
-    operator_tag:    OpTag | None
+    operator_tag:    OpTag | None = None
     norm_axis:       fd.UID | None     = None
     datatype_tag:    DataTag           = DataTag.REALS
     max_value:       nm.Numeric | None = None
@@ -56,7 +57,7 @@ class ArrayRow:
 @dataclass
 class ArrayAxisRow:
     """One axis belonging to one Array, with its role and physical position."""
-    array_name: fd.DynamicName | None
+    array_slot: int   # foreign key → ArrayRow.slot
     axis_uid:   fd.UID
     is_target:  bool
     position:   int = 0
@@ -65,10 +66,10 @@ class ArrayAxisRow:
 @dataclass
 class SampleRow:
     """One component of the reindexing rule for one input Array."""
-    src_uid:       fd.UID
-    tgt_uid:       fd.UID
-    coeff:         nm.Numeric
-    reindexing_of: fd.DynamicName | None
+    src_uid:          fd.UID
+    tgt_uid:          fd.UID
+    coeff:            nm.Numeric
+    reindexing_slot:  int   # foreign key → ArrayRow.slot
 
 
 @dataclass

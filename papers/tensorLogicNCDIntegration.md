@@ -427,6 +427,33 @@ class TensorProgram(Term):
 
 `topological_sort` orders equations so that each tensor is defined before it is used. The `name_to_axes` map translates tensor logic's implicit name-sharing into UID unification: when equation B refers to tensor `Hidden` that was defined by equation A, `ctx.append_iter` unifies A's `lhs_indices` with B's corresponding `rhs` entry. `ctx.apply(eq)` then substitutes canonical UIDs into both the equation and its resulting `Broadcasted`.
 
+#### Self-joins on computed intermediates
+
+A **self-join** occurs when the same intermediate tensor appears more than once in a consuming equation's `rhs` — the canonical ML instance being the Gram matrix:
+
+```text
+H[a, b]  = W[a, k] X[k, b]       -- intermediate
+Y[i, j]  = H[i, k] H[j, k]       -- Gram matrix: H self-joined on the row axis
+```
+
+The naïve unification loop iterates over every rhs entry for every intermediate tensor. When `H` appears twice, it unifies `name_to_axes['H'][0]` with both `i` and `j`, collapsing them into one equivalence class and silently producing `Y[i, i]` — a diagonal rather than a matrix. The self-join is destroyed without any error.
+
+The fix tracks which intermediate tensors have already been seen within the current equation's rhs and skips `ctx.append_iter` for subsequent occurrences:
+
+```python
+seen_in_eq: set[DynamicName] = set()
+for tensor_name, input_axes in eq.rhs:
+    if tensor_name in name_to_axes and tensor_name not in seen_in_eq:
+        seen_in_eq.add(tensor_name)
+        for prior_ax, eq_ax in zip(name_to_axes[tensor_name], input_axes):
+            ctx.append_iter((prior_ax, eq_ax))
+    # subsequent occurrences: skip — each reference keeps its own axis UIDs
+```
+
+For the first occurrence of `H`, `i` is unified with `H`'s canonical row axis and `k` is unified with `H`'s canonical column axis as before. For the second occurrence, `j` is left untouched (independent UID) and `k` — being the same Python object as in the first occurrence — is already in the canonical class, so the coupled contraction `Σ_k H[i,k] H[j,k]` is correctly expressed. `bc_signature()` then produces a `Broadcasted` with two independent input weaves for `H`, one contributing degree axis `i` and one contributing `j`.
+
+The one consequence of skipping subsequent unifications is that automatic size propagation does not reach axes that appear only in additional occurrences. In the Gram matrix example, `j`'s size is not inferred from `H`'s row size. The mitigation is an explicit declaration for `Y` (or `H`) — the existing `declarations` path in `to_morphism()` handles this and is unaffected by the change.
+
 ### 5.6 Beyond `TensorProgram` — Extending the Tensor Logic Interface
 
 At and below `TensorProgram`, the tensor logic term representation covers sequential composition, einsum structure, nonlinearities, normalization axes, and axis identity. The remaining gaps — parallel product, datatypes, symbolic shapes, and block structure — are the caller's responsibility above `TensorProgram.to_morphism()` and are catalogued in §4.3.

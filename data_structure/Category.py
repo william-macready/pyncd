@@ -29,10 +29,10 @@ from data_structure.BroadcastedCategory import (
     Broadcasted,
 )
 from data_structure.TensorLogic import (
-    NormAxis,
     TensorEquation,
     TensorProgram,
 )
+from data_structure.AxisAnnotations import NormAxis
 __all__ = [
     'ProdCategory',
     'ProdObject',

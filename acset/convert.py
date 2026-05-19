@@ -7,7 +7,8 @@ import data_structure.Term as fd
 import data_structure.Numeric as nm
 import data_structure.BroadcastedCategory as bc
 from data_structure.StrideCategory import StrideMorphism
-from data_structure.TensorLogic import TensorEquation, TensorProgram, NormAxis
+from data_structure.TensorLogic import TensorEquation, TensorProgram, topological_sort
+from data_structure.TensorDSL import NormAxis
 import data_structure.Operators as ops
 
 from acset.instances import (
@@ -52,7 +53,10 @@ def _operator_fields(op) -> _OpFields:
         return _OpFields(OpTag.ELEMENTWISE, None, op.operator)
     if isinstance(op, ops.Linear):
         return _OpFields(OpTag.LINEAR, op.bias, None)
-    return _OpFields(_TAG_FROM_TYPE.get(type(op), OpTag.IDENTITY), None, None)
+    tag = _TAG_FROM_TYPE.get(type(op))
+    if tag is None:
+        raise ValueError(f"unrecognised operator type: {type(op)}")
+    return _OpFields(tag, None, None)
 
 
 def from_stride_morphism(m: StrideMorphism) -> SStInstance:
@@ -62,11 +66,12 @@ def from_stride_morphism(m: StrideMorphism) -> SStInstance:
     Domain and codomain axes live together in axis_sizes, keyed by UID.
     """
     inst = SStInstance()
-    for ax in m.dom():
+    dom_axes = m.dom()
+    for ax in dom_axes:
         inst.axis_sizes[ax.uid] = ax.local_size()
     for cod_ax, coeffs in m.cod_strides:
         inst.axis_sizes[cod_ax.uid] = cod_ax.local_size()
-        for dom_ax, coeff in zip(m.dom(), coeffs):
+        for dom_ax, coeff in zip(dom_axes, coeffs):
             inst.entries.append(EntryRow(
                 src=dom_ax.uid, tgt=cod_ax.uid, coeff=coeff
             ))
@@ -81,10 +86,12 @@ def from_tensor_equation(
 
     Retained indices (lhs_indices) become degree/TILED axes (is_target=False).
     Contracted indices (in rhs but not lhs_indices) become target axes (is_target=True).
-    One SampleRow per (input_tensor, retained_axis) pair, all with coeff=Integer(1).
+    One SampleRow per (input_slot, retained_axis) pair, all with coeff=Integer(1).
 
     array_datatypes: optional mapping from tensor name to bc.Datatype; when supplied,
-    populates datatype_tag, max_value, bias, and elementwise_fn on ArrayRow.
+    populates datatype_tag and max_value on ArrayRow. Keyed by name rather than slot,
+    so a self-join (the same tensor appearing in multiple rhs slots) will receive the
+    same datatype at every slot — which is correct, since a tensor has one datatype.
 
     This is the intended path for equations with mixed datatypes (e.g. Natural-valued
     embedding indices alongside Reals-valued weights). Each ArrayRow carries its own
@@ -99,6 +106,7 @@ def from_tensor_equation(
     op = _operator_fields(eq.operator)
     out_datatype_tag, out_max_value = _dt_fields(datatypes.get(eq.lhs_name))
     inst.arrays.append(ArrayRow(
+        slot=0,
         name=eq.lhs_name,
         is_input=False,
         operator_tag=op.tag,
@@ -111,22 +119,22 @@ def from_tensor_equation(
     for pos, ax in enumerate(eq.lhs_indices):
         inst.axis_sizes[ax.uid] = ax.local_size()
         inst.array_axes.append(ArrayAxisRow(
-            array_name=eq.lhs_name, axis_uid=ax.uid, is_target=False, position=pos
+            array_slot=0, axis_uid=ax.uid, is_target=False, position=pos
         ))
 
-    for tensor_name, input_axes in eq.rhs:
+    for rhs_slot, (tensor_name, input_axes) in enumerate(eq.rhs, start=1):
         in_datatype_tag, in_max_value = _dt_fields(datatypes.get(tensor_name))
         inst.arrays.append(ArrayRow(
+            slot=rhs_slot,
             name=tensor_name,
             is_input=True,
-            operator_tag=None,
             datatype_tag=in_datatype_tag,
             max_value=in_max_value,
         ))
         for pos, ax in enumerate(input_axes):
             inst.axis_sizes[ax.uid] = ax.local_size()
             inst.array_axes.append(ArrayAxisRow(
-                array_name=tensor_name,
+                array_slot=rhs_slot,
                 axis_uid=ax.uid,
                 is_target=ax.uid not in retained,
                 position=pos,
@@ -141,7 +149,7 @@ def from_tensor_equation(
                     src_uid=ax.uid,
                     tgt_uid=ax.uid,
                     coeff=nm.Integer(1),
-                    reindexing_of=tensor_name,
+                    reindexing_slot=rhs_slot,
                 ))
 
     return inst
@@ -156,4 +164,4 @@ def from_tensor_program(
     Instances are independent; shared axes are identified by UID across them.
     array_datatypes is forwarded to each from_tensor_equation call.
     """
-    return [from_tensor_equation(eq, array_datatypes) for eq in prog.equations]
+    return [from_tensor_equation(eq, array_datatypes) for eq in topological_sort(prog.equations)]

@@ -103,17 +103,17 @@ $\mathcal{S}_{Br}$ shares the `Axis`-centred reindexing structure of $\mathcal{S
 
 In $\mathcal{S}_{St}$, the analogous entity type is called `Entry` because each row is a nonzero entry of a coefficient matrix. In $\mathcal{S}_{Br}$, the same structure plays a different role: each row specifies one axis-component of how a particular input array is **sampled** at each step of the degree loop. The triple (`src`, `tgt`, `coeff`) says "for array $X$, the index into axis `tgt` equals `coeff` times the degree index along axis `src`" — it is a sampling rule, not a matrix entry in the abstract algebraic sense. The name `Sample` reflects this: each row is one component of the sampling pattern that determines which slice of an input the base operation sees at each loop iteration.
 
-$$\texttt{Sample} \underset{\texttt{tgt}}{\overset{\texttt{src}}{\rightrightarrows}} \texttt{Axis} \xleftarrow{\texttt{axis}} \texttt{ArrayAxis} \xrightarrow{\texttt{array}} \texttt{Array}$$
+$$\texttt{Sample} \underset{\texttt{tgt}}{\overset{\texttt{src}}{\rightrightarrows}} \texttt{Axis} \xleftarrow{\texttt{axis}} \texttt{ArrayAxis} \xrightarrow{\texttt{array\_slot}} \texttt{Array}$$
 
-$$\texttt{Sample} \xrightarrow{\texttt{reindexing\_of}} \texttt{Array} \qquad \texttt{Array} \xrightarrow{\texttt{norm\_axis}} \texttt{Axis}$$
+$$\texttt{Sample} \xrightarrow{\texttt{reindexing\_slot}} \texttt{Array} \qquad \texttt{Array} \xrightarrow{\texttt{norm\_axis}} \texttt{Axis}$$
 
 $$\texttt{Sample} \xrightarrow{\texttt{coeff}} \mathbb{N} \qquad \texttt{Axis} \xrightarrow{\texttt{size}} \mathbb{N}_{>0} \qquad \texttt{ArrayAxis} \xrightarrow{\texttt{is\_target}} \mathbb{B} \qquad \texttt{ArrayAxis} \xrightarrow{\texttt{position}} \mathbb{N}$$
 
 $$\texttt{Array} \xrightarrow{\texttt{is\_input}} \mathbb{B} \qquad \texttt{Array} \xrightarrow{\texttt{datatype\_tag}} \texttt{DataTag} \qquad \texttt{Array} \xrightarrow{\texttt{max\_value}} \mathbb{N} \qquad \texttt{Array} \xrightarrow{\texttt{operator\_tag}} \texttt{OpTag}$$
 
-$$\texttt{Array} \xrightarrow{\texttt{bias}} \mathbb{B} \qquad \texttt{Array} \xrightarrow{\texttt{elementwise\_fn}} \texttt{String}$$
+$$\texttt{Array} \xrightarrow{\texttt{bias}} \mathbb{B} \qquad \texttt{Array} \xrightarrow{\texttt{elementwise\_fn}} \texttt{String} \qquad \texttt{Array} \xrightarrow{\texttt{slot}} \mathbb{N} \qquad \texttt{Array} \xrightarrow{\texttt{name}} \texttt{String}$$
 
-Four entity types, six attribute types ($\mathbb{N}$, $\mathbb{N}_{>0}$, $\mathbb{B}$, $\texttt{OpTag}$, $\texttt{DataTag}$, $\texttt{String}$), sixteen maps. `max_value` is a partial map defined only for `Natural`-typed arrays. `operator_tag`, `norm_axis`, `bias`, and `elementwise_fn` are partial maps defined only for output arrays (`is_input = False`); `norm_axis` is further restricted to operators in $\{\texttt{SoftMax}, \texttt{Normalize}\}$; `bias` is restricted to `Linear` output arrays; `elementwise_fn` is restricted to `Elementwise` output arrays.
+Four entity types, six attribute types ($\mathbb{N}$, $\mathbb{N}_{>0}$, $\mathbb{B}$, $\texttt{OpTag}$, $\texttt{DataTag}$, $\texttt{String}$), eighteen maps. `max_value` is a partial map defined only for `Natural`-typed arrays. `operator_tag`, `norm_axis`, `bias`, and `elementwise_fn` are partial maps defined only for output arrays (`is_input = False`); `norm_axis` is further restricted to operators in $\{\texttt{SoftMax}, \texttt{Normalize}\}$; `bias` is restricted to `Linear` output arrays; `elementwise_fn` is restricted to `Elementwise` output arrays.
 
 `norm_axis` is necessary even though the source representation (a `TensorEquation`) marks the normalisation axis via the `NormAxis` subtype of `RawAxis` in `lhs_indices`. Once converted to an instance, all axes in `lhs_indices` appear as `ArrayAxis` rows with `is_target = False` — degree axes and the norm axis are indistinguishable without the explicit pointer. `norm_axis` is what preserves this distinction in the standalone instance.
 
@@ -131,8 +131,10 @@ Four entity types, six attribute types ($\mathbb{N}$, $\mathbb{N}_{>0}$, $\mathb
 | `operator_tag` | `Array → OpTag` | base operation type; partial — defined only for output arrays (`is_input = False`) |
 | `bias` | `Array → Bool` | whether `Linear` applies a bias term; partial — defined only for `Linear` output arrays |
 | `elementwise_fn` | `Array → String` | name of the pointwise function; partial — defined only for `Elementwise` output arrays |
+| `slot` | `Array → ℕ` | 0-indexed argument position: 0 for the output array, 1..N for input arrays in rhs order; the primary key for `Array` within an instance, unambiguous under self-joins |
+| `name` | `Array → String` | tensor name; metadata carried alongside `slot` for display and traceability; partial — may be `None` for anonymous arrays |
 
-The **C-set part** (structure) = the reindexing multigraph on `Axis` (analogous to `Entry ⇉ Axis` in $\mathcal{S}_{St}$), the bipartite graph linking each `ArrayAxis` to its `Array` and its `Axis`, the `reindexing_of` map assigning each `Sample` to the array whose reindexing it belongs to, and the `norm_axis` map pointing each SoftMax/Normalize output array to its normalisation axis (partial — undefined for all other arrays).
+The **C-set part** (structure) = the reindexing multigraph on `Axis` (analogous to `Entry ⇉ Axis` in $\mathcal{S}_{St}$), the bipartite graph linking each `ArrayAxis` to its `Array` and its `Axis`, the `reindexing_slot` map assigning each `Sample` to the array whose reindexing it belongs to (by slot integer), and the `norm_axis` map pointing each SoftMax/Normalize output array to its normalisation axis (partial — undefined for all other arrays).
 
 The **degree** of a `Broadcasted` morphism is the tuple of loop axes — the axes iterated in the outer degree loop, shared across all inputs. In tabular form the degree is the image of `src` across all `Sample` rows.
 
@@ -144,28 +146,28 @@ The **degree** of a `Broadcasted` morphism is the tuple of loop axes — the axe
 | $a_i$ | 64 |
 | $a_j$ | 128 |
 
-| `Array` | `is_input` | `operator_tag` | `norm_axis` | `datatype_tag` | `max_value` | `bias` | `elementwise_fn` |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| $X$ | True | — | — | REALS | — | — | — |
-| $W$ | True | — | — | REALS | — | — | — |
-| $Y$ | False | SOFTMAX | $a_j$ | REALS | — | — | — |
+| `Array` | `slot` | `is_input` | `operator_tag` | `norm_axis` | `datatype_tag` | `max_value` | `bias` | `elementwise_fn` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| $Y$ | 0 | False | SOFTMAX | $a_j$ | REALS | — | — | — |
+| $X$ | 1 | True | — | — | REALS | — | — | — |
+| $W$ | 2 | True | — | — | REALS | — | — | — |
 
-| `ArrayAxis` | `array` | `axis` | `is_target` | `position` |
+| `ArrayAxis` | `array_slot` | `axis` | `is_target` | `position` |
 | --- | --- | --- | --- | --- |
-| $xa_b$ | $X$ | $a_b$ | False | 0 |
-| $xa_i$ | $X$ | $a_i$ | True | 1 |
-| $wa_b$ | $W$ | $a_b$ | False | 0 |
-| $wa_i$ | $W$ | $a_i$ | True | 1 |
-| $wa_j$ | $W$ | $a_j$ | True | 2 |
-| $ya_b$ | $Y$ | $a_b$ | False | 0 |
-| $ya_j$ | $Y$ | $a_j$ | True | 1 |
+| $xa_b$ | 1 | $a_b$ | False | 0 |
+| $xa_i$ | 1 | $a_i$ | True | 1 |
+| $wa_b$ | 2 | $a_b$ | False | 0 |
+| $wa_i$ | 2 | $a_i$ | True | 1 |
+| $wa_j$ | 2 | $a_j$ | True | 2 |
+| $ya_b$ | 0 | $a_b$ | False | 0 |
+| $ya_j$ | 0 | $a_j$ | True | 1 |
 
-| `Sample` | `src` | `tgt` | `coeff` | `reindexing_of` |
+| `Sample` | `src` | `tgt` | `coeff` | `reindexing_slot` |
 | --- | --- | --- | --- | --- |
-| $s_0$ | $a_b$ | $a_b$ | 1 | $X$ |
-| $s_1$ | $a_b$ | $a_b$ | 1 | $W$ |
+| $s_0$ | $a_b$ | $a_b$ | 1 | 1 |
+| $s_1$ | $a_b$ | $a_b$ | 1 | 2 |
 
-Both $\eta_X$ and $\eta_W$ are the identity on $b$, so each contributes one sample. The two rows are identical in `src`, `tgt`, and `coeff` — only `reindexing_of` distinguishes them, which is exactly why that column is necessary. The degree here is $P = (b)$, confirming that $b$ is the image of `src`. Tiling axes of each array are the `ArrayAxis` rows where `is_target = False`; their reindexing coordinates are supplied by the `Sample` rows with matching `reindexing_of` via `tgt`.
+Both $\eta_X$ and $\eta_W$ are the identity on $b$, so each contributes one sample. The two rows are identical in `src`, `tgt`, and `coeff` — only `reindexing_slot` distinguishes them (1 for $X$, 2 for $W$). The degree here is $P = (b)$, confirming that $b$ is the image of `src`. Tiling axes of each array are the `ArrayAxis` rows where `is_target = False`; their reindexing coordinates are supplied by the `Sample` rows with matching `reindexing_slot` via `tgt`.
 
 **Example instance** — stride-2 convolution $Y[p] = \sum_k W[k]\, X[2p + k]$, degree $P = (p)$, reindexing $\eta_X$ maps $p$ to $X$'s physical axis $n$ with coefficient 2; $W$ is not reindexed by the degree ($W[k]$ is the same slice at every step $p$):
 
@@ -175,25 +177,61 @@ Both $\eta_X$ and $\eta_W$ are the identity on $b$, so each contributes one samp
 | $k$ | 3 |
 | $n$ | 11 |
 
-| `Array` | `is_input` | `operator_tag` | `norm_axis` | `datatype_tag` | `max_value` | `bias` | `elementwise_fn` |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| $W$ | True | — | — | REALS | — | — | — |
-| $X$ | True | — | — | REALS | — | — | — |
-| $Y$ | False | IDENTITY | — | REALS | — | — | — |
+| `Array` | `slot` | `is_input` | `operator_tag` | `norm_axis` | `datatype_tag` | `max_value` | `bias` | `elementwise_fn` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| $Y$ | 0 | False | IDENTITY | — | REALS | — | — | — |
+| $W$ | 1 | True | — | — | REALS | — | — | — |
+| $X$ | 2 | True | — | — | REALS | — | — | — |
 
-| `ArrayAxis` | `array` | `axis` | `is_target` | `position` |
+| `ArrayAxis` | `array_slot` | `axis` | `is_target` | `position` |
 | --- | --- | --- | --- | --- |
-| $ya_p$ | $Y$ | $p$ | False | 0 |
-| $wa_k$ | $W$ | $k$ | True | 0 |
-| $xa_n$ | $X$ | $n$ | True | 0 |
+| $ya_p$ | 0 | $p$ | False | 0 |
+| $wa_k$ | 1 | $k$ | True | 0 |
+| $xa_n$ | 2 | $n$ | True | 0 |
 
-| `Sample` | `src` | `tgt` | `coeff` | `reindexing_of` |
+| `Sample` | `src` | `tgt` | `coeff` | `reindexing_slot` |
 | --- | --- | --- | --- | --- |
-| $s_0$ | $p$ | $n$ | 2 | $X$ |
+| $s_0$ | $p$ | $n$ | 2 | 2 |
 
 $W$ has no `Sample` row — it does not depend on the degree. $X$ contributes one `Sample` with `coeff` $= 2$: at degree step $p$, $X$'s physical axis $n$ starts at $2p$. The contracted axis $k$ then adds positions $0, 1, 2$ within that slice, so the full access is $n = 2p + k$.
 
 Three structural differences from the batched attention example stand out. First, `src` $\neq$ `tgt`: the degree axis $p$ and $X$'s physical axis $n$ are distinct — the reindexing is not a self-map on a shared axis. Second, `coeff` $= 2 \neq 1$: the stride. Third, $X$'s $n$-axis is `is_target = True` whereas in the batched attention example $X$'s $b$-axis is `is_target = False`: $b$ is shared directly between the degree and the input, so it is tiled and leaves `is_target = False`; $n$ is a target axis because the contracted $k$ also contributes to it ($n = 2p + k$ is not determined by $p$ alone).
+
+**Example instance** — self-join (Gram matrix) $Y[i,j] = \sum_k H[i,k]\, H[k,j]$, where $H$ is a sequence of embeddings and $Y$ records their pairwise inner products. Degree $P = (i, j)$; both $i$ and $j$ are retained. The contracted axis $k$ is summed over. The same tensor $H$ appears **twice** in the rhs, once indexing row $i$ and once indexing row $j$.
+
+| `Axis` | `size` |
+| --- | --- |
+| $a_i$ | 8 |
+| $a_j$ | 8 |
+| $a_k$ | 64 |
+
+The two occurrences of $H$ in the rhs are assigned distinct slots (1 and 2). `name` is metadata; `slot` is the entity identifier.
+
+| `Array` | `slot` | `is_input` | `operator_tag` | `norm_axis` | `datatype_tag` | `max_value` | `bias` | `elementwise_fn` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| $Y$ | 0 | False | IDENTITY | — | REALS | — | — | — |
+| $H$ | 1 | True | — | — | REALS | — | — | — |
+| $H$ | 2 | True | — | — | REALS | — | — | — |
+
+Two rows in the Array table share `name = H` with distinct `slot` values; `ArrayAxis` and `Sample` rows reference these by slot integer.
+
+| `ArrayAxis` | `array_slot` | `axis` | `is_target` | `position` |
+| --- | --- | --- | --- | --- |
+| $ya_i$ | 0 | $a_i$ | False | 0 |
+| $ya_j$ | 0 | $a_j$ | False | 1 |
+| $h1a_i$ | 1 | $a_i$ | False | 0 |
+| $h1a_k$ | 1 | $a_k$ | True | 1 |
+| $h2a_j$ | 2 | $a_j$ | False | 0 |
+| $h2a_k$ | 2 | $a_k$ | True | 1 |
+
+The first $H$ reference (slot 1) is indexed by degree axis $a_i$ (position 0) and contracted axis $a_k$ (position 1). The second $H$ reference (slot 2) is indexed by degree axis $a_j$ (position 0) and the same contracted axis $a_k$ (position 1). Crucially, $a_i$ and $a_j$ have distinct UIDs — they are different axis objects — while the single $a_k$ object appears in both: it is the axis that is summed over by the base operation, shared between both references.
+
+| `Sample` | `src` | `tgt` | `coeff` | `reindexing_slot` |
+| --- | --- | --- | --- | --- |
+| $s_0$ | $a_i$ | $a_i$ | 1 | 1 |
+| $s_1$ | $a_j$ | $a_j$ | 1 | 2 |
+
+Each degree axis contributes exactly one `Sample` row: $s_0$ assigns $a_i$ to the first $H$ reference (slot 1), and $s_1$ assigns $a_j$ to the second (slot 2). The contracted axis $a_k$ has no `Sample` row — it appears only as `is_target = True` in both `ArrayAxis` entries, indicating it is handled by the summation rather than the outer degree loop. `reindexing_slot` disambiguates the two occurrences without requiring tensor names to be unique, and corresponds directly to the positional structure of `Broadcasted`: the two input weaves for slots 1 and 2 are distinct positional entries in the same `Broadcasted` morphism.
 
 ---
 
@@ -339,12 +377,13 @@ These fields map to the four tables of `SBrInstance`: `arrays: list[ArrayRow]`, 
 
 | `TensorEquation` field | `SBrInstance` table entry |
 | --- | --- |
-| `lhs_name` | One `Array` row with `is_input = False` |
-| Each `(name, indices)` in `rhs` | One `Array` row with `is_input = True` |
+| `lhs_name` | One `Array` row with `is_input = False`, `slot = 0`, `name = lhs_name` |
+| Each `(name, indices)` in `rhs` at position $p$ (1-indexed) | One `Array` row with `is_input = True`, `slot = p`, `name = name` |
 | `(tensor, axis)` pair where `axis ∈ lhs_indices` | `ArrayAxis` row with `is_target = False` (retained / degree axis) |
 | `(tensor, axis)` pair where `axis ∉ lhs_indices` | `ArrayAxis` row with `is_target = True` (contracted) |
 | Index of `axis` in its containing tuple (`lhs_indices` or `rhs` axes) | `position` attribute on the `ArrayAxis` row |
-| Retained axis $i \in$ `lhs_indices` appearing in input $X$ | `Sample` row: `src` $= i$, `tgt` $= i$, `coeff` $= 1$, `reindexing_of` $= X$ |
+| `ArrayAxis` belonging to the $p$-th `Array` | `array_slot = p` on the `ArrayAxis` row |
+| Retained axis $i \in$ `lhs_indices` appearing in input $X$ at slot $p$ | `Sample` row: `src` $= i$, `tgt` $= i$, `coeff` $= 1$, `reindexing_slot` $= p$ |
 | `operator` field | `operator_tag` attribute on the output `Array` row |
 | `operator.bias` (when `Linear`) | `bias` attribute on the output `Array` row |
 | `operator.operator` (when `Elementwise`) | `elementwise_fn` attribute on the output `Array` row |
@@ -364,29 +403,29 @@ These fields map to the four tables of `SBrInstance`: `arrays: list[ArrayRow]`, 
 
 **Array table:**
 
-| `Array` | `is_input` | `operator_tag` | `norm_axis` | `datatype_tag` | `max_value` | `bias` | `elementwise_fn` |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| $Y$ | False | IDENTITY | — | REALS | — | — | — |
-| $W$ | True | — | — | REALS | — | — | — |
-| $X$ | True | — | — | REALS | — | — | — |
+| `Array` | `slot` | `is_input` | `operator_tag` | `norm_axis` | `datatype_tag` | `max_value` | `bias` | `elementwise_fn` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| $Y$ | 0 | False | IDENTITY | — | REALS | — | — | — |
+| $W$ | 1 | True | — | — | REALS | — | — | — |
+| $X$ | 2 | True | — | — | REALS | — | — | — |
 
 **ArrayAxis table:**
 
-| `ArrayAxis` | `array` | `axis` | `is_target` | `position` |
+| `ArrayAxis` | `array_slot` | `axis` | `is_target` | `position` |
 | --- | --- | --- | --- | --- |
-| $ya_i$ | $Y$ | $i$ | False | 0 |
-| $ya_j$ | $Y$ | $j$ | False | 1 |
-| $wa_i$ | $W$ | $i$ | False | 0 |
-| $wa_k$ | $W$ | $k$ | True | 1 |
-| $xa_k$ | $X$ | $k$ | True | 0 |
-| $xa_j$ | $X$ | $j$ | False | 1 |
+| $ya_i$ | 0 | $i$ | False | 0 |
+| $ya_j$ | 0 | $j$ | False | 1 |
+| $wa_i$ | 1 | $i$ | False | 0 |
+| $wa_k$ | 1 | $k$ | True | 1 |
+| $xa_k$ | 2 | $k$ | True | 0 |
+| $xa_j$ | 2 | $j$ | False | 1 |
 
 **Sample table:**
 
-| `Sample` | `src` | `tgt` | `coeff` | `reindexing_of` |
+| `Sample` | `src` | `tgt` | `coeff` | `reindexing_slot` |
 | --- | --- | --- | --- | --- |
-| $s_0$ | $i$ | $i$ | 1 | $W$ |
-| $s_1$ | $j$ | $j$ | 1 | $X$ |
+| $s_0$ | $i$ | $i$ | 1 | 1 |
+| $s_1$ | $j$ | $j$ | 1 | 2 |
 
 $W$ contributes degree axis $i$ (Sample $s_0$); $X$ contributes degree axis $j$ (Sample $s_1$). The contracted axis $k$ has no `Sample` rows — it is not part of any reindexing. Its `is_target = True` entries in the `ArrayAxis` table mark it as a target axis summed over by the base operation.
 

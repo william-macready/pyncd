@@ -1,10 +1,10 @@
 import pytest
 from data_structure.TensorDSL import (
     TL, TensorProxy, IndexedTensor, RHSExpression,
-    NatAxis, PredAxis, TensorKind, TensorDeclaration,
+    NormAxis, NatAxis, PredAxis, TensorKind, TensorDeclaration,
     axes, norm_axis, nat_axis, real_axis, relu, softmax,
 )
-from data_structure.TensorLogic import NormAxis, TensorEquation, TensorProgram
+from data_structure.TensorLogic import TensorEquation, TensorProgram
 import data_structure.Numeric as nm
 import data_structure.Operators as ops
 import data_structure.StrideCategory as sc
@@ -377,3 +377,22 @@ def test_tensor_declared_matmul_bc_signature():
     sig = tl.to_equation().bc_signature()
     assert len(sig.input_weaves) == 2
     assert len(sig.output_weaves) == 1
+
+
+# ---------------------------------------------------------------------------
+# bc_signature signature-string guard
+# ---------------------------------------------------------------------------
+
+def test_bc_signature_rejects_nonempty_signature_string():
+    tl = TL()
+    i, j, k = axes('i j k')
+    tl.Y[i, j] = tl.W[i, k] * tl.X[k, j]
+    with pytest.raises(ValueError, match="signature"):
+        tl.to_equation().bc_signature(signature="ij,jk->ij")
+
+def test_bc_signature_empty_string_accepted():
+    tl = TL()
+    i, j, k = axes('i j k')
+    tl.Y[i, j] = tl.W[i, k] * tl.X[k, j]
+    import data_structure.BroadcastedCategory as bc
+    assert isinstance(tl.to_equation().bc_signature(signature=''), bc.Broadcasted)

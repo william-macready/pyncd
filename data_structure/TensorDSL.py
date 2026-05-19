@@ -8,21 +8,8 @@ import data_structure.BroadcastedCategory as bc
 import data_structure.Numeric as nm
 import data_structure.StrideCategory as sc
 import data_structure.Operators as ops
-from data_structure.TensorLogic import NormAxis, TensorEquation, TensorProgram
-
-
-# ---------------------------------------------------------------------------
-# Axis subtypes
-# ---------------------------------------------------------------------------
-
-@dataclass(frozen=True)
-class NatAxis(sc.RawAxis):
-    """Marks a natural-number (ℕ) index dimension."""
-
-
-@dataclass(frozen=True)
-class PredAxis(sc.RawAxis):
-    """Marks a predicate (Boolean-filter) index dimension."""
+from data_structure.TensorLogic import TensorEquation, TensorProgram
+from data_structure.AxisAnnotations import NormAxis, NatAxis, PredAxis
 
 
 # ---------------------------------------------------------------------------
