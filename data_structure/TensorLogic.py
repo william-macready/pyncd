@@ -53,6 +53,23 @@ class TensorEquation(bc.Operator):
         datatype: B = bc.Reals(),
         give_names: bool = True,
     ) -> bc.Broadcasted[B, sc.RawAxis]:
+        # `signature` and `give_names` are accepted for interface compatibility
+        # with Operator.bc_signature() (monkey-patched in Operators.py to the
+        # string-parsing `broadcast` function), but are ignored here. TensorEquation
+        # derives its full contraction structure from axis UID identity, so no
+        # string signature is needed or consulted.
+        #
+        # Produces a homogeneously-typed Broadcasted: every weave (input and
+        # output) shares the same `datatype`. This is intentional — Broadcasted
+        # is parameterised by a single B, and bc_signature() is the path for
+        # display, morphism composition, and structurally-typed reasoning.
+        #
+        # For equations whose tensors have mixed datatypes (e.g. a Natural-valued
+        # embedding index alongside Reals-valued weights), use
+        # acset.convert.from_tensor_equation() instead. That path produces an
+        # SBrInstance where each ArrayRow carries its own datatype_tag, at the
+        # cost of losing the Broadcasted type parameter.
+        #
         # Converts this equation to a Broadcasted by reading the contraction
         # structure from UID identity. The translation has three parts:
         #

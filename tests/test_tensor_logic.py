@@ -298,6 +298,62 @@ def test_topological_sort_independent_equations():
     assert len(result) == 2
 
 
+def _diag_eq():
+    """Y[i] = X[i, i]  — diagonal extraction, repeated retained index."""
+    i = RawAxis.named('i')
+    eq = TensorEquation(
+        lhs_name=fd.DynamicName('Y'),
+        lhs_indices=(i,),
+        rhs=((fd.DynamicName('X'), (i, i)),),
+        operator=Identity(),
+    )
+    return eq, i
+
+
+def test_diag_retained_uids():
+    eq, i = _diag_eq()
+    assert eq.retained_uids() == {i.uid}
+
+
+def test_diag_no_contracted_axes():
+    eq, i = _diag_eq()
+    assert eq.contracted_axes() == ()
+
+
+def test_diag_bc_signature_degree():
+    eq, i = _diag_eq()
+    br = eq.bc_signature()
+    assert br.degree() == pc.ProdObject((i,))
+
+
+def test_diag_bc_signature_dom_shape():
+    # X[i, i]: input shape must be (i, i) — a square matrix
+    eq, i = _diag_eq()
+    br = eq.bc_signature()
+    assert br.dom()[0] == bc.Array(bc.Reals(), (i, i))
+
+
+def test_diag_bc_signature_cod_shape():
+    # Y[i]: output shape is a 1-D vector
+    eq, i = _diag_eq()
+    br = eq.bc_signature()
+    assert br.cod()[0] == bc.Array(bc.Reals(), (i,))
+
+
+def test_diag_reindexing_mapping():
+    # Both X positions map to degree position 0 — the diagonal constraint
+    eq, i = _diag_eq()
+    br = eq.bc_signature()
+    assert br.reindexings[0].mapping == (0, 0)
+
+
+def test_diag_reindexing_cod():
+    # cod of the reindexing is (i, i) — both slots resolved to the same degree axis
+    eq, i = _diag_eq()
+    br = eq.bc_signature()
+    assert br.reindexings[0].cod() == pc.ProdObject((i, i))
+
+
 def test_topological_sort_raises_on_cycle():
     i = RawAxis.named('i')
     k = RawAxis.named('k')

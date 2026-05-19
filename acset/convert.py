@@ -85,6 +85,12 @@ def from_tensor_equation(
 
     array_datatypes: optional mapping from tensor name to bc.Datatype; when supplied,
     populates datatype_tag, max_value, bias, and elementwise_fn on ArrayRow.
+
+    This is the intended path for equations with mixed datatypes (e.g. Natural-valued
+    embedding indices alongside Reals-valued weights). Each ArrayRow carries its own
+    datatype_tag independently. For homogeneously-typed structural reasoning, use
+    TensorEquation.bc_signature() instead, which produces a Broadcasted parameterised
+    by a single datatype.
     """
     inst = SBrInstance()
     retained = eq.retained_uids()
@@ -127,6 +133,10 @@ def from_tensor_equation(
             ))
         for ax in input_axes:
             if ax.uid in retained:
+                # src_uid == tgt_uid by design: TensorEquation retained axes are
+                # the same axis objects on both lhs and rhs, so sampling is always
+                # an identity map. SampleRow supports src_uid != tgt_uid for
+                # stride-style reindexing, but that path is not exercised here.
                 inst.samples.append(SampleRow(
                     src_uid=ax.uid,
                     tgt_uid=ax.uid,

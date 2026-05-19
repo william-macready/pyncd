@@ -17,6 +17,7 @@ This document examines the relationship between Tensor Logic (Domingos 2025) and
    - [Syntax](#21-syntax)
    - [Formal semantics](#22-formal-semantics)
    - [Algebraic properties](#23-algebraic-properties)
+   - [Delta tensors](#24-delta-tensors)
 3. [Background: pyncd](#3-background-pyncd)
    - [The product category framework](#31-the-product-category-framework)
    - [Broadcasted: the base morphism](#32-broadcasted-the-base-morphism)
@@ -154,7 +155,18 @@ Wenig, Rump, Blacher, and Giesen (2025) formally prove commutativity, associativ
 
 - An n-tensor einsum decomposes into `n−1` binary einsums in any order (**contraction path**).
 - Einsum distributes over elementwise aggregation, enabling algebraic simplification.
-- Einsum rewriting rules are precisely query rewriting rules from relational algebra.
+
+Together with Domingos (2025)'s identification of relations with Boolean tensors (§1.2), these properties imply that einsum rewriting rules correspond to query rewriting rules in relational algebra — a synthesis of the two frameworks, not a theorem stated by Wenig et al.
+
+### 2.4 Delta tensors
+
+Wenig et al. (2025) §7 introduce **delta tensors** as a first-class einsum primitive. The delta tensor `δ_o` over index structure `o` is the generalised identity matrix: `δ_o(x) = 1` if all components of `x` are equal, `0` otherwise. Trace (`#(ii → ; A)`) and diagonal extraction (`#(ii → i; A)`) are the canonical examples.
+
+**Lemma 7.4** characterises delta tensors within einsum: `δ_o = #(I → II; 1_o)` — a delta tensor over `o` equals the einsum of the all-ones tensor `1_o` with a duplicated output index. Delta tensors are therefore expressible as ordinary einsums; they require no special primitive.
+
+**Corollary 7.6** (delta removal) exploits this: any einsum expression containing a delta tensor can be rewritten into an equivalent delta-free einsum by substituting repeated indices. A delta tensor is a bookkeeping device, not a distinct operation.
+
+**Correspondence with pyncd.** The diagonal-extraction case `Y[i] = X[i, i]` — a retained index appearing twice in one input — is the prototypical delta tensor pattern. In pyncd, `bc_signature()` handles this correctly without special-casing: when the same `Axis` object `i` appears twice in an input's `rhs` entry, `retained_uid_to_pos[i.uid]` is looked up twice, producing `Rearrangement(mapping=(0, 0), _dom=(i,))`. `Rearrangement.cod()` then returns `ProdObject((i, i))`, and `imprint_to_degree(cod)` fills both TILED slots with `i`, correctly recovering the `(i, i)` input shape. Delta tensor behaviour is a consequence of UID-based reindexing, not a separate mechanism — consistent with Corollary 7.6's result that delta tensors are eliminable.
 
 ---
 
