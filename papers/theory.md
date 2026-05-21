@@ -1,24 +1,21 @@
 ```mermaid
+%%{init: {'themeVariables': {'edgeLabelBackground': 'transparent'}}}%%
 graph TD
-    Q["**Q** : [ℝ, b⊗h⊗q⊗k]\nTILED: b"]
-    K["**K** : [ℝ, h⊗x⊗k]\nno tiling"]
-    V["**V** : [ℝ, h⊗x⊗d]\nno tiling"]
+    QotK["Q ⊗ K : [ℝ, b⊗h⊗q⊗k] ⊗ [ℝ, h⊗x⊗k]"]
+    Q["Q : [ℝ, b⊗h⊗q⊗k]"]
+    K["K : [ℝ, h⊗x⊗k]"]
+    V["V : [ℝ, h⊗x⊗d]"]
+    S["S : [ℝ, b⊗h⊗q⊗x]"]
+    SotV["S ⊗ V : [ℝ, b⊗h⊗q⊗x] ⊗ [ℝ, h⊗x⊗d]"]
+    O["O : [ℝ, b⊗h⊗q⊗d]"]
 
-    QK["**Einops**\nh q k, h x k → h q x\ndegree P = (b)"]
+    QotK -->|"π<sub>Q</sub>"| Q
+    QotK -->|"π<sub>K</sub>"| K
+    QotK -->|"Broadcasted(Einops: h q k, h x k → h q x, P=(b), η<sub>Q</sub>=id<sub>b</sub>, η<sub>K</sub>=())"| S
 
-    S["**S** : [ℝ, b⊗h⊗q⊗x]\nTILED: b"]
-
-    VA["**Einops**\nh q x, h x d → h q d\ndegree P = (b)"]
-
-    O["**O** : [ℝ, b⊗h⊗q⊗d]\nTILED: b"]
-
-    Q -->|"η = id_(b)"| QK
-    K -->|"η = ()"| QK
-    QK --> S
-
-    S -->|"η = id_(b)"| VA
-    V -->|"η = ()"| VA
-    VA --> O
+    SotV -->|"π<sub>S</sub>"| S
+    SotV -->|"π<sub>V</sub>"| V
+    SotV -->|"Broadcasted(Einops: h q x, h x d → h q d, P=(b), η<sub>S</sub>=id<sub>b</sub>, η<sub>V</sub>=())"| O
 ```
 
 # Weaves, Wires, and Morphisms: Overview
