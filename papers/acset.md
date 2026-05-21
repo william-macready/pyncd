@@ -672,7 +672,14 @@ Each practical advantage below is followed by an italicized note assessing wheth
 
 An `SBrInstance` exported via `write_sbr` / `read_sbr` is a functor $G : \mathcal{S}_{Br} \to \mathbf{Set}$ — one point in the $\mathcal{S}_{Br}$-instance category. The CSV tables assign finite sets to entity types (`Axis`, `Equation`, `Array`, `ArrayAxis`, `Sample`) and functions to the foreign-key maps between them. Importing $G$ into Lean gives access to the relational data but not yet to the categorical structure of $\mathbf{Br}$.
 
-The goal is to interpret $G$ as a **strict monoidal functor** $D : \mathcal{J} \to \mathbf{Br}$ from a finite index category $\mathcal{J}$ whose objects are the arrays of the program and whose morphisms are its equations. $\mathbf{Br}$ is the Lean 4 encoding in [`leanncd.md §5`](leanncd.md#5-br--free-category-over-broadcasted-base-morphisms). Running example: matmul $Y[i,j] = W[i,k]\, X[k,j]$.
+The goal is to interpret $G$ as a **strict monoidal functor** $D : \mathcal{J} \to \mathbf{Br}$ from a finite index category $\mathcal{J}$ whose objects are the arrays of the program and whose morphisms are its equations. $\mathbf{Br}$ is the Lean 4 encoding in [`leanncd.md §5`](leanncd.md#5-br--free-category-over-broadcasted-base-morphisms).
+
+**Running example.** A two-equation linear layer with activation:
+
+$$Z[i,j] = W[i,k]\cdot X[k,j] \qquad\text{(equation 0: matmul, contracts }k\text{)}$$
+$$Y[i,j] = \mathrm{relu}(Z[i,j]) \qquad\text{(equation 1: elementwise, no contraction)}$$
+
+The two equations share the intermediate array $Z$; equation 1 takes the output of equation 0 as its sole input. This chain structure makes the J composition `JMor.comp (gen eq₀) (gen eq₁)` exact — no `tens` is needed — and the two equations show two distinct `op` values and two qualitatively different reindexings.
 
 ### Two Lean library shortcuts
 
@@ -724,7 +731,12 @@ def extractGens (inst : SBrInstance) : List EquationGen :=
 -- nameOf : ArrayRow → ArrayKey  (DynamicName → String)
 ```
 
-For matmul, `extractGens inst` returns a single generator: `{ eqIdx := 0, inputs := [⟨"W"⟩, ⟨"X"⟩], output := ⟨"Y"⟩ }`.
+For the running example, `extractGens inst` returns two generators:
+
+```lean
+-- eq₀ = { eqIdx := 0, inputs := [⟨"W"⟩, ⟨"X"⟩], output := ⟨"Z"⟩ }
+-- eq₁ = { eqIdx := 1, inputs := [⟨"Z"⟩],          output := ⟨"Y"⟩ }
+```
 
 Because $\mathbf{Br}$'s $\otimes$ is list concatenation ([`leanncd.md §2`](leanncd.md#2-prop)), it is natural to give $\mathcal{J}$ the same object type rather than a separate inductive:
 
@@ -744,9 +756,13 @@ inductive JMor : JObj → JObj → Type
 
 The `tens` constructor's index type uses `List.append` directly, matching `D.obj`'s definition below. No coherence constructors (associators, unitors) appear: because $\mathbf{Br}$ is a strict PROP, every coherence isomorphism in $\mathcal{J}$ would map to `rfl` under $D$ and is safely elided. This `JMor` is the **free strict monoidal category** on the `EquationGen` quiver. The universal property — formalised for the non-strict case by `CategoryTheory.FreeMonoidalCategory` in Mathlib, with the strict variant obtained by strictification — asserts that $D$ is the *unique* strict monoidal functor $\mathcal{J} \to \mathbf{Br}$ extending its action on generators. Specifying `D.genBase` therefore determines $D$ completely; the functor laws are a consequence, not a separate choice.
 
-For matmul, $\mathcal{J}$ has objects `[]`, `["W"]`, `["X"]`, `["Y"]`, `["W","X"]`, … and a single generating morphism `JMor.gen eq : JMor ["W", "X"] ["Y"]`.
+For the running example, the two generators give morphisms `gen eq₀ : JMor ["W", "X"] ["Z"]` and `gen eq₁ : JMor ["Z"] ["Y"]`. Because the codomain of `gen eq₀` equals the domain of `gen eq₁`, they compose directly:
 
-For a multi-equation program such as ffn, `Hidden` is the output of equation 0 and an input of equation 1, giving `JMor.comp (gen eq₀) (gen eq₁)` in $\mathcal{J}$.
+```lean
+JMor.comp (gen eq₀) (gen eq₁) : JMor ["W", "X"] ["Y"]
+```
+
+No `tens` or `id` wrapper is needed — this is the cleanest form of sequential composition in $\mathcal{J}$. When an equation has additional weight inputs that are not produced by a prior equation (as in the ffn's `W_out`), those are handled by tensoring with an identity: `JMor.comp (JMor.tens JMor.id (gen eq₀)) (gen eq₁)`.
 
 ### The Denotation Functor D
 
@@ -766,7 +782,7 @@ def D.singleObj (inst : SBrInstance) (key : ArrayKey) : ArrayType :=
 def D.obj (inst : SBrInstance) : JObj → BrObj := List.map (D.singleObj inst)
 ```
 
-Monoidality: `D.obj (A ++ B) = D.obj A ++ D.obj B` by `List.map_append` (`simp`). For matmul, `D.obj ["W", "X"] = [W_type, X_type]` — a two-element list, not an axis union.
+Monoidality: `D.obj (A ++ B) = D.obj A ++ D.obj B` by `List.map_append` (`simp`). For the running example, `D.obj ["W", "X"] = [W_type, X_type]` and `D.obj ["Z"] = [Z_type]` — lists of `ArrayType`, not axis unions.
 
 **D on morphisms.**
 
@@ -779,15 +795,27 @@ def D.map (inst : SBrInstance)
   | _, _, .gen eq    => .cons (D.genBase inst eq) (.nil _)
 ```
 
-For matmul: `D.map (gen eq) : BrMorph [W_type, X_type] [Y_type]` is `BrMorph.cons (D.genBase inst eq) (.nil _)` — a one-element list wrapping the single broadcasted operation.
+For the running example:
 
-The morphism for a full `TensorProgram` is therefore a single `BrMorph` — a list of `BrBase` operations in topological order assembled by `BrMorph.comp` (list concatenation).
+```lean
+D.map (gen eq₀) : BrMorph [W_type, X_type] [Z_type]
+  = BrMorph.cons matmul_base (.nil _)         -- single-element list
+
+D.map (gen eq₁) : BrMorph [Z_type] [Y_type]
+  = BrMorph.cons relu_base (.nil _)
+
+D.map (JMor.comp (gen eq₀) (gen eq₁)) : BrMorph [W_type, X_type] [Y_type]
+  = BrMorph.comp (D.map (gen eq₀)) (D.map (gen eq₁))
+  = BrMorph.cons matmul_base (BrMorph.cons relu_base (.nil _))
+```
+
+The morphism for a full `TensorProgram` is a single `BrMorph` — a list of `BrBase` operations in topological order assembled by `BrMorph.comp` (list concatenation).
 
 ### Populating BrBase from Instance Tables
 
 `D.genBase` assembles the five fields of `BrBase` ([`leanncd.md §9.5`](leanncd.md#95-broadcasted-operations-paper-def-13)).
 
-**`op`.** The `operator_tag` of the output `ArrayRow` (slot 0, `is_input = false`). For matmul: `op = "identity"` — a plain einsum has no nonlinearity, so `operator_tag = OpTag.IDENTITY`.
+**`op`.** The `operator_tag` of the output `ArrayRow` (slot 0, `is_input = false`). For equation 0 (matmul): `op = "identity"` — a plain einsum has no nonlinearity. For equation 1 (relu): `op = "elementwise/relu"`.
 
 **`degree` — outer-loop shape $P$** ([`leanncd.md §9.3`](leanncd.md#93-reindexing-and-batch-lift-paper-defs-1011)). All axes on the output array have `is_target = false`; sorted by `position` they give $P$:
 
@@ -799,7 +827,7 @@ def reconstructDegree (inst : SBrInstance) (eqIdx : Nat) : StObj :=
     |>.map    (fun aa => ⟨none, findUID inst aa.axis_uid⟩)
 ```
 
-For matmul: $P = [i, j]$.
+For both equations: $P_0 = [i, j]$ (the axes of $Z$) and $P_1 = [i, j]$ (the axes of $Y$).
 
 **`inputWeaves` and `outputWeaves`** ([`leanncd.md §9.4`](leanncd.md#94-weaves-paper-def-12)). Each `ArrayAxisRow.is_target` classifies the axis as a `WeaveSlot`. The naming is inverted relative to `convert.py`: `convert.py` calls contracted axes "target" (they are the contraction target); `leanncd.md` calls retained axes "fixed" (the reindexing selects a value for them at each step $p \in P$):
 
@@ -808,11 +836,16 @@ For matmul: $P = [i, j]$.
 | retained / degree axis | `false` | `WeaveSlot.fixed a` | reindexing supplies a specific value at each $p \in P$ |
 | contracted axis | `true` | `WeaveSlot.tiled` | base op contracts over full extent |
 
-For matmul $W[i, k]$: $i$ is retained (`is_target = false`) → `fixed i`; $k$ is contracted → `tiled`. So `inputWeaves 0 = [.fixed i, .tiled]` and $Q_W = [i]$.
+**Equation 0** ($Z[i,j] = W[i,k]\cdot X[k,j]$, degree $P_0 = [i,j]$):
 
-For matmul $X[k, j]$: $k$ is contracted → `tiled`; $j$ is retained → `fixed j`. So `inputWeaves 1 = [.tiled, .fixed j]` and $Q_X = [j]$.
+- $W[i, k]$: $i$ retained → `fixed i`; $k$ contracted → `tiled`. `inputWeaves 0 = [.fixed i, .tiled]`, $Q_W = [i]$.
+- $X[k, j]$: $k$ contracted → `tiled`; $j$ retained → `fixed j`. `inputWeaves 1 = [.tiled, .fixed j]`, $Q_X = [j]$.
+- $Z[i, j]$ (output): both retained. `outputWeaves 0 = [.fixed i, .fixed j]`.
 
-For the output $Y[i, j]$: both axes are retained, so `outputWeaves 0 = [.fixed i, .fixed j]` — at each step $p = (i, j) \in P$ the degree loop writes to a specific position in $Y$.
+**Equation 1** ($Y[i,j] = \mathrm{relu}(Z[i,j])$, degree $P_1 = [i,j]$):
+
+- $Z[i, j]$ (input): no contraction; both axes retained. `inputWeaves 0 = [.fixed i, .fixed j]`, $Q_Z = [i, j]$.
+- $Y[i, j]$ (output): both retained. `outputWeaves 0 = [.fixed i, .fixed j]`.
 
 ```lean
 def reconstructWeave (inst : SBrInstance) (eqIdx slot : Nat) : Weave :=
@@ -832,8 +865,9 @@ def reconstructProjection (degree fixed : StObj) : StMat degree fixed :=
         if degree[k].uid == fixed[j].uid then (1 : Numeric) else 0
     bias := fun _ => 0 }
 -- fixed := (reconstructWeave inst eqIdx slot).targetAxes
--- For matmul W: fixed = [i], degree = [i,j],  η_W = [[1, 0]]  (project onto i)
--- For matmul X: fixed = [j], degree = [i,j],  η_X = [[0, 1]]  (project onto j)
+-- Eq 0, W:  fixed=[i],    degree=[i,j],   η_W = [[1,0]]     (project onto i)
+-- Eq 0, X:  fixed=[j],    degree=[i,j],   η_X = [[0,1]]     (project onto j)
+-- Eq 1, Z:  fixed=[i,j],  degree=[i,j],   η_Z = [[1,0],[0,1]]  (identity: no contraction)
 ```
 
 For the general case (strided convolutions, non-unit coefficients), the `SampleRow` scan recovers the full affine matrix:
@@ -868,21 +902,31 @@ def D.genBase (inst : SBrInstance) (eq : EquationGen) : BrBase _ _ :=
     reindexings  := fun i => reconstructProjection deg (iWeave i).targetAxes }
 ```
 
-For matmul the assembled record is:
+The two assembled records for the running example:
 
 ```lean
+-- matmul_base : BrBase [W_type, X_type] [Z_type]
 -- BrBase {
 --   op           = "identity"
---   degree       = [i, j]                         -- P: outer loop
---   inputWeaves  = [ [.fixed i, .tiled],           -- W: retain i, contract k
---                    [.tiled,   .fixed j] ]        -- X: contract k, retain j
---   outputWeaves = [ [.fixed i, .fixed j] ]        -- Y: write to specific (i,j)
---   reindexings  = [ η_W = [[1,0]],                -- (i,j) ↦ i
---                    η_X = [[0,1]] ]               -- (i,j) ↦ j
+--   degree       = [i, j]
+--   inputWeaves  = [ [.fixed i, .tiled],    -- W: retain i, contract k
+--                    [.tiled,   .fixed j] ] -- X: contract k, retain j
+--   outputWeaves = [ [.fixed i, .fixed j] ] -- Z: write to (i,j)
+--   reindexings  = [ [[1,0]],               -- η_W: (i,j) ↦ i
+--                    [[0,1]] ]              -- η_X: (i,j) ↦ j
+-- }
+
+-- relu_base : BrBase [Z_type] [Y_type]
+-- BrBase {
+--   op           = "elementwise/relu"
+--   degree       = [i, j]
+--   inputWeaves  = [ [.fixed i, .fixed j] ] -- Z: no contraction
+--   outputWeaves = [ [.fixed i, .fixed j] ] -- Y: write to (i,j)
+--   reindexings  = [ [[1,0],[0,1]] ]        -- η_Z: identity, (i,j) ↦ (i,j)
 -- }
 ```
 
-The degree loop steps through all $(i, j) \in P$; at each step, $\eta_W$ selects row $i$ of $W$ and $\eta_X$ selects column $j$ of $X$; the base op accumulates the dot product over the tiled axis $k$ and writes the result to $Y[i, j]$.
+For `matmul_base`, the degree loop steps through all $(i,j) \in P_0$; at each step $\eta_W$ selects row $i$ of $W$, $\eta_X$ selects column $j$ of $X$, and the base op accumulates the dot product over the tiled axis $k$. For `relu_base`, the degree loop steps through all $(i,j) \in P_1$; $\eta_Z$ is the identity, so the base op reads $Z[i,j]$ and writes $\mathrm{relu}(Z[i,j])$ to $Y[i,j]$ — no summation. The two `BrBase` records compose into the two-element `BrMorph` shown in the D on morphisms section above.
 
 ### Proof Obligations
 
