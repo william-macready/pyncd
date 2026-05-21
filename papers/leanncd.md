@@ -75,6 +75,8 @@ Three design points are worth noting.
 
 **Laws are propositions.** `id_comp`, `comp_id`, and `assoc` are propositional equalities to be discharged by tactics. For Br all three reduce to `rfl` or one-step induction.
 
+**Python counterpart.** Python has no typeclass encoding for `SmallCategory`. Categories emerge implicitly from the `@` operator and `Composed` wrapper; the laws `id_comp`, `comp_id`, and `assoc` are never stated or enforced in the Python codebase.
+
 ---
 
 ### 2. PROP
@@ -111,11 +113,13 @@ The PROP typeclass earns its keep in three ways.
 
 3. **Interchange.** The law $(f  ;  g) \otimes (h  ;  k) = (f \otimes h)  ;  (g \otimes k)$ holds in any PROP and can be proved once from `tensorHom` and `assoc`.
 
+**Python counterpart.** No Python class corresponds to `PROP`. The shared monoidal structure is a paper-level concept: objects of both **St** and **Br** are `ProdObject[L]` terms (wrapping `tuple[L, ...]`) and the tensor product is implicitly tuple concatenation, but the strictness laws (`tensor_assoc`, `tensor_unit_l`, `tensor_unit_r`) and the `swap` morphism have no Python witness.
+
 ---
 
 ### 3. Numeric
 
-Both **St** and **Br** rely on symbolic dimension expressions — axis sizes and stride coefficients are not concrete natural numbers but terms in a free commutative semiring. The right type for this is Mathlib's `MvPolynomial String ℕ` — multivariate polynomials over $\mathbb{N}$ with `String`-named indeterminates — which is already a `CommSemiring` by Mathlib's instance, requires no additional proof work, and matches the `Numeric` grammar constructor for constructor:
+Both **St** and **Br** rely on symbolic dimension expressions — axis sizes and stride coefficients are not concrete natural numbers but terms in a free commutative semiring. The right type for this is Mathlib's `MvPolynomial String ℕ` — multivariate polynomials over $\mathbb{N}$ with `String`-named indeterminates — which is already a `CommSemiring` by Mathlib's instance, requires no additional proof work, and covers the Python `Numeric` term hierarchy (`Integer`, `FreeNumeric`, `Addition`, `Multiplication`, `Power`) uniformly:
 
 ```lean
 abbrev Numeric := MvPolynomial String ℕ
@@ -146,6 +150,8 @@ structure Axis where
 abbrev StObj := List Axis  -- a shape = an ordered list of axes
 ```
 
+**Python counterparts.** `Axis` corresponds to the abstract `Axis` `UTerm` subclass (backed by `RawAxis`), which additionally carries `uid: UID[Axis]` for alignment — the UID is Layer 2 and is absent from the Lean `Axis` record. `StObj = List Axis` corresponds to `ProdObject[Axis]` (a `Term` wrapping `content: tuple[Axis, ...]`).
+
 #### Morphisms
 
 A morphism `dom → cod` in **St** is a matrix $\Lambda \in \mathbb{N}^{|cod| \times |dom|}$ of `Numeric` coefficients (plus a bias vector). Each row $j$ gives the linear combination of input coordinates that produces output coordinate $j$:
@@ -169,6 +175,8 @@ def StMat.comp (f : StMat a b) (g : StMat b c) : StMat a c where
 ```
 
 `Matrix.mul` from Mathlib is `(A * B) i j = ∑_k A i k * B k j`, matching the standard formula. `Matrix.dotProduct v w = ∑_k v k * w k` handles the bias update.
+
+**Python counterpart.** `StMat` corresponds to `StrideMorphism[A]`. Python bundles codomain axes and coefficient rows as `_cod_stride: Prod[tuple[Axis, Prod[Numeric]]]` rather than separating them into a `Matrix` type with a distinct `bias` vector; bounds are checked at construction via `from_matrix` rather than enforced by `Fin` indices. Composition of two `StrideMorphism`s multiplies their coefficient matrices directly, matching `StMat.comp`.
 
 #### Category instance
 
@@ -219,14 +227,16 @@ structure ArrayType where
 abbrev BrObj := List ArrayType      -- a product of arrays
 ```
 
+**Python counterparts.** `DType` corresponds to `Datatype` / `Reals` / `Natural` (where `Natural` stores `max_value: Numeric`); `ArrayType` corresponds to `Array[B, A]`, parametric over `B: Datatype` and a list of axes `A`; `BrObj = List ArrayType` corresponds to `ProdObject[Array[B,A]]`.
+
 #### Base morphisms — Broadcasted
 
 A single `BrBase` is the root morphism of **Br**, corresponding to `Broadcasted` in pyncd. It bundles one base operation together with its reindexings (from **St**), input weaves, and output weaves.
 
 ```lean
 inductive WeaveSlot
-  | fixed : Axis → WeaveSlot   -- target axis: seen by the base operation
-  | tiled : WeaveSlot           -- tiling axis: supplied by the degree loop
+  | fixed : Axis → WeaveSlot   -- retained axis: the reindexing selects a value for this axis at each degree step
+  | tiled : WeaveSlot           -- contracted axis: the base op processes the full extent of this axis
 
 abbrev Weave := List WeaveSlot
 
@@ -246,6 +256,8 @@ structure BrBase (dom cod : BrObj) where
 
 The `reindexings` field precisely captures the four cases from the paper: identity, deletion (broadcast), duplication (diagonal), and affine scaling (strided convolution). Each is a different `StMat`.
 
+**Python counterparts.** `WeaveSlot.fixed a` (retained axis) corresponds to `WeaveMode.TILED` in Python's `Weave._shape` — both mark a slot that the outer reindexing loop fills at runtime. `WeaveSlot.tiled` (contracted axis) corresponds to a concrete `Axis` object in `Weave._shape` — both indicate an axis the base op processes in full. The naming is inverted across the boundary: Python `TILED` = Lean `fixed`; Python concrete `Axis` slot = Lean `tiled`. `Weave` corresponds to `Weave[B, A]` (Python additionally stores `datatype: B`, which Lean omits). `BrBase` corresponds to `Broadcasted[B, A, O]` — `op` maps to `operator: O`, `degree` to `Broadcasted.degree()`, `inputWeaves`/`outputWeaves` to `input_weaves`/`output_weaves`, and `reindexings` to `reindexings: Prod[StrideCategory[A]]`.
+
 #### Morphisms — free list
 
 ```lean
@@ -258,7 +270,9 @@ def BrMorph.comp : BrMorph a b → BrMorph b c → BrMorph a c
   | .cons f fs, g => .cons f (BrMorph.comp fs g)
 ```
 
-This is exactly the free category on `BrBase`: morphisms are non-empty lists of base operations threaded sequentially, and composition is list concatenation.
+This is exactly the free category on `BrBase`: morphisms are lists of base operations threaded sequentially (with `nil` as the empty identity), and composition is list concatenation.
+
+**Python counterparts.** `BrMorph.nil a` corresponds to an identity `Rearrangement` (permutation = `(0,1,2,...)`); `BrMorph.cons f fs` corresponds to `Composed[L, M]`, which stores `content: tuple[M, ...]` — a flat tuple rather than a linked list. Both representations are syntactic; two structurally distinct expressions can denote equal category-theoretic morphisms.
 
 #### Br Category instance
 
@@ -339,8 +353,8 @@ The Lean encoding targets the *mathematical* layer of the framework — what the
 **Layer 1 — mathematical entities (encoded in both Lean and Python)**
 Objects, morphisms, and the categorical structure that relates them. This is what `SmallCategory`, `PROP`, `StMat`, and `BrBase` formalise.
 
-**Layer 2 — representation / term system (Python only, Lean Layer 2)**
-A grammar of `Term` and `UTerm` subclasses in [data_structure/Term.py](../data_structure/Term.py) that provides: frozen dataclass identity, a `TermDirectory` for serialisation, `DynamicName` for LaTeX/diagram rendering, `UID` integers for axis identity tracking, and `Context` / `EqualityClass` (a union-find over UIDs) for the axis alignment that `@` composition triggers. The Lean equivalent is described in Layer 2 below.
+**Layer 2 — representation / term system (Python: `Term`/`UTerm` hierarchy; Lean: Layer 2 of this document)**
+In Python, a grammar of `Term` and `UTerm` subclasses in [data_structure/Term.py](../data_structure/Term.py) provides: frozen dataclass identity, a `TermDirectory` for serialisation, `DynamicName` for LaTeX/diagram rendering, `UID` integers for axis identity tracking, and `Context` / `EqualityClass` (a union-find over UIDs) for the axis alignment that `@` composition triggers. The Lean equivalents are described in Layer 2 below.
 
 #### Correspondence table
 
@@ -357,7 +371,7 @@ A grammar of `Term` and `UTerm` subclasses in [data_structure/Term.py](../data_s
 | `DType` | `Datatype`, `Reals`, `Natural` | Near 1:1; Python `Natural` stores `max_value: Numeric` |
 | `ArrayType` | `Array[B, A]` | Python parametric over `B: Datatype` and `A: Axis`; Lean uses a flat record |
 | `BrObj = List ArrayType` | `ProdObject[Array[B,A]]` | Same object-wrapper difference as for St |
-| `WeaveSlot` | `Axis \| WeaveMode.TILED` | Python encodes slots as a union type in `Weave._shape: Prod[A \| WeaveMode]`; Lean uses an inductive |
+| `WeaveSlot` | `Axis \| WeaveMode.TILED` | Python encodes slots as a union type in `Weave._shape: Prod[A \| WeaveMode]`; Lean uses an inductive. Convention inverted: Python `TILED` = Lean `.fixed` (retained); Python concrete `Axis` slot = Lean `.tiled` (contracted) |
 | `Weave` | `Weave[B, A]` | Python also stores `datatype: B`; Lean's `Weave` is shape-only |
 | `BrBase (dom cod)` | `Broadcasted[B, A, O]` | See §8.3 below |
 | `BrMorph.nil` | identity `Rearrangement` (mapping = `(0,1,2,...)`) | Python identity is a Rearrangement with the identity permutation; Lean `nil` is a single constructor |
@@ -377,7 +391,7 @@ Both represent the same affine coordinate transform $(\Pi_i a_i) ; \eta = \Pi_j(
 | Domain | `_dom: Prod[Axis]` — runtime tuple | `dom : StObj` — compile-time index type |
 | Codomain + coefficients | `_cod_stride: Prod[tuple[Axis, Prod[Numeric]]]` — axis and its coefficient row bundled together | `coeffs : Matrix (Fin cod.length) (Fin dom.length) Numeric` and `bias : Fin cod.length → Numeric` — separated; `Matrix` indexing enforces bounds |
 | Matrix bounds | checked at construction / `from_matrix` call | enforced by `Fin` — index-out-of-bounds is a type error |
-| Composition | not directly composed; wrapped in `Composed` | `StMat.comp` uses `Matrix.mul` for coefficients; `cod` of `f` must equal `dom` of `g` at the type level |
+| Composition | coefficient matrices multiplied directly (`from_matrix` on the result) | `StMat.comp` uses `Matrix.mul` for coefficients; `cod` of `f` must equal `dom` of `g` at the type level |
 | Law proofs | not stated | `Matrix.mul_assoc` + `ring` over `MvPolynomial String ℕ`; no `sorry` |
 | Name / display | `name: DynamicName \| None` | not encoded (Layer 2) |
 
@@ -466,7 +480,7 @@ In Lean this becomes:
 
 #### 9.3 Reindexing and batch lift (paper Defs 10–11)
 
-These two definitions describe how a base operation is lifted to run over a batch dimension.
+These two definitions describe how a base operation is lifted to run over a degree shape P (a product of one or more loop axes).
 
 **Def 10 — Reindexing.** A reindexing $[a, \eta] : [a, \text{dom}(\eta)] \to [a, \text{cod}(\eta)]$ applies a stride transform $\eta \in \mathbf{St}$ to the shape of an array $[a, \cdot]$ while leaving the datatype $a$ unchanged. In the Lean encoding this is not a standalone morphism type but a sub-component of `BrBase`: the `reindexings` field provides one `StMat` per input, mapping the shared degree $P$ to the input's tiling axes.
 
@@ -480,15 +494,15 @@ These two definitions describe how a base operation is lifted to run over a batc
 
 #### 9.4 Weaves (paper Def 12)
 
-A weave classifies each axis of an array as either a *target* axis (operated on directly by the base op) or a *tiling* axis (looped over by the degree).
+A weave classifies each axis of an array as either a *target* (retained) axis — selected by the reindexing at each degree step — or a *tiling* (contracted) axis processed over its full extent by the base op.
 
 | Paper | Lean | Note |
 | --- | --- | --- |
-| $w_i = 1$ (target axis) | `WeaveSlot.fixed a` | Carries the concrete `Axis` value |
-| $w_i = 0$ (tiling axis) | `WeaveSlot.tiled` | A sentinel; the axis index is supplied externally by the reindexing |
+| $w_i = 1$ (target axis) | `WeaveSlot.fixed a` | Retained axis: the reindexing maps a degree coordinate to this axis at each step |
+| $w_i = 0$ (tiling axis) | `WeaveSlot.tiled` | Contracted axis: a sentinel — no reindexing row targets it; the base op processes its full extent |
 | Weave $(w_i)_{i \in I}$ | `Weave := List WeaveSlot` | One slot per axis of the array |
-| Target axes $A$ (sub-shape seen by base op) | `Weave.targetAxes w` | `w.filterMap (·.fixed?)` — extracts all `.fixed` slots |
-| Tiling axes $Q$ (sub-shape looped by degree) | `Fin domain − targetAxes` | Not computed separately; implicit in the `tiled` slots |
+| Target axes $A$ (sub-shape selected by reindexing) | `Weave.targetAxes w` | `w.filterMap (·.fixed?)` — extracts all `.fixed` slots |
+| Tiling axes $Q$ (sub-shape processed by base op) | `Fin domain − targetAxes` | Not computed separately; implicit in the `tiled` slots |
 | Unweave permutation $\Omega_w$ | Not encoded | Would be a derived `StMat` permuting target axes to the front; needed for the full $\text{dom}(F)$ formula |
 
 The paper computes $\text{dom}(F)$ for a broadcasted operation $F$ via the unweave permutation $\Omega_{s_i}$, which gathers all target axes before all tiling axes. The Lean encoding does not yet compute `dom` from `inputWeaves`; it accepts `dom` as an index parameter to `BrBase` and relies on the user supplying a consistent value. A complete encoding would add a derived function:
@@ -587,6 +601,8 @@ def DynamicName.ofStr (s : String) : DynamicName :=
   | b :: rest => .mk (some b) (some (DynamicName.ofStr (rest.intercalate "_"))) none
 ```
 
+**Python counterpart.** `DynamicName` is a near 1:1 translation of the Python class of the same name. `DynamicNameSettings` directly translates `bold`, `overline`, and `absolute`. `DynamicName.ofStr` corresponds to `DynamicName.from_str` (both split on `_` to build subscript chains). See §6 for the full correspondence table.
+
 ---
 
 ### 2. `UID` and the `TermM` monad
@@ -639,6 +655,8 @@ Concrete decorated types are aliases:
 abbrev UAxis        := WithUID Axis
 abbrev UFreeNumeric := WithUID Numeric
 ```
+
+**Python counterparts.** `UAxis := WithUID Axis` corresponds to `Axis` (which extends `UTerm` via inheritance — the Python `Axis` *is* a `UTerm`, whereas `UAxis` *wraps* an `Axis` in a separate struct); `UFreeNumeric := WithUID Numeric` corresponds to `FreeNumeric` (a `UTerm` subclass carrying no fields beyond `uid`).
 
 Construction always runs in `TermM`:
 
@@ -725,7 +743,7 @@ def Context.apply [TermTraversable α] (ctx : Context α) (target : α) : α :=
     target
 ```
 
-`Context.merge` corresponds to Python's `append_bucket`. `Context.apply` corresponds to `Context.apply`. The canonical representative is the member with the largest UID, matching Python's `max(..., key=lambda uterm: uterm.uid)`.
+`Context.merge` corresponds to Python's `Context.append_bucket`. `Context.apply` has the same name in Python and the same semantics: substitute every UID in each class with its canonical representative throughout a term tree. The canonical representative is the member with the largest UID, matching Python's `max(..., key=lambda uterm: uterm.uid)`.
 
 ---
 
@@ -755,15 +773,9 @@ def Context.apply [TermTraversable α] (ctx : Context α) (target : α) : α :=
 
 #### UID and UTerm: inheritance vs composition
 
-The most significant structural difference between the Python and Lean representations is how identity is attached to mathematical values.
+As noted in §3, Python attaches identity via **inheritance** (`Axis` extends `UTerm` extends `Term`) while Lean uses **composition** (`UAxis = WithUID Axis`). The consequence for proof: a Lean lemma over `Axis` cannot accidentally mention `UData`; the compiler enforces the separation. In Python, `uid` is silently present on every `Axis` and simply ignored during mathematical reasoning.
 
-Python uses **inheritance**: `Axis` extends `UTerm`, which extends `Term`. Every `Axis` instance *is* a `UTerm` and therefore carries a `uid: UID[Axis]` field by construction. Adding identity to a new type means subclassing `UTerm`.
-
-Lean uses **composition**: `UAxis = WithUID Axis` wraps a bare `Axis` record. The `UData` lives in `WithUID.data`; the mathematical value lives in `WithUID.val`. Adding identity to a new Layer 1 type `α` means declaring `abbrev UMyType := WithUID MyType` — the Layer 1 type itself is never modified.
-
-The consequence is that Layer 1 proofs in Lean are genuinely independent of Layer 2. A lemma stated over `Axis` cannot accidentally depend on `UData`; the compiler enforces the separation. In Python, every `Axis` value already carries a `uid` field that is simply ignored during mathematical reasoning.
-
-A second difference is **UID generation**. Python generates UIDs as random integers at the moment of object construction — a side effect that is invisible in the type. Two calls to `RawAxis()` produce distinct objects regardless of their other fields. Lean makes this explicit: constructing a `UAxis` requires running in `TermM`, and the counter value at that point determines the UID. The same mathematical value constructed twice in the same `TermM` run gets distinct UIDs; two values from different runs are incomparable until their UIDs are explicitly unified via `Context`.
+The more subtle difference is **UID generation**. Python generates UIDs as random integers at construction — a side-effect invisible in the type. Two calls to `RawAxis()` produce distinct objects regardless of their fields. Lean makes this explicit: constructing a `UAxis` requires running in `TermM`, and the counter value at that point determines the UID. Two values from different `TermM` runs are incomparable until their UIDs are explicitly unified via `Context`.
 
 #### `deep_reconstruct` vs `TermTraversable`
 

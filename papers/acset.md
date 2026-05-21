@@ -30,7 +30,7 @@ Their central construction is the **acset**: a schema category $\mathcal{S}$ sep
    - [The operator\_tag Attribute](#the-operator_tag-attribute)
    - [The Dual-View Pipeline](#the-dual-view-pipeline)
    - [What Remains in the Term World](#what-remains-in-the-term-world)
-8. [Advantages of the ACSet Structure/Data Decomposition](#advantages-of-the-acset-structuredata-decomposition)
+8. [Advantages of the acset Structure/Data Decomposition](#advantages-of-the-acset-structuredata-decomposition)
    - [Practical and Implementation Advantages](#practical-and-implementation-advantages)
    - [Theoretical Advantages](#theoretical-advantages)
 9. [From SBrInstance to a Diagram in Br: A Lean Encoding](#from-sbrinstance-to-a-diagram-in-br-a-lean-encoding)
@@ -144,7 +144,13 @@ Five entity types, six attribute types ($\mathbb{N}$, $\mathbb{N}_{>0}$, $\mathb
 | `name` | `Array → String` | tensor name; metadata carried alongside `slot` for display and traceability; partial — may be `None` for anonymous arrays |
 | `lhs_name` | `Equation → String` | output tensor name for the equation; metadata only; partial — may be `None` for anonymous equations |
 
-The **C-set part** (structure) = the `equation` map assigning each `Array` to its containing `Equation`, the reindexing multigraph on `Axis` (analogous to `Entry ⇉ Axis` in $\mathcal{S}_{St}$), the bipartite graph linking each `ArrayAxis` to its `Array` and its `Axis`, the `reindexing_slot` map assigning each `Sample` to the array whose reindexing it belongs to (by slot integer), and the `norm_axis` map pointing each SoftMax/Normalize output array to its normalisation axis (partial — undefined for all other arrays).
+The **C-set part** (structure) consists of:
+
+- the `equation` map assigning each `Array` to its containing `Equation`
+- the reindexing multigraph on `Axis` via `Sample ⇉ Axis` (analogous to `Entry ⇉ Axis` in $\mathcal{S}_{St}$)
+- the bipartite graph linking each `ArrayAxis` to its `Array` and its `Axis` via `array_slot` and `axis`
+- the `reindexing_slot` map assigning each `Sample` to the array whose reindexing it belongs to
+- the `norm_axis` map (partial) pointing each SoftMax/Normalize output array to its normalisation axis
 
 The **degree** of a `Broadcasted` morphism is the tuple of loop axes — the axes iterated in the outer degree loop, shared across all inputs. In tabular form the degree is the image of `src` across all `Sample` rows.
 
@@ -337,8 +343,8 @@ There is a schema morphism $\phi : \mathcal{S}_{St} \hookrightarrow \mathcal{S}_
 Applying $\phi$ to an **St** instance $F$ via the restriction functor $\phi^* : \mathcal{S}_{Br}\text{-Inst} \to \mathcal{S}_{St}\text{-Inst}$ pulls back the `Axis`/`Sample` part of any **Br** instance to the `Axis`/`Entry` structure of an **St** instance. Going the other direction, the left Kan extension $\Sigma_\phi$ freely generates a **Br** instance from an **St** instance by:
 
 1. Adding one input `Array` $[a, Q]$ (`is_input = True`) and one output `Array` $[a, P]$ (`is_input = False`)
-2. Marking all `ArrayAxis` rows with `is_target = False` — every axis is a tiling axis, since $[a, \Lambda]$ is a pure reindexing with no base computation
-3. Setting `reindexing_of` on every `Sample` to the input array $[a, Q]$
+2. Marking all `ArrayAxis` rows with `is_target = False` — every axis is a retained (degree) axis, since $[a, \Lambda]$ is a pure reindexing with no contraction
+3. Setting `reindexing_slot` on every `Sample` to the input array $[a, Q]$
 4. Setting `position` on each `ArrayAxis` row to the index of that axis within its containing axis tuple (0, 1, 2, ... in order of the domain or codomain sequence)
 
 The result is exactly the `Broadcasted` acset structure of $[a, \Lambda] : [a, Q] \to [a, P]$.
@@ -617,7 +623,7 @@ Both constructs sit above the tensor logic boundary cleanly. The term world hand
 
 ---
 
-## Advantages of the ACSet Structure/Data Decomposition
+## Advantages of the acset Structure/Data Decomposition
 
 Each practical advantage below is followed by an italicized note assessing whether the current `SBrInstance` definition is sufficient to realize it from acset data alone, or whether additional information — absent from `SBrInstance` but available from the term layer — would be required.
 
@@ -731,6 +737,8 @@ def extractGens (inst : SBrInstance) : List EquationGen :=
 -- nameOf : ArrayRow → ArrayKey  (DynamicName → String)
 ```
 
+**Python counterpart.** `EquationGen` corresponds to a single `TensorEquation`; `extractGens` reads the same structural data that `TensorProgram.equations` exposes — one entry per equation, with inputs sorted by their `rhs` slot position.
+
 For the running example, `extractGens inst` returns two generators:
 
 ```lean
@@ -782,6 +790,8 @@ def D.singleObj (inst : SBrInstance) (key : ArrayKey) : ArrayType :=
 def D.obj (inst : SBrInstance) : JObj → BrObj := List.map (D.singleObj inst)
 ```
 
+**Python counterpart.** `D.singleObj` assembles an `ArrayType` record from instance tables, corresponding to constructing `Array[B, A]` in the Python term layer (where `B` is the datatype and `A` is the shape). `D.obj` maps a `JObj` to a `BrObj`; this corresponds to the `ProdObject[Array[B,A]]` type used as domain/codomain in the term layer.
+
 Monoidality: `D.obj (A ++ B) = D.obj A ++ D.obj B` by `List.map_append` (`simp`). For the running example, `D.obj ["W", "X"] = [W_type, X_type]` and `D.obj ["Z"] = [Z_type]` — lists of `ArrayType`, not axis unions.
 
 **D on morphisms.**
@@ -809,6 +819,8 @@ D.map (JMor.comp (gen eq₀) (gen eq₁)) : BrMorph [W_type, X_type] [Y_type]
   = BrMorph.cons matmul_base (BrMorph.cons relu_base (.nil _))
 ```
 
+**Python counterparts.** `D.map .id` → identity `Rearrangement` (permutation = `(0,1,...)`); `D.map (.comp f g)` → `Composed([b1, b2, ...])` assembled via `BrMorph.comp` (list concatenation); `D.map (.tens f g)` → `ProductOfMorphisms` running two sub-morphisms on disjoint inputs.
+
 The morphism for a full `TensorProgram` is a single `BrMorph` — a list of `BrBase` operations in topological order assembled by `BrMorph.comp` (list concatenation).
 
 ### Populating BrBase from Instance Tables
@@ -827,14 +839,16 @@ def reconstructDegree (inst : SBrInstance) (eqIdx : Nat) : StObj :=
     |>.map    (fun aa => ⟨none, findUID inst aa.axis_uid⟩)
 ```
 
+**Python counterpart.** `reconstructDegree` recovers the same axes that `Broadcasted.degree()` computes lazily at runtime via `iallequals(m.dom() for m in reindexings)` — the shared domain of all reindexing `StrideMorphism`s.
+
 For both equations: $P_0 = [i, j]$ (the axes of $Z$) and $P_1 = [i, j]$ (the axes of $Y$).
 
 **`inputWeaves` and `outputWeaves`** ([`leanncd.md §9.4`](leanncd.md#94-weaves-paper-def-12)). Each `ArrayAxisRow.is_target` classifies the axis as a `WeaveSlot`. The naming is inverted relative to `convert.py`: `convert.py` calls contracted axes "target" (they are the contraction target); `leanncd.md` calls retained axes "fixed" (the reindexing selects a value for them at each step $p \in P$):
 
-| `convert.py` name | `is_target` | `WeaveSlot` | Role |
+| `convert.py` / `is_target` | `WeaveSlot` (Lean) | Python `Weave._shape` slot | Role |
 | --- | --- | --- | --- |
-| retained / degree axis | `false` | `WeaveSlot.fixed a` | reindexing supplies a specific value at each $p \in P$ |
-| contracted axis | `true` | `WeaveSlot.tiled` | base op contracts over full extent |
+| retained / degree, `false` | `WeaveSlot.fixed a` | `WeaveMode.TILED` sentinel | reindexing supplies a specific value at each $p \in P$ |
+| contracted, `true` | `WeaveSlot.tiled` | concrete `Axis` object | base op processes the full extent of this axis |
 
 **Equation 0** ($Z[i,j] = W[i,k]\cdot X[k,j]$, degree $P_0 = [i,j]$):
 
@@ -878,13 +892,15 @@ def reconstructReindexing (inst : SBrInstance) (eqIdx slot : Nat)
   { coeffs := Matrix.of fun j k =>
         inst.samples.find? (fun s =>
             s.equation_idx    == eqIdx    ∧ s.reindexing_slot == slot
-          ∧ s.src_uid == fixed[j].uid     -- input axis  → Q_i row j
-          ∧ s.tgt_uid == degree[k].uid)   -- output axis → P column k
+          ∧ s.tgt_uid == fixed[j].uid     -- input axis  → Q_i row j
+          ∧ s.src_uid == degree[k].uid)   -- degree axis → P column k
         |>.map (·.coeff.toNumeric) |>.getD 0
     bias := fun _ => 0 }
 ```
 
 When `coeff` is always 1 and `src_uid == tgt_uid`, `reconstructReindexing` reduces to `reconstructProjection`.
+
+**Python counterpart.** Each call to `reconstructProjection` / `reconstructReindexing` produces one `StMat`, corresponding to one element of `Broadcasted.reindexings: Prod[StrideCategory[A]]` — the tuple of `StrideMorphism` objects (one per input array) stored inside a `Broadcasted` morphism.
 
 Assembling all fields:
 
@@ -901,6 +917,8 @@ def D.genBase (inst : SBrInstance) (eq : EquationGen) : BrBase _ _ :=
     outputWeaves := fun _ => reconstructWeave inst eq.eqIdx 0
     reindexings  := fun i => reconstructProjection deg (iWeave i).targetAxes }
 ```
+
+**Python counterpart.** `D.genBase` assembles a `BrBase` that corresponds directly to `Broadcasted[B, A, O]`: `op` → `operator: O`; `degree` → `Broadcasted.degree()`; `inputWeaves` → `input_weaves: Prod[Weave[B,A]]`; `outputWeaves` → `output_weaves: Prod[Weave[B,A]]`; `reindexings` → `reindexings: Prod[StrideCategory[A]]`.
 
 The two assembled records for the running example:
 
