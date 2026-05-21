@@ -1,5 +1,5 @@
 ```mermaid
-%%{init: {'themeVariables': {'edgeLabelBackground': 'transparent'}}}%%
+%%{init: {'theme': 'default', 'themeVariables': {'edgeLabelBackground': '#ffffff00'}}}%%
 graph TD
     QotK["Q ⊗ K : [ℝ, b⊗h⊗q⊗k] ⊗ [ℝ, h⊗x⊗k]"]
     Q["Q : [ℝ, b⊗h⊗q⊗k]"]
