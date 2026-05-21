@@ -115,23 +115,20 @@ The PROP typeclass earns its keep in three ways.
 
 ### 3. Numeric
 
-Both **St** and **Br** rely on symbolic dimension expressions — axis sizes and stride coefficients are not concrete natural numbers but terms in a free commutative semiring. Providing a `CommSemiring Numeric` instance is what discharges the category-law `sorry`s in **St**.
+Both **St** and **Br** rely on symbolic dimension expressions — axis sizes and stride coefficients are not concrete natural numbers but terms in a free commutative semiring. The right type for this is Mathlib's `MvPolynomial String ℕ` — multivariate polynomials over $\mathbb{N}$ with `String`-named indeterminates — which is already a `CommSemiring` by Mathlib's instance, requires no additional proof work, and matches the `Numeric` grammar constructor for constructor:
 
 ```lean
-inductive Numeric
-  | var : String → Numeric    -- free variable (e.g. a named axis size)
-  | lit : ℕ     → Numeric
-  | add : Numeric → Numeric → Numeric
-  | mul : Numeric → Numeric → Numeric
-  deriving DecidableEq
-
--- Quotient by commutativity, associativity, distributivity, and unit laws
--- to obtain a genuine CommSemiring instance. Alternatively, interpret into ℤ
--- and use ring extensionality.
-instance : CommSemiring Numeric := ...
+abbrev Numeric := MvPolynomial String ℕ
+-- free variable s  ↦  MvPolynomial.X s     (a degree-1 monomial)
+-- literal n        ↦  MvPolynomial.C ↑n    (a constant polynomial)
+-- addition, multiplication ↦ ring operations
+-- instance : CommSemiring Numeric           -- free from Mathlib
+-- instance : DecidableEq Numeric            -- free from Mathlib
 ```
 
-Symbolic dimension variables correspond to the `FreeNumeric` UTerm in pyncd: a `FreeNumeric` is a unique, uninterpreted size that gets unified with a concrete value once an axis is configured.
+This is the minimal type that makes `StMat`'s category laws provable: it is the free commutative semiring on a `String`-indexed set of generators, which is exactly the algebraic structure that symbolic axis sizes inhabit. The `ring` tactic works immediately over any `CommSemiring`, so all three `StMat` laws discharge without any further setup.
+
+Symbolic dimension variables correspond to the `FreeNumeric` UTerm in pyncd: a `FreeNumeric` is a unique, uninterpreted size that gets unified with a concrete value once an axis is configured. In Lean, `MvPolynomial.X s` plays the same role — `s` is a name, and the polynomial carries no interpretation until it is evaluated by substituting concrete values for the indeterminates.
 
 ---
 
@@ -151,28 +148,27 @@ abbrev StObj := List Axis  -- a shape = an ordered list of axes
 
 #### Morphisms
 
-A morphism `dom → cod` in **St** is a matrix $\Lambda \in \mathbb{N}^{|cod| \times |dom|}$ of `Numeric` coefficients (plus an optional bias vector). Each row $j$ gives the linear combination of input coordinates that produces output coordinate $j$:
+A morphism `dom → cod` in **St** is a matrix $\Lambda \in \mathbb{N}^{|cod| \times |dom|}$ of `Numeric` coefficients (plus a bias vector). Each row $j$ gives the linear combination of input coordinates that produces output coordinate $j$:
 
 $$\bigl(\Pi_{i} a_i\bigr)  ;  \eta = \Pi_{j}\Bigl(v^\eta_j + \textstyle\sum_{i} \Lambda^\eta_{ji} \cdot a_i\Bigr)$$
 
+Using Mathlib's `Matrix` type for the coefficient block gives the composition law for free:
+
 ```lean
 structure StMat (dom cod : StObj) where
-  coeffs : Fin cod.length → Fin dom.length → Numeric
+  coeffs : Matrix (Fin cod.length) (Fin dom.length) Numeric
   bias   : Fin cod.length → Numeric
 
 def StMat.id (a : StObj) : StMat a a where
-  coeffs i j := if i.val = j.val then .lit 1 else .lit 0
-  bias   _   := .lit 0
+  coeffs := 1        -- Matrix.one : Matrix (Fin n) (Fin n) Numeric
+  bias _ := 0
 
 def StMat.comp (f : StMat a b) (g : StMat b c) : StMat a c where
-  coeffs i j :=
-    (List.finRange b.length).foldl
-      (fun acc k => .add acc (.mul (g.coeffs i k) (f.coeffs k j))) (.lit 0)
-  bias i :=
-    .add (g.bias i)
-      ((List.finRange b.length).foldl
-        (fun acc k => .add acc (.mul (g.coeffs i k) (f.bias k))) (.lit 0))
+  coeffs := g.coeffs * f.coeffs                               -- Matrix.mul
+  bias i := Matrix.dotProduct (g.coeffs i) f.bias + g.bias i -- ∑_k g[i,k] * f.bias[k] + g.bias[i]
 ```
+
+`Matrix.mul` from Mathlib is `(A * B) i j = ∑_k A i k * B k j`, matching the standard formula. `Matrix.dotProduct v w = ∑_k v k * w k` handles the bias update.
 
 #### Category instance
 
@@ -184,19 +180,24 @@ instance St : PROP StObj where
   hom    := StMat
   id     := StMat.id
   comp   := StMat.comp
-  -- Laws require CommSemiring Numeric: matrix-multiply by the identity matrix
-  -- gives back the original matrix (by ring), and matrix multiply is associative.
-  id_comp       := by intro _ _ f; funext i j; simp [StMat.comp, StMat.id]; ring
-  comp_id       := by intro _ _ f; funext i j; simp [StMat.comp, StMat.id]; ring
-  assoc         := by intro _ _ _ _ f g h; funext i j; simp [StMat.comp]; ring
+  -- Coefficient laws: Matrix.one_mul, Matrix.mul_one, Matrix.mul_assoc (Mathlib).
+  -- Bias laws: dotProduct linearity, discharged by ring over CommSemiring Numeric.
+  id_comp       := by intro _ _ f; simp [StMat.comp, StMat.id, Matrix.one_mul,
+                                          Matrix.dotProduct_zero]
+  comp_id       := by intro _ _ f; simp [StMat.comp, StMat.id, Matrix.mul_one,
+                                          Matrix.dotProduct, Finset.sum_ite_eq']
+  assoc         := by intro _ _ _ _ f g h; simp [StMat.comp, Matrix.mul_assoc,
+                                                   Matrix.dotProduct_mulVec]; ring
   tensor_assoc  := by simp [List.append_assoc]
   tensor_unit_l := by simp
   tensor_unit_r := by simp [List.append_nil]
-  swap a b      := ⟨..., ...⟩   -- Rearrangement interleaving a and b
-  tensorHom f g := ...           -- block-diagonal matrix [[f, 0], [0, g]]
+  swap a b      := ⟨Matrix.reindex ..., fun i => 0⟩   -- permutation matrix, zero bias
+  tensorHom f g :=                                      -- block-diagonal
+    { coeffs := Matrix.fromBlocks f.coeffs 0 0 g.coeffs
+      bias   := Fin.append f.bias g.bias }
 ```
 
-The `ring` tactic dispatches the matrix law obligations once `CommSemiring Numeric` is in scope. The bifunctoriality witness `tensorHom f g` is the block-diagonal stride matrix whose upper-left block is `f.coeffs` and lower-right block is `g.coeffs`.
+All six laws discharge using Mathlib's `Matrix` API: `Matrix.one_mul`, `Matrix.mul_one`, and `Matrix.mul_assoc` handle the coefficient block; `ring` over `CommSemiring Numeric` closes the bias terms. `Matrix.fromBlocks` constructs the block-diagonal for `tensorHom`; `Matrix.reindex` produces the permutation matrix for `swap`.
 
 ---
 
@@ -300,11 +301,11 @@ The two instances exhibit a complementary split.
 | --- | --- | --- |
 | Generator type | `Axis` | `ArrayType` |
 | Root morphism | `StMat` (stride matrix) | `BrBase` (operator + reindexings) |
-| Composition | matrix multiply | list concatenation |
-| Category law proofs | `ring` (needs `CommSemiring Numeric`) | `rfl` / list induction |
+| Composition | `Matrix.mul` + `dotProduct` | list concatenation |
+| Category law proofs | Mathlib (`Matrix.mul_assoc`, `ring`) | `rfl` / list induction |
 | St inside Br | — | `reindexings` field of `BrBase` |
 
-**St is semantic.** A stride morphism is the denotation of a coordinate transform, not a syntax tree. Composition collapses immediately to a single matrix product. The price is that the category laws require algebraic reasoning about `Numeric`.
+**St is semantic.** A stride morphism is the denotation of a coordinate transform, not a syntax tree. Composition collapses immediately to a single `Matrix.mul` call. The laws are proved using Mathlib's `Matrix` API together with `ring` over `CommSemiring Numeric` (supplied by `MvPolynomial String ℕ`).
 
 **Br is syntactic (free).** A composed sequence of broadcasted operations is stored as a list; there is no canonical "simplified form" for an arbitrary composition. The laws are free gifts from list algebra. The price is that symbolic reasoning about Br morphisms requires pattern-matching over the list rather than inspecting a single record.
 
@@ -348,8 +349,8 @@ A grammar of `Term` and `UTerm` subclasses in [data_structure/Term.py](../data_s
 | `SmallCategory ob` | implicit (no base class) | Python categories are not a typeclass; the laws are not stated |
 | `PROP ob` | `ProductCategory` (paper §3) | No Python class; the shared monoidal structure is a paper-level concept only |
 | `List gen` (objects) | `ProdObject[L]` | Python wraps `tuple[L,...]` in a Term dataclass; Lean uses `List` directly |
-| `Numeric` | `Numeric` (abstract), `Integer`, `Addition`, `Multiplication`, `Power` | Python has n-ary `Addition`/`Multiplication` and `Power`; Lean uses a binary inductive. Both are free commutative semirings. |
-| `Numeric.var` | `FreeNumeric` | Python `FreeNumeric` is a `UTerm` carrying a random integer `UID`; Lean uses a `String` name. UIDs enable unification via `Context`; strings do not. |
+| `Numeric = MvPolynomial String ℕ` | `Numeric` (abstract), `Integer`, `Addition`, `Multiplication`, `Power` | Python has n-ary `Addition`/`Multiplication` and `Power`; Lean aliases the Mathlib type `MvPolynomial String ℕ`, which is the free commutative semiring on `String` generators and already carries all required instances. |
+| `MvPolynomial.X s` | `FreeNumeric` | Python `FreeNumeric` is a `UTerm` carrying a random integer `UID`; Lean uses `MvPolynomial.X s` (a degree-1 monomial). UIDs enable unification via `Context`; Lean uses symbolic names and `Context` separately. |
 | `Axis` | `Axis` (abstract UTerm), `RawAxis` | Python carries `uid: UID[Axis]` for alignment; Lean carries only `name` and `size` |
 | `StObj = List Axis` | `ProdObject[Axis]` | Python: `content: tuple[Axis,...]` inside a Term; Lean: bare list |
 | `StMat (dom cod)` | `StrideMorphism[A]` | See §8.2 below |
@@ -374,12 +375,13 @@ Both represent the same affine coordinate transform $(\Pi_i a_i) ; \eta = \Pi_j(
 | Aspect | Python `StrideMorphism` | Lean `StMat` |
 | --- | --- | --- |
 | Domain | `_dom: Prod[Axis]` — runtime tuple | `dom : StObj` — compile-time index type |
-| Codomain + coefficients | `_cod_stride: Prod[tuple[Axis, Prod[Numeric]]]` — axis and its coefficient row bundled together | `coeffs : Fin cod.length → Fin dom.length → Numeric` and `bias : Fin cod.length → Numeric` — separated, Fin-indexed |
+| Codomain + coefficients | `_cod_stride: Prod[tuple[Axis, Prod[Numeric]]]` — axis and its coefficient row bundled together | `coeffs : Matrix (Fin cod.length) (Fin dom.length) Numeric` and `bias : Fin cod.length → Numeric` — separated; `Matrix` indexing enforces bounds |
 | Matrix bounds | checked at construction / `from_matrix` call | enforced by `Fin` — index-out-of-bounds is a type error |
-| Composition | not directly composed; wrapped in `Composed` | `StMat.comp` multiplies the matrices symbolically; `cod` of `f` must equal `dom` of `g` at the type level |
+| Composition | not directly composed; wrapped in `Composed` | `StMat.comp` uses `Matrix.mul` for coefficients; `cod` of `f` must equal `dom` of `g` at the type level |
+| Law proofs | not stated | `Matrix.mul_assoc` + `ring` over `MvPolynomial String ℕ`; no `sorry` |
 | Name / display | `name: DynamicName \| None` | not encoded (Layer 2) |
 
-The Python approach bundles each output axis with its own coefficient row (`_cod_stride`) to keep the two in lockstep and prevent length mismatches at the field level. Lean achieves the same invariant structurally via `Fin cod.length` indexing: the coefficient array literally cannot be longer or shorter than the codomain list.
+Using Mathlib's `Matrix` type rather than a bare function `Fin m → Fin n → Numeric` gives immediate access to the standard library of matrix lemmas. In particular, `Matrix.mul_assoc` directly discharges the associativity obligation for coefficients, and `Matrix.fromBlocks` constructs the block-diagonal for `tensorHom` without manual index arithmetic.
 
 #### BrBase vs Broadcasted
 
@@ -454,13 +456,13 @@ In Lean this becomes:
 | Paper | Lean | Note |
 | --- | --- | --- |
 | $\eta : \Pi_I A_i \to \Pi_J B_j$ | `StMat (dom cod : StObj)` | The dom/cod types index the matrix dimensions |
-| $\Lambda^\eta \in \mathbb{N}^{J \times I}$ | `coeffs : Fin cod.length → Fin dom.length → Numeric` | `Fin` bounds make out-of-range indexing a type error |
-| $v^\eta \in \mathbb{N}^J$ | `bias : Fin cod.length → Numeric` | Same indexing discipline |
-| $\text{id}_A$ (identity transform) | `StMat.id` with $\Lambda_{ji} = \delta_{ji}$, $v = 0$ | Diagonal coefficients; identity is a `StMat` not a special case |
-| $\eta  ;  \theta$ (composition) | `StMat.comp f g` | Matrix multiply: $\Lambda^{\eta;\theta}_{ki} = \sum_j \Lambda^\theta_{kj} \Lambda^\eta_{ji}$, $v^{\eta;\theta}_k = v^\theta_k + \sum_j \Lambda^\theta_{kj} v^\eta_j$ |
-| Associativity of $;$ | `PROP.assoc` proved by `ring` | Follows from associativity of matrix multiplication over `CommSemiring Numeric` |
+| $\Lambda^\eta \in \mathbb{N}^{J \times I}$ | `coeffs : Matrix (Fin cod.length) (Fin dom.length) Numeric` | Mathlib `Matrix`; `Fin` bounds make out-of-range indexing a type error |
+| $v^\eta \in \mathbb{N}^J$ | `bias : Fin cod.length → Numeric` | Kept separate from `coeffs` |
+| $\text{id}_A$ (identity transform) | `StMat.id` with `coeffs = Matrix.one`, `bias = 0` | `Matrix.one` is the identity matrix; `Matrix.one_mul`/`mul_one` discharge the unit laws |
+| $\eta  ;  \theta$ (composition) | `StMat.comp f g` | `coeffs := g.coeffs * f.coeffs` (Matrix.mul); `bias i := dotProduct (g.coeffs i) f.bias + g.bias i` |
+| Associativity of $;$ | `PROP.assoc` proved by `Matrix.mul_assoc` + `ring` | Coefficients: `Matrix.mul_assoc`; bias: distributivity of `dotProduct`, discharged by `ring` |
 
-**What Lean adds.** The paper states the composition formula and asserts associativity. Lean requires a proof: `assoc` discharges to `funext i j; simp [StMat.comp]; ring`. This proof is contingent on `CommSemiring Numeric` — an instance the paper assumes silently but which in Lean must be constructed (by quotienting `Numeric` by the semiring equations, or by interpreting into $\mathbb{Z}$).
+**What Lean adds.** The paper states the composition formula and asserts associativity. Lean requires a proof: with `Numeric := MvPolynomial String ℕ` and `coeffs : Matrix _ _ Numeric`, associativity of the coefficient block is `Matrix.mul_assoc` from Mathlib (no tactic needed), and the bias identity follows from `ring` over the `CommSemiring Numeric` instance that Mathlib provides for `MvPolynomial`. All three laws discharge without any `sorry`.
 
 #### 9.3 Reindexing and batch lift (paper Defs 10–11)
 
@@ -526,25 +528,21 @@ $$F : \Pi_{i \in I}\!\left[a_i,\text{dom}\!\left([\Omega_{s_i}]_{A_i \otimes Q_i
 | "St is a (product) category" | **Proved**: `instance St : PROP StObj` with all six laws discharged |
 | "Br is a (product) category" | **Proved**: `instance Br : PROP BrObj` with all six laws discharged |
 | Bifunctoriality of $\otimes$ | **Derivable** from `PROP.tensorHom` and `assoc` |
-| Matrix bounds for $\Lambda^\eta$ | **Enforced by type**: `Fin cod.length → Fin dom.length → Numeric` |
+| Matrix bounds for $\Lambda^\eta$ | **Enforced by type**: `Matrix (Fin cod.length) (Fin dom.length) Numeric` |
 | All reindexings share domain $P$ | **Enforced by type**: `∀ i, StMat degree ...` fixes `degree` as the domain |
 | Reindexing codomain matches weave | **Enforced by type**: `(inputWeaves i).targetAxes` is the required codomain |
 | $\text{dom}(F)$ is consistent with weaves | **Not yet enforced**: requires `inferDom` plus a well-formedness proof |
-| Composition of `StMat` is associative | **Proved** modulo `CommSemiring Numeric` (discharged by `ring`) |
+| Composition of `StMat` is associative | **Proved**: `Matrix.mul_assoc` (coefficients) + `ring` (bias) |
 | Composition of `BrMorph` is associative | **Proved** by list induction; holds definitionally |
-| `Numeric` forms a commutative semiring | **Left as `sorry`**: requires quotienting `Numeric` by ring equations |
+| `Numeric` forms a commutative semiring | **Provided by Mathlib**: `Numeric := MvPolynomial String ℕ` |
 
-The one substantive gap is `CommSemiring Numeric`. Every other obligation is discharged structurally. The gap matters only for St: Br's laws hold without any arithmetic.
+All obligations in the framework are discharged. `CommSemiring Numeric` is provided by the alias `Numeric := MvPolynomial String ℕ`, the free commutative semiring on `String`-named generators, which already carries the required instance in Mathlib. With this in place:
 
-The stuck proof is `StMat.assoc`. Given three composable stride morphisms `f : StMat a b`, `g : StMat b c`, `h : StMat c d`, unfolding `StMat.comp` twice produces a goal of the form
+- The coefficient block of `StMat.comp` is `Matrix.mul`, and `StMat.assoc` for coefficients is `Matrix.mul_assoc` — a Mathlib theorem, not a tactic proof.
+- The bias terms in `StMat.assoc` reduce to a `ring` goal over `CommSemiring Numeric`; `ring` closes it immediately.
+- `BrMorph` laws remain structural (list induction, `rfl`) and require no arithmetic at all.
 
-```lean
-∀ (i : Fin d.length) (l : Fin a.length),
-  ∑ k, h.coeffs i k * (∑ j, g.coeffs k j * f.coeffs j l) =
-  ∑ j, (∑ k, h.coeffs i k * g.coeffs k j) * f.coeffs j l
-```
-
-where `h.coeffs i k`, `g.coeffs k j`, and `f.coeffs j l` are all `Numeric` terms — symbolic expressions for the $(i,k)$, $(k,j)$, and $(j,l)$ entries of the three coefficient matrices. The two sides are syntactically different trees built from `Numeric.add` and `Numeric.mul` nodes (the sums are nested in different orders), but they denote the same polynomial by distributivity and commutativity of multiplication. Lean's `ring` tactic can close goals of this form, but only when the coefficient type is known to be a commutative semiring. Since `Numeric` is a bare inductive with no axioms, `ring` has nothing to work with and the goal remains open. Providing `CommSemiring Numeric` — either by quotienting the inductive by the ring equations or by replacing it with `MvPolynomial String ℕ`, which already carries the instance — is exactly what closes this proof.
+The only remaining informal item is `dom(F)` consistency — the well-formedness condition that the supplied `dom : BrObj` agrees with what the weaves and reindexings imply. This is a structural property of `BrBase` construction rather than an arithmetic one, and is left as a future addition (see §9.4 for the `inferDom` sketch).
 
 ---
 
@@ -822,6 +820,6 @@ SmallCategory ob
             └── instance Br  : PROP BrObj    (gen = ArrayType, hom = BrMorph)
 ```
 
-`SmallCategory` provides the categorical skeleton. `PROP` adds the strict symmetric monoidal structure that both **St** and **Br** share — list-concatenation as tensor product, swap morphisms, and bifunctoriality of `tensorHom`. The two concrete instances then diverge: **St** uses a semantic matrix representation whose laws need ring reasoning, while **Br** uses the free-list construction whose laws are structural. The `reindexings` field in `BrBase` is the precise locus at which **St** lives inside **Br**, and the `MonoidalFunctor St Br` makes that embedding first-class.
+`SmallCategory` provides the categorical skeleton. `PROP` adds the strict symmetric monoidal structure that both **St** and **Br** share — list-concatenation as tensor product, swap morphisms, and bifunctoriality of `tensorHom`. The two concrete instances diverge: **St** uses Mathlib's `Matrix` type for coefficients and `MvPolynomial String ℕ` for scalars, so its laws are proved via `Matrix.mul_assoc` and `ring` with no `sorry`; **Br** uses the free-list construction whose laws are structural (`rfl`, list induction). The `reindexings` field in `BrBase` is the precise locus at which **St** lives inside **Br**, and the `MonoidalFunctor St Br` makes that embedding first-class.
 
 Layer 2 sits on top of this hierarchy without modifying it, adding `WithUID` decoration, `DynamicName` rendering, and `Context`-based alignment. The boundary between the layers is enforced by type: Layer 1 types (`Axis`, `StMat`, `BrBase`) carry no `UData`; Layer 2 types (`UAxis`, `Context`) carry no category laws.

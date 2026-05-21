@@ -33,6 +33,13 @@ Their central construction is the **acset**: a schema category $\mathcal{S}$ sep
 8. [Advantages of the ACSet Structure/Data Decomposition](#advantages-of-the-acset-structuredata-decomposition)
    - [Practical and Implementation Advantages](#practical-and-implementation-advantages)
    - [Theoretical Advantages](#theoretical-advantages)
+9. [From SBrInstance to a Diagram in Br: A Lean Encoding](#from-sbrinstance-to-a-diagram-in-br-a-lean-encoding)
+   - [Setting](#setting)
+   - [Two Lean library shortcuts](#two-lean-library-shortcuts)
+   - [The Index Category J](#the-index-category-j)
+   - [The Denotation Functor D](#the-denotation-functor-d)
+   - [Populating BrBase from Instance Tables](#populating-brbase-from-instance-tables)
+   - [Proof Obligations](#proof-obligations)
 
 ---
 
@@ -656,3 +663,231 @@ Each practical advantage below is followed by an italicized note assessing wheth
 **Natural transformations are the correct morphism concept between same-schema instances.** When instances are copresheaves, the correct notion of map between two instances of the same schema is a natural transformation: a family of functions, one per entity type, commuting with all schema maps. This is more discriminating than term equality and more general than pointwise numeric equality. It is the notion under which composition, Kan extensions, and the adjoint triple are all well-behaved. Any weaker notion of morphism would break at least one of these properties. Maps between instances of *different* schemas — such as $\Phi_a : \mathcal{S}_{St}\text{-Inst} \to \mathcal{S}_{Br}\text{-Inst}$ — are functors between functor categories rather than natural transformations; the two cases are complementary, not contradictory.
 
 **Connection to dependent type theory and formal verification.** The structure/data split is the categorical expression of the distinction between a type context (structural skeleton: which variables exist and how they relate) and a term (data assignment: values inhabiting those types). Schema morphisms are context morphisms (substitutions). This vocabulary maps directly onto Lean 4, where the type-theoretic and category-theoretic frameworks coincide. Proving properties of **St** and **Br** in Lean becomes a matter of instantiating general results about copresheaves and Kan extensions — the same framework used to establish `pullback_comp` — rather than developing bespoke proof strategies per construction.
+
+---
+
+## From SBrInstance to a Diagram in Br: A Lean Encoding
+
+### Setting
+
+An `SBrInstance` exported via `write_sbr` / `read_sbr` is a functor $G : \mathcal{S}_{Br} \to \mathbf{Set}$ — one point in the $\mathcal{S}_{Br}$-instance category. The CSV tables assign finite sets to entity types (`Axis`, `Equation`, `Array`, `ArrayAxis`, `Sample`) and functions to the foreign-key maps between them. Importing $G$ into Lean gives access to the relational data but not yet to the categorical structure of $\mathbf{Br}$.
+
+The goal is to interpret $G$ as a **strict monoidal functor** $D : \mathcal{J} \to \mathbf{Br}$ from a finite index category $\mathcal{J}$ whose objects are the arrays of the program and whose morphisms are its equations. $\mathbf{Br}$ is the Lean 4 encoding in [`leanncd.md §5`](leanncd.md#5-br--free-category-over-broadcasted-base-morphisms). Running example: matmul $Y[i,j] = W[i,k]\, X[k,j]$.
+
+### Two Lean library shortcuts
+
+Two Mathlib type choices give the construction access to ready-made lemmas.
+
+**`MvPolynomial String ℕ` for `Numeric`** ([`leanncd.md §3`](leanncd.md#3-numeric)). Symbolic axis sizes and stride coefficients inhabit the free commutative semiring on a set of named generators — exactly `MvPolynomial String ℕ` (multivariate polynomials over $\mathbb{N}$ with `String`-named indeterminates):
+
+```lean
+abbrev Numeric := MvPolynomial String ℕ
+-- free variable s  ↦  MvPolynomial.X s    (degree-1 monomial)
+-- literal n        ↦  MvPolynomial.C ↑n   (constant polynomial)
+-- instance : CommSemiring Numeric          -- from Mathlib
+```
+
+The `ring` tactic closes all `StMat` arithmetic goals over any `CommSemiring`, so all laws in [`leanncd.md §4`](leanncd.md#4-st--semantic-category-via-stride-matrices) discharge immediately.
+
+**Mathlib's `Matrix` for `StMat.coeffs`** ([`leanncd.md §4`](leanncd.md#4-st--semantic-category-via-stride-matrices)). The coefficient block of `StMat` is `Matrix (Fin cod.length) (Fin dom.length) Numeric`, giving direct access to `Matrix.mul`, `Matrix.mul_assoc`, `Matrix.one_mul`, and `Matrix.fromBlocks`:
+
+```lean
+-- StMat (dom cod : StObj)   -- a record with:
+--   coeffs : Matrix (Fin cod.length) (Fin dom.length) Numeric
+--   bias   : Fin cod.length → Numeric
+-- StMat.comp: coeffs := g.coeffs * f.coeffs   (Matrix.mul)
+--             bias i := dotProduct (g.coeffs i) f.bias + g.bias i
+-- StMat.assoc: coefficients by Matrix.mul_assoc; bias by ring
+```
+
+`reconstructProjection` below uses `Matrix.of` to build the selection matrix without manual index arithmetic.
+
+### The Index Category J
+
+The generating data is read from the instance:
+
+```lean
+structure ArrayKey where
+  name : String   -- from ArrayRow.name, rendered via DynamicName
+
+structure EquationGen where
+  eqIdx  : Nat
+  inputs : List ArrayKey   -- sorted by slot; is_input = true
+  output : ArrayKey        -- slot = 0, is_input = false
+
+def extractGens (inst : SBrInstance) : List EquationGen :=
+  inst.equations.map fun eq =>
+    let arrs := inst.arrays.filter (·.equation_idx == eq.equation_idx)
+    { eqIdx  := eq.equation_idx
+      inputs := arrs.filter (·.is_input) |>.sortBy (·.slot) |>.map nameOf
+      output := arrs.find!  (!·.is_input) |> nameOf }
+-- nameOf : ArrayRow → ArrayKey  (DynamicName → String)
+```
+
+For matmul, `extractGens inst` returns a single generator: `{ eqIdx := 0, inputs := [⟨"W"⟩, ⟨"X"⟩], output := ⟨"Y"⟩ }`.
+
+Because $\mathbf{Br}$'s $\otimes$ is list concatenation ([`leanncd.md §2`](leanncd.md#2-prop)), it is natural to give $\mathcal{J}$ the same object type rather than a separate inductive:
+
+```lean
+abbrev JObj := List ArrayKey   -- ⊗ := (· ++ ·),  𝟙 := [],  atom k := [k]
+```
+
+The morphism type is then:
+
+```lean
+inductive JMor : JObj → JObj → Type
+  | gen  : (eq : EquationGen) → JMor eq.inputs [eq.output]
+  | id   : JMor A A
+  | comp : JMor A B → JMor B C → JMor A C
+  | tens : JMor A B → JMor C D → JMor (A ++ C) (B ++ D)
+```
+
+The `tens` constructor's index type uses `List.append` directly, matching `D.obj`'s definition below. No coherence constructors (associators, unitors) appear: because $\mathbf{Br}$ is a strict PROP, every coherence isomorphism in $\mathcal{J}$ would map to `rfl` under $D$ and is safely elided. This `JMor` is the **free strict monoidal category** on the `EquationGen` quiver. The universal property — formalised for the non-strict case by `CategoryTheory.FreeMonoidalCategory` in Mathlib, with the strict variant obtained by strictification — asserts that $D$ is the *unique* strict monoidal functor $\mathcal{J} \to \mathbf{Br}$ extending its action on generators. Specifying `D.genBase` therefore determines $D$ completely; the functor laws are a consequence, not a separate choice.
+
+For matmul, $\mathcal{J}$ has objects `[]`, `["W"]`, `["X"]`, `["Y"]`, `["W","X"]`, … and a single generating morphism `JMor.gen eq : JMor ["W", "X"] ["Y"]`.
+
+For a multi-equation program such as ffn, `Hidden` is the output of equation 0 and an input of equation 1, giving `JMor.comp (gen eq₀) (gen eq₁)` in $\mathcal{J}$.
+
+### The Denotation Functor D
+
+The helpers `nameOf`, `dtypeOf`, and `findUID` are straightforward: `nameOf` renders `DynamicName` to `String`, `dtypeOf` reads `datatype_tag` from an `ArrayRow`, and `findUID` looks up a UID in `axis_sizes`.
+
+**D on objects.** `D.obj` is `List.map D.singleObj`, where `D.singleObj` assembles one `ArrayType` from the tables:
+
+```lean
+def D.singleObj (inst : SBrInstance) (key : ArrayKey) : ArrayType :=
+  let arr  := inst.arrays.find! (fun a => nameOf a == key.name ∧ !a.is_input)
+  let aaxs := inst.array_axes
+    |>.filter (fun aa => aa.equation_idx == arr.equation_idx ∧ aa.array_slot == arr.slot)
+    |>.sortBy (·.position)
+  { dtype := dtypeOf arr
+    shape := aaxs.map fun aa => ⟨none, findUID inst aa.axis_uid⟩ }
+
+def D.obj (inst : SBrInstance) : JObj → BrObj := List.map (D.singleObj inst)
+```
+
+Monoidality: `D.obj (A ++ B) = D.obj A ++ D.obj B` by `List.map_append` (`simp`). For matmul, `D.obj ["W", "X"] = [W_type, X_type]` — a two-element list, not an axis union.
+
+**D on morphisms.**
+
+```lean
+def D.map (inst : SBrInstance)
+    : ∀ {A B : JObj}, JMor A B → BrMorph (D.obj inst A) (D.obj inst B)
+  | _, _, .id        => .nil _
+  | _, _, .comp f g  => BrMorph.comp (D.map inst f) (D.map inst g)
+  | _, _, .tens f g  => PROP.tensorHom (D.map inst f) (D.map inst g)
+  | _, _, .gen eq    => .cons (D.genBase inst eq) (.nil _)
+```
+
+For matmul: `D.map (gen eq) : BrMorph [W_type, X_type] [Y_type]` is `BrMorph.cons (D.genBase inst eq) (.nil _)` — a one-element list wrapping the single broadcasted operation.
+
+The morphism for a full `TensorProgram` is therefore a single `BrMorph` — a list of `BrBase` operations in topological order assembled by `BrMorph.comp` (list concatenation).
+
+### Populating BrBase from Instance Tables
+
+`D.genBase` assembles the five fields of `BrBase` ([`leanncd.md §9.5`](leanncd.md#95-broadcasted-operations-paper-def-13)).
+
+**`op`.** The `operator_tag` of the output `ArrayRow` (slot 0, `is_input = false`). For matmul: `op = "identity"` — a plain einsum has no nonlinearity, so `operator_tag = OpTag.IDENTITY`.
+
+**`degree` — outer-loop shape $P$** ([`leanncd.md §9.3`](leanncd.md#93-reindexing-and-batch-lift-paper-defs-1011)). All axes on the output array have `is_target = false`; sorted by `position` they give $P$:
+
+```lean
+def reconstructDegree (inst : SBrInstance) (eqIdx : Nat) : StObj :=
+  inst.array_axes
+    |>.filter (fun aa => aa.equation_idx == eqIdx ∧ aa.array_slot == 0)
+    |>.sortBy (·.position)
+    |>.map    (fun aa => ⟨none, findUID inst aa.axis_uid⟩)
+```
+
+For matmul: $P = [i, j]$.
+
+**`inputWeaves` and `outputWeaves`** ([`leanncd.md §9.4`](leanncd.md#94-weaves-paper-def-12)). Each `ArrayAxisRow.is_target` classifies the axis as a `WeaveSlot`. The naming is inverted relative to `convert.py`: `convert.py` calls contracted axes "target" (they are the contraction target); `leanncd.md` calls retained axes "fixed" (the reindexing selects a value for them at each step $p \in P$):
+
+| `convert.py` name | `is_target` | `WeaveSlot` | Role |
+| --- | --- | --- | --- |
+| retained / degree axis | `false` | `WeaveSlot.fixed a` | reindexing supplies a specific value at each $p \in P$ |
+| contracted axis | `true` | `WeaveSlot.tiled` | base op contracts over full extent |
+
+For matmul $W[i, k]$: $i$ is retained (`is_target = false`) → `fixed i`; $k$ is contracted → `tiled`. So `inputWeaves 0 = [.fixed i, .tiled]` and $Q_W = [i]$.
+
+For matmul $X[k, j]$: $k$ is contracted → `tiled`; $j$ is retained → `fixed j`. So `inputWeaves 1 = [.tiled, .fixed j]` and $Q_X = [j]$.
+
+For the output $Y[i, j]$: both axes are retained, so `outputWeaves 0 = [.fixed i, .fixed j]` — at each step $p = (i, j) \in P$ the degree loop writes to a specific position in $Y$.
+
+```lean
+def reconstructWeave (inst : SBrInstance) (eqIdx slot : Nat) : Weave :=
+  inst.array_axes
+    |>.filter (fun aa => aa.equation_idx == eqIdx ∧ aa.array_slot == slot)
+    |>.sortBy (·.position)
+    |>.map    fun aa => if aa.is_target then .tiled
+                                        else .fixed ⟨none, findUID inst aa.axis_uid⟩
+```
+
+**`reindexings` — one `StMat` per input** ([`leanncd.md §9.3`](leanncd.md#93-reindexing-and-batch-lift-paper-defs-1011)). For `TensorProgram`-derived instances, `convert.py` always writes `src_uid == tgt_uid` and `coeff = Integer(1)` on every `SampleRow`. The reindexing $\eta_i : P \to Q_i$ is therefore a pure projection: each retained input axis shares its UID with the matching degree axis, and the coefficient is 1. This makes a direct UID comparison sufficient — no `SampleRow` scan needed:
+
+```lean
+-- For TensorProgram instances: Q_i axes and P axes share UIDs (src_uid == tgt_uid).
+def reconstructProjection (degree fixed : StObj) : StMat degree fixed :=
+  { coeffs := Matrix.of fun j k =>
+        if degree[k].uid == fixed[j].uid then (1 : Numeric) else 0
+    bias := fun _ => 0 }
+-- fixed := (reconstructWeave inst eqIdx slot).targetAxes
+-- For matmul W: fixed = [i], degree = [i,j],  η_W = [[1, 0]]  (project onto i)
+-- For matmul X: fixed = [j], degree = [i,j],  η_X = [[0, 1]]  (project onto j)
+```
+
+For the general case (strided convolutions, non-unit coefficients), the `SampleRow` scan recovers the full affine matrix:
+
+```lean
+def reconstructReindexing (inst : SBrInstance) (eqIdx slot : Nat)
+    (degree fixed : StObj) : StMat degree fixed :=
+  { coeffs := Matrix.of fun j k =>
+        inst.samples.find? (fun s =>
+            s.equation_idx    == eqIdx    ∧ s.reindexing_slot == slot
+          ∧ s.src_uid == fixed[j].uid     -- input axis  → Q_i row j
+          ∧ s.tgt_uid == degree[k].uid)   -- output axis → P column k
+        |>.map (·.coeff.toNumeric) |>.getD 0
+    bias := fun _ => 0 }
+```
+
+When `coeff` is always 1 and `src_uid == tgt_uid`, `reconstructReindexing` reduces to `reconstructProjection`.
+
+Assembling all fields:
+
+```lean
+def D.genBase (inst : SBrInstance) (eq : EquationGen) : BrBase _ _ :=
+  let outArr := inst.arrays.find! (fun a => a.equation_idx == eq.eqIdx ∧ !a.is_input)
+  let inArrs := inst.arrays
+    |>.filter (fun a => a.equation_idx == eq.eqIdx ∧ a.is_input) |>.sortBy (·.slot)
+  let deg    := reconstructDegree inst eq.eqIdx
+  let iWeave := fun i => reconstructWeave inst eq.eqIdx inArrs[i].slot
+  { op           := opTagStr outArr.operator_tag
+    degree       := deg
+    inputWeaves  := iWeave
+    outputWeaves := fun _ => reconstructWeave inst eq.eqIdx 0
+    reindexings  := fun i => reconstructProjection deg (iWeave i).targetAxes }
+```
+
+For matmul the assembled record is:
+
+```lean
+-- BrBase {
+--   op           = "identity"
+--   degree       = [i, j]                         -- P: outer loop
+--   inputWeaves  = [ [.fixed i, .tiled],           -- W: retain i, contract k
+--                    [.tiled,   .fixed j] ]        -- X: contract k, retain j
+--   outputWeaves = [ [.fixed i, .fixed j] ]        -- Y: write to specific (i,j)
+--   reindexings  = [ η_W = [[1,0]],                -- (i,j) ↦ i
+--                    η_X = [[0,1]] ]               -- (i,j) ↦ j
+-- }
+```
+
+The degree loop steps through all $(i, j) \in P$; at each step, $\eta_W$ selects row $i$ of $W$ and $\eta_X$ selects column $j$ of $X$; the base op accumulates the dot product over the tiled axis $k$ and writes the result to $Y[i, j]$.
+
+### Proof Obligations
+
+**Strict monoidality** ([`leanncd.md §2`](leanncd.md#2-prop)). `D.obj (A ++ B) = D.obj A ++ D.obj B` by `List.map_append` (`simp`). `D.map (.tens f g) = PROP.tensorHom ...` by the `tens` case of `D.map`. Both are one-liners.
+
+**Functoriality** ([`leanncd.md §5`](leanncd.md#5-br--free-category-over-broadcasted-base-morphisms)). `D.map .id = .nil _` and `D.map (.comp f g) = BrMorph.comp ...` follow from the `id` and `comp` cases of `D.map` by structural induction on `JMor`. Both reduce to list lemmas requiring no arithmetic.
+
+**StMat laws** ([`leanncd.md §9.6`](leanncd.md#96-what-lean-formalises-that-the-paper-leaves-informal)). The coefficient block of `StMat.comp` is `Matrix.mul`; associativity is `Matrix.mul_assoc` from Mathlib. The bias terms close by `ring` over `CommSemiring Numeric`. `BrMorph` laws hold structurally and require no arithmetic.
