@@ -156,7 +156,7 @@ abbrev StObj := List Axis  -- a shape = an ordered list of axes
 
 A morphism `dom → cod` in **St** is a matrix $\Lambda \in \mathbb{N}^{|cod| \times |dom|}$ of `Numeric` coefficients (plus a bias vector). Each row $j$ gives the linear combination of input coordinates that produces output coordinate $j$:
 
-$$\bigl(\Pi_{i} a_i\bigr)  ;  \eta = \Pi_{j}\Bigl(v^\eta_j + \textstyle\sum_{i} \Lambda^\eta_{ji} \cdot a_i\Bigr)$$
+$$\bigl(\Pi_{i} e_i\bigr)  ;  \eta = \Pi_{j}\Bigl(v^\eta_j + \textstyle\sum_{i} \Lambda^\eta_{ji} \cdot e_i\Bigr)$$
 
 Using Mathlib's `Matrix` type for the coefficient block gives the composition law for free:
 
@@ -384,7 +384,7 @@ In Python, a grammar of `Term` and `UTerm` subclasses in [data_structure/Term.py
 
 #### StMat vs StrideMorphism
 
-Both represent the same affine coordinate transform $(\Pi_i a_i) ; \eta = \Pi_j(v^\eta_j + \sum_i \Lambda^\eta_{ji} \cdot a_i)$.
+Both represent the same affine coordinate transform $(\Pi_i e_i) ; \eta = \Pi_j(v^\eta_j + \sum_i \Lambda^\eta_{ji} \cdot e_i)$.
 
 | Aspect | Python `StrideMorphism` | Lean `StMat` |
 | --- | --- | --- |
@@ -463,7 +463,7 @@ A shape $\Pi_{i \in I} A_i$ is $\texttt{List Axis}$, with $|I|$ given by `List.l
 
 **Morphisms.** A finite affine transform $\eta : \Pi_{i \in I} A_i \to \Pi_{j \in J} B_j$ is specified by a coefficient matrix $\Lambda^\eta \in \mathbb{N}^{J \times I}$ and a bias $v^\eta \in \mathbb{N}^J$:
 
-$$\bigl(\Pi_i a_i\bigr)  ;  \eta = \Pi_j\Bigl(v^\eta_j + \textstyle\sum_i \Lambda^\eta_{ji} \cdot a_i\Bigr)$$
+$$\bigl(\Pi_i e_i\bigr)  ;  \eta = \Pi_j\Bigl(v^\eta_j + \textstyle\sum_i \Lambda^\eta_{ji} \cdot e_i\Bigr)$$
 
 In Lean this becomes:
 

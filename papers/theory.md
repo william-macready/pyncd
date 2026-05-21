@@ -1,3 +1,26 @@
+```mermaid
+graph TD
+    Q["**Q** : [ℝ, b⊗h⊗q⊗k]\nTILED: b"]
+    K["**K** : [ℝ, h⊗x⊗k]\nno tiling"]
+    V["**V** : [ℝ, h⊗x⊗d]\nno tiling"]
+
+    QK["**Einops**\nh q k, h x k → h q x\ndegree P = (b)"]
+
+    S["**S** : [ℝ, b⊗h⊗q⊗x]\nTILED: b"]
+
+    VA["**Einops**\nh q x, h x d → h q d\ndegree P = (b)"]
+
+    O["**O** : [ℝ, b⊗h⊗q⊗d]\nTILED: b"]
+
+    Q -->|"η = id_(b)"| QK
+    K -->|"η = ()"| QK
+    QK --> S
+
+    S -->|"η = id_(b)"| VA
+    V -->|"η = ()"| VA
+    VA --> O
+```
+
 # Weaves, Wires, and Morphisms: Overview
 
 Abbott & Zardini (MIT LIDS), arXiv:2604.07242v2, April 2026.
@@ -168,7 +191,7 @@ Both **St** and **Br** are elemental categories. Elements are diagrammed as left
 **Objects** in **St** are **axes** and products of axes:
 
 - A lone object is an **axis** $A$; a UTerm carrying a UID and a size $|A| \in \mathbb{N}$. The UID serves as the axis's identity across an expression; the size is itself a `FreeNumeric` (another UTerm indicating an indeterminate size) until configured.
-- A product object $\Pi_{i \in I} A_i \in \text{Ob}(\mathbf{St})$ is a **shape** — the ordered set of multi-index coordinates $(a_i)_{i \in I}$ of an array. $I$ is the ordered index set of an array's axes, so $i \in I$ ranges over axis positions.
+- A product object $\Pi_{i \in I} A_i \in \text{Ob}(\mathbf{St})$ is a **shape** — the ordered set of multi-index coordinates $(e_i)_{i \in I}$ of an array. $I$ is the ordered index set of an array's axes, so $i \in I$ ranges over axis positions.
 - The unit object $\mathbf{1}$ is the empty product, corresponding to a scalar shape.
 
 In Python, `Axis` is the abstract base (`UTerm`); `RawAxis` is the concrete subclass used for unspecialized axes. `Axis.named('h')` creates an axis whose UID carries the name $h$ and whose size is a free numeric also named $|h|$.
@@ -179,9 +202,9 @@ In summary, **St** objects represent axes index sets of a given shape. Each inde
 
 **Morphisms** in **St** are **finite linear transforms**: maps $\eta : \Pi_{i \in I} A_i \to \Pi_{j \in J} B_j$ that describe how input coordinates relate to output coordinates. Each output coordinate $j$ is a linear combination of input coordinates:
 
-$$(\Pi_{i \in I} a_i) ; \eta = \Pi_{j \in J}(\sum_{i \in I} \Lambda^\eta_{ij} \cdot a_i)$$
+$$(\Pi_{i \in I} e_i) ; \eta = \Pi_{j \in J}(\sum_{i \in I} e_i \Lambda^\eta_{ij})$$
 
-where $\Lambda^\eta \in \mathbb{N}^{I \times J}$ is the coefficient matrix (keep in mind the notation for elements: $(\Pi_{i \in I} a_i)$ represents a morphism $\mathbf{1}\to \Pi_{i \in I} A_i$ denoted $\langle \Pi_{i\in I} a_i |$). A rearrangement $\eta$ has $\Lambda^\eta_{i,j} = 1$ iff $\mu(j)=i$. The identity morphism of object $\Pi_{i \in I} A_i$ has $\Lambda^\eta$ equal to the identity matrix.
+where $\Lambda^\eta \in \mathbb{N}^{I \times J}$ is the coefficient matrix (keep in mind the notation for elements: $(\Pi_{i \in I} e_i)$ represents a morphism $\mathbf{1}\to \Pi_{i \in I} A_i$ denoted $\langle \Pi_{i\in I} e_i |$). A rearrangement $\eta$ has $\Lambda^\eta_{i,j} = 1$ iff $\mu(j)=i$. The identity morphism of object $\Pi_{i \in I} A_i$ has $\Lambda^\eta$ equal to the identity matrix.
 
 In Python, `StrideMorphism` stores `_dom: Prod[Axis]` and `_cod_stride: Prod[tuple[Axis, Prod[Numeric]]]`. `_cod_stride` bundles the codomain axes and the coefficient matrix into a single field: each entry is a pair of one codomain axis and a tuple of coefficients — one per domain axis — forming one column of $\Lambda^\eta$. Keeping them paired ensures the two are always in lockstep. `cod()` recovers the codomain by stripping the coefficients: `ProdObject.from_iter(axis for axis, _ in self._cod_stride)`. An optional `name` field carries display metadata. For example, the convolution-shift $x = x' + w$ is
 
@@ -217,7 +240,7 @@ In summary, **St** morphisms represent linear transformations between the index 
 
 **Br** is the category of deep learning models. Its objects represent products of arrays (tensors) with each array represented as a collection of axes $A=\{A_i\}_{i \in I}$ (an object/shape in **St**) with an output datatype $a$.
 
-**Br** is a deletion product category, capturing both deterministic (**Set**) and probabilistic (**Stoch**) computation.
+**Br** is a deletion product category (i.e. all $\text{count}[\mu] \le 1$), capturing both deterministic (**Set**) and probabilistic (**Stoch**) computation.
 
 In this section we also introduce the diagrammatic conventions (following string diagrams) for representing **Br**.
 
@@ -245,13 +268,13 @@ Before describing broadcasting in detail, we note that the bracket notation $[a,
 
 **Broadcasting** describes how a base operation is lifted to run in parallel over additional axes. The key property is compositionality: lifting an operation over an additional axis is a systematic transformation, and broadcasts over shared axes compose predictably.
 
-A broadcasted operation separates two concerns: the *base operation* (what computation is performed on a single tile) and the *broadcasting structure* (which axes are looped over and how each input is indexed at each step). The loop domain is called the **degree** $P \in \text{Ob}(\mathbf{St})$. A **tiling axis** is an axis of an input array that is looped over by $P$ rather than operated on directly by the base operation. For each input $i$, a reindexing morphism $\eta_i : P \to Q_i$ in **St** specifies, for each degree coordinate $p \in P$, which coordinate $\eta_i(p) \in Q_i$ to read from that input's tiling axes — selecting the slice the base operation sees at that step. Different inputs can have different tiling shapes $Q_i$: an input with $\eta_i = \text{id}$ is indexed normally across all of $P$, while an input with $\eta_i = ()$ (the constant map to the empty shape) is broadcast across all of $P$ — its single value is reused at every step.
+A broadcasted operation separates two concerns: the *base operation* (what computation is performed on a single tile) and the *broadcasting structure* (which axes are looped over and how each input is indexed at each step). The loop domain is called the **degree** $P \in \text{Ob}(\mathbf{St})$. A **tiling axis** is an axis of an input array that is looped over by $P$ rather than operated on directly by the base operation. For each input $i \in I$ (indexing the domain arrays $[a_i, A_i]$ of the operation), a reindexing morphism $\eta_i : P \to Q_i$ in **St** specifies, for each degree coordinate $p \in P$, which coordinate $\eta_i(p) \in Q_i$ to read from that input's tiling axes — selecting the slice the base operation sees at that step. Different inputs can have different tiling shapes $Q_i$: an input with $\eta_i = \text{id}$ is indexed at coordinate $p$ at each step — every position in $P$ selects a different slice; an input with $\eta_i = ()$ (the unique map to the terminal shape $\mathbf{1}$) maps every $p$ to the single coordinate of $\mathbf{1}$, so its one value is reused at every step.
 
-Given a stride morphism $\eta : P \to Q$ in **St** and a base datatype $a$, the **identity reindexing** $[a, \eta] : [a, Q] \to [a, P]$ is a morphism in **Br** whose action on elements $(a_i)_{i \in \text{El}(Q)}$ is:
+Given a stride morphism $\eta : P \to Q$ in **St** and a base datatype $a$, the **identity reindexing** $[a, \eta] : [a, Q] \to [a, P]$ is a morphism in **Br** whose action on elements $(e_i)_{i \in \text{El}(Q)}$ is:
 
-$$(a_i)_{i \in \text{El}(Q)} ; [a, \eta] = (a_{\eta(p)})_{p \in \text{El}(P)}$$
+$$(e_i)_{i \in \text{El}(Q)} ; [a, \eta] = (e_{\eta(p)})_{p \in \text{El}(P)}$$
 
-<img src="images/reindexing-diagram.png" alt="Reindexing diagram: hexagon passing over base operation" width="220" style="float: right; margin-left: 1em;"/> In other words, $[a, \eta]$ relabels coordinates without changing any data values — it reads from position $\eta(p)$ of the input for each output position $p$. Diagramatically, reindexing is represented with a hexagon. This is the categorical counterpart of array indexing: a stride morphism $\eta$ in **St** lifts to a pure reindexing in **Br**. <img src="images/slice-diagram.png" alt="Slice diagram: reindexings built from elements and identities" width="100" style="float: right; margin-left: 1em;"/> When $\eta$ is an element $\langle q | : \mathbf{1} \to Q$ (a single coordinate), $[a, q]$ recovers the **index** morphism $[a, q] : [a, Q] \to [a, \mathbf{1}]$, selecting a single slice. As an example the figure corresponds to a slice `X[i,:,j]`.
+<img src="images/reindexing-diagram.png" alt="Reindexing diagram: hexagon passing over base operation" width="220" style="float: right; margin-left: 1em;"/> In other words, $[a, \eta]$ relabels coordinates without changing any data values — it reads from position $\eta(p)$ of the input for each output position $p$. Diagramatically, reindexing is represented with a hexagon. This is the categorical counterpart of array indexing: a stride morphism $\eta$ in **St** lifts to a pure reindexing in **Br**. <img src="images/slice-diagram.png" alt="Slice diagram: reindexings built from elements and identities" width="100" style="float: right; margin-left: 1em;"/> When $\eta$ is an element $\langle q | : \mathbf{1} \to Q$ (a single coordinate), $[a, q]$ recovers the **index** morphism $[a, q] : [a, Q] \to [a, \mathbf{1}]$, selecting a single slice. As an example the figure corresponds to a slice `X[i,:,j]`. Other useful reindexings include strided slice ($\Lambda^\eta=[2]$), transposition ($\Lambda^\eta = [0,1; 1, 0]$), diagonal extraction ($\Lambda^\eta=[1,1]$), etc.
 
 **Batch lifting** Given a morphism $f : X \to Y$ in **Br** and a shape $P \in \text{Ob}(\mathbf{St})$, the batch lift $[f, P] : [X, P] \to [Y, P]$ runs $f$ independently once for each coordinate in $P$ (where $[X, P]$ and $[Y, P]$ are the inputs and outputs of $f$ each extended by the extra batch shape $P$ — concretely, every array in $X$ (resp. $Y$) gains $P$ as an additional set of axes). The defining property is:
 
@@ -405,7 +428,7 @@ $$[X, \eta] = \Pi_{i \in I}[a_i,\, \text{id}_{A_i} \otimes \eta], \qquad [X, \et
 
 Here $\text{id}_{A_i} \otimes \eta : A_i \otimes P \to A_i \otimes Q$ is a **St** morphism, so each bracket $[a_i, \text{id}_{A_i} \otimes \eta]$ is a **Br** morphism (reindexing) $[a_i, A_i \otimes Q] \to [a_i, A_i \otimes P]$. It leaves the $A_i$ coordinates unchanged and pulls back along $\eta$ in the $P$/$Q$ coordinates:
 
-$$(a_{k,\,\ell})_{k \in \text{El}(A_i),\,\ell \in \text{El}(Q)} \mathbin{;} [a_i, \text{id}_{A_i} \otimes \eta] = (a_{k,\,\eta(p)})_{k \in \text{El}(A_i),\,p \in \text{El}(P)}$$
+$$(e_{k,\,\ell})_{k \in \text{El}(A_i),\,\ell \in \text{El}(Q)} \mathbin{;} [a_i, \text{id}_{A_i} \otimes \eta] = (e_{k,\,\eta(p)})_{k \in \text{El}(A_i),\,p \in \text{El}(P)}$$
 
 The lift produces a reindexing morphism in **Br** that permutes coordinates without touching data values. It is **contravariant** in $\eta$: a stride morphism $\eta : P \to Q$ yields a **Br** morphism going $[X, Q] \to [X, P]$, reading from position $\eta(p)$ of the source for each output position $p$.
 
@@ -780,7 +803,7 @@ For an array product $X = \Pi_{i \in I}[a_i, A_i] \in \text{Ob}(\mathbf{Br})$ an
 
 $$[X, \eta] = \Pi_{i \in I}[a_i, \text{id}_{A_i} \otimes \eta], \qquad [X, \eta] : [X, Q] \to [X, P]$$
 
-where each component $[a_i, \text{id}_{A_i} \otimes \eta] : [a_i, A_i \otimes Q] \to [a_i, A_i \otimes P]$ acts on elements by $(a_{k,\ell})_{k \in \text{El}(A_i),\,\ell \in \text{El}(Q)} \mathbin{;} [a_i, \text{id}_{A_i} \otimes \eta] = (a_{k,\,\eta(p)})_{k \in \text{El}(A_i),\,p \in \text{El}(P)}$.
+where each component $[a_i, \text{id}_{A_i} \otimes \eta] : [a_i, A_i \otimes Q] \to [a_i, A_i \otimes P]$ acts on elements by $(e_{k,\ell})_{k \in \text{El}(A_i),\,\ell \in \text{El}(Q)} \mathbin{;} [a_i, \text{id}_{A_i} \otimes \eta] = (e_{k,\,\eta(p)})_{k \in \text{El}(A_i),\,p \in \text{El}(P)}$.
 
 `object_morphism_lift(base=X, lift_by=η)` builds `Identity.template(segment, η)` for each array segment of `X`. `Identity` is an `Operator` that represents the reindexing as a `Broadcasted` with $\eta$ as its reindexing and the identity on target axes.
 
