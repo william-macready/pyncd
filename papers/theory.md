@@ -652,7 +652,7 @@ aggregator = Block.template(
 _transformer_model = _transformer @ aggregator
 ```
 
-The following is the equivalent diagram (quiver) in **Br**, showing the objects and morphisms in the broadcasted category. The boxes surrounding the objects and morphsism are for organization only and have no categorical meaning.
+The following is the equivalent diagram (quiver) in **Br**, showing the objects and morphisms in the broadcasted category. We include projection morphisms from the product structure. The boxes surrounding the objects and morphsism are for organization only and have no categorical meaning.
 
 ```mermaid
 %%{init: {'theme': 'default', 'themeVariables': {'edgeLabelBackground': '#ffffff00'}}}%%
