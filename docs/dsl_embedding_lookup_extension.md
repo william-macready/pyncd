@@ -23,6 +23,21 @@ making the embedding a transparent, first-class equation with explicit type info
 
 ---
 
+## What Embedding Does
+
+An embedding is a **row lookup**, not arithmetic. Given a vocabulary {"cat", "dog", "fish"} and embedding dimension $m = 4$, the embedding table is:
+
+$$E = \begin{bmatrix} 0.1 & 0.5 & -0.2 & 0.9 \\ 0.8 & -0.1 & 0.3 & 0.4 \\ -0.3 & 0.7 & 0.1 & 0.2 \end{bmatrix} \quad \begin{array}{l} \leftarrow \text{cat} \\ \leftarrow \text{dog} \\ \leftarrow \text{fish} \end{array}$$
+
+Input ["dog", "cat"] → token indices $[1, 0]$; the output is:
+
+$$X[0, m] = E[1, m] = [0.8,\ {-0.1},\ 0.3,\ 0.4]$$
+$$X[1, m] = E[0, m] = [0.1,\ 0.5,\ {-0.2},\ 0.9]$$
+
+The input is a `Natural` (discrete integer index), not a real-valued array, so there is nothing to contract. In the categorical framework it is a reindexing $[a, \eta]$ — the contravariant functor pulling values back along a stride morphism $\eta$ that maps token positions to vocabulary rows. This is why embedding is not expressible as a tensor logic equation and currently falls back to `ops.Embedding.template()`.
+
+---
+
 ## How pyncd Represents Lookups
 
 `ops.Embedding.template(vocab_size)` produces:

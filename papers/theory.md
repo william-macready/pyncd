@@ -1,23 +1,3 @@
-```mermaid
-%%{init: {'theme': 'default', 'themeVariables': {'edgeLabelBackground': '#ffffff00'}}}%%
-graph TD
-    QotK["Q ⊗ K : [ℝ, b⊗h⊗q⊗k] ⊗ [ℝ, h⊗x⊗k]"]
-    Q["Q : [ℝ, b⊗h⊗q⊗k]"]
-    K["K : [ℝ, h⊗x⊗k]"]
-    V["V : [ℝ, h⊗x⊗d]"]
-    S["S : [ℝ, b⊗h⊗q⊗x]"]
-    SotV["S ⊗ V : [ℝ, b⊗h⊗q⊗x] ⊗ [ℝ, h⊗x⊗d]"]
-    O["O : [ℝ, b⊗h⊗q⊗d]"]
-
-    QotK -->|"π<sub>Q</sub>"| Q
-    QotK -->|"π<sub>K</sub>"| K
-    QotK -->|"Broadcasted(Einops: h q k, h x k → h q x, P=(b), η<sub>Q</sub>=id<sub>b</sub>, η<sub>K</sub>=())"| S
-
-    SotV -->|"π<sub>S</sub>"| S
-    SotV -->|"π<sub>V</sub>"| V
-    SotV -->|"Broadcasted(Einops: h q x, h x d → h q d, P=(b), η<sub>S</sub>=id<sub>b</sub>, η<sub>V</sub>=())"| O
-```
-
 # Weaves, Wires, and Morphisms: Overview
 
 Abbott & Zardini (MIT LIDS), arXiv:2604.07242v2, April 2026.
@@ -541,7 +521,92 @@ The contravariancy is the categorical expression of **pullback**: a stride morph
 
 **Python:** [minimum_working_example.py](../minimum_working_example.py)
 
-The transformer is built by composing the operators above:
+The transformer expressed as tensor logic equations (a trailing dot marks the normalization axis):
+
+Axes: $\ell$ layer, $x$ token position, $x'$ key position, $m$ embedding dimension, $h$ attention head, $k$ head dimension, $d_{ff}$ FFN hidden dimension, $v$ vocabulary. We assume tokens have already been embedded; $X[0, x, m]$ is the input to the stack with $m$ indexing over the embedding components.
+
+**Linear projections** — each maps $m$ to learned axes $h, k$, batched over tokens $x$, with layer-specific weights:
+
+$$Q[\ell, x, h, k] = W_q[\ell, h, k, m] \, X[\ell, x, m]$$
+$$K[\ell, x, h, k] = W_k[\ell, h, k, m] \, X[\ell, x, m]$$
+$$V[\ell, x, h, k] = W_v[\ell, h, k, m] \, X[\ell, x, m]$$
+
+**QK multiply + softmax** — contracts $k$; normalizes over key positions $x'$:
+
+$$\text{Comp}[\ell, h, x, x'.] = \text{softmax}(Q[\ell, x, h, k] \, K[\ell, x', h, k])$$
+
+**Causal mask** — zero out future positions via Iverson bracket, then renormalize:
+
+$$S[\ell, h, x, x'.] = \text{normalize}(\text{Comp}[\ell, h, x, x'] \, [x' \leq x])$$
+
+where $[x' \leq x]$ is a fixed binary tensor (1 if key position $x' \leq$ query position $x$, 0 otherwise) whose definition requires the ordering structure of the axes in **St**, and $\text{normalize}$ divides each element by the sum over the norm axis: $S[\ell, h, x, x'] = \tilde{S}[\ell, h, x, x'] \,/\, \sum_{x''} \tilde{S}[\ell, h, x, x'']$.
+
+**SV multiply** — contracts $x'$:
+
+$$\text{Out}[\ell, x, h, k] = S[\ell, h, x, x'] \, V[\ell, x', h, k]$$
+
+**Output projection** — contracts $h, k$, batched over $x$:
+
+$$\text{Attn}[\ell, x, m] = W_o[\ell, m, h, k] \, \text{Out}[\ell, x, h, k]$$
+
+**FFN** — two chained equations with layer-specific weights:
+
+$$H[\ell, x, d_{ff}] = \text{relu}(W_{\text{in}}[\ell, d_{ff}, m] \, A[\ell, x, m])$$
+$$\text{FFN}[\ell, x, m] = W_{\text{out}}[\ell, m, d_{ff}] \, H[\ell, x, d_{ff}]$$
+
+**Transformer stack** — recurrence with $X[0, x, m]$ as input and $X[6, x, m]$ as output:
+
+$$A[\ell, x, m] = \text{rmsnorm}(\text{Attn}[\ell, x, m] + X[\ell, x, m]) \, [0 \leq \ell < 6]$$
+$$X[\ell+1, x, m] = \text{rmsnorm}(\text{FFN}[\ell, x, m] + A[\ell, x, m]) \, [0 \leq \ell < 6]$$
+
+The $\ell+1$ on the left-hand side is an affine offset on the layer axis — a stride morphism in **St** rather than a shared contracted index — so the recurrence structure sits at the boundary of tensor logic. The per-layer equations are valid tensor logic; the $\ell \to \ell+1$ dependency requires the stride category.
+
+**Aggregator** — contracts $m$; normalizes over vocabulary $v$:
+
+$$\text{logits}[x, v.] = \text{softmax}(W_{\text{agg}}[v, m] \, X[6, x, m])$$
+
+The `res(target)` helper — which wraps both the attention layer and the FFN — is defined in pyncd as `(0, 0) @ target @ AdditionOp @ Normalize`. The fork `(0, 0)` is implicit in tensor logic (a tensor may appear freely on both sides), so `res` reduces to two equations where $F = \text{target}(X)$:
+
+$$Y[i] = F[i] + X[i]$$
+$$Z[i.] = \text{rmsnorm}(Y[i])$$
+
+where rmsnorm is $Z[i] = Y[i] \,/\, \sqrt{\tfrac{1}{|i|}\sum_{i'} Y[i']^2}$. The transformer stack equations are this pattern instantiated with $F = \text{Attn}$ and $F = \text{FFN}$ respectively.
+
+The following flowchart summarises the full tensor logic data flow:
+
+```mermaid
+%%{init: {'theme': 'default', 'themeVariables': {'edgeLabelBackground': '#ffffff00'}}}%%
+graph TD
+    X["X[ℓ, x, m]"]
+    Q["Q[ℓ, x, h, k]"]
+    K["K[ℓ, x, h, k]"]
+    V["V[ℓ, x, h, k]"]
+    Comp["Comp[ℓ, h, x, x'.]"]
+    S["S[ℓ, h, x, x'.]"]
+    Out["Out[ℓ, x, h, k]"]
+    Attn["Attn[ℓ, x, m]"]
+    A["A[ℓ, x, m]"]
+    H["H[ℓ, x, d_ff]"]
+    FFN["FFN[ℓ, x, m]"]
+    Xnext["X[ℓ+1, x, m]"]
+    Logits["logits[x, v.]"]
+
+    X -->|"× W_q"| Q
+    X -->|"× W_k"| K
+    X -->|"× W_v"| V
+    Q & K -->|"contract k, softmax"| Comp
+    Comp -->|"[x'≤x], normalize"| S
+    S & V -->|"contract x'"| Out
+    Out -->|"× W_o"| Attn
+    Attn & X -->|"+, rmsnorm"| A
+    A -->|"× W_in, relu"| H
+    H -->|"× W_out"| FFN
+    FFN & A -->|"+, rmsnorm"| Xnext
+    Xnext -->|"[0 ≤ ℓ < 6]"| X
+    Xnext -->|"× W_agg, softmax"| Logits
+```
+
+The pyncd implementation composes these as:
 
 ```python
 # Attention core: qk multiply → softmax → mask → sv multiply
@@ -561,14 +626,107 @@ Lv = ops.Linear.template(('m',), 2, 'v')
 Lo = ops.Linear.template(2, ('m',), 'o') # [h, k] → [m]
 _attention_layer = (Lq * Lk * Lv) @ _attention_core @ Lo
 
-# Transformer layer: attention + FFN (feed-forward network: Linear → ReLU → Linear), each with residual + norm, repeated 6 times
+# FFN: Linear → ReLU → Linear
+_ffn_layer = Block.template(
+ ops.Linear.template(1, ('d_ff',), 'in')
+ @ ops.Elementwise.template()
+ @ ops.Linear.template(('d_ff',), 1, 'out'),
+ title='Feed Forward', fill_color='#C1E8F7'
+)
+
+# res(target) = fork → target → add residual → rmsnorm: (0,0) @ target @ AdditionOp @ Normalize
+# Transformer layer: res(attention) @ res(FFN), repeated 6 times
 _transformer = Block.template(
- res(_attention_layer) @ res(ffn_layer()),
+ res(_attention_layer) @ res(_ffn_layer),
  title='Transformer Layer', repetition=6
 )
 
-# Full model: embedding → 6× transformer → aggregator
-_transformer_model = embedding @ _transformer @ aggregator
+# Aggregator: Linear → SoftMax over vocabulary
+vocab_size = fd.DynamicName('v', settings=fd.DynamicNameSettings(overline=True))
+aggregator = Block.template(
+ ops.Linear.template(1, (vocab_size,)) @ ops.SoftMax.template(),
+ title='Aggregator', fill_color='#DBDFEF'
+)
+
+# Full model: 6× transformer → aggregator
+_transformer_model = _transformer @ aggregator
+```
+
+The following is the equivalent diagram in **Br**, showing the transformer as objects and morphisms in the broadcasted category. The boxes surrounding the objects and morphsism is for organization only and has no meaning in the category.
+
+```mermaid
+%%{init: {'theme': 'default', 'themeVariables': {'edgeLabelBackground': '#ffffff00'}}}%%
+graph LR
+    X["X : [ℝ, ℓ⊗x⊗m]"]
+
+    subgraph transformer["Transformer Layer (×6)"]
+        subgraph proj["Q, K, V Projections"]
+            direction TB
+            QotK["Q⊗K : [ℝ, ℓ⊗x⊗h⊗k] ⊗ [ℝ, ℓ⊗x'⊗h⊗k]"]
+            Q["Q : [ℝ, ℓ⊗x⊗h⊗k]"]
+            K["K : [ℝ, ℓ⊗x'⊗h⊗k]"]
+            V["V : [ℝ, ℓ⊗x'⊗h⊗k]"]
+        end
+
+        subgraph attn["Attention Core"]
+            direction TB
+            Comp["Comp : [ℝ, ℓ⊗h⊗x⊗x'.]"]
+            S["S : [ℝ, ℓ⊗h⊗x⊗x'.]"]
+            SotV["S⊗V : [ℝ, ℓ⊗h⊗x⊗x'.] ⊗ [ℝ, ℓ⊗x'⊗h⊗k]"]
+            Out["Out : [ℝ, ℓ⊗x⊗h⊗k]"]
+        end
+
+        subgraph res1["Attention Residual"]
+            direction TB
+            Attn["Attn : [ℝ, ℓ⊗x⊗m]"]
+            AttnX["Attn⊗X : [ℝ, ℓ⊗x⊗m] ⊗ [ℝ, ℓ⊗x⊗m]"]
+            A["A : [ℝ, ℓ⊗x⊗m]"]
+        end
+
+        subgraph ffn["FFN"]
+            direction TB
+            H["H : [ℝ, ℓ⊗x⊗d_ff]"]
+            FFNnode["FFN : [ℝ, ℓ⊗x⊗m]"]
+        end
+
+        subgraph res2["FFN Residual"]
+            direction TB
+            FFNwA["FFN⊗A : [ℝ, ℓ⊗x⊗m] ⊗ [ℝ, ℓ⊗x⊗m]"]
+            Xnext["X[ℓ+1] : [ℝ, ℓ⊗x⊗m]"]
+        end
+    end
+
+    subgraph agg["Aggregator"]
+        direction TB
+        Lagg["W_agg·X[6] : [ℝ, x⊗v]"]
+        Logits["logits : [ℝ, x⊗v]"]
+    end
+
+    X -->|"Broadcasted(Linear_q ⊗ Linear_k)"| QotK
+    X -->|"Broadcasted(Linear_v)"| V
+    QotK -->|"π<sub>Q</sub>"| Q
+    QotK -->|"π<sub>K</sub>"| K
+    QotK -->|"Broadcasted(Einops: ℓ x h k, ℓ x' h k → ℓ h x x'.) ; Broadcasted(SoftMax)"| Comp
+    Comp -->|"Broadcasted(normalize([x'≤x]))"| S
+    SotV -->|"π<sub>S</sub>"| S
+    SotV -->|"π<sub>V</sub>"| V
+    SotV -->|"Broadcasted(Einops: ℓ h x x', ℓ x' h k → ℓ x h k)"| Out
+    Out -->|"Broadcasted(Linear_o)"| Attn
+    AttnX -->|"π<sub>Attn</sub>"| Attn
+    AttnX -->|"π<sub>X</sub>"| X
+    AttnX -->|"Broadcasted(AdditionOp ; Normalize)"| A
+    A -->|"Broadcasted(Linear_in ; ReLU)"| H
+    H -->|"Broadcasted(Linear_out)"| FFNnode
+    FFNwA -->|"π<sub>FFN</sub>"| FFNnode
+    FFNwA -->|"π<sub>A</sub>"| A
+    FFNwA -->|"Broadcasted(AdditionOp ; Normalize)"| Xnext
+    Xnext -->|"Broadcasted(Linear_agg)"| Lagg
+    Lagg -->|"Broadcasted(SoftMax)"| Logits
+
+    classDef obj fill:#ffffff,stroke:#555555
+    class X,QotK,Q,K,V,Comp,S,SotV,Out,Attn,AttnX,A,H,FFNnode,FFNwA,Xnext,Lagg,Logits obj
+
+    style transformer fill:#f5f9fe,stroke:#6688bb,stroke-width:2px
 ```
 
 Each `*` creates a `ProductOfMorphisms` ($\otimes$, parallel); each `@` creates a `Composed` ($;$, sequential) with autoalignment. The result is a single algebraic term that can be:
