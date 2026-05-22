@@ -572,7 +572,7 @@ $$Z[i.] = \text{rmsnorm}(Y[i])$$
 
 where rmsnorm is $Z[i] = Y[i] \,/\, \sqrt{\tfrac{1}{|i|}\sum_{i'} Y[i']^2}$. The transformer stack equations are this pattern instantiated with $F = \text{Attn}$ and $F = \text{FFN}$ respectively.
 
-The following flowchart summarises the full tensor logic data flow:
+The following flowchart summarises the tensor logic data flow:
 
 ```mermaid
 %%{init: {'theme': 'default', 'themeVariables': {'edgeLabelBackground': '#ffffff00'}}}%%
@@ -652,7 +652,7 @@ aggregator = Block.template(
 _transformer_model = _transformer @ aggregator
 ```
 
-The following is the equivalent diagram in **Br**, showing the transformer as objects and morphisms in the broadcasted category. The boxes surrounding the objects and morphsism is for organization only and has no meaning in the category.
+The following is the equivalent diagram (quiver) in **Br**, showing the objects and morphisms in the broadcasted category. The boxes surrounding the objects and morphsism are for organization only and have no categorical meaning.
 
 ```mermaid
 %%{init: {'theme': 'default', 'themeVariables': {'edgeLabelBackground': '#ffffff00'}}}%%
