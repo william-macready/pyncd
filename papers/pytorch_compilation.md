@@ -422,23 +422,61 @@ pyncd builds the module.
 `torch.compile(module)` passes the module through three stages:
 
 1. **TorchDynamo** intercepts Python bytecode execution and records tensor
-   operations as nodes in an `fx.Graph` (a linked list of `fx.Node` objects,
-   each carrying an ATen operator, its arguments, and its outputs). Python
-   control flow that depends on non-tensor values — such as `if self.demote:`
-   — is **specialised**: Dynamo takes one branch, records it, and emits a
-   *guard* that checks the specialised value on future calls. If Dynamo cannot
-   trace a piece of code it emits a **graph break**, compiling what it has so
-   far and continuing afterwards in the Python interpreter.
+   operations as nodes in an `fx.Graph`. Python control flow that depends on
+   non-tensor values — such as `if self.demote:` — is **specialised**: Dynamo
+   takes one branch, records it, and emits a *guard* that checks the
+   specialised value on future calls. If Dynamo cannot trace a piece of code
+   it emits a **graph break**, compiling what it has so far and continuing
+   afterwards in the Python interpreter.
 
-2. **AOTAutograd** traces both the forward and backward passes at compile
-   time, producing two static `fx.GraphModule` objects (forward and backward).
-   It also applies *functionalization* — rewriting in-place ops into
-   out-of-place equivalents — so the graph is a pure function.
+2. **AOTAutograd** lowers the Dynamo-level graph to an ATen-level
+   `fx.GraphModule` and separately traces the backward pass. It also applies
+   *functionalization* — rewriting in-place ops into out-of-place equivalents
+   — so the graph is a pure function.
 
 3. **TorchInductor** lowers each ATen op into a loop-level IR
    (`Pointwise`, `Reduction`, `ExternKernel`), fuses adjacent elementwise and
    reduction nodes into single kernels, and generates either Triton (GPU) or
    C++ / OpenMP (CPU) source code that is compiled and cached.
+
+### FX graphs
+
+An **FX graph** (`torch.fx.Graph`) is the intermediate representation that
+flows between the three stages above — a flat, ordered list of `Node` objects,
+each recording one operation. The graph is wrapped in an `fx.GraphModule`,
+which is a regular `nn.Module` whose `forward` method is the graph itself.
+
+Each node has four fields:
+
+| field | meaning |
+| --- | --- |
+| `op` | kind of operation: `placeholder` (input), `get_attr` (module attribute), `call_function`, `call_method`, `call_module`, `output` |
+| `name` | local variable name for this node's result |
+| `target` | what to call — a function, method name, or attribute path |
+| `args` / `kwargs` | inputs, referencing earlier nodes by identity |
+
+The `op` field determines what a node *is*:
+
+- **`placeholder`** — a runtime input; its value is unknown at compile time.
+- **`get_attr`** — a value read from the module object (a buffer, parameter,
+  or constant); its tensor is fixed at compile time and can be inlined or
+  specialised on by the compiler.
+- **`call_function`** — an ordinary Python function call (e.g. `einops.einsum`,
+  `operator.gt`, or an `aten.*` op).
+
+The distinction between `placeholder` and `get_attr` matters for pyncd: a
+pre-materialised Iverson buffer (`_mask_2`) appears as `get_attr`, while the
+caller's `A` and `V` tensors appear as `placeholder`. Dynamo can specialise on
+the buffer's shape and values at compile time; the caller tensors are dynamic.
+
+FX graphs exist at two levels corresponding to stages 1 and 2:
+
+- **Dynamo-level (pre-ATen):** uses whatever ops the Python code called —
+  `einops.einsum`, Python comparisons, etc. This is what `torch._dynamo.export`
+  returns with `aten_graph=False` and is the level shown in Section 9.
+- **ATen-level:** every op decomposed into the core ATen operator set
+  (`aten.bmm`, `aten.view`, `aten.permute`, …). This is what Inductor receives
+  at stage 3. `aten_graph=True` in `torch._dynamo.export` gives this level.
 
 ### What this means for pyncd modules
 
@@ -906,6 +944,90 @@ graph TD
     PV --> E2
     E2 --> OUT2
 ```
+
+### Generated forward code
+
+The graphs above are produced by running both modules through
+`torch._dynamo.export`. Two levels are shown: the **Dynamo-level** graph
+(pre-ATen, `aten_graph=False`) is closest to pyncd's own representation and
+connects directly to the compilation stages; the **ATen-level** graph
+(`aten_graph=True`) is what Inductor receives and compiles to native code.
+
+**Gate — Dynamo-level forward** (pre-ATen; buffers appear as `get_attr`, not
+`placeholder`):
+
+```python
+def forward(self, a1, a2):               # caller supplies only the two A tensors
+    mask = self._mask_2                  # get_attr — constant (16,16) upper-triangular
+                                         # tensor produced by materialise_iverson(i<=j)
+                                         # at ConstructedTensorEquation.__init__
+    result = einops.einsum(
+        a1, a2, mask,
+        '... y0 y1 x0, ... y0 x0 y2, ... y1 y2 -> ... y0 y1 y2'
+    )                                    # TensorEquation contraction (Section 4.1)
+                                         # x0 = contracted axis k
+                                         # y0,y1,y2 = degree axes b,i,j
+                                         # mask slot '... y1 y2' omits y0 →
+                                         #   einops broadcasts mask over b
+    gt     = result > 0                  # Heaviside demotion step 1
+    return gt.to(torch.float32)          # Heaviside demotion step 2
+                                         # both from: self.demote=True (Bool output)
+```
+
+**Gate — ATen-level forward** (what Inductor compiles; einops expands to bmm +
+elementwise mul):
+
+```python
+def forward(self, a1, a2):
+    B = aten.sym_size.int(a1, 0)               # symbolic batch size
+
+    # einops decomposes '... y0 y1 x0, ... y0 x0 y2' into a batched matmul
+    a1_bmm = aten.view(
+        aten.permute(aten.unsqueeze(a1, 3), [0, 1, 3, 2]), [B, 16, 16]
+    )                                           # (B, I, K) — A[b,i,k]
+    a2_bmm = aten.view(
+        aten.permute(aten.unsqueeze(a2, 3), [0, 3, 2, 1]), [B, 16, 16]
+    )                                           # (B, K, J) — A[b,k,j]
+    contracted = aten.bmm(a1_bmm, a2_bmm)      # (B, I, J): Σ_k A[b,i,k]*A[b,k,j]
+
+    # '... y1 y2' mask factor: align (16,16) buffer to broadcast over b
+    mask   = self._tensor_constant0             # get_attr — _mask_2 renamed by Dynamo
+    mask_b = aten.permute(                      # (I, J) → (1, I, J, 1)
+        aten.unsqueeze(aten.unsqueeze(mask, 2), 3), [2, 0, 1, 3]
+    )
+    result = aten.permute(
+        aten.view(contracted, [B, 16, 1, 16]), [0, 1, 3, 2]
+    )                                           # reshape bmm result to align with mask
+    gated  = aten.mul(result, mask_b)           # elementwise: (B,I,J) * (1,I,J)
+    flat   = aten.view(gated, [B, 16, 16])      # (B, I, J)
+
+    # Heaviside demotion — self.demote=True, specialised by Dynamo
+    bits   = aten.gt.Scalar(flat, 0)
+    return aten._to_copy(bits, dtype=torch.float32)
+```
+
+Key observations at the ATen level:
+
+- The three-input einops contraction decomposes to **two separate ATen ops**: `bmm` for the `k`-contraction and `mul` for the elementwise masking. Inductor sees these as a `Reduction` followed by a `Pointwise`, which it may fuse into a single kernel.
+- The mask buffer (`_mask_2`) is renamed `_tensor_constant0` by Dynamo when embedded as a constant. It remains a `get_attr` node — never a `placeholder` — so its value is fixed at compile time.
+- Inductor can fuse `gt` and `_to_copy` into the epilogue of the preceding `Pointwise` kernel, so the Bool output adds no extra memory round-trip in the fused case.
+
+**Y — Dynamo-level forward** (structurally a batched matmul; no mask, no
+demotion):
+
+```python
+def forward(self, gate, v):    # gate is the Bool-float output from Gate
+    return einops.einsum(
+        gate, v,
+        '... y0 y1 x0, ... y0 x0 y2 -> ... y0 y1 y2'
+    )                          # no gt/to_copy: self.demote=False (Reals output)
+                               # j contracted via shared tag x0
+                               # gate and v both carry all degree axes → symmetric
+```
+
+At the ATen level the Y graph is the same bmm + reshape pattern as Gate's
+contraction step, without the mask multiplication or Heaviside epilogue — a
+single `aten.bmm` lowered directly to a cuBLAS/oneDNN call on accelerators.
 
 ### What makes this harder than a plain matmul
 
