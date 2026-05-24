@@ -26,6 +26,14 @@ def align_axes(
         right: AxialObject,
         ctx: fd.Context,
 ):
+    for lo, ro in zip(left, right):
+        if isinstance(lo, cat.Array) and isinstance(ro, cat.Array):
+            if lo.datatype != ro.datatype:
+                raise TypeError(
+                    f"Datatype mismatch in composition: "
+                    f"codomain has {lo.datatype!r}, "
+                    f"domain has {ro.datatype!r}"
+                )
     left_axes = tuple(get_axes(left))
     right_axes = tuple(get_axes(right))
     if len(left_axes) != len(right_axes):

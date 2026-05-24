@@ -1,6 +1,6 @@
 # Boolean Semiring Extension
 
-**Status:** Implemented (pyncd layer and torch compilation complete; tsncd rendering deferred)  
+**Status:** Implemented (pyncd layer, torch compilation, composition typing, tsncd rendering, and tsncd equation notation complete; Iverson materialisation and embedding DSL deferred)  
 **Context:** Design notes for extending pyncd and tsncd to support the Boolean semiring `(𝔹, ∨, ∧)` alongside the existing arithmetic semiring `(ℝ, +, ×)`, enabling predicate tensors to be realised at the `Datatype` level.
 
 ---
@@ -85,7 +85,7 @@ $$[\mathbb{B}, A] \underset{H}{\overset{\iota}{\rightleftharpoons}} [\mathbb{R}_
 
 The practical consequence is clean: a purely Boolean contraction $Y(i,j) = \exists_k X(i,k) \wedge Z(k,j)$ is computed as the arithmetic einsum $\tilde{Y}[i,j] = \sum_k [X(i,k)] \cdot [Z(k,j)]$ followed by a pointwise $H$. For mixed Bool+Real expressions where the output is $\mathbb{R}$ (masking), $H$ is omitted. The same arithmetic `Einops` infrastructure handles both cases — the only difference is whether the output weave has datatype $\mathbb{B}$ (apply $H$) or $\mathbb{R}$ (do not).
 
-**Composition typing.** `Context.append_iter` currently unifies axis objects when composing morphisms in **Br**. With mixed datatypes, composition also needs to check datatype compatibility — a `Bool` output cannot be fed directly to an input expecting `Reals` without an intervening $\iota$. This adds a datatype-unification step to the composition rule that does not exist today.
+**Composition typing.** `Context.append_iter` unifies axis objects when composing morphisms in **Br**. With mixed datatypes, composition also needs to check datatype compatibility — a `Bool` output cannot be fed directly to an input expecting `Reals` without an intervening $\iota$. `align_axes` in `construction_helpers/composition.py` now enforces this: it raises `TypeError` if codomain and domain carry different datatypes, covering `Bool↔Reals` and `Natural↔Reals`. No automatic coercion is inserted; the caller must compose an explicit promotion step.
 
 **The embedding chain.** The $\iota/H$ retraction handles $\mathbb{B}$ and $\mathbb{R}_{\geq 0}$, but embedding introduces $\mathbb{N}_{<v}$ as a third datatype. A $\mathbb{N}_{<v}$-valued tensor is a function $f : A \to V$, where $a \in A$ is an index into the domain shape and $V$ is a shape axis of size $v$ representing the codomain — the set of possible output values (e.g. $f = \mathrm{token\_at\_position}$). Promoting $f$ to $[\mathbb{B}, A \otimes V]$ turns it into a **relation** — $V$ becomes an explicit extra column (note the shape change from $A$ to $A \otimes V$) and the Bool type identifies which tuples $(a, v)$ are in the relation:
 
@@ -377,7 +377,6 @@ The `.predicate()` declaration is retained — it controls the Bool/Reals dispat
 ### 7. What is not yet done
 
 - **Iverson materialisation** — inline Iverson factors (`q <= x`) are typed as `Bool` inputs in `bc_signature()` but have no runtime evaluation path in `torch_compile`. They must currently be pre-built as concrete tensors by the caller and passed in RHS factor order. A future materialisation step would evaluate `IversonExpr` trees to generate these tensors automatically.
-- **tsncd rendering** — the TypeScript `Bool` class, `DatatypeAnchor` branch, and wire-styling changes are described in the Rendering section below but not yet implemented.
 - **Embedding DSL** — `ops.Embedding.template()` is unchanged; the Iverson-based embedding derivation is possible but not exposed.
 
 ---
@@ -415,19 +414,30 @@ if self.demote:
 
 `self.demote` is set at construction time as `isinstance(target.output_weaves[0].datatype, cat.Bool)`. When `demote` is `True`, the einsum result — which is always $\geq 0$ when inputs are $\{0,1\}$ — is thresholded: strictly positive values become $1.0$, zero becomes $0.0$. The `.to(result.dtype)` preserves the float dtype so the output is a float tensor of $0.0$/$1.0$ values rather than a `torch.bool` tensor, keeping it compatible with downstream arithmetic.
 
-The same flag that controls $H$ in the compiler is the signal for `∃`/`∧` display in tsncd (pending).
+The same flag that controls $H$ in the compiler is the signal for `∃`/`∧` display in tsncd.
 
 ---
 
 ### Challenge 3: Composition typing
 
-**Not yet resolved.**
+**Resolved** — datatype mismatch now raises `TypeError` at composition time.
 
-`Context.append_iter` in `data_structure/Composition.py` unifies axis UIDs when composing morphisms in **Br** but does not check datatype compatibility. A `Bool`-output weave composed directly with a `Reals`-input weave will silently type-check — the framework will not raise an error, and the resulting `Composed` morphism will carry a datatype mismatch across the composition boundary.
+The gap predated this extension: `Natural`/`Reals` compositions were equally broken. The fix is in `align_axes` in `construction_helpers/composition.py`. Before unpacking objects to their axis lists, it checks that each pair of `Array` objects carries the same datatype:
 
-The practical mitigation is that the current use cases do not compose Bool outputs directly with Reals inputs: masked contractions produce `Reals` output (the output weave is `Reals()`, so no mismatch); Bool-output equations (where `demote=True`) are terminal in the current patterns. The risk is latent — it surfaces as soon as someone writes a `Composed` morphism that feeds a Bool result to an arithmetic step without an explicit $\iota$.
+```python
+for lo, ro in zip(left, right):
+    if isinstance(lo, cat.Array) and isinstance(ro, cat.Array):
+        if lo.datatype != ro.datatype:
+            raise TypeError(
+                f"Datatype mismatch in composition: "
+                f"codomain has {lo.datatype!r}, "
+                f"domain has {ro.datatype!r}"
+            )
+```
 
-Resolving this properly requires `append_iter` to check `output_weave.datatype == input_weave.datatype` and either raise or insert $\iota$ automatically. That change is deferred.
+This fires for `Bool → Reals`, `Reals → Bool`, `Natural → Reals`, and `Reals → Natural`. It does not fire for `RawAxis`-typed objects (i.e. `StrideCategory` compositions), only `Broadcasted` ones where the objects are `Array` instances carrying a `datatype` field.
+
+No automatic insertion of $\iota$ or casting is attempted — the caller must compose an explicit promotion morphism. Eight tests in `tests/test_composition.py` cover the matching and mismatching cases.
 
 ---
 
@@ -441,61 +451,43 @@ The embedding derivation — treating an embedding table as a masked contraction
 
 ## Rendering
 
-Three aspects of the diagram can distinguish Boolean morphisms from arithmetic ones, in increasing implementation cost. All required signals are already present in the pyncd layer; what remains is purely tsncd display code.
+Three aspects of the diagram distinguish Boolean morphisms from arithmetic ones. All are now implemented.
 
 ### 1. Equation string inside the operator box
 
-The highest-signal change. Instead of `Σ`/`×` notation, Boolean equations render with `∃`/`∧`:
+Instead of `Σ`/`×` notation, Boolean equations render with `∃`/`∧`:
 
 ```text
 Y[i,z] = Σ_k  W[i,k] × X[k,z]    ← arithmetic
 Y(x,z) = ∃_y  R(x,y) ∧ S(y,z)    ← boolean
 ```
 
-The signal is `output_weave.datatype`: `Bool()` for a predicate-LHS equation, `Reals()` otherwise. This is the same flag that `ConstructedTensorEquation.demote` already reads to decide whether to apply the Heaviside step — no new infrastructure is needed. The display renderer reads it directly from the `Broadcasted`.
+The signal is `output_weave.datatype instanceof cat.Bool` — the same flag that `ConstructedTensorEquation.demote` reads to apply the Heaviside step.
+
+`TensorEquationBox` in `additionalOperationBoxes.ts` is registered for the `TensorEquation` operator and dispatches on this flag: Bool-output equations render `∃`, Reals-output equations render `Σ`. The supporting TypeScript types (`TensorRef`, `IversonConst`, `IversonBinOp`, `IversonUnaryOp`, `TensorEquation`) live in `tsncd/src/data_structure/TensorLogic.ts`, registered so that `to_term()` can deserialize `Broadcasted<_, _, TensorEquation>` without errors.
 
 ### 2. Wire styling for `Bool` input weaves
 
-Styling applies per input weave, not per equation. A mixed equation — one `Reals` input and one `Bool` input — has two wires entering the same operator box, rendered differently. The `Bool()` vs `Reals()` distinction is available on `input_weave.datatype` for each wire individually.
+Styling applies per input weave. A mixed equation has two wires entering the same operator box, rendered differently. The implementation uses both redundant cues:
 
-Dashed lines are a standard convention for discrete/Boolean types in categorical diagrams. However, tsncd already uses a `'5,5'` dash pattern on broadcaster separator curves (the lines dividing product elements in `Separated<T, S>`). Reusing the same pattern for Boolean wires would create a visual collision.
+- **`'2,6'` dotted stroke** — distinct from the `'5,5'` separator dash used by `Separated<T, S>`
+- **Amber (`#f59e0b`) stroke color** — ties axis wires visually to the `𝔹` anchor
 
-Two ways to avoid it:
+Both are applied in `ArrayMeridian` when `this.target.datatype instanceof cat.Bool`, by setting `curve_attributes` on each axis anchor. `Anchor.curve_attributes` was changed from `protected` to `public` to allow this.
 
-- **Different dash pattern.** The `'5,5'` separator reads as "dashed"; Boolean wires could use `'2,6'` (short dot, long gap), which reads distinctly as "dotted" — a conventional signal for discrete types and perceptually different at a glance.
-- **Color instead of dashing.** A solid wire in a distinct hue avoids the collision entirely. The `Natural` anchor already uses lime-green; a complementary color on the wire ties it visually to the `𝔹` anchor without ambiguity. Color communicates semantic type more naturally than stroke pattern, and the existing separator dashes are structural (they mark composition boundaries) — a type annotation should look different in kind, not just degree.
+**Iverson factor wires.** When `iverson_expr` is set on the `Array`, the first axis anchor's `getAnnotation()` is overridden to return the expression string (e.g. `(q <= x)`); remaining axis anchors return `undefined`. This replaces the default per-axis name annotations with a single expression label.
 
-The most robust option is both: a `'2,6'` dotted stroke in a distinct color, redundantly encoding the distinction so it reads correctly in greyscale and for users who notice only one cue. Of the two alone, color is preferred.
-
-**Iverson factor wires.** An inline Iverson factor (`q <= x`) produces an anonymous `Bool`-typed input weave — there is no tensor name to label the wire with. Its wire label should show the serialised expression string instead, which `_serialize_iverson` already produces and `ArrayRow.iverson_expr` already stores (e.g., `(q <= x)`, `abs((q - x)) < 3`). Named predicate tensors (declared via `.predicate()`) label their wires with the tensor name as usual.
+The `iverson_expr` field now travels the full pipeline: `_serialize_iverson` → `Weave.iverson_expr` (set in `TensorEquation.bc_signature()`) → `Array.iverson_expr` (forwarded in `imprint_to_degree()` and `target()`) → `ArrayMeridian`.
 
 ### 3. `𝔹` datatype anchor
 
-tsncd renders datatypes explicitly only for `Natural` — via a `DatatypeAnchor` (lime-green border, curved line with triangle arrow, LaTeX max-value annotation). `Reals` produces no visual element. A bare `Bool` would be equally invisible without an explicit rendering branch.
+`Bool` is now a registered TypeScript class in `tsncd/src/data_structure/BroadcastedCategory.ts` (re-exported from `Category.ts`) with `to_latex()` returning `'\\mathbb{B}'`. `ArrayMeridian` creates a `DatatypeAnchor` for `Bool`-typed arrays alongside the existing `Natural` branch, passing amber as the extra stroke color so the anchor arrow is visually distinct from the lime-green `Natural` anchor. The `DatatypeAnchor` constructor was extended with an optional `extra_curve_attributes` parameter (default `{}`) so the Natural branch is unchanged.
 
-**`tsncd/src/data_structure/BroadcastedCategory.ts`**  
-Add the TypeScript mirror class:
-
-```typescript
-export class Bool extends Datatype {}
-```
-
-**`tsncd/src/display/Framework/BroadcastedCategoryRenderer.ts`**  
-Add an `instanceof cat.Bool` branch alongside the existing `Natural` check (currently around line 96):
-
-```typescript
-if (this.target.datatype instanceof cat.Bool) {
-    this.datatype_anchor = new DatatypeAnchor(categoryRenderer, this.target.datatype);
-}
-```
-
-The `DatatypeAnchor` displays a `𝔹` annotation rather than a numeric max-value, following the same curved-line-with-triangle-arrow visual convention used for `Natural`.
-
-**pyncd text renderer (`display/node_category.py`)** requires no changes: the `datatype()` function already renders the first two characters of the class name, so `Bool()` appears as `"Bo"` automatically.
+**pyncd text renderer (`display/node_category.py`)** requires no changes: `datatype()` renders the first two characters of the class name, so `Bool()` appears as `"Bo"` automatically.
 
 ---
 
-The combination of per-wire Bool styling, `∃`/`∧` in the equation string, and `𝔹` datatype anchors gives a redundantly encoded visual language: a Boolean morphism is identifiable from the wires entering and leaving it, the label inside the box, and the anchor on its output wire independently.
+The combination of per-wire Bool styling, `𝔹` datatype anchors, and `∃`/`∧` equation strings gives a redundantly encoded visual language: a Boolean morphism is identifiable from the wires entering and leaving it, the anchor on its output wire, and the label inside the box independently.
 
 ---
 
@@ -514,3 +506,13 @@ The combination of per-wire Bool styling, `∃`/`∧` in the equation string, an
 | `acset/csv_io.py` | Remove `PredAxis` from UID registry; add `iverson_expr` to arrays CSV read/write |
 | `torch_compile/torch_compile.py` | Add `generate_tensor_equation_signature`; add `ConstructedTensorEquation` (registered for `TensorEquation` operator; applies $H$ when `output_weave.datatype == Bool()`) |
 | `tests/test_torch_compile.py` | **New.** Signature generation, dispatch, Reals forward, Bool/Heaviside forward, pre-materialised Iverson interface |
+| `construction_helpers/composition.py` | `align_axes` raises `TypeError` on datatype mismatch |
+| `tests/test_composition.py` | **New.** 8 tests for matching and mismatching datatype composition |
+| `data_structure/BroadcastedCategory.py` | `iverson_expr: str \| None` added to `Weave` and `Array`; forwarded in `target()` and `imprint_to_degree()` |
+| `data_structure/TensorLogic.py` | `bc_signature()` populates `Weave.iverson_expr` via `_serialize_iverson` |
+| `tsncd/src/data_structure/BroadcastedCategory.ts` | `Bool` class added; `iverson_expr` added to `Weave` and `Array`; forwarded in `imprint_to_degree()` and `target()` |
+| `tsncd/src/data_structure/Category.ts` | `Bool` added to re-export list |
+| `tsncd/src/display/Framework/CategoryRenderer.ts` | `Anchor.curve_attributes` made `public` |
+| `tsncd/src/display/Framework/BroadcastedCategoryRenderer.ts` | `DatatypeAnchor` gains `extra_curve_attributes` param; `ArrayMeridian` applies dotted amber styling and `𝔹` anchor to Bool arrays; Iverson `iverson_expr` rendered as wire annotation |
+| `tsncd/src/data_structure/TensorLogic.ts` | **New.** `TensorRef`, `IversonConst`, `IversonBinOp`, `IversonUnaryOp` stubs; `TensorEquation` operator (field order matches Python for positional `to_term()` deserialization) |
+| `tsncd/src/display/Framework/Operations/additionalOperationBoxes.ts` | `TensorEquationBox` registered for `TensorEquation`; renders `∃` for Bool-output, `Σ` for Reals-output |

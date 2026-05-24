@@ -6,7 +6,7 @@ import data_structure.Term as fd
 import data_structure.BroadcastedCategory as bc
 import data_structure.ProductCategory as pc
 import data_structure.StrideCategory as sc
-from data_structure.TensorExpr import TensorRef, IversonBinOp, IversonUnaryOp, _factor_axes
+from data_structure.TensorExpr import TensorRef, IversonBinOp, IversonUnaryOp, _factor_axes, _serialize_iverson
 
 
 # A single tensor logic equation stored as a pyncd Operator.
@@ -101,6 +101,7 @@ class TensorEquation(bc.Operator):
                     bc.WeaveMode.TILED if ax.uid in retained_uid_to_pos else ax
                     for ax in _factor_axes(factor)
                 ),
+                iverson_expr=_serialize_iverson(factor) if isinstance(factor, (IversonBinOp, IversonUnaryOp)) else None,
             )
             for factor in self.rhs
         )

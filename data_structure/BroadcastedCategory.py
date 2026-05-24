@@ -72,6 +72,7 @@ class Natural(Datatype):
 class Array[B:Datatype, A:sc.Axis](fd.Term):
     datatype: B
     _shape: fd.Prod[A] = ()
+    iverson_expr: str | None = None
     def shape(self) -> pc.ProdObject[A]:
         return pc.ProdObject(self._shape)
     
@@ -95,6 +96,7 @@ fd.register_enum(WeaveMode)
 class Weave[B: Datatype, A: sc.Axis](fd.Term):
     datatype: B
     _shape: fd.Prod[A | WeaveMode] = ()
+    iverson_expr: str | None = None
 
     def target(self) -> Array[B, A]:
         return Array[B, A](
@@ -102,7 +104,8 @@ class Weave[B: Datatype, A: sc.Axis](fd.Term):
             _shape=tuple(
                 axis for axis in self._shape
                 if not isinstance(axis, WeaveMode)
-            )
+            ),
+            iverson_expr=self.iverson_expr,
         )
     
     def select_degree[T](self, target: Iterable[T]) -> Iterable[T]:
@@ -147,7 +150,8 @@ class Weave[B: Datatype, A: sc.Axis](fd.Term):
             _shape=tuple(
                 next(other) if isinstance(axis, WeaveMode) else axis
                 for axis in self._shape
-            )
+            ),
+            iverson_expr=self.iverson_expr,
         )
     
 @dataclass(frozen=True)
