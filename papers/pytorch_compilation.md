@@ -17,20 +17,35 @@ can be executed:
 Python DSL (TensorDSL / operator constructors)
       │
       │  .bc_signature()
+      │    · IversonExpr AST retained in operator.rhs
       ▼
 Broadcasted[Datatype, Axis, Operator]        ← categorical representation
       │
       │  ConstructedModule.construct()
+      │    · materialise_iverson()           ← Iverson predicates whose axes
+      │        called per IversonExpr factor    carry concrete sizes are evaluated
+      │        with sized axes                  to float {0,1} tensors here and
+      │        → register_buffer(_mask_i)       stored as nn.Module buffers;
+      │      unsized axes → UserWarning,        unsized predicates fall through
+      │        caller must supply tensor        to the caller-provided path
       ▼
 torch.nn.Module (ConstructedModule subclass) ← executable PyTorch module
+      │  · Iverson buffers move with .to(device)
+      │  · forward() slots buffers into einsum alongside caller tensors
       │
       │  torch.compile  (optional)
+      │    · buffers appear as get_attr nodes (constants), not placeholders
       ▼
 Compiled kernel (Triton / C++)               ← optimised native code
 ```
 
 The first two stages are pure Python and live entirely in pyncd. The third
-stage is PyTorch's own compiler and is described briefly in Section 6.
+stage is PyTorch's own compiler and is described briefly in Section 7.
+Iverson materialisation is a sub-step of Stage 2: the `IversonExpr` AST
+travels through Stage 1 inside `operator.rhs` and is consumed at the top of
+Stage 2 by `ConstructedTensorEquation.__init__`. By the time `forward()` is
+called the predicate tensor is already a module buffer — it is never
+re-evaluated at runtime.
 
 ---
 
@@ -85,6 +100,37 @@ and `k` as the contracted axis:
 - `reindexings` → one `StrideCategory` per input, encoding which degree
   indices appear in that input's shape
 
+### Iverson predicates in `bc_signature()`
+
+When a tensor equation's RHS contains an inline predicate (e.g.
+`tl.Score[q, x] * (q <= x)`), the `RawAxis` comparison operators produce
+`IversonExpr` AST nodes at Python evaluation time — before `bc_signature()`
+is ever called:
+
+```python
+q <= x   # → IversonBinOp('<=', q, x)   via RawAxis.__le__
+```
+
+During `bc_signature()`, each factor in `operator.rhs` is inspected.
+`TensorRef` factors become `Reals()`-typed weaves as usual. `IversonExpr`
+factors are assigned a `Bool()`-typed `Weave` whose `_shape` contains only
+`TILED` slots — the predicate has no contracted axes of its own, only degree
+axes. Two things are stored on the weave for downstream use:
+
+- `iverson_expr` — a serialised string form of the AST (e.g. `"(i <= j)"`)
+  stored on the `Weave` for display by the `tsncd` visualiser.
+- The `IversonExpr` AST itself — retained in `target.operator.rhs`, not
+  discarded, so that Stage 2 can consume it.
+
+The AST travels through Stage 1 as a typed entry in `operator.rhs` and is
+consumed at the top of Stage 2 by `ConstructedTensorEquation.__init__`, which
+calls `materialise_iverson` to evaluate it into a float `{0, 1}` tensor. If
+every axis in the predicate carries a concrete integer size the tensor is
+built once at construction time and stored as an `nn.Module` buffer; if any
+axis is unsized a `UserWarning` is issued and the caller must supply the
+pre-built tensor at runtime. See Section 4.1 for the full materialisation
+machinery.
+
 ---
 
 ## 3. Stage 2 — `Broadcasted` to `nn.Module`: `ConstructedModule.construct()`
@@ -118,6 +164,12 @@ def construct_broadcasted(cls, target: cat.Broadcasted) -> ConstructedModule:
         raise NotImplementedError(...)
 ```
 
+For `TensorEquation` operators this dispatches to `ConstructedTensorEquation`,
+which is where any `IversonExpr` factors in `operator.rhs` are materialised
+into `nn.Module` buffers. The dispatch itself is unaware of Iverson predicates
+— all Iverson-specific logic lives inside `ConstructedTensorEquation.__init__`
+(Section 4.1).
+
 ---
 
 ## 4. The Operator Registry: `ConstructedModule` Subclasses
@@ -128,9 +180,10 @@ one Br operator type.
 ### 4.1 `ConstructedTensorEquation` — einsum contractions
 
 Handles `TensorEquation` operators: the core of the semiring algebra. Its
-`__init__` generates an einops contraction string and stores a `demote` flag
-for Bool outputs; its `forward` runs the einsum and applies Heaviside if
-needed.
+`__init__` generates an einops contraction string, stores a `demote` flag
+for Bool outputs, and auto-materialises any Iverson predicate factors whose
+axes have concrete sizes. Its `forward` fills in pre-built masks from buffers
+before calling `einops.einsum`, then applies Heaviside if needed.
 
 **Einsum signature generation** (`generate_tensor_equation_signature`,
 `torch_compile.py:217`):
@@ -143,17 +196,81 @@ needed.
    positions and contracted tags at `Axis` positions.
 4. The result is an einops string such as `"... y0 x0, ... x0 y1 -> ... y0 y1"`.
 
+**Iverson materialisation** (`torch_compile/materialise.py`):
+
+When a `TensorEquation` RHS contains an inline Iverson factor (e.g. `q <= x`),
+`__init__` calls `materialise_iverson` to evaluate the predicate expression
+tree into a concrete float `{0, 1}` tensor and stores it as an `nn.Module`
+buffer. The buffer moves to the correct device automatically with `.to(device)`.
+
+If any axis in the Iverson expression has no concrete integer size, a
+`UserWarning` is issued and the factor falls through to the caller-provided
+path — the caller must pass the pre-built tensor at that position in `*xs`.
+
 ```python
 class ConstructedTensorEquation(ConstructedModule, operation_key=cat.TensorEquation):
     def __init__(self, target):
         self.signature = generate_tensor_equation_signature(target)
         self.demote    = isinstance(target.output_weaves[0].datatype, cat.Bool)
+        # _factor_slots[i]: buffer name if Iverson is auto-materialised, else None
+        self._factor_slots = []
+        for i, factor in enumerate(target.operator.rhs):
+            if isinstance(factor, TensorRef):
+                self._factor_slots.append(None)
+            else:
+                try:
+                    buf = materialise_iverson(factor)
+                    self.register_buffer(f'_mask_{i}', buf)
+                    self._factor_slots.append(f'_mask_{i}')
+                except ValueError:
+                    warnings.warn(...)   # unsized axis — caller must supply
+                    self._factor_slots.append(None)
+        self._caller_positions = [i for i, s in enumerate(self._factor_slots) if s is None]
 
     def forward(self, *xs):
-        result = einops.einsum(*xs, self.signature)
+        caller_idx = 0
+        full_tensors = []
+        for slot in self._factor_slots:
+            if slot is not None:
+                full_tensors.append(getattr(self, slot))  # pre-built buffer
+            else:
+                full_tensors.append(xs[caller_idx])       # caller-provided
+                caller_idx += 1
+        result = einops.einsum(*full_tensors, self.signature)
         if self.demote:
-            return (result > 0).to(result.dtype)   # Heaviside for Bool output
+            return (result > 0).to(result.dtype)          # Heaviside for Bool output
         return result
+```
+
+**Example — sized axes, Iverson auto-materialised:**
+
+```python
+from data_structure.TensorDSL import TL, real_axis
+
+q = real_axis('q', 4)   # _size = Integer(4)
+x = real_axis('x', 4)
+tl = TL()
+tl.Attn[q, x] = tl.Score[q, x] * (q <= x)
+
+module = ConstructedModule.construct(tl.bc_signature())
+# _mask_1 registered as buffer: [[1,1,1,1],[0,1,1,1],[0,0,1,1],[0,0,0,1]]
+# Caller supplies only Score — no Mask argument needed:
+result = module(Score)   # shape (4, 4)
+```
+
+**Example — unsized axes, caller provides Mask:**
+
+```python
+from data_structure.TensorDSL import TL, axes
+
+q, x = axes('q x')   # no size — materialisation deferred
+tl = TL()
+tl.Attn[q, x] = tl.Score[q, x] * (q <= x)
+
+module = ConstructedModule.construct(tl.bc_signature())
+# UserWarning: RHS factor 1 has unsized axes — pass it as caller input
+Mask = torch.triu(torch.ones(n, n))   # built by caller
+result = module(Score, Mask)          # Mask passed explicitly
 ```
 
 ### 4.2 `ConstructedEinops` — axis rearrangement with contraction
@@ -213,9 +330,15 @@ instances. The function is looked up in `functions_registry` and wrapped by
 
 ## 5. Broadcasting: `broadcast_func()`
 
-Every `ConstructedModule` wraps its core function with `broadcast_func()`
-(`torch_compile.py:170`), which selects a broadcasting strategy by inspecting
-the `Broadcasted` morphism's `reindexings`.
+`ConstructedTensorEquation` and `ConstructedEinops` encode broadcasting
+structurally in their einops signature strings — the tag assignments produced
+by `generate_tensor_equation_signature()` and `generate_einops_signature()`
+determine which inputs contain which degree axes, and einops handles the
+implicit broadcast. The other operator subclasses (`Lambda`,
+`ConstructedLinear`, `ConstructedEmbedding`, `ConstructedNorm`) each wrap
+their core function with `broadcast_func()` (`torch_compile.py:170`), which
+selects a broadcasting strategy by inspecting the `Broadcasted` morphism's
+`reindexings`.
 
 ### The four strategies
 
@@ -356,11 +479,11 @@ that comparison operators produce these AST nodes directly:
 q <= x   # → IversonBinOp('<=', q, x)
 ```
 
-The predicate AST is consumed during `bc_signature()` to determine which input
-weaves carry `Bool()` datatypes, then serialised to a string (`iverson_expr`)
-stored on the `Weave` for display by `tsncd`. By the time
-`ConstructedTensorEquation` is constructed the predicate structure is gone;
-only the `demote` flag remains.
+During `bc_signature()`, the AST determines which input weaves carry `Bool()`
+datatypes and is serialised to a string (`iverson_expr`) stored on the `Weave`
+for display by `tsncd`. The AST is **retained** in `target.operator.rhs` and
+consumed by `ConstructedTensorEquation.__init__` to materialise the predicate
+tensor (see below).
 
 Tensors are declared as predicate-valued via `TL.predicate()`:
 
@@ -372,6 +495,58 @@ tl.Out[i, j] = tl.A[i, k] * tl.B[k, j]
 bc_sig = tl.bc_signature()      # output_weaves[0].datatype == Bool()
 ```
 
+### Iverson materialisation
+
+When an inline Iverson factor appears in the RHS (e.g. `tl.Score[q,x] * (q <= x)`),
+`ConstructedTensorEquation.__init__` calls `materialise_iverson`
+(`torch_compile/materialise.py`) to evaluate the expression tree into a
+concrete float `{0, 1}` tensor at module construction time.
+
+`materialise_iverson` works as follows:
+
+1. `_iverson_axes(factor)` collects all `RawAxis` leaves in **left-before-right
+   DFS order**, including duplicates for repeated axes. Each leaf becomes one
+   independent positional dimension.
+2. One `torch.arange` grid tensor is built per leaf, shaped so that only
+   dimension `i` is non-unit for the `i`-th leaf.
+3. `_eval` traverses the AST in the same DFS order, consuming grids one per
+   `RawAxis` leaf via an iterator. PyTorch broadcasting expands the per-leaf
+   tensors to the full shape automatically when they are combined.
+4. Comparison operators produce `float()` tensors of `{0.0, 1.0}`.
+
+**Repeated axes and the diagonal trace.** An axis appearing more than once in
+the predicate (e.g. `(q < x) & (x < k)` has `x` at two leaves) gets two
+independent grid dimensions. The einops signature emits the same tag twice
+(`x0 x0`), which contracts along the diagonal — correctly computing
+`∑_x [(q<x) & (x<k)]`. The tensor for `axes = (q, x, x, k)` has shape
+`(Q, X, X, K)` with `T[q, x1, x2, k] = [(q < x1) & (x2 < k)]`:
+
+```python
+q = real_axis('q', 3); x = real_axis('x', 4); k = real_axis('k', 5)
+t = materialise_iverson((q < x) & (x < k))
+# t.shape == (3, 4, 4, 5)
+# t[qi, x1, x2, ki] == float((qi < x1) and (x2 < ki))
+```
+
+**Supported expression nodes:**
+
+| Node | Evaluation |
+| --- | --- |
+| `RawAxis` | next positional grid (consumes from iterator) |
+| `IversonConst(Integer(v))` | `torch.tensor(float(v))` |
+| `IversonBinOp('<' / '<=' / '>' / '>=' / '==')` | `(l op r).float()` |
+| `IversonBinOp('+' / '-' / '*')` | `l op r` (arithmetic) |
+| `IversonBinOp('&' / '\|')` | `(l.bool() op r.bool()).float()` |
+| `IversonUnaryOp('abs' / '-' / 'not')` | `.abs()` / `-v` / `(~v.bool()).float()` |
+
+**Sized vs unsized axes.** If every `RawAxis` leaf has `_size: nm.Integer`,
+the tensor is built at `__init__` time and stored as a named buffer
+(`_mask_{i}` where `i` is the factor's position in `rhs`). The buffer moves
+to the correct device automatically with `.to(device)`. If any axis is unsized
+(`_size: nm.FreeNumeric`), a `UserWarning` is issued and the factor falls
+through to the caller-provided path — the caller must pass the pre-built tensor
+at that position in `*xs`.
+
 ### Runtime level: Heaviside demotion
 
 The bool semiring uses real arithmetic for the contraction and applies a
@@ -379,7 +554,7 @@ post-hoc threshold. `ConstructedTensorEquation.__init__` sets
 `self.demote = isinstance(output_weaves[0].datatype, Bool)`. In `forward`:
 
 ```python
-result = einops.einsum(*xs, self.signature)
+result = einops.einsum(*full_tensors, self.signature)
 if self.demote:
     return (result > 0).to(result.dtype)   # H(x) = (x > 0)
 ```
@@ -390,17 +565,21 @@ positive, matching the `∃`-semantics of contraction in the Bool semiring.
 
 ### What the FX graph looks like
 
-Dynamo specialises on `self.demote`. The `demote=True` graph:
+Dynamo specialises on `self.demote`. With a pre-materialised mask registered
+as a buffer, the mask appears as a `get_attr` node rather than a `placeholder`
+— it is a module constant, not a runtime input. The `demote=True` graph for
+`Score[q,x] * [q<=x]` with sized axes:
 
 ```text
-placeholder:   x0
-placeholder:   x1
-call_function: einsum  [aten.einsum, ("... i x0, ... x0 j -> ... i j", [x0, x1])]
-call_function: gt      [aten.gt,     (einsum, 0)]
-call_function: to      [aten.to,     (gt, dtype)]
+get_attr:      mask   [_mask_1, shape (Q, X)]
+placeholder:   score  [shape (Q, X)]
+call_function: einsum [aten.einsum, ("... y0 y1, ... y0 y1 -> ... y0 y1", [score, mask])]
+call_function: gt     [aten.gt, (einsum, 0)]
+call_function: to     [aten.to, (gt, dtype)]
 output:        to
 ```
 
+With unsized axes (caller-provided mask), `mask` becomes a `placeholder` instead.
 The `demote=False` graph ends at `einsum`. Inductor can fuse `gt` and `to`
 into the einsum epilogue for small contractions; for large matrix multiplies
 it delegates the einsum to cuBLAS and emits a separate pointwise kernel.
@@ -408,14 +587,17 @@ it delegates the einsum to cuBLAS and emits a separate pointwise kernel.
 ### Full mapping: symbolic → runtime → compiler
 
 ```text
-pyncd symbolic object         Runtime PyTorch        Compiler handling
-──────────────────────────    ──────────────────────  ──────────────────────────────
-Bool()  marker datatype   →   (no tensor)         →  EQUALS_MATCH guard on demote
-IversonBinOp  AST node    →   (discarded)         →  not in FX graph
-iverson_expr  string      →   (metadata for tsncd)→  not in FX graph
-self.demote = True        →   if-branch taken     →  specialised; two cached kernels
-einops.einsum(…)          →   aten.einsum         →  Reduction or ExternKernel
-(result > 0).to(dtype)   →   aten.gt + aten.to   →  fused into einsum epilogue
+pyncd symbolic object           Runtime PyTorch         Compiler handling
+────────────────────────────    ───────────────────────  ──────────────────────────────
+Bool()  marker datatype     →   (no tensor)          →  EQUALS_MATCH guard on demote
+IversonBinOp  AST node      →   materialise_iverson  →  get_attr (buffer) in FX graph
+  (all axes sized)                → register_buffer
+IversonBinOp  AST node      →   (caller supplies)    →  placeholder in FX graph
+  (any axis unsized)
+iverson_expr  string        →   (metadata for tsncd) →  not in FX graph
+self.demote = True          →   if-branch taken      →  specialised; two cached kernels
+einops.einsum(…)            →   aten.einsum          →  Reduction or ExternKernel
+(result > 0).to(dtype)     →   aten.gt + aten.to    →  fused into einsum epilogue
 ```
 
 ---
@@ -429,37 +611,46 @@ asymmetric broadcasting, and composition of two `Broadcasted` morphisms.
 ### The equations
 
 ```text
-Gate[b, i, j]  =  [∃k : A[b,i,k] ∧ A[b,k,j]]  ∧  Mask[i, j]    (Bool output)
-Y[b, i, d]     =  Σ_j  Gate[b, i, j] · V[b, j, d]              (Reals output)
+Gate[b, i, j]  =  [∃k : A[b,i,k] ∧ A[b,k,j]]  ∧  [i ≤ j]    (Bool output)
+Y[b, i, d]     =  Σ_j  Gate[b, i, j] · V[b, j, d]            (Reals output)
 ```
 
-`Mask[i, j]` carries the Iverson predicate `[i ≤ j]` (causal masking). In the
-DSL:
+The causal mask `[i ≤ j]` is expressed as an inline Iverson predicate rather
+than a named tensor. Because `i` and `j` have concrete sizes, it will be
+auto-materialised as a module buffer at construction time — the caller never
+needs to supply it.
 
 ```python
 tl = TL()
-b, i, j, k, d = axes('b i j k d')
+b = real_axis('b', 8)
+i = real_axis('i', 16)   # concrete size → Iverson auto-materialised
+j = real_axis('j', 16)
+k, d = axes('k d')       # unsized (contracted / output feature dim)
 
 tl.A.predicate(b, i, k)       # Bool adjacency
-tl.Mask.predicate(i, j)       # Bool causal mask, iverson_expr = "i <= j"
-tl.Gate.predicate(b, i, j)    # Bool output of Stage 1
+tl.Gate.predicate(b, i, j)    # Bool output of Gate equation
 # tl.V and tl.Y are Reals (default)
 
-tl.Gate[b, i, j] = tl.A[b, i, k] * tl.A[b, k, j] * tl.Mask[i, j]
+tl.Gate[b, i, j] = tl.A[b, i, k] * tl.A[b, k, j] * (i <= j)
 tl.Y[b, i, d]    = tl.Gate[b, i, j] * tl.V[b, j, d]
 ```
+
+`(i <= j)` is an `IversonBinOp('<=', i, j)` node. Because both `i` and `j`
+carry `_size = Integer(16)`, `ConstructedTensorEquation.__init__` calls
+`materialise_iverson(i <= j)` at construction time, producing a `(16, 16)`
+upper-triangular float tensor, and registers it as buffer `_mask_2`.
 
 ### Overall pipeline
 
 ```mermaid
 flowchart TD
-    DSL["Python DSL\ntl.Gate = A * A * Mask\ntl.Y = Gate * V"]
-    BC1["Broadcasted Stage 1\nop=TensorEquation, degree=(b,i,j)\ninputs: A, A, Mask  output: Gate (Bool)"]
-    BC2["Broadcasted Stage 2\nop=TensorEquation, degree=(b,i,d)\ninputs: Gate, V  output: Y (Reals)"]
-    CM1["ConstructedTensorEquation\nsignature='... y0 y1 x0, ... y0 x0 y2, ... y1 y2 -> ... y0 y1 y2'\ndemote=True"]
+    DSL["Python DSL\ntl.Gate = A * A * (i<=j)\ntl.Y = Gate * V"]
+    BC1["Gate morphism (Broadcasted)\nop=TensorEquation, degree=(b,i,j)\ninputs: A, A, IversonBinOp  output: Gate (Bool)"]
+    BC2["Y morphism (Broadcasted)\nop=TensorEquation, degree=(b,i,d)\ninputs: Gate, V  output: Y (Reals)"]
+    CM1["ConstructedTensorEquation\nsignature='... y0 y1 x0, ... y0 x0 y2, ... y1 y2 -> ... y0 y1 y2'\ndemote=True\n_mask_2 registered as buffer"]
     CM2["ConstructedTensorEquation\nsignature='... y0 y1 x0, ... y0 x0 y2 -> ... y0 y1 y2'\ndemote=False"]
-    COMP["ConstructedComposed\nnn.Sequential(stage1, stage2)"]
-    FX["torch.compile → two FX subgraphs\neinsum → gt → to  (stage 1)\neinsum            (stage 2)"]
+    COMP["ConstructedComposed\nnn.Sequential(gate_module, y_module)"]
+    FX["torch.compile → two FX subgraphs\neinsum → gt → to  (Gate)\neinsum            (Y)"]
 
     DSL -->|"tl.bc_signature()"| BC1
     DSL -->|"tl.bc_signature()"| BC2
@@ -470,14 +661,14 @@ flowchart TD
     COMP --> FX
 ```
 
-### Stage 1 — `bc_signature()`
+### Gate equation — `bc_signature()`
 
-`Gate[b,i,j] = A[b,i,k] * A[b,k,j] * Mask[i,j]` has degree `(b, i, j)` and
-contracted axis `k`. The Iverson predicate `"i <= j"` on `Mask` was serialised
-into `iverson_expr` at declaration time. During `bc_signature()` it sets
-`Mask`'s weave datatype to `Bool()`, then the AST is discarded — by the time
-`ConstructedTensorEquation` is constructed, only the `Bool()` datatype on the
-weave remains.
+`Gate[b,i,j] = A[b,i,k] * A[b,k,j] * (i<=j)` has degree `(b, i, j)` and
+contracted axis `k`. During `bc_signature()`, the inline Iverson factor
+`(i <= j)` is assigned a `Bool()` datatype and its serialised form is stored in
+`iverson_expr` on the weave for display by `tsncd`. Unlike a named `Mask`
+tensor, the Iverson AST is retained in `target.operator.rhs` and later
+consumed by `materialise_iverson` at construction time.
 
 ```mermaid
 graph LR
@@ -492,7 +683,7 @@ graph LR
     subgraph "input_weaves"
         A1["A₁: Weave(Bool, TILED, TILED, k)\n→ imprint gives (b, i, k)"]
         A2["A₂: Weave(Bool, TILED, k, TILED)\n→ imprint gives (b, k, j)"]
-        M["Mask: Weave(Bool, TILED, TILED)\n→ imprint gives (i, j)\niverson_expr = 'i <= j'"]
+        M["IversonBinOp('<=', i, j): Weave(Bool, TILED, TILED)\n→ imprint gives (i, j)\niverson_expr = '(i <= j)'\n→ auto-materialised: (16,16) upper-triangular buffer"]
     end
     subgraph "output_weave"
         Gate["Gate: Weave(Bool, TILED, TILED, TILED)\n→ imprint gives (b, i, j)"]
@@ -508,7 +699,7 @@ graph LR
     k_ax --> A2
 ```
 
-### Stage 1 — einsum signature generation
+### Gate equation — einsum signature
 
 `generate_tensor_equation_signature()` assigns tags by axis UID identity: the
 same `Axis` object always gets the same tag regardless of which weave it appears
@@ -548,70 +739,80 @@ Full signature: `"... y0 y1 x0, ... y0 x0 y2, ... y1 y2 -> ... y0 y1 y2"`.
 
 The `...` is the einops ellipsis: it matches any extra leading batch dimensions beyond those pyncd explicitly names. `Mask`'s slot is `... y1 y2` (no `y0`) because `b` is absent from its weave; the `...` matches zero dimensions there and einops broadcasts Mask over `b` automatically.
 
-### Stage 1 — broadcasting strategy
+### Gate equation — broadcasting
 
-`broadcast_func()` must decide how to lift the core einsum over the degree axes
-`(b, i, j)`. It does this by inspecting each input's **reindexing** — the map
-from degree positions to that input's axis positions:
+`generate_tensor_equation_signature()` asserts `is_mappable_broadcast(target)` —
+a structural check that all reindexings are order-preserving injections — then
+uses each input's reindexing `η` to select which degree tags appear in that
+input's signature slot:
 
-| Input | Degree axes present  | Degree pos → input pos |
-|-------|----------------------|------------------------|
-| A₁    | b (pos 0), i (pos 1) | 0→0, 1→1               |
-| A₂    | b (pos 0), j (pos 2) | 0→0, 2→1               |
-| Mask  | i (pos 1), j (pos 2) | 1→0, 2→1               |
+| Input | Degree axes present  | Degree pos → input pos | Signature slot  |
+|-------|----------------------|------------------------|-----------------|
+| A₁    | b (pos 0), i (pos 1) | 0→0, 1→1               | `... y0 y1 x0`  |
+| A₂    | b (pos 0), j (pos 2) | 0→0, 2→1               | `... y0 x0 y2`  |
+| Mask  | i (pos 1), j (pos 2) | 1→0, 2→1               | `... y1 y2`     |
 
-The check is whether each mapping is **order-preserving and injective**: degree
-axes appear in the same relative order inside the input tensor (no axis is
-repeated or swapped). The diagram below traces this check for each input; all
-three pass, so `is_semantically_broadcastable()` returns `True` and the cheapest
-strategy — no `vmap` — is selected.
+Mask omits `b`, so its slot is `... y1 y2` with no `y0`. The einops ellipsis
+`...` matches zero batch dimensions for Mask specifically; einops broadcasts it
+over the `b` dimension automatically when it aligns tensors for the contraction.
+No explicit reshaping or vmap is involved — the broadcast is entirely declarative,
+expressed in the tag assignment and resolved by einops at runtime.
 
-```mermaid
-flowchart TD
-    A["Inspect reindexings for each input"]
-    Q1{"A₁: degree positions (b=0, i=1)\nmapped to input positions (0, 1)"}
-    Q2{"A₂: degree positions (b=0, j=2)\nmapped to input positions (0, 2)"}
-    Q3{"Mask: degree positions (i=1, j=2)\nmapped to input positions (0, 1)"}
-    SEM["Semantic broadcasting\nunsqueeze_guide(Mask) → (1, I, J)\nbroadcasts over b\ncall einops.einsum directly — no vmap"]
-
-    A --> Q1
-    Q1 -->|"✓ order-preserving"| Q2
-    Q2 -->|"✓ order-preserving"| Q3
-    Q3 -->|"✓ injective, order-preserving"| SEM
-```
-
-Instead, `unsqueeze_guide()` computes the `unsqueeze` positions needed to align
-each input's axes with the degree. Mask is the interesting case: it has no `b`
-axis, so a unit dimension is inserted at position 0, giving shape `(1, I, J)`.
-PyTorch then broadcasts that dimension over `b` during the einsum. A₁ and A₂
-already have their degree axes in the right positions and need no reshaping.
-
-The alternative — `vmap` — would be used when any reindexing is non-injective
-or out-of-order (e.g. an input reuses a degree axis, or its axes appear in
-a different order than the degree). `vmap` handles the general case but adds
-overhead; semantic broadcasting avoids it entirely when the structure permits.
-
-### Stage 1 — `ConstructedTensorEquation` and Bool demotion
+### Gate equation — construction
 
 ```python
 class ConstructedTensorEquation(ConstructedModule, operation_key=cat.TensorEquation):
     def __init__(self, target):
         self.signature = "... y0 y1 x0, ... y0 x0 y2, ... y1 y2 -> ... y0 y1 y2"
         self.demote    = True   # output_weaves[0].datatype == Bool()
+        # factor 0: TensorRef(A)  → None (caller supplies)
+        # factor 1: TensorRef(A)  → None (caller supplies)
+        # factor 2: IversonBinOp('<=', i, j), both sized → auto-materialise
+        self._factor_slots     = [None, None, '_mask_2']
+        self._caller_positions = [0, 1]
+        self.register_buffer('_mask_2', materialise_iverson(i <= j))
+        # _mask_2: shape (16, 16), upper-triangular {0,1} float tensor
 
-    def forward(self, a1, a2, mask):
-        result = einops.einsum(a1, a2, mask, self.signature)
+    def forward(self, a1, a2):          # only A tensors — no mask argument
+        full_tensors = [a1, a2, self._mask_2]
+        result = einops.einsum(*full_tensors, self.signature)
         # result[b,i,j] = Σ_k  a1[b,i,k] * a2[b,k,j] * mask[i,j]
-        # Bool semiring: > 0  iff  ∃k where both adjacencies hold AND mask[i,j]=1
+        # Bool semiring: > 0  iff  ∃k where both hold AND i<=j
         return (result > 0).to(result.dtype)
 ```
 
-The Iverson predicate `[i ≤ j]` has completely vanished from the computational
-graph. Its only lasting effect is that `mask` is a 0/1 tensor materialised
-before this module is called; it participates in the real-valued sum like any
-other factor.
+**How `materialise_iverson` evaluates `i <= j`:**
 
-### Stage 2 — `bc_signature()` and construction
+`_iverson_axes(IversonBinOp('<=', i, j))` walks the AST left-before-right and
+collects the two `RawAxis` leaves in order: `[i, j]`. Both have
+`_size = Integer(16)`, so materialisation proceeds without error.
+
+One grid tensor is built per leaf, shaped so only its own dimension is non-unit:
+
+```python
+i_grid = torch.arange(16).float().reshape(16, 1)   # shape (16,  1)
+j_grid = torch.arange(16).float().reshape( 1, 16)  # shape ( 1, 16)
+```
+
+`_eval` traverses the AST, consuming grids from an iterator. For
+`IversonBinOp('<=', i, j)` it reads `l = i_grid` (16×1) and `r = j_grid`
+(1×16), then returns `(l <= r).float()`. PyTorch broadcasts the two tensors to
+shape (16, 16), and entry `[r, c]` equals `float(r <= c)` — an upper-triangular
+matrix of ones:
+
+```text
+[[1, 1, 1, …, 1],
+ [0, 1, 1, …, 1],
+ [0, 0, 1, …, 1],
+ …
+ [0, 0, 0, …, 1]]
+```
+
+This tensor is registered as `_mask_2` and never recomputed. The `forward`
+method slots it between the two `A` tensors in `full_tensors` and passes all
+three to `einops.einsum`.
+
+### Y equation — `bc_signature()` and construction
 
 `Y[b,i,d] = Gate[b,i,j] * V[b,j,d]` is structurally a batched matmul. Gate is
 now a `Weave(Bool, (TILED, TILED, j))` — Bool-typed input, Reals output.
@@ -634,64 +835,65 @@ demote    = False    (output_weaves[0].datatype == Reals())
 graph LR
     A1i["A  [B×I×K]"]
     A2i["A  [B×K×J]"]
-    Mi["Mask  [I×J]\n(iverson: i ≤ j)"]
+    BUF["_mask_2  [I×J]  buffer\n(i<=j, materialised at init)"]
     Vi["V  [B×J×D]"]
 
-    A1i --> Stage1
-    A2i --> Stage1
-    Mi  --> Stage1
+    A1i --> GateMod
+    A2i --> GateMod
+    BUF -->|"getattr (not placeholder)"| GateMod
 
-    subgraph Stage1["Stage 1 — ConstructedTensorEquation  demote=True"]
+    subgraph GateMod["Gate — ConstructedTensorEquation  demote=True"]
         E1["einops.einsum\n... y0 y1 x0, ... y0 x0 y2, ... y1 y2 → ..."]
         HV["Heaviside  (result > 0)"]
         E1 --> HV
     end
 
-    HV -->|"Gate  [B×I×J]  Bool 0/1 float"| Stage2
+    HV -->|"Gate  [B×I×J]  Bool 0/1 float"| YMod
 
-    subgraph Stage2["Stage 2 — ConstructedTensorEquation  demote=False"]
+    subgraph YMod["Y — ConstructedTensorEquation  demote=False"]
         E2["einops.einsum\n... y0 y1 x0, ... y0 x0 y2 → ..."]
     end
 
-    Vi --> Stage2
-    Stage2 --> Yi["Y  [B×I×D]  Reals"]
+    Vi --> YMod
+    YMod --> Yi["Y  [B×I×D]  Reals"]
 ```
 
 The `forward` loop in `ConstructedComposed` threads the tuple `(gate,)` out of
-Stage 1 into Stage 2 together with `V`, which is passed through from the
-top-level input partition.
+the Gate module into the Y module together with `V`. The caller passes only
+`(A, A, V)` — the mask is never a runtime argument.
 
 ### FX graphs after `torch.compile`
 
 Dynamo specialises on each module's `self.demote` flag independently, producing
 two compiled subgraphs.
 
-**Stage 1 FX graph** (`demote=True`):
+**Gate FX graph** (`demote=True`, mask auto-materialised as buffer):
 
 ```mermaid
 graph TD
     P1["placeholder: a1  [B I K]"]
     P2["placeholder: a2  [B K J]"]
-    P3["placeholder: mask  [I J]"]
-    E["call_function: aten.einsum\nargs: signature, a1, a2, mask"]
+    GA["get_attr: _mask_2  [I J]\n(module buffer — not a runtime input)"]
+    E["call_function: aten.einsum\nargs: signature, a1, a2, _mask_2"]
     GT["call_function: aten.gt\nargs: einsum_result, 0"]
     TO["call_function: aten.to\nargs: gt_result, dtype=float32"]
     OUT["output: gate"]
 
     P1 --> E
     P2 --> E
-    P3 --> E
+    GA --> E
     E --> GT
     GT --> TO
     TO --> OUT
 ```
 
+The mask is a `get_attr` node — Dynamo inlines the buffer as a constant.
 Inductor can fuse `gt` and `to` into the epilogue of the reduction kernel when
 the einsum is lowered as a `Reduction` node. For large tensors it may delegate
 to cuBLAS and emit a separate pointwise kernel — at most one extra memory
 round-trip.
 
-**Stage 2 FX graph** (`demote=False`):
+**Y FX graph** (`demote=False`):
 
 ```mermaid
 graph TD
@@ -709,19 +911,26 @@ graph TD
 
 | Complexity | matmul | this example |
 | --- | --- | --- |
-| Number of inputs | 2 | 3 (Stage 1), 2 (Stage 2) |
+| Number of inputs | 2 | 3 (Gate), 2 (Y) |
 | Datatypes | uniform Reals | Bool inputs, Bool→Reals handoff |
-| Iverson predicate | none | `iverson_expr = "i <= j"` on Mask |
+| Iverson predicate | none | `(i <= j)` inline; auto-materialised as buffer |
 | Broadcasting | symmetric | asymmetric — Mask missing `b` |
-| Heaviside demotion | never | Stage 1 only |
+| Heaviside demotion | never | Gate only |
 | FX subgraphs | 1 | 2 (separate `demote` specialisations) |
 | Composition | none | `ConstructedComposed` with partition |
 
-The Iverson predicate's contribution to compilation is entirely structural: it
-annotates `Mask`'s weave with `Bool()` at DSL time, which flows into
-`output_weaves[0].datatype == Bool()` in Stage 1, which sets `demote=True`,
-which Dynamo specialises on to produce the `gt → to` epilogue. The expression
-`"i <= j"` itself never appears in any PyTorch op.
+The Iverson predicate's contributions to compilation are:
+
+- **Buffer materialisation**: `(i <= j)` is evaluated once at construction time
+  as a `(16, 16)` float tensor and stored as `_mask_2`. The expression never
+  appears in any PyTorch op or runtime argument.
+- **Bool input annotation**: the Iverson factor's weave carries `Bool()`,
+  recording predicate semantics for display by `tsncd`.
+
+The Bool **output** — which drives `demote=True` and the Heaviside epilogue —
+comes from `tl.Gate.predicate(b, i, j)`, not from the inline Iverson factor.
+Dynamo specialises on `demote` to produce two separate cached kernels: one with
+the `gt → to` epilogue for Gate, one without for Y.
 
 ---
 

@@ -54,127 +54,32 @@ The full design record is in `docs/bool_semiring_extension.md`.
 - `tsncd/src/display/Framework/Operations/additionalOperationBoxes.ts` —
   `TensorEquationBox` registered for `TensorEquation`; renders `∃` for
   Bool-output, `Σ` for Reals-output
+- `torch_compile/materialise.py` — **new file**: `materialise_iverson` evaluates
+  an `IversonExpr` tree to a float `{0,1}` tensor; `_eval` traverses the AST in
+  left-before-right DFS order (matching `_iverson_axes`), consuming one
+  positional grid tensor per `RawAxis` leaf via an iterator
+- `torch_compile/torch_compile.py` — `ConstructedTensorEquation` updated:
+  `__init__` populates `_factor_slots` and `_caller_positions`; Iverson factors
+  with all-sized axes are auto-materialised via `materialise_iverson` and stored
+  as named buffers (`_mask_{i}`); unsized axes emit `UserWarning` and fall
+  through to caller-provided path; `forward` uses a counter over `_factor_slots`
+  instead of `iter(xs)` for `torch.compile` transparency
+- `tests/test_torch_compile.py` — 9 new tests: `test_materialise_upper_triangular`,
+  `test_materialise_diagonal`, `test_materialise_banded`,
+  `test_materialise_compound`, `test_materialise_free_axis_raises`,
+  `test_auto_materialise_shape`, `test_auto_materialise_values`,
+  `test_auto_materialise_buffer_registered`, `test_auto_materialise_bool_output`;
+  298 total tests pass
+- `papers/pytorch_compilation.md` — Section 4.1 updated with `_factor_slots`
+  machinery and sized/unsized examples; Section 8 corrected (AST not discarded;
+  new Iverson materialisation subsection added); Section 9 worked example updated
+  to use inline `(i <= j)` predicate with sized axes and buffer-based FX graph
 
 ---
 
 ## Remaining tasks
 
-### 1. Iverson materialisation in `torch_compile` (highest priority)
-
-`ConstructedTensorEquation.forward(*xs)` already accepts one tensor per RHS
-factor. The missing step is generating the Bool input tensor automatically from
-an `IversonExpr` tree, so callers don't have to pre-build it.
-
-#### Design
-
-The same axis can appear at multiple leaves of the expression tree (e.g.
-`(q < x) & (x < k)` has `x` at two leaves). `_factor_axes` returns axes in
-DFS order including duplicates: `(q, x, x, k)`. The weave built by
-`bc_signature` preserves these slots, so `generate_tensor_equation_signature`
-emits `x0 x0` for the two `x` slots. `einops.einsum` interprets `x0 x0` in
-one tensor as a diagonal trace, contracting only `T[..., x, x, ...]` over `x`.
-
-For the trace to give the correct predicate value, each occurrence of `x` must
-be an **independent positional dimension**. That is, the materialised tensor
-for `axes = (q, x, x, k)` has shape `(size_q, size_x, size_x, size_k)`, and
-`T[q, x1, x2, k] = [(q < x1) & (x2 < k)]`. The diagonal `x1 = x2 = x` is
-then `[(q < x) & (x < k)]`, and the einops trace contracts it correctly.
-
-No changes to `_factor_axes` or `_iverson_axes` are needed.
-
-#### `materialise_iverson(factor, axes) -> torch.Tensor`
-
-File: `torch_compile/torch_compile.py`
-
-`axes` is `_factor_axes(factor)` — DFS-ordered axis slots, possibly with
-duplicate UIDs. The function:
-
-1. Validates every `ax._size` is `nm.Integer`; raises `ValueError` for free
-   axes (caller must pre-materialise).
-2. Builds `n = len(axes)` positional coord tensors: `grids[i]` has shape
-   `(1, ..., size_i, ..., 1)` with `size_i` at dimension `i` only.
-3. Creates `grid_iter = iter(grids)`.
-4. Evaluates the expression tree with a nested `_eval(expr)` that dispatches
-   on node type:
-
-   | Node | Result |
-   | --- | --- |
-   | `RawAxis` | `next(grid_iter)` — consumes next positional coord |
-   | `IversonConst(Integer(v))` | `torch.tensor(float(v))` (0-D scalar) |
-   | `IversonBinOp('<'/'<='/'>'/>='/'==')` | `(eval(l) op eval(r)).float()` |
-   | `IversonBinOp('+'/'-'/'*')` | `eval(l) op eval(r)` |
-   | `IversonBinOp` (logical `&` / `or`) | `(eval(l).bool() op eval(r).bool()).float()` |
-   | `IversonUnaryOp('abs')` | `eval(operand).abs()` |
-   | `IversonUnaryOp('-')` | `-eval(operand)` |
-   | `IversonUnaryOp('not')` | `(~eval(operand).bool()).float()` |
-
-   `_eval` traverses left-before-right (same DFS order as `_factor_axes`), so
-   the i-th `RawAxis` leaf consumes `grids[i]`. PyTorch broadcasting expands
-   the positional tensors to the full shape automatically when they are
-   combined.
-
-**Worked example — `(q < x) & (x < k)`, `axes = (q, x, x, k)`, sizes 3, 4, 4, 5:**
-
-- `grids = [(3,1,1,1), (1,4,1,1), (1,1,4,1), (1,1,1,5)]`
-- `q < x` → `grids[0] < grids[1]` → shape `(3,4,1,1)`
-- `x < k` → `grids[2] < grids[3]` → shape `(1,1,4,5)`
-- `&` → broadcasts to shape `(3,4,4,5)`; `T[q,x1,x2,k] = [(q<x1) & (x2<k)]`
-- einops `y0 x0 x0 y1` traces over diagonal → `∑_x [(q<x) & (x<k)]` ✓
-
-#### Changes to `ConstructedTensorEquation`
-
-`__init__`: iterate `target.operator.rhs`. For each factor at position `i`:
-
-- `TensorRef` → append `None` to `self._factor_slots`
-- Iverson with all `nm.Integer` axes → call `materialise_iverson`, call
-  `self.register_buffer(f'_mask_{i}', tensor)`, append `f'_mask_{i}'`
-- Iverson with any free axis → append `None` (caller must pre-provide)
-
-`forward`:
-
-```python
-xs_iter = iter(xs)
-full_tensors = [
-    getattr(self, slot) if slot is not None else next(xs_iter)
-    for slot in self._factor_slots
-]
-result = einops.einsum(*full_tensors, self.signature)
-if self.demote:
-    return (result > 0).to(result.dtype)
-return result
-```
-
-Backward-compatible: free-axis equations (all existing tests) have all
-`_factor_slots = None`, so `forward` consumes every tensor from `*xs` as
-before.
-
-#### Tests (`tests/test_torch_compile.py`)
-
-`materialise_iverson` unit tests (5):
-
-- `test_materialise_lower_triangular` — `q <= x`, 4×4 → equals `torch.tril`
-- `test_materialise_diagonal` — `ieq(q, x)`, 4×4 → equals `torch.eye`
-- `test_materialise_banded` — `iabs(q - x) < IversonConst(Integer(2))`, 5×5
-- `test_materialise_compound` — `(q < x) & (x < k)`, axes `(q, x, x, k)`,
-  sizes 3,4,4,5 → verify shape `(3,4,4,5)` and diagonal values
-- `test_materialise_free_axis_raises` — unsized axis → `ValueError`
-
-`ConstructedTensorEquation` integration tests (4):
-
-- `test_auto_materialise_shape` — sized axes, `Score * (q<=x)` → `module(Score)`
-  gives correct shape
-- `test_auto_materialise_values` — values match `Score * tril_mask`
-- `test_auto_materialise_buffer_registered` — `_mask_1` in
-  `dict(module.named_buffers())`
-- `test_auto_materialise_bool_output` — Bool-output + Iverson factor →
-  correct `∃` semantics
-
-Regression (1):
-
-- `test_pre_materialised_still_works` — existing free-axis `module(Score, Mask)`
-  call unchanged
-
-### 2. Embedding DSL
+### 1. Embedding DSL
 
 `ops.Embedding.template()` is unchanged. The Iverson-based embedding derivation
 (embedding as a masked contraction over a `Natural`-typed axis) is theoretically
@@ -189,8 +94,9 @@ grounded but not yet exposed in the DSL.
 | `data_structure/TensorExpr.py` | Iverson tree types, `TensorRef`, `_serialize_iverson` |
 | `data_structure/TensorDSL.py` | DSL entry point; `TL`, `TensorProxy`, `_array_datatypes` |
 | `data_structure/TensorLogic.py` | `TensorEquation.bc_signature`, `TensorProgram.to_morphism` |
+| `torch_compile/materialise.py` | `materialise_iverson`, `_eval` |
 | `torch_compile/torch_compile.py` | `ConstructedTensorEquation`, `generate_tensor_equation_signature` |
-| `tests/test_torch_compile.py` | Compilation and Heaviside tests (all pass) |
+| `tests/test_torch_compile.py` | Compilation, Heaviside, and materialisation tests (all pass) |
 | `tsncd/src/data_structure/TensorLogic.ts` | TypeScript stubs + `TensorEquation` operator |
 | `tsncd/src/display/Framework/Operations/additionalOperationBoxes.ts` | `TensorEquationBox` |
 | `docs/bool_semiring_extension.md` | Full design record |

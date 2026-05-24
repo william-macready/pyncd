@@ -101,8 +101,126 @@ equations. An algebra of this PROP in FVect *is* a concrete transformer. Propert
 "attention is equivariant under token permutation" become theorems about the PROP
 presentation, derivable from the generators — not experiments.
 
-This would give pyncd a formal "architecture grammar": composable, type-checked, and
-amenable to algebraic proof.
+**What the generators look like in pyncd terms.** Each generator is a typed `Broadcasted`
+morphism. Concretely, for a single-head transformer over axes `(batch b, seq s, model d,
+head h, vocab v)`:
+
+```text
+embed   :  Natural[b, s]              →  Reals[b, s, d]
+Q_proj  :  Reals[b, s, d]            →  Reals[b, s, h]
+K_proj  :  Reals[b, s, d]            →  Reals[b, s, h]
+V_proj  :  Reals[b, s, d]            →  Reals[b, s, h]
+attn    :  Reals[b,s,h] × Reals[b,s,h] × Reals[b,s,h] × Bool[s,s]  →  Reals[b,s,h]
+O_proj  :  Reals[b, s, h]            →  Reals[b, s, d]
+FFN     :  Reals[b, s, d]            →  Reals[b, s, d]
+norm    :  Reals[b, s, d]            →  Reals[b, s, d]
+add     :  Reals[b, s, d] × Reals[b, s, d]  →  Reals[b, s, d]
+```
+
+The types are exactly the wire colors of the colored PROP; the monoidal product
+juxtaposes wires, and composition chains generators end-to-end. This is precisely what
+`TensorDSL` already constructs — a `Composed` chain of `Broadcasted` morphisms. The
+difference introduced by a formal generators-and-relations presentation is the addition
+of **equations** between composite expressions.
+
+**What relations add.** A relation is an equation θ₁ = θ₂ between two composite PROP
+expressions. Quotienting the free PROP by a set of relations yields the architecture PROP
+P_arch. Relations fall into several natural categories:
+
+*Definitional equations* expand a named derived generator into its primitive constituents.
+The scaled dot-product attention generator, for instance, is not primitive — it expands as:
+
+```text
+attn(Q, K, V, mask) = contract_j( V_j,  softmax_j( contract_h(Q_i_h, K_j_h) / √h  +  mask_ij ) )
+```
+
+In PROP composition notation: `attn = V_contract ∘ (softmax ⊗ id) ∘ (scale_bias_mask ⊗ id) ∘ (QK_contract ⊗ id)`.
+Treating `attn` as a named generator and asserting this equation as a relation means
+every algebra automatically decomposes attention into the correct primitive sequence.
+Multi-head attention similarly becomes a derived generator:
+`MHA = O_proj ∘ concat_heads ∘ (attn ⊗ ... ⊗ attn) ∘ split_heads`.
+
+*Architectural topology equations* define the residual stream structure. Pre-norm and
+post-norm are distinct quotient PROPs:
+
+```text
+pre-norm:   Block = add ∘ (id ⊗ (FFN ∘ norm)) ∘ add ∘ (id ⊗ (MHA ∘ norm))
+post-norm:  Block = norm ∘ add ∘ (id ⊗ FFN) ∘ norm ∘ add ∘ (id ⊗ MHA)
+```
+
+These equations differ in where `norm` appears relative to `add` and `MHA`/`FFN`. An
+algebra of the pre-norm PROP cannot be post-norm and vice versa — the architecture class
+is encoded in the quotient, not left to the implementer.
+
+*Naturality / commutativity equations* assert that one operation passes through another
+unchanged. A linear map `W` is natural with respect to the batch broadcast axis:
+
+```text
+linear_W ∘ batch_unsqueeze  =  batch_unsqueeze ∘ linear_W
+```
+
+This is the structural reason batched matrix multiplication is correct: it is a
+consequence of naturality of linear maps in the batch axis, derivable from the PROP
+equations rather than checked per-implementation. Attention with a causal mask is
+*not* natural under token permutation — `attn ∘ permute_seq ≠ permute_seq ∘ attn` —
+because the mask wire breaks symmetry. The asymmetry is visible directly in the PROP
+expression: `mask` carries the Bool color and its `iverson_expr = "i <= j"` relation
+is not permutation-invariant.
+
+*Weight-sharing equations* identify two generators. In GPT, the unembedding matrix is
+the transpose of the embedding matrix:
+
+```text
+unembed  =  transpose ∘ embed
+```
+
+where `transpose` is a `Rearrangement` morphism in `StrideCategory`. Asserting this as a
+relation in the quotient PROP means any algebra of that PROP automatically uses a single
+weight matrix for both; there is no possibility of the two drifting apart.
+
+*Inference-mode collapse equations* reduce a training-time generator to an identity at
+test time. Dropout satisfies `dropout_p = id` when `p = 0` (or when the model is in eval
+mode). In the PROP this is a conditional relation — a quotient taken only in the
+inference-mode sub-PROP — which cleanly separates the training and inference architecture
+classes without conditional logic in the implementation.
+
+*Fusion equations* are optimization opportunities expressed as PROP equalities:
+
+```text
+contract_k( contract_j(A_ij, B_jk),  C_kl )  =  contract_{jk}(A_ij, B_jk, C_kl)
+```
+
+This is the einsum associativity law: two chained contractions equal one three-tensor
+contraction. It is not always beneficial (the intermediate tensor may be cheaper to
+materialize), but it is *sound* — a compiler can apply it whenever it is profitable
+because it is a PROP equation, not an approximate heuristic. Similarly, layer norm
+after a linear layer satisfies `norm ∘ linear = linear'` where `linear'` absorbs the
+norm's learned scale and bias, fusing two `nn.Module` calls into one.
+
+**Two levels of algebra.** There are two distinct algebra notions in play:
+
+1. *Architecture algebra*: a functor from P_arch into the category of concrete tensor
+   operations (PyTorch). Different algebras of the same P_arch are transformers with
+   the same topology but different axis sizes — GPT-2 small and GPT-2 large are algebras
+   of the same P_arch.
+2. *Symbolic algebra*: the **initial algebra** of P_arch — the one that computes nothing
+   numeric but records the full dependency graph of operations. This is essentially what
+   pyncd builds before calling `construct()`: the `Composed` chain of `Broadcasted`
+   morphisms is the initial algebra's image of the architecture. Every concrete algebra
+   factors through this one, by the universal property of the free/initial algebra.
+
+**What this buys pyncd in practice.**
+
+- *Architectural identity checking*: two independently written `TensorDSL` programs
+  define the same architecture if and only if their `bc_signature()` outputs are equal
+  in the quotient PROP — an algebraic check, not a runtime comparison.
+- *Sound rewriting*: any PROP equation θ₁ = θ₂ proved in P_arch licenses the compiler
+  to replace one subgraph with the other without changing observable behavior. This is
+  the categorical foundation for operator fusion and layout optimization (see Opportunity 2).
+- *Architecture grammar*: the generators-and-relations presentation defines a type
+  system for model components. "Does this module implement a valid attention head?" is
+  the question of whether a given `nn.Module` is an algebra morphism from the
+  attention-head sub-PROP — an algebraically certified contract, not duck typing.
 
 ### 2. Diagrammatic Rewriting for Compilation
 

@@ -1,12 +1,15 @@
 import pytest
 import torch
 import data_structure.Category as cat
-from data_structure.TensorDSL import TL, axes
+from data_structure.TensorDSL import TL, axes, real_axis
+from data_structure.TensorExpr import IversonConst, ieq, iabs
+from data_structure.Numeric import Integer
 from torch_compile.torch_compile import (
     ConstructedModule,
     ConstructedTensorEquation,
     generate_tensor_equation_signature,
 )
+from torch_compile.materialise import materialise_iverson
 
 
 # ---------------------------------------------------------------------------
@@ -256,3 +259,108 @@ def test_pre_materialised_mask_bool_typed():
     tl.Attn[q, x] = tl.Score[q, x] * (q <= x)
     sig = tl.bc_signature()
     assert isinstance(sig.input_weaves[1].datatype, cat.Bool)
+
+
+# ---------------------------------------------------------------------------
+# materialise_iverson unit tests
+# ---------------------------------------------------------------------------
+
+def test_materialise_upper_triangular():
+    """[q <= x] over 4x4 equals upper-triangular ones (q is row, x is col)."""
+    q = real_axis('q', 4)
+    x = real_axis('x', 4)
+    result = materialise_iverson(q <= x)
+    assert torch.allclose(result, torch.triu(torch.ones(4, 4)))
+
+
+def test_materialise_diagonal():
+    """[q == x] over 4x4 equals the identity matrix."""
+    q = real_axis('q', 4)
+    x = real_axis('x', 4)
+    result = materialise_iverson(ieq(q, x))
+    assert torch.allclose(result, torch.eye(4))
+
+
+def test_materialise_banded():
+    """|q - x| < 2 over 5x5 produces the tri-diagonal band."""
+    q = real_axis('q', 5)
+    x = real_axis('x', 5)
+    result = materialise_iverson(iabs(q - x) < IversonConst(Integer(2)))
+    expected = torch.tensor([
+        [1, 1, 0, 0, 0],
+        [1, 1, 1, 0, 0],
+        [0, 1, 1, 1, 0],
+        [0, 0, 1, 1, 1],
+        [0, 0, 0, 1, 1],
+    ], dtype=torch.float32)
+    assert torch.allclose(result, expected)
+
+
+def test_materialise_compound():
+    """(q < x) & (x < k) with axes (q, x, x, k) has shape (3,4,4,5) and correct values."""
+    q = real_axis('q', 3)
+    x = real_axis('x', 4)
+    k = real_axis('k', 5)
+    result = materialise_iverson((q < x) & (x < k))
+    assert result.shape == (3, 4, 4, 5)
+    for qi in range(3):
+        for x1 in range(4):
+            for x2 in range(4):
+                for ki in range(5):
+                    assert result[qi, x1, x2, ki].item() == float((qi < x1) and (x2 < ki))
+
+
+def test_materialise_free_axis_raises():
+    """An unsized axis raises ValueError with a helpful message."""
+    q, x = axes('q x')
+    with pytest.raises(ValueError, match="no concrete size"):
+        materialise_iverson(q <= x)
+
+
+# ---------------------------------------------------------------------------
+# ConstructedTensorEquation auto-materialisation integration tests
+# ---------------------------------------------------------------------------
+
+def _causal_mask_sig_sized():
+    q = real_axis('q', 4)
+    x = real_axis('x', 4)
+    tl = TL()
+    tl.Attn[q, x] = tl.Score[q, x] * (q <= x)
+    return tl.bc_signature()
+
+
+def test_auto_materialise_shape():
+    """Sized Iverson factor is auto-materialised; caller passes only Score."""
+    module = ConstructedModule.construct(_causal_mask_sig_sized())
+    result = module(torch.ones(4, 4))
+    assert result.shape == (4, 4)
+
+
+def test_auto_materialise_values():
+    """Auto-materialised [q<=x] mask produces upper-triangular output."""
+    module = ConstructedModule.construct(_causal_mask_sig_sized())
+    result = module(torch.ones(4, 4))
+    assert torch.allclose(result, torch.triu(torch.ones(4, 4)))
+
+
+def test_auto_materialise_buffer_registered():
+    """The pre-built mask is stored as a named buffer on the module."""
+    module = ConstructedModule.construct(_causal_mask_sig_sized())
+    assert '_mask_1' in dict(module.named_buffers())
+
+
+def test_auto_materialise_bool_output():
+    """Bool-output + sized Iverson factor: ∃ semantics and {0,1} values."""
+    q = real_axis('q', 4)
+    x = real_axis('x', 4)
+    k = real_axis('k', 4)
+    tl = TL()
+    tl.Gate.predicate(q, x)
+    tl.Gate[q, x] = tl.A[q, k] * tl.B[k, x] * (q <= x)
+    module = ConstructedModule.construct(tl.bc_signature())
+    A = torch.ones(4, 4)
+    B = torch.ones(4, 4)
+    result = module(A, B)
+    assert torch.all((result == 0) | (result == 1))
+    # Gate[q,x] = ∃k: A[q,k] ∧ B[k,x] ∧ [q<=x] — true iff q<=x (since A,B are all-ones)
+    assert torch.allclose(result, torch.triu(torch.ones(4, 4)))

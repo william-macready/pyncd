@@ -8,11 +8,15 @@ from typing import (
 import math
 from abc import ABC
 
+import warnings
+
 import data_structure.Term as fd # for 'foundations'
 import data_structure.Numeric as nm
 import term_utilities.term_utilities as tutil
 import data_structure.Category as cat
 import data_structure.Operators as ops
+from data_structure.TensorExpr import TensorRef
+from torch_compile.materialise import materialise_iverson
 
 import data_structure.BrTyping as Br
 
@@ -318,8 +322,41 @@ class ConstructedTensorEquation[B: cat.Datatype, A: cat.Axis](
         self.signature = generate_tensor_equation_signature(target)
         self.demote = isinstance(target.output_weaves[0].datatype, cat.Bool)
 
+        # _factor_slots[i] is a buffer name if the factor is a fixed Iverson
+        # tensor (all axes sized), or None if the caller must supply it.
+        self._factor_slots: list[str | None] = []
+        for i, factor in enumerate(target.operator.rhs):
+            if isinstance(factor, TensorRef):
+                self._factor_slots.append(None)
+            else:
+                try:
+                    buf = materialise_iverson(factor)
+                    self.register_buffer(f'_mask_{i}', buf)
+                    self._factor_slots.append(f'_mask_{i}')
+                except ValueError as e:
+                    warnings.warn(
+                        f"RHS factor {i} is an Iverson predicate with unsized "
+                        f"axes — it will not be auto-materialised and must be "
+                        f"passed as a caller input. ({e})",
+                        stacklevel=2,
+                    )
+                    self._factor_slots.append(None)
+        # Precomputed for torch.compile: positions in _factor_slots that must
+        # be filled from the caller's *xs tuple, in order.
+        self._caller_positions: list[int] = [
+            i for i, s in enumerate(self._factor_slots) if s is None
+        ]
+
     def forward(self, *xs: torch.Tensor) -> torch.Tensor:
-        result = einops.einsum(*xs, self.signature)  # type: ignore
+        caller_idx = 0
+        full_tensors: list[torch.Tensor] = []
+        for slot in self._factor_slots:
+            if slot is not None:
+                full_tensors.append(getattr(self, slot))
+            else:
+                full_tensors.append(xs[caller_idx])
+                caller_idx += 1
+        result = einops.einsum(*full_tensors, self.signature)  # type: ignore
         if self.demote:
             return (result > 0).to(result.dtype)
         return result
