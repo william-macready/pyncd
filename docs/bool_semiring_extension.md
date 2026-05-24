@@ -1,7 +1,7 @@
 # Boolean Semiring Extension
 
 **Status:** Implemented (pyncd layer and torch compilation complete; tsncd rendering deferred)  
-**Context:** Design notes for extending pyncd and tsncd to support the Boolean semiring `(𝔹, ∨, ∧)` alongside the existing arithmetic semiring `(ℝ, +, ×)`, enabling predicate tensors to be realised at the `Datatype` level rather than only at the axis-subtype level.
+**Context:** Design notes for extending pyncd and tsncd to support the Boolean semiring `(𝔹, ∨, ∧)` alongside the existing arithmetic semiring `(ℝ, +, ×)`, enabling predicate tensors to be realised at the `Datatype` level.
 
 ---
 
@@ -21,11 +21,11 @@ $$Y[i, j] = \sum_k X[i, k] \cdot W[k, j] \cdot \mathrm{Mask}(i, k)$$
 
 The predicate $\mathrm{Mask}(i, k)$ restricts the contraction to a subset of positions without requiring a separate sparse data structure or explicit index enumeration. More generally, any logical condition on indices — triangular masking, padding masks, type filters — can participate directly in tensor equations via this promotion.
 
-A second example is **embedding lookup**. An embedding table $E[v, m]$ maps vocabulary index $v$ to a real-valued vector of dimension $m$. Given a sequence of token positions, $\mathrm{token\_at\_position}[x] = v$ maps position $x$ to vocabulary index $v$. The embedding of the sequence is then:
+A second example is **embedding lookup**. An embedding table $E[v, m]$ maps vocabulary index $v$ to a real-valued vector component at index $m$. Given a sequence of token positions, $\mathrm{token\_at\_position}[x] = v$ maps position $x$ to vocabulary index $v$. The embedding of the tokens in the sequence is then:
 
 $$X[v, m] = [\mathrm{token\_at\_position}[x] = v] \cdot E[v, m]$$
 
-where $[\mathrm{token\_at\_position}[x] = v] \in \{0,1\}$ is a boolean equality predicate promoted to a real indicator. Contracting over $v$ selects the unique row of $E$ corresponding to the token at each position — a row lookup expressed as a masked contraction. This unifies embedding with the general pattern: a boolean predicate on indices gates which entries of a real-valued table contribute to the output.
+where $[\mathrm{token\_at\_position}[x] = v] \in \{0,1\}$ is a boolean equality predicate promoted to a real indicator. Contracting over $x$ selects the unique row of $E$ corresponding to the token at each position — a row lookup expressed as a masked contraction. This unifies embedding with the general pattern: a boolean predicate on indices gates which entries of a real-valued table contribute to the output.
 
 To support these mixed expressions cleanly, we have proposals for declaration syntax that attaches kind and shape metadata to named tensors before any equations are written:
 
@@ -379,6 +379,63 @@ The `.predicate()` declaration is retained — it controls the Bool/Reals dispat
 - **Iverson materialisation** — inline Iverson factors (`q <= x`) are typed as `Bool` inputs in `bc_signature()` but have no runtime evaluation path in `torch_compile`. They must currently be pre-built as concrete tensors by the caller and passed in RHS factor order. A future materialisation step would evaluate `IversonExpr` trees to generate these tensors automatically.
 - **tsncd rendering** — the TypeScript `Bool` class, `DatatypeAnchor` branch, and wire-styling changes are described in the Rendering section below but not yet implemented.
 - **Embedding DSL** — `ops.Embedding.template()` is unchanged; the Iverson-based embedding derivation is possible but not exposed.
+
+---
+
+## Implementation against the challenges
+
+The four challenges identified in the Categorical structure section have different statuses in the current implementation.
+
+### Challenge 1: Heterogeneous input datatypes
+
+**Adopted resolution:** heterogeneous input weaves, with Python's type erasure absorbing the gap.
+
+`Broadcasted[B, A, O]` carries a single type parameter `B` that nominally applies to all input and output weaves. For a mixed equation — one `Reals` input and one `Bool` input — this is technically wrong: the `B` in the returned `Broadcasted` describes the output weave only, and the Bool input weave is stored silently under the same type parameter. Python does not enforce `B` on individual weave instances at runtime; the fields are just lists of `Weave` objects, each carrying its own `.datatype` attribute independently.
+
+The practical consequence is that **all downstream code reads `weave.datatype` per-weave**, not from the type parameter. `ConstructedTensorEquation` checks `target.output_weaves[0].datatype` to decide whether to apply $H$; `bc_signature()` assigns `Bool()` or `Reals()` to each input weave individually from `array_datatypes`; the tsncd renderer will style each wire from `input_weave.datatype`. None of these sites rely on `B` being correct.
+
+This is not a formal resolution of the type-system challenge — it is a pragmatic side-step that exploits the fact that Python's generic type parameters are unenforced. The "explicit coercion" alternative (inserting $\iota$ before composition) would keep `B` correct throughout but adds a morphism to every mixed equation. We chose the simpler path: store heterogeneous weaves, ignore the broken type parameter, dispatch per-weave.
+
+A future refactor could split `B` into `B_in: tuple[Datatype, ...]` and `B_out: Datatype` to recover type accuracy. This is not currently planned.
+
+---
+
+### Challenge 2: ι and H retraction
+
+**Fully resolved** for the torch compilation path.
+
+The promotion $\iota : \mathbb{B} \to \{0,1\} \subset \mathbb{R}$ is handled implicitly: pre-materialised Bool tensors are float tensors containing $0.0$ and $1.0$, so no explicit cast is needed. When a caller supplies a Mask or an inline Iverson tensor in RHS factor order, the values are already in $\{0,1\}$ by construction.
+
+The demotion $H : \mathbb{R}_{\geq 0} \to \mathbb{B}$ is implemented in `ConstructedTensorEquation.forward`:
+
+```python
+if self.demote:
+    return (result > 0).to(result.dtype)
+```
+
+`self.demote` is set at construction time as `isinstance(target.output_weaves[0].datatype, cat.Bool)`. When `demote` is `True`, the einsum result — which is always $\geq 0$ when inputs are $\{0,1\}$ — is thresholded: strictly positive values become $1.0$, zero becomes $0.0$. The `.to(result.dtype)` preserves the float dtype so the output is a float tensor of $0.0$/$1.0$ values rather than a `torch.bool` tensor, keeping it compatible with downstream arithmetic.
+
+The same flag that controls $H$ in the compiler is the signal for `∃`/`∧` display in tsncd (pending).
+
+---
+
+### Challenge 3: Composition typing
+
+**Not yet resolved.**
+
+`Context.append_iter` in `data_structure/Composition.py` unifies axis UIDs when composing morphisms in **Br** but does not check datatype compatibility. A `Bool`-output weave composed directly with a `Reals`-input weave will silently type-check — the framework will not raise an error, and the resulting `Composed` morphism will carry a datatype mismatch across the composition boundary.
+
+The practical mitigation is that the current use cases do not compose Bool outputs directly with Reals inputs: masked contractions produce `Reals` output (the output weave is `Reals()`, so no mismatch); Bool-output equations (where `demote=True`) are terminal in the current patterns. The risk is latent — it surfaces as soon as someone writes a `Composed` morphism that feeds a Bool result to an arithmetic step without an explicit $\iota$.
+
+Resolving this properly requires `append_iter` to check `output_weave.datatype == input_weave.datatype` and either raise or insert $\iota$ automatically. That change is deferred.
+
+---
+
+### Challenge 4: The embedding chain
+
+**Not yet implemented.**
+
+The embedding derivation — treating an embedding table as a masked contraction over a `Natural`-typed axis, with a `Natural`→`Bool` promotion step — is theoretically grounded (see the tower of retracts in the Categorical structure section) but not yet exposed in the DSL. `ops.Embedding.template()` is unchanged; the `ConstructedEmbedding` module continues to use `torch.nn.Embedding` directly without routing through the Iverson/Bool path. Implementing the embedding chain would require adding the $\mathbb{N}_{<v} \overset{R}{\to} [\mathbb{B}, A \otimes V]$ promotion step to the DSL and wiring it through `to_morphism()`.
 
 ---
 

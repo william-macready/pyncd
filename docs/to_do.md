@@ -1,7 +1,7 @@
 # Bool Semiring Extension — To-Do
 
 Picking up from the bool semiring implementation session. All changes are
-uncommitted (see `git diff --stat HEAD` for the full list). 257 existing
+in commit `c6d11f7` ("bool semiring theory + implmentation"). 257 existing
 tests pass; 24 new tests in `tests/test_torch_compile.py` also pass.
 
 The full design record is in `docs/bool_semiring_extension.md`.
@@ -77,11 +77,6 @@ already set correctly. Only the display string generation in tsncd needs updatin
 `ops.Embedding.template()` is unchanged. The Iverson-based embedding derivation
 (embedding as a masked contraction over a `Natural`-typed axis) is theoretically
 grounded but not yet exposed in the DSL.
-
-### 5. Commit
-
-None of the above changes have been committed. Once a natural stopping point is
-reached, commit with a message summarising the bool semiring work.
 
 ---
 
