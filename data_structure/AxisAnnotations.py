@@ -19,6 +19,3 @@ class NatAxis(sc.RawAxis):
     """Marks a natural-number (ℕ) index dimension."""
 
 
-@dataclass(frozen=True)
-class PredAxis(sc.RawAxis):
-    """Marks a predicate (Boolean-filter) index dimension."""

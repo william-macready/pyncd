@@ -8,6 +8,7 @@ import data_structure.Numeric as nm
 import data_structure.BroadcastedCategory as bc
 from data_structure.StrideCategory import StrideMorphism
 from data_structure.TensorLogic import TensorEquation, TensorProgram, topological_sort
+from data_structure.TensorExpr import TensorRef, IversonBinOp, IversonUnaryOp, _factor_axes, _serialize_iverson
 from data_structure.TensorDSL import NormAxis
 import data_structure.Operators as ops
 
@@ -21,6 +22,8 @@ def _dt_fields(dt: bc.Datatype | None) -> tuple[DataTag, nm.Numeric | None]:
     """Return (DataTag, max_value) for a Datatype, handling None as Reals."""
     if isinstance(dt, bc.Natural):
         return DataTag.NATURAL, dt.max_value
+    if isinstance(dt, bc.Bool):
+        return DataTag.BOOL, None
     return DataTag.REALS, None
 
 
@@ -108,16 +111,30 @@ def _add_equation(
             equation_idx=eq_idx, array_slot=0, axis_uid=ax.uid, is_target=False, position=pos
         ))
 
-    for rhs_slot, (tensor_name, input_axes) in enumerate(eq.rhs, start=1):
-        in_datatype_tag, in_max_value = _dt_fields(datatypes.get(tensor_name))
-        inst.arrays.append(ArrayRow(
-            equation_idx=eq_idx,
-            slot=rhs_slot,
-            name=tensor_name,
-            is_input=True,
-            datatype_tag=in_datatype_tag,
-            max_value=in_max_value,
-        ))
+    for rhs_slot, factor in enumerate(eq.rhs, start=1):
+        if isinstance(factor, TensorRef):
+            tensor_name = factor.name
+            input_axes = factor.axes
+            in_datatype_tag, in_max_value = _dt_fields(datatypes.get(tensor_name))
+            inst.arrays.append(ArrayRow(
+                equation_idx=eq_idx,
+                slot=rhs_slot,
+                name=tensor_name,
+                is_input=True,
+                datatype_tag=in_datatype_tag,
+                max_value=in_max_value,
+            ))
+        else:
+            # Iverson factor: Bool-typed, no tensor name
+            input_axes = _factor_axes(factor)
+            inst.arrays.append(ArrayRow(
+                equation_idx=eq_idx,
+                slot=rhs_slot,
+                name=None,
+                is_input=True,
+                datatype_tag=DataTag.BOOL,
+                iverson_expr=_serialize_iverson(factor),
+            ))
         for pos, ax in enumerate(input_axes):
             inst.axis_sizes[ax.uid] = ax.local_size()
             inst.array_axes.append(ArrayAxisRow(

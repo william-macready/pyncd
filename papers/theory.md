@@ -177,11 +177,11 @@ In summary, **St** objects represent axes index sets of a given shape. Each inde
 
 ### Morphisms in St
 
-**Morphisms** in **St** are **finite linear transforms**: maps $\eta : \Pi_{i \in I} A_i \to \Pi_{j \in J} B_j$ that describe how input coordinates relate to output coordinates. Each output coordinate $j$ is a linear combination of input coordinates:
+**Morphisms** in **St** are **finite affine transforms**: maps $\eta : \Pi_{i \in I} A_i \to \Pi_{j \in J} B_j$ that describe how input coordinates relate to output coordinates. Each output coordinate $j$ is an affine combination of input coordinates. Writing $\tilde{e} = (e_1, \ldots, e_I, 1)$ for the input augmented with a trailing $1$:
 
-$$(\Pi_{i \in I} e_i) ; \eta = \Pi_{j \in J}(\sum_{i \in I} e_i \Lambda^\eta_{ij})$$
+$$(\Pi_{i \in I} e_i) ; \eta = \Pi_{j \in J}\!\left(\sum_{i \in I \cup \{I{+}1\}} \tilde{e}_i\, \Lambda^\eta_{ij}\right)$$
 
-where $\Lambda^\eta \in \mathbb{N}^{I \times J}$ is the coefficient matrix (keep in mind the notation for elements: $(\Pi_{i \in I} e_i)$ represents a morphism $\mathbf{1}\to \Pi_{i \in I} A_i$ denoted $\langle \Pi_{i\in I} e_i |$). A rearrangement $\eta$ has $\Lambda^\eta_{i,j} = 1$ iff $\mu(j)=i$. The identity morphism of object $\Pi_{i \in I} A_i$ has $\Lambda^\eta$ equal to the identity matrix.
+where $\Lambda^\eta \in \mathbb{N}^{(I+1) \times J}$ is the coefficient matrix. The first $I$ rows are the linear coefficients and the last row ($i = I{+}1$, paired with the appended $1$) is the constant offset (keep in mind the notation for elements: $(\Pi_{i \in I} e_i)$ represents a morphism $\mathbf{1}\to \Pi_{i \in I} A_i$ denoted $\langle \Pi_{i\in I} e_i |$). A rearrangement $\eta$ has $\Lambda^\eta_{i,j} = 1$ iff $\mu(j)=i$ and zero offset. The identity morphism of object $\Pi_{i \in I} A_i$ has the top $I \times I$ block of $\Lambda^\eta$ equal to the identity matrix and the offset row equal to zero.
 
 In Python, `StrideMorphism` stores `_dom: Prod[Axis]` and `_cod_stride: Prod[tuple[Axis, Prod[Numeric]]]`. `_cod_stride` bundles the codomain axes and the coefficient matrix into a single field: each entry is a pair of one codomain axis and a tuple of coefficients — one per domain axis — forming one column of $\Lambda^\eta$. Keeping them paired ensures the two are always in lockstep. `cod()` recovers the codomain by stripping the coefficients: `ProdObject.from_iter(axis for axis, _ in self._cod_stride)`. An optional `name` field carries display metadata. For example, the convolution-shift $x = x' + w$ is
 
@@ -205,9 +205,9 @@ StrideMorphism.from_matrix(
 )
 ```
 
-The identity, permutation, duplication, and deletion ($\eta = ()$) are all special cases of linear transforms and appear as `Rearrangement` morphisms in **St**.
+The identity, permutation, duplication, and deletion ($\eta = ()$) are all special cases of affine transforms (with zero offset) and appear as `Rearrangement` morphisms in **St**.
 
-In summary, **St** morphisms represent linear transformations between the index vectors of the domain and codomain. In addition to copy and deletion of axes these linear transformation allow for arithmetic to be performed as indices are transformed. Convolution (where filters are slid over a two dimensional array) is one example of where this arithmetic structure is used. Another example is the one dimensional representation of arrays in computer memory. Slices of the array are recovered as loops of different stride through the one dimensional arrangment.
+In summary, **St** morphisms represent affine transformations between the index vectors of the domain and codomain. In addition to copy and deletion of axes these affine transformations allow for arithmetic to be performed as indices are transformed. Convolution (where filters are slid over a two dimensional array) is one example of where this arithmetic structure is used. Another example is the one dimensional representation of arrays in computer memory. Slices of the array are recovered as loops of different stride through the one dimensional arrangment.
 
 ---
 

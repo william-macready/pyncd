@@ -34,7 +34,13 @@ Input ["dog", "cat"] → token indices $[1, 0]$; the output is:
 $$X[0, m] = E[1, m] = [0.8,\ {-0.1},\ 0.3,\ 0.4]$$
 $$X[1, m] = E[0, m] = [0.1,\ 0.5,\ {-0.2},\ 0.9]$$
 
-The input is a `Natural` (discrete integer index), not a real-valued array, so there is nothing to contract. In the categorical framework it is a reindexing $[a, \eta]$ — the contravariant functor pulling values back along a stride morphism $\eta$ that maps token positions to vocabulary rows. This is why embedding is not expressible as a tensor logic equation and currently falls back to `ops.Embedding.template()`.
+As an example, in a transformer if we assume $\mathrm{token\_at\_position}[x]$ returns the token index $v \in \mathbb{N}_{<v}$ at sequence position $x$ then the embedded token sequence data $X$ is:
+
+$$X[v, m] = [\mathrm{token\_at\_position}[x] = v], E[v, m]$$
+
+so that v acts as a lookup into $E$.
+
+The output of $\mathrm{token\_at\_position}$ is a `Natural` (discrete integer index), not a real-valued array, so there is nothing to contract. This is why embedding is not expressible as a tensor logic equation and currently calls to `ops.Embedding.template()`.
 
 ---
 

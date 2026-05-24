@@ -4,6 +4,7 @@ import data_structure.BroadcastedCategory as bc
 from data_structure.BroadcastedCategory import WeaveMode
 import data_structure.ProductCategory as pc
 from data_structure.TensorLogic import TensorEquation, TensorProgram, topological_sort
+from data_structure.TensorExpr import TensorRef
 from data_structure.TensorDSL import NormAxis
 from data_structure.ProductCategory import Composed
 from data_structure.StrideCategory import RawAxis, Axis
@@ -34,8 +35,8 @@ def _matmul_eq():
         lhs_name=fd.DynamicName('Y'),
         lhs_indices=(i, j),
         rhs=(
-            (fd.DynamicName('W'), (i, k)),
-            (fd.DynamicName('X'), (k, j)),
+            TensorRef(fd.DynamicName('W'), (i, k)),
+            TensorRef(fd.DynamicName('X'), (k, j)),
         ),
         operator=Identity(),
     )
@@ -73,8 +74,8 @@ def test_tensor_equation_with_norm_axis():
         lhs_name=fd.DynamicName('Y'),
         lhs_indices=(b, p, t),
         rhs=(
-            (fd.DynamicName('W_O'), (t, d)),
-            (fd.DynamicName('Stream'), (b, p, d)),
+            TensorRef(fd.DynamicName('W_O'), (t, d)),
+            TensorRef(fd.DynamicName('Stream'), (b, p, d)),
         ),
         operator=SoftMax(),
     )
@@ -164,8 +165,8 @@ def _chain_equations():
         lhs_name=fd.DynamicName('Hidden'),
         lhs_indices=(i, j),
         rhs=(
-            (fd.DynamicName('W1'), (i, k)),
-            (fd.DynamicName('X'), (k, j)),
+            TensorRef(fd.DynamicName('W1'), (i, k)),
+            TensorRef(fd.DynamicName('X'), (k, j)),
         ),
         operator=Identity(),
     )
@@ -174,8 +175,8 @@ def _chain_equations():
         lhs_name=fd.DynamicName('Y'),
         lhs_indices=(i, m),
         rhs=(
-            (fd.DynamicName('W2'), (i, j)),
-            (fd.DynamicName('Hidden'), (j, m)),
+            TensorRef(fd.DynamicName('W2'), (i, j)),
+            TensorRef(fd.DynamicName('Hidden'), (j, m)),
         ),
         operator=Identity(),
     )
@@ -204,8 +205,8 @@ def test_tensor_program_single_equation():
         lhs_name=fd.DynamicName('Y'),
         lhs_indices=(i, j),
         rhs=(
-            (fd.DynamicName('W'), (i, k)),
-            (fd.DynamicName('X'), (k, j)),
+            TensorRef(fd.DynamicName('W'), (i, k)),
+            TensorRef(fd.DynamicName('X'), (k, j)),
         ),
         operator=Identity(),
     )
@@ -224,8 +225,8 @@ def test_tensor_program_two_equation_chain():
         lhs_name=fd.DynamicName('Hidden'),
         lhs_indices=(i, j),
         rhs=(
-            (fd.DynamicName('W1'), (i, k)),
-            (fd.DynamicName('X'), (k, j)),
+            TensorRef(fd.DynamicName('W1'), (i, k)),
+            TensorRef(fd.DynamicName('X'), (k, j)),
         ),
         operator=Identity(),
     )
@@ -237,8 +238,8 @@ def test_tensor_program_two_equation_chain():
         lhs_name=fd.DynamicName('Y'),
         lhs_indices=(i2, m),
         rhs=(
-            (fd.DynamicName('W2'), (i2, j2)),
-            (fd.DynamicName('Hidden'), (j2, m)),
+            TensorRef(fd.DynamicName('W2'), (i2, j2)),
+            TensorRef(fd.DynamicName('Hidden'), (j2, m)),
         ),
         operator=Identity(),
     )
@@ -256,8 +257,8 @@ def test_tensor_program_cod_has_correct_rank():
         lhs_name=fd.DynamicName('Hidden'),
         lhs_indices=(i, j),
         rhs=(
-            (fd.DynamicName('W1'), (i, k)),
-            (fd.DynamicName('X'), (k, j)),
+            TensorRef(fd.DynamicName('W1'), (i, k)),
+            TensorRef(fd.DynamicName('X'), (k, j)),
         ),
         operator=Identity(),
     )
@@ -268,8 +269,8 @@ def test_tensor_program_cod_has_correct_rank():
         lhs_name=fd.DynamicName('Y'),
         lhs_indices=(i2, m),
         rhs=(
-            (fd.DynamicName('W2'), (i2, j2)),
-            (fd.DynamicName('Hidden'), (j2, m)),
+            TensorRef(fd.DynamicName('W2'), (i2, j2)),
+            TensorRef(fd.DynamicName('Hidden'), (j2, m)),
         ),
         operator=Identity(),
     )
@@ -287,13 +288,13 @@ def test_topological_sort_independent_equations():
     eq_a = TensorEquation(
         lhs_name=fd.DynamicName('A'),
         lhs_indices=(i,),
-        rhs=((fd.DynamicName('X'), (i, k)),),
+        rhs=(TensorRef(fd.DynamicName('X'), (i, k)),),
         operator=Identity(),
     )
     eq_b = TensorEquation(
         lhs_name=fd.DynamicName('B'),
         lhs_indices=(i,),
-        rhs=((fd.DynamicName('Y'), (i, k)),),
+        rhs=(TensorRef(fd.DynamicName('Y'), (i, k)),),
         operator=Identity(),
     )
     result = topological_sort((eq_a, eq_b))
@@ -307,7 +308,7 @@ def _diag_eq():
     eq = TensorEquation(
         lhs_name=fd.DynamicName('Y'),
         lhs_indices=(i,),
-        rhs=((fd.DynamicName('X'), (i, i)),),
+        rhs=(TensorRef(fd.DynamicName('X'), (i, i)),),
         operator=Identity(),
     )
     return eq, i
@@ -364,13 +365,13 @@ def test_topological_sort_raises_on_cycle():
     eq_a = TensorEquation(
         lhs_name=fd.DynamicName('A'),
         lhs_indices=(i,),
-        rhs=((fd.DynamicName('B'), (i, k)),),
+        rhs=(TensorRef(fd.DynamicName('B'), (i, k)),),
         operator=Identity(),
     )
     eq_b = TensorEquation(
         lhs_name=fd.DynamicName('B'),
         lhs_indices=(i,),
-        rhs=((fd.DynamicName('A'), (i, k)),),
+        rhs=(TensorRef(fd.DynamicName('A'), (i, k)),),
         operator=Identity(),
     )
     with pytest.raises(ValueError, match="cyclic"):
@@ -405,8 +406,8 @@ def _gram_program():
         lhs_name=fd.DynamicName('H'),
         lhs_indices=(a, b),
         rhs=(
-            (fd.DynamicName('W'), (a, k_h)),
-            (fd.DynamicName('X'), (k_h, b)),
+            TensorRef(fd.DynamicName('W'), (a, k_h)),
+            TensorRef(fd.DynamicName('X'), (k_h, b)),
         ),
         operator=Identity(),
     )
@@ -419,8 +420,8 @@ def _gram_program():
         lhs_name=fd.DynamicName('Y'),
         lhs_indices=(i, j),
         rhs=(
-            (fd.DynamicName('H'), (i, k_y)),
-            (fd.DynamicName('H'), (j, k_y)),
+            TensorRef(fd.DynamicName('H'), (i, k_y)),
+            TensorRef(fd.DynamicName('H'), (j, k_y)),
         ),
         operator=Identity(),
     )
@@ -507,7 +508,10 @@ def test_to_morphism_declarations_accepted():
     eq = TensorEquation(
         lhs_name=fd.DynamicName('Y'),
         lhs_indices=(i, j),
-        rhs=((fd.DynamicName('W'), (i, k)), (fd.DynamicName('X'), (k, j))),
+        rhs=(
+            TensorRef(fd.DynamicName('W'), (i, k)),
+            TensorRef(fd.DynamicName('X'), (k, j)),
+        ),
         operator=Identity(),
     )
     d_i = RawAxis.named('i')
@@ -537,13 +541,13 @@ def test_topological_sort_raises_on_duplicate_lhs_name():
     eq_a = TensorEquation(
         lhs_name=fd.DynamicName('Y'),
         lhs_indices=(i,),
-        rhs=((fd.DynamicName('X'), (i, k)),),
+        rhs=(TensorRef(fd.DynamicName('X'), (i, k)),),
         operator=Identity(),
     )
     eq_b = TensorEquation(
         lhs_name=fd.DynamicName('Y'),
         lhs_indices=(i,),
-        rhs=((fd.DynamicName('Z'), (i, k)),),
+        rhs=(TensorRef(fd.DynamicName('Z'), (i, k)),),
         operator=Identity(),
     )
     with pytest.raises(ValueError, match="duplicate"):
@@ -559,7 +563,10 @@ def test_to_morphism_declaration_rank_mismatch_raises():
     eq = TensorEquation(
         lhs_name=fd.DynamicName('Y'),
         lhs_indices=(i, j),   # rank 2
-        rhs=((fd.DynamicName('W'), (i, k)), (fd.DynamicName('X'), (k, j))),
+        rhs=(
+            TensorRef(fd.DynamicName('W'), (i, k)),
+            TensorRef(fd.DynamicName('X'), (k, j)),
+        ),
         operator=Identity(),
     )
     with pytest.raises(ValueError, match="rank"):

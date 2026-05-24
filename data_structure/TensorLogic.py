@@ -6,6 +6,7 @@ import data_structure.Term as fd
 import data_structure.BroadcastedCategory as bc
 import data_structure.ProductCategory as pc
 import data_structure.StrideCategory as sc
+from data_structure.TensorExpr import TensorRef, IversonBinOp, IversonUnaryOp, _factor_axes
 
 
 # A single tensor logic equation stored as a pyncd Operator.
@@ -22,7 +23,7 @@ class TensorEquation(bc.Operator):
     # with defaults — satisfied here by giving everything a default.
     lhs_name: fd.DynamicName | None = None
     lhs_indices: fd.Prod[sc.RawAxis] = ()
-    rhs: fd.Prod[tuple[fd.DynamicName, fd.Prod[sc.RawAxis]]] = ()
+    rhs: fd.Prod[TensorRef | IversonBinOp | IversonUnaryOp] = ()
     operator: bc.Operator | None = None  # nonlinearity; None means Identity
 
     def retained_uids(self) -> set[fd.UID]:
@@ -32,8 +33,8 @@ class TensorEquation(bc.Operator):
         retained = self.retained_uids()
         seen: set[fd.UID] = set()
         result = []
-        for _, input_axes in self.rhs:
-            for ax in input_axes:
+        for factor in self.rhs:
+            for ax in _factor_axes(factor):
                 if ax.uid not in retained and ax.uid not in seen:
                     seen.add(ax.uid)
                     result.append(ax)
@@ -44,6 +45,7 @@ class TensorEquation(bc.Operator):
         signature: str = '',
         datatype: B = bc.Reals(),
         give_names: bool = True,
+        array_datatypes: dict[fd.DynamicName, bc.Datatype] | None = None,
     ) -> bc.Broadcasted[B, sc.RawAxis]:
         # `give_names` is accepted for interface compatibility with Operator.bc_signature()
         # (monkey-patched in Operators.py) but ignored — axis names come from UIDs.
@@ -90,31 +92,33 @@ class TensorEquation(bc.Operator):
             )
         degree = self.lhs_indices
         retained_uid_to_pos = {ax.uid: i for i, ax in enumerate(degree)}
+        _dt = array_datatypes or {}
 
         input_weaves = tuple(
             bc.Weave(
-                datatype,
+                _dt.get(factor.name, datatype) if isinstance(factor, TensorRef) else bc.Bool(),
                 tuple(
                     bc.WeaveMode.TILED if ax.uid in retained_uid_to_pos else ax
-                    for ax in input_axes
+                    for ax in _factor_axes(factor)
                 ),
             )
-            for _, input_axes in self.rhs
+            for factor in self.rhs
         )
+        out_dt = _dt.get(self.lhs_name, datatype) if self.lhs_name else datatype
         output_weave = bc.Weave(
-            datatype,
+            out_dt,
             tuple(bc.WeaveMode.TILED for _ in degree),
         )
         reindexings = tuple(
             pc.Rearrangement(
                 mapping=tuple(
                     retained_uid_to_pos[ax.uid]
-                    for ax in input_axes
+                    for ax in _factor_axes(factor)
                     if ax.uid in retained_uid_to_pos
                 ),
                 _dom=degree,
             )
-            for _, input_axes in self.rhs
+            for factor in self.rhs
         )
         return bc.Broadcasted(
             operator=self,
@@ -160,6 +164,7 @@ class TensorProgram(fd.Term):
     def to_morphism(
         self,
         declarations: dict[fd.DynamicName, tuple[sc.RawAxis, ...]] | None = None,
+        array_datatypes: dict[fd.DynamicName, bc.Datatype] | None = None,
     ) -> pc.Composed:
         ctx = fd.Context()
         morphisms = []
@@ -178,7 +183,11 @@ class TensorProgram(fd.Term):
                 for decl_ax, eq_ax in zip(decl_axes, eq.lhs_indices):
                     ctx.append_iter((decl_ax, eq_ax))
             seen_in_eq: set[fd.DynamicName | None] = set()
-            for tensor_name, input_axes in eq.rhs:
+            for factor in eq.rhs:
+                if not isinstance(factor, TensorRef):
+                    continue  # Iverson factors have no tensor name to unify
+                tensor_name = factor.name
+                input_axes = factor.axes
                 if tensor_name in name_to_axes and tensor_name not in seen_in_eq:
                     seen_in_eq.add(tensor_name)
                     prior_axes = name_to_axes[tensor_name]
@@ -194,7 +203,7 @@ class TensorProgram(fd.Term):
                 # axis UIDs. Size propagation for the extra reference requires
                 # an explicit declaration.
             applied_eq = ctx.apply(eq)
-            br = applied_eq.bc_signature()
+            br = applied_eq.bc_signature(array_datatypes=array_datatypes)
             morphisms.append(br)
             name_to_axes[eq.lhs_name] = applied_eq.lhs_indices
 
@@ -213,8 +222,8 @@ def topological_sort(
         name_to_eq[eq.lhs_name] = eq
     deps: dict[fd.DynamicName | None, set[fd.DynamicName | None]] = {
         eq.lhs_name: {
-            name for name, _ in eq.rhs
-            if name in name_to_eq
+            factor.name for factor in eq.rhs
+            if isinstance(factor, TensorRef) and factor.name in name_to_eq
         }
         for eq in equations
     }

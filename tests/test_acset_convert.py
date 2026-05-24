@@ -5,6 +5,7 @@ import data_structure.BroadcastedCategory as bc
 from data_structure.StrideCategory import RawAxis, StrideMorphism
 from data_structure.Numeric import Integer
 from data_structure.TensorLogic import TensorEquation, TensorProgram
+from data_structure.TensorExpr import TensorRef, IversonBinOp, _factor_axes
 from data_structure.Operators import (
     Identity, SoftMax, Linear, Elementwise,
     Normalize, Embedding, AdditionOp, WeightedTriangularLower,
@@ -83,8 +84,8 @@ def _matmul_eq():
         lhs_name=fd.DynamicName('Y'),
         lhs_indices=(i, j),
         rhs=(
-            (fd.DynamicName('W'), (i, k)),
-            (fd.DynamicName('X'), (k, j)),
+            TensorRef(fd.DynamicName('W'), (i, k)),
+            TensorRef(fd.DynamicName('X'), (k, j)),
         ),
         operator=Identity(),
     )
@@ -180,7 +181,7 @@ def test_softmax_operator_tag():
     eq = TensorEquation(
         lhs_name=fd.DynamicName('Y'),
         lhs_indices=(i,),
-        rhs=((fd.DynamicName('X'), (i,)),),
+        rhs=(TensorRef(fd.DynamicName('X'), (i,)),),
         operator=SoftMax(),
     )
     inst = from_tensor_equation(eq)
@@ -203,7 +204,7 @@ def test_normalize_operator_tag():
     eq = TensorEquation(
         lhs_name=fd.DynamicName('Y'),
         lhs_indices=(i,),
-        rhs=((fd.DynamicName('X'), (i,)),),
+        rhs=(TensorRef(fd.DynamicName('X'), (i,)),),
         operator=Normalize(),
     )
     inst = from_tensor_equation(eq)
@@ -217,7 +218,7 @@ def test_embedding_operator_tag():
     eq = TensorEquation(
         lhs_name=fd.DynamicName('Y'),
         lhs_indices=(i,),
-        rhs=((fd.DynamicName('E'), (i,)),),
+        rhs=(TensorRef(fd.DynamicName('E'), (i,)),),
         operator=Embedding(),
     )
     inst = from_tensor_equation(eq)
@@ -231,7 +232,10 @@ def test_addition_op_operator_tag():
     eq = TensorEquation(
         lhs_name=fd.DynamicName('Y'),
         lhs_indices=(i,),
-        rhs=((fd.DynamicName('X'), (i,)), (fd.DynamicName('Z'), (i,))),
+        rhs=(
+            TensorRef(fd.DynamicName('X'), (i,)),
+            TensorRef(fd.DynamicName('Z'), (i,)),
+        ),
         operator=AdditionOp(),
     )
     inst = from_tensor_equation(eq)
@@ -245,7 +249,7 @@ def test_weighted_triangular_lower_operator_tag():
     eq = TensorEquation(
         lhs_name=fd.DynamicName('Y'),
         lhs_indices=(i,),
-        rhs=((fd.DynamicName('X'), (i,)),),
+        rhs=(TensorRef(fd.DynamicName('X'), (i,)),),
         operator=WeightedTriangularLower(),
     )
     inst = from_tensor_equation(eq)
@@ -268,8 +272,8 @@ def _two_equation_program():
         lhs_name=fd.DynamicName('H'),
         lhs_indices=(i, k),
         rhs=(
-            (fd.DynamicName('W1'), (i, j)),
-            (fd.DynamicName('X'),  (j, k)),
+            TensorRef(fd.DynamicName('W1'), (i, j)),
+            TensorRef(fd.DynamicName('X'),  (j, k)),
         ),
         operator=Identity(),
     )
@@ -277,8 +281,8 @@ def _two_equation_program():
         lhs_name=fd.DynamicName('Y'),
         lhs_indices=(i, k),
         rhs=(
-            (fd.DynamicName('W2'), (i, m)),
-            (fd.DynamicName('H'),  (m, k)),
+            TensorRef(fd.DynamicName('W2'), (i, m)),
+            TensorRef(fd.DynamicName('H'),  (m, k)),
         ),
         operator=Identity(),
     )
@@ -324,7 +328,10 @@ def test_from_tensor_program_does_not_unify_fresh_axes():
     eq1 = TensorEquation(
         lhs_name=fd.DynamicName('H'),
         lhs_indices=(i1, k1),
-        rhs=((fd.DynamicName('W1'), (i1, j1)), (fd.DynamicName('X'), (j1, k1))),
+        rhs=(
+            TensorRef(fd.DynamicName('W1'), (i1, j1)),
+            TensorRef(fd.DynamicName('X'), (j1, k1)),
+        ),
         operator=Identity(),
     )
     i2 = RawAxis.named('i')
@@ -333,7 +340,10 @@ def test_from_tensor_program_does_not_unify_fresh_axes():
     eq2 = TensorEquation(
         lhs_name=fd.DynamicName('Y'),
         lhs_indices=(i2, k2),
-        rhs=((fd.DynamicName('W2'), (i2, m2)), (fd.DynamicName('H'), (m2, k2))),
+        rhs=(
+            TensorRef(fd.DynamicName('W2'), (i2, m2)),
+            TensorRef(fd.DynamicName('H'), (m2, k2)),
+        ),
         operator=Identity(),
     )
     inst = from_tensor_program(TensorProgram(equations=(eq1, eq2)))
@@ -352,7 +362,7 @@ def _embedding_eq():
     return TensorEquation(
         lhs_name=fd.DynamicName('Y'),
         lhs_indices=(i,),
-        rhs=((fd.DynamicName('E'), (i,)),),
+        rhs=(TensorRef(fd.DynamicName('E'), (i,)),),
         operator=Identity(),
     ), i
 
@@ -391,7 +401,7 @@ def test_linear_bias_true():
     eq = TensorEquation(
         lhs_name=fd.DynamicName('Y'),
         lhs_indices=(i,),
-        rhs=((fd.DynamicName('W'), (i, j)),),
+        rhs=(TensorRef(fd.DynamicName('W'), (i, j)),),
         operator=Linear(bias=True),
     )
     inst = from_tensor_equation(eq)
@@ -406,7 +416,7 @@ def test_linear_bias_false():
     eq = TensorEquation(
         lhs_name=fd.DynamicName('Y'),
         lhs_indices=(i,),
-        rhs=((fd.DynamicName('W'), (i, j)),),
+        rhs=(TensorRef(fd.DynamicName('W'), (i, j)),),
         operator=Linear(bias=False),
     )
     inst = from_tensor_equation(eq)
@@ -420,7 +430,7 @@ def test_elementwise_fn_stored():
     eq = TensorEquation(
         lhs_name=fd.DynamicName('Y'),
         lhs_indices=(i,),
-        rhs=((fd.DynamicName('X'), (i,)),),
+        rhs=(TensorRef(fd.DynamicName('X'), (i,)),),
         operator=Elementwise(operator='relu'),
     )
     inst = from_tensor_equation(eq)
@@ -488,8 +498,8 @@ def _gram_eq():
         lhs_name=fd.DynamicName('Y'),
         lhs_indices=(i, j),
         rhs=(
-            (h_name, (i, k)),
-            (h_name, (j, k)),
+            TensorRef(h_name, (i, k)),
+            TensorRef(h_name, (j, k)),
         ),
         operator=Identity(),
     )
@@ -544,3 +554,74 @@ def test_self_join_samples_point_to_distinct_slots():
     inst = from_tensor_equation(eq)
     assert len(inst.samples) == 2
     assert inst.samples[0].reindexing_slot != inst.samples[1].reindexing_slot
+
+
+# ── Bool semiring ────────────────────────────────────────────────────────────
+
+def test_bool_datatype_tag():
+    """Supplying bc.Bool() sets DataTag.BOOL and no max_value on that array."""
+    eq, _i = _embedding_eq()
+    datatypes = {fd.DynamicName('E'): bc.Bool()}
+    inst = from_tensor_equation(eq, array_datatypes=datatypes)
+    e_row = next(a for a in inst.arrays if a.name == fd.DynamicName('E'))
+    assert e_row.datatype_tag == DataTag.BOOL
+    assert e_row.max_value is None
+
+
+# ── Iverson factors ──────────────────────────────────────────────────────────
+
+def test_iverson_factor_produces_bool_array_row():
+    """An IversonBinOp in the rhs produces an ArrayRow with DataTag.BOOL."""
+    q = RawAxis.named('q')
+    x = RawAxis.named('x')
+    pred = q < x  # IversonBinOp('<', q, x) via monkey-patched __lt__
+    eq = TensorEquation(
+        lhs_name=fd.DynamicName('Out'),
+        lhs_indices=(q, x),
+        rhs=(
+            TensorRef(fd.DynamicName('Score'), (q, x)),
+            pred,
+        ),
+        operator=Identity(),
+    )
+    inst = from_tensor_equation(eq)
+    # slot 2 is the Iverson factor
+    iverson_array = next(a for a in inst.arrays if a.slot == 2)
+    assert iverson_array.datatype_tag == DataTag.BOOL
+    assert iverson_array.name is None
+
+
+def test_iverson_factor_serializes_expr():
+    """An Iverson factor's ArrayRow stores a non-empty iverson_expr string."""
+    q = RawAxis.named('q')
+    x = RawAxis.named('x')
+    pred = q < x
+    eq = TensorEquation(
+        lhs_name=fd.DynamicName('Out'),
+        lhs_indices=(q, x),
+        rhs=(
+            TensorRef(fd.DynamicName('Score'), (q, x)),
+            pred,
+        ),
+        operator=Identity(),
+    )
+    inst = from_tensor_equation(eq)
+    iverson_array = next(a for a in inst.arrays if a.slot == 2)
+    assert iverson_array.iverson_expr is not None
+    assert len(iverson_array.iverson_expr) > 0
+
+
+def test_iverson_factor_axes_are_registered():
+    """Axes from an Iverson factor appear in axis_sizes."""
+    q = RawAxis.named('q')
+    x = RawAxis.named('x')
+    pred = q < x
+    eq = TensorEquation(
+        lhs_name=fd.DynamicName('Out'),
+        lhs_indices=(q, x),
+        rhs=(pred,),
+        operator=Identity(),
+    )
+    inst = from_tensor_equation(eq)
+    assert q.uid in inst.axis_sizes
+    assert x.uid in inst.axis_sizes

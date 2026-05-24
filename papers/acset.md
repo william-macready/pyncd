@@ -135,8 +135,8 @@ Five entity types, six attribute types ($\mathbb{N}$, $\mathbb{N}_{>0}$, $\mathb
 | `is_target` | `ArrayAxis → Bool` | For input arrays: True = axis consumed by the base operation (contracted for sum operations, normalized for SoftMax/Normalize); False = degree axis supplied by the outer loop. For output arrays: always False — every axis in `lhs_indices` is a degree axis produced by the outer loop; the normalization dimension is identified separately by `norm_axis` on `Array` |
 | `position` | `ArrayAxis → ℕ` | 0-indexed dimension position within the array's physical layout; encodes the axis interleaving of `Weave._shape` |
 | `is_input` | `Array → Bool` | input array (True) or output array (False) |
-| `datatype_tag` | `Array → DataTag` | total map; `REALS` for floating-point arrays, `NATURAL` for discrete vocabulary arrays |
-| `max_value` | `Array → ℕ` | vocabulary size for `NATURAL` arrays; partial — undefined for `REALS` arrays |
+| `datatype_tag` | `Array → DataTag` | total map; `REALS` for floating-point arrays, `NATURAL` for discrete vocabulary arrays, `BOOL` for Boolean predicate arrays whose output is thresholded by $H$ |
+| `max_value` | `Array → ℕ` | vocabulary size for `NATURAL` arrays; partial — undefined for `REALS` and `BOOL` arrays |
 | `operator_tag` | `Array → OpTag` | base operation type; partial — defined only for output arrays (`is_input = False`) |
 | `bias` | `Array → Bool` | whether `Linear` applies a bias term; partial — defined only for `Linear` output arrays |
 | `elementwise_fn` | `Array → String` | name of the pointwise function; partial — defined only for `Elementwise` output arrays |
@@ -419,6 +419,7 @@ These fields map to the four tables of `SBrInstance`: `arrays: list[ArrayRow]`, 
 | `operator.operator` (when `Elementwise`) | `elementwise_fn` attribute on the output `Array` row |
 | Array datatype (from `array_datatypes` parameter) | `datatype_tag` attribute on the `Array` row |
 | `Natural.max_value` (when datatype is `Natural`) | `max_value` attribute on the `Array` row |
+| Bool datatype (predicate array) | `datatype_tag = BOOL`; `max_value` left absent |
 | Every axis in `lhs_indices` and every axis in `rhs` | Entry in `axis_sizes: dict[UID, Numeric]` |
 
 **Example: $Y[i,j] = W[i,k]\, X[k,j]$.** The degree is $(i, j)$ — the retained indices. The contracted axis $k$ appears in both $W$ and $X$ but not in the output. $W$ is indexed by degree axis $i$; $X$ by degree axis $j$.

@@ -1,10 +1,13 @@
 import pytest
 from data_structure.TensorDSL import (
     TL, TensorProxy, IndexedTensor, RHSExpression,
-    NormAxis, NatAxis, PredAxis, TensorKind, TensorDeclaration,
+    NormAxis, NatAxis, TensorKind, TensorDeclaration,
     axes, norm_axis, nat_axis, real_axis, relu, softmax,
+    ieq, imul, iabs,
 )
+from data_structure.TensorExpr import TensorRef, IversonBinOp, IversonUnaryOp
 from data_structure.TensorLogic import TensorEquation, TensorProgram
+import data_structure.BroadcastedCategory as bc
 import data_structure.Numeric as nm
 import data_structure.Operators as ops
 import data_structure.StrideCategory as sc
@@ -118,7 +121,7 @@ def test_softmax_on_expression():
 
 
 # ---------------------------------------------------------------------------
-# __setitem__ captures equations
+# __setitem__ captures equations with TensorRef factors
 # ---------------------------------------------------------------------------
 
 def test_setitem_captures_equation():
@@ -129,6 +132,13 @@ def test_setitem_captures_equation():
     eq = tl._equations[0]
     assert isinstance(eq, TensorEquation)
     assert eq.lhs_name == fd.DynamicName('Y')
+
+def test_setitem_rhs_contains_tensor_refs():
+    tl = TL()
+    i, j, k = axes('i j k')
+    tl.Y[i, j] = tl.W[i, k] * tl.X[k, j]
+    eq = tl._equations[0]
+    assert all(isinstance(f, TensorRef) for f in eq.rhs)
 
 def test_setitem_single_factor_coerced():
     tl = TL()
@@ -142,9 +152,9 @@ def test_setitem_preserves_axis_uid_identity():
     i, j, k = axes('i j k')
     tl.Y[i, j] = tl.W[i, k] * tl.X[k, j]
     eq = tl._equations[0]
-    # k appears in both rhs factors; uid must match
-    k_in_W = eq.rhs[0][1][1]   # W's second index
-    k_in_X = eq.rhs[1][1][0]   # X's first index
+    # k appears in both rhs TensorRefs; uid must match
+    k_in_W = eq.rhs[0].axes[1]   # W's second index
+    k_in_X = eq.rhs[1].axes[0]   # X's first index
     assert k_in_W.uid == k_in_X.uid
 
 def test_multiple_equations_ordered():
@@ -289,13 +299,15 @@ def test_declaration_returns_proxy():
 # Axis promotion via __getitem__
 # ---------------------------------------------------------------------------
 
-def test_predicate_promotes_all_axes():
+def test_predicate_no_longer_promotes_axes():
+    """PREDICATE kind no longer promotes axes to PredAxis; indices returned as-is."""
     tl = TL()
     q, x = axes('q x')
     tl.Mask.predicate(q, x)
     i, j = axes('i j')
     it = tl.Mask[i, j]
-    assert all(isinstance(ax, PredAxis) for ax in it.indices)
+    # No PredAxis type — plain RawAxis
+    assert all(type(ax) is sc.RawAxis for ax in it.indices)
 
 def test_predicate_preserves_uid():
     tl = TL()
@@ -312,8 +324,8 @@ def test_tensor_no_promotion():
     tl.W.tensor(d_ff, d)
     i, j = axes('i j')
     it = tl.W[i, j]
-    assert not isinstance(it.indices[0], (NatAxis, PredAxis))
-    assert not isinstance(it.indices[1], (NatAxis, PredAxis))
+    assert not isinstance(it.indices[0], NatAxis)
+    assert not isinstance(it.indices[1], NatAxis)
 
 def test_selection_promotes_nat_slots_only():
     tl = TL()
@@ -394,5 +406,99 @@ def test_bc_signature_empty_string_accepted():
     tl = TL()
     i, j, k = axes('i j k')
     tl.Y[i, j] = tl.W[i, k] * tl.X[k, j]
-    import data_structure.BroadcastedCategory as bc
     assert isinstance(tl.to_equation().bc_signature(signature=''), bc.Broadcasted)
+
+
+# ---------------------------------------------------------------------------
+# Bool semiring: predicate declaration flows to bc.Bool() weave datatype
+# ---------------------------------------------------------------------------
+
+def test_predicate_declaration_produces_bool_datatypes():
+    """_array_datatypes() returns bc.Bool() for each PREDICATE-declared tensor."""
+    tl = TL()
+    q, x = axes('q x')
+    tl.Mask.predicate(q, x)
+    adt = tl._array_datatypes()
+    assert adt[fd.DynamicName('Mask')] == bc.Bool()
+
+def test_predicate_weave_has_bool_datatype():
+    """bc_signature() with a PREDICATE tensor produces a Bool-typed input weave."""
+    tl = TL()
+    q, x = axes('q x')
+    tl.Mask.predicate(q, x)
+    tl.Out[q, x] = tl.Score[q, x] * tl.Mask[q, x]
+    sig = tl.bc_signature()
+    # rhs slot 0 = Score (Reals), slot 1 = Mask (Bool)
+    assert sig.input_weaves[1].datatype == bc.Bool()
+
+def test_non_predicate_weave_has_reals_datatype():
+    """Non-predicate tensors default to Reals datatype in bc_signature."""
+    tl = TL()
+    q, x = axes('q x')
+    tl.Mask.predicate(q, x)
+    tl.Out[q, x] = tl.Score[q, x] * tl.Mask[q, x]
+    sig = tl.bc_signature()
+    assert sig.input_weaves[0].datatype == bc.Reals()
+
+
+# ---------------------------------------------------------------------------
+# Iverson expressions
+# ---------------------------------------------------------------------------
+
+def test_iverson_binop_from_mul():
+    """Multiplying an IndexedTensor by an IversonBinOp gives an RHSExpression."""
+    tl = TL()
+    q, x = axes('q x')
+    pred = q < x  # RawAxis comparison → IversonBinOp
+    assert isinstance(pred, IversonBinOp)
+    expr = tl.A[q, x] * pred
+    assert isinstance(expr, RHSExpression)
+    assert len(expr.factors) == 2
+    assert isinstance(expr.factors[1], IversonBinOp)
+
+def test_iverson_factor_in_rhs():
+    """An IversonBinOp factor in an equation's rhs is stored as-is (not TensorRef)."""
+    from data_structure.TensorExpr import TensorRef
+    tl = TL()
+    q, x = axes('q x')
+    pred = q < x
+    tl.Out[q, x] = tl.A[q, x] * pred
+    eq = tl._equations[0]
+    assert isinstance(eq.rhs[0], TensorRef)
+    assert isinstance(eq.rhs[1], IversonBinOp)
+
+def test_ieq_helper():
+    """ieq(x, y) produces an IversonBinOp with op='=='."""
+    q, x = axes('q x')
+    pred = ieq(q, x)
+    assert isinstance(pred, IversonBinOp)
+    assert pred.op == '=='
+
+def test_iabs_helper():
+    """iabs(x) produces an IversonUnaryOp with op='abs'."""
+    q, = axes('q')
+    expr = iabs(q)
+    assert isinstance(expr, IversonUnaryOp)
+    assert expr.op == 'abs'
+
+def test_compound_iverson_expression():
+    """iabs(q - x) < threshold is a valid nested IversonBinOp."""
+    from data_structure.TensorExpr import IversonConst
+    from data_structure.Numeric import Integer
+    q, x = axes('q x')
+    diff = q - x          # IversonBinOp('-', q, x)
+    abs_diff = iabs(diff) # IversonUnaryOp('abs', diff)
+    pred = abs_diff < IversonConst(Integer(5))  # IversonBinOp('<', abs_diff, IversonConst(5))
+    assert isinstance(pred, IversonBinOp)
+    assert pred.op == '<'
+    assert isinstance(pred.lhs, IversonUnaryOp)
+
+def test_iverson_axes_extracted_correctly():
+    """_factor_axes() returns the RawAxis leaves from an Iverson factor."""
+    from data_structure.TensorExpr import _factor_axes
+    q, x = axes('q x')
+    pred = q < x
+    leaf_axes = _factor_axes(pred)
+    assert len(leaf_axes) == 2
+    assert leaf_axes[0].uid == q.uid
+    assert leaf_axes[1].uid == x.uid

@@ -9,7 +9,11 @@ import data_structure.Numeric as nm
 import data_structure.StrideCategory as sc
 import data_structure.Operators as ops
 from data_structure.TensorLogic import TensorEquation, TensorProgram
-from data_structure.AxisAnnotations import NormAxis, NatAxis, PredAxis
+from data_structure.TensorExpr import (
+    TensorRef, IversonBinOp, IversonUnaryOp,
+    ieq, imul, iabs,
+)
+from data_structure.AxisAnnotations import NormAxis, NatAxis
 
 
 # ---------------------------------------------------------------------------
@@ -18,7 +22,7 @@ from data_structure.AxisAnnotations import NormAxis, NatAxis, PredAxis
 
 class TensorKind(Enum):
     TENSOR    = 'tensor'
-    PREDICATE = 'predicate'
+    PREDICATE = 'predicate'  # Bool-typed; axes no longer promoted to PredAxis
     SELECTION = 'selection'
 
 
@@ -27,10 +31,6 @@ class TensorDeclaration:
     """Positional shape declaration for a named tensor."""
     kind:  TensorKind
     shape: tuple[sc.RawAxis, ...]
-
-
-def _pred_wrap(ax: sc.RawAxis) -> PredAxis:
-    return PredAxis(uid=ax.uid, _size=ax._size)
 
 
 def _nat_wrap(ax: sc.RawAxis) -> NatAxis:
@@ -81,12 +81,23 @@ class TL:
     def to_program(self) -> TensorProgram:
         return TensorProgram(equations=tuple(self._equations))
 
+    def _array_datatypes(self) -> dict[fd.DynamicName, bc.Datatype]:
+        """Map predicate tensor names to bc.Bool() for bc_signature / to_morphism."""
+        return {
+            fd.DynamicName(name): bc.Bool()
+            for name, decl in self._declarations.items()
+            if decl.kind is TensorKind.PREDICATE
+        }
+
     def to_morphism(self):
         decl_shapes = {
             fd.DynamicName(name): decl.shape
             for name, decl in self._declarations.items()
         }
-        return self.to_program().to_morphism(declarations=decl_shapes)
+        return self.to_program().to_morphism(
+            declarations=decl_shapes,
+            array_datatypes=self._array_datatypes(),
+        )
 
     def bc_signature[B: bc.Datatype](
         self,
@@ -94,7 +105,10 @@ class TL:
         datatype: B = bc.Reals(),
         give_names: bool = True,
     ) -> bc.Broadcasted[B, sc.RawAxis]:
-        return self.to_equation().bc_signature(signature, datatype, give_names)
+        return self.to_equation().bc_signature(
+            signature, datatype, give_names,
+            array_datatypes=self._array_datatypes(),
+        )
 
 
 class TensorProxy:
@@ -119,7 +133,7 @@ class TensorProxy:
                 f"but indexed with {len(indices)}"
             )
         if decl.kind is TensorKind.PREDICATE:
-            return tuple(_pred_wrap(ax) for ax in indices)
+            return indices  # Bool datatype; axes no longer promoted to PredAxis
         if decl.kind is TensorKind.SELECTION:
             return tuple(
                 _nat_wrap(ax) if isinstance(decl_ax, NatAxis) else ax
@@ -150,7 +164,10 @@ class TensorProxy:
         eq = TensorEquation(
             lhs_name=fd.DynamicName(self._name),
             lhs_indices=indices,
-            rhs=tuple((t.name, t.indices) for t in value.factors),
+            rhs=tuple(
+                TensorRef(f.name, f.indices) if isinstance(f, IndexedTensor) else f
+                for f in value.factors
+            ),
             operator=value.operator,
         )
         self._registry._register(eq)
@@ -164,7 +181,7 @@ class TensorProxy:
         return self
 
     def predicate(self, *shape: sc.RawAxis) -> TensorProxy:
-        """Declare this tensor as a predicate tensor; all indices promoted to PredAxis."""
+        """Declare this tensor as Bool-typed (predicate); axes are not promoted."""
         self._registry._register_declaration(
             self._name,
             TensorDeclaration(kind=TensorKind.PREDICATE, shape=shape),
@@ -190,7 +207,12 @@ class IndexedTensor:
         self.name = name
         self.indices = indices
 
-    def __mul__(self, other: IndexedTensor | RHSExpression) -> RHSExpression:
+    def __mul__(
+        self,
+        other: IndexedTensor | RHSExpression | IversonBinOp | IversonUnaryOp,
+    ) -> RHSExpression:
+        if isinstance(other, (IversonBinOp, IversonUnaryOp)):
+            return RHSExpression([self, other], ops.Identity())
         if isinstance(other, IndexedTensor):
             return RHSExpression([self, other], ops.Identity())
         return RHSExpression([self, *other.factors], other.operator)
@@ -206,11 +228,18 @@ class RHSExpression:
     to attach a nonlinearity.
     """
 
-    def __init__(self, factors: list[IndexedTensor], operator: bc.Operator) -> None:
+    def __init__(
+        self,
+        factors: list[IndexedTensor | IversonBinOp | IversonUnaryOp],
+        operator: bc.Operator,
+    ) -> None:
         self.factors = factors
         self.operator = operator
 
-    def __mul__(self, other: IndexedTensor) -> RHSExpression:
+    def __mul__(
+        self,
+        other: IndexedTensor | IversonBinOp | IversonUnaryOp,
+    ) -> RHSExpression:
         return RHSExpression(self.factors + [other], self.operator)
 
 

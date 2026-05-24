@@ -57,6 +57,9 @@ class Datatype(fd.Term, ABC):
 class Reals(Datatype): ...
 
 @dataclass(frozen=True)
+class Bool(Datatype): ...
+
+@dataclass(frozen=True)
 class Natural(Datatype):
     max_value: nm.Numeric = nm.FreeNumeric.field()
     @classmethod

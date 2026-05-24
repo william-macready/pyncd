@@ -5,6 +5,7 @@ import data_structure.Term as fd
 import data_structure.Numeric as nm
 from data_structure.StrideCategory import RawAxis, StrideMorphism
 from data_structure.TensorLogic import TensorEquation, TensorProgram
+from data_structure.TensorExpr import TensorRef
 from data_structure.Operators import Linear, SoftMax
 from data_structure.TensorDSL import NormAxis
 
@@ -55,7 +56,7 @@ def _identity_sbr():
     eq = TensorEquation(
         lhs_name=fd.DynamicName.from_str('Y'),
         lhs_indices=[p, d],
-        rhs=[(fd.DynamicName.from_str('X'), [p, d])],
+        rhs=(TensorRef(fd.DynamicName.from_str('X'), (p, d)),),
     )
     return from_tensor_equation(eq)
 
@@ -68,10 +69,10 @@ def _linear_sbr():
     eq = TensorEquation(
         lhs_name=fd.DynamicName.from_str('H'),
         lhs_indices=[p, d2],
-        rhs=[
-            (fd.DynamicName.from_str('X'), [p, d]),
-            (fd.DynamicName.from_str('W'), [d2, d]),
-        ],
+        rhs=(
+            TensorRef(fd.DynamicName.from_str('X'), (p, d)),
+            TensorRef(fd.DynamicName.from_str('W'), (d2, d)),
+        ),
         operator=Linear(bias=False),
     )
     return from_tensor_equation(eq)
@@ -85,19 +86,19 @@ def _two_equation_sbr():
     eq1 = TensorEquation(
         lhs_name=fd.DynamicName.from_str('H'),
         lhs_indices=[p, d2],
-        rhs=[
-            (fd.DynamicName.from_str('X'),  [p, d]),
-            (fd.DynamicName.from_str('W1'), [d2, d]),
-        ],
+        rhs=(
+            TensorRef(fd.DynamicName.from_str('X'),  (p, d)),
+            TensorRef(fd.DynamicName.from_str('W1'), (d2, d)),
+        ),
         operator=Linear(bias=False),
     )
     eq2 = TensorEquation(
         lhs_name=fd.DynamicName.from_str('Y'),
         lhs_indices=[p, d],
-        rhs=[
-            (fd.DynamicName.from_str('H'),  [p, d2]),
-            (fd.DynamicName.from_str('W2'), [d, d2]),
-        ],
+        rhs=(
+            TensorRef(fd.DynamicName.from_str('H'),  (p, d2)),
+            TensorRef(fd.DynamicName.from_str('W2'), (d, d2)),
+        ),
         operator=Linear(bias=True),
     )
     return from_tensor_program(TensorProgram(equations=(eq1, eq2)))
@@ -217,6 +218,7 @@ def test_write_sbr_arrays_headers(tmp_path):
         expected = {
             'equation_idx', 'slot', 'name', 'is_input', 'operator_tag',
             'norm_axis', 'datatype_tag', 'max_value', 'bias', 'elementwise_fn',
+            'iverson_expr',
         }
         assert set(csv.DictReader(f).fieldnames) == expected
 
@@ -390,7 +392,7 @@ def _softmax_sbr() -> SBrInstance:
     eq = TensorEquation(
         lhs_name=fd.DynamicName.from_str('Y'),
         lhs_indices=[i],
-        rhs=[(fd.DynamicName.from_str('X'), [i])],
+        rhs=(TensorRef(fd.DynamicName.from_str('X'), (i,)),),
         operator=SoftMax(),
     )
     return from_tensor_equation(eq)

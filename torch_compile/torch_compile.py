@@ -214,6 +214,44 @@ def broadcast_func(
 ## STATIC ##
 ############
 
+def generate_tensor_equation_signature(target: cat.Broadcasted) -> str:
+    """Build an einops contraction string from a TensorEquation-operator Broadcasted.
+
+    Reads contracted axes from weave _shape directly: concrete RawAxis slots are
+    contracted, WeaveMode.TILED slots are retained (degree). A UID→tag dict
+    ensures axes shared across multiple input weaves receive the same tag, which
+    is what causes einops to contract over them.
+
+    All RHS factors are expected to have been materialised as tensors before
+    forward() is called. Iverson materialisation is a separate upstream step.
+    """
+    assert tutil.is_mappable_broadcast(target)
+    degree_tags = tuple(f'y{i}' for i, _ in enumerate(target.degree()))
+    contracted_tag: dict = {}
+    tag_counter = 0
+    for weave in target.input_weaves:
+        for slot in weave._shape:
+            if not isinstance(slot, cat.WeaveMode):
+                uid = slot.uid
+                if uid not in contracted_tag:
+                    contracted_tag[uid] = f'x{tag_counter}'
+                    tag_counter += 1
+    input_segments = (
+        weave.imprint_axes(
+            (degree_tags[i] for i in tutil.get_mapping(eta)),
+            (contracted_tag[slot.uid] for slot in weave._shape
+             if not isinstance(slot, cat.WeaveMode)),
+        )
+        for weave, eta in zip(target.input_weaves, target.reindexings)
+    )
+    input_signature = ', '.join(
+        '... ' + ' '.join(segment)
+        for segment in input_segments
+    )
+    output_signature = ' '.join(degree_tags)
+    return f'{input_signature} -> ... {output_signature}'
+
+
 def generate_einops_signature(target: cat.Broadcasted[Any, Any, ops.Einops]):
     assert tutil.is_mappable_broadcast(target)
     operator = target.operator
@@ -251,7 +289,41 @@ class ConstructedEinops[B: cat.Datatype, A: cat.Axis](
 
     def forward(self, *xs: torch.Tensor):
         return einops.einsum(*xs, self.signature) # type: ignore
-    
+
+
+class ConstructedTensorEquation[B: cat.Datatype, A: cat.Axis](
+    ConstructedModule[cat.Broadcasted[B, A, cat.TensorEquation]],
+    operation_key=cat.TensorEquation,
+):
+    """Compile a TensorEquation-operator Broadcasted to an einsum.
+
+    Expects one tensor per RHS factor, in rhs order. Iverson factors must be
+    pre-materialised by the caller as concrete float tensors; this class treats
+    them identically to TensorRef factors. Iverson materialisation is a
+    separate upstream step so it can be implemented independently.
+
+    If the output weave carries Bool(), applies H(x) = (x > 0) after the
+    contraction to demote the real-valued result to {0, 1}.
+    """
+
+    def __init__(self, target: cat.Broadcasted[B, A, cat.TensorEquation]):
+        super().__init__(target)
+        assert len(target.output_weaves) == 1
+        nonlinearity = target.operator.operator
+        if nonlinearity is not None and not isinstance(nonlinearity, ops.Identity):
+            raise NotImplementedError(
+                f'ConstructedTensorEquation does not compile nonlinearity '
+                f'{nonlinearity!r}; compose it as a separate Broadcasted step.'
+            )
+        self.signature = generate_tensor_equation_signature(target)
+        self.demote = isinstance(target.output_weaves[0].datatype, cat.Bool)
+
+    def forward(self, *xs: torch.Tensor) -> torch.Tensor:
+        result = einops.einsum(*xs, self.signature)  # type: ignore
+        if self.demote:
+            return (result > 0).to(result.dtype)
+        return result
+
 
 ConstructedModule.add_function(ops.SoftMax, torch.softmax, dim=True)
 ConstructedModule.add_function(ops.AdditionOp, lambda x, y: x + y, semantic=True)

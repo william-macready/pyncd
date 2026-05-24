@@ -20,9 +20,10 @@ class OpTag(Enum):
 
 
 class DataTag(Enum):
-    """Scalar datatype of an Array: continuous reals or discrete naturals."""
+    """Scalar datatype of an Array: continuous reals, discrete naturals, or booleans."""
     REALS   = 'reals'
     NATURAL = 'natural'
+    BOOL    = 'bool'
 
 
 @dataclass
@@ -60,6 +61,7 @@ class ArrayRow:
     max_value:       nm.Numeric | None = None
     bias:            bool | None       = None
     elementwise_fn:  str | None        = None
+    iverson_expr:    str | None        = None
 
 
 @dataclass

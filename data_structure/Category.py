@@ -21,6 +21,7 @@ from data_structure.BroadcastedCategory import (
     BroadcastedObjectoid,
     Datatype,
     Reals,
+    Bool,
     Natural,
     Array,
     WeaveMode,
