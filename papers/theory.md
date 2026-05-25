@@ -117,10 +117,11 @@ type ProdCategory[L, M: Morphism] = (
  | Composed[L, ProdCategory[L, M]]
  | ProductOfMorphisms[L, ProdCategory[L, M]]
  | Block[L, ProdCategory[L, M]]
+ | Scan[L, ProdCategory[L, M]]   # pyncd extension — not in the original paper; see below
 )
 ```
 
-The first two are the core primitives; the remaining three are structural.
+The first two are the core primitives; the next three are structural; the sixth (`Scan`) is a pyncd extension not present in the original paper.
 
 **1. Root morphisms** $m \in M$ — the category-specific primitive operations. Abstract in `ProductCategory`; concretely `StrideMorphism` in **St** and `Broadcasted` in **Br**.
 
@@ -140,6 +141,12 @@ deletion of input $i$ is expressed by having $\text{count}[\mu](i)=0$ and copyin
 **5. Block** — a morphism decorated with display metadata (`title`, `fill_color`) and a `repetition` count (e.g., $\times 6$ for a stacked transformer layer). Transparent to the categorical semantics; passes $\text{dom}()$ and $\text{cod}()$ through from the body.
 
 - **Python:** `Block[L, M]` with `body: M` and `block_tag: BlockTag`.
+
+**6. Scan** *(pyncd extension — not in the original paper)* — an iterative scan over $N$ steps, expressing a recurrence relation $H_{l+1} = f(H_l, x_l)$ where $H$ is a running state and $x_l$ are per-step external inputs. Unlike `Block`, the step morphism $f$ has $\text{dom}(f) \neq \text{cod}(f)$ (the state and the input are different types), so `Block` cannot express this. `Scan` lifts the domain and codomain to the outer level: $\text{dom}(\text{Scan}) = (\text{StateInit}, \text{InputSequence})$ and $\text{cod}(\text{Scan}) = \text{StateSequence}$, returning the full state history (scanl semantics) of shape $(*\text{state}, N{+}1)$.
+
+`Scan` satisfies the core ProdCategory axioms (well-typed domain/codomain, identity, associativity, bifunctoriality) and is a valid construction rule in the grammar. However, it does **not** satisfy the batch lift independence axiom (Eq. 3) for the recurrence axis $L$: the output at position $l$ depends on all preceding positions, not only the $l$-th input slice. $L$ therefore cannot appear as a tiling axis in any weave or as the domain of a static reindexing; it is managed by `Scan`'s sequential iteration logic.
+
+- **Python:** `Scan` is defined in `data_structure/TensorDSL.py` (not `ProductCategory.py`) as a frozen `Term` dataclass. It stores `step` (the step-body morphism), `base` (the base-case morphism mapping initial-condition inputs to $H_0$), `N` (step count as `nm.Numeric`), `axis` (the recurrence `RawAxis`), and an optional `affine: ScanAffine` decomposition for the associative-scan fast path. It is **not** exported from `data_structure/Category.py` (to avoid the circular import `TensorDSL → Operators → Category → TensorDSL`).
 
 After describing one more ingredient for the **product categories** we're interested in we turn to specific instantiations.
 
@@ -419,6 +426,8 @@ $$[f, P] \mathbin{;} [Y, q] = [X, q] \mathbin{;} f \qquad \forall\, q : \mathbf{
 
 Slicing the output at $q$ after applying $[f, P]$ gives the same result as slicing the input at $q$ first and then applying $f$ directly. The computation at each position $q \in P$ depends only on the $q$-th input slice.
 
+> **Note (pyncd extension).** The `Scan` construction rule (§ above) does *not* satisfy Eq. 3 for its recurrence axis $L$. The output at position $l$ depends on all outputs at positions $0, \ldots, l{-}1$, so slicing output-first and input-first are not equivalent. This is precisely why `Scan` must be a new construction rule rather than a `Broadcasted` with $L$ as a tiling degree. Batch lifting over axes *orthogonal* to $L$ is well-defined — `[Scan, P]` for an independent batch axis $P$ runs the scan independently for each $p \in P$, and Eq. 3 holds over $P$.
+
 The full structural definition (Def 11) makes the independence of positions explicit via the copy remapping $\delta^P : P \to \mathbf{1}$, the unique morphism in **St** that deletes all axes of $P$:
 
 $$[f, P] \mathbin{;} [\delta^P]_{[Y,P]} \mathbin{;} \prod_{p \in \text{El}(P)} [Y, p] \;=\; [\delta^P]_{[X,P]} \mathbin{;} \left(\prod_{p \in \text{El}(P)} [X, p] \mathbin{;} f\right) \tag{Eq. 2}$$
@@ -499,8 +508,10 @@ Operators are `Operator` subclasses (frozen dataclasses) that implement `templat
 | `Elementwise.template()` | Elementwise nonlinearity ($\sigma$, ReLU, etc.) |
 | `Normalize.template()` | RMSNorm; same shape in and out |
 | `Embedding.template(embedding_size)` | Discrete $\to$ real; input datatype is `Natural` |
-| `AdditionOp.template()` | Elementwise addition of two arrays of the same shape |
+| `AdditionOp.template()` | Elementwise addition of $n \geq 2$ arrays of the same shape |
 | `WeightedTriangularLower.template()` | Causal mask; used in attention |
+
+`TensorEquation` is an additional `Operator` subclass defined in `data_structure/TensorLogic.py`. Unlike the operators above, it is not constructed via `template()` but via `bc_signature()`, which derives weaves and reindexings from the equation's axis UID graph rather than from a string signature. It is stored as the `Broadcasted.operator` field and carries the full contraction structure — `lhs_indices`, `rhs` as `TensorRef` / Iverson objects, and an optional nonlinearity — while remaining traversable by `Context.apply`. See [tensorLogicNCDIntegration.md](tensorLogicNCDIntegration.md) for the full treatment.
 
 ---
 
@@ -765,6 +776,12 @@ Each `*` creates a `ProductOfMorphisms` ($\otimes$, parallel); each `@` creates 
 | Autoalignment $@$ | `composition`, `align_composed` | `construction_helpers/composition.py` |
 | Batch lift $[f, P]$ (Def 11) | Product structure of `Broadcasted` | `data_structure/BroadcastedCategory.py` |
 | Reindexing $[a, \eta]$ (Def 10) | `reindexings` field of `Broadcasted` | `data_structure/BroadcastedCategory.py` |
+| Tensor equation as `Operator` | `TensorEquation` | `data_structure/TensorLogic.py` |
+| Sequence of tensor equations | `TensorProgram` | `data_structure/TensorLogic.py` |
+| Tensor logic Python DSL | `TL`, `TensorProxy`, `axes`, `SumExpr` | `data_structure/TensorDSL.py` |
+| Iterative scan (pyncd extension) | `Scan` | `data_structure/TensorDSL.py` |
+| Affine decomposition for fast scan | `ScanAffine` | `data_structure/TensorDSL.py` |
+| PyTorch module executing `Scan` | `ConstructedScan` | `torch_compile/torch_compile.py` |
 
 ---
 
@@ -1131,5 +1148,9 @@ concrete_model = config(model)    # config(x) = config.apply_context(x)
 ---
 
 ## Further Reading
+
+**Tensor Logic DSL.** `TensorEquation(Operator)` embeds tensor logic notation into the **Br** framework: each equation is a frozen dataclass whose axis UID graph encodes contraction structure, and `bc_signature()` converts it to a `Broadcasted`. The `TL` Python registry builds `Broadcasted` morphisms eagerly from tensor-equation notation — including additive expressions via a `SumExpr` path that compiles to `Composed(ProductOfMorphisms(terms), Broadcasted(AdditionOp, ...))`. See [tensorLogicNCDIntegration.md](tensorLogicNCDIntegration.md) for the full treatment, including the coverage analysis, self-join handling, tensor declarations, and the relationship between `TensorProgram.to_morphism()` and the eager `TL` registry.
+
+**Iterative recurrences (Scan, pyncd extension).** The `Scan` construction rule extends the ProdCategory grammar to support recurrence relations $H_{l+1} = f(H_l, x_l)$ with sequential state dependence. `Scan` is expressed in the tensor logic DSL via `TL.iteration_axis()` and `TL.__setitem__` with an `l+1` LHS; `_finalize_iter()` assembles the step and base morphisms and, when the recurrence is affine ($H_{l+1} = A_l H_l + b_l$), stores a `ScanAffine` decomposition enabling a parallel associative-scan fast path. At the PyTorch level, `ConstructedScan` dispatches to either a sequential `_run_loop` (always correct) or `_assoc_scan_forward` (affine only, uses `torch._higher_order_ops.associative_scan`). See [iteration.md](iteration.md) for the full design and [tensorLogicNCDIntegration.md](tensorLogicNCDIntegration.md) §6 for the DSL interface.
 
 **Acset representation.** The categories **St** and **Br** described above can also be represented as attributed C-sets (acsets) in the sense of Patterson et al. (2022) — a tabular, schema-driven alternative to the term representation. This is not part of pyncd; it is an analytical layer built on top of it. See [acset.md](acset.md).

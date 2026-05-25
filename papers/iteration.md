@@ -3,7 +3,7 @@
 This document records the design decisions for expressing iterative recurrences
 in pyncd's tensor logic DSL. It covers motivation, syntax, and the compiler
 consistency checks that make the design statically safe. §6 sketches how these
-decisions map onto the `TL`, `TensorProgram`, and `ConstructedModule` machinery.
+decisions map onto the `TL` and `ConstructedModule` machinery.
 
 ---
 
@@ -100,7 +100,7 @@ tl.H[i, 0] = tl.X[i]
 ```
 
 This means "the 0-th slice of `H` along `l` equals `X`." It is a first-class
-equation in the `TL` registry, collected alongside the recurrence equation. The
+assignment in the `TL` registry, stored alongside the recurrence entry. The
 initial condition can be an arbitrary tensor equation — a linear map, a
 normalisation, or a copy — without requiring a dedicated `init=` parameter on
 `iteration_axis`.
@@ -324,10 +324,13 @@ are not part of the current implementation.
 from lower to upper in unit increments. Reverse-mode, stride-2, or arbitrary
 permutation orderings are not expressible.
 
-**Parallel scan optimisation.** Linear recurrences of the form
-`H[i, l+1] = a * H[i, l] + b` can be evaluated in parallel using
-`torch.associative_scan`. Recognising and applying this optimisation is a
-compiler pass, not a DSL concern, and is left for future work (see §6.5).
+**Coupled recurrences with subset outputs.** When two or more tensors are
+coupled under `.iteration_axis(l)` and a downstream equation in the same `TL`
+session consumes only a subset of the coupled outputs, the chaining is
+incorrect: `ConstructedComposed` feeds the full output tuple to the next
+module, which expects a single tensor. Coupled scans must therefore be
+terminal in their `TL` session. Routing individual coupled outputs into
+further equations is not yet supported.
 
 ---
 
@@ -348,20 +351,53 @@ and records a recurrence equation. Symmetrically, `RawAxis.__sub__(int)` returns
 **Literal integer at the iteration axis slot.** `TensorProxy.__setitem__`
 currently expects `RawAxis` objects as indices. It must be extended to accept a
 plain `int` at the iteration axis slot and record the resulting equation as a
-base case, keyed by the literal value.
+base case. The iteration slot is identified by cross-referencing the index
+tuple with `_iteration_axes[name]` — the position of the recurrence axis in
+the declared shape. An `int` at that position signals a base case:
+`_register_entry()` strips the iteration slot from the LHS indices (reducing
+shape from `(i, l)` to `(i,)` for the slice), builds a regular
+`_build_rhs_morphism()` morphism over the stripped indices, and stores the
+result in `_pending_iter[name]['base_case']` rather than `_entries`. No
+extension to `_build_rhs_morphism()` or `bc_signature()` is required — the
+base case is an ordinary tensor equation over the non-iteration axes.
 
 **`TensorProxy.iteration_axis(l)`.** A new method analogous to `.predicate()`.
 It records `l` as the iteration axis for that tensor on the `TL` registry.
 
-**Multiple equations per tensor.** The `TL` registry currently associates at
-most one equation per LHS tensor name. Iterative tensors require two: the base
-case and the recurrence. The registry must permit this for tensors declared with
-`.iteration_axis()` and validate at `bc_signature()` time that exactly one of
-each is present.
+**Multiple entries and deferred assembly.** The `TL` registry currently builds
+and stores at most one morphism entry per LHS tensor name. Iterative tensors
+require two: the base case and the recurrence. `Scan` assembly requires both
+simultaneously — the base case morphism establishes the initial-state type and
+the recurrence provides the step body — so neither assignment alone has
+sufficient information to finalize the morphism. Iterative entries are
+therefore stored in a separate `_pending_iter: dict[str, dict]` dict keyed by
+tensor name rather than in `_entries`. `to_morphism()` calls `_finalize_iter()`
+before collecting `_entries`. `_finalize_iter()` groups all iterative tensors by
+iteration axis uid. Tensors that share an axis uid are dispatched to
+`_finalize_iter_group`, which emits a single coupled `Scan(n_states=k)` entry
+with a synthetic lhs name (`__coupled_G_H` for states G and H). Tensors with
+a unique uid take the existing single-state path: `_finalize_iter()` runs the
+§4 consistency checks, assembles the step body via the rewriting pass, wraps it
+in `Scan`, and appends the resulting morphism to `_entries`. The existing
+`_entries`/`_name_to_axes` infrastructure is then used unchanged for
+serialization and downstream composition.
+
+**Axis tracking for iterative tensors.** `_name_to_axes[H]` must hold the
+full logical shape `(i, l)` — not the slice shape `(i,)` produced by the step
+body or the base case — so that downstream equations referencing `tl.H[i, l]`
+receive the correct axes for unification. The base case registration does not
+update `_name_to_axes[H]`. When the recurrence entry `H[i, l+1] = ...` is
+stored in `_pending_iter`, `_name_to_axes[H]` is set immediately to the full
+shape: `decl.shape` from `_declarations[H]` if declared, or `(i, l)` inferred
+from the recurrence LHS by replacing `IterNextRef(l, 1)` with `l`. If a
+downstream equation references `H[i, l]` before the recurrence entry is
+processed, `_name_to_axes[H]` will be absent and no unification is attempted —
+consistent with existing behavior for forward references.
 
 **Step count from axis size.** The iteration count is read directly from
 `l._size._value`. No predicate extraction is required. The compiler validates
-that `l` carries a concrete `Integer` size at `bc_signature()` time.
+that `l` carries a concrete `Integer` size at `_register_entry()` time (i.e.,
+when the equation is assigned).
 
 ### 6.2 Block vs Scan: two categorical cases
 
@@ -409,10 +445,28 @@ status in Br and its interaction with weaves and reindexings; §6.6 for
 rendering):
 
 ```python
-@dataclass
-class Scan(Morphism):
-    step: Morphism   # (State, InputSlice) → State
-    steps: int       # l._size._value
+@dataclass(frozen=True)
+class ScanAffine:
+    A_morphism: object | None    # per-step A factor; None means identity
+    b_morphism: object | None    # per-step bias; None means zero
+    state_in_axes: tuple         # contracted state axes (non-empty iff matrix recurrence)
+    a_positions: tuple[int, ...] # indices into step_xs selecting A_module inputs
+    b_positions: tuple[int, ...] # indices into step_xs selecting b_module inputs
+
+@dataclass(frozen=True)
+class Scan(fd.Term):
+    step: object          # uncoupled: morphism (H_state, *xs) → H_next
+                          # coupled:   tuple[morphism, ...], one per state
+    base: object          # uncoupled: morphism *xs → H_0
+                          # coupled:   tuple[morphism, ...], one per state
+    N: nm.Numeric         # nm.Integer; N._value is the step count
+    axis: sc.RawAxis      # recurrence axis l
+    affine: ScanAffine | None = None  # affine decomposition for associative_scan (uncoupled only)
+    n_states: int = 1     # number of coupled state tensors; 1 = uncoupled
+    step_state_deps: tuple[tuple[int, ...], ...] = ()
+                          # coupled only: for each step morphism, the indices (into
+                          # the canonical states tuple) it reads, in morphism-domain order.
+                          # Empty tuple = all states in canonical order 0..n_states-1.
 ```
 
 `Scan` is directly analogous to the functional programming primitives `foldl`
@@ -428,18 +482,24 @@ reasons given in §6.4.
 different input sequences; `Block` is the special case where no per-step
 external input exists.
 
-`Scan` has domain `(StateInit, InputSequence)` and codomain `StateSequence`
-(full state history; see §6.4). The base case morphism maps from the
-base case inputs to `StateInit` and is composed before `Scan`:
+`Scan` has domain `(BaseInputs..., InputSequence...)` and codomain
+`StateSequence` (full state history; see §6.4). The `base` morphism is stored
+directly inside `Scan` and run at the start of `ConstructedScan.forward`; there
+is no external `Composed(BaseCase, Scan)` wrapper. All caller-supplied tensors
+— both the initial-condition inputs and the per-step sequences — are passed
+together to `ConstructedScan.forward`, which splits at `n_base`:
 
 ```text
-X ── BaseCase ──► H_0 ──┐
-                        ├── Scan(step, N) ──► H
-Grad ───────────────────┘
+X ──────────────────────────────────────────────────┐
+                                          Scan ──► H
+Grad ───────────────────────────────────────────────┘
+       (base and step both contained within Scan)
 ```
 
-`Block` remains unchanged. `Scan` is a new sibling morphism and requires a new
-`ConstructedScan` registered in `torch_compile`.
+`Block` is the correct morphism for pure-state recurrences (no per-step
+external inputs), but currently `_finalize_iter` always emits `Scan`. Block
+emission is deferred as a future optimisation. `Scan` is a new sibling
+morphism and requires a new `ConstructedScan` registered in `torch_compile`.
 
 ### 6.3 Step body extraction
 
@@ -450,184 +510,275 @@ recurrence equation. Given:
 H[i, l+1] = H[i, l] + lr * Grad[i, l]
 ```
 
-the compiler must produce a body morphism whose signature is:
-
-- Input weaves: `[Weave(H_state, (i,)), Weave(Grad_slice, (i,))]`
-- Output weaves: `[Weave(H_out, (i,))]`
-- Operator: `TensorEquation` for `H_out[i] = H_state[i] + lr * Grad_slice[i]`
-
-The transformation is a single rewriting pass: every tensor reference
-`T[..., l, ...]` becomes `T_local[...]` with the `l` slot removed. The role
-of each stripped reference is determined by the tensor's `iteration_axis`
-declaration and the form of the `l` reference:
+the compiler must produce a step body morphism via a single rewriting pass.
+The pass is valid for any recurrence equation regardless of the operator, the
+number of recurrent tensors, or the number of non-recurrent tensors indexed by
+`l`. Every tensor reference `T[..., l, ...]` becomes `T_local[...]` with the
+`l` slot removed. The role of each stripped reference is determined by the
+tensor's `iteration_axis` declaration and the form of the `l` reference:
 
 - `l+1` on the LHS → output proxy
 - plain `l` on a tensor declared with `.iteration_axis(l)` → state input
 - plain `l` on any other tensor → per-step input
 
-This classification determines the input weave structure of the step body.
+This classification determines the input and output weave structure of the step
+body for any recurrence. For the running example it produces:
+
+- Input weaves: `[Weave(H_state, (i,)), Weave(Grad_slice, (i,))]`
+- Output weaves: `[Weave(H_out, (i,))]`
+- Step body morphism: a `Composed(ProductOfMorphisms(H_term, Grad_term), AdditionOp_br)`
+  — the additive RHS `H[i, l] + lr * Grad[i, l]` strips `l` from each factor
+  and compiles via the existing `SumExpr` path: each stripped term becomes a
+  `Broadcasted(TensorEquation, ...)` and the addition step is a
+  `Broadcasted(AdditionOp, ...)` over the shared `(i,)` degree.
 
 ### 6.4 Compilation to PyTorch
 
-`ConstructedScan.__init__` builds one compiled sub-module and records one
-integer:
+`ConstructedScan.__init__` builds two compiled sub-modules and records the key
+scalars:
 
-- `self.step` — a `ConstructedModule` compiled from the step body extracted
-  in §6.3, mapping `(H_l, Grad_l) → H_{l+1}`. It is a regular Br morphism
-  with its own weaves and reindexings.
-- `self.steps` — the step count `N = l._size._value`, fixed at construction
-  time from the recurrence axis declaration.
+- `self.step_module` — a `ConstructedModule` compiled from the step body
+  extracted in §6.3, mapping `(H_state, *non_state_inputs) → H_next` with `l`
+  stripped from all indices. Determined entirely by the §6.3 rewriting pass.
+- `self.base_module` — a `ConstructedModule` compiled from the base case
+  morphism, mapping the initial-condition inputs to `H_0`. The base case is
+  held inside `ConstructedScan` and evaluated at the start of `forward`, not in
+  an external `Composed` chain.
+- `self.N` — the step count `l._size._value`, fixed at construction time.
+- `self.n_base` — the number of caller-supplied base-case inputs. Derived from
+  `len(self.base_module._caller_positions)` when the base module has
+  pre-materialised Iverson buffers; otherwise `len(target.base.dom())`.
 
-The base case morphism is **not** part of `ConstructedScan`. As shown in the
-§6.2 diagram, it is compiled separately and composed before `Scan` in the
-enclosing `ConstructedComposed` chain: the caller receives `H_0` already
-computed and passes it directly to `ConstructedScan.forward`.
-
-Unlike `ConstructedTensorEquation`, no reindexing constants are stored as
-buffers. The recurrence axis L is managed dynamically: at each iteration `l`,
-`Grad[..., l]` realises the element morphism `⟨l| : 1 → L`, selecting the
-l-th input slice. Because `l` advances at runtime rather than being fixed at
-construction time, this is not a static `StrideMorphism` and cannot appear as
-a weave entry or reindexing constant (see Appendix A.4). The step body
-extraction in §6.3 is responsible for ensuring L occupies the trailing axis
-of each per-step input tensor, so that `tensor[..., l]` is always the correct
-slice; symmetrically, `torch.stack(states, dim=-1)` places L' on the trailing
-axis of the output.
-
-`ConstructedScan.forward` for the single-state, single-input case:
+`ConstructedScan.forward(*xs)` receives all caller inputs combined:
+`xs[:n_base]` go to `base_module`; `xs[n_base:]` are the per-step sequence
+tensors, each with N as the **last** dimension (l-last convention). The
+sequential loop path:
 
 ```python
-def forward(self, H_0, Grad):
-    # H_0 is the initial state, already produced by the base case morphism
-    states = [H_0]
-    for l in range(self.steps):           # N iterations
-        H_0 = self.step(H_0, Grad[..., l])   # ⟨l|: l-th input slice
-        states.append(H_0)
-    return torch.stack(states, dim=-1)    # shape (*S, N+1) = S⊗L'
+def forward(self, *xs):
+    base_xs  = xs[:self.n_base]
+    step_xs  = xs[self.n_base:]
+    H0 = base_module(*base_xs)        # initial state
+    if self._has_affine:
+        return self._assoc_scan_forward(H0, step_xs)
+    return self._run_loop(H0, step_xs)
+
+def _run_loop(self, H, step_xs):
+    outputs = [H]
+    for l_idx in range(self.N):
+        sliced = tuple(x[..., l_idx] for x in step_xs)  # l-last: slice trailing dim
+        H = step_module(H, *sliced)
+        outputs.append(H)
+    return torch.stack(outputs, dim=-1)   # (*state, N+1)
 ```
 
-**Multiple per-step inputs.** If the recurrence reads more than one
-non-recurrent tensor indexed by `l` (e.g. both `Grad[i, l]` and `LR[l]`),
-`forward` receives one sequence tensor per such input and slices each at `l`:
+The loop is wrapped with `torch._dynamo.disable` to prevent `torch.compile`
+from unrolling it.
+
+**Affine fast path.** When `Scan.affine is not None`, `ConstructedScan` uses
+`torch._higher_order_ops.associative_scan` instead of the sequential loop.
+All N copies of `A_l` and `b_l` are computed in one batched pass using
+`torch.vmap` over the N dimension, then prefix-composed via the associative
+combine function `(A₂, b₂) ∘ (A₁, b₁) = (A₂·A₁, A₂·b₁ + b₂)`. The result
+is applied to `H0` to produce the full state sequence:
 
 ```python
-H_0 = self.step(H_0, Grad[..., l], LR[..., l])
+def _assoc_scan_forward(self, H0, step_xs):
+    # Batch over N via vmap; A_all/b_all have shape (N, *out).
+    A_all = vmap(A_module)(step_xs[a_positions, ...].movedim(-1, 0))
+    b_all = vmap(b_module)(step_xs[b_positions, ...].movedim(-1, 0))
+
+    def combine(s1, s2):
+        A1, b1 = s1; A2, b2 = s2
+        if is_matrix:
+            return einsum('ij,jk->ik', A2, A1), einsum('ij,j->i', A2, b1) + b2
+        return A2 * A1, A2 * b1 + b2
+
+    A_prefix, b_prefix = associative_scan(combine, (A_all, b_all), dim=0, combine_mode='generic')
+    H_seq = (einsum('nij,j->ni', A_prefix, H0) + b_prefix) if is_matrix else (A_prefix * H0 + b_prefix)
+    return cat([H0.unsqueeze(0), H_seq], dim=0).movedim(0, -1)  # (*state, N+1)
 ```
 
-**Coupled recurrences.** When two tensors are both declared with
-`.iteration_axis(l)`, the step body returns a tuple of states. `states`
-becomes a list of tuples, and the stack must be applied per tensor:
+`combine_mode='generic'` is used in all cases (scalar and matrix) because
+`'pointwise'` requires CUDA tensors. `is_matrix` is `True` when
+`len(affine.state_in_axes) > 0` — i.e. the state has contracted (non-tiled)
+axes.
+
+All return the full state history (`scanl` semantics, shape `(*state, N+1)`).
+In the ML context pyncd targets, `scanl` semantics are the common case:
+sequence models need `H[:, l]` at every position, attention mechanisms contract
+over the full state sequence, and DP algorithms require traceback through all
+intermediate states. Even when the forward pass uses only the final state,
+backpropagation through time requires all intermediates to be stored anyway.
+Final-state-only output can be recovered as a compiler optimisation when use
+analysis confirms the full history is never consumed, but it does not block
+correctness.
+
+**Coupled path (n_states > 1).** When `Scan.n_states > 1`, `ConstructedScan`
+builds parallel lists of compiled sub-modules:
+
+- `self.step_modules` — `nn.ModuleList` of per-state step morphisms in
+  canonical (sorted-by-name) order.
+- `self.base_modules` — `nn.ModuleList` of per-state base-case morphisms in
+  the same order.
+- `self.n_bases` — number of caller inputs consumed by each base morphism.
+- `self.step_state_deps` — for each step morphism, the indices (into the
+  canonical states tuple) of the states it reads, in morphism-domain order.
+  Derived from `Scan.step_state_deps` at construction time.
+- `self.n_step_xs` — number of per-step inputs consumed by each step morphism.
+  Computed as `len(_caller_positions) - len(step_state_deps[k])`, correctly
+  excluding the state inputs that are passed separately at runtime.
+
+`forward(*xs)` for the coupled path splits `xs` as follows:
+
+```text
+xs[:n_bases[0]]                 — base inputs for state 0 (first in canonical order)
+xs[n_bases[0]:...]              — base inputs for state 1, etc.
+xs[sum(n_bases):...]            — per-step inputs for state 0
+xs[sum(n_bases)+n_step_xs[0]:...] — per-step inputs for state 1, etc.
+```
+
+`_run_loop_coupled` applies Jacobi semantics: at each step `l`, every step
+module receives the **old** values of its required states (read from
+`states[j] for j in step_state_deps[k]`) and its own sliced per-step inputs,
+then all next-states are materialised simultaneously before any is stored back.
 
 ```python
-def forward(self, H_0, G_0, Grad):
-    state = (H_0, G_0)
-    states = [state]
-    for l in range(self.steps):
-        state = self.step(*state, Grad[..., l])
-        states.append(state)
-    return tuple(
-        torch.stack([s[k] for s in states], dim=-1)
-        for k in range(len(states[0]))
-    )
+def _run_loop_coupled(self, states, step_xs_per_state):
+    histories = [[s] for s in states]
+    for l_idx in range(self.N):
+        sliced = tuple(tuple(x[..., l_idx] for x in xs) for xs in step_xs_per_state)
+        new_states = tuple(
+            to_tuple(mod(*[states[j] for j in self.step_state_deps[k]], *sliced[k]))[0]
+            for k, mod in enumerate(self.step_modules)
+        )
+        states = new_states
+        for k, s in enumerate(states):
+            histories[k].append(s)
+    return tuple(torch.stack(hist, dim=-1) for hist in histories)
 ```
 
-All three variants return the full state history. In the ML context pyncd
-targets, `scanl` semantics are the common case: sequence models need `H[:, l]`
-at every position, attention mechanisms contract over the full state sequence,
-and DP algorithms require traceback through all intermediate states. Even when
-the forward pass uses only the final state, backpropagation through time
-requires all intermediates to be stored anyway — PyTorch's autograd does this
-regardless of what `Scan` returns. The simplest correct default is for `Scan`
-to always return `StateSequence` of shape `(I, N+1)` and allow downstream
-equations to index or contract over `l` as needed. Final-state-only output
-(`StateFinal` of shape `(I,)`) can be recovered as a compiler optimisation when
-use analysis confirms the full history is never consumed, but it is not required
-for correctness and need not block the initial implementation.
+The return value is a `tuple[Tensor, ...]` of shape `(*state_k, N+1)` per
+state, in canonical (sorted-by-name) order. `ConstructedComposed.forward` uses
+`to_tuple` on sub-module outputs, so the tuple propagates correctly through
+downstream composition chains.
 
 ### 6.5 Complexities
 
 **Step body extraction is the core difficulty.** The `l` axis appears in the
-outer `TensorProgram` but must be absent from the step body's weave types.
-Implementing this requires a rewriting pass over the `TensorEquation` that
-renames tensor references, removes the `l` slot from their index tuples, and
-rebuilds the `bc_signature` of the body without the iteration axis. This is
-substantially more involved than any existing morphism construction.
+recurrence entry's RHS factors but must be absent from the step body's weave
+types. Implementing this requires a rewriting pass that renames each factor's
+tensor reference to a stripped proxy, removes the `l` slot from its index
+tuple, and feeds the result into `_build_rhs_morphism()` or
+`_build_sum_morphism()` to build the step body morphism without the iteration
+axis. This is substantially more involved than any existing morphism
+construction.
 
-*Resolution.* The step body is produced by a static rewriting pass over the
-recurrence `TensorEquation` inside `bc_signature()`: each tensor reference is
-renamed to a stripped proxy and its index tuple is projected to remove the `l`
-slot — references using `l` on recurrent tensors become state-input proxies,
-those using `l` on non-recurrent tensors become per-step-input proxies, and
-the reference using `l+1` on the LHS becomes the output proxy. The resulting
-stripped equation feeds directly into the existing `ConstructedTensorEquation`
-machinery without any new compilation path.
+*Resolution (implemented).* The step body is produced by a static rewriting pass
+inside `_finalize_iter()`: `_strip_iter_axis_from_value` removes the `l` slot
+from each RHS factor's index tuple, classifying recurrent-tensor references as
+state-input proxies and non-recurrent references as per-step-input proxies. The
+`l+1` reference on the LHS becomes the output proxy. The stripped RHS feeds into
+`_build_step_morph()`, which delegates to the existing `_build_rhs_morphism()` /
+`_build_sum_morphism()` paths — no new compilation path is required. Additive
+recurrence bodies produce a `Composed(ProductOfMorphisms, AdditionOp Broadcasted)`
+step morphism as described in §6.3.
 
 **`Block` vs `Scan` determination requires tensor classification.** The compiler
 must inspect all RHS tensor references in the recurrence equation, classify each
 as recurrent (state) or non-recurrent (per-step input), and select the
 appropriate morphism. A recurrence equation with only recurrent tensors on the
-RHS maps to `Block`; any non-recurrent tensor indexed by `l` forces `Scan`. The
+RHS fits `Block`; any non-recurrent tensor indexed by `l` forces `Scan`. The
 classification must account for tensors that appear in both the base case and
 the recurrence with different roles.
 
-*Resolution.* A single pass over all RHS tensor references in the recurrence
-equation at `bc_signature()` time consults the TL registry: references to
-tensors with an `iteration_axis` declaration are classified as state inputs;
-references to tensors without it that are indexed by `l` are classified as
-per-step inputs. The base case equation is a separate registry entry keyed by
-the literal integer, and plays no role in this classification. If the
-per-step-input set is empty the compiler emits `Block`; otherwise it emits
-`Scan`.
+*Resolution (implemented).* The classification logic is implemented in `_is_pure_state_recurrence`
+in `_finalize_iter`. However, `_finalize_iter` currently always emits `Scan` for
+all recurrences, including pure-state ones. Emitting `Block` for pure-state
+recurrences is deferred as an optimisation.
 
-**Coupled recurrences require a product step body.** When `H` and `G` are both
-declared with `.iteration_axis(l)`, their recurrence equations must be assembled
-into a single step body with product output `(H_next, G_next)`. The step body
-classification and extraction must handle multiple simultaneous LHS tensors.
-This can be modeled using the existing `ProductOfMorphisms` structure, but the
-assembly logic is new.
+**Coupled recurrences require a multi-output step body.** When `H` and `G` are
+both declared with `.iteration_axis(l)`, the equations are typically
+cross-dependent: in the §2.6 example, `H_next` reads `G_state` and `G_next`
+reads `H_state`. A `ProductOfMorphisms` step body cannot represent this because
+it partitions inputs — each factor receives an exclusive slice of the domain
+with no shared inputs. The step body must be a single morphism that takes all
+state inputs and per-step inputs together and returns a tuple of next states.
 
-*Resolution.* When multiple tensors share the same iteration-axis `uid`
-(guaranteed by §4.6), the extraction pass runs over all their recurrence
-equations simultaneously with input sets unioned; the result is a
-`ProductOfMorphisms` step body whose factors are the stripped `TensorEquation`
-for each recurrent tensor, one per LHS. `ConstructedProduct` handles runtime
-dispatch for the product step body without modification; the only new logic is
-the multi-equation variant of the extraction pass.
+*Resolution (implemented).* `_finalize_iter` groups all tensors sharing the same
+iteration axis uid and dispatches to `_finalize_iter_group`, which emits one
+`Scan(n_states=k)` entry with a synthetic `__coupled_G_H` lhs name. Each
+state's step is a separate morphism (built by the existing `_build_step_morph`
+path) with state proxies stripped and renamed; `step_state_deps` records which
+canonical state indices each morphism reads and in what order, so that per-step
+input counts and domain routing are correct even when a step morphism is
+independent of some other states in the group. `ConstructedScan._run_loop_coupled`
+applies Jacobi semantics: every step module sees the OLD states before any is
+replaced, and the forward method returns a tuple of history tensors (one per
+state) that `ConstructedComposed` propagates via its existing `to_tuple`
+handling. Known limitation: downstream TL equations that consume only a subset
+of coupled outputs cannot be chained in the same `TL` session.
 
-**`torch.compile` transparency.** A Python `for` loop in `ConstructedScan.forward`
+**`torch.compile` transparency.** A Python `for` loop in `ConstructedScan._run_loop`
 is not FX-graph-transparent. `torch.compile` will attempt to trace through it,
 either unrolling (safe for small `N`, produces large graphs for large `N`) or
-treating it as a loop (graph break). For large `N`, the preferred strategy is
-`torch.associative_scan` for linear recurrences, but recognising linearity
-requires a separate structural analysis pass and is out of scope for the initial
-implementation. The sequential loop is correct in all cases and is the
-appropriate starting point.
+treating it as a loop (graph break).
 
-*Resolution.* Apply `torch._dynamo.disable` to `ConstructedScan.forward` to
-produce a predictable graph break rather than unbounded loop unrolling. A
-subsequent compiler pass may lower to `torch.associative_scan` (with
-`combine_mode='generic'` for CPU compatibility) when a structural check on the
-step body's `TensorEquation` confirms linearity of the form
-`H_next = A * H + b`; linear recurrences expressed as affine maps are
-associative and are exactly the use case `associative_scan` targets. This path
-can be added without changing the `ConstructedScan` interface and is explicitly
-deferred from the initial implementation.
+*Resolution (implemented).* `_run_loop` is wrapped with `torch._dynamo.disable`
+to produce a predictable graph break rather than unbounded loop unrolling. For
+affine recurrences, `_finalize_iter` runs `_recognize_affine` before morphism
+construction and stores a `ScanAffine` on the `Scan` term when the recurrence
+is **affine in the state**: at most one additive term contains the state tensor,
+that term's operator is `Identity` (no nonlinearity), and the state factor
+appears exactly once. `ConstructedScan` detects `_has_affine` and takes the
+`_assoc_scan_forward` path, which uses `torch._higher_order_ops.associative_scan`
+with `combine_mode='generic'` (required on CPU; `'pointwise'` is not used).
 
-**Composition with the base case morphism.** The full `Scan` pipeline composes
-the base case morphism (`X → H_0`) with the scan proper (`(H_0, Grad) →
-H_sequence`). In Br, this requires a `Composed` or `ProductOfMorphisms`
-wrapper that routes `X` through the base case and passes `Grad` directly to
-`Scan`. The base case morphism is itself a `TensorEquation` compiled normally;
-the complication is the routing plumbing.
+`_recognize_affine` runs in `_finalize_iter()` on the raw `RHSExpression` or
+`SumExpr`. It partitions additive terms by whether any factor carries
+`name == state_name`; rejects if more than one state-bearing term exists or the
+operator is non-identity. If affine, it extracts: (i) the `A_l` sub-expression
+— built with `lhs_indices = step_out + state_in_axes` so that contracted state
+axes survive as free output axes rather than being summed away; (ii) the `b_l`
+sub-expression — all remaining terms, or `None` if absent. `state_in_axes` is
+filtered against `step_out_uids` to exclude tiled (free) axes that coincidentally
+appear in both state and output. The result is stored as `Scan.affine`; position
+lists `a_positions` / `b_positions` index into the ordered non-state step inputs
+to route the correct tensors to `A_module` and `b_module`.
 
-*Resolution.* The routing follows a fixed pattern: `ProductOfMorphisms(BaseCase,
-id_Grad)` maps `(X, Grad)` to `(H_0, Grad)` and is placed before `Scan` in a
-`Composed` chain. `id_Grad` is a `Rearrangement` identity on the per-step
-inputs — an existing combinator requiring no new type. The compiler
-auto-generates this wrapper using the input partition already computed during
-the `Block`/`Scan` selection pass: base-case inputs feed `BaseCase`; per-step
-inputs become `id_Grad`. Bypassing an early stage with an identity is the
-standard `Composed` pattern and introduces no `Scan`-specific plumbing.
+**Recurrence axis contamination in the shared context.** The `TL` instance
+carries a single `_ctx` that accumulates axis unifications across all
+assignments. If the recurrence axis `l` is unified with another axis by an
+unrelated equation in the same `TL` — for example, because a non-iterative
+tensor is also indexed by `l` and gets its axes merged in the shared context —
+then the step body extraction pass may inherit that unification when it calls
+`_ctx.apply()` on the stripped factors. This can distort size information or
+merge stripped axes with the recurrence axis in ways the step body did not
+intend.
+
+*Resolution (implemented).* Step body extraction creates a filtered copy of `_ctx` by
+removing every equivalence class that contains the recurrence axis uid:
+`step_ctx = _ctx.without(l.uid)`. The stripped factors are built using
+`step_ctx` rather than `_ctx`, preventing `l` from participating in step-body
+unification. Non-iterative equations that used `l` as a free axis had their
+entries built with the full `_ctx` before filtering and are unaffected.
+`Context.without(uid)` is a helper defined in `data_structure/Term.py` that
+returns a new `Context` containing only the groups from the original that do not
+include the given uid.
+
+**Composition with the base case morphism.** The full `Scan` pipeline must
+evaluate the base case morphism (`X → H_0`) and then run the recurrence
+(`(H_0, Grad) → H_sequence`). In Br, this could require a `Composed` or
+`ProductOfMorphisms` wrapper that routes `X` through the base case and passes
+`Grad` directly to `Scan`.
+
+*Resolution (implemented).* Rather than an external wrapper, the `base`
+morphism is stored directly in `Scan` and evaluated inside
+`ConstructedScan.forward`. All caller inputs are passed together as `*xs`;
+`ConstructedScan` splits at `n_base` (the number of base-case inputs, inferred
+from `base_module._caller_positions` when the base module has pre-materialised
+Iverson buffers). This avoids external `ProductOfMorphisms` routing plumbing
+at the cost of making `ConstructedScan` responsible for the split.
 
 ### 6.6 Visual rendering
 

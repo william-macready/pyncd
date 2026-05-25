@@ -19,10 +19,18 @@ from data_structure.TensorExpr import TensorRef
 from torch_compile.materialise import materialise_iverson
 
 import data_structure.BrTyping as Br
+from data_structure.TensorDSL import Scan
 
 import torch
 import torch.nn as nn
 import einops
+
+# associative_scan is a top-level API from PyTorch 2.5; fall back to the
+# higher-order-ops location for older builds.
+try:
+    _associative_scan = torch.associative_scan  # type: ignore[attr-defined]
+except AttributeError:
+    from torch._higher_order_ops import associative_scan as _associative_scan
 
 import torch_compile.bcast as bcast
 import torch_compile.torch_utilities as torch_utilities
@@ -55,6 +63,8 @@ class ConstructedModule[M: cat.Morphism](nn.Module, ABC):
                 return ConstructedBlock(target)
             case cat.Broadcasted():
                 return ConstructedModule.construct_broadcasted(target)
+            case Scan():
+                return ConstructedScan(target)
         print(target)
         raise NotImplementedError()
     
@@ -439,3 +449,232 @@ class ConstructedNorm[B: cat.Datatype, A: cat.Axis](ConstructedModule, operation
 
     def forward(self, *xs: torch.Tensor):
         return self.func(xs[0])
+
+
+##############
+##   SCAN   ##
+##############
+
+class ConstructedScan(ConstructedModule):
+    """Iterative scan: sequential loop (always) with optional associative_scan fast path.
+
+    Uncoupled (n_states == 1):
+      forward(*xs) expects:
+        xs[:n_base]  — inputs to the base-case morphism (no l dimension)
+        xs[n_base:]  — per-step inputs, each with N as the LAST dimension
+      Returns a single Tensor of shape (*state, N+1).
+
+    Coupled (n_states > 1, Jacobi-style):
+      forward(*xs) expects:
+        xs[:n_bases[0]]                — base inputs for state 0
+        xs[n_bases[0]:n_bases[0]+n_bases[1]]  — base inputs for state 1
+        ...followed by per-step inputs for state 0, then state 1, etc.
+      Each step module receives (*all_current_states, *own_sliced_step_xs).
+      Returns tuple[Tensor, ...] with one (*state_k, N+1) tensor per state,
+      in the same canonical (sorted-by-name) order used during compilation.
+      ConstructedComposed handles this tuple automatically via to_tuple().
+    """
+
+    def __init__(self, target: Scan):
+        super().__init__(target)
+
+        if not isinstance(target.N, nm.Integer):
+            raise ValueError(
+                "Iterative axis has no concrete size; "
+                "use real_axis('name', N) to supply a step count."
+            )
+        self.N: int = target.N._value  # type: ignore[attr-defined]
+        self.n_states: int = target.n_states
+
+        if target.n_states == 1:
+            self._init_uncoupled(target)
+        else:
+            self._init_coupled(target)
+
+    def _init_uncoupled(self, target: Scan) -> None:
+        self.step_module = ConstructedModule.construct(target.step)
+        self.base_module = ConstructedModule.construct(target.base)
+
+        # Use _caller_positions so pre-materialised Iverson buffers are excluded.
+        if hasattr(self.base_module, '_caller_positions'):
+            self.n_base: int = len(self.base_module._caller_positions)
+        else:
+            self.n_base = len(target.base.dom())
+
+        affine = target.affine
+        self._has_affine = affine is not None
+        if affine is not None:
+            self.A_module = (
+                ConstructedModule.construct(affine.A_morphism)
+                if affine.A_morphism is not None else None
+            )
+            self.b_module = (
+                ConstructedModule.construct(affine.b_morphism)
+                if affine.b_morphism is not None else None
+            )
+            self.a_positions: tuple[int, ...] = affine.a_positions
+            self.b_positions: tuple[int, ...] = affine.b_positions
+            self._state_matrix = len(affine.state_in_axes) > 0
+
+        self._loop = torch._dynamo.disable(self._run_loop)
+
+    def _init_coupled(self, target: Scan) -> None:
+        self._has_affine = False  # no affine fast path for coupled groups
+        self.step_modules = nn.ModuleList(
+            [ConstructedModule.construct(s) for s in target.step]
+        )
+        self.base_modules = nn.ModuleList(
+            [ConstructedModule.construct(b) for b in target.base]
+        )
+        # Use _caller_positions to correctly exclude Iverson buffers.
+        self.n_bases: list[int] = [
+            len(m._caller_positions) if hasattr(m, '_caller_positions')
+            else len(target.base[k].dom())
+            for k, m in enumerate(self.base_modules)
+        ]
+        # Which states (by canonical index) each step morphism reads, in domain order.
+        # Falls back to "all states in order" if the Scan predates this field.
+        n = target.n_states
+        self.step_state_deps: list[tuple[int, ...]] = (
+            list(target.step_state_deps)
+            if target.step_state_deps
+            else [tuple(range(n)) for _ in range(n)]
+        )
+        # Per-step inputs count: total caller inputs minus the state inputs for that morphism.
+        self.n_step_xs: list[int] = [
+            (len(m._caller_positions) if hasattr(m, '_caller_positions')
+             else len(target.step[k].dom())) - len(self.step_state_deps[k])
+            for k, m in enumerate(self.step_modules)
+        ]
+        self._loop = torch._dynamo.disable(self._run_loop_coupled)
+
+    # ------------------------------------------------------------------
+    # Sequential path (always correct)
+    # ------------------------------------------------------------------
+
+    def _run_loop(
+        self,
+        H: torch.Tensor,
+        step_xs: tuple[torch.Tensor, ...],
+    ) -> torch.Tensor:
+        outputs = [H]
+        for l_idx in range(self.N):
+            # l is the LAST dimension of each step tensor.
+            sliced = tuple(x[..., l_idx] for x in step_xs)
+            H = to_tuple(self.step_module(H, *sliced))[0]
+            outputs.append(H)
+        # Stack along last dimension to produce shape (*state, N+1).
+        return torch.stack(outputs, dim=-1)
+
+    # ------------------------------------------------------------------
+    # Coupled sequential path (Jacobi-style: all states updated simultaneously)
+    # ------------------------------------------------------------------
+
+    def _run_loop_coupled(
+        self,
+        states: tuple[torch.Tensor, ...],
+        step_xs_per_state: tuple[tuple[torch.Tensor, ...], ...],
+    ) -> tuple[torch.Tensor, ...]:
+        histories: list[list[torch.Tensor]] = [[s] for s in states]
+        for l_idx in range(self.N):
+            sliced = tuple(
+                tuple(x[..., l_idx] for x in xs)
+                for xs in step_xs_per_state
+            )
+            # Jacobi: each module sees OLD states. Only the states it actually
+            # depends on are passed (in the order recorded in step_state_deps).
+            new_states = tuple(
+                to_tuple(mod(*[states[j] for j in self.step_state_deps[k]], *sliced[k]))[0]
+                for k, mod in enumerate(self.step_modules)
+            )
+            states = new_states
+            for k, s in enumerate(states):
+                histories[k].append(s)
+        return tuple(torch.stack(hist, dim=-1) for hist in histories)
+
+    # ------------------------------------------------------------------
+    # Associative scan fast path
+    # ------------------------------------------------------------------
+
+    def _batch_module(
+        self,
+        module: ConstructedModule,
+        positions: tuple[int, ...],
+        step_xs: tuple[torch.Tensor, ...],
+    ) -> torch.Tensor:
+        """Apply module to each l-step via vmap, returning shape (N, *out)."""
+        inputs_full = tuple(step_xs[j] for j in positions)  # each (*feat, N)
+        inputs_lf = tuple(x.movedim(-1, 0) for x in inputs_full)   # (N, *feat)
+        return torch.vmap(module)(*inputs_lf)                        # (N, *out)
+
+    def _assoc_scan_forward(
+        self,
+        H0: torch.Tensor,
+        step_xs: tuple[torch.Tensor, ...],
+    ) -> torch.Tensor:
+        # Compute A_l and b_l for all N steps via batched vmap; shape (N, *out).
+        if self.A_module is not None:
+            A_all = self._batch_module(self.A_module, self.a_positions, step_xs)
+        else:
+            A_all = torch.ones(self.N, *H0.shape, device=H0.device, dtype=H0.dtype)
+
+        if self.b_module is not None:
+            b_all = self._batch_module(self.b_module, self.b_positions, step_xs)
+        else:
+            b_all = torch.zeros(self.N, *H0.shape, device=H0.device, dtype=H0.dtype)
+
+        is_matrix = self._state_matrix
+
+        def combine(s1: tuple, s2: tuple) -> tuple:
+            A1, b1 = s1
+            A2, b2 = s2
+            if is_matrix:
+                A_new = torch.einsum('ij,jk->ik', A2, A1)
+                b_new = torch.einsum('ij,j->i', A2, b1) + b2
+            else:
+                A_new = A2 * A1
+                b_new = A2 * b1 + b2
+            return A_new, b_new
+
+        # Scan along dim=0 (l-first layout); both A_all and b_all start with N.
+        A_prefix, b_prefix = _associative_scan(
+            combine, (A_all, b_all),
+            dim=0,
+            combine_mode='generic',
+        )
+
+        # Apply cumulative affine maps to H0; A_prefix/b_prefix have shape (N, ...).
+        if is_matrix:
+            H_seq = torch.einsum('nij,j->ni', A_prefix, H0) + b_prefix  # (N, out)
+        else:
+            H_seq = A_prefix * H0 + b_prefix  # (N, *state)
+
+        # Prepend H0 as the step-0 state, then convert to l-last (*state, N+1).
+        H_lf = torch.cat([H0.unsqueeze(0), H_seq], dim=0)  # (N+1, *state)
+        return H_lf.movedim(0, -1)                          # (*state, N+1)
+
+    # ------------------------------------------------------------------
+    # Entry point
+    # ------------------------------------------------------------------
+
+    def forward(self, *xs: torch.Tensor):
+        if self.n_states == 1:
+            base_xs = xs[: self.n_base]
+            step_xs = xs[self.n_base :]
+            H0 = to_tuple(self.base_module(*base_xs))[0]
+            if self._has_affine:
+                return self._assoc_scan_forward(H0, step_xs)
+            return self._loop(H0, step_xs)
+
+        # Coupled path: split base inputs then per-step inputs.
+        pos = 0
+        states: list[torch.Tensor] = []
+        for k, nb in enumerate(self.n_bases):
+            s = to_tuple(self.base_modules[k](*xs[pos:pos + nb]))[0]
+            states.append(s)
+            pos += nb
+        step_xs_per_state: list[tuple[torch.Tensor, ...]] = []
+        for ns in self.n_step_xs:
+            step_xs_per_state.append(xs[pos:pos + ns])
+            pos += ns
+        return self._loop(tuple(states), tuple(step_xs_per_state))

@@ -16,10 +16,22 @@ can be executed:
 ```
 Python DSL (TensorDSL / operator constructors)
       │
-      │  .bc_signature()
-      │    · IversonExpr AST retained in operator.rhs
+      │  __setitem__  →  _register_entry()   ← called once per equation,
+      │    · _build_rhs_morphism()               eagerly at assignment time
+      │        creates TensorEquation, calls
+      │        TensorEquation.bc_signature()
+      │        → Broadcasted
+      │    · _build_sum_morphism()           ← for + expressions (SumExpr)
+      │        builds Broadcasted per term,
+      │        → Composed(ProductOfMorphisms,
+      │             AdditionOp Broadcasted)
+      │    · IversonExpr AST retained in
+      │        each Broadcasted's operator.rhs
+      │
+      │  to_morphism()                       ← collects stored morphisms;
+      │                                         no additional compilation
       ▼
-Broadcasted[Datatype, Axis, Operator]        ← categorical representation
+Broadcasted or Composed[…]                   ← categorical representation
       │
       │  ConstructedModule.construct()
       │    · materialise_iverson()           ← Iverson predicates whose axes
@@ -41,20 +53,45 @@ Compiled kernel (Triton / C++)               ← optimised native code
 
 The first two stages are pure Python and live entirely in pyncd. The third
 stage is PyTorch's own compiler and is described briefly in Section 7.
+Stage 1 is **eager**: morphisms are built at `__setitem__` time, not deferred
+to a separate compilation call. `to_morphism()` is the handoff between Stage 1
+and Stage 2 — it returns whatever was built, with no further computation.
 Iverson materialisation is a sub-step of Stage 2: the `IversonExpr` AST
-travels through Stage 1 inside `operator.rhs` and is consumed at the top of
-Stage 2 by `ConstructedTensorEquation.__init__`. By the time `forward()` is
-called the predicate tensor is already a module buffer — it is never
-re-evaluated at runtime.
+travels through Stage 1 inside each `Broadcasted`'s `operator.rhs` and is
+consumed at the top of Stage 2 by `ConstructedTensorEquation.__init__`. By the
+time `forward()` is called the predicate tensor is already a module buffer — it
+is never re-evaluated at runtime.
 
 ---
 
-## 2. Stage 1 — DSL to `Broadcasted`: `bc_signature()`
+## 2. Stage 1 — DSL to Categorical IR: Eager Morphism Construction
 
 The DSL (`data_structure/TensorDSL.py`) records tensor declarations and
-equations in a `TL` registry object. When you call `tl.bc_signature()`, the
-registry converts each `TensorEquation` into a `Broadcasted` morphism by
-calling `TensorEquation.bc_signature()` (`data_structure/TensorLogic.py`).
+equations in a `TL` registry object. Each `__setitem__` assignment
+(e.g. `tl.Y[i,j] = tl.W[i,k] * tl.X[k,j]`) immediately calls
+`_register_entry()`, which builds and stores the corresponding categorical
+morphism before the next assignment runs. The user calls `tl.to_morphism()` at
+the end to collect the stored morphisms; `to_morphism()` itself does no
+additional compilation.
+
+Two build paths exist inside `_register_entry()`:
+
+- **`_build_rhs_morphism()`** — for a `RHSExpression` (a single `*`-chain of
+  tensors and predicates). Creates a `TensorEquation`, unifies cross-equation
+  axis identities via the shared `_ctx`, applies the context, then calls
+  `TensorEquation.bc_signature()` (`data_structure/TensorLogic.py`) to produce
+  a `Broadcasted` morphism.
+
+- **`_build_sum_morphism()`** — for a `SumExpr` (a `+` of two or more
+  `RHSExpression` terms, written `tl.A[i] + tl.B[i]`). Calls
+  `_build_rhs_morphism()` once per term to get a `Broadcasted` per term,
+  collects them in a `ProductOfMorphisms`, then appends an
+  `AdditionOp`-backed `Broadcasted` that sums the term outputs elementwise.
+  The result is `Composed(ProductOfMorphisms(term_0, term_1, …), AdditionOp_br)`.
+
+`tl.bc_signature()` remains available as a shorthand for single-equation
+programs; it calls `to_equation()` then `TensorEquation.bc_signature()`
+directly and raises if more than one equation is registered.
 
 A `Broadcasted[B, A, Op]` (`data_structure/BroadcastedCategory.py:170`) has
 four fields:
@@ -131,12 +168,53 @@ axis is unsized a `UserWarning` is issued and the caller must supply the
 pre-built tensor at runtime. See Section 4.1 for the full materialisation
 machinery.
 
+### Sum expressions: `SumExpr` → `Composed`
+
+A `+` between `IndexedTensor` or `RHSExpression` objects produces a `SumExpr`,
+which is handled by `_build_sum_morphism()`:
+
+1. Each additive term is compiled via `_build_rhs_morphism()` to a
+   `Broadcasted` morphism (the standard path).
+2. The per-term morphisms are wrapped in a `ProductOfMorphisms`.
+3. An `AdditionOp`-backed `Broadcasted` (`AdditionOp_br`) is constructed over
+   the shared output degree, with one all-`TILED` input weave per term and one
+   all-`TILED` output weave.
+4. The final result is `Composed(content=(ProductOfMorphisms(…), AdditionOp_br))`.
+
+At runtime, `ConstructedComposed` threads the output tuple of
+`ConstructedProduct` — one tensor per term — into `Lambda(AdditionOp)`, which
+applies `lambda x, y: x + y` (or `functools.reduce` for more than two terms).
+
+```python
+tl = TL()
+i = real_axis('i', 16)
+tl.Out[i] = tl.A[i] + tl.B[i]
+morph = tl.to_morphism()
+# morph: Composed(
+#   ProductOfMorphisms(
+#     Broadcasted(TensorEquation(A), …),   # A[i] term
+#     Broadcasted(TensorEquation(B), …),   # B[i] term
+#   ),
+#   Broadcasted(AdditionOp(), …)           # elementwise sum
+# )
+module = ConstructedModule.construct(morph)
+# ConstructedComposed(ConstructedProduct(…), Lambda(AdditionOp))
+```
+
+The `AdditionOp_br` `Broadcasted` is dispatched via the `functions_registry`
+to `Lambda` exactly as a standalone `AdditionOp` would be (Section 4.7); the
+difference is only in how it is assembled — here it arrives as the second
+element of a `Composed` chain rather than as a top-level morphism.
+
 ---
 
-## 3. Stage 2 — `Broadcasted` to `nn.Module`: `ConstructedModule.construct()`
+## 3. Stage 2 — Categorical IR to `nn.Module`: `ConstructedModule.construct()`
 
 The entry point (`torch_compile/torch_compile.py:42`) is a class method that
-pattern-matches on the morphism type:
+pattern-matches on the morphism type. Stage 1 may produce a `Broadcasted`
+(single-chain assignment), a `Composed(ProductOfMorphisms, AdditionOp_br)`
+(additive sum), or a `Composed` of multiple entries (multi-equation `TL`);
+all are handled by the same match:
 
 ```python
 @classmethod
@@ -250,9 +328,9 @@ from data_structure.TensorDSL import TL, real_axis
 q = real_axis('q', 4)   # _size = Integer(4)
 x = real_axis('x', 4)
 tl = TL()
-tl.Attn[q, x] = tl.Score[q, x] * (q <= x)
+tl.Attn[q, x] = tl.Score[q, x] * (q <= x)   # morphism built eagerly here
 
-module = ConstructedModule.construct(tl.bc_signature())
+module = ConstructedModule.construct(tl.to_morphism())
 # _mask_1 registered as buffer: [[1,1,1,1],[0,1,1,1],[0,0,1,1],[0,0,0,1]]
 # Caller supplies only Score — no Mask argument needed:
 result = module(Score)   # shape (4, 4)
@@ -265,9 +343,9 @@ from data_structure.TensorDSL import TL, axes
 
 q, x = axes('q x')   # no size — materialisation deferred
 tl = TL()
-tl.Attn[q, x] = tl.Score[q, x] * (q <= x)
+tl.Attn[q, x] = tl.Score[q, x] * (q <= x)   # morphism built eagerly here
 
-module = ConstructedModule.construct(tl.bc_signature())
+module = ConstructedModule.construct(tl.to_morphism())
 # UserWarning: RHS factor 1 has unsized axes — pass it as caller input
 Mask = torch.triu(torch.ones(n, n))   # built by caller
 result = module(Score, Mask)          # Mask passed explicitly
@@ -529,8 +607,8 @@ Tensors are declared as predicate-valued via `TL.predicate()`:
 tl = TL()
 i, j, k = axes('i j k')
 tl.Out.predicate(i, j)          # marks Out as Bool-typed
-tl.Out[i, j] = tl.A[i, k] * tl.B[k, j]
-bc_sig = tl.bc_signature()      # output_weaves[0].datatype == Bool()
+tl.Out[i, j] = tl.A[i, k] * tl.B[k, j]   # morphism built eagerly; Bool output_weave
+morph = tl.to_morphism()        # morph.output_weaves[0].datatype == Bool()
 ```
 
 ### Iverson materialisation
@@ -682,31 +760,36 @@ upper-triangular float tensor, and registers it as buffer `_mask_2`.
 
 ```mermaid
 flowchart TD
-    DSL["Python DSL\ntl.Gate = A * A * (i<=j)\ntl.Y = Gate * V"]
-    BC1["Gate morphism (Broadcasted)\nop=TensorEquation, degree=(b,i,j)\ninputs: A, A, IversonBinOp  output: Gate (Bool)"]
-    BC2["Y morphism (Broadcasted)\nop=TensorEquation, degree=(b,i,d)\ninputs: Gate, V  output: Y (Reals)"]
+    DSL["Python DSL\ntl.Gate[b,i,j] = tl.A[b,i,k] * tl.A[b,k,j] * (i<=j)\ntl.Y[b,i,d]   = tl.Gate[b,i,j] * tl.V[b,j,d]"]
+    BC1["Gate morphism (Broadcasted)\nbuilt eagerly at first __setitem__\nop=TensorEquation, degree=(b,i,j)\ninputs: A, A, IversonBinOp  output: Gate (Bool)"]
+    BC2["Y morphism (Broadcasted)\nbuilt eagerly at second __setitem__\nop=TensorEquation, degree=(b,i,d)\ninputs: Gate, V  output: Y (Reals)"]
+    CMORPH["Composed(Gate_br, Y_br)\nreturned by tl.to_morphism()"]
     CM1["ConstructedTensorEquation\nsignature='... y0 y1 x0, ... y0 x0 y2, ... y1 y2 -> ... y0 y1 y2'\ndemote=True\n_mask_2 registered as buffer"]
     CM2["ConstructedTensorEquation\nsignature='... y0 y1 x0, ... y0 x0 y2 -> ... y0 y1 y2'\ndemote=False"]
     COMP["ConstructedComposed\nnn.Sequential(gate_module, y_module)"]
     FX["torch.compile → two FX subgraphs\neinsum → gt → to  (Gate)\neinsum            (Y)"]
 
-    DSL -->|"tl.bc_signature()"| BC1
-    DSL -->|"tl.bc_signature()"| BC2
-    BC1 -->|"construct_broadcasted()"| CM1
-    BC2 -->|"construct_broadcasted()"| CM2
+    DSL -->|"first __setitem__ → _register_entry()"| BC1
+    DSL -->|"second __setitem__ → _register_entry()"| BC2
+    BC1 --> CMORPH
+    BC2 --> CMORPH
+    CMORPH -->|"construct() → ConstructedComposed"| CM1
+    CMORPH -->|"construct() → ConstructedComposed"| CM2
     CM1 --> COMP
     CM2 --> COMP
     COMP --> FX
 ```
 
-### Gate equation — `bc_signature()`
+### Gate equation — morphism construction
 
-`Gate[b,i,j] = A[b,i,k] * A[b,k,j] * (i<=j)` has degree `(b, i, j)` and
-contracted axis `k`. During `bc_signature()`, the inline Iverson factor
-`(i <= j)` is assigned a `Bool()` datatype and its serialised form is stored in
-`iverson_expr` on the weave for display by `tsncd`. Unlike a named `Mask`
-tensor, the Iverson AST is retained in `target.operator.rhs` and later
-consumed by `materialise_iverson` at construction time.
+`Gate[b,i,j] = A[b,i,k] * A[b,k,j] * (i<=j)` is an `RHSExpression`, so the
+first `__setitem__` call dispatches to `_build_rhs_morphism()`. This creates
+a `TensorEquation` with degree `(b, i, j)` and contracted axis `k`, then calls
+`TensorEquation.bc_signature()` to produce the Gate `Broadcasted`. During
+`bc_signature()`, the inline Iverson factor `(i <= j)` is assigned a `Bool()`
+datatype and its serialised form is stored in `iverson_expr` on the weave for
+display by `tsncd`. The Iverson AST is retained in `target.operator.rhs` and
+later consumed by `materialise_iverson` at Stage 2 construction time.
 
 ```mermaid
 graph LR
@@ -850,10 +933,14 @@ This tensor is registered as `_mask_2` and never recomputed. The `forward`
 method slots it between the two `A` tensors in `full_tensors` and passes all
 three to `einops.einsum`.
 
-### Y equation — `bc_signature()` and construction
+### Y equation — morphism construction
 
-`Y[b,i,d] = Gate[b,i,j] * V[b,j,d]` is structurally a batched matmul. Gate is
-now a `Weave(Bool, (TILED, TILED, j))` — Bool-typed input, Reals output.
+`Y[b,i,d] = Gate[b,i,j] * V[b,j,d]` is an `RHSExpression`, so the second
+`__setitem__` call dispatches to `_build_rhs_morphism()`. The shared `_ctx`
+has already recorded the Gate output axes from the first assignment, so
+axis unification between Gate's output and Y's RHS reference is applied before
+`bc_signature()` is called. Gate is treated as a
+`Weave(Bool, (TILED, TILED, j))` — Bool-typed input, Reals output.
 
 ```text
 degree = (b, i, d)     tags: b→y0, i→y1, d→y2
@@ -1060,7 +1147,9 @@ the `gt → to` epilogue for Gate, one without for Y.
 
 | Stage | pyncd object | Key method / class |
 | --- | --- | --- |
-| DSL declaration | `TL`, `TensorEquation` | `tl.bc_signature()` |
+| DSL assignment (single chain) | `TL`, `_build_rhs_morphism` | `__setitem__` → `bc_signature()` internally |
+| DSL assignment (additive sum) | `TL`, `_build_sum_morphism` | `__setitem__` → `Composed(ProductOfMorphisms, AdditionOp_br)` |
+| Categorical IR retrieval | `TL` | `tl.to_morphism()` |
 | Categorical IR | `Broadcasted`, `Weave`, `Axis` | `bc_signature()` on each operator |
 | Operator dispatch | `ConstructedModule` | `.construct()`, `operation_registry` |
 | Einsum/contraction | `ConstructedTensorEquation` | `generate_tensor_equation_signature()` |

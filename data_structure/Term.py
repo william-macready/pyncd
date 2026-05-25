@@ -302,3 +302,9 @@ class Context:
     def append_buckets[T: UTerm](self, buckets: Iterable[EqualityClass[T]]) -> None:
         for bucket in buckets:
             self.append_bucket(bucket)
+
+    def without(self, uid: UID) -> Context:
+        """Return a new Context with all equality classes that involve uid removed."""
+        ctx = Context()
+        ctx.equality_classes = [eq for eq in self.equality_classes if uid not in eq.bucket]
+        return ctx

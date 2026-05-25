@@ -364,3 +364,126 @@ def test_auto_materialise_bool_output():
     assert torch.all((result == 0) | (result == 1))
     # Gate[q,x] = ∃k: A[q,k] ∧ B[k,x] ∧ [q<=x] — true iff q<=x (since A,B are all-ones)
     assert torch.allclose(result, torch.triu(torch.ones(4, 4)))
+
+
+# ---------------------------------------------------------------------------
+# Coupled recurrences
+# ---------------------------------------------------------------------------
+
+def test_coupled_jacobi_correctness():
+    """Two cross-dependent recurrences update simultaneously (Jacobi semantics).
+
+    H[i, l+1] = H[i, l] + G[i, l]
+    G[i, l+1] = G[i, l] * H[i, l]
+
+    Jacobi: both updates use the OLD H and G from step l, not the partially
+    updated values.  Verify against a reference Python loop.
+    """
+    i = real_axis('i', 3)
+    l = real_axis('l', 4)
+
+    tl = TL()
+    tl.H.iteration_axis(l)
+    tl.G.iteration_axis(l)
+    tl.H[i, 0] = tl.X[i]
+    tl.G[i, 0] = tl.Y[i]
+    tl.H[i, l + 1] = tl.H[i, l] + tl.G[i, l]
+    tl.G[i, l + 1] = tl.G[i, l] * tl.H[i, l]
+
+    module = ConstructedModule.construct(tl.to_morphism())
+
+    X = torch.tensor([1.0, 2.0, 3.0])
+    Y = torch.tensor([1.0, 1.0, 1.0])
+
+    # Reference: pure Python Jacobi loop
+    H_ref, G_ref = X.clone(), Y.clone()
+    H_hist = [H_ref.clone()]
+    G_hist = [G_ref.clone()]
+    for _ in range(4):
+        H_new = H_ref + G_ref
+        G_new = G_ref * H_ref   # uses old H, not H_new
+        H_ref, G_ref = H_new, G_new
+        H_hist.append(H_ref.clone())
+        G_hist.append(G_ref.clone())
+    H_expected = torch.stack(H_hist, dim=-1)  # (3, 5)
+    G_expected = torch.stack(G_hist, dim=-1)
+
+    # Module returns (H_seq, G_seq) in sorted(names) = ['G', 'H'] order.
+    result = module(Y, X)   # base inputs: G first (sorted), then H
+    G_out, H_out = result
+    assert torch.allclose(H_out, H_expected), f"H mismatch:\n{H_out}\nvs\n{H_expected}"
+    assert torch.allclose(G_out, G_expected), f"G mismatch:\n{G_out}\nvs\n{G_expected}"
+
+
+def test_coupled_ordering_invariance():
+    """Registering coupled recurrences in reversed order gives identical output."""
+    i = real_axis('i', 2)
+    l = real_axis('l', 3)
+
+    def build(register_H_first: bool):
+        tl = TL()
+        tl.H.iteration_axis(l)
+        tl.G.iteration_axis(l)
+        if register_H_first:
+            tl.H[i, 0] = tl.X[i]
+            tl.G[i, 0] = tl.Y[i]
+            tl.H[i, l + 1] = tl.H[i, l] + tl.G[i, l]
+            tl.G[i, l + 1] = tl.G[i, l] + tl.H[i, l]
+        else:
+            tl.G[i, 0] = tl.Y[i]
+            tl.H[i, 0] = tl.X[i]
+            tl.G[i, l + 1] = tl.G[i, l] + tl.H[i, l]
+            tl.H[i, l + 1] = tl.H[i, l] + tl.G[i, l]
+        return ConstructedModule.construct(tl.to_morphism())
+
+    mod_hfirst = build(register_H_first=True)
+    mod_gfirst = build(register_H_first=False)
+
+    X = torch.tensor([1.0, 2.0])
+    Y = torch.tensor([3.0, 4.0])
+    # Both modules: base inputs in sorted order (G first, then H)
+    out_hfirst = mod_hfirst(Y, X)
+    out_gfirst = mod_gfirst(Y, X)
+
+    for a, b in zip(out_hfirst, out_gfirst):
+        assert torch.allclose(a, b), "Output differs with different registration order"
+
+
+def test_coupled_with_per_step_inputs():
+    """Coupled recurrence where each state reads a distinct per-step input tensor.
+
+    H[i, l+1] = H[i, l] + A[i, l]
+    G[i, l+1] = G[i, l] + B[i, l]
+
+    A and B are separate pre-loaded per-step tensors (not iterative).
+    Verifies that n_step_xs routing is correct (no argument-count errors).
+    """
+    i = real_axis('i', 2)
+    l = real_axis('l', 3)
+
+    tl = TL()
+    tl.H.iteration_axis(l)
+    tl.G.iteration_axis(l)
+    tl.H[i, 0] = tl.X[i]
+    tl.G[i, 0] = tl.Y[i]
+    tl.H[i, l + 1] = tl.H[i, l] + tl.A[i, l]
+    tl.G[i, l + 1] = tl.G[i, l] + tl.B[i, l]
+
+    module = ConstructedModule.construct(tl.to_morphism())
+
+    X = torch.zeros(2)
+    Y = torch.zeros(2)
+    A = torch.ones(2, 3)
+    B = torch.full((2, 3), 2.0)
+
+    # Sorted order: G, H  — base inputs G first, then H; per-step inputs G first, then H
+    result = module(Y, X, B, A)
+    G_out, H_out = result
+
+    # H[i, l] = sum(A[i, 0..l-1]) = l  (all-ones A, zero init)
+    H_expected = torch.stack([torch.full((2,), float(k)) for k in range(4)], dim=-1)
+    # G[i, l] = 2*l  (B=2, zero init)
+    G_expected = torch.stack([torch.full((2,), 2.0 * k) for k in range(4)], dim=-1)
+
+    assert torch.allclose(H_out, H_expected), f"H: {H_out}"
+    assert torch.allclose(G_out, G_expected), f"G: {G_out}"
