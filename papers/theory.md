@@ -427,6 +427,12 @@ $$[f, P] \mathbin{;} [Y, q] = [X, q] \mathbin{;} f \qquad \forall\, q : \mathbf{
 Slicing the output at $q$ after applying $[f, P]$ gives the same result as slicing the input at $q$ first and then applying $f$ directly. The computation at each position $q \in P$ depends only on the $q$-th input slice.
 
 > **Note (pyncd extension).** The `Scan` construction rule (§ above) does *not* satisfy Eq. 3 for its recurrence axis $L$. The output at position $l$ depends on all outputs at positions $0, \ldots, l{-}1$, so slicing output-first and input-first are not equivalent. This is precisely why `Scan` must be a new construction rule rather than a `Broadcasted` with $L$ as a tiling degree. Batch lifting over axes *orthogonal* to $L$ is well-defined — `[Scan, P]` for an independent batch axis $P$ runs the scan independently for each $p \in P$, and Eq. 3 holds over $P$.
+>
+> `Scan` does satisfy a **prefix restriction law** in place of Eq. 3. Let $N$ be the step count (the `N` field of `Scan`). For any $m \le N$, let $\iota_m : [0{..}m] \hookrightarrow [0{..}N]$ be the **St** morphism including the first $m{+}1$ steps. Writing $[H, \iota_m]$ for the **Br** reindexing that restricts the output history to steps $0,\ldots,m$, and $[X_{\mathrm{step}}, \iota_{m-1}]$ for the reindexing that restricts the per-step inputs to steps $0,\ldots,m{-}1$ (the base inputs for $H_0$ are unchanged on both sides):
+> $$\mathrm{Scan}_N \mathbin{;} [H,\, \iota_m] \;=\; [X_{\mathrm{step}},\, \iota_{m-1}] \mathbin{;} \mathrm{Scan}_m$$
+> This says running the full scan and truncating the output is the same as truncating the per-step inputs and running a shorter scan. **Example:** take $N=3$ with per-step inputs $x_0, x_1, x_2$ and initial state $H_0 = \mathrm{base}(\cdot)$. The full scan produces the history $(H_0, H_1, H_2, H_3)$. Setting $m=2$, the left-hand side restricts that history to $(H_0, H_1, H_2)$. The right-hand side drops $x_2$ — restricting the per-step inputs to $(x_0, x_1)$ — and runs $\mathrm{Scan}_2$, which also produces $(H_0, H_1, H_2)$. The two sides agree because $H_2 = \mathrm{step}(H_1, x_1)$ depends only on $x_0$ and $x_1$, not on $x_2$.
+>
+> Eq. 3 would require this to hold for arbitrary single-point slices $q : \mathbf{1} \to L$ (diagonal / independent structure); the prefix law requires it only for order-preserving injections $\iota_m$ that include $0$ (causal / lower-triangular structure). The single-step transition morphism `step` itself satisfies Eq. 3 — `Scan` is precisely the iteration of that one-step law, accumulating the causal dependency.
 
 The full structural definition (Def 11) makes the independence of positions explicit via the copy remapping $\delta^P : P \to \mathbf{1}$, the unique morphism in **St** that deletes all axes of $P$:
 
@@ -1009,7 +1015,7 @@ For an array product $X = \Pi_{i \in I}[a_i, A_i] \in \text{Ob}(\mathbf{Br})$ an
 
 $$[X, P] = \Pi_{i \in I}[a_i, A_i \otimes P]$$
 
-For a morphism $f : X \to Y \in \text{Ob}(\mathbf{Br})$ and a shape $P \in \text{Ob}(\mathbf{St})$, the batch lift $[f, P] : [X, P] \to [Y, P]$ satisfies:
+For a **Br** morphism $f : X \to Y$ with $Y \in \text{Ob}(\mathbf{Br})$ and a shape $P \in \text{Ob}(\mathbf{St})$, the batch lift $[f, P] : [X, P] \to [Y, P]$ satisfies:
 
 $$[f, P] \mathbin{;} [Y, q] = [X, q] \mathbin{;} f$$
 
