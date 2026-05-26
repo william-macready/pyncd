@@ -188,10 +188,11 @@ pyncd represents neural network computations as morphisms in a **product categor
 ```text
 ProdCategory[L, M] = M                         -- atomic base morphism
                    | Composed[L, M]            -- sequential composition
+                   | ThreadedComposed[L, M]    -- threaded composition with live-pool routing (see §5.6)
                    | ProductOfMorphisms[L, M]  -- parallel product
                    | Rearrangement[L]          -- permutation / copy / discard
                    | Block[L, M]               -- named sub-expression
-                   | Scan[L, M]               -- iterative scan (new; see §6)
+                   | Scan[L, M]               -- iterative scan (see §6)
 ```
 
 The framework specialises to two concrete categories.
@@ -245,9 +246,9 @@ The following terms are proposed as part of the tensor logic integration and are
 | Class | Superclass | Produces | Scope |
 | --- | --- | --- | --- |
 | `TensorEquation` | `Operator` | `Broadcasted` via `bc_signature()` | one equation = one base morphism |
-| `TensorProgram` | `Term` | `Composed` via `to_morphism()` | many equations = sequential composition |
+| `TensorProgram` | `Term` | `ThreadedComposed` via `to_morphism()` | many equations = threaded sequential composition |
 
-`TensorProgram` is not an `Operator`: `Operator` is the type parameter stored in `Broadcasted.operator` and represents a single atomic computation, whereas `TensorProgram` wraps multiple equations and `to_morphism()` produces a `Composed` — a sequence of `Broadcasted` base morphisms spanning multiple steps with intermediate outputs.
+`TensorProgram` is not an `Operator`: `Operator` is the type parameter stored in `Broadcasted.operator` and represents a single atomic computation, whereas `TensorProgram` wraps multiple equations and `to_morphism()` produces a `ThreadedComposed` — a sequentially-composed morphism augmented with a live-pool routing table that delivers external tensors to every step that references them. See §5.5–5.6.
 
 Because `Operator` is a `Term`, any `Operator` subclass participates in `deep_reconstruct` and `Context.apply` traversal. This is the hook that makes the tensor logic integration possible: `TensorEquation` is an `Operator` subclass, so its internal structure — including its `Axis` index fields — is reachable by the standard `Term` machinery.
 
@@ -306,7 +307,7 @@ The following gaps in tensor logic are addressed by the term-based embedding des
 | Single einsum | `Y[i,j] = W[i,k] X[k,j]` | `TensorEquation` → `Broadcasted` via `bc_signature()` |
 | Elementwise nonlinearity | `relu(...)` in equation | `operator` field on `TensorEquation` |
 | Normalization axis | `t.` suffix | `SoftMax` / `Normalize` operator |
-| Sequential composition | Feed-forward equation chain | `TensorProgram.to_morphism()` → `Composed` |
+| Sequential composition | Feed-forward equation chain | `TensorProgram.to_morphism()` → `ThreadedComposed` |
 | Parallel composition | None | `ProductOfMorphisms([...])` |
 | Axis identity | Syntactic name sharing | `Axis(UTerm)` with UID — object sharing |
 | Datatypes | None (uniform semiring) | `Reals` / `Natural(max_value)` |
@@ -420,25 +421,61 @@ class TensorProgram(Term):
         self,
         declarations: dict[DynamicName, tuple[RawAxis, ...]] | None = None,
         array_datatypes: dict[DynamicName, Datatype] | None = None,
-    ) -> Composed:
+    ) -> ThreadedComposed:
         ctx = Context()
-        morphisms = []
+        morphisms: list = []
         name_to_axes: dict[DynamicName | None, Prod[RawAxis]] = {}
-        for eq in topological_sort(self.equations):
-            # Unify declaration axes first, then rhs axes.
+        external_axes: dict[DynamicName, tuple[RawAxis, ...]] = {}
+        internal_names = {eq.lhs_name for eq in self.equations}
+        equations_sorted = topological_sort(self.equations)
+        # Collect external tensor names in first-appearance order.
+        external_order: list[DynamicName] = []
+        external_name_set: set[DynamicName] = set()
+        for eq in equations_sorted:
+            for factor in eq.rhs:
+                if isinstance(factor, TensorRef) and factor.name not in internal_names \
+                        and factor.name not in external_name_set:
+                    external_order.append(factor.name)
+                    external_name_set.add(factor.name)
+        n_external = len(external_order)
+        ext_idx = {name: i for i, name in enumerate(external_order)}
+        produced_idx: dict[DynamicName, int] = {}
+        step_routing: list[tuple[int, ...]] = []
+        for eq in equations_sorted:
             seen_in_eq: set[DynamicName | None] = set()
             for factor in eq.rhs:
-                if isinstance(factor, TensorRef) and factor.name in name_to_axes \
-                        and factor.name not in seen_in_eq:
-                    seen_in_eq.add(factor.name)
-                    for prior_axis, eq_axis in zip(name_to_axes[factor.name], factor.axes):
+                if not isinstance(factor, TensorRef):
+                    continue
+                name = factor.name
+                if name in name_to_axes and name not in seen_in_eq:
+                    # Internal tensor produced by a prior step: unify axes.
+                    seen_in_eq.add(name)
+                    for prior_axis, eq_axis in zip(name_to_axes[name], factor.axes):
                         ctx.append_iter((prior_axis, eq_axis))
+                elif name not in internal_names and name not in seen_in_eq:
+                    # External tensor: unify axes across equations that share it.
+                    seen_in_eq.add(name)
+                    if name in external_axes:
+                        for prior_ax, eq_ax in zip(external_axes[name], factor.axes):
+                            ctx.append_iter((prior_ax, eq_ax))
+                    else:
+                        external_axes[name] = factor.axes
                 # self-joins: skip subsequent occurrences (each keeps its own UIDs)
             applied_eq = ctx.apply(eq)
-            br = applied_eq.bc_signature(array_datatypes=array_datatypes)
-            morphisms.append(br)
+            morphisms.append(_split_nonlinearity(applied_eq, array_datatypes=array_datatypes))
             name_to_axes[eq.lhs_name] = applied_eq.lhs_indices  # post-apply canonical axes
-        return Composed(content=tuple(morphisms))
+            # Build per-step routing: map each domain input to its live-pool slot.
+            route = tuple(
+                ext_idx[f.name] if f.name in ext_idx else n_external + produced_idx[f.name]
+                for f in applied_eq.rhs if isinstance(f, TensorRef)
+            )
+            step_routing.append(route)
+            produced_idx[eq.lhs_name] = len(produced_idx)
+        return ThreadedComposed(
+            content=tuple(morphisms),
+            routing=tuple(step_routing),
+            n_external=n_external,
+        )
 ```
 
 `topological_sort` orders equations so that each tensor is defined before it is used. The `name_to_axes` map translates tensor logic's implicit name-sharing into UID unification: when equation B refers to tensor `Hidden` that was defined by equation A, `ctx.append_iter` unifies A's `lhs_indices` with B's corresponding `rhs` `TensorRef` entry. `ctx.apply(eq)` then substitutes canonical UIDs into both the equation and its resulting `Broadcasted`.
@@ -506,7 +543,7 @@ tl.Out[i] = tl.A[i] + tl.B[i]
 tl.Out[i] = relu(tl.H[i, k] * tl.W[k]) + tl.Bias[i]
 ```
 
-**Eager axis unification.** The `TL` instance holds a single `_ctx: Context` shared across all assignments. When a tensor appears on the RHS that was defined by a prior assignment, its axes are unified with the prior output axes via `_ctx.append_iter` before building the morphism. `tl.to_morphism()` is therefore trivial — it returns the already-built morphisms directly, wrapped in a `Composed` if there are multiple. No topological sort or deferred unification pass is required.
+**Eager axis unification.** The `TL` instance holds a single `_ctx: Context` shared across all assignments. When a tensor appears on the RHS that was defined by a prior assignment, its axes are unified with the prior output axes via `_ctx.append_iter` before building the morphism. `tl.to_morphism()` builds a live-pool routing table from per-entry `input_names` and returns a `ThreadedComposed` — or falls back to `Composed` when any entry is a scan/iteration entry. No topological sort is required; equations are already recorded in assignment order.
 
 For programs that need to inspect or re-process the underlying `TensorEquation` objects (e.g. for serialisation via `from_tensor_program`), `tl.to_program()` extracts them from the stored morphisms and wraps them in a `TensorProgram`. `TensorProgram.to_morphism()` remains available as an alternative build path and performs its own `Context`-mediated unification on the extracted equations.
 
@@ -532,6 +569,45 @@ real_axis('d')         # RawAxis with _size = FreeNumeric  (type only, no size)
 `NatAxis` is a frozen zero-field dataclass subclass of `RawAxis`, following the same pattern as the existing `NormAxis`. The type distinction is carried by the Python class; size is carried by the `_size` field inherited from `Axis`. A declaration without concrete sizes is valid and serves as a kind annotation without binding sizes.
 
 Declarations are **entirely optional**. When absent, all existing behaviour — contraction detection, UID-based axis unification, `bc_signature()`, `to_morphism()` — is completely unchanged.
+
+#### Implicit threading: `ThreadedComposed` and the live-pool model
+
+`TensorProgram.to_morphism()` and `TL.to_morphism()` produce a `ThreadedComposed` morphism — a subtype of sequential composition that carries an explicit per-step input routing table. This enables external tensors (weights, residual inputs) referenced by more than one step to be delivered to every step that needs them, rather than being consumed by the first step and dropped.
+
+**Live-pool model.** `ThreadedComposed` maintains a *live pool* — a flat list of tensors indexed by position:
+
+```text
+live[0 .. n_external - 1]   initial caller inputs, in first-appearance order
+live[n_external + i]        output of step i
+```
+
+The `routing` field is a tuple of tuples: `routing[i][j]` is the live-pool index for input slot `j` of step `i`. `n_external` is the count of initial caller inputs. `ConstructedThreadedComposed.forward()` executes this routing:
+
+```python
+def forward(self, *xs: torch.Tensor):
+    live = list(xs)         # n_external slots
+    for module, route in zip(self.chain, self.routing):
+        last = to_tuple(module(*(live[i] for i in route)))
+        live.extend(last)   # append this step's output(s)
+    return last
+```
+
+**Residual connections without a fork.** Before `ThreadedComposed`, expressing `normalize(Attn + H)` where `H` also feeds Q/K/V projections required a `(0, 0)` rearrangement to copy `H` into two domain positions. With threading, `H` is assigned a single live-pool slot and the routing table delivers it to every step that needs it:
+
+```python
+# attn_res(): H is external; routing delivers it to projections and to the residual.
+tl.Query[q, h, k]   = tl.W_Q[h, k, m] * tl.H[q, m]
+tl.Key[x, h, k]     = tl.W_K[h, k, m] * tl.H[x, m]
+tl.Value[x, h, k]   = tl.W_V[h, k, m] * tl.H[x, m]
+# ... attention core steps ...
+tl.A[q, m]          = normalize(tl.Attn[q, m] + tl.H[q, m])   # H threaded, no fork
+```
+
+**`TL._entries` 4-tuple.** Each completed assignment is stored as `(lhs_name, morph, out_axes, input_names)` where `input_names: tuple[DynamicName | None, ...]` records one name per domain slot of `morph` (`None` for unsized Iverson predicates). `to_morphism()` walks these names to build `external_order` and the routing table.
+
+**`_compiled()` helper.** Within `to_morphism()`, a `_compiled()` helper applies `_split_nonlinearity` to any entry whose stored morphism is a `Broadcasted(operator=TensorEquation(operator=SoftMax|ReLU|Normalize))`. This ensures inline nonlinearities such as `softmax(Q * K)` are split into an einsum step followed by the nonlinearity template before being placed in the `ThreadedComposed` chain. The `_entries` list is left untouched; the split is applied only when building the final `content` tuple.
+
+**Scan fallback.** Scan/iteration entries produced by `_finalize_iter()` are appended to `_entries` with `input_names = ()` because their step inputs are wired internally inside the `Scan` term rather than in the outer domain. When any entry has `input_names = ()`, `to_morphism()` falls back to a plain `Composed` instead of `ThreadedComposed`.
 
 #### Parallel product from dependency analysis
 
@@ -709,11 +785,11 @@ Coupled recurrences (two tensors both declared with `.iteration_axis(l)`) are de
 
 ## 7. Summary
 
-Tensor Logic (Domingos 2025) provides a compact notation for individual operator applications in which the index structure is made explicit. `TensorEquation(Operator)` embeds this notation into pyncd's `Term` hierarchy: each equation is a frozen dataclass whose `Axis` index fields carry UID identity, whose `bc_signature()` method produces the corresponding `Broadcasted[B, A, TensorEquation]`, and whose structure remains accessible and traversable throughout the expression's lifetime. `TensorProgram(Term)` collects equations, topologically sorts them, and produces a `Composed` morphism via `Context`-mediated axis unification — converting tensor logic's implicit name-sharing into pyncd's explicit UID identity.
+Tensor Logic (Domingos 2025) provides a compact notation for individual operator applications in which the index structure is made explicit. `TensorEquation(Operator)` embeds this notation into pyncd's `Term` hierarchy: each equation is a frozen dataclass whose `Axis` index fields carry UID identity, whose `bc_signature()` method produces the corresponding `Broadcasted[B, A, TensorEquation]`, and whose structure remains accessible and traversable throughout the expression's lifetime. `TensorProgram(Term)` collects equations, topologically sorts them, and produces a `ThreadedComposed` morphism via `Context`-mediated axis unification — converting tensor logic's implicit name-sharing into pyncd's explicit UID identity. `ThreadedComposed` extends sequential composition with a live-pool routing table (`routing[i][j]` = live-pool index for input `j` of step `i`) that delivers external tensors to every step that references them, eliminating the need for explicit copy rearrangements at residual connections.
 
 The integration boundary is clean: `TensorProgram.to_morphism()` produces a morphism in `BroadcastedCategory`; above that level, `ProductOfMorphisms`, type-level datatypes, symbolic shape propagation, and `Block` structure are the caller's responsibility — categorical structures that tensor logic deliberately omits.
 
-Beyond this core integration, §5.6 describes the Python DSL layer implemented on top of `TensorProgram` and the remaining gaps. The `TL` registry builds `Broadcasted` morphisms eagerly as equations are assigned, using a single shared `Context` for axis unification across all assignments. The `+` operator produces additive expressions (`SumExpr`) compiled to `Composed(ProductOfMorphisms(terms), AdditionOp Broadcasted)`. Tensor declarations (`.tensor()`, `.selection()`, `.predicate()`) record kind and positional shape, promoting axis subtypes (`NatAxis`) and enforcing arity at indexing time.
+Beyond this core integration, §5.6 describes the Python DSL layer implemented on top of `TensorProgram` and the remaining gaps. The `TL` registry builds `Broadcasted` morphisms eagerly as equations are assigned, using a single shared `Context` for axis unification across all assignments. Per-entry `input_names` tuples record the domain tensor names; `to_morphism()` uses these to build the live-pool routing table and returns `ThreadedComposed`, falling back to `Composed` for entries containing scan/iteration steps. The `+` operator produces additive expressions (`SumExpr`) compiled to `Composed(ProductOfMorphisms(terms), AdditionOp Broadcasted)`. Tensor declarations (`.tensor()`, `.selection()`, `.predicate()`) record kind and positional shape, promoting axis subtypes (`NatAxis`) and enforcing arity at indexing time.
 
 §6 describes how the DSL extends to iterative (recurrent) tensor equations via `.iteration_axis()`. A `Scan` term — a new construction rule alongside `Block` in the pyncd grammar — represents the recurrence and is compiled to a sequential PyTorch loop with an optional `associative_scan` fast path for affine recurrences. The `TL` registry defers assembly of scan morphisms until `to_morphism()`, where `_finalize_iter()` runs consistency checks and constructs the `Scan` term.
 

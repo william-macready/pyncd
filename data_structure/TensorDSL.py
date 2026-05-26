@@ -786,13 +786,21 @@ class TL:
         return TensorProgram(equations=tuple(self._equations))
 
     def to_morphism(self):
+        from data_structure.TensorLogic import TensorEquation, _split_nonlinearity
+
+        def _compiled(morph):
+            if isinstance(morph, bc.Broadcasted) and isinstance(morph.operator, TensorEquation):
+                return _split_nonlinearity(morph.operator,
+                                           array_datatypes=self._array_datatypes())
+            return morph  # SumExpr Composed — nonlinearity already split
+
         self._finalize_iter()
         if not self._entries:
             raise ValueError("no equations registered")
         # Scan/iteration entries have input_names=(). The threading model cannot
         # track their external inputs — fall back to sequential Composed.
         if any(not input_names for _, _, _, input_names in self._entries):
-            morphisms = tuple(morph for _, morph, _, _ in self._entries)
+            morphisms = tuple(_compiled(morph) for _, morph, _, _ in self._entries)
             if len(morphisms) == 1:
                 return morphisms[0]
             return pc.Composed(content=morphisms)
@@ -821,7 +829,7 @@ class TL:
             routing.append(tuple(route))
             if lhs_name is not None:
                 produced_idx[lhs_name] = len(produced_idx)
-        morphisms = tuple(morph for _, morph, _, _ in self._entries)
+        morphisms = tuple(_compiled(morph) for _, morph, _, _ in self._entries)
         return pc.ThreadedComposed(
             content=morphisms,
             routing=tuple(routing),
