@@ -133,6 +133,34 @@ class Composed[L, M: Morphism](Morphism[L]):
         return cls(content=tuple(xs))
 
 @dataclass(frozen=True)
+class ThreadedComposed[L, M: Morphism](Morphism[L]):
+    """Composed morphism with explicit per-step input routing.
+
+    Produced by TensorProgram.to_morphism() / TL.to_morphism() when external
+    tensors are shared across multiple equations. routing[i][j] is the
+    live-pool index for input slot j of step i.
+
+    Live pool: indices 0..n_external-1 are initial caller inputs; index
+    n_external+i is the output of step i.
+    """
+    content: fd.Prod[M] = ()
+    routing: fd.Prod[fd.Prod[int]] = ()
+    n_external: int = 0
+
+    def dom(self) -> ProdObject[L]:
+        external_types: list = [None] * self.n_external
+        for step_morph, route in zip(self.content, self.routing):
+            dom = step_morph.dom()
+            for slot, live_idx in enumerate(route):
+                if live_idx < self.n_external and external_types[live_idx] is None:
+                    external_types[live_idx] = dom[slot]
+        return ProdObject(tuple(external_types))
+
+    def cod(self) -> ProdObject[L]:
+        return self.content[-1].cod()
+
+
+@dataclass(frozen=True)
 class ProductOfMorphisms[L, M: Morphism](Morphism[L]):
     content: fd.Prod[M] = ()
     def dom(self) -> ProdObject[L]:

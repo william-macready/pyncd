@@ -15,7 +15,7 @@ import data_structure.Numeric as nm
 import term_utilities.term_utilities as tutil
 import data_structure.Category as cat
 import data_structure.Operators as ops
-from data_structure.TensorExpr import TensorRef
+from data_structure.TensorExpr import TensorRef, IversonBinOp, IversonUnaryOp, _factor_axes
 from torch_compile.materialise import materialise_iverson
 
 import data_structure.BrTyping as Br
@@ -57,6 +57,8 @@ class ConstructedModule[M: cat.Morphism](nn.Module, ABC):
                 return ConstructedRearrangement(target)
             case cat.ProductOfMorphisms():
                 return ConstructedProduct(target)
+            case cat.ThreadedComposed():
+                return ConstructedThreadedComposed(target)
             case cat.Composed():
                 return ConstructedComposed(target)
             case cat.Block():
@@ -170,6 +172,23 @@ class ConstructedComposed[B: cat.Datatype, A: cat.Axis](
             xs = to_tuple(module(*xs))
         return xs
     
+class ConstructedThreadedComposed(ConstructedModule):
+    def __init__(self, target: cat.ThreadedComposed):
+        super().__init__(target)
+        self.routing = target.routing
+        self.chain = nn.ModuleList(
+            [ConstructedModule.construct(m) for m in target.content]
+        )
+
+    def forward(self, *xs: torch.Tensor):
+        live = list(xs)
+        last: tuple[torch.Tensor, ...] = xs
+        for module, route in zip(self.chain, self.routing):
+            last = to_tuple(module(*(live[i] for i in route)))
+            live.extend(last)
+        return last
+
+
 class ConstructedRearrangement(ConstructedModule):
     def __init__(self, target: cat.Rearrangement):
         super().__init__(target)
@@ -236,9 +255,12 @@ def generate_tensor_equation_signature(target: cat.Broadcasted) -> str:
     ensures axes shared across multiple input weaves receive the same tag, which
     is what causes einops to contract over them.
 
-    All RHS factors are expected to have been materialised as tensors before
-    forward() is called. Iverson materialisation is a separate upstream step.
+    Sized-Iverson factors are excluded from input_weaves (they are auto-buffered
+    and do not appear in the morphism domain).  Their segments are appended after
+    the domain segments here, matching the [caller-inputs, buffer-inputs] order
+    that ConstructedTensorEquation.forward() uses when calling einops.einsum.
     """
+    from data_structure.TensorLogic import TensorEquation, _iverson_is_materializable
     assert tutil.is_mappable_broadcast(target)
     degree_tags = tuple(f'y{i}' for i, _ in enumerate(target.degree()))
     contracted_tag: dict = {}
@@ -250,7 +272,7 @@ def generate_tensor_equation_signature(target: cat.Broadcasted) -> str:
                 if uid not in contracted_tag:
                     contracted_tag[uid] = f'x{tag_counter}'
                     tag_counter += 1
-    input_segments = (
+    input_segments = list(
         weave.imprint_axes(
             (degree_tags[i] for i in tutil.get_mapping(eta)),
             (contracted_tag[slot.uid] for slot in weave._shape
@@ -258,6 +280,22 @@ def generate_tensor_equation_signature(target: cat.Broadcasted) -> str:
         )
         for weave, eta in zip(target.input_weaves, target.reindexings)
     )
+    # Append segments for sized-Iverson buffer factors excluded from input_weaves.
+    # Their ordering here must match the buffer_inputs ordering in forward().
+    if isinstance(target.operator, TensorEquation):
+        lhs_uid_to_pos = {ax.uid: i for i, ax in enumerate(target.operator.lhs_indices)}
+        for factor in target.operator.rhs:
+            if isinstance(factor, (IversonBinOp, IversonUnaryOp)) and _iverson_is_materializable(factor):
+                segment = []
+                for ax in _factor_axes(factor):
+                    if ax.uid in lhs_uid_to_pos:
+                        segment.append(degree_tags[lhs_uid_to_pos[ax.uid]])
+                    else:
+                        if ax.uid not in contracted_tag:
+                            contracted_tag[ax.uid] = f'x{tag_counter}'
+                            tag_counter += 1
+                        segment.append(contracted_tag[ax.uid])
+                input_segments.append(segment)
     input_signature = ', '.join(
         '... ' + ' '.join(segment)
         for segment in input_segments
@@ -358,15 +396,10 @@ class ConstructedTensorEquation[B: cat.Datatype, A: cat.Axis](
         ]
 
     def forward(self, *xs: torch.Tensor) -> torch.Tensor:
-        caller_idx = 0
-        full_tensors: list[torch.Tensor] = []
-        for slot in self._factor_slots:
-            if slot is not None:
-                full_tensors.append(getattr(self, slot))
-            else:
-                full_tensors.append(xs[caller_idx])
-                caller_idx += 1
-        result = einops.einsum(*full_tensors, self.signature)  # type: ignore
+        # Callers (*xs) first, then buffer tensors — matches the segment ordering
+        # in generate_tensor_equation_signature (domain factors, then buffer factors).
+        buffer_inputs = [getattr(self, s) for s in self._factor_slots if s is not None]
+        result = einops.einsum(*xs, *buffer_inputs, self.signature)  # type: ignore
         if self.demote:
             return (result > 0).to(result.dtype)
         return result

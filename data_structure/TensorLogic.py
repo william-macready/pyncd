@@ -6,7 +6,19 @@ import data_structure.Term as fd
 import data_structure.BroadcastedCategory as bc
 import data_structure.ProductCategory as pc
 import data_structure.StrideCategory as sc
+import data_structure.Numeric as nm
+import data_structure.Operators as ops
 from data_structure.TensorExpr import TensorRef, IversonBinOp, IversonUnaryOp, _factor_axes, _serialize_iverson
+
+
+def _iverson_is_materializable(factor: IversonBinOp | IversonUnaryOp) -> bool:
+    """True when every axis of this Iverson factor has a concrete integer size.
+
+    Sized Iversons are auto-materialized as constant buffers at compile time
+    (ConstructedTensorEquation._factor_slots).  They must not appear as Bool
+    domain weaves so that morphism composition sees a pure Reals domain.
+    """
+    return all(isinstance(ax._size, nm.Integer) for ax in _factor_axes(factor))
 
 
 # A single tensor logic equation stored as a pyncd Operator.
@@ -94,6 +106,17 @@ class TensorEquation(bc.Operator):
         retained_uid_to_pos = {ax.uid: i for i, ax in enumerate(degree)}
         _dt = array_datatypes or {}
 
+        # Sized-Iverson factors are auto-materialized as constant buffers at
+        # compile time and do not need to be caller inputs.  Exclude them from
+        # input_weaves / reindexings so the morphism domain is pure Reals and
+        # composes cleanly with adjacent morphisms.
+        # Unsized Iversons (axes have no concrete size) still appear as Bool
+        # weaves — the caller must supply the materialised mask tensor.
+        domain_factors = [
+            f for f in self.rhs
+            if not (isinstance(f, (IversonBinOp, IversonUnaryOp)) and _iverson_is_materializable(f))
+        ]
+
         input_weaves = tuple(
             bc.Weave(
                 _dt.get(factor.name, datatype) if isinstance(factor, TensorRef) else bc.Bool(),
@@ -103,7 +126,7 @@ class TensorEquation(bc.Operator):
                 ),
                 iverson_expr=_serialize_iverson(factor) if isinstance(factor, (IversonBinOp, IversonUnaryOp)) else None,
             )
-            for factor in self.rhs
+            for factor in domain_factors
         )
         out_dt = _dt.get(self.lhs_name, datatype) if self.lhs_name else datatype
         output_weave = bc.Weave(
@@ -119,13 +142,49 @@ class TensorEquation(bc.Operator):
                 ),
                 _dom=degree,
             )
-            for factor in self.rhs
+            for factor in domain_factors
         )
         return bc.Broadcasted(
             operator=self,
             input_weaves=input_weaves,
             output_weaves=(output_weave,),
             reindexings=reindexings,
+        )
+
+
+def _split_nonlinearity(
+    eq: TensorEquation,
+    array_datatypes: dict | None = None,
+    datatype: bc.Datatype = bc.Reals(),
+) -> bc.Broadcasted | pc.Composed:
+    """Compile one equation, splitting any nonlinearity into a separate step.
+
+    Returns the plain Broadcasted einsum when the equation has no nonlinearity,
+    or Composed(einsum, nonlinearity_op) when it does.  The @ composition
+    handles autoalignment so axis UIDs are unified across the boundary.
+    """
+    op = eq.operator
+    if op is None or isinstance(op, ops.Identity):
+        return eq.bc_signature(datatype=datatype, array_datatypes=array_datatypes)
+    # Strip the nonlinearity before building the einsum so ConstructedTensorEquation
+    # never sees a non-identity operator.
+    bare_eq = TensorEquation(
+        lhs_name=eq.lhs_name,
+        lhs_indices=eq.lhs_indices,
+        rhs=eq.rhs,
+        operator=None,
+    )
+    br = bare_eq.bc_signature(datatype=datatype, array_datatypes=array_datatypes)
+    if isinstance(op, ops.SoftMax):
+        return br @ ops.SoftMax.template()
+    elif isinstance(op, ops.Normalize):
+        return br @ ops.Normalize.template()
+    elif isinstance(op, ops.Elementwise):   # catches ReLU (subclass)
+        return br @ ops.Elementwise.template()
+    else:
+        raise NotImplementedError(
+            f'No base morphism registered for nonlinearity {op!r}; '
+            f'compose it as a separate Broadcasted step.'
         )
 
 
@@ -166,13 +225,32 @@ class TensorProgram(fd.Term):
         self,
         declarations: dict[fd.DynamicName, tuple[sc.RawAxis, ...]] | None = None,
         array_datatypes: dict[fd.DynamicName, bc.Datatype] | None = None,
-    ) -> pc.Composed:
+    ) -> pc.ThreadedComposed:
         ctx = fd.Context()
         morphisms = []
         name_to_axes: dict[fd.DynamicName | None, fd.Prod[sc.RawAxis]] = {}
         declarations = declarations or {}
 
-        for eq in topological_sort(self.equations):
+        # Pre-collect external tensor names (in topo order of first appearance).
+        # Internal names are those with a defining equation.
+        internal_names: set[fd.DynamicName | None] = {eq.lhs_name for eq in self.equations}
+        equations_sorted = topological_sort(self.equations)
+        external_order: list[fd.DynamicName] = []
+        external_name_set: set[fd.DynamicName] = set()
+        for eq in equations_sorted:
+            for factor in eq.rhs:
+                if isinstance(factor, TensorRef) and factor.name not in internal_names:
+                    if factor.name not in external_name_set:
+                        external_order.append(factor.name)
+                        external_name_set.add(factor.name)
+        n_external = len(external_order)
+        ext_idx: dict[fd.DynamicName, int] = {name: i for i, name in enumerate(external_order)}
+
+        external_axes: dict[fd.DynamicName, tuple[sc.RawAxis, ...]] = {}
+        produced_idx: dict[fd.DynamicName | None, int] = {}
+        step_routing: list[tuple[int, ...]] = []
+
+        for eq in equations_sorted:
             # Unify declaration axes with lhs axes to propagate concrete sizes.
             if eq.lhs_name in declarations:
                 decl_axes = declarations[eq.lhs_name]
@@ -186,10 +264,20 @@ class TensorProgram(fd.Term):
             seen_in_eq: set[fd.DynamicName | None] = set()
             for factor in eq.rhs:
                 if not isinstance(factor, TensorRef):
-                    continue  # Iverson factors have no tensor name to unify
+                    continue
                 tensor_name = factor.name
                 input_axes = factor.axes
-                if tensor_name in name_to_axes and tensor_name not in seen_in_eq:
+                if tensor_name not in internal_names:
+                    # External tensor: unify axes with prior occurrence if any.
+                    if tensor_name in external_axes:
+                        if tensor_name not in seen_in_eq:
+                            seen_in_eq.add(tensor_name)
+                            for prior_ax, eq_ax in zip(external_axes[tensor_name], input_axes):
+                                ctx.append_iter((prior_ax, eq_ax))
+                    else:
+                        external_axes[tensor_name] = input_axes
+                elif tensor_name in name_to_axes and tensor_name not in seen_in_eq:
+                    # Internal tensor: unify with the prior equation's output axes.
                     seen_in_eq.add(tensor_name)
                     prior_axes = name_to_axes[tensor_name]
                     if len(prior_axes) != len(input_axes):
@@ -201,14 +289,38 @@ class TensorProgram(fd.Term):
                         ctx.append_iter((prior_ax, eq_ax))
                 # Subsequent occurrences of the same intermediate tensor are
                 # self-joins: skip unification so each reference keeps its own
-                # axis UIDs. Size propagation for the extra reference requires
-                # an explicit declaration.
+                # axis UIDs.
             applied_eq = ctx.apply(eq)
-            br = applied_eq.bc_signature(array_datatypes=array_datatypes)
-            morphisms.append(br)
-            name_to_axes[eq.lhs_name] = applied_eq.lhs_indices
 
-        return pc.Composed(content=tuple(morphisms))
+            # Compute routing for this step from the equation's domain factors.
+            domain_factors = [
+                f for f in applied_eq.rhs
+                if not (isinstance(f, (IversonBinOp, IversonUnaryOp))
+                        and _iverson_is_materializable(f))
+            ]
+            route: list[int] = []
+            for factor in domain_factors:
+                if isinstance(factor, TensorRef):
+                    name = factor.name
+                    if name in ext_idx:
+                        route.append(ext_idx[name])
+                    else:
+                        route.append(n_external + produced_idx[name])
+                # Unsized Iverson (Bool-typed) — not yet in external_order;
+                # skip for now (no caller slot assigned).
+            step_routing.append(tuple(route))
+
+            # Each equation is one step (einsum + optional inner nonlinearity).
+            result = _split_nonlinearity(applied_eq, array_datatypes=array_datatypes)
+            morphisms.append(result)
+            name_to_axes[eq.lhs_name] = applied_eq.lhs_indices
+            produced_idx[eq.lhs_name] = len(produced_idx)
+
+        return pc.ThreadedComposed(
+            content=tuple(morphisms),
+            routing=tuple(step_routing),
+            n_external=n_external,
+        )
 
 
 def topological_sort(

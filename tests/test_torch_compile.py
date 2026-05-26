@@ -1,7 +1,7 @@
 import pytest
 import torch
 import data_structure.Category as cat
-from data_structure.TensorDSL import TL, axes, real_axis
+from data_structure.TensorDSL import TL, axes, real_axis, relu, softmax, normalize
 from data_structure.TensorExpr import IversonConst, ieq, iabs
 from data_structure.Numeric import Integer
 from torch_compile.torch_compile import (
@@ -487,3 +487,151 @@ def test_coupled_with_per_step_inputs():
 
     assert torch.allclose(H_out, H_expected), f"H: {H_out}"
     assert torch.allclose(G_out, G_expected), f"G: {G_out}"
+
+
+# ---------------------------------------------------------------------------
+# Inline nonlinearity tests
+# ---------------------------------------------------------------------------
+
+def test_inline_softmax_compiles_and_runs():
+    """softmax() inline in a TL equation compiles and produces valid probabilities."""
+    q = real_axis('q', 4)
+    x = real_axis('x', 4)
+    tl = TL()
+    tl.Out[q, x] = softmax(tl.X[q, x])
+    mod = ConstructedModule.construct(tl.bc_signature())
+    result = mod(torch.ones(4, 4))
+    # ConstructedComposed returns a tuple; unpack the single output.
+    out = result[0] if isinstance(result, tuple) else result
+    assert torch.allclose(out.sum(dim=-1), torch.ones(4), atol=1e-5)
+
+
+def test_inline_relu_compiles_and_runs():
+    """relu() inline in a TL equation compiles and clips negatives."""
+    i, j, k = axes('i j k')
+    tl = TL()
+    tl.Out[i, j] = relu(tl.W[i, k] * tl.X[k, j])
+    mod = ConstructedModule.construct(tl.bc_signature())
+    W = -torch.ones(3, 4)
+    X = torch.ones(4, 5)
+    result = mod(W, X)
+    out = result[0] if isinstance(result, tuple) else result
+    assert (out <= 0).all()
+
+
+def test_inline_normalize_compiles_and_runs():
+    """normalize() inline in a TL equation compiles and preserves shape."""
+    p = real_axis('p', 8)
+    m = real_axis('m', 16)
+    tl = TL()
+    tl.Out[p, m] = normalize(tl.X[p, m])
+    mod = ConstructedModule.construct(tl.bc_signature())
+    result = mod(torch.randn(8, 16))
+    out = result[0] if isinstance(result, tuple) else result
+    assert out.shape == (8, 16)
+
+
+def test_inline_softmax_in_program():
+    """softmax() inline in a TensorProgram (multi-equation) compiles correctly."""
+    q = real_axis('q', 4)
+    x = real_axis('x', 4)
+    k = real_axis('k', 8)
+    tl = TL()
+    tl.Scores[q, x] = tl.Q[q, k] * tl.K[x, k]
+    tl.Attn[q, x] = softmax(tl.Scores[q, x])
+    mod = ConstructedModule.construct(tl.to_program().to_morphism())
+    Q = torch.randn(4, 8)
+    K = torch.randn(4, 8)
+    result = mod(Q, K)
+    out = result[0] if isinstance(result, tuple) else result
+    assert torch.allclose(out.sum(dim=-1), torch.ones(4), atol=1e-5)
+
+
+def test_inline_softmax_values_match_explicit_compose():
+    """Inline softmax() produces the same output as the explicit @ ops.SoftMax step."""
+    import data_structure.Operators as ops
+
+    q = real_axis('q', 4)
+    x = real_axis('x', 4)
+    k = real_axis('k', 8)
+
+    # Inline form
+    tl_inline = TL()
+    tl_inline.Scores[q, x] = tl_inline.Q[q, k] * tl_inline.K[x, k]
+    q2, x2, k2 = axes('q x k')
+    tl_inline.Attn[q2, x2] = softmax(tl_inline.Scores[q2, x2])
+    mod_inline = ConstructedModule.construct(tl_inline.to_program().to_morphism())
+
+    # Explicit compose form
+    tl_a = TL()
+    qa, xa, ka = axes('q x k')
+    tl_a.Scores[qa, xa] = tl_a.Q[qa, ka] * tl_a.K[xa, ka]
+    tl_b = TL()
+    qb, xb = axes('q x')
+    tl_b.Attn[qb, xb] = tl_b.Scores[qb, xb]
+    morphism = tl_a.bc_signature() @ tl_b.bc_signature() @ ops.SoftMax.template()
+    mod_explicit = ConstructedModule.construct(morphism)
+
+    Q = torch.randn(4, 8)
+    K = torch.randn(4, 8)
+    out_inline = mod_inline(Q, K)
+    out_explicit = mod_explicit(Q, K)
+    t_inline = out_inline[0] if isinstance(out_inline, tuple) else out_inline
+    t_explicit = out_explicit[0] if isinstance(out_explicit, tuple) else out_explicit
+    assert torch.allclose(t_inline, t_explicit, atol=1e-5)
+
+
+# ---------------------------------------------------------------------------
+# ThreadedComposed tests
+# ---------------------------------------------------------------------------
+
+def test_threaded_no_regression_single_eq():
+    tl = TL()
+    i, j, k = axes('i j k')
+    tl.Y[i, j] = tl.W[i, k] * tl.X[k, j]
+    mod = ConstructedModule.construct(tl.to_morphism())
+    W = torch.randn(3, 4)
+    X = torch.randn(4, 5)
+    result = mod(W, X)
+    out = result[0] if isinstance(result, tuple) else result
+    assert out.shape == (3, 5)
+
+
+def test_threaded_shared_external():
+    # H used by both steps with the same shape — must be threaded to step 2.
+    # W1:(m,k), H:(q,k) -> Y:(q,m); V:(m,k), H:(q,k) -> Z:(q,m)
+    q = real_axis('q', 3)
+    m = real_axis('m', 5)
+    k = real_axis('k', 4)
+    tl = TL()
+    tl.Y[q, m] = tl.W[m, k] * tl.H[q, k]   # step 1 uses H
+    tl.Z[q, m] = tl.V[m, k] * tl.H[q, k]   # step 2 uses H (must be threaded)
+    mod = ConstructedModule.construct(tl.to_morphism())
+    # external order (topo): W, H, V
+    W = torch.randn(5, 4)
+    H = torch.randn(3, 4)
+    V = torch.randn(5, 4)
+    result = mod(W, H, V)
+    out = result[0] if isinstance(result, tuple) else result
+    assert out.shape == (3, 5)
+
+
+def test_threaded_residual():
+    # normalize(W2*Y + H) where H also feeds the projection Y = W1*H.
+    # H:(q,dm); W1:(dm,dh), W2:(dm,dh) — H used in both steps.
+    q = real_axis('q', 3)
+    dm = real_axis('dm', 8)
+    dh = real_axis('dh', 4)
+    tl = TL()
+    # step 1: project H down to dh
+    tl.Y[q, dh] = tl.W1[dm, dh] * tl.H[q, dm]
+    # step 2: project back up, add residual H, normalize
+    tl.Out[q, dm] = normalize(tl.W2[dm, dh] * tl.Y[q, dh] + tl.H[q, dm])
+    mod = ConstructedModule.construct(tl.to_morphism())
+    # external order (topo): W1, H, W2
+    W1 = torch.randn(8, 4)
+    H = torch.randn(3, 8)
+    W2 = torch.randn(8, 4)
+    result = mod(W1, H, W2)
+    out = result[0] if isinstance(result, tuple) else result
+    assert out.shape == (3, 8)

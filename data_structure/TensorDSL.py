@@ -122,9 +122,10 @@ class TL:
         self._declarations: dict[str, TensorDeclaration] = {}
         self._ctx: fd.Context = fd.Context()
         self._name_to_axes: dict[fd.DynamicName, tuple[sc.RawAxis, ...]] = {}
-        # Each entry: (lhs_name, morphism, output_axes)
-        # morphism is bc.Broadcasted for RHSExpression, pc.Composed for SumExpr
-        self._entries: list[tuple[fd.DynamicName | None, object, tuple[sc.RawAxis, ...]]] = []
+        # Each entry: (lhs_name, morphism, output_axes, input_names)
+        # input_names[i] is the tensor name for domain slot i (None for Iverson).
+        # Scan/iteration entries use () for input_names (threading not needed there).
+        self._entries: list[tuple[fd.DynamicName | None, object, tuple[sc.RawAxis, ...], tuple]] = []
         # Iterative tensor support: keyed by tensor name string
         self._pending_iter: dict[str, dict] = {}       # {'base': (...), 'recur': (...)}
         self._iteration_axes: dict[str, sc.RawAxis] = {}  # name → l axis
@@ -138,7 +139,7 @@ class TL:
         are represented as Composed morphisms, not single TensorEquations.
         """
         result = []
-        for _, morph, _ in self._entries:
+        for _, morph, _, _ in self._entries:
             if isinstance(morph, bc.Broadcasted) and isinstance(morph.operator, TensorEquation):
                 result.append(morph.operator)
             else:
@@ -169,13 +170,16 @@ class TL:
         lhs_name: fd.DynamicName | None,
         lhs_indices: tuple[sc.RawAxis, ...],
         value: RHSExpression,
-    ) -> tuple[bc.Broadcasted, tuple[sc.RawAxis, ...]]:
+    ) -> tuple[bc.Broadcasted, tuple[sc.RawAxis, ...], tuple[fd.DynamicName | None, ...]]:
         """Build a Broadcasted morphism for one RHSExpression.
 
         Unifies any intermediate tensor axes with prior output axes via _ctx,
         then applies _ctx and calls bc_signature() to produce the morphism.
-        Returns (morphism, canonical_output_axes).
+        Returns (morphism, canonical_output_axes, input_names) where
+        input_names[i] is the tensor name for domain slot i (None for Iverson).
         """
+        from data_structure.TensorExpr import IversonBinOp, IversonUnaryOp
+        from data_structure.TensorLogic import _iverson_is_materializable
         eq = TensorEquation(
             lhs_name=lhs_name,
             lhs_indices=lhs_indices,
@@ -198,26 +202,41 @@ class TL:
                         self._ctx.append_iter((prior_ax, eq_ax))
         applied_eq = self._ctx.apply(eq)
         br = applied_eq.bc_signature(array_datatypes=self._array_datatypes())
-        return br, applied_eq.lhs_indices
+        domain_factors = [
+            f for f in applied_eq.rhs
+            if not (isinstance(f, (IversonBinOp, IversonUnaryOp))
+                    and _iverson_is_materializable(f))
+        ]
+        input_names = tuple(
+            f.name if isinstance(f, TensorRef) else None
+            for f in domain_factors
+        )
+        return br, applied_eq.lhs_indices, input_names
 
     def _build_sum_morphism(
         self,
         lhs_name: fd.DynamicName | None,
         lhs_indices: tuple[sc.RawAxis, ...],
         value: SumExpr,
-    ) -> tuple[pc.Composed, tuple[sc.RawAxis, ...]]:
+    ) -> tuple[pc.Composed, tuple[sc.RawAxis, ...], tuple[fd.DynamicName | None, ...]]:
         """Build a Composed morphism for a SumExpr.
 
         Compiles each additive term to a Broadcasted via _build_rhs_morphism,
-        wraps them in a ProductOfMorphisms, then appends an AdditionOp
+        splits any nonlinearity so ConstructedTensorEquation sees only einsum
+        steps, wraps them in a ProductOfMorphisms, then appends an AdditionOp
         Broadcasted that adds all term outputs together.
-        Returns (composed_morphism, canonical_output_axes).
+        Returns (composed_morphism, canonical_output_axes, input_names).
         """
-        term_morphisms: list[bc.Broadcasted] = []
+        from data_structure.TensorLogic import _split_nonlinearity
+        term_morphisms: list = []
+        all_input_names: list[fd.DynamicName | None] = []
         degree: tuple[sc.RawAxis, ...] = lhs_indices
         for term in value.terms:
-            br, degree = self._build_rhs_morphism(None, lhs_indices, term)
-            term_morphisms.append(br)
+            br, degree, term_names = self._build_rhs_morphism(None, lhs_indices, term)
+            all_input_names.extend(term_names)
+            term_morphisms.append(
+                _split_nonlinearity(br.operator, array_datatypes=self._array_datatypes())
+            )
 
         n = len(term_morphisms)
         tiled_shape = tuple(bc.WeaveMode.TILED for _ in degree)
@@ -230,8 +249,20 @@ class TL:
             reindexings=tuple(add_reidx for _ in range(n)),
         )
         prod = pc.ProductOfMorphisms(content=tuple(term_morphisms))
-        composed = pc.Composed(content=(prod, add_br))
-        return composed, degree
+        result: pc.Composed | bc.Broadcasted = pc.Composed(content=(prod, add_br))
+        op = value.operator
+        if op is not None and not isinstance(op, ops.Identity):
+            if isinstance(op, ops.SoftMax):
+                result = result @ ops.SoftMax.template()
+            elif isinstance(op, ops.Normalize):
+                result = result @ ops.Normalize.template()
+            elif isinstance(op, ops.Elementwise):
+                result = result @ ops.Elementwise.template()
+            else:
+                raise NotImplementedError(
+                    f'No base morphism registered for SumExpr nonlinearity {op!r}'
+                )
+        return result, degree, tuple(all_input_names)
 
     def _register_entry(
         self,
@@ -249,11 +280,11 @@ class TL:
                     self._ctx.append_iter((decl_ax, lhs_ax))
 
         if isinstance(value, RHSExpression):
-            morph, out_axes = self._build_rhs_morphism(lhs_name, lhs_indices, value)
+            morph, out_axes, input_names = self._build_rhs_morphism(lhs_name, lhs_indices, value)
         else:
-            morph, out_axes = self._build_sum_morphism(lhs_name, lhs_indices, value)
+            morph, out_axes, input_names = self._build_sum_morphism(lhs_name, lhs_indices, value)
 
-        self._entries.append((lhs_name, morph, out_axes))
+        self._entries.append((lhs_name, morph, out_axes, input_names))
         if lhs_name is not None:
             self._name_to_axes[lhs_name] = out_axes
 
@@ -649,7 +680,7 @@ class TL:
             n_states=n,
             step_state_deps=tuple(step_state_deps),
         )
-        self._entries.append((group_lhs, scan, combined_step_out + (l,)))
+        self._entries.append((group_lhs, scan, combined_step_out + (l,), ()))
 
     def _finalize_iter(self) -> None:
         """Build Scan morphisms from _pending_iter and append to _entries."""
@@ -674,7 +705,7 @@ class TL:
             if name_str in coupled_names:
                 continue  # handled by _finalize_iter_group above
 
-            if 'recur' not in entry:
+            if 'recur' not in entry and 'recur_morphism' not in entry:
                 raise ValueError(
                     f"Iterative tensor '{name_str}' has no recurrence equation."
                 )
@@ -693,7 +724,6 @@ class TL:
                 )
 
             lhs_name = fd.DynamicName(name_str)
-            step_out, recur_value = entry['recur']
             base_out, base_value, base_literal = entry['base']
 
             # Check 4.2: base case must be at l=0.
@@ -703,19 +733,27 @@ class TL:
                     "the iteration range starts at 0, so the base case must be l=0."
                 )
 
-            # Check 4.4: no l+1 on RHS.
-            self._check_no_lnext_on_rhs(recur_value, l, name_str)
+            if 'recur_morphism' in entry:
+                # Pre-built step morphism supplied via TensorProxy.recur().
+                # Bypasses TL equation parsing; state shape is inferred from
+                # the base case output axes.
+                step_morph = entry['recur_morphism']
+                step_out = base_out
+                affine = None
+            else:
+                step_out, recur_value = entry['recur']
+                # Check 4.4: no l+1 on RHS.
+                self._check_no_lnext_on_rhs(recur_value, l, name_str)
+                state_name_dn  = lhs_name
+                state_proxy_dn = fd.DynamicName(name_str + '_state')
+                step_ctx = self._ctx.without(l.uid)
+                step_value = self._strip_iter_axis_from_value(
+                    recur_value, l, {state_name_dn: state_proxy_dn}
+                )
+                step_morph = self._build_step_morph(None, step_out, step_value, step_ctx)
+                affine = self._recognize_affine(recur_value, name_str, step_out, l)
 
-            state_name_dn  = lhs_name
-            state_proxy_dn = fd.DynamicName(name_str + '_state')
-            step_ctx = self._ctx.without(l.uid)
-
-            step_value = self._strip_iter_axis_from_value(
-                recur_value, l, {state_name_dn: state_proxy_dn}
-            )
-            step_morph = self._build_step_morph(None, step_out, step_value, step_ctx)
             base_morph = self._build_step_morph(None, base_out, base_value, self._ctx)
-            affine = self._recognize_affine(recur_value, name_str, step_out, l)
 
             # Block is the correct morphism for pure-state recurrences (no per-step
             # external inputs), but requires base-case routing equivalent to Scan.
@@ -727,7 +765,7 @@ class TL:
                 axis=l,
                 affine=affine,
             )
-            self._entries.append((lhs_name, scan, step_out + (l,)))
+            self._entries.append((lhs_name, scan, step_out + (l,), ()))
 
     def _require_non_iterative(self, method: str) -> None:
         if self._pending_iter:
@@ -751,22 +789,61 @@ class TL:
         self._finalize_iter()
         if not self._entries:
             raise ValueError("no equations registered")
-        morphisms = tuple(morph for _, morph, _ in self._entries)
-        if len(morphisms) == 1:
-            return morphisms[0]
-        return pc.Composed(content=morphisms)
+        # Scan/iteration entries have input_names=(). The threading model cannot
+        # track their external inputs — fall back to sequential Composed.
+        if any(not input_names for _, _, _, input_names in self._entries):
+            morphisms = tuple(morph for _, morph, _, _ in self._entries)
+            if len(morphisms) == 1:
+                return morphisms[0]
+            return pc.Composed(content=morphisms)
+        internal_names = {lhs for lhs, _, _, _ in self._entries if lhs is not None}
+        # Collect external tensor names in order of first appearance.
+        external_order: list[fd.DynamicName] = []
+        external_name_set: set[fd.DynamicName] = set()
+        for _, _, _, input_names in self._entries:
+            for name in input_names:
+                if name is not None and name not in internal_names and name not in external_name_set:
+                    external_order.append(name)
+                    external_name_set.add(name)
+        n_external = len(external_order)
+        ext_idx = {name: i for i, name in enumerate(external_order)}
+        produced_idx: dict[fd.DynamicName, int] = {}
+        routing: list[tuple[int, ...]] = []
+        for lhs_name, _, _, input_names in self._entries:
+            route: list[int] = []
+            for name in input_names:
+                if name is None:
+                    continue  # Iverson buffer — not a live-pool input
+                if name in ext_idx:
+                    route.append(ext_idx[name])
+                else:
+                    route.append(n_external + produced_idx[name])
+            routing.append(tuple(route))
+            if lhs_name is not None:
+                produced_idx[lhs_name] = len(produced_idx)
+        morphisms = tuple(morph for _, morph, _, _ in self._entries)
+        return pc.ThreadedComposed(
+            content=morphisms,
+            routing=tuple(routing),
+            n_external=n_external,
+        )
 
     def bc_signature[B: bc.Datatype](
         self,
         signature: str = '',
         datatype: B = bc.Reals(),
         give_names: bool = True,
-    ) -> bc.Broadcasted[B, sc.RawAxis]:
+    ) -> bc.Broadcasted[B, sc.RawAxis] | pc.Composed:
         self._require_non_iterative('bc_signature')
-        return self.to_equation().bc_signature(
-            signature, datatype, give_names,
-            array_datatypes=self._array_datatypes(),
-        )
+        entries = self._entries
+        if len(entries) != 1:
+            raise ValueError(f"bc_signature() requires exactly one equation, got {len(entries)}")
+        _, morph, _, _ = entries[0]
+        from data_structure.TensorLogic import TensorEquation, _split_nonlinearity
+        if not (isinstance(morph, bc.Broadcasted) and isinstance(morph.operator, TensorEquation)):
+            return morph  # SumExpr Composed — terms already split by _build_sum_morphism
+        return _split_nonlinearity(morph.operator, datatype=datatype,
+                                   array_datatypes=self._array_datatypes())
 
 
 class TensorProxy:
@@ -864,6 +941,34 @@ class TensorProxy:
         self._registry._iteration_axes[self._name] = l
         return self
 
+    def recur(self, axis: sc.RawAxis, morphism: object) -> TensorProxy:
+        """Register a pre-built morphism as this tensor's Scan step function.
+
+        Use when the step function is too complex to express as a single TL
+        equation — for example, a chained block built from multiple TL sessions.
+        The morphism must accept the current state as its sole input and return
+        the next state (no per-step external inputs; all weights are baked in).
+        A base case must also be provided via tl.H[..., 0] = ...
+
+        Example::
+
+            l = real_axis('l', L)
+            x, m = axes('x m')
+            tl = TL()
+            tl.H[x, m, 0] = tl.X[x, m]           # base: pass embeddings through
+            tl.H.recur(l, transformer_layer())     # step: one full transformer layer
+            return tl.to_morphism()
+        """
+        if not isinstance(axis._size, nm.Integer):
+            raise ValueError(
+                f"Iteration axis '{axis}' has no concrete size; "
+                "use real_axis('name', N)."
+            )
+        self._registry._iteration_axes[self._name] = axis
+        entry = self._registry._pending_iter.setdefault(self._name, {})
+        entry['recur_morphism'] = morphism
+        return self
+
     def tensor(self, *shape: sc.RawAxis) -> TensorProxy:
         """Declare this tensor with the given shape (default contraction semantics)."""
         self._registry._register_declaration(
@@ -951,10 +1056,13 @@ class SumExpr:
     Produced by + between IndexedTensor, RHSExpression, or SumExpr objects.
     Each term is compiled to a Broadcasted morphism and the results are
     combined with AdditionOp. Supports chaining: A + B + C.
+    An optional `operator` (set by relu/softmax/normalize wrappers) is applied
+    after the addition.
     """
 
-    def __init__(self, terms: list[RHSExpression]) -> None:
+    def __init__(self, terms: list[RHSExpression], operator: bc.Operator | None = None) -> None:
         self.terms = terms
+        self.operator = operator
 
     def __add__(self, other: IndexedTensor | RHSExpression) -> SumExpr:
         rhs = other if isinstance(other, RHSExpression) else RHSExpression([other], ops.Identity())
@@ -1003,15 +1111,28 @@ def real_axis(name: str, size: int | None = None) -> sc.RawAxis:
 # Operator wrappers
 # ---------------------------------------------------------------------------
 
-def relu(expr: IndexedTensor | RHSExpression) -> RHSExpression:
+def relu(expr: IndexedTensor | RHSExpression | SumExpr) -> RHSExpression | SumExpr:
     """Wrap an expression with a ReLU nonlinearity."""
+    if isinstance(expr, SumExpr):
+        return SumExpr(expr.terms, ops.ReLU())
     if isinstance(expr, IndexedTensor):
         expr = RHSExpression([expr], ops.Identity())
     return RHSExpression(expr.factors, ops.ReLU())
 
 
-def softmax(expr: IndexedTensor | RHSExpression) -> RHSExpression:
+def softmax(expr: IndexedTensor | RHSExpression | SumExpr) -> RHSExpression | SumExpr:
     """Wrap an expression with a SoftMax nonlinearity."""
+    if isinstance(expr, SumExpr):
+        return SumExpr(expr.terms, ops.SoftMax())
     if isinstance(expr, IndexedTensor):
         expr = RHSExpression([expr], ops.Identity())
     return RHSExpression(expr.factors, ops.SoftMax())
+
+
+def normalize(expr: IndexedTensor | RHSExpression | SumExpr) -> RHSExpression | SumExpr:
+    """Wrap an expression with a Normalize (RMSnorm) nonlinearity."""
+    if isinstance(expr, SumExpr):
+        return SumExpr(expr.terms, ops.Normalize())
+    if isinstance(expr, IndexedTensor):
+        expr = RHSExpression([expr], ops.Identity())
+    return RHSExpression(expr.factors, ops.Normalize())
