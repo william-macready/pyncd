@@ -260,7 +260,7 @@ def display_category[B: cat.Datatype, A: cat.Axis](
     match target:
         case cat.Broadcasted():
             return display_broadcasted_join(target)
-        case cat.Composed(content=ms):
+        case cat.ThreadedComposed(content=ms) | cat.Composed(content=ms):
             boxes = (display_category(m) for m in ms)
             return Box.Horizontal.from_iter(
                 util.join_with_none(

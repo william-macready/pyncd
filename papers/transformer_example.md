@@ -199,7 +199,48 @@ def transformer_stack(L: int) -> cat.BroadcastedCategory:
 
 ---
 
-## 3. PyTorch
+## 3. Diagram
+
+The TypeScript renderer in `tsncd` can display any pyncd morphism. Start the WebSocket server and the dev server in two terminals, then run the snippet below to push the diagram.
+
+**Terminal 1 — WebSocket relay server** (from `pyncd/`):
+
+```bash
+python run_server.py
+```
+
+**Terminal 2 — TypeScript diagram frontend** (from `tsncd/`):
+
+```bash
+npm run dev          # opens http://localhost:3000
+```
+
+**Send the diagram** (from `pyncd/`):
+
+```python
+import asyncio
+import websocket_transfer.websockets_transfer as wst
+
+async def main():
+    diagram = transformer_stack(L=2)   # use small L — each layer is a visible sub-block
+    await wst.send_term(diagram)
+
+asyncio.run(main())
+```
+
+`transformer_stack(L)` returns a `Block(Composed([layer_1, ..., layer_L]))` where each layer is itself a `Block(Composed([attn_res, ffn_res]))`. The TypeScript renderer lays these out as nested coloured boxes: the outermost `'Transformer Stack'` block, one `'Transformer Layer'` block per step, and inside each layer the `'Attention + Add & Norm'` and `'FFN + Add & Norm'` sub-blocks.
+
+### Rendered diagram
+
+The diagram below is the actual tsncd output — rendered by the TypeScript front-end, screenshotted with Puppeteer at 2× device pixel ratio. Each coloured nested box corresponds to a `Block` in the pyncd morphism. Wires carry axis labels (`x`, `m`, `h`, `k`, `d_ff`). Dashed wires are the residual copy produced by the `(0, 0)` Rearrangement; solid wires carry computed tensors.
+
+![Transformer Layer](transformer_diagram.png)
+
+Left block (yellow, "Add & Norm" → purple "Attention Core"): Q/K/V linear projections (**L**_q, **L**_k, **L**_v), QK matmul, softmax (white triangle), causal mask (grey triangle), SV matmul, output projection **L**_o, residual addition (+) and normalisation (⊽). Right block (blue, "Feed Forward" inside yellow "Add & Norm"): FFN-in projection **L**_in, ReLU, FFN-out projection **L**_out, residual addition and normalisation.
+
+---
+
+## 4. PyTorch
 
 Each `LayerNorm` carries learned weight and bias parameters.  The causal mask
 is pre-materialised once — it is not recomputed each forward call.
