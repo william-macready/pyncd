@@ -34,51 +34,51 @@ the $L$-layer output is $H[L, x, m]$.
 
 **Q, K, V projections** (contract $m$):
 
-$$Q[\ell, x, h, k] = W_Q[\ell, h, k, m]\, H[\ell, x, m]$$
-$$K[\ell, x', h, k] = W_K[\ell, h, k, m]\, H[\ell, x', m]$$
-$$V[\ell, x', h, k] = W_V[\ell, h, k, m]\, H[\ell, x', m]$$
+$$Q[\ell, x, h, k] = W_Q[\ell, h, k, m]\, H[\ell, x, m] \tag{1}$$
+$$K[\ell, x', h, k] = W_K[\ell, h, k, m]\, H[\ell, x', m] \tag{2}$$
+$$V[\ell, x', h, k] = W_V[\ell, h, k, m]\, H[\ell, x', m] \tag{3}$$
 
 **QK scores → softmax** (contract $k$, normalise over $x'$):
 
-$$\text{Comp}[\ell, h, x, x'.] = \text{softmax}\!\left(Q[\ell, x, h, k]\, K[\ell, x', h, k]\right)$$
+$$\text{Comp}[\ell, h, x, x'.] = \text{softmax}\!\left(Q[\ell, x, h, k]\, K[\ell, x', h, k]\right) \tag{4}$$
 
 **Causal mask + renormalise** (normalise over $x'$):
 
-$$S[\ell, h, x, x'.] = \text{normalize}\!\left(\text{Comp}[\ell, h, x, x']\, [x' \leq x]\right)$$
+$$S[\ell, h, x, x'.] = \text{normalize}\!\left(\text{Comp}[\ell, h, x, x']\, [x' \leq x]\right) \tag{5}$$
 
 **SV aggregation** (contract $x'$):
 
-$$\text{Out}[\ell, x, h, k] = S[\ell, h, x, x']\, V[\ell, x', h, k]$$
+$$\text{Out}[\ell, x, h, k] = S[\ell, h, x, x']\, V[\ell, x', h, k] \tag{6}$$
 
 **Output projection** (contract $h, k$):
 
-$$\text{Attn}[\ell, x, m] = W_O[\ell, m, h, k]\, \text{Out}[\ell, x, h, k]$$
+$$\text{Attn}[\ell, x, m] = W_O[\ell, m, h, k]\, \text{Out}[\ell, x, h, k] \tag{7}$$
 
 **Attention residual + RMSnorm** (normalise over $m$):
 
-$$A[\ell, x, m.] = \text{rmsnorm}\!\left(\text{Attn}[\ell, x, m] + H[\ell, x, m]\right)$$
+$$A[\ell, x, m.] = \text{rmsnorm}\!\left(\text{Attn}[\ell, x, m] + H[\ell, x, m]\right) \tag{8}$$
 
 ### FFN sub-layer at step $\ell$
 
 **FFN in** — linear then ReLU (contract $m$):
 
-$$F[\ell, x, d_{ff}] = \text{relu}\!\left(W_{\text{in}}[\ell, d_{ff}, m]\, A[\ell, x, m]\right)$$
+$$F[\ell, x, d_{ff}] = \text{relu}\!\left(W_{\text{in}}[\ell, d_{ff}, m]\, A[\ell, x, m]\right) \tag{9}$$
 
 **FFN out** (contract $d_{ff}$):
 
-$$Y[\ell, x, m] = W_{\text{out}}[\ell, m, d_{ff}]\, F[\ell, x, d_{ff}]$$
+$$Y[\ell, x, m] = W_{\text{out}}[\ell, m, d_{ff}]\, F[\ell, x, d_{ff}] \tag{10}$$
 
 ### Scan recurrence
 
 **Initialisation** (token embeddings):
 
-$$H[0, x, m] = X[x, m]$$
+$$H[0, x, m] = X[x, m] \tag{11}$$
 
 **FFN residual + RMSnorm → next hidden state** (normalise over $m$):
 
-$$H[\ell+1, x, m.] = \text{rmsnorm}\!\left(Y[\ell, x, m] + A[\ell, x, m]\right)$$
+$$H[\ell+1, x, m.] = \text{rmsnorm}\!\left(Y[\ell, x, m] + A[\ell, x, m]\right) \tag{12}$$
 
-The layer axis $\ell$ has size $L$, a hyperparameter (e.g.\ $L = 12$ for
+The layer axis $\ell$ has size $L$, a hyperparameter (e.g. $L = 12$ for
 GPT-2 base, $L = 96$ for GPT-3).  In the TL DSL, $L$ is the argument to
 `transformer_stack(L)`, which allocates one independent `transformer_layer()`
 per step; equivalently it is the length of the `layers` list in the PyTorch
@@ -346,4 +346,175 @@ L      = 12
 layers = [make_layer() for _ in range(L)]
 H_0    = torch.randn(SEQ, D)      # input token embeddings
 H_L    = transformer_stack_forward(H_0, layers)   # (SEQ, D)
+```
+
+---
+
+## Appendix A. PyRel Translation
+
+The rules below translate each of the twelve tensor-logic equations into PyRel, following the conventions in [`tensor_logic_in_pyrel.md`](tensor_logic_in_pyrel.md). Weight tensors are declared as `model.Relationship`; derived tensors as `model.Concept`. Python names that would clash with builtins are suffixed `_rel` (e.g. `K_rel`, `S_rel`, `F_rel`).
+
+Equations with a trailing `.` — softmax in (4), normalize in (5), RMSnorm in (8) and (12) — are expanded into explicit intermediate bindings per the `.`-indexed normalization rules in `tensor_logic_in_pyrel.md`. Equation (4) requires an intermediate `Score` relation because the two aggregation steps (contract `k`, then normalize over `x'`) cannot be chained in a single `where` block.
+
+```python
+from relationalai.semantics.std.math import exp, sqrt
+from relationalai.std import Integer, Float
+
+D = 512  # model dimension — used as RMSnorm denominator
+
+# Axis refs, reused across all rules
+ell, x, xp = Integer.ref(), Integer.ref(), Integer.ref()
+m, h, k, d = Integer.ref(), Integer.ref(), Integer.ref(), Integer.ref()
+```
+
+---
+
+### Equations (1)–(3): Q, K, V projections
+
+Each projection contracts over `m`; the layer index `ell` and the shared dimension index `m` pin the join.
+
+```python
+# (1)  Q[ell,x,h,k] = W_Q[ell,h,k,m] H[ell,x,m]
+vwq, vh = Float.ref(), Float.ref()
+where(W_Q(ell,h,k,m,vwq), H(ell,x,m,vh)).define(
+    Q.new(ell=ell, x=x, h=h, k=k, val=sum(vwq*vh).per(ell,x,h,k))
+)
+
+# (2)  K[ell,x',h,k] = W_K[ell,h,k,m] H[ell,x',m]
+vwk, vh = Float.ref(), Float.ref()
+where(W_K(ell,h,k,m,vwk), H(ell,xp,m,vh)).define(
+    K_rel.new(ell=ell, xp=xp, h=h, k=k, val=sum(vwk*vh).per(ell,xp,h,k))
+)
+
+# (3)  V[ell,x',h,k] = W_V[ell,h,k,m] H[ell,x',m]
+vwv, vh = Float.ref(), Float.ref()
+where(W_V(ell,h,k,m,vwv), H(ell,xp,m,vh)).define(
+    V_rel.new(ell=ell, xp=xp, h=h, k=k, val=sum(vwv*vh).per(ell,xp,h,k))
+)
+```
+
+---
+
+### Equation (4): QK scores and softmax
+
+The score contracts over `k`; softmax then normalizes over `x'`. An intermediate `Score` relation separates the two aggregation steps.
+
+```python
+# Intermediate: raw QK score (contract k)
+vq, vkv = Float.ref(), Float.ref()
+where(Q(ell,x,h,k,vq), K_rel(ell,xp,h,k,vkv)).define(
+    Score.new(ell=ell, h=h, x=x, xp=xp, val=sum(vq*vkv).per(ell,h,x,xp))
+)
+
+# (4)  Comp[ell,h,x,x'.] = softmax(Q[ell,x,h,k] K[ell,x',h,k])
+# Softmax over xp for each (ell,h,x); max-shifted for numerical stability.
+vs = Float.ref()
+where(Score(ell,h,x,xp,vs),
+      smax := max(vs).per(ell,h,x),
+      sexp := exp(vs - smax),
+      z    := sum(sexp).per(ell,h,x)).define(
+    Comp.new(ell=ell, h=h, x=x, xp=xp, val=sexp/z)
+)
+```
+
+---
+
+### Equation (5): Causal mask and renormalization
+
+The Iverson bracket `[x' ≤ x]` becomes a `where` filter; the surviving rows are renormalized by dividing by their sum.
+
+```python
+# (5)  S[ell,h,x,x'.] = normalize(Comp[ell,h,x,x'] [x'≤x])
+vc = Float.ref()
+where(Comp(ell,h,x,xp,vc),
+      xp <= x,
+      z := sum(vc).per(ell,h,x)).define(
+    S_rel.new(ell=ell, h=h, x=x, xp=xp, val=vc/z)
+)
+```
+
+---
+
+### Equation (6): SV aggregation
+
+Contract over `x'`; join `S_rel` and `V_rel` on `(ell, h, xp)`.
+
+```python
+# (6)  Out[ell,x,h,k] = S[ell,h,x,x'] V[ell,x',h,k]
+vs, vv = Float.ref(), Float.ref()
+where(S_rel(ell,h,x,xp,vs), V_rel(ell,xp,h,k,vv)).define(
+    Out.new(ell=ell, x=x, h=h, k=k, val=sum(vs*vv).per(ell,x,h,k))
+)
+```
+
+---
+
+### Equation (7): Output projection
+
+Contract over `h, k`; join `W_O` and `Out` on `(ell, h, k)`.
+
+```python
+# (7)  Attn[ell,x,m] = W_O[ell,m,h,k] Out[ell,x,h,k]
+vwo, vo = Float.ref(), Float.ref()
+where(W_O(ell,m,h,k,vwo), Out(ell,x,h,k,vo)).define(
+    Attn.new(ell=ell, x=x, m=m, val=sum(vwo*vo).per(ell,x,m))
+)
+```
+
+---
+
+### Equation (8): Attention residual + RMSnorm
+
+The trailing `.` on `m` expands to RMSnorm: compute the residual, then divide each element by the root-mean-square of the full `m` slice.
+
+```python
+# (8)  A[ell,x,m.] = rmsnorm(Attn[ell,x,m] + H[ell,x,m])
+va, vh = Float.ref(), Float.ref()
+where(Attn(ell,x,m,va), H(ell,x,m,vh),
+      r   := va + vh,
+      rms := sqrt(sum(r*r).per(ell,x) / D)).define(
+    A.new(ell=ell, x=x, m=m, val=r/rms)
+)
+```
+
+---
+
+### Equations (9)–(10): FFN sub-layer
+
+ReLU is applied elementwise to the already-contracted sum (same pattern as `sigm` in example 3 of `tensor_logic_in_pyrel.md`).
+
+```python
+# (9)  F[ell,x,d] = relu(W_in[ell,d,m] A[ell,x,m])
+vwi, va = Float.ref(), Float.ref()
+where(W_in(ell,d,m,vwi), A(ell,x,m,va)).define(
+    F_rel.new(ell=ell, x=x, d=d, val=max(0.0, sum(vwi*va).per(ell,x,d)))
+)
+
+# (10) Y[ell,x,m] = W_out[ell,m,d] F[ell,x,d]
+vwout, vf = Float.ref(), Float.ref()
+where(W_out(ell,m,d,vwout), F_rel(ell,x,d,vf)).define(
+    Y.new(ell=ell, x=x, m=m, val=sum(vwout*vf).per(ell,x,m))
+)
+```
+
+---
+
+### Equations (11)–(12): Scan recurrence
+
+Equation (11) seeds the base case by copying token embeddings into layer 0. Equation (12) is a recursive rule advancing `ell` by one.
+
+> **Note:** recursive aggregation through a self-referential `Relationship` is a known open issue in PyRel (see *Limitations* in [`tensor_logic_in_pyrel.md`](tensor_logic_in_pyrel.md)). The rules below express the intended semantics; as a workaround they can be unrolled over concrete `ell` values.
+
+```python
+# (11) H[0,x,m] = X[x,m]
+vx = Float.ref()
+where(X(x,m,vx)).define(H(0, x, m, vx))
+
+# (12) H[ell+1,x,m.] = rmsnorm(Y[ell,x,m] + A[ell,x,m])
+vy, va = Float.ref(), Float.ref()
+where(Y(ell,x,m,vy), A(ell,x,m,va),
+      r   := vy + va,
+      rms := sqrt(sum(r*r).per(ell,x) / D)).define(
+    H(ell+1, x, m, r/rms)
+)
 ```
