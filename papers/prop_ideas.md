@@ -1,4 +1,35 @@
-# PROP Algebras and the Weaves Framework
+# PROP Algebras in pyncd
+
+## Contents
+
+1. [Background: PROs, PROPs, and Their Algebras](#background-pros-props-and-their-algebras)
+2. [The Direct Identification](#the-direct-identification)
+   - [Br → PyTorch compiler improvements](#br--pytorch-compiler-improvements)
+3. [TL as the Internal Language of Br](#tl-as-the-internal-language-of-br)
+   - [TL → Br compiler improvements](#tl--br-compiler-improvements)
+     - [Abstract Scan via traced monoidal structure](#abstract-scan-via-traced-monoidal-structure)
+     - [Normalization simplification via Markov laws](#normalization-simplification-via-markov-laws)
+     - [Dead code elimination and memory planning via comonoid structure](#dead-code-elimination-and-memory-planning-via-comonoid-structure)
+4. [The Para Refinement](#the-para-refinement)
+5. [Algebra Morphisms: Weight Tying and Equivariance](#algebra-morphisms--weight-tying-and-equivariance)
+   - [Weight tying: static verification](#weight-tying-static-verification-at-construct-time)
+   - [Batch equivariance](#batch-equivariance-a-theorem-construct-implicitly-relies-on)
+   - [Equivariance breaking: static detection](#equivariance-breaking-static-detection-from-wire-colors)
+6. [A Br Graph API](#a-br-graph-api)
+   - [Graph representation](#graph-representation)
+   - [What the API unlocks immediately](#what-the-api-unlocks-immediately)
+   - [Connection to each Creative Opportunity](#connection-to-each-creative-opportunity)
+7. [Creative Opportunities](#creative-opportunities)
+   - [Generators-and-Relations Presentations of Architectures](#1-generators-and-relations-presentations-of-architectures)
+   - [Diagrammatic Rewriting for Compilation](#2-diagrammatic-rewriting-for-compilation)
+   - [The Bool Semiring and Interacting Hopf Algebras](#3-the-bool-semiring-and-interacting-hopf-algebras)
+   - [Free Algebras and Architecture Initialization](#4-free-algebras-and-architecture-initialization)
+   - [Model Compression as Approximate Algebra Morphisms](#5-model-compression-as-approximate-algebra-morphisms)
+8. [The StrideCategory as a Representation-Theoretic Object](#the-stridecategory-as-a-representation-theoretic-object)
+9. [Summary](#summary)
+10. [References](#references)
+
+---
 
 ## Background: PROs, PROPs, and Their Algebras
 
@@ -12,11 +43,19 @@ equivalence.)
 
 A **PROP** (PROducts and Permutations) is a PRO equipped with symmetry morphisms
 σ_{m,n}: x^⊗(m+n) → x^⊗(n+m) satisfying the symmetric monoidal axioms. Wires can now be
-freely crossed. A **colored PROP** generalizes this by replacing the single generator x
-with a set of colors O; objects are then finite lists over O (the free monoid O*), and
-morphisms are typed operations mixing multiple wire types.
+freely crossed.
 
-An **algebra** of a PROP P in a symmetric monoidal category C is a strong symmetric
+A **colored PROP** (also called a symmetric monoidal theory with multiple sorts)
+generalizes a PROP by replacing the single generating object x with a set of colors O.
+Objects are finite lists over O — elements of the free monoid O* — and the monoidal
+product concatenates lists. A morphism f: [c₁, …, cₘ] → [d₁, …, dₙ] consumes wires of
+colors c₁, …, cₘ and produces wires of colors d₁, …, dₙ; composition and the monoidal
+product must respect the coloring. Symmetry morphisms σ_{c,d}: [c, d] → [d, c] exist for
+all pairs of colors c, d — wires of any colors may be permuted, as in tensor transposition.
+What the coloring constrains is composition: the output color of a wire must match the
+input color of whatever it connects to.
+
+An **algebra of a PROP** P in a symmetric monoidal category C is a strong symmetric
 monoidal functor F: P → C. It assigns to the generator x some object F(x) ∈ C and to
 each morphism θ: m → n a concrete operation F(θ): F(x)^⊗m → F(x)^⊗n, respecting
 composition and the monoidal structure. A morphism of algebras F → G is a monoidal
@@ -25,17 +64,11 @@ operation. The **endomorphism PROP** End(X) of an object X ∈ C has hom-sets
 End(X)(m,n) = C(X^⊗m, X^⊗n); an algebra of P in X is equivalently a PROP morphism
 P → End(X).
 
-In the pyncd setting, `BroadcastedCategory` is the colored PROP and
-`ConstructedModule.construct()` is the algebra functor into PyTorch — see *The Direct
-Identification* below for the precise correspondence. The rest of this document develops
-the consequences of making that identification explicit.
-
-Classical examples from mathematics: algebras of the simplex PROP Δ₊ are monoids;
-algebras of its opposite are comonoids; algebras of Mat(k) (matrices over a field) are
-bicommutative bialgebras; algebras of the cobordism PROP 2Cob are Frobenius algebras
-(underpinning 2D TQFTs). PROPs also admit **presentations by generators and relations**,
-analogous to group presentations — this is the basis for graphical calculi such as the
-ZX-calculus and Interacting Hopf Algebras.
+An **algebra of a colored PROP** P in C assigns to each color c ∈ O an object F(c) ∈ C,
+and to each morphism f: [c₁,…,cₘ] → [d₁,…,dₙ] a concrete map
+F(c₁) ⊗ ··· ⊗ F(cₘ) → F(d₁) ⊗ ··· ⊗ F(dₙ) in C, respecting composition and the
+monoidal structure. Different colors map to different objects, so the algebra carries
+genuinely heterogeneous data.
 
 ---
 
@@ -47,7 +80,9 @@ The compilation pipeline *is* already a PROP algebra, just unnamed as such.
 (`Array[B, A]`), the monoidal product is wire juxtaposition (`ProductOfMorphisms`),
 symmetries are `Rearrangement` morphisms, and colors are `(Datatype, shape)` pairs.
 Morphisms are `Broadcasted` objects — abstract, shape-typed operations with no concrete
-numerical content.
+numerical content. The underlying index arithmetic — permutations, reshapes, contractions
+over axes — is handled by `StrideCategory`, a second colored PROP whose colors are axis
+lengths (natural numbers); `BroadcastedCategory` layers datatype information on top.
 
 `ConstructedModule.construct()` is the **algebra functor** F: Br → PyTorch:
 - On objects: `Array[Reals, (d₁, d₂)]` → `torch.Tensor` of shape `(d₁, d₂)`
@@ -57,6 +92,235 @@ A *randomly initialized* model is one algebra; a *trained* model is a different 
 the space of algebra functors with the same abstract source morphism. The architecture
 **is** the PROP expression; the weights parameterize the algebra.
 
+### Br → PyTorch compiler improvements
+
+Two optimizations fall out directly from treating the functor as a compiler. Both are
+implementable against the existing `Composed`/`Broadcasted` data structures with minimal
+new infrastructure.
+
+**Shortcut fusion of adjacent contractions** (motivated by deforestation / shortcut fusion
+in functional compiler literature — Wadler 1990, Gill et al. 1993). In the current
+pipeline each `Broadcasted` morphism in a `Composed` chain compiles to a separate
+`nn.Module`, materialising an intermediate tensor at every step. The PROP equation in Br
+that licenses fusion is:
+
+```text
+Composed( ProductOfMorphisms(f_j, id_C),  f_k )  =  f_{jk}
+```
+
+where `f_j : [A]⊗[B] → [AB]` and `f_k : [AB]⊗[C] → [result]` are `Broadcasted`
+contractions over j and k respectively, `id_C` is the identity on the C wire, and
+`f_{jk} : [A]⊗[B]⊗[C] → [result]` is a single `Broadcasted` morphism with a merged
+einsum string contracting over both j and k. The intermediate object `[AB]` — a color in
+Br's type system on the left-hand side — disappears entirely on the right. (Throughout
+this equation the datatype annotation that normally accompanies each Br object — the
+`(Datatype, shape)` pair forming the full color — is suppressed for readability; in a
+fully typed Br expression each wire would carry e.g. `Array[Reals, (512, 64)]`.) Informally:
+two chained contractions over j and k can always be merged into one contraction over
+{j, k}.
+
+This licenses merging adjacent contractions into a single `torch.einsum` call whenever the
+intermediate tensor is not consumed by more than one downstream morphism (i.e. there is no
+branch in the `Composed` DAG at that point). The implementation is a single pre-pass over
+the `Composed` chain:
+
+1. Walk the chain left-to-right, maintaining a *pending* einsum string and tensor list.
+2. When the next morphism is a contraction whose input colors match the pending output,
+   merge its index string into the pending einsum and append its weight tensors.
+3. When the chain branches, or the next morphism is not a contraction (e.g. a
+   `Rearrangement` or nonlinearity), flush the pending einsum to a single
+   `torch.einsum` call and start a new pending group.
+
+The gain is real: fewer intermediate tensor allocations, better cache locality, and a
+smaller compiled module graph. The correctness condition — no sharing of the intermediate
+— is directly readable from the `Composed` / `ProductOfMorphisms` tree structure, so no
+dataflow analysis beyond a local branch check is needed.
+
+**Optimal contraction ordering via `opt_einsum`** (motivated by partial evaluation:
+because all axis sizes are fixed at `construct()` time, the functor is a specialisation of
+the abstract PROP expression to ground colors, and contraction order is a compile-time
+decision). For a multi-tensor contraction the pairwise order determines the size of every
+intermediate, with cost differences that can reach orders of magnitude for high-dimensional
+operations. `opt_einsum` (Smith & Gray 2018) takes the einsum string and the concrete axis
+sizes and returns the optimal contraction tree. Adding it at `construct()` time is
+straightforward:
+
+```python
+import opt_einsum as oe
+
+# inside the flush step of the fusion pass, instead of:
+#   torch.einsum(einsum_str, *tensors)
+# use:
+path, _ = oe.contract_path(einsum_str, *tensors, optimize='optimal')
+result   = oe.contract(einsum_str, *tensors, optimize=path)
+```
+
+The two passes compose naturally: run the fusion pass first (to merge adjacent
+contractions into maximal einsum expressions), then apply `opt_einsum` to each fused
+expression. Fusion enlarges the search space available to `opt_einsum`, so the combined
+effect is strictly better than either pass alone.
+
+---
+
+## TL as the Internal Language of Br
+
+Every category with sufficiently rich structure admits an **internal language**: a formal
+system of types and terms such that types correspond to objects, terms-in-context
+correspond to morphisms, and the typing derivation corresponds to the well-formedness of
+morphism composition. A *term-in-context* is a term `t : B` together with a declared list
+of free variables `x₁:A₁, …, xₙ:Aₙ` — the context — specifying what inputs are
+available; it corresponds to a morphism A₁ ⊗ ··· ⊗ Aₙ → B. Changing the context changes
+the morphism: a term with no free variables is a morphism from the unit object I → B,
+while a term with two free variables `x:A₁, y:A₂` is a morphism A₁ ⊗ A₂ → B. The correspondence runs in both directions — every categorical
+construction has a syntactic counterpart, and every syntactic derivation has a categorical
+semantics — so the internal language is a complete notation for working inside the category
+without naming objects and morphisms explicitly. Crucially, a theorem provable in the
+internal language holds in *every* model (every algebra of the category), which is the
+basis for sound rewriting: a simplification proved in the language is valid in every
+concrete instantiation.
+
+The canonical example is the **simply typed lambda calculus**, which is the internal
+language of any Cartesian closed category (CCC). A type A corresponds to an object; a
+term `t : A` in context `x₁:A₁,…,xₙ:Aₙ` corresponds to a morphism A₁ × ··· × Aₙ → A;
+function application is the evaluation map; lambda abstraction is currying. Sets, Vect,
+and CPO are all models of the same language — the term `λf. λx. f x` denotes a valid
+identity-like map in each — because it is a theorem of the internal language. This is the
+Curry-Howard-Lambek correspondence.
+
+**Multiplicative linear logic (MLL)** is the internal language of symmetric monoidal
+categories. The tensor product ⊗ corresponds to the monoidal product; the linear
+implication ⊸ to the internal hom where it exists. The structural rules of weakening and
+contraction are absent from MLL — matching the absence of diagonal and counit in a general
+SMC, which is why linear logic is described as resource-sensitive: each wire must be used
+exactly once. String diagrams are the *graphical* form of this internal language: a string
+diagram is precisely a term of MLL written as a planar graph, with wires as types and
+boxes as generators. Every symmetric monoidal category has a complete string-diagram
+calculus, and the tsncd renderer is exactly such a calculus for Br.
+
+Tensor logic is the *internal language* of Br in the same sense that the simply typed
+lambda calculus is the internal language of a Cartesian closed category. A TL equation
+`T[i₁,…,iₖ] = expr(inputs)` is a term of output type `[i₁,…,iₖ]` in a context of input
+types, denoting a morphism in Br. `TL.to_morphism()` is the denotational semantics — it
+interprets TL syntax as a concrete Br morphism. Equivalently, TL expressions are a
+linearised notation for string diagrams in Br; the tsncd renderer makes this literal by
+drawing compiled morphisms as typed wire diagrams.
+
+Each TL language feature corresponds to a distinct layer of Br's categorical structure:
+
+| TL feature | Categorical structure |
+| --- | --- |
+| axis-typed wires, index juxtaposition | symmetric monoidal colored PROP |
+| contraction over a shared index | compact closed — cup morphism on axis colors |
+| same tensor appearing in multiple equations | comonoid — copy morphism Δ |
+| `*t` recurrence / `Scan` | traced monoidal category |
+| `.`-indexed normalisation (softmax, RMSnorm) | Markov category |
+
+> **Note on the status of these claims.** The internal language is fully established for
+> the first three rows: typed string diagrams are complete for symmetric monoidal and
+> compact closed colored PROPs (Joyal–Street; Selinger 2010), and the comonoid / `!`-modality
+> layer is handled by linear-non-linear (LNL) logic. The traced monoidal row is also solid
+> (Joyal, Street, Verity 1996 give the categorical definition; the graphical calculus
+> extends naturally). The Markov category row is on shakier ground: Fritz's 2020 theory of
+> Markov categories does not come with an agreed term calculus, and subsequent work on an
+> internal logic (Moss, Perrone) is recent and not yet settled. Using "internal language"
+> for the `.` normalisation layer is therefore an extrapolation — the categorical structure
+> is correctly identified, but the claim that TL's `.` notation is the *term language* of
+> that structure is an aspiration rather than a theorem.
+
+This correspondence is not merely descriptive: each row carries algebraic laws that
+translate into implementable optimisations, distributed across the two compiler stages.
+The symmetric monoidal and compact closed rows (1–2) ground the Br → PyTorch
+improvements in *The Direct Identification*: the shortcut fusion equation
+`Composed(ProductOfMorphisms(f_j, id_C), f_k) = f_{jk}` is precisely a compact closed
+equation (the contractions are cup morphisms) whose validity rests on the monoidal product
+with identity (SMC structure). The comonoid, traced monoidal, and Markov rows (3–5) yield the TL → Br improvements
+below.
+
+### TL → Br compiler improvements
+
+### Abstract Scan via traced monoidal structure
+
+`transformer_stack(L)` currently unrolls the Scan at construction time, allocating L
+independent `transformer_layer()` instances and chaining them with `@`. This is the eager
+realisation of the traced monoidal trace `Tr(transformer_layer, steps=L)`, and it forecloses
+any compile-time choice about how the loop is executed.
+
+A `Scan(body, steps=L)` node type in `BroadcastedCategory` — storing the body morphism
+once rather than L times — defers that choice to `construct()`. With the axis sizes known
+at that point, `construct()` can select among three strategies:
+
+- **Eager unrolling** — identical to the current behaviour; `construct()` expands to L
+  chained modules. No new functionality, but now a named choice rather than the only option.
+- **Gradient checkpointing** (`torch.utils.checkpoint`) — recompute activations on the
+  backward pass rather than storing them. Peak activation memory drops from O(L · seq · d)
+  to O(seq · d) at an O(L) compute overhead. Applicable to any `Scan` over a module whose
+  intermediate activations dominate memory; the selection criterion is computable from the
+  Br color information alone.
+- **`torch.vmap` over stacked weights** — applicable to the weight-tied variant (one set of
+  parameters shared across all L steps). Stack the weight tensors along a new leading
+  dimension and vectorise over it; typically faster than a Python loop for large L and
+  compatible with `torch.compile`.
+
+The implementation requires: (1) a `Scan` class in `BroadcastedCategory` analogous to
+`Composed`, storing the body morphism and step count; (2) a `strategy` argument on
+`construct()` defaulting to eager unrolling. The body morphism is compiled once; the
+strategy determines how `construct()` wraps it. The weight-tied variant (`tl.H.recur(...)`)
+maps directly to the `vmap` strategy since all steps share the same `Broadcasted` generators.
+
+### Normalization simplification via Markov laws
+
+Markov categories satisfy shift invariance: `normalize(f + g) = normalize(f)` when `g`
+does not depend on the normalisation axis. This is not a numerical approximation — it is a
+theorem about the Markov category morphism, holding in every algebra of the PROP.
+
+At the TL level the condition is checkable by axis-dependency analysis: each sub-expression
+in a TL equation has a computable set of free indices; a term is constant along the
+normalisation axis precisely when that axis is absent from its free index set. Any such
+term in the argument to a `.`-normalised equation can be dropped before `TL.to_morphism()`
+is called, reducing the Br morphism by one input wire and one addition node.
+
+Concretely, if a TL program writes:
+
+```python
+tl.Comp[h, q, x] = softmax(tl.Query[q,h,k] * tl.Key[x,h,k] + tl.bias[h])
+```
+
+the term `tl.bias[h]` does not contain `x` (the normalisation axis), so it is a constant
+shift along that axis and the simplification `Comp = softmax(Query * Key)` is valid.
+
+The implementation is a single pre-pass in `TL.__setattr__` or in `TL.to_morphism()`: for
+each `.`-indexed assignment, decompose the right-hand side into additive terms and remove
+any whose free index set is disjoint from the normalisation axis. This requires only the
+free-index tracking that `TL` already performs to construct einsum strings — no new
+infrastructure is needed.
+
+### Dead code elimination and memory planning via comonoid structure
+
+When the same TL tensor appears in multiple downstream equations the comonoid copy morphism
+is present but invisible — the live pool in `TL.to_morphism()` handles sharing implicitly.
+Building an explicit dependency graph of TL equations (which tensor each equation produces,
+which tensors it consumes) before calling `TL.to_morphism()` enables two passes that are
+currently impossible:
+
+**Dead code elimination.** A backward sweep from the designated output tensors marks every
+reachable equation. Any equation whose output tensor is unreachable is dead and can be
+dropped before the Br morphism is built. Without this pass, a TL equation that defines a
+tensor that is never consumed silently compiles to a live `nn.Module` that allocates memory
+and runs forward/backward passes contributing nothing to the result.
+
+**Static memory estimation.** Standard forward liveness analysis on the dependency graph
+annotates each equation with the set of tensors live at that point — those that have been
+produced but not yet fully consumed. The peak cardinality of this set, weighted by tensor
+size from the Br color information (axis lengths from `StrideCategory`), gives a static
+lower bound on activation memory before any weights are instantiated or PyTorch code
+runs. This bound is directly useful for choosing between the Scan strategies above:
+if the estimated peak memory exceeds a budget, `construct()` should select gradient
+checkpointing; if it fits comfortably, eager unrolling is cheaper.
+
+Neither pass requires changing `BroadcastedCategory`'s data structures. Both operate on
+the TL equation graph before `TL.to_morphism()` is invoked, and both use only information
+already present in TL (free index sets, output tensor names).
+
 ---
 
 ## The Para Refinement
@@ -65,11 +329,41 @@ The learned layers (Linear, Embedding) make the algebra **parameterized** — th
 carries a weight space. This is exactly the **Para construction** (Gavranovic et al.,
 arXiv:2402.15332): Para(C) is a bicategory where a 1-cell A → B is a pair (P, f: P ⊗ A → B)
 with P an explicit parameter object. A trained model is a specific section of this
-parameterized algebra over the weight space. Gradient descent is a path in that section space.
+parameterized algebra over the weight space. Gradient descent is a path in that section
+space. The pyncd setup implicitly uses this: `Multilinear` bundles the weight tensor P
+and the forward function f: P × A → B, which is precisely a Para 1-cell.
 
-The pyncd setup implicitly uses this: `Multilinear` bundles the weight tensor P and the
-forward function f: P × A → B. Making this explicit as a Para morphism would give a clean
-categorical account of what training *does* to the algebra.
+**`construct()` is a Para functor.** The algebra functor F: Br → PyTorch described in
+*The Direct Identification* handles only the weight-free structure — it maps abstract
+`Broadcasted` morphisms to concrete `nn.Module` instances. The full picture is that
+`construct()` is a functor Para(Br) → Para(PyTorch): it maps abstract parameterized
+morphisms (the `Multilinear` weight tensors bundled with their forward maps in Br) to
+concrete parameterized PyTorch modules (weight tensors bundled with `nn.Module.forward`).
+This is a more precise description of what the compiler does, and it matters for
+correctness: the compiler improvements (contraction fusion, Scan strategy selection) are
+valid because they are natural transformations in Para(Br) — they commute with the
+parameter structure, leaving the weight space unchanged while transforming the forward map.
+
+**Weight tying is a Para morphism.** A morphism in Para(Br) between two parameterized
+algebras F and G is a reparameterization: a map on the parameter objects that commutes
+with all forward maps. Weight tying — where two generators share a single weight tensor
+— is a Para morphism that collapses two independent parameter objects P₁, P₂ to a single
+P via the diagonal Δ: P → P ⊗ P. This is the same phenomenon as the algebra morphism
+described in the following section, but Para gives it the right home: it is a morphism
+in Para(Br), not just a natural transformation between plain algebras, because it
+explicitly manipulates the parameter objects.
+
+**Scan strategy selection is a Para morphism.** The choice between eager unrolling and
+gradient checkpointing for the abstract `Scan(body, steps=L)` morphism (described in
+*TL as the Internal Language of Br*) is also a Para morphism. Gradient checkpointing
+recomputes activations on the backward pass rather than storing them — it trades a larger
+recomputation budget (part of the parameter/resource space) for a smaller activation
+memory footprint. In Para terms this is a reparameterization of the Scan's resource usage:
+both strategies implement the same abstract morphism in Br but are related by a Para
+morphism that exchanges stored-activation parameter for recomputation cost. The Abstract
+Scan representation makes this choice a first-class decision at `construct()` time,
+which is exactly where Para says it belongs: at the point where abstract parameter
+objects are instantiated into concrete ones.
 
 ---
 
@@ -85,9 +379,203 @@ morphisms φ_X: F(X) → G(X) commuting with every operation. In the deep learni
 - **Equivariance**: if a group G acts on the axis structure (e.g., permutations of token
   positions), then an equivariant architecture is an algebra that factors through the
   quotient PROP — the fixed points under the G-action. An equivariant layer is one where
-  φ_g ∘ F(θ) = F(θ) ∘ φ_g for all PROP morphisms θ and group elements g. Proving this
+  φ_g ∘ F(θ) = F(θ) ∘ φ_g for all PROP morphisms θ and group elements g. Here F is the
+  algebra functor (the compiled model), θ is an abstract generator, and φ_g is the action
+  of a group element g on the relevant tensor. Concretely: take θ to be the query
+  projection (a linear map Reals[b,s,d] → Reals[b,s,h] that contracts over the model
+  dimension d independently for each token position s) and g = σ ∈ S_seq (a permutation
+  of the sequence axis). φ_g permutes the s dimension of any tensor. The equation says:
+  project then permute tokens = permute tokens then project. This holds because the
+  projection operates only over d, leaving s untouched — token order is invisible to it.
+  It fails for the causal attention morphism because its mask predicate `i ≤ j` explicitly
+  depends on token order — permuting tokens changes which entries are masked. Proving this
   becomes a statement in the PROP algebra, derivable from the generators-and-relations
   presentation.
+
+Both have concrete practical consequences for pyncd.
+
+### Weight tying: static verification at `construct()` time
+
+Within a single `TL` instance, weight sharing is automatic: accessing the same attribute
+name (e.g. `tl.W_Q`) in multiple equations always returns the same internal tensor node,
+which `to_morphism()` threads through the live pool via the comonoid copy structure. The
+risk arises when sharing is intended *across* separately constructed Br morphisms — most
+concretely in a weight-tied stack, where the same body morphism should be composed with
+itself so that a single set of `Multilinear` objects serves all L steps. If a code path
+calls the body constructor L times rather than reusing one result, the L resulting
+`Multilinear` objects are Python-distinct: structurally identical, but each holding an
+independent `nn.Parameter`. The model runs and trains without error, but gradients
+accumulate to L separate parameters rather than one, silently defeating the weight-tying
+intent.
+
+The algebra morphism condition gives a structural check implementable at `construct()`
+time: traverse the Br graph and, for every pair of generators declared weight-tied (sharing
+the same Para 1-cell), assert that the compiled `nn.Parameter` objects are identical under
+Python `is`, not merely numerically equal. A failure means the TL program has two
+structurally distinct parameter nodes where one was intended — catchable before any
+training begins.
+
+### Batch equivariance: a theorem `construct()` implicitly relies on
+
+Every well-typed Br morphism is automatically equivariant in the batch axis. The batch
+axis appears in both the input and output colors of every morphism without ever being
+contracted, broadcast-expanded, or permuted by any generator; by the algebra morphism
+condition `φ_batch ∘ F(θ) = F(θ) ∘ φ_batch`, every functor F: Br → PyTorch therefore
+commutes with batch permutations. This is the formal justification for why batched
+execution is always correct — `construct()` currently relies on this property silently,
+without stating or checking it.
+
+Making it explicit yields an auditable invariant: any Br morphism that *does* consume the
+batch axis as a contraction index (e.g. batch normalisation, which aggregates statistics
+over the batch dimension) will fail the condition and cannot be silently batched. The
+compiler can enforce this as a type-level check: if a `Broadcasted` morphism contracts
+over the batch color, `construct()` should warn that the resulting module is not
+batch-equivariant and cannot be trivially parallelised across the batch dimension.
+
+### Equivariance breaking: static detection from wire colors
+
+A more general equivariance audit follows directly from inspecting Br wire colors.
+The condition `φ_g ∘ F(θ) = F(θ) ∘ φ_g` fails for a generator θ if and only if θ
+consumes a wire whose color encodes a predicate that is not invariant under g. The causal
+mask is the canonical example: it carries a Bool color with the Iverson predicate
+`i ≤ j`, which is not symmetric under token permutation. Any Br morphism that consumes
+this wire therefore breaks token-permutation equivariance — structurally, without running
+the model.
+
+This enables a static equivariance report at `construct()` time: walk the Br graph,
+identify every wire whose color carries a non-symmetric predicate or a non-trivial axis
+permutation, and report which generators consume them and which symmetry they break. For
+a transformer this would correctly report: equivariant in batch, equivariant in head
+dimension, *not* equivariant in sequence position (due to the causal mask wire). This is
+useful both as documentation and as a correctness audit — a model that should be
+equivariant but is not will surface the specific wire responsible.
+
+---
+
+## A Br Graph API
+
+The existing Br data structures — `Composed`, `ProductOfMorphisms`, `Broadcasted`,
+`Rearrangement`, `Block` — record the structure of a compiled morphism but provide no
+traversal, pattern-matching, or rewriting API. Every analysis (equivariance detection,
+weight-tying verification, shortcut fusion) therefore requires ad hoc traversal code
+written from scratch. A shared Br graph API would make these analyses composable,
+remove the duplication, and provide the concrete implementation substrate for most of the
+theoretical applications in this document. It is independent of the TL compilation
+architecture: it is additive, building on the existing Br data structures without
+changing them or the TL → Br compilation path.
+
+### Graph representation
+
+The key step is converting the Br morphism tree into a proper directed graph:
+
+- **Nodes**: `Broadcasted` operators, `Rearrangement` permutations, and `Scan` nodes
+  (with their body subgraph as a nested scope).
+- **Wires**: `Array[Datatype, shape]` typed edges — the colored PROP wires. Wire color
+  is the full Br color including datatype, shape tuple, and any Iverson predicate carried
+  by `Bool`-typed wires (e.g. `i ≤ j` for the causal mask).
+- **Copy nodes**: When a wire fans out to multiple consumers, the comonoid copy morphism
+  Δ appears as an explicit node rather than as implicit sharing in the tree. This makes
+  the sharing structure visible and auditable — the comonoid structure that is currently
+  implicit in the live pool becomes a first-class graph element.
+- **Parameter map**: A map from `nn.Parameter` objects to the `Multilinear` nodes that
+  carry them, making weight sharing visible as a relation over nodes rather than an
+  implicit Python identity check buried in `construct()`.
+
+A minimal API surface:
+
+```python
+class BrGraph:
+    def nodes(self) -> Iterator[BrNode]: ...
+    def predecessors(self, node: BrNode) -> list[tuple[Wire, BrNode]]: ...
+    def successors(self, node: BrNode) -> list[tuple[Wire, BrNode]]: ...
+    def color(self, wire: Wire) -> Array: ...
+    def predicate(self, wire: Wire) -> str | None: ...   # non-None for Bool wires
+    def parameter_groups(self) -> dict[Parameter, list[BrNode]]: ...
+    def subgraph(self, predicate: Callable[[BrNode], bool]) -> BrGraph: ...
+```
+
+Pattern matching and rewriting:
+
+```python
+class BrPattern:
+    def match(self, graph: BrGraph) -> Iterator[BrMatch]: ...
+
+class BrRewrite:
+    lhs: BrPattern
+    rhs: Callable[[BrMatch], BrGraph]
+    equation: str   # the PROP equation this rewrite realises; makes proof obligation explicit
+```
+
+A `BrRewrite` is sound if its `equation` field names a valid PROP equation. Recording
+the equation explicitly separates the mathematical justification from the implementation,
+and makes it possible to audit a rewriting system by checking each rule's name against
+the PROP presentation.
+
+### What the API unlocks immediately
+
+The **shortcut fusion pass** from *Br → PyTorch compiler improvements* becomes a
+`BrRewrite` whose `lhs` matches
+`Composed(ProductOfMorphisms(f_j, id_C), f_k)` and whose `rhs` is `f_{jk}`. Applying
+it greedily over maximal contraction chains is a standard graph rewrite. Currently this
+requires bespoke traversal code; with the graph API it is a one-paragraph implementation
+backed by a named PROP equation.
+
+**Equivariance detection** (from *Algebra Morphisms*) becomes a graph query: walk all
+`Bool`-colored wires, inspect their predicates, and report which group actions each
+predicate is not invariant under. The causal mask wire reports "not invariant under
+sequence permutation"; a wire with no predicate reports invariance under all axis
+permutations. No model execution required.
+
+**Weight-tying verification** becomes a `parameter_groups()` check: nodes declared
+weight-tied must appear in the same group. A mismatch is a static error reportable at
+`construct()` time, before any training begins.
+
+**`StrideCategory` analysis** is the `Bool`-free, `Rearrangement`-only subgraph of any
+Br morphism. `subgraph(lambda n: isinstance(n, Rearrangement))` extracts it. Consecutive
+permutations in this subgraph can be merged using the SMC composition law — a
+`BrRewrite` that is always valid. This is the StrideCategory representation-theory
+application made concrete.
+
+### Connection to each Creative Opportunity
+
+**Generators-and-Relations (Opportunity 1).** Architectural identity checking — do two
+independently written TL programs define the same architecture? — becomes colored graph
+isomorphism over `BrGraph`. PROP equation checking (asserting a relation θ₁ = θ₂ holds)
+becomes: apply the `BrRewrite` for the equation and check whether the result is
+graph-isomorphic to the right-hand side. The rewrite infrastructure is the
+implementation substrate for the generators-and-relations presentation: the architecture
+PROP is the collection of `BrRewrite` rules, and the quotient PROP is the graph normal
+form under those rewrites.
+
+**Diagrammatic Rewriting (Opportunity 2).** The entire content of this opportunity is a
+`BrRewrite` library: each PROP equation becomes a named rewrite rule. The collection of
+rules is a rewriting system over Br graphs. Confluence and termination of the system are
+the formal counterpart of "provably sound compiler optimization" — exactly the
+ZX-calculus analogy cited there. The graph API is the only missing piece; the PROP
+equations themselves are already identified throughout this document.
+
+**Bool Semiring and Interacting Hopf Algebras (Opportunity 3).** Investigating whether
+the Bool semiring operations close under the IH axioms requires: extract the
+`Bool`-colored subgraph via `subgraph(lambda n: n.datatype == Bool)`, identify which
+nodes correspond to IH generators (copy Δ, delete ε, merge ∇, unit η, and their duals),
+and verify whether the IH axioms hold as `BrRewrite` equations over that subgraph. The
+subgraph extraction and predicate inspection of the graph API are a direct prerequisite.
+
+**Free Algebras and Architecture Initialization (Opportunity 4).** The `BrGraph` *is*
+the initial (symbolic) algebra of the architecture PROP — it records structure without
+numerical content, and every concrete algebra factors through it. `construct()` is a
+graph homomorphism from `BrGraph` to the PyTorch computation graph. The graph API makes
+this factorisation inspectable: a `BrGraph` can be compared against a target
+architecture PROP graph to verify structural conformance before any weights are
+instantiated, formally certifying that an initialization scheme respects the
+architecture.
+
+**Model Compression as Approximate Algebra Morphisms (Opportunity 5).** Finding a
+compression morphism φ: F_large → F_small requires a structure-preserving map between
+two `BrGraph` instances — a graph homomorphism respecting wire colors and operator
+types, approximately in the numerical sense. The graph API provides traversal and
+node matching; the approximation tolerance is additional structure layered on top and
+does not require changes to the core API.
 
 ---
 
@@ -118,7 +606,10 @@ add     :  Reals[b, s, d] × Reals[b, s, d]  →  Reals[b, s, d]
 ```
 
 The types are exactly the wire colors of the colored PROP; the monoidal product
-juxtaposes wires, and composition chains generators end-to-end. This is precisely what
+juxtaposes wires, and composition chains generators end-to-end. (The notation
+`Reals[b,s,d]`, `Natural[b,s]`, `Bool[s,s]` is shorthand for the Br colors
+`Array[Reals,(b,s,d)]`, `Array[Natural,(b,s)]`, `Array[Bool,(s,s)]` — Datatype and
+axis-list, written compactly for readability.) This is precisely what
 `TensorDSL` already constructs — a `Composed` chain of `Broadcasted` morphisms. The
 difference introduced by a formal generators-and-relations presentation is the addition
 of **equations** between composite expressions.
@@ -214,9 +705,6 @@ norm's learned scale and bias, fusing two `nn.Module` calls into one.
 - *Architectural identity checking*: two independently written `TensorDSL` programs
   define the same architecture if and only if their `bc_signature()` outputs are equal
   in the quotient PROP — an algebraic check, not a runtime comparison.
-- *Sound rewriting*: any PROP equation θ₁ = θ₂ proved in P_arch licenses the compiler
-  to replace one subgraph with the other without changing observable behavior. This is
-  the categorical foundation for operator fusion and layout optimization (see Opportunity 2).
 - *Architecture grammar*: the generators-and-relations presentation defines a type
   system for model components. "Does this module implement a valid attention head?" is
   the question of whether a given `nn.Module` is an algebra morphism from the
@@ -261,34 +749,82 @@ from morphisms between algebras of *different* PROP expressions (different archi
 Current distillation literature does not use this distinction; the PROP framing suggests a
 typeful hierarchy of compression strategies.
 
-### 6. The StrideCategory as a Representation-Theoretic Object
+---
 
-`StrideCategory` is itself a PROP (or at least a PRO). Its algebras in FVect are "index
-representations": functors assigning a vector space to each axis-list and a linear map to
-each stride matrix. These are a kind of **representation theory of the index algebra** —
-and the constraint that a model be equivariant under an axis permutation is the condition
-that the StrideCategory algebra morphism commutes with the permutation. This reframes
-geometric deep learning (equivariant networks) as representation theory of the
-StrideCategory.
+## The StrideCategory as a Representation-Theoretic Object
+
+`StrideCategory` is a **colored PROP**, with colors being axis lengths (natural numbers).
+Objects are finite lists of lengths (e.g. [512, 8, 64] for a tensor with those three
+axes); morphisms are stride operations — permutations, reshapes, contractions — that
+respect the length typing: a permutation can reorder axes of any lengths (e.g. swapping a
+length-512 and a length-64 axis is valid transposition — the symmetry morphisms
+σ_{m,n}: [m,n] → [n,m] exist for all m, n). What the typing constrains is composition: a
+wire of length m can only connect to an input expecting length m. A reshape [512, 8] →
+[4096] is valid because 512 × 8 = 4096, and so on. It cannot be a plain PROP, because a
+plain PROP has only one sort of wire and would make axes of different lengths
+interchangeable at composition points, erasing the type safety that makes the stride
+structure useful. Its algebras in FVect are "index representations": functors assigning a
+vector space to each axis-list and a linear map to each stride morphism. These are a kind
+of **representation theory of the index algebra** — and the constraint that a model be
+equivariant under an axis permutation is the condition that the StrideCategory algebra
+morphism commutes with the permutation. This reframes geometric deep learning (equivariant
+networks) as representation theory of the StrideCategory.
 
 ---
 
 ## Summary
 
-The most immediate and concrete connection: **`construct()` is an algebra functor, and
-naming it as such unlocks the full toolkit** — algebra morphisms for weight tying and
-equivariance, generators-and-relations for architecture specification, diagrammatic
-rewriting for provably-sound compiler optimization, and the Para construction for a clean
-account of training. The Bool semiring / IH connection is the most mathematically
-surprising candidate for new theory.
+The central thesis is that the pyncd pipeline is a PROP algebra at every stage, and
+naming this structure precisely yields both theoretical insights and concrete improvements.
+
+TL is the internal language of the colored PROP Br. The correspondence is established for
+the SMC, compact closed, comonoid, and traced monoidal layers; the Markov layer governing
+`.`-normalisation is the open frontier where an agreed term calculus does not yet exist.
+The functor `construct()` maps Br to PyTorch, giving two families of compiler improvements.
+At the **Br → PyTorch** boundary: contraction fusion (eliminating intermediate tensor
+allocations) and optimal contraction ordering via `opt_einsum`. At the **TL → Br**
+boundary: abstract Scan (enabling gradient checkpointing and `vmap` in place of eager
+unrolling), normalization simplification from Markov shift invariance, and dead code
+elimination and static memory planning from liveness analysis on the TL dependency graph.
+
+Beyond the compiler, the PROP structure enables: weight tying and equivariance as algebra
+morphisms (monoidal natural transformations); generators-and-relations presentations of
+architectures, making properties like equivariance derivable theorems; the Para
+construction as a clean categorical account of training and gradient descent;
+`StrideCategory`'s representation theory as a foundation for geometric deep learning. The
+Bool semiring / Interacting Hopf Algebras connection remains the most mathematically
+surprising open candidate for new theory.
 
 ---
 
 ## References
 
-- Bonchi, Sobocinski, Zanasi — Interacting Hopf Algebras: arXiv:1404.1729
-- Gavranovic et al. — Categorical Deep Learning: arXiv:2402.15332
-- Gavranovic PhD thesis: arXiv:2403.13001
-- Fong, Spivak — Seven Sketches in Compositionality, Ch. 5 (PROPs and presentations)
+### PROPs and string diagrams
+
+- Joyal, Street — "The geometry of tensor calculus I", Advances in Mathematics, 1991
+- Selinger — "A survey of graphical languages for monoidal categories", in *New Structures for Physics*, Lecture Notes in Physics 813, Springer, 2010
+- Lack — "Composing PROPs", Theory and Applications of Categories 13, 2004
+- Bonchi, Sobocinski, Zanasi — "Interacting Hopf Algebras": arXiv:1404.1729
+- Fong, Spivak — *Seven Sketches in Compositionality*, Ch. 5 (PROPs and presentations)
 - nLab: [PRO](https://ncatlab.org/nlab/show/PRO), [PROP](https://ncatlab.org/nlab/show/PROP)
-- Wikipedia: [PROP (category theory)](https://en.wikipedia.org/wiki/PROP_(category_theory))
+
+### Traced and compact closed categories
+
+- Joyal, Street, Verity — "Traced monoidal categories", Mathematical Proceedings of the Cambridge Philosophical Society 119(3), 1996
+- Abramsky, Coecke — "A categorical semantics of quantum protocols", LICS 2004
+
+### Markov categories
+
+- Fritz — "A synthetic approach to Markov kernels, conditional independence and theorems on sufficient statistics", Advances in Mathematics 370, 2020
+- Moss, Perrone — "Probability monads with submonads of deterministic states" (internal logic of Markov categories), LICS 2022
+
+### Categorical deep learning and Para construction
+
+- Gavranovic et al. — Categorical Deep Learning: arXiv:2402.15332
+- Gavranovic — PhD thesis: arXiv:2403.13001
+
+### Compiler techniques
+
+- Wadler — "Deforestation: transforming programs to eliminate trees", Theoretical Computer Science 73, 1990
+- Gill, Launchbury, Peyton Jones — "A short cut to deforestation", FPCA 1993
+- Smith, Gray — "opt_einsum: A Python package for optimizing contraction order for einsum-like expressions", Journal of Open Source Software 3(26), 2018
