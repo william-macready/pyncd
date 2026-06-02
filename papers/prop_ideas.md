@@ -15,16 +15,16 @@
    - [Weight tying: static verification](#weight-tying-static-verification-at-construct-time)
    - [Batch equivariance](#batch-equivariance-a-theorem-construct-implicitly-relies-on)
    - [Equivariance breaking: static detection](#equivariance-breaking-static-detection-from-wire-colors)
-6. [A Br Graph API](#a-br-graph-api)
-   - [Graph representation](#graph-representation)
-   - [What the API unlocks immediately](#what-the-api-unlocks-immediately)
-   - [Connection to each Creative Opportunity](#connection-to-each-creative-opportunity)
-7. [Creative Opportunities](#creative-opportunities)
+6. [Creative Opportunities](#creative-opportunities)
    - [Generators-and-Relations Presentations of Architectures](#1-generators-and-relations-presentations-of-architectures)
    - [Diagrammatic Rewriting for Compilation](#2-diagrammatic-rewriting-for-compilation)
    - [The Bool Semiring and Interacting Hopf Algebras](#3-the-bool-semiring-and-interacting-hopf-algebras)
    - [Free Algebras and Architecture Initialization](#4-free-algebras-and-architecture-initialization)
    - [Model Compression as Approximate Algebra Morphisms](#5-model-compression-as-approximate-algebra-morphisms)
+7. [A Br Graph API](#a-br-graph-api)
+   - [Graph representation](#graph-representation)
+   - [What the API unlocks immediately](#what-the-api-unlocks-immediately)
+   - [Connection to the Creative Opportunities above](#connection-to-the-creative-opportunities-above)
 8. [The StrideCategory as a Representation-Theoretic Object](#the-stridecategory-as-a-representation-theoretic-object)
 9. [Summary](#summary)
 10. [References](#references)
@@ -171,10 +171,11 @@ morphism composition. A *term-in-context* is a term `t : B` together with a decl
 of free variables `x₁:A₁, …, xₙ:Aₙ` — the context — specifying what inputs are
 available; it corresponds to a morphism A₁ ⊗ ··· ⊗ Aₙ → B. Changing the context changes
 the morphism: a term with no free variables is a morphism from the unit object I → B,
-while a term with two free variables `x:A₁, y:A₂` is a morphism A₁ ⊗ A₂ → B. The correspondence runs in both directions — every categorical
-construction has a syntactic counterpart, and every syntactic derivation has a categorical
-semantics — so the internal language is a complete notation for working inside the category
-without naming objects and morphisms explicitly. Crucially, a theorem provable in the
+while a term with two free variables `x:A₁, y:A₂` is a morphism A₁ ⊗ A₂ → B.
+The correspondence runs in both directions — every categorical construction has a
+syntactic counterpart, and every syntactic derivation has a categorical semantics — so
+the internal language is a complete notation for working inside the category without
+naming objects and morphisms explicitly. Crucially, a theorem provable in the
 internal language holds in *every* model (every algebra of the category), which is the
 basis for sound rewriting: a simplification proved in the language is valid in every
 concrete instantiation.
@@ -234,9 +235,12 @@ improvements in *The Direct Identification*: the shortcut fusion equation
 `Composed(ProductOfMorphisms(f_j, id_C), f_k) = f_{jk}` is precisely a compact closed
 equation (the contractions are cup morphisms) whose validity rests on the monoidal product
 with identity (SMC structure). The comonoid, traced monoidal, and Markov rows (3–5) yield the TL → Br improvements
-below.
+described in the subsections below.
 
 ### TL → Br compiler improvements
+
+The three subsections below address improvements at the TL → Br stage; each follows
+from one of the rows in the table above.
 
 ### Abstract Scan via traced monoidal structure
 
@@ -267,6 +271,12 @@ The implementation requires: (1) a `Scan` class in `BroadcastedCategory` analogo
 strategy determines how `construct()` wraps it. The weight-tied variant (`tl.H.recur(...)`)
 maps directly to the `vmap` strategy since all steps share the same `Broadcasted` generators.
 
+*Partial implementation:* uncoupled Scans (`n_states=1`) now participate in the
+`ThreadedComposed` routing table — `_finalize_iter()` populates their `input_names` so
+external tensors are correctly threaded through the live pool. The abstract `Scan` node
+type in `BroadcastedCategory` and the strategy selection at `construct()` time remain
+aspirational.
+
 ### Normalization simplification via Markov laws
 
 Markov categories satisfy shift invariance: `normalize(f + g) = normalize(f)` when `g`
@@ -288,34 +298,34 @@ tl.Comp[h, q, x] = softmax(tl.Query[q,h,k] * tl.Key[x,h,k] + tl.bias[h])
 the term `tl.bias[h]` does not contain `x` (the normalisation axis), so it is a constant
 shift along that axis and the simplification `Comp = softmax(Query * Key)` is valid.
 
-The implementation is a single pre-pass in `TL.__setattr__` or in `TL.to_morphism()`: for
-each `.`-indexed assignment, decompose the right-hand side into additive terms and remove
-any whose free index set is disjoint from the normalisation axis. This requires only the
-free-index tracking that `TL` already performs to construct einsum strings — no new
-infrastructure is needed.
+This pre-pass is implemented in `TL._register_entry()`: for each `.`-indexed assignment,
+additive terms whose free index set is disjoint from the normalisation axis are dropped
+before `bc_signature()` is called. No new infrastructure is needed — the free-index sets
+are already available from the axis information that `TL` uses to construct einsum
+strings.
 
 ### Dead code elimination and memory planning via comonoid structure
 
 When the same TL tensor appears in multiple downstream equations the comonoid copy morphism
 is present but invisible — the live pool in `TL.to_morphism()` handles sharing implicitly.
-Building an explicit dependency graph of TL equations (which tensor each equation produces,
-which tensors it consumes) before calling `TL.to_morphism()` enables two passes that are
-currently impossible:
+A dependency graph over TL equations (which tensor each equation produces, which tensors it
+consumes) unlocks two passes:
 
-**Dead code elimination.** A backward sweep from the designated output tensors marks every
-reachable equation. Any equation whose output tensor is unreachable is dead and can be
-dropped before the Br morphism is built. Without this pass, a TL equation that defines a
-tensor that is never consumed silently compiles to a live `nn.Module` that allocates memory
-and runs forward/backward passes contributing nothing to the result.
+**Dead code elimination.** A backward BFS from the final output marks every reachable
+equation; unreachable equations are dropped before the Br morphism is built. Without this
+pass, a TL equation that defines a tensor that is never consumed silently compiles to a
+live `nn.Module` that allocates memory and runs forward/backward passes contributing
+nothing to the result. *Implemented:* `_live_entries()` in `TL.to_morphism()` performs
+this BFS and filters `_entries` before the routing table is constructed.
 
-**Static memory estimation.** Standard forward liveness analysis on the dependency graph
-annotates each equation with the set of tensors live at that point — those that have been
-produced but not yet fully consumed. The peak cardinality of this set, weighted by tensor
-size from the Br color information (axis lengths from `StrideCategory`), gives a static
-lower bound on activation memory before any weights are instantiated or PyTorch code
-runs. This bound is directly useful for choosing between the Scan strategies above:
-if the estimated peak memory exceeds a budget, `construct()` should select gradient
-checkpointing; if it fits comfortably, eager unrolling is cheaper.
+**Static memory estimation.** Forward liveness analysis on the dependency graph annotates
+each equation with the set of tensors live at that point — those produced but not yet
+fully consumed. The peak cardinality, weighted by tensor size from the Br color
+information (axis lengths from `StrideCategory`), gives a static lower bound on
+activation memory before any weights are instantiated or PyTorch code runs. This bound
+is useful for choosing between Scan strategies: if the estimated peak memory exceeds a
+budget, `construct()` should select gradient checkpointing; if it fits comfortably, eager
+unrolling is cheaper. *Not yet implemented.*
 
 Neither pass requires changing `BroadcastedCategory`'s data structures. Both operate on
 the TL equation graph before `TL.to_morphism()` is invoked, and both use only information
@@ -449,133 +459,6 @@ a transformer this would correctly report: equivariant in batch, equivariant in 
 dimension, *not* equivariant in sequence position (due to the causal mask wire). This is
 useful both as documentation and as a correctness audit — a model that should be
 equivariant but is not will surface the specific wire responsible.
-
----
-
-## A Br Graph API
-
-The existing Br data structures — `Composed`, `ProductOfMorphisms`, `Broadcasted`,
-`Rearrangement`, `Block` — record the structure of a compiled morphism but provide no
-traversal, pattern-matching, or rewriting API. Every analysis (equivariance detection,
-weight-tying verification, shortcut fusion) therefore requires ad hoc traversal code
-written from scratch. A shared Br graph API would make these analyses composable,
-remove the duplication, and provide the concrete implementation substrate for most of the
-theoretical applications in this document. It is independent of the TL compilation
-architecture: it is additive, building on the existing Br data structures without
-changing them or the TL → Br compilation path.
-
-### Graph representation
-
-The key step is converting the Br morphism tree into a proper directed graph:
-
-- **Nodes**: `Broadcasted` operators, `Rearrangement` permutations, and `Scan` nodes
-  (with their body subgraph as a nested scope).
-- **Wires**: `Array[Datatype, shape]` typed edges — the colored PROP wires. Wire color
-  is the full Br color including datatype, shape tuple, and any Iverson predicate carried
-  by `Bool`-typed wires (e.g. `i ≤ j` for the causal mask).
-- **Copy nodes**: When a wire fans out to multiple consumers, the comonoid copy morphism
-  Δ appears as an explicit node rather than as implicit sharing in the tree. This makes
-  the sharing structure visible and auditable — the comonoid structure that is currently
-  implicit in the live pool becomes a first-class graph element.
-- **Parameter map**: A map from `nn.Parameter` objects to the `Multilinear` nodes that
-  carry them, making weight sharing visible as a relation over nodes rather than an
-  implicit Python identity check buried in `construct()`.
-
-A minimal API surface:
-
-```python
-class BrGraph:
-    def nodes(self) -> Iterator[BrNode]: ...
-    def predecessors(self, node: BrNode) -> list[tuple[Wire, BrNode]]: ...
-    def successors(self, node: BrNode) -> list[tuple[Wire, BrNode]]: ...
-    def color(self, wire: Wire) -> Array: ...
-    def predicate(self, wire: Wire) -> str | None: ...   # non-None for Bool wires
-    def parameter_groups(self) -> dict[Parameter, list[BrNode]]: ...
-    def subgraph(self, predicate: Callable[[BrNode], bool]) -> BrGraph: ...
-```
-
-Pattern matching and rewriting:
-
-```python
-class BrPattern:
-    def match(self, graph: BrGraph) -> Iterator[BrMatch]: ...
-
-class BrRewrite:
-    lhs: BrPattern
-    rhs: Callable[[BrMatch], BrGraph]
-    equation: str   # the PROP equation this rewrite realises; makes proof obligation explicit
-```
-
-A `BrRewrite` is sound if its `equation` field names a valid PROP equation. Recording
-the equation explicitly separates the mathematical justification from the implementation,
-and makes it possible to audit a rewriting system by checking each rule's name against
-the PROP presentation.
-
-### What the API unlocks immediately
-
-The **shortcut fusion pass** from *Br → PyTorch compiler improvements* becomes a
-`BrRewrite` whose `lhs` matches
-`Composed(ProductOfMorphisms(f_j, id_C), f_k)` and whose `rhs` is `f_{jk}`. Applying
-it greedily over maximal contraction chains is a standard graph rewrite. Currently this
-requires bespoke traversal code; with the graph API it is a one-paragraph implementation
-backed by a named PROP equation.
-
-**Equivariance detection** (from *Algebra Morphisms*) becomes a graph query: walk all
-`Bool`-colored wires, inspect their predicates, and report which group actions each
-predicate is not invariant under. The causal mask wire reports "not invariant under
-sequence permutation"; a wire with no predicate reports invariance under all axis
-permutations. No model execution required.
-
-**Weight-tying verification** becomes a `parameter_groups()` check: nodes declared
-weight-tied must appear in the same group. A mismatch is a static error reportable at
-`construct()` time, before any training begins.
-
-**`StrideCategory` analysis** is the `Bool`-free, `Rearrangement`-only subgraph of any
-Br morphism. `subgraph(lambda n: isinstance(n, Rearrangement))` extracts it. Consecutive
-permutations in this subgraph can be merged using the SMC composition law — a
-`BrRewrite` that is always valid. This is the StrideCategory representation-theory
-application made concrete.
-
-### Connection to each Creative Opportunity
-
-**Generators-and-Relations (Opportunity 1).** Architectural identity checking — do two
-independently written TL programs define the same architecture? — becomes colored graph
-isomorphism over `BrGraph`. PROP equation checking (asserting a relation θ₁ = θ₂ holds)
-becomes: apply the `BrRewrite` for the equation and check whether the result is
-graph-isomorphic to the right-hand side. The rewrite infrastructure is the
-implementation substrate for the generators-and-relations presentation: the architecture
-PROP is the collection of `BrRewrite` rules, and the quotient PROP is the graph normal
-form under those rewrites.
-
-**Diagrammatic Rewriting (Opportunity 2).** The entire content of this opportunity is a
-`BrRewrite` library: each PROP equation becomes a named rewrite rule. The collection of
-rules is a rewriting system over Br graphs. Confluence and termination of the system are
-the formal counterpart of "provably sound compiler optimization" — exactly the
-ZX-calculus analogy cited there. The graph API is the only missing piece; the PROP
-equations themselves are already identified throughout this document.
-
-**Bool Semiring and Interacting Hopf Algebras (Opportunity 3).** Investigating whether
-the Bool semiring operations close under the IH axioms requires: extract the
-`Bool`-colored subgraph via `subgraph(lambda n: n.datatype == Bool)`, identify which
-nodes correspond to IH generators (copy Δ, delete ε, merge ∇, unit η, and their duals),
-and verify whether the IH axioms hold as `BrRewrite` equations over that subgraph. The
-subgraph extraction and predicate inspection of the graph API are a direct prerequisite.
-
-**Free Algebras and Architecture Initialization (Opportunity 4).** The `BrGraph` *is*
-the initial (symbolic) algebra of the architecture PROP — it records structure without
-numerical content, and every concrete algebra factors through it. `construct()` is a
-graph homomorphism from `BrGraph` to the PyTorch computation graph. The graph API makes
-this factorisation inspectable: a `BrGraph` can be compared against a target
-architecture PROP graph to verify structural conformance before any weights are
-instantiated, formally certifying that an initialization scheme respects the
-architecture.
-
-**Model Compression as Approximate Algebra Morphisms (Opportunity 5).** Finding a
-compression morphism φ: F_large → F_small requires a structure-preserving map between
-two `BrGraph` instances — a graph homomorphism respecting wire colors and operator
-types, approximately in the numerical sense. The graph API provides traversal and
-node matching; the approximation tolerance is additional structure layered on top and
-does not require changes to the core API.
 
 ---
 
@@ -717,6 +600,9 @@ The PyTorch compilation pipeline already does this informally (operator fusion, 
 absorption). A formal presentation would make graph rewrites **provably sound** —
 analogous to how the ZX-calculus gives a complete rewriting system for quantum circuits.
 The `Composed` / `ProductOfMorphisms` normal form is already a step in this direction.
+The implementation substrate for this opportunity is the `BrGraph` API and `BrRewrite`
+library described in *A Br Graph API* below: each PROP equation becomes a named rewrite
+rule, and the collection of rules constitutes a rewriting system over Br graphs.
 
 ### 3. The Bool Semiring and Interacting Hopf Algebras
 
@@ -748,6 +634,173 @@ distinguishes morphisms between algebras of the *same* PROP expression (same arc
 from morphisms between algebras of *different* PROP expressions (different architectures).
 Current distillation literature does not use this distinction; the PROP framing suggests a
 typeful hierarchy of compression strategies.
+
+---
+
+## A Br Graph API
+
+The existing Br data structures — `Composed`, `ProductOfMorphisms`, `Broadcasted`,
+`Rearrangement`, `Block` — record the structure of a compiled morphism but provide no
+traversal, pattern-matching, or rewriting API. Every analysis (equivariance detection,
+weight-tying verification, shortcut fusion) therefore requires ad hoc traversal code
+written from scratch. A shared Br graph API would make these analyses composable,
+remove the duplication, and provide the concrete implementation substrate for most of the
+theoretical applications in this document. It is independent of the TL compilation
+architecture: it is additive, building on the existing Br data structures without
+changing them or the TL → Br compilation path.
+
+### Relationship to `UIDHypergraph`
+
+A partial graph representation already exists in `graphs/UIDHypergraph.py`:
+`morphism2hypergraph()` (via `StructuredGraph.from_morphism()`) converts a Br morphism
+into a `StructuredGraph` of `HypergraphRoot` leaf nodes connected by shared
+`HypergraphObject` wire instances. This is used by the tsncd display pipeline. It is
+**not** a suitable foundation for `BrGraph` for two reasons.
+
+First, it does not handle `ThreadedComposed` or `Scan`. These are the actual outputs of
+`TL.to_morphism()` for any non-trivial program, but they hit the `case _:` catch-all
+branch and are wrapped as opaque `HypergraphRoot` leaves. The routing table inside
+`ThreadedComposed` — which is the primary carrier of data-flow connectivity — is
+invisible to the hypergraph representation. Since `BrGraph`'s purpose is data-flow
+analysis, a representation that cannot see the routing table is the wrong starting point.
+
+Second, `StructuredGraph`'s internal data model is optimised for spatial layout rather
+than data-flow analysis. Its `_subgraphs` field is a flat list of `(Location,
+HypergraphRoot)` pairs where `Location` encodes each node's position in the original
+expression tree (e.g., `(Composed, 2), (ProductOfMorphisms, 1)`). Wire connectivity is
+encoded implicitly by Python object identity between `HypergraphObject` instances in
+adjacent `cod` and `dom` tuples — exactly what a diagram renderer needs, but not the
+right representation for predecessor/successor queries, predicate inspection, or
+parameter grouping.
+
+`BrGraph` should instead be built by a new `BrGraph.from_morphism()` traversal that
+covers the same structural cases as `StructuredGraph.from_morphism()` but additionally
+handles `ThreadedComposed` (using its routing table to build explicit directed edges) and
+`Scan` (as a nested scope), and produces a data model where wires are first-class objects
+carrying their `Array[Datatype, shape]` color and optional predicate string. The
+recursive traversal pattern in `UIDHypergraph.py` is a useful reference; the output data
+structure should be designed from scratch for analysis.
+
+### Graph representation
+
+The key step is converting the Br morphism tree into a proper directed graph. The
+morphism tree is the Python object structure produced by `TL.to_morphism()`:
+composition operators (`Composed`, `ProductOfMorphisms`, `Block`) nest their children
+by reference, giving each node exactly one parent and no cross-references — a tree.
+But the computation this tree *represents* is a DAG: `ThreadedComposed` carries a
+routing table that encodes which earlier step's output feeds each later step's input,
+without any Python reference between the steps themselves. `BrGraph` must do both —
+traverse the tree to discover leaf `Broadcasted` nodes, and interpret the routing table
+to build the directed edges between them.
+
+- **Nodes**: `Broadcasted` operators, `Rearrangement` permutations, and `Scan` nodes
+  (with their body subgraph as a nested scope).
+- **Wires**: `Array[Datatype, shape]` typed edges — the colored PROP wires. Wire color
+  is the full Br color including datatype, shape tuple, and any Iverson predicate carried
+  by `Bool`-typed wires (e.g. `i ≤ j` for the causal mask).
+- **Copy nodes**: When a wire fans out to multiple consumers, the comonoid copy morphism
+  Δ appears as an explicit node rather than as implicit sharing in the tree. This makes
+  the sharing structure visible and auditable — the comonoid structure that is currently
+  implicit in the live pool becomes a first-class graph element.
+- **Parameter map**: A map from `nn.Parameter` objects to the `Multilinear` nodes that
+  carry them, making weight sharing visible as a relation over nodes rather than an
+  implicit Python identity check buried in `construct()`.
+
+A minimal API surface:
+
+```python
+class BrGraph:
+    def nodes(self) -> Iterator[BrNode]: ...
+    def predecessors(self, node: BrNode) -> list[tuple[Wire, BrNode]]: ...
+    def successors(self, node: BrNode) -> list[tuple[Wire, BrNode]]: ...
+    def color(self, wire: Wire) -> Array: ...
+    def predicate(self, wire: Wire) -> str | None: ...   # non-None for Bool wires
+    def parameter_groups(self) -> dict[Parameter, list[BrNode]]: ...
+    def subgraph(self, predicate: Callable[[BrNode], bool]) -> BrGraph: ...
+```
+
+Pattern matching and rewriting:
+
+```python
+class BrPattern:
+    def match(self, graph: BrGraph) -> Iterator[BrMatch]: ...
+
+class BrRewrite:
+    lhs: BrPattern
+    rhs: Callable[[BrMatch], BrGraph]
+    equation: str   # the PROP equation this rewrite realises; makes proof obligation explicit
+```
+
+A `BrRewrite` is sound if its `equation` field names a valid PROP equation. Recording
+the equation explicitly separates the mathematical justification from the implementation,
+and makes it possible to audit a rewriting system by checking each rule's name against
+the PROP presentation.
+
+### What the API unlocks immediately
+
+The **shortcut fusion pass** from *Br → PyTorch compiler improvements* becomes a
+`BrRewrite` whose `lhs` matches
+`Composed(ProductOfMorphisms(f_j, id_C), f_k)` and whose `rhs` is `f_{jk}`. Applying
+it greedily over maximal contraction chains is a standard graph rewrite. Currently this
+requires bespoke traversal code; with the graph API it is a one-paragraph implementation
+backed by a named PROP equation.
+
+**Equivariance detection** (from *Algebra Morphisms*) becomes a graph query: walk all
+`Bool`-colored wires, inspect their predicates, and report which group actions each
+predicate is not invariant under. The causal mask wire reports "not invariant under
+sequence permutation"; a wire with no predicate reports invariance under all axis
+permutations. No model execution required.
+
+**Weight-tying verification** becomes a `parameter_groups()` check: nodes declared
+weight-tied must appear in the same group. A mismatch is a static error reportable at
+`construct()` time, before any training begins.
+
+**`StrideCategory` analysis** is the `Bool`-free, `Rearrangement`-only subgraph of any
+Br morphism. `subgraph(lambda n: isinstance(n, Rearrangement))` extracts it. Consecutive
+permutations in this subgraph can be merged using the SMC composition law — a
+`BrRewrite` that is always valid. This is the StrideCategory representation-theory
+application made concrete.
+
+### Connection to the Creative Opportunities above
+
+**Generators-and-Relations (Opportunity 1).** Architectural identity checking — do two
+independently written TL programs define the same architecture? — becomes colored graph
+isomorphism over `BrGraph`. PROP equation checking (asserting a relation θ₁ = θ₂ holds)
+becomes: apply the `BrRewrite` for the equation and check whether the result is
+graph-isomorphic to the right-hand side. The rewrite infrastructure is the
+implementation substrate for the generators-and-relations presentation: the architecture
+PROP is the collection of `BrRewrite` rules, and the quotient PROP is the graph normal
+form under those rewrites.
+
+**Diagrammatic Rewriting (Opportunity 2).** The entire content of this opportunity is a
+`BrRewrite` library: each PROP equation becomes a named rewrite rule. The collection of
+rules is a rewriting system over Br graphs. Confluence and termination of the system are
+the formal counterpart of "provably sound compiler optimization" — exactly the
+ZX-calculus analogy cited there. The graph API is the only missing piece; the PROP
+equations themselves are already identified throughout this document.
+
+**Bool Semiring and Interacting Hopf Algebras (Opportunity 3).** Investigating whether
+the Bool semiring operations close under the IH axioms requires: extract the
+`Bool`-colored subgraph via `subgraph(lambda n: n.datatype == Bool)`, identify which
+nodes correspond to IH generators (copy Δ, delete ε, merge ∇, unit η, and their duals),
+and verify whether the IH axioms hold as `BrRewrite` equations over that subgraph. The
+subgraph extraction and predicate inspection of the graph API are a direct prerequisite.
+
+**Free Algebras and Architecture Initialization (Opportunity 4).** The `BrGraph` *is*
+the initial (symbolic) algebra of the architecture PROP — it records structure without
+numerical content, and every concrete algebra factors through it. `construct()` is a
+graph homomorphism from `BrGraph` to the PyTorch computation graph. The graph API makes
+this factorisation inspectable: a `BrGraph` can be compared against a target
+architecture PROP graph to verify structural conformance before any weights are
+instantiated, formally certifying that an initialization scheme respects the
+architecture.
+
+**Model Compression as Approximate Algebra Morphisms (Opportunity 5).** Finding a
+compression morphism φ: F_large → F_small requires a structure-preserving map between
+two `BrGraph` instances — a graph homomorphism respecting wire colors and operator
+types, approximately in the numerical sense. The graph API provides traversal and
+node matching; the approximation tolerance is additional structure layered on top and
+does not require changes to the core API.
 
 ---
 
@@ -792,8 +845,13 @@ morphisms (monoidal natural transformations); generators-and-relations presentat
 architectures, making properties like equivariance derivable theorems; the Para
 construction as a clean categorical account of training and gradient descent;
 `StrideCategory`'s representation theory as a foundation for geometric deep learning. The
-Bool semiring / Interacting Hopf Algebras connection remains the most mathematically
-surprising open candidate for new theory.
+`BrGraph` API — a typed DAG built from the Br morphism tree by traversing the structural
+nesting and interpreting the `ThreadedComposed` routing table — provides the common
+implementation substrate for most of the creative opportunities: architectural identity
+checking, diagrammatic rewriting, equivariance auditing, and compression morphism search
+all reduce to graph queries or rewrites over `BrGraph`. The Bool semiring / Interacting
+Hopf Algebras connection remains the most mathematically surprising open candidate for
+new theory.
 
 ---
 
