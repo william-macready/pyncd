@@ -215,8 +215,8 @@ def test_ffn_to_morphism():
     tl.Hidden[p, d_ff] = relu(tl.W_in[d_ff, d] * tl.X[p, d])
     tl.Output[p, d] = tl.W_out[d, d_ff] * tl.Hidden[p, d_ff]
     morph = tl.to_program().to_morphism()
-    from data_structure.ProductCategory import Composed
-    assert isinstance(morph, Composed)
+    from data_structure.ProductCategory import ThreadedComposed
+    assert isinstance(morph, ThreadedComposed)
     assert len(morph.content) == 2
 
 def test_norm_axis_preserved_in_equation():
