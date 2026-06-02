@@ -92,6 +92,44 @@ class Scan(fd.Term):
     step_state_deps: tuple[tuple[int, ...], ...] = ()
 
 
+def _live_entries(entries):
+    """Return only entries reachable from the last output, preserving order.
+
+    Unreachable entries — those whose lhs_name is never referenced by any
+    downstream input_names — are silently dropped.  Entries with lhs_name=None
+    (side-effect nodes) are always kept.
+    """
+    if not entries:
+        return entries
+
+    # Map each produced name to the index of the entry that produces it.
+    name_to_idx = {}
+    for i, (lhs, _, _, _) in enumerate(entries):
+        if lhs is not None:
+            name_to_idx[lhs] = i
+
+    # BFS backward from the final entry.
+    reachable = set()
+    queue = [len(entries) - 1]
+    while queue:
+        idx = queue.pop()
+        if idx in reachable:
+            continue
+        reachable.add(idx)
+        _, _, _, input_names = entries[idx]
+        for name in input_names:
+            if name is not None and name in name_to_idx:
+                queue.append(name_to_idx[name])
+
+    # Entries with lhs_name=None are always live.
+    for i, (lhs, _, _, _) in enumerate(entries):
+        if lhs is None:
+            reachable.add(i)
+
+    # Return in original declaration order.
+    return [e for i, e in enumerate(entries) if i in reachable]
+
+
 # ---------------------------------------------------------------------------
 # TL registry
 # ---------------------------------------------------------------------------
@@ -804,11 +842,12 @@ class TL:
             if len(morphisms) == 1:
                 return morphisms[0]
             return pc.Composed(content=morphisms)
-        internal_names = {lhs for lhs, _, _, _ in self._entries if lhs is not None}
+        entries = _live_entries(self._entries)
+        internal_names = {lhs for lhs, _, _, _ in entries if lhs is not None}
         # Collect external tensor names in order of first appearance.
         external_order: list[fd.DynamicName] = []
         external_name_set: set[fd.DynamicName] = set()
-        for _, _, _, input_names in self._entries:
+        for _, _, _, input_names in entries:
             for name in input_names:
                 if name is not None and name not in internal_names and name not in external_name_set:
                     external_order.append(name)
@@ -817,7 +856,7 @@ class TL:
         ext_idx = {name: i for i, name in enumerate(external_order)}
         produced_idx: dict[fd.DynamicName, int] = {}
         routing: list[tuple[int, ...]] = []
-        for lhs_name, _, _, input_names in self._entries:
+        for lhs_name, _, _, input_names in entries:
             route: list[int] = []
             for name in input_names:
                 if name is None:
@@ -829,7 +868,7 @@ class TL:
             routing.append(tuple(route))
             if lhs_name is not None:
                 produced_idx[lhs_name] = len(produced_idx)
-        morphisms = tuple(_compiled(morph) for _, morph, _, _ in self._entries)
+        morphisms = tuple(_compiled(morph) for _, morph, _, _ in entries)
         return pc.ThreadedComposed(
             content=morphisms,
             routing=tuple(routing),

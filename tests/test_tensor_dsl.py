@@ -502,3 +502,35 @@ def test_iverson_axes_extracted_correctly():
     assert len(leaf_axes) == 2
     assert leaf_axes[0].uid == q.uid
     assert leaf_axes[1].uid == x.uid
+
+
+def test_dead_equation_excluded_from_routing():
+    """An equation whose output is never consumed must not appear in the
+    compiled morphism.  ThreadedComposed.content length is the signal."""
+    from data_structure.ProductCategory import ThreadedComposed
+    q = real_axis('q', 3)
+    m = real_axis('m', 4)
+    k = real_axis('k', 4)
+    tl = TL()
+    # Dead: Unused is defined but never referenced downstream.
+    tl.Unused[q, m] = tl.W_dead[m, k] * tl.X_dead[q, k]
+    # Live: the actual output.
+    tl.Out[q, m] = tl.W[m, k] * tl.X[q, k]
+    morph = tl.to_morphism()
+    assert isinstance(morph, ThreadedComposed)
+    # Only one step in the chain — the dead equation must be gone.
+    assert len(morph.content) == 1
+
+
+def test_live_equation_retained():
+    """An equation whose output feeds downstream must survive DCE."""
+    from data_structure.ProductCategory import ThreadedComposed
+    q = real_axis('q', 3)
+    m = real_axis('m', 4)
+    k = real_axis('k', 4)
+    tl = TL()
+    tl.Hidden[q, k] = relu(tl.W1[m, k] * tl.X[q, m])
+    tl.Out[q, m]    = tl.W2[m, k] * tl.Hidden[q, k]
+    morph = tl.to_morphism()
+    assert isinstance(morph, ThreadedComposed)
+    assert len(morph.content) == 2
