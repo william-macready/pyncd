@@ -154,6 +154,52 @@ def _external_names_from_value(value, exclude):
     return tuple(result)
 
 
+def _drop_norm_invariant_terms(value, norm_uid):
+    """Drop additive terms that are constant along the normalization axis.
+
+    Applies the identity softmax(f + c) = softmax(f) when c's factors have
+    no index with UID matching norm_uid.
+
+    'value' is an RHSExpression or SumExpr.
+    'norm_uid' is the UID of the NormAxis from the equation's LHS.
+
+    Returns the value unchanged if it has only one term or if all terms
+    depend on the norm axis.  Returns a single RHSExpression (not a SumExpr)
+    if all but one term are dropped.
+    """
+    if not isinstance(value, SumExpr):
+        return value
+
+    kept = []
+    for term in value.terms:
+        # Check whether any IndexedTensor factor in this term is indexed by
+        # the norm axis (i.e., has norm_uid among its index UIDs).
+        depends_on_norm = any(
+            isinstance(f, IndexedTensor) and any(ax.uid == norm_uid for ax in f.indices)
+            for f in term.factors
+        )
+        if depends_on_norm:
+            kept.append(term)
+
+    # Nothing to drop — return original unchanged.
+    if len(kept) == len(value.terms):
+        return value
+
+    # All terms dropped (shouldn't happen in practice) — return original.
+    if len(kept) == 0:
+        return value
+
+    # Exactly one term remains — return it as a plain RHSExpression, but
+    # preserve any nonlinearity operator from the SumExpr wrapper.
+    if len(kept) == 1:
+        term = kept[0]
+        if value.operator is not None:
+            return RHSExpression(term.factors, value.operator)
+        return term
+
+    return SumExpr(kept, value.operator)
+
+
 # ---------------------------------------------------------------------------
 # TL registry
 # ---------------------------------------------------------------------------
@@ -340,6 +386,16 @@ class TL:
             for decl_ax, lhs_ax in zip(decl.shape, lhs_indices):
                 if type(decl_ax) is type(lhs_ax):
                     self._ctx.append_iter((decl_ax, lhs_ax))
+
+        # Pre-pass: drop additive terms constant along the normalisation axis.
+        # softmax(f + c) = softmax(f) when c has no factor indexed by NormAxis.
+        norm_uid = None
+        for ax in lhs_indices:
+            if isinstance(ax, NormAxis):
+                norm_uid = ax.uid
+                break
+        if norm_uid is not None:
+            value = _drop_norm_invariant_terms(value, norm_uid)
 
         if isinstance(value, RHSExpression):
             morph, out_axes, input_names = self._build_rhs_morphism(lhs_name, lhs_indices, value)
@@ -925,7 +981,13 @@ class TL:
         from data_structure.TensorLogic import TensorEquation, _split_nonlinearity
         if not (isinstance(morph, bc.Broadcasted) and isinstance(morph.operator, TensorEquation)):
             return morph  # SumExpr Composed — terms already split by _build_sum_morphism
-        return _split_nonlinearity(morph.operator, datatype=datatype,
+        eq = morph.operator
+        # NormAxis equations cannot be composed with a generic RawAxis-typed template
+        # (the @-composition unification would crash because NormAxis != RawAxis).
+        # Return the raw Broadcasted directly; the nonlinearity is embedded in the operator.
+        if any(isinstance(ax, NormAxis) for ax in eq.lhs_indices):
+            return morph
+        return _split_nonlinearity(eq, datatype=datatype,
                                    array_datatypes=self._array_datatypes())
 
 

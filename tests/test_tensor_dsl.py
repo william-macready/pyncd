@@ -555,3 +555,50 @@ def test_external_names_from_value_excludes_state():
     assert h_proxy not in names
     # W should be first (expression order)
     assert names[0] == fd.DynamicName('W')
+
+
+# ---------------------------------------------------------------------------
+# Markov shift-invariance: softmax normalization simplification
+# ---------------------------------------------------------------------------
+
+def test_normalization_simplification_drops_constant_bias():
+    """A bias that does not depend on the norm axis must be dropped before
+    bc_signature() is called.
+
+    tl.Comp[h, q, x] = softmax(tl.Q[q,h,k] * tl.K[x,h,k] + tl.bias[h])
+
+    tl.bias[h] has free indices {h}; the norm axis is x (a NormAxis).
+    Since x is not in {h}, the bias term is constant along x and must be
+    removed.  The resulting Broadcasted must have 2 input weaves (Q, K),
+    not 3 (Q, K, bias).
+    """
+    q, h, k = axes('q h k')
+    x = norm_axis('x')
+    tl = TL()
+    tl.Comp[h, q, x] = softmax(tl.Q[q, h, k] * tl.K[x, h, k] + tl.bias[h])
+    sig = tl.bc_signature()
+    assert len(sig.input_weaves) == 2, (
+        f"Expected 2 input weaves (Q, K); got {len(sig.input_weaves)}"
+    )
+
+
+def test_normalization_simplification_keeps_axis_dependent_term():
+    """A term that depends on the norm axis must NOT be dropped.
+
+    The pre-existing NormAxis != RawAxis bug in _build_sum_morphism means that a
+    2-term SumExpr equation containing a NormAxis raises ValueError at assignment
+    time.  We use that as a canary: if scale[x] is correctly kept (2 terms remain),
+    the assignment crashes with the known ValueError; if scale[x] is incorrectly
+    dropped (1 term remains), the assignment succeeds with no exception, which
+    fails the pytest.raises assertion.
+
+    Once the NormAxis bug is fixed (a separate task), this test should be updated
+    to call bc_signature() directly and assert 3 input weaves (Q, K, scale).
+    """
+    q, h, k = axes('q h k')
+    x = norm_axis('x')
+    tl = TL()
+    # tl.scale[x] depends on x (norm axis) → must be kept → 2-term SumExpr
+    # → _build_sum_morphism crashes with known NormAxis bug
+    with pytest.raises(ValueError, match="Elements are not all equal"):
+        tl.Comp[h, q, x] = softmax(tl.Q[q, h, k] * tl.K[x, h, k] + tl.scale[x])
