@@ -635,3 +635,68 @@ def test_threaded_residual():
     result = mod(W1, H, W2)
     out = result[0] if isinstance(result, tuple) else result
     assert out.shape == (3, 8)
+
+
+def test_uncoupled_scan_returns_threaded_composed():
+    """An uncoupled recurrence must produce ThreadedComposed, not Composed."""
+    from data_structure.ProductCategory import ThreadedComposed, Composed
+    i = real_axis('i', 3)
+    l = real_axis('l', 4)
+    tl = TL()
+    tl.H[i, 0]     = tl.X[i]
+    tl.H[i, l + 1] = tl.H[i, l] + tl.Delta[i, l]
+    morph = tl.to_morphism()
+    assert isinstance(morph, ThreadedComposed), (
+        f"Expected ThreadedComposed, got {type(morph).__name__}"
+    )
+
+
+def test_uncoupled_scan_in_threaded_matches_composed_numerics():
+    """Numerical output of ThreadedComposed path must match reference loop.
+
+    H[i, 0] = X[i]
+    H[i, l+1] = H[i, l] + Delta[i, l]
+    """
+    i = real_axis('i', 3)
+    l = real_axis('l', 4)
+    tl = TL()
+    tl.H[i, 0]     = tl.X[i]
+    tl.H[i, l + 1] = tl.H[i, l] + tl.Delta[i, l]
+    mod = ConstructedModule.construct(tl.to_morphism())
+
+    X     = torch.tensor([1.0, 2.0, 3.0])
+    Delta = torch.zeros(3, 4)
+    Delta[0, :] = 1.0
+
+    result = mod(X, Delta)
+    H_out = result[0] if isinstance(result, tuple) else result
+
+    # Reference: H[i, 0]=X[i], H[i, l+1]=H[i,l]+Delta[i,l]
+    H = X.clone()
+    H_hist = [H.clone()]
+    for step in range(4):
+        H = H + Delta[:, step]
+        H_hist.append(H.clone())
+    expected = torch.stack(H_hist, dim=-1)  # shape (3, 5)
+
+    assert torch.allclose(H_out, expected), (
+        f"Mismatch:\n{H_out}\nvs\n{expected}"
+    )
+
+
+def test_uncoupled_scan_mixed_with_non_scan_equations():
+    """A plain equation feeding an uncoupled Scan must compile to ThreadedComposed."""
+    from data_structure.ProductCategory import ThreadedComposed
+    q = real_axis('q', 2)
+    m = real_axis('m', 3)
+    l = real_axis('l', 3)
+    tl = TL()
+    # Plain equation first
+    tl.E[q, m] = tl.W_emb[m, q] * tl.Tok[q]
+    # Recurrence over E's output
+    tl.H[q, m, 0]     = tl.E[q, m]
+    tl.H[q, m, l + 1] = tl.H[q, m, l] + tl.Step[q, m, l]
+    morph = tl.to_morphism()
+    assert isinstance(morph, ThreadedComposed), (
+        f"Expected ThreadedComposed, got {type(morph).__name__}"
+    )

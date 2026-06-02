@@ -802,6 +802,7 @@ class TL:
                 step_morph = entry['recur_morphism']
                 step_out = base_out
                 affine = None
+                _input_names: tuple = ()
             else:
                 step_out, recur_value = entry['recur']
                 # Check 4.4: no l+1 on RHS.
@@ -814,6 +815,13 @@ class TL:
                 )
                 step_morph = self._build_step_morph(None, step_out, step_value, step_ctx)
                 affine = self._recognize_affine(recur_value, name_str, step_out, l)
+                # Collect external input names for the live-pool routing table.
+                # Exclude both the original state name and its proxy (both are
+                # internal to the Scan loop).
+                _exclude = {state_proxy_dn, state_name_dn}
+                _base_external = _external_names_from_value(base_value, _exclude)
+                _step_external = _external_names_from_value(step_value, _exclude)
+                _input_names = _base_external + _step_external
 
             base_morph = self._build_step_morph(None, base_out, base_value, self._ctx)
 
@@ -827,7 +835,7 @@ class TL:
                 axis=l,
                 affine=affine,
             )
-            self._entries.append((lhs_name, scan, step_out + (l,), ()))
+            self._entries.append((lhs_name, scan, step_out + (l,), _input_names))
 
     def _require_non_iterative(self, method: str) -> None:
         if self._pending_iter:
@@ -859,9 +867,13 @@ class TL:
         self._finalize_iter()
         if not self._entries:
             raise ValueError("no equations registered")
-        # Scan/iteration entries have input_names=(). The threading model cannot
-        # track their external inputs — fall back to sequential Composed.
-        if any(not input_names for _, _, _, input_names in self._entries):
+        # Coupled Scans (n_states > 1) still produce input_names=() until Phase 4.
+        # Uncoupled Scans now have proper input_names and go through ThreadedComposed.
+        _has_unresolved_scan = any(
+            not input_names and isinstance(morph, Scan)
+            for _, morph, _, input_names in self._entries
+        )
+        if _has_unresolved_scan:
             morphisms = tuple(_compiled(morph) for _, morph, _, _ in self._entries)
             if len(morphisms) == 1:
                 return morphisms[0]
