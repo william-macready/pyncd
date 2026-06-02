@@ -534,3 +534,24 @@ def test_live_equation_retained():
     morph = tl.to_morphism()
     assert isinstance(morph, ThreadedComposed)
     assert len(morph.content) == 2
+
+
+# ---------------------------------------------------------------------------
+# _external_names_from_value
+# ---------------------------------------------------------------------------
+
+def test_external_names_from_value_excludes_state():
+    """_external_names_from_value must skip excluded (state proxy) names and
+    return external tensor names in expression order."""
+    from data_structure.TensorDSL import _external_names_from_value
+    import data_structure.Term as fd
+    i, k = axes('i k')
+    tl = TL()
+    # Build an expression: W[i,k] * H_state[i,k]
+    expr = tl.W[i, k] * tl.H_state[i, k]   # RHSExpression with two factors
+    h_proxy = fd.DynamicName('H_state')
+    names = _external_names_from_value(expr, exclude={h_proxy})
+    assert fd.DynamicName('W') in names
+    assert h_proxy not in names
+    # W should be first (expression order)
+    assert names[0] == fd.DynamicName('W')

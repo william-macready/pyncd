@@ -130,6 +130,30 @@ def _live_entries(entries):
     return [e for i, e in enumerate(entries) if i in reachable]
 
 
+def _external_names_from_value(value, exclude):
+    """Return unique tensor names from a stripped RHS value, skipping excluded names.
+
+    'value' is the output of _strip_iter_axis_from_value: an RHSExpression or
+    SumExpr where state-proxy factors come first (canonical order) followed by
+    external-tensor factors.  We collect the external names in order of first
+    appearance, skipping any name in 'exclude'.
+
+    'exclude' is a set of DynamicName objects (state tensor names and their proxies).
+    """
+    seen = set()
+    result = []
+    if hasattr(value, 'terms'):          # SumExpr: flatten all terms
+        factors = [f for term in value.terms for f in term.factors]
+    else:                                 # RHSExpression
+        factors = value.factors
+    for f in factors:
+        if hasattr(f, 'name') and hasattr(f, 'indices'):   # IndexedTensor
+            if f.name not in exclude and f.name not in seen:
+                seen.add(f.name)
+                result.append(f.name)
+    return tuple(result)
+
+
 # ---------------------------------------------------------------------------
 # TL registry
 # ---------------------------------------------------------------------------
