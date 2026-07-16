@@ -7,6 +7,9 @@
 -- PredArith slice (self-recursion + composition): subsumes `specsPred`/`predAxisUIDs`; the
 -- remap direction is blocked by an unrelated production-code limitation (see the theorem's
 -- own comment below) — see docs/superpowers/specs/2026-07-15-e1-traverseaxes-predarith-design.md.
+-- BoolExpr slice (confirmation, one more delegation layer): subsumes `specsBool`/`boolAxisUIDs`;
+-- remap blocked by the same production-code limitation as PredArith's — see
+-- docs/superpowers/specs/2026-07-15-e1-traverseaxes-boolexpr-design.md.
 import LeanNCD.DSL.Traverse
 import LeanNCD.Eval.Contract
 import Mathlib.Control.Traversable.Instances
