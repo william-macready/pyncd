@@ -834,6 +834,21 @@ makes `TermTraversable` (`Exec/Traversable.lean`) its `Id` special case.
 > `Factor`; `Factor`/`LHSSlot`/`Stmt`/`Decl`/`TLProgram` remain open — see
 > `docs/superpowers/specs/2026-07-15-e1-traverseaxes-boolexpr-design.md` for the full go/no-go criteria.
 
+> **Prototype result (Factor slice, 2026-07-16):** extended `test/DSL/TraverseAxesSpike.lean` to
+> `Factor.traverseAxes` — the first node carrying tensor names (`String`, untouched passthrough)
+> and a `List IdxExpr` traversed via nested sub-traversal (`Traversable.traverse (IdxExpr.traverseAxes
+> g)`) rather than a bare per-element projection. Both collecting-direction theorems
+> (`traverseAxes_const_eq_specsFactor` and `traverseAxes_const_eq_factorAxisUIDs`) closed cleanly
+> with sound proofs — the new list-of-sub-traversal induction lemma worked via ordinary list
+> induction, no friction beyond the expected shape. The remap theorem split per case: `.read` and
+> `.unaryFn` both closed (the hoped-for outcome, confirming `Factor.mapUID`'s non-`partial`,
+> non-self-recursive shape avoids the blocking wall), while `.iverson` was confirmed blocked during
+> design (not attempted) — it needs `BoolExpr`'s own already-blocked remap, the same `partial def`/
+> zero-equation-lemmas wall propagating through composition. This is now a stronger "Go" signal
+> than any prior slice — 4 of 4 possible theorems closed. Full `lake build` succeeded, 8,609 jobs,
+> no `sorry`/`native_decide`. See `docs/superpowers/specs/2026-07-16-e1-traverseaxes-factor-design.md`
+> for the full go/no-go criteria.
+
 ### E2. A typed core IR the pipeline narrows into ("trees that grow")
 
 The scan-projection bug hunt surfaced a class of hazard Part I only documents, never removes:
