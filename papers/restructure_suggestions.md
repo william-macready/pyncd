@@ -814,7 +814,9 @@ makes `TermTraversable` (`Exec/Traversable.lean`) its `Id` special case.
 
 > **Prototype result (BoolExpr slice, 2026-07-15):** extended `test/DSL/TraverseAxesSpike.lean` to
 > `BoolExpr.traverseAxes` — no new risk pattern versus the `PredArith` slice, a scaling/confirmation
-> check (more constructors, one more composition layer). Both collecting-direction theorems
+> check (more constructors, one more composition layer). `BoolExpr.traverseAxes` compiled as
+> ordinary structural recursion, no `partial` needed (matching `PredArith.traverseAxes`). Both
+> collecting-direction theorems
 > (`traverseAxes_const_eq_specsBool` and `traverseAxes_const_eq_boolAxisUIDs`) closed cleanly on
 > the first build with the brief's proof scripts, independently verified axiom-clean, confirming
 > the pattern generalizes across the full non-mutual layered stack (IdxExpr → PredArith → BoolExpr).
