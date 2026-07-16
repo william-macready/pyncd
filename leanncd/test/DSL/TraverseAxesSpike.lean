@@ -282,4 +282,150 @@ theorem traverseAxes_id_eq_boolMapUID (f : UData → UData) (e : BoolExpr) :
   | ieq a b => simp [BoolExpr.traverseAxes, BoolExpr.mapUID]
 -/
 
+/-- Local copy of `Structural.lean`'s private `specsFactor`, for comparison only — NOT the
+    source of truth. Keep byte-identical to `Structural.lean:41-43` by inspection. -/
+private def specsFactor' : Factor → List AxisSpec
+  | .read _ es => es.flatMap specsIdx' | .iverson b => specsBool' b
+  | .unaryFn _ _ es => es.flatMap specsIdx'
+
+/-- Local extraction of the inline per-`Factor` match inside `termAxisUIDs`
+    (`Eval/Contract.lean:34-38`), for comparison only. NOT a copy of an existing standalone
+    function — no `factorAxisUIDs` exists in production; `termAxisUIDs` matches `Factor`
+    inline inside a `ProdTerm`-level `flatMap`. Keep this arm-for-arm identical to that inline
+    match by inspection. -/
+private def factorAxisUIDs' : Factor → List UID
+  | .read _ es => es.flatMap idxAxisUIDs | .iverson b => boolAxisUIDs b
+  | .unaryFn _ _ es => es.flatMap idxAxisUIDs
+
+/-- Extends the E1 prototype to `Factor`: the first node carrying tensor names (`String`,
+    passed through untouched) and a `List IdxExpr` traversed via a nested sub-traversal
+    (`Traversable.traverse (IdxExpr.traverseAxes g)`), rather than a bare per-element
+    projection. -/
+def Factor.traverseAxes [Applicative f] (g : AxisSpec → f AxisSpec) : Factor → f Factor
+  | .read nm es       => Factor.read nm <$> Traversable.traverse (IdxExpr.traverseAxes g) es
+  | .iverson b        => Factor.iverson <$> BoolExpr.traverseAxes g b
+  | .unaryFn op nm es => Factor.unaryFn op nm <$> Traversable.traverse (IdxExpr.traverseAxes g) es
+
+/-- Collect `AxisSpec`s: instantiating at `ConstL (List AxisSpec)` with `g := fun a => ⟨[a]⟩`
+    should reproduce `specsFactor'` (the local copy of `Structural.lean`'s private
+    `specsFactor`). -/
+theorem traverseAxes_const_eq_specsFactor (e : Factor) :
+    (Factor.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) e).run = specsFactor' e := by
+  cases e with
+  | read nm es =>
+      show (Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) es).run
+        = es.flatMap specsIdx'
+      have core : ∀ ys : List IdxExpr,
+          (Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) ys).run
+            = ys.flatMap specsIdx' := by
+        intro ys
+        induction ys with
+        | nil => rfl
+        | cons hd tl ih =>
+            show (IdxExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) hd).run ++
+                (Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) tl).run
+              = specsIdx' hd ++ tl.flatMap specsIdx'
+            rw [traverseAxes_const_eq_specsIdx hd, ih]
+      exact core es
+  | iverson b =>
+      show (BoolExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) b).run = specsBool' b
+      exact traverseAxes_const_eq_specsBool b
+  | unaryFn op nm es =>
+      show (Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) es).run
+        = es.flatMap specsIdx'
+      have core : ∀ ys : List IdxExpr,
+          (Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) ys).run
+            = ys.flatMap specsIdx' := by
+        intro ys
+        induction ys with
+        | nil => rfl
+        | cons hd tl ih =>
+            show (IdxExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) hd).run ++
+                (Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) tl).run
+              = specsIdx' hd ++ tl.flatMap specsIdx'
+            rw [traverseAxes_const_eq_specsIdx hd, ih]
+      exact core es
+
+/-- Collect UIDs: instantiating at `ConstL (List UID)` with `g := fun a => ⟨[a.uid]⟩` should
+    reproduce `factorAxisUIDs'` (the local extraction of `termAxisUIDs`'s inline `Factor`
+    match). -/
+theorem traverseAxes_const_eq_factorAxisUIDs (e : Factor) :
+    (Factor.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) e).run = factorAxisUIDs' e := by
+  cases e with
+  | read nm es =>
+      show (Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) es).run
+        = es.flatMap idxAxisUIDs
+      have core : ∀ ys : List IdxExpr,
+          (Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) ys).run
+            = ys.flatMap idxAxisUIDs := by
+        intro ys
+        induction ys with
+        | nil => rfl
+        | cons hd tl ih =>
+            show (IdxExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) hd).run ++
+                (Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) tl).run
+              = idxAxisUIDs hd ++ tl.flatMap idxAxisUIDs
+            rw [traverseAxes_const_eq_idxAxisUIDs hd, ih]
+      exact core es
+  | iverson b =>
+      show (BoolExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) b).run = boolAxisUIDs b
+      exact traverseAxes_const_eq_boolAxisUIDs b
+  | unaryFn op nm es =>
+      show (Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) es).run
+        = es.flatMap idxAxisUIDs
+      have core : ∀ ys : List IdxExpr,
+          (Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) ys).run
+            = ys.flatMap idxAxisUIDs := by
+        intro ys
+        induction ys with
+        | nil => rfl
+        | cons hd tl ih =>
+            show (IdxExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) hd).run ++
+                (Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) tl).run
+              = idxAxisUIDs hd ++ tl.flatMap idxAxisUIDs
+            rw [traverseAxes_const_eq_idxAxisUIDs hd, ih]
+      exact core es
+
+/-- Remap for `.read`: instantiating `traverseAxes` at `Id` with `g := AxisSpec.mapUID f`
+    should reproduce `Factor.mapUID`'s `.read` case. Full attempt — `Factor.mapUID`'s `.read`
+    case only calls `IdxExpr.mapUID` (non-`partial`, no self-recursion), so the wall that
+    blocked `PredArith`/`BoolExpr`'s remap theorems does not apply here. -/
+theorem traverseAxes_id_eq_factorMapUID_read (f : UData → UData) (nm : String) (es : List IdxExpr) :
+    Factor.traverseAxes (f := Id) (AxisSpec.mapUID f) (Factor.read nm es)
+      = Factor.mapUID f (Factor.read nm es) := by
+  show Factor.read nm (Traversable.traverse (IdxExpr.traverseAxes (f := Id) (AxisSpec.mapUID f)) es)
+    = Factor.read nm (es.map (IdxExpr.mapUID f))
+  have hEq : (IdxExpr.traverseAxes (f := Id) (AxisSpec.mapUID f) : IdxExpr → Id IdxExpr)
+      = pure ∘ IdxExpr.mapUID f := by
+    funext x
+    exact traverseAxes_id_eq_mapUID f x
+  simp only [Traversable.traverse, hEq, List.traverse_eq_map_id]
+  rfl
+
+/-- Remap for `.unaryFn`: same shape as `.read` above, one extra untouched argument (`op`). -/
+theorem traverseAxes_id_eq_factorMapUID_unaryFn (f : UData → UData) (op : UnaryOp) (nm : String) (es : List IdxExpr) :
+    Factor.traverseAxes (f := Id) (AxisSpec.mapUID f) (Factor.unaryFn op nm es)
+      = Factor.mapUID f (Factor.unaryFn op nm es) := by
+  show Factor.unaryFn op nm (Traversable.traverse (IdxExpr.traverseAxes (f := Id) (AxisSpec.mapUID f)) es)
+    = Factor.unaryFn op nm (es.map (IdxExpr.mapUID f))
+  have hEq : (IdxExpr.traverseAxes (f := Id) (AxisSpec.mapUID f) : IdxExpr → Id IdxExpr)
+      = pure ∘ IdxExpr.mapUID f := by
+    funext x
+    exact traverseAxes_id_eq_mapUID f x
+  simp only [Traversable.traverse, hEq, List.traverse_eq_map_id]
+  rfl
+
+/- Remap for `.iverson` — NOT ATTEMPTED, confirmed blocked during design (not implementation):
+    `Factor.traverseAxes (f := Id) (AxisSpec.mapUID f) (Factor.iverson b) = Factor.mapUID f
+    (Factor.iverson b)` reduces to `BoolExpr.traverseAxes (f := Id) (AxisSpec.mapUID f) b =
+    BoolExpr.mapUID f b` for arbitrary `b` — exactly the `BoolExpr` slice's own remap theorem,
+    already found blocked there (`partial def`, zero equation lemmas; re-confirmed directly via
+    `example (f) (op) (a b) : BoolExpr.mapUID f (BoolExpr.rel op a b) = BoolExpr.rel op
+    (PredArith.mapUID f a) (PredArith.mapUID f b) := by rfl` failing). `Factor.mapUID` itself
+    being non-`partial` does not help: its `.iverson` case's *top-level* equation unfolds fine
+    (`Factor.mapUID f (Factor.iverson b) = Factor.iverson (BoolExpr.mapUID f b)` closes by
+    `rfl`), but that just restates the goal in terms of the still-blocked `BoolExpr.mapUID`. Same
+    limitation, same fix if ever needed (drop `partial` from `BoolExpr.mapUID`), out of scope
+    for this spike. See docs/superpowers/specs/2026-07-16-e1-traverseaxes-factor-design.md. -/
+
 end LeanNCD
