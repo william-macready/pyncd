@@ -594,4 +594,82 @@ theorem traverseAxes_id_eq_sumExprMapUID_of_terms (f : UData → UData) (s : Sum
         rfl
   rw [core s.terms h]
 
+-- ===== Nonlin =====
+
+/-- Extends the E1 prototype to `Nonlin`: the first traversal in this series over an `Option`
+    payload rather than a `List`. All 9 constructors matched exhaustively — no wildcard — which
+    is the whole point: production's `specsNonlin` (`Structural.lean:37-39`) uses a wildcard
+    fallback documented as a hazard (it already silently swallowed `l2normalize`'s mask once);
+    this traversal cannot make that mistake, since Lean's totality check forces every
+    constructor to be handled. -/
+def Nonlin.traverseAxes [Applicative f] (g : AxisSpec → f AxisSpec) : Nonlin → f Nonlin
+  | .identity      => pure .identity
+  | .relu          => pure .relu
+  | .sigmoid       => pure .sigmoid
+  | .tanh          => pure .tanh
+  | .gelu          => pure .gelu
+  | .leakyrelu     => pure .leakyrelu
+  | .softmax m     => Nonlin.softmax <$> Traversable.traverse (BoolExpr.traverseAxes g) m
+  | .normalize m   => Nonlin.normalize <$> Traversable.traverse (BoolExpr.traverseAxes g) m
+  | .l2normalize m => Nonlin.l2normalize <$> Traversable.traverse (BoolExpr.traverseAxes g) m
+
+/-- Local copy of `Structural.lean`'s private `specsNonlin`, for comparison only — NOT the
+    source of truth. Keep byte-identical to `Structural.lean:37-39` by inspection, wildcard
+    included — this copy intentionally mirrors production's CURRENT (hazard-prone) shape; the
+    traversal above is what's exhaustive, not this comparison target. -/
+private def specsNonlin' : Nonlin → List AxisSpec
+  | .softmax (some m) => specsBool' m | .normalize (some m) => specsBool' m
+  | .l2normalize (some m) => specsBool' m | _ => []
+
+/-- Collect `AxisSpec`s: instantiating at `ConstL (List AxisSpec)` with `g := fun a => ⟨[a]⟩`
+    should reproduce `specsNonlin'`. NO UID-collecting theorem exists for `Nonlin` — no
+    production UID-collecting path ever touches the nonlin mask (see `RHSExpr`'s `NoMask`
+    traversal in Task 2), so there is nothing to compare a UID-collecting theorem against. -/
+theorem traverseAxes_const_eq_specsNonlin (n : Nonlin) :
+    (Nonlin.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) n).run = specsNonlin' n := by
+  cases n with
+  | identity => rfl
+  | relu => rfl
+  | sigmoid => rfl
+  | tanh => rfl
+  | gelu => rfl
+  | leakyrelu => rfl
+  | softmax m =>
+      cases m with
+      | none => rfl
+      | some b =>
+          show (BoolExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) b).run = specsBool' b
+          exact traverseAxes_const_eq_specsBool b
+  | normalize m =>
+      cases m with
+      | none => rfl
+      | some b =>
+          show (BoolExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) b).run = specsBool' b
+          exact traverseAxes_const_eq_specsBool b
+  | l2normalize m =>
+      cases m with
+      | none => rfl
+      | some b =>
+          show (BoolExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) b).run = specsBool' b
+          exact traverseAxes_const_eq_specsBool b
+
+/-- Remap demonstration, unmasked case: no hypothesis needed at all — closes by plain `rfl`.
+    The other 5 unmasked constructors (`relu`/`sigmoid`/`tanh`/`gelu`/`leakyrelu`) are
+    structurally identical and not separately proved; they add no new information. -/
+example (f : UData → UData) :
+    Nonlin.traverseAxes (f := Id) (AxisSpec.mapUID f) Nonlin.identity = Nonlin.mapUID f Nonlin.identity := by
+  rfl
+
+/-- Remap demonstration, masked case: CONDITIONAL on the mask's own `BoolExpr` satisfying its
+    remap equality (which is blocked in general — `BoolExpr.mapUID` is `partial def` with
+    self-recursion — but satisfiable for specific `b`, demonstrated here). This is the
+    `Nonlin`-level hypothesis `RHSExpr`'s own conditional remap theorem (Task 2) will require. -/
+theorem traverseAxes_id_eq_nonlinMapUID_of_mask (f : UData → UData) (b : BoolExpr)
+    (hb : BoolExpr.traverseAxes (f := Id) (AxisSpec.mapUID f) b = BoolExpr.mapUID f b) :
+    Nonlin.traverseAxes (f := Id) (AxisSpec.mapUID f) (Nonlin.softmax (some b)) = Nonlin.mapUID f (Nonlin.softmax (some b)) := by
+  show Nonlin.softmax (Traversable.traverse (BoolExpr.traverseAxes (f := Id) (AxisSpec.mapUID f)) (some b))
+    = Nonlin.softmax (some (BoolExpr.mapUID f b))
+  simp only [Traversable.traverse, Option.traverse, Option.mapA_eq_mapM, Option.mapM_some, hb]
+  rfl
+
 end LeanNCD
