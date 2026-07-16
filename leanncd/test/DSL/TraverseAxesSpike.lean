@@ -512,4 +512,78 @@ theorem traverseAxes_id_eq_prodTermMapUID_of_factors (f : UData → UData) (p : 
         rfl
   rw [core p.factors h]
 
+/-- Local copy delegating to `specsProdTerm'` (the `ProdTerm` slice's own local copy), not
+    re-derived through `specsFactor'` directly — mirrors `specsRHS`'s inline
+    `r.body.terms.flatMap (fun t => t.factors.flatMap specsFactor)` fragment
+    (`Structural.lean:45-46`) one layer at a time. -/
+private def specsSumExpr' (s : SumExpr) : List AxisSpec := s.terms.flatMap specsProdTerm'
+
+/-- Extends the E1 prototype to `SumExpr`: structurally identical to `ProdTerm` one layer up —
+    a single field, one line of composition, no `cases`/`induction` on `SumExpr` needed. -/
+def SumExpr.traverseAxes [Applicative f] (g : AxisSpec → f AxisSpec) (s : SumExpr) : f SumExpr :=
+  (fun ts => { terms := ts }) <$> Traversable.traverse (ProdTerm.traverseAxes g) s.terms
+
+/-- Collect `AxisSpec`s: instantiating at `ConstL (List AxisSpec)` with `g := fun a => ⟨[a]⟩`
+    should reproduce `specsSumExpr'`. -/
+theorem traverseAxes_const_eq_specsSumExpr (s : SumExpr) :
+    (SumExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) s).run = specsSumExpr' s := by
+  show (Traversable.traverse (ProdTerm.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) s.terms).run
+    = s.terms.flatMap specsProdTerm'
+  have core : ∀ ys : List ProdTerm,
+      (Traversable.traverse (ProdTerm.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) ys).run
+        = ys.flatMap specsProdTerm' := by
+    intro ys
+    induction ys with
+    | nil => rfl
+    | cons hd tl ih =>
+        show (ProdTerm.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) hd).run ++
+            (Traversable.traverse (ProdTerm.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) tl).run
+          = specsProdTerm' hd ++ tl.flatMap specsProdTerm'
+        rw [traverseAxes_const_eq_specsProdTerm hd, ih]
+  exact core s.terms
+
+/-- Collect UIDs: instantiating at `ConstL (List UID)` with `g := fun a => ⟨[a.uid]⟩` should
+    reproduce the bare expression `s.terms.flatMap termAxisUIDs` — no new named def; this is
+    exactly what `readAxisUIDs` (`Eval/Contract.lean:43-44`) builds from `rhs.body.terms`, just
+    at the `SumExpr` level directly rather than via `RHSExpr`. -/
+theorem traverseAxes_const_eq_termAxisUIDsSumExpr (s : SumExpr) :
+    (SumExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) s).run = s.terms.flatMap termAxisUIDs := by
+  show (Traversable.traverse (ProdTerm.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) s.terms).run
+    = s.terms.flatMap termAxisUIDs
+  have core : ∀ ys : List ProdTerm,
+      (Traversable.traverse (ProdTerm.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) ys).run
+        = ys.flatMap termAxisUIDs := by
+    intro ys
+    induction ys with
+    | nil => rfl
+    | cons hd tl ih =>
+        show (ProdTerm.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) hd).run ++
+            (Traversable.traverse (ProdTerm.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) tl).run
+          = termAxisUIDs hd ++ tl.flatMap termAxisUIDs
+        rw [traverseAxes_const_eq_termAxisUIDs hd, ih]
+  exact core s.terms
+
+/-- Remap, CONDITIONAL: same reasoning as `ProdTerm`'s own conditional lemma one layer down —
+    `SumExpr.mapUID` only calls `ProdTerm.mapUID` over the list, and since an unconditional
+    theorem over all `p : ProdTerm` cannot close (a single `.iverson` factor anywhere blocks
+    it), an unconditional `SumExpr`-level theorem cannot close either for the same reason,
+    propagated up one more layer. This lemma instead shows the traversal composes correctly
+    over `List` in the remap direction GIVEN that every `ProdTerm` in `s.terms` individually
+    satisfies its own remap equality. -/
+theorem traverseAxes_id_eq_sumExprMapUID_of_terms (f : UData → UData) (s : SumExpr)
+    (h : ∀ x ∈ s.terms, ProdTerm.traverseAxes (f := Id) (AxisSpec.mapUID f) x = ProdTerm.mapUID f x) :
+    SumExpr.traverseAxes (f := Id) (AxisSpec.mapUID f) s = SumExpr.mapUID f s := by
+  show (fun ts => ({ terms := ts } : SumExpr)) (Traversable.traverse (ProdTerm.traverseAxes (f := Id) (AxisSpec.mapUID f)) s.terms)
+    = { terms := s.terms.map (ProdTerm.mapUID f) }
+  have core : ∀ ys : List ProdTerm, (∀ x ∈ ys, ProdTerm.traverseAxes (f := Id) (AxisSpec.mapUID f) x = ProdTerm.mapUID f x) →
+      Traversable.traverse (ProdTerm.traverseAxes (f := Id) (AxisSpec.mapUID f)) ys = ys.map (ProdTerm.mapUID f) := by
+    intro ys hys
+    induction ys with
+    | nil => rfl
+    | cons hd tl ih =>
+        simp only [List.traverse_cons]
+        rw [hys hd List.mem_cons_self, ih (fun x hx => hys x (List.mem_cons_of_mem hd hx))]
+        rfl
+  rw [core s.terms h]
+
 end LeanNCD
