@@ -1,26 +1,34 @@
 # leanncd restructuring suggestions
 
-> **Resume here (checkpoint 2026-07-15).** E6 (property-based oracles) and **E11** (do UIDs
-> earn their keep?) are both now fully DONE — see their ✅ markers in
-> [E6](#e6-property-based-oracles-the-tests-the-portfolio-cant-express) and
-> [E11](#e11-investigation-do-uids-earn-their-keep) below. E11's outcome: `unifyAxes` +
-> `Exec/Context.lean` deleted as proven-dead machinery, `CanonicalProgram` merged into
-> `ResolvedProgram`. Per this doc's own critical path (see
-> [How the explorations relate to the Part I spikes](#how-the-explorations-relate-to-the-part-i-spikes)),
-> the next open item is **Spike 2** (one home for AST accessors and read/axis traversals) — now
-> unblocked, since E11 settled that axis identity is purely name-based and UIDs carry no extra
-> distinguishing information for 2b/2c to worry about — or, independently, the **cospan-model
-> spike** (Wave 3b, unlocks
-> **[E13](#e13-generators-for-br--closing-brop-and-promoting-e6s-laws-to-theorems)**) if that
-> thread is preferred instead.
+> **Resume here (checkpoint 2026-07-15).** E6 and **E11** are fully DONE (see their ✅ markers
+> below). **E1** (one traversal to rule the collectors) — the prototype Spike 2 was waiting on
+> — is now three slices in: `IdxExpr` (leaf), `PredArith` (self-recursion + composition), and
+> `BoolExpr` (confirmation, more constructors) all closed on the collecting direction with
+> axiom-clean proofs — see the three "Prototype result" blockquotes in
+> [E1](#e1-one-traversal-to-rule-the-collectors-van-laarhoven) below. This covers the entire
+> layered, non-mutually-recursive part of the AST (`IdxExpr → PredArith → BoolExpr`) and is a
+> strong, though not yet final, signal for E1 over Spike 2a/2b. **This work is not yet merged
+> to `main`** — it's on open PR
+> [william-macready/pyncd#1](https://github.com/william-macready/pyncd/pull/1), branch
+> `worktree-e1-traverseaxes-prototype`, worktree at
+> `.claude/worktrees/e1-traverseaxes-prototype`.
+>
+> **Next open item:** extend E1 to **`Factor`** — the next node up, and the first to introduce
+> a genuinely new risk: a `.read`/`.unaryFn` case carrying tensor **names** + index-expression
+> **lists**, not just bare axis occurrences (`IdxExpr`/`PredArith`/`BoolExpr` only ever touched
+> axis occurrences directly). Independently, the **cospan-model spike** (Wave 3b, unlocks
+> **[E13](#e13-generators-for-br--closing-brop-and-promoting-e6s-laws-to-theorems)**) remains
+> available if that thread is preferred instead.
 >
 > Quick resume checklist:
 >
-> 1. `cd leanncd && lake build` — confirm still green (sorry count in the default build
->    unchanged from the last checkpoint — E11 touched no proof).
-> 2. Read Spike 2's writeup (or the cospan model's, if that thread is preferred) before
->    touching code.
-> 3. Use `superpowers:brainstorming` to scope it before touching code, same as E6/E11.
+> 1. Decide whether to merge PR #1 first or keep extending on its branch — either is fine, the
+>    branch already has 3 clean slices and its own final reviews.
+> 2. `cd leanncd && lake build` — confirm still green (8609 jobs as of this checkpoint; sorry
+>    count in the default build unchanged — none of E1's slices touch a proof).
+> 3. Read the three existing E1 design docs (`docs/superpowers/specs/2026-07-15-e1-traverseaxes-*.md`)
+>    for the established pattern before scoping `Factor`.
+> 4. Use `superpowers:brainstorming` to scope it before touching code, same as E6/E11/E1's slices.
 
 A global review of `leanncd/` (~9,200 lines of Lean across 49 modules) after the recent wave of
 feature fixes (`Factor.unaryFn` inline transcendentals, new `Nonlin` activations, `l2normalize`,
