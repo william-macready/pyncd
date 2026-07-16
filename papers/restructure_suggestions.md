@@ -812,6 +812,18 @@ makes `TermTraversable` (`Exec/Traversable.lean`) its `Id` special case.
 
 *References:* Gibbons & Oliveira, [The Essence of the Iterator Pattern](http://www.cs.ox.ac.uk/jeremy.gibbons/publications/iterator.pdf) (JFP 2009) — traversal as applicative-functor iteration, the `Const`-vs-`Id` instantiation trick used above; van Laarhoven, [CPS-based functional references](https://www.twanvl.nl/blog/haskell/cps-functional-references) (2009); Kmett, [`lens`](https://hackage.haskell.org/package/lens) (the library that industrialized the encoding).
 
+> **Prototype result (BoolExpr slice, 2026-07-15):** extended `test/DSL/TraverseAxesSpike.lean` to
+> `BoolExpr.traverseAxes` — no new risk pattern versus the `PredArith` slice, a scaling/confirmation
+> check (more constructors, one more composition layer). Both collecting-direction theorems
+> (`traverseAxes_const_eq_specsBool` and `traverseAxes_const_eq_boolAxisUIDs`) closed cleanly on
+> the first build with the brief's proof scripts, independently verified axiom-clean, confirming
+> the pattern generalizes across the full non-mutual layered stack (IdxExpr → PredArith → BoolExpr).
+> The remap theorem's expected failure was confirmed with a single quick check (not a fresh search) —
+> `BoolExpr.mapUID` hits the same `partial def` + self-recursion + zero-equation-lemmas wall
+> `PredArith.mapUID` did. This completes the layered (non-mutual-recursion) part of the AST below
+> `Factor`; `Factor`/`LHSSlot`/`Stmt`/`Decl`/`TLProgram` remain open — see
+> `docs/superpowers/specs/2026-07-15-e1-traverseaxes-boolexpr-design.md` for the full go/no-go criteria.
+
 ### E2. A typed core IR the pipeline narrows into ("trees that grow")
 
 The scan-projection bug hunt surfaced a class of hazard Part I only documents, never removes:
