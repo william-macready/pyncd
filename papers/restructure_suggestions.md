@@ -2,37 +2,36 @@
 
 > **Resume here (checkpoint 2026-07-16).** E6 and **E11** are fully DONE (see their ✅ markers
 > below). **E1** (one traversal to rule the collectors) — the prototype Spike 2 was waiting on
-> — is now six slices in: `IdxExpr` (leaf), `PredArith` (self-recursion + composition),
+> — is now **seven slices in:** `IdxExpr` (leaf), `PredArith` (self-recursion + composition),
 > `BoolExpr` (confirmation, more constructors), `Factor` (first node carrying a tensor name
 > + a `List IdxExpr` sub-traversal), `ProdTerm` (first record node, wrapping `List Factor`),
-> and `SumExpr` (identical one-field-record-wrapping-a-list shape, all three theorems closed
-> exactly as pre-verified) — see the six "Prototype result" blockquotes in [E1](#e1-one-traversal-to-rule-the-collectors-van-laarhoven)
-> below. The conditional-lemma resolution from `ProdTerm` generalized mechanically to `SumExpr`
-> as predicted, with zero implementation-time surprises, confirming the pattern's soundness
-> across identically-shaped record nodes. This covers the entire layered, non-mutually-recursive
-> part of the AST (`IdxExpr → PredArith → BoolExpr → Factor → ProdTerm → SumExpr`) and is a
-> strong, though not yet final, signal for E1 over Spike 2a/2b. **This work is not yet merged to
-> `main`** — it's on open PR [william-macready/pyncd#1](https://github.com/william-macready/pyncd/pull/1),
-> branch `worktree-e1-traverseaxes-prototype`, worktree at
-> `.claude/worktrees/e1-traverseaxes-prototype`.
+> `SumExpr` (identical one-field-record-wrapping-a-list shape), and `RHSExpr` (the first slice
+> since `IdxExpr` needing fresh design work: resolved a real production semantic asymmetry with
+> two named traversals and a two-hypothesis conditional remap) — see the seven "Prototype result"
+> blockquotes in [E1](#e1-one-traversal-to-rule-the-collectors-van-laarhoven) below. All theorems
+> in `RHSExpr` plus the new `Nonlin.traverseAxes` building block (9 constructors, exhaustive
+> match) closed exactly as pre-verified during design — zero implementation-time surprises.
+> This covers the entire layered, non-mutually-recursive **expression** stack (`IdxExpr → PredArith → BoolExpr
+> → Factor → ProdTerm → SumExpr → RHSExpr`) and is a strong, though not yet final, signal for E1
+> over Spike 2a/2b. **This work is not yet merged to `main`** — it's on open PR
+> [william-macready/pyncd#1](https://github.com/william-macready/pyncd/pull/1), branch
+> `worktree-e1-traverseaxes-prototype`, worktree at `.claude/worktrees/e1-traverseaxes-prototype`.
 >
-> **Next open item:** extend E1 to **`RHSExpr`**. Unlike the `ProdTerm`→`SumExpr` transition,
-> `RHSExpr` is **NOT** structurally identical to `SumExpr`/`ProdTerm` — it has three fields
-> (`body : SumExpr`, `nonlin : Nonlin`, `agg : AggOp`), not one. The mechanical-repeat
-> expectation from this slice should NOT be assumed to carry over automatically — `RHSExpr`
-> needs fresh scoping, not a repeat of the playbook. `LHSSlot`/`Stmt`/`Decl`/`TLProgram` follow
-> after. Independently, the **cospan-model spike** (Wave 3b, unlocks
+> **Next open item:** extend E1 to **`LHSSlot`**. Unlike prior slices, `LHSSlot`'s structure
+> is not yet known without consulting `DSL/Ast.lean` — do not assume its shape will continue
+> the mechanical pattern from this chain. `Stmt`/`Decl`/`TLProgram` follow after. Independently,
+> the **cospan-model spike** (Wave 3b, unlocks
 > **[E13](#e13-generators-for-br--closing-brop-and-promoting-e6s-laws-to-theorems)**) remains
 > available if that thread is preferred instead.
 >
 > Quick resume checklist:
 >
 > 1. Decide whether to merge PR #1 first or keep extending on its branch — either is fine, the
->    branch already has 6 clean slices and its own final reviews.
+>    branch already has 7 clean slices and its own final reviews.
 > 2. `cd leanncd && lake build` — confirm still green (8609 jobs as of this checkpoint; sorry
 >    count in the default build unchanged — none of E1's slices touch a proof).
-> 3. Read the six existing E1 design docs (`docs/superpowers/specs/2026-07-1[56]-e1-traverseaxes-*.md`)
->    for the established pattern before scoping `RHSExpr`.
+> 3. Read the seven existing E1 design docs (`docs/superpowers/specs/2026-07-1[56]-e1-traverseaxes-*.md`)
+>    for the established pattern before scoping `LHSSlot`.
 > 4. Use `superpowers:brainstorming` to scope it before touching code, same as E6/E11/E1's slices.
 
 A global review of `leanncd/` (~9,200 lines of Lean across 49 modules) after the recent wave of
@@ -885,6 +884,28 @@ makes `TermTraversable` (`Exec/Traversable.lean`) its `Id` special case.
 > Full `lake build` succeeded, 8,609 jobs, no `sorry`/`native_decide`. `RHSExpr`/`LHSSlot`/
 > `Stmt`/`Decl`/`TLProgram` remain open — see
 > `docs/superpowers/specs/2026-07-16-e1-traverseaxes-sumexpr-design.md` for the full go/no-go
+> criteria.
+
+> **Prototype result (RHSExpr slice + Nonlin building block, 2026-07-16):** extended
+> `test/DSL/TraverseAxesSpike.lean` to `RHSExpr` — the first slice since `IdxExpr` needing
+> genuinely fresh design work rather than a mechanical continuation. Bundled a new
+> `Nonlin.traverseAxes` building block (the first `Option`-based traversal in the series, 9
+> constructors including 3 carrying a mask) whose exhaustive match closes off, by construction,
+> production's documented `specsNonlin` wildcard hazard. The `Nonlin` collecting-direction
+> theorem (against a local `specsNonlin'` copy) closed cleanly; no UID-collecting theorem
+> added (production never touches mask UIDs). Remap: `.identity` closes trivially, masked cases
+> conditionally on their `BoolExpr` mask's own remap. Resolved a real production semantic
+> asymmetry — `specsRHS` includes the nonlin mask's axes, `readAxisUIDs` deliberately excludes
+> them — with two named traversal functions (`traverseAxesWithMask`/`traverseAxesNoMask`)
+> rather than a flag. `traverseAxesWithMask` serves AxisSpec-collecting and remap;
+> `traverseAxesNoMask` serves UID-collecting only (compared directly against the real
+> `readAxisUIDs`). The remap theorem (`traverseAxes_id_eq_rhsExprMapUID`) is conditional on TWO
+> independent hypotheses (about `r.body` and `r.nonlin` separately) — the first slice with a
+> two-hypothesis conditional remap. All theorems in both tasks closed exactly as pre-verified
+> during design (staged, built, reverted before implementation) — zero implementation-time
+> surprises. Full `lake build` succeeded, 8,609 jobs, no `sorry`/`native_decide`.
+> `LHSSlot`/`Stmt`/`Decl`/`TLProgram` remain open — see
+> `docs/superpowers/specs/2026-07-16-e1-traverseaxes-rhsexpr-design.md` for the full go/no-go
 > criteria.
 
 ### E2. A typed core IR the pipeline narrows into ("trees that grow")
