@@ -28,7 +28,7 @@ import Mathlib.Control.Traversable.Instances
 
 namespace LeanNCD
 
-open LeanNCD.Eval (idxAxisUIDs predAxisUIDs boolAxisUIDs termAxisUIDs)
+open LeanNCD.Eval (idxAxisUIDs predAxisUIDs boolAxisUIDs termAxisUIDs readAxisUIDs)
 
 /-- Local copy of `Structural.lean`'s private `specsIdx`, for comparison only — NOT the
     source of truth. Keep byte-identical to `Structural.lean:26-27` by inspection. -/
@@ -671,5 +671,68 @@ theorem traverseAxes_id_eq_nonlinMapUID_of_mask (f : UData → UData) (b : BoolE
     = Nonlin.softmax (some (BoolExpr.mapUID f b))
   simp only [Traversable.traverse, Option.traverse, Option.mapA_eq_mapM, Option.mapM_some, hb]
   rfl
+
+-- ===== RHSExpr =====
+
+/-- Local copy delegating to `specsSumExpr'` and `specsNonlin'` (both already-existing local
+    copies), not re-derived through `specsFactor'`/`specsBool'` directly — mirrors production's
+    private `specsRHS` (`Structural.lean:45-46`: `(r.body.terms.flatMap (fun t =>
+    t.factors.flatMap specsFactor)) ++ specsNonlin r.nonlin`) one layer at a time. -/
+private def specsRHS' (r : RHSExpr) : List AxisSpec := specsSumExpr' r.body ++ specsNonlin' r.nonlin
+
+/-- `RHSExpr`'s AxisSpec-collecting-and-remap traversal: touches BOTH `body` (via
+    `SumExpr.traverseAxes`) AND `nonlin` (via `Nonlin.traverseAxes`), `agg` passed through
+    unchanged (a 3-constructor enum with no fields, genuinely axis-content-free). Matches
+    `specsRHS`'s semantics (mask INCLUDED) and `RHSExpr.mapUID`'s semantics (mapUID always
+    updates the mask's UIDs too — there is no production notion of "remap but leave the mask
+    stale"). The first traversal in this series combining two independent sub-traversals via
+    `<*>` rather than a single `List`. -/
+def RHSExpr.traverseAxesWithMask [Applicative f] (g : AxisSpec → f AxisSpec) (r : RHSExpr) : f RHSExpr :=
+  (fun body nonlin => { body := body, nonlin := nonlin, agg := r.agg }) <$>
+    SumExpr.traverseAxes g r.body <*> Nonlin.traverseAxes g r.nonlin
+
+/-- `RHSExpr`'s UID-collecting-ONLY traversal: touches ONLY `body`; `nonlin`/`agg` pass through
+    unchanged. Matches `readAxisUIDs`'s deliberate exclusion of the mask (per-term contraction
+    scoping must not see mask axes). NOT used for remap — remap always goes through
+    `traverseAxesWithMask`, since there is no "skip the mask" remap semantics anywhere in
+    production. -/
+def RHSExpr.traverseAxesNoMask [Applicative f] (g : AxisSpec → f AxisSpec) (r : RHSExpr) : f RHSExpr :=
+  (fun body => { body := body, nonlin := r.nonlin, agg := r.agg }) <$> SumExpr.traverseAxes g r.body
+
+/-- Collect `AxisSpec`s (mask included): instantiating `traverseAxesWithMask` at
+    `ConstL (List AxisSpec)` with `g := fun a => ⟨[a]⟩` should reproduce `specsRHS'`. -/
+theorem traverseAxes_const_eq_specsRHS (r : RHSExpr) :
+    (RHSExpr.traverseAxesWithMask (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) r).run = specsRHS' r := by
+  show (SumExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) r.body).run ++
+      (Nonlin.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) r.nonlin).run
+    = specsSumExpr' r.body ++ specsNonlin' r.nonlin
+  rw [traverseAxes_const_eq_specsSumExpr r.body, traverseAxes_const_eq_specsNonlin r.nonlin]
+
+/-- Collect UIDs (mask EXCLUDED): instantiating `traverseAxesNoMask` at `ConstL (List UID)`
+    with `g := fun a => ⟨[a.uid]⟩` should reproduce the REAL production `readAxisUIDs`
+    directly — no local copy needed, since `traverseAxesNoMask` never touches `nonlin`, this
+    reduces immediately to `SumExpr`'s own already-proven UID-collecting theorem. -/
+theorem traverseAxes_const_eq_readAxisUIDs (r : RHSExpr) :
+    (RHSExpr.traverseAxesNoMask (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) r).run = readAxisUIDs r := by
+  show (SumExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) r.body).run
+    = r.body.terms.flatMap termAxisUIDs
+  exact traverseAxes_const_eq_termAxisUIDsSumExpr r.body
+
+/-- Remap, CONDITIONAL on TWO independent hypotheses: `r.body`'s own remap equality
+    (the `SumExpr`-level conditional, itself gated on every `ProdTerm`/`Factor` inside it) and
+    `r.nonlin`'s own remap equality (gated on `.iverson`/mask blocking, per
+    `traverseAxes_id_eq_nonlinMapUID_of_mask`). Neither hypothesis is transitively re-derived
+    here — each is taken flat, about the specific `r.body`/`r.nonlin` values, mirroring exactly
+    how `ProdTerm`'s and `SumExpr`'s own conditional lemmas took a hypothesis about their
+    immediate sub-structure rather than expanding it further. Given both, the `RHSExpr`-level
+    equality follows directly — no induction needed, since there's no list at this level. -/
+theorem traverseAxes_id_eq_rhsExprMapUID (f : UData → UData) (r : RHSExpr)
+    (hbody : SumExpr.traverseAxes (f := Id) (AxisSpec.mapUID f) r.body = SumExpr.mapUID f r.body)
+    (hnonlin : Nonlin.traverseAxes (f := Id) (AxisSpec.mapUID f) r.nonlin = Nonlin.mapUID f r.nonlin) :
+    RHSExpr.traverseAxesWithMask (f := Id) (AxisSpec.mapUID f) r = RHSExpr.mapUID f r := by
+  show (fun body nonlin => ({ body := body, nonlin := nonlin, agg := r.agg } : RHSExpr))
+      (SumExpr.traverseAxes (f := Id) (AxisSpec.mapUID f) r.body) (Nonlin.traverseAxes (f := Id) (AxisSpec.mapUID f) r.nonlin)
+    = { body := SumExpr.mapUID f r.body, nonlin := Nonlin.mapUID f r.nonlin, agg := r.agg }
+  rw [hbody, hnonlin]
 
 end LeanNCD
