@@ -20,7 +20,7 @@ import Mathlib.Control.Traversable.Instances
 
 namespace LeanNCD
 
-open LeanNCD.Eval (idxAxisUIDs predAxisUIDs boolAxisUIDs)
+open LeanNCD.Eval (idxAxisUIDs predAxisUIDs boolAxisUIDs termAxisUIDs)
 
 /-- Local copy of `Structural.lean`'s private `specsIdx`, for comparison only — NOT the
     source of truth. Keep byte-identical to `Structural.lean:26-27` by inspection. -/
@@ -431,5 +431,85 @@ theorem traverseAxes_id_eq_factorMapUID_unaryFn (f : UData → UData) (op : Unar
     `rfl`), but that just restates the goal in terms of the still-blocked `BoolExpr.mapUID`. Same
     limitation, same fix if ever needed (drop `partial` from `BoolExpr.mapUID`), out of scope
     for this spike. See docs/superpowers/specs/2026-07-16-e1-traverseaxes-factor-design.md. -/
+
+/-- Local copy of the inline `t.factors.flatMap specsFactor` fragment inside `Structural.lean`'s
+    private `specsRHS` (`Structural.lean:45-46`), for comparison only — NOT the source of truth.
+    No standalone `specsProdTerm` exists in production; keep this arm-for-arm identical to that
+    fragment by inspection. -/
+private def specsProdTerm' (t : ProdTerm) : List AxisSpec := t.factors.flatMap specsFactor'
+
+/-- Extends the E1 prototype to `ProdTerm`: the first non-inductive (record) node in the
+    series. One field, one line of composition — no `cases`/`induction` on `ProdTerm` needed. -/
+def ProdTerm.traverseAxes [Applicative f] (g : AxisSpec → f AxisSpec) (p : ProdTerm) : f ProdTerm :=
+  (fun fs => { factors := fs }) <$> Traversable.traverse (Factor.traverseAxes g) p.factors
+
+/-- Collect `AxisSpec`s: instantiating at `ConstL (List AxisSpec)` with `g := fun a => ⟨[a]⟩`
+    should reproduce `specsProdTerm'` (the local copy of `specsRHS`'s inline
+    `t.factors.flatMap specsFactor` fragment). -/
+theorem traverseAxes_const_eq_specsProdTerm (t : ProdTerm) :
+    (ProdTerm.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) t).run = specsProdTerm' t := by
+  show (Traversable.traverse (Factor.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) t.factors).run
+    = t.factors.flatMap specsFactor'
+  have core : ∀ ys : List Factor,
+      (Traversable.traverse (Factor.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) ys).run
+        = ys.flatMap specsFactor' := by
+    intro ys
+    induction ys with
+    | nil => rfl
+    | cons hd tl ih =>
+        show (Factor.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) hd).run ++
+            (Traversable.traverse (Factor.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) tl).run
+          = specsFactor' hd ++ tl.flatMap specsFactor'
+        rw [traverseAxes_const_eq_specsFactor hd, ih]
+  exact core t.factors
+
+/-- Bridge: `termAxisUIDs`'s inline per-`Factor` match (`Eval/Contract.lean:34-38`) is exactly
+    `factorAxisUIDs'` applied per element — `factorAxisUIDs'` (from the `Factor` slice) was
+    built specifically to mirror that inline match. -/
+theorem termAxisUIDs_eq_flatMap_factorAxisUIDs' (t : ProdTerm) :
+    termAxisUIDs t = t.factors.flatMap factorAxisUIDs' := rfl
+
+/-- Collect UIDs: instantiating at `ConstL (List UID)` with `g := fun a => ⟨[a.uid]⟩` should
+    reproduce the REAL production `termAxisUIDs` (`Eval/Contract.lean:34-38`) — no local copy
+    needed for this direction. -/
+theorem traverseAxes_const_eq_termAxisUIDs (t : ProdTerm) :
+    (ProdTerm.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) t).run = termAxisUIDs t := by
+  rw [termAxisUIDs_eq_flatMap_factorAxisUIDs']
+  show (Traversable.traverse (Factor.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) t.factors).run
+    = t.factors.flatMap factorAxisUIDs'
+  have core : ∀ ys : List Factor,
+      (Traversable.traverse (Factor.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) ys).run
+        = ys.flatMap factorAxisUIDs' := by
+    intro ys
+    induction ys with
+    | nil => rfl
+    | cons hd tl ih =>
+        show (Factor.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) hd).run ++
+            (Traversable.traverse (Factor.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) tl).run
+          = factorAxisUIDs' hd ++ tl.flatMap factorAxisUIDs'
+        rw [traverseAxes_const_eq_factorAxisUIDs hd, ih]
+  exact core t.factors
+
+/-- Remap, CONDITIONAL: `ProdTerm.mapUID` only calls `Factor.mapUID` over the list, and
+    `Factor`'s own remap is only proved for `.read`/`.unaryFn` (not `.iverson`) — so an
+    UNCONDITIONAL theorem over all `p : ProdTerm` cannot close (a single `.iverson` anywhere in
+    `p.factors` would need the still-blocked `Factor`/`BoolExpr` remap). This lemma instead
+    shows the traversal composes correctly over `List` in the remap direction GIVEN that every
+    factor individually satisfies its own remap equality. -/
+theorem traverseAxes_id_eq_prodTermMapUID_of_factors (f : UData → UData) (p : ProdTerm)
+    (h : ∀ x ∈ p.factors, Factor.traverseAxes (f := Id) (AxisSpec.mapUID f) x = Factor.mapUID f x) :
+    ProdTerm.traverseAxes (f := Id) (AxisSpec.mapUID f) p = ProdTerm.mapUID f p := by
+  show (fun fs => ({ factors := fs } : ProdTerm)) (Traversable.traverse (Factor.traverseAxes (f := Id) (AxisSpec.mapUID f)) p.factors)
+    = { factors := p.factors.map (Factor.mapUID f) }
+  have core : ∀ ys : List Factor, (∀ x ∈ ys, Factor.traverseAxes (f := Id) (AxisSpec.mapUID f) x = Factor.mapUID f x) →
+      Traversable.traverse (Factor.traverseAxes (f := Id) (AxisSpec.mapUID f)) ys = ys.map (Factor.mapUID f) := by
+    intro ys hys
+    induction ys with
+    | nil => rfl
+    | cons hd tl ih =>
+        simp only [List.traverse_cons]
+        rw [hys hd List.mem_cons_self, ih (fun x hx => hys x (List.mem_cons_of_mem hd hx))]
+        rfl
+  rw [core p.factors h]
 
 end LeanNCD
