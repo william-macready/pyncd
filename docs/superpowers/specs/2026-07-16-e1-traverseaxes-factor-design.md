@@ -17,12 +17,21 @@ sub-traversals* — each list element gets its own full `IdxExpr.traverseAxes g`
 bare per-element projection like `.affine`'s `List (Int × AxisSpec)` in the `IdxExpr` slice.
 This is one layer of composition deeper than anything proved so far.
 
-**What's expected to go differently on the remap side:** `Factor.mapUID`
-(`DSL/Traverse.lean:47-50`) is a plain, non-`partial` `def` with no self-recursion (its cases
-only delegate to `IdxExpr.mapUID`/`BoolExpr.mapUID`) — unlike `PredArith`/`BoolExpr.mapUID`,
-which are `partial def` with genuine self-recursion and generate no equation lemmas. The
-remap-direction theorem is attempted for real this time (full effort, not a quick
-confirm-or-bail check), since the mechanism that blocked it twice does not apply here.
+**What's expected to go differently on the remap side — corrected during planning:**
+`Factor.mapUID` (`DSL/Traverse.lean:47-50`) is itself a plain, non-`partial` `def` with no
+self-recursion, so its own top-level equation is available (confirmed: `Factor.mapUID f
+(Factor.iverson b) = Factor.iverson (BoolExpr.mapUID f b)` closes by `rfl`). But the `.iverson`
+case's *full* remap goal doesn't stop there — it needs
+`BoolExpr.traverseAxes (f:=Id) (AxisSpec.mapUID f) b = BoolExpr.mapUID f b` for arbitrary `b`,
+which is exactly the statement the `BoolExpr` slice already found blocked (confirmed here again
+directly: `BoolExpr.mapUID f (BoolExpr.rel op a b) = BoolExpr.rel op (PredArith.mapUID f a)
+(PredArith.mapUID f b)` fails `rfl`). So `.iverson` inherits `BoolExpr`'s existing wall — not a
+fresh discovery, just that wall propagating up through composition, which the original version
+of this design missed. **`.read`/`.unaryFn` are unaffected** (they only touch `IdxExpr.mapUID`,
+which has no such wall) and remain the genuine full-attempt target. The remap theorem is
+therefore split per-case: `.read`/`.unaryFn` attempted for real, `.iverson` documented as
+blocked by the pre-existing `BoolExpr` wall (same treatment as that slice's own commented-out
+theorem), not re-litigated.
 
 ## Scope
 
@@ -75,9 +84,14 @@ theorem traverseAxes_const_eq_specsFactor (e : Factor) :
 theorem traverseAxes_const_eq_factorAxisUIDs (e : Factor) :
     (Factor.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) e).run = factorAxisUIDs' e
 
-theorem traverseAxes_id_eq_factorMapUID (f : UData → UData) (e : Factor) :
-    Factor.traverseAxes (f := Id) (AxisSpec.mapUID f) e = Factor.mapUID f e
+theorem traverseAxes_id_eq_factorMapUID_read (f : UData → UData) (nm : String) (es : List IdxExpr) :
+    Factor.traverseAxes (f := Id) (AxisSpec.mapUID f) (Factor.read nm es) = Factor.mapUID f (Factor.read nm es)
+
+theorem traverseAxes_id_eq_factorMapUID_unaryFn (f : UData → UData) (op : UnaryOp) (nm : String) (es : List IdxExpr) :
+    Factor.traverseAxes (f := Id) (AxisSpec.mapUID f) (Factor.unaryFn op nm es) = Factor.mapUID f (Factor.unaryFn op nm es)
 ```
+
+(`.iverson` is deliberately NOT stated as a theorem — see "Remap direction" below.)
 
 **Collecting direction.** `.iverson` delegates directly to the already-proven `BoolExpr`
 lemmas (`traverseAxes_const_eq_specsBool`/`traverseAxes_const_eq_boolAxisUIDs`) — no new proof
@@ -91,23 +105,29 @@ rather than a bare `⟨[a]⟩`-style projection. Concretely: prove
 ys.flatMap (fun e => (IdxExpr.traverseAxes (f:=ConstL _) g e).run)` by list induction using
 `ih`, then specialize the inner term via the already-proven `IdxExpr` theorem.
 
-**Remap direction.** The same list-layer lemma is needed at `Id`:
-`Traversable.traverse (IdxExpr.traverseAxes (f:=Id) (AxisSpec.mapUID f)) es = es.map
-(IdxExpr.mapUID f)`, obtained by combining `List.traverse_eq_map_id` (used already in the
-`IdxExpr` slice's own remap proof) with the already-proven `traverseAxes_id_eq_mapUID`
-pointwise inside the list. This is the one genuinely new proof-engineering step in this
-slice — no prior slice's remap attempt got far enough to need a list-layer composition,
-since both were blocked by the `partial`/self-recursion wall before reaching it.
+**Remap direction — split per case, per the correction above.** `.read`/`.unaryFn`: the
+list-layer lemma is needed at `Id` — `Traversable.traverse (IdxExpr.traverseAxes (f:=Id)
+(AxisSpec.mapUID f)) es = es.map (IdxExpr.mapUID f)`, obtained by combining
+`List.traverse_eq_map_id` (used already in the `IdxExpr` slice's own remap proof) with the
+already-proven `traverseAxes_id_eq_mapUID` pointwise inside the list. This is the one
+genuinely new proof-engineering step in this slice — no prior slice's remap attempt got far
+enough to need a list-layer composition, since both were blocked by the `partial`/
+self-recursion wall before reaching it. `.iverson`: NOT attempted as a theorem — confirmed
+directly (see "What's new" above) that it needs `BoolExpr.traverseAxes (f:=Id) (AxisSpec.mapUID
+f) b = BoolExpr.mapUID f b` for arbitrary `b`, which is the `BoolExpr` slice's own blocked
+statement. Document this with a comment citing the `BoolExpr` slice's finding, same treatment
+as that slice's commented-out theorem — do not re-attempt it.
 
 ## Effort policy
 
-Full attempt on the remap theorem, per the reasoning above (`Factor.mapUID` is non-`partial`
-and non-self-recursive, so the blocking mechanism from the `PredArith`/`BoolExpr` slices does
-not apply). If it still doesn't close after a reasonable attempt (the `List.traverse_eq_map_id`
-+ pointwise-remap composition sketched above, plus the standard `cases`/`show`/`rw` idiom used
-throughout this file), that is itself a new finding — not a predicted outcome — and should be
-recorded as such rather than silently commented out like the prior two "expected failure"
-cases.
+Full attempt on `.read`/`.unaryFn`'s remap theorems (`Factor.mapUID`'s cases for these two
+constructors are non-`partial` and non-self-recursive, so the blocking mechanism from the
+`PredArith`/`BoolExpr` slices does not apply to them). If either still doesn't close after a
+reasonable attempt (the `List.traverse_eq_map_id` + pointwise-remap composition sketched above,
+plus the standard `cases`/`show`/`rw` idiom used throughout this file), that IS a new finding —
+not a predicted outcome — and should be recorded as such rather than silently commented out.
+`.iverson`'s remap is not attempted at all (see above) — this is a confirmed, not merely
+predicted, block, established by direct check during planning, not deferred to implementation.
 
 ## File layout
 
@@ -117,20 +137,22 @@ cases.
 ## Success criteria (the go/no-go bar)
 
 **Go:**
-- Both collecting-direction theorems close with genuinely sound proofs, including the new
-  list-of-sub-traversal lemma.
-- `.iverson`'s delegation to the already-proven `BoolExpr` lemmas composes cleanly with no
-  re-proving.
-- The remap theorem closes (the hoped-for outcome, not merely the historical pattern).
+- Both collecting-direction theorems (all 3 `Factor` cases, one theorem each for
+  `AxisSpec`/`UID`) close with genuinely sound proofs, including the new list-of-sub-traversal
+  lemma.
+- `.iverson`'s collecting-direction case delegates to the already-proven `BoolExpr` lemmas
+  cleanly with no re-proving (this is unaffected by the remap-direction block above — the
+  collecting direction never needed `BoolExpr.mapUID`).
+- The `.read`/`.unaryFn` remap theorems close (the hoped-for outcome for these two cases).
 
 **No-go / interesting either way:**
 - If the list-of-sub-traversal collecting lemma needs real structural fighting beyond the
   induction shape above, that's a signal `Factor`'s composition (rather than self-recursion)
   is its own source of friction — worth a closer look before extrapolating to `ProdTerm`/`Stmt`.
-- If the remap theorem does NOT close despite `Factor.mapUID` being non-`partial`, that
-  contradicts the stated mechanism and should be understood (not just documented as "blocked
-  again") before scoping `Stmt`'s own `mapUID` (also worth checking for `partial`/self-recursion
-  before assuming its remap direction will behave like `Factor`'s).
+- If `.read`/`.unaryFn`'s remap theorems do NOT close despite `Factor.mapUID` being
+  non-`partial`, that contradicts the stated mechanism and should be understood (not just
+  documented as "blocked again") before scoping `Stmt`'s own `mapUID` (also worth checking for
+  `partial`/self-recursion before assuming its remap direction will behave like `Factor`'s).
 
 ## Risks / notes
 
