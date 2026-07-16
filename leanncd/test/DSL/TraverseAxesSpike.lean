@@ -22,6 +22,14 @@
 -- AxisSpecs) and the bare expression `s.terms.flatMap termAxisUIDs` (collect UIDs, no new named def);
 -- the conditional-remap pattern generalizes mechanically (all three theorems pre-verified during
 -- design, zero surprises) — see docs/superpowers/specs/2026-07-16-e1-traverseaxes-sumexpr-design.md.
+-- Nonlin slice (first `Option` payload, not `List`): exhaustive 9-constructor match, closing
+-- production's documented `specsNonlin` wildcard hazard by construction; subsumes local `specsNonlin'`
+-- (no UID counterpart — production never touches mask UIDs) — see
+-- docs/superpowers/specs/2026-07-16-e1-traverseaxes-rhsexpr-design.md.
+-- RHSExpr slice (dual traversals, resolving mask asymmetry): `traverseAxesWithMask` for
+-- AxisSpec-collecting-and-remap (conditional on body/nonlin), `traverseAxesNoMask` for
+-- UID-collecting-only (mask excluded per `readAxisUIDs`); `specsRHS` includes, `readAxisUIDs`
+-- excludes the mask axes — see docs/superpowers/specs/2026-07-16-e1-traverseaxes-rhsexpr-design.md.
 import LeanNCD.DSL.Traverse
 import LeanNCD.Eval.Contract
 import Mathlib.Control.Traversable.Instances
