@@ -10,6 +10,10 @@
 -- BoolExpr slice (confirmation, one more delegation layer): subsumes `specsBool`/`boolAxisUIDs`;
 -- remap blocked by the same production-code limitation as PredArith's — see
 -- docs/superpowers/specs/2026-07-15-e1-traverseaxes-boolexpr-design.md.
+-- Factor slice (first node carrying a tensor name): a `String` (untouched) and a `List IdxExpr`
+-- traversed via a nested sub-traversal; subsumes `specsFactor`/(the inline Factor-match inside
+-- `termAxisUIDs`); remap proved for `.read`/`.unaryFn`, blocked for `.iverson` (inherits
+-- BoolExpr's wall) — see docs/superpowers/specs/2026-07-16-e1-traverseaxes-factor-design.md.
 import LeanNCD.DSL.Traverse
 import LeanNCD.Eval.Contract
 import Mathlib.Control.Traversable.Instances
