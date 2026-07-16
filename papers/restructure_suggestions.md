@@ -7,7 +7,7 @@
 > + a `List IdxExpr` sub-traversal), and `ProdTerm` (first record node, wrapping `List Factor`;
 > conditional remap lemma proved via list induction, expected to generalize to `SumExpr`) — see
 > the five "Prototype result" blockquotes in [E1](#e1-one-traversal-to-rule-the-collectors-van-laarhoven)
-> below. `ProdTerm` closed all 5 theorems it attempted (2 collecting-direction, the `termAxisUIDs`
+> below. `ProdTerm` closed all 4 theorems it attempted (2 collecting-direction, the `termAxisUIDs`
 > bridge comparing directly against a real production function, and a conditional remap lemma);
 > the conditional form resolves the `.iverson` blocking wall by requiring per-element remap
 > hypotheses, a new proof shape. This covers the entire layered, non-mutually-recursive part of
