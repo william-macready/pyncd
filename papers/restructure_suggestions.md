@@ -2,37 +2,37 @@
 
 > **Resume here (checkpoint 2026-07-16).** E6 and **E11** are fully DONE (see their ✅ markers
 > below). **E1** (one traversal to rule the collectors) — the prototype Spike 2 was waiting on
-> — is now five slices in: `IdxExpr` (leaf), `PredArith` (self-recursion + composition),
+> — is now six slices in: `IdxExpr` (leaf), `PredArith` (self-recursion + composition),
 > `BoolExpr` (confirmation, more constructors), `Factor` (first node carrying a tensor name
-> + a `List IdxExpr` sub-traversal), and `ProdTerm` (first record node, wrapping `List Factor`;
-> conditional remap lemma proved via list induction, expected to generalize to `SumExpr`) — see
-> the five "Prototype result" blockquotes in [E1](#e1-one-traversal-to-rule-the-collectors-van-laarhoven)
-> below. `ProdTerm` closed all 4 theorems it attempted (2 collecting-direction, the `termAxisUIDs`
-> bridge comparing directly against a real production function, and a conditional remap lemma);
-> the conditional form resolves the `.iverson` blocking wall by requiring per-element remap
-> hypotheses, a new proof shape. This covers the entire layered, non-mutually-recursive part of
-> the AST (`IdxExpr → PredArith → BoolExpr → Factor → ProdTerm`) and is a strong, though not yet
-> final, signal for E1 over Spike 2a/2b. **This work is not yet merged to `main`** — it's on open
-> PR [william-macready/pyncd#1](https://github.com/william-macready/pyncd/pull/1), branch
-> `worktree-e1-traverseaxes-prototype`, worktree at
+> + a `List IdxExpr` sub-traversal), `ProdTerm` (first record node, wrapping `List Factor`),
+> and `SumExpr` (identical one-field-record-wrapping-a-list shape, all three theorems closed
+> exactly as pre-verified) — see the six "Prototype result" blockquotes in [E1](#e1-one-traversal-to-rule-the-collectors-van-laarhoven)
+> below. The conditional-lemma resolution from `ProdTerm` generalized mechanically to `SumExpr`
+> as predicted, with zero implementation-time surprises, confirming the pattern's soundness
+> across identically-shaped record nodes. This covers the entire layered, non-mutually-recursive
+> part of the AST (`IdxExpr → PredArith → BoolExpr → Factor → ProdTerm → SumExpr`) and is a
+> strong, though not yet final, signal for E1 over Spike 2a/2b. **This work is not yet merged to
+> `main`** — it's on open PR [william-macready/pyncd#1](https://github.com/william-macready/pyncd/pull/1),
+> branch `worktree-e1-traverseaxes-prototype`, worktree at
 > `.claude/worktrees/e1-traverseaxes-prototype`.
 >
-> **Next open item:** extend E1 to **`SumExpr`** — the next node up, structurally identical to
-> `ProdTerm` one layer higher (`structure SumExpr where terms : List ProdTerm`). Per the
-> `ProdTerm` blockquote's analysis, the conditional-lemma resolution is expected to repeat
-> mechanically here rather than surfacing a fresh design question. `RHSExpr`/`LHSSlot`/`Stmt`/
-> `Decl`/`TLProgram` follow after. Independently, the **cospan-model spike** (Wave 3b, unlocks
+> **Next open item:** extend E1 to **`RHSExpr`**. Unlike the `ProdTerm`→`SumExpr` transition,
+> `RHSExpr` is **NOT** structurally identical to `SumExpr`/`ProdTerm` — it has three fields
+> (`body : SumExpr`, `nonlin : Nonlin`, `agg : AggOp`), not one. The mechanical-repeat
+> expectation from this slice should NOT be assumed to carry over automatically — `RHSExpr`
+> needs fresh scoping, not a repeat of the playbook. `LHSSlot`/`Stmt`/`Decl`/`TLProgram` follow
+> after. Independently, the **cospan-model spike** (Wave 3b, unlocks
 > **[E13](#e13-generators-for-br--closing-brop-and-promoting-e6s-laws-to-theorems)**) remains
 > available if that thread is preferred instead.
 >
 > Quick resume checklist:
 >
 > 1. Decide whether to merge PR #1 first or keep extending on its branch — either is fine, the
->    branch already has 5 clean slices and its own final reviews.
+>    branch already has 6 clean slices and its own final reviews.
 > 2. `cd leanncd && lake build` — confirm still green (8609 jobs as of this checkpoint; sorry
 >    count in the default build unchanged — none of E1's slices touch a proof).
-> 3. Read the five existing E1 design docs (`docs/superpowers/specs/2026-07-1[56]-e1-traverseaxes-*.md`)
->    for the established pattern before scoping `SumExpr`.
+> 3. Read the six existing E1 design docs (`docs/superpowers/specs/2026-07-1[56]-e1-traverseaxes-*.md`)
+>    for the established pattern before scoping `RHSExpr`.
 > 4. Use `superpowers:brainstorming` to scope it before touching code, same as E6/E11/E1's slices.
 
 A global review of `leanncd/` (~9,200 lines of Lean across 49 modules) after the recent wave of
@@ -871,6 +871,20 @@ makes `TermTraversable` (`Exec/Traversable.lean`) its `Id` special case.
 > List ProdTerm`). Full `lake build` succeeded, 8,609 jobs, no `sorry`/`native_decide`.
 > `SumExpr`/`RHSExpr`/`LHSSlot`/`Stmt`/`Decl`/`TLProgram` remain open — see
 > `docs/superpowers/specs/2026-07-16-e1-traverseaxes-prodterm-design.md` for the full go/no-go
+> criteria.
+
+> **Prototype result (SumExpr slice, 2026-07-16):** extended `test/DSL/TraverseAxesSpike.lean` to
+> `SumExpr.traverseAxes` — structurally identical to `ProdTerm` one layer higher (`structure
+> SumExpr where terms : List ProdTerm`). All three theorems (2 collecting-direction, 1
+> conditional remap) closed exactly as pre-verified during design — confirming the `ProdTerm`
+> design doc's prediction that the conditional-lemma pattern generalizes mechanically across
+> identically-shaped record-wrapping-a-list nodes, with zero implementation-time surprises. The
+> UID-collecting theorem compares directly against the bare expression `s.terms.flatMap
+> termAxisUIDs` rather than a new named def, since no `SumExpr`-level production function
+> exists to copy or point at — a deliberate one-off exception to this file's usual pattern.
+> Full `lake build` succeeded, 8,609 jobs, no `sorry`/`native_decide`. `RHSExpr`/`LHSSlot`/
+> `Stmt`/`Decl`/`TLProgram` remain open — see
+> `docs/superpowers/specs/2026-07-16-e1-traverseaxes-sumexpr-design.md` for the full go/no-go
 > criteria.
 
 ### E2. A typed core IR the pipeline narrows into ("trees that grow")
