@@ -1,33 +1,36 @@
 # leanncd restructuring suggestions
 
-> **Resume here (checkpoint 2026-07-15).** E6 and **E11** are fully DONE (see their ✅ markers
+> **Resume here (checkpoint 2026-07-16).** E6 and **E11** are fully DONE (see their ✅ markers
 > below). **E1** (one traversal to rule the collectors) — the prototype Spike 2 was waiting on
-> — is now three slices in: `IdxExpr` (leaf), `PredArith` (self-recursion + composition), and
-> `BoolExpr` (confirmation, more constructors) all closed on the collecting direction with
-> axiom-clean proofs — see the three "Prototype result" blockquotes in
-> [E1](#e1-one-traversal-to-rule-the-collectors-van-laarhoven) below. This covers the entire
-> layered, non-mutually-recursive part of the AST (`IdxExpr → PredArith → BoolExpr`) and is a
-> strong, though not yet final, signal for E1 over Spike 2a/2b. **This work is not yet merged
-> to `main`** — it's on open PR
+> — is now four slices in: `IdxExpr` (leaf), `PredArith` (self-recursion + composition),
+> `BoolExpr` (confirmation, more constructors), and `Factor` (first node carrying a tensor name
+> + a `List IdxExpr` sub-traversal) — see the four "Prototype result" blockquotes in
+> [E1](#e1-one-traversal-to-rule-the-collectors-van-laarhoven) below. `Factor` closed all 4
+> theorems it attempted (2 collecting-direction, plus remap for `.read`/`.unaryFn`); `.iverson`'s
+> remap was never attempted, confirmed blocked pre-implementation by `BoolExpr.mapUID`'s own
+> already-documented wall. This covers the entire layered, non-mutually-recursive part of the
+> AST (`IdxExpr → PredArith → BoolExpr → Factor`) and is a strong, though not yet final, signal
+> for E1 over Spike 2a/2b. **This work is not yet merged to `main`** — it's on open PR
 > [william-macready/pyncd#1](https://github.com/william-macready/pyncd/pull/1), branch
 > `worktree-e1-traverseaxes-prototype`, worktree at
 > `.claude/worktrees/e1-traverseaxes-prototype`.
 >
-> **Next open item:** extend E1 to **`Factor`** — the next node up, and the first to introduce
-> a genuinely new risk: a `.read`/`.unaryFn` case carrying tensor **names** + index-expression
-> **lists**, not just bare axis occurrences (`IdxExpr`/`PredArith`/`BoolExpr` only ever touched
-> axis occurrences directly). Independently, the **cospan-model spike** (Wave 3b, unlocks
+> **Next open item:** extend E1 to **`ProdTerm`** — the next node up, a thin wrapper
+> (`structure ProdTerm where factors : List Factor`). Per the Factor blockquote's own "remain
+> open" list, `ProdTerm`/`SumExpr`/`RHSExpr`/`LHSSlot`/`Stmt`/`Decl`/`TLProgram` are all still
+> open; `ProdTerm` is simply the immediate next one in AST order. Independently, the
+> **cospan-model spike** (Wave 3b, unlocks
 > **[E13](#e13-generators-for-br--closing-brop-and-promoting-e6s-laws-to-theorems)**) remains
 > available if that thread is preferred instead.
 >
 > Quick resume checklist:
 >
 > 1. Decide whether to merge PR #1 first or keep extending on its branch — either is fine, the
->    branch already has 3 clean slices and its own final reviews.
+>    branch already has 4 clean slices and its own final reviews.
 > 2. `cd leanncd && lake build` — confirm still green (8609 jobs as of this checkpoint; sorry
 >    count in the default build unchanged — none of E1's slices touch a proof).
-> 3. Read the three existing E1 design docs (`docs/superpowers/specs/2026-07-15-e1-traverseaxes-*.md`)
->    for the established pattern before scoping `Factor`.
+> 3. Read the four existing E1 design docs (`docs/superpowers/specs/2026-07-1[56]-e1-traverseaxes-*.md`)
+>    for the established pattern before scoping `ProdTerm`.
 > 4. Use `superpowers:brainstorming` to scope it before touching code, same as E6/E11/E1's slices.
 
 A global review of `leanncd/` (~9,200 lines of Lean across 49 modules) after the recent wave of
