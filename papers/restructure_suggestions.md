@@ -2,35 +2,37 @@
 
 > **Resume here (checkpoint 2026-07-16).** E6 and **E11** are fully DONE (see their ✅ markers
 > below). **E1** (one traversal to rule the collectors) — the prototype Spike 2 was waiting on
-> — is now four slices in: `IdxExpr` (leaf), `PredArith` (self-recursion + composition),
-> `BoolExpr` (confirmation, more constructors), and `Factor` (first node carrying a tensor name
-> + a `List IdxExpr` sub-traversal) — see the four "Prototype result" blockquotes in
-> [E1](#e1-one-traversal-to-rule-the-collectors-van-laarhoven) below. `Factor` closed all 4
-> theorems it attempted (2 collecting-direction, plus remap for `.read`/`.unaryFn`); `.iverson`'s
-> remap was never attempted, confirmed blocked pre-implementation by `BoolExpr.mapUID`'s own
-> already-documented wall. This covers the entire layered, non-mutually-recursive part of the
-> AST (`IdxExpr → PredArith → BoolExpr → Factor`) and is a strong, though not yet final, signal
-> for E1 over Spike 2a/2b. **This work is not yet merged to `main`** — it's on open PR
-> [william-macready/pyncd#1](https://github.com/william-macready/pyncd/pull/1), branch
+> — is now five slices in: `IdxExpr` (leaf), `PredArith` (self-recursion + composition),
+> `BoolExpr` (confirmation, more constructors), `Factor` (first node carrying a tensor name
+> + a `List IdxExpr` sub-traversal), and `ProdTerm` (first record node, wrapping `List Factor`;
+> conditional remap lemma proved via list induction, expected to generalize to `SumExpr`) — see
+> the five "Prototype result" blockquotes in [E1](#e1-one-traversal-to-rule-the-collectors-van-laarhoven)
+> below. `ProdTerm` closed all 5 theorems it attempted (2 collecting-direction, the `termAxisUIDs`
+> bridge comparing directly against a real production function, and a conditional remap lemma);
+> the conditional form resolves the `.iverson` blocking wall by requiring per-element remap
+> hypotheses, a new proof shape. This covers the entire layered, non-mutually-recursive part of
+> the AST (`IdxExpr → PredArith → BoolExpr → Factor → ProdTerm`) and is a strong, though not yet
+> final, signal for E1 over Spike 2a/2b. **This work is not yet merged to `main`** — it's on open
+> PR [william-macready/pyncd#1](https://github.com/william-macready/pyncd/pull/1), branch
 > `worktree-e1-traverseaxes-prototype`, worktree at
 > `.claude/worktrees/e1-traverseaxes-prototype`.
 >
-> **Next open item:** extend E1 to **`ProdTerm`** — the next node up, a thin wrapper
-> (`structure ProdTerm where factors : List Factor`). Per the Factor blockquote's own "remain
-> open" list, `ProdTerm`/`SumExpr`/`RHSExpr`/`LHSSlot`/`Stmt`/`Decl`/`TLProgram` are all still
-> open; `ProdTerm` is simply the immediate next one in AST order. Independently, the
-> **cospan-model spike** (Wave 3b, unlocks
+> **Next open item:** extend E1 to **`SumExpr`** — the next node up, structurally identical to
+> `ProdTerm` one layer higher (`structure SumExpr where terms : List ProdTerm`). Per the
+> `ProdTerm` blockquote's analysis, the conditional-lemma resolution is expected to repeat
+> mechanically here rather than surfacing a fresh design question. `RHSExpr`/`LHSSlot`/`Stmt`/
+> `Decl`/`TLProgram` follow after. Independently, the **cospan-model spike** (Wave 3b, unlocks
 > **[E13](#e13-generators-for-br--closing-brop-and-promoting-e6s-laws-to-theorems)**) remains
 > available if that thread is preferred instead.
 >
 > Quick resume checklist:
 >
 > 1. Decide whether to merge PR #1 first or keep extending on its branch — either is fine, the
->    branch already has 4 clean slices and its own final reviews.
+>    branch already has 5 clean slices and its own final reviews.
 > 2. `cd leanncd && lake build` — confirm still green (8609 jobs as of this checkpoint; sorry
 >    count in the default build unchanged — none of E1's slices touch a proof).
-> 3. Read the four existing E1 design docs (`docs/superpowers/specs/2026-07-1[56]-e1-traverseaxes-*.md`)
->    for the established pattern before scoping `ProdTerm`.
+> 3. Read the five existing E1 design docs (`docs/superpowers/specs/2026-07-1[56]-e1-traverseaxes-*.md`)
+>    for the established pattern before scoping `SumExpr`.
 > 4. Use `superpowers:brainstorming` to scope it before touching code, same as E6/E11/E1's slices.
 
 A global review of `leanncd/` (~9,200 lines of Lean across 49 modules) after the recent wave of
@@ -851,6 +853,25 @@ makes `TermTraversable` (`Exec/Traversable.lean`) its `Id` special case.
 > no `sorry`/`native_decide`. `ProdTerm`/`SumExpr`/`RHSExpr`/`LHSSlot`/`Stmt`/`Decl`/`TLProgram`
 > remain open — see `docs/superpowers/specs/2026-07-16-e1-traverseaxes-factor-design.md` for the
 > full go/no-go criteria.
+
+> **Prototype result (ProdTerm slice, 2026-07-16):** extended `test/DSL/TraverseAxesSpike.lean`
+> to `ProdTerm.traverseAxes` — the first non-inductive (record) node in the series, needing no
+> `cases`/`induction` on `ProdTerm` itself. Both collecting-direction theorems closed cleanly,
+> including the `termAxisUIDs` bridge — the first slice comparing directly against a real public
+> production function (`termAxisUIDs`, from `Eval/Contract.lean:34-38`) rather than a local copy
+> or extraction. The remap direction's blocking wall (`partial def`, zero equation lemmas)
+> reappears here through the `List` of factors rather than through inductive case-splitting — a
+> single `.iverson` anywhere in `p.factors` would sink an unconditional theorem — so instead of
+> an unconditional theorem, a CONDITIONAL lemma (`traverseAxes_id_eq_prodTermMapUID_of_factors`,
+> "if every factor in the list individually satisfies its own remap equality, the list-level
+> equality follows") was attempted. The conditional lemma closed cleanly via list induction,
+> representing a new proof shape not seen in prior slices (the first hypothesis-parameterized
+> theorem). This resolution is expected to generalize cleanly to `SumExpr`, which has the
+> identical one-field-record-wrapping-a-list shape one layer up (`structure SumExpr where terms :
+> List ProdTerm`). Full `lake build` succeeded, 8,609 jobs, no `sorry`/`native_decide`.
+> `SumExpr`/`RHSExpr`/`LHSSlot`/`Stmt`/`Decl`/`TLProgram` remain open — see
+> `docs/superpowers/specs/2026-07-16-e1-traverseaxes-prodterm-design.md` for the full go/no-go
+> criteria.
 
 ### E2. A typed core IR the pipeline narrows into ("trees that grow")
 
