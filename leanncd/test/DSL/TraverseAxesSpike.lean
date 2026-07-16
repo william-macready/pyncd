@@ -13,7 +13,7 @@ import Mathlib.Control.Traversable.Instances
 
 namespace LeanNCD
 
-open LeanNCD.Eval (idxAxisUIDs predAxisUIDs)
+open LeanNCD.Eval (idxAxisUIDs predAxisUIDs boolAxisUIDs)
 
 /-- Local copy of `Structural.lean`'s private `specsIdx`, for comparison only — NOT the
     source of truth. Keep byte-identical to `Structural.lean:26-27` by inspection. -/
@@ -185,5 +185,98 @@ theorem traverseAxes_const_eq_predAxisUIDs (e : PredArith) :
   | iabs a iha =>
       show (PredArith.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) a).run = predAxisUIDs a
       exact iha
+
+/-- Local copy of `Structural.lean`'s private `specsBool`, for comparison only — NOT the
+    source of truth. Keep byte-identical to `Structural.lean:33-36` by inspection. -/
+private def specsBool' : BoolExpr → List AxisSpec
+  | .rel _ a b => specsPred' a ++ specsPred' b
+  | .and a b => specsBool' a ++ specsBool' b | .or a b => specsBool' a ++ specsBool' b
+  | .not a => specsBool' a | .ieq a b => specsPred' a ++ specsPred' b
+
+/-- Extends the E1 prototype to `BoolExpr`: same self-recursive-`<*>`-plus-delegation shape
+    as `PredArith.traverseAxes` (confirmation, not a new risk), one layer higher. -/
+def BoolExpr.traverseAxes [Applicative f] (g : AxisSpec → f AxisSpec) : BoolExpr → f BoolExpr
+  | .rel op a b => BoolExpr.rel op <$> PredArith.traverseAxes g a <*> PredArith.traverseAxes g b
+  | .and a b    => BoolExpr.and <$> BoolExpr.traverseAxes g a <*> BoolExpr.traverseAxes g b
+  | .or a b     => BoolExpr.or <$> BoolExpr.traverseAxes g a <*> BoolExpr.traverseAxes g b
+  | .not a      => BoolExpr.not <$> BoolExpr.traverseAxes g a
+  | .ieq a b    => BoolExpr.ieq <$> PredArith.traverseAxes g a <*> PredArith.traverseAxes g b
+
+/-- Collect `AxisSpec`s: instantiating at `ConstL (List AxisSpec)` with `g := fun a => ⟨[a]⟩`
+    should reproduce `specsBool'` (the local copy of `Structural.lean`'s private `specsBool`). -/
+theorem traverseAxes_const_eq_specsBool (e : BoolExpr) :
+    (BoolExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) e).run = specsBool' e := by
+  induction e with
+  | rel op a b =>
+      show ((PredArith.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) a).run ++
+            (PredArith.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) b).run
+              : List AxisSpec) = specsPred' a ++ specsPred' b
+      rw [traverseAxes_const_eq_specsPred a, traverseAxes_const_eq_specsPred b]
+  | and a b iha ihb =>
+      show ((BoolExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) a).run ++
+            (BoolExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) b).run
+              : List AxisSpec) = specsBool' a ++ specsBool' b
+      rw [iha, ihb]
+  | or a b iha ihb =>
+      show ((BoolExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) a).run ++
+            (BoolExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) b).run
+              : List AxisSpec) = specsBool' a ++ specsBool' b
+      rw [iha, ihb]
+  | not a iha =>
+      show (BoolExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) a).run = specsBool' a
+      exact iha
+  | ieq a b =>
+      show ((PredArith.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) a).run ++
+            (PredArith.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) b).run
+              : List AxisSpec) = specsPred' a ++ specsPred' b
+      rw [traverseAxes_const_eq_specsPred a, traverseAxes_const_eq_specsPred b]
+
+/-- Collect UIDs: instantiating at `ConstL (List UID)` with `g := fun a => ⟨[a.uid]⟩` should
+    reproduce `boolAxisUIDs` (`Eval/Contract.lean`). -/
+theorem traverseAxes_const_eq_boolAxisUIDs (e : BoolExpr) :
+    (BoolExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) e).run = boolAxisUIDs e := by
+  induction e with
+  | rel op a b =>
+      show ((PredArith.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) a).run ++
+            (PredArith.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) b).run
+              : List UID) = predAxisUIDs a ++ predAxisUIDs b
+      rw [traverseAxes_const_eq_predAxisUIDs a, traverseAxes_const_eq_predAxisUIDs b]
+  | and a b iha ihb =>
+      show ((BoolExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) a).run ++
+            (BoolExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) b).run
+              : List UID) = boolAxisUIDs a ++ boolAxisUIDs b
+      rw [iha, ihb]
+  | or a b iha ihb =>
+      show ((BoolExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) a).run ++
+            (BoolExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) b).run
+              : List UID) = boolAxisUIDs a ++ boolAxisUIDs b
+      rw [iha, ihb]
+  | not a iha =>
+      show (BoolExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) a).run = boolAxisUIDs a
+      exact iha
+  | ieq a b =>
+      show ((PredArith.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) a).run ++
+            (PredArith.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) b).run
+              : List UID) = predAxisUIDs a ++ predAxisUIDs b
+      rw [traverseAxes_const_eq_predAxisUIDs a, traverseAxes_const_eq_predAxisUIDs b]
+
+/- Remap: instantiating `traverseAxes` at `Id` with `g := AxisSpec.mapUID f` should reproduce
+    the existing `BoolExpr.mapUID`.
+
+    NOT PROVEN — commented out rather than left with a `sorry`, per the same wall the `PredArith`
+    slice hit: `BoolExpr.mapUID` is `partial def` in `Traverse.lean` with genuine self-recursion
+    (`.and`/`.or`/`.not` call it again), so Lean generates no equation lemmas for the whole
+    definition — confirmed here by a standalone `rfl` failing even on the non-recursive `.rel`
+    case. Same limitation, same fix if ever needed (drop `partial` from `BoolExpr.mapUID`,
+    out of scope for this spike).
+theorem traverseAxes_id_eq_boolMapUID (f : UData → UData) (e : BoolExpr) :
+    BoolExpr.traverseAxes (f := Id) (AxisSpec.mapUID f) e = BoolExpr.mapUID f e := by
+  induction e with
+  | rel op a b => simp [BoolExpr.traverseAxes, BoolExpr.mapUID]
+  | and a b iha ihb => simp [BoolExpr.traverseAxes, BoolExpr.mapUID, iha, ihb]
+  | or a b iha ihb => simp [BoolExpr.traverseAxes, BoolExpr.mapUID, iha, ihb]
+  | not a iha => simp [BoolExpr.traverseAxes, BoolExpr.mapUID, iha]
+  | ieq a b => simp [BoolExpr.traverseAxes, BoolExpr.mapUID]
+-/
 
 end LeanNCD
