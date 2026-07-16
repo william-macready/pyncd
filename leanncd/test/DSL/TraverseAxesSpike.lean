@@ -14,6 +14,14 @@
 -- traversed via a nested sub-traversal; subsumes `specsFactor`/(the inline Factor-match inside
 -- `termAxisUIDs`); remap proved for `.read`/`.unaryFn`, blocked for `.iverson` (inherits
 -- BoolExpr's wall) — see docs/superpowers/specs/2026-07-16-e1-traverseaxes-factor-design.md.
+-- ProdTerm slice (first non-inductive node; record): subsumes `specsProdTerm'` (collect AxisSpecs)
+-- and the real `termAxisUIDs` (collect UIDs); remap lemma is conditional (can't close unconditionally
+-- when a factor is `.iverson`, inheriting that slice's limitation) — see
+-- docs/superpowers/specs/2026-07-16-e1-traverseaxes-prodterm-design.md.
+-- SumExpr slice (structurally identical one layer up; record): subsumes `specsSumExpr'` (collect
+-- AxisSpecs) and the bare expression `s.terms.flatMap termAxisUIDs` (collect UIDs, no new named def);
+-- the conditional-remap pattern generalizes mechanically (all three theorems pre-verified during
+-- design, zero surprises) — see docs/superpowers/specs/2026-07-16-e1-traverseaxes-sumexpr-design.md.
 import LeanNCD.DSL.Traverse
 import LeanNCD.Eval.Contract
 import Mathlib.Control.Traversable.Instances
