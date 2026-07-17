@@ -3,9 +3,21 @@ import LeanNCD.DSL.Pipeline.Types
 import LeanNCD.DSL.Traverse
 import LeanNCD.Exec.Uid
 import Std.Data.HashMap
+-- SPIKE EXCEPTION (E1 traverseAxes prototype, 2026-07-16 — see
+-- docs/superpowers/specs/2026-07-16-e1-traverseaxes-stmt-design.md): this is the ONLY
+-- cross-layer import on this branch — DSL/Pipeline and Eval are otherwise deliberately
+-- parallel, non-crossing layers (see LeanNCD.lean's own architecture note). It exists solely
+-- so `Stmt.uids_eq` below (also new, also spike-only) can state its RHS using the real,
+-- public `idxAxisUIDs`/`boolAxisUIDs`/`termAxisUIDs` rather than duplicating their logic by
+-- hand. TO REVERT: delete this import and the `Stmt.uids_eq` theorem (search "SPIKE EXCEPTION"
+-- in this file) — nothing else in this file depends on either.
+import LeanNCD.Eval.Contract
 
 namespace LeanNCD
 open Std
+-- SPIKE EXCEPTION (see the `LeanNCD.Eval.Contract` import above): only needed by
+-- `Stmt.uids_eq` below. TO REVERT: delete this line along with that import and theorem.
+open LeanNCD.Eval (idxAxisUIDs predAxisUIDs boolAxisUIDs termAxisUIDs)
 
 /-! ## Axis collectors
 
@@ -70,6 +82,165 @@ def TLProgram.axisNames (p : TLProgram) : List String :=
 
 /-- Every `AxisSpec.uid` reachable in a statement, in program order. -/
 def Stmt.uids (s : Stmt) : List UID := (specsStmt s).map (·.uid)
+
+-- SPIKE EXCEPTION (E1 traverseAxes prototype, 2026-07-16 — see
+-- docs/superpowers/specs/2026-07-16-e1-traverseaxes-stmt-design.md): exposes `Stmt.uids`'s
+-- value in terms of already-public UID-collectors (`idxAxisUIDs`/`boolAxisUIDs`/
+-- `termAxisUIDs`), letting an outside caller (the E1 spike file, which cannot see the private
+-- `specsStmt`/`specsLHS`/`specsRHS`/`specsNonlin`/`specsFactor`/`specsBool`/`specsPred` this
+-- unfolds) relate `Stmt.uids` to its own `traverseAxes`-based reconstruction without
+-- duplicating any of their logic by hand. The five helper lemmas below establish, layer by
+-- layer, that each private `specsX` collector's `.map (·.uid)` coincides with the
+-- already-public UID collector at that same layer (`idxAxisUIDs`, `predAxisUIDs`,
+-- `boolAxisUIDs`) — each proved entirely from *inside* this file, where those private helpers
+-- are visible, checked against their real bodies by the Lean kernel, not "by inspection."
+-- TO REVERT: delete this comment block through `Stmt.uids_eq` below, and the
+-- `LeanNCD.Eval.Contract` import + `open` above (search "SPIKE EXCEPTION" in this file) —
+-- nothing else here depends on any of it.
+
+private theorem specsIdx_map_uid_eq (e : IdxExpr) : (specsIdx e).map (·.uid) = idxAxisUIDs e := by
+  cases e with
+  | axis a => rfl
+  | const n => rfl
+  | scale c a => rfl
+  | shift a n => rfl
+  | affine n xs =>
+      show (xs.map (·.2)).map (·.uid) = xs.map (·.2.uid)
+      rw [List.map_map]
+      rfl
+
+private theorem specsPred_map_uid_eq (e : PredArith) : (specsPred e).map (·.uid) = predAxisUIDs e := by
+  induction e with
+  | embed e => exact specsIdx_map_uid_eq e
+  | mul a b iha ihb =>
+      show (specsPred a ++ specsPred b).map (·.uid) = predAxisUIDs a ++ predAxisUIDs b
+      rw [List.map_append, iha, ihb]
+  | iabs a iha =>
+      show (specsPred a).map (·.uid) = predAxisUIDs a
+      exact iha
+
+private theorem specsBool_map_uid_eq (b : BoolExpr) : (specsBool b).map (·.uid) = boolAxisUIDs b := by
+  induction b with
+  | rel op a b =>
+      show (specsPred a ++ specsPred b).map (·.uid) = predAxisUIDs a ++ predAxisUIDs b
+      rw [List.map_append, specsPred_map_uid_eq, specsPred_map_uid_eq]
+  | and a b iha ihb =>
+      show (specsBool a ++ specsBool b).map (·.uid) = boolAxisUIDs a ++ boolAxisUIDs b
+      rw [List.map_append, iha, ihb]
+  | or a b iha ihb =>
+      show (specsBool a ++ specsBool b).map (·.uid) = boolAxisUIDs a ++ boolAxisUIDs b
+      rw [List.map_append, iha, ihb]
+  | not a iha =>
+      show (specsBool a).map (·.uid) = boolAxisUIDs a
+      exact iha
+  | ieq a b =>
+      show (specsPred a ++ specsPred b).map (·.uid) = predAxisUIDs a ++ predAxisUIDs b
+      rw [List.map_append, specsPred_map_uid_eq, specsPred_map_uid_eq]
+
+private theorem specsFactor_map_uid_eq (x : Factor) :
+    (specsFactor x).map (·.uid) = match x with
+      | .read _ es => es.flatMap idxAxisUIDs
+      | .iverson b => boolAxisUIDs b
+      | .unaryFn _ _ es => es.flatMap idxAxisUIDs := by
+  cases x with
+  | read nm es =>
+      show (es.flatMap specsIdx).map (·.uid) = es.flatMap idxAxisUIDs
+      rw [List.map_flatMap]
+      congr 1
+      funext e
+      exact specsIdx_map_uid_eq e
+  | iverson b =>
+      show (specsBool b).map (·.uid) = boolAxisUIDs b
+      exact specsBool_map_uid_eq b
+  | unaryFn op nm es =>
+      show (es.flatMap specsIdx).map (·.uid) = es.flatMap idxAxisUIDs
+      rw [List.map_flatMap]
+      congr 1
+      funext e
+      exact specsIdx_map_uid_eq e
+
+private theorem specsNonlin_map_uid_eq (n : Nonlin) :
+    (specsNonlin n).map (·.uid) = match n with
+      | .softmax (some m) => boolAxisUIDs m | .normalize (some m) => boolAxisUIDs m
+      | .l2normalize (some m) => boolAxisUIDs m | _ => [] := by
+  cases n with
+  | identity => rfl | relu => rfl | sigmoid => rfl | tanh => rfl | gelu => rfl | leakyrelu => rfl
+  | softmax m => cases m with | none => rfl | some b => exact specsBool_map_uid_eq b
+  | normalize m => cases m with | none => rfl | some b => exact specsBool_map_uid_eq b
+  | l2normalize m => cases m with | none => rfl | some b => exact specsBool_map_uid_eq b
+
+private theorem specsLHS_map_uid_eq (sl : LHSSlot) :
+    (specsLHS sl).map (·.uid) = match sl with
+      | .free a => [a.uid] | .freeNorm a => [a.uid]
+      | .iterAt a _ => [a.uid] | .iterNext a => [a.uid]
+      | .affine e => idxAxisUIDs e := by
+  cases sl with
+  | free a => rfl
+  | freeNorm a => rfl
+  | iterAt a n => rfl
+  | iterNext a => rfl
+  | affine e => exact specsIdx_map_uid_eq e
+
+theorem Stmt.uids_eq (s : Stmt) : Stmt.uids s =
+    match s with
+    | .assign _ ls r =>
+        ls.flatMap (fun sl => match sl with
+          | .free a => [a.uid] | .freeNorm a => [a.uid]
+          | .iterAt a _ => [a.uid] | .iterNext a => [a.uid]
+          | .affine e => idxAxisUIDs e)
+        ++ r.body.terms.flatMap termAxisUIDs
+        ++ (match r.nonlin with
+            | .softmax (some m) => boolAxisUIDs m | .normalize (some m) => boolAxisUIDs m
+            | .l2normalize (some m) => boolAxisUIDs m | _ => [])
+    | .scatter _ ls r _ =>
+        ls.flatMap (fun sl => match sl with
+          | .free a => [a.uid] | .freeNorm a => [a.uid]
+          | .iterAt a _ => [a.uid] | .iterNext a => [a.uid]
+          | .affine e => idxAxisUIDs e)
+        ++ r.body.terms.flatMap termAxisUIDs
+        ++ (match r.nonlin with
+            | .softmax (some m) => boolAxisUIDs m | .normalize (some m) => boolAxisUIDs m
+            | .l2normalize (some m) => boolAxisUIDs m | _ => [])
+    | .recurMorphism _ ax _ => [ax.uid]
+  := by
+  have hRHS : ∀ r : RHSExpr, (specsRHS r).map (·.uid) =
+      r.body.terms.flatMap termAxisUIDs
+      ++ (match r.nonlin with
+          | .softmax (some m) => boolAxisUIDs m | .normalize (some m) => boolAxisUIDs m
+          | .l2normalize (some m) => boolAxisUIDs m | _ => []) := by
+    intro r
+    show ((r.body.terms.flatMap (fun t => t.factors.flatMap specsFactor)) ++ specsNonlin r.nonlin).map (·.uid)
+      = r.body.terms.flatMap termAxisUIDs ++ (match r.nonlin with
+          | .softmax (some m) => boolAxisUIDs m | .normalize (some m) => boolAxisUIDs m
+          | .l2normalize (some m) => boolAxisUIDs m | _ => [])
+    rw [List.map_append, specsNonlin_map_uid_eq]
+    congr 1
+    rw [List.map_flatMap]
+    congr 1
+    funext t
+    show (t.factors.flatMap specsFactor).map (·.uid) = termAxisUIDs t
+    rw [List.map_flatMap]
+    congr 1
+    funext x
+    exact specsFactor_map_uid_eq x
+  have hLS : ∀ ls : List LHSSlot, (ls.flatMap specsLHS).map (·.uid) =
+      ls.flatMap (fun sl => match sl with
+        | .free a => [a.uid] | .freeNorm a => [a.uid]
+        | .iterAt a _ => [a.uid] | .iterNext a => [a.uid]
+        | .affine e => idxAxisUIDs e) := by
+    intro ls
+    rw [List.map_flatMap]
+    congr 1
+    funext sl
+    exact specsLHS_map_uid_eq sl
+  cases s with
+  | assign nm ls r =>
+      show (ls.flatMap specsLHS ++ specsRHS r).map (·.uid) = _
+      rw [List.map_append, hLS, hRHS, ← List.append_assoc]
+  | scatter nm ls r o =>
+      show (ls.flatMap specsLHS ++ specsRHS r).map (·.uid) = _
+      rw [List.map_append, hLS, hRHS, ← List.append_assoc]
+  | recurMorphism nm ax tc => rfl
 
 /-! ## The `assignUIDs` phase -/
 
