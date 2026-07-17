@@ -1077,4 +1077,95 @@ theorem traverseAxes_id_eq_declMapUID (f : UData → UData) (d : Decl) :
       rw [core ax]
   | axis ax n => rfl
 
+-- ===== TLProgram =====
+
+/-- Extends the E1 prototype to `TLProgram` — the FINAL AST node, completing full coverage.
+    Combines a `List Decl` sub-traversal (`Traversable.traverse (Decl.traverseAxes g)`) and a
+    `List Stmt` sub-traversal (`Traversable.traverse (Stmt.traverseAxes g)`) via `<$> ... <*>`,
+    the same shape `RHSExpr.traverseAxesWithMask` and `Stmt.traverseAxes`'s `.assign`/`.scatter`
+    arms already use to combine two independent parts of a record. -/
+def TLProgram.traverseAxes [Applicative f] (g : AxisSpec → f AxisSpec) (p : TLProgram) : f TLProgram :=
+  (fun decls stmts => ({ decls := decls, stmts := stmts } : TLProgram)) <$>
+    Traversable.traverse (Decl.traverseAxes g) p.decls <*> Traversable.traverse (Stmt.traverseAxes g) p.stmts
+
+/-- Local copy built from the already-proven `specsDecl'`/`specsStmt'`, mirroring production's
+    private `TLProgram.axisSpecs` (`Structural.lean:74-75`: `p.decls.flatMap specsDecl ++
+    p.stmts.flatMap specsStmt`) one layer removed — NOT the source of truth. -/
+private def specsProgram' (p : TLProgram) : List AxisSpec :=
+  p.decls.flatMap specsDecl' ++ p.stmts.flatMap specsStmt'
+
+/-- Collect `AxisSpec`s: instantiating at `ConstL (List AxisSpec)` with `g := fun a => ⟨[a]⟩`
+    should reproduce `specsProgram'`. Two independent `core` induction lemmas — one folding
+    `Decl.traverseAxes` over `p.decls` via the already-proven `traverseAxes_const_eq_specsDecl`,
+    one folding `Stmt.traverseAxes` over `p.stmts` via the already-proven
+    `traverseAxes_const_eq_specsStmt` — then combined. -/
+theorem traverseAxes_const_eq_specsProgram (p : TLProgram) :
+    (TLProgram.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) p).run = specsProgram' p := by
+  have coreD : ∀ ds : List Decl,
+      (Traversable.traverse (Decl.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) ds).run
+        = ds.flatMap specsDecl' := by
+    intro ds
+    induction ds with
+    | nil => rfl
+    | cons hd tl ih =>
+        show (Decl.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) hd).run ++
+            (Traversable.traverse (Decl.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) tl).run
+          = specsDecl' hd ++ tl.flatMap specsDecl'
+        rw [traverseAxes_const_eq_specsDecl hd, ih]
+  have coreS : ∀ ss : List Stmt,
+      (Traversable.traverse (Stmt.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) ss).run
+        = ss.flatMap specsStmt' := by
+    intro ss
+    induction ss with
+    | nil => rfl
+    | cons hd tl ih =>
+        show (Stmt.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) hd).run ++
+            (Traversable.traverse (Stmt.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) tl).run
+          = specsStmt' hd ++ tl.flatMap specsStmt'
+        rw [traverseAxes_const_eq_specsStmt hd, ih]
+  show (Traversable.traverse (Decl.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) p.decls).run ++
+      (Traversable.traverse (Stmt.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) p.stmts).run
+    = p.decls.flatMap specsDecl' ++ p.stmts.flatMap specsStmt'
+  rw [coreD p.decls, coreS p.stmts]
+
+/-- Remap: instantiating `traverseAxes` at `Id` with `g := AxisSpec.mapUID f` should reproduce
+    the REAL `TermTraversable.traverseUID f p` — not a named `TLProgram.mapUID` (which does not
+    exist; `TLProgram`'s remap logic is written inline in its `TermTraversable` instance,
+    `Traverse.lean:79-80`) and not a hand-copied local. CONDITIONAL on exactly ONE hypothesis,
+    about `p.stmts` (`∀ s ∈ p.stmts, ...`) — `p.decls` needs no hypothesis at all, since
+    `Decl`'s own remap (`traverseAxes_id_eq_declMapUID`) is already fully unconditional. The
+    `stmts` hypothesis mirrors `ProdTerm`'s own "if every element in the list individually
+    satisfies its own remap equality, the list-level equality follows" pattern, generalized from
+    `List Factor` to `List Stmt` via explicit list membership. -/
+theorem traverseAxes_id_eq_tlProgramMapUID (f : UData → UData) (p : TLProgram)
+    (hstmts : ∀ s ∈ p.stmts, Stmt.traverseAxes (f := Id) (AxisSpec.mapUID f) s = Stmt.mapUID f s) :
+    TLProgram.traverseAxes (f := Id) (AxisSpec.mapUID f) p = TermTraversable.traverseUID f p := by
+  have coreD : Traversable.traverse (Decl.traverseAxes (f := Id) (AxisSpec.mapUID f)) p.decls = p.decls.map (Decl.mapUID f) := by
+    have core : ∀ ds : List Decl,
+        Traversable.traverse (Decl.traverseAxes (f := Id) (AxisSpec.mapUID f)) ds = ds.map (Decl.mapUID f) := by
+      intro ds
+      induction ds with
+      | nil => rfl
+      | cons hd tl ih =>
+          simp only [List.traverse_cons]
+          rw [traverseAxes_id_eq_declMapUID f hd, ih]
+          rfl
+    exact core p.decls
+  have coreS : Traversable.traverse (Stmt.traverseAxes (f := Id) (AxisSpec.mapUID f)) p.stmts = p.stmts.map (Stmt.mapUID f) := by
+    have core : ∀ ss : List Stmt, (∀ s ∈ ss, Stmt.traverseAxes (f := Id) (AxisSpec.mapUID f) s = Stmt.mapUID f s) →
+        Traversable.traverse (Stmt.traverseAxes (f := Id) (AxisSpec.mapUID f)) ss = ss.map (Stmt.mapUID f) := by
+      intro ss hss
+      induction ss with
+      | nil => rfl
+      | cons hd tl ih =>
+          simp only [List.traverse_cons]
+          rw [hss hd List.mem_cons_self, ih (fun s hs => hss s (List.mem_cons_of_mem hd hs))]
+          rfl
+    exact core p.stmts hstmts
+  show (fun decls stmts => ({ decls := decls, stmts := stmts } : TLProgram))
+      (Traversable.traverse (Decl.traverseAxes (f := Id) (AxisSpec.mapUID f)) p.decls)
+      (Traversable.traverse (Stmt.traverseAxes (f := Id) (AxisSpec.mapUID f)) p.stmts)
+    = { decls := p.decls.map (Decl.mapUID f), stmts := p.stmts.map (Stmt.mapUID f) }
+  rw [coreD, coreS]
+
 end LeanNCD
