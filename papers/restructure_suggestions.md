@@ -21,10 +21,11 @@
 > `worktree-e1-traverseaxes-prototype`, worktree at
 > `.claude/worktrees/e1-traverseaxes-prototype`.
 >
-> **Next open item:** extend E1 to **`Stmt`**. `Stmt` has three constructors (`.assign`,
-> `.scatter`, and `.recurMorphism` — the last being a "pre-built morphism escape hatch" not
-> expressible via DSL syntax at all) of genuinely different shapes, which is structurally unlike
-> the uniform expression nodes preceding it. Before scoping, consult `DSL/Ast.lean:116-121` and
+> **Next open item:** extend E1 to **`Stmt`**. `Stmt` has three constructors: `.assign` and
+> `.scatter` are nearly identical (`.scatter` = `.assign` plus `ScatterOpts`), but
+> `.recurMorphism` is a genuine outlier — a "pre-built morphism escape hatch" not expressible
+> via DSL syntax at all, structurally unlike the uniform expression nodes preceding it. Before
+> scoping, consult `DSL/Ast.lean:116-121` and
 > note the collector-vs-classifier distinction `LHSSlot` just surfaced — `Stmt` may have its own
 > version of this asymmetry to navigate rather than a mechanical continuation. `Decl`/`TLProgram`
 > follow after. Independently, the **cospan-model spike** (Wave 3b, unlocks
@@ -921,18 +922,19 @@ makes `TermTraversable` (`Exec/Traversable.lean`) its `Id` special case.
 > to `LHSSlot.traverseAxes` — the simplest traversal shape in the series (4 of 5 arms apply `g`
 > directly to a bare `AxisSpec`, no sub-traversal; the 5th delegates to the already-proven
 > `IdxExpr.traverseAxes`). The collecting-direction theorem (`traverseAxes_const_eq_specsLHS`,
-> against a local `specsLHS'` copy) closed cleanly. The remap theorem closed FULLY
-> UNCONDITIONALLY — the first time since `IdxExpr` itself — because `LHSSlot.mapUID` is
-> flat/non-partial and its only dependency, `IdxExpr.mapUID`, never touches `BoolExpr` and so
-> never hits the `partial def`/zero-equation-lemmas wall every intermediate slice needed a
-> hypothesis to work around. Explicitly out of scope: `lhsAxisUID?`/`freeAxisUIDs`
-> (`Eval/Shape.lean:501-506`, `Eval/Contract.lean:29`) are a classify-and-filter function, not
-> a collector — `.affine` maps to `none` there, not "the axes inside its `IdxExpr`" (which is
-> what any instantiation of this traversal produces instead) — so no instantiation of
-> `LHSSlot.traverseAxes` can reproduce them; this is a different function shape, not a missing
-> production counterpart. `Stmt`/`Decl`/`TLProgram` remain open — see
-> `docs/superpowers/specs/2026-07-16-e1-traverseaxes-lhsslot-design.md` for the full go/no-go
-> criteria.
+> against a local `specsLHS'` copy) closed cleanly. The remap theorem
+> (`traverseAxes_id_eq_lhsSlotMapUID`) closed FULLY UNCONDITIONALLY — the first time since
+> `IdxExpr` itself — because `LHSSlot.mapUID` is flat/non-partial and its only dependency,
+> `IdxExpr.mapUID`, never touches `BoolExpr` and so never hits the `partial def`/
+> zero-equation-lemmas wall every intermediate slice needed a hypothesis to work around.
+> Explicitly out of scope: `lhsAxisUID?`/`freeAxisUIDs` (`Eval/Shape.lean:501-506`,
+> `Eval/Contract.lean:29`) are classify-and-filter functions, not collectors — `.affine` maps
+> to `none` there, not "the axes inside its `IdxExpr`" (which is what any instantiation of this
+> traversal produces instead) — so no instantiation of `LHSSlot.traverseAxes` can reproduce
+> them; this is a different function shape, not a missing production counterpart. Full `lake
+> build` succeeded, 8,609 jobs, no `sorry`/`native_decide`. `Stmt`/`Decl`/`TLProgram` remain
+> open — see `docs/superpowers/specs/2026-07-16-e1-traverseaxes-lhsslot-design.md` for the
+> full go/no-go criteria.
 
 ### E2. A typed core IR the pipeline narrows into ("trees that grow")
 
