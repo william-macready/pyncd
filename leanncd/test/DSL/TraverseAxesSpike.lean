@@ -743,4 +743,63 @@ theorem traverseAxes_id_eq_rhsExprMapUID (f : UData → UData) (r : RHSExpr)
     = { body := SumExpr.mapUID f r.body, nonlin := Nonlin.mapUID f r.nonlin, agg := r.agg }
   rw [hbody, hnonlin]
 
+-- ===== LHSSlot =====
+
+/-- Local copy of `Structural.lean`'s private `specsLHS`, for comparison only — NOT the
+    source of truth. Keep byte-identical to `Structural.lean:52-53` by inspection. Unlike
+    `Nonlin`'s `specsNonlin`, this is already a clean, exhaustive match with no documented
+    wildcard hazard. -/
+private def specsLHS' : LHSSlot → List AxisSpec
+  | .free a => [a] | .freeNorm a => [a]
+  | .iterAt a _ => [a] | .iterNext a => [a] | .affine e => specsIdx' e
+
+/-- Extends the E1 prototype to `LHSSlot`: the simplest traversal shape in the series — 4 of 5
+    arms apply `g` directly to a bare `AxisSpec` (no sub-traversal at all), the 5th (`.affine`)
+    delegates entirely to the already-proven `IdxExpr.traverseAxes`.
+
+    Deliberately OUT OF SCOPE: `lhsAxisUID?`/`freeAxisUIDs` (`Eval/Shape.lean:501-506`,
+    `Eval/Contract.lean:29`) cannot be reproduced by any instantiation of this traversal — they
+    are a classify-and-filter function (`.affine` maps to `none`, dropped entirely from the
+    free-axis list), not a collector (which is what every instantiation of `traverseAxes`
+    produces — for `.affine`, that means recursing into its `IdxExpr` and collecting those
+    axes, which is NOT what `lhsAxisUID?` does). This is a different function shape, not a
+    missing production counterpart. -/
+def LHSSlot.traverseAxes [Applicative f] (g : AxisSpec → f AxisSpec) : LHSSlot → f LHSSlot
+  | .free a     => LHSSlot.free <$> g a
+  | .freeNorm a => LHSSlot.freeNorm <$> g a
+  | .iterAt a n => (fun a' => LHSSlot.iterAt a' n) <$> g a
+  | .iterNext a => LHSSlot.iterNext <$> g a
+  | .affine e   => LHSSlot.affine <$> IdxExpr.traverseAxes g e
+
+/-- Collect `AxisSpec`s: instantiating at `ConstL (List AxisSpec)` with `g := fun a => ⟨[a]⟩`
+    should reproduce `specsLHS'`. -/
+theorem traverseAxes_const_eq_specsLHS (s : LHSSlot) :
+    (LHSSlot.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) s).run = specsLHS' s := by
+  cases s with
+  | free a => rfl
+  | freeNorm a => rfl
+  | iterAt a n => rfl
+  | iterNext a => rfl
+  | affine e =>
+      show (IdxExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) e).run = specsIdx' e
+      exact traverseAxes_const_eq_specsIdx e
+
+/-- Remap: instantiating `traverseAxes` at `Id` with `g := AxisSpec.mapUID f` should reproduce
+    `LHSSlot.mapUID`. FULLY UNCONDITIONAL — the first time since `IdxExpr` itself — because
+    `LHSSlot.mapUID` is flat/non-partial and its only non-trivial dependency,
+    `IdxExpr.mapUID`, is already fully and unconditionally proven (`traverseAxes_id_eq_mapUID`,
+    from the `IdxExpr` slice, which never touches `BoolExpr` and so never hits the `partial
+    def`/zero-equation-lemmas wall every slice from `PredArith` onward has needed a hypothesis
+    or block to work around). -/
+theorem traverseAxes_id_eq_lhsSlotMapUID (f : UData → UData) (s : LHSSlot) :
+    LHSSlot.traverseAxes (f := Id) (AxisSpec.mapUID f) s = LHSSlot.mapUID f s := by
+  cases s with
+  | free a => rfl
+  | freeNorm a => rfl
+  | iterAt a n => rfl
+  | iterNext a => rfl
+  | affine e =>
+      show LHSSlot.affine (IdxExpr.traverseAxes (f := Id) (AxisSpec.mapUID f) e) = LHSSlot.affine (IdxExpr.mapUID f e)
+      rw [traverseAxes_id_eq_mapUID f e]
+
 end LeanNCD
