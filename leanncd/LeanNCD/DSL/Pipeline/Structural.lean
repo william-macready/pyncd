@@ -177,8 +177,45 @@ private theorem specsFactor_eq_old (x : Factor) : specsFactor x = specsFactor_ol
         = es.flatMap specsIdx
       exact core es
 
-private def specsRHS (r : RHSExpr) : List AxisSpec :=
+private def specsRHS_old (r : RHSExpr) : List AxisSpec :=
   (r.body.terms.flatMap (fun t => t.factors.flatMap specsFactor)) ++ specsNonlin r.nonlin
+
+private def specsRHS (r : RHSExpr) : List AxisSpec :=
+  (RHSExpr.traverseAxesWithMask (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) r).run
+
+private theorem specsRHS_eq_old (r : RHSExpr) : specsRHS r = specsRHS_old r := by
+  have coreFactor : ∀ fs : List Factor,
+      (Traversable.traverse (Factor.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) fs).run
+        = fs.flatMap specsFactor := by
+    intro fs
+    induction fs with
+    | nil => rfl
+    | cons hd tl ih =>
+        show specsFactor hd ++
+            (Traversable.traverse (Factor.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) tl).run
+          = specsFactor hd ++ tl.flatMap specsFactor
+        rw [ih]
+  have coreTerm : ∀ ts : List ProdTerm,
+      (Traversable.traverse (ProdTerm.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) ts).run
+        = ts.flatMap (fun t => t.factors.flatMap specsFactor) := by
+    intro ts
+    induction ts with
+    | nil => rfl
+    | cons hd tl ih =>
+        show (Traversable.traverse (Factor.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) hd.factors).run ++
+            (Traversable.traverse (ProdTerm.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) tl).run
+          = hd.factors.flatMap specsFactor ++ tl.flatMap (fun t => t.factors.flatMap specsFactor)
+        rw [coreFactor hd.factors, ih]
+  show (SumExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) r.body).run ++
+      (Nonlin.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) r.nonlin).run
+    = (r.body.terms.flatMap (fun t => t.factors.flatMap specsFactor)) ++ specsNonlin r.nonlin
+  have hbody : (SumExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) r.body).run
+      = r.body.terms.flatMap (fun t => t.factors.flatMap specsFactor) := by
+    show (Traversable.traverse (ProdTerm.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) r.body.terms).run
+      = r.body.terms.flatMap (fun t => t.factors.flatMap specsFactor)
+    exact coreTerm r.body.terms
+  rw [hbody]
+  rfl
 
 private def specsLHS : LHSSlot → List AxisSpec
   | .free a => [a] | .freeNorm a => [a]
@@ -335,6 +372,7 @@ theorem Stmt.uids_eq (s : Stmt) : Stmt.uids s =
           | .softmax (some m) => boolAxisUIDs m | .normalize (some m) => boolAxisUIDs m
           | .l2normalize (some m) => boolAxisUIDs m | _ => []) := by
     intro r
+    rw [specsRHS_eq_old]
     show ((r.body.terms.flatMap (fun t => t.factors.flatMap specsFactor)) ++ specsNonlin r.nonlin).map (·.uid)
       = r.body.terms.flatMap termAxisUIDs ++ (match r.nonlin with
           | .softmax (some m) => boolAxisUIDs m | .normalize (some m) => boolAxisUIDs m
