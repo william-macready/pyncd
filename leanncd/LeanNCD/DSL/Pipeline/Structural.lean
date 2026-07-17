@@ -232,9 +232,8 @@ private theorem specsLHS_eq_old (s : LHSSlot) : specsLHS s = specsLHS_old s := b
   | iterNext a => rfl
   | affine e => rfl
 
-private def specsDecl : Decl → List AxisSpec
-  | .tensor _ ax => ax | .predicate _ ax => ax | .linear _ ax _ => ax
-  | .axis ax _ => [ax]
+private def specsDecl (d : Decl) : List AxisSpec :=
+  (Decl.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) d).run
 
 private def specsStmt : Stmt → List AxisSpec
   | .assign _ ls r => ls.flatMap specsLHS ++ specsRHS r
