@@ -998,4 +998,76 @@ theorem traverseAxes_id_eq_stmtMapUID_scatter (f : UData → UData) (nm : String
         rfl
   rw [core ls, hr]
 
+-- ===== Decl =====
+
+/-- Extends the E1 prototype to `Decl`: the flattest traversal shape in the series — no
+    constructor wraps a nested `IdxExpr`/`BoolExpr`/`RHSExpr`/`LHSSlot`; every arm bottoms out
+    directly in a bare `AxisSpec` or a `List AxisSpec`. Three of four arms traverse a
+    `List AxisSpec` via `Traversable.traverse g` directly (no nested `traverseAxes` call
+    needed, since the elements are already bare `AxisSpec`s); the fourth (`.axis`) applies `g`
+    to its single `AxisSpec` directly. -/
+def Decl.traverseAxes [Applicative f] (g : AxisSpec → f AxisSpec) : Decl → f Decl
+  | .tensor nm ax     => Decl.tensor nm <$> Traversable.traverse g ax
+  | .predicate nm ax  => Decl.predicate nm <$> Traversable.traverse g ax
+  | .linear nm ax b   => (fun ax' => Decl.linear nm ax' b) <$> Traversable.traverse g ax
+  | .axis ax n        => (fun ax' => Decl.axis ax' n) <$> g ax
+
+/-- Local copy of `Structural.lean`'s private `specsDecl`, for comparison only — NOT the
+    source of truth. Keep byte-identical to `Structural.lean:64-66` by inspection. -/
+private def specsDecl' : Decl → List AxisSpec
+  | .tensor _ ax => ax | .predicate _ ax => ax | .linear _ ax _ => ax
+  | .axis ax _ => [ax]
+
+/-- Collect `AxisSpec`s: instantiating at `ConstL (List AxisSpec)` with `g := fun a => ⟨[a]⟩`
+    should reproduce `specsDecl'`. The `core` lemma calls `Traversable.traverse` DIRECTLY on a
+    `List AxisSpec` (not through a node-level `traverseAxes` wrapper, unlike every prior list
+    traversal in this file) — the explicit `ConstL (List AxisSpec) AxisSpec` type ascription on
+    the lambda is required because `ConstL` ignores its second type parameter, so Lean cannot
+    infer the target element type from `⟨[a]⟩` alone. -/
+theorem traverseAxes_const_eq_specsDecl (d : Decl) :
+    (Decl.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) d).run = specsDecl' d := by
+  have core : ∀ ys : List AxisSpec,
+      (Traversable.traverse (fun a => (⟨[a]⟩ : ConstL (List AxisSpec) AxisSpec)) ys).run = ys := by
+    intro ys
+    induction ys with
+    | nil => rfl
+    | cons hd tl ih =>
+        show [hd] ++ (Traversable.traverse (fun a => (⟨[a]⟩ : ConstL (List AxisSpec) AxisSpec)) tl).run = hd :: tl
+        rw [ih]
+        rfl
+  cases d with
+  | tensor nm ax => exact core ax
+  | predicate nm ax => exact core ax
+  | linear nm ax b => exact core ax
+  | axis ax n => rfl
+
+/-- Remap: instantiating `traverseAxes` at `Id` with `g := AxisSpec.mapUID f` should reproduce
+    `Decl.mapUID`. FULLY UNCONDITIONAL, matching `LHSSlot`'s and `IdxExpr`'s precedent — because
+    `Decl.mapUID` is flat/non-partial and its only dependency, `AxisSpec.mapUID`, carries no
+    `partial def`/self-recursion wall anywhere in its own chain. Note `Traversable.traverse`'s
+    own implicit applicative-functor parameter is named `m`, not `f` — this only matters when
+    calling it directly (as here), not through a node-level `traverseAxes` wrapper. -/
+theorem traverseAxes_id_eq_declMapUID (f : UData → UData) (d : Decl) :
+    Decl.traverseAxes (f := Id) (AxisSpec.mapUID f) d = Decl.mapUID f d := by
+  have core : ∀ ys : List AxisSpec,
+      Traversable.traverse (m := Id) (AxisSpec.mapUID f) ys = ys.map (AxisSpec.mapUID f) := by
+    intro ys
+    induction ys with
+    | nil => rfl
+    | cons hd tl ih =>
+        simp only [List.traverse_cons]
+        rw [ih]
+        rfl
+  cases d with
+  | tensor nm ax =>
+      show Decl.tensor nm (Traversable.traverse (m := Id) (AxisSpec.mapUID f) ax) = Decl.tensor nm (ax.map (AxisSpec.mapUID f))
+      rw [core ax]
+  | predicate nm ax =>
+      show Decl.predicate nm (Traversable.traverse (m := Id) (AxisSpec.mapUID f) ax) = Decl.predicate nm (ax.map (AxisSpec.mapUID f))
+      rw [core ax]
+  | linear nm ax b =>
+      show Decl.linear nm (Traversable.traverse (m := Id) (AxisSpec.mapUID f) ax) b = Decl.linear nm (ax.map (AxisSpec.mapUID f)) b
+      rw [core ax]
+  | axis ax n => rfl
+
 end LeanNCD
