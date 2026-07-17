@@ -32,6 +32,7 @@
 -- excludes the mask axes — see docs/superpowers/specs/2026-07-16-e1-traverseaxes-rhsexpr-design.md.
 import LeanNCD.DSL.Traverse
 import LeanNCD.Eval.Contract
+import LeanNCD.DSL.Pipeline.Structural
 import Mathlib.Control.Traversable.Instances
 
 namespace LeanNCD
@@ -661,6 +662,41 @@ theorem traverseAxes_const_eq_specsNonlin (n : Nonlin) :
           show (BoolExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) b).run = specsBool' b
           exact traverseAxes_const_eq_specsBool b
 
+/-- `Nonlin`'s UID-collecting direction: only needed downstream by `Stmt.uids` (production's
+    `specsStmt`, unlike `readAxisUIDs`, includes the mask's axes — see the mask-inclusion
+    asymmetry noted at the RHSExpr slice). No prior slice needed this because `readAxisUIDs`
+    deliberately excludes the mask. -/
+theorem traverseAxes_const_eq_nonlinAxisUIDs (n : Nonlin) :
+    (Nonlin.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) n).run =
+      match n with
+      | .softmax (some m) => boolAxisUIDs m | .normalize (some m) => boolAxisUIDs m
+      | .l2normalize (some m) => boolAxisUIDs m | _ => [] := by
+  cases n with
+  | identity => rfl
+  | relu => rfl
+  | sigmoid => rfl
+  | tanh => rfl
+  | gelu => rfl
+  | leakyrelu => rfl
+  | softmax m =>
+      cases m with
+      | none => rfl
+      | some b =>
+          show (BoolExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) b).run = boolAxisUIDs b
+          exact traverseAxes_const_eq_boolAxisUIDs b
+  | normalize m =>
+      cases m with
+      | none => rfl
+      | some b =>
+          show (BoolExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) b).run = boolAxisUIDs b
+          exact traverseAxes_const_eq_boolAxisUIDs b
+  | l2normalize m =>
+      cases m with
+      | none => rfl
+      | some b =>
+          show (BoolExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) b).run = boolAxisUIDs b
+          exact traverseAxes_const_eq_boolAxisUIDs b
+
 /-- Remap demonstration, unmasked case: no hypothesis needed at all — closes by plain `rfl`.
     The other 5 unmasked constructors (`relu`/`sigmoid`/`tanh`/`gelu`/`leakyrelu`) are
     structurally identical and not separately proved; they add no new information. -/
@@ -801,5 +837,153 @@ theorem traverseAxes_id_eq_lhsSlotMapUID (f : UData → UData) (s : LHSSlot) :
   | affine e =>
       show LHSSlot.affine (IdxExpr.traverseAxes (f := Id) (AxisSpec.mapUID f) e) = LHSSlot.affine (IdxExpr.mapUID f e)
       rw [traverseAxes_id_eq_mapUID f e]
+
+-- ===== Stmt =====
+
+def Stmt.traverseAxes [Applicative f] (g : AxisSpec → f AxisSpec) : Stmt → f Stmt
+  | .assign nm ls r         => (fun ls' r' => Stmt.assign nm ls' r') <$>
+      Traversable.traverse (LHSSlot.traverseAxes g) ls <*> RHSExpr.traverseAxesWithMask g r
+  | .scatter nm ls r o      => (fun ls' r' => Stmt.scatter nm ls' r' o) <$>
+      Traversable.traverse (LHSSlot.traverseAxes g) ls <*> RHSExpr.traverseAxesWithMask g r
+  | .recurMorphism nm ax tc => (fun ax' => Stmt.recurMorphism nm ax' tc) <$> g ax
+
+private def specsStmt' : Stmt → List AxisSpec
+  | .assign _ ls r => ls.flatMap specsLHS' ++ specsRHS' r
+  | .scatter _ ls r _ => ls.flatMap specsLHS' ++ specsRHS' r
+  | .recurMorphism _ ax _ => [ax]
+
+theorem traverseAxes_const_eq_specsStmt (s : Stmt) :
+    (Stmt.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) s).run = specsStmt' s := by
+  have core : ∀ ys : List LHSSlot,
+      (Traversable.traverse (LHSSlot.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) ys).run
+        = ys.flatMap specsLHS' := by
+    intro ys
+    induction ys with
+    | nil => rfl
+    | cons hd tl ih =>
+        show (LHSSlot.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) hd).run ++
+            (Traversable.traverse (LHSSlot.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) tl).run
+          = specsLHS' hd ++ tl.flatMap specsLHS'
+        rw [traverseAxes_const_eq_specsLHS hd, ih]
+  cases s with
+  | assign nm ls r =>
+      show (Traversable.traverse (LHSSlot.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) ls).run ++
+          (RHSExpr.traverseAxesWithMask (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) r).run
+        = ls.flatMap specsLHS' ++ specsRHS' r
+      rw [core ls, traverseAxes_const_eq_specsRHS r]
+  | scatter nm ls r o =>
+      show (Traversable.traverse (LHSSlot.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) ls).run ++
+          (RHSExpr.traverseAxesWithMask (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) r).run
+        = ls.flatMap specsLHS' ++ specsRHS' r
+      rw [core ls, traverseAxes_const_eq_specsRHS r]
+  | recurMorphism nm ax tc => rfl
+
+theorem traverseAxes_const_eq_stmtUids (s : Stmt) :
+    (Stmt.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) s).run = Stmt.uids s := by
+  rw [Stmt.uids_eq]
+  have core : ∀ ys : List LHSSlot,
+      (Traversable.traverse (LHSSlot.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) ys).run
+        = ys.flatMap (fun sl => match sl with
+            | .free a => [a.uid] | .freeNorm a => [a.uid]
+            | .iterAt a _ => [a.uid] | .iterNext a => [a.uid]
+            | .affine e => idxAxisUIDs e) := by
+    intro ys
+    induction ys with
+    | nil => rfl
+    | cons hd tl ih =>
+        show (LHSSlot.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) hd).run ++
+            (Traversable.traverse (LHSSlot.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) tl).run
+          = (match hd with
+              | .free a => [a.uid] | .freeNorm a => [a.uid]
+              | .iterAt a _ => [a.uid] | .iterNext a => [a.uid]
+              | .affine e => idxAxisUIDs e) ++ tl.flatMap (fun sl => match sl with
+                  | .free a => [a.uid] | .freeNorm a => [a.uid]
+                  | .iterAt a _ => [a.uid] | .iterNext a => [a.uid]
+                  | .affine e => idxAxisUIDs e)
+        cases hd with
+        | free a => rw [ih]; rfl
+        | freeNorm a => rw [ih]; rfl
+        | iterAt a n => rw [ih]; rfl
+        | iterNext a => rw [ih]; rfl
+        | affine e =>
+            show (IdxExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) e).run ++
+                (Traversable.traverse (LHSSlot.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) tl).run
+              = idxAxisUIDs e ++ tl.flatMap (fun sl => match sl with
+                  | .free a => [a.uid] | .freeNorm a => [a.uid]
+                  | .iterAt a _ => [a.uid] | .iterNext a => [a.uid]
+                  | .affine e => idxAxisUIDs e)
+            rw [traverseAxes_const_eq_idxAxisUIDs e, ih]
+  cases s with
+  | assign nm ls r =>
+      show (Traversable.traverse (LHSSlot.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) ls).run ++
+          (RHSExpr.traverseAxesWithMask (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) r).run
+        = _
+      have hr : (RHSExpr.traverseAxesWithMask (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) r).run
+          = r.body.terms.flatMap termAxisUIDs ++ (match r.nonlin with
+              | .softmax (some m) => boolAxisUIDs m | .normalize (some m) => boolAxisUIDs m
+              | .l2normalize (some m) => boolAxisUIDs m | _ => []) := by
+        show (SumExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) r.body).run ++
+            (Nonlin.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) r.nonlin).run
+          = r.body.terms.flatMap termAxisUIDs ++ (match r.nonlin with
+              | .softmax (some m) => boolAxisUIDs m | .normalize (some m) => boolAxisUIDs m
+              | .l2normalize (some m) => boolAxisUIDs m | _ => [])
+        rw [traverseAxes_const_eq_termAxisUIDsSumExpr r.body, traverseAxes_const_eq_nonlinAxisUIDs r.nonlin]
+      rw [core ls, hr, ← List.append_assoc]
+      rfl
+  | scatter nm ls r o =>
+      show (Traversable.traverse (LHSSlot.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) ls).run ++
+          (RHSExpr.traverseAxesWithMask (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) r).run
+        = _
+      have hr : (RHSExpr.traverseAxesWithMask (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) r).run
+          = r.body.terms.flatMap termAxisUIDs ++ (match r.nonlin with
+              | .softmax (some m) => boolAxisUIDs m | .normalize (some m) => boolAxisUIDs m
+              | .l2normalize (some m) => boolAxisUIDs m | _ => []) := by
+        show (SumExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) r.body).run ++
+            (Nonlin.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) r.nonlin).run
+          = r.body.terms.flatMap termAxisUIDs ++ (match r.nonlin with
+              | .softmax (some m) => boolAxisUIDs m | .normalize (some m) => boolAxisUIDs m
+              | .l2normalize (some m) => boolAxisUIDs m | _ => [])
+        rw [traverseAxes_const_eq_termAxisUIDsSumExpr r.body, traverseAxes_const_eq_nonlinAxisUIDs r.nonlin]
+      rw [core ls, hr, ← List.append_assoc]
+      rfl
+  | recurMorphism nm ax tc => rfl
+
+theorem traverseAxes_id_eq_stmtMapUID_recurMorphism (f : UData → UData) (nm : String) (ax : AxisSpec) (tc : ThreadedComposed) :
+    Stmt.traverseAxes (f := Id) (AxisSpec.mapUID f) (Stmt.recurMorphism nm ax tc) = Stmt.mapUID f (Stmt.recurMorphism nm ax tc) := by
+  rfl
+
+theorem traverseAxes_id_eq_stmtMapUID_assign (f : UData → UData) (nm : String) (ls : List LHSSlot) (r : RHSExpr)
+    (hr : RHSExpr.traverseAxesWithMask (f := Id) (AxisSpec.mapUID f) r = RHSExpr.mapUID f r) :
+    Stmt.traverseAxes (f := Id) (AxisSpec.mapUID f) (Stmt.assign nm ls r) = Stmt.mapUID f (Stmt.assign nm ls r) := by
+  show (fun ls' r' => Stmt.assign nm ls' r') (Traversable.traverse (LHSSlot.traverseAxes (f := Id) (AxisSpec.mapUID f)) ls)
+      (RHSExpr.traverseAxesWithMask (f := Id) (AxisSpec.mapUID f) r)
+    = Stmt.assign nm (ls.map (LHSSlot.mapUID f)) (RHSExpr.mapUID f r)
+  have core : ∀ ys : List LHSSlot,
+      Traversable.traverse (LHSSlot.traverseAxes (f := Id) (AxisSpec.mapUID f)) ys = ys.map (LHSSlot.mapUID f) := by
+    intro ys
+    induction ys with
+    | nil => rfl
+    | cons hd tl ih =>
+        simp only [List.traverse_cons]
+        rw [traverseAxes_id_eq_lhsSlotMapUID f hd, ih]
+        rfl
+  rw [core ls, hr]
+
+theorem traverseAxes_id_eq_stmtMapUID_scatter (f : UData → UData) (nm : String) (ls : List LHSSlot) (r : RHSExpr) (o : ScatterOpts)
+    (hr : RHSExpr.traverseAxesWithMask (f := Id) (AxisSpec.mapUID f) r = RHSExpr.mapUID f r) :
+    Stmt.traverseAxes (f := Id) (AxisSpec.mapUID f) (Stmt.scatter nm ls r o) = Stmt.mapUID f (Stmt.scatter nm ls r o) := by
+  show (fun ls' r' => Stmt.scatter nm ls' r' o) (Traversable.traverse (LHSSlot.traverseAxes (f := Id) (AxisSpec.mapUID f)) ls)
+      (RHSExpr.traverseAxesWithMask (f := Id) (AxisSpec.mapUID f) r)
+    = Stmt.scatter nm (ls.map (LHSSlot.mapUID f)) (RHSExpr.mapUID f r) o
+  have core : ∀ ys : List LHSSlot,
+      Traversable.traverse (LHSSlot.traverseAxes (f := Id) (AxisSpec.mapUID f)) ys = ys.map (LHSSlot.mapUID f) := by
+    intro ys
+    induction ys with
+    | nil => rfl
+    | cons hd tl ih =>
+        simp only [List.traverse_cons]
+        rw [traverseAxes_id_eq_lhsSlotMapUID f hd, ih]
+        rfl
+  rw [core ls, hr]
 
 end LeanNCD
