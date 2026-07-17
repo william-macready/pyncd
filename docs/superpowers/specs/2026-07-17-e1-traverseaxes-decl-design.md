@@ -37,18 +37,29 @@ List AxisSpec` (`Structural.lean:64-66`), consumed by `private def TLProgram.axi
 (`Structural.lean:74-75`, also private), which in turn feeds the actually-public `def
 TLProgram.axisNames : TLProgram → List String` (`Structural.lean:78-79`, mapping to `.name`, not
 `.uid`). Unlike `Stmt.uids`, there is no `Decl`-level public wrapper at all (no `Decl.uids`, no
-`declAxisUIDs`) — grepped the full `LeanNCD/` tree for any function touching `Decl` outside
-`Ast.lean`/`Traverse.lean`/`Structural.lean` and found nothing else. The only public function
-near this data, `TLProgram.axisNames`, belongs to `TLProgram` — the node *after* `Decl` in the
-remaining slice order — not to `Decl` itself. So this slice needs **no production-file change**.
-But `TLProgram.axisNames` has the exact same shape that trapped `Stmt.uids` (a public function
-built through a chain of private helpers), so this risk is expected to resurface when
-`TLProgram`'s own slice is scoped — worth stating explicitly rather than re-discovering cold.
+`declAxisUIDs`) — grepped `specsDecl`'s own callers and found only the private
+`TLProgram.axisSpecs` (`Structural.lean:74-75`), which itself only feeds the public
+`TLProgram.axisNames` (`Structural.lean:78-79`). `TLProgram.axisNames` belongs to `TLProgram` —
+the node *after* `Decl` in the remaining slice order — not to `Decl` itself. So this slice needs
+**no production-file change**. But `TLProgram.axisNames` has the exact same shape that trapped
+`Stmt.uids` (a public function built through a chain of private helpers), so this risk is
+expected to resurface when `TLProgram`'s own slice is scoped — worth stating explicitly rather
+than re-discovering cold.
 
-**No classify-vs-collect asymmetry exists for `Decl`, unlike `LHSSlot`'s `lhsAxisUID?`.** Grepped
-for any other `Decl`-touching function beyond `specsDecl`/`TLProgram.axisSpecs`/
-`TLProgram.axisNames` and found none — there is no second, differently-shaped production
-function near `Decl` to scope in or out.
+**Correction (found during final review): `Decl` DOES have other production functions touching
+it — none of them collector-shaped, and none reachable through `specsDecl`'s own chain, so the
+"no production-file change" conclusion above is unaffected, but the original claim of "found
+none" was an overstatement.** `Decl.name` (`Structural.lean:279`, public) and `declName`
+(`Eval/Contract.lean:129`, public) both extract a `Decl`'s name as a bare `String` — unrelated
+to axis collection, no `AxisSpec`/`UID` involved at all. `Decl.axisCount : Decl → Nat`
+(`Structural.lean:319`, private) is a genuine classify-shaped function in the same spirit as
+`LHSSlot`'s `lhsAxisUID?`: it returns `0` for `.axis` (excluded, since axis decls never appear
+in the tensor-keyed `DeclEnv` this count validates against) rather than `specsDecl`'s `[ax]`
+(length 1) — a real asymmetry, just like `lhsAxisUID?`'s `.affine => none`. None of these three
+functions is a *public wrapper over `specsDecl`'s private chain* the way `Stmt.uids` was, so
+they don't change this slice's scope or its "no production-file change needed" conclusion — but
+`Decl.axisCount` is explicitly out of scope for the same reason `lhsAxisUID?` was: a different
+function shape (classify, not collect), not a missing production counterpart.
 
 ## Scope
 
@@ -58,9 +69,12 @@ comparison copy; one collecting-direction theorem against it; one FULLY UNCONDIT
 theorem covering all 4 constructors.
 
 **Out:** `TLProgram.axisSpecs`/`TLProgram.axisNames` — belong to the `TLProgram` slice, not this
-one. No production-file changes — no `Decl`-level public wrapper exists to bridge to, so there
-is no privacy wall to route around here (contrast `Stmt`, where one did exist and required a new
-`Structural.lean` theorem).
+one. `Decl.name`/`declName` (bare `String` extraction, no axis content) and `Decl.axisCount`
+(classify-shaped, not collect-shaped — see the correction above) — out of scope for the same
+reason `lhsAxisUID?` was for `LHSSlot`. No production-file changes — no `Decl`-level public
+wrapper over `specsDecl`'s own chain exists to bridge to, so there is no privacy wall to route
+around here (contrast `Stmt`, where one did exist and required a new `Structural.lean`
+theorem).
 
 ## The traversal
 

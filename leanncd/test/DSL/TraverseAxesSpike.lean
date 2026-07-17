@@ -42,6 +42,13 @@
 -- adding `Stmt.uids_eq` plus six bridge lemmas to `Structural.lean` itself (marked
 -- `SPIKE EXCEPTION`, revertible) — see
 -- docs/superpowers/specs/2026-07-16-e1-traverseaxes-stmt-design.md.
+-- Decl slice (flattest node in the series): no constructor wraps a nested AST type; remap is
+-- FULLY UNCONDITIONAL. First slice calling `Traversable.traverse` directly on a bare
+-- `List AxisSpec` (not through a node-level `traverseAxes`), surfacing that its own implicit
+-- applicative parameter is named `m` not `f`, and that a direct `ConstL`-typed call needs an
+-- explicit type ascription. No production-file change needed — `Decl` has no public wrapper
+-- the way `Stmt.uids` did — see
+-- docs/superpowers/specs/2026-07-17-e1-traverseaxes-decl-design.md.
 import LeanNCD.DSL.Traverse
 import LeanNCD.Eval.Contract
 import LeanNCD.DSL.Pipeline.Structural
