@@ -145,9 +145,37 @@ private theorem specsNonlin_eq_old (n : Nonlin) : specsNonlin n = specsNonlin_ol
           simp only [specsNonlin, specsNonlin_old, Nonlin.traverseAxes, specsBool]
           rfl
 
-private def specsFactor : Factor → List AxisSpec
+private def specsFactor_old : Factor → List AxisSpec
   | .read _ es => es.flatMap specsIdx | .iverson b => specsBool b
   | .unaryFn _ _ es => es.flatMap specsIdx
+
+private def specsFactor (x : Factor) : List AxisSpec :=
+  (Factor.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) x).run
+
+private theorem specsFactor_eq_old (x : Factor) : specsFactor x = specsFactor_old x := by
+  have core : ∀ ys : List IdxExpr,
+      (Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) ys).run
+        = ys.flatMap specsIdx := by
+    intro ys
+    induction ys with
+    | nil => rfl
+    | cons hd tl ih =>
+        show specsIdx hd ++
+            (Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) tl).run
+          = specsIdx hd ++ tl.flatMap specsIdx
+        rw [ih]
+  cases x with
+  | read nm es =>
+      show (Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) es).run
+        = es.flatMap specsIdx
+      exact core es
+  | iverson b =>
+      simp only [specsFactor, specsFactor_old, Factor.traverseAxes, specsBool]
+      rfl
+  | unaryFn op nm es =>
+      show (Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) es).run
+        = es.flatMap specsIdx
+      exact core es
 
 private def specsRHS (r : RHSExpr) : List AxisSpec :=
   (r.body.terms.flatMap (fun t => t.factors.flatMap specsFactor)) ++ specsNonlin r.nonlin
@@ -239,6 +267,7 @@ private theorem specsFactor_map_uid_eq (x : Factor) :
       | .read _ es => es.flatMap idxAxisUIDs
       | .iverson b => boolAxisUIDs b
       | .unaryFn _ _ es => es.flatMap idxAxisUIDs := by
+  rw [specsFactor_eq_old]
   cases x with
   | read nm es =>
       show (es.flatMap specsIdx).map (·.uid) = es.flatMap idxAxisUIDs
