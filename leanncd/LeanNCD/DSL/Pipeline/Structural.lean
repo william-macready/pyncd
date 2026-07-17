@@ -235,10 +235,40 @@ private theorem specsLHS_eq_old (s : LHSSlot) : specsLHS s = specsLHS_old s := b
 private def specsDecl (d : Decl) : List AxisSpec :=
   (Decl.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) d).run
 
-private def specsStmt : Stmt → List AxisSpec
+private def specsStmt_old : Stmt → List AxisSpec
   | .assign _ ls r => ls.flatMap specsLHS ++ specsRHS r
   | .scatter _ ls r _ => ls.flatMap specsLHS ++ specsRHS r
   | .recurMorphism _ ax _ => [ax]
+
+private def specsStmt (s : Stmt) : List AxisSpec :=
+  (Stmt.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) s).run
+
+private theorem specsStmt_eq_old (s : Stmt) : specsStmt s = specsStmt_old s := by
+  have core : ∀ ys : List LHSSlot,
+      (Traversable.traverse (LHSSlot.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) ys).run
+        = ys.flatMap specsLHS := by
+    intro ys
+    induction ys with
+    | nil => rfl
+    | cons hd tl ih =>
+        show specsLHS hd ++
+            (Traversable.traverse (LHSSlot.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) tl).run
+          = specsLHS hd ++ tl.flatMap specsLHS
+        rw [ih]
+  cases s with
+  | assign nm ls r =>
+      show (Traversable.traverse (LHSSlot.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) ls).run ++
+          (RHSExpr.traverseAxesWithMask (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) r).run
+        = ls.flatMap specsLHS ++ specsRHS r
+      rw [core ls]
+      rfl
+  | scatter nm ls r o =>
+      show (Traversable.traverse (LHSSlot.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) ls).run ++
+          (RHSExpr.traverseAxesWithMask (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) r).run
+        = ls.flatMap specsLHS ++ specsRHS r
+      rw [core ls]
+      rfl
+  | recurMorphism nm ax tc => rfl
 
 /-- Every `AxisSpec` occurring anywhere in the program, in program order (decls then stmts). -/
 private def TLProgram.axisSpecs (p : TLProgram) : List AxisSpec :=
@@ -407,6 +437,8 @@ theorem Stmt.uids_eq (s : Stmt) : Stmt.uids s =
     congr 1
     funext sl
     exact specsLHS_map_uid_eq sl
+  show (specsStmt s).map (·.uid) = _
+  rw [specsStmt_eq_old]
   cases s with
   | assign nm ls r =>
       show (ls.flatMap specsLHS ++ specsRHS r).map (·.uid) = _
