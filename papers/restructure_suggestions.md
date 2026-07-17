@@ -2,64 +2,68 @@
 
 > **Resume here (checkpoint 2026-07-17).** E6 and **E11** are fully DONE (see their ✅ markers
 > below). **E1** (one traversal to rule the collectors) — the prototype Spike 2 was waiting on
-> — is now **ten slices in:** `IdxExpr` (leaf), `PredArith` (self-recursion + composition),
-> `BoolExpr` (confirmation, more constructors), `Factor` (first node carrying a tensor name
-> + a `List IdxExpr` sub-traversal), `ProdTerm` (first record node, wrapping `List Factor`),
-> `SumExpr` (identical one-field-record-wrapping-a-list shape), `RHSExpr` (the first slice
-> since `IdxExpr` needing fresh design work: resolved a real production semantic asymmetry with
-> two named traversals and a two-hypothesis conditional remap), `LHSSlot` (the simplest
-> shape in the series: fully unconditional remap, the first since `IdxExpr`, with a real-time
-> discovery that `lhsAxisUID?`/`freeAxisUIDs` are classify-and-filter, not collectors),
-> `Stmt` (three constructors — `.assign`/`.scatter` combine an `LHSSlot` traversal with
-> `RHSExpr.traverseAxesWithMask`, `.recurMorphism` only threads a bare `AxisSpec`; both
-> collecting-direction theorems and all three remap theorems closed as pre-verified, but the
-> headline finding is that `Stmt.uids` is public yet built entirely from `private` helpers,
-> which Lean cannot delta-reduce through from outside its file — resolved by adding
-> `Stmt.uids_eq` to `LeanNCD/DSL/Pipeline/Structural.lean`, **the first production-file change
-> on this branch**), and `Decl` (the flattest shape yet — every arm bottoms out directly in a
-> bare `AxisSpec` or `List AxisSpec`; both theorems closed as pre-verified, the remap fully
-> unconditionally like `LHSSlot`/`IdxExpr` — and, unlike `Stmt`, **no production-file change
-> was needed**: `Decl` has no public wrapper at all, so it never hits `Stmt.uids`'s
-> private-helper-chain wall) — see the ten "Prototype result" blockquotes in
-> [E1](#e1-one-traversal-to-rule-the-collectors-van-laarhoven) below. All theorems in
-> `RHSExpr`/`LHSSlot`/`Stmt`/`Decl` plus the new `Nonlin.traverseAxes` building block (9
-> constructors, exhaustive match) closed exactly as pre-verified during design — zero
-> implementation-time surprises. This covers the entire layered, non-mutually-recursive
-> **expression** stack (`IdxExpr → PredArith → BoolExpr → Factor → ProdTerm → SumExpr →
-> RHSExpr`), the first two **statement** layers (`LHSSlot`, `Stmt`), and the **declaration**
-> layer (`Decl`), a strong signal for E1 over Spike 2a/2b. **This work is not yet merged to
-> `main`** — it's on open PR
+> — is now **eleven slices in — full AST coverage complete:** `IdxExpr` (leaf), `PredArith`
+> (self-recursion + composition), `BoolExpr` (confirmation, more constructors), `Factor` (first
+> node carrying a tensor name + a `List IdxExpr` sub-traversal), `ProdTerm` (first record node,
+> wrapping `List Factor`), `SumExpr` (identical one-field-record-wrapping-a-list shape),
+> `RHSExpr` (the first slice since `IdxExpr` needing fresh design work: resolved a real
+> production semantic asymmetry with two named traversals and a two-hypothesis conditional
+> remap), `LHSSlot` (the simplest shape in the series: fully unconditional remap, the first
+> since `IdxExpr`, with a real-time discovery that `lhsAxisUID?`/`freeAxisUIDs` are
+> classify-and-filter, not collectors), `Stmt` (three constructors — `.assign`/`.scatter`
+> combine an `LHSSlot` traversal with `RHSExpr.traverseAxesWithMask`, `.recurMorphism` only
+> threads a bare `AxisSpec`; both collecting-direction theorems and all three remap theorems
+> closed as pre-verified, but the headline finding is that `Stmt.uids` is public yet built
+> entirely from `private` helpers, which Lean cannot delta-reduce through from outside its
+> file — resolved by adding `Stmt.uids_eq` to `LeanNCD/DSL/Pipeline/Structural.lean`, **the
+> first production-file change on this branch**), `Decl` (the flattest shape yet — every arm
+> bottoms out directly in a bare `AxisSpec` or `List AxisSpec`; both theorems closed as
+> pre-verified, the remap fully unconditionally like `LHSSlot`/`IdxExpr` — and, unlike `Stmt`,
+> **no production-file change was needed**: `Decl` has no public wrapper at all, so it never
+> hits `Stmt.uids`'s private-helper-chain wall), and **`TLProgram`** (the FINAL AST node — a
+> `List Decl`/`List Stmt` combination via `<$> ... <*>`; the collecting-direction theorem closed
+> cleanly against a local `specsProgram'` copy, and the remap theorem, conditional on one
+> hypothesis about `p.stmts`, closed exactly as pre-verified. The checkpoint's own prediction
+> that `TLProgram.axisNames` would force a `Stmt.uids_eq`-style production-file bridge did NOT
+> materialize: the wall is real — `TLProgram.axisNames` does share `Stmt.uids`'s
+> public-wrapper-over-private-helpers shape — but this slice's scoping choice excluded the
+> `.eraseDups`/`.name`-projection step from scope, leaving nothing left to bridge to. So
+> **`TLProgram` needed no production-file change either**) — see the eleven "Prototype result"
+> blockquotes in [E1](#e1-one-traversal-to-rule-the-collectors-van-laarhoven) below. All
+> theorems in `RHSExpr`/`LHSSlot`/`Stmt`/`Decl`/`TLProgram` plus the new `Nonlin.traverseAxes`
+> building block (9 constructors, exhaustive match) closed exactly as pre-verified during
+> design — zero implementation-time surprises across all eleven slices. This covers the entire
+> layered, non-mutually-recursive **expression** stack (`IdxExpr → PredArith → BoolExpr →
+> Factor → ProdTerm → SumExpr → RHSExpr`), both **statement** layers (`LHSSlot`, `Stmt`), the
+> **declaration** layer (`Decl`), and the **top-level program** layer (`TLProgram`) — every node
+> in `DSL/Ast.lean`. **This work is not yet merged to `main`** — it's on open PR
 > [william-macready/pyncd#1](https://github.com/william-macready/pyncd/pull/1), branch
 > `worktree-e1-traverseaxes-prototype`, worktree at
 > `.claude/worktrees/e1-traverseaxes-prototype`.
 >
-> **Next open item:** extend E1 to **`TLProgram`** — the FINAL slice, completing full AST
-> coverage; this is the last slice before E1's full-AST go/no-go decision can be made. Check
-> `TLProgram`'s actual definition in `DSL/Ast.lean` before writing anything more specific than
-> naming it — do not assume it's a mechanical continuation, the same caution every slice since
-> `RHSExpr` has carried. It's already known to be a flat two-field wrapper
-> (`structure TLProgram where decls : List Decl; stmts : List Stmt`, confirmed during `Decl`'s
-> own design), but its own risk shape beyond that flat wrapping has not been examined.
-> Specifically: `TLProgram.axisNames` (`Structural.lean:78-79`) has the exact
-> public-wrapper-over-private-helpers shape that trapped `Stmt.uids`, so a
-> `Stmt.uids_eq`-style production-file bridge theorem should be EXPECTED for this slice, not
-> treated as a surprise if it recurs. Independently, the **cospan-model spike** (Wave 3b,
-> unlocks **[E13](#e13-generators-for-br--closing-brop-and-promoting-e6s-laws-to-theorems)**)
-> remains available if that thread is preferred instead.
+> **Next open item:** there is no further AST node to extend to — E1 has reached full AST
+> coverage. **E1's own go/no-go decision against Spike 2a/2b is now the open item**, and that
+> decision belongs to the user: this checkpoint does not render a verdict, recommendation, or
+> lean either way — the decision is now answerable in full, using all eleven slices' evidence,
+> and is left there. Independently, the **cospan-model spike** (Wave 3b, unlocks
+> **[E13](#e13-generators-for-br--closing-brop-and-promoting-e6s-laws-to-theorems)**) remains
+> available as a separate thread; the choice now is between making the E1 go/no-go call and
+> picking up the cospan-model thread instead, not between continuing E1 and switching threads.
 >
 > Quick resume checklist:
 >
-> 1. Decide whether to merge PR #1 first or keep extending on its branch — either is fine, the
->    branch already has 10 clean slices and its own final reviews.
+> 1. Decide whether to merge PR #1 first or make the go/no-go call first — either is fine, the
+>    branch already has 11 clean slices and its own final reviews.
 > 2. `cd leanncd && lake build 2>&1 | tail -5` — confirm still green (8609 jobs as of this
 >    checkpoint; sorry count in the default build unchanged — none of E1's slices touch a proof).
-> 3. Read the ten existing E1 design docs (`docs/superpowers/specs/2026-07-1[567]-e1-traverseaxes-*.md`)
->    for the established pattern before scoping `TLProgram`.
-> 4. Use `superpowers:brainstorming` to scope it before touching code, same as E6/E11/E1's slices.
-> 5. `git diff --stat` against `main` will still show **one production file touched**
->    (`LeanNCD/DSL/Pipeline/Structural.lean`, the `Stmt.uids_eq` addition) — `Decl` needed no
->    second one, so expect this count to grow again only if `TLProgram.axisNames` needs its own
->    bridge theorem.
+> 3. Read the eleven existing E1 design docs (`docs/superpowers/specs/2026-07-1[567]-e1-traverseaxes-*.md`)
+>    for the established pattern and full history.
+> 4. Before deciding, re-read all eleven design docs' own "Success criteria" sections together
+>    — the go/no-go decision should weigh them collectively, not just the headline findings
+>    summarized here.
+> 5. `git diff --stat` against `main` shows **one production file touched**
+>    (`LeanNCD/DSL/Pipeline/Structural.lean`, the `Stmt.uids_eq` addition) — neither `Decl` nor
+>    `TLProgram` needed a second one, so this count is now final for the eleven-slice series.
 
 A global review of `leanncd/` (~9,200 lines of Lean across 49 modules) after the recent wave of
 feature fixes (`Factor.unaryFn` inline transcendentals, new `Nonlin` activations, `l2normalize`,
@@ -1015,6 +1019,31 @@ makes `TermTraversable` (`Exec/Traversable.lean`) its `Id` special case.
 > to production's private `specsDecl`. `TLProgram` remains open — see
 > `docs/superpowers/specs/2026-07-17-e1-traverseaxes-decl-design.md` for the full go/no-go
 > criteria.
+
+> **Prototype result (TLProgram slice, 2026-07-17):** extended `test/DSL/TraverseAxesSpike.lean`
+> to `TLProgram.traverseAxes` — **the FINAL AST node.** It combines a `List Decl` sub-traversal
+> and a `List Stmt` sub-traversal via `<$> ... <*>`; the collecting-direction theorem
+> (`traverseAxes_const_eq_specsProgram`, against a local `specsProgram'` copy built from the
+> already-proven `specsDecl'`/`specsStmt'`) closed cleanly. The remap theorem
+> (`traverseAxes_id_eq_tlProgramMapUID`) is conditional on exactly ONE hypothesis, about
+> `p.stmts` — `p.decls` needs none, since `Decl`'s own remap is already fully unconditional. It
+> closed exactly as pre-verified, with zero implementation-time surprises. Two genuinely new
+> wrinkles surfaced while scoping: (1) there is no named `TLProgram.mapUID` — the remap logic is
+> written inline in the `TermTraversable TLProgram` instance — so this slice's remap theorem
+> targets the real `TermTraversable.traverseUID f p` directly (confirmed against the actual
+> instance at `Traverse.lean:79-80`), the first slice to do so rather than pointing at a named
+> production function or a local copy; (2) `TLProgram.axisNames` confirmed the checkpoint's own
+> prediction that it shares `Stmt.uids`'s public-wrapper-over-private-helpers shape, but adds a
+> `.eraseDups`/`.name`-projection step beyond anything `Stmt.uids_eq` needed — scoped out as a
+> deliberate non-goal (matching `Nonlin`'s and `LHSSlot`'s own non-goals), so **no
+> production-file change was needed this slice either**, despite the checkpoint's prediction: the
+> wall is real, but this scoping choice avoids needing to cross it. Module build succeeded at
+> 8,487 jobs, full-project build at 8,609 jobs, no `sorry`/`native_decide`. **E1 has now achieved
+> full AST coverage** — every node in `DSL/Ast.lean` (`IdxExpr` through `TLProgram`, eleven
+> slices) has a `traverseAxes` definition and at least one proven equivalence in each direction,
+> with zero `sorry`/`native_decide` anywhere in the series — see
+> `docs/superpowers/specs/2026-07-17-e1-traverseaxes-tlprogram-design.md` for the full go/no-go
+> criteria and what E1's own adoption decision against Spike 2a/2b would still need to weigh.
 
 ### E2. A typed core IR the pipeline narrows into ("trees that grow")
 
