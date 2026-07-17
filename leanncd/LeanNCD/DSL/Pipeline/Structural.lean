@@ -272,7 +272,7 @@ private theorem specsStmt_eq_old (s : Stmt) : specsStmt s = specsStmt_old s := b
 
 /-- Every `AxisSpec` occurring anywhere in the program, in program order (decls then stmts). -/
 private def TLProgram.axisSpecs (p : TLProgram) : List AxisSpec :=
-  p.decls.flatMap specsDecl ++ p.stmts.flatMap specsStmt
+  (TLProgram.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) p).run
 
 /-- The ordered, de-duplicated list of axis names occurring anywhere in the program. -/
 def TLProgram.axisNames (p : TLProgram) : List String :=
