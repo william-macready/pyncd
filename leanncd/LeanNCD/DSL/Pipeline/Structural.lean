@@ -69,8 +69,21 @@ private theorem specsIdx_eq_old (e : IdxExpr) : specsIdx e = specsIdx_old e := b
       rw [hmap]
       exact core xs
 
-private def specsPred : PredArith → List AxisSpec
-  | .embed e => specsIdx e | .mul a b => specsPred a ++ specsPred b | .iabs a => specsPred a
+private def specsPred_old : PredArith → List AxisSpec
+  | .embed e => specsIdx e | .mul a b => specsPred_old a ++ specsPred_old b | .iabs a => specsPred_old a
+
+private def specsPred (e : PredArith) : List AxisSpec :=
+  (PredArith.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) e).run
+
+private theorem specsPred_eq_old (e : PredArith) : specsPred e = specsPred_old e := by
+  induction e with
+  | embed e => rfl
+  | mul a b iha ihb =>
+      show specsPred a ++ specsPred b = specsPred_old a ++ specsPred_old b
+      rw [iha, ihb]
+  | iabs a iha =>
+      show specsPred a = specsPred_old a
+      exact iha
 
 private def specsBool : BoolExpr → List AxisSpec
   | .rel _ a b => specsPred a ++ specsPred b
