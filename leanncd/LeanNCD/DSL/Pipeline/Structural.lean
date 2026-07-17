@@ -35,6 +35,15 @@ otherwise the wildcard silently swallows that mask's axis specs (this bit `l2nor
 already; see the git history). The two public collectors below are thin projections of one
 traversal: by name (`TLProgram.axisNames`, de-duplicated) or by uid (`Stmt.uids`). -/
 
+-- SCAFFOLDING (E1 migration): four `specsX_old`/`specsX_eq_old` pairs remain below
+-- (`specsIdx`, `specsFactor`, `specsRHS`, `specsStmt`). Each `_old` is the frozen pre-migration
+-- body; each `_eq_old` bridges the traversal-derived def back to it, and is `rw`'d into by one
+-- pre-existing UID proof (`specsIdx_map_uid_eq`, `specsFactor_map_uid_eq`, and `Stmt.uids_eq`'s
+-- `hRHS`/top-level) that was written against the old structural shape. To eliminate them, the
+-- dependent UID proofs must be re-derived directly against `traverseAxes` — a separate, reviewed
+-- task. See docs/superpowers/specs/2026-07-17-e1-scaffolding-refactor-followup.md before touching.
+-- (The four dead pairs — specsPred/specsBool/specsNonlin/specsLHS — were already removed.)
+
 private def specsIdx_old : IdxExpr → List AxisSpec
   | .axis a => [a] | .const _ => [] | .scale _ a => [a]
   | .shift a _ => [a] | .affine _ xs => xs.map (·.2)
@@ -69,81 +78,14 @@ private theorem specsIdx_eq_old (e : IdxExpr) : specsIdx e = specsIdx_old e := b
       rw [hmap]
       exact core xs
 
-private def specsPred_old : PredArith → List AxisSpec
-  | .embed e => specsIdx e | .mul a b => specsPred_old a ++ specsPred_old b | .iabs a => specsPred_old a
-
 private def specsPred (e : PredArith) : List AxisSpec :=
   (PredArith.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) e).run
-
-private theorem specsPred_eq_old (e : PredArith) : specsPred e = specsPred_old e := by
-  induction e with
-  | embed e => rfl
-  | mul a b iha ihb =>
-      show specsPred a ++ specsPred b = specsPred_old a ++ specsPred_old b
-      rw [iha, ihb]
-  | iabs a iha =>
-      show specsPred a = specsPred_old a
-      exact iha
-
-private def specsBool_old : BoolExpr → List AxisSpec
-  | .rel _ a b => specsPred a ++ specsPred b
-  | .and a b => specsBool_old a ++ specsBool_old b | .or a b => specsBool_old a ++ specsBool_old b
-  | .not a => specsBool_old a | .ieq a b => specsPred a ++ specsPred b
 
 private def specsBool (e : BoolExpr) : List AxisSpec :=
   (BoolExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) e).run
 
-private theorem specsBool_eq_old (e : BoolExpr) : specsBool e = specsBool_old e := by
-  induction e with
-  | rel op a b =>
-      simp only [specsBool, specsBool_old, BoolExpr.traverseAxes, specsPred]
-      rfl
-  | and a b iha ihb =>
-      show specsBool a ++ specsBool b = specsBool_old a ++ specsBool_old b
-      rw [iha, ihb]
-  | or a b iha ihb =>
-      show specsBool a ++ specsBool b = specsBool_old a ++ specsBool_old b
-      rw [iha, ihb]
-  | not a iha =>
-      show specsBool a = specsBool_old a
-      exact iha
-  | ieq a b =>
-      simp only [specsBool, specsBool_old, BoolExpr.traverseAxes, specsPred]
-      rfl
-
-private def specsNonlin_old : Nonlin → List AxisSpec
-  | .softmax (some m) => specsBool m | .normalize (some m) => specsBool m
-  | .l2normalize (some m) => specsBool m | _ => []
-
 private def specsNonlin (n : Nonlin) : List AxisSpec :=
   (Nonlin.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) n).run
-
-private theorem specsNonlin_eq_old (n : Nonlin) : specsNonlin n = specsNonlin_old n := by
-  cases n with
-  | identity => rfl
-  | relu => rfl
-  | sigmoid => rfl
-  | tanh => rfl
-  | gelu => rfl
-  | leakyrelu => rfl
-  | softmax m =>
-      cases m with
-      | none => rfl
-      | some b =>
-          simp only [specsNonlin, specsNonlin_old, Nonlin.traverseAxes, specsBool]
-          rfl
-  | normalize m =>
-      cases m with
-      | none => rfl
-      | some b =>
-          simp only [specsNonlin, specsNonlin_old, Nonlin.traverseAxes, specsBool]
-          rfl
-  | l2normalize m =>
-      cases m with
-      | none => rfl
-      | some b =>
-          simp only [specsNonlin, specsNonlin_old, Nonlin.traverseAxes, specsBool]
-          rfl
 
 private def specsFactor_old : Factor → List AxisSpec
   | .read _ es => es.flatMap specsIdx | .iverson b => specsBool b
@@ -217,20 +159,8 @@ private theorem specsRHS_eq_old (r : RHSExpr) : specsRHS r = specsRHS_old r := b
   rw [hbody]
   rfl
 
-private def specsLHS_old : LHSSlot → List AxisSpec
-  | .free a => [a] | .freeNorm a => [a]
-  | .iterAt a _ => [a] | .iterNext a => [a] | .affine e => specsIdx e
-
 private def specsLHS (s : LHSSlot) : List AxisSpec :=
   (LHSSlot.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) s).run
-
-private theorem specsLHS_eq_old (s : LHSSlot) : specsLHS s = specsLHS_old s := by
-  cases s with
-  | free a => rfl
-  | freeNorm a => rfl
-  | iterAt a n => rfl
-  | iterNext a => rfl
-  | affine e => rfl
 
 private def specsDecl (d : Decl) : List AxisSpec :=
   (Decl.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) d).run
