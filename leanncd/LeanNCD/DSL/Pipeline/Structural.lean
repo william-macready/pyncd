@@ -85,10 +85,31 @@ private theorem specsPred_eq_old (e : PredArith) : specsPred e = specsPred_old e
       show specsPred a = specsPred_old a
       exact iha
 
-private def specsBool : BoolExpr → List AxisSpec
+private def specsBool_old : BoolExpr → List AxisSpec
   | .rel _ a b => specsPred a ++ specsPred b
-  | .and a b => specsBool a ++ specsBool b | .or a b => specsBool a ++ specsBool b
-  | .not a => specsBool a | .ieq a b => specsPred a ++ specsPred b
+  | .and a b => specsBool_old a ++ specsBool_old b | .or a b => specsBool_old a ++ specsBool_old b
+  | .not a => specsBool_old a | .ieq a b => specsPred a ++ specsPred b
+
+private def specsBool (e : BoolExpr) : List AxisSpec :=
+  (BoolExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) e).run
+
+private theorem specsBool_eq_old (e : BoolExpr) : specsBool e = specsBool_old e := by
+  induction e with
+  | rel op a b =>
+      simp only [specsBool, specsBool_old, BoolExpr.traverseAxes, specsPred]
+      rfl
+  | and a b iha ihb =>
+      show specsBool a ++ specsBool b = specsBool_old a ++ specsBool_old b
+      rw [iha, ihb]
+  | or a b iha ihb =>
+      show specsBool a ++ specsBool b = specsBool_old a ++ specsBool_old b
+      rw [iha, ihb]
+  | not a iha =>
+      show specsBool a = specsBool_old a
+      exact iha
+  | ieq a b =>
+      simp only [specsBool, specsBool_old, BoolExpr.traverseAxes, specsPred]
+      rfl
 
 private def specsNonlin : Nonlin → List AxisSpec
   | .softmax (some m) => specsBool m | .normalize (some m) => specsBool m
