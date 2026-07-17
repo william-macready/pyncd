@@ -11,9 +11,9 @@
 > blockquotes in [E1](#e1-one-traversal-to-rule-the-collectors-van-laarhoven) below. All theorems
 > in `RHSExpr` plus the new `Nonlin.traverseAxes` building block (9 constructors, exhaustive
 > match) closed exactly as pre-verified during design — zero implementation-time surprises.
-> This covers the entire layered, non-mutually-recursive **expression** stack (`IdxExpr → PredArith → BoolExpr
-> → Factor → ProdTerm → SumExpr → RHSExpr`) and is a strong, though not yet final, signal for E1
-> over Spike 2a/2b. **This work is not yet merged to `main`** — it's on open PR
+> This covers the entire layered, non-mutually-recursive **expression** stack
+> (`IdxExpr → PredArith → BoolExpr → Factor → ProdTerm → SumExpr → RHSExpr`)
+> and is a strong, though not yet final, signal for E1 over Spike 2a/2b. **This work is not yet merged to `main`** — it's on open PR
 > [william-macready/pyncd#1](https://github.com/william-macready/pyncd/pull/1), branch
 > `worktree-e1-traverseaxes-prototype`, worktree at `.claude/worktrees/e1-traverseaxes-prototype`.
 >
@@ -893,8 +893,10 @@ makes `TermTraversable` (`Exec/Traversable.lean`) its `Id` special case.
 > constructors including 3 carrying a mask) whose exhaustive match closes off, by construction,
 > production's documented `specsNonlin` wildcard hazard. The `Nonlin` collecting-direction
 > theorem (against a local `specsNonlin'` copy) closed cleanly; no UID-collecting theorem
-> added (production never touches mask UIDs). Remap: `.identity` closes trivially, masked cases
-> conditionally on their `BoolExpr` mask's own remap. Resolved a real production semantic
+> added (production never touches mask UIDs). Remap: `.identity` closes trivially, the masked
+> case (demonstrated for `.softmax`; `.normalize`/`.l2normalize` follow the identical shape and
+> were not separately proved) closes conditionally on its `BoolExpr` mask's own remap. Resolved
+> a real production semantic
 > asymmetry — `specsRHS` includes the nonlin mask's axes, `readAxisUIDs` deliberately excludes
 > them — with two named traversal functions (`traverseAxesWithMask`/`traverseAxesNoMask`)
 > rather than a flag. `traverseAxesWithMask` serves AxisSpec-collecting and remap;
