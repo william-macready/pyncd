@@ -111,9 +111,39 @@ private theorem specsBool_eq_old (e : BoolExpr) : specsBool e = specsBool_old e 
       simp only [specsBool, specsBool_old, BoolExpr.traverseAxes, specsPred]
       rfl
 
-private def specsNonlin : Nonlin → List AxisSpec
+private def specsNonlin_old : Nonlin → List AxisSpec
   | .softmax (some m) => specsBool m | .normalize (some m) => specsBool m
   | .l2normalize (some m) => specsBool m | _ => []
+
+private def specsNonlin (n : Nonlin) : List AxisSpec :=
+  (Nonlin.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) n).run
+
+private theorem specsNonlin_eq_old (n : Nonlin) : specsNonlin n = specsNonlin_old n := by
+  cases n with
+  | identity => rfl
+  | relu => rfl
+  | sigmoid => rfl
+  | tanh => rfl
+  | gelu => rfl
+  | leakyrelu => rfl
+  | softmax m =>
+      cases m with
+      | none => rfl
+      | some b =>
+          simp only [specsNonlin, specsNonlin_old, Nonlin.traverseAxes, specsBool]
+          rfl
+  | normalize m =>
+      cases m with
+      | none => rfl
+      | some b =>
+          simp only [specsNonlin, specsNonlin_old, Nonlin.traverseAxes, specsBool]
+          rfl
+  | l2normalize m =>
+      cases m with
+      | none => rfl
+      | some b =>
+          simp only [specsNonlin, specsNonlin_old, Nonlin.traverseAxes, specsBool]
+          rfl
 
 private def specsFactor : Factor → List AxisSpec
   | .read _ es => es.flatMap specsIdx | .iverson b => specsBool b
