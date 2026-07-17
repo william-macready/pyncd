@@ -36,34 +36,30 @@
 > layered, non-mutually-recursive **expression** stack (`IdxExpr → PredArith → BoolExpr →
 > Factor → ProdTerm → SumExpr → RHSExpr`), both **statement** layers (`LHSSlot`, `Stmt`), the
 > **declaration** layer (`Decl`), and the **top-level program** layer (`TLProgram`) — every node
-> in `DSL/Ast.lean`. **This work is not yet merged to `main`** — it's on open PR
-> [william-macready/pyncd#1](https://github.com/william-macready/pyncd/pull/1), branch
-> `worktree-e1-traverseaxes-prototype`, worktree at
-> `.claude/worktrees/e1-traverseaxes-prototype`.
+> in `DSL/Ast.lean`. **This work is merged to `main`** (PR
+> [william-macready/pyncd#1](https://github.com/william-macready/pyncd/pull/1),
+> `worktree-e1-traverseaxes-prototype` merged and deleted 2026-07-17).
 >
-> **Next open item:** there is no further AST node to extend to — E1 has reached full AST
-> coverage. **E1's own go/no-go decision against Spike 2a/2b is now the open item**, and that
-> decision belongs to the user: this checkpoint does not render a verdict, recommendation, or
-> lean either way — the decision is now answerable in full, using all eleven slices' evidence,
-> and is left there. Independently, the **cospan-model spike** (Wave 3b, unlocks
+> **Decision (2026-07-17): GO.** E1 is adopted. Production migration is underway — see the
+> "**Production migration**" note at the end of [E1](#e1-one-traversal-to-rule-the-collectors-van-laarhoven)
+> below for the full motivation (drawing on all eleven slices' findings) and the sub-project
+> decomposition. Sub-project 1 (`specs*` family) is scoped and designed at
+> `docs/superpowers/specs/2026-07-17-e1-production-migration-specs-design.md`, on branch
+> `e1-production-migration-specs`, worktree at `.claude/worktrees/e1-production-migration-specs`.
+> Independently, the **cospan-model spike** (Wave 3b, unlocks
 > **[E13](#e13-generators-for-br--closing-brop-and-promoting-e6s-laws-to-theorems)**) remains
-> available as a separate thread; the choice now is between making the E1 go/no-go call and
-> picking up the cospan-model thread instead, not between continuing E1 and switching threads.
+> available as a separate thread whenever picked up.
 >
 > Quick resume checklist:
 >
-> 1. Decide whether to merge PR #1 first or make the go/no-go call first — either is fine, the
->    branch already has 11 clean slices and its own final reviews.
-> 2. `cd leanncd && lake build 2>&1 | tail -5` — confirm still green (8609 jobs as of this
->    checkpoint; sorry count in the default build unchanged — none of E1's slices touch a proof).
-> 3. Read the eleven existing E1 design docs (`docs/superpowers/specs/2026-07-1[567]-e1-traverseaxes-*.md`)
->    for the established pattern and full history.
-> 4. Before deciding, re-read all eleven design docs' own "Success criteria" sections together
->    — the go/no-go decision should weigh them collectively, not just the headline findings
->    summarized here.
-> 5. `git diff --stat` against `main` shows **one production file touched**
->    (`LeanNCD/DSL/Pipeline/Structural.lean`, the `Stmt.uids_eq` addition) — neither `Decl` nor
->    `TLProgram` needed a second one, so this count is now final for the eleven-slice series.
+> 1. `cd leanncd && lake build 2>&1 | tail -5` — confirm still green (8609 jobs as of this
+>    checkpoint; sorry count in the default build unchanged).
+> 2. Read `docs/superpowers/specs/2026-07-17-e1-production-migration-specs-design.md` for
+>    sub-project 1's current design; the eleven E1 design docs
+>    (`docs/superpowers/specs/2026-07-1[567]-e1-traverseaxes-*.md`) remain the source of truth
+>    for per-node findings the migration relies on.
+> 3. Sub-project order is fixed: `specs*` → `*AxisUIDs` → `mapUID`, safest-first — do not
+>    reorder without re-checking the blast-radius findings in sub-project 1's design doc.
 
 A global review of `leanncd/` (~9,200 lines of Lean across 49 modules) after the recent wave of
 feature fixes (`Factor.unaryFn` inline transcendentals, new `Nonlin` activations, `l2normalize`,
@@ -1044,6 +1040,85 @@ makes `TermTraversable` (`Exec/Traversable.lean`) its `Id` special case.
 > with zero `sorry`/`native_decide` anywhere in the series — see
 > `docs/superpowers/specs/2026-07-17-e1-traverseaxes-tlprogram-design.md` for the full go/no-go
 > criteria and what E1's own adoption decision against Spike 2a/2b would still need to weigh.
+
+> **Production migration — decision and motivation (2026-07-17):** the go/no-go decision above
+> is **GO** — E1 is adopted, and production is being migrated off the three hand-maintained
+> families (`mapUID`, `specs*`, `*AxisUIDs`) onto `traverseAxes`-based implementations. The
+> motivation draws directly on the eleven slices above, not on this decision being asserted
+> fresh:
+>
+> - **The original case for E1** (made before any slice was attempted, still holding after all
+>   eleven): almost every function in `Traverse.lean`'s `mapUID` family, the `specs*` family, and
+>   the `*AxisUIDs` family is *the same traversal instantiated at a different applicative functor*
+>   — remap at `Id`, collect-`AxisSpec`s at `Const (List AxisSpec)`, collect-UIDs at
+>   `Const (List UID)` (see the `Factor.traverseAxes` sketch and the surrounding discussion
+>   earlier in this section). If it works, it *replaces* Spikes 2a/2b entirely and makes
+>   `TermTraversable` (`Exec/Traversable.lean`) its `Id` special case. It worked, across all
+>   eleven AST nodes, with zero exceptions to the pattern's basic shape.
+> - **Zero `sorry`/`native_decide` across the entire eleven-slice series** — every collecting-
+>   direction theorem closed with a sound, kernel-checked proof, and every remap theorem that
+>   *could* close (see next point) closed either fully unconditionally or via an explicit,
+>   independently-verified hypothesis. This is a stronger correctness posture than production's
+>   *current* code enjoys (see next point).
+> - **A genuine defect in production's current `mapUID` family, found and characterized by the
+>   `PredArith`/`BoolExpr` slices, that migration fixes as a side effect, not merely papers
+>   over:** `PredArith.mapUID` and `BoolExpr.mapUID` are declared `partial def` with genuine
+>   self-recursion, which causes Lean to generate **zero equation lemmas for the entire
+>   definition** — nothing about their current behavior is mechanically provable today, in
+>   production, right now. `PredArith.traverseAxes`/`BoolExpr.traverseAxes` compiled as ordinary
+>   structural recursion with no `partial` annotation needed at all. Migrating `mapUID` to be
+>   `traverseAxes`-derived doesn't just consolidate code — it closes a standing gap where two of
+>   eleven nodes' remap behavior was entirely opaque to proof.
+> - **A documented, previously-triggered production hazard that migration closes by
+>   construction:** `specsNonlin`'s wildcard fallback (`_ => []`) is safe today only because every
+>   *current* non-masked `Nonlin` variant happens to contribute no axes — its own module doc in
+>   `Structural.lean` warns this already silently swallowed `l2normalize`'s mask once before a
+>   fix. `Nonlin.traverseAxes` (built during the `RHSExpr` slice) is a 9-arm *exhaustive* match
+>   with no wildcard, so Lean's totality checker forces any future masked variant to be handled
+>   explicitly — the hazard cannot recur once `specsNonlin` is `traverseAxes`-derived.
+> - **A real production semantic asymmetry, found and resolved once, that the migration must
+>   carry forward rather than flatten:** `specsRHS` includes the nonlin mask's axes;
+>   `readAxisUIDs` deliberately excludes them (per-term contraction scoping must not see mask
+>   axes). The `RHSExpr` slice resolved this with two named traversal instantiations
+>   (`traverseAxesWithMask`/`traverseAxesNoMask`) rather than a boolean flag — production's
+>   migration reuses this exact resolution, not a fresh one.
+> - **Proof that crossing into production, when a slice's scope demands it, is tractable and
+>   reversible:** the `Stmt` slice needed the *only* production-file change across all eleven
+>   slices (`Stmt.uids_eq`, bridging `Stmt.uids`'s private-helper-chain wall), landed cleanly with
+>   a new cross-layer import, and was marked with `SPIKE EXCEPTION`/`TO REVERT` comments precisely
+>   so that decision could be revisited independently of E1's own fate. Both `Decl` and
+>   `TLProgram` later confirmed the *same risk shape* recurs (a public wrapper over private
+>   helpers) without *forcing* a production change every time — whether a bridge is needed
+>   depends on the exact scope chosen, not on the wall's mere existence. This distinction —
+>   confirmed real, but not always requiring action — is exactly what this migration's own
+>   sub-project 1 design doc (linked below) had to get right when it found `TLProgram.axisNames`'s
+>   wall real but avoidable given its scoping choice.
+> - **Explicit, load-bearing non-goals, established slice by slice, that the migration inherits
+>   rather than re-litigates:** `lhsAxisUID?`/`freeAxisUIDs` (`LHSSlot`) are classify-and-filter,
+>   not collectors — no instantiation of any traversal can reproduce them. `Decl.axisCount`/
+>   `Decl.name`/`declName` are classify- or name-extraction-shaped, not axis-collector-shaped.
+>   `TLProgram.axisNames`'s `.eraseDups`/`.name`-projection step is scoped out for the same
+>   reason. All three stay hand-written, permanently outside this migration's scope — not
+>   oversights, but functions of a genuinely different shape than `traverseAxes` produces.
+>
+> **Decomposition:** three sub-projects, safest-first — **`specs*` → `*AxisUIDs` → `mapUID`**.
+> Blast-radius research done before scoping sub-project 1 found the risk profile is much smaller
+> than the families' scale suggests: `mapUID` has exactly one production call site in total
+> (`Structural.lean`'s `assignUIDs`, via `TermTraversable.traverseUID`); every `specs*` function
+> is `private` with zero external callers by construction; `*AxisUIDs` has a small,
+> well-understood set of callers. The same research surfaced a related-but-out-of-scope
+> axis-collector ecosystem in `DSL/Pipeline/Lowering.lean` (`idxAxes`, a byte-for-byte duplicate
+> of `specsIdx`; `dedupByUid`/`tensorAxes`/`ScanStmt.stepRetainedAxes`/`stepDegAxesMulti`, feeding
+> `RouteSpec.lean`'s correctness proofs) — explicitly fenced off from this migration, not
+> something a "unify everything with a similar name" pass should sweep in.
+>
+> Sub-project 1 (`specs*`) is scoped and designed at
+> `docs/superpowers/specs/2026-07-17-e1-production-migration-specs-design.md`, on branch
+> `e1-production-migration-specs`. It also introduces the one new piece of shared infrastructure
+> every later sub-project builds on: a production home for `traverseAxes` itself
+> (`LeanNCD/DSL/TraverseAxes.lean`, promoted verbatim from the spike, alongside the minimal
+> `ConstL` applicative the spike used in place of Mathlib's `Monoid`-ceremony-requiring
+> `Functor.Const`).
 
 ### E2. A typed core IR the pipeline narrows into ("trees that grow")
 
