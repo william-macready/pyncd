@@ -30,6 +30,18 @@
 -- AxisSpec-collecting-and-remap (conditional on body/nonlin), `traverseAxesNoMask` for
 -- UID-collecting-only (mask excluded per `readAxisUIDs`); `specsRHS` includes, `readAxisUIDs`
 -- excludes the mask axes — see docs/superpowers/specs/2026-07-16-e1-traverseaxes-rhsexpr-design.md.
+-- LHSSlot slice (simplest shape since IdxExpr): 4 of 5 arms apply `g` directly to a bare
+-- `AxisSpec`, the 5th delegates to `IdxExpr.traverseAxes`; remap is FULLY UNCONDITIONAL, the
+-- first time since IdxExpr itself; `lhsAxisUID?`/`freeAxisUIDs` are explicitly out of scope
+-- (classify-and-filter, not a collector) — see
+-- docs/superpowers/specs/2026-07-16-e1-traverseaxes-lhsslot-design.md.
+-- Stmt slice (3 constructors; first production-file change on this branch): `.assign`/`.scatter`
+-- combine a `List LHSSlot` traversal with `RHSExpr.traverseAxesWithMask`, conditional remap on
+-- one hypothesis; `.recurMorphism` unconditional. `Stmt.uids` is public but built entirely from
+-- `private` helpers Lean can't delta-reduce through even via the public wrapper — resolved by
+-- adding `Stmt.uids_eq` plus six bridge lemmas to `Structural.lean` itself (marked
+-- `SPIKE EXCEPTION`, revertible) — see
+-- docs/superpowers/specs/2026-07-16-e1-traverseaxes-stmt-design.md.
 import LeanNCD.DSL.Traverse
 import LeanNCD.Eval.Contract
 import LeanNCD.DSL.Pipeline.Structural

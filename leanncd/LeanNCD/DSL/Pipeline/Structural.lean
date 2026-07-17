@@ -89,10 +89,11 @@ def Stmt.uids (s : Stmt) : List UID := (specsStmt s).map (·.uid)
 -- `termAxisUIDs`), letting an outside caller (the E1 spike file, which cannot see the private
 -- `specsStmt`/`specsLHS`/`specsRHS`/`specsNonlin`/`specsFactor`/`specsBool`/`specsPred` this
 -- unfolds) relate `Stmt.uids` to its own `traverseAxes`-based reconstruction without
--- duplicating any of their logic by hand. The five helper lemmas below establish, layer by
--- layer, that each private `specsX` collector's `.map (·.uid)` coincides with the
--- already-public UID collector at that same layer (`idxAxisUIDs`, `predAxisUIDs`,
--- `boolAxisUIDs`) — each proved entirely from *inside* this file, where those private helpers
+-- duplicating any of their logic by hand. The six helper lemmas below establish, layer by
+-- layer, that each private `specsX` collector's `.map (·.uid)` coincides with the layer's
+-- public UID collector where one exists (`idxAxisUIDs`, `predAxisUIDs`, `boolAxisUIDs`), or
+-- else the corresponding inline UID match (for `Factor`/`Nonlin`/`LHSSlot`, which have no named
+-- public collector) — each proved entirely from *inside* this file, where those private helpers
 -- are visible, checked against their real bodies by the Lean kernel, not "by inspection."
 -- TO REVERT: delete this comment block through `Stmt.uids_eq` below, and the
 -- `LeanNCD.Eval.Contract` import + `open` above (search "SPIKE EXCEPTION" in this file) —
