@@ -1,6 +1,7 @@
 -- LeanNCD/DSL/Pipeline/Structural.lean
 import LeanNCD.DSL.Pipeline.Types
 import LeanNCD.DSL.Traverse
+import LeanNCD.DSL.TraverseAxes
 import LeanNCD.Exec.Uid
 import Std.Data.HashMap
 -- SPIKE EXCEPTION (E1 traverseAxes prototype, 2026-07-16 — see
@@ -34,9 +35,39 @@ otherwise the wildcard silently swallows that mask's axis specs (this bit `l2nor
 already; see the git history). The two public collectors below are thin projections of one
 traversal: by name (`TLProgram.axisNames`, de-duplicated) or by uid (`Stmt.uids`). -/
 
-private def specsIdx : IdxExpr → List AxisSpec
+private def specsIdx_old : IdxExpr → List AxisSpec
   | .axis a => [a] | .const _ => [] | .scale _ a => [a]
   | .shift a _ => [a] | .affine _ xs => xs.map (·.2)
+
+private def specsIdx (e : IdxExpr) : List AxisSpec :=
+  (IdxExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) e).run
+
+private theorem specsIdx_eq_old (e : IdxExpr) : specsIdx e = specsIdx_old e := by
+  cases e with
+  | axis a => rfl
+  | const n => rfl
+  | scale c a => rfl
+  | shift a n => rfl
+  | affine n xs =>
+      have hmap : (fun (ca : Int × AxisSpec) => Prod.mk ca.1 <$> (⟨[ca.2]⟩ : ConstL (List AxisSpec) AxisSpec))
+          = (fun ca => (⟨[ca.2]⟩ : ConstL (List AxisSpec) (Int × AxisSpec))) := rfl
+      have core : ∀ ys : List (Int × AxisSpec),
+          (Traversable.traverse (fun ca => (⟨[ca.2]⟩ : ConstL (List AxisSpec) (Int × AxisSpec))) ys).run
+            = ys.map (·.2) := by
+        intro ys
+        induction ys with
+        | nil => rfl
+        | cons hd tl ih =>
+            show [hd.2] ++
+                (Traversable.traverse (fun ca => (⟨[ca.2]⟩ : ConstL (List AxisSpec) (Int × AxisSpec))) tl).run
+              = hd.2 :: List.map (·.2) tl
+            rw [ih]
+            rfl
+      show (IdxExpr.affine n <$>
+          Traversable.traverse (fun ca => Prod.mk ca.1 <$> (⟨[ca.2]⟩ : ConstL (List AxisSpec) AxisSpec)) xs :
+          ConstL (List AxisSpec) IdxExpr).run = xs.map (·.2)
+      rw [hmap]
+      exact core xs
 
 private def specsPred : PredArith → List AxisSpec
   | .embed e => specsIdx e | .mul a b => specsPred a ++ specsPred b | .iabs a => specsPred a
@@ -100,6 +131,7 @@ def Stmt.uids (s : Stmt) : List UID := (specsStmt s).map (·.uid)
 -- nothing else here depends on any of it.
 
 private theorem specsIdx_map_uid_eq (e : IdxExpr) : (specsIdx e).map (·.uid) = idxAxisUIDs e := by
+  rw [specsIdx_eq_old]
   cases e with
   | axis a => rfl
   | const n => rfl
