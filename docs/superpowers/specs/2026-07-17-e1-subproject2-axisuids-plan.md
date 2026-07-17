@@ -1,0 +1,246 @@
+# E1 Sub-project 2 — migrate the `*AxisUIDs` family to `traverseAxes` — Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended)
+> or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax.
+
+**Goal:** Re-express the UID-collecting `*AxisUIDs` functions in `LeanNCD/Eval/Contract.lean` as
+instantiations of the production `traverseAxes` machinery at `ConstL (List UID)`, each verified
+behavior-preserving against its real prior body by a kernel-checked equality theorem — the UID-direction
+analogue of sub-project 1's `specs*` migration.
+
+**Architecture:** Same pattern as sub-project 1 (rename `_old`, define via `traverseAxes`, prove
+`_eq_old`, keep-or-delete). The proofs are **direct ports of theorems the spike already proved**
+(`traverseAxes_const_eq_*AxisUIDs` in `test/DSL/TraverseAxesSpike.lean`), so no new proof search is
+expected. The one strategic wrinkle — the interaction with `Structural.lean`'s UID proofs — is the
+subject of the "Sequencing decision" section and drives the whole plan.
+
+**Tech Stack:** Lean 4 (v4.30.0), Mathlib, Lake. Verification = `lake build` green + `#print axioms`.
+
+## Global Constraints
+
+- Lean toolchain `leanprover/lean4:v4.30.0`; Mathlib rev `v4.30.0` (see `leanncd/lakefile.toml`). Do not bump.
+- Every `*AxisUIDs_eq_old` must close **kernel-checked** (never `sorry`/`admit`/"by inspection").
+- Full test suite (`lake build`, incl. `DSL.Pipeline.StructuralTest`) must stay green at **every** task,
+  not just the end. Match sub-project 1's cadence.
+- Axiom hygiene: `LeanNCD.Stmt.uids_eq` must stay `[propext, Quot.sound]` (no `sorryAx`); the
+  `Eval`-side collectors feed `checkReadRanks`/shape inference and must not acquire new axioms.
+- Conform to `Contract.lean`'s existing style (public `def`s, doc-comments). Match, don't reformat.
+- New file created by sub-project 1 (`LeanNCD/DSL/TraverseAxes.lean`) is the shared home of the traversal
+  machinery; sub-project 2 **consumes** it and adds nothing to it (all eleven `NodeName.traverseAxes` +
+  `traverseAxesNoMask` are already there).
+
+---
+
+## Findings from researching the actual blast radius (before assuming scope)
+
+**The family lives in `LeanNCD/Eval/Contract.lean`** (NOT `Structural.lean`), and unlike sub-project 1's
+`private` `specs*`, these are **public `def`s** with cross-module consumers. Six functions exist:
+
+| Function | Type | Shape | Migratable? |
+|---|---|---|---|
+| `idxAxisUIDs` | `IdxExpr → List UID` | leaf (`[a.uid]`, `xs.map (·.2.uid)`) | ✅ yes |
+| `predAxisUIDs` | `PredArith → List UID` | recursive | ✅ yes |
+| `boolAxisUIDs` | `BoolExpr → List UID` | recursive | ✅ yes |
+| `termAxisUIDs` | `ProdTerm → List UID` | inlined factor match | ✅ yes |
+| `readAxisUIDs` | `RHSExpr → List UID` | `body.terms.flatMap termAxisUIDs` — **mask EXCLUDED** | ✅ yes (via `traverseAxesNoMask`) |
+| `freeAxisUIDs` | `List LHSSlot → List UID` | `slots.filterMap lhsAxisUID?` | ❌ **NO — see below** |
+
+**`freeAxisUIDs` is out of scope — do not migrate it.** `lhsAxisUID?` (`Eval/Shape.lean:501`) returns
+`none` for `.affine` slots and `some a.uid` for the four bare-axis slots. So `freeAxisUIDs` collects a
+deliberate *subset* — the "free" (non-affine) axes only — not all axes. `LHSSlot.traverseAxes` visits
+*every* axis (including the affine slot's `IdxExpr`), so `freeAxisUIDs` is **not** a `traverseAxes`
+instantiation. The spike proves no equivalence for it (confirmed: no `traverseAxes_const_eq_freeAxisUIDs`).
+It stays hand-written, exactly as `TLProgram.axisNames` stayed hand-written on top of `axisSpecs` in
+sub-project 1. (It also has no production callers today — used only in tests/legacy — a further reason to
+leave it alone.)
+
+**`readAxisUIDs` excludes the nonlin mask.** It is `body.terms.flatMap termAxisUIDs` — no `nonlin` arm —
+the documented asymmetry vs. `specsRHS` (which *includes* the mask). Its migration therefore uses
+`RHSExpr.traverseAxesNoMask` (already in `TraverseAxes.lean:79`), NOT `traverseAxesWithMask`. The spike's
+`traverseAxes_const_eq_readAxisUIDs` (line 700) proves exactly this via `NoMask`.
+
+**No standalone `factorAxisUIDs`/`nonlinAxisUIDs` in production** — `termAxisUIDs` inlines the factor
+match; nothing collects nonlin-mask UIDs (consistent with the mask exclusion). The spike's
+`factorAxisUIDs`/`nonlinAxisUIDs` theorems used local copies; production introduces no standalone
+functions for them (mirrors sub-project 1's `specsProdTerm`/`specsSumExpr` handling).
+
+**Proof blast radius — who reaches through these functions' structural shape:**
+- `Eval/Scatter.lean` (`scatterSourceAxes`, `evalScatter`) uses `idxAxisUIDs`/`readAxisUIDs` **as values
+  only** — no proof unfolds their shape. Safe; behavior-preservation by `_eq_old` is enough.
+- `DSL/Pipeline/Structural.lean` is the hazard. Four proofs name these collectors on the RHS of an
+  equality and reason against their **current hand-written shape**:
+  - `specsIdx_map_uid_eq  : (specsIdx e).map (·.uid) = idxAxisUIDs e`
+  - `specsPred_map_uid_eq : (specsPred e).map (·.uid) = predAxisUIDs e`
+  - `specsBool_map_uid_eq : (specsBool b).map (·.uid) = boolAxisUIDs b`
+  - `Stmt.uids_eq` — its statement + proof spell out `idxAxisUIDs`/`boolAxisUIDs`/`termAxisUIDs`.
+- No other production theorems reference the family (`AcsetCodec`'s `axisUid*` lemmas are unrelated).
+
+## The sequencing decision (READ THIS FIRST — it changes the whole plan)
+
+Migrating `idxAxisUIDs`/`predAxisUIDs`/`boolAxisUIDs`/`termAxisUIDs` changes their **definitional shape**
+from a hand-written match to `(NodeName.traverseAxes (ConstL (List UID)) …).run`. The four
+`Structural.lean` proofs above currently close by matching that old shape. So **naively migrating the
+family will break those four proofs**, and the sub-project-1-style fix would be to add a *second* layer of
+`_old`/`_eq_old` scaffolding — this time on the UID side (`idxAxisUIDs_old`/`idxAxisUIDs_eq_old` + a
+`rw [idxAxisUIDs_eq_old]` in each broken proof).
+
+That is **exactly the scaffolding the deeper-refactor follow-up
+(`docs/superpowers/specs/2026-07-17-e1-scaffolding-refactor-followup.md`) exists to dissolve.** The
+follow-up wants `specsX_map_uid_eq`/`Stmt.uids_eq` re-derived so they relate the AxisSpec-collecting
+traversal to the UID-collecting traversal *directly* (via a `ConstL` fusion lemma), depending on neither
+side's structural shape. Once that holds, both the `specs*` scaffolding AND any `*AxisUIDs` scaffolding
+become unnecessary.
+
+**Recommendation:** do the deeper refactor and sub-project 2 as **one combined effort**, unified by a
+single `ConstL` map-`.uid`-over-traverse fusion lemma. Concretely:
+
+1. Prove the fusion lemma: for a node's `traverseAxes`, `((traverseAxes (ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) x).run).map (·.uid) = (traverseAxes (ConstL (List UID)) (fun a => ⟨[a.uid]⟩) x).run`. This is the crux — one lemma, reused everywhere.
+2. Migrate the five `*AxisUIDs` to the `ConstL (List UID)` traversal (this plan's Tasks 1–5).
+3. Re-derive the four `Structural.lean` proofs through the fusion lemma (the follow-up's work) — which lets the remaining four `specs*_old`/`_eq_old` pairs be deleted too.
+
+Doing sub-project 2 **in isolation first** is possible (Tasks 1–5 below stand alone), but it will
+temporarily add UID-side scaffolding to `Structural.lean` that step 3 later removes — churn for no end
+gain. **Preferred order: fusion lemma → migrate family → re-derive proofs → delete all scaffolding.**
+
+The task list below covers the family migration (Tasks 1–5) plus the fusion+re-derivation (Task 6),
+sequenced in the preferred order. If you deliberately choose the isolated path, Task 6 is replaced by
+"add UID-side `_old`/`_eq_old` for the reached-into functions," which is explicitly the worse option.
+
+## File layout
+
+- `LeanNCD/Eval/Contract.lean` (modify) — 5 functions migrated to `traverseAxes`; `freeAxisUIDs`,
+  `readNames`, `cartesian`, etc. untouched.
+- `LeanNCD/DSL/Pipeline/Structural.lean` (modify, Task 6) — re-derive the 4 UID proofs via the fusion
+  lemma; delete the 4 surviving `specs*_old`/`_eq_old` pairs and the scaffolding pointer comment.
+- `LeanNCD/DSL/TraverseAxes.lean` — **no change** (machinery already present).
+- No test file changes expected (`StructuralTest` exercises the pipeline end-to-end and should stay green
+  by behavior-preservation).
+
+## Migration pattern (Tasks 1–5, per function; leaf-to-root order)
+
+Order: `idxAxisUIDs` → `predAxisUIDs` → `boolAxisUIDs` → `termAxisUIDs` → `readAxisUIDs`. For each:
+
+1. Rename the current body to `<fn>_old` (keep `def`, same signature), renaming self-recursive calls too.
+2. Define `<fn>` as the `ConstL (List UID)` instantiation:
+   `(NodeName.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) x).run`
+   — except `readAxisUIDs`, which uses `RHSExpr.traverseAxesNoMask` (mask excluded).
+3. Prove `theorem <fn>_eq_old (x) : <fn> x = <fn>_old x` by **porting the named spike theorem** (table
+   below): same induction/case structure, with `specsX'`/local-copy references replaced by the real
+   production `<fn>` calls, which are now definitional (so spike `exact <lemma>` steps often become `rfl`,
+   and any final `.run` vs def-unfold gap closes with an explicit `rfl` after `rw` — the reducible-`rfl`
+   caveat learned in sub-project 1's `specsRHS`).
+4. `lake build DSL.Pipeline.StructuralTest` then full `lake build`; confirm green.
+5. Because these are reached into by `Structural.lean` proofs, **keep `<fn>_old`/`<fn>_eq_old`** until
+   Task 6 re-derives those proofs; then Task 6 deletes them. (Do not delete per-function.)
+
+**Spike proof templates to port (all already proven in `test/DSL/TraverseAxesSpike.lean`):**
+
+| Task | Function | Instantiation | Port from spike theorem |
+|---|---|---|---|
+| 1 | `idxAxisUIDs` | `IdxExpr.traverseAxes` @ `ConstL (List UID)` | `traverseAxes_const_eq_idxAxisUIDs` (L134) |
+| 2 | `predAxisUIDs` | `PredArith.traverseAxes` | `traverseAxes_const_eq_predAxisUIDs` (L205) |
+| 3 | `boolAxisUIDs` | `BoolExpr.traverseAxes` | `traverseAxes_const_eq_boolAxisUIDs` (L256) |
+| 4 | `termAxisUIDs` | `ProdTerm.traverseAxes` | `traverseAxes_const_eq_termAxisUIDs` (L474) + inlined factor match (`traverseAxes_const_eq_factorAxisUIDs`, L360) |
+| 5 | `readAxisUIDs` | `RHSExpr.traverseAxesNoMask` @ `ConstL (List UID)` | `traverseAxes_const_eq_readAxisUIDs` (L700) |
+
+### Task 1: migrate `idxAxisUIDs`
+
+**Files:** Modify `LeanNCD/Eval/Contract.lean` (the `idxAxisUIDs` block, ~L7–13).
+
+**Interfaces:**
+- Consumes: `IdxExpr.traverseAxes`, `ConstL` from `LeanNCD.DSL.TraverseAxes` (add `import`/`open` if
+  `Contract.lean` does not already transitively see them — check first; `TraverseAxes` imports may need
+  wiring, since `Contract.lean` is in `Eval/`, not `DSL/`).
+- Produces: `idxAxisUIDs : IdxExpr → List UID` (unchanged signature); `idxAxisUIDs_old`,
+  `idxAxisUIDs_eq_old : ∀ e, idxAxisUIDs e = idxAxisUIDs_old e`.
+
+- [ ] **Step 1: confirm `Contract.lean` can see the traversal machinery.**
+  Run: `grep -n "import\|TraverseAxes" LeanNCD/Eval/Contract.lean`. If `LeanNCD.DSL.TraverseAxes` is not
+  transitively imported, add `import LeanNCD.DSL.TraverseAxes`. **Watch for an import cycle**: `TraverseAxes`
+  must not depend on `Eval/Contract`. Verify with `lake build LeanNCD.Eval.Contract` after adding.
+- [ ] **Step 2: rename to `idxAxisUIDs_old`.** Copy the current body verbatim into
+  `def idxAxisUIDs_old : IdxExpr → List UID` (no self-recursion to rename — it's a leaf).
+- [ ] **Step 3: define new `idxAxisUIDs`** as
+  `(IdxExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) e).run`.
+- [ ] **Step 4: prove `idxAxisUIDs_eq_old`** by porting `traverseAxes_const_eq_idxAxisUIDs` (spike L134):
+  the `.affine` arm's list-`map` core is the non-trivial case; the four other arms should be `rfl`. If a
+  case does not close on first attempt, STOP and diagnose (per sub-project 1's effort policy) — do not force.
+- [ ] **Step 5: build.** Run `lake build DSL.Pipeline.StructuralTest` then `lake build`. Expected: green
+  (only `padded-access` warnings). Note: `specsIdx_map_uid_eq`/`Stmt.uids_eq` may now FAIL to build because
+  `idxAxisUIDs` changed shape — that is expected and is fixed in Task 6. If you are running Tasks 1–5 in
+  isolation, this is where the UID-side scaffolding decision bites (see Sequencing decision).
+- [ ] **Step 6: axiom check.** Run a scratch `#print axioms LeanNCD.Eval.idxAxisUIDs`; expect standard axioms only.
+- [ ] **Step 7: commit** `prod: migrate idxAxisUIDs to traverseAxes (E1 migration sub-project 2)`.
+
+### Tasks 2–5: `predAxisUIDs`, `boolAxisUIDs`, `termAxisUIDs`, `readAxisUIDs`
+
+Identical shape to Task 1, porting the spike theorem named in the template table. Per-task specifics:
+
+- **Task 2 (`predAxisUIDs`):** recursive; port `traverseAxes_const_eq_predAxisUIDs`. `.embed` arm delegates
+  to `idxAxisUIDs` (now definitional → likely `rfl`/`exact`); `.mul`/`.iabs` recurse via IH.
+- **Task 3 (`boolAxisUIDs`):** recursive; port `traverseAxes_const_eq_boolAxisUIDs`. `.rel`/`.ieq` delegate
+  to `predAxisUIDs` (cross-node → expect `simp only [...]; rfl`, not bare `show`, per sub-project 1's
+  same-node-vs-cross-node asymmetry); `.and`/`.or`/`.not` recurse.
+- **Task 4 (`termAxisUIDs`):** inlined factor match; port `traverseAxes_const_eq_termAxisUIDs` (which uses
+  `traverseAxes_const_eq_factorAxisUIDs` for the per-factor arms — `.read`/`.unaryFn` fold `idxAxisUIDs`
+  over the index list, `.iverson` delegates to `boolAxisUIDs`). Mirror sub-project 1's `specsFactor`/inlined
+  `specsRHS` core-lemma style.
+- **Task 5 (`readAxisUIDs`):** use `RHSExpr.traverseAxesNoMask (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)`;
+  port `traverseAxes_const_eq_readAxisUIDs`, which reduces to `termAxisUIDs` over `body.terms` (mask never
+  touched). Confirm the `NoMask` form is used — a `WithMask` here would wrongly pull in nonlin-mask UIDs and
+  the `_eq_old` proof would fail (a useful correctness tripwire).
+
+Each ends with the same build + axiom check + commit steps as Task 1.
+
+### Task 6: fusion lemma + re-derive `Structural.lean` UID proofs + delete all scaffolding
+
+**Files:** Modify `LeanNCD/DSL/Pipeline/Structural.lean`; delete `<fn>_old`/`_eq_old` in
+`LeanNCD/Eval/Contract.lean` (Tasks 1–5's scaffolding) once the re-derived proofs no longer reference them.
+
+**Interfaces:**
+- Consumes: the migrated `specsX` (sub-project 1) and `*AxisUIDs` (Tasks 1–5), all now `ConstL`
+  instantiations of the same `traverseAxes`.
+- Produces: re-derived `specsIdx_map_uid_eq`, `specsPred_map_uid_eq`, `specsBool_map_uid_eq`,
+  `Stmt.uids_eq` — proven via the fusion lemma; and the removal of every `specs*_old`/`_eq_old`
+  (sub-project 1) and `*AxisUIDs_old`/`_eq_old` (Tasks 1–5).
+
+- [ ] **Step 1: state and prove the `ConstL` fusion lemma** (per node, or one generic over the traversal):
+  `((NodeName.traverseAxes (ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) x).run).map (·.uid) = (NodeName.traverseAxes (ConstL (List UID)) (fun a => ⟨[a.uid]⟩) x).run`.
+  This is the crux — investigate whether a single naturality statement over `ConstL`/`Traversable`
+  generalizes, or whether per-node induction is needed. Prove by induction mirroring the spike.
+- [ ] **Step 2: re-derive `specsIdx_map_uid_eq`/`specsPred_map_uid_eq`/`specsBool_map_uid_eq`** to close via
+  the fusion lemma against the traversal forms — dropping their `rw [specsX_eq_old]` openers.
+- [ ] **Step 3: re-derive `Stmt.uids_eq`** (its `hRHS` `have` and top-level) via the fusion lemma —
+  dropping the `rw [specsRHS_eq_old]`/`rw [specsStmt_eq_old]` openers. **Mind the circularity** flagged in
+  the follow-up: `traverseAxes_const_eq_stmtUids` (spike) is proved *from* `Stmt.uids_eq`; prove
+  `Stmt.uids_eq` from the traversal first, without leaning on anything downstream of it.
+- [ ] **Step 4: delete scaffolding.** Remove `specsIdx_old`/`_eq_old`, `specsFactor_old`/`_eq_old`,
+  `specsRHS_old`/`_eq_old`, `specsStmt_old`/`_eq_old` (Structural.lean) and all five `*AxisUIDs_old`/`_eq_old`
+  (Contract.lean), plus the scaffolding pointer comment in `Structural.lean`.
+- [ ] **Step 5: verify.** Full `lake build` green (incl. `DSL.Pipeline.StructuralTest`);
+  `#print axioms LeanNCD.Stmt.uids_eq` == `[propext, Quot.sound]`. Update/close the follow-up note.
+- [ ] **Step 6: commit** `refactor: re-derive UID proofs via ConstL fusion; drop all specs*/AxisUIDs _old scaffolding`.
+
+## Success criteria
+
+**Go:** all five `*AxisUIDs_eq_old` close kernel-checked; `readAxisUIDs` uses `NoMask` (mask stays
+excluded); `freeAxisUIDs` untouched; the fusion lemma lets every `specs*`/`*AxisUIDs` `_old`/`_eq_old`
+pair be deleted; full suite green at every step; `Stmt.uids_eq` axiom-clean.
+
+**No-go / interesting either way:** if any `*AxisUIDs_eq_old` fails to close despite the spike having proven
+the identical statement, that signals a drift between the spike's model and current production — investigate
+fully before working around. If the fusion lemma resists a single generic statement, fall back to per-node
+fusion lemmas (still eliminates the scaffolding) and record why.
+
+## Risks / notes
+
+- `Contract.lean` is in `Eval/` and may need a new `import LeanNCD.DSL.TraverseAxes` — **check for an import
+  cycle** first (Task 1 Step 1). This is the single most likely surprise; if `TraverseAxes` transitively
+  imports anything in `Eval/`, the family cannot import it and the migration needs the machinery factored
+  to a lower module. Stage this before committing to the plan.
+- These are **public** functions feeding `checkReadRanks`/shape inference/`scatterSourceAxes`; behavior
+  preservation is load-bearing for the evaluator, not just internal tidiness. The `_eq_old` proofs are the
+  guarantee; keep the full suite green throughout.
+- Sub-project 2 is independent of sub-project 3 (`mapUID` family) and can precede or follow it.
+- If the deeper refactor (Task 6) is deferred, Tasks 1–5 leave `Structural.lean` needing UID-side
+  scaffolding — capture that debt in the follow-up note rather than leaving the build red.
