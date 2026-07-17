@@ -13,9 +13,11 @@
 > match) closed exactly as pre-verified during design — zero implementation-time surprises.
 > This covers the entire layered, non-mutually-recursive **expression** stack
 > (`IdxExpr → PredArith → BoolExpr → Factor → ProdTerm → SumExpr → RHSExpr`)
-> and is a strong, though not yet final, signal for E1 over Spike 2a/2b. **This work is not yet merged to `main`** — it's on open PR
+> and is a strong, though not yet final, signal for E1 over Spike 2a/2b. **This work is not yet
+> merged to `main`** — it's on open PR
 > [william-macready/pyncd#1](https://github.com/william-macready/pyncd/pull/1), branch
-> `worktree-e1-traverseaxes-prototype`, worktree at `.claude/worktrees/e1-traverseaxes-prototype`.
+> `worktree-e1-traverseaxes-prototype`, worktree at
+> `.claude/worktrees/e1-traverseaxes-prototype`.
 >
 > **Next open item:** extend E1 to **`LHSSlot`**. Unlike prior slices, `LHSSlot`'s structure
 > is not yet known without consulting `DSL/Ast.lean` — do not assume its shape will continue
