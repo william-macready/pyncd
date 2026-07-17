@@ -217,9 +217,20 @@ private theorem specsRHS_eq_old (r : RHSExpr) : specsRHS r = specsRHS_old r := b
   rw [hbody]
   rfl
 
-private def specsLHS : LHSSlot → List AxisSpec
+private def specsLHS_old : LHSSlot → List AxisSpec
   | .free a => [a] | .freeNorm a => [a]
   | .iterAt a _ => [a] | .iterNext a => [a] | .affine e => specsIdx e
+
+private def specsLHS (s : LHSSlot) : List AxisSpec :=
+  (LHSSlot.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) s).run
+
+private theorem specsLHS_eq_old (s : LHSSlot) : specsLHS s = specsLHS_old s := by
+  cases s with
+  | free a => rfl
+  | freeNorm a => rfl
+  | iterAt a n => rfl
+  | iterNext a => rfl
+  | affine e => rfl
 
 private def specsDecl : Decl → List AxisSpec
   | .tensor _ ax => ax | .predicate _ ax => ax | .linear _ ax _ => ax
