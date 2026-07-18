@@ -183,6 +183,48 @@ Order: `idxAxisUIDs` → `predAxisUIDs` → `boolAxisUIDs` → `termAxisUIDs` �
 | 4 | `termAxisUIDs` | `ProdTerm.traverseAxes` | `traverseAxes_const_eq_termAxisUIDs` (L474) + inlined factor match (`traverseAxes_const_eq_factorAxisUIDs`, L360) |
 | 5 | `readAxisUIDs` | `RHSExpr.traverseAxesNoMask` @ `ConstL (List UID)` | `traverseAxes_const_eq_readAxisUIDs` (L700) |
 
+### Task 0: bring sub-project 1's code up to the same commenting standard (do first)
+
+Sub-project 1 (the `specs*` migration, already committed) under-commented its output — the reasoning lived
+in commit messages, not in the source. Before adding more traversal-derived code, retro-comment the
+**existing** sub-project 1 declarations in `LeanNCD/DSL/Pipeline/Structural.lean` to exactly the standard in
+"Commenting requirements" above, so both sub-projects read uniformly. This is **comments-only — no code,
+statement, or proof-term changes** (a comment-only diff; the build must be byte-for-behavior identical).
+
+Do it first: it sets the house style the rest of this plan matches, and it pays off even if the optional
+Task 6 refactor is never done (the four surviving `specs*_old`/`_eq_old` pairs persist in that case, so
+their comments are not throwaway). Where Task 6 *does* later delete or re-derive a commented declaration, it
+must carry this same standard forward — see Task 6 Step 4a.
+
+**Files:** Modify `LeanNCD/DSL/Pipeline/Structural.lean` (comments only).
+
+- [ ] **Step 1: the 10 migrated `specs*` definitions** (`specsIdx`, `specsPred`, `specsBool`, `specsNonlin`,
+  `specsFactor`, `specsRHS`, `specsLHS`, `specsDecl`, `specsStmt`, `TLProgram.axisSpecs`): ensure each has a
+  `/-- … -/` doc-comment stating what it collects (preserve existing ones, e.g. `axisSpecs`'s) plus one line
+  that it is the `ConstL (List AxisSpec)` instantiation of `NodeName.traverseAxes` and — for the eight that
+  keep them — that `specsX_eq_old` certifies equality to the prior body. Note `specsRHS` uses
+  `traverseAxesWithMask` (mask **included**) — comment that, the mirror of `readAxisUIDs`'s `NoMask`.
+- [ ] **Step 2: the 4 surviving `specs*_old`** (`specsIdx`/`specsFactor`/`specsRHS`/`specsStmt`): one-line
+  comment each — frozen pre-migration body, kept as the structural anchor the UID proofs `rw` back to,
+  slated for Task 6 deletion. (The scaffolding pointer comment added by the cleanup commit already frames
+  this block; make the per-`_old` lines consistent with it, don't duplicate it.)
+- [ ] **Step 3: the 4 surviving `specs*_eq_old` proofs** (`specsIdx`/`specsFactor`/`specsRHS`/`specsStmt` —
+  the other four were deleted in the cleanup commit): doc-comment naming the spike theorem each ports
+  (`traverseAxes_const_eq_specsIdx`/`…specsFactor`/`…specsRHS`/`…specsStmt`) and the one-line strategy;
+  inline-comment the non-obvious steps — the **explicit `rfl` after `rw`** in `specsRHS_eq_old`
+  (`-- rw's reducible close can't unfold specsNonlin; rfl (default) does`) and `specsStmt_eq_old`
+  (`-- …can't unfold specsRHS; rfl does`), and the `simp only [...]; rfl` **cross-node** close in
+  `specsFactor_eq_old`'s `.iverson` arm (delegates to `specsBool`) gets a "cross-node delegation — plain
+  show/rw can't see through the instance layers" note.
+- [ ] **Step 4: `specsX_map_uid_eq` lemmas and `Stmt.uids_eq`**: inline-comment the non-obvious steps —
+  the leading `rw [specsX_eq_old]` bridge (why: restore the old structural shape the proof body matches),
+  and any `simp`/`congr` that is not self-evident. Do not touch the proof terms.
+- [ ] **Step 5: verify comments-only.** Run `git diff -U0 -- LeanNCD/DSL/Pipeline/Structural.lean` and
+  confirm **every** changed line is a comment (`--`/`/-- -/`) or blank — no tactic or term lines changed.
+  Then `lake build` green (incl. `DSL.Pipeline.StructuralTest`); `#print axioms LeanNCD.Stmt.uids_eq` unchanged
+  (`[propext, Quot.sound]`).
+- [ ] **Step 6: commit** `docs: comment sub-project 1 specs* code to the sub-project 2 standard`.
+
 ### Task 1: migrate `idxAxisUIDs`
 
 **Files:** Modify `LeanNCD/Eval/Contract.lean` (the `idxAxisUIDs` block, ~L7–13).
@@ -278,6 +320,11 @@ Each ends with the same build + axiom check + commit steps as Task 1.
 - [ ] **Step 4: delete scaffolding.** Remove `specsIdx_old`/`_eq_old`, `specsFactor_old`/`_eq_old`,
   `specsRHS_old`/`_eq_old`, `specsStmt_old`/`_eq_old` (Structural.lean) and all five `*AxisUIDs_old`/`_eq_old`
   (Contract.lean), plus the scaffolding pointer comment in `Structural.lean`.
+- [ ] **Step 4a: carry the comment standard forward.** The re-derived `specs{Idx,Pred,Bool}_map_uid_eq` and
+  `Stmt.uids_eq` (Steps 2–3) replace proofs that Task 0 commented — the new proofs must meet the same
+  "Commenting requirements" (doc-comment naming the fusion-lemma path, inline notes on any non-obvious step).
+  Comments on the deleted `_old`/`_eq_old` pairs simply go away with them (expected, not a regression). Net
+  result: no commented declaration loses its comments except by deletion of the declaration itself.
 - [ ] **Step 5: verify.** Full `lake build` green (incl. `DSL.Pipeline.StructuralTest`);
   `#print axioms LeanNCD.Stmt.uids_eq` == `[propext, Quot.sound]`. Update/close the follow-up note.
 - [ ] **Step 6: commit** `refactor: re-derive UID proofs via ConstL fusion; drop all specs*/AxisUIDs _old scaffolding`.
@@ -289,7 +336,8 @@ excluded); `freeAxisUIDs` untouched (and its exclusion comment added); the fusio
 `specs*`/`*AxisUIDs` `_old`/`_eq_old` pair be deleted; full suite green at every step; `Stmt.uids_eq`
 axiom-clean; **and the generated code meets every item in "Commenting requirements"** (doc-comments
 preserved, `NoMask`/fusion/transparency-gotcha comments present) — treat a missing required comment as a
-task failure, same as a red build.
+task failure, same as a red build. Additionally (Task 0): sub-project 1's committed `specs*` code reads to
+the **same** commenting standard, via a verified comments-only diff.
 
 **No-go / interesting either way:** if any `*AxisUIDs_eq_old` fails to close despite the spike having proven
 the identical statement, that signals a drift between the spike's model and current production — investigate
