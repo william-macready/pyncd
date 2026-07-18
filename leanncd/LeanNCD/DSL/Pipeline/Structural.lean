@@ -258,6 +258,284 @@ private theorem specsStmt_eq_old (s : Stmt) : specsStmt s = specsStmt_old s := b
       rfl
   | recurMorphism nm ax tc => rfl
 
+/-! ## `Const`-applicative monoid-hom fusion (map-`·.uid` naturality)
+
+The lemmas below are pure facts relating the TWO `ConstL` instantiations of each node's
+`traverseAxes`: mapping `(·.uid)` over the AxisSpec-collecting run (leaf action `fun a => ⟨[a]⟩`)
+equals the UID-collecting run (leaf action `fun a => ⟨[a.uid]⟩`). They hold because
+`List.map (·.uid)` is a monoid homomorphism on `(List, ++, [])` and `(fun a => ⟨[a]⟩)`
+post-composed with `List.map (·.uid)` is `(fun a => ⟨[a.uid]⟩)`, so the `Const` applicative's
+`++`-accumulation commutes with the hom — i.e. this is the `Const`-applicative naturality of that
+monoid hom, applied per node.
+
+They reference ONLY the two runs and `List.map` — no `specsX`/`*AxisUIDs` collector — so they
+stand on their own: the bridge that sub-project 1's `specs*` (AxisSpec) side and sub-project 2's
+`*AxisUIDs` (UID) side never had. With them, sub-project 2 can re-derive the UID proofs directly
+from the AxisSpec proofs, without the `_old` structural scaffolding above.
+
+Leaf-to-root; each recursive lemma reuses the earlier ones (the hom naturality composes
+structurally, exactly as the spike's `traverseAxes_const_eq_*` pairs do per node). -/
+
+/-- `IdxExpr` (leaf): bare-axis arms (`.axis`/`.scale`/`.shift`) are `[a].map (·.uid) = [a.uid]`
+    and `.const` is `[]` — all `rfl`; `.affine` folds the coordinate list, pushing the map through
+    each `Prod.mk`-repaired const action (`hmapAS`/`hmapUS` collapse the `Prod.mk` wrapping). -/
+private theorem idxAxisUidFusion (e : IdxExpr) :
+    ((IdxExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) e).run).map (·.uid)
+      = (IdxExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) e).run := by
+  cases e with
+  | axis a => rfl
+  | const n => rfl
+  | scale c a => rfl
+  | shift a n => rfl
+  | affine n xs =>
+      -- Both runs re-pair each coordinate's `Int` half via `Prod.mk`; `ConstL` ignores its second
+      -- type parameter, so `hmapAS`/`hmapUS` collapse both to the plain per-element const action
+      -- the combined `core` folds over.
+      have hmapAS : (fun (ca : Int × AxisSpec) => Prod.mk ca.1 <$> (⟨[ca.2]⟩ : ConstL (List AxisSpec) AxisSpec))
+          = (fun ca => (⟨[ca.2]⟩ : ConstL (List AxisSpec) (Int × AxisSpec))) := rfl
+      have hmapUS : (fun (ca : Int × AxisSpec) => Prod.mk ca.1 <$> (⟨[ca.2.uid]⟩ : ConstL (List UID) AxisSpec))
+          = (fun ca => (⟨[ca.2.uid]⟩ : ConstL (List UID) (Int × AxisSpec))) := rfl
+      have core : ∀ ys : List (Int × AxisSpec),
+          ((Traversable.traverse (fun ca => (⟨[ca.2]⟩ : ConstL (List AxisSpec) (Int × AxisSpec))) ys).run).map (·.uid)
+            = (Traversable.traverse (fun ca => (⟨[ca.2.uid]⟩ : ConstL (List UID) (Int × AxisSpec))) ys).run := by
+        intro ys
+        induction ys with
+        | nil => rfl
+        | cons hd tl ih =>
+            show ([hd.2] ++ (Traversable.traverse (fun ca => (⟨[ca.2]⟩ : ConstL (List AxisSpec) (Int × AxisSpec))) tl).run).map (·.uid)
+              = [hd.2.uid] ++ (Traversable.traverse (fun ca => (⟨[ca.2.uid]⟩ : ConstL (List UID) (Int × AxisSpec))) tl).run
+            simp only [List.map_append, List.map_cons, List.map_nil, ih]
+      show ((IdxExpr.affine n <$>
+          Traversable.traverse (fun ca => Prod.mk ca.1 <$> (⟨[ca.2]⟩ : ConstL (List AxisSpec) AxisSpec)) xs :
+          ConstL (List AxisSpec) IdxExpr).run).map (·.uid)
+        = (IdxExpr.affine n <$>
+          Traversable.traverse (fun ca => Prod.mk ca.1 <$> (⟨[ca.2.uid]⟩ : ConstL (List UID) AxisSpec)) xs :
+          ConstL (List UID) IdxExpr).run
+      rw [hmapAS, hmapUS]
+      exact core xs
+
+/-- `PredArith`: `.embed` delegates to `idxAxisUidFusion`; `.mul` pushes the map through the
+    `++` of the two child runs (`List.map_append` + the IHs); `.iabs` is the single-child run. -/
+private theorem predAxisUidFusion (e : PredArith) :
+    ((PredArith.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) e).run).map (·.uid)
+      = (PredArith.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) e).run := by
+  induction e with
+  | embed e => exact idxAxisUidFusion e   -- cross-node delegation: embed's run IS the IdxExpr run
+  | mul a b iha ihb =>
+      show ((PredArith.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) a).run ++
+            (PredArith.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) b).run).map (·.uid)
+        = (PredArith.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) a).run ++
+            (PredArith.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) b).run
+      rw [List.map_append, iha, ihb]
+  | iabs a iha =>
+      show ((PredArith.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) a).run).map (·.uid)
+        = (PredArith.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) a).run
+      exact iha
+
+/-- `BoolExpr`: `.rel`/`.ieq` delegate to `predAxisUidFusion` over the `++` of the two child runs;
+    `.and`/`.or` use the IHs over the `++`; `.not` is the single-child run. -/
+private theorem boolAxisUidFusion (e : BoolExpr) :
+    ((BoolExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) e).run).map (·.uid)
+      = (BoolExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) e).run := by
+  induction e with
+  | rel op a b =>
+      show ((PredArith.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) a).run ++
+            (PredArith.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) b).run).map (·.uid)
+        = (PredArith.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) a).run ++
+            (PredArith.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) b).run
+      rw [List.map_append, predAxisUidFusion a, predAxisUidFusion b]
+  | and a b iha ihb =>
+      show ((BoolExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) a).run ++
+            (BoolExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) b).run).map (·.uid)
+        = (BoolExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) a).run ++
+            (BoolExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) b).run
+      rw [List.map_append, iha, ihb]
+  | or a b iha ihb =>
+      show ((BoolExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) a).run ++
+            (BoolExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) b).run).map (·.uid)
+        = (BoolExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) a).run ++
+            (BoolExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) b).run
+      rw [List.map_append, iha, ihb]
+  | not a iha =>
+      show ((BoolExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) a).run).map (·.uid)
+        = (BoolExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) a).run
+      exact iha
+  | ieq a b =>
+      show ((PredArith.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) a).run ++
+            (PredArith.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) b).run).map (·.uid)
+        = (PredArith.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) a).run ++
+            (PredArith.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) b).run
+      rw [List.map_append, predAxisUidFusion a, predAxisUidFusion b]
+
+/-- `Factor`: `.read`/`.unaryFn` fold `IdxExpr.traverseAxes` over the index list (the `core`
+    list-fold, using `idxAxisUidFusion` per element); `.iverson` cross-node-delegates to
+    `boolAxisUidFusion`. -/
+private theorem factorAxisUidFusion (x : Factor) :
+    ((Factor.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) x).run).map (·.uid)
+      = (Factor.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) x).run := by
+  have core : ∀ ys : List IdxExpr,
+      ((Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) ys).run).map (·.uid)
+        = (Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) ys).run := by
+    intro ys
+    induction ys with
+    | nil => rfl
+    | cons hd tl ih =>
+        show ((IdxExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) hd).run ++
+            (Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) tl).run).map (·.uid)
+          = (IdxExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) hd).run ++
+            (Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) tl).run
+        rw [List.map_append, idxAxisUidFusion hd, ih]
+  cases x with
+  | read nm es =>
+      show ((Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) es).run).map (·.uid)
+        = (Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) es).run
+      exact core es
+  | iverson b =>
+      show ((BoolExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) b).run).map (·.uid)
+        = (BoolExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) b).run
+      exact boolAxisUidFusion b
+  | unaryFn op nm es =>
+      show ((Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) es).run).map (·.uid)
+        = (Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) es).run
+      exact core es
+
+/-- `ProdTerm`: folds `Factor.traverseAxes` over `t.factors` (the `core` list-fold, using
+    `factorAxisUidFusion` per element). -/
+private theorem prodTermAxisUidFusion (t : ProdTerm) :
+    ((ProdTerm.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) t).run).map (·.uid)
+      = (ProdTerm.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) t).run := by
+  show ((Traversable.traverse (Factor.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) t.factors).run).map (·.uid)
+    = (Traversable.traverse (Factor.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) t.factors).run
+  have core : ∀ ys : List Factor,
+      ((Traversable.traverse (Factor.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) ys).run).map (·.uid)
+        = (Traversable.traverse (Factor.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) ys).run := by
+    intro ys
+    induction ys with
+    | nil => rfl
+    | cons hd tl ih =>
+        show ((Factor.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) hd).run ++
+            (Traversable.traverse (Factor.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) tl).run).map (·.uid)
+          = (Factor.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) hd).run ++
+            (Traversable.traverse (Factor.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) tl).run
+        rw [List.map_append, factorAxisUidFusion hd, ih]
+  exact core t.factors
+
+/-- `SumExpr`: folds `ProdTerm.traverseAxes` over `s.terms` (the `core` list-fold, using
+    `prodTermAxisUidFusion` per element). -/
+private theorem sumExprAxisUidFusion (s : SumExpr) :
+    ((SumExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) s).run).map (·.uid)
+      = (SumExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) s).run := by
+  show ((Traversable.traverse (ProdTerm.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) s.terms).run).map (·.uid)
+    = (Traversable.traverse (ProdTerm.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) s.terms).run
+  have core : ∀ ys : List ProdTerm,
+      ((Traversable.traverse (ProdTerm.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) ys).run).map (·.uid)
+        = (Traversable.traverse (ProdTerm.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) ys).run := by
+    intro ys
+    induction ys with
+    | nil => rfl
+    | cons hd tl ih =>
+        show ((ProdTerm.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) hd).run ++
+            (Traversable.traverse (ProdTerm.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) tl).run).map (·.uid)
+          = (ProdTerm.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) hd).run ++
+            (Traversable.traverse (ProdTerm.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) tl).run
+        rw [List.map_append, prodTermAxisUidFusion hd, ih]
+  exact core s.terms
+
+/-- `Nonlin`: mask-free constructors collect `[]` (`rfl`); masked `.softmax`/`.normalize`/
+    `.l2normalize` with `some b` cross-node-delegate to `boolAxisUidFusion`, `none` is `[]`. -/
+private theorem nonlinAxisUidFusion (n : Nonlin) :
+    ((Nonlin.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) n).run).map (·.uid)
+      = (Nonlin.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) n).run := by
+  cases n with
+  | identity => rfl
+  | relu => rfl
+  | sigmoid => rfl
+  | tanh => rfl
+  | gelu => rfl
+  | leakyrelu => rfl
+  | softmax m =>
+      cases m with
+      | none => rfl
+      | some b =>
+          show ((BoolExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) b).run).map (·.uid)
+            = (BoolExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) b).run
+          exact boolAxisUidFusion b
+  | normalize m =>
+      cases m with
+      | none => rfl
+      | some b =>
+          show ((BoolExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) b).run).map (·.uid)
+            = (BoolExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) b).run
+          exact boolAxisUidFusion b
+  | l2normalize m =>
+      cases m with
+      | none => rfl
+      | some b =>
+          show ((BoolExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) b).run).map (·.uid)
+            = (BoolExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) b).run
+          exact boolAxisUidFusion b
+
+/-- `LHSSlot`: bare-axis arms (`.free`/`.freeNorm`/`.iterAt`/`.iterNext`) are
+    `[a].map (·.uid) = [a.uid]` (`rfl`); `.affine` cross-node-delegates to `idxAxisUidFusion`. -/
+private theorem lhsAxisUidFusion (s : LHSSlot) :
+    ((LHSSlot.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) s).run).map (·.uid)
+      = (LHSSlot.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) s).run := by
+  cases s with
+  | free a => rfl
+  | freeNorm a => rfl
+  | iterAt a n => rfl
+  | iterNext a => rfl
+  | affine e =>
+      show ((IdxExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) e).run).map (·.uid)
+        = (IdxExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) e).run
+      exact idxAxisUidFusion e
+
+/-- `Stmt` (root of the statement layer): `.assign`/`.scatter` split into the LHS-slot list-fold
+    (`coreLHS`, using `lhsAxisUidFusion`) and the RHS (`hRHS`, whose `traverseAxesWithMask` run is
+    `SumExpr`'s body run `++` the `Nonlin` mask run — mask INCLUDED on both sides, so no `NoMask`
+    asymmetry here); `.recurMorphism` is `[ax].map (·.uid) = [ax.uid]` (`rfl`). -/
+private theorem stmtAxisUidFusion (s : Stmt) :
+    ((Stmt.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) s).run).map (·.uid)
+      = (Stmt.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) s).run := by
+  have coreLHS : ∀ ys : List LHSSlot,
+      ((Traversable.traverse (LHSSlot.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) ys).run).map (·.uid)
+        = (Traversable.traverse (LHSSlot.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) ys).run := by
+    intro ys
+    induction ys with
+    | nil => rfl
+    | cons hd tl ih =>
+        show ((LHSSlot.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) hd).run ++
+            (Traversable.traverse (LHSSlot.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) tl).run).map (·.uid)
+          = (LHSSlot.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) hd).run ++
+            (Traversable.traverse (LHSSlot.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) tl).run
+        rw [List.map_append, lhsAxisUidFusion hd, ih]
+  -- The `RHSExpr` layer is not one of this block's nodes, but its `traverseAxesWithMask` run
+  -- decomposes (defeq) into the `SumExpr` body run `++` the `Nonlin` mask run, so its fusion is
+  -- exactly `sumExprAxisUidFusion` `++` `nonlinAxisUidFusion` — no separate RHSExpr lemma needed.
+  have hRHS : ∀ r : RHSExpr,
+      ((RHSExpr.traverseAxesWithMask (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) r).run).map (·.uid)
+        = (RHSExpr.traverseAxesWithMask (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) r).run := by
+    intro r
+    show ((SumExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) r.body).run ++
+        (Nonlin.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) r.nonlin).run).map (·.uid)
+      = (SumExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) r.body).run ++
+        (Nonlin.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) r.nonlin).run
+    rw [List.map_append, sumExprAxisUidFusion r.body, nonlinAxisUidFusion r.nonlin]
+  cases s with
+  | assign nm ls r =>
+      show ((Traversable.traverse (LHSSlot.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) ls).run ++
+          (RHSExpr.traverseAxesWithMask (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) r).run).map (·.uid)
+        = (Traversable.traverse (LHSSlot.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) ls).run ++
+          (RHSExpr.traverseAxesWithMask (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) r).run
+      rw [List.map_append, coreLHS ls, hRHS r]
+  | scatter nm ls r o =>
+      show ((Traversable.traverse (LHSSlot.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) ls).run ++
+          (RHSExpr.traverseAxesWithMask (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) r).run).map (·.uid)
+        = (Traversable.traverse (LHSSlot.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) ls).run ++
+          (RHSExpr.traverseAxesWithMask (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) r).run
+      rw [List.map_append, coreLHS ls, hRHS r]
+  | recurMorphism nm ax tc => rfl
+
 /-- Every `AxisSpec` occurring anywhere in the program, in program order (decls then stmts).
     The `ConstL (List AxisSpec)` instantiation of `TLProgram.traverseAxes`. -/
 private def TLProgram.axisSpecs (p : TLProgram) : List AxisSpec :=
