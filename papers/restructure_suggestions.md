@@ -1,6 +1,57 @@
 # leanncd restructuring suggestions
 
-> **Resume here (checkpoint 2026-07-17).** E6 and **E11** are fully DONE (see their ✅ markers
+> **▶ RESUME HERE — E1 sub-project 2 (`*AxisUIDs` → `traverseAxes`), mid-execution (checkpoint 2026-07-17).**
+>
+> **State:** branch `e1-production-migration-specs` (worktree `.claude/worktrees/e1-production-migration-specs`),
+> tip **`a2d908d`**, pushed; PR [#2](https://github.com/william-macready/pyncd/pull/2) open (NOT merged).
+> Build green at the tip. E1 prototype = DONE (PR #1, merged). Sub-project 1 (`specs*` family, all 10
+> collectors) = DONE on this branch. Sub-project 2 (`*AxisUIDs` family) = IN PROGRESS, described here.
+>
+> **Plan:** `docs/superpowers/specs/2026-07-17-e1-subproject2-axisuids-plan.md`.
+> **SDD ledger (gitignored, mirrors this):** `.superpowers/sdd/progress.md`.
+>
+> **Decision that governs execution:** *fusion-first, green at every commit* (chosen over temp UID-side
+> scaffolding / accepting a red middle). The migration breaks the `Structural.lean` UID proofs
+> (`specsX_map_uid_eq`, `Stmt.uids_eq`) that match the old collector shapes, so the plan's per-function
+> tasks were collapsed into **Task A** (fusion lemmas) + **Task B** (migrate + re-derive + delete).
+>
+> **Done & committed:**
+> - Go/no-go: **GO** — `Eval/Contract.lean` can `import LeanNCD.DSL.TraverseAxes` with no import cycle (built green).
+> - **Task 0** (`c9e40a9`): sub-project 1's `specs*` code retro-commented to the plan's standard (verified comments-only).
+> - **Task A** (`a2d908d`): 9 per-node **`<node>AxisUidFusion`** lemmas added to `Structural.lean` (grep
+>   `AxisUidFusion`; nodes Idx/Pred/Bool/Factor/ProdTerm/SumExpr/Nonlin/LHSSlot/Stmt). Each proves
+>   `((traverseAxes (ConstL (List AxisSpec)) (fun a=>⟨[a]⟩) x).run).map (·.uid) = (traverseAxes (ConstL (List UID)) (fun a=>⟨[a.uid]⟩) x).run`
+>   — the `Const` monoid-hom fusion bridging the AxisSpec and UID collection directions. Kernel-checked,
+>   purely additive, no `sorry`. They sit BEFORE the `specsX_map_uid_eq` proofs, ready to use.
+>
+> **NEXT — Task B (not started):**
+> - **B1 (migrate + re-derive, green):** In `Eval/Contract.lean`, migrate the 5 collectors to
+>   `(NodeName.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) x).run` — `idxAxisUIDs`,
+>   `predAxisUIDs`, `boolAxisUIDs`, `termAxisUIDs`, and **`readAxisUIDs` via `traverseAxesNoMask`** (mask
+>   EXCLUDED — the asymmetry vs `specsRHS`'s `WithMask`; wrong choice makes `readAxisUIDs_eq_old` fail =
+>   tripwire). Keep each `_old` and prove `<fn>_eq_old` by porting the spike theorem
+>   (`traverseAxes_const_eq_*AxisUIDs` in `test/DSL/TraverseAxesSpike.lean`). In `Structural.lean`,
+>   re-derive `specsIdx/Pred/Bool/Factor/Nonlin/LHS_map_uid_eq` and `Stmt.uids_eq` through the matching
+>   `AxisUidFusion` lemma, dropping every `rw [specsX_eq_old]` bridge. **`freeAxisUIDs` is OUT of scope** —
+>   `lhsAxisUID?` returns `none` for `.affine`, so it collects a subset, not all axes; leave it, add a
+>   one-line exclusion comment.
+> - **B2 (delete scaffolding, green):** delete all now-unused `_old`/`_eq_old` (4 specs-side:
+>   `specsIdx/Factor/RHS/Stmt`; 5 `*AxisUIDs`-side), the `SCAFFOLDING` pointer comment, and update the
+>   `SPIKE EXCEPTION` block + the follow-up note `docs/superpowers/specs/2026-07-17-e1-scaffolding-refactor-followup.md`.
+>
+> **Working-tree note:** `Eval/Contract.lean` has ONE uncommitted line (`import LeanNCD.DSL.TraverseAxes`,
+> from the go/no-go test) — commit it with B1, do not stage it into anything else.
+>
+> **Resume checklist:** (1) `cd leanncd && lake build 2>&1 | grep -v padded-access | tail -5` — confirm
+> green at `a2d908d`. (2) Read the sub-project 2 plan (above) — Task B section + "Spike-coverage map" +
+> "Commenting requirements". (3) The `AxisUidFusion` lemmas are the tools for B1's re-derivations; each
+> `specsX_map_uid_eq` should reduce to `exact <node>AxisUidFusion _` modulo definitional unfolding.
+> (4) Keep every commit green; do NOT push directly — a git hook blocks it (use the documented bypass or
+> hand off to the controller). Match the plan's commenting standard on all new code.
+>
+> *(The block below is the PRIOR checkpoint — E1 prototype + sub-project 1 setup — kept for historical context.)*
+
+> **Prior checkpoint (superseded — see ▶ RESUME HERE above).** E6 and **E11** are fully DONE (see their ✅ markers
 > below). **E1** (one traversal to rule the collectors) — the prototype Spike 2 was waiting on
 > — is now **eleven slices in — full AST coverage complete:** `IdxExpr` (leaf), `PredArith`
 > (self-recursion + composition), `BoolExpr` (confirmation, more constructors), `Factor` (first
