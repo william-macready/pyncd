@@ -204,16 +204,37 @@ Each ends with the same build + axiom check + commit steps as Task 1.
   `Stmt.uids_eq` — proven via the fusion lemma; and the removal of every `specs*_old`/`_eq_old`
   (sub-project 1) and `*AxisUIDs_old`/`_eq_old` (Tasks 1–5).
 
-- [ ] **Step 1: state and prove the `ConstL` fusion lemma** (per node, or one generic over the traversal):
+> **This is the ONLY genuinely-new proof obligation in the whole sub-project.** The spike proves both
+> collection directions (`traverseAxes_const_eq_specsX` and `traverseAxes_const_eq_*AxisUIDs`) but never
+> *bridges* them — it compares each direction to its own hand-written reference and stops. Everything in
+> Steps 2–3 below is a port of an existing spike theorem; only Step 1's fusion lemma is new. See the
+> "Spike-coverage map" at the end of this plan for the full audit.
+
+- [ ] **Step 1: state and prove the `ConstL` fusion lemma.** This is **not open-ended research** — it is the
+  standard **monoid-homomorphism naturality of the `Const` applicative**. `List.map (·.uid) : List AxisSpec
+  → List UID` is a monoid hom on `(List, ++, [])`, and `(fun a => ⟨[a]⟩)` post-composed with it is exactly
+  `(fun a => ⟨[a.uid]⟩)`. Target statement (per node, and/or generic):
   `((NodeName.traverseAxes (ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) x).run).map (·.uid) = (NodeName.traverseAxes (ConstL (List UID)) (fun a => ⟨[a.uid]⟩) x).run`.
-  This is the crux — investigate whether a single naturality statement over `ConstL`/`Traversable`
-  generalizes, or whether per-node induction is needed. Prove by induction mirroring the spike.
-- [ ] **Step 2: re-derive `specsIdx_map_uid_eq`/`specsPred_map_uid_eq`/`specsBool_map_uid_eq`** to close via
-  the fusion lemma against the traversal forms — dropping their `rw [specsX_eq_old]` openers.
-- [ ] **Step 3: re-derive `Stmt.uids_eq`** (its `hRHS` `have` and top-level) via the fusion lemma —
-  dropping the `rw [specsRHS_eq_old]`/`rw [specsStmt_eq_old]` openers. **Mind the circularity** flagged in
-  the follow-up: `traverseAxes_const_eq_stmtUids` (spike) is proved *from* `Stmt.uids_eq`; prove
-  `Stmt.uids_eq` from the traversal first, without leaning on anything downstream of it.
+  **Preferred:** prove one generic naturality lemma — for a monoid hom `φ : M → N`,
+  `φ ((traverse (fun a => ⟨g a⟩ : ConstL M) x).run) = (traverse (fun a => ⟨φ (g a)⟩ : ConstL N) x).run` — via
+  `LawfulTraversable`, then instantiate at `φ := List.map (·.uid)`, `g := fun a => [a]`. **Fallback:**
+  per-node fusion lemmas by induction, reusing the exact case structure of the spike's
+  `traverseAxes_const_eq_*` proofs (which already do this induction over each node). Record which route was taken.
+- [ ] **Step 2: re-derive `specsIdx_map_uid_eq`/`specsPred_map_uid_eq`/`specsBool_map_uid_eq`** — rewrite each
+  through the fusion lemma: after fusion turns `(specsX x).map (·.uid)` into
+  `(NodeName.traverseAxes (ConstL (List UID)) …).run`, that is `*AxisUIDs x` by the Tasks 1–5 definitions
+  (closes by `rfl`, since post-migration `*AxisUIDs` **is** that run). Drop the `rw [specsX_eq_old]`
+  openers. No structural matching on either side remains.
+- [ ] **Step 3: re-derive `Stmt.uids_eq`** (its `hRHS` `have` and top-level) — **port the spike's
+  `traverseAxes_const_eq_stmtUids` (L797) proof body** as the template, together with its recursion
+  scaffold `traverseAxes_const_eq_termAxisUIDsSumExpr` (L543), `traverseAxes_const_eq_factorAxisUIDs`
+  (L360), and `traverseAxes_const_eq_nonlinAxisUIDs` (L629). Path: `Stmt.uids s = (specsStmt s).map (·.uid)`
+  [def] `= (Stmt.traverseAxes (ConstL (List UID)) …).run` [Stmt-level fusion, Step 1] `=` the explicit
+  UID-list RHS [the ported `*AxisUIDs` theorems]. Drop the `rw [specsRHS_eq_old]`/`rw [specsStmt_eq_old]`
+  openers. **Circularity note:** the spike's `traverseAxes_const_eq_stmtUids` is itself proved *via*
+  `rw [Stmt.uids_eq]`, so use it only as a *proof-shape template*, never as a lemma the re-derived
+  `Stmt.uids_eq` depends on — otherwise the dependency is circular. The re-derived `Stmt.uids_eq` must
+  bottom out only in Step 1's fusion lemma and the Tasks 1–5 `*AxisUIDs` facts.
 - [ ] **Step 4: delete scaffolding.** Remove `specsIdx_old`/`_eq_old`, `specsFactor_old`/`_eq_old`,
   `specsRHS_old`/`_eq_old`, `specsStmt_old`/`_eq_old` (Structural.lean) and all five `*AxisUIDs_old`/`_eq_old`
   (Contract.lean), plus the scaffolding pointer comment in `Structural.lean`.
@@ -244,3 +265,28 @@ fusion lemmas (still eliminates the scaffolding) and record why.
 - Sub-project 2 is independent of sub-project 3 (`mapUID` family) and can precede or follow it.
 - If the deeper refactor (Task 6) is deferred, Tasks 1–5 leave `Structural.lean` needing UID-side
   scaffolding — capture that debt in the follow-up note rather than leaving the build red.
+
+## Spike-coverage map (audit: what this plan reuses vs. proves new)
+
+Every proof obligation below, mapped to its source in `test/DSL/TraverseAxesSpike.lean`. The point:
+**exactly one obligation is new** (the fusion lemma); all others are ports of already-proven spike theorems.
+
+| Plan obligation | Spike theorem to port | Status |
+| --- | --- | --- |
+| Task 1 `idxAxisUIDs_eq_old` | `traverseAxes_const_eq_idxAxisUIDs` (L134) | PORT |
+| Task 2 `predAxisUIDs_eq_old` | `traverseAxes_const_eq_predAxisUIDs` (L205) | PORT |
+| Task 3 `boolAxisUIDs_eq_old` | `traverseAxes_const_eq_boolAxisUIDs` (L256) | PORT |
+| Task 4 `termAxisUIDs_eq_old` | `traverseAxes_const_eq_termAxisUIDs` (L474) + `…factorAxisUIDs` (L360) | PORT |
+| Task 5 `readAxisUIDs_eq_old` | `traverseAxes_const_eq_readAxisUIDs` (L700, via `NoMask`) + `…termAxisUIDsSumExpr` (L543) | PORT |
+| Task 6 Step 1 fusion lemma | *(none — spike never bridges specs↔uid)* | **NEW** |
+| Task 6 Step 2 `specs{Idx,Pred,Bool}_map_uid_eq` | fusion (Step 1) + Tasks 1–3 defs | DERIVED |
+| Task 6 Step 3 `Stmt.uids_eq` | `traverseAxes_const_eq_stmtUids` (L797) as shape template + `…nonlinAxisUIDs` (L629), `…termAxisUIDsSumExpr` (L543), `…factorAxisUIDs` (L360) | PORT (shape) |
+
+**Not needed by sub-project 2** (belongs to sub-project 3, the `mapUID` family): the entire
+`traverseAxes_id_eq_*MapUID` set (L87, 180, 292, 401, 414, 498, 567, 671, 714, 753, 867, 871, 888, 942,
+1016). Listed here only so a reader confirms nothing UID-relevant was overlooked.
+
+**The one non-ported obligation — the fusion lemma — is standard, not speculative:** it is the
+monoid-hom naturality of the `Const` applicative (`List.map (·.uid)` is a `(List, ++, [])` hom). If the
+generic `LawfulTraversable` route is fiddly, the per-node fallback reuses the spike's own
+`traverseAxes_const_eq_*` case structure verbatim, so even the fallback is spike-shaped.
