@@ -25,6 +25,10 @@ subject of the "Sequencing decision" section and drives the whole plan.
 - Axiom hygiene: `LeanNCD.Stmt.uids_eq` must stay `[propext, Quot.sound]` (no `sorryAx`); the
   `Eval`-side collectors feed `checkReadRanks`/shape inference and must not acquire new axioms.
 - Conform to `Contract.lean`'s existing style (public `def`s, doc-comments). Match, don't reformat.
+- **Comment the generated code** to the standard in "Commenting requirements" below — this is a hard
+  requirement, not a nicety. Every migrated function keeps its existing `/-- … -/` doc-comment, and every
+  non-obvious proof step (especially the fusion lemma and any transparency gotcha) carries an inline
+  explanation. Sub-project 1 under-commented its proofs (reasoning lived in commit messages); do better here.
 - New file created by sub-project 1 (`LeanNCD/DSL/TraverseAxes.lean`) is the shared home of the traversal
   machinery; sub-project 2 **consumes** it and adds nothing to it (all eleven `NodeName.traverseAxes` +
   `traverseAxesNoMask` are already there).
@@ -115,6 +119,42 @@ sequenced in the preferred order. If you deliberately choose the isolated path, 
 - `LeanNCD/DSL/TraverseAxes.lean` — **no change** (machinery already present).
 - No test file changes expected (`StructuralTest` exercises the pipeline end-to-end and should stay green
   by behavior-preservation).
+
+## Commenting requirements (hard requirement — the generated code must be well commented)
+
+The migration re-expresses concrete, readable recursive functions as opaque `(traverseAxes …).run` one-liners
+whose behavior and correctness are non-obvious at the call site. The comments are what keep the result
+readable. A reviewer must be able to understand *why* each declaration exists and *why* each non-trivial
+proof step is there, without reading the spike or the commit log. Required, per declaration:
+
+- **Migrated function (e.g. `idxAxisUIDs`):** keep its existing `/-- … -/` doc-comment verbatim on the new
+  definition (semantics are unchanged — the doc-comment is still true). Add one line noting it is now the
+  `ConstL (List UID)` instantiation of `NodeName.traverseAxes`, and that `<fn>_eq_old` certifies it equals
+  the prior hand-written body. Never drop a doc-comment during the rename.
+- **`readAxisUIDs` specifically:** comment the `traverseAxesNoMask` choice prominently — *why* the nonlin
+  mask is excluded (the documented `specsRHS`-vs-`readAxisUIDs` asymmetry). This is the one place a future
+  editor could "fix" it to `WithMask` and silently corrupt shape inference; the comment is the guardrail.
+- **`<fn>_old`:** a one-line comment that it is the frozen pre-migration body, kept only as the structural
+  anchor that `Structural.lean`'s UID proofs `rw` back to, and slated for deletion in Task 6. Match the
+  tone of the existing `SPIKE EXCEPTION` block in `Structural.lean`.
+- **`<fn>_eq_old`:** a doc-comment naming the spike theorem it ports (from the Spike-coverage map) and the
+  one-line strategy. Inline-comment any tactic that is non-obvious — in particular an **explicit `rfl`
+  after `rw`** must carry `-- rw's reducible-transparency close can't unfold <def>; rfl (default) does`
+  (the exact gotcha sub-project 1 hit in `specsRHS`/`specsStmt`), and any `simp only [...]; rfl` used for a
+  cross-node delegation must say so.
+- **Fusion lemma (Task 6 Step 1) — the most important comment in the sub-project:** a full doc-comment
+  explaining it is the monoid-homomorphism naturality of the `Const` applicative — that `List.map (·.uid)`
+  is a `(List, ++, [])` hom and `(fun a => ⟨[a]⟩)` post-composed with it is `(fun a => ⟨[a.uid]⟩)` — why
+  that makes it the one bridge the spike never built, and (if the per-node fallback is used) why each node's
+  case mirrors its `traverseAxes_const_eq_*` proof.
+- **`freeAxisUIDs` (NOT migrated):** add a comment at its definition stating it is deliberately excluded
+  from the `traverseAxes` migration because `lhsAxisUID?` returns `none` for `.affine` slots, so it collects
+  a *subset* (free axes only), not all axes — it is not a `traverseAxes` instantiation. Without this note a
+  future reader will "helpfully" migrate it and change its meaning. This is a required addition even though
+  the function body is untouched.
+
+Do not over-comment the trivial (a bare `| nil => rfl` needs nothing). Comment the surprising: the
+indirection, the mask asymmetry, the transparency gotchas, and the fusion rationale.
 
 ## Migration pattern (Tasks 1–5, per function; leaf-to-root order)
 
@@ -245,8 +285,11 @@ Each ends with the same build + axiom check + commit steps as Task 1.
 ## Success criteria
 
 **Go:** all five `*AxisUIDs_eq_old` close kernel-checked; `readAxisUIDs` uses `NoMask` (mask stays
-excluded); `freeAxisUIDs` untouched; the fusion lemma lets every `specs*`/`*AxisUIDs` `_old`/`_eq_old`
-pair be deleted; full suite green at every step; `Stmt.uids_eq` axiom-clean.
+excluded); `freeAxisUIDs` untouched (and its exclusion comment added); the fusion lemma lets every
+`specs*`/`*AxisUIDs` `_old`/`_eq_old` pair be deleted; full suite green at every step; `Stmt.uids_eq`
+axiom-clean; **and the generated code meets every item in "Commenting requirements"** (doc-comments
+preserved, `NoMask`/fusion/transparency-gotcha comments present) — treat a missing required comment as a
+task failure, same as a red build.
 
 **No-go / interesting either way:** if any `*AxisUIDs_eq_old` fails to close despite the spike having proven
 the identical statement, that signals a drift between the spike's model and current production — investigate
