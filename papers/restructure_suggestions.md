@@ -48,69 +48,6 @@
 > `specsX_map_uid_eq` should reduce to `exact <node>AxisUidFusion _` modulo definitional unfolding.
 > (4) Keep every commit green; do NOT push directly — a git hook blocks it (use the documented bypass or
 > hand off to the controller). Match the plan's commenting standard on all new code.
->
-> *(The block below is the PRIOR checkpoint — E1 prototype + sub-project 1 setup — kept for historical context.)*
-
-> **Prior checkpoint (superseded — see ▶ RESUME HERE above).** E6 and **E11** are fully DONE (see their ✅ markers
-> below). **E1** (one traversal to rule the collectors) — the prototype Spike 2 was waiting on
-> — is now **eleven slices in — full AST coverage complete:** `IdxExpr` (leaf), `PredArith`
-> (self-recursion + composition), `BoolExpr` (confirmation, more constructors), `Factor` (first
-> node carrying a tensor name + a `List IdxExpr` sub-traversal), `ProdTerm` (first record node,
-> wrapping `List Factor`), `SumExpr` (identical one-field-record-wrapping-a-list shape),
-> `RHSExpr` (the first slice since `IdxExpr` needing fresh design work: resolved a real
-> production semantic asymmetry with two named traversals and a two-hypothesis conditional
-> remap), `LHSSlot` (the simplest shape in the series: fully unconditional remap, the first
-> since `IdxExpr`, with a real-time discovery that `lhsAxisUID?`/`freeAxisUIDs` are
-> classify-and-filter, not collectors), `Stmt` (three constructors — `.assign`/`.scatter`
-> combine an `LHSSlot` traversal with `RHSExpr.traverseAxesWithMask`, `.recurMorphism` only
-> threads a bare `AxisSpec`; both collecting-direction theorems and all three remap theorems
-> closed as pre-verified, but the headline finding is that `Stmt.uids` is public yet built
-> entirely from `private` helpers, which Lean cannot delta-reduce through from outside its
-> file — resolved by adding `Stmt.uids_eq` to `LeanNCD/DSL/Pipeline/Structural.lean`, **the
-> first production-file change on this branch**), `Decl` (the flattest shape yet — every arm
-> bottoms out directly in a bare `AxisSpec` or `List AxisSpec`; both theorems closed as
-> pre-verified, the remap fully unconditionally like `LHSSlot`/`IdxExpr` — and, unlike `Stmt`,
-> **no production-file change was needed**: `Decl` has no public wrapper at all, so it never
-> hits `Stmt.uids`'s private-helper-chain wall), and **`TLProgram`** (the FINAL AST node — a
-> `List Decl`/`List Stmt` combination via `<$> ... <*>`; the collecting-direction theorem closed
-> cleanly against a local `specsProgram'` copy, and the remap theorem, conditional on one
-> hypothesis about `p.stmts`, closed exactly as pre-verified. The checkpoint's own prediction
-> that `TLProgram.axisNames` would force a `Stmt.uids_eq`-style production-file bridge did NOT
-> materialize: the wall is real — `TLProgram.axisNames` does share `Stmt.uids`'s
-> public-wrapper-over-private-helpers shape — but this slice's scoping choice excluded the
-> `.eraseDups`/`.name`-projection step from scope, leaving nothing left to bridge to. So
-> **`TLProgram` needed no production-file change either**) — see the eleven "Prototype result"
-> blockquotes in [E1](#e1-one-traversal-to-rule-the-collectors-van-laarhoven) below. All
-> theorems in `RHSExpr`/`LHSSlot`/`Stmt`/`Decl`/`TLProgram` plus the new `Nonlin.traverseAxes`
-> building block (9 constructors, exhaustive match) closed exactly as pre-verified during
-> design — zero implementation-time surprises across all eleven slices. This covers the entire
-> layered, non-mutually-recursive **expression** stack (`IdxExpr → PredArith → BoolExpr →
-> Factor → ProdTerm → SumExpr → RHSExpr`), both **statement** layers (`LHSSlot`, `Stmt`), the
-> **declaration** layer (`Decl`), and the **top-level program** layer (`TLProgram`) — every node
-> in `DSL/Ast.lean`. **This work is merged to `main`** (PR
-> [william-macready/pyncd#1](https://github.com/william-macready/pyncd/pull/1),
-> `worktree-e1-traverseaxes-prototype` merged and deleted 2026-07-17).
->
-> **Decision (2026-07-17): GO.** E1 is adopted. Production migration is underway — see the
-> "**Production migration**" note at the end of [E1](#e1-one-traversal-to-rule-the-collectors-van-laarhoven)
-> below for the full motivation (drawing on all eleven slices' findings) and the sub-project
-> decomposition. Sub-project 1 (`specs*` family) is scoped and designed at
-> `docs/superpowers/specs/2026-07-17-e1-production-migration-specs-design.md`, on branch
-> `e1-production-migration-specs`, worktree at `.claude/worktrees/e1-production-migration-specs`.
-> Independently, the **cospan-model spike** (Wave 3b, unlocks
-> **[E13](#e13-generators-for-br--closing-brop-and-promoting-e6s-laws-to-theorems)**) remains
-> available as a separate thread whenever picked up.
->
-> Quick resume checklist:
->
-> 1. `cd leanncd && lake build 2>&1 | tail -5` — confirm still green (8609 jobs as of this
->    checkpoint; sorry count in the default build unchanged).
-> 2. Read `docs/superpowers/specs/2026-07-17-e1-production-migration-specs-design.md` for
->    sub-project 1's current design; the eleven E1 design docs
->    (`docs/superpowers/specs/2026-07-1[567]-e1-traverseaxes-*.md`) remain the source of truth
->    for per-node findings the migration relies on.
-> 3. Sub-project order is fixed: `specs*` → `*AxisUIDs` → `mapUID`, safest-first — do not
->    reorder without re-checking the blast-radius findings in sub-project 1's design doc.
 
 A global review of `leanncd/` (~9,200 lines of Lean across 49 modules) after the recent wave of
 feature fixes (`Factor.unaryFn` inline transcendentals, new `Nonlin` activations, `l2normalize`,
