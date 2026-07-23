@@ -1,69 +1,49 @@
 # leanncd restructuring suggestions
 
-> **Resume here (checkpoint 2026-07-17).** E6 and **E11** are fully DONE (see their ✅ markers
-> below). **E1** (one traversal to rule the collectors) — the prototype Spike 2 was waiting on
-> — is now **eleven slices in — full AST coverage complete:** `IdxExpr` (leaf), `PredArith`
-> (self-recursion + composition), `BoolExpr` (confirmation, more constructors), `Factor` (first
-> node carrying a tensor name + a `List IdxExpr` sub-traversal), `ProdTerm` (first record node,
-> wrapping `List Factor`), `SumExpr` (identical one-field-record-wrapping-a-list shape),
-> `RHSExpr` (the first slice since `IdxExpr` needing fresh design work: resolved a real
-> production semantic asymmetry with two named traversals and a two-hypothesis conditional
-> remap), `LHSSlot` (the simplest shape in the series: fully unconditional remap, the first
-> since `IdxExpr`, with a real-time discovery that `lhsAxisUID?`/`freeAxisUIDs` are
-> classify-and-filter, not collectors), `Stmt` (three constructors — `.assign`/`.scatter`
-> combine an `LHSSlot` traversal with `RHSExpr.traverseAxesWithMask`, `.recurMorphism` only
-> threads a bare `AxisSpec`; both collecting-direction theorems and all three remap theorems
-> closed as pre-verified, but the headline finding is that `Stmt.uids` is public yet built
-> entirely from `private` helpers, which Lean cannot delta-reduce through from outside its
-> file — resolved by adding `Stmt.uids_eq` to `LeanNCD/DSL/Pipeline/Structural.lean`, **the
-> first production-file change on this branch**), `Decl` (the flattest shape yet — every arm
-> bottoms out directly in a bare `AxisSpec` or `List AxisSpec`; both theorems closed as
-> pre-verified, the remap fully unconditionally like `LHSSlot`/`IdxExpr` — and, unlike `Stmt`,
-> **no production-file change was needed**: `Decl` has no public wrapper at all, so it never
-> hits `Stmt.uids`'s private-helper-chain wall), and **`TLProgram`** (the FINAL AST node — a
-> `List Decl`/`List Stmt` combination via `<$> ... <*>`; the collecting-direction theorem closed
-> cleanly against a local `specsProgram'` copy, and the remap theorem, conditional on one
-> hypothesis about `p.stmts`, closed exactly as pre-verified. The checkpoint's own prediction
-> that `TLProgram.axisNames` would force a `Stmt.uids_eq`-style production-file bridge did NOT
-> materialize: the wall is real — `TLProgram.axisNames` does share `Stmt.uids`'s
-> public-wrapper-over-private-helpers shape — but this slice's scoping choice excluded the
-> `.eraseDups`/`.name`-projection step from scope, leaving nothing left to bridge to. So
-> **`TLProgram` needed no production-file change either**) — see the eleven "Prototype result"
-> blockquotes in [E1](#e1-one-traversal-to-rule-the-collectors-van-laarhoven) below. All
-> theorems in `RHSExpr`/`LHSSlot`/`Stmt`/`Decl`/`TLProgram` plus the new `Nonlin.traverseAxes`
-> building block (9 constructors, exhaustive match) closed exactly as pre-verified during
-> design — zero implementation-time surprises across all eleven slices. This covers the entire
-> layered, non-mutually-recursive **expression** stack (`IdxExpr → PredArith → BoolExpr →
-> Factor → ProdTerm → SumExpr → RHSExpr`), both **statement** layers (`LHSSlot`, `Stmt`), the
-> **declaration** layer (`Decl`), and the **top-level program** layer (`TLProgram`) — every node
-> in `DSL/Ast.lean`. **This work is not yet merged to `main`** — it's on open PR
-> [william-macready/pyncd#1](https://github.com/william-macready/pyncd/pull/1), branch
-> `worktree-e1-traverseaxes-prototype`, worktree at
-> `.claude/worktrees/e1-traverseaxes-prototype`.
+> **▶ RESUME HERE — E1 sub-project 2 (`*AxisUIDs` → `traverseAxes`) is COMPLETE (checkpoint 2026-07-22).**
 >
-> **Next open item:** there is no further AST node to extend to — E1 has reached full AST
-> coverage. **E1's own go/no-go decision against Spike 2a/2b is now the open item**, and that
-> decision belongs to the user: this checkpoint does not render a verdict, recommendation, or
-> lean either way — the decision is now answerable in full, using all eleven slices' evidence,
-> and is left there. Independently, the **cospan-model spike** (Wave 3b, unlocks
-> **[E13](#e13-generators-for-br--closing-brop-and-promoting-e6s-laws-to-theorems)**) remains
-> available as a separate thread; the choice now is between making the E1 go/no-go call and
-> picking up the cospan-model thread instead, not between continuing E1 and switching threads.
+> **State:** branch `e1-production-migration-specs` (worktree `.claude/worktrees/e1-production-migration-specs`),
+> tip **`7c8738c`**; PR [#2](https://github.com/william-macready/pyncd/pull/2) open (NOT merged). Full
+> `lake build` green (8610 jobs). E1 prototype = DONE (PR #1, merged). Sub-project 1 (`specs*` family) =
+> DONE. **Sub-project 2 (`*AxisUIDs` family) = DONE** (Tasks A, B1, B2 all landed). Sub-project 3
+> (`mapUID` family) = NOT STARTED (independent; can be done next).
 >
-> Quick resume checklist:
+> **Plan:** `docs/superpowers/specs/2026-07-17-e1-subproject2-axisuids-plan.md`.
+> **Follow-up (now DONE):** `docs/superpowers/specs/2026-07-17-e1-scaffolding-refactor-followup.md`.
 >
-> 1. Decide whether to merge PR #1 first or make the go/no-go call first — either is fine, the
->    branch already has 11 clean slices and its own final reviews.
-> 2. `cd leanncd && lake build 2>&1 | tail -5` — confirm still green (8609 jobs as of this
->    checkpoint; sorry count in the default build unchanged — none of E1's slices touch a proof).
-> 3. Read the eleven existing E1 design docs (`docs/superpowers/specs/2026-07-1[567]-e1-traverseaxes-*.md`)
->    for the established pattern and full history.
-> 4. Before deciding, re-read all eleven design docs' own "Success criteria" sections together
->    — the go/no-go decision should weigh them collectively, not just the headline findings
->    summarized here.
-> 5. `git diff --stat` against `main` shows **one production file touched**
->    (`LeanNCD/DSL/Pipeline/Structural.lean`, the `Stmt.uids_eq` addition) — neither `Decl` nor
->    `TLProgram` needed a second one, so this count is now final for the eleven-slice series.
+> **What landed (fusion-first, green at every commit):**
+>
+> - **Task A** (`a2d908d`): 9 per-node `<node>AxisUidFusion` lemmas in `Structural.lean` (the `Const`
+>   monoid-hom fusion bridging AxisSpec and UID collection). Kernel-checked, no `sorry`.
+> - **Task B1** (`959aabd`): migrated all 5 collectors in `Eval/Contract.lean` to `ConstL (List UID)`
+>   instantiations (`idx/pred/bool/termAxisUIDs` via `NodeName.traverseAxes`; **`readAxisUIDs` via
+>   `traverseAxesNoMask`** — mask excluded, commented as the guardrail). `freeAxisUIDs` left unmigrated
+>   (collects a subset). Re-derived `specsIdx/Factor_map_uid_eq` + `Stmt.uids_eq` via the fusion lemmas,
+>   dropping all 4 `specsX_eq_old` bridges (`specsPred/Bool/Nonlin/LHS_map_uid_eq` were already
+>   shape-independent-valid, left unchanged). `Stmt.uids_eq` proved straight from the traversal and its
+>   axioms tightened to `[propext]` (old proof pulled `Quot.sound`). Also **retired the redundant
+>   `*AxisUIDs`-direction block in `test/DSL/TraverseAxesSpike.lean`** (migrating the collectors broke
+>   the spike theorems that referenced production directly; superseded by the production `_eq_old`
+>   proofs) — specs/mapUID spike theorems untouched.
+> - **Task B2** (`7c8738c`): deleted all 9 `_old`/`_eq_old` pairs (4 specs-side + 5 UID-side), the
+>   SCAFFOLDING comment; rewrote the SPIKE EXCEPTION notes; closed the follow-up doc.
+>
+> **Deviation on record (see B2 commit + follow-up doc):** the six `specsX_map_uid_eq` lemmas and the
+> `specsX` production defs were **kept**, not deleted. `Stmt.uids_eq` now routes through the
+> `*AxisUidFusion` lemmas rather than the `map_uid_eq` lemmas, so several specs-side declarations have no
+> *current* consumer — but this is **forward infrastructure, not dead code, and should NOT be retired.**
+> Per E1's goal (see the E1 section below), the end state unifies every collector/mapper — `specs*`
+> (AxisSpec), `*AxisUIDs` (UID), `mapUID` (`Id`), and the `Exec` rebuild tower — as `traverseAxes`
+> instantiations; the `map_uid_eq`/fusion lemmas are the kernel-checked coherence proof that the
+> AxisSpec- and UID-collection instantiations agree node-for-node, and `Stmt.uids` is the by-uid readout
+> deliberately staged "for later phases" (its section header says so), symmetric with `axisNames`
+> (by-name). Retiring any of it is wasteful (Task A already paid for the fusion tower) and premature
+> (sub-project 3 + consumer convergence still pending). The only decoupled wart is the cross-layer
+> `import LeanNCD.Eval.Contract`, which resolves later by *relocating* the UID collectors, not deleting.
+>
+> **Next options:** (a) push / merge PR #2; (b) start sub-project 3 (`mapUID` family — the `Id`
+> instantiation, which completes the collector/mapper unification; see the plan's Risks/notes). Do NOT
+> push directly — a git hook blocks it (use the documented bypass or hand off to the controller).
 
 A global review of `leanncd/` (~9,200 lines of Lean across 49 modules) after the recent wave of
 feature fixes (`Factor.unaryFn` inline transcendentals, new `Nonlin` activations, `l2normalize`,
@@ -1044,6 +1024,85 @@ makes `TermTraversable` (`Exec/Traversable.lean`) its `Id` special case.
 > with zero `sorry`/`native_decide` anywhere in the series — see
 > `docs/superpowers/specs/2026-07-17-e1-traverseaxes-tlprogram-design.md` for the full go/no-go
 > criteria and what E1's own adoption decision against Spike 2a/2b would still need to weigh.
+
+> **Production migration — decision and motivation (2026-07-17):** the go/no-go decision above
+> is **GO** — E1 is adopted, and production is being migrated off the three hand-maintained
+> families (`mapUID`, `specs*`, `*AxisUIDs`) onto `traverseAxes`-based implementations. The
+> motivation draws directly on the eleven slices above, not on this decision being asserted
+> fresh:
+>
+> - **The original case for E1** (made before any slice was attempted, still holding after all
+>   eleven): almost every function in `Traverse.lean`'s `mapUID` family, the `specs*` family, and
+>   the `*AxisUIDs` family is *the same traversal instantiated at a different applicative functor*
+>   — remap at `Id`, collect-`AxisSpec`s at `Const (List AxisSpec)`, collect-UIDs at
+>   `Const (List UID)` (see the `Factor.traverseAxes` sketch and the surrounding discussion
+>   earlier in this section). If it works, it *replaces* Spikes 2a/2b entirely and makes
+>   `TermTraversable` (`Exec/Traversable.lean`) its `Id` special case. It worked, across all
+>   eleven AST nodes, with zero exceptions to the pattern's basic shape.
+> - **Zero `sorry`/`native_decide` across the entire eleven-slice series** — every collecting-
+>   direction theorem closed with a sound, kernel-checked proof, and every remap theorem that
+>   *could* close (see next point) closed either fully unconditionally or via an explicit,
+>   independently-verified hypothesis. This is a stronger correctness posture than production's
+>   *current* code enjoys (see next point).
+> - **A genuine defect in production's current `mapUID` family, found and characterized by the
+>   `PredArith`/`BoolExpr` slices, that migration fixes as a side effect, not merely papers
+>   over:** `PredArith.mapUID` and `BoolExpr.mapUID` are declared `partial def` with genuine
+>   self-recursion, which causes Lean to generate **zero equation lemmas for the entire
+>   definition** — nothing about their current behavior is mechanically provable today, in
+>   production, right now. `PredArith.traverseAxes`/`BoolExpr.traverseAxes` compiled as ordinary
+>   structural recursion with no `partial` annotation needed at all. Migrating `mapUID` to be
+>   `traverseAxes`-derived doesn't just consolidate code — it closes a standing gap where two of
+>   eleven nodes' remap behavior was entirely opaque to proof.
+> - **A documented, previously-triggered production hazard that migration closes by
+>   construction:** `specsNonlin`'s wildcard fallback (`_ => []`) is safe today only because every
+>   *current* non-masked `Nonlin` variant happens to contribute no axes — its own module doc in
+>   `Structural.lean` warns this already silently swallowed `l2normalize`'s mask once before a
+>   fix. `Nonlin.traverseAxes` (built during the `RHSExpr` slice) is a 9-arm *exhaustive* match
+>   with no wildcard, so Lean's totality checker forces any future masked variant to be handled
+>   explicitly — the hazard cannot recur once `specsNonlin` is `traverseAxes`-derived.
+> - **A real production semantic asymmetry, found and resolved once, that the migration must
+>   carry forward rather than flatten:** `specsRHS` includes the nonlin mask's axes;
+>   `readAxisUIDs` deliberately excludes them (per-term contraction scoping must not see mask
+>   axes). The `RHSExpr` slice resolved this with two named traversal instantiations
+>   (`traverseAxesWithMask`/`traverseAxesNoMask`) rather than a boolean flag — production's
+>   migration reuses this exact resolution, not a fresh one.
+> - **Proof that crossing into production, when a slice's scope demands it, is tractable and
+>   reversible:** the `Stmt` slice needed the *only* production-file change across all eleven
+>   slices (`Stmt.uids_eq`, bridging `Stmt.uids`'s private-helper-chain wall), landed cleanly with
+>   a new cross-layer import, and was marked with `SPIKE EXCEPTION`/`TO REVERT` comments precisely
+>   so that decision could be revisited independently of E1's own fate. Both `Decl` and
+>   `TLProgram` later confirmed the *same risk shape* recurs (a public wrapper over private
+>   helpers) without *forcing* a production change every time — whether a bridge is needed
+>   depends on the exact scope chosen, not on the wall's mere existence. This distinction —
+>   confirmed real, but not always requiring action — is exactly what this migration's own
+>   sub-project 1 design doc (linked below) had to get right when it found `TLProgram.axisNames`'s
+>   wall real but avoidable given its scoping choice.
+> - **Explicit, load-bearing non-goals, established slice by slice, that the migration inherits
+>   rather than re-litigates:** `lhsAxisUID?`/`freeAxisUIDs` (`LHSSlot`) are classify-and-filter,
+>   not collectors — no instantiation of any traversal can reproduce them. `Decl.axisCount`/
+>   `Decl.name`/`declName` are classify- or name-extraction-shaped, not axis-collector-shaped.
+>   `TLProgram.axisNames`'s `.eraseDups`/`.name`-projection step is scoped out for the same
+>   reason. All three stay hand-written, permanently outside this migration's scope — not
+>   oversights, but functions of a genuinely different shape than `traverseAxes` produces.
+>
+> **Decomposition:** three sub-projects, safest-first — **`specs*` → `*AxisUIDs` → `mapUID`**.
+> Blast-radius research done before scoping sub-project 1 found the risk profile is much smaller
+> than the families' scale suggests: `mapUID` has exactly one production call site in total
+> (`Structural.lean`'s `assignUIDs`, via `TermTraversable.traverseUID`); every `specs*` function
+> is `private` with zero external callers by construction; `*AxisUIDs` has a small,
+> well-understood set of callers. The same research surfaced a related-but-out-of-scope
+> axis-collector ecosystem in `DSL/Pipeline/Lowering.lean` (`idxAxes`, a byte-for-byte duplicate
+> of `specsIdx`; `dedupByUid`/`tensorAxes`/`ScanStmt.stepRetainedAxes`/`stepDegAxesMulti`, feeding
+> `RouteSpec.lean`'s correctness proofs) — explicitly fenced off from this migration, not
+> something a "unify everything with a similar name" pass should sweep in.
+>
+> Sub-project 1 (`specs*`) is scoped and designed at
+> `docs/superpowers/specs/2026-07-17-e1-production-migration-specs-design.md`, on branch
+> `e1-production-migration-specs`. It also introduces the one new piece of shared infrastructure
+> every later sub-project builds on: a production home for `traverseAxes` itself
+> (`LeanNCD/DSL/TraverseAxes.lean`, promoted verbatim from the spike, alongside the minimal
+> `ConstL` applicative the spike used in place of Mathlib's `Monoid`-ceremony-requiring
+> `Functor.Const`).
 
 ### E2. A typed core IR the pipeline narrows into ("trees that grow")
 

@@ -1,47 +1,54 @@
 import LeanNCD.Eval.Shape
 import LeanNCD.Eval.Gather
+import LeanNCD.DSL.TraverseAxes
 namespace LeanNCD.Eval
 open Std
 
-/-- All axis-UIDs referenced by an index expression. -/
-def idxAxisUIDs : IdxExpr → List UID
-  | .axis a      => [a.uid]
-  | .const _     => []
-  | .scale _ a   => [a.uid]
-  | .shift a _   => [a.uid]
-  | .affine _ xs => xs.map (·.2.uid)
+-- E1 migration sub-project 2: the five `*AxisUIDs` collectors below are `ConstL (List UID)`
+-- instantiations of the production `NodeName.traverseAxes` machinery
+-- (`LeanNCD/DSL/TraverseAxes.lean`), the UID-direction analogue of sub-project 1's `specs*`
+-- migration. `freeAxisUIDs` is deliberately NOT migrated (see its comment).
 
-/-- All axis-UIDs referenced by predicate arithmetic. -/
-def predAxisUIDs : PredArith → List UID
-  | .embed e => idxAxisUIDs e
-  | .mul a b => predAxisUIDs a ++ predAxisUIDs b
-  | .iabs a  => predAxisUIDs a
+/-- All axis-UIDs referenced by an index expression.
+    The `ConstL (List UID)` instantiation of `IdxExpr.traverseAxes`. -/
+def idxAxisUIDs (e : IdxExpr) : List UID :=
+  (IdxExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) e).run
 
-/-- All axis-UIDs referenced by a Boolean/mask predicate. -/
-def boolAxisUIDs : BoolExpr → List UID
-  | .rel _ a b => predAxisUIDs a ++ predAxisUIDs b
-  | .and a b   => boolAxisUIDs a ++ boolAxisUIDs b
-  | .or  a b   => boolAxisUIDs a ++ boolAxisUIDs b
-  | .not a     => boolAxisUIDs a
-  | .ieq a b   => predAxisUIDs a ++ predAxisUIDs b
+/-- All axis-UIDs referenced by predicate arithmetic.
+    The `ConstL (List UID)` instantiation of `PredArith.traverseAxes`. -/
+def predAxisUIDs (e : PredArith) : List UID :=
+  (PredArith.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) e).run
+
+/-- All axis-UIDs referenced by a Boolean/mask predicate.
+    The `ConstL (List UID)` instantiation of `BoolExpr.traverseAxes`. -/
+def boolAxisUIDs (e : BoolExpr) : List UID :=
+  (BoolExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) e).run
 
 /-- The free axes (LHS) of an assign, as UID list (affine slots contribute none). -/
+-- Deliberately NOT migrated to `traverseAxes` (unlike the other collectors in this block):
+-- `lhsAxisUID?` returns `none` for `.affine` slots, so `freeAxisUIDs` collects a *subset* — the
+-- free (non-affine) axes only — not every axis. `LHSSlot.traverseAxes` visits every axis
+-- (including the affine slot's `IdxExpr`), so this is not a `traverseAxes` instantiation and the
+-- spike proves no equivalence for it. Migrating it would silently change its meaning.
 def freeAxisUIDs (slots : List LHSSlot) : List UID := slots.filterMap lhsAxisUID?
 
 /-- Every axis-UID appearing in one product term's reads/masks. This is the per-term
     contraction scope: a `+`-joined RHS sums each term over only the axes *that term*
-    mentions, not the union of axes across the whole equation (see `evalAssignWith`). -/
+    mentions, not the union of axes across the whole equation (see `evalAssignWith`).
+    The `ConstL (List UID)` instantiation of `ProdTerm.traverseAxes`. -/
 def termAxisUIDs (t : ProdTerm) : List UID :=
-  t.factors.flatMap (fun
-    | .read _ es => es.flatMap idxAxisUIDs
-    | .iverson b => boolAxisUIDs b
-    | .unaryFn _ _ es => es.flatMap idxAxisUIDs)
+  (ProdTerm.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) t).run
 
 /-- Every axis-UID appearing anywhere in the RHS reads/masks (union across all terms).
     Used for size inference / shape solving, where the full axis set is wanted — NOT for
     contraction scoping, which must stay per-term (`termAxisUIDs`). -/
+-- The `ConstL (List UID)` instantiation of `RHSExpr.traverseAxesNoMask`.
+-- IMPORTANT — `traverseAxesNoMask`, NOT `traverseAxesWithMask`: `readAxisUIDs` deliberately
+-- EXCLUDES the nonlin-mask axes (the documented `specsRHS`-includes-vs-`readAxisUIDs`-excludes
+-- asymmetry). `traverseAxesNoMask` never visits `r.nonlin`. A future edit to `WithMask` here
+-- would silently pull nonlin-mask UIDs into shape inference and corrupt it — do not change it.
 def readAxisUIDs (rhs : RHSExpr) : List UID :=
-  rhs.body.terms.flatMap termAxisUIDs
+  (RHSExpr.traverseAxesNoMask (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) rhs).run
 
 /-- Every `.read` tensor name appearing in the RHS. -/
 def readNames (rhs : RHSExpr) : List String :=
