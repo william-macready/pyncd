@@ -39,18 +39,85 @@ theorem IdxExpr.mapUID_eq_old (f : UData → UData) (e : IdxExpr) :
 
 instance : TermTraversable IdxExpr where traverseUID := IdxExpr.mapUID
 
-def PredArith.mapUID (f : UData → UData) : PredArith → PredArith
-  | .embed e  => .embed (IdxExpr.mapUID f e)
-  | .mul a b  => .mul (PredArith.mapUID f a) (PredArith.mapUID f b)
-  | .iabs a   => .iabs (PredArith.mapUID f a)
+-- Temporary scaffolding for `PredArith.mapUID_eq_old` below; slated for removal in the
+-- Task 7 cleanup once all `mapUID` callers are migrated.
+def PredArith.mapUID_old (f : UData → UData) : PredArith → PredArith
+  | .embed e  => .embed (IdxExpr.mapUID_old f e)
+  | .mul a b  => .mul (PredArith.mapUID_old f a) (PredArith.mapUID_old f b)
+  | .iabs a   => .iabs (PredArith.mapUID_old f a)
+
+/-- The `ConstL`-free `Id` instantiation of `PredArith.traverseAxes`. -/
+def PredArith.mapUID (f : UData → UData) (e : PredArith) : PredArith :=
+  PredArith.traverseAxes (f := Id) (AxisSpec.mapUID f) e
+
+theorem PredArith.mapUID_eq_old (f : UData → UData) (e : PredArith) :
+    PredArith.mapUID f e = PredArith.mapUID_old f e := by
+  induction e with
+  | embed e =>
+      simp only [PredArith.mapUID, PredArith.traverseAxes, PredArith.mapUID_old]
+      show (PredArith.embed <$> IdxExpr.mapUID f e : Id PredArith) = PredArith.embed (IdxExpr.mapUID_old f e)
+      rw [IdxExpr.mapUID_eq_old f e]
+      rfl  -- collapses the `Id` applicative `<$>` (reducible-transparency `rw` won't)
+  | mul a b iha ihb =>
+      simp only [PredArith.mapUID, PredArith.traverseAxes, PredArith.mapUID_old]
+      show (PredArith.mul <$> PredArith.mapUID f a <*> PredArith.mapUID f b : Id PredArith)
+        = PredArith.mul (PredArith.mapUID_old f a) (PredArith.mapUID_old f b)
+      rw [iha, ihb]
+      rfl  -- collapses the `Id` applicative `<$>`/`<*>` (reducible-transparency `rw` won't)
+  | iabs a iha =>
+      simp only [PredArith.mapUID, PredArith.traverseAxes, PredArith.mapUID_old]
+      show (PredArith.iabs <$> PredArith.mapUID f a : Id PredArith) = PredArith.iabs (PredArith.mapUID_old f a)
+      rw [iha]
+      rfl  -- collapses the `Id` applicative `<$>` (reducible-transparency `rw` won't)
+
 instance : TermTraversable PredArith where traverseUID := PredArith.mapUID
 
-def BoolExpr.mapUID (f : UData → UData) : BoolExpr → BoolExpr
-  | .rel op a b => .rel op (PredArith.mapUID f a) (PredArith.mapUID f b)
-  | .and a b    => .and (BoolExpr.mapUID f a) (BoolExpr.mapUID f b)
-  | .or  a b    => .or  (BoolExpr.mapUID f a) (BoolExpr.mapUID f b)
-  | .not a      => .not (BoolExpr.mapUID f a)
-  | .ieq a b    => .ieq (PredArith.mapUID f a) (PredArith.mapUID f b)
+-- Temporary scaffolding for `BoolExpr.mapUID_eq_old` below; slated for removal in the
+-- Task 7 cleanup once all `mapUID` callers are migrated.
+def BoolExpr.mapUID_old (f : UData → UData) : BoolExpr → BoolExpr
+  | .rel op a b => .rel op (PredArith.mapUID_old f a) (PredArith.mapUID_old f b)
+  | .and a b    => .and (BoolExpr.mapUID_old f a) (BoolExpr.mapUID_old f b)
+  | .or  a b    => .or  (BoolExpr.mapUID_old f a) (BoolExpr.mapUID_old f b)
+  | .not a      => .not (BoolExpr.mapUID_old f a)
+  | .ieq a b    => .ieq (PredArith.mapUID_old f a) (PredArith.mapUID_old f b)
+
+/-- The `ConstL`-free `Id` instantiation of `BoolExpr.traverseAxes`. -/
+def BoolExpr.mapUID (f : UData → UData) (e : BoolExpr) : BoolExpr :=
+  BoolExpr.traverseAxes (f := Id) (AxisSpec.mapUID f) e
+
+theorem BoolExpr.mapUID_eq_old (f : UData → UData) (e : BoolExpr) :
+    BoolExpr.mapUID f e = BoolExpr.mapUID_old f e := by
+  induction e with
+  | rel op a b =>
+      simp only [BoolExpr.mapUID, BoolExpr.traverseAxes, BoolExpr.mapUID_old]
+      show (BoolExpr.rel op <$> PredArith.mapUID f a <*> PredArith.mapUID f b : Id BoolExpr)
+        = BoolExpr.rel op (PredArith.mapUID_old f a) (PredArith.mapUID_old f b)
+      rw [PredArith.mapUID_eq_old f a, PredArith.mapUID_eq_old f b]
+      rfl  -- collapses the `Id` applicative `<$>`/`<*>` (reducible-transparency `rw` won't)
+  | and a b iha ihb =>
+      simp only [BoolExpr.mapUID, BoolExpr.traverseAxes, BoolExpr.mapUID_old]
+      show (BoolExpr.and <$> BoolExpr.mapUID f a <*> BoolExpr.mapUID f b : Id BoolExpr)
+        = BoolExpr.and (BoolExpr.mapUID_old f a) (BoolExpr.mapUID_old f b)
+      rw [iha, ihb]
+      rfl  -- collapses the `Id` applicative `<$>`/`<*>` (reducible-transparency `rw` won't)
+  | or a b iha ihb =>
+      simp only [BoolExpr.mapUID, BoolExpr.traverseAxes, BoolExpr.mapUID_old]
+      show (BoolExpr.or <$> BoolExpr.mapUID f a <*> BoolExpr.mapUID f b : Id BoolExpr)
+        = BoolExpr.or (BoolExpr.mapUID_old f a) (BoolExpr.mapUID_old f b)
+      rw [iha, ihb]
+      rfl  -- collapses the `Id` applicative `<$>`/`<*>` (reducible-transparency `rw` won't)
+  | not a iha =>
+      simp only [BoolExpr.mapUID, BoolExpr.traverseAxes, BoolExpr.mapUID_old]
+      show (BoolExpr.not <$> BoolExpr.mapUID f a : Id BoolExpr) = BoolExpr.not (BoolExpr.mapUID_old f a)
+      rw [iha]
+      rfl  -- collapses the `Id` applicative `<$>` (reducible-transparency `rw` won't)
+  | ieq a b =>
+      simp only [BoolExpr.mapUID, BoolExpr.traverseAxes, BoolExpr.mapUID_old]
+      show (BoolExpr.ieq <$> PredArith.mapUID f a <*> PredArith.mapUID f b : Id BoolExpr)
+        = BoolExpr.ieq (PredArith.mapUID_old f a) (PredArith.mapUID_old f b)
+      rw [PredArith.mapUID_eq_old f a, PredArith.mapUID_eq_old f b]
+      rfl  -- collapses the `Id` applicative `<$>`/`<*>` (reducible-transparency `rw` won't)
+
 instance : TermTraversable BoolExpr where traverseUID := BoolExpr.mapUID
 
 def Nonlin.mapUID (f : UData → UData) : Nonlin → Nonlin
