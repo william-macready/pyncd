@@ -93,9 +93,11 @@ theorem traverseAxes_id_eq_mapUID (f : UData → UData) (e : IdxExpr) :
       have hEq : (fun (ca : Int × AxisSpec) => Prod.mk ca.1 <$> AxisSpec.mapUID f ca.2 :
             Int × AxisSpec → Id (Int × AxisSpec))
           = pure ∘ (fun ca => (ca.1, AxisSpec.mapUID f ca.2)) := rfl
+      -- Post-migration (E1 sub-project 3, Task 1): `IdxExpr.mapUID` is now *defined* as this
+      -- same `traverseAxes (f := Id) (AxisSpec.mapUID f)` term, so `simp` alone closes the
+      -- goal reflexively; the previously-needed closing `rfl` now has no goal left to solve.
       simp only [IdxExpr.traverseAxes, IdxExpr.mapUID, Traversable.traverse, hEq,
         List.traverse_eq_map_id]
-      rfl
 
 /-- Collect `AxisSpec`s: instantiating at `ConstL (List AxisSpec)` with `g := fun a => ⟨[a]⟩`
     should reproduce `specsIdx'` (the local copy of `Structural.lean`'s private `specsIdx`). -/
