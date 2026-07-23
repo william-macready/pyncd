@@ -337,20 +337,13 @@ theorem traverseAxes_const_eq_specsProdTerm (t : ProdTerm) :
     shows the traversal composes correctly over `List` in the remap direction GIVEN that every
     factor individually satisfies its own remap equality. -/
 theorem traverseAxes_id_eq_prodTermMapUID_of_factors (f : UData → UData) (p : ProdTerm)
-    (h : ∀ x ∈ p.factors, Factor.traverseAxes (f := Id) (AxisSpec.mapUID f) x = Factor.mapUID f x) :
+    (_h : ∀ x ∈ p.factors, Factor.traverseAxes (f := Id) (AxisSpec.mapUID f) x = Factor.mapUID f x) :
     ProdTerm.traverseAxes (f := Id) (AxisSpec.mapUID f) p = ProdTerm.mapUID f p := by
-  show (fun fs => ({ factors := fs } : ProdTerm)) (Traversable.traverse (Factor.traverseAxes (f := Id) (AxisSpec.mapUID f)) p.factors)
-    = { factors := p.factors.map (Factor.mapUID f) }
-  have core : ∀ ys : List Factor, (∀ x ∈ ys, Factor.traverseAxes (f := Id) (AxisSpec.mapUID f) x = Factor.mapUID f x) →
-      Traversable.traverse (Factor.traverseAxes (f := Id) (AxisSpec.mapUID f)) ys = ys.map (Factor.mapUID f) := by
-    intro ys hys
-    induction ys with
-    | nil => rfl
-    | cons hd tl ih =>
-        simp only [List.traverse_cons]
-        rw [hys hd List.mem_cons_self, ih (fun x hx => hys x (List.mem_cons_of_mem hd hx))]
-        rfl
-  rw [core p.factors h]
+  -- Post-migration (E1 sub-project 3, Task 4): `ProdTerm.mapUID` is now *defined* as this same
+  -- `traverseAxes (f := Id) (AxisSpec.mapUID f)` instantiation, so both sides are syntactically
+  -- the same term — `_h` (needed pre-migration, when `ProdTerm.mapUID` recursed on
+  -- `Factor.mapUID` directly) is no longer used.
+  rfl
 
 /-- Local copy delegating to `specsProdTerm'` (the `ProdTerm` slice's own local copy), not
     re-derived through `specsFactor'` directly — mirrors `specsRHS`'s inline
@@ -385,20 +378,13 @@ theorem traverseAxes_const_eq_specsSumExpr (s : SumExpr) :
     over `List` in the remap direction GIVEN that every `ProdTerm` in `s.terms` individually
     satisfies its own remap equality. -/
 theorem traverseAxes_id_eq_sumExprMapUID_of_terms (f : UData → UData) (s : SumExpr)
-    (h : ∀ x ∈ s.terms, ProdTerm.traverseAxes (f := Id) (AxisSpec.mapUID f) x = ProdTerm.mapUID f x) :
+    (_h : ∀ x ∈ s.terms, ProdTerm.traverseAxes (f := Id) (AxisSpec.mapUID f) x = ProdTerm.mapUID f x) :
     SumExpr.traverseAxes (f := Id) (AxisSpec.mapUID f) s = SumExpr.mapUID f s := by
-  show (fun ts => ({ terms := ts } : SumExpr)) (Traversable.traverse (ProdTerm.traverseAxes (f := Id) (AxisSpec.mapUID f)) s.terms)
-    = { terms := s.terms.map (ProdTerm.mapUID f) }
-  have core : ∀ ys : List ProdTerm, (∀ x ∈ ys, ProdTerm.traverseAxes (f := Id) (AxisSpec.mapUID f) x = ProdTerm.mapUID f x) →
-      Traversable.traverse (ProdTerm.traverseAxes (f := Id) (AxisSpec.mapUID f)) ys = ys.map (ProdTerm.mapUID f) := by
-    intro ys hys
-    induction ys with
-    | nil => rfl
-    | cons hd tl ih =>
-        simp only [List.traverse_cons]
-        rw [hys hd List.mem_cons_self, ih (fun x hx => hys x (List.mem_cons_of_mem hd hx))]
-        rfl
-  rw [core s.terms h]
+  -- Post-migration (E1 sub-project 3, Task 4): `SumExpr.mapUID` is now *defined* as this same
+  -- `traverseAxes (f := Id) (AxisSpec.mapUID f)` instantiation, so both sides are syntactically
+  -- the same term — `_h` (needed pre-migration, when `SumExpr.mapUID` recursed on
+  -- `ProdTerm.mapUID` directly) is no longer used.
+  rfl
 
 -- ===== Nonlin =====
 
@@ -487,13 +473,14 @@ theorem traverseAxes_const_eq_specsRHS (r : RHSExpr) :
     immediate sub-structure rather than expanding it further. Given both, the `RHSExpr`-level
     equality follows directly — no induction needed, since there's no list at this level. -/
 theorem traverseAxes_id_eq_rhsExprMapUID (f : UData → UData) (r : RHSExpr)
-    (hbody : SumExpr.traverseAxes (f := Id) (AxisSpec.mapUID f) r.body = SumExpr.mapUID f r.body)
-    (hnonlin : Nonlin.traverseAxes (f := Id) (AxisSpec.mapUID f) r.nonlin = Nonlin.mapUID f r.nonlin) :
+    (_hbody : SumExpr.traverseAxes (f := Id) (AxisSpec.mapUID f) r.body = SumExpr.mapUID f r.body)
+    (_hnonlin : Nonlin.traverseAxes (f := Id) (AxisSpec.mapUID f) r.nonlin = Nonlin.mapUID f r.nonlin) :
     RHSExpr.traverseAxesWithMask (f := Id) (AxisSpec.mapUID f) r = RHSExpr.mapUID f r := by
-  show (fun body nonlin => ({ body := body, nonlin := nonlin, agg := r.agg } : RHSExpr))
-      (SumExpr.traverseAxes (f := Id) (AxisSpec.mapUID f) r.body) (Nonlin.traverseAxes (f := Id) (AxisSpec.mapUID f) r.nonlin)
-    = { body := SumExpr.mapUID f r.body, nonlin := Nonlin.mapUID f r.nonlin, agg := r.agg }
-  rw [hbody, hnonlin]
+  -- Post-migration (E1 sub-project 3, Task 4): `RHSExpr.mapUID` is now *defined* as this same
+  -- `traverseAxesWithMask (f := Id) (AxisSpec.mapUID f)` instantiation, so both sides are
+  -- syntactically the same term — `_hbody`/`_hnonlin` (needed pre-migration, when
+  -- `RHSExpr.mapUID` recursed on `SumExpr.mapUID`/`Nonlin.mapUID` directly) are no longer used.
+  rfl
 
 -- ===== LHSSlot =====
 
