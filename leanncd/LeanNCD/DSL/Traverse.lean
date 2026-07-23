@@ -11,7 +11,7 @@ def AxisSpec.mapUID (f : UData → UData) (a : AxisSpec) : AxisSpec :=
 instance : TermTraversable AxisSpec where
   traverseUID f a := AxisSpec.mapUID f a
 
-partial def IdxExpr.mapUID (f : UData → UData) : IdxExpr → IdxExpr
+def IdxExpr.mapUID (f : UData → UData) : IdxExpr → IdxExpr
   | .axis a       => .axis (AxisSpec.mapUID f a)
   | .const n      => .const n
   | .scale n a    => .scale n (AxisSpec.mapUID f a)
@@ -19,13 +19,13 @@ partial def IdxExpr.mapUID (f : UData → UData) : IdxExpr → IdxExpr
   | .affine n xs  => .affine n (xs.map (fun (c, a) => (c, AxisSpec.mapUID f a)))
 instance : TermTraversable IdxExpr where traverseUID := IdxExpr.mapUID
 
-partial def PredArith.mapUID (f : UData → UData) : PredArith → PredArith
+def PredArith.mapUID (f : UData → UData) : PredArith → PredArith
   | .embed e  => .embed (IdxExpr.mapUID f e)
   | .mul a b  => .mul (PredArith.mapUID f a) (PredArith.mapUID f b)
   | .iabs a   => .iabs (PredArith.mapUID f a)
 instance : TermTraversable PredArith where traverseUID := PredArith.mapUID
 
-partial def BoolExpr.mapUID (f : UData → UData) : BoolExpr → BoolExpr
+def BoolExpr.mapUID (f : UData → UData) : BoolExpr → BoolExpr
   | .rel op a b => .rel op (PredArith.mapUID f a) (PredArith.mapUID f b)
   | .and a b    => .and (BoolExpr.mapUID f a) (BoolExpr.mapUID f b)
   | .or  a b    => .or  (BoolExpr.mapUID f a) (BoolExpr.mapUID f b)
