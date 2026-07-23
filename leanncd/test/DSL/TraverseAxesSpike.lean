@@ -74,8 +74,6 @@ import Mathlib.Control.Traversable.Instances
 
 namespace LeanNCD
 
-open LeanNCD.Eval (idxAxisUIDs predAxisUIDs boolAxisUIDs termAxisUIDs readAxisUIDs)
-
 /-- Local copy of `Structural.lean`'s private `specsIdx`, for comparison only — NOT the
     source of truth. Keep byte-identical to `Structural.lean:26-27` by inspection. -/
 private def specsIdx' : IdxExpr → List AxisSpec
@@ -129,36 +127,6 @@ theorem traverseAxes_const_eq_specsIdx (e : IdxExpr) :
       rw [hmap]
       exact core xs
 
-/-- Collect UIDs: instantiating at `ConstL (List UID)` with `g := fun a => ⟨[a.uid]⟩` should
-    reproduce `idxAxisUIDs` (`Eval/Contract.lean`). -/
-theorem traverseAxes_const_eq_idxAxisUIDs (e : IdxExpr) :
-    (IdxExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) e).run = idxAxisUIDs e := by
-  cases e with
-  | axis a => rfl
-  | const n => rfl
-  | scale c a => rfl
-  | shift a n => rfl
-  | affine n xs =>
-      have hmap : (fun (ca : Int × AxisSpec) => Prod.mk ca.1 <$> (⟨[ca.2.uid]⟩ : ConstL (List UID) AxisSpec))
-          = (fun ca => (⟨[ca.2.uid]⟩ : ConstL (List UID) (Int × AxisSpec))) := rfl
-      have core : ∀ ys : List (Int × AxisSpec),
-          (Traversable.traverse (fun ca => (⟨[ca.2.uid]⟩ : ConstL (List UID) (Int × AxisSpec))) ys).run
-            = ys.map (·.2.uid) := by
-        intro ys
-        induction ys with
-        | nil => rfl
-        | cons hd tl ih =>
-            show [hd.2.uid] ++
-                (Traversable.traverse (fun ca => (⟨[ca.2.uid]⟩ : ConstL (List UID) (Int × AxisSpec))) tl).run
-              = hd.2.uid :: List.map (·.2.uid) tl
-            rw [ih]
-            rfl
-      show (IdxExpr.affine n <$>
-          Traversable.traverse (fun ca => Prod.mk ca.1 <$> (⟨[ca.2.uid]⟩ : ConstL (List UID) AxisSpec)) xs :
-          ConstL (List UID) IdxExpr).run = xs.map (·.2.uid)
-      rw [hmap]
-      exact core xs
-
 /-- Local copy of `Structural.lean`'s private `specsPred`, for comparison only — NOT the
     source of truth. Keep byte-identical to `Structural.lean:30-31` by inspection. -/
 private def specsPred' : PredArith → List AxisSpec
@@ -200,21 +168,6 @@ theorem traverseAxes_const_eq_specsPred (e : PredArith) :
       show (PredArith.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) a).run = specsPred' a
       exact iha
 
-/-- Collect UIDs: instantiating at `ConstL (List UID)` with `g := fun a => ⟨[a.uid]⟩` should
-    reproduce `predAxisUIDs` (`Eval/Contract.lean`). -/
-theorem traverseAxes_const_eq_predAxisUIDs (e : PredArith) :
-    (PredArith.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) e).run = predAxisUIDs e := by
-  induction e with
-  | embed e => exact traverseAxes_const_eq_idxAxisUIDs e
-  | mul a b iha ihb =>
-      show ((PredArith.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) a).run ++
-            (PredArith.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) b).run
-              : List UID) = predAxisUIDs a ++ predAxisUIDs b
-      rw [iha, ihb]
-  | iabs a iha =>
-      show (PredArith.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) a).run = predAxisUIDs a
-      exact iha
-
 /-- Local copy of `Structural.lean`'s private `specsBool`, for comparison only — NOT the
     source of truth. Keep byte-identical to `Structural.lean:33-36` by inspection. -/
 private def specsBool' : BoolExpr → List AxisSpec
@@ -251,35 +204,6 @@ theorem traverseAxes_const_eq_specsBool (e : BoolExpr) :
               : List AxisSpec) = specsPred' a ++ specsPred' b
       rw [traverseAxes_const_eq_specsPred a, traverseAxes_const_eq_specsPred b]
 
-/-- Collect UIDs: instantiating at `ConstL (List UID)` with `g := fun a => ⟨[a.uid]⟩` should
-    reproduce `boolAxisUIDs` (`Eval/Contract.lean`). -/
-theorem traverseAxes_const_eq_boolAxisUIDs (e : BoolExpr) :
-    (BoolExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) e).run = boolAxisUIDs e := by
-  induction e with
-  | rel op a b =>
-      show ((PredArith.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) a).run ++
-            (PredArith.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) b).run
-              : List UID) = predAxisUIDs a ++ predAxisUIDs b
-      rw [traverseAxes_const_eq_predAxisUIDs a, traverseAxes_const_eq_predAxisUIDs b]
-  | and a b iha ihb =>
-      show ((BoolExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) a).run ++
-            (BoolExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) b).run
-              : List UID) = boolAxisUIDs a ++ boolAxisUIDs b
-      rw [iha, ihb]
-  | or a b iha ihb =>
-      show ((BoolExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) a).run ++
-            (BoolExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) b).run
-              : List UID) = boolAxisUIDs a ++ boolAxisUIDs b
-      rw [iha, ihb]
-  | not a iha =>
-      show (BoolExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) a).run = boolAxisUIDs a
-      exact iha
-  | ieq a b =>
-      show ((PredArith.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) a).run ++
-            (PredArith.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) b).run
-              : List UID) = predAxisUIDs a ++ predAxisUIDs b
-      rw [traverseAxes_const_eq_predAxisUIDs a, traverseAxes_const_eq_predAxisUIDs b]
-
 /- Remap: instantiating `traverseAxes` at `Id` with `g := AxisSpec.mapUID f` should reproduce
     the existing `BoolExpr.mapUID`.
 
@@ -304,15 +228,6 @@ theorem traverseAxes_id_eq_boolMapUID (f : UData → UData) (e : BoolExpr) :
 private def specsFactor' : Factor → List AxisSpec
   | .read _ es => es.flatMap specsIdx' | .iverson b => specsBool' b
   | .unaryFn _ _ es => es.flatMap specsIdx'
-
-/-- Local extraction of the inline per-`Factor` match inside `termAxisUIDs`
-    (`Eval/Contract.lean:34-38`), for comparison only. NOT a copy of an existing standalone
-    function — no `factorAxisUIDs` exists in production; `termAxisUIDs` matches `Factor`
-    inline inside a `ProdTerm`-level `flatMap`. Keep this arm-for-arm identical to that inline
-    match by inspection. -/
-private def factorAxisUIDs' : Factor → List UID
-  | .read _ es => es.flatMap idxAxisUIDs | .iverson b => boolAxisUIDs b
-  | .unaryFn _ _ es => es.flatMap idxAxisUIDs
 
 /-- Collect `AxisSpec`s: instantiating at `ConstL (List AxisSpec)` with `g := fun a => ⟨[a]⟩`
     should reproduce `specsFactor'` (the local copy of `Structural.lean`'s private
@@ -352,46 +267,6 @@ theorem traverseAxes_const_eq_specsFactor (e : Factor) :
                 (Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) tl).run
               = specsIdx' hd ++ tl.flatMap specsIdx'
             rw [traverseAxes_const_eq_specsIdx hd, ih]
-      exact core es
-
-/-- Collect UIDs: instantiating at `ConstL (List UID)` with `g := fun a => ⟨[a.uid]⟩` should
-    reproduce `factorAxisUIDs'` (the local extraction of `termAxisUIDs`'s inline `Factor`
-    match). -/
-theorem traverseAxes_const_eq_factorAxisUIDs (e : Factor) :
-    (Factor.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) e).run = factorAxisUIDs' e := by
-  cases e with
-  | read nm es =>
-      show (Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) es).run
-        = es.flatMap idxAxisUIDs
-      have core : ∀ ys : List IdxExpr,
-          (Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) ys).run
-            = ys.flatMap idxAxisUIDs := by
-        intro ys
-        induction ys with
-        | nil => rfl
-        | cons hd tl ih =>
-            show (IdxExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) hd).run ++
-                (Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) tl).run
-              = idxAxisUIDs hd ++ tl.flatMap idxAxisUIDs
-            rw [traverseAxes_const_eq_idxAxisUIDs hd, ih]
-      exact core es
-  | iverson b =>
-      show (BoolExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) b).run = boolAxisUIDs b
-      exact traverseAxes_const_eq_boolAxisUIDs b
-  | unaryFn op nm es =>
-      show (Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) es).run
-        = es.flatMap idxAxisUIDs
-      have core : ∀ ys : List IdxExpr,
-          (Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) ys).run
-            = ys.flatMap idxAxisUIDs := by
-        intro ys
-        induction ys with
-        | nil => rfl
-        | cons hd tl ih =>
-            show (IdxExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) hd).run ++
-                (Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) tl).run
-              = idxAxisUIDs hd ++ tl.flatMap idxAxisUIDs
-            rw [traverseAxes_const_eq_idxAxisUIDs hd, ih]
       exact core es
 
 /-- Remap for `.read`: instantiating `traverseAxes` at `Id` with `g := AxisSpec.mapUID f`
@@ -462,33 +337,6 @@ theorem traverseAxes_const_eq_specsProdTerm (t : ProdTerm) :
         rw [traverseAxes_const_eq_specsFactor hd, ih]
   exact core t.factors
 
-/-- Bridge: `termAxisUIDs`'s inline per-`Factor` match (`Eval/Contract.lean:34-38`) is exactly
-    `factorAxisUIDs'` applied per element — `factorAxisUIDs'` (from the `Factor` slice) was
-    built specifically to mirror that inline match. -/
-theorem termAxisUIDs_eq_flatMap_factorAxisUIDs' (t : ProdTerm) :
-    termAxisUIDs t = t.factors.flatMap factorAxisUIDs' := rfl
-
-/-- Collect UIDs: instantiating at `ConstL (List UID)` with `g := fun a => ⟨[a.uid]⟩` should
-    reproduce the REAL production `termAxisUIDs` (`Eval/Contract.lean:34-38`) — no local copy
-    needed for this direction. -/
-theorem traverseAxes_const_eq_termAxisUIDs (t : ProdTerm) :
-    (ProdTerm.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) t).run = termAxisUIDs t := by
-  rw [termAxisUIDs_eq_flatMap_factorAxisUIDs']
-  show (Traversable.traverse (Factor.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) t.factors).run
-    = t.factors.flatMap factorAxisUIDs'
-  have core : ∀ ys : List Factor,
-      (Traversable.traverse (Factor.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) ys).run
-        = ys.flatMap factorAxisUIDs' := by
-    intro ys
-    induction ys with
-    | nil => rfl
-    | cons hd tl ih =>
-        show (Factor.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) hd).run ++
-            (Traversable.traverse (Factor.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) tl).run
-          = factorAxisUIDs' hd ++ tl.flatMap factorAxisUIDs'
-        rw [traverseAxes_const_eq_factorAxisUIDs hd, ih]
-  exact core t.factors
-
 /-- Remap, CONDITIONAL: `ProdTerm.mapUID` only calls `Factor.mapUID` over the list, and
     `Factor`'s own remap is only proved for `.read`/`.unaryFn` (not `.iverson`) — so an
     UNCONDITIONAL theorem over all `p : ProdTerm` cannot close (a single `.iverson` anywhere in
@@ -534,27 +382,6 @@ theorem traverseAxes_const_eq_specsSumExpr (s : SumExpr) :
             (Traversable.traverse (ProdTerm.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) tl).run
           = specsProdTerm' hd ++ tl.flatMap specsProdTerm'
         rw [traverseAxes_const_eq_specsProdTerm hd, ih]
-  exact core s.terms
-
-/-- Collect UIDs: instantiating at `ConstL (List UID)` with `g := fun a => ⟨[a.uid]⟩` should
-    reproduce the bare expression `s.terms.flatMap termAxisUIDs` — no new named def; this is
-    exactly what `readAxisUIDs` (`Eval/Contract.lean:43-44`) builds from `rhs.body.terms`, just
-    at the `SumExpr` level directly rather than via `RHSExpr`. -/
-theorem traverseAxes_const_eq_termAxisUIDsSumExpr (s : SumExpr) :
-    (SumExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) s).run = s.terms.flatMap termAxisUIDs := by
-  show (Traversable.traverse (ProdTerm.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) s.terms).run
-    = s.terms.flatMap termAxisUIDs
-  have core : ∀ ys : List ProdTerm,
-      (Traversable.traverse (ProdTerm.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) ys).run
-        = ys.flatMap termAxisUIDs := by
-    intro ys
-    induction ys with
-    | nil => rfl
-    | cons hd tl ih =>
-        show (ProdTerm.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) hd).run ++
-            (Traversable.traverse (ProdTerm.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) tl).run
-          = termAxisUIDs hd ++ tl.flatMap termAxisUIDs
-        rw [traverseAxes_const_eq_termAxisUIDs hd, ih]
   exact core s.terms
 
 /-- Remap, CONDITIONAL: same reasoning as `ProdTerm`'s own conditional lemma one layer down —
@@ -622,41 +449,6 @@ theorem traverseAxes_const_eq_specsNonlin (n : Nonlin) :
           show (BoolExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) b).run = specsBool' b
           exact traverseAxes_const_eq_specsBool b
 
-/-- `Nonlin`'s UID-collecting direction: only needed downstream by `Stmt.uids` (production's
-    `specsStmt`, unlike `readAxisUIDs`, includes the mask's axes — see the mask-inclusion
-    asymmetry noted at the RHSExpr slice). No prior slice needed this because `readAxisUIDs`
-    deliberately excludes the mask. -/
-theorem traverseAxes_const_eq_nonlinAxisUIDs (n : Nonlin) :
-    (Nonlin.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) n).run =
-      match n with
-      | .softmax (some m) => boolAxisUIDs m | .normalize (some m) => boolAxisUIDs m
-      | .l2normalize (some m) => boolAxisUIDs m | _ => [] := by
-  cases n with
-  | identity => rfl
-  | relu => rfl
-  | sigmoid => rfl
-  | tanh => rfl
-  | gelu => rfl
-  | leakyrelu => rfl
-  | softmax m =>
-      cases m with
-      | none => rfl
-      | some b =>
-          show (BoolExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) b).run = boolAxisUIDs b
-          exact traverseAxes_const_eq_boolAxisUIDs b
-  | normalize m =>
-      cases m with
-      | none => rfl
-      | some b =>
-          show (BoolExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) b).run = boolAxisUIDs b
-          exact traverseAxes_const_eq_boolAxisUIDs b
-  | l2normalize m =>
-      cases m with
-      | none => rfl
-      | some b =>
-          show (BoolExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) b).run = boolAxisUIDs b
-          exact traverseAxes_const_eq_boolAxisUIDs b
-
 /-- Remap demonstration, unmasked case: no hypothesis needed at all — closes by plain `rfl`.
     The other 5 unmasked constructors (`relu`/`sigmoid`/`tanh`/`gelu`/`leakyrelu`) are
     structurally identical and not separately proved; they add no new information. -/
@@ -692,16 +484,6 @@ theorem traverseAxes_const_eq_specsRHS (r : RHSExpr) :
       (Nonlin.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) r.nonlin).run
     = specsSumExpr' r.body ++ specsNonlin' r.nonlin
   rw [traverseAxes_const_eq_specsSumExpr r.body, traverseAxes_const_eq_specsNonlin r.nonlin]
-
-/-- Collect UIDs (mask EXCLUDED): instantiating `traverseAxesNoMask` at `ConstL (List UID)`
-    with `g := fun a => ⟨[a.uid]⟩` should reproduce the REAL production `readAxisUIDs`
-    directly — no local copy needed, since `traverseAxesNoMask` never touches `nonlin`, this
-    reduces immediately to `SumExpr`'s own already-proven UID-collecting theorem. -/
-theorem traverseAxes_const_eq_readAxisUIDs (r : RHSExpr) :
-    (RHSExpr.traverseAxesNoMask (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) r).run = readAxisUIDs r := by
-  show (SumExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) r.body).run
-    = r.body.terms.flatMap termAxisUIDs
-  exact traverseAxes_const_eq_termAxisUIDsSumExpr r.body
 
 /-- Remap, CONDITIONAL on TWO independent hypotheses: `r.body`'s own remap equality
     (the `SumExpr`-level conditional, itself gated on every `ProdTerm`/`Factor` inside it) and
@@ -792,76 +574,6 @@ theorem traverseAxes_const_eq_specsStmt (s : Stmt) :
           (RHSExpr.traverseAxesWithMask (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) r).run
         = ls.flatMap specsLHS' ++ specsRHS' r
       rw [core ls, traverseAxes_const_eq_specsRHS r]
-  | recurMorphism nm ax tc => rfl
-
-theorem traverseAxes_const_eq_stmtUids (s : Stmt) :
-    (Stmt.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) s).run = Stmt.uids s := by
-  rw [Stmt.uids_eq]
-  have core : ∀ ys : List LHSSlot,
-      (Traversable.traverse (LHSSlot.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) ys).run
-        = ys.flatMap (fun sl => match sl with
-            | .free a => [a.uid] | .freeNorm a => [a.uid]
-            | .iterAt a _ => [a.uid] | .iterNext a => [a.uid]
-            | .affine e => idxAxisUIDs e) := by
-    intro ys
-    induction ys with
-    | nil => rfl
-    | cons hd tl ih =>
-        show (LHSSlot.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) hd).run ++
-            (Traversable.traverse (LHSSlot.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) tl).run
-          = (match hd with
-              | .free a => [a.uid] | .freeNorm a => [a.uid]
-              | .iterAt a _ => [a.uid] | .iterNext a => [a.uid]
-              | .affine e => idxAxisUIDs e) ++ tl.flatMap (fun sl => match sl with
-                  | .free a => [a.uid] | .freeNorm a => [a.uid]
-                  | .iterAt a _ => [a.uid] | .iterNext a => [a.uid]
-                  | .affine e => idxAxisUIDs e)
-        cases hd with
-        | free a => rw [ih]; rfl
-        | freeNorm a => rw [ih]; rfl
-        | iterAt a n => rw [ih]; rfl
-        | iterNext a => rw [ih]; rfl
-        | affine e =>
-            show (IdxExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) e).run ++
-                (Traversable.traverse (LHSSlot.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) tl).run
-              = idxAxisUIDs e ++ tl.flatMap (fun sl => match sl with
-                  | .free a => [a.uid] | .freeNorm a => [a.uid]
-                  | .iterAt a _ => [a.uid] | .iterNext a => [a.uid]
-                  | .affine e => idxAxisUIDs e)
-            rw [traverseAxes_const_eq_idxAxisUIDs e, ih]
-  cases s with
-  | assign nm ls r =>
-      show (Traversable.traverse (LHSSlot.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) ls).run ++
-          (RHSExpr.traverseAxesWithMask (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) r).run
-        = _
-      have hr : (RHSExpr.traverseAxesWithMask (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) r).run
-          = r.body.terms.flatMap termAxisUIDs ++ (match r.nonlin with
-              | .softmax (some m) => boolAxisUIDs m | .normalize (some m) => boolAxisUIDs m
-              | .l2normalize (some m) => boolAxisUIDs m | _ => []) := by
-        show (SumExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) r.body).run ++
-            (Nonlin.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) r.nonlin).run
-          = r.body.terms.flatMap termAxisUIDs ++ (match r.nonlin with
-              | .softmax (some m) => boolAxisUIDs m | .normalize (some m) => boolAxisUIDs m
-              | .l2normalize (some m) => boolAxisUIDs m | _ => [])
-        rw [traverseAxes_const_eq_termAxisUIDsSumExpr r.body, traverseAxes_const_eq_nonlinAxisUIDs r.nonlin]
-      rw [core ls, hr, ← List.append_assoc]
-      rfl
-  | scatter nm ls r o =>
-      show (Traversable.traverse (LHSSlot.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) ls).run ++
-          (RHSExpr.traverseAxesWithMask (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) r).run
-        = _
-      have hr : (RHSExpr.traverseAxesWithMask (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) r).run
-          = r.body.terms.flatMap termAxisUIDs ++ (match r.nonlin with
-              | .softmax (some m) => boolAxisUIDs m | .normalize (some m) => boolAxisUIDs m
-              | .l2normalize (some m) => boolAxisUIDs m | _ => []) := by
-        show (SumExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) r.body).run ++
-            (Nonlin.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) r.nonlin).run
-          = r.body.terms.flatMap termAxisUIDs ++ (match r.nonlin with
-              | .softmax (some m) => boolAxisUIDs m | .normalize (some m) => boolAxisUIDs m
-              | .l2normalize (some m) => boolAxisUIDs m | _ => [])
-        rw [traverseAxes_const_eq_termAxisUIDsSumExpr r.body, traverseAxes_const_eq_nonlinAxisUIDs r.nonlin]
-      rw [core ls, hr, ← List.append_assoc]
-      rfl
   | recurMorphism nm ax tc => rfl
 
 theorem traverseAxes_id_eq_stmtMapUID_recurMorphism (f : UData → UData) (nm : String) (ax : AxisSpec) (tc : ThreadedComposed) :

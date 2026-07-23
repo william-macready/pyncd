@@ -1,47 +1,245 @@
 import LeanNCD.Eval.Shape
 import LeanNCD.Eval.Gather
+import LeanNCD.DSL.TraverseAxes
 namespace LeanNCD.Eval
 open Std
 
+-- E1 migration sub-project 2: the five `*AxisUIDs` collectors below are re-expressed as
+-- `ConstL (List UID)` instantiations of the production `NodeName.traverseAxes` machinery
+-- (`LeanNCD/DSL/TraverseAxes.lean`), the UID-direction analogue of sub-project 1's `specs*`
+-- migration. Each keeps a frozen `_old` body and a kernel-checked `_eq_old` certifying the new
+-- definition equals the prior hand-written one; the `_old`/`_eq_old` scaffolding is deleted in
+-- Task B2. `freeAxisUIDs` is deliberately NOT migrated (see its comment).
+
 /-- All axis-UIDs referenced by an index expression. -/
-def idxAxisUIDs : IdxExpr → List UID
+-- Now the `ConstL (List UID)` instantiation of `IdxExpr.traverseAxes`; `idxAxisUIDs_eq_old`
+-- certifies it equals the prior hand-written body.
+def idxAxisUIDs (e : IdxExpr) : List UID :=
+  (IdxExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) e).run
+
+-- Frozen pre-migration body: the behaviour-preservation anchor `idxAxisUIDs_eq_old` certifies
+-- against; slated for deletion in Task B2 (see the SCAFFOLDING note in `Structural.lean`).
+def idxAxisUIDs_old : IdxExpr → List UID
   | .axis a      => [a.uid]
   | .const _     => []
   | .scale _ a   => [a.uid]
   | .shift a _   => [a.uid]
   | .affine _ xs => xs.map (·.2.uid)
 
+/-- Ports the spike theorem `traverseAxes_const_eq_idxAxisUIDs`
+    (`test/DSL/TraverseAxesSpike.lean`): the bare-axis arms are `[a.uid]` and `.const` is `[]`
+    (all `rfl`); `.affine` folds the coordinate list, pushing the `(·.uid)`-map through each
+    `Prod.mk`-repaired const action (`hmap` collapses the `Prod.mk` wrapping). -/
+theorem idxAxisUIDs_eq_old (e : IdxExpr) : idxAxisUIDs e = idxAxisUIDs_old e := by
+  cases e with
+  | axis a => rfl
+  | const n => rfl
+  | scale c a => rfl
+  | shift a n => rfl
+  | affine n xs =>
+      have hmap : (fun (ca : Int × AxisSpec) => Prod.mk ca.1 <$> (⟨[ca.2.uid]⟩ : ConstL (List UID) AxisSpec))
+          = (fun ca => (⟨[ca.2.uid]⟩ : ConstL (List UID) (Int × AxisSpec))) := rfl
+      have core : ∀ ys : List (Int × AxisSpec),
+          (Traversable.traverse (fun ca => (⟨[ca.2.uid]⟩ : ConstL (List UID) (Int × AxisSpec))) ys).run
+            = ys.map (·.2.uid) := by
+        intro ys
+        induction ys with
+        | nil => rfl
+        | cons hd tl ih =>
+            show [hd.2.uid] ++
+                (Traversable.traverse (fun ca => (⟨[ca.2.uid]⟩ : ConstL (List UID) (Int × AxisSpec))) tl).run
+              = hd.2.uid :: List.map (·.2.uid) tl
+            rw [ih]
+            rfl
+      -- restate the goal with the new `idxAxisUIDs` unfolded to its `.run`; RHS is `idxAxisUIDs_old`'s
+      -- `.affine` arm `xs.map (·.2.uid)`.
+      show (IdxExpr.affine n <$>
+          Traversable.traverse (fun ca => Prod.mk ca.1 <$> (⟨[ca.2.uid]⟩ : ConstL (List UID) AxisSpec)) xs :
+          ConstL (List UID) IdxExpr).run = xs.map (·.2.uid)
+      rw [hmap]
+      exact core xs
+
 /-- All axis-UIDs referenced by predicate arithmetic. -/
-def predAxisUIDs : PredArith → List UID
-  | .embed e => idxAxisUIDs e
-  | .mul a b => predAxisUIDs a ++ predAxisUIDs b
-  | .iabs a  => predAxisUIDs a
+-- `ConstL (List UID)` instantiation of `PredArith.traverseAxes`; `predAxisUIDs_eq_old` certifies it.
+def predAxisUIDs (e : PredArith) : List UID :=
+  (PredArith.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) e).run
+
+-- Frozen pre-migration body; calls the frozen `_old` collectors so it is the faithful original.
+-- Slated for Task B2 deletion.
+def predAxisUIDs_old : PredArith → List UID
+  | .embed e => idxAxisUIDs_old e
+  | .mul a b => predAxisUIDs_old a ++ predAxisUIDs_old b
+  | .iabs a  => predAxisUIDs_old a
+
+/-- Ports the spike theorem `traverseAxes_const_eq_predAxisUIDs`: `.embed` delegates to
+    `idxAxisUIDs_eq_old`; `.mul` pushes the map through the `++` of the two child runs via the
+    IHs; `.iabs` is the single-child run. Each `show` restates the goal with the (definitionally
+    equal) new collectors so the IH `rw`s find a syntactic match. -/
+theorem predAxisUIDs_eq_old (e : PredArith) : predAxisUIDs e = predAxisUIDs_old e := by
+  induction e with
+  | embed e => exact idxAxisUIDs_eq_old e
+  | mul a b iha ihb =>
+      show predAxisUIDs a ++ predAxisUIDs b = predAxisUIDs_old a ++ predAxisUIDs_old b
+      rw [iha, ihb]
+  | iabs a iha =>
+      show predAxisUIDs a = predAxisUIDs_old a
+      exact iha
 
 /-- All axis-UIDs referenced by a Boolean/mask predicate. -/
-def boolAxisUIDs : BoolExpr → List UID
-  | .rel _ a b => predAxisUIDs a ++ predAxisUIDs b
-  | .and a b   => boolAxisUIDs a ++ boolAxisUIDs b
-  | .or  a b   => boolAxisUIDs a ++ boolAxisUIDs b
-  | .not a     => boolAxisUIDs a
-  | .ieq a b   => predAxisUIDs a ++ predAxisUIDs b
+-- `ConstL (List UID)` instantiation of `BoolExpr.traverseAxes`; `boolAxisUIDs_eq_old` certifies it.
+def boolAxisUIDs (e : BoolExpr) : List UID :=
+  (BoolExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) e).run
+
+-- Frozen pre-migration body (calls the frozen `_old` collectors); slated for Task B2 deletion.
+def boolAxisUIDs_old : BoolExpr → List UID
+  | .rel _ a b => predAxisUIDs_old a ++ predAxisUIDs_old b
+  | .and a b   => boolAxisUIDs_old a ++ boolAxisUIDs_old b
+  | .or  a b   => boolAxisUIDs_old a ++ boolAxisUIDs_old b
+  | .not a     => boolAxisUIDs_old a
+  | .ieq a b   => predAxisUIDs_old a ++ predAxisUIDs_old b
+
+/-- Ports the spike theorem `traverseAxes_const_eq_boolAxisUIDs`: `.rel`/`.ieq` cross-node
+    delegate to `predAxisUIDs_eq_old` over the `++` of the two child runs; `.and`/`.or`/`.not`
+    recurse via the IHs. -/
+theorem boolAxisUIDs_eq_old (e : BoolExpr) : boolAxisUIDs e = boolAxisUIDs_old e := by
+  induction e with
+  | rel op a b =>
+      show predAxisUIDs a ++ predAxisUIDs b = predAxisUIDs_old a ++ predAxisUIDs_old b
+      rw [predAxisUIDs_eq_old a, predAxisUIDs_eq_old b]
+  | and a b iha ihb =>
+      show boolAxisUIDs a ++ boolAxisUIDs b = boolAxisUIDs_old a ++ boolAxisUIDs_old b
+      rw [iha, ihb]
+  | or a b iha ihb =>
+      show boolAxisUIDs a ++ boolAxisUIDs b = boolAxisUIDs_old a ++ boolAxisUIDs_old b
+      rw [iha, ihb]
+  | not a iha =>
+      show boolAxisUIDs a = boolAxisUIDs_old a
+      exact iha
+  | ieq a b =>
+      show predAxisUIDs a ++ predAxisUIDs b = predAxisUIDs_old a ++ predAxisUIDs_old b
+      rw [predAxisUIDs_eq_old a, predAxisUIDs_eq_old b]
 
 /-- The free axes (LHS) of an assign, as UID list (affine slots contribute none). -/
+-- Deliberately NOT migrated to `traverseAxes` (unlike the other collectors in this block):
+-- `lhsAxisUID?` returns `none` for `.affine` slots, so `freeAxisUIDs` collects a *subset* — the
+-- free (non-affine) axes only — not every axis. `LHSSlot.traverseAxes` visits every axis
+-- (including the affine slot's `IdxExpr`), so this is not a `traverseAxes` instantiation and the
+-- spike proves no equivalence for it. Migrating it would silently change its meaning.
 def freeAxisUIDs (slots : List LHSSlot) : List UID := slots.filterMap lhsAxisUID?
 
 /-- Every axis-UID appearing in one product term's reads/masks. This is the per-term
     contraction scope: a `+`-joined RHS sums each term over only the axes *that term*
     mentions, not the union of axes across the whole equation (see `evalAssignWith`). -/
+-- `ConstL (List UID)` instantiation of `ProdTerm.traverseAxes`; `termAxisUIDs_eq_old` certifies it.
 def termAxisUIDs (t : ProdTerm) : List UID :=
+  (ProdTerm.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) t).run
+
+-- Frozen pre-migration body (inline per-`Factor` match, calling the frozen `_old` collectors);
+-- slated for Task B2 deletion.
+def termAxisUIDs_old (t : ProdTerm) : List UID :=
   t.factors.flatMap (fun
-    | .read _ es => es.flatMap idxAxisUIDs
-    | .iverson b => boolAxisUIDs b
-    | .unaryFn _ _ es => es.flatMap idxAxisUIDs)
+    | .read _ es => es.flatMap idxAxisUIDs_old
+    | .iverson b => boolAxisUIDs_old b
+    | .unaryFn _ _ es => es.flatMap idxAxisUIDs_old)
+
+/-- Ports the spike theorem `traverseAxes_const_eq_termAxisUIDs`, with the inline per-`Factor`
+    match handled arm-by-arm as in the spike's `traverseAxes_const_eq_factorAxisUIDs`. `hfac`
+    proves each `Factor`'s run equals the matching `_old` arm (`.read`/`.unaryFn` fold
+    `idxAxisUIDs_eq_old` over the index list; `.iverson` delegates to `boolAxisUIDs_eq_old`);
+    `core` then folds `hfac` over the factor list. -/
+theorem termAxisUIDs_eq_old (t : ProdTerm) : termAxisUIDs t = termAxisUIDs_old t := by
+  have hfac : ∀ x : Factor,
+      (Factor.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) x).run
+        = (match x with
+           | .read _ es => es.flatMap idxAxisUIDs_old
+           | .iverson b => boolAxisUIDs_old b
+           | .unaryFn _ _ es => es.flatMap idxAxisUIDs_old) := by
+    intro x
+    cases x with
+    | read nm es =>
+        show (Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) es).run
+          = es.flatMap idxAxisUIDs_old
+        induction es with
+        | nil => rfl
+        | cons hd tl ih =>
+            show idxAxisUIDs hd ++
+                (Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) tl).run
+              = idxAxisUIDs_old hd ++ tl.flatMap idxAxisUIDs_old
+            rw [idxAxisUIDs_eq_old hd, ih]
+    | iverson b => exact boolAxisUIDs_eq_old b
+    | unaryFn op nm es =>
+        show (Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) es).run
+          = es.flatMap idxAxisUIDs_old
+        induction es with
+        | nil => rfl
+        | cons hd tl ih =>
+            show idxAxisUIDs hd ++
+                (Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) tl).run
+              = idxAxisUIDs_old hd ++ tl.flatMap idxAxisUIDs_old
+            rw [idxAxisUIDs_eq_old hd, ih]
+  -- fold `hfac` over the factor list (`termAxisUIDs_old t` is `t.factors.flatMap` of that match).
+  show (Traversable.traverse (Factor.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) t.factors).run
+    = termAxisUIDs_old t
+  have core : ∀ ys : List Factor,
+      (Traversable.traverse (Factor.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) ys).run
+        = ys.flatMap (fun x =>
+            match x with
+            | .read _ es => es.flatMap idxAxisUIDs_old
+            | .iverson b => boolAxisUIDs_old b
+            | .unaryFn _ _ es => es.flatMap idxAxisUIDs_old) := by
+    intro ys
+    induction ys with
+    | nil => rfl
+    | cons hd tl ih =>
+        show (Factor.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) hd).run ++
+            (Traversable.traverse (Factor.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) tl).run
+          = (match hd with
+             | .read _ es => es.flatMap idxAxisUIDs_old
+             | .iverson b => boolAxisUIDs_old b
+             | .unaryFn _ _ es => es.flatMap idxAxisUIDs_old)
+            ++ tl.flatMap (fun x =>
+                match x with
+                | .read _ es => es.flatMap idxAxisUIDs_old
+                | .iverson b => boolAxisUIDs_old b
+                | .unaryFn _ _ es => es.flatMap idxAxisUIDs_old)
+        rw [hfac hd, ih]
+  exact core t.factors
 
 /-- Every axis-UID appearing anywhere in the RHS reads/masks (union across all terms).
     Used for size inference / shape solving, where the full axis set is wanted — NOT for
     contraction scoping, which must stay per-term (`termAxisUIDs`). -/
+-- Migrated as the `ConstL (List UID)` instantiation of `RHSExpr.traverseAxesNoMask`.
+-- IMPORTANT — `traverseAxesNoMask`, NOT `traverseAxesWithMask`: `readAxisUIDs` deliberately
+-- EXCLUDES the nonlin-mask axes (the documented `specsRHS`-includes-vs-`readAxisUIDs`-excludes
+-- asymmetry). `traverseAxesNoMask` never visits `r.nonlin`. A future edit to `WithMask` here
+-- would silently pull nonlin-mask UIDs into shape inference and corrupt it; `readAxisUIDs_eq_old`
+-- is the tripwire — it would fail to close. `readAxisUIDs_eq_old` also certifies this equals the
+-- prior hand-written body.
 def readAxisUIDs (rhs : RHSExpr) : List UID :=
-  rhs.body.terms.flatMap termAxisUIDs
+  (RHSExpr.traverseAxesNoMask (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) rhs).run
+
+-- Frozen pre-migration body (calls the frozen `termAxisUIDs_old`); slated for Task B2 deletion.
+def readAxisUIDs_old (rhs : RHSExpr) : List UID :=
+  rhs.body.terms.flatMap termAxisUIDs_old
+
+/-- Ports the spike theorem `traverseAxes_const_eq_readAxisUIDs` (via `NoMask`): the `NoMask` run
+    reduces to `SumExpr`'s traversal over `r.body` (nonlin never touched), then `core` folds
+    `termAxisUIDs_eq_old` over `r.body.terms`. -/
+theorem readAxisUIDs_eq_old (r : RHSExpr) : readAxisUIDs r = readAxisUIDs_old r := by
+  show (SumExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) r.body).run
+    = r.body.terms.flatMap termAxisUIDs_old
+  have core : ∀ ys : List ProdTerm,
+      (Traversable.traverse (ProdTerm.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) ys).run
+        = ys.flatMap termAxisUIDs_old := by
+    intro ys
+    induction ys with
+    | nil => rfl
+    | cons hd tl ih =>
+        show termAxisUIDs hd ++
+            (Traversable.traverse (ProdTerm.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) tl).run
+          = termAxisUIDs_old hd ++ tl.flatMap termAxisUIDs_old
+        rw [termAxisUIDs_eq_old hd, ih]
+  exact core r.body.terms
 
 /-- Every `.read` tensor name appearing in the RHS. -/
 def readNames (rhs : RHSExpr) : List String :=

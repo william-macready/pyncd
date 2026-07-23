@@ -37,15 +37,19 @@ traversal: by name (`TLProgram.axisNames`, de-duplicated) or by uid (`Stmt.uids`
 
 -- SCAFFOLDING (E1 migration): four `specsX_old`/`specsX_eq_old` pairs remain below
 -- (`specsIdx`, `specsFactor`, `specsRHS`, `specsStmt`). Each `_old` is the frozen pre-migration
--- body; each `_eq_old` bridges the traversal-derived def back to it, and is `rw`'d into by one
--- pre-existing UID proof (`specsIdx_map_uid_eq`, `specsFactor_map_uid_eq`, and `Stmt.uids_eq`'s
--- `hRHS`/top-level) that was written against the old structural shape. To eliminate them, the
--- dependent UID proofs must be re-derived directly against `traverseAxes` — a separate, reviewed
--- task. See docs/superpowers/specs/2026-07-17-e1-scaffolding-refactor-followup.md before touching.
+-- body; each `_eq_old` USED to bridge the traversal-derived def back to it.
+-- As of E1 sub-project 2 Task B1 the dependent UID proofs (`specsIdx_map_uid_eq`,
+-- `specsFactor_map_uid_eq`, and `Stmt.uids_eq`) were re-derived directly against `traverseAxes`
+-- via the `*AxisUidFusion` lemmas below, so NOTHING references these `_old`/`_eq_old` pairs any
+-- more — they are now fully dead. Also newly dead (orphaned by that same re-derivation):
+-- `specsFactor_map_uid_eq`, `specsNonlin_map_uid_eq`, `specsLHS_map_uid_eq` and their feeders
+-- (`specsIdx/Pred/Bool_map_uid_eq`). Task B2 deletes all of it (both the four `_old`/`_eq_old`
+-- pairs and the orphaned `specs*_map_uid_eq` lemmas) and removes this comment.
+-- See docs/superpowers/specs/2026-07-17-e1-scaffolding-refactor-followup.md before touching.
 -- (The four dead pairs — specsPred/specsBool/specsNonlin/specsLHS — were already removed.)
 
--- Frozen pre-migration body: the structural anchor `specsIdx_map_uid_eq` `rw`s back to via
--- `specsIdx_eq_old`; slated for deletion in Task 6 (see the SCAFFOLDING note above).
+-- Frozen pre-migration body; now dead — `specsIdx_map_uid_eq` no longer bridges through
+-- `specsIdx_eq_old` (re-derived via fusion in Task B1). Deleted in Task B2 (see SCAFFOLDING note).
 private def specsIdx_old : IdxExpr → List AxisSpec
   | .axis a => [a] | .const _ => [] | .scale _ a => [a]
   | .shift a _ => [a] | .affine _ xs => xs.map (·.2)
@@ -107,8 +111,8 @@ private def specsBool (e : BoolExpr) : List AxisSpec :=
 private def specsNonlin (n : Nonlin) : List AxisSpec :=
   (Nonlin.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) n).run
 
--- Frozen pre-migration body: the structural anchor `specsFactor_map_uid_eq` `rw`s back to via
--- `specsFactor_eq_old`; slated for deletion in Task 6 (see the SCAFFOLDING note above).
+-- Frozen pre-migration body; now dead — `specsFactor_map_uid_eq` no longer bridges through
+-- `specsFactor_eq_old` (re-derived via fusion in Task B1). Deleted in Task B2 (see SCAFFOLDING note).
 private def specsFactor_old : Factor → List AxisSpec
   | .read _ es => es.flatMap specsIdx | .iverson b => specsBool b
   | .unaryFn _ _ es => es.flatMap specsIdx
@@ -150,8 +154,8 @@ private theorem specsFactor_eq_old (x : Factor) : specsFactor x = specsFactor_ol
         = es.flatMap specsIdx
       exact core es
 
--- Frozen pre-migration body: the structural anchor `Stmt.uids_eq`'s `hRHS` rewrites back to via
--- `specsRHS_eq_old`; slated for deletion in Task 6 (see the SCAFFOLDING note above).
+-- Frozen pre-migration body; now dead — `Stmt.uids_eq` no longer rewrites through
+-- `specsRHS_eq_old` (re-derived via fusion in Task B1). Deleted in Task B2 (see SCAFFOLDING note).
 private def specsRHS_old (r : RHSExpr) : List AxisSpec :=
   (r.body.terms.flatMap (fun t => t.factors.flatMap specsFactor)) ++ specsNonlin r.nonlin
 
@@ -212,8 +216,8 @@ private def specsLHS (s : LHSSlot) : List AxisSpec :=
 private def specsDecl (d : Decl) : List AxisSpec :=
   (Decl.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) d).run
 
--- Frozen pre-migration body: the structural anchor `Stmt.uids_eq`'s top-level proof rewrites back
--- to via `specsStmt_eq_old`; slated for deletion in Task 6 (see the SCAFFOLDING note above).
+-- Frozen pre-migration body; now dead — `Stmt.uids_eq`'s top-level proof no longer rewrites
+-- through `specsStmt_eq_old` (re-derived via fusion in Task B1). Deleted in Task B2 (see SCAFFOLDING note).
 private def specsStmt_old : Stmt → List AxisSpec
   | .assign _ ls r => ls.flatMap specsLHS ++ specsRHS r
   | .scatter _ ls r _ => ls.flatMap specsLHS ++ specsRHS r
@@ -567,18 +571,11 @@ def Stmt.uids (s : Stmt) : List UID := (specsStmt s).map (·.uid)
 -- nothing else here depends on any of it.
 
 private theorem specsIdx_map_uid_eq (e : IdxExpr) : (specsIdx e).map (·.uid) = idxAxisUIDs e := by
-  -- Restore the old structural shape (`specsIdx_old`) the case split below matches, since
-  -- `idxAxisUIDs` is itself hand-written against that same shape.
-  rw [specsIdx_eq_old]
-  cases e with
-  | axis a => rfl
-  | const n => rfl
-  | scale c a => rfl
-  | shift a n => rfl
-  | affine n xs =>
-      show (xs.map (·.2)).map (·.uid) = xs.map (·.2.uid)
-      rw [List.map_map]
-      rfl
+  -- Both sides are `ConstL` runs of `IdxExpr.traverseAxes` — `specsIdx` at `List AxisSpec`,
+  -- `idxAxisUIDs` (post-migration) at `List UID` — so `idxAxisUidFusion` (the map-`(·.uid)`
+  -- naturality of the `Const` applicative) IS this statement, up to unfolding both defs. This is
+  -- the fusion-based re-derivation: no `specsIdx_eq_old` bridge, no dependence on either shape.
+  exact idxAxisUidFusion e
 
 private theorem specsPred_map_uid_eq (e : PredArith) : (specsPred e).map (·.uid) = predAxisUIDs e := by
   induction e with
@@ -613,25 +610,27 @@ private theorem specsFactor_map_uid_eq (x : Factor) :
       | .read _ es => es.flatMap idxAxisUIDs
       | .iverson b => boolAxisUIDs b
       | .unaryFn _ _ es => es.flatMap idxAxisUIDs := by
-  -- Restore the old structural shape (`specsFactor_old`) the case split below matches, since
-  -- the RHS match is itself written against that same shape.
-  rw [specsFactor_eq_old]
+  -- Fusion-based re-derivation (no `specsFactor_eq_old` bridge): `factorAxisUidFusion` turns
+  -- `(specsFactor x).map (·.uid)` into the UID run; the `.read`/`.unaryFn` runs then fold to
+  -- `es.flatMap idxAxisUIDs` (`hidx`), and `.iverson`'s run IS `boolAxisUIDs b` definitionally.
+  have hidx : ∀ es : List IdxExpr,
+      (Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) es).run
+        = es.flatMap idxAxisUIDs := by
+    intro es
+    induction es with
+    | nil => rfl
+    | cons hd tl ih =>
+        -- head's run IS `idxAxisUIDs hd` (post-migration); tail closes by the IH.
+        show idxAxisUIDs hd ++
+            (Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) tl).run
+          = idxAxisUIDs hd ++ tl.flatMap idxAxisUIDs
+        rw [ih]
+  show ((Factor.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) x).run).map (·.uid) = _
+  rw [factorAxisUidFusion x]
   cases x with
-  | read nm es =>
-      show (es.flatMap specsIdx).map (·.uid) = es.flatMap idxAxisUIDs
-      rw [List.map_flatMap]
-      congr 1
-      funext e
-      exact specsIdx_map_uid_eq e
-  | iverson b =>
-      show (specsBool b).map (·.uid) = boolAxisUIDs b
-      exact specsBool_map_uid_eq b
-  | unaryFn op nm es =>
-      show (es.flatMap specsIdx).map (·.uid) = es.flatMap idxAxisUIDs
-      rw [List.map_flatMap]
-      congr 1
-      funext e
-      exact specsIdx_map_uid_eq e
+  | read nm es => exact hidx es
+  | iverson b => rfl
+  | unaryFn op nm es => exact hidx es
 
 private theorem specsNonlin_map_uid_eq (n : Nonlin) :
     (specsNonlin n).map (·.uid) = match n with
@@ -677,50 +676,88 @@ theorem Stmt.uids_eq (s : Stmt) : Stmt.uids s =
             | .l2normalize (some m) => boolAxisUIDs m | _ => [])
     | .recurMorphism _ ax _ => [ax.uid]
   := by
-  have hRHS : ∀ r : RHSExpr, (specsRHS r).map (·.uid) =
-      r.body.terms.flatMap termAxisUIDs
-      ++ (match r.nonlin with
-          | .softmax (some m) => boolAxisUIDs m | .normalize (some m) => boolAxisUIDs m
-          | .l2normalize (some m) => boolAxisUIDs m | _ => []) := by
-    intro r
-    -- Restore the old structural shape (`specsRHS_old`) the `show` below matches, since the RHS
-    -- match (`termAxisUIDs`/nonlin-mask arms) is itself written against that same shape.
-    rw [specsRHS_eq_old]
-    show ((r.body.terms.flatMap (fun t => t.factors.flatMap specsFactor)) ++ specsNonlin r.nonlin).map (·.uid)
-      = r.body.terms.flatMap termAxisUIDs ++ (match r.nonlin with
-          | .softmax (some m) => boolAxisUIDs m | .normalize (some m) => boolAxisUIDs m
-          | .l2normalize (some m) => boolAxisUIDs m | _ => [])
-    rw [List.map_append, specsNonlin_map_uid_eq]
-    congr 1
-    rw [List.map_flatMap]
-    congr 1
-    funext t
-    show (t.factors.flatMap specsFactor).map (·.uid) = termAxisUIDs t
-    rw [List.map_flatMap]
-    congr 1
-    funext x
-    exact specsFactor_map_uid_eq x
-  have hLS : ∀ ls : List LHSSlot, (ls.flatMap specsLHS).map (·.uid) =
-      ls.flatMap (fun sl => match sl with
-        | .free a => [a.uid] | .freeNorm a => [a.uid]
-        | .iterAt a _ => [a.uid] | .iterNext a => [a.uid]
-        | .affine e => idxAxisUIDs e) := by
+  -- Fusion-based re-derivation (drops the `specsStmt_eq_old` / `specsRHS_eq_old` bridges):
+  -- `stmtAxisUidFusion` turns `Stmt.uids s = (specsStmt s).map (·.uid)` into the single
+  -- UID-collecting run of `Stmt.traverseAxes`; the three `have`s reduce that run's list/option
+  -- sub-traversals to the explicit UID collectors the statement spells out. Each head element's
+  -- run IS the corresponding collector definitionally (post sub-project-2 migration), so the
+  -- inductions close on the IH alone. Proved directly from the traversal — NOT via the spike's
+  -- `traverseAxes_const_eq_stmtUids`, which is itself proved from this theorem (would be circular).
+  have hLS : ∀ ls : List LHSSlot,
+      (Traversable.traverse (LHSSlot.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) ls).run
+        = ls.flatMap (fun sl => match sl with
+            | .free a => [a.uid] | .freeNorm a => [a.uid]
+            | .iterAt a _ => [a.uid] | .iterNext a => [a.uid]
+            | .affine e => idxAxisUIDs e) := by
     intro ls
-    rw [List.map_flatMap]
-    congr 1
-    funext sl
-    exact specsLHS_map_uid_eq sl
-  show (specsStmt s).map (·.uid) = _
-  -- Restore the old structural shape (`specsStmt_old`) the case split below matches, since the
-  -- goal's RHS (the `Stmt.uids_eq` statement) is itself written against that same shape.
-  rw [specsStmt_eq_old]
+    induction ls with
+    | nil => rfl
+    | cons hd tl ih =>
+        show (LHSSlot.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) hd).run
+            ++ (Traversable.traverse (LHSSlot.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) tl).run
+          = (match hd with
+             | .free a => [a.uid] | .freeNorm a => [a.uid]
+             | .iterAt a _ => [a.uid] | .iterNext a => [a.uid]
+             | .affine e => idxAxisUIDs e)
+            ++ tl.flatMap (fun sl => match sl with
+                | .free a => [a.uid] | .freeNorm a => [a.uid]
+                | .iterAt a _ => [a.uid] | .iterNext a => [a.uid]
+                | .affine e => idxAxisUIDs e)
+        rw [ih]
+        -- each slot's run IS its arm: bare-axis slots are `[a.uid]`, `.affine` is `idxAxisUIDs e`.
+        cases hd with
+        | free a => rfl
+        | freeNorm a => rfl
+        | iterAt a n => rfl
+        | iterNext a => rfl
+        | affine e => rfl
+  have hBody : ∀ ts : List ProdTerm,
+      (Traversable.traverse (ProdTerm.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) ts).run
+        = ts.flatMap termAxisUIDs := by
+    intro ts
+    induction ts with
+    | nil => rfl
+    | cons hd tl ih =>
+        -- head's run IS `termAxisUIDs hd` (post-migration); tail closes by the IH.
+        show termAxisUIDs hd
+            ++ (Traversable.traverse (ProdTerm.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) tl).run
+          = termAxisUIDs hd ++ tl.flatMap termAxisUIDs
+        rw [ih]
+  have hNonlin : ∀ n : Nonlin,
+      (Nonlin.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) n).run
+        = (match n with
+           | .softmax (some m) => boolAxisUIDs m | .normalize (some m) => boolAxisUIDs m
+           | .l2normalize (some m) => boolAxisUIDs m | _ => []) := by
+    intro n
+    -- the mask run is `boolAxisUIDs m` when a mask is present, `[]` otherwise — all `rfl`.
+    cases n with
+    | identity => rfl
+    | relu => rfl
+    | sigmoid => rfl
+    | tanh => rfl
+    | gelu => rfl
+    | leakyrelu => rfl
+    | softmax m => cases m with | none => rfl | some b => rfl
+    | normalize m => cases m with | none => rfl | some b => rfl
+    | l2normalize m => cases m with | none => rfl | some b => rfl
+  show ((Stmt.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) s).run).map (·.uid) = _
+  rw [stmtAxisUidFusion s]
   cases s with
   | assign nm ls r =>
-      show (ls.flatMap specsLHS ++ specsRHS r).map (·.uid) = _
-      rw [List.map_append, hLS, hRHS, ← List.append_assoc]
+      -- `Stmt.traverseAxes` for `.assign` is `traverse LHSSlot <*> traverseAxesWithMask`, whose run
+      -- is `lhsRun ++ (bodyRun ++ nonlinRun)`; `hLS`/`hBody`/`hNonlin` reduce the three, then
+      -- `← List.append_assoc` re-brackets to the statement's `(lhs ++ body) ++ nonlin` form.
+      show (Traversable.traverse (LHSSlot.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) ls).run
+          ++ ((Traversable.traverse (ProdTerm.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) r.body.terms).run
+              ++ (Nonlin.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) r.nonlin).run)
+        = _
+      rw [hLS ls, hBody r.body.terms, hNonlin r.nonlin, ← List.append_assoc]
   | scatter nm ls r o =>
-      show (ls.flatMap specsLHS ++ specsRHS r).map (·.uid) = _
-      rw [List.map_append, hLS, hRHS, ← List.append_assoc]
+      show (Traversable.traverse (LHSSlot.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) ls).run
+          ++ ((Traversable.traverse (ProdTerm.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)) r.body.terms).run
+              ++ (Nonlin.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) r.nonlin).run)
+        = _
+      rw [hLS ls, hBody r.body.terms, hNonlin r.nonlin, ← List.append_assoc]
   | recurMorphism nm ax tc => rfl
 
 /-! ## The `assignUIDs` phase -/
