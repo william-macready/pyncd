@@ -656,15 +656,13 @@ theorem traverseAxes_const_eq_specsProgram (p : TLProgram) :
     = p.decls.flatMap specsDecl' ++ p.stmts.flatMap specsStmt'
   rw [coreD p.decls, coreS p.stmts]
 
-/-- Remap: instantiating `traverseAxes` at `Id` with `g := AxisSpec.mapUID f` should reproduce
-    the REAL `TermTraversable.traverseUID f p` — not a named `TLProgram.mapUID` (which does not
-    exist; `TLProgram`'s remap logic is written inline in its `TermTraversable` instance,
-    `Traverse.lean:79-80`) and not a hand-copied local. CONDITIONAL on exactly ONE hypothesis,
-    about `p.stmts` (`∀ s ∈ p.stmts, ...`) — `p.decls` needs no hypothesis at all, since
-    `Decl`'s own remap (`traverseAxes_id_eq_declMapUID`) is already fully unconditional. The
-    `stmts` hypothesis mirrors `ProdTerm`'s own "if every element in the list individually
-    satisfies its own remap equality, the list-level equality follows" pattern, generalized from
-    `List Factor` to `List Stmt` via explicit list membership. -/
+/-- Remap: instantiating `traverseAxes` at `Id` with `g := AxisSpec.mapUID f` reproduces the
+    named `TLProgram.mapUID` (`Traverse.lean`), which is itself defined as exactly this
+    instantiation — so the two sides are definitionally equal and the proof is `rfl`.
+    `TermTraversable.traverseUID` for `TLProgram` now routes through `TLProgram.mapUID` (E1
+    sub-project 3 migration), so this also reproduces the real `TermTraversable.traverseUID f p`.
+    The `_hstmts` hypothesis is no longer needed for the proof (kept for statement stability) —
+    unconditional, unlike the earlier conditional version. -/
 theorem traverseAxes_id_eq_tlProgramMapUID (f : UData → UData) (p : TLProgram)
     (_hstmts : ∀ s ∈ p.stmts, Stmt.traverseAxes (f := Id) (AxisSpec.mapUID f) s = Stmt.mapUID f s) :
     TLProgram.traverseAxes (f := Id) (AxisSpec.mapUID f) p = TermTraversable.traverseUID f p :=
