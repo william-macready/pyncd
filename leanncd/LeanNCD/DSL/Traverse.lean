@@ -210,12 +210,77 @@ theorem Factor.mapUID_eq_old (f : UData → UData) (x : Factor) :
       simp only [Traversable.traverse, hEq, List.traverse_eq_map_id]
       rfl  -- collapses the `Id` applicative `<$>` (reducible-transparency `rw` won't)
 
+-- Temporary scaffolding for `ProdTerm.mapUID_eq_old` below; slated for removal in the
+-- Task 7 cleanup once all `mapUID` callers are migrated.
+def ProdTerm.mapUID_old (f : UData → UData) (p : ProdTerm) : ProdTerm :=
+  { factors := p.factors.map (Factor.mapUID_old f) }
+
+/-- The `Id` instantiation of `ProdTerm.traverseAxes`. -/
 def ProdTerm.mapUID (f : UData → UData) (p : ProdTerm) : ProdTerm :=
-  { factors := p.factors.map (Factor.mapUID f) }
+  ProdTerm.traverseAxes (f := Id) (AxisSpec.mapUID f) p
+
+theorem ProdTerm.mapUID_eq_old (f : UData → UData) (p : ProdTerm) :
+    ProdTerm.mapUID f p = ProdTerm.mapUID_old f p := by
+  simp only [ProdTerm.mapUID, ProdTerm.traverseAxes, ProdTerm.mapUID_old]
+  show (fun fs => ({ factors := fs } : ProdTerm))
+      (Traversable.traverse (Factor.traverseAxes (f := Id) (AxisSpec.mapUID f)) p.factors)
+    = { factors := p.factors.map (Factor.mapUID_old f) }
+  have core : ∀ ys : List Factor,
+      Traversable.traverse (Factor.traverseAxes (f := Id) (AxisSpec.mapUID f)) ys = ys.map (Factor.mapUID_old f) := by
+    intro ys
+    induction ys with
+    | nil => rfl
+    | cons hd tl ih =>
+        simp only [List.traverse_cons]
+        show (Factor.mapUID f hd) :: (Traversable.traverse (Factor.traverseAxes (f := Id) (AxisSpec.mapUID f)) tl)
+          = Factor.mapUID_old f hd :: tl.map (Factor.mapUID_old f)
+        rw [Factor.mapUID_eq_old f hd, ih]
+  rw [core p.factors]
+
+-- Temporary scaffolding for `SumExpr.mapUID_eq_old` below; slated for removal in the
+-- Task 7 cleanup once all `mapUID` callers are migrated.
+def SumExpr.mapUID_old (f : UData → UData) (s : SumExpr) : SumExpr :=
+  { terms := s.terms.map (ProdTerm.mapUID_old f) }
+
+/-- The `Id` instantiation of `SumExpr.traverseAxes`. -/
 def SumExpr.mapUID (f : UData → UData) (s : SumExpr) : SumExpr :=
-  { terms := s.terms.map (ProdTerm.mapUID f) }
+  SumExpr.traverseAxes (f := Id) (AxisSpec.mapUID f) s
+
+theorem SumExpr.mapUID_eq_old (f : UData → UData) (s : SumExpr) :
+    SumExpr.mapUID f s = SumExpr.mapUID_old f s := by
+  simp only [SumExpr.mapUID, SumExpr.traverseAxes, SumExpr.mapUID_old]
+  show (fun ts => ({ terms := ts } : SumExpr))
+      (Traversable.traverse (ProdTerm.traverseAxes (f := Id) (AxisSpec.mapUID f)) s.terms)
+    = { terms := s.terms.map (ProdTerm.mapUID_old f) }
+  have core : ∀ ys : List ProdTerm,
+      Traversable.traverse (ProdTerm.traverseAxes (f := Id) (AxisSpec.mapUID f)) ys = ys.map (ProdTerm.mapUID_old f) := by
+    intro ys
+    induction ys with
+    | nil => rfl
+    | cons hd tl ih =>
+        simp only [List.traverse_cons]
+        show (ProdTerm.mapUID f hd) :: (Traversable.traverse (ProdTerm.traverseAxes (f := Id) (AxisSpec.mapUID f)) tl)
+          = ProdTerm.mapUID_old f hd :: tl.map (ProdTerm.mapUID_old f)
+        rw [ProdTerm.mapUID_eq_old f hd, ih]
+  rw [core s.terms]
+
+-- Temporary scaffolding for `RHSExpr.mapUID_eq_old` below; slated for removal in the
+-- Task 7 cleanup once all `mapUID` callers are migrated.
+def RHSExpr.mapUID_old (f : UData → UData) (r : RHSExpr) : RHSExpr :=
+  { body := SumExpr.mapUID_old f r.body, nonlin := Nonlin.mapUID_old f r.nonlin, agg := r.agg }
+
+/-- The `Id` instantiation of `RHSExpr.traverseAxesWithMask` (mask included, matching
+    `specsRHS`/`RHSExpr.mapUID`'s always-remap-the-mask semantics). -/
 def RHSExpr.mapUID (f : UData → UData) (r : RHSExpr) : RHSExpr :=
-  { body := SumExpr.mapUID f r.body, nonlin := Nonlin.mapUID f r.nonlin, agg := r.agg }
+  RHSExpr.traverseAxesWithMask (f := Id) (AxisSpec.mapUID f) r
+
+theorem RHSExpr.mapUID_eq_old (f : UData → UData) (r : RHSExpr) :
+    RHSExpr.mapUID f r = RHSExpr.mapUID_old f r := by
+  simp only [RHSExpr.mapUID, RHSExpr.traverseAxesWithMask, RHSExpr.mapUID_old]
+  show (fun body nonlin => ({ body := body, nonlin := nonlin, agg := r.agg } : RHSExpr))
+      (SumExpr.mapUID f r.body) (Nonlin.mapUID f r.nonlin)
+    = { body := SumExpr.mapUID_old f r.body, nonlin := Nonlin.mapUID_old f r.nonlin, agg := r.agg }
+  rw [SumExpr.mapUID_eq_old f r.body, Nonlin.mapUID_eq_old f r.nonlin]
 
 def LHSSlot.mapUID (f : UData → UData) : LHSSlot → LHSSlot
   | .free a     => .free (AxisSpec.mapUID f a)
