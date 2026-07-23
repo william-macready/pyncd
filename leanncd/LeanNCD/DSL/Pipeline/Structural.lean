@@ -4,20 +4,20 @@ import LeanNCD.DSL.Traverse
 import LeanNCD.DSL.TraverseAxes
 import LeanNCD.Exec.Uid
 import Std.Data.HashMap
--- SPIKE EXCEPTION (E1 traverseAxes prototype, 2026-07-16 — see
+-- E1 traverseAxes migration (2026-07-16..17 — see
 -- docs/superpowers/specs/2026-07-16-e1-traverseaxes-stmt-design.md): this is the ONLY
 -- cross-layer import on this branch — DSL/Pipeline and Eval are otherwise deliberately
--- parallel, non-crossing layers (see LeanNCD.lean's own architecture note). It exists solely
--- so `Stmt.uids_eq` below (also new, also spike-only) can state its RHS using the real,
--- public `idxAxisUIDs`/`boolAxisUIDs`/`termAxisUIDs` rather than duplicating their logic by
--- hand. TO REVERT: delete this import and the `Stmt.uids_eq` theorem (search "SPIKE EXCEPTION"
--- in this file) — nothing else in this file depends on either.
+-- parallel, non-crossing layers (see LeanNCD.lean's own architecture note). It exists so
+-- `Stmt.uids_eq` and the `specsX_map_uid_eq` lemmas below can state their RHSs using the real,
+-- public `idxAxisUIDs`/`predAxisUIDs`/`boolAxisUIDs`/`termAxisUIDs` rather than duplicating their
+-- logic by hand. TO REVERT: delete this import together with `Stmt.uids_eq` and the
+-- `specsX_map_uid_eq` lemmas (search the E1 note above `Stmt.uids_eq` in this file).
 import LeanNCD.Eval.Contract
 
 namespace LeanNCD
 open Std
--- SPIKE EXCEPTION (see the `LeanNCD.Eval.Contract` import above): only needed by
--- `Stmt.uids_eq` below. TO REVERT: delete this line along with that import and theorem.
+-- (See the `LeanNCD.Eval.Contract` import above): needed by `Stmt.uids_eq` and the
+-- `specsX_map_uid_eq` lemmas below.
 open LeanNCD.Eval (idxAxisUIDs predAxisUIDs boolAxisUIDs termAxisUIDs)
 
 /-! ## Axis collectors
@@ -35,65 +35,10 @@ otherwise the wildcard silently swallows that mask's axis specs (this bit `l2nor
 already; see the git history). The two public collectors below are thin projections of one
 traversal: by name (`TLProgram.axisNames`, de-duplicated) or by uid (`Stmt.uids`). -/
 
--- SCAFFOLDING (E1 migration): four `specsX_old`/`specsX_eq_old` pairs remain below
--- (`specsIdx`, `specsFactor`, `specsRHS`, `specsStmt`). Each `_old` is the frozen pre-migration
--- body; each `_eq_old` USED to bridge the traversal-derived def back to it.
--- As of E1 sub-project 2 Task B1 the dependent UID proofs (`specsIdx_map_uid_eq`,
--- `specsFactor_map_uid_eq`, and `Stmt.uids_eq`) were re-derived directly against `traverseAxes`
--- via the `*AxisUidFusion` lemmas below, so NOTHING references these `_old`/`_eq_old` pairs any
--- more — they are now fully dead. Also newly dead (orphaned by that same re-derivation):
--- `specsFactor_map_uid_eq`, `specsNonlin_map_uid_eq`, `specsLHS_map_uid_eq` and their feeders
--- (`specsIdx/Pred/Bool_map_uid_eq`). Task B2 deletes all of it (both the four `_old`/`_eq_old`
--- pairs and the orphaned `specs*_map_uid_eq` lemmas) and removes this comment.
--- See docs/superpowers/specs/2026-07-17-e1-scaffolding-refactor-followup.md before touching.
--- (The four dead pairs — specsPred/specsBool/specsNonlin/specsLHS — were already removed.)
-
--- Frozen pre-migration body; now dead — `specsIdx_map_uid_eq` no longer bridges through
--- `specsIdx_eq_old` (re-derived via fusion in Task B1). Deleted in Task B2 (see SCAFFOLDING note).
-private def specsIdx_old : IdxExpr → List AxisSpec
-  | .axis a => [a] | .const _ => [] | .scale _ a => [a]
-  | .shift a _ => [a] | .affine _ xs => xs.map (·.2)
-
 /-- Every `AxisSpec` occurring in an index expression (a bare axis, or the coordinate list of an
-    affine combination). The `ConstL (List AxisSpec)` instantiation of `IdxExpr.traverseAxes`;
-    `specsIdx_eq_old` certifies it equals the prior hand-written body. -/
+    affine combination). The `ConstL (List AxisSpec)` instantiation of `IdxExpr.traverseAxes`. -/
 private def specsIdx (e : IdxExpr) : List AxisSpec :=
   (IdxExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) e).run
-
-/-- Ports the spike's `traverseAxes_const_eq_specsIdx`: the leaf arms (`.axis`/`.const`/`.scale`/
-    `.shift`) close by `rfl`; the `.affine` arm needs the `hmap`/`core` lemmas below to push the
-    traversal's per-element `Prod.mk`-wrapping down to a plain `.map (·.2)`. -/
-private theorem specsIdx_eq_old (e : IdxExpr) : specsIdx e = specsIdx_old e := by
-  cases e with
-  | axis a => rfl
-  | const n => rfl
-  | scale c a => rfl
-  | shift a n => rfl
-  | affine n xs =>
-      -- The traversal re-pairs each `(Int × AxisSpec)` coordinate's `Int` half with the mapped
-      -- `ConstL` value via `Prod.mk`; `ConstL` ignores its second type parameter, so this
-      -- collapses definitionally to the plain per-element const action `core` is stated over.
-      have hmap : (fun (ca : Int × AxisSpec) => Prod.mk ca.1 <$> (⟨[ca.2]⟩ : ConstL (List AxisSpec) AxisSpec))
-          = (fun ca => (⟨[ca.2]⟩ : ConstL (List AxisSpec) (Int × AxisSpec))) := rfl
-      -- The core list-map trick: traversing the coordinate list collects exactly `ys.map (·.2)`
-      -- (the axis half of each pair) — the old `.affine` arm's body.
-      have core : ∀ ys : List (Int × AxisSpec),
-          (Traversable.traverse (fun ca => (⟨[ca.2]⟩ : ConstL (List AxisSpec) (Int × AxisSpec))) ys).run
-            = ys.map (·.2) := by
-        intro ys
-        induction ys with
-        | nil => rfl
-        | cons hd tl ih =>
-            show [hd.2] ++
-                (Traversable.traverse (fun ca => (⟨[ca.2]⟩ : ConstL (List AxisSpec) (Int × AxisSpec))) tl).run
-              = hd.2 :: List.map (·.2) tl
-            rw [ih]
-            rfl
-      show (IdxExpr.affine n <$>
-          Traversable.traverse (fun ca => Prod.mk ca.1 <$> (⟨[ca.2]⟩ : ConstL (List AxisSpec) AxisSpec)) xs :
-          ConstL (List AxisSpec) IdxExpr).run = xs.map (·.2)
-      rw [hmap]
-      exact core xs
 
 /-- Every `AxisSpec` occurring in a predicate-arithmetic expression, gathered from its embedded
     index expressions. The `ConstL (List AxisSpec)` instantiation of `PredArith.traverseAxes`. -/
@@ -111,99 +56,17 @@ private def specsBool (e : BoolExpr) : List AxisSpec :=
 private def specsNonlin (n : Nonlin) : List AxisSpec :=
   (Nonlin.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) n).run
 
--- Frozen pre-migration body; now dead — `specsFactor_map_uid_eq` no longer bridges through
--- `specsFactor_eq_old` (re-derived via fusion in Task B1). Deleted in Task B2 (see SCAFFOLDING note).
-private def specsFactor_old : Factor → List AxisSpec
-  | .read _ es => es.flatMap specsIdx | .iverson b => specsBool b
-  | .unaryFn _ _ es => es.flatMap specsIdx
-
 /-- Every `AxisSpec` occurring in a product factor (`read`'s index list, `iverson`'s boolean
     guard, or `unaryFn`'s index list). The `ConstL (List AxisSpec)` instantiation of
-    `Factor.traverseAxes`; `specsFactor_eq_old` certifies it equals the prior hand-written body. -/
+    `Factor.traverseAxes`. -/
 private def specsFactor (x : Factor) : List AxisSpec :=
   (Factor.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) x).run
 
-/-- Ports the spike's `traverseAxes_const_eq_specsFactor` (built on
-    `traverseAxes_const_eq_factorAxisUIDs`'s AxisSpec-side counterpart): `.read`/`.unaryFn` reduce
-    to the `core` list-fold over `specsIdx`; `.iverson` cross-node-delegates to `specsBool`. -/
-private theorem specsFactor_eq_old (x : Factor) : specsFactor x = specsFactor_old x := by
-  have core : ∀ ys : List IdxExpr,
-      (Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) ys).run
-        = ys.flatMap specsIdx := by
-    intro ys
-    induction ys with
-    | nil => rfl
-    | cons hd tl ih =>
-        show specsIdx hd ++
-            (Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) tl).run
-          = specsIdx hd ++ tl.flatMap specsIdx
-        rw [ih]
-  cases x with
-  | read nm es =>
-      show (Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) es).run
-        = es.flatMap specsIdx
-      exact core es
-  | iverson b =>
-      -- Cross-node delegation to `specsBool` — plain `show`/`rw` can't see through the
-      -- `Applicative`/`Traversable` instance layers here; `simp only [...]` unfolds both sides
-      -- to the same `BoolExpr.traverseAxes` application, then `rfl` closes it.
-      simp only [specsFactor, specsFactor_old, Factor.traverseAxes, specsBool]
-      rfl
-  | unaryFn op nm es =>
-      show (Traversable.traverse (IdxExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) es).run
-        = es.flatMap specsIdx
-      exact core es
-
--- Frozen pre-migration body; now dead — `Stmt.uids_eq` no longer rewrites through
--- `specsRHS_eq_old` (re-derived via fusion in Task B1). Deleted in Task B2 (see SCAFFOLDING note).
-private def specsRHS_old (r : RHSExpr) : List AxisSpec :=
-  (r.body.terms.flatMap (fun t => t.factors.flatMap specsFactor)) ++ specsNonlin r.nonlin
-
 /-- Every `AxisSpec` occurring on the RHS of a statement: every factor of every term, PLUS the
     `nonlin` mask — mask INCLUDED, the mirror of `readAxisUIDs`'s mask-excluded `NoMask` traversal
-    on the UID side. The `ConstL (List AxisSpec)` instantiation of `RHSExpr.traverseAxesWithMask`;
-    `specsRHS_eq_old` certifies it equals the prior hand-written body. -/
+    on the UID side. The `ConstL (List AxisSpec)` instantiation of `RHSExpr.traverseAxesWithMask`. -/
 private def specsRHS (r : RHSExpr) : List AxisSpec :=
   (RHSExpr.traverseAxesWithMask (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) r).run
-
-/-- Ports the spike's `traverseAxes_const_eq_specsRHS`: the term/factor list-folds (`coreFactor`,
-    `coreTerm`) mirror `specsFactor_eq_old`'s core lemma one layer up; the final step needs an
-    explicit `rfl` after `rw [hbody]` (see the comment there) since the mask half of the traversal
-    doesn't reduce under `rw`'s transparency. -/
-private theorem specsRHS_eq_old (r : RHSExpr) : specsRHS r = specsRHS_old r := by
-  have coreFactor : ∀ fs : List Factor,
-      (Traversable.traverse (Factor.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) fs).run
-        = fs.flatMap specsFactor := by
-    intro fs
-    induction fs with
-    | nil => rfl
-    | cons hd tl ih =>
-        show specsFactor hd ++
-            (Traversable.traverse (Factor.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) tl).run
-          = specsFactor hd ++ tl.flatMap specsFactor
-        rw [ih]
-  have coreTerm : ∀ ts : List ProdTerm,
-      (Traversable.traverse (ProdTerm.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) ts).run
-        = ts.flatMap (fun t => t.factors.flatMap specsFactor) := by
-    intro ts
-    induction ts with
-    | nil => rfl
-    | cons hd tl ih =>
-        show (Traversable.traverse (Factor.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) hd.factors).run ++
-            (Traversable.traverse (ProdTerm.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) tl).run
-          = hd.factors.flatMap specsFactor ++ tl.flatMap (fun t => t.factors.flatMap specsFactor)
-        rw [coreFactor hd.factors, ih]
-  show (SumExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) r.body).run ++
-      (Nonlin.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) r.nonlin).run
-    = (r.body.terms.flatMap (fun t => t.factors.flatMap specsFactor)) ++ specsNonlin r.nonlin
-  have hbody : (SumExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) r.body).run
-      = r.body.terms.flatMap (fun t => t.factors.flatMap specsFactor) := by
-    show (Traversable.traverse (ProdTerm.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) r.body.terms).run
-      = r.body.terms.flatMap (fun t => t.factors.flatMap specsFactor)
-    exact coreTerm r.body.terms
-  rw [hbody]
-  -- rw's reducible-transparency close can't unfold specsNonlin; rfl (default) does
-  rfl
 
 /-- Every `AxisSpec` occurring in a single LHS slot: the bare axis for `free`/`freeNorm`/
     `iterAt`/`iterNext`, or the index expression's specs for `affine`. The `ConstL (List AxisSpec)`
@@ -216,51 +79,11 @@ private def specsLHS (s : LHSSlot) : List AxisSpec :=
 private def specsDecl (d : Decl) : List AxisSpec :=
   (Decl.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) d).run
 
--- Frozen pre-migration body; now dead — `Stmt.uids_eq`'s top-level proof no longer rewrites
--- through `specsStmt_eq_old` (re-derived via fusion in Task B1). Deleted in Task B2 (see SCAFFOLDING note).
-private def specsStmt_old : Stmt → List AxisSpec
-  | .assign _ ls r => ls.flatMap specsLHS ++ specsRHS r
-  | .scatter _ ls r _ => ls.flatMap specsLHS ++ specsRHS r
-  | .recurMorphism _ ax _ => [ax]
-
 /-- Every `AxisSpec` occurring in a statement: its LHS slots and RHS (`assign`/`scatter`), or its
     recur axis (`recurMorphism`). The `ConstL (List AxisSpec)` instantiation of
-    `Stmt.traverseAxes`; `specsStmt_eq_old` certifies it equals the prior hand-written body. -/
+    `Stmt.traverseAxes`. -/
 private def specsStmt (s : Stmt) : List AxisSpec :=
   (Stmt.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) s).run
-
-/-- Ports the spike's `traverseAxes_const_eq_specsStmt`: the LHS-slot list-fold (`core`) mirrors
-    `specsFactor_eq_old`'s core lemma one layer up; `.assign`/`.scatter` each need an explicit
-    `rfl` after `rw [core ls]` (see the comments there) since `rw`'s reducible transparency can't
-    unfold `specsRHS`; `.recurMorphism` closes directly by `rfl`. -/
-private theorem specsStmt_eq_old (s : Stmt) : specsStmt s = specsStmt_old s := by
-  have core : ∀ ys : List LHSSlot,
-      (Traversable.traverse (LHSSlot.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) ys).run
-        = ys.flatMap specsLHS := by
-    intro ys
-    induction ys with
-    | nil => rfl
-    | cons hd tl ih =>
-        show specsLHS hd ++
-            (Traversable.traverse (LHSSlot.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) tl).run
-          = specsLHS hd ++ tl.flatMap specsLHS
-        rw [ih]
-  cases s with
-  | assign nm ls r =>
-      show (Traversable.traverse (LHSSlot.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) ls).run ++
-          (RHSExpr.traverseAxesWithMask (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) r).run
-        = ls.flatMap specsLHS ++ specsRHS r
-      rw [core ls]
-      -- rw's reducible-transparency close can't unfold specsRHS; rfl (default) does
-      rfl
-  | scatter nm ls r o =>
-      show (Traversable.traverse (LHSSlot.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) ls).run ++
-          (RHSExpr.traverseAxesWithMask (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) r).run
-        = ls.flatMap specsLHS ++ specsRHS r
-      rw [core ls]
-      -- rw's reducible-transparency close can't unfold specsRHS; rfl (default) does
-      rfl
-  | recurMorphism nm ax tc => rfl
 
 /-! ## `Const`-applicative monoid-hom fusion (map-`·.uid` naturality)
 
@@ -274,8 +97,8 @@ monoid hom, applied per node.
 
 They reference ONLY the two runs and `List.map` — no `specsX`/`*AxisUIDs` collector — so they
 stand on their own: the bridge that sub-project 1's `specs*` (AxisSpec) side and sub-project 2's
-`*AxisUIDs` (UID) side never had. With them, sub-project 2 can re-derive the UID proofs directly
-from the AxisSpec proofs, without the `_old` structural scaffolding above.
+`*AxisUIDs` (UID) side never had. With them, the UID proofs (`specsX_map_uid_eq`, `Stmt.uids_eq`)
+are derived directly from the traversal, with no dependence on any hand-written structural shape.
 
 Leaf-to-root; each recursive lemma reuses the earlier ones (the hom naturality composes
 structurally, exactly as the spike's `traverseAxes_const_eq_*` pairs do per node). -/
@@ -554,21 +377,18 @@ def TLProgram.axisNames (p : TLProgram) : List String :=
 /-- Every `AxisSpec.uid` reachable in a statement, in program order. -/
 def Stmt.uids (s : Stmt) : List UID := (specsStmt s).map (·.uid)
 
--- SPIKE EXCEPTION (E1 traverseAxes prototype, 2026-07-16 — see
--- docs/superpowers/specs/2026-07-16-e1-traverseaxes-stmt-design.md): exposes `Stmt.uids`'s
--- value in terms of already-public UID-collectors (`idxAxisUIDs`/`boolAxisUIDs`/
--- `termAxisUIDs`), letting an outside caller (the E1 spike file, which cannot see the private
--- `specsStmt`/`specsLHS`/`specsRHS`/`specsNonlin`/`specsFactor`/`specsBool`/`specsPred` this
--- unfolds) relate `Stmt.uids` to its own `traverseAxes`-based reconstruction without
--- duplicating any of their logic by hand. The six helper lemmas below establish, layer by
--- layer, that each private `specsX` collector's `.map (·.uid)` coincides with the layer's
--- public UID collector where one exists (`idxAxisUIDs`, `predAxisUIDs`, `boolAxisUIDs`), or
--- else the corresponding inline UID match (for `Factor`/`Nonlin`/`LHSSlot`, which have no named
--- public collector) — each proved entirely from *inside* this file, where those private helpers
--- are visible, checked against their real bodies by the Lean kernel, not "by inspection."
--- TO REVERT: delete this comment block through `Stmt.uids_eq` below, and the
--- `LeanNCD.Eval.Contract` import + `open` above (search "SPIKE EXCEPTION" in this file) —
--- nothing else here depends on any of it.
+-- E1 traverseAxes migration (2026-07-16..17 — see
+-- docs/superpowers/specs/2026-07-16-e1-traverseaxes-stmt-design.md). `Stmt.uids_eq` (below)
+-- relates the public `Stmt.uids` to the explicit per-node UID collectors; the six
+-- `specsX_map_uid_eq` lemmas relate each private `specsX` AxisSpec-collector's `.map (·.uid)` to
+-- its UID collector. Both are proved directly against `traverseAxes` via the `*AxisUidFusion`
+-- lemmas above (Task B1's fusion re-derivation), not against any hand-written body. This is the
+-- sole reason for the cross-layer `LeanNCD.Eval.Contract` import + `open` at the top of the file:
+-- the statements below name the real public `idxAxisUIDs`/`predAxisUIDs`/`boolAxisUIDs`/
+-- `termAxisUIDs` rather than duplicating their logic. NOTE: the six `specsX_map_uid_eq` lemmas
+-- are not consumed elsewhere now — the spike's own `stmtUids` reconstruction was retired with
+-- sub-project 2, and `Stmt.uids_eq` goes straight through fusion — but they are kept as the
+-- kernel-checked AxisSpec↔UID correspondence for the private `specsX` collectors.
 
 private theorem specsIdx_map_uid_eq (e : IdxExpr) : (specsIdx e).map (·.uid) = idxAxisUIDs e := by
   -- Both sides are `ConstL` runs of `IdxExpr.traverseAxes` — `specsIdx` at `List AxisSpec`,

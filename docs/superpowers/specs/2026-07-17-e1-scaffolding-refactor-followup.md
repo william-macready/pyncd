@@ -1,10 +1,30 @@
 # FOLLOW-UP: eliminate the remaining `specs*_old` / `specs*_eq_old` scaffolding
 
-**Status:** open / not started
+**Status:** DONE — folded into E1 sub-project 2 (Task B1 re-derivation, Task B2 deletion), 2026-07-22.
 **Created:** 2026-07-17 (during E1 production migration sub-project 1)
 **Owner:** unassigned
 **Companion to:** [`2026-07-17-e1-production-migration-specs-design.md`](2026-07-17-e1-production-migration-specs-design.md)
 **Code:** `leanncd/LeanNCD/DSL/Pipeline/Structural.lean`
+
+> **RESOLVED.** This follow-up was executed as part of E1 sub-project 2 rather than as a separate
+> task. **Task B1** proved the `ConstL` map-`(·.uid)`-over-traverse fusion lemmas (the per-node
+> `*AxisUidFusion` lemmas in `Structural.lean`) and re-derived `specsIdx_map_uid_eq`,
+> `specsFactor_map_uid_eq`, and `Stmt.uids_eq` directly against `traverseAxes` through them —
+> dropping every `rw [specsX_eq_old]` bridge. `Stmt.uids_eq` is proved straight from the traversal
+> (not via the spike's circular `traverseAxes_const_eq_stmtUids`) and its axioms tightened to
+> `[propext]` (the old proof pulled `Quot.sound`). **Task B2** deleted all four
+> `specsIdx/Factor/RHS/Stmt _old`/`_eq_old` pairs (and the five UID-side `*AxisUIDs_old`/`_eq_old`
+> pairs in `Eval/Contract.lean`) and the SCAFFOLDING pointer comment. End state achieved:
+> `Structural.lean` has no `specs*_old`/`specs*_eq_old`.
+>
+> One deviation from the plan below: the six `specsX_map_uid_eq` lemmas were **kept**, not deleted.
+> Once sub-project 2 migrated the UID collectors (`idxAxisUIDs` etc.) to opaque `traverseAxes`
+> runs, `Stmt.uids_eq` could no longer route through those lemmas, so they are no longer consumed —
+> but deleting them would orphan the sub-project-1 `specsIdx..specsLHS`/`specsDecl` production defs
+> (they are those lemmas' only remaining consumers). They are retained as the kernel-checked
+> AxisSpec↔UID correspondence. Whether to retire the whole now-vestigial AxisSpec-collecting
+> specs-side (all `specsX` except `specsStmt`, plus the `specsX_map_uid_eq` lemmas) is a separate
+> design question, left open.
 
 > If you touch the `_old`/`_eq_old` scaffolding in `Structural.lean`, read this first.
 > There is a pointer comment at the scaffolding in that file linking here.
