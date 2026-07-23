@@ -632,27 +632,9 @@ theorem traverseAxes_const_eq_specsDecl (d : Decl) :
     own implicit applicative-functor parameter is named `m`, not `f` — this only matters when
     calling it directly (as here), not through a node-level `traverseAxes` wrapper. -/
 theorem traverseAxes_id_eq_declMapUID (f : UData → UData) (d : Decl) :
-    Decl.traverseAxes (f := Id) (AxisSpec.mapUID f) d = Decl.mapUID f d := by
-  have core : ∀ ys : List AxisSpec,
-      Traversable.traverse (m := Id) (AxisSpec.mapUID f) ys = ys.map (AxisSpec.mapUID f) := by
-    intro ys
-    induction ys with
-    | nil => rfl
-    | cons hd tl ih =>
-        simp only [List.traverse_cons]
-        rw [ih]
-        rfl
-  cases d with
-  | tensor nm ax =>
-      show Decl.tensor nm (Traversable.traverse (m := Id) (AxisSpec.mapUID f) ax) = Decl.tensor nm (ax.map (AxisSpec.mapUID f))
-      rw [core ax]
-  | predicate nm ax =>
-      show Decl.predicate nm (Traversable.traverse (m := Id) (AxisSpec.mapUID f) ax) = Decl.predicate nm (ax.map (AxisSpec.mapUID f))
-      rw [core ax]
-  | linear nm ax b =>
-      show Decl.linear nm (Traversable.traverse (m := Id) (AxisSpec.mapUID f) ax) b = Decl.linear nm (ax.map (AxisSpec.mapUID f)) b
-      rw [core ax]
-  | axis ax n => rfl
+    Decl.traverseAxes (f := Id) (AxisSpec.mapUID f) d = Decl.mapUID f d :=
+  rfl  -- `Decl.mapUID` is now literally `Decl.traverseAxes (f := Id) (AxisSpec.mapUID f)`
+       -- (E1 sub-project 3 migration); no case split needed post-migration.
 
 -- ===== TLProgram =====
 
