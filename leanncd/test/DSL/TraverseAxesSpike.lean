@@ -80,23 +80,6 @@ private def specsIdx' : IdxExpr → List AxisSpec
   | .axis a => [a] | .const _ => [] | .scale _ a => [a]
   | .shift a _ => [a] | .affine _ xs => xs.map (·.2)
 
-/-- Remap: instantiating `traverseAxes` at `Id` with `g := AxisSpec.mapUID f` should
-    reproduce the existing `IdxExpr.mapUID`. -/
-theorem traverseAxes_id_eq_mapUID (f : UData → UData) (e : IdxExpr) :
-    IdxExpr.traverseAxes (f := Id) (AxisSpec.mapUID f) e = IdxExpr.mapUID f e := by
-  cases e with
-  | axis a => rfl
-  | const n => rfl
-  | scale c a => rfl
-  | shift a n => rfl
-  | affine n xs =>
-      have hEq : (fun (ca : Int × AxisSpec) => Prod.mk ca.1 <$> AxisSpec.mapUID f ca.2 :
-            Int × AxisSpec → Id (Int × AxisSpec))
-          = pure ∘ (fun ca => (ca.1, AxisSpec.mapUID f ca.2)) := rfl
-      simp only [IdxExpr.traverseAxes, IdxExpr.mapUID, Traversable.traverse, hEq,
-        List.traverse_eq_map_id]
-      rfl
-
 /-- Collect `AxisSpec`s: instantiating at `ConstL (List AxisSpec)` with `g := fun a => ⟨[a]⟩`
     should reproduce `specsIdx'` (the local copy of `Structural.lean`'s private `specsIdx`). -/
 theorem traverseAxes_const_eq_specsIdx (e : IdxExpr) :
@@ -131,27 +114,6 @@ theorem traverseAxes_const_eq_specsIdx (e : IdxExpr) :
     source of truth. Keep byte-identical to `Structural.lean:30-31` by inspection. -/
 private def specsPred' : PredArith → List AxisSpec
   | .embed e => specsIdx' e | .mul a b => specsPred' a ++ specsPred' b | .iabs a => specsPred' a
-
-/- Remap: instantiating `traverseAxes` at `Id` with `g := AxisSpec.mapUID f` should
-    reproduce the existing `PredArith.mapUID`.
-
-    NOT PROVEN — commented out rather than left with a `sorry`. `PredArith.mapUID` is declared
-    `partial def` in `Traverse.lean:22` (it genuinely self-recurses via `.mul`/`.iabs`, unlike
-    `IdxExpr.mapUID`, which is also `partial` but never calls itself). Lean generates no
-    equation lemmas for a `partial def`, and `unfold`/`delta`/`rfl` all fail to make any
-    progress on `PredArith.mapUID f (PredArith.embed e) = PredArith.embed (IdxExpr.mapUID f e)`
-    — confirmed even for this non-recursive `.embed` case, so the blocker is not proof search
-    difficulty but the outright absence of any unfolding principle for `PredArith.mapUID` in
-    the proof layer. Closing this would require changing `PredArith.mapUID`'s definition
-    (e.g. dropping `partial` in favor of ordinary structural recursion, which the function's
-    shape appears to support) — out of scope for this spike.
-theorem traverseAxes_id_eq_predMapUID (f : UData → UData) (e : PredArith) :
-    PredArith.traverseAxes (f := Id) (AxisSpec.mapUID f) e = PredArith.mapUID f e := by
-  induction e with
-  | embed e => exact traverseAxes_id_eq_mapUID f e
-  | mul a b iha ihb => simp [PredArith.traverseAxes, PredArith.mapUID, iha, ihb]
-  | iabs a iha => simp [PredArith.traverseAxes, PredArith.mapUID, iha]
--/
 
 /-- Collect `AxisSpec`s: instantiating at `ConstL (List AxisSpec)` with `g := fun a => ⟨[a]⟩`
     should reproduce `specsPred'` (the local copy of `Structural.lean`'s private `specsPred`). -/
@@ -204,25 +166,6 @@ theorem traverseAxes_const_eq_specsBool (e : BoolExpr) :
               : List AxisSpec) = specsPred' a ++ specsPred' b
       rw [traverseAxes_const_eq_specsPred a, traverseAxes_const_eq_specsPred b]
 
-/- Remap: instantiating `traverseAxes` at `Id` with `g := AxisSpec.mapUID f` should reproduce
-    the existing `BoolExpr.mapUID`.
-
-    NOT PROVEN — commented out rather than left with a `sorry`, per the same wall the `PredArith`
-    slice hit: `BoolExpr.mapUID` is `partial def` in `Traverse.lean` with genuine self-recursion
-    (`.and`/`.or`/`.not` call it again), so Lean generates no equation lemmas for the whole
-    definition — confirmed here by a standalone `rfl` failing even on the non-recursive `.rel`
-    case. Same limitation, same fix if ever needed (drop `partial` from `BoolExpr.mapUID`,
-    out of scope for this spike).
-theorem traverseAxes_id_eq_boolMapUID (f : UData → UData) (e : BoolExpr) :
-    BoolExpr.traverseAxes (f := Id) (AxisSpec.mapUID f) e = BoolExpr.mapUID f e := by
-  induction e with
-  | rel op a b => simp [BoolExpr.traverseAxes, BoolExpr.mapUID]
-  | and a b iha ihb => simp [BoolExpr.traverseAxes, BoolExpr.mapUID, iha, ihb]
-  | or a b iha ihb => simp [BoolExpr.traverseAxes, BoolExpr.mapUID, iha, ihb]
-  | not a iha => simp [BoolExpr.traverseAxes, BoolExpr.mapUID, iha]
-  | ieq a b => simp [BoolExpr.traverseAxes, BoolExpr.mapUID]
--/
-
 /-- Local copy of `Structural.lean`'s private `specsFactor`, for comparison only — NOT the
     source of truth. Keep byte-identical to `Structural.lean:41-43` by inspection. -/
 private def specsFactor' : Factor → List AxisSpec
@@ -269,48 +212,6 @@ theorem traverseAxes_const_eq_specsFactor (e : Factor) :
             rw [traverseAxes_const_eq_specsIdx hd, ih]
       exact core es
 
-/-- Remap for `.read`: instantiating `traverseAxes` at `Id` with `g := AxisSpec.mapUID f`
-    should reproduce `Factor.mapUID`'s `.read` case. Full attempt — `Factor.mapUID`'s `.read`
-    case only calls `IdxExpr.mapUID` (non-`partial`, no self-recursion), so the wall that
-    blocked `PredArith`/`BoolExpr`'s remap theorems does not apply here. -/
-theorem traverseAxes_id_eq_factorMapUID_read (f : UData → UData) (nm : String) (es : List IdxExpr) :
-    Factor.traverseAxes (f := Id) (AxisSpec.mapUID f) (Factor.read nm es)
-      = Factor.mapUID f (Factor.read nm es) := by
-  show Factor.read nm (Traversable.traverse (IdxExpr.traverseAxes (f := Id) (AxisSpec.mapUID f)) es)
-    = Factor.read nm (es.map (IdxExpr.mapUID f))
-  have hEq : (IdxExpr.traverseAxes (f := Id) (AxisSpec.mapUID f) : IdxExpr → Id IdxExpr)
-      = pure ∘ IdxExpr.mapUID f := by
-    funext x
-    exact traverseAxes_id_eq_mapUID f x
-  simp only [Traversable.traverse, hEq, List.traverse_eq_map_id]
-  rfl
-
-/-- Remap for `.unaryFn`: same shape as `.read` above, one extra untouched argument (`op`). -/
-theorem traverseAxes_id_eq_factorMapUID_unaryFn (f : UData → UData) (op : UnaryOp) (nm : String) (es : List IdxExpr) :
-    Factor.traverseAxes (f := Id) (AxisSpec.mapUID f) (Factor.unaryFn op nm es)
-      = Factor.mapUID f (Factor.unaryFn op nm es) := by
-  show Factor.unaryFn op nm (Traversable.traverse (IdxExpr.traverseAxes (f := Id) (AxisSpec.mapUID f)) es)
-    = Factor.unaryFn op nm (es.map (IdxExpr.mapUID f))
-  have hEq : (IdxExpr.traverseAxes (f := Id) (AxisSpec.mapUID f) : IdxExpr → Id IdxExpr)
-      = pure ∘ IdxExpr.mapUID f := by
-    funext x
-    exact traverseAxes_id_eq_mapUID f x
-  simp only [Traversable.traverse, hEq, List.traverse_eq_map_id]
-  rfl
-
-/- Remap for `.iverson` — NOT ATTEMPTED, confirmed blocked during design (not implementation):
-    `Factor.traverseAxes (f := Id) (AxisSpec.mapUID f) (Factor.iverson b) = Factor.mapUID f
-    (Factor.iverson b)` reduces to `BoolExpr.traverseAxes (f := Id) (AxisSpec.mapUID f) b =
-    BoolExpr.mapUID f b` for arbitrary `b` — exactly the `BoolExpr` slice's own remap theorem,
-    already found blocked there (`partial def`, zero equation lemmas; re-confirmed directly via
-    `example (f) (op) (a b) : BoolExpr.mapUID f (BoolExpr.rel op a b) = BoolExpr.rel op
-    (PredArith.mapUID f a) (PredArith.mapUID f b) := by rfl` failing). `Factor.mapUID` itself
-    being non-`partial` does not help: its `.iverson` case's *top-level* equation unfolds fine
-    (`Factor.mapUID f (Factor.iverson b) = Factor.iverson (BoolExpr.mapUID f b)` closes by
-    `rfl`), but that just restates the goal in terms of the still-blocked `BoolExpr.mapUID`. Same
-    limitation, same fix if ever needed (drop `partial` from `BoolExpr.mapUID`), out of scope
-    for this spike. See docs/superpowers/specs/2026-07-16-e1-traverseaxes-factor-design.md. -/
-
 /-- Local copy of the inline `t.factors.flatMap specsFactor` fragment inside `Structural.lean`'s
     private `specsRHS` (`Structural.lean:45-46`), for comparison only — NOT the source of truth.
     No standalone `specsProdTerm` exists in production; keep this arm-for-arm identical to that
@@ -337,28 +238,6 @@ theorem traverseAxes_const_eq_specsProdTerm (t : ProdTerm) :
         rw [traverseAxes_const_eq_specsFactor hd, ih]
   exact core t.factors
 
-/-- Remap, CONDITIONAL: `ProdTerm.mapUID` only calls `Factor.mapUID` over the list, and
-    `Factor`'s own remap is only proved for `.read`/`.unaryFn` (not `.iverson`) — so an
-    UNCONDITIONAL theorem over all `p : ProdTerm` cannot close (a single `.iverson` anywhere in
-    `p.factors` would need the still-blocked `Factor`/`BoolExpr` remap). This lemma instead
-    shows the traversal composes correctly over `List` in the remap direction GIVEN that every
-    factor individually satisfies its own remap equality. -/
-theorem traverseAxes_id_eq_prodTermMapUID_of_factors (f : UData → UData) (p : ProdTerm)
-    (h : ∀ x ∈ p.factors, Factor.traverseAxes (f := Id) (AxisSpec.mapUID f) x = Factor.mapUID f x) :
-    ProdTerm.traverseAxes (f := Id) (AxisSpec.mapUID f) p = ProdTerm.mapUID f p := by
-  show (fun fs => ({ factors := fs } : ProdTerm)) (Traversable.traverse (Factor.traverseAxes (f := Id) (AxisSpec.mapUID f)) p.factors)
-    = { factors := p.factors.map (Factor.mapUID f) }
-  have core : ∀ ys : List Factor, (∀ x ∈ ys, Factor.traverseAxes (f := Id) (AxisSpec.mapUID f) x = Factor.mapUID f x) →
-      Traversable.traverse (Factor.traverseAxes (f := Id) (AxisSpec.mapUID f)) ys = ys.map (Factor.mapUID f) := by
-    intro ys hys
-    induction ys with
-    | nil => rfl
-    | cons hd tl ih =>
-        simp only [List.traverse_cons]
-        rw [hys hd List.mem_cons_self, ih (fun x hx => hys x (List.mem_cons_of_mem hd hx))]
-        rfl
-  rw [core p.factors h]
-
 /-- Local copy delegating to `specsProdTerm'` (the `ProdTerm` slice's own local copy), not
     re-derived through `specsFactor'` directly — mirrors `specsRHS`'s inline
     `r.body.terms.flatMap (fun t => t.factors.flatMap specsFactor)` fragment
@@ -383,29 +262,6 @@ theorem traverseAxes_const_eq_specsSumExpr (s : SumExpr) :
           = specsProdTerm' hd ++ tl.flatMap specsProdTerm'
         rw [traverseAxes_const_eq_specsProdTerm hd, ih]
   exact core s.terms
-
-/-- Remap, CONDITIONAL: same reasoning as `ProdTerm`'s own conditional lemma one layer down —
-    `SumExpr.mapUID` only calls `ProdTerm.mapUID` over the list, and since an unconditional
-    theorem over all `p : ProdTerm` cannot close (a single `.iverson` factor anywhere blocks
-    it), an unconditional `SumExpr`-level theorem cannot close either for the same reason,
-    propagated up one more layer. This lemma instead shows the traversal composes correctly
-    over `List` in the remap direction GIVEN that every `ProdTerm` in `s.terms` individually
-    satisfies its own remap equality. -/
-theorem traverseAxes_id_eq_sumExprMapUID_of_terms (f : UData → UData) (s : SumExpr)
-    (h : ∀ x ∈ s.terms, ProdTerm.traverseAxes (f := Id) (AxisSpec.mapUID f) x = ProdTerm.mapUID f x) :
-    SumExpr.traverseAxes (f := Id) (AxisSpec.mapUID f) s = SumExpr.mapUID f s := by
-  show (fun ts => ({ terms := ts } : SumExpr)) (Traversable.traverse (ProdTerm.traverseAxes (f := Id) (AxisSpec.mapUID f)) s.terms)
-    = { terms := s.terms.map (ProdTerm.mapUID f) }
-  have core : ∀ ys : List ProdTerm, (∀ x ∈ ys, ProdTerm.traverseAxes (f := Id) (AxisSpec.mapUID f) x = ProdTerm.mapUID f x) →
-      Traversable.traverse (ProdTerm.traverseAxes (f := Id) (AxisSpec.mapUID f)) ys = ys.map (ProdTerm.mapUID f) := by
-    intro ys hys
-    induction ys with
-    | nil => rfl
-    | cons hd tl ih =>
-        simp only [List.traverse_cons]
-        rw [hys hd List.mem_cons_self, ih (fun x hx => hys x (List.mem_cons_of_mem hd hx))]
-        rfl
-  rw [core s.terms h]
 
 -- ===== Nonlin =====
 
@@ -449,25 +305,6 @@ theorem traverseAxes_const_eq_specsNonlin (n : Nonlin) :
           show (BoolExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) b).run = specsBool' b
           exact traverseAxes_const_eq_specsBool b
 
-/-- Remap demonstration, unmasked case: no hypothesis needed at all — closes by plain `rfl`.
-    The other 5 unmasked constructors (`relu`/`sigmoid`/`tanh`/`gelu`/`leakyrelu`) are
-    structurally identical and not separately proved; they add no new information. -/
-example (f : UData → UData) :
-    Nonlin.traverseAxes (f := Id) (AxisSpec.mapUID f) Nonlin.identity = Nonlin.mapUID f Nonlin.identity := by
-  rfl
-
-/-- Remap demonstration, masked case: CONDITIONAL on the mask's own `BoolExpr` satisfying its
-    remap equality (which is blocked in general — `BoolExpr.mapUID` is `partial def` with
-    self-recursion — but satisfiable for specific `b`, demonstrated here). This is the
-    `Nonlin`-level hypothesis `RHSExpr`'s own conditional remap theorem (Task 2) will require. -/
-theorem traverseAxes_id_eq_nonlinMapUID_of_mask (f : UData → UData) (b : BoolExpr)
-    (hb : BoolExpr.traverseAxes (f := Id) (AxisSpec.mapUID f) b = BoolExpr.mapUID f b) :
-    Nonlin.traverseAxes (f := Id) (AxisSpec.mapUID f) (Nonlin.softmax (some b)) = Nonlin.mapUID f (Nonlin.softmax (some b)) := by
-  show Nonlin.softmax (Traversable.traverse (BoolExpr.traverseAxes (f := Id) (AxisSpec.mapUID f)) (some b))
-    = Nonlin.softmax (some (BoolExpr.mapUID f b))
-  simp only [Traversable.traverse, Option.traverse, Option.mapA_eq_mapM, Option.mapM_some, hb]
-  rfl
-
 -- ===== RHSExpr =====
 
 /-- Local copy delegating to `specsSumExpr'` and `specsNonlin'` (both already-existing local
@@ -484,23 +321,6 @@ theorem traverseAxes_const_eq_specsRHS (r : RHSExpr) :
       (Nonlin.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) r.nonlin).run
     = specsSumExpr' r.body ++ specsNonlin' r.nonlin
   rw [traverseAxes_const_eq_specsSumExpr r.body, traverseAxes_const_eq_specsNonlin r.nonlin]
-
-/-- Remap, CONDITIONAL on TWO independent hypotheses: `r.body`'s own remap equality
-    (the `SumExpr`-level conditional, itself gated on every `ProdTerm`/`Factor` inside it) and
-    `r.nonlin`'s own remap equality (gated on `.iverson`/mask blocking, per
-    `traverseAxes_id_eq_nonlinMapUID_of_mask`). Neither hypothesis is transitively re-derived
-    here — each is taken flat, about the specific `r.body`/`r.nonlin` values, mirroring exactly
-    how `ProdTerm`'s and `SumExpr`'s own conditional lemmas took a hypothesis about their
-    immediate sub-structure rather than expanding it further. Given both, the `RHSExpr`-level
-    equality follows directly — no induction needed, since there's no list at this level. -/
-theorem traverseAxes_id_eq_rhsExprMapUID (f : UData → UData) (r : RHSExpr)
-    (hbody : SumExpr.traverseAxes (f := Id) (AxisSpec.mapUID f) r.body = SumExpr.mapUID f r.body)
-    (hnonlin : Nonlin.traverseAxes (f := Id) (AxisSpec.mapUID f) r.nonlin = Nonlin.mapUID f r.nonlin) :
-    RHSExpr.traverseAxesWithMask (f := Id) (AxisSpec.mapUID f) r = RHSExpr.mapUID f r := by
-  show (fun body nonlin => ({ body := body, nonlin := nonlin, agg := r.agg } : RHSExpr))
-      (SumExpr.traverseAxes (f := Id) (AxisSpec.mapUID f) r.body) (Nonlin.traverseAxes (f := Id) (AxisSpec.mapUID f) r.nonlin)
-    = { body := SumExpr.mapUID f r.body, nonlin := Nonlin.mapUID f r.nonlin, agg := r.agg }
-  rw [hbody, hnonlin]
 
 -- ===== LHSSlot =====
 
@@ -524,24 +344,6 @@ theorem traverseAxes_const_eq_specsLHS (s : LHSSlot) :
   | affine e =>
       show (IdxExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) e).run = specsIdx' e
       exact traverseAxes_const_eq_specsIdx e
-
-/-- Remap: instantiating `traverseAxes` at `Id` with `g := AxisSpec.mapUID f` should reproduce
-    `LHSSlot.mapUID`. FULLY UNCONDITIONAL — the first time since `IdxExpr` itself — because
-    `LHSSlot.mapUID` is flat/non-partial and its only non-trivial dependency,
-    `IdxExpr.mapUID`, is already fully and unconditionally proven (`traverseAxes_id_eq_mapUID`,
-    from the `IdxExpr` slice, which never touches `BoolExpr` and so never hits the `partial
-    def`/zero-equation-lemmas wall every slice from `PredArith` onward has needed a hypothesis
-    or block to work around). -/
-theorem traverseAxes_id_eq_lhsSlotMapUID (f : UData → UData) (s : LHSSlot) :
-    LHSSlot.traverseAxes (f := Id) (AxisSpec.mapUID f) s = LHSSlot.mapUID f s := by
-  cases s with
-  | free a => rfl
-  | freeNorm a => rfl
-  | iterAt a n => rfl
-  | iterNext a => rfl
-  | affine e =>
-      show LHSSlot.affine (IdxExpr.traverseAxes (f := Id) (AxisSpec.mapUID f) e) = LHSSlot.affine (IdxExpr.mapUID f e)
-      rw [traverseAxes_id_eq_mapUID f e]
 
 -- ===== Stmt =====
 
@@ -576,44 +378,6 @@ theorem traverseAxes_const_eq_specsStmt (s : Stmt) :
       rw [core ls, traverseAxes_const_eq_specsRHS r]
   | recurMorphism nm ax tc => rfl
 
-theorem traverseAxes_id_eq_stmtMapUID_recurMorphism (f : UData → UData) (nm : String) (ax : AxisSpec) (tc : ThreadedComposed) :
-    Stmt.traverseAxes (f := Id) (AxisSpec.mapUID f) (Stmt.recurMorphism nm ax tc) = Stmt.mapUID f (Stmt.recurMorphism nm ax tc) := by
-  rfl
-
-theorem traverseAxes_id_eq_stmtMapUID_assign (f : UData → UData) (nm : String) (ls : List LHSSlot) (r : RHSExpr)
-    (hr : RHSExpr.traverseAxesWithMask (f := Id) (AxisSpec.mapUID f) r = RHSExpr.mapUID f r) :
-    Stmt.traverseAxes (f := Id) (AxisSpec.mapUID f) (Stmt.assign nm ls r) = Stmt.mapUID f (Stmt.assign nm ls r) := by
-  show (fun ls' r' => Stmt.assign nm ls' r') (Traversable.traverse (LHSSlot.traverseAxes (f := Id) (AxisSpec.mapUID f)) ls)
-      (RHSExpr.traverseAxesWithMask (f := Id) (AxisSpec.mapUID f) r)
-    = Stmt.assign nm (ls.map (LHSSlot.mapUID f)) (RHSExpr.mapUID f r)
-  have core : ∀ ys : List LHSSlot,
-      Traversable.traverse (LHSSlot.traverseAxes (f := Id) (AxisSpec.mapUID f)) ys = ys.map (LHSSlot.mapUID f) := by
-    intro ys
-    induction ys with
-    | nil => rfl
-    | cons hd tl ih =>
-        simp only [List.traverse_cons]
-        rw [traverseAxes_id_eq_lhsSlotMapUID f hd, ih]
-        rfl
-  rw [core ls, hr]
-
-theorem traverseAxes_id_eq_stmtMapUID_scatter (f : UData → UData) (nm : String) (ls : List LHSSlot) (r : RHSExpr) (o : ScatterOpts)
-    (hr : RHSExpr.traverseAxesWithMask (f := Id) (AxisSpec.mapUID f) r = RHSExpr.mapUID f r) :
-    Stmt.traverseAxes (f := Id) (AxisSpec.mapUID f) (Stmt.scatter nm ls r o) = Stmt.mapUID f (Stmt.scatter nm ls r o) := by
-  show (fun ls' r' => Stmt.scatter nm ls' r' o) (Traversable.traverse (LHSSlot.traverseAxes (f := Id) (AxisSpec.mapUID f)) ls)
-      (RHSExpr.traverseAxesWithMask (f := Id) (AxisSpec.mapUID f) r)
-    = Stmt.scatter nm (ls.map (LHSSlot.mapUID f)) (RHSExpr.mapUID f r) o
-  have core : ∀ ys : List LHSSlot,
-      Traversable.traverse (LHSSlot.traverseAxes (f := Id) (AxisSpec.mapUID f)) ys = ys.map (LHSSlot.mapUID f) := by
-    intro ys
-    induction ys with
-    | nil => rfl
-    | cons hd tl ih =>
-        simp only [List.traverse_cons]
-        rw [traverseAxes_id_eq_lhsSlotMapUID f hd, ih]
-        rfl
-  rw [core ls, hr]
-
 -- ===== Decl =====
 
 /-- Local copy of `Structural.lean`'s private `specsDecl`, for comparison only — NOT the
@@ -643,35 +407,6 @@ theorem traverseAxes_const_eq_specsDecl (d : Decl) :
   | tensor nm ax => exact core ax
   | predicate nm ax => exact core ax
   | linear nm ax b => exact core ax
-  | axis ax n => rfl
-
-/-- Remap: instantiating `traverseAxes` at `Id` with `g := AxisSpec.mapUID f` should reproduce
-    `Decl.mapUID`. FULLY UNCONDITIONAL, matching `LHSSlot`'s and `IdxExpr`'s precedent — because
-    `Decl.mapUID` is flat/non-partial and its only dependency, `AxisSpec.mapUID`, carries no
-    `partial def`/self-recursion wall anywhere in its own chain. Note `Traversable.traverse`'s
-    own implicit applicative-functor parameter is named `m`, not `f` — this only matters when
-    calling it directly (as here), not through a node-level `traverseAxes` wrapper. -/
-theorem traverseAxes_id_eq_declMapUID (f : UData → UData) (d : Decl) :
-    Decl.traverseAxes (f := Id) (AxisSpec.mapUID f) d = Decl.mapUID f d := by
-  have core : ∀ ys : List AxisSpec,
-      Traversable.traverse (m := Id) (AxisSpec.mapUID f) ys = ys.map (AxisSpec.mapUID f) := by
-    intro ys
-    induction ys with
-    | nil => rfl
-    | cons hd tl ih =>
-        simp only [List.traverse_cons]
-        rw [ih]
-        rfl
-  cases d with
-  | tensor nm ax =>
-      show Decl.tensor nm (Traversable.traverse (m := Id) (AxisSpec.mapUID f) ax) = Decl.tensor nm (ax.map (AxisSpec.mapUID f))
-      rw [core ax]
-  | predicate nm ax =>
-      show Decl.predicate nm (Traversable.traverse (m := Id) (AxisSpec.mapUID f) ax) = Decl.predicate nm (ax.map (AxisSpec.mapUID f))
-      rw [core ax]
-  | linear nm ax b =>
-      show Decl.linear nm (Traversable.traverse (m := Id) (AxisSpec.mapUID f) ax) b = Decl.linear nm (ax.map (AxisSpec.mapUID f)) b
-      rw [core ax]
   | axis ax n => rfl
 
 -- ===== TLProgram =====
@@ -715,45 +450,5 @@ theorem traverseAxes_const_eq_specsProgram (p : TLProgram) :
       (Traversable.traverse (Stmt.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩)) p.stmts).run
     = p.decls.flatMap specsDecl' ++ p.stmts.flatMap specsStmt'
   rw [coreD p.decls, coreS p.stmts]
-
-/-- Remap: instantiating `traverseAxes` at `Id` with `g := AxisSpec.mapUID f` should reproduce
-    the REAL `TermTraversable.traverseUID f p` — not a named `TLProgram.mapUID` (which does not
-    exist; `TLProgram`'s remap logic is written inline in its `TermTraversable` instance,
-    `Traverse.lean:79-80`) and not a hand-copied local. CONDITIONAL on exactly ONE hypothesis,
-    about `p.stmts` (`∀ s ∈ p.stmts, ...`) — `p.decls` needs no hypothesis at all, since
-    `Decl`'s own remap (`traverseAxes_id_eq_declMapUID`) is already fully unconditional. The
-    `stmts` hypothesis mirrors `ProdTerm`'s own "if every element in the list individually
-    satisfies its own remap equality, the list-level equality follows" pattern, generalized from
-    `List Factor` to `List Stmt` via explicit list membership. -/
-theorem traverseAxes_id_eq_tlProgramMapUID (f : UData → UData) (p : TLProgram)
-    (hstmts : ∀ s ∈ p.stmts, Stmt.traverseAxes (f := Id) (AxisSpec.mapUID f) s = Stmt.mapUID f s) :
-    TLProgram.traverseAxes (f := Id) (AxisSpec.mapUID f) p = TermTraversable.traverseUID f p := by
-  have coreD : Traversable.traverse (Decl.traverseAxes (f := Id) (AxisSpec.mapUID f)) p.decls = p.decls.map (Decl.mapUID f) := by
-    have core : ∀ ds : List Decl,
-        Traversable.traverse (Decl.traverseAxes (f := Id) (AxisSpec.mapUID f)) ds = ds.map (Decl.mapUID f) := by
-      intro ds
-      induction ds with
-      | nil => rfl
-      | cons hd tl ih =>
-          simp only [List.traverse_cons]
-          rw [traverseAxes_id_eq_declMapUID f hd, ih]
-          rfl
-    exact core p.decls
-  have coreS : Traversable.traverse (Stmt.traverseAxes (f := Id) (AxisSpec.mapUID f)) p.stmts = p.stmts.map (Stmt.mapUID f) := by
-    have core : ∀ ss : List Stmt, (∀ s ∈ ss, Stmt.traverseAxes (f := Id) (AxisSpec.mapUID f) s = Stmt.mapUID f s) →
-        Traversable.traverse (Stmt.traverseAxes (f := Id) (AxisSpec.mapUID f)) ss = ss.map (Stmt.mapUID f) := by
-      intro ss hss
-      induction ss with
-      | nil => rfl
-      | cons hd tl ih =>
-          simp only [List.traverse_cons]
-          rw [hss hd List.mem_cons_self, ih (fun s hs => hss s (List.mem_cons_of_mem hd hs))]
-          rfl
-    exact core p.stmts hstmts
-  show (fun decls stmts => ({ decls := decls, stmts := stmts } : TLProgram))
-      (Traversable.traverse (Decl.traverseAxes (f := Id) (AxisSpec.mapUID f)) p.decls)
-      (Traversable.traverse (Stmt.traverseAxes (f := Id) (AxisSpec.mapUID f)) p.stmts)
-    = { decls := p.decls.map (Decl.mapUID f), stmts := p.stmts.map (Stmt.mapUID f) }
-  rw [coreD, coreS]
 
 end LeanNCD

@@ -1,5 +1,6 @@
 -- LeanNCD/DSL/Traverse.lean
 import LeanNCD.DSL.Ast
+import LeanNCD.DSL.TraverseAxes
 import LeanNCD.Exec.Traversable
 
 namespace LeanNCD
@@ -11,72 +12,66 @@ def AxisSpec.mapUID (f : UData → UData) (a : AxisSpec) : AxisSpec :=
 instance : TermTraversable AxisSpec where
   traverseUID f a := AxisSpec.mapUID f a
 
-partial def IdxExpr.mapUID (f : UData → UData) : IdxExpr → IdxExpr
-  | .axis a       => .axis (AxisSpec.mapUID f a)
-  | .const n      => .const n
-  | .scale n a    => .scale n (AxisSpec.mapUID f a)
-  | .shift a n    => .shift (AxisSpec.mapUID f a) n
-  | .affine n xs  => .affine n (xs.map (fun (c, a) => (c, AxisSpec.mapUID f a)))
+/-- The `Id` instantiation of `IdxExpr.traverseAxes`. -/
+def IdxExpr.mapUID (f : UData → UData) (e : IdxExpr) : IdxExpr :=
+  IdxExpr.traverseAxes (f := Id) (AxisSpec.mapUID f) e
+
 instance : TermTraversable IdxExpr where traverseUID := IdxExpr.mapUID
 
-partial def PredArith.mapUID (f : UData → UData) : PredArith → PredArith
-  | .embed e  => .embed (IdxExpr.mapUID f e)
-  | .mul a b  => .mul (PredArith.mapUID f a) (PredArith.mapUID f b)
-  | .iabs a   => .iabs (PredArith.mapUID f a)
+/-- The `ConstL`-free `Id` instantiation of `PredArith.traverseAxes`. -/
+def PredArith.mapUID (f : UData → UData) (e : PredArith) : PredArith :=
+  PredArith.traverseAxes (f := Id) (AxisSpec.mapUID f) e
+
 instance : TermTraversable PredArith where traverseUID := PredArith.mapUID
 
-partial def BoolExpr.mapUID (f : UData → UData) : BoolExpr → BoolExpr
-  | .rel op a b => .rel op (PredArith.mapUID f a) (PredArith.mapUID f b)
-  | .and a b    => .and (BoolExpr.mapUID f a) (BoolExpr.mapUID f b)
-  | .or  a b    => .or  (BoolExpr.mapUID f a) (BoolExpr.mapUID f b)
-  | .not a      => .not (BoolExpr.mapUID f a)
-  | .ieq a b    => .ieq (PredArith.mapUID f a) (PredArith.mapUID f b)
+/-- The `ConstL`-free `Id` instantiation of `BoolExpr.traverseAxes`. -/
+def BoolExpr.mapUID (f : UData → UData) (e : BoolExpr) : BoolExpr :=
+  BoolExpr.traverseAxes (f := Id) (AxisSpec.mapUID f) e
+
 instance : TermTraversable BoolExpr where traverseUID := BoolExpr.mapUID
 
-def Nonlin.mapUID (f : UData → UData) : Nonlin → Nonlin
-  | .identity      => .identity
-  | .relu          => .relu
-  | .sigmoid       => .sigmoid
-  | .tanh          => .tanh
-  | .gelu          => .gelu
-  | .leakyrelu     => .leakyrelu
-  | .softmax m     => .softmax (m.map (BoolExpr.mapUID f))
-  | .normalize m   => .normalize (m.map (BoolExpr.mapUID f))
-  | .l2normalize m => .l2normalize (m.map (BoolExpr.mapUID f))
+/-- The `Id` instantiation of `Nonlin.traverseAxes`. -/
+def Nonlin.mapUID (f : UData → UData) (n : Nonlin) : Nonlin :=
+  Nonlin.traverseAxes (f := Id) (AxisSpec.mapUID f) n
 
-def Factor.mapUID (f : UData → UData) : Factor → Factor
-  | .read nm es => .read nm (es.map (IdxExpr.mapUID f))
-  | .iverson b  => .iverson (BoolExpr.mapUID f b)
-  | .unaryFn op nm es => .unaryFn op nm (es.map (IdxExpr.mapUID f))
+/-- The `Id` instantiation of `Factor.traverseAxes`. -/
+def Factor.mapUID (f : UData → UData) (x : Factor) : Factor :=
+  Factor.traverseAxes (f := Id) (AxisSpec.mapUID f) x
 
+/-- The `Id` instantiation of `ProdTerm.traverseAxes`. -/
 def ProdTerm.mapUID (f : UData → UData) (p : ProdTerm) : ProdTerm :=
-  { factors := p.factors.map (Factor.mapUID f) }
+  ProdTerm.traverseAxes (f := Id) (AxisSpec.mapUID f) p
+
+/-- The `Id` instantiation of `SumExpr.traverseAxes`. -/
 def SumExpr.mapUID (f : UData → UData) (s : SumExpr) : SumExpr :=
-  { terms := s.terms.map (ProdTerm.mapUID f) }
+  SumExpr.traverseAxes (f := Id) (AxisSpec.mapUID f) s
+
+/-- The `Id` instantiation of `RHSExpr.traverseAxesWithMask` (mask included, matching
+    `specsRHS`/`RHSExpr.mapUID`'s always-remap-the-mask semantics). -/
 def RHSExpr.mapUID (f : UData → UData) (r : RHSExpr) : RHSExpr :=
-  { body := SumExpr.mapUID f r.body, nonlin := Nonlin.mapUID f r.nonlin, agg := r.agg }
+  RHSExpr.traverseAxesWithMask (f := Id) (AxisSpec.mapUID f) r
 
-def LHSSlot.mapUID (f : UData → UData) : LHSSlot → LHSSlot
-  | .free a     => .free (AxisSpec.mapUID f a)
-  | .freeNorm a => .freeNorm (AxisSpec.mapUID f a)
-  | .iterAt a n => .iterAt (AxisSpec.mapUID f a) n
-  | .iterNext a => .iterNext (AxisSpec.mapUID f a)
-  | .affine e   => .affine (IdxExpr.mapUID f e)
+/-- The `Id` instantiation of `LHSSlot.traverseAxes`. -/
+def LHSSlot.mapUID (f : UData → UData) (s : LHSSlot) : LHSSlot :=
+  LHSSlot.traverseAxes (f := Id) (AxisSpec.mapUID f) s
 
-def Decl.mapUID (f : UData → UData) : Decl → Decl
-  | .tensor nm ax        => .tensor nm (ax.map (AxisSpec.mapUID f))
-  | .predicate nm ax     => .predicate nm (ax.map (AxisSpec.mapUID f))
-  | .linear nm ax b      => .linear nm (ax.map (AxisSpec.mapUID f)) b
-  | .axis ax n           => .axis (AxisSpec.mapUID f ax) n
+/-- The `Id` instantiation of `Decl.traverseAxes`. -/
+def Decl.mapUID (f : UData → UData) (d : Decl) : Decl :=
+  Decl.traverseAxes (f := Id) (AxisSpec.mapUID f) d
 instance : TermTraversable Decl where traverseUID := Decl.mapUID
 
-def Stmt.mapUID (f : UData → UData) : Stmt → Stmt
-  | .assign nm ls r      => .assign nm (ls.map (LHSSlot.mapUID f)) (RHSExpr.mapUID f r)
-  | .scatter nm ls r o   => .scatter nm (ls.map (LHSSlot.mapUID f)) (RHSExpr.mapUID f r) o
-  | .recurMorphism nm ax tc => .recurMorphism nm (AxisSpec.mapUID f ax) tc
+/-- The `Id` instantiation of `Stmt.traverseAxes` (mask included via
+    `RHSExpr.traverseAxesWithMask`, matching the always-remap-the-mask semantics). -/
+def Stmt.mapUID (f : UData → UData) (s : Stmt) : Stmt :=
+  Stmt.traverseAxes (f := Id) (AxisSpec.mapUID f) s
+
 instance : TermTraversable Stmt where traverseUID := Stmt.mapUID
 
+/-- The `Id` instantiation of `TLProgram.traverseAxes`. -/
+def TLProgram.mapUID (f : UData → UData) (p : TLProgram) : TLProgram :=
+  TLProgram.traverseAxes (f := Id) (AxisSpec.mapUID f) p
+
 instance : TermTraversable TLProgram where
-  traverseUID f p := { decls := p.decls.map (Decl.mapUID f), stmts := p.stmts.map (Stmt.mapUID f) }
+  traverseUID f p := TLProgram.mapUID f p
 
 end LeanNCD
