@@ -120,21 +120,95 @@ theorem BoolExpr.mapUID_eq_old (f : UData → UData) (e : BoolExpr) :
 
 instance : TermTraversable BoolExpr where traverseUID := BoolExpr.mapUID
 
-def Nonlin.mapUID (f : UData → UData) : Nonlin → Nonlin
+-- Temporary scaffolding for `Nonlin.mapUID_eq_old` below; slated for removal in the
+-- Task 7 cleanup once all `mapUID` callers are migrated.
+def Nonlin.mapUID_old (f : UData → UData) : Nonlin → Nonlin
   | .identity      => .identity
   | .relu          => .relu
   | .sigmoid       => .sigmoid
   | .tanh          => .tanh
   | .gelu          => .gelu
   | .leakyrelu     => .leakyrelu
-  | .softmax m     => .softmax (m.map (BoolExpr.mapUID f))
-  | .normalize m   => .normalize (m.map (BoolExpr.mapUID f))
-  | .l2normalize m => .l2normalize (m.map (BoolExpr.mapUID f))
+  | .softmax m     => .softmax (m.map (BoolExpr.mapUID_old f))
+  | .normalize m   => .normalize (m.map (BoolExpr.mapUID_old f))
+  | .l2normalize m => .l2normalize (m.map (BoolExpr.mapUID_old f))
 
-def Factor.mapUID (f : UData → UData) : Factor → Factor
-  | .read nm es => .read nm (es.map (IdxExpr.mapUID f))
-  | .iverson b  => .iverson (BoolExpr.mapUID f b)
-  | .unaryFn op nm es => .unaryFn op nm (es.map (IdxExpr.mapUID f))
+/-- The `Id` instantiation of `Nonlin.traverseAxes`. -/
+def Nonlin.mapUID (f : UData → UData) (n : Nonlin) : Nonlin :=
+  Nonlin.traverseAxes (f := Id) (AxisSpec.mapUID f) n
+
+theorem Nonlin.mapUID_eq_old (f : UData → UData) (n : Nonlin) :
+    Nonlin.mapUID f n = Nonlin.mapUID_old f n := by
+  cases n with
+  | identity => rfl
+  | relu => rfl
+  | sigmoid => rfl
+  | tanh => rfl
+  | gelu => rfl
+  | leakyrelu => rfl
+  | softmax m =>
+      cases m with
+      | none => rfl
+      | some b =>
+          simp only [Nonlin.mapUID, Nonlin.traverseAxes, Nonlin.mapUID_old]
+          show (Nonlin.softmax (some (BoolExpr.mapUID f b)) : Id Nonlin)
+            = Nonlin.softmax (some (BoolExpr.mapUID_old f b))
+          rw [BoolExpr.mapUID_eq_old f b]
+  | normalize m =>
+      cases m with
+      | none => rfl
+      | some b =>
+          simp only [Nonlin.mapUID, Nonlin.traverseAxes, Nonlin.mapUID_old]
+          show (Nonlin.normalize (some (BoolExpr.mapUID f b)) : Id Nonlin)
+            = Nonlin.normalize (some (BoolExpr.mapUID_old f b))
+          rw [BoolExpr.mapUID_eq_old f b]
+  | l2normalize m =>
+      cases m with
+      | none => rfl
+      | some b =>
+          simp only [Nonlin.mapUID, Nonlin.traverseAxes, Nonlin.mapUID_old]
+          show (Nonlin.l2normalize (some (BoolExpr.mapUID f b)) : Id Nonlin)
+            = Nonlin.l2normalize (some (BoolExpr.mapUID_old f b))
+          rw [BoolExpr.mapUID_eq_old f b]
+
+-- Temporary scaffolding for `Factor.mapUID_eq_old` below; slated for removal in the
+-- Task 7 cleanup once all `mapUID` callers are migrated.
+def Factor.mapUID_old (f : UData → UData) : Factor → Factor
+  | .read nm es => .read nm (es.map (IdxExpr.mapUID_old f))
+  | .iverson b  => .iverson (BoolExpr.mapUID_old f b)
+  | .unaryFn op nm es => .unaryFn op nm (es.map (IdxExpr.mapUID_old f))
+
+/-- The `Id` instantiation of `Factor.traverseAxes`. -/
+def Factor.mapUID (f : UData → UData) (x : Factor) : Factor :=
+  Factor.traverseAxes (f := Id) (AxisSpec.mapUID f) x
+
+theorem Factor.mapUID_eq_old (f : UData → UData) (x : Factor) :
+    Factor.mapUID f x = Factor.mapUID_old f x := by
+  cases x with
+  | read nm es =>
+      simp only [Factor.mapUID, Factor.traverseAxes, Factor.mapUID_old]
+      show Factor.read nm (Traversable.traverse (IdxExpr.traverseAxes (f := Id) (AxisSpec.mapUID f)) es)
+        = Factor.read nm (es.map (IdxExpr.mapUID_old f))
+      have hEq : (IdxExpr.traverseAxes (f := Id) (AxisSpec.mapUID f) : IdxExpr → Id IdxExpr)
+          = pure ∘ IdxExpr.mapUID_old f := by
+        funext e
+        exact IdxExpr.mapUID_eq_old f e
+      simp only [Traversable.traverse, hEq, List.traverse_eq_map_id]
+      rfl  -- collapses the `Id` applicative `<$>` (reducible-transparency `rw` won't)
+  | iverson b =>
+      simp only [Factor.mapUID, Factor.traverseAxes, Factor.mapUID_old]
+      show (Factor.iverson (BoolExpr.mapUID f b) : Id Factor) = Factor.iverson (BoolExpr.mapUID_old f b)
+      rw [BoolExpr.mapUID_eq_old f b]
+  | unaryFn op nm es =>
+      simp only [Factor.mapUID, Factor.traverseAxes, Factor.mapUID_old]
+      show Factor.unaryFn op nm (Traversable.traverse (IdxExpr.traverseAxes (f := Id) (AxisSpec.mapUID f)) es)
+        = Factor.unaryFn op nm (es.map (IdxExpr.mapUID_old f))
+      have hEq : (IdxExpr.traverseAxes (f := Id) (AxisSpec.mapUID f) : IdxExpr → Id IdxExpr)
+          = pure ∘ IdxExpr.mapUID_old f := by
+        funext e
+        exact IdxExpr.mapUID_eq_old f e
+      simp only [Traversable.traverse, hEq, List.traverse_eq_map_id]
+      rfl  -- collapses the `Id` applicative `<$>` (reducible-transparency `rw` won't)
 
 def ProdTerm.mapUID (f : UData → UData) (p : ProdTerm) : ProdTerm :=
   { factors := p.factors.map (Factor.mapUID f) }
