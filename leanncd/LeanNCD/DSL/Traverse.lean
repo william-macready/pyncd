@@ -282,19 +282,68 @@ theorem RHSExpr.mapUID_eq_old (f : UData → UData) (r : RHSExpr) :
     = { body := SumExpr.mapUID_old f r.body, nonlin := Nonlin.mapUID_old f r.nonlin, agg := r.agg }
   rw [SumExpr.mapUID_eq_old f r.body, Nonlin.mapUID_eq_old f r.nonlin]
 
-def LHSSlot.mapUID (f : UData → UData) : LHSSlot → LHSSlot
+-- Temporary scaffolding for `LHSSlot.mapUID_eq_old` below; slated for removal in the
+-- Task 7 cleanup once all `mapUID` callers are migrated.
+def LHSSlot.mapUID_old (f : UData → UData) : LHSSlot → LHSSlot
   | .free a     => .free (AxisSpec.mapUID f a)
   | .freeNorm a => .freeNorm (AxisSpec.mapUID f a)
   | .iterAt a n => .iterAt (AxisSpec.mapUID f a) n
   | .iterNext a => .iterNext (AxisSpec.mapUID f a)
-  | .affine e   => .affine (IdxExpr.mapUID f e)
+  | .affine e   => .affine (IdxExpr.mapUID_old f e)
 
-def Decl.mapUID (f : UData → UData) : Decl → Decl
+/-- The `Id` instantiation of `LHSSlot.traverseAxes`. -/
+def LHSSlot.mapUID (f : UData → UData) (s : LHSSlot) : LHSSlot :=
+  LHSSlot.traverseAxes (f := Id) (AxisSpec.mapUID f) s
+
+theorem LHSSlot.mapUID_eq_old (f : UData → UData) (s : LHSSlot) :
+    LHSSlot.mapUID f s = LHSSlot.mapUID_old f s := by
+  cases s with
+  | free a => rfl
+  | freeNorm a => rfl
+  | iterAt a n => rfl
+  | iterNext a => rfl
+  | affine e =>
+      simp only [LHSSlot.mapUID, LHSSlot.traverseAxes, LHSSlot.mapUID_old]
+      show (LHSSlot.affine <$> IdxExpr.mapUID f e : Id LHSSlot) = LHSSlot.affine (IdxExpr.mapUID_old f e)
+      rw [IdxExpr.mapUID_eq_old f e]
+      rfl  -- collapses the `Id` applicative `<$>` (reducible-transparency `rw` won't)
+
+-- Temporary scaffolding for `Decl.mapUID_eq_old` below; slated for removal in the
+-- Task 7 cleanup once all `mapUID` callers are migrated.
+def Decl.mapUID_old (f : UData → UData) : Decl → Decl
   | .tensor nm ax        => .tensor nm (ax.map (AxisSpec.mapUID f))
   | .predicate nm ax     => .predicate nm (ax.map (AxisSpec.mapUID f))
   | .linear nm ax b      => .linear nm (ax.map (AxisSpec.mapUID f)) b
   | .axis ax n           => .axis (AxisSpec.mapUID f ax) n
+
+/-- The `Id` instantiation of `Decl.traverseAxes`. -/
+def Decl.mapUID (f : UData → UData) (d : Decl) : Decl :=
+  Decl.traverseAxes (f := Id) (AxisSpec.mapUID f) d
 instance : TermTraversable Decl where traverseUID := Decl.mapUID
+
+theorem Decl.mapUID_eq_old (f : UData → UData) (d : Decl) :
+    Decl.mapUID f d = Decl.mapUID_old f d := by
+  have hMap : ∀ ys : List AxisSpec,
+      Traversable.traverse (m := Id) (AxisSpec.mapUID f) ys = ys.map (AxisSpec.mapUID f) := by
+    intro ys
+    show List.traverse ((pure : AxisSpec → Id AxisSpec) ∘ AxisSpec.mapUID f) ys
+      = ys.map (AxisSpec.mapUID f)
+    rw [List.traverse_eq_map_id]
+    rfl  -- collapses the `Id` applicative `pure` (reducible-transparency `rw` won't)
+  cases d with
+  | tensor nm ax =>
+      simp only [Decl.mapUID, Decl.traverseAxes, Decl.mapUID_old]
+      show Decl.tensor nm (Traversable.traverse (m := Id) (AxisSpec.mapUID f) ax) = Decl.tensor nm (ax.map (AxisSpec.mapUID f))
+      rw [hMap ax]
+  | predicate nm ax =>
+      simp only [Decl.mapUID, Decl.traverseAxes, Decl.mapUID_old]
+      show Decl.predicate nm (Traversable.traverse (m := Id) (AxisSpec.mapUID f) ax) = Decl.predicate nm (ax.map (AxisSpec.mapUID f))
+      rw [hMap ax]
+  | linear nm ax b =>
+      simp only [Decl.mapUID, Decl.traverseAxes, Decl.mapUID_old]
+      show Decl.linear nm (Traversable.traverse (m := Id) (AxisSpec.mapUID f) ax) b = Decl.linear nm (ax.map (AxisSpec.mapUID f)) b
+      rw [hMap ax]
+  | axis ax n => rfl
 
 def Stmt.mapUID (f : UData → UData) : Stmt → Stmt
   | .assign nm ls r      => .assign nm (ls.map (LHSSlot.mapUID f)) (RHSExpr.mapUID f r)
