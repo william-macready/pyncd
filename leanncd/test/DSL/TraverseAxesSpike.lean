@@ -278,26 +278,17 @@ theorem traverseAxes_const_eq_specsFactor (e : Factor) :
 theorem traverseAxes_id_eq_factorMapUID_read (f : UData → UData) (nm : String) (es : List IdxExpr) :
     Factor.traverseAxes (f := Id) (AxisSpec.mapUID f) (Factor.read nm es)
       = Factor.mapUID f (Factor.read nm es) := by
-  show Factor.read nm (Traversable.traverse (IdxExpr.traverseAxes (f := Id) (AxisSpec.mapUID f)) es)
-    = Factor.read nm (es.map (IdxExpr.mapUID f))
-  have hEq : (IdxExpr.traverseAxes (f := Id) (AxisSpec.mapUID f) : IdxExpr → Id IdxExpr)
-      = pure ∘ IdxExpr.mapUID f := by
-    funext x
-    exact traverseAxes_id_eq_mapUID f x
-  simp only [Traversable.traverse, hEq, List.traverse_eq_map_id]
+  -- Post-migration (E1 sub-project 3, Task 3): `Factor.mapUID` is now *defined* as this same
+  -- `traverseAxes (f := Id) (AxisSpec.mapUID f)` instantiation, so both sides are syntactically
+  -- the same term.
   rfl
 
 /-- Remap for `.unaryFn`: same shape as `.read` above, one extra untouched argument (`op`). -/
 theorem traverseAxes_id_eq_factorMapUID_unaryFn (f : UData → UData) (op : UnaryOp) (nm : String) (es : List IdxExpr) :
     Factor.traverseAxes (f := Id) (AxisSpec.mapUID f) (Factor.unaryFn op nm es)
       = Factor.mapUID f (Factor.unaryFn op nm es) := by
-  show Factor.unaryFn op nm (Traversable.traverse (IdxExpr.traverseAxes (f := Id) (AxisSpec.mapUID f)) es)
-    = Factor.unaryFn op nm (es.map (IdxExpr.mapUID f))
-  have hEq : (IdxExpr.traverseAxes (f := Id) (AxisSpec.mapUID f) : IdxExpr → Id IdxExpr)
-      = pure ∘ IdxExpr.mapUID f := by
-    funext x
-    exact traverseAxes_id_eq_mapUID f x
-  simp only [Traversable.traverse, hEq, List.traverse_eq_map_id]
+  -- Post-migration (E1 sub-project 3, Task 3): same reason as `.read` above — `Factor.mapUID`
+  -- is now defined as this `traverseAxes` instantiation, so both sides are the same term.
   rfl
 
 /- Remap for `.iverson` — NOT ATTEMPTED, confirmed blocked during design (not implementation):
