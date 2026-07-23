@@ -345,13 +345,91 @@ theorem Decl.mapUID_eq_old (f : UData → UData) (d : Decl) :
       rw [hMap ax]
   | axis ax n => rfl
 
-def Stmt.mapUID (f : UData → UData) : Stmt → Stmt
-  | .assign nm ls r      => .assign nm (ls.map (LHSSlot.mapUID f)) (RHSExpr.mapUID f r)
-  | .scatter nm ls r o   => .scatter nm (ls.map (LHSSlot.mapUID f)) (RHSExpr.mapUID f r) o
+-- Temporary scaffolding for `Stmt.mapUID_eq_old` below; slated for removal in the
+-- Task 7 cleanup once all `mapUID` callers are migrated.
+def Stmt.mapUID_old (f : UData → UData) : Stmt → Stmt
+  | .assign nm ls r      => .assign nm (ls.map (LHSSlot.mapUID_old f)) (RHSExpr.mapUID_old f r)
+  | .scatter nm ls r o   => .scatter nm (ls.map (LHSSlot.mapUID_old f)) (RHSExpr.mapUID_old f r) o
   | .recurMorphism nm ax tc => .recurMorphism nm (AxisSpec.mapUID f ax) tc
+
+/-- The `Id` instantiation of `Stmt.traverseAxes` (mask included via
+    `RHSExpr.traverseAxesWithMask`, matching `Stmt.mapUID_old`'s always-remap-the-mask
+    semantics). -/
+def Stmt.mapUID (f : UData → UData) (s : Stmt) : Stmt :=
+  Stmt.traverseAxes (f := Id) (AxisSpec.mapUID f) s
+
+theorem Stmt.mapUID_eq_old (f : UData → UData) (s : Stmt) :
+    Stmt.mapUID f s = Stmt.mapUID_old f s := by
+  have core : ∀ ys : List LHSSlot,
+      Traversable.traverse (LHSSlot.traverseAxes (f := Id) (AxisSpec.mapUID f)) ys = ys.map (LHSSlot.mapUID_old f) := by
+    intro ys
+    induction ys with
+    | nil => rfl
+    | cons hd tl ih =>
+        simp only [List.traverse_cons]
+        show (LHSSlot.mapUID f hd) :: (Traversable.traverse (LHSSlot.traverseAxes (f := Id) (AxisSpec.mapUID f)) tl)
+          = LHSSlot.mapUID_old f hd :: tl.map (LHSSlot.mapUID_old f)
+        rw [LHSSlot.mapUID_eq_old f hd, ih]
+  cases s with
+  | assign nm ls r =>
+      simp only [Stmt.mapUID, Stmt.traverseAxes, Stmt.mapUID_old]
+      show (fun ls' r' => Stmt.assign nm ls' r')
+          (Traversable.traverse (LHSSlot.traverseAxes (f := Id) (AxisSpec.mapUID f)) ls) (RHSExpr.mapUID f r)
+        = Stmt.assign nm (ls.map (LHSSlot.mapUID_old f)) (RHSExpr.mapUID_old f r)
+      rw [core ls, RHSExpr.mapUID_eq_old f r]
+  | scatter nm ls r o =>
+      simp only [Stmt.mapUID, Stmt.traverseAxes, Stmt.mapUID_old]
+      show (fun ls' r' => Stmt.scatter nm ls' r' o)
+          (Traversable.traverse (LHSSlot.traverseAxes (f := Id) (AxisSpec.mapUID f)) ls) (RHSExpr.mapUID f r)
+        = Stmt.scatter nm (ls.map (LHSSlot.mapUID_old f)) (RHSExpr.mapUID_old f r) o
+      rw [core ls, RHSExpr.mapUID_eq_old f r]
+  | recurMorphism nm ax tc => rfl
+
 instance : TermTraversable Stmt where traverseUID := Stmt.mapUID
 
+-- Temporary scaffolding for `TLProgram.mapUID_eq_old` below; slated for removal in the
+-- Task 7 cleanup once all `mapUID` callers are migrated.
+def TLProgram.mapUID_old (f : UData → UData) (p : TLProgram) : TLProgram :=
+  { decls := p.decls.map (Decl.mapUID_old f), stmts := p.stmts.map (Stmt.mapUID_old f) }
+
+/-- The `Id` instantiation of `TLProgram.traverseAxes`. -/
+def TLProgram.mapUID (f : UData → UData) (p : TLProgram) : TLProgram :=
+  TLProgram.traverseAxes (f := Id) (AxisSpec.mapUID f) p
+
+theorem TLProgram.mapUID_eq_old (f : UData → UData) (p : TLProgram) :
+    TLProgram.mapUID f p = TLProgram.mapUID_old f p := by
+  have coreD : Traversable.traverse (Decl.traverseAxes (f := Id) (AxisSpec.mapUID f)) p.decls = p.decls.map (Decl.mapUID_old f) := by
+    have core : ∀ ds : List Decl,
+        Traversable.traverse (Decl.traverseAxes (f := Id) (AxisSpec.mapUID f)) ds = ds.map (Decl.mapUID_old f) := by
+      intro ds
+      induction ds with
+      | nil => rfl
+      | cons hd tl ih =>
+          simp only [List.traverse_cons]
+          show (Decl.mapUID f hd) :: (Traversable.traverse (Decl.traverseAxes (f := Id) (AxisSpec.mapUID f)) tl)
+            = Decl.mapUID_old f hd :: tl.map (Decl.mapUID_old f)
+          rw [Decl.mapUID_eq_old f hd, ih]
+    exact core p.decls
+  have coreS : Traversable.traverse (Stmt.traverseAxes (f := Id) (AxisSpec.mapUID f)) p.stmts = p.stmts.map (Stmt.mapUID_old f) := by
+    have core : ∀ ss : List Stmt,
+        Traversable.traverse (Stmt.traverseAxes (f := Id) (AxisSpec.mapUID f)) ss = ss.map (Stmt.mapUID_old f) := by
+      intro ss
+      induction ss with
+      | nil => rfl
+      | cons hd tl ih =>
+          simp only [List.traverse_cons]
+          show (Stmt.mapUID f hd) :: (Traversable.traverse (Stmt.traverseAxes (f := Id) (AxisSpec.mapUID f)) tl)
+            = Stmt.mapUID_old f hd :: tl.map (Stmt.mapUID_old f)
+          rw [Stmt.mapUID_eq_old f hd, ih]
+    exact core p.stmts
+  simp only [TLProgram.mapUID, TLProgram.traverseAxes, TLProgram.mapUID_old]
+  show (fun decls stmts => ({ decls := decls, stmts := stmts } : TLProgram))
+      (Traversable.traverse (Decl.traverseAxes (f := Id) (AxisSpec.mapUID f)) p.decls)
+      (Traversable.traverse (Stmt.traverseAxes (f := Id) (AxisSpec.mapUID f)) p.stmts)
+    = { decls := p.decls.map (Decl.mapUID_old f), stmts := p.stmts.map (Stmt.mapUID_old f) }
+  rw [coreD, coreS]
+
 instance : TermTraversable TLProgram where
-  traverseUID f p := { decls := p.decls.map (Decl.mapUID f), stmts := p.stmts.map (Stmt.mapUID f) }
+  traverseUID f p := TLProgram.mapUID f p
 
 end LeanNCD
