@@ -385,10 +385,14 @@ def Stmt.uids (s : Stmt) : List UID := (specsStmt s).map (·.uid)
 -- lemmas above (Task B1's fusion re-derivation), not against any hand-written body. This is the
 -- sole reason for the cross-layer `LeanNCD.Eval.Contract` import + `open` at the top of the file:
 -- the statements below name the real public `idxAxisUIDs`/`predAxisUIDs`/`boolAxisUIDs`/
--- `termAxisUIDs` rather than duplicating their logic. NOTE: the six `specsX_map_uid_eq` lemmas
--- are not consumed elsewhere now — the spike's own `stmtUids` reconstruction was retired with
--- sub-project 2, and `Stmt.uids_eq` goes straight through fusion — but they are kept as the
--- kernel-checked AxisSpec↔UID correspondence for the private `specsX` collectors.
+-- `termAxisUIDs` rather than duplicating their logic. NOTE — DO NOT retire as "unused": the six
+-- `specsX_map_uid_eq` lemmas have no current consumer (the spike's `stmtUids` reconstruction was
+-- retired with sub-project 2, and `Stmt.uids_eq` goes straight through fusion), and `Stmt.uids`
+-- is the by-uid readout staged "for later phases" (see its section header, symmetric with the
+-- by-name `TLProgram.axisNames`). They are FORWARD INFRASTRUCTURE for E1's collector/mapper
+-- unification (see the E1 section in papers/restructure_suggestions.md): the `map_uid_eq`/
+-- `*AxisUidFusion` lemmas are the kernel-checked proof that the AxisSpec- and UID-collection
+-- `traverseAxes` instantiations agree node-for-node. Keep them.
 
 private theorem specsIdx_map_uid_eq (e : IdxExpr) : (specsIdx e).map (·.uid) = idxAxisUIDs e := by
   -- Both sides are `ConstL` runs of `IdxExpr.traverseAxes` — `specsIdx` at `List AxisSpec`,

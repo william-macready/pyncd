@@ -29,16 +29,21 @@
 >   SCAFFOLDING comment; rewrote the SPIKE EXCEPTION notes; closed the follow-up doc.
 >
 > **Deviation on record (see B2 commit + follow-up doc):** the six `specsX_map_uid_eq` lemmas and the
-> `specsX` production defs were **kept**, not deleted. Once the UID collectors became opaque
-> `traverseAxes` runs, `Stmt.uids_eq` stopped routing through those lemmas — but they are the only
-> remaining consumers of the sub-project-1 `specsIdx..specsLHS`/`specsDecl` defs, so deleting them would
-> orphan those production defs. **OPEN DESIGN QUESTION:** the whole AxisSpec-collecting specs-side (every
-> `specsX` except `specsStmt`, plus the 6 `map_uid_eq` lemmas) is now vestigial — nothing consumes it
-> except `Stmt.uids`/`Stmt.uids_eq`. Retiring it wholesale is a separate decision, deferred.
+> `specsX` production defs were **kept**, not deleted. `Stmt.uids_eq` now routes through the
+> `*AxisUidFusion` lemmas rather than the `map_uid_eq` lemmas, so several specs-side declarations have no
+> *current* consumer — but this is **forward infrastructure, not dead code, and should NOT be retired.**
+> Per E1's goal (see the E1 section below), the end state unifies every collector/mapper — `specs*`
+> (AxisSpec), `*AxisUIDs` (UID), `mapUID` (`Id`), and the `Exec` rebuild tower — as `traverseAxes`
+> instantiations; the `map_uid_eq`/fusion lemmas are the kernel-checked coherence proof that the
+> AxisSpec- and UID-collection instantiations agree node-for-node, and `Stmt.uids` is the by-uid readout
+> deliberately staged "for later phases" (its section header says so), symmetric with `axisNames`
+> (by-name). Retiring any of it is wasteful (Task A already paid for the fusion tower) and premature
+> (sub-project 3 + consumer convergence still pending). The only decoupled wart is the cross-layer
+> `import LeanNCD.Eval.Contract`, which resolves later by *relocating* the UID collectors, not deleting.
 >
-> **Next options:** (a) push / merge PR #2; (b) resolve the vestigial-specs-side question above;
-> (c) start sub-project 3 (`mapUID` family — see the plan's Risks/notes). Do NOT push directly — a git
-> hook blocks it (use the documented bypass or hand off to the controller).
+> **Next options:** (a) push / merge PR #2; (b) start sub-project 3 (`mapUID` family — the `Id`
+> instantiation, which completes the collector/mapper unification; see the plan's Risks/notes). Do NOT
+> push directly — a git hook blocks it (use the documented bypass or hand off to the controller).
 
 A global review of `leanncd/` (~9,200 lines of Lean across 49 modules) after the recent wave of
 feature fixes (`Factor.unaryFn` inline transcendentals, new `Nonlin` activations, `l2normalize`,

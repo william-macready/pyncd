@@ -19,12 +19,17 @@
 >
 > One deviation from the plan below: the six `specsX_map_uid_eq` lemmas were **kept**, not deleted.
 > Once sub-project 2 migrated the UID collectors (`idxAxisUIDs` etc.) to opaque `traverseAxes`
-> runs, `Stmt.uids_eq` could no longer route through those lemmas, so they are no longer consumed —
-> but deleting them would orphan the sub-project-1 `specsIdx..specsLHS`/`specsDecl` production defs
-> (they are those lemmas' only remaining consumers). They are retained as the kernel-checked
-> AxisSpec↔UID correspondence. Whether to retire the whole now-vestigial AxisSpec-collecting
-> specs-side (all `specsX` except `specsStmt`, plus the `specsX_map_uid_eq` lemmas) is a separate
-> design question, left open.
+> runs, `Stmt.uids_eq` re-routed through the `*AxisUidFusion` lemmas rather than the `map_uid_eq`
+> lemmas, so several specs-side declarations have no *current* consumer. **They are deliberately
+> retained as forward infrastructure — do NOT retire them.** E1's goal is to unify every
+> collector/mapper (`specs*`/`*AxisUIDs`/`mapUID` + the `Exec` rebuild tower) as `traverseAxes`
+> instantiations; the `map_uid_eq`/fusion lemmas are the kernel-checked coherence proof that the
+> AxisSpec- and UID-collection instantiations agree node-for-node, and the collectors are staged
+> "for later phases" (per their section header). Deleting them is wasteful (Task A paid for the
+> fusion tower) and premature (sub-project 3 `mapUID` and consumer convergence are still pending).
+> The only genuinely-decoupled item is the cross-layer `import LeanNCD.Eval.Contract`, which is
+> resolved later by *relocating* the UID collectors next to the traversal machinery, not by
+> deleting the specs-side.
 
 > If you touch the `_old`/`_eq_old` scaffolding in `Structural.lean`, read this first.
 > There is a pointer comment at the scaffolding in that file linking here.
