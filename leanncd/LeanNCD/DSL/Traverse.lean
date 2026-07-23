@@ -1,5 +1,6 @@
 -- LeanNCD/DSL/Traverse.lean
 import LeanNCD.DSL.Ast
+import LeanNCD.DSL.TraverseAxes
 import LeanNCD.Exec.Traversable
 
 namespace LeanNCD
@@ -11,12 +12,31 @@ def AxisSpec.mapUID (f : UData → UData) (a : AxisSpec) : AxisSpec :=
 instance : TermTraversable AxisSpec where
   traverseUID f a := AxisSpec.mapUID f a
 
-def IdxExpr.mapUID (f : UData → UData) : IdxExpr → IdxExpr
+def IdxExpr.mapUID_old (f : UData → UData) : IdxExpr → IdxExpr
   | .axis a       => .axis (AxisSpec.mapUID f a)
   | .const n      => .const n
   | .scale n a    => .scale n (AxisSpec.mapUID f a)
   | .shift a n    => .shift (AxisSpec.mapUID f a) n
   | .affine n xs  => .affine n (xs.map (fun (c, a) => (c, AxisSpec.mapUID f a)))
+
+def IdxExpr.mapUID (f : UData → UData) (e : IdxExpr) : IdxExpr :=
+  IdxExpr.traverseAxes (f := Id) (AxisSpec.mapUID f) e
+
+theorem IdxExpr.mapUID_eq_old (f : UData → UData) (e : IdxExpr) :
+    IdxExpr.mapUID f e = IdxExpr.mapUID_old f e := by
+  cases e with
+  | axis a => rfl
+  | const n => rfl
+  | scale c a => rfl
+  | shift a n => rfl
+  | affine n xs =>
+      have hEq : (fun (ca : Int × AxisSpec) => Prod.mk ca.1 <$> AxisSpec.mapUID f ca.2 :
+            Int × AxisSpec → Id (Int × AxisSpec))
+          = pure ∘ (fun ca => (ca.1, AxisSpec.mapUID f ca.2)) := rfl
+      simp only [IdxExpr.mapUID, IdxExpr.traverseAxes, IdxExpr.mapUID_old, Traversable.traverse,
+        hEq, List.traverse_eq_map_id]
+      rfl
+
 instance : TermTraversable IdxExpr where traverseUID := IdxExpr.mapUID
 
 def PredArith.mapUID (f : UData → UData) : PredArith → PredArith
