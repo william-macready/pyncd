@@ -176,4 +176,18 @@ def LHSSlot.outIdx : LHSSlot → IdxExpr
   | .iterAt _ n => .const n
   | .iterNext a => .shift a 1
 
+/-- Output extent of one scatter LHS slot under a sizing lookup `sz`.
+    The single home of the scatter-extent convention (upsample stride semantics —
+    deliberately not derivable from `idxAffineForm`). `none` if a source axis is unsized. -/
+def LHSSlot.outExtent (sl : LHSSlot) (sz : UID → Option Nat) : Option Nat :=
+  match sl.outIdx with
+  | .axis a       => sz a.uid
+  | .const n      => some (n + 1).toNat
+  | .scale c a    => (sz a.uid).map (fun s => (c * Int.ofNat s).toNat)
+  | .shift a c    => (sz a.uid).map (fun s => (Int.ofNat s + c).toNat)
+  | .affine c0 xs =>
+      if xs.all (fun (_, a) => (sz a.uid).isSome) then
+        some (xs.foldl (fun acc (c, a) => acc + c * Int.ofNat ((sz a.uid).getD 0)) c0).toNat
+      else none
+
 end LeanNCD
