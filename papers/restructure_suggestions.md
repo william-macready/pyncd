@@ -210,13 +210,41 @@ report `cyclicDataflow` instead of falling back. Add a reject test.
 
 ### Spike 2: one home for AST accessors and read/axis traversals
 
+> **✅ 2c/2d/2e IMPLEMENTED — branch `spike2-cde-accessor-consolidation`, PR #10 (awaiting merge; 2026-07-24).**
+> Commits `3b2a625..89f9b55` (6 refactor + 1 spec doc + 1 docstring-restore); `lake build` green (8,609 jobs)
+> at every commit; each task passed an independent spec+quality review and a whole-branch review (ready to merge).
+> Net effect: **−44 lines of Lean**; **10 duplicate/mirror functions eliminated** (`stmtName`, `stmtSlots`,
+> `Stmt.lhsSlots`, `declName`, `Stmt.nonlin`, `lhsAxisUID?`, `lhsSlotIdx`, `slotOutIdx`, `scatterOutDim`,
+> `stateShape`) onto single homes in `DSL/Ast.lean` (or, for the HashMap-bound pair, within the Eval layer).
+>
+> **Status of the five sub-items:**
+> - **2b** — subsumed by **E1** (`traverseAxes` replaced the `specs*`/`*AxisUIDs` collector towers). No separate work.
+> - **2c/2d/2e** — done on the branch above.
+> - **2a** — **still OUTSTANDING** (the read-projection family / `Factor.read?`). The only unfinished Spike-2 item.
+>
+> **Design deviations from the plan text below (deliberate, reviewed):**
+> - **2c axis accessors** unified onto a single rich primitive `LHSSlot.axisSpec? : LHSSlot → Option AxisSpec`,
+>   with `axisUID? := axisSpec?.map (·.uid)` **derived** — folding in `Stmt.lhsAxes` and `stmtLhsRank`'s inner
+>   match (a twin the doc missed). The two genuinely *selective* projections were kept distinct and **named**:
+>   `LHSSlot.freeUID?` (free-only, diagonal detection) and `LHSSlot.normUID?` (freeNorm-only, norm-axis lookup) —
+>   `UID = Nat`, so widening either would typecheck yet silently change behavior; a build alone can't catch it.
+> - **`outputShape`/`stateShape`** consolidated **within the Eval layer** (kept `outputShape`, deleted `stateShape`),
+>   *not* moved to `Ast.lean` as the 2c table says — `Ast.lean` cannot import `HashMap`.
+> - **Corrections found during execution:** `Stmt.lhsSlots` was **not** dead (18 callers in `test/Eval/`); the
+>   survey had searched only `LeanNCD/`. `Structural`'s free-only and `normAxisUidOf`'s freeNorm-only matches are
+>   intentionally selective (now `freeUID?`/`normUID?`), *not* `axisUID?` twins.
+>
+> **Deferred (per plan):** the kernel-checked equivalence certificates (E1-style `*_eq_ref` + `freeUID?`/`normUID?`
+> selectivity teeth) are specced in `docs/superpowers/specs/2026-07-24-spike2-cde-equivalence-certificates.md`;
+> `2c/2d/2e` currently rely on `lake build` + the pinned suite.
+
 The single largest duplication cluster. Root cause: `Eval/` imports only `DSL/Ast.lean`
 (deliberate layering), so pure-AST helpers that live in `Pipeline/Structural.lean` were
 re-declared in Eval — and then again inside function bodies. Fix the placement, not the
 layering: move the primitives *down* into `Ast.lean` (or a new `DSL/Collect.lean`), where
 both layers can import them.
 
-**2a. The read-projection family — 6 functions, one primitive.** Each pattern-matches
+**2a. The read-projection family — 6 functions, one primitive.** ⏳ **OUTSTANDING** (not yet done.) Each pattern-matches
 `Factor` with identical arms (`.read`/`.unaryFn` → keep name+exprs, `.iverson` → drop) and
 differs only in projection:
 
@@ -234,7 +262,7 @@ new `Factor` constructor gets classified), `RHSExpr.readFactors`, `Stmt.readFact
 become one-line projections; `Eval.Stmt.readsOf` is deleted outright. Ordering is identical
 in all six (terms in order, factors filterMapped in order) — zero behavior change.
 
-**2b. The axis-collector family — two parallel towers.** The private `specs*` family
+**2b. The axis-collector family — two parallel towers.** ✅ **DONE via E1** (`traverseAxes`). The private `specs*` family
 (`Structural.lean:26-60`, AxisSpec-valued) and the `*AxisUIDs` family
 (`Eval/Contract.lean:7-44`, UID-valued) are the same structural walks; each UID function is
 its Structural twin post-composed with `(·.uid)`. Additionally `idxAxes`
@@ -247,7 +275,7 @@ axes). Two named entry points — e.g. `RHSExpr.axes (includeNonlinMask := true/
 `axesWithMask` vs `readAxes` — not a silent flag default. A `CollectAxes` typeclass would be
 overkill; plain shared functions suffice.
 
-**2c. Accessor twins created by the layering split** — move to `Ast.lean` and delete the
+**2c. Accessor twins created by the layering split** — ✅ **DONE (PR #10).** Move to `Ast.lean` and delete the
 duplicates (all verified byte-identical or projection-trivial):
 
 | Keep (new home: Ast.lean) | Delete |
@@ -260,7 +288,7 @@ duplicates (all verified byte-identical or projection-trivial):
 | `Decl.name` | `declName` (`Eval/Contract.lean:129`) |
 | `outputShape` (one copy) | `stateShape` (`Eval/Scan.lean:81` — byte-identical body) |
 
-**2d. The most dangerous mirror: scatter extent sizing.** `scatterOutShape`
+**2d. The most dangerous mirror: scatter extent sizing.** ✅ **DONE (PR #10).** `scatterOutShape`
 (`Eval/Eval.lean:12-27`, `Except`, fail-loud) and `scatterOutDim` (`Eval/Shape.lean:386-395`,
 `Option`) implement the same 5-case per-slot extent formula, with a comment begging "MUST
 match … kept in sync by mirroring". The extent convention (`.const n ⇒ n+1`, `.scale c a ⇒
@@ -269,7 +297,7 @@ it deserves exactly one home: `LHSSlot.outExtent (sz : UID → Option Nat) : Opt
 both callers derived (`scatterOutShape` = `mapM` + `getDM (throw …)`). Deletes the mirror and
 its sync obligation (~25 lines).
 
-**2e. `Stmt.iterInfo`'s anonymous 4-tuple** (`Structural.lean:354`,
+**2e. `Stmt.iterInfo`'s anonymous 4-tuple** ✅ **DONE (PR #10).** (`Structural.lean:354`,
 `List (UID × AxisSpec × Bool × Nat)`) forces `t.2.2.1`-style accessors at 6+ sites and its
 first component is redundant (`= axis.uid`). Replace with
 `structure IterSlot where axis : AxisSpec; isRecur : Bool; pos : Nat`; `Eval/Scan.lean:10`'s
@@ -280,6 +308,12 @@ pattern that every recent feature had to hand-replicate drops to one site
 (`Factor.read?`/`Factor.axes`). Pinned by StructuralTest, LoweringTest,
 AffineShapeSolverTest, ScatterTest, ShapeTest, ScanTest, EvalExamplesTest. Do this spike
 first in Wave 2 — Spikes 3 and 4 both shrink substantially once it lands.*
+
+*Actuals (2c/2d/2e, PR #10): exactly **10 duplicate/mirror functions deleted**, **−44 lines of Lean**
+(smaller than the 150–200 estimate because the branch also adds docstrings and, in the axis-accessor
+family, more named primitives than envisioned — the `axisSpec?`-root design). The one-site mirroring
+goal is met for the axis accessors (`LHSSlot.axisSpec?`), the scatter extent (`LHSSlot.outExtent`), and
+the iter tuple (`IterSlot`). The `Factor.read?` half of that goal is **2a**, still outstanding.*
 
 ### Spike 3: make the Nonlin wildcard hazards unrepresentable
 
