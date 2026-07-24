@@ -1,49 +1,32 @@
 # leanncd restructuring suggestions
 
-> **▶ RESUME HERE — E1 sub-project 2 (`*AxisUIDs` → `traverseAxes`) is COMPLETE (checkpoint 2026-07-22).**
+> **✅ E1 "one traversal to rule the collectors" is COMPLETE and merged to `main` (2026-07-23).**
 >
-> **State:** branch `e1-production-migration-specs` (worktree `.claude/worktrees/e1-production-migration-specs`),
-> tip **`7c8738c`**; PR [#2](https://github.com/william-macready/pyncd/pull/2) open (NOT merged). Full
-> `lake build` green (8610 jobs). E1 prototype = DONE (PR #1, merged). Sub-project 1 (`specs*` family) =
-> DONE. **Sub-project 2 (`*AxisUIDs` family) = DONE** (Tasks A, B1, B2 all landed). Sub-project 3
-> (`mapUID` family) = NOT STARTED (independent; can be done next).
+> Every AST node now has a single `NodeName.traverseAxes [Applicative f] (g : AxisSpec → f AxisSpec)`,
+> instantiated three ways — `Id` (remap, `X.mapUID`), `ConstL (List AxisSpec)` (`specs*`),
+> `ConstL (List UID)` (`*AxisUIDs`) — replacing the hand-written `mapUID`/`specs*`/`*AxisUIDs` families
+> and the bespoke `TermTraversable` typeclass. `main` builds green.
 >
-> **Plan:** `docs/superpowers/specs/2026-07-17-e1-subproject2-axisuids-plan.md`.
-> **Follow-up (now DONE):** `docs/superpowers/specs/2026-07-17-e1-scaffolding-refactor-followup.md`.
+> **Merged PRs:**
 >
-> **What landed (fusion-first, green at every commit):**
+> - **#1** — E1 prototype: full-AST feasibility spike (`test/DSL/TraverseAxesSpike.lean`).
+> - **#2** — sub-projects 1 & 2: migrate `specs*` (AxisSpec) and `*AxisUIDs` (UID) collectors to `traverseAxes`.
+> - **#3** — sub-project 3: migrate the `mapUID` (remap) family to `traverseAxes @ Id`.
+> - **#4** — sub-project 4: retire the vestigial `TermTraversable` typeclass (`assignUIDs` now calls
+>   `TLProgram.mapUID`; `Exec/Traversable.lean` + unused `WithUID` deleted; no bespoke traversal
+>   abstraction and no cross-layer `Eval.Contract` import remain).
+> - **#5** — permanent Id/uid equivalence certificates (`test/DSL/TraverseAxesEquiv.lean`).
 >
-> - **Task A** (`a2d908d`): 9 per-node `<node>AxisUidFusion` lemmas in `Structural.lean` (the `Const`
->   monoid-hom fusion bridging AxisSpec and UID collection). Kernel-checked, no `sorry`.
-> - **Task B1** (`959aabd`): migrated all 5 collectors in `Eval/Contract.lean` to `ConstL (List UID)`
->   instantiations (`idx/pred/bool/termAxisUIDs` via `NodeName.traverseAxes`; **`readAxisUIDs` via
->   `traverseAxesNoMask`** — mask excluded, commented as the guardrail). `freeAxisUIDs` left unmigrated
->   (collects a subset). Re-derived `specsIdx/Factor_map_uid_eq` + `Stmt.uids_eq` via the fusion lemmas,
->   dropping all 4 `specsX_eq_old` bridges (`specsPred/Bool/Nonlin/LHS_map_uid_eq` were already
->   shape-independent-valid, left unchanged). `Stmt.uids_eq` proved straight from the traversal and its
->   axioms tightened to `[propext]` (old proof pulled `Quot.sound`). Also **retired the redundant
->   `*AxisUIDs`-direction block in `test/DSL/TraverseAxesSpike.lean`** (migrating the collectors broke
->   the spike theorems that referenced production directly; superseded by the production `_eq_old`
->   proofs) — specs/mapUID spike theorems untouched.
-> - **Task B2** (`7c8738c`): deleted all 9 `_old`/`_eq_old` pairs (4 specs-side + 5 UID-side), the
->   SCAFFOLDING comment; rewrote the SPIKE EXCEPTION notes; closed the follow-up doc.
+> **Standing, kernel-checked, per-node equivalence certificates (all three directions):**
+> `traverseAxes_const_eq_specs*` (12, specs) in `TraverseAxesSpike.lean`; `*.mapUID_eq_ref` (12, remap)
+> and `*AxisUIDs_eq_ref` (5 public uid collectors) in `TraverseAxesEquiv.lean` — each proves the
+> production `traverseAxes`-instantiation equals an independent hand-written reference
+> (`[propext, Quot.sound]` or fewer; no `sorry`). The `*AxisUidFusion` lemmas in `Structural.lean`
+> additionally prove specs↔uid agreement per node.
 >
-> **Deviation on record (see B2 commit + follow-up doc):** the six `specsX_map_uid_eq` lemmas and the
-> `specsX` production defs were **kept**, not deleted. `Stmt.uids_eq` now routes through the
-> `*AxisUidFusion` lemmas rather than the `map_uid_eq` lemmas, so several specs-side declarations have no
-> *current* consumer — but this is **forward infrastructure, not dead code, and should NOT be retired.**
-> Per E1's goal (see the E1 section below), the end state unifies every collector/mapper — `specs*`
-> (AxisSpec), `*AxisUIDs` (UID), `mapUID` (`Id`), and the `Exec` rebuild tower — as `traverseAxes`
-> instantiations; the `map_uid_eq`/fusion lemmas are the kernel-checked coherence proof that the
-> AxisSpec- and UID-collection instantiations agree node-for-node, and `Stmt.uids` is the by-uid readout
-> deliberately staged "for later phases" (its section header says so), symmetric with `axisNames`
-> (by-name). Retiring any of it is wasteful (Task A already paid for the fusion tower) and premature
-> (sub-project 3 + consumer convergence still pending). The only decoupled wart is the cross-layer
-> `import LeanNCD.Eval.Contract`, which resolves later by *relocating* the UID collectors, not deleting.
->
-> **Next options:** (a) push / merge PR #2; (b) start sub-project 3 (`mapUID` family — the `Id`
-> instantiation, which completes the collector/mapper unification; see the plan's Risks/notes). Do NOT
-> push directly — a git hook blocks it (use the documented bypass or hand off to the controller).
+> **Design/plan docs:** `docs/superpowers/specs/2026-07-1{5,6,7}-e1-*` (prototype slices; sub-project 1/2/3/4
+> plans; scaffolding-refactor follow-up [DONE]; mapUID go/no-go spike). See the [E1](#e1-one-traversal-to-rule-the-collectors-van-laarhoven)
+> section below for the original vision. No E1 follow-on work is outstanding.
 
 A global review of `leanncd/` (~9,200 lines of Lean across 49 modules) after the recent wave of
 feature fixes (`Factor.unaryFn` inline transcendentals, new `Nonlin` activations, `l2normalize`,
