@@ -127,15 +127,24 @@ structure TLProgram where
 
 /- ── AST accessors (shared by the DSL pipeline and Eval layers) ── -/
 
+/-- The declaration's tensor name. (`axis` decls name an AXIS, not a tensor; `resolveDecls`
+    skips them when building the tensor-keyed `DeclEnv`.) -/
 def Decl.name : Decl → String
   | .tensor n _ => n | .predicate n _ => n | .linear n _ _ => n | .axis ax _ => ax.name
 
+/-- The tensor name a stmt writes to (its LHS). -/
 def Stmt.lhsName : Stmt → String
   | .assign n _ _ => n | .scatter n _ _ _ => n | .recurMorphism n _ _ => n
 
+/-- The LHS slots of a statement. -/
 def Stmt.slots : Stmt → List LHSSlot
   | .assign _ ls _ => ls | .scatter _ ls _ _ => ls | .recurMorphism _ _ _ => []
 
+/-- The nonlinearity wrapping a stmt's step. A `recurMorphism` is pre-built (already-lowered),
+    so it is affine-neutral (`identity`). Used by `finalizeScans` to detect ScanAffine (Prop 8.7):
+    a scan whose every recurrence stmt is `identity`-nonlin carries no nonlinearity and is thus
+    associative/parallel-prefix-able. This MUST be checked here (pre-`splitNonlins`), since
+    `splitNonlins` later lifts nonlinearities out of `RHSExpr.nonlin` into separate steps. -/
 def Stmt.nonlinOf : Stmt → Nonlin
   | .assign _ _ r => r.nonlin
   | .scatter _ _ r _ => r.nonlin
