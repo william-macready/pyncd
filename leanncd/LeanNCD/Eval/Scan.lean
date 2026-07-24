@@ -63,14 +63,6 @@ def writeSliceAtMulti (out : DenseTensor) (iters : List (Nat × Nat)) (slice : D
     let ocoord := sorted.foldl (fun acc (pos, idx) => acc.insertIdx pos idx) scoord
     cur.set! ocoord (slice.get! scoord)) out
 
-/-- The full state-tensor shape for a name produced by base/recur slots: each slot position holds
-    the size of its axis (slot order). For an iteration slot this size IS the axis's length `L`
-    (`sizes[uid]` equals the declared axis size); for a free slot it is that free axis's size. -/
-def stateShape (sizes : HashMap UID Nat) (slots : List LHSSlot) : List Nat :=
-  slots.map (fun sl => match sl.axisUID? with
-    | some u => (sizes[u]?).getD 0
-    | none   => 0)
-
 /-- Evaluate a ScanStmt → the scanned state tensors. Multi-axis (n-D) scans iterate the cartesian
     product of `[0 … L_a − 2]` over every advancing axis. Boundary semantics (zero-default): the
     step writes only fully-advanced cells (every advancing index `+1 ≥ 1`); boundary cells (any
@@ -89,7 +81,7 @@ def evalScan (env : HashMap String DenseTensor) (sizes : HashMap UID Nat) :
       let mut work := env
       for s in base do
         match s with
-        | .assign nm slots _ => work := work.insert nm (DenseTensor.zeros (stateShape sizes slots))
+        | .assign nm slots _ => work := work.insert nm (DenseTensor.zeros (outputShape sizes slots))
         | _ => throw "evalScan: base stmts must be assigns"
       -- 2. fill boundaries from base stmts: each base pins a subset of axes to their literal index
       --    and fills that slice over its free axes (e.g. `G[r,0]` fills the c=0 column for all r).
