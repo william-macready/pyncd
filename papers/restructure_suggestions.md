@@ -220,7 +220,7 @@ report `cyclicDataflow` instead of falling back. Add a reject test.
 > **Status of the five sub-items:**
 > - **2b** — subsumed by **E1** (`traverseAxes` replaced the `specs*`/`*AxisUIDs` collector towers). No separate work.
 > - **2c/2d/2e** — done on the branch above.
-> - **2a** — **still OUTSTANDING** (the read-projection family / `Factor.read?`). The only unfinished Spike-2 item.
+> - **2a** — ✅ **DONE** via Approach D (`Factor.read?` classifier — a plain filterMap, not a traversal; reads need collection only). All of Spike 2 is now complete.
 >
 > **Design deviations from the plan text below (deliberate, reviewed):**
 > - **2c axis accessors** unified onto a single rich primitive `LHSSlot.axisSpec? : LHSSlot → Option AxisSpec`,
@@ -244,7 +244,7 @@ re-declared in Eval — and then again inside function bodies. Fix the placement
 layering: move the primitives *down* into `Ast.lean` (or a new `DSL/Collect.lean`), where
 both layers can import them.
 
-**2a. The read-projection family — 6 functions, one primitive.** ⏳ **OUTSTANDING** (not yet done.) Each pattern-matches
+**2a. The read-projection family — 6 functions, one primitive.** ✅ **DONE (Approach D — `Factor.read?`).** Each pattern-matches
 `Factor` with identical arms (`.read`/`.unaryFn` → keep name+exprs, `.iverson` → drop) and
 differs only in projection:
 
@@ -313,7 +313,7 @@ first in Wave 2 — Spikes 3 and 4 both shrink substantially once it lands.*
 (smaller than the 150–200 estimate because the branch also adds docstrings and, in the axis-accessor
 family, more named primitives than envisioned — the `axisSpec?`-root design). The one-site mirroring
 goal is met for the axis accessors (`LHSSlot.axisSpec?`), the scatter extent (`LHSSlot.outExtent`), and
-the iter tuple (`IterSlot`). The `Factor.read?` half of that goal is **2a**, still outstanding.*
+the iter tuple (`IterSlot`). The `Factor.read?` half of that goal is **2a**, now also **done via Approach D** — `Factor.read?` + `readFactors` collapse the six read functions and delete the `Stmt.readsOf` duplicate; all of Spike 2 is complete.*
 
 ### Spike 3: make the Nonlin wildcard hazards unrepresentable
 
@@ -709,7 +709,7 @@ spikes they protect or reshape, and the rest are genuinely independent — pull 
 
 | Idea | Relationship to Part I | When to act |
 | ---- | ---------------------- | ----------- |
-| **E1** (one traversal) | **Replaces** Spike 2a/2b if the prototype succeeds; makes `TermTraversable` its `Id` case | *At Spike 2* — prototype E1 first; commit to the shared-functions form (2a/2b) only if it fails. Deciding this after 2a/2b lands wastes that work. |
+| **E1** (one traversal) | ✅ **Landed** — replaced **2b** (the axis-collector towers) plus `mapUID` and `TermTraversable` (its `Id` case). **2a** (reads) was *not* subsumed — `traverseAxes` focuses on `AxisSpec`, so a read's tensor name never reaches the effect — and was done separately via **Approach D** (`Factor.read?`). | *Done (E1 merged; 2a via Approach D).* |
 | **E12** (named simp sets) | **Folds into** Spike 6 | *During Spike 6* — register the lemmas as you consolidate them, not as a separate pass. |
 | **E3** (semiring) | **Depends on** Spike 4a/4b — it is their payoff (`unit1` threaded, one evaluator body) | *After Spike 4.* Not a competitor to Spike 4; do not attempt before it. |
 | **E10** (codegen) | **Depends on** E4 (its `EvalPlan` is ~80% of the specialization) | *After E4*, and only once the Python-target work is actually scheduled. |
@@ -751,7 +751,7 @@ Phase 0  — zero-dep, start now, run in parallel
 
 Phase 1  — foundational structural spike (executable track)
   E1             prototype the one-traversal encoding   ← decides the shape of Spike 2
-  Spike 2        AST accessors/traversals — as 2a/2b, OR replaced by E1 if the prototype lands
+  Spike 2        AST accessors/traversals — DONE: 2b via E1 (traverseAxes); 2c/2d/2e via PR #10; 2a via Approach D (Factor.read?)
                  (scope informed by E11's outcome)
   Spike 6a       factor toBrBaseP out of buildStep (proof track; before Spike 3)
 
@@ -805,6 +805,8 @@ on it, not just E13) — it earns its keep independent of whether E13 is ever pu
 > This does **not** yet decide E1 for `BoolExpr`/`PredArith` or the rest of the AST — see
 > `docs/superpowers/specs/2026-07-15-e1-traverseaxes-prototype-design.md` for the full go/no-go
 > criteria and what remains before committing to E1 broadly or falling back to Spike 2a/2b.
+> (**Outcome:** E1 was adopted and replaced the axis collectors, i.e. **2b**; **2a** — reads — was
+> not covered by `traverseAxes` and was done separately via Approach D, `Factor.read?`.)
 > (**Correction, since attempted:** the phrase "mutually-recursive `BoolExpr`/`PredArith` cluster"
 > above was inaccurate — `PredArith` recurses only into itself and `IdxExpr`; `BoolExpr` recurses
 > into itself and `PredArith`, one direction only, so there's no cycle. PredArith has since been
@@ -847,8 +849,10 @@ mapper/collector — present and future — is a two-line instantiation. A `Cons
 "an axis occurrence" must be reconciled into one canonical occurrence type before the
 traversal can subsume both. That reconciliation is itself clarifying (it answers "what IS an
 axis occurrence?" once), but it's why this is prototype-first rather than a drop-in
-replacement for Spike 2. If the prototype works, it *replaces* Spikes 2a/2b entirely and
-makes `TermTraversable` (`Exec/Traversable.lean`) its `Id` special case.
+replacement for Spike 2. If the prototype works, it *replaces* Spike **2b** (the axis collectors) entirely and
+makes `TermTraversable` (`Exec/Traversable.lean`) its `Id` special case. (**As shipped**, E1 = `traverseAxes`,
+axis-focused — it did *not* subsume **2a** (reads); a read's tensor name never reaches the leaf effect. 2a was
+done separately via Approach D, `Factor.read?`.)
 
 *References:* Gibbons & Oliveira, [The Essence of the Iterator Pattern](http://www.cs.ox.ac.uk/jeremy.gibbons/publications/iterator.pdf) (JFP 2009) — traversal as applicative-functor iteration, the `Const`-vs-`Id` instantiation trick used above; van Laarhoven, [CPS-based functional references](https://www.twanvl.nl/blog/haskell/cps-functional-references) (2009); Kmett, [`lens`](https://hackage.haskell.org/package/lens) (the library that industrialized the encoding).
 
@@ -1041,6 +1045,8 @@ makes `TermTraversable` (`Exec/Traversable.lean`) its `Id` special case.
 > with zero `sorry`/`native_decide` anywhere in the series — see
 > `docs/superpowers/specs/2026-07-17-e1-traverseaxes-tlprogram-design.md` for the full go/no-go
 > criteria and what E1's own adoption decision against Spike 2a/2b would still need to weigh.
+> (**Outcome:** adopted; E1 replaced **2b** (axis collectors); **2a** — reads — was done separately
+> via Approach D, `Factor.read?`.)
 
 > **Production migration — decision and motivation (2026-07-17):** the go/no-go decision above
 > is **GO** — E1 is adopted, and production is being migrated off the three hand-maintained
@@ -1053,9 +1059,10 @@ makes `TermTraversable` (`Exec/Traversable.lean`) its `Id` special case.
 >   the `*AxisUIDs` family is *the same traversal instantiated at a different applicative functor*
 >   — remap at `Id`, collect-`AxisSpec`s at `Const (List AxisSpec)`, collect-UIDs at
 >   `Const (List UID)` (see the `Factor.traverseAxes` sketch and the surrounding discussion
->   earlier in this section). If it works, it *replaces* Spikes 2a/2b entirely and makes
+>   earlier in this section). If it works, it *replaces* Spike **2b** (the axis collectors) entirely and makes
 >   `TermTraversable` (`Exec/Traversable.lean`) its `Id` special case. It worked, across all
->   eleven AST nodes, with zero exceptions to the pattern's basic shape.
+>   eleven AST nodes, with zero exceptions to the pattern's basic shape. (`traverseAxes` is axis-focused, so
+>   **2a** — reads — was *not* subsumed; it was done separately via Approach D, `Factor.read?`.)
 > - **Zero `sorry`/`native_decide` across the entire eleven-slice series** — every collecting-
 >   direction theorem closed with a sound, kernel-checked proof, and every remap theorem that
 >   *could* close (see next point) closed either fully unconditionally or via an explicit,
