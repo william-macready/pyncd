@@ -25,11 +25,12 @@ runtime input tensor shapes are available.
 > **complete**, and the follow-on §8.2 acset agreement work
 > (`docs/superpowers/plans/2026-07-01-acset-agreement-impl-plan.md`, Tasks A–E) has also landed:
 > `compile_wellFormed`, `realize`, and `realize_fromThreadedComposed_agree` are all sorry-free.
-> **Track A of this plan can start now.** Track B remains gated — `act` and all ten coherence
-> fields on `instDGradedStBr` are unchanged, still bare `sorry` (`LeanNCD/Instances/StBr.lean`),
-> so spike S0 has not been run and nothing in the projected proof savings of
-> [NaperianTyping.md §6](./NaperianTyping.md) should be treated as validated. Run **S0** before
-> committing to any Track-B milestone.
+> **Track A of this plan is now COMPLETE and merged to `main`** (see §8 for the final status +
+> proved routing-layer invariants). Track B's feasibility gates — spikes **S0** and **S1** — have
+> **both since been run and cleared** (§0.2), so Track B is a funded cost/benefit decision now, not a
+> feasibility gamble. It remains **unbuilt**: `act` and all ten coherence fields on `instDGradedStBr`
+> are still bare `sorry` (`LeanNCD/Instances/StBr.lean`), and the projected proof savings in
+> [NaperianTyping.md §6](./NaperianTyping.md) are not yet realized.
 
 ## 0. Code audit findings (2026-07-01) — read this first
 
@@ -541,9 +542,10 @@ That separation is cleaner both logically and implementation-wise.
    see the 2026-07-03 audit update in §0 above. `topo_bound` was fixed by restating it over
    `routeCore` success, not by re-typing weaves, so spike S2's original "prove-twice" justification
    for this surface no longer applies.
-2. **Track A (M0 → M2 → M3 → M4) — start now.** The symbolic typed-reindexing layer. Deliverable
-   and valuable regardless of Track B. S2 (M4.5) is now optional/speculative (see the finding-5
-   update in §0) rather than a decision this surface is waiting on.
+2. **Track A (M0 → M2 → M3 → M4) — DONE and merged to `main`** (see §8). The symbolic typed-reindexing
+   layer, delivered as routing-layer `StMatP` invariants (not the `Naperian` typeclass of §3 — that
+   file-by-file plan was superseded). Valuable regardless of Track B. S2 (M4.5) stayed
+   optional/speculative and was not run.
 3. **Spikes S0 (M0.5) and S1 (M1.5)** — gate Track B. **Both DONE (2026-07-03).** S0: the `Rel`-lift
    is tractable (~400–650 lines) and its object-level `sh_act` blocker is **resolved** (`=` → `≅` in
    `Core/Graded.lean`, build green). S1: **POSITIVE** — `jointly_monic` has a Lean-verified acyclic
