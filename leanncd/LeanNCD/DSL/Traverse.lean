@@ -1,7 +1,6 @@
 -- LeanNCD/DSL/Traverse.lean
 import LeanNCD.DSL.Ast
 import LeanNCD.DSL.TraverseAxes
-import LeanNCD.Exec.Traversable
 
 namespace LeanNCD
 
@@ -9,26 +8,17 @@ namespace LeanNCD
 def AxisSpec.mapUID (f : UData → UData) (a : AxisSpec) : AxisSpec :=
   { a with uid := (f ⟨a.uid, some a.name⟩).uid }
 
-instance : TermTraversable AxisSpec where
-  traverseUID f a := AxisSpec.mapUID f a
-
 /-- The `Id` instantiation of `IdxExpr.traverseAxes`. -/
 def IdxExpr.mapUID (f : UData → UData) (e : IdxExpr) : IdxExpr :=
   IdxExpr.traverseAxes (f := Id) (AxisSpec.mapUID f) e
-
-instance : TermTraversable IdxExpr where traverseUID := IdxExpr.mapUID
 
 /-- The `ConstL`-free `Id` instantiation of `PredArith.traverseAxes`. -/
 def PredArith.mapUID (f : UData → UData) (e : PredArith) : PredArith :=
   PredArith.traverseAxes (f := Id) (AxisSpec.mapUID f) e
 
-instance : TermTraversable PredArith where traverseUID := PredArith.mapUID
-
 /-- The `ConstL`-free `Id` instantiation of `BoolExpr.traverseAxes`. -/
 def BoolExpr.mapUID (f : UData → UData) (e : BoolExpr) : BoolExpr :=
   BoolExpr.traverseAxes (f := Id) (AxisSpec.mapUID f) e
-
-instance : TermTraversable BoolExpr where traverseUID := BoolExpr.mapUID
 
 /-- The `Id` instantiation of `Nonlin.traverseAxes`. -/
 def Nonlin.mapUID (f : UData → UData) (n : Nonlin) : Nonlin :=
@@ -58,20 +48,14 @@ def LHSSlot.mapUID (f : UData → UData) (s : LHSSlot) : LHSSlot :=
 /-- The `Id` instantiation of `Decl.traverseAxes`. -/
 def Decl.mapUID (f : UData → UData) (d : Decl) : Decl :=
   Decl.traverseAxes (f := Id) (AxisSpec.mapUID f) d
-instance : TermTraversable Decl where traverseUID := Decl.mapUID
 
 /-- The `Id` instantiation of `Stmt.traverseAxes` (mask included via
     `RHSExpr.traverseAxesWithMask`, matching the always-remap-the-mask semantics). -/
 def Stmt.mapUID (f : UData → UData) (s : Stmt) : Stmt :=
   Stmt.traverseAxes (f := Id) (AxisSpec.mapUID f) s
 
-instance : TermTraversable Stmt where traverseUID := Stmt.mapUID
-
 /-- The `Id` instantiation of `TLProgram.traverseAxes`. -/
 def TLProgram.mapUID (f : UData → UData) (p : TLProgram) : TLProgram :=
   TLProgram.traverseAxes (f := Id) (AxisSpec.mapUID f) p
-
-instance : TermTraversable TLProgram where
-  traverseUID f p := TLProgram.mapUID f p
 
 end LeanNCD
