@@ -203,19 +203,8 @@ def Stmt.readFactors : Stmt → List (String × List IdxExpr)
 /-- The retained-output `AxisSpec`s of a stmt: those named by `free`/`iterAt`/`iterNext` slots.
     `.affine` (scatter) slots carry no single retained axis and are skipped. -/
 def Stmt.lhsAxes : Stmt → List AxisSpec
-  | .assign _ ls _ | .scatter _ ls _ _ =>
-      ls.filterMap (fun
-        | .free a     => some a
-        | .freeNorm a => some a
-        | .iterAt a _ => some a
-        | .iterNext a => some a
-        | .affine _   => none)
+  | .assign _ ls _ | .scatter _ ls _ _ => ls.filterMap (·.axisSpec?)
   | .recurMorphism _ _ _ => []
-
-/-- The `RHSExpr.nonlin` of a stmt. -/
-def Stmt.nonlin : Stmt → Nonlin
-  | .assign _ _ r | .scatter _ _ r _ => r.nonlin
-  | .recurMorphism _ _ _ => .identity
 
 /-- The `RHSExpr.agg` of a stmt. -/
 def Stmt.agg : Stmt → AggOp
@@ -518,7 +507,7 @@ def buildStep (nameToStep : Std.HashMap String (Nat × Nat)) (extIndex : Std.Has
   let op : BrOp :=
     if sc.isScanPre then .scanPre
     else if sc.isScan then (if sc.isAffineScan then .scanAffine else .scan)
-    else match s.nonlin with
+    else match s.nonlinOf with
       | .relu        => .relu
       | .sigmoid     => .sigmoid
       | .tanh        => .tanh

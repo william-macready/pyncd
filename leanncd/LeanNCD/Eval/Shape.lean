@@ -5,12 +5,6 @@ import Std.Data.HashMap
 namespace LeanNCD.Eval
 open Std
 
-/-- The LHS slots of a statement (assign/scatter; `recurMorphism` has none here). -/
-def Stmt.lhsSlots : Stmt → List LHSSlot
-  | .assign _ ls _    => ls
-  | .scatter _ ls _ _ => ls
-  | .recurMorphism _ _ _ => []
-
 /-- All `(name, [idxExprs])` reads in a stmt's RHS (assign/scatter; recurMorphism has none here). -/
 def Stmt.readsOf : Stmt → List (String × List IdxExpr)
   | .assign _ _ r | .scatter _ _ r _ =>
@@ -370,37 +364,13 @@ private def solveSizeConstraints (constraints : List SizeConstraint) :
         , mlHints := hints })
   return solved
 
-/-- The `IdxExpr` an LHS slot places its value at (mirrors `Eval/Scatter.lhsSlotIdx`; kept local to
-    avoid an import cycle with `Scatter.lean`). -/
-private def slotOutIdx : LHSSlot → IdxExpr
-  | .affine e   => e
-  | .free a     => .axis a
-  | .freeNorm a => .axis a
-  | .iterAt _ n => .const n
-  | .iterNext a => .shift a 1
-
-/-- Output dim of one scatter LHS slot at the current `sizes` (`none` if a source axis is unsized).
-    MUST match `Eval.scatterOutShape`'s per-slot formula exactly — that is the shape `evalScatter`
-    actually materializes, so sizing a downstream reader by anything else would read a wrong-extent
-    (cropped/over-long) view. Kept in sync by mirroring its constructor cases (can't import `Eval`). -/
-private def scatterOutDim (sizes : HashMap UID Nat) (e : IdxExpr) : Option Nat :=
-  match e with
-  | .axis a       => sizes[a.uid]?
-  | .const n      => some (n + 1).toNat
-  | .scale c a    => (sizes[a.uid]?).map (fun s => (c * Int.ofNat s).toNat)
-  | .shift a c    => (sizes[a.uid]?).map (fun s => (Int.ofNat s + c).toNat)
-  | .affine c0 xs =>
-      if xs.all (fun (_, a) => sizes.contains a.uid) then
-        some (xs.foldl (fun acc (c, a) => acc + c * Int.ofNat ((sizes[a.uid]?).getD 0)) c0).toNat
-      else none
-
 /-- Output shapes of the scatter stmts whose source axes are all sized, keyed by output name. Lets
     downstream reads of a scatter-produced tensor size their own axes (B3 — the eval read-path for
     scatter outputs, e.g. an upsampling decoder feeding a subsequent layer). -/
 def scatterOutputShapes (sizes : HashMap UID Nat) (stmts : List Stmt) : HashMap String (List Nat) :=
   stmts.foldl (fun m s => match s with
     | .scatter nm slots _ _ =>
-        match slots.mapM (fun sl => scatterOutDim sizes (slotOutIdx sl)) with
+        match slots.mapM (fun sl => sl.outExtent (fun u => sizes[u]?)) with
         | some dims => m.insert nm dims
         | none      => m
     | _ => m) {}
@@ -497,25 +467,17 @@ def inferAxisSizes (seed : HashMap UID Nat) (env : HashMap String DenseTensor)
     throw s!"axis uid {u} is purely negatively constrained (appears only with non-positive coefficients in all reads; sources: {srcs}); add an explicit axis declaration"
   return (sizes, warns)
 
-/-- The axis UID of an LHS slot, if it has one (`affine` slots do not). -/
-def lhsAxisUID? : LHSSlot → Option UID
-  | .free a     => some a.uid
-  | .freeNorm a => some a.uid
-  | .iterAt a _ => some a.uid
-  | .iterNext a => some a.uid
-  | .affine _   => none
-
 /-- The UID of the slot marked (`m.`) as the softmax/normalize reduction axis, if any.
     This is how the reduction axis is identified for a stmt (the norm flag moved off the
     tensor decl onto the output slot); `none` means no axis was marked. -/
 def normAxisUidOf (slots : List LHSSlot) : Option UID :=
-  slots.findSome? (fun | .freeNorm a => some a.uid | _ => none)
+  slots.findSome? (·.normUID?)
 
 /-- The output shape: the size of each LHS slot's axis (free/iterAt/iterNext), in slot order.
     `affine` slots (scatter) have no axis size here and yield `0`; their real output extents
-    are computed separately on the scatter path (`scatterOutDim`), not by this function. -/
+    are computed separately on the scatter path (`LHSSlot.outExtent`), not by this function. -/
 def outputShape (sizes : HashMap UID Nat) (slots : List LHSSlot) : List Nat :=
-  slots.map (fun sl => match lhsAxisUID? sl with
+  slots.map (fun sl => match sl.axisUID? with
     | some u => (sizes[u]?).getD 0
     | none   => 0)
 

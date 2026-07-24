@@ -125,4 +125,95 @@ structure TLProgram where
   stmts : List Stmt
   deriving DecidableEq, Repr, Lean.ToExpr, Inhabited
 
+/- ── AST accessors (shared by the DSL pipeline and Eval layers) ── -/
+
+/-- The declaration's tensor name. (`axis` decls name an AXIS, not a tensor; `resolveDecls`
+    skips them when building the tensor-keyed `DeclEnv`.) -/
+def Decl.name : Decl → String
+  | .tensor n _ => n | .predicate n _ => n | .linear n _ _ => n | .axis ax _ => ax.name
+
+/-- The tensor name a stmt writes to (its LHS). -/
+def Stmt.lhsName : Stmt → String
+  | .assign n _ _ => n | .scatter n _ _ _ => n | .recurMorphism n _ _ => n
+
+/-- The LHS slots of a statement. -/
+def Stmt.slots : Stmt → List LHSSlot
+  | .assign _ ls _ => ls | .scatter _ ls _ _ => ls | .recurMorphism _ _ _ => []
+
+/-- The nonlinearity wrapping a stmt's step. A `recurMorphism` is pre-built (already-lowered),
+    so it is affine-neutral (`identity`). Used by `finalizeScans` to detect ScanAffine (Prop 8.7):
+    a scan whose every recurrence stmt is `identity`-nonlin carries no nonlinearity and is thus
+    associative/parallel-prefix-able. This MUST be checked here (pre-`splitNonlins`), since
+    `splitNonlins` later lifts nonlinearities out of `RHSExpr.nonlin` into separate steps. -/
+def Stmt.nonlinOf : Stmt → Nonlin
+  | .assign _ _ r => r.nonlin
+  | .scatter _ _ r _ => r.nonlin
+  | .recurMorphism _ _ _ => .identity
+
+/-- One iteration slot of a stmt: its axis, whether it advances a recurrence (`iterNext`),
+    and its slot position. Replaces the old anonymous `UID × AxisSpec × Bool × Nat` tuple
+    (the UID component was redundant — it is `axis.uid`). -/
+structure IterSlot where
+  axis    : AxisSpec
+  isRecur : Bool
+  pos     : Nat
+  deriving DecidableEq, Repr
+
+/-- All iteration slots of a stmt: one entry per `iterAt`/`iterNext` slot.
+    A 1-D scan yields a single-element list; multi-axis scans yield one entry per advancing slot. -/
+def Stmt.iterInfo (s : Stmt) : List IterSlot :=
+  s.slots.zipIdx.filterMap (fun (sl, i) => match sl with
+    | .iterAt a _ => some { axis := a, isRecur := false, pos := i }
+    | .iterNext a => some { axis := a, isRecur := true,  pos := i }
+    | _           => none)
+
+/-- The retained placement axis of an LHS slot, if any: the named axis of a
+    `free`/`freeNorm`/`iterAt`/`iterNext` slot; `none` for an `affine` (scatter) slot.
+    The one classifier the UID/AxisSpec projections below derive from. -/
+def LHSSlot.axisSpec? : LHSSlot → Option AxisSpec
+  | .free a     => some a
+  | .freeNorm a => some a
+  | .iterAt a _ => some a
+  | .iterNext a => some a
+  | .affine _   => none
+
+/-- The UID of a slot's retained placement axis (`none` for `affine`). -/
+def LHSSlot.axisUID? (sl : LHSSlot) : Option UID := (sl.axisSpec?).map (·.uid)
+
+/-- The UID of a *plain* `free` slot only (`none` for freeNorm/iter/affine).
+    Intentionally selective: a repeated `freeUID?` across a stmt's slots is how a
+    diagonal LHS (`Y[i,i]`) is detected and routed to `scatter`. NOT `axisUID?`. -/
+def LHSSlot.freeUID? : LHSSlot → Option UID
+  | .free a => some a.uid
+  | _       => none
+
+/-- The UID of the slot marked (`m.`) as the softmax/normalize reduction axis
+    (`freeNorm`), if any. Intentionally selective: this is how the reduction axis
+    is identified for a stmt. NOT `axisUID?`. -/
+def LHSSlot.normUID? : LHSSlot → Option UID
+  | .freeNorm a => some a.uid
+  | _           => none
+
+/-- The index expression an LHS slot maps to (for `evalIdx`): the affine output coordinate. -/
+def LHSSlot.outIdx : LHSSlot → IdxExpr
+  | .affine e   => e
+  | .free a     => .axis a
+  | .freeNorm a => .axis a
+  | .iterAt _ n => .const n
+  | .iterNext a => .shift a 1
+
+/-- Output extent of one scatter LHS slot under a sizing lookup `sz`.
+    The single home of the scatter-extent convention (upsample stride semantics —
+    deliberately not derivable from `idxAffineForm`). `none` if a source axis is unsized. -/
+def LHSSlot.outExtent (sl : LHSSlot) (sz : UID → Option Nat) : Option Nat :=
+  match sl.outIdx with
+  | .axis a       => sz a.uid
+  | .const n      => some (n + 1).toNat
+  | .scale c a    => (sz a.uid).map (fun s => (c * Int.ofNat s).toNat)
+  | .shift a c    => (sz a.uid).map (fun s => (Int.ofNat s + c).toNat)
+  | .affine c0 xs =>
+      if xs.all (fun (_, a) => (sz a.uid).isSome) then
+        some (xs.foldl (fun acc (c, a) => acc + c * Int.ofNat ((sz a.uid).getD 0)) c0).toNat
+      else none
+
 end LeanNCD

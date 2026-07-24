@@ -9,22 +9,13 @@ open Std
     sizes — `c0 + Σ cᵢ·size(aᵢ)` for an `.affine`, `c·size(a)` for a `.scale` (e.g. upsample
     `Out[2·i]` ⇒ `2·size(i)`), `size(a)+c` for a `.shift`, `n+1` for a `.const n`, `size(a)` for a
     bare axis. (`sizes[u]` defaults to 0 for an unseen UID.) -/
-def scatterOutShape (sizes : HashMap UID Nat) (slots : List LHSSlot) : Except EvalError (List Nat) := do
+def scatterOutShape (sizes : HashMap UID Nat) (slots : List LHSSlot) : Except EvalError (List Nat) :=
   -- Every axis in a scatter output coordinate must have an inferred size. An unsized axis means
   -- it is unbound by any read (an upstream sizing gap), so FAIL LOUD rather than defaulting its
   -- size to 0 (which would silently produce a wrong-shaped, usually empty, output tensor).
-  let sz (u : UID) : Except EvalError Nat := match sizes[u]? with
+  slots.mapM (fun sl => match sl.outExtent (fun u => sizes[u]?) with
     | some n => pure n
-    | none   => throw s!"scatterOutShape: unsized axis uid {u} in scatter output coordinate"
-  slots.mapM (fun sl => do
-    match lhsSlotIdx sl with
-    | .axis a      => sz a.uid
-    | .const n     => pure (n + 1).toNat
-    | .scale c a   => pure (c * Int.ofNat (← sz a.uid)).toNat
-    | .shift a c   => pure (Int.ofNat (← sz a.uid) + c).toNat
-    | .affine c0 xs => do
-        let contribs ← xs.mapM (fun (c, a) => do pure (c * Int.ofNat (← sz a.uid)))
-        pure (contribs.foldl (· + ·) c0).toNat)
+    | none   => throw s!"scatterOutShape: unsized axis in scatter output coordinate for slot {repr sl}")
 
 /-- Evaluate one `.plain` stmt → (name, tensor). -/
 def evalPlain (decls : List Decl) (env : HashMap String DenseTensor) (sizes : HashMap UID Nat)
@@ -35,7 +26,7 @@ def evalPlain (decls : List Decl) (env : HashMap String DenseTensor) (sizes : Ha
       if rhs.nonlin == Nonlin.identity then return (nm, pre)
       else
         -- the reduction axis is the slot marked `m.` (norm flag now lives on the output slot).
-        let axisUids := slots.filterMap lhsAxisUID?
+        let axisUids := slots.filterMap (·.axisUID?)
         -- Assumption: every POINTWISE `Nonlin` (no reduction axis) needs its own explicit arm
         -- here, listed before the `_, some nu` / `_, none` fallback. Without one, a pointwise
         -- variant with no `·`-marked axis wrongly falls into `_, none` and throws "no output

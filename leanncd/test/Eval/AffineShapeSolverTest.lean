@@ -24,8 +24,8 @@ run_cmd do
   | .ok (sizes, _) =>
       unless sizes[i.uid]? == some 5 && sizes[j.uid]? == some 3 do
         throwError s!"wrong solved sizes: {sizes[i.uid]?}, {sizes[j.uid]?}"
-      unless outputShape sizes (Stmt.lhsSlots stmt) == [5, 3] do
-        throwError s!"wrong output shape: {outputShape sizes (Stmt.lhsSlots stmt)}"
+      unless outputShape sizes (stmt.slots) == [5, 3] do
+        throwError s!"wrong output shape: {outputShape sizes (stmt.slots)}"
 
 -- A conv-like padded read: W[k] constrains the kernel axis; X[2h+k-1] then constrains h
 -- jointly via the solver (unified floor-then-verify route).
@@ -42,8 +42,8 @@ run_cmd do
   | .ok (sizes, _) =>
       unless sizes[h.uid]? == some 4 && sizes[k.uid]? == some 3 do
         throwError s!"wrong conv-like sizes: {sizes[h.uid]?}, {sizes[k.uid]?}"
-      unless outputShape sizes (Stmt.lhsSlots stmt) == [4] do
-        throwError s!"wrong conv-like output shape: {outputShape sizes (Stmt.lhsSlots stmt)}"
+      unless outputShape sizes (stmt.slots) == [4] do
+        throwError s!"wrong conv-like output shape: {outputShape sizes (stmt.slots)}"
 
 -- One affine equation over two free axes remains underdetermined.
 run_cmd do
@@ -149,8 +149,8 @@ run_cmd do
   | .ok (sizes, _) =>
       unless sizes[i.uid]? == some 2 && sizes[j.uid]? == some 2 do
         throwError s!"wrong floored non-integral sizes: {sizes[i.uid]?}, {sizes[j.uid]?}"
-      unless outputShape sizes (Stmt.lhsSlots stmt) == [2, 2] do
-        throwError s!"wrong floored non-integral output shape: {outputShape sizes (Stmt.lhsSlots stmt)}"
+      unless outputShape sizes (stmt.slots) == [2, 2] do
+        throwError s!"wrong floored non-integral output shape: {outputShape sizes (stmt.slots)}"
 
 -- Positive-only sizes are required for inferred axes.
 run_cmd do
@@ -194,8 +194,8 @@ run_cmd do
   | .ok (sizes, _) =>
       unless sizes[i.uid]? == some 4 && sizes[j.uid]? == some 5 do
         throwError s!"wrong signed-affine sizes: {sizes[i.uid]?}, {sizes[j.uid]?}"
-      unless outputShape sizes (Stmt.lhsSlots stmt) == [4, 5] do
-        throwError s!"wrong signed-affine output shape: {outputShape sizes (Stmt.lhsSlots stmt)}"
+      unless outputShape sizes (stmt.slots) == [4, 5] do
+        throwError s!"wrong signed-affine output shape: {outputShape sizes (stmt.slots)}"
 
 -- End-to-end signed-affine evaluation under padded semantics.
 run_cmd do
@@ -261,8 +261,8 @@ run_cmd do
         throwError s!"wrong 2D output sizes: {sizes[h.uid]?}, {sizes[w.uid]?}"
       unless sizes[kh.uid]? == some 3 && sizes[kw.uid]? == some 5 do
         throwError s!"wrong 2D kernel sizes: {sizes[kh.uid]?}, {sizes[kw.uid]?}"
-      unless outputShape sizes (Stmt.lhsSlots stmt) == [8, 8] do
-        throwError s!"wrong 2D output shape: {outputShape sizes (Stmt.lhsSlots stmt)}"
+      unless outputShape sizes (stmt.slots) == [8, 8] do
+        throwError s!"wrong 2D output shape: {outputShape sizes (stmt.slots)}"
 
 -- Phase 2D: ND padded-window family (3D) should remain stable.
 run_cmd do
@@ -284,8 +284,8 @@ run_cmd do
   match inferAxisSizes {} env [stmt] with
   | .error e => throwError s!"expected 3D padded-window success, got: {e}"
   | .ok (sizes, _) =>
-      unless outputShape sizes (Stmt.lhsSlots stmt) == [6, 6, 6] do
-        throwError s!"wrong 3D output shape: {outputShape sizes (Stmt.lhsSlots stmt)}"
+      unless outputShape sizes (stmt.slots) == [6, 6, 6] do
+        throwError s!"wrong 3D output shape: {outputShape sizes (stmt.slots)}"
       unless sizes[kt.uid]? == some 2 && sizes[kh.uid]? == some 3 && sizes[kw.uid]? == some 4 do
         throwError s!"wrong 3D kernel sizes: {sizes[kt.uid]?}, {sizes[kh.uid]?}, {sizes[kw.uid]?}"
 
@@ -311,8 +311,8 @@ run_cmd do
         throwError s!"wrong mixed-path output sizes: {sizes[h.uid]?}, {sizes[i.uid]?}, {sizes[j.uid]?}"
       unless sizes[k.uid]? == some 3 do
         throwError s!"wrong mixed-path kernel size: {sizes[k.uid]?}"
-      unless outputShape sizes (Stmt.lhsSlots stmt) == [4, 5, 3] do
-        throwError s!"wrong mixed-path output shape: {outputShape sizes (Stmt.lhsSlots stmt)}"
+      unless outputShape sizes (stmt.slots) == [4, 5, 3] do
+        throwError s!"wrong mixed-path output shape: {outputShape sizes (stmt.slots)}"
 
 -- Phase 2E: redundant equalities should be pruned without changing the solve result.
 run_cmd do
@@ -332,8 +332,8 @@ run_cmd do
   | .ok (sizes, _) =>
       unless sizes[i.uid]? == some 5 && sizes[j.uid]? == some 3 do
         throwError s!"wrong redundant-equalities sizes: {sizes[i.uid]?}, {sizes[j.uid]?}"
-      unless outputShape sizes (Stmt.lhsSlots stmt) == [5, 3] do
-        throwError s!"wrong redundant-equalities output shape: {outputShape sizes (Stmt.lhsSlots stmt)}"
+      unless outputShape sizes (stmt.slots) == [5, 3] do
+        throwError s!"wrong redundant-equalities output shape: {outputShape sizes (stmt.slots)}"
 
 -- Issue D: an axis with only negative upper-envelope coefficients in all reads is invisible
 -- to the solver and must be declared explicitly (e.g. axis i = n).

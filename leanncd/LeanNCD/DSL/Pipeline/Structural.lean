@@ -624,15 +624,6 @@ Per the §12.1 contract this phase is purely constructive: §12.1 example progra
 `W`, `X`, `Q`, `K` with no `tensor` declaration, so an undeclared read is an external input — not
 an error. `resolveDecls` therefore NEVER throws. -/
 
-/-- The declaration's tensor name. (`axis` decls name an AXIS, not a tensor; `resolveDecls`
-    skips them when building the tensor-keyed `DeclEnv`.) -/
-def Decl.name : Decl → String
-  | .tensor n _ => n | .predicate n _ => n | .linear n _ _ => n | .axis ax _ => ax.name
-
-/-- The tensor name a stmt writes to (its LHS). -/
-def Stmt.lhsName : Stmt → String
-  | .assign n _ _ => n | .scatter n _ _ _ => n | .recurMorphism n _ _ => n
-
 /-- The tensor names a stmt reads (from `.read` factors; iverson factors read nothing). -/
 def Stmt.readNames : Stmt → List String
   | .assign _ _ r | .scatter _ _ r _ =>
@@ -684,7 +675,7 @@ private def stmtReads (s : Stmt) : List (String × Nat) :=
     read-rank guard (`stmtLhsRank`) and `lowerArith` so they agree on the published rank. -/
 def slotsBecomeScatter (slots : List LHSSlot) : Bool :=
   slots.any (fun sl => match sl with | .affine _ => true | _ => false)
-  || (let us := slots.filterMap (fun sl => match sl with | .free a => some a.uid | _ => none)
+  || (let us := slots.filterMap (·.freeUID?)
       us.length ≠ us.eraseDups.length)
 
 /-- The produced (published) rank of a stmt's LHS — what a reader's arity must match. A LHS that
@@ -696,10 +687,7 @@ private def stmtLhsRank (s : Stmt) : Nat :=
   match s with
   | .assign _ ls _ | .scatter _ ls _ _ =>
       if slotsBecomeScatter ls then ls.length
-      else (ls.filterMap (fun
-        | .free a | .freeNorm a | .iterNext a => some a.uid
-        | .iterAt a _ => some a.uid
-        | .affine _   => none)).eraseDups.length
+      else (ls.filterMap (·.axisUID?)).eraseDups.length
   | .recurMorphism _ _ _ => 0
 
 def checkReadRanks (rp : ResolvedProgram) : FreshM ResolvedProgram := do
@@ -823,28 +811,6 @@ they are grouped into ONE `ScanStmt.scan`. Validation: every recur step needs a 
 step of the same name (else `missingBaseCase`); and a recur step may not read its iteration axis
 "ahead" (`l+1` look-ahead on the RHS — else `causalityViolation`). -/
 
-/-- The LHS slots of a statement. -/
-def Stmt.slots : Stmt → List LHSSlot
-  | .assign _ ls _ => ls | .scatter _ ls _ _ => ls | .recurMorphism _ _ _ => []
-
-/-- The nonlinearity wrapping a stmt's step. A `recurMorphism` is pre-built (already-lowered),
-    so it is affine-neutral (`identity`). Used by `finalizeScans` to detect ScanAffine (Prop 8.7):
-    a scan whose every recurrence stmt is `identity`-nonlin carries no nonlinearity and is thus
-    associative/parallel-prefix-able. This MUST be checked here (pre-`splitNonlins`), since
-    `splitNonlins` later lifts nonlinearities out of `RHSExpr.nonlin` into separate steps. -/
-def Stmt.nonlinOf : Stmt → Nonlin
-  | .assign _ _ r => r.nonlin
-  | .scatter _ _ r _ => r.nonlin
-  | .recurMorphism _ _ _ => .identity
-
-/-- All iteration slots of a stmt: `(uid, axis, isRecur, slot-position)` for each `iterAt`/`iterNext`.
-    A 1-D scan yields a single-element list; multi-axis scans yield one entry per advancing slot. -/
-def Stmt.iterInfo (s : Stmt) : List (UID × AxisSpec × Bool × Nat) :=
-  s.slots.zipIdx.filterMap (fun (sl, i) => match sl with
-    | .iterAt a _ => some (a.uid, a, false, i)
-    | .iterNext a => some (a.uid, a, true, i)
-    | _           => none)
-
 /-- All `IdxExpr`s read on the RHS of a stmt. -/
 def Stmt.rhsReads : Stmt → List IdxExpr
   | .assign _ _ r | .scatter _ _ r _ =>
@@ -863,7 +829,7 @@ def readsIterAhead (s : Stmt) (u : UID) : Bool :=
 
 /-- Map slot-position → iteration axis, read from a step (`iterNext`) stmt. -/
 def Stmt.stepAxisAt (step : Stmt) : Nat → Option AxisSpec := fun p =>
-  step.iterInfo.findSome? (fun (_, a, isRec, i) => if isRec && i == p then some a else none)
+  step.iterInfo.findSome? (fun it => if it.isRecur && it.pos == p then some it.axis else none)
 
 /-- Rewrite a base stmt's `iterAt` slots so each adopts the step's iteration axis at the SAME
     slot position (the E1 parser leaves base iter-axes as placeholders — `idxAxis ""` — so the
@@ -896,9 +862,9 @@ def finalizeScans (lp : LoweredProgram) : FreshM ScanProgram := do
   -- A base stmt has `iterAt` slots (no `iterNext`); its matching step has `iterNext` slots. Each
   -- base `iterAt` adopts the step's `iterNext` axis at the same slot position (multi-axis general).
   let stepFor (nm : String) : Option Stmt :=
-    lp.stmts.find? (fun s => s.lhsName == nm && s.iterInfo.any (fun t => t.2.2.1 == true))
+    lp.stmts.find? (fun s => s.lhsName == nm && s.iterInfo.any (fun t => t.isRecur == true))
   let stmts0 := lp.stmts.map (fun s =>
-    if s.iterInfo.any (fun t => t.2.2.1 == false) && !s.iterInfo.any (fun t => t.2.2.1 == true) then
+    if s.iterInfo.any (fun t => t.isRecur == false) && !s.iterInfo.any (fun t => t.isRecur == true) then
       match stepFor s.lhsName with
       | some step => s.adoptBaseIterAxes step
       | none      => s
@@ -920,7 +886,7 @@ def finalizeScans (lp : LoweredProgram) : FreshM ScanProgram := do
   let mut dep : HashMap String (List UID) := {}
   for s in nonPre do
     unless s.iterInfo.isEmpty do
-      dep := dep.insert s.lhsName ((dep.getD s.lhsName [] ++ s.iterInfo.map (·.1)).eraseDups)
+      dep := dep.insert s.lhsName ((dep.getD s.lhsName [] ++ s.iterInfo.map (·.axis.uid)).eraseDups)
   for _ in List.range (nonPre.length + 1) do
     let mut changed := false
     for s in nonPre do
@@ -933,12 +899,7 @@ def finalizeScans (lp : LoweredProgram) : FreshM ScanProgram := do
   -- CONNECTED COMPONENTS over iteration-axis UIDs: two iter-stmts are coupled iff their axis-sets
   -- share a UID (the §12.1 `G`/`H` coupled scan, and each axis of a genuine multi-axis scan). One
   -- `ScanStmt.scan` per component. Bounded union-find: repeated merge, capped by #stmts passes.
-  let axSet : Stmt → List UID := fun s => (s.iterInfo.map (·.1)).eraseDups
-  -- The axis-UID of an LHS slot, if it has one (`.affine` slots contribute none) — used below to
-  -- detect an unsupported in-scan per-step projection (§KG-scanprojection).
-  let slotUID : LHSSlot → Option UID := fun sl => match sl with
-    | .free a | .freeNorm a | .iterAt a _ | .iterNext a => some a.uid
-    | .affine _ => none
+  let axSet : Stmt → List UID := fun s => (s.iterInfo.map (·.axis.uid)).eraseDups
   let mut comps : List (List UID) := iterStmts.map axSet
   for _ in List.range (iterStmts.length + 1) do
     comps := comps.foldl (fun acc c =>
@@ -959,22 +920,22 @@ def finalizeScans (lp : LoweredProgram) : FreshM ScanProgram := do
     -- membership tested against the ORIGINAL `nonPre` order so the recurrence body keeps source
     -- order (producers before consumers — exactly what `evalScan`'s step loop relies on).
     let inComp  : Stmt → Bool := fun s => (axSet s).any (fun u => comp.contains u)
-    let isBase  : Stmt → Bool := fun s => inComp s && s.iterInfo.all (fun t => t.2.2.1 == false)
-    let isState : Stmt → Bool := fun s => inComp s && s.iterInfo.any (fun t => t.2.2.1 == true)
+    let isBase  : Stmt → Bool := fun s => inComp s && s.iterInfo.all (fun t => t.isRecur == false)
+    let isState : Stmt → Bool := fun s => inComp s && s.iterInfo.any (fun t => t.isRecur == true)
     let isInter : Stmt → Bool := fun s => s.iterInfo.isEmpty &&
       (let d := dep.getD s.lhsName []; !d.isEmpty && d.all (fun u => comp.contains u))
     let baseStmts  := nonPre.filter (fun s => !s.iterInfo.isEmpty && isBase s)
     let stateRecur := nonPre.filter isState
     -- axis list in step slot order, from a representative step (each advancing slot ⇒ one axis).
     let axes : List AxisSpec := (stateRecur.head?.map (fun st =>
-      ((st.iterInfo.filter (·.2.2.1)).mergeSort (fun a b => a.2.2.2 ≤ b.2.2.2)).map (·.2.1))).getD []
+      ((st.iterInfo.filter (·.isRecur)).mergeSort (fun a b => a.pos ≤ b.pos)).map (·.axis))).getD []
     -- FAIL LOUD (design §5): every state recurrence in a component MUST advance over the
     -- component's FULL axis set. A heterogeneous coupling — e.g. `H` advancing over `{c}` coupled
     -- (via shared `c`) with `G` advancing over `{r,c}` — would drop the non-head axes when `axes`
     -- is taken from the head alone, and `evalScan` would silently mis-address the shorter tensor.
     -- Compare axis-UID SETS (order-independent) against the component's unioned axis set `comp`.
     for r in stateRecur do
-      let radv := ((r.iterInfo.filter (·.2.2.1)).map (·.1)).eraseDups
+      let radv := ((r.iterInfo.filter (·.isRecur)).map (·.axis.uid)).eraseDups
       unless radv.length == comp.length && comp.all (fun u => radv.contains u) do
         throw (CompileError.inconsistentScanAxes
           s!"{r.lhsName}: coupled scan statements advance over different axis sets (each must advance over the component's full axis set)")
@@ -994,7 +955,7 @@ def finalizeScans (lp : LoweredProgram) : FreshM ScanProgram := do
     -- materialized state (see SS2 in the portfolio doc).
     for s in nonPre do
       if isInter s then
-        if (s.slots.filterMap slotUID).any (fun u => comp.contains u) then
+        if (s.slots.filterMap (·.axisUID?)).any (fun u => comp.contains u) then
           throw (CompileError.scanProjectionUnsupported s.lhsName)
     -- recurrence body = per-step intermediates ++ state recurrences, in source order.
     let recurStmts := nonPre.filter (fun s => isInter s || isState s)
