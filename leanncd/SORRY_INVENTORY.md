@@ -192,7 +192,6 @@ Notes:
 discharged with no `sorry`** (the first fully-executable milestone):
 
 - `Uid.lean`: `UID`/`UData`/`CompileError`/`FreshM`/`freshUData` (Lean core only).
-- `Traversable.lean`: `WithUID`, `TermTraversable` class (Lean core only; real per-type instances are Milestone E).
 - `Context.lean`: `EqClass`, `Context`, `Context.merge` (largest-UID canonical), `Context.apply`
   (generalized to `(ctx : Context α) (target : β) : β` — the substitution is UID-level, α-independent).
 
