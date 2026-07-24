@@ -51,9 +51,10 @@
 -- docs/superpowers/specs/2026-07-17-e1-traverseaxes-decl-design.md.
 -- TLProgram slice (FINAL — completes full AST coverage): combines a `List Decl` and a
 -- `List Stmt` sub-traversal via `<$> ... <*>`; conditional remap on one `p.stmts` hypothesis
--- (`p.decls` needs none, `Decl`'s own remap is unconditional). No named `TLProgram.mapUID`
--- exists, so the remap theorem targets the real `TermTraversable.traverseUID` directly — the
--- first slice to do so. `TLProgram.axisNames` confirms the `Stmt.uids`-style privacy wall but
+-- (`p.decls` needs none, `Decl`'s own remap is unconditional). At prototype time no named
+-- `TLProgram.mapUID` existed, so the remap theorem targeted the `traverseUID` interface directly
+-- (that interface and the prototype remap theorems were both retired in E1 sub-projects 3-4).
+-- `TLProgram.axisNames` confirms the `Stmt.uids`-style privacy wall but
 -- adds a `.eraseDups`/`.name`-projection step, scoped out as a non-goal — so no production-file
 -- change was needed here either — see
 -- docs/superpowers/specs/2026-07-17-e1-traverseaxes-tlprogram-design.md.

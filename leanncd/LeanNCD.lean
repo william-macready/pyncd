@@ -110,7 +110,6 @@ import LeanNCD.Algebra.Construct
 import LeanNCD.Props.Generic
 import LeanNCD.Instances.StBr
 import LeanNCD.Exec.Uid
-import LeanNCD.Exec.Traversable
 import LeanNCD.Base.SizeExpr
 import LeanNCD.DSL.Ast
 import LeanNCD.DSL.Syntax
