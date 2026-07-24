@@ -675,7 +675,7 @@ private def stmtReads (s : Stmt) : List (String × Nat) :=
     read-rank guard (`stmtLhsRank`) and `lowerArith` so they agree on the published rank. -/
 def slotsBecomeScatter (slots : List LHSSlot) : Bool :=
   slots.any (fun sl => match sl with | .affine _ => true | _ => false)
-  || (let us := slots.filterMap (fun sl => match sl with | .free a => some a.uid | _ => none)
+  || (let us := slots.filterMap (·.freeUID?)
       us.length ≠ us.eraseDups.length)
 
 /-- The produced (published) rank of a stmt's LHS — what a reader's arity must match. A LHS that
@@ -687,10 +687,7 @@ private def stmtLhsRank (s : Stmt) : Nat :=
   match s with
   | .assign _ ls _ | .scatter _ ls _ _ =>
       if slotsBecomeScatter ls then ls.length
-      else (ls.filterMap (fun
-        | .free a | .freeNorm a | .iterNext a => some a.uid
-        | .iterAt a _ => some a.uid
-        | .affine _   => none)).eraseDups.length
+      else (ls.filterMap (·.axisUID?)).eraseDups.length
   | .recurMorphism _ _ _ => 0
 
 def checkReadRanks (rp : ResolvedProgram) : FreshM ResolvedProgram := do
@@ -911,11 +908,6 @@ def finalizeScans (lp : LoweredProgram) : FreshM ScanProgram := do
   -- share a UID (the §12.1 `G`/`H` coupled scan, and each axis of a genuine multi-axis scan). One
   -- `ScanStmt.scan` per component. Bounded union-find: repeated merge, capped by #stmts passes.
   let axSet : Stmt → List UID := fun s => (s.iterInfo.map (·.1)).eraseDups
-  -- The axis-UID of an LHS slot, if it has one (`.affine` slots contribute none) — used below to
-  -- detect an unsupported in-scan per-step projection (§KG-scanprojection).
-  let slotUID : LHSSlot → Option UID := fun sl => match sl with
-    | .free a | .freeNorm a | .iterAt a _ | .iterNext a => some a.uid
-    | .affine _ => none
   let mut comps : List (List UID) := iterStmts.map axSet
   for _ in List.range (iterStmts.length + 1) do
     comps := comps.foldl (fun acc c =>
@@ -971,7 +963,7 @@ def finalizeScans (lp : LoweredProgram) : FreshM ScanProgram := do
     -- materialized state (see SS2 in the portfolio doc).
     for s in nonPre do
       if isInter s then
-        if (s.slots.filterMap slotUID).any (fun u => comp.contains u) then
+        if (s.slots.filterMap (·.axisUID?)).any (fun u => comp.contains u) then
           throw (CompileError.scanProjectionUnsupported s.lhsName)
     -- recurrence body = per-step intermediates ++ state recurrences, in source order.
     let recurStmts := nonPre.filter (fun s => isInter s || isState s)

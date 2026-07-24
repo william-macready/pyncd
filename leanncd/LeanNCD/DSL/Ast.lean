@@ -141,4 +141,31 @@ def Stmt.nonlinOf : Stmt → Nonlin
   | .scatter _ _ r _ => r.nonlin
   | .recurMorphism _ _ _ => .identity
 
+/-- The retained placement axis of an LHS slot, if any: the named axis of a
+    `free`/`freeNorm`/`iterAt`/`iterNext` slot; `none` for an `affine` (scatter) slot.
+    The one classifier the UID/AxisSpec projections below derive from. -/
+def LHSSlot.axisSpec? : LHSSlot → Option AxisSpec
+  | .free a     => some a
+  | .freeNorm a => some a
+  | .iterAt a _ => some a
+  | .iterNext a => some a
+  | .affine _   => none
+
+/-- The UID of a slot's retained placement axis (`none` for `affine`). -/
+def LHSSlot.axisUID? (sl : LHSSlot) : Option UID := (sl.axisSpec?).map (·.uid)
+
+/-- The UID of a *plain* `free` slot only (`none` for freeNorm/iter/affine).
+    Intentionally selective: a repeated `freeUID?` across a stmt's slots is how a
+    diagonal LHS (`Y[i,i]`) is detected and routed to `scatter`. NOT `axisUID?`. -/
+def LHSSlot.freeUID? : LHSSlot → Option UID
+  | .free a => some a.uid
+  | _       => none
+
+/-- The UID of the slot marked (`m.`) as the softmax/normalize reduction axis
+    (`freeNorm`), if any. Intentionally selective: this is how the reduction axis
+    is identified for a stmt. NOT `axisUID?`. -/
+def LHSSlot.normUID? : LHSSlot → Option UID
+  | .freeNorm a => some a.uid
+  | _           => none
+
 end LeanNCD

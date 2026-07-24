@@ -26,11 +26,11 @@ def boolAxisUIDs (e : BoolExpr) : List UID :=
 
 /-- The free axes (LHS) of an assign, as UID list (affine slots contribute none). -/
 -- Deliberately NOT migrated to `traverseAxes` (unlike the other collectors in this block):
--- `lhsAxisUID?` returns `none` for `.affine` slots, so `freeAxisUIDs` collects a *subset* — the
+-- `LHSSlot.axisUID?` returns `none` for `.affine` slots, so `freeAxisUIDs` collects a *subset* — the
 -- free (non-affine) axes only — not every axis. `LHSSlot.traverseAxes` visits every axis
 -- (including the affine slot's `IdxExpr`), so this is not a `traverseAxes` instantiation and the
 -- spike proves no equivalence for it. Migrating it would silently change its meaning.
-def freeAxisUIDs (slots : List LHSSlot) : List UID := slots.filterMap lhsAxisUID?
+def freeAxisUIDs (slots : List LHSSlot) : List UID := slots.filterMap (·.axisUID?)
 
 /-- Every axis-UID appearing in one product term's reads/masks. This is the per-term
     contraction scope: a `+`-joined RHS sums each term over only the axes *that term*
@@ -170,7 +170,7 @@ def evalAssignSeeded (mul : Float → Float → Float) (combine : Float → Floa
   let freesAll := freeAxisUIDs slots
   let frees := freesAll.filter (fun u => ! seed.contains u)
   -- output shape: each non-seeded free slot's size, in slot order
-  let outShape := slots.filterMap (fun sl => match lhsAxisUID? sl with
+  let outShape := slots.filterMap (fun sl => match sl.axisUID? with
     | some u => if seed.contains u then none else some ((sizes[u]?).getD 0)
     | none   => none)
   let data ← (DenseTensor.allCoords outShape).mapM (fun fcoord => do

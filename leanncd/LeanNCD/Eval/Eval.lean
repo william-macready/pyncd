@@ -35,7 +35,7 @@ def evalPlain (decls : List Decl) (env : HashMap String DenseTensor) (sizes : Ha
       if rhs.nonlin == Nonlin.identity then return (nm, pre)
       else
         -- the reduction axis is the slot marked `m.` (norm flag now lives on the output slot).
-        let axisUids := slots.filterMap lhsAxisUID?
+        let axisUids := slots.filterMap (·.axisUID?)
         -- Assumption: every POINTWISE `Nonlin` (no reduction axis) needs its own explicit arm
         -- here, listed before the `_, some nu` / `_, none` fallback. Without one, a pointwise
         -- variant with no `·`-marked axis wrongly falls into `_, none` and throws "no output

@@ -41,7 +41,7 @@ def evalStmtSliceSeeded (env : HashMap String DenseTensor) (sizes : HashMap UID 
         | .min => Combine.min
         | .sum => Combine.real
       let (_, slice) ← evalAssignSeeded c.mul c.combine c.unit0 env sizes seed nm slots rhs
-      let sliceUids := (slots.filterMap lhsAxisUID?).filter (fun u => ! seed.contains u)
+      let sliceUids := (slots.filterMap (·.axisUID?)).filter (fun u => ! seed.contains u)
       let pos ← match rhs.nonlin with
         | .identity | .relu | .sigmoid | .tanh | .gelu | .leakyrelu =>
             pure 0     -- pointwise: reduction axis irrelevant
@@ -67,7 +67,7 @@ def writeSliceAtMulti (out : DenseTensor) (iters : List (Nat × Nat)) (slice : D
     the size of its axis (slot order). For an iteration slot this size IS the axis's length `L`
     (`sizes[uid]` equals the declared axis size); for a free slot it is that free axis's size. -/
 def stateShape (sizes : HashMap UID Nat) (slots : List LHSSlot) : List Nat :=
-  slots.map (fun sl => match lhsAxisUID? sl with
+  slots.map (fun sl => match sl.axisUID? with
     | some u => (sizes[u]?).getD 0
     | none   => 0)
 

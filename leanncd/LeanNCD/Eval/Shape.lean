@@ -491,25 +491,17 @@ def inferAxisSizes (seed : HashMap UID Nat) (env : HashMap String DenseTensor)
     throw s!"axis uid {u} is purely negatively constrained (appears only with non-positive coefficients in all reads; sources: {srcs}); add an explicit axis declaration"
   return (sizes, warns)
 
-/-- The axis UID of an LHS slot, if it has one (`affine` slots do not). -/
-def lhsAxisUID? : LHSSlot → Option UID
-  | .free a     => some a.uid
-  | .freeNorm a => some a.uid
-  | .iterAt a _ => some a.uid
-  | .iterNext a => some a.uid
-  | .affine _   => none
-
 /-- The UID of the slot marked (`m.`) as the softmax/normalize reduction axis, if any.
     This is how the reduction axis is identified for a stmt (the norm flag moved off the
     tensor decl onto the output slot); `none` means no axis was marked. -/
 def normAxisUidOf (slots : List LHSSlot) : Option UID :=
-  slots.findSome? (fun | .freeNorm a => some a.uid | _ => none)
+  slots.findSome? (·.normUID?)
 
 /-- The output shape: the size of each LHS slot's axis (free/iterAt/iterNext), in slot order.
     `affine` slots (scatter) have no axis size here and yield `0`; their real output extents
     are computed separately on the scatter path (`scatterOutDim`), not by this function. -/
 def outputShape (sizes : HashMap UID Nat) (slots : List LHSSlot) : List Nat :=
-  slots.map (fun sl => match lhsAxisUID? sl with
+  slots.map (fun sl => match sl.axisUID? with
     | some u => (sizes[u]?).getD 0
     | none   => 0)
 
