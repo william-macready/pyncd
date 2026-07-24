@@ -1,9 +1,10 @@
-# Spike 2 (2c/2d/2e) — deferred equivalence certificates
+# Spike 2 (2c/2d/2e + 2a) — deferred equivalence certificates
 
 > **Status:** SPEC / not-yet-built. Written 2026-07-24 alongside the Spike 2 (2c/2d/2e)
-> consolidation (branch `spike2-cde-accessor-consolidation`). The consolidation itself is
-> verified behavior-preserving by `lake build` green + the pinned test suite; this spec
-> captures the *kernel-checked equivalence proofs* that were deliberately deferred, so the
+> consolidation (PR #10, merged), and extended for **2a** (the read-projection family / Approach D,
+> branch `spike2a-read-projection-consolidation`) — so this spec now covers all of Spike 2. Each
+> consolidation is verified behavior-preserving by `lake build` green + the pinned test suite; this
+> spec captures the *kernel-checked equivalence proofs* that were deliberately deferred, so the
 > intent (Rule 9: tests encode WHY) is not lost.
 
 ## Why this exists
@@ -107,6 +108,27 @@ comment used to guard:
   This certifies the dropped leading `UID` component really did equal `axis.uid` at every slot.
 - `iterSlotPositions_eq_ref` — the re-signatured projection vs the old
   `List LHSSlot → List (UID × Nat)` body: `∀ s, iterSlotPositions s = <old body> s.slots`.
+
+### 2a — read-projection family (Approach D)
+
+Consolidated onto one classifier `Factor.read? : Factor → Option (String × List IdxExpr)` (a plain
+`filterMap`, **not** a `traverseAxes` extension — reads need collection only). The certificates that
+matter here certify **order + multiplicity preservation** (the reference bodies are order-preserving
+`filterMap`s; each `_eq_ref` being `rfl`/`cases`-provable *is* the proof that no `eraseDups`/`filter`/
+reorder crept in — which the build alone cannot guarantee, since the two load-bearing callers
+`checkReadRanks` and `buildStep` only fail on order/duplicate-sensitive inputs a test may not exercise):
+
+- `Factor.read?_eq_ref` — vs the inline `.read/.unaryFn/.iverson` classification (`.unaryFn` drops the
+  `UnaryOp` and projects like `.read`; `.iverson → none`). `by cases f <;> rfl`.
+- `RHSExpr.readFactors_eq_ref` and `Stmt.readFactors_eq_ref` — vs the old explicit
+  `body.terms.flatMap (·.factors.filterMap …)` bodies. `Stmt.readFactors_eq_readsOf_ref` additionally
+  certifies the deleted `Eval.Stmt.readsOf` was byte-identical.
+- `Stmt.readNames_eq_ref` — `s.readFactors.map (·.1)` vs old body.
+- `stmtReads_eq_ref` — `s.readFactors.map (fun (nm, es) => (nm, es.length))` vs old body (the
+  order/duplicate-preservation certificate `checkReadRanks` relies on).
+- `Stmt.rhsReads_eq_ref` — `s.readFactors.flatMap (·.2)` vs old body.
+- `Eval.readNames_eq_ref` — the RHS-level `rhs.readFactors.map (·.1)` vs old body (kept distinct from
+  the `Stmt`-level `readNames`).
 
 ## Acceptance
 
