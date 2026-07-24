@@ -210,7 +210,7 @@ report `cyclicDataflow` instead of falling back. Add a reject test.
 
 ### Spike 2: one home for AST accessors and read/axis traversals
 
-> **✅ 2c/2d/2e IMPLEMENTED — branch `spike2-cde-accessor-consolidation`, PR #10 (awaiting merge; 2026-07-24).**
+> **✅ 2c/2d/2e DONE — merged to `main` via PR #10 (2026-07-24).**
 > Commits `3b2a625..89f9b55` (6 refactor + 1 spec doc + 1 docstring-restore); `lake build` green (8,609 jobs)
 > at every commit; each task passed an independent spec+quality review and a whole-branch review (ready to merge).
 > Net effect: **−44 lines of Lean**; **10 duplicate/mirror functions eliminated** (`stmtName`, `stmtSlots`,
