@@ -605,7 +605,7 @@ def assignUIDs (p : TLProgram) : FreshM LabeledProgram := do
     match u.name with
     | some nm => match memo[nm]? with | some v => { u with uid := v } | none => u
     | none    => u
-  let p' := TermTraversable.traverseUID relabel p
+  let p' := TLProgram.mapUID relabel p
   return { decls := p'.decls, stmts := p'.stmts }
 
 /-! ## The `resolveDecls` phase
