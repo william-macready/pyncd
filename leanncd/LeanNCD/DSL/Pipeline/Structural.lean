@@ -369,6 +369,15 @@ private def TLProgram.axisSpecs (p : TLProgram) : List AxisSpec :=
   (TLProgram.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) p).run
 
 /-- The ordered, de-duplicated list of axis names occurring anywhere in the program. -/
+-- Design note — the name-collecting "fourth direction" of `traverseAxes`. It *could* be a first-class
+-- instantiation, `g := fun a => ⟨[a.name]⟩` at `f := ConstL (List String)`:
+--   ((TLProgram.traverseAxes (f := ConstL (List String)) (fun a => ⟨[a.name]⟩) p).run).eraseDups
+-- We deliberately keep it as a projection of `axisSpecs` instead, for two reasons: (1) unlike the
+-- `mapUID`/`specs*`/`*AxisUIDs` families E1 unified, name-collection was never a duplicated per-node
+-- traversal — it's a one-liner over `axisSpecs` (itself the `ConstL (List AxisSpec)` instantiation), so
+-- there is no duplication to remove and its correctness rides on `axisSpecs`'s certificate for free;
+-- (2) `.eraseDups` is post-processing, not part of the traversal, so a direct instantiation would still
+-- need it — it would add a fourth instantiation to maintain for no simplification.
 def TLProgram.axisNames (p : TLProgram) : List String :=
   (p.axisSpecs.map (·.name)).eraseDups
 
