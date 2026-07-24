@@ -191,15 +191,6 @@ The executable back-end's final phase: turn the scheduled statements into a `Thr
 
 `nExternal := sp.extNames.card`. -/
 
-/-- The read factors (tensor name + read index expressions) of a stmt, in order. -/
-def Stmt.readFactors : Stmt → List (String × List IdxExpr)
-  | .assign _ _ r | .scatter _ _ r _ =>
-      r.body.terms.flatMap (fun t => t.factors.filterMap (fun
-        | .read nm es => some (nm, es)
-        | .iverson _  => none
-        | .unaryFn _ nm es => some (nm, es)))
-  | .recurMorphism _ _ _ => []
-
 /-- The retained-output `AxisSpec`s of a stmt: those named by `free`/`iterAt`/`iterNext` slots.
     `.affine` (scatter) slots carry no single retained axis and are skipped. -/
 def Stmt.lhsAxes : Stmt → List AxisSpec
