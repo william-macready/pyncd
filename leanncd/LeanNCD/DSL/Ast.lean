@@ -141,6 +141,23 @@ def Stmt.nonlinOf : Stmt → Nonlin
   | .scatter _ _ r _ => r.nonlin
   | .recurMorphism _ _ _ => .identity
 
+/-- One iteration slot of a stmt: its axis, whether it advances a recurrence (`iterNext`),
+    and its slot position. Replaces the old anonymous `UID × AxisSpec × Bool × Nat` tuple
+    (the UID component was redundant — it is `axis.uid`). -/
+structure IterSlot where
+  axis    : AxisSpec
+  isRecur : Bool
+  pos     : Nat
+  deriving DecidableEq, Repr
+
+/-- All iteration slots of a stmt: one entry per `iterAt`/`iterNext` slot.
+    A 1-D scan yields a single-element list; multi-axis scans yield one entry per advancing slot. -/
+def Stmt.iterInfo (s : Stmt) : List IterSlot :=
+  s.slots.zipIdx.filterMap (fun (sl, i) => match sl with
+    | .iterAt a _ => some { axis := a, isRecur := false, pos := i }
+    | .iterNext a => some { axis := a, isRecur := true,  pos := i }
+    | _           => none)
+
 /-- The retained placement axis of an LHS slot, if any: the named axis of a
     `free`/`freeNorm`/`iterAt`/`iterNext` slot; `none` for an `affine` (scatter) slot.
     The one classifier the UID/AxisSpec projections below derive from. -/

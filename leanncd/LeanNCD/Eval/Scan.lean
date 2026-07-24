@@ -4,14 +4,11 @@ import LeanNCD.DSL.Pipeline.Types
 namespace LeanNCD.Eval
 open Std
 
-/-- All iteration slots `(uid, position)` of a base/recur stmt's slot list, in slot order
+/-- All iteration slots `(uid, position)` of a base/recur stmt, in slot order
     (ascending position). One entry per `.iterAt`/`.iterNext` slot — multi-axis scans yield
     several. -/
-def iterSlotPositions (slots : List LHSSlot) : List (UID × Nat) :=
-  slots.zipIdx.filterMap (fun (sl, i) => match sl with
-    | .iterAt a _ => some (a.uid, i)
-    | .iterNext a => some (a.uid, i)
-    | _           => none)
+def iterSlotPositions (s : Stmt) : List (UID × Nat) :=
+  s.iterInfo.map (fun it => (it.axis.uid, it.pos))
 
 /-- Cartesian product of a list of index ranges → list of tuples (each tuple a `List Nat`), in
     reverse-lexicographic order (last axis slowest). This order is a linear extension of the
@@ -89,7 +86,7 @@ def evalScan (env : HashMap String DenseTensor) (sizes : HashMap UID Nat) :
         let seed : HashMap UID Int := ((s.slots).filterMap (fun
             | .iterAt a n => some (a.uid, n) | _ => none)).foldl (fun m (u, n) => m.insert u n) {}
         let (nm, slice) ← evalStmtSliceSeeded work sizes seed s
-        let iters := (iterSlotPositions (s.slots)).map (fun (u, p) => (p, ((seed[u]?).getD 0).toNat))
+        let iters := (iterSlotPositions s).map (fun (u, p) => (p, ((seed[u]?).getD 0).toNat))
         work := work.insert nm (writeSliceAtMulti ((work[nm]?).getD (DenseTensor.zeros [])) iters slice)
       -- 3. nested loop over ∏ [0 … L_a − 2]: run the recur list at each tuple; intermediates into
       --    the step env; write final state slices at (position, index+1) per advancing axis.
@@ -105,7 +102,7 @@ def evalScan (env : HashMap String DenseTensor) (sizes : HashMap UID Nat) :
           -- slice in the step env only. (This is the crucial distinction from a slot-based test.)
           if stateNames.contains nm then
             -- a state slice: write at (position, currentIndex+1) for each of THIS stmt's advancing axes
-            let iters := (iterSlotPositions (s.slots)).map (fun (u, p) => (p, ((seed[u]?).getD 0).toNat + 1))
+            let iters := (iterSlotPositions s).map (fun (u, p) => (p, ((seed[u]?).getD 0).toNat + 1))
             let updated := writeSliceAtMulti ((work[nm]?).getD (DenseTensor.zeros [])) iters slice
             work := work.insert nm updated
             stepEnv := stepEnv.insert nm updated
