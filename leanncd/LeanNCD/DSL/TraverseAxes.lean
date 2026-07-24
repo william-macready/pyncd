@@ -24,6 +24,28 @@ instance {γ : Type} : Applicative (ConstL (List γ)) where
   pure _ := ⟨[]⟩
   seq f x := ⟨f.run ++ (x ()).run⟩
 
+-- ── Reading the family: what `f` and `g` are ──────────────────────────────────────────────────
+-- Every node's traversal has the shape `X.traverseAxes [Applicative f] (g : AxisSpec → f AxisSpec) : X → f X`.
+-- The whole layer is two choices: the applicative `f` (the "mode" / effect) and the leaf action `g`
+-- (what happens at each axis). The three production paths:
+--
+--   • Remap (rebuild the AST with uids substituted) — subsumes `X.mapUID`:
+--       f := Id                        g := AxisSpec.mapUID φ   (φ : UData → UData)
+--       result : X          — the same AST with every axis's uid remapped by φ.
+--
+--   • Collect AxisSpecs (gather every axis occurrence) — subsumes `specsX`:
+--       f := ConstL (List AxisSpec)    g := fun a => ⟨[a]⟩
+--       result : (…).run : List AxisSpec   — all axes, in traversal order.
+--
+--   • Collect UIDs (gather every axis's uid) — subsumes `*AxisUIDs`:
+--       f := ConstL (List UID)         g := fun a => ⟨[a.uid]⟩
+--       result : (…).run : List UID        — all axis uids, in traversal order.
+--
+-- `Id` returns the rebuilt value directly; `ConstL (List _)` ignores its second type parameter and
+-- accumulates via the list monoid (`pure = []`, `seq = ++`), so the collected list is read off `.run`.
+-- (The name projection `axisNames` rides on the AxisSpec collector rather than defining a fourth
+-- `ConstL (List String)` / `g := fun a => ⟨[a.name]⟩` path — see the note at `TLProgram.axisNames`.)
+
 def IdxExpr.traverseAxes [Applicative f] (g : AxisSpec → f AxisSpec) : IdxExpr → f IdxExpr
   | .axis a      => IdxExpr.axis <$> g a
   | .const n     => pure (IdxExpr.const n)
