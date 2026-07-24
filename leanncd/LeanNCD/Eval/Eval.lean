@@ -17,7 +17,7 @@ def scatterOutShape (sizes : HashMap UID Nat) (slots : List LHSSlot) : Except Ev
     | some n => pure n
     | none   => throw s!"scatterOutShape: unsized axis uid {u} in scatter output coordinate"
   slots.mapM (fun sl => do
-    match lhsSlotIdx sl with
+    match sl.outIdx with
     | .axis a      => sz a.uid
     | .const n     => pure (n + 1).toNat
     | .scale c a   => pure (c * Int.ofNat (← sz a.uid)).toNat

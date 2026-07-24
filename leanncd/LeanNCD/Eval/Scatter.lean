@@ -2,18 +2,10 @@ import LeanNCD.Eval.Contract
 namespace LeanNCD.Eval
 open Std
 
-/-- The index expression an LHS slot maps to (for `evalIdx`): the affine output coordinate. -/
-def lhsSlotIdx : LHSSlot → IdxExpr
-  | .affine e   => e
-  | .free a     => .axis a
-  | .freeNorm a => .axis a
-  | .iterAt _ n => .const n
-  | .iterNext a => .shift a 1
-
 /-- Source axes of a scatter: the axis-UIDs appearing in the affine LHS slots, unioned with the
     RHS read/mask axes; de-duplicated, in first-seen order. -/
 def scatterSourceAxes (slots : List LHSSlot) (rhs : RHSExpr) : List UID :=
-  (slots.flatMap (fun sl => idxAxisUIDs (lhsSlotIdx sl)) ++ readAxisUIDs rhs).eraseDups
+  (slots.flatMap (fun sl => idxAxisUIDs sl.outIdx) ++ readAxisUIDs rhs).eraseDups
 
 /-- Evaluate a scatter stmt. `outShape` is the output dims (caller supplies, from the decl/inference).
     Each source coord → rhs value (∏ over factors, Σ over terms; no contraction axes beyond source)
@@ -46,7 +38,7 @@ def evalScatter (env : HashMap String DenseTensor) (sizes : HashMap UID Nat)
         | .error e => throw e   -- e.g. a .unaryFn domain violation; out-of-range reads are `.ok 0.0`, not `.error`
       val := val + prod
     -- output coordinate = each slot's affine image at this source coord
-    let outCoordZ : List Int := slots.map (fun sl => evalIdx coord (lhsSlotIdx sl))
+    let outCoordZ : List Int := slots.map (fun sl => evalIdx coord sl.outIdx)
     if (outCoordZ.zip outShape).all (fun (z, d) => 0 ≤ z && z < (d : Int)) then
       let oc := outCoordZ.map Int.toNat
       let prev := out.get! oc

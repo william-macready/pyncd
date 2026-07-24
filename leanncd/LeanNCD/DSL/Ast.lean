@@ -168,4 +168,12 @@ def LHSSlot.normUID? : LHSSlot → Option UID
   | .freeNorm a => some a.uid
   | _           => none
 
+/-- The index expression an LHS slot maps to (for `evalIdx`): the affine output coordinate. -/
+def LHSSlot.outIdx : LHSSlot → IdxExpr
+  | .affine e   => e
+  | .free a     => .axis a
+  | .freeNorm a => .axis a
+  | .iterAt _ n => .const n
+  | .iterNext a => .shift a 1
+
 end LeanNCD

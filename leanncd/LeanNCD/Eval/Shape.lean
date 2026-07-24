@@ -364,15 +364,6 @@ private def solveSizeConstraints (constraints : List SizeConstraint) :
         , mlHints := hints })
   return solved
 
-/-- The `IdxExpr` an LHS slot places its value at (mirrors `Eval/Scatter.lhsSlotIdx`; kept local to
-    avoid an import cycle with `Scatter.lean`). -/
-private def slotOutIdx : LHSSlot → IdxExpr
-  | .affine e   => e
-  | .free a     => .axis a
-  | .freeNorm a => .axis a
-  | .iterAt _ n => .const n
-  | .iterNext a => .shift a 1
-
 /-- Output dim of one scatter LHS slot at the current `sizes` (`none` if a source axis is unsized).
     MUST match `Eval.scatterOutShape`'s per-slot formula exactly — that is the shape `evalScatter`
     actually materializes, so sizing a downstream reader by anything else would read a wrong-extent
@@ -394,7 +385,7 @@ private def scatterOutDim (sizes : HashMap UID Nat) (e : IdxExpr) : Option Nat :
 def scatterOutputShapes (sizes : HashMap UID Nat) (stmts : List Stmt) : HashMap String (List Nat) :=
   stmts.foldl (fun m s => match s with
     | .scatter nm slots _ _ =>
-        match slots.mapM (fun sl => scatterOutDim sizes (slotOutIdx sl)) with
+        match slots.mapM (fun sl => scatterOutDim sizes sl.outIdx) with
         | some dims => m.insert nm dims
         | none      => m
     | _ => m) {}
