@@ -615,10 +615,10 @@ it in.
    `map` at the two `idxAffineForm e` call sites (lines 433, 449): a `.gather` read simply
    contributes no size equation for the axis it indexes into. The fixpoint loop, upper-envelope
    constraint builder, RREF solve, and the Issue-D/Issue-H checks are all untouched.
-4. **`Stmt.readsOf`** (`Eval/Shape.lean:15-20`) — needs a new case to recurse into a
-   `.gather`'s inner read (e.g. `src[e]`) so that the inner read's own axis (`e`) still gets
-   sized normally; today `readsOf` never looks inside index expressions, because there's never
-   been anything to recurse into.
+4. **`Stmt.readFactors`** (`DSL/Ast.lean`; formerly `Stmt.readsOf` in `Eval/Shape.lean`, deleted
+   in Spike 2a) — needs a new case to recurse into a `.gather`'s inner read (e.g. `src[e]`) so that
+   the inner read's own axis (`e`) still gets sized normally; today `readFactors` never looks inside
+   index expressions, because there's never been anything to recurse into.
 5. **Consequence, not a new failure mode:** the gathered-into axis (e.g. `X`'s row axis) can no
    longer be sized from that occurrence. It must be inferable elsewhere (another affine read,
    or an explicit `axis ... = n` pin) or the solver fails loud — via the *existing* Issue-D
