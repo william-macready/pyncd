@@ -16,7 +16,7 @@ run_cmd do
   | .ok (sizes, _) =>
       unless sizes[1]? == some 2 && sizes[2]? == some 3 && sizes[3]? == some 4 do
         throwError s!"wrong sizes: {sizes[1]?},{sizes[2]?},{sizes[3]?}"
-      unless outputShape sizes (Stmt.lhsSlots mm) == [2,4] do throwError "wrong output shape"
+      unless outputShape sizes (mm.slots) == [2,4] do throwError "wrong output shape"
 
 -- conflict: same uid bound to two different sizes ⇒ error.
 run_cmd do
@@ -38,6 +38,6 @@ run_cmd do
   match inferAxisSizes {} env [s] with
   | .error e => throwError e
   | .ok (sizes, _) =>
-      unless outputShape sizes (Stmt.lhsSlots s) == [0] do throwError "expected [0] for unpinned axis"
+      unless outputShape sizes (s.slots) == [0] do throwError "expected [0] for unpinned axis"
 
 end LeanNCD.Eval

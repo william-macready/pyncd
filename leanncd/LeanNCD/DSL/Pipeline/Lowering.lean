@@ -212,11 +212,6 @@ def Stmt.lhsAxes : Stmt → List AxisSpec
         | .affine _   => none)
   | .recurMorphism _ _ _ => []
 
-/-- The `RHSExpr.nonlin` of a stmt. -/
-def Stmt.nonlin : Stmt → Nonlin
-  | .assign _ _ r | .scatter _ _ r _ => r.nonlin
-  | .recurMorphism _ _ _ => .identity
-
 /-- The `RHSExpr.agg` of a stmt. -/
 def Stmt.agg : Stmt → AggOp
   | .assign _ _ r | .scatter _ _ r _ => r.agg
@@ -518,7 +513,7 @@ def buildStep (nameToStep : Std.HashMap String (Nat × Nat)) (extIndex : Std.Has
   let op : BrOp :=
     if sc.isScanPre then .scanPre
     else if sc.isScan then (if sc.isAffineScan then .scanAffine else .scan)
-    else match s.nonlin with
+    else match s.nonlinOf with
       | .relu        => .relu
       | .sigmoid     => .sigmoid
       | .tanh        => .tanh

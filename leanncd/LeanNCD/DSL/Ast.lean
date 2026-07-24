@@ -125,4 +125,20 @@ structure TLProgram where
   stmts : List Stmt
   deriving DecidableEq, Repr, Lean.ToExpr, Inhabited
 
+/- ── AST accessors (shared by the DSL pipeline and Eval layers) ── -/
+
+def Decl.name : Decl → String
+  | .tensor n _ => n | .predicate n _ => n | .linear n _ _ => n | .axis ax _ => ax.name
+
+def Stmt.lhsName : Stmt → String
+  | .assign n _ _ => n | .scatter n _ _ _ => n | .recurMorphism n _ _ => n
+
+def Stmt.slots : Stmt → List LHSSlot
+  | .assign _ ls _ => ls | .scatter _ ls _ _ => ls | .recurMorphism _ _ _ => []
+
+def Stmt.nonlinOf : Stmt → Nonlin
+  | .assign _ _ r => r.nonlin
+  | .scatter _ _ r _ => r.nonlin
+  | .recurMorphism _ _ _ => .identity
+
 end LeanNCD

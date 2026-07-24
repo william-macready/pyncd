@@ -5,12 +5,6 @@ import Std.Data.HashMap
 namespace LeanNCD.Eval
 open Std
 
-/-- The LHS slots of a statement (assign/scatter; `recurMorphism` has none here). -/
-def Stmt.lhsSlots : Stmt → List LHSSlot
-  | .assign _ ls _    => ls
-  | .scatter _ ls _ _ => ls
-  | .recurMorphism _ _ _ => []
-
 /-- All `(name, [idxExprs])` reads in a stmt's RHS (assign/scatter; recurMorphism has none here). -/
 def Stmt.readsOf : Stmt → List (String × List IdxExpr)
   | .assign _ _ r | .scatter _ _ r _ =>

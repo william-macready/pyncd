@@ -132,20 +132,13 @@ def Combine.max : Combine := ⟨(· * ·), fun (a b : Float) => Max.max a b, -1.
     across terms and contracted axes. Identity is `+∞` so all-positive inputs reduce correctly. -/
 def Combine.min : Combine := ⟨(· * ·), fun (a b : Float) => Min.min a b, 1.0 / 0.0⟩
 
-/-- The declared name of a `Decl`. -/
-def declName : Decl → String
-  | .tensor n _      => n
-  | .predicate n _   => n
-  | .linear n _ _    => n
-  | .axis ax _       => ax.name
-
 /-- Pick the `Combine` for an output given its decl and the RHS aggregation op.
     Priority: `agg = .max` ⇒ tropical max; `agg = .min` ⇒ tropical min; `predicate` ⇒ bool; else real. -/
 def combineFor (decls : List Decl) (nm : String) (agg : AggOp) : Combine :=
   match agg with
   | .max => Combine.max
   | .min => Combine.min
-  | .sum => match decls.find? (fun d => declName d == nm) with
+  | .sum => match decls.find? (fun d => d.name == nm) with
       | some (.predicate _ _) => Combine.bool
       | _                     => Combine.real
 
