@@ -6,7 +6,7 @@ open Lean Elab
 def bump : UData → UData := fun d => if d.uid == 1 then { d with uid := 99 } else d
 run_cmd do
   let a : AxisSpec := { name := "i", uid := 1, kind := .real none }
-  let r := TermTraversable.traverseUID bump (IdxExpr.axis a)
+  let r := IdxExpr.mapUID bump (IdxExpr.axis a)
   match r with
   | .axis a' => unless a'.uid == 99 && a'.name == "i" do throwError "axis uid not remapped"
   | _ => throwError "shape changed"
@@ -15,5 +15,5 @@ run_cmd do
   let p : TLProgram := { decls := [], stmts := [
     .assign "Y" [.free { name := "i", uid := 1, kind := .real none }]
       { body := { terms := [] }, nonlin := .identity } ] }
-  unless (TermTraversable.traverseUID id p == p) do throwError "traverseUID id ≠ id"
+  unless (TLProgram.mapUID id p == p) do throwError "TLProgram.mapUID id ≠ id"
 end LeanNCD
