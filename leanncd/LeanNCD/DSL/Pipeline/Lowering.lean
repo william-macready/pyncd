@@ -455,6 +455,44 @@ def buildNameToStep (stmts : List ScanStmt) : Std.HashMap String (Nat × Nat) :=
   stmts.zipIdx.foldl (fun m (sc, i) =>
     sc.outputs.zipIdx.foldl (fun m' (nm, s) => m'.insert nm (i, s)) m) {}
 
+/-- The pure `BrBaseP` a step lowers to (op label + the four shape fields). Factored out of
+    `buildStep` so its field-extraction proofs collapse to projections. Total (throw-free);
+    `buildStep` keeps the guards and the wire-`mapM`. -/
+def ScanStmt.toBrBaseP (sc : ScanStmt) (nameToStep : Std.HashMap String (Nat × Nat))
+    (stmts : List ScanStmt) : BrBaseP :=
+  let s := sc.repStmt.getD emptyStmt
+  let readFactors := sc.inputReadFactors
+  let degree : StObjP := sc.stepDegAxesMulti.map (fun a => AxisP.mk (some a.name) (SizeExpr.var a.name))
+  let inputWeaves : List WeaveShapeP :=
+    readFactors.map (fun rf =>
+      match nameToStep[rf.1]? with
+      | some (j, slot) => (tensorAxes ((stmts.getD j default).slotStmt slot)).map (fun a => WeaveSlotP.fixed a)
+      | none   => (List.range rf.2.length).map (fun pos =>
+                    WeaveSlotP.fixed (AxisP.mk (some (rf.1 ++ "_" ++ toString pos))
+                      (SizeExpr.var (rf.1 ++ "_" ++ toString pos)))))
+  let outputWeaves : List WeaveShapeP := (List.range sc.outputs.length).map sc.slotWeave
+  let reindexings : List StMatP := sc.elaborateReindexings
+  let op : BrOp :=
+    if sc.isScanPre then .scanPre
+    else if sc.isScan then (if sc.isAffineScan then .scanAffine else .scan)
+    else match s.nonlinOf with
+      | .relu        => .relu
+      | .sigmoid     => .sigmoid
+      | .tanh        => .tanh
+      | .gelu        => .gelu
+      | .leakyrelu   => .leakyrelu
+      | .softmax _   => .softmax
+      | .normalize _ => .normalize
+      | .l2normalize _ => .l2normalize
+      | .identity    => match s with
+          | .scatter .. => .scatter
+          | .assign ..  => match s.agg with
+              | .max => .maxreduce
+              | .min => .minreduce
+              | .sum => .contract
+          | .recurMorphism .. => .contract   -- unreachable: scanPre handled above
+  { op, degree, inputWeaves, outputWeaves, reindexings }
+
 /-- Build one `BrBaseP` step and its routing wires for `sc`, given the precomputed maps and the
     full scheduled statement list (`stmts`, used to publish an internal read's producer axes).
     Returns `CompileError.shapeMismatch` for an empty-step `scanPre`, or
