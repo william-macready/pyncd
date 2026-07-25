@@ -234,9 +234,12 @@ report `cyclicDataflow` instead of falling back. Add a reject test.
 >   survey had searched only `LeanNCD/`. `Structural`'s free-only and `normAxisUidOf`'s freeNorm-only matches are
 >   intentionally selective (now `freeUID?`/`normUID?`), *not* `axisUID?` twins.
 >
-> **Deferred (per plan):** the kernel-checked equivalence certificates (E1-style `*_eq_ref` + `freeUID?`/`normUID?`
-> selectivity teeth) are specced in `docs/superpowers/specs/2026-07-24-spike2-cde-equivalence-certificates.md`;
-> `2c/2d/2e` currently rely on `lake build` + the pinned suite.
+> **Equivalence certificates — WILL NOT BUILD (decision 2026-07-25):** the kernel-checked `*_eq_ref`
+> certificates (E1-style + `freeUID?`/`normUID?` selectivity teeth) were specced in
+> `docs/superpowers/specs/2026-07-24-spike2-cde-equivalence-certificates.md` but will **not** be written —
+> proving `new = old` against pre-refactor baselines that were themselves never verified buys little.
+> All of Spike 2 relies on `lake build` + the pinned suite + the per-task/whole-branch reviews. The spec
+> is retained (marked NOT PLANNED) as a ready-made pickup if that calculus ever changes.
 
 The single largest duplication cluster. Root cause: `Eval/` imports only `DSL/Ast.lean`
 (deliberate layering), so pure-AST helpers that live in `Pipeline/Structural.lean` were
