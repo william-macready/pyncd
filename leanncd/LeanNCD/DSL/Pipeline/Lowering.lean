@@ -455,45 +455,22 @@ def buildNameToStep (stmts : List ScanStmt) : Std.HashMap String (Nat × Nat) :=
   stmts.zipIdx.foldl (fun m (sc, i) =>
     sc.outputs.zipIdx.foldl (fun m' (nm, s) => m'.insert nm (i, s)) m) {}
 
-/-- Build one `BrBaseP` step and its routing wires for `sc`, given the precomputed maps and the
-    full scheduled statement list (`stmts`, used to publish an internal read's producer axes).
-    Returns `CompileError.shapeMismatch` for an empty-step `scanPre`, or
-    `CompileError.undeclaredName` for an unresolved read. -/
-def buildStep (nameToStep : Std.HashMap String (Nat × Nat)) (extIndex : Std.HashMap String Nat)
-    (stmts : List ScanStmt)
-    (sc : ScanStmt) : Except CompileError (BrBaseP × List Wire) := do
-  -- Validate a pre-built (escape-hatch) morphism: its step list must be non-empty.
-  match sc with
-  | .scanPre nm _ tc =>
-      if tc.steps.isEmpty then
-        throw (CompileError.shapeMismatch s!"recurMorphism {nm}: empty step morphism" "non-empty ThreadedComposed")
-  | _ => pure ()
-  -- Step guard: at least one true output, and coupled-scan outputs agree on shared-axis order
-  -- (else the shared step degree cannot publish every slot in its own LHS order). FAIL LOUD.
-  if ! sc.stepGuardOk then
-    throw (if sc.outputs.isEmpty
-      then CompileError.emptyScanOutputs "buildStep: scan step has no true outputs (empty base∩recur)"
-      else CompileError.inconsistentScanAxes "buildStep: coupled scan outputs disagree on shared axis order")
-  -- rep stmt drives ONLY the op label (nonlin/agg/kind); reads/axes come from the whole group.
+/-- The pure `BrBaseP` a step lowers to (op label + the four shape fields). Factored out of
+    `buildStep` so its field-extraction proofs collapse to projections. Total (throw-free);
+    `buildStep` keeps the guards and the wire-`mapM`. -/
+def ScanStmt.toBrBaseP (sc : ScanStmt) (nameToStep : Std.HashMap String (Nat × Nat))
+    (stmts : List ScanStmt) : BrBaseP :=
   let s := sc.repStmt.getD emptyStmt
   let readFactors := sc.inputReadFactors
-  -- degree = combined retained ++ contracted across all stepStmts, de-duplicated by uid.
-  let degAxes : List AxisSpec := sc.stepDegAxesMulti
-  let degree : StObjP := degAxes.map (fun a => AxisP.mk (some a.name) (SizeExpr.var a.name))
-  -- internal read ⇒ publish producer step `j`'s slot-`slot` `tensorAxes` (the SAME (j,slot) the wire
-  -- below uses, so producer output and consumer input weaves coincide); external ⇒ one fixed slot
-  -- per read position.
+  let degree : StObjP := sc.stepDegAxesMulti.map (fun a => AxisP.mk (some a.name) (SizeExpr.var a.name))
   let inputWeaves : List WeaveShapeP :=
     readFactors.map (fun rf =>
       match nameToStep[rf.1]? with
-      | some (j, slot) => (tensorAxes ((stmts.getD j default).slotStmt slot)).map
-                            (fun a => WeaveSlotP.fixed a)
+      | some (j, slot) => (tensorAxes ((stmts.getD j default).slotStmt slot)).map (fun a => WeaveSlotP.fixed a)
       | none   => (List.range rf.2.length).map (fun pos =>
                     WeaveSlotP.fixed (AxisP.mk (some (rf.1 ++ "_" ++ toString pos))
                       (SizeExpr.var (rf.1 ++ "_" ++ toString pos)))))
-  -- one output weave per true output (base∩recur for scans), in `outputs` order.
   let outputWeaves : List WeaveShapeP := (List.range sc.outputs.length).map sc.slotWeave
-  -- M4: consume the pre-route artifact (single source of truth) instead of recomputing the rows.
   let reindexings : List StMatP := sc.elaborateReindexings
   let op : BrOp :=
     if sc.isScanPre then .scanPre
@@ -514,18 +491,40 @@ def buildStep (nameToStep : Std.HashMap String (Nat × Nat)) (extIndex : Std.Has
               | .min => .minreduce
               | .sum => .contract
           | .recurMorphism .. => .contract   -- unreachable: scanPre handled above
-  let step : BrBaseP := { op, degree, inputWeaves, outputWeaves, reindexings }
+  { op, degree, inputWeaves, outputWeaves, reindexings }
+
+/-- Build one `BrBaseP` step and its routing wires for `sc`, given the precomputed maps and the
+    full scheduled statement list (`stmts`, used to publish an internal read's producer axes).
+    Returns `CompileError.shapeMismatch` for an empty-step `scanPre`, or
+    `CompileError.undeclaredName` for an unresolved read. -/
+def buildStep (nameToStep : Std.HashMap String (Nat × Nat)) (extIndex : Std.HashMap String Nat)
+    (stmts : List ScanStmt)
+    (sc : ScanStmt) : Except CompileError (BrBaseP × List Wire) := do
+  -- Validate a pre-built (escape-hatch) morphism: its step list must be non-empty.
+  match sc with
+  | .scanPre nm _ tc =>
+      if tc.steps.isEmpty then
+        throw (CompileError.shapeMismatch s!"recurMorphism {nm}: empty step morphism" "non-empty ThreadedComposed")
+  | _ => pure ()
+  -- Step guard: at least one true output, and coupled-scan outputs agree on shared-axis order
+  -- (else the shared step degree cannot publish every slot in its own LHS order). FAIL LOUD.
+  if ! sc.stepGuardOk then
+    throw (if sc.outputs.isEmpty
+      then CompileError.emptyScanOutputs "buildStep: scan step has no true outputs (empty base∩recur)"
+      else CompileError.inconsistentScanAxes "buildStep: coupled scan outputs disagree on shared axis order")
   -- Route each read to its producer (step, slot), else to the external sentinel. A name that is
   -- neither produced nor declared external is an unresolved read: FAIL LOUD rather than
   -- silently defaulting to external slot 0 (which masks upstream dataflow errors).
-  let wires ← readFactors.mapM (fun rf =>
+  let wires ← sc.inputReadFactors.mapM (fun rf =>
     match nameToStep[rf.1]? with
     | some (j, slot) => pure (Wire.internal j slot)
     | none   =>
       match extIndex[rf.1]? with
       | some k => pure (Wire.external k)
       | none   => throw (CompileError.undeclaredName rf.1))
-  return (step, wires)
+  -- The pure step record (op label + four shape fields) is `sc.toBrBaseP` — the exact record this
+  -- function inlined before, factored out so field-extraction proofs collapse to projections.
+  return (sc.toBrBaseP nameToStep stmts, wires)
 
 /-- Acyclicity guard for Phase 8: every internal read wire points BACKWARD — its producer step
     precedes its consumer (`j < i`). False exactly for a genuine inter-step cycle (`topoSort` source-

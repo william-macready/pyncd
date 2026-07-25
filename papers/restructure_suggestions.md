@@ -496,7 +496,7 @@ No statement changes anywhere in this spike — pure proof-engineering. It also 
 the proofs against Wave-2 pipeline changes, which is why 6a is worth doing early if Spike 3
 is planned.
 
-**6a. Factor `ScanStmt.toBrBaseP` out of `buildStep`.** Five RouteSpec lemmas
+**6a. Factor `ScanStmt.toBrBaseP` out of `buildStep`.** ✅ **DONE (2026-07-25, branch `spike6a-tobrbasep`).** Five RouteSpec lemmas
 (`buildStep_outputWeaves`:344, `_reindexings`:405, `_degree`:424, `_inputWeaves`:613,
 `_wires_mapM`:716) each redo the same 3-way `cases sc` + `bind_pure_pair_ok` dance because
 `buildStep` (`Lowering.lean:498-564`) interleaves guards with record construction. Reshape as
@@ -504,6 +504,17 @@ is planned.
 `buildStep_ok_eq : buildStep … = .ok (b, w) → b = sc.toBrBaseP ∧ …` plus `rfl` projections.
 Future `BrBaseP` field additions then need zero new extraction lemmas — this is what makes
 Spike 3a's `buildStep` touch cheap. ≈ −150 lines.
+
+> *Actuals: the repair surface was **7 proof bodies, not 5** — the two the sketch omits,
+> `buildStep_ok_guard` and `buildStep_outputWeaves_length_one`, also `unfold buildStep`. Six
+> field-projection proofs collapse to one-liners off the new `buildStep_ok_eq` (`rfl` for the four
+> plain fields, `simp` for the length lemma, and `buildStep_wires_mapM` is literally its second
+> conjunct); `buildStep_ok_guard` reasons about the throw-guards (which stay in `buildStep`) so it
+> was untouched. Net **−35 lines of Lean** (RouteSpec 908→874; `Lowering` net −1), well short of the −150 estimate,
+> because `ScanStmt.toBrBaseP` and `buildStep_ok_eq` are net-new — the real payoff is structural
+> (future `BrBaseP` fields = zero new extraction lemmas; Spike 3a's `buildStep` touch is now cheap),
+> not line count. Zero statement changes; sorry-free; `[propext, Quot.sound]`. Two clean commits,
+> two whole-task reviews.*
 
 **6b. One `routeCore` elimination lemma.** Six proofs (RouteSpec :87-162, :469-513, :692-712)
 re-unfold `routeCore`, case on `routableInOrder`, case on the `mapM`. Prove
@@ -653,7 +664,7 @@ Wave 1   Spike 1  ✅ DONE 2026-07-10 (dead code/docs/housekeeping) — merged 1
 Wave 3a  Spike 7a/7b/7c ✅ DONE 2026-07-10 (sorry pruning)        — merged eb09a6d..c707fce
          Spike 8  ✅ DONE 2026-07-11 (proof-adjacent type cleanups)   — merged 2db951c..7831816
 Wave 2   Spike 2  (AST accessors/traversals)                     — first structural spike
-         Spike 6a (toBrBaseP)                                    — before/with Spike 3
+         Spike 6a (toBrBaseP) ✅ DONE 2026-07-25                 — before/with Spike 3
          Spike 3  (Nonlin + Elab tables; then optional 3c)       — after 2 (and ideally 6a)
                   [3a doubles as a worked dry-run for E13's "close BrOp" question]
          Spike 4  (Eval unification; 4a→4b→4c→4d, then 4e–4i)    — after 2; 4d cheaper after 3
@@ -756,7 +767,7 @@ Phase 1  — foundational structural spike (executable track)
   E1             prototype the one-traversal encoding   ← decides the shape of Spike 2
   Spike 2        AST accessors/traversals — DONE: 2b via E1 (traverseAxes); 2c/2d/2e via PR #10; 2a via Approach D (Factor.read?)
                  (scope informed by E11's outcome)
-  Spike 6a       factor toBrBaseP out of buildStep (proof track; before Spike 3)
+  Spike 6a ✅DONE factor toBrBaseP out of buildStep (proof track; before Spike 3)
 
 Phase 2  — executable-track unification (after Spike 2; E6 net in place)
   Spike 3        Nonlin + Elab tables (after 6a); optional 3c after Spike 2a
