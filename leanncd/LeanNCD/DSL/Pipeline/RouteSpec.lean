@@ -221,15 +221,15 @@ theorem buildStep_ok_eq
   cases sc with
   | plain s =>
       simp only [hg, Bool.not_true, pure_bind] at h
-      exact ⟨by simpa [ScanStmt.toBrBaseP] using bind_pure_pair_ok h, bind_pure_pair_ok_snd h⟩
+      exact ⟨bind_pure_pair_ok h, bind_pure_pair_ok_snd h⟩
   | scan nm ax bs rs aff =>
       simp only [hg, Bool.not_true, pure_bind] at h
-      exact ⟨by simpa [ScanStmt.toBrBaseP] using bind_pure_pair_ok h, bind_pure_pair_ok_snd h⟩
+      exact ⟨bind_pure_pair_ok h, bind_pure_pair_ok_snd h⟩
   | scanPre nm ax tc =>
       by_cases he : tc.steps.isEmpty = true
       · simp [he, bind, Except.bind] at h
       · simp only [hg, Bool.not_true, he, pure_bind] at h
-        exact ⟨by simpa [ScanStmt.toBrBaseP] using bind_pure_pair_ok h, bind_pure_pair_ok_snd h⟩
+        exact ⟨bind_pure_pair_ok h, bind_pure_pair_ok_snd h⟩
 
 /-- A successful `buildStep` implies its outputs are consistent (projected from the guard). -/
 theorem buildStep_ok_consistent
