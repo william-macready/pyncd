@@ -50,12 +50,8 @@ def termAxisUIDs (t : ProdTerm) : List UID :=
 def readAxisUIDs (rhs : RHSExpr) : List UID :=
   (RHSExpr.traverseAxesNoMask (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) rhs).run
 
-/-- Every `.read` tensor name appearing in the RHS. -/
-def readNames (rhs : RHSExpr) : List String :=
-  rhs.body.terms.flatMap (fun t => t.factors.filterMap (fun
-    | .read nm _ => some nm
-    | .iverson _ => none
-    | .unaryFn _ nm _ => some nm))
+/-- Every read tensor name appearing in the RHS. -/
+def readNames (rhs : RHSExpr) : List String := rhs.readFactors.map (·.1)
 
 /-- The cartesian product of `[0..d-1]` ranges (one per dimension). Reuses `allCoords`. -/
 def cartesian (dims : List Nat) : List (List Nat) := DenseTensor.allCoords dims

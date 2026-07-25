@@ -624,14 +624,8 @@ Per the §12.1 contract this phase is purely constructive: §12.1 example progra
 `W`, `X`, `Q`, `K` with no `tensor` declaration, so an undeclared read is an external input — not
 an error. `resolveDecls` therefore NEVER throws. -/
 
-/-- The tensor names a stmt reads (from `.read` factors; iverson factors read nothing). -/
-def Stmt.readNames : Stmt → List String
-  | .assign _ _ r | .scatter _ _ r _ =>
-      r.body.terms.flatMap (fun t => t.factors.filterMap (fun
-        | .read nm _ => some nm
-        | .iverson _ => none
-        | .unaryFn _ nm _ => some nm))
-  | .recurMorphism _ _ _ => []   -- recurMorphism reads not introspected (E2c)
+/-- The tensor names a stmt reads (from `.read`/`.unaryFn` factors; iverson reads nothing). -/
+def Stmt.readNames (s : Stmt) : List String := s.readFactors.map (·.1)
 
 /-- Build the declaration environment and classify external-input names.
     `extNames` = names READ in some stmt but never PRODUCED (never a stmt LHS). Never throws. -/
@@ -662,13 +656,7 @@ private def Decl.axisCount : Decl → Nat
   | .axis _ _ => 0   -- axis decls are excluded from DeclEnv; never reached via env lookup
 
 private def stmtReads (s : Stmt) : List (String × Nat) :=
-  match s with
-  | .assign _ _ r | .scatter _ _ r _ =>
-      r.body.terms.flatMap (fun t => t.factors.filterMap (fun
-        | .read nm es => some (nm, es.length)
-        | .iverson _  => none
-        | .unaryFn _ nm es => some (nm, es.length)))
-  | .recurMorphism _ _ _ => []
+  s.readFactors.map (fun (nm, es) => (nm, es.length))
 
 /-- Will this LHS be lowered to a `scatter` (publishing its full slot-count rank)? True for an affine
     LHS (`Out[2*i,2*j]`) or a diagonal LHS with a repeated free axis (`Y[i,i]`). Shared by the
@@ -811,14 +799,8 @@ they are grouped into ONE `ScanStmt.scan`. Validation: every recur step needs a 
 step of the same name (else `missingBaseCase`); and a recur step may not read its iteration axis
 "ahead" (`l+1` look-ahead on the RHS — else `causalityViolation`). -/
 
-/-- All `IdxExpr`s read on the RHS of a stmt. -/
-def Stmt.rhsReads : Stmt → List IdxExpr
-  | .assign _ _ r | .scatter _ _ r _ =>
-      r.body.terms.flatMap (fun t => t.factors.flatMap (fun
-        | .read _ es => es
-        | .iverson _ => []
-        | .unaryFn _ _ es => es))
-  | .recurMorphism _ _ _ => []
+/-- All `IdxExpr`s read on the RHS of a stmt (concatenated per factor, in order). -/
+def Stmt.rhsReads (s : Stmt) : List IdxExpr := s.readFactors.flatMap (·.2)
 
 /-- Conservative causality check: does any RHS read reference iteration axis `u` with a
     strictly-positive look-ahead offset (`shift a n`, `n > 0`)? -/

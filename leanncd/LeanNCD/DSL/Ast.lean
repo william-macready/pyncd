@@ -216,4 +216,22 @@ def LHSSlot.outExtent (sl : LHSSlot) (sz : UID → Option Nat) : Option Nat :=
         some (xs.foldl (fun acc (c, a) => acc + c * Int.ofNat ((sz a.uid).getD 0)) c0).toNat
       else none
 
+/-- Classify a `Factor` as a tensor read: `read`/`unaryFn` keep (name, index-exprs);
+    `iverson` (a mask/predicate) reads no tensor. The ONE place a new `Factor` constructor
+    gets classified as a read — every read collector below is a projection of this. -/
+def Factor.read? : Factor → Option (String × List IdxExpr)
+  | .read nm es       => some (nm, es)
+  | .unaryFn _ nm es  => some (nm, es)
+  | .iverson _        => none
+
+/-- The read factors (tensor name + read index exprs) of an RHS, in traversal order,
+    with duplicates preserved (callers dedup if they need to). -/
+def RHSExpr.readFactors (r : RHSExpr) : List (String × List IdxExpr) :=
+  r.body.terms.flatMap (fun t => t.factors.filterMap Factor.read?)
+
+/-- The read factors of a stmt, in order (`recurMorphism` reads are not introspected). -/
+def Stmt.readFactors : Stmt → List (String × List IdxExpr)
+  | .assign _ _ r | .scatter _ _ r _ => r.readFactors
+  | .recurMorphism _ _ _ => []
+
 end LeanNCD

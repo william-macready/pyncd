@@ -5,15 +5,6 @@ import Std.Data.HashMap
 namespace LeanNCD.Eval
 open Std
 
-/-- All `(name, [idxExprs])` reads in a stmt's RHS (assign/scatter; recurMorphism has none here). -/
-def Stmt.readsOf : Stmt → List (String × List IdxExpr)
-  | .assign _ _ r | .scatter _ _ r _ =>
-      r.body.terms.flatMap (fun t => t.factors.filterMap (fun
-        | .read nm es => some (nm, es)
-        | .iverson _  => none
-        | .unaryFn _ nm es => some (nm, es)))
-  | .recurMorphism _ _ _ => []
-
 -- `idxAffineForm` (the shared affine-lowering primitive) now lives in `DSL/Ast.lean`; the
 -- unqualified name below resolves to `LeanNCD.idxAffineForm` (M2 dedup, §6.2).
 
@@ -397,7 +388,7 @@ def inferAxisSizes (seed : HashMap UID Nat) (env : HashMap String DenseTensor)
     (stmts : List Stmt) : Except EvalError (HashMap UID Nat × List String) := do
   -- collect every (affine-form, dim) read position once
   let positions : List AffinePosition := stmts.flatMap (fun s =>
-    (Stmt.readsOf s).flatMap (fun (nm, es) =>
+    (Stmt.readFactors s).flatMap (fun (nm, es) =>
       match env[nm]? with
       | none   => []
       | some t => (es.zip t.shape).map (fun (e, d) =>
@@ -413,7 +404,7 @@ def inferAxisSizes (seed : HashMap UID Nat) (env : HashMap String DenseTensor)
   for _ in List.range (positions.length + stmts.length + 1) do
     let producedShapes := scatterOutputShapes sizes stmts
     let scatterPositions : List AffinePosition := stmts.flatMap (fun s =>
-      (Stmt.readsOf s).flatMap (fun (nm, es) =>
+      (Stmt.readFactors s).flatMap (fun (nm, es) =>
         match producedShapes[nm]? with
         | none       => []
         | some shape => (es.zip shape).map (fun (e, d) =>
