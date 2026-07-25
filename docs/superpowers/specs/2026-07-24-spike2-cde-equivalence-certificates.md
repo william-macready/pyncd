@@ -1,11 +1,21 @@
-# Spike 2 (2c/2d/2e + 2a) — deferred equivalence certificates
+# Spike 2 (2c/2d/2e + 2a) — equivalence certificates (NOT PLANNED)
 
-> **Status:** SPEC / not-yet-built. Written 2026-07-24 alongside the Spike 2 (2c/2d/2e)
-> consolidation (PR #10, merged), and extended for **2a** (the read-projection family / Approach D,
-> branch `spike2a-read-projection-consolidation`) — so this spec now covers all of Spike 2. Each
-> consolidation is verified behavior-preserving by `lake build` green + the pinned test suite; this
-> spec captures the *kernel-checked equivalence proofs* that were deliberately deferred, so the
-> intent (Rule 9: tests encode WHY) is not lost.
+> **Status: WILL NOT BUILD — decision 2026-07-25.** Written 2026-07-24 alongside the Spike 2
+> consolidation (2c/2d/2e via PR #10; 2a via PR #11 — both merged) to spec the kernel-checked
+> equivalence proofs. **These certificates will not be written.**
+>
+> **Rationale:** an equivalence certificate only certifies `new = old`. The pre-refactor baselines
+> here were never independently verified, so proving equivalence to them merely preserves whatever
+> the originals did — bugs included — which is limited payoff. The refactors' actual safety net is
+> `lake build` green + the pinned test suite + the per-task and whole-branch reviews, and that stands
+> regardless of these proofs.
+>
+> This document is retained as a ready-made spec should the calculus change (e.g. an independently
+> verified baseline appears, or behavioral drift here becomes a real risk). If revisited, the
+> highest-value pieces are the **2d** `outExtent`↔`scatterOutDim` certificates (the collapsed
+> "MUST match … kept in sync by mirroring" pair) and the **2a** order/duplicate-preservation
+> certificates — the two things `lake build` alone cannot guarantee. Everything below is the spec as
+> originally written.
 
 ## Why this exists
 
