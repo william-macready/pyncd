@@ -43,7 +43,48 @@ each claim cross-checked against the code; the highest-leverage claims (dead cod
 duplicates, hardcoded semiring constants) were re-verified independently. Everything below
 carries `file:line` references against HEAD as of 2026-07-09.
 
+## Review addendum (2026-07-26): correctness-first reprioritization
+
+> An independent high-effort review (`pyncd.worktrees/agents-gpt-56-vscode-agents-integration/copilot_code_analysis.md`)
+> validated this document against the current post-6a tree with **compiled Lean artifacts** — countermodels and
+> runtime regressions, not a code read. Its verdict: this plan is directionally right (preserve the proof/execution
+> split, one applicative traversal, explicit serialization tags, phase types), but **under-prioritizes several
+> *demonstrated* correctness failures** relative to ergonomic refactors. This section folds in that reprioritization;
+> the individual spikes below are unchanged except where noted.
+
+**The lens — four "closure" guarantees.** Rank work by which it advances, and never describe a refactor as a
+semantics improvement unless its exit gate actually checks semantics:
+
+1. **Representation closure** — every constructor classified by an exhaustive match (what Spike 3a delivers for `Nonlin`).
+2. **Semantic closure** — every source operation has enough data in the *target IR* to be interpreted, or is explicitly rejected.
+3. **Boundary validity** — malformed external data cannot become valid-looking internal values.
+4. **Proof validity** — theorem statements actually follow from the advertised interfaces.
+
+**Demonstrated failures (compiled evidence) that the current ordering treats as deferred/optional:**
+
+| # | Failure (evidence) | Guarantee | Where it sits now | Recommended action |
+|---|---|---|---|---|
+| 3 | **Nonlinear scatter is silently erased** — `evalScatter` never applies `rhs.nonlin`; `relu(-2)` ⇒ `-2` (reproduced; re-verified 2026-07-26) | semantic/boundary | not in any spike | **ACTIONED**: added as **Spike 3 Task 0** (reject non-identity scatter) |
+| 5 | Unsized scan ⇒ shape `[…,0]` + two `set!` bounds **panics**, yet exits 0 (reproduced) | boundary | RejectTest records it as "accepted" | require iter-axis sizes; `EvalError`; checked `set` API (light typestate / E2) |
+| 4 | `recurMorphism` accepted by `compile`, rejected by `eval` (reproduced) | semantic | §12.2 escape hatch | reject at compile until routed/eval semantics exist (E5 stage) |
+| 6/17 | Boundary decoders + CSV use **meaning-changing defaults** (`writeSBr` emits `RawAxis:0,` on an `encodeSize` error; `brOpOfIdx` maps unknown ⇒ `.contract`) (reproduced) | boundary | E9/bridge, unscheduled | parse-then-validate; `Except` serializers; partial `brOpOfIdx?` (bridge hardening) |
+| 1 | `weave_unique` is **false** under its stated hypotheses (compiled countermodel) | proof | Constraint-adjacent; milestone | quarantine under `Experimental`; restate up to iso (parallel proof track) |
+| 10 | The semiring param in `TargetActegory` is **phantom** (parametricity witness) | proof | E3-adjacent | separate scalar-semantics interface from the shape action |
+| 19 | **No single semantic IR** — `compile` (routed) and `eval` (scheduled) diverge; masks/`UnaryOp`/dtype/scan-bodies disappear while bridge theorems still pass | semantic | **E5 (marked optional)** | **promote E5**: define a denotation for the represented fragment, reject the rest, expand op-by-op |
+| 22 | `SORRY_INVENTORY.md` contradicts the build (says "St sorry-free" while `St.lean:269-270` has two `sorry`s) | proof/trust | — | generate the inventory + axiom-closure checks from source in CI |
+
+**Reprioritization (my read, adopting the review):**
+- **Promote E5 and E2 earlier.** E5 (scheduled-vs-routed agreement) is the *mechanism* by which #3/#4/#6/#19 hide; E2 (light typestate at boundaries — e.g. `ResolvedNonlin` with a checked `NormAxis`, `SizedScan`, `ValidatedScatter`) closes #4/#5 and the norm-axis runtime recompute without dependent-typing the whole compiler.
+- **Add a semantic-payload audit before 3c / E4 / E10.** `BrBaseP` (`op, degree, inputWeaves, outputWeaves, reindexings`) provably has **no field** for the softmax mask, the `UnaryOp`, `ScatterOpts`, or dtype — so `log(X[i])` and `X[i]` lower identically. Any unsupported routed construct should become a named compile error, not a look-alike primitive. This also resets **E13**'s question: it's not whether `BrOp`'s *names* are closed, but whether the *parameterized payload* those names need is closed (today: no).
+- **Parallel proof track:** quarantine `weave_unique`/the flagship graded instance under `Experimental`, add generated `#print axioms`/`sorryAx` CI over a named trusted-core API, keep the weave countermodel as a permanent model test.
+
+**Already actioned:** Spike 3 was revised (see its plan) to (a) reject non-identity scatter as **Task 0**, and (b) claim **representation closure only** — not semantic closure — since `BrBaseP` still erases the payload. **Not yet folded into this doc's spike bodies:** the E5/E2 promotion, the payload audit, and the proof-track CI — these reshape Part II's ordering and are a larger edit than this addendum. The full staged roadmap (Stage 0–8) and per-finding evidence are in the analysis file.
+
+*Caveat:* several categorical findings (#1, the `StBr` `sorry`s) are already labeled deliberate milestones in-code — the review's contribution there is showing they are *inconsistent with the advertised interface*, not merely incomplete. The freshest actionable signal is the **executable correctness bugs (#3, #4, #5, #6)**, which the passing test suite masks.
+
 ## Table of Contents
+
+- [Review addendum (2026-07-26): correctness-first reprioritization](#review-addendum-2026-07-26-correctness-first-reprioritization)
 
 - [0. Constraints — what must NOT be restructured](#0-constraints--what-must-not-be-restructured)
 - [Wave 1 — mechanical deletions and corrections (near-zero risk)](#wave-1--mechanical-deletions-and-corrections-near-zero-risk)
