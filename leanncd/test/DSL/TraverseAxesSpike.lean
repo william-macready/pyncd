@@ -22,8 +22,9 @@
 -- AxisSpecs) and the bare expression `s.terms.flatMap termAxisUIDs` (collect UIDs, no new named def);
 -- the conditional-remap pattern generalizes mechanically (all three theorems pre-verified during
 -- design, zero surprises) — see docs/superpowers/specs/2026-07-16-e1-traverseaxes-sumexpr-design.md.
--- Nonlin slice (first `Option` payload, not `List`): exhaustive 9-constructor match, closing
--- production's documented `specsNonlin` wildcard hazard by construction; subsumes local `specsNonlin'`
+-- Nonlin slice (first `Option` payload, not `List`): exhaustive 3-constructor match
+-- (`identity`/`pointwise`/`axiswise`); the mask can only live on `.axiswise`, so the old
+-- `specsNonlin` wildcard hazard is now unrepresentable; subsumes local `specsNonlin'`
 -- (no UID counterpart — production never touches mask UIDs) — see
 -- docs/superpowers/specs/2026-07-16-e1-traverseaxes-rhsexpr-design.md.
 -- RHSExpr slice (dual traversals, resolving mask asymmetry): `traverseAxesWithMask` for
@@ -309,9 +310,8 @@ theorem traverseAxes_const_eq_specsRHS (r : RHSExpr) :
 -- ===== LHSSlot =====
 
 /-- Local copy of `Structural.lean`'s private `specsLHS`, for comparison only — NOT the
-    source of truth. Keep byte-identical to `Structural.lean:52-53` by inspection. Unlike
-    `Nonlin`'s `specsNonlin`, this is already a clean, exhaustive match with no documented
-    wildcard hazard. -/
+    source of truth. Keep byte-identical to `Structural.lean:52-53` by inspection. This is
+    already a clean, exhaustive match with no documented wildcard hazard. -/
 private def specsLHS' : LHSSlot → List AxisSpec
   | .free a => [a] | .freeNorm a => [a]
   | .iterAt a _ => [a] | .iterNext a => [a] | .affine e => specsIdx' e

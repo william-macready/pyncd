@@ -40,16 +40,16 @@ test "FF3 relu-asym"
       (HashMap.ofList [("W", tl [2,2] [1,1, -1,-1]), ("x", tl [2] [2,1])])
       "H" (tl [2] [3,0])) $
 
--- FF5  sigmoid (KG-activation).  W=I₂, x=[-2,2] ⇒ pre=x exactly.  Also the regression test for
---   the `Eval.lean` wildcard hazard: this statement has NO `.`-marked axis anywhere — if the
---   pointwise arm were missing, this would wrongly throw "no output axis is marked" instead of
---   evaluating.  sigmoid(-2)=1/(1+e²)≈0.1192029, sigmoid(2)=1/(1+e⁻²)≈0.8807971.
+-- FF5  sigmoid (KG-activation).  W=I₂, x=[-2,2] ⇒ pre=x exactly.  Also checks that `.pointwise`
+--   nonlinearities must not require a `·`-marked axis: this statement has NO `.`-marked axis
+--   anywhere, and must still evaluate rather than throw "no output axis is marked".
+--   sigmoid(-2)=1/(1+e²)≈0.1192029, sigmoid(2)=1/(1+e⁻²)≈0.8807971.
 test "FF5 sigmoid"
     (evalEqB (tlprog!{ H[i] := sigmoid(W[i, j] · x[j]) })
       (HashMap.ofList [("W", tl [2,2] [1,0, 0,1]), ("x", tl [2] [-2,2])])
       "H" (tl [2] [0.11920292202211755, 0.8807970779778823])) $
 
--- FF6  tanh (KG-activation).  Same pre=[-2,2] setup as FF5 (unmarked, same wildcard-hazard check).
+-- FF6  tanh (KG-activation).  Same pre=[-2,2] setup as FF5 (unmarked, same no-mask-required check).
 --   tanh(-2)≈-0.9640276, tanh(2)≈0.9640276.
 test "FF6 tanh"
     (evalEqB (tlprog!{ H[i] := tanh(W[i, j] · x[j]) })

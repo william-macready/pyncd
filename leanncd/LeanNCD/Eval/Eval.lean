@@ -28,7 +28,7 @@ def evalPlain (decls : List Decl) (env : HashMap String DenseTensor) (sizes : Ha
         -- the reduction axis is the slot marked `m.` (norm flag now lives on the output slot).
         let axisUids := slots.filterMap (·.axisUID?)
         let axisPos ← match rhs.nonlin, normAxisUidOf slots with
-          | .identity, _           => pure 0
+          | .identity, _           => pure 0     -- unreachable: identity returns early via the guard above; arm kept for exhaustiveness
           | .pointwise _, _        => pure 0     -- pointwise: the axis is irrelevant
           | .axiswise _ _, some nu => match axisUids.findIdx? (· == nu) with
               | some p => pure p
