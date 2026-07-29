@@ -3,7 +3,7 @@ import Lean
 /-!
 # Tensor-logic DSL surface grammar (Milestone E1, Task E1.2)
 
-This module declares the 17 `declare_syntax_cat` categories and transcribes the
+This module declares the 23 `declare_syntax_cat` categories and transcribes the
 surface grammar rules from `papers/leanncd.md` §12.3.  It defines *only* the
 grammar; the elaborators that consume it are added in later tasks.
 
