@@ -15,9 +15,14 @@ Layers covered: `tl_size`, `tl_axis_kind`, `tl_axis_spec`, `tl_decl`,
 namespace LeanNCD
 open Lean Elab Meta
 
+/-- The user-facing name of an `ident` syntax node: its `Name` with macro scopes
+    erased, as a `String`.  Every DSL name (tensor, axis, linear, index) goes
+    through this. -/
+private def identStr (x : Lean.Syntax) : String := x.getId.eraseMacroScopes.getString!
+
 partial def elabTLSize : Syntax → MetaM SizeExpr
   | `(tl_size| $n:num)          => return .lit n.getNat
-  | `(tl_size| $x:ident)        => return .var x.getId.eraseMacroScopes.getString!
+  | `(tl_size| $x:ident)        => return .var (identStr x)
   | `(tl_size| $a:tl_size * $b) => return .mul (← elabTLSize a) (← elabTLSize b)
   | `(tl_size| $a:tl_size / $n:num) => do
       if n.getNat == 0 then throwError "division by zero in size expression"
@@ -36,28 +41,28 @@ partial def elabTLAxisKind : Syntax → MetaM AxisKind
 
 partial def elabTLAxisSpec : Syntax → MetaM AxisSpec
   | `(tl_axis_spec| $x:ident) =>
-      return { name := x.getId.eraseMacroScopes.getString!, uid := 0, kind := .real none }
+      return { name := identStr x, uid := 0, kind := .real none }
   | _ => throwUnsupportedSyntax
 
 private def elabTLNamedShape : Syntax → MetaM (String × List AxisSpec)
   | `(tl_named_shape| $x:ident ( $specs,* )) => do
-      return (x.getId.eraseMacroScopes.getString!, ← specs.getElems.toList.mapM elabTLAxisSpec)
+      return (identStr x, ← specs.getElems.toList.mapM elabTLAxisSpec)
   | _ => throwUnsupportedSyntax
 
 private def elabTLLinearItem : Syntax → MetaM Decl
   | `(tl_linear_item| $x:ident ( $specs,* )) => do
-      return .linear x.getId.eraseMacroScopes.getString!
+      return .linear (identStr x)
         (← specs.getElems.toList.mapM elabTLAxisSpec) false
   | `(tl_linear_item| $x:ident ( $specs,* ) bias) => do
-      return .linear x.getId.eraseMacroScopes.getString!
+      return .linear (identStr x)
         (← specs.getElems.toList.mapM elabTLAxisSpec) true
   | _ => throwUnsupportedSyntax
 
 private def elabTLAxisDeclItem : Syntax → MetaM Decl
   | `(tl_axis_decl_item| $x:ident : $k:tl_axis_kind) => do
-      return .axis { name := x.getId.eraseMacroScopes.getString!, uid := 0, kind := (← elabTLAxisKind k) } none
+      return .axis { name := identStr x, uid := 0, kind := (← elabTLAxisKind k) } none
   | `(tl_axis_decl_item| $x:ident : $k:tl_axis_kind = $n:num) => do
-      return .axis { name := x.getId.eraseMacroScopes.getString!, uid := 0, kind := (← elabTLAxisKind k) } (some n.getNat)
+      return .axis { name := identStr x, uid := 0, kind := (← elabTLAxisKind k) } (some n.getNat)
   | _ => throwUnsupportedSyntax
 
 partial def elabTLDecl : Syntax → MetaM (List Decl)
@@ -94,9 +99,9 @@ partial def collectIdxTerms (sign : Int) (acc : AffineAcc) : Syntax → MetaM Af
   | `(tl_idx_expr| $n:num) =>
       return { acc with const := acc.const + sign * (n.getNat : Int) }
   | `(tl_idx_expr| $x:ident) =>
-      return { acc with terms := acc.terms ++ [(sign, idxAxis x.getId.eraseMacroScopes.getString!)] }
+      return { acc with terms := acc.terms ++ [(sign, idxAxis (identStr x))] }
   | `(tl_idx_expr| $n:num * $x:ident) =>
-      return { acc with terms := acc.terms ++ [(sign * (n.getNat : Int), idxAxis x.getId.eraseMacroScopes.getString!)] }
+      return { acc with terms := acc.terms ++ [(sign * (n.getNat : Int), idxAxis (identStr x))] }
   | `(tl_idx_expr| $a:tl_idx_expr + $b:tl_idx_expr) => do
       collectIdxTerms sign (← collectIdxTerms sign acc a) b
   | `(tl_idx_expr| $a:tl_idx_expr - $b:tl_idx_expr) => do
@@ -155,18 +160,19 @@ partial def elabTLNonlin : Syntax → MetaM Nonlin
 
 partial def elabTLFactor : Syntax → MetaM Factor
   | `(tl_factor| $name:ident [ $idxs,* ]) =>
-      return .read (name.getId.eraseMacroScopes.getString!) (← idxs.getElems.toList.mapM elabTLIdxExpr)
+      return .read (identStr name) (← idxs.getElems.toList.mapM elabTLIdxExpr)
   | `(tl_factor| [ $b:tl_bool_expr ]) => return .iverson (← elabTLBoolExpr b)
-  | `(tl_factor| log( $nm:ident [ $idxs,* ] )) =>
-      return .unaryFn .log (nm.getId.eraseMacroScopes.getString!) (← idxs.getElems.toList.mapM elabTLIdxExpr)
-  | `(tl_factor| exp( $nm:ident [ $idxs,* ] )) =>
-      return .unaryFn .exp (nm.getId.eraseMacroScopes.getString!) (← idxs.getElems.toList.mapM elabTLIdxExpr)
-  | `(tl_factor| sin( $nm:ident [ $idxs,* ] )) =>
-      return .unaryFn .sin (nm.getId.eraseMacroScopes.getString!) (← idxs.getElems.toList.mapM elabTLIdxExpr)
-  | `(tl_factor| cos( $nm:ident [ $idxs,* ] )) =>
-      return .unaryFn .cos (nm.getId.eraseMacroScopes.getString!) (← idxs.getElems.toList.mapM elabTLIdxExpr)
-  | `(tl_factor| sqrt( $nm:ident [ $idxs,* ] )) =>
-      return .unaryFn .sqrt (nm.getId.eraseMacroScopes.getString!) (← idxs.getElems.toList.mapM elabTLIdxExpr)
+  -- One arm for all unary transcendentals; the keyword→`UnaryOp` map is the match below.
+  -- No wildcard default: an unmapped `tl_unary_kw` production is an error, not a silent op.
+  | `(tl_factor| $kw:tl_unary_kw ( $nm:ident [ $idxs,* ] )) => do
+      let op ← match kw with
+        | `(tl_unary_kw| log)  => pure UnaryOp.log
+        | `(tl_unary_kw| exp)  => pure UnaryOp.exp
+        | `(tl_unary_kw| sin)  => pure UnaryOp.sin
+        | `(tl_unary_kw| cos)  => pure UnaryOp.cos
+        | `(tl_unary_kw| sqrt) => pure UnaryOp.sqrt
+        | _ => throwErrorAt kw "unknown unary function"
+      return .unaryFn op (identStr nm) (← idxs.getElems.toList.mapM elabTLIdxExpr)
   | _ => throwUnsupportedSyntax
 
 /-- Collect the factor list of a `tl_prod_term`. The `·` rule is left-recursive
@@ -174,7 +180,7 @@ partial def elabTLFactor : Syntax → MetaM Factor
 partial def prodFactors : Syntax → MetaM (List Factor)
   | `(tl_prod_term| $p:tl_prod_term · $f:tl_factor) => return (← prodFactors p) ++ [(← elabTLFactor f)]
   | `(tl_prod_term| $p:tl_prod_term / $nm:ident [ $idxs,* ]) =>
-      return (← prodFactors p) ++ [.unaryFn .recip (nm.getId.eraseMacroScopes.getString!)
+      return (← prodFactors p) ++ [.unaryFn .recip (identStr nm)
         (← idxs.getElems.toList.mapM elabTLIdxExpr)]
   | `(tl_prod_term| $f:tl_factor)                   => return [(← elabTLFactor f)]
   | _ => throwUnsupportedSyntax
@@ -221,20 +227,20 @@ partial def elabTLRHS : Syntax → MetaM RHSExpr
       `IdxExpr`, built directly from the slot's pieces. -/
 partial def elabTLLHSSlot : Syntax → MetaM LHSSlot
   | `(tl_lhs_slot| $x:ident .) =>
-      return .freeNorm (idxAxis x.getId.eraseMacroScopes.getString!)
+      return .freeNorm (idxAxis (identStr x))
   | `(tl_lhs_slot| $x:ident) =>
-      return .free (idxAxis x.getId.eraseMacroScopes.getString!)
+      return .free (idxAxis (identStr x))
   | `(tl_lhs_slot| $n:num) =>
       return .iterAt (scanAxis "") (Int.ofNat n.getNat)
   | `(tl_lhs_slot| $x:ident +1) =>
-      return .iterNext (scanAxis x.getId.eraseMacroScopes.getString!)
+      return .iterNext (scanAxis (identStr x))
   | `(tl_lhs_slot| $n:num * $x:ident + $m:num) =>
       return .affine (.affine (Int.ofNat m.getNat)
-        [(Int.ofNat n.getNat, idxAxis x.getId.eraseMacroScopes.getString!)])
+        [(Int.ofNat n.getNat, idxAxis (identStr x))])
   | `(tl_lhs_slot| $n:num * $x:ident) =>
-      return .affine (.scale (Int.ofNat n.getNat) (idxAxis x.getId.eraseMacroScopes.getString!))
+      return .affine (.scale (Int.ofNat n.getNat) (idxAxis (identStr x)))
   | `(tl_lhs_slot| $x:ident + $n:num) =>
-      return .affine (.shift (idxAxis x.getId.eraseMacroScopes.getString!) (Int.ofNat n.getNat))
+      return .affine (.shift (idxAxis (identStr x)) (Int.ofNat n.getNat))
   | _ => throwUnsupportedSyntax
 
 /-- Elaborate a `tl_stmt` (`name[slots] := rhs`) into a `Stmt`.
@@ -245,7 +251,7 @@ partial def elabTLLHSSlot : Syntax → MetaM LHSSlot
     REPORTED simplification. -/
 partial def elabTLStmt : Syntax → MetaM Stmt
   | `(tl_stmt| $name:ident [ $slots,* ] := $rhs:tl_rhs) =>
-      return .assign (name.getId.eraseMacroScopes.getString!)
+      return .assign (identStr name)
         (← slots.getElems.toList.mapM elabTLLHSSlot) (← elabTLRHS rhs)
   | _ => throwUnsupportedSyntax
 

@@ -119,12 +119,17 @@ syntax ident "[" tl_idx_expr,* "]"     : tl_factor
 syntax "[" tl_bool_expr "]"            : tl_factor
 
 -- Unary transcendental functions, restricted to wrapping a bare tensor read (`log(P[i])`),
--- not composable (`log(sin(X[i]))` is out of scope).
-syntax "log"  "(" ident "[" tl_idx_expr,* "]" ")" : tl_factor
-syntax "exp"  "(" ident "[" tl_idx_expr,* "]" ")" : tl_factor
-syntax "sin"  "(" ident "[" tl_idx_expr,* "]" ")" : tl_factor
-syntax "cos"  "(" ident "[" tl_idx_expr,* "]" ")" : tl_factor
-syntax "sqrt" "(" ident "[" tl_idx_expr,* "]" ")" : tl_factor
+-- not composable (`log(sin(X[i]))` is out of scope).  The keyword is factored into its own
+-- category so the argument shape is written once and the elaborator has a single arm; adding
+-- a function is one `tl_unary_kw` line here plus one match case in `elabTLFactor`.
+declare_syntax_cat tl_unary_kw
+syntax "log"  : tl_unary_kw
+syntax "exp"  : tl_unary_kw
+syntax "sin"  : tl_unary_kw
+syntax "cos"  : tl_unary_kw
+syntax "sqrt" : tl_unary_kw
+
+syntax tl_unary_kw "(" ident "[" tl_idx_expr,* "]" ")" : tl_factor
 
 -- `·` (product) binds tighter than `+` (sum); both left-associative, n-ary.
 syntax:70 tl_prod_term:70 " · " tl_factor:71 : tl_prod_term

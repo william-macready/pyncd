@@ -50,4 +50,24 @@ private def linmlp : TLProgram := tlprog!{
   | [.linear "W_in" _ bi, .linear "W_out" _ bo] => bi == false && bo == true
   | _ => false
 
+-- 7. Unary transcendentals (the `tl_unary_kw` keyword table). Guards the keyword→`UnaryOp`
+-- mapping, not just that the productions parse: each keyword must yield its OWN op, so a
+-- swapped/dropped table entry (or a fallthrough to some default op) fails this `#guard`.
+private def unaries : TLProgram := tlprog!{
+  A[i] := log(P[i])
+  B[i] := exp(P[i])
+  C[i] := sin(P[i])
+  D[i] := cos(P[i])
+  E[i] := sqrt(P[i])
+}
+#guard unaries.stmts.length == 5
+
+/-- The `(op, tensor name)` of a statement whose RHS is exactly one unary-function factor. -/
+private def soleUnary : Stmt → Option (UnaryOp × String)
+  | .assign _ _ { body := { terms := [{ factors := [.unaryFn op nm _] }] }, .. } => some (op, nm)
+  | _ => none
+
+#guard unaries.stmts.map soleUnary ==
+  [some (.log, "P"), some (.exp, "P"), some (.sin, "P"), some (.cos, "P"), some (.sqrt, "P")]
+
 end LeanNCD
