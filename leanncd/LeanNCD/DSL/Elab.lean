@@ -144,18 +144,28 @@ partial def elabTLBoolExpr : Syntax → MetaM BoolExpr
   | `(tl_bool_expr| ($b:tl_bool_expr))                  => elabTLBoolExpr b
   | _ => throwUnsupportedSyntax
 
+/-- Elaborate a `tl_nonlin`.  Two arms, one per closed keyword category: the pointwise family
+    never carries a mask, the axiswise family optionally does.  There is deliberately no
+    pointwise-with-mask arm — the grammar makes `relu(where …)` unrepresentable.
+    No wildcard default inside either match: an unmapped keyword is an error, not a silent op. -/
 partial def elabTLNonlin : Syntax → MetaM Nonlin
-  | `(tl_nonlin| relu)                          => return .pointwise .relu
-  | `(tl_nonlin| sigmoid)                       => return .pointwise .sigmoid
-  | `(tl_nonlin| tanh)                          => return .pointwise .tanh
-  | `(tl_nonlin| gelu)                          => return .pointwise .gelu
-  | `(tl_nonlin| leakyrelu)                     => return .pointwise .leakyrelu
-  | `(tl_nonlin| softmax)                       => return .axiswise .softmax none
-  | `(tl_nonlin| softmax( where $b ))           => return .axiswise .softmax (some (← elabTLBoolExpr b))
-  | `(tl_nonlin| normalize)                     => return .axiswise .normalize none
-  | `(tl_nonlin| normalize( where $b ))         => return .axiswise .normalize (some (← elabTLBoolExpr b))
-  | `(tl_nonlin| l2normalize)                   => return .axiswise .l2normalize none
-  | `(tl_nonlin| l2normalize( where $b ))       => return .axiswise .l2normalize (some (← elabTLBoolExpr b))
+  | `(tl_nonlin| $kw:tl_pointwise_kw) => do
+      let fn ← match kw with
+        | `(tl_pointwise_kw| relu)      => pure PointwiseFn.relu
+        | `(tl_pointwise_kw| sigmoid)   => pure PointwiseFn.sigmoid
+        | `(tl_pointwise_kw| tanh)      => pure PointwiseFn.tanh
+        | `(tl_pointwise_kw| gelu)      => pure PointwiseFn.gelu
+        | `(tl_pointwise_kw| leakyrelu) => pure PointwiseFn.leakyrelu
+        | _ => throwErrorAt kw "unknown pointwise nonlinearity"
+      return .pointwise fn
+  | `(tl_nonlin| $kw:tl_axiswise_kw $[( where $b )]?) => do
+      let mask? ← b.mapM fun s => elabTLBoolExpr s
+      let fn ← match kw with
+        | `(tl_axiswise_kw| softmax)     => pure AxiswiseFn.softmax
+        | `(tl_axiswise_kw| normalize)   => pure AxiswiseFn.normalize
+        | `(tl_axiswise_kw| l2normalize) => pure AxiswiseFn.l2normalize
+        | _ => throwErrorAt kw "unknown axiswise nonlinearity"
+      return .axiswise fn mask?
   | _ => throwUnsupportedSyntax
 
 partial def elabTLFactor : Syntax → MetaM Factor

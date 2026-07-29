@@ -142,20 +142,28 @@ syntax:70 tl_prod_term:70 " / " ident "[" tl_idx_expr,* "]" : tl_prod_term
 syntax:65 tl_sum_expr:65 " + " tl_prod_term:66 : tl_sum_expr
 syntax:66 tl_prod_term:66                       : tl_sum_expr
 
--- `atomic("(" "where")` left-factors the masked variants against the bare token: on an
+-- Nonlinearities split into TWO closed keyword categories, so that "which nonlinearities admit
+-- a `(where …)` mask" is a *grammatical* fact rather than an elaborator check: only the axiswise
+-- family reduces along an axis, so only it can be masked.  `relu(where …)` is therefore not
+-- representable at all (it is a parse error, not an elaboration error).  Adding a nonlinearity
+-- is one keyword line here plus one match case in `elabTLNonlin`.
+declare_syntax_cat tl_pointwise_kw
+syntax "relu"      : tl_pointwise_kw
+syntax "sigmoid"   : tl_pointwise_kw
+syntax "tanh"      : tl_pointwise_kw
+syntax "gelu"      : tl_pointwise_kw
+syntax "leakyrelu" : tl_pointwise_kw
+
+declare_syntax_cat tl_axiswise_kw
+syntax "softmax"     : tl_axiswise_kw
+syntax "normalize"   : tl_axiswise_kw
+syntax "l2normalize" : tl_axiswise_kw
+
+syntax tl_pointwise_kw : tl_nonlin
+-- `atomic("(" "where")` left-factors the masked variant against the bare keyword: on an
 -- unmasked `softmax(sum)` the `( where` lookahead fails and rewinds (it does not commit to
--- `where`), so the bare `softmax` rule wins and the `(sum)` is consumed at the tl_rhs level.
-syntax "relu"                                           : tl_nonlin
-syntax "sigmoid"                                        : tl_nonlin
-syntax "tanh"                                           : tl_nonlin
-syntax "gelu"                                           : tl_nonlin
-syntax "leakyrelu"                                      : tl_nonlin
-syntax "softmax"                                        : tl_nonlin
-syntax "softmax"   atomic("(" "where") tl_bool_expr ")" : tl_nonlin
-syntax "normalize"                                      : tl_nonlin
-syntax "normalize" atomic("(" "where") tl_bool_expr ")" : tl_nonlin
-syntax "l2normalize"                                      : tl_nonlin
-syntax "l2normalize" atomic("(" "where") tl_bool_expr ")" : tl_nonlin
+-- `where`), so the optional mask group is skipped and the `(sum)` is consumed at the tl_rhs level.
+syntax tl_axiswise_kw (atomic("(" "where") tl_bool_expr ")")? : tl_nonlin
 
 -- Aggregation operations: change the contraction from sum to another reduction.
 syntax "maxreduce" : tl_agg
