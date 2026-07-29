@@ -483,14 +483,8 @@ def ScanStmt.toBrBaseP (sc : ScanStmt) (nameToStep : Std.HashMap String (Nat × 
     if sc.isScanPre then .scanPre
     else if sc.isScan then (if sc.isAffineScan then .scanAffine else .scan)
     else match s.nonlinOf with
-      | .relu        => .relu
-      | .sigmoid     => .sigmoid
-      | .tanh        => .tanh
-      | .gelu        => .gelu
-      | .leakyrelu   => .leakyrelu
-      | .softmax _   => .softmax
-      | .normalize _ => .normalize
-      | .l2normalize _ => .l2normalize
+      | .pointwise pf  => pf.toBrOp
+      | .axiswise fn _ => fn.toBrOp
       | .identity    => match s with
           | .scatter .. => .scatter
           | .assign ..  => match s.agg with

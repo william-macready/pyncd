@@ -266,13 +266,12 @@ theorem traverseAxes_const_eq_specsSumExpr (s : SumExpr) :
 
 -- ===== Nonlin =====
 
-/-- Local copy of `Structural.lean`'s private `specsNonlin`, for comparison only — NOT the
-    source of truth. Keep byte-identical to `Structural.lean:37-39` by inspection, wildcard
-    included — this copy intentionally mirrors production's CURRENT (hazard-prone) shape; the
-    traversal above is what's exhaustive, not this comparison target. -/
+/-- Independent hand-written reference for `Structural.lean`'s private `specsNonlin` — NOT the
+    source of truth, and deliberately NOT defined as `= specsNonlin`/`Nonlin.traverseAxes` (that
+    would make the theorem below tautological). The only axis specs a nonlinearity carries are
+    those of an `.axiswise` mask; a production traversal that dropped the mask would fail here. -/
 private def specsNonlin' : Nonlin → List AxisSpec
-  | .softmax (some m) => specsBool' m | .normalize (some m) => specsBool' m
-  | .l2normalize (some m) => specsBool' m | _ => []
+  | .axiswise _ (some m) => specsBool' m | _ => []
 
 /-- Collect `AxisSpec`s: instantiating at `ConstL (List AxisSpec)` with `g := fun a => ⟨[a]⟩`
     should reproduce `specsNonlin'`. NO UID-collecting theorem exists for `Nonlin` — no
@@ -282,24 +281,8 @@ theorem traverseAxes_const_eq_specsNonlin (n : Nonlin) :
     (Nonlin.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) n).run = specsNonlin' n := by
   cases n with
   | identity => rfl
-  | relu => rfl
-  | sigmoid => rfl
-  | tanh => rfl
-  | gelu => rfl
-  | leakyrelu => rfl
-  | softmax m =>
-      cases m with
-      | none => rfl
-      | some b =>
-          show (BoolExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) b).run = specsBool' b
-          exact traverseAxes_const_eq_specsBool b
-  | normalize m =>
-      cases m with
-      | none => rfl
-      | some b =>
-          show (BoolExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) b).run = specsBool' b
-          exact traverseAxes_const_eq_specsBool b
-  | l2normalize m =>
+  | pointwise pf => rfl
+  | axiswise fn m =>
       cases m with
       | none => rfl
       | some b =>

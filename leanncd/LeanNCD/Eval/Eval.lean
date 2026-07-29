@@ -27,18 +27,13 @@ def evalPlain (decls : List Decl) (env : HashMap String DenseTensor) (sizes : Ha
       else
         -- the reduction axis is the slot marked `m.` (norm flag now lives on the output slot).
         let axisUids := slots.filterMap (·.axisUID?)
-        -- Assumption: every POINTWISE `Nonlin` (no reduction axis) needs its own explicit arm
-        -- here, listed before the `_, some nu` / `_, none` fallback. Without one, a pointwise
-        -- variant with no `·`-marked axis wrongly falls into `_, none` and throws "no output
-        -- axis is marked" instead of evaluating — this exact wildcard hazard bit `sigmoid` et al.
-        -- during development; FF5–FF8 (unmarked activations) are the regression test.
         let axisPos ← match rhs.nonlin, normAxisUidOf slots with
-          | .relu, _ | .sigmoid, _ | .tanh, _ | .gelu, _ | .leakyrelu, _ =>
-              pure 0     -- pointwise: the axis is irrelevant
-          | _, some nu => match axisUids.findIdx? (· == nu) with
+          | .identity, _           => pure 0
+          | .pointwise _, _        => pure 0     -- pointwise: the axis is irrelevant
+          | .axiswise _ _, some nu => match axisUids.findIdx? (· == nu) with
               | some p => pure p
               | none   => throw s!"evalPlain: marked norm axis of {nm} is not among its output axes"
-          | _, none    => throw s!"evalPlain: {nm} applies softmax/normalize but no output axis is marked (·)"
+          | .axiswise _ _, none    => throw s!"evalPlain: {nm} applies softmax/normalize but no output axis is marked (·)"
         return (nm, applyNonlin rhs.nonlin axisPos axisUids pre)
   | .scatter nm slots rhs opts =>
       let outShape ← scatterOutShape sizes slots

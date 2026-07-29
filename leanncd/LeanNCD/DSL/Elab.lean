@@ -140,17 +140,17 @@ partial def elabTLBoolExpr : Syntax → MetaM BoolExpr
   | _ => throwUnsupportedSyntax
 
 partial def elabTLNonlin : Syntax → MetaM Nonlin
-  | `(tl_nonlin| relu)                          => return .relu
-  | `(tl_nonlin| sigmoid)                       => return .sigmoid
-  | `(tl_nonlin| tanh)                          => return .tanh
-  | `(tl_nonlin| gelu)                          => return .gelu
-  | `(tl_nonlin| leakyrelu)                     => return .leakyrelu
-  | `(tl_nonlin| softmax)                       => return .softmax none
-  | `(tl_nonlin| softmax( where $b ))           => return .softmax (some (← elabTLBoolExpr b))
-  | `(tl_nonlin| normalize)                     => return .normalize none
-  | `(tl_nonlin| normalize( where $b ))         => return .normalize (some (← elabTLBoolExpr b))
-  | `(tl_nonlin| l2normalize)                   => return .l2normalize none
-  | `(tl_nonlin| l2normalize( where $b ))       => return .l2normalize (some (← elabTLBoolExpr b))
+  | `(tl_nonlin| relu)                          => return .pointwise .relu
+  | `(tl_nonlin| sigmoid)                       => return .pointwise .sigmoid
+  | `(tl_nonlin| tanh)                          => return .pointwise .tanh
+  | `(tl_nonlin| gelu)                          => return .pointwise .gelu
+  | `(tl_nonlin| leakyrelu)                     => return .pointwise .leakyrelu
+  | `(tl_nonlin| softmax)                       => return .axiswise .softmax none
+  | `(tl_nonlin| softmax( where $b ))           => return .axiswise .softmax (some (← elabTLBoolExpr b))
+  | `(tl_nonlin| normalize)                     => return .axiswise .normalize none
+  | `(tl_nonlin| normalize( where $b ))         => return .axiswise .normalize (some (← elabTLBoolExpr b))
+  | `(tl_nonlin| l2normalize)                   => return .axiswise .l2normalize none
+  | `(tl_nonlin| l2normalize( where $b ))       => return .axiswise .l2normalize (some (← elabTLBoolExpr b))
   | _ => throwUnsupportedSyntax
 
 partial def elabTLFactor : Syntax → MetaM Factor

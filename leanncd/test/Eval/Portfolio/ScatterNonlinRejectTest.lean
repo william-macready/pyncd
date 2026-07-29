@@ -48,7 +48,7 @@ run_cmd do
   let X := DenseTensor.mk [2] #[1.0, 2.0]
   let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X" X
   let slots : List LHSSlot := [.affine (.scale 2 i)]
-  let rhs : RHSExpr := { body := { terms := [{ factors := [.read "X" [.axis i]] }] }, nonlin := .relu }
+  let rhs : RHSExpr := { body := { terms := [{ factors := [.read "X" [.axis i]] }] }, nonlin := .pointwise .relu }
   let sizes := ({} : HashMap UID Nat).insert 1 2
   match evalScatter env sizes "Out" slots rhs { fill := 0, reduce := none } [4] with
   | .error e =>
