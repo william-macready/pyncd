@@ -744,6 +744,36 @@ def checkDtypes (rp : ResolvedProgram) : FreshM ResolvedProgram := do
     | .recurMorphism _ _ _ => pure ()
   return rp
 
+/-! ## The `checkScatterNonlin` phase
+
+**Spike-3 Stage-0 policy (SHORT-TERM, not permanent):** a scatter write (an affine or diagonal
+LHS — `slotsBecomeScatter`) may carry ONLY the `identity` nonlinearity; any other nonlinearity is
+REJECTED here. Why: `evalScatter` (`Eval/Scatter.lean`) evaluates a scatter's RHS body but never
+applied `rhs.nonlin` — so e.g. `Out[2*i] := relu(X[i])` used to compile and evaluate with the
+`relu` silently dropped. Supporting a real nonlinear scatter later needs a semantic decision
+(does the activation apply BEFORE collision-reduction, or AFTER the output is filled/reduced?)
+that is deliberately out of scope now.
+
+Runs here (pre-`lowerArith`), alongside `checkReadRanks`/`checkDtypes`, checking `r.nonlin ≠
+Nonlin.identity`, NOT a match on the 9 flat `Nonlin` constructors — written this way so it
+survives Task 1's later restructuring of `Nonlin` unchanged. Checks BOTH shapes of the AST at
+this point in the pipeline: an `.assign` whose LHS `slotsBecomeScatter` (the surface-compiled
+case — `lowerArith`, Phase 4, is what reclassifies such an `.assign` into `Stmt.scatter`, and
+that phase runs AFTER this one) and an already-`.scatter` stmt (the `recurMorphism`-style
+escape hatch, §12.2 — a programmatic caller can build a `Stmt.scatter` directly, bypassing the
+surface compiler entirely). -/
+def checkScatterNonlin (rp : ResolvedProgram) : FreshM ResolvedProgram := do
+  for s in rp.stmts do
+    match s with
+    | .assign nm ls rhs =>
+        if slotsBecomeScatter ls && rhs.nonlin ≠ Nonlin.identity then
+          throw (.unsupportedNonlinScatter nm)
+    | .scatter nm _ rhs _ =>
+        if rhs.nonlin ≠ Nonlin.identity then
+          throw (.unsupportedNonlinScatter nm)
+    | .recurMorphism _ _ _ => pure ()
+  return rp
+
 /-! ## The `lowerArith` phase (Phase 4 — affine index arithmetic)
 
 E2a SCOPING DECISION (a deliberate divergence from §12.4): affine *reads* (e.g.

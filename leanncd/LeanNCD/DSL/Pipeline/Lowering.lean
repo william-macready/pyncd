@@ -17,17 +17,24 @@ For each `Stmt` whose `RHSExpr.nonlin ≠ .identity`, split it into TWO stmts:
 A stmt already at `.identity` is emitted unchanged. -/
 
 /-- Axis indices that index the output of a stmt (its free/scan slots). An `.affine` slot is a
-    scatter output; the §12.1 examples never apply a nonlinearity over a scatter, so it is
-    dropped here. -/
+    scatter output; `checkScatterNonlin` (Structural.lean, Spike-3 Stage-0 policy) rejects any
+    scatter with a non-identity nonlinearity upstream of this phase, so a `.affine` slot reaching
+    here is always paired with `.identity` — dropped here since `splitStmt`'s `.assign` arm never
+    needs it (its `readIdxs` are only consulted when `rhs.nonlin ≠ .identity`). -/
 def LHSSlot.toReadIdx : LHSSlot → Option IdxExpr
   | .free a     => some (.axis a)
   | .freeNorm a => some (.axis a)
   | .iterAt a _ => some (.axis a)
   | .iterNext a => some (.axis a)
-  | .affine _   => none      -- scatter outputs: skipped (no example needs nonlin-over-scatter)
+  | .affine _   => none      -- scatter outputs: skipped (see doc above)
 
 /-- Split one stmt's nonlinearity into (≤2) stmts. Identity stmts and scatters pass through
-    unchanged (scatters carry no nonlinearity in the §12.1 examples). -/
+    unchanged. Scatters are a `.identity`-only shape by this point: `checkScatterNonlin`
+    (Structural.lean, a Spike-3 Stage-0 SHORT-TERM policy — not permanent) rejects any
+    `.scatter`/affine-LHS `.assign` with a non-identity nonlinearity upstream, in validation,
+    before `lowerArith` reclassifies an affine-LHS `.assign` into `Stmt.scatter` — so nothing
+    reaches this arm needing a split. (Supporting a real nonlinear scatter later needs a semantic
+    decision — activation before collision-reduction, or after fill/reduce? — deferred.) -/
 def splitStmt (s : Stmt) : FreshM (List Stmt) := do
   match s with
   | .assign nm slots rhs =>
@@ -41,7 +48,7 @@ def splitStmt (s : Stmt) : FreshM (List Stmt) := do
           { body := { terms := [ { factors := [ .read interName readIdxs ] } ] },
             nonlin := rhs.nonlin }
         return [linStep, nlStep]
-  | .scatter .. => return [s]   -- scatters carry no nonlinearity in the §12.1 examples
+  | .scatter .. => return [s]   -- always identity-nonlin here (rejected upstream otherwise)
   | .recurMorphism .. => return [s]   -- pre-built morphism: nothing to split
 
 /-- Split nonlinearities within a `ScanStmt`. For `.scan`, split each stmt in `base`/`recur`

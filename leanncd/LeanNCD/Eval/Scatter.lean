@@ -15,6 +15,13 @@ def scatterSourceAxes (slots : List LHSSlot) (rhs : RHSExpr) : List UID :=
 def evalScatter (env : HashMap String DenseTensor) (sizes : HashMap UID Nat)
     (nm : String) (slots : List LHSSlot) (rhs : RHSExpr) (opts : ScatterOpts) (outShape : List Nat) :
     Except EvalError (String × DenseTensor) := do
+  -- Defensive check (belt-and-suspenders — Spike-3 Stage-0 policy, SHORT-TERM not permanent):
+  -- the surface compiler's `checkScatterNonlin` (DSL/Pipeline/Structural.lean) is the primary gate
+  -- rejecting a non-identity scatter nonlinearity, but a programmatic caller can build this AST
+  -- directly (bypassing validation), and below never applied `rhs.nonlin` to the body — silently
+  -- dropping it (the bug this Stage fixes). Fail loud instead of silently erasing it.
+  if rhs.nonlin ≠ Nonlin.identity then
+    throw s!"evalScatter: non-identity nonlinearity on scatter {nm} is unsupported (Spike-3 Stage-0 policy)"
   -- up-front validation: every read name must be a known tensor
   for rn in (readNames rhs).eraseDups do
     if !(env.contains rn) then
