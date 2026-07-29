@@ -17,10 +17,10 @@ For each `Stmt` whose `RHSExpr.nonlin ≠ .identity`, split it into TWO stmts:
 A stmt already at `.identity` is emitted unchanged. -/
 
 /-- Axis indices that index the output of a stmt (its free/scan slots). An `.affine` slot is a
-    scatter output; `checkScatterNonlin` (Structural.lean, Spike-3 Stage-0 policy) rejects any
-    scatter with a non-identity nonlinearity upstream of this phase, so a `.affine` slot reaching
-    here is always paired with `.identity` — dropped here since `splitStmt`'s `.assign` arm never
-    needs it (its `readIdxs` are only consulted when `rhs.nonlin ≠ .identity`). -/
+    scatter output; `lowerArith` (Structural.lean) reclassifies every `slotsBecomeScatter`
+    `.assign` into `Stmt.scatter` before this phase runs, so no `.assign` carrying an `.affine`
+    slot can reach `splitStmt` at all — unreachable from `splitStmt` post-`lowerArith`; kept
+    total for exhaustiveness. -/
 def LHSSlot.toReadIdx : LHSSlot → Option IdxExpr
   | .free a     => some (.axis a)
   | .freeNorm a => some (.axis a)

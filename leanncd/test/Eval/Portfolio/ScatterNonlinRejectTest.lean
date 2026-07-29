@@ -15,7 +15,13 @@ rejected during validation.
   upsample pattern from `Eval.ScatterTest`/`Eval.Portfolio.GnnScatterTest`'s SC1).
 * RSN3 — the defensive `evalScatter` check (belt-and-suspenders for programmatic callers that
   build the AST directly, bypassing the surface compiler's validation) also rejects a
-  non-identity-nonlin scatter, with a specific error message.
+  non-identity-nonlin scatter, pinned to the specific defensive-check error message (not merely
+  "is an error" — `EvalError` is a plain `String` and `evalScatter` has other `throw` sites, e.g.
+  unknown tensor name or unsized source axis, so a bare "is an error" check wouldn't pin down
+  *which* check fired).
+* RSN4 — a *diagonal* LHS (`Y[i, i]`, a repeated `.free` axis UID — the other
+  `slotsBecomeScatter` trigger besides an `.affine` slot) with a `relu` RHS is REJECTED at
+  compile time with the same `unsupportedNonlinScatter` constructor.
 -/
 namespace LeanNCD.Eval
 open Std
@@ -45,7 +51,20 @@ run_cmd do
   let rhs : RHSExpr := { body := { terms := [{ factors := [.read "X" [.axis i]] }] }, nonlin := .relu }
   let sizes := ({} : HashMap UID Nat).insert 1 2
   match evalScatter env sizes "Out" slots rhs { fill := 0, reduce := none } [4] with
-  | .error _ => pure ()   -- expected: rejected, not silently evaluated with relu dropped
+  | .error e =>
+      unless (e.splitOn "non-identity nonlinearity on scatter").length > 1 do
+        throwError s!"RSN3: wrong error message: {e}"
   | .ok _    => throwError "RSN3: expected evalScatter to reject a non-identity nonlin scatter"
+
+-- RSN4  diagonal-LHS trigger: `Y[i, i]` repeats the free axis `i`, so `slotsBecomeScatter` fires
+--   via the repeated-freeUID disjunct (no `.affine` slot at all — confirmed by construction: a
+--   bare axis variable on the LHS elaborates to `.free`, only an arithmetic index like `2*i`
+--   elaborates to `.affine`; see `LHSSlot` cases in `DSL/Ast.lean`). Non-identity nonlin ⇒ same
+--   `unsupportedNonlinScatter` rejection as the affine case (RSN1).
+run_cmd do
+  match TLProgram.compile (tlprog!{ Y[i, i] := relu(X[i]) }) |>.run 0 with
+  | .error (.unsupportedNonlinScatter "Y") _ => pure ()
+  | .error e _ => throwError s!"RSN4: wrong CompileError: {repr e}"
+  | .ok _ _    => throwError "RSN4: expected unsupportedNonlinScatter, compile succeeded"
 
 end LeanNCD.Eval
