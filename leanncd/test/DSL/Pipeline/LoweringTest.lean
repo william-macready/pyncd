@@ -149,4 +149,33 @@ run_cmd do
   | .ok _ _ => throwError "expected cyclicDataflow, got .ok (schedule silently source-ordered a cycle)"
   | .error (.cyclicDataflow _) _ => pure ()
   | .error e _ => throwError s!"expected cyclicDataflow, got: {repr e}"
+
+-- AGG1/AGG2 (audit finding C): `splitStmt` must thread `agg` onto the LINEAR step and leave the
+-- nonlinear step at `.sum`.  The linear step is the one that actually contracts, so dropping `agg`
+-- there silently substitutes `RHSExpr`'s `.sum` default for a `max`/`min` aggregation — an EVAL bug
+-- (the evaluator reads `rhs.agg` off post-split stmts), not merely a routing-label one.
+--
+-- This state is NOT constructible from surface syntax: `tl_nonlin (…)` and `tl_agg (…)` are mutually
+-- exclusive `tl_rhs` alternatives, so `relu(maxreduce(…))` is a parse error.  Hence this test builds
+-- the `Stmt` programmatically — without it nothing guards the fix.
+run_cmd do
+  let ax (nm : String) : AxisSpec := { name := nm, uid := 1, kind := .real none }
+  -- Y[i] := relu(maxreduce over j of P[i,j])  — non-identity nonlin AND non-sum agg together.
+  let s : Stmt := .assign "Y" [ .free (ax "i") ]
+    { body := { terms := [ { factors := [ .read "P" [ .axis (ax "i"), .axis (ax "j") ] ] } ] },
+      nonlin := .pointwise .relu, agg := .max }
+  let sp : ScanProgram := { decls := [], stmts := [ .plain s ], env := {}, extNames := ∅ }
+  match splitNonlins sp |>.run 0 with
+  | .ok lp _ =>
+      let stmts := lp.stmts.filterMap (fun | .plain t => some t | .scan .. => none | .scanPre .. => none)
+      unless stmts.length == 2 do throwError s!"AGG: expected 2 stmts after split, got {stmts.length}"
+      let pairs := stmts.map (fun | .assign _ _ r => (r.nonlin, r.agg) | .scatter _ _ r _ => (r.nonlin, r.agg) | .recurMorphism .. => (Nonlin.identity, AggOp.sum))
+      -- AGG1: the linear (identity-nonlin) step must carry the original `.max`.
+      unless pairs.any (fun (n, a) => n == .identity && a == .max) do
+        throwError s!"AGG1: linear step lost agg (expected .max); got {repr pairs}"
+      -- AGG2: the relu step contracts nothing, so it must be `.sum`, not an inherited `.max`.
+      unless pairs.any (fun (n, a) => n == .pointwise .relu && a == .sum) do
+        throwError s!"AGG2: nonlin step should be .sum; got {repr pairs}"
+  | .error e _ => throwError s!"AGG: splitNonlins errored: {repr e}"
+
 end LeanNCD

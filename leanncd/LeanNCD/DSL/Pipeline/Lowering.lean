@@ -42,11 +42,21 @@ def splitStmt (s : Stmt) : FreshM (List Stmt) := do
       else
         let d ← freshUData
         let interName := s!"%nl{d.uid}"
-        let linStep : Stmt := .assign interName slots { body := rhs.body, nonlin := .identity }
+        -- `agg` MUST be threaded onto the linear step: it is the step that actually contracts, so
+        -- omitting it silently takes `RHSExpr`'s `.sum` default and drops a `max`/`min` aggregation.
+        -- Unreachable from surface syntax (`tl_nonlin (…)` and `tl_agg (…)` are mutually exclusive
+        -- `tl_rhs` alternatives, so `relu(maxreduce(…))` cannot parse) but reachable for a
+        -- programmatically built AST — and it is an EVAL bug, not just a routing-label one, since
+        -- `compileToScheduled` runs `splitNonlins` and the evaluator reads `rhs.agg` off the result.
+        -- See `papers/semantic_payload_audit.md` finding C; regression: `LoweringTest` AGG1/AGG2.
+        let linStep : Stmt := .assign interName slots
+          { body := rhs.body, nonlin := .identity, agg := rhs.agg }
         let readIdxs := slots.filterMap LHSSlot.toReadIdx
+        -- `.sum` is stated explicitly (not defaulted): `nlStep`'s body is a single read, so there is
+        -- nothing to contract and inheriting `rhs.agg` here would be wrong, not merely redundant.
         let nlStep : Stmt := .assign nm slots
           { body := { terms := [ { factors := [ .read interName readIdxs ] } ] },
-            nonlin := rhs.nonlin }
+            nonlin := rhs.nonlin, agg := .sum }
         return [linStep, nlStep]
   | .scatter .. => return [s]   -- always identity-nonlin here (rejected upstream otherwise)
   | .recurMorphism .. => return [s]   -- pre-built morphism: nothing to split

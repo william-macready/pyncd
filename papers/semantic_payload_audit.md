@@ -50,6 +50,26 @@ finding F). That is the mechanism by which all of the above stays invisible.
 | 9 | `recurMorphism` / `.scanPre` | `Ast.lean:137` | **✗ hard error** on all three eval entries | **NONE — the entire `tc` is discarded.** Emits a literally empty step `{op := .scanPre, degree := [], inputWeaves := [], outputWeaves := [[]], reindexings := []}`; the iteration axis is dropped too | encodes the empty step | realizes an empty step | op tag only — and **demonstrably does not guard content**: `RecurMorphismTest:19-27` feeds `outputWeaves := [[.tiled]]` and asserts only the tag | **Reject at compile** — accepted-then-discarded is the worst state |
 | — | *(incidental)* sum-of-products term structure | `Ast.lean:247-248` | ✅ per-term contraction scoping is load-bearing (`Contract.lean:63-69`) | **NONE** — `A·B + C` and `A·B·C` yield identical read-factor lists | — | — | **NONE** | **Reject or carry** — decide with #1/#3/#7 |
 
+## Verification log (2026-07-30) — probes, and one account that was wrong
+
+Executable probes, not code reading. **Apply this lesson to the un-probed findings.**
+
+| Finding | Verdict | Detail |
+|---|---|---|
+| **C** (`agg` drop) | ✅ **CONFIRMED + FIXED** | Mutation test: reverting the fix yields `[(identity, sum), (relu, sum)]` where `.max` was expected. Fixed in `78dd276`. |
+| **D** (`brOpOfIdx` default) | ✅ **CONFIRMED + FIXED** | Fixed in `14b1353`; both round-trip lemmas axiom-free. |
+| **#4** (`recurMorphism`) | ✅ **CONFIRMED** | Probe: `compile → .ok, ops=[BrOp.scanPre]`; `eval → .error "scanPre unsupported (S)"`. Payload discarded. Accepted-then-discarded, as described. Fix needs a policy decision (see below). |
+| **#17** (CSV error swallowing) | ✅ **CONFIRMED + FIXED** | Probe: `encodeSize` errors on a compound `SizeExpr`, yet `writeSBr` emitted `"axis_uid,size\r\nRawAxis:1,\r\n"` and returned normally. `writeSBr` now returns `Except CsvError` (`b1468cf`). The `encSizeOpt` docstring's "sizes here are `.lit`/`.var` so total" was an assumption stated as fact. |
+| **#5** (unsized scan) | ✅ **CONFIRMED + FIXED** — *and my first verdict on it was wrong* | The audit's account was **right**: `evalScan`'s `getD 0` was the mechanism, and the fix (`0f58e0b`) closes it — re-probed, the panic is **gone** and the error is the new one (`unsized iteration axis 'l' (uid 3)`). My earlier "MECHANISM WRONG" verdict was **my** error: when writing the structure probe I retyped the program as `l + 1` instead of the reported `l +1`, so I compared two *different* programs. One variable at a time. |
+| **#5b** (NEW — found while re-probing) | 🔴 **OPEN, unfixed** | `l + 1` and `l +1` elaborate to **different LHS slots**: `` `(tl_lhs_slot\| ident "+1") `` is a single ATOM (`Syntax.lean:192`), so `l +1` → `.iterNext` (a scan recurrence) while `l + 1` → `.affine (.shift l 1)` (a shifted write) — it even flips the axis kind `nat`→`real`. `finalizeScans` then finds no `iterNext` and emits `SCAN … axes=[]`, a degenerate axis-less scan. **The natural spacing silently means something else** rather than failing. Needs a design decision. |
+
+| **H** (NEW 2026-07-30 — probed) | 🔴 **OPEN, unfixed** | The size carried by an axis **kind** (`axis l : ℕ[3]`) is **write-only**: it is parsed into `AxisKind.nat (some (.lit 3))` (`Elab.lean:39`) and never read. Probe (three programs differing only in the axis declaration): `axis l : ℕ = 3` → `OK`; **`axis l : ℕ[3]` → the same "unsized iteration axis" error as declaring nothing at all**. So the language has a spelling that *looks* like an extent pin and pins nothing. See finding **H** below. |
+
+**Method note.** #5's write-up was right that something is broken and wrong about what. Both it and
+the original restructuring doc were produced by reading; the corrections came from running. Treat the
+remaining un-probed findings (#6/#17, and the routed-payload rows in the table below) as *unverified
+mechanisms* until a probe says otherwise.
+
 ## Cross-cutting findings
 
 > **These letters are the canonical labels for the actionable items.** Wave A of the
@@ -109,6 +129,98 @@ ROUTE — NbE / initiality"). Every `realize*` is `noncomputable`, so it cannot 
 unscheduled — it is currently impossible.** It requires the `Br` interpreter first. The
 tractable interim is a *shape/label* agreement theorem plus per-feature reject gates (below),
 not a numeric commuting diagram.
+
+**G. A scan base case does not name its own iteration axis; base↔recur pairing is positional
+(new 2026-07-30 — in no spike).** `Elab.lean:244` elaborates a literal LHS slot as
+`.iterAt (scanAxis "") n` — **empty name, uid 0**. So `G[j, 0]` never records *which* axis it
+pins. `finalizeScans` repairs this after the fact (`Structural.lean:849-851`): it finds the
+same-named stmt carrying a recur slot and has each base `iterAt` adopt that step's `iterNext`
+axis **at the same slot position**.
+
+This is deliberate and documented in-place, so it is a **fragility, not a reproduced defect —
+NOT PROBED, no failing program constructed.** The exposure: correctness rests on the base and
+recur stmts agreeing on slot order and on the base's pinned positions lining up with the step's
+advancing positions, and *the surface syntax enforces neither*. A base whose slots are ordered
+differently from its step would be silently re-attributed to the wrong axis rather than
+rejected — the same shape as findings C/D/E′ (a plausible invariant, unchecked).
+
+The precise miss arm is `Stmt.adoptBaseIterAxes` (`Structural.lean:827-835`): a base `iterAt` whose
+position has no matching step `iterNext` is **"left as-is"**, keeping `name ""` / `uid 0`. Since
+grouping is by iteration-axis UID, such a base lands in a uid-0 group *separate from its own
+recurrence*, so the boundary is never initialised and the state is silently zero-filled.
+
+**No existing guard covers this.** `outputAxesConsistent` (`Lowering.lean:457-460`) is a *different*
+check: it compares the outputs of one already-grouped coupled scan (`G[j,l]` vs `H[l,j]`) on the
+routed path, after grouping. Nothing in `finalizeScans` enforces base↔recur slot-order agreement.
+
+Relevant to **#5b**: naming the axis at the slot (e.g. `G[j, l@0]`) would make the positional
+recovery pass unnecessary. The declaration-based fix chosen for #5b does **not** close G, but it does
+defuse it: a single-candidate rule (one step `iterNext`, one base `iterAt` ⇒ adopt regardless of
+position) removes the failure mode for single-axis scans outright and needs no declaration at all,
+and replacing the "left as-is" arm with a named rejection makes the multi-axis remainder loud instead
+of silent. Scoped as Part 5 of the #5b spec.
+
+**H. An axis kind's size is write-only — `axis l : ℕ[3]` looks like an extent pin and is not
+(new 2026-07-30, PROBED).** `AxisKind` is `real/nat : Option SizeExpr → AxisKind`
+(`Ast.lean:7-10`) and `Elab.lean:37,39` populate that `SizeExpr` from the `ℝ[…]`/`ℕ[…]` kind
+forms. **Nothing ever reads it.** The only consumers of `AxisSpec.kind` are the two dtype checks
+`iterAxisNotNat` / `normAxisNotReal` (`Structural.lean:700,702`), which test `isNat`/`isReal`
+and discard the payload. Extents come from a *different* channel: `explicitSizes` is folded from
+`| .axis ax (some n) => …` alone (`Lowering.lean:176-178`).
+
+Probe (three programs differing only in the axis declaration, all else identical):
+
+| Declaration | Result |
+|---|---|
+| `axis l : ℕ = 3` | `OK` — extent pinned |
+| `axis l : ℕ[3]` | `ERROR — evalScan: unsized iteration axis 'l'` |
+| *(none)* | `ERROR — evalScan: unsized iteration axis 'l'` |
+
+**`ℕ[3]` is indistinguishable from declaring nothing.** Directly load-bearing for **#5b**, whose
+whole premise is "require a *pinned* axis": any "is this axis sized?" check must test
+`Decl.axis _ (some n)`, because a `kind`-based test would accept the decoy.
+
+**DECIDED 2026-07-30 — remove the payload from the type, not the spelling from the grammar.**
+`AxisKind` becomes `| real | nat`. `AxisKind` is mentioned in only five places in `LeanNCD/`
+(definition, the `AxisSpec.kind` field, the elaborator, and `isNat`/`isReal`, which discard the
+payload with `_`) and is not serialized anywhere, so the payload is provably write-only. This
+deletes the two `ℝ[…]`/`ℕ[…]` productions with it, and costs a mechanical rewrite of **70
+construction sites across 20 files** (`.real none` → `.real`, `.real (some (.lit 2))` → `.real`).
+
+Two weaker fixes were considered and rejected. *Wiring the size in* is not like-for-like: `tl_size`
+yields a general `SizeExpr` (`var/add/sub/mul/div`) while `explicitSizes` is `HashMap UID Nat`, so
+only `.lit` could be wired and symbolic extents need the affine solver — a feature, not a fix.
+*Rejecting the form with a named `CompileError`* was the first recommendation here and was **wrong**:
+it kept the state representable (so a programmatic AST could still carry it) and it contradicted the
+argument used for `iter` in the same spec — make the bad state ungrammatical rather than validated.
+A check can be bypassed by a new entry point, as Task-0 / #4 showed; a deleted payload cannot.
+
+That the trap is live, not cosmetic: the property oracle writes the same size through both channels
+— `⟨"l", 202, .nat (some (.lit L))⟩` (dead) alongside `.axis l (some L)` (live) — at all 15 sites
+carrying a kind size.
+
+**H is an UNFINISHED FEATURE, not accidental cruft (established 2026-07-30).** `papers/leanncd.md`
+**specifies** the bracket forms — `:1421-1431`, "Layer 1", commented *"bracket holds a `tl_size` term
+elaborating to `SizeExpr`, §14.3"*. So the parser and the AST field were built to spec and the
+*consumer* was never written. That is also why 15 oracle sites populate the kind size: the authors
+were following the specified design. Three positions follow, and the paper's own answer is the third:
+
+| | Action | Cost |
+|---|---|---|
+| Delete | drop `tl_size` + `elabTLSize` + 4 tests | **spec deviation** — needs a `leanncd.md` update |
+| **Keep** *(chosen)* | Part 2b only; parser survives orphaned but tested | zero — it is a leaf |
+| Finish | wire `ℕ[n]` to the affine size solver | a feature; out of scope, but the specified endpoint |
+
+Deleting is *mechanically* safe — the cost is exactly the four `run_cmd` blocks at
+`SizeExprTest.lean:40-67`; the 20 `SizeExpr` guards at `:10-38` never touch `tl_size`. So this is a
+judgement call, not a constraint. **Related dead code in the same bucket: `SizeExpr.eval` has zero
+production callers** (`Base/SizeExpr.lean:21-27`, self-recursive only); `SizeExpr` is used in
+production purely as inert labels (`AxisP.mk (some a.name) (SizeExpr.var a.name)`). Keep, record.
+
+Note this is *not* the "keep it for the future solver" argument rejected above. That argument would
+have kept a **reachable** trap — `axis l : ℕ[3]` writable in a real program, silently doing nothing.
+Part 2b removes the reachability; afterwards no program can reach `tl_size`, so it cannot mislead.
+The trap was the bracket form *in an axis declaration*, not the size parser behind it.
 
 ## ⚠️ Revision 2026-07-30 — these decisions now target `EvalPlan`, not `BrBaseP`
 

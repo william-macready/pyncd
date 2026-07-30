@@ -72,7 +72,21 @@ def evalScan (env : HashMap String DenseTensor) (sizes : HashMap UID Nat) :
   | .scan _ axes base recur _ => do
       if axes.isEmpty then .error "evalScan: scan node has no iteration axis" else
       let axUids := axes.map (·.uid)
-      let Ls     := axUids.map (fun u => (sizes[u]?).getD 0)   -- per-axis length, in `axes` order
+      -- Per-axis length, in `axes` order. FAIL LOUD on an unsized iteration axis: an unspecified
+      -- extent is NOT an extent of zero. The former `(sizes[u]?).getD 0` conflated the two, which
+      -- made `List.range (L-1)` run no recurrence steps AND drove an unchecked `Array.set!` in the
+      -- base-slice write below — so a plain surface program with no `axis l` pin
+      -- (`tensor X(j); G[j,0] := X[j]; G[j,l+1] := G[j,l]`) PANICKED with "index out of bounds"
+      -- instead of returning an error. Reproduced 2026-07-30; see `papers/semantic_payload_audit.md`
+      -- finding #5. This reverses the `RJ6` entry in `test/Eval/Portfolio/RejectTest.lean`, which
+      -- recorded "do NOT reject" without knowing the path panicked.
+      -- NOTE (untested adjacent case): an axis pinned explicitly to `0` still yields `L = 0`; that is
+      -- a stated intent rather than a sizing gap, and is not covered by this check.
+      let Ls ← axes.mapM (fun a =>
+        match sizes[a.uid]? with
+        | some n => pure n
+        | none   => throw s!"evalScan: unsized iteration axis '{a.name}' (uid {a.uid}) — pin it with \
+`axis {a.name} : ℕ = N`, or ensure some read fixes its extent")
       let stateNames := (base.map Stmt.lhsName).eraseDups
       -- 1. allocate each state tensor (zeros at full shape) from its base slots.
       let mut work := env

@@ -829,13 +829,115 @@ tests (`ColoredPROP.lean`) and could merge into it. Only worth doing opportunist
 ### Remaining — the critical path to an executing backend
 
 ```text
-Wave A  Correctness freeze (cheap, no dependencies, do first)
-        · finding C  splitStmt drops rhs.agg — eval bug too; gate 8 forbids literal-1.0 folds
-        · finding D  brOpOfIdx? (totality-preserving) + the #guard totality check
-        · finding E' stale elementwiseFn comment (the carved-out actionable half of finding E)
+Wave A  Correctness freeze — ✅ THE THREE AUDIT FINDINGS DONE 2026-07-30 (c754165..14b1353)
+        · finding C  ✅ splitStmt now threads agg onto the LINEAR step (it is the step that
+                       contracts); nonlin step stated .sum explicitly. Was an EVAL bug, not just
+                       a routing-label one. Guarded by LoweringTest AGG1/AGG2, which build the
+                       stmt programmatically because the grammar makes relu(maxreduce(..))
+                       unparseable — teeth verified by mutation (reverting fails AGG1).
+        · finding D  ✅ brOpOfIdx? is now the single table; brOpOfIdx derives via .getD .contract
+                       so the two cannot drift. 3 #guards (mutual-inverse on 0..14 + two
+                       out-of-range). Both round-trip lemmas axiom-free; decode_op/decodeStep_eq
+                       closed unchanged. Genuinely-partial decode deliberately NOT done (restates
+                       5 theorems + realizeSBr — a separate project).
+        · finding E' ✅ blankArrayRow comment corrected (op index rides in EquationRow.lhsName,
+                       NOT elementwiseFn — the old claim matched a superseded plan).
           [letters = papers/semantic_payload_audit.md "Cross-cutting findings"]
-        · remaining demonstrated bugs: unsized-scan panic (#5), recurMorphism
-          accept-then-fail (#4), CSV/ACSet meaning-changing defaults (#6/#17)
+        · finding #4  ✅ recurMorphism REJECTED at compile (CompileError.unsupportedRecurMorphism).
+                       Probe confirmed the analysis exactly: compile .ok ops=[scanPre] while eval
+                       errored, and toBrBaseP discarded the whole ThreadedComposed. Reverses
+                       RecurMorphismTest's live `hasOp .. BrOp.scanPre` guard — which could never
+                       have caught the bug (it checked the op TAG, not the discarded payload).
+        · finding #5  ⚠️ HARDENED, NOT CLOSED. evalScan now fails loud on an unsized iteration
+                       extent, but the analysis's MECHANISM was wrong: the reported program is
+                       rejected by the pre-existing `axes.isEmpty` guard (compileToScheduled yields
+                       `SCAN G axes=[]`), so the new check is unreachable for it and untested. Open:
+                       (a) why a .scan with axes=[] is constructible; (b) where the
+                       `lean_array_set_panic` originates — it is in the EVAL path, not compile
+                       (Shape.lean:431,472's getD 0 are the suspects).
+        · finding #17 ✅ writeSBr now returns `Except CsvError` — it used to emit `RawAxis:1,` (an
+                       axis with an EMPTY size) and return normally after `encodeSize` had already
+                       REFUSED the compound expression. Regression tests cover both fallible paths
+                       (`axisSizes` and `ArrayRow.maxValue`); all byte-exact fixture assertions pass
+                       unchanged, so only the error channel moved.
+        · finding #5  ✅ CLOSED after re-probing (my earlier "not closed" was wrong — I had compared
+                       two different programs). Panic gone; the named error fires.
+        · finding #5b 🔴 OPEN — DESIGN SETTLED, NOT IMPLEMENTED (its own spike, not a Wave A item).
+                       Whitespace is SEMANTIC in an LHS slot: `ident "+1"` is one ATOM, so `l +1` ⇒
+                       .iterNext (scan recurrence) but `l + 1` ⇒ .affine (.shift l 1) (a shifted
+                       write, and it flips the axis kind nat→real), yielding a degenerate
+                       `SCAN .. axes=[]`. The natural spacing silently means something else rather
+                       than failing. DECIDED: accept BOTH spacings + REQUIRE a declared AND PINNED
+                       iteration axis for scans. The PIN is the load-bearing half and is NOT implied
+                       by declaration (`axis l : ℕ` carries no size — `Decl.axis` takes
+                       `Option Nat`); requiring `= N` is what closes #5 at the source. An earlier
+                       note here wrongly credited mere declaration. PROPOSED SYNTAX: a new `iter`
+                       decl keyword in pinned form only — `iter l = 3` — which makes both
+                       "unpinned" and "wrong kind" ungrammatical rather than validated.
+                       STRICT variant DECIDED 2026-07-30 (`iter` is the ONLY way to declare an
+                       iteration axis) — because under permissive `iter` is only a comment: if
+                       `axis l : ℕ = 3` still counts, the reclassifier must accept both spellings and
+                       no code can rely on `Decl.iter`. Strict makes it a real invariant (present ⇒
+                       iteration axis, pinned, ℕ-kinded) and collapses the error to one failure mode.
+                       Breaking change: ~10 recurrences / 6 files to ADD, plus ~25 axes / ~14 lines /
+                       5 files to CONVERT from `axis … : ℕ = N`, plus 5 AST sites in ScanGen.
+                       ⚠️ NOT a mechanical keyword swap (an earlier note here said ~23 and
+                       "mechanical" — both wrong): `axis X : ℕ = N` does NOT imply X iterates, so
+                       four files' ℕ axes must STAY `axis` (RecurrenceTest:77 is a no-recurrence mask
+                       contraction — the trap most likely to catch a bulk edit; ConvPoolTest's `p`;
+                       RelationalTest; EdgeCaseTest; SyntaxTest:7 is a syntax quotation), co-iterating
+                       comma groups swap wholesale (`axis r,c` ⇒ `iter r,c`), and MIXED groups must be
+                       SPLIT (EvalExamplesTest:268 `axis l : ℕ = 3, s : ℕ = 2` ⇒ `iter l = 3` +
+                       `axis s : ℕ = 2`). Count is ±2; the per-program pass belongs in the plan.
+                       Spec: docs/superpowers/specs/2026-07-30-scan-axis-declaration-spike.md
+        · finding G   🔴 OPEN, NEW 2026-07-30, NOT PROBED — a scan base case does not name its own
+                       iteration axis: `G[j,0]` elaborates to `.iterAt (scanAxis "") n` with an
+                       EMPTY name and uid 0 (Elab.lean:244), and `finalizeScans` recovers the axis
+                       BY SLOT POSITION from the matching step (Structural.lean:849-851). Deliberate
+                       and documented, so this is a fragility (silent misattribution if base and
+                       recur slot orders disagree — nothing enforces they agree; outputAxesConsistent
+                       is a DIFFERENT check, across a coupled scan's outputs on the routed path after
+                       grouping), not a reproduced defect. Only slot-level naming (`G[j, l@0]`) would
+                       CLOSE it, but #5b defuses it — folded in as Part 5 of the spec: a
+                       single-candidate rule removes the failure mode for single-axis scans (needing
+                       no declaration at all), and the "left as-is" miss arm becomes a named
+                       rejection so the multi-axis remainder is loud instead of silent.
+        · finding H   🔴 OPEN, NEW 2026-07-30, PROBED — an axis KIND's size is write-only:
+                       `axis l : ℕ[3]` parses to `AxisKind.nat (some (.lit 3))` and pins NOTHING.
+                       Probed: it yields the same "unsized iteration axis" error as declaring no
+                       axis at all, because `explicitSizes` folds only `.axis ax (some n)`
+                       (Lowering.lean:176-178) and the sole `AxisSpec.kind` consumers are the two
+                       dtype checks. A spelling that looks like an extent pin and is not. DECIDED
+                       2026-07-30 (revised after review): remove the PAYLOAD FROM THE TYPE, not the
+                       spelling from the grammar — `AxisKind` becomes `| real | nat`, which deletes
+                       the ℝ[…]/ℕ[…] productions with it and makes the state a TYPE error, so no
+                       CompileError and no test are needed. AxisKind is mentioned in only 5 places in
+                       LeanNCD/ and is not serialized, so the payload is provably write-only. Cost:
+                       70 mechanical construction-site edits across 20 files. An earlier decision
+                       here (reject the form with `unsupportedAxisKindSize`) was WRONG — it left the
+                       state representable for programmatic ASTs and contradicted the `iter`
+                       reasoning in the same spec (make bad states ungrammatical, not validated); a
+                       check can be bypassed by a new entry point, as Task-0/#4 showed. Wiring the
+                       size in was also rejected (tl_size yields a general SizeExpr; explicitSizes is
+                       HashMap UID Nat, so only `.lit` could be wired — symbolic extents need the
+                       affine solver, a feature not a fix). SEPARABLE from #5b: ship it ahead of the
+                       spike. Side effect: tl_size/elabTLSize become reachable only from
+                       test/DSL/SizeExprTest.lean — KEEP them. H IS AN UNFINISHED FEATURE, NOT CRUFT:
+                       papers/leanncd.md:1421-1431 SPECIFIES the bracket forms ("Layer 1", §14.3), so
+                       the parser + AST field were built to spec and only the consumer was never
+                       written — which is also why 15 oracle sites populate the kind size. Deleting
+                       tl_size is mechanically safe (cost = 4 run_cmd blocks at SizeExprTest:40-67;
+                       the 20 SizeExpr guards at :10-38 don't touch it) but is a SPEC DEVIATION
+                       needing a paper update, so it is a judgement call, not cleanup. The paper's own
+                       resolution is to FINISH it: wire ℕ[n] to the affine size solver (out of scope).
+                       Same bucket: SizeExpr.eval has ZERO production callers (Base/SizeExpr.lean:
+                       21-27, self-recursive only); SizeExpr is used in production only as inert
+                       labels. Keeping these is not the retracted "keep it for the future solver"
+                       argument — that kept a REACHABLE trap; Part 2b removes reachability, after
+                       which no program can reach tl_size and it cannot mislead anyone.
+        · STILL OPEN in Wave A: #5b, G, H above. #6 (the broader boundary DECODER defaults —
+          realizeStMat zero-fill, realizeBrBaseP, AcsetCodec, realizeSBr → empty identity) is
+          Stage-5 bridge-hardening, not Wave A, per the audit's own assignment.
 
 Wave B  THE BACKEND CONTRACT — Spike 4, resequenced (highest priority)
         · ContractionAlgebra + BOTH identities   (= 4b + the shared classifier)

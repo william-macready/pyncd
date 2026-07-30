@@ -33,6 +33,14 @@ inductive CompileError
   | scanProjectionUnsupported : String → CompileError       -- per-step stmt inside a scan references the
                                                              -- iteration axis on its own LHS with no base case;
                                                              -- move it after the scan and read the materialized state
+  | unsupportedRecurMorphism : String → CompileError        -- Wave-A policy: the §12.2 `recurMorphism`
+                                                             -- escape hatch has NO semantics anywhere —
+                                                             -- `toBrBaseP` discards the supplied
+                                                             -- `ThreadedComposed` and emits an empty
+                                                             -- `.scanPre` step, and every evaluator entry
+                                                             -- rejects it. Accepted-then-discarded was the
+                                                             -- worst state, so `compile` now rejects it
+                                                             -- outright (audit finding #4)
   | unsupportedNonlinScatter : String → CompileError        -- Spike-3 Stage-0 short-term policy: a scatter
                                                              -- (affine/diagonal LHS) write may only carry the
                                                              -- identity nonlinearity — `evalScatter` never applied

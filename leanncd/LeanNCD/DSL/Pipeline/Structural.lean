@@ -707,7 +707,17 @@ def checkDtypes (rp : ResolvedProgram) : FreshM ResolvedProgram := do
         if let some (.predicate _ _) := rp.env[nm]? then
           unless rhs.nonlin == .identity do throw (.predicateNonlin nm)
           unless rhs.agg   == .sum       do throw (.predicateAgg nm)
-    | .recurMorphism _ _ _ => pure ()
+    | .recurMorphism nm _ _ =>
+        -- Audit finding #4 (probed 2026-07-30): `compile` accepted this and emitted
+        -- `ops=[BrOp.scanPre]`, while `eval` reported "scanPre unsupported" — and `toBrBaseP`
+        -- DISCARDED the supplied `ThreadedComposed` entirely (empty degree/weaves/reindexings, and
+        -- the iteration axis dropped too). Accepted-then-partially-inspected-then-discarded is the
+        -- worst of the three options, so reject it here, before it can become a look-alike primitive.
+        -- Supporting it properly means one of: an opaque validated primitive whose semantics reach
+        -- routing/realization/eval, or an inlined subgraph with explicit boundary ports. Its payload
+        -- is also a required `EvalPlan` scan-step field (base plan + step plan), so the real fix
+        -- belongs with that IR.
+        throw (.unsupportedRecurMorphism nm)
   return rp
 
 /-! ## The `checkScatterNonlin` phase

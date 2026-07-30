@@ -82,28 +82,53 @@ def brOpIdx : BrOp → Nat
   | .leakyrelu  => 13
   | .l2normalize => 14
 
-/-- Inverse of `brOpIdx` on `0..14`; defaults to `.contract` outside that range (never hit on data
-    produced by `brOpIdx`, only relevant for totality on arbitrary/garbage input). -/
-def brOpOfIdx : Nat → BrOp
-  | 0 => .contract
-  | 1 => .maxreduce
-  | 2 => .scatter
-  | 3 => .relu
-  | 4 => .softmax
-  | 5 => .normalize
-  | 6 => .scan
-  | 7 => .scanAffine
-  | 8 => .scanPre
-  | 9 => .minreduce
-  | 10 => .sigmoid
-  | 11 => .tanh
-  | 12 => .gelu
-  | 13 => .leakyrelu
-  | 14 => .l2normalize
-  | _ => .contract
+/-- Partial inverse of `brOpIdx`: `some op` on `0..14`, `none` outside. **This is the honest
+    decoder** — an out-of-range tag from untrusted data (a hand-edited CSV, a truncated acset) is
+    NOT a `BrOp`, and saying so is the point. Prefer this at any boundary that can report failure.
 
+    See `papers/semantic_payload_audit.md` finding D: `decodeStep` reaches the total `brOpOfIdx`
+    below via `unaryToNat` of a raw string, and a MISSING `EquationRow` yields `"" ⇒ 0 ⇒ .contract`
+    — so a garbled relu/softmax/scatter/scan tag silently became a plain contraction. -/
+def brOpOfIdx? : Nat → Option BrOp
+  | 0 => some .contract
+  | 1 => some .maxreduce
+  | 2 => some .scatter
+  | 3 => some .relu
+  | 4 => some .softmax
+  | 5 => some .normalize
+  | 6 => some .scan
+  | 7 => some .scanAffine
+  | 8 => some .scanPre
+  | 9 => some .minreduce
+  | 10 => some .sigmoid
+  | 11 => some .tanh
+  | 12 => some .gelu
+  | 13 => some .leakyrelu
+  | 14 => some .l2normalize
+  | _ => none
+
+/-- Total inverse of `brOpIdx`, **derived from `brOpOfIdx?`** so the two cannot drift — there is
+    exactly ONE table. Still defaults to `.contract` out of range, because `decodeStep` is total by
+    design (`toThreadedComposed` must be total for `realizeSBr`, `Bridge/SBr.lean:17-20`), so it has
+    no error channel to use. The default is now *visible* rather than buried in a wildcard arm:
+    making the decode genuinely partial would restate 5 theorems plus `realizeSBr` and is a separate
+    project (audit finding D records the counter-position in `restructure_suggestions.md:155-158`). -/
+def brOpOfIdx (n : Nat) : BrOp := (brOpOfIdx? n).getD .contract
+
+@[simp] theorem brOpOfIdx?_brOpIdx (op : BrOp) : brOpOfIdx? (brOpIdx op) = some op := by
+  cases op <;> rfl
+
+-- `cases <;> rfl` (not `simp`): `brOpOfIdx` still reduces for a concrete `op`, so this stays
+-- axiom-free, matching the footprint it had before `brOpOfIdx?` was factored out.
 @[simp] theorem brOpOfIdx_brOpIdx (op : BrOp) : brOpOfIdx (brOpIdx op) = op := by
   cases op <;> rfl
+
+-- The two tables are mutual inverses on the whole valid range, and out-of-range is rejected by the
+-- partial decoder. These fire at build time, so adding a `BrOp` constructor without extending BOTH
+-- tables fails the build rather than silently widening the `.contract` default.
+#guard (List.range 15).map (brOpIdx ∘ brOpOfIdx) == List.range 15
+#guard brOpOfIdx? 15 == none
+#guard brOpOfIdx? 99 == none
 
 /-! ### `fromThreadedComposed` — the encode direction -/
 
@@ -169,11 +194,18 @@ def encodeReindexing (i degSlot arraySlot : Nat) (inW : WeaveShapeP) (m : StMatP
         { equationIdx := i, reindexingSlot := arraySlot, srcUid := axisUidFor3 i degSlot d,
           tgtUid := tgtUid, coeff := row.getD d 0, offset := offset }
 
-/-- The default (unused-field) `ArrayRow` shared by output/input rows — only `slot`/`isInput`/
-    `elementwiseFn` (op index, output slot 0 only — see `fromThreadedComposed`)/`wireLabel` (input
-    rows only) ever carry real content; everything else is `none`/`.reals` because it carries
-    Python-specific semantic distinctions (masked-softmax predicates, linear-layer bias flags) that
-    `BrOp` doesn't make and nothing here needs to reconstruct. -/
+/-- The default (unused-field) `ArrayRow` shared by output/input rows — only `slot`/`isInput` and
+    `wireLabel` (input rows only, set by `encodeStep`) ever carry real content; everything else is
+    `none`/`.reals` because it carries Python-specific semantic distinctions (masked-softmax
+    predicates, linear-layer bias flags) that `BrOp` doesn't make and nothing here needs to
+    reconstruct.
+
+    NOTE: the **op index is NOT here** — it rides in `EquationRow.lhsName` as a unary numeral (see
+    `encodeStep`, and `from_equation_find`'s docstring). An earlier revision of this comment claimed
+    `elementwiseFn` carried it, matching a superseded plan
+    (`docs/superpowers/plans/2026-07-01-acset-agreement-impl-plan.md:152`); the code below has always
+    set `elementwiseFn := none`. `datatypeTag := .reals` is likewise a hardcode, not a carried value
+    — see `papers/semantic_payload_audit.md` feature 6. -/
 def blankArrayRow (i slot : Nat) (isInput : Bool) : ArrayRow :=
   { equationIdx := i, slot := slot, name := none, isInput := isInput, operatorTag := none,
     normAxis := none, datatypeTag := .reals, maxValue := none, bias := none,
