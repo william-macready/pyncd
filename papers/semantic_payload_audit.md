@@ -103,7 +103,35 @@ unscheduled — it is currently impossible.** It requires the `Br` interpreter f
 tractable interim is a *shape/label* agreement theorem plus per-feature reject gates (below),
 not a numeric commuting diagram.
 
-## Recommended decision set
+## ⚠️ Revision 2026-07-30 — these decisions now target `EvalPlan`, not `BrBaseP`
+
+The terminal goal is a **PyTorch/JAX execution layer** lowered from a backend-neutral **`EvalPlan`**
+(`copilot_code_analysis.md` Appendix A). Execution branches off `ScheduledProgram` → `EvalPlan`, **not**
+off the routed `ThreadedComposed` — which ends in `BrMorph`, a `Quotient` of raw syntax with no
+denotation into numbers (finding F above) and therefore cannot execute anything.
+
+**Every payload in the table above is a required `EvalPlan` field**, so "reject routed" is a temporary
+staging device, never the long-term answer — you cannot reject `log(X[i])` if the goal is to emit
+`torch.log`:
+
+| Audited payload | Required `EvalPlan` home (Appendix A) |
+|---|---|
+| #1 axiswise mask | nonlinearity step: function, resolved axis, **mask**, exceptional-row policy |
+| #3 `UnaryOp` | pointwise function step |
+| #4 `ScatterOpts` | scatter step: destination map, output shape, **fill, collision op**, OOB policy, injectivity |
+| #5 `AggOp` + #6 dtype | `ContractionAlgebra` (`factorOp`/`factorId`/`reduceOp`/`reduceId`) + `TensorSig.dtype : ScalarDType` |
+| incidental term structure | contraction step: factors, **per-term reduction axes**, factor op/id, term op/id |
+| #8 scan bodies | scan step: state sigs, **base plan, step plan**, iteration order, causality cert |
+
+**Consequences for the buckets below:** the *carry* bucket's destination changes — dtype belongs in
+`ContractionAlgebra`/`TensorSig`, not `BrBaseP`, and the expensive `weaveToArrayType_congr` /
+`Agreement.lean` conjunct-2 rework buys **nothing** for execution, so defer it. The *reject* bucket
+remains useful only as an honest interim gate while each payload's `EvalPlan` representation is built.
+#8 (scan bodies) stays an accepted boundary for the *routed* path but must be **carried** for the
+backend (`base plan` + `step plan`). See the terminal-goal section of
+[`restructure_suggestions.md`](restructure_suggestions.md).
+
+## Recommended decision set (routed-path framing — superseded in part by the revision above)
 
 The honest intermediate property is **"preserve all payload, or reject with a named error."**
 Concretely, three buckets:
