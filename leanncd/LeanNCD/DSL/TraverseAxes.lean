@@ -78,15 +78,9 @@ def SumExpr.traverseAxes [Applicative f] (g : AxisSpec → f AxisSpec) (s : SumE
   (fun ts => { terms := ts }) <$> Traversable.traverse (ProdTerm.traverseAxes g) s.terms
 
 def Nonlin.traverseAxes [Applicative f] (g : AxisSpec → f AxisSpec) : Nonlin → f Nonlin
-  | .identity      => pure .identity
-  | .relu          => pure .relu
-  | .sigmoid       => pure .sigmoid
-  | .tanh          => pure .tanh
-  | .gelu          => pure .gelu
-  | .leakyrelu     => pure .leakyrelu
-  | .softmax m     => Nonlin.softmax <$> Traversable.traverse (BoolExpr.traverseAxes g) m
-  | .normalize m   => Nonlin.normalize <$> Traversable.traverse (BoolExpr.traverseAxes g) m
-  | .l2normalize m => Nonlin.l2normalize <$> Traversable.traverse (BoolExpr.traverseAxes g) m
+  | .identity       => pure .identity
+  | .pointwise pf   => pure (.pointwise pf)
+  | .axiswise fn m  => Nonlin.axiswise fn <$> Traversable.traverse (BoolExpr.traverseAxes g) m
 
 /-- `RHSExpr`'s AxisSpec-collecting-and-remap traversal: touches BOTH `body` (via
     `SumExpr.traverseAxes`) AND `nonlin` (via `Nonlin.traverseAxes`), `agg` passed through

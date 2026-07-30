@@ -113,49 +113,27 @@ theorem BoolExpr.mapUID_eq_ref (f : UData → UData) (e : BoolExpr) :
       rw [PredArith.mapUID_eq_ref f a, PredArith.mapUID_eq_ref f b]
       rfl  -- collapses the `Id` applicative `<$>`/`<*>` (reducible-transparency `rw` won't)
 
+/-- Independent hand-written reference for `Nonlin.mapUID`: `.identity`/`.pointwise` pass through
+    unchanged, and `.axiswise` remaps the MASK's UIDs (spelled out via `BoolExpr.mapUID_ref`, NOT
+    delegated to `Nonlin.mapUID`/`Nonlin.traverseAxes`) — a production traversal that silently
+    dropped the mask remap would break `Nonlin.mapUID_eq_ref` below. -/
 private def Nonlin.mapUID_ref (f : UData → UData) : Nonlin → Nonlin
   | .identity      => .identity
-  | .relu          => .relu
-  | .sigmoid       => .sigmoid
-  | .tanh          => .tanh
-  | .gelu          => .gelu
-  | .leakyrelu     => .leakyrelu
-  | .softmax m     => .softmax (m.map (BoolExpr.mapUID_ref f))
-  | .normalize m   => .normalize (m.map (BoolExpr.mapUID_ref f))
-  | .l2normalize m => .l2normalize (m.map (BoolExpr.mapUID_ref f))
+  | .pointwise pf  => .pointwise pf
+  | .axiswise fn m => .axiswise fn (m.map (BoolExpr.mapUID_ref f))
 
 theorem Nonlin.mapUID_eq_ref (f : UData → UData) (n : Nonlin) :
     Nonlin.mapUID f n = Nonlin.mapUID_ref f n := by
   cases n with
   | identity => rfl
-  | relu => rfl
-  | sigmoid => rfl
-  | tanh => rfl
-  | gelu => rfl
-  | leakyrelu => rfl
-  | softmax m =>
+  | pointwise pf => rfl
+  | axiswise fn m =>
       cases m with
       | none => rfl
       | some b =>
           simp only [Nonlin.mapUID, Nonlin.traverseAxes, Nonlin.mapUID_ref]
-          show (Nonlin.softmax (some (BoolExpr.mapUID f b)) : Id Nonlin)
-            = Nonlin.softmax (some (BoolExpr.mapUID_ref f b))
-          rw [BoolExpr.mapUID_eq_ref f b]
-  | normalize m =>
-      cases m with
-      | none => rfl
-      | some b =>
-          simp only [Nonlin.mapUID, Nonlin.traverseAxes, Nonlin.mapUID_ref]
-          show (Nonlin.normalize (some (BoolExpr.mapUID f b)) : Id Nonlin)
-            = Nonlin.normalize (some (BoolExpr.mapUID_ref f b))
-          rw [BoolExpr.mapUID_eq_ref f b]
-  | l2normalize m =>
-      cases m with
-      | none => rfl
-      | some b =>
-          simp only [Nonlin.mapUID, Nonlin.traverseAxes, Nonlin.mapUID_ref]
-          show (Nonlin.l2normalize (some (BoolExpr.mapUID f b)) : Id Nonlin)
-            = Nonlin.l2normalize (some (BoolExpr.mapUID_ref f b))
+          show (Nonlin.axiswise fn (some (BoolExpr.mapUID f b)) : Id Nonlin)
+            = Nonlin.axiswise fn (some (BoolExpr.mapUID_ref f b))
           rw [BoolExpr.mapUID_eq_ref f b]
 
 private def Factor.mapUID_ref (f : UData → UData) : Factor → Factor

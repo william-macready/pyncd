@@ -29,7 +29,7 @@ run_cmd do
   let env : HashMap String DenseTensor := (({} : HashMap String DenseTensor).insert "X" X).insert "A" A
   let sizes := (({} : HashMap UID Nat).insert 1 1).insert 9 2
   let base : Stmt := .assign "S" [.free j, .iterAt l 0] { body := { terms := [{ factors := [.read "X" [.axis j]] }] }, nonlin := .identity }
-  let recur : Stmt := .assign "S" [.free j, .iterNext l] { body := { terms := [{ factors := [.read "S" [.axis j, .axis l], .read "A" [.axis j]] }] }, nonlin := .relu }
+  let recur : Stmt := .assign "S" [.free j, .iterNext l] { body := { terms := [{ factors := [.read "S" [.axis j, .axis l], .read "A" [.axis j]] }] }, nonlin := .pointwise .relu }
   match evalScan env sizes (.scan "S" [l] [base] [recur] false) with
   | .error e => throwError e
   | .ok outs => match outs.find? (·.1 == "S") with

@@ -3,7 +3,7 @@ import Lean
 /-!
 # Tensor-logic DSL surface grammar (Milestone E1, Task E1.2)
 
-This module declares the 17 `declare_syntax_cat` categories and transcribes the
+This module declares the 23 `declare_syntax_cat` categories and transcribes the
 surface grammar rules from `papers/leanncd.md` §12.3.  It defines *only* the
 grammar; the elaborators that consume it are added in later tasks.
 
@@ -119,12 +119,17 @@ syntax ident "[" tl_idx_expr,* "]"     : tl_factor
 syntax "[" tl_bool_expr "]"            : tl_factor
 
 -- Unary transcendental functions, restricted to wrapping a bare tensor read (`log(P[i])`),
--- not composable (`log(sin(X[i]))` is out of scope).
-syntax "log"  "(" ident "[" tl_idx_expr,* "]" ")" : tl_factor
-syntax "exp"  "(" ident "[" tl_idx_expr,* "]" ")" : tl_factor
-syntax "sin"  "(" ident "[" tl_idx_expr,* "]" ")" : tl_factor
-syntax "cos"  "(" ident "[" tl_idx_expr,* "]" ")" : tl_factor
-syntax "sqrt" "(" ident "[" tl_idx_expr,* "]" ")" : tl_factor
+-- not composable (`log(sin(X[i]))` is out of scope).  The keyword is factored into its own
+-- category so the argument shape is written once and the elaborator has a single arm; adding
+-- a function is one `tl_unary_kw` line here plus one match case in `elabTLFactor`.
+declare_syntax_cat tl_unary_kw
+syntax "log"  : tl_unary_kw
+syntax "exp"  : tl_unary_kw
+syntax "sin"  : tl_unary_kw
+syntax "cos"  : tl_unary_kw
+syntax "sqrt" : tl_unary_kw
+
+syntax tl_unary_kw "(" ident "[" tl_idx_expr,* "]" ")" : tl_factor
 
 -- `·` (product) binds tighter than `+` (sum); both left-associative, n-ary.
 syntax:70 tl_prod_term:70 " · " tl_factor:71 : tl_prod_term
@@ -137,20 +142,39 @@ syntax:70 tl_prod_term:70 " / " ident "[" tl_idx_expr,* "]" : tl_prod_term
 syntax:65 tl_sum_expr:65 " + " tl_prod_term:66 : tl_sum_expr
 syntax:66 tl_prod_term:66                       : tl_sum_expr
 
--- `atomic("(" "where")` left-factors the masked variants against the bare token: on an
+-- Nonlinearities split into TWO closed keyword categories, so that "which nonlinearities admit
+-- a `(where …)` mask" is a *grammatical* fact rather than an elaborator check: only the axiswise
+-- family reduces along an axis, so only it can be masked.  `relu(where …)` is therefore not
+-- representable at all (it is a parse error, not an elaboration error).  Adding a nonlinearity
+-- is one keyword line here plus one match case in `elabTLNonlin`.
+--
+-- DIAGNOSTIC COST of routing keywords through categories (`tl_pointwise_kw`/`tl_axiswise_kw`
+-- here, `tl_unary_kw` below): Lean's "expected …" sets now name the CATEGORY, not the typeable
+-- keywords, for *any* malformed RHS head — e.g. `H[i] := 3 + X[i]` reports
+-- `expected tl_agg, tl_axiswise_kw, tl_pointwise_kw or tl_unary_kw` rather than listing
+-- relu/sigmoid/…/softmax, and `relu(where …)` reports `expected tl_unary_kw` (an unrelated
+-- category — `tl_factor` is simply the last `tl_sum_expr` alternative to fail).  This is a
+-- deliberate trade for the closed-category safety above; `tl_agg` was already category-led
+-- before this change, so only the reach is new.  Lean offers no way to alias a category name in
+-- an `expected` set, so the mitigation is this note plus the keyword-mapping tests
+-- (`ParseLayer34Test` asserts every keyword by full `Nonlin` equality).
+declare_syntax_cat tl_pointwise_kw
+syntax "relu"      : tl_pointwise_kw
+syntax "sigmoid"   : tl_pointwise_kw
+syntax "tanh"      : tl_pointwise_kw
+syntax "gelu"      : tl_pointwise_kw
+syntax "leakyrelu" : tl_pointwise_kw
+
+declare_syntax_cat tl_axiswise_kw
+syntax "softmax"     : tl_axiswise_kw
+syntax "normalize"   : tl_axiswise_kw
+syntax "l2normalize" : tl_axiswise_kw
+
+syntax tl_pointwise_kw : tl_nonlin
+-- `atomic("(" "where")` left-factors the masked variant against the bare keyword: on an
 -- unmasked `softmax(sum)` the `( where` lookahead fails and rewinds (it does not commit to
--- `where`), so the bare `softmax` rule wins and the `(sum)` is consumed at the tl_rhs level.
-syntax "relu"                                           : tl_nonlin
-syntax "sigmoid"                                        : tl_nonlin
-syntax "tanh"                                           : tl_nonlin
-syntax "gelu"                                           : tl_nonlin
-syntax "leakyrelu"                                      : tl_nonlin
-syntax "softmax"                                        : tl_nonlin
-syntax "softmax"   atomic("(" "where") tl_bool_expr ")" : tl_nonlin
-syntax "normalize"                                      : tl_nonlin
-syntax "normalize" atomic("(" "where") tl_bool_expr ")" : tl_nonlin
-syntax "l2normalize"                                      : tl_nonlin
-syntax "l2normalize" atomic("(" "where") tl_bool_expr ")" : tl_nonlin
+-- `where`), so the optional mask group is skipped and the `(sum)` is consumed at the tl_rhs level.
+syntax tl_axiswise_kw (atomic("(" "where") tl_bool_expr ")")? : tl_nonlin
 
 -- Aggregation operations: change the contraction from sum to another reduction.
 syntax "maxreduce" : tl_agg

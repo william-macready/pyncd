@@ -57,4 +57,4 @@ globs = ["Base.NumericTest", "Base.StTest", "Base.BrTest", "Base.BrWiringTest",
          "Eval.Portfolio.TropicalTest", "Eval.Portfolio.TensorNetTest",
          "Eval.Portfolio.GenerativeTest", "Eval.Portfolio.ClassicalMLTest",
          "Eval.Portfolio.EdgeCaseTest", "Eval.Portfolio.RejectTest",
-         "Eval.Portfolio.KnownGapTest"]
+         "Eval.Portfolio.KnownGapTest", "Eval.Portfolio.ScatterNonlinRejectTest"]

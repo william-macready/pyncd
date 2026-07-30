@@ -92,19 +92,22 @@ def l2normalizeT (axisPos : Nat) (axisUids : List UID) (mask? : Option BoolExpr)
     entries.map (fun (x, masked) =>
       if masked || s == 0.0 then 0.0 else x / s)) t
 
-/-- Dispatch: apply a Nonlin. `axisPos`/`axisUids` describe the norm axis (ignored by the
-    pointwise variants: relu/identity/sigmoid/tanh/gelu/leakyrelu). -/
+/-- The elementwise tensor map a `PointwiseFn` denotes — owned by the enum, so a new pointwise
+    function has exactly one place to be interpreted (and no axis/mask to forget). -/
+def _root_.LeanNCD.PointwiseFn.apply : PointwiseFn → DenseTensor → DenseTensor
+  | .relu => reluT | .sigmoid => sigmoidT | .tanh => tanhT | .gelu => geluT
+  | .leakyrelu => leakyReluT
+
+/-- Dispatch: apply a Nonlin. `axisPos`/`axisUids` describe the norm axis (ignored by
+    `.identity` and by every `.pointwise` variant — by type, those carry no axis). -/
 def applyNonlin (nl : Nonlin) (axisPos : Nat) (axisUids : List UID)
     (t : DenseTensor) : DenseTensor :=
   match nl with
   | .identity      => t
-  | .relu          => reluT t
-  | .sigmoid       => sigmoidT t
-  | .tanh          => tanhT t
-  | .gelu          => geluT t
-  | .leakyrelu     => leakyReluT t
-  | .softmax m     => softmaxT axisPos axisUids m t
-  | .normalize m   => normalizeT axisPos axisUids m t
-  | .l2normalize m => l2normalizeT axisPos axisUids m t
+  | .pointwise pf  => pf.apply t
+  | .axiswise fn m => match fn with
+      | .softmax     => softmaxT axisPos axisUids m t
+      | .normalize   => normalizeT axisPos axisUids m t
+      | .l2normalize => l2normalizeT axisPos axisUids m t
 
 end LeanNCD.Eval

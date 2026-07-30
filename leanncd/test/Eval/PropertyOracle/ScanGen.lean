@@ -59,7 +59,7 @@ private def template2 (L : Nat) (Aneg : Bool) : ScanCase :=
     { body := { terms := [{ factors := [.read "X0" [.axis j2]] }] }, nonlin := .identity }
   let recur : Stmt := .assign "S" [.free j2, .iterNext l]
     { body := { terms := [{ factors := [.read "S" [.axis j2, .axis l], .read "A" [.axis j2]] }] },
-      nonlin := .relu }
+      nonlin := .pointwise .relu }
   let aVals : Array Float := if Aneg then #[-1.0, -1.0] else #[1.0, 2.0]
   let inputs : Std.HashMap String DenseTensor :=
     (({} : Std.HashMap String DenseTensor).insert "X0" ⟨[2], #[1.0, 1.0]⟩).insert "A" ⟨[2], aVals⟩

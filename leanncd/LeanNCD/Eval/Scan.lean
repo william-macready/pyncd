@@ -40,9 +40,9 @@ def evalStmtSliceSeeded (env : HashMap String DenseTensor) (sizes : HashMap UID 
       let (_, slice) ← evalAssignSeeded c.mul c.combine c.unit0 env sizes seed nm slots rhs
       let sliceUids := (slots.filterMap (·.axisUID?)).filter (fun u => ! seed.contains u)
       let pos ← match rhs.nonlin with
-        | .identity | .relu | .sigmoid | .tanh | .gelu | .leakyrelu =>
+        | .identity | .pointwise _ =>
             pure 0     -- pointwise: reduction axis irrelevant
-        | .softmax _ | .normalize _ | .l2normalize _ => match normAxisUidOf slots with
+        | .axiswise _ _ => match normAxisUidOf slots with
             | some nu => match sliceUids.findIdx? (· == nu) with
                 | some p => pure p
                 | none   => throw s!"evalStmtSliceSeeded: marked norm axis of {nm} is not among its slice axes"
