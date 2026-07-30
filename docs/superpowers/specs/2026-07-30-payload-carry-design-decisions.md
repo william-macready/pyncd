@@ -45,8 +45,9 @@
 > public.
 >
 > **Revised task order for the next plan** (supersedes §5):
-> 1. **D14** (comment), **D12** (`agg` drop — now *doubly* motivated: gate 8 forbids literal-`1.0`
->    folds), **D13** (`brOpOfIdx?`) — all still valid, all cheap, no dependency on the above.
+> 1. **Finding E-comment** (stale comment), **Finding C** (`agg` drop — now *doubly* motivated: gate 8
+>    forbids literal-`1.0` folds), **Finding D** (`brOpOfIdx?`) — all still valid, all cheap, no
+>    dependency on the above.
 > 2. **`ContractionAlgebra` + both identities** (= 4b + R-1), with `combineFor` reduced to a projection.
 >    Behavior-preserving; the reviewable unit that proves the shared classifier before anything depends
 >    on it.
@@ -66,9 +67,9 @@ From the audit's three buckets, the user chose **bug fixes + the carry bucket**.
 
 | Item | What |
 |---|---|
-| **D14** | Fix the stale `elementwiseFn` comment (`Bridge/AcsetCodec.lean:172-180`) |
-| **D12** | `splitStmt` drops `rhs.agg` (`Lowering.lean:45`, and `:47-49`) |
-| **D13** | `brOpOfIdx`'s `_ => .contract` is reachable from CSV (`AcsetCodec.lean:87-103`) |
+| **Finding E-comment** | Fix the stale `elementwiseFn` comment (`Bridge/AcsetCodec.lean:172-180`) |
+| **Finding C** | `splitStmt` drops `rhs.agg` (`Lowering.lean:45`, and `:47-49`) |
+| **Finding D** | `brOpOfIdx`'s `_ => .contract` is reachable from CSV (`AcsetCodec.lean:87-103`) |
 | **Carry** | dtype tag + auxiliary nonlin/agg tag on `BrBaseP`, threaded to codec + realize |
 | **Docs** | Two stale docs claiming `splitNonlins` splits scans (`leanncd/realize.md:194`, `papers/code_walkthrough.md:378`) |
 
@@ -185,7 +186,7 @@ the old form follows.
   `toThreadedComposed (fromThreadedComposed P) = P`, decided by `DecidableEq ThreadedComposed` — so
   it compares every field of every step on the nose and **will fire the moment a new field isn't
   encoded/decoded**. Use it; don't write a parallel check.
-- **D12 is worse than the audit said:** BOTH halves of `splitStmt` omit `agg` (`:45` semantically
+- **Finding C is worse than the audit itself said:** BOTH halves of `splitStmt` omit `agg` (`:45` semantically
   wrong, `:47-49` harmless-but-should-be-explicit), and it is an **eval bug too** —
   `compileToScheduled` includes `splitNonlins` and `Eval/Scan.lean:35-38` / `Eval/Contract.lean:149`
   read `rhs.agg` off post-split stmts. Unreachable from surface syntax (`Syntax.lean:183-185` makes
@@ -204,9 +205,9 @@ the old form follows.
 
 ## 5. Suggested task sequence
 
-1. **D14** — comment-only; it sits on the same 9 lines as the dtype work (`AcsetCodec.lean:172-180`), so do it first to avoid churn.
-2. **D12** — one-line fix ×2 + a programmatic regression test.
-3. **D13** — `brOpOfIdx?` as the single table + the `#guard` totality check.
+1. **Finding E-comment** — comment-only; it sits on the same 9 lines as the dtype work (`AcsetCodec.lean:172-180`), so do it first to avoid churn.
+2. **Finding C** — one-line fix ×2 + a programmatic regression test.
+3. **Finding D** — `brOpOfIdx?` as the single table + the `#guard` totality check.
 4. **R-1** — extract `outputSemiring` and make `combineFor` project from it. **Behavior-preserving, no new field yet** — a clean reviewable unit that proves the shared classifier works before anything depends on it.
 5. **Field addition** — `DTypeP` + the two `BrBaseP` fields (with defaults), `decls` threaded from `routeCore`, `toBrBaseP` populating both, the 23 RouteSpec statement edits, one new RouteSpec projection.
 6. **Codec** — `datatypeTag` for dtype, `lhsName` packing for the nonlin tag, the new `decodeStep_eq` round-trip `have`. `AcsetCodecTest`'s 5 `#guard`s are the gate.

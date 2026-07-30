@@ -52,6 +52,13 @@ finding F). That is the mechanism by which all of the above stays invisible.
 
 ## Cross-cutting findings
 
+> **These letters are the canonical labels for the actionable items.** Wave A of the
+> [work order](restructure_suggestions.md#suggested-spike-ordering-and-dependencies) is
+> **finding C** (`agg` drop), **finding D** (`brOpOfIdx?`), and the carved-out actionable half of
+> **finding E** (the stale `elementwiseFn` comment — cited as *finding E-comment* / *E'*). An earlier
+> draft numbered these `D12`/`D13`/`D14` after a subagent survey's section headings; that numbering is
+> **retired** (it was untraceable to any document, and its `D` prefix collided with finding D).
+
 **B. A second eval divergence — plain vs scan, on dtype.** `evalScan`'s signature never takes
 `decls` (`Eval/Scan.lean:68-69`), so it picks its `Combine` from `rhs.agg` alone
 (`:36-40`) and never reaches `combineFor`'s predicate branch (`Contract.lean:133-139`). A

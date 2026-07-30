@@ -830,9 +830,10 @@ tests (`ColoredPROP.lean`) and could merge into it. Only worth doing opportunist
 
 ```text
 Wave A  Correctness freeze (cheap, no dependencies, do first)
-        · D12 splitStmt drops rhs.agg  — eval bug too; gate 8 forbids literal-1.0 folds
-        · D13 brOpOfIdx? (totality-preserving) + the #guard totality check
-        · D14 stale elementwiseFn comment
+        · finding C  splitStmt drops rhs.agg — eval bug too; gate 8 forbids literal-1.0 folds
+        · finding D  brOpOfIdx? (totality-preserving) + the #guard totality check
+        · finding E' stale elementwiseFn comment (the carved-out actionable half of finding E)
+          [letters = papers/semantic_payload_audit.md "Cross-cutting findings"]
         · remaining demonstrated bugs: unsized-scan panic (#5), recurMorphism
           accept-then-fail (#4), CSV/ACSet meaning-changing defaults (#6/#17)
 
