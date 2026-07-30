@@ -94,7 +94,7 @@ run_cmd do
   let l : AxisSpec := { name := "l", uid := 9, kind := .nat none }
   let j : AxisSpec := { name := "j", uid := 1, kind := .real none }
   let rhs (nm : String) : RHSExpr :=
-    { body := { terms := [ { factors := [ .read nm [ .axis j, .axis l ] ] } ] }, nonlin := .relu }
+    { body := { terms := [ { factors := [ .read nm [ .axis j, .axis l ] ] } ] }, nonlin := .pointwise .relu }
   let gBase : Stmt := .assign "G" [ .free j, .iterAt l 0 ] { body := { terms := [] }, nonlin := .identity }
   let gRec  : Stmt := .assign "G" [ .free j, .iterNext l ] (rhs "G")
   let hBase : Stmt := .assign "H" [ .free j, .iterAt l 0 ] { body := { terms := [] }, nonlin := .identity }
@@ -248,7 +248,7 @@ run_cmd do
 run_cmd do
   let m : AxisSpec := { name := "m", uid := 2, kind := .nat none }  -- ← nat, not real
   let s : Stmt := .assign "S" [.freeNorm m]
-    { body := { terms := [] }, nonlin := .softmax none }
+    { body := { terms := [] }, nonlin := .axiswise .softmax none }
   let rp : ResolvedProgram := { decls := [], env := {}, extNames := ∅, stmts := [s] }
   match checkDtypes rp |>.run 0 with
   | .error (.normAxisNotReal "m") _ => pure ()
@@ -259,7 +259,7 @@ run_cmd do
 run_cmd do
   let ax : AxisSpec := { name := "i", uid := 1, kind := .real none }
   let s : Stmt := .assign "P" [.free ax]
-    { body := { terms := [] }, nonlin := .relu }  -- ← relu on a predicate
+    { body := { terms := [] }, nonlin := .pointwise .relu }  -- ← relu on a predicate
   let env : DeclEnv := ({} : Std.HashMap String Decl).insert "P" (.predicate "P" [ax])
   let rp : ResolvedProgram := { decls := [], env, extNames := ∅, stmts := [s] }
   match checkDtypes rp |>.run 0 with

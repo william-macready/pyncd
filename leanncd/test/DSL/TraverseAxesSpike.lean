@@ -22,8 +22,9 @@
 -- AxisSpecs) and the bare expression `s.terms.flatMap termAxisUIDs` (collect UIDs, no new named def);
 -- the conditional-remap pattern generalizes mechanically (all three theorems pre-verified during
 -- design, zero surprises) — see docs/superpowers/specs/2026-07-16-e1-traverseaxes-sumexpr-design.md.
--- Nonlin slice (first `Option` payload, not `List`): exhaustive 9-constructor match, closing
--- production's documented `specsNonlin` wildcard hazard by construction; subsumes local `specsNonlin'`
+-- Nonlin slice (first `Option` payload, not `List`): exhaustive 3-constructor match
+-- (`identity`/`pointwise`/`axiswise`); the mask can only live on `.axiswise`, so the old
+-- `specsNonlin` wildcard hazard is now unrepresentable; subsumes local `specsNonlin'`
 -- (no UID counterpart — production never touches mask UIDs) — see
 -- docs/superpowers/specs/2026-07-16-e1-traverseaxes-rhsexpr-design.md.
 -- RHSExpr slice (dual traversals, resolving mask asymmetry): `traverseAxesWithMask` for
@@ -266,13 +267,12 @@ theorem traverseAxes_const_eq_specsSumExpr (s : SumExpr) :
 
 -- ===== Nonlin =====
 
-/-- Local copy of `Structural.lean`'s private `specsNonlin`, for comparison only — NOT the
-    source of truth. Keep byte-identical to `Structural.lean:37-39` by inspection, wildcard
-    included — this copy intentionally mirrors production's CURRENT (hazard-prone) shape; the
-    traversal above is what's exhaustive, not this comparison target. -/
+/-- Independent hand-written reference for `Structural.lean`'s private `specsNonlin` — NOT the
+    source of truth, and deliberately NOT defined as `= specsNonlin`/`Nonlin.traverseAxes` (that
+    would make the theorem below tautological). The only axis specs a nonlinearity carries are
+    those of an `.axiswise` mask; a production traversal that dropped the mask would fail here. -/
 private def specsNonlin' : Nonlin → List AxisSpec
-  | .softmax (some m) => specsBool' m | .normalize (some m) => specsBool' m
-  | .l2normalize (some m) => specsBool' m | _ => []
+  | .axiswise _ (some m) => specsBool' m | _ => []
 
 /-- Collect `AxisSpec`s: instantiating at `ConstL (List AxisSpec)` with `g := fun a => ⟨[a]⟩`
     should reproduce `specsNonlin'`. NO UID-collecting theorem exists for `Nonlin` — no
@@ -282,24 +282,8 @@ theorem traverseAxes_const_eq_specsNonlin (n : Nonlin) :
     (Nonlin.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) n).run = specsNonlin' n := by
   cases n with
   | identity => rfl
-  | relu => rfl
-  | sigmoid => rfl
-  | tanh => rfl
-  | gelu => rfl
-  | leakyrelu => rfl
-  | softmax m =>
-      cases m with
-      | none => rfl
-      | some b =>
-          show (BoolExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) b).run = specsBool' b
-          exact traverseAxes_const_eq_specsBool b
-  | normalize m =>
-      cases m with
-      | none => rfl
-      | some b =>
-          show (BoolExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) b).run = specsBool' b
-          exact traverseAxes_const_eq_specsBool b
-  | l2normalize m =>
+  | pointwise pf => rfl
+  | axiswise fn m =>
       cases m with
       | none => rfl
       | some b =>
@@ -326,9 +310,8 @@ theorem traverseAxes_const_eq_specsRHS (r : RHSExpr) :
 -- ===== LHSSlot =====
 
 /-- Local copy of `Structural.lean`'s private `specsLHS`, for comparison only — NOT the
-    source of truth. Keep byte-identical to `Structural.lean:52-53` by inspection. Unlike
-    `Nonlin`'s `specsNonlin`, this is already a clean, exhaustive match with no documented
-    wildcard hazard. -/
+    source of truth. Keep byte-identical to `Structural.lean:52-53` by inspection. This is
+    already a clean, exhaustive match with no documented wildcard hazard. -/
 private def specsLHS' : LHSSlot → List AxisSpec
   | .free a => [a] | .freeNorm a => [a]
   | .iterAt a _ => [a] | .iterNext a => [a] | .affine e => specsIdx' e

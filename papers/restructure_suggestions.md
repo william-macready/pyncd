@@ -43,7 +43,48 @@ each claim cross-checked against the code; the highest-leverage claims (dead cod
 duplicates, hardcoded semiring constants) were re-verified independently. Everything below
 carries `file:line` references against HEAD as of 2026-07-09.
 
+## Review addendum (2026-07-26): correctness-first reprioritization
+
+> An independent high-effort review (`pyncd.worktrees/agents-gpt-56-vscode-agents-integration/copilot_code_analysis.md`)
+> validated this document against the current post-6a tree with **compiled Lean artifacts** — countermodels and
+> runtime regressions, not a code read. Its verdict: this plan is directionally right (preserve the proof/execution
+> split, one applicative traversal, explicit serialization tags, phase types), but **under-prioritizes several
+> *demonstrated* correctness failures** relative to ergonomic refactors. This section folds in that reprioritization;
+> the individual spikes below are unchanged except where noted.
+
+**The lens — four "closure" guarantees.** Rank work by which it advances, and never describe a refactor as a
+semantics improvement unless its exit gate actually checks semantics:
+
+1. **Representation closure** — every constructor classified by an exhaustive match (what Spike 3a delivers for `Nonlin`).
+2. **Semantic closure** — every source operation has enough data in the *target IR* to be interpreted, or is explicitly rejected.
+3. **Boundary validity** — malformed external data cannot become valid-looking internal values.
+4. **Proof validity** — theorem statements actually follow from the advertised interfaces.
+
+**Demonstrated failures (compiled evidence) that the current ordering treats as deferred/optional:**
+
+| # | Failure (evidence) | Guarantee | Where it sits now | Recommended action |
+|---|---|---|---|---|
+| 3 | **Nonlinear scatter is silently erased** — `evalScatter` never applies `rhs.nonlin`; `relu(-2)` ⇒ `-2` (reproduced; re-verified 2026-07-26) | semantic/boundary | not in any spike | **ACTIONED**: added as **Spike 3 Task 0** (reject non-identity scatter) |
+| 5 | Unsized scan ⇒ shape `[…,0]` + two `set!` bounds **panics**, yet exits 0 (reproduced) | boundary | RejectTest records it as "accepted" | require iter-axis sizes; `EvalError`; checked `set` API (light typestate / E2) |
+| 4 | `recurMorphism` accepted by `compile`, rejected by `eval` (reproduced) | semantic | §12.2 escape hatch | reject at compile until routed/eval semantics exist (E5 stage) |
+| 6/17 | Boundary decoders + CSV use **meaning-changing defaults** (`writeSBr` emits `RawAxis:0,` on an `encodeSize` error; `brOpOfIdx` maps unknown ⇒ `.contract`) (reproduced) | boundary | E9/bridge, unscheduled | parse-then-validate; `Except` serializers; partial `brOpOfIdx?` (bridge hardening) |
+| 1 | `weave_unique` is **false** under its stated hypotheses (compiled countermodel) | proof | Constraint-adjacent; milestone | quarantine under `Experimental`; restate up to iso (parallel proof track) |
+| 10 | The semiring param in `TargetActegory` is **phantom** (parametricity witness) | proof | E3-adjacent | separate scalar-semantics interface from the shape action |
+| 19 | **No single semantic IR** — `compile` (routed) and `eval` (scheduled) diverge; masks/`UnaryOp`/dtype/scan-bodies disappear while bridge theorems still pass | semantic | **E5 (marked optional)** | **promote E5**: define a denotation for the represented fragment, reject the rest, expand op-by-op |
+| 22 | `SORRY_INVENTORY.md` contradicts the build (says "St sorry-free" while `St.lean:269-270` has two `sorry`s) | proof/trust | — | generate the inventory + axiom-closure checks from source in CI |
+
+**Reprioritization (my read, adopting the review):**
+- **Promote E5 and E2 earlier.** E5 (scheduled-vs-routed agreement) is the *mechanism* by which #3/#4/#6/#19 hide; E2 (light typestate at boundaries — e.g. `ResolvedNonlin` with a checked `NormAxis`, `SizedScan`, `ValidatedScatter`) closes #4/#5 and the norm-axis runtime recompute without dependent-typing the whole compiler.
+- **Add a semantic-payload audit before 3c / E4 / E10.** `BrBaseP` (`op, degree, inputWeaves, outputWeaves, reindexings`) provably has **no field** for the softmax mask, the `UnaryOp`, `ScatterOpts`, or dtype — so `log(X[i])` and `X[i]` lower identically. Any unsupported routed construct should become a named compile error, not a look-alike primitive. This also resets **E13**'s question: it's not whether `BrOp`'s *names* are closed, but whether the *parameterized payload* those names need is closed (today: no).
+- **Parallel proof track:** quarantine `weave_unique`/the flagship graded instance under `Experimental`, add generated `#print axioms`/`sorryAx` CI over a named trusted-core API, keep the weave countermodel as a permanent model test.
+
+**Already actioned:** Spike 3 was revised (see its plan) to (a) reject non-identity scatter as **Task 0**, and (b) claim **representation closure only** — not semantic closure — since `BrBaseP` still erases the payload. **Not yet folded into this doc's spike bodies:** the E5/E2 promotion, the payload audit, and the proof-track CI — these reshape Part II's ordering and are a larger edit than this addendum. The full staged roadmap (Stage 0–8) and per-finding evidence are in the analysis file.
+
+*Caveat:* several categorical findings (#1, the `StBr` `sorry`s) are already labeled deliberate milestones in-code — the review's contribution there is showing they are *inconsistent with the advertised interface*, not merely incomplete. The freshest actionable signal is the **executable correctness bugs (#3, #4, #5, #6)**, which the passing test suite masks.
+
 ## Table of Contents
+
+- [Review addendum (2026-07-26): correctness-first reprioritization](#review-addendum-2026-07-26-correctness-first-reprioritization)
 
 - [0. Constraints — what must NOT be restructured](#0-constraints--what-must-not-be-restructured)
 - [Wave 1 — mechanical deletions and corrections (near-zero risk)](#wave-1--mechanical-deletions-and-corrections-near-zero-risk)
@@ -320,13 +361,30 @@ the iter tuple (`IterSlot`). The `Factor.read?` half of that goal is **2a**, now
 
 ### Spike 3: make the Nonlin wildcard hazards unrepresentable
 
+> **✅ 3a/3b DONE — branch `spike3-nonlin-elab` (2026-07-29).** Commits `70b5233..d65320e` (4 code commits + 2 fix commits); `lake build` green (8610 jobs) at every task boundary; sorry-free; each task passed an independent spec+quality review.
+>
+> **Actuals and deviations from the sketch below:**
+> - **`AxiswiseFn`, not `RowwiseFn`** — softmax/normalize act along ONE designated axis of an arbitrary-rank tensor; "row" was a `perRow` implementation view, not the source semantics. Constructor is `Nonlin.axiswise`.
+> - **`Nonlin` is now `identity | pointwise PointwiseFn | axiswise AxiswiseFn (Option BoolExpr)`** in `DSL/Ast.lean`, with `PointwiseFn.toBrOp` / `AxiswiseFn.toBrOp` (the "two tiny tables") also in `Ast.lean` (it already imports `DSL.Target`), and `PointwiseFn.apply` in `Eval/Nonlin.lean`. All 6 migration sites were verified arm-by-arm semantically identical to the old 9-arm matches. Both in-code hazard comments are deleted — the hazard is now unrepresentable.
+> - **The Spike 6a payoff was real and measured:** `RouteSpec.lean`, `Bridge/*`, `AcsetCodec.lean`, `Csv.lean`, and `Target.lean` are **untouched** across the whole branch (empty diff), and RouteSpec rebuilt clean with no edit — so the `Nonlin→BrOp` change required **zero** proof repair, versus the "budget RouteSpec repair" this doc warned about. `brOpIdx` wire format intact.
+> - **3b landed as TWO closed keyword categories** (`tl_pointwise_kw`, `tl_axiswise_kw`) rather than one generic `tl_nonlin_kw`: only the axiswise category admits a `(where …)` mask, so `relu(where …)` is now unrepresentable at *parse* ("parse, don't validate") instead of merely rejected during elaboration. The `atomic("(" "where")` lookahead was preserved byte-identically and `ParseLayer34Test`'s `softmax(sum)` regression case still passes unweakened.
+> - **Diagnostic cost — broader than "a blunter message" (measured, not estimated).** Routing keywords through categories (including 3b's `tl_unary_kw`) means Lean's `expected …` sets now name the *category* rather than the typeable keywords for **any** malformed RHS head, not just `relu(where …)`: `H[i] := 3 + X[i]` now reports `expected tl_agg, tl_axiswise_kw, tl_pointwise_kw or tl_unary_kw` instead of listing relu/sigmoid/…/softmax, and `relu(where …)` reports `expected tl_unary_kw` (an unrelated category — `tl_factor` is merely the last `tl_sum_expr` alternative to fail). Lean has no way to alias a category name in an `expected` set, so this is an accepted trade for the closed-category safety; `tl_agg` was already category-led, so only the reach is new. Recorded in `Syntax.lean`'s comment block and mitigated by keyword-mapping tests that assert every keyword by full `Nonlin` equality. **A favorable, unplanned side effect:** a *malformed* axiswise mask (`softmax(where <bad>)`) now errors *inside* the mask rather than backtracking to bare `softmax` and failing later at `tl_rhs` — a strictly better, more local diagnostic that cannot affect any previously-parsing program.
+> - **`identStr` collapsed 23 sites**, not the 19 this doc estimated.
+> - **A prerequisite bug fix was added as Task 0** (see below).
+>
+> **Task 0 — nonlinear scatter was silently erased (fixed).** Independent review (`copilot_code_analysis.md`) demonstrated, and we re-verified on `main`, that `evalScatter` never applied `rhs.nonlin`: `Out[2*i] := relu(X[i])` compiled and evaluated with the `relu` dropped. The "scatters carry no nonlinearity" claim at `Lowering.lean:30,44` was only a comment. Policy now enforced: **scatter + identity accepted; scatter + non-identity rejected during validation** (`CompileError.unsupportedNonlinScatter`, checked in both `TLProgram.compile` and `compileToScheduled` before `lowerArith`, plus a defensive `EvalError` in `evalScatter`). Supporting it later needs a semantic decision — activation before collision-reduction, or after fill/reduce — deliberately not chosen here. Note the check must match `.assign` guarded by `slotsBecomeScatter` **as well as** `.scatter`: the elaborator only ever emits `Stmt.assign`, and `lowerArith` (the sole `.scatter` producer) runs *after* validation, so a `.scatter`-only check would be a dead no-op.
+>
+> **⚠️ Honest scope — what this spike does and does NOT establish.** Spike 3 establishes **representation closure** for `Nonlin` (every nonlinearity's category is encoded in its constructor; every match is exhaustive with no semantic wildcard) and source-level **keyword/mask shape validity**. It does **NOT** establish **semantic closure**: `BrBaseP` still carries no field for the softmax mask, the `UnaryOp`, `ScatterOpts`, or dtype, so routed lowering can still drop payload (an inline `log(X[i])` and a plain `X[i]` still lower identically). Grouping prevents *misclassification*; it cannot manufacture a new function's evaluator/target/codec semantics — a new `AxiswiseFn` still needs all of those. It also repairs **no** categorical proof gap (`weave_unique`, the flagship graded instance) and leaves ACSet operation-tag decoding outside the validated boundary. See the [review addendum](#review-addendum-2026-07-26-correctness-first-reprioritization) for the remaining stages.
+>
+> **3c remains deferred** — with a sharper reason than "evaluate whether it pays": `BrBaseP` has no field for the `UnaryOp` at all, so merging `Factor.unaryFn` into `Factor.read` before that payload is designed would make the loss *less visible*, not fix it. Blocked on the semantic-payload audit.
+
 Two real bugs this cycle came from the same type-design flaw: `Nonlin`'s 9 flat constructors
 force every match site to re-enumerate the pointwise-vs-rowwise split, and wildcard fallbacks
 silently misclassify new variants (`specsNonlin` swallowed `l2normalize`'s mask;
 `evalPlain` initially demanded a marked axis for `sigmoid` — both documented in-code with
 warning comments that this spike deletes).
 
-**3a. Restructure the AST:**
+**3a. Restructure the AST:** ✅ **DONE** (as `AxiswiseFn`, not `RowwiseFn`).
 
 ```lean
 inductive PointwiseFn | relu | sigmoid | tanh | gelu | leakyrelu
@@ -356,7 +414,7 @@ exposure; see Constraint 3 — cheaper if Spike 6a has landed first). Pinned by 
 FF5–FF8 (unmarked activations), LoweringTest's masked-softmax split, EvalExamplesTest's
 masked attention.
 
-**3b. Elab/Syntax keyword tables.** Two mechanical generator patterns replace 16 copy-pasted
+**3b. Elab/Syntax keyword tables.** ✅ **DONE** (as *two* closed nonlin categories; `identStr` was 23 sites). Two mechanical generator patterns replace 16 copy-pasted
 productions/arms:
 
 - `tl_unary_kw` category: 5 one-token rules + one `tl_factor` production + one elab arm with
@@ -372,7 +430,7 @@ productions/arms:
 - Cleanup: `Elab.lean` repeats `x.getId.eraseMacroScopes.getString!` 19 times — extract
   `private def identStr`.
 
-**3c. Optional follow-up: merge `Factor.unaryFn` into `Factor.read`.** Exactly one consumer
+**3c. Optional follow-up: merge `Factor.unaryFn` into `Factor.read`.** ⏸ **DEFERRED** — blocked on the `UnaryOp` payload design (`BrBaseP` has no field for it). Exactly one consumer
 inspects the op (`gather`, `Eval/Gather.lean:75-78`); nine sites carry a `.unaryFn` arm
 identical to their `.read` arm. `| read : (fn : Option UnaryOp) → String → List IdxExpr →
 Factor` makes "a unaryFn *is* a read" true in the AST. **Do this only after Spike 2a** — once
@@ -665,7 +723,7 @@ Wave 3a  Spike 7a/7b/7c ✅ DONE 2026-07-10 (sorry pruning)        — merged eb
          Spike 8  ✅ DONE 2026-07-11 (proof-adjacent type cleanups)   — merged 2db951c..7831816
 Wave 2   Spike 2  (AST accessors/traversals)                     — first structural spike
          Spike 6a (toBrBaseP) ✅ DONE 2026-07-25                 — before/with Spike 3
-         Spike 3  (Nonlin + Elab tables; then optional 3c)       — after 2 (and ideally 6a)
+         Spike 3  (Nonlin + Elab tables) ✅ DONE 2026-07-29     — after 2 (and ideally 6a); 3c deferred
                   [3a doubles as a worked dry-run for E13's "close BrOp" question]
          Spike 4  (Eval unification; 4a→4b→4c→4d, then 4e–4i)    — after 2; 4d cheaper after 3
                   [do 4i early: a cheap worker/wrapper trial before the E4 decision point]
@@ -770,7 +828,7 @@ Phase 1  — foundational structural spike (executable track)
   Spike 6a ✅DONE factor toBrBaseP out of buildStep (proof track; before Spike 3)
 
 Phase 2  — executable-track unification (after Spike 2; E6 net in place)
-  Spike 3        Nonlin + Elab tables (after 6a); optional 3c after Spike 2a
+  Spike 3 ✅DONE  Nonlin + Elab tables (after 6a); 3c deferred (UnaryOp payload)
   Spike 4        Eval unification: 4a → 4b first …
   E4             ← decision point: if pursued, prototype on 4a/4b; it supersedes parts of
                     4c/4d/4f — then run 4c–4i, skipping whatever E4 replaces

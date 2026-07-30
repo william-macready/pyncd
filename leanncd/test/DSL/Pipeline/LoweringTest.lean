@@ -9,7 +9,7 @@ run_cmd do
   let attn : Stmt := .assign "A" [ .free (ax "q"), .free (ax "s") ]
     { body := { terms := [ { factors := [ .read "Q" [.axis (ax "q"), .axis (ax "d")],
                                             .read "K" [.axis (ax "s"), .axis (ax "d")] ] } ] },
-      nonlin := .softmax (some mask) }
+      nonlin := .axiswise .softmax (some mask) }
   let sp : ScanProgram :=
     { decls := [], stmts := [ .plain attn ], env := {}, extNames := ∅ }
   match splitNonlins sp |>.run 0 with
@@ -19,7 +19,7 @@ run_cmd do
       unless stmts.length == 2 do throwError s!"expected 2 stmts after split, got {stmts.length}"
       let nlins := stmts.map (fun | .assign _ _ r => r.nonlin | .scatter _ _ r _ => r.nonlin | .recurMorphism .. => .identity)
       unless nlins.any (· == .identity) do throwError "missing linear (identity) step"
-      unless nlins.any (fun n => match n with | .softmax (some _) => true | _ => false) do
+      unless nlins.any (fun n => match n with | .axiswise .softmax (some _) => true | _ => false) do
         throwError "missing masked-softmax step"
   | .error e _ => throwError s!"splitNonlins errored: {repr e}"
 
@@ -116,7 +116,7 @@ run_cmd do
   let mkRd (nm : String) (es : List IdxExpr) : RHSExpr :=
     { body := { terms := [ { factors := [ .read nm es ] } ] }, nonlin := .identity }
   let mkRd2 (nm1 : String) (es1 : List IdxExpr) (nm2 : String) (es2 : List IdxExpr) : RHSExpr :=
-    { body := { terms := [ { factors := [ .read nm1 es1, .read nm2 es2 ] } ] }, nonlin := .relu }
+    { body := { terms := [ { factors := [ .read nm1 es1, .read nm2 es2 ] } ] }, nonlin := .pointwise .relu }
   -- Y[i,j] := relu(W2[j,k] · H[i,k])   -- consumer of H
   let yStmt : ScanStmt := .plain (.assign "Y" [.free i, .free j]
     (mkRd2 "W2" [.axis j, .axis k] "H" [.axis i, .axis k]))

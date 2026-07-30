@@ -63,17 +63,35 @@ inductive BoolExpr
   | ieq  : PredArith → PredArith → BoolExpr
   deriving DecidableEq, Repr, Lean.ToExpr
 
-inductive Nonlin
-  | identity  : Nonlin
-  | relu      : Nonlin
-  | sigmoid   : Nonlin
-  | tanh      : Nonlin
-  | gelu      : Nonlin
-  | leakyrelu : Nonlin
-  | softmax     : Option BoolExpr → Nonlin
-  | normalize   : Option BoolExpr → Nonlin
-  | l2normalize : Option BoolExpr → Nonlin
+/-- Pointwise (elementwise) nonlinearities: they carry no mask and no axis, because they act on
+    each entry independently. -/
+inductive PointwiseFn | relu | sigmoid | tanh | gelu | leakyrelu
   deriving DecidableEq, Repr, Lean.ToExpr, Inhabited
+
+/-- Axis-reducing nonlinearities (softmax/normalize act along ONE designated axis of an
+    arbitrary-rank tensor — "axiswise", not intrinsically a matrix row; `perRow` is the
+    implementation view, not the semantics). -/
+inductive AxiswiseFn | softmax | normalize | l2normalize
+  deriving DecidableEq, Repr, Lean.ToExpr, Inhabited
+
+/-- A step's nonlinearity. `pointwise` fns carry no mask (by type — a new one *cannot* forget
+    mask handling); `axiswise` fns carry the reduction mask once.
+    `identity` stays FIRST so the derived `Inhabited` default remains `.identity`. -/
+inductive Nonlin
+  | identity
+  | pointwise : PointwiseFn → Nonlin
+  | axiswise  : AxiswiseFn → Option BoolExpr → Nonlin
+  deriving DecidableEq, Repr, Lean.ToExpr, Inhabited
+
+/-- The `BrOp` label a pointwise nonlinearity lowers to. `BrOp` stays flat (its indices are a
+    wire format — see `brOpIdx`); only the mapping from the `Nonlin` side is structured. -/
+def PointwiseFn.toBrOp : PointwiseFn → BrOp
+  | .relu => .relu | .sigmoid => .sigmoid | .tanh => .tanh | .gelu => .gelu
+  | .leakyrelu => .leakyrelu
+
+/-- The `BrOp` label an axiswise nonlinearity lowers to (the mask is not part of the op label). -/
+def AxiswiseFn.toBrOp : AxiswiseFn → BrOp
+  | .softmax => .softmax | .normalize => .normalize | .l2normalize => .l2normalize
 
 -- Reduction operation for contraction (sum is standard; max/min are tropical).
 inductive AggOp | sum | max | min

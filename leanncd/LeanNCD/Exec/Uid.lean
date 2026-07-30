@@ -33,6 +33,15 @@ inductive CompileError
   | scanProjectionUnsupported : String → CompileError       -- per-step stmt inside a scan references the
                                                              -- iteration axis on its own LHS with no base case;
                                                              -- move it after the scan and read the materialized state
+  | unsupportedNonlinScatter : String → CompileError        -- Spike-3 Stage-0 short-term policy: a scatter
+                                                             -- (affine/diagonal LHS) write may only carry the
+                                                             -- identity nonlinearity — `evalScatter` never applied
+                                                             -- one (silent-erasure bug), and supporting one needs a
+                                                             -- semantic decision (activation before
+                                                             -- collision-reduction, or after fill/reduce?) that is
+                                                             -- out of scope for now; see `checkScatterNonlin`
+                                                             -- (Structural.lean) and `splitStmt`'s `.scatter` arm
+                                                             -- (Lowering.lean)
   deriving Repr, DecidableEq
 
 /-- Combined error + UID-counter monad (`EStateM ε σ α = σ → Result ε σ α`, Lean core). Mints fresh

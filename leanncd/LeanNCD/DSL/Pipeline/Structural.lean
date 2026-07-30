@@ -25,15 +25,10 @@ open LeanNCD.Eval (idxAxisUIDs predAxisUIDs boolAxisUIDs termAxisUIDs)
 Axis identity in tensor logic is name-based within program scope (§12.1): a name appearing
 in multiple places denotes the same axis. The `specs*` family gathers every source `AxisSpec`
 in program order via structural recursion. Most of these (`specsIdx`, `specsPred`, `specsBool`,
-`specsFactor`, `specsLHS`) are exhaustive matches, so Lean's totality check forces every new
-constructor to be handled — nothing is silently dropped there. `specsNonlin` is the one
-exception: it uses a wildcard fallback (`_ => []`), which is safe ONLY because every current
-non-masked `Nonlin` variant genuinely contributes no axis specs. **Assumption that must hold for
-any future `Nonlin` variant:** if it carries an optional mask (`Option BoolExpr`, like
-`softmax`/`normalize`/`l2normalize`), it needs an explicit `some m => specsBool m` arm here —
-otherwise the wildcard silently swallows that mask's axis specs (this bit `l2normalize` once
-already; see the git history). The two public collectors below are thin projections of one
-traversal: by name (`TLProgram.axisNames`, de-duplicated) or by uid (`Stmt.uids`). -/
+`specsFactor`, `specsLHS`, `specsNonlin`) are exhaustive matches, so Lean's totality check forces
+every new constructor to be handled — nothing is silently dropped. The two public collectors below
+are thin projections of one traversal: by name (`TLProgram.axisNames`, de-duplicated) or by uid
+(`Stmt.uids`). -/
 
 /-- Every `AxisSpec` occurring in an index expression (a bare axis, or the coordinate list of an
     affine combination). The `ConstL (List AxisSpec)` instantiation of `IdxExpr.traverseAxes`. -/
@@ -268,33 +263,15 @@ private theorem sumExprAxisUidFusion (s : SumExpr) :
         rw [List.map_append, prodTermAxisUidFusion hd, ih]
   exact core s.terms
 
-/-- `Nonlin`: mask-free constructors collect `[]` (`rfl`); masked `.softmax`/`.normalize`/
-    `.l2normalize` with `some b` cross-node-delegate to `boolAxisUidFusion`, `none` is `[]`. -/
+/-- `Nonlin`: `.identity`/`.pointwise` collect `[]` (`rfl`); `.axiswise` with a `some b` mask
+    cross-node-delegates to `boolAxisUidFusion`, `none` is `[]`. -/
 private theorem nonlinAxisUidFusion (n : Nonlin) :
     ((Nonlin.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) n).run).map (·.uid)
       = (Nonlin.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) n).run := by
   cases n with
   | identity => rfl
-  | relu => rfl
-  | sigmoid => rfl
-  | tanh => rfl
-  | gelu => rfl
-  | leakyrelu => rfl
-  | softmax m =>
-      cases m with
-      | none => rfl
-      | some b =>
-          show ((BoolExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) b).run).map (·.uid)
-            = (BoolExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) b).run
-          exact boolAxisUidFusion b
-  | normalize m =>
-      cases m with
-      | none => rfl
-      | some b =>
-          show ((BoolExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) b).run).map (·.uid)
-            = (BoolExpr.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) b).run
-          exact boolAxisUidFusion b
-  | l2normalize m =>
+  | pointwise pf => rfl
+  | axiswise fn m =>
       cases m with
       | none => rfl
       | some b =>
@@ -467,13 +444,11 @@ private theorem specsFactor_map_uid_eq (x : Factor) :
 
 private theorem specsNonlin_map_uid_eq (n : Nonlin) :
     (specsNonlin n).map (·.uid) = match n with
-      | .softmax (some m) => boolAxisUIDs m | .normalize (some m) => boolAxisUIDs m
-      | .l2normalize (some m) => boolAxisUIDs m | _ => [] := by
+      | .axiswise _ (some m) => boolAxisUIDs m | _ => [] := by
   cases n with
-  | identity => rfl | relu => rfl | sigmoid => rfl | tanh => rfl | gelu => rfl | leakyrelu => rfl
-  | softmax m => cases m with | none => rfl | some b => exact specsBool_map_uid_eq b
-  | normalize m => cases m with | none => rfl | some b => exact specsBool_map_uid_eq b
-  | l2normalize m => cases m with | none => rfl | some b => exact specsBool_map_uid_eq b
+  | identity => rfl
+  | pointwise pf => rfl
+  | axiswise fn m => cases m with | none => rfl | some b => exact specsBool_map_uid_eq b
 
 private theorem specsLHS_map_uid_eq (sl : LHSSlot) :
     (specsLHS sl).map (·.uid) = match sl with
@@ -496,8 +471,7 @@ theorem Stmt.uids_eq (s : Stmt) : Stmt.uids s =
           | .affine e => idxAxisUIDs e)
         ++ r.body.terms.flatMap termAxisUIDs
         ++ (match r.nonlin with
-            | .softmax (some m) => boolAxisUIDs m | .normalize (some m) => boolAxisUIDs m
-            | .l2normalize (some m) => boolAxisUIDs m | _ => [])
+            | .axiswise _ (some m) => boolAxisUIDs m | _ => [])
     | .scatter _ ls r _ =>
         ls.flatMap (fun sl => match sl with
           | .free a => [a.uid] | .freeNorm a => [a.uid]
@@ -505,8 +479,7 @@ theorem Stmt.uids_eq (s : Stmt) : Stmt.uids s =
           | .affine e => idxAxisUIDs e)
         ++ r.body.terms.flatMap termAxisUIDs
         ++ (match r.nonlin with
-            | .softmax (some m) => boolAxisUIDs m | .normalize (some m) => boolAxisUIDs m
-            | .l2normalize (some m) => boolAxisUIDs m | _ => [])
+            | .axiswise _ (some m) => boolAxisUIDs m | _ => [])
     | .recurMorphism _ ax _ => [ax.uid]
   := by
   -- Fusion-based re-derivation (drops the `specsStmt_eq_old` / `specsRHS_eq_old` bridges):
@@ -559,20 +532,13 @@ theorem Stmt.uids_eq (s : Stmt) : Stmt.uids s =
   have hNonlin : ∀ n : Nonlin,
       (Nonlin.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩) n).run
         = (match n with
-           | .softmax (some m) => boolAxisUIDs m | .normalize (some m) => boolAxisUIDs m
-           | .l2normalize (some m) => boolAxisUIDs m | _ => []) := by
+           | .axiswise _ (some m) => boolAxisUIDs m | _ => []) := by
     intro n
     -- the mask run is `boolAxisUIDs m` when a mask is present, `[]` otherwise — all `rfl`.
     cases n with
     | identity => rfl
-    | relu => rfl
-    | sigmoid => rfl
-    | tanh => rfl
-    | gelu => rfl
-    | leakyrelu => rfl
-    | softmax m => cases m with | none => rfl | some b => rfl
-    | normalize m => cases m with | none => rfl | some b => rfl
-    | l2normalize m => cases m with | none => rfl | some b => rfl
+    | pointwise pf => rfl
+    | axiswise fn m => cases m with | none => rfl | some b => rfl
   show ((Stmt.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) s).run).map (·.uid) = _
   rw [stmtAxisUidFusion s]
   cases s with
@@ -741,6 +707,36 @@ def checkDtypes (rp : ResolvedProgram) : FreshM ResolvedProgram := do
         if let some (.predicate _ _) := rp.env[nm]? then
           unless rhs.nonlin == .identity do throw (.predicateNonlin nm)
           unless rhs.agg   == .sum       do throw (.predicateAgg nm)
+    | .recurMorphism _ _ _ => pure ()
+  return rp
+
+/-! ## The `checkScatterNonlin` phase
+
+**Spike-3 Stage-0 policy (SHORT-TERM, not permanent):** a scatter write (an affine or diagonal
+LHS — `slotsBecomeScatter`) may carry ONLY the `identity` nonlinearity; any other nonlinearity is
+REJECTED here. Why: `evalScatter` (`Eval/Scatter.lean`) evaluates a scatter's RHS body but never
+applied `rhs.nonlin` — so e.g. `Out[2*i] := relu(X[i])` used to compile and evaluate with the
+`relu` silently dropped. Supporting a real nonlinear scatter later needs a semantic decision
+(does the activation apply BEFORE collision-reduction, or AFTER the output is filled/reduced?)
+that is deliberately out of scope now.
+
+Runs here (pre-`lowerArith`), alongside `checkReadRanks`/`checkDtypes`, checking `r.nonlin ≠
+Nonlin.identity`, NOT a match on `Nonlin`'s constructors — written this way so it
+survived Spike 3a's restructuring of `Nonlin` unchanged. Checks BOTH shapes of the AST at
+this point in the pipeline: an `.assign` whose LHS `slotsBecomeScatter` (the surface-compiled
+case — `lowerArith`, Phase 4, is what reclassifies such an `.assign` into `Stmt.scatter`, and
+that phase runs AFTER this one) and an already-`.scatter` stmt (the `recurMorphism`-style
+escape hatch, §12.2 — a programmatic caller can build a `Stmt.scatter` directly, bypassing the
+surface compiler entirely). -/
+def checkScatterNonlin (rp : ResolvedProgram) : FreshM ResolvedProgram := do
+  for s in rp.stmts do
+    match s with
+    | .assign nm ls rhs =>
+        if slotsBecomeScatter ls && rhs.nonlin ≠ Nonlin.identity then
+          throw (.unsupportedNonlinScatter nm)
+    | .scatter nm _ rhs _ =>
+        if rhs.nonlin ≠ Nonlin.identity then
+          throw (.unsupportedNonlinScatter nm)
     | .recurMorphism _ _ _ => pure ()
   return rp
 
