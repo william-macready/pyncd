@@ -806,28 +806,87 @@ tests (`ColoredPROP.lean`) and could merge into it. Only worth doing opportunist
 
 ## Suggested spike ordering and dependencies
 
+> **THIS IS THE AUTHORITATIVE WORK ORDER (rewritten 2026-07-30).** It supersedes the original
+> Wave 1/2/3 grouping and the 2026-07-26 addendum's ordering advice, both of which predate the
+> [terminal goal](#terminal-goal-2026-07-30-a-pytorchjax-execution-layer-via-evalplan). The waves
+> below are ordered by *dependency*, not by risk. Where a spike's own body text still describes the
+> old ordering, this section wins.
+
+### Landed
+
+| | Spike | Date | Ref |
+|---|---|---|---|
+| ✅ | **Spike 1** — dead code, stale docs, housekeeping | 2026-07-10 | `1cf92d3..3bb7e13` |
+| ✅ | **Spike 7a/7b/7c** — sorry-surface pruning (38 → ~14) | 2026-07-10 | `eb09a6d..c707fce` |
+| ✅ | **Spike 8** — proof-adjacent type cleanups | 2026-07-11 | `2db951c..7831816` |
+| ✅ | **E6** — property-based oracles (all 3 laws) | 2026-07-12 | the regression net Spikes 4/5 + E4 build against |
+| ✅ | **E1** — one traversal (`traverseAxes`) | 2026-07-23 | PRs #1–#5; absorbed Spike **2b** |
+| ✅ | **Spike 2** — *all of it* (2c/2d/2e, then 2a) | 2026-07-24/25 | PR #10, PR #11 |
+| ✅ | **Spike 6a** — factor `ScanStmt.toBrBaseP` out of `buildStep` | 2026-07-25 | PR #13 — paid off immediately in Spike 3 (zero RouteSpec repair) |
+| ✅ | **Spike 3** — 3a/3b + the Task-0 scatter reject | 2026-07-29 | PR #14; **3c deferred** |
+| ✅ | **Semantic payload audit** (roadmap Stage 3) | 2026-07-30 | `papers/semantic_payload_audit.md` |
+
+### Remaining — the critical path to an executing backend
+
 ```text
-Wave 1   Spike 1  ✅ DONE 2026-07-10 (dead code/docs/housekeeping) — merged 1cf92d3..3bb7e13
-Wave 3a  Spike 7a/7b/7c ✅ DONE 2026-07-10 (sorry pruning)        — merged eb09a6d..c707fce
-         Spike 8  ✅ DONE 2026-07-11 (proof-adjacent type cleanups)   — merged 2db951c..7831816
-Wave 2   Spike 2  (AST accessors/traversals)                     — first structural spike
-         Spike 6a (toBrBaseP) ✅ DONE 2026-07-25                 — before/with Spike 3
-         Spike 3  (Nonlin + Elab tables) ✅ DONE 2026-07-29     — after 2 (and ideally 6a); 3c deferred
-                  [3a doubles as a worked dry-run for E13's "close BrOp" question]
-         Spike 4  (Eval unification; 4a→4b→4c→4d, then 4e–4i)    — after 2; 4d cheaper after 3
-                  [do 4i early: a cheap worker/wrapper trial before the E4 decision point]
-         Spike 5  (finalizeScans decomposition)                  — after 2
-Wave 3b  Spike 6b/6c/6d (RouteSpec/AcsetCodec consolidation)     — independent of Wave 2
-         St hexagons proof spike                                 — independent, budget separately
-         Cospan model spike (scope Br's non-bijective wiring —  — independent, budget separately;
-           Spike 7b's named-but-unscheduled prerequisite)           unlocks E13 once scoped
+Wave A  Correctness freeze (cheap, no dependencies, do first)
+        · D12 splitStmt drops rhs.agg  — eval bug too; gate 8 forbids literal-1.0 folds
+        · D13 brOpOfIdx? (totality-preserving) + the #guard totality check
+        · D14 stale elementwiseFn comment
+        · remaining demonstrated bugs: unsized-scan panic (#5), recurMorphism
+          accept-then-fail (#4), CSV/ACSet meaning-changing defaults (#6/#17)
+
+Wave B  THE BACKEND CONTRACT — Spike 4, resequenced (highest priority)
+        · ContractionAlgebra + BOTH identities   (= 4b + the shared classifier)
+              factorOp/factorId/reduceOp/reduceId; `Combine` becomes one interpretation
+        · 4a  unify seeded/unseeded assignment   — ports the fail-loud unsized-axis check
+                                                   to the scan path (closes a bug)
+        · 4d  ResolvedNonlin + checked NormAxis  — cheap now that Spike 3a has landed
+        · 4c  one dtype-aware worker             — kills the plain-vs-scan divergence that
+                                                   Appendix A warns must not be recreated
+        dependencies:  4b → 4a → 4c ;  Spike 3a ✅ → 4d → 4c
+
+Wave C  Minimal EvalPlan (E4) — the first checked backend boundary
+        · canonical, versioned, hashed, serializable; no Lean/backend callbacks
+        · scan-free real sum-product fragment only; typed capability rejection
+        · differential-test against DenseTensor
+        first milestone is NOT "JAX runs a model" — it is: every checked EvalPlan in the
+        declared reference64 fragment either matches DenseTensor or is rejected with a
+        typed capability error before Python starts
+
+Wave D  4g  typed scatter policy (CollisionReduce; separate RHS agg from collision reduce)
+Wave E  4e → 4h → 4i  diagnostics split, structured errors, EvalReport
+        · 4h/4i MUST land before the backend is public (closed BackendError family)
+Wave F  4f  decompose evalScan — AFTER the EvalPlan boundary, not before
+        · then one-axis coupled lax.scan, then flattened multi-axis
+Wave G  Backends (E10): PyTorch eager first (fast semantic bring-up; torch_compile/
+        prototype exists) → JAX jit as the stricter static backend → optimization fast
+        paths, each guarded by generic-lowering differential tests
 ```
 
-Every spike is verified by `lake build` (full suite, currently 8,602 jobs) — the test
-portfolio pins numeric behavior, reject paths, and the two historical wildcard bugs
-(FF5–FF8), so mechanical refactors here are unusually safe. The two spikes that need genuine
-test-first care are Spike 5 (`finalizeScans` is behavior-dense) and Spike 3b's `atomic`
-lookahead interaction (run the parse-layer tests early).
+### Independent — schedule anytime, parallel to the above
+
+- **Spike 5** (`finalizeScans` decomposition) — behavior-dense; needs genuine test-first care.
+- **Spike 6b/6c/6d** (RouteSpec `routeCore` elim, shared `ListMapM`, AcsetCodec split) — pure proof engineering.
+- **Proof track** — quarantine `weave_unique` under `Experimental`; generated `sorryAx`/axiom-closure CI over a named trusted-core API; regenerate `SORRY_INVENTORY.md` from source (it currently contradicts the build). Keep the weave countermodel as a permanent model test.
+- **St hexagons** proof spike; **cospan model** spike (unlocks E13 once scoped).
+
+### Deferred or blocked — with the reason
+
+| Item | Status |
+|---|---|
+| **`BrBaseP` payload carry** (dtype/nonlin tags, `Agreement` conjunct-2 rework) | **Deferred** — buys nothing for execution; the routed path cannot execute. Revisit only if Python-acset fidelity becomes the priority. |
+| **E5 eval ↔ routed agreement** | **Blocked** — needs a `Br` denotation into numbers (a separate deferred milestone); every `realize*` is `noncomputable`. |
+| **Spike 3c** (`unaryFn` → `read`) | **Deferred** — `BrBaseP`/`EvalPlan` must first define how `UnaryOp` is preserved; merging the constructor early hides the loss. |
+| **E13** (close `BrOp`) | Blocked on the cospan spike; and its real question is payload closure, not name closure. |
+
+### Verification standard for every item above
+
+`lake build` (full suite; **8,610 jobs** as of 2026-07-30) is the gate — it elaborates `LeanNCD` plus
+the `Tests` library, firing every `#guard`/`example`-by-`rfl`. The portfolio pins numeric behavior,
+reject paths, and the two historical wildcard bugs (FF5–FF8), so mechanical refactors are unusually
+safe. Beyond Wave C, add the backend evidence tiers (emit → eager → jit → reference agreement →
+cross-backend → device → export → VJP) and state which tier a claim rests on.
 
 ---
 
@@ -846,16 +905,16 @@ below consolidates it into one map so the interaction is decidable at planning t
 
 | # | Idea | Pattern provenance | Verdict |
 |---|------|--------------------|---------|
-| E1 | One traversal to rule the collectors | van Laarhoven traversals (Kmett lenses) | prototype-first |
-| E2 | A typed core IR the pipeline narrows into | "Trees that grow" (GHC), typestate | spike-worthy (light form) |
-| E3 | Evaluate over an arbitrary semiring | algebra-parameterized interpreters | spike-worthy |
-| E4 | EvalPlan: run the route's own affine maps | stride-based einsum; "one artifact, two consumers" | prototype-first |
-| E5 | Executable denotation of the routed artifact | denotational semantics as executable spec | spike-worthy |
+| E1 | One traversal to rule the collectors | van Laarhoven traversals (Kmett lenses) | ✅ DONE 2026-07-23 |
+| E2 | A typed core IR the pipeline narrows into | "Trees that grow" (GHC), typestate | **Wave B/D** (light form) — `ResolvedNonlin` is its first instance |
+| E3 | Evaluate over an arbitrary semiring | algebra-parameterized interpreters | **folds into Wave B**'s `ContractionAlgebra` |
+| E4 | EvalPlan: run the route's own affine maps | stride-based einsum; "one artifact, two consumers" | **CRITICAL PATH (Wave C)** — the backend-neutral IR |
+| E5 | Executable denotation of the routed artifact | denotational semantics as executable spec | **split**: eval↔backend = Wave C gate; eval↔routed **blocked** (no `Br` denotation) |
 | E6 | Property-based oracles for the pipeline | QuickCheck / metamorphic testing | ✅ DONE 2026-07-12 |
 | E7 | Accumulate compile diagnostics | the Validation applicative | spike-worthy |
 | E8 | Open registration of unary functions | environment extensions, command macros | recorded-only |
 | E9 | Datatype-generic acset codecs | custom `deriving` handlers | recorded-only |
-| E10 | Stage the interpreter into a code generator | Futamura projections | recorded-only |
+| E10 | Stage the interpreter into a code generator | Futamura projections | **THE DELIVERABLE (Wave G)** — PyTorch eager, then JAX jit |
 | E11 | Do UIDs earn their keep? | locally-nameless discipline | investigation |
 | E12 | Named simp sets for the proof domains | mathlib attribute hygiene | spike-worthy (tiny) |
 | E13 | Generators for `Br` — closing `BrOp`, promoting E6's laws to theorems | GHC's Core as a small closed generating set; System FC | investigation → spike-worthy |
@@ -896,64 +955,34 @@ it cannot come first even if resourced, because its prerequisite — a scoped co
 not E13's own investigation. The remaining sequencing among the explorations themselves
 (E6 → E3 → E4 → E5) is covered in [How the exploratory ideas compose](#how-the-exploratory-ideas-compose).
 
-Concretely, here is one sequencing that satisfies every dependency above — it extends the
-Part I [spike ordering](#suggested-spike-ordering-and-dependencies) by front-loading the two
-exploration *enablers* (E6, E11) and slotting the rest in at their decision points, while the
-proof track runs in parallel with the executable track throughout:
+> **⚠️ The phase diagram that used to live here has been REMOVED (2026-07-30).** It duplicated —
+> and by then contradicted — Part I's ordering, notably still showing `Spike 4: 4a → 4b first`
+> (backwards; both contraction identities must exist before the seeded/unseeded merge) and `E4` as an
+> optional "decision point" (it is now the critical path). **There is exactly one work order:
+> [Suggested spike ordering and dependencies](#suggested-spike-ordering-and-dependencies).** Consult
+> it, not this section, for sequencing.
 
-```text
-Phase 0  — zero-dep, start now, run in parallel
-  Spike 1        dead code / stale docs / housekeeping
-  Spike 7a/7b/7c sorry-surface pruning (38 → ~14)
-  Spike 8a/8c    proof-adjacent type cleanups
-  E6             property-based oracles      ✅ DONE 2026-07-12 (all 3 laws — reordering,
-                 materialization, scan-unrolling); regression net now in place for Spikes 4/5 + E4
-  E11            UID investigation (~1 day)  ← MUST resolve before the Spike 2 commit
+What remains Part II's own contribution is *where each exploration slots into that single order*:
 
-Phase 1  — foundational structural spike (executable track)
-  E1             prototype the one-traversal encoding   ← decides the shape of Spike 2
-  Spike 2        AST accessors/traversals — DONE: 2b via E1 (traverseAxes); 2c/2d/2e via PR #10; 2a via Approach D (Factor.read?)
-                 (scope informed by E11's outcome)
-  Spike 6a ✅DONE factor toBrBaseP out of buildStep (proof track; before Spike 3)
+| Exploration | Placement in the authoritative order | Note |
+|---|---|---|
+| **E6** property oracles | ✅ **DONE** 2026-07-12 | the regression net Waves B/C build against |
+| **E11** UID investigation | ✅ resolved before the Spike 2 commit | — |
+| **E1** one traversal | ✅ **DONE** 2026-07-23 | absorbed Spike 2b |
+| **E4** `EvalPlan` | **Wave C — critical path, not optional** | the first checked backend boundary |
+| **E3** semiring evaluation | folds into **Wave B**'s `ContractionAlgebra` | 4b's ⊗-unit is its prerequisite, and the algebra *is* its payoff |
+| **E2** (light) checked boundaries | **Wave B/D** — `ResolvedNonlin` (4d) is its first instance; `SizedScan`/`ValidatedScatter` follow in D | do it selectively at boundaries, not by indexing the whole compiler |
+| **E10** interpreter → codegen | **Wave G** — the deliverable | PyTorch eager, then JAX jit |
+| **E5** denotation/agreement | **split**: eval↔backend is Wave C's gate; eval↔routed is **blocked** on a `Br` denotation | see the Deferred table |
+| **E12** named simp sets | folds into Spike 6 (independent track) | — |
+| **E7** accumulate diagnostics | anytime; self-contained. Overlaps Wave E's structured errors — do them together | — |
+| **E13** close `BrOp` | blocked on the cospan spike | and its real question is *payload* closure, not name closure |
+| **E14** simplifier | after E2; before E10 if both are pursued | — |
+| **E8, E9** open unary registry / generic codecs | recorded-only; revisit if inventories grow | — |
 
-Phase 2  — executable-track unification (after Spike 2; E6 net in place)
-  Spike 3 ✅DONE  Nonlin + Elab tables (after 6a); 3c deferred (UnaryOp payload)
-  Spike 4        Eval unification: 4a → 4b first …
-  E4             ← decision point: if pursued, prototype on 4a/4b; it supersedes parts of
-                    4c/4d/4f — then run 4c–4i, skipping whatever E4 replaces
-  E3             evaluate over a semiring (after 4a/4b — this is their payoff)
-  Spike 5        finalizeScans decomposition (E6's scan-unrolling oracle guards this rewrite)
-
-Phase 3  — proof consolidation (independent of Waves above; run in parallel)
-  Spike 6b/6c/6d RouteSpec + AcsetCodec consolidation
-  E12            named simp sets            ← folded into Spike 6
-  St hexagons    swap_hexagon_fwd/rev proof spike (budget separately)
-  Cospan model   scope Br's non-bijective wiring model (Spike 7b's named-but-unscheduled
-                 prerequisite) — budget separately; unlocks E13 once scoped
-
-Phase 4  — typed successor + executable denotation (after Spikes 3–5)
-  E2 (light)     CoreStmt boundary type (subsumes invariants Spikes 3–5 only document)
-  E5             executable denotation / agreement test (natural once E4 lands)
-
-Opportunistic / deferred (pull in on demand, no phase)
-  E7             accumulate compile diagnostics (Validation) — anytime, self-contained
-  Spike 8b/8d    lowest-priority type cleanups
-  E8, E9         open unary registry / generic codecs — recorded-only; revisit if inventories grow
-  E10            interpreter → codegen — after E4, and after E14 if both are pursued (see E14),
-                 and only when the Python target is scheduled
-  E13            Br generators / BrOp-closure question — after Phase 3's cospan model is scoped;
-                 do Spike 3a first (a worked precedent for the same move)
-  E14            simplifier (rewrite rules over CoreStmt) — after E2; absorbs CSE/scan-
-                 specialization; do before E10 if both are pursued
-```
-
-The critical path runs Phase 0's E6/E11 enablers → Spike 2 → Spike 4 → E4/E3 → E5; everything
-in Phase 3 and the "deferred" block is off that path and can be scheduled to fill gaps. If only
-one exploration thread is resourced, run **E6 → E3 → E4 → E5** (the highest-value path from
-[How the exploratory ideas compose](#how-the-exploratory-ideas-compose)) and leave the spikes
-otherwise untouched. One Phase-3 item is worth not indefinitely deferring despite being "off
-path": scoping the cospan wiring model is Spike 7b's own flagged gap (`brCancelPoint` is parked
-on it, not just E13) — it earns its keep independent of whether E13 is ever pursued.
+One independent item is worth not deferring indefinitely despite being off the critical path:
+scoping the **cospan wiring model** is Spike 7b's own flagged gap (`brCancelPoint` is parked on it,
+not just E13), so it earns its keep regardless of whether E13 is ever pursued.
 
 ### E1. One traversal to rule the collectors (van Laarhoven)
 
