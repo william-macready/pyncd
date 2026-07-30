@@ -843,8 +843,20 @@ Wave A  Correctness freeze — ✅ THE THREE AUDIT FINDINGS DONE 2026-07-30 (c75
         · finding E' ✅ blankArrayRow comment corrected (op index rides in EquationRow.lhsName,
                        NOT elementwiseFn — the old claim matched a superseded plan).
           [letters = papers/semantic_payload_audit.md "Cross-cutting findings"]
-        · STILL OPEN in Wave A: unsized-scan panic (#5), recurMorphism accept-then-fail (#4),
-          CSV/ACSet meaning-changing defaults (#6/#17) — the remaining demonstrated bugs.
+        · finding #4  ✅ recurMorphism REJECTED at compile (CompileError.unsupportedRecurMorphism).
+                       Probe confirmed the analysis exactly: compile .ok ops=[scanPre] while eval
+                       errored, and toBrBaseP discarded the whole ThreadedComposed. Reverses
+                       RecurMorphismTest's live `hasOp .. BrOp.scanPre` guard — which could never
+                       have caught the bug (it checked the op TAG, not the discarded payload).
+        · finding #5  ⚠️ HARDENED, NOT CLOSED. evalScan now fails loud on an unsized iteration
+                       extent, but the analysis's MECHANISM was wrong: the reported program is
+                       rejected by the pre-existing `axes.isEmpty` guard (compileToScheduled yields
+                       `SCAN G axes=[]`), so the new check is unreachable for it and untested. Open:
+                       (a) why a .scan with axes=[] is constructible; (b) where the
+                       `lean_array_set_panic` originates — it is in the EVAL path, not compile
+                       (Shape.lean:431,472's getD 0 are the suspects).
+        · STILL OPEN in Wave A: #5's two puzzles above, plus CSV/ACSet meaning-changing defaults
+          (#6/#17) — the latter still UNVERIFIED; probe before fixing (see the audit's method note).
 
 Wave B  THE BACKEND CONTRACT — Spike 4, resequenced (highest priority)
         · ContractionAlgebra + BOTH identities   (= 4b + the shared classifier)
