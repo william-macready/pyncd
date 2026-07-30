@@ -8,6 +8,57 @@
 > **Next action:** write the implementation plan (superpowers:writing-plans), then execute
 > subagent-driven. Do **not** re-litigate the decisions in §2; they were made with the user.
 
+> ## ⚠️ REVISION 2026-07-30 — the target changed. Read this before §1.
+>
+> New context: the terminal goal is a **PyTorch/JAX execution layer** lowered from a backend-neutral
+> **`EvalPlan`** (`copilot_code_analysis.md` Appendix A; a `torch_compile/` prototype already exists
+> in-repo). That reorders this pass. Three changes, in order of importance:
+>
+> **(a) DEFER the `BrBaseP` field addition (old §5 tasks 5–7).** Execution branches off
+> `ScheduledProgram` → `EvalPlan`, **not** off the routed `ThreadedComposed`. The routed path ends in
+> `BrMorph`, a `Quotient` of raw syntax with no denotation into numbers — it cannot execute anything.
+> So carrying dtype/nonlin into `BrBaseP` serves only Python-acset interop and the proof track, and the
+> expensive part — reworking `weaveToArrayType_congr` (`Agreement.lean:67-70`) and conjunct-2
+> (`:188-233`) — **buys zero for execution**. Appendix A's warning against generating JAX through
+> `NetSpec` ("a second, semantically incomplete IR") applies equally to routing it through `BrBaseP`.
+> Decisions **D-1** and **D-2** below stay *valid as decisions* but are **descoped from this pass**;
+> revisit only if Python-acset fidelity becomes the priority.
+>
+> **(b) PROMOTE R-1 to the centrepiece, and name it `ContractionAlgebra`.** The shared classifier I
+> derived independently is exactly Appendix A's required plan type — so match its name and shape:
+> ```lean
+> inductive ScalarBinOp | add | mul | min | max | logicalAnd | logicalOr
+> structure ContractionAlgebra where
+>   factorOp : ScalarBinOp;  factorId : ScalarConst   -- the ⊗-unit = Spike 4b
+>   reduceOp : ScalarBinOp;  reduceId : ScalarConst
+> ```
+> This subsumes **Spike 4b** (`prod := 1.0` hardcoded at `Contract.lean:95,187`, `Scatter.lean:42` —
+> gate 8 says "no evaluator product fold starts at a literal `1.0`"), unifies the plain/scan dtype
+> divergence (**4c**), and is the direct ancestor of `EvalPlan`'s contraction step. `Combine` becomes
+> *one interpretation* of it (the reference semantics); `ScalarDType` is another projection.
+>
+> **(c) RE-SEQUENCE to Appendix A's dependency waves.** `4b → 4a → 4c`; `Spike 3a ✅ → 4d → 4c`; then
+> minimal `EvalPlan`; then `4g`; then `4e → 4h`. Two corrections to advice given earlier in this
+> session: **4b precedes 4a** (identities before the seeded/unseeded merge), and **4f comes after** the
+> `EvalPlan` boundary, not early as a "safe decomposition". Also **4h is not last** — structured errors
+> are needed to map Python/JAX exceptions into a closed `BackendError` family before the backend goes
+> public.
+>
+> **Revised task order for the next plan** (supersedes §5):
+> 1. **D14** (comment), **D12** (`agg` drop — now *doubly* motivated: gate 8 forbids literal-`1.0`
+>    folds), **D13** (`brOpOfIdx?`) — all still valid, all cheap, no dependency on the above.
+> 2. **`ContractionAlgebra` + both identities** (= 4b + R-1), with `combineFor` reduced to a projection.
+>    Behavior-preserving; the reviewable unit that proves the shared classifier before anything depends
+>    on it.
+> 3. **4a** (unify seeded/unseeded, porting the fail-loud unsized-axis check to the scan path).
+> 4. **4d** (`ResolvedNonlin` — now cheap post-Spike-3a) **→ 4c** (one dtype-aware worker; kills the
+>    plain-vs-scan divergence that Appendix A explicitly warns must not be recreated in the backend).
+> 5. **Minimal `EvalPlan`** — scan-free real sum-product fragment, canonical + hashed, with typed
+>    capability rejection; differential-test it against `DenseTensor`.
+>
+> §3's reuse answers **R-2/R-3/R-4** are unaffected in substance but only R-3 (`brOpOfIdx?` single
+> table) is in scope for this pass; R-2/R-4 travel with the deferred `BrBaseP` work.
+
 ## 1. Scope of this pass
 
 From the audit's three buckets, the user chose **bug fixes + the carry bucket**. The routed

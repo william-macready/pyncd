@@ -82,8 +82,95 @@ semantics improvement unless its exit gate actually checks semantics:
 
 *Caveat:* several categorical findings (#1, the `StBr` `sorry`s) are already labeled deliberate milestones in-code — the review's contribution there is showing they are *inconsistent with the advertised interface*, not merely incomplete. The freshest actionable signal is the **executable correctness bugs (#3, #4, #5, #6)**, which the passing test suite masks.
 
+## Terminal goal (2026-07-30): a PyTorch/JAX execution layer via `EvalPlan`
+
+> **This section outranks the wave ordering below.** The eventual target is a real execution
+> backend — PyTorch first (eager, for fast semantic bring-up; a `torch_compile/` prototype already
+> exists in-repo), then JAX (stricter, static-shape, `lax.scan`) — both lowered from **one
+> backend-neutral `EvalPlan`**, with the Lean `DenseTensor` evaluator retained as the small,
+> inspectable reference semantics. See `copilot_code_analysis.md` Appendix A for the full design.
+>
+> ```text
+> TLProgram → compile+validate → ScheduledProgram → EvalPlan
+>                                                     ├→ DenseTensor reference worker
+>                                                     ├→ PyTorch lowering → eager/compile
+>                                                     └→ JAX lowering → jit → execute
+> ```
+>
+> The governing rule: *"If JAX and PyTorch require different meanings for an `EvalPlan` constructor,
+> the constructor is underspecified. Backend-specific optimization metadata is acceptable;
+> backend-specific mathematical semantics is not."*
+
+**Four consequences that reorder this document.**
+
+**1. Spike 4 is not deduplication — it IS the backend contract.** Appendix A's Phase 1 is verbatim
+"finish Spike 4's checked sizes, `Combine`, dtype-aware assignment, `ResolvedNonlin`, typed scatter,
+structured errors, and `EvalReport`" — i.e. 4a, 4b, 4c, 4d, 4g, 4h, 4i are each a named prerequisite
+for executing anything on a GPU. Spike 4 should be read as *the highest-priority remaining work*,
+and its linear `4a→4b→4c→…` order is wrong. Use the dependency waves:
+
+```text
+4b → 4a → 4c                    (identities FIRST, then unify, then dtype-aware dispatch)
+Spike 3a ✅ → ResolvedNonlin (4d) → 4c
+4b + 4a + 4c + 4d → minimal EvalPlan → JAX/PyTorch stateless oracle
+4g → EvalPlan scatter capability
+4e diagnostic split → 4h → warning half of 4i
+minimal EvalPlan + E2 recurrence → 4f → scan lowering
+```
+
+Two corrections to earlier advice in this doc: **4b precedes 4a** (both contraction identities must
+exist before the seeded/unseeded merge), and **4f comes after the `EvalPlan` boundary**, not early as
+a "safe decomposition" — the plan-level pure state transition must be defined first. And **4h is not
+last**: structured errors are required to map Python/JAX exceptions into a closed `BackendError`
+family *before the backend becomes public*.
+
+**2. `E4` (EvalPlan) moves from "prototype-first" to the critical path; `E10` (codegen) from
+"recorded-only" to the eventual deliverable.** `EvalPlan` is the semantic, versioned source of truth
+— canonical, hashed (the hash is both the JIT cache key and the identity in backend errors),
+serializable, and containing no Lean or backend callbacks. Generated Python is *one lowering*;
+exported StableHLO is a *cache artifact*, not a semantics.
+
+**3. `E5` splits into two axes with very different tractability — do not conflate them.**
+
+| Axis | Status | Priority |
+|---|---|---|
+| eval ↔ **routed** (`BrMorph`) agreement | **Blocked, not merely unscheduled** — the routed path ends in a `Quotient` of raw syntax with *no denotation into numbers*; every `realize*` is `noncomputable`. Needs the `Br` interpreter, a separate deferred milestone. | Low |
+| eval ↔ **backend** (`EvalPlan`→PyTorch/JAX) agreement | **Achievable now**, and it is the actual prize: a differential test matrix (emit → eager → jit → reference agreement → cross-backend → device → export → VJP). | **High** |
+
+The first milestone is deliberately *not* "JAX runs a model." It is: *for the declared scan-free
+`reference64` fragment, every checked `EvalPlan` either produces matching `DenseTensor` and
+jitted-JAX outputs, or is rejected before backend execution with a typed capability error.*
+
+**4. The payload audit's carry/reject decisions must target `EvalPlan`, not `BrBaseP`.** This is the
+sharpest correction. Every payload [`semantic_payload_audit.md`](semantic_payload_audit.md) found
+dropped is a **required `EvalPlan` field**:
+
+| Audited payload | Required `EvalPlan` home |
+|---|---|
+| axiswise mask | nonlinearity step: *function, resolved axis, **mask**, exceptional-row policy* |
+| `UnaryOp` | pointwise function step |
+| `ScatterOpts.fill`/`.reduce` | scatter step: *destination map, output shape, **fill, collision operation**, OOB policy, injectivity* |
+| `AggOp` + dtype | `ContractionAlgebra` (`factorOp`/`factorId`/`reduceOp`/`reduceId`) + `TensorSig.dtype : ScalarDType` |
+| per-term contraction scoping | contraction step: *factors, **per-term reduction axes**, factor op/identity, term op/identity* |
+| scan bodies | scan step: *ordered state signatures, **base plan, step plan**, static iteration shape/order, causality certification* |
+
+So "reject routed" is at best a temporary staging device and never the long-term answer — you cannot
+reject `log(X[i])` if the goal is to emit `torch.log`. Conversely, **carrying payload into `BrBaseP`
+buys nothing for execution**: the routed path is a serialization/proof artifact for Python-acset
+interop, not an execution IR. Appendix A's warning against routing JAX generation through `NetSpec`
+("would create a second, semantically incomplete IR") applies with equal force to routing it through
+`BrBaseP`. Expensive routed-side work — notably reworking `weaveToArrayType_congr` and
+`Agreement.lean` conjunct-2 to admit a step-level dtype — should be **deferred** in favour of the same
+classification landing in the shared contraction algebra and `EvalPlan`.
+
+**What stays true from the 2026-07-26 addendum:** the demonstrated correctness bugs still come first
+(they are Wave 1 of the revised Spike 4 sequencing: "freeze failures and policies"), and the
+four-guarantee lens still applies — it now has a fifth consumer, since *backend* agreement is the
+strongest available form of semantic closure.
+
 ## Table of Contents
 
+- [Terminal goal (2026-07-30): a PyTorch/JAX execution layer via `EvalPlan`](#terminal-goal-2026-07-30-a-pytorchjax-execution-layer-via-evalplan)
 - [Review addendum (2026-07-26): correctness-first reprioritization](#review-addendum-2026-07-26-correctness-first-reprioritization)
 
 - [0. Constraints — what must NOT be restructured](#0-constraints--what-must-not-be-restructured)
