@@ -50,6 +50,22 @@ finding F). That is the mechanism by which all of the above stays invisible.
 | 9 | `recurMorphism` / `.scanPre` | `Ast.lean:137` | **✗ hard error** on all three eval entries | **NONE — the entire `tc` is discarded.** Emits a literally empty step `{op := .scanPre, degree := [], inputWeaves := [], outputWeaves := [[]], reindexings := []}`; the iteration axis is dropped too | encodes the empty step | realizes an empty step | op tag only — and **demonstrably does not guard content**: `RecurMorphismTest:19-27` feeds `outputWeaves := [[.tiled]]` and asserts only the tag | **Reject at compile** — accepted-then-discarded is the worst state |
 | — | *(incidental)* sum-of-products term structure | `Ast.lean:247-248` | ✅ per-term contraction scoping is load-bearing (`Contract.lean:63-69`) | **NONE** — `A·B + C` and `A·B·C` yield identical read-factor lists | — | — | **NONE** | **Reject or carry** — decide with #1/#3/#7 |
 
+## Verification log (2026-07-30) — two findings probed, one account was wrong
+
+Executable probes, not code reading. **Apply this lesson to the un-probed findings.**
+
+| Finding | Verdict | Detail |
+|---|---|---|
+| **C** (`agg` drop) | ✅ **CONFIRMED + FIXED** | Mutation test: reverting the fix yields `[(identity, sum), (relu, sum)]` where `.max` was expected. Fixed in `78dd276`. |
+| **D** (`brOpOfIdx` default) | ✅ **CONFIRMED + FIXED** | Fixed in `14b1353`; both round-trip lemmas axiom-free. |
+| **#4** (`recurMorphism`) | ✅ **CONFIRMED** | Probe: `compile → .ok, ops=[BrOp.scanPre]`; `eval → .error "scanPre unsupported (S)"`. Payload discarded. Accepted-then-discarded, as described. Fix needs a policy decision (see below). |
+| **#5** (unsized scan) | ⚠️ **MECHANISM WRONG** | The program *is* rejected, but by the **pre-existing `axes.isEmpty` guard**, not by sizing: `compileToScheduled` yields `SCAN G axes=[] uids=[] base=1 recur=1`. `evalScan`'s new unsized-extent check (`0f58e0b`) is correct hardening but **unreachable for this program**. Two puzzles remain open: (a) why a `.scan` with `axes = []` is constructible at all, and (b) where the `lean_array_set_panic` actually originates — `compileToScheduled` does *not* panic, so it is in the eval path (`Shape.lean:431,472`'s `getD 0` are the suspects). **#5 is NOT closed.** |
+
+**Method note.** #5's write-up was right that something is broken and wrong about what. Both it and
+the original restructuring doc were produced by reading; the corrections came from running. Treat the
+remaining un-probed findings (#6/#17, and the routed-payload rows in the table below) as *unverified
+mechanisms* until a probe says otherwise.
+
 ## Cross-cutting findings
 
 > **These letters are the canonical labels for the actionable items.** Wave A of the
