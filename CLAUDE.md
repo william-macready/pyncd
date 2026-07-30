@@ -151,6 +151,7 @@ Small utility dirs (no dedicated node — see README for their one-line purpose)
 - **`.normalize()` is sum-normalization, not `LayerNorm`** — a documented, easy-to-assume-wrong trap in `torch_compile/`.
 - **No `causal_softmax` operator exists** — attempted and reverted twice (in `data_structure/` and `torch_compile/`). Causal masking goes through `softmax(..., where=predicate)`. Check git history (`e29fdac`) before re-adding dedicated causal-attention support.
 - **Golden-file test fixtures under `tests/cset_serialization/` are gitignored, generated artifacts** — a fresh clone fails `test_cset_roundtrip.py` until `python tests/generate_cset_serialization.py` is run once.
+- **In `leanncd/`'s TL surface syntax, whitespace is SEMANTIC in an LHS slot** — `G[j, l +1]` is a scan recurrence but `G[j, l + 1]` is a shifted *write* (`ident "+1"` is a single atom token), and the more natural spacing silently means the other thing rather than failing. Same class of trap as `.normalize()` above and reachable from ordinary surface syntax. A breaking fix is specced but NOT implemented — see `leanncd/LeanNCD/DSL/AGENTS.md` and `docs/superpowers/specs/2026-07-30-scan-axis-declaration-spike.md`.
 
 ### Boundaries
 
