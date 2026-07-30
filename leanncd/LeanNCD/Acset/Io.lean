@@ -10,21 +10,27 @@ Fully executable, zero `sorry`.
 
 namespace LeanNCD.Acset
 
-/-- Encode an `Option SizeExpr` column ("" when none; sizes here are `.lit`/`.var` so total). -/
-private def encSizeOpt (m : Option SizeExpr) : String :=
-  match m with | none => "" | some s => (encodeSize s).toOption.getD ""
+/-- Encode an `Option SizeExpr` column: `""` when absent, else `encodeSize`.
+    FAIL LOUD on a compound `SizeExpr`. The former `(encodeSize s).toOption.getD ""` justified
+    itself with "sizes here are `.lit`/`.var` so total" — an assumption, not a fact: probed
+    2026-07-30, an `axisSizes` entry of `.add (.lit 2) (.lit 3)` made `writeSBr` emit the row
+    `RawAxis:1,` (an axis with an EMPTY size) and return normally, turning a *known* serialization
+    failure into corrupt output. `decodeSize ""` then fails on read, so the corruption surfaced far
+    from its cause. See `papers/semantic_payload_audit.md` finding #17. -/
+private def encSizeOpt (m : Option SizeExpr) : Except CsvError String :=
+  match m with | none => .ok "" | some s => encodeSize s
 
-private def axisSizesRows (inst : SBrInstance) : List (List String) :=
-  inst.axisSizes.map (fun (u, sz) => [encodeUID u, (encodeSize sz).toOption.getD ""])
+private def axisSizesRows (inst : SBrInstance) : Except CsvError (List (List String)) :=
+  inst.axisSizes.mapM (fun (u, sz) => do pure [encodeUID u, ← encodeSize sz])
 
 private def equationRows (inst : SBrInstance) : List (List String) :=
   inst.equations.map (fun e => [toString e.equationIdx, encodeName e.lhsName])
 
-private def arrayRows (inst : SBrInstance) : List (List String) :=
-  inst.arrays.map (fun a =>
-    [ toString a.equationIdx, toString a.slot, encodeName a.name, encodeReqBool a.isInput,
+private def arrayRows (inst : SBrInstance) : Except CsvError (List (List String)) :=
+  inst.arrays.mapM (fun a => do
+    pure [ toString a.equationIdx, toString a.slot, encodeName a.name, encodeReqBool a.isInput,
       encodeOpTagOpt a.operatorTag, (a.normAxis.map encodeUID).getD "", encodeDataTag a.datatypeTag,
-      encSizeOpt a.maxValue, encodeBoolOpt a.bias, encodeName a.elementwiseFn,
+      ← encSizeOpt a.maxValue, encodeBoolOpt a.bias, encodeName a.elementwiseFn,
       encodeName a.opPredicate, encodeName a.wireLabel ])
 
 private def arrayAxisRows (inst : SBrInstance) : List (List String) :=
@@ -37,14 +43,20 @@ private def sampleRows (inst : SBrInstance) : List (List String) :=
     [ toString s.equationIdx, toString s.reindexingSlot, encodeUID s.srcUid, encodeUID s.tgtUid,
       encodeInt s.coeff, encodeInt s.offset ])
 
-/-- Serialize an `SBrInstance` to the five `(filename, content)` pairs, in Python order. -/
-def writeSBr (inst : SBrInstance) : List (String × String) :=
-  [ ("axis_sizes.csv", renderTable ["axis_uid", "size"] (axisSizesRows inst)),
+/-- Serialize an `SBrInstance` to the five `(filename, content)` pairs, in Python order.
+    Returns `Except CsvError` because serialization is a BOUNDARY: `encodeSize` genuinely cannot
+    represent a compound `SizeExpr`, and the old total signature had nowhere to say so, emitting an
+    empty size field instead (audit finding #17). Only `axisSizes` and `ArrayRow.maxValue` can fail;
+    the other three tables are total. -/
+def writeSBr (inst : SBrInstance) : Except CsvError (List (String × String)) := do
+  let axisRows ← axisSizesRows inst
+  let arrRows  ← arrayRows inst
+  return [ ("axis_sizes.csv", renderTable ["axis_uid", "size"] axisRows),
     ("equations.csv",  renderTable ["equation_idx", "lhs_name"] (equationRows inst)),
     ("arrays.csv",     renderTable
         ["equation_idx","slot","name","is_input","operator_tag","norm_axis",
          "datatype_tag","max_value","bias","elementwise_fn","op_predicate","wire_label"]
-        (arrayRows inst)),
+        arrRows),
     ("array_axes.csv", renderTable
         ["equation_idx","array_slot","axis_uid","is_target","position"] (arrayAxisRows inst)),
     ("samples.csv",    renderTable

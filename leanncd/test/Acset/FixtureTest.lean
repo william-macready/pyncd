@@ -35,8 +35,12 @@ run_cmd liftTermElabM do
   match readSBr pairs with
   | .error e => throwError s!"readSBr FAILED on Python fixture: {e}"
   | .ok inst =>
-      -- (b) writeSBr reproduces the Python bytes exactly, per file
-      let written := writeSBr inst
+      -- (b) writeSBr reproduces the Python bytes exactly, per file.
+      -- `writeSBr` is `Except CsvError` since 2026-07-30 (audit finding #17); a Python fixture that
+      -- Lean cannot re-serialize is itself a real failure, so surface it rather than defaulting.
+      let written ← match writeSBr inst with
+        | .ok fs   => pure fs
+        | .error e => throwError s!"writeSBr FAILED on an instance read from a Python fixture: {e}"
       for (f, want) in pairs do
         let got := (written.find? (·.1 == f)).map (·.2) |>.getD "<missing>"
         unless got == want do
