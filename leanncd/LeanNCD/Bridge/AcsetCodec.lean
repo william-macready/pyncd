@@ -169,11 +169,18 @@ def encodeReindexing (i degSlot arraySlot : Nat) (inW : WeaveShapeP) (m : StMatP
         { equationIdx := i, reindexingSlot := arraySlot, srcUid := axisUidFor3 i degSlot d,
           tgtUid := tgtUid, coeff := row.getD d 0, offset := offset }
 
-/-- The default (unused-field) `ArrayRow` shared by output/input rows — only `slot`/`isInput`/
-    `elementwiseFn` (op index, output slot 0 only — see `fromThreadedComposed`)/`wireLabel` (input
-    rows only) ever carry real content; everything else is `none`/`.reals` because it carries
-    Python-specific semantic distinctions (masked-softmax predicates, linear-layer bias flags) that
-    `BrOp` doesn't make and nothing here needs to reconstruct. -/
+/-- The default (unused-field) `ArrayRow` shared by output/input rows — only `slot`/`isInput` and
+    `wireLabel` (input rows only, set by `encodeStep`) ever carry real content; everything else is
+    `none`/`.reals` because it carries Python-specific semantic distinctions (masked-softmax
+    predicates, linear-layer bias flags) that `BrOp` doesn't make and nothing here needs to
+    reconstruct.
+
+    NOTE: the **op index is NOT here** — it rides in `EquationRow.lhsName` as a unary numeral (see
+    `encodeStep`, and `from_equation_find`'s docstring). An earlier revision of this comment claimed
+    `elementwiseFn` carried it, matching a superseded plan
+    (`docs/superpowers/plans/2026-07-01-acset-agreement-impl-plan.md:152`); the code below has always
+    set `elementwiseFn := none`. `datatypeTag := .reals` is likewise a hardcode, not a carried value
+    — see `papers/semantic_payload_audit.md` feature 6. -/
 def blankArrayRow (i slot : Nat) (isInput : Bool) : ArrayRow :=
   { equationIdx := i, slot := slot, name := none, isInput := isInput, operatorTag := none,
     normAxis := none, datatypeTag := .reals, maxValue := none, bias := none,
