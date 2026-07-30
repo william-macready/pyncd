@@ -882,17 +882,27 @@ Wave A  Correctness freeze — ✅ THE THREE AUDIT FINDINGS DONE 2026-07-30 (c75
                        EMPTY name and uid 0 (Elab.lean:244), and `finalizeScans` recovers the axis
                        BY SLOT POSITION from the matching step (Structural.lean:849-851). Deliberate
                        and documented, so this is a fragility (silent misattribution if base and
-                       recur slot orders disagree — nothing enforces they agree), not a reproduced
-                       defect. #5b's declaration fix does NOT close it; only slot-level naming
-                       (`G[j, l@0]`) would.
+                       recur slot orders disagree — nothing enforces they agree; outputAxesConsistent
+                       is a DIFFERENT check, across a coupled scan's outputs on the routed path after
+                       grouping), not a reproduced defect. Only slot-level naming (`G[j, l@0]`) would
+                       CLOSE it, but #5b defuses it — folded in as Part 5 of the spec: a
+                       single-candidate rule removes the failure mode for single-axis scans (needing
+                       no declaration at all), and the "left as-is" miss arm becomes a named
+                       rejection so the multi-axis remainder is loud instead of silent.
         · finding H   🔴 OPEN, NEW 2026-07-30, PROBED — an axis KIND's size is write-only:
                        `axis l : ℕ[3]` parses to `AxisKind.nat (some (.lit 3))` and pins NOTHING.
                        Probed: it yields the same "unsized iteration axis" error as declaring no
                        axis at all, because `explicitSizes` folds only `.axis ax (some n)`
                        (Lowering.lean:176-178) and the sole `AxisSpec.kind` consumers are the two
-                       dtype checks. A spelling that looks like an extent pin and is not. Fix with
-                       #5b (wire it in, or reject the form) — shipping a "require a pin" rule while
-                       a no-op pin spelling survives is a trap.
+                       dtype checks. A spelling that looks like an extent pin and is not. DECIDED
+                       2026-07-30: fix WITH #5b by REJECTING the form — keep the production and add
+                       `CompileError.unsupportedAxisKindSize`, rather than deleting the production
+                       (deletion makes it a PARSE error, which RejectTest.lean:9-11 records as
+                       un-automatable) and rather than wiring the size in (`tl_size` yields a general
+                       SizeExpr; `explicitSizes` is HashMap UID Nat, so only `.lit` could be wired —
+                       symbolic sizes need the affine solver, a feature not a fix). Zero migration:
+                       ℕ[…]/ℝ[…] appear nowhere outside Syntax.lean:54-57 + Elab.lean:37,39. Shipping
+                       a "require a pin" rule while a no-op pin spelling survives is a trap.
         · STILL OPEN in Wave A: #5b, G, H above. #6 (the broader boundary DECODER defaults —
           realizeStMat zero-fill, realizeBrBaseP, AcsetCodec, realizeSBr → empty identity) is
           Stage-5 bridge-hardening, not Wave A, per the audit's own assignment.

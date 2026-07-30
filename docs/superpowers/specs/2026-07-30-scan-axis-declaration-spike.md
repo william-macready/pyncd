@@ -135,20 +135,58 @@ Strict is recommended because it delivers the explicitness the option was chosen
 ~23 edits are a mechanical keyword swap with no semantic change. **The ~23 figure is derived from
 the "already declared" column below and has not been re-grepped — confirm it during planning.**
 
-### What this option does NOT fix
+### Effect on finding G — it becomes resolvable or loud, though not closed
 
-Audit finding **G**: a base case still does not name its own axis (`.iterAt (scanAxis "") n`,
-`Elab.lean:244`), so `finalizeScans` keeps recovering it **by slot position**
-(`Structural.lean:849-851`). A declaration cannot fix a slot-level anonymity — only slot option 2
-above would. The single-iteration-axis case *could* be resolved by declaration instead of position;
-whether to do that is out of scope here and tracked as finding G.
+A base case still does not *name* its own axis (`.iterAt (scanAxis "") n`, `Elab.lean:244`); closing
+that needs slot option 2. But `iter` supplies the signal the positional pass lacks, so G stops being
+a silent-wrong-answer path. **This is a refinement of an earlier note here that said the declaration
+option "does not close G" and stopped there** — true about *closing*, incomplete about the effect.
+
+The mechanism, read precisely (`Stmt.adoptBaseIterAxes`, `Structural.lean:827-835`): each base
+`.iterAt _ n` at position `p` adopts `step.stepAxisAt p`, and **on a miss it is "left as-is"** —
+keeping the placeholder (`name ""`, `uid 0`), documented at `:824-825`. Grouping is by iteration-axis
+UID, so an un-adopted base lands in a uid-0 group, *separate from its own recurrence*: the boundary
+never gets initialised and the state is silently zero-filled instead.
+
+**No existing guard covers this.** `outputAxesConsistent` (`Lowering.lean:457-460`) is a different
+check — it compares the outputs of one *already-grouped* coupled scan (`G[j,l]` vs `H[l,j]`) on the
+routed path, after grouping. Nothing in `finalizeScans` enforces base↔recur slot-order agreement.
+
+See `papers/semantic_payload_audit.md` finding **G**. Fold it in here as **Part 5**:
+
+1. **Single-candidate rule (position-independent).** If the matching step has exactly one `iterNext`
+   axis and the base exactly one `iterAt` slot, adopt it **regardless of position**. This removes G's
+   failure mode outright for single-axis scans — the common case per Part 3's table — and needs *no*
+   declaration, so it could ship independently of this spike.
+2. **Positional fallback** for genuinely multi-axis scans, unchanged.
+3. **Fail loud on a miss.** Replace the "left as-is" arm with a named rejection, so an un-adopted
+   base can no longer flow onward as a uid-0 placeholder:
+
+```lean
+| unresolvedBaseIterAxis : String → CompileError
+--  "base case of 'G' pins a slot with no corresponding iteration axis in its recurrence"
+```
+
+   This means `adoptBaseIterAxes` becomes `Except`-returning. With `iter` available, strengthen the
+   check: the adopted axis must also be declared `iter`.
+
+⚠️ **Do not test the placeholder by `uid == 0`** — `uid 0` is a legitimate UID (`scanAxis` merely
+*defaults* to it). Detect a miss structurally, at the point adoption fails.
+
+⚠️ **G is UNPROBED.** Verified: the miss arm keeps the placeholder, and no `finalizeScans` check
+guards it. NOT verified: a program that triggers it. The routed path may incidentally catch the
+resulting base-only group via `stepGuardOk`'s `!outputs.isEmpty` (`Lowering.lean:466-467`); whether
+the eval path catches it is unknown. **Write the failing program first** — if it turns out
+unreachable, Part 5 reduces to the defensive rejection in step 3 and should be scoped down.
 
 ## Implementation shape — four coupled parts
 
 **Part 1 — grammar/elaboration.** `elabTLLHSSlot` is `Syntax → MetaM LHSSlot` and **cannot see
 declarations**, so the disambiguation cannot happen there. Elaborate *both* spellings uniformly to
 `.affine (.shift x 1)`, then **reclassify after `resolveDecls`**: a slot `.affine (.shift a 1)` whose
-axis `a` is a declared `Decl.axis` (nat kind) becomes `.iterNext a`. Precedent: `lowerArith`
+axis `a` is declared `Decl.iter` becomes `.iterNext a`. (Under the *permissive* variant the predicate
+widens to `Decl.iter _ _ | Decl.axis _ (some _)`; note it must test the `Decl` payload and never the
+axis *kind* — see finding **H**.) Precedent: `lowerArith`
 (`Structural.lean:803-814`) already reclassifies `.assign` → `.scatter` in a post-resolution pass.
 Keep `ident "+1"` working (it is the documented form and is used widely) — the reclassifier makes the
 two paths converge.
@@ -158,17 +196,52 @@ after, which is the phase that consumes `iterInfo`, so this should be safe — b
 `checkDtypes`'s `iterAxisNotNat` / `normAxisNotReal` (`Structural.lean:697-703`), which inspect slot
 kinds and may run earlier.
 
-**Part 2 — a new named rejection.** The rule has TWO failure modes, so decide whether they share one
-error or get two:
-  * the recurrence axis has no `Decl.axis` at all, and
-  * it has one but with no pinned extent (`axis l : ℕ` — `Decl.axis a none`).
-Suggested: one `CompileError.scanAxisNotPinned : String → CompileError` covering both (the message can
-distinguish them), since the *pin* is the actual requirement and "declared but unpinned" must fail too
-— an `…NotDeclared` name would under-describe it. Follow the Task-0 / #4 precedent: place the check in
-the Structural validation phase so it runs in **both** `TLProgram.compile` and `compileToScheduled`.
+**Part 2 — the named rejections (TWO of them).** Place both in the Structural validation phase, per
+the Task-0 / #4 precedent, so they run in **both** `TLProgram.compile` and `compileToScheduled`.
 
-**Part 3 — migration (~10 recurrences, 6 files).** Add `axis` declarations to the surface-syntax
-programs that lack them. Measured 2026-07-30 (surface `tlprog!` programs only):
+*2a — the recurrence rule.* Because the proposed `iter` production is **pinned-only**, "declared but
+unpinned" is ungrammatical and the rule has just **one** failure mode: an axis used as a recurrence
+that is not declared `iter`. Name it for what it tests:
+
+```lean
+| scanAxisNotIter : String → CompileError
+--  "axis 'l' is used as a scan recurrence but is not declared; add `iter l = N`"
+```
+
+⚠️ Under the *permissive* variant the two modes return (no declaration at all / `axis l : ℕ` with no
+pin), and the error should then be named `scanAxisNotPinned` — the *pin* is the requirement, so a
+`…NotDeclared` name would under-describe it. **Pick the name after the strict/permissive fork is
+settled; the earlier draft of this spec assumed the permissive shape.**
+
+*2b — reject the write-only kind size (closes finding **H**).*
+
+```lean
+| unsupportedAxisKindSize : String → CompileError
+--  "axis 'l': the kind size `ℕ[…]` does not pin an extent — use `axis l : ℕ = N`"
+```
+
+Naming follows the existing `unsupportedRecurMorphism` / `unsupportedNonlinScatter` convention.
+
+**Why reject rather than wire it in, and why not just delete the production:**
+
+- **Zero migration** — `ℕ[…]`/`ℝ[…]` appear nowhere outside `Syntax.lean:54-57` and `Elab.lean:37,39`.
+- **Contained** — `tl_axis_kind` is referenced by exactly two productions (`Syntax.lean:64-65`), both
+  axis-decl items, so the bracket forms can only ever occur in an `axis` declaration.
+- **Wiring it in is not like-for-like.** `tl_size` is a full arithmetic grammar
+  (`Syntax.lean:45-51`) producing a general `SizeExpr` (`var/add/sub/mul/div`), whereas
+  `explicitSizes` is `HashMap UID Nat`. Only `.lit n` could be wired; `ℕ[n*2]` would need the affine
+  size solver. That is a *feature*, not a fix for H — record it as a deliberate non-goal.
+- **Keep the production, reject in validation** rather than deleting it, because deletion makes
+  `axis l : ℕ[3]` a *parse* error, and `RejectTest.lean:9-11` records that parse errors **cannot be
+  automated** ("a hard parse error fails the build, and `#guard_msgs` does not validate parse-time
+  errors"). A named rejection is testable and can name the fix. It also leaves the syntax available
+  if the size solver ever backs it.
+
+Note `axis l : ℕ[3] = 5` is currently grammatical — two size channels, bracket silently ignored.
+2b makes that unrepresentable too.
+
+**Part 3 — migration (~10 recurrences, 6 files, plus 5 AST sites).** Add `iter` declarations to the
+surface-syntax programs that lack them. Measured 2026-07-30 (surface `tlprog!` programs only):
 
 | File | recurrences | already declared | needs |
 |---|---|---|---|
@@ -183,10 +256,19 @@ programs that lack them. Measured 2026-07-30 (surface `tlprog!` programs only):
 | `Eval/Portfolio/FeedforwardTest.lean` | 1 | 0 | 1 |
 | `DSL/ParseProgramTest.lean` | 1 | 0 | 1 |
 
-**`ScanGen`/`ScanUnroll` are NOT affected** — the property oracle's 3,832 programs are built
-programmatically (`.assign "S" [.free j1, .iterNext l]`) and already declare
+**`ScanGen`/`ScanUnroll` need no *surface* migration** — the property oracle's 3,832 programs are
+built programmatically (`.assign "S" [.free j1, .iterNext l]`) and already declare
 `decls := [.axis j1 (some 2), .axis l (some L), …]`. An earlier estimate wrongly listed them by
 grepping for the *surface* `axis … : ℕ` in files that use the AST constructor.
+
+⚠️ **But under the strict variant they ARE affected at the AST level** — a prior version of this note
+said "NOT affected" without that qualifier. Every programmatic `Decl.axis` for an *iteration* axis
+must become `Decl.iter`. Re-measured 2026-07-30: **5 sites**, all declaring `l`, all in
+`test/Eval/PropertyOracle/ScanGen.lean` (`:48, :66, :85, :108, :126`). The other pinned AST decls
+(`PropertyOracleTest.lean:15,36`, `Gen.lean:21`, `ScanGen.lean:146`) are ordinary axes and stay
+`.axis`. So the 3,832-program blast radius costs **5 edits**, not 3,832 — but the count is not zero,
+and `ScanGen.lean:146` (`r6`/`c6`, no `l`) is the case to check by hand, since it is a scan-shaped
+generator whose axes are *not* named `l`.
 
 **Part 4 — RJ6's semantics change again.** `RejectTest`'s RJ6 program deliberately has **no** axis
 pin; under the new rule it is rejected at **compile** (undeclared axis) rather than at eval. Update
@@ -205,6 +287,19 @@ the completion report — it is a language-surface reduction, not just a validat
 ## Verification
 
 `lake build` green (baseline **8610 jobs**; `Eval/Scan.lean` and `Structural.lean` are deep in the
-graph, so full rebuilds run minutes, not seconds). No `sorry`/`maxHeartbeats`/`native_decide`. Add a
-test asserting **both spacings produce the same `LHSSlot`** — that is the regression guard for #5b
-itself, and nothing else would catch a reintroduced divergence.
+graph, so full rebuilds run minutes, not seconds). No `sorry`/`maxHeartbeats`/`native_decide`.
+
+Four tests, one per rule. **Each must be mutation-tested** — revert the fix and confirm the test
+fails — because three of the bugs in this cluster were "guarded" by a comment asserting they could
+not happen, and finding #4 was documented by a test that could never have caught it (it asserted the
+op *tag* while the payload was discarded).
+
+1. **Both spacings produce the same `LHSSlot`** (`l +1` vs `l + 1`). The regression guard for #5b
+   itself; nothing else would catch a reintroduced divergence.
+2. **`scanAxisNotIter`** — a recurrence over an undeclared axis is rejected at compile.
+3. **`unsupportedAxisKindSize`** (finding H) — `axis l : ℕ[3]` is rejected. Assert on the *error*,
+   not on eval output: today the program merely behaves as if nothing were declared, so a
+   pass/fail-shaped test would have looked fine before the fix.
+4. **`unresolvedBaseIterAxis`** (finding G) — *write this one first and expect it to be hard.* If no
+   program can be constructed that reaches the miss arm, say so explicitly and scope Part 5 down to
+   the defensive rejection; do not report a passing suite as evidence that G was closed.

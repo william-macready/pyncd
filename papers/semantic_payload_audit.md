@@ -144,9 +144,21 @@ advancing positions, and *the surface syntax enforces neither*. A base whose slo
 differently from its step would be silently re-attributed to the wrong axis rather than
 rejected — the same shape as findings C/D/E′ (a plausible invariant, unchecked).
 
+The precise miss arm is `Stmt.adoptBaseIterAxes` (`Structural.lean:827-835`): a base `iterAt` whose
+position has no matching step `iterNext` is **"left as-is"**, keeping `name ""` / `uid 0`. Since
+grouping is by iteration-axis UID, such a base lands in a uid-0 group *separate from its own
+recurrence*, so the boundary is never initialised and the state is silently zero-filled.
+
+**No existing guard covers this.** `outputAxesConsistent` (`Lowering.lean:457-460`) is a *different*
+check: it compares the outputs of one already-grouped coupled scan (`G[j,l]` vs `H[l,j]`) on the
+routed path, after grouping. Nothing in `finalizeScans` enforces base↔recur slot-order agreement.
+
 Relevant to **#5b**: naming the axis at the slot (e.g. `G[j, l@0]`) would make the positional
-recovery pass unnecessary. Note the declaration-based fix chosen for #5b **does not** close G,
-except partially in the single-iteration-axis case where the declared axis is unambiguous.
+recovery pass unnecessary. The declaration-based fix chosen for #5b does **not** close G, but it does
+defuse it: a single-candidate rule (one step `iterNext`, one base `iterAt` ⇒ adopt regardless of
+position) removes the failure mode for single-axis scans outright and needs no declaration at all,
+and replacing the "left as-is" arm with a named rejection makes the multi-axis remainder loud instead
+of silent. Scoped as Part 5 of the #5b spec.
 
 **H. An axis kind's size is write-only — `axis l : ℕ[3]` looks like an extent pin and is not
 (new 2026-07-30, PROBED).** `AxisKind` is `real/nat : Option SizeExpr → AxisKind`
