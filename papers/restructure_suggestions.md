@@ -860,7 +860,15 @@ Wave A  Correctness freeze — ✅ THE THREE AUDIT FINDINGS DONE 2026-07-30 (c75
                        REFUSED the compound expression. Regression tests cover both fallible paths
                        (`axisSizes` and `ArrayRow.maxValue`); all byte-exact fixture assertions pass
                        unchanged, so only the error channel moved.
-        · STILL OPEN in Wave A: #5's two puzzles above. #6 (the broader boundary DECODER defaults —
+        · finding #5  ✅ CLOSED after re-probing (my earlier "not closed" was wrong — I had compared
+                       two different programs). Panic gone; the named error fires.
+        · finding #5b 🔴 NEW, OPEN — whitespace is SEMANTIC in an LHS slot: `ident "+1"` is one ATOM,
+                       so `l +1` ⇒ .iterNext (scan recurrence) but `l + 1` ⇒ .affine (.shift l 1)
+                       (a shifted write, and it flips the axis kind nat→real), yielding a degenerate
+                       `SCAN .. axes=[]`. The natural spacing silently means something else rather
+                       than failing. NEEDS A DECISION: accept both spacings / reject the ambiguity /
+                       document only.
+        · STILL OPEN in Wave A: #5b above. #6 (the broader boundary DECODER defaults —
           realizeStMat zero-fill, realizeBrBaseP, AcsetCodec, realizeSBr → empty identity) is
           Stage-5 bridge-hardening, not Wave A, per the audit's own assignment.
 
