@@ -73,9 +73,14 @@ after, which is the phase that consumes `iterInfo`, so this should be safe — b
 `checkDtypes`'s `iterAxisNotNat` / `normAxisNotReal` (`Structural.lean:697-703`), which inspect slot
 kinds and may run earlier.
 
-**Part 2 — a new named rejection.** Add `CompileError.scanAxisNotDeclared : String → CompileError`
-for a recurrence on an undeclared axis. Follow the Task-0 / #4 precedent: place the check in the
-Structural validation phase so it runs in **both** `TLProgram.compile` and `compileToScheduled`.
+**Part 2 — a new named rejection.** The rule has TWO failure modes, so decide whether they share one
+error or get two:
+  * the recurrence axis has no `Decl.axis` at all, and
+  * it has one but with no pinned extent (`axis l : ℕ` — `Decl.axis a none`).
+Suggested: one `CompileError.scanAxisNotPinned : String → CompileError` covering both (the message can
+distinguish them), since the *pin* is the actual requirement and "declared but unpinned" must fail too
+— an `…NotDeclared` name would under-describe it. Follow the Task-0 / #4 precedent: place the check in
+the Structural validation phase so it runs in **both** `TLProgram.compile` and `compileToScheduled`.
 
 **Part 3 — migration (~10 recurrences, 6 files).** Add `axis` declarations to the surface-syntax
 programs that lack them. Measured 2026-07-30 (surface `tlprog!` programs only):
