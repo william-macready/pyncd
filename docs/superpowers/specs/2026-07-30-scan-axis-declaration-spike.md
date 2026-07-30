@@ -56,7 +56,92 @@ axes. `scanAxis` (`Elab.lean:88`) is an internal `AxisSpec` builder, not user sy
   the slot (`syntax:max ident "." : tl_lhs_slot`, `Syntax.lean:195`). Needs no reclassification pass,
   no migration, and no language-surface reduction, at the cost of new syntax.
 
-The user preferred the explicit declaration rule over both.
+The user preferred the explicit declaration rule over both. The slot-level family was explored in
+full before that choice was confirmed; recorded here so it is not re-derived.
+
+#### Slot-level notation — the four shapes explored (2026-07-30, NOT chosen)
+
+⚠️ **Lexer constraint that eliminates the obvious candidate:** `'` is a legal identifier character
+in Lean 4, so `l'` lexes as a *single ident* before any `tl_lhs_slot` production sees it. A postfix
+marker must use a character that cannot appear in an ident. `+` and `*` are already claimed by the
+affine productions (`Syntax.lean:190-193`), leaving `⁺`, `^`, `@`, `→`.
+
+| # | Shape | Notes |
+|---|---|---|
+| 1 | `G[j, l⁺]` (ASCII `l^`) | Smallest diff; exact mirror of `freeNorm`'s postfix `.`. Leaves the base case anonymous (finding **G**). |
+| 2 | `G[j, l@0]` / `G[j, l@+1]` | Symmetric — **also fixes finding G** by letting the base name its axis, retiring the positional recovery pass at `Structural.lean:849-851`. Cost: every existing base case changes (`G[j,0]` → `G[j,l@0]`), a far larger migration than this spike's. |
+| 3 | `G[j, next l]` | Keyword form, using the keyword-category machinery Spike 3b added. Most explicit, most verbose. |
+| 4 | *no new syntax* — let `ident "+" num` mean `.iterNext` at `num = 1`, and spell shift-by-1 as `1*l+1` via the **already-existing** `num "*" ident "+" num` production | Zero new tokens, no reclassification pass, and **no declaration requirement** — it fixes #5b outright, with both spacings converging for free. Rejected because `Out[i + 1] := …` in an existing program would *silently* change meaning from shifted-write to iteration-advance — the exact defect class #5b is about. Would need its own guard. |
+
+**If the migration below proves painful, #4 is the documented fallback** — it is the cheapest fix
+for #5b considered in isolation, at the cost of leaving iteration axes implicit.
+
+## Proposed syntax for the chosen (declaration) option
+
+**Recommendation: a new `iter` declaration keyword, in the pinned form only.**
+
+```
+iter l = 3
+```
+
+`iter` is free — grep confirms no `tl` program uses `iter` as an identifier, so introducing the
+keyword collides with nothing. It joins `tensor` / `predicate` / `linear` / `axis` as a fifth
+`tl_decl` (`Syntax.lean:76-82`).
+
+```lean
+-- Syntax.lean, beside the existing `axis` production
+syntax "iter" tl_iter_decl_item,+ : tl_decl
+syntax ident "=" num              : tl_iter_decl_item   -- ONLY this form. No unpinned variant.
+
+-- Ast.lean
+| iter : AxisSpec → Nat → Decl   -- note: `Nat`, NOT `Option Nat`
+```
+
+**Why this shape — two whole error classes become ungrammatical rather than validated:**
+
+1. **No unpinned production ⟹ "declared but unpinned" cannot be written.** This collapses Part 2's
+   two failure modes into one ("axis used as a recurrence but never declared `iter`"), so
+   `CompileError.scanAxisNotPinned` needs to describe only that.
+2. **The keyword fixes the kind**, so `iterAxisNotNat` (`Structural.lean:700`) becomes unreachable
+   for any declared iteration axis. This is why the kind is *omitted* from the surface form: writing
+   `iter l : ℕ = 3` would preserve the visual parallel with `axis` but reintroduce a spelling that
+   can be wrong.
+
+⚠️ **Finding H makes the "pinned" test subtle — get this right.** The extent pin and the axis
+*kind* are two independent channels, and only one of them is live: `axis l : ℕ[3]` parses into
+`AxisKind.nat (some (.lit 3))` and **pins nothing** (probed — it behaves identically to declaring
+no axis at all; see audit finding **H**). So the check must test the `Decl` payload, never the kind:
+
+```lean
+-- CORRECT                                  -- WRONG: `ℕ[3]` is a decoy that passes this
+| .iter _ _ => pinned                       | .axis ax _ => hasSize ax.kind
+| .axis _ (some _) => pinned
+```
+
+Consider closing H in the same pass — either wire the kind size into `explicitSizes`
+(`Lowering.lean:176-178`) or reject the `ℕ[…]`/`ℝ[…]` forms. Leaving a no-op pin in the language
+while adding a rule that *requires* a pin is a trap for the next reader.
+
+### Strict vs permissive — decide this before implementing
+
+This is the one open decision, and it is a **migration-cost fork**, not a design fork:
+
+| | Rule | Migration |
+|---|---|---|
+| **Strict** *(recommended)* | `iter` is the **only** way to declare an iteration axis | **~33 sites.** The ~10 in the table below, **plus the ~23 axes already declared `axis l : ℕ = N`** that must switch keyword. |
+| **Permissive** | Require a *pinned* declaration by **either** keyword; `iter` is sugar that also pins the kind | **~10 sites** (the table below only). But iteration-ness stays non-explicit at the declaration site, which was the point of choosing this option. |
+
+Strict is recommended because it delivers the explicitness the option was chosen for, and the extra
+~23 edits are a mechanical keyword swap with no semantic change. **The ~23 figure is derived from
+the "already declared" column below and has not been re-grepped — confirm it during planning.**
+
+### What this option does NOT fix
+
+Audit finding **G**: a base case still does not name its own axis (`.iterAt (scanAxis "") n`,
+`Elab.lean:244`), so `finalizeScans` keeps recovering it **by slot position**
+(`Structural.lean:849-851`). A declaration cannot fix a slot-level anonymity — only slot option 2
+above would. The single-iteration-axis case *could* be resolved by declaration instead of position;
+whether to do that is out of scope here and tracked as finding G.
 
 ## Implementation shape — four coupled parts
 

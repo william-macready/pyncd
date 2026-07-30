@@ -867,11 +867,33 @@ Wave A  Correctness freeze — ✅ THE THREE AUDIT FINDINGS DONE 2026-07-30 (c75
                        .iterNext (scan recurrence) but `l + 1` ⇒ .affine (.shift l 1) (a shifted
                        write, and it flips the axis kind nat→real), yielding a degenerate
                        `SCAN .. axes=[]`. The natural spacing silently means something else rather
-                       than failing. DECIDED: accept BOTH spacings + REQUIRE a declared iteration
-                       axis for scans (which also closes #5 at the source). Breaking change,
-                       ~10 recurrences / 6 files; the ScanGen property oracle is NOT affected.
+                       than failing. DECIDED: accept BOTH spacings + REQUIRE a declared AND PINNED
+                       iteration axis for scans. The PIN is the load-bearing half and is NOT implied
+                       by declaration (`axis l : ℕ` carries no size — `Decl.axis` takes
+                       `Option Nat`); requiring `= N` is what closes #5 at the source. An earlier
+                       note here wrongly credited mere declaration. PROPOSED SYNTAX: a new `iter`
+                       decl keyword in pinned form only — `iter l = 3` — which makes both
+                       "unpinned" and "wrong kind" ungrammatical rather than validated.
+                       Breaking change: ~10 recurrences / 6 files to add, plus ~23 keyword swaps if
+                       the strict variant is chosen; the ScanGen property oracle is NOT affected.
                        Spec: docs/superpowers/specs/2026-07-30-scan-axis-declaration-spike.md
-        · STILL OPEN in Wave A: #5b above. #6 (the broader boundary DECODER defaults —
+        · finding G   🔴 OPEN, NEW 2026-07-30, NOT PROBED — a scan base case does not name its own
+                       iteration axis: `G[j,0]` elaborates to `.iterAt (scanAxis "") n` with an
+                       EMPTY name and uid 0 (Elab.lean:244), and `finalizeScans` recovers the axis
+                       BY SLOT POSITION from the matching step (Structural.lean:849-851). Deliberate
+                       and documented, so this is a fragility (silent misattribution if base and
+                       recur slot orders disagree — nothing enforces they agree), not a reproduced
+                       defect. #5b's declaration fix does NOT close it; only slot-level naming
+                       (`G[j, l@0]`) would.
+        · finding H   🔴 OPEN, NEW 2026-07-30, PROBED — an axis KIND's size is write-only:
+                       `axis l : ℕ[3]` parses to `AxisKind.nat (some (.lit 3))` and pins NOTHING.
+                       Probed: it yields the same "unsized iteration axis" error as declaring no
+                       axis at all, because `explicitSizes` folds only `.axis ax (some n)`
+                       (Lowering.lean:176-178) and the sole `AxisSpec.kind` consumers are the two
+                       dtype checks. A spelling that looks like an extent pin and is not. Fix with
+                       #5b (wire it in, or reject the form) — shipping a "require a pin" rule while
+                       a no-op pin spelling survives is a trap.
+        · STILL OPEN in Wave A: #5b, G, H above. #6 (the broader boundary DECODER defaults —
           realizeStMat zero-fill, realizeBrBaseP, AcsetCodec, realizeSBr → empty identity) is
           Stage-5 bridge-hardening, not Wave A, per the audit's own assignment.
 
