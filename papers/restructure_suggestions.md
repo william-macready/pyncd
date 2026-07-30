@@ -909,7 +909,19 @@ Wave A  Correctness freeze — ✅ THE THREE AUDIT FINDINGS DONE 2026-07-30 (c75
                        HashMap UID Nat, so only `.lit` could be wired — symbolic extents need the
                        affine solver, a feature not a fix). SEPARABLE from #5b: ship it ahead of the
                        spike. Side effect: tl_size/elabTLSize become reachable only from
-                       test/DSL/SizeExprTest.lean — KEEP them (mention dead code, don't delete it).
+                       test/DSL/SizeExprTest.lean — KEEP them. H IS AN UNFINISHED FEATURE, NOT CRUFT:
+                       papers/leanncd.md:1421-1431 SPECIFIES the bracket forms ("Layer 1", §14.3), so
+                       the parser + AST field were built to spec and only the consumer was never
+                       written — which is also why 15 oracle sites populate the kind size. Deleting
+                       tl_size is mechanically safe (cost = 4 run_cmd blocks at SizeExprTest:40-67;
+                       the 20 SizeExpr guards at :10-38 don't touch it) but is a SPEC DEVIATION
+                       needing a paper update, so it is a judgement call, not cleanup. The paper's own
+                       resolution is to FINISH it: wire ℕ[n] to the affine size solver (out of scope).
+                       Same bucket: SizeExpr.eval has ZERO production callers (Base/SizeExpr.lean:
+                       21-27, self-recursive only); SizeExpr is used in production only as inert
+                       labels. Keeping these is not the retracted "keep it for the future solver"
+                       argument — that kept a REACHABLE trap; Part 2b removes reachability, after
+                       which no program can reach tl_size and it cannot mislead anyone.
         · STILL OPEN in Wave A: #5b, G, H above. #6 (the broader boundary DECODER defaults —
           realizeStMat zero-fill, realizeBrBaseP, AcsetCodec, realizeSBr → empty identity) is
           Stage-5 bridge-hardening, not Wave A, per the audit's own assignment.

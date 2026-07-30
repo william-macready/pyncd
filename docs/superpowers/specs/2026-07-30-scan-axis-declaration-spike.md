@@ -274,10 +274,32 @@ All 15 sites carrying a kind size are of this shape, which is why deleting only 
 ⚠️ **Consequence to state explicitly, not discover later: `tl_size` becomes orphaned.** Its only
 non-self references are the two bracket forms being deleted, so afterwards the whole category
 (`Syntax.lean:21,45-51`) and `elabTLSize` (`Elab.lean:23-33`) are reachable **only from
-`test/DSL/SizeExprTest.lean`**, which quotes `` `(tl_size| …) `` directly. **Keep them** — per
-CLAUDE.md §3, mention unrelated dead code rather than deleting it; `SizeExpr` itself is load-bearing
-across the routed path, and a tested parser for it is the obvious substrate if symbolic extents are
-ever wired to the affine solver. Note this in the completion report as a known orphan.
+`test/DSL/SizeExprTest.lean`**, which quotes `` `(tl_size| …) `` directly.
+
+**DO NOT delete `tl_size` — H is an unfinished feature, not accidental cruft.** `papers/leanncd.md`
+**specifies** it (`:1421-1431`, "Layer 1", with the comment *"bracket holds a `tl_size` term
+elaborating to `SizeExpr`, §14.3"*). Deleting it is therefore a **spec deviation needing a paper
+update**, not a cleanup. This also explains the 15 oracle sites that write kind sizes: the authors
+were following the specified design, and the consumer was simply never built. The paper's own
+resolution is the third option — *finish* it by wiring `ℕ[n]` to the affine size solver — which is out
+of scope here but should be named as the intended endpoint rather than left implicit.
+
+Deleting it is mechanically safe (the cost is exactly the four `run_cmd` blocks at
+`SizeExprTest.lean:40-67`; the 20 `SizeExpr` guards at `:10-38` never touch `tl_size`), so this is a
+judgement call, not a constraint. Related: **`SizeExpr.eval` also has zero production callers** —
+`Base/SizeExpr.lean:21-27`, self-recursive only. `SizeExpr` is used in production purely as inert
+labels (`AxisP.mk (some a.name) (SizeExpr.var a.name)`). It belongs in the same bucket: keep, record.
+
+**Why this is not the argument retracted above.** What made H dangerous was **reachability** —
+`axis l : ℕ[3]` was writable in a real program and silently did nothing. Part 2b removes exactly
+that. Afterwards `tl_size` cannot mislead anyone, because no program can reach it. The trap was the
+bracket form *in an axis declaration*, not the size parser behind it. Keeping a live trap is
+speculative flexibility; keeping inert, tested, unreachable machinery that a specified feature will
+need is just CLAUDE.md §3 (mention dead code, do not delete it).
+
+⚠️ Do **not** lean on "JAX will want symbolic shapes" as justification — plausible given the terminal
+`EvalPlan` goal, but unverified. The paper specification is the load-bearing reason; that intuition
+is not.
 
 Note `axis l : ℕ[3] = 5` is grammatical today — two size channels, bracket silently ignored. This
 makes it unparseable.

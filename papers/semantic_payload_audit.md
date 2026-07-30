@@ -197,8 +197,30 @@ A check can be bypassed by a new entry point, as Task-0 / #4 showed; a deleted p
 
 That the trap is live, not cosmetic: the property oracle writes the same size through both channels
 — `⟨"l", 202, .nat (some (.lit L))⟩` (dead) alongside `.axis l (some L)` (live) — at all 15 sites
-carrying a kind size. Side effect to expect: `tl_size` and `elabTLSize` become reachable only from
-`test/DSL/SizeExprTest.lean`. Keep them.
+carrying a kind size.
+
+**H is an UNFINISHED FEATURE, not accidental cruft (established 2026-07-30).** `papers/leanncd.md`
+**specifies** the bracket forms — `:1421-1431`, "Layer 1", commented *"bracket holds a `tl_size` term
+elaborating to `SizeExpr`, §14.3"*. So the parser and the AST field were built to spec and the
+*consumer* was never written. That is also why 15 oracle sites populate the kind size: the authors
+were following the specified design. Three positions follow, and the paper's own answer is the third:
+
+| | Action | Cost |
+|---|---|---|
+| Delete | drop `tl_size` + `elabTLSize` + 4 tests | **spec deviation** — needs a `leanncd.md` update |
+| **Keep** *(chosen)* | Part 2b only; parser survives orphaned but tested | zero — it is a leaf |
+| Finish | wire `ℕ[n]` to the affine size solver | a feature; out of scope, but the specified endpoint |
+
+Deleting is *mechanically* safe — the cost is exactly the four `run_cmd` blocks at
+`SizeExprTest.lean:40-67`; the 20 `SizeExpr` guards at `:10-38` never touch `tl_size`. So this is a
+judgement call, not a constraint. **Related dead code in the same bucket: `SizeExpr.eval` has zero
+production callers** (`Base/SizeExpr.lean:21-27`, self-recursive only); `SizeExpr` is used in
+production purely as inert labels (`AxisP.mk (some a.name) (SizeExpr.var a.name)`). Keep, record.
+
+Note this is *not* the "keep it for the future solver" argument rejected above. That argument would
+have kept a **reachable** trap — `axis l : ℕ[3]` writable in a real program, silently doing nothing.
+Part 2b removes the reachability; afterwards no program can reach `tl_size`, so it cannot mislead.
+The trap was the bracket form *in an axis declaration*, not the size parser behind it.
 
 ## ⚠️ Revision 2026-07-30 — these decisions now target `EvalPlan`, not `BrBaseP`
 
