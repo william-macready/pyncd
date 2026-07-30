@@ -436,6 +436,20 @@ DSL's intended boundaries; if a future change accepts them silently, the test fa
 | RJ8 | `A[q, d.] := softmax(...)` where `d` is contracted (not an output axis) | not constructible via surface syntax (marking always places the slot on the LHS) | `[R]` (not automated) |
 | RJ9 | `Y[i] := X[i - 5]` short input | does not reject — evaluates, zero-padded; no Issue-D error at this size | — |
 | RJ10 | scatter whose output axis is unsized | `scatterOutShape` fail-loud on unsized axis | `[R]` (not readily constructible) |
+| RSN1 | `Out[2*i] := relu(X[i])` (affine LHS ⇒ scatter) | `checkScatterNonlin` → `unsupportedNonlinScatter` (compile) | `[R]` |
+| RSN2 | `Out[2*i] := X[i]` (identity scatter) | **accepted** — the control: identity scatters still compile+evaluate | `[R]` |
+| RSN3 | `evalScatter` called directly with a non-identity `rhs.nonlin` | eval error — defensive check for programmatic (non-surface) callers | `[R]` |
+| RSN4 | `Y[i,i] := relu(X[i])` (diagonal LHS ⇒ scatter) | `checkScatterNonlin` → `unsupportedNonlinScatter` (compile) | `[R]` |
+
+> **RSN1–RSN4 (`ScatterNonlinRejectTest.lean`, Spike-3 Stage 0):** a non-identity nonlinearity on
+> a scatter used to be **silently erased** — `evalScatter` evaluated `rhs.body` and never applied
+> `rhs.nonlin`, so `Out[2*i] := relu(X[i])` returned un-relu'd values. Policy now: scatter +
+> identity accepted, scatter + non-identity rejected during validation. This is a **short-term
+> policy, not a permanent one** — supporting it requires deciding whether the activation applies
+> before collision-reduction or after fill/reduce. Note the validator must also match `.assign`
+> guarded by `slotsBecomeScatter` (RSN1 affine, RSN4 diagonal), because the elaborator only ever
+> emits `Stmt.assign` and `lowerArith` — the sole `.scatter` producer — runs *after* validation.
+> (§8b's SC3/SC8 are unaffected: they apply the nonlinearity in a *reader* of the scatter output.)
 
 > **Live in `RejectTest.lean`:** RJ3 (`predicateAgg`, compile), RJ4 (eval), RJ7 (eval),
 > and SS4/RC4 (`causalityViolation`, compile). RJ1/RJ2 fail at **parse time** — a hard parse

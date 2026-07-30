@@ -91,6 +91,11 @@ run_cmd do
     throwError "control: bare relu should parse as tl_nonlin"
   if parses `tl_nonlin "relu(where s ≤ q)" then
     throwError "relu(where …) must NOT parse: pointwise nonlinearities take no mask"
+  -- NOTE on the mechanism: `runParserCategory` requires end-of-input, so this fails as
+  -- `expected end of input` at the `(` — `relu` itself parses and the mask is trailing junk.
+  -- The check is therefore coarser than it reads, but NOT vacuous: adding a pointwise-mask
+  -- production would make the whole string parse and flip this to a failure.  The `tl_rhs`
+  -- controls below (where a mask would actually be written) carry the load-bearing weight.
   -- ... and it stays rejected in the position it would actually be written, at `tl_rhs`.
   unless parses `tl_rhs "relu(W[i, j] · x[j])" do
     throwError "control: relu over a sum should parse as tl_rhs"

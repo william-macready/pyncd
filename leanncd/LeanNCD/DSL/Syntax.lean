@@ -147,6 +147,17 @@ syntax:66 tl_prod_term:66                       : tl_sum_expr
 -- family reduces along an axis, so only it can be masked.  `relu(where …)` is therefore not
 -- representable at all (it is a parse error, not an elaboration error).  Adding a nonlinearity
 -- is one keyword line here plus one match case in `elabTLNonlin`.
+--
+-- DIAGNOSTIC COST of routing keywords through categories (`tl_pointwise_kw`/`tl_axiswise_kw`
+-- here, `tl_unary_kw` below): Lean's "expected …" sets now name the CATEGORY, not the typeable
+-- keywords, for *any* malformed RHS head — e.g. `H[i] := 3 + X[i]` reports
+-- `expected tl_agg, tl_axiswise_kw, tl_pointwise_kw or tl_unary_kw` rather than listing
+-- relu/sigmoid/…/softmax, and `relu(where …)` reports `expected tl_unary_kw` (an unrelated
+-- category — `tl_factor` is simply the last `tl_sum_expr` alternative to fail).  This is a
+-- deliberate trade for the closed-category safety above; `tl_agg` was already category-led
+-- before this change, so only the reach is new.  Lean offers no way to alias a category name in
+-- an `expected` set, so the mitigation is this note plus the keyword-mapping tests
+-- (`ParseLayer34Test` asserts every keyword by full `Nonlin` equality).
 declare_syntax_cat tl_pointwise_kw
 syntax "relu"      : tl_pointwise_kw
 syntax "sigmoid"   : tl_pointwise_kw
