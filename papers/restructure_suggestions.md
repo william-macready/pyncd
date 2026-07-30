@@ -855,8 +855,14 @@ Wave A  Correctness freeze — ✅ THE THREE AUDIT FINDINGS DONE 2026-07-30 (c75
                        (a) why a .scan with axes=[] is constructible; (b) where the
                        `lean_array_set_panic` originates — it is in the EVAL path, not compile
                        (Shape.lean:431,472's getD 0 are the suspects).
-        · STILL OPEN in Wave A: #5's two puzzles above, plus CSV/ACSet meaning-changing defaults
-          (#6/#17) — the latter still UNVERIFIED; probe before fixing (see the audit's method note).
+        · finding #17 ✅ writeSBr now returns `Except CsvError` — it used to emit `RawAxis:1,` (an
+                       axis with an EMPTY size) and return normally after `encodeSize` had already
+                       REFUSED the compound expression. Regression tests cover both fallible paths
+                       (`axisSizes` and `ArrayRow.maxValue`); all byte-exact fixture assertions pass
+                       unchanged, so only the error channel moved.
+        · STILL OPEN in Wave A: #5's two puzzles above. #6 (the broader boundary DECODER defaults —
+          realizeStMat zero-fill, realizeBrBaseP, AcsetCodec, realizeSBr → empty identity) is
+          Stage-5 bridge-hardening, not Wave A, per the audit's own assignment.
 
 Wave B  THE BACKEND CONTRACT — Spike 4, resequenced (highest priority)
         · ContractionAlgebra + BOTH identities   (= 4b + the shared classifier)
