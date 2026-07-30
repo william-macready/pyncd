@@ -100,3 +100,63 @@ Default to surfacing uncertainty, not hiding it.
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+
+## Intent Layer
+
+> TL;DR: pyncd formally expresses deep learning models as morphisms in a category (`data_structure/`), built via operator overloading (`construction_helpers/`), compiled to PyTorch (`torch_compile/`), rendered as text (`display/`) or serialized to ACSet/CSV (`acset/`). Start at Entry Points, check Subsystems for deep dives.
+
+### Subsystems
+
+| Area | Location | Description |
+|------|----------|-------------|
+| Core data structure | `data_structure/AGENTS.md` | `Term`/`UID` identity, `BroadcastedCategory`, `StrideCategory`, operators, `TensorLogic`/`TensorDSL` |
+| Operator overloading | `construction_helpers/AGENTS.md` | `@`/`*`/`>>` — composition, product, batch lifting |
+| PyTorch codegen | `torch_compile/AGENTS.md` | compiles morphism trees to `nn.Module` trees |
+| Textual rendering | `display/AGENTS.md` | box-layout engine + Category-variant renderer |
+| ACSet/CSV serialization | `acset/AGENTS.md` | flattens morphisms to tables, round-trips via CSV |
+| Test conventions | `tests/AGENTS.md` | pipeline-layered test organization, golden-file regeneration |
+| Lean formalization | `leanncd/AGENTS.md` | separate Lean 4 subproject; **has its own build pitfalls (Mathlib cold-build) — read before touching `leanncd/`** |
+
+Small utility dirs (no dedicated node — see README for their one-line purpose): `data_transfer/` + `websocket_transfer/` (JSON encoding + WebSocket transport to the [`tsncd`](https://github.com/mit-zardini-lab/tsncd) TypeScript diagram viewer), `graphs/` (morphism→hypergraph conversion, prototype-stage), `term_utilities/`, `data_structure_kernels/` (kernelized/tiled axis variants), `utilities/` (generic helpers, no pyncd-specific logic).
+
+### Downlinks
+
+| Area | Node | What's There |
+|------|------|--------------|
+| Core | `data_structure/AGENTS.md` | Category theory core — read this first if unfamiliar with the codebase |
+| Construction | `construction_helpers/AGENTS.md` | Operator overloading semantics + axis-alignment contracts |
+| Codegen | `torch_compile/AGENTS.md` | Morphism → `nn.Module` compilation, `.normalize()` semantics trap |
+| Rendering | `display/AGENTS.md` | Box-layout text renderer |
+| Serialization | `acset/AGENTS.md` | ACSet/CSV round-trip contracts |
+| Tests | `tests/AGENTS.md` | Golden-fixture regeneration workflow |
+
+### Entry Points
+
+| Task | Start Here |
+|------|------------|
+| Author a model with the TL DSL | `data_structure/TensorDSL.py` (`TL`, `axes`, `relu`, `softmax`), example in `README.md` |
+| Compose models with `@`/`*`/`>>` | `construction_helpers/AGENTS.md` — import the relevant submodule to activate operators |
+| Compile a model to PyTorch | `torch_compile/torch_compile.py::ConstructedModule.construct` |
+| Visualize a model (browser diagram) | `make diagram-server` + `make diagram-frontend` (clones/runs the companion `tsncd` repo), or `make diagram-example` for CLI; see `README_DIAGRAMS.md` |
+| Export a standalone HTML diagram | `make diagram-html` |
+| Run the test suite | `uv run pytest` from repo root (regenerate golden fixtures first — see `tests/AGENTS.md`) |
+
+### Global Invariants
+
+- **Axis identity is by `UID`, never by name.** Two axes are "the same axis" iff they share a UID; string-based axis matching is a bug wherever it appears (see `data_structure/AGENTS.md` Contracts).
+- **`data_structure/` is a one-way dependency root.** `construction_helpers/`, `torch_compile/`, `display/`, `acset/`, `graphs/`, `term_utilities/` all import from it; it imports from none of them.
+
+### Global Pitfalls
+
+- **`.normalize()` is sum-normalization, not `LayerNorm`** — a documented, easy-to-assume-wrong trap in `torch_compile/`.
+- **No `causal_softmax` operator exists** — attempted and reverted twice (in `data_structure/` and `torch_compile/`). Causal masking goes through `softmax(..., where=predicate)`. Check git history (`e29fdac`) before re-adding dedicated causal-attention support.
+- **Golden-file test fixtures under `tests/cset_serialization/` are gitignored, generated artifacts** — a fresh clone fails `test_cset_roundtrip.py` until `python tests/generate_cset_serialization.py` is run once.
+
+### Boundaries
+
+#### Never
+- Compare or hash axes/`UID`s/`FreeNumeric` by anything other than the documented identity field (`uid._id`) — breaks round-trip equality after acset serialization (fix `d146fb6`).
+- Hand-edit a CSV fixture under `tests/cset_serialization/` — regenerate via `tests/generate_cset_serialization.py` instead.
+
+#### Ask First
+- Reintroducing a dedicated causal-softmax-style operator — this was tried twice and reverted; understand why (see `torch_compile/AGENTS.md` Pitfalls) before proposing it again.

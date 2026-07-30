@@ -89,7 +89,8 @@
       "mcp__lean-lsp__lean_verify",
       "Bash(echo \"exit: $?\")",
       "Bash(echo \"grep exit: $?\")",
-      "Bash(rtk grep *)"
+      "Bash(rtk grep *)",
+      "Bash(rtk rg *)"
     ],
     "additionalDirectories": [
       "/tmp"
