@@ -29,24 +29,17 @@ run_cmd do
 -- RJ6  a scan whose iteration axis is never sized IS rejected — but read the mechanism carefully,
 --       because it is NOT the one the 2026-07-26 code analysis reported.
 --
---       Probed 2026-07-30: `compileToScheduled` on this program yields
---         SCAN G axes=[] uids=[] base=1 recur=1 aff=true
---       i.e. `finalizeScans` emits a `.scan` node with an EMPTY iteration-axis list, so the
---       pre-existing `axes.isEmpty` guard in `evalScan` is what rejects it.  The separate
---       unsized-extent check added to `evalScan` the same day (an unspecified extent is not an
---       extent of 0) is correct hardening but is UNREACHABLE for this program — it needs a scan
---       that has axes yet lacks a size for one.  This assertion therefore pins the `axes.isEmpty`
---       path; the sizing check is currently unguarded by any test.
---
---       TWO OPEN PUZZLES (do not treat #5 as closed):
---        (a) Why does `finalizeScans` build a `.scan` with `axes = []` at all?  A scan with no
---            iteration axis looks like it should be unrepresentable, and the guard is masking it.
---        (b) `#eval!`-ing `TLProgram.eval` on this program still emitted
---            `Error: index out of bounds` from `lean_array_set_panic` (reproduced 2026-07-30).
---            `compileToScheduled` alone does NOT panic, so the unchecked `Array.set!` is somewhere
---            in the eval path — `Shape.lean:431,472`'s own `getD 0` are the prime suspects.  A
---            panic that does not become an `EvalError` is a defect under any sizing policy.
-run_cmd (assertEvalError "RJ6 unsized-scan-axis (via the axes.isEmpty guard — see note)"
+--       ⚠️ WHITESPACE IS SEMANTIC HERE — the spacing below is deliberate.  `ident "+1"` is a single
+--       ATOM in the grammar (`Syntax.lean:192`), so:
+--            `l +1`   =>  LHSSlot.iterNext  (a scan recurrence, axis kind `nat`)
+--            `l + 1`  =>  LHSSlot.affine (IdxExpr.shift l 1)   (a shifted WRITE, kind `real`)
+--       Confirmed by elaborating both forms, 2026-07-30.  With `l + 1`, `finalizeScans` finds no
+--       `iterNext` slot and emits a degenerate `SCAN … axes=[]`, which `evalScan`'s `axes.isEmpty`
+--       guard then rejects — a DIFFERENT path with a different message.  So do not "tidy" the
+--       spacing in the program below: it would silently change which check this test exercises.
+--       That divergence is tracked as audit finding #5b (open, unfixed): the natural spacing means
+--       something else rather than failing.
+run_cmd (assertEvalError "RJ6 `l + 1` LHS ⇒ degenerate axes=[] scan (finding #5b) — see note"
   (tlprog!{ tensor X(j)
             G[j, 0]     := X[j]
             G[j, l + 1] := G[j, l] })
