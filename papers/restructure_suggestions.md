@@ -829,13 +829,22 @@ tests (`ColoredPROP.lean`) and could merge into it. Only worth doing opportunist
 ### Remaining — the critical path to an executing backend
 
 ```text
-Wave A  Correctness freeze (cheap, no dependencies, do first)
-        · finding C  splitStmt drops rhs.agg — eval bug too; gate 8 forbids literal-1.0 folds
-        · finding D  brOpOfIdx? (totality-preserving) + the #guard totality check
-        · finding E' stale elementwiseFn comment (the carved-out actionable half of finding E)
+Wave A  Correctness freeze — ✅ THE THREE AUDIT FINDINGS DONE 2026-07-30 (c754165..14b1353)
+        · finding C  ✅ splitStmt now threads agg onto the LINEAR step (it is the step that
+                       contracts); nonlin step stated .sum explicitly. Was an EVAL bug, not just
+                       a routing-label one. Guarded by LoweringTest AGG1/AGG2, which build the
+                       stmt programmatically because the grammar makes relu(maxreduce(..))
+                       unparseable — teeth verified by mutation (reverting fails AGG1).
+        · finding D  ✅ brOpOfIdx? is now the single table; brOpOfIdx derives via .getD .contract
+                       so the two cannot drift. 3 #guards (mutual-inverse on 0..14 + two
+                       out-of-range). Both round-trip lemmas axiom-free; decode_op/decodeStep_eq
+                       closed unchanged. Genuinely-partial decode deliberately NOT done (restates
+                       5 theorems + realizeSBr — a separate project).
+        · finding E' ✅ blankArrayRow comment corrected (op index rides in EquationRow.lhsName,
+                       NOT elementwiseFn — the old claim matched a superseded plan).
           [letters = papers/semantic_payload_audit.md "Cross-cutting findings"]
-        · remaining demonstrated bugs: unsized-scan panic (#5), recurMorphism
-          accept-then-fail (#4), CSV/ACSet meaning-changing defaults (#6/#17)
+        · STILL OPEN in Wave A: unsized-scan panic (#5), recurMorphism accept-then-fail (#4),
+          CSV/ACSet meaning-changing defaults (#6/#17) — the remaining demonstrated bugs.
 
 Wave B  THE BACKEND CONTRACT — Spike 4, resequenced (highest priority)
         · ContractionAlgebra + BOTH identities   (= 4b + the shared classifier)
