@@ -24,17 +24,39 @@ class of defect Spike 3 removed for `Nonlin`.
 ## The decision (made with the user)
 
 1. **Accept both spacings** — `l +1` and `l + 1` mean the same thing.
-2. **Require a declared iteration axis for scans** — an axis used as a recurrence must be declared
-   (`axis l : ℕ = N`, i.e. `Decl.axis`).
+2. **Require a declared AND PINNED iteration axis for scans** — an axis used as a recurrence must be
+   declared *with an explicit extent*: `axis l : ℕ = N`.
+
+   ⚠️ **The pin is the load-bearing half, and it is NOT implied by declaration.** There is no
+   dedicated iteration-axis notation in this language; `axis` gives kind + *optional* size —
+   `Syntax.lean:64-65` are two separate productions and `Decl.axis : AxisSpec → Option Nat → Decl`
+   has the pin as `Option`. So `axis l : ℕ` alone would disambiguate the slot but would **not** close
+   #5: an unsized iteration axis would remain constructible. Requiring `= N` is what closes it.
 
 Clause 2 is what makes clause 1 *safe*: accepting both spacings destroys the only signal currently
 distinguishing "iteration advance" from "shift by 1", and a declaration restores it **semantically**
-rather than typographically. Clause 2 also closes finding **#5** at the source (a declared axis is a
-sized axis), rather than at `evalScan` where it is currently caught.
+rather than typographically. Clause 2 also closes finding **#5** at the source — *because it requires
+the extent pin*, not merely because the axis is declared (an earlier draft of this spec wrongly
+asserted "a declared axis is a sized axis"). `evalScan`'s unsized check then becomes defence-in-depth
+for programmatically-built ASTs rather than the primary gate.
 
-**Alternative considered and rejected by the user:** disambiguate on the presence of a base case
-(machinery already exists — `CompileError.missingBaseCase`). Non-breaking, but leaves iteration axes
-implicit. The user preferred the explicit rule.
+### How iteration axes are notated TODAY (established 2026-07-30)
+
+There is **no dedicated iteration-axis declaration**. The role is notated **by use, on the LHS slot**:
+`G[j, 0]` ⇒ `.iterAt` (base case), `G[j, l+1]` ⇒ `.iterNext` (advance). The only tie between a
+declaration and the role is one-way: `iterAxisNotNat` (`Structural.lean:699`) requires an axis used in
+`iterAt`/`iterNext` to be ℕ-kinded — necessary, not sufficient, since most ℕ axes are not iteration
+axes. `scanAxis` (`Elab.lean:88`) is an internal `AxisSpec` builder, not user syntax.
+
+### Alternatives considered and rejected by the user
+
+- **Disambiguate on the base case** — the machinery already exists (`CompileError.missingBaseCase`
+  already rejects a recurrence lacking one). Non-breaking, but leaves iteration axes implicit.
+- **A slot-level advance marker** — idiomatic here: `freeNorm` is already marked by a postfix dot at
+  the slot (`syntax:max ident "." : tl_lhs_slot`, `Syntax.lean:195`). Needs no reclassification pass,
+  no migration, and no language-surface reduction, at the cost of new syntax.
+
+The user preferred the explicit declaration rule over both.
 
 ## Implementation shape — four coupled parts
 
@@ -85,7 +107,7 @@ rewritten rather than deleted.
 
 ## Consequence to decide during planning
 
-Requiring declaration removes **extent inference from an input** for *iteration* axes specifically
+Requiring a *pinned* declaration removes **extent inference from an input** for *iteration* axes specifically
 (RJ6's note describes "no `axis l` pin **and no input fixing `l`**", implying an input can currently
 fix it). Confirm whether any surviving program relies on that, and state the removal explicitly in
 the completion report — it is a language-surface reduction, not just a validation addition.
