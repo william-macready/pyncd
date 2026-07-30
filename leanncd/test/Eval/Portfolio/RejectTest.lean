@@ -10,9 +10,9 @@ Programs the DSL should refuse. Three sub-kinds:
   parse error fails the build, and `#guard_msgs` does not validate parse-time errors), so they
   are documented as comments below.
 
-Probed against HEAD (2026-07-04). Note: the draft's RJ6 (underdetermined loop axis) and RJ9
-(purely-negative index) do **not** actually reject — they return output — so they are not
-authored here; see the note at the end.
+Probed against HEAD (2026-07-04); RJ6 re-probed 2026-07-30. Note: the draft's RJ9
+(purely-negative index) does **not** actually reject — it returns output — so it is not authored
+here; see the note at the end.  **RJ6 now REJECTS** (it previously did not; see RJ6 below).
 -/
 namespace LeanNCD.Eval
 open Std
@@ -26,6 +26,33 @@ run_cmd do
   | .ok _ _    => throwError "RJ3: expected predicateAgg, compile succeeded"
 
 -- RJ4  softmax with no `·`-marked reduction axis ⇒ eval error
+-- RJ6  a scan whose iteration axis is never sized IS rejected — but read the mechanism carefully,
+--       because it is NOT the one the 2026-07-26 code analysis reported.
+--
+--       Probed 2026-07-30: `compileToScheduled` on this program yields
+--         SCAN G axes=[] uids=[] base=1 recur=1 aff=true
+--       i.e. `finalizeScans` emits a `.scan` node with an EMPTY iteration-axis list, so the
+--       pre-existing `axes.isEmpty` guard in `evalScan` is what rejects it.  The separate
+--       unsized-extent check added to `evalScan` the same day (an unspecified extent is not an
+--       extent of 0) is correct hardening but is UNREACHABLE for this program — it needs a scan
+--       that has axes yet lacks a size for one.  This assertion therefore pins the `axes.isEmpty`
+--       path; the sizing check is currently unguarded by any test.
+--
+--       TWO OPEN PUZZLES (do not treat #5 as closed):
+--        (a) Why does `finalizeScans` build a `.scan` with `axes = []` at all?  A scan with no
+--            iteration axis looks like it should be unrepresentable, and the guard is masking it.
+--        (b) `#eval!`-ing `TLProgram.eval` on this program still emitted
+--            `Error: index out of bounds` from `lean_array_set_panic` (reproduced 2026-07-30).
+--            `compileToScheduled` alone does NOT panic, so the unchecked `Array.set!` is somewhere
+--            in the eval path — `Shape.lean:431,472`'s own `getD 0` are the prime suspects.  A
+--            panic that does not become an `EvalError` is a defect under any sizing policy.
+run_cmd (assertEvalError "RJ6 unsized-scan-axis (via the axes.isEmpty guard — see note)"
+  (tlprog!{ tensor X(j)
+            G[j, 0]     := X[j]
+            G[j, l + 1] := G[j, l] })
+  (HashMap.ofList [("X", tl [2] [1, 2])])
+  "no iteration axis")
+
 run_cmd (assertEvalError "RJ4 softmax-no-axis"
   (tlprog!{ A[q, s] := softmax(Q[q, d] · K[s, d]) })
   (HashMap.ofList [("Q", tl [2,2] [1,0,0,1]), ("K", tl [2,2] [1,0,0,1])])
@@ -117,8 +144,16 @@ Parse-level rejects (fail during elaboration of `tlprog!`; not automatable — k
        sizing gap that surface syntax does not readily produce.
 
 Dropped from the draft (do NOT reject — return output instead):
-  RJ6  scan with no `axis l` pin and no input fixing `l`  → evaluates (0-step / defaulted).
   RJ9  Y[i] := X[i - 5] with a short input               → evaluates (zero-padded), no Issue-D error.
+
+REVERSED 2026-07-30 — RJ6 now rejects:
+  RJ6  scan with no `axis l` pin and no input fixing `l`.  This entry previously read "do NOT
+       reject — evaluates (0-step / defaulted)".  That was decided WITHOUT knowing the path
+       panics: `evalScan`'s `(sizes[u]?).getD 0` conflated "unsized" with "extent 0", which drove
+       an unchecked `Array.set!` in the base-slice write, so the program below emitted
+       `Error: index out of bounds` from `lean_array_set_panic` rather than returning anything.
+       Reproduced 2026-07-30.  An unspecified extent is not an extent of zero, so `evalScan` now
+       fails loud and names the axis.  Automated as RJ6 above.
 -/
 
 end LeanNCD.Eval
