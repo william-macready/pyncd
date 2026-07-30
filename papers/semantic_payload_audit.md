@@ -176,11 +176,29 @@ Probe (three programs differing only in the axis declaration, all else identical
 | `axis l : ℕ[3]` | `ERROR — evalScan: unsized iteration axis 'l'` |
 | *(none)* | `ERROR — evalScan: unsized iteration axis 'l'` |
 
-**`ℕ[3]` is indistinguishable from declaring nothing.** Consequences: (1) any "is this axis
-sized?" check must test `Decl.axis _ (some n)` — a `kind`-based test would accept a decoy;
-(2) either the `ℝ[…]`/`ℕ[…]` size should be wired into `explicitSizes` or the productions should
-be rejected, because silently accepting a no-op pin is the #5 failure mode with a friendlier
-face. Directly load-bearing for **#5b**, whose whole premise is "require a *pinned* axis".
+**`ℕ[3]` is indistinguishable from declaring nothing.** Directly load-bearing for **#5b**, whose
+whole premise is "require a *pinned* axis": any "is this axis sized?" check must test
+`Decl.axis _ (some n)`, because a `kind`-based test would accept the decoy.
+
+**DECIDED 2026-07-30 — remove the payload from the type, not the spelling from the grammar.**
+`AxisKind` becomes `| real | nat`. `AxisKind` is mentioned in only five places in `LeanNCD/`
+(definition, the `AxisSpec.kind` field, the elaborator, and `isNat`/`isReal`, which discard the
+payload with `_`) and is not serialized anywhere, so the payload is provably write-only. This
+deletes the two `ℝ[…]`/`ℕ[…]` productions with it, and costs a mechanical rewrite of **70
+construction sites across 20 files** (`.real none` → `.real`, `.real (some (.lit 2))` → `.real`).
+
+Two weaker fixes were considered and rejected. *Wiring the size in* is not like-for-like: `tl_size`
+yields a general `SizeExpr` (`var/add/sub/mul/div`) while `explicitSizes` is `HashMap UID Nat`, so
+only `.lit` could be wired and symbolic extents need the affine solver — a feature, not a fix.
+*Rejecting the form with a named `CompileError`* was the first recommendation here and was **wrong**:
+it kept the state representable (so a programmatic AST could still carry it) and it contradicted the
+argument used for `iter` in the same spec — make the bad state ungrammatical rather than validated.
+A check can be bypassed by a new entry point, as Task-0 / #4 showed; a deleted payload cannot.
+
+That the trap is live, not cosmetic: the property oracle writes the same size through both channels
+— `⟨"l", 202, .nat (some (.lit L))⟩` (dead) alongside `.axis l (some L)` (live) — at all 15 sites
+carrying a kind size. Side effect to expect: `tl_size` and `elabTLSize` become reachable only from
+`test/DSL/SizeExprTest.lean`. Keep them.
 
 ## ⚠️ Revision 2026-07-30 — these decisions now target `EvalPlan`, not `BrBaseP`
 

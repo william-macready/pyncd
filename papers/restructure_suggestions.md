@@ -895,14 +895,21 @@ Wave A  Correctness freeze — ✅ THE THREE AUDIT FINDINGS DONE 2026-07-30 (c75
                        axis at all, because `explicitSizes` folds only `.axis ax (some n)`
                        (Lowering.lean:176-178) and the sole `AxisSpec.kind` consumers are the two
                        dtype checks. A spelling that looks like an extent pin and is not. DECIDED
-                       2026-07-30: fix WITH #5b by REJECTING the form — keep the production and add
-                       `CompileError.unsupportedAxisKindSize`, rather than deleting the production
-                       (deletion makes it a PARSE error, which RejectTest.lean:9-11 records as
-                       un-automatable) and rather than wiring the size in (`tl_size` yields a general
-                       SizeExpr; `explicitSizes` is HashMap UID Nat, so only `.lit` could be wired —
-                       symbolic sizes need the affine solver, a feature not a fix). Zero migration:
-                       ℕ[…]/ℝ[…] appear nowhere outside Syntax.lean:54-57 + Elab.lean:37,39. Shipping
-                       a "require a pin" rule while a no-op pin spelling survives is a trap.
+                       2026-07-30 (revised after review): remove the PAYLOAD FROM THE TYPE, not the
+                       spelling from the grammar — `AxisKind` becomes `| real | nat`, which deletes
+                       the ℝ[…]/ℕ[…] productions with it and makes the state a TYPE error, so no
+                       CompileError and no test are needed. AxisKind is mentioned in only 5 places in
+                       LeanNCD/ and is not serialized, so the payload is provably write-only. Cost:
+                       70 mechanical construction-site edits across 20 files. An earlier decision
+                       here (reject the form with `unsupportedAxisKindSize`) was WRONG — it left the
+                       state representable for programmatic ASTs and contradicted the `iter`
+                       reasoning in the same spec (make bad states ungrammatical, not validated); a
+                       check can be bypassed by a new entry point, as Task-0/#4 showed. Wiring the
+                       size in was also rejected (tl_size yields a general SizeExpr; explicitSizes is
+                       HashMap UID Nat, so only `.lit` could be wired — symbolic extents need the
+                       affine solver, a feature not a fix). SEPARABLE from #5b: ship it ahead of the
+                       spike. Side effect: tl_size/elabTLSize become reachable only from
+                       test/DSL/SizeExprTest.lean — KEEP them (mention dead code, don't delete it).
         · STILL OPEN in Wave A: #5b, G, H above. #6 (the broader boundary DECODER defaults —
           realizeStMat zero-fill, realizeBrBaseP, AcsetCodec, realizeSBr → empty identity) is
           Stage-5 bridge-hardening, not Wave A, per the audit's own assignment.

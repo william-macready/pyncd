@@ -2,7 +2,7 @@
 
 > **Status:** DESIGN SETTLED with the user 2026-07-30; NOT IMPLEMENTED. This is a **breaking
 > language change** — write a plan from this spec, then execute subagent-driven. Do not start
-> editing without the plan: the four parts below are coupled, and a half-applied grammar change is
+> editing without the plan: Parts 1–5 below are coupled, and a half-applied grammar change is
 > the worst state to leave the repo in.
 
 ## The bug being fixed (finding #5b, confirmed by probe)
@@ -179,14 +179,19 @@ resulting base-only group via `stepGuardOk`'s `!outputs.isEmpty` (`Lowering.lean
 the eval path catches it is unknown. **Write the failing program first** — if it turns out
 unreachable, Part 5 reduces to the defensive rejection in step 3 and should be scoped down.
 
-## Implementation shape — four coupled parts
+## Implementation shape — Parts 1–4 (Part 5, for finding G, is specified above)
+
+Two of these are **separable and should ship as their own commits, ahead of the rest**: Part 2b
+(finding H — a mechanical 70-site type change) and Part 5 step 1 (the single-candidate rule, which
+needs no declaration). Neither depends on `iter`.
 
 **Part 1 — grammar/elaboration.** `elabTLLHSSlot` is `Syntax → MetaM LHSSlot` and **cannot see
 declarations**, so the disambiguation cannot happen there. Elaborate *both* spellings uniformly to
 `.affine (.shift x 1)`, then **reclassify after `resolveDecls`**: a slot `.affine (.shift a 1)` whose
 axis `a` is declared `Decl.iter` becomes `.iterNext a`. (Under the *permissive* variant the predicate
-widens to `Decl.iter _ _ | Decl.axis _ (some _)`; note it must test the `Decl` payload and never the
-axis *kind* — see finding **H**.) Precedent: `lowerArith`
+widens to `Decl.iter _ _ | Decl.axis _ (some _)`. It must test the `Decl` payload, which is the only
+extent channel — and once Part 2b lands, the `AxisKind` decoy that made this worth warning about no
+longer exists.) Precedent: `lowerArith`
 (`Structural.lean:803-814`) already reclassifies `.assign` → `.scatter` in a post-resolution pass.
 Keep `ident "+1"` working (it is the documented form and is used widely) — the reclassifier makes the
 two paths converge.
@@ -213,32 +218,73 @@ pin), and the error should then be named `scanAxisNotPinned` — the *pin* is th
 `…NotDeclared` name would under-describe it. **Pick the name after the strict/permissive fork is
 settled; the earlier draft of this spec assumed the permissive shape.**
 
-*2b — reject the write-only kind size (closes finding **H**).*
+*2b — delete `AxisKind`'s payload; there is no 2b rejection (closes finding **H** at the root).*
+
+**REVISED 2026-07-30 after review.** An earlier draft of this spec proposed keeping the `ℕ[…]`
+production and adding `CompileError.unsupportedAxisKindSize`. **That was wrong, and wrong in a way
+worth recording:** it contradicted the very argument used for `iter` one section above. There the
+reasoning is *make the bad state ungrammatical rather than validated, because that eliminates the
+error class*; for H the draft argued the opposite — keep it grammatical so the rejection is testable.
+Both cannot be right. Testability of a rejection is instrumental, not terminal: a test protects a
+*check* from regressing, and if there is no check because the state is unrepresentable, there is
+nothing to protect. Deletion is also strictly stronger — a validation check can be bypassed by a new
+entry point (precisely the Task-0 / #4 trap, where a check on one path missed the other), whereas a
+deleted production returns only if someone consciously re-adds syntax. "Keep it for the future size
+solver" was speculative flexibility of the kind CLAUDE.md §2 forbids.
+
+**Nor is the syntax the root cause** — a programmatically built AST can carry the dead size whatever
+the grammar says. The root cause is the payload on the type:
 
 ```lean
-| unsupportedAxisKindSize : String → CompileError
---  "axis 'l': the kind size `ℕ[…]` does not pin an extent — use `axis l : ℕ = N`"
+-- Ast.lean:7-9   BEFORE                        AFTER
+inductive AxisKind                              inductive AxisKind
+  | real : Option SizeExpr → AxisKind             | real
+  | nat  : Option SizeExpr → AxisKind             | nat
 ```
 
-Naming follows the existing `unsupportedRecurMorphism` / `unsupportedNonlinScatter` convention.
+`AxisKind` is mentioned in **only five places** in `LeanNCD/` — its definition (`Ast.lean:7-9`), the
+`AxisSpec.kind` field (`Ast.lean:15`), the elaborator (`Elab.lean:35,63,65`), and `isNat`/`isReal`
+(`Structural.lean:688-689`), which **discard the payload with `_`**. Nothing else anywhere, including
+no acset/CSV serialization. The payload is therefore *provably* write-only.
 
-**Why reject rather than wire it in, and why not just delete the production:**
+**The change:**
 
-- **Zero migration** — `ℕ[…]`/`ℝ[…]` appear nowhere outside `Syntax.lean:54-57` and `Elab.lean:37,39`.
-- **Contained** — `tl_axis_kind` is referenced by exactly two productions (`Syntax.lean:64-65`), both
-  axis-decl items, so the bracket forms can only ever occur in an `axis` declaration.
-- **Wiring it in is not like-for-like.** `tl_size` is a full arithmetic grammar
-  (`Syntax.lean:45-51`) producing a general `SizeExpr` (`var/add/sub/mul/div`), whereas
-  `explicitSizes` is `HashMap UID Nat`. Only `.lit n` could be wired; `ℕ[n*2]` would need the affine
-  size solver. That is a *feature*, not a fix for H — record it as a deliberate non-goal.
-- **Keep the production, reject in validation** rather than deleting it, because deletion makes
-  `axis l : ℕ[3]` a *parse* error, and `RejectTest.lean:9-11` records that parse errors **cannot be
-  automated** ("a hard parse error fails the build, and `#guard_msgs` does not validate parse-time
-  errors"). A named rejection is testable and can name the fix. It also leaves the syntax available
-  if the size solver ever backs it.
+1. Drop the `Option SizeExpr` from both `AxisKind` constructors.
+2. Delete `syntax "ℝ[" tl_size "]"` / `syntax "ℕ[" tl_size "]"` (`Syntax.lean:55,57`) and their two
+   elaborator arms (`Elab.lean:37,39`). `elabTLAxisKind` then has no recursive or `elabTLSize` call
+   left, so its `partial` can go too.
+3. Mechanically rewrite the construction sites: `.real none` → `.real`, `.nat none` → `.nat`, and
+   `.real (some (.lit 2))` → `.real`. Measured 2026-07-30: **70 sites across 20 files** — wide but
+   purely mechanical, and a net simplification (`isNat`/`isReal` collapse to a two-constructor match).
 
-Note `axis l : ℕ[3] = 5` is currently grammatical — two size channels, bracket silently ignored.
-2b makes that unrepresentable too.
+**No `CompileError` and no test are needed** — the bad state becomes a *type* error. That is the point:
+level 3 removes the rejection and its test rather than adding them.
+
+**Evidence this is a live trap, not a cosmetic one.** The property oracle writes the same size twice,
+through both channels — dead and live:
+
+```lean
+private def l1 (L : Nat) : AxisSpec := ⟨"l", 202, .nat (some (.lit L))⟩   -- DEAD, never read
+  decls := [.axis j1 (some 2), .axis l (some L), …]                       -- LIVE
+```
+
+All 15 sites carrying a kind size are of this shape, which is why deleting only the *grammar* (level
+2) would be insufficient: those sites would keep writing a size nothing reads.
+
+⚠️ **Consequence to state explicitly, not discover later: `tl_size` becomes orphaned.** Its only
+non-self references are the two bracket forms being deleted, so afterwards the whole category
+(`Syntax.lean:21,45-51`) and `elabTLSize` (`Elab.lean:23-33`) are reachable **only from
+`test/DSL/SizeExprTest.lean`**, which quotes `` `(tl_size| …) `` directly. **Keep them** — per
+CLAUDE.md §3, mention unrelated dead code rather than deleting it; `SizeExpr` itself is load-bearing
+across the routed path, and a tested parser for it is the obvious substrate if symbolic extents are
+ever wired to the affine solver. Note this in the completion report as a known orphan.
+
+Note `axis l : ℕ[3] = 5` is grammatical today — two size channels, bracket silently ignored. This
+makes it unparseable.
+
+**Separable.** Nothing about `iter` depends on 2b, so it can ship as its own commit *ahead* of the
+spike, which shrinks the spike by one error and one test. Recommended, since it also touches 20 files
+and is better reviewed on its own.
 
 **Part 3 — migration (~10 recurrences, 6 files, plus 5 AST sites).** Add `iter` declarations to the
 surface-syntax programs that lack them. Measured 2026-07-30 (surface `tlprog!` programs only):
@@ -289,17 +335,19 @@ the completion report — it is a language-surface reduction, not just a validat
 `lake build` green (baseline **8610 jobs**; `Eval/Scan.lean` and `Structural.lean` are deep in the
 graph, so full rebuilds run minutes, not seconds). No `sorry`/`maxHeartbeats`/`native_decide`.
 
-Four tests, one per rule. **Each must be mutation-tested** — revert the fix and confirm the test
-fails — because three of the bugs in this cluster were "guarded" by a comment asserting they could
-not happen, and finding #4 was documented by a test that could never have caught it (it asserted the
-op *tag* while the payload was discarded).
+**Three** tests, one per behavioural rule. **Each must be mutation-tested** — revert the fix and
+confirm the test fails — because three of the bugs in this cluster were "guarded" by a comment
+asserting they could not happen, and finding #4 was documented by a test that could never have caught
+it (it asserted the op *tag* while the payload was discarded).
 
 1. **Both spacings produce the same `LHSSlot`** (`l +1` vs `l + 1`). The regression guard for #5b
    itself; nothing else would catch a reintroduced divergence.
 2. **`scanAxisNotIter`** — a recurrence over an undeclared axis is rejected at compile.
-3. **`unsupportedAxisKindSize`** (finding H) — `axis l : ℕ[3]` is rejected. Assert on the *error*,
-   not on eval output: today the program merely behaves as if nothing were declared, so a
-   pass/fail-shaped test would have looked fine before the fix.
-4. **`unresolvedBaseIterAxis`** (finding G) — *write this one first and expect it to be hard.* If no
+3. **`unresolvedBaseIterAxis`** (finding G) — *write this one first and expect it to be hard.* If no
    program can be constructed that reaches the miss arm, say so explicitly and scope Part 5 down to
    the defensive rejection; do not report a passing suite as evidence that G was closed.
+
+**Finding H gets no test, deliberately** — Part 2b makes the state a *type* error, so there is nothing
+runtime to assert. Its verification is that the build still passes after the 70-site rewrite, plus
+`#print axioms` unchanged on the touched declarations. If you find yourself writing a test for H, the
+change has drifted back to level 1 (validate a still-representable state) — stop and re-read Part 2b.
