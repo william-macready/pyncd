@@ -122,18 +122,46 @@ Consider closing H in the same pass — either wire the kind size into `explicit
 (`Lowering.lean:176-178`) or reject the `ℕ[…]`/`ℝ[…]` forms. Leaving a no-op pin in the language
 while adding a rule that *requires* a pin is a trap for the next reader.
 
-### Strict vs permissive — decide this before implementing
-
-This is the one open decision, and it is a **migration-cost fork**, not a design fork:
+### Strict vs permissive — ✅ DECIDED: STRICT (user, 2026-07-30)
 
 | | Rule | Migration |
 |---|---|---|
-| **Strict** *(recommended)* | `iter` is the **only** way to declare an iteration axis | **~33 sites.** The ~10 in the table below, **plus the ~23 axes already declared `axis l : ℕ = N`** that must switch keyword. |
-| **Permissive** | Require a *pinned* declaration by **either** keyword; `iter` is sugar that also pins the kind | **~10 sites** (the table below only). But iteration-ness stays non-explicit at the declaration site, which was the point of choosing this option. |
+| **STRICT** ✅ *chosen* | `iter` is the **only** way to declare an iteration axis | ~25 axis swaps + ~10 new + 5 AST sites (measured below) |
+| Permissive *(rejected)* | Require a *pinned* declaration by **either** keyword; `iter` is sugar | ~10 new only, no churn |
 
-Strict is recommended because it delivers the explicitness the option was chosen for, and the extra
-~23 edits are a mechanical keyword swap with no semantic change. **The ~23 figure is derived from
-the "already declared" column below and has not been re-grepped — confirm it during planning.**
+**Why strict wins, in one line: under permissive, `iter` is a comment; under strict, it is a
+guarantee.** If `axis l : ℕ = 3` still counts for a recurrence, Part 1's reclassifier must accept both
+spellings, so no code can ever rely on seeing `Decl.iter` — it carries no information the compiler can
+use, and the explicitness the option was chosen for never arrives. Under strict, `Decl.iter` becomes a
+real invariant (present ⇒ iteration axis, pinned, ℕ-kinded), which is also what collapses Part 2a to a
+single failure mode.
+
+⚠️ **The migration is NOT a mechanical keyword swap — an earlier draft of this section said it was,
+and that was wrong.** Re-measured 2026-07-30 (the earlier "~23, mechanical" figure was derived from
+the table below rather than grepped). Three findings change the character of the work:
+
+1. **`axis X : ℕ = N` does not imply `X` is an iteration axis**, so the swap set requires per-program
+   judgement. Confirmed counter-examples that must **stay** `axis`:
+   * `RecurrenceTest.lean:77` — `axis i : ℕ = 3, j : ℕ = 3` for `C[i] := X[j] · [j ≤ i]`, a
+     triangular-mask contraction with **no recurrence at all**. A non-recurrence program with ℕ axes
+     inside the file named `RecurrenceTest` is the trap most likely to catch a bulk edit.
+   * `ConvPoolTest.lean` — `p` is a pooling-window axis; the actual iteration axes (`i`, `j`) are
+     *undeclared* and belong in the "needs" column instead.
+   * `RelationalTest.lean`, `EdgeCaseTest.lean` — ℕ axes, no recurrences.
+   * `SyntaxTest.lean:7` — inside a ``#check (`(tl_decl| …) : Lean.MacroM _)`` quotation: a pure
+     syntax test, not a program. Leave it: it covers the `axis` production, which survives.
+2. **Comma groups of co-iterating axes swap wholesale** — `axis r : ℕ = 2, c : ℕ = 2` for
+   `G[r +1, c +1]` becomes `iter r = 2, c = 2`. Most multi-axis scans in `RecurrenceTest` are this
+   shape (`:36, :55, :96, :116, :130`), so they are cheap.
+3. **Mixed groups must be SPLIT**, which is the genuinely non-mechanical part. Confirmed:
+   `EvalExamplesTest.lean:268` — `axis l : ℕ = 3, s : ℕ = 2` where `l` iterates and `s` is a sequence
+   axis ⇒ `iter l = 3` **plus** `axis s : ℕ = 2`.
+
+**Measured swap set: ~25 individual axes across ~14 declaration lines in 5 files** —
+`RecurrenceTest` ~15 (9 of 10 programs; `:77` excluded), `EvalExamplesTest` ~4, `RejectTest` 3,
+`GenerativeTest` 2, `ClassicalMLTest` 1. Higher than the retracted ~23 because multi-axis scans
+contribute 2–3 axes per line. **This count is ±2 — the per-program pass belongs in the plan**, and it
+is a count of *axes*, not edits; the edit count is nearer 14.
 
 ### Effect on finding G — it becomes resolvable or loud, though not closed
 
@@ -308,8 +336,13 @@ makes it unparseable.
 spike, which shrinks the spike by one error and one test. Recommended, since it also touches 20 files
 and is better reviewed on its own.
 
-**Part 3 — migration (~10 recurrences, 6 files, plus 5 AST sites).** Add `iter` declarations to the
-surface-syntax programs that lack them. Measured 2026-07-30 (surface `tlprog!` programs only):
+**Part 3 — migration.** Two halves under STRICT: (a) **add** `iter` declarations where an iteration
+axis is undeclared — the table below; (b) **convert** existing `axis … : ℕ = N` declarations of
+iteration axes to `iter` — ~25 axes / ~14 lines / 5 files, itemised in the strict-vs-permissive
+section above, **including the four files whose ℕ axes must NOT be converted**. Plus 5 AST sites.
+
+⚠️ The "already declared" column below is what produced the retracted "~23, mechanical" estimate —
+read it as *"needs conversion, not exempt"*. Measured 2026-07-30 (surface `tlprog!` programs only):
 
 | File | recurrences | already declared | needs |
 |---|---|---|---|

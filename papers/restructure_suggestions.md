@@ -874,8 +874,21 @@ Wave A  Correctness freeze — ✅ THE THREE AUDIT FINDINGS DONE 2026-07-30 (c75
                        note here wrongly credited mere declaration. PROPOSED SYNTAX: a new `iter`
                        decl keyword in pinned form only — `iter l = 3` — which makes both
                        "unpinned" and "wrong kind" ungrammatical rather than validated.
-                       Breaking change: ~10 recurrences / 6 files to add, plus ~23 keyword swaps if
-                       the strict variant is chosen; the ScanGen property oracle is NOT affected.
+                       STRICT variant DECIDED 2026-07-30 (`iter` is the ONLY way to declare an
+                       iteration axis) — because under permissive `iter` is only a comment: if
+                       `axis l : ℕ = 3` still counts, the reclassifier must accept both spellings and
+                       no code can rely on `Decl.iter`. Strict makes it a real invariant (present ⇒
+                       iteration axis, pinned, ℕ-kinded) and collapses the error to one failure mode.
+                       Breaking change: ~10 recurrences / 6 files to ADD, plus ~25 axes / ~14 lines /
+                       5 files to CONVERT from `axis … : ℕ = N`, plus 5 AST sites in ScanGen.
+                       ⚠️ NOT a mechanical keyword swap (an earlier note here said ~23 and
+                       "mechanical" — both wrong): `axis X : ℕ = N` does NOT imply X iterates, so
+                       four files' ℕ axes must STAY `axis` (RecurrenceTest:77 is a no-recurrence mask
+                       contraction — the trap most likely to catch a bulk edit; ConvPoolTest's `p`;
+                       RelationalTest; EdgeCaseTest; SyntaxTest:7 is a syntax quotation), co-iterating
+                       comma groups swap wholesale (`axis r,c` ⇒ `iter r,c`), and MIXED groups must be
+                       SPLIT (EvalExamplesTest:268 `axis l : ℕ = 3, s : ℕ = 2` ⇒ `iter l = 3` +
+                       `axis s : ℕ = 2`). Count is ±2; the per-program pass belongs in the plan.
                        Spec: docs/superpowers/specs/2026-07-30-scan-axis-declaration-spike.md
         · finding G   🔴 OPEN, NEW 2026-07-30, NOT PROBED — a scan base case does not name its own
                        iteration axis: `G[j,0]` elaborates to `.iterAt (scanAxis "") n` with an
