@@ -862,12 +862,15 @@ Wave A  Correctness freeze — ✅ THE THREE AUDIT FINDINGS DONE 2026-07-30 (c75
                        unchanged, so only the error channel moved.
         · finding #5  ✅ CLOSED after re-probing (my earlier "not closed" was wrong — I had compared
                        two different programs). Panic gone; the named error fires.
-        · finding #5b 🔴 NEW, OPEN — whitespace is SEMANTIC in an LHS slot: `ident "+1"` is one ATOM,
-                       so `l +1` ⇒ .iterNext (scan recurrence) but `l + 1` ⇒ .affine (.shift l 1)
-                       (a shifted write, and it flips the axis kind nat→real), yielding a degenerate
+        · finding #5b 🔴 OPEN — DESIGN SETTLED, NOT IMPLEMENTED (its own spike, not a Wave A item).
+                       Whitespace is SEMANTIC in an LHS slot: `ident "+1"` is one ATOM, so `l +1` ⇒
+                       .iterNext (scan recurrence) but `l + 1` ⇒ .affine (.shift l 1) (a shifted
+                       write, and it flips the axis kind nat→real), yielding a degenerate
                        `SCAN .. axes=[]`. The natural spacing silently means something else rather
-                       than failing. NEEDS A DECISION: accept both spacings / reject the ambiguity /
-                       document only.
+                       than failing. DECIDED: accept BOTH spacings + REQUIRE a declared iteration
+                       axis for scans (which also closes #5 at the source). Breaking change,
+                       ~10 recurrences / 6 files; the ScanGen property oracle is NOT affected.
+                       Spec: docs/superpowers/specs/2026-07-30-scan-axis-declaration-spike.md
         · STILL OPEN in Wave A: #5b above. #6 (the broader boundary DECODER defaults —
           realizeStMat zero-fill, realizeBrBaseP, AcsetCodec, realizeSBr → empty identity) is
           Stage-5 bridge-hardening, not Wave A, per the audit's own assignment.
