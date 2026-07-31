@@ -598,6 +598,7 @@ def Stmt.readNames (s : Stmt) : List String := s.readFactors.map (·.1)
 def resolveDecls (lp : LabeledProgram) : FreshM ResolvedProgram := do
   let env : DeclEnv := lp.decls.foldl (fun m d => match d with
     | .axis _ _ => m                  -- axis decls name an axis, not a tensor: keep them out of the env
+    | .iter _ _ => m                  -- iter decls ALSO name an axis, not a tensor — same reason
     | _         => m.insert d.name d) {}
   let produced : List String := lp.stmts.map Stmt.lhsName
   let reads    : List String := lp.stmts.flatMap Stmt.readNames
@@ -620,6 +621,7 @@ rest of the pipeline treats that escape hatch. -/
 private def Decl.axisCount : Decl → Nat
   | .tensor _ ax | .predicate _ ax | .linear _ ax _ => ax.length
   | .axis _ _ => 0   -- axis decls are excluded from DeclEnv; never reached via env lookup
+  | .iter _ _ => 0   -- iter decls are ALSO excluded from DeclEnv; never reached via env lookup
 
 private def stmtReads (s : Stmt) : List (String × Nat) :=
   s.readFactors.map (fun (nm, es) => (nm, es.length))

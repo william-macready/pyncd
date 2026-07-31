@@ -20,6 +20,9 @@ inductive Decl
   | predicate : String → List AxisSpec → Decl
   | linear    : String → List AxisSpec → (bias : Bool) → Decl
   | axis      : AxisSpec → Option Nat → Decl   -- `axis l : ℕ = 3`: declares an axis's dtype + optional pinned size
+  | iter      : AxisSpec → Nat → Decl          -- `iter l = 3`: the ONLY way to declare a scan iteration
+                                                 -- axis (#5b) — pinned-only (no `Option`), kind is always
+                                                 -- `.nat` (forced at elaboration, `Elab.lean`), never `ℝ`
   deriving DecidableEq, Repr, Lean.ToExpr
 
 inductive IdxExpr
@@ -149,6 +152,7 @@ structure TLProgram where
     skips them when building the tensor-keyed `DeclEnv`.) -/
 def Decl.name : Decl → String
   | .tensor n _ => n | .predicate n _ => n | .linear n _ _ => n | .axis ax _ => ax.name
+  | .iter ax _  => ax.name
 
 /-- The tensor name a stmt writes to (its LHS). -/
 def Stmt.lhsName : Stmt → String

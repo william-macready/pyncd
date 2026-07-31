@@ -247,6 +247,7 @@ private def Decl.mapUID_ref (f : UData → UData) : Decl → Decl
   | .predicate nm ax     => .predicate nm (ax.map (AxisSpec.mapUID f))
   | .linear nm ax b      => .linear nm (ax.map (AxisSpec.mapUID f)) b
   | .axis ax n           => .axis (AxisSpec.mapUID f ax) n
+  | .iter ax n           => .iter (AxisSpec.mapUID f ax) n
 
 theorem Decl.mapUID_eq_ref (f : UData → UData) (d : Decl) :
     Decl.mapUID f d = Decl.mapUID_ref f d := by
@@ -271,6 +272,7 @@ theorem Decl.mapUID_eq_ref (f : UData → UData) (d : Decl) :
       show Decl.linear nm (Traversable.traverse (m := Id) (AxisSpec.mapUID f) ax) b = Decl.linear nm (ax.map (AxisSpec.mapUID f)) b
       rw [hMap ax]
   | axis ax n => rfl
+  | iter ax n => rfl
 
 private def Stmt.mapUID_ref (f : UData → UData) : Stmt → Stmt
   | .assign nm ls r      => .assign nm (ls.map (LHSSlot.mapUID_ref f)) (RHSExpr.mapUID_ref f r)

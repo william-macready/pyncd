@@ -23,6 +23,7 @@ declare_syntax_cat tl_axis_kind
 declare_syntax_cat tl_axis_spec
 declare_syntax_cat tl_named_shape
 declare_syntax_cat tl_axis_decl_item
+declare_syntax_cat tl_iter_decl_item
 declare_syntax_cat tl_linear_item
 declare_syntax_cat tl_decl
 declare_syntax_cat tl_idx_expr
@@ -61,6 +62,8 @@ syntax ident "(" tl_axis_spec,* ")" : tl_named_shape
 -- `l : ℕ` or `l : ℕ = 3` — a single axis declaration item (may appear in a comma group).
 syntax ident ":" tl_axis_kind         : tl_axis_decl_item
 syntax ident ":" tl_axis_kind "=" num : tl_axis_decl_item
+-- `l = 3` — a single iter declaration item (pinned only, no kind).
+syntax ident "=" num : tl_iter_decl_item
 -- `W(a, b, c)` or `W(a, b, c) bias` — a single linear layer item.  The axis list mirrors
 -- tensor/predicate `tl_named_shape`; an optional trailing `bias` marks an affine layer.
 syntax ident "(" tl_axis_spec,* ")"        : tl_linear_item
@@ -75,6 +78,9 @@ syntax "linear"    tl_linear_item,+                        : tl_decl
 -- `axis l : ℕ = 3, s : ℕ = 2` — one or more axis items, comma-separated.
 -- Each item may independently have or omit the `= size` pin.
 syntax "axis"      tl_axis_decl_item,+                     : tl_decl
+-- `iter l = 3` or `iter r = 2, c = 2` — one or more iter items, comma-separated.
+-- The ONLY way to declare a scan iteration axis (#5b).
+syntax "iter"      tl_iter_decl_item,+                     : tl_decl
 
 -- Layer 2: index expressions — GENERALIZED to general integer-affine sums (E1.3).
 -- A `tl_idx_expr` is a left-associative `+`/`-` sum of terms, where each term is a

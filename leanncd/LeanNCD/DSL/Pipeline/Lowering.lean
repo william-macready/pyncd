@@ -175,6 +175,7 @@ def schedule (lp : LinearProgram) : FreshM ScheduledProgram := do
   -- collect the sizes pinned by `axis … = n` decls (UIDs are canonical by this phase).
   let explicitSizes : Std.HashMap UID Nat := lp.decls.foldl (fun m d => match d with
     | .axis ax (some n) => m.insert ax.uid n
+    | .iter ax n        => m.insert ax.uid n
     | _                 => m) {}
   let orderedReads := ordered.flatMap ScanStmt.reads
   let liveExtNames := lp.extNames.filter (fun nm => orderedReads.contains nm)
