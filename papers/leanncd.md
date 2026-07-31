@@ -1204,9 +1204,10 @@ H[q, m.]         := normalize(Y[q, m] + A[q, m])
 -- the only scan state (base = embeddings); the attention+FFN block becomes per-step
 -- INTERMEDIATES, recomputed from H[·,·,l] each step. `finalizeScans` routes any non-iteration
 -- stmt that transitively reads a scan state into the recurrence body (in source order). The loop
--- extent L and the key-position extent s are pinned by `axis` decls (since H is now produced, not
--- an input, no tensor shape fixes them); norm axes are marked on the output slot (`s.`, `m.`).
-axis l : ℕ = 3
+-- extent L is pinned by an `iter` decl (#5b: the ONLY way to declare a scan iteration axis) and
+-- the key-position extent s by an `axis` decl (since H is now produced, not an input, no tensor
+-- shape fixes them); norm axes are marked on the output slot (`s.`, `m.`).
+iter l = 3
 axis s : ℕ = 2
 tensor S : (h, q, s)
 tensor A : (q, m)
@@ -1280,6 +1281,8 @@ inductive Decl
   | predicate : String → List AxisSpec → Decl   -- Boolean-valued: R = Bool target semiring (§8)
   | linear    : String → List AxisSpec → (bias : Bool) → Decl   -- flat axis list like tensor; roles read from equations
   | axis      : AxisSpec → Option Nat → Decl    -- `axis l : ℕ = 3`: an axis's dtype + optional pinned size
+  | iter      : AxisSpec → Nat → Decl           -- #5b: `iter l = 3`: the ONLY way to declare a scan iteration
+                                                 -- axis — pinned-only (no `Option`), always `nat`-kinded
 ```
 
 **All array indices are nat-valued — the `real`/`nat` distinction is about semantic role, not representation.** In the concrete implementation every tensor index is a natural number (`Fin n`), regardless of axis kind. The `AxisKind` tag captures how the axis is *used*, not how it is indexed:
@@ -1287,7 +1290,7 @@ inductive Decl
 - A **`nat`-kinded** axis participates in *sequential/temporal* structure. The `l+1` successor operation is semantically meaningful — this is a step counter, time index, or sequence position. In the D-graded framework, `nat` axes are the temporal objects of the `TemporalGraded` mixin ([§6.1](#61-temporalgraded--scan)); only `nat` axes may appear in `iterAt`/`iterNext` LHS slots.
 - A **`real`-kinded** axis participates in *algebraic* structure — embedding dimensions, spatial coordinates, feature channels. Operations over these axes are contractions (sum over `k`), free outputs (retain `i`, `j`), or normalizations (softmax over `d`). No ordering or successor is implied.
 
-The names `real`/`nat` are inherited from the mathematical framework where real-indexed dimensions participate in polynomial/continuous-analogue algebra (`MvPolynomial`) and nat-indexed dimensions are discrete counters with a well-defined successor in `ℕ`. The parser defaults unannotated axes to `real`; axes appearing in `iterAt`/`iterNext` slots are assigned `nat` kind automatically by the elaborator without requiring explicit `ℕ` annotations. An explicit `axis l : ℕ = 3` declaration overrides the default and pins both kind and size.
+The names `real`/`nat` are inherited from the mathematical framework where real-indexed dimensions participate in polynomial/continuous-analogue algebra (`MvPolynomial`) and nat-indexed dimensions are discrete counters with a well-defined successor in `ℕ`. The parser defaults unannotated axes to `real`. Elaboration no longer produces `iterNext` directly for either spacing: `l +1` and `l + 1` both elaborate uniformly to `IdxExpr.affine (IdxExpr.shift a 1)` (an ordinary affine LHS slot). A later compile phase, `reclassifyIterSlots` (#5b), reclassifies such a slot to `iterNext` — and only then forces its axis's kind to `nat` — iff the axis is declared `iter`; otherwise it rejects the program (`CompileError.scanAxisNotIter`). An explicit `axis l : ℕ = 3` declaration still overrides the default kind/size for ordinary (non-iteration) axes, but no longer suffices to declare a scan iteration axis — only `iter l = 3` does that.
 
 ```lean
 -- Layer 2
@@ -1441,6 +1444,7 @@ syntax ident : tl_axis_spec               -- an axis name (bare ident)
 syntax ident "(" tl_axis_spec,* ")" : tl_named_shape   -- `T(a, b, c)`
 syntax ident ":" tl_axis_kind         : tl_axis_decl_item  -- dtype only
 syntax ident ":" tl_axis_kind "=" num : tl_axis_decl_item  -- dtype + pinned size
+syntax ident "=" num                  : tl_iter_decl_item  -- iteration axis: name + pinned size, no kind (always ℕ)
 syntax ident "(" tl_axis_spec,* ")"        : tl_linear_item  -- `W(dff, d)` — flat axis list
 syntax ident "(" tl_axis_spec,* ")" "bias" : tl_linear_item  -- with bias
 syntax "(" tl_axis_spec,* ")" : tl_shape   -- kept; no longer used by any tl_decl rule
@@ -1449,6 +1453,8 @@ syntax "tensor"    tl_named_shape,+                        : tl_decl   -- `tenso
 syntax "predicate" tl_named_shape,+                        : tl_decl   -- `predicate P(i,j)`
 syntax "linear"    tl_linear_item,+                        : tl_decl   -- `linear W(dff, d), V(d, dff) bias`
 syntax "axis"      tl_axis_decl_item,+                     : tl_decl   -- `axis l : ℕ = 3, s : ℕ = 2`
+syntax "iter"      tl_iter_decl_item,+                     : tl_decl   -- #5b: `iter l = 3` or `iter r = 2, c = 2` —
+                                                                        -- the ONLY way to declare a scan iteration axis
 
 -- Layer 2: index expressions — GENERALIZED to general integer-affine sums (the AST's
 -- IdxExpr.affine carries a full `List (ℤ × AxisSpec)`, so the grammar must reach it).

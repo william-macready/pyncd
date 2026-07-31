@@ -60,6 +60,23 @@ run_cmd (assertEvalError "RJ7 size-conflict"
   (HashMap.ofList [("A", tl [3] [1,2,3]), ("B", tl [2] [1,1])])
   "inconsistent")
 
+-- RJ11  a scan base case with NO matching recurrence step anywhere in the program ⇒
+--   `finalizeScans` still groups it into its own singleton `ScanStmt.scan` (its `iterAt` slot's
+--   placeholder axis forms a one-element component with nothing to union against), but since
+--   `stateRecur` is empty for that component, `axes := stateRecur.head?...` comes out `[]` —
+--   nothing throws `missingBaseCase` (that check only walks `stateRecur`, never `baseStmts`), so
+--   compile SUCCEEDS with a degenerate axis-less scan node. `evalScan`'s `axes.isEmpty` guard
+--   (`Eval/Scan.lean`) is what actually catches this, at EVAL time. This is the same live,
+--   fail-loud guard RJ6 exercised pre-#5b (see the RJ6 comment above); RJ6's #5b rewrite (this
+--   plan's Task 7) correctly moved RJ6 itself to test the new compile-time `scanAxisNotIter`
+--   rejection, but that incidentally dropped the only coverage of this eval-time guard, which is
+--   still reachable from ordinary surface syntax. Restored here under a fresh name.
+run_cmd (assertEvalError "RJ11 orphan-base-case"
+  (tlprog!{ tensor X(j)
+            S[j, 0] := X[j] })
+  (HashMap.ofList [("X", tl [2] [1,2])])
+  "scan node has no iteration axis")
+
 -- SS4 / RC4  a scan step reading an external at the advancing index l+1 ⇒ causalityViolation
 run_cmd do
   match TLProgram.compile (tlprog!{ iter l = 3

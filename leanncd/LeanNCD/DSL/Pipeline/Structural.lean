@@ -616,9 +616,14 @@ shape and would otherwise either silently skip a slot that should become `.iterN
 #5b: `l +1` and `l + 1` both elaborate to `LHSSlot.affine (IdxExpr.shift a 1)` now (Elab.lean) — the
 only remaining signal for "is this really a scan recurrence, or an ordinary shifted write?" is
 whether `a`'s axis is declared `iter`. An offset of exactly 1 is ALWAYS presumed a recurrence
-attempt under this design (that's the whole point of accepting both spacings — there is no third
-way left to write an ordinary shift-by-1 write distinct from a recurrence); an offset other than 1
-is never touched here and stays an ordinary shifted write, ambiguity-free. -/
+attempt under this design (that's the whole point of accepting both spacings for THIS `IdxExpr`
+shape); an offset other than 1 is never touched here and stays an ordinary shifted write,
+ambiguity-free. NOT exhaustive over all surface spellings of "shift by 1": `1*l+1` elaborates to
+the distinct shape `IdxExpr.affine 1 [(1, l)]` (the `num "*" ident "+" num` LHS-slot production),
+which this reclassifier does not match at all — it passes through untouched even if `l` is
+declared `iter`, and compiles to a different `ThreadedComposed` than `l+1`/`l + 1` would. That
+still fails loud at EVAL time (a genuine size mismatch), never silently wrong — just an
+unreclassified extra spelling, not a gap in the affine-shift case this phase actually handles. -/
 
 /-- Every axis-UID declared via `iter` in this program. -/
 def iterDeclUids (decls : List Decl) : List UID :=

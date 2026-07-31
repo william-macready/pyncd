@@ -890,7 +890,7 @@ Wave A  Correctness freeze — ✅ THE THREE AUDIT FINDINGS DONE 2026-07-30 (c75
                        SPLIT (EvalExamplesTest:268 `axis l : ℕ = 3, s : ℕ = 2` ⇒ `iter l = 3` +
                        `axis s : ℕ = 2`). Count is ±2; the per-program pass belongs in the plan.
                        Spec: docs/superpowers/specs/2026-07-30-scan-axis-declaration-spike.md
-                       SHIPPED 2026-07-31 via a 9-task plan: `iter <ident> = <num>[, ...]` is now
+                       SHIPPED 2026-07-31 via an 11-task plan: `iter <ident> = <num>[, ...]` is now
                        the ONLY way to declare a scan iteration axis, both spacings elaborate
                        identically, and an undeclared iteration axis is rejected at COMPILE time
                        (`CompileError.scanAxisNotIter`, replacing RJ6's old eval-time path — same

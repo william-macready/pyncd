@@ -2,7 +2,7 @@
 
 > **Status:** DONE 2026-07-31. **All parts of this spec are now shipped** — Parts 2b (finding H)
 > and 5 (finding G) landed first (2026-07-30, as recorded below), and **Parts 1, 2a, 3, 4 (the
-> `iter` keyword + STRICT migration) landed 2026-07-31** across a 9-task implementation/verification
+> `iter` keyword + STRICT migration) landed 2026-07-31** across an 11-task implementation/verification
 > plan: `iter <ident> = <num>[, <ident> = <num>]*` is now the ONLY way to declare a scan iteration
 > axis; `l +1` and `l + 1` elaborate identically; a compile-time `CompileError.scanAxisNotIter`
 > replaces the old eval-time rejection path for an undeclared iteration axis (RJ6 in

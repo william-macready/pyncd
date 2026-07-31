@@ -50,7 +50,7 @@ structure ScheduledProgram where
   stmts    : List ScanStmt     -- live stmts, topological order: producers precede consumers
   env      : DeclEnv
   extNames : Finset String
-  explicitSizes : HashMap UID Nat  -- axis sizes pinned by `axis … = n` decls (seed for inferAxisSizes)
+  explicitSizes : HashMap UID Nat  -- axis sizes pinned by `axis … = n` or `iter … = n` decls (seed for inferAxisSizes)
 
 example : ScanStmt := .plain (.assign "x" [] { body := { terms := [] }, nonlin := .identity })
 
