@@ -37,11 +37,13 @@ open LeanNCD.AcsetCodec
 
 -- 5. Coupled scan (one multi-output scan step, six external inputs).
 #guard toThreadedComposed (fromThreadedComposed (tl!{
+          iter l = 3
           G[j, 0]    := X[j]
           G[j, l +1] := relu(G[j, l] · W_G[j, k] + H[j, l] · U[j, k])
           H[j, 0]    := Y[j]
           H[j, l +1] := relu(H[j, l] · W_H[j, k] + G[j, l] · V[j, k]) }))
         = tl!{
+          iter l = 3
           G[j, 0]    := X[j]
           G[j, l +1] := relu(G[j, l] · W_G[j, k] + H[j, l] · U[j, k])
           H[j, 0]    := Y[j]

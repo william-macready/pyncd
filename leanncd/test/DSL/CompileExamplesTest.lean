@@ -48,6 +48,7 @@ and each `#guard` asserts a structural fact calibrated to what the pipeline actu
 --    (`op == "scan"`), and X,Y,W_G,U,W_H,V are the six external inputs.
 #guard
   let tc := tl!{
+    iter l = 3
     G[j, 0]    := X[j]
     G[j, l +1] := relu(G[j, l] · W_G[j, k] + H[j, l] · U[j, k])
     H[j, 0]    := Y[j]
@@ -56,6 +57,7 @@ and each `#guard` asserts a structural fact calibrated to what the pipeline actu
   tc.steps.any (fun s => s.op == BrOp.scan || s.op == BrOp.scanAffine)
 #guard
   let tc := tl!{
+    iter l = 3
     G[j, 0]    := X[j]
     G[j, l +1] := relu(G[j, l] · W_G[j, k] + H[j, l] · U[j, k])
     H[j, 0]    := Y[j]
