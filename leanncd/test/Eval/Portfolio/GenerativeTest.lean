@@ -99,7 +99,7 @@ test "ME3 combine"
 --   h[0]=1, h[1]=1·1+1·u[0]=2, h[2]=1·2+1·u[1]=3 ⇒ h=[1,2,3].
 test "SS1 linear-recurrence"
     (evalEqB (tlprog!{
-    axis l : ℕ = 3
+    iter l = 3
     h[j, 0]    := h0[j]
     h[j, l +1] := A[j, k] · h[k, l] + B[j] · u[l]
   })
@@ -123,7 +123,7 @@ test "SS2 output-map"
 --   j=1: 1, 0.5·1+1=1.5, 0.5·1.5+1=1.75 ⇒ [1,1.5,1.75]
 test "SS3 diagonal-ssm"
     (evalEqB (tlprog!{
-    axis l : ℕ = 3
+    iter l = 3
     h[j, 0]    := h0[j]
     h[j, l +1] := a[j] · h[j, l] + B[j] · u[l]
   })
