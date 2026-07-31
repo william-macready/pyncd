@@ -248,7 +248,7 @@ partial def elabTLLHSSlot : Syntax → MetaM LHSSlot
   | `(tl_lhs_slot| $n:num) =>
       return .iterAt (scanAxis "") (Int.ofNat n.getNat)
   | `(tl_lhs_slot| $x:ident +1) =>
-      return .iterNext (scanAxis (identStr x))
+      return .affine (.shift (idxAxis (identStr x)) 1)
   | `(tl_lhs_slot| $n:num * $x:ident + $m:num) =>
       return .affine (.affine (Int.ofNat m.getNat)
         [(Int.ofNat n.getNat, idxAxis (identStr x))])

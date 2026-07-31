@@ -50,6 +50,11 @@ inductive CompileError
                                                              -- out of scope for now; see `checkScatterNonlin`
                                                              -- (Structural.lean) and `splitStmt`'s `.scatter` arm
                                                              -- (Lowering.lean)
+  | scanAxisNotIter      : String → CompileError            -- #5b: an axis used as a scan recurrence
+                                                             -- (an LHS slot shifted by exactly 1) is not
+                                                             -- declared `iter` — `iter l = N` is required;
+                                                             -- both `l +1` and `l + 1` mean the same thing
+                                                             -- and neither is a plain shifted write anymore
   deriving Repr, DecidableEq
 
 /-- Combined error + UID-counter monad (`EStateM ε σ α = σ → Result ε σ α`, Lean core). Mints fresh

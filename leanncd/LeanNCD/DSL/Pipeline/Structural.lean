@@ -607,6 +607,43 @@ def resolveDecls (lp : LabeledProgram) : FreshM ResolvedProgram := do
   return { decls := lp.decls, stmts := lp.stmts, env,
            extNames }
 
+/-! ## The `reclassifyIterSlots` phase (between `resolveDecls` and `checkReadRanks`/`checkDtypes`/
+`checkScatterNonlin`/`lowerArith` — MUST run before all four, since each of those inspects LHS slot
+shape and would otherwise either silently skip a slot that should become `.iterNext` (`checkDtypes`'s
+`iterAxisNotNat`) or silently misclassify it as a scatter (`checkScatterNonlin`/`lowerArith`'s
+`slotsBecomeScatter`, which matches ANY `.affine` slot).
+
+#5b: `l +1` and `l + 1` both elaborate to `LHSSlot.affine (IdxExpr.shift a 1)` now (Elab.lean) — the
+only remaining signal for "is this really a scan recurrence, or an ordinary shifted write?" is
+whether `a`'s axis is declared `iter`. An offset of exactly 1 is ALWAYS presumed a recurrence
+attempt under this design (that's the whole point of accepting both spacings — there is no third
+way left to write an ordinary shift-by-1 write distinct from a recurrence); an offset other than 1
+is never touched here and stays an ordinary shifted write, ambiguity-free. -/
+
+/-- Every axis-UID declared via `iter` in this program. -/
+def iterDeclUids (decls : List Decl) : List UID :=
+  decls.filterMap (fun d => match d with | .iter ax _ => some ax.uid | _ => none)
+
+/-- Reclassify one LHS slot: an `.affine (.shift a 1)` write becomes `.iterNext` iff `a` is
+    declared `iter` (forcing its kind to `.nat` — `iter` carries no kind of its own, unlike
+    `axis`, so the reclassifier is what fixes it; this is why `iterAxisNotNat` becomes
+    unreachable for any `iter`-declared axis). Otherwise: reject. Every other slot shape passes
+    through unchanged, including `.affine (.shift a n)` for any `n ≠ 1` (an ordinary shifted
+    write — never ambiguous, never touched). -/
+def reclassifyLHSSlot (iterUids : List UID) : LHSSlot → FreshM LHSSlot
+  | .affine (.shift a 1) =>
+      if a.uid ∈ iterUids then return .iterNext { a with kind := .nat }
+      else throw (CompileError.scanAxisNotIter a.name)
+  | sl => return sl
+
+def reclassifyIterSlots (rp : ResolvedProgram) : FreshM ResolvedProgram := do
+  let iterUids := iterDeclUids rp.decls
+  let stmts' ← rp.stmts.mapM (fun s => match s with
+    | .assign nm ls rhs      => return Stmt.assign nm (← ls.mapM (reclassifyLHSSlot iterUids)) rhs
+    | .scatter nm ls rhs opt => return Stmt.scatter nm (← ls.mapM (reclassifyLHSSlot iterUids)) rhs opt
+    | .recurMorphism _ _ _   => return s)
+  return { rp with stmts := stmts' }
+
 /-! ## The `checkReadRanks` phase
 
 Validates that every `read nm idxExprs` in the program uses a number of index positions consistent

@@ -19,4 +19,33 @@ private def multiIter : TLProgram := tlprog!{ iter r = 2, c = 2 }
   | .ok rp _ => !rp.env.contains "l"
   | .error _ _ => false
 
+-- Both spacings converge: `l +1` and `l + 1` compile identically once `l` is declared `iter`,
+-- and BOTH now produce a genuine `.scan` step (not a degenerate one). `=` (not `==`) matches
+-- AcsetCodecTest.lean's own convention for comparing two `ThreadedComposed` values.
+#guard
+  let tcA := tl!{ iter l = 3
+                  S[j, 0]   := X[j]
+                  S[j, l +1] := S[j, l] }
+  let tcB := tl!{ iter l = 3
+                  S[j, 0]    := X[j]
+                  S[j, l + 1] := S[j, l] }
+  tcA = tcB
+
+-- An axis used at an offset-1 LHS shift but NOT declared `iter` is a compile error, not a
+-- silently-different AST — regardless of which spacing was used.
+run_cmd
+  match TLProgram.compile (tlprog!{ tensor X(j)
+                                     S[j, 0]    := X[j]
+                                     S[j, l +1] := S[j, l] }) |>.run 0 with
+  | .error (.scanAxisNotIter "l") _ => pure ()
+  | .error e _ => throwError s!"IterDeclTest: wrong CompileError: {repr e}"
+  | .ok _ _    => throwError "IterDeclTest: expected scanAxisNotIter, compile succeeded"
+run_cmd
+  match TLProgram.compile (tlprog!{ tensor X(j)
+                                     S[j, 0]     := X[j]
+                                     S[j, l + 1] := S[j, l] }) |>.run 0 with
+  | .error (.scanAxisNotIter "l") _ => pure ()
+  | .error e _ => throwError s!"IterDeclTest: wrong CompileError: {repr e}"
+  | .ok _ _    => throwError "IterDeclTest: expected scanAxisNotIter, compile succeeded"
+
 end LeanNCD
