@@ -48,4 +48,14 @@ run_cmd
   | .error e _ => throwError s!"IterDeclTest: wrong CompileError: {repr e}"
   | .ok _ _    => throwError "IterDeclTest: expected scanAxisNotIter, compile succeeded"
 
+-- Parse-level spacing equivalence (independent of reclassifyIterSlots — this must differ
+-- BEFORE the elaborator fix and match AFTER it, regardless of any `iter` declaration).
+#guard
+  (tlprog!{ iter l = 3
+            S[j, 0]    := X[j]
+            S[j, l +1] := S[j, l] })
+  = (tlprog!{ iter l = 3
+              S[j, 0]     := X[j]
+              S[j, l + 1] := S[j, l] })
+
 end LeanNCD
