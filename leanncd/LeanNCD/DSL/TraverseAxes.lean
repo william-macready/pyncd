@@ -114,6 +114,7 @@ def Decl.traverseAxes [Applicative f] (g : AxisSpec → f AxisSpec) : Decl → f
   | .predicate nm ax  => Decl.predicate nm <$> Traversable.traverse g ax
   | .linear nm ax b   => (fun ax' => Decl.linear nm ax' b) <$> Traversable.traverse g ax
   | .axis ax n        => (fun ax' => Decl.axis ax' n) <$> g ax
+  | .iter ax n        => (fun ax' => Decl.iter ax' n) <$> g ax
 
 def TLProgram.traverseAxes [Applicative f] (g : AxisSpec → f AxisSpec) (p : TLProgram) : f TLProgram :=
   (fun decls stmts => ({ decls := decls, stmts := stmts } : TLProgram)) <$>

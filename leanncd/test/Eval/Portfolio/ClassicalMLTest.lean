@@ -79,7 +79,7 @@ test "CM3 value-iteration"
 --     l=0: [1,0];  l=1: [0,1];  l=2: [1,0]  ⇒  p (shape [j=2, l=3]) = [[1,0,1],[0,1,0]].
 test "CM4 power-iteration"
     (evalEqB (tlprog!{
-    axis l : ℕ = 3
+    iter l = 3
     p[j, 0] := p0[j]
     p[j, l +1] := p[i, l] · M[i, j]
   })

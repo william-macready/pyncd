@@ -11,6 +11,7 @@ private def hasOp (p : TLProgram) (op : BrOp) : Bool :=
 
 -- AFFINE scan: identity-nonlin recurrence ⇒ op = .scanAffine.
 private def affineScan : TLProgram := tlprog!{
+  iter l = 3
   S[j, 0]    := X[j]
   S[j, l +1] := S[j, l] · A[j, k]
 }
@@ -19,6 +20,7 @@ private def affineScan : TLProgram := tlprog!{
 
 -- NONLINEAR scan: relu recurrence ⇒ op = .scan (NOT .scanAffine).
 private def reluScan : TLProgram := tlprog!{
+  iter l = 3
   S[j, 0]    := X[j]
   S[j, l +1] := relu(S[j, l] · A[j, k])
 }

@@ -87,7 +87,7 @@ run_cmd do
     | none => throwError "upsample: no Out"
 
 /- 5. Coupled scan (G, H share the iteration axis `l`). All weights = 1, one feature.
-    The iteration count L = 3 is pinned by the explicit `axis l : ℕ = 3` declaration (no
+    The iteration count L = 3 is pinned by the explicit `iter l = 3` declaration (no
     input tensor's shape would otherwise fix the loop axis). Steps: G₀=1,H₀=2; G₁=relu(1+2)=3,H₁=relu(2+1)=3;
     G₂=relu(3+3)=6,H₂=6 ⇒ G=[1,3,6], H=[2,3,6]. Asserts the first two steps. -/
 run_cmd do
@@ -96,7 +96,7 @@ run_cmd do
       (tensorOf [1,1] [1.0])).insert "U" (tensorOf [1,1] [1.0])).insert "W_H"
       (tensorOf [1,1] [1.0])).insert "V" (tensorOf [1,1] [1.0])
   match TLProgram.eval (tlprog!{
-    axis l : ℕ = 3
+    iter l = 3
     G[j, 0]    := X[j]
     G[j, l +1] := relu(G[j, l] · W_G[j, k] + H[j, l] · U[j, k])
     H[j, 0]    := Y[j]
@@ -245,7 +245,7 @@ run_cmd do
     The layer hidden state `H[q,m,l]` is the only scan state: H[·,·,0] = X (embeddings), and each
     step recomputes the whole attention+FFN block (Q/K/V/S/AttnOut/Attn/A/F/Y — per-step
     *intermediates*, recomputed from `H[·,·,l]`) before writing H[·,·,l+1]. The iteration count
-    L = 3 (layers 0,1,2) is pinned by the explicit `axis l : ℕ = 3` declaration. Same identity
+    L = 3 (layers 0,1,2) is pinned by the explicit `iter l = 3` declaration. Same identity
     weights and toy sizes as example 12, so:
       H[·,·,0] = X = I₂                                      (base / embeddings)
       H[·,·,1] = [[1,0],[0.13447,0.86553]]                  (= example 12's output)
@@ -265,7 +265,8 @@ run_cmd do
   let env := env.insert "W_in"  (tensorOf [2,2] [1,0, 0,1])
   let env := env.insert "W_out" (tensorOf [2,2] [1,0, 0,1])
   match TLProgram.eval (tlprog!{
-    axis l : ℕ = 3, s : ℕ = 2
+    iter l = 3
+    axis s : ℕ = 2
     tensor S(h, q, s), A(q, m), H(q, m, l)
     H[q, m, 0]       := X[q, m]
     Q[q, h, k]       := W_Q[h, k, m] · H[q, m, l]

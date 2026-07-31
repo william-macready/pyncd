@@ -376,7 +376,7 @@ def scatterOutputShapes (sizes : HashMap UID Nat) (stmts : List Stmt) : HashMap 
     valid index need not sit exactly at `d-1`). This is the unified floor-then-verify convention.
     Conflicting sizes for one UID ⇒ error. We iterate to a fixpoint so inference order
     (e.g. a kernel axis sizing before the dotted output axis) does not matter.
-    `seed` pre-binds axes pinned by `axis … = n` decls; inference treats them as already
+    `seed` pre-binds axes pinned by `axis … = n` or `iter … = n` decls; inference treats them as already
     known (and a later read implying a different size conflicts, as for any bound UID).
 
     **Known gap (Issue H)**: when ALL axes in a multi-term read are already sized (fully-known

@@ -63,6 +63,11 @@ private def elabTLAxisDeclItem : Syntax → MetaM Decl
       return .axis { name := identStr x, uid := 0, kind := (← elabTLAxisKind k) } (some n.getNat)
   | _ => throwUnsupportedSyntax
 
+private def elabTLIterDeclItem : Syntax → MetaM Decl
+  | `(tl_iter_decl_item| $x:ident = $n:num) =>
+      return .iter { name := identStr x, uid := 0, kind := .nat } n.getNat
+  | _ => throwUnsupportedSyntax
+
 partial def elabTLDecl : Syntax → MetaM (List Decl)
   | `(tl_decl| tensor $items:tl_named_shape,*) => do
       let pairs ← items.getElems.toList.mapM elabTLNamedShape
@@ -74,6 +79,8 @@ partial def elabTLDecl : Syntax → MetaM (List Decl)
       items.getElems.toList.mapM elabTLLinearItem
   | `(tl_decl| axis $items:tl_axis_decl_item,*) => do
       items.getElems.toList.mapM elabTLAxisDeclItem
+  | `(tl_decl| iter $items:tl_iter_decl_item,*) => do
+      items.getElems.toList.mapM elabTLIterDeclItem
   | _ => throwUnsupportedSyntax
 
 /-- A placeholder `AxisSpec` for an index-expression axis reference.
@@ -241,7 +248,7 @@ partial def elabTLLHSSlot : Syntax → MetaM LHSSlot
   | `(tl_lhs_slot| $n:num) =>
       return .iterAt (scanAxis "") (Int.ofNat n.getNat)
   | `(tl_lhs_slot| $x:ident +1) =>
-      return .iterNext (scanAxis (identStr x))
+      return .affine (.shift (idxAxis (identStr x)) 1)
   | `(tl_lhs_slot| $n:num * $x:ident + $m:num) =>
       return .affine (.affine (Int.ofNat m.getNat)
         [(Int.ofNat n.getNat, idxAxis (identStr x))])

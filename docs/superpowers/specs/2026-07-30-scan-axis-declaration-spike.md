@@ -1,14 +1,29 @@
 # Spike: declared iteration axes + spacing-insensitive recurrence syntax (#5b)
 
-> **Status:** DESIGN SETTLED with the user 2026-07-30. **Parts 2b (finding H) and 5 (finding G)
-> are DONE** — both were separable and shipped ahead of the rest, as this spec always intended.
-> H: `AxisKind`'s dead `Option SizeExpr` payload deleted (mechanical, 72 sites/20 files, `lake
-> build` green at the same 8610-job baseline). G: probed 2026-07-30 and found UNREACHABLE via
-> surface syntax — closed docs-only, no code change (see `papers/semantic_payload_audit.md`).
-> **Parts 1, 2a, 3, 4 (the `iter` keyword + STRICT migration) remain NOT IMPLEMENTED** — this is
-> the actual **breaking language change**; write a plan from this spec, then execute
-> subagent-driven, before touching it. Parts 1/2a/3/4 are coupled, and a half-applied grammar
-> change is the worst state to leave the repo in.
+> **Status:** DONE 2026-07-31. **All parts of this spec are now shipped** — Parts 2b (finding H)
+> and 5 (finding G) landed first (2026-07-30, as recorded below), and **Parts 1, 2a, 3, 4 (the
+> `iter` keyword + STRICT migration) landed 2026-07-31** across an 11-task implementation/verification
+> plan: `iter <ident> = <num>[, <ident> = <num>]*` is now the ONLY way to declare a scan iteration
+> axis; `l +1` and `l + 1` elaborate identically; a compile-time `CompileError.scanAxisNotIter`
+> replaces the old eval-time rejection path for an undeclared iteration axis (RJ6 in
+> `RejectTest.lean` still rejects it, now via the correct mechanism). Full `leanncd/` build green
+> (8611 jobs), no new sorries, property-oracle suite unaffected. New test coverage:
+> `test/DSL/IterDeclTest.lean`.
+>
+> The migration touched a different file set than Part 3's table below predicted — corrections
+> found during implementation: `ConvPoolTest.lean` and `FeedforwardTest.lean` needed **no** changes
+> (zero real scan recurrences in either, contrary to the table); `ParseExamplesTest.lean` and
+> `ParseProgramTest.lean` needed **no** changes either (parse-only, never compile, so the new
+> mechanism never runs for them); `test/Bridge/AcsetCodecTest.lean` and
+> `test/DSL/CompileExamplesTest.lean` **did** need `iter` added despite not appearing in the table
+> at all (found via an exhaustive repo-wide grep sweep); `ScanGen.lean`'s 6 programmatic `Decl.axis`
+> iteration-axis entries (5× `l`, plus `r6`/`c6`) did **not** need to become `Decl.iter` — their
+> `.iterNext`/`.iterAt` slots are built directly in Lean code, never through the ambiguous surface
+> grammar `iter` disambiguates (confirmed empirically: the property-oracle suite passes unchanged).
+> A gap not named anywhere in this spec: `explicitSizes` (`Lowering.lean`'s `schedule`) needed a new
+> `Decl.iter` fold-arm alongside its existing `Decl.axis ax (some n)` arm, or an `iter`-declared
+> axis's pinned size would silently never reach shape resolution — found only because the fold is a
+> silent-wildcard match with no compiler safety net to flag the missing case.
 
 ## The bug being fixed (finding #5b, confirmed by probe)
 

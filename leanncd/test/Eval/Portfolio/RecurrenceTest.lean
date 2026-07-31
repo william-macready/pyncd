@@ -18,7 +18,7 @@ open Std LSpec
 -- RC4  REJECT: a scan step reading an external at the advancing index l+1 ⇒ causalityViolation
 --   (the compiler treats any next-index read as a future dependency). Asserted exactly like SS4.
 run_cmd do
-  match TLProgram.compile (tlprog!{ axis l : ℕ = 3
+  match TLProgram.compile (tlprog!{ iter l = 3
                                     S[j, 0]    := X[j, 0]
                                     S[j, l +1] := S[j, l] + X[j, l + 1] }) |>.run 0 with
   | .error (.causalityViolation "S") _ => pure ()
@@ -33,7 +33,7 @@ run_cmd do
 --   a 1-D one. `.op = .scan` (not `.scanAffine`) since multi-axis recurrences are forced
 --   sequential.
 run_cmd do
-  match TLProgram.compile (tlprog!{ axis r : ℕ = 2, c : ℕ = 2
+  match TLProgram.compile (tlprog!{ iter r = 2, c = 2
                                     G[r, 0]       := Z[r]
                                     G[r +1, c +1] := G[r, c] + A[r, c] }) |>.run 0 with
   | .ok tc _ =>
@@ -52,7 +52,7 @@ run_cmd do
 --   (design 2026-07-08-multi-axis-scans §5: "exotic couplings fail loud"). Homogeneous couplings
 --   (RC1 both over `l`) and single-tensor multi-axis scans (RC6/RC8) are unaffected.
 run_cmd do
-  match TLProgram.compile (tlprog!{ axis r : ℕ = 2, c : ℕ = 2
+  match TLProgram.compile (tlprog!{ iter r = 2, c = 2
                                     H[j, 0]       := X[j]
                                     H[j, c +1]    := H[j, c]
                                     G[r, 0]       := Z[r]
@@ -65,7 +65,7 @@ run_cmd do
 -- RC2  simple RNN: single scan, self-recurrence. 1 feature, W = 1, X0 = 1.
 --   S₀ = 1; S₁ = relu(1·1) = 1; S₂ = relu(1·1) = 1  ⇒  S = [1,1,1].
 test "RC2 rnn"
-    (evalEqB (tlprog!{ axis l : ℕ = 3
+    (evalEqB (tlprog!{ iter l = 3
             S[j, 0]    := X0[j]
             S[j, l +1] := relu(S[j, l] · W[j, k]) })
       (HashMap.ofList [("X0", tl [1] [1]), ("W", tl [1,1] [1])])
@@ -83,7 +83,7 @@ test "RC3 prefix-sum"
 --   X0 = 2, W = [1,3].  Max-semantics: Mₗ₊₁ = max(Mₗ·1, Mₗ·3) = 3·Mₗ ⇒ [2,6,18].
 --   (Was silently summed to 4·Mₗ ⇒ [2,8,32] before the fix — see §14 KG-scanagg / git history.)
 test "RC5 maxreduce-in-scan (KG-scanagg, fixed)"
-    (evalEqB (tlprog!{ axis l : ℕ = 3
+    (evalEqB (tlprog!{ iter l = 3
             M[j, 0]    := X0[j]
             M[j, l +1] := maxreduce(M[j, l] · W[j, k]) })
       (HashMap.ofList [("X0", tl [1] [2]), ("W", tl [1,2] [1,3])])
@@ -93,7 +93,7 @@ test "RC5 maxreduce-in-scan (KG-scanagg, fixed)"
 --   Only the fully-advanced cell G[1,1] = G[0,0]+A[0,0] = 1 is written; boundary cells (r=0 or
 --   c=0) keep their zero-default. Correct grid-DP ⇒ [[0,0],[0,1]]. (KG-2dscan fixed 2026-07-08.)
 test "RC6 2d-scan (KG-2dscan, fixed)"
-    (evalEqB (tlprog!{ axis r : ℕ = 2, c : ℕ = 2
+    (evalEqB (tlprog!{ iter r = 2, c = 2
             G[r, 0]       := Z[r]
             G[r +1, c +1] := G[r, c] + A[r, c] })
       (HashMap.ofList [("Z", tl [2] [0,0]), ("A", tl [2,2] [1,1,1,1])])
@@ -103,7 +103,7 @@ test "RC6 2d-scan (KG-2dscan, fixed)"
 --   X0 = 2, W = [2,3].  Min-semantics: Mₗ₊₁ = min(Mₗ·2, Mₗ·3) = 2·Mₗ ⇒ [2,4,8].
 --   Confirms the scan step honors `minreduce` (tropical min), not sum, via the KG-scanagg plumbing.
 test "RC7 minreduce-in-scan"
-    (evalEqB (tlprog!{ axis l : ℕ = 3
+    (evalEqB (tlprog!{ iter l = 3
             M[j, 0]    := X0[j]
             M[j, l +1] := minreduce(M[j, l] · W[j, k]) })
       (HashMap.ofList [("X0", tl [1] [2]), ("W", tl [1,2] [2,3])])
@@ -113,7 +113,7 @@ test "RC7 minreduce-in-scan"
 --   d=0 plane; step adds T=ones. Only the fully-advanced cell G[1,1,1] = G[0,0,0]+T[0,0,0] = 1
 --   is written; all boundary cells keep 0. ⇒ a 2×2×2 tensor with a single 1 at [1,1,1].
 test "RC8 3d-scan"
-    (evalEqB (tlprog!{ axis a : ℕ = 2, b : ℕ = 2, d : ℕ = 2
+    (evalEqB (tlprog!{ iter a = 2, b = 2, d = 2
             G[a, b, 0]        := S[a, b]
             G[a +1, b +1, d +1] := G[a, b, d] + T[a, b, d] })
       (HashMap.ofList [("S", tl [2,2] [0,0,0,0]), ("T", tl [2,2,2] [1,1,1,1,1,1,1,1])])
@@ -127,7 +127,7 @@ test "RC8 3d-scan"
 --   Boundary/base cells: G[0,0]=Z[0]=2, G[1,0]=Z[1]=5, G[0,1]=0 (r=0 boundary, unwritten).
 --   Row-major [r][c] ⇒ [[2,0],[5,6]] = [2,0,5,6]. (W[0,0,:]=[1,3]; other W cells unused.)
 test "RC10 multi-axis maxreduce (KG-scanagg × KG-2dscan)"
-    (evalEqB (tlprog!{ axis r : ℕ = 2, c : ℕ = 2
+    (evalEqB (tlprog!{ iter r = 2, c = 2
             G[r, 0]       := Z[r]
             G[r +1, c +1] := maxreduce(G[r, c] · W[r, c, k]) })
       (HashMap.ofList [("Z", tl [2] [2,5]), ("W", tl [2,2,2] [1,3, 0,0, 0,0, 0,0])])

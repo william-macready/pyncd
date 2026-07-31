@@ -369,6 +369,7 @@ theorem traverseAxes_const_eq_specsStmt (s : Stmt) :
 private def specsDecl' : Decl → List AxisSpec
   | .tensor _ ax => ax | .predicate _ ax => ax | .linear _ ax _ => ax
   | .axis ax _ => [ax]
+  | .iter ax _ => [ax]
 
 /-- Collect `AxisSpec`s: instantiating at `ConstL (List AxisSpec)` with `g := fun a => ⟨[a]⟩`
     should reproduce `specsDecl'`. The `core` lemma calls `Traversable.traverse` DIRECTLY on a
@@ -392,6 +393,7 @@ theorem traverseAxes_const_eq_specsDecl (d : Decl) :
   | predicate nm ax => exact core ax
   | linear nm ax b => exact core ax
   | axis ax n => rfl
+  | iter ax n => rfl
 
 -- ===== TLProgram =====
 
