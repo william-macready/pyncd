@@ -862,7 +862,7 @@ Wave A  Correctness freeze — ✅ THE THREE AUDIT FINDINGS DONE 2026-07-30 (c75
                        unchanged, so only the error channel moved.
         · finding #5  ✅ CLOSED after re-probing (my earlier "not closed" was wrong — I had compared
                        two different programs). Panic gone; the named error fires.
-        · finding #5b 🔴 OPEN — DESIGN SETTLED, NOT IMPLEMENTED (its own spike, not a Wave A item).
+        · finding #5b ✅ DONE 2026-07-31 (its own spike, not a Wave A item).
                        Whitespace is SEMANTIC in an LHS slot: `ident "+1"` is one ATOM, so `l +1` ⇒
                        .iterNext (scan recurrence) but `l + 1` ⇒ .affine (.shift l 1) (a shifted
                        write, and it flips the axis kind nat→real), yielding a degenerate
@@ -890,6 +890,21 @@ Wave A  Correctness freeze — ✅ THE THREE AUDIT FINDINGS DONE 2026-07-30 (c75
                        SPLIT (EvalExamplesTest:268 `axis l : ℕ = 3, s : ℕ = 2` ⇒ `iter l = 3` +
                        `axis s : ℕ = 2`). Count is ±2; the per-program pass belongs in the plan.
                        Spec: docs/superpowers/specs/2026-07-30-scan-axis-declaration-spike.md
+                       SHIPPED 2026-07-31 via a 9-task plan: `iter <ident> = <num>[, ...]` is now
+                       the ONLY way to declare a scan iteration axis, both spacings elaborate
+                       identically, and an undeclared iteration axis is rejected at COMPILE time
+                       (`CompileError.scanAxisNotIter`, replacing RJ6's old eval-time path — same
+                       defect, correct mechanism). The actual file-touch list differed from the
+                       table above: `ConvPoolTest`/`FeedforwardTest`/`ParseExamplesTest`/
+                       `ParseProgramTest` needed NO changes (no real recurrences, or parse-only —
+                       never in the table's favor); `AcsetCodecTest`/`CompileExamplesTest` DID need
+                       `iter` added despite not appearing in the table at all; `ScanGen.lean`'s 6
+                       programmatic `Decl.axis` entries did NOT need conversion (built directly in
+                       Lean, bypassing the surface grammar `iter` disambiguates). Also found and
+                       fixed: `explicitSizes` (`Lowering.lean`'s `schedule`) needed a new
+                       `Decl.iter` fold-arm or a pinned `iter` axis's size would silently never
+                       reach shape resolution. Full `leanncd/` build green (8611 jobs), no new
+                       sorries, property-oracle suite unaffected.
         · finding G   ✅ DONE (docs-only) — PROBED 2026-07-30, UNREACHABLE via surface syntax. A
                        scan base case does not name its own
                        iteration axis: `G[j,0]` elaborates to `.iterAt (scanAxis "") n` with an
@@ -936,8 +951,8 @@ Wave A  Correctness freeze — ✅ THE THREE AUDIT FINDINGS DONE 2026-07-30 (c75
                        labels. Keeping these is not the retracted "keep it for the future solver"
                        argument — that kept a REACHABLE trap; Part 2b removes reachability, after
                        which no program can reach tl_size and it cannot mislead anyone.
-        · STILL OPEN in Wave A: #5b (Parts 1/2a/3/4 — the `iter` keyword breaking change) only.
-          G and H above are now DONE (2026-07-30). #6 (the broader boundary DECODER defaults —
+        · Wave A is now fully closed: #5b (Parts 1/2a/3/4 — the `iter` keyword breaking change)
+          shipped 2026-07-31, joining G and H, both DONE 2026-07-30. #6 (the broader boundary DECODER defaults —
           realizeStMat zero-fill, realizeBrBaseP, AcsetCodec, realizeSBr → empty identity) is
           Stage-5 bridge-hardening, not Wave A, per the audit's own assignment.
 
