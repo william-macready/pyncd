@@ -18,7 +18,7 @@ Does not own: any new data types — this is purely a construction/orchestration
 | where operators get attached to base classes | bottom of each file: `cat.Morphism.__matmul__ = composition`, etc. |
 
 ### Key Relationships
-Every file imports `data_structure.Category as cat`. `composition.py` imports `construction_helpers.product` and `.lift`; `lift.py` imports `construction_helpers.product`. `einops.py`/`signature.py` are standalone internally but consumed externally by `data_structure/Operators.py` to build operator templates — so there is a (deliberate) reverse dependency at the string-parsing level only, not for composition/product/lift.
+Every file imports `data_structure.Category as cat`. `composition.py` imports `construction_helpers.product` and `.lift`; `lift.py` imports `construction_helpers.product`. `einops.py`/`signature.py` are standalone internally but consumed externally by `data_structure/Operators.py` to build operator templates. `Operators.py` also imports `construction_helpers.product` directly (`object_product`, `morphism_product`, `datatype_converter`, `axis_converter`, and the `ProductObjectTarget`/`ProductMorphismTarget` type aliases) for its own signature construction — so the reverse dependency covers `product.py` as well as the string-parsing helpers. Only `composition.py`/`lift.py` have no reverse dependency from `data_structure/`.
 
 ## Public API
 

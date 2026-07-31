@@ -134,7 +134,7 @@ Small utility dirs (no dedicated node — see README for their one-line purpose)
 
 | Task | Start Here |
 |------|------------|
-| Author a model with the TL DSL | `data_structure/TensorDSL.py` (`TL`, `axes`, `relu`, `softmax`), example in `README.md` |
+| Author a model with the TL DSL | `data_structure/TensorDSL.py` (`TL`, `axes`, `relu`, `softmax`), example in `minimum_working_example_tl.py` (`README.md`'s example uses the older `construction_helpers`/`Operators` API directly, not the TL DSL) |
 | Compose models with `@`/`*`/`>>` | `construction_helpers/AGENTS.md` — import the relevant submodule to activate operators |
 | Compile a model to PyTorch | `torch_compile/torch_compile.py::ConstructedModule.construct` |
 | Visualize a model (browser diagram) | `make diagram-server` + `make diagram-frontend` (clones/runs the companion `tsncd` repo), or `make diagram-example` for CLI; see `README_DIAGRAMS.md` |
@@ -144,20 +144,20 @@ Small utility dirs (no dedicated node — see README for their one-line purpose)
 ### Global Invariants
 
 - **Axis identity is by `UID`, never by name.** Two axes are "the same axis" iff they share a UID; string-based axis matching is a bug wherever it appears (see `data_structure/AGENTS.md` Contracts).
-- **`data_structure/` is a one-way dependency root.** `construction_helpers/`, `torch_compile/`, `display/`, `acset/`, `graphs/`, `term_utilities/` all import from it; it imports from none of them.
+- **`data_structure/` is a one-way dependency root, with one known exception.** `construction_helpers/`, `torch_compile/`, `display/`, `acset/`, `graphs/`, `term_utilities/` all import from it. But `data_structure/Operators.py` imports `construction_helpers.product` directly (`object_product`, `morphism_product`, `datatype_converter`, `axis_converter`) to build operator templates — this is a deliberate, narrow reverse dependency, not a violation to "fix." See `construction_helpers/AGENTS.md` Key Relationships for the exact scope.
 
 ### Global Pitfalls
 
 - **`.normalize()` is sum-normalization, not `LayerNorm`** — a documented, easy-to-assume-wrong trap in `torch_compile/`.
-- **No `causal_softmax` operator exists** — attempted and reverted twice (in `data_structure/` and `torch_compile/`). Causal masking goes through `softmax(..., where=predicate)`. Check git history (`e29fdac`) before re-adding dedicated causal-attention support.
+- **No `causal_softmax` operator exists** — attempted and reverted (one episode, touching both `data_structure/` and `torch_compile/`). Causal masking goes through `softmax(..., where=predicate)`. Check git history (`e29fdac`) before re-adding dedicated causal-attention support.
 - **Golden-file test fixtures under `tests/cset_serialization/` are gitignored, generated artifacts** — a fresh clone fails `test_cset_roundtrip.py` until `python tests/generate_cset_serialization.py` is run once.
 - **In `leanncd/`'s TL surface syntax, whitespace is SEMANTIC in an LHS slot** — `G[j, l +1]` is a scan recurrence but `G[j, l + 1]` is a shifted *write* (`ident "+1"` is a single atom token), and the more natural spacing silently means the other thing rather than failing. Same class of trap as `.normalize()` above and reachable from ordinary surface syntax. A breaking fix is specced but NOT implemented — see `leanncd/LeanNCD/DSL/AGENTS.md` and `docs/superpowers/specs/2026-07-30-scan-axis-declaration-spike.md`.
 
 ### Boundaries
 
 #### Never
-- Compare or hash axes/`UID`s/`FreeNumeric` by anything other than the documented identity field (`uid._id`) — breaks round-trip equality after acset serialization (fix `d146fb6`).
+- Hash a `FreeNumeric`/`Numeric` value by anything other than `uid._id` — breaks round-trip equality after acset serialization (fix `d146fb6`). Plain `UID` equality (`ax.uid == other.uid`) for axis identity is unaffected and is the normal, correct pattern throughout `data_structure/`.
 - Hand-edit a CSV fixture under `tests/cset_serialization/` — regenerate via `tests/generate_cset_serialization.py` instead.
 
 #### Ask First
-- Reintroducing a dedicated causal-softmax-style operator — this was tried twice and reverted; understand why (see `torch_compile/AGENTS.md` Pitfalls) before proposing it again.
+- Reintroducing a dedicated causal-softmax-style operator — this was tried and reverted; understand why (see `torch_compile/AGENTS.md` Pitfalls) before proposing it again.

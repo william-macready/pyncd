@@ -49,7 +49,7 @@ Import order (leaf → root): `Term.py` → `Numeric.py` → `StrideCategory.py`
 - **`Broadcasted.degree()` requires all `reindexings` to share the same domain** (`util.iallequals`); hand-built `Broadcasted`s must maintain this themselves.
 - **`FreeNumeric` equality is by `uid._id`, not the `UID` object** (fix `d146fb6`: hashing the full `UID` broke round-trip equality after acset serialization — see `acset/AGENTS.md`). Any new `Numeric` subclass must hash a primitive, never a nested `Term`.
 - **`Scan` base case must be at literal index `l=0`**; no `l+1` (next-step) reference is allowed on a recurrence RHS (`_check_no_lnext_on_rhs`).
-- **`topological_sort`/`_topo_sort_entries` must raise `ValueError` on a short result** (cycle), not silently return a partial order (fix `c379cfe`) — a partial order fails later with a confusing `IndexError` instead.
+- **`TensorLogic.topological_sort` raises `ValueError` on a short result** (cycle), not silently returning a partial order (fix `c379cfe`) — a partial order fails later with a confusing `IndexError` instead. **`TensorDSL._topo_sort_entries` (the `Scan`/coupled-iteration compile path) does NOT have this fix** — on a cycle it silently falls back to the original entry order (`TensorDSL.py:202`, `return entries  # cycle (unexpected) — leave as-is`), which can produce wrong compiled output rather than a clean error. Latent gap, not yet covered by `c379cfe`.
 
 ## Entry Points
 | Task | Start Here |

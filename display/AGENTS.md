@@ -19,7 +19,7 @@ Does not own: any mutation of `data_structure` objects — display only reads vi
 | Truncated name/id label for a `UTerm` | `node_category.py` → `display_uterm` |
 
 ### Key Relationships
-`node_category.py` imports `data_structure.Category` (most variants) and, separately, `data_structure.TensorDSL.Reindex` directly (not part of the `Category` re-export union, so matched via `isinstance` rather than a dataclass pattern). Both renderer files also depend on `term_utilities.term_utilities` (to pick reindexed-weave rendering branch) and `utilities.justification`/`utilities.utilities` for layout.
+`node_category.py` imports `data_structure.Category` (most variants) and, separately, `data_structure.TensorDSL.Reindex` directly (not part of the `Category` re-export union, so matched via `isinstance` rather than a dataclass pattern). `node_category.py` depends on `term_utilities.term_utilities` (to pick the reindexed-weave rendering branch) and `utilities.justification`/`utilities.utilities` for layout; `display_config.py` imports the same modules but currently doesn't use any of them beyond `display.node_category.display_uterm`.
 
 ## Public API
 
@@ -50,13 +50,13 @@ Does not own: any mutation of `data_structure` objects — display only reads vi
 
 ## Patterns
 - Render a term: `print_category(target)` builds a `Box` tree, then `.render()` produces the multi-line string.
-- A `Broadcasted` renders as three columns: input weaves | degree+operator | output weaves, each built with `separated_product` (Vertical, `-`-fill separators).
+- A `Broadcasted` renders as three columns: input weaves | degree+operator | output weaves; the two weave columns are built with `separated_product` (Vertical, `-`-fill separators), the middle degree+operator column is a plain `Box.Vertical` with no separator.
 - Weave/axis rendering shares iterators zipped against `weave._shape` — strictly order-dependent; a real `Axis` entry renders via `display_axis`, other slots pull the next item from the same shared iterator.
 - `UTerm` labels are hard-truncated to exactly 2 characters (first 2 chars of the name, or last 2 hex digits of `uid._id`).
 
 ## Pitfalls
 - **`display_category`'s `match` has no unconditional default arm** — the last case is `case _ if isinstance(target, Reindex)`. Any `Category` value matching none of the explicit patterns and not a `Reindex` (e.g. a bare `Scatter`, or a new variant added upstream without updating this file) falls through with **no error** — the function implicitly returns `None`, and the failure surfaces later as a confusing `AttributeError` deep inside `Box.Horizontal.rows()`'s `zip(*box_rows)`.
 - **2-character name/id truncation is intentional, not a bug** — distinct terms whose first-2-chars or last-2-hex-digits coincide render identically.
-- **`Color.original()` assumes well-formed ANSI escapes** — a malformed/truncated escape (no trailing `m`) makes `s.find('m', start)` return `-1`, silently corrupting the string (mis-slices from position 0) rather than raising.
+- **`Color.original()` assumes well-formed ANSI escapes, with two distinct failure modes**: if no `m` follows the escape start at all, `s.find('m', start)` returns `-1`, `end` becomes `0`, and the recursive call repeats on the unchanged string — infinite recursion, `RecursionError`, not silent corruption. If a stray `m` appears later in ordinary (non-escape) text, `find` locks onto that `m` instead and silently mis-slices from that point, dropping everything between the escape start and the stray `m`.
 - **`reindexed_weave` branches purely on `tutil.is_mappable(reindexing)`** (`# type: ignore` at the call site) — the two branches expect structurally different reindexing shapes not enforced by the type system; a `StrideCategory` value misclassified by `is_mappable` picks the wrong renderer.
 - **Importing `display_config.py` mutates global state** merely by being imported (monkeypatches `ConfigLog.__str__`), independent of whether anything in the module is called.
