@@ -307,7 +307,7 @@ run_cmd do
 -- absent from `sizes`) instead of defaulting its extent to 0 (a silently wrong, empty output dim).
 -- A sized axis still computes normally (`.scale 2` over size 2 ⇒ extent 4).
 run_cmd do
-  let a : AxisSpec := { name := "a", uid := 9, kind := .real none }
+  let a : AxisSpec := { name := "a", uid := 9, kind := .real }
   match scatterOutShape ({} : HashMap UID Nat) [.affine (.axis a)] with
   | .error _ => pure ()                       -- expected: unsized axis
   | .ok s    => throwError s!"expected scatterOutShape to reject unsized axis, got {repr s}"

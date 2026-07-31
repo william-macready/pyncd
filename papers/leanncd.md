@@ -1426,9 +1426,16 @@ syntax tl_size "+" tl_size   : tl_size
 syntax "(" tl_size ")"       : tl_size
 
 syntax "ℝ"                   : tl_axis_kind
-syntax "ℝ[" tl_size "]"      : tl_axis_kind
 syntax "ℕ"                   : tl_axis_kind
-syntax "ℕ[" tl_size "]"      : tl_axis_kind
+-- DEVIATION (2026-07-30, audit finding H): the bracket forms `ℝ[tl_size]`/`ℕ[tl_size]` specified
+-- here were implemented (`Elab.lean:37,39`) but their SizeExpr payload was never read by anything
+-- — isNat/isReal (Structural.lean) discarded it, and extents came only through the separate
+-- `axis l : K = N` pin. `axis l : ℕ[3]` parsed but pinned nothing, silently. Deleted at the type
+-- level (`AxisKind.real/nat` dropped the `Option SizeExpr` payload) rather than left as a
+-- reachable no-op — see `docs/superpowers/specs/2026-07-30-scan-axis-declaration-spike.md` Part 2b
+-- and `papers/semantic_payload_audit.md` finding H. `tl_size` itself is kept (still used directly
+-- by `SizeExprTest.lean`); finishing this design by wiring `ℕ[n]` to the affine size solver
+-- remains the open, unbuilt endpoint this section originally specified.
 
 syntax ident : tl_axis_spec               -- an axis name (bare ident)
 syntax ident "(" tl_axis_spec,* ")" : tl_named_shape   -- `T(a, b, c)`

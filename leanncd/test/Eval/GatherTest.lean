@@ -1,7 +1,7 @@
 import LeanNCD.Eval.Gather
 namespace LeanNCD.Eval
 open Std
-private def ax (u : Nat) : AxisSpec := { name := "x", uid := u, kind := .real none }
+private def ax (u : Nat) : AxisSpec := { name := "x", uid := u, kind := .real }
 private def coordOf (ps : List (Nat × Int)) : HashMap UID Int := ps.foldl (fun m (u,v) => m.insert u v) {}
 -- evalIdx:
 #guard evalIdx (coordOf [(1,3),(2,1)]) (.affine 0 [(2, ax 1), (1, ax 2)]) == 7   -- 2*3 + 1

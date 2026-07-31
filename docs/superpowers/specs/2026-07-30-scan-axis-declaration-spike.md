@@ -1,9 +1,14 @@
 # Spike: declared iteration axes + spacing-insensitive recurrence syntax (#5b)
 
-> **Status:** DESIGN SETTLED with the user 2026-07-30; NOT IMPLEMENTED. This is a **breaking
-> language change** — write a plan from this spec, then execute subagent-driven. Do not start
-> editing without the plan: Parts 1–5 below are coupled, and a half-applied grammar change is
-> the worst state to leave the repo in.
+> **Status:** DESIGN SETTLED with the user 2026-07-30. **Parts 2b (finding H) and 5 (finding G)
+> are DONE** — both were separable and shipped ahead of the rest, as this spec always intended.
+> H: `AxisKind`'s dead `Option SizeExpr` payload deleted (mechanical, 72 sites/20 files, `lake
+> build` green at the same 8610-job baseline). G: probed 2026-07-30 and found UNREACHABLE via
+> surface syntax — closed docs-only, no code change (see `papers/semantic_payload_audit.md`).
+> **Parts 1, 2a, 3, 4 (the `iter` keyword + STRICT migration) remain NOT IMPLEMENTED** — this is
+> the actual **breaking language change**; write a plan from this spec, then execute
+> subagent-driven, before touching it. Parts 1/2a/3/4 are coupled, and a half-applied grammar
+> change is the worst state to leave the repo in.
 
 ## The bug being fixed (finding #5b, confirmed by probe)
 
@@ -163,55 +168,67 @@ the table below rather than grepped). Three findings change the character of the
 contribute 2–3 axes per line. **This count is ±2 — the per-program pass belongs in the plan**, and it
 is a count of *axes*, not edits; the edit count is nearer 14.
 
-### Effect on finding G — it becomes resolvable or loud, though not closed
+### Effect on finding G — PROBED 2026-07-30: unreachable via surface syntax, Part 5 closed docs-only
 
-A base case still does not *name* its own axis (`.iterAt (scanAxis "") n`, `Elab.lean:244`); closing
-that needs slot option 2. But `iter` supplies the signal the positional pass lacks, so G stops being
-a silent-wrong-answer path. **This is a refinement of an earlier note here that said the declaration
-option "does not close G" and stopped there** — true about *closing*, incomplete about the effect.
+A base case still does not *name* its own axis (`.iterAt (scanAxis "") n`, `Elab.lean:244`); that
+part of the earlier analysis stands. But the feared consequence — a silent zero-fill when
+`adoptBaseIterAxes` misses — does not happen for any program written through `tlprog!`.
 
 The mechanism, read precisely (`Stmt.adoptBaseIterAxes`, `Structural.lean:827-835`): each base
-`.iterAt _ n` at position `p` adopts `step.stepAxisAt p`, and **on a miss it is "left as-is"** —
-keeping the placeholder (`name ""`, `uid 0`), documented at `:824-825`. Grouping is by iteration-axis
-UID, so an un-adopted base lands in a uid-0 group, *separate from its own recurrence*: the boundary
-never gets initialised and the state is silently zero-filled instead.
+`.iterAt _ n` at position `p` adopts `step.stepAxisAt p`, and on a miss it is "left as-is" — keeping
+the placeholder (`name ""`), documented at `:824-825`.
 
-**No existing guard covers this.** `outputAxesConsistent` (`Lowering.lean:457-460`) is a different
-check — it compares the outputs of one *already-grouped* coupled scan (`G[j,l]` vs `H[l,j]`) on the
-routed path, after grouping. Nothing in `finalizeScans` enforces base↔recur slot-order agreement.
+**Three constructions tried, all fail loud, none silent:**
 
-See `papers/semantic_payload_audit.md` finding **G**. Fold it in here as **Part 5**:
+1. Single-axis, iteration axis last-in-base/first-in-step (`G[j,0]` / `G[l+1,j]`) ⇒
+   `missingBaseCase "G"`.
+2. Multi-axis, one axis adopts correctly and one doesn't (`G[0,k,0]` / `G[r+1,c+1,k]`) ⇒
+   `inconsistentScanAxes` — the mismatched slot's placeholder-uid leaks into the stmt's own axis
+   set via the correctly-adopted sibling slot, so the component's axis count no longer matches the
+   recurrence's advance set.
+3. Two independently-mis-ordered scans in one program ⇒ `missingBaseCase` fires on the first,
+   unaffected by the second.
 
-1. **Single-candidate rule (position-independent).** If the matching step has exactly one `iterNext`
-   axis and the base exactly one `iterAt` slot, adopt it **regardless of position**. This removes G's
-   failure mode outright for single-axis scans — the common case per Part 3's table — and needs *no*
-   declaration, so it could ship independently of this spike.
-2. **Positional fallback** for genuinely multi-axis scans, unchanged.
-3. **Fail loud on a miss.** Replace the "left as-is" arm with a named rejection, so an un-adopted
-   base can no longer flow onward as a uid-0 placeholder:
+**Why it can't be silent — verified by direct inspection**: `assignUIDs` (`Structural.lean:572-578`)
+mints exactly one fresh, mutually-distinct, non-zero UID per *distinct axis name* in the whole
+program (a de-duplicated name list, `p.axisNames`) via a `memo : HashMap String UID`, then
+relabels every occurrence of that name to its minted UID. `""` — the placeholder's name
+(`scanAxis ""`, `Elab.lean:244`) — is just one more entry in that name list: it gets minted its
+OWN UID like any other name, it does NOT stay at its construction-time default of `0`. Confirmed
+by dumping `resolveDecls`'s output on a correctly-adopted program: `l` → uid 1, `j` → uid 2, the
+base's placeholder → uid **3**, not 0. (An earlier draft of this section claimed `0` stays
+exclusively reserved for the placeholder — that's not the mechanism; the placeholder is relabeled
+too, just to a value distinct from every other name's value.) What actually holds: the memo is
+name-keyed and injective, so **two axes only ever share a UID if they share a name** — and no
+real, surface-declared axis is ever named `""`. So an un-adopted base's axis set is always either
+disjoint from its recurrence's real axis set (cases 1/3 — `missingBaseCase`) or a strict superset
+of it (case 2 — `inconsistentScanAxes`). It can never be *silently equal*.
+`outputAxesConsistent` (`Lowering.lean:457-460`) is unrelated — it compares outputs of an
+already-grouped coupled scan post-grouping — and was never the mechanism that closes this.
 
-```lean
-| unresolvedBaseIterAxis : String → CompileError
---  "base case of 'G' pins a slot with no corresponding iteration axis in its recurrence"
-```
+**The residual risk is programmatic ASTs only**, which bypass `assignUIDs`'s name-based minting
+entirely and so *could* deliberately give a real axis the same UID as some placeholder.
+`ScanGen.lean` is the one place in the repo doing this, and it already assigns distinct, proper
+non-zero UIDs (`202`, `L`, etc.) — no instance of the collision exists in practice. **Still don't
+detect a placeholder by `uid == 0` in new code** — that was never the actual invariant (name-based
+distinctness is), and a hand-built AST is free to pick any UID for anything.
 
-   This means `adoptBaseIterAxes` becomes `Except`-returning. With `iter` available, strengthen the
-   check: the adopted axis must also be declared `iter`.
-
-⚠️ **Do not test the placeholder by `uid == 0`** — `uid 0` is a legitimate UID (`scanAxis` merely
-*defaults* to it). Detect a miss structurally, at the point adoption fails.
-
-⚠️ **G is UNPROBED.** Verified: the miss arm keeps the placeholder, and no `finalizeScans` check
-guards it. NOT verified: a program that triggers it. The routed path may incidentally catch the
-resulting base-only group via `stepGuardOk`'s `!outputs.isEmpty` (`Lowering.lean:466-467`); whether
-the eval path catches it is unknown. **Write the failing program first** — if it turns out
-unreachable, Part 5 reduces to the defensive rejection in step 3 and should be scoped down.
+**Decision: docs-only, per the "write the failing program first, scope down if unreachable"
+instruction this section originally carried.** No code change. `papers/semantic_payload_audit.md`
+finding G carries the full probe writeup. The single-candidate adoption rule (position-independent
+adoption when there's exactly one `iterNext` and one `iterAt`) and the fail-loud
+`unresolvedBaseIterAxis` rejection (replacing "left as-is" with an `Except`-returning
+`adoptBaseIterAxes`) remain on the table as optional future work — an ergonomic fix and a
+defense-in-depth for programmatic ASTs, respectively, neither a safety fix for the surface DSL —
+should someone want to revisit them.
 
 ## Implementation shape — Parts 1–4 (Part 5, for finding G, is specified above)
 
-Two of these are **separable and should ship as their own commits, ahead of the rest**: Part 2b
-(finding H — a mechanical 70-site type change) and Part 5 step 1 (the single-candidate rule, which
-needs no declaration). Neither depends on `iter`.
+Two of these were **separable and shipped ahead of the rest, as planned**: Part 2b (finding H — a
+mechanical type change, 72 sites measured, not the estimated 70) is DONE. Part 5 (finding G) turned
+out unreachable via surface syntax on probing, so its step 1 (single-candidate rule) was NOT
+implemented — see the "Effect on finding G" section above for the full writeup. Neither depended
+on `iter`, and Parts 1–4 below are unaffected by either outcome.
 
 **Part 1 — grammar/elaboration.** `elabTLLHSSlot` is `Syntax → MetaM LHSSlot` and **cannot see
 declarations**, so the disambiguation cannot happen there. Elaborate *both* spellings uniformly to
@@ -332,9 +349,9 @@ is not.
 Note `axis l : ℕ[3] = 5` is grammatical today — two size channels, bracket silently ignored. This
 makes it unparseable.
 
-**Separable.** Nothing about `iter` depends on 2b, so it can ship as its own commit *ahead* of the
-spike, which shrinks the spike by one error and one test. Recommended, since it also touches 20 files
-and is better reviewed on its own.
+**DONE, shipped ahead of the spike as its own commit** (72 sites, 20 files — `Ast.lean`, `Syntax.lean`,
+`Elab.lean`, `Structural.lean`, and 16 test files). `lake build` green at the same 8610-job baseline
+as before the change; no new sorries. `papers/leanncd.md` §14.3 annotated with the deviation.
 
 **Part 3 — migration.** Two halves under STRICT: (a) **add** `iter` declarations where an iteration
 axis is undeclared — the table below; (b) **convert** existing `axis … : ℕ = N` declarations of
@@ -390,7 +407,7 @@ the completion report — it is a language-surface reduction, not just a validat
 `lake build` green (baseline **8610 jobs**; `Eval/Scan.lean` and `Structural.lean` are deep in the
 graph, so full rebuilds run minutes, not seconds). No `sorry`/`maxHeartbeats`/`native_decide`.
 
-**Three** tests, one per behavioural rule. **Each must be mutation-tested** — revert the fix and
+**Two** tests, one per behavioural rule. **Each must be mutation-tested** — revert the fix and
 confirm the test fails — because three of the bugs in this cluster were "guarded" by a comment
 asserting they could not happen, and finding #4 was documented by a test that could never have caught
 it (it asserted the op *tag* while the payload was discarded).
@@ -398,9 +415,12 @@ it (it asserted the op *tag* while the payload was discarded).
 1. **Both spacings produce the same `LHSSlot`** (`l +1` vs `l + 1`). The regression guard for #5b
    itself; nothing else would catch a reintroduced divergence.
 2. **`scanAxisNotIter`** — a recurrence over an undeclared axis is rejected at compile.
-3. **`unresolvedBaseIterAxis`** (finding G) — *write this one first and expect it to be hard.* If no
-   program can be constructed that reaches the miss arm, say so explicitly and scope Part 5 down to
-   the defensive rejection; do not report a passing suite as evidence that G was closed.
+
+**Finding G needs no test** — probed 2026-07-30 (see `papers/semantic_payload_audit.md`): three
+constructions of the base/step mismatch all failed loud via existing guards
+(`missingBaseCase`/`inconsistentScanAxes`), and `assignUIDs`' non-zero guarantee shows why no
+surface program can reach the silent case. Closed docs-only; no `unresolvedBaseIterAxis`
+rejection was added.
 
 **Finding H gets no test, deliberately** — Part 2b makes the state a *type* error, so there is nothing
 runtime to assert. Its verification is that the build still passes after the 70-site rewrite, plus

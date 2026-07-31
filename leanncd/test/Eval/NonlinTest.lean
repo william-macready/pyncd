@@ -17,7 +17,7 @@ run_cmd do
 run_cmd do
   -- t shape [2,2], axisPos 1 (the second axis), uids [q=1, s=2]; mask: s ≤ q (causal)
   let t : DenseTensor := ⟨[2,2], #[1.0, 2.0, 0.5, 1.5]⟩
-  let mask : BoolExpr := .rel .le (.embed (.axis ⟨"s",2,.real none⟩)) (.embed (.axis ⟨"q",1,.real none⟩))
+  let mask : BoolExpr := .rel .le (.embed (.axis ⟨"s",2,.real⟩)) (.embed (.axis ⟨"q",1,.real⟩))
   let y := softmaxT 1 [1,2] (some mask) t
   -- row q=0: only s=0 unmasked ⇒ y[0,0]=1, y[0,1]=0 ; row q=1: both unmasked ⇒ sums to 1
   unless Float.abs (y.get! [0,0] - 1.0) < 1e-6 && Float.abs (y.get! [0,1] - 0.0) < 1e-6 do throwError "masked row0"

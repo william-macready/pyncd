@@ -16,8 +16,8 @@ is what makes this a trustworthy source of baselines for property-based oracles.
 namespace LeanNCD.PropertyOracle
 open LeanNCD LeanNCD.Eval
 
-private def i : AxisSpec := ⟨"i", 1, .real (some (.lit 2))⟩
-private def j : AxisSpec := ⟨"j", 2, .real (some (.lit 2))⟩
+private def i : AxisSpec := ⟨"i", 1, .real⟩
+private def j : AxisSpec := ⟨"j", 2, .real⟩
 private def axDecls : List Decl := [.axis i (some 2), .axis j (some 2)]
 
 /-- Affine index-expr choices over one axis (plain, +1, 2·). Out-of-range reads

@@ -13,7 +13,7 @@ private def isErr (p : TLProgram) : Bool :=
   | .ok _ _ => false
   | .error _ _ => true
 
-private def iterAxis : AxisSpec := { name := "l", uid := 0, kind := .nat none }
+private def iterAxis : AxisSpec := { name := "l", uid := 0, kind := .nat }
 
 -- a well-formed pre-built step morphism (one BrBaseP, no inputs):
 private def stepTC : ThreadedComposed :=

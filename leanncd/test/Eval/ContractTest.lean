@@ -1,7 +1,7 @@
 import LeanNCD.Eval.Contract
 namespace LeanNCD.Eval
 open Std
-private def ax (nm : String) (u : Nat) : AxisSpec := { name := nm, uid := u, kind := .real none }
+private def ax (nm : String) (u : Nat) : AxisSpec := { name := nm, uid := u, kind := .real }
 private def tensorOf (shape : List Nat) (xs : List Float) : DenseTensor := ⟨shape, xs.toArray⟩
 
 -- W (2×3) · X (3×2) = known 2×2 product.

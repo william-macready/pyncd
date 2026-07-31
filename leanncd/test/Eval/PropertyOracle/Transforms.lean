@@ -72,7 +72,7 @@ def materializeSplit (p : TLProgram) : TLProgram :=
   { p with stmts := out }
 
 -- TESTS (fire on build) — hand-built tiny program:
-private def ax (n : String) (u : Nat) : AxisSpec := ⟨n, u, .real (some (.lit 2))⟩
+private def ax (n : String) (u : Nat) : AxisSpec := ⟨n, u, .real⟩
 private def rdT (nm : String) : ProdTerm := ⟨[.read nm [.axis (ax "i" 1)]]⟩
 private def twoTerm : Stmt := .assign "Y" [.free (ax "i" 1)] ⟨⟨[rdT "A", rdT "B"]⟩, .identity, .sum⟩
 private def prog : TLProgram := { decls := [], stmts := [twoTerm] }

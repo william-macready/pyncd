@@ -890,7 +890,8 @@ Wave A  Correctness freeze — ✅ THE THREE AUDIT FINDINGS DONE 2026-07-30 (c75
                        SPLIT (EvalExamplesTest:268 `axis l : ℕ = 3, s : ℕ = 2` ⇒ `iter l = 3` +
                        `axis s : ℕ = 2`). Count is ±2; the per-program pass belongs in the plan.
                        Spec: docs/superpowers/specs/2026-07-30-scan-axis-declaration-spike.md
-        · finding G   🔴 OPEN, NEW 2026-07-30, NOT PROBED — a scan base case does not name its own
+        · finding G   ✅ DONE (docs-only) — PROBED 2026-07-30, UNREACHABLE via surface syntax. A
+                       scan base case does not name its own
                        iteration axis: `G[j,0]` elaborates to `.iterAt (scanAxis "") n` with an
                        EMPTY name and uid 0 (Elab.lean:244), and `finalizeScans` recovers the axis
                        BY SLOT POSITION from the matching step (Structural.lean:849-851). Deliberate
@@ -902,7 +903,7 @@ Wave A  Correctness freeze — ✅ THE THREE AUDIT FINDINGS DONE 2026-07-30 (c75
                        single-candidate rule removes the failure mode for single-axis scans (needing
                        no declaration at all), and the "left as-is" miss arm becomes a named
                        rejection so the multi-axis remainder is loud instead of silent.
-        · finding H   🔴 OPEN, NEW 2026-07-30, PROBED — an axis KIND's size is write-only:
+        · finding H   ✅ DONE 2026-07-30 — PROBED, then fixed. An axis KIND's size was write-only:
                        `axis l : ℕ[3]` parses to `AxisKind.nat (some (.lit 3))` and pins NOTHING.
                        Probed: it yields the same "unsized iteration axis" error as declaring no
                        axis at all, because `explicitSizes` folds only `.axis ax (some n)`
@@ -935,7 +936,8 @@ Wave A  Correctness freeze — ✅ THE THREE AUDIT FINDINGS DONE 2026-07-30 (c75
                        labels. Keeping these is not the retracted "keep it for the future solver"
                        argument — that kept a REACHABLE trap; Part 2b removes reachability, after
                        which no program can reach tl_size and it cannot mislead anyone.
-        · STILL OPEN in Wave A: #5b, G, H above. #6 (the broader boundary DECODER defaults —
+        · STILL OPEN in Wave A: #5b (Parts 1/2a/3/4 — the `iter` keyword breaking change) only.
+          G and H above are now DONE (2026-07-30). #6 (the broader boundary DECODER defaults —
           realizeStMat zero-fill, realizeBrBaseP, AcsetCodec, realizeSBr → empty identity) is
           Stage-5 bridge-hardening, not Wave A, per the audit's own assignment.
 

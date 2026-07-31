@@ -4,7 +4,7 @@ namespace LeanNCD
 -- Masked attention: A[q,s] := softmax(where s≤q)(Q[q,d]·K[s,d]) splits into a linear step
 -- (identity nonlin) + a softmax step (carries the mask).
 run_cmd do
-  let ax (nm : String) : AxisSpec := { name := nm, uid := 1, kind := .real none }
+  let ax (nm : String) : AxisSpec := { name := nm, uid := 1, kind := .real }
   let mask : BoolExpr := .rel .le (.embed (.axis (ax "s"))) (.embed (.axis (ax "q")))
   let attn : Stmt := .assign "A" [ .free (ax "q"), .free (ax "s") ]
     { body := { terms := [ { factors := [ .read "Q" [.axis (ax "q"), .axis (ax "d")],
@@ -25,7 +25,7 @@ run_cmd do
 
 -- A plain identity assign is unchanged (one stmt out).
 run_cmd do
-  let ax (nm : String) : AxisSpec := { name := nm, uid := 1, kind := .real none }
+  let ax (nm : String) : AxisSpec := { name := nm, uid := 1, kind := .real }
   let mm : Stmt := .assign "Y" [ .free (ax "i") ]
     { body := { terms := [ { factors := [ .read "X" [.axis (ax "i")] ] } ] }, nonlin := .identity }
   let sp : ScanProgram :=
@@ -40,7 +40,7 @@ run_cmd do
 -- multi-output programs. `Second` (produced, never read, not the tail statement) now survives
 -- alongside `Y` (the tail output) and `T` (Y's dependency), same as every other statement.
 run_cmd do
-  let ax (nm : String) : AxisSpec := { name := nm, uid := 1, kind := .real none }
+  let ax (nm : String) : AxisSpec := { name := nm, uid := 1, kind := .real }
   let rd (nm : String) : RHSExpr :=
     { body := { terms := [ { factors := [ .read nm [ .axis (ax "i") ] ] } ] }, nonlin := .identity }
   let tStmt      : ScanStmt := .plain (.assign "T" [ .free (ax "i") ] (rd "X"))      -- T := X
@@ -57,7 +57,7 @@ run_cmd do
 -- Matmul Y[i,j] := W[i,k]·X[k,j]: W,X external ⇒ nExternal=2; one step; k contracted ⇒
 -- exactly one .tiled slot in the output weave; W,X reindexings present.
 run_cmd do
-  let ax (nm : String) (u : Nat) : AxisSpec := { name := nm, uid := u, kind := .real none }
+  let ax (nm : String) (u : Nat) : AxisSpec := { name := nm, uid := u, kind := .real }
   let i := ax "i" 1; let j := ax "j" 2; let k := ax "k" 3
   let mm : Stmt := .assign "Y" [ .free i, .free j ]
     { body := { terms := [ { factors := [ .read "W" [.axis i, .axis k], .read "X" [.axis k, .axis j] ] } ] },
@@ -78,7 +78,7 @@ run_cmd do
 
 -- Strided read: Y[i] := X[2*i] ⇒ the X reindexing row has coefficient 2.
 run_cmd do
-  let ax (nm : String) (u : Nat) : AxisSpec := { name := nm, uid := u, kind := .real none }
+  let ax (nm : String) (u : Nat) : AxisSpec := { name := nm, uid := u, kind := .real }
   let i := ax "i" 1
   let conv : Stmt := .assign "Y" [ .free i ]
     { body := { terms := [ { factors := [ .read "X" [ .scale 2 i ] ] } ] }, nonlin := .identity }
@@ -93,7 +93,7 @@ run_cmd do
 -- FAIL LOUD with `undeclaredName`, not silently route it to external slot 0 (the former
 -- `(extIndex …).getD 0` fallback, which masked upstream dataflow errors).
 run_cmd do
-  let ax (nm : String) (u : Nat) : AxisSpec := { name := nm, uid := u, kind := .real none }
+  let ax (nm : String) (u : Nat) : AxisSpec := { name := nm, uid := u, kind := .real }
   let i := ax "i" 1
   let s : Stmt := .assign "Y" [ .free i ]
     { body := { terms := [ { factors := [ .read "Ghost" [ .axis i ] ] } ] }, nonlin := .identity }
@@ -111,7 +111,7 @@ run_cmd do
 -- After schedule: live = {Sink, Y, H}; non-topological order without sort: [Y, H, Sink].
 -- After topoSort: [H, Y, Sink]. routing[1] should contain internal 0 0 (j=0 < i=1).
 run_cmd do
-  let ax (nm : String) (u : Nat) : AxisSpec := { name := nm, uid := u, kind := .real none }
+  let ax (nm : String) (u : Nat) : AxisSpec := { name := nm, uid := u, kind := .real }
   let i := ax "i" 1; let j := ax "j" 2; let k := ax "k" 3; let d := ax "d" 4
   let mkRd (nm : String) (es : List IdxExpr) : RHSExpr :=
     { body := { terms := [ { factors := [ .read nm es ] } ] }, nonlin := .identity }
@@ -139,7 +139,7 @@ run_cmd do
 
 -- Cyclic dataflow must be rejected fail-loud (Spike 1h), not silently source-ordered.
 run_cmd do
-  let ax (nm : String) : AxisSpec := { name := nm, uid := 1, kind := .real none }
+  let ax (nm : String) : AxisSpec := { name := nm, uid := 1, kind := .real }
   let rd (nm : String) : RHSExpr :=
     { body := { terms := [ { factors := [ .read nm [ .axis (ax "i") ] ] } ] }, nonlin := .identity }
   let aStmt : ScanStmt := .plain (.assign "A" [ .free (ax "i") ] (rd "B"))  -- A := B
@@ -159,7 +159,7 @@ run_cmd do
 -- exclusive `tl_rhs` alternatives, so `relu(maxreduce(…))` is a parse error.  Hence this test builds
 -- the `Stmt` programmatically — without it nothing guards the fix.
 run_cmd do
-  let ax (nm : String) : AxisSpec := { name := nm, uid := 1, kind := .real none }
+  let ax (nm : String) : AxisSpec := { name := nm, uid := 1, kind := .real }
   -- Y[i] := relu(maxreduce over j of P[i,j])  — non-identity nonlin AND non-sum agg together.
   let s : Stmt := .assign "Y" [ .free (ax "i") ]
     { body := { terms := [ { factors := [ .read "P" [ .axis (ax "i"), .axis (ax "j") ] ] } ] },

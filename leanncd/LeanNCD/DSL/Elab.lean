@@ -32,16 +32,14 @@ partial def elabTLSize : Syntax → MetaM SizeExpr
   | `(tl_size| ($a:tl_size))    => elabTLSize a
   | _                           => throwUnsupportedSyntax
 
-partial def elabTLAxisKind : Syntax → MetaM AxisKind
-  | `(tl_axis_kind| ℝ)          => return .real none
-  | `(tl_axis_kind| ℝ[ $s ])    => return .real (some (← elabTLSize s))
-  | `(tl_axis_kind| ℕ)          => return .nat none
-  | `(tl_axis_kind| ℕ[ $s ])    => return .nat (some (← elabTLSize s))
+def elabTLAxisKind : Syntax → MetaM AxisKind
+  | `(tl_axis_kind| ℝ)          => return .real
+  | `(tl_axis_kind| ℕ)          => return .nat
   | _                           => throwUnsupportedSyntax
 
 partial def elabTLAxisSpec : Syntax → MetaM AxisSpec
   | `(tl_axis_spec| $x:ident) =>
-      return { name := identStr x, uid := 0, kind := .real none }
+      return { name := identStr x, uid := 0, kind := .real }
   | _ => throwUnsupportedSyntax
 
 private def elabTLNamedShape : Syntax → MetaM (String × List AxisSpec)
@@ -81,12 +79,12 @@ partial def elabTLDecl : Syntax → MetaM (List Decl)
 /-- A placeholder `AxisSpec` for an index-expression axis reference.
     `uid` is assigned in Stage 2 (E2's `resolveDecls`); `kind` is resolved there too. -/
 private def idxAxis (name : String) : AxisSpec :=
-  { name := name, uid := 0, kind := .real none }
+  { name := name, uid := 0, kind := .real }
 
 /-- A placeholder `AxisSpec` for a scan-axis reference (`iterAt`/`iterNext`).
     Scan axes iterate over discrete integer indices, so their kind is `.nat`. -/
 private def scanAxis (name : String) : AxisSpec :=
-  { name := name, uid := 0, kind := .nat none }
+  { name := name, uid := 0, kind := .nat }
 
 /-- An accumulated integer-affine read: a constant plus a list of `(coeff, axis)` terms. -/
 private structure AffineAcc where

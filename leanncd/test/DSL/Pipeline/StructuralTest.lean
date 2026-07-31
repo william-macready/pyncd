@@ -4,7 +4,7 @@ namespace LeanNCD
 -- matmul: Y[i,j] := W[i,k]·X[k,j].  After assignUIDs: no axis uid is 0, and the
 -- two `k` occurrences share one uid while i,j,k are pairwise distinct.
 run_cmd do
-  let ax (nm : String) : AxisSpec := { name := nm, uid := 0, kind := .real none }
+  let ax (nm : String) : AxisSpec := { name := nm, uid := 0, kind := .real }
   let p : TLProgram := { decls := [], stmts := [
     .assign "Y" [ .free (ax "i"), .free (ax "j") ]
       { body := { terms := [ { factors := [
@@ -21,7 +21,7 @@ run_cmd do
 
 -- matmul Y[i,j] := W[i,k]·X[k,j]: W,X are external inputs; Y is produced (not external).
 run_cmd do
-  let ax (nm : String) : AxisSpec := { name := nm, uid := 0, kind := .real none }
+  let ax (nm : String) : AxisSpec := { name := nm, uid := 0, kind := .real }
   let p : TLProgram := { decls := [], stmts := [
     .assign "Y" [ .free (ax "i"), .free (ax "j") ]
       { body := { terms := [ { factors := [
@@ -46,7 +46,7 @@ run_cmd do
 -- lowerArith
 -- Upsample: Out[2*i, 2*j] := X[i,j] — affine LHS ⇒ reclassified to Stmt.scatter, injective (no error).
 run_cmd do
-  let ax (nm : String) : AxisSpec := { name := nm, uid := 1, kind := .real none }
+  let ax (nm : String) : AxisSpec := { name := nm, uid := 1, kind := .real }
   let upsample : Stmt := .assign "Out"
     [ .affine (.scale 2 (ax "i")), .affine (.scale 2 (ax "j")) ]
     { body := { terms := [ { factors := [ .read "X" [ .axis (ax "i"), .axis (ax "j") ] ] } ] },
@@ -64,7 +64,7 @@ run_cmd do
 -- i/j must NOT share a uid, else the LHS `Y[i,j]` looks like a diagonal `Y[i,i]` write.)
 run_cmd do
   let ax (nm : String) : AxisSpec :=
-    { name := nm, uid := (if nm == "i" then 1 else if nm == "j" then 2 else 3), kind := .real none }
+    { name := nm, uid := (if nm == "i" then 1 else if nm == "j" then 2 else 3), kind := .real }
   let mm : Stmt := .assign "Y" [ .free (ax "i"), .free (ax "j") ]
     { body := { terms := [ { factors := [ .read "W" [.axis (ax "i"), .axis (ax "k")],
                                             .read "X" [.axis (ax "k"), .axis (ax "j")] ] } ] },
@@ -91,8 +91,8 @@ run_cmd do
 -- Coupled scan: G and H both recur over `l` (uid 9) ⇒ ONE ScanStmt.scan whose recur list
 -- has BOTH G and H steps; each has a base case (no missingBaseCase).
 run_cmd do
-  let l : AxisSpec := { name := "l", uid := 9, kind := .nat none }
-  let j : AxisSpec := { name := "j", uid := 1, kind := .real none }
+  let l : AxisSpec := { name := "l", uid := 9, kind := .nat }
+  let j : AxisSpec := { name := "j", uid := 1, kind := .real }
   let rhs (nm : String) : RHSExpr :=
     { body := { terms := [ { factors := [ .read nm [ .axis j, .axis l ] ] } ] }, nonlin := .pointwise .relu }
   let gBase : Stmt := .assign "G" [ .free j, .iterAt l 0 ] { body := { terms := [] }, nonlin := .identity }
@@ -112,7 +112,7 @@ run_cmd do
 
 -- A recurrence with no matching base case ⇒ missingBaseCase.
 run_cmd do
-  let l : AxisSpec := { name := "l", uid := 9, kind := .nat none }
+  let l : AxisSpec := { name := "l", uid := 9, kind := .nat }
   let orphan : Stmt := .assign "S" [ .iterNext l ]
     { body := { terms := [ { factors := [ .read "S" [ .axis l ] ] } ] }, nonlin := .identity }
   let lp : LoweredProgram := { decls := [], stmts := [orphan], env := {}, extNames := ∅ }
@@ -122,7 +122,7 @@ run_cmd do
   | .ok _ _ => throwError "expected missingBaseCase for orphan recurrence"
 -- checkReadRanks: declared tensor read with matching rank passes through.
 run_cmd do
-  let ax (nm : String) : AxisSpec := { name := nm, uid := 0, kind := .real none }
+  let ax (nm : String) : AxisSpec := { name := nm, uid := 0, kind := .real }
   let p : TLProgram := {
     decls := [.tensor "W" [ax "i", ax "k"]],
     stmts := [.assign "Y" [.free (ax "i")]
@@ -135,7 +135,7 @@ run_cmd do
 
 -- checkReadRanks: declared tensor read with wrong rank ⇒ rankMismatch.
 run_cmd do
-  let ax (nm : String) : AxisSpec := { name := nm, uid := 0, kind := .real none }
+  let ax (nm : String) : AxisSpec := { name := nm, uid := 0, kind := .real }
   let p : TLProgram := {
     decls := [.tensor "W" [ax "i", ax "k"]],   -- declared rank 2
     stmts := [.assign "Y" [.free (ax "i")]
@@ -149,7 +149,7 @@ run_cmd do
 
 -- checkReadRanks: external tensor with consistent read arity passes through.
 run_cmd do
-  let ax : AxisSpec := { name := "i", uid := 1, kind := .real none }
+  let ax : AxisSpec := { name := "i", uid := 1, kind := .real }
   let readX n : Factor := .read "X" (List.replicate n (.axis ax))
   let mkStmt (nm : String) (n : Nat) : Stmt :=
     .assign nm [] { body := { terms := [{ factors := [readX n] }] }, nonlin := .identity }
@@ -162,7 +162,7 @@ run_cmd do
 
 -- checkReadRanks: external tensor with conflicting read arities ⇒ rankMismatch.
 run_cmd do
-  let ax : AxisSpec := { name := "i", uid := 1, kind := .real none }
+  let ax : AxisSpec := { name := "i", uid := 1, kind := .real }
   let readX n : Factor := .read "X" (List.replicate n (.axis ax))
   let mkStmt (nm : String) (n : Nat) : Stmt :=
     .assign nm [] { body := { terms := [{ factors := [readX n] }] }, nonlin := .identity }
@@ -177,8 +177,8 @@ run_cmd do
 -- checkReadRanks: over-indexed read of a produced-but-undeclared intermediate ⇒ rankMismatch
 -- (Track A #1 guard: T produced rank 1, read at arity 2, no declaration to justify the higher rank).
 run_cmd do
-  let i : AxisSpec := { name := "i", uid := 0, kind := .real none }
-  let k : AxisSpec := { name := "k", uid := 1, kind := .real none }
+  let i : AxisSpec := { name := "i", uid := 0, kind := .real }
+  let k : AxisSpec := { name := "k", uid := 1, kind := .real }
   let rp : ResolvedProgram := {
     decls := [], env := {}, extNames := insert "A" ∅,
     stmts := [
@@ -193,7 +193,7 @@ run_cmd do
 
 -- checkReadRanks: reading the produced intermediate at its produced rank passes.
 run_cmd do
-  let i : AxisSpec := { name := "i", uid := 0, kind := .real none }
+  let i : AxisSpec := { name := "i", uid := 0, kind := .real }
   let rp : ResolvedProgram := {
     decls := [], env := {}, extNames := insert "A" ∅,
     stmts := [
@@ -209,9 +209,9 @@ run_cmd do
 -- the produced rank of an affine LHS is its slot count (e.g. Out[2*i,2*i] ⇒ 2), not its free-axis
 -- count (0). Regression for the guard's scatter-rank handling.
 run_cmd do
-  let i : AxisSpec := { name := "i", uid := 0, kind := .real none }
-  let a : AxisSpec := { name := "a", uid := 2, kind := .real none }
-  let b : AxisSpec := { name := "b", uid := 3, kind := .real none }
+  let i : AxisSpec := { name := "i", uid := 0, kind := .real }
+  let a : AxisSpec := { name := "a", uid := 2, kind := .real }
+  let b : AxisSpec := { name := "b", uid := 3, kind := .real }
   let rp : ResolvedProgram := {
     decls := [], env := {}, extNames := insert "X" ∅,
     stmts := [
@@ -225,7 +225,7 @@ run_cmd do
 
 -- checkDtypes: real-kinded axis in iterAt slot ⇒ iterAxisNotNat.
 run_cmd do
-  let l : AxisSpec := { name := "l", uid := 1, kind := .real none }  -- ← real, not nat
+  let l : AxisSpec := { name := "l", uid := 1, kind := .real }  -- ← real, not nat
   let s : Stmt := .assign "H" [.iterAt l 0]
     { body := { terms := [] }, nonlin := .identity }
   let rp : ResolvedProgram := { decls := [], env := {}, extNames := ∅, stmts := [s] }
@@ -236,7 +236,7 @@ run_cmd do
 
 -- checkDtypes: nat-kinded axis in iterAt slot passes through.
 run_cmd do
-  let l : AxisSpec := { name := "l", uid := 1, kind := .nat none }
+  let l : AxisSpec := { name := "l", uid := 1, kind := .nat }
   let s : Stmt := .assign "H" [.iterAt l 0]
     { body := { terms := [] }, nonlin := .identity }
   let rp : ResolvedProgram := { decls := [], env := {}, extNames := ∅, stmts := [s] }
@@ -246,7 +246,7 @@ run_cmd do
 
 -- checkDtypes: nat-kinded axis in freeNorm slot ⇒ normAxisNotReal.
 run_cmd do
-  let m : AxisSpec := { name := "m", uid := 2, kind := .nat none }  -- ← nat, not real
+  let m : AxisSpec := { name := "m", uid := 2, kind := .nat }  -- ← nat, not real
   let s : Stmt := .assign "S" [.freeNorm m]
     { body := { terms := [] }, nonlin := .axiswise .softmax none }
   let rp : ResolvedProgram := { decls := [], env := {}, extNames := ∅, stmts := [s] }
@@ -257,7 +257,7 @@ run_cmd do
 
 -- checkDtypes: predicate tensor with non-identity nonlin ⇒ predicateNonlin.
 run_cmd do
-  let ax : AxisSpec := { name := "i", uid := 1, kind := .real none }
+  let ax : AxisSpec := { name := "i", uid := 1, kind := .real }
   let s : Stmt := .assign "P" [.free ax]
     { body := { terms := [] }, nonlin := .pointwise .relu }  -- ← relu on a predicate
   let env : DeclEnv := ({} : Std.HashMap String Decl).insert "P" (.predicate "P" [ax])
@@ -269,7 +269,7 @@ run_cmd do
 
 -- checkDtypes: predicate tensor with identity nonlin passes through.
 run_cmd do
-  let ax : AxisSpec := { name := "i", uid := 1, kind := .real none }
+  let ax : AxisSpec := { name := "i", uid := 1, kind := .real }
   let s : Stmt := .assign "P" [.free ax]
     { body := { terms := [] }, nonlin := .identity }
   let env : DeclEnv := ({} : Std.HashMap String Decl).insert "P" (.predicate "P" [ax])

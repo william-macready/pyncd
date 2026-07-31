@@ -44,7 +44,7 @@ run_cmd (assertEval "RSN2 identity-scatter-still-works"
 -- RSN3  defensive check: `evalScatter` itself rejects a non-identity nonlin (programmatic AST
 --   construction bypassing the surface compiler / validation).
 run_cmd do
-  let i : AxisSpec := { name := "i", uid := 1, kind := .real none }
+  let i : AxisSpec := { name := "i", uid := 1, kind := .real }
   let X := DenseTensor.mk [2] #[1.0, 2.0]
   let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X" X
   let slots : List LHSSlot := [.affine (.scale 2 i)]

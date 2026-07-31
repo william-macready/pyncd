@@ -3,9 +3,9 @@ import LeanNCD.DSL.Ast
 namespace LeanNCD
 
 -- Build the matmul AST by hand: Y[i,j] := W[i,k] · X[k,j] (k contracted).
-private def axI : AxisSpec := ⟨"i", 0, .real none⟩
-private def axJ : AxisSpec := ⟨"j", 0, .real none⟩
-private def axK : AxisSpec := ⟨"k", 0, .real none⟩
+private def axI : AxisSpec := ⟨"i", 0, .real⟩
+private def axJ : AxisSpec := ⟨"j", 0, .real⟩
+private def axK : AxisSpec := ⟨"k", 0, .real⟩
 private def matmul : TLProgram :=
   { decls := []
     stmts := [ .assign "Y" [.free axI, .free axJ]

@@ -1,7 +1,7 @@
 import LeanNCD.Eval.Scan
 namespace LeanNCD.Eval
 open Std
-private def ax (nm : String) (u : Nat) : AxisSpec := { name := nm, uid := u, kind := .real none }
+private def ax (nm : String) (u : Nat) : AxisSpec := { name := nm, uid := u, kind := .real }
 private def tensorOf (shape : List Nat) (xs : List Float) : DenseTensor := ⟨shape, xs.toArray⟩
 
 -- LINEAR scan, single state: S[j,0] := X[j]; S[j,l+1] := S[j,l] · A[j]   (elementwise, no contraction)

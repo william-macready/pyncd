@@ -5,8 +5,8 @@ import LeanNCD.DSL.Target
 namespace LeanNCD
 
 inductive AxisKind
-  | real : Option SizeExpr → AxisKind
-  | nat  : Option SizeExpr → AxisKind
+  | real
+  | nat
   deriving DecidableEq, Repr, Lean.ToExpr, Inhabited
 
 structure AxisSpec where

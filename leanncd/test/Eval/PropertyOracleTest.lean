@@ -10,7 +10,7 @@ run_cmd do
   | some msg => throwError s!"E6 property oracle FAILED:\n{msg}"
 
 -- TEST-THE-TESTER (a): a known-good tiny program passes both laws.
-private def i0 : AxisSpec := ⟨"i", 1, .real (some (.lit 2))⟩
+private def i0 : AxisSpec := ⟨"i", 1, .real⟩
 private def goodProg : TLProgram :=
   { decls := [.axis i0 (some 2), .tensor "A" [i0], .tensor "B" [i0]],
     stmts := [.assign "Y" [.free i0]

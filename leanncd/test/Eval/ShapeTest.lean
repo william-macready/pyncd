@@ -2,7 +2,7 @@ import LeanNCD.Eval.Shape
 namespace LeanNCD.Eval
 open Std
 
-private def ax (nm : String) (u : Nat) : AxisSpec := { name := nm, uid := u, kind := .real none }
+private def ax (nm : String) (u : Nat) : AxisSpec := { name := nm, uid := u, kind := .real }
 
 -- matmul reads W[i,k], X[k,j] with W:[2,3], X:[3,4] ⇒ i↦2, k↦3, j↦4; Y[i,j] shape [2,4].
 run_cmd do

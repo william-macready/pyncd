@@ -131,41 +131,65 @@ tractable interim is a *shape/label* agreement theorem plus per-feature reject g
 not a numeric commuting diagram.
 
 **G. A scan base case does not name its own iteration axis; base↔recur pairing is positional
-(new 2026-07-30 — in no spike).** `Elab.lean:244` elaborates a literal LHS slot as
-`.iterAt (scanAxis "") n` — **empty name, uid 0**. So `G[j, 0]` never records *which* axis it
-pins. `finalizeScans` repairs this after the fact (`Structural.lean:849-851`): it finds the
-same-named stmt carrying a recur slot and has each base `iterAt` adopt that step's `iterNext`
-axis **at the same slot position**.
-
-This is deliberate and documented in-place, so it is a **fragility, not a reproduced defect —
-NOT PROBED, no failing program constructed.** The exposure: correctness rests on the base and
-recur stmts agreeing on slot order and on the base's pinned positions lining up with the step's
-advancing positions, and *the surface syntax enforces neither*. A base whose slots are ordered
-differently from its step would be silently re-attributed to the wrong axis rather than
-rejected — the same shape as findings C/D/E′ (a plausible invariant, unchecked).
+(new 2026-07-30, PROBED 2026-07-30 — turned out UNREACHABLE via surface syntax).**
+`Elab.lean:244` elaborates a literal LHS slot as `.iterAt (scanAxis "") n` — **empty name, uid 0**.
+So `G[j, 0]` never records *which* axis it pins. `finalizeScans` repairs this after the fact
+(`Structural.lean:849-851`): it finds the same-named stmt carrying a recur slot and has each base
+`iterAt` adopt that step's `iterNext` axis **at the same slot position**.
 
 The precise miss arm is `Stmt.adoptBaseIterAxes` (`Structural.lean:827-835`): a base `iterAt` whose
-position has no matching step `iterNext` is **"left as-is"**, keeping `name ""` / `uid 0`. Since
-grouping is by iteration-axis UID, such a base lands in a uid-0 group *separate from its own
-recurrence*, so the boundary is never initialised and the state is silently zero-filled.
+position has no matching step `iterNext` is **"left as-is"**, keeping `name ""` / `uid 0`. The
+concern was that grouping-by-UID would then land such a base in a uid-0 group *separate from its
+own recurrence*, silently zero-filling the boundary.
 
-**No existing guard covers this.** `outputAxesConsistent` (`Lowering.lean:457-460`) is a *different*
-check: it compares the outputs of one already-grouped coupled scan (`G[j,l]` vs `H[l,j]`) on the
-routed path, after grouping. Nothing in `finalizeScans` enforces base↔recur slot-order agreement.
+**Probed: three constructions, all fail loud, none silent.** (1) single-axis, iteration axis
+last-in-base/first-in-step (`G[j,0]` / `G[l+1,j]`) ⇒ `missingBaseCase`. (2) multi-axis, one axis
+adopts correctly and one doesn't ⇒ `inconsistentScanAxes` (the mismatched slot's placeholder-uid
+leaks into the stmt's own axis set via the *correctly*-adopted sibling slot, so the component's
+axis count no longer matches the recurrence's advance set). (3) two independently-mis-ordered
+scans in one program ⇒ `missingBaseCase` fires on the first, not masked by the second.
 
-Relevant to **#5b**: naming the axis at the slot (e.g. `G[j, l@0]`) would make the positional
-recovery pass unnecessary. The declaration-based fix chosen for #5b does **not** close G, but it does
-defuse it: a single-candidate rule (one step `iterNext`, one base `iterAt` ⇒ adopt regardless of
-position) removes the failure mode for single-axis scans outright and needs no declaration at all,
-and replacing the "left as-is" arm with a named rejection makes the multi-axis remainder loud instead
-of silent. Scoped as Part 5 of the #5b spec.
+**Root cause it's unreachable — verified by direct inspection, not just inference:**
+`assignUIDs` (`Structural.lean:572-578`) mints exactly one fresh, mutually-distinct, non-zero UID
+per *distinct axis name* in the whole program (`p.axisNames`, a de-duplicated name list) via a
+`memo : HashMap String UID`, then relabels every occurrence of that name to its minted UID. The
+empty string `""` — the anonymous placeholder's name (`Elab.lean:244`, `scanAxis ""`) — is just
+one more entry in that name list: it gets minted its OWN UID like any other name, not left at its
+construction-time default of `0`. Confirmed by dumping `resolveDecls`'s output directly on a
+correctly-adopted program (`axis l : ℕ = 3 / G[j,0] := Z[j] / G[j,l+1] := …`): `l` → uid 1, `j` →
+uid 2, and the base's placeholder (name `""`) → uid **3** — not 0. (An earlier draft of this
+finding claimed uid 0 stays exclusively reserved for the placeholder; that's not the mechanism —
+the placeholder is relabeled too, just to a value distinct from every *other* name's value.) The
+guarantee that actually holds: **two axes are only ever merged into the same component if they
+share a name**, since the memo is name-keyed and injective (`freshNonZero` is strictly
+increasing, so distinct memo entries are distinct UIDs). A real, surface-declared axis is never
+named `""`, so its UID can never coincide with the placeholder's — an un-adopted base's axSet can
+never *quietly* equal a real recurrence's axSet; it always ends up a strict superset (case 2,
+loud) or disjoint (cases 1/3, loud). The `outputAxesConsistent` (`Lowering.lean:457-460`) guard
+is unrelated (compares outputs of an already-grouped coupled scan, post-grouping) and was never
+the mechanism that closes this — `missingBaseCase`/`inconsistentScanAxes` are.
+
+**The residual risk is programmatic ASTs only** — code that builds `AxisSpec`/`Stmt` values
+directly (bypassing `assignUIDs`'s name-based minting entirely) *could* deliberately give a real
+axis the same UID as some placeholder it constructs, at which point the "left as-is" arm's
+silence would matter. `ScanGen.lean` is the one place in the repo that builds ASTs this way, and
+it already assigns distinct, proper non-zero UIDs (e.g. `202`, `L`) to every axis it constructs —
+the collision has never occurred in practice. **Still don't detect a placeholder by `uid == 0` in
+new code** — that was never the actual invariant (see above), and a hand-built AST is free to pick
+any UID for anything.
+
+**Decided 2026-07-30: docs-only.** No code change for G — recorded here and in the #5b spec's
+Part 5, which is closed as "probed unreachable" rather than implemented. The single-candidate
+adoption rule and the fail-loud `unresolvedBaseIterAxis` rejection remain available as optional
+future ergonomic/defense-in-depth work (not safety fixes) if anyone wants to revisit; see the
+spec for the shape.
 
 **H. An axis kind's size is write-only — `axis l : ℕ[3]` looks like an extent pin and is not
-(new 2026-07-30, PROBED).** `AxisKind` is `real/nat : Option SizeExpr → AxisKind`
-(`Ast.lean:7-10`) and `Elab.lean:37,39` populate that `SizeExpr` from the `ℝ[…]`/`ℕ[…]` kind
-forms. **Nothing ever reads it.** The only consumers of `AxisSpec.kind` are the two dtype checks
+(new 2026-07-30, PROBED, FIXED 2026-07-30).** `AxisKind` was `real/nat : Option SizeExpr → AxisKind`
+(`Ast.lean:7-10`) and `Elab.lean:37,39` populated that `SizeExpr` from the `ℝ[…]`/`ℕ[…]` kind
+forms. **Nothing ever read it.** The only consumers of `AxisSpec.kind` were the two dtype checks
 `iterAxisNotNat` / `normAxisNotReal` (`Structural.lean:700,702`), which test `isNat`/`isReal`
-and discard the payload. Extents come from a *different* channel: `explicitSizes` is folded from
+and discarded the payload. Extents came from a *different* channel: `explicitSizes` is folded from
 `| .axis ax (some n) => …` alone (`Lowering.lean:176-178`).
 
 Probe (three programs differing only in the axis declaration, all else identical):
@@ -176,9 +200,19 @@ Probe (three programs differing only in the axis declaration, all else identical
 | `axis l : ℕ[3]` | `ERROR — evalScan: unsized iteration axis 'l'` |
 | *(none)* | `ERROR — evalScan: unsized iteration axis 'l'` |
 
-**`ℕ[3]` is indistinguishable from declaring nothing.** Directly load-bearing for **#5b**, whose
+**`ℕ[3]` was indistinguishable from declaring nothing.** Directly load-bearing for **#5b**, whose
 whole premise is "require a *pinned* axis": any "is this axis sized?" check must test
 `Decl.axis _ (some n)`, because a `kind`-based test would accept the decoy.
+
+**Fix applied (Part 2b of the #5b spec, docs/superpowers/specs/2026-07-30-scan-axis-declaration-spike.md):**
+deleted the dead payload rather than adding a rejection for it — `AxisKind` is now `real | nat`
+(no argument), the `ℝ[…]`/`ℕ[…]` grammar productions and their two elaborator arms are gone, and
+the state `axis l : ℕ[3]` used to parse into is no longer representable at all. Mechanical rewrite
+across 72 sites in 20 files (`.real none`/`.nat none` → `.real`/`.nat`, `.real (some (.lit n))` →
+`.real`, etc.); `lake build` green at the same 8610-job baseline, no new sorries. `tl_size` was kept
+(the syntax category, `elabTLSize`, and `SizeExprTest.lean`) per `papers/leanncd.md` §14.3, which
+specifies `ℕ[n]` as an unfinished feature (wiring to the affine size solver), not cruft — only the
+*reachable, silently-inert* bracket-in-an-axis-declaration form was removed.
 
 **DECIDED 2026-07-30 — remove the payload from the type, not the spelling from the grammar.**
 `AxisKind` becomes `| real | nat`. `AxisKind` is mentioned in only five places in `LeanNCD/`

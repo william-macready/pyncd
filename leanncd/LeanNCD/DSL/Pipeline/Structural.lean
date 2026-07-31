@@ -685,8 +685,8 @@ to such an output is a semantic error. Reading a predicate tensor on the RHS is 
 
 `recurMorphism` stmts and `.affine`/`.free` slots are unconstrained and pass through. -/
 
-private def isNat : AxisKind → Bool | .nat _ => true | _ => false
-private def isReal : AxisKind → Bool | .real _ => true | _ => false
+private def isNat : AxisKind → Bool | .nat => true | _ => false
+private def isReal : AxisKind → Bool | .real => true | _ => false
 
 def checkDtypes (rp : ResolvedProgram) : FreshM ResolvedProgram := do
   for s in rp.stmts do

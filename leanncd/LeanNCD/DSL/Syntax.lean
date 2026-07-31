@@ -52,9 +52,7 @@ syntax:max "(" tl_size ")"           : tl_size
 
 -- Layer 1: axis kinds
 syntax "ℝ"                   : tl_axis_kind
-syntax "ℝ[" tl_size "]"      : tl_axis_kind
 syntax "ℕ"                   : tl_axis_kind
-syntax "ℕ[" tl_size "]"      : tl_axis_kind
 
 -- Axis names in tensor/predicate shapes are bare identifiers.
 syntax ident : tl_axis_spec

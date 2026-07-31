@@ -30,8 +30,8 @@ structure ScanCase where
   recur  : List Stmt
 
 -- ===== Template 1: linear self-scan  S[j,l+1] := S[j,l]·A[j] =====
-private def j1 : AxisSpec := ⟨"j", 201, .real (some (.lit 2))⟩
-private def l1 (L : Nat) : AxisSpec := ⟨"l", 202, .nat (some (.lit L))⟩
+private def j1 : AxisSpec := ⟨"j", 201, .real⟩
+private def l1 (L : Nat) : AxisSpec := ⟨"l", 202, .nat⟩
 
 /-- Public (unlike the other templates) because `ScanUnroll`'s Task 4 point-check needs a
     concrete, named case to test `unrollScan1D` against directly. -/
@@ -50,8 +50,8 @@ def template1 (L : Nat) (Aneg : Bool) : ScanCase :=
     inputs := inputs, axes := [l], Ls := [L], base := [base], recur := [recur] }
 
 -- ===== Template 2: nonlin self-scan  S[j,l+1] := relu(S[j,l]·A[j]) =====
-private def j2 : AxisSpec := ⟨"j", 211, .real (some (.lit 2))⟩
-private def l2 (L : Nat) : AxisSpec := ⟨"l", 212, .nat (some (.lit L))⟩
+private def j2 : AxisSpec := ⟨"j", 211, .real⟩
+private def l2 (L : Nat) : AxisSpec := ⟨"l", 212, .nat⟩
 
 private def template2 (L : Nat) (Aneg : Bool) : ScanCase :=
   let l := l2 L
@@ -68,7 +68,7 @@ private def template2 (L : Nat) (Aneg : Bool) : ScanCase :=
     inputs := inputs, axes := [l], Ls := [L], base := [base], recur := [recur] }
 
 -- ===== Template 3: coupled 2-state  G[l+1]:=G[l]+H[l]; H[l+1]:=G[l] =====
-private def l3 (L : Nat) : AxisSpec := ⟨"l", 222, .nat (some (.lit L))⟩
+private def l3 (L : Nat) : AxisSpec := ⟨"l", 222, .nat⟩
 
 private def template3 (L : Nat) : ScanCase :=
   let l := l3 L
@@ -93,7 +93,7 @@ def partialScanCases : List ScanCase :=
   ([2, 3].map template3)
 
 -- ===== Template 4: state + external read  S[l+1] := S[l] + X[l] =====
-private def l4 (L : Nat) : AxisSpec := ⟨"l", 232, .nat (some (.lit L))⟩
+private def l4 (L : Nat) : AxisSpec := ⟨"l", 232, .nat⟩
 
 private def template4 (L : Nat) : ScanCase :=
   let l := l4 L
@@ -110,9 +110,9 @@ private def template4 (L : Nat) : ScanCase :=
     inputs := inputs, axes := [l], Ls := [L], base := [base], recur := [recur] }
 
 -- ===== Template 5: tropical aggregator  M[j,l+1] := maxreduce/minreduce(M[j,l]·W[j,k]) =====
-private def j5 : AxisSpec := ⟨"j", 241, .real (some (.lit 1))⟩
-private def k5 : AxisSpec := ⟨"k", 242, .real (some (.lit 2))⟩
-private def l5 (L : Nat) : AxisSpec := ⟨"l", 243, .nat (some (.lit L))⟩
+private def j5 : AxisSpec := ⟨"j", 241, .real⟩
+private def k5 : AxisSpec := ⟨"k", 242, .real⟩
+private def l5 (L : Nat) : AxisSpec := ⟨"l", 243, .nat⟩
 
 private def template5 (L : Nat) (useMax : Bool) : ScanCase :=
   let l := l5 L
@@ -129,8 +129,8 @@ private def template5 (L : Nat) (useMax : Bool) : ScanCase :=
     inputs := inputs, axes := [l], Ls := [L], base := [base], recur := [recur] }
 
 -- ===== Template 6: 2-D grid-DP  G[r,0]:=Z[r]; G[r+1,c+1]:=G[r,c]+A[r,c] =====
-private def r6 : AxisSpec := ⟨"r", 251, .nat (some (.lit 2))⟩
-private def c6 : AxisSpec := ⟨"c", 252, .nat (some (.lit 2))⟩
+private def r6 : AxisSpec := ⟨"r", 251, .nat⟩
+private def c6 : AxisSpec := ⟨"c", 252, .nat⟩
 
 /-- Public (unlike templates 2-5) because `ScanUnroll`'s Task 5 point-check needs a concrete,
     named case to test `unrollScan2D` against directly. -/

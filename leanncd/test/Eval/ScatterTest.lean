@@ -1,7 +1,7 @@
 import LeanNCD.Eval.Scatter
 namespace LeanNCD.Eval
 open Std
-private def ax (nm : String) (u : Nat) : AxisSpec := { name := nm, uid := u, kind := .real none }
+private def ax (nm : String) (u : Nat) : AxisSpec := { name := nm, uid := u, kind := .real }
 private def tensorOf (shape : List Nat) (xs : List Float) : DenseTensor := ⟨shape, xs.toArray⟩
 
 -- upsample: Out[2*i, 2*j] := X[i,j], X = [[1,2],[3,4]] (2×2) ⇒ 4×4 with X at even coords, 0 elsewhere.

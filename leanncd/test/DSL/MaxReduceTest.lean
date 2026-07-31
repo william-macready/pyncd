@@ -27,7 +27,7 @@ run_cmd do
 -- ---------------------------------------------------------------------------
 
 run_cmd do
-  let ax : AxisSpec := { name := "i", uid := 1, kind := .real none }
+  let ax : AxisSpec := { name := "i", uid := 1, kind := .real }
   let s : Stmt := .assign "P" [.free ax]
     { body := { terms := [] }, nonlin := .identity, agg := .max }
   let env : DeclEnv := ({} : HashMap String Decl).insert "P" (.predicate "P" [ax])
@@ -46,7 +46,7 @@ end LeanNCD
 namespace LeanNCD.Eval
 open Std
 
-private def ax (nm : String) (u : Nat) : AxisSpec := { name := nm, uid := u, kind := .real none }
+private def ax (nm : String) (u : Nat) : AxisSpec := { name := nm, uid := u, kind := .real }
 private def tensorOf (shape : List Nat) (xs : List Float) : DenseTensor := ⟨shape, xs.toArray⟩
 private def floatMax (a b : Float) : Float := Max.max a b
 private def negInf : Float := -1.0 / 0.0
