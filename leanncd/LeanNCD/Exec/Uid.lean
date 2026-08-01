@@ -55,6 +55,15 @@ inductive CompileError
                                                              -- declared `iter` — `iter l = N` is required;
                                                              -- both `l +1` and `l + 1` mean the same thing
                                                              -- and neither is a plain shifted write anymore
+  | scatterInScan        : String → CompileError            -- a scatter-shaped LHS
+                                                             -- (slotsBecomeScatter) also carries a
+                                                             -- scan iteration slot (iterAt/
+                                                             -- iterNext) — Scan.evalStmtSliceSeeded
+                                                             -- already rejects this at eval time
+                                                             -- ("only assign stmts are supported in
+                                                             -- scans"); reject it here instead, at
+                                                             -- compile time, mirroring
+                                                             -- checkScatterNonlin
   deriving Repr, DecidableEq
 
 /-- Combined error + UID-counter monad (`EStateM ε σ α = σ → Result ε σ α`, Lean core). Mints fresh

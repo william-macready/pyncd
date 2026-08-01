@@ -23,6 +23,7 @@ def TLProgram.compile (p : TLProgram) : FreshM ThreadedComposed := do
   let b ← checkReadRanks b
   let b ← checkDtypes b
   let b ← checkScatterNonlin b
+  let b ← checkScatterNoScan b
   let d ← lowerArith b
   let e ← finalizeScans d
   let f ← splitNonlins e
@@ -33,7 +34,8 @@ def TLProgram.compile (p : TLProgram) : FreshM ThreadedComposed := do
     bodies + lowered ops + decls (dtype). The evaluator consumes this (the routed ThreadedComposed
     collapses scan bodies and can't be evaluated). -/
 def TLProgram.compileToScheduled : TLProgram → FreshM ScheduledProgram :=
-  assignUIDs >=> resolveDecls >=> reclassifyIterSlots >=> checkReadRanks >=> checkDtypes >=> checkScatterNonlin >=> lowerArith >=> finalizeScans >=> splitNonlins >=> schedule
+  assignUIDs >=> resolveDecls >=> reclassifyIterSlots >=> checkReadRanks >=> checkDtypes >=>
+    checkScatterNonlin >=> checkScatterNoScan >=> lowerArith >=> finalizeScans >=> splitNonlins >=> schedule
 
 /-- Stage 1 (parse) + Stage 2 (compile) at elaboration time; embed the computable
     `ThreadedComposed` presentation via `ToExpr`. -/

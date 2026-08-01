@@ -278,4 +278,33 @@ run_cmd do
   | .ok _ _    => pure ()
   | .error e _ => throwError s!"predicate with identity should not error: {repr e}"
 
+-- checkScatterNoScan: a scatter-shaped LHS (Out[2*i]) combined with an iteration slot (l+1 on
+-- another dimension) must be rejected at compile time — today it silently compiles, and is only
+-- rejected much later at eval time by evalStmtSliceSeeded's generic "only assign stmts" guard.
+run_cmd do
+  let i : AxisSpec := { name := "i", uid := 1, kind := .real }
+  let l : AxisSpec := { name := "l", uid := 9, kind := .nat }
+  let rhs : RHSExpr := { body := { terms := [{ factors := [.read "X" [.axis i]] }] }, nonlin := .identity }
+  let rp : ResolvedProgram :=
+    { decls := [], env := {}, extNames := ∅,
+      stmts := [.assign "Out" [.affine (.scale 2 i), .iterNext l] rhs] }
+  match checkScatterNoScan rp |>.run 0 with
+  | .error (.scatterInScan "Out") _ => pure ()
+  | .error e _ => throwError s!"checkScatterNoScan: wrong CompileError: {repr e}"
+  | .ok _ _    => throwError "checkScatterNoScan: expected scatterInScan, got success"
+
+-- checkScatterNoScan's .scatter arm (the programmatic escape hatch — a Stmt.scatter built
+-- directly, bypassing lowerArith's own reclassification) must be rejected the same way.
+run_cmd do
+  let i : AxisSpec := { name := "i", uid := 1, kind := .real }
+  let l : AxisSpec := { name := "l", uid := 9, kind := .nat }
+  let rhs : RHSExpr := { body := { terms := [{ factors := [.read "X" [.axis i]] }] }, nonlin := .identity }
+  let rp : ResolvedProgram :=
+    { decls := [], env := {}, extNames := ∅,
+      stmts := [.scatter "Out" [.affine (.scale 2 i), .iterNext l] rhs { fill := 0, reduce := .rejectCollisions }] }
+  match checkScatterNoScan rp |>.run 0 with
+  | .error (.scatterInScan "Out") _ => pure ()
+  | .error e _ => throwError s!"checkScatterNoScan (.scatter arm): wrong CompileError: {repr e}"
+  | .ok _ _    => throwError "checkScatterNoScan (.scatter arm): expected scatterInScan, got success"
+
 end LeanNCD
