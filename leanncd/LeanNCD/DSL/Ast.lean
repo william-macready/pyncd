@@ -129,9 +129,23 @@ inductive LHSSlot
   | affine   : IdxExpr → LHSSlot
   deriving DecidableEq, Repr, Lean.ToExpr
 
+/-- Scatter collision-reduction policy: how to merge multiple source coordinates that write the
+    same output coordinate. Distinct from `RHSExpr.agg` (the 4b `Combine` selection in
+    `Contract`/`Scatter`), which governs how a SINGLE source coordinate's own RHS terms combine —
+    the two are independent (an RHS `maxreduce` with collision `sum` differs from RHS `sum` with
+    collision `max`). `rejectCollisions` is the default: absence of an explicit policy means a
+    collision is a validation failure, not an implicit overwrite. -/
+inductive CollisionReduce
+  | rejectCollisions
+  | overwrite
+  | sum
+  | max
+  | min
+  deriving DecidableEq, Repr, Lean.ToExpr, Inhabited
+
 structure ScatterOpts where
   fill   : Int := 0
-  reduce : Option String := none
+  reduce : CollisionReduce := .rejectCollisions
   deriving DecidableEq, Repr, Lean.ToExpr, Inhabited
 
 inductive Stmt

@@ -12,7 +12,7 @@ run_cmd do
   let slots : List LHSSlot := [.affine (.scale 2 i), .affine (.scale 2 j)]
   let rhs : RHSExpr := { body := { terms := [{ factors := [.read "X" [.axis i, .axis j]] }] }, nonlin := .identity }
   let sizes := (({} : HashMap UID Nat).insert 1 2).insert 2 2   -- i↦2, j↦2
-  match evalScatter env sizes "Out" slots rhs { fill := 0, reduce := none } [4,4] with
+  match evalScatter env sizes "Out" slots rhs { fill := 0, reduce := .rejectCollisions } [4,4] with
   | .error e => throwError e
   | .ok (_, Out) =>
       -- X values at even coords:
@@ -30,7 +30,7 @@ run_cmd do
   let slots : List LHSSlot := [.affine (.const 0), .affine (.const 0)]
   let rhs : RHSExpr := { body := { terms := [{ factors := [.read "X" [.axis i, .axis j]] }] }, nonlin := .identity }
   let sizes := (({} : HashMap UID Nat).insert 1 2).insert 2 2
-  match evalScatter env sizes "Out" slots rhs { fill := 0, reduce := some "sum" } [4,4] with
+  match evalScatter env sizes "Out" slots rhs { fill := 0, reduce := .sum } [4,4] with
   | .error e => throwError e
   | .ok (_, Out) =>
       unless Out.get! [0,0] == 10.0 do throwError s!"reduce sum wrong: {repr Out.data}"
@@ -44,7 +44,7 @@ run_cmd do
   let slots : List LHSSlot := [.affine (.scale 2 i), .affine (.scale 2 j)]
   let rhs : RHSExpr := { body := { terms := [{ factors := [.read "X" [.axis i, .axis j]] }] }, nonlin := .identity }
   let sizes := ({} : HashMap UID Nat).insert 1 2          -- i↦2, but j (uid 2) deliberately unsized
-  match evalScatter env sizes "Out" slots rhs { fill := 0, reduce := none } [4,4] with
+  match evalScatter env sizes "Out" slots rhs { fill := 0, reduce := .rejectCollisions } [4,4] with
   | .error _ => pure ()                                   -- expected
   | .ok _    => throwError "expected evalScatter to reject an unsized source axis"
 
@@ -63,10 +63,38 @@ run_cmd do
     { body := { terms := [{ factors := [.read "A" [.axis i]] }, { factors := [.read "B" [.axis i]] }] },
       nonlin := .identity, agg := .max }
   let sizes := ({} : HashMap UID Nat).insert 1 3
-  match evalScatter env sizes "Out" slots rhs { fill := 0, reduce := none } [3] with
+  match evalScatter env sizes "Out" slots rhs { fill := 0, reduce := .rejectCollisions } [3] with
   | .error e => throwError e
   | .ok (_, Out) => unless DenseTensor.approxEq Out (tensorOf [3] [10, 5, 2]) do
       throwError s!"4g regression: expected per-position max(A,B) = [10,5,2] (agg = .max), got \
 {repr Out.data} (evalScatter ignores rhs.agg and always computes a real sum, which gives [11,4,1])"
+
+-- 4g: two source coords writing the same output coord under the default (.rejectCollisions)
+-- policy must error, naming both conflicting source coordinates.
+run_cmd do
+  let i := ax "i" 1; let j := ax "j" 2
+  let X := tensorOf [2,2] [1,2, 3,4]
+  let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X" X
+  let slots : List LHSSlot := [.affine (.const 0), .affine (.const 0)]
+  let rhs : RHSExpr := { body := { terms := [{ factors := [.read "X" [.axis i, .axis j]] }] }, nonlin := .identity }
+  let sizes := (({} : HashMap UID Nat).insert 1 2).insert 2 2
+  match evalScatter env sizes "Out" slots rhs { fill := 0, reduce := .rejectCollisions } [4,4] with
+  | .error e =>
+      unless (e.splitOn "collision").length > 1 do throwError s!"4g: wrong error: {e}"
+  | .ok _ => throwError "4g: expected rejectCollisions to error on a genuine collision"
+
+-- 4g: .min collision policy folds every write (min), not just the last one — the never-before-
+-- reachable case that used to silently fall through to overwrite.
+run_cmd do
+  let i := ax "i" 1
+  let X := tensorOf [3] [5, -8, 2]
+  let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X" X
+  let slots : List LHSSlot := [.affine (.const 0)]   -- every source coord collides at output 0
+  let rhs : RHSExpr := { body := { terms := [{ factors := [.read "X" [.axis i]] }] }, nonlin := .identity }
+  let sizes := ({} : HashMap UID Nat).insert 1 3
+  match evalScatter env sizes "Out" slots rhs { fill := 0, reduce := .min } [1] with
+  | .error e => throwError e
+  | .ok (_, Out) => unless Out.get! [0] == -8.0 do
+      throwError s!"4g: min collision should give -8, got {repr Out.data}"
 
 end LeanNCD.Eval

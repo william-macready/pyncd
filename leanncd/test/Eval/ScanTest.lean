@@ -123,7 +123,7 @@ run_cmd do
   let sizes := (({} : HashMap UID Nat).insert 1 2).insert 9 3
   let slots : List LHSSlot := [.affine (.scale 2 i), .iterNext l]
   let rhs : RHSExpr := { body := { terms := [{ factors := [.read "X" [.axis i]] }] }, nonlin := .identity }
-  match evalStmtSliceSeeded [] env sizes {} (.scatter "Out" slots rhs { fill := 0, reduce := none }) with
+  match evalStmtSliceSeeded [] env sizes {} (.scatter "Out" slots rhs { fill := 0, reduce := .rejectCollisions }) with
   | .error e =>
       unless (e.splitOn "only assign stmts are supported in scans").length > 1 do
         throwError s!"scan/scatter boundary: wrong error message: {e}"

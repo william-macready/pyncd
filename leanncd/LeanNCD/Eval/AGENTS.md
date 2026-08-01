@@ -72,6 +72,16 @@ imports `Shape.lean` (for `normAxisUidOf`, since Wave B's `resolveNonlin`); `Sca
   uses, selected by `rhs.agg`** — not a separate hardcoded real sum-of-products. Before Wave C
   (4g), `rhs.agg` was never read inside `Scatter.lean` at all, so a `maxreduce`/`minreduce` scatter
   RHS silently computed a real sum instead of the declared tropical max/min.
+- **`ScatterOpts.reduce` is a closed `CollisionReduce`, not a string** — `rejectCollisions`
+  (default), `overwrite`, `sum`, `max`, `min`. Before Wave C (4g) it was `Option String` matched
+  against only `"sum"`/`"max"`; an unrecognized string (or the never-implemented `"min"`) silently
+  fell through to overwrite. The default changed from implicit-overwrite (`none`) to
+  `rejectCollisions`, confirmed safe by running the full test suite — no surface-compiled scatter
+  pattern in this codebase ever collides (`DSL/Pipeline/Structural.lean`'s `lowerArith` already
+  rejects any surface-detectable collision independently, via `overlappingScatter`). Reaching
+  `.overwrite`/`.sum`/`.max`/`.min` still requires the programmatic escape hatch (direct
+  `Stmt.scatter` construction) — no surface DSL syntax sets this field to anything but the
+  default.
 
 ## Patterns
 The Portfolio suite (`test/Eval/Portfolio/`, shared `Harness.lean`) is a broad library of worked model fragments, one file per model family (LinAlg/Feedforward/Attention/ConvPool/Norm/Recurrence/GnnScatter/Relational/StatsLoss/Tropical/TensorNet/Generative/ClassicalML/EdgeCase). Three test styles (see `docs/test_portfolio.md`): **[N] numeric** (`assertEval`/`assertShape`, compare against a hand-computed tensor or property), **[R]/[F] runtime/compile failure** (`assertEvalError`/`assertCompileError`, checks the error string/constructor), and pure parse-errors (documented as comments only — `tlprog!` fails during elaboration, before any assertion machinery runs). `RejectTest.lean`/`ScatterNonlinRejectTest.lean` hold adversarial cases pinned to a specific error so a regression that turns a reject into a silent success is caught. `KnownGapTest.lean` is pure documentation — a triage taxonomy of DSL expressiveness gaps (rejecting/parse-level/missing-primitive/confirmed-non-gaps), not live assertions.

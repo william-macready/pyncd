@@ -830,10 +830,10 @@ def lowerArith (rp : ResolvedProgram) : FreshM LoweredProgram := do
         -- injective (i ↦ (i,i)) so it passes.
         if slotsBecomeScatter slots then
           if slots.any LHSSlot.collapses then throw (CompileError.overlappingScatter nm)
-          else return Stmt.scatter nm slots rhs { fill := 0, reduce := none }
+          else return Stmt.scatter nm slots rhs { fill := 0, reduce := .rejectCollisions }
         else return s
     | .scatter nm slots _ opts =>
-        if (slots.any LHSSlot.collapses) && opts.reduce ≠ some "sum" then
+        if (slots.any LHSSlot.collapses) && opts.reduce ≠ .sum then
           throw (CompileError.overlappingScatter nm)
         else return s
     | .recurMorphism _ _ _ => return s)   -- no affine LHS; passes through unchanged

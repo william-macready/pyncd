@@ -11,6 +11,10 @@ def scatterSourceAxes (slots : List LHSSlot) (rhs : RHSExpr) : List UID :=
     Each source coord → rhs value (per the 4b `Combine` selected by `rhs.agg` — `.sum`/`.max`/
     `.min` combine terms, not a hardcoded real sum) → written to the affine output coord. Output
     is initialised to `opts.fill`; see `opts.reduce`'s own doc comment for the collision policy.
+    Colliding writes (two or more source coords landing on the same output coord) are merged per
+    `opts.reduce`: `.rejectCollisions` (default) errors naming both conflicting source coords;
+    `.overwrite` keeps the last write; `.sum`/`.max`/`.min` fold every write (including the first)
+    starting from `opts.fill`. Non-colliding coordinates behave identically under every policy.
     Out-of-range output coordinates are skipped. -/
 def evalScatter (env : HashMap String DenseTensor) (sizes : HashMap UID Nat)
     (nm : String) (slots : List LHSSlot) (rhs : RHSExpr) (opts : ScatterOpts) (outShape : List Nat) :
@@ -40,6 +44,9 @@ def evalScatter (env : HashMap String DenseTensor) (sizes : HashMap UID Nat)
     | .min => Combine.min
     | .sum => Combine.real
   let mut out := DenseTensor.ofFn outShape (fun _ => Float.ofInt opts.fill)
+  -- Tracks, per output flat-index, the FIRST source coordinate that wrote there — used only to
+  -- name the conflicting pair when `.rejectCollisions` fires; every other policy ignores it.
+  let mut writtenBy : HashMap Nat (List Nat) := {}
   for sc in cartesian srcSizes do
     let coord : HashMap UID Int := (srcAxes.zip sc).foldl (fun m (u, v) => m.insert u (Int.ofNat v)) {}
     -- rhs value at this source coord: ∏ over a term's factors (from c.unit1), combined over
@@ -56,12 +63,21 @@ def evalScatter (env : HashMap String DenseTensor) (sizes : HashMap UID Nat)
     let outCoordZ : List Int := slots.map (fun sl => evalIdx coord sl.outIdx)
     if (outCoordZ.zip outShape).all (fun (z, d) => 0 ≤ z && z < (d : Int)) then
       let oc := outCoordZ.map Int.toNat
+      let fi := DenseTensor.flatIdx outShape oc
       let prev := out.get! oc
-      let new := match opts.reduce with
-        | some "sum" => prev + val
-        | some "max" => Max.max prev val
-        | _          => val
-      out := out.set! oc new
+      match opts.reduce with
+      | .rejectCollisions =>
+          match writtenBy[fi]? with
+          | some firstSrc =>
+              throw s!"evalScatter {nm}: collision writing output coord {oc} — source coords \
+{firstSrc} and {sc} both write here"
+          | none =>
+              writtenBy := writtenBy.insert fi sc
+              out := out.set! oc val
+      | .overwrite => out := out.set! oc val
+      | .sum        => out := out.set! oc (prev + val)
+      | .max        => out := out.set! oc (Max.max prev val)
+      | .min        => out := out.set! oc (Min.min prev val)
   return (nm, out)
 
 end LeanNCD.Eval

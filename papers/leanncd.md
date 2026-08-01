@@ -1356,10 +1356,16 @@ inductive LHSSlot
   | iterNext : AxisSpec → LHSSlot                       -- l + 1  (recurrence step)
   | affine   : IdxExpr → LHSSlot                        -- affine output slot (Scatter)
 
+inductive CollisionReduce
+  | rejectCollisions | overwrite | sum | max | min
+
 structure ScatterOpts where
-  fill   : Int := 0                 -- `Int`, not `Float`: Lean's `Float` has no `DecidableEq`,
-  reduce : Option String := none    -- which the AST's `deriving DecidableEq` requires
-                                    -- none = injective required; 'sum' = accumulate
+  fill   : Int := 0                              -- `Int`, not `Float`: Lean's `Float` has no
+  reduce : CollisionReduce := .rejectCollisions   -- `DecidableEq`, which the AST's
+                                                   -- `deriving DecidableEq` requires
+                                                   -- rejectCollisions = injective required (the
+                                                   -- default); sum/max/min accumulate; overwrite
+                                                   -- = last write wins
 
 inductive Stmt
   | assign        : String → List LHSSlot → RHSExpr → Stmt

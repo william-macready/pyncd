@@ -50,7 +50,7 @@ run_cmd do
   let slots : List LHSSlot := [.affine (.scale 2 i)]
   let rhs : RHSExpr := { body := { terms := [{ factors := [.read "X" [.axis i]] }] }, nonlin := .pointwise .relu }
   let sizes := ({} : HashMap UID Nat).insert 1 2
-  match evalScatter env sizes "Out" slots rhs { fill := 0, reduce := none } [4] with
+  match evalScatter env sizes "Out" slots rhs { fill := 0, reduce := .rejectCollisions } [4] with
   | .error e =>
       unless (e.splitOn "non-identity nonlinearity on scatter").length > 1 do
         throwError s!"RSN3: wrong error message: {e}"
