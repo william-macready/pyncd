@@ -349,10 +349,22 @@ string silently overwrites, violating the fail-loud convention. Introduce
 > implementing this: `evalScatter`'s RHS value computation ignored `rhs.agg` entirely (always a
 > real sum-of-products, even for a declared `maxreduce`/`minreduce`) — routed through the same
 > `Combine` record Wave B built for `Contract.lean` instead. Two adjacent gaps surfaced but
-> deliberately not fixed here — see `scatter-in-scan-compiles-but-should-reject` in
-> project memory: a scatter-shaped LHS combined with a scan iteration slot compiles when it
-> arguably should be rejected at compile time, and Lean's compile-time collision detection
+> deliberately not fixed here: a scatter-shaped LHS combined with a scan iteration slot compiled
+> when it arguably should be rejected at compile time, and Lean's compile-time collision detection
 > (`LHSSlot.collapses`) is narrower than the Python reference implementation's `_scatter_injective`.
+>
+> **First gap ✅ DONE — merged to `main` 2026-08-01** (commits `047b023..fd72d48`, merge `f2d0a2b`;
+> full `lake build` green, 8,612 jobs; via
+> `docs/superpowers/plans/2026-08-01-scatter-scan-compile-check.md`). New compile-phase function
+> `checkScatterNoScan`, mirroring `checkScatterNonlin`'s exact shape and pipeline position, plus a
+> new `CompileError.scatterInScan` constructor — purely structural, no axis-size information
+> needed. The second gap (broadening `LHSSlot.collapses` toward a general injectivity check)
+> **remains deferred, now for a confirmed architectural reason, not an assumed one**: tracing the
+> actual call graph showed `checkScatterNonlin`/`lowerArith` have no concrete axis sizes available
+> at all (`inferAxisSizes` only runs later, inside `evalScheduled`, after compilation has already
+> finished) — a Python-`_scatter_injective`-style enumeration cannot run at this point in the
+> pipeline. Would need a sound symbolic over-approximation instead; a separate, harder task. See
+> `scatter-in-scan-compiles-but-should-reject` in project memory for the full writeup.
 
 **4h. Structured `EvalError` (largest item — do last).** `abbrev EvalError := String`
 (`Eval/Tensor.lean:4`) vs the structured `CompileError`. Tests show the cost:
@@ -520,8 +532,16 @@ were **zero-sorry** at the time of the census; all 38 were math-tower.
 | ✅ | **Semantic payload audit** (roadmap Stage 3) | 2026-07-30 | `papers/semantic_payload_audit.md` |
 | ⚠️ | **Wave B** — 4a/4d/4c DONE; 4b's `unit1` DONE, its `ContractionAlgebra` classifier NOT built (deferred to Wave C) | 2026-07-31 | `d08a1d8..383bc0b`; `docs/superpowers/plans/2026-07-31-wave-b-eval-unification.md` |
 | ✅ | **Wave D** — 4g typed scatter collision policy (`CollisionReduce`) | 2026-08-01 | `a3098c0..c86005e`; `docs/superpowers/plans/2026-08-01-scatter-collision-policy.md` |
+| ✅ | **checkScatterNoScan** — reject scatter+scan-iteration-slot at compile time (Wave D follow-up finding) | 2026-08-01 | `047b023..fd72d48`, merge `f2d0a2b`; `docs/superpowers/plans/2026-08-01-scatter-scan-compile-check.md` |
 
 ### Remaining — the critical path to an executing backend
+
+> **Next up: Wave E** (4e → 4h → 4i). No blockers — Wave B/D's prerequisites are landed. Wave C
+> (Minimal EvalPlan) is the larger critical-path item everything here still points at, but it is a
+> new-IR-scale undertaking (differential testing against `DenseTensor`, the deferred
+> `ContractionAlgebra`/`ScalarBinOp` classifier) that warrants its own explicit go-ahead rather than
+> being picked up by default; Wave E is Eval/DSL-only, similarly scoped to Waves B/D, and 4h/4i are
+> a hard prerequisite for Wave C's backend going public regardless of ordering.
 
 ```text
 Wave A  Correctness freeze — ✅ THE THREE AUDIT FINDINGS DONE 2026-07-30 (c754165..14b1353)
@@ -682,8 +702,13 @@ Wave C  Minimal EvalPlan (E4) — the first checked backend boundary
 
 Wave D  ✅ DONE 2026-08-01 (a3098c0..c86005e) — 4g typed scatter policy (CollisionReduce;
         separate RHS agg from collision reduce)
-Wave E  4e → 4h → 4i  diagnostics split, structured errors, EvalReport
+        · follow-up ✅ DONE 2026-08-01 (047b023..fd72d48) — checkScatterNoScan, a compile-time
+          gap Wave D's own review surfaced (scatter+scan-iteration-slot compiled when it should
+          reject); the OTHER gap it surfaced (broadening `LHSSlot.collapses`) stays deferred —
+          confirmed no concrete axis sizes exist at `lowerArith`'s point in the pipeline
+Wave E  ◄ NEXT  4e → 4h → 4i  diagnostics split, structured errors, EvalReport
         · 4h/4i MUST land before the backend is public (closed BackendError family)
+        · no blockers: Wave B (4a/4d/4c) and Wave D (4g + checkScatterNoScan) are both landed
 Wave F  4f  decompose evalScan — AFTER the EvalPlan boundary, not before
         · then one-axis coupled lax.scan, then flattened multi-axis
 Wave G  Backends (E10): PyTorch eager first (fast semantic bring-up; torch_compile/
