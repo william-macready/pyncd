@@ -68,6 +68,10 @@ imports `Shape.lean` (for `normAxisUidOf`, since Wave B's `resolveNonlin`); `Sca
   happen to use ordinary multiplication, so `unit1 = 1.0` for each, but a future `Combine` whose
   `mul` is not ordinary multiplication (e.g. a min-plus/tropical semiring) depends on this field
   being threaded correctly rather than assumed.
+- **`evalScatter`'s RHS value computation routes through the same `Combine` record `Contract.lean`
+  uses, selected by `rhs.agg`** — not a separate hardcoded real sum-of-products. Before Wave C
+  (4g), `rhs.agg` was never read inside `Scatter.lean` at all, so a `maxreduce`/`minreduce` scatter
+  RHS silently computed a real sum instead of the declared tropical max/min.
 
 ## Patterns
 The Portfolio suite (`test/Eval/Portfolio/`, shared `Harness.lean`) is a broad library of worked model fragments, one file per model family (LinAlg/Feedforward/Attention/ConvPool/Norm/Recurrence/GnnScatter/Relational/StatsLoss/Tropical/TensorNet/Generative/ClassicalML/EdgeCase). Three test styles (see `docs/test_portfolio.md`): **[N] numeric** (`assertEval`/`assertShape`, compare against a hand-computed tensor or property), **[R]/[F] runtime/compile failure** (`assertEvalError`/`assertCompileError`, checks the error string/constructor), and pure parse-errors (documented as comments only — `tlprog!` fails during elaboration, before any assertion machinery runs). `RejectTest.lean`/`ScatterNonlinRejectTest.lean` hold adversarial cases pinned to a specific error so a regression that turns a reject into a silent success is caught. `KnownGapTest.lean` is pure documentation — a triage taxonomy of DSL expressiveness gaps (rejecting/parse-level/missing-primitive/confirmed-non-gaps), not live assertions.
