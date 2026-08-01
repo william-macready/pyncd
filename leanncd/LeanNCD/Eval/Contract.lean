@@ -56,9 +56,16 @@ def readNames (rhs : RHSExpr) : List String := rhs.readFactors.map (·.1)
 /-- The cartesian product of `[0..d-1]` ranges (one per dimension). Reuses `allCoords`. -/
 def cartesian (dims : List Nat) : List (List Nat) := DenseTensor.allCoords dims
 
-/-- Evaluate a `.plain` assign (identity nonlin) to its output tensor.
-    `mul` combines factors within a product term; `combine` folds contributions onto the
-    accumulator starting from `unit0`. Default is the ℝ contraction `(*, +, 0)`.
+/-- Evaluate an assign to its output tensor, seeded or not. A `seed : HashMap UID Int` pins
+    axis-UIDs to fixed values (e.g. a scan's iteration axis, pinned to the current slice `l`);
+    seeded UIDs are excluded from BOTH the free (output) axes and the contracted axes, and every
+    per-output coord is seeded with these fixed values. `evalAssignWith` (below) is this function
+    called with an empty seed — unseeded assignment IS seeded assignment with no pins, literally,
+    not a separately maintained implementation.
+
+    `mul` combines factors within a product term (empty product = `unit1`); `combine` folds
+    contributions onto the accumulator starting from `unit0`. Default is the ℝ contraction
+    `(*, +, 0, 1)`.
 
     Each product term is contracted **independently**, over only the axes that term itself
     mentions (`termAxisUIDs`), then its result is folded into the output accumulator via
@@ -68,31 +75,56 @@ def cartesian (dims : List Nat) : List (List Nat) := DenseTensor.allCoords dims
     axis set for every term) would force `a[i]` through a `k`-indexed loop it doesn't need,
     adding it in `|k|` times instead of once.
 
+    Fails loud (returns `.error`, never a wrong or empty-shaped tensor) if: a non-seeded free
+    output axis has no inferable size; a seeded axis has no declared size, or its seed coordinate
+    is out of range; or a per-term contracted axis has no inferable size (previously defaulted to
+    extent one — Wave-B corroborating example #2, `papers/copilot_code_analysis.md`).
+
     All `.read`/`.unaryFn` tensor names are validated against `env` up front. A `gather` error
     during accumulation is now genuinely reachable — a `.unaryFn` domain violation (e.g.
     `log` of a non-positive value) — and propagates as a hard `.error`, per this evaluator's
     fail-loud convention; it is never treated as an out-of-range pad (out-of-range reads return
     `.ok 0.0` directly from `gather`, they never reach the `.error` branch at all). -/
-def evalAssignWith (mul : Float → Float → Float) (combine : Float → Float → Float) (unit0 : Float)
-    (unit1 : Float)
+def evalAssignSeeded (mul : Float → Float → Float) (combine : Float → Float → Float)
+    (unit0 : Float) (unit1 : Float)
     (env : HashMap String DenseTensor) (sizes : HashMap UID Nat)
-    (nm : String) (slots : List LHSSlot) (rhs : RHSExpr) : Except EvalError (String × DenseTensor) := do
-  -- up-front validation: every read name must be a known tensor
+    (seed : HashMap UID Int) (nm : String) (slots : List LHSSlot) (rhs : RHSExpr) :
+    Except EvalError (String × DenseTensor) := do
   for rn in (readNames rhs).eraseDups do
     if !(env.contains rn) then
       throw s!"evalAssign: unknown tensor {rn}"
-  let frees := freeAxisUIDs slots
-  -- fail loud: a free output axis with no inferred size would silently yield a 0-extent tensor.
+  -- free axes = LHS slot axes minus the seeded UIDs (and minus affine slots, which contribute none)
+  let freesAll := freeAxisUIDs slots
+  let frees := freesAll.filter (fun u => ! seed.contains u)
+  -- fail loud: a non-seeded free output axis with no inferred size would silently yield a
+  -- 0-extent tensor (Wave-B corroborating example #1).
   for u in frees do
     if (sizes[u]?).isNone then
       throw s!"evalAssign {nm}: output axis (uid {u}) has no inferable size (it appears in no read position)"
-  let outShape := outputShape sizes slots
+  -- fail loud: a seeded axis needs a declared size to check its seed coordinate is in range.
+  for u in seed.keys do
+    match sizes[u]? with
+    | none   => throw s!"evalAssign {nm}: seeded axis (uid {u}) has no declared size"
+    | some n =>
+        let v := (seed[u]?).getD 0
+        if v < 0 || v >= Int.ofNat n then
+          throw s!"evalAssign {nm}: seed coordinate {v} for axis (uid {u}) is out of range [0, {n})"
+  -- output shape: each non-seeded free slot's size, in slot order
+  let outShape := slots.filterMap (fun sl => match sl.axisUID? with
+    | some u => if seed.contains u then none else some ((sizes[u]?).getD 0)
+    | none   => none)
   let data ← (DenseTensor.allCoords outShape).mapM (fun fcoord => do
-      let baseCoord : HashMap UID Int := (frees.zip fcoord).foldl (fun m (u, v) => m.insert u (Int.ofNat v)) {}
+      let baseCoord : HashMap UID Int :=
+        (frees.zip fcoord).foldl (fun m (u, v) => m.insert u (Int.ofNat v)) seed
       let mut acc := unit0
       for t in rhs.body.terms do
-        let termContr := (termAxisUIDs t).eraseDups.filter (fun u => ! frees.contains u)
-        let termSizes := termContr.map (fun u => (sizes[u]?).getD 1)
+        -- per-term contraction scoping, same rationale as above.
+        let termContr := (termAxisUIDs t).eraseDups.filter (fun u => ! frees.contains u && ! seed.contains u)
+        -- fail loud: a contracted axis with no inferable size used to silently contract at
+        -- extent one (Wave-B corroborating example #2) instead of rejecting the malformed context.
+        let termSizes ← termContr.mapM (fun u => match sizes[u]? with
+          | some n => pure n
+          | none   => throw s!"evalAssign {nm}: contracted axis (uid {u}) has no inferable size")
         let mut termAcc := unit0
         for cc in cartesian termSizes do
           let coord := (termContr.zip cc).foldl (fun m (u, v) => m.insert u (Int.ofNat v)) baseCoord
@@ -105,6 +137,14 @@ def evalAssignWith (mul : Float → Float → Float) (combine : Float → Float 
         acc := combine acc termAcc
       pure acc)
   return (nm, ⟨outShape, data.toArray⟩)
+
+/-- Unseeded assignment: `evalAssignSeeded` with an empty seed, literally — not a separate
+    implementation. -/
+def evalAssignWith (mul : Float → Float → Float) (combine : Float → Float → Float)
+    (unit0 : Float) (unit1 : Float)
+    (env : HashMap String DenseTensor) (sizes : HashMap UID Nat)
+    (nm : String) (slots : List LHSSlot) (rhs : RHSExpr) : Except EvalError (String × DenseTensor) :=
+  evalAssignSeeded mul combine unit0 unit1 env sizes {} nm slots rhs
 
 /-- The default tensor (ℝ) contraction: multiply factors, then sum contributions. -/
 def evalAssign := evalAssignWith (· * ·) (· + ·) 0.0 1.0
@@ -150,47 +190,5 @@ def evalAssignDtyped (decls : List Decl)
     Except EvalError (String × DenseTensor) :=
   let c := combineFor decls nm rhs.agg
   evalAssignWith c.mul c.combine c.unit0 c.unit1 env sizes nm slots rhs
-
-/-- Like `evalAssign`, but with a `seed : HashMap UID Int` of axis-UIDs pinned to fixed values
-    (e.g. the iteration axis of a scan, pinned to the current slice `l`). The seeded UIDs are
-    excluded from BOTH the free (output) axes and the contracted axes; every per-output coord is
-    seeded with these fixed values. Output shape/order follows the NON-seeded free slots.
-    Uses the caller-supplied contraction `(mul, combine, unit0)`, so a `maxreduce` scan step
-    reduces with tropical max — not the ℝ sum (KG-scanagg). -/
-def evalAssignSeeded (mul : Float → Float → Float) (combine : Float → Float → Float) (unit0 : Float)
-    (unit1 : Float)
-    (env : HashMap String DenseTensor) (sizes : HashMap UID Nat)
-    (seed : HashMap UID Int) (nm : String) (slots : List LHSSlot) (rhs : RHSExpr) :
-    Except EvalError (String × DenseTensor) := do
-  for rn in (readNames rhs).eraseDups do
-    if !(env.contains rn) then
-      throw s!"evalAssign: unknown tensor {rn}"
-  -- free axes = LHS slot axes minus the seeded UIDs (and minus affine slots, which contribute none)
-  let freesAll := freeAxisUIDs slots
-  let frees := freesAll.filter (fun u => ! seed.contains u)
-  -- output shape: each non-seeded free slot's size, in slot order
-  let outShape := slots.filterMap (fun sl => match sl.axisUID? with
-    | some u => if seed.contains u then none else some ((sizes[u]?).getD 0)
-    | none   => none)
-  let data ← (DenseTensor.allCoords outShape).mapM (fun fcoord => do
-      let baseCoord : HashMap UID Int :=
-        (frees.zip fcoord).foldl (fun m (u, v) => m.insert u (Int.ofNat v)) seed
-      let mut acc := unit0
-      for t in rhs.body.terms do
-        -- per-term contraction scoping, same rationale as `evalAssignWith`.
-        let termContr := (termAxisUIDs t).eraseDups.filter (fun u => ! frees.contains u && ! seed.contains u)
-        let termSizes := termContr.map (fun u => (sizes[u]?).getD 1)
-        let mut termAcc := unit0
-        for cc in cartesian termSizes do
-          let coord := (termContr.zip cc).foldl (fun m (u, v) => m.insert u (Int.ofNat v)) baseCoord
-          let mut prod := unit1
-          for f in t.factors do
-            match gather env coord f with
-            | .ok v   => prod := mul prod v
-            | .error e => throw e
-          termAcc := combine termAcc prod
-        acc := combine acc termAcc
-      pure acc)
-  return (nm, ⟨outShape, data.toArray⟩)
 
 end LeanNCD.Eval

@@ -78,4 +78,37 @@ run_cmd do
   | .error e => throwError s!"4b empty-product: unexpected error {e}"
   | .ok (_, Z) => unless DenseTensor.approxEq Z (tensorOf [] [0.0]) do
       throwError s!"4b empty-product: got {repr Z.data}, want [0.0] (unit1 not threaded through)"
+
+-- 4a: an out-of-range seed coordinate must be rejected.
+-- (mul/combine bound to explicitly-typed `let`s, and LHSSlot/Except spelled out rather than
+-- dot notation — passing `(· * ·)`/`(· + ·)` inline stalls expected-type propagation for the
+-- `slots` argument, breaking plain `.iterAt`/`.free`/`.error`/`.ok`; caught while executing Task 1.)
+run_cmd do
+  let k := ax "k" 2
+  let X := tensorOf [2] [1, 2]
+  let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X" X
+  let sizes : HashMap UID Nat := ({} : HashMap UID Nat).insert 2 2
+  let seed : HashMap UID Int := ({} : HashMap UID Int).insert 2 5   -- 5 ∉ [0, 2)
+  let rhs : RHSExpr := { body := { terms := [{ factors := [.read "X" [.axis k]] }] }, nonlin := .identity }
+  let mul : Float → Float → Float := (· * ·)
+  let combine : Float → Float → Float := (· + ·)
+  match evalAssignSeeded mul combine 0.0 1.0 env sizes seed "Y" [LHSSlot.iterAt k 0] rhs with
+  | Except.error _ => pure ()
+  | Except.ok _    => throwError "4a: expected rejection of out-of-range seed coordinate 5 ∉ [0, 2)"
+
+-- 4a: empty seed gives the same result as the unseeded wrapper (evalAssignWith IS
+-- evalAssignSeeded with seed = {} — this is the definitional check for the unification).
+run_cmd do
+  let i := ax "i" 1
+  let A := tensorOf [3] [1, 2, 3]
+  let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "A" A
+  let sizes : HashMap UID Nat := ({} : HashMap UID Nat).insert 1 3
+  let rhs : RHSExpr := { body := { terms := [{ factors := [.read "A" [.axis i]] }] }, nonlin := .identity }
+  let mul : Float → Float → Float := (· * ·)
+  let combine : Float → Float → Float := (· + ·)
+  match evalAssignWith mul combine 0.0 1.0 env sizes "Y" [LHSSlot.free i] rhs,
+        evalAssignSeeded mul combine 0.0 1.0 env sizes {} "Y" [LHSSlot.free i] rhs with
+  | Except.ok (_, a), Except.ok (_, b) => unless DenseTensor.approxEq a b do
+      throwError s!"4a: evalAssignWith {repr a.data} ≠ evalAssignSeeded-with-empty-seed {repr b.data}"
+  | _, _ => throwError "4a: one of the two calls errored unexpectedly"
 end LeanNCD.Eval

@@ -40,7 +40,19 @@ Does not own: parsing/compilation/routing (`../DSL/`).
 
 ## Contracts
 - **`scatterOutShape`/`scatterOutputShapes` MUST equal `LHSSlot.outExtent`** (`../DSL/Ast.lean`) — the sole shared formula both `Eval.scatterOutShape` and `Shape.scatterOutputShapes` call. History: an earlier duplicate formula (`scatterOutDim`, upper-envelope `max index + 1`) disagreed with the evaluator's stride-based materialization for strided scatters (`Out[2*i]`) — a downstream reader was sized to `3` while `evalScatter` materialized `4`, an unsound cropped read (fix `fc10d70`). The duplicate was deleted (`6a26825`) so both call sites share one function — **no import enforces this beyond both depending on the same function; a future second formula reintroduces the drift risk.**
-- **Fail-loud unsized axis**: `evalAssignWith` throws before building an output shape if any output axis has no inferable size; mirrored in `Eval.scatterOutShape`, `Scatter.evalScatter`, **and `Scan.evalScan`**. ⚠️ `Scan.evalScan` was **missing from this list, and that omission WAS the bug** (audit finding #5, fixed 2026-07-30): it used `(sizes[u]?).getD 0`, conflating "no extent" with "extent 0", which made `List.range (L-1)` run zero recurrence steps *and* drove an unchecked `Array.set!` — so a plain surface program with no `axis l` pin **panicked** with "index out of bounds" instead of returning an error. Keep all four sites in this list: the gap was visible by reading it.
+- **Fail-loud unsized axis**: `evalAssignSeeded` (the sole contraction implementation —
+  `evalAssignWith` is its empty-seed wrapper) throws before building an output shape if any
+  non-seeded free output axis, any per-term contracted axis, or any seeded axis has no inferable
+  size, and rejects an out-of-range seed coordinate. Mirrored in `Eval.scatterOutShape`,
+  `Scatter.evalScatter`, and `Scan.evalScan`. ⚠️ `Scan.evalScan` was **missing from this list, and
+  that omission WAS the bug** (audit finding #5, fixed 2026-07-30): it used
+  `(sizes[u]?).getD 0`, conflating "no extent" with "extent 0", which made `List.range (L-1)` run
+  zero recurrence steps *and* drove an unchecked `Array.set!` — so a plain surface program with no
+  `axis l` pin **panicked** with "index out of bounds" instead of returning an error. A second,
+  narrower gap closed 2026-07-31 (Wave B, 4a): `evalAssignSeeded` had no check for a missing
+  per-term contracted-axis size (silently contracted at extent one) or a missing seeded-axis size
+  (silently produced a shape-`[0]` tensor). Keep all four call sites in this list: the gap was
+  visible by reading it.
 - **Non-identity scatter is rejected, not silently dropped**: `Scatter.evalScatter` throws if `rhs.nonlin ≠ .identity` (defensive re-check; the primary gate is `checkScatterNonlin` in `../DSL/Pipeline/Structural.lean`, see that dir's AGENTS.md). Fixes the bug where `Out[2*i] := relu(X[i])` used to compile and silently drop the `relu`.
 - **Per-term contraction scoping**: each `+`-joined RHS term is contracted over only the axes *that term* mentions (`termAxisUIDs`), not the union across the whole equation.
 - **`readAxisUIDs` excludes nonlin-mask axes** — must stay `traverseAxesNoMask`, not the with-mask variant, or shape inference gets corrupted by mask-only UIDs.
