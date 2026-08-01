@@ -63,7 +63,7 @@ run_cmd do
   match inferAxisSizes {} env [stmt] with
   | .error e => throwError e
   | .ok (sizes, _) =>
-    match evalAssignWith (· * ·) floatMax negInf env sizes "C" [.free i] rhs with
+    match evalAssignWith (· * ·) floatMax negInf 1.0 env sizes "C" [.free i] rhs with
     | .error e => throwError e
     | .ok (_, C) =>
         unless DenseTensor.approxEq C (tensorOf [2] [4, 9]) do
@@ -80,7 +80,7 @@ run_cmd do
   match inferAxisSizes {} env [Stmt.assign "C" [.free i] rhs] with
   | .error e => throwError e
   | .ok (sizes, _) =>
-    match evalAssignWith (· * ·) floatMax negInf env sizes "C" [.free i] rhs with
+    match evalAssignWith (· * ·) floatMax negInf 1.0 env sizes "C" [.free i] rhs with
     | .error e => throwError e
     | .ok (_, C) =>
         unless DenseTensor.approxEq C (tensorOf [1] [-1]) do
@@ -101,7 +101,7 @@ run_cmd do
   match inferAxisSizes {} env [Stmt.assign "C" [.free i] rhs] with
   | .error e => throwError e
   | .ok (sizes, _) =>
-    match evalAssignWith (· * ·) floatMax negInf env sizes "C" [.free i] rhs with
+    match evalAssignWith (· * ·) floatMax negInf 1.0 env sizes "C" [.free i] rhs with
     | .error e => throwError e
     | .ok (_, C) =>
         unless DenseTensor.approxEq C (tensorOf [2] [2, 6]) do

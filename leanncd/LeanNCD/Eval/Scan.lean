@@ -37,7 +37,7 @@ def evalStmtSliceSeeded (env : HashMap String DenseTensor) (sizes : HashMap UID 
         | .max => Combine.max
         | .min => Combine.min
         | .sum => Combine.real
-      let (_, slice) ← evalAssignSeeded c.mul c.combine c.unit0 env sizes seed nm slots rhs
+      let (_, slice) ← evalAssignSeeded c.mul c.combine c.unit0 c.unit1 env sizes seed nm slots rhs
       let sliceUids := (slots.filterMap (·.axisUID?)).filter (fun u => ! seed.contains u)
       let pos ← match rhs.nonlin with
         | .identity | .pointwise _ =>

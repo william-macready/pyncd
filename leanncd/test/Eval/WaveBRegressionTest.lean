@@ -24,11 +24,9 @@ run_cmd do
   let sizes : HashMap UID Nat := ({} : HashMap UID Nat).insert 2 2   -- k (seeded) sized; i (free) deliberately absent
   let seed : HashMap UID Int := ({} : HashMap UID Int).insert 2 0
   let rhs : RHSExpr := { body := { terms := [{ factors := [.read "X" [.axis i]] }] }, nonlin := .identity }
-  -- NOTE: evalAssignSeeded takes (mul, combine, unit0) today — no `unit1` yet (that's Task 2/4b).
-  -- Task 2 must add a fourth `1.0` argument here when it lands.
   let mul : Float → Float → Float := (· * ·)
   let combine : Float → Float → Float := (· + ·)
-  match evalAssignSeeded mul combine 0.0 env sizes seed "Y" [LHSSlot.free i, LHSSlot.iterAt k 0] rhs with
+  match evalAssignSeeded mul combine 0.0 1.0 env sizes seed "Y" [LHSSlot.free i, LHSSlot.iterAt k 0] rhs with
   | Except.error _ => pure ()
   | Except.ok (_, Y) => throwError
       s!"Wave-B #1: expected rejection of missing free-axis size, got shape {Y.shape} \

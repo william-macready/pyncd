@@ -65,4 +65,17 @@ run_cmd do
     match evalAssignDtyped [.predicate "Result" []] env sizes "Result" [] rhs with
     | .error e => throwError e
     | .ok (_, R) => unless DenseTensor.approxEq R (tensorOf [] [1.0]) do throwError s!"Bool agg wrong: {repr R.data}"
+
+-- 4b: a term with an EMPTY factor list must fold to the Combine's `unit1`, not a hard-coded 1.0.
+-- Use a synthetic min-plus-style Combine (mul = add, combine = min) to make the difference
+-- observable: if the product fold still started from a literal 1.0, this would wrongly give
+-- combine(unit0, 1.0) = min(+inf, 1.0) = 1.0 instead of the correct min(+inf, 0.0) = 0.0.
+run_cmd do
+  let minPlus : Combine := { mul := (· + ·), combine := Min.min, unit0 := 1.0 / 0.0, unit1 := 0.0 }
+  let env : HashMap String DenseTensor := {}
+  let rhs : RHSExpr := { body := { terms := [{ factors := [] }] }, nonlin := .identity }
+  match evalAssignWith minPlus.mul minPlus.combine minPlus.unit0 minPlus.unit1 env {} "Z" [] rhs with
+  | .error e => throwError s!"4b empty-product: unexpected error {e}"
+  | .ok (_, Z) => unless DenseTensor.approxEq Z (tensorOf [] [0.0]) do
+      throwError s!"4b empty-product: got {repr Z.data}, want [0.0] (unit1 not threaded through)"
 end LeanNCD.Eval

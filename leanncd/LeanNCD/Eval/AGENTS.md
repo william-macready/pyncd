@@ -45,6 +45,12 @@ Does not own: parsing/compilation/routing (`../DSL/`).
 - **Per-term contraction scoping**: each `+`-joined RHS term is contracted over only the axes *that term* mentions (`termAxisUIDs`), not the union across the whole equation.
 - **`readAxisUIDs` excludes nonlin-mask axes** — must stay `traverseAxesNoMask`, not the with-mask variant, or shape inference gets corrupted by mask-only UIDs.
 - **RREF solver floor-then-verify convention** (`Shape.lean`): builds an upper-envelope affine constraint per unsized read position, reduces to RREF over `Rat`, floors any fractional solution (padded/stride semantics), then re-verifies the floored solution against every original constraint. Typed failure kinds (`inconsistent`/`underdetermined`/`nonIntegral`/`nonPositive`) with remediation hints.
+- **`Combine`'s factor-product fold starts from `unit1`, never a literal `1.0`** — `unit1` is the
+  multiplicative identity of one term's factor product, distinct from `unit0` (the identity of
+  the outer term-aggregation fold). All four current `Combine` values (`real`/`bool`/`max`/`min`)
+  happen to use ordinary multiplication, so `unit1 = 1.0` for each, but a future `Combine` whose
+  `mul` is not ordinary multiplication (e.g. a min-plus/tropical semiring) depends on this field
+  being threaded correctly rather than assumed.
 
 ## Patterns
 The Portfolio suite (`test/Eval/Portfolio/`, shared `Harness.lean`) is a broad library of worked model fragments, one file per model family (LinAlg/Feedforward/Attention/ConvPool/Norm/Recurrence/GnnScatter/Relational/StatsLoss/Tropical/TensorNet/Generative/ClassicalML/EdgeCase). Three test styles (see `docs/test_portfolio.md`): **[N] numeric** (`assertEval`/`assertShape`, compare against a hand-computed tensor or property), **[R]/[F] runtime/compile failure** (`assertEvalError`/`assertCompileError`, checks the error string/constructor), and pure parse-errors (documented as comments only — `tlprog!` fails during elaboration, before any assertion machinery runs). `RejectTest.lean`/`ScatterNonlinRejectTest.lean` hold adversarial cases pinned to a specific error so a regression that turns a reject into a silent success is caught. `KnownGapTest.lean` is pure documentation — a triage taxonomy of DSL expressiveness gaps (rejecting/parse-level/missing-primitive/confirmed-non-gaps), not live assertions.
