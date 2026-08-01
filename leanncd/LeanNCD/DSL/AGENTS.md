@@ -23,7 +23,7 @@ Does not own: evaluation semantics (`../Eval/`) or the acset bridge (`../Bridge/
 | Looking for... | Go to |
 |---|---|
 | Pipeline intermediate types (`ResolvedProgram`, `ScanStmt`, `ScheduledProgram`) | `Types.lean` |
-| Phases 1-5 (assignUIDs/resolveDecls/checkReadRanks/checkDtypes/checkScatterNonlin/lowerArith/finalizeScans) | `Structural.lean` |
+| Phases 1-5 (assignUIDs/resolveDecls/checkReadRanks/checkDtypes/checkScatterNonlin/checkScatterNoScan/lowerArith/finalizeScans) | `Structural.lean` |
 | Phase 6-8 (splitNonlins/schedule/route/buildStep/routeCore) | `Lowering.lean` |
 | Proofs about routeCore/buildStep (Track A, lemmas B.1-B.7) | `RouteSpec.lean` |
 
