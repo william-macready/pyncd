@@ -339,6 +339,21 @@ as `some "sum" | some "max" | _ => overwrite` (`Eval/Scatter.lean:53-56`) — an
 string silently overwrites, violating the fail-loud convention. Introduce
 `inductive ReduceOp | sum | max | overwrite`, parse/validate once at the boundary.
 
+> **✅ DONE — merged to `main` 2026-08-01** (commits `a3098c0..c86005e`; full `lake build` green,
+> 8,612 jobs; whole-branch review clean via `docs/superpowers/plans/2026-08-01-scatter-collision-policy.md`).
+> Landed as `CollisionReduce | rejectCollisions | overwrite | sum | max | min` — one more
+> constructor than proposed here (`min`, for `AggOp` parity) and a different default: absence of
+> an explicit policy now means `rejectCollisions`, not `overwrite`, confirmed safe because no
+> surface-compiled scatter pattern in the codebase ever collides (`lowerArith` already rejects any
+> surface-detectable collision independently). Also fixed a second, related defect found while
+> implementing this: `evalScatter`'s RHS value computation ignored `rhs.agg` entirely (always a
+> real sum-of-products, even for a declared `maxreduce`/`minreduce`) — routed through the same
+> `Combine` record Wave B built for `Contract.lean` instead. Two adjacent gaps surfaced but
+> deliberately not fixed here — see `scatter-in-scan-compiles-but-should-reject` in
+> project memory: a scatter-shaped LHS combined with a scan iteration slot compiles when it
+> arguably should be rejected at compile time, and Lean's compile-time collision detection
+> (`LHSSlot.collapses`) is narrower than the Python reference implementation's `_scatter_injective`.
+
 **4h. Structured `EvalError` (largest item — do last).** `abbrev EvalError := String`
 (`Eval/Tensor.lean:4`) vs the structured `CompileError`. Tests show the cost:
 `AffineShapeSolverTest` needs 5–8 chained `.contains` substring assertions per case, and
@@ -503,6 +518,8 @@ were **zero-sorry** at the time of the census; all 38 were math-tower.
 | ✅ | **Spike 6a** — factor `ScanStmt.toBrBaseP` out of `buildStep` | 2026-07-25 | PR #13 — paid off immediately in Spike 3 (zero RouteSpec repair) |
 | ✅ | **Spike 3** — 3a/3b + the Task-0 scatter reject | 2026-07-29 | PR #14; **3c deferred** |
 | ✅ | **Semantic payload audit** (roadmap Stage 3) | 2026-07-30 | `papers/semantic_payload_audit.md` |
+| ⚠️ | **Wave B** — 4a/4d/4c DONE; 4b's `unit1` DONE, its `ContractionAlgebra` classifier NOT built (deferred to Wave C) | 2026-07-31 | `d08a1d8..383bc0b`; `docs/superpowers/plans/2026-07-31-wave-b-eval-unification.md` |
+| ✅ | **Wave D** — 4g typed scatter collision policy (`CollisionReduce`) | 2026-08-01 | `a3098c0..c86005e`; `docs/superpowers/plans/2026-08-01-scatter-collision-policy.md` |
 
 ### Remaining — the critical path to an executing backend
 
@@ -635,12 +652,23 @@ Wave A  Correctness freeze — ✅ THE THREE AUDIT FINDINGS DONE 2026-07-30 (c75
           Stage-5 bridge-hardening, not Wave A, per the audit's own assignment.
 
 Wave B  THE BACKEND CONTRACT — Spike 4, resequenced (highest priority)
+        ⚠️ PARTIALLY DONE 2026-07-31 (d08a1d8..383bc0b) — see
+        `docs/superpowers/plans/2026-07-31-wave-b-eval-unification.md`. 4a, 4d, and 4c below are
+        fully DONE. Of 4b, only `Combine.unit1` (the missing multiplicative identity) landed —
+        `Combine` stayed the reference evaluator's own record, function-valued as before. The
+        closed, serializable `ContractionAlgebra`/`ScalarBinOp` tag classifier this line
+        originally called for was explicitly NOT built: that plan's own Global Constraints
+        deferred it as having no consumer yet outside the EvalPlan/backend work below (Wave C),
+        and building it speculatively ahead of that consumer would be exactly the premature
+        abstraction this project's CLAUDE.md asks not to do. Whoever picks up Wave C should build
+        `ContractionAlgebra` there, against a real `EvalPlan` consumer, not assume it already
+        exists from this line.
         · ContractionAlgebra + BOTH identities   (= 4b + the shared classifier)
               factorOp/factorId/reduceOp/reduceId; `Combine` becomes one interpretation
-        · 4a  unify seeded/unseeded assignment   — ports the fail-loud unsized-axis check
+        · 4a  ✅ unify seeded/unseeded assignment — ports the fail-loud unsized-axis check
                                                    to the scan path (closes a bug)
-        · 4d  ResolvedNonlin + checked NormAxis  — cheap now that Spike 3a has landed
-        · 4c  one dtype-aware worker             — kills the plain-vs-scan divergence that
+        · 4d  ✅ ResolvedNonlin + checked NormAxis — cheap now that Spike 3a has landed
+        · 4c  ✅ one dtype-aware worker            — kills the plain-vs-scan divergence that
                                                    Appendix A warns must not be recreated
         dependencies:  4b → 4a → 4c ;  Spike 3a ✅ → 4d → 4c
 
@@ -652,7 +680,8 @@ Wave C  Minimal EvalPlan (E4) — the first checked backend boundary
         declared reference64 fragment either matches DenseTensor or is rejected with a
         typed capability error before Python starts
 
-Wave D  4g  typed scatter policy (CollisionReduce; separate RHS agg from collision reduce)
+Wave D  ✅ DONE 2026-08-01 (a3098c0..c86005e) — 4g typed scatter policy (CollisionReduce;
+        separate RHS agg from collision reduce)
 Wave E  4e → 4h → 4i  diagnostics split, structured errors, EvalReport
         · 4h/4i MUST land before the backend is public (closed BackendError family)
 Wave F  4f  decompose evalScan — AFTER the EvalPlan boundary, not before
