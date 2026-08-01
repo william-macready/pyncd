@@ -794,6 +794,34 @@ def checkScatterNonlin (rp : ResolvedProgram) : FreshM ResolvedProgram := do
     | .recurMorphism _ _ _ => pure ()
   return rp
 
+/-! ## The `checkScatterNoScan` phase
+
+A scatter-shaped LHS (`slotsBecomeScatter` — an affine or diagonal LHS) may not also carry a scan
+iteration slot (`iterAt`/`iterNext`). Why: such a statement compiles successfully today —
+`lowerArith` reclassifies it to `Stmt.scatter` regardless of the iteration slot riding on another
+dimension, and `finalizeScans` groups it into a scan's base/recur list with nothing here rejecting
+the combination — but `Scan.evalStmtSliceSeeded` (`Eval/Scan.lean`) rejects any non-`.assign`
+statement at EVAL time with a generic "only assign stmts are supported in scans" error. Reject it
+here instead, at compile time, with a specific typed error — mirroring `checkScatterNonlin` above.
+
+Runs here (pre-`lowerArith`, right after `checkScatterNonlin`), after `reclassifyIterSlots` has
+already correctly classified `iterAt`/`iterNext` slots. Checks both AST shapes
+`checkScatterNonlin` checks: an `.assign` whose LHS `slotsBecomeScatter` (the surface-compiled
+case) and an already-`.scatter` stmt (the programmatic escape hatch). -/
+def checkScatterNoScan (rp : ResolvedProgram) : FreshM ResolvedProgram := do
+  let hasIterSlot (ls : List LHSSlot) : Bool :=
+    ls.any (fun sl => match sl with | .iterAt _ _ | .iterNext _ => true | _ => false)
+  for s in rp.stmts do
+    match s with
+    | .assign nm ls _ =>
+        if slotsBecomeScatter ls && hasIterSlot ls then
+          throw (.scatterInScan nm)
+    | .scatter nm ls _ _ =>
+        if hasIterSlot ls then
+          throw (.scatterInScan nm)
+    | .recurMorphism _ _ _ => pure ()
+  return rp
+
 /-! ## The `lowerArith` phase (Phase 4 — affine index arithmetic)
 
 E2a SCOPING DECISION (a deliberate divergence from §12.4): affine *reads* (e.g.
