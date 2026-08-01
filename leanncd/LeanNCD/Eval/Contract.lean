@@ -180,15 +180,25 @@ def combineFor (decls : List Decl) (nm : String) (agg : AggOp) : Combine :=
       | some (.predicate _ _) => Combine.bool
       | _                     => Combine.real
 
-/-- dtype-aware assign: choose the `Combine` from the decls and `rhs.agg`, then evaluate.
+/-- dtype-aware assign, seeded or not: choose the `Combine` from the decls and `rhs.agg`, then
+    evaluate. Shared by `evalPlain` (via `evalAssignDtyped`, its empty-seed wrapper) AND
+    `Scan.evalStmtSliceSeeded` — before Wave B (4c), the scan path matched `rhs.agg` manually and
+    could never select `Combine.bool` for a predicate state, since it never saw `decls` at all.
     `agg = .max` ⇒ tropical `(×, max, −∞)`;
     `predicate` ⇒ Boolean `(∧, ∃)`;
     else ℝ `(×, Σ, 0)`. -/
+def evalAssignDtypedSeeded (decls : List Decl)
+    (env : HashMap String DenseTensor) (sizes : HashMap UID Nat)
+    (seed : HashMap UID Int) (nm : String) (slots : List LHSSlot) (rhs : RHSExpr) :
+    Except EvalError (String × DenseTensor) :=
+  let c := combineFor decls nm rhs.agg
+  evalAssignSeeded c.mul c.combine c.unit0 c.unit1 env sizes seed nm slots rhs
+
+/-- Unseeded dtype-aware assign: `evalAssignDtypedSeeded` with an empty seed. -/
 def evalAssignDtyped (decls : List Decl)
     (env : HashMap String DenseTensor) (sizes : HashMap UID Nat)
     (nm : String) (slots : List LHSSlot) (rhs : RHSExpr) :
     Except EvalError (String × DenseTensor) :=
-  let c := combineFor decls nm rhs.agg
-  evalAssignWith c.mul c.combine c.unit0 c.unit1 env sizes nm slots rhs
+  evalAssignDtypedSeeded decls env sizes {} nm slots rhs
 
 end LeanNCD.Eval

@@ -67,7 +67,7 @@ run_cmd do
   match evalAssignDtyped [.predicate "Result" []] env sizes "Result" [] rhs with
   | .error e => throwError s!"Wave-B #3: plain (predicate) path errored: {e}"
   | .ok (_, plainR) =>
-      match evalStmtSliceSeeded env sizes {} (.assign "Result" [] rhs) with
+      match evalStmtSliceSeeded [.predicate "Result" []] env sizes {} (.assign "Result" [] rhs) with
       | .error e => throwError s!"Wave-B #3: scan-slice path errored: {e}"
       | .ok (_, scanR) =>
           unless DenseTensor.approxEq plainR scanR do

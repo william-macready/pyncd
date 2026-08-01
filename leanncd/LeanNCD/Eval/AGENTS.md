@@ -36,7 +36,7 @@ imports `Shape.lean` (for `normAxisUidOf`, since Wave B's `resolveNonlin`); `Sca
 |---|---|---|
 | `TLProgram.eval` | test harness (`assertEval*`) | the one blessed entry point; error-format changes break needle-matching across the whole Portfolio suite |
 | `DenseTensor { shape; data }` | every file here | invariant `data.size = ∏ shape` — no runtime check, breaking it silently breaks `get!`/`set!`/`ofFn` |
-| `evalAssignDtyped`/`Combine` (`Contract.lean`) | `evalPlain` | dtype→semiring dispatch (real/bool/tropical); new dtype needs a new `Combine` + `combineFor` arm |
+| `evalAssignDtypedSeeded`/`Combine` (`Contract.lean`) | `evalPlain` (via `evalAssignDtyped`, its empty-seed wrapper) AND `Scan.evalStmtSliceSeeded` | dtype→semiring dispatch (real/bool/tropical), now shared by plain and scan assignment — before Wave B (4c), the scan path matched `rhs.agg` manually and could never select `Combine.bool` for a predicate state; new dtype needs a new `Combine` + `combineFor` arm |
 | `inferAxisSizes` (`Shape.lean`) | `evalScheduled` | central sizing fixpoint, touches scatter-output propagation and both hard-conflict/warning paths |
 | `evalScan` (`Scan.lean`) | `evalScheduled` | multi-axis scan driver — `axes` is a general `List AxisSpec`, not 1-D |
 

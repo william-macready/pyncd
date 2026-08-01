@@ -28,16 +28,11 @@ def cartesianList : List (List Nat) → List (List Nat)
     lives on the output slot — see `normAxisUidOf`) within that slice-axis list. This holds uniformly
     whether or not the stmt is itself a scan-state; pinned by the `!seed.contains ·` filter, which
     drops every seeded axis exactly as `evalAssignSeeded` does. -/
-def evalStmtSliceSeeded (env : HashMap String DenseTensor) (sizes : HashMap UID Nat)
+def evalStmtSliceSeeded (decls : List Decl) (env : HashMap String DenseTensor) (sizes : HashMap UID Nat)
     (seed : HashMap UID Int) (s : Stmt) : Except EvalError (String × DenseTensor) := do
   match s with
   | .assign nm slots rhs =>
-      -- honor the contraction aggregator (KG-scanagg): `maxreduce`/`minreduce` ⇒ tropical max/min, else ℝ sum.
-      let c : Combine := match rhs.agg with
-        | .max => Combine.max
-        | .min => Combine.min
-        | .sum => Combine.real
-      let (_, slice) ← evalAssignSeeded c.mul c.combine c.unit0 c.unit1 env sizes seed nm slots rhs
+      let (_, slice) ← evalAssignDtypedSeeded decls env sizes seed nm slots rhs
       let sliceUids := (slots.filterMap (·.axisUID?)).filter (fun u => ! seed.contains u)
       let rn ← resolveNonlin rhs.nonlin slots sliceUids
       return (nm, applyNonlin rn sliceUids slice)
@@ -58,7 +53,7 @@ def writeSliceAtMulti (out : DenseTensor) (iters : List (Nat × Nat)) (slice : D
     step writes only fully-advanced cells (every advancing index `+1 ≥ 1`); boundary cells (any
     advancing index `= 0`) keep the zero-allocated state, except where an explicit base stmt pins
     a slice at index 0. -/
-def evalScan (env : HashMap String DenseTensor) (sizes : HashMap UID Nat) :
+def evalScan (decls : List Decl) (env : HashMap String DenseTensor) (sizes : HashMap UID Nat) :
     ScanStmt → Except EvalError (List (String × DenseTensor))
   | .plain _      => .error "evalScan: plain handled by evalScheduled, not here"
   | .scanPre nm _ _ => .error s!"evalScan: scanPre (recurMorphism escape hatch) evaluation unsupported ({nm})"
@@ -92,7 +87,7 @@ def evalScan (env : HashMap String DenseTensor) (sizes : HashMap UID Nat) :
       for s in base do
         let seed : HashMap UID Int := ((s.slots).filterMap (fun
             | .iterAt a n => some (a.uid, n) | _ => none)).foldl (fun m (u, n) => m.insert u n) {}
-        let (nm, slice) ← evalStmtSliceSeeded work sizes seed s
+        let (nm, slice) ← evalStmtSliceSeeded decls work sizes seed s
         let iters := (iterSlotPositions s).map (fun (u, p) => (p, ((seed[u]?).getD 0).toNat))
         work := work.insert nm (writeSliceAtMulti ((work[nm]?).getD (DenseTensor.zeros [])) iters slice)
       -- 3. nested loop over ∏ [0 … L_a − 2]: run the recur list at each tuple; intermediates into
@@ -102,7 +97,7 @@ def evalScan (env : HashMap String DenseTensor) (sizes : HashMap UID Nat) :
         let seed : HashMap UID Int := (axUids.zip tup).foldl (fun m (u, v) => m.insert u (Int.ofNat v)) {}
         let mut stepEnv := work
         for s in recur do
-          let (nm, slice) ← evalStmtSliceSeeded stepEnv sizes seed s
+          let (nm, slice) ← evalStmtSliceSeeded decls stepEnv sizes seed s
           -- classify by NAME: only the allocated scan states (`stateNames`) are written into `work`.
           -- A per-step intermediate may itself carry an iteration slot (e.g. a `splitNonlins`-lifted
           -- `%nl…` derived from the recurrence), but it is NOT an allocated state — keep it as a raw

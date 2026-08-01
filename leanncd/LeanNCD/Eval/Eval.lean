@@ -46,7 +46,7 @@ def evalScheduled (sched : ScheduledProgram) (inputs : HashMap String DenseTenso
         let (nm, t) ← evalPlain sched.decls env sizes s
         env := env.insert nm t
     | .scan .. =>
-        let outs ← evalScan env sizes sc
+        let outs ← evalScan sched.decls env sizes sc
         for (nm, t) in outs do env := env.insert nm t
     | .scanPre nm _ _ => throw s!"evalScheduled: scanPre unsupported ({nm})"
   return env
