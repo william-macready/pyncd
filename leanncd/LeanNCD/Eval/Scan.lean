@@ -39,15 +39,8 @@ def evalStmtSliceSeeded (env : HashMap String DenseTensor) (sizes : HashMap UID 
         | .sum => Combine.real
       let (_, slice) ← evalAssignSeeded c.mul c.combine c.unit0 c.unit1 env sizes seed nm slots rhs
       let sliceUids := (slots.filterMap (·.axisUID?)).filter (fun u => ! seed.contains u)
-      let pos ← match rhs.nonlin with
-        | .identity | .pointwise _ =>
-            pure 0     -- pointwise: reduction axis irrelevant
-        | .axiswise _ _ => match normAxisUidOf slots with
-            | some nu => match sliceUids.findIdx? (· == nu) with
-                | some p => pure p
-                | none   => throw s!"evalStmtSliceSeeded: marked norm axis of {nm} is not among its slice axes"
-            | none    => throw s!"evalStmtSliceSeeded: {nm} applies softmax/normalize but no output axis is marked (·)"
-      return (nm, applyNonlin rhs.nonlin pos sliceUids slice)
+      let rn ← resolveNonlin rhs.nonlin slots sliceUids
+      return (nm, applyNonlin rn sliceUids slice)
   | _ => throw "evalStmtSliceSeeded: only assign stmts are supported in scans"
 
 /-- Write a non-iter `slice` into the full state tensor `out`, given the iteration `(position, index)`

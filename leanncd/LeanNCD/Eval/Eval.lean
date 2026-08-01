@@ -23,18 +23,9 @@ def evalPlain (decls : List Decl) (env : HashMap String DenseTensor) (sizes : Ha
   match s with
   | .assign nm slots rhs =>
       let (_, pre) ← evalAssignDtyped decls env sizes nm slots rhs    -- contract (dtype-aware)
-      if rhs.nonlin == Nonlin.identity then return (nm, pre)
-      else
-        -- the reduction axis is the slot marked `m.` (norm flag now lives on the output slot).
-        let axisUids := slots.filterMap (·.axisUID?)
-        let axisPos ← match rhs.nonlin, normAxisUidOf slots with
-          | .identity, _           => pure 0     -- unreachable: identity returns early via the guard above; arm kept for exhaustiveness
-          | .pointwise _, _        => pure 0     -- pointwise: the axis is irrelevant
-          | .axiswise _ _, some nu => match axisUids.findIdx? (· == nu) with
-              | some p => pure p
-              | none   => throw s!"evalPlain: marked norm axis of {nm} is not among its output axes"
-          | .axiswise _ _, none    => throw s!"evalPlain: {nm} applies softmax/normalize but no output axis is marked (·)"
-        return (nm, applyNonlin rhs.nonlin axisPos axisUids pre)
+      let axisUids := slots.filterMap (·.axisUID?)
+      let rn ← resolveNonlin rhs.nonlin slots axisUids
+      return (nm, applyNonlin rn axisUids pre)
   | .scatter nm slots rhs opts =>
       let outShape ← scatterOutShape sizes slots
       evalScatter env sizes nm slots rhs opts outShape

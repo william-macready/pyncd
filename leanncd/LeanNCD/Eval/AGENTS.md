@@ -22,7 +22,12 @@ Does not own: parsing/compilation/routing (`../DSL/`).
 | "Does this model class evaluate correctly" test suite | `test/Eval/Portfolio/*.lean` |
 
 ### Key Relationships
-`Eval.lean` imports `DSL.Compile`; `Shape.lean`/`Gather.lean` import `DSL.Ast`; `Scan.lean` imports `DSL.Pipeline.Types`; `Contract.lean` imports `DSL.TraverseAxes`. Internal chain: `Tensor` ← `Gather` ← `Nonlin`/`Shape` ← `Contract` ← `Scan`/`Scatter` ← `Eval`. `LHSSlot.outExtent` (defined in `../DSL/Ast.lean`, not here) is the single shared scatter-extent formula both `Eval.scatterOutShape` and `Shape.scatterOutputShapes` call.
+`Eval.lean` imports `DSL.Compile`; `Shape.lean`/`Gather.lean` import `DSL.Ast`; `Nonlin.lean`
+imports `Shape.lean` (for `normAxisUidOf`, since Wave B's `resolveNonlin`); `Scan.lean` imports
+`DSL.Pipeline.Types`; `Contract.lean` imports `DSL.TraverseAxes`. Internal chain: `Tensor` ←
+`Gather` ← `Shape` ← `Nonlin` ← `Contract` ← `Scan`/`Scatter` ← `Eval`. `LHSSlot.outExtent`
+(defined in `../DSL/Ast.lean`, not here) is the single shared scatter-extent formula both
+`Eval.scatterOutShape` and `Shape.scatterOutputShapes` call.
 
 ## Public API
 
@@ -71,7 +76,7 @@ The Portfolio suite (`test/Eval/Portfolio/`, shared `Harness.lean`) is a broad l
 | Task | Start Here |
 |------|------------|
 | Run a compiled program end-to-end | `Eval.TLProgram.eval` |
-| Add a new nonlinearity | `Nonlin.lean` — add a `PointwiseFn`/`Nonlin.axiswise` arm + `applyNonlin` case |
+| Add a new nonlinearity | `Nonlin.lean` — add a `PointwiseFn`/`Nonlin.axiswise` arm, an `applyNonlin` case, and (for an axiswise fn) confirm `resolveNonlin`'s existing marker check covers it — do not add a second marker-lookup site in `Eval.lean`/`Scan.lean` |
 | Add a new dtype/semiring | `Contract.lean` — new `Combine.*` + `combineFor` arm |
 | Debug an axis-sizing failure | `Shape.inferAxisSizes` — check `SolveDiagnostic` message |
 | Debug a scatter shape mismatch | Confirm `LHSSlot.outExtent` is the sole formula both call sites use |

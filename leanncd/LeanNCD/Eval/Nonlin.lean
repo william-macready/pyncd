@@ -1,5 +1,6 @@
 import LeanNCD.Eval.Tensor
 import LeanNCD.Eval.Gather
+import LeanNCD.Eval.Shape
 namespace LeanNCD.Eval
 open Std
 
@@ -98,16 +99,39 @@ def _root_.LeanNCD.PointwiseFn.apply : PointwiseFn → DenseTensor → DenseTens
   | .relu => reluT | .sigmoid => sigmoidT | .tanh => tanhT | .gelu => geluT
   | .leakyrelu => leakyReluT
 
-/-- Dispatch: apply a Nonlin. `axisPos`/`axisUids` describe the norm axis (ignored by
-    `.identity` and by every `.pointwise` variant — by type, those carry no axis). -/
-def applyNonlin (nl : Nonlin) (axisPos : Nat) (axisUids : List UID)
-    (t : DenseTensor) : DenseTensor :=
+/-- A nonlinearity together with everything statically resolved against one statement's own
+    output slots: which axis position (if any) is the marked reduction axis, checked exactly
+    once. Both `evalPlain` and `evalStmtSliceSeeded` consume this instead of each independently
+    searching `slots` for a `·`-marked axis. -/
+inductive ResolvedNonlin
+  | identity
+  | pointwise : PointwiseFn → ResolvedNonlin
+  | axiswise  : AxiswiseFn → Option BoolExpr → Nat → ResolvedNonlin
+
+/-- Resolve a statement's `Nonlin` against its own output slots. `identity`/`pointwise` need no
+    axis and always succeed. `axiswise` needs exactly one `·`-marked output slot among
+    `axisUids`; its position there is computed once here rather than at every evaluation call. -/
+def resolveNonlin (nl : Nonlin) (slots : List LHSSlot) (axisUids : List UID) :
+    Except EvalError ResolvedNonlin :=
   match nl with
-  | .identity      => t
-  | .pointwise pf  => pf.apply t
-  | .axiswise fn m => match fn with
-      | .softmax     => softmaxT axisPos axisUids m t
-      | .normalize   => normalizeT axisPos axisUids m t
-      | .l2normalize => l2normalizeT axisPos axisUids m t
+  | .identity      => pure .identity
+  | .pointwise pf  => pure (.pointwise pf)
+  | .axiswise fn m => match normAxisUidOf slots with
+      | some nu => match axisUids.findIdx? (· == nu) with
+          | some p => pure (.axiswise fn m p)
+          | none   => throw "resolveNonlin: marked norm axis is not among its output axes"
+      | none    => throw "resolveNonlin: applies softmax/normalize but no output axis is marked (·)"
+
+/-- Dispatch: apply a resolved Nonlin. `axisUids` is still needed by `softmaxT`/`normalizeT`/
+    `l2normalizeT` for their coordinate/mask math; the axis *position* itself already lives in
+    `rn` for the `.axiswise` case, resolved once by `resolveNonlin` rather than re-derived here. -/
+def applyNonlin (rn : ResolvedNonlin) (axisUids : List UID) (t : DenseTensor) : DenseTensor :=
+  match rn with
+  | .identity        => t
+  | .pointwise pf    => pf.apply t
+  | .axiswise fn m p => match fn with
+      | .softmax     => softmaxT p axisUids m t
+      | .normalize   => normalizeT p axisUids m t
+      | .l2normalize => l2normalizeT p axisUids m t
 
 end LeanNCD.Eval
