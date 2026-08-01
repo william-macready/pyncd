@@ -93,6 +93,24 @@ Small subsystems (no dedicated node — each <170 lines, single-file or near it)
 - **Isolate hard proofs, keep load-bearing instances sorry-free (`Br` only)** — `Br`'s core `ColoredPROP` instance is fully proved; its deferred content (`brCancelPoint`) is pushed into the opt-in `Elemental` mixin, never left inside the instance. `St` does NOT follow this pattern — `swap_hexagon_fwd`/`swap_hexagon_rev` (`St.lean:269-270`) are `by sorry` directly inside the `St` instance; see `Base/AGENTS.md`.
 - **Doc comments and status docs drift out of date faster than code** — `SORRY_INVENTORY.md` is the closest thing to authoritative, but even it has stale entries (see Algebra/AGENTS.md). Always verify a "sorry-free" or "X sorries remain" claim by reading the actual file, not by trusting a comment or a memory of one.
 
+### Patterns
+
+- **When the same logic is genuinely duplicated across two or more call sites, unify it into one
+  general routine — don't leave parallel near-copies to drift.** The trigger is an actual second
+  occurrence, not an anticipated one: this does not license speculative generalization (building a
+  general routine for a hypothetical future second caller is exactly what the root `CLAUDE.md`'s
+  "no abstractions for single-use code" rule forbids). Duplicated logic across real call sites is
+  also where correctness bugs hide, precisely because nothing forces the copies to stay in sync —
+  treat "these two blocks look alike" as a prompt to check whether they've already diverged, not
+  just an opportunity to tidy up.
+  Concrete precedent: `docs/superpowers/plans/2026-07-31-wave-b-eval-unification.md` (Eval
+  contraction/nonlinearity unification) is built entirely around this — `evalAssignWith`/
+  `evalAssignSeeded` unify into one `evalAssignSeeded` (`evalAssignWith` becomes its empty-seed
+  wrapper); `evalPlain`'s and `Scan.evalStmtSliceSeeded`'s duplicated norm-axis-lookup blocks
+  unify into one `resolveNonlin`; their duplicated dtype dispatch unifies into one
+  `evalAssignDtypedSeeded`. In each case the two copies had already silently diverged (a real
+  defect, not a style nit) — the strongest evidence a unification is overdue, not premature.
+
 ### Global Pitfalls
 
 - **`grep sorry` produces false positives constantly in this codebase** — many files have prose doc comments that mention the word "sorry" (e.g. "fully executable, zero `sorry`") without containing one. Always read the surrounding line, don't just count grep hits.
