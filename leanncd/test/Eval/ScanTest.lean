@@ -109,4 +109,24 @@ run_cmd do
       throwError s!"4c mutation check: Combine.real should give 2.0 on this rhs, got {repr R.data} \
 (if this fails, the test above may be passing for the wrong reason)"
 
+-- scan/scatter boundary check (found while writing the 4g plan, not a 4g bug): a scatter-shaped
+-- LHS combined with an iteration slot (e.g. `Out[2*i, l+1] := X[i,l]`) compiles successfully today
+-- — lowerArith reclassifies the whole slot list to Stmt.scatter regardless of the iteration slot
+-- riding on another dimension, and finalizeScans groups it into a scan's base/recur list with
+-- nothing rejecting the combination at compile time. evalStmtSliceSeeded is what actually rejects
+-- it, at eval time. This test locks in that rejection so evalScatter/CollisionReduce changes in
+-- this plan (Tasks 2-3) can't silently make evalScatter reachable from inside a scan.
+run_cmd do
+  let i := ax "i" 1; let l := ax "l" 9
+  let X := tensorOf [2] [1, 2]
+  let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X" X
+  let sizes := (({} : HashMap UID Nat).insert 1 2).insert 9 3
+  let slots : List LHSSlot := [.affine (.scale 2 i), .iterNext l]
+  let rhs : RHSExpr := { body := { terms := [{ factors := [.read "X" [.axis i]] }] }, nonlin := .identity }
+  match evalStmtSliceSeeded [] env sizes {} (.scatter "Out" slots rhs { fill := 0, reduce := none }) with
+  | .error e =>
+      unless (e.splitOn "only assign stmts are supported in scans").length > 1 do
+        throwError s!"scan/scatter boundary: wrong error message: {e}"
+  | .ok _ => throwError "scan/scatter boundary: expected evalStmtSliceSeeded to reject a scatter stmt"
+
 end LeanNCD.Eval

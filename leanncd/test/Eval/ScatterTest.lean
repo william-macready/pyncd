@@ -48,4 +48,25 @@ run_cmd do
   | .error _ => pure ()                                   -- expected
   | .ok _    => throwError "expected evalScatter to reject an unsized source axis"
 
+-- 4g regression: evalScatter ignores rhs.agg entirely — it hardcodes real sum-of-products for
+-- every RHS term regardless of the declared aggregation. A maxreduce-style scatter RHS must use
+-- tropical max, not silently compute a real sum instead. A[i]=[1,5,2], B[i]=[10,-1,-1]; per-
+-- position max = [10,5,2] (today's real sum would wrongly give [11,4,1]).
+run_cmd do
+  let i := ax "i" 1
+  let A := tensorOf [3] [1, 5, 2]
+  let B := tensorOf [3] [10, -1, -1]
+  let env : HashMap String DenseTensor :=
+    (({} : HashMap String DenseTensor).insert "A" A).insert "B" B
+  let slots : List LHSSlot := [.affine (.axis i)]
+  let rhs : RHSExpr :=
+    { body := { terms := [{ factors := [.read "A" [.axis i]] }, { factors := [.read "B" [.axis i]] }] },
+      nonlin := .identity, agg := .max }
+  let sizes := ({} : HashMap UID Nat).insert 1 3
+  match evalScatter env sizes "Out" slots rhs { fill := 0, reduce := none } [3] with
+  | .error e => throwError e
+  | .ok (_, Out) => unless DenseTensor.approxEq Out (tensorOf [3] [10, 5, 2]) do
+      throwError s!"4g regression: expected per-position max(A,B) = [10,5,2] (agg = .max), got \
+{repr Out.data} (evalScatter ignores rhs.agg and always computes a real sum, which gives [11,4,1])"
+
 end LeanNCD.Eval
