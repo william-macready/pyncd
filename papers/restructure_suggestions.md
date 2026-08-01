@@ -43,47 +43,6 @@ each claim cross-checked against the code; the highest-leverage claims (dead cod
 duplicates, hardcoded semiring constants) were re-verified independently. Everything below
 carries `file:line` references against HEAD as of 2026-07-09.
 
-## Review addendum (2026-07-26): correctness-first reprioritization
-
-> An independent high-effort review (`pyncd.worktrees/agents-gpt-56-vscode-agents-integration/copilot_code_analysis.md`)
-> validated this document against the current post-6a tree with **compiled Lean artifacts** — countermodels and
-> runtime regressions, not a code read. Its verdict: this plan is directionally right (preserve the proof/execution
-> split, one applicative traversal, explicit serialization tags, phase types), but **under-prioritizes several
-> *demonstrated* correctness failures** relative to ergonomic refactors. This section folds in that reprioritization;
-> the individual spikes below are unchanged except where noted.
-
-**The lens — four "closure" guarantees.** Rank work by which it advances, and never describe a refactor as a
-semantics improvement unless its exit gate actually checks semantics:
-
-1. **Representation closure** — every constructor classified by an exhaustive match (what Spike 3a delivers for `Nonlin`).
-2. **Semantic closure** — every source operation has enough data in the *target IR* to be interpreted, or is explicitly rejected.
-3. **Boundary validity** — malformed external data cannot become valid-looking internal values.
-4. **Proof validity** — theorem statements actually follow from the advertised interfaces.
-
-**Demonstrated failures (compiled evidence) that the current ordering treats as deferred/optional:**
-
-| # | Failure (evidence) | Guarantee | Where it sits now | Recommended action |
-|---|---|---|---|---|
-| 3 | **Nonlinear scatter is silently erased** — `evalScatter` never applies `rhs.nonlin`; `relu(-2)` ⇒ `-2` (reproduced; re-verified 2026-07-26) | semantic/boundary | not in any spike | **ACTIONED**: added as **Spike 3 Task 0** (reject non-identity scatter) |
-| 5 | Unsized scan ⇒ shape `[…,0]` + two `set!` bounds **panics**, yet exits 0 (reproduced) | boundary | RejectTest records it as "accepted" | require iter-axis sizes; `EvalError`; checked `set` API (light typestate / E2) |
-| 4 | `recurMorphism` accepted by `compile`, rejected by `eval` (reproduced) | semantic | §12.2 escape hatch | reject at compile until routed/eval semantics exist (E5 stage) |
-| 6/17 | Boundary decoders + CSV use **meaning-changing defaults** (`writeSBr` emits `RawAxis:0,` on an `encodeSize` error; `brOpOfIdx` maps unknown ⇒ `.contract`) (reproduced) | boundary | E9/bridge, unscheduled | parse-then-validate; `Except` serializers; partial `brOpOfIdx?` (bridge hardening) |
-| 1 | `weave_unique` is **false** under its stated hypotheses (compiled countermodel) | proof | Constraint-adjacent; milestone | quarantine under `Experimental`; restate up to iso (parallel proof track) |
-| 10 | The semiring param in `TargetActegory` is **phantom** (parametricity witness) | proof | E3-adjacent | separate scalar-semantics interface from the shape action |
-| 19 | **No single semantic IR** — `compile` (routed) and `eval` (scheduled) diverge; masks/`UnaryOp`/dtype/scan-bodies disappear while bridge theorems still pass | semantic | **E5 (marked optional)** | **promote E5**: define a denotation for the represented fragment, reject the rest, expand op-by-op |
-| 22 | `SORRY_INVENTORY.md` contradicts the build (says "St sorry-free" while `St.lean:269-270` has two `sorry`s) | proof/trust | — | generate the inventory + axiom-closure checks from source in CI |
-
-**Reprioritization (my read, adopting the review):**
-- **Promote E5 and E2 earlier.** E5 (scheduled-vs-routed agreement) is the *mechanism* by which #3/#4/#6/#19 hide; E2 (light typestate at boundaries — e.g. `ResolvedNonlin` with a checked `NormAxis`, `SizedScan`, `ValidatedScatter`) closes #4/#5 and the norm-axis runtime recompute without dependent-typing the whole compiler.
-- **Add a semantic-payload audit before 3c / E4 / E10.** ✅ **DONE — see [`semantic_payload_audit.md`](semantic_payload_audit.md) (2026-07-30); decisions still OPEN.** `BrBaseP` (`op, degree, inputWeaves, outputWeaves, reindexings`) provably has **no field** for the softmax mask, the `UnaryOp`, `ScatterOpts`, or dtype — so `log(X[i])` and `X[i]` lower identically. Any unsupported routed construct should become a named compile error, not a look-alike primitive. This also resets **E13**'s question: it's not whether `BrOp`'s *names* are closed, but whether the *parameterized payload* those names need is closed (today: no).
-  - **Audit headline:** of 9 features, **6 have no `BrBaseP` field**, 2 are partial *and lost entirely for any scan node* (the op label short-circuits to `.scan*` before `nonlinOf` is read), 1 is collapsed by design. Three new findings: a latent `agg` drop in `splitNonlins` on **both** paths; `brOpOfIdx`'s `_ => .contract` default is reachable from CSV (a garbled tag silently becomes a contraction); and a second eval divergence — `evalScan` never receives `decls`, so a predicate inside a scan contracts in ℝ (this is Spike 4c's bug, mechanism now pinned).
-  - **⚠️ This reshapes E5.** `Bridge/Agreement.lean` proves *structural wiring* and *DSL-routed vs CSV-routed* round-tripping — **not** eval-vs-routed — and `realize_fromThreadedComposed_agree` uses `sorryAx`. The routed path ends in `BrMorph`, a `Quotient` of raw syntax with **no denotation into numbers** (a deferred milestone, `Base/Br.lean:285-297`), and every `realize*` is `noncomputable`. So **E5's commuting diagram is not currently constructible**, not merely unscheduled: it needs the `Br` interpreter first. The tractable interim is shape/label agreement plus per-feature routed reject gates.
-- **Parallel proof track:** quarantine `weave_unique`/the flagship graded instance under `Experimental`, add generated `#print axioms`/`sorryAx` CI over a named trusted-core API, keep the weave countermodel as a permanent model test.
-
-**Already actioned:** Spike 3 was revised (see its plan) to (a) reject non-identity scatter as **Task 0**, and (b) claim **representation closure only** — not semantic closure — since `BrBaseP` still erases the payload. **Not yet folded into this doc's spike bodies:** the E5/E2 promotion, the payload audit, and the proof-track CI — these reshape Part II's ordering and are a larger edit than this addendum. The full staged roadmap (Stage 0–8) and per-finding evidence are in the analysis file.
-
-*Caveat:* several categorical findings (#1, the `StBr` `sorry`s) are already labeled deliberate milestones in-code — the review's contribution there is showing they are *inconsistent with the advertised interface*, not merely incomplete. The freshest actionable signal is the **executable correctness bugs (#3, #4, #5, #6)**, which the passing test suite masks.
-
 ## Terminal goal (2026-07-30): a PyTorch/JAX execution layer via `EvalPlan`
 
 > **This section outranks the wave ordering below.** The eventual target is a real execution
@@ -173,7 +132,6 @@ strongest available form of semantic closure.
 ## Table of Contents
 
 - [Terminal goal (2026-07-30): a PyTorch/JAX execution layer via `EvalPlan`](#terminal-goal-2026-07-30-a-pytorchjax-execution-layer-via-evalplan)
-- [Review addendum (2026-07-26): correctness-first reprioritization](#review-addendum-2026-07-26-correctness-first-reprioritization)
 
 - [0. Constraints — what must NOT be restructured](#0-constraints--what-must-not-be-restructured)
 - [Wave 1 — mechanical deletions and corrections (near-zero risk)](#wave-1--mechanical-deletions-and-corrections-near-zero-risk)
@@ -269,70 +227,6 @@ superficially like duplication. Any implementation plan should treat them as fix
 > `BrNF.lean:34` (not `Br.lean:288`); the `Shape.lean` "Task 6" placeholder was at `:515`; and
 > `St.lean` was indeed **not** sorry-free (`swap_hexagon_fwd/rev`, `St.lean:267-268`), so the
 > `SORRY_INVENTORY.md` claim was corrected — the full sorry recount stays deferred to Spike 7.
-> The bullets below are retained as the record of what was changed.
-
-All verified dead by grep and/or reasoning from the current code; each bullet is
-independently landable.
-
-**1a. `liveFix`/`liveStep` are provably no-ops — delete.**
-`schedule` (`DSL/Pipeline/Lowering.lean:155-167`) now seeds liveness with *every* produced
-name (`produced.eraseDups`, the KG-multiout fix). Every `ScanStmt` has nonempty `writes`, and
-each stmt's writes are contained in `produced ⊆ live`, so the filter
-`stmts.filter ((·.writes).any (live.contains ·))` keeps every statement — it is the identity.
-Delete `liveStep` (:137-139), `liveFix` (:141-145 — also removes a `partial def`), and the
-seeding lines (:156-158). `schedule` reduces to `topoSort` + `explicitSizes` + `liveExtNames`
-(the last still does real work: it drops never-read external names via `orderedReads`).
-Rewrite the "Dead-code elimination by backward reachability" doc block (:65-69) to say
-"ordering only; no statement pruning (KG-multiout)". Pinned by
-`test/DSL/Pipeline/LoweringTest.lean:37-48` ("No DCE for unread top-level statements"),
-which passes identically.
-
-**1b. Dead trio `stepContracted`/`stepDegAxes`/`stepMkWeave`
-(`Lowering.lean:292-303`) — delete.** `stepMkWeave` has zero call sites in `LeanNCD/` and
-`test/`; the other two are called only by it. All three were superseded by the multi-stmt
-`ScanStmt.stepDegAxesMulti`/`slotWeave` (:398-467). One stale doc-comment mention at :400.
-
-**1c. Dead surface syntax `tl_shape`/`elabTLShape`** (`Syntax.lean:27,62-63`,
-`Elab.lean:42-44`) — the comment itself says "kept for future use; no longer referenced by
-any `tl_decl` rule". Delete, or keep with a conscious decision recorded.
-
-**1d. Speculative always-empty fields `extraStmts`/`auxStmts`**
-(`Pipeline/Types.lean:30,45`; constructed as `#[]` at `Structural.lean:137,327`). They encode
-"§12.4 said there would be intermediates and there aren't". Deleting them simplifies two
-records but touches ~15 test-record literals (`StructuralTest.lean`, `MaxReduceTest.lean`) —
-mechanical, compiler-guided.
-
-**1e. Root scratch files.** Eight untracked `_scratch_*.lean` at the repo root are
-unreferenced by `lakefile.toml` and imported by nothing. Move to a `spikes/` directory (or
-delete). One dependency first: `Br.lean:288`'s `brCancelPoint` doc cites "the old
-`_scratch_nf.lean`" as the assemble-step reference — inline that skeleton into `BrNF`'s
-header (or the doc) before removing the file.
-
-**1f. Merge the empty mixin stubs.** `Mixins/Route.lean` (11 lines) and
-`Mixins/Symmetry.lean` (13 lines) are one-class stubs; merge into a single
-`Mixins/Stubs.lean` (a `Mixins.StubsTest` already exists in the test globs, suggesting this
-was the original intent). Optional, same spirit: fold `Bridge/SBr.lean` (22 lines, one def)
-into `Agreement.lean`.
-
-**1g. Stale documentation that now misleads** (each verified):
-
-- `Bridge/Agreement.lean:316-338` — a long "FALSE AS STATED" warning block describing the
-  *old* `topo_bound` statement; the theorem at :339 is now proved (the Phase-A
-  `routableInOrder` guard discharged it). Also :323 claims "the pipeline never rejects cyclic
-  dataflow" — `routeCore` now rejects cycles with `cyclicDataflow`. Trim to a short note.
-- `Props/Generic.lean:52-53` — doc says "SIGNATURE — body is `sorry`" but
-  `scan_catamorphism` is proved.
-- `SORRY_INVENTORY.md` (last updated 2026-07-03) — claims `St.lean` is fully sorry-free
-  (false: `swap_hexagon_fwd/rev` at `St.lean:267-268` were added as fields afterward), and
-  has no entries for `BrNF.lean`'s 6 sorries. Refresh against the census in Spike 7.
-- `Structural.lean:147` references `readsOf` (an Eval-layer name) from the DSL layer.
-- `Eval/Shape.lean:518` — "affine slots handled in Task 6 — 0 placeholder" is stale.
-
-**1h. Optional fail-loud quick win (behavior-changing, flag separately):** on the eval-only
-path (`compileToScheduled`, no `route`), a cyclic program sails through `schedule` (the
-`topoSortFuel` cycle fallback silently returns source order, `Lowering.lean:126`) and dies
-later with a generic "unknown tensor". `topoSort` already detects the cycle; make `schedule`
-report `cyclicDataflow` instead of falling back. Add a reject test.
 
 ---
 
@@ -352,7 +246,7 @@ report `cyclicDataflow` instead of falling back. Add a reject test.
 > - **2c/2d/2e** — done on the branch above.
 > - **2a** — ✅ **DONE** via Approach D (`Factor.read?` classifier — a plain filterMap, not a traversal; reads need collection only). All of Spike 2 is now complete.
 >
-> **Design deviations from the plan text below (deliberate, reviewed):**
+> **Design deviations from the original plan (deliberate, reviewed):**
 > - **2c axis accessors** unified onto a single rich primitive `LHSSlot.axisSpec? : LHSSlot → Option AxisSpec`,
 >   with `axisUID? := axisSpec?.map (·.uid)` **derived** — folding in `Stmt.lhsAxes` and `stmtLhsRank`'s inner
 >   match (a twin the doc missed). The two genuinely *selective* projections were kept distinct and **named**:
@@ -371,88 +265,11 @@ report `cyclicDataflow` instead of falling back. Add a reject test.
 > All of Spike 2 relies on `lake build` + the pinned suite + the per-task/whole-branch reviews. The spec
 > is retained (marked NOT PLANNED) as a ready-made pickup if that calculus ever changes.
 
-The single largest duplication cluster. Root cause: `Eval/` imports only `DSL/Ast.lean`
-(deliberate layering), so pure-AST helpers that live in `Pipeline/Structural.lean` were
-re-declared in Eval — and then again inside function bodies. Fix the placement, not the
-layering: move the primitives *down* into `Ast.lean` (or a new `DSL/Collect.lean`), where
-both layers can import them.
-
-**2a. The read-projection family — 6 functions, one primitive.** ✅ **DONE (Approach D — `Factor.read?`).** Each pattern-matches
-`Factor` with identical arms (`.read`/`.unaryFn` → keep name+exprs, `.iverson` → drop) and
-differs only in projection:
-
-| Function | Location | Projection |
-|----------|----------|------------|
-| `Stmt.readNames` | `Structural.lean:116` | name |
-| `stmtReads` | `Structural.lean:154` | (name, arity) |
-| `Stmt.rhsReads` | `Structural.lean:361` | index exprs |
-| `Stmt.readFactors` | `Lowering.lean:197` | (name, exprs) |
-| `Eval.Stmt.readsOf` | `Eval/Shape.lean:15` | verbatim duplicate of the row above |
-| `readNames` (RHS-level) | `Eval/Contract.lean:47` | name |
-
-Add to `Ast.lean`: `Factor.read? : Factor → Option (String × List IdxExpr)` (the ONE place a
-new `Factor` constructor gets classified), `RHSExpr.readFactors`, `Stmt.readFactors`. The six
-become one-line projections; `Eval.Stmt.readsOf` is deleted outright. Ordering is identical
-in all six (terms in order, factors filterMapped in order) — zero behavior change.
-
-**2b. The axis-collector family — two parallel towers.** ✅ **DONE via E1** (`traverseAxes`). The private `specs*` family
-(`Structural.lean:26-60`, AxisSpec-valued) and the `*AxisUIDs` family
-(`Eval/Contract.lean:7-44`, UID-valued) are the same structural walks; each UID function is
-its Structural twin post-composed with `(·.uid)`. Additionally `idxAxes`
-(`Lowering.lean:228`) is a public verbatim copy of the private `specsIdx`
-(`Structural.lean:26`). Move one AxisSpec-valued family into the AST layer (`IdxExpr.axes`,
-`BoolExpr.axes`, `Factor.axes`, `LHSSlot.axes`) and derive the UID versions by `.map (·.uid)`.
-**Preserve the one semantic distinction explicitly:** `specsRHS` includes the nonlin mask's
-axes; `readAxisUIDs` deliberately does not (per-term contraction scoping must not see mask
-axes). Two named entry points — e.g. `RHSExpr.axes (includeNonlinMask := true/false)` or
-`axesWithMask` vs `readAxes` — not a silent flag default. A `CollectAxes` typeclass would be
-overkill; plain shared functions suffice.
-
-**2c. Accessor twins created by the layering split** — ✅ **DONE (PR #10).** Move to `Ast.lean` and delete the
-duplicates (all verified byte-identical or projection-trivial):
-
-| Keep (new home: Ast.lean) | Delete |
-|---------------------------|--------|
-| `Stmt.lhsName` | `stmtName` (`Eval/Scan.lean:67`) |
-| `Stmt.slots` | `Eval.Stmt.lhsSlots` (`Eval/Shape.lean:9`), `stmtSlots` (`Eval/Scan.lean:73`) |
-| `Stmt.nonlinOf` | `Stmt.nonlin` (`Lowering.lean:218`) |
-| `LHSSlot.axisUID?` | `lhsAxisUID?` (`Eval/Shape.lean:501`), the `slotUID` closure (`Structural.lean:451-453`), inline matches at `Structural.lean:180-183` and `Lowering.lean:207` |
-| `LHSSlot.outIdx` | `lhsSlotIdx` (`Eval/Scatter.lean:6`), `slotOutIdx` (`Eval/Shape.lean:375` — its own comment apologizes for the import-cycle copy) |
-| `Decl.name` | `declName` (`Eval/Contract.lean:129`) |
-| `outputShape` (one copy) | `stateShape` (`Eval/Scan.lean:81` — byte-identical body) |
-
-**2d. The most dangerous mirror: scatter extent sizing.** ✅ **DONE (PR #10).** `scatterOutShape`
-(`Eval/Eval.lean:12-27`, `Except`, fail-loud) and `scatterOutDim` (`Eval/Shape.lean:386-395`,
-`Option`) implement the same 5-case per-slot extent formula, with a comment begging "MUST
-match … kept in sync by mirroring". The extent convention (`.const n ⇒ n+1`, `.scale c a ⇒
-c·size`) is deliberately not derivable from `idxAffineForm` (upsample stride semantics), so
-it deserves exactly one home: `LHSSlot.outExtent (sz : UID → Option Nat) : Option Nat`, with
-both callers derived (`scatterOutShape` = `mapM` + `getDM (throw …)`). Deletes the mirror and
-its sync obligation (~25 lines).
-
-**2e. `Stmt.iterInfo`'s anonymous 4-tuple** ✅ **DONE (PR #10).** (`Structural.lean:354`,
-`List (UID × AxisSpec × Bool × Nat)`) forces `t.2.2.1`-style accessors at 6+ sites and its
-first component is redundant (`= axis.uid`). Replace with
-`structure IterSlot where axis : AxisSpec; isRecur : Bool; pos : Nat`; `Eval/Scan.lean:10`'s
-`iterSlotPositions` becomes a projection of it.
-
-*Estimated effect: ~10 duplicate functions deleted (~150–200 lines), the "9-site mirroring"
-pattern that every recent feature had to hand-replicate drops to one site
-(`Factor.read?`/`Factor.axes`). Pinned by StructuralTest, LoweringTest,
-AffineShapeSolverTest, ScatterTest, ShapeTest, ScanTest, EvalExamplesTest. Do this spike
-first in Wave 2 — Spikes 3 and 4 both shrink substantially once it lands.*
-
-*Actuals (2c/2d/2e, PR #10): exactly **10 duplicate/mirror functions deleted**, **−44 lines of Lean**
-(smaller than the 150–200 estimate because the branch also adds docstrings and, in the axis-accessor
-family, more named primitives than envisioned — the `axisSpec?`-root design). The one-site mirroring
-goal is met for the axis accessors (`LHSSlot.axisSpec?`), the scatter extent (`LHSSlot.outExtent`), and
-the iter tuple (`IterSlot`). The `Factor.read?` half of that goal is **2a**, now also **done via Approach D** — `Factor.read?` + `readFactors` collapse the six read functions and delete the `Stmt.readsOf` duplicate; all of Spike 2 is complete.*
-
 ### Spike 3: make the Nonlin wildcard hazards unrepresentable
 
 > **✅ 3a/3b DONE — branch `spike3-nonlin-elab` (2026-07-29).** Commits `70b5233..d65320e` (4 code commits + 2 fix commits); `lake build` green (8610 jobs) at every task boundary; sorry-free; each task passed an independent spec+quality review.
 >
-> **Actuals and deviations from the sketch below:**
+> **Actuals and deviations from the original plan:**
 > - **`AxiswiseFn`, not `RowwiseFn`** — softmax/normalize act along ONE designated axis of an arbitrary-rank tensor; "row" was a `perRow` implementation view, not the source semantics. Constructor is `Nonlin.axiswise`.
 > - **`Nonlin` is now `identity | pointwise PointwiseFn | axiswise AxiswiseFn (Option BoolExpr)`** in `DSL/Ast.lean`, with `PointwiseFn.toBrOp` / `AxiswiseFn.toBrOp` (the "two tiny tables") also in `Ast.lean` (it already imports `DSL.Target`), and `PointwiseFn.apply` in `Eval/Nonlin.lean`. All 6 migration sites were verified arm-by-arm semantically identical to the old 9-arm matches. Both in-code hazard comments are deleted — the hazard is now unrepresentable.
 > - **The Spike 6a payoff was real and measured:** `RouteSpec.lean`, `Bridge/*`, `AcsetCodec.lean`, `Csv.lean`, and `Target.lean` are **untouched** across the whole branch (empty diff), and RouteSpec rebuilt clean with no edit — so the `Nonlin→BrOp` change required **zero** proof repair, versus the "budget RouteSpec repair" this doc warned about. `brOpIdx` wire format intact.
@@ -463,68 +280,9 @@ the iter tuple (`IterSlot`). The `Factor.read?` half of that goal is **2a**, now
 >
 > **Task 0 — nonlinear scatter was silently erased (fixed).** Independent review (`copilot_code_analysis.md`) demonstrated, and we re-verified on `main`, that `evalScatter` never applied `rhs.nonlin`: `Out[2*i] := relu(X[i])` compiled and evaluated with the `relu` dropped. The "scatters carry no nonlinearity" claim at `Lowering.lean:30,44` was only a comment. Policy now enforced: **scatter + identity accepted; scatter + non-identity rejected during validation** (`CompileError.unsupportedNonlinScatter`, checked in both `TLProgram.compile` and `compileToScheduled` before `lowerArith`, plus a defensive `EvalError` in `evalScatter`). Supporting it later needs a semantic decision — activation before collision-reduction, or after fill/reduce — deliberately not chosen here. Note the check must match `.assign` guarded by `slotsBecomeScatter` **as well as** `.scatter`: the elaborator only ever emits `Stmt.assign`, and `lowerArith` (the sole `.scatter` producer) runs *after* validation, so a `.scatter`-only check would be a dead no-op.
 >
-> **⚠️ Honest scope — what this spike does and does NOT establish.** Spike 3 establishes **representation closure** for `Nonlin` (every nonlinearity's category is encoded in its constructor; every match is exhaustive with no semantic wildcard) and source-level **keyword/mask shape validity**. It does **NOT** establish **semantic closure**: `BrBaseP` still carries no field for the softmax mask, the `UnaryOp`, `ScatterOpts`, or dtype, so routed lowering can still drop payload (an inline `log(X[i])` and a plain `X[i]` still lower identically). Grouping prevents *misclassification*; it cannot manufacture a new function's evaluator/target/codec semantics — a new `AxiswiseFn` still needs all of those. It also repairs **no** categorical proof gap (`weave_unique`, the flagship graded instance) and leaves ACSet operation-tag decoding outside the validated boundary. See the [review addendum](#review-addendum-2026-07-26-correctness-first-reprioritization) for the remaining stages.
+> **⚠️ Honest scope — what this spike does and does NOT establish.** Spike 3 establishes **representation closure** for `Nonlin` (every nonlinearity's category is encoded in its constructor; every match is exhaustive with no semantic wildcard) and source-level **keyword/mask shape validity**. It does **NOT** establish **semantic closure**: `BrBaseP` still carries no field for the softmax mask, the `UnaryOp`, `ScatterOpts`, or dtype, so routed lowering can still drop payload (an inline `log(X[i])` and a plain `X[i]` still lower identically). Grouping prevents *misclassification*; it cannot manufacture a new function's evaluator/target/codec semantics — a new `AxiswiseFn` still needs all of those. It also repairs **no** categorical proof gap (`weave_unique`, the flagship graded instance) and leaves ACSet operation-tag decoding outside the validated boundary. See [`semantic_payload_audit.md`](semantic_payload_audit.md) and the [terminal goal](#terminal-goal-2026-07-30-a-pytorchjax-execution-layer-via-evalplan) section for the remaining stages.
 >
 > **3c remains deferred** — with a sharper reason than "evaluate whether it pays": `BrBaseP` has no field for the `UnaryOp` at all, so merging `Factor.unaryFn` into `Factor.read` before that payload is designed would make the loss *less visible*, not fix it. Blocked on the semantic-payload audit.
-
-Two real bugs this cycle came from the same type-design flaw: `Nonlin`'s 9 flat constructors
-force every match site to re-enumerate the pointwise-vs-rowwise split, and wildcard fallbacks
-silently misclassify new variants (`specsNonlin` swallowed `l2normalize`'s mask;
-`evalPlain` initially demanded a marked axis for `sigmoid` — both documented in-code with
-warning comments that this spike deletes).
-
-**3a. Restructure the AST:** ✅ **DONE** (as `AxiswiseFn`, not `RowwiseFn`).
-
-```lean
-inductive PointwiseFn | relu | sigmoid | tanh | gelu | leakyrelu
-inductive RowwiseFn   | softmax | normalize | l2normalize
-inductive Nonlin
-  | identity
-  | pointwise : PointwiseFn → Nonlin
-  | rowwise   : RowwiseFn → Option BoolExpr → Nonlin
-```
-
-A new pointwise fn *cannot* forget mask handling (no mask exists, by type); a new rowwise fn
-automatically flows through mask collection, norm-axis lookup, and nonlin-split at every site
-via the existing `.rowwise` arms. Eleven match sites collapse (survey verified —
-`Traverse.lean:36-45` 9→3 arms; `specsNonlin` `Structural.lean:38-40` becomes
-`| .rowwise _ (some m) => specsBool m | _ => []` with a *provably safe* wildcard, deleting
-the 8-line hazard warning in the module docstring; `buildStep`'s op mapping
-`Lowering.lean:537-546` 9→3 arms + two tiny `toBrOp` tables; `applyNonlin`
-`Eval/Nonlin.lean:97-108` 9→3; the `evalPlain`/`evalStmtSliceSeeded` axis-resolution matches
-become exhaustive 3-arm matches with no wildcard, deleting the second hazard comment).
-Equality-only sites (`== .identity` at `Structural.lean:247,516`, `Lowering.lean:34`) are
-unchanged. `BrOp` stays flat (Python bridge); only the mapping changes. (This spike already does,
-for `Nonlin`, exactly the move **E13** asks whether `Br`'s own generators need: closing off a
-flat, wildcard-hazard-prone sum type into a structurally exhaustive split. `BrOp` itself is the
-next candidate for the same question.) Surface syntax
-unchanged. **Budget RouteSpec repair** for the one `buildStep` arm this touches (limited
-exposure; see Constraint 3 — cheaper if Spike 6a has landed first). Pinned by NonlinTest,
-FF5–FF8 (unmarked activations), LoweringTest's masked-softmax split, EvalExamplesTest's
-masked attention.
-
-**3b. Elab/Syntax keyword tables.** ✅ **DONE** (as *two* closed nonlin categories; `identStr` was 23 sites). Two mechanical generator patterns replace 16 copy-pasted
-productions/arms:
-
-- `tl_unary_kw` category: 5 one-token rules + one `tl_factor` production + one elab arm with
-  a `String → UnaryOp` table (replaces `Syntax.lean:126-130` + `Elab.lean:164-173`). Adding
-  a unary fn becomes a 2-line change.
-- `tl_nonlin_kw` category: 8 keyword tokens + one
-  `tl_nonlin_kw (atomic("(" "where") tl_bool_expr ")")?` production + one elab arm. Bonus: a
-  mask on a pointwise keyword becomes a clear *elaboration* error ("relu takes no
-  where-mask") instead of today's inscrutable parse failure. **Verify** the
-  `atomic("(" "where")` lookahead still disambiguates `softmax(sum)` (documented at
-  `Syntax.lean:143-145`) — run `ParseLayer34Test` and `CompileExamplesTest` before trusting
-  it.
-- Cleanup: `Elab.lean` repeats `x.getId.eraseMacroScopes.getString!` 19 times — extract
-  `private def identStr`.
-
-**3c. Optional follow-up: merge `Factor.unaryFn` into `Factor.read`.** ⏸ **DEFERRED** — blocked on the `UnaryOp` payload design (`BrBaseP` has no field for it). Exactly one consumer
-inspects the op (`gather`, `Eval/Gather.lean:75-78`); nine sites carry a `.unaryFn` arm
-identical to their `.read` arm. `| read : (fn : Option UnaryOp) → String → List IdxExpr →
-Factor` makes "a unaryFn *is* a read" true in the AST. **Do this only after Spike 2a** — once
-`Factor.read?` exists the nine duplicated arms are already gone and this shrinks to a small
-honesty refactor (Traverse/Gather/Elab); evaluate then whether it still pays.
 
 ### Spike 4: Eval interpreter unification
 
@@ -643,17 +401,15 @@ No statement changes anywhere in this spike — pure proof-engineering. It also 
 the proofs against Wave-2 pipeline changes, which is why 6a is worth doing early if Spike 3
 is planned.
 
-**6a. Factor `ScanStmt.toBrBaseP` out of `buildStep`.** ✅ **DONE (2026-07-25, branch `spike6a-tobrbasep`).** Five RouteSpec lemmas
-(`buildStep_outputWeaves`:344, `_reindexings`:405, `_degree`:424, `_inputWeaves`:613,
-`_wires_mapM`:716) each redo the same 3-way `cases sc` + `bind_pure_pair_ok` dance because
-`buildStep` (`Lowering.lean:498-564`) interleaves guards with record construction. Reshape as
-`guards; pure (sc.toBrBaseP, ← wires)`; the five collapse to one
-`buildStep_ok_eq : buildStep … = .ok (b, w) → b = sc.toBrBaseP ∧ …` plus `rfl` projections.
-Future `BrBaseP` field additions then need zero new extraction lemmas — this is what makes
-Spike 3a's `buildStep` touch cheap. ≈ −150 lines.
+**6a. Factor `ScanStmt.toBrBaseP` out of `buildStep`.** ✅ **DONE (2026-07-25, branch `spike6a-tobrbasep`)** —
+reshaped `buildStep` (`Lowering.lean:498-564`) as `guards; pure (sc.toBrBaseP, ← wires)`, collapsing
+five RouteSpec lemmas' repeated `cases sc` + `bind_pure_pair_ok` dance onto one
+`buildStep_ok_eq : buildStep … = .ok (b, w) → b = sc.toBrBaseP ∧ …` plus `rfl` projections. Future
+`BrBaseP` field additions need zero new extraction lemmas — this is what made Spike 3a's `buildStep`
+touch cheap.
 
-> *Actuals: the repair surface was **7 proof bodies, not 5** — the two the sketch omits,
-> `buildStep_ok_guard` and `buildStep_outputWeaves_length_one`, also `unfold buildStep`. Six
+> *Actuals: the repair surface was **7 proof bodies, not 5** — two more, `buildStep_ok_guard` and
+> `buildStep_outputWeaves_length_one`, also `unfold buildStep`. Six
 > field-projection proofs collapse to one-liners off the new `buildStep_ok_eq` (`rfl` for the four
 > plain fields, `simp` for the length lemma, and `buildStep_wires_mapM` is literally its second
 > conjunct); `buildStep_ok_guard` reasons about the throw-guards (which stay in `buildStep`) so it
@@ -694,48 +450,12 @@ proof schemas that account for ~700 lines collapse:
 > 7c **deleted** `grothendieck_split` (**−1**, chosen over restating). Confirmed **pure subtraction —
 > no new proofs, no sorry re-introduced**; `St.swap_hexagon_fwd/rev`, `instDGradedStBr`, and
 > `brCancelPoint`'s proof were left untouched (out of scope). A trailing `docs:` commit swept the
-> stale references the deletions exposed. The census/table below is retained as the record.
+> stale references the deletions exposed. `Br.lean:298`'s doc records the cospan-model
+> requirement 7b surfaced (`BrNF`'s bijective wiring provably can't interpret `copyW`/`delW`;
+> see `leanncd/LeanNCD/Base/AGENTS.md` and Part II's **E13**) — not repeated here.
 
-Full census performed (verified by grep + reading each site). The Bridge track
-(Realize/Agreement/AcsetCodec/SBr/RouteSpec) and the whole executable track are **zero-sorry**
-today; all 38 are math-tower. Three actions:
-
-**7a. Delete the two impossible `Algebra` instances (−17 sorries, ~30 min).**
-`Algebra/Target.lean:79-86` (8 fields) is false-as-stated by a *recorded mathematical
-obstruction* (file comment :70-77: no faithful dimension-adding `actV` over `FGModuleCat ℝ`
-with symbolic sizes; `δ_V` forces `f(P)=f(P)² ⇒ 1`). `Algebra/Construct.lean:14-21,43`
-(8 fields + `construct_correspondence`) is gated on it and quantifies over sorry data. Keep
-the *classes* (`TargetActegory`, `Algebra`, `ParaAlgebra` — all sorry-free) and the proved
-`semiring_choice_split`; keep the obstruction notes as docs; delete the instances. They
-remain instantiable at Milestone I with concrete `Nat` sizes — which is the actual plan of
-record anyway.
-
-**7b. Park `BrNF` outside the default build (−6 sorries, −247 built lines).**
-[†](#e13-generators-for-br--closing-brop-and-promoting-e6s-laws-to-theorems) Verified:
-imported by nothing except the root `LeanNCD.lean:101`. More importantly, a **model-adequacy
-finding supersedes its plan**: `Hom` gained CD generators `copyW`/`delW` (`Br.lean:61-62`)
-with comonoid laws in `Rel` (:125-134), and `brCancelPoint` quantifies over *all* raw terms —
-but `BrNF`'s `NData` wiring is a *bijection* (`OutPort ≃ InPort`), which provably cannot
-interpret one-in-two-out `copyW` (`BrNF.lean:243-244` admits exactly this). **BrNF as
-designed can never complete `brCancelPoint`.** The honest route is a gs-monoidal/cospan
-(non-bijective) model — a larger development than BrNF's header estimates, which predate the
-CD extension. (Part II's **E13** frames this precisely: `Br`'s generating set — `BrOp` plus the
-CD structural generators — isn't closed under its own wiring model yet, the same kind of gap
-that forced GHC's Core to grow explicit `Coercion` terms for GADTs; the cospan model is that
-growth, not a proof patch.) Actions: drop the import, move the file to `spikes/`, and record the
-cospan-model requirement in `Br.lean:298`'s doc (the sorry-free wiring combinators and the
-`@[simp]`-projection technique in BrNF survive in the file for eventual reuse). Optionally
-demote `instance : Elemental BrObj` (`Br.lean:425`) to a scoped instance/def so no default
-instance carries a transitive sorry — `weave_unique`/`weave_subsingleton` already take
-`[Elemental C]` explicitly. Consumer chain verified safe: `brCancelPoint → Elemental BrObj →
-weave_unique (itself sorry, double-gated) → weave_subsingleton → nothing`; the executable
-target uses the *proved* `St.elemental`.
-
-**7c. Restate or gate `grothendieck_split` (−1 false-as-stated sorry).** With the stub
-`structuralCongruence := fun _ _ _ _ => True` (`Grothendieck/Split.lean:15`), `Cˢʰᵃʳᵖ` is the
-thin quotient and the claimed equivalence `C ≌ ∫Dat` is false for any non-thin `C`.
-Parameterize the theorem over a real `HomRel`+`Congruence` hypothesis, or delete until the
-real relation exists.
+The Bridge track (Realize/Agreement/AcsetCodec/SBr/RouteSpec) and the whole executable track
+were **zero-sorry** at the time of the census; all 38 were math-tower.
 
 **What remains after 7a–7c (~14, the honest open surface):**
 
@@ -758,49 +478,7 @@ real relation exists.
 > kept — it backs the `StMat` laws) and making `realizeAxis` identity-on-size; the `StMat` category
 > laws were verified **byte-identical** (signature-only swap, no proof-meaning change, no sorry
 > touched). **8b** intentionally skipped (churn without payoff). A trailing `docs:` commit swept the
-> stale `Numeric` references the swap exposed. The writeup below is retained as the record.
-
-A fourth, separate proof-track spike — findings that are neither sorry-count reductions
-(Spike 7) nor proof-script consolidation (Spike 6), but simplifications of the *types* the
-proofs are stated over. Grouped here because they're small, mostly independent of each other
-and of Spikes 6/7, and each closes a documented "this is a known wart" note rather than fixing
-a bug.
-
-**8a. `StMatP'` (`DSL/Target.lean:38-52`) is nearly dead.** Only `toStMatP` + one theorem
-consume it; no pipeline stage does. Either wire `elaborateReindexings` through it (making
-`StMatP.wellFormed` structural by construction, deleting `StMatP.validate`) or delete it
-outright. Low cost either way; resolve it rather than leave it half-used.
-
-**8b. `realizeStMat` could take a `wellFormed` hypothesis instead of `getD 0` fuzz.**
-Currently (`Bridge/Realize.lean:25-28`) it defaults out-of-range entries silently. Now that
-`routeCore_reindexings_wellFormed` (`RouteSpec.lean:469`) supplies well-formedness upstream,
-`realizeStMat` could accept it as a hypothesis instead — but only worth doing if a future
-proof actually needs entry-level faithfulness; otherwise the fuzz is harmless and this is
-churn without payoff. Lowest-priority item in this spike.
-
-**8c. `Axis.size : Numeric → SizeExpr` swap — the concrete next step on the
-`leanncd-numeric-noncomputable` open item.** `SizeExpr` already backs the entire DSL/Eval
-track; the remaining `Numeric` surface is small and, critically, *inert*: `Base/Numeric.lean:9`
-(the def), `Base/St.lean:10` (`Axis.size`), `Base/Br.lean:8` (`DType.nat`),
-`DSL/SizeExpr.lean:37-43` (the lossy `toNumeric` bridge — `.sub`/`.div` are silently dropped, a
-documented lossiness), `Bridge/Realize.lean:11` (`realizeAxis`, the sole `toNumeric`
-consumer). Nothing in any `St`/`Br` proof pattern-matches on a `Numeric` *value* — the `StMat`
-laws touch only `coeffs`/`bias` (`Coeff = MvPolynomial String ℤ`, genuinely used via
-`Matrix.mul_assoc`/ring reasoning) — so swapping `Axis.size`/`DType.nat` to `SizeExpr` is
-safe: it makes `StObj`/`BrObj`/`WeaveShape` *objects* computable (morphisms stay noncomputable
-via `Coeff`), deletes `SizeExpr.toNumeric` outright, and turns `realizeAxis` into the identity
-on sizes — killing the documented sub/div lossiness for good. Touch set: `Base/St.lean` (1
-field, laws unaffected), `Base/Br.lean` (1 constructor), `Bridge/Realize.lean` (2 defs
-simplify), `Base/Numeric.lean` (keep only `Coeff`), `Base.NumericTest`/`Bridge.RealizeTest`.
-Estimated < 1 day. **Does not** fix the `Algebra/Target` obstruction (Spike 7a) — that needs
-concrete `Nat` sizes, a separate design decision. **Explicitly not recommended as a
-follow-on:** a full `Coeff` computability swap (needed to make `StMat` itself computable)
-would need a computable multivariate-polynomial normal form and re-proving the St laws over
-it; the presentation layer (`StMatP`) already covers the computable need, so that would be
-effort spent on a track that already has a computable twin.
-
-**8d. Optional, very low value:** `Base/Category.lean` (31 lines) has one importer besides
-tests (`ColoredPROP.lean`) and could merge into it. Only worth doing opportunistically.
+> stale `Numeric` references the swap exposed.
 
 ---
 
@@ -990,6 +668,11 @@ Wave G  Backends (E10): PyTorch eager first (fast semantic bring-up; torch_compi
 - **Spike 6b/6c/6d** (RouteSpec `routeCore` elim, shared `ListMapM`, AcsetCodec split) — pure proof engineering.
 - **Proof track** — quarantine `weave_unique` under `Experimental`; generated `sorryAx`/axiom-closure CI over a named trusted-core API; regenerate `SORRY_INVENTORY.md` from source (it currently contradicts the build). Keep the weave countermodel as a permanent model test.
 - **St hexagons** proof spike; **cospan model** spike (unlocks E13 once scoped).
+- **Phantom semiring parameter** — `TargetActegory`'s semiring type parameter is a
+  parametricity witness with no live instance constraining it (finding #10, 2026-07-26 review).
+  Separate a scalar-semantics interface from the shape action. E3-adjacent, but distinct from
+  E3's `EvalSemiring` (that's the Eval-interpreter's Float-level semiring; this is the
+  categorical Algebra/Construct machinery's type-level parameter).
 
 ### Deferred or blocked — with the reason
 
