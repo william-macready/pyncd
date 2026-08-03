@@ -27,7 +27,8 @@ run_cmd do
   let mul : Float → Float → Float := (· * ·)
   let combine : Float → Float → Float := (· + ·)
   match evalAssignSeeded mul combine 0.0 1.0 env sizes seed "Y" [LHSSlot.free i, LHSSlot.iterAt k 0] rhs with
-  | Except.error _ => pure ()
+  | Except.error (.shape (.unsizedAxis 1 (.assignOutput "Y"))) => pure ()
+  | Except.error e => throwError s!"Wave-B #1: wrong rejection reason, got: {e}"
   | Except.ok (_, Y) => throwError
       s!"Wave-B #1: expected rejection of missing free-axis size, got shape {Y.shape} \
 (evalAssignSeeded has no free-axis size check today, unlike evalAssignWith)"
@@ -43,7 +44,8 @@ run_cmd do
   let sizes : HashMap UID Nat := {}   -- k deliberately absent
   let rhs : RHSExpr := { body := { terms := [{ factors := [.read "X" [.axis k]] }] }, nonlin := .identity }
   match evalAssign env sizes "Y" [] rhs with
-  | .error _ => pure ()
+  | .error (.shape (.unsizedAxis 2 (.assignContracted "Y"))) => pure ()
+  | .error e => throwError s!"Wave-B #2: wrong rejection reason, got: {e}"
   | .ok (_, Y) => throwError
       s!"Wave-B #2: expected rejection of missing contracted-axis size, got {repr Y.data} \
 (evalAssignWith/evalAssignSeeded default a missing contracted axis to extent 1 today)"

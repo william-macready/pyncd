@@ -1,7 +1,10 @@
 namespace LeanNCD.Eval
 
-/-- Errors any evaluator phase can raise (shared across the Eval/ modules). -/
-abbrev EvalError := String
+-- Deliberately does NOT import `Error.lean`: `DenseTensor` is pure runtime data (shape + a flat
+-- Float buffer), independent of how any worker that reads/writes it reports failure. Before 4h
+-- this file also defined `abbrev EvalError := String`, which made every Eval/ module depend on
+-- `Tensor.lean` just to name its own error type — that's gone now, and each worker instead
+-- imports `LeanNCD.Eval.Error` explicitly for `EvalError`.
 
 /-- A dense row-major Float tensor. Invariant: `data.size = (shape.foldl (·*·) 1)`. -/
 structure DenseTensor where

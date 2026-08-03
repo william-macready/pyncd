@@ -1,4 +1,5 @@
 import LeanNCD.Eval.Tensor
+import LeanNCD.Eval.Error
 import LeanNCD.DSL.Ast
 namespace LeanNCD.Eval
 open Std
@@ -42,7 +43,7 @@ def evalBool (coord : HashMap UID Int) : BoolExpr → Bool
 def gatherRead (env : HashMap String DenseTensor) (coord : HashMap UID Int)
     (nm : String) (es : List IdxExpr) : Except EvalError Float :=
   match env[nm]? with
-  | none => .error s!"gather: unknown tensor {nm}"
+  | none => .error (.unknownTensor .gather nm)
   | some t =>
       let srcZ : List Int := es.map (evalIdx coord)
       -- bounds check against t.shape; out-of-range ⇒ 0.0
@@ -55,16 +56,18 @@ def gatherRead (env : HashMap String DenseTensor) (coord : HashMap UID Int)
     a domain violation (consistent with this evaluator's fail-loud conventions elsewhere —
     unsized axes, unknown tensors, causality violations); `exp`/`sin`/`cos` are total, no domain
     check needed. `recip` (the friendly `/` operator's desugared form) fails on exactly zero
-    rather than propagating `inf`. -/
-def applyUnaryFn : UnaryOp → Float → Except EvalError Float
-  | .log,  v => if v ≤ 0.0 then .error s!"log domain error: log({v}) undefined for non-positive input"
+    rather than propagating `inf`. `ctx` is the deterministic tensor/coordinate the failing value
+    was gathered from — carried on `EvalError.unaryDomain` for future/typed inspection, but NOT
+    part of the initial rendered message (see `Error.lean`'s `EvalContext` doc). -/
+def applyUnaryFn (ctx : EvalContext) : UnaryOp → Float → Except EvalError Float
+  | .log,  v => if v ≤ 0.0 then .error (.unaryDomain .log v ctx)
                 else .ok (Float.log v)
-  | .sqrt, v => if v < 0.0 then .error s!"sqrt domain error: sqrt({v}) undefined for negative input"
+  | .sqrt, v => if v < 0.0 then .error (.unaryDomain .sqrt v ctx)
                 else .ok (Float.sqrt v)
   | .exp,  v => .ok (Float.exp v)
   | .sin,  v => .ok (Float.sin v)
   | .cos,  v => .ok (Float.cos v)
-  | .recip, v => if v == 0.0 then .error s!"div domain error: 1/{v} undefined for zero input"
+  | .recip, v => if v == 0.0 then .error (.unaryDomain .recip v ctx)
                  else .ok (1.0 / v)
 
 /-- Gather one factor's value at a coordinate, from the input tensors.
@@ -75,6 +78,8 @@ def applyUnaryFn : UnaryOp → Float → Except EvalError Float
 def gather (env : HashMap String DenseTensor) (coord : HashMap UID Int) : Factor → Except EvalError Float
   | .iverson b => .ok (if evalBool coord b then 1.0 else 0.0)
   | .read nm es => gatherRead env coord nm es
-  | .unaryFn op nm es => (gatherRead env coord nm es).bind (applyUnaryFn op)
+  | .unaryFn op nm es =>
+      let ctx : EvalContext := { tensor := nm, coord := es.map (evalIdx coord) }
+      (gatherRead env coord nm es).bind (applyUnaryFn ctx op)
 
 end LeanNCD.Eval

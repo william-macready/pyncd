@@ -1,7 +1,7 @@
 import Eval.PropertyOracle.Compare
 import Eval.PropertyOracle.ScanGen
 import Eval.PropertyOracle.ScanUnroll
-import LeanNCD.Eval.Eval
+import LeanNCD.Eval.Entry
 
 /-!
 # Scan-unrolling oracle runner (E6, Task 6)
@@ -65,13 +65,18 @@ def checkScanLaw (c : ScanCase) : Option String :=
   let stateNames := (c.base.filterMap (fun s => match s with | .assign nm _ _ => some nm | _ => none)).eraseDups
   match TLProgram.eval c.prog c.inputs with
   | .error e => some s!"scan case did not evaluate (generator well-formedness gap): {e}\n{repr c.prog}"
-  | .ok scanEnv =>
+  | .ok scanReport =>
       let unrolled := if c.axes.length == 1 then unrollScan1D c else unrollScan2D c
       match TLProgram.eval unrolled c.inputs with
       | .error e => some s!"unrolled companion did not evaluate: {e}\n{repr unrolled}"
-      | .ok unrollEnv =>
-          if c.axes.length == 1 then compareScan1D c scanEnv unrollEnv stateNames
-          else compareScan2D c scanEnv unrollEnv stateNames
+      | .ok unrollReport =>
+          if scanReport.warnings != unrollReport.warnings then
+            some s!"SCAN-UNROLL diagnostics differ: scan={scanReport.warnings.map toString}, \
+unrolled={unrollReport.warnings.map toString}"
+          else if c.axes.length == 1 then
+            compareScan1D c scanReport.env unrollReport.env stateNames
+          else
+            compareScan2D c scanReport.env unrollReport.env stateNames
 
 /-- Run the law over the whole generator; `none` if all pass, else the first failure message. -/
 def runAllScans : Option String :=
@@ -91,9 +96,10 @@ private def bogusUnrolled : TLProgram :=
           else .assign nm slots rhs
       | other => other) }
 #guard
-  match TLProgram.eval bogusT1.prog bogusT1.inputs, TLProgram.eval bogusUnrolled bogusT1.inputs with
-  | .ok scanEnv, .ok unrollEnv =>
-      match scanEnv["S"]?, unrollEnv["Su_S_2"]? with
+  match TLProgram.eval bogusT1.prog bogusT1.inputs,
+      TLProgram.eval bogusUnrolled bogusT1.inputs with
+  | .ok scanReport, .ok unrollReport =>
+      match scanReport.env["S"]?, unrollReport.env["Su_S_2"]? with
       | some full, some leaf =>
           ! denseEq (sliceTensorAtMulti [(full.shape.length - 1, 2)] full) leaf
       | _, _ => false

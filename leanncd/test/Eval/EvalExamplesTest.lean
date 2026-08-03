@@ -1,4 +1,4 @@
-import LeanNCD.Eval.Eval
+import LeanNCD.Eval.Entry
 /-!
 # End-to-end evaluation examples (Milestone I integration test)
 
@@ -25,7 +25,7 @@ run_cmd do
     (({} : HashMap String DenseTensor).insert "W" (tensorOf [2,3] [1,2,3, 4,5,6])).insert "X" (tensorOf [3,2] [1,0, 0,1, 1,1])
   match TLProgram.eval (tlprog!{ Y[i,j] := W[i,k] · X[k,j] }) env with
   | .error e => throwError s!"matmul: {e}"
-  | .ok out => match out["Y"]? with
+  | .ok report => match report.env["Y"]? with
     | some Y => unless DenseTensor.approxEq Y (tensorOf [2,2] [4,5, 10,11]) do
         throwError s!"matmul wrong: {repr Y.data}"
     | none => throwError "matmul: no Y"
@@ -42,7 +42,7 @@ run_cmd do
     A[q, s.] := softmax(where s ≤ q)(Q[q, d] · K[s, d])
   }) env with
   | .error e => throwError s!"attn: {e}"
-  | .ok out => match out["A"]? with
+  | .ok report => match report.env["A"]? with
     | some A =>
         -- masked entry (q=0, s=1, s>q) is exactly 0
         unless A.get! [0,1] == 0.0 do throwError s!"attn: masked entry ≠ 0: {repr A.data}"
@@ -65,7 +65,7 @@ run_cmd do
       (tensorOf [3,5] [0,1,2,3,4, 5,6,7,8,9, 10,11,12,13,14])
   match TLProgram.eval (tlprog!{ Y[i,j] := W[p,r] · X[i + p, 2 * j + r] }) env with
   | .error e => throwError s!"conv: {e}"
-  | .ok out => match out["Y"]? with
+  | .ok report => match report.env["Y"]? with
     | some Y => unless DenseTensor.approxEq Y (tensorOf [2,2] [6,10, 16,20]) do
         throwError s!"conv wrong: shape={repr Y.shape} {repr Y.data}"
     | none => throwError "conv: no Y"
@@ -80,7 +80,7 @@ run_cmd do
     Out[2 * i, 2 * j] := X[i, j]
   }) env with
   | .error e => throwError s!"upsample: {e}"
-  | .ok out => match out["Out"]? with
+  | .ok report => match report.env["Out"]? with
     | some Y =>
         unless DenseTensor.approxEq Y (tensorOf [4,4] [1,0,2,0, 0,0,0,0, 3,0,4,0, 0,0,0,0]) do
           throwError s!"upsample wrong: shape={repr Y.shape} {repr Y.data}"
@@ -103,7 +103,7 @@ run_cmd do
     H[j, l +1] := relu(H[j, l] · W_H[j, k] + G[j, l] · V[j, k])
   }) env with
   | .error e => throwError s!"scan: {e}"
-  | .ok out => match out["G"]?, out["H"]? with
+  | .ok report => match report.env["G"]?, report.env["H"]? with
     | some G, some H =>
         unless DenseTensor.approxEq G (tensorOf [1,3] [1,3,6]) do
           throwError s!"scan G wrong: {repr G.data}"
@@ -122,7 +122,7 @@ run_cmd do
     Result[] := F[t, i] · F[t, j] · edge[i, j]
   }) env with
   | .error e => throwError s!"maskedAgg: {e}"
-  | .ok out => match out["Result"]? with
+  | .ok report => match report.env["Result"]? with
     | some R => unless DenseTensor.approxEq R (tensorOf [] [28]) do
         throwError s!"maskedAgg wrong: shape={repr R.shape} {repr R.data}"
     | none => throwError "maskedAgg: no Result"
@@ -134,7 +134,7 @@ run_cmd do
     ({} : HashMap String DenseTensor).insert "A" (tensorOf [3,3] [1,2,3, 4,5,6, 7,8,9])
   match TLProgram.eval (tlprog!{ Band[i, j] := A[i, j] · [|i - j| ≤ 1] }) env with
   | .error e => throwError s!"band: {e}"
-  | .ok out => match out["Band"]? with
+  | .ok report => match report.env["Band"]? with
     | some B => unless DenseTensor.approxEq B (tensorOf [3,3] [1,2,0, 4,5,6, 0,8,9]) do
         throwError s!"band wrong: {repr B.data}"
     | none => throwError "band: no Band"
@@ -147,7 +147,7 @@ run_cmd do
     ({} : HashMap String DenseTensor).insert "X" (tensorOf [4] [10,20,30,40])
   match TLProgram.eval (tlprog!{ Y[i] := X[i - 1] }) env with
   | .error e => throwError s!"lookback: {e}"
-  | .ok out => match out["Y"]? with
+  | .ok report => match report.env["Y"]? with
     | some Y => unless DenseTensor.approxEq Y (tensorOf [5] [0,10,20,30,40]) do
         throwError s!"lookback wrong: shape={repr Y.shape} {repr Y.data}"
     | none => throwError "lookback: no Y"
@@ -159,7 +159,7 @@ run_cmd do
     (({} : HashMap String DenseTensor).insert "A" (tensorOf [2] [1,2])).insert "B" (tensorOf [3] [10,20,30])
   match TLProgram.eval (tlprog!{ Y[i, j] := A[i] · B[j] }) env with
   | .error e => throwError s!"outer: {e}"
-  | .ok out => match out["Y"]? with
+  | .ok report => match report.env["Y"]? with
     | some Y => unless DenseTensor.approxEq Y (tensorOf [2,3] [10,20,30, 20,40,60]) do
         throwError s!"outer wrong: {repr Y.data}"
     | none => throwError "outer: no Y"
@@ -171,7 +171,7 @@ run_cmd do
     (({} : HashMap String DenseTensor).insert "W" (tensorOf [2,2] [1,-2, -1,1])).insert "X" (tensorOf [2] [3,1])
   match TLProgram.eval (tlprog!{ Y[i] := relu(W[i, k] · X[k]) }) env with
   | .error e => throwError s!"crelu: {e}"
-  | .ok out => match out["Y"]? with
+  | .ok report => match report.env["Y"]? with
     | some Y => unless DenseTensor.approxEq Y (tensorOf [2] [1, 0]) do
         throwError s!"crelu wrong: {repr Y.data}"
     | none => throwError "crelu: no Y"
@@ -186,7 +186,7 @@ run_cmd do
     Y[q, s.] := normalize(A[q, s])
   }) env with
   | .error e => throwError s!"normalize: {e}"
-  | .ok out => match out["Y"]? with
+  | .ok report => match report.env["Y"]? with
     | some Y =>
         unless DenseTensor.approxEq Y (tensorOf [2,2] [0.25, 0.75, 0.5, 0.5]) do
           throwError s!"normalize wrong: {repr Y.data}"
@@ -227,7 +227,7 @@ run_cmd do
     H[q, m.]         := normalize(Y[q, m] + A[q, m])
   }) env with
   | .error e => throwError s!"transformer: {e}"
-  | .ok out => match out["H"]? with
+  | .ok report => match report.env["H"]? with
     | some H =>
         -- each q-row of H must sum to 1 (normalize output)
         let row0 := H.get! [0,0] + H.get! [0,1]
@@ -281,7 +281,7 @@ run_cmd do
     H[q, m., l +1]   := normalize(Y[q, m] + A[q, m])
   }) env with
   | .error e => throwError s!"scan-transformer: {e}"
-  | .ok out => match out["H"]? with
+  | .ok report => match report.env["H"]? with
     | some H =>
         -- every (q-row, layer) is a normalize output ⇒ sums to 1 over m
         for q in [0,1] do
@@ -315,7 +315,7 @@ run_cmd do
   match scatterOutShape (({} : HashMap UID Nat).insert 9 2) [.affine (.scale 2 a)] with
   | .ok [4]  => pure ()                        -- sized axis ⇒ normal computation
   | .ok s    => throwError s!"scatterOutShape sized case wrong: {repr s}"
-  | .error e => throwError e
+  | .error e => throwError (toString e)
 
 /- B3 — reading a SCATTER OUTPUT across layers (the decoder pattern §12.1 never exercises).
    `Out[2i,2j] := X[i,j]` upsamples X (2×2) into a scatter output; the next layer reads the full
@@ -331,7 +331,7 @@ run_cmd do
     Y[a, b] := Out[a, b] · Out[a, b]
   }) env with
   | .error e => throwError s!"scatter-output read: {e}"
-  | .ok out => match out["Y"]? with
+  | .ok report => match report.env["Y"]? with
     | some Y =>
         unless DenseTensor.approxEq Y
             (tensorOf [4,4] [1,0,4,0, 0,0,0,0, 9,0,16,0, 0,0,0,0]) do
@@ -349,7 +349,7 @@ run_cmd do
     Z[a, b] := Y[a, b]
   }) env with
   | .error e => throwError s!"diagonal read: {e}"
-  | .ok out => match out["Z"]? with
+  | .ok report => match report.env["Z"]? with
     | some Z =>
         unless DenseTensor.approxEq Z (tensorOf [2,2] [1,0, 0,2]) do
           throwError s!"diagonal read wrong: shape={repr Z.shape} data={repr Z.data}"
@@ -369,12 +369,12 @@ run_cmd do
     Peak[] := maxreduce(X[i])
   }) env with
   | .error e => throwError s!"multi-output: {e}"
-  | .ok out =>
-      match out["Total"]? with
+  | .ok report =>
+      match report.env["Total"]? with
       | some t => unless DenseTensor.approxEq t (tensorOf [] [9]) do
           throwError s!"Total wrong: {repr t.data}"
       | none => throwError "multi-output: Total silently dropped (KG-multiout regression)"
-      match out["Peak"]? with
+      match report.env["Peak"]? with
       | some p => unless DenseTensor.approxEq p (tensorOf [] [5]) do
           throwError s!"Peak wrong: {repr p.data}"
       | none => throwError "multi-output: Peak missing"

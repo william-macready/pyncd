@@ -1,5 +1,5 @@
 import LeanNCD.DSL.Ast
-import LeanNCD.Eval.Eval
+import LeanNCD.Eval.Entry
 import Eval.PropertyOracle.Compare
 
 /-!
@@ -31,12 +31,12 @@ structure ScanCase where
 
 -- ===== Template 1: linear self-scan  S[j,l+1] := S[j,l]·A[j] =====
 private def j1 : AxisSpec := ⟨"j", 201, .real⟩
-private def l1 (L : Nat) : AxisSpec := ⟨"l", 202, .nat⟩
+private def l1 : AxisSpec := ⟨"l", 202, .nat⟩
 
 /-- Public (unlike the other templates) because `ScanUnroll`'s Task 4 point-check needs a
     concrete, named case to test `unrollScan1D` against directly. -/
 def template1 (L : Nat) (Aneg : Bool) : ScanCase :=
-  let l := l1 L
+  let l := l1
   let base : Stmt := .assign "S" [.free j1, .iterAt l 0]
     { body := { terms := [{ factors := [.read "X0" [.axis j1]] }] }, nonlin := .identity }
   let recur : Stmt := .assign "S" [.free j1, .iterNext l]
@@ -51,10 +51,10 @@ def template1 (L : Nat) (Aneg : Bool) : ScanCase :=
 
 -- ===== Template 2: nonlin self-scan  S[j,l+1] := relu(S[j,l]·A[j]) =====
 private def j2 : AxisSpec := ⟨"j", 211, .real⟩
-private def l2 (L : Nat) : AxisSpec := ⟨"l", 212, .nat⟩
+private def l2 : AxisSpec := ⟨"l", 212, .nat⟩
 
 private def template2 (L : Nat) (Aneg : Bool) : ScanCase :=
-  let l := l2 L
+  let l := l2
   let base : Stmt := .assign "S" [.free j2, .iterAt l 0]
     { body := { terms := [{ factors := [.read "X0" [.axis j2]] }] }, nonlin := .identity }
   let recur : Stmt := .assign "S" [.free j2, .iterNext l]
@@ -68,10 +68,10 @@ private def template2 (L : Nat) (Aneg : Bool) : ScanCase :=
     inputs := inputs, axes := [l], Ls := [L], base := [base], recur := [recur] }
 
 -- ===== Template 3: coupled 2-state  G[l+1]:=G[l]+H[l]; H[l+1]:=G[l] =====
-private def l3 (L : Nat) : AxisSpec := ⟨"l", 222, .nat⟩
+private def l3 : AxisSpec := ⟨"l", 222, .nat⟩
 
 private def template3 (L : Nat) : ScanCase :=
-  let l := l3 L
+  let l := l3
   let baseG : Stmt := .assign "G" [.iterAt l 0]
     { body := { terms := [{ factors := [.read "C" []] }] }, nonlin := .identity }
   let baseH : Stmt := .assign "H" [.iterAt l 0]
@@ -93,10 +93,10 @@ def partialScanCases : List ScanCase :=
   ([2, 3].map template3)
 
 -- ===== Template 4: state + external read  S[l+1] := S[l] + X[l] =====
-private def l4 (L : Nat) : AxisSpec := ⟨"l", 232, .nat⟩
+private def l4 : AxisSpec := ⟨"l", 232, .nat⟩
 
 private def template4 (L : Nat) : ScanCase :=
-  let l := l4 L
+  let l := l4
   let base : Stmt := .assign "S" [.iterAt l 0]
     { body := { terms := [{ factors := [.read "C0" []] }] }, nonlin := .identity }
   let recur : Stmt := .assign "S" [.iterNext l]
@@ -112,10 +112,10 @@ private def template4 (L : Nat) : ScanCase :=
 -- ===== Template 5: tropical aggregator  M[j,l+1] := maxreduce/minreduce(M[j,l]·W[j,k]) =====
 private def j5 : AxisSpec := ⟨"j", 241, .real⟩
 private def k5 : AxisSpec := ⟨"k", 242, .real⟩
-private def l5 (L : Nat) : AxisSpec := ⟨"l", 243, .nat⟩
+private def l5 : AxisSpec := ⟨"l", 243, .nat⟩
 
 private def template5 (L : Nat) (useMax : Bool) : ScanCase :=
-  let l := l5 L
+  let l := l5
   let base : Stmt := .assign "M" [.free j5, .iterAt l 0]
     { body := { terms := [{ factors := [.read "X0" [.axis j5]] }] }, nonlin := .identity }
   let recur : Stmt := .assign "M" [.free j5, .iterNext l]
@@ -154,8 +154,8 @@ def template6 : ScanCase :=
 -- actual value, so it slipped through. Row-major [r][c]: G = [[0,0],[0,1]].
 run_cmd do
   match TLProgram.eval template6.prog template6.inputs with
-  | .error e => throwError e
-  | .ok env => match env["G"]? with
+  | .error e => throwError (toString e)
+  | .ok report => match report.env["G"]? with
     | some g => unless denseEq g ⟨[2, 2], #[0.0, 0.0, 0.0, 1.0]⟩ do
         throwError s!"template6 wrong: {repr g.data}"
     | none => throwError "template6: no G in output"

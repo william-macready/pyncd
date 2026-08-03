@@ -13,7 +13,7 @@ run_cmd do
   let rhs : RHSExpr := { body := { terms := [{ factors := [.read "X" [.axis i, .axis j]] }] }, nonlin := .identity }
   let sizes := (({} : HashMap UID Nat).insert 1 2).insert 2 2   -- i↦2, j↦2
   match evalScatter env sizes "Out" slots rhs { fill := 0, reduce := .rejectCollisions } [4,4] with
-  | .error e => throwError e
+  | .error e => throwError (toString e)
   | .ok (_, Out) =>
       -- X values at even coords:
       unless Out.get! [0,0] == 1.0 && Out.get! [0,2] == 2.0 && Out.get! [2,0] == 3.0 && Out.get! [2,2] == 4.0 do
@@ -31,7 +31,7 @@ run_cmd do
   let rhs : RHSExpr := { body := { terms := [{ factors := [.read "X" [.axis i, .axis j]] }] }, nonlin := .identity }
   let sizes := (({} : HashMap UID Nat).insert 1 2).insert 2 2
   match evalScatter env sizes "Out" slots rhs { fill := 0, reduce := .sum } [4,4] with
-  | .error e => throwError e
+  | .error e => throwError (toString e)
   | .ok (_, Out) =>
       unless Out.get! [0,0] == 10.0 do throwError s!"reduce sum wrong: {repr Out.data}"
 
@@ -64,7 +64,7 @@ run_cmd do
       nonlin := .identity, agg := .max }
   let sizes := ({} : HashMap UID Nat).insert 1 3
   match evalScatter env sizes "Out" slots rhs { fill := 0, reduce := .rejectCollisions } [3] with
-  | .error e => throwError e
+  | .error e => throwError (toString e)
   | .ok (_, Out) => unless DenseTensor.approxEq Out (tensorOf [3] [10, 5, 2]) do
       throwError s!"4g regression: expected per-position max(A,B) = [10,5,2] (agg = .max), got \
 {repr Out.data} (evalScatter ignores rhs.agg and always computes a real sum, which gives [11,4,1])"
@@ -80,7 +80,17 @@ run_cmd do
   let sizes := (({} : HashMap UID Nat).insert 1 2).insert 2 2
   match evalScatter env sizes "Out" slots rhs { fill := 0, reduce := .rejectCollisions } [4,4] with
   | .error e =>
-      unless (e.splitOn "collision").length > 1 do throwError s!"4g: wrong error: {e}"
+      -- Typed check (4h): the collision must be `EvalError.scatterCollision "Out" [0,0] .. ..`
+      -- (both source coords collapse to output coord [0,0] under `.affine (.const 0)` slots).
+      -- Source-coordinate fields are left as wildcards — WHICH of the two colliding coords is
+      -- "first" vs "second" is an iteration-order detail (`cartesian srcSizes`), not part of
+      -- this test's actual assertion. Retained renderer check (byte-identical text) alongside.
+      match e with
+      | .scatterCollision nm outCoord _ _ =>
+          unless nm == "Out" && outCoord == [0,0] do
+            throwError s!"4g: wrong collision fields: nm={nm} outCoord={outCoord}"
+      | _ => throwError s!"4g: expected a scatterCollision error, got: {e}"
+      unless ((toString e).splitOn "collision").length > 1 do throwError s!"4g: wrong error: {e}"
   | .ok _ => throwError "4g: expected rejectCollisions to error on a genuine collision"
 
 -- 4g: .min collision policy folds every write (min), not just the last one — the never-before-
@@ -93,7 +103,7 @@ run_cmd do
   let rhs : RHSExpr := { body := { terms := [{ factors := [.read "X" [.axis i]] }] }, nonlin := .identity }
   let sizes := ({} : HashMap UID Nat).insert 1 3
   match evalScatter env sizes "Out" slots rhs { fill := 0, reduce := .min } [1] with
-  | .error e => throwError e
+  | .error e => throwError (toString e)
   | .ok (_, Out) => unless Out.get! [0] == -8.0 do
       throwError s!"4g: min collision should give -8, got {repr Out.data}"
 

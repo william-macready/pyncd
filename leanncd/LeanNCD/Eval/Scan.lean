@@ -1,5 +1,7 @@
 import LeanNCD.Eval.Contract
+import LeanNCD.Eval.Error
 import LeanNCD.Eval.Nonlin
+import LeanNCD.Eval.Slots
 import LeanNCD.DSL.Pipeline.Types
 namespace LeanNCD.Eval
 open Std
@@ -36,7 +38,7 @@ def evalStmtSliceSeeded (decls : List Decl) (env : HashMap String DenseTensor) (
       let sliceUids := (slots.filterMap (·.axisUID?)).filter (fun u => ! seed.contains u)
       let rn ← resolveNonlin rhs.nonlin slots sliceUids
       return (nm, applyNonlin rn sliceUids slice)
-  | _ => throw "evalStmtSliceSeeded: only assign stmts are supported in scans"
+  | _ => throw (.invalidScanNode .onlyAssignInSlice)
 
 /-- Write a non-iter `slice` into the full state tensor `out`, given the iteration `(position, index)`
     pairs (one per advancing axis of the stmt). The slice's coords are the out-coords with all
@@ -55,10 +57,10 @@ def writeSliceAtMulti (out : DenseTensor) (iters : List (Nat × Nat)) (slice : D
     a slice at index 0. -/
 def evalScan (decls : List Decl) (env : HashMap String DenseTensor) (sizes : HashMap UID Nat) :
     ScanStmt → Except EvalError (List (String × DenseTensor))
-  | .plain _      => .error "evalScan: plain handled by evalScheduled, not here"
-  | .scanPre nm _ _ => .error s!"evalScan: scanPre (recurMorphism escape hatch) evaluation unsupported ({nm})"
+  | .plain _      => .error (.invalidScanNode .plainNotHandledHere)
+  | .scanPre nm _ _ => .error (.unsupportedRecurMorphism .evalScanNode nm)
   | .scan _ axes base recur _ => do
-      if axes.isEmpty then .error "evalScan: scan node has no iteration axis" else
+      if axes.isEmpty then .error (.invalidScanNode .noIterationAxis) else
       let axUids := axes.map (·.uid)
       -- Per-axis length, in `axes` order. FAIL LOUD on an unsized iteration axis: an unspecified
       -- extent is NOT an extent of zero. The former `(sizes[u]?).getD 0` conflated the two, which
@@ -73,15 +75,14 @@ def evalScan (decls : List Decl) (env : HashMap String DenseTensor) (sizes : Has
       let Ls ← axes.mapM (fun a =>
         match sizes[a.uid]? with
         | some n => pure n
-        | none   => throw s!"evalScan: unsized iteration axis '{a.name}' (uid {a.uid}) — pin it with \
-`axis {a.name} : ℕ = N`, or ensure some read fixes its extent")
+        | none   => throw (.shape (.unsizedAxis a.uid (.scanIteration a.name))))
       let stateNames := (base.map Stmt.lhsName).eraseDups
       -- 1. allocate each state tensor (zeros at full shape) from its base slots.
       let mut work := env
       for s in base do
         match s with
         | .assign nm slots _ => work := work.insert nm (DenseTensor.zeros (outputShape sizes slots))
-        | _ => throw "evalScan: base stmts must be assigns"
+        | _ => throw (.invalidScanNode .baseMustBeAssign)
       -- 2. fill boundaries from base stmts: each base pins a subset of axes to their literal index
       --    and fills that slice over its free axes (e.g. `G[r,0]` fills the c=0 column for all r).
       for s in base do

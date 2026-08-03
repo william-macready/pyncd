@@ -14,7 +14,7 @@ run_cmd do
   let base : Stmt := .assign "S" [.free j, .iterAt l 0] { body := { terms := [{ factors := [.read "X" [.axis j]] }] }, nonlin := .identity }
   let recur : Stmt := .assign "S" [.free j, .iterNext l] { body := { terms := [{ factors := [.read "S" [.axis j, .axis l], .read "A" [.axis j]] }] }, nonlin := .identity }
   match evalScan [] env sizes (.scan "S" [l] [base] [recur] false) with
-  | .error e => throwError e
+  | .error e => throwError (toString e)
   | .ok outs =>
       match outs.find? (·.1 == "S") with
       | some (_, S) =>
@@ -31,7 +31,7 @@ run_cmd do
   let base : Stmt := .assign "S" [.free j, .iterAt l 0] { body := { terms := [{ factors := [.read "X" [.axis j]] }] }, nonlin := .identity }
   let recur : Stmt := .assign "S" [.free j, .iterNext l] { body := { terms := [{ factors := [.read "S" [.axis j, .axis l], .read "A" [.axis j]] }] }, nonlin := .pointwise .relu }
   match evalScan [] env sizes (.scan "S" [l] [base] [recur] false) with
-  | .error e => throwError e
+  | .error e => throwError (toString e)
   | .ok outs => match outs.find? (·.1 == "S") with
     | some (_, S) => unless DenseTensor.approxEq S (tensorOf [1,2] [1, 0]) do throwError s!"relu scan wrong: {repr S.data}"
     | none => throwError "no S"
@@ -50,7 +50,7 @@ run_cmd do
   let recurG : Stmt := .assign "G" [.iterNext l] { body := { terms := [{ factors := [.read "G" [.axis l]] }, { factors := [.read "H" [.axis l]] }] }, nonlin := .identity }
   let recurH : Stmt := .assign "H" [.iterNext l] { body := { terms := [{ factors := [.read "G" [.axis l]] }] }, nonlin := .identity }
   match evalScan [] env sizes (.scan "G" [l] [baseG, baseH] [recurG, recurH] false) with
-  | .error e => throwError e
+  | .error e => throwError (toString e)
   | .ok outs =>
       match outs.find? (·.1 == "G"), outs.find? (·.1 == "H") with
       | some (_, G), some (_, H) =>
@@ -124,9 +124,8 @@ run_cmd do
   let slots : List LHSSlot := [.affine (.scale 2 i), .iterNext l]
   let rhs : RHSExpr := { body := { terms := [{ factors := [.read "X" [.axis i]] }] }, nonlin := .identity }
   match evalStmtSliceSeeded [] env sizes {} (.scatter "Out" slots rhs { fill := 0, reduce := .rejectCollisions }) with
-  | .error e =>
-      unless (e.splitOn "only assign stmts are supported in scans").length > 1 do
-        throwError s!"scan/scatter boundary: wrong error message: {e}"
+  | .error (.invalidScanNode .onlyAssignInSlice) => pure ()
+  | .error e => throwError s!"scan/scatter boundary: wrong error message: {e}"
   | .ok _ => throwError "scan/scatter boundary: expected evalStmtSliceSeeded to reject a scatter stmt"
 
 end LeanNCD.Eval

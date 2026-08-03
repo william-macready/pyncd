@@ -995,10 +995,13 @@ private def mm := tl!{ Y[i,j] := W[i,k] · X[k,j] }
 #eval mm.steps.length -- 1
 ```
 
-**Evaluating on concrete `Float` tensors.** `TLProgram.eval` ([§14.6](#146-evaluation)) is a reference evaluator that runs a `TLProgram` on named input tensors and returns named output tensors:
+**Evaluating on concrete `Float` tensors.** `TLProgram.eval` ([§14.6](#146-evaluation)) is a
+reference evaluator that runs a `TLProgram` on named input tensors and returns an `EvalReport`
+containing the full tensor environment and any non-fatal warnings, or an `EvalFailure` containing
+the fatal typed error and warnings discovered before it:
 
 ```lean
-import LeanNCD.Eval.Eval
+import LeanNCD.Eval.Entry
 open Std
 
 def main : IO Unit := do
@@ -1006,8 +1009,12 @@ def main : IO Unit := do
     |>.insert "W" ⟨[2,3], #[1,2,3, 4,5,6]⟩
     |>.insert "X" ⟨[3,2], #[1,0, 0,1, 1,1]⟩)
   match TLProgram.eval (tlprog!{ Y[i,j] := W[i,k] · X[k,j] }) env with
-  | .ok out  => IO.println s!"Y = {repr out[\"Y\"]?.get!.data}"
-  | .error e => IO.println s!"Error: {repr e}"
+  | .ok report =>
+      IO.println s!"Y = {repr report.env[\"Y\"]?.get!.data}"
+      for warning in report.warnings do IO.println s!"Warning: {warning}"
+  | .error failure =>
+      for warning in failure.warnings do IO.println s!"Warning: {warning}"
+      IO.println s!"Error: {failure.error}"
 ```
 
 **Test files.** Three files exercise the complete pipeline from surface syntax to numeric output:
@@ -1784,10 +1791,15 @@ The result is a `ThreadedComposed` (a presentation of a `BrMorph`, [§2.3](#23-b
 ### 14.6 Evaluation
 
 The DSL has a reference **`Float` evaluator**,
-`TLProgram.eval : TLProgram → Std.HashMap String DenseTensor → Except EvalError (HashMap String DenseTensor)`
-(in `leanncd/LeanNCD/Eval/`), which runs a program on concrete input tensors and produces concrete
-output tensors (`DenseTensor` = a row-major `{ shape, data : Array Float }`). It is fully executable
-and `sorry`-free.
+`TLProgram.eval : TLProgram → Std.HashMap String DenseTensor → Except EvalFailure EvalReport`
+(in `leanncd/LeanNCD/Eval/Entry.lean`), which runs a program on concrete input tensors and returns
+the full input-plus-computed environment together with non-fatal warnings on success, or the fatal
+typed error together with warnings inferred before that failure
+(`EvalReport = { env : HashMap String DenseTensor, warnings : List EvalWarning }`;
+`EvalFailure = { error : EvalError, warnings : List EvalWarning }`;
+`DenseTensor` is a row-major `{ shape, data : Array Float }`). Callers that need tensors explicitly
+inspect `EvalReport.env` after handling both outcomes; there is no warning-dropping output-only
+entry point. The evaluator is fully executable and `sorry`-free.
 
 The evaluator interprets the **pre-route `ScheduledProgram`** rather than the routed
 `ThreadedComposed` of [§14.5](#145-semantic-compilation): the routed presentation keeps only a scan's
@@ -1800,9 +1812,9 @@ predicate) is read from the decls and the `RHSExpr.agg` field via a `Combine` st
 - **`Combine.bool`** `(min, max, 0.0)` — Boolean `(∧, ∃)` contraction on 0/1 Floats (`R = Bool`); selected for `predicate`-declared outputs
 - **`Combine.max`** `(×, max, −∞)` — max contraction (not tropical semiring); selected when `agg = .max` (`maxreduce`). Identity `−∞` (IEEE 754 `−1.0/0.0`) ensures all-negative inputs reduce to the true maximum rather than `0`.
 
-`combineFor` chooses: `agg = .max` → `Combine.max`; else `predicate` → `Combine.bool`; else `Combine.real`. This sidesteps the deferred `BrBaseP` dtype gap. All eleven
+`combineFor` chooses: `agg = .max` → `Combine.max`; else `predicate` → `Combine.bool`; else `Combine.real`. This sidesteps the deferred `BrBaseP` dtype gap. All thirteen
 example programs (the seven §14.2/predicate examples plus look-back, outer product, contraction+relu,
-and normalize) evaluate with hand-checked numeric assertions in `test/Eval/EvalExamplesTest.lean`;
+normalize, and unrolled/scan transformer examples) evaluate with hand-checked numeric assertions in `test/Eval/EvalExamplesTest.lean`;
 max-reduction programs are tested in `test/DSL/MaxReduceTest.lean`.
 Symbolic-size evaluation and the `scanPre`/`recurMorphism` escape hatches are out of scope (they raise
 an `EvalError`).
@@ -1817,10 +1829,11 @@ the input width (from `X`'s shape), via two coupled constraints. An outer-produc
 Neither is determined by any single tensor dimension in isolation.
 
 `evalScheduled` therefore calls
-`inferAxisSizes : HashMap UID Nat → HashMap String DenseTensor → List Stmt → Except EvalError (HashMap UID Nat × List String)`
-(in `leanncd/LeanNCD/Eval/Shape.lean`) to derive the concrete size of every free axis from the
-shapes of the supplied input tensors. The return type is a pair of the solved size map and a list
-of non-fatal warnings. The solver works in three stages:
+`inferAxisSizes : HashMap UID Nat → HashMap String DenseTensor → List Stmt → Except EvalFailure
+(HashMap UID Nat × List EvalWarning)` (in `leanncd/LeanNCD/Eval/SizeInfer.lean`) to derive the
+concrete size of every free axis from the shapes of the supplied input tensors. Success returns the
+solved size map and structured warnings; failure returns the typed fatal error together with any
+warnings discovered before it. The solver works in three stages:
 
 1. **Upper-envelope projection.** Each affine read position (an `AffinePosition` carrying the
    tensor name, dimension, constant offset, and coefficient list) is filtered to its
@@ -1837,7 +1850,7 @@ of non-fatal warnings. The solver works in three stages:
    `Σ_{cᵢ>0} cᵢ · size(aᵢ) = d − c₀ + Σ_{cᵢ>0} cᵢ − 1`,
    which places the maximum index exactly at `d − 1` (tight fit). Non-integral RREF solutions are
    floored independently (*floor-then-verify*): after flooring, every original constraint is
-   re-checked as an inequality (`lhs ≤ rhs`); a violation throws a descriptive `EvalError`. This
+   re-checked as an inequality (`lhs ≤ rhs`); a violation returns a descriptive `EvalFailure`. This
    handles padded-access programs such as strided convolution, where the exact system is
    non-integral but the floored solution still satisfies the inequality bounds.
 
@@ -1848,12 +1861,13 @@ of non-fatal warnings. The solver works in three stages:
      `EvalError` citing the axis UID and source positions. Such axes must be declared explicitly
      (`axis a = n`).
    - *Padded-access warning:* any fully-known multi-term read (all axes already sized) whose
-     maximum index meets or exceeds the tensor dimension emits a `"padded-access warning"` in the
-     returned `List String`. Under padded semantics out-of-range reads return zero and are valid,
-     but the warning flags the access as potentially surprising. Warnings are forwarded to stderr
-     via `dbg_trace` in `evalScheduled`. This warning fires only when axis sizes arrive via the
-     explicit seed argument, because solver-derived sizes are tight-fit by construction
-     (max-index = dim − 1) and can never trigger it.
+     maximum index meets or exceeds the tensor dimension emits
+     `EvalWarning.paddedAccess source maxIndex dimension`. Under padded semantics out-of-range
+     reads return zero and are valid, but the warning flags the access as potentially surprising.
+     `evalScheduled` preserves the warning in `EvalReport` on success or `EvalFailure` if a later
+     inference/execution step fails; it never prints diagnostics via tracing. This warning fires
+     only when axis sizes arrive via the explicit seed argument, because solver-derived sizes are
+     tight-fit by construction (max-index = dim − 1) and can never trigger it.
 
 **What the solver infers.** A few representative cases:
 

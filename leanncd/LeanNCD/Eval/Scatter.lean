@@ -1,4 +1,5 @@
 import LeanNCD.Eval.Contract
+import LeanNCD.Eval.Error
 namespace LeanNCD.Eval
 open Std
 
@@ -25,17 +26,17 @@ def evalScatter (env : HashMap String DenseTensor) (sizes : HashMap UID Nat)
   -- directly (bypassing validation), and below never applied `rhs.nonlin` to the body — silently
   -- dropping it (the bug this Stage fixes). Fail loud instead of silently erasing it.
   if rhs.nonlin ≠ Nonlin.identity then
-    throw s!"evalScatter: non-identity nonlinearity on scatter {nm} is unsupported (Spike-3 Stage-0 policy)"
+    throw (.unsupportedScatterNonlin nm)
   -- up-front validation: every read name must be a known tensor
   for rn in (readNames rhs).eraseDups do
     if !(env.contains rn) then
-      throw s!"evalScatter: unknown tensor {rn}"
+      throw (.unknownTensor .scatter rn)
   let srcAxes := scatterSourceAxes slots rhs
   -- Every source axis must have an inferred size; an unsized one is an upstream sizing gap, so
   -- fail loud rather than silently iterating it once (`.getD 1`), which drops source coordinates.
   let srcSizes ← srcAxes.mapM (fun u => match sizes[u]? with
     | some n => pure n
-    | none   => throw s!"evalScatter: unsized source axis uid {u}")
+    | none   => throw (.shape (.unsizedAxis u .scatterSource)))
   -- RHS aggregation: select the Combine record from rhs.agg (4b), not a hardcoded real
   -- sum-of-products — a maxreduce/minreduce scatter RHS must use tropical max/min, not silently
   -- compute a real sum instead (Wave-C corroborating example, fixed here).
@@ -69,8 +70,7 @@ def evalScatter (env : HashMap String DenseTensor) (sizes : HashMap UID Nat)
       | .rejectCollisions =>
           match writtenBy[fi]? with
           | some firstSrc =>
-              throw s!"evalScatter {nm}: collision writing output coord {oc} — source coords \
-{firstSrc} and {sc} both write here"
+              throw (.scatterCollision nm oc firstSrc sc)
           | none =>
               writtenBy := writtenBy.insert fi sc
               out := out.set! oc val

@@ -1,4 +1,4 @@
-import LeanNCD.Eval.Eval
+import LeanNCD.Eval.Entry
 import LSpec
 /-!
 # Portfolio test harness
@@ -27,13 +27,13 @@ def assertEval (nm : String) (prog : TLProgram) (env : HashMap String DenseTenso
     (key : String) (expect : DenseTensor) : CommandElabM Unit := do
   match TLProgram.eval prog env with
   | .error e => throwError s!"{nm}: eval error: {e}"
-  | .ok out => match out[key]? with
+  | .ok report => match report.env[key]? with
     | some t =>
         unless t.shape == expect.shape do
           throwError s!"{nm}: shape {t.shape} ≠ expected {expect.shape}"
         unless DenseTensor.approxEq t expect do
           throwError s!"{nm}: got {t.data.toList}, want {expect.data.toList}"
-    | none => throwError s!"{nm}: no output '{key}' (have {out.toList.map (·.1)})"
+    | none => throwError s!"{nm}: no output '{key}' (have {report.env.toList.map (·.1)})"
 
 /-- `[R]`/`[F]`: assert `eval` fails and its error string contains `needle`. -/
 def assertEvalError (nm : String) (prog : TLProgram) (env : HashMap String DenseTensor)
@@ -41,7 +41,7 @@ def assertEvalError (nm : String) (prog : TLProgram) (env : HashMap String Dense
   match TLProgram.eval prog env with
   | .ok _ => throwError s!"{nm}: expected eval failure containing '{needle}', but it succeeded"
   | .error e =>
-      unless needle.isEmpty || (e.splitOn needle).length > 1 do
+      unless needle.isEmpty || ((toString e).splitOn needle).length > 1 do
         throwError s!"{nm}: error '{e}' does not contain '{needle}'"
 
 /-- `[R]`: assert the compile pipeline rejects `prog` (any `CompileError`).  Callers that need a
@@ -57,7 +57,7 @@ def assertEvalPred (nm : String) (prog : TLProgram) (env : HashMap String DenseT
     (key : String) (p : DenseTensor → Bool) (desc : String) : CommandElabM Unit := do
   match TLProgram.eval prog env with
   | .error e => throwError s!"{nm}: eval error: {e}"
-  | .ok out => match out[key]? with
+  | .ok report => match report.env[key]? with
     | some t => unless p t do throwError s!"{nm}: property failed ({desc}); got {t.data.toList}"
     | none   => throwError s!"{nm}: no output '{key}'"
 
@@ -67,7 +67,7 @@ def assertShape (nm : String) (prog : TLProgram) (env : HashMap String DenseTens
     (key : String) (shape : List Nat) : CommandElabM Unit := do
   match TLProgram.eval prog env with
   | .error e => throwError s!"{nm}: eval error: {e}"
-  | .ok out => match out[key]? with
+  | .ok report => match report.env[key]? with
     | some t => unless t.shape == shape do throwError s!"{nm}: shape {t.shape} ≠ {shape}"
     | none   => throwError s!"{nm}: no output '{key}'"
 
@@ -87,7 +87,7 @@ def evalEqB (prog : TLProgram) (env : HashMap String DenseTensor)
     (key : String) (expect : DenseTensor) : Bool :=
   match TLProgram.eval prog env with
   | .error _ => false
-  | .ok out => match out[key]? with
+  | .ok report => match report.env[key]? with
     | some t => t.shape == expect.shape && DenseTensor.approxEq t expect
     | none => false
 
@@ -96,13 +96,13 @@ def evalPredB (prog : TLProgram) (env : HashMap String DenseTensor)
     (key : String) (p : DenseTensor → Bool) : Bool :=
   match TLProgram.eval prog env with
   | .error _ => false
-  | .ok out => (out[key]?.map p).getD false
+  | .ok report => (report.env[key]?.map p).getD false
 
 /-- Pure Bool checker for LSpec `test` blocks: eval and check output shape. -/
 def evalShapeB (prog : TLProgram) (env : HashMap String DenseTensor)
     (key : String) (shape : List Nat) : Bool :=
   match TLProgram.eval prog env with
   | .error _ => false
-  | .ok out => (out[key]?.map (·.shape == shape)).getD false
+  | .ok report => (report.env[key]?.map (·.shape == shape)).getD false
 
 end LeanNCD.Eval

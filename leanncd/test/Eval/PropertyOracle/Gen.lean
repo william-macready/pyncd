@@ -1,5 +1,5 @@
 import LeanNCD.DSL.Ast
-import LeanNCD.Eval.Eval
+import LeanNCD.Eval.Entry
 
 /-!
 # Bounded-exhaustive generator of well-formed scan-free programs (Task 3, E6)
@@ -196,4 +196,3 @@ def enumPrograms : List (TLProgram × Std.HashMap String DenseTensor) :=
       idxs.any (fun e => (idxAffineForm e).2.any (fun (_, u) => !lhsUids.contains u)))))
 
 end LeanNCD.PropertyOracle
-

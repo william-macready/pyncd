@@ -1,5 +1,16 @@
 # AGENTS.md — leanncd
 
+## Invoking Lake
+
+From the repository root, invoke Lake through Elan from inside the Lean subproject:
+
+```bash
+cd leanncd && "$HOME/.elan/bin/lake" build
+```
+
+Do not assume `lake` is on `PATH`, and do not run it from the repository root: the Lake
+configuration lives under `leanncd/`. Replace `build` with the desired target or Lake command.
+
 ## New worktree / fresh checkout: don't cold-build Mathlib
 
 This project depends on Mathlib (thousands of files). A `lake build` from a
@@ -34,7 +45,7 @@ while still exiting 0. Check `rsync --version` if unsure; don't trust a
 "completed, exit 0" report alone — verify the `.olean` count in the
 destination afterward.
 
-After syncing, run `lake build` normally — it will only need to compile the
+After syncing, run `cd leanncd && "$HOME/.elan/bin/lake" build` — it will only need to compile the
 handful of `LeanNCD`-specific modules (and whatever the new worktree's edits
 touch), typically well under a minute instead of hours.
 
@@ -83,8 +94,8 @@ Small subsystems (no dedicated node — each <170 lines, single-file or near it)
 | Check current sorry/proof status authoritatively | `SORRY_INVENTORY.md` (more current than scattered doc comments) |
 | Understand the `realize` bridge problem in depth | `realize.md` (companion to `SORRY_INVENTORY.md`) |
 | Design history / past decisions | `docs/superpowers/plans/`, `docs/superpowers/specs/` |
-| Build the project | `lake build` (see Mathlib cold-build pitfall above) |
-| Run the test suite | `lake build` (Tests is a default target — `lakefile.toml`'s `globs` list elaborates every test module, firing all `#guard`/example/`#print axioms` checks) |
+| Build the project | `cd leanncd && "$HOME/.elan/bin/lake" build` (see Mathlib cold-build pitfall above) |
+| Run the test suite | `cd leanncd && "$HOME/.elan/bin/lake" build` (Tests is a default target — `lakefile.toml`'s `globs` list elaborates every test module, firing all `#guard`/example/`#print axioms` checks) |
 | Experimental/scratch work | `spikes/` — gitignored except `spikes/BrNF.lean` (kept in-tree, off the default build, for its wiring-combinator technique) |
 
 ### Global Invariants (Contracts)

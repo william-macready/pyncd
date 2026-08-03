@@ -329,6 +329,11 @@ driver + scatter shapes — :373-498). Pure file moves. **Caution:**
 `AffineShapeSolverTest.lean` pins exact substrings of rendered diagnostics ("rank=1, vars=2",
 "ml-hint: …") — moving files is safe, editing `renderSolveDiagnostic` is not.
 
+> **✅ DONE 2026-08-02 (Wave E).** `Shape.lean` is now a compatibility umbrella over
+> `Slots.lean`, `SizeSolve.lean`, and `SizeInfer.lean`. The split follows the actual branched
+> dependency graph rather than adding another lower-level abstraction; duplicate affine-position
+> construction was consolidated while solver behavior and diagnostic rendering stayed unchanged.
+
 **4f. Decompose `evalScan`** (`Eval/Scan.lean:91-135`, 45 lines, four phases already numbered
 in comments) into `allocStates` / `applyBase` / `runRecurStep` + an `iterWritePositions`
 helper for the `(position, index+δ)` bookkeeping that appears twice (δ=0 base, δ=1 recur).
@@ -377,6 +382,12 @@ throw site (`Shape.lean:330,340,353,366`). Proposal: an inductive with
 pass unchanged), migrate assertions to field matches second. ~20 throw sites across 6 files;
 `SolveDiagnostic` and friends need un-`private`-ing.
 
+> **✅ DONE 2026-08-02 (Wave E).** `Eval/Error.lean` now owns closed, layered
+> `EvalError`/`ShapeError`/`EvalWarning` values and their sole renderers. Compile and shape causes
+> remain nested, unary-domain failures retain tensor/coordinate context, unknown-tensor and
+> domain-operation tags are closed enums rather than strings or impossible total operations, and
+> typed tests inspect payloads without losing byte-compatible presentation text.
+
 **4i. Small decoupling wins:** `Eval/Eval.lean` imports all of `DSL.Compile` solely for the
 `TLProgram.eval` wrapper (:78-83) — move the wrapper out (e.g. `Eval/Entry.lean`) so the
 interpreter depends only on `DSL.Ast` + `Pipeline.Types`. (Already, in miniature, the
@@ -384,6 +395,14 @@ worker/wrapper split **E4**'s exploration names explicitly: `compileToScheduled`
 is the worker, `TLProgram.eval` the thin boundary around it.) And `evalScheduled` drops solver
 warnings into `dbg_trace` (`Eval/Eval.lean:64`) — return them instead
 (`AffineShapeSolverTest:412` already asserts on a returned list elsewhere).
+
+> **✅ DONE 2026-08-02 (Wave E).** `Eval.lean` is now a compiler-independent scheduled worker
+> returning `EvalReport { env, warnings }` on success and `EvalFailure { error, warnings }` when
+> execution fails after inference; `Entry.lean` alone joins it with `DSL.Compile`. `TLProgram.eval`
+> preserves warnings on both outcomes as the sole source API; the initially-added output-only
+> compatibility projection was removed before merge because it silently discarded diagnostics and
+> duplicated the entry surface. Callers explicitly inspect `EvalReport.env`. `dbg_trace` was
+> removed.
 
 ### Spike 5 (cross-cutting, after 2–4): decompose `finalizeScans`
 
@@ -533,15 +552,14 @@ were **zero-sorry** at the time of the census; all 38 were math-tower.
 | ⚠️ | **Wave B** — 4a/4d/4c DONE; 4b's `unit1` DONE, its `ContractionAlgebra` classifier NOT built (deferred to Wave C) | 2026-07-31 | `d08a1d8..383bc0b`; `docs/superpowers/plans/2026-07-31-wave-b-eval-unification.md` |
 | ✅ | **Wave D** — 4g typed scatter collision policy (`CollisionReduce`) | 2026-08-01 | `a3098c0..c86005e`; `docs/superpowers/plans/2026-08-01-scatter-collision-policy.md` |
 | ✅ | **checkScatterNoScan** — reject scatter+scan-iteration-slot at compile time (Wave D follow-up finding) | 2026-08-01 | `047b023..fd72d48`, merge `f2d0a2b`; `docs/superpowers/plans/2026-08-01-scatter-scan-compile-check.md` |
+| ✅ | **Wave E** — 4e shape split, 4h structured diagnostics, 4i `EvalReport`/entry boundary | 2026-08-02 | full cached `lake build` green (8,618 jobs) |
 
 ### Remaining — the critical path to an executing backend
 
-> **Next up: Wave E** (4e → 4h → 4i). No blockers — Wave B/D's prerequisites are landed. Wave C
-> (Minimal EvalPlan) is the larger critical-path item everything here still points at, but it is a
-> new-IR-scale undertaking (differential testing against `DenseTensor`, the deferred
+> **Next up: Wave C** (Minimal EvalPlan). Wave E's diagnostics/report prerequisites are complete.
+> Wave C is a new-IR-scale undertaking (differential testing against `DenseTensor`, the deferred
 > `ContractionAlgebra`/`ScalarBinOp` classifier) that warrants its own explicit go-ahead rather than
-> being picked up by default; Wave E is Eval/DSL-only, similarly scoped to Waves B/D, and 4h/4i are
-> a hard prerequisite for Wave C's backend going public regardless of ordering.
+> being picked up by default.
 
 ```text
 Wave A  Correctness freeze — ✅ THE THREE AUDIT FINDINGS DONE 2026-07-30 (c754165..14b1353)
@@ -706,9 +724,8 @@ Wave D  ✅ DONE 2026-08-01 (a3098c0..c86005e) — 4g typed scatter policy (Coll
           gap Wave D's own review surfaced (scatter+scan-iteration-slot compiled when it should
           reject); the OTHER gap it surfaced (broadening `LHSSlot.collapses`) stays deferred —
           confirmed no concrete axis sizes exist at `lowerArith`'s point in the pipeline
-Wave E  ◄ NEXT  4e → 4h → 4i  diagnostics split, structured errors, EvalReport
-        · 4h/4i MUST land before the backend is public (closed BackendError family)
-        · no blockers: Wave B (4a/4d/4c) and Wave D (4g + checkScatterNoScan) are both landed
+Wave E  ✅ DONE 2026-08-02  4e → 4h → 4i  diagnostics split, structured errors, EvalReport
+        · compiler-independent scheduled worker + diagnostic-preserving source entry are in place
 Wave F  4f  decompose evalScan — AFTER the EvalPlan boundary, not before
         · then one-axis coupled lax.scan, then flattened multi-axis
 Wave G  Backends (E10): PyTorch eager first (fast semantic bring-up; torch_compile/

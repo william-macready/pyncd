@@ -1833,16 +1833,17 @@ The report should make warnings first-class:
 
 ```lean
 structure EvalReport where
-  outputs  : TensorEnv
+  env      : TensorEnv
   warnings : List EvalWarning
   backend  : BackendInfo
   timing   : Option EvalTiming
 ```
 
-`evalScheduled` should return `Except EvalError EvalReport`. A detailed entry point can compile and
-evaluate without flattening `CompileError`. If compatibility requires the old output-only API, name
-the projection explicitly (`evalOutputs`) and deprecate it; do not retain `dbg_trace` or make the
-primary `eval` silently discard warnings.
+`evalScheduled` should return `Except EvalFailure EvalReport`, with warnings carried on both
+outcomes. A detailed entry point can compile and evaluate without flattening `CompileError`. Do not
+retain an output-only compatibility entry: callers can inspect `EvalReport.env` after handling the
+complete outcome, without creating a second API that silently discards warnings. Likewise, do not
+retain `dbg_trace`.
 
 `BackendInfo` should identify the reference/JAX/PyTorch worker, backend and device versions, numeric
 profile, canonical plan hash, and compilation-cache hit. Timings should separate plan compilation,
@@ -1867,11 +1868,10 @@ workers.
 
 **Acceptance tests:**
 
-- compile errors remain inspectable as `EvalError.compile cause`;
+- compile errors remain inspectable as `EvalFailure.error = EvalError.compile cause`;
 - shape warnings are returned exactly once and no `dbg_trace` is required;
-- the output-only compatibility projection equals `EvalReport.outputs`;
 - importing the scheduled worker does not import `DSL.Compile`; and
-- entry and worker produce identical outputs on an already compiled schedule;
+- entry and worker produce identical complete outcomes on an already compiled schedule;
 - JAX capability rejection occurs before process launch; and
 - JAX reports preserve plan hash, device/profile, cache hit, and separated compile/execute timings.
 

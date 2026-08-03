@@ -1,4 +1,4 @@
-import LeanNCD.Eval.Eval
+import LeanNCD.Eval.Entry
 
 namespace LeanNCD.Eval
 open Std
@@ -20,7 +20,7 @@ run_cmd do
                                       .read "U" [.affine 0 [(1, i), (2, j)]]] }] },
       nonlin := .identity }
   match inferAxisSizes {} env [stmt] with
-  | .error e => throwError e
+  | .error e => throwError (toString e)
   | .ok (sizes, _) =>
       unless sizes[i.uid]? == some 5 && sizes[j.uid]? == some 3 do
         throwError s!"wrong solved sizes: {sizes[i.uid]?}, {sizes[j.uid]?}"
@@ -38,7 +38,7 @@ run_cmd do
     { body := { terms := [{ factors := [.read "W" [.axis k], .read "X" [.affine (-1) [(2, h), (1, k)]]] }] },
       nonlin := .identity }
   match inferAxisSizes {} env [stmt] with
-  | .error e => throwError e
+  | .error e => throwError (toString e)
   | .ok (sizes, _) =>
       unless sizes[h.uid]? == some 4 && sizes[k.uid]? == some 3 do
         throwError s!"wrong conv-like sizes: {sizes[h.uid]?}, {sizes[k.uid]?}"
@@ -54,21 +54,22 @@ run_cmd do
     { body := { terms := [{ factors := [.read "X" [.affine 0 [(1, i), (1, j)]]] }] },
       nonlin := .identity }
   match inferAxisSizes {} env [stmt] with
-  | .error e =>
-      unless e.contains "underdetermined" do
-        throwError s!"expected underdetermined error, got: {e}"
-      unless e.contains "unconstrained uids: [2]" do
-        throwError s!"expected sorted unconstrained UID list, got: {e}"
-      unless e.contains "rank=1, vars=2" do
-        throwError s!"expected underdetermined rank/vars detail, got: {e}"
-      unless e.contains "sources:" do
-        throwError s!"expected underdetermined source provenance, got: {e}"
-      unless e.contains "actions:" do
-        throwError s!"expected underdetermined remediation actions, got: {e}"
-      unless e.contains "add independent affine reads" do
-        throwError s!"expected underdetermined remediation guidance, got: {e}"
-      unless e.contains "ml-hint: multi-axis window constraint" do
-        throwError s!"expected ml diagnostic hint, got: {e}"
+  | .error { error := .shape (.solveFailure d), .. } =>
+      (match d.kind with
+       | .underdetermined => pure ()
+       | k => throwError s!"expected underdetermined kind, got {repr k}")
+      unless d.unconstrained == [2] do
+        throwError s!"expected sorted unconstrained UID list [2], got: {d.unconstrained}"
+      unless !d.sourceRefs.isEmpty do
+        throwError s!"expected underdetermined source provenance, got: {d.sourceRefs}"
+      unless d.mlHints.contains "ml-hint: multi-axis window constraint" do
+        throwError s!"expected ml diagnostic hint, got: {d.mlHints}"
+      -- renderer checks retained: rank/vars detail text and remediation guidance text.
+      unless (renderSolveDiagnostic d).contains "rank=1, vars=2" do
+        throwError s!"expected underdetermined rank/vars detail, got: {renderSolveDiagnostic d}"
+      unless (renderSolveDiagnostic d).contains "add independent affine reads" do
+        throwError s!"expected underdetermined remediation guidance, got: {renderSolveDiagnostic d}"
+  | .error e => throwError s!"expected underdetermined solve failure, got: {e}"
   | .ok (sizes, _) => throwError s!"expected underdetermined failure, got sizes {sizes.toList}"
 
 -- Row order in factors should not change solved sizes.
@@ -119,17 +120,18 @@ run_cmd do
                                       .read "U" [.affine 0 [(1, i), (1, j)]]] }] },
       nonlin := .identity }
   match inferAxisSizes {} env [stmt] with
-  | .error e =>
-      unless e.contains "inconsistent" do
-        throwError s!"expected inconsistent error, got: {e}"
-      unless e.contains "reduced witness: 0 =" do
-        throwError s!"expected inconsistent reduced witness detail, got: {e}"
-      unless e.contains "sources:" do
-        throwError s!"expected inconsistent source provenance, got: {e}"
-      unless e.contains "actions:" do
-        throwError s!"expected inconsistent remediation actions, got: {e}"
-      unless e.contains "verify cited tensor dimensions and affine offsets" do
-        throwError s!"expected inconsistent remediation guidance, got: {e}"
+  | .error { error := .shape (.solveFailure d), .. } =>
+      (match d.kind with
+       | .inconsistent => pure ()
+       | k => throwError s!"expected inconsistent kind, got {repr k}")
+      unless d.detail? == some "reduced witness: 0 = -1" do
+        throwError s!"expected inconsistent reduced witness detail, got: {d.detail?}"
+      unless d.sourceRefs.length == 2 do
+        throwError s!"expected inconsistent source provenance from both reads, got: {d.sourceRefs}"
+      -- renderer check retained: the composite remediation-actions guidance text.
+      unless (renderSolveDiagnostic d).contains "verify cited tensor dimensions and affine offsets" do
+        throwError s!"expected inconsistent remediation guidance, got: {renderSolveDiagnostic d}"
+  | .error e => throwError s!"expected inconsistent solve failure, got: {e}"
   | .ok (sizes, _) => throwError s!"expected inconsistent failure, got sizes {sizes.toList}"
 
 -- Non-integral RREF solutions are floored under padded semantics and verified as inequalities.
@@ -163,19 +165,20 @@ run_cmd do
                                       .read "U" [.affine 0 [(1, i), (2, j)]]] }] },
       nonlin := .identity }
   match inferAxisSizes {} env [stmt] with
-  | .error e =>
-      unless e.contains "non-positive" do
-        throwError s!"expected non-positive error, got: {e}"
-      unless e.contains "reduced row=" do
-        throwError s!"expected non-positive reduced-row detail, got: {e}"
-      unless e.contains "sources:" do
-        throwError s!"expected non-positive source provenance, got: {e}"
-      unless e.contains "actions:" do
-        throwError s!"expected non-positive remediation actions, got: {e}"
-      unless e.contains "ensure inferred output window size stays strictly positive" do
-        throwError s!"expected non-positive remediation guidance, got: {e}"
-      unless e.contains "ml-hint: offset/window yields non-positive extent" do
-        throwError s!"expected non-positive ml hint, got: {e}"
+  | .error { error := .shape (.solveFailure d), .. } =>
+      (match d.kind with
+       | .nonPositive => pure ()
+       | k => throwError s!"expected non-positive kind, got {repr k}")
+      unless d.offendingUid? == some 1 do
+        throwError s!"expected non-positive offending uid 1, got: {d.offendingUid?}"
+      unless d.detail? == some "value=0, reduced row=0, col=0" do
+        throwError s!"expected non-positive reduced-row detail, got: {d.detail?}"
+      unless d.mlHints.contains "ml-hint: offset/window yields non-positive extent" do
+        throwError s!"expected non-positive ml hint, got: {d.mlHints}"
+      -- renderer check retained: the composite remediation-actions guidance text.
+      unless (renderSolveDiagnostic d).contains "ensure inferred output window size stays strictly positive" do
+        throwError s!"expected non-positive remediation guidance, got: {renderSolveDiagnostic d}"
+  | .error e => throwError s!"expected non-positive solve failure, got: {e}"
   | .ok (sizes, _) => throwError s!"expected non-positive failure, got sizes {sizes.toList}"
 
 -- Signed affine form: the solver uses the upper envelope of `3 - i + j`,
@@ -204,7 +207,7 @@ run_cmd do
       (tensorOf [4] [10,20,30,40])
   match TLProgram.eval (tlprog!{ Y[i, j] := X[j - i + 3] · U[i] }) env with
   | .error e => throwError s!"signed eval failed: {e}"
-  | .ok out => match out["Y"]? with
+  | .ok report => match report.env["Y"]? with
     | some y =>
         unless y.shape == [4,5] do
           throwError s!"signed eval wrong shape: {repr y.shape}"
@@ -217,7 +220,7 @@ run_cmd do
       (tensorOf [9] [0, 10, 20, 30, 40, 50, 60, 70, 80])
   match TLProgram.eval (tlprog!{ Y[i, j] := X[i + j] + U[i + 2 * j] }) env with
   | .error e => throwError s!"affine eval failed: {e}"
-  | .ok out => match out["Y"]? with
+  | .ok report => match report.env["Y"]? with
     | some y =>
         unless DenseTensor.approxEq y (tensorOf [5, 3]
             [0, 21, 42,
@@ -235,7 +238,7 @@ run_cmd do
       (tensorOf [8] [1, 2, 3, 4, 5, 6, 7, 8])
   match TLProgram.eval (tlprog!{ Y[h] := W[k] · X[2 * h + k - 1] }) env with
   | .error e => throwError s!"window eval failed: {e}"
-  | .ok out => match out["Y"]? with
+  | .ok report => match report.env["Y"]? with
     | some y =>
         unless DenseTensor.approxEq y (tensorOf [4] [210, 432, 654, 876]) do
           throwError s!"window eval wrong: shape={repr y.shape} {repr y.data}"
@@ -345,11 +348,10 @@ run_cmd do
     { body := { terms := [{ factors := [.read "X" [.affine 3 [(-1, i)]]] }] },
       nonlin := .identity }
   match inferAxisSizes {} env [stmt] with
-  | .error e =>
-      unless e.contains "purely negatively constrained" do
-        throwError s!"expected Issue-D negatively-constrained error, got: {e}"
-      unless e.contains "uid 1" do
-        throwError s!"expected uid in Issue-D error, got: {e}"
+  | .error { error := .shape (.negativeOnlyAxis 1 srcs), .. } =>
+      unless !srcs.isEmpty do
+        throwError s!"expected Issue-D source provenance, got: {srcs}"
+  | .error e => throwError s!"expected Issue-D negativeOnlyAxis(uid 1) failure, got: {e}"
   | .ok (sizes, _) => throwError s!"expected Issue-D failure, got sizes {sizes.toList}"
 
 -- Issue D with seed: an explicit axis declaration resolves the ambiguity.
@@ -409,7 +411,7 @@ run_cmd do
   | .ok (sizes, warns) =>
       unless sizes[i.uid]? == some 4 && sizes[j.uid]? == some 3 do
         throwError s!"wrong Issue-H sizes: i={sizes[i.uid]?} j={sizes[j.uid]?}"
-      unless warns.any (fun w => w.contains "padded-access") do
-        throwError s!"expected padded-access warning in Issue-H, got warns={warns}"
+      unless warns.any (fun w => (toString w).contains "padded-access") do
+        throwError s!"expected padded-access warning in Issue-H, got warns={warns.map toString}"
 
 end LeanNCD.Eval

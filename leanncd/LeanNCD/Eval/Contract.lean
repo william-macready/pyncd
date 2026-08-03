@@ -1,5 +1,5 @@
-import LeanNCD.Eval.Shape
 import LeanNCD.Eval.Gather
+import LeanNCD.Eval.Error
 import LeanNCD.DSL.TraverseAxes
 namespace LeanNCD.Eval
 open Std
@@ -92,7 +92,7 @@ def evalAssignSeeded (mul : Float → Float → Float) (combine : Float → Floa
     Except EvalError (String × DenseTensor) := do
   for rn in (readNames rhs).eraseDups do
     if !(env.contains rn) then
-      throw s!"evalAssign: unknown tensor {rn}"
+      throw (.unknownTensor .assign rn)
   -- free axes = LHS slot axes minus the seeded UIDs (and minus affine slots, which contribute none)
   let freesAll := freeAxisUIDs slots
   let frees := freesAll.filter (fun u => ! seed.contains u)
@@ -100,15 +100,15 @@ def evalAssignSeeded (mul : Float → Float → Float) (combine : Float → Floa
   -- 0-extent tensor (Wave-B corroborating example #1).
   for u in frees do
     if (sizes[u]?).isNone then
-      throw s!"evalAssign {nm}: output axis (uid {u}) has no inferable size (it appears in no read position)"
+      throw (.shape (.unsizedAxis u (.assignOutput nm)))
   -- fail loud: a seeded axis needs a declared size to check its seed coordinate is in range.
   for u in seed.keys do
     match sizes[u]? with
-    | none   => throw s!"evalAssign {nm}: seeded axis (uid {u}) has no declared size"
+    | none   => throw (.shape (.unsizedAxis u (.assignSeeded nm)))
     | some n =>
         let v := (seed[u]?).getD 0
         if v < 0 || v >= Int.ofNat n then
-          throw s!"evalAssign {nm}: seed coordinate {v} for axis (uid {u}) is out of range [0, {n})"
+          throw (.invalidSeed nm u v n)
   -- output shape: each non-seeded free slot's size, in slot order
   let outShape := slots.filterMap (fun sl => match sl.axisUID? with
     | some u => if seed.contains u then none else some ((sizes[u]?).getD 0)
@@ -124,7 +124,7 @@ def evalAssignSeeded (mul : Float → Float → Float) (combine : Float → Floa
         -- extent one (Wave-B corroborating example #2) instead of rejecting the malformed context.
         let termSizes ← termContr.mapM (fun u => match sizes[u]? with
           | some n => pure n
-          | none   => throw s!"evalAssign {nm}: contracted axis (uid {u}) has no inferable size")
+          | none   => throw (.shape (.unsizedAxis u (.assignContracted nm))))
         let mut termAcc := unit0
         for cc in cartesian termSizes do
           let coord := (termContr.zip cc).foldl (fun m (u, v) => m.insert u (Int.ofNat v)) baseCoord

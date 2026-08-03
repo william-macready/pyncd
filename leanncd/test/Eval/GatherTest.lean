@@ -15,11 +15,11 @@ run_cmd do
   let X := (DenseTensor.zeros [3]).set! [1] 5.0    -- X = [0,5,0]
   let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X" X
   -- read X[i] at i=1 ⇒ 5.0
-  match gather env (coordOf [(1,1)]) (.read "X" [.axis (ax 1)]) with | .ok v => unless v == 5.0 do throwError "read" | .error e => throwError e
+  match gather env (coordOf [(1,1)]) (.read "X" [.axis (ax 1)]) with | .ok v => unless v == 5.0 do throwError "read" | .error e => throwError (toString e)
   -- read X[i-1] at i=0 ⇒ out of range ⇒ 0.0
-  match gather env (coordOf [(1,0)]) (.read "X" [.shift (ax 1) (-1)]) with | .ok v => unless v == 0.0 do throwError "pad" | .error e => throwError e
+  match gather env (coordOf [(1,0)]) (.read "X" [.shift (ax 1) (-1)]) with | .ok v => unless v == 0.0 do throwError "pad" | .error e => throwError (toString e)
   -- iverson [i ≤ 2] at i=1 ⇒ 1.0
-  match gather env (coordOf [(1,1)]) (.iverson (.rel .le (.embed (.axis (ax 1))) (.embed (.const 2)))) with | .ok v => unless v == 1.0 do throwError "iverson" | .error e => throwError e
+  match gather env (coordOf [(1,1)]) (.iverson (.rel .le (.embed (.axis (ax 1))) (.embed (.const 2)))) with | .ok v => unless v == 1.0 do throwError "iverson" | .error e => throwError (toString e)
 
 -- `.ieq` semantics (the DSL's intended *modular* equality, currently APPROXIMATED by structural
 -- Int `==`; see `evalBool` in Gather.lean). These lock in the actual behavior so a future switch

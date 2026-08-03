@@ -30,7 +30,8 @@ run_cmd do
 run_cmd do
   let i := ax "i" 1
   match resolveNonlin (.axiswise .softmax none) [.free i] [1] with
-  | .error _ => pure ()
+  | .error (.invalidNormAxis .notMarked) => pure ()
+  | .error e => throwError s!"4d: wrong error for missing norm marker: {e}"
   | .ok _    => throwError "4d: expected rejection of axiswise nonlin with no marked norm axis"
 run_cmd do
   let i := ax "i" 1

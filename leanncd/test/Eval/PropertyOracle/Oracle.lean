@@ -1,7 +1,7 @@
 import Eval.PropertyOracle.Compare
 import Eval.PropertyOracle.Transforms
 import Eval.PropertyOracle.Gen
-import LeanNCD.Eval.Eval
+import LeanNCD.Eval.Entry
 
 namespace LeanNCD.PropertyOracle
 open LeanNCD LeanNCD.Eval

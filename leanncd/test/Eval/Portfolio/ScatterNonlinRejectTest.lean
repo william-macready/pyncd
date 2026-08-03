@@ -15,10 +15,10 @@ rejected during validation.
   upsample pattern from `Eval.ScatterTest`/`Eval.Portfolio.GnnScatterTest`'s SC1).
 * RSN3 — the defensive `evalScatter` check (belt-and-suspenders for programmatic callers that
   build the AST directly, bypassing the surface compiler's validation) also rejects a
-  non-identity-nonlin scatter, pinned to the specific defensive-check error message (not merely
-  "is an error" — `EvalError` is a plain `String` and `evalScatter` has other `throw` sites, e.g.
-  unknown tensor name or unsized source axis, so a bare "is an error" check wouldn't pin down
-  *which* check fired).
+  non-identity-nonlin scatter, pinned to the specific `EvalError.unsupportedScatterNonlin`
+  constructor (not merely "is an error" — `evalScatter` has other `throw` sites, e.g. unknown
+  tensor name or unsized source axis, so a bare "is an error" check wouldn't pin down *which*
+  check fired).
 * RSN4 — a *diagonal* LHS (`Y[i, i]`, a repeated `.free` axis UID — the other
   `slotsBecomeScatter` trigger besides an `.affine` slot) with a `relu` RHS is REJECTED at
   compile time with the same `unsupportedNonlinScatter` constructor.
@@ -51,9 +51,8 @@ run_cmd do
   let rhs : RHSExpr := { body := { terms := [{ factors := [.read "X" [.axis i]] }] }, nonlin := .pointwise .relu }
   let sizes := ({} : HashMap UID Nat).insert 1 2
   match evalScatter env sizes "Out" slots rhs { fill := 0, reduce := .rejectCollisions } [4] with
-  | .error e =>
-      unless (e.splitOn "non-identity nonlinearity on scatter").length > 1 do
-        throwError s!"RSN3: wrong error message: {e}"
+  | .error (.unsupportedScatterNonlin "Out") => pure ()
+  | .error e => throwError s!"RSN3: wrong error, expected unsupportedScatterNonlin \"Out\", got: {e}"
   | .ok _    => throwError "RSN3: expected evalScatter to reject a non-identity nonlin scatter"
 
 -- RSN4  diagonal-LHS trigger: `Y[i, i]` repeats the free axis `i`, so `slotsBecomeScatter` fires

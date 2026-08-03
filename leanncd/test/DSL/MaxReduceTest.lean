@@ -2,6 +2,7 @@ import LeanNCD.DSL.Elab
 import LeanNCD.DSL.Syntax
 import LeanNCD.DSL.Pipeline.Structural
 import LeanNCD.Eval.Contract
+import LeanNCD.Eval.SizeInfer   -- `inferAxisSizes`, used directly below (was transitive via `Eval.Shape`)
 
 namespace LeanNCD
 open Lean Elab Std
@@ -61,10 +62,10 @@ run_cmd do
                           nonlin := .identity, agg := .max }
   let stmt := Stmt.assign "C" [.free i] rhs
   match inferAxisSizes {} env [stmt] with
-  | .error e => throwError e
+  | .error e => throwError (toString e)
   | .ok (sizes, _) =>
     match evalAssignWith (· * ·) floatMax negInf 1.0 env sizes "C" [.free i] rhs with
-    | .error e => throwError e
+    | .error e => throwError (toString e)
     | .ok (_, C) =>
         unless DenseTensor.approxEq C (tensorOf [2] [4, 9]) do
           throwError s!"max-pool wrong: {repr C.data}"
@@ -78,10 +79,10 @@ run_cmd do
   let rhs : RHSExpr := { body := { terms := [{ factors := [.read "A" [.axis i, .axis k]] }] },
                           nonlin := .identity, agg := .max }
   match inferAxisSizes {} env [Stmt.assign "C" [.free i] rhs] with
-  | .error e => throwError e
+  | .error e => throwError (toString e)
   | .ok (sizes, _) =>
     match evalAssignWith (· * ·) floatMax negInf 1.0 env sizes "C" [.free i] rhs with
-    | .error e => throwError e
+    | .error e => throwError (toString e)
     | .ok (_, C) =>
         unless DenseTensor.approxEq C (tensorOf [1] [-1]) do
           throwError s!"all-negative max-pool wrong: {repr C.data}"
@@ -99,10 +100,10 @@ run_cmd do
     { body := { terms := [{ factors := [.read "A" [.axis i, .axis k], .read "B" [.axis k]] }] },
       nonlin := .identity, agg := .max }
   match inferAxisSizes {} env [Stmt.assign "C" [.free i] rhs] with
-  | .error e => throwError e
+  | .error e => throwError (toString e)
   | .ok (sizes, _) =>
     match evalAssignWith (· * ·) floatMax negInf 1.0 env sizes "C" [.free i] rhs with
-    | .error e => throwError e
+    | .error e => throwError (toString e)
     | .ok (_, C) =>
         unless DenseTensor.approxEq C (tensorOf [2] [2, 6]) do
           throwError s!"multi-factor max wrong: {repr C.data}"

@@ -96,9 +96,9 @@ private def t1unrolled := unrollScan1D t1case
 #guard (TLProgram.eval t1unrolled t1case.inputs).toOption.isSome
 run_cmd do
   match TLProgram.eval t1unrolled t1case.inputs with
-  | .error e => throwError e
-  | .ok env =>
-      match env["Su_S_0"]?, env["Su_S_1"]?, env["Su_S_2"]? with
+  | .error e => throwError (toString e)
+  | .ok report =>
+      match report.env["Su_S_0"]?, report.env["Su_S_1"]?, report.env["Su_S_2"]? with
       | some s0, some s1, some s2 =>
           unless denseEq s0 ⟨[2], #[1.0, 2.0]⟩ do throwError s!"Su_S_0 wrong: {repr s0.data}"
           unless denseEq s1 ⟨[2], #[2.0, 6.0]⟩ do throwError s!"Su_S_1 wrong: {repr s1.data}"
@@ -159,9 +159,9 @@ private def t6unrolled := unrollScan2D t6case
 #guard (TLProgram.eval t6unrolled t6case.inputs).toOption.isSome
 run_cmd do
   match TLProgram.eval t6unrolled t6case.inputs with
-  | .error e => throwError e
-  | .ok env =>
-      match env["Su_G_col0"]?, env["Su_G_1_1"]?, env["Su_G_0_1"]? with
+  | .error e => throwError (toString e)
+  | .ok report =>
+      match report.env["Su_G_col0"]?, report.env["Su_G_1_1"]?, report.env["Su_G_0_1"]? with
       | some col0, some g11, some g01 =>
           unless denseEq col0 ⟨[2], #[0.0, 0.0]⟩ do throwError s!"Su_G_col0 wrong: {repr col0.data}"
           unless denseEq g11 ⟨[], #[1.0]⟩ do throwError s!"Su_G_1_1 wrong: {repr g11.data}"

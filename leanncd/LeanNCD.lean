@@ -45,7 +45,8 @@ compare, and embed them at elaboration time.
   DSL/Pipeline/*, DSL/Compile      `TLProgram.compile`: seven transformation phases (+ two
                                    validation passes, `checkReadRanks`/`checkDtypes`) threaded
                                    in `FreshM`, taking source → `ThreadedComposed`
-  Eval/*                           a `Float` reference interpreter (`TLProgram.eval`)
+  Eval/*                           a `Float` reference interpreter (`TLProgram.eval` →
+                                    `Except EvalFailure EvalReport`)
   Acset/*                          the §8 CSV path: `SBrInstance` (a byte-for-byte mirror of
                                    Python `acset/instances.py`) + its codec
 
@@ -81,7 +82,7 @@ The same conceptual object has three representations, one per concern. They shar
     ── compile (8 phases) ─▶  ThreadedComposed   -- the routed presentation DAG (the artifact)
          ├─ realize ─────────────▶ BrMorph        -- math tower; §8 agreement   [body deferred]
          ├─ fromThreadedComposed ─▶ SBrInstance ─▶ CSV   -- Python interop       [extraction deferred]
-         └─ TLProgram.eval ──────▶ DenseTensor    -- Float reference
+         └─ TLProgram.eval ──────▶ EvalReport / EvalFailure  -- Float outcome + warnings
   NB: the evaluator consumes the PRE-route `ScheduledProgram` (`compileToScheduled`), which keeps
   full scan bodies; the routed `ThreadedComposed` collapses scans and is lossy to evaluate.
 
@@ -127,7 +128,11 @@ import LeanNCD.Bridge.Agreement
 import LeanNCD.Acset.SBrInstance
 import LeanNCD.Acset.Csv
 import LeanNCD.Acset.Io
+import LeanNCD.Eval.Error
 import LeanNCD.Eval.Tensor
+import LeanNCD.Eval.Slots
+import LeanNCD.Eval.SizeSolve
+import LeanNCD.Eval.SizeInfer
 import LeanNCD.Eval.Shape
 import LeanNCD.Eval.Gather
 import LeanNCD.Eval.Contract
@@ -135,3 +140,4 @@ import LeanNCD.Eval.Nonlin
 import LeanNCD.Eval.Scatter
 import LeanNCD.Eval.Scan
 import LeanNCD.Eval.Eval
+import LeanNCD.Eval.Entry

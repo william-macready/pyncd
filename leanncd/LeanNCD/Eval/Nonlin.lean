@@ -1,6 +1,7 @@
 import LeanNCD.Eval.Tensor
+import LeanNCD.Eval.Error
 import LeanNCD.Eval.Gather
-import LeanNCD.Eval.Shape
+import LeanNCD.Eval.Slots
 namespace LeanNCD.Eval
 open Std
 
@@ -119,8 +120,8 @@ def resolveNonlin (nl : Nonlin) (slots : List LHSSlot) (axisUids : List UID) :
   | .axiswise fn m => match normAxisUidOf slots with
       | some nu => match axisUids.findIdx? (· == nu) with
           | some p => pure (.axiswise fn m p)
-          | none   => throw "resolveNonlin: marked norm axis is not among its output axes"
-      | none    => throw "resolveNonlin: applies softmax/normalize but no output axis is marked (·)"
+          | none   => throw (.invalidNormAxis .notAmongOutputAxes)
+      | none    => throw (.invalidNormAxis .notMarked)
 
 /-- Dispatch: apply a resolved Nonlin. `axisUids` is still needed by `softmaxT`/`normalizeT`/
     `l2normalizeT` for their coordinate/mask math; the axis *position* itself already lives in

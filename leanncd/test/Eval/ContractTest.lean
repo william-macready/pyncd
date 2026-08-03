@@ -1,4 +1,5 @@
 import LeanNCD.Eval.Contract
+import LeanNCD.Eval.SizeInfer   -- `inferAxisSizes`, used directly below (was transitive via `Eval.Shape`)
 namespace LeanNCD.Eval
 open Std
 private def ax (nm : String) (u : Nat) : AxisSpec := { name := nm, uid := u, kind := .real }
@@ -14,10 +15,10 @@ run_cmd do
   let mm : Stmt := .assign "Y" [.free i, .free j]
     { body := { terms := [{ factors := [.read "W" [.axis i, .axis k], .read "X" [.axis k, .axis j]] }] }, nonlin := .identity }
   match inferAxisSizes {} env [mm] with
-  | .error e => throwError e
+  | .error e => throwError (toString e)
   | .ok (sizes, _) =>
     match evalAssign env sizes "Y" [.free i, .free j] { body := { terms := [{ factors := [.read "W" [.axis i, .axis k], .read "X" [.axis k, .axis j]] }] }, nonlin := .identity } with
-    | .error e => throwError e
+    | .error e => throwError (toString e)
     | .ok (_, Y) =>
         let expected := tensorOf [2,2] [4,5, 10,11]
         unless DenseTensor.approxEq Y expected do throwError s!"matmul wrong: {repr Y.data}"
@@ -29,9 +30,9 @@ run_cmd do
   let env : HashMap String DenseTensor := (({} : HashMap String DenseTensor).insert "A" A).insert "B" B
   let rhs : RHSExpr := { body := { terms := [{ factors := [.read "A" [.axis i]] }, { factors := [.read "B" [.axis i]] }] }, nonlin := .identity }
   match inferAxisSizes {} env [.assign "Z" [.free i] rhs] with
-  | .error e => throwError e
+  | .error e => throwError (toString e)
   | .ok (sizes, _) => match evalAssign env sizes "Z" [.free i] rhs with
-    | .error e => throwError e
+    | .error e => throwError (toString e)
     | .ok (_, Z) => unless DenseTensor.approxEq Z (tensorOf [3] [11,22,33]) do throwError "sum wrong"
 
 -- missing input tensor ⇒ .error (not silent 0)
@@ -55,15 +56,15 @@ run_cmd do
   let env : HashMap String DenseTensor := (({} : HashMap String DenseTensor).insert "F" F).insert "edge" edge
   let rhs : RHSExpr := { body := { terms := [{ factors := [.read "F" [.axis t, .axis i], .read "F" [.axis t, .axis j], .read "edge" [.axis i, .axis j]] }] }, nonlin := .identity }
   match inferAxisSizes {} env [.assign "Result" [] rhs] with
-  | .error e => throwError e
+  | .error e => throwError (toString e)
   | .ok (sizes, _) =>
     -- ℝ (tensor) reading ⇒ scalar 2.0
     match evalAssignDtyped [.tensor "Result" []] env sizes "Result" [] rhs with
-    | .error e => throwError e
+    | .error e => throwError (toString e)
     | .ok (_, R) => unless DenseTensor.approxEq R (tensorOf [] [2.0]) do throwError s!"ℝ agg wrong: {repr R.data}"
     -- Boolean (predicate) reading ⇒ ∃ t,i,j with all-1 ⇒ 1.0 (there is such a term)
     match evalAssignDtyped [.predicate "Result" []] env sizes "Result" [] rhs with
-    | .error e => throwError e
+    | .error e => throwError (toString e)
     | .ok (_, R) => unless DenseTensor.approxEq R (tensorOf [] [1.0]) do throwError s!"Bool agg wrong: {repr R.data}"
 
 -- 4b: a term with an EMPTY factor list must fold to the Combine's `unit1`, not a hard-coded 1.0.
@@ -93,7 +94,8 @@ run_cmd do
   let mul : Float → Float → Float := (· * ·)
   let combine : Float → Float → Float := (· + ·)
   match evalAssignSeeded mul combine 0.0 1.0 env sizes seed "Y" [LHSSlot.iterAt k 0] rhs with
-  | Except.error _ => pure ()
+  | Except.error (.invalidSeed "Y" 2 5 2) => pure ()
+  | Except.error e => throwError s!"4a: wrong error for out-of-range seed: {e}"
   | Except.ok _    => throwError "4a: expected rejection of out-of-range seed coordinate 5 ∉ [0, 2)"
 
 -- 4a: empty seed gives the same result as the unseeded wrapper (evalAssignWith IS
