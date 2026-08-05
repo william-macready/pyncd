@@ -31,6 +31,8 @@ def evalErrorEq : EvalError → EvalError → Bool
   | .unsupportedRecurMorphism sa na, .unsupportedRecurMorphism sb nb =>
       decide (sa = sb ∧ na = nb)
   | .invalidScanNode a, .invalidScanNode b => decide (a = b)
+  -- Catches only cross-constructor pairs today. Adding an `EvalError` constructor needs a new
+  -- arm above it here too, or two equal instances of it will silently compare unequal.
   | _, _ => false
 
 /-- Two complete evaluation outcomes agree on a set of names and on their diagnostics. Successful
