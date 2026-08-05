@@ -554,15 +554,16 @@ were **zero-sorry** at the time of the census; all 38 were math-tower.
 | ✅ | **checkScatterNoScan** — reject scatter+scan-iteration-slot at compile time (Wave D follow-up finding) | 2026-08-01 | `047b023..fd72d48`, merge `f2d0a2b`; `docs/superpowers/plans/2026-08-01-scatter-scan-compile-check.md` |
 | ✅ | **Wave E** — 4e shape split, 4h structured diagnostics, 4i `EvalReport`/entry boundary | 2026-08-02 | full cached `lake build` green (8,618 jobs) |
 | ✅ | **Wave C EvalPlan proposal** — architecture, phase/workstream breakdown, correctness laws, acceptance criteria (design only; Wave C implementation not started) | 2026-08-03, revised 2026-08-05 | `papers/wave_c_evalplan_proposal.md` (896ae22, revised 3ebdee1) |
+| ✅ | **Wave C C0** — executable contract: capability classifiers, preflight ordering, 12 fixture/mutation `run_cmd` pairs (`Eval.Plan.ContractTest`), registered in the default build target | 2026-08-05 | full cached `lake build` green (8,619 jobs) |
 
 ### Remaining — the critical path to an executing backend
 
-> **Next up: Wave C** (Minimal EvalPlan). Wave E's diagnostics/report prerequisites are complete,
-> and the detailed architecture is now written up in
+> **Next up: Wave C** (Minimal EvalPlan). C0 (executable contract) is done. Wave E's
+> diagnostics/report prerequisites are complete, and the detailed architecture is written up in
 > [`wave_c_evalplan_proposal.md`](wave_c_evalplan_proposal.md) (design-only, not yet implemented).
-> Wave C is a new-IR-scale undertaking (differential testing against `DenseTensor`, the deferred
-> `ContractionAlgebra`/`ScalarBinOp` classifier) that warrants its own explicit go-ahead rather than
-> being picked up by default.
+> C1 (signature-driven shape inference) is next. Wave C is a new-IR-scale undertaking (differential
+> testing against `DenseTensor`, the deferred `ContractionAlgebra`/`ScalarBinOp` classifier) that
+> warrants its own explicit go-ahead rather than being picked up by default.
 
 ```text
 Wave A  Correctness freeze — ✅ THE THREE AUDIT FINDINGS DONE 2026-07-30 (c754165..14b1353)
