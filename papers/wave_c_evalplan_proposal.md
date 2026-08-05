@@ -1712,8 +1712,7 @@ semantic fingerprint.
 | Static boundary | C1 | enum | `ScalarDType` | Closed concrete-storage dtype vocabulary; only `f64` is admitted initially. |
 | Static boundary | C1 | structure | `TensorSignature` | Concrete shape and dtype without tensor values. |
 | Static boundary | C1 | structure | `InputSignature` | Source-name-keyed specialization input. |
-| Static boundary | C1 | errors | `InputSignatureError`; reuses existing `ShapeError` | Distinguish static-signature failures and preserve warnings from shape inference. |
-| Static boundary | C1 | function | `inferAxisSizesFromSignature` | Runs the existing sizing semantics from shapes plus `ScheduledProgram.explicitSizes`. |
+| Static boundary | C1 | function | `inferAxisSizesFromSignature` | Runs the existing sizing semantics from shapes plus `ScheduledProgram.explicitSizes`; reuses existing `ShapeError` — no new C1-scoped failure mode exists. |
 | Local kernel | C2 | index/policies | `TensorSlot`, `NumericMode`, `OutOfBoundsPolicy` | Positional storage, exact numeric-order policy, and padded-read policy. |
 | Local kernel | C2 | scalar data | `ScalarConst`, `ScalarBinOp`, `ContractionAlgebra` | Closed, dtype-preserving factor/reduction operations and identities. |
 | Local kernel | C2 | semantic IR | `AffineMap`, `ReadPlan`, `TermPlan`, `AssignPlan` | One complete local tensor operation with explicit iteration, pullback maps, product, and ordered pushforward. |
@@ -1725,7 +1724,7 @@ semantic fingerprint.
 | Dense interpretation | C3 | worker | `runDensePlan` | Execute the checked graph over positional `DenseTensor` storage by invoking `runDenseAssign` in order. |
 | Dense interpretation | C2-C3 | runtime error | `PositionalInputError` | Reject absent positional tensors or runtime shape/storage that disagrees with checked source signatures. |
 | Source boundary | C4 | sidecars | `SlotBinding`, `PlanBindings`, `PreparedPlan` | Pair a checked graph with source names and preparation warnings without changing semantic identity. |
-| Source boundary | C4 | errors | `CapabilityError`, `PlanCompileCause`, `PlanCompileFailure`, `InputBindingError`, `PlanRunFailure` | Preserve typed preflight, specialization, binding, and runtime-adapter failures. |
+| Source boundary | C4 | errors | `CapabilityError`, `InputSignatureError`, `PlanCompileCause`, `PlanCompileFailure`, `InputBindingError`, `PlanRunFailure` | Preserve typed preflight, specialization, binding, and runtime-adapter failures. `InputSignatureError`'s real producer is `prepareEvalPlan`'s signature-completeness check (§4.2 step 2) — moved here from C1, which has no producer for it. |
 | Source boundary | C4 | compiler | `prepareEvalPlan` | Residualize `(ScheduledProgram, InputSignature)` into a checked positional plan plus boundary sidecars. |
 | Source boundary | C4 | adapter | `pack`, `unpack`, `runPreparedDense` | Implement the worker/wrapper boundary and preserve complete source-visible observations. |
 | Representation | C5 | derived data | `PlanFingerprint` | Opaque SHA-256 digest of domain-separated canonical semantic bytes. |
@@ -2007,12 +2006,19 @@ are defined independently of `HashMap`/`Finset` traversal.
 
 ### A.5 C1 - static signature boundary
 
-**Production files:** `Plan/Types.lean`, `Plan/Error.lean`, `Plan/Signature.lean`, and
-[`SizeInfer.lean`](../leanncd/LeanNCD/Eval/SizeInfer.lean).
+**Production files:** `Plan/Types.lean`, `Plan/Signature.lean`, and
+[`SizeInfer.lean`](../leanncd/LeanNCD/Eval/SizeInfer.lean). **Not `Plan/Error.lean`** — C1
+introduces no new error type (see item 1's note), so the module has nothing to hold yet; C2
+creates it for `PlanError`.
 
-1. Define `ScalarDType`, `TensorSignature`, `InputSignature`, and `InputSignatureError`; reuse the
-   existing `ShapeError` (Section 5.5) for shape-inference failures rather than introducing a second
-   shape-failure type.
+1. Define `ScalarDType`, `TensorSignature`, and `InputSignature`; reuse the existing `ShapeError`
+   (Section 5.5) for shape-inference failures rather than introducing a second shape-failure type.
+   **Do not define `InputSignatureError` here.** `evalScheduled`'s `inputs : HashMap String
+   DenseTensor` parameter is always the raw external-input map (never the accumulating `env`), so a
+   signature-based shape lookup misses a name under exactly the same circumstances the current
+   env-based lookup does — no new failure mode exists yet. `InputSignatureError`'s real producer is
+   C4's `prepareEvalPlan` step 2 ("validate that the `InputSignature` is complete and structurally
+   compatible with the schedule", Section 4.2) — define it there, where it has one.
 2. Extract the body of `inferAxisSizes` into a shape-driven core whose inputs are:
    - the existing `HashMap UID Nat` explicit-size seed; and
    - a source-name-to-`List Nat` shape lookup.
