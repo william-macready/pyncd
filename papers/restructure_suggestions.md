@@ -553,10 +553,13 @@ were **zero-sorry** at the time of the census; all 38 were math-tower.
 | ✅ | **Wave D** — 4g typed scatter collision policy (`CollisionReduce`) | 2026-08-01 | `a3098c0..c86005e`; `docs/superpowers/plans/2026-08-01-scatter-collision-policy.md` |
 | ✅ | **checkScatterNoScan** — reject scatter+scan-iteration-slot at compile time (Wave D follow-up finding) | 2026-08-01 | `047b023..fd72d48`, merge `f2d0a2b`; `docs/superpowers/plans/2026-08-01-scatter-scan-compile-check.md` |
 | ✅ | **Wave E** — 4e shape split, 4h structured diagnostics, 4i `EvalReport`/entry boundary | 2026-08-02 | full cached `lake build` green (8,618 jobs) |
+| ✅ | **Wave C EvalPlan proposal** — architecture, phase/workstream breakdown, correctness laws, acceptance criteria (design only; Wave C implementation not started) | 2026-08-03, revised 2026-08-05 | `papers/wave_c_evalplan_proposal.md` (896ae22, revised 3ebdee1) |
 
 ### Remaining — the critical path to an executing backend
 
-> **Next up: Wave C** (Minimal EvalPlan). Wave E's diagnostics/report prerequisites are complete.
+> **Next up: Wave C** (Minimal EvalPlan). Wave E's diagnostics/report prerequisites are complete,
+> and the detailed architecture is now written up in
+> [`wave_c_evalplan_proposal.md`](wave_c_evalplan_proposal.md) (design-only, not yet implemented).
 > Wave C is a new-IR-scale undertaking (differential testing against `DenseTensor`, the deferred
 > `ContractionAlgebra`/`ScalarBinOp` classifier) that warrants its own explicit go-ahead rather than
 > being picked up by default.
@@ -717,6 +720,9 @@ Wave C  Minimal EvalPlan (E4) — the first checked backend boundary
         first milestone is NOT "JAX runs a model" — it is: every checked EvalPlan in the
         declared reference64 fragment either matches DenseTensor or is rejected with a
         typed capability error before Python starts
+        · proposal ✅ DONE 2026-08-03, revised 2026-08-05 — full architecture, phase/workstream
+          breakdown, correctness laws, and acceptance criteria written up in
+          `papers/wave_c_evalplan_proposal.md`; implementation NOT started, awaiting go-ahead
 
 Wave D  ✅ DONE 2026-08-01 (a3098c0..c86005e) — 4g typed scatter policy (CollisionReduce;
         separate RHS agg from collision reduce)
