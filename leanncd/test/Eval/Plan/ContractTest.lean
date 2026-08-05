@@ -82,6 +82,37 @@ def classifyScanStmt : ScanStmt → Classification
   | .scan ..  => .rejected "scanNode"
   | .scanPre .. => .rejected "scanNode"
 
+/-- The total order in which `prepareEvalPlan`'s checks run (§4.2, A.4 item 2): the first phase
+    whose check fails determines the reported failure category, with no other interleaving
+    permitted. `priority` turning this into `Nat` order (rather than list position alone) means a
+    future accidental reordering of `preflightOrder` is caught by `#guard`, not just by inspection. -/
+inductive PreflightPhase
+  | capability | inputSignature | shapeInference | rawConstruction
+  | localChecking | graphChecking | runtimeBinding
+  deriving DecidableEq, BEq, Repr
+
+def PreflightPhase.priority : PreflightPhase → Nat
+  | .capability      => 0
+  | .inputSignature  => 1
+  | .shapeInference  => 2
+  | .rawConstruction => 3
+  | .localChecking   => 4
+  | .graphChecking   => 5
+  | .runtimeBinding  => 6
+
+def preflightOrder : List PreflightPhase :=
+  [.capability, .inputSignature, .shapeInference, .rawConstruction,
+   .localChecking, .graphChecking, .runtimeBinding]
+
+/-- Strict pairwise increase, without depending on `List.Chain'`'s decidability instance. -/
+def strictlyIncreasing : List Nat → Bool
+  | []           => true
+  | [_]          => true
+  | a :: b :: rest => a < b && strictlyIncreasing (b :: rest)
+
+#guard strictlyIncreasing (preflightOrder.map PreflightPhase.priority)
+#guard preflightOrder.length == 7
+
 end LeanNCD.PlanContract
 
 open LeanNCD.PlanContract in
