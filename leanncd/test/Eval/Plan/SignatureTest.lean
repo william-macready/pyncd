@@ -141,3 +141,78 @@ run_cmd do
       match inferAxisSizes sched.explicitSizes conflictInputs allStmts with
       | .ok _ => throwError "conflict-case fixture does not actually conflict — fix the fixture"
       | .error _ => pure ()
+
+-- Category 4 — an extent known only through `explicitSizes`.
+
+private def unusedAxisProg : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  axis unused : ℕ = 5
+  Y[i] := X[i]
+}
+
+private def unusedAxisInputs : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "X" ⟨[2], #[1.0, 2.0]⟩
+
+-- `unused` is declared with a pinned size but never appears in any read — its size can only ever
+-- come from `explicitSizes` (the seed), never from a signature entry. Confirm both adapters still
+-- carry it through to their output `sizes` map unchanged.
+run_cmd do
+  match unusedAxisProg.compileToScheduled.run 0 with
+  | .error e _ => throwError s!"unused-axis-case compile failed: {repr e}"
+  | .ok sched _ =>
+      match parityCheck sched unusedAxisInputs with
+      | .error e => throwError s!"parity mismatch (explicitSizes-only extent case): {e}"
+      | .ok () => pure ()
+      -- `unused`'s UID is whatever the compiler assigned it; find it via `sched.explicitSizes`
+      -- itself (the seed the fixture's own `axis unused : ℕ = 5` declaration produced) rather than
+      -- hand-guessing a UID number.
+      let unusedEntries := sched.explicitSizes.toList.filter (fun (_, sz) => sz == 5)
+      match unusedEntries with
+      | [(uid, _)] =>
+          let sig := InputSignature.ofDenseInputs unusedAxisInputs
+          match inferAxisSizesFromSignature sched.explicitSizes sig
+              (sched.stmts.flatMap (fun
+                | .plain s => [s] | .scan _ _ b r _ => b ++ r | .scanPre _ _ _ => [])) with
+          | .ok (sizes, _) =>
+              unless sizes[uid]? == some 5 do
+                throwError s!"unused axis's seeded size was not preserved: {repr (sizes[uid]?)}"
+          | .error e => throwError s!"unused-axis-case eval failed: {e}"
+      | _ => throwError s!"expected exactly one explicitSizes entry of size 5, got {unusedEntries.length}"
+
+-- Category 6 — warnings retained when a later shape constraint fails.
+
+private def warningsThenFailProg : TLProgram := tlprog!{
+  axis i : ℕ = 4
+  axis j : ℕ = 3
+  Y[i, j] := X[2 * i + j]
+  axis k : ℕ = 2
+  Z[k] := W[k]
+}
+
+-- X undersized (shape [6], needs up to index 10) triggers a paddedAccess warning on Y's read;
+-- W's shape (5) then conflicts with k's pinned size (2), throwing AFTER that warning was already
+-- accumulated. Positions are collected from all statements up front, in declaration order, so
+-- Y's warning is added to `warns` before Z's position is even reached in the per-position loop —
+-- confirm it survives into the returned `EvalFailure.warnings`, via both adapters.
+private def warningsThenFailInputs : HashMap String DenseTensor :=
+  (({} : HashMap String DenseTensor).insert "X" ⟨[6], #[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]⟩).insert
+    "W" ⟨[5], #[0.0, 0.0, 0.0, 0.0, 0.0]⟩
+
+run_cmd do
+  match warningsThenFailProg.compileToScheduled.run 0 with
+  | .error e _ => throwError s!"warnings-then-fail-case compile failed: {repr e}"
+  | .ok sched _ =>
+      let allStmts := sched.stmts.flatMap (fun
+        | .plain s => [s] | .scan _ _ b r _ => b ++ r | .scanPre _ _ _ => [])
+      let sig := InputSignature.ofDenseInputs warningsThenFailInputs
+      match inferAxisSizes sched.explicitSizes warningsThenFailInputs allStmts,
+            inferAxisSizesFromSignature sched.explicitSizes sig allStmts with
+      | .error e1, .error e2 =>
+          unless !e1.warnings.isEmpty do
+            throwError "expected the env-based path to retain the earlier padded-access warning"
+          unless decide (e1.warnings = e2.warnings) do
+            throwError s!"warning lists diverged between adapters: {e1.warnings} vs {e2.warnings}"
+      | .ok _, _ => throwError "expected both adapters to fail on the pinned-size conflict"
+      | _, .ok _ => throwError "expected both adapters to fail on the pinned-size conflict"
+
+end LeanNCD.Eval.Plan.SignatureTest
