@@ -292,8 +292,29 @@ The first compiler should reject, before worker execution:
 - backend- or value-dependent shapes;
 - any recurrence or callback-bearing payload.
 
-Each category needs a closed constructor with the relevant source context. A supported program that
-fails to compile is a bug. An unsupported program that reaches the worker is also a bug.
+Each category needs a closed constructor with the relevant source context. Concretely, one
+constructor per rejected category above, in the same `String`-context convention as the existing
+[`CompileError`](../leanncd/LeanNCD/Exec/Uid.lean):
+
+```lean
+inductive CapabilityError
+  | scanNode             (context : String)  -- ScanStmt.scan / .scanPre
+  | scatterOrAffineLhs   (context : String)  -- scatter statements, affine LHS slots
+  | unsupportedLhsSlot   (context : String)  -- freeNorm, iterAt, iterNext
+  | unsupportedNonlin    (context : String)  -- pointwise/axiswise nonlinearities
+  | maskOrPredicate      (context : String)  -- masks, predicates, Iverson factors
+  | unaryFactor          (context : String)
+  | unsupportedAgg       (context : String)  -- max/min aggregation
+  | booleanOutput        (context : String)
+  | unsupportedDtype     (context : String)  -- any dtype other than the declared f64 mode
+  | dynamicShape         (context : String)  -- backend- or value-dependent shapes
+  | recurrenceOrCallback (context : String)
+```
+
+This closes the obvious escape hatch: nothing above should permit an `unsupported : String`
+catch-all constructor, which would silently reopen the stringly-typed error surface Wave E removed.
+A supported program that fails to compile is a bug. An unsupported program that reaches the worker
+is also a bug.
 
 ### 3.3 Rejection is staging, not terminal semantics
 
@@ -436,7 +457,7 @@ inductive ScalarConst
   | bool (value : Bool)
 
 inductive ScalarBinOp
-  | add | mul | min | max | logicalAnd | logicalOr
+  | add | mul
 
 structure ContractionAlgebra where
   factorOp : ScalarBinOp
@@ -452,6 +473,15 @@ numeric conventions; Wave C has only `reference64`, defined precisely in Section
 literal in a dtype-preserving canonical form. `ScalarBinOp` is the closed set of binary scalar
 operations, and `ContractionAlgebra` records the operation and identity used within factor products
 and across reductions/terms.
+
+`ScalarBinOp` holds exactly the operations Wave C's checker and worker implement — `min`, `max`
+(needed for max/min aggregation), and `logicalAnd`/`logicalOr` (needed for predicate/Boolean
+outputs) are deliberately absent, not merely unreachable: both source capabilities are rejected by
+`CapabilityError` before a plan is built (Section 3.2), so today no producer could ever construct
+them and no worker implements their semantics. Adding a constructor to this closed enum is itself a
+semantic-version change (Section 9.2), so each later capability wave adds its own tag deliberately,
+rather than pre-declaring tags a checker must defensively reject with no compile-time-checked
+reason to.
 
 `InputSignature` is named because it is consumed at a source-facing boundary. The checked semantic
 plan is positional and need not retain these names.
@@ -534,12 +564,21 @@ structure RawEvalPlan where
   steps       : Array AssignPlan
   numericMode : NumericMode
 
-structure CheckedAssignPlan where private
+structure CheckedAssignPlan where private mk ::
   raw : AssignPlan
 
-structure CheckedEvalPlan where private
+structure CheckedEvalPlan where private mk ::
   raw : RawEvalPlan
 ```
+
+The `private mk ::` constructor name is not decorative: Lean only rejects external `⟨...⟩`
+construction when the constructor is explicitly named and marked private this way. A bare
+`structure Foo where private` (no named constructor) compiles but leaves the anonymous constructor
+public — verified against this toolchain by a two-module test where that form let an external file
+construct a value with no error. Since Law 2 and the entire raw/checked boundary in Section 5.2
+depend on `CheckedAssignPlan`/`CheckedEvalPlan` being unconstructible outside `Check.lean`, C2/C3
+must include a compile-time negative test (an external module attempting `⟨...⟩` on either type
+fails to elaborate), not merely that `checkAssign`/`checkPlan` return `Except`.
 
 The exact storage of checked operations inside `CheckedEvalPlan` is an implementation choice; the
 important contract is that `checkPlan` reuses `checkAssign` rather than reimplementing local
@@ -570,10 +609,14 @@ structure PreparedPlan where
   warnings : List EvalWarning
 ```
 
-`materializedNames` includes every produced tensor currently observable in `EvalReport.env`,
-including compiler-generated intermediates if they are currently exposed. The runtime wrapper starts
-from the original input environment and inserts these materialized results. That preserves extra
-input entries that are not semantically consumed by the plan.
+`materializedNames` is exactly every name produced by a `sched.stmts` entry — this is not an
+approximation to pin down later: `evalScheduled` ([`Eval.lean`](../leanncd/LeanNCD/Eval/Eval.lean))
+starts `env` at `inputs` and, with no filtering, inserts every `.plain`/`.scan` statement's produced
+name(s) in schedule order, so `EvalReport.env` is already exactly `inputs ∪ {every scheduled
+statement's output}`. `materializedNames` must reproduce that same set from `RawEvalPlan.steps`
+(each `AssignPlan.destinationSlot`) with no separate notion of "exposed" to define. The runtime
+wrapper starts from the original input environment and inserts these materialized results; that
+preserves extra input entries that are not semantically consumed by the plan.
 
 `requiredInputs` is a slot map, not an implicit parallel-array convention. `pack` walks
 `CheckedEvalPlan.inputSlots` and requires exactly one matching `requiredInputs` entry for each slot;
@@ -626,9 +669,21 @@ occur before warning-producing shape inference, so those causes carry `warnings 
 preflight succeeds, warnings produced while inferring shapes or constructing a plan survive a later
 `ShapeError` or `PlanError`, analogously to `EvalFailure`. `PlanCodecError` belongs to encode/decode
 APIs rather than `prepareEvalPlan`; `pack` reports `InputBindingError`; `runDenseAssign` and
-`runDensePlan` report `PositionalInputError` rather than using unchecked array access. The complete
-`PlanRunFailure` nests either runtime cause with preparation warnings. `BackendError` belongs to
-later backend execution APIs.
+`runDensePlan` report `PositionalInputError` rather than using unchecked array access. The runtime
+counterpart nests either cause with the preparation warnings already carried by `PreparedPlan`:
+
+```lean
+inductive PlanRunCause
+  | binding   (cause : InputBindingError)
+  | execution (cause : PositionalInputError)
+
+structure PlanRunFailure where
+  cause    : PlanRunCause
+  warnings : List EvalWarning
+```
+
+`PlanRunFailure` is the failure type of `runPreparedDense` (Section 4.3, Law 4). `BackendError`
+belongs to later backend execution APIs.
 
 ## 6. Boundary layer: shape specialization
 
@@ -804,9 +859,9 @@ reduceOp = add, reduceId = f64(bitPattern(0.0))
 Here `bitPattern(x)` means the IEEE-754 binary encoding of the displayed binary64 value `x`, matching
 the `ScalarConst.f64` representation from Section 5.1.
 
-The remaining operation tags are reserved for later plan capabilities. They become admissible only
-when the checker, every relevant worker, and dtype rules implement the same backend-independent
-meaning.
+`ScalarBinOp` has no other tags in Wave C's plan version (Section 5.1): `min`/`max`/`logicalAnd`/
+`logicalOr` are added only in the later plan version that gives max/min aggregation and
+predicate/Boolean outputs a real producer and consumer, not pre-declared now.
 
 This is an instance of Reynolds-style **defunctionalization**: a finite family of functions is
 replaced by a first-order tag plus an interpreter. The important benefit is not the terminology but
@@ -1657,7 +1712,7 @@ semantic fingerprint.
 | Static boundary | C1 | enum | `ScalarDType` | Closed concrete-storage dtype vocabulary; only `f64` is admitted initially. |
 | Static boundary | C1 | structure | `TensorSignature` | Concrete shape and dtype without tensor values. |
 | Static boundary | C1 | structure | `InputSignature` | Source-name-keyed specialization input. |
-| Static boundary | C1 | errors | `InputSignatureError`, `ShapeInferenceFailure` | Distinguish static-signature failures and preserve warnings from shape inference. |
+| Static boundary | C1 | errors | `InputSignatureError`; reuses existing `ShapeError` | Distinguish static-signature failures and preserve warnings from shape inference. |
 | Static boundary | C1 | function | `inferAxisSizesFromSignature` | Runs the existing sizing semantics from shapes plus `ScheduledProgram.explicitSizes`. |
 | Local kernel | C2 | index/policies | `TensorSlot`, `NumericMode`, `OutOfBoundsPolicy` | Positional storage, exact numeric-order policy, and padded-read policy. |
 | Local kernel | C2 | scalar data | `ScalarConst`, `ScalarBinOp`, `ContractionAlgebra` | Closed, dtype-preserving factor/reduction operations and identities. |
@@ -1692,7 +1747,7 @@ contract, but C6 must not add placeholder constructors without real producers an
 
 | Slice | New executable claim | Principal law | Gate |
 |---|---|---|---|
-| C0 - executable contract | The accepted fragment, observation relation, ordering, and rejection order are unambiguous. | all laws' premises | Every source constructor and edge case has one expected classification or observation. |
+| C0 - executable contract ✅ DONE 2026-08-05 | The accepted fragment, observation relation, ordering, and rejection order are unambiguous. | all laws' premises | Every source constructor and edge case has one expected classification or observation. |
 | C1 - static boundary | Concrete shapes can be inferred from signatures without tensor values. | Law 1 premise | Signature- and Dense-driven inference have identical sizes, warnings, and failures. |
 | C2 - local kernel | One checked operation has one Dense meaning. | Law 2 locally; Dense-side premise of Law 3 | Hand-computed pullback/product/pushforward cases pass; malformed local nodes and nonconforming positional tensors are rejected. |
 | C3 - typed graph | Checked local operations compose into one deterministic Dense graph. | Law 2 compositionally; Dense-side premise of Law 3 | Manual graph cases cover chains, fan-out, re-reads, single production, and invalid production order. |
@@ -1825,9 +1880,16 @@ Check + Error + Eval.Error -> Prepared
 Prepared + Signature + Graph + Check + Error + DSL/Eval source helpers -> Compile
 Prepared + Dense + Check + Error + Eval.Report -> Adapter
 
-Check -> Canonical
+Check + Graph -> Canonical
 Canonical + Graph + Check + Error -> Codec
 ```
+
+`Canonical.lean` needs `Graph` directly, not only `Check`: `CheckedEvalPlan` privately wraps
+`RawEvalPlan`, so encoding it means walking `RawEvalPlan`-shaped fields (themselves built from
+`Kernel`'s types), which requires `Graph`'s type declarations in scope. `Check.lean`'s trusted
+accessors (Section 5.2) may expose that payload — e.g. an accessor returning the underlying
+`RawEvalPlan` structure by value — without exposing either private constructor; they do not remove
+`Canonical.lean`'s need to import `Graph` for the type itself.
 
 `Check.lean` may add `checkAssign` in C2 before adding `checkPlan` in C3; `Dense.lean` similarly adds
 the node interpreter before the graph interpreter. This incremental growth is intentional.
@@ -1888,7 +1950,9 @@ not a gate.
 **Production changes:** none.
 
 1. Build one capability matrix covering every `ScanStmt`, `Stmt`, `LHSSlot`, `Factor`, `Nonlin`,
-   `AggOp`, declaration dtype, and numeric mode constructor.
+   `AggOp`, and declaration dtype constructor. `NumericMode` has no admitted values to enumerate
+   yet — it is a `Plan/Types.lean` type introduced in C1/C2, not something C0 can classify against;
+   record its Wave C value (`reference64`, the only one) as a one-line comment, not a classifier.
 2. Fix failure precedence: capability preflight, signature validation, shape inference, raw
    construction, local checking, graph checking, runtime binding.
 3. Fix source-to-graph ordering:
@@ -1899,28 +1963,56 @@ not a gate.
    - the final materialized binding for a repeated name points to its last write;
    - term and factor arrays retain source order;
    - each term basis is retained LHS UIDs followed by first-occurrence contracted UIDs;
-   - output positions are the basis prefix and reduction positions the suffix.
-4. Fix empty and zero semantics:
+   - output positions are the basis prefix and reduction positions the suffix;
+   - `materializedNames` is exactly every `sched.stmts` destination name (Section 5.4) — the same
+     set `evalScheduled` inserts into `env`, with no separate filtering rule.
+
+   Only some of these bullets have observable behavior yet: "most-recent-preceding-slot" and
+   "final materialized binding" are pinned in C0 against the *current* `evalScheduled` (repeated
+   assignment and fan-out already exhibit this — there is no `TensorSlot` to test against). "Fresh
+   destination slot" and "term basis order" name concepts that don't exist as data until C4's
+   compiler allocates them; for those, C0's job is done by this bullet list itself, and C4's own
+   plan pins them for real once `Compile.lean` exists.
+4. Fix empty and zero semantics — these are two distinct cases, both needing a fixture:
    - an empty factor product uses `factorId`;
-   - an empty term array or zero-extent reduction uses `reduceId`;
+   - an empty term array (no terms at all) uses `reduceId`;
+   - a *non-empty* term whose contracted axis has size 0 — a zero-extent reduction *domain*, not an
+     empty term array — also uses `reduceId`, over zero folded coordinates;
    - no reduction axes means one reduction coordinate, `[[]]`;
    - a zero output extent produces empty tensor data.
 5. Add hand-written fixtures for negative shifts, multi-axis maps, zero coefficients that still
    mention a contracted UID, empty products/reductions, zero dimensions, unused extra inputs,
-   per-term contraction asymmetry, fan-out, and repeated assignment.
+   fan-out, and repeated assignment. Per-term contraction asymmetry is already pinned by the
+   existing `EC15 per-term-contraction` case in
+   [`EdgeCaseTest.lean`](../leanncd/test/Eval/Portfolio/EdgeCaseTest.lean) — cite it, do not
+   duplicate it.
 6. Define mutation expectations: each malformed mutation must either be rejected by its owning
-   checker or, if still valid, change the expected result.
+   checker or, if still valid, change the expected result. Every fixture's expected value must be
+   independently verified against the real evaluator before being written down, not hand-guessed.
 
 **Gate:** every capability and edge case has one typed expectation, and all iteration/fold orders
 are defined independently of `HashMap`/`Finset` traversal.
+
+**Detailed plan:** [`docs/superpowers/plans/2026-08-05-wave-c-c0-executable-contract.md`](../docs/superpowers/plans/2026-08-05-wave-c-c0-executable-contract.md).
+
+> **✅ DONE 2026-08-05.** `leanncd/test/Eval/Plan/ContractTest.lean` implements items 1-6 above:
+> exhaustive classifiers over every listed constructor, the checked `PreflightPhase` total order,
+> and ten hand-verified fixture/mutation pairs. Full `lake build` green (8,619 jobs, up from the
+> 8,618 baseline). **One real gap found and fixed by the final whole-branch review, not anticipated
+> by this section:** `classifyStmt`'s first draft never inspected `RHSExpr.agg`, so it classified a
+> `agg := .max`/`.min` statement as accepted even though item 1's own `classifyAggOp` correctly
+> rejects `.max`/`.min` — a direct internal contradiction between two functions in the same file,
+> caught only once all six tasks' content sat together. Fixed before merge; the capability matrix
+> now checks `agg` as part of `classifyStmt`'s composed precedence chain.
 
 ### A.5 C1 - static signature boundary
 
 **Production files:** `Plan/Types.lean`, `Plan/Error.lean`, `Plan/Signature.lean`, and
 [`SizeInfer.lean`](../leanncd/LeanNCD/Eval/SizeInfer.lean).
 
-1. Define `ScalarDType`, `TensorSignature`, `InputSignature`, `InputSignatureError`, and
-   `ShapeInferenceFailure`.
+1. Define `ScalarDType`, `TensorSignature`, `InputSignature`, and `InputSignatureError`; reuse the
+   existing `ShapeError` (Section 5.5) for shape-inference failures rather than introducing a second
+   shape-failure type.
 2. Extract the body of `inferAxisSizes` into a shape-driven core whose inputs are:
    - the existing `HashMap UID Nat` explicit-size seed; and
    - a source-name-to-`List Nat` shape lookup.
@@ -2019,7 +2111,9 @@ caller-provided data.
 - empty products/reductions and zero extents;
 - exact fold-order cases sensitive to binary64 reassociation;
 - missing, wrong-shape, and malformed-storage positional inputs return `PositionalInputError`;
-- one mutation for every local `PlanError`.
+- one mutation for every local `PlanError`;
+- a cross-module compile-time check that external `⟨...⟩` construction of `CheckedAssignPlan` is
+  rejected (Section 5.3) — not merely that `checkAssign` returns `Except`.
 
 **Gate:** every local checker branch is covered, every valid fixture has a hand-computed Dense
 result, and there is no worker accepting raw `AssignPlan`.
@@ -2081,7 +2175,9 @@ plan structure. The untrusted named entry remains C4's adapter.
 - wrong positional input arity, shape, or storage returns `PositionalInputError` without panic;
 - manual sequential composition agrees with `runDensePlan`;
 - reordering independent nodes preserves results only when dependencies permit it;
-- reordering Float-sensitive terms inside a node is not treated as graph equivalence.
+- reordering Float-sensitive terms inside a node is not treated as graph equivalence;
+- a cross-module compile-time check that external `⟨...⟩` construction of `CheckedEvalPlan` is
+  rejected (Section 5.3) — not merely that `checkPlan` returns `Except`.
 
 **Gate:** manual checked graphs execute without source compiler support; all graph violations are
 rejected before execution; `Dense.lean` has no source or legacy-worker dependency.
@@ -2182,9 +2278,10 @@ Only after C4 freezes semantic completeness, define canonical encoding:
 - rejection of nonminimal integers and trailing bytes.
 
 Hash domain-separated semantic bytes with SHA-256. `PlanFingerprint` is an opaque 32-byte digest;
-never use host `Hashable`. Before implementation, either approve a small audited Lean dependency or
-implement SHA-256 locally and verify published test vectors. Do not silently choose another
-algorithm.
+never use host `Hashable`. **Decide at the C4-to-C5 handoff** (A.11), before any A.9 work begins,
+whether to take a small audited Lean SHA-256 dependency or implement it locally against published
+test vectors — not as an implicit choice made by whoever happens to start C5. Do not silently choose
+another algorithm.
 
 `decodePlan` parses a wire envelope to `RawEvalPlan`, reports path/offset-bearing `PlanCodecError`,
 calls `checkPlan`, and recomputes rather than trusts any persisted fingerprint.
@@ -2249,7 +2346,9 @@ C6  audit, manifest, and documentation
 C1 may proceed beside C2 after C0. Otherwise land in dependency order. Do not combine C2 through C4:
 local semantics, graph composition, and source residualization need distinct reviews and distinct
 failure localization. Do not begin Wave F or Wave G until C4's differential gate passes. Do not
-freeze C5 bytes before that gate.
+freeze C5 bytes before that gate. Between C4b and C5a, decide the SHA-256 dependency question
+(Section A.9) explicitly before C5a begins — it is a project decision, not an implementation detail
+to resolve inline.
 
 ### A.12 Implementation-time stop conditions
 
