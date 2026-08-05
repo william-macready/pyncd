@@ -58,23 +58,32 @@ def classifyAggOp : AggOp → Classification
   | .max => .rejected "unsupportedAgg"
   | .min => .rejected "unsupportedAgg"
 
-/-- A `Stmt` is accepted only if every LHS slot, its nonlinearity, and every factor classify as
-    accepted. The first rejected sub-construct (LHS slots checked before nonlin before factors,
-    matching the total precedence A.4/§4.2 fixes) determines the reported category. -/
+/-- A `Stmt` is accepted only if every LHS slot, the aggregation op, the nonlinearity, and every
+    factor classify as accepted. The sub-construct order (LHS slots, then `agg`, then nonlin, then
+    factors) is a locally-chosen deterministic order for this classifier — it is NOT derived from
+    §4.2/A.4's phase-level `prepareEvalPlan` ordering (that total order governs coarser phases:
+    capability preflight, signature validation, shape inference, ...; it says nothing about the
+    relative order of sub-constructs within one already-capability-checked statement). `agg` is
+    checked right after the LHS slot because both are properties of the assignment's shape/target
+    rather than its value expression, ahead of `nonlin`/factors which classify the RHS value
+    computation. The first rejected sub-construct determines the reported category. -/
 def classifyStmt : Stmt → Classification
   | .assign _ slots rhs =>
       match slots.findSome? (fun s => match classifyLHSSlot s with
         | .accepted => none | .rejected c => some c) with
       | some c => .rejected c
       | none =>
-          match classifyNonlin rhs.nonlin with
+          match classifyAggOp rhs.agg with
           | .rejected c => .rejected c
           | .accepted =>
-              match rhs.body.terms.findSome? (fun t => t.factors.findSome? (fun f =>
-                match classifyFactor f with
-                | .accepted => none | .rejected c => some c)) with
-              | some c => .rejected c
-              | none => .accepted
+              match classifyNonlin rhs.nonlin with
+              | .rejected c => .rejected c
+              | .accepted =>
+                  match rhs.body.terms.findSome? (fun t => t.factors.findSome? (fun f =>
+                    match classifyFactor f with
+                    | .accepted => none | .rejected c => some c)) with
+                  | some c => .rejected c
+                  | none => .accepted
   | .scatter .. => .rejected "scatterOrAffineLhs"
   | .recurMorphism .. => .rejected "recurrenceOrCallback"
 
@@ -156,6 +165,18 @@ section
 #guard classifyStmt (.assign "Y" [.freeNorm ⟨"i", 0, .nat⟩]
   { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity }) ==
   .rejected "unsupportedLhsSlot"
+-- LHS ok, agg rejected.
+#guard classifyStmt (.assign "Y" [.free ⟨"i", 0, .nat⟩]
+  { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity, agg := .max }) ==
+  .rejected "unsupportedAgg"
+-- LHS+agg ok, nonlin rejected.
+#guard classifyStmt (.assign "Y" [.free ⟨"i", 0, .nat⟩]
+  { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .pointwise .relu }) ==
+  .rejected "unsupportedNonlin"
+-- LHS+agg+nonlin ok, factor rejected.
+#guard classifyStmt (.assign "Y" [.free ⟨"i", 0, .nat⟩]
+  { body := { terms := [{ factors := [.unaryFn .log "X" []] }] }, nonlin := .identity }) ==
+  .rejected "unaryFactor"
 #guard classifyScanStmt (.scan "s" [] [] [] false) == .rejected "scanNode"
 #guard classifyScanStmt (.plain (.assign "Y" [.free ⟨"i", 0, .nat⟩]
   { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity })) == .accepted
