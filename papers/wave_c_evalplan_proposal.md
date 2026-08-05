@@ -2044,6 +2044,30 @@ identical outcomes for equal shape metadata.
 
 **Detailed plan:** [`docs/superpowers/plans/2026-08-05-wave-c-c1-static-signature-boundary.md`](../docs/superpowers/plans/2026-08-05-wave-c-c1-static-signature-boundary.md).
 
+> **✅ DONE 2026-08-05.** `Plan/Types.lean` and `Plan/Signature.lean` add the
+> `ScalarDType`/`TensorSignature`/`InputSignature` vocabulary and `inferAxisSizesFromSignature`;
+> `SizeInfer.lean` was refactored to extract `inferAxisSizesCore`, with `inferAxisSizes` kept as a
+> thin `DenseTensor`-based adapter so its call sites needed no change. `leanncd/test/Eval/Plan/SignatureTest.lean`
+> implements all six test bullets above (signature conversion, adapter parity on an existing shape
+> case, adapter parity on two hand-written corpus fixtures, an `explicitSizes`-only extent, a
+> pinned-size/input conflict, and warning preservation across a later failure). Full `lake build`
+> green (8,622 jobs, up from the 8,619 C0 baseline). **Two deviations from this section's plan
+> text, recorded here since this document is the permanent record of what C1 actually did:**
+>
+> - The parity helper's natural formulation, `decide (e1.error = e2.error)`, does not compile:
+>   `EvalError` has no `DecidableEq` (its `.unaryDomain` constructor carries a `Float` field, which
+>   has none either — the same reason `test/Eval/PropertyOracle/Compare.lean` carries a
+>   hand-written `evalErrorEq`). The test compares via `toString e1.error = toString e2.error`
+>   instead, sound here because `inferAxisSizesCore` only ever throws `ShapeError`'s `.shape`
+>   variants (which do derive `DecidableEq`) over this test's fixtures.
+> - Test bullet 3's suggestion to reuse cases from `test/Eval/PropertyOracle/Gen.lean`'s corpus
+>   turned out to be blocked: every named sub-list feeding that file's generator
+>   (`contractPrograms`, `yDepPrograms`, `contractMultiTermPrograms`, etc.) is `private`, and only
+>   the bulk `enumPrograms` is public. Two hand-written `tlprog!` fixtures (a multi-factor
+>   contraction and a chained two-statement program) were used instead of corpus slicing.
+>
+> Commits: `ee54e00..dcd16c2`.
+
 ### A.6 C2 - checked local kernel vertical slice
 
 **Production files:** `Plan/Types.lean`, `Plan/Kernel.lean`, `Plan/Error.lean`,
