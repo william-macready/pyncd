@@ -107,14 +107,14 @@ private def insertWarningSortedUnique (acc : List EvalWarning) (w : EvalWarning)
     warning is emitted for such positions; the second component of a successful return pair
     collects all such warnings, while `EvalFailure.warnings` preserves them if a later inference
     step fails. Only bare-axis positions (`name[a]`) receive a hard conflict check. -/
-def inferAxisSizes (seed : HashMap UID Nat) (env : HashMap String DenseTensor)
+def inferAxisSizesCore (seed : HashMap UID Nat) (shapeOf : String → Option (List Nat))
     (stmts : List Stmt) : Except EvalFailure (HashMap UID Nat × List EvalWarning) := do
   -- collect every (affine-form, dim) read position once
   let positions : List AffinePosition := stmts.flatMap (fun s =>
     (Stmt.readFactors s).flatMap (fun (nm, es) =>
-      match env[nm]? with
-      | none   => []
-      | some t => affinePositionsOf "" nm es t.shape))
+      match shapeOf nm with
+      | none    => []
+      | some shape => affinePositionsOf "" nm es shape))
   let mut sizes : HashMap UID Nat := seed
   let mut warns : List EvalWarning := []
   -- fixpoint: build upper-envelope constraints for all unknown positions, solve jointly,
@@ -182,5 +182,12 @@ def inferAxisSizes (seed : HashMap UID Nat) (env : HashMap String DenseTensor)
       if pos.coeffs.any (fun (_, v) => v == u) then some pos.source else none)
     throw { error := .shape (.negativeOnlyAxis u srcs), warnings := warns }
   return (sizes, warns)
+
+/-- Thin adapter: derive each read tensor's shape from its concrete `DenseTensor`. Preserves
+    `inferAxisSizes`'s established name and signature exactly, so every existing caller (the
+    scheduled evaluator, `Shape.lean`, and every shape/entry test) needs no change. -/
+def inferAxisSizes (seed : HashMap UID Nat) (env : HashMap String DenseTensor)
+    (stmts : List Stmt) : Except EvalFailure (HashMap UID Nat × List EvalWarning) :=
+  inferAxisSizesCore seed (fun nm => (env[nm]?).map (·.shape)) stmts
 
 end LeanNCD.Eval
