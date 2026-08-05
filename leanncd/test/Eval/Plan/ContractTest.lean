@@ -353,3 +353,151 @@ run_cmd do
         throwError s!"extraInput mutation not reflected: {repr (report.env["Unused"]?)}"
       unless expectTensor report.env["Y"]? [2] #[1.0, 2.0] do
         throwError s!"extraInput mutation of Unused incorrectly affected Y: {repr (report.env["Y"]?)}"
+
+/-- Empty factor products and empty term arrays have no surface syntax (every parsed term has at
+    least one factor). Compile an ordinary one-factor schedule, then splice a hand-built `RHSExpr`
+    onto its existing (already correctly UID-resolved) LHS slot, reusing the compiled `env`/
+    `explicitSizes` — the same technique `EntryTest.lean` uses `compileToScheduled` for. -/
+private def spliceRhs (prog : TLProgram) (rhs : RHSExpr) : Except CompileError ScheduledProgram := do
+  let sched ← match prog.compileToScheduled.run 0 with
+    | .ok sched _ => pure sched
+    | .error e _ => throw e
+  match sched.stmts with
+  | [.plain (.assign nm (slot :: _) _)] =>
+      pure { sched with stmts := [.plain (.assign nm [slot] rhs)] }
+  | _ => throw (.undeclaredName "skeleton did not compile to the expected single-slot shape")
+
+private def emptySkeletonSize3 : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  Y[i] := X[i]
+}
+
+private def emptySkeletonSize5 : TLProgram := tlprog!{
+  axis i : ℕ = 5
+  Y[i] := X[i]
+}
+
+-- Empty factor product: each term contributes `factorId = 1.0`; one term per output coordinate.
+-- Baseline verified: size 3 → Y = [1,1,1].
+run_cmd do
+  match spliceRhs emptySkeletonSize3 { body := { terms := [{ factors := [] }] }, nonlin := .identity } with
+  | .error e => throwError s!"emptyProduct splice failed: {repr e}"
+  | .ok sched =>
+      match evalScheduled sched ({} : HashMap String DenseTensor) with
+      | .error e => throwError s!"emptyProduct eval failed: {e}"
+      | .ok report =>
+          unless expectTensor report.env["Y"]? [3] #[1.0, 1.0, 1.0] do
+            throwError s!"emptyProduct baseline mismatch: {repr (report.env["Y"]?)}"
+
+-- Mutation: vary the axis size (3 → 5); the identity-fill must scale with shape, not stay fixed.
+run_cmd do
+  match spliceRhs emptySkeletonSize5 { body := { terms := [{ factors := [] }] }, nonlin := .identity } with
+  | .error e => throwError s!"emptyProduct size mutation splice failed: {repr e}"
+  | .ok sched =>
+      match evalScheduled sched ({} : HashMap String DenseTensor) with
+      | .error e => throwError s!"emptyProduct size mutation eval failed: {e}"
+      | .ok report =>
+          unless expectTensor report.env["Y"]? [5] #[1.0, 1.0, 1.0, 1.0, 1.0] do
+            throwError s!"emptyProduct did not scale with axis size: {repr (report.env["Y"]?)}"
+
+private def emptySkeletonSize4 : TLProgram := tlprog!{
+  axis i : ℕ = 4
+  Y[i] := X[i]
+}
+
+-- Empty term array: the output fold starts and ends at `reduceId = 0.0`.
+-- Baseline verified: size 3 → Y = [0,0,0].
+run_cmd do
+  match spliceRhs emptySkeletonSize3 { body := { terms := [] }, nonlin := .identity } with
+  | .error e => throwError s!"emptyTerms splice failed: {repr e}"
+  | .ok sched =>
+      match evalScheduled sched ({} : HashMap String DenseTensor) with
+      | .error e => throwError s!"emptyTerms eval failed: {e}"
+      | .ok report =>
+          unless expectTensor report.env["Y"]? [3] #[0.0, 0.0, 0.0] do
+            throwError s!"emptyTerms baseline mismatch: {repr (report.env["Y"]?)}"
+
+-- Mutation: vary the axis size (3 → 4); the zero-fill must scale with shape.
+run_cmd do
+  match spliceRhs emptySkeletonSize4 { body := { terms := [] }, nonlin := .identity } with
+  | .error e => throwError s!"emptyTerms size mutation splice failed: {repr e}"
+  | .ok sched =>
+      match evalScheduled sched ({} : HashMap String DenseTensor) with
+      | .error e => throwError s!"emptyTerms size mutation eval failed: {e}"
+      | .ok report =>
+          unless expectTensor report.env["Y"]? [4] #[0.0, 0.0, 0.0, 0.0] do
+            throwError s!"emptyTerms did not scale with axis size: {repr (report.env["Y"]?)}"
+
+/-- `Y[i] := A[i, j]` with `axis j : ℕ = 0`: `j` is contracted (it doesn't appear in `Y`'s LHS), and
+    its zero size means the reduction folds zero coordinates — `reduceId = 0.0` for every `i`. This
+    is a different case from the empty-term-array fixture above: here there IS one real term with
+    one real factor; only the reduction *domain* is empty. -/
+private def zeroRedProgSize2 : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  axis j : ℕ = 0
+  Y[i] := A[i, j]
+}
+
+private def zeroRedProgSize3 : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  axis j : ℕ = 0
+  Y[i] := A[i, j]
+}
+
+private def zeroRedInputsSize2 : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "A" ⟨[2, 0], #[]⟩
+
+private def zeroRedInputsSize3 : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "A" ⟨[3, 0], #[]⟩
+
+-- Baseline: verified, i size 2 → Y = [0, 0].
+run_cmd do
+  match TLProgram.eval zeroRedProgSize2 zeroRedInputsSize2 with
+  | .error e => throwError s!"zeroRed baseline eval failed: {e}"
+  | .ok report =>
+      unless expectTensor report.env["Y"]? [2] #[0.0, 0.0] do
+        throwError s!"zeroRed baseline mismatch: {repr (report.env["Y"]?)}"
+
+-- Mutation: vary the (non-contracted) output axis size 2 → 3; the zero-fill must scale with it.
+run_cmd do
+  match TLProgram.eval zeroRedProgSize3 zeroRedInputsSize3 with
+  | .error e => throwError s!"zeroRed size mutation eval failed: {e}"
+  | .ok report =>
+      unless expectTensor report.env["Y"]? [3] #[0.0, 0.0, 0.0] do
+        throwError s!"zeroRed did not scale with output axis size: {repr (report.env["Y"]?)}"
+
+/-- A zero-size axis produces an empty tensor, not an error — contrasted against size 1 to show the
+    zero case is a genuine boundary, not an accidentally-always-empty result. -/
+private def sizeVariantProgSize0 : TLProgram := tlprog!{
+  axis i : ℕ = 0
+  Y[i] := X[i]
+}
+
+private def sizeVariantProgSize1 : TLProgram := tlprog!{
+  axis i : ℕ = 1
+  Y[i] := X[i]
+}
+
+private def sizeVariantInputsSize0 : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "X" ⟨[0], #[]⟩
+
+private def sizeVariantInputsSize1 : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "X" ⟨[1], #[7.0]⟩
+
+-- Zero extent: verified shape [0], empty data.
+run_cmd do
+  match TLProgram.eval sizeVariantProgSize0 sizeVariantInputsSize0 with
+  | .error e => throwError s!"zeroExtent eval failed: {e}"
+  | .ok report =>
+      unless expectTensor report.env["Y"]? [0] #[] do
+        throwError s!"zeroExtent mismatch: {repr (report.env["Y"]?)}"
+
+-- Contrast: size 1 produces one real element (verified), showing zero-extent isn't a fixed result.
+run_cmd do
+  match TLProgram.eval sizeVariantProgSize1 sizeVariantInputsSize1 with
+  | .error e => throwError s!"size-one eval failed: {e}"
+  | .ok report =>
+      unless expectTensor report.env["Y"]? [1] #[7.0] do
+        throwError s!"size-one mismatch: {repr (report.env["Y"]?)}"
+
+end LeanNCD.PlanContract.Fixtures
