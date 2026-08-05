@@ -258,3 +258,98 @@ run_cmd do
   | .ok report =>
       unless expectTensor report.env["Y"]? [2] #[240.0, 2400.0] do
         throwError s!"zeroCoeff mutation did not change as expected: {repr (report.env["Y"]?)}"
+
+/-- `X` is produced once and read by two later statements (`Y` and `Z`) — pins that fan-out reuse
+    of one tensor slot is ordinary, not a special case requiring re-materialization. -/
+private def fanOutProg : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  X[i] := A[i]
+  Y[i] := X[i]
+  Z[i] := X[i] + Y[i]
+}
+
+private def fanOutInputs (a0 : Float) : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "A" ⟨[2], #[a0, 20.0]⟩
+
+-- Baseline: A = [10, 20] → X = [10,20], Y = [10,20], Z = X+Y = [20,40] (verified).
+run_cmd do
+  match TLProgram.eval fanOutProg (fanOutInputs 10.0) with
+  | .error e => throwError s!"fanOut baseline eval failed: {e}"
+  | .ok report =>
+      unless expectTensor report.env["X"]? [2] #[10.0, 20.0] do
+        throwError s!"fanOut baseline X mismatch: {repr (report.env["X"]?)}"
+      unless expectTensor report.env["Y"]? [2] #[10.0, 20.0] do
+        throwError s!"fanOut baseline Y mismatch: {repr (report.env["Y"]?)}"
+      unless expectTensor report.env["Z"]? [2] #[20.0, 40.0] do
+        throwError s!"fanOut baseline Z mismatch: {repr (report.env["Z"]?)}"
+
+-- Mutation: A[0] 10 → 99 propagates through both fan-out readers (verified).
+run_cmd do
+  match TLProgram.eval fanOutProg (fanOutInputs 99.0) with
+  | .error e => throwError s!"fanOut mutation eval failed: {e}"
+  | .ok report =>
+      unless expectTensor report.env["Z"]? [2] #[198.0, 40.0] do
+        throwError s!"fanOut mutation did not propagate through fan-out: {repr (report.env["Z"]?)}"
+
+/-- `Y` is assigned twice; `Z` reads `Y` after both writes. Pins two properties at once: (a) the
+    materialized binding for `Y` is the LAST write, and (b) that binding is truly overwritten, not
+    combined — mutating the FIRST (discarded) write must change nothing. -/
+private def repeatAssignProg : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  Y[i] := A[i]
+  Y[i] := B[i]
+  Z[i] := Y[i]
+}
+
+private def repeatAssignInputs (a0 : Float) : HashMap String DenseTensor :=
+  (({} : HashMap String DenseTensor).insert "A" ⟨[2], #[a0, 2.0]⟩).insert "B" ⟨[2], #[100.0, 200.0]⟩
+
+-- Baseline: last write (B) is what both Y and Z observe (verified).
+run_cmd do
+  match TLProgram.eval repeatAssignProg (repeatAssignInputs 1.0) with
+  | .error e => throwError s!"repeatAssign baseline eval failed: {e}"
+  | .ok report =>
+      unless expectTensor report.env["Y"]? [2] #[100.0, 200.0] do
+        throwError s!"repeatAssign baseline Y mismatch: {repr (report.env["Y"]?)}"
+      unless expectTensor report.env["Z"]? [2] #[100.0, 200.0] do
+        throwError s!"repeatAssign baseline Z mismatch: {repr (report.env["Z"]?)}"
+
+-- Mutation: changing A (the discarded first write) must change NOTHING — proves true overwrite,
+-- not e.g. an accidental combine of both writes.
+run_cmd do
+  match TLProgram.eval repeatAssignProg (repeatAssignInputs 999.0) with
+  | .error e => throwError s!"repeatAssign discarded-write eval failed: {e}"
+  | .ok report =>
+      unless expectTensor report.env["Y"]? [2] #[100.0, 200.0] do
+        throwError s!"repeatAssign: discarded first write leaked through: {repr (report.env["Y"]?)}"
+
+/-- An input tensor not referenced anywhere in the program must still appear, unchanged, in the
+    final environment (§5.4: `env` starts at `inputs`, nothing is filtered out). -/
+private def extraInputProg : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  Y[i] := A[i]
+}
+
+private def extraInputInputs (unused0 : Float) : HashMap String DenseTensor :=
+  (({} : HashMap String DenseTensor).insert "A" ⟨[2], #[1.0, 2.0]⟩).insert
+    "Unused" ⟨[1], #[unused0]⟩
+
+-- Baseline: verified.
+run_cmd do
+  match TLProgram.eval extraInputProg (extraInputInputs 0.0) with
+  | .error e => throwError s!"extraInput baseline eval failed: {e}"
+  | .ok report =>
+      unless expectTensor report.env["Y"]? [2] #[1.0, 2.0] do
+        throwError s!"extraInput baseline Y mismatch: {repr (report.env["Y"]?)}"
+      unless expectTensor report.env["Unused"]? [1] #[0.0] do
+        throwError s!"extraInput baseline did not preserve unused input: {repr (report.env["Unused"]?)}"
+
+-- Mutation: changing the unused input's value passes through unchanged, and Y is unaffected.
+run_cmd do
+  match TLProgram.eval extraInputProg (extraInputInputs 42.0) with
+  | .error e => throwError s!"extraInput mutation eval failed: {e}"
+  | .ok report =>
+      unless expectTensor report.env["Unused"]? [1] #[42.0] do
+        throwError s!"extraInput mutation not reflected: {repr (report.env["Unused"]?)}"
+      unless expectTensor report.env["Y"]? [2] #[1.0, 2.0] do
+        throwError s!"extraInput mutation of Unused incorrectly affected Y: {repr (report.env["Y"]?)}"
