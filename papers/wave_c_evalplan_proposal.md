@@ -2042,6 +2042,8 @@ creates it for `PlanError`.
 **Gate:** the legacy evaluator is behaviorally unchanged, and the two inference adapters return
 identical outcomes for equal shape metadata.
 
+**Detailed plan:** [`docs/superpowers/plans/2026-08-05-wave-c-c1-static-signature-boundary.md`](../docs/superpowers/plans/2026-08-05-wave-c-c1-static-signature-boundary.md).
+
 ### A.6 C2 - checked local kernel vertical slice
 
 **Production files:** `Plan/Types.lean`, `Plan/Kernel.lean`, `Plan/Error.lean`,
