@@ -1,5 +1,6 @@
 import LeanNCD.DSL.Ast
 import LeanNCD.DSL.Pipeline.Types
+import LeanNCD.Eval.Entry
 
 /-!
 # Wave C capability classification (C0)
@@ -161,3 +162,99 @@ section
 end
 
 -- NumericMode: deferred to C1/C2, where it is defined; Wave C admits only `reference64`.
+
+open LeanNCD.Eval (DenseTensor)
+
+private def expectTensor (t : Option DenseTensor) (shape : List Nat) (data : Array Float) : Bool :=
+  t.map (fun d => d.shape == shape && d.data == data) |>.getD false
+
+namespace LeanNCD.PlanContract.Fixtures
+open LeanNCD LeanNCD.Eval Std
+
+/-- `Y[i] := X[i - 2]`: for `i = 0, 1` the read is out of range (padded 0); for `i = 2` the read is
+    `X[0]`. Only `X[0]` is ever read — `X[1]`/`X[2]` are present but unused, which is itself part
+    of the pin (a negative-shift read must not accidentally consult a neighboring in-range index). -/
+private def negShiftProg : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  Y[i] := X[i - 2]
+}
+
+private def negShiftInputs (x0 : Float) : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "X" ⟨[3], #[x0, 20.0, 30.0]⟩
+
+-- Baseline: X = [10, 20, 30] → Y = [0, 0, 10] (verified against the real evaluator).
+run_cmd do
+  match TLProgram.eval negShiftProg (negShiftInputs 10.0) with
+  | .error e => throwError s!"negShift baseline eval failed: {e}"
+  | .ok report =>
+      unless expectTensor report.env["Y"]? [3] #[0.0, 0.0, 10.0] do
+        throwError s!"negShift baseline mismatch: {repr (report.env["Y"]?)}"
+
+-- Mutation: only X[0] is ever read (i=2 reads index 0), so changing X[0] must change Y[2];
+-- verified against the real evaluator (10 → 99 flows through to Y[2]).
+run_cmd do
+  match TLProgram.eval negShiftProg (negShiftInputs 99.0) with
+  | .error e => throwError s!"negShift mutation eval failed: {e}"
+  | .ok report =>
+      unless expectTensor report.env["Y"]? [3] #[0.0, 0.0, 99.0] do
+        throwError s!"negShift mutation did not change as expected: {repr (report.env["Y"]?)}"
+
+/-- `Y[i, j] := X[2*i + j]` over `i:2, j:3`, X fully sized (no padding — that's the previous
+    fixture's concern). Row-major: Y[0,·] = X[0,1,2], Y[1,·] = X[2,3,4]. -/
+private def multiAxisProg : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  axis j : ℕ = 3
+  Y[i, j] := X[2 * i + j]
+}
+
+private def multiAxisInputs (x4 : Float) : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "X" ⟨[6], #[1.0, 2.0, 3.0, 4.0, x4, 6.0]⟩
+
+-- Baseline: verified Y = [1,2,3, 3,4,5].
+run_cmd do
+  match TLProgram.eval multiAxisProg (multiAxisInputs 5.0) with
+  | .error e => throwError s!"multiAxis baseline eval failed: {e}"
+  | .ok report =>
+      unless expectTensor report.env["Y"]? [2, 3] #[1.0, 2.0, 3.0, 3.0, 4.0, 5.0] do
+        throwError s!"multiAxis baseline mismatch: {repr (report.env["Y"]?)}"
+
+-- Mutation: X[4] is read only by Y[1,2] (2*1+2=4); verified Y[1,2] alone changes to 99.
+run_cmd do
+  match TLProgram.eval multiAxisProg (multiAxisInputs 99.0) with
+  | .error e => throwError s!"multiAxis mutation eval failed: {e}"
+  | .ok report =>
+      unless expectTensor report.env["Y"]? [2, 3] #[1.0, 2.0, 3.0, 3.0, 4.0, 99.0] do
+        throwError s!"multiAxis mutation did not isolate to Y[1,2]: {repr (report.env["Y"]?)}"
+
+/-- `Y[i] := A[i] · B[j]` contracted over `j`: `A[i]`'s own read never mentions `j` (its densified
+    affine map over the term basis `{i, j}` has a zero column for `j`), yet §7.4 requires `A[i]` be
+    folded once per coordinate of `j`, not read once and treated as independent of the reduction.
+    NOTE: for a pure sum-product term this value is mathematically identical whether `A[i]` is
+    folded per-`j` or hoisted and multiplied by `Σ_j B[j]` once (multiplication distributes over
+    addition) — this fixture pins the expected value and shape precisely; it does not by itself
+    discriminate that specific implementation strategy. (§7.4's warning becomes value-discriminating
+    once a non-distributive algebra, e.g. `max` reduction, exists — out of scope for C0.) -/
+private def zeroCoeffProg : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  axis j : ℕ = 3
+  Y[i] := A[i] · B[j]
+}
+
+private def zeroCoeffInputs (b1 : Float) : HashMap String DenseTensor :=
+  (({} : HashMap String DenseTensor).insert "A" ⟨[2], #[10.0, 100.0]⟩).insert "B" ⟨[3], #[1.0, b1, 3.0]⟩
+
+-- Baseline: B = [1,2,3], ΣB = 6 → Y = A * 6 = [60, 600] (verified).
+run_cmd do
+  match TLProgram.eval zeroCoeffProg (zeroCoeffInputs 2.0) with
+  | .error e => throwError s!"zeroCoeff baseline eval failed: {e}"
+  | .ok report =>
+      unless expectTensor report.env["Y"]? [2] #[60.0, 600.0] do
+        throwError s!"zeroCoeff baseline mismatch: {repr (report.env["Y"]?)}"
+
+-- Mutation: B[1] 2 → 20, ΣB = 24 → Y = A * 24 = [240, 2400] (verified).
+run_cmd do
+  match TLProgram.eval zeroCoeffProg (zeroCoeffInputs 20.0) with
+  | .error e => throwError s!"zeroCoeff mutation eval failed: {e}"
+  | .ok report =>
+      unless expectTensor report.env["Y"]? [2] #[240.0, 2400.0] do
+        throwError s!"zeroCoeff mutation did not change as expected: {repr (report.env["Y"]?)}"
