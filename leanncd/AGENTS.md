@@ -22,6 +22,18 @@ cd leanncd && "$HOME/.elan/bin/lake" build
 Do not assume `lake` is on `PATH`, and do not run it from the repository root: the Lake
 configuration lives under `leanncd/`. Replace `build` with the desired target or Lake command.
 
+**`lake env lean <file>` does not rebuild the file's dependencies — it only typechecks that one
+file against whatever `.olean`s already exist.** If you edit module `A.lean` and then run
+`lake env lean` on a file `B.lean` that imports `A`, `B` is checked against `A`'s STALE `.olean`
+from before your edit — you can get a clean pass, or a failure that references A's old behavior,
+either way silently wrong. Real incident: editing `Check.lean` to wrap an error constructor with
+extra context, then running `lake env lean test/…/GraphCheckTest.lean` (which imports `Check.lean`)
+showed the *old*, unwrapped error value on the first attempt — not because the test was wrong, but
+because `Check.lean`'s `.olean` hadn't been refreshed yet. Fix: `lake build <TheModuleYouEdited>`
+(e.g. `lake build LeanNCD.Eval.Plan.Check`) before `lake env lean`-checking anything that imports
+it. When in doubt, `lake build` the whole project — the cost is proportional to what actually
+changed, not a full rebuild, once `.lake` is already warm (see the cold-build note below).
+
 ## New worktree / fresh checkout: don't cold-build Mathlib
 
 This project depends on Mathlib (thousands of files). A `lake build` from a
@@ -153,6 +165,9 @@ Small subsystems (no dedicated node — each <170 lines, single-file or near it)
 
 ### Global Pitfalls
 
+- **`lake env lean <file>` checks against stale `.olean`s for anything that file imports** — see
+  "Invoking Lake" above. `lake build <edited-module>` first, or you may verify a fix against the
+  pre-edit behavior without realizing it.
 - **`grep sorry` produces false positives constantly in this codebase** — many files have prose doc comments that mention the word "sorry" (e.g. "fully executable, zero `sorry`") without containing one. Always read the surrounding line, don't just count grep hits.
 - **The R=Bool XOR-ring trap** (`Algebra/AGENTS.md`) — Mathlib's `Bool` ring instance is XOR, not `(∨,∧)`; `Mat Bool` typechecks but computes the wrong thing.
 - **`scatterOutDim`/`scatterOutShape` must stay in sync with no import enforcing it** (`Eval/AGENTS.md`) — a real, previously-shipped soundness bug (fixed, but structurally re-introducible).
