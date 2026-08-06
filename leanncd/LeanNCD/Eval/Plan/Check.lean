@@ -1,4 +1,5 @@
 import LeanNCD.Eval.Plan.Error
+import LeanNCD.Eval.Plan.Graph
 
 /-!
 # Wave C local checked construction (C2)
@@ -54,7 +55,7 @@ def checkAssign (sigs : Array TensorSignature) (a : AssignPlan) :
   unless destSig.dtype == .f64 do
     throw (.dtypeNotAdmitted a.destinationSlot destSig.dtype)
   unless destSig.shape == a.outputShape do
-    throw (.outputProjectionMismatch 0 destSig.shape a.outputShape)
+    throw (.destinationShapeMismatch a.outputShape destSig.shape)
   unless a.algebra == admittedAlgebra do throw (.algebraNotAdmitted a.algebra)
   unless constMatchesDtype destSig.dtype a.algebra.factorId do
     throw (.constDtypeMismatch destSig.dtype a.algebra.factorId)
@@ -82,5 +83,71 @@ def checkAssign (sigs : Array TensorSignature) (a : AssignPlan) :
         unless row.size == t.iterationShape.size do
           throw (.affineWidthMismatch ti fi t.iterationShape.size row.size)
   return CheckedAssignPlan.mk a
+
+/-- Wave C admits exactly one plan version. -/
+def admittedVersion : Nat := 1
+
+/-- Evidence that a `RawEvalPlan`'s wiring is sound: every node is locally checked, input slots are
+    in-range/unique/ordered, no destination overwrites an existing slot, every read is from an input
+    or an earlier destination, and every non-input slot is produced exactly once. `checkedNodes` is
+    built by pushing each node's `checkAssign` result in raw-graph order, so "checked-node order is
+    exactly raw graph order" holds by construction, not by a separate invariant. -/
+structure CheckedEvalPlan where private mk ::
+  raw          : RawEvalPlan
+  checkedNodes : Array CheckedAssignPlan
+  deriving Repr
+
+/-- Validate an open evaluation graph: local per-node validity (via `checkAssign`) plus the graph
+    wiring invariants `checkAssign` cannot see (slot availability and production order). -/
+def checkPlan (raw : RawEvalPlan) : Except PlanError CheckedEvalPlan := do
+  unless raw.version == admittedVersion do throw (.versionNotAdmitted raw.version)
+  unless raw.numericMode == .reference64 do throw (.numericModeNotAdmitted raw.numericMode)
+  let n := raw.tensorSigs.size
+  -- input slots: in range, unique, ordered (adjacent-pair scan; equal ⇒ duplicate, decreasing ⇒
+  -- not-ordered, so the two failure modes stay independently locatable).
+  for h : i in [0 : raw.inputSlots.size] do
+    let s := raw.inputSlots[i]
+    unless s < n do throw (.slotOutOfRange s n)
+    if h2 : i + 1 < raw.inputSlots.size then
+      let s2 := raw.inputSlots[i + 1]
+      if s == s2 then throw (.duplicateInputSlot s)
+      else if s2 < s then throw (.inputSlotsNotOrdered i)
+  -- slot availability tracking: plain arrays indexed by `TensorSlot`, sized `tensorSigs.size` —
+  -- slots are dense `Nat` indices bounded by a known table size, so this is the natural fit (no
+  -- `HashMap` dependency).
+  let mut available : Array Bool := Array.replicate n false
+  let mut producedBy : Array (Option Nat) := Array.replicate n none
+  for s in raw.inputSlots do
+    available := available.set! s true
+  let mut checkedNodes : Array CheckedAssignPlan := #[]
+  for h : ni in [0 : raw.steps.size] do
+    let step := raw.steps[ni]
+    let destSlot := step.destinationSlot
+    match available[destSlot]? with
+    | none => throw (.slotOutOfRange destSlot n)
+    | some isAvail =>
+        if isAvail then
+          match producedBy[destSlot]?.join with
+          | none => throw (.inputSlotOverwritten destSlot ni)
+          | some firstNode => throw (.duplicateDestination destSlot firstNode ni)
+    for h2 : ti in [0 : step.terms.size] do
+      let t := step.terms[ti]
+      for h3 : fi in [0 : t.factors.size] do
+        let f := t.factors[fi]
+        match available[f.sourceSlot]? with
+        | none => throw (.slotOutOfRange f.sourceSlot n)
+        | some true => pure ()
+        | some false => throw (.invalidForwardRead ni ti fi f.sourceSlot)
+    match checkAssign raw.tensorSigs step with
+    | .error e => throw (.nodeError ni e)
+    | .ok c =>
+        checkedNodes := checkedNodes.push c
+        available := available.set! destSlot true
+        producedBy := producedBy.set! destSlot (some ni)
+  -- every non-input slot must be produced; input slots were marked available above and so never
+  -- trip this check regardless of whether any node also produces them.
+  for h : i in [0 : n] do
+    unless available[i]! do throw (.missingProduction i)
+  return CheckedEvalPlan.mk raw checkedNodes
 
 end LeanNCD.Eval.Plan

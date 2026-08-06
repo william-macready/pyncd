@@ -26,6 +26,16 @@ inductive PlanError
   | constDtypeMismatch       (dtype : ScalarDType) (const : ScalarConst)
   | algebraNotAdmitted       (algebra : ContractionAlgebra)
   | policyNotAdmitted        (policy : OutOfBoundsPolicy)
+  | destinationShapeMismatch (declared : Array Nat) (signature : Array Nat)
+  | versionNotAdmitted       (version : Nat)
+  | numericModeNotAdmitted   (mode : NumericMode)
+  | duplicateInputSlot       (slot : TensorSlot)
+  | inputSlotsNotOrdered     (atIndex : Nat)
+  | inputSlotOverwritten     (slot : TensorSlot) (nodeIndex : Nat)
+  | duplicateDestination     (slot : TensorSlot) (firstNode : Nat) (secondNode : Nat)
+  | missingProduction        (slot : TensorSlot)
+  | invalidForwardRead       (nodeIndex termIndex factorIndex : Nat) (slot : TensorSlot)
+  | nodeError                (nodeIndex : Nat) (cause : PlanError)
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- A checked plan met a positional tensor store that does not conform to the shapes the checker
