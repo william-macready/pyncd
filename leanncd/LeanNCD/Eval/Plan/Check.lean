@@ -124,7 +124,7 @@ def checkPlan (raw : RawEvalPlan) : Except PlanError CheckedEvalPlan := do
     let step := raw.steps[ni]
     let destSlot := step.destinationSlot
     match available[destSlot]? with
-    | none => throw (.slotOutOfRange destSlot n)
+    | none => throw (.nodeError ni (.slotOutOfRange destSlot n))
     | some isAvail =>
         if isAvail then
           match producedBy[destSlot]?.join with
@@ -135,7 +135,7 @@ def checkPlan (raw : RawEvalPlan) : Except PlanError CheckedEvalPlan := do
       for h3 : fi in [0 : t.factors.size] do
         let f := t.factors[fi]
         match available[f.sourceSlot]? with
-        | none => throw (.slotOutOfRange f.sourceSlot n)
+        | none => throw (.nodeError ni (.slotOutOfRange f.sourceSlot n))
         | some true => pure ()
         | some false => throw (.invalidForwardRead ni ti fi f.sourceSlot)
     match checkAssign raw.tensorSigs step with

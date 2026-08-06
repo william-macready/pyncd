@@ -91,6 +91,19 @@ def diamondPlan : RawEvalPlan :=
 #guard errOf (checkPlan { diamondPlan with inputSlots := #[0, 99] })
   == some (.slotOutOfRange 99 5)
 
+-- node-level destination slot out of range: nodeA (index 0) targets slot 99, which doesn't exist
+-- in the 5-slot table. Wrapped with node context via `.nodeError`, matching every other per-node
+-- failure in this loop.
+#guard errOf (checkPlan { diamondPlan with steps := #[idNode 99 0, idNode 2 0, nodeC] })
+  == some (.nodeError 0 (.slotOutOfRange 99 5))
+
+-- node-level source slot out of range: nodeC (index 2) reads slot 99 via its first term/first
+-- factor instead of slot 1. Wrapped with node context, same as the destination case above.
+#guard errOf (checkPlan
+  { diamondPlan with steps := #[idNode 1 0, idNode 2 0,
+      { nodeC with terms := #[{ nodeC.terms[0]! with factors := #[idRead 99] }, nodeC.terms[1]!] }] })
+  == some (.nodeError 2 (.slotOutOfRange 99 5))
+
 -- invalid forward read: nodeC (index 2) reads slot 3 (its own not-yet-produced destination) via
 -- its first term/first factor instead of slot 1
 #guard errOf (checkPlan

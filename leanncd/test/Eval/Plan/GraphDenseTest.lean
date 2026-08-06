@@ -4,7 +4,7 @@ import LeanNCD.Eval.Plan.Dense
 # Wave C C3 graph interpreter tests
 
 Every expected tensor here is hand-computed and confirmed by an actual run; none is read back from
-this interpreter's own output. Reuses `GraphCheckTest`'s reference graphs (chain, diamond) rather
+this interpreter's own output. Mirrors `GraphCheckTest`'s reference graphs (chain, diamond) rather
 than inventing a third topology.
 -/
 
@@ -208,5 +208,13 @@ def posErrOf (raw : RawEvalPlan) (inputs : Array DenseTensor) : Option Positiona
 -- malformed storage: X declares shape [2] (matching the plan) but its data array holds only 1
 -- element — shape agrees, storage size does not.
 #guard posErrOf chainPlan #[{ shape := [2], data := #[1.0] }] == some (.storageMismatch 0 [2] 1)
+
+-- unread input still validated: W (slot 4) is never read by any node in the diamond, but a
+-- wrong-shaped W is still caught before `runDensePlan` returns — an unread input slot is not a
+-- validation loophole. Inputs are ordered by `diamondPlan.inputSlots = #[0, 4]`, so X (correct)
+-- comes first and W (declared shape #[2], supplied shape [3]) comes second.
+#guard posErrOf diamondPlan
+    #[ { shape := [2], data := #[5.0, 7.0] }, { shape := [3], data := #[9.0, 11.0, 1.0] } ] ==
+  some (.shapeMismatch 4 #[2] [3])
 
 end LeanNCD.Eval.Plan.GraphDenseTest
