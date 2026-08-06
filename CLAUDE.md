@@ -101,6 +101,37 @@ Default to surfacing uncertainty, not hiding it.
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
 
+## Rule 13 — Standing decisions: do these without asking
+
+This is a solo repo where every merge is gated by a green build and a whole-branch review, and git
+is the undo button. The following are **durably authorized** — carry them out and report, do not
+open a menu or ask for confirmation:
+
+- **Worktrees.** Plan/slice work always happens in an isolated worktree. Create it (`EnterWorktree`
+  then `.claude/skills/new-slice/prepare-worktree.sh`) without asking for consent.
+- **Integration.** When a branch's work is complete — full `lake build` green AND the final
+  whole-branch review clean or its findings adjudicated — **merge to local `main`**, delete the
+  branch, and remove the worktree. Do not present the merge/PR/keep menu; merging locally is the
+  established choice.
+- **Plan scope.** One implementation plan per slice (C2, then C3, …), not one spanning several.
+  Write the next slice's plan only when the previous one has landed.
+- **Executing a plan.** Run every task to completion without pausing between them. No "shall I
+  continue?" checkpoints — the per-task review is the checkpoint.
+- **Committing.** Commit freely as work lands, following the repo's message conventions.
+
+Still ask, or still stop, for these:
+
+- **Pushing to a remote.** Outward-facing and effectively irreversible once others fetch. Default to
+  **not** pushing; do not ask each time either — just leave `main` ahead of `origin/main` and say so.
+  Push only on an explicit request.
+- **A genuinely blocked task** — a subagent reporting BLOCKED that more context cannot fix, a plan
+  defect that invalidates later tasks, or a review finding that is real, load-bearing, and unfixable
+  within the plan. Stop and report; do not improvise around it.
+- **Anything destructive beyond the current branch's own work** — force-push, history rewrite,
+  deleting others' branches or worktrees, `git clean -fdx` over a shared checkout.
+
+Rule 12 still governs: report faithfully what happened, including anything skipped or parked.
+
 ## Intent Layer
 
 > TL;DR: pyncd formally expresses deep learning models as morphisms in a category (`data_structure/`), built via operator overloading (`construction_helpers/`), compiled to PyTorch (`torch_compile/`), rendered as text (`display/`) or serialized to ACSet/CSV (`acset/`). Start at Entry Points, check Subsystems for deep dives.
