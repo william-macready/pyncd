@@ -17,11 +17,16 @@ committed code, because it must NOT compile:
 ```
 
 Manually verified (2026-08-06) by uncommenting that exact line (with a `goodPlan : AssignPlan` in
-scope) and running `lake env lean` on this file. Observed failure, exactly as expected:
+scope) and running, from `leanncd/`:
 
 ```
-error: invalid {...} notation, constructor for `LeanNCD.Eval.Plan.CheckedAssignPlan` is marked as
-private
+lake env lean test/Eval/Plan/CheckedPrivacyTest.lean
+```
+
+Observed failure, exit code 1, literal captured stdout/stderr:
+
+```
+test/Eval/Plan/CheckedPrivacyTest.lean:56:36: error: Invalid `⟨...⟩` notation: Constructor for `LeanNCD.Eval.Plan.CheckedAssignPlan` is marked as private
 ```
 
 The line was re-commented immediately after confirming the failure; this file compiles clean with
