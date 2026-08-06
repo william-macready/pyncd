@@ -2173,7 +2173,7 @@ result, and there is no worker accepting raw `AssignPlan`.
 > `0.0` on first try, ruling out the reassociation that would cancel the two `±1e16` terms before
 > adding `1.0` (which would yield `1.0` instead). No other deviations from this section's plan text.
 >
-> Commits: `b6de149..e809064` (Task 1's `Plan/Kernel.lean`, Task 2's `Plan/Error.lean` +
+> Commits: `b6de149^..e809064` (Task 1's `Plan/Kernel.lean`, Task 2's `Plan/Error.lean` +
 > `Plan/Check.lean`, and Task 3's `Plan/Dense.lean` + all three test-module registrations).
 
 ### A.7 C3 - checked graph vertical slice
