@@ -2066,7 +2066,7 @@ identical outcomes for equal shape metadata.
 >   the bulk `enumPrograms` is public. Two hand-written `tlprog!` fixtures (a multi-factor
 >   contraction and a chained two-statement program) were used instead of corpus slicing.
 >
-> Commits: `ee54e00..dcd16c2`.
+> Commits: `ee54e00^..dcd16c2`.
 
 ### A.6 C2 - checked local kernel vertical slice
 

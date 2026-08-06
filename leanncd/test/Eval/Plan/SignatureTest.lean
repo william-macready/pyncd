@@ -67,6 +67,54 @@ run_cmd do
       | .error e => throwError s!"parity mismatch (existing shape case): {e}"
       | .ok () => pure ()
 
+-- Category 2b — sizeless-axis parity: giving the assertion real teeth.
+--
+-- Every fixture above pins its axes via `axis i : ℕ = n`, so `sched.explicitSizes` already seeds
+-- every axis's size before either adapter's shape lookup ever runs — confirmed empirically:
+-- temporarily swapping `parityCheck`'s derived signature for an empty one still passes
+-- `parityProg`, `multiFactorProg`, `chainedProg`, and `unusedAxisProg` unchanged; only
+-- `conflictProg` (which fails for an unrelated reason — the pinned/actual-shape mismatch) notices.
+-- The two fixtures below instead declare a bare `axis i : ℕ` (no `= n` — legal grammar per
+-- `DSL/Syntax.lean`'s `tl_axis_decl_item : ident ":" tl_axis_kind`), so `i`'s size can ONLY come
+-- from a read against the tensor's actual shape, through the exact adapter this slice re-plumbed.
+
+private def bareAxisSizelessProg : TLProgram := tlprog!{
+  axis i : ℕ
+  Y[i] := X[i]
+}
+
+private def bareAxisSizelessInputs : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "X" ⟨[6], #[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]⟩
+
+run_cmd do
+  match bareAxisSizelessProg.compileToScheduled.run 0 with
+  | .error e _ => throwError s!"bare-axis sizeless case compile failed: {repr e}"
+  | .ok sched _ =>
+      match parityCheck sched bareAxisSizelessInputs with
+      | .error e => throwError s!"parity mismatch (bare-axis sizeless case): {e}"
+      | .ok () => pure ()
+
+-- Same idea routed through the affine constraint solver rather than the bare-axis fast path: `i`
+-- is sizeless while `j` is pinned, and `X`'s read position `2 * i + j` resolves `i`'s size only by
+-- combining the read's actual dimension with `j`'s already-known size.
+private def affineSizelessProg : TLProgram := tlprog!{
+  axis i : ℕ
+  axis j : ℕ = 3
+  Y[i, j] := X[2 * i + j]
+}
+
+private def affineSizelessInputs : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "X"
+    ⟨[9], #[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]⟩
+
+run_cmd do
+  match affineSizelessProg.compileToScheduled.run 0 with
+  | .error e _ => throwError s!"affine sizeless case compile failed: {repr e}"
+  | .ok sched _ =>
+      match parityCheck sched affineSizelessInputs with
+      | .error e => throwError s!"parity mismatch (affine sizeless case): {e}"
+      | .ok () => pure ()
+
 -- Category 3 — parity across a small hand-written corpus.
 --
 -- Route decision: `test/Eval/PropertyOracle/Gen.lean` was read first, per the brief. Its only
@@ -81,8 +129,8 @@ run_cmd do
 -- and opaque, exactly the case the brief calls out as not easily sliceable. So this follows the
 -- brief's fallback: two hand-written `tlprog!` fixtures, in the same explicit-axis style as
 -- `parityProg`/`conflictProg` above, covering multiple factors in one term (a contraction, not
--- covered by category 2's single-factor affine read) and a chained two-statement program (not
--- covered anywhere else in this file).
+-- covered by category 2's single-factor affine read) and a chained two-statement program
+-- (`chainedProg`, below — see its own comment for what it actually exercises at this layer).
 
 private def multiFactorProg : TLProgram := tlprog!{
   axis i : ℕ = 2
@@ -102,6 +150,11 @@ run_cmd do
       | .error e => throwError s!"parity mismatch (corpus multi-factor case): {e}"
       | .ok () => pure ()
 
+-- Nominal coverage only, at this layer: `i` is pinned (`= 4`), and the read of `Y` (an
+-- intermediate, never present in `inputs`/the signature) contributes zero read positions on
+-- either adapter's path — `shapeOf "Y"` returns `none` for both. So this exercises `parityCheck`
+-- over a multi-statement schedule, not a chained producer/consumer's shape-driven inference; that
+-- coverage is what `bareAxisSizelessProg`/`affineSizelessProg` above actually provide.
 private def chainedProg : TLProgram := tlprog!{
   axis i : ℕ = 4
   Y[i] := P[i]
@@ -189,7 +242,7 @@ private def warningsThenFailProg : TLProgram := tlprog!{
   Z[k] := W[k]
 }
 
--- X undersized (shape [6], needs up to index 10) triggers a paddedAccess warning on Y's read;
+-- X undersized (shape [6], needs up to index 8) triggers a paddedAccess warning on Y's read;
 -- W's shape (5) then conflicts with k's pinned size (2), throwing AFTER that warning was already
 -- accumulated. Positions are collected from all statements up front, in declaration order, so
 -- Y's warning is added to `warns` before Z's position is even reached in the per-position loop —
