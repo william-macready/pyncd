@@ -1,0 +1,92 @@
+import LeanNCD.Eval.Tensor
+import LeanNCD.Eval.Plan.Check
+
+/-!
+# Wave C Dense interpretation of one checked operation (C2)
+
+The pullback-product-pushforward semantics of proposal §8, over positional `DenseTensor` storage.
+Independent of the legacy evaluator by construction — this module imports neither `Gather` nor
+`Contract`, builds no `HashMap UID Int`, and knows no source names — so the two implementations can
+serve as each other's oracle in C4's differential matrix.
+-/
+
+namespace LeanNCD.Eval.Plan
+open LeanNCD.Eval
+
+/-- Row-major coordinate enumeration: the last index varies fastest (C0's declared order). -/
+private def allCoords : List Nat → List (List Int)
+  | [] => [[]]
+  | d :: rest => (List.range d).flatMap (fun i => (allCoords rest).map (fun c => Int.ofNat i :: c))
+
+private def flatIndex (shape : List Nat) (coord : List Nat) : Nat :=
+  (shape.zip coord).foldl (fun acc (d, c) => acc * d + c) 0
+
+/-- `coeffs * iteration + bias`, one component per source dimension. -/
+private def applyAffine (m : AffineMap) (iter : List Int) : List Int :=
+  (m.coeffs.toList.zip m.bias.toList).map (fun (row, b) =>
+    (row.toList.zip iter).foldl (fun acc (c, x) => acc + c * x) b)
+
+/-- Gather one factor. Every source dimension is range-tested BEFORE flattening: testing the flat
+    offset instead can alias distinct invalid coordinates onto a valid address (proposal §8.3). -/
+private def gatherFactor (store : Array DenseTensor) (f : ReadPlan) (iter : List Int) : Float :=
+  match store[f.sourceSlot]? with
+  | none => 0.0
+  | some t =>
+      let src := applyAffine f.map iter
+      let shape := f.sourceShape.toList
+      if (src.zip shape).any (fun (z, d) => z < 0 || z ≥ (d : Int)) then 0.0
+      else (t.data[flatIndex shape (src.map Int.toNat)]?).getD 0.0
+
+private def applyOp : ScalarBinOp → Float → Float → Float
+  | .add => (· + ·)
+  | .mul => (· * ·)
+
+private def constFloat : ScalarConst → Float
+  | .f64 bits => Float.ofBits bits
+  | _ => 0.0
+
+/-- Validate the positional store against the shapes `checkAssign` already validated. Runtime
+    values are a separate trust boundary from plan structure, so this is a value check, not a
+    re-validation of the plan. -/
+private def validateStore (c : CheckedAssignPlan) (store : Array DenseTensor) :
+    Except PositionalInputError Unit := do
+  for t in c.plan.terms do
+    for f in t.factors do
+      match store[f.sourceSlot]? with
+      | none => throw (.missingSlot f.sourceSlot store.size)
+      | some d =>
+          unless d.shape == f.sourceShape.toList do
+            throw (.shapeMismatch f.sourceSlot f.sourceShape d.shape)
+          unless d.data.size == f.sourceShape.toList.foldl (· * ·) 1 do
+            throw (.storageMismatch f.sourceSlot d.shape d.data.size)
+
+/-- Execute one checked operation. Fold order is source-declared and preserved exactly: factors
+    from `factorId`, then that term's reduction coordinates from `reduceId`, then completed terms
+    from `reduceId` in term-array order. The inner reduction fold and the outer term fold are NOT
+    flattened — `Y[i] := A[i] + P[i,j]` must add `A[i]` once, not once per `j` (proposal §8.2). -/
+def runDenseAssign (c : CheckedAssignPlan) (store : Array DenseTensor) :
+    Except PositionalInputError DenseTensor := do
+  validateStore c store
+  let a := c.plan
+  let alg := a.algebra
+  let factorId := constFloat alg.factorId
+  let reduceId := constFloat alg.reduceId
+  let mut out : Array Float := #[]
+  for oc in allCoords a.outputShape.toList do
+    let mut acc := reduceId
+    for t in a.terms do
+      let redShape := t.reductionPos.toList.filterMap (fun p => t.iterationShape[p]?)
+      let mut termAcc := reduceId
+      for rc in allCoords redShape do
+        let mut iter : Array Int := Array.replicate t.iterationShape.size 0
+        for (p, v) in t.outputPos.toList.zip oc do iter := iter.set! p v
+        for (p, v) in t.reductionPos.toList.zip rc do iter := iter.set! p v
+        let mut prod := factorId
+        for f in t.factors do
+          prod := applyOp alg.factorOp prod (gatherFactor store f iter.toList)
+        termAcc := applyOp alg.reduceOp termAcc prod
+      acc := applyOp alg.reduceOp acc termAcc
+    out := out.push acc
+  return { shape := a.outputShape.toList, data := out }
+
+end LeanNCD.Eval.Plan
