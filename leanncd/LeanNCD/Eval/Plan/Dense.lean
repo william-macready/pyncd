@@ -89,4 +89,27 @@ def runDenseAssign (c : CheckedAssignPlan) (store : Array DenseTensor) :
     out := out.push acc
   return { shape := a.outputShape.toList, data := out }
 
+/-- Execute a checked graph over positional Dense inputs, ordered by `c.raw.inputSlots`. Checks
+    input arity, places inputs into their declared slots, then runs each checked node in order via
+    `runDenseAssign`, inserting its result at that node's destination slot. Every non-input slot is
+    populated by construction — `checkPlan` already proved every non-input slot has exactly one
+    producer and that every read only touches an already-available slot at the point it is read —
+    so the placeholder value used to pre-fill not-yet-produced slots is never actually read; this is
+    the total "unwrap" that proof supports, not a silent default. Arity mismatch is reported via the
+    dedicated `PositionalInputError.arityMismatch` constructor added in Step 1 above. -/
+def runDensePlan (c : CheckedEvalPlan) (inputs : Array DenseTensor) :
+    Except PositionalInputError (Array DenseTensor) := do
+  let raw := c.raw
+  unless inputs.size == raw.inputSlots.size do
+    throw (.arityMismatch raw.inputSlots.size inputs.size)
+  let n := raw.tensorSigs.size
+  let placeholder : DenseTensor := { shape := [], data := #[] }
+  let mut store : Array DenseTensor := Array.replicate n placeholder
+  for h : i in [0 : raw.inputSlots.size] do
+    store := store.set! raw.inputSlots[i] inputs[i]!
+  for node in c.checkedNodes do
+    let result ← runDenseAssign node store
+    store := store.set! node.plan.destinationSlot result
+  return store
+
 end LeanNCD.Eval.Plan

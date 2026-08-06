@@ -44,6 +44,7 @@ inductive PositionalInputError
   | missingSlot     (slot : TensorSlot) (provided : Nat)
   | shapeMismatch   (slot : TensorSlot) (expected : Array Nat) (actual : List Nat)
   | storageMismatch (slot : TensorSlot) (shape : List Nat) (dataSize : Nat)
+  | arityMismatch   (expected : Nat) (actual : Nat)
   deriving DecidableEq, BEq, Repr, Inhabited
 
 end LeanNCD.Eval.Plan
