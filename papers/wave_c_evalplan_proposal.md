@@ -2155,15 +2155,16 @@ result, and there is no worker accepting raw `AssignPlan`.
 > **✅ DONE 2026-08-06.** `Plan/Kernel.lean` adds `AffineMap`/`ReadPlan`/`TermPlan`/`AssignPlan`;
 > `Plan/Error.lean` adds `PlanError`/`PositionalInputError`; `Plan/Check.lean` adds the
 > private-constructor `CheckedAssignPlan` and `checkAssign`; `Plan/Dense.lean` adds the direct Dense
-> interpreter `runDenseAssign`. Tests: `Eval.Plan.KernelCheckTest` (12 `#guard`s — the reference
-> plan's acceptance plus one mutation per reachable `PlanError` branch, with the three structurally
-> unreachable branches — `dtypeMismatch`, `constDtypeMismatch`, `policyNotAdmitted` — named directly
-> and explained inline instead of forced); `Eval.Plan.KernelDenseTest` (16 `#guard`s — the
-> reference contraction plus identity, transpose, lower- and upper-boundary zero-padding, multi-axis
-> affine, multiple terms, the `u[]·a[i] + W[i,k]·v[k]` per-term contraction asymmetry, empty factor
-> product, empty term array, a zero-extent reduction domain, zero output extent, a fold-order
-> fixture, and the three `PositionalInputError` cases); `Eval.Plan.CheckedPrivacyTest` (2 `#guard`s
-> plus the documented manual compile-failure check for `CheckedAssignPlan`'s private constructor).
+> interpreter `runDenseAssign`. Tests: `Eval.Plan.KernelCheckTest` (15 `#guard`s — the reference
+> plan's acceptance plus one mutation per reachable `checkAssign` throw site, with the three
+> structurally unreachable branches — `dtypeMismatch`, `constDtypeMismatch`, `policyNotAdmitted` —
+> named directly and explained inline instead of forced); `Eval.Plan.KernelDenseTest` (16 `#guard`s
+> — the reference contraction plus identity, transpose, lower- and upper-boundary zero-padding,
+> multi-axis affine, multiple terms, the `u[]·a[i] + W[i,k]·v[k]` per-term contraction asymmetry,
+> empty factor product, empty term array, a zero-extent reduction domain, zero output extent, a
+> fold-order fixture, and the three `PositionalInputError` cases); `Eval.Plan.CheckedPrivacyTest`
+> (1 `#guard` plus the documented manual compile-failure check for `CheckedAssignPlan`'s private
+> constructor). 32 `#guard`s in total across the three modules.
 > All three modules registered in the default build target. Full `lake build` green (8,629 jobs, up
 > from the 8,622 C1 baseline — the 4 new library modules and 3 new test modules this slice adds,
 > matching this section's own arithmetic exactly). **One numeric fixture required a real execution
