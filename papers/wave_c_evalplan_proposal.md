@@ -2152,6 +2152,31 @@ result, and there is no worker accepting raw `AssignPlan`.
 
 **Detailed plan:** [`docs/superpowers/plans/2026-08-05-wave-c-c2-checked-local-kernel.md`](../docs/superpowers/plans/2026-08-05-wave-c-c2-checked-local-kernel.md).
 
+> **✅ DONE 2026-08-06.** `Plan/Kernel.lean` adds `AffineMap`/`ReadPlan`/`TermPlan`/`AssignPlan`;
+> `Plan/Error.lean` adds `PlanError`/`PositionalInputError`; `Plan/Check.lean` adds the
+> private-constructor `CheckedAssignPlan` and `checkAssign`; `Plan/Dense.lean` adds the direct Dense
+> interpreter `runDenseAssign`. Tests: `Eval.Plan.KernelCheckTest` (15 `#guard`s — the reference
+> plan's acceptance plus one mutation per reachable `checkAssign` throw site, with the three
+> structurally unreachable branches — `dtypeMismatch`, `constDtypeMismatch`, `policyNotAdmitted` —
+> named directly and explained inline instead of forced); `Eval.Plan.KernelDenseTest` (16 `#guard`s
+> — the reference contraction plus identity, transpose, lower- and upper-boundary zero-padding,
+> multi-axis affine, multiple terms, the `u[]·a[i] + W[i,k]·v[k]` per-term contraction asymmetry,
+> empty factor product, empty term array, a zero-extent reduction domain, zero output extent, a
+> fold-order fixture, and the three `PositionalInputError` cases); `Eval.Plan.CheckedPrivacyTest`
+> (1 `#guard` plus the documented manual compile-failure check for `CheckedAssignPlan`'s private
+> constructor). 32 `#guard`s in total across the three modules.
+> All three modules registered in the default build target. Full `lake build` green (8,629 jobs, up
+> from the 8,622 C1 baseline — the 4 new library modules and 3 new test modules this slice adds,
+> matching this section's own arithmetic exactly). **One numeric fixture required a real execution
+> to pin, not hand derivation alone:** the fold-order-sensitivity case (`1e16, 1.0, -1e16` folded in
+> that array order) predicted `0.0` by hand — reasoning that binary64's round-ties-to-even rounds
+> `1e16 + 1.0` back down to `1e16` at that magnitude's ULP of 2 — and the actual run confirmed
+> `0.0` on first try, ruling out the reassociation that would cancel the two `±1e16` terms before
+> adding `1.0` (which would yield `1.0` instead). No other deviations from this section's plan text.
+>
+> Commits: `b6de149^..e809064` (Task 1's `Plan/Kernel.lean`, Task 2's `Plan/Error.lean` +
+> `Plan/Check.lean`, and Task 3's `Plan/Dense.lean` + all three test-module registrations).
+
 ### A.7 C3 - checked graph vertical slice
 
 **Production files:** `Plan/Graph.lean`, `Plan/Error.lean`, `Plan/Check.lean`, and
