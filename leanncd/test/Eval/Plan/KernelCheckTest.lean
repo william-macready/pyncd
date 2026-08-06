@@ -43,6 +43,10 @@ def errOf : Except PlanError CheckedAssignPlan → Option PlanError
   { goodPlan with terms := #[{ goodPlan.terms[0]! with
       factors := #[{ readA with sourceSlot := 99 }] }] }) == some (.slotOutOfRange 99 3)
 
+-- destination slot outside the signature table
+#guard errOf (checkAssign sigs { goodPlan with destinationSlot := 99 })
+  == some (.slotOutOfRange 99 3)
+
 -- coefficient row no longer matches the term-basis width
 #guard errOf (checkAssign sigs
   { goodPlan with terms := #[{ goodPlan.terms[0]! with
@@ -70,6 +74,19 @@ def errOf : Except PlanError CheckedAssignPlan → Option PlanError
   #[ { shape := #[4], dtype := .f64 }, { shape := #[3], dtype := .f64 }
    , { shape := #[4], dtype := .f32 } ] goodPlan)
   == some (.dtypeNotAdmitted 2 .f32)
+
+-- source factor's signature dtype not admitted (f32), distinct from the destination case above
+#guard errOf (checkAssign
+  #[ { shape := #[4], dtype := .f32 }, { shape := #[3], dtype := .f64 }
+   , { shape := #[4], dtype := .f64 } ] goodPlan)
+  == some (.dtypeNotAdmitted 0 .f32)
+
+-- destination signature's declared shape disagrees with the AssignPlan's outputShape (not the
+-- term's outputPos projection, which stays consistent with outputShape here)
+#guard errOf (checkAssign
+  #[ { shape := #[4], dtype := .f64 }, { shape := #[3], dtype := .f64 }
+   , { shape := #[6], dtype := .f64 } ] goodPlan)
+  == some (.outputProjectionMismatch 0 #[6] #[4])
 
 -- affine map rank does not match source rank (2 coeff rows for a rank-1 source)
 #guard errOf (checkAssign sigs
