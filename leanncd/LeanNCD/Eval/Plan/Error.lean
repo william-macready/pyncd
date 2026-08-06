@@ -47,4 +47,23 @@ inductive PositionalInputError
   | arityMismatch   (expected : Nat) (actual : Nat)
   deriving DecidableEq, BEq, Repr, Inhabited
 
+/-- Wave C capability rejection (proposal §3.1/§3.2): which construct in the initial scan-free `f64`
+    fragment boundary a source `ScheduledProgram` falls outside of, with the source-level context
+    (statement/decl name, or a short description) that failed. Ported from C0's test-only
+    `PlanContract.Classification` category names (`test/Eval/Plan/ContractTest.lean`) into a real,
+    closed error type a real function can throw — no `unsupported : String` escape hatch (§3.2). -/
+inductive CapabilityError
+  | scanNode             (context : String)  -- ScanStmt.scan / .scanPre
+  | scatterOrAffineLhs   (context : String)  -- scatter statements, affine LHS slots
+  | unsupportedLhsSlot   (context : String)  -- freeNorm, iterAt, iterNext
+  | unsupportedNonlin    (context : String)  -- pointwise/axiswise nonlinearities
+  | maskOrPredicate      (context : String)  -- masks, predicates, Iverson factors
+  | unaryFactor          (context : String)
+  | unsupportedAgg       (context : String)  -- max/min aggregation
+  | booleanOutput        (context : String)
+  | unsupportedDtype     (context : String)  -- any dtype other than the declared f64 mode
+  | dynamicShape         (context : String)  -- backend- or value-dependent shapes
+  | recurrenceOrCallback (context : String)
+  deriving DecidableEq, BEq, Repr, Inhabited
+
 end LeanNCD.Eval.Plan
