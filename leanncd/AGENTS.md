@@ -18,25 +18,30 @@ checkout that has never been built compiles Mathlib from source, which can
 take several hours — even though `.lake/packages` (the source fetch) may
 already be present, `.lake/build` (the compiled `.olean`s) starts empty.
 
-Before running `lake build` in a new worktree or fresh clone, check whether
-another checkout of this repo already has a fully-built `.lake` directory,
-and copy it over instead of rebuilding:
+**Do not do this by hand — run the script.** From inside a newly-created
+worktree (after `EnterWorktree`, which the script cannot do for you):
 
 ```bash
-# 1. Find candidate checkouts (main repo, other worktrees)
-git worktree list
+bash .claude/skills/new-slice/prepare-worktree.sh --plan <plan-path>
+```
 
-# 2. Check if a candidate is actually fully built (compare to the target's
-#    lakefile.toml / lake-manifest.json — a build from a different mathlib
-#    rev won't help and lake will partially recompile it anyway, which is
-#    still much faster than a full cold build):
+It finds the fullest donor checkout, rsyncs its `.lake`, and then *verifies*
+the result is ≥95% built before declaring the worktree ready — plus it
+fast-forwards the branch to local `main` (see the stale-base trap below) and
+scaffolds the SDD ledger. See `.claude/skills/new-slice/SKILL.md`.
+
+If you ever do need to sync manually, the counts to compare are:
+
+```bash
+git worktree list   # candidate checkouts
 find <candidate>/leanncd/.lake/packages/mathlib/.lake/build/lib -name "*.olean" | wc -l
-find <candidate>/leanncd/Mathlib -name "*.lean" | wc -l   # rough total to compare against
-
-# 3. If the candidate's count is at or near the total, sync its .lake into
-#    the new worktree before building:
+find <candidate>/leanncd/.lake/packages/mathlib/Mathlib -name "*.lean" | wc -l  # total to compare against
 rsync -a "<candidate>/leanncd/.lake/" "./leanncd/.lake/"
 ```
+
+Note the source path is `.lake/packages/mathlib/Mathlib`, **not**
+`leanncd/Mathlib` — the latter does not exist and silently counts 0, which
+makes a completely unbuilt checkout look "complete" by comparison.
 
 **Use plain `rsync -a`, not `--info=progress2` or other GNU-rsync-only flags.**
 macOS ships `openrsync` (protocol 29) by default, not GNU rsync — passing a
@@ -48,6 +53,19 @@ destination afterward.
 After syncing, run `cd leanncd && "$HOME/.elan/bin/lake" build` — it will only need to compile the
 handful of `LeanNCD`-specific modules (and whatever the new worktree's edits
 touch), typically well under a minute instead of hours.
+
+## New worktree: the stale-base trap
+
+`EnterWorktree` branches from `origin/<default-branch>`, **not** from local
+`main`. This repo's local `main` routinely runs far ahead of `origin/main`
+(21 commits at the time of writing), so a new worktree silently starts on
+stale code — and every edit you make is against the wrong base.
+
+This has been hit repeatedly and was always caught by eyeballing `git log`,
+never by tooling. `prepare-worktree.sh` (above) now fast-forwards for you and
+refuses to proceed if the branches have genuinely diverged. If you set a
+worktree up by hand instead, check `git status -sb` / `git log --oneline -3`
+against local `main` **before** making any edits.
 
 ## Intent Layer
 
