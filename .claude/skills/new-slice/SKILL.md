@@ -9,6 +9,10 @@ Six setup steps used to be done by hand at the start of every slice, and two of
 them are traps that silently cost hours if missed. `prepare-worktree.sh` does
 all six and fails loudly instead of silently.
 
+> Writing the plan you are about to execute is a separate, earlier step with
+> its own disciplines (task right-sizing, compiling plan code before it ships):
+> see `.claude/skills/slice-plan/`.
+
 ## Why this exists
 
 - **Stale base.** `EnterWorktree` branches from `origin/<default>`, not local

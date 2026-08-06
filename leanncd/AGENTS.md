@@ -1,5 +1,16 @@
 # AGENTS.md — leanncd
 
+## Doing slice work here: two skills
+
+Implementation slices (Wave C's C0/C1/C2…, and any other plan executed via
+subagent-driven-development) have two mechanized steps. Use them rather than
+redoing the setup by hand:
+
+| When | Skill | What it covers |
+|---|---|---|
+| Writing the plan | `.claude/skills/slice-plan/` | task right-sizing; compiling plan code before it ships (`check-snippet.sh`) |
+| Executing the plan | `.claude/skills/new-slice/` | worktree creation, stale-base fix, `.lake` sync, plan copy, ledger scaffold |
+
 ## Invoking Lake
 
 From the repository root, invoke Lake through Elan from inside the Lean subproject:
