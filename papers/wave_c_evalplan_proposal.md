@@ -2150,6 +2150,8 @@ caller-provided data.
 **Gate:** every local checker branch is covered, every valid fixture has a hand-computed Dense
 result, and there is no worker accepting raw `AssignPlan`.
 
+**Detailed plan:** [`docs/superpowers/plans/2026-08-05-wave-c-c2-checked-local-kernel.md`](../docs/superpowers/plans/2026-08-05-wave-c-c2-checked-local-kernel.md).
+
 ### A.7 C3 - checked graph vertical slice
 
 **Production files:** `Plan/Graph.lean`, `Plan/Error.lean`, `Plan/Check.lean`, and
