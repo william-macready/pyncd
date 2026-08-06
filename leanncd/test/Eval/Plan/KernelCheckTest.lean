@@ -86,7 +86,7 @@ def errOf : Except PlanError CheckedAssignPlan → Option PlanError
 #guard errOf (checkAssign
   #[ { shape := #[4], dtype := .f64 }, { shape := #[3], dtype := .f64 }
    , { shape := #[6], dtype := .f64 } ] goodPlan)
-  == some (.outputProjectionMismatch 0 #[6] #[4])
+  == some (.destinationShapeMismatch #[4] #[6])
 
 -- affine map rank does not match source rank (2 coeff rows for a rank-1 source)
 #guard errOf (checkAssign sigs

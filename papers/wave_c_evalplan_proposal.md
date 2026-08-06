@@ -2241,6 +2241,32 @@ plan structure. The untrusted named entry remains C4's adapter.
 **Gate:** manual checked graphs execute without source compiler support; all graph violations are
 rejected before execution; `Dense.lean` has no source or legacy-worker dependency.
 
+> **✅ DONE 2026-08-06.** `Plan/Graph.lean` adds `RawEvalPlan`; `Plan/Check.lean` adds the
+> private-constructor `CheckedEvalPlan` and the graph-wiring checker `checkPlan`; `Plan/Error.lean`
+> adds `PositionalInputError.arityMismatch`; `Plan/Dense.lean` adds the graph interpreter
+> `runDensePlan`, composing `runDenseAssign` once per checked node rather than re-implementing
+> node-level execution at the graph level. Tests: `Eval.Plan.GraphCheckTest` (16 `#guard`s — the
+> chain and diamond/fan-out-with-unused-input reference graphs' acceptance, one mutation per
+> `checkPlan` wiring-invariant throw site (including the in-node destination-slot and factor-source
+> `slotOutOfRange` sites, both wrapped in `.nodeError` for node context), the single-valued
+> `numericModeNotAdmitted` named directly since `NumericMode` has exactly one constructor, and the
+> `CheckedEvalPlan` privacy check folded in per A.3's module list rather than split into its own
+> module); `Eval.Plan.GraphDenseTest` (20 `#guard`s — one node, the chain, the diamond with
+> fan-out/convergence/an unused input, an independent-node-reordering case, a manual
+> sequential-composition-agreement check calling `checkAssign`/`runDenseAssign` directly instead of
+> `checkPlan`/`runDensePlan`, a restatement of C2's non-associative-float fold-order fixture wrapped
+> in a trivial one-node graph, the four `PositionalInputError` cases — too-few arity, too-many
+> arity, wrong shape, and malformed storage — and an unread-input-still-validated case confirming an
+> unused input slot's declared signature is enforced). 36 `#guard`s in total across the two modules,
+> both registered in the default build target. Full `lake build` green (8,632 jobs, up from the 8,629 C2
+> baseline — the 1 new library module (`Plan/Graph.lean`) and 2 new test modules this slice adds;
+> `Error.lean`/`Check.lean`/`Dense.lean` are modified, not added, so they don't change the job count
+> — matching this section's own arithmetic exactly). No deviations from this section's plan text.
+>
+> Commits: `f3cae27^..c2ac49a` (Task 1's `Plan/Graph.lean` + `checkPlan` + `GraphCheckTest.lean`,
+> and Task 2's `PositionalInputError.arityMismatch` + `Plan/Dense.lean`'s `runDensePlan` +
+> `GraphDenseTest.lean` + lakefile registration of both test modules).
+
 ### A.8 C4 - source compiler and representation boundary
 
 **Production files:** `Eval/Report.lean`, `Eval/Eval.lean`, `Plan/Prepared.lean`,
