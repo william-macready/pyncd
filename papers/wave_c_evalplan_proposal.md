@@ -1787,6 +1787,13 @@ Additionally, every successful canonical round-trip must return a checked plan w
 semantic bytes, fingerprint, and Dense behavior. Because the fragment has only
 `NumericMode.reference64`, tensor equality within `=obs` is bit-for-bit equality.
 
+> **Deferred 2026-08-07, see A.9.** The canonical-round-trip clause above depends on C5's
+> `Plan/Canonical.lean`/`Plan/Codec.lean`, which are deferred — no consumer inside this process's
+> own lifetime needs fingerprint stability or serialized bytes. Until C5 is actually built, this
+> gate holds only for its first clause (`prepareEvalPlan`/`runPreparedDense` agreement with
+> `evalScheduled`, or a typed rejection) — already demonstrated by C4's differential sweep. C6's own
+> Gate ("Section 15.4 holds") should be read against this reduced form, not the full text above.
+
 ## 16. Final recommendation
 
 Proceed with Wave C as a compiler-and-reference-worker milestone, not as an early JAX demo and not
