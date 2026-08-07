@@ -126,3 +126,10 @@ part; the whole-branch pass is the one earning its keep.
       merged into neighbours.
 - [ ] Global Constraints state exact values, and name anything the plan
       deliberately does *not* do (and which later slice owns it).
+- [ ] If this slice introduces a new subsystem or file tree, the plan makes it
+      *discoverable*, not just correct: reachable from a plain top-level import
+      a new reader would already use, and mentioned in the AGENTS.md a reader
+      would already open. Wave C's C0-C4 shipped 10 files and a working
+      compiler that `import LeanNCD` couldn't reach and neither AGENTS.md
+      mentioned — invisible until a later audit slice (C6) fixed it. Don't
+      defer this to "someone will notice eventually."

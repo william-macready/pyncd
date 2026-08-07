@@ -724,16 +724,33 @@ Wave B  THE BACKEND CONTRACT — Spike 4, resequenced (highest priority)
                                                    Appendix A warns must not be recreated
         dependencies:  4b → 4a → 4c ;  Spike 3a ✅ → 4d → 4c
 
-Wave C  Minimal EvalPlan (E4) — the first checked backend boundary
-        · canonical, versioned, hashed, serializable; no Lean/backend callbacks
-        · scan-free real sum-product fragment only; typed capability rejection
-        · differential-test against DenseTensor
+Wave C  ✅ DONE 2026-08-07 (C0-C4, C6; C5 deferred) — Minimal EvalPlan (E4), the first checked
+        backend boundary
+        · canonical, versioned (`admittedVersion = 1`); no Lean/backend callbacks — **not yet
+          serializable to bytes**: hashing/wire-encoding was C5, deliberately deferred (A.9) —
+          nothing outside one process's own lifetime needs it yet
+        · SHIPPED SCOPE IS SCAN-FREE, exactly as scoped here: only `.plain` assignment steps are
+          admitted; no `ScanPlan`/`.scan`/`.scanPre` exists anywhere in the checked IR. **Scans
+          are still not in** — see Wave F below, which remains unstarted and unscoped beyond the
+          one-line note it already had before Wave C began.
+        · real sum-product contraction, identity nonlinearity, integer-affine reads
+          (shifts/scales/multi-axis), zero-padded OOB reads, chained/intermediate tensors; typed
+          capability rejection for everything else (11 `CapabilityError` categories — see
+          `papers/wave_c_capability_manifest.md` §3 for the full accept/reject boundary)
         first milestone is NOT "JAX runs a model" — it is: every checked EvalPlan in the
         declared reference64 fragment either matches DenseTensor or is rejected with a
-        typed capability error before Python starts
-        · proposal ✅ DONE 2026-08-03, revised 2026-08-05 — full architecture, phase/workstream
-          breakdown, correctness laws, and acceptance criteria written up in
-          `papers/wave_c_evalplan_proposal.md`; implementation NOT started, awaiting go-ahead
+        typed capability error before Python starts. **Achieved, counted, not estimated:**
+        3,832/3,832 `PropertyOracle.enumPrograms` entries agree bit-for-bit against `DenseTensor`,
+        0 rejected (`Eval.Plan.DifferentialTest`) — see the differential-sweep scope caveat in
+        Learnings below before citing this number for a capability the generator doesn't vary.
+        · proposal ✅ DONE 2026-08-03, revised 2026-08-05 — `papers/wave_c_evalplan_proposal.md`
+        · C0 ✅ (executable contract) → C1 ✅ (signature-driven shape inference) → C2 ✅ (checked
+          local kernel) → C3 ✅ (checked graph) → C4 ✅ (source compiler + representation boundary)
+          → **C5 deferred** (canonical bytes/fingerprint — no consumer yet; `deriving Hashable`
+          would suffice in-process if one ever appears) → C6 ✅ (adversarial audit + handoff:
+          closed 5 real coverage gaps, made `Plan/` discoverable from `import LeanNCD`, published
+          the capability manifest). Full detail in the Landed table above; this row is now a
+          pointer, not the source of truth — read `papers/wave_c_capability_manifest.md` first.
 
 Wave D  ✅ DONE 2026-08-01 (a3098c0..c86005e) — 4g typed scatter policy (CollisionReduce;
         separate RHS agg from collision reduce)
@@ -743,12 +760,59 @@ Wave D  ✅ DONE 2026-08-01 (a3098c0..c86005e) — 4g typed scatter policy (Coll
           confirmed no concrete axis sizes exist at `lowerArith`'s point in the pipeline
 Wave E  ✅ DONE 2026-08-02  4e → 4h → 4i  diagnostics split, structured errors, EvalReport
         · compiler-independent scheduled worker + diagnostic-preserving source entry are in place
-Wave F  4f  decompose evalScan — AFTER the EvalPlan boundary, not before
+Wave F  NOT STARTED, NOT SCOPED beyond this note — this is where scans enter the checked-plan
+        world. 4f  decompose evalScan — AFTER the EvalPlan boundary (now built, Wave C), not
+        before. Needs an explicit `ScanPlan` state/transition/geometry/boundary/order/causality
+        design (proposal §7/§A.12) that Wave C deliberately did not attempt — nothing in C0-C6
+        assumes scan support exists, and the capability manifest documents its absence as a
+        stated non-goal, not an oversight.
         · then one-axis coupled lax.scan, then flattened multi-axis
 Wave G  Backends (E10): PyTorch eager first (fast semantic bring-up; torch_compile/
         prototype exists) → JAX jit as the stricter static backend → optimization fast
         paths, each guarded by generic-lowering differential tests
 ```
+
+### Learnings from Wave C (2026-08-07 retrospective)
+
+Six slices (C0-C4, C6) executed via `superpowers:subagent-driven-development`, one worktree and
+one whole-branch review each; C5 planned-then-deliberately-not-built. What generalizes beyond
+this Wave:
+
+- **The final whole-branch review is the tier that earns its keep, every time.** Per-task reviews
+  (3-4 per slice, all clean) never once found what the whole-branch pass found: C0's self-
+  contradicting capability matrix, C1's tautological parity fixtures, C4's 4 real coverage gaps,
+  C6's false coverage-attribution claim and "matches A.2 exactly" overclaim. Each was invisible in
+  any single task's diff by construction — the defect was a relationship *between* tasks, or
+  between a claim and code the task never touched. Do not trim this step to save a dispatch.
+- **A fix wave can reintroduce the same failure mode it was sent to fix.** C6's final-review fix
+  wave corrected a false coverage-attribution in the capability manifest — and its own replacement
+  citation was *also* wrong (it cited a rejection test as confirming a capability). The scoped
+  re-review caught it. Lesson: a fix-wave re-review must independently re-check factual/citation
+  claims the fix rewrote, not just confirm the flagged line changed.
+- **A differential sweep's coverage claim is bounded by its generator, and that bound must be
+  stated, not assumed.** `PropertyOracle.enumPrograms` pins both axes to size 2 and generates only
+  single-axis affine reads — it was, until C6's review caught it, incorrectly credited with
+  confirming zero/one-dimension and multi-axis-affine coverage it structurally cannot generate.
+  Any doc citing a property-test sweep as evidence for a capability must check what the generator
+  actually varies, not what the test *file* is titled.
+- **A shipped subsystem is invisible until something makes it importable and documented.** C0-C4
+  shipped 10 files and a working compiler; nothing outside `Plan/` itself could reach it — `import
+  LeanNCD` didn't pull it in, and neither `AGENTS.md` mentioned it existed. This is exactly the gap
+  the `slice-plan` skill's checklist doesn't cover (it verifies code, not discoverability) — worth
+  adding "is the new subsystem reachable from where a reader already looks" to that checklist for
+  the next multi-slice wave.
+- **Defer infrastructure until a real consumer exists, even mid-wave.** C5 (canonical
+  representation and codec) was the natural next slice by sheer sequencing momentum; stopping to
+  ask "what actually needs this" collapsed it to "nothing yet" and saved a whole slice. The
+  reasoning is recorded in A.9 specifically so it can be reopened cheaply if a real consumer
+  (cross-process serialization, a stability-sensitive cache) appears later — deferral is not the
+  same as foreclosure.
+- **The commit-range citation convention (caret form, and which commit counts as "last") is now
+  settled by precedent, not something to re-derive each time.** It recurred as a review finding in
+  C2, C3, and C4's docs steps. C6's final reviewer resolved it definitively by reading the actual
+  git history of every prior slice's DONE blockquote: the range always excludes the docs-authoring
+  commit itself (matches C1-C4), but must include any *substantive* final-review fix-wave commit
+  (the C3/C4 correction, `33e595e`). Cite this paragraph instead of re-litigating it next time.
 
 ### Independent — schedule anytime, parallel to the above
 
