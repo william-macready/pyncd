@@ -2347,6 +2347,39 @@ Move `EvalReport` to the neutral leaf without changing its fields or legacy beha
 unsupported construct fails before `runDensePlan`; checked semantic data contains no `String` or
 `UID`.
 
+> **✅ DONE 2026-08-06.** `Plan/Compile.lean` adds `capabilityPreflight` and `prepareEvalPlan`;
+> `Plan/Prepared.lean` adds `SlotBinding`/`PlanBindings`/`PreparedPlan`; `Plan/Adapter.lean` adds
+> `pack`/`unpack`/`runPreparedDense`; `Eval/Report.lean` moves `EvalReport` to the neutral leaf
+> (fields/behavior unchanged); `Plan/Error.lean` adds `CapabilityError`/`PlanCompileCause`/
+> `PlanCompileFailure`/`InputBindingError`/`PlanRunCause`/`PlanRunFailure`; `Eval/Eval.lean` is
+> touched only for the `Report.lean` move. Tests: `Eval.Plan.CompileTest` (28 `#guard`s — one
+> accepted and one rejected case per C0 capability row, deterministic slots/term bases, the
+> zero-coefficient contracted-axis regression, and repeated assignment); `Eval.Plan.AdapterTest` (3
+> `run_cmd` blocks covering the 9 checks documented in-file — the full pack/unpack/`runPreparedDense`
+> round trip cross-checked against the legacy evaluator, an unpack preserving an unrelated extra
+> input, `requiredInputs` order-independence against an asymmetric-roles contraction fixture,
+> duplicate/missing/extra/structurally-missing binding failures, and warning preservation on both
+> the success path and a later binding failure); `Eval.Plan.DifferentialTest` (the alpha-renaming law
+> — equal raw semantic graphs, unequal bindings, confirmed by a real run — plus the full
+> `PropertyOracle.enumPrograms` differential sweep and 3 test-the-tester mutations). **Real observed
+> sweep counts (not estimated): total = 3,832, accepted = 3,832, rejected = 0, 0 rejection
+> categories — 100% bit-exact agreement between `runPreparedDense` and `evalScheduled` on every
+> entry**, pinned by a `#guard` on the exact triple. All 3 test-the-tester mutations (coefficient
+> change, dropped term, reversed Float-sensitive fold order) were confirmed by executing both the
+> original and mutated program through `evalScheduled` to actually break agreement, not assumed from
+> the mutation's description. All three test modules registered in the default build target. Full
+> `lake build` green (8,639 jobs, up from the 8,632 C3 baseline — the 4 new library modules
+> (`Eval/Report.lean`, `Plan/Prepared.lean`, `Plan/Compile.lean`, `Plan/Adapter.lean`) and 3 new test
+> modules (`CompileTest`, `AdapterTest`, `DifferentialTest`) this slice adds; `Plan/Error.lean` and
+> `Eval/Eval.lean` are modified, not added, so they don't change the job count — matching this
+> section's own arithmetic exactly). No deviations from this section's plan text.
+>
+> Commits: `1aab71e^..bc90f98` (Task 1's `capabilityPreflight` and capability-row `CompileTest`
+> fixtures, Task 2's `prepareEvalPlan` and `Plan/Prepared.lean` and the deterministic-slot/repeated-
+> assignment `CompileTest` additions, Task 3's `pack`/`unpack`/`runPreparedDense` and
+> `Eval/Report.lean` and `AdapterTest`, and Task 4's alpha-renaming law and differential sweep and
+> mutations and `DifferentialTest` and the three test-module lakefile registrations).
+
 ### A.9 C5 - canonical representation and codec
 
 **Production files:** `Plan/Canonical.lean` and `Plan/Codec.lean`.
