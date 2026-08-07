@@ -2458,6 +2458,29 @@ malformed or unchecked payload is executable.
 > adopted instead, Codec.lean's real shape should be driven by that boundary's actual requirements,
 > not guessed here in advance. Wave C proceeds directly from C4 to C6 (A.10); this section is
 > retained as a design record, not resurrected without a concrete triggering need.
+>
+> **Why the codec above was structured this way, for whoever revisits it.** Every structural rule
+> in this section serves one of two goals, and neither goal disappears just because nothing
+> currently needs the codec built — they're worth restating so a future reader doesn't have to
+> re-derive them: **(1) canonical encoding** — one semantic value must produce exactly one byte
+> sequence, which is what made a byte-derived fingerprint meaningful in the first place. Fixed
+> constructor tags, fixed field order, length-prefixed arrays, and rejecting nonminimal integers
+> all exist so no value has two valid encodings. Explicit big-endian float bit patterns exist so
+> the same `Float` doesn't serialize differently on different machines — the wire-level analogue of
+> why `ScalarConst.f64` already stores `UInt64` bits rather than a `Float` in memory. Preserving
+> operation/term/factor/coordinate/slot order (never reordering "for convenience," per §9.3) exists
+> because binary64 addition isn't associative — sorting terms because the underlying algebra is
+> commutative would silently change results, the same failure mode the fold-order test fixtures
+> throughout this Wave exist to catch. Excluding names/warnings/bindings/backend metadata from the
+> encoder is what makes alpha-renaming invariant: two plans differing only in variable names must
+> encode identically. Magic bytes plus independent wire/semantic versions exist so a decoder
+> recognizes a format mismatch immediately rather than parsing garbage, and so a layout change and
+> a vocabulary change are never conflated into one version bump. **(2) the raw/checked boundary
+> discipline applied at the wire** — `decodePlan` calling `checkPlan` and recomputing rather than
+> trusting a persisted fingerprint is the same rule C2's `checkAssign` and C3's `checkPlan` already
+> enforce in memory (nothing executes without going through its checker), just extended to bytes
+> that arrived from outside the process, which are untrusted input by construction. If C5 is ever
+> revisited, preserve both goals even if the concrete encoding details change.
 
 ### A.10 C6 - adversarial audit and handoff
 
