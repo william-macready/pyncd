@@ -110,7 +110,7 @@ Does not own: the Python implementation (`../data_structure/`, `../acset/`, etc.
 | Math tower | `LeanNCD/Base/AGENTS.md` | `ColoredPROP`, `St` (affine morphisms), `Br` (free strict SMC), `SizeExpr` |
 | DSL + routing | `LeanNCD/DSL/AGENTS.md` | `tl!{...}` parse/elaborate/compile/route pipeline (largest, most active subsystem) |
 | Bridge | `LeanNCD/Bridge/AGENTS.md` | `realize`, acset codec + round-trip proofs, DSL/CSV agreement — highest-churn subsystem |
-| Evaluation | `LeanNCD/Eval/AGENTS.md` | reference-semantics interpreter + the Portfolio test suite |
+| Evaluation | `LeanNCD/Eval/AGENTS.md` | reference-semantics interpreter + the Portfolio test suite; `Eval/Plan/` adds a checked, positional plan IR with its own source compiler and Dense interpreter (Wave C) |
 | Acset schema | `LeanNCD/Acset/AGENTS.md` | row-table schema + CSV text mechanics (mirrors Python `acset/`) |
 | Algebra | `LeanNCD/Algebra/AGENTS.md` | algebra-functor signatures (`Algebra`/`TargetActegory`); deliberately no concrete instance yet |
 
@@ -123,7 +123,7 @@ Small subsystems (no dedicated node — each <170 lines, single-file or near it)
 | Base | `LeanNCD/Base/AGENTS.md` | `brCancelPoint`/BrNF situation, St hexagon gap |
 | DSL | `LeanNCD/DSL/AGENTS.md` | 8-phase pipeline, Track A routing proofs, `readArityOk` gap |
 | Bridge | `LeanNCD/Bridge/AGENTS.md` | round-trip Task A-E staging, `wf_topo` history |
-| Eval | `LeanNCD/Eval/AGENTS.md` | scatterOutDim/scatterOutShape sync contract, Portfolio test patterns |
+| Eval | `LeanNCD/Eval/AGENTS.md` | scatterOutDim/scatterOutShape sync contract, Portfolio test patterns, `Eval/Plan/` checked-plan IR (Wave C) |
 | Acset | `LeanNCD/Acset/AGENTS.md` | schema/CSV split from Bridge's round-trip proofs |
 | Algebra | `LeanNCD/Algebra/AGENTS.md` | the R=Bool XOR-ring trap |
 

@@ -24,7 +24,26 @@ Does not own: parsing/compilation/routing (`../DSL/`).
 | Axis-size inference fixpoint (`inferAxisSizes`, `scatterOutputShapes`) | `SizeInfer.lean` |
 | Compatibility umbrella re-exporting `Slots`/`SizeSolve`/`SizeInfer` (no new code) | `Shape.lean` |
 | Every typed diagnostic (`EvalError`, `ShapeError`, `EvalWarning`, `SolveDiagnostic`, `EvalFailure`) + their sole renderers | `Error.lean` |
+| Checked, positional tensor-plan IR + compiler + adapter (Wave C) | `Plan/` (10 files: `Types`, `Kernel`, `Graph`, `Error`, `Check`, `Dense`, `Signature`, `Prepared`, `Compile`, `Adapter`) |
 | "Does this model class evaluate correctly" test suite | `test/Eval/Portfolio/*.lean` |
+
+### The `Plan/` subtree
+A second, checked evaluation path (Wave C), independent of the legacy `Gather`/`Contract`/`Scan`
+evaluator above and reachable from `import LeanNCD` via `Eval.Plan.Adapter`. One line per file —
+see `papers/wave_c_capability_manifest.md` for the full design, not duplicated here:
+
+| File | Owns |
+|---|---|
+| `Types.lean` | static specialization vocabulary — `ScalarDType`, `TensorSignature`, `InputSignature` |
+| `Kernel.lean` | one local operation's IR — `AffineMap`, factor/term records, `AssignPlan` |
+| `Graph.lean` | the unchecked plan graph — `RawEvalPlan` |
+| `Error.lean` | closed `PlanError` (checker) / `PositionalInputError` (runtime) diagnostics |
+| `Check.lean` | the checker — `checkAssign`/`CheckedAssignPlan` (local invariants), `checkPlan`/`CheckedEvalPlan` (graph-level: slot availability, production order) |
+| `Dense.lean` | Dense interpreter for one checked operation, over positional `DenseTensor` storage |
+| `Signature.lean` | C1's shape-specialization boundary — signature-driven axis-size inference in place of concrete tensors |
+| `Prepared.lean` | source-name-keyed bindings around a checked plan — `PreparedPlan` |
+| `Compile.lean` | the source compiler — capability preflight (C4) |
+| `Adapter.lean` | named ↔ positional runtime boundary — `pack`/`unpack`/`runPreparedDense` |
 
 ### Key Relationships
 `Entry.lean` imports `DSL.Compile`; `Eval.lean` does not. `Slots.lean`/`Gather.lean` import

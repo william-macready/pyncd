@@ -46,7 +46,9 @@ compare, and embed them at elaboration time.
                                    validation passes, `checkReadRanks`/`checkDtypes`) threaded
                                    in `FreshM`, taking source → `ThreadedComposed`
   Eval/*                           a `Float` reference interpreter (`TLProgram.eval` →
-                                    `Except EvalFailure EvalReport`)
+                                    `Except EvalFailure EvalReport`); `Eval/Plan/*` adds a checked,
+                                    positional plan IR with its own source compiler and Dense
+                                    interpreter (Wave C)
   Acset/*                          the §8 CSV path: `SBrInstance` (a byte-for-byte mirror of
                                    Python `acset/instances.py`) + its codec
 
@@ -141,3 +143,4 @@ import LeanNCD.Eval.Scatter
 import LeanNCD.Eval.Scan
 import LeanNCD.Eval.Eval
 import LeanNCD.Eval.Entry
+import LeanNCD.Eval.Plan.Adapter
