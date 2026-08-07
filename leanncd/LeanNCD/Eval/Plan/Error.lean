@@ -95,4 +95,39 @@ structure PlanCompileFailure where
   warnings : List EvalWarning
   deriving DecidableEq, BEq, Inhabited
 
+/-- Everything `pack` can detect wrong with a `PreparedPlan.bindings.requiredInputs` array and the
+    caller-supplied `env` it is asked to resolve against `plan.plan.raw.inputSlots`. The three
+    "structural" constructors (`missingRequiredBinding`/`duplicateRequiredBinding`/
+    `extraRequiredBinding`) are about `requiredInputs` itself failing to be a clean bijection onto
+    `raw.inputSlots`; the two "runtime" constructors (`missingEnvBinding`/`shapeMismatch`/
+    `storageMismatch`) are about the concrete tensor `env` supplies once a name IS resolved.
+    "Extra" is about a `requiredInputs` entry naming a slot the plan doesn't need — NOT about `env`
+    carrying unrelated extra names, which `unpack`'s own contract says is fine, not an error. -/
+inductive InputBindingError
+  | missingRequiredBinding   (slot : TensorSlot)
+  | duplicateRequiredBinding (slot : TensorSlot) (firstName secondName : String)
+  | extraRequiredBinding     (slot : TensorSlot) (name : String)
+  | missingEnvBinding        (name : String)
+  | shapeMismatch            (name : String) (slot : TensorSlot) (expected : Array Nat) (actual : List Nat)
+  | storageMismatch          (name : String) (slot : TensorSlot) (shape : List Nat) (dataSize : Nat)
+  deriving DecidableEq, BEq, Repr, Inhabited
+
+/-- The runtime counterpart of `PlanCompileCause`: a `PreparedPlan` failed either at the named
+    binding boundary (`pack`) or inside the positional worker (`runDensePlan`). Both
+    `InputBindingError` and `PositionalInputError` derive `Repr` (unlike `PlanCompileCause`'s
+    `ShapeError` sibling) — verified, not assumed by analogy — so `PlanRunCause` derives `Repr` too. -/
+inductive PlanRunCause
+  | binding   (cause : InputBindingError)
+  | execution (cause : PositionalInputError)
+  deriving DecidableEq, BEq, Repr, Inhabited
+
+/-- Failure type of `runPreparedDense`. `warnings` is always `plan.warnings` (the preparation
+    warnings `PreparedPlan` already carried) — never re-derived — so a binding or execution failure
+    never silently drops an earlier shape-inference warning. NOT `Repr`: `EvalWarning` has none, so
+    `List EvalWarning` blocks a derived `Repr` here exactly as it did for `PlanCompileFailure`. -/
+structure PlanRunFailure where
+  cause    : PlanRunCause
+  warnings : List EvalWarning
+  deriving DecidableEq, BEq, Inhabited
+
 end LeanNCD.Eval.Plan

@@ -2,17 +2,9 @@ import LeanNCD.Eval.Scan        -- (transitively brings Contract/Nonlin/Gather/S
 import LeanNCD.Eval.Scatter
 import LeanNCD.Eval.SizeInfer   -- `inferAxisSizes`, called directly below
 import LeanNCD.Eval.Error
+import LeanNCD.Eval.Report      -- `EvalReport` (C4): moved to a neutral leaf shared with `Plan/Adapter.lean`
 namespace LeanNCD.Eval
 open Std
-
-/-- The complete result of evaluating an already-scheduled program. `env` deliberately preserves
-    the evaluator's established full-environment behavior (inputs plus every computed tensor);
-    `warnings` makes non-fatal sizing diagnostics persistent data instead of trace output. This is
-    intentionally backend-specific for now: Wave C can introduce a shared report boundary once an
-    `EvalPlan` and a second worker make the genuinely common fields concrete. -/
-structure EvalReport where
-  env : HashMap String DenseTensor
-  warnings : List EvalWarning
 
 /-- The declared output shape for a scatter `nm[slots] := …`, computed from the inferred source
     axis sizes (`sizes`): each affine slot's output extent is its affine map applied to the source
