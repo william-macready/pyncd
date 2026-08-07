@@ -37,12 +37,12 @@ see `papers/wave_c_capability_manifest.md` for the full design, not duplicated h
 | `Types.lean` | static specialization vocabulary — `ScalarDType`, `TensorSignature`, `InputSignature` |
 | `Kernel.lean` | one local operation's IR — `AffineMap`, factor/term records, `AssignPlan` |
 | `Graph.lean` | the unchecked plan graph — `RawEvalPlan` |
-| `Error.lean` | closed `PlanError` (checker) / `PositionalInputError` (runtime) diagnostics |
+| `Error.lean` | closed diagnostics: `PlanError` (checker), `PositionalInputError` (runtime), `CapabilityError` (capability rejection), `InputSignatureError`/`InputBindingError` (boundary), `PlanCompileCause`/`PlanCompileFailure` (prepare-time), `PlanRunCause`/`PlanRunFailure` (run-time) |
 | `Check.lean` | the checker — `checkAssign`/`CheckedAssignPlan` (local invariants), `checkPlan`/`CheckedEvalPlan` (graph-level: slot availability, production order) |
 | `Dense.lean` | Dense interpreter for one checked operation, over positional `DenseTensor` storage |
 | `Signature.lean` | C1's shape-specialization boundary — signature-driven axis-size inference in place of concrete tensors |
 | `Prepared.lean` | source-name-keyed bindings around a checked plan — `PreparedPlan` |
-| `Compile.lean` | the source compiler — capability preflight (C4) |
+| `Compile.lean` | the source compiler — capability preflight (C4), `prepareEvalPlan` |
 | `Adapter.lean` | named ↔ positional runtime boundary — `pack`/`unpack`/`runPreparedDense` |
 
 ### Key Relationships
@@ -171,6 +171,7 @@ The Portfolio suite (`test/Eval/Portfolio/`, shared `Harness.lean`) is a broad l
 |------|------------|
 | Evaluate source while preserving warnings | `Entry.lean` — `TLProgram.eval` |
 | Evaluate an existing schedule without importing the compiler | `Eval.lean` — `evalScheduled` |
+| Run a checked plan (Wave C) | `Plan/Compile.lean` — `prepareEvalPlan`; `Plan/Adapter.lean` — `runPreparedDense` |
 | Add a new nonlinearity | `Nonlin.lean` — add a `PointwiseFn`/`Nonlin.axiswise` arm, an `applyNonlin` case, and (for an axiswise fn) confirm `resolveNonlin`'s existing marker check covers it — do not add a second marker-lookup site in `Eval.lean`/`Scan.lean` |
 | Add a new dtype/semiring | `Contract.lean` — new `Combine.*` + `combineFor` arm |
 | Debug an axis-sizing failure | `SizeInfer.inferAxisSizes` — match the `ShapeError`/`SolveDiagnostic` constructor (`Error.lean`) directly, or `toString` it for the legacy flat message |

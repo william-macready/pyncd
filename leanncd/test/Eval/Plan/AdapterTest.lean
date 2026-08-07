@@ -124,7 +124,7 @@ run_cmd do
           unless nm == "A" && expected == #[2] && actual == [3] do
             throwError s!"wrong shapeMismatch payload: name={nm} expected={repr expected} actual={repr actual}"
       | .error e => throwError s!"wrong error kind for a shape mismatch: {repr e}"
-      -- Check 10: `pack` fails loudly when a required input's declared shape matches but its
+      -- Check 4b: `pack` fails loudly when a required input's declared shape matches but its
       -- data array is undersized. Distinct from Check 4 (`shapeMismatch`): here `.shape` itself
       -- agrees with the signature, but `.data.size` doesn't match the shape's element product.
       match pack prepared undersizedDataInputs with

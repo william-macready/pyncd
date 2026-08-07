@@ -4,9 +4,16 @@ import LeanNCD.Eval.Plan.Compile
 /-!
 # Wave C C4 capability preflight tests
 
-One accepted program plus one rejected case per `CapabilityError` category (11 total); the two
-structurally-unreachable categories (`unsupportedDtype`, `dynamicShape`) are exercised directly on
-the constructor rather than through `capabilityPreflight`.
+One baseline accepted program (`Y[i] := X[i]`) plus rejected cases for every `CapabilityError`
+category (11 total): 3 cases for `unsupportedLhsSlot` (`freeNorm`/`iterAt`/`iterNext`), 2 for
+`unsupportedNonlin` (pointwise/axiswise), 2 for `unsupportedAgg` (max/min), and one each for the
+remaining categories;
+the two structurally-unreachable categories (`unsupportedDtype`, `dynamicShape`) are exercised
+directly on the constructor rather than through `capabilityPreflight`. Also covers `prepareEvalPlan`
+end-to-end on accepted programs — an identity copy, a zero-coefficient contraction, and a
+repeated-assignment (no-dedup) case — every `PlanCompileCause` variant reached through the real
+pipeline (`inputSignature`, `capability`, `shape`), and non-empty preparation warnings surviving a
+later `shape` failure unchanged.
 -/
 
 namespace LeanNCD.Eval.Plan.CompileTest

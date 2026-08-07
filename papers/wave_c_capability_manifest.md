@@ -19,8 +19,7 @@ counted from an actual run on this branch, not estimated or copied from planning
 
 ## 2. Accepted source constructs
 
-The checked fragment accepts exactly (proposal §3.1), and this is what the differential sweep in
-§4 below actually exercises and confirms, not merely what was intended:
+The checked fragment accepts exactly (proposal §3.1):
 
 - scan-free `.plain` assignment steps;
 - ordinary free LHS axes only;
@@ -34,7 +33,19 @@ The checked fragment accepts exactly (proposal §3.1), and this is what the diff
 - per-term contracted axes;
 - chained scheduled steps and intermediate tensors;
 - zero-padded out-of-bounds reads;
-- zero/one dimensions.
+- zero/one dimensions if their semantics are explicitly validated;
+- the current full-environment observation through `PlanBindings`.
+
+The differential sweep in §4 below is real, counted evidence for most of this list, but its own
+generator (`test/Eval/PropertyOracle/Gen.lean`) pins both axes at size 2, generates only rank-≤2
+programs, and only produces single-axis affine reads (`.axis`, `.shift _ 1`, `.scale 2 _`) — it
+never generates a size-0/size-1 axis or a multi-axis affine expression. Two bullets above are
+validated by hand-built fixtures instead: zero/one dimensions by
+[`ContractTest.lean:490`](../leanncd/test/Eval/Plan/ContractTest.lean) and
+[`KernelDenseTest.lean:279`](../leanncd/test/Eval/Plan/KernelDenseTest.lean), and multi-axis affine
+reads by [`KernelCheckTest.lean:94`](../leanncd/test/Eval/Plan/KernelCheckTest.lean)'s two-column
+`coeffs` case and C6's own `warnProg` fixture in
+[`CompileTest.lean`](../leanncd/test/Eval/Plan/CompileTest.lean) (`X[2 * i + j]`).
 
 ## 3. Rejected source constructs
 
@@ -122,11 +133,18 @@ not a roadmap commitment:
 Two findings from this plan's own authoring, recorded here so a future reader does not have to
 re-verify them:
 
-- **The module import graph matches
-  [A.2](wave_c_evalplan_proposal.md#a2-production-modules-and-dependency-direction) exactly.**
-  `Dense.lean` imports neither `Compile.lean` nor the legacy `Gather`/`Contract`; `Compile.lean`
-  does not import `Dense.lean`; `SizeInfer.lean` imports no plan module. (`Canonical.lean` does not
-  exist yet — C5 is deferred — so its A.2 constraint has no module to check against.)
+- **Three of [A.2](wave_c_evalplan_proposal.md#a2-production-modules-and-dependency-direction)'s
+  import-direction constraints hold — this is not a claim that the whole graph matches A.2's
+  diagram.** `Dense.lean` imports neither `Compile.lean` nor the legacy `Gather`/`Contract`;
+  `Compile.lean` does not import `Dense.lean`; `SizeInfer.lean` imports no plan module.
+  (`Canonical.lean` does not exist yet — C5 is deferred — so its A.2 constraint has no module to
+  check against.) Two things A.2's diagram does not show as-is: A.2 lists
+  `Prepared + Dense + Check + Error + Eval.Report -> Adapter`, but `Adapter.lean` actually imports
+  `Compile.lean` too (pre-existing since C4, not introduced by this slice), which transitively
+  pulls in `DSL.Ast`, `DSL.Pipeline.Lowering`, and `Eval.Contract`. And A.2's module table also
+  lists a `Plan.lean` "stable public umbrella" that was never built; C6's Task 2
+  `import LeanNCD.Eval.Plan.Adapter` (`LeanNCD.lean`) supersedes that never-built umbrella as the
+  real top-level entry point, so this is superseded scope, not unmet work.
 - **The checked semantic IR carries no `String`, `UID`, callback/function, or unordered-map field
   anywhere.** `AffineMap`, `ReadPlan`, `TermPlan`, `AssignPlan`, `RawEvalPlan`
   (`Plan/Kernel.lean`, `Plan/Graph.lean`) and the `CheckedAssignPlan`/`CheckedEvalPlan` wrappers
@@ -135,3 +153,11 @@ re-verify them:
   `OutOfBoundsPolicy` tags. The source-name-keyed `HashMap String TensorSignature` in
   `InputSignature` and the `SlotBinding`/`PlanBindings` sidecar are boundary/specialization data by
   design (proposal §5.1/§5.4) — they sit outside the checked plan, not inside it.
+
+**Which import to use.** For checked-plan execution with no source compilation, import
+`Plan.Check`/`Plan.Dense` directly — neither imports `Compile.lean`, `DSL.Ast`, or the legacy
+evaluator. For the named source-to-plan boundary (`prepareEvalPlan`, `pack`/`unpack`/
+`runPreparedDense`), import `Plan.Adapter` — this pulls in `Compile.lean` and therefore source
+compilation. `import LeanNCD` pulls in everything, including the legacy `Eval.Entry` evaluator.
+Only a `Plan/` leaf import (`Plan.Check`/`Plan.Dense`) satisfies A.10's Gate clause: "Wave F and
+Wave G can consume checked plan APIs without importing source compilation or legacy execution."
