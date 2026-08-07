@@ -1838,14 +1838,21 @@ Wave C is complete only when:
 5. `runPreparedDense` agrees with `evalScheduled` under `=obs`, including complete environments,
    warning order, typed failures, empty products/domains, zero extents, and bit-exact Float data;
 6. raw and decoded operations or graphs cannot reach workers without `checkAssign` or `checkPlan`;
-7. canonical bytes and fingerprints are deterministic, name-independent, versioned, and downstream
-   of checked semantics;
-8. the plan worker does not call or import the legacy `Gather`/`Contract` execution path; and
-9. the full default Lean build passes with no skipped test module:
+7. the plan worker does not call or import the legacy `Gather`/`Contract` execution path; and
+8. the full default Lean build passes with no skipped test module:
 
    ```bash
    cd leanncd && "$HOME/.elan/bin/lake" build
    ```
+
+> **Deferred 2026-08-07, see A.9.** The original bullet 7 here — "canonical bytes and fingerprints
+> are deterministic, name-independent, versioned, and downstream of checked semantics" — is removed
+> from Wave C's completion criteria, not silently dropped. No consumer inside this process's own
+> lifetime needs either a stable fingerprint across restarts or serialized plan bytes; the one
+> plausible future need (a live cross-process JAX/PyTorch backend) would contradict the
+> ahead-of-time codegen pattern `torch_compile/` already establishes for backend integration. C5
+> (A.9) is deferred until a concrete need actually specifies its shape, rather than being built
+> speculatively now.
 
 ### A.2 Production modules and dependency direction
 
@@ -2437,6 +2444,21 @@ calls `checkPlan`, and recomputes rather than trusts any persisted fingerprint.
 **Gate:** representation round-trip preserves the already established Dense meaning, and no
 malformed or unchecked payload is executable.
 
+> **⏸️ DEFERRED 2026-08-07.** No consumer inside this process's own lifetime needs either fingerprint
+> stability across restarts or serialized plan bytes — both were speculative future-proofing with no
+> concrete consumer, surfaced and discarded during C5 plan authoring rather than built and later
+> found unused. `PlanFingerprint`'s only real requirement — an in-process cache key — would be
+> satisfied by `deriving Hashable` directly on the checked types (once verified to compile across
+> the nested `RawEvalPlan`/`AssignPlan`/`TermPlan`/`ReadPlan`/`AffineMap` tree), with no new module,
+> no canonical byte layout, and no SHA-256-vs-alternative decision needed at all — that `Hashable`
+> addition is not landed either, absent an actual consumer to justify it now. `Plan/Codec.lean`'s
+> wire envelope has no current consumer either: the one plausible reason (a live cross-process
+> JAX/PyTorch backend needing serialized plans) would contradict `torch_compile/`'s already-
+> established ahead-of-time codegen pattern for backend integration — if that architecture is ever
+> adopted instead, Codec.lean's real shape should be driven by that boundary's actual requirements,
+> not guessed here in advance. Wave C proceeds directly from C4 to C6 (A.10); this section is
+> retained as a design record, not resurrected without a concrete triggering need.
+
 ### A.10 C6 - adversarial audit and handoff
 
 1. Run the complete local, graph, compiler, adapter, and codec mutation matrices.
@@ -2475,17 +2497,16 @@ C3a raw graph + checkPlan
 C3b runDensePlan + manual composition tests
 C4a source specialization + typed preflight
 C4b pack/unpack + end-to-end differential matrix
-C5a canonical bytes + fingerprint
-C5b codec + malformed-input tests
 C6  audit, manifest, and documentation
 ```
 
+(C5a/C5b — canonical bytes + fingerprint, codec + malformed-input tests — are omitted: C5 is
+deferred, see A.9.)
+
 C1 may proceed beside C2 after C0. Otherwise land in dependency order. Do not combine C2 through C4:
 local semantics, graph composition, and source residualization need distinct reviews and distinct
-failure localization. Do not begin Wave F or Wave G until C4's differential gate passes. Do not
-freeze C5 bytes before that gate. Between C4b and C5a, decide the SHA-256 dependency question
-(Section A.9) explicitly before C5a begins — it is a project decision, not an implementation detail
-to resolve inline.
+failure localization. Do not begin Wave F or Wave G until C4's differential gate passes. C5 is
+deferred (A.9), so C6 follows C4 directly.
 
 ### A.12 Implementation-time stop conditions
 

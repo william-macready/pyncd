@@ -558,7 +558,7 @@ were **zero-sorry** at the time of the census; all 38 were math-tower.
 | ✅ | **Wave C C1** — static signature boundary: `TensorSignature`/`InputSignature` vocabulary, `inferAxisSizesCore` extraction, `inferAxisSizesFromSignature`, six test categories (`Eval.Plan.SignatureTest`), registered in the default build target | 2026-08-05 | full cached `lake build` green (8,622 jobs) |
 | ✅ | **Wave C C2** — checked local kernel vertical slice: local-operation IR (`Plan/Kernel.lean`), `PlanError`/`PositionalInputError` diagnostics (`Plan/Error.lean`), the private-constructor checker `checkAssign` (`Plan/Check.lean`), and the Dense interpreter `runDenseAssign` (`Plan/Dense.lean`), with 32 `#guard` fixtures across three test modules (`Eval.Plan.KernelCheckTest` 15, `Eval.Plan.KernelDenseTest` 16, `Eval.Plan.CheckedPrivacyTest` 1), registered in the default build target | 2026-08-06 | full cached `lake build` green (8,629 jobs) |
 | ✅ | **Wave C C3** — checked graph vertical slice: the raw graph IR `RawEvalPlan` (`Plan/Graph.lean`), the graph-wiring checker `checkPlan` and private-constructor `CheckedEvalPlan` (`Plan/Check.lean`), the `PositionalInputError.arityMismatch` diagnostic (`Plan/Error.lean`), and the graph interpreter `runDensePlan` (`Plan/Dense.lean`), with 36 `#guard` fixtures across two test modules (`Eval.Plan.GraphCheckTest` 16, `Eval.Plan.GraphDenseTest` 20), registered in the default build target | 2026-08-06 | full cached `lake build` green (8,632 jobs) |
-| ✅ | **Wave C C4** — source compiler and representation boundary: `capabilityPreflight`/`prepareEvalPlan` (`Plan/Compile.lean`), the source-name-keyed `PlanBindings`/`PreparedPlan` sidecar (`Plan/Prepared.lean`), the named-entry adapter `pack`/`unpack`/`runPreparedDense` (`Plan/Adapter.lean`), and the neutral-leaf `EvalReport` move (`Eval/Report.lean`), plus the alpha-renaming law and the full `PropertyOracle.enumPrograms` differential sweep against the legacy evaluator (3,832/3,832 entries agree bit-for-bit, 0 rejected) and 3 test-the-tester mutations (`Eval.Plan.DifferentialTest`), alongside `Eval.Plan.CompileTest` (28 `#guard`s) and `Eval.Plan.AdapterTest` (3 `run_cmd` blocks / 9 checks), all registered in the default build target | 2026-08-06 | full cached `lake build` green (8,639 jobs) |
+| ✅ | **Wave C C4** — source compiler and representation boundary: `capabilityPreflight`/`prepareEvalPlan` (`Plan/Compile.lean`), the source-name-keyed `PlanBindings`/`PreparedPlan` sidecar (`Plan/Prepared.lean`), the named-entry adapter `pack`/`unpack`/`runPreparedDense` (`Plan/Adapter.lean`), and the neutral-leaf `EvalReport` move (`Eval/Report.lean`), plus the alpha-renaming law and the full `PropertyOracle.enumPrograms` differential sweep against the legacy evaluator (3,832/3,832 entries agree bit-for-bit, 0 rejected) and 3 test-the-tester mutations (`Eval.Plan.DifferentialTest`), alongside `Eval.Plan.CompileTest` (29 `#guard`s) and `Eval.Plan.AdapterTest` (3 `run_cmd` blocks / 9 checks), all registered in the default build target | 2026-08-06 | full cached `lake build` green (8,639 jobs) |
 
 ### Remaining — the critical path to an executing backend
 
@@ -567,9 +567,12 @@ were **zero-sorry** at the time of the census; all 38 were math-tower.
 > (source compiler and representation boundary) are done. Wave E's diagnostics/report prerequisites
 > are complete, and the detailed architecture is written up in
 > [`wave_c_evalplan_proposal.md`](wave_c_evalplan_proposal.md) (design-only beyond C0/C1/C2/C3/C4).
-> C5 (canonical representation and codec) is next. Wave C is a new-IR-scale undertaking
-> (differential testing against `DenseTensor`, the deferred `ContractionAlgebra`/`ScalarBinOp`
-> classifier) that warrants its own explicit go-ahead rather than being picked up by default.
+> **C5 (canonical representation and codec) is deferred** — no consumer inside one process's own
+> lifetime needs either fingerprint stability or serialized plan bytes, and the proposal's own A.9
+> now records this explicitly. **C6 (adversarial audit and handoff) is next.** Wave C is a
+> new-IR-scale undertaking (differential testing against `DenseTensor`, the deferred
+> `ContractionAlgebra`/`ScalarBinOp` classifier) that warrants its own explicit go-ahead rather than
+> being picked up by default.
 
 ```text
 Wave A  Correctness freeze — ✅ THE THREE AUDIT FINDINGS DONE 2026-07-30 (c754165..14b1353)
