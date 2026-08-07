@@ -2514,6 +2514,50 @@ malformed or unchecked payload is executable.
 **Gate:** Section 15.4 holds; the module graph matches A.2; Wave F and Wave G can consume checked
 plan APIs without importing source compilation or legacy execution.
 
+> **✅ DONE 2026-08-07.** Closed 5 real test-coverage gaps found by this task's own audit:
+> `InputBindingError.storageMismatch` (new `AdapterTest.lean` fixture), `PlanCompileCause.shape`
+> exercised through `prepareEvalPlan` (new `CompileTest.lean` fixture), non-empty warnings surviving
+> a later failure (new `CompileTest.lean` fixture, a second statement's unsized-axis failure
+> carrying the first statement's warnings forward unchanged), `PlanRunCause.execution` documented
+> and exercised directly (confirmed unreachable via the full `pack -> runPreparedDense` pipeline by
+> 3 real construction attempts during plan authoring, not merely asserted), and 4
+> `CapabilityError` sub-cases (`iterAt`/`iterNext`/`axiswise`/`min`) newly tested through the real
+> `capabilityPreflight` rather than only through the C0-era test-only classifier. Documented, rather
+> than closed, 2 confirmed dead-code findings: `ScalarConst.f32`/`.bool` and 4 `Compile.lean` helper
+> branches (`plainStmtOrFail`/`assignPartsOrFail`/`freeUidOrFail` and the `.iverson`/`.unaryFn`
+> factor-loop arms) are unreachable post-preflight by construction, now with doc comments explaining
+> why rather than left silently unexplained. Made `Eval/Plan/` discoverable: `Eval/AGENTS.md` and
+> `AGENTS.md` both gained a `Plan/` subsystem entry, and `LeanNCD.lean` gained
+> `import LeanNCD.Eval.Plan.Adapter` (plus a header mention) so `import LeanNCD` alone now reaches
+> the checked-plan API — full `lake build` after that change reported exactly 8,639 jobs, matching
+> the C4 baseline exactly (confirming the added import path creates no new compilation job, only a
+> second route to already-compiled artifacts). Published
+> [`wave_c_capability_manifest.md`](wave_c_capability_manifest.md): the exact semantic/wire versions
+> (`admittedVersion = 1`; no wire version, C5 deferred), the accepted/rejected source constructs (all
+> 11 `CapabilityError` categories, with `unsupportedDtype`/`dynamicShape` confirmed structurally
+> unreachable from the current AST — no dtype field on `Decl`, no value-dependent-shape constructor
+> on `IdxExpr` — not merely unimplemented), the real counted Law 1 corpus coverage (3,832 entries,
+> 3,832 accepted, 0 rejected, 100% bit-exact agreement on both indexed environment values and
+> preparation warnings, pinned by `DifferentialTest.lean`'s `#guard`), and the extension points
+> (scans, other backends, C5) stated as what is not yet supported and why rather than as a roadmap
+> commitment. The manifest also records the two audit findings this task's own work confirmed clean:
+> the module import graph matches A.2 exactly (`Dense.lean` imports neither `Compile.lean` nor legacy
+> `Gather`/`Contract`; `Compile.lean` does not import `Dense.lean`; `SizeInfer.lean` imports no plan
+> module), and the checked semantic IR (`AffineMap`/`ReadPlan`/`TermPlan`/`AssignPlan`/`RawEvalPlan`/
+> `CheckedAssignPlan`/`CheckedEvalPlan`) carries no `String`, `UID`, callback/function, or
+> unordered-map field anywhere — confirmed by reading every one of those types directly, not assumed
+> by analogy. Full `lake build` green (**8,639 jobs**, unchanged from the C4 baseline: this slice
+> adds no new production or test modules, only doc comments, test fixtures inside already-registered
+> modules, `AGENTS.md`/`LeanNCD.lean` documentation edits, and this papers update, none of which
+> register a new compilation unit). **Section 15.4's Gate holds in its reduced form**, per its own
+> A.9 deferral note: `prepareEvalPlan`/`runPreparedDense` agreement with `evalScheduled` (or a typed
+> rejection) is demonstrated for the whole declared fragment by the differential sweep above; the
+> canonical-round-trip clause remains out of scope until C5 is built. This completes Wave C
+> (C0-C4, C6; C5 deferred, see A.9).
+>
+> Commits: `8761328^..ded704c` (Task 1's 5 coverage-gap fixtures and 2 dead-code doc comments, Task
+> 2's `Plan/` discoverability edits, and Task 3's capability manifest).
+
 ### A.11 Landing sequence and review boundaries
 
 Prefer these reviewable commits:
