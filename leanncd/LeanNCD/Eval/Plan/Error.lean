@@ -1,4 +1,5 @@
 import LeanNCD.Eval.Plan.Kernel
+import LeanNCD.Eval.Error
 
 /-!
 # Wave C plan-layer diagnostics (C2)
@@ -65,5 +66,33 @@ inductive CapabilityError
   | dynamicShape         (context : String)  -- backend- or value-dependent shapes
   | recurrenceOrCallback (context : String)
   deriving DecidableEq, BEq, Repr, Inhabited
+
+/-- A required signature is missing, malformed, or incompatible with the scheduled declarations
+    (§5.5). Checked for every name in `sched.extNames` — by construction (`resolveDecls`,
+    `Structural.lean`), every such name is read somewhere, so no separate "read before production"
+    filter is needed here. -/
+inductive InputSignatureError
+  | missingSignature (name : String)
+  | dtypeNotAdmitted (name : String) (dtype : ScalarDType)
+  deriving DecidableEq, BEq, Repr, Inhabited
+
+/-- §5.5's sketch, verified as-is. Does NOT derive `Repr`: `ShapeError` (an existing sibling type)
+    has no `Repr` instance — confirmed by observing the actual `synthInstanceFailed` error, not
+    assumed — and `Repr` derivation requires every constructor's payload to support it, unlike
+    `DecidableEq`/`Inhabited`, which don't have that all-or-nothing requirement the same way. -/
+inductive PlanCompileCause
+  | inputSignature (cause : InputSignatureError)
+  | capability     (cause : CapabilityError)
+  | shape          (cause : ShapeError)
+  | invalidPlan    (cause : PlanError)
+  deriving DecidableEq, BEq, Inhabited
+
+/-- Same finding applies here: `EvalWarning` also has no `Repr`, so this likewise derives
+    `DecidableEq, BEq, Inhabited` but not `Repr`. `#guard`-based equality testing is unaffected —
+    `DecidableEq`/`BEq` are exactly what `==` needs, and both derive cleanly. -/
+structure PlanCompileFailure where
+  cause    : PlanCompileCause
+  warnings : List EvalWarning
+  deriving DecidableEq, BEq, Inhabited
 
 end LeanNCD.Eval.Plan
