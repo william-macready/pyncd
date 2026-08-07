@@ -1,0 +1,137 @@
+# Wave C capability manifest
+
+This is a standalone reference for what the Wave C checked `EvalPlan` boundary actually accepts,
+rejects, and covers today — not a design narrative. For the architecture, the correctness laws, and
+the reasoning behind each decision, see
+[`wave_c_evalplan_proposal.md`](wave_c_evalplan_proposal.md); for the slice-by-slice delivery
+history, see [`restructure_suggestions.md`](restructure_suggestions.md). Every number below was
+counted from an actual run on this branch, not estimated or copied from planning text.
+
+## 1. Semantic and wire versions
+
+- **Semantic version:** `admittedVersion = 1`
+  ([`LeanNCD/Eval/Plan/Check.lean`](../leanncd/LeanNCD/Eval/Plan/Check.lean)). `checkPlan` rejects
+  any `RawEvalPlan.version` other than `1` with `PlanError.versionNotAdmitted`.
+- **Wire version:** N/A. C5 (canonical representation and codec — `Plan/Canonical.lean`,
+  `Plan/Codec.lean`) is deliberately deferred; see
+  [`wave_c_evalplan_proposal.md` A.9](wave_c_evalplan_proposal.md#a9-c5---canonical-representation-and-codec).
+  There is no wire format, and therefore nothing to version, until C5 is built.
+
+## 2. Accepted source constructs
+
+The checked fragment accepts exactly (proposal §3.1), and this is what the differential sweep in
+§4 below actually exercises and confirms, not merely what was intended:
+
+- scan-free `.plain` assignment steps;
+- ordinary free LHS axes only;
+- concrete `f64` tensor signatures;
+- identity nonlinearity;
+- real sum-product contraction;
+- plain tensor read factors;
+- integer-affine reads, including shifts, scales, and multi-axis affine expressions;
+- multiple factors per term;
+- multiple terms per assignment;
+- per-term contracted axes;
+- chained scheduled steps and intermediate tensors;
+- zero-padded out-of-bounds reads;
+- zero/one dimensions.
+
+## 3. Rejected source constructs
+
+Every rejection is a typed `CapabilityError` constructor
+([`LeanNCD/Eval/Plan/Error.lean`](../leanncd/LeanNCD/Eval/Plan/Error.lean)) — there is no
+`unsupported : String` escape hatch. All 11 categories:
+
+| Constructor | Rejects |
+|---|---|
+| `scanNode` | `ScanStmt.scan` / `.scanPre` |
+| `scatterOrAffineLhs` | scatter statements, affine LHS slots |
+| `unsupportedLhsSlot` | `freeNorm`, `iterAt`, `iterNext` LHS slots |
+| `unsupportedNonlin` | pointwise/axiswise nonlinearities |
+| `maskOrPredicate` | masks, predicates, Iverson factors |
+| `unaryFactor` | unary functions on a factor |
+| `unsupportedAgg` | max/min aggregation |
+| `booleanOutput` | Boolean/predicate declared outputs |
+| `unsupportedDtype` | any dtype other than the declared `f64` mode |
+| `dynamicShape` | backend- or value-dependent shapes |
+| `recurrenceOrCallback` | recurrence- or callback-bearing payloads |
+
+**Two of these — `unsupportedDtype` and `dynamicShape` — are structurally unreachable from the
+current AST, not merely unimplemented.** `Compile.lean`'s own doc comment says so
+(`capabilityPreflight`: "`unsupportedDtype`/`dynamicShape` are never thrown below"), and this is
+confirmed by the AST itself, not just the comment:
+
+- `Decl` ([`LeanNCD/DSL/Ast.lean`](../leanncd/LeanNCD/DSL/Ast.lean)) has constructors `.tensor`,
+  `.predicate`, `.linear`, `.axis`, `.iter` — none carries a `ScalarDType` or any other dtype field.
+  There is nothing in a declaration for a dtype check to inspect and reject.
+- `IdxExpr` (same file) has constructors `.axis`, `.const`, `.scale`, `.shift`, `.affine` — every
+  one is integer-affine over a fixed axis basis. None can express a backend- or value-dependent
+  shape.
+
+This distinction matters for a future reader deciding whether to "complete" these two categories:
+doing so is not a matter of adding a missed check to `Compile.lean`, but of first adding a new AST
+constructor (a dtype field on `Decl`, or a value-dependent-shape constructor on `IdxExpr`) that does
+not exist today. The other 9 categories are real, exercised rejections of constructs the AST already
+expresses.
+
+## 4. Law 1 corpus coverage
+
+The full `PropertyOracle.enumPrograms` differential sweep
+([`test/Eval/Plan/DifferentialTest.lean`](../leanncd/test/Eval/Plan/DifferentialTest.lean)) is the
+real, counted evidence for Law 1 (residualization):
+
+- **3,832** entries generated;
+- **3,832** accepted by `capabilityPreflight`/`prepareEvalPlan` (**0** rejected, 0 rejection
+  categories — every generated program today falls inside Wave C's scan-free fragment);
+- **100% bit-exact agreement** between `runPreparedDense` and `evalScheduled` on every accepted
+  entry, compared on both the indexed environment values (`EvalReport.env`) and the preparation
+  warnings (`EvalReport.warnings`) — not values alone.
+
+This is pinned by the file's own `#guard`, not merely printed and eyeballed:
+
+```lean
+#guard match sweep with
+  | .ok (total, accepted, rejCounts) => total == 3832 && accepted == 3832 && rejCounts.isEmpty
+  | .error _ => false
+```
+
+A future change that silently shifts the accept/reject boundary, or changes `enumPrograms`'s size,
+fails this guard loudly instead of being silently re-baselined.
+
+## 5. Extension points
+
+These are named as what is **not yet supported and why** — a record of deliberate scope discipline,
+not a roadmap commitment:
+
+- **Scans.** Rejected via `scanNode` (§3). Extending the plan to scans needs explicit `ScanPlan`
+  state, transition, geometry, boundary, order, and causality data (proposal §7, and §A.12's stop
+  conditions) — this has been deliberately deferred, not designed. Adding scan support without that
+  data would mean guessing at semantics the proposal explicitly declines to guess at.
+- **Other backends (PyTorch/JAX).** Proposal §4.4/§10 treats Dense, PyTorch, and JAX as
+  interpretations of one checked plan language, but only the Dense worker exists today. Whether and
+  how PyTorch/JAX consume `CheckedEvalPlan` is contingent on how backend integration is eventually
+  architected — `torch_compile/`'s existing ahead-of-time-codegen precedent for backend integration
+  is why C5's codec (below) was deferred rather than built speculatively ahead of a real consumer.
+- **Canonical representation/codec (C5).** Deferred; see
+  [A.9](wave_c_evalplan_proposal.md#a9-c5---canonical-representation-and-codec) for the full
+  reasoning (no consumer inside this process's own lifetime needs fingerprint stability or
+  serialized bytes) and what would resurrect it (a concrete cross-process or persistence consumer).
+
+## 6. Audit findings confirmed clean
+
+Two findings from this plan's own authoring, recorded here so a future reader does not have to
+re-verify them:
+
+- **The module import graph matches
+  [A.2](wave_c_evalplan_proposal.md#a2-production-modules-and-dependency-direction) exactly.**
+  `Dense.lean` imports neither `Compile.lean` nor the legacy `Gather`/`Contract`; `Compile.lean`
+  does not import `Dense.lean`; `SizeInfer.lean` imports no plan module. (`Canonical.lean` does not
+  exist yet — C5 is deferred — so its A.2 constraint has no module to check against.)
+- **The checked semantic IR carries no `String`, `UID`, callback/function, or unordered-map field
+  anywhere.** `AffineMap`, `ReadPlan`, `TermPlan`, `AssignPlan`, `RawEvalPlan`
+  (`Plan/Kernel.lean`, `Plan/Graph.lean`) and the `CheckedAssignPlan`/`CheckedEvalPlan` wrappers
+  (`Plan/Check.lean`) are built entirely from `Nat`, `Int`, `Array`, `TensorSlot` (a `Nat`), and the
+  closed `ScalarDType`/`ScalarConst`/`ScalarBinOp`/`ContractionAlgebra`/`NumericMode`/
+  `OutOfBoundsPolicy` tags. The source-name-keyed `HashMap String TensorSignature` in
+  `InputSignature` and the `SlotBinding`/`PlanBindings` sidecar are boundary/specialization data by
+  design (proposal §5.1/§5.4) — they sit outside the checked plan, not inside it.
