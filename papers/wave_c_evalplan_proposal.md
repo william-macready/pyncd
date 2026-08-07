@@ -2263,9 +2263,12 @@ rejected before execution; `Dense.lean` has no source or legacy-worker dependenc
 > `Error.lean`/`Check.lean`/`Dense.lean` are modified, not added, so they don't change the job count
 > — matching this section's own arithmetic exactly). No deviations from this section's plan text.
 >
-> Commits: `f3cae27^..c2ac49a` (Task 1's `Plan/Graph.lean` + `checkPlan` + `GraphCheckTest.lean`,
-> and Task 2's `PositionalInputError.arityMismatch` + `Plan/Dense.lean`'s `runDensePlan` +
-> `GraphDenseTest.lean` + lakefile registration of both test modules).
+> Commits: `f3cae27^..0ea2fa0` (Task 1's `Plan/Graph.lean` + `checkPlan` + `GraphCheckTest.lean`,
+> Task 2's `PositionalInputError.arityMismatch` + `Plan/Dense.lean`'s `runDensePlan` +
+> `GraphDenseTest.lean` + lakefile registration of both test modules, and the final-review fix wave
+> that validated unused input slots and wrapped the in-node `slotOutOfRange` sites in `.nodeError`
+> for node context — both already folded into the counts and description above, not a separate
+> deviation).
 
 ### A.8 C4 - source compiler and representation boundary
 
@@ -2364,25 +2367,37 @@ unsupported construct fails before `runDensePlan`; checked semantic data contain
 > input, `requiredInputs` order-independence against an asymmetric-roles contraction fixture,
 > duplicate/missing/extra/structurally-missing binding failures, and warning preservation on both
 > the success path and a later binding failure); `Eval.Plan.DifferentialTest` (the alpha-renaming law
-> — equal raw semantic graphs, unequal bindings, confirmed by a real run — plus the full
-> `PropertyOracle.enumPrograms` differential sweep and 3 test-the-tester mutations). **Real observed
-> sweep counts (not estimated): total = 3,832, accepted = 3,832, rejected = 0, 0 rejection
-> categories — 100% bit-exact agreement between `runPreparedDense` and `evalScheduled` on every
-> entry**, pinned by a `#guard` on the exact triple. All 3 test-the-tester mutations (coefficient
-> change, dropped term, reversed Float-sensitive fold order) were confirmed by executing both the
-> original and mutated program through `evalScheduled` to actually break agreement, not assumed from
-> the mutation's description. All three test modules registered in the default build target. Full
-> `lake build` green (8,639 jobs, up from the 8,632 C3 baseline — the 4 new library modules
-> (`Eval/Report.lean`, `Plan/Prepared.lean`, `Plan/Compile.lean`, `Plan/Adapter.lean`) and 3 new test
-> modules (`CompileTest`, `AdapterTest`, `DifferentialTest`) this slice adds; `Plan/Error.lean` and
-> `Eval/Eval.lean` are modified, not added, so they don't change the job count — matching this
-> section's own arithmetic exactly). No deviations from this section's plan text.
+> — equal raw semantic graphs, unequal bindings, confirmed by a real run — the full
+> `PropertyOracle.enumPrograms` differential sweep, 3 test-the-tester mutations, a rank-2 output case
+> (`Y[i,j] := A[i]·B[j]`) exercising the multi-retained-axis surface at the value level, and a
+> repeated-assignment program run through the full `prepareEvalPlan → runPreparedDense` pipeline
+> confirming the last write wins — the latter two added by the final whole-branch review, which
+> independently confirmed the compiler algorithm correct but found these two value-level paths
+> untested by anything else in the slice). **Real observed sweep counts (not estimated): total =
+> 3,832, accepted = 3,832, rejected = 0, 0 rejection categories — 100% bit-exact agreement between
+> `runPreparedDense` and `evalScheduled` on every entry, both indexed environment values AND
+> preparation warnings compared (the latter comparison also added by the final review — the original
+> sweep compared only `.env`)**, pinned by a `#guard` on the exact triple. All 3 test-the-tester
+> mutations (coefficient change, dropped term, reversed Float-sensitive fold order) were confirmed by
+> executing both the original and mutated program through `evalScheduled` to actually break
+> agreement, not assumed from the mutation's description. All three test modules registered in the
+> default build target. Full `lake build` green (8,639 jobs, up from the 8,632 C3 baseline — the 4
+> new library modules (`Eval/Report.lean`, `Plan/Prepared.lean`, `Plan/Compile.lean`,
+> `Plan/Adapter.lean`) and 3 new test modules (`CompileTest`, `AdapterTest`, `DifferentialTest`) this
+> slice adds; `Plan/Error.lean` and `Eval/Eval.lean` are modified, not added, so they don't change
+> the job count — matching this section's own arithmetic exactly, unchanged by the final-review fix
+> wave since it only added `#guard`/`run_cmd` lines to already-registered modules). One deviation
+> from this section's plan text: the differential sweep's Gate claim ("every unsupported construct
+> fails before `runDensePlan`") originally rested on the sweep's own consistency check, which the
+> real `enumPrograms` corpus never exercises (0 of 3,832 entries are rejected) — the final review
+> caught this and the Task 1 `#guard` above now directly demonstrates the claim instead.
 >
-> Commits: `1aab71e^..bc90f98` (Task 1's `capabilityPreflight` and capability-row `CompileTest`
+> Commits: `1aab71e^..1790db8` (Task 1's `capabilityPreflight` and capability-row `CompileTest`
 > fixtures, Task 2's `prepareEvalPlan` and `Plan/Prepared.lean` and the deterministic-slot/repeated-
 > assignment `CompileTest` additions, Task 3's `pack`/`unpack`/`runPreparedDense` and
-> `Eval/Report.lean` and `AdapterTest`, and Task 4's alpha-renaming law and differential sweep and
-> mutations and `DifferentialTest` and the three test-module lakefile registrations).
+> `Eval/Report.lean` and `AdapterTest`, Task 4's alpha-renaming law and differential sweep and
+> mutations and `DifferentialTest` and the three test-module lakefile registrations, and the
+> final-review fix wave closing the four coverage gaps and one stale `AGENTS.md` reference above).
 
 ### A.9 C5 - canonical representation and codec
 
