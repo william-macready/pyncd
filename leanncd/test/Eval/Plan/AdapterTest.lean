@@ -29,6 +29,10 @@ private def zeroCoeffInputs : HashMap String DenseTensor :=
   (({} : HashMap String DenseTensor).insert "A" ⟨[2], #[10.0, 100.0]⟩).insert
     "B" ⟨[3], #[1.0, 2.0, 3.0]⟩
 
+private def undersizedDataInputs : HashMap String DenseTensor :=
+  (({} : HashMap String DenseTensor).insert "A" ⟨[2], #[10.0]⟩).insert
+    "B" ⟨[3], #[1.0, 2.0, 3.0]⟩
+
 -- Example 2: two same-shape, different-value inputs playing ASYMMETRIC roles (`A` retained on the
 -- output axis `i`, `B` contracted over `j`) — `+`/`·` over identically-indexed same-shape reads
 -- would be commutative and so would NOT actually discriminate a positional slot-swap bug from a
@@ -120,6 +124,15 @@ run_cmd do
           unless nm == "A" && expected == #[2] && actual == [3] do
             throwError s!"wrong shapeMismatch payload: name={nm} expected={repr expected} actual={repr actual}"
       | .error e => throwError s!"wrong error kind for a shape mismatch: {repr e}"
+      -- Check 10: `pack` fails loudly when a required input's declared shape matches but its
+      -- data array is undersized. Distinct from Check 4 (`shapeMismatch`): here `.shape` itself
+      -- agrees with the signature, but `.data.size` doesn't match the shape's element product.
+      match pack prepared undersizedDataInputs with
+      | .ok _ => throwError "expected pack to fail on a storage mismatch"
+      | .error (.storageMismatch nm slot shape dataSize) =>
+          unless nm == "A" && slot == 0 && shape == [2] && dataSize == 1 do
+            throwError s!"wrong storageMismatch payload: name={nm} slot={slot} shape={repr shape} dataSize={dataSize}"
+      | .error e => throwError s!"wrong error kind for a storage mismatch: {repr e}"
 
 -- ── Checks 5–8: reordering `requiredInputs`, a genuine duplicate slot binding, an extra binding
 -- naming a slot the plan doesn't need, and a structurally-missing required binding — all against
@@ -224,5 +237,11 @@ run_cmd do
           match failure.cause with
           | .binding (.missingEnvBinding nm) => unless nm == "X" do throwError s!"wrong missing name: {nm}"
           | c => throwError s!"expected a binding failure, got: {repr c}"
+
+-- PlanRunCause.execution: unreachable through the full runPreparedDense pipeline — pack's own
+-- validation (Adapter.lean) and runDenseAssign's self-consistent output construction (Dense.lean)
+-- together rule out every PositionalInputError constructor once pack has already succeeded.
+-- Named directly instead, same pattern as PlanError.numericModeNotAdmitted (C3).
+#guard (PlanRunCause.execution (.arityMismatch 2 3)) == PlanRunCause.execution (.arityMismatch 2 3)
 
 end LeanNCD.Eval.Plan.AdapterTest

@@ -1,3 +1,4 @@
+import LeanNCD.Eval.Entry
 import LeanNCD.Eval.Plan.Compile
 
 /-!
@@ -58,12 +59,34 @@ def acceptedSched : ScheduledProgram :=
           { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity })] })
   == some (.unsupportedLhsSlot "Y: freeNorm i")
 
+-- unsupportedLhsSlot: iterAt
+#guard errOf (capabilityPreflight
+    { acceptedSched with stmts :=
+        [.plain (.assign "Y" [.iterAt ⟨"i", 0, .nat⟩ 0]
+          { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity })] })
+  == some (.unsupportedLhsSlot "Y: iterAt i")
+
+-- unsupportedLhsSlot: iterNext
+#guard errOf (capabilityPreflight
+    { acceptedSched with stmts :=
+        [.plain (.assign "Y" [.iterNext ⟨"i", 0, .nat⟩]
+          { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity })] })
+  == some (.unsupportedLhsSlot "Y: iterNext i")
+
 -- unsupportedNonlin: pointwise
 #guard errOf (capabilityPreflight
     { acceptedSched with stmts :=
         [.plain (.assign "Y" [.free ⟨"i", 0, .nat⟩]
           { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .pointwise .relu })] })
   == some (.unsupportedNonlin "Y: pointwise nonlinearity")
+
+-- unsupportedNonlin: axiswise
+#guard errOf (capabilityPreflight
+    { acceptedSched with stmts :=
+        [.plain (.assign "Y" [.free ⟨"i", 0, .nat⟩]
+          { body := { terms := [{ factors := [.read "X" []] }] }
+          , nonlin := .axiswise .softmax none })] })
+  == some (.unsupportedNonlin "Y: axiswise nonlinearity")
 
 -- maskOrPredicate: an iverson factor
 #guard errOf (capabilityPreflight
@@ -88,6 +111,14 @@ def acceptedSched : ScheduledProgram :=
           { body := { terms := [{ factors := [.read "X" []] }] }
           , nonlin := .identity, agg := .max })] })
   == some (.unsupportedAgg "Y: max aggregation")
+
+-- unsupportedAgg: min
+#guard errOf (capabilityPreflight
+    { acceptedSched with stmts :=
+        [.plain (.assign "Y" [.free ⟨"i", 0, .nat⟩]
+          { body := { terms := [{ factors := [.read "X" []] }] }
+          , nonlin := .identity, agg := .min })] })
+  == some (.unsupportedAgg "Y: min aggregation")
 
 -- booleanOutput: a predicate decl
 #guard errOf (capabilityPreflight { acceptedSched with decls := [.predicate "P" []] })
@@ -200,5 +231,72 @@ def badDtypeSig : InputSignature :=
 -- same schedule/error pair `capabilityPreflight`'s own `scanNode` guard above uses.
 #guard causeOf (prepareEvalPlan { acceptedSched with stmts := [.scan "s" [] [] [] false] } identitySig) ==
   some { cause := .capability (.scanNode "s"), warnings := [] }
+
+-- `PlanCompileCause.shape` through `prepareEvalPlan`: axis `i` never appears in any read, so shape
+-- inference succeeds vacuously (no read positions to fail on) but leaves `i` unsized;
+-- `resolveSizeOrFail` then fails on it while resolving the statement's output shape.
+def axUnsized : AxisSpec := { name := "i", uid := 1, kind := .nat }
+
+def unsizedSched : ScheduledProgram :=
+  { decls := [.axis axUnsized none]
+  , stmts := [.plain (.assign "Y" [.free axUnsized]
+      { body := { terms := [{ factors := [] }] }, nonlin := .identity })]
+  , env := {}, extNames := (∅ : Finset String)
+  , explicitSizes := {} }
+
+def emptySig : InputSignature := InputSignature.mk ({} : HashMap String TensorSignature)
+
+#guard causeOf (prepareEvalPlan unsizedSched emptySig) ==
+  some { cause := .shape (.unsizedAxis 1 (.assignOutput "Y")), warnings := [] }
+
+/-- Manual renderer for `PlanCompileCause` (used only for test-failure messages): the type
+    deliberately has no `Repr`/`ToString` (`ShapeError` — nested via `.shape` — has neither), so a
+    diagnosable message has to dispatch per-constructor to whichever rendering each nested cause
+    DOES support (`Repr` for `CapabilityError`/`InputSignatureError`/`PlanError`, `ToString` for
+    `ShapeError`). -/
+private def renderCompileCause : PlanCompileCause → String
+  | .inputSignature c => s!"inputSignature: {repr c}"
+  | .capability c     => s!"capability: {repr c}"
+  | .shape c          => s!"shape: {c}"
+  | .invalidPlan c     => s!"invalidPlan: {repr c}"
+
+-- non-empty `warnings` surviving into a real `prepareEvalPlan` failure: a second statement's
+-- unsized-axis failure must not touch or clear warnings the first statement already accumulated.
+private def warnProg : TLProgram := tlprog!{
+  axis i : ℕ = 4
+  axis j : ℕ = 3
+  Y[i, j] := X[2 * i + j]
+}
+private def warnInputs : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "X" ⟨[6], #[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]⟩
+def axUnsized2 : AxisSpec := { name := "k", uid := 1000, kind := .nat }
+
+-- statement 1 alone, for cross-check that the combined program's warnings didn't change.
+def warnBaselinePrepared : Option PreparedPlan := Id.run do
+  match warnProg.compileToScheduled.run 0 with
+  | .error _ _ => none
+  | .ok sched _ => (prepareEvalPlan sched (InputSignature.ofDenseInputs warnInputs)).toOption
+
+run_cmd do
+  match warnProg.compileToScheduled.run 0 with
+  | .error e _ => throwError s!"warnProg compile failed: {repr e}"
+  | .ok sched _ =>
+    let combined : ScheduledProgram :=
+      { sched with
+          decls := sched.decls ++ [.axis axUnsized2 none]
+          stmts := sched.stmts ++ [.plain (.assign "Z" [.free axUnsized2]
+            { body := { terms := [{ factors := [] }] }, nonlin := .identity })] }
+    match causeOf (prepareEvalPlan combined (InputSignature.ofDenseInputs warnInputs)) with
+    | none => throwError "expected prepareEvalPlan to fail on the combined program"
+    | some f =>
+        unless !f.warnings.isEmpty do
+          throwError "expected non-empty warnings to survive into the Step D failure"
+        unless f.cause == .shape (.unsizedAxis 1000 (.assignOutput "Z")) do
+          throwError s!"wrong cause: {renderCompileCause f.cause}"
+        match warnBaselinePrepared with
+        | none => throwError "unreachable: baseline already confirmed some above"
+        | some baseline =>
+            unless f.warnings == baseline.warnings do
+              throwError s!"combined warnings diverged from statement-1-alone: {f.warnings} vs {baseline.warnings}"
 
 end LeanNCD.Eval.Plan.CompileTest

@@ -50,7 +50,13 @@ inductive OutOfBoundsPolicy
 
 /-- A scalar literal in dtype-preserving canonical form. `f64` stores `Float.toBits`, never a
     `Float`: `Float.toBits 0.0 ≠ Float.toBits (-0.0)` whereas `(0.0 : Float) == (-0.0 : Float)`
-    is `true`, so bits distinguish signed zero and preserve NaN payloads. Verified by `#eval`. -/
+    is `true`, so bits distinguish signed zero and preserve NaN payloads. Verified by `#eval`.
+
+    As with `ScalarDType`, only `.f64` is admitted by Wave C: `admittedAlgebra` (`Check.lean`) is
+    the sole `ContractionAlgebra` `checkAssign` accepts (its `algebraNotAdmitted` guard forces
+    `a.algebra == admittedAlgebra` exactly), and both of its constants (`factorId`, `reduceId`) are
+    `.f64 _`. `.f32`/`.bool` are reserved tags — like `ScalarDType.f32`/`.bool` — with no producer
+    or consumer yet; neither can ever appear inside a checked plan's `ContractionAlgebra`. -/
 inductive ScalarConst
   | f64  (bits : UInt64)
   | f32  (bits : UInt32)

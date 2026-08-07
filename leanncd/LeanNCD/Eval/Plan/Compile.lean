@@ -105,15 +105,27 @@ def orderedExtNames (sched : ScheduledProgram) : List String :=
       if decide (nm ∈ sched.extNames) && !acc.contains nm then acc ++ [nm] else acc) acc)
     ([] : List String)
 
+/-- Unreachable post-preflight: `checkLHSSlot` (Step A) already rejects every non-`.free` slot
+    (`freeNorm`/`iterAt`/`iterNext` via `unsupportedLhsSlot`, `affine` via `scatterOrAffineLhs`)
+    before `prepareEvalPlan` ever calls this. Kept total for the same reason as
+    `plainStmtOrFail`/`assignPartsOrFail` above. -/
 private def freeUidOrFail (context : String) : LHSSlot → Except CapabilityError UID
   | .free a => pure a.uid
   | .freeNorm _ | .iterAt .. | .iterNext _ => throw (.unsupportedLhsSlot context)
   | .affine _ => throw (.scatterOrAffineLhs context)
 
+/-- Unreachable post-preflight: `checkScanStmt` (Step A) already rejects `.scan`/`.scanPre` via
+    `scanNode` before `prepareEvalPlan` ever calls this — same "Step A already rejected these"
+    pattern as the `flatStmts` filter a few lines below `capabilityPreflight`. Kept total (rather
+    than assuming `.plain` via a partial match) so a future `ScanStmt` constructor is a compile
+    error here, not a silent fallthrough. -/
 private def plainStmtOrFail (context : String) : ScanStmt → Except CapabilityError Stmt
   | .plain s => pure s
   | .scan .. | .scanPre .. => throw (.scanNode context)
 
+/-- Unreachable post-preflight: `checkStmt` (Step A) already rejects `.scatter`/`.recurMorphism`
+    outright (`scatterOrAffineLhs`/`recurrenceOrCallback`) before `prepareEvalPlan` ever calls this.
+    Kept total for the same reason as `plainStmtOrFail` above. -/
 private def assignPartsOrFail (context : String) : Stmt →
     Except CapabilityError (String × List LHSSlot × RHSExpr)
   | .assign nm slots rhs => pure (nm, slots, rhs)
@@ -208,7 +220,9 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
               { sourceSlot, map := { coeffs, bias := biasArr }, sourceShape := sourceSig.shape
               , oobPolicy := .zeroPad }
         | .iverson _ => liftCapability warnings (throw (.maskOrPredicate "factor"))
+            -- unreachable post-preflight (checkFactor/Step A already rejected .iverson)
         | .unaryFn .. => liftCapability warnings (throw (.unaryFactor "factor"))
+            -- unreachable post-preflight (checkFactor/Step A already rejected .unaryFn)
       termsAcc := termsAcc.push
         { iterationShape, outputPos, reductionPos, factors := factorsAcc }
     let destSlot := tensorSigsAcc.size
