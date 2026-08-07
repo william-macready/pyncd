@@ -115,12 +115,21 @@ for a NON-capability reason.\nprogram: {repr p}"
               throw s!"evalScheduled failed on a capabilityPreflight-accepted program: \
 {e.error}.\nprogram: {repr p}"
           | .ok planReport, .ok refReport =>
-              if envEq planReport.env refReport.env then
+              let envOk := envEq planReport.env refReport.env
+              -- `EvalWarning` derives `DecidableEq` only (no `BEq`) — compare via `List`'s derived
+              -- `DecidableEq` (order matters: warnings are meant to preserve emission order, not be
+              -- compared as a set).
+              let warningsOk := decide (planReport.warnings = refReport.warnings)
+              if envOk && warningsOk then
                 pure SweepOutcome.accepted
-              else
-                throw s!"DISAGREEMENT between runPreparedDense and evalScheduled.\n\
+              else if !envOk then
+                throw s!"DISAGREEMENT (env) between runPreparedDense and evalScheduled.\n\
 program: {repr p}\ninput env: {repr env}\nplan env: {repr planReport.env.toList}\n\
 reference env: {repr refReport.env.toList}"
+              else
+                throw s!"DISAGREEMENT (warnings) between runPreparedDense and evalScheduled.\n\
+program: {repr p}\ninput env: {repr env}\nplan warnings: {planReport.warnings.map toString}\n\
+reference warnings: {refReport.warnings.map toString}"
 
 /-- Fold the whole corpus, accumulating (total, accepted, per-category rejection counts).
     `foldlM` over `Except String _` short-circuits on the first `checkEntry` failure — a genuine
@@ -168,6 +177,71 @@ private def planAgrees (p : TLProgram) (env : HashMap String DenseTensor) : Exce
   | .ok .accepted => pure ()
   | .ok (.rejected cat) => throw s!"expected an accepted case, got rejected ({cat})"
   | .error e => throw e
+
+-- ── Rank-2 output coverage: every `enumPrograms` entry and every hand-built value-comparison
+-- fixture above writes a rank-1 output (`Y[i] := ...`, one `.free` LHS slot). The multi-retained-
+-- axis surface — `outputShape` in `retainedUids` order, `outputPos := Array.range`, how
+-- `basisUids`'s retained prefix lines up with `runDenseAssign`'s row-major coordinate enumeration —
+-- is otherwise untested at the value level. `Y[i, j] := A[i] · B[j]` (outer product, both `i` and
+-- `j` retained, no contraction) exercises exactly that surface. ──
+
+private def rank2Prog : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  axis j : ℕ = 3
+  Y[i, j] := A[i] · B[j]
+}
+
+private def rank2Inputs : HashMap String DenseTensor :=
+  (({} : HashMap String DenseTensor).insert "A" ⟨[2], #[1.0, 2.0]⟩).insert
+    "B" ⟨[3], #[10.0, 20.0, 30.0]⟩
+
+run_cmd do
+  match planAgrees rank2Prog rank2Inputs with
+  | .error e => throwError s!"rank-2 output case: {e}"
+  | .ok () => pure ()
+
+-- ── Repeated-assignment executing coverage: `CompileTest.lean`'s `repeatSched` fixture
+-- (`Y[i]:=A[i]; Y[i]:=B[i]; Z[i]:=Y[i]`) is checked STRUCTURALLY there (`materializedNames ==
+-- #["Y","Y","Z"]`, two distinct slots for the two `Y` entries) but never actually RUN.
+-- `PlanBindings.materializedNames`'s deliberate non-deduplication design and `unpack`'s "later
+-- insertion wins" behavior have zero executing test behind them without this: a regression in
+-- `unpack`'s fold direction (e.g. `foldr` instead of `foldl`, or an accidental `.reverse`) would
+-- silently make a reassigned name return its FIRST write instead of its last, and nothing else in
+-- this slice would catch it. Runs the equivalent source program through the full
+-- `prepareEvalPlan` → `runPreparedDense` pipeline, asserts the explicit expected value (last write
+-- wins), AND cross-checks against `evalScheduled` via `planAgrees` — belt and suspenders. ──
+
+private def repeatProg : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  Y[i] := A[i]
+  Y[i] := B[i]
+  Z[i] := Y[i]
+}
+
+private def repeatProgInputs : HashMap String DenseTensor :=
+  (({} : HashMap String DenseTensor).insert "A" ⟨[2], #[1.0, 2.0]⟩).insert
+    "B" ⟨[2], #[100.0, 200.0]⟩
+
+run_cmd do
+  match planAgrees repeatProg repeatProgInputs with
+  | .error e => throwError s!"repeated-assignment case: {e}"
+  | .ok () => pure ()
+  match repeatProg.compileToScheduled.run 0 with
+  | .error e _ => throwError s!"repeatProg compile failed: {repr e}"
+  | .ok sched _ =>
+      match prepareEvalPlan sched (InputSignature.ofDenseInputs repeatProgInputs) with
+      | .error _ => throwError "repeatProg prepare failed (unexpected — planAgrees already accepted it)"
+      | .ok prepared =>
+          match runPreparedDense prepared repeatProgInputs with
+          | .error e => throwError s!"repeatProg run failed (warnings={e.warnings.length})"
+          | .ok report =>
+              match report.env["Y"]?, report.env["Z"]? with
+              | some y, some z =>
+                  unless denseEq y ⟨[2], #[100.0, 200.0]⟩ do
+                    throwError s!"Y did not take the LAST write's value: {repr y.data}"
+                  unless denseEq z ⟨[2], #[100.0, 200.0]⟩ do
+                    throwError s!"Z did not read the LAST write of Y: {repr z.data}"
+              | _, _ => throwError "Y or Z missing from repeated-assignment plan env"
 
 /-- Confirm mutating `original` into `mutated` actually changes `outputName`'s value relative to
     `original`'s OWN `evalScheduled` result — a mutation that doesn't break agreement is worse than

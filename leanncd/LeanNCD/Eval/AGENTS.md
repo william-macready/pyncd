@@ -12,7 +12,7 @@ Does not own: parsing/compilation/routing (`../DSL/`).
 | Looking for... | Go to |
 |---|---|
 | Source entry (compile + evaluate, preserving warnings) | `Entry.lean` — `TLProgram.eval` |
-| Scheduled worker (no source compiler dependency) | `Eval.lean` — `evalScheduled`, `EvalReport` |
+| Scheduled worker (no source compiler dependency) | `Eval.lean` — `evalScheduled`; `EvalReport` is `Eval/Report.lean` |
 | Dense tensor rep, coord math | `Tensor.lean` |
 | Index/predicate/mask eval, zero-padded reads, unary math fns | `Gather.lean` |
 | Scatter (`Out[2*i] := ...`) evaluation | `Scatter.lean` |
@@ -75,7 +75,7 @@ independent of error representation entirely, and `EvalError` now lives solely i
 
 ### Core Types
 `DenseTensor { shape : List Nat; data : Array Float }` — the only runtime value type.
-`EvalReport { env : HashMap String DenseTensor; warnings : List EvalWarning }` (`Eval.lean`) —
+`EvalReport { env : HashMap String DenseTensor; warnings : List EvalWarning }` (`Eval/Report.lean`) —
 the successful result of either entry path; `env` retains inputs plus computed tensors exactly as
 before 4i. `EvalFailure { error : EvalError; warnings : List EvalWarning }` (`Error.lean`) preserves
 warnings inferred before a later inference or worker failure; only compile failures necessarily

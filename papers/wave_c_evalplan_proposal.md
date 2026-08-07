@@ -2352,9 +2352,13 @@ unsupported construct fails before `runDensePlan`; checked semantic data contain
 > `pack`/`unpack`/`runPreparedDense`; `Eval/Report.lean` moves `EvalReport` to the neutral leaf
 > (fields/behavior unchanged); `Plan/Error.lean` adds `CapabilityError`/`PlanCompileCause`/
 > `PlanCompileFailure`/`InputBindingError`/`PlanRunCause`/`PlanRunFailure`; `Eval/Eval.lean` is
-> touched only for the `Report.lean` move. Tests: `Eval.Plan.CompileTest` (28 `#guard`s — one
+> touched only for the `Report.lean` move. Tests: `Eval.Plan.CompileTest` (29 `#guard`s — one
 > accepted and one rejected case per C0 capability row, deterministic slots/term bases, the
-> zero-coefficient contracted-axis regression, and repeated assignment); `Eval.Plan.AdapterTest` (3
+> zero-coefficient contracted-axis regression, repeated assignment, and — the direct demonstration
+> of the Gate's "every unsupported construct fails before `runDensePlan`" clause, since the
+> differential sweep below never rejects a single `enumPrograms` entry and so cannot exercise it —
+> `prepareEvalPlan` itself rejecting a `.scan` schedule with a `.capability`-tagged
+> `PlanCompileFailure`); `Eval.Plan.AdapterTest` (3
 > `run_cmd` blocks covering the 9 checks documented in-file — the full pack/unpack/`runPreparedDense`
 > round trip cross-checked against the legacy evaluator, an unpack preserving an unrelated extra
 > input, `requiredInputs` order-independence against an asymmetric-roles contraction fixture,

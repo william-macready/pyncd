@@ -194,4 +194,11 @@ def badDtypeSig : InputSignature :=
 #guard causeOf (prepareEvalPlan identitySched badDtypeSig) ==
   some { cause := .inputSignature (.dtypeNotAdmitted "X" .bool), warnings := [] }
 
+-- `prepareEvalPlan`'s OWN capability-rejection path: Step A runs `capabilityPreflight` before
+-- shape inference, so a `.scan` statement is rejected with a `.capability`-tagged
+-- `PlanCompileFailure` and `warnings := []` (Step A fails before any warnings could accrue) — the
+-- same schedule/error pair `capabilityPreflight`'s own `scanNode` guard above uses.
+#guard causeOf (prepareEvalPlan { acceptedSched with stmts := [.scan "s" [] [] [] false] } identitySig) ==
+  some { cause := .capability (.scanNode "s"), warnings := [] }
+
 end LeanNCD.Eval.Plan.CompileTest
