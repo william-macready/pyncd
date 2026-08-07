@@ -48,6 +48,25 @@ the shape lookup the slice existed to build. Break the thing under test,
 confirm the fixture fails, restore, confirm it passes. Record both observations
 in the plan so the implementer can re-run the same check.
 
+**Re-verify after assembly, not just during drafting.** A large plan is
+usually built from several verified pieces (one per task, sometimes drafted by
+different subagents) and then combined into one document. That combination
+step is itself an edit — reformatting a multi-line snippet, inlining a `let`
+binding for concision, re-wrapping a line — and Lean's `do`/`match` blocks are
+column-sensitive enough that a purely cosmetic edit can silently break parsing.
+Real example, Wave C C4: a verified draft used
+`let unreachableDiag := {...}` then `throw (.shape (.solveFailure unreachableDiag))`;
+the assembled plan inlined the binding directly into the `throw` as a nested
+multi-line struct literal "for concision" — never re-verified — and it failed
+to *parse* (not elaborate) when the implementer transcribed it, costing a real
+debugging cycle for a change that carried zero semantic difference. **Any
+reformatting during assembly — even one that looks purely cosmetic — needs
+`check-snippet.sh` run again on the *assembled* text, not just trust carried
+over from verifying the pre-assembly draft.** If a code block survives
+assembly completely unedited (copy-pasted verbatim), it does not need
+re-verification; the risk is specifically in edits made *after* the drafting
+agent's own verification pass.
+
 ## 2. Right-size tasks — dispatch overhead is fixed, deliverables are not
 
 Each task costs one implementer dispatch plus one reviewer dispatch regardless
@@ -96,6 +115,10 @@ part; the whole-branch pass is the one earning its keep.
 
 - [ ] Every Lean block compiled via `check-snippet.sh` (fragments concatenated
       with their dependencies).
+- [ ] Every Lean block that was reformatted, inlined, or otherwise edited
+      *after* its drafting agent's own verification — including during final
+      assembly into one document — re-verified in its post-edit form, not
+      assumed safe because the pre-edit version compiled.
 - [ ] Every asserted fixture value observed from a real run, not hand-derived.
 - [ ] Every regression/parity fixture mutation-tested, with both observations
       recorded in the plan.
