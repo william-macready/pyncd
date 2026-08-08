@@ -229,4 +229,104 @@ run_cmd do
   | .ok (_, slice) => unless DenseTensor.approxEq slice (tensorOf [2] [12, 22]) do
       throwError s!"nonzero-pin wrong: {repr slice.data}"
 
+-- === Wave F F0 Task 3: Jacobi/Gauss-Seidel snapshot-safety discriminator ===
+-- A[l+1] := A[l] + ONE (ordinary predecessor read); B[l+1] := A[.const 1] (a FIXED literal read
+-- of A's position 1, ignoring the loop axis entirely). readsIterAhead only matches `.shift a n,
+-- n > 0`, so this constant read is not flagged as look-ahead by the source pipeline's causality
+-- check. recur order [recurA, recurB]: at q=0 (writing position 1 for both), recurA runs first
+-- and writes stepEnv["A"][1]=1 BEFORE recurB reads it -- so B[1] observes the just-written value,
+-- not the pre-step zero. Verified: A=[0,1,2], B=[0,1,1].
+run_cmd do
+  let l := ax "l" 9
+  let zero := tensorOf [] [0]; let one := tensorOf [] [1]
+  let env : HashMap String DenseTensor :=
+    (({} : HashMap String DenseTensor).insert "Z" zero).insert "ONE" one
+  let sizes := (({} : HashMap UID Nat).insert 9 3)
+  let baseA : Stmt := .assign "A" [.iterAt l 0] { body := { terms := [{ factors := [.read "Z" []] }] }, nonlin := .identity }
+  let baseB : Stmt := .assign "B" [.iterAt l 0] { body := { terms := [{ factors := [.read "Z" []] }] }, nonlin := .identity }
+  let recurA : Stmt := .assign "A" [.iterNext l]
+    { body := { terms := [{ factors := [.read "A" [.axis l]] }, { factors := [.read "ONE" []] }] }, nonlin := .identity }
+  let recurB : Stmt := .assign "B" [.iterNext l]
+    { body := { terms := [{ factors := [.read "A" [.const 1]] }] }, nonlin := .identity }
+  match evalScan [] env sizes (.scan "A" [l] [baseA, baseB] [recurA, recurB] false) with
+  | .error e => throwError (toString e)
+  | .ok outs =>
+      match outs.find? (·.1 == "A"), outs.find? (·.1 == "B") with
+      | some (_, A), some (_, B) =>
+          unless DenseTensor.approxEq A (tensorOf [3] [0,1,2]) do throwError s!"jacobi A wrong: {repr A.data}"
+          unless DenseTensor.approxEq B (tensorOf [3] [0,1,1]) do throwError s!"jacobi B wrong: {repr B.data}"
+      | _, _ => throwError "missing A or B"
+
+-- Mutation: swap recur order to [recurB, recurA] (B evaluated BEFORE A writes this step). If the
+-- leak above is genuinely order-sensitive, B[1] must now read A's still-zero value: B=[0,0,1].
+run_cmd do
+  let l := ax "l" 9
+  let zero := tensorOf [] [0]; let one := tensorOf [] [1]
+  let env : HashMap String DenseTensor :=
+    (({} : HashMap String DenseTensor).insert "Z" zero).insert "ONE" one
+  let sizes := (({} : HashMap UID Nat).insert 9 3)
+  let baseA : Stmt := .assign "A" [.iterAt l 0] { body := { terms := [{ factors := [.read "Z" []] }] }, nonlin := .identity }
+  let baseB : Stmt := .assign "B" [.iterAt l 0] { body := { terms := [{ factors := [.read "Z" []] }] }, nonlin := .identity }
+  let recurA : Stmt := .assign "A" [.iterNext l]
+    { body := { terms := [{ factors := [.read "A" [.axis l]] }, { factors := [.read "ONE" []] }] }, nonlin := .identity }
+  let recurB : Stmt := .assign "B" [.iterNext l]
+    { body := { terms := [{ factors := [.read "A" [.const 1]] }] }, nonlin := .identity }
+  match evalScan [] env sizes (.scan "A" [l] [baseA, baseB] [recurB, recurA] false) with
+  | .error e => throwError (toString e)
+  | .ok outs =>
+      match outs.find? (·.1 == "B") with
+      | some (_, B) => unless DenseTensor.approxEq B (tensorOf [3] [0,0,1]) do
+          throwError s!"jacobi mutation: order-sensitivity not observed, B = {repr B.data}"
+      | none => throwError "missing B"
+
+-- Two same-named base statements for state "dp": a row-0 face write (free over column) plus a
+-- fully-pinned point override at (1,0) -- the accepted shape from
+-- papers/wave_f_scanplan_proposal.md §5.1. Verified: dp = [[0,1],[1,1]] (row-major [0,1,1,1]) --
+-- the row-0 face [0,1], the point override at (1,0)=1, and the single fully-advanced recur cell
+-- dp[1,1] = dp[0,0] + T[0,0] = 0 + 1 = 1.
+run_cmd do
+  let r := ax "r" 1; let c := ax "c" 2
+  let rowFace := tensorOf [2] [0, 1]; let one := tensorOf [] [1]; let ones2 := tensorOf [2,2] [1,1,1,1]
+  let env : HashMap String DenseTensor :=
+    ((({} : HashMap String DenseTensor).insert "ROWFACE" rowFace).insert "ONE" one).insert "T" ones2
+  let sizes := (({} : HashMap UID Nat).insert 1 2).insert 2 2
+  let baseFace : Stmt := .assign "dp" [.iterAt r 0, .free c]
+    { body := { terms := [{ factors := [.read "ROWFACE" [.axis c]] }] }, nonlin := .identity }
+  let basePoint : Stmt := .assign "dp" [.iterAt r 1, .iterAt c 0]
+    { body := { terms := [{ factors := [.read "ONE" []] }] }, nonlin := .identity }
+  let recur : Stmt := .assign "dp" [.iterNext r, .iterNext c]
+    { body := { terms := [{ factors := [.read "dp" [.axis r, .axis c]] }, { factors := [.read "T" [.axis r, .axis c]] }] },
+      nonlin := .identity }
+  match evalScan [] env sizes (.scan "dp" [r, c] [baseFace, basePoint] [recur] false) with
+  | .error e => throwError (toString e)
+  | .ok outs => match outs.find? (·.1 == "dp") with
+    | some (_, dp) => unless DenseTensor.approxEq dp (tensorOf [2,2] [0,1,1,1]) do
+        throwError s!"multi-base wrong: {repr dp.data}"
+    | none => throwError "no dp"
+
+-- Collision mutation: shrink the point override so it collides with the face write, both landing
+-- on (0,0). Wave F's checker will reject this outright (§5.1); the LEGACY evaluator has no such
+-- check and silently applies last-write-wins in declared order (basePoint overwrites baseFace's
+-- value at (0,0)). Verified: dp = [[1,1],[0,2]] (row-major [1,1,0,2]) -- (0,0) is now 1 (the
+-- point override, applied second), and the recur cell becomes dp[0,0]+T[0,0] = 1+1 = 2.
+run_cmd do
+  let r := ax "r" 1; let c := ax "c" 2
+  let rowFace := tensorOf [2] [0, 1]; let one := tensorOf [] [1]; let ones2 := tensorOf [2,2] [1,1,1,1]
+  let env : HashMap String DenseTensor :=
+    ((({} : HashMap String DenseTensor).insert "ROWFACE" rowFace).insert "ONE" one).insert "T" ones2
+  let sizes := (({} : HashMap UID Nat).insert 1 2).insert 2 2
+  let baseFace : Stmt := .assign "dp" [.iterAt r 0, .free c]
+    { body := { terms := [{ factors := [.read "ROWFACE" [.axis c]] }] }, nonlin := .identity }
+  let collidingPoint : Stmt := .assign "dp" [.iterAt r 0, .iterAt c 0]
+    { body := { terms := [{ factors := [.read "ONE" []] }] }, nonlin := .identity }
+  let recur : Stmt := .assign "dp" [.iterNext r, .iterNext c]
+    { body := { terms := [{ factors := [.read "dp" [.axis r, .axis c]] }, { factors := [.read "T" [.axis r, .axis c]] }] },
+      nonlin := .identity }
+  match evalScan [] env sizes (.scan "dp" [r, c] [baseFace, collidingPoint] [recur] false) with
+  | .error e => throwError (toString e)
+  | .ok outs => match outs.find? (·.1 == "dp") with
+    | some (_, dp) => unless DenseTensor.approxEq dp (tensorOf [2,2] [1,1,0,2]) do
+        throwError s!"collision mutation wrong: {repr dp.data}"
+    | none => throwError "no dp"
+
 end LeanNCD.Eval
