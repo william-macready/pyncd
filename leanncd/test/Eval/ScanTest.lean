@@ -128,4 +128,105 @@ run_cmd do
   | .error e => throwError s!"scan/scatter boundary: wrong error message: {e}"
   | .ok _ => throwError "scan/scatter boundary: expected evalStmtSliceSeeded to reject a scatter stmt"
 
+-- (a) External read at the CURRENT coordinate: S[l+1] := S[l] + X[l], X plain, indexed by the
+-- loop axis itself (distinct from RC4's rejected look-AHEAD X[l+1] case). Verified: S=[1,11,31].
+run_cmd do
+  let l := ax "l" 9
+  let S0 := tensorOf [] [1]; let X := tensorOf [3] [10, 20, 30]
+  let env : HashMap String DenseTensor :=
+    (({} : HashMap String DenseTensor).insert "S0" S0).insert "X" X
+  let sizes := (({} : HashMap UID Nat).insert 9 3)
+  let base : Stmt := .assign "S" [.iterAt l 0] { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := .identity }
+  let recur : Stmt := .assign "S" [.iterNext l]
+    { body := { terms := [{ factors := [.read "S" [.axis l]] }, { factors := [.read "X" [.axis l]] }] }, nonlin := .identity }
+  match evalScan [] env sizes (.scan "S" [l] [base] [recur] false) with
+  | .error e => throwError (toString e)
+  | .ok outs => match outs.find? (·.1 == "S") with
+    | some (_, S) => unless DenseTensor.approxEq S (tensorOf [3] [1,11,31]) do throwError s!"external-read wrong: {repr S.data}"
+    | none => throwError "no S"
+
+-- (b) Deep history look-back (k=2): G[l+1] := G[l-2], base G[0]=5, axis size 5. q=0/1 read
+-- out-of-range (zero pad); q=2 reads G[0]=5; q=3 reads G[1]=0 (the padded value from q=0).
+-- Verified: G=[5,0,0,5,0].
+run_cmd do
+  let l := ax "l" 9
+  let G0 := tensorOf [] [5]
+  let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "G0" G0
+  let sizes := (({} : HashMap UID Nat).insert 9 5)
+  let base : Stmt := .assign "G" [.iterAt l 0] { body := { terms := [{ factors := [.read "G0" []] }] }, nonlin := .identity }
+  let recur : Stmt := .assign "G" [.iterNext l]
+    { body := { terms := [{ factors := [.read "G" [.shift l (-2)]] }] }, nonlin := .identity }
+  match evalScan [] env sizes (.scan "G" [l] [base] [recur] false) with
+  | .error e => throwError (toString e)
+  | .ok outs => match outs.find? (·.1 == "G") with
+    | some (_, G) => unless DenseTensor.approxEq G (tensorOf [5] [5,0,0,5,0]) do throwError s!"deep-history wrong: {repr G.data}"
+    | none => throwError "no G"
+
+-- (c) Extent one (base-only): axis size 1, recurrence domain empty (`stepExtents = [0]`); the
+-- state must equal exactly its base value. Verified: S=[7].
+run_cmd do
+  let l := ax "l" 9
+  let S0 := tensorOf [] [7]
+  let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "S0" S0
+  let sizes := (({} : HashMap UID Nat).insert 9 1)
+  let base : Stmt := .assign "S" [.iterAt l 0] { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := .identity }
+  let recur : Stmt := .assign "S" [.iterNext l] { body := { terms := [{ factors := [.read "S" [.axis l]] }] }, nonlin := .identity }
+  match evalScan [] env sizes (.scan "S" [l] [base] [recur] false) with
+  | .error e => throwError (toString e)
+  | .ok outs => match outs.find? (·.1 == "S") with
+    | some (_, S) => unless DenseTensor.approxEq S (tensorOf [1] [7]) do throwError s!"extent-one wrong: {repr S.data}"
+    | none => throwError "no S"
+
+-- (d) Extent zero: axis size 0. `evalScan`'s own comment flags this as an "untested adjacent
+-- case" -- observed (not assumed): a graceful `Except.error` from the base write's coordinate-
+-- range check ("seed coordinate 0 for axis ... is out of range [0, 0)"), not a panic. Pins
+-- CURRENT behavior; Wave F's typed rejection (§5.3) replaces this ad hoc bounds error with a
+-- named `ScanPlanError` constructor -- it does not fix a crash, because there is none.
+run_cmd do
+  let l := ax "l" 9
+  let S0 := tensorOf [] [7]
+  let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "S0" S0
+  let sizes := (({} : HashMap UID Nat).insert 9 0)
+  let base : Stmt := .assign "S" [.iterAt l 0] { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := .identity }
+  let recur : Stmt := .assign "S" [.iterNext l] { body := { terms := [{ factors := [.read "S" [.axis l]] }] }, nonlin := .identity }
+  match evalScan [] env sizes (.scan "S" [l] [base] [recur] false) with
+  | .error _ => pure ()
+  | .ok _ => throwError "extent-zero: expected an error (out-of-range base coordinate), got ok"
+
+-- Zero pin: S[j, iterAt l 0] := W[j, l]. The base RHS reads W indexed by the SAME axis it pins to
+-- a literal -- confirms the pin substitutes into the read, not just the write coordinate. The
+-- recur is an identity copy (S[j,l+1] := S[j,l]), so the base value propagates across the whole
+-- history -- this is why the verified result has constant columns per row, not a coincidence.
+-- Verified: S[0,:] = [10,10,10] (= W[0,0] repeated), S[1,:] = [20,20,20] (= W[1,0] repeated).
+run_cmd do
+  let j := ax "j" 1; let l := ax "l" 9
+  let W := tensorOf [2, 3] [10, 11, 12, 20, 21, 22]
+  let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "W" W
+  let sizes := (({} : HashMap UID Nat).insert 1 2).insert 9 3
+  let base : Stmt := .assign "S" [.free j, .iterAt l 0]
+    { body := { terms := [{ factors := [.read "W" [.axis j, .axis l]] }] }, nonlin := .identity }
+  let recur : Stmt := .assign "S" [.free j, .iterNext l]
+    { body := { terms := [{ factors := [.read "S" [.axis j, .axis l]] }] }, nonlin := .identity }
+  match evalScan [] env sizes (.scan "S" [l] [base] [recur] false) with
+  | .error e => throwError (toString e)
+  | .ok outs => match outs.find? (·.1 == "S") with
+    | some (_, S) => unless DenseTensor.approxEq S (tensorOf [2,3] [10,10,10, 20,20,20]) do
+        throwError s!"zero-pin wrong: {repr S.data}"
+    | none => throwError "no S"
+
+-- Nonzero pin, tested directly via `evalStmtSliceSeeded` (the exact primitive a compiler-inserted
+-- point-override write, e.g. `dp[1,0]`, would drive): seed l=2 into a base-shaped statement that
+-- reads W indexed by that same axis. Verified: slice = [W[0,2], W[1,2]] = [12, 22].
+run_cmd do
+  let j := ax "j" 1; let l := ax "l" 9
+  let W := tensorOf [2, 3] [10, 11, 12, 20, 21, 22]
+  let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "W" W
+  let sizes := (({} : HashMap UID Nat).insert 1 2).insert 9 3
+  let base : Stmt := .assign "S" [.free j, .iterAt l 2]
+    { body := { terms := [{ factors := [.read "W" [.axis j, .axis l]] }] }, nonlin := .identity }
+  match evalStmtSliceSeeded [] env sizes (({} : HashMap UID Int).insert 9 2) base with
+  | .error e => throwError (toString e)
+  | .ok (_, slice) => unless DenseTensor.approxEq slice (tensorOf [2] [12, 22]) do
+      throwError s!"nonzero-pin wrong: {repr slice.data}"
+
 end LeanNCD.Eval
