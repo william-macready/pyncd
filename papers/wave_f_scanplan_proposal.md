@@ -2,7 +2,9 @@
 
 ## Status and purpose
 
-**Status:** design draft, 2026-08-07. No Wave F implementation has started.
+**Status:** design draft, 2026-08-07. F0 (executable scan contract) landed 2026-08-08 — see
+`papers/restructure_suggestions.md`'s wave-progress table. F1 (contextual local kernel) is next, per
+§13's ordering.
 
 This document proposes Wave F: extending Wave C's checked, backend-neutral `EvalPlan` with explicit
 scan state and a general Dense scan worker. It is modeled on
@@ -1348,6 +1350,29 @@ mutation.
 
 This is a substantial contract slice, not a tiny test append: it fixes the semantic decisions every
 later checker and worker implements.
+
+**F0 completion record (2026-08-08).** Landed as `Eval.Plan.ScanContractTest` (compiler-checked
+classifier over bare `ScanStmt`s, `classifyScanStmtF` etc.) plus mechanical legacy-behavior fixtures
+appended to `Eval.ScanTest`, registered in the default build target; `lake build` green (8,640 jobs).
+Generator-coverage inventory (the last Deliver bullet above):
+
+`test/Eval/PropertyOracle/ScanGen.lean`'s `enumScanCases` is a curated (not combinatorial) family of
+exactly 17 cases (`#guard enumScanCases.length == 17`), built from 6 templates:
+
+| Template | Varies | Wave F relevance |
+|---|---|---|
+| 1: linear self-scan | scan length `L`, coefficient sign | in Wave F's admitted kernel |
+| 2: nonlin self-scan (`relu`) | `L`, coefficient sign | **outside** Wave F's admitted kernel (pointwise nonlin) |
+| 3: coupled 2-state (`G`/`H`) | fixed | in Wave F's admitted kernel; `c.base.length > 1` here means two **differently-named** states' base statements, not one state's multiple base writes — Task 3's fixture is the first test of the latter |
+| 4: state + external read at current coordinate | `L ∈ {2, 3}` | in Wave F's admitted kernel; differential/property-oracle-layer counterpart to Task 2's Contract-layer fixture |
+| 5: tropical aggregator (`maxreduce`/`minreduce`) | `L ∈ {2, 3}`, sign | **outside** Wave F's admitted kernel (only real sum-product is admitted) |
+| 6: 2-D grid-DP | fixed | in Wave F's admitted kernel; single base write per state, not multi-write |
+
+`ScanOracle.lean` compares each case against `ScanUnroll.lean`'s independent unroller
+(`unrollScan1D`/`unrollScan2D` — 1-D and 2-D only; no deeper n-D, no deep-history, no multi-base-write
+unroller exists). None of the 17 generated cases exercises: deep history (`k > 1` look-back), a
+constant/non-loop-relative state read, extent zero or one, or more than one base write for a single
+state — every one of those is new coverage from Tasks 2-3, not already present in this corpus.
 
 ### F1 - contextual local kernel
 
