@@ -224,11 +224,11 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
         | .unaryFn .. => liftCapability warnings (throw (.unaryFactor "factor"))
             -- unreachable post-preflight (checkFactor/Step A already rejected .unaryFn)
       termsAcc := termsAcc.push
-        { iterationShape, outputPos, reductionPos, factors := factorsAcc }
+        { iterationShape, contextPos := #[], outputPos, reductionPos, factors := factorsAcc }
     let destSlot := tensorSigsAcc.size
     tensorSigsAcc := tensorSigsAcc.push { shape := outputShape, dtype := .f64 }
     stepsAcc := stepsAcc.push
-      { destinationSlot := destSlot, outputShape, terms := termsAcc, algebra := admittedAlgebra }
+      { contextShape := #[], destinationSlot := destSlot, outputShape, terms := termsAcc, algebra := admittedAlgebra }
     materializedAcc := materializedAcc.push { name := nm, slot := destSlot }
     slotOf := slotOf.insert nm destSlot
   -- Step E: assemble and check. This should ALWAYS succeed for a schedule that passed capability

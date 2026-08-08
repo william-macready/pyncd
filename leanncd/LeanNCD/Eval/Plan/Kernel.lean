@@ -37,13 +37,14 @@ structure ReadPlan where
     belong to the reduction domain, and so still affect multiplicity (proposal §7.4). -/
 structure TermPlan where
   iterationShape : Array Nat
+  contextPos     : Array Nat
   outputPos      : Array Nat
   reductionPos   : Array Nat
   factors        : Array ReadPlan
   deriving DecidableEq, BEq, Repr, Inhabited
 
-/-- One complete local operation: terms combined into one destination tensor under one algebra. -/
 structure AssignPlan where
+  contextShape    : Array Nat
   destinationSlot : TensorSlot
   outputShape     : Array Nat
   terms           : Array TermPlan

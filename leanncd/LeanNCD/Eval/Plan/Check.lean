@@ -33,11 +33,15 @@ def admittedAlgebra : ContractionAlgebra :=
 def TermPlan.outputProjection (t : TermPlan) : Array Nat :=
   t.outputPos.filterMap (fun p => t.iterationShape[p]?)
 
+/-- The extents this term projects onto the surrounding context, in `contextPos` order. -/
+def TermPlan.contextProjection (t : TermPlan) : Array Nat :=
+  t.contextPos.filterMap (fun p => t.iterationShape[p]?)
+
 /-- `outputPos ++ reductionPos` must be a disjoint partition of every iteration-basis position.
     Checked by sorting the concatenation and comparing against `List.range`, which catches
     duplicates, omissions, and out-of-range positions in one comparison. -/
 def TermPlan.positionsPartition (t : TermPlan) : Bool :=
-  let all := (t.outputPos ++ t.reductionPos).toList
+  let all := (t.contextPos ++ t.outputPos ++ t.reductionPos).toList
   all.length == t.iterationShape.size && all.mergeSort (· ≤ ·) == List.range t.iterationShape.size
 
 def constMatchesDtype : ScalarDType → ScalarConst → Bool
@@ -66,6 +70,8 @@ def checkAssign (sigs : Array TensorSignature) (a : AssignPlan) :
     unless t.positionsPartition do throw (.positionsNotPartition ti)
     unless t.outputProjection == a.outputShape do
       throw (.outputProjectionMismatch ti t.outputProjection a.outputShape)
+    unless t.contextProjection == a.contextShape do
+      throw (.contextProjectionMismatch ti t.contextProjection a.contextShape)
     for h2 : fi in [0 : t.factors.size] do
       let f := t.factors[fi]
       let srcSig ← match sigs[f.sourceSlot]? with
@@ -122,6 +128,7 @@ def checkPlan (raw : RawEvalPlan) : Except PlanError CheckedEvalPlan := do
   let mut checkedNodes : Array CheckedAssignPlan := #[]
   for h : ni in [0 : raw.steps.size] do
     let step := raw.steps[ni]
+    unless step.contextShape == #[] do throw (.topLevelContextNotEmpty ni)
     let destSlot := step.destinationSlot
     match available[destSlot]? with
     | none => throw (.nodeError ni (.slotOutOfRange destSlot n))

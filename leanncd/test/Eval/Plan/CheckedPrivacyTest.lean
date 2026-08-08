@@ -50,8 +50,8 @@ def readB : ReadPlan :=
   , sourceShape := #[3], oobPolicy := .zeroPad }
 
 def goodPlan : AssignPlan :=
-  { destinationSlot := 2, outputShape := #[4]
-  , terms := #[{ iterationShape := #[4, 3], outputPos := #[0], reductionPos := #[1]
+  { contextShape := #[], destinationSlot := 2, outputShape := #[4]
+  , terms := #[{ iterationShape := #[4, 3], contextPos := #[], outputPos := #[0], reductionPos := #[1]
                , factors := #[readA, readB] }]
   , algebra := admittedAlgebra }
 

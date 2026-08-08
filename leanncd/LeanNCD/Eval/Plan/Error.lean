@@ -24,6 +24,8 @@ inductive PlanError
                              (declared : Array Nat) (signature : Array Nat)
   | positionsNotPartition    (termIndex : Nat)
   | outputProjectionMismatch (termIndex : Nat) (projected : Array Nat) (declared : Array Nat)
+  | contextProjectionMismatch (termIndex : Nat) (projected : Array Nat) (declared : Array Nat)
+  | topLevelContextNotEmpty  (nodeIndex : Nat)
   | constDtypeMismatch       (dtype : ScalarDType) (const : ScalarConst)
   | algebraNotAdmitted       (algebra : ContractionAlgebra)
   | policyNotAdmitted        (policy : OutOfBoundsPolicy)

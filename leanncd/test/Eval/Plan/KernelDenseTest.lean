@@ -25,8 +25,8 @@ def readB : ReadPlan :=
 
 /-- `Y[i] := A[i] · B[j]`, contracted over `j`. -/
 def contractPlan : AssignPlan :=
-  { destinationSlot := 2, outputShape := #[4]
-  , terms := #[{ iterationShape := #[4, 3], outputPos := #[0], reductionPos := #[1]
+  { contextShape := #[], destinationSlot := 2, outputShape := #[4]
+  , terms := #[{ iterationShape := #[4, 3], contextPos := #[], outputPos := #[0], reductionPos := #[1]
                , factors := #[readA, readB] }]
   , algebra := admittedAlgebra }
 
@@ -65,8 +65,8 @@ def identityRead : ReadPlan :=
   , sourceShape := #[3], oobPolicy := .zeroPad }
 
 def identityPlan : AssignPlan :=
-  { destinationSlot := 1, outputShape := #[3]
-  , terms := #[{ iterationShape := #[3], outputPos := #[0], reductionPos := #[]
+  { contextShape := #[], destinationSlot := 1, outputShape := #[3]
+  , terms := #[{ iterationShape := #[3], contextPos := #[], outputPos := #[0], reductionPos := #[]
                , factors := #[identityRead] }]
   , algebra := admittedAlgebra }
 
@@ -86,8 +86,8 @@ def transposeRead : ReadPlan :=
   , sourceShape := #[3, 2], oobPolicy := .zeroPad }
 
 def transposePlan : AssignPlan :=
-  { destinationSlot := 1, outputShape := #[2, 3]
-  , terms := #[{ iterationShape := #[2, 3], outputPos := #[0, 1], reductionPos := #[]
+  { contextShape := #[], destinationSlot := 1, outputShape := #[2, 3]
+  , terms := #[{ iterationShape := #[2, 3], contextPos := #[], outputPos := #[0, 1], reductionPos := #[]
                , factors := #[transposeRead] }]
   , algebra := admittedAlgebra }
 
@@ -110,8 +110,8 @@ def shiftRead : ReadPlan :=
   , sourceShape := #[5], oobPolicy := .zeroPad }
 
 def shiftPlan : AssignPlan :=
-  { destinationSlot := 1, outputShape := #[5]
-  , terms := #[{ iterationShape := #[5], outputPos := #[0], reductionPos := #[]
+  { contextShape := #[], destinationSlot := 1, outputShape := #[5]
+  , terms := #[{ iterationShape := #[5], contextPos := #[], outputPos := #[0], reductionPos := #[]
                , factors := #[shiftRead] }]
   , algebra := admittedAlgebra }
 
@@ -133,8 +133,8 @@ def strideRead : ReadPlan :=
   , sourceShape := #[5], oobPolicy := .zeroPad }
 
 def stridePlan : AssignPlan :=
-  { destinationSlot := 1, outputShape := #[4]
-  , terms := #[{ iterationShape := #[4], outputPos := #[0], reductionPos := #[]
+  { contextShape := #[], destinationSlot := 1, outputShape := #[4]
+  , terms := #[{ iterationShape := #[4], contextPos := #[], outputPos := #[0], reductionPos := #[]
                , factors := #[strideRead] }]
   , algebra := admittedAlgebra }
 
@@ -155,8 +155,8 @@ def maffRead : ReadPlan :=
   , sourceShape := #[5], oobPolicy := .zeroPad }
 
 def maffPlan : AssignPlan :=
-  { destinationSlot := 1, outputShape := #[2, 3]
-  , terms := #[{ iterationShape := #[2, 3], outputPos := #[0, 1], reductionPos := #[]
+  { contextShape := #[], destinationSlot := 1, outputShape := #[2, 3]
+  , terms := #[{ iterationShape := #[2, 3], contextPos := #[], outputPos := #[0, 1], reductionPos := #[]
                , factors := #[maffRead] }]
   , algebra := admittedAlgebra }
 
@@ -186,10 +186,10 @@ def mtermReadB : ReadPlan :=
   , sourceShape := #[2, 3], oobPolicy := .zeroPad }
 
 def mtermPlan : AssignPlan :=
-  { destinationSlot := 2, outputShape := #[2]
-  , terms := #[ { iterationShape := #[2], outputPos := #[0], reductionPos := #[]
+  { contextShape := #[], destinationSlot := 2, outputShape := #[2]
+  , terms := #[ { iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
                 , factors := #[mtermReadA] }
-              , { iterationShape := #[2, 3], outputPos := #[0], reductionPos := #[1]
+              , { iterationShape := #[2, 3], contextPos := #[], outputPos := #[0], reductionPos := #[1]
                 , factors := #[mtermReadB] } ]
   , algebra := admittedAlgebra }
 
@@ -230,10 +230,10 @@ def ptcReadV : ReadPlan :=
   , sourceShape := #[2], oobPolicy := .zeroPad }
 
 def ptcPlan : AssignPlan :=
-  { destinationSlot := 4, outputShape := #[2]
-  , terms := #[ { iterationShape := #[2], outputPos := #[0], reductionPos := #[]
+  { contextShape := #[], destinationSlot := 4, outputShape := #[2]
+  , terms := #[ { iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
                 , factors := #[ptcReadU, ptcReadA] }
-              , { iterationShape := #[2, 2], outputPos := #[0], reductionPos := #[1]
+              , { iterationShape := #[2, 2], contextPos := #[], outputPos := #[0], reductionPos := #[1]
                 , factors := #[ptcReadW, ptcReadV] } ]
   , algebra := admittedAlgebra }
 
@@ -254,8 +254,9 @@ def ptcStore : Array DenseTensor :=
 def efpSigs : Array TensorSignature := #[ { shape := #[3], dtype := .f64 } ]
 
 def efpPlan : AssignPlan :=
-  { destinationSlot := 0, outputShape := #[3]
-  , terms := #[{ iterationShape := #[3], outputPos := #[0], reductionPos := #[], factors := #[] }]
+  { contextShape := #[], destinationSlot := 0, outputShape := #[3]
+  , terms := #[{ iterationShape := #[3], contextPos := #[], outputPos := #[0], reductionPos := #[]
+               , factors := #[] }]
   , algebra := admittedAlgebra }
 
 def efpStore : Array DenseTensor := #[ { shape := [3], data := #[] } ]
@@ -269,7 +270,8 @@ def efpStore : Array DenseTensor := #[ { shape := [3], data := #[] } ]
 def etaSigs : Array TensorSignature := #[ { shape := #[2], dtype := .f64 } ]
 
 def etaPlan : AssignPlan :=
-  { destinationSlot := 0, outputShape := #[2], terms := #[], algebra := admittedAlgebra }
+  { contextShape := #[], destinationSlot := 0, outputShape := #[2], terms := #[]
+  , algebra := admittedAlgebra }
 
 def etaStore : Array DenseTensor := #[ { shape := [2], data := #[] } ]
 
@@ -288,8 +290,8 @@ def zerdRead : ReadPlan :=
   , sourceShape := #[2], oobPolicy := .zeroPad }
 
 def zerdPlan : AssignPlan :=
-  { destinationSlot := 1, outputShape := #[2]
-  , terms := #[{ iterationShape := #[2, 0], outputPos := #[0], reductionPos := #[1]
+  { contextShape := #[], destinationSlot := 1, outputShape := #[2]
+  , terms := #[{ iterationShape := #[2, 0], contextPos := #[], outputPos := #[0], reductionPos := #[1]
                , factors := #[zerdRead] }]
   , algebra := admittedAlgebra }
 
@@ -310,8 +312,8 @@ def zoeRead : ReadPlan :=
   , sourceShape := #[0], oobPolicy := .zeroPad }
 
 def zoePlan : AssignPlan :=
-  { destinationSlot := 1, outputShape := #[0]
-  , terms := #[{ iterationShape := #[0], outputPos := #[0], reductionPos := #[]
+  { contextShape := #[], destinationSlot := 1, outputShape := #[0]
+  , terms := #[{ iterationShape := #[0], contextPos := #[], outputPos := #[0], reductionPos := #[]
                , factors := #[zoeRead] }]
   , algebra := admittedAlgebra }
 
@@ -336,10 +338,11 @@ def fosRead (slot : TensorSlot) : ReadPlan :=
   , sourceShape := #[], oobPolicy := .zeroPad }
 
 def fosTerm (slot : TensorSlot) : TermPlan :=
-  { iterationShape := #[1], outputPos := #[0], reductionPos := #[], factors := #[fosRead slot] }
+  { iterationShape := #[1], contextPos := #[], outputPos := #[0], reductionPos := #[]
+  , factors := #[fosRead slot] }
 
 def fosPlan : AssignPlan :=
-  { destinationSlot := 3, outputShape := #[1]
+  { contextShape := #[], destinationSlot := 3, outputShape := #[1]
   , terms := #[fosTerm 0, fosTerm 1, fosTerm 2]
   , algebra := admittedAlgebra }
 

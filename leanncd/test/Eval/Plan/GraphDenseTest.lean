@@ -18,8 +18,8 @@ def idRead (slot : TensorSlot) : ReadPlan :=
 
 /-- An identity node: destination `dest` copies `src` verbatim. -/
 def idNode (dest src : TensorSlot) : AssignPlan :=
-  { destinationSlot := dest, outputShape := #[2]
-  , terms := #[{ iterationShape := #[2], outputPos := #[0], reductionPos := #[]
+  { contextShape := #[], destinationSlot := dest, outputShape := #[2]
+  , terms := #[{ iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
                , factors := #[idRead src] }]
   , algebra := admittedAlgebra }
 
@@ -86,10 +86,10 @@ def diamondSigs : Array TensorSignature :=
 
 /-- `C[i] := A[i] + B[i]`: two single-factor terms, folded by `reduceOp = add`. -/
 def nodeC : AssignPlan :=
-  { destinationSlot := 3, outputShape := #[2]
-  , terms := #[ { iterationShape := #[2], outputPos := #[0], reductionPos := #[]
+  { contextShape := #[], destinationSlot := 3, outputShape := #[2]
+  , terms := #[ { iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
                 , factors := #[idRead 1] }
-              , { iterationShape := #[2], outputPos := #[0], reductionPos := #[]
+              , { iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
                 , factors := #[idRead 2] } ]
   , algebra := admittedAlgebra }
 
@@ -167,10 +167,11 @@ def fosRead (slot : TensorSlot) : ReadPlan :=
   , sourceShape := #[], oobPolicy := .zeroPad }
 
 def fosTerm (slot : TensorSlot) : TermPlan :=
-  { iterationShape := #[1], outputPos := #[0], reductionPos := #[], factors := #[fosRead slot] }
+  { iterationShape := #[1], contextPos := #[], outputPos := #[0], reductionPos := #[]
+  , factors := #[fosRead slot] }
 
 def fosNode : AssignPlan :=
-  { destinationSlot := 3, outputShape := #[1]
+  { contextShape := #[], destinationSlot := 3, outputShape := #[1]
   , terms := #[fosTerm 0, fosTerm 1, fosTerm 2], algebra := admittedAlgebra }
 
 def fosPlan : RawEvalPlan :=
