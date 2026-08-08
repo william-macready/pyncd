@@ -1365,10 +1365,10 @@ appended to `Eval.ScanTest`, registered in the default build target; `lake build
 | Traversal (mixed-radix, axis zero fastest) | `RecurrenceTest.lean` RC6/RC8 (2-D/3-D grids; row/plane-major write order matches declared axis order) |
 | Boundary (zero-init, then base overlay) | RC6: "boundary cells (r=0 or c=0) keep their zero-default... except where an explicit base stmt pins a slice" |
 | Base placement (in-bounds, boundary-touching) | RC6/RC8's base statements, all pinning to literal `0` |
-| History reads (non-positive look-back, zero pad) | `ScanTest.lean`'s deep-history fixture (Task 2 of this slice; `k=2` look-back, zero-padded out-of-range reads) |
+| History reads (non-positive look-back, zero pad) | `ScanTest.lean`'s deep-history fixture added by F0 (`k=2` look-back, zero-padded out-of-range reads) |
 | Outputs (complete histories only) | every `evalScan` fixture in this file and in `RecurrenceTest.lean` (`evalScan`'s own final `return stateNames.filterMap ...`, `Scan.lean:115`) |
 | Numeric mode (`reference64`, declared order) | implicit in every existing fixture's exact-value assertions; no distinct fixture needed |
-| Snapshot / commit (immutable pre-step state, simultaneous commit) | **not soundly observed — the Jacobi/Gauss-Seidel snapshot-safety fixture (Task 3 of this slice) shows the current implementation is NOT structurally safe; this is what Wave F's checked worker will fix** |
+| Snapshot / commit (immutable pre-step state, simultaneous commit) | **not soundly observed — the Jacobi/Gauss-Seidel snapshot-safety fixture added by F0 shows the current implementation is NOT structurally safe; this is what Wave F's checked worker will fix** |
 
 Generator-coverage inventory (the last Deliver bullet above):
 
@@ -1379,8 +1379,8 @@ exactly 17 cases (`#guard enumScanCases.length == 17`), built from 6 templates:
 |---|---|---|
 | 1: linear self-scan | scan length `L`, coefficient sign | in Wave F's admitted kernel |
 | 2: nonlin self-scan (`relu`) | `L`, coefficient sign | **outside** Wave F's admitted kernel (pointwise nonlin) |
-| 3: coupled 2-state (`G`/`H`) | scan length `L ∈ {2, 3}` | in Wave F's admitted kernel; `c.base.length > 1` here means two **differently-named** states' base statements, not one state's multiple base writes — Task 3's fixture is the first test of the latter |
-| 4: state + external read at current coordinate | `L ∈ {2, 3}` | in Wave F's admitted kernel; differential/property-oracle-layer counterpart to Task 2's Contract-layer fixture |
+| 3: coupled 2-state (`G`/`H`) | scan length `L ∈ {2, 3}` | in Wave F's admitted kernel; `c.base.length > 1` here means two **differently-named** states' base statements, not one state's multiple base writes — F0's multi-base-write fixture is the first test of the latter |
+| 4: state + external read at current coordinate | `L ∈ {2, 3}` | in Wave F's admitted kernel; differential/property-oracle-layer counterpart to F0's Contract-layer external-read fixture |
 | 5: tropical aggregator (`maxreduce`/`minreduce`) | `L ∈ {2, 3}`, aggregator (max vs. min) | **outside** Wave F's admitted kernel (only real sum-product is admitted) |
 | 6: 2-D grid-DP | fixed | in Wave F's admitted kernel; single base write per state, not multi-write |
 
@@ -1388,7 +1388,7 @@ exactly 17 cases (`#guard enumScanCases.length == 17`), built from 6 templates:
 (`unrollScan1D`/`unrollScan2D` — 1-D and 2-D only; no deeper n-D, no deep-history, no multi-base-write
 unroller exists). None of the 17 generated cases exercises: deep history (`k > 1` look-back), a
 constant/non-loop-relative state read, extent zero or one, or more than one base write for a single
-state — every one of those is new coverage from Tasks 2-3, not already present in this corpus.
+state — every one of those is new coverage from F0's fixtures, not already present in this corpus.
 
 ### F1 - contextual local kernel
 
