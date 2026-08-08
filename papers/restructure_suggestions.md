@@ -76,7 +76,7 @@ Spike 3a ✅ → ResolvedNonlin (4d) → 4c
 4b + 4a + 4c + 4d → minimal EvalPlan → JAX/PyTorch stateless oracle
 4g → EvalPlan scatter capability
 4e diagnostic split → 4h → warning half of 4i
-minimal EvalPlan + E2 recurrence → 4f → scan lowering
+minimal EvalPlan + Wave F plan-level recurrence → checked scan worker
 ```
 
 Two corrections to earlier advice in this doc: **4b precedes 4a** (both contraction identities must
@@ -731,8 +731,8 @@ Wave C  ✅ DONE 2026-08-07 (C0-C4, C6; C5 deferred) — Minimal EvalPlan (E4), 
           nothing outside one process's own lifetime needs it yet
         · SHIPPED SCOPE IS SCAN-FREE, exactly as scoped here: only `.plain` assignment steps are
           admitted; no `ScanPlan`/`.scan`/`.scanPre` exists anywhere in the checked IR. **Scans
-          are still not in** — see Wave F below, which remains unstarted and unscoped beyond the
-          one-line note it already had before Wave C began.
+          are still not in** — see Wave F below. Its design is now drafted, but implementation has
+          not started.
         · real sum-product contraction, identity nonlinearity, integer-affine reads
           (shifts/scales/multi-axis), zero-padded OOB reads, chained/intermediate tensors; typed
           capability rejection for everything else (11 `CapabilityError` categories — see
@@ -760,13 +760,32 @@ Wave D  ✅ DONE 2026-08-01 (a3098c0..c86005e) — 4g typed scatter policy (Coll
           confirmed no concrete axis sizes exist at `lowerArith`'s point in the pipeline
 Wave E  ✅ DONE 2026-08-02  4e → 4h → 4i  diagnostics split, structured errors, EvalReport
         · compiler-independent scheduled worker + diagnostic-preserving source entry are in place
-Wave F  NOT STARTED, NOT SCOPED beyond this note — this is where scans enter the checked-plan
-        world. 4f  decompose evalScan — AFTER the EvalPlan boundary (now built, Wave C), not
-        before. Needs an explicit `ScanPlan` state/transition/geometry/boundary/order/causality
-        design (proposal §7/§A.12) that Wave C deliberately did not attempt — nothing in C0-C6
-        assumes scan support exists, and the capability manifest documents its absence as a
-        stated non-goal, not an oversight.
-        · then one-axis coupled lax.scan, then flattened multi-axis
+Wave F  📝 DESIGN DRAFTED 2026-08-07; IMPLEMENTATION NOT STARTED — this is where scans enter the
+        checked-plan world. See `papers/wave_f_scanplan_proposal.md`.
+        · extends the landed Wave C boundary with `PlanStep.scan`, checked positional base/step
+          blocks, ordered persistent states, explicit capture/write geometry, static full-history
+          extents, derived step extents, axis-zero-fastest mixed-radix order, zero-plus-checked-base
+          boundaries, immutable Jacobi snapshots, simultaneous commits, complete-history outputs,
+          and checker-produced schedule-legality evidence
+        · first admitted source fragment is deliberately "scan structure over the Wave C kernel":
+          f64 real sum-product, identity nonlinearity, affine reads, zero padding, coupled and
+          rectangular uniform all-axis +1 recurrences; nonlinearities, predicates, unary factors,
+          max/min, scatter, callbacks, and specialized parallel execution remain typed source
+          rejections
+        · roadmap patterns applied now: Spike 4f/5 semantic decomposition, E2's closed typed-IR
+          principle at the execution boundary, E4 residualization/worker-wrapper, E6 independent
+          metamorphic oracles, and E10's static/dynamic split. E7 error accumulation, E14 checked
+          unrolling, compact carries, wavefront schedules, and numeric-mode-certified prefix are
+          deferred refinements, not first-version semantics.
+        · extent means complete history length; extent 1 is base-only; extent 0 is rejected in the
+          first plan version; non-positive constant look-back is causal and zero-padded
+        · implementation sequence: F0 executable contract → F1 contextual local kernel → F2 checked
+          executable plan blocks → F3 checked scan graph + general Dense worker → F4 source compiler
+          + differential gate → F5 adversarial audit/handoff. One slice plan at a time, after its
+          predecessor lands.
+        · one-axis `lax.scan`, flattened multi-axis backend lowering, nested-scan recognition, and
+          parallel prefix are post-Wave-F optimizations governed by scan-refinement agreement with
+          the general worker — they do not define `ScanPlan`
 Wave G  Backends (E10): PyTorch eager first (fast semantic bring-up; torch_compile/
         prototype exists) → JAX jit as the stricter static backend → optimization fast
         paths, each guarded by generic-lowering differential tests
@@ -1275,6 +1294,14 @@ done separately via Approach D, `Factor.read?`.)
 
 ### E2. A typed core IR the pipeline narrows into ("trees that grow")
 
+> **2026-08-07 clarification after the Wave F design:** Wave F takes the execution-side part of this
+> idea into `EvalPlan`: explicit positional state, base/step blocks, captures, writes, policies, and
+> checked causality. It does **not** first migrate the source pipeline to the `CoreStmt`/`Recurrence`
+> type proposed below, because changing `evalScheduled` before the new worker's differential gate
+> would weaken the independent oracle. F4 instead residualizes the existing `ScheduledProgram` into
+> checked scan data. The source-side `CoreStmt` migration remains a separate later refactor; it is no
+> longer a prerequisite for Wave F.
+
 The scan-projection bug hunt surfaced a class of hazard Part I only documents, never removes:
 **phase invariants that live in comments.** "Classification must happen before `splitNonlins`
 because `splitStmt` reuses slots verbatim"; "after `lowerArith` every affine LHS is a
@@ -1366,8 +1393,8 @@ generalizes past this one boundary — `evalScan`'s four numbered phases (Spike 
 candidate worker/wrapper split once `EvalPlan` exists. Two further payoffs the plan
 representation unlocks, folded into **E14** rather than duplicated here: once affine-map
 fragments are directly comparable (not `HashMap`-driven dictionaries), **CSE** across statements
-and **compile-time unrolling of small, statically-known scan lengths** (the same transform E6's
-scan-unroll oracle already builds, reused as a real optimization rather than a test) both become
+and **compile-time unrolling of small, statically-known scan lengths** (a separate checked-plan
+transform validated against E6's independent source-level scan-unroll oracle) both become
 straightforward passes over the plan.
 
 *References:* the [`numpy.einsum`](https://numpy.org/doc/stable/reference/generated/numpy.einsum.html) Einstein-summation convention — the stride/coefficient-row contraction spec this plan representation mirrors; Gill & Hutton, [The Worker/Wrapper Transformation](https://people.cs.nott.ac.uk/pszgmh/wrapper.pdf) (JFP 2009) — the general pattern this split instantiates.
@@ -1634,15 +1661,15 @@ their own —
 - **Compile-time unrolling of small, statically-known scan lengths.** Every scan axis size is a
   compile-time literal (`Decl.axis l (some L)`) — this is GHC's specialization pass in miniature
   (turning a parameterized computation into a monomorphic, straight-line one per concrete size).
-  The transform is *the same code* as E6's scan-unroll oracle, reused as a real optimization
-  rather than a test: what's being built right now to check `evalScan` against its unrolled form
-  is, with no new logic, a compiler pass that replaces a small scan with its unrolled form.
+  The production transform must be a separate checked-plan pass validated against E6's independent
+  source-level scan-unroll oracle. They share the unrolling law and verification discipline, not
+  implementation code; otherwise optimizer/oracle agreement is tautological.
 
 **Verdict:** spike-worthy, but sequenced *after* E2 (needs a stable IR to rewrite over) and best
 started once E4 exists (CSE and scan-specialization are its cheapest, highest-value first rules).
-Not a competitor to E6 — the two share machinery (the unroll transform) and a verification
-discipline (generate-and-compare), they just answer different questions ("does this hold" vs.
-"can we always rewrite to this").
+Not a competitor to E6 — the two share a law and verification discipline
+(generate-and-compare), but deliberately not implementation machinery; they answer different
+questions ("does this hold" versus "can this checked plan be rewritten").
 
 *References:* Peyton Jones, Tolmach & Hoare, [Playing by the Rules: Rewriting as a practical optimisation technique in GHC](https://www.microsoft.com/en-us/research/publication/playing-by-the-rules-rewriting-as-a-practical-optimisation-technique-in-ghc/) (Haskell Workshop 2001) — the `RULES` mechanism this pass generalizes; Peyton Jones, [The Glasgow Haskell Compiler](https://simon.peytonjones.org/assets/pdfs/glasgow-haskell-compiler.pdf) — the Simplifier's role as GHC's central, repeatedly-applied optimization pass.
 

@@ -114,10 +114,12 @@ fails this guard loudly instead of being silently re-baselined.
 These are named as what is **not yet supported and why** — a record of deliberate scope discipline,
 not a roadmap commitment:
 
-- **Scans.** Rejected via `scanNode` (§3). Extending the plan to scans needs explicit `ScanPlan`
-  state, transition, geometry, boundary, order, and causality data (proposal §7, and §A.12's stop
-  conditions) — this has been deliberately deferred, not designed. Adding scan support without that
-  data would mean guessing at semantics the proposal explicitly declines to guess at.
+- **Scans.** Rejected via `scanNode` (§3). At Wave C completion, extending the plan to scans still
+  needed explicit `ScanPlan` state, transition, geometry, boundary, order, and causality data and had
+  been deliberately deferred, not designed. The later
+  [`wave_f_scanplan_proposal.md`](wave_f_scanplan_proposal.md) now drafts that design; implementation
+  remains unstarted. Adding scan support without explicit checked data would still mean guessing at
+  semantics Wave C correctly declined to guess at.
 - **Other backends (PyTorch/JAX).** Proposal §4.4/§10 treats Dense, PyTorch, and JAX as
   interpretations of one checked plan language, but only the Dense worker exists today. Whether and
   how PyTorch/JAX consume `CheckedEvalPlan` is contingent on how backend integration is eventually

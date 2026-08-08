@@ -1253,7 +1253,7 @@ reference does not justify speculative constructors without a producer and consu
 ### 11.5 Checked construction: evidence belongs at the raw/executable boundary
 
 **Usable idea.** Noonan's
-[*Ghosts of Departed Proofs*](https://arxiv.org/abs/1808.00351) shows how evidence can constrain data
+[*Ghosts of Departed Proofs*](https://doi.org/10.1145/3242744.3242755) shows how evidence can constrain data
 at construction time without imposing the same proof representation on runtime computation.
 
 **Concrete application.** C2 validates freely constructible `AssignPlan` values into private
@@ -2633,7 +2633,7 @@ mega-record fields, or silent defaults.
 - John C. Reynolds,
   [Definitional Interpreters for Higher-Order Programming Languages](https://dl.acm.org/doi/10.1145/800194.805852),
   1972.
-- Matt Noonan, [Ghosts of Departed Proofs](https://arxiv.org/abs/1808.00351), 2018.
+- Matt Noonan, [Ghosts of Departed Proofs](https://doi.org/10.1145/3242744.3242755), 2018.
 - Amir Pnueli, Michael Siegel, and Eli Singerman,
   [Translation Validation](https://doi.org/10.1007/BFb0054170), TACAS 1998.
 - John C. Mitchell,
