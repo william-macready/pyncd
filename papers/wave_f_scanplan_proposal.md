@@ -545,8 +545,10 @@ Wave F continues to reject:
 - scatter or affine LHS writes inside a scan block;
 - unsupported state-write geometry;
 - source scans with ambiguous state/base/result pairing;
-- source scans whose snapshot behavior is not equivalent to immutable Jacobi update; and
-- specialized parallel or backend-specific scan requests.
+- source scans whose snapshot behavior is not equivalent to immutable Jacobi update;
+- specialized parallel or backend-specific scan requests; and
+- `.scan` nodes declaring an empty advancing-axis list, under a `noAdvancingAxis`-named
+  `CapabilityError` category (a new constructor F2 will need to add).
 
 Some are plan-kernel capabilities deferred from Wave C; others are scan-structure capabilities.
 Syntactically visible cases have closed `CapabilityError` constructors. Cases that require concrete
@@ -1354,6 +1356,20 @@ later checker and worker implements.
 **F0 completion record (2026-08-08).** Landed as `Eval.Plan.ScanContractTest` (compiler-checked
 classifier over bare `ScanStmt`s, `classifyScanStmtF` etc.) plus mechanical legacy-behavior fixtures
 appended to `Eval.ScanTest`, registered in the default build target; `lake build` green (8,640 jobs).
+
+§5.3 policy-value inventory:
+
+| §5.3 policy | Already observed by |
+|---|---|
+| Extent meaning (full history, `stepExtents = extent - 1`) | `ScanTest.lean`'s linear-scan fixture (`l` size 3 → 2 recurrence steps writing positions 1–2) |
+| Traversal (mixed-radix, axis zero fastest) | `RecurrenceTest.lean` RC6/RC8 (2-D/3-D grids; row/plane-major write order matches declared axis order) |
+| Boundary (zero-init, then base overlay) | RC6: "boundary cells (r=0 or c=0) keep their zero-default... except where an explicit base stmt pins a slice" |
+| Base placement (in-bounds, boundary-touching) | RC6/RC8's base statements, all pinning to literal `0` |
+| History reads (non-positive look-back, zero pad) | `ScanTest.lean`'s deep-history fixture (Task 2 of this slice; `k=2` look-back, zero-padded out-of-range reads) |
+| Outputs (complete histories only) | every `evalScan` fixture in this file and in `RecurrenceTest.lean` (`evalScan`'s own final `return stateNames.filterMap ...`, `Scan.lean:115`) |
+| Numeric mode (`reference64`, declared order) | implicit in every existing fixture's exact-value assertions; no distinct fixture needed |
+| Snapshot / commit (immutable pre-step state, simultaneous commit) | **not soundly observed — the Jacobi/Gauss-Seidel snapshot-safety fixture (Task 3 of this slice) shows the current implementation is NOT structurally safe; this is what Wave F's checked worker will fix** |
+
 Generator-coverage inventory (the last Deliver bullet above):
 
 `test/Eval/PropertyOracle/ScanGen.lean`'s `enumScanCases` is a curated (not combinatorial) family of
@@ -1363,9 +1379,9 @@ exactly 17 cases (`#guard enumScanCases.length == 17`), built from 6 templates:
 |---|---|---|
 | 1: linear self-scan | scan length `L`, coefficient sign | in Wave F's admitted kernel |
 | 2: nonlin self-scan (`relu`) | `L`, coefficient sign | **outside** Wave F's admitted kernel (pointwise nonlin) |
-| 3: coupled 2-state (`G`/`H`) | fixed | in Wave F's admitted kernel; `c.base.length > 1` here means two **differently-named** states' base statements, not one state's multiple base writes — Task 3's fixture is the first test of the latter |
+| 3: coupled 2-state (`G`/`H`) | scan length `L ∈ {2, 3}` | in Wave F's admitted kernel; `c.base.length > 1` here means two **differently-named** states' base statements, not one state's multiple base writes — Task 3's fixture is the first test of the latter |
 | 4: state + external read at current coordinate | `L ∈ {2, 3}` | in Wave F's admitted kernel; differential/property-oracle-layer counterpart to Task 2's Contract-layer fixture |
-| 5: tropical aggregator (`maxreduce`/`minreduce`) | `L ∈ {2, 3}`, sign | **outside** Wave F's admitted kernel (only real sum-product is admitted) |
+| 5: tropical aggregator (`maxreduce`/`minreduce`) | `L ∈ {2, 3}`, aggregator (max vs. min) | **outside** Wave F's admitted kernel (only real sum-product is admitted) |
 | 6: 2-D grid-DP | fixed | in Wave F's admitted kernel; single base write per state, not multi-write |
 
 `ScanOracle.lean` compares each case against `ScanUnroll.lean`'s independent unroller

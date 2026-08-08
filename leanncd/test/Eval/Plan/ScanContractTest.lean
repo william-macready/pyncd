@@ -12,6 +12,14 @@ block content, since that admitted local kernel is unchanged inside a scan. This
 necessary but not sufficient for Wave F acceptance: extent zero/one, base-write geometry and
 disjointness, and causality all need axis sizes a bare `ScanStmt` does not carry, so they are
 `ScanCompileError`-tier (post-shape) checks belonging to F4, not classified here.
+
+`classifyScanBlockStmt` is also applied uniformly to `base ++ recur`, so several §5.1 structural
+requirements that do not depend on axis sizes are likewise left unchecked here and deferred to
+F2/F3: an empty `base` list (§5.1 requires one or more base results), a `base` statement using
+`.iterNext` or a `recur` statement using `.iterAt` (base/recur slot discipline is not verified in
+either direction), and two or more `.iterNext` writes for one state (§5.1 requires exactly one
+next-state result). These are syntactically decidable without shape information but are not yet
+built, not axis-size-dependent gaps like the ones above.
 -/
 
 namespace LeanNCD.PlanContract.WaveF
