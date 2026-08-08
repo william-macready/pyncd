@@ -29,6 +29,14 @@ The proposal has two goals:
 2. provide an implementation sequence whose intermediate slices are independently checkable and
    executable.
 
+Throughout, **"general" describes the execution model, not the breadth of accepted source programs.**
+The worker's four-phase semantics ([§9](#9-general-dense-scan-semantics)) applies uniformly to any
+checked `ScanPlan`, with no specialized case for one-axis, coupled, or n-dimensional scans. The
+*accepted source fragment* is deliberately narrow — one-axis and rectangular uniform recurrences only,
+base writes that are pairwise disjoint across a state's boundary — and stays that way until later
+plan-kernel and scan-structure waves broaden it ([§5.1](#51-accepted-source-fragment), summarized in
+the capability table in [§1](#1-executive-summary)).
+
 Wave F is **not** the JAX `lax.scan` wave. A one-axis `lax.scan` lowering, nested-scan recognition,
 parallel prefix, final-carry-only execution, and other optimized implementations follow only after
 the general checked scan semantics has an independent differential gate.
@@ -52,6 +60,23 @@ the general checked scan semantics has an independent differential gate.
 - [15. Wave C planning lessons applied](#15-wave-c-planning-lessons-applied)
 - [16. Literature-derived design patterns](#16-literature-derived-design-patterns)
 - [17. References](#17-references)
+
+## Glossary
+
+Terms below recur across many sections; each is fully defined at its first section reference, and
+restated here only as a lookup aid.
+
+| Term | Meaning | Defined in |
+|---|---|---|
+| State | One persistent, feedback-carrying tensor a scan maintains across iterations. | §6.3 |
+| Base write / step write | The boundary-initializing write for a state, vs. the per-iteration next-state write. | §6.5 |
+| Block (`PlanBlock`) | A local, acyclic, context-parameterized dataflow graph — the base block or the step block. | §6.2 |
+| Capture | A block input bound to either an outer graph slot (external) or a persistent state (state capture). | §6.4 |
+| Snapshot / commit | The immutable pre-step state exposed to a block, vs. the simultaneous write of next-state results after it runs. | §5.3, §9.3 |
+| History extent / step extent | Full stored-history length per axis, vs. the derived recurrence-domain size (`extent - 1`). | §1, §6.6 |
+| Mixed-radix rank | The traversal order over multi-axis recurrence coordinates (axis zero fastest). | §6.6 |
+| Causality certificate | Checker-produced evidence that every feedback read is defined by padding, base init, or an earlier producer. | §7.4 |
+| Materialization policy | Which values a scan actually returns (currently: complete state histories only). | §6.3 |
 
 ## 1. Executive summary
 
@@ -185,7 +210,8 @@ outside the checked-plan path:
 | Scatter and affine LHS writes | Wave D source semantics are not yet represented by checked `EvalPlan`. |
 | Dtypes beyond the admitted concrete `f64` mode and dynamic shapes | Still rejected at the checked-plan preparation boundary. |
 | `.scanPre`, callbacks, nonlinear scan bodies, and predicate-dispatch scan bodies | Still rejected even though `PlanStep.scan` exists. |
-| General n-dimensional recurrence geometry, multiple/overlapping boundary faces, and arbitrary state writes | The first checked scan remains the rectangular uniform all-axis `+1` fragment. |
+| General n-dimensional recurrence geometry and arbitrary state writes | The first checked scan remains the rectangular uniform all-axis `+1` fragment. |
+| Multi-face full-boundary writes — a state initialized by two or more *free-axis* faces (the standard n-D tabulation-DP pattern, e.g. row-0-plus-column-0) — and genuinely overlapping writes with no declared precedence | Neither is achievable in this version. Both need the same missing capability: an offset/restricted-range or conflict-resolving base-write geometry beyond pin-plus-full-free. **Known defect**: an earlier draft of this proposal incorrectly claimed the first case was accepted; see the corrected limit in [§5.1](#51-accepted-source-fragment) and the narrower geometry actually admitted in [§6.5](#65-write-geometry). Only a main free-axis face plus disjoint fully-pinned point overrides is admitted here. |
 | PyTorch/JAX execution and optimized `lax.scan`, compact-carry, wavefront, or parallel-prefix lowering | Dense remains the only general checked worker delivered by Wave F. |
 
 The next semantic-expansion work after Wave F should be a named **checked local-kernel capability
@@ -196,34 +222,17 @@ not choose the order of those operation families, but F5 must preserve this tabl
 manifest and handoff rather than allowing the typed rejections to disappear from the roadmap.
 
 The first scan plan preserves the existing LeanNCD scan evaluator's extent meaning: a declared scan
-extent counts the number of state values stored along that scan axis in each output state tensor—the
-initial base slice plus one stored slice for each recurrence invocation. It does not count relations
-or recurrence invocations directly. Thus `historyExtents` records these stored-history lengths `H`,
-coordinate `0` is a boundary coordinate, and `stepExtents = H.map (· - 1)` records the actual
-recurrence domain before writing coordinate `+1`. For example, a one-axis extent of `4` stores base
-value `H[0]` and runs three recurrence invocations, at `q = 0, 1, 2`, which write `H[1]`, `H[2]`,
-and `H[3]`.
+extent counts the number of state values stored along that scan axis in each output state
+tensor—the initial base slice plus one stored slice for each recurrence invocation, not the number
+of recurrence invocations directly. `historyExtents` records these stored-history lengths;
+`stepExtents` derives the actual recurrence domain. See [§6.6](#66-scan-node-and-outer-graph) for the
+exact derivation and the mixed-radix traversal order, and [§7.4](#74-causality-certificate) for the
+structural causality recognizer that admits non-positive constant look-back while rejecting
+look-ahead.
 
-Multi-axis iteration is defined by increasing mixed-radix rank with scan axis zero fastest, rather
-than by the convention-dependent phrase "reverse lexicographic." Complete histories are
-materialized. A zero history extent is rejected by the first plan version; extent one is a base-only
-scan.
-
-The causality certificate means that every feedback read is defined by padding or initialization, or
-has a unique producer earlier under the checked schedule. The first recognizer is intentionally
-structural and backend-neutral: every advancing state dimension must read the corresponding current
-scan coordinate plus a non-positive constant offset, with no dependence on slice or reduction
-coordinates in that dimension. This admits immediate predecessor and deeper look-back reads under
-explicit zero padding while rejecting scale-dependent look-ahead. A later checker may admit a wider
-affine fragment while producing the same `CausalityCertificate`.
-
-Adding a stateful plan constructor changes the Lean type of the plan language itself. Wave F should
-remove `RawEvalPlan.version` and the corresponding `admittedVersion` check rather than bumping the
-field. No raw or checked plans are serialized or persisted, so assignment-only and scan-capable plan
-types never need to coexist at runtime. Existing Lean code that constructs a raw plan must compile
-against the new `PlanStep.assign | PlanStep.scan` type, and the type checker already makes stale
-constructors fail. If a canonical codec or external plan consumer is introduced later, version its
-serialized envelope then; an otherwise unused in-memory tag is not compatibility machinery.
+Adding a stateful plan constructor changes the Lean type of the plan language itself, which is also
+why Wave F removes `RawEvalPlan.version` and `admittedVersion` rather than bumping the field — see
+[§2.3](#23-remove-the-unused-in-memory-version-tag) for the full argument.
 
 ## 2. Landed Wave C boundary
 
@@ -411,6 +420,11 @@ history reads are zero padded, and execution still begins at the first recurrenc
 
 ## 4. Problems Wave F must remove
 
+This table names the *type* of explicit data that replaces each current implicit rule. The concrete
+*value* each replacement takes (e.g., which boundary policy, which traversal order) is fixed once in
+[§5.3](#53-fixed-first-version-policies); it is not restated here. [§6.8](#68-producer-checker-and-consumer-matrix)
+then traces each field to its producer/checker/consumer.
+
 The checked plan must not depend on these current implicit rules:
 
 | Current rule | Why it is unsuitable | Explicit Wave F data |
@@ -442,9 +456,10 @@ Wave F initially accepts a `.scan` when:
 - all base, scratch, and state-result assignments fit the existing real sum-product `AssignPlan`
   fragment;
 - state reads satisfy the structural affine causality rule in Section 7.4;
-- each persistent state has exactly one base result and one next-state result;
-- base writes are in range, touch a boundary, and do not overlap another base write for the same
-  state;
+- each persistent state has one or more base results, whose written regions are pairwise disjoint,
+  and exactly one next-state result;
+- every base write is in range, touches a boundary, and shares no coordinate with any other base
+  write for the same state;
 - every state has the same ordered advancing-axis context, though those axes may occupy different
   tensor dimensions;
 - step-block dependencies are acyclic and production ordered; and
@@ -458,12 +473,62 @@ This includes:
 - contractions inside a recurrence;
 - constant non-positive look-back;
 - rectangular uniform all-axis `+1` recurrences, where every advancing axis writes `q + 1`;
-- coupled rectangular uniform all-axis `+1` recurrences; and
-- iteration dimensions in arbitrary tensor positions.
+- coupled rectangular uniform all-axis `+1` recurrences;
+- iteration dimensions in arbitrary tensor positions; and
+- a state boundary written as one free-axis face write plus one or more disjoint fully-pinned
+  point overrides elsewhere (see the worked example and the limit below — this is narrower than it
+  sounds).
 
-This is an ordered lattice recurrence, not a general n-dimensional prefix scan. In particular, one
-non-overlapping base write per state does not cover the common dynamic-programming case with several
-overlapping boundary faces.
+This is an ordered lattice recurrence, not a general n-dimensional prefix scan.
+
+> **Known defect, deferred, not fixed here.** An earlier draft of this section claimed that a state's
+> boundary could be split across two *disjoint free-axis faces* — e.g. row `0` and column `0` of a
+> 2-D table, the standard tabulation-DP boundary pattern. That claim does not hold and has been
+> removed. See the limit below for why, and the deferred-capability table in
+> [§1](#1-executive-summary) for where the fix belongs.
+
+**The actual limit: two full free-axis boundary faces of one state are never disjoint.** Each base
+write pins some axes to a literal and leaves the rest `.free` — and `.free` always ranges over an
+axis's *entire* declared size, starting at `0`; there is no source or plan construct for "free,
+starting at an offset" (`LHSSlot` has `.free`, `.iterAt` (a single literal point), `.iterNext`, and
+`.affine` — the general one, which `checkLHSSlot`/`checkStmt` reject unconditionally as
+`CapabilityError.scatterOrAffineLhs`, since arbitrary affine LHS writes remain a deferred, separate
+capability). Since every write required to "touch a boundary" must pin at least one axis to `0`, and
+every *other* axis it leaves free necessarily includes `0` in its range, any two such writes overlap
+wherever every axis either write pins to zero is simultaneously zero — for a 2-D table with one write
+pinning row and one pinning column, that intersection is exactly the corner `(0,0)`. This is not
+specific to the row/column example; it holds for any two distinct free-axis face writes of one state.
+
+**What multiple base writes are useful for in this version**, given that limit: at most one write per
+state may leave any axis free (a single "main" face); additional writes must pin *every* axis to a
+specific literal, landing on isolated points the main face's free range doesn't already cover. A
+worked pair:
+
+```text
+-- accepted: one face write, plus a fully-pinned point override that the face doesn't cover
+dp[0, j] = j        for all j     -- pins row = 0, free over column
+dp[1, 0] = 1                      -- fully pinned (row = 1, column = 0); row = 1 is outside the face
+
+-- rejected: two free-axis faces — both regions include (0, 0)
+dp[0, j] = j        for all j
+dp[i, 0] = i        for all i
+```
+
+Disjointness is checked over written index regions only, never over RHS values: the rejected pair
+above is rejected even though both writes assign `dp[0,0] = 0` and therefore agree. The checker only
+looks at which coordinates each base write's declared range touches, not at what the two RHS
+expressions evaluate to; proving that two arbitrary RHS expressions agree wherever their ranges
+intersect is a distinct, materially harder feature (symbolic equality of affine/sum-product terms,
+not a checked policy value) and is not planned.
+
+Writing a state's boundary as two or more full opposing free-axis faces — the common n-dimensional
+tabulation-DP pattern (row-0-plus-column-0, and its higher-dimensional analogues) — is **not
+achievable in this version** for the structural reason above, and is deferred alongside genuinely
+overlapping writes with no declared precedence (e.g. writing row `0` and column `0` both unrestricted,
+so both claim `(0,0)`, as in the rejected pair above). Both gaps share the same underlying missing
+capability — some form of offset/restricted-range or conflict-resolving base-write geometry beyond
+pin-plus-full-free — and are recorded together in the capability table in
+[§1](#1-executive-summary).
 
 ### 5.2 Typed source rejection
 
@@ -487,6 +552,10 @@ shapes or lowered affine maps have closed `ScanCompileError` constructors after 
 generic `unsupportedScan : String` constructor in either family is not acceptable.
 
 ### 5.3 Fixed first-version policies
+
+These are the concrete values for the checked-data types named in [§4](#4-problems-wave-f-must-remove);
+[§6.8](#68-producer-checker-and-consumer-matrix) traces each one to its producer, checker, and
+consumer.
 
 | Concern | Wave F policy |
 |---|---|
@@ -611,9 +680,14 @@ name or access the mutable state accumulator directly.
 - one persistent state index; and
 - one `AffineMap` from scan-context-plus-slice coordinates to complete state coordinates.
 
-Base writes have empty scan context and may insert literal boundary coordinates. Step writes use the
-current recurrence coordinate and add one in each advancing state dimension. Non-advancing state
-dimensions are an order-preserving projection of the result slice.
+Base writes have empty scan context and may insert literal boundary coordinates. A state's
+`baseWrites` may contain more than one `StateWriteMap`, provided their target regions are pairwise
+disjoint; `checkScanPlan` ([§7.3](#73-scan-structural-checks)) owns that disjointness check across
+the whole list, not just between a pair. In practice this geometry admits at most one write per state
+that leaves any axis `.free`; additional writes must pin every axis to a specific literal (see
+[§5.1](#51-accepted-source-fragment) for why two free-axis writes for one state can never be
+disjoint). Step writes use the current recurrence coordinate and add one in each advancing state
+dimension. Non-advancing state dimensions are an order-preserving projection of the result slice.
 
 The raw representation may use the existing general `AffineMap`; the first checker admits only the
 canonical base and step geometries above. This keeps the plan language extensible without making the
@@ -679,7 +753,10 @@ Workers inspect trusted accessors but cannot construct this evidence.
 
 ### 6.8 Producer, checker, and consumer matrix
 
-No conceptual field is admitted without all three roles:
+This is the third and final view of the same policy set introduced in
+[§4](#4-problems-wave-f-must-remove) (what replaces each implicit rule) and
+[§5.3](#53-fixed-first-version-policies) (the concrete value each policy takes): here, who builds,
+validates, and reads each field. No conceptual field is admitted without all three roles:
 
 | Data | Source compiler producer | Checker owner | Dense consumer |
 |---|---|---|---|
@@ -746,13 +823,17 @@ This is the local-graph analogue of `checkPlan`, not a special evaluator convent
   bound exactly once and no capture targets a non-input slot;
 - exact base-block context `#[]` and exact step-block context
   `stepExtents`;
-- exactly one base write and one step write per state;
+- one or more base writes and exactly one step write per state;
 - every write source is a declared output of its corresponding block;
 - a bijection between each block's declared outputs and its write sources, so no output is discarded
-  or committed twice;
+  or committed twice — for a state with several base writes, each is a distinct block output bound to
+  a distinct `StateWriteMap`, not one output replayed at several coordinates;
 - write-result signature agreement with the unpinned state dimensions;
 - admitted base and step geometry;
-- boundary-touching and non-overlapping base writes;
+- boundary-touching base writes, pairwise disjoint across the full `baseWrites` list for one state
+  (not just checked pairwise between two arbitrarily chosen writes); disjointness is a check over
+  each write's declared index region alone — it never inspects or compares RHS values, so ranges
+  that happen to agree at a shared coordinate are still rejected;
 - admitted traversal, boundary, snapshot, and materialization policies; and
 - causality of every persistent-state read.
 
@@ -795,8 +876,10 @@ Use four layers:
 - `PositionalInputError` for runtime tensor shape/storage failures at external captures.
 
 `ScanPlanError` should have one constructor per checker branch, including context for state, block,
-capture, write, and factor indices. Do not flatten it to rendered strings. A worker may report a
-genuine resource failure, but it must not rediscover malformed geometry, missing state results,
+capture, write, and factor indices. In particular, the base-write-overlap branch must carry the state
+index and the *pair* of colliding write indices, since a state may now have more than two base
+writes and "which two collided" is load-bearing for the error message. Do not flatten it to rendered
+strings. A worker may report a genuine resource failure, but it must not rediscover malformed geometry, missing state results,
 causality, or block production order.
 
 `PlanCompileCause.scan` owns `ScanCompileError` and preserves warnings already produced by shape
@@ -888,7 +971,8 @@ No sorting by state name or UID is permitted.
 
 The compiler, not the worker, classifies:
 
-- persistent states: same-name base/recurrence pairs selected by the scheduled scan;
+- persistent states: same-name base statement(s) — one or more — paired with a recurrence result
+  selected by the scheduled scan;
 - step results: designated recurrence assignments for those states;
 - scratch: every other recurrence-list destination; and
 - externals: reads not produced by the block and present before the outer scan node.
@@ -902,7 +986,10 @@ in a base list.
 
 A base LHS's `iterAt` positions become literal components of its `StateWriteMap`. Its remaining free
 positions form the base result slice. The first version requires each base write to touch at least one
-advancing dimension at coordinate zero and rejects overlapping base regions for one state.
+advancing dimension at coordinate zero. A state's boundary may be split across several base
+statements sharing its name — each compiles to its own `StateWriteMap` — provided the compiler
+records them as an ordered list rather than assuming a single result; `checkScanPlan` then rejects
+any pairwise-overlapping regions across that list.
 
 The same pins also seed RHS evaluation. For each normalized read row with affine constant `b`,
 coefficients `cᵤ`, and pin map `p`, base compilation computes:
@@ -940,6 +1027,10 @@ failure.
 
 ## 9. General Dense scan semantics
 
+*General* here means: this worker executes any checked `ScanPlan` the same way, with no
+one-axis/coupled/n-dimensional special case. It does not mean the accepted source fragment is broad —
+that remains the narrow set fixed in [§5.1](#51-accepted-source-fragment).
+
 ### 9.1 Worker independence
 
 The checked scan worker must not import or call:
@@ -959,9 +1050,12 @@ independence here is more valuable than deduplicating a small coordinate enumera
 ### 9.2 Allocation and bases
 
 For each state, allocate a `DenseTensor.zeros` with its checked complete shape. Execute the base block
-once with empty context. Apply base writes in declared order through checked geometry. Although the
-first version rejects overlapping writes, retaining order in the semantics avoids making future
-relaxation ambiguous.
+once with empty context. Apply every base write for that state, in declared order, through checked
+geometry — a state may have several, one per disjoint boundary face. Because `checkScanPlan` has
+already established that they are pairwise disjoint, declaration order does not affect the result in
+this version; it is retained in the worker semantics only so a later relaxation to genuinely
+overlapping regions has an unambiguous order to define its resolution policy against, not because
+order is observable here.
 
 The worker performs no bounds recovery or default geometry. Every produced base slice must have the
 checked signature, and every generated write coordinate is in bounds by construction.
@@ -1107,7 +1201,14 @@ Hand-written fixtures are required for:
 - future reads hidden through scratch;
 - base/result slice-signature mismatch;
 - duplicate or missing state writers;
-- overlapping or interior-only base writes;
+- interior-only base writes (touching no boundary);
+- a main free-axis face write plus a disjoint fully-pinned point override for one state, accepted
+  (F0 requires an actual compiled/run `evalScan` fixture for this, not a hand-derived trace — see
+  [§13](#13-implementation-slices));
+- two free-axis face writes for one state (e.g., row `0` and column `0`, both left fully free) —
+  rejected, since two free-axis writes for one state are never disjoint (see [§5.1](#51-accepted-source-fragment));
+  include the sub-case where the two RHS expressions would evaluate to equal values at the shared
+  corner, to confirm the checker never inspects RHS values when deciding disjointness;
 - block forward reads and cycles;
 - arbitrary scan-axis positions;
 - rank/unrank inversion for asymmetric `2 x 3`, `3 x 2`, and extent-one shapes;
@@ -1140,6 +1241,8 @@ upon. Required test-the-tester mutations include:
 - reverse the mixed-radix rank order;
 - change one step-write `+1` bias;
 - drop one state write;
+- shrink one of a state's several disjoint base writes so it now shares a coordinate with another,
+  which `checkScanPlan` must reject;
 - turn one causal bias from `0` to `+1`;
 - leak one scratch result into materialized outputs; and
 - alter one context coefficient.
@@ -1212,17 +1315,29 @@ only after the previous slice lands. Every plan-level Lean block must be compile
 
 ### F0 - executable scan contract
 
-**Production changes:** none.
+**Production changes:** none. F0 produces no new Lean types — not even stubs. "Checked data" below
+means the concrete value each policy takes and the fixture that observed it, written down in the
+plan/spec and validated against the legacy evaluator; the corresponding `RawScanPlan`,
+`CheckedScanPlan`, and checker types are F2-F3 production changes that must agree with these
+observed values, not anticipate them.
 
 Deliver:
 
 - an exhaustive source rejection matrix for `.scan` and `.scanPre`, assigning every case to either
   pre-shape `CapabilityError` or post-shape `ScanCompileError`;
-- checked data for every policy in Section 5.3;
+- the concrete value and an observed fixture for every policy in Section 5.3;
 - observed legacy fixtures for self, coupled, external-read, contraction, history, and homogeneous
   diagonal n-D scans;
 - zero and nonzero multidimensional base-pin fixtures whose RHS reads depend on the pinned UID;
-- explicit accepted/rejected outcomes for extent zero/one, bases, geometry, scratch, and causality;
+- explicit accepted/rejected outcomes for extent zero/one, bases (including a face-plus-point-override
+  multi-write accepted, and two free-axis face writes for one state rejected — see
+  [§5.1](#51-accepted-source-fragment)), geometry, scratch, and causality;
+- an actual compiled, run `evalScan` fixture — not a hand-derived trace — for two same-named base
+  statements in the accepted face-plus-point-override shape, confirming allocate-then-fill
+  accumulation behaves as expected, since no existing test exercises this pattern (only
+  different-named coupled states, e.g. `ScanTest.lean`'s `G`/`H` case, are currently covered); pair it
+  with the collision mutation from §11.4 to observe the *legacy* path's silent last-write-wins
+  behavior at a shared coordinate, for contrast with the checked path's unconditional rejection;
 - a typed-rejection fixture for source reads that could observe ordered state mutation, plus
   fixture/mutation pairs for traversal, boundary, and materialization semantics; and
 - an exact inventory of existing generator coverage.
@@ -1281,8 +1396,10 @@ to the closed sum, remove the unused in-memory version tag, and update scan-free
 Deliver:
 
 - scan structural, capture, geometry, and causality checking;
+- pairwise base-write disjointness checking across a state's full `baseWrites` list (not a
+  two-write special case);
 - multi-output outer graph availability/production checking;
-- checked allocation/base application;
+- checked allocation/base application, including applying more than one base write per state;
 - independent rank/unrank and explicit-order enumeration;
 - immutable snapshots;
 - a pure step-input binding helper tested directly to bind every state capture from the supplied
@@ -1290,8 +1407,8 @@ Deliver:
 - checked block invocation;
 - simultaneous state commit;
 - complete-history output;
-- hand-computed self, coupled, history, base-only, and asymmetric rectangular all-axis `+1` fixtures;
-  and
+- hand-computed self, coupled, history, base-only, asymmetric rectangular all-axis `+1`, and
+  face-plus-point-override multi-base-write fixtures; and
 - one mutation per reachable scan and outer-graph error branch.
 
 **Gate:** malformed raw scan data cannot reach a worker; every checked `PlanStep` is executable;
