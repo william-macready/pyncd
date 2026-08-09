@@ -2,9 +2,9 @@
 
 ## Status and purpose
 
-**Status:** design draft, 2026-08-07. F0 (executable scan contract) landed 2026-08-08 — see
-`papers/restructure_suggestions.md`'s wave-progress table. F1 (contextual local kernel) is next, per
-§13's ordering.
+**Status:** design draft, 2026-08-07. F0 (executable scan contract) landed 2026-08-08; F1 (contextual
+local kernel) landed 2026-08-08 — see `papers/restructure_suggestions.md`'s wave-progress table. F2
+(checked plan-block vertical slice) is next, per §13's ordering.
 
 This document proposes Wave F: extending Wave C's checked, backend-neutral `EvalPlan` with explicit
 scan state and a general Dense scan worker. It is modeled on
@@ -1406,6 +1406,11 @@ Deliver:
 **Gate:** every existing Wave C plan test remains green; top-level assignment semantics and raw graph
 ordering are unchanged; the contextual worker introduces no DSL, UID, name, or legacy-evaluator
 dependency.
+
+**F1 completion record (2026-08-08).** Landed with `runDenseAssignAt` (context-indexed primitive),
+`PositionalInputError.contextShapeMismatch` (runtime context validation), `validateContext` (private
+helper), updated `runDenseAssign` (empty-context wrapper), and context-sensitive fixtures in
+`Eval.Plan.KernelDenseTest`; `lake build` green (8,640 jobs).
 
 This slice is separate because it changes existing production code with many dependents and is a
 natural rollback unit.
