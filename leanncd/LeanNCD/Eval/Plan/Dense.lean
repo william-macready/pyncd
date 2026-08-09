@@ -68,12 +68,24 @@ private def validateStore (c : CheckedAssignPlan) (store : Array DenseTensor) :
           unless d.data.size == f.sourceShape.toList.foldl (· * ·) 1 do
             throw (.storageMismatch f.sourceSlot d.shape d.data.size)
 
-/-- Execute one checked operation. Fold order is source-declared and preserved exactly: factors
-    from `factorId`, then that term's reduction coordinates from `reduceId`, then completed terms
-    from `reduceId` in term-array order. The inner reduction fold and the outer term fold are NOT
-    flattened — `Y[i] := A[i] + P[i,j]` must add `A[i]` once, not once per `j` (proposal §8.2). -/
-def runDenseAssign (c : CheckedAssignPlan) (store : Array DenseTensor) :
+/-- Validate a runtime context coordinate against the checked context shape: same rank, and every
+    component in range. A separate check from `checkAssign`'s structural work — `ctx` is a runtime
+    value supplied per call, not plan data (proposal §7.1). -/
+private def validateContext (a : AssignPlan) (ctx : List Int) : Except PositionalInputError Unit :=
+  let inRange := (ctx.zip a.contextShape.toList).all (fun (v, d) => 0 ≤ v && v < (d : Int))
+  if ctx.length == a.contextShape.size && inRange then pure ()
+  else throw (.contextShapeMismatch a.contextShape ctx)
+
+/-- Execute one checked operation at a fixed context coordinate. Fold order is source-declared and
+    preserved exactly: factors from `factorId`, then that term's reduction coordinates from
+    `reduceId`, then completed terms from `reduceId` in term-array order. The inner reduction fold
+    and the outer term fold are NOT flattened — `Y[i] := A[i] + P[i,j]` must add `A[i]` once, not
+    once per `j` (proposal §8.2). `ctx` is bound once per call, at every term's `contextPos`
+    positions, and held fixed across the whole output/reduction double-loop — it does not get
+    enumerated like `outputPos`/`reductionPos` do. -/
+def runDenseAssignAt (c : CheckedAssignPlan) (ctx : List Int) (store : Array DenseTensor) :
     Except PositionalInputError DenseTensor := do
+  validateContext c.plan ctx
   validateStore c store
   let a := c.plan
   let alg := a.algebra
@@ -87,6 +99,7 @@ def runDenseAssign (c : CheckedAssignPlan) (store : Array DenseTensor) :
       let mut termAcc := reduceId
       for rc in allCoords redShape do
         let mut iter : Array Int := Array.replicate t.iterationShape.size 0
+        for (p, v) in t.contextPos.toList.zip ctx do iter := iter.set! p v
         for (p, v) in t.outputPos.toList.zip oc do iter := iter.set! p v
         for (p, v) in t.reductionPos.toList.zip rc do iter := iter.set! p v
         let mut prod := factorId
@@ -96,6 +109,11 @@ def runDenseAssign (c : CheckedAssignPlan) (store : Array DenseTensor) :
       acc := applyOp alg.reduceOp acc termAcc
     out := out.push acc
   return { shape := a.outputShape.toList, data := out }
+
+/-- The empty-context wrapper every existing (scan-free) call site uses. -/
+def runDenseAssign (c : CheckedAssignPlan) (store : Array DenseTensor) :
+    Except PositionalInputError DenseTensor :=
+  runDenseAssignAt c [] store
 
 /-- Execute a checked graph over positional Dense inputs, ordered by `c.raw.inputSlots`. Checks
     input arity, validates each input tensor's shape and storage against its declared signature,

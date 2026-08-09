@@ -394,4 +394,43 @@ def badDataStore : Array DenseTensor :=
 
 #guard posErrOf sigs contractPlan badDataStore == some (.storageMismatch 0 [4] 3)
 
+/-!
+## Context-sensitive fixtures (Step 3)
+-/
+
+def ctxSigs : Array TensorSignature := #[{ shape := #[2,3], dtype := .f64 }, { shape := #[3], dtype := .f64 }]
+
+def ctxReadX : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[#[1,0], #[0,1]], bias := #[0,0] }
+  , sourceShape := #[2,3], oobPolicy := .zeroPad }
+
+def ctxPlan : AssignPlan :=
+  { contextShape := #[2], destinationSlot := 1, outputShape := #[3]
+  , terms := #[{ iterationShape := #[2,3], contextPos := #[0], outputPos := #[1], reductionPos := #[]
+               , factors := #[ctxReadX] }]
+  , algebra := admittedAlgebra }
+
+run_cmd do
+  match checkAssign ctxSigs ctxPlan with
+  | .error e => throwError s!"checkAssign rejected context-sensitive plan: {repr e}"
+  | .ok checked =>
+      let x : DenseTensor := { shape := [2,3], data := #[1,2,3,4,5,6] }
+      let zeros : DenseTensor := { shape := [3], data := #[0,0,0] }
+      -- Verified: ctx=0 -> X's row 0 = [1,2,3].
+      match runDenseAssignAt checked [0] #[x, zeros] with
+      | .error e => throwError s!"ctx=0 failed: {repr e}"
+      | .ok y0 => unless y0.data == #[1,2,3] do throwError s!"ctx=0 wrong: {repr y0.data}"
+      -- Verified: ctx=1 -> X's row 1 = [4,5,6].
+      match runDenseAssignAt checked [1] #[x, zeros] with
+      | .error e => throwError s!"ctx=1 failed: {repr e}"
+      | .ok y1 => unless y1.data == #[4,5,6] do throwError s!"ctx=1 wrong: {repr y1.data}"
+      -- Verified: out-of-range context (contextShape is #[2]) is rejected, not padded.
+      match runDenseAssignAt checked [5] #[x, zeros] with
+      | .error _ => pure ()
+      | .ok _ => throwError "out-of-range context should have been rejected"
+      -- Verified: wrong-rank context (2 components against a 1-D contextShape) is rejected.
+      match runDenseAssignAt checked [0, 0] #[x, zeros] with
+      | .error _ => pure ()
+      | .ok _ => throwError "wrong-rank context should have been rejected"
+
 end LeanNCD.Eval.Plan.KernelDenseTest

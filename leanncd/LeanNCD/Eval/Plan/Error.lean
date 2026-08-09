@@ -48,6 +48,7 @@ inductive PositionalInputError
   | shapeMismatch   (slot : TensorSlot) (expected : Array Nat) (actual : List Nat)
   | storageMismatch (slot : TensorSlot) (shape : List Nat) (dataSize : Nat)
   | arityMismatch   (expected : Nat) (actual : Nat)
+  | contextShapeMismatch (expected : Array Nat) (actual : List Int)
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- Wave C capability rejection (proposal §3.1/§3.2): which construct in the initial scan-free `f64`
