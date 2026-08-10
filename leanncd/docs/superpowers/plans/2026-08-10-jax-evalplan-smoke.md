@@ -1,6 +1,6 @@
 # JAX evaluator smoke test for checked Tensor Logic plans
 
-**Status:** draft, 2026-08-10
+**Status:** complete, 2026-08-10
 
 ## Goal
 
@@ -304,3 +304,36 @@ backend with two explicit lowering paths:
 
 That promotion should be planned separately. Scan lowering remains downstream of Wave F's checked
 block and scan semantics, not part of this experiment.
+
+## Completion record
+
+Completed on 2026-08-10 in commits `3b2a7c6` (checked-plan generator) and `637999e`
+(JAX runner and documentation), after the plan commit `5cda8b7`.
+
+Observed results:
+
+- `Y[i] := W[i, j] · x[j] + b[i]` compiled through `prepareEvalPlan`, executed through
+  `runPreparedDense`, generated `jnp.einsum("ab,b->a", ...)`, and produced `[11.0, 16.0]` under
+  both eager JAX and `jax.jit`;
+- eager and JIT output were bit-identical to the Dense `Float.toBits` oracle;
+- `jax.grad(sum(Y), W)` produced `[[5.0], [5.0]]`;
+- `Y[i] := A[i + 1]` reached the checked plan and was rejected by
+  `JaxCodegenError.nonzeroAffineBias` at node 0, term 0, factor 0, row 0, bias 1;
+- removing the generated bias-term addition changed output to `[10.0, 15.0]` and failed the
+  bit-identity assertion;
+- replacing the required contraction with numerically equivalent `jnp.matmul` failed the AST
+  `jnp.einsum("ab,b->a", ...)` gate;
+- disabling JAX x64 produced `float32` and failed the explicit dtype assertion;
+- restoring each mutation returned the smoke test to green;
+- the independent upstream `NetSpec` smoke test remained green; and
+- the final full `lake build` completed successfully with 8,640 jobs.
+
+Verified environment:
+
+- Lean 4.30.0 (`d024af099ca4bf2c86f649261ebf59565dc8c622`);
+- Python 3.13.5;
+- JAX/JAXlib 0.10.0; and
+- NumPy 2.5.2 on the CPU backend.
+
+No `lakefile.toml` dependency, public `LeanNCD` backend API, stable plan serialization, generic
+affine fallback, context execution, or scan lowering was introduced. Those non-goals remain true.

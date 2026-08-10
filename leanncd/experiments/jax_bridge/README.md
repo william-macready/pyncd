@@ -96,3 +96,26 @@ JAX backend: it accepts only projection-only affine `einsum` contractions in `f6
 mode, with no context positions, scans, or nonlinearities. See
 `docs/superpowers/plans/2026-08-10-jax-evalplan-smoke.md` for the full exit criteria and
 non-goals.
+
+## Verified environment and commands
+
+The completed smoke plan was verified on 2026-08-10 with:
+
+- Lean 4.30.0 (`d024af099ca4bf2c86f649261ebf59565dc8c622`);
+- Python 3.13.5;
+- JAX/JAXlib 0.10.0;
+- NumPy 2.5.2; and
+- the JAX CPU backend.
+
+The final validation commands were:
+
+```bash
+cd leanncd/experiments/jax_bridge
+./run-evalplan.sh
+./run.sh
+
+cd ../..
+"$HOME/.elan/bin/lake" build
+```
+
+Both smoke tests passed, and the complete Lean build finished with 8,640 jobs.
