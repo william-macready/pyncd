@@ -1,5 +1,6 @@
 import LeanNCD.Eval.Tensor
 import LeanNCD.Eval.Plan.Check
+import LeanNCD.Eval.Plan.Coordinates
 
 /-!
 # Wave C Dense interpretation of one checked operation (C2)
@@ -7,35 +8,24 @@ import LeanNCD.Eval.Plan.Check
 The pullback-product-pushforward semantics of proposal §8, over positional `DenseTensor` storage.
 Independent of the legacy evaluator by construction — this module imports neither `Gather` nor
 `Contract`, builds no `HashMap UID Int`, and knows no source names — so the two implementations can
-serve as each other's oracle in C4's differential matrix.
+serve as each other's oracle in C4's differential matrix. Row-major coordinate enumeration, affine
+application, flattening, and the per-dimension bounds predicate live in `Coordinates.lean`.
 -/
 
 namespace LeanNCD.Eval.Plan
 open LeanNCD.Eval
 
-/-- Row-major coordinate enumeration: the last index varies fastest (C0's declared order). -/
-private def allCoords : List Nat → List (List Int)
-  | [] => [[]]
-  | d :: rest => (List.range d).flatMap (fun i => (allCoords rest).map (fun c => Int.ofNat i :: c))
-
-private def flatIndex (shape : List Nat) (coord : List Nat) : Nat :=
-  (shape.zip coord).foldl (fun acc (d, c) => acc * d + c) 0
-
-/-- `coeffs * iteration + bias`, one component per source dimension. -/
-private def applyAffine (m : AffineMap) (iter : List Int) : List Int :=
-  (m.coeffs.toList.zip m.bias.toList).map (fun (row, b) =>
-    (row.toList.zip iter).foldl (fun acc (c, x) => acc + c * x) b)
-
-/-- Gather one factor. Every source dimension is range-tested BEFORE flattening: testing the flat
-    offset instead can alias distinct invalid coordinates onto a valid address (proposal §8.3). -/
+/-- Gather one factor. Every source dimension is range-tested BEFORE flattening (`inBoundsPerDim`,
+    `Coordinates.lean`): testing the flat offset instead can alias distinct invalid coordinates onto
+    a valid address (proposal §8.3). -/
 private def gatherFactor (store : Array DenseTensor) (f : ReadPlan) (iter : List Int) : Float :=
   match store[f.sourceSlot]? with
   | none => 0.0
   | some t =>
       let src := applyAffine f.map iter
       let shape := f.sourceShape.toList
-      if (src.zip shape).any (fun (z, d) => z < 0 || z ≥ (d : Int)) then 0.0
-      else (t.data[flatIndex shape (src.map Int.toNat)]?).getD 0.0
+      if inBoundsPerDim shape src then (t.data[flatIndex shape (src.map Int.toNat)]?).getD 0.0
+      else 0.0
 
 private def applyOp : ScalarBinOp → Float → Float → Float
   | .add => (· + ·)

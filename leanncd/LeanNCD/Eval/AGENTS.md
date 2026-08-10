@@ -24,7 +24,7 @@ Does not own: parsing/compilation/routing (`../DSL/`).
 | Axis-size inference fixpoint (`inferAxisSizes`, `scatterOutputShapes`) | `SizeInfer.lean` |
 | Compatibility umbrella re-exporting `Slots`/`SizeSolve`/`SizeInfer` (no new code) | `Shape.lean` |
 | Every typed diagnostic (`EvalError`, `ShapeError`, `EvalWarning`, `SolveDiagnostic`, `EvalFailure`) + their sole renderers | `Error.lean` |
-| Checked, positional tensor-plan IR + compiler + adapter (Wave C) | `Plan/` (10 files: `Types`, `Kernel`, `Graph`, `Error`, `Check`, `Dense`, `Signature`, `Prepared`, `Compile`, `Adapter`) |
+| Checked, positional tensor-plan IR + compiler + adapter (Wave C) | `Plan/` (11 files: `Types`, `Kernel`, `Graph`, `Error`, `Check`, `Coordinates`, `Dense`, `Signature`, `Prepared`, `Compile`, `Adapter`) |
 | "Does this model class evaluate correctly" test suite | `test/Eval/Portfolio/*.lean` |
 
 ### The `Plan/` subtree
@@ -39,6 +39,7 @@ see `papers/wave_c_capability_manifest.md` for the full design, not duplicated h
 | `Graph.lean` | the unchecked plan graph — `RawEvalPlan` |
 | `Error.lean` | closed diagnostics: `PlanError` (checker), `PositionalInputError` (runtime), `CapabilityError` (capability rejection), `InputSignatureError`/`InputBindingError` (boundary), `PlanCompileCause`/`PlanCompileFailure` (prepare-time), `PlanRunCause`/`PlanRunFailure` (run-time) |
 | `Check.lean` | the checker — `checkAssign`/`CheckedAssignPlan` (local invariants), `checkPlan`/`CheckedEvalPlan` (graph-level: slot availability, production order) |
+| `Coordinates.lean` | shared row-major coordinate primitives — `allCoords`, `applyAffine`, `flatIndex`, `inBoundsPerDim` (extracted from `Dense.lean`, no JAX/table/source-name concepts) |
 | `Dense.lean` | Dense interpreter for one checked operation, over positional `DenseTensor` storage |
 | `Signature.lean` | C1's shape-specialization boundary — signature-driven axis-size inference in place of concrete tensors |
 | `Prepared.lean` | source-name-keyed bindings around a checked plan — `PreparedPlan` |
