@@ -1,8 +1,18 @@
-# Lean-JAX bridge experiment
+# Lean-JAX bridge experiments
 
-This isolated smoke test evaluates the
-[`lean4-mlir`](https://github.com/brettkoonce/lean4-mlir) JAX bridge without
-changing LeanNCD's dependencies or toolchain.
+This directory holds two independent isolated smoke tests, neither of which changes LeanNCD's
+dependencies or toolchain. They exercise different Lean-to-JAX paths and share no code:
+
+- **`run.sh`**: upstream `NetSpec` -> generated JAX. Evaluates the
+  [`lean4-mlir`](https://github.com/brettkoonce/lean4-mlir) JAX bridge, an upstream code
+  generator that never runs LeanNCD's own Tensor Logic pipeline.
+- **`run-evalplan.sh`**: Tensor Logic -> checked LeanNCD plan -> generated `jnp.einsum` -> JAX.
+  Runs a Tensor Logic fixture through LeanNCD's own `compileToScheduled` / `prepareEvalPlan` /
+  `CheckedEvalPlan` pipeline (see `docs/superpowers/plans/2026-08-10-jax-evalplan-smoke.md`), then
+  through a narrow experimental Lean code generator (`EvalPlanSmoke.lean`) that emits a Python
+  module containing a real `jnp.einsum` call.
+
+## `run.sh`: upstream `NetSpec` bridge
 
 The upstream bridge is a code generator, not an in-process Lean/Python FFI:
 
@@ -16,7 +26,7 @@ The runner pins upstream commit
 cloned under the ignored `.cache/` directory, keeping it separate from
 LeanNCD's Lean 4.30.0 project.
 
-## Run
+### Run
 
 From this directory:
 
@@ -40,9 +50,49 @@ PYTHON=/path/to/python ./run.sh
 The first run fetches the pinned upstream repository and its Lean dependencies.
 Later runs reuse everything under `.cache/`.
 
-## Scope
+### Scope
 
 This spike establishes that a Lean-authored network specification can reach
 JAX execution and autodiff. It does not yet translate LeanNCD's tensor-logic
-IR into upstream `NetSpec`; that adapter is the next integration boundary to
-investigate.
+IR into upstream `NetSpec`. The checked-`EvalPlan` experiment below tests a
+direct LeanNCD-to-JAX path instead of adding that adapter.
+
+## `run-evalplan.sh`: checked `EvalPlan` -> `jnp.einsum` bridge
+
+Unlike `run.sh`, this path never leaves LeanNCD's own project or toolchain, and never touches
+upstream `NetSpec`:
+
+1. [`EvalPlanSmoke.lean`](./EvalPlanSmoke.lean) compiles a Tensor Logic affine fixture
+   (`Y[i] := W[i, j] · x[j] + b[i]`) with `compileToScheduled`, prepares it with
+   `prepareEvalPlan`, runs it with `runPreparedDense`, and generates a Python module from the
+   resulting `PreparedPlan` — reading only checker-produced positional data and source-name
+   bindings, never source syntax or axis UIDs. It also confirms an affine-shift fixture
+   (`Y[i] := A[i + 1]`) is rejected by a typed codegen error before any Python is emitted for it.
+2. [`evalplan_smoke.py`](./evalplan_smoke.py) enables `jax_enable_x64`, reconstructs inputs and
+   the independent Dense-computed expected output from the emitted `Float.toBits` payloads,
+   AST-asserts the generated module contains a real `jnp.einsum("ab,b->a", ...)` call, and checks
+   eager/`jax.jit` output is bit-identical to Dense and `jax.grad(sum(Y), W) == [[5], [5]]`.
+
+### Run
+
+From this directory:
+
+```bash
+./setup-python.sh
+./run-evalplan.sh
+```
+
+`run-evalplan.sh` reuses the same experiment Python environment as `run.sh` (`.cache/python/bin/python`,
+or `PYTHON` if set) and never invokes `run.sh` or clones/builds upstream `lean4-mlir`. It builds
+`LeanNCD` (through Elan, from LeanNCD's own Lean 4.30.0 project root) before `lake env lean --run`,
+so the generator never runs against stale `.olean`s, then generates
+`.cache/generated_evalplan_smoke.py` and runs `evalplan_smoke.py` on it.
+
+### Scope
+
+This spike is a feasibility check that one real, scan-free Tensor Logic program can travel
+through LeanNCD's own checked-plan boundary and execute as generated JAX. It is not a production
+JAX backend: it accepts only projection-only affine `einsum` contractions in `f64`/`reference64`
+mode, with no context positions, scans, or nonlinearities. See
+`docs/superpowers/plans/2026-08-10-jax-evalplan-smoke.md` for the full exit criteria and
+non-goals.
