@@ -23,6 +23,10 @@ all six and fails loudly instead of silently.
   Mathlib from source — hours. `leanncd/AGENTS.md` documents the manual
   rsync-a-donor procedure; this script performs it and then *verifies* the
   result is ≥95% complete before declaring the worktree ready.
+- **Donor project oleans.** The whole `.lake` sync also copies the donor's
+  `LeanNCD` oleans, which may have been built from a different branch even when
+  Mathlib itself is compatible. Refresh `LeanNCD` before any `lake env lean` or
+  `check-snippet.sh` call, or stale fields can appear as ghost compile errors.
 
 ## Usage
 
@@ -47,9 +51,12 @@ idempotent, and an existing ledger is left untouched (resume, don't restart).
 
 ## After it succeeds
 
-1. Do the pre-flight conflict scan over the plan (per
+1. Refresh project-owned oleans against this worktree's source:
+   `cd leanncd && "$HOME/.elan/bin/lake" build LeanNCD`. The synced Mathlib
+   cache keeps this fast.
+2. Do the pre-flight conflict scan over the plan (per
    `superpowers:subagent-driven-development`) before dispatching Task 1.
-2. Dispatch tasks. Subagent prompts do **not** need to restate the lake
+3. Dispatch tasks. Subagent prompts do **not** need to restate the lake
    invocation or the Mathlib warning — point them at `leanncd/AGENTS.md`
    instead, which is the single source for both.
 

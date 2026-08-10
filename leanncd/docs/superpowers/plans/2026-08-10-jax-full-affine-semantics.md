@@ -157,7 +157,8 @@ The reusable experimental codegen module itself may import only production `Lean
 ### F1 compatibility
 
 This plan is authored against local `main` at `b513c15`, before Wave F F1 lands there. Before
-execution, sync to the latest local `main` and inspect the F1 diff.
+execution, sync to the latest local `main`, run `lake build LeanNCD` to replace any donor-branch
+project oleans, and inspect the F1 diff.
 
 If F1's `contextShape`/`contextPos` fields are present:
 
