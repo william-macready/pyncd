@@ -1,7 +1,7 @@
 # Lean-JAX bridge experiments
 
-This directory holds two independent isolated smoke tests, neither of which changes LeanNCD's
-dependencies or toolchain. They exercise different Lean-to-JAX paths and share no code:
+This directory holds four isolated experiment runners, none of which changes LeanNCD's dependencies
+or toolchain:
 
 - **`run.sh`**: upstream `NetSpec` -> generated JAX. Evaluates the
   [`lean4-mlir`](https://github.com/brettkoonce/lean4-mlir) JAX bridge, an upstream code
@@ -11,6 +11,10 @@ dependencies or toolchain. They exercise different Lean-to-JAX paths and share n
   `CheckedEvalPlan` pipeline (see `docs/superpowers/plans/2026-08-10-jax-evalplan-smoke.md`), then
   through a narrow experimental Lean code generator (`EvalPlanSmoke.lean`) that emits a Python
   module containing a real `jnp.einsum` call.
+- **`run-evalplan-affine.sh`**: curated source, checked-kernel, and positional-graph fixtures ->
+  checker-produced affine lookup tables -> the ordered JAX reference runtime.
+- **`run-evalplan-affine-corpus.sh`**: all 3,832 `PropertyOracle.enumPrograms` cases through the same
+  affine reference, with eager full-output comparison and JIT feature representatives.
 
 ## `run.sh`: upstream `NetSpec` bridge
 
@@ -97,6 +101,31 @@ mode, with no context positions, scans, or nonlinearities. See
 `docs/superpowers/plans/2026-08-10-jax-evalplan-smoke.md` for the full exit criteria and
 non-goals.
 
+## Ordered affine reference and full corpus
+
+`EvalPlanCodegen.lean`'s explicit `affineReference` mode emits static safe-index/mask tables built
+from the same coordinate primitives as Dense. `evalplan_affine_runtime.py` interprets those tables
+with ordered factor, reduction, and term folds; it does not use `einsum` or a tree reduction.
+
+`run-evalplan-affine.sh` checks 20 curated fixtures eagerly and under JIT. These supply semantics
+outside the generated grammar: negative-coordinate invalidity, zero extents, empty factors, and
+empty terms. `run-evalplan-affine-corpus.sh` explicitly builds `LeanNCD`, `Tests`, and the
+non-default `JaxExperiment` target, then generates and checks every corpus case and every
+materialized output. The generated `.cache/` artifacts remain ignored.
+
+Measured on the JAX CPU backend on 2026-08-10:
+
+- 3,832 source/eager cases, zero mismatches;
+- 45 distinct generated feature masks and 65 JIT checks (45 representatives + 20 curated);
+- 3,424,195-byte generated module;
+- 13.482 s generation, 685.535 s eager verification, 7.317 s JIT/curated verification.
+
+Generated cases cover nonzero bias, non-unit/multi-axis coefficient rows, multiple factors/terms,
+reduction domains, multiple graph nodes, and internal reads. Curated cases uniquely supply
+negative-coordinate invalidity, zero-coefficient rows, zero extents, empty factors, and empty terms.
+These are empirical binary64 results for the measured CPU platform, not a proof about every XLA
+platform. Scan lowering remains future work.
+
 ## Verified environment and commands
 
 The completed smoke plan was verified on 2026-08-10 with:
@@ -112,10 +141,12 @@ The final validation commands were:
 ```bash
 cd leanncd/experiments/jax_bridge
 ./run-evalplan.sh
+./run-evalplan-affine.sh
+./run-evalplan-affine-corpus.sh
 ./run.sh
 
 cd ../..
 "$HOME/.elan/bin/lake" build
 ```
 
-Both smoke tests passed, and the complete Lean build finished with 8,640 jobs.
+All four experiment runners passed, and the complete Lean build finished with 8,642 jobs.

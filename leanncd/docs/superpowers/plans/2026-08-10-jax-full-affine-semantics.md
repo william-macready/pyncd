@@ -560,6 +560,32 @@ to distinguish upstream `NetSpec`, einsum-only, affine-reference, and future sca
 Task 3 is separate because corpus scalability and evidence attribution can be rejected while the
 curated affine interpreter from Task 2 remains valid.
 
+### Task 3 completion record (2026-08-10)
+
+Implemented the three corpus files and ran the real generated corpus on the JAX CPU backend
+(JAX/JAXlib 0.10.0, Python 3.13.5, x64 enabled):
+
+- source/eager cases: **3,832**; every case passed
+  `compileToScheduled → prepareEvalPlan → runPreparedDense → affineReference`;
+- eager mismatches: **0**, comparing every materialized output;
+- distinct generated feature masks: **45**;
+- JIT checks: **65** (**45** first-per-mask corpus representatives + all **20** curated fixtures);
+- generated artifact: **3,424,195 bytes**;
+- measured generation/eager/JIT+curated times: **13.482 s / 685.535 s / 7.317 s**.
+
+The generated corpus supplied nonzero bias, non-unit/multi-axis coefficient rows, multiple factors,
+multiple terms, reduction domains, multiple nodes, and internal producer reads. Curated fixtures
+supplied the absent negative-coordinate invalidity, zero-coefficient rows, zero extents, empty
+factors, and empty terms; the verifier fails if this attribution leaves any required bit uncovered
+in eager or JIT evidence.
+
+Both named mutations had teeth and were restored: skipping the final source case stopped generation
+at **3,831 != 3,832**; corrupting the earlier output of two-output case **1806** produced one
+full-comparison mismatch, while the deliberately weakened last-output-only comparison passed all
+3,832 cases and therefore missed it. All four experiment runners passed. The final default
+`lake build` passed **8,642 jobs**; `JaxExperiment` remained explicit and outside
+`defaultTargets`. No plan deviation.
+
 ## Whole-branch review gate
 
 Review the complete branch after Task 3. The reviewer must confirm:

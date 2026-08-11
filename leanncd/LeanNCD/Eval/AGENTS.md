@@ -178,6 +178,7 @@ The Portfolio suite (`test/Eval/Portfolio/`, shared `Harness.lean`) is a broad l
 | Debug an axis-sizing failure | `SizeInfer.inferAxisSizes` — match the `ShapeError`/`SolveDiagnostic` constructor (`Error.lean`) directly, or `toString` it for the legacy flat message |
 | Debug a scatter shape mismatch | Confirm `LHSSlot.outExtent` is the sole formula both call sites use |
 | Add a portfolio test case | `test/Eval/Portfolio/<Family>Test.lean` + `Harness.lean` asserters |
+| Run checked plans against JAX | `experiments/jax_bridge/run-evalplan-affine.sh` (20 curated boundary fixtures) and `run-evalplan-affine-corpus.sh` (all 3,832 `PropertyOracle.enumPrograms`, every output eager + first JIT representative per feature mask). The corpus currently has 45 masks; generated cases supply graph/combinatorial features while curated fixtures supply negative invalidity, zero coefficients/extents, and empty factors/terms. |
 
 ## Pitfalls
 - **scatterOutDim/scatterOutShape drift (historical, now structurally prevented)** — see Contracts. If a second scatter-extent formula is ever reintroduced, the drift bug returns silently.

@@ -138,7 +138,7 @@ Small subsystems (no dedicated node — each <170 lines, single-file or near it)
 | Build the project | `cd leanncd && "$HOME/.elan/bin/lake" build` (see Mathlib cold-build pitfall above) |
 | Run the test suite | `cd leanncd && "$HOME/.elan/bin/lake" build` (Tests is a default target — `lakefile.toml`'s `globs` list elaborates every test module, firing all `#guard`/example/`#print axioms` checks) |
 | Experimental/scratch work | `spikes/` — gitignored except `spikes/BrNF.lean` (kept in-tree, off the default build, for its wiring-combinator technique) |
-| Feasibility spike: checked `EvalPlan` -> JAX | `experiments/jax_bridge/` — `run-evalplan.sh` compiles a Tensor Logic fixture through `prepareEvalPlan`'s checked plan boundary and generates a Python module with a real `jnp.einsum` call, run under `jax.jit`/`jax.grad` (`docs/superpowers/plans/2026-08-10-jax-evalplan-smoke.md`); the entry point for anyone evaluating a future fast (non-Dense) execution backend |
+| Feasibility experiments: checked `EvalPlan` -> JAX | `experiments/jax_bridge/` — four isolated runners: upstream `NetSpec`, the narrow real-`jnp.einsum` smoke, the ordered affine-reference curated suite, and the full 3,832-case PropertyOracle corpus. The corpus runner explicitly builds non-default `JaxExperiment` plus `Tests`, compares every materialized output eagerly, and JIT-checks feature representatives; generated data stays under ignored `.cache/`. These are empirical backend checks, not production imports or scan lowering. |
 
 ### Global Invariants (Contracts)
 
