@@ -5,7 +5,7 @@ set -euo pipefail
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 LEANNCD_ROOT=$(cd "$HERE/../.." && pwd)
 CACHE_DIR="$HERE/.cache"
-GENERATED="$CACHE_DIR/generated_evalplan_smoke.py"
+GENERATED="$CACHE_DIR/generated_evalplan_affine_smoke.py"
 LAKE="${LAKE:-$HOME/.elan/bin/lake}"
 PYTHON="${PYTHON:-$CACHE_DIR/python/bin/python}"
 
@@ -24,15 +24,16 @@ fi
 
 mkdir -p "$CACHE_DIR"
 
-# Build LeanNCD (through Elan, from LeanNCD's own toolchain root) before generating, so
-# `lake env lean --run` below never checks the generator against stale .oleans. Deliberately does
-# not touch upstream `run.sh`, clone `lean4-mlir`, or trigger a cold Mathlib build: this stays
-# entirely inside LeanNCD's already-warm Lean 4.30.0 project.
+# Build LeanNCD (production), the non-default JaxExperiment codegen library, and Tests (the affine
+# smoke reuses the public `Eval.Plan.KernelDenseTest` checked-kernel fixtures), then generate the
+# static affine plan data. Building through Elan from LeanNCD's own toolchain root; stays inside the
+# already-warm project (no upstream clone, no cold Mathlib build).
 (
   cd "$LEANNCD_ROOT"
   "$LAKE" build LeanNCD
   "$LAKE" build JaxExperiment
-  "$LAKE" env lean --run "$HERE/EvalPlanSmoke.lean" "$GENERATED"
+  "$LAKE" build Tests
+  "$LAKE" env lean --run "$HERE/EvalPlanAffineSmoke.lean" "$GENERATED"
 )
 
-"$PYTHON" "$HERE/evalplan_smoke.py" "$GENERATED"
+"$PYTHON" "$HERE/evalplan_affine_smoke.py" "$GENERATED"

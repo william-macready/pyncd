@@ -342,6 +342,18 @@ transpose untested:
 
 This exact fixture was compiled and executed while authoring the plan.
 
+Add two further checked-assignment boundaries:
+
+- a three-factor Float-sensitive pair using exact finite, normal binary64 inputs. Dense and eager/JIT
+  JAX produce `0x52ace21080787dc7` in declared `[a,b,c]` order and
+  `0x52ace21080787dc6` after the `[b,c,a]` mutation; and
+- a nonempty `[2]` output reading a `[0]` source through two all-false lookup masks. This reaches the
+  empty-storage no-gather guard rather than short-circuiting on a zero output/reduction extent.
+
+Add one complete positional checked graph with input slots `#[0,4]` and three dependent nodes:
+slot 4 is copied to slot 1, slot 1 to slot 2, then slots 2 and 0 are added into slot 3. Compare all
+five store slots under eager and JIT to pin input placement, checked graph order, and final bits.
+
 The experimental codegen therefore needs three boundary entry points:
 
 - named `PreparedPlan` generation for source/corpus cases; and
@@ -422,14 +434,19 @@ The committed Python runtime owns only execution of the emitted static plan data
 - remain differentiable with respect to floating input tensors.
 
 The affine smoke driver includes the nine verified source fixtures, six reused checked-kernel
-fixtures, and the local permuted-basis checked-assignment fixture from the evidence matrix. It
-emits Dense result bits for every materialized output or positional result under comparison. The
-Python verifier runs eager and JIT for every hand fixture and checks:
+fixtures, four local checked assignments (permuted basis, declared/reordered factor order, and empty
+source), and the local positional graph from the evidence matrix. It emits Dense result bits for
+every materialized output, positional result, or graph-store slot under comparison. The Python
+verifier runs eager and JIT for every hand fixture and checks:
 
 - exact dtype, shape, and `UInt64` bits;
 - `grad(sum(Y), A) == [0, 1, 1]` for the shift fixture;
 - `grad(sum(Y), A) == [1, 0, 1]` for the scale fixture; and
-- the reduction- and term-order low-bit distinctions.
+- the reduction-, term-, and factor-order low-bit distinctions.
+
+The verifier also starts a fresh process with x64 disabled, imports the runtime, then enables x64
+and executes eager/JIT. This directly proves runtime import cannot cache a float32 zero before the
+caller boundary enables reference64 execution.
 
 Keep `run-evalplan.sh` green and preserve its AST assertion that the original fast-path module
 contains `jnp.einsum("ab,b->a", ...)`.
@@ -443,7 +460,11 @@ Named mutations:
 4. combine terms over one shared reduction domain; `termScopeProg` must change from `13` to `23`;
 5. reorder the `fosPlan` term stack from `[0, 1, 2]` to `[0, 2, 1]`; its result must change from
    `0.0` to `1.0`; and
-6. disable x64; the dtype gate must fail before bit comparison.
+6. disable x64; the dtype gate must fail before bit comparison;
+7. reorder the three factor tables from `[a,b,c]` to `[b,c,a]`; the result must change from
+   `0x52ace21080787dc7` to `0x52ace21080787dc6`; and
+8. remove the empty-source storage guard; the nonempty-output `emptySourceGuard` fixture must fail
+   by attempting to gather index zero from empty storage.
 
 Restore after each mutation and rerun the complete affine smoke.
 

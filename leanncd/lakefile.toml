@@ -66,3 +66,13 @@ globs = ["Base.NumericTest", "Base.StTest", "Base.BrTest", "Base.BrWiringTest",
          "Eval.Portfolio.GenerativeTest", "Eval.Portfolio.ClassicalMLTest",
          "Eval.Portfolio.EdgeCaseTest", "Eval.Portfolio.RejectTest",
          "Eval.Portfolio.KnownGapTest", "Eval.Portfolio.ScatterNonlinRejectTest"]
+
+# Non-default experimental JAX-bridge codegen library. Deliberately absent from
+# `defaultTargets`: it only builds when explicitly requested (`lake build JaxExperiment`, as the
+# `run-evalplan*.sh` runners do). Builds ONLY the reusable code generator `EvalPlanCodegen`; the
+# executable drivers (`EvalPlanSmoke`, `EvalPlanAffineSmoke`, `BridgeSmoke`) are compiled ad hoc via
+# `lake env lean --run` and are not part of any library. No JAX dependency, no production import.
+[[lean_lib]]
+name = "JaxExperiment"
+srcDir = "experiments/jax_bridge"
+globs = ["EvalPlanCodegen"]
