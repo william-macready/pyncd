@@ -37,7 +37,8 @@ def TermPlan.outputProjection (t : TermPlan) : Array Nat :=
 def TermPlan.contextProjection (t : TermPlan) : Array Nat :=
   t.contextPos.filterMap (fun p => t.iterationShape[p]?)
 
-/-- `outputPos ++ reductionPos` must be a disjoint partition of every iteration-basis position.
+/-- `contextPos ++ outputPos ++ reductionPos` must be a disjoint partition of every iteration-basis
+    position.
     Checked by sorting the concatenation and comparing against `List.range`, which catches
     duplicates, omissions, and out-of-range positions in one comparison. -/
 def TermPlan.positionsPartition (t : TermPlan) : Bool :=

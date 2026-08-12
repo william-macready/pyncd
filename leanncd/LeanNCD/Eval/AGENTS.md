@@ -38,8 +38,8 @@ see `papers/wave_c_capability_manifest.md` for the full design, not duplicated h
 | `Kernel.lean` | one local operation's IR — `AffineMap`, factor/term records, `AssignPlan` |
 | `Graph.lean` | the unchecked plan graph — `RawEvalPlan` |
 | `Error.lean` | closed diagnostics: `PlanError` (checker), `PositionalInputError` (runtime), `CapabilityError` (capability rejection), `InputSignatureError`/`InputBindingError` (boundary), `PlanCompileCause`/`PlanCompileFailure` (prepare-time), `PlanRunCause`/`PlanRunFailure` (run-time) |
-| `Check.lean` | the checker — `checkAssign`/`CheckedAssignPlan` (local invariants), `checkPlan`/`CheckedEvalPlan` (graph-level: slot availability, production order) |
-| `Dense.lean` | Dense interpreter for one checked operation, over positional `DenseTensor` storage |
+| `Check.lean` | the checker — `checkAssign`/`CheckedAssignPlan` (local invariants, including context partition/projection), `checkPlan`/`CheckedEvalPlan` (graph-level: slot availability, production order) |
+| `Dense.lean` | Dense interpreter for one checked operation, over positional `DenseTensor` storage — `runDenseAssignAt` (context-indexed primitive) and `runDenseAssign` (its empty-context wrapper) |
 | `Signature.lean` | C1's shape-specialization boundary — signature-driven axis-size inference in place of concrete tensors |
 | `Prepared.lean` | source-name-keyed bindings around a checked plan — `PreparedPlan` |
 | `Compile.lean` | the source compiler — capability preflight (C4), `prepareEvalPlan` |

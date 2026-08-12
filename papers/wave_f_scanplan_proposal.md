@@ -1410,7 +1410,9 @@ dependency.
 **F1 completion record (2026-08-08).** Landed with `runDenseAssignAt` (context-indexed primitive),
 `PositionalInputError.contextShapeMismatch` (runtime context validation), `validateContext` (private
 helper), updated `runDenseAssign` (empty-context wrapper), and context-sensitive fixtures in
-`Eval.Plan.KernelDenseTest`; `lake build` green (8,640 jobs).
+`Eval.Plan.KernelDenseTest`; `lake build` green (8,640 jobs). `checkPlan` rejects any top-level step
+with non-empty context (`PlanError.topLevelContextNotEmpty`) — a policy a future F2 slice will need
+to relax when it introduces blocks with real, non-empty context.
 
 This slice is separate because it changes existing production code with many dependents and is a
 natural rollback unit.

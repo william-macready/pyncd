@@ -424,13 +424,49 @@ run_cmd do
       match runDenseAssignAt checked [1] #[x, zeros] with
       | .error e => throwError s!"ctx=1 failed: {repr e}"
       | .ok y1 => unless y1.data == #[4,5,6] do throwError s!"ctx=1 wrong: {repr y1.data}"
-      -- Verified: out-of-range context (contextShape is #[2]) is rejected, not padded.
+      -- Verified: out-of-range context (contextShape is #[2]) is rejected, not padded, with the
+      -- exact `contextShapeMismatch` payload.
       match runDenseAssignAt checked [5] #[x, zeros] with
-      | .error _ => pure ()
       | .ok _ => throwError "out-of-range context should have been rejected"
-      -- Verified: wrong-rank context (2 components against a 1-D contextShape) is rejected.
+      | .error e =>
+          unless e == .contextShapeMismatch #[2] [5] do
+            throwError s!"out-of-range context: wrong error {repr e}"
+      -- Verified: wrong-rank context (2 components against a 1-D contextShape) is rejected, with
+      -- the exact `contextShapeMismatch` payload.
       match runDenseAssignAt checked [0, 0] #[x, zeros] with
-      | .error _ => pure ()
       | .ok _ => throwError "wrong-rank context should have been rejected"
+      | .error e =>
+          unless e == .contextShapeMismatch #[2] [0, 0] do
+            throwError s!"wrong-rank context: wrong error {repr e}"
+
+-- Context bound across a NON-trivial reduction: contextShape=#[2]; iterationShape=#[2,3,4]
+-- (context, output, reduction); X shape [2,3,4] sequential 0..23 row-major.
+-- Y[o] = sum_r X[ctx,o,r]. Verified via `lake env lean`: ctx=0 -> [6,22,38], ctx=1 -> [54,70,86].
+def sigsCR : Array TensorSignature := #[{ shape := #[2,3,4], dtype := .f64 }, { shape := #[3], dtype := .f64 }]
+
+def readCR : ReadPlan :=
+  { sourceSlot := 0
+  , map := { coeffs := #[#[1,0,0], #[0,1,0], #[0,0,1]], bias := #[0,0,0] }
+  , sourceShape := #[2,3,4], oobPolicy := .zeroPad }
+
+def crPlan : AssignPlan :=
+  { contextShape := #[2], destinationSlot := 1, outputShape := #[3]
+  , terms := #[{ iterationShape := #[2,3,4], contextPos := #[0], outputPos := #[1], reductionPos := #[2]
+               , factors := #[readCR] }]
+  , algebra := admittedAlgebra }
+
+run_cmd do
+  match checkAssign sigsCR crPlan with
+  | .error e => throwError s!"checkAssign rejected context+reduction plan: {repr e}"
+  | .ok checked =>
+      let xdata : Array Float := (Array.range 24).map (fun n => Float.ofNat n)
+      let x : DenseTensor := { shape := [2,3,4], data := xdata }
+      let zeros : DenseTensor := { shape := [3], data := #[0,0,0] }
+      match runDenseAssignAt checked [0] #[x, zeros] with
+      | .error e => throwError s!"ctx=0 failed: {repr e}"
+      | .ok y0 => unless y0.data == #[6,22,38] do throwError s!"ctx=0 wrong: {repr y0.data}"
+      match runDenseAssignAt checked [1] #[x, zeros] with
+      | .error e => throwError s!"ctx=1 failed: {repr e}"
+      | .ok y1 => unless y1.data == #[54,70,86] do throwError s!"ctx=1 wrong: {repr y1.data}"
 
 end LeanNCD.Eval.Plan.KernelDenseTest

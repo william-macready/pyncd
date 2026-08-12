@@ -31,9 +31,9 @@ structure ReadPlan where
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- One product term. `iterationShape` is the term's coordinate basis (retained output axes
-    followed by that term's contracted axes); `outputPos`/`reductionPos` classify every position
-    of that basis. The classification is explicit rather than rediscovered from affine
-    coefficients: a syntactically-mentioned axis can densify to a zero coefficient yet still
+    followed by that term's contracted axes); `contextPos`/`outputPos`/`reductionPos` classify
+    every position of that basis. The classification is explicit rather than rediscovered from
+    affine coefficients: a syntactically-mentioned axis can densify to a zero coefficient yet still
     belong to the reduction domain, and so still affect multiplicity (proposal §7.4). -/
 structure TermPlan where
   iterationShape : Array Nat
@@ -43,6 +43,8 @@ structure TermPlan where
   factors        : Array ReadPlan
   deriving DecidableEq, BEq, Repr, Inhabited
 
+/-- One complete local operation: terms combined into one destination tensor under one algebra,
+    evaluated at one runtime context coordinate (empty for a top-level, scan-free assignment). -/
 structure AssignPlan where
   contextShape    : Array Nat
   destinationSlot : TensorSlot

@@ -137,7 +137,7 @@ def badContextPlan : AssignPlan :=
                , factors := #[readX2] }]
   , algebra := admittedAlgebra }
 
-#guard (checkAssign sigs2 badContextPlan).toBool == false
+#guard errOf (checkAssign sigs2 badContextPlan) == some (.contextProjectionMismatch 0 #[2] #[3])
 
 -- Mutation: a top-level RawEvalPlan step with nonempty context. Verified: checkPlan rejects with
 -- topLevelContextNotEmpty 0.
@@ -149,6 +149,9 @@ def topLevelBadPlan : RawEvalPlan :=
                , algebra := admittedAlgebra }]
   , numericMode := .reference64 }
 
-#guard (checkPlan topLevelBadPlan).toBool == false
+def checkPlanErrOf : Except PlanError CheckedEvalPlan → Option PlanError
+  | .ok _ => none | .error e => some e
+
+#guard checkPlanErrOf (checkPlan topLevelBadPlan) == some (.topLevelContextNotEmpty 0)
 
 end LeanNCD.Eval.Plan.KernelCheckTest
