@@ -113,12 +113,21 @@ empty terms. `run-evalplan-affine-corpus.sh` explicitly builds `LeanNCD`, `Tests
 non-default `JaxExperiment` target, then generates and checks every corpus case and every
 materialized output. The generated `.cache/` artifacts remain ignored.
 
-Measured on the JAX CPU backend on 2026-08-10:
+Measured on the JAX CPU backend, 2026-08-10 and re-measured 2026-08-12:
 
-- 3,832 source/eager cases, zero mismatches;
+- 3,832 source/eager cases, zero mismatches (both runs);
 - 45 distinct generated feature masks and 65 JIT checks (45 representatives + 20 curated);
-- 3,424,195-byte generated module;
-- 13.482 s generation, 685.535 s eager verification, 7.317 s JIT/curated verification.
+- 3,424,195-byte generated module (byte-identical across both runs — the generator is deterministic);
+- 13.482 s / 685.535 s / 7.317 s generation, eager, JIT+curated on 2026-08-10;
+- 13.214 s / 661.263 s / 7.056 s on 2026-08-12.
+
+The 2026-08-12 re-measurement followed a driver repair. Wave F F1 added `TermPlan.contextPos` and
+`AssignPlan.contextShape`, and the hand-built plan literals in `EvalPlanAffineSmoke.lean` were
+positional anonymous constructors of the pre-F1 arity, so they stopped compiling. Because the drivers
+belong to no Lake target (`JaxExperiment` globs only `EvalPlanCodegen`), `lake build` stayed green and
+both affine runners were silently unrunnable. The literals now use named-field syntax like the
+`KernelDenseTest` fixtures, which survives field additions. **Run the runners after any change to
+`Eval/Plan` types — a green `lake build` does not typecheck these drivers.**
 
 Generated cases cover nonzero bias, non-unit/multi-axis coefficient rows, multiple factors/terms,
 reduction domains, multiple graph nodes, and internal reads. Curated cases uniquely supply

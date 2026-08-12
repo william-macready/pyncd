@@ -117,7 +117,10 @@ def permutedRead : ReadPlan :=
   ⟨0, ⟨#[#[0, 1], #[1, 0]], #[0, 0]⟩, #[2, 3], .zeroPad⟩
 
 def permutedPlan : AssignPlan :=
-  ⟨1, #[2], #[⟨#[3, 2], #[1], #[0], #[permutedRead]⟩], admittedAlgebra⟩
+  { contextShape := #[], destinationSlot := 1, outputShape := #[2]
+  , terms := #[{ iterationShape := #[3, 2], contextPos := #[], outputPos := #[1], reductionPos := #[0]
+               , factors := #[permutedRead] }]
+  , algebra := admittedAlgebra }
 
 def permutedStore : Array DenseTensor :=
   #[ ⟨[2, 3], #[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]⟩, ⟨[2], #[]⟩ ]
@@ -135,7 +138,10 @@ def scalarRead (slot : TensorSlot) : ReadPlan :=
   ⟨slot, ⟨#[], #[]⟩, #[], .zeroPad⟩
 
 def factorOrderPlanFor (slots : Array TensorSlot) : AssignPlan :=
-  ⟨3, #[1], #[⟨#[1], #[0], #[], slots.map scalarRead⟩], admittedAlgebra⟩
+  { contextShape := #[], destinationSlot := 3, outputShape := #[1]
+  , terms := #[{ iterationShape := #[1], contextPos := #[], outputPos := #[0], reductionPos := #[]
+               , factors := slots.map scalarRead }]
+  , algebra := admittedAlgebra }
 
 def factorOrderPlan : AssignPlan := factorOrderPlanFor #[0, 1, 2]
 def factorOrderReorderedPlan : AssignPlan := factorOrderPlanFor #[1, 2, 0]
@@ -159,7 +165,10 @@ def emptySourceRead : ReadPlan :=
   ⟨0, ⟨#[#[0]], #[0]⟩, #[0], .zeroPad⟩
 
 def emptySourcePlan : AssignPlan :=
-  ⟨1, #[2], #[⟨#[2], #[0], #[], #[emptySourceRead]⟩], admittedAlgebra⟩
+  { contextShape := #[], destinationSlot := 1, outputShape := #[2]
+  , terms := #[{ iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
+               , factors := #[emptySourceRead] }]
+  , algebra := admittedAlgebra }
 
 def emptySourceStore : Array DenseTensor :=
   #[ ⟨[0], #[]⟩, ⟨[2], #[]⟩ ]
@@ -177,13 +186,18 @@ def positionalRead (slot : TensorSlot) : ReadPlan :=
   ⟨slot, ⟨#[#[1]], #[0]⟩, #[2], .zeroPad⟩
 
 def positionalCopy (dest source : TensorSlot) : AssignPlan :=
-  ⟨dest, #[2], #[⟨#[2], #[0], #[], #[positionalRead source]⟩], admittedAlgebra⟩
+  { contextShape := #[], destinationSlot := dest, outputShape := #[2]
+  , terms := #[{ iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
+               , factors := #[positionalRead source] }]
+  , algebra := admittedAlgebra }
 
 def positionalSum : AssignPlan :=
-  ⟨3, #[2],
-    #[ ⟨#[2], #[0], #[], #[positionalRead 2]⟩
-     , ⟨#[2], #[0], #[], #[positionalRead 0]⟩ ],
-    admittedAlgebra⟩
+  { contextShape := #[], destinationSlot := 3, outputShape := #[2]
+  , terms := #[ { iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
+                , factors := #[positionalRead 2] }
+              , { iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
+                , factors := #[positionalRead 0] } ]
+  , algebra := admittedAlgebra }
 
 def positionalRaw : RawEvalPlan :=
   ⟨admittedVersion, positionalSigs, #[0, 4],
