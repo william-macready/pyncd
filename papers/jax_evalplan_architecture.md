@@ -48,6 +48,14 @@ Representatives for the corpus's structural feature classes also run under `jax.
 fixtures cover integer-affine coordinate maps, empty tensors, graph order, scalar fold order, and
 selected gradients.
 
+That evidence is broad structurally and narrow numerically. The corpus is a bounded enumeration over
+two axes of extent two, so no tensor in it exceeds four elements, its 3,832 programs collapse to 45
+distinct structural feature classes, and five of the twelve tracked features are supplied only by the
+curated fixtures. It establishes that the affine grammar is interpreted correctly; it says nothing
+about scale. The measured cost of the reference representation makes that limit concrete: 3.4 MB of
+generated lookup tables and roughly eleven minutes of eager verification for that four-element corpus
+([Section 1.4](#14-evidence-validating-the-experimental-jax-bridge)).
+
 The bridge is therefore a strong semantic reference, but not yet a production boundary: after
 checking, Lean emits generated Python source or untyped nested dictionaries and lists. Before
 **Wave F**—the planned extension that adds checked recurrent scans—or production use, the existing
@@ -276,7 +284,7 @@ emitted `jnp.einsum`.
 |---|---|---|
 | Projection einsum smoke | Checked `EvalPlan`s containing only projection reads | AST inspection plus eager, JIT, and gradient execution |
 | Curated affine suite | 20 hand-selected source, assignment, and graph boundary cases | Eager and JIT execution, representative gradients, and exact agreement with Dense |
-| Wave C corpus | All 3,832 plans accepted by `PropertyOracle.enumPrograms` | Exact eager Dense agreement for every materialized output, plus JIT agreement for one representative of each of 45 structural feature masks |
+| Wave C corpus | All 3,832 plans accepted by `PropertyOracle.enumPrograms`, collapsing to 45 distinct structural feature masks | Exact eager Dense agreement for every materialized output, plus JIT agreement for one representative of each feature mask |
 
 A separate upstream `NetSpec` smoke test checks that the upstream IR and its toolchain still run in
 this environment. Because `NetSpec` is not the LeanNCD execution IR, that smoke test does not validate
@@ -291,8 +299,65 @@ count; corrupting an earlier output defeats a deliberately weakened last-output-
 not the real full-output check; and coefficient, bounds, fold-order, and feature mutations fail their
 target assertions.
 
-Generated artifacts remain in ignored `.cache` storage. `JaxExperiment` is a non-default Lean library
-built explicitly by its runners and does not enter LeanNCD's normal dependency surface.
+**Measured results.** These are observed costs of the whole-corpus runner, not estimates. Both
+columns ran on the JAX CPU backend (JAX/JAXlib 0.10.0, Python 3.13, Lean 4.30.0, Apple silicon); the
+generated module is byte-identical across the two dates, so the table generator is deterministic:
+
+| Quantity | 2026-08-10 | 2026-08-12 |
+|---|---|---|
+| Corpus cases / eager mismatches | 3,832 / 0 | 3,832 / 0 |
+| Distinct feature masks / total JIT checks | 45 / 65 | 45 / 65 |
+| Generated corpus module | 3,424,195 bytes | 3,424,195 bytes |
+| Table generation | 13.482 s | 13.214 s |
+| Eager verification | 685.535 s | 661.263 s |
+| JIT and curated verification | 7.317 s | 7.056 s |
+
+Two of these numbers carry design weight: the generated module is **3.4 MB**, and eager verification
+takes **about eleven minutes** — at a scale where no tensor in the corpus exceeds four elements. Both
+follow directly from the affine-table representation. Lean emits one safe index and one validity bit
+per iteration coordinate per factor, so artifact size and verification time scale with the *product*
+of each term's iteration domain — reduction axes included — rather than with the size of the source
+program. [Section 2](#2-architectural-decision-and-principles) records domain-sized tables as a
+scalability risk and [Section 6](#6-jax-and-pytorch-executable-architecture) assigns compact kernels
+to the backend executable phase. These measurements are why that assignment is a schedule risk and
+not a detail: the representation is already this expensive at the smallest scale the corpus can
+express, so no production-shaped program can use the table path at all.
+
+**Corpus breadth is structural, not numerical.** `PropertyOracle.enumPrograms` is a deliberately
+bounded enumeration, and 3,832 is closer to a redundancy count than a coverage count. Every program
+is generated over two axes of extent two, with input tensors `A`/`B` of shape `[2]` and `P` of shape
+`[2, 2]`, and has one or two statements; the two-statement cross product is capped at
+`twoStmtCap = 40` of 1,806 RHS choices, and `yDepCap = 20`. Three consequences should be read
+together with the runner table above:
+
+- the largest tensor anywhere in the corpus has four elements, so the corpus carries no evidence
+  about scale, rank, or large contractions;
+- the 3,832 programs collapse to 45 distinct structural feature masks, which is why 45 representatives
+  are JIT-checked rather than all 3,832;
+- the generated grammar reaches only 7 of the 12 tracked feature bits. Negative-coordinate
+  invalidity, zero-coefficient rows, zero extents, empty factors, and empty terms are supplied
+  **only** by the 20 curated fixtures, and the runner enforces that attribution rather than assuming it.
+
+So the corpus is strong evidence about structural coverage of Wave C's affine grammar, and the curated
+fixtures — not the corpus — carry the boundary cases. Neither speaks to scale.
+
+**Reproducibility, and a gap this evidence has already hit.** Generated artifacts remain in ignored
+`.cache` storage. `JaxExperiment` is a non-default Lean library built explicitly by its runners and
+does not enter LeanNCD's normal dependency surface; its `globs` cover only the reusable
+`EvalPlanCodegen`, so the executable drivers (`EvalPlanSmoke`, `EvalPlanAffineSmoke`, `BridgeSmoke`)
+belong to no Lake target and are typechecked only when a runner invokes `lake env lean --run`.
+
+That gap has already cost evidence. Wave F F1 added `TermPlan.contextPos` and
+`AssignPlan.contextShape`; `lake build` stayed green across the whole 8,644-job suite; and every
+hand-built plan literal in `EvalPlanAffineSmoke.lean` silently stopped compiling, because those
+literals were positional anonymous constructors of the pre-F1 arity. Both affine runners were
+therefore unrunnable — and the corpus runner with them, since it generates the curated module from the
+same file — while this section continued to cite their results. The literals now use named-field
+syntax, matching the F1-updated `KernelDenseTest` fixtures and making them robust to future field
+additions; the 2026-08-12 column above is the post-fix re-measurement. The durable lesson belongs to
+[Section 7.2](#72-five-adoption-gates)'s baseline gate: an evidence claim whose driver no ordinary
+build compiles will rot silently behind the next IR change, so that gate must mean *running the
+runners*, not restating their previous output.
 
 The supported claim is deliberately bounded:
 
@@ -522,6 +587,16 @@ requiring a nonzero lag.
 Every recurrence coordinate reads one immutable snapshot. A block returns one complete collection of
 next-state results. Only the scan worker commits that collection atomically after all sibling results
 have been computed. Partial updates and read-after-write between sibling states are forbidden.
+
+This snapshot requirement is stated as a target, not as a description of existing behavior. The
+current legacy scan evaluator (`LeanNCD/Eval/Scan.lean`) is **known nonconforming**: Wave F F0 pinned a
+Jacobi/Gauss-Seidel discriminator fixture in `test/Eval/ScanTest.lean` showing that a later `recur`
+statement observes an earlier sibling's just-written value, so permuting two sibling recurrences
+changes the result. F0 also pinned a multi-base-write collision fixture showing that the legacy
+evaluator silently applies last-write-wins where the checked worker is required to reject. Both
+defects are recorded deliberately and remain unfixed; the checked scan worker that would satisfy this
+subsection is the F3 target and has no code. A scan backend must therefore not be validated against
+the legacy evaluator as an oracle — the two disagree by design until F3 lands.
 
 ### 3.4 Invariant matrix
 
@@ -990,11 +1065,19 @@ parallel-prefix, compact-carry, and opaque opcode encodings are not silently adm
 
 1. **Baseline preservation**
    - The full Lean build remains green.
-   - Existing JAX runners execute all 3,832 accepted corpus cases.
+   - Every JAX runner is *executed*, not cited: the einsum smoke, the curated affine suite, and the
+     whole-corpus runner all run to completion on all 3,832 accepted corpus cases. Restating a
+     previous run's output does not clear this gate. Because the runner drivers belong to no Lake
+     target ([Section 1.4](#14-evidence-validating-the-experimental-jax-bridge)), a green
+     `lake build` is not evidence that they still compile, and an IR field addition can break them
+     invisibly — as Wave F F1 did.
    - Mutation, low-bit fold-order, empty-source, graph-order, and gradient evidence remain sensitive
      and passing.
+   - Re-measured artifact size and generation/eager/JIT timings are recorded, so table-representation
+     cost stays visible as the IR grows rather than being rediscovered later.
    - The empirical claim remains bounded to the measured corpus, fixtures, backend mode, and CPU
-     platform; this gate does not establish cross-platform or compiler correctness.
+     platform; this gate does not establish cross-platform or compiler correctness. In particular the
+     corpus bounds evidence to tensors of at most four elements, so it cannot witness scale.
 
 2. **Stage A gate**
    - No semantic or observable behavior changes.
