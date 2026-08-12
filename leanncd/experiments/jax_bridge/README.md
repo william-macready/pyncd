@@ -108,8 +108,8 @@ from the same coordinate primitives as Dense. `evalplan_affine_runtime.py` inter
 with ordered factor, reduction, and term folds; it does not use `einsum` or a tree reduction.
 
 `run-evalplan-affine.sh` checks 20 curated fixtures eagerly and under JIT. These supply semantics
-outside the generated grammar: negative-coordinate invalidity, zero extents, empty factors, and
-empty terms. `run-evalplan-affine-corpus.sh` explicitly builds `LeanNCD`, `Tests`, and the
+outside the generated grammar: negative-coordinate invalidity, zero-coefficient rows, zero extents,
+empty factors, and empty terms. `run-evalplan-affine-corpus.sh` explicitly builds `LeanNCD`, `Tests`, and the
 non-default `JaxExperiment` target, then generates and checks every corpus case and every
 materialized output. The generated `.cache/` artifacts remain ignored.
 
@@ -117,7 +117,10 @@ Measured on the JAX CPU backend, 2026-08-10 and re-measured 2026-08-12:
 
 - 3,832 source/eager cases, zero mismatches (both runs);
 - 45 distinct generated feature masks and 65 JIT checks (45 representatives + 20 curated);
-- 3,424,195-byte generated module (byte-identical across both runs — the generator is deterministic);
+- 3,424,195-byte generated module (identical size on both runs; the runner records `artifact_bytes`
+  only, so this is consistent with a deterministic generator but does not prove it — no digest is kept);
+- of that module, the `safe_index`/`mask` literals are 571,459 bytes (~17%) across 28,106 literals;
+  the rest is per-case keys, input tensors, and expected outputs, ~894 bytes per case;
 - 13.482 s / 685.535 s / 7.317 s generation, eager, JIT+curated on 2026-08-10;
 - 13.214 s / 661.263 s / 7.056 s on 2026-08-12.
 
