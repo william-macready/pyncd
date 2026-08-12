@@ -24,8 +24,8 @@ def readB : ReadPlan :=
   , sourceShape := #[3], oobPolicy := .zeroPad }
 
 def goodPlan : AssignPlan :=
-  { destinationSlot := 2, outputShape := #[4]
-  , terms := #[{ iterationShape := #[4, 3], outputPos := #[0], reductionPos := #[1]
+  { contextShape := #[], destinationSlot := 2, outputShape := #[4]
+  , terms := #[{ iterationShape := #[4, 3], contextPos := #[], outputPos := #[0], reductionPos := #[1]
                , factors := #[readA, readB] }]
   , algebra := admittedAlgebra }
 
@@ -122,5 +122,36 @@ def errOf : Except PlanError CheckedAssignPlan → Option PlanError
    `f.oobPolicy == .zeroPad` is a tautology — there is no other constructor to supply as input.
    Named directly instead. -/
 #guard (PlanError.policyNotAdmitted .zeroPad) == PlanError.policyNotAdmitted .zeroPad
+
+def sigs2 : Array TensorSignature := #[{ shape := #[2,3], dtype := .f64 }, { shape := #[3], dtype := .f64 }]
+
+def readX2 : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[#[1,0], #[0,1]], bias := #[0,0] }
+  , sourceShape := #[2,3], oobPolicy := .zeroPad }
+
+-- Mutation: declared contextShape (#[3]) disagrees with the term's actual context projection
+-- (iterationShape[0] = 2). Verified: checkAssign rejects with contextProjectionMismatch 0 #[2] #[3].
+def badContextPlan : AssignPlan :=
+  { contextShape := #[3], destinationSlot := 1, outputShape := #[3]
+  , terms := #[{ iterationShape := #[2,3], contextPos := #[0], outputPos := #[1], reductionPos := #[]
+               , factors := #[readX2] }]
+  , algebra := admittedAlgebra }
+
+#guard errOf (checkAssign sigs2 badContextPlan) == some (.contextProjectionMismatch 0 #[2] #[3])
+
+-- Mutation: a top-level RawEvalPlan step with nonempty context. Verified: checkPlan rejects with
+-- topLevelContextNotEmpty 0.
+def topLevelBadPlan : RawEvalPlan :=
+  { version := admittedVersion, tensorSigs := sigs2, inputSlots := #[0]
+  , steps := #[{ contextShape := #[2], destinationSlot := 1, outputShape := #[3]
+               , terms := #[{ iterationShape := #[2,3], contextPos := #[0], outputPos := #[1]
+                             , reductionPos := #[], factors := #[readX2] }]
+               , algebra := admittedAlgebra }]
+  , numericMode := .reference64 }
+
+def checkPlanErrOf : Except PlanError CheckedEvalPlan → Option PlanError
+  | .ok _ => none | .error e => some e
+
+#guard checkPlanErrOf (checkPlan topLevelBadPlan) == some (.topLevelContextNotEmpty 0)
 
 end LeanNCD.Eval.Plan.KernelCheckTest

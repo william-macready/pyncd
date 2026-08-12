@@ -185,6 +185,8 @@ def contractPrepared : Option PreparedPlan := (prepareEvalPlan contractSched con
 #guard contractPrepared.map (fun p => p.plan.raw.steps[0]!.terms[0]!.iterationShape) == some #[2, 3]
 #guard contractPrepared.map (fun p => p.plan.raw.steps[0]!.terms[0]!.outputPos) == some #[0]
 #guard contractPrepared.map (fun p => p.plan.raw.steps[0]!.terms[0]!.reductionPos) == some #[1]
+#guard contractPrepared.map (fun p => p.plan.raw.steps[0]!.terms[0]!.contextPos) == some #[]
+#guard contractPrepared.map (fun p => p.plan.raw.steps[0]!.contextShape) == some #[]
 #guard contractPrepared.map (fun p => p.plan.raw.steps[0]!.terms[0]!.factors[0]!.map.coeffs) ==
   some #[#[1, 0]]   -- A[i]: zero coefficient in the j (contracted) column — still counted
 #guard contractPrepared.map (fun p => p.plan.raw.steps[0]!.terms[0]!.factors[1]!.map.coeffs) ==

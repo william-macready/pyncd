@@ -25,8 +25,8 @@ def readB : ReadPlan :=
 
 /-- `Y[i] := A[i] · B[j]`, contracted over `j`. -/
 def contractPlan : AssignPlan :=
-  { destinationSlot := 2, outputShape := #[4]
-  , terms := #[{ iterationShape := #[4, 3], outputPos := #[0], reductionPos := #[1]
+  { contextShape := #[], destinationSlot := 2, outputShape := #[4]
+  , terms := #[{ iterationShape := #[4, 3], contextPos := #[], outputPos := #[0], reductionPos := #[1]
                , factors := #[readA, readB] }]
   , algebra := admittedAlgebra }
 
@@ -65,8 +65,8 @@ def identityRead : ReadPlan :=
   , sourceShape := #[3], oobPolicy := .zeroPad }
 
 def identityPlan : AssignPlan :=
-  { destinationSlot := 1, outputShape := #[3]
-  , terms := #[{ iterationShape := #[3], outputPos := #[0], reductionPos := #[]
+  { contextShape := #[], destinationSlot := 1, outputShape := #[3]
+  , terms := #[{ iterationShape := #[3], contextPos := #[], outputPos := #[0], reductionPos := #[]
                , factors := #[identityRead] }]
   , algebra := admittedAlgebra }
 
@@ -86,8 +86,8 @@ def transposeRead : ReadPlan :=
   , sourceShape := #[3, 2], oobPolicy := .zeroPad }
 
 def transposePlan : AssignPlan :=
-  { destinationSlot := 1, outputShape := #[2, 3]
-  , terms := #[{ iterationShape := #[2, 3], outputPos := #[0, 1], reductionPos := #[]
+  { contextShape := #[], destinationSlot := 1, outputShape := #[2, 3]
+  , terms := #[{ iterationShape := #[2, 3], contextPos := #[], outputPos := #[0, 1], reductionPos := #[]
                , factors := #[transposeRead] }]
   , algebra := admittedAlgebra }
 
@@ -110,8 +110,8 @@ def shiftRead : ReadPlan :=
   , sourceShape := #[5], oobPolicy := .zeroPad }
 
 def shiftPlan : AssignPlan :=
-  { destinationSlot := 1, outputShape := #[5]
-  , terms := #[{ iterationShape := #[5], outputPos := #[0], reductionPos := #[]
+  { contextShape := #[], destinationSlot := 1, outputShape := #[5]
+  , terms := #[{ iterationShape := #[5], contextPos := #[], outputPos := #[0], reductionPos := #[]
                , factors := #[shiftRead] }]
   , algebra := admittedAlgebra }
 
@@ -133,8 +133,8 @@ def strideRead : ReadPlan :=
   , sourceShape := #[5], oobPolicy := .zeroPad }
 
 def stridePlan : AssignPlan :=
-  { destinationSlot := 1, outputShape := #[4]
-  , terms := #[{ iterationShape := #[4], outputPos := #[0], reductionPos := #[]
+  { contextShape := #[], destinationSlot := 1, outputShape := #[4]
+  , terms := #[{ iterationShape := #[4], contextPos := #[], outputPos := #[0], reductionPos := #[]
                , factors := #[strideRead] }]
   , algebra := admittedAlgebra }
 
@@ -155,8 +155,8 @@ def maffRead : ReadPlan :=
   , sourceShape := #[5], oobPolicy := .zeroPad }
 
 def maffPlan : AssignPlan :=
-  { destinationSlot := 1, outputShape := #[2, 3]
-  , terms := #[{ iterationShape := #[2, 3], outputPos := #[0, 1], reductionPos := #[]
+  { contextShape := #[], destinationSlot := 1, outputShape := #[2, 3]
+  , terms := #[{ iterationShape := #[2, 3], contextPos := #[], outputPos := #[0, 1], reductionPos := #[]
                , factors := #[maffRead] }]
   , algebra := admittedAlgebra }
 
@@ -186,10 +186,10 @@ def mtermReadB : ReadPlan :=
   , sourceShape := #[2, 3], oobPolicy := .zeroPad }
 
 def mtermPlan : AssignPlan :=
-  { destinationSlot := 2, outputShape := #[2]
-  , terms := #[ { iterationShape := #[2], outputPos := #[0], reductionPos := #[]
+  { contextShape := #[], destinationSlot := 2, outputShape := #[2]
+  , terms := #[ { iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
                 , factors := #[mtermReadA] }
-              , { iterationShape := #[2, 3], outputPos := #[0], reductionPos := #[1]
+              , { iterationShape := #[2, 3], contextPos := #[], outputPos := #[0], reductionPos := #[1]
                 , factors := #[mtermReadB] } ]
   , algebra := admittedAlgebra }
 
@@ -230,10 +230,10 @@ def ptcReadV : ReadPlan :=
   , sourceShape := #[2], oobPolicy := .zeroPad }
 
 def ptcPlan : AssignPlan :=
-  { destinationSlot := 4, outputShape := #[2]
-  , terms := #[ { iterationShape := #[2], outputPos := #[0], reductionPos := #[]
+  { contextShape := #[], destinationSlot := 4, outputShape := #[2]
+  , terms := #[ { iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
                 , factors := #[ptcReadU, ptcReadA] }
-              , { iterationShape := #[2, 2], outputPos := #[0], reductionPos := #[1]
+              , { iterationShape := #[2, 2], contextPos := #[], outputPos := #[0], reductionPos := #[1]
                 , factors := #[ptcReadW, ptcReadV] } ]
   , algebra := admittedAlgebra }
 
@@ -254,8 +254,9 @@ def ptcStore : Array DenseTensor :=
 def efpSigs : Array TensorSignature := #[ { shape := #[3], dtype := .f64 } ]
 
 def efpPlan : AssignPlan :=
-  { destinationSlot := 0, outputShape := #[3]
-  , terms := #[{ iterationShape := #[3], outputPos := #[0], reductionPos := #[], factors := #[] }]
+  { contextShape := #[], destinationSlot := 0, outputShape := #[3]
+  , terms := #[{ iterationShape := #[3], contextPos := #[], outputPos := #[0], reductionPos := #[]
+               , factors := #[] }]
   , algebra := admittedAlgebra }
 
 def efpStore : Array DenseTensor := #[ { shape := [3], data := #[] } ]
@@ -269,7 +270,8 @@ def efpStore : Array DenseTensor := #[ { shape := [3], data := #[] } ]
 def etaSigs : Array TensorSignature := #[ { shape := #[2], dtype := .f64 } ]
 
 def etaPlan : AssignPlan :=
-  { destinationSlot := 0, outputShape := #[2], terms := #[], algebra := admittedAlgebra }
+  { contextShape := #[], destinationSlot := 0, outputShape := #[2], terms := #[]
+  , algebra := admittedAlgebra }
 
 def etaStore : Array DenseTensor := #[ { shape := [2], data := #[] } ]
 
@@ -288,8 +290,8 @@ def zerdRead : ReadPlan :=
   , sourceShape := #[2], oobPolicy := .zeroPad }
 
 def zerdPlan : AssignPlan :=
-  { destinationSlot := 1, outputShape := #[2]
-  , terms := #[{ iterationShape := #[2, 0], outputPos := #[0], reductionPos := #[1]
+  { contextShape := #[], destinationSlot := 1, outputShape := #[2]
+  , terms := #[{ iterationShape := #[2, 0], contextPos := #[], outputPos := #[0], reductionPos := #[1]
                , factors := #[zerdRead] }]
   , algebra := admittedAlgebra }
 
@@ -310,8 +312,8 @@ def zoeRead : ReadPlan :=
   , sourceShape := #[0], oobPolicy := .zeroPad }
 
 def zoePlan : AssignPlan :=
-  { destinationSlot := 1, outputShape := #[0]
-  , terms := #[{ iterationShape := #[0], outputPos := #[0], reductionPos := #[]
+  { contextShape := #[], destinationSlot := 1, outputShape := #[0]
+  , terms := #[{ iterationShape := #[0], contextPos := #[], outputPos := #[0], reductionPos := #[]
                , factors := #[zoeRead] }]
   , algebra := admittedAlgebra }
 
@@ -336,10 +338,11 @@ def fosRead (slot : TensorSlot) : ReadPlan :=
   , sourceShape := #[], oobPolicy := .zeroPad }
 
 def fosTerm (slot : TensorSlot) : TermPlan :=
-  { iterationShape := #[1], outputPos := #[0], reductionPos := #[], factors := #[fosRead slot] }
+  { iterationShape := #[1], contextPos := #[], outputPos := #[0], reductionPos := #[]
+  , factors := #[fosRead slot] }
 
 def fosPlan : AssignPlan :=
-  { destinationSlot := 3, outputShape := #[1]
+  { contextShape := #[], destinationSlot := 3, outputShape := #[1]
   , terms := #[fosTerm 0, fosTerm 1, fosTerm 2]
   , algebra := admittedAlgebra }
 
@@ -390,5 +393,80 @@ def badDataStore : Array DenseTensor :=
   #[ { shape := [4], data := #[10.0, 100.0, 1000.0] } ]
 
 #guard posErrOf sigs contractPlan badDataStore == some (.storageMismatch 0 [4] 3)
+
+/-!
+## Context-sensitive fixtures (Step 3)
+-/
+
+def ctxSigs : Array TensorSignature := #[{ shape := #[2,3], dtype := .f64 }, { shape := #[3], dtype := .f64 }]
+
+def ctxReadX : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[#[1,0], #[0,1]], bias := #[0,0] }
+  , sourceShape := #[2,3], oobPolicy := .zeroPad }
+
+def ctxPlan : AssignPlan :=
+  { contextShape := #[2], destinationSlot := 1, outputShape := #[3]
+  , terms := #[{ iterationShape := #[2,3], contextPos := #[0], outputPos := #[1], reductionPos := #[]
+               , factors := #[ctxReadX] }]
+  , algebra := admittedAlgebra }
+
+run_cmd do
+  match checkAssign ctxSigs ctxPlan with
+  | .error e => throwError s!"checkAssign rejected context-sensitive plan: {repr e}"
+  | .ok checked =>
+      let x : DenseTensor := { shape := [2,3], data := #[1,2,3,4,5,6] }
+      let zeros : DenseTensor := { shape := [3], data := #[0,0,0] }
+      -- Verified: ctx=0 -> X's row 0 = [1,2,3].
+      match runDenseAssignAt checked [0] #[x, zeros] with
+      | .error e => throwError s!"ctx=0 failed: {repr e}"
+      | .ok y0 => unless y0.data == #[1,2,3] do throwError s!"ctx=0 wrong: {repr y0.data}"
+      -- Verified: ctx=1 -> X's row 1 = [4,5,6].
+      match runDenseAssignAt checked [1] #[x, zeros] with
+      | .error e => throwError s!"ctx=1 failed: {repr e}"
+      | .ok y1 => unless y1.data == #[4,5,6] do throwError s!"ctx=1 wrong: {repr y1.data}"
+      -- Verified: out-of-range context (contextShape is #[2]) is rejected, not padded, with the
+      -- exact `contextShapeMismatch` payload.
+      match runDenseAssignAt checked [5] #[x, zeros] with
+      | .ok _ => throwError "out-of-range context should have been rejected"
+      | .error e =>
+          unless e == .contextShapeMismatch #[2] [5] do
+            throwError s!"out-of-range context: wrong error {repr e}"
+      -- Verified: wrong-rank context (2 components against a 1-D contextShape) is rejected, with
+      -- the exact `contextShapeMismatch` payload.
+      match runDenseAssignAt checked [0, 0] #[x, zeros] with
+      | .ok _ => throwError "wrong-rank context should have been rejected"
+      | .error e =>
+          unless e == .contextShapeMismatch #[2] [0, 0] do
+            throwError s!"wrong-rank context: wrong error {repr e}"
+
+-- Context bound across a NON-trivial reduction: contextShape=#[2]; iterationShape=#[2,3,4]
+-- (context, output, reduction); X shape [2,3,4] sequential 0..23 row-major.
+-- Y[o] = sum_r X[ctx,o,r]. Verified via `lake env lean`: ctx=0 -> [6,22,38], ctx=1 -> [54,70,86].
+def sigsCR : Array TensorSignature := #[{ shape := #[2,3,4], dtype := .f64 }, { shape := #[3], dtype := .f64 }]
+
+def readCR : ReadPlan :=
+  { sourceSlot := 0
+  , map := { coeffs := #[#[1,0,0], #[0,1,0], #[0,0,1]], bias := #[0,0,0] }
+  , sourceShape := #[2,3,4], oobPolicy := .zeroPad }
+
+def crPlan : AssignPlan :=
+  { contextShape := #[2], destinationSlot := 1, outputShape := #[3]
+  , terms := #[{ iterationShape := #[2,3,4], contextPos := #[0], outputPos := #[1], reductionPos := #[2]
+               , factors := #[readCR] }]
+  , algebra := admittedAlgebra }
+
+run_cmd do
+  match checkAssign sigsCR crPlan with
+  | .error e => throwError s!"checkAssign rejected context+reduction plan: {repr e}"
+  | .ok checked =>
+      let xdata : Array Float := (Array.range 24).map (fun n => Float.ofNat n)
+      let x : DenseTensor := { shape := [2,3,4], data := xdata }
+      let zeros : DenseTensor := { shape := [3], data := #[0,0,0] }
+      match runDenseAssignAt checked [0] #[x, zeros] with
+      | .error e => throwError s!"ctx=0 failed: {repr e}"
+      | .ok y0 => unless y0.data == #[6,22,38] do throwError s!"ctx=0 wrong: {repr y0.data}"
+      match runDenseAssignAt checked [1] #[x, zeros] with
+      | .error e => throwError s!"ctx=1 failed: {repr e}"
+      | .ok y1 => unless y1.data == #[54,70,86] do throwError s!"ctx=1 wrong: {repr y1.data}"
 
 end LeanNCD.Eval.Plan.KernelDenseTest

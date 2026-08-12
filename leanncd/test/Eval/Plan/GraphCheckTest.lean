@@ -17,8 +17,8 @@ def idRead (slot : TensorSlot) : ReadPlan :=
 
 /-- An identity node: destination `dest` copies `src` verbatim. -/
 def idNode (dest src : TensorSlot) : AssignPlan :=
-  { destinationSlot := dest, outputShape := #[2]
-  , terms := #[{ iterationShape := #[2], outputPos := #[0], reductionPos := #[]
+  { contextShape := #[], destinationSlot := dest, outputShape := #[2]
+  , terms := #[{ iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
                , factors := #[idRead src] }]
   , algebra := admittedAlgebra }
 
@@ -58,10 +58,10 @@ def diamondSigs : Array TensorSignature :=
 
 /-- `C[i] := A[i] + B[i]`: two single-factor terms, folded by `reduceOp = add`. -/
 def nodeC : AssignPlan :=
-  { destinationSlot := 3, outputShape := #[2]
-  , terms := #[ { iterationShape := #[2], outputPos := #[0], reductionPos := #[]
+  { contextShape := #[], destinationSlot := 3, outputShape := #[2]
+  , terms := #[ { iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
                 , factors := #[idRead 1] }
-              , { iterationShape := #[2], outputPos := #[0], reductionPos := #[]
+              , { iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
                 , factors := #[idRead 2] } ]
   , algebra := admittedAlgebra }
 
