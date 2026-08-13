@@ -6,8 +6,9 @@ import LeanNCD.Eval.Plan.Adapter
 
 Hand-built fixtures only — the `PropertyOracle.enumPrograms` differential matrix is Task 4, not
 this task. Covers the full `pack`/`unpack`/`runPreparedDense` round trip cross-checked against the
-legacy evaluator, every `InputBindingError` constructor, and warning preservation on success and on
-a later binding failure.
+legacy evaluator, every `InputBindingError` constructor, every `BindingsError` constructor at the
+`checkBindings` construction boundary (Task 3), and warning preservation on success and on a later
+binding failure.
 -/
 
 namespace LeanNCD.Eval.Plan.AdapterTest
