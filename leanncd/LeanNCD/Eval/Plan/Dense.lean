@@ -43,6 +43,50 @@ private def constFloat : ScalarConst → Float
   | .f64 bits => Float.ofBits bits
   | _ => 0.0
 
+/-- Fold one term's factor product, left to right in stored factor order (architecture doc §2.2:
+    `factorFold([]) = float64(1)`, `factorFold(xs ++ [x]) = float64(factorFold(xs) * x)`). Named
+    separately from `reductionFold`/`termFold` even though all three are left folds over `applyOp`
+    because §2.2 gives each its own operation/identity — factors use `factorOp`/`factorId`, never
+    `reduceOp`/`reduceId`. -/
+private def factorFold (alg : ContractionAlgebra) (xs : List Float) : Float :=
+  xs.foldl (applyOp alg.factorOp) (constFloat alg.factorId)
+
+example (alg : ContractionAlgebra) : factorFold alg [] = constFloat alg.factorId := rfl
+
+example (alg : ContractionAlgebra) (xs : List Float) (x : Float) :
+    factorFold alg (xs ++ [x]) = applyOp alg.factorOp (factorFold alg xs) x := by
+  simp [factorFold, List.foldl_append]
+
+/-- Fold one term's reduction coordinates, left to right in row-major order (architecture doc §2.2:
+    `reductionFold([]) = float64(0)`, `reductionFold(xs ++ [x]) = float64(reductionFold(xs) + x)`).
+    Each `x` here is that reduction coordinate's factor product (`factorFold`'s result), not a raw
+    factor value. -/
+private def reductionFold (alg : ContractionAlgebra) (xs : List Float) : Float :=
+  xs.foldl (applyOp alg.reduceOp) (constFloat alg.reduceId)
+
+example (alg : ContractionAlgebra) : reductionFold alg [] = constFloat alg.reduceId := rfl
+
+example (alg : ContractionAlgebra) (xs : List Float) (x : Float) :
+    reductionFold alg (xs ++ [x]) = applyOp alg.reduceOp (reductionFold alg xs) x := by
+  simp [reductionFold, List.foldl_append]
+
+/-- Fold completed terms into one output coordinate's value, left to right in term-array order
+    (architecture doc §2.2: `termFold([]) = float64(0)`, `termFold(xs ++ [x]) =
+    float64(termFold(xs) + x)`). Defined with the same `reduceOp`/`reduceId` as `reductionFold` —
+    not a coincidence: `ContractionAlgebra`'s own doc comment (`Types.lean`) states that term
+    combination and reduction intentionally share one op/identity pair, mirroring the reference
+    evaluator's `Combine.combine`/`unit0`. Kept as its own named function (rather than reusing
+    `reductionFold` under a second name) so each of §2.2's three fold equations has exactly one
+    Lean definition to pin it to. -/
+private def termFold (alg : ContractionAlgebra) (xs : List Float) : Float :=
+  xs.foldl (applyOp alg.reduceOp) (constFloat alg.reduceId)
+
+example (alg : ContractionAlgebra) : termFold alg [] = constFloat alg.reduceId := rfl
+
+example (alg : ContractionAlgebra) (xs : List Float) (x : Float) :
+    termFold alg (xs ++ [x]) = applyOp alg.reduceOp (termFold alg xs) x := by
+  simp [termFold, List.foldl_append]
+
 /-- Validate the positional store against the shapes `checkAssign` already validated. Runtime
     values are a separate trust boundary from plan structure, so this is a value check, not a
     re-validation of the plan. -/
@@ -67,38 +111,34 @@ private def validateContext (a : AssignPlan) (ctx : List Int) : Except Positiona
   else throw (.contextShapeMismatch a.contextShape ctx)
 
 /-- Execute one checked operation at a fixed context coordinate. Fold order is source-declared and
-    preserved exactly: factors from `factorId`, then that term's reduction coordinates from
-    `reduceId`, then completed terms from `reduceId` in term-array order. The inner reduction fold
-    and the outer term fold are NOT flattened — `Y[i] := A[i] + P[i,j]` must add `A[i]` once, not
-    once per `j` (proposal §8.2). `ctx` is bound once per call, at every term's `contextPos`
-    positions, and held fixed across the whole output/reduction double-loop — it does not get
-    enumerated like `outputPos`/`reductionPos` do. -/
+    preserved exactly: factors via `factorFold`, then that term's reduction coordinates via
+    `reductionFold`, then completed terms via `termFold`, in term-array order — matching architecture
+    doc §2.2's three fold equations one-for-one. The inner reduction fold and the outer term fold
+    are NOT flattened — `Y[i] := A[i] + P[i,j]` must add `A[i]` once, not once per `j` (proposal
+    §8.2). `ctx` is bound once per call, at every term's `contextPos` positions, and held fixed
+    across the whole output/reduction double-loop — it does not get enumerated like
+    `outputPos`/`reductionPos` do. -/
 def runDenseAssignAt (c : CheckedAssignPlan) (ctx : List Int) (store : Array DenseTensor) :
     Except PositionalInputError DenseTensor := do
   validateContext c.plan ctx
   validateStore c store
   let a := c.plan
   let alg := a.algebra
-  let factorId := constFloat alg.factorId
-  let reduceId := constFloat alg.reduceId
-  let mut out : Array Float := #[]
-  for oc in allCoords a.outputShape.toList do
-    let mut acc := reduceId
-    for t in a.terms do
+  let out : List Float := (allCoords a.outputShape.toList).map (fun oc =>
+    let termAccs : List Float := a.terms.toList.map (fun t =>
       let redShape := t.reductionPos.toList.filterMap (fun p => t.iterationShape[p]?)
-      let mut termAcc := reduceId
-      for rc in allCoords redShape do
-        let mut iter : Array Int := Array.replicate t.iterationShape.size 0
-        for (p, v) in t.contextPos.toList.zip ctx do iter := iter.set! p v
-        for (p, v) in t.outputPos.toList.zip oc do iter := iter.set! p v
-        for (p, v) in t.reductionPos.toList.zip rc do iter := iter.set! p v
-        let mut prod := factorId
-        for f in t.factors do
-          prod := applyOp alg.factorOp prod (gatherFactor store f iter.toList)
-        termAcc := applyOp alg.reduceOp termAcc prod
-      acc := applyOp alg.reduceOp acc termAcc
-    out := out.push acc
-  return { shape := a.outputShape.toList, data := out }
+      let prods : List Float := (allCoords redShape).map (fun rc =>
+        let iter : Array Int := Id.run do
+          let mut iter : Array Int := Array.replicate t.iterationShape.size 0
+          for (p, v) in t.contextPos.toList.zip ctx do iter := iter.set! p v
+          for (p, v) in t.outputPos.toList.zip oc do iter := iter.set! p v
+          for (p, v) in t.reductionPos.toList.zip rc do iter := iter.set! p v
+          return iter
+        let factorVals : List Float := t.factors.toList.map (fun f => gatherFactor store f iter.toList)
+        factorFold alg factorVals)
+      reductionFold alg prods)
+    termFold alg termAccs)
+  return { shape := a.outputShape.toList, data := out.toArray }
 
 /-- The empty-context wrapper every existing (scan-free) call site uses. -/
 def runDenseAssign (c : CheckedAssignPlan) (store : Array DenseTensor) :

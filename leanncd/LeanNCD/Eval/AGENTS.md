@@ -40,7 +40,7 @@ see `papers/wave_c_capability_manifest.md` for the full design, not duplicated h
 | `Error.lean` | closed diagnostics: `PlanError` (checker), `PositionalInputError` (runtime), `CapabilityError` (capability rejection), `InputSignatureError`/`InputBindingError` (boundary), `PlanCompileCause`/`PlanCompileFailure` (prepare-time), `PlanRunCause`/`PlanRunFailure` (run-time) |
 | `Check.lean` | the checker — `checkAssign`/`CheckedAssignPlan` (local invariants, including context partition/projection), `checkPlan`/`CheckedEvalPlan` (graph-level: slot availability, production order) |
 | `Coordinates.lean` | shared row-major coordinate primitives — `allCoords`, `applyAffine`, `flatIndex`, `inBoundsPerDim` (extracted from `Dense.lean`, no JAX/table/source-name concepts) |
-| `Dense.lean` | Dense interpreter for one checked operation, over positional `DenseTensor` storage — `runDenseAssignAt` (context-indexed primitive) and `runDenseAssign` (its empty-context wrapper) |
+| `Dense.lean` | Dense interpreter for one checked operation, over positional `DenseTensor` storage — `runDenseAssignAt` (context-indexed primitive, built from named folds `factorFold`/`reductionFold`/`termFold` matching architecture doc §2.2) and `runDenseAssign` (its empty-context wrapper) |
 | `Signature.lean` | C1's shape-specialization boundary — signature-driven axis-size inference in place of concrete tensors |
 | `Prepared.lean` | source-name-keyed bindings around a checked plan — `PreparedPlan` |
 | `Compile.lean` | the source compiler — capability preflight (C4), `prepareEvalPlan` |
