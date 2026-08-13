@@ -469,4 +469,108 @@ run_cmd do
       | .error e => throwError s!"ctx=1 failed: {repr e}"
       | .ok y1 => unless y1.data == #[54,70,86] do throwError s!"ctx=1 wrong: {repr y1.data}"
 
+/-!
+## Fixtures shared with the JAX affine bridge
+
+`experiments/jax_bridge/EvalPlanAffineSmoke.lean` renders these three checked kernels as bridge
+fixtures. They live here, in a default Lake target, so an `Eval/Plan` field change breaks
+`lake build` rather than only the untargeted bridge driver — which is how Wave F F1's
+`contextPos`/`contextShape` addition silently broke every hand-built plan literal in that driver.
+Each also carries its own Lean-side expectation, so the fixture is validated whether or not the
+bridge runs.
+-/
+
+/-! ### Permuted iteration basis
+
+Source signature `[2,3]`, destination `[2]`, with the *reduction* position before the output position
+in the iteration basis (`iterationShape = #[3,2]`, `outputPos = #[1]`, `reductionPos = #[0]`). Source
+compilation cannot emit output-before-reduction, so this is the only coverage of an interpreter that
+must transpose rather than assume canonical order. -/
+
+def permutedSigs : Array TensorSignature :=
+  #[ { shape := #[2, 3], dtype := .f64 }, { shape := #[2], dtype := .f64 } ]
+
+def permutedRead : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[#[0, 1], #[1, 0]], bias := #[0, 0] }
+  , sourceShape := #[2, 3], oobPolicy := .zeroPad }
+
+def permutedPlan : AssignPlan :=
+  { contextShape := #[], destinationSlot := 1, outputShape := #[2]
+  , terms := #[{ iterationShape := #[3, 2], contextPos := #[], outputPos := #[1], reductionPos := #[0]
+               , factors := #[permutedRead] }]
+  , algebra := admittedAlgebra }
+
+def permutedStore : Array DenseTensor :=
+  #[ { shape := [2, 3], data := #[1.0, 2.0, 3.0, 4.0, 5.0, 6.0] }, { shape := [2], data := #[] } ]
+
+-- `Y[o] = Σ_r src[o, r]`: rows [1,2,3] and [4,5,6] sum to 6 and 15. Hand-computed.
+#guard (match checkAssign permutedSigs permutedPlan with
+        | .error _ => none
+        | .ok c => (runDenseAssign c permutedStore).toOption.map DenseTensor.data)
+  == some #[6.0, 15.0]
+
+/-! ### Float-sensitive factor order
+
+Three scalar factors whose product differs by one output ULP between declared order `[a,b,c]` and
+rotation `[b,c,a]`, without overflow or subnormals. This pins that the factor fold is left-associated
+in *stored* order: an interpreter free to reassociate would make both plans agree. -/
+
+def factorOrderSigs : Array TensorSignature :=
+  #[ { shape := #[], dtype := .f64 }, { shape := #[], dtype := .f64 }
+   , { shape := #[], dtype := .f64 }, { shape := #[1], dtype := .f64 } ]
+
+def factorOrderPlanFor (slots : Array TensorSlot) : AssignPlan :=
+  { contextShape := #[], destinationSlot := 3, outputShape := #[1]
+  , terms := #[{ iterationShape := #[1], contextPos := #[], outputPos := #[0], reductionPos := #[]
+               , factors := slots.map fosRead }]
+  , algebra := admittedAlgebra }
+
+def factorOrderPlan : AssignPlan := factorOrderPlanFor #[0, 1, 2]
+def factorOrderReorderedPlan : AssignPlan := factorOrderPlanFor #[1, 2, 0]
+
+def factorOrderStore : Array DenseTensor :=
+  #[ { shape := [], data := #[Float.ofBits 0x4b81df8e849782c0] }
+   , { shape := [], data := #[Float.ofBits 0x3e8249ed35cbdd0e] }
+   , { shape := [], data := #[Float.ofBits 0x48869ebf3614d3eb] }
+   , { shape := [1], data := #[] } ]
+
+private def factorOrderBits (a : AssignPlan) : Option UInt64 :=
+  match checkAssign factorOrderSigs a with
+  | .error _ => none
+  | .ok c => ((runDenseAssign c factorOrderStore).toOption.bind
+      (fun t => t.data[0]?)).map Float.toBits
+
+-- The two orders differ, and differ by exactly one ULP. Previously these bits were pinned only on
+-- the Python side of the bridge; the ordering claim is a Dense claim and belongs here too.
+#guard factorOrderBits factorOrderPlan == some 0x52ace21080787dc7
+#guard factorOrderBits factorOrderReorderedPlan == some 0x52ace21080787dc6
+
+/-! ### Nonempty output reading empty source storage
+
+The source extent is zero, so every lookup is invalid, but the output extent is two. This is the only
+fixture that reaches an interpreter's empty-storage guard: zero-output and zero-reduction cases short
+circuit before any gather, whereas this one must produce two zeros from an empty array. -/
+
+def emptySourceSigs : Array TensorSignature :=
+  #[ { shape := #[0], dtype := .f64 }, { shape := #[2], dtype := .f64 } ]
+
+def emptySourceRead : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[#[0]], bias := #[0] }
+  , sourceShape := #[0], oobPolicy := .zeroPad }
+
+def emptySourcePlan : AssignPlan :=
+  { contextShape := #[], destinationSlot := 1, outputShape := #[2]
+  , terms := #[{ iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
+               , factors := #[emptySourceRead] }]
+  , algebra := admittedAlgebra }
+
+def emptySourceStore : Array DenseTensor :=
+  #[ { shape := [0], data := #[] }, { shape := [2], data := #[] } ]
+
+-- Every read is out of bounds against a zero extent, so zero padding gives [0, 0]. Hand-computed.
+#guard (match checkAssign emptySourceSigs emptySourcePlan with
+        | .error _ => none
+        | .ok c => (runDenseAssign c emptySourceStore).toOption.map DenseTensor.data)
+  == some #[0.0, 0.0]
+
 end LeanNCD.Eval.Plan.KernelDenseTest

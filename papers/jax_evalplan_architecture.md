@@ -551,6 +551,19 @@ floating-point specification, not a semiring: it claims neither associativity no
 makes no identity claim over all IEEE-754 values. Adding a numeric mode requires a new closed
 semantic case with an explicit interpretation.
 
+All nonlinear operations are intended to eventually be supported, but they require a second numeric
+contract rather than an extension of this one. `reference64SumProduct` is closed over +/×: its only
+claims are evaluation order and the fold equations above. `exp`, `tanh`, `erf`, and other transcendental
+functions are not part of that algebra, and their binary64 results are not bit-reproducible across
+libm implementations, XLA versions, or devices, so "support every nonlinearity" and "bit-exact ordered
+reference" cannot both hold under one contract. This document therefore names a second, separately
+closed contract, `reference64Transcendental`, for nonlinear steps: it fixes the function computed and
+bounds agreement by a stated per-function ULP tolerance instead of asserting bit-exactness. Differential
+testing follows the same split — affine and sum-product steps compare bit-exact against the ordered
+reference; nonlinear steps compare within their contract's ULP bound. Neither contract exists as a
+supported step yet: `LeanNCD/Eval/Plan/Compile.lean` rejects every pointwise and axiswise
+nonlinear statement via `unsupportedNonlin` ahead of either producer, checker, or interpreter support.
+
 ### 3.3 Blocks, graph flow, and scans
 
 Contractions explain one assignment; blocks and scans explain how assignments participate in larger
@@ -574,6 +587,18 @@ and backend traversals must use these functions rather than independently recons
 dependencies. Broader summaries such as slot provenance or feature sets should be added only when a
 second real consumer would otherwise duplicate their derivation; the design does not require a
 separate `PlanManifest`.
+
+Nonlinear operations, once supported, become two further `PlanStep` cases rather than fields on
+`AssignPlan`, mirroring the source language's existing split at
+`LeanNCD/DSL/Ast.lean`: `Nonlin = identity | pointwise PointwiseFn | axiswise AxiswiseFn (Option BoolExpr)`
+(`identity` needs no step of its own — it applies no transformation), where `PointwiseFn` covers
+`relu`/`sigmoid`/`tanh`/`gelu`/`leakyrelu` and `AxiswiseFn` covers
+`softmax`/`normalize`/`l2normalize`. In TL a nonlinearity applies to the whole right-hand side after
+aggregation, not per factor, so a field on `AssignPlan` would blur that boundary; a separate step
+preserves `AssignPlan` as a pure ordered sum-product under `reference64SumProduct` and lets nonlinear
+steps carry `reference64Transcendental` evidence ([Section 3.2](#32-contractions-and-ordered-floating-point-execution))
+independently. `PointwiseFn` takes no mask argument by type, so a newly added pointwise function
+cannot silently forget masking; `AxiswiseFn` carries its optional predicate explicitly instead.
 
 A **scan** repeatedly invokes base and step blocks to construct complete state histories. Its
 **history extents** are the final sizes along advancing axes; subtracting one from each gives the step
@@ -621,6 +646,10 @@ evaluator silently applies last-write-wins where the checked worker is required 
 defects are recorded deliberately and remain unfixed; the checked scan worker that would satisfy this
 subsection is the F3 target and has no code. A scan backend must therefore not be validated against
 the legacy evaluator as an oracle — the two disagree by design until F3 lands.
+
+This divergence is transitional, not permanent: once Backend Eval IR reaches parity, `LeanNCD/Eval/`
+retires outright and `EvalPlan` becomes the sole evaluator. F3's checked scan worker is therefore a
+replacement target for the legacy evaluator, not a reconciliation with it.
 
 ### 3.4 Invariant matrix
 
@@ -677,7 +706,11 @@ sketches so the main argument can compare tradeoffs without presenting experimen
 
 These changes encode stable boundaries without requiring the dependent contraction prototype. They
 are described completely here; unlike Stages B and C, Stage A has no separate candidate schema in the
-appendices:
+appendices. Closing `reference64SumProduct` is this stage's entire numeric-mode content, so the
+[Section 3.2](#32-contractions-and-ordered-floating-point-execution) contract split must be settled
+before Stage A closes, not after Wave F: closing only the sum-product mode while treating nonlinear
+steps as future scope for the same mode would misrepresent Stage A as complete numeric-mode coverage,
+when in fact a second closed mode, `reference64Transcendental`, is required and not yet specified.
 
 | Refinement | Eliminated invalid state | Required migration | Expected proof burden | Adoption test |
 |---|---|---|---|---|

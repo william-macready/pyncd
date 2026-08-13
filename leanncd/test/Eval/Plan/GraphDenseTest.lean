@@ -108,6 +108,49 @@ def diamondInputs : Array DenseTensor :=
 #guard dataOf (runGraph diamondPlan diamondInputs) 3 == some #[10.0, 14.0]
 #guard dataOf (runGraph diamondPlan diamondInputs) 4 == some #[9.0, 11.0]
 
+/-!
+## Noncontiguous input placement with a produced-slot chain
+
+Distinct from both topologies above. `diamondPlan` leaves its second input slot (4) *unread*, so it
+cannot show that a high-numbered input was placed at the right slot. Here slot 4 is an input that the
+first node *reads*, the second node can only read the slot the first node just produced, and the third
+node sums a produced slot with an input slot. The expected full store therefore distinguishes input
+placement (slot 4, not slot 1), node order, and final arithmetic together.
+
+Shared with the JAX affine bridge: `experiments/jax_bridge/EvalPlanAffineSmoke.lean` renders this same
+plan as its positional-graph fixture, so the two backends compare on one checked graph rather than two
+hand-built ones. These definitions live here, in a default Lake target, so an `Eval/Plan` field change
+breaks `lake build` rather than only the untargeted bridge driver.
+-/
+
+def placementSigs : Array TensorSignature :=
+  Array.replicate 5 { shape := #[2], dtype := .f64 }
+
+/-- Sums two slots into `dest`, one term per source, in the given order. -/
+def sumNode (dest srcA srcB : TensorSlot) : AssignPlan :=
+  { contextShape := #[], destinationSlot := dest, outputShape := #[2]
+  , terms := #[ { iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
+                , factors := #[idRead srcA] }
+              , { iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
+                , factors := #[idRead srcB] } ]
+  , algebra := admittedAlgebra }
+
+def placementPlan : RawEvalPlan :=
+  { version := admittedVersion, tensorSigs := placementSigs, inputSlots := #[0, 4]
+  , steps := #[idNode 1 4, idNode 2 1, sumNode 3 2 0], numericMode := .reference64 }
+
+/-- Inputs ordered by `inputSlots = #[0, 4]`: slot 0 first, then slot 4. -/
+def placementInputs : Array DenseTensor :=
+  #[ { shape := [2], data := #[2.0, 3.0] }, { shape := [2], data := #[5.0, 7.0] } ]
+
+-- slot0=[2,3], slot4=[5,7]. slot1 := slot4 = [5,7]; slot2 := slot1 = [5,7];
+-- slot3 := slot2 + slot0 = [7,10]. Hand-computed.
+#guard dataOf (runGraph placementPlan placementInputs) 0 == some #[2.0, 3.0]
+#guard dataOf (runGraph placementPlan placementInputs) 1 == some #[5.0, 7.0]
+#guard dataOf (runGraph placementPlan placementInputs) 2 == some #[5.0, 7.0]
+#guard dataOf (runGraph placementPlan placementInputs) 3 == some #[7.0, 10.0]
+#guard dataOf (runGraph placementPlan placementInputs) 4 == some #[5.0, 7.0]
+
 -- reordering independent nodes: swap A/B's step order (neither depends on the other) — the graph
 -- is still accepted and the final store is identical, slot-for-slot.
 def diamondPlanSwapped : RawEvalPlan :=

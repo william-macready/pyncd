@@ -2,6 +2,7 @@ import LeanNCD.Eval.Entry
 import LeanNCD.DSL.Compile
 import EvalPlanCodegen
 import Eval.Plan.KernelDenseTest
+import Eval.Plan.GraphDenseTest
 
 /-!
 # Wave C affine JAX reference smoke — driver (`docs/superpowers/plans/2026-08-10-jax-full-affine-semantics.md`, Task 2)
@@ -13,13 +14,17 @@ from `EvalPlanCodegen` (`JaxBridge`):
 
 * **named `PreparedPlan`** — the nine verified source fixtures (compiled through the real
   `compileToScheduled → prepareEvalPlan → runPreparedDense` pipeline);
-* **positional `CheckedAssignPlan`** — the six reused `KernelDenseTest` checked-kernel fixtures plus
-  a permuted-iteration-basis case, a three-factor Float-sensitive order pair, and a nonempty output
+* **positional `CheckedAssignPlan`** — ten `KernelDenseTest` checked-kernel fixtures, including a
+  permuted-iteration-basis case, a three-factor Float-sensitive order pair, and a nonempty output
   reading empty source storage through all-false masks;
-* **positional `CheckedEvalPlan`** — a real three-node graph with noncontiguous input slots.
+* **positional `CheckedEvalPlan`** — `GraphDenseTest.placementPlan`, a three-node graph with
+  noncontiguous input slots.
 
 Nothing here computes an affine address: all lookup tables are precomputed in Lean by
-`renderAffine*`. Kept out of the default build; run ad hoc via `lake env lean --run`.
+`renderAffine*`. Nothing here declares a plan either — every fixture is imported from `Tests`, which
+an ordinary `lake build` typechecks, so an `Eval/Plan` field change cannot break this driver
+invisibly. This file itself is still kept out of the default build; run ad hoc via
+`lake env lean --run`.
 -/
 
 namespace JaxBridge.AffineSmoke
@@ -103,108 +108,12 @@ def zeroReductionInputs : HashMap String DenseTensor :=
     [ ("A", ⟨[2], #[7.0, 8.0]⟩)
     , ("B", ⟨[0], #[]⟩) ]
 
-/-! ## Local permuted-iteration-basis fixture (positional `CheckedAssignPlan` boundary)
+/-! ## Checked-plan fixtures
 
-Source signature `[2,3]`, destination `[2]`; `iterationShape = #[3,2]`, `outputPos = #[1]`,
-`reductionPos = #[0]`; source-map rows `#[0,1]`/`#[1,0]`; verified `runDenseAssign` output `#[6,15]`
-(`Y[o] = Σ_r src[o, r]`, output before reduction is impossible from source compilation, so this
-exercises the runtime transpose). -/
-
-def permutedSigs : Array TensorSignature :=
-  #[ ⟨#[2, 3], .f64⟩, ⟨#[2], .f64⟩ ]
-
-def permutedRead : ReadPlan :=
-  ⟨0, ⟨#[#[0, 1], #[1, 0]], #[0, 0]⟩, #[2, 3], .zeroPad⟩
-
-def permutedPlan : AssignPlan :=
-  { contextShape := #[], destinationSlot := 1, outputShape := #[2]
-  , terms := #[{ iterationShape := #[3, 2], contextPos := #[], outputPos := #[1], reductionPos := #[0]
-               , factors := #[permutedRead] }]
-  , algebra := admittedAlgebra }
-
-def permutedStore : Array DenseTensor :=
-  #[ ⟨[2, 3], #[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]⟩, ⟨[2], #[]⟩ ]
-
-/-! ## Float-sensitive factor order
-
-The exact input bit patterns below were selected so `[a,b,c]` and `[b,c,a]` differ by one output
-ULP without using overflow or subnormals. Both plans are Dense-run below; Python pins their observed
-bits under eager and JIT rather than relying on a real-number argument. -/
-
-def factorOrderSigs : Array TensorSignature :=
-  #[ ⟨#[], .f64⟩, ⟨#[], .f64⟩, ⟨#[], .f64⟩, ⟨#[1], .f64⟩ ]
-
-def scalarRead (slot : TensorSlot) : ReadPlan :=
-  ⟨slot, ⟨#[], #[]⟩, #[], .zeroPad⟩
-
-def factorOrderPlanFor (slots : Array TensorSlot) : AssignPlan :=
-  { contextShape := #[], destinationSlot := 3, outputShape := #[1]
-  , terms := #[{ iterationShape := #[1], contextPos := #[], outputPos := #[0], reductionPos := #[]
-               , factors := slots.map scalarRead }]
-  , algebra := admittedAlgebra }
-
-def factorOrderPlan : AssignPlan := factorOrderPlanFor #[0, 1, 2]
-def factorOrderReorderedPlan : AssignPlan := factorOrderPlanFor #[1, 2, 0]
-
-def factorOrderStore : Array DenseTensor :=
-  #[ ⟨[], #[Float.ofBits 0x4b81df8e849782c0]⟩
-   , ⟨[], #[Float.ofBits 0x3e8249ed35cbdd0e]⟩
-   , ⟨[], #[Float.ofBits 0x48869ebf3614d3eb]⟩
-   , ⟨[1], #[]⟩ ]
-
-/-! ## Empty source with a nonempty output
-
-Every lookup is invalid because the source extent is zero, but the output extent is two. This
-reaches the runtime's empty-storage guard (unlike zero-output/reduction short circuits), and removal
-of that guard attempts index-zero gather from empty storage. -/
-
-def emptySourceSigs : Array TensorSignature :=
-  #[ ⟨#[0], .f64⟩, ⟨#[2], .f64⟩ ]
-
-def emptySourceRead : ReadPlan :=
-  ⟨0, ⟨#[#[0]], #[0]⟩, #[0], .zeroPad⟩
-
-def emptySourcePlan : AssignPlan :=
-  { contextShape := #[], destinationSlot := 1, outputShape := #[2]
-  , terms := #[{ iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
-               , factors := #[emptySourceRead] }]
-  , algebra := admittedAlgebra }
-
-def emptySourceStore : Array DenseTensor :=
-  #[ ⟨[0], #[]⟩, ⟨[2], #[]⟩ ]
-
-/-! ## Multi-node positional graph
-
-Inputs are supplied in `inputSlots = #[0,4]` order. The first node copies slot 4 to slot 1, the
-second can only read that freshly-produced slot, and the third adds slot 2 to slot 0. The expected
-full store distinguishes placement (`slot 4`, not slot 1), node order, and final arithmetic. -/
-
-def positionalSigs : Array TensorSignature :=
-  Array.replicate 5 ⟨#[2], .f64⟩
-
-def positionalRead (slot : TensorSlot) : ReadPlan :=
-  ⟨slot, ⟨#[#[1]], #[0]⟩, #[2], .zeroPad⟩
-
-def positionalCopy (dest source : TensorSlot) : AssignPlan :=
-  { contextShape := #[], destinationSlot := dest, outputShape := #[2]
-  , terms := #[{ iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
-               , factors := #[positionalRead source] }]
-  , algebra := admittedAlgebra }
-
-def positionalSum : AssignPlan :=
-  { contextShape := #[], destinationSlot := 3, outputShape := #[2]
-  , terms := #[ { iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
-                , factors := #[positionalRead 2] }
-              , { iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
-                , factors := #[positionalRead 0] } ]
-  , algebra := admittedAlgebra }
-
-def positionalRaw : RawEvalPlan :=
-  ⟨admittedVersion, positionalSigs, #[0, 4],
-    #[positionalCopy 1 4, positionalCopy 2 1, positionalSum], .reference64⟩
-
-def positionalInputs : Array DenseTensor :=
-  #[ ⟨[2], #[2.0, 3.0]⟩, ⟨[2], #[5.0, 7.0]⟩ ]
+Every hand-built plan this driver renders now lives in the `Tests` library — `KernelDenseTest` for the
+checked kernels, `GraphDenseTest` for the positional graph — where an ordinary `lake build` typechecks
+it and a Lean-side expectation pins its Dense result. Nothing plan-shaped is declared in this file, so
+an `Eval/Plan` field change can no longer break the bridge without also breaking the build. -/
 
 /-! ## Assembly helpers -/
 
@@ -297,7 +206,7 @@ def main (args : List String) : IO Unit := do
       ("zeroOutput", zeroOutputProg, zeroOutputInputs),
       ("zeroReduction", zeroReductionProg, zeroReductionInputs)
     ].mapM (fun (nm, p, i) => buildNamedFixture nm p i)
-  -- Reused public `KernelDenseTest` checked-kernel fixtures + the local permuted-basis fixture.
+  -- All reused from the `Tests` library; nothing plan-shaped is declared in this driver.
   let assignFixtures ← #[
       buildAssignFixture "ptc" KernelDenseTest.ptcSigs KernelDenseTest.ptcPlan KernelDenseTest.ptcStore,
       buildAssignFixture "efp" KernelDenseTest.efpSigs KernelDenseTest.efpPlan KernelDenseTest.efpStore,
@@ -305,12 +214,18 @@ def main (args : List String) : IO Unit := do
       buildAssignFixture "zerd" KernelDenseTest.zerdSigs KernelDenseTest.zerdPlan KernelDenseTest.zerdStore,
       buildAssignFixture "zoe" KernelDenseTest.zoeSigs KernelDenseTest.zoePlan KernelDenseTest.zoeStore,
       buildAssignFixture "fos" KernelDenseTest.fosSigs KernelDenseTest.fosPlan KernelDenseTest.fosStore,
-      buildAssignFixture "permuted" permutedSigs permutedPlan permutedStore,
-      buildAssignFixture "factorOrder" factorOrderSigs factorOrderPlan factorOrderStore,
-      buildAssignFixture "factorOrderReordered" factorOrderSigs factorOrderReorderedPlan factorOrderStore,
-      buildAssignFixture "emptySourceGuard" emptySourceSigs emptySourcePlan emptySourceStore
+      buildAssignFixture "permuted"
+        KernelDenseTest.permutedSigs KernelDenseTest.permutedPlan KernelDenseTest.permutedStore,
+      buildAssignFixture "factorOrder"
+        KernelDenseTest.factorOrderSigs KernelDenseTest.factorOrderPlan KernelDenseTest.factorOrderStore,
+      buildAssignFixture "factorOrderReordered"
+        KernelDenseTest.factorOrderSigs KernelDenseTest.factorOrderReorderedPlan
+        KernelDenseTest.factorOrderStore,
+      buildAssignFixture "emptySourceGuard"
+        KernelDenseTest.emptySourceSigs KernelDenseTest.emptySourcePlan KernelDenseTest.emptySourceStore
     ].mapM id
-  let positionalFixture ← buildPositionalFixture "positionalGraph" positionalRaw positionalInputs
+  let positionalFixture ← buildPositionalFixture "positionalGraph"
+    GraphDenseTest.placementPlan GraphDenseTest.placementInputs
   let allFixtures := namedFixtures ++ assignFixtures ++ #[positionalFixture]
   let moduleSrc :=
     "# Generated by EvalPlanAffineSmoke.lean — do not edit.\n" ++
