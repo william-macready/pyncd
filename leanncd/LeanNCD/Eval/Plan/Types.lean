@@ -37,10 +37,10 @@ structure InputSignature where
 /-- Index into a plan's `tensorSigs` table and the worker's parallel tensor store. -/
 abbrev TensorSlot := Nat
 
-/-- Cross-backend numeric convention. Wave C has exactly one: bit-exact binary64 with
-    source-declared fold order preserved (proposal §8.4). -/
+/-- Cross-backend numeric convention. Wave C has exactly one: ordered sum-product over binary64,
+    with source-declared fold order preserved (proposal §8.4). -/
 inductive NumericMode
-  | reference64
+  | reference64SumProduct
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- Out-of-range read policy. Wave C has exactly one. -/

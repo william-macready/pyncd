@@ -39,8 +39,8 @@
       "Bash(git rm *)",
       "Bash(git -C /Users/williammacready/code/python/pyncd show --stat --oneline HEAD)",
       "Bash(git merge --no-ff leanncd-graded-prop-revamp -m 'Merge leanncd-graded-prop-revamp: D-graded colored PROP revamp of leanncd.md *)",
-      "Bash(perl -ne 'while \\(/\\(?<!\\\\\\(|#\\)\\(\u00a7[0-9][0-9.]*\\)/g\\) { print \"$.: $1\\\\n\" }' /Users/williammacready/code/python/pyncd/papers/graded_prop.md)",
-      "Bash(perl -ne 'print \"$.: $_\" if /\\(?<!\\\\[\\)\u00a7\\(?!\\\\d*\\\\]\\)/' /Users/williammacready/code/python/pyncd/papers/graded_prop.md)",
+      "Bash(perl -ne 'while \\(/\\(?<!\\\\\\(|#\\)\\(§[0-9][0-9.]*\\)/g\\) { print \"$.: $1\\\\n\" }' /Users/williammacready/code/python/pyncd/papers/graded_prop.md)",
+      "Bash(perl -ne 'print \"$.: $_\" if /\\(?<!\\\\[\\)§\\(?!\\\\d*\\\\]\\)/' /Users/williammacready/code/python/pyncd/papers/graded_prop.md)",
       "Bash(.venv/bin/pip install *)",
       "Bash(/Users/williammacready/code/python/pyncd/.venv/bin/python3 -m pip install websockets -q)",
       "Bash(uv --version)",
@@ -100,7 +100,8 @@
       "Bash(bash .claude/skills/new-slice/prepare-worktree.sh *)",
       "Bash(bash .claude/skills/slice-plan/check-snippet.sh *)",
       "Bash(bash /Users/williammacready/code/python/pyncd/.claude/skills/new-slice/prepare-worktree.sh *)",
-      "Bash(bash /Users/williammacready/code/python/pyncd/.claude/skills/slice-plan/check-snippet.sh *)"
+      "Bash(bash /Users/williammacready/code/python/pyncd/.claude/skills/slice-plan/check-snippet.sh *)",
+      "Read(//Users/williammacready/.claude/plugins/cache/claude-plugins-official/superpowers/6.3.0/skills/subagent-driven-development/**)"
     ],
     "additionalDirectories": [
       "/tmp"

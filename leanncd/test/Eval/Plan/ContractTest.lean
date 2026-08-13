@@ -182,7 +182,7 @@ section
   { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity })) == .accepted
 end
 
--- NumericMode: deferred to C1/C2, where it is defined; Wave C admits only `reference64`.
+-- NumericMode: deferred to C1/C2, where it is defined; Wave C admits only `reference64SumProduct`.
 
 open LeanNCD.Eval (DenseTensor)
 

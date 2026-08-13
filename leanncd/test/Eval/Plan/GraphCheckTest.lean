@@ -33,7 +33,7 @@ def chainSigs : Array TensorSignature :=
 
 def chainPlan : RawEvalPlan :=
   { version := admittedVersion, tensorSigs := chainSigs, inputSlots := #[0]
-  , steps := #[idNode 1 0, idNode 2 1], numericMode := .reference64 }
+  , steps := #[idNode 1 0, idNode 2 1], numericMode := .reference64SumProduct }
 
 def isOk : Except PlanError CheckedEvalPlan → Bool
   | .ok _ => true | .error _ => false
@@ -67,7 +67,7 @@ def nodeC : AssignPlan :=
 
 def diamondPlan : RawEvalPlan :=
   { version := admittedVersion, tensorSigs := diamondSigs, inputSlots := #[0, 4]
-  , steps := #[idNode 1 0, idNode 2 0, nodeC], numericMode := .reference64 }
+  , steps := #[idNode 1 0, idNode 2 0, nodeC], numericMode := .reference64SumProduct }
 
 -- the diamond (fan-out + convergence + an unused input) is accepted
 #guard isOk (checkPlan diamondPlan)
@@ -138,9 +138,9 @@ def diamondPlan : RawEvalPlan :=
   == some (.nodeError 0 (.destinationShapeMismatch #[3] #[2]))
 
 -- numericModeNotAdmitted: structurally unreachable via checkPlan (NumericMode has exactly one
--- constructor, reference64), same pattern as checkAssign's single-valued-vocabulary
+-- constructor, reference64SumProduct), same pattern as checkAssign's single-valued-vocabulary
 -- unreachables — named directly instead of exercised through checkPlan.
-#guard (PlanError.numericModeNotAdmitted .reference64) == PlanError.numericModeNotAdmitted .reference64
+#guard (PlanError.numericModeNotAdmitted .reference64SumProduct) == PlanError.numericModeNotAdmitted .reference64SumProduct
 
 /-!
 ## `CheckedEvalPlan` privacy (compile-time check, folded into this file per A.3's module list —

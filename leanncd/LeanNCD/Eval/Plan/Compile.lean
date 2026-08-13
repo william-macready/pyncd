@@ -236,7 +236,7 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
   -- compiler above, not a legitimate rejection.
   let raw : RawEvalPlan :=
     { version := admittedVersion, tensorSigs := tensorSigsAcc, inputSlots := inputSlotsAcc
-    , steps := stepsAcc, numericMode := .reference64 }
+    , steps := stepsAcc, numericMode := .reference64SumProduct }
   let checked ← liftPlanError warnings (checkPlan raw)
   -- Step F: assemble PreparedPlan.
   return { plan := checked

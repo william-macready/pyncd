@@ -147,7 +147,7 @@ def topLevelBadPlan : RawEvalPlan :=
                , terms := #[{ iterationShape := #[2,3], contextPos := #[0], outputPos := #[1]
                              , reductionPos := #[], factors := #[readX2] }]
                , algebra := admittedAlgebra }]
-  , numericMode := .reference64 }
+  , numericMode := .reference64SumProduct }
 
 def checkPlanErrOf : Except PlanError CheckedEvalPlan → Option PlanError
   | .ok _ => none | .error e => some e

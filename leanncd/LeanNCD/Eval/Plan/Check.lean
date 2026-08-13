@@ -108,7 +108,7 @@ structure CheckedEvalPlan where private mk ::
     wiring invariants `checkAssign` cannot see (slot availability and production order). -/
 def checkPlan (raw : RawEvalPlan) : Except PlanError CheckedEvalPlan := do
   unless raw.version == admittedVersion do throw (.versionNotAdmitted raw.version)
-  unless raw.numericMode == .reference64 do throw (.numericModeNotAdmitted raw.numericMode)
+  unless raw.numericMode == .reference64SumProduct do throw (.numericModeNotAdmitted raw.numericMode)
   let n := raw.tensorSigs.size
   -- input slots: in range, unique, ordered (adjacent-pair scan; equal ⇒ duplicate, decreasing ⇒
   -- not-ordered, so the two failure modes stay independently locatable).
