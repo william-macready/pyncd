@@ -26,9 +26,11 @@ structure SlotBinding where
     producer that builds a `RequiredBindings` and its enclosing `PreparedPlan` together from the
     same array; `PlanBindings`/`PreparedPlan`'s public constructors don't enforce that coupling, so
     a hand-built `PreparedPlan` could pair a validly-checked `RequiredBindings` with a mismatched
-    `raw.inputSlots` undetected (see `Error.lean`'s `InputBindingError` doc comment for the
-    resulting `pack`-level diagnosability gap). Private constructor: the only way to build one from
-    outside this module is `checkBindings`, so a `RequiredBindings` misaligned against ITS OWN
+    `raw.inputSlots` — `Adapter.lean`'s `pack` still fails loud on it (a `.missingEnvBinding` naming
+    the unmatched slot, see `Error.lean`'s `InputBindingError` doc comment), just not as a
+    type-level guarantee the way alignment against ITS OWN `inputSlots` is. Private constructor:
+    the only way to build one from outside this module is `checkBindings`, so a `RequiredBindings`
+    misaligned against ITS OWN
     `inputSlots` field (duplicate/extra/missing slot, or a name bound twice) is unconstructable,
     not merely untested — that guarantee does not extend to alignment against some OTHER
     `inputSlots` array such as a differently-constructed `PreparedPlan`'s. No `BEq`/
@@ -41,15 +43,15 @@ structure RequiredBindings where private mk ::
   aligned    : (bindings.map (·.slot)).toList.Perm inputSlots.toList
   deriving Repr
 
-/-- First name in `names` that recurs later in the list. Total and structurally recursive; used
-    only to give `checkBindings`'s `.duplicateName` failure a concrete witness once
-    `(bindings.map (·.name)).toList.Nodup` has already been decided false. Returns `""` on a
-    Nodup list — a case `checkBindings` never actually reaches, the same "trust the invariant, a
-    total default is never really hit" idiom `Dense.lean`'s `runDensePlan` already uses (`getD`
-    defaults documented there as unreachable given the caller's own guarantees). -/
-private def firstDuplicateName : List String → String
-  | [] => ""
-  | n :: rest => if rest.contains n then n else firstDuplicateName rest
+/-- First name in `names` that recurs later in the list, if any. Total and structurally recursive;
+    used only to give `checkBindings`'s `.duplicateName` failure a concrete witness once
+    `(bindings.map (·.name)).toList.Nodup` has already been decided false — that branch guarantees
+    this returns `some`, never `none`; `checkBindings` unwraps with a self-documenting fallback
+    string rather than an `Option`-shaped return type collapsing to a bare `""` sentinel that could
+    be mistaken for a real (empty) name elsewhere. -/
+private def firstDuplicateName : List String → Option String
+  | [] => none
+  | n :: rest => if rest.contains n then some n else firstDuplicateName rest
 
 /-- The only public way to build a `RequiredBindings`. Reordering `bindings` is fine (`Perm`, not
     positional equality — see `RequiredBindings`'s doc comment for why), but the slot multiset must
@@ -60,7 +62,9 @@ def checkBindings (inputSlots : Array TensorSlot) (bindings : Array SlotBinding)
     if (bindings.map (·.name)).toList.Nodup then
       .ok { inputSlots, bindings, aligned := h }
     else
-      .error (.duplicateName (firstDuplicateName (bindings.map (·.name)).toList))
+      .error (.duplicateName
+        ((firstDuplicateName (bindings.map (·.name)).toList).getD
+          "<unreachable: checkBindings already confirmed a duplicate exists>"))
   else
     .error (.notAPermutation inputSlots (bindings.map (·.slot)))
 

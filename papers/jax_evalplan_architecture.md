@@ -249,11 +249,10 @@ semantics and then the graph/scan semantics that every representation must prese
 
 ### 2.2 Contractions and ordered floating-point execution
 
-The current raw plan calls its numeric mode `reference64`. It means ordered sum-product over binary64,
-not merely “use 64-bit floats.” This document calls the corresponding semantic contract
-`reference64SumProduct` to make both the arithmetic and the permitted operations explicit; Stage A
-would close the checked representation around that meaning. For each output coordinate, the
-interpreter evaluates factors, reduction coordinates, and terms in stored order:
+The raw plan's numeric mode is `reference64SumProduct`. The name is deliberately not merely
+“use 64-bit floats”: it commits to ordered sum-product over binary64, with both the arithmetic and
+the permitted operations made explicit in the constructor name itself. For each output coordinate,
+the interpreter evaluates factors, reduction coordinates, and terms in stored order:
 
 ```text
 factorFold([])           = float64(1)
@@ -705,15 +704,15 @@ results in that order for each `i`.
 | `TermPlan` | Iteration shape, output/reduction positions, ordered factors |
 | `ReadPlan` | Source slot and shape, affine map, out-of-bounds policy |
 
-`checkPlan` currently admits the plan version and `reference64` numeric mode—a tag selecting the
-plan's operational floating-point contract—verifies tensor shapes
+`checkPlan` currently admits the plan version and `reference64SumProduct` numeric mode—the closed
+constructor selecting the plan's operational floating-point contract—verifies tensor shapes
 and slot bounds, proves a complete disjoint output/reduction partition, checks affine dimensions, and
 establishes graph production order and source availability. `PreparedPlan` adds the ordered bindings
 needed to pack named inputs and reconstruct materialized names.
 
-Wave C's `reference64` numeric mode admits only ordered sum-product over binary64 values. `binary64`
-specifies the scalar representation and arithmetic format; `reference64` additionally specifies the
-identities and evaluation order:
+Wave C's `reference64SumProduct` numeric mode admits only ordered sum-product over binary64 values.
+`binary64` specifies the scalar representation and arithmetic format; `reference64SumProduct`
+additionally specifies the identities and evaluation order:
 
 ```text
 factor identity     = 1.0
@@ -1284,12 +1283,13 @@ data crosses the Lean/Python trust boundary as ordinary DTOs without serializing
 The preceding sections describe six threads that are easy to assume are strictly ordered when they
 are not: closing the numeric-mode contract, measuring affine-table scaling, Wave F's scan work,
 nonlinearity support, compact/evidence-indexed kernels, and closing Stage A's remaining narrow
-refinements. Two are now settled, in different senses — thread 1 is a closed *decision*, not yet
-empirically checked; thread 2 is a closed *measurement* — and settling them changed the recommended
-order for the four still open. Thread numbers below are stable identifiers other sections cite by
-number ([Section 2.2](#22-contractions-and-ordered-floating-point-execution) cites thread 1,
+refinements. Three are now settled, in different senses — thread 1 is a closed *decision*, not yet
+empirically checked; thread 2 is a closed *measurement*; thread 6 is closed outright, implemented and
+tested — and settling the first two changed the recommended order for the three still open. Thread
+numbers below are stable identifiers other sections cite by number
+([Section 2.2](#22-contractions-and-ordered-floating-point-execution) cites thread 1,
 [Section 5.4](#54-evidence-validating-the-experimental-jax-bridge) cites thread 5) — they are not a
-reading order. The table's row order is: settled threads first, then the four open threads in their
+reading order. The table's row order is: settled threads first, then the three open threads in their
 current recommended sequence. Wave F (thread 3) is in-progress Part I work, not a Part III candidate;
 it appears here only because its timing relative to the others needs stating. This remains a
 planning default, not a gate enforced anywhere in [Section 6](#6-adoption-plan-and-gates) — re-derive
@@ -1300,13 +1300,14 @@ the open threads' order if a reason emerges, but don't re-litigate it without on
 count of this paragraph's claims. `PlanStep`, distinct slot namespaces,
 private validated executable constructors, evidence-indexed kernels, and snapshot/next-state types
 genuinely don't exist in any form — the real codebase today is `RawEvalPlan` → `CheckedEvalPlan` →
-`PreparedPlan` built from `AssignPlan`/`TermPlan`/`ReadPlan` (assignment-only, flat `Nat` slots, an
-open `reference64` tag rather than a closed `reference64SumProduct`). But two items already have
-correct, tested *behavior* that just isn't surfaced as the distinct API Stage A specifies:
-`Dense.lean`'s `runDenseAssignAt` already documents and implements exact source-declared,
-non-flattened factor/reduction/term order (item 2), just inlined rather than as three named fold
-functions; `prepareEvalPlan` already builds one required-input binding per name (item 4), just
-without a length-correctness wrapper type. And executable lowering itself already exists —
+`PreparedPlan` built from `AssignPlan`/`TermPlan`/`ReadPlan` (assignment-only, flat `Nat` slots — the
+numeric mode is now the closed `reference64SumProduct` constructor, item 3, closed by thread 6). Two
+further items also have correct, tested *behavior* now surfaced as the distinct API Stage A specifies,
+also closed by thread 6: `Dense.lean`'s `runDenseAssignAt` builds its source-declared, non-flattened
+factor/reduction/term order from three named fold functions, `factorFold`/`reductionFold`/`termFold`
+(item 2); `prepareEvalPlan` now builds its one required-input binding per name into `RequiredBindings`
+(item 4), a private-constructor, `List.Perm`-checked wrapper in `Prepared.lean`. And executable
+lowering itself already exists —
 `EvalPlanCodegen.lean`'s `einsumOnly`/`affineReference` modes are the basis of every measurement in
 [Section 5.4](#54-evidence-validating-the-experimental-jax-bridge) — what's missing there (items 5, 6)
 is the validated, evidence-indexed *type-level discipline* around it, not lowering itself: the
@@ -1315,15 +1316,15 @@ is the validated, evidence-indexed *type-level discipline* around it, not loweri
 ordered-reference from experimental evidence in the type system. This matters for sequencing: threads
 3 and 5 below build
 the Stage A pieces their own work genuinely lacks (items 1, 7, 8 for thread 3; items 5, 6 for thread
-5) — not by choice, because nothing else claims them either. Thread 6 is the remainder: items 2, 3,
-and 4, none blocked on thread 3 or 5, and cheaper than the others since two are API-surface work over
-already-correct behavior rather than new structure.
+5) — not by choice, because nothing else claims them either. Thread 6 closed the remainder — items 2,
+3, and 4 — none blocked on thread 3 or 5, and cheaper than the others since two were API-surface work
+over already-correct behavior rather than new structure.
 
 | Thread | Item | Status | Depends on | Why |
 |---|---|---|---|---|
 | 1 | Pin `reference64Transcendental`'s per-function ULP bounds | **Specified**, not validated | Nothing | [Section 2.2](#22-contractions-and-ordered-floating-point-execution) gives reasoned starting bounds with no Lean constant or test behind them yet, unvalidated against any real backend output. [Section 7.1](#71-stage-a-recommended-low-risk-refinements) no longer flags the *absence* of a contract as blocking Stage A's close. |
 | 2 | Run the affine-table scaling measurement: one mid-sized contraction, timed and sized | **Measured** | Nothing | [Section 5.4](#54-evidence-validating-the-experimental-jax-bridge): one 4,096-coordinate contraction is already ~5% of the entire corpus's artifact size, and its compiled steady-state runtime is measurably (~5×) slower than native `jnp.einsum`. Both findings reordered thread 5 below. |
-| 6 | Close Stage A's remaining refinements: explicit named factor/reduction/term fold functions (behavior already correct in `Dense.lean`, not yet its own API), `reference64SumProduct` as an actual closed type (today just an open `reference64` tag), and length-correct required-input bindings (behavior already correct in `prepareEvalPlan`, not yet its own type) | Open, parallel-safe | Nothing | The three Stage A items neither thread 3 nor thread 5 already needs. Cheaper than either — two of the three are surfacing already-correct, already-tested behavior as a named API/type, not building new structure. Blocked on nothing and blocks nothing, so it belongs here (right after the other zero-dependency threads), not queued behind 5, 3, or 4 — do it whenever, in parallel with any of them. |
+| 6 | Closed Stage A's remaining refinements: explicit named factor/reduction/term fold functions in `Dense.lean` (`factorFold`/`reductionFold`/`termFold`), `reference64SumProduct` as the actual closed `NumericMode` constructor (renamed from the open `reference64` tag), and length-correct `RequiredBindings` in `Prepared.lean` | **Done** | Nothing | The three Stage A items neither thread 3 nor thread 5 needed. Cheaper than either — two of the three surfaced already-correct, already-tested behavior as a named API/type, not building new structure. Blocked on nothing and blocked nothing else, so it ran right after the other zero-dependency threads, in parallel with threads 5/3/4. |
 | 5 | Compact/evidence-indexed kernels and the PyTorch backend ([Section 4.3](#43-evidence-indexed-executable-lowering), Appendix D) | **Next** — moved ahead of threads 3-4 | Thread 2's outcome | Artifact size grows too fast for the affine-table oracle to stay usable past near-term needs, and its compiled steady-state runtime is a real, measured gap, not merely comparable. Includes building the validated, evidence-indexed executable-lowering discipline Stage A describes (private validated constructors, evidence-indexed kernels — [Section 7.1](#71-stage-a-recommended-low-risk-refinements)) — not building lowering itself, which already exists via the experimental JAX bridge. Not yet started. |
 | 3 | Continue Wave F (F2-F4: checked block and scan layers) | Open, after thread 5 | Nothing beyond what F0/F1 already landed | This *is* Backend Eval IR's scan-half implementation per [Section 2.3](#23-blocks-graph-flow-and-scans), not prerequisite work backend IR waits on — but it includes building the block-scoped slots, the `PlanStep` assign/scan interface, and the snapshot/next-state types that section already requires, none of which exist yet. Proceeds independently of threads 1, 2, and 4, subject to [Section 7.2](#72-stage-b-candidate-dependent-contraction-prototype)'s existing constraint against combining it with the Stage B rewrite. |
 | 4 | Implement nonlinearity: new `PlanStep` pointwise/axiswise cases, Dense/JAX/PyTorch interpreter support | Open, after thread 3 | Thread 3 (the `PlanStep` type must exist before a case can be added to it), thread 1 (specified) | Sequenced after thread 3 for a real type dependency, not just conflict-avoidance: `PlanStep` doesn't exist until thread 3 builds it. A nonlinear step's evidence is also meaningless without a stated ULP bound — settled by thread 1. |
@@ -1459,23 +1460,47 @@ structure RawPlanBindings where
   requiredInputs : Array RawSlotBinding
   materialized   : Array RawSlotBinding
 
-structure CheckedPlanBindings {Slot : Type} (inputs : Vector Slot k) where
-  requiredInputs : Vector (String × Slot) k
-  aligned        : ∀ i, requiredInputs[i].2 = inputs[i]
-  uniqueNames    : (requiredInputs.toArray.map (·.1)).Nodup
-  materialized   : Array (String × Slot)
+structure SlotBinding where
+  name : String
+  slot : TensorSlot
+
+inductive BindingsError
+  | notAPermutation (expectedSlots observedSlots : Array TensorSlot)
+  | duplicateName   (name : String)
+
+structure RequiredBindings where private mk ::
+  inputSlots : Array TensorSlot
+  bindings   : Array SlotBinding
+  aligned    : (bindings.map (·.slot)).toList.Perm inputSlots.toList
+
+def checkBindings (inputSlots : Array TensorSlot) (bindings : Array SlotBinding) :
+    Except BindingsError RequiredBindings := ...
 ```
 
-Required bindings are positionally aligned with the input slots by vector length and construction;
-only name uniqueness remains evidence. Materialized bindings remain an ordered array, may repeat
-names, and are reconstructed left-to-right with last-write-wins. Conflating the two would either lose
-required-input totality or incorrectly ban an existing materialization behavior. The generic `Slot`
-parameter keeps this Stage A binding property independent of Appendix B's candidate slot encoding.
+This is what Wave C actually shipped (`Eval/Plan/Prepared.lean`), not the positional-`Vector` design
+once sketched here. `RequiredBindings.aligned` is a `List.Perm`, not positional/`Vector` equality, and
+that is the load-bearing choice, not an incidental relaxation: `Adapter.lean`'s `pack` resolves every
+binding by NAME, never by array position, and `AdapterTest.lean`'s Check 5 exists specifically to
+exercise a reordered `bindings` array and confirm `pack` still resolves it correctly. A
+positional-equality proof (`bindings.map (·.slot) = inputSlots`) would make that reordering fixture
+inexpressible and would make the whole name-indirection design pointless. `checkBindings` is the only
+public constructor; besides the permutation check it also rejects a duplicate binding name
+(`BindingsError.duplicateName`), a malformation slot-`Perm` alone cannot catch, since two distinct
+slots can each appear exactly once in the permutation while still sharing a name. Materialized
+bindings remain a separate, ordinary array (`PlanBindings.materializedNames`), may repeat names, and
+are reconstructed left-to-right with last-write-wins — conflating the two would either lose
+required-input totality or incorrectly ban an existing materialization behavior.
+
+One honest limit remains, undisguised by the type: `RequiredBindings` proves `bindings` aligned
+against its OWN stored `inputSlots` field, not against the enclosing `PreparedPlan`'s actual
+`plan.raw.inputSlots`. The two agree for every plan `prepareEvalPlan` produces only because it is the
+sole real producer that builds both together from the same array — that is producer discipline, not a
+type-level guarantee `PlanBindings`/`PreparedPlan`'s own public constructors close off.
 
 ```lean
 structure PreparedPlan where
   plan     : CheckedEvalPlan
-  bindings : CheckedPlanBindings plan.inputSlots
+  bindings : RequiredBindings
   warnings : Array EvalWarning
 
 structure BridgeSchemaVersion where
@@ -1516,7 +1541,7 @@ structure CheckedPortablePlan (payload : PortableBackendPlan) where private mk :
   mode           : NumericMode
   inputSlots     : Vector table.Slot payload.raw.inputSlots.size
   steps          : Vector (CheckedPortableStep table mode) payload.raw.steps.size
-  bindings       : CheckedPlanBindings inputSlots
+  bindings       : RequiredBindings
   warnings       : Array EvalWarning
   modeAligned    : mode = payload.raw.numericMode
   planAligned    : eraseCheckedPlan table inputSlots steps = payload.raw
@@ -1550,6 +1575,11 @@ These fields implement the identity and payload ownership specified in
 interfaces. Appendix B may implement the assignment interface with dependent slots; Appendix C
 implements the scan interface without requiring that choice. Appendix D consumes only these common
 interfaces and the explicit `.table` and `.mode` fields of `CheckedPortablePlan`.
+
+`CheckedPortablePlan.bindingsAligned` is exactly the type-level coupling `RequiredBindings` itself does
+not yet provide (above): it ties `bindings` to `payload.bindings` structurally, rather than by producer
+discipline alone. That is a real gap in today's shipped in-Lean-only phase, not a gap in this candidate
+— whether a future portable phase is ever built to close it is still an open, unadopted question.
 
 ### Appendix B: candidate dependent checked contraction core
 
@@ -1629,10 +1659,12 @@ permutation from that basis to iteration order. Consequently `iterationShape`, `
 disjointness, and shape projection follow from the permutation. Densified zero coefficients still
 retain their canonical reduction axes and therefore their multiplicity. `ContractionAlgebra` encodes,
 but does not redefine, the operational contract in
-[Section 2.2](#22-contractions-and-ordered-floating-point-execution); current `reference64` migrates
-one-to-one to its closed `reference64SumProduct` constructor. The prototype gates in
-[Section 6](#6-adoption-plan-and-gates), including rewrite ergonomics, decide whether this sketch
-should replace arrays plus proofs.
+[Section 2.2](#22-contractions-and-ordered-floating-point-execution); the shipped `NumericMode`
+constructor, `reference64SumProduct` (thread 6), already corresponds one-to-one to this candidate's
+`.reference64SumProduct` case — that correspondence is realized at the non-dependent level today,
+independent of whether this dependent sketch is ever adopted. The prototype gates in
+[Section 6](#6-adoption-plan-and-gates), including rewrite ergonomics, still decide whether this
+sketch should replace arrays plus proofs.
 
 ### Appendix C: candidate checked scan refinements
 

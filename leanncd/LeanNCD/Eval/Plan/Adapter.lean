@@ -28,11 +28,11 @@ abbrev NamedDenseEnv := HashMap String DenseTensor
     public constructors close off. So `pack` builds the `slot → name` map directly from
     `requiredInputs` and trusts the invariant instead of re-deriving it — the same way
     `runDensePlan`/`runDenseAssignAt` (`Dense.lean`) trust `checkPlan`'s invariants rather than
-    re-validating them — but a hand-built `PreparedPlan` pairing a validly-checked
-    `RequiredBindings` against a mismatched `raw.inputSlots` would not be caught here: the
-    unmatched slot would silently resolve to `pack`'s generic `.missingEnvBinding ""` rather than a
-    diagnostic naming it. What's left to check here is genuinely about the caller-supplied `env`,
-    not about `requiredInputs`' own shape: resolving each name against `env` and validating
+    re-validating them. If that invariant were ever broken (a hand-built `PreparedPlan` pairing a
+    validly-checked `RequiredBindings` against a mismatched `raw.inputSlots`), `pack` fails loud
+    with a `.missingEnvBinding` diagnostic naming the unmatched slot, rather than resolving a bogus
+    empty-string name into `env`. What's left to check here is genuinely about the caller-supplied
+    `env`, not about `requiredInputs`' own shape: resolving each name against `env` and validating
     shape/storage against `raw.tensorSigs[slot]` — the same value checks `runDensePlan`'s own
     per-input validation performs, reproduced here (not literally shared, since that helper is
     private and typed to `PositionalInputError`) so a NAMED failure is diagnosable without waiting
@@ -49,11 +49,14 @@ def pack (plan : PreparedPlan) (env : NamedDenseEnv) :
     -- name-unique permutation onto `requiredInputs`'s OWN stored `inputSlots` field, and
     -- `prepareEvalPlan` (the sole real producer) builds that field from the very same
     -- `inputSlotsAcc` it uses, unchanged, as this plan's `raw.inputSlots` — so for
-    -- `prepareEvalPlan`'s output the two agree and the `getD` default is never actually reached.
-    -- That agreement is producer discipline, not something the type enforces: nothing here stops
-    -- a hand-built `PreparedPlan` from pairing a validly-checked `requiredInputs` against a
-    -- different `raw.inputSlots`, in which case `getD`'s `""` default WOULD be reached, silently.
-    let name := slotName.getD slot ""
+    -- `prepareEvalPlan`'s output the two agree and `slotName` always has an entry here. That
+    -- agreement is producer discipline, not something the type enforces: nothing here stops a
+    -- hand-built `PreparedPlan` from pairing a validly-checked `requiredInputs` against a
+    -- different `raw.inputSlots`, in which case the slot genuinely has no bound name — handled
+    -- below as a loud `missingEnvBinding` failure rather than a silent `""` lookup key.
+    let name ← match slotName[slot]? with
+      | some nm => pure nm
+      | none => throw (.missingEnvBinding s!"<no binding for slot {slot}>")
     let t ← match env[name]? with
       | some t => pure t
       | none => throw (.missingEnvBinding name)
