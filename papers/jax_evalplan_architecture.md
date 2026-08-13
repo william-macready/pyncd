@@ -103,10 +103,10 @@ never define semantics by themselves.
 ## Part I — Normative Design
 
 This part is the sole authority for what every backend must mean and what a client can build against
-it: the decision to evolve `EvalPlan` into Backend Eval IR, the canonical semantics every
-representation must preserve, the structured artifact a client first needs to cross the Lean/Python
-boundary, and the executable architecture — presented decoder-first, then the compact-kernel
-optimizations layered on top of it. [Part II](#part-ii--evidence-record) is the evidence and gates
+it: the decision to evolve `EvalPlan` into Backend Eval IR, the canonical semantics every backend must
+implement, the structured artifact a client first needs to cross the Lean/Python boundary, and the
+executable architecture — presented decoder-first, then the compact-kernel optimizations layered on
+top of it. [Part II](#part-ii--evidence-record) is the evidence and gates
 that justify this design; [Part III](#part-iii--research-agenda) is the staged, not-yet-adopted
 strengthening this design leaves open.
 
@@ -146,11 +146,11 @@ constructing a `CheckedEvalPlan`. The remaining risks arise after that point:
 | General scan maps | Invalid writes and look-ahead are expressible then rejected | Prototype admitted pin-mask/successor writes and affine-derived causal descriptors in Stage C |
 | Flat lowering mode | Constructor encodes backend choice | Evidence-indexed backend kernel sums |
 
-These are organizational and scalability limitations, not evidence against the Wave C result.
-Section 5 shows that `EvalPlan` is already the point where backend-relevant meaning becomes explicit:
-Lean checks its shapes, affine reads, ordered contractions, and graph flow; Dense interprets it as the
-reference semantics; and the JAX experiment interprets the same checked plans with exact agreement
-over the measured Wave C corpus. The table above identifies weaknesses in transport, independent
+These are organizational and scalability limitations, not evidence against the Wave C result, as
+Part II's Section 5 demonstrates: `EvalPlan` is already the point where backend-relevant meaning
+becomes explicit. Lean checks its shapes, affine reads, ordered contractions, and graph flow; Dense
+interprets it as the reference semantics; and the JAX experiment interprets the same checked plans
+with exact agreement over the measured Wave C corpus. The table above identifies weaknesses in transport, independent
 validation, typing, and executable lowering—not a missing semantic language. Introducing a parallel
 JAX or PyTorch plan would duplicate these semantics and add a translation-equivalence obligation
 without addressing those weaknesses.
@@ -177,11 +177,12 @@ operators land with checking, portable validation, reference interpretation, and
 rather than through callbacks, string operators, embedded Python, generic custom calls, or silent
 fallback.
 
-This decision leaves four questions, answered in order below: what every backend must mean
-([Section 2](#2-canonical-backend-eval-ir-semantics)), how strongly Lean should encode that meaning
-([Section 7](#7-staged-checked-representation-strategy)), how it crosses a trust boundary
-([Section 3](#3-raw-and-portable-representation)), and how each backend may execute it
-([Section 4](#4-jax-and-pytorch-executable-architecture)).
+This decision leaves four questions. The rest of Part I answers three of them in order: what every
+backend must mean ([Section 2](#2-canonical-backend-eval-ir-semantics)), how it crosses a trust
+boundary ([Section 3](#3-raw-and-portable-representation)), and how each backend may execute it
+([Section 4](#4-jax-and-pytorch-executable-architecture)). The fourth — how strongly Lean should
+encode that meaning — is staged, candidate work deferred to Part III's
+[Section 7](#7-staged-checked-representation-strategy).
 
 ## 2. Canonical Backend Eval IR semantics
 
@@ -612,9 +613,10 @@ scan implementations require new capability results, refinement predicates, and 
 ## Part II — Evidence Record
 
 Part I specified the design; this part is the justification record — what the current experimental
-bridge has already demonstrated, and the gates a future change must clear to keep demonstrating it.
-Both halves are about evidence rather than semantics or roadmap, which is why they sit together even
-though the current bridge (Section 5) predates the adoption gates (Section 6) that will govern its successors.
+bridge has already demonstrated, and the gates any future change, including Part III's candidates,
+must clear to keep demonstrating it. Both halves are about validating claims against fixed evidence
+standards rather than designing new representations, which is why they sit together even though the
+current bridge (Section 5) predates the adoption gates (Section 6) that will govern its successors.
 [Part III](#part-iii--research-agenda) covers what is not yet decided.
 
 ## 5. Current system and evidence
@@ -1210,9 +1212,8 @@ pass correct, as in [Leroy's verified compiler back-end](#ref-leroy), or validat
 transformation, as in [Alive2](#ref-alive2).
 
 The staged Lean representation now has a coherent semantic owner, but it is not itself a safe
-cross-language artifact. [Section 3](#3-raw-and-portable-representation) therefore returns to
-ordinary DTOs and explains how semantic data crosses the Lean/Python trust boundary without
-serializing proofs.
+cross-language artifact; [Section 3](#3-raw-and-portable-representation) already covers how semantic
+data crosses the Lean/Python trust boundary as ordinary DTOs without serializing proofs.
 
 ## 8. Appendices
 
