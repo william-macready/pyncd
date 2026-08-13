@@ -3,33 +3,36 @@
 ## Table of contents
 
 - [Executive summary](#executive-summary)
-- [1. Current system and evidence](#1-current-system-and-evidence)
-  - [1.1 Checked-plan boundary](#11-checked-plan-boundary)
-  - [1.2 Ordered reference semantics](#12-ordered-reference-semantics)
-  - [1.3 Current JAX lowerings](#13-current-jax-lowerings)
-  - [1.4 Evidence validating the experimental JAX bridge](#14-evidence-validating-the-experimental-jax-bridge)
-- [2. Architectural decision and principles](#2-architectural-decision-and-principles)
-- [3. Canonical Backend Eval IR semantics](#3-canonical-backend-eval-ir-semantics)
-  - [3.1 Semantic domain and ownership](#31-semantic-domain-and-ownership)
-  - [3.2 Contractions and ordered floating-point execution](#32-contractions-and-ordered-floating-point-execution)
-  - [3.3 Blocks, graph flow, and scans](#33-blocks-graph-flow-and-scans)
-  - [3.4 Invariant matrix](#34-invariant-matrix)
-- [4. Staged checked-representation strategy](#4-staged-checked-representation-strategy)
-  - [4.1 Stage A: recommended low-risk refinements](#41-stage-a-recommended-low-risk-refinements)
-  - [4.2 Stage B: candidate dependent contraction prototype](#42-stage-b-candidate-dependent-contraction-prototype)
-  - [4.3 Stage C: candidate scan refinements](#43-stage-c-candidate-scan-refinements)
-  - [4.4 Deferred: availability-indexed graph typing](#44-deferred-availability-indexed-graph-typing)
-  - [4.5 Rewrite architecture and optimization boundary](#45-rewrite-architecture-and-optimization-boundary)
-- [5. Raw and portable representation](#5-raw-and-portable-representation)
-  - [5.1 Phase pipeline and ownership](#51-phase-pipeline-and-ownership)
-  - [5.2 Identity and independent validation](#52-identity-and-independent-validation)
-- [6. JAX and PyTorch executable architecture](#6-jax-and-pytorch-executable-architecture)
-  - [6.1 Evidence-indexed executable lowering](#61-evidence-indexed-executable-lowering)
-  - [6.2 JAX and PyTorch interpretations](#62-jax-and-pytorch-interpretations)
-  - [6.3 Why the JAX interpreter can remain purely functional](#63-why-the-jax-interpreter-can-remain-purely-functional)
-- [7. Adoption plan and gates](#7-adoption-plan-and-gates)
-  - [7.1 Constructor admission](#71-constructor-admission)
-  - [7.2 Five adoption gates](#72-five-adoption-gates)
+- [Part I — Normative Design](#part-i--normative-design)
+  - [1. Architectural decision and principles](#1-architectural-decision-and-principles)
+  - [2. Canonical Backend Eval IR semantics](#2-canonical-backend-eval-ir-semantics)
+    - [2.1 Semantic domain and ownership](#21-semantic-domain-and-ownership)
+    - [2.2 Contractions and ordered floating-point execution](#22-contractions-and-ordered-floating-point-execution)
+    - [2.3 Blocks, graph flow, and scans](#23-blocks-graph-flow-and-scans)
+    - [2.4 Invariant matrix](#24-invariant-matrix)
+  - [3. Raw and portable representation](#3-raw-and-portable-representation)
+    - [3.1 Phase pipeline and ownership](#31-phase-pipeline-and-ownership)
+    - [3.2 Identity and independent validation](#32-identity-and-independent-validation)
+  - [4. JAX and PyTorch executable architecture](#4-jax-and-pytorch-executable-architecture)
+    - [4.1 Why the JAX interpreter can remain purely functional](#41-why-the-jax-interpreter-can-remain-purely-functional)
+    - [4.2 JAX and PyTorch interpretations](#42-jax-and-pytorch-interpretations)
+    - [4.3 Evidence-indexed executable lowering](#43-evidence-indexed-executable-lowering)
+- [Part II — Evidence Record](#part-ii--evidence-record)
+  - [5. Current system and evidence](#5-current-system-and-evidence)
+    - [5.1 Checked-plan boundary](#51-checked-plan-boundary)
+    - [5.2 Ordered reference semantics](#52-ordered-reference-semantics)
+    - [5.3 Current JAX lowerings](#53-current-jax-lowerings)
+    - [5.4 Evidence validating the experimental JAX bridge](#54-evidence-validating-the-experimental-jax-bridge)
+  - [6. Adoption plan and gates](#6-adoption-plan-and-gates)
+    - [6.1 Constructor admission](#61-constructor-admission)
+    - [6.2 Five adoption gates](#62-five-adoption-gates)
+- [Part III — Research Agenda](#part-iii--research-agenda)
+  - [7. Staged checked-representation strategy](#7-staged-checked-representation-strategy)
+    - [7.1 Stage A: recommended low-risk refinements](#71-stage-a-recommended-low-risk-refinements)
+    - [7.2 Stage B: candidate dependent contraction prototype](#72-stage-b-candidate-dependent-contraction-prototype)
+    - [7.3 Stage C: candidate scan refinements](#73-stage-c-candidate-scan-refinements)
+    - [7.4 Deferred: availability-indexed graph typing](#74-deferred-availability-indexed-graph-typing)
+    - [7.5 Rewrite architecture and optimization boundary](#75-rewrite-architecture-and-optimization-boundary)
 - [8. Appendices](#8-appendices)
   - [Appendix A: ordinary raw and portable DTOs](#appendix-a-ordinary-raw-and-portable-dtos)
   - [Appendix B: candidate dependent checked contraction core](#appendix-b-candidate-dependent-checked-contraction-core)
@@ -53,7 +56,7 @@ two axes of extent two, so no tensor in it exceeds four elements, its 3,832 prog
 distinct structural feature classes, and five of the twelve tracked features are supplied only by the
 curated fixtures. It establishes that the affine grammar is interpreted correctly, and it says nothing
 about scale — the evidence base contains no scaling measurement at all
-([Section 1.4](#14-evidence-validating-the-experimental-jax-bridge)). That absence matters because the
+([Section 5.4](#54-evidence-validating-the-experimental-jax-bridge)). That absence matters because the
 reference lowering emits one index and one validity bit per iteration coordinate per factor, so its
 table size is the product of a term's full iteration domain, contracted axes included. Whether that
 path is usable beyond toy scale is therefore an open measurement, not a settled one.
@@ -82,20 +85,541 @@ validity masks, remains the **reference oracle** against which alternative execu
 Pure functional execution is a particular JAX advantage, while PyTorch retains its own tensor,
 compilation, and export choices.
 
-The argument proceeds from evidence to design:
-[Section 1](#1-current-system-and-evidence) establishes the behavior that must be preserved;
-[Section 2](#2-architectural-decision-and-principles) explains the architectural decision;
-[Section 3](#3-canonical-backend-eval-ir-semantics) defines canonical semantics;
-[Section 4](#4-staged-checked-representation-strategy) stages candidate checked encodings;
-[Sections 5](#5-raw-and-portable-representation) and
-[6](#6-jax-and-pytorch-executable-architecture) separate transport from executable lowering;
-[Section 7](#7-adoption-plan-and-gates) defines adoption gates; and
-[Appendices A-D](#8-appendices) collect the corresponding type sketches. This order is intentional:
-the appendices illustrate decisions made in the narrative and never define semantics by themselves.
+The document is organized in three parts, sequenced by what a client needs first rather than by
+architectural layer. [Part I](#part-i--normative-design) is normative: the architectural decision
+([Section 1](#1-architectural-decision-and-principles)), the canonical semantics every backend must
+implement ([Section 2](#2-canonical-backend-eval-ir-semantics)), the structured artifact a client first
+needs to cross the Lean/Python boundary ([Section 3](#3-raw-and-portable-representation)), and the
+executable architecture — presented as one working decoder before the compact, evidence-indexed
+kernels layered on top of it ([Section 4](#4-jax-and-pytorch-executable-architecture)).
+[Part II](#part-ii--evidence-record) is the evidence record: what the current bridge has already
+demonstrated ([Section 5](#5-current-system-and-evidence)) and the gates a future change must clear
+([Section 6](#6-adoption-plan-and-gates)). [Part III](#part-iii--research-agenda) is the research
+agenda: staged, not-yet-adopted representation strengthenings
+([Section 7](#7-staged-checked-representation-strategy)). [Appendices A-D](#8-appendices) collect the
+corresponding type sketches for Parts I and III; they illustrate decisions made in the narrative and
+never define semantics by themselves.
 
-## 1. Current system and evidence
+## Part I — Normative Design
 
-### 1.1 Checked-plan boundary
+This part is the sole authority for what every backend must mean and what a client can build against
+it: the decision to evolve `EvalPlan` into Backend Eval IR, the canonical semantics every
+representation must preserve, the structured artifact a client first needs to cross the Lean/Python
+boundary, and the executable architecture — presented decoder-first, then the compact-kernel
+optimizations layered on top of it. [Part II](#part-ii--evidence-record) is the evidence and gates
+that justify this design; [Part III](#part-iii--research-agenda) is the staged, not-yet-adopted
+strengthening this design leaves open.
+
+## 1. Architectural decision and principles
+
+The present bridge has four strengths worth preserving: it starts from checked semantics; separates
+reference and optimization intent; excludes unsafe indexing structurally; and has full-corpus,
+boundary, gradient, low-bit-order, and mutation evidence.
+
+The design response uses four terms throughout the paper. A **portable artifact** is the versioned,
+ordinary-data representation exchanged across the Lean/Python boundary. A **semantic fingerprint** is
+the canonical encoded form of its semantic identity. **Capability validation** decides whether a backend supports
+already-valid semantics; it does not repair them. An **evidence index** is a type-level label for the
+numerical claim an executable is allowed to make.
+
+Across the boundary, Lean erases proof-only fields from a checked, prepared plan and canonically
+encodes the remaining versioned data as bytes. Python decodes those bytes into an untrusted ordinary
+data object, independently revalidates its semantics and backend capabilities, and only then lowers
+it to an executable. Concrete tensor values travel separately as a shape plus fixed-endian `UInt64`
+binary64 bit patterns, preserving exact values such as signed zero. [Section 3](#3-raw-and-portable-representation)
+specifies this exchange and its trust boundary.
+
+Here, **checking** is Lean's semantic validation of a `RawEvalPlan`: it verifies tensor shapes,
+slots, affine maps, iteration-basis partitions, numeric mode, and graph flow before privately
+constructing a `CheckedEvalPlan`. The remaining risks arise after that point:
+
+| Risk | Current form | Required response |
+|---|---|---|
+| Untyped boundary | Generated source and nested `dict`/`list` values | Typed, versioned portable artifact |
+| Rendering mixed with lowering | Lean constructs Python syntax directly | Structural IR followed by codecs |
+| No independent artifact validation | Python trusts emitted structure | Separate semantic, capability, and executable validators |
+| Shared coordinate implementation | Dense and lowering reuse primitives | Proof or independent translation oracle |
+| Domain-sized affine tables | Index and mask per iteration coordinate | Keep as oracle; add validated compact kernels later |
+| Implicit JIT identity | Python containers captured in closures | Stable fingerprints and backend runtime plans |
+| Weak dimensional types | Shapes, ranks, and axis partitions are repeated arrays | Prototype staged derivation from signatures, ranked maps, and basis layouts that map semantic axis roles to iteration positions |
+| Open floating algebra | Arbitrary operations appear lawful by construction | Closed numeric-mode-indexed operational algebra |
+| General scan maps | Invalid writes and look-ahead are expressible then rejected | Prototype admitted pin-mask/successor writes and affine-derived causal descriptors in Stage C |
+| Flat lowering mode | Constructor encodes backend choice | Evidence-indexed backend kernel sums |
+
+These are organizational and scalability limitations, not evidence against the Wave C result.
+Section 1 shows that `EvalPlan` is already the point where backend-relevant meaning becomes explicit:
+Lean checks its shapes, affine reads, ordered contractions, and graph flow; Dense interprets it as the
+reference semantics; and the JAX experiment interprets the same checked plans with exact agreement
+over the measured Wave C corpus. The table above identifies weaknesses in transport, independent
+validation, typing, and executable lowering—not a missing semantic language. Introducing a parallel
+JAX or PyTorch plan would duplicate these semantics and add a translation-equivalence obligation
+without addressing those weaknesses.
+
+**Decision:** evolve the existing `EvalPlan` family into the common Backend Eval IR. Affine reads,
+ordered contractions, graph flow, and the planned scan extension belong to that shared semantic
+language; lookup tables, einsum, `lax.scan`, compiled PyTorch loops, caches, and exports remain backend
+implementations.
+
+The new PyTorch evaluator is an EvalPlan backend. Compatibility with the existing `torch_compile/`
+morphism-to-`nn.Module` compiler is explicitly **not** a design constraint.
+
+Backend Eval IR remains an inspectable **deep embedding**: plans are explicit data that interpreters
+can traverse, serialize, validate, and analyze, rather than host-language functions that hide their
+structure. This is a deliberate contrast with finally-tagless encodings, whose operations are
+represented through a host-language interface ([Carette, Kiselyov, and Shan](#ref-finally-tagless)).
+Dense execution, portable encoding, capability analysis, JAX lowering, PyTorch lowering, cost
+analysis, and proofs are separate interpreters over one closed step language. Centralized traversal,
+in the general fold-based style described by [Gibbons](#ref-origami), dispatches each assignment or
+scan once and lets an interpreter thread a store or build executable nodes. A **smart constructor**
+may provide a convenient validated way to build this data, but must not replace the inspectable
+representation needed for serialization, structural proof, corpus generation, and migration. New
+operators land with checking, portable validation, reference interpretation, and differential tests
+rather than through callbacks, string operators, embedded Python, generic custom calls, or silent
+fallback.
+
+This decision leaves four questions, answered in order below: what every backend must mean
+([Section 2](#2-canonical-backend-eval-ir-semantics)), how strongly Lean should encode that meaning
+([Section 7](#7-staged-checked-representation-strategy)), how it crosses a trust boundary
+([Section 3](#3-raw-and-portable-representation)), and how each backend may execute it
+([Section 4](#4-jax-and-pytorch-executable-architecture)).
+
+## 2. Canonical Backend Eval IR semantics
+
+This section is the sole authority for what Backend Eval IR means. It is intentionally independent of
+Lean encodings, wire codecs, lookup tables, einsum labels, pytrees, modules, devices, and caches.
+Dense, JAX, and PyTorch are interpreters of these semantics. Later representations may make some
+requirements structural, but do not change their meaning. The appendices are subordinate to this
+section: [Appendix A](#appendix-a-ordinary-raw-and-portable-dtos) sketches ordinary transport data,
+[Appendices B](#appendix-b-candidate-dependent-checked-contraction-core) and
+[C](#appendix-c-candidate-checked-scan-refinements) explore stronger checked encodings, and
+[Appendix D](#appendix-d-jax-and-pytorch-executable-types) sketches backend executables.
+
+### 2.1 Semantic domain and ownership
+
+A plan has scoped tensor slots. Each slot belongs to exactly one namespace (outer plan or one block),
+has one tensor signature and shape, and cannot be confused with an equally numbered slot in another
+scope. Inputs initialize designated outer slots. Steps execute in positional graph order, read only
+available slots, and produce designated destination slots. **Materialization** is the ordered
+projection that reconstructs source-visible names from the final positional store.
+
+Assignments are **contextual**: a context coordinate is supplied by the enclosing block or scan rather
+than generated by the assignment itself, while the output coordinate ranges over the destination
+signature. A term's canonical basis is therefore `context ++ output ++ reduction`; iteration order
+may permute that basis but must preserve a complete, disjoint classification. The reduction shape
+determines multiplicity even when an affine coefficient is zero.
+
+Having defined the term's iteration basis, the remaining question is how each factor uses an
+iteration coordinate to address its source tensor. An affine read selects a source slot and maps
+iteration coordinate `u` to each source coordinate:
+
+```text
+source[d] = bias[d] + sum(coefficients[d, k] * u[k] for k)
+```
+
+Coefficients and intermediate coordinates have mathematical-integer meaning. Every source dimension
+is bounds-checked before row-major flattening. An out-of-bounds coordinate contributes numeric zero;
+it must never alias valid storage. Empty source storage follows the same zero-padding semantics.
+
+These local meanings must survive several representations. A **semantic identity** combines schema
+major version, semantic version, and the digest of one canonical portable payload;
+[Section 3.2](#32-identity-and-independent-validation) defines those fields precisely. The phase table
+below assigns one role to each representation so later sections can add detail without redefining
+ownership:
+
+| Phase | Sole owner and semantic role |
+|---|---|
+| Raw | Untrusted, diagnosable construction/decoded values; may be malformed and never execute |
+| Checked | Backend-neutral semantic plan whose local obligations and global evidence have been validated |
+| Prepared | A checked plan plus required-input bindings, ordered materialized bindings, and warnings |
+| Portable | Canonical ordinary-data projection of a prepared plan; carries versions and semantic identity, never proof authority |
+| Executable | Backend-specific validated lowering of one portable semantic plan; only this phase contains implementation choices |
+
+Required-input bindings are length-correct and positionally aligned with plan input slots, with unique
+names. Ordered materialized bindings are reconstructed left-to-right and retain existing
+last-write-wins behavior, including repeated names. These roles must not be conflated.
+
+[Appendix A](#appendix-a-ordinary-raw-and-portable-dtos) illustrates Raw, Prepared, and Portable
+ownership. [Appendix B](#appendix-b-candidate-dependent-checked-contraction-core) and
+[Appendix C](#appendix-c-candidate-checked-scan-refinements) illustrate candidate Checked
+representations. [Appendix D](#appendix-d-jax-and-pytorch-executable-types) illustrates Executable
+ownership. With the phase boundary fixed, the next two subsections define the local contraction
+semantics and then the graph/scan semantics that every representation must preserve.
+
+### 2.2 Contractions and ordered floating-point execution
+
+The current raw plan calls its numeric mode `reference64`. It means ordered sum-product over binary64,
+not merely “use 64-bit floats.” This document calls the corresponding semantic contract
+`reference64SumProduct` to make both the arithmetic and the permitted operations explicit; Stage A
+would close the checked representation around that meaning. For each output coordinate, the
+interpreter evaluates factors, reduction coordinates, and terms in stored order:
+
+```text
+factorFold([])           = float64(1)
+factorFold(xs ++ [x])    = float64(factorFold(xs) * x)
+reductionFold([])        = float64(0)
+reductionFold(xs ++ [x]) = float64(reductionFold(xs) + x)
+termFold([])             = float64(0)
+termFold(xs ++ [x])      = float64(termFold(xs) + x)
+```
+
+Each accumulator is the left operand. Reduction coordinates use row-major order. Empty factors
+produce one; empty reductions and empty term lists produce zero. This is an operational
+floating-point specification, not a semiring: it claims neither associativity nor distributivity and
+makes no identity claim over all IEEE-754 values. Adding a numeric mode requires a new closed
+semantic case with an explicit interpretation.
+
+All nonlinear operations are intended to eventually be supported, but they require a second numeric
+contract rather than an extension of this one. `reference64SumProduct` is closed over +/×: its only
+claims are evaluation order and the fold equations above. `exp`, `tanh`, `erf`, and other transcendental
+functions are not part of that algebra, and their binary64 results are not bit-reproducible across
+libm implementations, XLA versions, or devices, so "support every nonlinearity" and "bit-exact ordered
+reference" cannot both hold under one contract. This document therefore names a second, separately
+closed contract, `reference64Transcendental`, for nonlinear steps: it fixes the function computed and
+bounds agreement by a stated per-function ULP tolerance instead of asserting bit-exactness. Differential
+testing follows the same split — affine and sum-product steps compare bit-exact against the ordered
+reference; nonlinear steps compare within their contract's ULP bound. Neither contract exists as a
+supported step yet: `LeanNCD/Eval/Plan/Compile.lean` rejects every pointwise and axiswise
+nonlinear statement via `unsupportedNonlin` ahead of either producer, checker, or interpreter support.
+
+### 2.3 Blocks, graph flow, and scans
+
+Contractions explain one assignment; blocks and scans explain how assignments participate in larger
+stateful graphs. A **block** is a scoped, acyclic local graph with its own tensor slots, context shape,
+input and output ports, and ordered assignments. A **capture** binds an external value or immutable
+state snapshot to a block input. A **state** is a persistent tensor history produced by a scan, while a
+scratch slot exists only for one block invocation. Causal evidence belongs to the factor reads that
+address captured state, not to the capture itself.
+
+An outer **`PlanStep`** is one closed graph instruction, initially either an assignment or a scan.
+Every step exposes one uniform graph interface:
+
+```lean
+def PlanStep.sourceSlots : PlanStep → Array TensorSlot
+def PlanStep.destinationSlots : PlanStep → Array TensorSlot
+```
+
+These are derived functions, not stored fields. Assignments derive one destination and their factor
+sources; scans derive their external sources and ordered state destinations. `checkPlan`, diagnostics,
+and backend traversals must use these functions rather than independently reconstructing graph
+dependencies. Broader summaries such as slot provenance or feature sets should be added only when a
+second real consumer would otherwise duplicate their derivation; the design does not require a
+separate `PlanManifest`.
+
+Nonlinear operations, once supported, become two further `PlanStep` cases rather than fields on
+`AssignPlan`, mirroring the source language's existing split at
+`LeanNCD/DSL/Ast.lean`: `Nonlin = identity | pointwise PointwiseFn | axiswise AxiswiseFn (Option BoolExpr)`
+(`identity` needs no step of its own — it applies no transformation), where `PointwiseFn` covers
+`relu`/`sigmoid`/`tanh`/`gelu`/`leakyrelu` and `AxiswiseFn` covers
+`softmax`/`normalize`/`l2normalize`. In TL a nonlinearity applies to the whole right-hand side after
+aggregation, not per factor, so a field on `AssignPlan` would blur that boundary; a separate step
+preserves `AssignPlan` as a pure ordered sum-product under `reference64SumProduct` and lets nonlinear
+steps carry `reference64Transcendental` evidence ([Section 2.2](#22-contractions-and-ordered-floating-point-execution))
+independently. `PointwiseFn` takes no mask argument by type, so a newly added pointwise function
+cannot silently forget masking; `AxiswiseFn` carries its optional predicate explicitly instead.
+
+A **scan** repeatedly invokes base and step blocks to construct complete state histories. Its
+**history extents** are the final sizes along advancing axes; subtracting one from each gives the step
+domain. A scan has positive history extents and therefore derived predecessor/step extents. Each state names
+bounded, distinct advancing dimensions. Complete histories are zero-initialized, then declared base
+writes overlay pairwise-disjoint pin-mask regions in source order. A base region may leave dimensions
+free and pin others to literals, but it must touch the lower boundary by pinning at least one advancing
+dimension to zero. Uncovered boundary cells retain their initialized zero value. Step execution
+traverses coordinates in `axisZeroFastest` mixed-radix order and writes the canonical `q + 1`
+successor for every advancing dimension. Complete-history materialization is semantic: compact
+carries are permitted only when proven to refine it.
+
+Wave F base-pin substitution is mandatory. If UID `u` is pinned to `p[u]`, every RHS affine row is
+residualized before block checking:
+
+```text
+bias'[d] = bias[d] + sum(coeff[d, u] * p[u] for pinned u)
+```
+
+Pinned UIDs are removed from the affine input basis and from the context/output/reduction basis.
+Correct destination geometry never excuses an un-specialized RHS.
+
+State-read causality is derived from each factor's checked affine rows, not from a second capture-level
+offset. Checked reads retain erasure/alignment evidence to their raw factors and source paths, so a
+rejection remains factor-local and the derived descriptor cannot disagree with the address executed.
+Relative to invocation coordinate `q`, each advancing-state row has unit coefficient for its matching
+context position, zero coefficients for other basis positions, and non-positive bias. An
+all-zero bias is valid: reading `G[q]` while the canonical write targets `G[q + 1]` reads the previous
+state cell. Look-ahead remains invalid. Global evidence proves that every read is out of bounds and
+zero-padded, lies in the zero-initialized boundary region (possibly overlaid by one base write), or has
+a unique recurrence producer whose traversal rank is strictly less than the consumer's. Thus strict
+causality follows from read geometry, canonical successor writes, and traversal rank rather than from
+requiring a nonzero lag.
+
+Every recurrence coordinate reads one immutable snapshot. A block returns one complete collection of
+next-state results. Only the scan worker commits that collection atomically after all sibling results
+have been computed. Partial updates and read-after-write between sibling states are forbidden.
+
+This snapshot requirement is stated as a target, not as a description of existing behavior. The
+current legacy scan evaluator (`LeanNCD/Eval/Scan.lean`) is **known nonconforming**: Wave F F0 pinned a
+Jacobi/Gauss-Seidel discriminator fixture in `test/Eval/ScanTest.lean` showing that a later `recur`
+statement observes an earlier sibling's just-written value, so permuting two sibling recurrences
+changes the result. F0 also pinned a multi-base-write collision fixture showing that the legacy
+evaluator silently applies last-write-wins where the checked worker is required to reject. Both
+defects are recorded deliberately and remain unfixed; the checked scan worker that would satisfy this
+subsection is the F3 target and has no code. A scan backend must therefore not be validated against
+the legacy evaluator as an oracle — the two disagree by design until F3 lands.
+
+This divergence is transitional, not permanent: once Backend Eval IR reaches parity, `LeanNCD/Eval/`
+retires outright and `EvalPlan` becomes the sole evaluator. F3's checked scan worker is therefore a
+replacement target for the legacy evaluator, not a reconciliation with it.
+
+### 2.4 Invariant matrix
+
+The preceding subsections define behavior without committing to arrays, vectors, proofs, or dependent
+indices. **Refinement evidence** is a proof or independently validated witness that a transformed plan
+or executable preserves its source's observable behavior under the stated numeric contract. The
+matrix now connects each semantic requirement to its present enforcement and to the stronger
+representation considered in
+[Section 7](#7-staged-checked-representation-strategy):
+
+For interpreting the final column, **Stage A** means low-risk changes to validation boundaries and
+closed tags, **Stage B** means a prototype of stronger dependent types for contractions, and
+**Stage C** means a separate prototype of stronger scan types. “Deferred” marks ideas not proposed
+for any of those stages. [Section 7](#7-staged-checked-representation-strategy) motivates and details
+this staging.
+
+| Invariant | Semantic requirement | Current enforcement | Candidate stronger encoding |
+|---|---|---|---|
+| Slot scope and bounds | References stay within one slot namespace | Checker bounds tests and graph evidence | Stage A distinct namespaces; Stage B signature-indexed slots |
+| Signature-derived shape | Reads and destinations agree with selected signatures | Repeated-shape comparisons | Stage B shapes derived from slot signatures |
+| Positional availability | Every read follows an input or earlier producer | `checkPlan` graph-order evidence | Deferred availability-indexed construction |
+| Affine dimensions | Matrix is rectangular; row/bias ranks match source and iteration ranks | Array-length checks | Stage B rank-indexed affine maps |
+| Bounds before flattening | Invalid multidimensional coordinates zero-pad and never alias storage | Shared Dense/lowering primitives plus mutations | Executable refinement evidence or independent translation oracle |
+| Basis meaning | Context, output, and reduction positions form a complete disjoint basis | Partition checks | Stage B basis permutation with derived projections |
+| Ordered numeric folds | Factor, reduction, and term folds are left-associated in source order | Dense semantics and low-bit fixtures | Stage A closed mode and operational fold API |
+| Binding alignment | Required names align exactly; materialization remains ordered | Preparation checks and arrays | Stage A length-correct required bindings |
+| Block flow | Ports are valid and assignments are acyclic and available | F2 checked-block target; not landed | Checked block-flow evidence |
+| Positive scan extents | Predecessor extents cannot underflow | F0 landed contract evidence; F3 checker target not landed | Stage C positive extent witness |
+| Advancing dimensions | State dimensions are in range and pairwise distinct | F0 landed contract evidence; F3 structural checks not landed | Stage C bounded distinct-dimension witness |
+| Base substitution | Pinned UIDs are residualized and removed from RHS bases | F0 landed legacy-behavior fixtures; F4 compiler target not landed | Stage C raw-to-checked residualization evidence |
+| Base initialization | Complete histories start at zero; disjoint pin-mask overlays may leave boundary cells zero | F0 landed policy fixtures; F3 checked worker not landed | Stage C boundary-policy witness plus checked regions |
+| Write geometry | Base regions touch the lower boundary; step writes target canonical `q + 1` | F0 landed geometry fixtures; F3 recognition/checks not landed | Stage C checked pin masks and successor witness |
+| Causal reads | Per-factor affine descriptors forbid look-ahead, allow zero lag, and resolve recurrence reads to lower-rank producers | F0 landed causality fixtures; F3 certificate not landed | Stage C raw-aligned per-factor descriptor plus global proof |
+| Traversal and materialization | Axis-zero-fastest traversal yields complete histories | F0 landed policy fixtures; F3 checked worker not landed | Stage C closed tags and validated witnesses |
+| Snapshot and commit | Sibling results share one snapshot and commit atomically | F0 landed defect fixture; F3 immutable worker not landed | Stage A distinct snapshot/result types; Stage C snapshot-policy witness |
+| Backend evidence | An optimization cannot claim ordered-reference status | Explicit lowering modes and AST/mutation checks | Stage A evidence-indexed kernels and private constructors |
+
+The matrix separates semantic requirements from implementation choices. `Fin`, vectors,
+permutations, arrays plus proofs, and indexed inductives are candidates, not semantics. It is also the
+bridge to the staged representation strategy developed next.
+
+Canonical semantics fix what every backend must mean; the next question a client actually hits is how
+a checked plan crosses the Lean/Python boundary as a structured, versioned artifact before any backend
+runs it at all.
+
+## 3. Raw and portable representation
+
+### 3.1 Phase pipeline and ownership
+
+Raw and portable values are ordinary DTOs (data-transfer objects: tagged records that carry data but
+are not executable) built from conventional integers, arrays, tags, bindings, warnings, and version
+metadata. A **raw DTO** is the unchecked construction form produced after tagged
+wire decoding has recognized every constructor. Unknown tags fail in the preceding decode phase with
+a path-aware error; known but invalid values remain in the raw DTO for semantic diagnostics. A
+**portable artifact** is its canonically encoded, versioned cross-language envelope after projection
+from a prepared plan; it is portable data, not a second semantic language. Both intentionally preserve
+offending known data for migration and path-aware diagnostics, and neither executes.
+[Appendix A](#appendix-a-ordinary-raw-and-portable-dtos) gives their complete conceptual field
+ownership.
+
+The essential trust transition is:
+
+```text
+raw DTO
+  -> Lean checking
+  -> checked Backend Eval IR
+  -> portable raw projection
+  -> independent Python validation
+```
+
+Including preparation and executable lowering gives the complete pipeline:
+
+```text
+Lean production:
+  RawEvalPlan
+  -> Lean semantic checker -> CheckedEvalPlan
+  -> PreparedPlan
+  -> erasure + canonical encoding -> portable artifact bytes
+
+Python consumption:
+  portable artifact bytes
+  -> tagged decoding/migration
+  -> PortableBackendPlan raw DTO | path-aware decode error
+  -> independent semantic validation -> ValidatedPortablePlan
+  -> backend capability validation -> capability result
+  -> executable lowering -> non-executable candidate
+  -> executable validation -> private JAX executable | private PyTorch executable
+```
+
+This pipeline instantiates the ownership defined in
+[Section 2.1](#21-semantic-domain-and-ownership) rather than redefining it.
+Decoding/migration returns an ordinary untrusted DTO and retains precise locations such as
+`steps[3].terms[1].factors[2].map.bias`.
+
+### 3.2 Identity and independent validation
+
+A **semantic identity** combines schema major version, semantic version, and a domain-separated digest
+of canonical payload bytes. Its canonical string encoding is the semantic fingerprint. The schema
+major version marks incompatible wire shapes; the semantic version marks meaning; schema minor and
+producer versions are provenance. Numeric mode, ordered bindings, warnings, and exact fixed-endian
+`UInt64` float bits have one payload owner. Derived indices, labels, devices, exports, and cache
+metadata are excluded from identity.
+
+The three post-decode validations are intentionally separate:
+
+| Phase | Checks | Failure meaning |
+|---|---|---|
+| Semantic | Tags, slots, signatures, bindings, map ranks, basis permutations, mode, graph flow, positive extents, admitted scan geometry, coverage, uniqueness, causality | Malformed or semantically invalid artifact |
+| Capability | Backend dtype, evidence contract, scan implementation, integer range, and feature support | Valid semantics unsupported by the selected backend |
+| Executable | Table lengths, masks, safe indices, einsum labels, conversion, candidate alignment, scan refinement, and evidence index | Invalid or mislabeled backend lowering |
+
+Decode applicatively into an untrusted DTO and accumulate path-aware independent errors, following
+the error-accumulating composition described by
+[McBride and Paterson](#ref-applicative-programming). Only
+validator-controlled constructors create immutable `ValidatedPortablePlan` values. Artifact
+validation reconstructs every semantic obligation independently of Lean proofs. A validated scan
+retains the exact outer signature table used to check captures and destinations. The resulting
+`ValidatedPortablePlan` pairs the envelope with a `CheckedPortablePlan` exposing the common table,
+numeric mode, aligned checked steps, bindings, and graph evidence described in Appendix A. This is the
+defined handoff consumed by executable lowering.
+
+Runtime adapters separately reject wrong input count, name, shape, dtype, and uninitialized slots
+before JAX tracing or PyTorch compilation. Backend caches and exports are reproducible derivatives of
+the semantic fingerprint; they never replace the portable artifact. Once independent validation has
+reconstructed trusted semantics, the backend may choose an implementation; that is the subject of
+[Section 4](#4-jax-and-pytorch-executable-architecture) and
+[Appendix D](#appendix-d-jax-and-pytorch-executable-types).
+
+## 4. JAX and PyTorch executable architecture
+
+### 4.1 Why the JAX interpreter can remain purely functional
+
+Backend Eval IR is backend-neutral, but its explicit positional store, ordered graph, and explicit
+scan state fit JAX's mandatory functional execution model particularly well. The JAX backend should
+therefore be a direct pure interpreter rather than another generated-source or object-graph compiler:
+
+```text
+AssignPlan : Store -> Store
+PlanStep   : Store -> Store
+EvalPlan   : Inputs -> Outputs
+Scan step  : State × Input -> State × Output
+```
+
+After host-side validation and executable lowering, graph execution is composition of pure store
+transformations in checked order:
+
+```python
+def evaluate(executable, inputs):
+    store = place_inputs(executable, inputs)
+    for step in executable.steps:  # static traversal while tracing
+        store = step(store)
+    return materialize_outputs(executable, store)
+```
+
+This eliminates JAX-side Python source generation, module hierarchies, parameter registration,
+mutable buffers, device-moving methods, and checkpoint object lifecycles. Structural plan metadata
+belongs in immutable [pytree auxiliary data](#ref-jax-pytrees); inputs, state tensors, and large lookup
+tables remain dynamic pytree leaves. A stable top-level evaluator is keyed by the verified semantic
+identity rather than by closure-specific function objects.
+
+One evaluator can then participate compositionally in JAX transformations:
+
+| Transformation | Backend benefit |
+|---|---|
+| `jax.jit` | Compile the complete pure evaluator |
+| `jax.grad` | Differentiate losses through the same evaluator |
+| `jax.vmap` | Add batching or independent-coordinate parallelism without a second evaluator |
+| `jax.remat` | Add checkpointing without changing Backend Eval IR |
+| JAX sharding transformations | Distribute suitable tensor dimensions while retaining explicit semantics |
+| JAX export | Derive a deployable executable from the validated evaluator |
+
+This composability is a genuine JAX advantage. A new PyTorch evaluator can also follow a functional
+discipline through tensor functions, `torch.func`, functionalization, and `torch.compile`, but purity
+is native and transformation-defining in JAX rather than an optional layer over modules and mutation.
+
+Scans receive an additional benefit. `StateSnapshot` is a pytree carry; the pure step consumes it and
+returns complete `NextStateResults`, and the scan worker alone forms the next snapshot. This directly
+represents snapshot independence and atomic commit. When its refinement gate passes, `jax.lax.scan`
+stages one loop instead of unrolling one graph copy per recurrence coordinate. Heterogeneous outer
+graph steps remain static traversal outside that loop.
+
+Future stochastic operations should preserve the same discipline by taking and returning explicit
+PRNG keys. Random splitting and reproducibility then remain visible dataflow rather than hidden
+global state.
+
+Purity does not itself establish `orderedReference64`. `jit`, `vmap`, `remat`, sharding, and
+`lax.scan` may change compilation and floating-point behavior; every transformation admitted under
+the ordered contract must retain the low-bit and boundary gates. Plan structure and shapes also
+remain static compilation inputs, so structural changes may require recompilation. These obligations
+lead directly to the admission and adoption gates in
+[Section 6](#6-adoption-plan-and-gates).
+
+### 4.2 JAX and PyTorch interpretations
+
+The common lowering protocol does not erase backend differences. The table below shows which choices
+belong to each executable rather than to Backend Eval IR:
+
+| Concern | JAX executable | PyTorch executable |
+|---|---|---|
+| Values | `jax.Array` | `torch.Tensor` |
+| Affine reference | Safe-index arrays plus `jnp.where` | Safe-index tensors plus `torch.where` |
+| Projection optimization | `jnp.einsum` | `torch.einsum` |
+| Ordered folds | [`jax.lax.fori_loop`](#ref-jax-fori-loop) or validated equivalent | Explicit sequential operations or validated compiled loop |
+| Graph execution | Static traversal during tracing | Static traversal in eager or compiled execution |
+| Differentiation | `jax.grad` | [PyTorch autograd](#ref-torch-autograd) |
+| Compilation | [`jax.jit`](#ref-jax-jit) | [`torch.compile`](#ref-torch-compile) |
+| Scan optimization | [`jax.lax.scan`](#ref-jax-scan) after refinement | Compiled state loop after refinement |
+| Derivative export/cache | [JAX export](#ref-jax-export) or [persistent cache](#ref-jax-persistent-cache) | [`torch.export`](#ref-torch-export) or FX-derived artifact |
+
+Neither backend earns `orderedReference64` — the ordered-reference evidence label defined in
+[Section 4.3](#43-evidence-indexed-executable-lowering) below — from sequential-looking source alone:
+transformed and compiled execution must pass the low-bit order fixtures; JAX itself documents that
+[JIT compilation can change exact numerics](#ref-jax-jit-numerics).
+
+For PyTorch, keep tensor data separate from immutable structure and introduce
+`torch.compile`/`torch.export` representations only at the executable boundary. Parameters, modules,
+devices, optimizers, and checkpoints are adapter concerns, not Backend Eval IR fields.
+
+### 4.3 Evidence-indexed executable lowering
+
+Backend Eval IR states what execution means. Backend-specific executable IR states how it runs.
+An **executable candidate** is a backend lowering that cannot run until validated. A **kernel** is the
+implementation selected for one local assignment; a scan implementation contains kernels for its base
+and step blocks plus a traversal choice. A **refinement predicate** states that an assignment kernel or
+scan implementation realizes its retained semantic source. An **evidence index** records the numerical
+claim justified for that implementation, preventing an experimental optimization from being labeled
+as ordered reference execution. The corresponding non-copy-ready types are isolated in
+[Appendix D](#appendix-d-jax-and-pytorch-executable-types).
+
+Portable affine-table and einsum specifications are ordinary validated data, never semantic
+constructors. Lowering produces a non-executable candidate retaining its semantic source. A separate
+validator checks table lengths, safe indices, masks, label limits, integer conversion, scan
+refinement, and whole-plan alignment before calling a private executable constructor.
+
+JAX and PyTorch have distinct kernel sums and executable types because their implementation choices
+differ even though their semantic source is shared. For both, an evidence index separates
+`orderedReference64` from `optimizationExperiment`: ordered affine kernels may inhabit the former,
+while einsum may inhabit only the latter. A mixed executable derives its aggregate evidence from all
+contained assignment kernels, scan child kernels, and scan implementation choices: it is
+ordered-reference only if every member is, and is experimental if any member is. Compact affine and
+scan implementations require new capability results, refinement predicates, and differential gates.
+
+## Part II — Evidence Record
+
+Part I specified the design; this part is the justification record — what the current experimental
+bridge has already demonstrated, and the gates a future change must clear to keep demonstrating it.
+Both halves are about evidence rather than semantics or roadmap, which is why they sit together even
+though the current bridge (Section 5) predates the adoption gates (Section 6) that will govern its successors.
+[Part III](#part-iii--research-agenda) covers what is not yet decided.
+
+## 5. Current system and evidence
+
+### 5.1 Checked-plan boundary
 
 The bridge evaluates neither Tensor Logic syntax nor the upstream `lean4-mlir` `NetSpec`. It consumes
 LeanNCD's existing checked evaluation plan:
@@ -171,7 +695,7 @@ For iteration coordinate `u`, an affine read computes:
 source[d] = bias[d] + sum(coeffs[d, k] * u[k] for k)
 ```
 
-### 1.2 Ordered reference semantics
+### 5.2 Ordered reference semantics
 
 The Lean Dense evaluator is the oracle. It executes nodes in checked graph order and preserves source
 array order at all three scalar folds:
@@ -205,10 +729,10 @@ coordinate first can alias valid storage. Dense and the current lowerer share:
 | `flatIndex` | Flatten a valid coordinate in row-major order |
 
 Sharing this vocabulary prevents representational drift but creates a common-mode risk; the
-[baseline and backend optimization gates](#72-five-adoption-gates) therefore require independent
+[baseline and backend optimization gates](#62-five-adoption-gates) therefore require independent
 validation or proof of the affine lowering.
 
-### 1.3 Current JAX lowerings
+### 5.3 Current JAX lowerings
 
 A **lowering** translates validated semantics into a concrete candidate implementation. The numerical
 claim that candidate may make is established only by executable validation and its evidence index.
@@ -274,7 +798,7 @@ Concrete values cross the boundary as shape plus `Float.toBits` `UInt64` payload
 `uint64` arrays as `float64` and verifies dtype, shape, and bits, preserving signed zero and avoiding
 decimal round-trip ambiguity.
 
-### 1.4 Evidence validating the experimental JAX bridge
+### 5.4 Evidence validating the experimental JAX bridge
 
 Three test runners support different parts of the bridge's correctness claim. In the table, the
 **test population** identifies which checked plans are executed, while **observations** identifies
@@ -308,7 +832,7 @@ generated module has identical *size* on both dates, which is consistent with a 
 generator but does not establish it: the runner records `artifact_bytes` and no digest, and the earlier
 artifact no longer exists to compare. Recording a payload digest here would make the property checkable
 and would exercise, at trivial cost, the same canonical-encoding discipline
-[Section 5.2](#52-identity-and-independent-validation) requires of the portable artifact:
+[Section 3.2](#32-identity-and-independent-validation) requires of the portable artifact:
 
 | Quantity | 2026-08-10 | 2026-08-12 |
 |---|---|---|
@@ -335,8 +859,8 @@ emits one safe index and one validity bit per coordinate of `allCoords iteration
 full iteration domain with contracted axes included — the shape of the contraction's work, not of its
 source text. At corpus scale that product is two or four, which is exactly why the tables are a
 minority of the artifact here and why this corpus cannot exhibit the growth.
-[Section 2](#2-architectural-decision-and-principles) records domain-sized tables as a scalability
-risk and [Section 6](#6-jax-and-pytorch-executable-architecture) assigns compact kernels to the
+[Section 1](#1-architectural-decision-and-principles) records domain-sized tables as a scalability
+risk and [Section 4](#4-jax-and-pytorch-executable-architecture) assigns compact kernels to the
 backend executable phase, retaining safe-index arrays as the JAX affine-reference kernel. Whether the
 table path remains viable for any non-toy program is an open question that no measurement in this
 evidence base answers; producing one — a single mid-sized contraction, timed and sized — is the
@@ -379,7 +903,7 @@ therefore unrunnable — and the corpus runner with them, since it generates the
 same file — while this section continued to cite their results. The literals now use named-field
 syntax, matching the F1-updated `KernelDenseTest` fixtures and making them robust to future field
 additions; the 2026-08-12 column above is the post-fix re-measurement. The durable lesson belongs to
-[Section 7.2](#72-five-adoption-gates)'s baseline gate: an evidence claim whose driver no ordinary
+[Section 6.2](#62-five-adoption-gates)'s baseline gate: an evidence claim whose driver no ordinary
 build compiles will rot silently behind the next IR change, so that gate must mean *running the
 runners*, not restating their previous output.
 
@@ -389,710 +913,17 @@ The supported claim is deliberately bounded:
 > interpreter agrees with LeanNCD Dense `reference64` evaluation on the measured CPU platform.
 
 This does not establish cross-platform equivalence, scan or nonlinear semantics, production-scale
-performance, or proof-level correctness of JAX/XLA. Those limits explain the next architectural step:
-preserve this path as the oracle while replacing its untyped boundary with explicit semantic,
-transport, and executable phases.
+performance, or proof-level correctness of JAX/XLA. Those limits are exactly what the adoption gates
+below exist to close before any successor design may claim more than this bridge already has.
 
-## 2. Architectural decision and principles
-
-The present bridge has four strengths worth preserving: it starts from checked semantics; separates
-reference and optimization intent; excludes unsafe indexing structurally; and has full-corpus,
-boundary, gradient, low-bit-order, and mutation evidence.
-
-The design response uses four terms throughout the paper. A **portable artifact** is the versioned,
-ordinary-data representation exchanged across the Lean/Python boundary. A **semantic fingerprint** is
-the canonical encoded form of its semantic identity. **Capability validation** decides whether a backend supports
-already-valid semantics; it does not repair them. An **evidence index** is a type-level label for the
-numerical claim an executable is allowed to make.
-
-Across the boundary, Lean erases proof-only fields from a checked, prepared plan and canonically
-encodes the remaining versioned data as bytes. Python decodes those bytes into an untrusted ordinary
-data object, independently revalidates its semantics and backend capabilities, and only then lowers
-it to an executable. Concrete tensor values travel separately as a shape plus fixed-endian `UInt64`
-binary64 bit patterns, preserving exact values such as signed zero. [Section 5](#5-raw-and-portable-representation)
-specifies this exchange and its trust boundary.
-
-Here, **checking** is Lean's semantic validation of a `RawEvalPlan`: it verifies tensor shapes,
-slots, affine maps, iteration-basis partitions, numeric mode, and graph flow before privately
-constructing a `CheckedEvalPlan`. The remaining risks arise after that point:
-
-| Risk | Current form | Required response |
-|---|---|---|
-| Untyped boundary | Generated source and nested `dict`/`list` values | Typed, versioned portable artifact |
-| Rendering mixed with lowering | Lean constructs Python syntax directly | Structural IR followed by codecs |
-| No independent artifact validation | Python trusts emitted structure | Separate semantic, capability, and executable validators |
-| Shared coordinate implementation | Dense and lowering reuse primitives | Proof or independent translation oracle |
-| Domain-sized affine tables | Index and mask per iteration coordinate | Keep as oracle; add validated compact kernels later |
-| Implicit JIT identity | Python containers captured in closures | Stable fingerprints and backend runtime plans |
-| Weak dimensional types | Shapes, ranks, and axis partitions are repeated arrays | Prototype staged derivation from signatures, ranked maps, and basis layouts that map semantic axis roles to iteration positions |
-| Open floating algebra | Arbitrary operations appear lawful by construction | Closed numeric-mode-indexed operational algebra |
-| General scan maps | Invalid writes and look-ahead are expressible then rejected | Prototype admitted pin-mask/successor writes and affine-derived causal descriptors in Stage C |
-| Flat lowering mode | Constructor encodes backend choice | Evidence-indexed backend kernel sums |
-
-These are organizational and scalability limitations, not evidence against the Wave C result.
-Section 1 shows that `EvalPlan` is already the point where backend-relevant meaning becomes explicit:
-Lean checks its shapes, affine reads, ordered contractions, and graph flow; Dense interprets it as the
-reference semantics; and the JAX experiment interprets the same checked plans with exact agreement
-over the measured Wave C corpus. The table above identifies weaknesses in transport, independent
-validation, typing, and executable lowering—not a missing semantic language. Introducing a parallel
-JAX or PyTorch plan would duplicate these semantics and add a translation-equivalence obligation
-without addressing those weaknesses.
-
-**Decision:** evolve the existing `EvalPlan` family into the common Backend Eval IR. Affine reads,
-ordered contractions, graph flow, and the planned scan extension belong to that shared semantic
-language; lookup tables, einsum, `lax.scan`, compiled PyTorch loops, caches, and exports remain backend
-implementations.
-
-The new PyTorch evaluator is an EvalPlan backend. Compatibility with the existing `torch_compile/`
-morphism-to-`nn.Module` compiler is explicitly **not** a design constraint.
-
-Backend Eval IR remains an inspectable **deep embedding**: plans are explicit data that interpreters
-can traverse, serialize, validate, and analyze, rather than host-language functions that hide their
-structure. This is a deliberate contrast with finally-tagless encodings, whose operations are
-represented through a host-language interface ([Carette, Kiselyov, and Shan](#ref-finally-tagless)).
-Dense execution, portable encoding, capability analysis, JAX lowering, PyTorch lowering, cost
-analysis, and proofs are separate interpreters over one closed step language. Centralized traversal,
-in the general fold-based style described by [Gibbons](#ref-origami), dispatches each assignment or
-scan once and lets an interpreter thread a store or build executable nodes. A **smart constructor**
-may provide a convenient validated way to build this data, but must not replace the inspectable
-representation needed for serialization, structural proof, corpus generation, and migration. New
-operators land with checking, portable validation, reference interpretation, and differential tests
-rather than through callbacks, string operators, embedded Python, generic custom calls, or silent
-fallback.
-
-This decision leaves four questions, answered in order below: what every backend must mean
-([Section 3](#3-canonical-backend-eval-ir-semantics)), how strongly Lean should encode that meaning
-([Section 4](#4-staged-checked-representation-strategy)), how it crosses a trust boundary
-([Section 5](#5-raw-and-portable-representation)), and how each backend may execute it
-([Section 6](#6-jax-and-pytorch-executable-architecture)).
-
-## 3. Canonical Backend Eval IR semantics
-
-This section is the sole authority for what Backend Eval IR means. It is intentionally independent of
-Lean encodings, wire codecs, lookup tables, einsum labels, pytrees, modules, devices, and caches.
-Dense, JAX, and PyTorch are interpreters of these semantics. Later representations may make some
-requirements structural, but do not change their meaning. The appendices are subordinate to this
-section: [Appendix A](#appendix-a-ordinary-raw-and-portable-dtos) sketches ordinary transport data,
-[Appendices B](#appendix-b-candidate-dependent-checked-contraction-core) and
-[C](#appendix-c-candidate-checked-scan-refinements) explore stronger checked encodings, and
-[Appendix D](#appendix-d-jax-and-pytorch-executable-types) sketches backend executables.
-
-### 3.1 Semantic domain and ownership
-
-A plan has scoped tensor slots. Each slot belongs to exactly one namespace (outer plan or one block),
-has one tensor signature and shape, and cannot be confused with an equally numbered slot in another
-scope. Inputs initialize designated outer slots. Steps execute in positional graph order, read only
-available slots, and produce designated destination slots. **Materialization** is the ordered
-projection that reconstructs source-visible names from the final positional store.
-
-Assignments are **contextual**: a context coordinate is supplied by the enclosing block or scan rather
-than generated by the assignment itself, while the output coordinate ranges over the destination
-signature. A term's canonical basis is therefore `context ++ output ++ reduction`; iteration order
-may permute that basis but must preserve a complete, disjoint classification. The reduction shape
-determines multiplicity even when an affine coefficient is zero.
-
-Having defined the term's iteration basis, the remaining question is how each factor uses an
-iteration coordinate to address its source tensor. An affine read selects a source slot and maps
-iteration coordinate `u` to each source coordinate:
-
-```text
-source[d] = bias[d] + sum(coefficients[d, k] * u[k] for k)
-```
-
-Coefficients and intermediate coordinates have mathematical-integer meaning. Every source dimension
-is bounds-checked before row-major flattening. An out-of-bounds coordinate contributes numeric zero;
-it must never alias valid storage. Empty source storage follows the same zero-padding semantics.
-
-These local meanings must survive several representations. A **semantic identity** combines schema
-major version, semantic version, and the digest of one canonical portable payload;
-[Section 5.2](#52-identity-and-independent-validation) defines those fields precisely. The phase table
-below assigns one role to each representation so later sections can add detail without redefining
-ownership:
-
-| Phase | Sole owner and semantic role |
-|---|---|
-| Raw | Untrusted, diagnosable construction/decoded values; may be malformed and never execute |
-| Checked | Backend-neutral semantic plan whose local obligations and global evidence have been validated |
-| Prepared | A checked plan plus required-input bindings, ordered materialized bindings, and warnings |
-| Portable | Canonical ordinary-data projection of a prepared plan; carries versions and semantic identity, never proof authority |
-| Executable | Backend-specific validated lowering of one portable semantic plan; only this phase contains implementation choices |
-
-Required-input bindings are length-correct and positionally aligned with plan input slots, with unique
-names. Ordered materialized bindings are reconstructed left-to-right and retain existing
-last-write-wins behavior, including repeated names. These roles must not be conflated.
-
-[Appendix A](#appendix-a-ordinary-raw-and-portable-dtos) illustrates Raw, Prepared, and Portable
-ownership. [Appendix B](#appendix-b-candidate-dependent-checked-contraction-core) and
-[Appendix C](#appendix-c-candidate-checked-scan-refinements) illustrate candidate Checked
-representations. [Appendix D](#appendix-d-jax-and-pytorch-executable-types) illustrates Executable
-ownership. With the phase boundary fixed, the next two subsections define the local contraction
-semantics and then the graph/scan semantics that every representation must preserve.
-
-### 3.2 Contractions and ordered floating-point execution
-
-The current raw plan calls its numeric mode `reference64`. It means ordered sum-product over binary64,
-not merely “use 64-bit floats.” This document calls the corresponding semantic contract
-`reference64SumProduct` to make both the arithmetic and the permitted operations explicit; Stage A
-would close the checked representation around that meaning. For each output coordinate, the
-interpreter evaluates factors, reduction coordinates, and terms in stored order:
-
-```text
-factorFold([])           = float64(1)
-factorFold(xs ++ [x])    = float64(factorFold(xs) * x)
-reductionFold([])        = float64(0)
-reductionFold(xs ++ [x]) = float64(reductionFold(xs) + x)
-termFold([])             = float64(0)
-termFold(xs ++ [x])      = float64(termFold(xs) + x)
-```
-
-Each accumulator is the left operand. Reduction coordinates use row-major order. Empty factors
-produce one; empty reductions and empty term lists produce zero. This is an operational
-floating-point specification, not a semiring: it claims neither associativity nor distributivity and
-makes no identity claim over all IEEE-754 values. Adding a numeric mode requires a new closed
-semantic case with an explicit interpretation.
-
-All nonlinear operations are intended to eventually be supported, but they require a second numeric
-contract rather than an extension of this one. `reference64SumProduct` is closed over +/×: its only
-claims are evaluation order and the fold equations above. `exp`, `tanh`, `erf`, and other transcendental
-functions are not part of that algebra, and their binary64 results are not bit-reproducible across
-libm implementations, XLA versions, or devices, so "support every nonlinearity" and "bit-exact ordered
-reference" cannot both hold under one contract. This document therefore names a second, separately
-closed contract, `reference64Transcendental`, for nonlinear steps: it fixes the function computed and
-bounds agreement by a stated per-function ULP tolerance instead of asserting bit-exactness. Differential
-testing follows the same split — affine and sum-product steps compare bit-exact against the ordered
-reference; nonlinear steps compare within their contract's ULP bound. Neither contract exists as a
-supported step yet: `LeanNCD/Eval/Plan/Compile.lean` rejects every pointwise and axiswise
-nonlinear statement via `unsupportedNonlin` ahead of either producer, checker, or interpreter support.
-
-### 3.3 Blocks, graph flow, and scans
-
-Contractions explain one assignment; blocks and scans explain how assignments participate in larger
-stateful graphs. A **block** is a scoped, acyclic local graph with its own tensor slots, context shape,
-input and output ports, and ordered assignments. A **capture** binds an external value or immutable
-state snapshot to a block input. A **state** is a persistent tensor history produced by a scan, while a
-scratch slot exists only for one block invocation. Causal evidence belongs to the factor reads that
-address captured state, not to the capture itself.
-
-An outer **`PlanStep`** is one closed graph instruction, initially either an assignment or a scan.
-Every step exposes one uniform graph interface:
-
-```lean
-def PlanStep.sourceSlots : PlanStep → Array TensorSlot
-def PlanStep.destinationSlots : PlanStep → Array TensorSlot
-```
-
-These are derived functions, not stored fields. Assignments derive one destination and their factor
-sources; scans derive their external sources and ordered state destinations. `checkPlan`, diagnostics,
-and backend traversals must use these functions rather than independently reconstructing graph
-dependencies. Broader summaries such as slot provenance or feature sets should be added only when a
-second real consumer would otherwise duplicate their derivation; the design does not require a
-separate `PlanManifest`.
-
-Nonlinear operations, once supported, become two further `PlanStep` cases rather than fields on
-`AssignPlan`, mirroring the source language's existing split at
-`LeanNCD/DSL/Ast.lean`: `Nonlin = identity | pointwise PointwiseFn | axiswise AxiswiseFn (Option BoolExpr)`
-(`identity` needs no step of its own — it applies no transformation), where `PointwiseFn` covers
-`relu`/`sigmoid`/`tanh`/`gelu`/`leakyrelu` and `AxiswiseFn` covers
-`softmax`/`normalize`/`l2normalize`. In TL a nonlinearity applies to the whole right-hand side after
-aggregation, not per factor, so a field on `AssignPlan` would blur that boundary; a separate step
-preserves `AssignPlan` as a pure ordered sum-product under `reference64SumProduct` and lets nonlinear
-steps carry `reference64Transcendental` evidence ([Section 3.2](#32-contractions-and-ordered-floating-point-execution))
-independently. `PointwiseFn` takes no mask argument by type, so a newly added pointwise function
-cannot silently forget masking; `AxiswiseFn` carries its optional predicate explicitly instead.
-
-A **scan** repeatedly invokes base and step blocks to construct complete state histories. Its
-**history extents** are the final sizes along advancing axes; subtracting one from each gives the step
-domain. A scan has positive history extents and therefore derived predecessor/step extents. Each state names
-bounded, distinct advancing dimensions. Complete histories are zero-initialized, then declared base
-writes overlay pairwise-disjoint pin-mask regions in source order. A base region may leave dimensions
-free and pin others to literals, but it must touch the lower boundary by pinning at least one advancing
-dimension to zero. Uncovered boundary cells retain their initialized zero value. Step execution
-traverses coordinates in `axisZeroFastest` mixed-radix order and writes the canonical `q + 1`
-successor for every advancing dimension. Complete-history materialization is semantic: compact
-carries are permitted only when proven to refine it.
-
-Wave F base-pin substitution is mandatory. If UID `u` is pinned to `p[u]`, every RHS affine row is
-residualized before block checking:
-
-```text
-bias'[d] = bias[d] + sum(coeff[d, u] * p[u] for pinned u)
-```
-
-Pinned UIDs are removed from the affine input basis and from the context/output/reduction basis.
-Correct destination geometry never excuses an un-specialized RHS.
-
-State-read causality is derived from each factor's checked affine rows, not from a second capture-level
-offset. Checked reads retain erasure/alignment evidence to their raw factors and source paths, so a
-rejection remains factor-local and the derived descriptor cannot disagree with the address executed.
-Relative to invocation coordinate `q`, each advancing-state row has unit coefficient for its matching
-context position, zero coefficients for other basis positions, and non-positive bias. An
-all-zero bias is valid: reading `G[q]` while the canonical write targets `G[q + 1]` reads the previous
-state cell. Look-ahead remains invalid. Global evidence proves that every read is out of bounds and
-zero-padded, lies in the zero-initialized boundary region (possibly overlaid by one base write), or has
-a unique recurrence producer whose traversal rank is strictly less than the consumer's. Thus strict
-causality follows from read geometry, canonical successor writes, and traversal rank rather than from
-requiring a nonzero lag.
-
-Every recurrence coordinate reads one immutable snapshot. A block returns one complete collection of
-next-state results. Only the scan worker commits that collection atomically after all sibling results
-have been computed. Partial updates and read-after-write between sibling states are forbidden.
-
-This snapshot requirement is stated as a target, not as a description of existing behavior. The
-current legacy scan evaluator (`LeanNCD/Eval/Scan.lean`) is **known nonconforming**: Wave F F0 pinned a
-Jacobi/Gauss-Seidel discriminator fixture in `test/Eval/ScanTest.lean` showing that a later `recur`
-statement observes an earlier sibling's just-written value, so permuting two sibling recurrences
-changes the result. F0 also pinned a multi-base-write collision fixture showing that the legacy
-evaluator silently applies last-write-wins where the checked worker is required to reject. Both
-defects are recorded deliberately and remain unfixed; the checked scan worker that would satisfy this
-subsection is the F3 target and has no code. A scan backend must therefore not be validated against
-the legacy evaluator as an oracle — the two disagree by design until F3 lands.
-
-This divergence is transitional, not permanent: once Backend Eval IR reaches parity, `LeanNCD/Eval/`
-retires outright and `EvalPlan` becomes the sole evaluator. F3's checked scan worker is therefore a
-replacement target for the legacy evaluator, not a reconciliation with it.
-
-### 3.4 Invariant matrix
-
-The preceding subsections define behavior without committing to arrays, vectors, proofs, or dependent
-indices. **Refinement evidence** is a proof or independently validated witness that a transformed plan
-or executable preserves its source's observable behavior under the stated numeric contract. The
-matrix now connects each semantic requirement to its present enforcement and to the stronger
-representation considered in
-[Section 4](#4-staged-checked-representation-strategy):
-
-For interpreting the final column, **Stage A** means low-risk changes to validation boundaries and
-closed tags, **Stage B** means a prototype of stronger dependent types for contractions, and
-**Stage C** means a separate prototype of stronger scan types. “Deferred” marks ideas not proposed
-for any of those stages. [Section 4](#4-staged-checked-representation-strategy) motivates and details
-this staging.
-
-| Invariant | Semantic requirement | Current enforcement | Candidate stronger encoding |
-|---|---|---|---|
-| Slot scope and bounds | References stay within one slot namespace | Checker bounds tests and graph evidence | Stage A distinct namespaces; Stage B signature-indexed slots |
-| Signature-derived shape | Reads and destinations agree with selected signatures | Repeated-shape comparisons | Stage B shapes derived from slot signatures |
-| Positional availability | Every read follows an input or earlier producer | `checkPlan` graph-order evidence | Deferred availability-indexed construction |
-| Affine dimensions | Matrix is rectangular; row/bias ranks match source and iteration ranks | Array-length checks | Stage B rank-indexed affine maps |
-| Bounds before flattening | Invalid multidimensional coordinates zero-pad and never alias storage | Shared Dense/lowering primitives plus mutations | Executable refinement evidence or independent translation oracle |
-| Basis meaning | Context, output, and reduction positions form a complete disjoint basis | Partition checks | Stage B basis permutation with derived projections |
-| Ordered numeric folds | Factor, reduction, and term folds are left-associated in source order | Dense semantics and low-bit fixtures | Stage A closed mode and operational fold API |
-| Binding alignment | Required names align exactly; materialization remains ordered | Preparation checks and arrays | Stage A length-correct required bindings |
-| Block flow | Ports are valid and assignments are acyclic and available | F2 checked-block target; not landed | Checked block-flow evidence |
-| Positive scan extents | Predecessor extents cannot underflow | F0 landed contract evidence; F3 checker target not landed | Stage C positive extent witness |
-| Advancing dimensions | State dimensions are in range and pairwise distinct | F0 landed contract evidence; F3 structural checks not landed | Stage C bounded distinct-dimension witness |
-| Base substitution | Pinned UIDs are residualized and removed from RHS bases | F0 landed legacy-behavior fixtures; F4 compiler target not landed | Stage C raw-to-checked residualization evidence |
-| Base initialization | Complete histories start at zero; disjoint pin-mask overlays may leave boundary cells zero | F0 landed policy fixtures; F3 checked worker not landed | Stage C boundary-policy witness plus checked regions |
-| Write geometry | Base regions touch the lower boundary; step writes target canonical `q + 1` | F0 landed geometry fixtures; F3 recognition/checks not landed | Stage C checked pin masks and successor witness |
-| Causal reads | Per-factor affine descriptors forbid look-ahead, allow zero lag, and resolve recurrence reads to lower-rank producers | F0 landed causality fixtures; F3 certificate not landed | Stage C raw-aligned per-factor descriptor plus global proof |
-| Traversal and materialization | Axis-zero-fastest traversal yields complete histories | F0 landed policy fixtures; F3 checked worker not landed | Stage C closed tags and validated witnesses |
-| Snapshot and commit | Sibling results share one snapshot and commit atomically | F0 landed defect fixture; F3 immutable worker not landed | Stage A distinct snapshot/result types; Stage C snapshot-policy witness |
-| Backend evidence | An optimization cannot claim ordered-reference status | Explicit lowering modes and AST/mutation checks | Stage A evidence-indexed kernels and private constructors |
-
-The matrix separates semantic requirements from implementation choices. `Fin`, vectors,
-permutations, arrays plus proofs, and indexed inductives are candidates, not semantics. It is also the
-bridge to the staged representation strategy developed next.
-
-## 4. Staged checked-representation strategy
-
-[Section 3](#3-canonical-backend-eval-ir-semantics) fixed the semantics; this section asks which
-invariants should be enforced by ordinary checking and which should be made unrepresentable by
-stronger types. The answer is staged because
-structural guarantees have migration, elaboration, proof, rewrite, and diagnostic costs. Stage A is
-recommended. Stages B and C remain candidates until their separate gates pass.
-[Appendix B](#appendix-b-candidate-dependent-checked-contraction-core) and
-[Appendix C](#appendix-c-candidate-checked-scan-refinements) retain the detailed non-copy-ready
-sketches so the main argument can compare tradeoffs without presenting experimental syntax as settled.
-
-### 4.1 Stage A: recommended low-risk refinements
-
-These changes encode stable boundaries without requiring the dependent contraction prototype. They
-are described completely here; unlike Stages B and C, Stage A has no separate candidate schema in the
-appendices. Closing `reference64SumProduct` is this stage's entire numeric-mode content, so the
-[Section 3.2](#32-contractions-and-ordered-floating-point-execution) contract split must be settled
-before Stage A closes, not after Wave F: closing only the sum-product mode while treating nonlinear
-steps as future scope for the same mode would misrepresent Stage A as complete numeric-mode coverage,
-when in fact a second closed mode, `reference64Transcendental`, is required and not yet specified.
-
-| Refinement | Eliminated invalid state | Required migration | Expected proof burden | Adoption test |
-|---|---|---|---|---|
-| Distinct slot namespaces | Outer and block slots cannot be accidentally interchanged | Tag current slot references by scope | Small wrappers and erasure lemmas | Existing graph corpus plus cross-scope rejection fixtures |
-| Explicit operational fold order | A backend cannot infer lawful reassociation | Route Dense and ordered interpreters through three named folds | Small equivalence proof to current Dense loops | Factor/reduction/term low-bit mutations |
-| Closed `reference64SumProduct` | Unsupported open scalar operators cannot inhabit this mode | Replace current `reference64` tag and arbitrary fold records | Constructor exhaustiveness and one-to-one migration | All current numeric fixtures bit-exact |
-| Length-correct required-input bindings | Missing or extra prepared input names | Build aligned bindings during preparation; preserve materialized arrays | Alignment construction and name-uniqueness evidence | Missing/extra/name-order and repeated-materialization tests |
-| Private validated executable constructors | Unvalidated candidates cannot execute | Split public lowering candidates from validator-owned constructors | Candidate/source alignment predicate | Constructor privacy tests and lowering mutations |
-| Evidence-indexed backend kernels | Einsum/optimized kernels cannot claim ordered-reference evidence | Aggregate each mixed plan under a common evidence index | Sum-index aggregation and exhaustiveness | Mixed-kernel rejection plus AST/low-bit evidence |
-| Distinct snapshot and next-state result types | Partial mutation and sibling read-after-write through the API | Make workers consume snapshots and return complete result values | Worker boundary and completeness predicate | Coupled-state snapshot/atomic-commit tests |
-| Derived step graph interface | Assignments, scans, checkers, and backends cannot disagree about graph sources or destinations | Route graph validation and consumers through `PlanStep.sourceSlots` and `PlanStep.destinationSlots` | Exhaustive definitions over the closed step sum | Assignment/scan source and multi-destination graph fixtures |
-
-Stage A should preserve behavior and path-local errors. It must not introduce pervasive casts in
-backend code. Backend Eval IR remains an inspectable deep embedding with separate Dense, encoding,
-capability, JAX, PyTorch, cost, and proof interpreters. Use closed sums and smart constructors rather
-than meaning-changing option fields, strings, callbacks, embedded Python, or silent fallback; Lean's
-[inductive types](#ref-lean-inductive-types) provide the relevant closed-sum mechanism.
-
-### 4.2 Stage B: candidate dependent contraction prototype
-
-**Status: candidate pending prototype; not canonical and not adopted.**
-[Appendix B](#appendix-b-candidate-dependent-checked-contraction-core) proposes
-signature-indexed scoped slots, signature-derived source/output shapes, rank-indexed affine maps,
-reduction shape plus a basis permutation, and derived iteration shapes and position arrays.
-These candidates use the same general value-plus-proof principle as Lean
-[subtypes](#ref-lean-subtypes), though the sketches also use indexed structures where one field's type
-depends on another.
-
-| Candidate refinement | Invariant made structural | Principal implementation cost | Prototype measurement and gate |
-|---|---|---|---|
-| Signature-indexed slots | Scope, bounds, and signature ownership | Dependent table parameters and slot erasure | Count equality transports/casts at producers and interpreters |
-| Signature-derived shapes | No copied source/output shape disagreement | Dependent projections through assignment terms | Measure source compiler complexity and diagnostic paths |
-| Rank-indexed affine maps | Rectangular rows and rank-correct bias | Vector conversion and rank equalities | Measure raw-to-checked conversion code and error quality |
-| Reduction shape + basis permutation | Complete disjoint context/output/reduction basis | Permutation construction and proofs | Measure elaboration/build time and proof terms |
-| Derived iteration/position arrays | Repeated shape and projection claims disappear | Computation under dependent indices | Count checker/backend fields and validations eliminated |
-
-The prototype must record absolute and comparative measurements for equality transports/casts,
-elaboration and build time, source compiler complexity, raw-to-checked conversion size, diagnostic
-quality, checker/backend code eliminated, and rewrite ergonomics. At minimum, prototype one basis
-permutation and one slot-remapping transformation and count the transports needed to reconstruct a
-checked candidate. Adoption requires representative Wave C programs and the complete 3,832-case
-corpus to compile and execute without pervasive proof plumbing, while showing a clear net reduction
-in downstream validation. Failure of that test retains arrays plus proofs.
-
-Do **not** make Wave F depend on this prototype. In particular, do not combine the full Wave F
-implementation and the Stage B contraction-core rewrite in one slice.
-
-### 4.3 Stage C: candidate scan refinements
-
-**Status: Wave F-aligned candidate, separately staged; not canonical and not adopted.**
-[Appendix C](#appendix-c-candidate-checked-scan-refinements)
-sketches positive history extents, bounded distinct advancing dimensions, zero initialization plus
-canonical base and next-state write geometry, affine-derived causal evidence, explicit scan-policy
-witnesses, global coverage and producer-uniqueness evidence, and snapshot/result separation.
-
-| Candidate refinement | Local fact made structural | Remaining global proof | Cost and measurable gate |
-|---|---|---|---|
-| Positive history extents | Predecessor subtraction is total | None beyond raw positivity admission | Conversion/error-code size; zero-extent rejection suite |
-| Bounded distinct advancing dimensions | Rank bounds and within-state distinctness | Cross-state coverage/compatibility | Constructor burden; duplicate/out-of-range mutations |
-| Closed base/next write geometry | Arbitrary destination maps cannot execute | Base-region disjointness and recurrence producer uniqueness | Recognition complexity; pin-mask and successor mutation suite |
-| Affine-derived causal descriptor | No duplicated capture offset; no look-ahead | Boundary initialization and earlier-producer causality | Diagnostic quality; zero-lag and look-ahead mutations |
-| Coverage/producer evidence | — | Every admitted read resolves to zero padding, boundary initialization, or one earlier producer | Proof/checker runtime; coupled-state coverage corpus |
-| Explicit policy witnesses | Workers cannot infer traversal, boundary, snapshot, or materialization conventions | Policy admission during checking | Raw-tag and policy-mismatch mutations |
-| Snapshot/result separation | One immutable read view and complete result boundary | Worker refines atomic commit | API migration size; sibling-state snapshot tests |
-
-Stage C passes only with Wave F base-substitution, traversal, snapshot/commit, complete-history, and
-causality semantics intact. Its gate includes base-substitution and causality mutations, coupled-state
-tests, and Dense/JAX/PyTorch differential agreement when those interpreters exist.
-
-### 4.4 Deferred: availability-indexed graph typing
-
-Stages B and C strengthen local operations and scans without threading graph availability through
-every constructor. **Availability-indexed graph typing** would instead index each successive step by
-the slots produced so far, making an unavailable read impossible to construct. “Indexed” means that
-this changing set of available slots appears in the Lean type: if inputs provide slots 0 and 1, the
-first step can read only those slots; after it produces slot 2, the next step's type permits reads
-from 0, 1, or 2. A read from a not-yet-produced slot would then fail during Lean elaboration rather
-than later graph validation. The practical
-graph-level compromise remains an ordinary raw graph plus aligned checked-step evidence. The sketch
-below uses the Appendix A common interfaces and therefore does not depend on adopting Stage B.
-`CheckedTensorScope`, `CheckedAssignment`, and `CheckedScan` are abstract: a scope supplies a slot type
-and signature lookup, while assignments and scans supply checked semantic steps over that scope.
-
-```lean
-inductive CheckedPlanStep (table : CheckedTensorScope) (mode : NumericMode)
-  | assign (assignment : CheckedAssignment table mode)
-  | scan   (scan : CheckedScan table mode)
-
-structure CheckedEvalPlan where
-  raw          : RawEvalPlan
-  table        : CheckedTensorScope
-  inputSlots   : Vector table.Slot raw.inputSlots.size
-  checkedSteps : Vector (CheckedPlanStep table raw.numericMode) raw.steps.size
-  signatureAligned : eraseSignatures table = raw.tensorSigs
-  inputAligned : eraseSlots inputSlots = raw.inputSlots
-  aligned      : eraseSteps checkedSteps = raw.steps
-  graphValid   : GraphAvailabilityAndProduction table inputSlots checkedSteps
-```
-
-Availability-indexed construction could make unavailable reads unrepresentable, but would thread a
-changing slot environment through heterogeneous steps. That raises decoding, migration, construction,
-equality-transport, and path-aware diagnostic costs. Prototype gates would have to show fewer graph
-checks, acceptable build time, and equally precise errors on representative programs. Until then,
-ordinary raw graphs plus `GraphAvailabilityAndProduction` are the deliberate practical compromise.
-Do not index semantic types by versions, backend capabilities, devices, compilation keys, caches, or
-future operator families.
-
-### 4.5 Rewrite architecture and optimization boundary
-
-Execution optimization creates two different transformation problems that must not be conflated.
-A semantic-plan rewrite changes the Backend Eval IR graph while claiming equivalent behavior. An
-executable refinement keeps the checked semantic plan fixed and selects a different backend
-implementation. The refinement evidence defined in
-[Section 3.4](#34-invariant-matrix) establishes the required behavioral relation. A
-**capability result** is the typed supported/unsupported output of the capability validation
-introduced in [Section 2](#2-architectural-decision-and-principles). The executable path is the safer
-and expected path for most near-term optimization.
-
-| Transformation class | Examples | Result | Required authority |
-|---|---|---|---|
-| Semantic-plan rewrite | Dead-step elimination, common-subexpression elimination, slot compaction, basis canonicalization | Newly checked Backend Eval IR | Rewrite validation plus equivalence/refinement evidence |
-| Executable refinement | Affine tables, einsum, loop fusion, compact gathers, `lax.scan`, compiled PyTorch loops | Backend executable retaining its semantic source | Capability result, executable validation, and kernel refinement evidence |
-
-The current representations have deliberately different rewrite properties:
-
-| Representation | Rewrite ergonomics | Consequence |
-|---|---|---|
-| Raw DTO | Ordinary arrays and records are easy to reconstruct, but may be invalid | Appropriate construction surface for a semantic rewrite candidate |
-| Checked Backend Eval IR | Private constructors prevent direct mutation | A changed plan must return through semantic checking |
-| Candidate Stage B core | Indices derive more invariants but may require equality transport when ranks, bases, or slots change | Rewrite cost is an explicit prototype adoption metric |
-| Backend executable | Kernel choices and schedules are backend-owned | Preferred optimization surface when semantic graph meaning need not change |
-
-Five constraints make semantic rewrites nontrivial:
-
-1. Positional slot changes must update the signature table, input slots, every read and destination,
-   and both required-input and ordered materialized bindings.
-2. A basis change must update iteration shape, context/output/reduction projections, and every affine
-   coefficient column together.
-3. `reference64SumProduct` forbids factor, reduction, or term reassociation merely because it is
-   algebraically valid over a semiring.
-4. Scan rewrites can invalidate coverage, producer uniqueness, traversal, snapshot, commit, or
-   causality evidence.
-5. A rewritten graph and the original graph have distinct canonical payloads and semantic identities
-   even when a refinement establishes observational equivalence. The digest inputs are defined fully
-   in [Section 5.2](#52-identity-and-independent-validation).
-
-When the first semantic rewrite is implemented, it must follow this boundary:
-
-```text
-checked/prepared source
-  -> ordinary rewrite candidate
-  -> one explicit slot renaming applied to plan and bindings
-  -> semantic rechecking
-  -> newly checked rewritten plan
-  -> equivalence/refinement evidence against the retained source
-```
-
-The slot renaming must be one shared value used for tensor signatures, input slots, read sources,
-destinations, required bindings, and materialized bindings; separate remapping logic at each consumer
-would recreate the drift risk the rewrite layer is meant to remove. A rewrite trace may record old and
-new slot/step correspondence for diagnostics and provenance, but it is not Backend Eval IR semantics
-and does not enter semantic identity. The source and rewritten identities may be linked as provenance.
-
-No generic `SlotRenaming`, `RewriteResult`, pass registry, or rewrite combinator framework should be
-implemented before selecting the first real semantic rewrite. The Stage A
-`PlanStep.sourceSlots`/`destinationSlots` interface is sufficient preparation. Most optimization
-should begin as executable refinement, where the original checked plan remains the ordered oracle and
-no semantic slot renumbering is needed;
-[Section 6](#6-jax-and-pytorch-executable-architecture) defines that executable boundary.
-The distinction mirrors two established ways to justify compiler transformations: prove a compiler
-pass correct, as in [Leroy's verified compiler back-end](#ref-leroy), or validate each proposed
-transformation, as in [Alive2](#ref-alive2).
-
-The staged Lean representation now has a coherent semantic owner, but it is not itself a safe
-cross-language artifact. [Section 5](#5-raw-and-portable-representation) therefore returns to
-ordinary DTOs and explains how semantic data crosses the Lean/Python trust boundary without
-serializing proofs.
-
-## 5. Raw and portable representation
-
-### 5.1 Phase pipeline and ownership
-
-Raw and portable values are ordinary DTOs (data-transfer objects: tagged records that carry data but
-are not executable) built from conventional integers, arrays, tags, bindings, warnings, and version
-metadata. A **raw DTO** is the unchecked construction form produced after tagged
-wire decoding has recognized every constructor. Unknown tags fail in the preceding decode phase with
-a path-aware error; known but invalid values remain in the raw DTO for semantic diagnostics. A
-**portable artifact** is its canonically encoded, versioned cross-language envelope after projection
-from a prepared plan; it is portable data, not a second semantic language. Both intentionally preserve
-offending known data for migration and path-aware diagnostics, and neither executes.
-[Appendix A](#appendix-a-ordinary-raw-and-portable-dtos) gives their complete conceptual field
-ownership.
-
-The essential trust transition is:
-
-```text
-raw DTO
-  -> Lean checking
-  -> checked Backend Eval IR
-  -> portable raw projection
-  -> independent Python validation
-```
-
-Including preparation and executable lowering gives the complete pipeline:
-
-```text
-Lean production:
-  RawEvalPlan
-  -> Lean semantic checker -> CheckedEvalPlan
-  -> PreparedPlan
-  -> erasure + canonical encoding -> portable artifact bytes
-
-Python consumption:
-  portable artifact bytes
-  -> tagged decoding/migration
-  -> PortableBackendPlan raw DTO | path-aware decode error
-  -> independent semantic validation -> ValidatedPortablePlan
-  -> backend capability validation -> capability result
-  -> executable lowering -> non-executable candidate
-  -> executable validation -> private JAX executable | private PyTorch executable
-```
-
-This pipeline instantiates the ownership defined in
-[Section 3.1](#31-semantic-domain-and-ownership) rather than redefining it.
-Decoding/migration returns an ordinary untrusted DTO and retains precise locations such as
-`steps[3].terms[1].factors[2].map.bias`.
-
-### 5.2 Identity and independent validation
-
-A **semantic identity** combines schema major version, semantic version, and a domain-separated digest
-of canonical payload bytes. Its canonical string encoding is the semantic fingerprint. The schema
-major version marks incompatible wire shapes; the semantic version marks meaning; schema minor and
-producer versions are provenance. Numeric mode, ordered bindings, warnings, and exact fixed-endian
-`UInt64` float bits have one payload owner. Derived indices, labels, devices, exports, and cache
-metadata are excluded from identity.
-
-The three post-decode validations are intentionally separate:
-
-| Phase | Checks | Failure meaning |
-|---|---|---|
-| Semantic | Tags, slots, signatures, bindings, map ranks, basis permutations, mode, graph flow, positive extents, admitted scan geometry, coverage, uniqueness, causality | Malformed or semantically invalid artifact |
-| Capability | Backend dtype, evidence contract, scan implementation, integer range, and feature support | Valid semantics unsupported by the selected backend |
-| Executable | Table lengths, masks, safe indices, einsum labels, conversion, candidate alignment, scan refinement, and evidence index | Invalid or mislabeled backend lowering |
-
-Decode applicatively into an untrusted DTO and accumulate path-aware independent errors, following
-the error-accumulating composition described by
-[McBride and Paterson](#ref-applicative-programming). Only
-validator-controlled constructors create immutable `ValidatedPortablePlan` values. Artifact
-validation reconstructs every semantic obligation independently of Lean proofs. A validated scan
-retains the exact outer signature table used to check captures and destinations. The resulting
-`ValidatedPortablePlan` pairs the envelope with a `CheckedPortablePlan` exposing the common table,
-numeric mode, aligned checked steps, bindings, and graph evidence described in Appendix A. This is the
-defined handoff consumed by executable lowering.
-
-Runtime adapters separately reject wrong input count, name, shape, dtype, and uninitialized slots
-before JAX tracing or PyTorch compilation. Backend caches and exports are reproducible derivatives of
-the semantic fingerprint; they never replace the portable artifact. Once independent validation has
-reconstructed trusted semantics, the backend may choose an implementation; that is the subject of
-[Section 6](#6-jax-and-pytorch-executable-architecture) and
-[Appendix D](#appendix-d-jax-and-pytorch-executable-types).
-
-## 6. JAX and PyTorch executable architecture
-
-### 6.1 Evidence-indexed executable lowering
-
-Backend Eval IR states what execution means. Backend-specific executable IR states how it runs.
-An **executable candidate** is a backend lowering that cannot run until validated. A **kernel** is the
-implementation selected for one local assignment; a scan implementation contains kernels for its base
-and step blocks plus a traversal choice. A **refinement predicate** states that an assignment kernel or
-scan implementation realizes its retained semantic source. An **evidence index** records the numerical
-claim justified for that implementation, preventing an experimental optimization from being labeled
-as ordered reference execution. The corresponding non-copy-ready types are isolated in
-[Appendix D](#appendix-d-jax-and-pytorch-executable-types).
-
-Portable affine-table and einsum specifications are ordinary validated data, never semantic
-constructors. Lowering produces a non-executable candidate retaining its semantic source. A separate
-validator checks table lengths, safe indices, masks, label limits, integer conversion, scan
-refinement, and whole-plan alignment before calling a private executable constructor.
-
-JAX and PyTorch have distinct kernel sums and executable types because their implementation choices
-differ even though their semantic source is shared. For both, an evidence index separates
-`orderedReference64` from `optimizationExperiment`: ordered affine kernels may inhabit the former,
-while einsum may inhabit only the latter. A mixed executable derives its aggregate evidence from all
-contained assignment kernels, scan child kernels, and scan implementation choices: it is
-ordered-reference only if every member is, and is experimental if any member is. Compact affine and
-scan implementations require new capability results, refinement predicates, and differential gates.
-
-### 6.2 JAX and PyTorch interpretations
-
-The common lowering protocol does not erase backend differences. The table below shows which choices
-belong to each executable rather than to Backend Eval IR:
-
-| Concern | JAX executable | PyTorch executable |
-|---|---|---|
-| Values | `jax.Array` | `torch.Tensor` |
-| Affine reference | Safe-index arrays plus `jnp.where` | Safe-index tensors plus `torch.where` |
-| Projection optimization | `jnp.einsum` | `torch.einsum` |
-| Ordered folds | [`jax.lax.fori_loop`](#ref-jax-fori-loop) or validated equivalent | Explicit sequential operations or validated compiled loop |
-| Graph execution | Static traversal during tracing | Static traversal in eager or compiled execution |
-| Differentiation | `jax.grad` | [PyTorch autograd](#ref-torch-autograd) |
-| Compilation | [`jax.jit`](#ref-jax-jit) | [`torch.compile`](#ref-torch-compile) |
-| Scan optimization | [`jax.lax.scan`](#ref-jax-scan) after refinement | Compiled state loop after refinement |
-| Derivative export/cache | [JAX export](#ref-jax-export) or [persistent cache](#ref-jax-persistent-cache) | [`torch.export`](#ref-torch-export) or FX-derived artifact |
-
-Neither backend earns `orderedReference64` from sequential-looking source alone: transformed and
-compiled execution must pass the low-bit order fixtures; JAX itself documents that
-[JIT compilation can change exact numerics](#ref-jax-jit-numerics).
-
-For PyTorch, keep tensor data separate from immutable structure and introduce
-`torch.compile`/`torch.export` representations only at the executable boundary. Parameters, modules,
-devices, optimizers, and checkpoints are adapter concerns, not Backend Eval IR fields.
-
-### 6.3 Why the JAX interpreter can remain purely functional
-
-Backend Eval IR is backend-neutral, but its explicit positional store, ordered graph, and explicit
-scan state fit JAX's mandatory functional execution model particularly well. The JAX backend should
-therefore be a direct pure interpreter rather than another generated-source or object-graph compiler:
-
-```text
-AssignPlan : Store -> Store
-PlanStep   : Store -> Store
-EvalPlan   : Inputs -> Outputs
-Scan step  : State × Input -> State × Output
-```
-
-After host-side validation and executable lowering, graph execution is composition of pure store
-transformations in checked order:
-
-```python
-def evaluate(executable, inputs):
-    store = place_inputs(executable, inputs)
-    for step in executable.steps:  # static traversal while tracing
-        store = step(store)
-    return materialize_outputs(executable, store)
-```
-
-This eliminates JAX-side Python source generation, module hierarchies, parameter registration,
-mutable buffers, device-moving methods, and checkpoint object lifecycles. Structural plan metadata
-belongs in immutable [pytree auxiliary data](#ref-jax-pytrees); inputs, state tensors, and large lookup
-tables remain dynamic pytree leaves. A stable top-level evaluator is keyed by the verified semantic
-identity rather than by closure-specific function objects.
-
-One evaluator can then participate compositionally in JAX transformations:
-
-| Transformation | Backend benefit |
-|---|---|
-| `jax.jit` | Compile the complete pure evaluator |
-| `jax.grad` | Differentiate losses through the same evaluator |
-| `jax.vmap` | Add batching or independent-coordinate parallelism without a second evaluator |
-| `jax.remat` | Add checkpointing without changing Backend Eval IR |
-| JAX sharding transformations | Distribute suitable tensor dimensions while retaining explicit semantics |
-| JAX export | Derive a deployable executable from the validated evaluator |
-
-This composability is a genuine JAX advantage. A new PyTorch evaluator can also follow a functional
-discipline through tensor functions, `torch.func`, functionalization, and `torch.compile`, but purity
-is native and transformation-defining in JAX rather than an optional layer over modules and mutation.
-
-Scans receive an additional benefit. `StateSnapshot` is a pytree carry; the pure step consumes it and
-returns complete `NextStateResults`, and the scan worker alone forms the next snapshot. This directly
-represents snapshot independence and atomic commit. When its refinement gate passes, `jax.lax.scan`
-stages one loop instead of unrolling one graph copy per recurrence coordinate. Heterogeneous outer
-graph steps remain static traversal outside that loop.
-
-Future stochastic operations should preserve the same discipline by taking and returning explicit
-PRNG keys. Random splitting and reproducibility then remain visible dataflow rather than hidden
-global state.
-
-Purity does not itself establish `orderedReference64`. `jit`, `vmap`, `remat`, sharding, and
-`lax.scan` may change compilation and floating-point behavior; every transformation admitted under
-the ordered contract must retain the low-bit and boundary gates. Plan structure and shapes also
-remain static compilation inputs, so structural changes may require recompilation. These obligations
-lead directly to the admission and adoption gates in
-[Section 7](#7-adoption-plan-and-gates).
-
-## 7. Adoption plan and gates
+## 6. Adoption plan and gates
 
 Sections 3-6 define semantics, candidate representations, transport, and execution. This section turns
 those design choices into admission criteria. Adoption follows evidence gates rather than a fixed
 implementation sequence: the current affine-table path remains the oracle while each representation
 or executable change proves that it preserves the canonical semantics.
 
-### 7.1 Constructor admission
+### 6.1 Constructor admission
 
 Here a **constructor** means one closed semantic `PlanStep` case or one backend kernel/scan case, not an
 arbitrary host-language callback. Each constructor advances independently through three gates:
@@ -1118,14 +949,14 @@ global coverage/causality. JAX `orderedLoop` and PyTorch `eagerOrderedLoop` are 
 implementation targets. `laxScan` and `compiledLoop` require separate refinement evidence. Wavefront,
 parallel-prefix, compact-carry, and opaque opcode encodings are not silently admitted.
 
-### 7.2 Five adoption gates
+### 6.2 Five adoption gates
 
 1. **Baseline preservation**
    - The full Lean build remains green.
    - Every JAX runner is *executed*, not cited: the einsum smoke, the 20-fixture curated affine
      suite, and the whole-corpus runner over all 3,832 accepted cases each run to completion.
      Restating a previous run's output does not clear this gate. Because all four runner drivers
-     belong to no Lake target ([Section 1.4](#14-evidence-validating-the-experimental-jax-bridge)), a
+     belong to no Lake target ([Section 5.4](#54-evidence-validating-the-experimental-jax-bridge)), a
      green `lake build` is not evidence that they still compile, and an IR field addition can break
      them invisibly — as Wave F F1 did.
    - Mutation, low-bit fold-order, empty-source, graph-order, and gradient evidence remain sensitive
@@ -1174,26 +1005,231 @@ parallel-prefix, compact-carry, and opaque opcode encodings are not silently adm
 
 The affine proof boundary remains practical: proving Lean lowering and independently validating
 concrete artifacts is valuable, while end-to-end verification of Python, JAX/XLA, and PyTorch
-compilers is currently disproportionate. The appendices that follow preserve the detailed schemas
-needed to evaluate these gates without interrupting the main argument.
+compilers is currently disproportionate. Meeting these gates is what turns a research-agenda
+candidate, covered next, into an adopted part of Part I.
+
+## Part III — Research Agenda
+
+Everything in this part is explicitly **not adopted**: staged representation strengthenings whose
+adoption depends on a measured prototype clearing the gates in [Section 6](#6-adoption-plan-and-gates)
+above. Nothing here overrides the canonical semantics fixed in
+[Section 2](#2-canonical-backend-eval-ir-semantics).
+
+## 7. Staged checked-representation strategy
+
+[Section 2](#2-canonical-backend-eval-ir-semantics) fixed the semantics; this section asks which
+invariants should be enforced by ordinary checking and which should be made unrepresentable by
+stronger types. The answer is staged because
+structural guarantees have migration, elaboration, proof, rewrite, and diagnostic costs. Stage A is
+recommended. Stages B and C remain candidates until their separate gates pass.
+[Appendix B](#appendix-b-candidate-dependent-checked-contraction-core) and
+[Appendix C](#appendix-c-candidate-checked-scan-refinements) retain the detailed non-copy-ready
+sketches so the main argument can compare tradeoffs without presenting experimental syntax as settled.
+
+### 7.1 Stage A: recommended low-risk refinements
+
+These changes encode stable boundaries without requiring the dependent contraction prototype. They
+are described completely here; unlike Stages B and C, Stage A has no separate candidate schema in the
+appendices. Closing `reference64SumProduct` is this stage's entire numeric-mode content, so the
+[Section 2.2](#22-contractions-and-ordered-floating-point-execution) contract split must be settled
+before Stage A closes, not after Wave F: closing only the sum-product mode while treating nonlinear
+steps as future scope for the same mode would misrepresent Stage A as complete numeric-mode coverage,
+when in fact a second closed mode, `reference64Transcendental`, is required and not yet specified.
+
+| Refinement | Eliminated invalid state | Required migration | Expected proof burden | Adoption test |
+|---|---|---|---|---|
+| Distinct slot namespaces | Outer and block slots cannot be accidentally interchanged | Tag current slot references by scope | Small wrappers and erasure lemmas | Existing graph corpus plus cross-scope rejection fixtures |
+| Explicit operational fold order | A backend cannot infer lawful reassociation | Route Dense and ordered interpreters through three named folds | Small equivalence proof to current Dense loops | Factor/reduction/term low-bit mutations |
+| Closed `reference64SumProduct` | Unsupported open scalar operators cannot inhabit this mode | Replace current `reference64` tag and arbitrary fold records | Constructor exhaustiveness and one-to-one migration | All current numeric fixtures bit-exact |
+| Length-correct required-input bindings | Missing or extra prepared input names | Build aligned bindings during preparation; preserve materialized arrays | Alignment construction and name-uniqueness evidence | Missing/extra/name-order and repeated-materialization tests |
+| Private validated executable constructors | Unvalidated candidates cannot execute | Split public lowering candidates from validator-owned constructors | Candidate/source alignment predicate | Constructor privacy tests and lowering mutations |
+| Evidence-indexed backend kernels | Einsum/optimized kernels cannot claim ordered-reference evidence | Aggregate each mixed plan under a common evidence index | Sum-index aggregation and exhaustiveness | Mixed-kernel rejection plus AST/low-bit evidence |
+| Distinct snapshot and next-state result types | Partial mutation and sibling read-after-write through the API | Make workers consume snapshots and return complete result values | Worker boundary and completeness predicate | Coupled-state snapshot/atomic-commit tests |
+| Derived step graph interface | Assignments, scans, checkers, and backends cannot disagree about graph sources or destinations | Route graph validation and consumers through `PlanStep.sourceSlots` and `PlanStep.destinationSlots` | Exhaustive definitions over the closed step sum | Assignment/scan source and multi-destination graph fixtures |
+
+Stage A should preserve behavior and path-local errors. It must not introduce pervasive casts in
+backend code. Backend Eval IR remains an inspectable deep embedding with separate Dense, encoding,
+capability, JAX, PyTorch, cost, and proof interpreters. Use closed sums and smart constructors rather
+than meaning-changing option fields, strings, callbacks, embedded Python, or silent fallback; Lean's
+[inductive types](#ref-lean-inductive-types) provide the relevant closed-sum mechanism.
+
+### 7.2 Stage B: candidate dependent contraction prototype
+
+**Status: candidate pending prototype; not canonical and not adopted.**
+[Appendix B](#appendix-b-candidate-dependent-checked-contraction-core) proposes
+signature-indexed scoped slots, signature-derived source/output shapes, rank-indexed affine maps,
+reduction shape plus a basis permutation, and derived iteration shapes and position arrays.
+These candidates use the same general value-plus-proof principle as Lean
+[subtypes](#ref-lean-subtypes), though the sketches also use indexed structures where one field's type
+depends on another.
+
+| Candidate refinement | Invariant made structural | Principal implementation cost | Prototype measurement and gate |
+|---|---|---|---|
+| Signature-indexed slots | Scope, bounds, and signature ownership | Dependent table parameters and slot erasure | Count equality transports/casts at producers and interpreters |
+| Signature-derived shapes | No copied source/output shape disagreement | Dependent projections through assignment terms | Measure source compiler complexity and diagnostic paths |
+| Rank-indexed affine maps | Rectangular rows and rank-correct bias | Vector conversion and rank equalities | Measure raw-to-checked conversion code and error quality |
+| Reduction shape + basis permutation | Complete disjoint context/output/reduction basis | Permutation construction and proofs | Measure elaboration/build time and proof terms |
+| Derived iteration/position arrays | Repeated shape and projection claims disappear | Computation under dependent indices | Count checker/backend fields and validations eliminated |
+
+The prototype must record absolute and comparative measurements for equality transports/casts,
+elaboration and build time, source compiler complexity, raw-to-checked conversion size, diagnostic
+quality, checker/backend code eliminated, and rewrite ergonomics. At minimum, prototype one basis
+permutation and one slot-remapping transformation and count the transports needed to reconstruct a
+checked candidate. Adoption requires representative Wave C programs and the complete 3,832-case
+corpus to compile and execute without pervasive proof plumbing, while showing a clear net reduction
+in downstream validation. Failure of that test retains arrays plus proofs.
+
+Do **not** make Wave F depend on this prototype. In particular, do not combine the full Wave F
+implementation and the Stage B contraction-core rewrite in one slice.
+
+### 7.3 Stage C: candidate scan refinements
+
+**Status: Wave F-aligned candidate, separately staged; not canonical and not adopted.**
+[Appendix C](#appendix-c-candidate-checked-scan-refinements)
+sketches positive history extents, bounded distinct advancing dimensions, zero initialization plus
+canonical base and next-state write geometry, affine-derived causal evidence, explicit scan-policy
+witnesses, global coverage and producer-uniqueness evidence, and snapshot/result separation.
+
+| Candidate refinement | Local fact made structural | Remaining global proof | Cost and measurable gate |
+|---|---|---|---|
+| Positive history extents | Predecessor subtraction is total | None beyond raw positivity admission | Conversion/error-code size; zero-extent rejection suite |
+| Bounded distinct advancing dimensions | Rank bounds and within-state distinctness | Cross-state coverage/compatibility | Constructor burden; duplicate/out-of-range mutations |
+| Closed base/next write geometry | Arbitrary destination maps cannot execute | Base-region disjointness and recurrence producer uniqueness | Recognition complexity; pin-mask and successor mutation suite |
+| Affine-derived causal descriptor | No duplicated capture offset; no look-ahead | Boundary initialization and earlier-producer causality | Diagnostic quality; zero-lag and look-ahead mutations |
+| Coverage/producer evidence | — | Every admitted read resolves to zero padding, boundary initialization, or one earlier producer | Proof/checker runtime; coupled-state coverage corpus |
+| Explicit policy witnesses | Workers cannot infer traversal, boundary, snapshot, or materialization conventions | Policy admission during checking | Raw-tag and policy-mismatch mutations |
+| Snapshot/result separation | One immutable read view and complete result boundary | Worker refines atomic commit | API migration size; sibling-state snapshot tests |
+
+Stage C passes only with Wave F base-substitution, traversal, snapshot/commit, complete-history, and
+causality semantics intact. Its gate includes base-substitution and causality mutations, coupled-state
+tests, and Dense/JAX/PyTorch differential agreement when those interpreters exist.
+
+### 7.4 Deferred: availability-indexed graph typing
+
+Stages B and C strengthen local operations and scans without threading graph availability through
+every constructor. **Availability-indexed graph typing** would instead index each successive step by
+the slots produced so far, making an unavailable read impossible to construct. “Indexed” means that
+this changing set of available slots appears in the Lean type: if inputs provide slots 0 and 1, the
+first step can read only those slots; after it produces slot 2, the next step's type permits reads
+from 0, 1, or 2. A read from a not-yet-produced slot would then fail during Lean elaboration rather
+than later graph validation. The practical
+graph-level compromise remains an ordinary raw graph plus aligned checked-step evidence. The sketch
+below uses the Appendix A common interfaces and therefore does not depend on adopting Stage B.
+`CheckedTensorScope`, `CheckedAssignment`, and `CheckedScan` are abstract: a scope supplies a slot type
+and signature lookup, while assignments and scans supply checked semantic steps over that scope.
+
+```lean
+inductive CheckedPlanStep (table : CheckedTensorScope) (mode : NumericMode)
+  | assign (assignment : CheckedAssignment table mode)
+  | scan   (scan : CheckedScan table mode)
+
+structure CheckedEvalPlan where
+  raw          : RawEvalPlan
+  table        : CheckedTensorScope
+  inputSlots   : Vector table.Slot raw.inputSlots.size
+  checkedSteps : Vector (CheckedPlanStep table raw.numericMode) raw.steps.size
+  signatureAligned : eraseSignatures table = raw.tensorSigs
+  inputAligned : eraseSlots inputSlots = raw.inputSlots
+  aligned      : eraseSteps checkedSteps = raw.steps
+  graphValid   : GraphAvailabilityAndProduction table inputSlots checkedSteps
+```
+
+Availability-indexed construction could make unavailable reads unrepresentable, but would thread a
+changing slot environment through heterogeneous steps. That raises decoding, migration, construction,
+equality-transport, and path-aware diagnostic costs. Prototype gates would have to show fewer graph
+checks, acceptable build time, and equally precise errors on representative programs. Until then,
+ordinary raw graphs plus `GraphAvailabilityAndProduction` are the deliberate practical compromise.
+Do not index semantic types by versions, backend capabilities, devices, compilation keys, caches, or
+future operator families.
+
+### 7.5 Rewrite architecture and optimization boundary
+
+Execution optimization creates two different transformation problems that must not be conflated.
+A semantic-plan rewrite changes the Backend Eval IR graph while claiming equivalent behavior. An
+executable refinement keeps the checked semantic plan fixed and selects a different backend
+implementation. The refinement evidence defined in
+[Section 2.4](#24-invariant-matrix) establishes the required behavioral relation. A
+**capability result** is the typed supported/unsupported output of the capability validation
+introduced in [Section 1](#1-architectural-decision-and-principles). The executable path is the safer
+and expected path for most near-term optimization.
+
+| Transformation class | Examples | Result | Required authority |
+|---|---|---|---|
+| Semantic-plan rewrite | Dead-step elimination, common-subexpression elimination, slot compaction, basis canonicalization | Newly checked Backend Eval IR | Rewrite validation plus equivalence/refinement evidence |
+| Executable refinement | Affine tables, einsum, loop fusion, compact gathers, `lax.scan`, compiled PyTorch loops | Backend executable retaining its semantic source | Capability result, executable validation, and kernel refinement evidence |
+
+The current representations have deliberately different rewrite properties:
+
+| Representation | Rewrite ergonomics | Consequence |
+|---|---|---|
+| Raw DTO | Ordinary arrays and records are easy to reconstruct, but may be invalid | Appropriate construction surface for a semantic rewrite candidate |
+| Checked Backend Eval IR | Private constructors prevent direct mutation | A changed plan must return through semantic checking |
+| Candidate Stage B core | Indices derive more invariants but may require equality transport when ranks, bases, or slots change | Rewrite cost is an explicit prototype adoption metric |
+| Backend executable | Kernel choices and schedules are backend-owned | Preferred optimization surface when semantic graph meaning need not change |
+
+Five constraints make semantic rewrites nontrivial:
+
+1. Positional slot changes must update the signature table, input slots, every read and destination,
+   and both required-input and ordered materialized bindings.
+2. A basis change must update iteration shape, context/output/reduction projections, and every affine
+   coefficient column together.
+3. `reference64SumProduct` forbids factor, reduction, or term reassociation merely because it is
+   algebraically valid over a semiring.
+4. Scan rewrites can invalidate coverage, producer uniqueness, traversal, snapshot, commit, or
+   causality evidence.
+5. A rewritten graph and the original graph have distinct canonical payloads and semantic identities
+   even when a refinement establishes observational equivalence. The digest inputs are defined fully
+   in [Section 3.2](#32-identity-and-independent-validation).
+
+When the first semantic rewrite is implemented, it must follow this boundary:
+
+```text
+checked/prepared source
+  -> ordinary rewrite candidate
+  -> one explicit slot renaming applied to plan and bindings
+  -> semantic rechecking
+  -> newly checked rewritten plan
+  -> equivalence/refinement evidence against the retained source
+```
+
+The slot renaming must be one shared value used for tensor signatures, input slots, read sources,
+destinations, required bindings, and materialized bindings; separate remapping logic at each consumer
+would recreate the drift risk the rewrite layer is meant to remove. A rewrite trace may record old and
+new slot/step correspondence for diagnostics and provenance, but it is not Backend Eval IR semantics
+and does not enter semantic identity. The source and rewritten identities may be linked as provenance.
+
+No generic `SlotRenaming`, `RewriteResult`, pass registry, or rewrite combinator framework should be
+implemented before selecting the first real semantic rewrite. The Stage A
+`PlanStep.sourceSlots`/`destinationSlots` interface is sufficient preparation. Most optimization
+should begin as executable refinement, where the original checked plan remains the ordered oracle and
+no semantic slot renumbering is needed;
+[Section 4](#4-jax-and-pytorch-executable-architecture) defines that executable boundary.
+The distinction mirrors two established ways to justify compiler transformations: prove a compiler
+pass correct, as in [Leroy's verified compiler back-end](#ref-leroy), or validate each proposed
+transformation, as in [Alive2](#ref-alive2).
+
+The staged Lean representation now has a coherent semantic owner, but it is not itself a safe
+cross-language artifact. [Section 3](#3-raw-and-portable-representation) therefore returns to
+ordinary DTOs and explains how semantic data crosses the Lean/Python trust boundary without
+serializing proofs.
 
 ## 8. Appendices
 
 The Lean fragments in Appendices A-D are architectural sketches. They are deliberately
 **non-copy-ready**: names, universe parameters, equality transport, and constructor ergonomics must
 be validated in the relevant prototype. A sketch records a design candidate, not adoption, and never
-overrides the semantics in [Section 3](#3-canonical-backend-eval-ir-semantics).
+overrides the semantics in [Section 2](#2-canonical-backend-eval-ir-semantics).
 
 | Appendix | Supports | Status |
 |---|---|---|
-| A | [Section 5](#5-raw-and-portable-representation) raw/portable ownership and independent validation | Ordinary DTO design recommended as the transport direction |
-| B | [Section 4.2](#42-stage-b-candidate-dependent-contraction-prototype) Stage B contraction refinements | Candidate pending measured prototype |
-| C | [Section 4.3](#43-stage-c-candidate-scan-refinements) Stage C scan refinements | Wave F-aligned candidate independent of Stage B adoption |
-| D | [Section 6](#6-jax-and-pytorch-executable-architecture) executable validation and evidence indexing | Backend-specific design sketch |
+| A | [Section 3](#3-raw-and-portable-representation) raw/portable ownership and independent validation | Ordinary DTO design recommended as the transport direction |
+| B | [Section 7.2](#72-stage-b-candidate-dependent-contraction-prototype) Stage B contraction refinements | Candidate pending measured prototype |
+| C | [Section 7.3](#73-stage-c-candidate-scan-refinements) Stage C scan refinements | Wave F-aligned candidate independent of Stage B adoption |
+| D | [Section 4](#4-jax-and-pytorch-executable-architecture) executable validation and evidence indexing | Backend-specific design sketch |
 
 ### Appendix A: ordinary raw and portable DTOs
 
-This appendix makes the [Section 5](#5-raw-and-portable-representation) trust boundary concrete. The
+This appendix makes the [Section 3](#3-raw-and-portable-representation) trust boundary concrete. The
 first group represents unchecked plan semantics with ordinary data; the second separates required and
 materialized bindings; the final group adds preparation, versioning, identity, and independent
 validation. None of these records is an executable backend plan.
@@ -1394,7 +1430,7 @@ structure ValidatedPortablePlan where private mk ::
 ```
 
 These fields implement the identity and payload ownership specified in
-[Section 5.2](#52-identity-and-independent-validation). Exact floats use fixed-endian `UInt64` bits.
+[Section 3.2](#32-identity-and-independent-validation). Exact floats use fixed-endian `UInt64` bits.
 `CheckedTensorScope`, `CheckedAssignment`, and `CheckedScan` are intentionally abstract semantic
 interfaces. Appendix B may implement the assignment interface with dependent slots; Appendix C
 implements the scan interface without requiring that choice. Appendix D consumes only these common
@@ -1403,7 +1439,7 @@ interfaces and the explicit `.table` and `.mode` fields of `CheckedPortablePlan`
 ### Appendix B: candidate dependent checked contraction core
 
 **Status: candidate pending prototype; not canonical and not adopted.** This is the full Stage B
-schema introduced in [Section 4.2](#42-stage-b-candidate-dependent-contraction-prototype), not a
+schema introduced in [Section 7.2](#72-stage-b-candidate-dependent-contraction-prototype), not a
 source-compatible implementation prescription. It explores whether slot, rank, and basis invariants
 can become structural without making construction, diagnostics, or rewriting worse.
 
@@ -1478,17 +1514,17 @@ permutation from that basis to iteration order. Consequently `iterationShape`, `
 disjointness, and shape projection follow from the permutation. Densified zero coefficients still
 retain their canonical reduction axes and therefore their multiplicity. `ContractionAlgebra` encodes,
 but does not redefine, the operational contract in
-[Section 3.2](#32-contractions-and-ordered-floating-point-execution); current `reference64` migrates
+[Section 2.2](#22-contractions-and-ordered-floating-point-execution); current `reference64` migrates
 one-to-one to its closed `reference64SumProduct` constructor. The prototype gates in
-[Section 7](#7-adoption-plan-and-gates), including rewrite ergonomics, decide whether this sketch
+[Section 6](#6-adoption-plan-and-gates), including rewrite ergonomics, decide whether this sketch
 should replace arrays plus proofs.
 
 ### Appendix C: candidate checked scan refinements
 
 **Status: candidate pending a separate Wave F-aligned prototype; not canonical and not adopted.**
 
-This appendix elaborates [Section 4.3](#43-stage-c-candidate-scan-refinements) while preserving the
-scan semantics fixed in [Section 3.3](#33-blocks-graph-flow-and-scans). The sketch is deliberately
+This appendix elaborates [Section 7.3](#73-stage-c-candidate-scan-refinements) while preserving the
+scan semantics fixed in [Section 2.3](#23-blocks-graph-flow-and-scans). The sketch is deliberately
 parameterized over the checked local-kernel boundary. It can be
 instantiated by the current/Stage A Wave C assignment and block representation and therefore does not
 depend on adopting Appendix B. A later Stage B instantiation must preserve the same interface.
@@ -1663,7 +1699,7 @@ placement can therefore never mask an un-specialized RHS.
 
 **Status: backend-specific executable design sketch; non-copy-ready.** These types are not Backend
 Eval IR semantics. They make the candidate/refinement/evidence protocol in
-[Section 6.1](#61-evidence-indexed-executable-lowering) concrete using Appendix A's abstract
+[Section 4.3](#43-evidence-indexed-executable-lowering) concrete using Appendix A's abstract
 `CheckedTensorScope`, `CheckedAssignment`, and `CheckedScan` interfaces. Appendix B and Appendix C are
 candidate implementations of those interfaces, not prerequisites for executable separation.
 
