@@ -906,7 +906,7 @@ maximum of four), on the same JAX 0.10.0 CPU platform as the table above:
 | Quantity | Value |
 |---|---|
 | Generated artifact | 177,547 bytes |
-| Lean render time | 66 ms |
+| Lean check + Dense-verify + render | 66 ms |
 | Affine-table path, JIT steady-state call (median of 20) | 34 µs |
 | Native `jnp.einsum`, JIT steady-state call (median of 20) | 7 µs |
 | Affine-table path, first call (eager) | 340 ms |
