@@ -147,7 +147,7 @@ constructing a `CheckedEvalPlan`. The remaining risks arise after that point:
 | Flat lowering mode | Constructor encodes backend choice | Evidence-indexed backend kernel sums |
 
 These are organizational and scalability limitations, not evidence against the Wave C result.
-Section 1 shows that `EvalPlan` is already the point where backend-relevant meaning becomes explicit:
+Section 5 shows that `EvalPlan` is already the point where backend-relevant meaning becomes explicit:
 Lean checks its shapes, affine reads, ordered contractions, and graph flow; Dense interprets it as the
 reference semantics; and the JAX experiment interprets the same checked plans with exact agreement
 over the measured Wave C corpus. The table above identifies weaknesses in transport, independent
@@ -406,7 +406,7 @@ this staging.
 
 The matrix separates semantic requirements from implementation choices. `Fin`, vectors,
 permutations, arrays plus proofs, and indexed inductives are candidates, not semantics. It is also the
-bridge to the staged representation strategy developed next.
+bridge to the staged representation strategy in Part III's Section 7.
 
 Canonical semantics fix what every backend must mean; the next question a client actually hits is how
 a checked plan crosses the Lean/Python boundary as a structured, versioned artifact before any backend
@@ -918,10 +918,11 @@ below exist to close before any successor design may claim more than this bridge
 
 ## 6. Adoption plan and gates
 
-Sections 3-6 define semantics, candidate representations, transport, and execution. This section turns
-those design choices into admission criteria. Adoption follows evidence gates rather than a fixed
-implementation sequence: the current affine-table path remains the oracle while each representation
-or executable change proves that it preserves the canonical semantics.
+Part I's Sections 2-4 define semantics, transport, and execution, and Part III's Section 7 defines the
+candidate representations these gates also admit. This section turns those design choices into
+admission criteria. Adoption follows evidence gates rather than a fixed implementation sequence: the
+current affine-table path remains the oracle while each representation or executable change proves
+that it preserves the canonical semantics.
 
 ### 6.1 Constructor admission
 
