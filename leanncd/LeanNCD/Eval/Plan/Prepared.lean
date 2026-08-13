@@ -15,13 +15,23 @@ structure SlotBinding where
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- The subset of what used to be a plain `Array SlotBinding` that is checked, not merely assumed,
-    to be a name-unique reordering of `raw.inputSlots`: `bindings.map (·.slot)` is a `List.Perm` of
-    `inputSlots` — deliberately NOT plain array/positional equality, because `Adapter.lean`'s `pack`
-    resolves bindings by NAME, never by array position, and only a `Perm`-based proof lets a
-    reordering of `bindings` (`AdapterTest.lean` Check 5) stay provably legal — and
-    `bindings.map (·.name)` has no duplicates. Private constructor: the only way to build one from
-    outside this module is `checkBindings`, so a malformed `RequiredBindings` (duplicate/extra/
-    missing slot, or a name bound twice) is unconstructable, not merely untested. No `BEq`/
+    to be a name-unique reordering of its OWN stored `inputSlots` field below: `bindings.map
+    (·.slot)` is a `List.Perm` of `inputSlots` — deliberately NOT plain array/positional equality,
+    because `Adapter.lean`'s `pack` resolves bindings by NAME, never by array position, and only a
+    `Perm`-based proof lets a reordering of `bindings` (`AdapterTest.lean` Check 5) stay provably
+    legal — and `bindings.map (·.name)` has no duplicates. IMPORTANT SCOPE NOTE: `aligned` proves
+    the permutation against `inputSlots` as stored HERE, not against the enclosing
+    `PreparedPlan.plan.raw.inputSlots` — nothing in the type ties the two together.
+    They coincide for every plan `prepareEvalPlan` produces only because it is the sole real
+    producer that builds a `RequiredBindings` and its enclosing `PreparedPlan` together from the
+    same array; `PlanBindings`/`PreparedPlan`'s public constructors don't enforce that coupling, so
+    a hand-built `PreparedPlan` could pair a validly-checked `RequiredBindings` with a mismatched
+    `raw.inputSlots` undetected (see `Error.lean`'s `InputBindingError` doc comment for the
+    resulting `pack`-level diagnosability gap). Private constructor: the only way to build one from
+    outside this module is `checkBindings`, so a `RequiredBindings` misaligned against ITS OWN
+    `inputSlots` field (duplicate/extra/missing slot, or a name bound twice) is unconstructable,
+    not merely untested — that guarantee does not extend to alignment against some OTHER
+    `inputSlots` array such as a differently-constructed `PreparedPlan`'s. No `BEq`/
     `DecidableEq`/`Inhabited`: same precedent as `PreparedPlan` itself (below) — compare through
     `.bindings` (a plain `Array SlotBinding`, which does derive `BEq`) rather than whole-struct
     equality. -/

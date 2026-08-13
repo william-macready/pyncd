@@ -117,13 +117,23 @@ structure PlanCompileFailure where
 
 /-- Everything `pack` can detect wrong with the concrete tensor `env` supplies once `requiredInputs`
     itself is already known-good (`PlanBindings.requiredInputs : RequiredBindings`, checked by
-    `checkBindings` — a clean, name-unique bijection onto `raw.inputSlots` by construction, so
-    `pack` has nothing structural left to detect there; the three constructors that used to cover
-    that ground, `missingRequiredBinding`/`duplicateRequiredBinding`/`extraRequiredBinding`, are
-    gone, unreachable once `checkBindings` gates every `RequiredBindings` at prepare time). What's
-    left are genuine runtime concerns about the caller-supplied `env`: `missingEnvBinding` (a
-    required name absent from `env`), `shapeMismatch`/`storageMismatch` (a name resolved, but its
-    tensor doesn't conform to the plan's declared signature). -/
+    `checkBindings` — a clean, name-unique bijection, but onto `RequiredBindings`' OWN stored
+    `inputSlots` field, NOT — by anything the type system enforces — onto the enclosing
+    `PreparedPlan`'s `plan.raw.inputSlots`. The two agree for every plan `prepareEvalPlan` produces
+    only because it is the sole real-world producer that builds a `RequiredBindings` and its
+    enclosing `PreparedPlan` together from the same `inputSlotsAcc` (`Compile.lean`) — a
+    producer-discipline fact, not a type-level guarantee; `PlanBindings`/`PreparedPlan` both have
+    public constructors, so nothing stops a hand-built `PreparedPlan` from pairing a
+    validly-checked `RequiredBindings` against a mismatched `raw.inputSlots`. Were that ever to
+    happen, `pack` would NOT catch it structurally: the unmatched slot would silently resolve to
+    `pack`'s generic `.missingEnvBinding ""` (the `slotName.getD slot ""` default) instead of a
+    diagnostic naming the actual slot, the way the three constructors below used to. Those
+    constructors, `missingRequiredBinding`/`duplicateRequiredBinding`/`extraRequiredBinding`, are
+    gone, unreachable for every `RequiredBindings` `prepareEvalPlan` actually produces — not
+    unreachable in general, since the type does not close that gap). What's left are genuine
+    runtime concerns about the caller-supplied `env`: `missingEnvBinding` (a required name absent
+    from `env`), `shapeMismatch`/`storageMismatch` (a name resolved, but its tensor doesn't conform
+    to the plan's declared signature). -/
 inductive InputBindingError
   | missingEnvBinding (name : String)
   | shapeMismatch     (name : String) (slot : TensorSlot) (expected : Array Nat) (actual : List Nat)
