@@ -1309,9 +1309,11 @@ functions; `prepareEvalPlan` already builds one required-input binding per name 
 without a length-correctness wrapper type. And executable lowering itself already exists —
 `EvalPlanCodegen.lean`'s `einsumOnly`/`affineReference` modes are the basis of every measurement in
 [Section 5.4](#54-evidence-validating-the-experimental-jax-bridge) — what's missing there (items 5, 6)
-is the validated, evidence-indexed *type-level discipline* around it, not lowering itself: nothing
-currently stops an unvalidated candidate from executing or distinguishes ordered-reference from
-experimental evidence in the type system. This matters for sequencing: threads 3 and 5 below build
+is the validated, evidence-indexed *type-level discipline* around it, not lowering itself: the
+*checked* phase already gates on private constructors (`CheckedEvalPlan`/`CheckedAssignPlan` in
+`Eval/Plan/Check.lean`), but nothing yet gates the *executable* phase the same way, or distinguishes
+ordered-reference from experimental evidence in the type system. This matters for sequencing: threads
+3 and 5 below build
 the Stage A pieces their own work genuinely lacks (items 1, 7, 8 for thread 3; items 5, 6 for thread
 5) — not by choice, because nothing else claims them either. Thread 6 is the remainder: items 2, 3,
 and 4, none blocked on thread 3 or 5, and cheaper than the others since two are API-surface work over
