@@ -1,6 +1,6 @@
 # Lean-JAX bridge experiments
 
-This directory holds four isolated experiment runners, none of which changes LeanNCD's dependencies
+This directory holds five isolated experiment runners, none of which changes LeanNCD's dependencies
 or toolchain:
 
 - **`run.sh`**: upstream `NetSpec` -> generated JAX. Evaluates the
@@ -15,6 +15,9 @@ or toolchain:
   checker-produced affine lookup tables -> the ordered JAX reference runtime.
 - **`run-evalplan-affine-corpus.sh`**: all 3,832 `PropertyOracle.enumPrograms` cases through the same
   affine reference, with eager full-output comparison and JIT feature representatives.
+- **`run-scaling-probe.sh`**: one mid-sized (64x64, 4,096-coordinate) contraction through the same
+  affine reference, measured against native `jnp.einsum` computing the same contraction — not a
+  permanent test, a one-off measurement for `papers/jax_evalplan_architecture.md` §7.6 row 2.
 
 ## `run.sh`: upstream `NetSpec` bridge
 
@@ -137,6 +140,25 @@ reduction domains, multiple graph nodes, and internal reads. Curated cases uniqu
 negative-coordinate invalidity, zero-coefficient rows, zero extents, empty factors, and empty terms.
 These are empirical binary64 results for the measured CPU platform, not a proof about every XLA
 platform. Scan lowering remains future work.
+
+## Scaling probe
+
+`run-scaling-probe.sh` measures one mid-sized contraction — `Y[i] := Σⱼ W[i,j]·x[j]`, `i,j` both
+ranging over 64, a 4,096-coordinate iteration domain, 1,024× the corpus's maximum of four — against
+native `jnp.einsum` computing the same contraction. Not a permanent test: this converts
+`papers/jax_evalplan_architecture.md` §5.4's affine-table scaling risk from code inspection into a
+measurement (§7.6 row 2).
+
+Measured on the JAX CPU backend, 2026-08-13 (JAX/JAXlib 0.10.0):
+
+- 177,547-byte generated artifact from this one fixture — about 5% of the entire 3,832-case corpus's
+  3,424,195 bytes;
+- 34 µs affine-table JIT steady-state call (median of 20) versus 7 µs for native `jnp.einsum`, about
+  4.9× slower — measured with `.block_until_ready()` inside the timed region, since unblocked JAX
+  dispatch understates completion time;
+- 340 ms / 15 ms first-call (eager) times for the affine path and native `jnp.einsum` respectively —
+  both pay real XLA compilation on first call (`jax.lax.fori_loop`/`jax.vmap` compile their bodies
+  even outside an outer `jax.jit`), so this gap overstates the steady-state one.
 
 ## Verified environment and commands
 

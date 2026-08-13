@@ -5,14 +5,17 @@ import Eval.Plan.KernelDenseTest
 # Affine-table scaling probe — driver
 
 One-off measurement for `papers/jax_evalplan_architecture.md` §7.6 row 2: how big is the generated
-affine table for one mid-sized contraction, and how long does Lean take to render it? Renders
-`Eval.Plan.KernelDenseTest.scalingProbePlan` (a 64x64, 4,096-coordinate `Y[i] := Σⱼ W[i,j]·x[j]`,
-checked and Dense-verified in `Tests`, part of the default build) via `EvalPlanCodegen.buildAssignFixture`
-— the one assign-fixture builder every `jax_bridge` driver shares — into the same
-one-fixture-per-entry `FIXTURES` module shape `EvalPlanAffineSmoke.lean` uses, so
-`evalplan_affine_runtime.py` can run it unchanged. Not a permanent test; run ad hoc via
-`lake env lean --run` and read the printed timing plus the written file's byte size. Kept out of the
-default build, matching every other driver here.
+affine table for one mid-sized contraction, and how long does Lean take to check, Dense-verify, and
+render it? Renders `Eval.Plan.KernelDenseTest.scalingProbePlan` (a 64x64, 4,096-coordinate
+`Y[i] := Σⱼ W[i,j]·x[j]`, checked and Dense-verified in `Tests`, part of the default build) via
+`EvalPlanCodegen.buildAssignFixture` — the one assign-fixture builder every `jax_bridge` driver
+shares — into the same one-fixture-per-entry `FIXTURES` module shape `EvalPlanAffineSmoke.lean` uses,
+so `evalplan_affine_runtime.py` can run it unchanged. The printed timing spans `buildAssignFixture`'s
+whole `checkAssign`/`runDenseAssign`/`renderAffineAssign` sequence, not table-rendering alone — the
+shared helper doesn't expose a render-only entry point, and adding one just to shave this timing
+window would duplicate it. Not a permanent test; run ad hoc via `lake env lean --run` and read the
+printed timing plus the written file's byte size. Kept out of the default build, matching every
+other driver here.
 -/
 
 open LeanNCD LeanNCD.Eval LeanNCD.Eval.Plan Std
@@ -28,4 +31,4 @@ def main (args : List String) : IO Unit := do
     "FIXTURES = [\n" ++ fixture ++ "\n]\n"
   IO.FS.writeFile outputPath moduleSrc
   let bytes := moduleSrc.toUTF8.size
-  IO.println s!"Generated {outputPath}: {bytes} bytes, render took {t1 - t0} ms"
+  IO.println s!"Generated {outputPath}: {bytes} bytes, check+Dense-verify+render took {t1 - t0} ms"
