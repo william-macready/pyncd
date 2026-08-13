@@ -279,9 +279,42 @@ reference" cannot both hold under one contract. This document therefore names a 
 closed contract, `reference64Transcendental`, for nonlinear steps: it fixes the function computed and
 bounds agreement by a stated per-function ULP tolerance instead of asserting bit-exactness. Differential
 testing follows the same split — affine and sum-product steps compare bit-exact against the ordered
-reference; nonlinear steps compare within their contract's ULP bound. Neither contract exists as a
-supported step yet: `LeanNCD/Eval/Plan/Compile.lean` rejects every pointwise and axiswise
-nonlinear statement via `unsupportedNonlin` ahead of either producer, checker, or interpreter support.
+reference; nonlinear steps compare within their contract's ULP bound. Neither contract admits a
+checked step in the new pipeline yet: `LeanNCD/Eval/Plan/Compile.lean` rejects every pointwise and
+axiswise nonlinear statement via `unsupportedNonlin` ahead of either producer, checker, or interpreter
+support. This is separate from the legacy DSL evaluator, where `LeanNCD/Eval/Nonlin.lean` already
+computes all eight functions today for `Eval.lean`/`Scan.lean` — the same legacy evaluator
+[Section 2.3](#23-blocks-graph-flow-and-scans) already marks known-nonconforming and slated for
+retirement; its existing formulas ground the table below, but its numeric agreement with the ordered
+reference has never been checked.
+
+IEEE-754 mandates correctly-rounded results for `+`, `-`, `×`, `÷`, and `√`; it does not mandate
+correctly-rounded transcendentals. Combined with this document's ordered-fold discipline above, every
+`AxiswiseFn`'s reduction — softmax's denominator sum, `normalize`'s sum, `l2normalize`'s sum of
+squares — is exact by construction. Cross-backend disagreement can only enter through an actual
+transcendental primitive call, which four of the eight functions never make:
+
+| Function | Formula | ULP bound | Basis |
+|---|---|---|---|
+| `relu` | `max(x, 0)` | 0 (exact) | Comparison and select only; no transcendental, no division |
+| `leakyrelu` | `x` if `x ≥ 0` else `α·x`, `α = 0.01` (matches PyTorch's `nn.LeakyReLU` default) | 0 (exact) | One IEEE-mandated multiply, given identical `α` bit pattern in every backend |
+| `normalize` | `x / sum(x)` | 0 (exact) | Ordered sum plus one IEEE-mandated divide; no transcendental |
+| `l2normalize` | `x / sqrt(sum(x^2))` | 0 (exact) | Ordered sum of squares plus IEEE-mandated `sqrt` and divide; no transcendental |
+| `sigmoid` | `1 / (1 + exp(-x))` | 2 | One `exp` call, the only source of variance; wrapping arithmetic is exact |
+| `tanh` | `tanh(x)` | 2 | One primitive transcendental call, no wrapping arithmetic |
+| `gelu` | `x · 0.5 · (1 + tanh(√(2/π) · (x + 0.044715x³)))` — the tanh approximation, chosen because `Float.erf` isn't available in this Lean toolchain (per `Nonlin.lean`'s own rationale) and because it matches JAX's `jax.nn.gelu` default; PyTorch's default is the exact erf form and must pass `approximate='tanh'` to match | 4 | One `tanh` call, same tier as plain `tanh`, doubled only because `1 + tanh(z)` risks cancellation for very negative `x` — an allowance for a named mechanism, not a separate derivation |
+| `softmax` | `exp(xᵢ − max(x)) / Σⱼ exp(xⱼ − max(x))` | 2 per element | Max-subtraction and the summation are exact by the ordered-fold discipline; one `exp` call per element, same tier as plain `tanh`/`sigmoid` |
+
+These are reasoned starting bounds, not measurements — and unlike `reference64SumProduct`'s fold order,
+which `KernelDenseTest.lean` and `DifferentialTest.lean` pin as exact Lean values today, nothing in
+this table has a corresponding Lean constant or test yet, because nothing can exercise it: unlike
+[Section 5.4](#54-evidence-validating-the-experimental-jax-bridge)'s corpus evidence, no differential
+run exists yet, because the checked pipeline these bounds govern accepts none of these steps. Once
+Dense, JAX, and PyTorch gain checked nonlinear support, re-measure against real output, turn each
+bound into an actual Lean constant with a pinning test the way `reference64SumProduct`'s fold order
+already has, and tighten or loosen these numbers accordingly; treat this table as the closing decision
+Stage A needs ([Section 7.1](#71-stage-a-recommended-low-risk-refinements),
+[Section 7.6](#76-sequencing-across-open-threads) row 1), not as validated evidence.
 
 ### 2.3 Blocks, graph flow, and scans
 
@@ -1035,10 +1068,12 @@ sketches so the main argument can compare tradeoffs without presenting experimen
 These changes encode stable boundaries without requiring the dependent contraction prototype. They
 are described completely here; unlike Stages B and C, Stage A has no separate candidate schema in the
 appendices. Closing `reference64SumProduct` is this stage's entire numeric-mode content, so the
-[Section 2.2](#22-contractions-and-ordered-floating-point-execution) contract split must be settled
+[Section 2.2](#22-contractions-and-ordered-floating-point-execution) contract split had to be settled
 before Stage A closes, not after Wave F: closing only the sum-product mode while treating nonlinear
-steps as future scope for the same mode would misrepresent Stage A as complete numeric-mode coverage,
-when in fact a second closed mode, `reference64Transcendental`, is required and not yet specified.
+steps as future scope for the same mode would misrepresent Stage A as complete numeric-mode coverage.
+The second closed mode, `reference64Transcendental`, is now specified per function in Section 2.2 —
+reasoned starting bounds pending empirical validation once an interpreter accepts nonlinear steps at
+all, not yet a source of doubt about whether Stage A's numeric-mode scope is complete.
 
 | Refinement | Eliminated invalid state | Required migration | Expected proof burden | Adoption test |
 |---|---|---|---|---|
@@ -1227,7 +1262,7 @@ enforced anywhere in [Section 6](#6-adoption-plan-and-gates).
 
 | Order | Thread | Depends on | Why here |
 |---|---|---|---|
-| 1 | Pin `reference64Transcendental`'s per-function ULP bounds | Nothing | Specification only, no code. [Section 7.1](#71-stage-a-recommended-low-risk-refinements) already flags this as blocking a true Stage A close, alongside Stage A's other unclosed refinements. |
+| 1 | Pin `reference64Transcendental`'s per-function ULP bounds | Nothing | **Specified**, not landed: [Section 2.2](#22-contractions-and-ordered-floating-point-execution) gives reasoned starting bounds with no Lean constant or test behind them yet, unvalidated against any real backend output. [Section 7.1](#71-stage-a-recommended-low-risk-refinements) no longer flags the *absence* of a contract as blocking Stage A's close. |
 | 2 | Run the affine-table scaling measurement: one mid-sized contraction, timed and sized | Nothing | Independent of every other thread; can run in parallel with all of them. Converts [Section 5.4](#54-evidence-validating-the-experimental-jax-bridge)'s open risk into a decision that determines row 5's timing. |
 | 3 | Continue Wave F (F2-F4: checked block and scan layers) | Nothing beyond what F0/F1 already landed | This *is* Backend Eval IR's scan-half implementation per [Section 2.3](#23-blocks-graph-flow-and-scans), not prerequisite work backend IR waits on. Proceeds independently of rows 1, 2, and 4, subject to [Section 7.2](#72-stage-b-candidate-dependent-contraction-prototype)'s existing constraint against combining it with the Stage B rewrite. |
 | 4 | Implement nonlinearity: new `PlanStep` pointwise/axiswise cases, Dense/JAX/PyTorch interpreter support | Row 1 | A nonlinear step's evidence is meaningless without a stated ULP bound. Sequenced after row 3, not because of a type dependency, but to avoid two concurrent foundational changes to the same `PlanStep` sum; pull forward if that stops mattering. |
