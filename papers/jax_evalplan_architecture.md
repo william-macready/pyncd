@@ -906,24 +906,29 @@ maximum of four), on the same JAX 0.10.0 CPU platform as the table above:
 | Quantity | Value |
 |---|---|
 | Generated artifact | 177,547 bytes |
-| Lean render time | 36 ms |
-| Affine-table path, JIT steady-state call | 28 µs |
-| Native `jnp.einsum`, JIT steady-state call | 16 µs |
-| Affine-table path, first call (eager) | 670 ms |
+| Lean render time | 66 ms |
+| Affine-table path, JIT steady-state call (median of 20) | 34 µs |
+| Native `jnp.einsum`, JIT steady-state call (median of 20) | 7 µs |
+| Affine-table path, first call (eager) | 340 ms |
 | Native `jnp.einsum`, first call (eager) | 15 ms |
 
-This is decisive for the artifact-size half of the concern and inconclusive for the runtime-speed
-half. **Artifact size**: one fixture at this size is already 177,547 bytes — about 5% of the entire
-3,424,195-byte, 3,832-case corpus, from a single case. Extrapolating the same linear-in-iteration-domain
-relationship (not a second measurement) to a size more typical of real use — say 512×512, 64× this
-domain — projects to roughly 64× the bytes, on the order of 11 MB for one contraction. **Runtime
-speed**, once compiled, is a smaller gap than the raw first-call numbers suggest: both paths' first
-calls pay for XLA compiling internally (the affine runtime's sequential folds use `jax.lax.fori_loop`
-and `jax.vmap`, which compile their bodies even outside an outer `jax.jit`), so the fair comparison is
-the steady-state call after that one-time cost — 28 µs versus 16 µs, under 2× slower, not the 45×
-the eager numbers alone would imply. [Section 7.6](#76-sequencing-across-open-threads) row 5 treats
-the artifact-size finding as sufficient to move compact kernels ahead of Wave F and nonlinearity
-implementation; the runtime-speed finding does not, on its own, argue for that.
+Every timed call blocks on `.block_until_ready()` inside the timed region — JAX dispatch is
+asynchronous, so a `perf_counter` delta around an unblocked call measures dispatch overhead, not
+completion — and the steady-state rows are the median of 20 repeated calls, not one sample; an
+earlier single-sample pass understated the steady-state gap by nearly 3× before this methodology
+fix. This is decisive for both halves of the concern. **Artifact size**: one fixture at this size is
+already 177,547 bytes — about 5% of the entire 3,424,195-byte, 3,832-case corpus, from a single case.
+Extrapolating the same linear-in-iteration-domain relationship (not a second measurement) to a size
+more typical of real use — say 512×512, 64× this domain — projects to roughly 64× the bytes, on the
+order of 11 MB for one contraction. **Runtime speed**, once compiled, is a real gap, smaller than the
+raw first-call numbers suggest but larger than a first, less careful pass at this same measurement
+found: both paths' first calls pay for XLA compiling internally (the affine runtime's sequential
+folds use `jax.lax.fori_loop` and `jax.vmap`, which compile their bodies even outside an outer
+`jax.jit`), so the fair comparison is the steady-state call after that one-time cost — 34 µs versus
+7 µs, about 4.9× slower, not the 23× the eager numbers alone would imply, but also not the under-2×
+an earlier single-sample measurement of this same fixture reported.
+[Section 7.6](#76-sequencing-across-open-threads) row 5 treats both findings as reasons to move
+compact kernels ahead of Wave F and nonlinearity implementation, not the artifact-size finding alone.
 
 **Corpus breadth is structural, not numerical.** `PropertyOracle.enumPrograms` is a deliberately
 bounded enumeration, and 3,832 is closer to a redundancy count than a coverage count. Every program
@@ -1289,7 +1294,7 @@ enforced anywhere in [Section 6](#6-adoption-plan-and-gates).
 | 2 | Run the affine-table scaling measurement: one mid-sized contraction, timed and sized | Nothing | **Measured** ([Section 5.4](#54-evidence-validating-the-experimental-jax-bridge)): one 4,096-coordinate contraction is already ~5% of the entire corpus's artifact size; steady-state JIT speed is not the crisis code inspection implied, but artifact size is. Reorders row 5 below. |
 | 3 | Continue Wave F (F2-F4: checked block and scan layers) | Nothing beyond what F0/F1 already landed | This *is* Backend Eval IR's scan-half implementation per [Section 2.3](#23-blocks-graph-flow-and-scans), not prerequisite work backend IR waits on. Proceeds independently of rows 1, 2, and 4, subject to [Section 7.2](#72-stage-b-candidate-dependent-contraction-prototype)'s existing constraint against combining it with the Stage B rewrite. |
 | 4 | Implement nonlinearity: new `PlanStep` pointwise/axiswise cases, Dense/JAX/PyTorch interpreter support | Row 1 | A nonlinear step's evidence is meaningless without a stated ULP bound. Sequenced after row 3, not because of a type dependency, but to avoid two concurrent foundational changes to the same `PlanStep` sum; pull forward if that stops mattering. |
-| 5 | Compact/evidence-indexed kernels and the PyTorch backend ([Section 4.3](#43-evidence-indexed-executable-lowering), Appendix D) | Row 2's outcome | **Moved ahead of rows 3-4** per row 2's measurement: artifact size grows too fast for the affine-table oracle to stay usable past near-term needs, even though its compiled runtime speed is fine. Not yet started. |
+| 5 | Compact/evidence-indexed kernels and the PyTorch backend ([Section 4.3](#43-evidence-indexed-executable-lowering), Appendix D) | Row 2's outcome | **Moved ahead of rows 3-4** per row 2's measurement: artifact size grows too fast for the affine-table oracle to stay usable past near-term needs, and its compiled steady-state runtime is measurably (~5×) slower than native `jnp.einsum`, not merely comparable. Not yet started. |
 
 ## 8. Appendices
 

@@ -342,6 +342,23 @@ def renderAffinePlanNamed (plan : PreparedPlan) : String :=
 def renderAffineAssign (c : CheckedAssignPlan) : String :=
   renderAffineNode c.plan
 
+/-- Check, Dense-run, and render one checked-assignment fixture as a `FIXTURES`-list entry:
+    `{"name", "kind": "assign", "assign", "store", "expected"}`. The one assign-fixture builder
+    every `jax_bridge` driver needs — shared here, on `EvalPlanCodegen`, so a new driver can call it
+    directly instead of re-deriving the same check→run→render sequence. -/
+def buildAssignFixture (name : String) (sigs : Array TensorSignature) (a : AssignPlan)
+    (store : Array DenseTensor) : IO String := do
+  let checked ← match checkAssign sigs a with
+    | .ok c => pure c
+    | .error e => throw (IO.userError s!"{name} check failed: {repr e}")
+  let expected ← match runDenseAssign checked store with
+    | .ok d => pure d
+    | .error e => throw (IO.userError s!"{name} Dense run failed: {repr e}")
+  let storeEntries := String.intercalate ", " (store.toList.map pyTensorEntry)
+  pure ("{\"name\": " ++ pyStrLit name ++ ", \"kind\": \"assign\", \"assign\": " ++
+    renderAffineAssign checked ++ ", \"store\": [" ++ storeEntries ++ "], \"expected\": " ++
+    pyTensorEntry expected ++ "}")
+
 /-! ## 7. Explicit mode selection -/
 
 /-- The two lowerings, chosen by the caller — never a silent fallback. -/
