@@ -573,4 +573,46 @@ def emptySourceStore : Array DenseTensor :=
         | .ok c => (runDenseAssign c emptySourceStore).toOption.map DenseTensor.data)
   == some #[0.0, 0.0]
 
+/-! ## Scaling probe: one mid-sized contraction
+
+`Y[i] := Σⱼ W[i,j]·x[j]`, `i,j` both ranging over 64 — the same shape as `ptcReadW`/`ptcReadV`'s
+2×2 matrix-vector contraction, scaled to a 4,096-coordinate iteration domain (`64 · 64`) instead of
+4. This is `papers/jax_evalplan_architecture.md` §7.6 row 2's scaling measurement: the affine-table
+lowering renders one safe index and one validity bit per coordinate of the *full* iteration domain,
+contracted axis included, so this is the first fixture in the suite big enough to measure that growth
+rather than reason about it from code inspection alone. `W` and `x` are all-ones so the expected
+output is the trivially hand-computed constant `64.0` at every position, not a value read back from
+this interpreter. -/
+
+def scalingProbeSigs : Array TensorSignature :=
+  #[ { shape := #[64, 64], dtype := .f64 }
+   , { shape := #[64], dtype := .f64 }
+   , { shape := #[64], dtype := .f64 } ]
+
+def scalingProbeReadW : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[#[1, 0], #[0, 1]], bias := #[0, 0] }
+  , sourceShape := #[64, 64], oobPolicy := .zeroPad }
+
+def scalingProbeReadX : ReadPlan :=
+  { sourceSlot := 1, map := { coeffs := #[#[0, 1]], bias := #[0] }
+  , sourceShape := #[64], oobPolicy := .zeroPad }
+
+def scalingProbePlan : AssignPlan :=
+  { contextShape := #[], destinationSlot := 2, outputShape := #[64]
+  , terms := #[{ iterationShape := #[64, 64], contextPos := #[], outputPos := #[0], reductionPos := #[1]
+               , factors := #[scalingProbeReadW, scalingProbeReadX] }]
+  , algebra := admittedAlgebra }
+
+def scalingProbeStore : Array DenseTensor :=
+  #[ { shape := [64, 64], data := (Array.range (64 * 64)).map (fun _ => (1.0 : Float)) }
+   , { shape := [64], data := (Array.range 64).map (fun _ => (1.0 : Float)) }
+   , { shape := [64], data := #[] } ]
+
+-- Y[i] := Σⱼ W[i,j]·x[j] with W, x all-ones: Y[i] = 64 (one 1.0 per reduction coordinate) for
+-- every i. Hand-computed from the constant, not read back from the interpreter.
+#guard (match checkAssign scalingProbeSigs scalingProbePlan with
+        | .error _ => none
+        | .ok c => (runDenseAssign c scalingProbeStore).toOption.map DenseTensor.data)
+  == some ((Array.range 64).map (fun _ => (64.0 : Float)))
+
 end LeanNCD.Eval.Plan.KernelDenseTest

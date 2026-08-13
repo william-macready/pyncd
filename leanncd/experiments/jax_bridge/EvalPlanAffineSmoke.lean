@@ -161,19 +161,6 @@ def buildNamedFixture (name : String) (prog : TLProgram) (inputs : HashMap Strin
     renderAffinePlanNamed prepared ++ ", \"inputs\": " ++ inputsDict ++
     ", \"expected\": " ++ expectedDict ++ "}")
 
-def buildAssignFixture (name : String) (sigs : Array TensorSignature) (a : AssignPlan)
-    (store : Array DenseTensor) : IO String := do
-  let checked ← match checkAssign sigs a with
-    | .ok c => pure c
-    | .error e => throw (IO.userError s!"{name} check failed: {repr e}")
-  let expected ← match runDenseAssign checked store with
-    | .ok d => pure d
-    | .error e => throw (IO.userError s!"{name} Dense run failed: {repr e}")
-  let storeEntries := String.intercalate ", " (store.toList.map pyTensorEntry)
-  pure ("{\"name\": " ++ pyStrLit name ++ ", \"kind\": \"assign\", \"assign\": " ++
-    renderAffineAssign checked ++ ", \"store\": [" ++ storeEntries ++ "], \"expected\": " ++
-    pyTensorEntry expected ++ "}")
-
 def buildPositionalFixture (name : String) (raw : RawEvalPlan) (inputs : Array DenseTensor) :
     IO String := do
   let checked ← match checkPlan raw with
