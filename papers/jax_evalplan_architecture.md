@@ -1103,16 +1103,16 @@ The second closed mode, `reference64Transcendental`, is now specified per functi
 reasoned starting bounds pending empirical validation once an interpreter accepts nonlinear steps at
 all, not yet a source of doubt about whether Stage A's numeric-mode scope is complete.
 
-| Refinement | Eliminated invalid state | Required migration | Expected proof burden | Adoption test |
-|---|---|---|---|---|
-| Distinct slot namespaces | Outer and block slots cannot be accidentally interchanged | Tag current slot references by scope | Small wrappers and erasure lemmas | Existing graph corpus plus cross-scope rejection fixtures |
-| Explicit operational fold order | A backend cannot infer lawful reassociation | Route Dense and ordered interpreters through three named folds | Small equivalence proof to current Dense loops | Factor/reduction/term low-bit mutations |
-| Closed `reference64SumProduct` | Unsupported open scalar operators cannot inhabit this mode | Replace current `reference64` tag and arbitrary fold records | Constructor exhaustiveness and one-to-one migration | All current numeric fixtures bit-exact |
-| Length-correct required-input bindings | Missing or extra prepared input names | Build aligned bindings during preparation; preserve materialized arrays | Alignment construction and name-uniqueness evidence | Missing/extra/name-order and repeated-materialization tests |
-| Private validated executable constructors | Unvalidated candidates cannot execute | Split public lowering candidates from validator-owned constructors | Candidate/source alignment predicate | Constructor privacy tests and lowering mutations |
-| Evidence-indexed backend kernels | Einsum/optimized kernels cannot claim ordered-reference evidence | Aggregate each mixed plan under a common evidence index | Sum-index aggregation and exhaustiveness | Mixed-kernel rejection plus AST/low-bit evidence |
-| Distinct snapshot and next-state result types | Partial mutation and sibling read-after-write through the API | Make workers consume snapshots and return complete result values | Worker boundary and completeness predicate | Coupled-state snapshot/atomic-commit tests |
-| Derived step graph interface | Assignments, scans, checkers, and backends cannot disagree about graph sources or destinations | Route graph validation and consumers through `PlanStep.sourceSlots` and `PlanStep.destinationSlots` | Exhaustive definitions over the closed step sum | Assignment/scan source and multi-destination graph fixtures |
+| # | Refinement | Eliminated invalid state | Required migration | Expected proof burden | Adoption test |
+|---|---|---|---|---|---|
+| 1 | Distinct slot namespaces | Outer and block slots cannot be accidentally interchanged | Tag current slot references by scope | Small wrappers and erasure lemmas | Existing graph corpus plus cross-scope rejection fixtures |
+| 2 | Explicit operational fold order | A backend cannot infer lawful reassociation | Route Dense and ordered interpreters through three named folds | Small equivalence proof to current Dense loops | Factor/reduction/term low-bit mutations |
+| 3 | Closed `reference64SumProduct` | Unsupported open scalar operators cannot inhabit this mode | Replace current `reference64` tag and arbitrary fold records | Constructor exhaustiveness and one-to-one migration | All current numeric fixtures bit-exact |
+| 4 | Length-correct required-input bindings | Missing or extra prepared input names | Build aligned bindings during preparation; preserve materialized arrays | Alignment construction and name-uniqueness evidence | Missing/extra/name-order and repeated-materialization tests |
+| 5 | Private validated executable constructors | Unvalidated candidates cannot execute | Split public lowering candidates from validator-owned constructors | Candidate/source alignment predicate | Constructor privacy tests and lowering mutations |
+| 6 | Evidence-indexed backend kernels | Einsum/optimized kernels cannot claim ordered-reference evidence | Aggregate each mixed plan under a common evidence index | Sum-index aggregation and exhaustiveness | Mixed-kernel rejection plus AST/low-bit evidence |
+| 7 | Distinct snapshot and next-state result types | Partial mutation and sibling read-after-write through the API | Make workers consume snapshots and return complete result values | Worker boundary and completeness predicate | Coupled-state snapshot/atomic-commit tests |
+| 8 | Derived step graph interface | Assignments, scans, checkers, and backends cannot disagree about graph sources or destinations | Route graph validation and consumers through `PlanStep.sourceSlots` and `PlanStep.destinationSlots` | Exhaustive definitions over the closed step sum | Assignment/scan source and multi-destination graph fixtures |
 
 Stage A should preserve behavior and path-local errors. It must not introduce pervasive casts in
 backend code. Backend Eval IR remains an inspectable deep embedding with separate Dense, encoding,
@@ -1281,26 +1281,52 @@ data crosses the Lean/Python trust boundary as ordinary DTOs without serializing
 
 ### 7.6 Sequencing across threads
 
-The preceding sections describe five threads that are easy to assume are strictly ordered when they
+The preceding sections describe six threads that are easy to assume are strictly ordered when they
 are not: closing the numeric-mode contract, measuring affine-table scaling, Wave F's scan work,
-nonlinearity support, and compact/evidence-indexed kernels. Two are now settled, in different senses —
-thread 1 is a closed *decision*, not yet empirically checked; thread 2 is a closed *measurement* — and
-settling them changed the recommended order for the three still open. Thread numbers below are stable
-identifiers other sections cite by number ([Section 2.2](#22-contractions-and-ordered-floating-point-execution)
-cites thread 1, [Section 5.4](#54-evidence-validating-the-experimental-jax-bridge) cites thread 5) —
-they are not a reading order. The table's row order is: settled threads first, then the three open
-threads in their current recommended sequence. Wave F (thread 3) is in-progress Part I work, not a
-Part III candidate; it appears here only because its timing relative to the others needs stating.
-This remains a planning default, not a gate enforced anywhere in [Section 6](#6-adoption-plan-and-gates)
-— re-derive the open threads' order if a reason emerges, but don't re-litigate it without one.
+nonlinearity support, compact/evidence-indexed kernels, and closing Stage A's remaining narrow
+refinements. Two are now settled, in different senses — thread 1 is a closed *decision*, not yet
+empirically checked; thread 2 is a closed *measurement* — and settling them changed the recommended
+order for the four still open. Thread numbers below are stable identifiers other sections cite by
+number ([Section 2.2](#22-contractions-and-ordered-floating-point-execution) cites thread 1,
+[Section 5.4](#54-evidence-validating-the-experimental-jax-bridge) cites thread 5) — they are not a
+reading order. The table's row order is: settled threads first, then the four open threads in their
+current recommended sequence. Wave F (thread 3) is in-progress Part I work, not a Part III candidate;
+it appears here only because its timing relative to the others needs stating. This remains a
+planning default, not a gate enforced anywhere in [Section 6](#6-adoption-plan-and-gates) — re-derive
+the open threads' order if a reason emerges, but don't re-litigate it without one.
+
+**Most of Stage A doesn't exist as code, but not uniformly.** Item numbers below are
+[Section 7.1](#71-stage-a-recommended-low-risk-refinements)'s own `#` column, not a positional
+count of this paragraph's claims. `PlanStep`, distinct slot namespaces,
+private validated executable constructors, evidence-indexed kernels, and snapshot/next-state types
+genuinely don't exist in any form — the real codebase today is `RawEvalPlan` → `CheckedEvalPlan` →
+`PreparedPlan` built from `AssignPlan`/`TermPlan`/`ReadPlan` (assignment-only, flat `Nat` slots, an
+open `reference64` tag rather than a closed `reference64SumProduct`). But two items already have
+correct, tested *behavior* that just isn't surfaced as the distinct API Stage A specifies:
+`Dense.lean`'s `runDenseAssignAt` already documents and implements exact source-declared,
+non-flattened factor/reduction/term order (item 2), just inlined rather than as three named fold
+functions; `prepareEvalPlan` already builds one required-input binding per name (item 4), just
+without a length-correctness wrapper type. And executable lowering itself already exists —
+`EvalPlanCodegen.lean`'s `einsumOnly`/`affineReference` modes are the basis of every measurement in
+[Section 5.4](#54-evidence-validating-the-experimental-jax-bridge) — what's missing there (items 5, 6)
+is the validated, evidence-indexed *type-level discipline* around it, not lowering itself: the
+*checked* phase already gates on private constructors (`CheckedEvalPlan`/`CheckedAssignPlan` in
+`Eval/Plan/Check.lean`), but nothing yet gates the *executable* phase the same way, or distinguishes
+ordered-reference from experimental evidence in the type system. This matters for sequencing: threads
+3 and 5 below build
+the Stage A pieces their own work genuinely lacks (items 1, 7, 8 for thread 3; items 5, 6 for thread
+5) — not by choice, because nothing else claims them either. Thread 6 is the remainder: items 2, 3,
+and 4, none blocked on thread 3 or 5, and cheaper than the others since two are API-surface work over
+already-correct behavior rather than new structure.
 
 | Thread | Item | Status | Depends on | Why |
 |---|---|---|---|---|
 | 1 | Pin `reference64Transcendental`'s per-function ULP bounds | **Specified**, not validated | Nothing | [Section 2.2](#22-contractions-and-ordered-floating-point-execution) gives reasoned starting bounds with no Lean constant or test behind them yet, unvalidated against any real backend output. [Section 7.1](#71-stage-a-recommended-low-risk-refinements) no longer flags the *absence* of a contract as blocking Stage A's close. |
 | 2 | Run the affine-table scaling measurement: one mid-sized contraction, timed and sized | **Measured** | Nothing | [Section 5.4](#54-evidence-validating-the-experimental-jax-bridge): one 4,096-coordinate contraction is already ~5% of the entire corpus's artifact size, and its compiled steady-state runtime is measurably (~5×) slower than native `jnp.einsum`. Both findings reordered thread 5 below. |
-| 5 | Compact/evidence-indexed kernels and the PyTorch backend ([Section 4.3](#43-evidence-indexed-executable-lowering), Appendix D) | **Next** — moved ahead of threads 3-4 | Thread 2's outcome | Artifact size grows too fast for the affine-table oracle to stay usable past near-term needs, and its compiled steady-state runtime is a real, measured gap, not merely comparable. Not yet started. |
-| 3 | Continue Wave F (F2-F4: checked block and scan layers) | Open, after thread 5 | Nothing beyond what F0/F1 already landed | This *is* Backend Eval IR's scan-half implementation per [Section 2.3](#23-blocks-graph-flow-and-scans), not prerequisite work backend IR waits on. Proceeds independently of threads 1, 2, and 4, subject to [Section 7.2](#72-stage-b-candidate-dependent-contraction-prototype)'s existing constraint against combining it with the Stage B rewrite. |
-| 4 | Implement nonlinearity: new `PlanStep` pointwise/axiswise cases, Dense/JAX/PyTorch interpreter support | Open, after thread 3 | Thread 1 (specified) | A nonlinear step's evidence is meaningless without a stated ULP bound — now specified, though still unvalidated. Not a type dependency on thread 3; avoids two concurrent foundational changes to the same `PlanStep` sum. Pull forward if that stops mattering. |
+| 6 | Close Stage A's remaining refinements: explicit named factor/reduction/term fold functions (behavior already correct in `Dense.lean`, not yet its own API), `reference64SumProduct` as an actual closed type (today just an open `reference64` tag), and length-correct required-input bindings (behavior already correct in `prepareEvalPlan`, not yet its own type) | Open, parallel-safe | Nothing | The three Stage A items neither thread 3 nor thread 5 already needs. Cheaper than either — two of the three are surfacing already-correct, already-tested behavior as a named API/type, not building new structure. Blocked on nothing and blocks nothing, so it belongs here (right after the other zero-dependency threads), not queued behind 5, 3, or 4 — do it whenever, in parallel with any of them. |
+| 5 | Compact/evidence-indexed kernels and the PyTorch backend ([Section 4.3](#43-evidence-indexed-executable-lowering), Appendix D) | **Next** — moved ahead of threads 3-4 | Thread 2's outcome | Artifact size grows too fast for the affine-table oracle to stay usable past near-term needs, and its compiled steady-state runtime is a real, measured gap, not merely comparable. Includes building the validated, evidence-indexed executable-lowering discipline Stage A describes (private validated constructors, evidence-indexed kernels — [Section 7.1](#71-stage-a-recommended-low-risk-refinements)) — not building lowering itself, which already exists via the experimental JAX bridge. Not yet started. |
+| 3 | Continue Wave F (F2-F4: checked block and scan layers) | Open, after thread 5 | Nothing beyond what F0/F1 already landed | This *is* Backend Eval IR's scan-half implementation per [Section 2.3](#23-blocks-graph-flow-and-scans), not prerequisite work backend IR waits on — but it includes building the block-scoped slots, the `PlanStep` assign/scan interface, and the snapshot/next-state types that section already requires, none of which exist yet. Proceeds independently of threads 1, 2, and 4, subject to [Section 7.2](#72-stage-b-candidate-dependent-contraction-prototype)'s existing constraint against combining it with the Stage B rewrite. |
+| 4 | Implement nonlinearity: new `PlanStep` pointwise/axiswise cases, Dense/JAX/PyTorch interpreter support | Open, after thread 3 | Thread 3 (the `PlanStep` type must exist before a case can be added to it), thread 1 (specified) | Sequenced after thread 3 for a real type dependency, not just conflict-avoidance: `PlanStep` doesn't exist until thread 3 builds it. A nonlinear step's evidence is also meaningless without a stated ULP bound — settled by thread 1. |
 
 ## 8. Appendices
 
