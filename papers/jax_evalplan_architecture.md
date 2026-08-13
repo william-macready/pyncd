@@ -33,6 +33,7 @@
     - [7.3 Stage C: candidate scan refinements](#73-stage-c-candidate-scan-refinements)
     - [7.4 Deferred: availability-indexed graph typing](#74-deferred-availability-indexed-graph-typing)
     - [7.5 Rewrite architecture and optimization boundary](#75-rewrite-architecture-and-optimization-boundary)
+    - [7.6 Sequencing across open threads](#76-sequencing-across-open-threads)
 - [8. Appendices](#8-appendices)
   - [Appendix A: ordinary raw and portable DTOs](#appendix-a-ordinary-raw-and-portable-dtos)
   - [Appendix B: candidate dependent checked contraction core](#appendix-b-candidate-dependent-checked-contraction-core)
@@ -1214,6 +1215,21 @@ transformation, as in [Alive2](#ref-alive2).
 The staged Lean representation now has a coherent semantic owner, but it is not itself a safe
 cross-language artifact; [Section 3](#3-raw-and-portable-representation) already covers how semantic
 data crosses the Lean/Python trust boundary as ordinary DTOs without serializing proofs.
+
+### 7.6 Sequencing across open threads
+
+The preceding sections describe four open threads that are easy to assume are strictly ordered when
+they are not: closing the numeric-mode contract, measuring affine-table scaling, Wave F's scan work,
+and nonlinearity support. This subsection states the actual dependencies among them, as a planning
+default rather than a gate enforced anywhere in [Section 6](#6-adoption-plan-and-gates).
+
+| Order | Thread | Depends on | Why here |
+|---|---|---|---|
+| 1 | Pin `reference64Transcendental`'s per-function ULP bounds | Nothing | A specification task, not implementation — no new code, no PlanStep change. [Section 2.2](#22-contractions-and-ordered-floating-point-execution) already requires this before Stage A can honestly claim closed numeric-mode coverage; leaving it open is the one thing actively blocking a true Stage A close. |
+| 2 | Run the affine-table scaling measurement: one mid-sized contraction, timed and sized | Nothing | Independent of every other thread; can run in parallel with all of them. Converts [Section 5.4](#54-evidence-validating-the-experimental-jax-bridge)'s open risk into a decision, and its outcome — not a fixed slice order — decides whether row 5 below needs to move ahead of rows 3-4. |
+| 3 | Continue Wave F (F2-F4: checked block and scan layers) | Nothing beyond what F0/F1 already landed | This *is* Backend Eval IR's scan-half implementation per [Section 2.3](#23-blocks-graph-flow-and-scans), not separate prerequisite work that backend IR waits on. It proceeds on the scan `PlanStep` case through the same `sourceSlots`/`destinationSlots` interface Stage A already defines, independent of rows 1, 2, and 4. Carries forward [Section 7.2](#72-stage-b-candidate-dependent-contraction-prototype)'s existing constraint: do not combine the full Wave F implementation with the Stage B contraction-core rewrite in one slice. |
+| 4 | Implement nonlinearity: new `PlanStep` pointwise/axiswise cases, Dense/JAX/PyTorch interpreter support | Row 1 | Row 1 must settle first because a nonlinear step's evidence is meaningless without a stated ULP bound. Sequencing after row 3 (rather than in parallel) is not a type dependency — `PlanStep`'s closed sum was designed to gain cases cleanly — it avoids two concurrent foundational changes to the same sum type. Pull this forward if that conflict-avoidance stops mattering. |
+| 5 | Compact/evidence-indexed kernels and the PyTorch backend ([Section 4.3](#43-evidence-indexed-executable-lowering), Appendix D) | Row 2's outcome | If row 2 shows the affine-table oracle degrades beyond near-term needs, this moves ahead of or alongside rows 3-4; otherwise it follows them. This is the one place row 2 can reorder the rest of this table — re-evaluate this row, and only this row, once that measurement lands. |
 
 ## 8. Appendices
 
