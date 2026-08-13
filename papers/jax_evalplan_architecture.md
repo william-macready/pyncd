@@ -561,7 +561,7 @@ closed contract, `reference64Transcendental`, for nonlinear steps: it fixes the 
 bounds agreement by a stated per-function ULP tolerance instead of asserting bit-exactness. Differential
 testing follows the same split — affine and sum-product steps compare bit-exact against the ordered
 reference; nonlinear steps compare within their contract's ULP bound. Neither contract exists as a
-supported step yet: `LeanNCD/Eval/Plan/Compile.lean:42-45` rejects every pointwise and axiswise
+supported step yet: `LeanNCD/Eval/Plan/Compile.lean` rejects every pointwise and axiswise
 nonlinear statement via `unsupportedNonlin` ahead of either producer, checker, or interpreter support.
 
 ### 3.3 Blocks, graph flow, and scans
@@ -590,8 +590,9 @@ separate `PlanManifest`.
 
 Nonlinear operations, once supported, become two further `PlanStep` cases rather than fields on
 `AssignPlan`, mirroring the source language's existing split at
-`LeanNCD/DSL/Ast.lean:83`: `Nonlin = pointwise PointwiseFn | axiswise AxiswiseFn (Option BoolExpr)`,
-where `PointwiseFn` covers `relu`/`sigmoid`/`tanh`/`gelu`/`leakyrelu` and `AxiswiseFn` covers
+`LeanNCD/DSL/Ast.lean`: `Nonlin = identity | pointwise PointwiseFn | axiswise AxiswiseFn (Option BoolExpr)`
+(`identity` needs no step of its own — it applies no transformation), where `PointwiseFn` covers
+`relu`/`sigmoid`/`tanh`/`gelu`/`leakyrelu` and `AxiswiseFn` covers
 `softmax`/`normalize`/`l2normalize`. In TL a nonlinearity applies to the whole right-hand side after
 aggregation, not per factor, so a field on `AssignPlan` would blur that boundary; a separate step
 preserves `AssignPlan` as a pure ordered sum-product under `reference64SumProduct` and lets nonlinear

@@ -519,14 +519,10 @@ def factorOrderSigs : Array TensorSignature :=
   #[ { shape := #[], dtype := .f64 }, { shape := #[], dtype := .f64 }
    , { shape := #[], dtype := .f64 }, { shape := #[1], dtype := .f64 } ]
 
-def scalarRead (slot : TensorSlot) : ReadPlan :=
-  { sourceSlot := slot, map := { coeffs := #[], bias := #[] }
-  , sourceShape := #[], oobPolicy := .zeroPad }
-
 def factorOrderPlanFor (slots : Array TensorSlot) : AssignPlan :=
   { contextShape := #[], destinationSlot := 3, outputShape := #[1]
   , terms := #[{ iterationShape := #[1], contextPos := #[], outputPos := #[0], reductionPos := #[]
-               , factors := slots.map scalarRead }]
+               , factors := slots.map fosRead }]
   , algebra := admittedAlgebra }
 
 def factorOrderPlan : AssignPlan := factorOrderPlanFor #[0, 1, 2]

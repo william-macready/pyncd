@@ -151,10 +151,6 @@ def placementInputs : Array DenseTensor :=
 #guard dataOf (runGraph placementPlan placementInputs) 3 == some #[7.0, 10.0]
 #guard dataOf (runGraph placementPlan placementInputs) 4 == some #[5.0, 7.0]
 
--- The placement claim, isolated: had slot 4's input been misplaced at slot 1, slot 1 would hold
--- slot 0's data. It does not.
-#guard dataOf (runGraph placementPlan placementInputs) 1 != some #[2.0, 3.0]
-
 -- reordering independent nodes: swap A/B's step order (neither depends on the other) — the graph
 -- is still accepted and the final store is identical, slot-for-slot.
 def diamondPlanSwapped : RawEvalPlan :=
