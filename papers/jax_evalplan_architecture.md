@@ -1281,26 +1281,39 @@ data crosses the Lean/Python trust boundary as ordinary DTOs without serializing
 
 ### 7.6 Sequencing across threads
 
-The preceding sections describe five threads that are easy to assume are strictly ordered when they
+The preceding sections describe six threads that are easy to assume are strictly ordered when they
 are not: closing the numeric-mode contract, measuring affine-table scaling, Wave F's scan work,
-nonlinearity support, and compact/evidence-indexed kernels. Two are now settled, in different senses —
-thread 1 is a closed *decision*, not yet empirically checked; thread 2 is a closed *measurement* — and
-settling them changed the recommended order for the three still open. Thread numbers below are stable
-identifiers other sections cite by number ([Section 2.2](#22-contractions-and-ordered-floating-point-execution)
-cites thread 1, [Section 5.4](#54-evidence-validating-the-experimental-jax-bridge) cites thread 5) —
-they are not a reading order. The table's row order is: settled threads first, then the three open
-threads in their current recommended sequence. Wave F (thread 3) is in-progress Part I work, not a
-Part III candidate; it appears here only because its timing relative to the others needs stating.
-This remains a planning default, not a gate enforced anywhere in [Section 6](#6-adoption-plan-and-gates)
-— re-derive the open threads' order if a reason emerges, but don't re-litigate it without one.
+nonlinearity support, compact/evidence-indexed kernels, and closing Stage A's remaining narrow
+refinements. Two are now settled, in different senses — thread 1 is a closed *decision*, not yet
+empirically checked; thread 2 is a closed *measurement* — and settling them changed the recommended
+order for the four still open. Thread numbers below are stable identifiers other sections cite by
+number ([Section 2.2](#22-contractions-and-ordered-floating-point-execution) cites thread 1,
+[Section 5.4](#54-evidence-validating-the-experimental-jax-bridge) cites thread 5) — they are not a
+reading order. The table's row order is: settled threads first, then the four open threads in their
+current recommended sequence. Wave F (thread 3) is in-progress Part I work, not a Part III candidate;
+it appears here only because its timing relative to the others needs stating. This remains a
+planning default, not a gate enforced anywhere in [Section 6](#6-adoption-plan-and-gates) — re-derive
+the open threads' order if a reason emerges, but don't re-litigate it without one.
+
+**None of Stage A exists as code yet** — every refinement in [Section 7.1](#71-stage-a-recommended-low-risk-refinements),
+including the `PlanStep` type itself, is prose. The real codebase today is `RawEvalPlan` →
+`CheckedEvalPlan` → `PreparedPlan` built from `AssignPlan`/`TermPlan`/`ReadPlan` (assignment-only,
+flat `Nat` slots, an open `reference64` tag rather than a closed `reference64SumProduct`). This
+matters for sequencing: threads 3 and 5 below don't build *on top of* Stage A's interfaces as
+already-available infrastructure — they build the relevant slice of Stage A *as part of themselves*,
+because Wave F's own semantics ([Section 2.3](#23-blocks-graph-flow-and-scans)) already require block
+slot scoping and an assign/scan step interface, and compact kernels can't exist without an executable
+phase to lower into. Thread 6 below is the remainder: the two Stage A items neither thread already
+needs.
 
 | Thread | Item | Status | Depends on | Why |
 |---|---|---|---|---|
 | 1 | Pin `reference64Transcendental`'s per-function ULP bounds | **Specified**, not validated | Nothing | [Section 2.2](#22-contractions-and-ordered-floating-point-execution) gives reasoned starting bounds with no Lean constant or test behind them yet, unvalidated against any real backend output. [Section 7.1](#71-stage-a-recommended-low-risk-refinements) no longer flags the *absence* of a contract as blocking Stage A's close. |
 | 2 | Run the affine-table scaling measurement: one mid-sized contraction, timed and sized | **Measured** | Nothing | [Section 5.4](#54-evidence-validating-the-experimental-jax-bridge): one 4,096-coordinate contraction is already ~5% of the entire corpus's artifact size, and its compiled steady-state runtime is measurably (~5×) slower than native `jnp.einsum`. Both findings reordered thread 5 below. |
-| 5 | Compact/evidence-indexed kernels and the PyTorch backend ([Section 4.3](#43-evidence-indexed-executable-lowering), Appendix D) | **Next** — moved ahead of threads 3-4 | Thread 2's outcome | Artifact size grows too fast for the affine-table oracle to stay usable past near-term needs, and its compiled steady-state runtime is a real, measured gap, not merely comparable. Not yet started. |
-| 3 | Continue Wave F (F2-F4: checked block and scan layers) | Open, after thread 5 | Nothing beyond what F0/F1 already landed | This *is* Backend Eval IR's scan-half implementation per [Section 2.3](#23-blocks-graph-flow-and-scans), not prerequisite work backend IR waits on. Proceeds independently of threads 1, 2, and 4, subject to [Section 7.2](#72-stage-b-candidate-dependent-contraction-prototype)'s existing constraint against combining it with the Stage B rewrite. |
-| 4 | Implement nonlinearity: new `PlanStep` pointwise/axiswise cases, Dense/JAX/PyTorch interpreter support | Open, after thread 3 | Thread 1 (specified) | A nonlinear step's evidence is meaningless without a stated ULP bound — now specified, though still unvalidated. Not a type dependency on thread 3; avoids two concurrent foundational changes to the same `PlanStep` sum. Pull forward if that stops mattering. |
+| 5 | Compact/evidence-indexed kernels and the PyTorch backend ([Section 4.3](#43-evidence-indexed-executable-lowering), Appendix D) | **Next** — moved ahead of threads 3-4 | Thread 2's outcome | Artifact size grows too fast for the affine-table oracle to stay usable past near-term needs, and its compiled steady-state runtime is a real, measured gap, not merely comparable. Includes building Stage A's executable-lowering foundation (private validated constructors, evidence-indexed kernels — [Section 7.1](#71-stage-a-recommended-low-risk-refinements)) as part of this thread, since neither exists yet. Not yet started. |
+| 3 | Continue Wave F (F2-F4: checked block and scan layers) | Open, after thread 5 | Nothing beyond what F0/F1 already landed | This *is* Backend Eval IR's scan-half implementation per [Section 2.3](#23-blocks-graph-flow-and-scans), not prerequisite work backend IR waits on — but it includes building the block-scoped slots, the `PlanStep` assign/scan interface, and the snapshot/next-state types that section already requires, since none of Stage A exists yet to build on top of. Proceeds independently of threads 1, 2, and 4, subject to [Section 7.2](#72-stage-b-candidate-dependent-contraction-prototype)'s existing constraint against combining it with the Stage B rewrite. |
+| 4 | Implement nonlinearity: new `PlanStep` pointwise/axiswise cases, Dense/JAX/PyTorch interpreter support | Open, after thread 3 | Thread 3 (the `PlanStep` type must exist before a case can be added to it), thread 1 (specified) | Sequenced after thread 3 for a real type dependency, not just conflict-avoidance: `PlanStep` doesn't exist until thread 3 builds it. A nonlinear step's evidence is also meaningless without a stated ULP bound — settled by thread 1. |
+| 6 | Close Stage A's remaining refinements: `reference64SumProduct` as an actual closed type (today just an open `reference64` tag) and length-correct required-input bindings | Open, unclaimed | Nothing | The only two Stage A items neither thread 3 nor thread 5 already needs to build. Narrow, cheap, blocked on nothing — without an explicit thread nothing forces them to happen. As safe to do immediately as thread 5, arguably safer given it has no dependency risk at all. |
 
 ## 8. Appendices
 
