@@ -283,6 +283,31 @@ reference; nonlinear steps compare within their contract's ULP bound. Neither co
 supported step yet: `LeanNCD/Eval/Plan/Compile.lean` rejects every pointwise and axiswise
 nonlinear statement via `unsupportedNonlin` ahead of either producer, checker, or interpreter support.
 
+IEEE-754 mandates correctly-rounded results for `+`, `-`, `×`, `÷`, and `√`; it does not mandate
+correctly-rounded transcendentals. Combined with this document's ordered-fold discipline above, every
+`AxiswiseFn`'s reduction — softmax's denominator sum, `normalize`'s sum, `l2normalize`'s sum of
+squares — is exact by construction. Cross-backend disagreement can only enter through an actual
+transcendental primitive call, which four of the eight functions never make:
+
+| Function | Formula | ULP bound | Basis |
+|---|---|---|---|
+| `relu` | `max(x, 0)` | 0 (exact) | Comparison and select only; no transcendental, no division |
+| `leakyrelu` | `x` if `x > 0` else `α·x`, `α = 0.01` (matches PyTorch's `nn.LeakyReLU` default) | 0 (exact) | One IEEE-mandated multiply, given identical `α` bit pattern in every backend |
+| `normalize` | `x / sum(x)` | 0 (exact) | Ordered sum plus one IEEE-mandated divide; no transcendental |
+| `l2normalize` | `x / sqrt(sum(x^2))` | 0 (exact) | Ordered sum of squares plus IEEE-mandated `sqrt` and divide; no transcendental |
+| `sigmoid` | `1 / (1 + exp(-x))` | 4 | One `exp` call, the only source of variance; wrapping arithmetic is exact |
+| `tanh` | `tanh(x)` | 2 | One primitive transcendental call, no wrapping arithmetic |
+| `gelu` | `x · 0.5 · (1 + tanh(√(2/π) · (x + 0.044715x³)))` — the tanh approximation, matching JAX's `jax.nn.gelu` default (PyTorch's own default is the exact erf form; it must pass `approximate='tanh'` to match) | 8 | A `tanh` call plus a cubic polynomial argument compounds more than plain `tanh`, though each individual arithmetic step is still IEEE-exact |
+| `softmax` | `exp(xᵢ − max(x)) / Σⱼ exp(xⱼ − max(x))` | 4 per element | Max-subtraction and the summation are exact by the ordered-fold discipline; the bound is driven entirely by the per-element `exp` call |
+
+These are reasoned starting bounds — typical libm accuracy (glibc, Apple libm, and XLA's CPU backend
+are usually within 1-2 ULP for a single transcendental call) — not measurements: unlike
+[Section 5.4](#54-evidence-validating-the-experimental-jax-bridge)'s corpus evidence, no differential
+run exists yet, because no interpreter accepts these steps. Once Dense, JAX, and PyTorch gain nonlinear
+support, re-measure against real output and tighten or loosen these numbers; treat this table as the
+closing decision Stage A needs ([Section 7.1](#71-stage-a-recommended-low-risk-refinements),
+[Section 7.6](#76-sequencing-across-open-threads) row 1), not as validated evidence.
+
 ### 2.3 Blocks, graph flow, and scans
 
 Contractions explain one assignment; blocks and scans explain how assignments participate in larger
@@ -1035,10 +1060,12 @@ sketches so the main argument can compare tradeoffs without presenting experimen
 These changes encode stable boundaries without requiring the dependent contraction prototype. They
 are described completely here; unlike Stages B and C, Stage A has no separate candidate schema in the
 appendices. Closing `reference64SumProduct` is this stage's entire numeric-mode content, so the
-[Section 2.2](#22-contractions-and-ordered-floating-point-execution) contract split must be settled
+[Section 2.2](#22-contractions-and-ordered-floating-point-execution) contract split had to be settled
 before Stage A closes, not after Wave F: closing only the sum-product mode while treating nonlinear
-steps as future scope for the same mode would misrepresent Stage A as complete numeric-mode coverage,
-when in fact a second closed mode, `reference64Transcendental`, is required and not yet specified.
+steps as future scope for the same mode would misrepresent Stage A as complete numeric-mode coverage.
+The second closed mode, `reference64Transcendental`, is now specified per function in Section 2.2 —
+reasoned starting bounds pending empirical validation once an interpreter accepts nonlinear steps at
+all, not yet a source of doubt about whether Stage A's numeric-mode scope is complete.
 
 | Refinement | Eliminated invalid state | Required migration | Expected proof burden | Adoption test |
 |---|---|---|---|---|
@@ -1227,7 +1254,7 @@ enforced anywhere in [Section 6](#6-adoption-plan-and-gates).
 
 | Order | Thread | Depends on | Why here |
 |---|---|---|---|
-| 1 | Pin `reference64Transcendental`'s per-function ULP bounds | Nothing | Specification only, no code. [Section 7.1](#71-stage-a-recommended-low-risk-refinements) already flags this as blocking a true Stage A close, alongside Stage A's other unclosed refinements. |
+| 1 | Pin `reference64Transcendental`'s per-function ULP bounds | Nothing | **Landed** in [Section 2.2](#22-contractions-and-ordered-floating-point-execution): reasoned starting bounds, not yet empirically validated. [Section 7.1](#71-stage-a-recommended-low-risk-refinements) no longer flags this as blocking Stage A's close. |
 | 2 | Run the affine-table scaling measurement: one mid-sized contraction, timed and sized | Nothing | Independent of every other thread; can run in parallel with all of them. Converts [Section 5.4](#54-evidence-validating-the-experimental-jax-bridge)'s open risk into a decision that determines row 5's timing. |
 | 3 | Continue Wave F (F2-F4: checked block and scan layers) | Nothing beyond what F0/F1 already landed | This *is* Backend Eval IR's scan-half implementation per [Section 2.3](#23-blocks-graph-flow-and-scans), not prerequisite work backend IR waits on. Proceeds independently of rows 1, 2, and 4, subject to [Section 7.2](#72-stage-b-candidate-dependent-contraction-prototype)'s existing constraint against combining it with the Stage B rewrite. |
 | 4 | Implement nonlinearity: new `PlanStep` pointwise/axiswise cases, Dense/JAX/PyTorch interpreter support | Row 1 | A nonlinear step's evidence is meaningless without a stated ULP bound. Sequenced after row 3, not because of a type dependency, but to avoid two concurrent foundational changes to the same `PlanStep` sum; pull forward if that stops mattering. |
