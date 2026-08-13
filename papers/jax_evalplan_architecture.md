@@ -1218,18 +1218,20 @@ data crosses the Lean/Python trust boundary as ordinary DTOs without serializing
 
 ### 7.6 Sequencing across open threads
 
-The preceding sections describe four open threads that are easy to assume are strictly ordered when
+The preceding sections describe five open threads that are easy to assume are strictly ordered when
 they are not: closing the numeric-mode contract, measuring affine-table scaling, Wave F's scan work,
-and nonlinearity support. This subsection states the actual dependencies among them, as a planning
-default rather than a gate enforced anywhere in [Section 6](#6-adoption-plan-and-gates).
+nonlinearity support, and compact/evidence-indexed kernels. Wave F is in-progress Part I work, not a
+Part III candidate; it appears here because its timing relative to the other four still needs stating.
+This subsection gives the actual dependencies among all five, as a planning default rather than a gate
+enforced anywhere in [Section 6](#6-adoption-plan-and-gates).
 
 | Order | Thread | Depends on | Why here |
 |---|---|---|---|
-| 1 | Pin `reference64Transcendental`'s per-function ULP bounds | Nothing | A specification task, not implementation — no new code, no PlanStep change. [Section 2.2](#22-contractions-and-ordered-floating-point-execution) already requires this before Stage A can honestly claim closed numeric-mode coverage; leaving it open is the one thing actively blocking a true Stage A close. |
-| 2 | Run the affine-table scaling measurement: one mid-sized contraction, timed and sized | Nothing | Independent of every other thread; can run in parallel with all of them. Converts [Section 5.4](#54-evidence-validating-the-experimental-jax-bridge)'s open risk into a decision, and its outcome — not a fixed slice order — decides whether row 5 below needs to move ahead of rows 3-4. |
-| 3 | Continue Wave F (F2-F4: checked block and scan layers) | Nothing beyond what F0/F1 already landed | This *is* Backend Eval IR's scan-half implementation per [Section 2.3](#23-blocks-graph-flow-and-scans), not separate prerequisite work that backend IR waits on. It proceeds on the scan `PlanStep` case through the same `sourceSlots`/`destinationSlots` interface Stage A already defines, independent of rows 1, 2, and 4. Carries forward [Section 7.2](#72-stage-b-candidate-dependent-contraction-prototype)'s existing constraint: do not combine the full Wave F implementation with the Stage B contraction-core rewrite in one slice. |
-| 4 | Implement nonlinearity: new `PlanStep` pointwise/axiswise cases, Dense/JAX/PyTorch interpreter support | Row 1 | Row 1 must settle first because a nonlinear step's evidence is meaningless without a stated ULP bound. Sequencing after row 3 (rather than in parallel) is not a type dependency — `PlanStep`'s closed sum was designed to gain cases cleanly — it avoids two concurrent foundational changes to the same sum type. Pull this forward if that conflict-avoidance stops mattering. |
-| 5 | Compact/evidence-indexed kernels and the PyTorch backend ([Section 4.3](#43-evidence-indexed-executable-lowering), Appendix D) | Row 2's outcome | If row 2 shows the affine-table oracle degrades beyond near-term needs, this moves ahead of or alongside rows 3-4; otherwise it follows them. This is the one place row 2 can reorder the rest of this table — re-evaluate this row, and only this row, once that measurement lands. |
+| 1 | Pin `reference64Transcendental`'s per-function ULP bounds | Nothing | Specification only, no code. [Section 7.1](#71-stage-a-recommended-low-risk-refinements) already flags this as blocking a true Stage A close, alongside Stage A's other unclosed refinements. |
+| 2 | Run the affine-table scaling measurement: one mid-sized contraction, timed and sized | Nothing | Independent of every other thread; can run in parallel with all of them. Converts [Section 5.4](#54-evidence-validating-the-experimental-jax-bridge)'s open risk into a decision that determines row 5's timing. |
+| 3 | Continue Wave F (F2-F4: checked block and scan layers) | Nothing beyond what F0/F1 already landed | This *is* Backend Eval IR's scan-half implementation per [Section 2.3](#23-blocks-graph-flow-and-scans), not prerequisite work backend IR waits on. Proceeds independently of rows 1, 2, and 4, subject to [Section 7.2](#72-stage-b-candidate-dependent-contraction-prototype)'s existing constraint against combining it with the Stage B rewrite. |
+| 4 | Implement nonlinearity: new `PlanStep` pointwise/axiswise cases, Dense/JAX/PyTorch interpreter support | Row 1 | A nonlinear step's evidence is meaningless without a stated ULP bound. Sequenced after row 3, not because of a type dependency, but to avoid two concurrent foundational changes to the same `PlanStep` sum; pull forward if that stops mattering. |
+| 5 | Compact/evidence-indexed kernels and the PyTorch backend ([Section 4.3](#43-evidence-indexed-executable-lowering), Appendix D) | Row 2's outcome | Moves ahead of rows 3-4 if row 2 shows the affine-table oracle degrading beyond near-term needs; otherwise follows them. The only row row 2 can reorder. |
 
 ## 8. Appendices
 
