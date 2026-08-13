@@ -33,7 +33,7 @@
     - [7.3 Stage C: candidate scan refinements](#73-stage-c-candidate-scan-refinements)
     - [7.4 Deferred: availability-indexed graph typing](#74-deferred-availability-indexed-graph-typing)
     - [7.5 Rewrite architecture and optimization boundary](#75-rewrite-architecture-and-optimization-boundary)
-    - [7.6 Sequencing across open threads](#76-sequencing-across-open-threads)
+    - [7.6 Sequencing across threads](#76-sequencing-across-threads)
 - [8. Appendices](#8-appendices)
   - [Appendix A: ordinary raw and portable DTOs](#appendix-a-ordinary-raw-and-portable-dtos)
   - [Appendix B: candidate dependent checked contraction core](#appendix-b-candidate-dependent-checked-contraction-core)
@@ -314,7 +314,7 @@ Dense, JAX, and PyTorch gain checked nonlinear support, re-measure against real 
 bound into an actual Lean constant with a pinning test the way `reference64SumProduct`'s fold order
 already has, and tighten or loosen these numbers accordingly; treat this table as the closing decision
 Stage A needs ([Section 7.1](#71-stage-a-recommended-low-risk-refinements),
-[Section 7.6](#76-sequencing-across-open-threads) row 1), not as validated evidence.
+[Section 7.6](#76-sequencing-across-threads) thread 1), not as validated evidence.
 
 ### 2.3 Blocks, graph flow, and scans
 
@@ -927,7 +927,7 @@ folds use `jax.lax.fori_loop` and `jax.vmap`, which compile their bodies even ou
 `jax.jit`), so the fair comparison is the steady-state call after that one-time cost — 34 µs versus
 7 µs, about 4.9× slower, not the 23× the eager numbers alone would imply, but also not the under-2×
 an earlier single-sample measurement of this same fixture reported.
-[Section 7.6](#76-sequencing-across-open-threads) row 5 treats both findings as reasons to move
+[Section 7.6](#76-sequencing-across-threads) thread 5 treats both findings as reasons to move
 compact kernels ahead of Wave F and nonlinearity implementation, not the artifact-size finding alone.
 
 **Corpus breadth is structural, not numerical.** `PropertyOracle.enumPrograms` is a deliberately
@@ -1279,22 +1279,28 @@ The staged Lean representation now has a coherent semantic owner, but it is not 
 cross-language artifact; [Section 3](#3-raw-and-portable-representation) already covers how semantic
 data crosses the Lean/Python trust boundary as ordinary DTOs without serializing proofs.
 
-### 7.6 Sequencing across open threads
+### 7.6 Sequencing across threads
 
-The preceding sections describe five open threads that are easy to assume are strictly ordered when
-they are not: closing the numeric-mode contract, measuring affine-table scaling, Wave F's scan work,
-nonlinearity support, and compact/evidence-indexed kernels. Wave F is in-progress Part I work, not a
-Part III candidate; it appears here because its timing relative to the other four still needs stating.
-This subsection gives the actual dependencies among all five, as a planning default rather than a gate
-enforced anywhere in [Section 6](#6-adoption-plan-and-gates).
+The preceding sections describe five threads that are easy to assume are strictly ordered when they
+are not: closing the numeric-mode contract, measuring affine-table scaling, Wave F's scan work,
+nonlinearity support, and compact/evidence-indexed kernels. Two are now settled, in different senses —
+thread 1 is a closed *decision*, not yet empirically checked; thread 2 is a closed *measurement* — and
+settling them changed the recommended order for the three still open. Thread numbers below are stable
+identifiers other sections cite by number ([Section 2.2](#22-contractions-and-ordered-floating-point-execution)
+cites thread 1, [Section 5.4](#54-evidence-validating-the-experimental-jax-bridge) cites thread 5) —
+they are not a reading order. The table's row order is: settled threads first, then the three open
+threads in their current recommended sequence. Wave F (thread 3) is in-progress Part I work, not a
+Part III candidate; it appears here only because its timing relative to the others needs stating.
+This remains a planning default, not a gate enforced anywhere in [Section 6](#6-adoption-plan-and-gates)
+— re-derive the open threads' order if a reason emerges, but don't re-litigate it without one.
 
-| Order | Thread | Depends on | Why here |
-|---|---|---|---|
-| 1 | Pin `reference64Transcendental`'s per-function ULP bounds | Nothing | **Specified**, not landed: [Section 2.2](#22-contractions-and-ordered-floating-point-execution) gives reasoned starting bounds with no Lean constant or test behind them yet, unvalidated against any real backend output. [Section 7.1](#71-stage-a-recommended-low-risk-refinements) no longer flags the *absence* of a contract as blocking Stage A's close. |
-| 2 | Run the affine-table scaling measurement: one mid-sized contraction, timed and sized | Nothing | **Measured** ([Section 5.4](#54-evidence-validating-the-experimental-jax-bridge)): one 4,096-coordinate contraction is already ~5% of the entire corpus's artifact size; steady-state JIT speed is not the crisis code inspection implied, but artifact size is. Reorders row 5 below. |
-| 3 | Continue Wave F (F2-F4: checked block and scan layers) | Nothing beyond what F0/F1 already landed | This *is* Backend Eval IR's scan-half implementation per [Section 2.3](#23-blocks-graph-flow-and-scans), not prerequisite work backend IR waits on. Proceeds independently of rows 1, 2, and 4, subject to [Section 7.2](#72-stage-b-candidate-dependent-contraction-prototype)'s existing constraint against combining it with the Stage B rewrite. |
-| 4 | Implement nonlinearity: new `PlanStep` pointwise/axiswise cases, Dense/JAX/PyTorch interpreter support | Row 1 | A nonlinear step's evidence is meaningless without a stated ULP bound. Sequenced after row 3, not because of a type dependency, but to avoid two concurrent foundational changes to the same `PlanStep` sum; pull forward if that stops mattering. |
-| 5 | Compact/evidence-indexed kernels and the PyTorch backend ([Section 4.3](#43-evidence-indexed-executable-lowering), Appendix D) | Row 2's outcome | **Moved ahead of rows 3-4** per row 2's measurement: artifact size grows too fast for the affine-table oracle to stay usable past near-term needs, and its compiled steady-state runtime is measurably (~5×) slower than native `jnp.einsum`, not merely comparable. Not yet started. |
+| Thread | Item | Status | Depends on | Why |
+|---|---|---|---|---|
+| 1 | Pin `reference64Transcendental`'s per-function ULP bounds | **Specified**, not validated | Nothing | [Section 2.2](#22-contractions-and-ordered-floating-point-execution) gives reasoned starting bounds with no Lean constant or test behind them yet, unvalidated against any real backend output. [Section 7.1](#71-stage-a-recommended-low-risk-refinements) no longer flags the *absence* of a contract as blocking Stage A's close. |
+| 2 | Run the affine-table scaling measurement: one mid-sized contraction, timed and sized | **Measured** | Nothing | [Section 5.4](#54-evidence-validating-the-experimental-jax-bridge): one 4,096-coordinate contraction is already ~5% of the entire corpus's artifact size, and its compiled steady-state runtime is measurably (~5×) slower than native `jnp.einsum`. Both findings reordered thread 5 below. |
+| 5 | Compact/evidence-indexed kernels and the PyTorch backend ([Section 4.3](#43-evidence-indexed-executable-lowering), Appendix D) | **Next** — moved ahead of threads 3-4 | Thread 2's outcome | Artifact size grows too fast for the affine-table oracle to stay usable past near-term needs, and its compiled steady-state runtime is a real, measured gap, not merely comparable. Not yet started. |
+| 3 | Continue Wave F (F2-F4: checked block and scan layers) | Open, after thread 5 | Nothing beyond what F0/F1 already landed | This *is* Backend Eval IR's scan-half implementation per [Section 2.3](#23-blocks-graph-flow-and-scans), not prerequisite work backend IR waits on. Proceeds independently of threads 1, 2, and 4, subject to [Section 7.2](#72-stage-b-candidate-dependent-contraction-prototype)'s existing constraint against combining it with the Stage B rewrite. |
+| 4 | Implement nonlinearity: new `PlanStep` pointwise/axiswise cases, Dense/JAX/PyTorch interpreter support | Open, after thread 3 | Thread 1 (specified) | A nonlinear step's evidence is meaningless without a stated ULP bound — now specified, though still unvalidated. Not a type dependency on thread 3; avoids two concurrent foundational changes to the same `PlanStep` sum. Pull forward if that stops mattering. |
 
 ## 8. Appendices
 
