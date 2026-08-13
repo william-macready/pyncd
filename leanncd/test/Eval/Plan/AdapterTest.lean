@@ -74,6 +74,7 @@ private def renderCompileCause : PlanCompileCause → String
   | .capability c     => s!"capability: {repr c}"
   | .shape c          => s!"shape: {c}"
   | .invalidPlan c     => s!"invalidPlan: {repr c}"
+  | .bindings c        => s!"bindings: {repr c}"
 
 -- ── Checks 1–4: full adapter round-trip (cross-checked against the legacy evaluator), an unpack
 -- preserving an unrelated extra input, a missing-env-binding failure, and a shape-mismatch
@@ -134,9 +135,16 @@ run_cmd do
             throwError s!"wrong storageMismatch payload: name={nm} slot={slot} shape={repr shape} dataSize={dataSize}"
       | .error e => throwError s!"wrong error kind for a storage mismatch: {repr e}"
 
--- ── Checks 5–8: reordering `requiredInputs`, a genuine duplicate slot binding, an extra binding
--- naming a slot the plan doesn't need, and a structurally-missing required binding — all against
--- the `swapProg` example (two same-shape, different-value inputs in asymmetric roles). ──
+-- ── Checks 5–9: reordering `requiredInputs` (Check 5, kept exactly as designed — proves the
+-- `Perm` choice over positional equality), and `checkBindings`-boundary rejections for a genuine
+-- duplicate slot binding, an extra binding naming a slot the plan doesn't need, a
+-- structurally-missing required binding, and a duplicated source name across two different slots
+-- (Checks 6–9) — all against the `swapProg` example (two same-shape, different-value inputs in
+-- asymmetric roles). `RequiredBindings`' private constructor means Checks 6–9 can no longer be
+-- expressed via `{ prepared.bindings with requiredInputs := ... }` struct-update on a malformed
+-- array (that malformed state is now unconstructable outside `Prepared.lean`) — they instead call
+-- `checkBindings` directly with a raw, malformed `Array SlotBinding`, confirming the typed
+-- rejection fires with the right `BindingsError` constructor and payload. ──
 
 run_cmd do
   match swapProg.compileToScheduled.run 0 with
@@ -145,8 +153,9 @@ run_cmd do
     match prepareEvalPlan sched (InputSignature.ofDenseInputs swapInputs) with
     | .error f => throwError s!"swap prepare failed: {renderCompileCause f.cause}"
     | .ok prepared =>
-      unless prepared.bindings.requiredInputs.size == 2 do
-        throwError s!"expected exactly two required inputs, got {prepared.bindings.requiredInputs.size}"
+      let rb := prepared.bindings.requiredInputs
+      unless rb.bindings.size == 2 do
+        throwError s!"expected exactly two required inputs, got {rb.bindings.size}"
       -- Check 5: reordering `requiredInputs` does not change which value lands in which slot.
       -- MUTATION-VERIFIED: a deliberately-broken `pack`, patched to resolve `requiredInputs[i]` by
       -- ARRAY POSITION `i` against `raw.inputSlots[i]` instead of by each binding's own `.slot`
@@ -154,54 +163,73 @@ run_cmd do
       -- failed EXACTLY this one — producing W = [110.0, 220.0] (the swapped-slot value predicted
       -- above) instead of the correct [30.0, 300.0]. Restored before this fixture shipped. (An
       -- earlier `A[i]+B[i]` version of this fixture did NOT catch the same broken `pack`, because
-      -- addition is commutative — that's why `swapProg` uses contraction instead.)
-      let reordered : PreparedPlan :=
-        { prepared with
-            bindings := { prepared.bindings with
-                            requiredInputs := prepared.bindings.requiredInputs.reverse } }
-      unless prepared.bindings.requiredInputs != reordered.bindings.requiredInputs do
-        throwError "reversal of a two-element array should differ from the original — fixture is broken"
-      match runPreparedDense reordered swapInputs with
-      | .error e => throwError s!"reordered-bindings run failed: {repr e.cause}"
-      | .ok report =>
-          unless expectTensor report.env["W"]? [2] #[30.0, 300.0] do
-            throwError s!"reordered requiredInputs produced a wrong slotting: {repr (report.env["W"]?)}"
-      -- Check 6: a genuine duplicate slot binding fails loudly.
-      let dup : PreparedPlan :=
-        { prepared with
-            bindings := { prepared.bindings with
-                            requiredInputs := prepared.bindings.requiredInputs.push { name := "A2", slot := 0 } } }
-      match pack dup swapInputs with
-      | .ok _ => throwError "expected pack to fail on a duplicate slot binding"
-      | .error (.duplicateRequiredBinding slot first second) =>
-          unless slot == 0 && first == "A" && second == "A2" do
-            throwError s!"wrong duplicateRequiredBinding payload: slot={slot} first={first} second={second}"
-      | .error e => throwError s!"wrong error kind for a duplicate binding: {repr e}"
-      -- Check 7: an extra binding naming a slot the plan doesn't need fails loudly.
+      -- addition is commutative — that's why `swapProg` uses contraction instead.) The reversed
+      -- array is obtained via `checkBindings` itself (the only public way to build a
+      -- `RequiredBindings`), not via struct-update — reversal stays a legal `Perm` of `inputSlots`.
+      match checkBindings rb.inputSlots rb.bindings.reverse with
+      | .error e => throwError s!"expected reversed bindings to still check out: {repr e}"
+      | .ok reorderedRB =>
+          unless rb.bindings != reorderedRB.bindings do
+            throwError "reversal of a two-element array should differ from the original — fixture is broken"
+          let reordered : PreparedPlan :=
+            { prepared with bindings := { prepared.bindings with requiredInputs := reorderedRB } }
+          match runPreparedDense reordered swapInputs with
+          | .error e => throwError s!"reordered-bindings run failed: {repr e.cause}"
+          | .ok report =>
+              unless expectTensor report.env["W"]? [2] #[30.0, 300.0] do
+                throwError s!"reordered requiredInputs produced a wrong slotting: {repr (report.env["W"]?)}"
+      -- Sanity check on the well-formed fixture the four malformed variants below are derived
+      -- from — confirms it still succeeds (Checks 6–9 mutate exactly one aspect of it each).
+      match checkBindings rb.inputSlots rb.bindings with
+      | .error e => throwError s!"expected well-formed bindings to succeed: {repr e}"
+      | .ok _ => pure ()
+      let slotA := (rb.bindings[0]!).slot
+      let slotB := (rb.bindings[1]!).slot
+      -- Check 6: a genuine duplicate slot binding (two entries naming the same slot, so the other
+      -- required slot goes unbound) breaks the slot permutation — rejected as `.notAPermutation`.
+      let dupSlotBindings : Array SlotBinding :=
+        #[{ name := "A", slot := slotA }, { name := "A2", slot := slotA }]
+      match checkBindings rb.inputSlots dupSlotBindings with
+      | .ok rb2 => throwError s!"expected a duplicate slot binding to be rejected, got {repr rb2}"
+      | .error (.notAPermutation expected observed) =>
+          unless expected == rb.inputSlots && observed == dupSlotBindings.map (·.slot) do
+            throwError
+              s!"wrong notAPermutation payload for a duplicate slot: expected={repr expected} observed={repr observed}"
+      | .error e => throwError s!"wrong error kind for a duplicate slot binding: {repr e}"
+      -- Check 7: an extra binding naming a slot the plan doesn't need also breaks the slot
+      -- permutation (the observed multiset no longer matches `inputSlots`) — `.notAPermutation`.
       let wSlot := (prepared.bindings.materializedNames[0]!).slot
-      let extra : PreparedPlan :=
-        { prepared with
-            bindings := { prepared.bindings with
-                            requiredInputs := prepared.bindings.requiredInputs.push { name := "W", slot := wSlot } } }
-      match pack extra swapInputs with
-      | .ok _ => throwError "expected pack to fail on an extra (not-needed) slot binding"
-      | .error (.extraRequiredBinding slot nm) =>
-          unless slot == wSlot && nm == "W" do
-            throwError s!"wrong extraRequiredBinding payload: slot={slot} name={nm}"
+      let extraBindings : Array SlotBinding := rb.bindings.push { name := "W", slot := wSlot }
+      match checkBindings rb.inputSlots extraBindings with
+      | .ok rb2 => throwError s!"expected an extra slot binding to be rejected, got {repr rb2}"
+      | .error (.notAPermutation expected observed) =>
+          unless expected == rb.inputSlots && observed == extraBindings.map (·.slot) do
+            throwError
+              s!"wrong notAPermutation payload for an extra binding: expected={repr expected} observed={repr observed}"
       | .error e => throwError s!"wrong error kind for an extra binding: {repr e}"
-      -- Check 8: a missing required-input slot (structurally absent), distinct from a name
-      -- absent from `env` (Check 3).
-      let missingStructural : PreparedPlan :=
-        { prepared with
-            bindings := { prepared.bindings with
-                            requiredInputs := #[prepared.bindings.requiredInputs[0]!] } }
-      match pack missingStructural swapInputs with
-      | .ok _ => throwError "expected pack to fail on a structurally-missing required binding"
-      | .error (.missingRequiredBinding slot) =>
-          unless slot == 1 do throwError s!"wrong missingRequiredBinding slot: {slot}"
-      | .error e => throwError s!"wrong error kind for a structurally-missing binding: {repr e}"
+      -- Check 8: a structurally-missing required binding (fewer bindings than input slots),
+      -- distinct from a name absent from `env` (Check 3) — also `.notAPermutation`.
+      let missingBindings : Array SlotBinding := #[rb.bindings[0]!]
+      match checkBindings rb.inputSlots missingBindings with
+      | .ok rb2 => throwError s!"expected a missing binding to be rejected, got {repr rb2}"
+      | .error (.notAPermutation expected observed) =>
+          unless expected == rb.inputSlots && observed == missingBindings.map (·.slot) do
+            throwError
+              s!"wrong notAPermutation payload for a missing binding: expected={repr expected} observed={repr observed}"
+      | .error e => throwError s!"wrong error kind for a missing binding: {repr e}"
+      -- Check 9: a duplicate NAME across two different slots is a genuinely separate
+      -- malformation from Checks 6–8 — the slot permutation is perfectly fine (both `slotA` and
+      -- `slotB` appear exactly once), but the same source name is bound to two different slots.
+      -- Not covered by the old `pack`-level duplicate check at all: that one only ever caught the
+      -- same SLOT bound to two names, never the same NAME bound to two slots.
+      let dupNameBindings : Array SlotBinding :=
+        #[{ name := "A", slot := slotA }, { name := "A", slot := slotB }]
+      match checkBindings rb.inputSlots dupNameBindings with
+      | .ok rb2 => throwError s!"expected a duplicate name binding to be rejected, got {repr rb2}"
+      | .error (.duplicateName nm) => unless nm == "A" do throwError s!"wrong duplicateName payload: {nm}"
+      | .error e => throwError s!"wrong error kind for a duplicate name binding: {repr e}"
 
--- ── Check 9: preparation warnings survive both a successful run and a later binding failure ──
+-- ── Check 10: preparation warnings survive both a successful run and a later binding failure ──
 -- (real teeth: `warnProg` genuinely produces a non-empty warning list, verified against the
 -- legacy evaluator producing the SAME warning on the SAME inputs, not an empty list that would
 -- pass this check vacuously.)

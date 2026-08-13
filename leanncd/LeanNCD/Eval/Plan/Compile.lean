@@ -93,6 +93,11 @@ private def liftPlanError (warnings : List EvalWarning) :
   | .ok a => .ok a
   | .error e => .error { cause := .invalidPlan e, warnings }
 
+private def liftBindings (warnings : List EvalWarning) :
+    Except BindingsError α → Except PlanCompileFailure α
+  | .ok a => .ok a
+  | .error e => .error { cause := .bindings e, warnings }
+
 /-- External names in first-seen-read order, restricted to `sched.extNames`. NOT `sched.decls`
     filtered to `extNames` (see Global Constraints — an implicitly-external, never-`Decl`ared name
     would be silently dropped), and NOT `sched.extNames.toList` (noncomputable — `Finset.toList`
@@ -238,9 +243,13 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
     { version := admittedVersion, tensorSigs := tensorSigsAcc, inputSlots := inputSlotsAcc
     , steps := stepsAcc, numericMode := .reference64SumProduct }
   let checked ← liftPlanError warnings (checkPlan raw)
-  -- Step F: assemble PreparedPlan.
+  -- Step F: assemble PreparedPlan. `requiredInputsAcc`/`inputSlotsAcc` were built positionally
+  -- (hence also as a permutation) in lockstep by the same Step D loop above, so `checkBindings`
+  -- should never actually reject compiler-produced input — same "this should ALWAYS succeed" spirit
+  -- as `checkPlan` just above, wired through the same `lift*` pattern regardless.
+  let requiredInputs ← liftBindings warnings (checkBindings inputSlotsAcc requiredInputsAcc)
   return { plan := checked
-         , bindings := { requiredInputs := requiredInputsAcc, materializedNames := materializedAcc }
+         , bindings := { requiredInputs, materializedNames := materializedAcc }
          , warnings }
 
 end LeanNCD.Eval.Plan

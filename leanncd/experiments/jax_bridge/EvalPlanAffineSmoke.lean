@@ -135,7 +135,7 @@ def prepareNamed (name : String) (prog : TLProgram) (inputs : HashMap String Den
 def renderInputsDict (prepared : PreparedPlan) (inputs : HashMap String DenseTensor) :
     IO String := do
   let mut parts : Array String := #[]
-  for b in prepared.bindings.requiredInputs do
+  for b in prepared.bindings.requiredInputs.bindings do
     let t ← match inputs[b.name]? with
       | some t => pure t
       | none => throw (IO.userError s!"missing fixture input {b.name}")

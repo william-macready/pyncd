@@ -217,7 +217,7 @@ def renderOutputLines (indent : String) (materializedNames : Array SlotBinding) 
 def generateForward (plan : PreparedPlan) : Except JaxCodegenError String := do
   let raw := plan.plan.raw
   let nodes ← lowerPlan plan.plan
-  let slotInitLines ← renderSlotInitLines "    " raw plan.bindings.requiredInputs
+  let slotInitLines ← renderSlotInitLines "    " raw plan.bindings.requiredInputs.bindings
   let nodeLines := nodes.flatMap (renderNodeLines "    ")
   let outputLines := renderOutputLines "    " plan.bindings.materializedNames
   let lines : Array String :=
@@ -260,6 +260,7 @@ def renderCompileCause : PlanCompileCause → String
   | .capability c     => s!"capability: {repr c}"
   | .shape c          => s!"shape: {c}"
   | .invalidPlan c    => s!"invalidPlan: {repr c}"
+  | .bindings c       => s!"bindings: {repr c}"
 
 /-! ## 6. `affineReference`: exact per-factor lookup tables from the shared coordinate primitives -/
 
@@ -332,7 +333,7 @@ def renderAffinePlanNamed (plan : PreparedPlan) : String :=
   let c := plan.plan
   "{\"num_slots\": " ++ toString c.raw.tensorSigs.size ++
   ", \"input_slots\": " ++ pyNatListLit c.raw.inputSlots ++
-  ", \"required_inputs\": " ++ renderBindingList plan.bindings.requiredInputs ++
+  ", \"required_inputs\": " ++ renderBindingList plan.bindings.requiredInputs.bindings ++
   ", \"materialized\": " ++ renderBindingList plan.bindings.materializedNames ++
   ", \"nodes\": " ++ renderAffineNodesArray c ++ "}"
 

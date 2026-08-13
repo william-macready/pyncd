@@ -14,14 +14,54 @@ structure SlotBinding where
   slot : TensorSlot
   deriving DecidableEq, BEq, Repr, Inhabited
 
+/-- The subset of what used to be a plain `Array SlotBinding` that is checked, not merely assumed,
+    to be a name-unique reordering of `raw.inputSlots`: `bindings.map (·.slot)` is a `List.Perm` of
+    `inputSlots` — deliberately NOT plain array/positional equality, because `Adapter.lean`'s `pack`
+    resolves bindings by NAME, never by array position, and only a `Perm`-based proof lets a
+    reordering of `bindings` (`AdapterTest.lean` Check 5) stay provably legal — and
+    `bindings.map (·.name)` has no duplicates. Private constructor: the only way to build one from
+    outside this module is `checkBindings`, so a malformed `RequiredBindings` (duplicate/extra/
+    missing slot, or a name bound twice) is unconstructable, not merely untested. No `BEq`/
+    `DecidableEq`/`Inhabited`: same precedent as `PreparedPlan` itself (below) — compare through
+    `.bindings` (a plain `Array SlotBinding`, which does derive `BEq`) rather than whole-struct
+    equality. -/
+structure RequiredBindings where private mk ::
+  inputSlots : Array TensorSlot
+  bindings   : Array SlotBinding
+  aligned    : (bindings.map (·.slot)).toList.Perm inputSlots.toList
+  deriving Repr
+
+/-- First name in `names` that recurs later in the list. Total and structurally recursive; used
+    only to give `checkBindings`'s `.duplicateName` failure a concrete witness once
+    `(bindings.map (·.name)).toList.Nodup` has already been decided false. Returns `""` on a
+    Nodup list — a case `checkBindings` never actually reaches, the same "trust the invariant, a
+    total default is never really hit" idiom `Dense.lean`'s `runDensePlan` already uses (`getD`
+    defaults documented there as unreachable given the caller's own guarantees). -/
+private def firstDuplicateName : List String → String
+  | [] => ""
+  | n :: rest => if rest.contains n then n else firstDuplicateName rest
+
+/-- The only public way to build a `RequiredBindings`. Reordering `bindings` is fine (`Perm`, not
+    positional equality — see `RequiredBindings`'s doc comment for why), but the slot multiset must
+    match `inputSlots` exactly and every name must be used at most once. -/
+def checkBindings (inputSlots : Array TensorSlot) (bindings : Array SlotBinding) :
+    Except BindingsError RequiredBindings :=
+  if h : (bindings.map (·.slot)).toList.Perm inputSlots.toList then
+    if (bindings.map (·.name)).toList.Nodup then
+      .ok { inputSlots, bindings, aligned := h }
+    else
+      .error (.duplicateName (firstDuplicateName (bindings.map (·.name)).toList))
+  else
+    .error (.notAPermutation inputSlots (bindings.map (·.slot)))
+
 /-- `materializedNames` is NOT deduplicated by name — exactly one entry per statement in
     `RawEvalPlan.steps`, in schedule order (§5.4's literal text: "every name produced by a
     `sched.stmts` entry"). A name reassigned twice appears twice; `unpack` (Task 3) relies on this,
     inserting each in order so the LAST entry for a repeated name is the one that survives. -/
 structure PlanBindings where
-  requiredInputs    : Array SlotBinding
+  requiredInputs    : RequiredBindings
   materializedNames : Array SlotBinding
-  deriving DecidableEq, BEq, Repr, Inhabited
+  deriving Repr
 
 /-- No `deriving` clause: `CheckedEvalPlan` (private constructor) has no `BEq`/`DecidableEq`/
     `Inhabited` of its own (same as `CheckedAssignPlan`'s established precedent), and

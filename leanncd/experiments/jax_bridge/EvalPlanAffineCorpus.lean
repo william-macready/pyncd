@@ -73,7 +73,7 @@ def featureMask (plan : PreparedPlan) : Nat :=
 
 private def renderInputs (plan : PreparedPlan) (env : HashMap String DenseTensor) : IO String := do
   let mut entries : Array String := #[]
-  for b in plan.bindings.requiredInputs do
+  for b in plan.bindings.requiredInputs.bindings do
     let t ← match env[b.name]? with
       | some t => pure t
       | none => throw (IO.userError s!"required input {b.name} is absent")

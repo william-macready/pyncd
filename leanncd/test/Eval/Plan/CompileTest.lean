@@ -219,8 +219,11 @@ def repeatYSlots : Option (Array TensorSlot) :=
 #guard repeatYSlots.map (fun ss => ss[0]! == ss[1]!) == some false   -- two DISTINCT "Y" slots
 
 -- Deterministic slot assignment: same input, same structural output.
-#guard ((prepareEvalPlan contractSched contractSig).toOption.map (·.bindings.requiredInputs)) ==
-       ((prepareEvalPlan contractSched contractSig).toOption.map (·.bindings.requiredInputs))
+-- `RequiredBindings` has no derived `BEq` (same established precedent as `PreparedPlan` itself, per
+-- `Prepared.lean`'s own doc comment: private-constructor types compare through field projections,
+-- not whole-struct equality), so compare through `.bindings` instead.
+#guard ((prepareEvalPlan contractSched contractSig).toOption.map (·.bindings.requiredInputs.bindings)) ==
+       ((prepareEvalPlan contractSched contractSig).toOption.map (·.bindings.requiredInputs.bindings))
 #guard ((prepareEvalPlan contractSched contractSig).toOption.map (·.plan.raw)) ==
        ((prepareEvalPlan contractSched contractSig).toOption.map (·.plan.raw))
 
@@ -268,6 +271,7 @@ private def renderCompileCause : PlanCompileCause → String
   | .capability c     => s!"capability: {repr c}"
   | .shape c          => s!"shape: {c}"
   | .invalidPlan c     => s!"invalidPlan: {repr c}"
+  | .bindings c        => s!"bindings: {repr c}"
 
 -- non-empty `warnings` surviving into a real `prepareEvalPlan` failure: a second statement's
 -- unsized-axis failure must not touch or clear warnings the first statement already accumulated.

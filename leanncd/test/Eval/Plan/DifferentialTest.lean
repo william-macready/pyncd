@@ -49,7 +49,11 @@ run_cmd do
           unless p1.plan.raw == p2.plan.raw do
             throwError s!"alpha-renaming CHANGED the checked semantic graph: \
 {repr p1.plan.raw} vs {repr p2.plan.raw}"
-          unless p1.bindings != p2.bindings do
+          -- `PlanBindings` has no derived `BEq` (`RequiredBindings` has none — same
+          -- private-constructor precedent as `PreparedPlan` itself): compare through
+          -- `.requiredInputs.bindings`/`.materializedNames` instead of whole-struct equality.
+          unless p1.bindings.requiredInputs.bindings != p2.bindings.requiredInputs.bindings ||
+                 p1.bindings.materializedNames != p2.bindings.materializedNames do
             throwError "alpha-renaming did NOT change bindings — bindings should be name-keyed"
 
 -- ── The `enumPrograms` differential sweep ──

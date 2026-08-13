@@ -19,28 +19,28 @@ open LeanNCD.Eval Std
 abbrev NamedDenseEnv := HashMap String DenseTensor
 
 /-- Resolve every input slot `runDensePlan` needs, in `raw.inputSlots` order, by NAME through
-    `requiredInputs` — never by array position. Builds a `slot → name` map from `requiredInputs`
-    first (catching `extraRequiredBinding`/`duplicateRequiredBinding` while building it), then walks
-    `raw.inputSlots` (the true positional order) through that map, resolving each name against
-    `env` and validating shape/storage against `raw.tensorSigs[slot]` — the same value checks
-    `runDensePlan`'s own per-input validation performs, reproduced here (not literally shared,
-    since that helper is private and typed to `PositionalInputError`) so a NAMED failure is
+    `requiredInputs` — never by array position. `requiredInputs : RequiredBindings` is already
+    checked (`checkBindings`, `Compile.lean`) to be a name-unique permutation of `raw.inputSlots`,
+    so `pack` builds the `slot → name` map directly from it and trusts the invariant instead of
+    re-deriving it — the same way `runDensePlan`/`runDenseAssignAt` (`Dense.lean`) trust
+    `checkPlan`'s invariants rather than re-validating them. What's left to check here is genuinely
+    about the caller-supplied `env`, not about `requiredInputs`' own shape: resolving each name
+    against `env` and validating shape/storage against `raw.tensorSigs[slot]` — the same value
+    checks `runDensePlan`'s own per-input validation performs, reproduced here (not literally
+    shared, since that helper is private and typed to `PositionalInputError`) so a NAMED failure is
     diagnosable without waiting for the positional worker to run. -/
 def pack (plan : PreparedPlan) (env : NamedDenseEnv) :
     Except InputBindingError (Array DenseTensor) := do
   let raw := plan.plan.raw
-  let mut slotName : HashMap TensorSlot String := {}
-  for b in plan.bindings.requiredInputs do
-    unless raw.inputSlots.contains b.slot do
-      throw (.extraRequiredBinding b.slot b.name)
-    match slotName[b.slot]? with
-    | some existing => throw (.duplicateRequiredBinding b.slot existing b.name)
-    | none => slotName := slotName.insert b.slot b.name
+  let slotName : HashMap TensorSlot String :=
+    plan.bindings.requiredInputs.bindings.foldl (fun acc b => acc.insert b.slot b.name) {}
   let mut out : Array DenseTensor := #[]
   for slot in raw.inputSlots do
-    let name ← match slotName[slot]? with
-      | some nm => pure nm
-      | none => throw (.missingRequiredBinding slot)
+    -- `slotName` has an entry for every slot in `raw.inputSlots`: `checkBindings` already
+    -- established `requiredInputs.bindings` is a name-unique permutation onto exactly this array
+    -- (`inputSlotsAcc`, which `prepareEvalPlan` also uses unchanged as `raw.inputSlots`) — the
+    -- `getD` default is never actually reached.
+    let name := slotName.getD slot ""
     let t ← match env[name]? with
       | some t => pure t
       | none => throw (.missingEnvBinding name)

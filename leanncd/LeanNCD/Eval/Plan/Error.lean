@@ -79,6 +79,22 @@ inductive InputSignatureError
   | dtypeNotAdmitted (name : String) (dtype : ScalarDType)
   deriving DecidableEq, BEq, Repr, Inhabited
 
+/-- Failure of `Prepared.lean`'s `checkBindings`: a candidate `requiredInputs` array does not align
+    with a plan's `inputSlots` the way a `RequiredBindings` requires. `notAPermutation` covers a
+    duplicate slot, an extra slot, or a missing slot alike — every one of those breaks
+    `(bindings.map (·.slot)).toList.Perm inputSlots.toList`, so they all surface through this one
+    constructor with the two slot lists that failed to match. `duplicateName` is a genuinely
+    separate malformation: two different slots bound to the same source name, which slot-`Perm`
+    alone cannot catch (two distinct slots can each legitimately appear once in the permutation
+    while still sharing a name). Defined here, not in `Prepared.lean`, because `PlanCompileCause`
+    below needs it and `Error.lean` sits upstream of `Prepared.lean` in the import graph (`Prepared
+    → Check → Error`) — `TensorSlot`/`String` are both already available via `Kernel.lean`, so no
+    `SlotBinding`-shaped payload is needed here to make that work. -/
+inductive BindingsError
+  | notAPermutation (expectedSlots observedSlots : Array TensorSlot)
+  | duplicateName   (name : String)
+  deriving DecidableEq, BEq, Repr, Inhabited
+
 /-- §5.5's sketch, verified as-is. Does NOT derive `Repr`: `ShapeError` (an existing sibling type)
     has no `Repr` instance — confirmed by observing the actual `synthInstanceFailed` error, not
     assumed — and `Repr` derivation requires every constructor's payload to support it, unlike
@@ -88,6 +104,7 @@ inductive PlanCompileCause
   | capability     (cause : CapabilityError)
   | shape          (cause : ShapeError)
   | invalidPlan    (cause : PlanError)
+  | bindings       (cause : BindingsError)
   deriving DecidableEq, BEq, Inhabited
 
 /-- Same finding applies here: `EvalWarning` also has no `Repr`, so this likewise derives
@@ -98,21 +115,19 @@ structure PlanCompileFailure where
   warnings : List EvalWarning
   deriving DecidableEq, BEq, Inhabited
 
-/-- Everything `pack` can detect wrong with a `PreparedPlan.bindings.requiredInputs` array and the
-    caller-supplied `env` it is asked to resolve against `plan.plan.raw.inputSlots`. The three
-    "structural" constructors (`missingRequiredBinding`/`duplicateRequiredBinding`/
-    `extraRequiredBinding`) are about `requiredInputs` itself failing to be a clean bijection onto
-    `raw.inputSlots`; the two "runtime" constructors (`missingEnvBinding`/`shapeMismatch`/
-    `storageMismatch`) are about the concrete tensor `env` supplies once a name IS resolved.
-    "Extra" is about a `requiredInputs` entry naming a slot the plan doesn't need — NOT about `env`
-    carrying unrelated extra names, which `unpack`'s own contract says is fine, not an error. -/
+/-- Everything `pack` can detect wrong with the concrete tensor `env` supplies once `requiredInputs`
+    itself is already known-good (`PlanBindings.requiredInputs : RequiredBindings`, checked by
+    `checkBindings` — a clean, name-unique bijection onto `raw.inputSlots` by construction, so
+    `pack` has nothing structural left to detect there; the three constructors that used to cover
+    that ground, `missingRequiredBinding`/`duplicateRequiredBinding`/`extraRequiredBinding`, are
+    gone, unreachable once `checkBindings` gates every `RequiredBindings` at prepare time). What's
+    left are genuine runtime concerns about the caller-supplied `env`: `missingEnvBinding` (a
+    required name absent from `env`), `shapeMismatch`/`storageMismatch` (a name resolved, but its
+    tensor doesn't conform to the plan's declared signature). -/
 inductive InputBindingError
-  | missingRequiredBinding   (slot : TensorSlot)
-  | duplicateRequiredBinding (slot : TensorSlot) (firstName secondName : String)
-  | extraRequiredBinding     (slot : TensorSlot) (name : String)
-  | missingEnvBinding        (name : String)
-  | shapeMismatch            (name : String) (slot : TensorSlot) (expected : Array Nat) (actual : List Nat)
-  | storageMismatch          (name : String) (slot : TensorSlot) (shape : List Nat) (dataSize : Nat)
+  | missingEnvBinding (name : String)
+  | shapeMismatch     (name : String) (slot : TensorSlot) (expected : Array Nat) (actual : List Nat)
+  | storageMismatch   (name : String) (slot : TensorSlot) (shape : List Nat) (dataSize : Nat)
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- The runtime counterpart of `PlanCompileCause`: a `PreparedPlan` failed either at the named
