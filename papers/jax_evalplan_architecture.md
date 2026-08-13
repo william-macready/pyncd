@@ -1295,24 +1295,34 @@ it appears here only because its timing relative to the others needs stating. Th
 planning default, not a gate enforced anywhere in [Section 6](#6-adoption-plan-and-gates) — re-derive
 the open threads' order if a reason emerges, but don't re-litigate it without one.
 
-**None of Stage A exists as code yet** — every refinement in [Section 7.1](#71-stage-a-recommended-low-risk-refinements),
-including the `PlanStep` type itself, is prose. The real codebase today is `RawEvalPlan` →
-`CheckedEvalPlan` → `PreparedPlan` built from `AssignPlan`/`TermPlan`/`ReadPlan` (assignment-only,
-flat `Nat` slots, an open `reference64` tag rather than a closed `reference64SumProduct`). This
-matters for sequencing: threads 3 and 5 below don't build *on top of* Stage A's interfaces as
-already-available infrastructure — they build the relevant slice of Stage A *as part of themselves*,
-because Wave F's own semantics ([Section 2.3](#23-blocks-graph-flow-and-scans)) already require block
-slot scoping and an assign/scan step interface, and compact kernels can't exist without an executable
-phase to lower into. Thread 6 below is the remainder: the two Stage A items neither thread already
-needs.
+**Most of Stage A doesn't exist as code, but not uniformly.** `PlanStep`, distinct slot namespaces,
+private validated executable constructors, evidence-indexed kernels, and snapshot/next-state types
+genuinely don't exist in any form — the real codebase today is `RawEvalPlan` → `CheckedEvalPlan` →
+`PreparedPlan` built from `AssignPlan`/`TermPlan`/`ReadPlan` (assignment-only, flat `Nat` slots, an
+open `reference64` tag rather than a closed `reference64SumProduct`). But two items already have
+correct, tested *behavior* that just isn't surfaced as the distinct API Stage A specifies:
+`Dense.lean`'s `runDenseAssignAt` already documents and implements exact source-declared,
+non-flattened factor/reduction/term order (item 2), just inlined rather than as three named fold
+functions; `prepareEvalPlan` already builds one required-input binding per name (item 4), just
+without a length-correctness wrapper type. And executable lowering itself already exists —
+`EvalPlanCodegen.lean`'s `einsumOnly`/`affineReference` modes are the basis of every measurement in
+[Section 5.4](#54-evidence-validating-the-experimental-jax-bridge) — what's missing there (items 5, 6)
+is the validated, evidence-indexed *type-level discipline* around it, not lowering itself: nothing
+currently stops an unvalidated candidate from executing or distinguishes ordered-reference from
+experimental evidence in the type system. This matters for sequencing: threads 3 and 5 below build
+the Stage A pieces their own work genuinely lacks (items 1, 7, 8 for thread 3; items 5, 6 for thread
+5) — not by choice, because nothing else claims them either. Thread 6 is the remainder: items 2, 3,
+and 4, none blocked on thread 3 or 5, and cheaper than the others since two are API-surface work over
+already-correct behavior rather than new structure.
 
 | Thread | Item | Status | Depends on | Why |
 |---|---|---|---|---|
 | 1 | Pin `reference64Transcendental`'s per-function ULP bounds | **Specified**, not validated | Nothing | [Section 2.2](#22-contractions-and-ordered-floating-point-execution) gives reasoned starting bounds with no Lean constant or test behind them yet, unvalidated against any real backend output. [Section 7.1](#71-stage-a-recommended-low-risk-refinements) no longer flags the *absence* of a contract as blocking Stage A's close. |
 | 2 | Run the affine-table scaling measurement: one mid-sized contraction, timed and sized | **Measured** | Nothing | [Section 5.4](#54-evidence-validating-the-experimental-jax-bridge): one 4,096-coordinate contraction is already ~5% of the entire corpus's artifact size, and its compiled steady-state runtime is measurably (~5×) slower than native `jnp.einsum`. Both findings reordered thread 5 below. |
-| 5 | Compact/evidence-indexed kernels and the PyTorch backend ([Section 4.3](#43-evidence-indexed-executable-lowering), Appendix D) | **Next** — moved ahead of threads 3-4 | Thread 2's outcome | Artifact size grows too fast for the affine-table oracle to stay usable past near-term needs, and its compiled steady-state runtime is a real, measured gap, not merely comparable. Includes building Stage A's executable-lowering foundation (private validated constructors, evidence-indexed kernels — [Section 7.1](#71-stage-a-recommended-low-risk-refinements)) as part of this thread, since neither exists yet. Not yet started. |
-| 3 | Continue Wave F (F2-F4: checked block and scan layers) | Open, after thread 5 | Nothing beyond what F0/F1 already landed | This *is* Backend Eval IR's scan-half implementation per [Section 2.3](#23-blocks-graph-flow-and-scans), not prerequisite work backend IR waits on — but it includes building the block-scoped slots, the `PlanStep` assign/scan interface, and the snapshot/next-state types that section already requires, since none of Stage A exists yet to build on top of. Proceeds independently of threads 1, 2, and 4, subject to [Section 7.2](#72-stage-b-candidate-dependent-contraction-prototype)'s existing constraint against combining it with the Stage B rewrite. |
+| 5 | Compact/evidence-indexed kernels and the PyTorch backend ([Section 4.3](#43-evidence-indexed-executable-lowering), Appendix D) | **Next** — moved ahead of threads 3-4 | Thread 2's outcome | Artifact size grows too fast for the affine-table oracle to stay usable past near-term needs, and its compiled steady-state runtime is a real, measured gap, not merely comparable. Includes building the validated, evidence-indexed executable-lowering discipline Stage A describes (private validated constructors, evidence-indexed kernels — [Section 7.1](#71-stage-a-recommended-low-risk-refinements)) — not building lowering itself, which already exists via the experimental JAX bridge. Not yet started. |
+| 3 | Continue Wave F (F2-F4: checked block and scan layers) | Open, after thread 5 | Nothing beyond what F0/F1 already landed | This *is* Backend Eval IR's scan-half implementation per [Section 2.3](#23-blocks-graph-flow-and-scans), not prerequisite work backend IR waits on — but it includes building the block-scoped slots, the `PlanStep` assign/scan interface, and the snapshot/next-state types that section already requires, none of which exist yet. Proceeds independently of threads 1, 2, and 4, subject to [Section 7.2](#72-stage-b-candidate-dependent-contraction-prototype)'s existing constraint against combining it with the Stage B rewrite. |
 | 4 | Implement nonlinearity: new `PlanStep` pointwise/axiswise cases, Dense/JAX/PyTorch interpreter support | Open, after thread 3 | Thread 3 (the `PlanStep` type must exist before a case can be added to it), thread 1 (specified) | Sequenced after thread 3 for a real type dependency, not just conflict-avoidance: `PlanStep` doesn't exist until thread 3 builds it. A nonlinear step's evidence is also meaningless without a stated ULP bound — settled by thread 1. |
+| 6 | Close Stage A's remaining refinements: explicit named factor/reduction/term fold functions (behavior already correct in `Dense.lean`, not yet its own API), `reference64SumProduct` as an actual closed type (today just an open `reference64` tag), and length-correct required-input bindings (behavior already correct in `prepareEvalPlan`, not yet its own type) | Open, unclaimed | Nothing | The three Stage A items neither thread 3 nor thread 5 already needs. Cheaper than either — two of the three are surfacing already-correct, already-tested behavior as a named API/type, not building new structure. Blocked on nothing; without an explicit thread nothing forces them to happen. |
 | 6 | Close Stage A's remaining refinements: `reference64SumProduct` as an actual closed type (today just an open `reference64` tag) and length-correct required-input bindings | Open, unclaimed | Nothing | The only two Stage A items neither thread 3 nor thread 5 already needs to build. Narrow, cheap, blocked on nothing — without an explicit thread nothing forces them to happen. As safe to do immediately as thread 5, arguably safer given it has no dependency risk at all. |
 
 ## 8. Appendices
