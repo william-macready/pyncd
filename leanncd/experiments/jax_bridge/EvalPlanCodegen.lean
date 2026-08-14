@@ -378,34 +378,161 @@ def generateNamed (mode : LoweringMode) (plan : PreparedPlan) :
   | .einsumOnly       => generateForward plan
   | .affineReference  => .ok (renderAffinePlanNamed plan)
 
-/-! ## 8. Candidate routing (Thread 5, Task 4)
+/-! ## 8. Candidate routing (Thread 5, Tasks 4–5)
 
 Routes each checked assignment through the two existing lowering modes to produce the
 `Candidate` types from `LeanNCD.Eval.Plan.Executable`, instead of the raw dict-shaped output
-above. Stubs only — the real extraction logic (pulling tables/operands out of the existing
-`affineReference`/`einsumOnly` builders above) is Task 5's scope.
+above. Task 4 added the stub signatures; Task 5 fills in the real extraction logic (pulling
+tables/operands out of the existing `affineReference`/`einsumOnly` builders above) — see each
+function's own doc comment for the two Task 5 signature/scope rulings this reflects.
 -/
 
-/-- Convert affineReference lowering to OrderedAffineTableKernelCandidate.
-    Extract tables from existing affineReference builder.
+/-- Convert `affineReference` lowering to `OrderedAffineTableKernelCandidate`: reuse
+    `buildFactorTable` (§6, the exact primitive `renderAffineFactor` already calls) to compute each
+    factor's safe-index/validity-mask table, one table array per term (outer), one table per factor
+    within that term (inner) — matching `tables`'s documented "one per term, then per factor" shape.
 -/
 def loweringToAffineTableCandidate (assign : CheckedAssignPlan) :
-    OrderedAffineTableKernelCandidate := by
-  sorry  -- TODO: extract tables from existing affineReference builder
+    OrderedAffineTableKernelCandidate :=
+  let tables := assign.plan.terms.map (fun term =>
+    term.factors.map (fun f =>
+      let (safeIndex, validMask) := buildFactorTable term.iterationShape f
+      ({ source := f.sourceSlot, safeIndex, validMask } : AffineTableReadCandidate)))
+  { semanticAssignment := assign, tables }
 
-/-- Convert einsumOnly lowering to EinsumExperimentKernelCandidate.
-    Extract einsum operands and output axes from existing builder.
+/-- Convert `einsumOnly` lowering to `EinsumExperimentKernelCandidate`, reusing
+    `rowProjectionTarget` (§3) to recognize each factor's pure-projection rows the same way
+    `lowerFactor` does.
+
+    Ruling (Thread 5 Task 5, conflict 2 — see the plan/brief pre-flight analysis):
+    `EinsumExperimentKernelCandidate` has one flat `operands`/`outputAxes` pair with no per-term
+    dimension, so it can only faithfully represent a SINGLE-TERM `AssignPlan` — the existing
+    `einsumOnly` mode already sums multiple per-term `jnp.einsum` calls for a multi-term assign
+    (`NodeLowering`/`renderNodeLines` above), which this flat candidate shape cannot express. This
+    function therefore lowers only `assign.plan.terms[0]?`; `Executable.validateEinsum` separately
+    and independently rejects any candidate whose semantic source has other than exactly one term,
+    so a multi-term assign accidentally routed through this function still cannot pass validation.
+    `lowerCheckPlanToCandidate` below does NOT call this function — it routes every step through
+    `loweringToAffineTableCandidate` only (every current Wave C plan is admitted by that path
+    already, per `affineReference`'s own doc comment "accepts every current Wave C CheckedEvalPlan").
+    This lowering is real and available, just not yet wired into the plan-level path.
+
+    Total (not `Except`-wrapped, unlike `lowerFactor`), so it cannot reject a non-projection row or
+    nonzero bias the way `lowerFactor` does: `rowProjectionTarget` already returns `none` for such a
+    row (any nonzero bias is not itself detected here, matching `rowProjectionTarget`'s own
+    contract — only the coefficient row is inspected), and `Array.filterMap` silently drops it from
+    that factor's axis list rather than failing. The empty-term case (an assign with no terms, which
+    `checkAssign` never actually admits — `einsumOnly`'s own `emptyAssign`/`emptyTerm` reject it —
+    but this function is total over the type, so it still needs a defined answer) returns empty
+    `operands`/`outputAxes`.
 -/
 def loweringToEinsumCandidate (assign : CheckedAssignPlan) :
-    EinsumExperimentKernelCandidate := by
-  sorry  -- TODO: extract einsum operands from existing builder
+    EinsumExperimentKernelCandidate :=
+  match assign.plan.terms[0]? with
+  | none =>
+      { semanticAssignment := assign, destination := assign.plan.destinationSlot
+      , operands := #[], outputAxes := #[] }
+  | some term =>
+      let operands := term.factors.map (fun f =>
+        #[f.sourceSlot] ++ f.map.coeffs.filterMap rowProjectionTarget)
+      { semanticAssignment := assign, destination := assign.plan.destinationSlot
+      , operands, outputAxes := term.outputPos }
 
 /-- Lower a checked plan to an executable candidate.
-    Routes each assignment through affineReference (reference evidence).
-    Returns candidates ready for validation and private construction.
+
+    Ruling (Thread 5 Task 5, conflict 1 — see the plan/brief pre-flight analysis): parameter is
+    `PreparedPlan`, not the stub's original bare `CheckedEvalPlan` — `JaxExecutableCandidate.source`
+    (Task 3) is a `PreparedPlan`, which carries `bindings`/`warnings` that cannot be derived from a
+    bare `CheckedEvalPlan`. There were zero existing callers of this function at the time of the
+    signature fix (verified by grep), so the change is safe and contained.
+
+    Routes each assignment through `loweringToAffineTableCandidate` only (reference evidence) —
+    matching the "Routes each assignment through affineReference (reference evidence)" doc comment
+    already on this function from Task 4; `loweringToEinsumCandidate` is deliberately not called
+    here (see its own doc comment for why). Iterates `plan.plan.checkedNodes` (each a
+    `CheckedAssignPlan`) in checked-node order, which is exactly raw-graph order by
+    `CheckedEvalPlan`'s own construction invariant.
 -/
-def lowerCheckPlanToCandidate (plan : CheckedEvalPlan) :
-    Except String JaxExecutableCandidate := by
-  sorry  -- TODO: iterate steps, collect kernels, build candidate
+def lowerCheckPlanToCandidate (plan : PreparedPlan) :
+    Except String JaxExecutableCandidate := do
+  let steps ← plan.plan.checkedNodes.mapM (fun assign =>
+    validateAndConstructKernel (.affineTable (loweringToAffineTableCandidate assign)))
+  return { source := plan, steps
+         , evidence := aggregateEvidenceList (steps.map (·.evidence))
+         , aggregated := rfl }
+
+/-! ## 9. Candidate routing tests (Thread 5, Task 5)
+
+Exercises the real (non-`sorry`) lowering + validation functions above against a minimal
+identity-copy fixture (`Y[i] := X[i]`), built the same way `test/Eval/Plan/KernelDenseTest.lean`
+builds its own. This file lives in the non-default `JaxExperiment` library, so these `#guard`s only
+run under `lake build JaxExperiment`, not the default `lake build` — mirroring
+`Eval.Plan.ExecutableTest`'s own hand-built fixtures (which cannot reach these functions, since that
+default-build test module deliberately does not import this experimental library).
+-/
+
+def idSigs : Array TensorSignature :=
+  #[ { shape := #[3], dtype := .f64 }, { shape := #[3], dtype := .f64 } ]
+
+def idRead : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[#[1]], bias := #[0] }
+  , sourceShape := #[3], oobPolicy := .zeroPad }
+
+def idAssign : AssignPlan :=
+  { contextShape := #[], destinationSlot := 1, outputShape := #[3]
+  , terms := #[{ iterationShape := #[3], contextPos := #[], outputPos := #[0], reductionPos := #[]
+               , factors := #[idRead] }]
+  , algebra := admittedAlgebra }
+
+def idRaw : RawEvalPlan :=
+  { version := admittedVersion, tensorSigs := idSigs, inputSlots := #[0]
+  , steps := #[idAssign], numericMode := .reference64SumProduct }
+
+/-- `loweringToAffineTableCandidate` on the identity fixture produces a candidate
+    `validateAndConstructKernel` accepts. -/
+def testAffineLoweringValid : Bool :=
+  match checkAssign idSigs idAssign with
+  | .error _ => false
+  | .ok checked =>
+      match validateAndConstructKernel (.affineTable (loweringToAffineTableCandidate checked)) with
+      | .ok _ => true
+      | .error _ => false
+
+#guard testAffineLoweringValid
+
+/-- `loweringToEinsumCandidate` on the same (single-term, pure-projection) fixture also produces a
+    candidate `validateAndConstructKernel` accepts, even though this path is not wired into
+    `lowerCheckPlanToCandidate`. -/
+def testEinsumLoweringValid : Bool :=
+  match checkAssign idSigs idAssign with
+  | .error _ => false
+  | .ok checked =>
+      match validateAndConstructKernel (.einsum (loweringToEinsumCandidate checked)) with
+      | .ok _ => true
+      | .error _ => false
+
+#guard testEinsumLoweringValid
+
+/-- `lowerCheckPlanToCandidate` on a minimal real `PreparedPlan` produces a candidate
+    `validateAndConstructExecutable` accepts. -/
+def testLowerCheckPlanToCandidateValid : Bool :=
+  match checkPlan idRaw with
+  | .error _ => false
+  | .ok checkedPlan =>
+    match checkBindings #[0] #[{ name := "x", slot := 0 }] with
+    | .error _ => false
+    | .ok requiredInputs =>
+      let prepared : PreparedPlan :=
+        { plan := checkedPlan
+        , bindings := { requiredInputs, materializedNames := #[{ name := "y", slot := 1 }] }
+        , warnings := [] }
+      match lowerCheckPlanToCandidate prepared with
+      | .error _ => false
+      | .ok candidate =>
+        match validateAndConstructExecutable candidate with
+        | .ok _ => true
+        | .error _ => false
+
+#guard testLowerCheckPlanToCandidateValid
 
 end JaxBridge

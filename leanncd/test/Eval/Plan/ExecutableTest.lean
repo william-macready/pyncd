@@ -137,4 +137,142 @@ def testValidateExecutable (plan : PreparedPlan) : Bool :=
   | .ok _ => true      -- validator succeeded
   | .error _ => false  -- validator failed
 
+-- === Task 5: real table/candidate validation ===
+--
+-- A minimal real identity-copy fixture (`Y[i] := X[i]`, mirroring `KernelDenseTest.lean`'s
+-- `identityPlan`): one term, one factor, iteration domain size 3, built through the real
+-- `checkAssign`/`checkPlan`/`checkBindings` entry points — no `sorry` placeholders anywhere below,
+-- per Task 5's guidance against literal `sorry` in test bodies. This file only imports
+-- `LeanNCD.Eval.Plan.Executable` (a default-build production module), so it deliberately does NOT
+-- exercise `EvalPlanCodegen.lean`'s new `loweringToAffineTableCandidate`/`loweringToEinsumCandidate`/
+-- `lowerCheckPlanToCandidate` (those live in the non-default `JaxExperiment` library and are tested
+-- there instead, inline in `EvalPlanCodegen.lean` itself) — candidates here are hand-built to the
+-- same shape those lowering functions would themselves produce for this fixture.
+
+def idSigs : Array TensorSignature :=
+  #[ { shape := #[3], dtype := .f64 }, { shape := #[3], dtype := .f64 } ]
+
+def idRead : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[#[1]], bias := #[0] }
+  , sourceShape := #[3], oobPolicy := .zeroPad }
+
+def idAssign : AssignPlan :=
+  { contextShape := #[], destinationSlot := 1, outputShape := #[3]
+  , terms := #[{ iterationShape := #[3], contextPos := #[], outputPos := #[0], reductionPos := #[]
+               , factors := #[idRead] }]
+  , algebra := admittedAlgebra }
+
+def idRaw : RawEvalPlan :=
+  { version := admittedVersion, tensorSigs := idSigs, inputSlots := #[0]
+  , steps := #[idAssign], numericMode := .reference64SumProduct }
+
+-- Well-formed affine-table candidate: the iteration domain has 3 coordinates (0, 1, 2), and the
+-- identity read maps each straight through to the same-numbered source index, all in-bounds.
+def testValidAffineCandidate : Bool :=
+  match checkAssign idSigs idAssign with
+  | .error _ => false
+  | .ok checked =>
+      let table : AffineTableReadCandidate :=
+        { source := 0, safeIndex := #[0, 1, 2], validMask := #[true, true, true] }
+      let kernel : OrderedAffineTableKernelCandidate :=
+        { semanticAssignment := checked, tables := #[#[table]] }
+      match validateAndConstructKernel (.affineTable kernel) with
+      | .ok _ => true
+      | .error _ => false
+
+#guard testValidAffineCandidate
+
+-- Deliberately malformed: `safeIndex`/`validMask` have the wrong length (2 entries, not the
+-- iteration domain's 3) — `validateAffineTable` must reject a truncated table, not silently accept
+-- it.
+def testMalformedAffineCandidateRejected : Bool :=
+  match checkAssign idSigs idAssign with
+  | .error _ => false
+  | .ok checked =>
+      let badTable : AffineTableReadCandidate :=
+        { source := 0, safeIndex := #[0, 1], validMask := #[true, true] }
+      let kernel : OrderedAffineTableKernelCandidate :=
+        { semanticAssignment := checked, tables := #[#[badTable]] }
+      match validateAndConstructKernel (.affineTable kernel) with
+      | .ok _ => false      -- must NOT validate
+      | .error _ => true    -- correctly rejected
+
+#guard testMalformedAffineCandidateRejected
+
+-- Well-formed einsum candidate for the same fixture: the identity read is a pure projection
+-- (coefficient row `#[1]`, zero bias) onto iteration position 0, so factor 0's operand row is
+-- `#[sourceSlot, coveredPosition] = #[0, 0]`, and the single output position is `#[0]`.
+def testValidEinsumCandidate : Bool :=
+  match checkAssign idSigs idAssign with
+  | .error _ => false
+  | .ok checked =>
+      let kernel : EinsumExperimentKernelCandidate :=
+        { semanticAssignment := checked, destination := 1
+        , operands := #[#[0, 0]], outputAxes := #[0] }
+      match validateAndConstructKernel (.einsum kernel) with
+      | .ok _ => true
+      | .error _ => false
+
+#guard testValidEinsumCandidate
+
+-- Plan-level: a real `PreparedPlan` (via `checkPlan` + `checkBindings`, no `sorry`), wrapping the
+-- single validated affine kernel above into a `JaxExecutableCandidate`; the plan-level validator
+-- must accept it.
+def testValidPlanCandidate : Bool :=
+  match checkPlan idRaw with
+  | .error _ => false
+  | .ok checkedPlan =>
+    match checkedPlan.checkedNodes[0]? with
+    | none => false
+    | some checkedAssign =>
+      match checkBindings #[0] #[{ name := "x", slot := 0 }] with
+      | .error _ => false
+      | .ok requiredInputs =>
+        let prepared : PreparedPlan :=
+          { plan := checkedPlan
+          , bindings := { requiredInputs, materializedNames := #[{ name := "y", slot := 1 }] }
+          , warnings := [] }
+        let table : AffineTableReadCandidate :=
+          { source := 0, safeIndex := #[0, 1, 2], validMask := #[true, true, true] }
+        let kernel : OrderedAffineTableKernelCandidate :=
+          { semanticAssignment := checkedAssign, tables := #[#[table]] }
+        match validateAndConstructKernel (.affineTable kernel) with
+        | .error _ => false
+        | .ok someKernel =>
+          let steps := #[someKernel]
+          let candidate : JaxExecutableCandidate :=
+            { source := prepared, steps
+            , evidence := aggregateEvidenceList (steps.map (·.evidence))
+            , aggregated := rfl }
+          match validateAndConstructExecutable candidate with
+          | .ok _ => true
+          | .error _ => false
+
+#guard testValidPlanCandidate
+
+-- Deliberately malformed at plan level: zero step-kernels against a one-step source plan —
+-- `JaxExecutableWellFormed`'s step-count/raw-step-count correspondence must reject this, not
+-- silently accept a plan that dropped a step.
+def testMalformedPlanCandidateRejected : Bool :=
+  match checkPlan idRaw with
+  | .error _ => false
+  | .ok checkedPlan =>
+    match checkBindings #[0] #[{ name := "x", slot := 0 }] with
+    | .error _ => false
+    | .ok requiredInputs =>
+      let prepared : PreparedPlan :=
+        { plan := checkedPlan
+        , bindings := { requiredInputs, materializedNames := #[{ name := "y", slot := 1 }] }
+        , warnings := [] }
+      let steps : Array SomeJaxKernel := #[]
+      let candidate : JaxExecutableCandidate :=
+        { source := prepared, steps
+        , evidence := aggregateEvidenceList (steps.map (·.evidence))
+        , aggregated := rfl }
+      match validateAndConstructExecutable candidate with
+      | .ok _ => false      -- must NOT validate (steps.size = 0 ≠ source's 1 raw step)
+      | .error _ => true    -- correctly rejected
+
+#guard testMalformedPlanCandidateRejected
+
 end LeanNCD.Eval.Plan.ExecutableTest

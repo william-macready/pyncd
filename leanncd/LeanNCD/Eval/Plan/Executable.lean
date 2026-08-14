@@ -17,6 +17,28 @@ inhabit `orderedReference64` evidence, and only `einsum`-shaped candidates can e
 `optimizationExperiment` evidence.
 
 Spec: `papers/jax_evalplan_architecture.md` §4.3, §7.1 rows 5–6, Appendix D.
+
+NOTE (Thread 5 Task 5, Step 6 grep gate — `grep -E '...' papers/jax_evalplan_architecture.md`,
+run from the repo root over every identifier this file and `EvalPlanCodegen.lean`'s Task 5 section
+introduce or touch): the doc names `ExecutionEvidence`, `JaxKernel`, `SomeJaxKernel`,
+`JaxExecutableCandidate`, `JaxExecutable`, and `JaxExecutableWellFormed` verbatim (Appendix D). It
+does NOT name `JaxKernelCandidate`, `AffineTableReadCandidate`, `OrderedAffineTableKernelCandidate`,
+`EinsumExperimentKernelCandidate`, `SomeJaxExecutable`, `JaxKernelWellFormed`,
+`candidateEvidenceLabel`, `validateAndConstructKernel`, `validateAndConstructExecutable`, or any of
+`kernelWellFormedBool`/`validateAffineTable`/`validateEinsum`/`affineFactorTableValid`/
+`affineTermTablesValid` (this file) or `lowerCheckPlanToCandidate`/
+`loweringToAffineTableCandidate`/`loweringToEinsumCandidate` (`EvalPlanCodegen.lean`) — this is
+expected, not a gap: Appendix D is
+explicitly this thread's Spec-line "non-copy-ready sketch needing translation to real types" (its
+own dependent-type sketch uses a single `JaxKernel (evidence) (table : CheckedTensorScope) (mode :
+NumericMode)`, for instance, not this file's flat non-dependent `JaxKernelCandidate`/table-array
+split), and the Plan Verification Checklist's own "No copy-paste from Appendix D: Translated
+concepts, not code" line already anticipates exactly this kind of naming divergence for
+Lean-real-type plumbing and internal validation helpers that Appendix D's sketch never spells out
+at that granularity. One genuine drift worth flagging rather than silently translating: this file's
+`aggregateEvidenceList` is the doc's `aggregateEvidence` (Appendix D, e.g. line ~1940) under a
+different name — same fold-over-an-array-of-evidences concept (`List`-style suffix reflecting that
+it takes an `Array`, not a single evidence), not a second, undocumented concept.
 -/
 
 namespace LeanNCD.Eval.Plan
@@ -66,19 +88,88 @@ def candidateEvidenceLabel : JaxKernelCandidate → ExecutionEvidence
   | .affineTable _ => ExecutionEvidence.orderedReference64
   | .einsum _ => ExecutionEvidence.optimizationExperiment
 
-/-- Opaque witness that a candidate is well-formed (stub predicate).
-    Real implementation: table lengths match iteration domain, indices are safe, etc.
+/-- Whether one factor's precomputed table is length- and index-safe against its own term's
+    iteration domain and its own source shape: `safeIndex`/`validMask` both have exactly
+    `domainSize` entries, the table's `source` matches the factor's own `sourceSlot`, and every
+    `safeIndex` entry marked valid (`validMask[k] = true`) is a genuine in-range flat index into
+    `sourceShape` (`< sourceShape`'s product — the same bound `flatIndex`/`inBoundsPerDim`
+    (`Coordinates.lean`) guarantee for a coordinate that actually passed `inBoundsPerDim`). -/
+def affineFactorTableValid (domainSize : Nat) (factor : ReadPlan)
+    (table : AffineTableReadCandidate) : Bool :=
+  let sourceSize := factor.sourceShape.foldl (· * ·) 1
+  table.safeIndex.size == domainSize &&
+  table.validMask.size == domainSize &&
+  table.source == factor.sourceSlot &&
+  (table.safeIndex.zip table.validMask).all (fun (idx, valid) => !valid || idx < sourceSize)
+
+/-- Whether one term's array of per-factor tables corresponds to that term's own factor list
+    (one table per factor, `tables.size = term.factors.size`) and each table is individually valid
+    (`affineFactorTableValid`) against that term's iteration-domain size
+    (`term.iterationShape`'s product). -/
+def affineTermTablesValid (term : TermPlan) (tables : Array AffineTableReadCandidate) : Bool :=
+  let domainSize := term.iterationShape.foldl (· * ·) 1
+  tables.size == term.factors.size &&
+  (term.factors.zip tables).all (fun (factor, table) => affineFactorTableValid domainSize factor table)
+
+/-- Validate an affine-table kernel candidate against its own semantic source: one table array per
+    term (`tables.size = semanticAssignment.plan.terms.size`, per `OrderedAffineTableKernelCandidate`'s
+    doc comment "one per term, then per factor"), and every per-term table array individually valid
+    (`affineTermTablesValid`). -/
+def validateAffineTable (kernel : OrderedAffineTableKernelCandidate) : Bool :=
+  let terms := kernel.semanticAssignment.plan.terms
+  kernel.tables.size == terms.size &&
+  (terms.zip kernel.tables).all (fun (term, tableRow) => affineTermTablesValid term tableRow)
+
+/-- Validate an einsum kernel candidate against its own semantic source.
+    `EinsumExperimentKernelCandidate` has one flat `operands`/`outputAxes` pair with no per-term
+    dimension, so it can only faithfully represent a SINGLE-TERM `AssignPlan` (see
+    `EvalPlanCodegen.lean`'s `loweringToEinsumCandidate` doc comment for the full ruling this
+    reflects). Checks:
+    - the semantic source has exactly one term
+    - `destination` matches the semantic assignment's own `destinationSlot`
+    - `operands.size` matches that term's factor count, one operand row per factor
+    - each operand row's first entry is that factor's own `sourceSlot`
+    - every axis position named in an operand row (after the leading slot) or in `outputAxes` is
+      within the term's iteration basis (`< term.iterationShape.size`) -/
+def validateEinsum (kernel : EinsumExperimentKernelCandidate) : Bool :=
+  let terms := kernel.semanticAssignment.plan.terms
+  kernel.destination == kernel.semanticAssignment.plan.destinationSlot &&
+  terms.size == 1 &&
+  match terms[0]? with
+  | none => false
+  | some term =>
+      let rank := term.iterationShape.size
+      kernel.operands.size == term.factors.size &&
+      (term.factors.zip kernel.operands).all (fun (factor, opRow) =>
+        opRow.size ≥ 1 && opRow.getD 0 0 == factor.sourceSlot &&
+        (opRow.extract 1 opRow.size).all (· < rank)) &&
+      kernel.outputAxes.all (· < rank)
+
+/-- Combined kernel-candidate validity check, real implementation (Task 5): dispatches to
+    `validateAffineTable`/`validateEinsum` per candidate kind. Bool-valued (not `Prop`-valued via
+    the `Bool → Prop` coercion the task brief's sketch used) so it can also be used directly inside
+    `JaxExecutableWellFormed`'s `Array.all` below, which needs a `Bool`-returning predicate. -/
+def kernelWellFormedBool : JaxKernelCandidate → Bool
+  | .affineTable kernel => validateAffineTable kernel
+  | .einsum kernel => validateEinsum kernel
+
+/-- Real well-formedness predicate for a kernel candidate: `kernelWellFormedBool candidate = true`.
+    `Decidable` follows automatically from `DecidableEq Bool` — no manual instance needed (the
+    earlier stub instance that always answered `.isTrue trivial` regardless of the predicate's
+    actual truth has been removed; leaving it would have silently defeated
+    `validateAndConstructKernel`'s `decide` check now that this predicate can genuinely be false).
 -/
 def JaxKernelWellFormed (candidate : JaxKernelCandidate) : Prop :=
-  True  -- TODO: implement real validation after lowering is updated
+  kernelWellFormedBool candidate = true
 
-/-- The stub predicate is unconditionally `True`, so it is trivially decidable. Real validation
-    (after lowering is updated) will need a genuine `Decidable` instance derived from the actual
-    checks; this stub instance is what lets `validateAndConstructKernel` branch on the predicate
-    today without blocking on that future work.
--/
+/-- `Decidable (b = true)` for `b : Bool` should in principle resolve automatically from
+    `DecidableEq Bool`, but instance search does not unfold a plain (non-`@[reducible]`) `def` like
+    `JaxKernelWellFormed` to expose that shape — confirmed by trying without this instance first
+    (`synthInstanceFailed`). `inferInstanceAs` forces the unfold via definitional equality at
+    elaboration time (rather than instance-head matching), then delegates to the ordinary
+    `Bool` `DecidableEq` instance. -/
 instance (candidate : JaxKernelCandidate) : Decidable (JaxKernelWellFormed candidate) :=
-  .isTrue trivial
+  inferInstanceAs (Decidable (kernelWellFormedBool candidate = true))
 
 /-- Type-indexed kernel, only creatable by validator (`validateAndConstructKernel`).
     Evidence is fixed at construction and never changes: `aligned` ties the candidate's
@@ -88,7 +179,7 @@ instance (candidate : JaxKernelCandidate) : Decidable (JaxKernelWellFormed candi
 structure JaxKernel (evidence : ExecutionEvidence) where private mk ::
   candidate : JaxKernelCandidate
   aligned : candidateEvidenceLabel candidate = evidence
-  valid : JaxKernelWellFormed candidate  -- semantic: stub for now
+  valid : JaxKernelWellFormed candidate  -- real validation (Task 5): `validateAffineTable`/`validateEinsum`
 
 /-- Existential witness hiding the evidence index.
 -/
@@ -103,19 +194,23 @@ def validateAndConstructKernel (candidate : JaxKernelCandidate) :
     Except String SomeJaxKernel := do
   -- Derive evidence label from candidate structure (not mutable).
   let evidence := candidateEvidenceLabel candidate
-  -- Stub validation: real implementation checks table lengths, indices, etc.
-  -- `throw`, not `return .error` — `return` in this `Except` do-block already performs the `.ok`
-  -- wrap (`pure`), so `return .error x` would elaborate `.error` against the wrong expected type
-  -- (`SomeJaxKernel`, not `Except String SomeJaxKernel`) and fail to resolve.
-  unless decide (JaxKernelWellFormed candidate) do
+  -- `if h : ... then ... else throw`, not `unless decide ... do throw` + a separate `trivial`
+  -- proof: now that `JaxKernelWellFormed` does real (possibly-false) validation, `JaxKernel.valid`
+  -- needs an actual proof term, not `trivial` (which only ever proves `True`). The `dite` form
+  -- (`if h : P then ...`) is what hands that proof (`h`) to the `then`-branch.
+  if h : JaxKernelWellFormed candidate then
+    -- Construct private kernel only after validation passes.
+    let kernel : JaxKernel evidence := {
+      candidate := candidate
+      aligned := rfl  -- evidence derivation is deterministic
+      valid := h
+    }
+    return { evidence := evidence, kernel := kernel }
+  else
+    -- `throw`, not `return .error` — `return` in this `Except` do-block already performs the
+    -- `.ok` wrap (`pure`), so `return .error x` would elaborate `.error` against the wrong
+    -- expected type (`SomeJaxKernel`, not `Except String SomeJaxKernel`) and fail to resolve.
     throw "Kernel validation failed"
-  -- Construct private kernel only after validation passes.
-  let kernel : JaxKernel evidence := {
-    candidate := candidate
-    aligned := rfl  -- evidence derivation is deterministic
-    valid := trivial
-  }
-  return { evidence := evidence, kernel := kernel }
 
 /-- Aggregate evidence across an array of kernel evidences.
     Returns `orderedReference64` only if ALL are; otherwise `optimizationExperiment`.
@@ -137,18 +232,33 @@ structure JaxExecutableCandidate where
   evidence : ExecutionEvidence
   aggregated : evidence = aggregateEvidenceList (steps.map (·.evidence))
 
-/-- Opaque witness that a candidate is well-formed (stub predicate).
-    Real implementation (after Task 5): plan/step alignment, kernel counts match plan steps, etc.
+/-- Validate an executable plan against its own semantic source, real implementation (Task 5):
+    - step count matches the raw semantic plan's own step count (`candidate.source : PreparedPlan`,
+      per the Task 5 ruling that corrected `JaxExecutableCandidate.source`'s type — see
+      `EvalPlanCodegen.lean`'s `lowerCheckPlanToCandidate` doc comment for the full ruling)
+    - every step's kernel candidate is itself well-formed (`kernelWellFormedBool`, not the
+      `Prop`-valued `JaxKernelWellFormed` the task brief's sketch used directly inside
+      `Array.all` — `Array.all` needs a `Bool`-returning predicate, and `Prop` cannot be
+      implicitly used as `Bool`, so `Array.all` is applied to the `Bool`-valued helper instead,
+      with the `= true` making the whole conjunct a `Prop` again)
+    - the evidence-aggregation invariant, restated as the same proposition
+      `JaxExecutableCandidate.aggregated` is itself a proof OF (`candidate.aggregated` names a
+      proof TERM, not the proposition — the brief's sketch conjoined the term directly, which does
+      not type-check as a `Prop`; restating the equality itself is the fix)
 -/
 def JaxExecutableWellFormed (candidate : JaxExecutableCandidate) : Prop :=
-  True  -- TODO: alignment checks after Task 5
+  candidate.steps.size = candidate.source.plan.raw.steps.size ∧
+  candidate.steps.all (fun sk => kernelWellFormedBool sk.kernel.candidate) = true ∧
+  candidate.evidence = aggregateEvidenceList (candidate.steps.map (·.evidence))
 
-/-- The stub predicate is unconditionally `True`, so it is trivially decidable — same precedent as
-    `JaxKernelWellFormed`'s instance above. Real validation will need a genuine `Decidable`
-    instance derived from the actual checks once the predicate does real work.
--/
+/-- Same rationale as `JaxKernelWellFormed`'s instance above: instance search does not unfold a
+    plain `def` to expose the underlying (fully decidable) conjunction, so `inferInstanceAs` forces
+    the unfold via definitional equality, then delegates to the ordinary `Nat`/`Bool`/
+    `ExecutionEvidence` `DecidableEq` instances combined through `And`'s standard instance. -/
 instance (candidate : JaxExecutableCandidate) : Decidable (JaxExecutableWellFormed candidate) :=
-  .isTrue trivial
+  inferInstanceAs (Decidable (candidate.steps.size = candidate.source.plan.raw.steps.size ∧
+    candidate.steps.all (fun sk => kernelWellFormedBool sk.kernel.candidate) = true ∧
+    candidate.evidence = aggregateEvidenceList (candidate.steps.map (·.evidence))))
 
 /-- Type-indexed executable plan, only creatable by validator (`validateAndConstructExecutable`).
     Evidence is fixed at construction: `evidenceAligned` ties the candidate's own `evidence`
@@ -171,20 +281,23 @@ structure SomeJaxExecutable where
       well-typed candidate, so `decide` on the same equality can never actually fail here — the
       check is kept anyway so a bad aggregation surfaces as a reported error rather than a proof
       obligation silently discharged elsewhere, matching the brief's two-error-path shape);
-    - the (currently stub) `JaxExecutableWellFormed` predicate.
+    - the real `JaxExecutableWellFormed` predicate, via the same `if h : ... then ... else throw`
+      (`dite`) shape `validateAndConstructKernel` uses — `JaxExecutable.valid` needs an actual
+      proof term now that the predicate does real work, not `trivial` (which only proves `True`).
 -/
 def validateAndConstructExecutable (candidate : JaxExecutableCandidate) :
     Except String SomeJaxExecutable := do
   unless decide (candidate.evidence = aggregateEvidenceList (candidate.steps.map (·.evidence))) do
     throw "Executable aggregation invariant violated"
-  unless decide (JaxExecutableWellFormed candidate) do
+  if h : JaxExecutableWellFormed candidate then
+    let evidence := candidate.evidence
+    let exec : JaxExecutable evidence := {
+      candidate := candidate
+      evidenceAligned := rfl
+      valid := h
+    }
+    return { evidence := evidence, executable := exec }
+  else
     throw "Executable validation failed"
-  let evidence := candidate.evidence
-  let exec : JaxExecutable evidence := {
-    candidate := candidate
-    evidenceAligned := rfl
-    valid := trivial
-  }
-  return { evidence := evidence, executable := exec }
 
 end LeanNCD.Eval.Plan
