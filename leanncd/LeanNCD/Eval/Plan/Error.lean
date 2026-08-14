@@ -38,6 +38,12 @@ inductive PlanError
   | missingProduction        (slot : TensorSlot)
   | invalidForwardRead       (nodeIndex termIndex factorIndex : Nat) (slot : TensorSlot)
   | nodeError                (nodeIndex : Nat) (cause : PlanError)
+  /-- TEMPORARY Task-1 (Wave F F3) interim placeholder: `checkPlan` cannot yet check a `.scan` graph
+      step (that's Task 4's job, once `checkPlan` relocates into `EvalPlan.lean` alongside a real
+      `PlanStepError` that can represent scan failures properly), so every `.scan` step is rejected
+      here rather than left to break `checkPlan`'s compile. Task 4 deletes this constructor when it
+      lands. -/
+  | scanStepNotYetSupported  (stepIndex : Nat)
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- A checked plan met a positional tensor store that does not conform to the shapes the checker

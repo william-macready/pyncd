@@ -124,30 +124,32 @@ def checkPlan (raw : RawEvalPlan) : Except PlanError CheckedEvalPlan := do
     available := available.set! s true
   let mut checkedNodes : Array CheckedAssignPlan := #[]
   for h : ni in [0 : raw.steps.size] do
-    let step := raw.steps[ni]
-    unless step.contextShape == #[] do throw (.topLevelContextNotEmpty ni)
-    let destSlot := step.destinationSlot
-    match available[destSlot]? with
-    | none => throw (.nodeError ni (.slotOutOfRange destSlot n))
-    | some isAvail =>
-        if isAvail then
-          match producedBy[destSlot]?.join with
-          | none => throw (.inputSlotOverwritten destSlot ni)
-          | some firstNode => throw (.duplicateDestination destSlot firstNode ni)
-    for h2 : ti in [0 : step.terms.size] do
-      let t := step.terms[ti]
-      for h3 : fi in [0 : t.factors.size] do
-        let f := t.factors[fi]
-        match available[f.sourceSlot]? with
-        | none => throw (.nodeError ni (.slotOutOfRange f.sourceSlot n))
-        | some true => pure ()
-        | some false => throw (.invalidForwardRead ni ti fi f.sourceSlot)
-    match checkAssign raw.tensorSigs step with
-    | .error e => throw (.nodeError ni e)
-    | .ok c =>
-        checkedNodes := checkedNodes.push c
-        available := available.set! destSlot true
-        producedBy := producedBy.set! destSlot (some ni)
+    match raw.steps[ni] with
+    | .scan _ => throw (.nodeError ni (.scanStepNotYetSupported ni))
+    | .assign a =>
+      unless a.contextShape == #[] do throw (.topLevelContextNotEmpty ni)
+      let destSlot := a.destinationSlot
+      match available[destSlot]? with
+      | none => throw (.nodeError ni (.slotOutOfRange destSlot n))
+      | some isAvail =>
+          if isAvail then
+            match producedBy[destSlot]?.join with
+            | none => throw (.inputSlotOverwritten destSlot ni)
+            | some firstNode => throw (.duplicateDestination destSlot firstNode ni)
+      for h2 : ti in [0 : a.terms.size] do
+        let t := a.terms[ti]
+        for h3 : fi in [0 : t.factors.size] do
+          let f := t.factors[fi]
+          match available[f.sourceSlot]? with
+          | none => throw (.nodeError ni (.slotOutOfRange f.sourceSlot n))
+          | some true => pure ()
+          | some false => throw (.invalidForwardRead ni ti fi f.sourceSlot)
+      match checkAssign raw.tensorSigs a with
+      | .error e => throw (.nodeError ni e)
+      | .ok c =>
+          checkedNodes := checkedNodes.push c
+          available := available.set! destSlot true
+          producedBy := producedBy.set! destSlot (some ni)
   -- every non-input slot must be produced; input slots were marked available above and so never
   -- trip this check regardless of whether any node also produces them.
   for h : i in [0 : n] do
