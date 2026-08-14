@@ -240,8 +240,8 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
   -- preflight — if `checkPlan` ever rejects a compiler-generated plan, that is a bug in the
   -- compiler above, not a legitimate rejection.
   let raw : RawEvalPlan :=
-    { version := admittedVersion, tensorSigs := tensorSigsAcc, inputSlots := inputSlotsAcc
-    , steps := stepsAcc, numericMode := .reference64SumProduct }
+    { tensorSigs := tensorSigsAcc, inputSlots := inputSlotsAcc
+    , steps := stepsAcc.map .assign, numericMode := .reference64SumProduct }
   let checked ← liftPlanError warnings (checkPlan raw)
   -- Step F: assemble PreparedPlan. `requiredInputsAcc`/`inputSlotsAcc` were built positionally
   -- (hence also as a permutation) in lockstep by the same Step D loop above, so `checkBindings`
