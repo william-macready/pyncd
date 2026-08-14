@@ -1,4 +1,5 @@
 import LeanNCD.Eval.Plan.Adapter
+import LeanNCD.Eval.Plan.Executable
 
 /-!
 # Wave C JAX code generation (`docs/superpowers/plans/2026-08-10-jax-full-affine-semantics.md`, Task 2)
@@ -376,5 +377,35 @@ def generateNamed (mode : LoweringMode) (plan : PreparedPlan) :
   match mode with
   | .einsumOnly       => generateForward plan
   | .affineReference  => .ok (renderAffinePlanNamed plan)
+
+/-! ## 8. Candidate routing (Thread 5, Task 4)
+
+Routes each checked assignment through the two existing lowering modes to produce the
+`Candidate` types from `LeanNCD.Eval.Plan.Executable`, instead of the raw dict-shaped output
+above. Stubs only — the real extraction logic (pulling tables/operands out of the existing
+`affineReference`/`einsumOnly` builders above) is Task 5's scope.
+-/
+
+/-- Convert affineReference lowering to OrderedAffineTableKernelCandidate.
+    Extract tables from existing affineReference builder.
+-/
+def loweringToAffineTableCandidate (assign : CheckedAssignPlan) :
+    OrderedAffineTableKernelCandidate := by
+  sorry  -- TODO: extract tables from existing affineReference builder
+
+/-- Convert einsumOnly lowering to EinsumExperimentKernelCandidate.
+    Extract einsum operands and output axes from existing builder.
+-/
+def loweringToEinsumCandidate (assign : CheckedAssignPlan) :
+    EinsumExperimentKernelCandidate := by
+  sorry  -- TODO: extract einsum operands from existing builder
+
+/-- Lower a checked plan to an executable candidate.
+    Routes each assignment through affineReference (reference evidence).
+    Returns candidates ready for validation and private construction.
+-/
+def lowerCheckPlanToCandidate (plan : CheckedEvalPlan) :
+    Except String JaxExecutableCandidate := by
+  sorry  -- TODO: iterate steps, collect kernels, build candidate
 
 end JaxBridge
