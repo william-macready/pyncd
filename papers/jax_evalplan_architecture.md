@@ -67,7 +67,11 @@ checking, Lean emits generated Python source or untyped nested dictionaries and 
 of **Wave F**—the extension that adds checked recurrent scans, whose F0 contract fixtures and F1
 context fields have landed while the checked block and scan layers (F2-F4) have not—or production use,
 the existing `EvalPlan` should evolve into a phase-separated **Backend Eval IR**: the common,
-backend-neutral execution language interpreted by Dense, JAX, and a new PyTorch evaluator.
+backend-neutral execution language interpreted by Dense and JAX today, keeping a PyTorch evaluator
+possible without committing to build one. **PyTorch is a potential future backend, not scheduled
+work**: no client has asked for it, and [Section 7.6](#76-sequencing-across-threads) schedules no
+PyTorch implementation. Design decisions that follow keep the IR backend-neutral so a PyTorch
+evaluator remains straightforward to add later; they are not a claim that one is being built now.
 
 The design separates meaning from representation maturity. Canonical Backend Eval IR **semantics**
 state graph, contraction, binding, block, and scan behavior without choosing a Lean encoding or wire
@@ -642,6 +646,10 @@ while einsum may inhabit only the latter. A mixed executable derives its aggrega
 contained assignment kernels, scan child kernels, and scan implementation choices: it is
 ordered-reference only if every member is, and is experimental if any member is. Compact affine and
 scan implementations require new capability results, refinement predicates, and differential gates.
+
+This section states the design symmetrically for JAX and PyTorch so the IR stays backend-neutral, not
+because both are scheduled work: [Section 7.6](#76-sequencing-across-threads) builds this discipline
+for JAX only for now, with no PyTorch implementation thread scheduled.
 
 ## Part II — Evidence Record
 
@@ -1325,9 +1333,9 @@ over already-correct behavior rather than new structure.
 | 1 | Pin `reference64Transcendental`'s per-function ULP bounds | **Specified**, not validated | Nothing | [Section 2.2](#22-contractions-and-ordered-floating-point-execution) gives reasoned starting bounds with no Lean constant or test behind them yet, unvalidated against any real backend output. [Section 7.1](#71-stage-a-recommended-low-risk-refinements) no longer flags the *absence* of a contract as blocking Stage A's close. |
 | 2 | Run the affine-table scaling measurement: one mid-sized contraction, timed and sized | **Measured** | Nothing | [Section 5.4](#54-evidence-validating-the-experimental-jax-bridge): one 4,096-coordinate contraction is already ~5% of the entire corpus's artifact size, and its compiled steady-state runtime is measurably (~5×) slower than native `jnp.einsum`. Both findings reordered thread 5 below. |
 | 6 | Closed Stage A's remaining refinements: explicit named factor/reduction/term fold functions in `Dense.lean` (`factorFold`/`reductionFold`/`termFold`), `reference64SumProduct` as the actual closed `NumericMode` constructor (renamed from the open `reference64` tag), and length-correct `RequiredBindings` in `Prepared.lean` | **Done** | Nothing | The three Stage A items neither thread 3 nor thread 5 needed. Cheaper than either — two of the three surfaced already-correct, already-tested behavior as a named API/type, not building new structure. Blocked on nothing and blocked nothing else, so it ran right after the other zero-dependency threads, in parallel with threads 5/3/4. |
-| 5 | Compact/evidence-indexed kernels and the PyTorch backend ([Section 4.3](#43-evidence-indexed-executable-lowering), Appendix D) | **Next** — moved ahead of threads 3-4 | Thread 2's outcome | Artifact size grows too fast for the affine-table oracle to stay usable past near-term needs, and its compiled steady-state runtime is a real, measured gap, not merely comparable. Includes building the validated, evidence-indexed executable-lowering discipline Stage A describes (private validated constructors, evidence-indexed kernels — [Section 7.1](#71-stage-a-recommended-low-risk-refinements)) — not building lowering itself, which already exists via the experimental JAX bridge. Not yet started. |
+| 5 | Compact/evidence-indexed kernels for JAX ([Section 4.3](#43-evidence-indexed-executable-lowering)) | **Next** — moved ahead of threads 3-4 | Thread 2's outcome | Artifact size grows too fast for the affine-table oracle to stay usable past near-term needs, and its compiled steady-state runtime is a real, measured gap, not merely comparable. Includes building the validated, evidence-indexed executable-lowering discipline Stage A describes (private validated constructors, evidence-indexed kernels — [Section 7.1](#71-stage-a-recommended-low-risk-refinements)) — not building lowering itself, which already exists via the experimental JAX bridge. Not yet started. **JAX only**: the PyTorch backend (also sketched in Appendix D) is explicitly out of scope here — no client has asked for it, so it is deferred with no scheduled thread, not merely sequenced later. |
 | 3 | Continue Wave F (F2-F4: checked block and scan layers) | Open, after thread 5 | Nothing beyond what F0/F1 already landed | This *is* Backend Eval IR's scan-half implementation per [Section 2.3](#23-blocks-graph-flow-and-scans), not prerequisite work backend IR waits on — but it includes building the block-scoped slots, the `PlanStep` assign/scan interface, and the snapshot/next-state types that section already requires, none of which exist yet. Proceeds independently of threads 1, 2, and 4, subject to [Section 7.2](#72-stage-b-candidate-dependent-contraction-prototype)'s existing constraint against combining it with the Stage B rewrite. |
-| 4 | Implement nonlinearity: new `PlanStep` pointwise/axiswise cases, Dense/JAX/PyTorch interpreter support | Open, after thread 3 | Thread 3 (the `PlanStep` type must exist before a case can be added to it), thread 1 (specified) | Sequenced after thread 3 for a real type dependency, not just conflict-avoidance: `PlanStep` doesn't exist until thread 3 builds it. A nonlinear step's evidence is also meaningless without a stated ULP bound — settled by thread 1. |
+| 4 | Implement nonlinearity: new `PlanStep` pointwise/axiswise cases, Dense/JAX interpreter support | Open, after thread 3 | Thread 3 (the `PlanStep` type must exist before a case can be added to it), thread 1 (specified) | Sequenced after thread 3 for a real type dependency, not just conflict-avoidance: `PlanStep` doesn't exist until thread 3 builds it. A nonlinear step's evidence is also meaningless without a stated ULP bound — settled by thread 1. PyTorch interpreter support is not listed: it follows the PyTorch backend itself (thread 5's note above), which is deferred, not scheduled. |
 
 ## 8. Appendices
 
@@ -1857,7 +1865,11 @@ placement can therefore never mask an un-specialized RHS.
 Eval IR semantics. They make the candidate/refinement/evidence protocol in
 [Section 4.3](#43-evidence-indexed-executable-lowering) concrete using Appendix A's abstract
 `CheckedTensorScope`, `CheckedAssignment`, and `CheckedScan` interfaces. Appendix B and Appendix C are
-candidate implementations of those interfaces, not prerequisites for executable separation.
+candidate implementations of those interfaces, not prerequisites for executable separation. `TorchKernel`
+and `SomeTorchKernel` sketch the PyTorch side of the same protocol for design symmetry only —
+[Section 7.6](#76-sequencing-across-threads) schedules no PyTorch implementation, so these are further
+from being buildable than their JAX counterparts, which themselves depend on Appendix A/B's
+not-yet-built dependent types (see thread 5's own scope note).
 
 ```lean
 inductive ExecutionEvidence
