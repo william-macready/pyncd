@@ -1438,18 +1438,25 @@ or unordered maps.
 `CheckedPlanBlock`/`checkPlanBlock`, `runDenseBlock`) plus context-indexed positive/mutation
 fixtures in `Eval.Plan.BlockTest`; `Block.lean` is reachable from `import LeanNCD`, `BlockTest`'s
 fixtures are registered in the default `Tests` build target (not reachable via the `import LeanNCD`
-chain); `lake build` green (8,646 jobs). No second local-kernel checker, no second graph-wiring loop, and no new coordinate-math
-module were added: `checkPlanBlock` calls `checkAssign` per node and reuses `checkPlan`'s
-availability/production-order loop shape verbatim (parameterized over the block's own
-`tensorSigs`/`inputs`); `runDenseBlock` calls `runDenseAssignAt` per node exactly as `runDensePlan`
-does for the outer graph; every `BlockError` case that duplicates a `PlanError` case is wrapped as
-`.wiring (...)`, not reimplemented as a freestanding lookalike. Two items are known and deliberately
-deferred, not fixed here (both out of F2's additive-only scope, since fixing either would require
-editing `Dense.lean`): (1) `runDenseBlock`'s arity/shape/storage input validation duplicates
-`runDensePlan`'s verbatim rather than sharing a helper — a candidate for a future reuse-cleanup
-slice; (2) `runDenseBlock` returns the full local store rather than a value projected to
-`raw.outputs` — fine since nothing yet consumes block outputs, but F3 will need to decide the
-output-projection contract when it wires a block into a scan node.
+chain); `lake build` green (8,646 jobs). Reuse happens at the leaf level, not the loop level:
+`checkPlanBlock` calls `checkAssign` per node, `runDenseBlock` calls `runDenseAssignAt` per node
+(pulling in `Coordinates.lean`'s coordinate-math primitives transitively), and every `BlockError`
+case that duplicates a `PlanError` case is wrapped as `.wiring (...)` rather than reimplemented as a
+freestanding lookalike — none of these leaf primitives were reimplemented. The two wiring/store
+loops themselves are NOT shared, contrary to an earlier draft of this record: `checkPlanBlock`'s
+availability/production-order loop is a structural copy of `checkPlan`'s outer-graph loop
+(`Check.lean`), and `runDenseBlock`'s store-initialization loop is a structural copy of
+`runDensePlan`'s (`Dense.lean`) — both differ from their originals only by field renames
+(`inputSlots`→`inputs`, `steps`→`assignments`) and, for the checker, `.wiring (...)` error wrapping.
+No shared, parameterized helper exists for either loop. Two items are known and deliberately
+deferred, not fixed here, for two different reasons: (1) the wiring-loop and store-init-loop
+duplication above is deferred because factoring either into a shared helper requires editing
+`Check.lean`/`Dense.lean`, which this plan's Global Constraints place out of F2's additive-only
+scope — a candidate for a future reuse-cleanup slice; (2) `runDenseBlock` returning the full local
+store rather than a value projected to `raw.outputs` is deferred for an unrelated reason — this
+plan adds no scan constructor, so no caller yet exists to consume projected block outputs, and
+projecting now with zero callers would be speculative rather than scope-driven; F3 (the
+scan-constructor slice) is what should decide the output-projection contract.
 
 ### F3 - checked scan graph vertical slice
 
