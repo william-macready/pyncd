@@ -67,6 +67,24 @@ assembly completely unedited (copy-pasted verbatim), it does not need
 re-verification; the risk is specifically in edits made *after* the drafting
 agent's own verification pass.
 
+**Verify prose claims about the code too, not just code blocks.** The same elaborator-catches-it
+argument for Lean snippets does not cover claims written in plain English about how two pieces of
+code relate — "X reuses Y," "no second Z was added," "both are reachable from W" — and those are
+just as checkable, and were just as wrong. Real example, Wave F F2: the plan's architecture section
+said `checkPlanBlock` "reuses `checkPlan`'s availability/production-order loop shape," and the
+completion-record template it handed to a later task went further and claimed "no second
+graph-wiring loop" was added. Neither was verified against the actual functions before being
+written. The real relationship — caught only by the SDD final review, not by drafting or by either
+per-task review — was a ~36-of-44-line structural copy, not a shared function; the same completion
+record also gave one justification for two different deferred items when it was only true for one
+of them. Catching this at the final review (the most expensive tier) rather than at plan-authoring
+time cost roughly a third to a half of that slice's total SDD token spend.
+
+**Rule: before writing a sentence of the form "X reuses/shares/duplicates Y" or "both are reachable
+from Z," diff or grep the actual functions/files it describes.** This applies to the plan's own
+architecture prose and to any completion-record template the plan hands to a later task —
+templated prose is not exempt just because it looks like documentation rather than code.
+
 ## 2. Right-size tasks — dispatch overhead is fixed, deliverables are not
 
 Each task costs one implementer dispatch plus one reviewer dispatch regardless
@@ -103,6 +121,16 @@ Pure-addition sequences — "define the types", "define the function over those
 types" — are usually one task. Sequential appends to one test file are usually
 two tasks, not three or four.
 
+**A task that bundles mechanical housekeeping with a claim needing verification is worth flagging
+even when it isn't worth splitting.** Wave F F2's Task 3 combined a plain import-line addition and
+an AGENTS.md table update (housekeeping, no failure mode of its own) with a completion record's
+accuracy claims (exactly the kind section 1 above requires verifying). The housekeeping was clean
+on the first pass; the record's claims survived Task 3's own review and only broke at the final
+review. The reviewer test still applies here: a reviewer could approve the import/AGENTS.md edit
+while rejecting the completion record, so the record's claims need the section-1 diff-it-yourself
+treatment specifically — not folded into a generic "does this look right" pass — even when the
+task as a whole isn't worth splitting.
+
 ## 3. What not to trim
 
 The final whole-branch review. Both Wave C slices' most valuable findings came
@@ -122,6 +150,10 @@ part; the whole-branch pass is the one earning its keep.
 - [ ] Every asserted fixture value observed from a real run, not hand-derived.
 - [ ] Every regression/parity fixture mutation-tested, with both observations
       recorded in the plan.
+- [ ] Every claim in the plan's prose or a completion-record template it produces
+      — "X reuses Y," "no second Z was added," "both are reachable from W" —
+      checked against the actual functions/files, not asserted from the plan's
+      own design intent.
 - [ ] Task boundaries pass the reviewer test above; tiny pure-addition tasks
       merged into neighbours.
 - [ ] Global Constraints state exact values, and name anything the plan
