@@ -1,4 +1,5 @@
 import LeanNCD.Eval.Plan.Check
+import LeanNCD.Eval.Plan.Prepared
 
 /-!
 # JAX evidence-indexed executable kernels — Stage A candidate types (Thread 5, Task 1)
@@ -115,5 +116,75 @@ def validateAndConstructKernel (candidate : JaxKernelCandidate) :
     valid := trivial
   }
   return { evidence := evidence, kernel := kernel }
+
+/-- Aggregate evidence across an array of kernel evidences.
+    Returns `orderedReference64` only if ALL are; otherwise `optimizationExperiment`.
+    `evidences.all (· == .orderedReference64)` is vacuously `true` for the empty array, so an
+    empty step list aggregates to `orderedReference64` (the identity for the "all" fold).
+-/
+def aggregateEvidenceList (evidences : Array ExecutionEvidence) : ExecutionEvidence :=
+  if evidences.all (· == .orderedReference64) then .orderedReference64
+  else .optimizationExperiment
+
+/-- Candidate JAX execution plan (public inspection, not executable).
+    Retains the semantic source (`PreparedPlan`) and every step's kernel candidate for validation.
+    `aggregated` ties the stored `evidence` to the derived aggregation over `steps`, so a
+    `JaxExecutableCandidate` cannot be built claiming evidence its own steps don't support.
+-/
+structure JaxExecutableCandidate where
+  source : PreparedPlan
+  steps : Array SomeJaxKernel
+  evidence : ExecutionEvidence
+  aggregated : evidence = aggregateEvidenceList (steps.map (·.evidence))
+
+/-- Opaque witness that a candidate is well-formed (stub predicate).
+    Real implementation (after Task 5): plan/step alignment, kernel counts match plan steps, etc.
+-/
+def JaxExecutableWellFormed (candidate : JaxExecutableCandidate) : Prop :=
+  True  -- TODO: alignment checks after Task 5
+
+/-- The stub predicate is unconditionally `True`, so it is trivially decidable — same precedent as
+    `JaxKernelWellFormed`'s instance above. Real validation will need a genuine `Decidable`
+    instance derived from the actual checks once the predicate does real work.
+-/
+instance (candidate : JaxExecutableCandidate) : Decidable (JaxExecutableWellFormed candidate) :=
+  .isTrue trivial
+
+/-- Type-indexed executable plan, only creatable by validator (`validateAndConstructExecutable`).
+    Evidence is fixed at construction: `evidenceAligned` ties the candidate's own `evidence`
+    field to the index `evidence`, mirroring `JaxKernel`'s `aligned` above.
+-/
+structure JaxExecutable (evidence : ExecutionEvidence) where private mk ::
+  candidate : JaxExecutableCandidate
+  evidenceAligned : evidence = candidate.evidence
+  valid : JaxExecutableWellFormed candidate
+
+/-- Existential witness hiding the executable's evidence index.
+-/
+structure SomeJaxExecutable where
+  evidence : ExecutionEvidence
+  executable : JaxExecutable evidence
+
+/-- Validate a candidate and construct a private executable plan.
+    Two checks, mirroring `validateAndConstructKernel`'s shape:
+    - the aggregation invariant (`candidate.aggregated` already proves this holds for any
+      well-typed candidate, so `decide` on the same equality can never actually fail here — the
+      check is kept anyway so a bad aggregation surfaces as a reported error rather than a proof
+      obligation silently discharged elsewhere, matching the brief's two-error-path shape);
+    - the (currently stub) `JaxExecutableWellFormed` predicate.
+-/
+def validateAndConstructExecutable (candidate : JaxExecutableCandidate) :
+    Except String SomeJaxExecutable := do
+  unless decide (candidate.evidence = aggregateEvidenceList (candidate.steps.map (·.evidence))) do
+    throw "Executable aggregation invariant violated"
+  unless decide (JaxExecutableWellFormed candidate) do
+    throw "Executable validation failed"
+  let evidence := candidate.evidence
+  let exec : JaxExecutable evidence := {
+    candidate := candidate
+    evidenceAligned := rfl
+    valid := trivial
+  }
+  return { evidence := evidence, executable := exec }
 
 end LeanNCD.Eval.Plan

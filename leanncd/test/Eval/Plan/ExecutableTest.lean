@@ -70,4 +70,71 @@ def testPrivateConstructor (candidate : JaxKernelCandidate) : Bool :=
   | .ok _ => true      -- validator succeeded
   | .error _ => false  -- validator failed
 
+-- === Task 3: plan-level executable structures + evidence aggregation ===
+--
+-- Field note vs. the Task 3 brief's Step 1 sketch: the brief says "add at END of ExecutableTests
+-- namespace" — no such (plural) namespace exists in this file. Same as Task 2's field note,
+-- appended inside the existing (singular) `LeanNCD.Eval.Plan.ExecutableTest` namespace instead of
+-- opening a new one.
+
+-- `aggregateEvidenceList`: all ordered-ref → ordered-ref; any experiment → experiment; empty → the
+-- identity for "all" (ordered-ref). `#guard`s (not just compile-only defs) verify the actual
+-- expected outcome, matching `CompileTest.lean`'s convention elsewhere in this directory.
+def testAggregateAll : ExecutionEvidence :=
+  aggregateEvidenceList #[.orderedReference64, .orderedReference64]
+
+def testAggregateMixed : ExecutionEvidence :=
+  aggregateEvidenceList #[.orderedReference64, .optimizationExperiment]
+
+def testAggregateEmpty : ExecutionEvidence :=
+  aggregateEvidenceList #[]
+
+#guard testAggregateAll == .orderedReference64
+#guard testAggregateMixed == .optimizationExperiment
+#guard testAggregateEmpty == .orderedReference64
+
+-- `JaxExecutable`'s constructor is `private mk ::` (`Executable.lean`), same discipline as
+-- `JaxKernel` in Task 2 — cannot be invoked from this file. Deliberately commented out; must
+-- never be uncommented in committed code:
+--
+-- def badExecutable (candidate : JaxExecutableCandidate) : JaxExecutable candidate.evidence :=
+--   ⟨candidate, rfl, sorry⟩
+--
+-- Manually verified (2026-08-13) by uncommenting that exact line and running, from `leanncd/`:
+--
+-- lake env lean test/Eval/Plan/ExecutableTest.lean
+--
+-- Observed failure, exit code 1, literal captured stdout/stderr:
+--
+-- test/Eval/Plan/ExecutableTest.lean:101:2: error: Invalid `⟨...⟩` notation: Constructor for
+-- `LeanNCD.Eval.Plan.JaxExecutable` is marked as private
+--
+-- The line was re-commented immediately after confirming the failure; this file compiles clean
+-- with it commented out, exercising only the positive half (construction via
+-- `validateAndConstructExecutable` works).
+
+-- A zero-step plan candidate: `aggregateEvidenceList #[] = .orderedReference64` (proved `by simp
+-- [aggregateEvidenceList]` — neither `rfl` nor `decide` close it, see field note below), so
+-- `evidence := .orderedReference64` is the only value that type-checks here.
+--
+-- Field note: unlike `JaxKernel`'s analogous `aligned := rfl` (Task 2, a direct match on the
+-- candidate's constructor, which unifies definitionally), `aggregateEvidenceList` goes through
+-- `Array.all`/`Array.map`, whose kernel-level whnf reduction gets stuck on `Array`'s
+-- well-founded-recursion internals for both `rfl` (`Type mismatch ... ?m.4 = ?m.4`) and `decide`
+-- (`did not reduce to isTrue or isFalse`, confirmed by building each). `simp
+-- [aggregateEvidenceList]` unfolds the definition and simplifies `#[].all _`/`#[].map _` via simp
+-- lemmas rather than kernel whnf, which does close the goal.
+def emptyPlanCandidate (plan : PreparedPlan) : JaxExecutableCandidate :=
+  { source := plan
+    steps := #[]
+    evidence := .orderedReference64
+    aggregated := by simp [aggregateEvidenceList] }
+
+-- Test that the plan-level validator is the only way to construct a `JaxExecutable`: it either
+-- succeeds (producing an executable through the private constructor) or reports an error.
+def testValidateExecutable (plan : PreparedPlan) : Bool :=
+  match validateAndConstructExecutable (emptyPlanCandidate plan) with
+  | .ok _ => true      -- validator succeeded
+  | .error _ => false  -- validator failed
+
 end LeanNCD.Eval.Plan.ExecutableTest
