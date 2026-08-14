@@ -24,7 +24,7 @@ Does not own: parsing/compilation/routing (`../DSL/`).
 | Axis-size inference fixpoint (`inferAxisSizes`, `scatterOutputShapes`) | `SizeInfer.lean` |
 | Compatibility umbrella re-exporting `Slots`/`SizeSolve`/`SizeInfer` (no new code) | `Shape.lean` |
 | Every typed diagnostic (`EvalError`, `ShapeError`, `EvalWarning`, `SolveDiagnostic`, `EvalFailure`) + their sole renderers | `Error.lean` |
-| Checked, positional tensor-plan IR + compiler + adapter (Wave C) | `Plan/` (12 files: `Types`, `Kernel`, `Graph`, `Error`, `Check`, `Coordinates`, `Dense`, `Signature`, `Prepared`, `Compile`, `Adapter`, `Executable`) |
+| Checked, positional tensor-plan IR + compiler + adapter (Wave C) | `Plan/` (13 files: `Types`, `Kernel`, `Graph`, `Error`, `Check`, `Coordinates`, `Dense`, `Signature`, `Prepared`, `Compile`, `Adapter`, `Executable`, `Block`) |
 | "Does this model class evaluate correctly" test suite | `test/Eval/Portfolio/*.lean` |
 
 ### The `Plan/` subtree
@@ -50,6 +50,7 @@ cover it.
 | `Compile.lean` | the source compiler — capability preflight (C4), `prepareEvalPlan` |
 | `Adapter.lean` | named ↔ positional runtime boundary — `pack`/`unpack`/`runPreparedDense` |
 | `Executable.lean` | JAX executable phase (Thread 5): `ExecutionEvidence`, kernel/plan candidates, private-constructor `JaxKernel`/`JaxExecutable` gated by real validators (`validateAffineTable`/`validateEinsum`); consumed only by `experiments/jax_bridge`, not by the production `LeanNCD` import graph (see the exception noted above) |
+| `Block.lean` | checked plan-block vertical slice (F2) — `RawPlanBlock`, `BlockError`, `CheckedPlanBlock`/`checkPlanBlock`, `runDenseBlock`; reuses `checkAssign`/`runDenseAssignAt` per node and `checkPlan`'s wiring-loop shape, not a second local-graph implementation |
 
 ### Key Relationships
 `Entry.lean` imports `DSL.Compile`; `Eval.lean` does not. `Slots.lean`/`Gather.lean` import

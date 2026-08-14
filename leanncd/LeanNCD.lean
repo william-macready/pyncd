@@ -144,3 +144,4 @@ import LeanNCD.Eval.Scan
 import LeanNCD.Eval.Eval
 import LeanNCD.Eval.Entry
 import LeanNCD.Eval.Plan.Adapter
+import LeanNCD.Eval.Plan.Block

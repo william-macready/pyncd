@@ -1434,6 +1434,22 @@ Deliver:
 `runDenseBlock`; checked block data contains no names, UIDs, functions, callbacks, backend objects,
 or unordered maps.
 
+**F2 completion record (2026-08-14).** Landed as `Eval.Plan.Block` (`RawPlanBlock`, `BlockError`,
+`CheckedPlanBlock`/`checkPlanBlock`, `runDenseBlock`) plus context-indexed positive/mutation
+fixtures in `Eval.Plan.BlockTest`, both reachable from `import LeanNCD`; `lake build` green (8,646
+jobs). No second local-kernel checker, no second graph-wiring loop, and no new coordinate-math
+module were added: `checkPlanBlock` calls `checkAssign` per node and reuses `checkPlan`'s
+availability/production-order loop shape verbatim (parameterized over the block's own
+`tensorSigs`/`inputs`); `runDenseBlock` calls `runDenseAssignAt` per node exactly as `runDensePlan`
+does for the outer graph; every `BlockError` case that duplicates a `PlanError` case is wrapped as
+`.wiring (...)`, not reimplemented as a freestanding lookalike. Two items are known and deliberately
+deferred, not fixed here (both out of F2's additive-only scope, since fixing either would require
+editing `Dense.lean`): (1) `runDenseBlock`'s arity/shape/storage input validation duplicates
+`runDensePlan`'s verbatim rather than sharing a helper — a candidate for a future reuse-cleanup
+slice; (2) `runDenseBlock` returns the full local store rather than a value projected to
+`raw.outputs` — fine since nothing yet consumes block outputs, but F3 will need to decide the
+output-projection contract when it wires a block into a scan node.
+
 ### F3 - checked scan graph vertical slice
 
 Add `RawScanPlan`, `PlanStep`, private checked scan evidence, scan checking, outer graph integration,
