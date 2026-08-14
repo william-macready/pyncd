@@ -114,4 +114,30 @@ def checkPlanBlock (block : RawPlanBlock) : Except BlockError CheckedPlanBlock :
     unless available[i]! do throw (.wiring (.missingProduction i))
   return CheckedPlanBlock.mk block checkedNodes
 
+/-- Execute one checked block at a fixed enclosing-scan context coordinate. Positional store is
+    local to this invocation — sized to the block's own `tensorSigs`, not the outer plan's. Reuses
+    `runDenseAssignAt` per node exactly as `runDensePlan` does for the outer graph; this is the only
+    place F2 evaluates a local assignment. -/
+def runDenseBlock (c : CheckedPlanBlock) (ctx : List Int) (inputs : Array DenseTensor) :
+    Except PositionalInputError (Array DenseTensor) := do
+  let raw := c.raw
+  unless inputs.size == raw.inputs.size do
+    throw (.arityMismatch raw.inputs.size inputs.size)
+  let n := raw.tensorSigs.size
+  let placeholder : DenseTensor := { shape := [], data := #[] }
+  let mut store : Array DenseTensor := Array.replicate n placeholder
+  for h : i in [0 : raw.inputs.size] do
+    let slot := raw.inputs[i]
+    let t := inputs[i]!
+    let sig := raw.tensorSigs.getD slot { shape := #[], dtype := .f64 }
+    unless t.shape == sig.shape.toList do
+      throw (.shapeMismatch slot sig.shape t.shape)
+    unless t.data.size == sig.shape.toList.foldl (· * ·) 1 do
+      throw (.storageMismatch slot t.shape t.data.size)
+    store := store.set! slot t
+  for node in c.checkedNodes do
+    let result ← runDenseAssignAt node ctx store
+    store := store.set! node.plan.destinationSlot result
+  return store
+
 end LeanNCD.Eval.Plan

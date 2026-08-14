@@ -63,4 +63,32 @@ run_cmd do
       unless e == .blockContextMismatch 0 #[2] #[3] do
         throwError s!"context mismatch: wrong error {repr e}"
 
+-- Execution: same `stepBlock` as Task 1, run at ctx=0 and ctx=1. Expected values are the same
+-- [1,2,3]/[4,5,6] KernelDenseTest.lean's `ctxPlan` already observed for this exact assignment.
+run_cmd do
+  match checkPlanBlock stepBlock with
+  | .error e => throwError s!"checkPlanBlock rejected a well-formed block: {repr e}"
+  | .ok checked =>
+      let x : DenseTensor := { shape := [2,3], data := #[1,2,3,4,5,6] }
+      match runDenseBlock checked [0] #[x] with
+      | .error e => throwError s!"ctx=0 failed: {repr e}"
+      | .ok store => unless store[1]!.data == #[1,2,3] do
+          throwError s!"ctx=0 wrong: {repr store[1]!.data}"
+      match runDenseBlock checked [1] #[x] with
+      | .error e => throwError s!"ctx=1 failed: {repr e}"
+      | .ok store => unless store[1]!.data == #[4,5,6] do
+          throwError s!"ctx=1 wrong: {repr store[1]!.data}"
+
+-- Mutation: `runDenseBlock` arity mismatch (checked block expects exactly one input) must be
+-- rejected with the same `PositionalInputError.arityMismatch` constructor `runDensePlan` uses.
+run_cmd do
+  match checkPlanBlock stepBlock with
+  | .error e => throwError s!"checkPlanBlock rejected a well-formed block: {repr e}"
+  | .ok checked =>
+      match runDenseBlock checked [0] #[] with
+      | .ok _ => throwError "arity mismatch should have been rejected"
+      | .error e =>
+          unless e == .arityMismatch 1 0 do
+            throwError s!"arity mismatch: wrong error {repr e}"
+
 end LeanNCD.Eval.Plan.BlockTest
