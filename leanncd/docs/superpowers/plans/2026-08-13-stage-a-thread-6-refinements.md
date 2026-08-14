@@ -1,6 +1,6 @@
 # Stage A thread 6 — close the three unclaimed low-risk refinements
 
-**Status:** not started, drafted 2026-08-13
+**Status:** complete, 2026-08-13
 
 ## Goal
 
@@ -340,3 +340,37 @@ This slice does not:
 If a future slice wants to build on this, the natural next step per §7.6 is row 5 (compact/
 evidence-indexed kernels + PyTorch backend) — already reordered ahead of Wave F/nonlinearity by
 thread 2's measurement, and explicitly unblocked by this thread regardless of order.
+
+## Completion record
+
+Completed 2026-08-13 on branch `worktree-jax-stage-a-thread-6`, commits `bb41a99` (this plan) through
+`1f02ace` (final-review adjudication fix), merged to local `main`. Every task passed its own
+task-scoped review; Task 3 took one fix round (a doc-comment overclaim about what `RequiredBindings`'s
+proof actually covers); the final whole-branch review found 4 Important, no Critical, fixed in one
+wave, whose own re-review caught one further doc-accuracy defect (Appendix A repointed to the wrong
+binding type), adjudicated and fixed directly as the terminal action rather than spawning a fourth
+review round. `lake build` green (8642 jobs) at every checkpoint; `DifferentialTest.lean`'s 3,832-case
+sweep passed unchanged throughout.
+
+Two things this session verified were NOT true when checked directly, contrary to what the plan
+assumed when drafted:
+
+- The plan's own §7.1 call-site grep for the reference64 rename missed one real site
+  (`test/Eval/Plan/KernelCheckTest.lean:150`) — found and fixed by the Task 2 implementer, confirmed
+  a genuine pre-branch gap, not scope creep.
+- Task 3's brief did not anticipate `leanncd/experiments/jax_bridge/`'s `JaxExperiment` lib and several
+  ad-hoc scripts consuming `PlanBindings.requiredInputs`/`pack` directly — found and fixed
+  mechanically by the Task 3 implementer, verified surgical by both Task 3's reviewer and the final
+  reviewer.
+
+The final review also caught something the plan's own whole-branch-review gate (item 7) under-scoped:
+gate 7 checked only whether §7.1's table needed an edit. It did not check whether OTHER sections of
+`papers/jax_evalplan_architecture.md` (§7.6, §2.2, §5.1, Appendix A, Appendix B) still described this
+exact work as unbuilt or designed differently — which they did, in several places, including an
+Appendix A binding-type sketch (`CheckedPlanBindings`, positional-`Vector`-indexed) that specified a
+materially different design than what shipped (`RequiredBindings`, `List.Perm`-indexed) without the
+difference ever being adjudicated in writing. All corrected before merge. **Lesson for future plans in
+this repo:** a whole-branch review gate that checks doc accuracy should grep the ENTIRE spec doc for
+every identifier/type the branch renamed or introduced, not just the one section the plan itself
+cites — this project has now hit this exact gap twice (see this plan's own predecessor commits
+`a779a01`..`5b659b6`, which fixed the same class of error in the opposite direction).
