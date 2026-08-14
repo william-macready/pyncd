@@ -17,18 +17,6 @@ exists yet — `RawEvalPlan` is untouched by this file.
 
 namespace LeanNCD.Eval.Plan
 
-/-- A local, acyclic, context-parameterized dataflow graph — the base block or the step block of a
-    future scan (`papers/wave_f_scanplan_proposal.md` §6.2). Local assignments are plain
-    `AssignPlan`s sharing this block's `contextShape` — the same node type the outer graph uses, so
-    F2 introduces no second local-operation representation. -/
-structure RawPlanBlock where
-  contextShape : Array Nat
-  tensorSigs   : Array TensorSignature
-  inputs       : Array TensorSlot
-  assignments  : Array AssignPlan
-  outputs      : Array TensorSlot
-  deriving DecidableEq, BEq, Repr, Inhabited
-
 /-- A raw `RawPlanBlock` violates a local-graph invariant. `wiring` reuses `PlanError` verbatim for
     every failure mode `checkPlanBlock`'s wiring loop shares with `checkPlan`'s outer-graph loop
     (slot range, input uniqueness/order, overwrite, duplicate destination, missing production,

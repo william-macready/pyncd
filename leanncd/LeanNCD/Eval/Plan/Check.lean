@@ -91,9 +91,6 @@ def checkAssign (sigs : Array TensorSignature) (a : AssignPlan) :
           throw (.affineWidthMismatch ti fi t.iterationShape.size row.size)
   return CheckedAssignPlan.mk a
 
-/-- Wave C admits exactly one plan version. -/
-def admittedVersion : Nat := 1
-
 /-- Evidence that a `RawEvalPlan`'s wiring is sound: every node is locally checked, input slots are
     in-range/unique/ordered, no destination overwrites an existing slot, every read is from an input
     or an earlier destination, and every non-input slot is produced exactly once. `checkedNodes` is
@@ -107,7 +104,6 @@ structure CheckedEvalPlan where private mk ::
 /-- Validate an open evaluation graph: local per-node validity (via `checkAssign`) plus the graph
     wiring invariants `checkAssign` cannot see (slot availability and production order). -/
 def checkPlan (raw : RawEvalPlan) : Except PlanError CheckedEvalPlan := do
-  unless raw.version == admittedVersion do throw (.versionNotAdmitted raw.version)
   unless raw.numericMode == .reference64SumProduct do throw (.numericModeNotAdmitted raw.numericMode)
   let n := raw.tensorSigs.size
   -- input slots: in range, unique, ordered (adjacent-pair scan; equal ⇒ duplicate, decreasing ⇒
