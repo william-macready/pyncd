@@ -65,4 +65,55 @@ def candidateEvidenceLabel : JaxKernelCandidate → ExecutionEvidence
   | .affineTable _ => ExecutionEvidence.orderedReference64
   | .einsum _ => ExecutionEvidence.optimizationExperiment
 
+/-- Opaque witness that a candidate is well-formed (stub predicate).
+    Real implementation: table lengths match iteration domain, indices are safe, etc.
+-/
+def JaxKernelWellFormed (candidate : JaxKernelCandidate) : Prop :=
+  True  -- TODO: implement real validation after lowering is updated
+
+/-- The stub predicate is unconditionally `True`, so it is trivially decidable. Real validation
+    (after lowering is updated) will need a genuine `Decidable` instance derived from the actual
+    checks; this stub instance is what lets `validateAndConstructKernel` branch on the predicate
+    today without blocking on that future work.
+-/
+instance (candidate : JaxKernelCandidate) : Decidable (JaxKernelWellFormed candidate) :=
+  .isTrue trivial
+
+/-- Type-indexed kernel, only creatable by validator (`validateAndConstructKernel`).
+    Evidence is fixed at construction and never changes: `aligned` ties the candidate's
+    derived evidence label to the index `evidence`, so the private constructor cannot be
+    used to mismatch the two even from within this file.
+-/
+structure JaxKernel (evidence : ExecutionEvidence) where private mk ::
+  candidate : JaxKernelCandidate
+  aligned : candidateEvidenceLabel candidate = evidence
+  valid : JaxKernelWellFormed candidate  -- semantic: stub for now
+
+/-- Existential witness hiding the evidence index.
+-/
+structure SomeJaxKernel where
+  evidence : ExecutionEvidence
+  kernel : JaxKernel evidence
+
+/-- Validate a candidate and construct a private executable kernel.
+    Returns `SomeJaxKernel` to hide evidence at the cost of unpacking later.
+-/
+def validateAndConstructKernel (candidate : JaxKernelCandidate) :
+    Except String SomeJaxKernel := do
+  -- Derive evidence label from candidate structure (not mutable).
+  let evidence := candidateEvidenceLabel candidate
+  -- Stub validation: real implementation checks table lengths, indices, etc.
+  -- `throw`, not `return .error` — `return` in this `Except` do-block already performs the `.ok`
+  -- wrap (`pure`), so `return .error x` would elaborate `.error` against the wrong expected type
+  -- (`SomeJaxKernel`, not `Except String SomeJaxKernel`) and fail to resolve.
+  unless decide (JaxKernelWellFormed candidate) do
+    throw "Kernel validation failed"
+  -- Construct private kernel only after validation passes.
+  let kernel : JaxKernel evidence := {
+    candidate := candidate
+    aligned := rfl  -- evidence derivation is deterministic
+    valid := trivial
+  }
+  return { evidence := evidence, kernel := kernel }
+
 end LeanNCD.Eval.Plan

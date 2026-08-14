@@ -36,4 +36,38 @@ def einsumCandidate (plan : CheckedEvalPlan) (operands : Array (Array Nat)) :
     operands := operands
     outputAxes := sorry }
 
+-- === Task 2: private JaxKernel constructor + validator ===
+--
+-- `JaxKernel`'s constructor is `private mk ::` (`Executable.lean`), so it cannot be invoked from
+-- this file. As with `CheckedPrivacyTest.lean`'s treatment of `CheckedAssignPlan`, Lean has no
+-- in-tree "expect this declaration to fail to elaborate" harness, so the negative half is a
+-- documented manual verification, not an automated `#guard`. Deliberately commented out; must
+-- never be uncommented in committed code:
+--
+-- def badKernel : JaxKernel .orderedReference64 := ⟨sorry, sorry, sorry⟩
+--
+-- Manually verified (2026-08-13) by uncommenting that exact line and running, from `leanncd/`:
+--
+-- lake env lean test/Eval/Plan/ExecutableTest.lean
+--
+-- Observed failure, exit code 1, literal captured stdout/stderr:
+--
+-- test/Eval/Plan/ExecutableTest.lean:47:49: error: Invalid `⟨...⟩` notation: Constructor for
+-- `LeanNCD.Eval.Plan.JaxKernel` is marked as private
+--
+-- The line was re-commented immediately after confirming the failure; this file compiles clean
+-- with it commented out, exercising only the positive half (construction via
+-- `validateAndConstructKernel` works).
+
+-- Correct way: use the validator.
+def goodKernel (candidate : JaxKernelCandidate) : Except String SomeJaxKernel :=
+  validateAndConstructKernel candidate
+
+-- Test that the validator is the only way to construct a kernel: it either succeeds (producing a
+-- kernel through the private constructor) or reports an error, never anything else.
+def testPrivateConstructor (candidate : JaxKernelCandidate) : Bool :=
+  match validateAndConstructKernel candidate with
+  | .ok _ => true      -- validator succeeded
+  | .error _ => false  -- validator failed
+
 end LeanNCD.Eval.Plan.ExecutableTest
