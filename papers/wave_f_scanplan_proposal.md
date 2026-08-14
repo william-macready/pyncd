@@ -1436,8 +1436,9 @@ or unordered maps.
 
 **F2 completion record (2026-08-14).** Landed as `Eval.Plan.Block` (`RawPlanBlock`, `BlockError`,
 `CheckedPlanBlock`/`checkPlanBlock`, `runDenseBlock`) plus context-indexed positive/mutation
-fixtures in `Eval.Plan.BlockTest`, both reachable from `import LeanNCD`; `lake build` green (8,646
-jobs). No second local-kernel checker, no second graph-wiring loop, and no new coordinate-math
+fixtures in `Eval.Plan.BlockTest`; `Block.lean` is reachable from `import LeanNCD`, `BlockTest`'s
+fixtures are registered in the default `Tests` build target (not reachable via the `import LeanNCD`
+chain); `lake build` green (8,646 jobs). No second local-kernel checker, no second graph-wiring loop, and no new coordinate-math
 module were added: `checkPlanBlock` calls `checkAssign` per node and reuses `checkPlan`'s
 availability/production-order loop shape verbatim (parameterized over the block's own
 `tensorSigs`/`inputs`); `runDenseBlock` calls `runDenseAssignAt` per node exactly as `runDensePlan`
