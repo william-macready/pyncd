@@ -1,20 +1,27 @@
 import LeanNCD.Eval.Plan.Check
 import LeanNCD.Eval.Plan.Prepared
+import LeanNCD.Eval.Plan.Coordinates
 
 /-!
-# JAX evidence-indexed executable kernels — Stage A candidate types (Thread 5, Task 1)
+# JAX evidence-indexed executable kernels — Stage A candidate/validator/executable types (Thread 5)
 
-Foundation for the JAX executable phase's private-constructor discipline, mirroring the pattern
-already established for the checked phase in `Check.lean` (`CheckedAssignPlan`, `CheckedEvalPlan`).
-This file adds the evidence index (`ExecutionEvidence`) and the public, pre-validation `Candidate`
-types the pipeline runs through before a later task adds private, evidence-indexed `Executable`
-constructors: `CheckedEvalPlan` → `PreparedPlan` → `JaxExecutableCandidate` → `JaxExecutable`.
+The JAX executable phase's private-constructor discipline, mirroring the pattern already
+established for the checked phase in `Check.lean` (`CheckedAssignPlan`, `CheckedEvalPlan`). This
+file owns the full pipeline from public, pre-validation `Candidate` types through the private,
+evidence-indexed `Executable` constructors that are the only way to build one:
+`CheckedEvalPlan` → `PreparedPlan` → `JaxExecutableCandidate` → (`validateAndConstructExecutable`)
+→ `JaxExecutable`. Real validators (`validateAffineTable`/`validateEinsum`, dispatched through
+`kernelWellFormedBool`, plus the plan-level `JaxExecutableWellFormed`) back both private
+constructors (`JaxKernel`/`JaxExecutable`) — a candidate whose tables don't match its own semantic
+source, or whose einsum lowering silently dropped an axis or a nonzero affine bias, is rejected,
+not merely shape-checked.
 
 No lowering logic lives here — `EvalPlanCodegen.lean`'s `einsumOnly`/`affineReference` modes
-already exist and are untouched. This file is purely structural: types a later task will wrap with
-validators and private constructors so that only `orderedAffineTable`-shaped candidates can ever
-inhabit `orderedReference64` evidence, and only `einsum`-shaped candidates can ever inhabit
-`optimizationExperiment` evidence.
+already exist and are untouched, and so is the routing in that file's `loweringToAffineTableCandidate`
+/`loweringToEinsumCandidate`/`lowerCheckPlanToCandidate`. This file only imports
+`LeanNCD.Eval.Plan.Coordinates` for `validateAffineTable`'s own recomputation check (below), the
+same shared row-major primitives `EvalPlanCodegen.lean`'s `buildFactorTable` composes — no
+JAX/lookup-table/source-name/codegen concept is introduced here.
 
 Spec: `papers/jax_evalplan_architecture.md` §4.3, §7.1 rows 5–6, Appendix D.
 
@@ -26,7 +33,7 @@ does NOT name `JaxKernelCandidate`, `AffineTableReadCandidate`, `OrderedAffineTa
 `EinsumExperimentKernelCandidate`, `SomeJaxExecutable`, `JaxKernelWellFormed`,
 `candidateEvidenceLabel`, `validateAndConstructKernel`, `validateAndConstructExecutable`, or any of
 `kernelWellFormedBool`/`validateAffineTable`/`validateEinsum`/`affineFactorTableValid`/
-`affineTermTablesValid` (this file) or `lowerCheckPlanToCandidate`/
+`affineTermTablesValid`/`recomputeAffineFactorTable` (this file) or `lowerCheckPlanToCandidate`/
 `loweringToAffineTableCandidate`/`loweringToEinsumCandidate` (`EvalPlanCodegen.lean`) — this is
 expected, not a gap: Appendix D is
 explicitly this thread's Spec-line "non-copy-ready sketch needing translation to real types" (its
@@ -88,28 +95,51 @@ def candidateEvidenceLabel : JaxKernelCandidate → ExecutionEvidence
   | .affineTable _ => ExecutionEvidence.orderedReference64
   | .einsum _ => ExecutionEvidence.optimizationExperiment
 
-/-- Whether one factor's precomputed table is length- and index-safe against its own term's
-    iteration domain and its own source shape: `safeIndex`/`validMask` both have exactly
-    `domainSize` entries, the table's `source` matches the factor's own `sourceSlot`, and every
-    `safeIndex` entry marked valid (`validMask[k] = true`) is a genuine in-range flat index into
-    `sourceShape` (`< sourceShape`'s product — the same bound `flatIndex`/`inBoundsPerDim`
-    (`Coordinates.lean`) guarantee for a coordinate that actually passed `inBoundsPerDim`). -/
-def affineFactorTableValid (domainSize : Nat) (factor : ReadPlan)
+/-- Recompute the correct `(safeIndex, validMask)` pair for one factor against a given iteration
+    basis, straight from the shared coordinate primitives (`Coordinates.lean`): enumerate the basis
+    in row-major order (`allCoords`), apply the factor's own affine map (`applyAffine`), and either
+    flatten to a safe index (`flatIndex`) when every source dimension is in range
+    (`inBoundsPerDim`), or record `0`/`false`. Byte-for-byte the same fold as
+    `EvalPlanCodegen.lean`'s `buildFactorTable` (the exact primitive `loweringToAffineTableCandidate`
+    calls to build a candidate's table in the first place) — duplicated here, not imported, because
+    `experiments/jax_bridge` depends on `LeanNCD`, not the reverse, so this production module cannot
+    import that experimental one. This is the semantic source `validateAffineTable` below checks a
+    candidate's stored table AGAINST, not merely a shape/bounds sanity check on the stored table
+    itself. -/
+def recomputeAffineFactorTable (iterationShape : Array Nat) (factor : ReadPlan) :
+    Array Nat × Array Bool :=
+  (allCoords iterationShape.toList).foldl
+    (fun (acc : Array Nat × Array Bool) iter =>
+      let (idxs, masks) := acc
+      let src := applyAffine factor.map iter
+      let shape := factor.sourceShape.toList
+      if inBoundsPerDim shape src then
+        (idxs.push (flatIndex shape (src.map Int.toNat)), masks.push true)
+      else
+        (idxs.push 0, masks.push false))
+    (#[], #[])
+
+/-- Whether one factor's precomputed table is the CORRECT table for its own term's iteration basis
+    and its own source: the table's `source` matches the factor's own `sourceSlot`, and its stored
+    `safeIndex`/`validMask` are exactly (`Array`'s derived `BEq`, i.e. equal length and pointwise
+    equal) the pair `recomputeAffineFactorTable` derives independently from `factor` itself. A table
+    with every `safeIndex` entry replaced by `0` (but otherwise the right length and in-bounds) used
+    to still pass here before this check existed — length/bounds alone cannot tell a genuinely wrong
+    gather from a right one; equality against the recomputed table can. -/
+def affineFactorTableValid (iterationShape : Array Nat) (factor : ReadPlan)
     (table : AffineTableReadCandidate) : Bool :=
-  let sourceSize := factor.sourceShape.foldl (· * ·) 1
-  table.safeIndex.size == domainSize &&
-  table.validMask.size == domainSize &&
+  let (expectedIndex, expectedMask) := recomputeAffineFactorTable iterationShape factor
   table.source == factor.sourceSlot &&
-  (table.safeIndex.zip table.validMask).all (fun (idx, valid) => !valid || idx < sourceSize)
+  table.safeIndex == expectedIndex &&
+  table.validMask == expectedMask
 
 /-- Whether one term's array of per-factor tables corresponds to that term's own factor list
     (one table per factor, `tables.size = term.factors.size`) and each table is individually valid
-    (`affineFactorTableValid`) against that term's iteration-domain size
-    (`term.iterationShape`'s product). -/
+    (`affineFactorTableValid`) against that term's own iteration basis (`term.iterationShape`). -/
 def affineTermTablesValid (term : TermPlan) (tables : Array AffineTableReadCandidate) : Bool :=
-  let domainSize := term.iterationShape.foldl (· * ·) 1
   tables.size == term.factors.size &&
-  (term.factors.zip tables).all (fun (factor, table) => affineFactorTableValid domainSize factor table)
+  (term.factors.zip tables).all
+    (fun (factor, table) => affineFactorTableValid term.iterationShape factor table)
 
 /-- Validate an affine-table kernel candidate against its own semantic source: one table array per
     term (`tables.size = semanticAssignment.plan.terms.size`, per `OrderedAffineTableKernelCandidate`'s
@@ -130,7 +160,22 @@ def validateAffineTable (kernel : OrderedAffineTableKernelCandidate) : Bool :=
     - `operands.size` matches that term's factor count, one operand row per factor
     - each operand row's first entry is that factor's own `sourceSlot`
     - every axis position named in an operand row (after the leading slot) or in `outputAxes` is
-      within the term's iteration basis (`< term.iterationShape.size`) -/
+      within the term's iteration basis (`< term.iterationShape.size`)
+    - the factor's own affine map has zero bias in every row (`f.map.bias.all (· == 0)`) — a
+      nonzero-bias read (e.g. `X[i+1]`) is rejected, matching `lowerFactor`'s (`EvalPlanCodegen.lean`)
+      `.nonzeroAffineBias` rejection of the very same shape
+    - the operand row's axis count (after the leading source-slot entry) equals the factor's own
+      coefficient-row count (`f.map.coeffs.size`) — `loweringToEinsumCandidate` builds each operand
+      row via `f.map.coeffs.filterMap rowProjectionTarget`, which silently DROPS any row that isn't a
+      genuine single-`1` projection (e.g. `X[-i]`); a dropped row shrinks the operand row below the
+      factor's own coefficient count, so this count check is exactly the projection-only restriction
+      `lowerFactor`'s `.nonProjectionRow` rejection enforces, applied post hoc to the candidate's
+      already-built (and otherwise unable to distinguish "genuine 1-D factor" from "3-D factor that
+      lost two axes to `filterMap`") operand row.
+    Without these last two checks this validator was strictly WEAKER than the pre-existing
+    `lowerFactor`/`einsumOnly` path it lowers alongside: a candidate built from a nonzero-bias or
+    non-projection read passed validation and was stamped `optimizationExperiment` evidence anyway,
+    even though the corresponding `einsumOnly` lowering refuses to emit it at all. -/
 def validateEinsum (kernel : EinsumExperimentKernelCandidate) : Bool :=
   let terms := kernel.semanticAssignment.plan.terms
   kernel.destination == kernel.semanticAssignment.plan.destinationSlot &&
@@ -142,7 +187,9 @@ def validateEinsum (kernel : EinsumExperimentKernelCandidate) : Bool :=
       kernel.operands.size == term.factors.size &&
       (term.factors.zip kernel.operands).all (fun (factor, opRow) =>
         opRow.size ≥ 1 && opRow.getD 0 0 == factor.sourceSlot &&
-        (opRow.extract 1 opRow.size).all (· < rank)) &&
+        (opRow.extract 1 opRow.size).all (· < rank) &&
+        factor.map.bias.all (· == 0) &&
+        opRow.size - 1 == factor.map.coeffs.size) &&
       kernel.outputAxes.all (· < rank)
 
 /-- Combined kernel-candidate validity check, real implementation (Task 5): dispatches to

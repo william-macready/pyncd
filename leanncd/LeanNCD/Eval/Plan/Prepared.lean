@@ -5,6 +5,15 @@ import LeanNCD.Eval.Plan.Check
 
 Owns `SlotBinding`, `PlanBindings`, `PreparedPlan` — the source-name-keyed sidecar around a
 `CheckedEvalPlan` (§5.4). No canonical bytes or fingerprint field (that's `Canonical.lean`, C5).
+
+`PreparedPlan` is also the two-phase post-checked pipeline's own boundary: `CheckedEvalPlan` →
+`PreparedPlan` (this file, production `LeanNCD`) → `JaxExecutableCandidate` → `JaxExecutable`
+(`Executable.lean`, Thread 5, consumed only by the non-default `JaxExperiment` library under
+`experiments/jax_bridge`). Thread 5's own plan named `Compile.lean` routing to the new
+executable-creation entry point (`lowerCheckPlanToCandidate`) and a comment here on that account,
+but that entry point lives in `JaxExperiment`, not `LeanNCD` — wiring `Compile.lean` (production)
+to call into it would be a wrong-direction dependency, so neither happened; this note records that
+as a deliberate scope decision, not a silent omission.
 -/
 
 namespace LeanNCD.Eval.Plan

@@ -1291,50 +1291,52 @@ data crosses the Lean/Python trust boundary as ordinary DTOs without serializing
 The preceding sections describe six threads that are easy to assume are strictly ordered when they
 are not: closing the numeric-mode contract, measuring affine-table scaling, Wave F's scan work,
 nonlinearity support, compact/evidence-indexed kernels, and closing Stage A's remaining narrow
-refinements. Three are now settled, in different senses — thread 1 is a closed *decision*, not yet
-empirically checked; thread 2 is a closed *measurement*; thread 6 is closed outright, implemented and
-tested — and settling the first two changed the recommended order for the three still open. Thread
-numbers below are stable identifiers other sections cite by number
+refinements. Four are now settled, in different senses — thread 1 is a closed *decision*, not yet
+empirically checked; thread 2 is a closed *measurement*; threads 5 and 6 are closed outright,
+implemented and tested — and settling the first two changed the recommended order for the two still
+open. Thread numbers below are stable identifiers other sections cite by number
 ([Section 2.2](#22-contractions-and-ordered-floating-point-execution) cites thread 1,
 [Section 5.4](#54-evidence-validating-the-experimental-jax-bridge) cites thread 5) — they are not a
-reading order. The table's row order is: settled threads first, then the three open threads in their
+reading order. The table's row order is: settled threads first, then the two open threads in their
 current recommended sequence. Wave F (thread 3) is in-progress Part I work, not a Part III candidate;
 it appears here only because its timing relative to the others needs stating. This remains a
 planning default, not a gate enforced anywhere in [Section 6](#6-adoption-plan-and-gates) — re-derive
 the open threads' order if a reason emerges, but don't re-litigate it without one.
 
-**Most of Stage A doesn't exist as code, but not uniformly.** Item numbers below are
-[Section 7.1](#71-stage-a-recommended-low-risk-refinements)'s own `#` column, not a positional
-count of this paragraph's claims. `PlanStep`, distinct slot namespaces,
-private validated executable constructors, evidence-indexed kernels, and snapshot/next-state types
-genuinely don't exist in any form — the real codebase today is `RawEvalPlan` → `CheckedEvalPlan` →
-`PreparedPlan` built from `AssignPlan`/`TermPlan`/`ReadPlan` (assignment-only, flat `Nat` slots — the
-numeric mode is now the closed `reference64SumProduct` constructor, item 3, closed by thread 6). Two
-further items also have correct, tested *behavior* now surfaced as the distinct API Stage A specifies,
-also closed by thread 6: `Dense.lean`'s `runDenseAssignAt` builds its source-declared, non-flattened
-factor/reduction/term order from three named fold functions, `factorFold`/`reductionFold`/`termFold`
-(item 2); `prepareEvalPlan` now builds its one required-input binding per name into `RequiredBindings`
-(item 4), a private-constructor, `List.Perm`-checked wrapper in `Prepared.lean`. And executable
-lowering itself already exists —
-`EvalPlanCodegen.lean`'s `einsumOnly`/`affineReference` modes are the basis of every measurement in
-[Section 5.4](#54-evidence-validating-the-experimental-jax-bridge) — what's missing there (items 5, 6)
-is the validated, evidence-indexed *type-level discipline* around it, not lowering itself: the
-*checked* phase already gates on private constructors (`CheckedEvalPlan`/`CheckedAssignPlan` in
-`Eval/Plan/Check.lean`), but nothing yet gates the *executable* phase the same way, or distinguishes
-ordered-reference from experimental evidence in the type system. This matters for sequencing: threads
-3 and 5 below build
-the Stage A pieces their own work genuinely lacks (items 1, 7, 8 for thread 3; items 5, 6 for thread
-5) — not by choice, because nothing else claims them either. Thread 6 closed the remainder — items 2,
-3, and 4 — none blocked on thread 3 or 5, and cheaper than the others since two were API-surface work
-over already-correct behavior rather than new structure.
+**Most of Stage A didn't exist as code, but not uniformly, and less of it is missing now.** Item
+numbers below are [Section 7.1](#71-stage-a-recommended-low-risk-refinements)'s own `#` column, not
+a positional count of this paragraph's claims. `PlanStep`, distinct slot namespaces, and
+snapshot/next-state types genuinely don't exist in any form yet — the real codebase today is
+`RawEvalPlan` → `CheckedEvalPlan` → `PreparedPlan` built from `AssignPlan`/`TermPlan`/`ReadPlan`
+(assignment-only, flat `Nat` slots — the numeric mode is now the closed `reference64SumProduct`
+constructor, item 3, closed by thread 6). Two further items also have correct, tested *behavior* now
+surfaced as the distinct API Stage A specifies, also closed by thread 6: `Dense.lean`'s
+`runDenseAssignAt` builds its source-declared, non-flattened factor/reduction/term order from three
+named fold functions, `factorFold`/`reductionFold`/`termFold` (item 2); `prepareEvalPlan` now builds
+its one required-input binding per name into `RequiredBindings` (item 4), a private-constructor,
+`List.Perm`-checked wrapper in `Prepared.lean`. Executable lowering itself already existed before
+thread 5 — `EvalPlanCodegen.lean`'s `einsumOnly`/`affineReference` modes are the basis of every
+measurement in [Section 5.4](#54-evidence-validating-the-experimental-jax-bridge) — and thread 5 has
+now closed what was missing around it (items 5, 6): the validated, evidence-indexed *type-level
+discipline*, not lowering itself. The *checked* phase already gated on private constructors
+(`CheckedEvalPlan`/`CheckedAssignPlan` in `Eval/Plan/Check.lean`); the *executable* phase now gates
+the same way — `LeanNCD/Eval/Plan/Executable.lean`'s private-constructor `JaxKernel`/`JaxExecutable`,
+buildable only through `validateAndConstructKernel`/`validateAndConstructExecutable` after
+`validateAffineTable`/`validateEinsum` pass, distinguishing `orderedReference64` from
+`optimizationExperiment` evidence in the type system exactly as this section calls for. This matters
+for sequencing: thread 3 below still has to build the Stage A pieces its own work genuinely lacks
+(items 1, 7, 8) — not by choice, because nothing else claims them either. Threads 5 and 6 between
+them closed the remainder — items 2 through 6 — none blocked on thread 3, and cheaper than thread 3's
+remaining scope since most were API-surface or validator work over already-correct lowering behavior
+rather than new graph structure.
 
 | Thread | Item | Status | Depends on | Why |
 |---|---|---|---|---|
 | 1 | Pin `reference64Transcendental`'s per-function ULP bounds | **Specified**, not validated | Nothing | [Section 2.2](#22-contractions-and-ordered-floating-point-execution) gives reasoned starting bounds with no Lean constant or test behind them yet, unvalidated against any real backend output. [Section 7.1](#71-stage-a-recommended-low-risk-refinements) no longer flags the *absence* of a contract as blocking Stage A's close. |
 | 2 | Run the affine-table scaling measurement: one mid-sized contraction, timed and sized | **Measured** | Nothing | [Section 5.4](#54-evidence-validating-the-experimental-jax-bridge): one 4,096-coordinate contraction is already ~5% of the entire corpus's artifact size, and its compiled steady-state runtime is measurably (~5×) slower than native `jnp.einsum`. Both findings reordered thread 5 below. |
 | 6 | Closed Stage A's remaining refinements: explicit named factor/reduction/term fold functions in `Dense.lean` (`factorFold`/`reductionFold`/`termFold`), `reference64SumProduct` as the actual closed `NumericMode` constructor (renamed from the open `reference64` tag), and length-correct `RequiredBindings` in `Prepared.lean` | **Done** | Nothing | The three Stage A items neither thread 3 nor thread 5 needed. Cheaper than either — two of the three surfaced already-correct, already-tested behavior as a named API/type, not building new structure. Blocked on nothing and blocked nothing else, so it ran right after the other zero-dependency threads, in parallel with threads 5/3/4. |
-| 5 | Compact/evidence-indexed kernels for JAX ([Section 4.3](#43-evidence-indexed-executable-lowering)) | **Next** — moved ahead of threads 3-4 | Thread 2's outcome | Artifact size grows too fast for the affine-table oracle to stay usable past near-term needs, and its compiled steady-state runtime is a real, measured gap, not merely comparable. Includes building the validated, evidence-indexed executable-lowering discipline Stage A describes (private validated constructors, evidence-indexed kernels — [Section 7.1](#71-stage-a-recommended-low-risk-refinements)) — not building lowering itself, which already exists via the experimental JAX bridge. Not yet started. **JAX only**: the PyTorch backend (also sketched in Appendix D) is explicitly out of scope here — no client has asked for it, so it is deferred with no scheduled thread, not merely sequenced later. |
-| 3 | Continue Wave F (F2-F4: checked block and scan layers) | Open, after thread 5 | Nothing beyond what F0/F1 already landed | This *is* Backend Eval IR's scan-half implementation per [Section 2.3](#23-blocks-graph-flow-and-scans), not prerequisite work backend IR waits on — but it includes building the block-scoped slots, the `PlanStep` assign/scan interface, and the snapshot/next-state types that section already requires, none of which exist yet. Proceeds independently of threads 1, 2, and 4, subject to [Section 7.2](#72-stage-b-candidate-dependent-contraction-prototype)'s existing constraint against combining it with the Stage B rewrite. |
+| 5 | Compact/evidence-indexed kernels for JAX ([Section 4.3](#43-evidence-indexed-executable-lowering)) | **Done** | Thread 2's outcome | Artifact size grows too fast for the affine-table oracle to stay usable past near-term needs, and its compiled steady-state runtime is a real, measured gap, not merely comparable. Built the validated, evidence-indexed executable-lowering discipline Stage A describes (private validated constructors, evidence-indexed kernels — [Section 7.1](#71-stage-a-recommended-low-risk-refinements)) around the lowering that already existed via the experimental JAX bridge, not a second lowering: `LeanNCD/Eval/Plan/Executable.lean`'s `ExecutionEvidence`, kernel/plan `Candidate` types, and private-constructor `JaxKernel`/`JaxExecutable`, gated by `validateAffineTable`/`validateEinsum` (the latter also closes a validation gap found in review — rejecting nonzero-bias and dropped-projection-axis einsum candidates the way `EvalPlanCodegen.lean`'s pre-existing `lowerFactor` already does). **JAX only**: the PyTorch backend (also sketched in Appendix D) is explicitly out of scope here — no client has asked for it, so it is deferred with no scheduled thread, not merely sequenced later. |
+| 3 | Continue Wave F (F2-F4: checked block and scan layers) | Open — next recommended | Nothing beyond what F0/F1 already landed | This *is* Backend Eval IR's scan-half implementation per [Section 2.3](#23-blocks-graph-flow-and-scans), not prerequisite work backend IR waits on — but it includes building the block-scoped slots, the `PlanStep` assign/scan interface, and the snapshot/next-state types that section already requires, none of which exist yet. Proceeds independently of threads 1, 2, and 4, subject to [Section 7.2](#72-stage-b-candidate-dependent-contraction-prototype)'s existing constraint against combining it with the Stage B rewrite. Thread 5's completion (above) does not unblock anything here — the "after thread 5" sequencing in earlier drafts of this table was a priority ordering (thread 5 addressed a measured, worsening gap; thread 3 did not depend on thread 5's output), not a real dependency, and thread 3 was never blocked on it. |
 | 4 | Implement nonlinearity: new `PlanStep` pointwise/axiswise cases, Dense/JAX interpreter support | Open, after thread 3 | Thread 3 (the `PlanStep` type must exist before a case can be added to it), thread 1 (specified) | Sequenced after thread 3 for a real type dependency, not just conflict-avoidance: `PlanStep` doesn't exist until thread 3 builds it. A nonlinear step's evidence is also meaningless without a stated ULP bound — settled by thread 1. PyTorch interpreter support is not listed: it follows the PyTorch backend itself (thread 5's note above), which is deferred, not scheduled. |
 
 ## 8. Appendices
@@ -1939,7 +1941,9 @@ to JAX and PyTorch, so neither can attach reference evidence after constructing 
 kernel. Compact affine kernels require a future evidence contract, validator, and differential gate.
 `aggregateEvidence` returns `orderedReference64` only when every execution component has that
 evidence; any experimental kernel or scan implementation makes the enclosing scan or plan
-`optimizationExperiment`.
+`optimizationExperiment`. (Thread 5's shipped JAX implementation names this function
+`aggregateEvidenceList` — `LeanNCD/Eval/Plan/Executable.lean` — the same fold-over-an-array-of-
+evidences concept under an `Array`-reflecting suffix, not a second, undocumented concept.)
 
 ```lean
 inductive JaxExecStep (evidence : ExecutionEvidence)

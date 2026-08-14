@@ -24,13 +24,17 @@ Does not own: parsing/compilation/routing (`../DSL/`).
 | Axis-size inference fixpoint (`inferAxisSizes`, `scatterOutputShapes`) | `SizeInfer.lean` |
 | Compatibility umbrella re-exporting `Slots`/`SizeSolve`/`SizeInfer` (no new code) | `Shape.lean` |
 | Every typed diagnostic (`EvalError`, `ShapeError`, `EvalWarning`, `SolveDiagnostic`, `EvalFailure`) + their sole renderers | `Error.lean` |
-| Checked, positional tensor-plan IR + compiler + adapter (Wave C) | `Plan/` (11 files: `Types`, `Kernel`, `Graph`, `Error`, `Check`, `Coordinates`, `Dense`, `Signature`, `Prepared`, `Compile`, `Adapter`) |
+| Checked, positional tensor-plan IR + compiler + adapter (Wave C) | `Plan/` (12 files: `Types`, `Kernel`, `Graph`, `Error`, `Check`, `Coordinates`, `Dense`, `Signature`, `Prepared`, `Compile`, `Adapter`, `Executable`) |
 | "Does this model class evaluate correctly" test suite | `test/Eval/Portfolio/*.lean` |
 
 ### The `Plan/` subtree
 A second, checked evaluation path (Wave C), independent of the legacy `Gather`/`Contract`/`Scan`
 evaluator above and reachable from `import LeanNCD` via `Eval.Plan.Adapter`. One line per file —
-see `papers/wave_c_capability_manifest.md` for the full design, not duplicated here:
+see `papers/wave_c_capability_manifest.md` for the full design, not duplicated here. Exception:
+`Executable.lean` (Thread 5) is NOT reachable from `import LeanNCD` — it is consumed only by
+`experiments/jax_bridge` (the non-default `JaxExperiment` library), not by the production
+`LeanNCD` import graph, so the blanket "reachable via `Eval.Plan.Adapter`" claim above does not
+cover it.
 
 | File | Owns |
 |---|---|
@@ -45,6 +49,7 @@ see `papers/wave_c_capability_manifest.md` for the full design, not duplicated h
 | `Prepared.lean` | source-name-keyed bindings around a checked plan — `PreparedPlan`; `RequiredBindings`/`checkBindings` (private-constructor, `List.Perm`-checked, name-unique `requiredInputs`) |
 | `Compile.lean` | the source compiler — capability preflight (C4), `prepareEvalPlan` |
 | `Adapter.lean` | named ↔ positional runtime boundary — `pack`/`unpack`/`runPreparedDense` |
+| `Executable.lean` | JAX executable phase (Thread 5): `ExecutionEvidence`, kernel/plan candidates, private-constructor `JaxKernel`/`JaxExecutable` gated by real validators (`validateAffineTable`/`validateEinsum`); consumed only by `experiments/jax_bridge`, not by the production `LeanNCD` import graph (see the exception noted above) |
 
 ### Key Relationships
 `Entry.lean` imports `DSL.Compile`; `Eval.lean` does not. `Slots.lean`/`Gather.lean` import

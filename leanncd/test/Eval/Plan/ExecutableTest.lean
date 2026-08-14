@@ -1,19 +1,16 @@
 import LeanNCD.Eval.Plan.Executable
 
 /-!
-# Thread 5, Task 1 — `ExecutionEvidence` / kernel-candidate fixture sketches
+# Thread 5 (Tasks 1-5) — `ExecutionEvidence` / kernel-candidate / executable tests
 
-Compile-only fixtures: pins that `ExecutionEvidence`'s two constructors exist and destructure, and
-that the four candidate types (`AffineTableReadCandidate`, `OrderedAffineTableKernelCandidate`,
-`EinsumExperimentKernelCandidate`, `JaxKernelCandidate`) and `candidateEvidenceLabel` elaborate.
-No lowering logic exists yet, so the actual derivation from a `CheckedEvalPlan`/`CheckedAssignPlan`
-is stubbed with `sorry` — a later task supplies real validators and private constructors.
-
-Field note vs. the Task 1 brief's Step 1 sketch: `EinsumExperimentKernelCandidate` has two fields
-(`destination`, `outputAxes`) beyond `semanticAssignment`/`operands` that the brief's original
-fixture omitted from the structure literal, which would not elaborate (missing required fields).
-Both are supplied here as `sorry`, consistent with `semanticAssignment`'s existing `sorry` — no
-change to the type or to what this task is scoped to prove.
+Tests for `LeanNCD.Eval.Plan.Executable`'s full pipeline: `ExecutionEvidence`'s two constructors,
+the candidate types (`AffineTableReadCandidate`, `OrderedAffineTableKernelCandidate`,
+`EinsumExperimentKernelCandidate`, `JaxKernelCandidate`), `candidateEvidenceLabel`, private
+constructor discipline (`JaxKernel`/`JaxExecutable`, Task 2/3), evidence aggregation, and the real
+Task 5 validators (`validateAffineTable`/`validateEinsum`). No `sorry` anywhere in this file — every
+fixture below is built through real `checkAssign`/`checkPlan`/`checkBindings` entry points, per
+Task 5's guidance against literal `sorry` in test bodies (the earlier Task-1-era sketches that did
+use `sorry` were removed once Task 5 supplied real fixtures over the same types).
 -/
 
 namespace LeanNCD.Eval.Plan.ExecutableTest
@@ -22,19 +19,6 @@ open LeanNCD.Eval.Plan
 -- Test that evidence types exist and destructure
 def evidenceOrdred : ExecutionEvidence := ExecutionEvidence.orderedReference64
 def evidenceExp : ExecutionEvidence := ExecutionEvidence.optimizationExperiment
-
--- Test that kernel candidates can be constructed
-def affineCandidate (plan : CheckedEvalPlan) (tables : Array (Array AffineTableReadCandidate)) :
-    OrderedAffineTableKernelCandidate :=
-  { semanticAssignment := sorry
-    tables := tables }
-
-def einsumCandidate (plan : CheckedEvalPlan) (operands : Array (Array Nat)) :
-    EinsumExperimentKernelCandidate :=
-  { semanticAssignment := sorry
-    destination := sorry
-    operands := operands
-    outputAxes := sorry }
 
 -- === Task 2: private JaxKernel constructor + validator ===
 --
@@ -250,6 +234,40 @@ def testValidPlanCandidate : Bool :=
 
 #guard testValidPlanCandidate
 
+-- Same fixture and single well-formed affine kernel as `testValidPlanCandidate` above, but pinning
+-- the resulting plan-level `.evidence` VALUE directly — `testValidPlanCandidate` only checks `.ok`,
+-- never inspects `.evidence`. An all-affine (single-kernel) plan's aggregated evidence must be
+-- `.orderedReference64`.
+def testValidPlanCandidateEvidence : Bool :=
+  match checkPlan idRaw with
+  | .error _ => false
+  | .ok checkedPlan =>
+    match checkedPlan.checkedNodes[0]? with
+    | none => false
+    | some checkedAssign =>
+      match checkBindings #[0] #[{ name := "x", slot := 0 }] with
+      | .error _ => false
+      | .ok requiredInputs =>
+        let prepared : PreparedPlan :=
+          { plan := checkedPlan
+          , bindings := { requiredInputs, materializedNames := #[{ name := "y", slot := 1 }] }
+          , warnings := [] }
+        let table : AffineTableReadCandidate :=
+          { source := 0, safeIndex := #[0, 1, 2], validMask := #[true, true, true] }
+        let kernel : OrderedAffineTableKernelCandidate :=
+          { semanticAssignment := checkedAssign, tables := #[#[table]] }
+        match validateAndConstructKernel (.affineTable kernel) with
+        | .error _ => false
+        | .ok someKernel =>
+          let steps := #[someKernel]
+          let candidate : JaxExecutableCandidate :=
+            { source := prepared, steps
+            , evidence := aggregateEvidenceList (steps.map (·.evidence))
+            , aggregated := rfl }
+          candidate.evidence == .orderedReference64
+
+#guard testValidPlanCandidateEvidence
+
 -- Deliberately malformed at plan level: zero step-kernels against a one-step source plan —
 -- `JaxExecutableWellFormed`'s step-count/raw-step-count correspondence must reject this, not
 -- silently accept a plan that dropped a step.
@@ -274,5 +292,77 @@ def testMalformedPlanCandidateRejected : Bool :=
       | .error _ => true    -- correctly rejected
 
 #guard testMalformedPlanCandidateRejected
+
+-- === Fix wave: mixed-kernel plan-level evidence (review finding 4) ===
+--
+-- A real two-step plan (`Y[i] := X[i]`, then `Z[i] := Y[i]`) whose step 0 gets a validated
+-- AFFINE kernel and step 1 gets a validated EINSUM kernel instead — deliberately, to exercise
+-- `aggregateEvidenceList` at the PLAN level with a genuine mix. `testAggregateMixed` (Task 3, above)
+-- only exercises the aggregation function directly on a bare `Array ExecutionEvidence`; no existing
+-- test built an actual `JaxExecutableCandidate` from two real, differently-evidenced kernels and
+-- inspected the resulting `.evidence`.
+
+def mixedSigs : Array TensorSignature :=
+  #[ { shape := #[3], dtype := .f64 }, { shape := #[3], dtype := .f64 }, { shape := #[3], dtype := .f64 } ]
+
+def mixedRead12 : ReadPlan :=
+  { sourceSlot := 1, map := { coeffs := #[#[1]], bias := #[0] }
+  , sourceShape := #[3], oobPolicy := .zeroPad }
+
+-- `Z[i] := Y[i]`: reads slot 1 (`Y`, step 0's destination), writes slot 2.
+def mixedAssign1 : AssignPlan :=
+  { contextShape := #[], destinationSlot := 2, outputShape := #[3]
+  , terms := #[{ iterationShape := #[3], contextPos := #[], outputPos := #[0], reductionPos := #[]
+               , factors := #[mixedRead12] }]
+  , algebra := admittedAlgebra }
+
+-- Step 0 reuses `idAssign` (`Y[i] := X[i]`, slot 0 → slot 1) unchanged; step 1 is `mixedAssign1`
+-- (`Z[i] := Y[i]`, slot 1 → slot 2).
+def mixedRaw : RawEvalPlan :=
+  { version := admittedVersion, tensorSigs := mixedSigs, inputSlots := #[0]
+  , steps := #[idAssign, mixedAssign1], numericMode := .reference64SumProduct }
+
+def testMixedKernelPlanEvidence : Bool :=
+  match checkPlan mixedRaw with
+  | .error _ => false
+  | .ok checkedPlan =>
+    match checkedPlan.checkedNodes[0]?, checkedPlan.checkedNodes[1]? with
+    | some checkedAssign0, some checkedAssign1 =>
+      match checkBindings #[0] #[{ name := "x", slot := 0 }] with
+      | .error _ => false
+      | .ok requiredInputs =>
+        let prepared : PreparedPlan :=
+          { plan := checkedPlan
+          , bindings :=
+              { requiredInputs
+              , materializedNames := #[{ name := "y", slot := 1 }, { name := "z", slot := 2 }] }
+          , warnings := [] }
+        -- Step 0: affine-table kernel (`orderedReference64`), same table shape as `idAssign`'s
+        -- other uses above (identity read, 3-entry iteration domain, all in-bounds).
+        let affineTable : AffineTableReadCandidate :=
+          { source := 0, safeIndex := #[0, 1, 2], validMask := #[true, true, true] }
+        let affineKernel : OrderedAffineTableKernelCandidate :=
+          { semanticAssignment := checkedAssign0, tables := #[#[affineTable]] }
+        -- Step 1: einsum kernel (`optimizationExperiment`) for `Z[i] := Y[i]` — the identity read
+        -- is a pure projection (coefficient row `#[1]`, zero bias) onto position 0, so the operand
+        -- row is `#[sourceSlot, coveredPosition] = #[1, 0]`.
+        let einsumKernel : EinsumExperimentKernelCandidate :=
+          { semanticAssignment := checkedAssign1, destination := 2
+          , operands := #[#[1, 0]], outputAxes := #[0] }
+        match validateAndConstructKernel (.affineTable affineKernel),
+              validateAndConstructKernel (.einsum einsumKernel) with
+        | .ok someAffine, .ok someEinsum =>
+          let steps := #[someAffine, someEinsum]
+          let candidate : JaxExecutableCandidate :=
+            { source := prepared, steps
+            , evidence := aggregateEvidenceList (steps.map (·.evidence))
+            , aggregated := rfl }
+          match validateAndConstructExecutable candidate with
+          | .ok _ => candidate.evidence == .optimizationExperiment
+          | .error _ => false
+        | _, _ => false
+    | _, _ => false
+
+#guard testMixedKernelPlanEvidence
 
 end LeanNCD.Eval.Plan.ExecutableTest
