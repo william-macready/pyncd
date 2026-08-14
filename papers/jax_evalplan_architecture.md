@@ -749,7 +749,7 @@ for output coordinate:
 ```
 
 This is an operational floating-point contract, not a lawful semiring. Merely using binary64 does not
-satisfy `reference64`: reassociation may change low bits, so an optimized tree reduction can be
+satisfy `reference64SumProduct`: reassociation may change low bits, so an optimized tree reduction can be
 algebraically equivalent while violating the mode.
 
 `gatherAffine` applies maps with Lean `Int`, checks every dimension, and returns zero for an invalid
@@ -839,7 +839,7 @@ Three test runners support different parts of the bridge's correctness claim. In
 **test population** identifies which checked plans are executed, while **observations** identifies
 what is inspected: eager execution runs JAX directly; JIT execution runs the compiled JAX program;
 gradient checks exercise JAX autodiff; exact Dense agreement compares JAX results with the Lean
-Dense `reference64` oracle; and AST inspection confirms that the projection experiment actually
+Dense `reference64SumProduct` oracle; and AST inspection confirms that the projection experiment actually
 emitted `jnp.einsum`.
 
 | Validation runner | Test population | Observations |
@@ -973,7 +973,7 @@ runners*, not restating their previous output.
 The supported claim is deliberately bounded:
 
 > For the accepted Wave C corpus and curated boundary fixtures, the table-driven ordered JAX
-> interpreter agrees with LeanNCD Dense `reference64` evaluation on the measured CPU platform.
+> interpreter agrees with LeanNCD Dense `reference64SumProduct` evaluation on the measured CPU platform.
 
 This does not establish cross-platform equivalence, scan or nonlinear semantics, production-scale
 performance, or proof-level correctness of JAX/XLA. Those limits are exactly what the adoption gates
@@ -1475,6 +1475,10 @@ structure RequiredBindings where private mk ::
 
 def checkBindings (inputSlots : Array TensorSlot) (bindings : Array SlotBinding) :
     Except BindingsError RequiredBindings := ...
+
+structure PlanBindings where
+  requiredInputs    : RequiredBindings
+  materializedNames : Array SlotBinding
 ```
 
 This is what Wave C actually shipped (`Eval/Plan/Prepared.lean`), not the positional-`Vector` design
@@ -1500,7 +1504,7 @@ type-level guarantee `PlanBindings`/`PreparedPlan`'s own public constructors clo
 ```lean
 structure PreparedPlan where
   plan     : CheckedEvalPlan
-  bindings : RequiredBindings
+  bindings : PlanBindings
   warnings : Array EvalWarning
 
 structure BridgeSchemaVersion where
@@ -1541,7 +1545,7 @@ structure CheckedPortablePlan (payload : PortableBackendPlan) where private mk :
   mode           : NumericMode
   inputSlots     : Vector table.Slot payload.raw.inputSlots.size
   steps          : Vector (CheckedPortableStep table mode) payload.raw.steps.size
-  bindings       : RequiredBindings
+  bindings       : PlanBindings
   warnings       : Array EvalWarning
   modeAligned    : mode = payload.raw.numericMode
   planAligned    : eraseCheckedPlan table inputSlots steps = payload.raw
@@ -1576,10 +1580,15 @@ interfaces. Appendix B may implement the assignment interface with dependent slo
 implements the scan interface without requiring that choice. Appendix D consumes only these common
 interfaces and the explicit `.table` and `.mode` fields of `CheckedPortablePlan`.
 
-`CheckedPortablePlan.bindingsAligned` is exactly the type-level coupling `RequiredBindings` itself does
-not yet provide (above): it ties `bindings` to `payload.bindings` structurally, rather than by producer
-discipline alone. That is a real gap in today's shipped in-Lean-only phase, not a gap in this candidate
-— whether a future portable phase is ever built to close it is still an open, unadopted question.
+`CheckedPortablePlan.bindingsAligned` is a round-trip property, not the coupling gap named above: it
+ties the checked `bindings` back to `payload.bindings` (a `RawPlanBindings`), which is itself an
+unvalidated raw array pair — the same raw DTO that "intentionally permits bad slot numbers" elsewhere
+in this appendix. Round-tripping to a possibly-malformed raw value does not establish that
+`payload.bindings.requiredInputs`'s slots equal `payload.raw.inputSlots`; nothing in this candidate
+closes that gap either. `RequiredBindings.inputSlots`-vs-`payload.raw.inputSlots` alignment remains
+producer discipline in the portable candidate exactly as it is in the shipped in-Lean-only phase — a
+real limit of today's design, not one this appendix resolves, and closing it (if ever wanted) is a
+distinct, unadopted question from the round-trip property `bindingsAligned` actually states.
 
 ### Appendix B: candidate dependent checked contraction core
 
