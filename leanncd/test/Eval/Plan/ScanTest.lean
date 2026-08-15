@@ -974,6 +974,52 @@ been rejected — this is the final-review Critical finding"
       unless e == .writeFreeExtentMismatch true 0 0 #[2,2] #[5] do
         throwError s!"writeFreeExtentMismatch: wrong error {repr e}"
 
+/-! #### `writePinnedLiteralOutOfRange`: a base write PINNED outside the state's own dimension
+
+The sibling of the finding above, same failure class, found while documenting that fix and
+independently reproduced by a second reviewer. Geometry admission recognizes a row as `.pinned lit`
+without ever inspecting `lit`'s VALUE: `baseWriteRowsOk` requires only that SOME advancing dimension
+be pinned to literal `0`, so with `dp`'s `advancingDims = #[0,1]`, `pointWrite`'s dim-1 `0` alone
+satisfied that rule and left the dim-0 literal completely unconstrained. `dp[5, 0] := ONE` on a
+`[2,2]` state passed `checkScanPlan`, and `commitWrite` then reached `Array.set!` out of range
+(`lean_array_set_panic`, or a silent commit to the wrong cell).
+
+One field differs from `multiBaseScan`: `pointWrite`'s dim-0 bias `1 -> 5`. Nothing else moves — the
+write is still fully pinned (scalar output, no free rows), still admitted by `baseWriteRowsOk`, and
+still non-colliding with `faceWrite` (row `5` vs row `0` are different literals), so the plan
+reaches the new check with every earlier check passed. -/
+
+def outOfRangePointWrite : StateWriteMap :=
+  { pointWrite with map := { coeffs := #[#[], #[]], bias := #[5, 0] } }
+
+def outOfRangePointRows : Array (Option WriteRowKind) := writeRowKinds 2 0 outOfRangePointWrite
+
+-- Still admitted by the geometry rule — that is exactly why a separate value check is needed.
+#guard baseWriteRowsOk #[0, 1] 0 outOfRangePointRows
+#guard writesCollide faceRows outOfRangePointRows == false
+
+-- The predicate itself, on the exact rows involved (`pointRows` is the real, in-range fixture).
+#guard pinnedLiteralsInRange #[2,2] pointRows == true
+#guard pinnedLiteralsInRange #[2,2] outOfRangePointRows == false
+-- A NEGATIVE literal is out of range too (`Int.toNat` would silently clamp it to `0`).
+#guard pinnedLiteralsInRange #[2,2] (writeRowKinds 2 0
+  { pointWrite with map := { coeffs := #[#[], #[]], bias := #[-1, 0] } }) == false
+
+def pinnedOutOfRangeScan : RawScanPlan :=
+  { multiBaseScan with baseWrites := #[faceWrite, outOfRangePointWrite] }
+
+-- writePinnedLiteralOutOfRange: accepted before the fix (`checkScanPlan` returned `.ok`, and
+-- `runDenseScan` then panicked in `Array.set!`), rejected now. Locator is base write index 1
+-- (`faceWrite` at index 0 passes first), state 0, whose shape is `#[2,2]`.
+run_cmd do
+  match checkScanPlan outerSigsMultiBase pinnedOutOfRangeScan with
+  | .ok _ =>
+      throwError "a base write PINNED outside the state's own dimension should have been rejected \
+— this is the sibling of the final-review Critical free-extent finding"
+  | .error e =>
+      unless e == .writePinnedLiteralOutOfRange true 1 0 #[2,2] do
+        throwError s!"writePinnedLiteralOutOfRange: wrong error {repr e}"
+
 -- Fixture 5: face-plus-point-override multi-base-write. Verified: dp = [0,1,1,1] (row-major [2,2]).
 run_cmd do
   match checkScanPlan outerSigsMultiBase multiBaseScan with

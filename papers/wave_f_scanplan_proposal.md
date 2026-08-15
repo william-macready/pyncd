@@ -1573,15 +1573,33 @@ and `ScanTest.lean`'s `commitWriteLocal` comment no longer claims to reimplement
 equation, stating plainly that it is the scalar-output-only specialization (it embeds the pre-fix
 single-coordinate read) valid only for the scalar fixtures that use it.
 
+**Sibling gap closed in the same wave (2026-08-15): an out-of-range PINNED base-write literal.**
+Found while writing `commitWrite`'s bounds doc comment above, independently reproduced by a second
+reviewer, and NOT closed by the free-extent fix — the same failure class one row-kind over. Geometry
+admission recognizes a row as `.pinned lit` without ever inspecting `lit`'s VALUE: `stepWriteRowsOk`
+admits no pinned rows at all, but `baseWriteRowsOk` requires only that SOME advancing dimension be
+pinned to `0`, leaving every other pinned literal unconstrained. A hand-built base write
+`dp[5, 0] := ONE` on a `[2,2]` state was accepted by `checkScanPlan`, after which `commitWrite`
+reached `Array.set!` out of range (`lean_array_set_panic`, confirmed reproduced) or committed
+silently to the wrong cell. Fixed by a new `pinnedLiteralsInRange` predicate (`Scan.lean`, beside
+`freeExtentsAgree`) requiring `0 ≤ lit` and `lit < stateShape[d]` on every pinned row, and a new
+`ScanPlanError.writePinnedLiteralOutOfRange (isBase) (writeIndex stateIndex) (stateShape)`, thrown
+from `checkWrites` immediately after the free-extent check; `ScanTest.lean` gains the reproducing
+fixture (`pinnedOutOfRangeScan`, a one-field mutation of Fixture 5's `pointWrite`: dim-0 bias
+`1 -> 5`) asserting the exact error, plus `#guard`s pinning the predicate on Fixture 5's own rows
+(in-range true, out-of-range false, negative literal false) and two showing the mutated write is
+still admitted by `baseWriteRowsOk`/`writesCollide` — i.e. that no earlier check catches it. The
+fixture was verified to discriminate, as this file's other mutation fixtures are: with the new
+`checkWrites` guard commented out the build FAILS on that fixture (`checkScanPlan` returned `.ok`),
+with it restored the full build is green (8,651 jobs, unchanged). No pre-existing accepted fixture
+regressed — `ScanTest.lean` holds all 60 `checkScanPlan` call sites in the suite (`EvalPlanTest.lean`
+names it only in prose), 13 of which assert acceptance, and every one still builds: each was built
+from real, consistent data whose pinned literals were already in range.
+`commitWrite`'s bounds doc comment, which recorded this as a genuinely open obligation, is updated to
+state the closure.
+
 Known follow-ups, deliberately not fixed here:
 
-- **An out-of-range PINNED base-write literal is still unchecked** — found while writing
-  `commitWrite`'s new bounds doc comment, and NOT closed by the extent fix above. `stepWriteRowsOk`
-  admits no pinned rows at all, but `baseWriteRowsOk` requires only that SOME advancing dimension be
-  pinned to `0`; every other pinned literal is unconstrained, so a hand-built base write
-  `dp[5, 0] := ONE` on a `[2,2]` state still reaches `Array.set!` out of range. The fix belongs in
-  `checkWrites` beside `freeExtentsAgree` (a guard inside `commitWrite` could only silently drop the
-  write, since it returns a `DenseTensor`, not an `Except`). Documented in full on `commitWrite`.
 - `papers/wave_c_capability_manifest.md` §1 is now stale — it still documents `admittedVersion = 1`
   and `PlanError.versionNotAdmitted`, both removed by this slice. Updating it is F5's own job per
   §13's F5 deliverables ("updated capability manifest recording removal of the unused in-memory

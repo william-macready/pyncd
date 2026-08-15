@@ -68,6 +68,20 @@ def freeExtentsAgree (stateShape : Array Nat) (outputShape : Array Nat)
     | some (.free p) => stateShape.getD d 0 == outputShape.getD p 0
     | _ => true)
 
+/-- Every `.pinned` row's literal must be a valid in-range coordinate for its own state dimension —
+    proposal §7.3's write-result signature agreement extended to pinned (not just free) positions.
+    `.free`/`.advancing` rows are vacuously fine (their range is already bounded by the checked
+    output/context shapes elsewhere). Sibling of `freeExtentsAgree`, same failure class: geometry
+    admission recognizes a row as `.pinned lit` without ever looking at `lit`'s VALUE, so
+    `baseWriteRowsOk`'s "some advancing dimension is pinned to `0`" rule leaves every OTHER pinned
+    literal — and any pinned literal on a non-advancing dimension — completely unconstrained. A base
+    write like `dp[5, 0] := ONE` on a `[2,2]` state was accepted, and `runDenseScan` then either
+    panicked in `Array.set!` or committed to the wrong cell. -/
+def pinnedLiteralsInRange (stateShape : Array Nat) (rows : Array (Option WriteRowKind)) : Bool :=
+  rows.toList.zipIdx.all (fun (r, d) => match r with
+    | some (.pinned lit) => 0 ≤ lit && lit.toNat < stateShape.getD d 0
+    | _ => true)
+
 /-- Two writes' declared regions collide iff no dimension forces them apart. Since every row is
     `.pinned`/`.free`/`.advancing`, a dimension forces the regions apart only when BOTH writes pin
     it to DIFFERENT literals; `.free`/`.advancing` always range over their full domain and can never
@@ -138,6 +152,8 @@ inductive ScanPlanError
   | writeGeometryNotAdmitted      (isBase : Bool) (writeIndex : Nat)
   | writeFreeExtentMismatch       (isBase : Bool) (writeIndex stateIndex : Nat)
                                   (stateShape outputShape : Array Nat)
+  | writePinnedLiteralOutOfRange  (isBase : Bool) (writeIndex stateIndex : Nat)
+                                  (stateShape : Array Nat)
   | baseWritesOverlap             (stateIndex firstWriteIndex secondWriteIndex : Nat)
   | iterationOrderNotAdmitted     (order : ScanIterationOrder)
   | boundaryPolicyNotAdmitted     (policy : ScanBoundaryPolicy)
@@ -201,7 +217,10 @@ private def checkCaptures (sigs : Array TensorSignature) (block : RawPlanBlock)
     declared output is written by exactly one write, base-write geometry is admitted and pairwise
     disjoint across each state's FULL write list, step-write geometry is admitted, and every
     admitted write's free rows agree in SIZE with the state's own dimensions (`freeExtentsAgree` —
-    geometry admission covers only rank/position). Returns, per state, the accepted row
+    geometry admission covers only rank/position) and every pinned row's LITERAL is an in-range
+    coordinate of that dimension (`pinnedLiteralsInRange` — geometry admission never inspects a
+    pinned literal's value beyond the single "some advancing dimension is `0`" rule). Returns, per
+    state, the accepted row
     classifications PAIRED with each write's original global index `wi` (so a caller needing a real
     locator — e.g. `multipleStepWritesForState`'s first/second write index — doesn't have to
     re-derive it), so the caller can additionally require exactly one step write and at least one
@@ -231,6 +250,8 @@ private def checkWrites (sigs : Array TensorSignature) (block : RawPlanBlock)
     unless admitted do throw (.writeGeometryNotAdmitted isBase wi)
     unless freeExtentsAgree stateShape outputShape rows do
       throw (.writeFreeExtentMismatch isBase wi w.stateIndex stateShape outputShape)
+    unless pinnedLiteralsInRange stateShape rows do
+      throw (.writePinnedLiteralOutOfRange isBase wi w.stateIndex stateShape)
     rowsByState := rowsByState.set! w.stateIndex (rowsByState.getD w.stateIndex #[] |>.push (wi, rows))
   for outputSlot in block.outputs do
     unless writtenOutputs.getD outputSlot none |>.isSome do
@@ -365,15 +386,15 @@ def mixedRadixDomainSize (D : Array Nat) : Nat := D.foldl (· * ·) 1
     - an `.advancing i` row is `ctx[i] + 1`, with `ctx` from `mixedRadixUnrank c.stepExtents` and
       `stepExtents = historyExtents - 1` tied to the state's own extent by `advancingSizeMismatch`,
       so it stays within `[1, extent)`;
-    - a `.pinned lit` row is `lit` verbatim. **Only `stepWriteRowsOk` excludes pinned rows
-      entirely; a BASE write may pin any dimension to any literal, and `baseWriteRowsOk` requires
-      only that SOME advancing dimension be pinned to `0` — no check forces an arbitrary pinned
-      literal to lie inside its dimension.** A hand-built `RawScanPlan` pinning a base write out of
-      range (`dp[5, 0] := ONE` on a `[2,2]` state) therefore still reaches `Array.set!` with an
-      out-of-range index. That obligation is genuinely open, not closed by the free-extent fix, and
-      is recorded as an F3 follow-up in `papers/wave_f_scanplan_proposal.md` §13; a guard HERE
-      cannot fix it (this function returns a `DenseTensor`, not an `Except`, so it could only
-      silently drop the write) — it belongs in `checkWrites` beside `freeExtentsAgree`. -/
+    - a `.pinned lit` row is `lit` verbatim, and `pinnedLiteralsInRange` forces `0 ≤ lit` and
+      `lit < stateShape[d]`. This was the SIBLING gap of the free-extent one, found while
+      documenting that fix: `baseWriteRowsOk` requires only that SOME advancing dimension be pinned
+      to `0`, leaving every other pinned literal unconstrained, so a hand-built base write
+      `dp[5, 0] := ONE` on a `[2,2]` state was accepted here and reached `Array.set!` out of range
+      (`lean_array_set_panic`, or a silent commit to the wrong cell). A guard HERE could not have
+      fixed it (this function returns a `DenseTensor`, not an `Except`, so it could only silently
+      drop the write) — it belongs in `checkWrites` beside `freeExtentsAgree`, which is where it
+      now lives. -/
 private def commitWrite (target : DenseTensor) (w : StateWriteMap) (blockStore : Array DenseTensor)
     (ctx : List Int) : DenseTensor := Id.run do
   let out := blockStore.getD w.outputSlot { shape := [], data := #[] }
