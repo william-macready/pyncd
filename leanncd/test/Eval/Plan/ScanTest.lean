@@ -4,7 +4,7 @@ import LeanNCD.Eval.Plan.Scan
 /-!
 # Wave F F3 Task 1: write-geometry recognizer + `checkScanPlan` structural-half tests
 
-Two families:
+Four families:
 
 1. The write-geometry recognizer worked examples (face/point-override/collision/two-free-faces),
    reproducing the plan's own hand-verified numbers against a 2-D `dp` state (row axis `r`, column
@@ -19,6 +19,11 @@ Two families:
 3. (Task 2) `stateReadCausal`'s causality certificate: a deep-history accept, the Jacobi/Gauss-Seidel
    discriminator's unsafe constant read now rejected at check time, a look-ahead-bias rejection, and
    a non-advancing-dimension exemption — see Part 4 below.
+4. (Task 3) `runDenseScan` execution: six hand-computed fixtures (linear self-recurrence, deep
+   history, extent-one, coupled `G`/`H`, face-plus-point-override multi-base-write, asymmetric `2×3`
+   rectangular) each asserted against a real numeric target, plus three §11.4 mutations against
+   hand-modified worker copies (reversed rank order, decremented step-write bias, stale state
+   capture) — see Parts 5-6 below.
 -/
 
 namespace LeanNCD.Eval.Plan.ScanTest
@@ -650,5 +655,601 @@ run_cmd do
       throwError s!"checkScanPlan rejected a scan whose only irregularity is a non-advancing \
 dimension's read — the causality certificate must not check non-advancing rows: {repr e}"
   | .ok _checked => pure ()
+
+/-! ## Part 5: Task 3 — `runDenseScan` fixtures and mutation coverage
+
+Six hand-computed fixtures, each asserted directly against `runDenseScan`'s output (not just
+`checkScanPlan`'s acceptance). Fixture 1 reuses `linearScan`/`outerSigs`/`stateS` verbatim (Part 2);
+Fixture 2 reuses `deepHistoryScan`/`outerSigsDeepHistory`/`stateG` verbatim (Part 4). Fixtures 3-6 are
+new `RawScanPlan`s built by the same construction pattern.
+
+**A genuine gap found while building Fixtures 5/6, not a construction bug**: `commitWrite` (as given,
+verified only against Fixture 1's fully-pinned/fully-advancing writes) applies `applyAffine w.map
+iter` with `iter := []` for every base write and reads only `blockStore.getD w.outputSlot
+{...}.data.getD 0 0.0` (element 0). For a base write with a genuine FREE output position (e.g. a
+row-face write `dp[0, c] := ROWFACE[c]`), this always resolves to the coordinate given by the write
+map's bias components alone and always reads element 0 of the block's output — so it writes exactly
+ONE coordinate, never iterating the free axis, silently dropping every other element. Confirmed
+empirically: a direct construction of F0's face-write fixture through `runDenseScan` produces
+`#[0,0,1,1]`, not `#[0,1,1,1]` — `dp[0,1]` (which should be `ROWFACE[1] = 1`) is never written and
+stays at its zero-initialized value. `checkScanPlan`'s `baseWriteRowsOk` structurally ACCEPTS
+free-position base writes (Part 1's own `faceWrite` fixture) — the gap is in the worker, not the
+checker. Fixtures 5 and 6 below route around this by decomposing every free-position base write into
+multiple fully-pinned point overrides (one per free-axis value) — the same final state values, using
+only the write shapes Fixture 1 already exercises. This is flagged as a concern for the controller,
+not treated as BLOCKED: no fixture in this table actually requires a free-position write to reach its
+target value once decomposed this way, and `runDenseScan` itself is left untouched. -/
+
+def outerStoreLinear : Array DenseTensor :=
+  #[ { shape := [], data := #[1.0] }
+   , { shape := [3], data := #[10.0, 20.0, 30.0] }
+   , { shape := [3], data := Array.replicate 3 0.0 } ]
+
+-- Fixture 1: linear self-recurrence. Verified: S = [1, 11, 31].
+run_cmd do
+  match checkScanPlan outerSigs linearScan with
+  | .error e => throwError s!"F1 (linear scan) checkScanPlan rejected: {repr e}"
+  | .ok checked =>
+      match runDenseScan outerSigs checked outerStoreLinear with
+      | .error e => throwError s!"F1 (linear scan) runDenseScan error: {repr e}"
+      | .ok result =>
+          let S := result.getD 2 { shape := [], data := #[] }
+          unless DenseTensor.approxEq S { shape := [3], data := #[1.0, 11.0, 31.0] } do
+            throwError s!"F1 (linear scan): wrong result {repr S.data}"
+
+def outerStoreDeepHistory : Array DenseTensor :=
+  #[ { shape := [], data := #[5.0] }
+   , { shape := [5], data := Array.replicate 5 0.0 } ]
+
+-- Fixture 2: deep history (k=2 look-back). Verified: G = [5, 0, 0, 5, 0].
+run_cmd do
+  match checkScanPlan outerSigsDeepHistory deepHistoryScan with
+  | .error e => throwError s!"F2 (deep history) checkScanPlan rejected: {repr e}"
+  | .ok checked =>
+      match runDenseScan outerSigsDeepHistory checked outerStoreDeepHistory with
+      | .error e => throwError s!"F2 (deep history) runDenseScan error: {repr e}"
+      | .ok result =>
+          let G := result.getD 1 { shape := [], data := #[] }
+          unless DenseTensor.approxEq G { shape := [5], data := #[5.0, 0.0, 0.0, 5.0, 0.0] } do
+            throwError s!"F2 (deep history): wrong result {repr G.data}"
+
+/-! ### Fixture 3: extent one (base-only)
+
+Axis size 1 ⇒ `stepExtents = #[0]` ⇒ `mixedRadixDomainSize = 0`: the step loop runs zero times, so
+the state must equal exactly its base value. Reuses `baseBlock`'s generic scalar-passthrough shape
+(Part 2) — no assignments needed, the captured input is already its own output. -/
+
+def outerSigsExtentOne : Array TensorSignature :=
+  #[{ shape := #[], dtype := .f64 }, { shape := #[1], dtype := .f64 }]
+
+def stateSExtentOne : StateSlot :=
+  { destSlot := 1, advancingDims := #[0], materialization := .completeHistory }
+
+def baseCaptureS0ExtentOne : BlockCapture := { inputSlot := 0, source := .external 0 }
+def baseWriteSExtentOne : StateWriteMap :=
+  { outputSlot := 0, stateIndex := 0, map := { coeffs := #[#[]], bias := #[0] } }
+
+def stepReadSExtentOne : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[#[1]], bias := #[0] }, sourceShape := #[1], oobPolicy := .zeroPad }
+def termSExtentOne : TermPlan :=
+  { iterationShape := #[0], contextPos := #[0], outputPos := #[], reductionPos := #[]
+  , factors := #[stepReadSExtentOne] }
+def stepAssignSExtentOne : AssignPlan :=
+  { contextShape := #[0], destinationSlot := 1, outputShape := #[], terms := #[termSExtentOne]
+  , algebra := admittedAlgebra }
+def stepBlockExtentOne : RawPlanBlock :=
+  { contextShape := #[0]
+  , tensorSigs := #[{ shape := #[1], dtype := .f64 }, { shape := #[], dtype := .f64 }]
+  , inputs := #[0], assignments := #[stepAssignSExtentOne], outputs := #[1] }
+def stepCaptureSExtentOne : BlockCapture := { inputSlot := 0, source := .state 0 }
+def stepWriteSExtentOne : StateWriteMap :=
+  { outputSlot := 1, stateIndex := 0, map := { coeffs := #[#[1]], bias := #[1] } }
+
+def extentOneScan : RawScanPlan :=
+  { states := #[stateSExtentOne]
+  , baseBlock := baseBlock, baseCaptures := #[baseCaptureS0ExtentOne], baseWrites := #[baseWriteSExtentOne]
+  , stepBlock := stepBlockExtentOne, stepCaptures := #[stepCaptureSExtentOne]
+  , stepWrites := #[stepWriteSExtentOne]
+  , historyExtents := #[1]
+  , iterationOrder := .axisZeroFastest, boundaryPolicy := .zeroThenBaseOverlay
+  , snapshotPolicy := .immutablePreStep }
+
+def outerStoreExtentOne : Array DenseTensor :=
+  #[ { shape := [], data := #[7.0] }, { shape := [1], data := #[0.0] } ]
+
+-- Fixture 3: extent one. Verified: S = [7].
+run_cmd do
+  match checkScanPlan outerSigsExtentOne extentOneScan with
+  | .error e => throwError s!"F3 (extent one) checkScanPlan rejected: {repr e}"
+  | .ok checked =>
+      match runDenseScan outerSigsExtentOne checked outerStoreExtentOne with
+      | .error e => throwError s!"F3 (extent one) runDenseScan error: {repr e}"
+      | .ok result =>
+          let S := result.getD 1 { shape := [], data := #[] }
+          unless DenseTensor.approxEq S { shape := [1], data := #[7.0] } do
+            throwError s!"F3 (extent one): wrong result {repr S.data}"
+
+/-! ### Fixture 4: coupled `G`/`H` (Fibonacci-shaped)
+
+The first real exercise of the multi-state path: TWO `StateSlot`s, a step block with TWO state
+captures and TWO state-result outputs, and TWO `StateWriteMap`s in `stepWrites` (`stateIndex := 0`
+for `G`, `stateIndex := 1` for `H`). `G[0] := C; H[0] := C; G[l+1] := G[l] + H[l]; H[l+1] := G[l]`. -/
+
+def outerSigsCoupled : Array TensorSignature :=
+  #[{ shape := #[], dtype := .f64 }, { shape := #[4], dtype := .f64 }, { shape := #[4], dtype := .f64 }]
+
+def stateGCoupled : StateSlot := { destSlot := 1, advancingDims := #[0], materialization := .completeHistory }
+def stateHCoupled : StateSlot := { destSlot := 2, advancingDims := #[0], materialization := .completeHistory }
+
+-- Base block: one captured input C, one assignment producing a second (identical) output, so G's
+-- and H's base writes can each target a DISTINCT block output slot (every write's outputSlot must be
+-- distinct — `duplicateWriteForOutput`).
+def baseIdReadCoupled : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[], bias := #[] }, sourceShape := #[], oobPolicy := .zeroPad }
+def baseIdTermCoupled : TermPlan :=
+  { iterationShape := #[], contextPos := #[], outputPos := #[], reductionPos := #[]
+  , factors := #[baseIdReadCoupled] }
+def baseIdAssignCoupled : AssignPlan :=
+  { contextShape := #[], destinationSlot := 1, outputShape := #[], terms := #[baseIdTermCoupled]
+  , algebra := admittedAlgebra }
+def baseBlockCoupled : RawPlanBlock :=
+  { contextShape := #[], tensorSigs := #[{ shape := #[], dtype := .f64 }, { shape := #[], dtype := .f64 }]
+  , inputs := #[0], assignments := #[baseIdAssignCoupled], outputs := #[0, 1] }
+
+def baseCaptureCCoupled : BlockCapture := { inputSlot := 0, source := .external 0 }
+def baseWriteGCoupled : StateWriteMap :=
+  { outputSlot := 0, stateIndex := 0, map := { coeffs := #[#[]], bias := #[0] } }
+def baseWriteHCoupled : StateWriteMap :=
+  { outputSlot := 1, stateIndex := 1, map := { coeffs := #[#[]], bias := #[0] } }
+
+def readGForGCoupled : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[#[1]], bias := #[0] }, sourceShape := #[4], oobPolicy := .zeroPad }
+def readHForGCoupled : ReadPlan :=
+  { sourceSlot := 1, map := { coeffs := #[#[1]], bias := #[0] }, sourceShape := #[4], oobPolicy := .zeroPad }
+def readGForHCoupled : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[#[1]], bias := #[0] }, sourceShape := #[4], oobPolicy := .zeroPad }
+
+def termGGCoupled : TermPlan :=
+  { iterationShape := #[3], contextPos := #[0], outputPos := #[], reductionPos := #[]
+  , factors := #[readGForGCoupled] }
+def termHGCoupled : TermPlan :=
+  { iterationShape := #[3], contextPos := #[0], outputPos := #[], reductionPos := #[]
+  , factors := #[readHForGCoupled] }
+def termGHCoupled : TermPlan :=
+  { iterationShape := #[3], contextPos := #[0], outputPos := #[], reductionPos := #[]
+  , factors := #[readGForHCoupled] }
+
+def stepAssignGCoupled : AssignPlan :=
+  { contextShape := #[3], destinationSlot := 2, outputShape := #[], terms := #[termGGCoupled, termHGCoupled]
+  , algebra := admittedAlgebra }
+def stepAssignHCoupled : AssignPlan :=
+  { contextShape := #[3], destinationSlot := 3, outputShape := #[], terms := #[termGHCoupled]
+  , algebra := admittedAlgebra }
+
+def stepBlockCoupled : RawPlanBlock :=
+  { contextShape := #[3]
+  , tensorSigs := #[{ shape := #[4], dtype := .f64 }, { shape := #[4], dtype := .f64 }
+                  , { shape := #[], dtype := .f64 }, { shape := #[], dtype := .f64 }]
+  , inputs := #[0, 1], assignments := #[stepAssignGCoupled, stepAssignHCoupled], outputs := #[2, 3] }
+
+def stepCaptureGCoupled : BlockCapture := { inputSlot := 0, source := .state 0 }
+def stepCaptureHCoupled : BlockCapture := { inputSlot := 1, source := .state 1 }
+
+def stepWriteGCoupled : StateWriteMap :=
+  { outputSlot := 2, stateIndex := 0, map := { coeffs := #[#[1]], bias := #[1] } }
+def stepWriteHCoupled : StateWriteMap :=
+  { outputSlot := 3, stateIndex := 1, map := { coeffs := #[#[1]], bias := #[1] } }
+
+def coupledScan : RawScanPlan :=
+  { states := #[stateGCoupled, stateHCoupled]
+  , baseBlock := baseBlockCoupled, baseCaptures := #[baseCaptureCCoupled]
+  , baseWrites := #[baseWriteGCoupled, baseWriteHCoupled]
+  , stepBlock := stepBlockCoupled, stepCaptures := #[stepCaptureGCoupled, stepCaptureHCoupled]
+  , stepWrites := #[stepWriteGCoupled, stepWriteHCoupled]
+  , historyExtents := #[4]
+  , iterationOrder := .axisZeroFastest, boundaryPolicy := .zeroThenBaseOverlay
+  , snapshotPolicy := .immutablePreStep }
+
+def outerStoreCoupled : Array DenseTensor :=
+  #[ { shape := [], data := #[1.0] }
+   , { shape := [4], data := Array.replicate 4 0.0 }
+   , { shape := [4], data := Array.replicate 4 0.0 } ]
+
+-- Fixture 4: coupled G/H. Verified: G = [1,2,3,5], H = [1,1,2,3].
+run_cmd do
+  match checkScanPlan outerSigsCoupled coupledScan with
+  | .error e => throwError s!"F4 (coupled) checkScanPlan rejected: {repr e}"
+  | .ok checked =>
+      match runDenseScan outerSigsCoupled checked outerStoreCoupled with
+      | .error e => throwError s!"F4 (coupled) runDenseScan error: {repr e}"
+      | .ok result =>
+          let G := result.getD 1 { shape := [], data := #[] }
+          let H := result.getD 2 { shape := [], data := #[] }
+          unless DenseTensor.approxEq G { shape := [4], data := #[1.0, 2.0, 3.0, 5.0] } do
+            throwError s!"F4 (coupled): wrong G {repr G.data}"
+          unless DenseTensor.approxEq H { shape := [4], data := #[1.0, 1.0, 2.0, 3.0] } do
+            throwError s!"F4 (coupled): wrong H {repr H.data}"
+
+/-! ### Fixture 5: face-plus-point-override multi-base-write
+
+F0's `dp` fixture (row-0 face write plus a point override at `(1,0)`), decomposed into THREE fully
+pinned base writes — `dp[0,0] := ROWFACE[0]`, `dp[0,1] := ROWFACE[1]`, `dp[1,0] := ONE` — to route
+around the free-position `commitWrite` gap documented above, rather than using Part 1's `faceWrite`
+(a free-over-`c` write) directly. `baseWriteDp10Multi` reuses Part 1's `pointWrite` verbatim (same
+outputSlot, same fully-pinned geometry) and `stepWriteDpMulti` reuses Part 1's `dpStepWrite`'s map
+(only the outputSlot differs, since this scan's own step block numbers its output differently). -/
+
+def outerSigsMultiBase : Array TensorSignature :=
+  #[{ shape := #[2], dtype := .f64 }, { shape := #[], dtype := .f64 }
+  , { shape := #[2,2], dtype := .f64 }, { shape := #[2,2], dtype := .f64 }]
+
+def stateDpMulti : StateSlot :=
+  { destSlot := 3, advancingDims := #[0,1], materialization := .completeHistory }
+
+def readRowface0Multi : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[#[]], bias := #[0] }, sourceShape := #[2], oobPolicy := .zeroPad }
+def readRowface1Multi : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[#[]], bias := #[1] }, sourceShape := #[2], oobPolicy := .zeroPad }
+def termRowface0Multi : TermPlan :=
+  { iterationShape := #[], contextPos := #[], outputPos := #[], reductionPos := #[]
+  , factors := #[readRowface0Multi] }
+def termRowface1Multi : TermPlan :=
+  { iterationShape := #[], contextPos := #[], outputPos := #[], reductionPos := #[]
+  , factors := #[readRowface1Multi] }
+def assignRowface0Multi : AssignPlan :=
+  { contextShape := #[], destinationSlot := 2, outputShape := #[], terms := #[termRowface0Multi]
+  , algebra := admittedAlgebra }
+def assignRowface1Multi : AssignPlan :=
+  { contextShape := #[], destinationSlot := 3, outputShape := #[], terms := #[termRowface1Multi]
+  , algebra := admittedAlgebra }
+
+def baseBlockMultiBase : RawPlanBlock :=
+  { contextShape := #[]
+  , tensorSigs := #[{ shape := #[2], dtype := .f64 }, { shape := #[], dtype := .f64 }
+                  , { shape := #[], dtype := .f64 }, { shape := #[], dtype := .f64 }]
+  , inputs := #[0, 1], assignments := #[assignRowface0Multi, assignRowface1Multi], outputs := #[1, 2, 3] }
+
+def baseCaptureRowfaceMulti : BlockCapture := { inputSlot := 0, source := .external 0 }
+def baseCaptureOneMulti : BlockCapture := { inputSlot := 1, source := .external 1 }
+
+def baseWriteDp00Multi : StateWriteMap :=
+  { outputSlot := 2, stateIndex := 0, map := { coeffs := #[#[], #[]], bias := #[0, 0] } }
+def baseWriteDp01Multi : StateWriteMap :=
+  { outputSlot := 3, stateIndex := 0, map := { coeffs := #[#[], #[]], bias := #[0, 1] } }
+def baseWriteDp10Multi : StateWriteMap := { pointWrite with outputSlot := 1 }
+
+def stepReadDpMulti : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[#[1,0], #[0,1]], bias := #[0,0] }, sourceShape := #[2,2]
+  , oobPolicy := .zeroPad }
+def stepReadTMulti : ReadPlan :=
+  { sourceSlot := 1, map := { coeffs := #[#[1,0], #[0,1]], bias := #[0,0] }, sourceShape := #[2,2]
+  , oobPolicy := .zeroPad }
+def termDpReadMulti : TermPlan :=
+  { iterationShape := #[1,1], contextPos := #[0,1], outputPos := #[], reductionPos := #[]
+  , factors := #[stepReadDpMulti] }
+def termTReadMulti : TermPlan :=
+  { iterationShape := #[1,1], contextPos := #[0,1], outputPos := #[], reductionPos := #[]
+  , factors := #[stepReadTMulti] }
+def stepAssignDpMulti : AssignPlan :=
+  { contextShape := #[1,1], destinationSlot := 2, outputShape := #[], terms := #[termDpReadMulti, termTReadMulti]
+  , algebra := admittedAlgebra }
+def stepBlockMultiBase : RawPlanBlock :=
+  { contextShape := #[1,1]
+  , tensorSigs := #[{ shape := #[2,2], dtype := .f64 }, { shape := #[2,2], dtype := .f64 }, { shape := #[], dtype := .f64 }]
+  , inputs := #[0, 1], assignments := #[stepAssignDpMulti], outputs := #[2] }
+def stepCaptureDpMulti : BlockCapture := { inputSlot := 0, source := .state 0 }
+def stepCaptureTMulti : BlockCapture := { inputSlot := 1, source := .external 2 }
+def stepWriteDpMulti : StateWriteMap := { dpStepWrite with outputSlot := 2 }
+
+def multiBaseScan : RawScanPlan :=
+  { states := #[stateDpMulti]
+  , baseBlock := baseBlockMultiBase, baseCaptures := #[baseCaptureRowfaceMulti, baseCaptureOneMulti]
+  , baseWrites := #[baseWriteDp00Multi, baseWriteDp01Multi, baseWriteDp10Multi]
+  , stepBlock := stepBlockMultiBase, stepCaptures := #[stepCaptureDpMulti, stepCaptureTMulti]
+  , stepWrites := #[stepWriteDpMulti]
+  , historyExtents := #[2,2]
+  , iterationOrder := .axisZeroFastest, boundaryPolicy := .zeroThenBaseOverlay
+  , snapshotPolicy := .immutablePreStep }
+
+def outerStoreMultiBase : Array DenseTensor :=
+  #[ { shape := [2], data := #[0.0, 1.0] }
+   , { shape := [], data := #[1.0] }
+   , { shape := [2,2], data := #[1.0,1.0,1.0,1.0] }
+   , { shape := [2,2], data := Array.replicate 4 0.0 } ]
+
+-- Fixture 5: face-plus-point-override multi-base-write. Verified: dp = [0,1,1,1] (row-major [2,2]).
+run_cmd do
+  match checkScanPlan outerSigsMultiBase multiBaseScan with
+  | .error e => throwError s!"F5 (multi-base-write) checkScanPlan rejected: {repr e}"
+  | .ok checked =>
+      match runDenseScan outerSigsMultiBase checked outerStoreMultiBase with
+      | .error e => throwError s!"F5 (multi-base-write) runDenseScan error: {repr e}"
+      | .ok result =>
+          let dp := result.getD 3 { shape := [], data := #[] }
+          unless DenseTensor.approxEq dp { shape := [2,2], data := #[0.0, 1.0, 1.0, 1.0] } do
+            throwError s!"F5 (multi-base-write): wrong result {repr dp.data}"
+
+/-! ### Fixture 6: asymmetric rectangular `2×3`, all-axis `+1`
+
+`historyExtents := #[2,3]` — two DIFFERENT per-axis extents (`r` size 2, `c` size 3) — so
+`stepExtents = #[1,2]`. `G[r,0] := Z[r]` (also a free-over-`r` base write in F0's original form) is
+likewise decomposed into two fully-pinned point overrides, same rationale as Fixture 5. -/
+
+def outerSigsAsym : Array TensorSignature :=
+  #[{ shape := #[2], dtype := .f64 }, { shape := #[2,3], dtype := .f64 }, { shape := #[2,3], dtype := .f64 }]
+
+def stateGAsym : StateSlot := { destSlot := 2, advancingDims := #[0,1], materialization := .completeHistory }
+
+def readZ0Asym : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[#[]], bias := #[0] }, sourceShape := #[2], oobPolicy := .zeroPad }
+def readZ1Asym : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[#[]], bias := #[1] }, sourceShape := #[2], oobPolicy := .zeroPad }
+def termZ0Asym : TermPlan :=
+  { iterationShape := #[], contextPos := #[], outputPos := #[], reductionPos := #[], factors := #[readZ0Asym] }
+def termZ1Asym : TermPlan :=
+  { iterationShape := #[], contextPos := #[], outputPos := #[], reductionPos := #[], factors := #[readZ1Asym] }
+def assignZ0Asym : AssignPlan :=
+  { contextShape := #[], destinationSlot := 1, outputShape := #[], terms := #[termZ0Asym], algebra := admittedAlgebra }
+def assignZ1Asym : AssignPlan :=
+  { contextShape := #[], destinationSlot := 2, outputShape := #[], terms := #[termZ1Asym], algebra := admittedAlgebra }
+
+def baseBlockAsym : RawPlanBlock :=
+  { contextShape := #[]
+  , tensorSigs := #[{ shape := #[2], dtype := .f64 }, { shape := #[], dtype := .f64 }, { shape := #[], dtype := .f64 }]
+  , inputs := #[0], assignments := #[assignZ0Asym, assignZ1Asym], outputs := #[1, 2] }
+
+def baseCaptureZAsym : BlockCapture := { inputSlot := 0, source := .external 0 }
+def baseWriteG00Asym : StateWriteMap :=
+  { outputSlot := 1, stateIndex := 0, map := { coeffs := #[#[], #[]], bias := #[0, 0] } }
+def baseWriteG10Asym : StateWriteMap :=
+  { outputSlot := 2, stateIndex := 0, map := { coeffs := #[#[], #[]], bias := #[1, 0] } }
+
+def stepReadGAsym : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[#[1,0], #[0,1]], bias := #[0,0] }, sourceShape := #[2,3]
+  , oobPolicy := .zeroPad }
+def stepReadAAsym : ReadPlan :=
+  { sourceSlot := 1, map := { coeffs := #[#[1,0], #[0,1]], bias := #[0,0] }, sourceShape := #[2,3]
+  , oobPolicy := .zeroPad }
+def termGAsym : TermPlan :=
+  { iterationShape := #[1,2], contextPos := #[0,1], outputPos := #[], reductionPos := #[]
+  , factors := #[stepReadGAsym] }
+def termAAsym : TermPlan :=
+  { iterationShape := #[1,2], contextPos := #[0,1], outputPos := #[], reductionPos := #[]
+  , factors := #[stepReadAAsym] }
+def stepAssignAsym : AssignPlan :=
+  { contextShape := #[1,2], destinationSlot := 2, outputShape := #[], terms := #[termGAsym, termAAsym]
+  , algebra := admittedAlgebra }
+def stepBlockAsym : RawPlanBlock :=
+  { contextShape := #[1,2]
+  , tensorSigs := #[{ shape := #[2,3], dtype := .f64 }, { shape := #[2,3], dtype := .f64 }, { shape := #[], dtype := .f64 }]
+  , inputs := #[0, 1], assignments := #[stepAssignAsym], outputs := #[2] }
+def stepCaptureGAsym : BlockCapture := { inputSlot := 0, source := .state 0 }
+def stepCaptureAAsym : BlockCapture := { inputSlot := 1, source := .external 1 }
+def stepWriteGAsym : StateWriteMap :=
+  { outputSlot := 2, stateIndex := 0, map := { coeffs := #[#[1,0], #[0,1]], bias := #[1,1] } }
+
+def asymScan : RawScanPlan :=
+  { states := #[stateGAsym]
+  , baseBlock := baseBlockAsym, baseCaptures := #[baseCaptureZAsym]
+  , baseWrites := #[baseWriteG00Asym, baseWriteG10Asym]
+  , stepBlock := stepBlockAsym, stepCaptures := #[stepCaptureGAsym, stepCaptureAAsym]
+  , stepWrites := #[stepWriteGAsym]
+  , historyExtents := #[2,3]
+  , iterationOrder := .axisZeroFastest, boundaryPolicy := .zeroThenBaseOverlay
+  , snapshotPolicy := .immutablePreStep }
+
+def outerStoreAsym : Array DenseTensor :=
+  #[ { shape := [2], data := #[2.0, 5.0] }
+   , { shape := [2,3], data := Array.replicate 6 1.0 }
+   , { shape := [2,3], data := Array.replicate 6 0.0 } ]
+
+-- Fixture 6: asymmetric 2x3. Verified: G = [2,0,0, 5,3,1] (row-major [2,3]).
+run_cmd do
+  match checkScanPlan outerSigsAsym asymScan with
+  | .error e => throwError s!"F6 (asymmetric) checkScanPlan rejected: {repr e}"
+  | .ok checked =>
+      match runDenseScan outerSigsAsym checked outerStoreAsym with
+      | .error e => throwError s!"F6 (asymmetric) runDenseScan error: {repr e}"
+      | .ok result =>
+          let G := result.getD 2 { shape := [], data := #[] }
+          unless DenseTensor.approxEq G { shape := [2,3], data := #[2.0,0.0,0.0, 5.0,3.0,1.0] } do
+            throwError s!"F6 (asymmetric): wrong result {repr G.data}"
+
+/-! ## Part 6: Task 3 — §11.4 mutation coverage
+
+Three mutations, each a hand-modified COPY of `runDenseScan` (never the shipped function itself),
+each demonstrating that a specific piece of the worker's behavior is load-bearing rather than
+incidental. `commitWrite` (Scan.lean) is `private`, so each copy reimplements its one equation
+locally as `commitWriteLocal` rather than reaching across the module boundary. -/
+
+def commitWriteLocal (target : DenseTensor) (w : StateWriteMap) (blockStore : Array DenseTensor)
+    (iter : List Int) : DenseTensor :=
+  let coord := (applyAffine w.map iter).map Int.toNat
+  let v := (blockStore.getD w.outputSlot { shape := [], data := #[] }).data.getD 0 0.0
+  { target with data := target.data.set! (flatIndex target.shape coord) v }
+
+/-! ### Mutation A: reverse the mixed-radix rank order
+
+Decode each rank `r` from `domainSize - 1 - r` instead of `r` directly, on the coupled fixture (the
+richest ordering: state-to-state coupling makes traversal order visibly observable). If order were
+NOT actually load-bearing (e.g. if some other invariant made the result order-independent), this
+mutation would still reproduce `[1,2,3,5]`/`[1,1,2,3]` — it does not. -/
+
+def reversedDomainRank (D : Array Nat) (r : Nat) : Nat := mixedRadixDomainSize D - 1 - r
+
+def runDenseScanReversedOrder (sigs : Array TensorSignature) (c : CheckedScanPlan)
+    (outerStore : Array DenseTensor) : Except PositionalInputError (Array DenseTensor) := do
+  let raw := c.raw
+  let mut states : Array DenseTensor := raw.states.map (fun st =>
+    let sig := sigs.getD st.destSlot { shape := #[], dtype := .f64 }
+    { shape := sig.shape.toList, data := Array.replicate (sig.shape.toList.foldl (· * ·) 1) 0.0 })
+  let baseExternalInputs ← raw.baseCaptures.mapM (fun cap => match cap.source with
+    | .external slot => pure (outerStore.getD slot { shape := [], data := #[] })
+    | .state _ => throw (PositionalInputError.arityMismatch 0 0))
+  let baseStore ← runDenseBlock c.checkedBase [] baseExternalInputs
+  for w in raw.baseWrites do
+    let target := states.getD w.stateIndex { shape := [], data := #[] }
+    states := states.set! w.stateIndex (commitWriteLocal target w baseStore [])
+  let domainSize := mixedRadixDomainSize c.stepExtents
+  for r in [0 : domainSize] do
+    -- MUTATION: decode from the reversed rank instead of `r` directly (was: `mixedRadixUnrank
+    -- c.stepExtents r`).
+    let q := mixedRadixUnrank c.stepExtents (reversedDomainRank c.stepExtents r)
+    let oldStates := states
+    let stepInputs ← raw.stepCaptures.mapM (fun cap => match cap.source with
+      | .external slot => pure (outerStore.getD slot { shape := [], data := #[] })
+      | .state si => pure (oldStates.getD si { shape := [], data := #[] }))
+    let ctx : List Int := q.toList.map Int.ofNat
+    let stepStore ← runDenseBlock c.checkedStep ctx stepInputs
+    let mut nextStates := states
+    for w in raw.stepWrites do
+      let target := nextStates.getD w.stateIndex { shape := [], data := #[] }
+      nextStates := nextStates.set! w.stateIndex (commitWriteLocal target w stepStore ctx)
+    states := nextStates
+  let mut result := outerStore
+  for h : si in [0 : raw.states.size] do
+    result := result.set! raw.states[si].destSlot (states.getD si { shape := [], data := #[] })
+  return result
+
+-- Mutated: reversed rank order on the coupled fixture gives G = [1,2,0,0], not the real [1,2,3,5] —
+-- ranks 2,3 get processed as if they were ranks 0,1 (mapped through `reversedDomainRank`, domainSize
+-- 3 ⇒ r=0↦2, r=1↦1, r=2↦0), so the writes destined for positions 2,3 never actually run in the
+-- correct order and the last two Fibonacci steps are lost. Restored (Fixture 4 above, real
+-- `runDenseScan`, real rank order): G = [1,2,3,5], H = [1,1,2,3] — correct.
+run_cmd do
+  match checkScanPlan outerSigsCoupled coupledScan with
+  | .error e => throwError s!"MutA checkScanPlan rejected: {repr e}"
+  | .ok checked =>
+      match runDenseScanReversedOrder outerSigsCoupled checked outerStoreCoupled with
+      | .error e => throwError s!"MutA runDenseScan error: {repr e}"
+      | .ok result =>
+          let G := result.getD 1 { shape := [], data := #[] }
+          if DenseTensor.approxEq G { shape := [4], data := #[1.0,2.0,3.0,5.0] } then
+            throwError s!"MutA: reversed rank order should NOT reproduce the correct G, got {repr G.data}"
+          unless DenseTensor.approxEq G { shape := [4], data := #[1.0,2.0,0.0,0.0] } do
+            throwError s!"MutA: expected the specific wrong value [1,2,0,0], got {repr G.data}"
+
+/-! ### Mutation B: change one step-write's `+1` bias
+
+`classifyWriteRow` (Scan.lean) only recognizes `bias == 1` for an advancing row, so mutating a
+fixture's OWN write map to any other bias is rejected by `checkScanPlan` itself before ever reaching
+`runDenseScan` (structurally unreachable, same reason Part 2's `lookAheadStepWrite` mutation is a
+CHECK-time rejection, not a value mismatch). So this mutation targets the WORKER's commit arithmetic
+instead: every step write's bias is decremented by 1 before committing (i.e. "commit to `q` instead
+of `q+1`"), on the real, unmutated `deepHistoryScan` fixture — simulating a worker that got the
+canonical `+1` advancing convention wrong, independent of what the checked plan declares. -/
+
+def runDenseScanBadStepBias (sigs : Array TensorSignature) (c : CheckedScanPlan)
+    (outerStore : Array DenseTensor) : Except PositionalInputError (Array DenseTensor) := do
+  let raw := c.raw
+  let mut states : Array DenseTensor := raw.states.map (fun st =>
+    let sig := sigs.getD st.destSlot { shape := #[], dtype := .f64 }
+    { shape := sig.shape.toList, data := Array.replicate (sig.shape.toList.foldl (· * ·) 1) 0.0 })
+  let baseExternalInputs ← raw.baseCaptures.mapM (fun cap => match cap.source with
+    | .external slot => pure (outerStore.getD slot { shape := [], data := #[] })
+    | .state _ => throw (PositionalInputError.arityMismatch 0 0))
+  let baseStore ← runDenseBlock c.checkedBase [] baseExternalInputs
+  for w in raw.baseWrites do
+    let target := states.getD w.stateIndex { shape := [], data := #[] }
+    states := states.set! w.stateIndex (commitWriteLocal target w baseStore [])
+  let domainSize := mixedRadixDomainSize c.stepExtents
+  for r in [0 : domainSize] do
+    let q := mixedRadixUnrank c.stepExtents r
+    let oldStates := states
+    let stepInputs ← raw.stepCaptures.mapM (fun cap => match cap.source with
+      | .external slot => pure (outerStore.getD slot { shape := [], data := #[] })
+      | .state si => pure (oldStates.getD si { shape := [], data := #[] }))
+    let ctx : List Int := q.toList.map Int.ofNat
+    let stepStore ← runDenseBlock c.checkedStep ctx stepInputs
+    let mut nextStates := states
+    for w in raw.stepWrites do
+      let target := nextStates.getD w.stateIndex { shape := [], data := #[] }
+      -- MUTATION: decrement every bias by 1 before applying the write map (was: `w.map` unchanged).
+      let mutatedMap : AffineMap := { w.map with bias := w.map.bias.map (· - 1) }
+      let coord := (applyAffine mutatedMap ctx).map Int.toNat
+      let v := (stepStore.getD w.outputSlot { shape := [], data := #[] }).data.getD 0 0.0
+      nextStates := nextStates.set! w.stateIndex
+        { target with data := target.data.set! (flatIndex target.shape coord) v }
+    states := nextStates
+  let mut result := outerStore
+  for h : si in [0 : raw.states.size] do
+    result := result.set! raw.states[si].destSlot (states.getD si { shape := [], data := #[] })
+  return result
+
+-- Mutated: every step write now lands one position early (`q` instead of `q+1`), so `q=0`
+-- overwrites the freshly-written base value at position 0 with the pre-step (zero) read, and every
+-- later position inherits zeros the same way. Deep-history G collapses to all zeros: [0,0,0,0,0].
+-- Restored (Fixture 2 above, real `runDenseScan`, real `+1` bias): G = [5,0,0,5,0] — correct.
+run_cmd do
+  match checkScanPlan outerSigsDeepHistory deepHistoryScan with
+  | .error e => throwError s!"MutB checkScanPlan rejected: {repr e}"
+  | .ok checked =>
+      match runDenseScanBadStepBias outerSigsDeepHistory checked outerStoreDeepHistory with
+      | .error e => throwError s!"MutB runDenseScan error: {repr e}"
+      | .ok result =>
+          let G := result.getD 1 { shape := [], data := #[] }
+          if DenseTensor.approxEq G { shape := [5], data := #[5.0,0.0,0.0,5.0,0.0] } then
+            throwError s!"MutB: bias-decremented worker should NOT reproduce the correct G, got {repr G.data}"
+          unless DenseTensor.approxEq G { shape := [5], data := #[0.0,0.0,0.0,0.0,0.0] } do
+            throwError s!"MutB: expected the specific wrong value [0,0,0,0,0], got {repr G.data}"
+
+/-! ### Mutation C: bind a state capture from a stale array
+
+`runDenseScan`'s real step-input construction reads `oldStates`, refreshed at the START of every `r`
+iteration from the then-current `states` (which already reflects every PRIOR iteration's committed
+writes — the "immutable pre-step snapshot" is per-iteration, not per-scan). This copy instead
+snapshots ONCE, before the domain loop begins, and every iteration's state capture reads that same
+stale snapshot forever — on the real linear-scan fixture. -/
+
+def runDenseScanStaleCapture (sigs : Array TensorSignature) (c : CheckedScanPlan)
+    (outerStore : Array DenseTensor) : Except PositionalInputError (Array DenseTensor) := do
+  let raw := c.raw
+  let mut states : Array DenseTensor := raw.states.map (fun st =>
+    let sig := sigs.getD st.destSlot { shape := #[], dtype := .f64 }
+    { shape := sig.shape.toList, data := Array.replicate (sig.shape.toList.foldl (· * ·) 1) 0.0 })
+  let baseExternalInputs ← raw.baseCaptures.mapM (fun cap => match cap.source with
+    | .external slot => pure (outerStore.getD slot { shape := [], data := #[] })
+    | .state _ => throw (PositionalInputError.arityMismatch 0 0))
+  let baseStore ← runDenseBlock c.checkedBase [] baseExternalInputs
+  for w in raw.baseWrites do
+    let target := states.getD w.stateIndex { shape := [], data := #[] }
+    states := states.set! w.stateIndex (commitWriteLocal target w baseStore [])
+  let domainSize := mixedRadixDomainSize c.stepExtents
+  -- MUTATION: snapshot ONCE, before the loop, instead of once per iteration (was: `let oldStates :=
+  -- states` INSIDE the loop body, refreshed every `r`).
+  let staleStates := states
+  for r in [0 : domainSize] do
+    let q := mixedRadixUnrank c.stepExtents r
+    let stepInputs ← raw.stepCaptures.mapM (fun cap => match cap.source with
+      | .external slot => pure (outerStore.getD slot { shape := [], data := #[] })
+      | .state si => pure (staleStates.getD si { shape := [], data := #[] }))  -- MUTATION: never refreshed
+    let ctx : List Int := q.toList.map Int.ofNat
+    let stepStore ← runDenseBlock c.checkedStep ctx stepInputs
+    let mut nextStates := states
+    for w in raw.stepWrites do
+      let target := nextStates.getD w.stateIndex { shape := [], data := #[] }
+      nextStates := nextStates.set! w.stateIndex (commitWriteLocal target w stepStore ctx)
+    states := nextStates
+  let mut result := outerStore
+  for h : si in [0 : raw.states.size] do
+    result := result.set! raw.states[si].destSlot (states.getD si { shape := [], data := #[] })
+  return result
+
+-- Mutated: the linear scan's `l=1` step now reads S's STALE (base-only) snapshot at position 1
+-- (still 0) instead of the freshly-written 11 from `l=0`'s step, giving S = [1,11,20] (20 = X[1] +
+-- 0, not X[1] + S[1] = 20 + 11 = 31). Restored (Fixture 1 above, real `runDenseScan`, refreshed
+-- snapshot every iteration): S = [1,11,31] — correct.
+run_cmd do
+  match checkScanPlan outerSigs linearScan with
+  | .error e => throwError s!"MutC checkScanPlan rejected: {repr e}"
+  | .ok checked =>
+      match runDenseScanStaleCapture outerSigs checked outerStoreLinear with
+      | .error e => throwError s!"MutC runDenseScan error: {repr e}"
+      | .ok result =>
+          let S := result.getD 2 { shape := [], data := #[] }
+          if DenseTensor.approxEq S { shape := [3], data := #[1.0,11.0,31.0] } then
+            throwError s!"MutC: stale-capture worker should NOT reproduce the correct S, got {repr S.data}"
+          unless DenseTensor.approxEq S { shape := [3], data := #[1.0,11.0,20.0] } do
+            throwError s!"MutC: expected the specific wrong value [1,11,20], got {repr S.data}"
 
 end LeanNCD.Eval.Plan.ScanTest

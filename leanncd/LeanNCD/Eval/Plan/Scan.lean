@@ -301,4 +301,70 @@ def checkScanPlan (sigs : Array TensorSignature) (raw : RawScanPlan) :
               throw (.causalityFailure si ti fi)
   return CheckedScanPlan.mk raw checkedBase checkedStep stepExtents
 
+/-- `rank_D(q) = sum_i q[i] * product_{j<i} D[j]` (proposal §6.6): axis `0` varies fastest. -/
+def mixedRadixRank (D : Array Nat) (q : Array Nat) : Nat :=
+  (Array.range D.size).foldl (fun acc i =>
+    acc + q.getD i 0 * (Array.range i).foldl (fun p j => p * D.getD j 1) 1) 0
+
+/-- Inverse of `mixedRadixRank`: axis `0` decoded first (fastest-varying), matching
+    `ScanIterationOrder.axisZeroFastest`. Deliberately independent from `Coordinates.lean`'s
+    `allCoords` (last-index-fastest, the local-kernel's own row-major convention) — proposal §9.3:
+    "Rank/unrank belongs to the scan worker and is intentionally independent from the local
+    assignment kernel's coordinate enumerator." -/
+def mixedRadixUnrank (D : Array Nat) (r : Nat) : Array Nat := Id.run do
+  let mut rem := r
+  let mut q : Array Nat := #[]
+  for d in D do
+    q := q.push (rem % d)
+    rem := rem / d
+  return q
+
+def mixedRadixDomainSize (D : Array Nat) : Nat := D.foldl (· * ·) 1
+
+/-- Place one write's value into a complete-state tensor at the coordinate `writeTargetCoord`
+    derives from `iter`, reusing `applyAffine`/`flatIndex` unchanged. -/
+private def commitWrite (target : DenseTensor) (w : StateWriteMap) (blockStore : Array DenseTensor)
+    (iter : List Int) : DenseTensor :=
+  let coord := (applyAffine w.map iter).map Int.toNat
+  let v := (blockStore.getD w.outputSlot { shape := [], data := #[] }).data.getD 0 0.0
+  { target with data := target.data.set! (flatIndex target.shape coord) v }
+
+/-- The general Dense scan worker (proposal §9): allocate, apply every checked base write, then for
+    each recurrence coordinate in increasing mixed-radix rank, bind an immutable pre-step snapshot,
+    run the checked step block, and commit every designated next-state slice simultaneously.
+    Independent of `Eval.evalScan`/`evalScheduled` by construction — imports neither, builds no
+    `HashMap UID Int`, knows no source names (proposal §9.1). `sigs` supplies each state's declared
+    complete shape for allocation. -/
+def runDenseScan (sigs : Array TensorSignature) (c : CheckedScanPlan) (outerStore : Array DenseTensor) :
+    Except PositionalInputError (Array DenseTensor) := do
+  let raw := c.raw
+  let mut states : Array DenseTensor := raw.states.map (fun st =>
+    let sig := sigs.getD st.destSlot { shape := #[], dtype := .f64 }
+    { shape := sig.shape.toList, data := Array.replicate (sig.shape.toList.foldl (· * ·) 1) 0.0 })
+  let baseExternalInputs ← raw.baseCaptures.mapM (fun cap => match cap.source with
+    | .external slot => pure (outerStore.getD slot { shape := [], data := #[] })
+    | .state _ => throw (PositionalInputError.arityMismatch 0 0))  -- unreachable: checked
+  let baseStore ← runDenseBlock c.checkedBase [] baseExternalInputs
+  for w in raw.baseWrites do
+    let target := states.getD w.stateIndex { shape := [], data := #[] }
+    states := states.set! w.stateIndex (commitWrite target w baseStore [])
+  let domainSize := mixedRadixDomainSize c.stepExtents
+  for r in [0 : domainSize] do
+    let q := mixedRadixUnrank c.stepExtents r
+    let oldStates := states
+    let stepInputs ← raw.stepCaptures.mapM (fun cap => match cap.source with
+      | .external slot => pure (outerStore.getD slot { shape := [], data := #[] })
+      | .state si => pure (oldStates.getD si { shape := [], data := #[] }))
+    let ctx : List Int := q.toList.map Int.ofNat
+    let stepStore ← runDenseBlock c.checkedStep ctx stepInputs
+    let mut nextStates := states
+    for w in raw.stepWrites do
+      let target := nextStates.getD w.stateIndex { shape := [], data := #[] }
+      nextStates := nextStates.set! w.stateIndex (commitWrite target w stepStore ctx)
+    states := nextStates
+  let mut result := outerStore
+  for h : si in [0 : raw.states.size] do
+    result := result.set! raw.states[si].destSlot (states.getD si { shape := [], data := #[] })
+  return result
+
 end LeanNCD.Eval.Plan
