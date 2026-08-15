@@ -866,14 +866,21 @@ inductive CheckedPlanStepEvidence
   deriving Repr
 
 /-- A `PlanStep`'s outer-graph-visible source/destination slots — derived, not stored (proposal
-    §6.6: "These are derived functions, not stored fields"). An assignment has one destination; a
-    scan has one per state, plus every base/step external capture as a source alongside its own
-    factor sources are already covered by the block's own checking. -/
+    §6.6: "These are derived functions, not stored fields"). An assignment reads every factor's
+    source slot (flattened across all its terms) and has one destination; a scan reads every
+    EXTERNAL base/step capture (a state capture is not an outer-graph read — it is satisfied
+    entirely inside the checked scan, from the scan's own persistent state) and has one destination
+    per state. These are general-purpose accessors for any future consumer that needs a step's
+    slots without caring which kind it is (proposal §6.6's own stated purpose); `checkPlan` below
+    does NOT route its own per-`.assign`-step forward-read check through `sourceSlots` — that check
+    needs the original per-term/per-factor locators (`ti`, `fi`) for `invalidForwardRead`, which
+    flattening this array away loses. -/
 def PlanStep.sourceSlots : PlanStep → Array TensorSlot
   | .assign a => a.terms.flatMap (·.factors.map (·.sourceSlot))
   | .scan s => (s.baseCaptures ++ s.stepCaptures).filterMap (fun c => match c.source with
       | .external slot => some slot | .state _ => none)
 
+/-- One destination per state for a scan; the single destination slot for an assignment. -/
 def PlanStep.destinationSlots : PlanStep → Array TensorSlot
   | .assign a => #[a.destinationSlot]
   | .scan s => s.states.map (·.destSlot)
@@ -893,17 +900,29 @@ structure CheckedEvalPlan where private mk ::
     to `PlanStep`: an ordinary node still uses `checkAssign` verbatim and requires empty context
     exactly as before; a scan node uses `checkScanPlan` and requires ALL of its declared destination
     slots to be currently unavailable (so none can already be produced) before checking, then marks
-    all of them available together afterward. -/
-def checkPlan (raw : RawEvalPlan) : Except PlanError CheckedEvalPlan := do
-  unless raw.numericMode == .reference64SumProduct do throw (.numericModeNotAdmitted raw.numericMode)
+    all of them available together afterward. **The forward-read availability check is NOT routed
+    through the generic `sourceSlots` accessor** — an `.assign` step's check stays a direct
+    per-term/per-factor loop, exactly as Wave C's original `checkPlan` had it, so
+    `invalidForwardRead`'s `ti`/`fi` locators remain the real offending term/factor, not a flattened
+    `0 0` regardless of where the bad read actually is. A `.scan` step's forward reads are its
+    external captures, which have no term/factor structure at the outer-graph level, so `0 0` there
+    is a genuine (not regressed) placeholder — every scan-local read's real locator lives inside
+    `ScanPlanError`/`CausalityCertificate`, one layer down, already. Return type is `PlanStepError`
+    (defined below this function, alongside `CheckedPlanStepEvidence`), not bare `PlanError` — every
+    `PlanError`-shaped throw below is wrapped `.assign (...)`; a `checkScanPlan` failure is `.scan ni
+    e` directly, with no `nodeError` double-wrap, since `ScanPlanError` already carries its own
+    internal locators. -/
+def checkPlan (raw : RawEvalPlan) : Except PlanStepError CheckedEvalPlan := do
+  unless raw.numericMode == .reference64SumProduct do
+    throw (.assign (.numericModeNotAdmitted raw.numericMode))
   let n := raw.tensorSigs.size
   for h : i in [0 : raw.inputSlots.size] do
     let s := raw.inputSlots[i]
-    unless s < n do throw (.slotOutOfRange s n)
+    unless s < n do throw (.assign (.slotOutOfRange s n))
     if h2 : i + 1 < raw.inputSlots.size then
       let s2 := raw.inputSlots[i + 1]
-      if s == s2 then throw (.duplicateInputSlot s)
-      else if s2 < s then throw (.inputSlotsNotOrdered i)
+      if s == s2 then throw (.assign (.duplicateInputSlot s))
+      else if s2 < s then throw (.assign (.inputSlotsNotOrdered i))
   let mut available : Array Bool := Array.replicate n false
   let mut producedBy : Array (Option Nat) := Array.replicate n none
   for s in raw.inputSlots do
@@ -911,35 +930,46 @@ def checkPlan (raw : RawEvalPlan) : Except PlanError CheckedEvalPlan := do
   let mut checkedNodes : Array CheckedPlanStepEvidence := #[]
   for h : ni in [0 : raw.steps.size] do
     let step := raw.steps[ni]
-    for src in step.sourceSlots do
-      match available[src]? with
-      | none => throw (.nodeError ni (.slotOutOfRange src n))
-      | some true => pure ()
-      | some false => throw (.invalidForwardRead ni 0 0 src)
+    match step with
+    | .assign a =>
+        for h2 : ti in [0 : a.terms.size] do
+          let t := a.terms[ti]
+          for h3 : fi in [0 : t.factors.size] do
+            let f := t.factors[fi]
+            match available[f.sourceSlot]? with
+            | none => throw (.assign (.nodeError ni (.slotOutOfRange f.sourceSlot n)))
+            | some true => pure ()
+            | some false => throw (.assign (.invalidForwardRead ni ti fi f.sourceSlot))
+    | .scan _ =>
+        for src in step.sourceSlots do
+          match available[src]? with
+          | none => throw (.assign (.nodeError ni (.slotOutOfRange src n)))
+          | some true => pure ()
+          | some false => throw (.assign (.invalidForwardRead ni 0 0 src))
     let dests := step.destinationSlots
     for dest in dests do
       match available[dest]? with
-      | none => throw (.nodeError ni (.slotOutOfRange dest n))
+      | none => throw (.assign (.nodeError ni (.slotOutOfRange dest n)))
       | some isAvail =>
           if isAvail then
             match producedBy[dest]?.join with
-            | none => throw (.inputSlotOverwritten dest ni)
-            | some firstNode => throw (.duplicateDestination dest firstNode ni)
+            | none => throw (.assign (.inputSlotOverwritten dest ni))
+            | some firstNode => throw (.assign (.duplicateDestination dest firstNode ni))
     match step with
     | .assign a =>
-        unless a.contextShape == #[] do throw (.topLevelContextNotEmpty ni)
+        unless a.contextShape == #[] do throw (.assign (.topLevelContextNotEmpty ni))
         match checkAssign raw.tensorSigs a with
-        | .error e => throw (.nodeError ni e)
+        | .error e => throw (.assign (.nodeError ni e))
         | .ok c => checkedNodes := checkedNodes.push (.assign c)
     | .scan s =>
         match checkScanPlan raw.tensorSigs s with
-        | .error e => throw (.nodeError ni (.scanError e))  -- see note below
+        | .error e => throw (.scan ni e)
         | .ok c => checkedNodes := checkedNodes.push (.scan c)
     for dest in dests do
       available := available.set! dest true
       producedBy := producedBy.set! dest (some ni)
   for h : i in [0 : n] do
-    unless available[i]! do throw (.missingProduction i)
+    unless available[i]! do throw (.assign (.missingProduction i))
   return CheckedEvalPlan.mk raw checkedNodes
 
 /-- Execute a checked graph over positional Dense inputs. Generalizes `runDensePlan` (previously in
@@ -970,19 +1000,28 @@ def runDensePlan (c : CheckedEvalPlan) (inputs : Array DenseTensor) :
 end LeanNCD.Eval.Plan
 ```
 
-**Open item flagged for the implementer, not silently resolved:** `.nodeError ni (.scanError e)`
-above assumes a new `PlanError.scanError (cause : ScanPlanError)` constructor — but `PlanError`
-(`Error.lean`) is upstream of `Scan.lean` and cannot reference `ScanPlanError` (the same acyclic-
-import constraint as `RawPlanBlock`/`Graph.lean`, this time one layer up). **Do not add
-`PlanError.scanError`.** Instead, introduce the wrapping at `EvalPlan.lean`'s own level, downstream
-of everything: change `checkPlan`'s return type from `Except PlanError CheckedEvalPlan` to `Except
-PlanStepError CheckedEvalPlan`, where
+**Why `checkPlan` above already returns `PlanStepError` and wraps every throw in `.assign`/`.scan`,
+not bare `PlanError`:** a natural first draft would have `checkScanPlan`'s failure surface as
+`.nodeError ni (.scanError e)`, assuming a new `PlanError.scanError (cause : ScanPlanError)`
+constructor — but `PlanError` (`Error.lean`) is upstream of `Scan.lean` and cannot reference
+`ScanPlanError` (the same acyclic-import constraint as `RawPlanBlock`/`Graph.lean`, this time one
+layer up). **Do not add `PlanError.scanError`.** Instead the wrapping lives at `EvalPlan.lean`'s own
+level, downstream of everything, as the snippet above already does: `checkPlan`'s return type is
+`Except PlanStepError CheckedEvalPlan`, where
 
 ```lean
 /-- `checkPlan`'s error type, generalized from bare `PlanError` now that an outer step can fail
     either as a malformed assignment (unchanged `PlanError`, including its existing `nodeError`
     wrapper) or a malformed scan (`ScanPlanError`, not representable inside `PlanError` itself — see
-    this plan's Architecture section for why). -/
+    this plan's Architecture section for why). **`.assign` names the ERROR'S OWN SHAPE, not the
+    failing step's kind:** every graph-level `PlanError` this checker can throw — slot-range,
+    input-ordering, forward-read, overwrite, duplicate-destination, missing-production, and the
+    per-node `checkAssign` failures the `nodeError` wrapper already carried — is a `PlanError`
+    regardless of whether the OFFENDING step is itself a `.assign` or a `.scan` (a scan step can
+    just as well overwrite an input slot or collide on a destination; only a `checkScanPlan`
+    failure is scan-SPECIFIC and gets the other constructor). Do not read `.assign`/`.scan` as "step
+    kind" — read them as "which checker rejected this: the graph-level PlanError checks, or
+    checkScanPlan itself." -/
 inductive PlanStepError
   | assign (cause : PlanError)
   | scan   (stepIndex : Nat) (cause : ScanPlanError)

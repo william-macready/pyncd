@@ -6,8 +6,9 @@ import LeanNCD.Eval.Plan.Coordinates
 # JAX evidence-indexed executable kernels — Stage A candidate/validator/executable types (Thread 5)
 
 The JAX executable phase's private-constructor discipline, mirroring the pattern already
-established for the checked phase in `Check.lean` (`CheckedAssignPlan`, `CheckedEvalPlan`). This
-file owns the full pipeline from public, pre-validation `Candidate` types through the private,
+established for the checked phase in `Check.lean` (`CheckedAssignPlan`) and `EvalPlan.lean`
+(`CheckedEvalPlan`, relocated there in Wave F F3 Task 4). This file owns the full pipeline from
+public, pre-validation `Candidate` types through the private,
 evidence-indexed `Executable` constructors that are the only way to build one:
 `CheckedEvalPlan` → `PreparedPlan` → `JaxExecutableCandidate` → (`validateAndConstructExecutable`)
 → `JaxExecutable`. Real validators (`validateAffineTable`/`validateEinsum`, dispatched through

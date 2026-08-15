@@ -111,4 +111,110 @@ def scanFailPlan : RawEvalPlan :=
 
 #guard errOf (checkPlan scanFailPlan) == some (.scan 0 (.zeroExtent 0))
 
+/-! ## Fix-wave addition: a `.assign` step's bad forward read at term index ≥ 1
+
+Review finding (Important #1): routing the forward-read availability check through the generic
+`PlanStep.sourceSlots` accessor loses the original per-term/per-factor locators — every fixture
+above happens to have its bad read at term 0/factor 0, which masked the loss (`checkPlan` now uses
+a direct per-term/per-factor loop for `.assign` steps instead, restoring the original locators).
+This fixture's bad read sits at term INDEX 1 (the second term), pinning the `ti` locator down for
+real: term 0 reads slot 0 (`A`, a graph input, available), term 1 reads slot 1 (`Z`, neither an
+input nor produced by anything), so the graph is rejected with `ti = 1`, not `ti = 0`. -/
+
+def termLocatorSigs : Array TensorSignature :=
+  #[ { shape := #[2], dtype := .f64 }   -- 0 = A (input)
+   , { shape := #[2], dtype := .f64 }   -- 1 = Z (never an input, never produced)
+   , { shape := #[2], dtype := .f64 } ] -- 2 = C (dest)
+
+def termLocatorReadA : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[#[1]], bias := #[0] }
+  , sourceShape := #[2], oobPolicy := .zeroPad }
+
+def termLocatorReadZ : ReadPlan :=
+  { sourceSlot := 1, map := { coeffs := #[#[1]], bias := #[0] }
+  , sourceShape := #[2], oobPolicy := .zeroPad }
+
+def termLocatorTerm0 : TermPlan :=
+  { iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
+  , factors := #[termLocatorReadA] }
+
+def termLocatorTerm1 : TermPlan :=
+  { iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
+  , factors := #[termLocatorReadZ] }
+
+-- `C[i] := A[i] + Z[i]`: term 0 (index 0) is fine; term 1 (index 1) is the bad read.
+def termLocatorAssign : AssignPlan :=
+  { contextShape := #[], destinationSlot := 2, outputShape := #[2]
+  , terms := #[termLocatorTerm0, termLocatorTerm1], algebra := admittedAlgebra }
+
+def termLocatorPlan : RawEvalPlan :=
+  { tensorSigs := termLocatorSigs, inputSlots := #[0]
+  , steps := #[.assign termLocatorAssign]
+  , numericMode := .reference64SumProduct }
+
+-- `ti = 1`, `fi = 0`, slot = 1 — the exact locator of the bad read, not `0 0` by coincidence.
+#guard errOf (checkPlan termLocatorPlan) == some (.assign (.invalidForwardRead 0 1 0 1))
+
+/-! ## Fix-wave addition: a genuine two-state scan, exercised through the multi-destination path
+
+Review finding (Important #3): every scan fixture above reuses `linearScan`, which has exactly one
+state (one destination slot) — nothing distinguished a correct "check/mark every destination" loop
+from a bug that only checks/commits `dests[0]!`. Reuses `ScanTest.coupledScan` (Task 3's
+Fibonacci-shaped `G`/`H` scan: `G[0] := C; H[0] := C; G[l+1] := G[l]+H[l]; H[l+1] := G[l]`, two
+`StateSlot`s — `stateGCoupled` destSlot 1, `stateHCoupled` destSlot 2) as a standalone outer
+`.scan` node. -/
+
+def twoStateOuterPlan : RawEvalPlan :=
+  { tensorSigs := outerSigsCoupled, inputSlots := #[0]
+  , steps := #[.scan coupledScan]
+  , numericMode := .reference64SumProduct }
+
+def coupledOuterInputs : Array DenseTensor := #[ { shape := [], data := #[1.0] } ]
+
+-- Accept: BOTH destination slots (1 = G, 2 = H) end up marked produced — if `checkPlan` only
+-- checked/committed `dests[0]!`, slot 2 would still show as unproduced and `missingProduction 2`
+-- would fire, so `isOk` alone already distinguishes that bug; `runDensePlan` below additionally
+-- confirms the checked node is the real, correctly-constructed scan (not just "some node got
+-- pushed"), reusing Task 3's own verified Fixture-4 numbers: C=1 ⇒ G=[1,2,3,5], H=[1,1,2,3].
+#guard isOk (checkPlan twoStateOuterPlan)
+
+run_cmd do
+  match checkPlan twoStateOuterPlan with
+  | .error e => throwError s!"two-state accept: checkPlan rejected a well-formed 2-state scan: {repr e}"
+  | .ok checked =>
+      match runDensePlan checked coupledOuterInputs with
+      | .error e => throwError s!"two-state accept: runDensePlan error: {repr e}"
+      | .ok result =>
+          let G := result.getD 1 { shape := [], data := #[] }
+          let H := result.getD 2 { shape := [], data := #[] }
+          unless DenseTensor.approxEq G { shape := [4], data := #[1.0, 2.0, 3.0, 5.0] } do
+            throwError s!"two-state accept: wrong G {repr G.data}"
+          unless DenseTensor.approxEq H { shape := [4], data := #[1.0, 1.0, 2.0, 3.0] } do
+            throwError s!"two-state accept: wrong H {repr H.data}"
+
+-- `H[i] := C` (a valid broadcast of the scalar input into H's own shape `[4]`), placed BEFORE the
+-- scan so it already produces slot 2 (H's own future destination) by the time the scan step runs.
+-- G's destination (slot 1, checked FIRST in `coupledScan.states` order) is fine and unproduced —
+-- only H's (checked SECOND) collides, so this pins down that the destination loop genuinely
+-- iterates every destination rather than stopping at (or only ever inspecting) the first.
+def preemptRead : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[], bias := #[] }, sourceShape := #[], oobPolicy := .zeroPad }
+
+def preemptTerm : TermPlan :=
+  { iterationShape := #[4], contextPos := #[], outputPos := #[0], reductionPos := #[]
+  , factors := #[preemptRead] }
+
+def preemptAssign : AssignPlan :=
+  { contextShape := #[], destinationSlot := 2, outputShape := #[4]
+  , terms := #[preemptTerm], algebra := admittedAlgebra }
+
+def collideOuterPlan : RawEvalPlan :=
+  { tensorSigs := outerSigsCoupled, inputSlots := #[0]
+  , steps := #[.assign preemptAssign, .scan coupledScan]
+  , numericMode := .reference64SumProduct }
+
+-- Reported collision is slot 2 (H), first produced by node 0 (`preemptAssign`), re-targeted by
+-- node 1 (the scan) — NOT slot 1 (G), which never collides here.
+#guard errOf (checkPlan collideOuterPlan) == some (.assign (.duplicateDestination 2 0 1))
+
 end LeanNCD.Eval.Plan.EvalPlanTest

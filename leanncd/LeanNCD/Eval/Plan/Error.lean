@@ -86,9 +86,10 @@ inductive InputSignatureError
     separate malformation: two different slots bound to the same source name, which slot-`Perm`
     alone cannot catch (two distinct slots can each legitimately appear once in the permutation
     while still sharing a name). Defined here, not in `Prepared.lean`, because `PlanCompileCause`
-    below needs it and `Error.lean` sits upstream of `Prepared.lean` in the import graph (`Prepared
-    → Check → Error`) — `TensorSlot`/`String` are both already available via `Kernel.lean`, so no
-    `SlotBinding`-shaped payload is needed here to make that work. -/
+    (relocated to `EvalPlan.lean` — see the plain comment just below) needs it and `Error.lean` sits
+    upstream of `Prepared.lean` in the CURRENT import graph (`Prepared → EvalPlan → Scan → Block →
+    Dense → Check → Error`) — `TensorSlot`/`String` are both already available via `Kernel.lean`, so
+    no `SlotBinding`-shaped payload is needed here to make that work. -/
 inductive BindingsError
   | notAPermutation (expectedSlots observedSlots : Array TensorSlot)
   | duplicateName   (name : String)

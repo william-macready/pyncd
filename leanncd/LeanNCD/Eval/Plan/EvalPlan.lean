@@ -27,14 +27,21 @@ inductive CheckedPlanStepEvidence
   deriving Repr
 
 /-- A `PlanStep`'s outer-graph-visible source/destination slots — derived, not stored (proposal
-    §6.6: "These are derived functions, not stored fields"). An assignment has one destination; a
-    scan has one per state, plus every base/step external capture as a source alongside its own
-    factor sources are already covered by the block's own checking. -/
+    §6.6: "These are derived functions, not stored fields"). An assignment reads every factor's
+    source slot (flattened across all its terms) and has one destination; a scan reads every
+    EXTERNAL base/step capture (a state capture is not an outer-graph read — it is satisfied
+    entirely inside the checked scan, from the scan's own persistent state) and has one destination
+    per state. These are general-purpose accessors for any future consumer that needs a step's
+    slots without caring which kind it is (proposal §6.6's own stated purpose); `checkPlan` below
+    does NOT route its own per-`.assign`-step forward-read check through `sourceSlots` — that check
+    needs the original per-term/per-factor locators (`ti`, `fi`) for `invalidForwardRead`, which
+    flattening this array away loses. -/
 def PlanStep.sourceSlots : PlanStep → Array TensorSlot
   | .assign a => a.terms.flatMap (·.factors.map (·.sourceSlot))
   | .scan s => (s.baseCaptures ++ s.stepCaptures).filterMap (fun c => match c.source with
       | .external slot => some slot | .state _ => none)
 
+/-- One destination per state for a scan; the single destination slot for an assignment. -/
 def PlanStep.destinationSlots : PlanStep → Array TensorSlot
   | .assign a => #[a.destinationSlot]
   | .scan s => s.states.map (·.destSlot)
@@ -53,10 +60,18 @@ structure CheckedEvalPlan where private mk ::
 /-- `checkPlan`'s error type, generalized from bare `PlanError` now that an outer step can fail
     either as a malformed assignment (unchanged `PlanError`, including its existing `nodeError`
     wrapper) or a malformed scan (`ScanPlanError`, not representable inside `PlanError` itself — see
-    this plan's Architecture section for why). Derives the same four classes `PlanError`/
-    `ScanPlanError` both already carry (`DecidableEq, BEq, Repr, Inhabited`), not just `Repr`, so
-    downstream types built on top of it (`PlanCompileCause` below) can keep their own existing
-    `DecidableEq`/`BEq`/`Inhabited` derivations. -/
+    this plan's Architecture section for why). **`.assign` names the ERROR'S OWN SHAPE, not the
+    failing step's kind:** every graph-level `PlanError` this checker can throw — slot-range,
+    input-ordering, forward-read, overwrite, duplicate-destination, missing-production, and the
+    per-node `checkAssign` failures the `nodeError` wrapper already carried — is a `PlanError`
+    regardless of whether the OFFENDING step is itself a `.assign` or a `.scan` (a scan step can
+    just as well overwrite an input slot or collide on a destination; only a `checkScanPlan`
+    failure is scan-SPECIFIC and gets the other constructor). Do not read `.assign`/`.scan` as "step
+    kind" — read them as "which checker rejected this: the graph-level PlanError checks, or
+    checkScanPlan itself." Derives the same four classes `PlanError`/`ScanPlanError` both already
+    carry (`DecidableEq, BEq, Repr, Inhabited`), not just `Repr`, so downstream types built on top of
+    it (`PlanCompileCause` below) can keep their own existing `DecidableEq`/`BEq`/`Inhabited`
+    derivations. -/
 inductive PlanStepError
   | assign (cause : PlanError)
   | scan   (stepIndex : Nat) (cause : ScanPlanError)
@@ -69,7 +84,12 @@ inductive PlanStepError
     all of them available together afterward. Every `PlanError`-shaped failure from the loop below is
     wrapped as `.assign (...)`; a `checkScanPlan` failure becomes `.scan ni e` directly (no
     double-wrapping through `nodeError`, since `ScanPlanError` already carries its own internal
-    locators). -/
+    locators). The forward-read check for a `.assign` step is a direct per-term/per-factor loop
+    (the same shape the original pre-Wave-F `checkPlan` used), NOT routed through the generic
+    `PlanStep.sourceSlots` accessor: flattening across terms/factors loses the `ti`/`fi` locators
+    `invalidForwardRead` needs to report exactly where a bad read sits. A `.scan` step's forward-read
+    check DOES use `sourceSlots` (its external captures have no term/factor structure to preserve —
+    `ti`/`fi` are a genuine `0 0` placeholder there, not a lost locator). -/
 def checkPlan (raw : RawEvalPlan) : Except PlanStepError CheckedEvalPlan := do
   unless raw.numericMode == .reference64SumProduct do
     throw (.assign (.numericModeNotAdmitted raw.numericMode))
@@ -88,11 +108,22 @@ def checkPlan (raw : RawEvalPlan) : Except PlanStepError CheckedEvalPlan := do
   let mut checkedNodes : Array CheckedPlanStepEvidence := #[]
   for h : ni in [0 : raw.steps.size] do
     let step := raw.steps[ni]
-    for src in step.sourceSlots do
-      match available[src]? with
-      | none => throw (.assign (.nodeError ni (.slotOutOfRange src n)))
-      | some true => pure ()
-      | some false => throw (.assign (.invalidForwardRead ni 0 0 src))
+    match step with
+    | .assign a =>
+        for h2 : ti in [0 : a.terms.size] do
+          let t := a.terms[ti]
+          for h3 : fi in [0 : t.factors.size] do
+            let f := t.factors[fi]
+            match available[f.sourceSlot]? with
+            | none => throw (.assign (.nodeError ni (.slotOutOfRange f.sourceSlot n)))
+            | some true => pure ()
+            | some false => throw (.assign (.invalidForwardRead ni ti fi f.sourceSlot))
+    | .scan _ =>
+        for src in step.sourceSlots do
+          match available[src]? with
+          | none => throw (.assign (.nodeError ni (.slotOutOfRange src n)))
+          | some true => pure ()
+          | some false => throw (.assign (.invalidForwardRead ni 0 0 src))
     let dests := step.destinationSlots
     for dest in dests do
       match available[dest]? with
