@@ -1613,6 +1613,20 @@ Known follow-ups, deliberately not fixed here:
   `private` (ruled non-blocking during Task 3's review, consistent with the file's existing
   mutation-copy pattern elsewhere; the final review's fix wave corrected their misleading comment but
   did not remove the duplication).
+- `checkWrites` never validates a write's `AffineMap` rank (`w.map.coeffs.size`/`w.map.bias.size`)
+  against the state's own rank — the same kind of check `checkAssign` already makes for read plans
+  via `affineRankMismatch` (`Check.lean`), but with no write-side counterpart. `writeRowKinds` pads a
+  short map via `getD`; `commitWrite`'s `applyAffine` (`Coordinates.lean`) zips and silently truncates
+  a mismatched one instead. A hand-built repro (state `#[2,2]`, `map := { coeffs := #[#[]], bias :=
+  #[1] }` — one row short) is admitted by every existing check (`baseWriteRowsOk`,
+  `freeExtentsAgree`, and now `pinnedLiteralsInRange` all pass), and `commitWrite` then computes the
+  wrong flat coordinate — cell `(0,1)` instead of the intended `(1,0)`. Unlike the two bugs this
+  record already covers, this one stays within the target's total storage size (no
+  `lean_array_set_panic`, no read/write outside the tensor) — it silently commits to the wrong
+  in-bounds cell, a correctness gap rather than a memory-safety one. Found and confirmed via
+  independent trace during the pinned-literal-bounds fix's own review (not fixed there — correctly
+  scoped out as a new, adjacent finding rather than expanding that diff); left here as a known,
+  characterized follow-up rather than chased through a fourth fix round.
 
 `JaxExperiment` — the non-default target whose lone glob is `experiments/jax_bridge/
 EvalPlanCodegen.lean` — fails to build under this slice, exactly as Task 4's brief predicted and
