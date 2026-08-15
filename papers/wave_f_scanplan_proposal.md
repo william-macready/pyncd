@@ -1513,16 +1513,27 @@ added during Task 4's review fix round), and migrations of five pre-existing fil
 `RawEvalPlan` shape (`GraphCheckTest.lean`, `GraphDenseTest.lean`, `KernelCheckTest.lean`,
 `ExecutableTest.lean`, `CompileTest.lean`). `lake build` (default targets) green at **8,651 jobs**.
 
-Two real, load-bearing bugs were found and fixed during this slice, not merely documented: (1) Task 3
-found that `commitWrite` (the plan's own worked design) only ever committed element 0 of a write's
-block output, silently dropping every other coordinate for any write with a genuine free output
-position (a "face" write) — fixed to iterate every coordinate of the write's own output shape,
-verified as a strict generalization (scalar-output writes unaffected) and confirmed by rebuilding the
-two required fixtures that exist specifically to exercise free-position face writes as genuine free
-writes, not the point-override workaround first tried while isolating the bug; (2) Task 1's review
-found `multipleStepWritesForState`'s locator arguments were hardcoded (`si 0 1`) rather than derived
-from the actual colliding write indices, masked by the single test case exercised — fixed to thread
-real write indices through `checkWrites`'s `rowsByState` grouping.
+Four real bugs — three load-bearing, one a misleading doc comment — were found and fixed during this
+slice, not merely documented: (1) Task 3 found that `commitWrite` (the plan's own worked design) only
+ever committed element 0 of a write's block output, silently dropping every other coordinate for any
+write with a genuine free output position (a "face" write) — fixed to iterate every coordinate of the
+write's own output shape, verified as a strict generalization (scalar-output writes unaffected) and
+confirmed by rebuilding the two required fixtures that exist specifically to exercise free-position
+face writes as genuine free writes, not the point-override workaround first tried while isolating the
+bug; (2) Task 1's review found `multipleStepWritesForState`'s locator arguments were hardcoded
+(`si 0 1`) rather than derived from the actual colliding write indices, masked by the single test case
+exercised — fixed to thread real write indices through `checkWrites`'s `rowsByState` grouping; (3)
+Task 4's review found that generalizing `checkPlan`'s forward-read availability check to route
+through the new generic `PlanStep.sourceSlots` accessor would hardcode `invalidForwardRead`'s `ti`/`fi`
+locators to `0 0` for every `.assign`-step failure — a real regression from Wave C's original
+per-term/per-factor precision, masked because every existing fixture's bad read happened to sit at
+term 0/factor 0 — fixed by keeping a direct per-term/per-factor loop for `.assign` steps outside the
+generic accessor (`checkPlan`'s own doc comment now states this explicitly as a design rule, not just
+an implementation detail); (4) the same review round also caught and fixed a misleading doc comment:
+`PlanStepError.assign`'s docstring read as if `.assign` meant "the failing step was itself an
+assignment," when it actually means "this is a graph-level `PlanError`, regardless of which step kind
+failed" — a scan step's own capture/destination collision correctly surfaces as `.assign (...)`, not
+`.scan`; corrected in place, no rename.
 
 This task (F3's close-out) also applied one fix deferred from Task 4's own review: `checkPlan`'s
 `.assign`-branch check order had drifted from Wave C's original order (context-check →
@@ -1533,13 +1544,17 @@ accept/reject outcome ever changed; only which of 2+ simultaneous defects is rep
 untested edge case). Restored to Wave C's exact order in `LeanNCD/Eval/Plan/EvalPlan.lean`'s
 `checkPlan`, verified by a clean `lake build` (unchanged job count, 8,651).
 
-Two minor items remain open, deliberately not fixed by this task (out of scope for a
+Three minor items remain open, deliberately not fixed by this task (out of scope for a
 discoverability/documentation/completion-record close-out): `Scan.lean`'s `checkScanPlan` docstring
 still needs its stale "causality not yet added" line corrected now that Task 2 landed the
-certificate (deferred since Task 2's own review, non-blocking); and no fixture distinguishes
+certificate (deferred since Task 2's own review, non-blocking); no fixture distinguishes
 `multipleStepWritesForState`'s locator behavior for a 3rd conflicting step write or writes not at raw
 index 0/1 — the fix above is correct by code inspection and an independent re-review, but only
-reasoning, not a dedicated assertion, proves the general case (deferred since Task 1's re-review).
+reasoning, not a dedicated assertion, proves the general case (deferred since Task 1's re-review);
+and Task 3's 3 `commitWrite` mutation-test functions each duplicate ~20 lines of `runDenseScan`'s own
+body — unavoidable without changing `commitWrite`'s visibility, since the function under test is
+`private` (ruled non-blocking during Task 3's review, consistent with the file's existing
+mutation-copy pattern elsewhere; not fixed here).
 
 `JaxExperiment` — the non-default target whose lone glob is `experiments/jax_bridge/
 EvalPlanCodegen.lean` — fails to build under this slice, exactly as Task 4's brief predicted and
