@@ -12,11 +12,13 @@ Two families:
 2. `checkScanPlan` over a hand-built linear self-recurrence (`linearScan`: `S[iterAt l 0] := S0`,
    `S[iterNext l] := S[l] + X[l]`, one 1-D state, one advancing axis) — the accept case plus one
    mutation per reachable `ScanPlanError` branch not already exercised by the accept/zeroExtent/
-   writeGeometryNotAdmitted trio the plan itself worked out. Causality (`causalityFailure`) is out of
-   scope (Task 2); the four closed-policy `*NotAdmitted` branches (`iterationOrderNotAdmitted`,
-   `boundaryPolicyNotAdmitted`, `snapshotPolicyNotAdmitted`, `materializationPolicyNotAdmitted`) are
-   unreachable in this Wave: each enum has exactly one constructor, so no other value can ever be
-   constructed to trigger them.
+   writeGeometryNotAdmitted trio the plan itself worked out. The four closed-policy `*NotAdmitted`
+   branches (`iterationOrderNotAdmitted`, `boundaryPolicyNotAdmitted`, `snapshotPolicyNotAdmitted`,
+   `materializationPolicyNotAdmitted`) are unreachable in this Wave: each enum has exactly one
+   constructor, so no other value can ever be constructed to trigger them.
+3. (Task 2) `stateReadCausal`'s causality certificate: a deep-history accept, the Jacobi/Gauss-Seidel
+   discriminator's unsafe constant read now rejected at check time, a look-ahead-bias rejection, and
+   a non-advancing-dimension exemption — see Part 4 below.
 -/
 
 namespace LeanNCD.Eval.Plan.ScanTest
@@ -474,5 +476,179 @@ run_cmd do
   | .error e =>
       unless e == .multipleStepWritesForState 0 0 1 do
         throwError s!"multipleStepWritesForState: wrong error {repr e}"
+
+/-! ## Part 4: Task 2 — causality certificate
+
+Four fixtures reproducing the brief's worked causality table: a deep-history accept (mirrors F0's
+own `G[l+1] := G[l-2]` fixture in `test/Eval/ScanTest.lean`, same axis size 5), the Jacobi/
+Gauss-Seidel snapshot-safety discriminator's unsafe constant read (F0's `A[.const 1]`) now rejected
+at CHECK time instead of silently misevaluated, a look-ahead-bias rejection, and a non-advancing-
+dimension exemption (confirming the certificate does not over-reach into ordinary elementwise
+reads). -/
+
+-- Deep-history scan: one state G (shape [5]), advancing dim 0. Base: G[0] := G0 (= 5). Step:
+-- G[l+1] := G[l-2] (coeffs=#[1], bias=#[-2] at G's own dimension 0).
+def outerSigsDeepHistory : Array TensorSignature :=
+  #[{ shape := #[], dtype := .f64 }, { shape := #[5], dtype := .f64 }]
+
+def stateG : StateSlot := { destSlot := 1, advancingDims := #[0], materialization := .completeHistory }
+
+def baseBlockG : RawPlanBlock :=
+  { contextShape := #[], tensorSigs := #[{ shape := #[], dtype := .f64 }]
+  , inputs := #[0], assignments := #[], outputs := #[0] }
+
+def baseCaptureG0 : BlockCapture := { inputSlot := 0, source := .external 0 }
+
+def baseWriteG : StateWriteMap :=
+  { outputSlot := 0, stateIndex := 0, map := { coeffs := #[#[]], bias := #[0] } }
+
+-- Step block: reads a snapshot of G at l-2 (deep history), one scalar output.
+def stepReadG : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[#[1]], bias := #[-2] }, sourceShape := #[5], oobPolicy := .zeroPad }
+
+def termG : TermPlan :=
+  { iterationShape := #[4], contextPos := #[0], outputPos := #[], reductionPos := #[], factors := #[stepReadG] }
+
+def stepAssignG : AssignPlan :=
+  { contextShape := #[4], destinationSlot := 1, outputShape := #[], terms := #[termG]
+  , algebra := admittedAlgebra }
+
+def stepBlockG : RawPlanBlock :=
+  { contextShape := #[4]
+  , tensorSigs := #[{ shape := #[5], dtype := .f64 }, { shape := #[], dtype := .f64 }]
+  , inputs := #[0], assignments := #[stepAssignG], outputs := #[1] }
+
+def stepCaptureG : BlockCapture := { inputSlot := 0, source := .state 0 }
+
+def stepWriteG : StateWriteMap :=
+  { outputSlot := 1, stateIndex := 0, map := { coeffs := #[#[1]], bias := #[1] } }
+
+def deepHistoryScan : RawScanPlan :=
+  { states := #[stateG]
+  , baseBlock := baseBlockG, baseCaptures := #[baseCaptureG0], baseWrites := #[baseWriteG]
+  , stepBlock := stepBlockG, stepCaptures := #[stepCaptureG], stepWrites := #[stepWriteG]
+  , historyExtents := #[5]
+  , iterationOrder := .axisZeroFastest, boundaryPolicy := .zeroThenBaseOverlay
+  , snapshotPolicy := .immutablePreStep }
+
+-- Accept: the deep-history read (coeffs=#[1], bias=#[-2]) is causal — a single unit coefficient at
+-- the read's own scan-context position, with non-positive bias.
+run_cmd do
+  match checkScanPlan outerSigsDeepHistory deepHistoryScan with
+  | .error e => throwError s!"checkScanPlan rejected the deep-history scan: {repr e}"
+  | .ok _checked => pure ()
+
+-- Reject: the Jacobi/Gauss-Seidel discriminator's unsafe read (F0 Task 3's `B[l+1] := A[.const 1]`)
+-- reproduced here as a constant read of G's own history, ignoring the loop axis entirely —
+-- coeffs=#[0], bias=#[1]. The legacy evaluator's `readsIterAhead`-style syntactic check only
+-- matches a positive `.shift`, so it does NOT catch this; `stateReadCausal` does, because the
+-- read's sole row then has zero nonzero coefficients.
+def constReadG : ReadPlan := { stepReadG with map := { coeffs := #[#[0]], bias := #[1] } }
+def termConstG : TermPlan := { termG with factors := #[constReadG] }
+def stepAssignConstG : AssignPlan := { stepAssignG with terms := #[termConstG] }
+def stepBlockConstG : RawPlanBlock := { stepBlockG with assignments := #[stepAssignConstG] }
+
+run_cmd do
+  match checkScanPlan outerSigsDeepHistory { deepHistoryScan with stepBlock := stepBlockConstG } with
+  | .ok _ => throwError "a constant (Jacobi-style unsafe) state read should have been rejected"
+  | .error e => unless e == .causalityFailure 0 0 0 do
+      throwError s!"causalityFailure (constant read): wrong error {repr e}"
+
+-- Reject: a look-ahead-shaped read, coeffs=#[1] bias=#[1] (reads G[l+1] instead of G[l-2] or
+-- G[l]) — the same single-unit-coefficient row shape as a causal advancing read, but with a
+-- positive bias.
+def lookAheadReadG : ReadPlan := { stepReadG with map := { coeffs := #[#[1]], bias := #[1] } }
+def termLookAheadG : TermPlan := { termG with factors := #[lookAheadReadG] }
+def stepAssignLookAheadG : AssignPlan := { stepAssignG with terms := #[termLookAheadG] }
+def stepBlockLookAheadG : RawPlanBlock := { stepBlockG with assignments := #[stepAssignLookAheadG] }
+
+run_cmd do
+  match checkScanPlan outerSigsDeepHistory { deepHistoryScan with stepBlock := stepBlockLookAheadG } with
+  | .ok _ => throwError "a look-ahead-shaped state read should have been rejected"
+  | .error e => unless e == .causalityFailure 0 0 0 do
+      throwError s!"causalityFailure (look-ahead read): wrong error {repr e}"
+
+/-! ### Non-advancing dimension exemption
+
+A second, independent 2-D state `Gj` (dim0 = `j`, a plain non-advancing elementwise axis, size 2;
+dim1 = `l`, the advancing axis, size 3) confirms `stateReadCausal` genuinely ignores non-advancing
+rows: the `j` row's affine map is mutated to something arbitrary and non-canonical (`coeffs=#[7,
+-3], bias=42` — not a recognized `.free`/`.pinned`/`.advancing` write-row shape at all, and not
+even a plausible read of `j`) while the `l` row stays an ordinary causal predecessor read, and
+`checkScanPlan` still accepts the scan — proving the certificate checks only `advancingDims`, not
+every state dimension. -/
+
+def outerSigsGj : Array TensorSignature :=
+  #[{ shape := #[2], dtype := .f64 }, { shape := #[2, 3], dtype := .f64 }]
+
+def stateGj : StateSlot := { destSlot := 1, advancingDims := #[1], materialization := .completeHistory }
+
+def baseBlockGj : RawPlanBlock :=
+  { contextShape := #[], tensorSigs := #[{ shape := #[2], dtype := .f64 }]
+  , inputs := #[0], assignments := #[], outputs := #[0] }
+
+def baseCaptureG0j : BlockCapture := { inputSlot := 0, source := .external 0 }
+
+-- Gj[j, 0] := G0j[j] — j free, l pinned to 0 (touches the lower boundary).
+def baseWriteGj : StateWriteMap :=
+  { outputSlot := 0, stateIndex := 0, map := { coeffs := #[#[1], #[]], bias := #[0, 0] } }
+
+def stepCaptureGj : BlockCapture := { inputSlot := 0, source := .state 0 }
+
+-- Canonical read: Gj[j, l] (elementwise-j, ordinary predecessor-l) — row0 (j, non-advancing) is a
+-- plain free projection; row1 (l, advancing) is causal.
+def readGjCanonical : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[#[0, 1], #[1, 0]], bias := #[0, 0] }
+  , sourceShape := #[2, 3], oobPolicy := .zeroPad }
+
+def termGj : TermPlan :=
+  { iterationShape := #[2, 2], contextPos := #[0], outputPos := #[1], reductionPos := #[]
+  , factors := #[readGjCanonical] }
+
+def stepAssignGj : AssignPlan :=
+  { contextShape := #[2], destinationSlot := 1, outputShape := #[2], terms := #[termGj]
+  , algebra := admittedAlgebra }
+
+def stepBlockGj : RawPlanBlock :=
+  { contextShape := #[2]
+  , tensorSigs := #[{ shape := #[2, 3], dtype := .f64 }, { shape := #[2], dtype := .f64 }]
+  , inputs := #[0], assignments := #[stepAssignGj], outputs := #[1] }
+
+-- Gj[j, l+1] := <expr> — j free (output position 0), l advancing (context position 0).
+def stepWriteGj : StateWriteMap :=
+  { outputSlot := 1, stateIndex := 0, map := { coeffs := #[#[0, 1], #[1, 0]], bias := #[0, 1] } }
+
+def nonAdvancingScan : RawScanPlan :=
+  { states := #[stateGj]
+  , baseBlock := baseBlockGj, baseCaptures := #[baseCaptureG0j], baseWrites := #[baseWriteGj]
+  , stepBlock := stepBlockGj, stepCaptures := #[stepCaptureGj], stepWrites := #[stepWriteGj]
+  , historyExtents := #[3]
+  , iterationOrder := .axisZeroFastest, boundaryPolicy := .zeroThenBaseOverlay
+  , snapshotPolicy := .immutablePreStep }
+
+-- Accept (canonical): both rows well-behaved.
+run_cmd do
+  match checkScanPlan outerSigsGj nonAdvancingScan with
+  | .error e => throwError s!"checkScanPlan rejected the canonical non-advancing-read scan: {repr e}"
+  | .ok _checked => pure ()
+
+-- Mutation: replace ONLY the non-advancing (j) row with an arbitrary, non-canonical affine map.
+-- `checkScanPlan` must still accept the scan, since `j` is not an advancing dimension of `Gj` and
+-- so carries no causality obligation at all.
+def readGjWild : ReadPlan :=
+  { readGjCanonical with
+    map := { coeffs := readGjCanonical.map.coeffs.set! 0 #[7, -3]
+           , bias := readGjCanonical.map.bias.set! 0 42 } }
+
+def termGjWild : TermPlan := { termGj with factors := #[readGjWild] }
+def stepAssignGjWild : AssignPlan := { stepAssignGj with terms := #[termGjWild] }
+def stepBlockGjWild : RawPlanBlock := { stepBlockGj with assignments := #[stepAssignGjWild] }
+
+run_cmd do
+  match checkScanPlan outerSigsGj { nonAdvancingScan with stepBlock := stepBlockGjWild } with
+  | .error e =>
+      throwError s!"checkScanPlan rejected a scan whose only irregularity is a non-advancing \
+dimension's read — the causality certificate must not check non-advancing rows: {repr e}"
+  | .ok _checked => pure ()
 
 end LeanNCD.Eval.Plan.ScanTest

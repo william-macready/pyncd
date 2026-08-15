@@ -65,6 +65,34 @@ def writesCollide (rowsA rowsB : Array (Option WriteRowKind)) : Bool :=
       | some (.pinned a), some (.pinned b) => a != b
       | _, _ => false)
 
+/- Opaque evidence that every persistent-state read in a scan's step block is causal. Only
+   `checkScanPlan` constructs values whose presence certifies this (the certificate itself carries
+   no data beyond marking that the pass ran — `CheckedScanPlan`'s existence, not a separate field,
+   is the evidence a worker relies on; see the note after `stateReadCausal` below for why no
+   separate stored field is needed). -/
+
+/-- Whether one read row (for state dimension `d`, whose scan-context position is `ctxPos`) is
+    causal: exactly one nonzero coefficient, equal to `1`, at `ctxPos`, and non-positive bias. This
+    single row-shape rule captures all three cases of proposal §7.4's causality obligation
+    uniformly — out-of-bounds zero-padding, initialized-boundary reads, and a strictly-earlier
+    recurrence producer are not case-split here: a canonical `q + 1` successor write makes every row
+    satisfying this shape resolve to one of those three automatically, regardless of the concrete
+    bias value or declared extents (the checker "tests this implication directly over the canonical
+    geometry," per §7.4, rather than leaving it as worker folklore). -/
+def causalAdvancingRow (row : Array Int) (bias : Int) (ctxPos : Nat) : Bool :=
+  let nz := row.toList.zipIdx.filter (fun (c, _) => c != 0)
+  match nz with
+  | [(c, p)] => c == 1 && p == ctxPos && bias ≤ 0
+  | _ => false
+
+/-- Every advancing dimension of a captured state's read must be causal at its own scan-context
+    position; non-advancing dimensions are ordinary reads and carry no causality obligation. -/
+def stateReadCausal (advancingDims : Array Nat) (contextPos : Array Nat) (f : ReadPlan) : Bool :=
+  advancingDims.size == contextPos.size &&
+  (Array.range advancingDims.size).all (fun i =>
+    causalAdvancingRow (f.map.coeffs.getD (advancingDims.getD i 0) #[])
+      (f.map.bias.getD (advancingDims.getD i 0) 0) (contextPos.getD i 0))
+
 /-- A raw `RawScanPlan` violates a scan-level invariant. Indices identify the offending
     state/write/capture so a failure is locatable without re-deriving it (proposal §7.5). -/
 inductive ScanPlanError
@@ -256,7 +284,21 @@ def checkScanPlan (sigs : Array TensorSignature) (raw : RawScanPlan) :
     | _ =>
         throw (.multipleStepWritesForState si (stateStepWrites.getD 0 (0, #[])).1
           (stateStepWrites.getD 1 (0, #[])).1)
-  -- Task 2 inserts the causality pass here, before the return below.
+  let stateCaptureFor : TensorSlot → Option Nat := fun inputSlot =>
+    (raw.stepCaptures.find? (fun c => c.inputSlot == inputSlot)).bind (fun c => match c.source with
+      | .state si => some si | .external _ => none)
+  for h : ai in [0 : raw.stepBlock.assignments.size] do
+    let a := raw.stepBlock.assignments[ai]
+    for h2 : ti in [0 : a.terms.size] do
+      let t := a.terms[ti]
+      for h3 : fi in [0 : t.factors.size] do
+        let f := t.factors[fi]
+        match stateCaptureFor f.sourceSlot with
+        | none => pure ()
+        | some si =>
+            let st := raw.states.getD si default
+            unless stateReadCausal st.advancingDims t.contextPos f do
+              throw (.causalityFailure si ti fi)
   return CheckedScanPlan.mk raw checkedBase checkedStep stepExtents
 
 end LeanNCD.Eval.Plan
