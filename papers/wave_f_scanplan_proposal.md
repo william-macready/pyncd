@@ -1505,7 +1505,7 @@ plus edits to `Check.lean`/`Dense.lean` (lost their relocated definitions, left 
 `Error.lean` (lost the relocated compile-failure types and Task 1's temporary interim placeholder
 constructor), `Compile.lean`/`Adapter.lean`/`Prepared.lean`/`Executable.lean`/`Graph.lean`/
 `Block.lean` (import/reference updates only), `LeanNCD.lean` (+3 imports), and `lakefile.toml` (+1
-test target). Tests: a new `test/Eval/Plan/ScanTest.lean` (1,221 lines across six parts — structural
+test target). Tests: a new `test/Eval/Plan/ScanTest.lean` (1,309 lines across six parts — structural
 geometry (Task 1), the causality certificate (Task 2), and the dense worker (Task 3), each with its
 own mutation fixtures), a new `test/Eval/Plan/EvalPlanTest.lean` (outer-graph accept/forward-read/
 duplicate-destination/scan-failure-surfacing fixtures, including the multi-destination-scan fixture
@@ -1544,17 +1544,57 @@ accept/reject outcome ever changed; only which of 2+ simultaneous defects is rep
 untested edge case). Restored to Wave C's exact order in `LeanNCD/Eval/Plan/EvalPlan.lean`'s
 `checkPlan`, verified by a clean `lake build` (unchanged job count, 8,651).
 
-Three minor items remain open, deliberately not fixed by this task (out of scope for a
-discoverability/documentation/completion-record close-out): `Scan.lean`'s `checkScanPlan` docstring
-still needs its stale "causality not yet added" line corrected now that Task 2 landed the
-certificate (deferred since Task 2's own review, non-blocking); no fixture distinguishes
-`multipleStepWritesForState`'s locator behavior for a 3rd conflicting step write or writes not at raw
-index 0/1 — the fix above is correct by code inspection and an independent re-review, but only
-reasoning, not a dedicated assertion, proves the general case (deferred since Task 1's re-review);
-and Task 3's 3 `commitWrite` mutation-test functions each duplicate ~20 lines of `runDenseScan`'s own
-body — unavoidable without changing `commitWrite`'s visibility, since the function under test is
-`private` (ruled non-blocking during Task 3's review, consistent with the file's existing
-mutation-copy pattern elsewhere; not fixed here).
+**Final whole-branch review (2026-08-15), one fix wave.** The review found one further Critical
+soundness gap, fixed here: `checkWrites` verified a `.free` write row's POSITION and RANK against the
+block output (`baseWriteRowsOk`/`stepWriteRowsOk` compare free positions to `List.range
+outputShape.size`, a COUNT) but never its EXTENT against the state's own dimension — precisely the
+"write-result signature agreement with the unpinned state dimensions" obligation §7.3 names. A
+`RawScanPlan` whose base write declared a shape-`[5]` face into a size-`2` state dimension was
+accepted by `checkScanPlan`, after which `runDenseScan` wrote through `flatIndex` into cells
+belonging to other rows, or out of the tensor entirely. Fixed by a new `freeExtentsAgree` predicate
+(`Scan.lean`, beside `baseWriteRowsOk`/`stepWriteRowsOk`) and a new
+`ScanPlanError.writeFreeExtentMismatch (isBase) (writeIndex stateIndex) (stateShape outputShape)`,
+thrown from `checkWrites` after geometry admission; `ScanTest.lean` gains the reproducing fixture
+(`freeExtentMismatchScan`, a two-field mutation of Fixture 5) asserting the exact error, plus two
+`#guard`s pinning the predicate on Fixture 5's own rows. Every pre-existing accepted fixture was
+re-checked and none regressed — each was built from consistent data, so its free rows already agreed.
+The review's Important/Minor findings were fixed in the same wave: `commitWrite` now documents the
+bounds obligation it relies on (see the residual item below); `CheckedScanPlan` gains the
+`private mk ::` compile-failure privacy test this project requires of every checked type (§15),
+matching `CheckedPrivacyTest.lean`/`BlockTest.lean`'s manual-verification pattern with the literal
+captured compiler error; `Eval/AGENTS.md`'s `Check.lean`/`Error.lean` rows no longer contradict the
+new `EvalPlan.lean` row about who owns `checkPlan`/`CheckedEvalPlan`/`PlanCompileCause`/
+`PlanCompileFailure`; the stale `checkScanPlan` "omits causality" docstring is corrected (flagged by
+three prior reviews); an orphaned block comment describing a `CausalityCertificate` type that was
+never declared is replaced by an accurate note on `CheckedScanPlan` explaining why no separate
+certificate type or field exists; three surviving stale relocation references
+(`Graph.lean`/`Block.lean` on `checkPlan`, `Adapter.lean` on `runDensePlan`) now name `EvalPlan.lean`;
+and `ScanTest.lean`'s `commitWriteLocal` comment no longer claims to reimplement `commitWrite`'s
+equation, stating plainly that it is the scalar-output-only specialization (it embeds the pre-fix
+single-coordinate read) valid only for the scalar fixtures that use it.
+
+Known follow-ups, deliberately not fixed here:
+
+- **An out-of-range PINNED base-write literal is still unchecked** — found while writing
+  `commitWrite`'s new bounds doc comment, and NOT closed by the extent fix above. `stepWriteRowsOk`
+  admits no pinned rows at all, but `baseWriteRowsOk` requires only that SOME advancing dimension be
+  pinned to `0`; every other pinned literal is unconstrained, so a hand-built base write
+  `dp[5, 0] := ONE` on a `[2,2]` state still reaches `Array.set!` out of range. The fix belongs in
+  `checkWrites` beside `freeExtentsAgree` (a guard inside `commitWrite` could only silently drop the
+  write, since it returns a `DenseTensor`, not an `Except`). Documented in full on `commitWrite`.
+- `papers/wave_c_capability_manifest.md` §1 is now stale — it still documents `admittedVersion = 1`
+  and `PlanError.versionNotAdmitted`, both removed by this slice. Updating it is F5's own job per
+  §13's F5 deliverables ("updated capability manifest recording removal of the unused in-memory
+  version tag"); recorded here only so it is not silently forgotten.
+- No fixture distinguishes `multipleStepWritesForState`'s locator behavior for a 3rd conflicting step
+  write or writes not at raw index 0/1 — the Task 1 fix is correct by code inspection and an
+  independent re-review, but only reasoning, not a dedicated assertion, proves the general case
+  (deferred since Task 1's re-review).
+- Task 3's 3 `commitWrite` mutation-test functions each duplicate ~20 lines of `runDenseScan`'s own
+  body — unavoidable without changing `commitWrite`'s visibility, since the function under test is
+  `private` (ruled non-blocking during Task 3's review, consistent with the file's existing
+  mutation-copy pattern elsewhere; the final review's fix wave corrected their misleading comment but
+  did not remove the duplication).
 
 `JaxExperiment` — the non-default target whose lone glob is `experiments/jax_bridge/
 EvalPlanCodegen.lean` — fails to build under this slice, exactly as Task 4's brief predicted and
@@ -1578,8 +1618,15 @@ runner scripts fail transitively the moment `lake build JaxExperiment` does (`se
 (`plan.plan.checkedNodes.flatMap ...`, three call sites) that will need the same fix regardless, once
 `EvalPlanCodegen` compiles again. `JaxExperiment` is not in `defaultTargets`, so none of this gates
 `lake build` or this slice — it is a deliberate, unfixed consequence recorded here for whoever picks
-up the JAX/scan-lowering thread next (Thread 3 in `papers/jax_evalplan_architecture.md`'s §7.6, an
-explicitly unscheduled repair beyond what F4 itself needs).
+up the JAX bridge next. That is thread **5** in `papers/jax_evalplan_architecture.md`'s §7.6
+("compact/evidence-indexed kernels for JAX", status **Done**), which has no further work scheduled —
+NOT thread 3, which is "Continue Wave F (F4)" and is open/next-recommended; this repair is unscheduled
+because thread 5 is finished, not because it was dropped from a scheduled thread. One further latent
+trap for whoever revives it: `Executable.lean`'s `JaxExecutableWellFormed` invariant silently changed
+MEANING under this slice — it encodes a 1:1 step-to-kernel correspondence that predates scan support,
+so a `.scan` step now counts as "one step" with no JAX-kernel meaning at all. No production caller
+reaches this today (`Executable.lean` is consumed only by `JaxExperiment`), so nothing is broken now,
+but the invariant no longer says what its name suggests.
 
 ### F4 - source compiler, adapter, and differential gate
 

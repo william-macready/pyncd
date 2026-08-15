@@ -6,7 +6,7 @@ import LeanNCD.Eval.Plan.RawStep
 `RawEvalPlan` is the public, unchecked graph record accepted from a compiler or codec: the
 positional signature table, the ordered set of input slots, an ordered sequence of local
 operations, and the numeric convention. No graph scheduling logic lives here — this module owns
-only the open presentation; `checkPlan` (`Check.lean`) is what turns a `RawEvalPlan` into evidence
+only the open presentation; `checkPlan` (`EvalPlan.lean`) is what turns a `RawEvalPlan` into evidence
 that its wiring is sound.
 -/
 

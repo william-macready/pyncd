@@ -27,8 +27,8 @@ abbrev NamedDenseEnv := HashMap String DenseTensor
     `inputSlotsAcc`; that is producer discipline, not a guarantee `PlanBindings`/`PreparedPlan`'s
     public constructors close off. So `pack` builds the `slot → name` map directly from
     `requiredInputs` and trusts the invariant instead of re-deriving it — the same way
-    `runDensePlan`/`runDenseAssignAt` (`Dense.lean`) trust `checkPlan`'s invariants rather than
-    re-validating them. If that invariant were ever broken (a hand-built `PreparedPlan` pairing a
+    `runDensePlan` (`EvalPlan.lean`) and `runDenseAssignAt` (`Dense.lean`) trust `checkPlan`'s
+    invariants rather than re-validating them. If that invariant were ever broken (a hand-built `PreparedPlan` pairing a
     validly-checked `RequiredBindings` against a mismatched `raw.inputSlots`), `pack` fails loud
     with a `.missingEnvBinding` diagnostic naming the unmatched slot, rather than resolving a bogus
     empty-string name into `env`. What's left to check here is genuinely about the caller-supplied

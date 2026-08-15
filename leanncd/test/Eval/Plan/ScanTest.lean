@@ -935,6 +935,45 @@ def outerStoreMultiBase : Array DenseTensor :=
    , { shape := [2,2], data := #[1.0,1.0,1.0,1.0] }
    , { shape := [2,2], data := Array.replicate 4 0.0 } ]
 
+/-! #### `writeFreeExtentMismatch`: a free face WIDER than the state's own dimension
+
+The final whole-branch review's Critical finding, reproduced on this fixture. Before
+`freeExtentsAgree` existed, `checkWrites` compared only the free positions' RANK/ORDER against the
+block output (`baseWriteRowsOk`'s `outputShapeSize` is `shape.size`, a COUNT), never their SIZE — so
+declaring `ROWFACE` as shape `[5]` while `dp`'s own free dimension is size `2` was accepted, and
+`runDenseScan` then committed `ROWFACE[2..4]` through `flatIndex` into cells belonging to other rows
+(or past the end of `dp.data` entirely).
+
+Only two fields differ from `multiBaseScan`: outer slot 0 and the base block's input-0 signature
+both become `[5]` (they must move together, or `captureSignatureMismatch` fires first and the
+extent check is never reached). `dp` itself is untouched at `[2,2]`, so `faceWrite`'s free row —
+state dim 1, size `2` — now disagrees with the block output's size `5` at free position `0`. -/
+
+def outerSigsFreeExtentMismatch : Array TensorSignature :=
+  outerSigsMultiBase.set! 0 { shape := #[5], dtype := .f64 }
+
+def baseBlockFreeExtentMismatch : RawPlanBlock :=
+  { baseBlockMultiBase with
+    tensorSigs := baseBlockMultiBase.tensorSigs.set! 0 { shape := #[5], dtype := .f64 } }
+
+def freeExtentMismatchScan : RawScanPlan :=
+  { multiBaseScan with baseBlock := baseBlockFreeExtentMismatch }
+
+-- The predicate itself, on the exact rows involved: `faceRows`'s free row is state dim 1.
+#guard freeExtentsAgree #[2,2] #[2] faceRows == true
+#guard freeExtentsAgree #[2,2] #[5] faceRows == false
+
+-- writeFreeExtentMismatch: accepted before the fix (`checkScanPlan` returned `.ok`, and
+-- `runDenseScan` then wrote out of region), rejected now.
+run_cmd do
+  match checkScanPlan outerSigsFreeExtentMismatch freeExtentMismatchScan with
+  | .ok _ =>
+      throwError "a base write whose free face is WIDER than the state's own dimension should have \
+been rejected — this is the final-review Critical finding"
+  | .error e =>
+      unless e == .writeFreeExtentMismatch true 0 0 #[2,2] #[5] do
+        throwError s!"writeFreeExtentMismatch: wrong error {repr e}"
+
 -- Fixture 5: face-plus-point-override multi-base-write. Verified: dp = [0,1,1,1] (row-major [2,2]).
 run_cmd do
   match checkScanPlan outerSigsMultiBase multiBaseScan with
@@ -1025,8 +1064,16 @@ run_cmd do
 
 Three mutations, each a hand-modified COPY of `runDenseScan` (never the shipped function itself),
 each demonstrating that a specific piece of the worker's behavior is load-bearing rather than
-incidental. `commitWrite` (Scan.lean) is `private`, so each copy reimplements its one equation
-locally as `commitWriteLocal` rather than reaching across the module boundary. -/
+incidental. `commitWrite` (Scan.lean) is `private`, so each copy commits writes through a local
+`commitWriteLocal` rather than reaching across the module boundary.
+
+⚠️ `commitWriteLocal` is NOT a faithful copy of `commitWrite`: it is the SCALAR-OUTPUT-ONLY
+specialization, reading element `0` at the single coordinate `applyAffine w.map iter` — which is
+exactly the pre-fix `commitWrite` bug Fixtures 5/6 found (a genuine free-position write must place
+EVERY element of its output, iterating `allCoords out.shape`). It stays valid only because every
+mutation fixture below (`coupledScan`, `deepHistoryScan`, `linearScan`) has scalar step outputs and
+no free-position write, where the two agree by `allCoords [] = [[]]`. Any future mutation fixture
+with a free-position write must copy the real `commitWrite` equation instead of reusing this. -/
 
 def commitWriteLocal (target : DenseTensor) (w : StateWriteMap) (blockStore : Array DenseTensor)
     (iter : List Int) : DenseTensor :=
@@ -1217,5 +1264,46 @@ run_cmd do
             throwError s!"MutC: stale-capture worker should NOT reproduce the correct S, got {repr S.data}"
           unless DenseTensor.approxEq S { shape := [3], data := #[1.0,11.0,20.0] } do
             throwError s!"MutC: expected the specific wrong value [1,11,20], got {repr S.data}"
+
+/-!
+## `CheckedScanPlan` construction boundary (compile-time privacy check)
+
+Pins that `checkScanPlan` is the only way to obtain a `CheckedScanPlan`, matching
+`CheckedPrivacyTest.lean`'s check for `CheckedAssignPlan` and `BlockTest.lean`'s for
+`CheckedPlanBlock`: the structure's constructor is `private mk ::`, so anonymous-constructor
+notation (`⟨...⟩`) cannot be used to smuggle an unchecked `RawScanPlan` past `checkScanPlan` from
+outside `LeanNCD.Eval.Plan`. This matters more here than for either predecessor, because
+`runDenseScan` performs NO bounds recovery of its own (see `commitWrite`'s doc comment): a
+`CheckedScanPlan` wrapped around a plan whose write geometry was never checked would write through
+`flatIndex` at unvalidated coordinates.
+
+As in both precedents, the negative half of this check is NOT an automated `#guard` — it is a
+documented manual verification. The line below is deliberately commented out; it must never be
+uncommented in committed code, because it must NOT compile:
+
+```
+-- def smuggledScan : CheckedScanPlan := ⟨freeExtentMismatchScan⟩
+```
+
+Note the payload it names: `freeExtentMismatchScan` is the very plan the Critical-finding fixture
+above proves `checkScanPlan` REJECTS, so this is exactly the bypass that would matter.
+
+Manually verified (2026-08-15) by uncommenting that exact line (with `freeExtentMismatchScan :
+RawScanPlan` already in scope above) and running, from `leanncd/`:
+
+```
+lake env lean test/Eval/Plan/ScanTest.lean
+```
+
+Observed failure, exit code 1, literal captured stdout/stderr:
+
+```
+test/Eval/Plan/ScanTest.lean:1288:38: error: Invalid `⟨...⟩` notation: Constructor for `LeanNCD.Eval.Plan.CheckedScanPlan` is marked as private
+```
+
+The line was re-commented immediately after confirming the failure; this file compiles clean with
+it commented out, exercising only the positive half (normal construction via `checkScanPlan` works,
+already exercised by every fixture above).
+-/
 
 end LeanNCD.Eval.Plan.ScanTest

@@ -53,6 +53,21 @@ def stepWriteRowsOk (advancingDims : Array Nat) (outputShapeSize : Nat)
         | some (.free p) => some p | _ => none))
     == List.range outputShapeSize)
 
+/-- For every `.free` row, the state's own dimension size must equal the block output's size at the
+    corresponding free position — proposal §7.3's "write-result signature agreement with the
+    unpinned state dimensions", previously checked only for rank/position, never for size. Without
+    it, a write whose free face is WIDER than the state's own dimension writes out of its declared
+    region (silently into another row's cells, or past the end of the tensor entirely); a NARROWER
+    one leaves part of the region it claims to cover unwritten. At its only call site it runs AFTER
+    `baseWriteRowsOk`/`stepWriteRowsOk` have admitted the geometry, which forces `rows.size` to be
+    the state's rank and every free position to be in range — so neither `getD` default is
+    reachable there. -/
+def freeExtentsAgree (stateShape : Array Nat) (outputShape : Array Nat)
+    (rows : Array (Option WriteRowKind)) : Bool :=
+  rows.toList.zipIdx.all (fun (r, d) => match r with
+    | some (.free p) => stateShape.getD d 0 == outputShape.getD p 0
+    | _ => true)
+
 /-- Two writes' declared regions collide iff no dimension forces them apart. Since every row is
     `.pinned`/`.free`/`.advancing`, a dimension forces the regions apart only when BOTH writes pin
     it to DIFFERENT literals; `.free`/`.advancing` always range over their full domain and can never
@@ -64,12 +79,6 @@ def writesCollide (rowsA rowsB : Array (Option WriteRowKind)) : Bool :=
       match rowsA.getD d none, rowsB.getD d none with
       | some (.pinned a), some (.pinned b) => a != b
       | _, _ => false)
-
-/- Opaque evidence that every persistent-state read in a scan's step block is causal. Only
-   `checkScanPlan` constructs values whose presence certifies this (the certificate itself carries
-   no data beyond marking that the pass ran — `CheckedScanPlan`'s existence, not a separate field,
-   is the evidence a worker relies on; see the note after `stateReadCausal` below for why no
-   separate stored field is needed). -/
 
 /-- Whether one read row (for state dimension `d`, whose scan-context position is `ctxPos`) is
     causal: exactly one nonzero coefficient, equal to `1`, at `ctxPos`, and non-positive bias. This
@@ -127,6 +136,8 @@ inductive ScanPlanError
   | duplicateWriteForOutput       (isBase : Bool) (outputSlot : TensorSlot)
                                   (firstWriteIndex secondWriteIndex : Nat)
   | writeGeometryNotAdmitted      (isBase : Bool) (writeIndex : Nat)
+  | writeFreeExtentMismatch       (isBase : Bool) (writeIndex stateIndex : Nat)
+                                  (stateShape outputShape : Array Nat)
   | baseWritesOverlap             (stateIndex firstWriteIndex secondWriteIndex : Nat)
   | iterationOrderNotAdmitted     (order : ScanIterationOrder)
   | boundaryPolicyNotAdmitted     (policy : ScanBoundaryPolicy)
@@ -136,8 +147,14 @@ inductive ScanPlanError
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- Evidence that one `RawScanPlan` is a sound checked scan: both blocks are checked, every
-    capture/write obligation in proposal §7.3 holds, and (Task 2) causality holds for every state
-    read. `stepExtents` is retained rather than recomputed by every consumer. -/
+    capture/write obligation in proposal §7.3 holds, and causality holds for every state read.
+    `stepExtents` is retained rather than recomputed by every consumer.
+
+    There is deliberately no separate `CausalityCertificate` type or field: the certificate IS
+    `checkScanPlan`'s own causality loop over `stateReadCausal`, and a `CheckedScanPlan` value's
+    existence — obtainable only through `checkScanPlan`, since `mk` is `private` — is itself the
+    evidence a worker relies on. Storing a redundant marker field would add a second thing to keep
+    in sync with the check that already ran. -/
 structure CheckedScanPlan where private mk ::
   raw         : RawScanPlan
   checkedBase : CheckedPlanBlock
@@ -182,11 +199,13 @@ private def checkCaptures (sigs : Array TensorSignature) (block : RawPlanBlock)
 /-- Validate one block's writes against its own declared `outputs` and against `states`: every
     write's `stateIndex` is in range, every write's `outputSlot` is a declared block output, every
     declared output is written by exactly one write, base-write geometry is admitted and pairwise
-    disjoint across each state's FULL write list, and step-write geometry is admitted. Returns, per
-    state, the accepted row classifications PAIRED with each write's original global index `wi` (so
-    a caller needing a real locator — e.g. `multipleStepWritesForState`'s first/second write index —
-    doesn't have to re-derive it), so the caller can additionally require exactly one step write and
-    at least one base write. -/
+    disjoint across each state's FULL write list, step-write geometry is admitted, and every
+    admitted write's free rows agree in SIZE with the state's own dimensions (`freeExtentsAgree` —
+    geometry admission covers only rank/position). Returns, per state, the accepted row
+    classifications PAIRED with each write's original global index `wi` (so a caller needing a real
+    locator — e.g. `multipleStepWritesForState`'s first/second write index — doesn't have to
+    re-derive it), so the caller can additionally require exactly one step write and at least one
+    base write. -/
 private def checkWrites (sigs : Array TensorSignature) (block : RawPlanBlock)
     (writes : Array StateWriteMap) (states : Array StateSlot) (isBase : Bool) :
     Except ScanPlanError (Array (Array (Nat × Array (Option WriteRowKind)))) := do
@@ -203,13 +222,15 @@ private def checkWrites (sigs : Array TensorSignature) (block : RawPlanBlock)
     | some firstWi => throw (.duplicateWriteForOutput isBase w.outputSlot firstWi wi)
     | none => writtenOutputs := writtenOutputs.set! w.outputSlot (some wi)
     let st := states.getD w.stateIndex default
-    let stateRank := (sigs.getD st.destSlot { shape := #[], dtype := .f64 }).shape.size
+    let stateShape := (sigs.getD st.destSlot { shape := #[], dtype := .f64 }).shape
     let contextWidth := if isBase then 0 else st.advancingDims.size
-    let rows := writeRowKinds stateRank contextWidth w
-    let outputShapeSize := (block.tensorSigs.getD w.outputSlot { shape := #[], dtype := .f64 }).shape.size
-    let admitted := if isBase then baseWriteRowsOk st.advancingDims outputShapeSize rows
-                    else stepWriteRowsOk st.advancingDims outputShapeSize rows
+    let rows := writeRowKinds stateShape.size contextWidth w
+    let outputShape := (block.tensorSigs.getD w.outputSlot { shape := #[], dtype := .f64 }).shape
+    let admitted := if isBase then baseWriteRowsOk st.advancingDims outputShape.size rows
+                    else stepWriteRowsOk st.advancingDims outputShape.size rows
     unless admitted do throw (.writeGeometryNotAdmitted isBase wi)
+    unless freeExtentsAgree stateShape outputShape rows do
+      throw (.writeFreeExtentMismatch isBase wi w.stateIndex stateShape outputShape)
     rowsByState := rowsByState.set! w.stateIndex (rowsByState.getD w.stateIndex #[] |>.push (wi, rows))
   for outputSlot in block.outputs do
     unless writtenOutputs.getD outputSlot none |>.isSome do
@@ -229,8 +250,10 @@ private def checkWrites (sigs : Array TensorSignature) (block : RawPlanBlock)
             if writesCollide stateRows[a].2 stateRows[b].2 then throw (.baseWritesOverlap si a b)
   return rowsByState
 
-/-- Validate an unchecked scan node (proposal §7.3). This version omits causality — Task 2 adds the
-    `stateReadCausal` pass before the final `return`. -/
+/-- Validate an unchecked scan node (proposal §7.3), INCLUDING causality: the final loop before
+    `return` walks every step-block factor that reads a captured state and requires
+    `stateReadCausal` of it, so a look-ahead or loop-axis-ignoring state read is rejected here
+    rather than left as a worker-side assumption (proposal §7.4). -/
 def checkScanPlan (sigs : Array TensorSignature) (raw : RawScanPlan) :
     Except ScanPlanError CheckedScanPlan := do
   if raw.states.isEmpty then throw .noStates else pure ()
@@ -328,7 +351,29 @@ def mixedRadixDomainSize (D : Array Nat) : Nat := D.foldl (· * ·) 1
     `dp[0, j] := ROWFACE[j]`) has a non-scalar output and must place every one of its elements, not
     just element `0`. Reduces to the scalar case cleanly: `allCoords [] = [[]]` (one iteration),
     `flatIndex [] [] = 0`, so a fully-pinned/advancing write (no free positions, scalar output)
-    behaves exactly as a single-coordinate commit. -/
+    behaves exactly as a single-coordinate commit.
+
+    **Bounds obligation this relies on.** Unlike `gatherFactor` (`Dense.lean`) and
+    `Executable.lean`, this function does NOT call `inBoundsPerDim` before `flatIndex`: it performs
+    no bounds recovery, trusting `checkScanPlan` the same way the base/step phases of
+    `runDenseScan` below trust it. Row by row, per `writeRowKinds`/`baseWriteRowsOk`/
+    `stepWriteRowsOk`:
+    - a `.free p` row ranges over exactly `out.shape[p]`, which `freeExtentsAgree` forces to equal
+      the state's own extent at that dimension (this was the gap the final F3 review found: before
+      it, only the free positions' RANK/ORDER was checked, so a wider output face wrote into other
+      rows' cells or past the end of the tensor);
+    - an `.advancing i` row is `ctx[i] + 1`, with `ctx` from `mixedRadixUnrank c.stepExtents` and
+      `stepExtents = historyExtents - 1` tied to the state's own extent by `advancingSizeMismatch`,
+      so it stays within `[1, extent)`;
+    - a `.pinned lit` row is `lit` verbatim. **Only `stepWriteRowsOk` excludes pinned rows
+      entirely; a BASE write may pin any dimension to any literal, and `baseWriteRowsOk` requires
+      only that SOME advancing dimension be pinned to `0` — no check forces an arbitrary pinned
+      literal to lie inside its dimension.** A hand-built `RawScanPlan` pinning a base write out of
+      range (`dp[5, 0] := ONE` on a `[2,2]` state) therefore still reaches `Array.set!` with an
+      out-of-range index. That obligation is genuinely open, not closed by the free-extent fix, and
+      is recorded as an F3 follow-up in `papers/wave_f_scanplan_proposal.md` §13; a guard HERE
+      cannot fix it (this function returns a `DenseTensor`, not an `Except`, so it could only
+      silently drop the write) — it belongs in `checkWrites` beside `freeExtentsAgree`. -/
 private def commitWrite (target : DenseTensor) (w : StateWriteMap) (blockStore : Array DenseTensor)
     (ctx : List Int) : DenseTensor := Id.run do
   let out := blockStore.getD w.outputSlot { shape := [], data := #[] }

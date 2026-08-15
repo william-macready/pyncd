@@ -46,7 +46,7 @@ structure CheckedPlanBlock where private mk ::
   deriving Repr
 
 /-- Validate one local block graph. Reuses `checkAssign` per assignment and the identical
-    availability/production-order discipline `checkPlan` (`Check.lean`) already applies to the
+    availability/production-order discipline `checkPlan` (`EvalPlan.lean`) already applies to the
     outer graph — the same loop shape, parameterized by this block's own `tensorSigs`/`inputs`
     instead of `RawEvalPlan`'s `tensorSigs`/`inputSlots`, plus the one block-specific obligation
     `checkPlan` has no analogue for: every assignment's `contextShape` must equal the block's
