@@ -1,4 +1,4 @@
-import LeanNCD.Eval.Plan.Dense
+import LeanNCD.Eval.Plan.EvalPlan
 
 /-!
 # Wave C C3 graph interpreter tests
@@ -6,6 +6,9 @@ import LeanNCD.Eval.Plan.Dense
 Every expected tensor here is hand-computed and confirmed by an actual run; none is read back from
 this interpreter's own output. Mirrors `GraphCheckTest`'s reference graphs (chain, diamond) rather
 than inventing a third topology.
+
+Migrated (Wave F F3, Task 4) to `RawEvalPlan`'s current shape: no `version` field, `steps : Array
+PlanStep` (every entry wrapped in `.assign`).
 -/
 
 namespace LeanNCD.Eval.Plan.GraphDenseTest
@@ -44,8 +47,8 @@ def oneNodeSigs : Array TensorSignature :=
   #[ { shape := #[2], dtype := .f64 }, { shape := #[2], dtype := .f64 } ]
 
 def oneNodePlan : RawEvalPlan :=
-  { version := admittedVersion, tensorSigs := oneNodeSigs, inputSlots := #[0]
-  , steps := #[idNode 1 0], numericMode := .reference64SumProduct }
+  { tensorSigs := oneNodeSigs, inputSlots := #[0]
+  , steps := #[.assign (idNode 1 0)], numericMode := .reference64SumProduct }
 
 def oneNodeInputs : Array DenseTensor := #[ { shape := [2], data := #[3.0, 4.0] } ]
 
@@ -62,8 +65,8 @@ def chainSigs : Array TensorSignature :=
    , { shape := #[2], dtype := .f64 } ] -- 2 = Z
 
 def chainPlan : RawEvalPlan :=
-  { version := admittedVersion, tensorSigs := chainSigs, inputSlots := #[0]
-  , steps := #[idNode 1 0, idNode 2 1], numericMode := .reference64SumProduct }
+  { tensorSigs := chainSigs, inputSlots := #[0]
+  , steps := #[.assign (idNode 1 0), .assign (idNode 2 1)], numericMode := .reference64SumProduct }
 
 def chainInputs : Array DenseTensor := #[ { shape := [2], data := #[5.0, 7.0] } ]
 
@@ -94,8 +97,9 @@ def nodeC : AssignPlan :=
   , algebra := admittedAlgebra }
 
 def diamondPlan : RawEvalPlan :=
-  { version := admittedVersion, tensorSigs := diamondSigs, inputSlots := #[0, 4]
-  , steps := #[idNode 1 0, idNode 2 0, nodeC], numericMode := .reference64SumProduct }
+  { tensorSigs := diamondSigs, inputSlots := #[0, 4]
+  , steps := #[.assign (idNode 1 0), .assign (idNode 2 0), .assign nodeC]
+  , numericMode := .reference64SumProduct }
 
 -- inputs ordered by inputSlots = #[0, 4]: X first, then W.
 def diamondInputs : Array DenseTensor :=
@@ -136,8 +140,9 @@ def sumNode (dest srcA srcB : TensorSlot) : AssignPlan :=
   , algebra := admittedAlgebra }
 
 def placementPlan : RawEvalPlan :=
-  { version := admittedVersion, tensorSigs := placementSigs, inputSlots := #[0, 4]
-  , steps := #[idNode 1 4, idNode 2 1, sumNode 3 2 0], numericMode := .reference64SumProduct }
+  { tensorSigs := placementSigs, inputSlots := #[0, 4]
+  , steps := #[.assign (idNode 1 4), .assign (idNode 2 1), .assign (sumNode 3 2 0)]
+  , numericMode := .reference64SumProduct }
 
 /-- Inputs ordered by `inputSlots = #[0, 4]`: slot 0 first, then slot 4. -/
 def placementInputs : Array DenseTensor :=
@@ -154,7 +159,7 @@ def placementInputs : Array DenseTensor :=
 -- reordering independent nodes: swap A/B's step order (neither depends on the other) — the graph
 -- is still accepted and the final store is identical, slot-for-slot.
 def diamondPlanSwapped : RawEvalPlan :=
-  { diamondPlan with steps := #[idNode 2 0, idNode 1 0, nodeC] }
+  { diamondPlan with steps := #[.assign (idNode 2 0), .assign (idNode 1 0), .assign nodeC] }
 
 #guard dataOf (runGraph diamondPlanSwapped diamondInputs) 1 == some #[5.0, 7.0]
 #guard dataOf (runGraph diamondPlanSwapped diamondInputs) 2 == some #[5.0, 7.0]
@@ -218,8 +223,8 @@ def fosNode : AssignPlan :=
   , terms := #[fosTerm 0, fosTerm 1, fosTerm 2], algebra := admittedAlgebra }
 
 def fosPlan : RawEvalPlan :=
-  { version := admittedVersion, tensorSigs := fosSigs, inputSlots := #[0, 1, 2]
-  , steps := #[fosNode], numericMode := .reference64SumProduct }
+  { tensorSigs := fosSigs, inputSlots := #[0, 1, 2]
+  , steps := #[.assign fosNode], numericMode := .reference64SumProduct }
 
 def fosInputs : Array DenseTensor :=
   #[ { shape := [], data := #[1e16] }, { shape := [], data := #[1.0] }

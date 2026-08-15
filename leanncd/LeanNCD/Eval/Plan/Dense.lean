@@ -145,40 +145,9 @@ def runDenseAssign (c : CheckedAssignPlan) (store : Array DenseTensor) :
     Except PositionalInputError DenseTensor :=
   runDenseAssignAt c [] store
 
-/-- Execute a checked graph over positional Dense inputs, ordered by `c.raw.inputSlots`. Checks
-    input arity, validates each input tensor's shape and storage against its declared signature,
-    places inputs into their declared slots, then runs each checked node in order via
-    `runDenseAssign`, inserting its result at that node's destination slot. Every non-input slot is
-    populated by construction — `checkPlan` already established that every non-input slot has
-    exactly one producer and that every read only touches an already-available slot at the point it
-    is read — so the placeholder value used to pre-fill not-yet-produced slots is never actually
-    read; this is the total "unwrap" that guarantee supports, not a silent default. Arity mismatch
-    is reported via the dedicated `PositionalInputError.arityMismatch` constructor. Per-input shape
-    and storage mismatches use the same `shapeMismatch`/`storageMismatch` constructors
-    `runDenseAssign`'s `validateStore` uses for read factors — an input slot no node reads (e.g. an
-    unused graph input) still gets its declared signature enforced here, not skipped. -/
-def runDensePlan (c : CheckedEvalPlan) (inputs : Array DenseTensor) :
-    Except PositionalInputError (Array DenseTensor) := do
-  let raw := c.raw
-  unless inputs.size == raw.inputSlots.size do
-    throw (.arityMismatch raw.inputSlots.size inputs.size)
-  let n := raw.tensorSigs.size
-  let placeholder : DenseTensor := { shape := [], data := #[] }
-  let mut store : Array DenseTensor := Array.replicate n placeholder
-  for h : i in [0 : raw.inputSlots.size] do
-    let slot := raw.inputSlots[i]
-    let t := inputs[i]!
-    -- `slot < raw.tensorSigs.size` was already range-checked by `checkPlan`; the default here is
-    -- never actually used, `getD` just avoids requiring an `Inhabited TensorSignature` instance.
-    let sig := raw.tensorSigs.getD slot { shape := #[], dtype := .f64 }
-    unless t.shape == sig.shape.toList do
-      throw (.shapeMismatch slot sig.shape t.shape)
-    unless t.data.size == sig.shape.toList.foldl (· * ·) 1 do
-      throw (.storageMismatch slot t.shape t.data.size)
-    store := store.set! slot t
-  for node in c.checkedNodes do
-    let result ← runDenseAssign node store
-    store := store.set! node.plan.destinationSlot result
-  return store
+-- `runDensePlan` used to live here (C3), but now that a checked outer graph can contain a `.scan`
+-- node (whose worker is `runDenseScan`, `Scan.lean`), it relocated to `EvalPlan.lean` — the only
+-- module that can see both this file's `runDenseAssign` and `Scan.lean`'s `runDenseScan` without a
+-- circular import. See `EvalPlan.lean`.
 
 end LeanNCD.Eval.Plan

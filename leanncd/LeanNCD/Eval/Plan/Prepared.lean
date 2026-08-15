@@ -1,4 +1,4 @@
-import LeanNCD.Eval.Plan.Check
+import LeanNCD.Eval.Plan.EvalPlan
 
 /-!
 # Wave C prepared-plan bindings (C4)

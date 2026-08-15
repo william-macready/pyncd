@@ -2,6 +2,7 @@ import LeanNCD.DSL.Ast
 import LeanNCD.DSL.Pipeline.Types
 import LeanNCD.Eval.Plan.Error
 import LeanNCD.Eval.Plan.Prepared
+import LeanNCD.Eval.Plan.EvalPlan
 import LeanNCD.Eval.Plan.Signature
 import LeanNCD.Eval.Contract
 import LeanNCD.DSL.Pipeline.Lowering
@@ -89,7 +90,7 @@ private def liftShape (warnings : List EvalWarning) :
   | .error e => .error { cause := .shape e, warnings }
 
 private def liftPlanError (warnings : List EvalWarning) :
-    Except PlanError α → Except PlanCompileFailure α
+    Except PlanStepError α → Except PlanCompileFailure α
   | .ok a => .ok a
   | .error e => .error { cause := .invalidPlan e, warnings }
 

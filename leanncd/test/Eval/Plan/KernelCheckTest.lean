@@ -1,4 +1,4 @@
-import LeanNCD.Eval.Plan.Check
+import LeanNCD.Eval.Plan.EvalPlan
 
 /-!
 # Wave C C2 checker tests
@@ -141,17 +141,20 @@ def badContextPlan : AssignPlan :=
 
 -- Mutation: a top-level RawEvalPlan step with nonempty context. Verified: checkPlan rejects with
 -- topLevelContextNotEmpty 0.
+def topLevelBadAssign : AssignPlan :=
+  { contextShape := #[2], destinationSlot := 1, outputShape := #[3]
+  , terms := #[{ iterationShape := #[2,3], contextPos := #[0], outputPos := #[1]
+               , reductionPos := #[], factors := #[readX2] }]
+  , algebra := admittedAlgebra }
+
 def topLevelBadPlan : RawEvalPlan :=
-  { version := admittedVersion, tensorSigs := sigs2, inputSlots := #[0]
-  , steps := #[{ contextShape := #[2], destinationSlot := 1, outputShape := #[3]
-               , terms := #[{ iterationShape := #[2,3], contextPos := #[0], outputPos := #[1]
-                             , reductionPos := #[], factors := #[readX2] }]
-               , algebra := admittedAlgebra }]
+  { tensorSigs := sigs2, inputSlots := #[0]
+  , steps := #[.assign topLevelBadAssign]
   , numericMode := .reference64SumProduct }
 
-def checkPlanErrOf : Except PlanError CheckedEvalPlan → Option PlanError
+def checkPlanErrOf : Except PlanStepError CheckedEvalPlan → Option PlanStepError
   | .ok _ => none | .error e => some e
 
-#guard checkPlanErrOf (checkPlan topLevelBadPlan) == some (.topLevelContextNotEmpty 0)
+#guard checkPlanErrOf (checkPlan topLevelBadPlan) == some (.assign (.topLevelContextNotEmpty 0))
 
 end LeanNCD.Eval.Plan.KernelCheckTest

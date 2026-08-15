@@ -1,10 +1,14 @@
-import LeanNCD.Eval.Plan.Check
+import LeanNCD.Eval.Plan.EvalPlan
 
 /-!
 # Wave C C3 graph checker tests
 
 Reference graphs plus mutation coverage for `checkPlan`'s wiring invariants (slot availability,
 production order) on top of `checkAssign`'s already-tested local invariants.
+
+Migrated (Wave F F3, Task 4) to `RawEvalPlan`'s current shape: no `version` field (removed §2.3),
+`steps : Array PlanStep` (every entry wrapped in `.assign`), and `checkPlan`'s error type
+generalized to `PlanStepError` (every `PlanError`-shaped expectation below wrapped in `.assign`).
 -/
 
 namespace LeanNCD.Eval.Plan.GraphCheckTest
@@ -32,13 +36,13 @@ def chainSigs : Array TensorSignature :=
    , { shape := #[2], dtype := .f64 } ] -- 2 = Z
 
 def chainPlan : RawEvalPlan :=
-  { version := admittedVersion, tensorSigs := chainSigs, inputSlots := #[0]
-  , steps := #[idNode 1 0, idNode 2 1], numericMode := .reference64SumProduct }
+  { tensorSigs := chainSigs, inputSlots := #[0]
+  , steps := #[.assign (idNode 1 0), .assign (idNode 2 1)], numericMode := .reference64SumProduct }
 
-def isOk : Except PlanError CheckedEvalPlan → Bool
+def isOk : Except PlanStepError CheckedEvalPlan → Bool
   | .ok _ => true | .error _ => false
 
-def errOf : Except PlanError CheckedEvalPlan → Option PlanError
+def errOf : Except PlanStepError CheckedEvalPlan → Option PlanStepError
   | .ok _ => none | .error e => some e
 
 -- the chain is accepted
@@ -66,8 +70,9 @@ def nodeC : AssignPlan :=
   , algebra := admittedAlgebra }
 
 def diamondPlan : RawEvalPlan :=
-  { version := admittedVersion, tensorSigs := diamondSigs, inputSlots := #[0, 4]
-  , steps := #[idNode 1 0, idNode 2 0, nodeC], numericMode := .reference64SumProduct }
+  { tensorSigs := diamondSigs, inputSlots := #[0, 4]
+  , steps := #[.assign (idNode 1 0), .assign (idNode 2 0), .assign nodeC]
+  , numericMode := .reference64SumProduct }
 
 -- the diamond (fan-out + convergence + an unused input) is accepted
 #guard isOk (checkPlan diamondPlan)
@@ -76,66 +81,68 @@ def diamondPlan : RawEvalPlan :=
 ## Mutations
 -/
 
--- version not admitted
-#guard errOf (checkPlan { diamondPlan with version := 2 }) == some (.versionNotAdmitted 2)
-
 -- duplicate input slot
 #guard errOf (checkPlan { diamondPlan with inputSlots := #[0, 0] })
-  == some (.duplicateInputSlot 0)
+  == some (.assign (.duplicateInputSlot 0))
 
 -- input slots not ordered (decreasing, not equal)
 #guard errOf (checkPlan { diamondPlan with inputSlots := #[4, 0] })
-  == some (.inputSlotsNotOrdered 0)
+  == some (.assign (.inputSlotsNotOrdered 0))
 
 -- input slot out of range
 #guard errOf (checkPlan { diamondPlan with inputSlots := #[0, 99] })
-  == some (.slotOutOfRange 99 5)
+  == some (.assign (.slotOutOfRange 99 5))
 
 -- node-level destination slot out of range: nodeA (index 0) targets slot 99, which doesn't exist
 -- in the 5-slot table. Wrapped with node context via `.nodeError`, matching every other per-node
 -- failure in this loop.
-#guard errOf (checkPlan { diamondPlan with steps := #[idNode 99 0, idNode 2 0, nodeC] })
-  == some (.nodeError 0 (.slotOutOfRange 99 5))
+#guard errOf (checkPlan
+    { diamondPlan with steps := #[.assign (idNode 99 0), .assign (idNode 2 0), .assign nodeC] })
+  == some (.assign (.nodeError 0 (.slotOutOfRange 99 5)))
 
 -- node-level source slot out of range: nodeC (index 2) reads slot 99 via its first term/first
 -- factor instead of slot 1. Wrapped with node context, same as the destination case above.
 #guard errOf (checkPlan
-  { diamondPlan with steps := #[idNode 1 0, idNode 2 0,
-      { nodeC with terms := #[{ nodeC.terms[0]! with factors := #[idRead 99] }, nodeC.terms[1]!] }] })
-  == some (.nodeError 2 (.slotOutOfRange 99 5))
+  { diamondPlan with steps := #[.assign (idNode 1 0), .assign (idNode 2 0),
+      .assign { nodeC with terms := #[{ nodeC.terms[0]! with factors := #[idRead 99] }, nodeC.terms[1]!] }] })
+  == some (.assign (.nodeError 2 (.slotOutOfRange 99 5)))
 
 -- invalid forward read: nodeC (index 2) reads slot 3 (its own not-yet-produced destination) via
 -- its first term/first factor instead of slot 1
 #guard errOf (checkPlan
-  { diamondPlan with steps := #[idNode 1 0, idNode 2 0,
-      { nodeC with terms := #[{ nodeC.terms[0]! with factors := #[idRead 3] }, nodeC.terms[1]!] }] })
-  == some (.invalidForwardRead 2 0 0 3)
+  { diamondPlan with steps := #[.assign (idNode 1 0), .assign (idNode 2 0),
+      .assign { nodeC with terms := #[{ nodeC.terms[0]! with factors := #[idRead 3] }, nodeC.terms[1]!] }] })
+  == some (.assign (.invalidForwardRead 2 0 0 3))
 
 -- reordering a DEPENDENT node is rejected outright, not merely "a different but valid result":
 -- moving nodeC (which reads slots 1 and 2) before the nodes that produce them is an
 -- invalidForwardRead, not a permitted reordering — "reordering preserves results only when
 -- dependencies permit it" (A.7) is enforced by rejection here, not by computing a wrong answer.
-#guard errOf (checkPlan { diamondPlan with steps := #[nodeC, idNode 1 0, idNode 2 0] })
-  == some (.invalidForwardRead 0 0 0 1)
+#guard errOf (checkPlan
+    { diamondPlan with steps := #[.assign nodeC, .assign (idNode 1 0), .assign (idNode 2 0)] })
+  == some (.assign (.invalidForwardRead 0 0 0 1))
 
 -- duplicate destination: nodeB (index 1) overwritten to also target slot 1 (nodeA's destination)
-#guard errOf (checkPlan { diamondPlan with steps := #[idNode 1 0, idNode 1 0, nodeC] })
-  == some (.duplicateDestination 1 0 1)
+#guard errOf (checkPlan
+    { diamondPlan with steps := #[.assign (idNode 1 0), .assign (idNode 1 0), .assign nodeC] })
+  == some (.assign (.duplicateDestination 1 0 1))
 
 -- input slot overwritten: a node targets input slot 4 (W)
-#guard errOf (checkPlan { diamondPlan with steps := #[idNode 4 0, idNode 2 0, nodeC] })
-  == some (.inputSlotOverwritten 4 0)
+#guard errOf (checkPlan
+    { diamondPlan with steps := #[.assign (idNode 4 0), .assign (idNode 2 0), .assign nodeC] })
+  == some (.assign (.inputSlotOverwritten 4 0))
 
 -- missing production: drop nodeC, so slot 3 (C) is declared in tensorSigs but never produced
-#guard errOf (checkPlan { diamondPlan with steps := #[idNode 1 0, idNode 2 0] })
-  == some (.missingProduction 3)
+#guard errOf (checkPlan { diamondPlan with steps := #[.assign (idNode 1 0), .assign (idNode 2 0)] })
+  == some (.assign (.missingProduction 3))
 
 -- local error propagated with node context: nodeA's own outputShape is mutated to disagree with
 -- its destination signature, which checkAssign already rejects (destinationShapeMismatch),
 -- wrapped here with the node index that produced it
 #guard errOf (checkPlan
-  { diamondPlan with steps := #[{ idNode 1 0 with outputShape := #[3] }, idNode 2 0, nodeC] })
-  == some (.nodeError 0 (.destinationShapeMismatch #[3] #[2]))
+  { diamondPlan with steps :=
+      #[.assign { idNode 1 0 with outputShape := #[3] }, .assign (idNode 2 0), .assign nodeC] })
+  == some (.assign (.nodeError 0 (.destinationShapeMismatch #[3] #[2])))
 
 -- numericModeNotAdmitted: structurally unreachable via checkPlan (NumericMode has exactly one
 -- constructor, reference64SumProduct), same pattern as checkAssign's single-valued-vocabulary

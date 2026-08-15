@@ -1,5 +1,5 @@
 import LeanNCD.Eval.Plan.Compile
-import LeanNCD.Eval.Plan.Dense
+import LeanNCD.Eval.Plan.EvalPlan
 import LeanNCD.Eval.Report
 
 /-!

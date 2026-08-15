@@ -147,8 +147,8 @@ def idAssign : AssignPlan :=
   , algebra := admittedAlgebra }
 
 def idRaw : RawEvalPlan :=
-  { version := admittedVersion, tensorSigs := idSigs, inputSlots := #[0]
-  , steps := #[idAssign], numericMode := .reference64SumProduct }
+  { tensorSigs := idSigs, inputSlots := #[0]
+  , steps := #[.assign idAssign], numericMode := .reference64SumProduct }
 
 -- Well-formed affine-table candidate: the iteration domain has 3 coordinates (0, 1, 2), and the
 -- identity read maps each straight through to the same-numbered source index, all in-bounds.
@@ -206,9 +206,10 @@ def testValidPlanCandidate : Bool :=
   match checkPlan idRaw with
   | .error _ => false
   | .ok checkedPlan =>
-    match checkedPlan.checkedNodes[0]? with
+    match (checkedPlan.checkedNodes[0]? : Option CheckedPlanStepEvidence) with
     | none => false
-    | some checkedAssign =>
+    | some (.scan _) => false  -- unreachable: idRaw is scan-free by construction
+    | some (.assign checkedAssign) =>
       match checkBindings #[0] #[{ name := "x", slot := 0 }] with
       | .error _ => false
       | .ok requiredInputs =>
@@ -242,9 +243,10 @@ def testValidPlanCandidateEvidence : Bool :=
   match checkPlan idRaw with
   | .error _ => false
   | .ok checkedPlan =>
-    match checkedPlan.checkedNodes[0]? with
+    match (checkedPlan.checkedNodes[0]? : Option CheckedPlanStepEvidence) with
     | none => false
-    | some checkedAssign =>
+    | some (.scan _) => false  -- unreachable: idRaw is scan-free by construction
+    | some (.assign checkedAssign) =>
       match checkBindings #[0] #[{ name := "x", slot := 0 }] with
       | .error _ => false
       | .ok requiredInputs =>
@@ -319,15 +321,16 @@ def mixedAssign1 : AssignPlan :=
 -- Step 0 reuses `idAssign` (`Y[i] := X[i]`, slot 0 → slot 1) unchanged; step 1 is `mixedAssign1`
 -- (`Z[i] := Y[i]`, slot 1 → slot 2).
 def mixedRaw : RawEvalPlan :=
-  { version := admittedVersion, tensorSigs := mixedSigs, inputSlots := #[0]
-  , steps := #[idAssign, mixedAssign1], numericMode := .reference64SumProduct }
+  { tensorSigs := mixedSigs, inputSlots := #[0]
+  , steps := #[.assign idAssign, .assign mixedAssign1], numericMode := .reference64SumProduct }
 
 def testMixedKernelPlanEvidence : Bool :=
   match checkPlan mixedRaw with
   | .error _ => false
   | .ok checkedPlan =>
-    match checkedPlan.checkedNodes[0]?, checkedPlan.checkedNodes[1]? with
-    | some checkedAssign0, some checkedAssign1 =>
+    match (checkedPlan.checkedNodes[0]? : Option CheckedPlanStepEvidence),
+          (checkedPlan.checkedNodes[1]? : Option CheckedPlanStepEvidence) with
+    | some (.assign checkedAssign0), some (.assign checkedAssign1) =>
       match checkBindings #[0] #[{ name := "x", slot := 0 }] with
       | .error _ => false
       | .ok requiredInputs =>

@@ -38,12 +38,6 @@ inductive PlanError
   | missingProduction        (slot : TensorSlot)
   | invalidForwardRead       (nodeIndex termIndex factorIndex : Nat) (slot : TensorSlot)
   | nodeError                (nodeIndex : Nat) (cause : PlanError)
-  /-- TEMPORARY Task-1 (Wave F F3) interim placeholder: `checkPlan` cannot yet check a `.scan` graph
-      step (that's Task 4's job, once `checkPlan` relocates into `EvalPlan.lean` alongside a real
-      `PlanStepError` that can represent scan failures properly), so every `.scan` step is rejected
-      here rather than left to break `checkPlan`'s compile. Task 4 deletes this constructor when it
-      lands. -/
-  | scanStepNotYetSupported  (stepIndex : Nat)
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- A checked plan met a positional tensor store that does not conform to the shapes the checker
@@ -100,25 +94,12 @@ inductive BindingsError
   | duplicateName   (name : String)
   deriving DecidableEq, BEq, Repr, Inhabited
 
-/-- §5.5's sketch, verified as-is. Does NOT derive `Repr`: `ShapeError` (an existing sibling type)
-    has no `Repr` instance — confirmed by observing the actual `synthInstanceFailed` error, not
-    assumed — and `Repr` derivation requires every constructor's payload to support it, unlike
-    `DecidableEq`/`Inhabited`, which don't have that all-or-nothing requirement the same way. -/
-inductive PlanCompileCause
-  | inputSignature (cause : InputSignatureError)
-  | capability     (cause : CapabilityError)
-  | shape          (cause : ShapeError)
-  | invalidPlan    (cause : PlanError)
-  | bindings       (cause : BindingsError)
-  deriving DecidableEq, BEq, Inhabited
-
-/-- Same finding applies here: `EvalWarning` also has no `Repr`, so this likewise derives
-    `DecidableEq, BEq, Inhabited` but not `Repr`. `#guard`-based equality testing is unaffected —
-    `DecidableEq`/`BEq` are exactly what `==` needs, and both derive cleanly. -/
-structure PlanCompileFailure where
-  cause    : PlanCompileCause
-  warnings : List EvalWarning
-  deriving DecidableEq, BEq, Inhabited
+/- `PlanCompileCause`/`PlanCompileFailure` used to live here (§5.5's sketch), but `invalidPlan`'s
+   payload is now `PlanStepError` (`EvalPlan.lean`), which itself depends on `ScanPlanError`
+   (`Scan.lean`) — one layer downstream of where this file sits in the import graph (`Error` is
+   imported by `Check`, which is upstream of `Dense → Block → Scan → EvalPlan`). So both types
+   relocated to `EvalPlan.lean`, the first module downstream of everything they need to reference.
+   See `EvalPlan.lean` for their current definitions. -/
 
 /-- Everything `pack` can detect wrong with the concrete tensor `env` supplies once `requiredInputs`
     itself is already known-good (`PlanBindings.requiredInputs : RequiredBindings`, checked by

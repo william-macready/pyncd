@@ -182,14 +182,24 @@ def contractSig : InputSignature := InputSignature.ofDenseInputs contractInputs
 #guard (prepareEvalPlan contractSched contractSig).toOption.isSome
 
 def contractPrepared : Option PreparedPlan := (prepareEvalPlan contractSched contractSig).toOption
-#guard contractPrepared.map (fun p => p.plan.raw.steps[0]!.terms[0]!.iterationShape) == some #[2, 3]
-#guard contractPrepared.map (fun p => p.plan.raw.steps[0]!.terms[0]!.outputPos) == some #[0]
-#guard contractPrepared.map (fun p => p.plan.raw.steps[0]!.terms[0]!.reductionPos) == some #[1]
-#guard contractPrepared.map (fun p => p.plan.raw.steps[0]!.terms[0]!.contextPos) == some #[]
-#guard contractPrepared.map (fun p => p.plan.raw.steps[0]!.contextShape) == some #[]
-#guard contractPrepared.map (fun p => p.plan.raw.steps[0]!.terms[0]!.factors[0]!.map.coeffs) ==
+
+/-- `PlanStep` field-access helper: every fixture in this file is scan-free by construction
+    (`prepareEvalPlan`'s Step D only ever emits `.assign` steps, wrapped via `stepsAcc.map .assign`),
+    so the `.scan` arm should never actually be hit — made explicit here (fails the assertion, since
+    `AssignPlan` derives `Inhabited`) rather than silently defaulting or re-projecting a field that no
+    longer exists directly on `PlanStep`. -/
+def assignStep : PlanStep → AssignPlan
+  | .assign a => a
+  | .scan _ => panic! "unreachable: CompileTest fixtures are scan-free by construction"
+
+#guard contractPrepared.map (fun p => (assignStep p.plan.raw.steps[0]!).terms[0]!.iterationShape) == some #[2, 3]
+#guard contractPrepared.map (fun p => (assignStep p.plan.raw.steps[0]!).terms[0]!.outputPos) == some #[0]
+#guard contractPrepared.map (fun p => (assignStep p.plan.raw.steps[0]!).terms[0]!.reductionPos) == some #[1]
+#guard contractPrepared.map (fun p => (assignStep p.plan.raw.steps[0]!).terms[0]!.contextPos) == some #[]
+#guard contractPrepared.map (fun p => (assignStep p.plan.raw.steps[0]!).contextShape) == some #[]
+#guard contractPrepared.map (fun p => (assignStep p.plan.raw.steps[0]!).terms[0]!.factors[0]!.map.coeffs) ==
   some #[#[1, 0]]   -- A[i]: zero coefficient in the j (contracted) column — still counted
-#guard contractPrepared.map (fun p => p.plan.raw.steps[0]!.terms[0]!.factors[1]!.map.coeffs) ==
+#guard contractPrepared.map (fun p => (assignStep p.plan.raw.steps[0]!).terms[0]!.factors[1]!.map.coeffs) ==
   some #[#[0, 1]]   -- B[j]
 
 -- Example 3: repeated assignment `Y[i]:=A[i]; Y[i]:=B[i]; Z[i]:=Y[i]`, axis i : ℕ = 2.
