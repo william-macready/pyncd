@@ -321,13 +321,24 @@ def mixedRadixUnrank (D : Array Nat) (r : Nat) : Array Nat := Id.run do
 
 def mixedRadixDomainSize (D : Array Nat) : Nat := D.foldl (· * ·) 1
 
-/-- Place one write's value into a complete-state tensor at the coordinate `writeTargetCoord`
-    derives from `iter`, reusing `applyAffine`/`flatIndex` unchanged. -/
+/-- Place one write's value(s) into a complete-state tensor. `ctx` is the write's context portion
+    (empty for base, the current recurrence coordinate for step); the write's full domain is
+    `ctx ++ outputCoord` for every coordinate `outputCoord` of the block's own output tensor at
+    `w.outputSlot` (proposal §6.5) — a write with a genuinely FREE position (e.g. a face write like
+    `dp[0, j] := ROWFACE[j]`) has a non-scalar output and must place every one of its elements, not
+    just element `0`. Reduces to the scalar case cleanly: `allCoords [] = [[]]` (one iteration),
+    `flatIndex [] [] = 0`, so a fully-pinned/advancing write (no free positions, scalar output)
+    behaves exactly as a single-coordinate commit. -/
 private def commitWrite (target : DenseTensor) (w : StateWriteMap) (blockStore : Array DenseTensor)
-    (iter : List Int) : DenseTensor :=
-  let coord := (applyAffine w.map iter).map Int.toNat
-  let v := (blockStore.getD w.outputSlot { shape := [], data := #[] }).data.getD 0 0.0
-  { target with data := target.data.set! (flatIndex target.shape coord) v }
+    (ctx : List Int) : DenseTensor := Id.run do
+  let out := blockStore.getD w.outputSlot { shape := [], data := #[] }
+  let mut target := target
+  for oc in allCoords out.shape do
+    let iter := ctx ++ oc
+    let coord := (applyAffine w.map iter).map Int.toNat
+    let v := out.data.getD (flatIndex out.shape (oc.map Int.toNat)) 0.0
+    target := { target with data := target.data.set! (flatIndex target.shape coord) v }
+  return target
 
 /-- The general Dense scan worker (proposal §9): allocate, apply every checked base write, then for
     each recurrence coordinate in increasing mixed-radix rank, bind an immutable pre-step snapshot,

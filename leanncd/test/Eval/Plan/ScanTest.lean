@@ -663,22 +663,21 @@ Six hand-computed fixtures, each asserted directly against `runDenseScan`'s outp
 Fixture 2 reuses `deepHistoryScan`/`outerSigsDeepHistory`/`stateG` verbatim (Part 4). Fixtures 3-6 are
 new `RawScanPlan`s built by the same construction pattern.
 
-**A genuine gap found while building Fixtures 5/6, not a construction bug**: `commitWrite` (as given,
-verified only against Fixture 1's fully-pinned/fully-advancing writes) applies `applyAffine w.map
-iter` with `iter := []` for every base write and reads only `blockStore.getD w.outputSlot
-{...}.data.getD 0 0.0` (element 0). For a base write with a genuine FREE output position (e.g. a
-row-face write `dp[0, c] := ROWFACE[c]`), this always resolves to the coordinate given by the write
-map's bias components alone and always reads element 0 of the block's output — so it writes exactly
-ONE coordinate, never iterating the free axis, silently dropping every other element. Confirmed
-empirically: a direct construction of F0's face-write fixture through `runDenseScan` produces
-`#[0,0,1,1]`, not `#[0,1,1,1]` — `dp[0,1]` (which should be `ROWFACE[1] = 1`) is never written and
-stays at its zero-initialized value. `checkScanPlan`'s `baseWriteRowsOk` structurally ACCEPTS
-free-position base writes (Part 1's own `faceWrite` fixture) — the gap is in the worker, not the
-checker. Fixtures 5 and 6 below route around this by decomposing every free-position base write into
-multiple fully-pinned point overrides (one per free-axis value) — the same final state values, using
-only the write shapes Fixture 1 already exercises. This is flagged as a concern for the controller,
-not treated as BLOCKED: no fixture in this table actually requires a free-position write to reach its
-target value once decomposed this way, and `runDenseScan` itself is left untouched. -/
+**A genuine gap found and fixed while building Fixtures 5/6, not a construction bug**: the first draft
+of `commitWrite` (verified only against Fixture 1's fully-pinned/fully-advancing writes) applied
+`applyAffine w.map iter` with `iter := []` for every base write and read only `blockStore.getD
+w.outputSlot {...}.data.getD 0 0.0` (element 0) — so a base write with a genuine FREE output position
+(e.g. a row-face write `dp[0, c] := ROWFACE[c]`) always resolved to one coordinate (its bias
+components alone) from one source element, silently dropping every other free-axis value. Confirmed
+empirically before any fix: a direct construction of F0's face-write fixture through the ORIGINAL
+`runDenseScan` produced `#[0,0,1,1]`, not `#[0,1,1,1]` — `dp[0,1]` (which should be `ROWFACE[1] = 1`)
+was never written. `checkScanPlan`'s `baseWriteRowsOk` structurally ACCEPTS free-position base writes
+(Part 1's own `faceWrite` fixture) — the gap was in the worker, not the checker. `commitWrite` now
+iterates `allCoords out.shape` and commits every element (see `Scan.lean`'s doc comment on
+`commitWrite`), reducing to the original single-coordinate behavior exactly when the output is
+scalar (`allCoords [] = [[]]`, one iteration). Fixtures 5 and 6 below use GENUINE free-position base
+writes (`faceWrite` from Part 1, and an analogous free-over-`r` write for the asymmetric case) —
+matching F0's original fixture intent — now that the worker executes them correctly. -/
 
 def outerStoreLinear : Array DenseTensor :=
   #[ { shape := [], data := #[1.0] }
@@ -872,12 +871,15 @@ run_cmd do
 
 /-! ### Fixture 5: face-plus-point-override multi-base-write
 
-F0's `dp` fixture (row-0 face write plus a point override at `(1,0)`), decomposed into THREE fully
-pinned base writes — `dp[0,0] := ROWFACE[0]`, `dp[0,1] := ROWFACE[1]`, `dp[1,0] := ONE` — to route
-around the free-position `commitWrite` gap documented above, rather than using Part 1's `faceWrite`
-(a free-over-`c` write) directly. `baseWriteDp10Multi` reuses Part 1's `pointWrite` verbatim (same
-outputSlot, same fully-pinned geometry) and `stepWriteDpMulti` reuses Part 1's `dpStepWrite`'s map
-(only the outputSlot differs, since this scan's own step block numbers its output differently). -/
+F0's `dp` fixture, unmodified: a row-0 face write `dp[0, c] := ROWFACE[c]` (free over `c`) plus a
+point override `dp[1,0] := ONE`. Reuses Part 1's `faceWrite`/`pointWrite` directly (same
+`outputSlot`s, same geometry, already independently verified structurally-accepted by
+`baseWriteRowsOk`/`writesCollide` in Part 1) — the base block's own outputs are slot 0 (ROWFACE,
+passed through whole) and slot 1 (ONE, passed through whole), matching `faceWrite.outputSlot = 0` /
+`pointWrite.outputSlot = 1` exactly, so no assignments are needed (both inputs are already their own
+outputs, the same "input doubles as output" shape `baseBlock`/`baseBlockCoupled` use elsewhere).
+`stepWriteDpMulti` reuses Part 1's `dpStepWrite`'s map (only the outputSlot differs, since this
+scan's own step block numbers its output differently). -/
 
 def outerSigsMultiBase : Array TensorSignature :=
   #[{ shape := #[2], dtype := .f64 }, { shape := #[], dtype := .f64 }
@@ -886,37 +888,13 @@ def outerSigsMultiBase : Array TensorSignature :=
 def stateDpMulti : StateSlot :=
   { destSlot := 3, advancingDims := #[0,1], materialization := .completeHistory }
 
-def readRowface0Multi : ReadPlan :=
-  { sourceSlot := 0, map := { coeffs := #[#[]], bias := #[0] }, sourceShape := #[2], oobPolicy := .zeroPad }
-def readRowface1Multi : ReadPlan :=
-  { sourceSlot := 0, map := { coeffs := #[#[]], bias := #[1] }, sourceShape := #[2], oobPolicy := .zeroPad }
-def termRowface0Multi : TermPlan :=
-  { iterationShape := #[], contextPos := #[], outputPos := #[], reductionPos := #[]
-  , factors := #[readRowface0Multi] }
-def termRowface1Multi : TermPlan :=
-  { iterationShape := #[], contextPos := #[], outputPos := #[], reductionPos := #[]
-  , factors := #[readRowface1Multi] }
-def assignRowface0Multi : AssignPlan :=
-  { contextShape := #[], destinationSlot := 2, outputShape := #[], terms := #[termRowface0Multi]
-  , algebra := admittedAlgebra }
-def assignRowface1Multi : AssignPlan :=
-  { contextShape := #[], destinationSlot := 3, outputShape := #[], terms := #[termRowface1Multi]
-  , algebra := admittedAlgebra }
-
 def baseBlockMultiBase : RawPlanBlock :=
   { contextShape := #[]
-  , tensorSigs := #[{ shape := #[2], dtype := .f64 }, { shape := #[], dtype := .f64 }
-                  , { shape := #[], dtype := .f64 }, { shape := #[], dtype := .f64 }]
-  , inputs := #[0, 1], assignments := #[assignRowface0Multi, assignRowface1Multi], outputs := #[1, 2, 3] }
+  , tensorSigs := #[{ shape := #[2], dtype := .f64 }, { shape := #[], dtype := .f64 }]
+  , inputs := #[0, 1], assignments := #[], outputs := #[0, 1] }
 
 def baseCaptureRowfaceMulti : BlockCapture := { inputSlot := 0, source := .external 0 }
 def baseCaptureOneMulti : BlockCapture := { inputSlot := 1, source := .external 1 }
-
-def baseWriteDp00Multi : StateWriteMap :=
-  { outputSlot := 2, stateIndex := 0, map := { coeffs := #[#[], #[]], bias := #[0, 0] } }
-def baseWriteDp01Multi : StateWriteMap :=
-  { outputSlot := 3, stateIndex := 0, map := { coeffs := #[#[], #[]], bias := #[0, 1] } }
-def baseWriteDp10Multi : StateWriteMap := { pointWrite with outputSlot := 1 }
 
 def stepReadDpMulti : ReadPlan :=
   { sourceSlot := 0, map := { coeffs := #[#[1,0], #[0,1]], bias := #[0,0] }, sourceShape := #[2,2]
@@ -944,7 +922,7 @@ def stepWriteDpMulti : StateWriteMap := { dpStepWrite with outputSlot := 2 }
 def multiBaseScan : RawScanPlan :=
   { states := #[stateDpMulti]
   , baseBlock := baseBlockMultiBase, baseCaptures := #[baseCaptureRowfaceMulti, baseCaptureOneMulti]
-  , baseWrites := #[baseWriteDp00Multi, baseWriteDp01Multi, baseWriteDp10Multi]
+  , baseWrites := #[faceWrite, pointWrite]
   , stepBlock := stepBlockMultiBase, stepCaptures := #[stepCaptureDpMulti, stepCaptureTMulti]
   , stepWrites := #[stepWriteDpMulti]
   , historyExtents := #[2,2]
@@ -972,37 +950,25 @@ run_cmd do
 /-! ### Fixture 6: asymmetric rectangular `2×3`, all-axis `+1`
 
 `historyExtents := #[2,3]` — two DIFFERENT per-axis extents (`r` size 2, `c` size 3) — so
-`stepExtents = #[1,2]`. `G[r,0] := Z[r]` (also a free-over-`r` base write in F0's original form) is
-likewise decomposed into two fully-pinned point overrides, same rationale as Fixture 5. -/
+`stepExtents = #[1,2]`. `G[r,0] := Z[r]` — a genuine free-over-`r` base write (row1/`c` pinned to
+`0`) — matching F0's original fixture intent, now that `commitWrite` executes free positions
+correctly. The base block passes `Z` straight through as its own output (no assignment needed, same
+"input doubles as output" shape used throughout this file). -/
 
 def outerSigsAsym : Array TensorSignature :=
   #[{ shape := #[2], dtype := .f64 }, { shape := #[2,3], dtype := .f64 }, { shape := #[2,3], dtype := .f64 }]
 
 def stateGAsym : StateSlot := { destSlot := 2, advancingDims := #[0,1], materialization := .completeHistory }
 
-def readZ0Asym : ReadPlan :=
-  { sourceSlot := 0, map := { coeffs := #[#[]], bias := #[0] }, sourceShape := #[2], oobPolicy := .zeroPad }
-def readZ1Asym : ReadPlan :=
-  { sourceSlot := 0, map := { coeffs := #[#[]], bias := #[1] }, sourceShape := #[2], oobPolicy := .zeroPad }
-def termZ0Asym : TermPlan :=
-  { iterationShape := #[], contextPos := #[], outputPos := #[], reductionPos := #[], factors := #[readZ0Asym] }
-def termZ1Asym : TermPlan :=
-  { iterationShape := #[], contextPos := #[], outputPos := #[], reductionPos := #[], factors := #[readZ1Asym] }
-def assignZ0Asym : AssignPlan :=
-  { contextShape := #[], destinationSlot := 1, outputShape := #[], terms := #[termZ0Asym], algebra := admittedAlgebra }
-def assignZ1Asym : AssignPlan :=
-  { contextShape := #[], destinationSlot := 2, outputShape := #[], terms := #[termZ1Asym], algebra := admittedAlgebra }
-
 def baseBlockAsym : RawPlanBlock :=
-  { contextShape := #[]
-  , tensorSigs := #[{ shape := #[2], dtype := .f64 }, { shape := #[], dtype := .f64 }, { shape := #[], dtype := .f64 }]
-  , inputs := #[0], assignments := #[assignZ0Asym, assignZ1Asym], outputs := #[1, 2] }
+  { contextShape := #[], tensorSigs := #[{ shape := #[2], dtype := .f64 }]
+  , inputs := #[0], assignments := #[], outputs := #[0] }
 
 def baseCaptureZAsym : BlockCapture := { inputSlot := 0, source := .external 0 }
-def baseWriteG00Asym : StateWriteMap :=
-  { outputSlot := 1, stateIndex := 0, map := { coeffs := #[#[], #[]], bias := #[0, 0] } }
-def baseWriteG10Asym : StateWriteMap :=
-  { outputSlot := 2, stateIndex := 0, map := { coeffs := #[#[], #[]], bias := #[1, 0] } }
+
+-- G[r, 0] := Z[r] — r free (output position 0), c pinned to 0 (touches the lower boundary).
+def baseWriteGFaceAsym : StateWriteMap :=
+  { outputSlot := 0, stateIndex := 0, map := { coeffs := #[#[1], #[0]], bias := #[0, 0] } }
 
 def stepReadGAsym : ReadPlan :=
   { sourceSlot := 0, map := { coeffs := #[#[1,0], #[0,1]], bias := #[0,0] }, sourceShape := #[2,3]
@@ -1031,7 +997,7 @@ def stepWriteGAsym : StateWriteMap :=
 def asymScan : RawScanPlan :=
   { states := #[stateGAsym]
   , baseBlock := baseBlockAsym, baseCaptures := #[baseCaptureZAsym]
-  , baseWrites := #[baseWriteG00Asym, baseWriteG10Asym]
+  , baseWrites := #[baseWriteGFaceAsym]
   , stepBlock := stepBlockAsym, stepCaptures := #[stepCaptureGAsym, stepCaptureAAsym]
   , stepWrites := #[stepWriteGAsym]
   , historyExtents := #[2,3]
