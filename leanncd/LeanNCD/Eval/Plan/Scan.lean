@@ -155,13 +155,15 @@ private def checkCaptures (sigs : Array TensorSignature) (block : RawPlanBlock)
     write's `stateIndex` is in range, every write's `outputSlot` is a declared block output, every
     declared output is written by exactly one write, base-write geometry is admitted and pairwise
     disjoint across each state's FULL write list, and step-write geometry is admitted. Returns, per
-    state, the accepted row classifications so the caller can additionally require exactly one step
-    write and at least one base write. -/
+    state, the accepted row classifications PAIRED with each write's original global index `wi` (so
+    a caller needing a real locator — e.g. `multipleStepWritesForState`'s first/second write index —
+    doesn't have to re-derive it), so the caller can additionally require exactly one step write and
+    at least one base write. -/
 private def checkWrites (sigs : Array TensorSignature) (block : RawPlanBlock)
     (writes : Array StateWriteMap) (states : Array StateSlot) (isBase : Bool) :
-    Except ScanPlanError (Array (Array (Array (Option WriteRowKind)))) := do
+    Except ScanPlanError (Array (Array (Nat × Array (Option WriteRowKind)))) := do
   let mut writtenOutputs : Array (Option Nat) := Array.replicate block.tensorSigs.size none
-  let mut rowsByState : Array (Array (Array (Option WriteRowKind))) :=
+  let mut rowsByState : Array (Array (Nat × Array (Option WriteRowKind))) :=
     Array.replicate states.size #[]
   for h : wi in [0 : writes.size] do
     let w := writes[wi]
@@ -180,21 +182,23 @@ private def checkWrites (sigs : Array TensorSignature) (block : RawPlanBlock)
     let admitted := if isBase then baseWriteRowsOk st.advancingDims outputShapeSize rows
                     else stepWriteRowsOk st.advancingDims outputShapeSize rows
     unless admitted do throw (.writeGeometryNotAdmitted isBase wi)
-    rowsByState := rowsByState.set! w.stateIndex (rowsByState.getD w.stateIndex #[] |>.push rows)
+    rowsByState := rowsByState.set! w.stateIndex (rowsByState.getD w.stateIndex #[] |>.push (wi, rows))
   for outputSlot in block.outputs do
     unless writtenOutputs.getD outputSlot none |>.isSome do
       throw (.blockOutputNotWritten isBase outputSlot)
   -- pairwise disjointness across each state's FULL base-write list (proposal §7.3: not just
   -- checked between an arbitrarily chosen pair; index into each state's own accumulated write
-  -- list, not the raw `writes` array — the implementer may thread through global write indices
-  -- instead if a reviewer prefers that error shape, a call-site detail with no semantic effect).
+  -- list, not the raw `writes` array — deliberately per-state-local indices `a`/`b`, not the
+  -- global `wi`s now carried alongside each entry's rows, confirmed correct and intentional by
+  -- review: `baseWritesOverlap`'s locator is "which of this state's own writes collided", not
+  -- "which raw write index", so `.2` (the rows) is all this loop needs).
   if isBase then
     for h : si in [0 : rowsByState.size] do
       let stateRows := rowsByState[si]
       for h2 : a in [0 : stateRows.size] do
         for h3 : b in [0 : stateRows.size] do
           if a < b then
-            if writesCollide stateRows[a] stateRows[b] then throw (.baseWritesOverlap si a b)
+            if writesCollide stateRows[a].2 stateRows[b].2 then throw (.baseWritesOverlap si a b)
   return rowsByState
 
 /-- Validate an unchecked scan node (proposal §7.3). This version omits causality — Task 2 adds the
@@ -245,10 +249,13 @@ def checkScanPlan (sigs : Array TensorSignature) (raw : RawScanPlan) :
   let stepRowsByState ← checkWrites sigs raw.stepBlock raw.stepWrites raw.states false
   for h : si in [0 : raw.states.size] do
     if (baseRowsByState.getD si #[]).size == 0 then throw (.noBaseWriteForState si) else pure ()
-    match (stepRowsByState.getD si #[]).size with
+    let stateStepWrites := stepRowsByState.getD si #[]
+    match stateStepWrites.size with
     | 0 => throw (.noStepWriteForState si)
     | 1 => pure ()
-    | _ => throw (.multipleStepWritesForState si 0 1)
+    | _ =>
+        throw (.multipleStepWritesForState si (stateStepWrites.getD 0 (0, #[])).1
+          (stateStepWrites.getD 1 (0, #[])).1)
   -- Task 2 inserts the causality pass here, before the return below.
   return CheckedScanPlan.mk raw checkedBase checkedStep stepExtents
 
