@@ -930,6 +930,22 @@ def checkPlan (raw : RawEvalPlan) : Except PlanStepError CheckedEvalPlan := do
   let mut checkedNodes : Array CheckedPlanStepEvidence := #[]
   for h : ni in [0 : raw.steps.size] do
     let step := raw.steps[ni]
+    -- order matches Wave C's original checkPlan exactly for `.assign`: context -> destination ->
+    -- source -> checkAssign. (An earlier draft of this function reordered these during the
+    -- PlanStep generalization — caught by Task 4's own review as a real, if silent, regression;
+    -- this is the corrected order, not the order that first shipped.)
+    match step with
+    | .assign a => unless a.contextShape == #[] do throw (.assign (.topLevelContextNotEmpty ni))
+    | .scan _ => pure ()
+    let dests := step.destinationSlots
+    for dest in dests do
+      match available[dest]? with
+      | none => throw (.assign (.nodeError ni (.slotOutOfRange dest n)))
+      | some isAvail =>
+          if isAvail then
+            match producedBy[dest]?.join with
+            | none => throw (.assign (.inputSlotOverwritten dest ni))
+            | some firstNode => throw (.assign (.duplicateDestination dest firstNode ni))
     match step with
     | .assign a =>
         for h2 : ti in [0 : a.terms.size] do
@@ -946,18 +962,8 @@ def checkPlan (raw : RawEvalPlan) : Except PlanStepError CheckedEvalPlan := do
           | none => throw (.assign (.nodeError ni (.slotOutOfRange src n)))
           | some true => pure ()
           | some false => throw (.assign (.invalidForwardRead ni 0 0 src))
-    let dests := step.destinationSlots
-    for dest in dests do
-      match available[dest]? with
-      | none => throw (.assign (.nodeError ni (.slotOutOfRange dest n)))
-      | some isAvail =>
-          if isAvail then
-            match producedBy[dest]?.join with
-            | none => throw (.assign (.inputSlotOverwritten dest ni))
-            | some firstNode => throw (.assign (.duplicateDestination dest firstNode ni))
     match step with
     | .assign a =>
-        unless a.contextShape == #[] do throw (.assign (.topLevelContextNotEmpty ni))
         match checkAssign raw.tensorSigs a with
         | .error e => throw (.assign (.nodeError ni e))
         | .ok c => checkedNodes := checkedNodes.push (.assign c)

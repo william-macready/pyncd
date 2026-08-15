@@ -1491,6 +1491,81 @@ worker imports no DSL, `Plan.Compile`, or legacy Eval execution module.
 The source compiler still rejects scans at the end of this slice. Manual checked plans prove the
 language and worker before source residualization is introduced.
 
+**F3 completion record (2026-08-15).** Landed as three new modules — `Eval.Plan.RawStep`
+(`RawPlanBlock` relocated here from `Block.lean`, `RawScanPlan`, `PlanStep` — `.assign`/`.scan` —
+so `Graph.lean`'s `RawEvalPlan` can reference a scan node without a circular import), `Eval.Plan.Scan`
+(the write-geometry classifier `WriteRowKind`/`writeRowKinds`, `baseWriteRowsOk`/`stepWriteRowsOk`/
+`writesCollide`, the causality certificate `causalAdvancingRow`/`stateReadCausal`,
+`checkScanPlan`/`CheckedScanPlan`, mixed-radix rank/unrank, and the four-phase dense worker
+`runDenseScan`), and `Eval.Plan.EvalPlan` (outer-graph `checkPlan`/`CheckedEvalPlan`/`runDensePlan`,
+generalized from `AssignPlan`-only steps to `PlanStep`, dispatching `checkAssign`/`checkScanPlan` per
+node without re-deriving either's own obligations, plus `PlanCompileCause`/`PlanCompileFailure`
+relocated here from `Error.lean` for the same acyclic-import reason `PlanStep`'s own home moved) —
+plus edits to `Check.lean`/`Dense.lean` (lost their relocated definitions, left one-line pointers),
+`Error.lean` (lost the relocated compile-failure types and Task 1's temporary interim placeholder
+constructor), `Compile.lean`/`Adapter.lean`/`Prepared.lean`/`Executable.lean`/`Graph.lean`/
+`Block.lean` (import/reference updates only), `LeanNCD.lean` (+3 imports), and `lakefile.toml` (+1
+test target). Tests: a new `test/Eval/Plan/ScanTest.lean` (1,221 lines across six parts — structural
+geometry (Task 1), the causality certificate (Task 2), and the dense worker (Task 3), each with its
+own mutation fixtures), a new `test/Eval/Plan/EvalPlanTest.lean` (outer-graph accept/forward-read/
+duplicate-destination/scan-failure-surfacing fixtures, including the multi-destination-scan fixture
+added during Task 4's review fix round), and migrations of five pre-existing files off the old
+`RawEvalPlan` shape (`GraphCheckTest.lean`, `GraphDenseTest.lean`, `KernelCheckTest.lean`,
+`ExecutableTest.lean`, `CompileTest.lean`). `lake build` (default targets) green at **8,651 jobs**.
+
+Two real, load-bearing bugs were found and fixed during this slice, not merely documented: (1) Task 3
+found that `commitWrite` (the plan's own worked design) only ever committed element 0 of a write's
+block output, silently dropping every other coordinate for any write with a genuine free output
+position (a "face" write) — fixed to iterate every coordinate of the write's own output shape,
+verified as a strict generalization (scalar-output writes unaffected) and confirmed by rebuilding the
+two required fixtures that exist specifically to exercise free-position face writes as genuine free
+writes, not the point-override workaround first tried while isolating the bug; (2) Task 1's review
+found `multipleStepWritesForState`'s locator arguments were hardcoded (`si 0 1`) rather than derived
+from the actual colliding write indices, masked by the single test case exercised — fixed to thread
+real write indices through `checkWrites`'s `rowsByState` grouping.
+
+This task (F3's close-out) also applied one fix deferred from Task 4's own review: `checkPlan`'s
+`.assign`-branch check order had drifted from Wave C's original order (context-check →
+destination-check → source-check → `checkAssign`) to source → destination → context → `checkAssign`
+during the `PlanStep` generalization — a real, if silent, regression that Task 4's fix round
+correctly diagnosed but a controller drafting mistake left unapplied to the actual file (no
+accept/reject outcome ever changed; only which of 2+ simultaneous defects is reported first, an
+untested edge case). Restored to Wave C's exact order in `LeanNCD/Eval/Plan/EvalPlan.lean`'s
+`checkPlan`, verified by a clean `lake build` (unchanged job count, 8,651).
+
+Two minor items remain open, deliberately not fixed by this task (out of scope for a
+discoverability/documentation/completion-record close-out): `Scan.lean`'s `checkScanPlan` docstring
+still needs its stale "causality not yet added" line corrected now that Task 2 landed the
+certificate (deferred since Task 2's own review, non-blocking); and no fixture distinguishes
+`multipleStepWritesForState`'s locator behavior for a 3rd conflicting step write or writes not at raw
+index 0/1 — the fix above is correct by code inspection and an independent re-review, but only
+reasoning, not a dedicated assertion, proves the general case (deferred since Task 1's re-review).
+
+`JaxExperiment` — the non-default target whose lone glob is `experiments/jax_bridge/
+EvalPlanCodegen.lean` — fails to build under this slice, exactly as Task 4's brief predicted and
+confirmed. `EvalPlanCodegen.lean` directly iterates `checkedNodes` assuming a bare
+`CheckedAssignPlan` element (now `CheckedPlanStepEvidence`), and separately still constructs a
+`RawEvalPlan` with the pre-Task-1 shape (`version :=`, bare `AssignPlan` steps) in its own `idRaw`
+doctest fixture — two independent breakages, not one:
+```
+error: experiments/jax_bridge/EvalPlanCodegen.lean:176:49: Invalid field `plan`: ...
+error: experiments/jax_bridge/EvalPlanCodegen.lean:316:91: Invalid field `plan`: ...
+error: experiments/jax_bridge/EvalPlanCodegen.lean:458:14: Application type mismatch: ... Array CheckedPlanStepEvidence ... expected ... Array CheckedAssignPlan ...
+error: experiments/jax_bridge/EvalPlanCodegen.lean:488:4: `version` is not a field of structure `RawEvalPlan`
+error: experiments/jax_bridge/EvalPlanCodegen.lean:489:15: Application type mismatch: ... AssignPlan ... expected ... PlanStep ...
+```
+`EvalPlanAffineSmoke.lean`/`EvalPlanAffineCorpus.lean` are not part of the `JaxExperiment` lake
+target at all (they're driver files `run-evalplan-affine{,-corpus}.sh` compile ad hoc via `lake env
+lean --run`, per `lakefile.toml`'s own comment on the `JaxExperiment` target) but both
+`import EvalPlanCodegen`, so both
+runner scripts fail transitively the moment `lake build JaxExperiment` does (`set -euo pipefail`);
+`EvalPlanAffineCorpus.lean` additionally has its own direct `checkedNodes`-shape assumption
+(`plan.plan.checkedNodes.flatMap ...`, three call sites) that will need the same fix regardless, once
+`EvalPlanCodegen` compiles again. `JaxExperiment` is not in `defaultTargets`, so none of this gates
+`lake build` or this slice — it is a deliberate, unfixed consequence recorded here for whoever picks
+up the JAX/scan-lowering thread next (Thread 3 in `papers/jax_evalplan_architecture.md`'s §7.6, an
+explicitly unscheduled repair beyond what F4 itself needs).
+
 ### F4 - source compiler, adapter, and differential gate
 
 Teach syntactic capability preflight and `prepareEvalPlan`'s post-shape scan-specialization phase to

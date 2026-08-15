@@ -24,13 +24,16 @@ Does not own: parsing/compilation/routing (`../DSL/`).
 | Axis-size inference fixpoint (`inferAxisSizes`, `scatterOutputShapes`) | `SizeInfer.lean` |
 | Compatibility umbrella re-exporting `Slots`/`SizeSolve`/`SizeInfer` (no new code) | `Shape.lean` |
 | Every typed diagnostic (`EvalError`, `ShapeError`, `EvalWarning`, `SolveDiagnostic`, `EvalFailure`) + their sole renderers | `Error.lean` |
-| Checked, positional tensor-plan IR + compiler + adapter (Wave C) | `Plan/` (13 files: `Types`, `Kernel`, `Graph`, `Error`, `Check`, `Coordinates`, `Dense`, `Signature`, `Prepared`, `Compile`, `Adapter`, `Executable`, `Block`) |
+| Checked, positional tensor-plan IR + compiler + adapter (Wave C/F) | `Plan/` (16 files: `Types`, `Kernel`, `Graph`, `Error`, `Check`, `Coordinates`, `Dense`, `Signature`, `Prepared`, `Compile`, `Adapter`, `Executable`, `Block`, `RawStep`, `Scan`, `EvalPlan`) |
 | "Does this model class evaluate correctly" test suite | `test/Eval/Portfolio/*.lean` |
 
 ### The `Plan/` subtree
-A second, checked evaluation path (Wave C), independent of the legacy `Gather`/`Contract`/`Scan`
-evaluator above and reachable from `import LeanNCD` via `Eval.Plan.Adapter`. One line per file —
-see `papers/wave_c_capability_manifest.md` for the full design, not duplicated here. Exception:
+A second, checked evaluation path (Wave C, extended by Wave F's checked scan graph), independent of
+the legacy `Gather`/`Contract`/`Scan` evaluator above and reachable from `import LeanNCD` via
+`Eval.Plan.Adapter` (Wave C files) and, for the three Wave F additions below, direct imports in the
+top-level `LeanNCD.lean`. One line per file — see `papers/wave_c_capability_manifest.md` (Wave C
+design) and `papers/wave_f_scanplan_proposal.md` (Wave F checked-scan design) for the full designs,
+not duplicated here. Exception:
 `Executable.lean` (Thread 5) is NOT reachable from `import LeanNCD` — it is consumed only by
 `experiments/jax_bridge` (the non-default `JaxExperiment` library), not by the production
 `LeanNCD` import graph, so the blanket "reachable via `Eval.Plan.Adapter`" claim above does not
@@ -50,7 +53,10 @@ cover it.
 | `Compile.lean` | the source compiler — capability preflight (C4), `prepareEvalPlan` |
 | `Adapter.lean` | named ↔ positional runtime boundary — `pack`/`unpack`/`runPreparedDense` |
 | `Executable.lean` | JAX executable phase (Thread 5): `ExecutionEvidence`, kernel/plan candidates, private-constructor `JaxKernel`/`JaxExecutable` gated by real validators (`validateAffineTable`/`validateEinsum`); consumed only by `experiments/jax_bridge`, not by the production `LeanNCD` import graph (see the exception noted above) |
-| `Block.lean` | checked plan-block vertical slice (F2) — `RawPlanBlock`, `BlockError`, `CheckedPlanBlock`/`checkPlanBlock`, `runDenseBlock`; reuses `checkAssign`/`runDenseAssignAt` per node and `checkPlan`'s wiring-loop shape, not a second local-graph implementation |
+| `Block.lean` | checked plan-block vertical slice (F2) — `BlockError`, `CheckedPlanBlock`/`checkPlanBlock`, `runDenseBlock`; reuses `checkAssign`/`runDenseAssignAt` per node and `checkPlan`'s wiring-loop shape, not a second local-graph implementation |
+| `RawStep.lean` | checked scan graph, Task 1 (F3) — raw scan/local-block vocabulary: `RawPlanBlock` (relocated here from `Block.lean` so `Graph.lean` can reference a scan node without a circular import), `RawScanPlan`, `PlanStep` (`.assign`/`.scan`) |
+| `Scan.lean` | checked scan graph, Tasks 2-3 (F3) — write-geometry classifier (`WriteRowKind`/`writeRowKinds`), collision/coverage checks (`baseWriteRowsOk`/`stepWriteRowsOk`/`writesCollide`), the causality certificate (`stateReadCausal`), `checkScanPlan`/`CheckedScanPlan`, and the dense worker `runDenseScan` (mixed-radix coordinate enumeration + `commitWrite`) |
+| `EvalPlan.lean` | checked scan graph, Task 4 (F3) — outer-graph `checkPlan`/`CheckedEvalPlan`/`runDensePlan`, generalized from `AssignPlan`-only steps to `PlanStep`, dispatching `checkAssign`/`checkScanPlan` per node without re-deriving either's obligations; also hosts `PlanCompileCause`/`PlanCompileFailure` (relocated from `Error.lean`, same acyclic-import constraint as `RawPlanBlock`'s move) |
 
 ### Key Relationships
 `Entry.lean` imports `DSL.Compile`; `Eval.lean` does not. `Slots.lean`/`Gather.lean` import
