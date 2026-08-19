@@ -91,6 +91,10 @@ inductive ScanCompileError
   | orphanAdvancingResult    (scan name : String) (stmtIndex : Nat)
   | duplicateStateResult     (scan state : String) (firstStmtIndex secondStmtIndex : Nat)
   | stateResultNotAdvancing  (scan state : String) (stmtIndex : Nat)
+  -- "partial" in the sense of "not exactly the declared context": `declared` is how many axes the
+  -- result actually advances and `expected` the scan's context width, so this covers advancing too
+  -- FEW axes (some context axis left un-advanced) and advancing an axis that is not scan context at
+  -- all (too many) alike — both break the canonical all-axis `+1` step geometry the same way.
   | partialAdvancingResult   (scan state : String) (stmtIndex : Nat) (declared expected : Nat)
   | duplicateScratchProducer (scan name : String) (firstStmtIndex secondStmtIndex : Nat)
   -- block dependency order

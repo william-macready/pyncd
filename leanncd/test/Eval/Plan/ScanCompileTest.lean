@@ -753,6 +753,13 @@ def nextL : LHSSlot := .iterNext axL
     , nonlin := .identity }]
   == some (.scan (.partialAdvancingResult "sc2" "dp" 0 1 2))
 
+-- the same constructor's other direction: a result advancing an axis that is not scan context at
+-- all, so `declared` (2) EXCEEDS the context width (1). Both directions break the canonical all-axis
+-- `+1` geometry identically, which is why they share a constructor.
+#guard rej [okBase] [.assign "S" [.iterNext axL, .iterNext axJ]
+      { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := .identity }]
+  == some (.scan (.partialAdvancingResult "sc" "S" 0 2 1))
+
 -- two producers for one scratch name.
 def scratchT : Stmt := .assign "T" []
   { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := .identity }
