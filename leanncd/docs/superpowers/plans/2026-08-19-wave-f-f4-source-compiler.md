@@ -335,7 +335,7 @@ production code with real failure modes, so both still warrant full implementer+
 down is *review round count and model tier for fix waves* on Tasks 1/2 specifically if their first
 review passes clean — don't manufacture a second round there to match Task 3/5's expected depth.
 
-## 6. Task 1 — close F3 checker/worker soundness gaps
+## Task 1: close F3 checker/worker soundness gaps
 
 ### Outcome
 
@@ -392,7 +392,7 @@ lake build LeanNCD
 
 Complete an independent task review before Task 3.
 
-## 7. Task 2 — extract common assignment lowering with scan-free parity
+## Task 2: extract common assignment lowering with scan-free parity
 
 ### Outcome
 
@@ -447,7 +447,7 @@ lake build LeanNCD
 
 Complete an independent parity review before Task 3.
 
-## 8. Task 3 — implement source scan admission and residualization
+## Task 3: implement source scan admission and residualization
 
 ### Outcome
 
@@ -592,7 +592,7 @@ lake build LeanNCD
 
 Complete an independent compiler review before Task 4.
 
-## 9. Task 4 — prove named-boundary and legacy parity
+## Task 4: prove named-boundary and legacy parity
 
 ### Outcome
 
@@ -657,7 +657,7 @@ lake build LeanNCD
 
 Complete an independent public-boundary review before Task 5.
 
-## 10. Task 5 — generalize the independent oracle and close F4
+## Task 5: generalize the independent oracle and close F4
 
 ### Outcome
 
