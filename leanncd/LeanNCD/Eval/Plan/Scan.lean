@@ -149,6 +149,8 @@ inductive ScanPlanError
   | blockOutputNotWritten         (isBase : Bool) (outputSlot : TensorSlot)
   | duplicateWriteForOutput       (isBase : Bool) (outputSlot : TensorSlot)
                                   (firstWriteIndex secondWriteIndex : Nat)
+  | writeCoeffRankMismatch        (isBase : Bool) (writeIndex stateIndex expected actual : Nat)
+  | writeBiasRankMismatch         (isBase : Bool) (writeIndex stateIndex expected actual : Nat)
   | writeGeometryNotAdmitted      (isBase : Bool) (writeIndex : Nat)
   | writeFreeExtentMismatch       (isBase : Bool) (writeIndex stateIndex : Nat)
                                   (stateShape outputShape : Array Nat)
@@ -214,8 +216,16 @@ private def checkCaptures (sigs : Array TensorSignature) (block : RawPlanBlock)
 
 /-- Validate one block's writes against its own declared `outputs` and against `states`: every
     write's `stateIndex` is in range, every write's `outputSlot` is a declared block output, every
-    declared output is written by exactly one write, base-write geometry is admitted and pairwise
-    disjoint across each state's FULL write list, step-write geometry is admitted, and every
+    declared output is written by exactly one write, every write's `AffineMap` has exactly one
+    coefficient ROW and one bias ENTRY per the state's own rank (checked here, BEFORE
+    `writeRowKinds` ever reads either array: `writeRowKinds`/`classifyWriteRow` read row `d` via
+    `Array.getD d ...`, which silently substitutes a zero-row/zero-bias default for a SHORT array
+    rather than rejecting it, so an under-length `coeffs`/`bias` would otherwise be admitted as if
+    its missing rows were all-zero; an OVER-length array would instead have its excess rows silently
+    ignored — both checked here independently, since `coeffs` and `bias` are separate arrays that
+    can disagree with the state's rank independently of each other), base-write geometry is admitted
+    and pairwise disjoint across each state's FULL write list, step-write geometry is admitted, and
+    every
     admitted write's free rows agree in SIZE with the state's own dimensions (`freeExtentsAgree` —
     geometry admission covers only rank/position) and every pinned row's LITERAL is an in-range
     coordinate of that dimension (`pinnedLiteralsInRange` — geometry admission never inspects a
@@ -243,6 +253,10 @@ private def checkWrites (sigs : Array TensorSignature) (block : RawPlanBlock)
     let st := states.getD w.stateIndex default
     let stateShape := (sigs.getD st.destSlot { shape := #[], dtype := .f64 }).shape
     let contextWidth := if isBase then 0 else st.advancingDims.size
+    unless w.map.coeffs.size == stateShape.size do
+      throw (.writeCoeffRankMismatch isBase wi w.stateIndex stateShape.size w.map.coeffs.size)
+    unless w.map.bias.size == stateShape.size do
+      throw (.writeBiasRankMismatch isBase wi w.stateIndex stateShape.size w.map.bias.size)
     let rows := writeRowKinds stateShape.size contextWidth w
     let outputShape := (block.tensorSigs.getD w.outputSlot { shape := #[], dtype := .f64 }).shape
     let admitted := if isBase then baseWriteRowsOk st.advancingDims outputShape.size rows
@@ -411,16 +425,30 @@ private def commitWrite (target : DenseTensor) (w : StateWriteMap) (blockStore :
     run the checked step block, and commit every designated next-state slice simultaneously.
     Independent of `Eval.evalScan`/`evalScheduled` by construction — imports neither, builds no
     `HashMap UID Int`, knows no source names (proposal §9.1). `sigs` supplies each state's declared
-    complete shape for allocation. -/
+    complete shape for allocation.
+
+    **Capture-order obligation.** `runDenseBlock` treats its `inputs : Array DenseTensor` argument as
+    POSITIONAL against `block.inputs` — `inputs[i]` binds to `raw.inputs[i]` — and `block.inputs` is
+    sorted/deduplicated by `checkPlanBlock`. Each block's input-value array below is therefore built
+    by resolving, for every slot in `raw.baseBlock.inputs`/`raw.stepBlock.inputs` (in THAT order), the
+    unique capture whose `inputSlot` matches it — a lookup, not a positional pass-through — rather
+    than by mapping over `raw.baseCaptures`/`raw.stepCaptures` in their own stored order. A capture
+    array is only guaranteed order-INSENSITIVE-valid by `checkCaptures` (every input captured exactly
+    once, as a set); nothing ties its storage order to `block.inputs`' sorted order, so a caller
+    supplying captures in any other order would otherwise have this function silently bind the wrong
+    tensor to the wrong `runDenseBlock` input position. -/
 def runDenseScan (sigs : Array TensorSignature) (c : CheckedScanPlan) (outerStore : Array DenseTensor) :
     Except PositionalInputError (Array DenseTensor) := do
   let raw := c.raw
   let mut states : Array DenseTensor := raw.states.map (fun st =>
     let sig := sigs.getD st.destSlot { shape := #[], dtype := .f64 }
     { shape := sig.shape.toList, data := Array.replicate (sig.shape.toList.foldl (· * ·) 1) 0.0 })
-  let baseExternalInputs ← raw.baseCaptures.mapM (fun cap => match cap.source with
-    | .external slot => pure (outerStore.getD slot { shape := [], data := #[] })
-    | .state _ => throw (PositionalInputError.arityMismatch 0 0))  -- unreachable: checked
+  let baseExternalInputs ← raw.baseBlock.inputs.mapM (fun inputSlot =>
+    match raw.baseCaptures.find? (fun cap => cap.inputSlot == inputSlot) with
+    | none => throw (PositionalInputError.arityMismatch 0 0)  -- unreachable: checked (checkCaptures)
+    | some cap => match cap.source with
+      | .external slot => pure (outerStore.getD slot { shape := [], data := #[] })
+      | .state _ => throw (PositionalInputError.arityMismatch 0 0))  -- unreachable: checked
   let baseStore ← runDenseBlock c.checkedBase [] baseExternalInputs
   for w in raw.baseWrites do
     let target := states.getD w.stateIndex { shape := [], data := #[] }
@@ -429,9 +457,12 @@ def runDenseScan (sigs : Array TensorSignature) (c : CheckedScanPlan) (outerStor
   for r in [0 : domainSize] do
     let q := mixedRadixUnrank c.stepExtents r
     let oldStates := states
-    let stepInputs ← raw.stepCaptures.mapM (fun cap => match cap.source with
-      | .external slot => pure (outerStore.getD slot { shape := [], data := #[] })
-      | .state si => pure (oldStates.getD si { shape := [], data := #[] }))
+    let stepInputs ← raw.stepBlock.inputs.mapM (fun inputSlot =>
+      match raw.stepCaptures.find? (fun cap => cap.inputSlot == inputSlot) with
+      | none => throw (PositionalInputError.arityMismatch 0 0)  -- unreachable: checked (checkCaptures)
+      | some cap => match cap.source with
+        | .external slot => pure (outerStore.getD slot { shape := [], data := #[] })
+        | .state si => pure (oldStates.getD si { shape := [], data := #[] }))
     let ctx : List Int := q.toList.map Int.ofNat
     let stepStore ← runDenseBlock c.checkedStep ctx stepInputs
     let mut nextStates := states

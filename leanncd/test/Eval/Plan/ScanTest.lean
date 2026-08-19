@@ -1311,6 +1311,298 @@ run_cmd do
           unless DenseTensor.approxEq S { shape := [3], data := #[1.0,11.0,20.0] } do
             throwError s!"MutC: expected the specific wrong value [1,11,20], got {repr S.data}"
 
+/-! ## Part 7: Task 1 (F4) — write-map rank checks and capture-order resolution
+
+Two soundness gaps in F3's shipped checker/worker, closed here before F4's Task 3 source compiler
+builds on top of them.
+
+**Gap 1**: `checkWrites` never validated that a `StateWriteMap`'s `AffineMap` actually has one
+coefficient row and one bias entry per the state's own rank before `writeRowKinds` read it —
+`writeRowKinds`/`classifyWriteRow` read row `d` via `Array.getD d ...`, silently substituting a
+zero default for a SHORT array rather than rejecting it (and silently ignoring excess rows of an
+OVER-length array). `coeffs` and `bias` are checked independently below, since they are separate
+arrays that can disagree with the state's rank independently of each other.
+
+**Gap 2**: `runDenseScan` built each block's input-value array by mapping over its OWN capture
+array (`raw.baseCaptures`/`raw.stepCaptures`) in whatever order that array happened to be stored,
+then passed the result POSITIONALLY into `runDenseBlock`, which binds `inputs[i]` to `raw.inputs[i]`
+— `block.inputs`, sorted/deduplicated by `checkPlanBlock`, a SEPARATE order from the capture array's
+own storage order. `checkCaptures` only guarantees the capture array is valid as a SET (every input
+captured exactly once); nothing ties its storage order to `block.inputs`' order, so a capture array
+not already sorted by `inputSlot` silently bound the wrong tensor to the wrong block input. -/
+
+/-! ### Gap 1: coefficient/bias rank mismatch
+
+Reuses Part 5's `multiBaseScan`/`outerSigsMultiBase` (`dp`, a rank-2 state) and Part 1's `faceWrite`
+(base write index `0` of `multiBaseScan.baseWrites`) as the write under mutation, so every fixture
+below reaches `checkWrites`' new rank checks with every earlier obligation (state index, output
+slot, duplicate-output) already satisfied. -/
+
+def shortCoeffsFaceWrite : StateWriteMap :=
+  { faceWrite with map := { faceWrite.map with coeffs := #[#[0]] } }
+def longCoeffsFaceWrite : StateWriteMap :=
+  { faceWrite with map := { faceWrite.map with coeffs := #[#[0], #[1], #[0]] } }
+def shortBiasFaceWrite : StateWriteMap :=
+  { faceWrite with map := { faceWrite.map with bias := #[0] } }
+def longBiasFaceWrite : StateWriteMap :=
+  { faceWrite with map := { faceWrite.map with bias := #[0, 0, 0] } }
+
+-- writeCoeffRankMismatch: fewer coefficient rows than `dp`'s rank (2).
+run_cmd do
+  match checkScanPlan outerSigsMultiBase
+      { multiBaseScan with baseWrites := #[shortCoeffsFaceWrite, pointWrite] } with
+  | .ok _ =>
+      throwError "a write with fewer coefficient rows than the state's rank should have been rejected"
+  | .error e =>
+      unless e == .writeCoeffRankMismatch true 0 0 2 1 do
+        throwError s!"writeCoeffRankMismatch (short): wrong error {repr e}"
+
+-- writeCoeffRankMismatch: more coefficient rows than `dp`'s rank.
+run_cmd do
+  match checkScanPlan outerSigsMultiBase
+      { multiBaseScan with baseWrites := #[longCoeffsFaceWrite, pointWrite] } with
+  | .ok _ =>
+      throwError "a write with more coefficient rows than the state's rank should have been rejected"
+  | .error e =>
+      unless e == .writeCoeffRankMismatch true 0 0 2 3 do
+        throwError s!"writeCoeffRankMismatch (long): wrong error {repr e}"
+
+-- writeBiasRankMismatch: fewer bias entries than `dp`'s rank.
+run_cmd do
+  match checkScanPlan outerSigsMultiBase
+      { multiBaseScan with baseWrites := #[shortBiasFaceWrite, pointWrite] } with
+  | .ok _ =>
+      throwError "a write with fewer bias entries than the state's rank should have been rejected"
+  | .error e =>
+      unless e == .writeBiasRankMismatch true 0 0 2 1 do
+        throwError s!"writeBiasRankMismatch (short): wrong error {repr e}"
+
+-- writeBiasRankMismatch: more bias entries than `dp`'s rank.
+run_cmd do
+  match checkScanPlan outerSigsMultiBase
+      { multiBaseScan with baseWrites := #[longBiasFaceWrite, pointWrite] } with
+  | .ok _ =>
+      throwError "a write with more bias entries than the state's rank should have been rejected"
+  | .error e =>
+      unless e == .writeBiasRankMismatch true 0 0 2 3 do
+        throwError s!"writeBiasRankMismatch (long): wrong error {repr e}"
+
+-- The same check applies to a STEP write (`isBase = false`), confirming the rank obligation is not
+-- accidentally base-only: `stepWriteDpMulti` (Part 5) with one coefficient row dropped.
+def shortCoeffsStepWrite : StateWriteMap :=
+  { stepWriteDpMulti with map := { stepWriteDpMulti.map with coeffs := #[#[1, 0]] } }
+
+run_cmd do
+  match checkScanPlan outerSigsMultiBase { multiBaseScan with stepWrites := #[shortCoeffsStepWrite] } with
+  | .ok _ =>
+      throwError
+        "a step write with fewer coefficient rows than the state's rank should have been rejected"
+  | .error e =>
+      unless e == .writeCoeffRankMismatch false 0 0 2 1 do
+        throwError s!"writeCoeffRankMismatch (step): wrong error {repr e}"
+
+/-! ### Gap 2: capture-array-order resolution
+
+Each fixture below stores its capture array deliberately NOT in sorted-`inputSlot` order (the exact
+condition `checkCaptures` never rules out), then compares the REAL `runDenseScan` against
+`runDenseScanOldCaptureOrder` — a hand-modified copy reproducing the pre-fix behavior (mapping over
+the capture array in its own stored order, `commitWriteLocal`-based per Part 6's convention since
+`commitWrite` is `private`). If the fix were not load-bearing, both would agree; they do not. -/
+
+def runDenseScanOldCaptureOrder (sigs : Array TensorSignature) (c : CheckedScanPlan)
+    (outerStore : Array DenseTensor) : Except PositionalInputError (Array DenseTensor) := do
+  let raw := c.raw
+  let mut states : Array DenseTensor := raw.states.map (fun st =>
+    let sig := sigs.getD st.destSlot { shape := #[], dtype := .f64 }
+    { shape := sig.shape.toList, data := Array.replicate (sig.shape.toList.foldl (· * ·) 1) 0.0 })
+  -- MUTATION (the pre-Task-1 bug): map over the capture array in ITS OWN stored order instead of
+  -- resolving each of `block.inputs`' slots by lookup — passed positionally into `runDenseBlock`
+  -- regardless of whether that order matches `raw.baseBlock.inputs`'/`raw.stepBlock.inputs`' sorted
+  -- order.
+  let baseExternalInputs ← raw.baseCaptures.mapM (fun cap => match cap.source with
+    | .external slot => pure (outerStore.getD slot { shape := [], data := #[] })
+    | .state _ => throw (PositionalInputError.arityMismatch 0 0))  -- unreachable: checked
+  let baseStore ← runDenseBlock c.checkedBase [] baseExternalInputs
+  for w in raw.baseWrites do
+    let target := states.getD w.stateIndex { shape := [], data := #[] }
+    states := states.set! w.stateIndex (commitWriteLocal target w baseStore [])
+  let domainSize := mixedRadixDomainSize c.stepExtents
+  for r in [0 : domainSize] do
+    let q := mixedRadixUnrank c.stepExtents r
+    let oldStates := states
+    -- MUTATION: same as above, for the step block's captures.
+    let stepInputs ← raw.stepCaptures.mapM (fun cap => match cap.source with
+      | .external slot => pure (outerStore.getD slot { shape := [], data := #[] })
+      | .state si => pure (oldStates.getD si { shape := [], data := #[] }))
+    let ctx : List Int := q.toList.map Int.ofNat
+    let stepStore ← runDenseBlock c.checkedStep ctx stepInputs
+    let mut nextStates := states
+    for w in raw.stepWrites do
+      let target := nextStates.getD w.stateIndex { shape := [], data := #[] }
+      nextStates := nextStates.set! w.stateIndex (commitWriteLocal target w stepStore ctx)
+    states := nextStates
+  let mut result := outerStore
+  for h : si in [0 : raw.states.size] do
+    result := result.set! raw.states[si].destSlot (states.getD si { shape := [], data := #[] })
+  return result
+
+/-! #### Base-capture reordering (external-only, same-shaped inputs)
+
+Two independent extent-one states `G3`/`H3` (Fixture 3's shape, so the step loop runs zero times and
+only the base path is exercised) fed by a two-input base block whose captures are stored in REVERSED
+`inputSlot` order — the capture for input `1` listed before the capture for input `0`. Both inputs
+share the same scalar shape, so `checkCaptures`'s own signature check cannot distinguish a correct
+binding from a swapped one; only positional-vs-lookup resolution can. -/
+
+def outerSigsBaseReorder : Array TensorSignature :=
+  #[{ shape := #[], dtype := .f64 }, { shape := #[], dtype := .f64 }
+  , { shape := #[1], dtype := .f64 }, { shape := #[1], dtype := .f64 }]
+
+def stateG3 : StateSlot := { destSlot := 2, advancingDims := #[0], materialization := .completeHistory }
+def stateH3 : StateSlot := { destSlot := 3, advancingDims := #[0], materialization := .completeHistory }
+
+def baseBlockReorder : RawPlanBlock :=
+  { contextShape := #[]
+  , tensorSigs := #[{ shape := #[], dtype := .f64 }, { shape := #[], dtype := .f64 }]
+  , inputs := #[0, 1], assignments := #[], outputs := #[0, 1] }
+
+-- Deliberately reversed: the capture for input slot `1` is stored BEFORE the capture for input
+-- slot `0`.
+def baseCaptureBReorder : BlockCapture := { inputSlot := 1, source := .external 1 }
+def baseCaptureAReorder : BlockCapture := { inputSlot := 0, source := .external 0 }
+
+def baseWriteG3 : StateWriteMap :=
+  { outputSlot := 0, stateIndex := 0, map := { coeffs := #[#[]], bias := #[0] } }
+def baseWriteH3 : StateWriteMap :=
+  { outputSlot := 1, stateIndex := 1, map := { coeffs := #[#[]], bias := #[0] } }
+
+def stepReadG3 : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[#[1]], bias := #[0] }, sourceShape := #[1], oobPolicy := .zeroPad }
+def stepReadH3 : ReadPlan :=
+  { sourceSlot := 1, map := { coeffs := #[#[1]], bias := #[0] }, sourceShape := #[1], oobPolicy := .zeroPad }
+def termG3 : TermPlan :=
+  { iterationShape := #[0], contextPos := #[0], outputPos := #[], reductionPos := #[], factors := #[stepReadG3] }
+def termH3 : TermPlan :=
+  { iterationShape := #[0], contextPos := #[0], outputPos := #[], reductionPos := #[], factors := #[stepReadH3] }
+def stepAssignG3 : AssignPlan :=
+  { contextShape := #[0], destinationSlot := 2, outputShape := #[], terms := #[termG3], algebra := admittedAlgebra }
+def stepAssignH3 : AssignPlan :=
+  { contextShape := #[0], destinationSlot := 3, outputShape := #[], terms := #[termH3], algebra := admittedAlgebra }
+def stepBlockReorder : RawPlanBlock :=
+  { contextShape := #[0]
+  , tensorSigs := #[{ shape := #[1], dtype := .f64 }, { shape := #[1], dtype := .f64 }
+                  , { shape := #[], dtype := .f64 }, { shape := #[], dtype := .f64 }]
+  , inputs := #[0, 1], assignments := #[stepAssignG3, stepAssignH3], outputs := #[2, 3] }
+def stepCaptureG3 : BlockCapture := { inputSlot := 0, source := .state 0 }
+def stepCaptureH3 : BlockCapture := { inputSlot := 1, source := .state 1 }
+def stepWriteG3 : StateWriteMap :=
+  { outputSlot := 2, stateIndex := 0, map := { coeffs := #[#[1]], bias := #[1] } }
+def stepWriteH3 : StateWriteMap :=
+  { outputSlot := 3, stateIndex := 1, map := { coeffs := #[#[1]], bias := #[1] } }
+
+def baseReorderScan : RawScanPlan :=
+  { states := #[stateG3, stateH3]
+  , baseBlock := baseBlockReorder, baseCaptures := #[baseCaptureBReorder, baseCaptureAReorder]
+  , baseWrites := #[baseWriteG3, baseWriteH3]
+  , stepBlock := stepBlockReorder, stepCaptures := #[stepCaptureG3, stepCaptureH3]
+  , stepWrites := #[stepWriteG3, stepWriteH3]
+  , historyExtents := #[1]
+  , iterationOrder := .axisZeroFastest, boundaryPolicy := .zeroThenBaseOverlay
+  , snapshotPolicy := .immutablePreStep }
+
+def outerStoreBaseReorder : Array DenseTensor :=
+  #[ { shape := [], data := #[7.0] }, { shape := [], data := #[3.0] }
+   , { shape := [1], data := #[0.0] }, { shape := [1], data := #[0.0] } ]
+
+-- The fix: the real `runDenseScan` resolves each block input by `inputSlot` lookup, so the reversed
+-- storage order in `baseCaptures` has no effect. G3 = external slot 0 = 7, H3 = external slot 1 = 3.
+run_cmd do
+  match checkScanPlan outerSigsBaseReorder baseReorderScan with
+  | .error e => throwError s!"baseReorder (real) checkScanPlan rejected: {repr e}"
+  | .ok checked =>
+      match runDenseScan outerSigsBaseReorder checked outerStoreBaseReorder with
+      | .error e => throwError s!"baseReorder (real) runDenseScan error: {repr e}"
+      | .ok result =>
+          let G3 := result.getD 2 { shape := [], data := #[] }
+          let H3 := result.getD 3 { shape := [], data := #[] }
+          unless DenseTensor.approxEq G3 { shape := [1], data := #[7.0] } do
+            throwError s!"baseReorder (real): wrong G3 {repr G3.data}"
+          unless DenseTensor.approxEq H3 { shape := [1], data := #[3.0] } do
+            throwError s!"baseReorder (real): wrong H3 {repr H3.data}"
+
+-- The bug reproduced: the old, positional-order worker maps over `baseCaptures` in its OWN stored
+-- order (`[input-1's capture, input-0's capture]`), so `runDenseBlock` binds slot 0 ↦ external 1
+-- (= 3) and slot 1 ↦ external 0 (= 7) — G3 and H3 come out SWAPPED: G3 = 3, H3 = 7.
+run_cmd do
+  match checkScanPlan outerSigsBaseReorder baseReorderScan with
+  | .error e => throwError s!"baseReorder (old) checkScanPlan rejected: {repr e}"
+  | .ok checked =>
+      match runDenseScanOldCaptureOrder outerSigsBaseReorder checked outerStoreBaseReorder with
+      | .error e => throwError s!"baseReorder (old) runDenseScan error: {repr e}"
+      | .ok result =>
+          let G3 := result.getD 2 { shape := [], data := #[] }
+          let H3 := result.getD 3 { shape := [], data := #[] }
+          if DenseTensor.approxEq G3 { shape := [1], data := #[7.0] } then
+            throwError s!"baseReorder (old): should NOT reproduce the correct G3, got {repr G3.data}"
+          unless DenseTensor.approxEq G3 { shape := [1], data := #[3.0] } do
+            throwError s!"baseReorder (old): expected the specific wrong value G3 = 3, got {repr G3.data}"
+          if DenseTensor.approxEq H3 { shape := [1], data := #[3.0] } then
+            throwError s!"baseReorder (old): should NOT reproduce the correct H3, got {repr H3.data}"
+          unless DenseTensor.approxEq H3 { shape := [1], data := #[7.0] } do
+            throwError s!"baseReorder (old): expected the specific wrong value H3 = 7, got {repr H3.data}"
+
+/-! #### Coupled-state step-capture reordering
+
+Reuses Part 5's `coupledScan` (Fibonacci-shaped `G`/`H`) verbatim except for one field:
+`stepCaptures` stores `H`'s capture before `G`'s, though `G`'s `inputSlot` (`0`) is lower. Under the
+fix this has no effect (Fixture 4's `G = [1,2,3,5]`, `H = [1,1,2,3]` reproduced exactly). Under the
+old positional-order worker, `stepBlockCoupled`'s input slot 0 (meant for `G`) instead receives `H`,
+and slot 1 (meant for `H`) receives `G`, EVERY iteration: `H`'s recurrence (`stepAssignHCoupled`
+reads ONLY slot 0) becomes `H[l+1] := H[l]` instead of `G[l]`, so `H` freezes at its base value
+forever (`[1,1,1,1]`). `G`'s recurrence (`stepAssignGCoupled` sums BOTH slots) is, per iteration,
+unaffected by which slot holds which real value — but it still consumes `H`'s value from the
+PRECEDING iteration, which is itself already corrupted from iteration 2 onward, so `G` silently
+diverges too, one step later than `H` does (`[1,2,3,4]` instead of `[1,2,3,5]`). This is exactly why
+the fixture asserts EXACT histories for BOTH states rather than just checking "something changed" —
+a capture-order bug can leave one output looking right for a while and still be wrong. -/
+
+def coupledStepReorderScan : RawScanPlan :=
+  { coupledScan with stepCaptures := #[stepCaptureHCoupled, stepCaptureGCoupled] }
+
+-- The fix: real `runDenseScan` reproduces Fixture 4 exactly, regardless of `stepCaptures`' order.
+run_cmd do
+  match checkScanPlan outerSigsCoupled coupledStepReorderScan with
+  | .error e => throwError s!"coupledStepReorder (real) checkScanPlan rejected: {repr e}"
+  | .ok checked =>
+      match runDenseScan outerSigsCoupled checked outerStoreCoupled with
+      | .error e => throwError s!"coupledStepReorder (real) runDenseScan error: {repr e}"
+      | .ok result =>
+          let G := result.getD 1 { shape := [], data := #[] }
+          let H := result.getD 2 { shape := [], data := #[] }
+          unless DenseTensor.approxEq G { shape := [4], data := #[1.0, 2.0, 3.0, 5.0] } do
+            throwError s!"coupledStepReorder (real): wrong G {repr G.data}"
+          unless DenseTensor.approxEq H { shape := [4], data := #[1.0, 1.0, 2.0, 3.0] } do
+            throwError s!"coupledStepReorder (real): wrong H {repr H.data}"
+
+-- The bug reproduced: H freezes at its base value; G then diverges too, one step later.
+run_cmd do
+  match checkScanPlan outerSigsCoupled coupledStepReorderScan with
+  | .error e => throwError s!"coupledStepReorder (old) checkScanPlan rejected: {repr e}"
+  | .ok checked =>
+      match runDenseScanOldCaptureOrder outerSigsCoupled checked outerStoreCoupled with
+      | .error e => throwError s!"coupledStepReorder (old) runDenseScan error: {repr e}"
+      | .ok result =>
+          let G := result.getD 1 { shape := [], data := #[] }
+          let H := result.getD 2 { shape := [], data := #[] }
+          if DenseTensor.approxEq G { shape := [4], data := #[1.0, 2.0, 3.0, 5.0] } then
+            throwError s!"coupledStepReorder (old): G should NOT reproduce the correct sequence, got {repr G.data}"
+          unless DenseTensor.approxEq G { shape := [4], data := #[1.0, 2.0, 3.0, 4.0] } do
+            throwError s!"coupledStepReorder (old): expected the specific wrong value G = [1,2,3,4], got {repr G.data}"
+          if DenseTensor.approxEq H { shape := [4], data := #[1.0, 1.0, 2.0, 3.0] } then
+            throwError s!"coupledStepReorder (old): H should NOT reproduce the correct sequence, got {repr H.data}"
+          unless DenseTensor.approxEq H { shape := [4], data := #[1.0, 1.0, 1.0, 1.0] } do
+            throwError s!"coupledStepReorder (old): expected the specific wrong value H = [1,1,1,1], got {repr H.data}"
+
 /-!
 ## `CheckedScanPlan` construction boundary (compile-time privacy check)
 
