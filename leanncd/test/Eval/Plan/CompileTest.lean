@@ -202,6 +202,57 @@ def assignStep : PlanStep → AssignPlan
 #guard contractPrepared.map (fun p => (assignStep p.plan.raw.steps[0]!).terms[0]!.factors[1]!.map.coeffs) ==
   some #[#[0, 1]]   -- B[j]
 
+-- Example 2b: multiple factors and ORDERED reductions `Y[i] := A[i,j]·B[j,k]·C[k]`, contracting
+-- over TWO axes (j then k, in first-encountered order via `termAxisUIDs`) — Example 2 above never
+-- exercises more than one contracted axis, and neither does `PropertyOracle.enumPrograms` (its
+-- generator caps every term at 2 factors and never puts more than one contracted axis `j` into
+-- play — confirmed by reading `Gen.lean` directly), so this is the only coverage anywhere in the
+-- suite for reduction ORDER with more than one axis, and the only multi-dimensional-read (`A[i,j]`,
+-- two idx-expr rows in one factor) coverage in this file.
+def axI2b : AxisSpec := { name := "i", uid := 1, kind := .nat }
+def axJ2b : AxisSpec := { name := "j", uid := 2, kind := .nat }
+def axK2b : AxisSpec := { name := "k", uid := 3, kind := .nat }
+def multiReductionSched : ScheduledProgram :=
+  { decls := [.axis axI2b (some 2), .axis axJ2b (some 2), .axis axK2b (some 2)]
+  , stmts := [.plain (.assign "Y" [.free axI2b]
+      { body := { terms := [{ factors :=
+          [ .read "A" [.axis axI2b, .axis axJ2b]
+          , .read "B" [.axis axJ2b, .axis axK2b]
+          , .read "C" [.axis axK2b] ] }] }
+      , nonlin := .identity })]
+  , env := {}, extNames := insert "A" (insert "B" (insert "C" (∅ : Finset String)))
+  , explicitSizes :=
+      (((({} : HashMap UID Nat).insert axI2b.uid 2).insert axJ2b.uid 2).insert axK2b.uid 2) }
+def multiReductionInputs : HashMap String DenseTensor :=
+  ((({} : HashMap String DenseTensor).insert "A" ⟨[2, 2], #[1.0, 2.0, 3.0, 4.0]⟩).insert
+    "B" ⟨[2, 2], #[1.0, 0.0, 0.0, 1.0]⟩).insert "C" ⟨[2], #[1.0, 1.0]⟩
+def multiReductionSig : InputSignature := InputSignature.ofDenseInputs multiReductionInputs
+#guard (prepareEvalPlan multiReductionSched multiReductionSig).toOption.isSome
+
+def multiReductionPrepared : Option PreparedPlan :=
+  (prepareEvalPlan multiReductionSched multiReductionSig).toOption
+
+#guard multiReductionPrepared.map
+    (fun p => (assignStep p.plan.raw.steps[0]!).terms[0]!.iterationShape) == some #[2, 2, 2]
+#guard multiReductionPrepared.map
+    (fun p => (assignStep p.plan.raw.steps[0]!).terms[0]!.outputPos) == some #[0]
+#guard multiReductionPrepared.map
+    (fun p => (assignStep p.plan.raw.steps[0]!).terms[0]!.reductionPos) == some #[1, 2]  -- j, then k
+#guard multiReductionPrepared.map
+    (fun p => (assignStep p.plan.raw.steps[0]!).terms[0]!.contextPos) == some #[]
+-- A[i,j]: one row per read dimension, over basis [i, j, k].
+#guard multiReductionPrepared.map
+    (fun p => (assignStep p.plan.raw.steps[0]!).terms[0]!.factors[0]!.map.coeffs) ==
+  some #[#[1, 0, 0], #[0, 1, 0]]
+-- B[j,k]
+#guard multiReductionPrepared.map
+    (fun p => (assignStep p.plan.raw.steps[0]!).terms[0]!.factors[1]!.map.coeffs) ==
+  some #[#[0, 1, 0], #[0, 0, 1]]
+-- C[k]
+#guard multiReductionPrepared.map
+    (fun p => (assignStep p.plan.raw.steps[0]!).terms[0]!.factors[2]!.map.coeffs) ==
+  some #[#[0, 0, 1]]
+
 -- Example 3: repeated assignment `Y[i]:=A[i]; Y[i]:=B[i]; Z[i]:=Y[i]`, axis i : ℕ = 2.
 def axI3 : AxisSpec := { name := "i", uid := 1, kind := .nat }
 def repeatSched : ScheduledProgram :=

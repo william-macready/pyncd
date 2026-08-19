@@ -204,6 +204,30 @@ run_cmd do
   | .error e => throwError s!"rank-2 output case: {e}"
   | .ok () => pure ()
 
+-- ── Multiple factors and ordered reductions: `CompileTest.lean`'s `multiReductionSched` fixture
+-- checks the STRUCTURAL basis/reduction ordering (`reductionPos == #[1, 2]`, per-factor coeff
+-- rows) but never actually RUNS the plan. `enumPrograms` never contracts more than one axis (its
+-- generator caps every term at 2 factors, `Gen.lean` confirmed), so a THREE-factor term
+-- contracting TWO axes jointly (`Y[i] := A[i,j]·B[j,k]·C[k]`, summing over both `j` and `k`) is
+-- otherwise unexercised at the value level anywhere in this suite. Cross-checked against
+-- `evalScheduled` via `planAgrees`, same belt-and-suspenders pattern as `rank2Prog` above. ──
+
+private def multiReductionProg : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  axis j : ℕ = 2
+  axis k : ℕ = 2
+  Y[i] := A[i, j] · B[j, k] · C[k]
+}
+
+private def multiReductionProgInputs : HashMap String DenseTensor :=
+  ((({} : HashMap String DenseTensor).insert "A" ⟨[2, 2], #[1.0, 2.0, 3.0, 4.0]⟩).insert
+    "B" ⟨[2, 2], #[1.0, 0.0, 0.0, 1.0]⟩).insert "C" ⟨[2], #[1.0, 1.0]⟩
+
+run_cmd do
+  match planAgrees multiReductionProg multiReductionProgInputs with
+  | .error e => throwError s!"multi-factor ordered-reduction case: {e}"
+  | .ok () => pure ()
+
 -- ── Repeated-assignment executing coverage: `CompileTest.lean`'s `repeatSched` fixture
 -- (`Y[i]:=A[i]; Y[i]:=B[i]; Z[i]:=Y[i]`) is checked STRUCTURALLY there (`materializedNames ==
 -- #["Y","Y","Z"]`, two distinct slots for the two `Y` entries) but never actually RUN.

@@ -13,7 +13,10 @@ import LeanNCD.DSL.Pipeline.Lowering
 Ports C0's already-verified classification logic (`PlanContract.classify*`,
 `test/Eval/Plan/ContractTest.lean`) from test-only `Classification`-valued classifiers into a real
 production entry point that throws `CapabilityError`. No `PreparedPlan`, slot allocation, or shape
-inference here — this file holds only capability preflight; Task 2 grows it.
+inference here — this file holds only capability preflight; `prepareEvalPlan` (Step D) grows it
+with per-statement assignment residualization, generalized (Wave F F4 Task 2) into
+`residualizeAssignment` so a future scan compiler (Task 3) can lower base/step assignments through
+the same core instead of duplicating it.
 -/
 
 namespace LeanNCD.Eval.Plan
@@ -147,6 +150,97 @@ private def resolveSizeOrFail (sizes : HashMap UID Nat) (site : UnsizedAxisSite)
   | some n => pure n
   | none => throw (.unsizedAxis uid site)
 
+/-- Fold every pinned axis's contribution into `row`'s bias and drop it from both the coefficient
+    row and the basis, preserving the relative order of the remaining positions. `row` must be
+    `idxToRow basis e` for some `e` — one coefficient per `basis` position. This is proposal
+    §4.4's base-assignment pin substitution ("substitute every `iterAt` pin into every normalized
+    RHS affine row; add every pinned coefficient's contribution to the bias; remove pinned UIDs
+    from the residual basis"), generalized over any pin set so `residualizeAssignment` below can
+    serve both an empty-pin plain caller (this task) and a future non-empty-pin base caller
+    (Task 3) with the same code. -/
+private def substitutePins (pins : HashMap UID Int) (basis : List UID) (row : List Int × Int) :
+    List Int × Int :=
+  let (coeffs, bias) := row
+  let indexed := basis.zip coeffs
+  let extraBias := indexed.foldl (fun acc (u, c) => acc + (pins[u]?).getD 0 * c) 0
+  let residualCoeffs := indexed.filterMap (fun (u, c) => if (pins[u]?).isSome then none else some c)
+  (residualCoeffs, bias + extraBias)
+
+/-- Hand-worked sanity check (proposal §4.4's own worked example): pinning `u := 5` into
+    `7 + 2u - 3v + 4u` over basis `[u, v]` leaves residual basis `[v]`, coefficient row `[-3]`
+    (`2 + 4 = 6` on `u`, dropped), bias `7 + 6·5 = 37`. Checked directly here (`substitutePins` is
+    `private`, so only this file can reach it) rather than deferred to Task 3, whose base-write
+    caller is the first real, non-empty-pin CALLER of `residualizeAssignment` — but not the first
+    correctness check of the substitution arithmetic itself. -/
+private def pinCheckU : AxisSpec := { name := "u", uid := 9001, kind := .nat }
+private def pinCheckV : AxisSpec := { name := "v", uid := 9002, kind := .nat }
+#guard substitutePins (({} : HashMap UID Int).insert pinCheckU.uid 5) [pinCheckU.uid, pinCheckV.uid]
+    (idxToRow [pinCheckU.uid, pinCheckV.uid]
+      (.affine 7 [(2, pinCheckU), (-3, pinCheckV), (4, pinCheckU)]))
+  == ([-3], 37)
+
+/-- The common per-statement assignment residualization core (Wave F F4 Task 2): given a
+    statement's scan context (empty outside a scan step), its output (retained) basis, validated
+    pins, a source-name-to-`(slot, shape)` resolver, and an already-allocated destination
+    slot/shape, lower `terms` into an `AssignPlan`. Per proposal §4.4's ordered-basis table, each
+    term's basis is `context ++ output ++ reduction`, where `reduction` is THAT TERM's own
+    contracted axes (`termAxisUIDs` minus context/output — per-term, not per-statement, exactly as
+    `prepareEvalPlan`'s Step D always computed it) with any pinned axis substituted out via
+    `substitutePins`.
+
+    Constructs only the `AssignPlan` value. It deliberately does NOT touch the caller's name
+    environment (`slotOf`/`tensorSigsAcc`/`materializedAcc`): the plain-assignment caller below and
+    Task 3's future scan base/step callers publish produced names under different rules (a scan
+    step's coupled-state results, for instance, must not be visible to each other mid-block), so
+    publication policy stays with each caller, not this shared core.
+
+    Precondition (caller's responsibility, not re-validated here): `pins`' keys are disjoint from
+    both `contextUids` and `outputUids` — a "validated pin" is exactly one that names neither a
+    scan-context nor an output axis, by construction of whoever builds the pin set. Violating this
+    would desync `outputPos`/`reductionPos` (computed from `outputUids`/`reduction`'s own lengths)
+    from `iterationShape` (computed from the pin-filtered residual basis). -/
+private def residualizeAssignment (sizes : HashMap UID Nat) (warnings : List EvalWarning)
+    (stmtName : String) (contextUids : List UID) (contextShape : Array Nat)
+    (outputUids : List UID) (pins : HashMap UID Int)
+    (resolveSource : String → TensorSlot × Array Nat)
+    (destSlot : TensorSlot) (outputShape : Array Nat) (terms : List ProdTerm) :
+    Except PlanCompileFailure AssignPlan := do
+  let mut termsAcc : Array TermPlan := #[]
+  for term in terms do
+    let termUids := (termAxisUIDs term).eraseDups
+    let contractedUids :=
+      termUids.filter (fun u => !contextUids.contains u && !outputUids.contains u)
+    let basisUids := contextUids ++ outputUids ++ contractedUids
+    let reductionUids := contractedUids.filter (fun u => (pins[u]?).isNone)
+    let residualUids := contextUids ++ outputUids ++ reductionUids
+    let iterationShape ←
+      liftShape warnings (residualUids.toArray.mapM (resolveSizeOrFail sizes (.assignContracted stmtName)))
+    let contextPos : Array Nat := Array.range contextUids.length
+    let outputPos : Array Nat := (Array.range outputUids.length).map (· + contextUids.length)
+    let reductionPos : Array Nat :=
+      (Array.range reductionUids.length).map (· + contextUids.length + outputUids.length)
+    let mut factorsAcc : Array ReadPlan := #[]
+    for factor in term.factors do
+      match factor with
+      | .read name idxs =>
+          -- resolved against the caller's name environment as it stood BEFORE this statement's
+          -- destination slot was allocated — see the caller for why `getD`/its resolver default is
+          -- never actually reached.
+          let (sourceSlot, sourceShape) := resolveSource name
+          let rows := idxs.map (fun e => substitutePins pins basisUids (idxToRow basisUids e))
+          let coeffs : Array (Array Int) := (rows.map (fun r => r.1.toArray)).toArray
+          let biasArr : Array Int := (rows.map (fun r => r.2)).toArray
+          factorsAcc := factorsAcc.push
+            { sourceSlot, map := { coeffs, bias := biasArr }, sourceShape, oobPolicy := .zeroPad }
+      | .iverson _ => liftCapability warnings (throw (.maskOrPredicate "factor"))
+          -- unreachable post-preflight (checkFactor/Step A already rejected .iverson)
+      | .unaryFn .. => liftCapability warnings (throw (.unaryFactor "factor"))
+          -- unreachable post-preflight (checkFactor/Step A already rejected .unaryFn)
+    termsAcc := termsAcc.push
+      { iterationShape, contextPos, outputPos, reductionPos, factors := factorsAcc }
+  return { contextShape, destinationSlot := destSlot, outputShape, terms := termsAcc
+          , algebra := admittedAlgebra }
+
 def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
     Except PlanCompileFailure PreparedPlan := do
   -- Step A: capability preflight.
@@ -199,42 +293,24 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
     let retainedUids ← liftCapability warnings (slots.mapM (freeUidOrFail "lhs"))
     let outputShape ←
       liftShape warnings (retainedUids.toArray.mapM (resolveSizeOrFail sizes (.assignOutput nm)))
-    let mut termsAcc : Array TermPlan := #[]
-    for term in rhs.body.terms do
-      let termUids := (termAxisUIDs term).eraseDups
-      let contractedUids := termUids.filter (fun u => !retainedUids.contains u)
-      let basisUids := retainedUids ++ contractedUids
-      let iterationShape ←
-        liftShape warnings (basisUids.toArray.mapM (resolveSizeOrFail sizes (.assignContracted nm)))
-      let outputPos : Array Nat := Array.range retainedUids.length
-      let reductionPos : Array Nat :=
-        (Array.range basisUids.length).extract retainedUids.length basisUids.length
-      let mut factorsAcc : Array ReadPlan := #[]
-      for factor in term.factors do
-        match factor with
-        | .read name idxs =>
-            -- resolved against `slotOf` as it stands BEFORE this statement's destination slot is
-            -- allocated. `getD` default is never reached: every read name is either external
-            -- (allocated above) or produced by an earlier statement (schedule is topological, per
-            -- `ScheduledProgram.stmts`'s own doc: "producers precede consumers").
-            let sourceSlot := slotOf.getD name 0
-            let sourceSig := tensorSigsAcc.getD sourceSlot { shape := #[], dtype := .f64 }
-            let rows := idxs.map (idxToRow basisUids)
-            let coeffs : Array (Array Int) := (rows.map (fun r => r.1.toArray)).toArray
-            let biasArr : Array Int := (rows.map (fun r => r.2)).toArray
-            factorsAcc := factorsAcc.push
-              { sourceSlot, map := { coeffs, bias := biasArr }, sourceShape := sourceSig.shape
-              , oobPolicy := .zeroPad }
-        | .iverson _ => liftCapability warnings (throw (.maskOrPredicate "factor"))
-            -- unreachable post-preflight (checkFactor/Step A already rejected .iverson)
-        | .unaryFn .. => liftCapability warnings (throw (.unaryFactor "factor"))
-            -- unreachable post-preflight (checkFactor/Step A already rejected .unaryFn)
-      termsAcc := termsAcc.push
-        { iterationShape, contextPos := #[], outputPos, reductionPos, factors := factorsAcc }
+    -- name-environment mutation (`slotOf`/`tensorSigsAcc`/`materializedAcc`) is this plain caller's
+    -- own publication policy — `residualizeAssignment` only builds the `AssignPlan` value, per its
+    -- own doc comment.
     let destSlot := tensorSigsAcc.size
+    let resolveSource (name : String) : TensorSlot × Array Nat :=
+      -- resolved against `slotOf` as it stands BEFORE this statement's destination slot is
+      -- allocated. `getD` default is never reached: every read name is either external (allocated
+      -- above) or produced by an earlier statement (schedule is topological, per
+      -- `ScheduledProgram.stmts`'s own doc: "producers precede consumers").
+      let sourceSlot := slotOf.getD name 0
+      (sourceSlot, (tensorSigsAcc.getD sourceSlot { shape := #[], dtype := .f64 }).shape)
+    -- plain assignment: empty scan context, no pins — reproduces this Step D's pre-extraction
+    -- behavior exactly (Task 2's whole point; see `residualizeAssignment`'s doc comment).
+    let assignPlan ←
+      residualizeAssignment sizes warnings nm [] #[] retainedUids ({} : HashMap UID Int)
+        resolveSource destSlot outputShape rhs.body.terms
     tensorSigsAcc := tensorSigsAcc.push { shape := outputShape, dtype := .f64 }
-    stepsAcc := stepsAcc.push
-      { contextShape := #[], destinationSlot := destSlot, outputShape, terms := termsAcc, algebra := admittedAlgebra }
+    stepsAcc := stepsAcc.push assignPlan
     materializedAcc := materializedAcc.push { name := nm, slot := destSlot }
     slotOf := slotOf.insert nm destSlot
   -- Step E: assemble and check. This should ALWAYS succeed for a schedule that passed capability
