@@ -37,14 +37,23 @@ def acceptedSched : ScheduledProgram :=
 
 #guard isOk (capabilityPreflight acceptedSched)
 
--- scanNode: a `.scan` ScanStmt
+-- noAdvancingAxis: a `.scan` ScanStmt declaring no advancing axis. (Wave C rejected EVERY `.scan`
+-- here with `scanNode`; F4 admits well-formed ones, so this fixture now pins the empty-axis
+-- rejection specifically — see `Eval.Plan.ScanCompileTest` for the admitted cases.)
 #guard errOf (capabilityPreflight
     { acceptedSched with stmts := [.scan "s" [] [] [] false] })
-  == some (.scanNode "s")
+  == some (.noAdvancingAxis "s")
 
--- scanNode via `.scanPre` (checked directly on the sub-function, not through a whole program, to
--- keep this fixture minimal — `capabilityPreflight` is already exercised end-to-end above)
-#guard errOf (checkScanStmt (.scanPre "s" ⟨"l", 0, .nat⟩ default)) == some (.scanNode "s")
+-- recurrenceOrCallback via `.scanPre` (checked directly on the sub-function, not through a whole
+-- program, to keep this fixture minimal — `capabilityPreflight` is already exercised end-to-end
+-- above). Reuses the constructor `Stmt.recurMorphism` already gets: a `.scanPre`'s payload IS a
+-- pre-built step morphism (proposal §5.2 / plan §4.1), not a distinct capability.
+#guard errOf (checkScanStmt (.scanPre "s" ⟨"l", 0, .nat⟩ default)) == some (.recurrenceOrCallback "s")
+
+-- `scanNode` has no producer left in `Compile.lean` (F4 replaced both of its throw sites), but the
+-- constructor is retained on `CapabilityError` — deleting a shipped closed-family constructor is
+-- itself a semantic version change. Exercised directly, same pattern as `unsupportedDtype` below.
+#guard (CapabilityError.scanNode "retained") == CapabilityError.scanNode "retained"
 
 -- scatterOrAffineLhs: a scatter statement
 #guard errOf (capabilityPreflight
@@ -299,11 +308,11 @@ def badDtypeSig : InputSignature :=
   some { cause := .inputSignature (.dtypeNotAdmitted "X" .bool), warnings := [] }
 
 -- `prepareEvalPlan`'s OWN capability-rejection path: Step A runs `capabilityPreflight` before
--- shape inference, so a `.scan` statement is rejected with a `.capability`-tagged
+-- shape inference, so an axis-less `.scan` statement is rejected with a `.capability`-tagged
 -- `PlanCompileFailure` and `warnings := []` (Step A fails before any warnings could accrue) — the
--- same schedule/error pair `capabilityPreflight`'s own `scanNode` guard above uses.
+-- same schedule/error pair `capabilityPreflight`'s own `noAdvancingAxis` guard above uses.
 #guard causeOf (prepareEvalPlan { acceptedSched with stmts := [.scan "s" [] [] [] false] } identitySig) ==
-  some { cause := .capability (.scanNode "s"), warnings := [] }
+  some { cause := .capability (.noAdvancingAxis "s"), warnings := [] }
 
 -- `PlanCompileCause.shape` through `prepareEvalPlan`: axis `i` never appears in any read, so shape
 -- inference succeeds vacuously (no read positions to fail on) but leaves `i` unsized;
@@ -331,6 +340,7 @@ private def renderCompileCause : PlanCompileCause → String
   | .inputSignature c => s!"inputSignature: {repr c}"
   | .capability c     => s!"capability: {repr c}"
   | .shape c          => s!"shape: {c}"
+  | .scan c            => s!"scan: {repr c}"
   | .invalidPlan c     => s!"invalidPlan: {repr c}"
   | .bindings c        => s!"bindings: {repr c}"
 

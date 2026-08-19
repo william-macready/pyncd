@@ -74,6 +74,7 @@ private def renderCompileCause : PlanCompileCause → String
   | .inputSignature c => s!"inputSignature: {repr c}"
   | .capability c     => s!"capability: {repr c}"
   | .shape c          => s!"shape: {c}"
+  | .scan c            => s!"scan: {repr c}"
   | .invalidPlan c     => s!"invalidPlan: {repr c}"
   | .bindings c        => s!"bindings: {repr c}"
 

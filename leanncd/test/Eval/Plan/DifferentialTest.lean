@@ -79,6 +79,7 @@ private def capabilityCategory : CapabilityError → String
   | .unsupportedDtype _ => "unsupportedDtype"
   | .dynamicShape _ => "dynamicShape"
   | .recurrenceOrCallback _ => "recurrenceOrCallback"
+  | .noAdvancingAxis _ => "noAdvancingAxis"
 
 private inductive SweepOutcome
   | accepted

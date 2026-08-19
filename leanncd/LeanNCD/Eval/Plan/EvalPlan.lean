@@ -190,6 +190,7 @@ inductive PlanCompileCause
   | inputSignature (cause : InputSignatureError)
   | capability     (cause : CapabilityError)
   | shape          (cause : ShapeError)
+  | scan           (cause : ScanCompileError)
   | invalidPlan    (cause : PlanStepError)
   | bindings       (cause : BindingsError)
   deriving DecidableEq, BEq, Inhabited

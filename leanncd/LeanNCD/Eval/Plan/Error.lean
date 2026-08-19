@@ -67,6 +67,59 @@ inductive CapabilityError
   | unsupportedDtype     (context : String)  -- any dtype other than the declared f64 mode
   | dynamicShape         (context : String)  -- backend- or value-dependent shapes
   | recurrenceOrCallback (context : String)
+  | noAdvancingAxis      (context : String)  -- `.scan` declaring an empty advancing-axis list
+  deriving DecidableEq, BEq, Repr, Inhabited
+
+/-- Wave F source-scan rejection (proposal §5.2/§7.5): what a `.scan` node's base/recurrence lists
+    say that cannot be given a checked-scan meaning, discovered AFTER capability preflight and shape
+    inference, once concrete axis sizes and lowered affine maps exist. Deliberately a second closed
+    family beside `CapabilityError` rather than more constructors on it: a `CapabilityError` is
+    decidable from the bare AST (`capabilityPreflight` runs before shape inference and cannot see a
+    size), whereas every constructor below needs either an inferred extent, a derived state
+    geometry, or a lowered read row. No `unsupportedScan : String` escape hatch, for the same reason
+    `CapabilityError` has none (§5.2's literal text).
+
+    Every constructor carries source locators, never rendered strings: the enclosing scan's
+    representative name (`scan` — a DIAGNOSTIC label only; state classification never reads it, see
+    `compileScan`'s doc comment), the offending state or destination name, the offending statement's
+    index within its own `base`/`recur` list, and the term/factor or write/dimension index where one
+    applies. `isBase` distinguishes the two blocks wherever one constructor genuinely serves both. -/
+inductive ScanCompileError
+  -- §4.2 state/base/result pairing
+  | noPersistentState        (scan : String)
+  | orphanBaseState          (scan state : String)
+  | orphanAdvancingResult    (scan name : String) (stmtIndex : Nat)
+  | duplicateStateResult     (scan state : String) (firstStmtIndex secondStmtIndex : Nat)
+  | stateResultNotAdvancing  (scan state : String) (stmtIndex : Nat)
+  | partialAdvancingResult   (scan state : String) (stmtIndex : Nat) (declared expected : Nat)
+  | duplicateScratchProducer (scan name : String) (firstStmtIndex secondStmtIndex : Nat)
+  -- block dependency order
+  | blockReadNotAvailable    (scan : String) (isBase : Bool) (stmtIndex : Nat) (name : String)
+  | stateReadInBaseBlock     (scan : String) (stmtIndex : Nat) (state : String)
+  -- context axes and per-state geometry
+  | duplicateContextAxis     (scan : String) (axisIndex : Nat) (uid : UID)
+  | scanAxisZeroExtent       (scan : String) (axisIndex : Nat) (uid : UID)
+  | iterNextInBaseBlock      (scan name : String) (stmtIndex : Nat) (uid : UID)
+  | iterAtInStepBlock        (scan name : String) (stmtIndex : Nat) (uid : UID)
+  | pinnedAxisNotContext     (scan name : String) (stmtIndex : Nat) (uid : UID)
+  | contextAxisAsFreeOutput  (scan name : String) (stmtIndex : Nat) (uid : UID)
+  | advancingAxisNotInLhs    (scan name : String) (isBase : Bool) (stmtIndex : Nat) (uid : UID)
+  | duplicateAxisInLhs       (scan name : String) (stmtIndex : Nat) (uid : UID)
+  | inconsistentStateRank    (scan state : String) (isBase : Bool)
+                             (stmtIndex expected actual : Nat)
+  -- The two below compare one placement against the one that established the state's geometry, so
+  -- their locator is the STATE plus the disagreeing axis/dimension and both values, not a single
+  -- statement index: a state's placements are its own base statements plus its one result, and the
+  -- pair of values names which two disagree. Adding `isBase`/`stmtIndex` here would only identify
+  -- the second of the two, which is not more useful than the values themselves.
+  | inconsistentAdvancingDim (scan state : String) (uid : UID) (expected actual : Nat)
+  | inconsistentStateExtent  (scan state : String) (dim expected actual : Nat)
+  -- base write placement (§5.1: in range, boundary-touching, pairwise disjoint)
+  | baseWriteNotAtBoundary   (scan state : String) (writeIndex : Nat)
+  | baseWritePinOutOfRange   (scan state : String) (writeIndex dim : Nat) (lit : Int) (extent : Nat)
+  | baseWritesOverlap        (scan state : String) (firstWriteIndex secondWriteIndex : Nat)
+  -- §7.4 causality, checked against the lowered step-block read rows
+  | stateReadNotCausal       (scan state : String) (stmtIndex termIndex factorIndex : Nat)
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- A required signature is missing, malformed, or incompatible with the scheduled declarations
