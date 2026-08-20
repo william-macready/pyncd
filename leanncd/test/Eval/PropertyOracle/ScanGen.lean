@@ -11,8 +11,13 @@ over a few parameters (scan length `L`, coefficient signs, aggregator). Scan wel
 materially tighter than the scan-free fragment (causality, matching base/recur names, full-axis-
 set coupling), so a curated family is lower-risk than combinatorial enumeration here.
 
-INVARIANT (load-bearing for `ScanUnroll`'s slicing, added in a later task): in every generated
-statement, scan-axis LHS slots are always the LAST slot position(s).
+NO SLOT-ORDER INVARIANT. Every generated statement here happens to put its scan-axis LHS slots
+last, but nothing may depend on that. This file used to declare it as an invariant "load-bearing
+for `ScanUnroll`'s slicing"; F4 Task 5 deleted that slicing and rewrote the oracle to resolve each
+state's advancing dimensions from its own recurrence result, precisely so a non-trailing advancing
+dimension is handled rather than assumed away (it was one of the four deficiencies plan §4.8
+names). A new template with an interior or leading scan-axis slot is therefore welcome, and is
+covered by `test/Eval/Plan/ScanCompileTest.lean`'s fixture H on the hand-written side.
 -/
 namespace LeanNCD.PropertyOracle
 open LeanNCD LeanNCD.Eval
@@ -33,8 +38,9 @@ structure ScanCase where
 private def j1 : AxisSpec := ⟨"j", 201, .real⟩
 private def l1 : AxisSpec := ⟨"l", 202, .nat⟩
 
-/-- Public (unlike the other templates) because `ScanUnroll`'s Task 4 point-check needs a
-    concrete, named case to test `unrollScan1D` against directly. -/
+/-- Public (unlike templates 2/4/5) because `ScanUnroll`/`ScanOracle` need a concrete, named
+    single-state case: it is the point check for `independentRun`'s hand-derived history and the
+    subject of `ScanOracle.lean`'s two teeth checks. -/
 def template1 (L : Nat) (Aneg : Bool) : ScanCase :=
   let l := l1
   let base : Stmt := .assign "S" [.free j1, .iterAt l 0]
@@ -135,8 +141,9 @@ private def template5 (L : Nat) (useMax : Bool) : ScanCase :=
 private def r6 : AxisSpec := ⟨"r", 251, .nat⟩
 private def c6 : AxisSpec := ⟨"c", 252, .nat⟩
 
-/-- Public (unlike templates 2-5) because `ScanUnroll`'s Task 5 point-check needs a concrete,
-    named case to test `unrollScan2D` against directly. -/
+/-- Public (unlike templates 2/4/5) because `ScanUnroll`'s point check needs a concrete, named
+    TWO-AXIS case: it is the only template whose grid has coordinates that neither the base face nor
+    any step reaches, so it is what pins the zero-leaf path. -/
 def template6 : ScanCase :=
   let base : Stmt := .assign "G" [.free r6, .iterAt c6 0]
     { body := { terms := [{ factors := [.read "Z" [.axis r6]] }] }, nonlin := .identity }
@@ -150,7 +157,7 @@ def template6 : ScanCase :=
               stmts := [base, recur] },
     inputs := inputs, axes := [r6, c6], Ls := [2, 2], base := [base], recur := [recur] }
 
--- REGRESSION GUARD (found while deriving Task 5's unrollScan2D by hand): template6 must match
+-- REGRESSION GUARD (found while hand-deriving the 2-D unroll): template6 must match
 -- RC6's own hand-verified result (RecurrenceTest.lean) — an earlier draft had `G[r,c]` and
 -- `A[r,c]` crammed into one product term (multiplication) instead of two summed terms
 -- (addition), and Task 2's contract tests only checked well-formedness (`.isSome`), never the

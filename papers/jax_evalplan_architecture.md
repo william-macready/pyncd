@@ -1292,25 +1292,36 @@ data crosses the Lean/Python trust boundary as ordinary DTOs without serializing
 The preceding sections describe six threads that are easy to assume are strictly ordered when they
 are not: closing the numeric-mode contract, measuring affine-table scaling, Wave F's scan work,
 nonlinearity support, compact/evidence-indexed kernels, and closing Stage A's remaining narrow
-refinements. Four are now settled, in different senses — thread 1 is a closed *decision*, not yet
+refinements. Five are now settled, in different senses — thread 1 is a closed *decision*, not yet
 empirically checked; thread 2 is a closed *measurement*; threads 5 and 6 are closed outright,
-implemented and tested — and settling the first two changed the recommended order for the two still
-open. Thread numbers below are stable identifiers other sections cite by number
+implemented and tested; thread 3's own stated scope (Wave F's F4) landed 2026-08-19, though Wave F
+itself is not finished — and settling the first two changed the recommended order for what was then
+still open. Thread numbers below are stable identifiers other sections cite by number
 ([Section 2.2](#22-contractions-and-ordered-floating-point-execution) cites thread 1,
 [Section 5.4](#54-evidence-validating-the-experimental-jax-bridge) cites thread 5) — they are not a
-reading order. The table's row order is: settled threads first, then the two open threads in their
-current recommended sequence. Wave F (thread 3) is in-progress Part I work, not a Part III candidate;
-it appears here only because its timing relative to the others needs stating. This remains a
+reading order. The table's row order is: settled threads first, then the one remaining open thread.
+Wave F (thread 3) is Part I work, not a Part III candidate; it appears here only because its timing
+relative to the others needed stating. This remains a
 planning default, not a gate enforced anywhere in [Section 6](#6-adoption-plan-and-gates) — re-derive
 the open threads' order if a reason emerges, but don't re-litigate it without one.
 
 **Most of Stage A didn't exist as code, but not uniformly, and less of it is missing now.** Item
 numbers below are [Section 7.1](#71-stage-a-recommended-low-risk-refinements)'s own `#` column, not
-a positional count of this paragraph's claims. `PlanStep`, distinct slot namespaces, and
-snapshot/next-state types genuinely don't exist in any form yet — the real codebase today is
-`RawEvalPlan` → `CheckedEvalPlan` → `PreparedPlan` built from `AssignPlan`/`TermPlan`/`ReadPlan`
-(assignment-only, flat `Nat` slots — the numeric mode is now the closed `reference64SumProduct`
-constructor, item 3, closed by thread 6). Two further items also have correct, tested *behavior* now
+a positional count of this paragraph's claims. **`PlanStep` now exists** (Wave F F3): it is the
+closed `.assign`/`.scan` sum in `LeanNCD/Eval/Plan/RawStep.lean`, `RawEvalPlan.steps` is an
+`Array PlanStep`, and `RawPlanBlock` (same file) gives each block its own `tensorSigs` table with
+its own `inputs`/`outputs` indices — F4 then made scan steps reachable from source syntax. So the
+real codebase today is `RawEvalPlan` → `CheckedEvalPlan` → `PreparedPlan` over assignment AND scan
+steps, with `AssignPlan`/`TermPlan`/`ReadPlan` remaining the assignment-side hierarchy. What is
+still genuinely absent is narrower than this paragraph used to claim: **distinct slot namespaces**
+(item 1) — `TensorSlot` is a bare `abbrev TensorSlot := Nat` (`Types.lean:38`) shared by outer and
+block slots alike, so block scoping is structural, not type-level — and **distinct snapshot and
+next-state result types** (item 7), where the *behavior* is implemented and checked
+(`runDenseScan` binds an immutable `oldStates` snapshot per iteration, accumulates `nextStates`,
+and commits simultaneously; `checkScanPlan` admits only `snapshotPolicy = .immutablePreStep`) but
+both are plain `Array DenseTensor` locals rather than the distinct types Stage A specifies. Flat
+`Nat` slots therefore remain, while the numeric mode is now the closed `reference64SumProduct`
+constructor (item 3, closed by thread 6). Two further items also have correct, tested *behavior* now
 surfaced as the distinct API Stage A specifies, also closed by thread 6: `Dense.lean`'s
 `runDenseAssignAt` builds its source-declared, non-flattened factor/reduction/term order from three
 named fold functions, `factorFold`/`reductionFold`/`termFold` (item 2); `prepareEvalPlan` now builds
@@ -1325,10 +1336,16 @@ the same way — `LeanNCD/Eval/Plan/Executable.lean`'s private-constructor `JaxK
 buildable only through `validateAndConstructKernel`/`validateAndConstructExecutable` after
 `validateAffineTable`/`validateEinsum` pass, distinguishing `orderedReference64` from
 `optimizationExperiment` evidence in the type system exactly as this section calls for. This matters
-for sequencing: thread 3 below still has to build the Stage A pieces its own work genuinely lacks
-(items 1, 7, 8) — not by choice, because nothing else claims them either. Threads 5 and 6 between
+for sequencing: thread 3 was left holding the Stage A pieces nothing else claims (items 1, 7, 8), and
+of those **item 8 is now built** — `PlanStep.sourceSlots` and `PlanStep.destinationSlots`
+(`EvalPlan.lean:39` and `:45`) are exhaustive derived accessors over the closed step sum, and
+`checkPlan` routes destination production and scan-step source reads through them. One deliberate
+exception is documented at the definition: `checkPlan` keeps a direct per-term/per-factor loop for
+`.assign` source reads, because flattening through `sourceSlots` would lose the `ti`/`fi` locators
+`invalidForwardRead` reports. Items 1 and 7 are still open as *type-level* refinements, per the
+paragraph above. Threads 5 and 6 between
 them closed the remainder — items 2 through 6 — none blocked on thread 3, and cheaper than thread 3's
-remaining scope since most were API-surface or validator work over already-correct lowering behavior
+scope since most were API-surface or validator work over already-correct lowering behavior
 rather than new graph structure.
 
 | Thread | Item | Status | Depends on | Why |
@@ -1337,8 +1354,8 @@ rather than new graph structure.
 | 2 | Run the affine-table scaling measurement: one mid-sized contraction, timed and sized | **Measured** | Nothing | [Section 5.4](#54-evidence-validating-the-experimental-jax-bridge): one 4,096-coordinate contraction is already ~5% of the entire corpus's artifact size, and its compiled steady-state runtime is measurably (~5×) slower than native `jnp.einsum`. Both findings reordered thread 5 below. |
 | 6 | Closed Stage A's remaining refinements: explicit named factor/reduction/term fold functions in `Dense.lean` (`factorFold`/`reductionFold`/`termFold`), `reference64SumProduct` as the actual closed `NumericMode` constructor (renamed from the open `reference64` tag), and length-correct `RequiredBindings` in `Prepared.lean` | **Done** | Nothing | The three Stage A items neither thread 3 nor thread 5 needed. Cheaper than either — two of the three surfaced already-correct, already-tested behavior as a named API/type, not building new structure. Blocked on nothing and blocked nothing else, so it ran right after the other zero-dependency threads, in parallel with threads 5/3/4. |
 | 5 | Compact/evidence-indexed kernels for JAX ([Section 4.3](#43-evidence-indexed-executable-lowering)) | **Done** | Thread 2's outcome | Artifact size grows too fast for the affine-table oracle to stay usable past near-term needs, and its compiled steady-state runtime is a real, measured gap, not merely comparable. Built the validated, evidence-indexed executable-lowering discipline Stage A describes (private validated constructors, evidence-indexed kernels — [Section 7.1](#71-stage-a-recommended-low-risk-refinements)) around the lowering that already existed via the experimental JAX bridge, not a second lowering: `LeanNCD/Eval/Plan/Executable.lean`'s `ExecutionEvidence`, kernel/plan `Candidate` types, and private-constructor `JaxKernel`/`JaxExecutable`, gated by `validateAffineTable`/`validateEinsum` (the latter also closes a validation gap found in review — rejecting nonzero-bias and dropped-projection-axis einsum candidates the way `EvalPlanCodegen.lean`'s pre-existing `lowerFactor` already does). **JAX only**: the PyTorch backend (also sketched in Appendix D) is explicitly out of scope here — no client has asked for it, so it is deferred with no scheduled thread, not merely sequenced later. |
-| 3 | Continue Wave F (F4: source compiler, adapter, and differential gate) | Open — next recommended | Nothing beyond what F0/F1/F2/F3 already landed | This *is* Backend Eval IR's scan-half implementation per [Section 2.3](#23-blocks-graph-flow-and-scans) reaching source-level closure, not prerequisite work backend IR waits on — F2 and F3 already built the block-scoped slots, the `PlanStep` assign/scan interface, and the snapshot/next-state types that section requires (as hand-built checked plans, not yet reachable from source syntax); F4 teaches the source compiler and adapter to reach them and adds the differential gate against `evalScheduled`/independent unrolling. Proceeds independently of threads 1, 2, and 4, subject to [Section 7.2](#72-stage-b-candidate-dependent-contraction-prototype)'s existing constraint against combining it with the Stage B rewrite. Thread 5's completion (above) does not unblock anything here — the "after thread 5" sequencing in earlier drafts of this table was a priority ordering (thread 5 addressed a measured, worsening gap; thread 3 did not depend on thread 5's output), not a real dependency, and thread 3 was never blocked on it. |
-| 4 | Implement nonlinearity: new `PlanStep` pointwise/axiswise cases, Dense/JAX interpreter support | Open, after thread 3 | Thread 3 (the `PlanStep` type must exist before a case can be added to it), thread 1 (specified) | Sequenced after thread 3 for a real type dependency, not just conflict-avoidance: `PlanStep` doesn't exist until thread 3 builds it. A nonlinear step's evidence is also meaningless without a stated ULP bound — settled by thread 1. PyTorch interpreter support is not listed: it follows the PyTorch backend itself (thread 5's note above), which is deferred, not scheduled. |
+| 3 | Continue Wave F (F4: source compiler, adapter, and differential gate) | **Done** for its stated F4 scope (2026-08-19); Wave F itself continues with F5 | Nothing beyond what F0/F1/F2/F3 already landed | This *is* Backend Eval IR's scan-half implementation per [Section 2.3](#23-blocks-graph-flow-and-scans) reaching source-level closure, not prerequisite work backend IR waits on — F2 and F3 already built the block-scoped slot tables and the `PlanStep` assign/scan interface that section requires (as hand-built checked plans, not reachable from source syntax), and implemented the immutable-pre-step snapshot and simultaneous next-state commit *as worker behavior*, though not yet as the distinct types Stage A item 7 asks for. F4 taught the source compiler and adapter to reach them and added the differential gate: `prepareEvalPlan` now compiles a `ScanStmt.scan` into a `PlanStep.scan`, and 21 scan programs agree bit-for-bit across the compiled checked path, `evalScheduled`, and an independent scan-free unrolling (see the F4 completion record in [`wave_f_scanplan_proposal.md`](wave_f_scanplan_proposal.md#f4---source-compiler-adapter-and-differential-gate)). **Wave F is not finished:** F5 (adversarial audit and handoff — checker/error mutation matrix, import-direction audit, updated capability manifest) has not started, and F4 did not include JAX scan lowering or execution, so the non-default `JaxExperiment` target still does not build. Proceeded independently of threads 1, 2, and 4, subject to [Section 7.2](#72-stage-b-candidate-dependent-contraction-prototype)'s existing constraint against combining it with the Stage B rewrite. Thread 5's completion (above) did not unblock anything here — the "after thread 5" sequencing in earlier drafts of this table was a priority ordering (thread 5 addressed a measured, worsening gap; thread 3 did not depend on thread 5's output), not a real dependency, and thread 3 was never blocked on it. |
+| 4 | Implement nonlinearity: new `PlanStep` pointwise/axiswise cases, Dense/JAX interpreter support | Open — the only thread still open | Thread 1 (specified). The former dependency on thread 3 is **discharged**: `PlanStep` exists (`RawStep.lean`) as of F3. | Its one real type dependency was that `PlanStep` had to exist before a case could be added to it; F3 built it, so this is now unblocked rather than sequenced behind Wave F — though adding a constructor to the closed sum does touch every exhaustive match over it (`checkPlan`, `runDensePlan`, `PlanStep.sourceSlots`/`destinationSlots`, and the JAX lowering), so coordinating with any in-flight Wave F slice is still prudent. A nonlinear step's evidence is also meaningless without a stated ULP bound — settled by thread 1. PyTorch interpreter support is not listed: it follows the PyTorch backend itself (thread 5's note above), which is deferred, not scheduled. |
 
 ## 8. Appendices
 

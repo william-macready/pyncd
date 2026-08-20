@@ -1384,9 +1384,14 @@ exactly 17 cases (`#guard enumScanCases.length == 17`), built from 6 templates:
 | 5: tropical aggregator (`maxreduce`/`minreduce`) | `L ∈ {2, 3}`, aggregator (max vs. min) | **outside** Wave F's admitted kernel (only real sum-product is admitted) |
 | 6: 2-D grid-DP | fixed | in Wave F's admitted kernel; single base write per state, not multi-write |
 
-`ScanOracle.lean` compares each case against `ScanUnroll.lean`'s independent unroller
-(`unrollScan1D`/`unrollScan2D` — 1-D and 2-D only; no deeper n-D, no deep-history, no multi-base-write
-unroller exists). None of the 17 generated cases exercises: deep history (`k > 1` look-back), a
+`ScanOracle.lean` compares each case against `ScanUnroll.lean`'s independent unroller. *As surveyed
+at F0* that unroller was the pair `unrollScan1D`/`unrollScan2D` — 1-D and one fixed 2×2 template
+only, with no deeper n-D, deep-history, or multi-base-write support, which is part of why F0's own
+fixtures were needed. **F4 Task 5 deleted both**, replacing them with a single `unrollScanNode`/
+`independentRun` over `ScheduledProgram` that handles arbitrary advancing-dimension positions and
+order, affine deep history, several base writes per state, and block-local scratch; see the F4
+completion record below. The corpus surveyed here is unchanged either way — none of the 17 generated
+cases exercises: deep history (`k > 1` look-back), a
 constant/non-loop-relative state read, extent zero or one, or more than one base write for a single
 state — every one of those is new coverage from F0's fixtures, not already present in this corpus.
 
@@ -1790,15 +1795,27 @@ RED, and reverted.*
 | Pin every base `iterAt` literal to 0 | `baseRegion`, `ScanUnroll.lean` | `I-J/multiBase: ... plan=[1,2,3,7,1,2,0,7,1] unrolled=[1,2,3,0,1,2,0,0,1]` |
 | Bind every step-block local input slot to the LAST capture's source | `Compile.lean`'s `stepCaptures` (production) | on `C/scratch`, leg 1 gives `S = [1,4,9]` while legs 2 and 3 BOTH give `[1,2,6]` — the two independent paths agree with each other and disagree with the plan |
 
-Two of those were sharpened after a first attempt went red for the wrong reason, recorded because the
-distinction is the point of the exercise. The trailing-dimension mutation was first written into
-`buildGeom`, where the base-region axis-identity check rejected it structurally before any value was
-computed; moving it into `reconstructHistory` produces the intended shape/value disagreement and is
-also the exact §11.5 deficiency ("comparison assumes trailing scan dimensions"). The production
-capture mutation was first attempted as a step-write bias change (`1 -> 0`), which `checkScanPlan`
-correctly rejected as `writeGeometryNotAdmitted` — a checker doing its job, not evidence about the
-oracle; the capture rebinding survives checking for same-shaped captures and was measured on a
-standalone probe because `ScanCompileTest`/`AdapterTest` catch it first in the ordinary build.
+Two of those were sharpened after earlier attempts went red for the wrong reason, recorded because
+the distinction is the point of the exercise.
+
+The state-dimension-placement mutation took **three** attempts, each rejected by a different guard.
+(a) Written into `buildGeom` as "the advancing dimensions are the last `|axes|` dimensions", it was
+rejected by `buildGeom`'s own free-slot check — `B/coupled: the independent scan-free unrolling
+failed: G: dimension 0 is neither advancing nor a plain free axis (…iterNext r…)` — a structural
+refusal, not a differential. (b) Rewritten as `advDim.reverse`, which keeps every position a genuine
+`iterNext` slot, it was caught one guard earlier still, by `baseRegion`'s axis-identity check:
+`template6 unroll failed: base write for G: dimension 1 pins c, expected r`. (c) Moved into
+`reconstructHistory`, it finally produces the intended shape/value disagreement on `B/coupled` — and
+that is also the precise §11.5 deficiency being retired ("comparison assumes trailing scan
+dimensions"), so it is the right site for this mutation regardless.
+
+The production capture mutation was first attempted as a step-write bias change (`1 -> 0`), which
+`checkScanPlan` correctly rejected as `writeGeometryNotAdmitted` on all nine acceptance fixtures — a
+checker doing its job, not evidence about the oracle. The capture rebinding survives F3 checking
+wherever the two captures share a signature; it was measured on a standalone `lake env lean` probe
+with the fixture inlined, because `ScanCompileTest`'s whole-`RawScanPlan` assertion and `AdapterTest`
+Check 11 both catch it earlier in the ordinary build, and neutering those far enough to reach
+`DifferentialTest` would have changed too much to be trustworthy evidence.
 
 *Controller ruling recorded so it need not be re-derived.* §4.2's "every base destination is a state
 candidate" appeared to conflict with §8.4's "base blocks may read external inputs and earlier
@@ -1807,6 +1824,21 @@ directly: `finalizeScans` filters `baseStmts` to `!s.iterInfo.isEmpty && isBase 
 intermediate (`isInter`) goes only into `recurStmts`, so **base-block scratch is structurally
 unreachable from source**. §8.4 describes a checked-plan-language capability, not a source-compiler
 obligation, and the oracle rejects a base-block scratch or state read for the same reason.
+
+*Documentation corrected alongside the code.* `Prepared.lean`'s `materializedNames` doc comment (one
+entry per persistent OUTPUT, not per scheduled statement — a coupled scan step publishes one per
+state); `Eval/AGENTS.md` (the parity matrix is eight points, plus a row for the independent oracle
+and its §4.8 forbidden list); `papers/eval_ir.md` (the compiler no longer "emits only
+`PlanStep.assign` and rejects source scans during capability preflight"); §F0 above (its survey of
+`ScanUnroll.lean` described the deleted `unrollScan1D`/`unrollScan2D` pair in the present tense); and
+`papers/jax_evalplan_architecture.md` §7.6, which asserted that "`PlanStep`, distinct slot namespaces,
+and snapshot/next-state types genuinely don't exist in any form yet" and that thread 3 still owed
+Stage A items 1, 7 and 8. Re-checked against the code: `PlanStep` has existed since F3
+(`RawStep.lean`) and item 8 is built (`PlanStep.sourceSlots`/`destinationSlots`, `EvalPlan.lean:39`
+and `:45`); items 1 and 7 really are still open as TYPE-level refinements — `TensorSlot` is a bare
+`abbrev … := Nat` shared by outer and block slots, and `runDenseScan`'s snapshot/next-state values
+are plain `Array DenseTensor` locals despite the behavior being correct and checked. Thread 3's
+status is now Done for its stated F4 scope, explicitly noting that F5 has not started.
 
 Known follow-ups, deliberately not fixed here:
 
@@ -1838,10 +1870,24 @@ Known follow-ups, deliberately not fixed here:
   presence, shape and storage with the same predicates `runDensePlan` re-applies), so "warnings
   preserved on execution failure" is pinned by construction plus a positive
   `pack`-succeeds-implies-`runDensePlan`-succeeds check over four scan shapes, not by a live failure.
-- `papers/jax_evalplan_architecture.md` §7.6's thread table still records thread 3 ("Continue Wave F
-  (F4)") as **Open — next recommended**, and its surrounding prose still counts two open threads.
-  That is now stale, and the fix touches several interlocking sentences rather than one cell, so it
-  is left for F5's discoverability/documentation sweep rather than half-applied here.
+- The independent oracle's `rewriteRead` performs no causality check of its own: it evaluates a state
+  read's advancing indices at the current step tuple and routes the result by range and liveness
+  alone. A positive-bias (non-causal) read would therefore be unrolled rather than rejected — reading
+  a leaf the emission order has not produced yet (a loud but unhelpfully-worded `unknownTensor`), or,
+  if that coordinate happens to be base-covered, a value that is merely wrong. Not a live defect:
+  `compileScan`'s `stateReadNotCausal` rejects such a source before the oracle ever sees it, and F3
+  rejects it again at the plan level. Recorded as a consistency gap — the oracle rejects every OTHER
+  out-of-fragment construct explicitly — not as a bug.
+- `DifferentialTest.lean`'s `scanFeatures` "extent one" predicate tests only that the schedule
+  DECLARES some `.iter _ 1`; it does not check that the axis so declared is one the scan actually
+  advances over. Every other row in that table is derived from the scan node itself. Adequate for
+  today's fixtures (`extentOneSched` declares exactly one iter axis, of extent 1) but the weakest
+  row, and the one most likely to pass vacuously if a future fixture declares an unrelated
+  extent-one axis.
+- The two-way leg's `advScratch` support (the `%nl` shape `splitNonlins` manufactures for a nonlinear
+  recurrence) exists only because the four `relu` generated cases produce it. Nothing asserts its
+  presence the way `scanFeatures` asserts the others, so if those templates change it silently loses
+  coverage.
 
 ### F5 - adversarial audit and handoff
 
