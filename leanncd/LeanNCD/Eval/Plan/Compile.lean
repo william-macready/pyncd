@@ -404,7 +404,7 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
     let (nm, slots, _) := baseParts[bi]
     let slotAxes ← liftCapability warnings (slots.mapM (scanSlotAxisOrFail s!"{nm}: base LHS slot"))
     match firstDuplicateUID (slotAxes.map (·.uid)) with
-    | some u => throw (scanErr warnings (.duplicateAxisInLhs scanName nm bi u))
+    | some u => throw (scanErr warnings (.duplicateAxisInLhs scanName nm true bi u))
     | none => pure ()
     for sl in slots do
       match sl with
@@ -422,7 +422,7 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
     let slotAxes ←
       liftCapability warnings (slots.mapM (scanSlotAxisOrFail s!"{nm}: recurrence LHS slot"))
     match firstDuplicateUID (slotAxes.map (·.uid)) with
-    | some u => throw (scanErr warnings (.duplicateAxisInLhs scanName nm ri u))
+    | some u => throw (scanErr warnings (.duplicateAxisInLhs scanName nm false ri u))
     | none => pure ()
     for sl in slots do
       match sl with
@@ -526,7 +526,7 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
       if stateNames.contains rn then
         throw (scanErr warnings (.stateReadInBaseBlock scanName bi rn))
       match slotOf[rn]? with
-      | none => throw (scanErr warnings (.blockReadNotAvailable scanName true bi rn))
+      | none => throw (scanErr warnings (.blockReadNotAvailable scanName true bi rn .unknownName))
       | some _ => unless baseCapNames.contains rn do baseCapNames := baseCapNames.push rn
   let baseInputCount := baseCapNames.size
   let baseLocalOf : HashMap String TensorSlot := (Array.range baseInputCount).foldl
@@ -595,10 +595,11 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
           match scratchOf[rn]? with
           | some producer =>
               unless producer < ri do
-                throw (scanErr warnings (.blockReadNotAvailable scanName false ri rn))
+                throw (scanErr warnings (.blockReadNotAvailable scanName false ri rn
+                  (if producer == ri then .selfRead else .forwardReference)))
           | none =>
               match slotOf[rn]? with
-              | none => throw (scanErr warnings (.blockReadNotAvailable scanName false ri rn))
+              | none => throw (scanErr warnings (.blockReadNotAvailable scanName false ri rn .unknownName))
               | some outerSlot =>
                   unless (stepCapNames.map Prod.fst).contains rn do
                     stepCapNames := stepCapNames.push (rn, .external outerSlot)

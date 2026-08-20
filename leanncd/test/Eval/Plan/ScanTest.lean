@@ -556,7 +556,7 @@ def stepBlockConstG : RawPlanBlock := { stepBlockG with assignments := #[stepAss
 run_cmd do
   match checkScanPlan outerSigsDeepHistory { deepHistoryScan with stepBlock := stepBlockConstG } with
   | .ok _ => throwError "a constant (Jacobi-style unsafe) state read should have been rejected"
-  | .error e => unless e == .causalityFailure 0 0 0 do
+  | .error e => unless e == .causalityFailure 0 0 0 0 do
       throwError s!"causalityFailure (constant read): wrong error {repr e}"
 
 -- Reject: a look-ahead-shaped read, coeffs=#[1] bias=#[1] (reads G[l+1] instead of G[l-2] or
@@ -570,7 +570,7 @@ def stepBlockLookAheadG : RawPlanBlock := { stepBlockG with assignments := #[ste
 run_cmd do
   match checkScanPlan outerSigsDeepHistory { deepHistoryScan with stepBlock := stepBlockLookAheadG } with
   | .ok _ => throwError "a look-ahead-shaped state read should have been rejected"
-  | .error e => unless e == .causalityFailure 0 0 0 do
+  | .error e => unless e == .causalityFailure 0 0 0 0 do
       throwError s!"causalityFailure (look-ahead read): wrong error {repr e}"
 
 /-! ### Non-advancing dimension exemption

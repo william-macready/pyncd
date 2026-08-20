@@ -773,12 +773,12 @@ def scratchT : Stmt := .assign "T" []
     [ .assign "U" [] { body := { terms := [{ factors := [.read "T" []] }] }, nonlin := .identity }
     , scratchT
     , okRecur ]
-  == some (.scan (.blockReadNotAvailable "sc" false 0 "T"))
+  == some (.scan (.blockReadNotAvailable "sc" false 0 "T" .forwardReference))
 
 -- a base read of a name that is neither a state nor an available outer tensor.
 #guard rej [.assign "S" [.iterAt axL 0]
       { body := { terms := [{ factors := [.read "NOPE" []] }] }, nonlin := .identity }] [okRecur]
-  == some (.scan (.blockReadNotAvailable "sc" true 0 "NOPE"))
+  == some (.scan (.blockReadNotAvailable "sc" true 0 "NOPE" .unknownName))
 
 -- a base block reading persistent state (proposal §8.4: initialization must not become a second,
 -- implicit state machine).
@@ -792,7 +792,7 @@ def scratchT : Stmt := .assign "T" []
 #guard rej [okBase]
     [ .assign "T" [] { body := { terms := [{ factors := [.read "T" []] }] }, nonlin := .identity }
     , okRecur ]
-  == some (.scan (.blockReadNotAvailable "sc" false 0 "T"))
+  == some (.scan (.blockReadNotAvailable "sc" false 0 "T" .selfRead))
 
 -- a step read of a name that is neither state, nor scratch, nor an available outer tensor (the
 -- recurrence-side counterpart of the base-side fixture above — the two blocks resolve names through
@@ -801,7 +801,7 @@ def scratchT : Stmt := .assign "T" []
     [ .assign "T" [] { body := { terms := [{ factors := [.read "NOPE" []] }] }
                      , nonlin := .identity }
     , okRecur ]
-  == some (.scan (.blockReadNotAvailable "sc" false 0 "NOPE"))
+  == some (.scan (.blockReadNotAvailable "sc" false 0 "NOPE" .unknownName))
 
 /-! ### 2.5 `ScanCompileError` — context axes and per-state geometry -/
 
@@ -846,10 +846,10 @@ def zeroExtentSched : ScheduledProgram :=
 -- agree with the context width while leaving a context axis unadvanced).
 #guard rej [.assign "S" [.iterAt axL 0, .free axL]
       { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := .identity }] [okRecur]
-  == some (.scan (.duplicateAxisInLhs "sc" "S" 0 axL.uid))
+  == some (.scan (.duplicateAxisInLhs "sc" "S" true 0 axL.uid))
 #guard rej [okBase] [.assign "S" [.iterNext axL, .iterNext axL]
       { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := .identity }]
-  == some (.scan (.duplicateAxisInLhs "sc" "S" 0 axL.uid))
+  == some (.scan (.duplicateAxisInLhs "sc" "S" false 0 axL.uid))
 
 -- a base placement that never mentions the advancing axis.
 #guard rej [.assign "S" [.free axJ, .free axK2]

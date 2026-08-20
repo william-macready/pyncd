@@ -70,6 +70,18 @@ inductive CapabilityError
   | noAdvancingAxis      (context : String)  -- `.scan` declaring an empty advancing-axis list
   deriving DecidableEq, BEq, Repr, Inhabited
 
+/-- Why `blockReadNotAvailable` rejected a name: it never resolves to a state, a block-local
+    scratch producer, or an outer/external tensor at all (`unknownName`); it resolves to a scratch
+    name whose one producing statement comes strictly LATER in source order (`forwardReference`);
+    or it resolves to the very statement that is itself about to produce it (`selfRead`, the
+    `producer == stmtIndex` edge of the same check). Base blocks have no block-local scratch
+    (§4.2/§8.4), so every base-side `blockReadNotAvailable` is `unknownName`. -/
+inductive ReadUnavailableCause
+  | unknownName
+  | forwardReference
+  | selfRead
+  deriving DecidableEq, BEq, Repr, Inhabited
+
 /-- Wave F source-scan rejection (proposal §5.2/§7.5): what a `.scan` node's base/recurrence lists
     say that cannot be given a checked-scan meaning, discovered AFTER capability preflight and shape
     inference, once concrete axis sizes and lowered affine maps exist. Deliberately a second closed
@@ -99,6 +111,7 @@ inductive ScanCompileError
   | duplicateScratchProducer (scan name : String) (firstStmtIndex secondStmtIndex : Nat)
   -- block dependency order
   | blockReadNotAvailable    (scan : String) (isBase : Bool) (stmtIndex : Nat) (name : String)
+                             (cause : ReadUnavailableCause)
   | stateReadInBaseBlock     (scan : String) (stmtIndex : Nat) (state : String)
   -- context axes and per-state geometry
   | duplicateContextAxis     (scan : String) (axisIndex : Nat) (uid : UID)
@@ -108,7 +121,7 @@ inductive ScanCompileError
   | pinnedAxisNotContext     (scan name : String) (stmtIndex : Nat) (uid : UID)
   | contextAxisAsFreeOutput  (scan name : String) (stmtIndex : Nat) (uid : UID)
   | advancingAxisNotInLhs    (scan name : String) (isBase : Bool) (stmtIndex : Nat) (uid : UID)
-  | duplicateAxisInLhs       (scan name : String) (stmtIndex : Nat) (uid : UID)
+  | duplicateAxisInLhs       (scan name : String) (isBase : Bool) (stmtIndex : Nat) (uid : UID)
   | inconsistentStateRank    (scan state : String) (isBase : Bool)
                              (stmtIndex expected actual : Nat)
   -- The two below compare one placement against the one that established the state's geometry, so

@@ -183,7 +183,7 @@ inductive ScanPlanError
   | boundaryPolicyNotAdmitted     (policy : ScanBoundaryPolicy)
   | snapshotPolicyNotAdmitted     (policy : ScanSnapshotPolicy)
   | materializationPolicyNotAdmitted (stateIndex : Nat) (policy : MaterializationPolicy)
-  | causalityFailure              (stateIndex termIndex factorIndex : Nat)  -- Task 2
+  | causalityFailure              (stateIndex stmtIndex termIndex factorIndex : Nat)  -- Task 2
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- Evidence that one `RawScanPlan` is a sound checked scan: both blocks are checked, every
@@ -378,7 +378,7 @@ def checkScanPlan (sigs : Array TensorSignature) (raw : RawScanPlan) :
         | some si =>
             let st := raw.states.getD si default
             unless stateReadCausal st.advancingDims t.contextPos f do
-              throw (.causalityFailure si ti fi)
+              throw (.causalityFailure si ai ti fi)
   return CheckedScanPlan.mk raw checkedBase checkedStep stepExtents
 
 /-- `rank_D(q) = sum_i q[i] * product_{j<i} D[j]` (proposal §6.6): axis `0` varies fastest. -/
