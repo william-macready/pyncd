@@ -1682,6 +1682,167 @@ Deliver:
 and independent unroller; every unsupported scan fails before `runDensePlan`; compiler-generated raw
 plans always pass their checker.
 
+**F4 completion record (2026-08-19).** Landed on one branch, in plan order, as `755354e` (Task 1),
+`ece56ce` (Task 2), `78b8c57` + `e86d7eb` (Task 3), `ecb0604` (Task 4), `35bd1db` (Task 5's oracle),
+and the documentation commit carrying this record — six implementation/test commits plus this one,
+on top of the two plan-authoring commits that precede them.
+
+*Two F3 prerequisite soundness fixes* (`755354e`, `LeanNCD/Eval/Plan/Scan.lean`). (1) `checkWrites`
+never validated a write's `AffineMap` rank against the state's rank — F3's own recorded, deliberately
+deferred follow-up. Two new constructors, `ScanPlanError.writeCoeffRankMismatch` /
+`writeBiasRankMismatch`, now run before `writeRowKinds` (which pads a short map with `getD` and
+ignores a long one's excess rows). (2) `runDenseScan` built `baseExternalInputs`/`stepInputs` by
+mapping over `raw.baseCaptures`/`raw.stepCaptures` in their own stored order, while `runDenseBlock`
+consumes them positionally against `block.inputs` — the sorted, deduped array `checkPlanBlock`
+produces. `checkCaptures` validates the capture array only as a SET, so a plan whose captures are
+stored in any other order bound every block input to the wrong tensor. Both now map over
+`raw.*Block.inputs` and resolve each slot through `find?` on `inputSlot`. Found independently this
+slice, not previously recorded anywhere. `test/Eval/Plan/ScanTest.lean` gains Part 7 (+292 lines),
+including a `runDenseScanOldCaptureOrder` mutation copy that reproduces the pre-fix binding and shows
+a coupled Fibonacci scan silently freezing `H` at its base value.
+
+*Shared lowering extraction* (`ece56ce`). `residualizeAssignment` (`Compile.lean`) is now the one
+per-statement lowering core used by the plain, base, and step callers alike. It BUILDS an
+`AssignPlan` and deliberately does not mutate the caller's name environment — publication policy
+belongs to each caller, which is what lets a coupled scan lower one state's next value without
+shadowing the immutable state capture a later sibling still needs (§4.2). Wave C's scan-free
+behavior is unchanged, proven by `CompileTest.lean` and the pre-existing 3,832-case scan-free sweep.
+
+*The source scan compiler* (`78b8c57`, `e86d7eb`). `prepareEvalPlan` now compiles a `ScanStmt.scan`
+node into a `PlanStep.scan`; `CapabilityError.scanNode` has no producer left. New surface: a closed
+24-constructor `ScanCompileError` (`Error.lean`) covering §4.2 pairing, block dependency order,
+context-axis and per-state geometry, §5.1 base-write placement, and §7.4 causality — every
+constructor carrying source locators, no `String` escape hatch; `PlanCompileCause.scan`
+(`EvalPlan.lean`); `CapabilityError.noAdvancingAxis`; and the six-phase `compileScan`. `.scanPre`
+reuses the existing `recurrenceOrCallback` rather than adding a second constructor.
+`.iterAt`/`.iterNext` are admitted ONLY inside a scan node's own base/recur lists — `checkLHSSlot` is
+untouched, so a genuinely plain statement still rejects both. Phase order is preserved exactly as
+§4.1 requires (preflight → signature → shape inference over plain+base+recur in source order →
+source-ordered scan specialization → `checkScanPlan` then `checkPlan` → runtime packing).
+`test/Eval/Plan/ScanCompileTest.lean` (1,008 lines) holds nine acceptance schedules covering twelve
+lettered shapes (self-recurrence asserted as a whole `RawScanPlan`; coupled states with
+`advancingDims = #[0,2]` and a PERMUTED `#[1,0]`; scratch; contraction plus current-coordinate
+external read; constant deep look-back with zero padding; extent one; a non-trailing advancing
+dimension; duplicate-pinned-UID bias substitution plus a face-plus-point multi-base write; two scans
+plus a plain consumer of both histories), 60 typed-rejection `#guard` fixtures (`rej`/`rej2`, counted
+in the file) pinning exact error values, and precedence fixtures for simultaneous defects.
+
+*Named boundary and legacy parity* (`ecb0604`). No adapter production change was needed or made,
+exactly as §4.7 predicted. `DifferentialTest.lean`'s `scanParityCheck` runs an execution matrix over
+each fixture, and `AdapterTest.lean` gains Checks 11-16 (full named round trip with scratch asserted
+ABSENT from the unpacked env; missing input at a base-block and at a step-block capture; shape and
+storage mismatch at a capture with full payloads pinned; two-warning order-and-payload preservation
+on the success and `pack`-failure paths).
+
+*The independent oracle and the three-way gate* (`35bd1db`). `test/Eval/PropertyOracle/
+ScanUnroll.lean` was rewritten (540 lines) around `unrollScanNode`/`reconstructHistory`/
+`independentRun`, replacing the immediate-predecessor one-axis unroller and the single fixed 2x2
+template §11.5 calls out. A scan node becomes a scan-free leaf program: one leaf per (state, history
+coordinate), one per (scratch name, step iteration), and one zero leaf per state for every coordinate
+neither a base write nor a step reaches. Each state's dimension mapping is resolved from its
+recurrence RESULT statement, so advancing dimensions need not trail, be contiguous, or follow context
+order; base regions may pin a context axis or leave it free (§5.1's boundary face); history reads may
+be any affine expression that reduces to a literal coordinate; out-of-range and never-written reads
+route to the zero leaf. Emission order — zero leaves, base writes in declared order, then step
+iterations lexicographically — both satisfies every read and yields §9's immutable-pre-step (Jacobi)
+snapshot for free, because a step at `u` reads only coordinates `<= u` and writes only `u + 1`.
+Complete histories are reassembled with `DenseTensor.ofFn`, with a completeness check so a lost or
+misplaced leaf cannot be absorbed by the zero default. `independentRun` walks the whole schedule, so
+a plain statement downstream of a scan sees the reconstructed history.
+
+Per §11.5's independence requirement, the file no longer names `runDenseScan`, `evalScan`,
+`writeRowKinds`, `applyAffine`, any compiler residualization helper, or any scan-worker write helper.
+The predecessor's `sliceTensorAtMulti` — defined as "the inverse of `LeanNCD.Eval.writeSliceAtMulti`"
+and round-trip-tested against that worker helper directly — is deleted along with the
+`LeanNCD.Eval.Scan` import: reconstruction from per-coordinate leaves needs no slicing. The one
+evaluator entry point used is `evalScheduled`, always on an all-`ScanStmt.plain` program. The one
+shared DSL accessor reused is `idxAffineForm` (`DSL/Ast.lean`), a five-constructor destructuring of
+`IdxExpr` used by both the compile path and the eval size solver — an AST reader, not an
+implementation under comparison; a second copy would have been duplication for its own sake.
+
+*Exact counts.* The curated `enumScanCases` corpus splits **17 total / 9 accepted / 4
+`unsupportedNonlin` / 4 `unsupportedAgg`**, pinned by `#guard` and by which capability constructor
+each rejection produces. Twenty-one scan programs pass the three-way gate: twelve hand-written (the
+nine acceptance schedules, a two-warning fixture, a whole-surface alpha-rename, and a scan over an
+axis sharing a NAME but not a UID with a free output axis) plus the nine accepted generated cases.
+All twenty-one agree bit-for-bit across `prepareEvalPlan -> runPreparedDense`, `evalScheduled`, and
+the independent unrolling; no checked-versus-legacy divergence arose, so nothing needed classifying
+under Law 1. Warnings are compared between the first two legs only: the unrolling replaces every
+scan-axis index with a literal, so which reads are STATICALLY out of extent legitimately changes
+while the values may not. Because count alone is not coverage, `DifferentialTest.lean` also asserts a
+structurally derived feature table — deep look-back and zero padding, coupled states, scratch,
+external reads, contraction, extent one, more than one scan axis, several base writes for one state,
+a non-trailing advancing dimension, more than one scan in a schedule, and a plain consumer of a
+published history — each checked against the gated schedules themselves rather than by fixture name.
+`ScanOracle.lean` additionally runs the two-way law (legacy versus independent unrolling) over all
+seventeen generated cases, including the eight F4 rejects, by carrying nonlinearity and aggregation
+through the rewrite unchanged. Full `lake build` green at **8,652 jobs**; the pre-existing 3,832-case
+scan-free sweep is unchanged.
+
+*Oracle mutation observations (fail-before / pass-after), each applied to the tree, built, observed
+RED, and reverted.*
+
+| Mutation | Site | Observed RED |
+|---|---|---|
+| Drop a state read's affine bias, so every history read selects the immediate predecessor | `rewriteRead`, `ScanUnroll.lean` | `F/deepHistory: THREE-WAY DIFFERENTIAL FAILURE ... plan=[1,1,1,2] unrolled=[1,2,4,8]` |
+| Resolve a same-step scratch read to iteration 0's scratch leaf | `rewriteRead`, `ScanUnroll.lean` | `C/scratch: ... plan=[1,2,6] unrolled=[1,2,2]`, and the same on the alpha-renamed fixture |
+| Assume the advancing dimensions TRAIL during reconstruction (the predecessor oracle's actual assumption) | `reconstructHistory`, `ScanUnroll.lean` | `B/coupled: ... plan shape [3,2,3] vs unrolled shape [2,3,3]` |
+| Pin every base `iterAt` literal to 0 | `baseRegion`, `ScanUnroll.lean` | `I-J/multiBase: ... plan=[1,2,3,7,1,2,0,7,1] unrolled=[1,2,3,0,1,2,0,0,1]` |
+| Bind every step-block local input slot to the LAST capture's source | `Compile.lean`'s `stepCaptures` (production) | on `C/scratch`, leg 1 gives `S = [1,4,9]` while legs 2 and 3 BOTH give `[1,2,6]` — the two independent paths agree with each other and disagree with the plan |
+
+Two of those were sharpened after a first attempt went red for the wrong reason, recorded because the
+distinction is the point of the exercise. The trailing-dimension mutation was first written into
+`buildGeom`, where the base-region axis-identity check rejected it structurally before any value was
+computed; moving it into `reconstructHistory` produces the intended shape/value disagreement and is
+also the exact §11.5 deficiency ("comparison assumes trailing scan dimensions"). The production
+capture mutation was first attempted as a step-write bias change (`1 -> 0`), which `checkScanPlan`
+correctly rejected as `writeGeometryNotAdmitted` — a checker doing its job, not evidence about the
+oracle; the capture rebinding survives checking for same-shaped captures and was measured on a
+standalone probe because `ScanCompileTest`/`AdapterTest` catch it first in the ordinary build.
+
+*Controller ruling recorded so it need not be re-derived.* §4.2's "every base destination is a state
+candidate" appeared to conflict with §8.4's "base blocks may read external inputs and earlier
+block-local scratch". Resolved in favour of §4.2 after reading `LeanNCD/DSL/Pipeline/Structural.lean`
+directly: `finalizeScans` filters `baseStmts` to `!s.iterInfo.isEmpty && isBase s`, and an
+intermediate (`isInter`) goes only into `recurStmts`, so **base-block scratch is structurally
+unreachable from source**. §8.4 describes a checked-plan-language capability, not a source-compiler
+obligation, and the oracle rejects a base-block scratch or state read for the same reason.
+
+Known follow-ups, deliberately not fixed here:
+
+- `partialAdvancingResult`'s payload is degenerate in a third sub-case: a result that advances the
+  right NUMBER of context axes but the wrong SET reports `declared = n, expected = n`. No fixture
+  covers that sub-case.
+- `duplicateAxisInLhs` is the one both-blocks `ScanCompileError` constructor lacking the `isBase`
+  flag its siblings carry, so two different programs failing in two different blocks assert
+  byte-identical expected values (`ScanCompileTest.lean:849` and `:852`).
+- `blockReadNotAvailable` collapses three distinct user errors — unknown name, read before its
+  producer, and self-read — into one constructor discriminated only by `isBase`;
+  `ScanCompileTest.lean:776` and `:795` assert identical values.
+- A wrong-arity read confined to NON-advancing dimensions inside a scan block surfaces as
+  `invalidPlan` ("internal compiler bug") for what is really a legitimate source error. This is
+  **pre-existing** — the plain Wave C path has the identical hole because `SizeInfer` has no
+  read-arity check — but it slightly weakens §7.5's "a later checker rejection is therefore an
+  internal compiler bug" claim now that scans are admitted. Worth a §7.5 note in F5 rather than a fix
+  here.
+- `requiredInputs : RequiredBindings` is asserted in only one acceptance fixture (A); the multi-scan
+  fixture K/L, where slot allocation interleaves, asserts `materializedNames` but not it.
+- `compileScan` is roughly 375 lines in a single `do` block with about fifteen mutable accumulators;
+  phases 2, 3 and 5 would extract cleanly.
+- `DifferentialTest.lean`'s `scanCorpusSplit` is computed twice — once for a `run_cmd` diagnostic and
+  once for the `#guard` — re-running the full execution matrix over the nine accepted cases a second
+  time for no functional benefit.
+- The legacy-side scratch-privacy assertion has no dedicated mutation demonstrating it can fail; only
+  the compiled-side privacy check got real RED evidence.
+- `PlanRunCause.execution` remains unreachable through `runPreparedDense` (`pack` re-validates
+  presence, shape and storage with the same predicates `runDensePlan` re-applies), so "warnings
+  preserved on execution failure" is pinned by construction plus a positive
+  `pack`-succeeds-implies-`runDensePlan`-succeeds check over four scan shapes, not by a live failure.
+- `papers/jax_evalplan_architecture.md` §7.6's thread table still records thread 3 ("Continue Wave F
+  (F4)") as **Open — next recommended**, and its surrounding prose still counts two open threads.
+  That is now stale, and the fix touches several interlocking sentences rather than one cell, so it
+  is left for F5's discoverability/documentation sweep rather than half-applied here.
+
 ### F5 - adversarial audit and handoff
 
 Audit the whole branch rather than adding new architecture.

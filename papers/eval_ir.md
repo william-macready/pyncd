@@ -118,8 +118,9 @@ to runtime JAX arrays; it returns another Python dictionary mapping materialized
 arrays. The plan's bindings perform the name-to-slot and slot-to-name correspondence.
 
 This is currently a target architecture rather than a working end-to-end evaluator. Wave F F3
-generalized the checked graph to contain assignments or scans, but the non-default JAX experiment
-still assumes assignment-only checked nodes and does not build against that representation. See
+generalized the checked graph to contain assignments or scans and Wave F F4 made the compiler
+actually produce scan steps, but the non-default JAX experiment still assumes assignment-only
+checked nodes and does not build against that representation. See
 [Section 3.3.2](#332-experimental-jax-evaluator) for the status of each component.
 
 ## 2. Plan preparation
@@ -276,12 +277,24 @@ step; it does not discard the operation.
 
 The current `prepareEvalPlan` implementation does not yet lower all of this source vocabulary.
 Its capability preflight currently admits free-axis assignments whose factors are ordinary tensor
-reads, whose aggregation is `sum`, and whose nonlinearity is `identity`. It returns a typed
+reads, whose aggregation is `sum`, and whose nonlinearity is `identity` — inside a `ScanStmt.plain`
+node and inside a `ScanStmt.scan` node's base and recurrence lists alike. It returns a typed
 capability failure for predicate declarations and Iverson factors, unary factors, pointwise or
-axiswise nonlinearities, `max` or `min` aggregation, normalized-axis slots, scatters, and recurrence
-or scan nodes. Consequently, these constructs live in the `ScheduledProgram` input described here,
-but they do not yet appear in the `CheckedEvalPlan` inside the
+axiswise nonlinearities, `max` or `min` aggregation, normalized-axis slots, scatters, `scanPre`
+nodes, and scan nodes with no advancing axis. Consequently, these constructs live in the
+`ScheduledProgram` input described here, but they do not appear in the `CheckedEvalPlan` inside the
 [`PreparedPlan`](#24-prepareevalplan-output-preparedplan).
+
+Wave F F4 added source scan compilation, so a `ScanStmt.scan` node whose statements pass that
+preflight is no longer rejected: it is specialized into a `PlanStep.scan`. Admission is narrower
+than preflight alone, and the additional obligations — which need inferred sizes and lowered affine
+maps and therefore cannot be decided syntactically — are reported as a `ScanCompileError` rather
+than a `CapabilityError`. They are: exactly one all-axis `+1` recurrence result per base
+destination; base writes that are in range, pairwise disjoint, and boundary-touching; no state read
+in a base block; no forward read of block-local scratch; a nonzero extent for every scan axis; and a
+non-positive bias on every state read's advancing rows. A rejection by the checked-plan validator
+(`checkScanPlan`) on compiler output is neither of these; it is an internal compiler bug and
+surfaces as `PlanCompileCause.invalidPlan`.
 
 #### 2.2.3 `env : DeclEnv`
 
@@ -448,15 +461,18 @@ Its three fields separate semantic computation from the source-facing boundary:
   `RequiredBindings` proves that its entries are a permutation of its own stored `inputSlots` array
   and rejects duplicate names. `prepareEvalPlan` constructs that array and
   `plan.raw.inputSlots` together, but the public `PreparedPlan` type does not itself prove that they
-  agree. For a compiler-produced plan, `materializedNames` has one entry per scheduled statement in
-  schedule order. Repeated materialized names are retained so the final assignment wins.
+  agree. For a compiler-produced plan, `materializedNames` has one entry per persistent output in
+  schedule order: one per `PlanStep.assign`, and one per persistent STATE for a `PlanStep.scan`, so
+  a coupled scan contributes several entries from a single step. Block-local scratch inside a scan
+  is never an entry. Repeated materialized names are retained so the final assignment wins.
 - `warnings` preserves nonfatal warnings produced during static shape inference and preparation.
 
 Within `plan`, the underlying `plan.raw.steps` graph is an array of `PlanStep`s, each representing an
-assignment or scan; `plan.checkedNodes` carries the corresponding checked evidence. The types support
-both step kinds, although the current `prepareEvalPlan` compiler emits only `PlanStep.assign` and
-rejects source scans during capability preflight. The assignment-side data structures form the
-following hierarchy:
+assignment or scan; `plan.checkedNodes` carries the corresponding checked evidence. Since Wave F F4
+the `prepareEvalPlan` compiler emits both step kinds: `PlanStep.assign` for a `ScanStmt.plain` node
+and `PlanStep.scan` for an admitted `ScanStmt.scan` node, several of which may appear in one graph
+alongside plain steps that read the published histories. The assignment-side data structures form
+the following hierarchy:
 ```text
 AssignPlan
   -> Array TermPlan
@@ -750,10 +766,10 @@ execution.
 > that presently exists; it does not describe a working end-to-end evaluator. Completed
 > [Wave F F3](../leanncd/docs/superpowers/plans/2026-08-14-wave-f-f3-checked-scan-graph.md)
 > changed `CheckedEvalPlan.checkedNodes` from assignment-only nodes to assignment-or-scan evidence.
-> The JAX experiment has not been migrated and currently fails to build. Planned
+> The JAX experiment has not been migrated and currently fails to build. Completed
 > [Wave F F4](wave_f_scanplan_proposal.md#f4---source-compiler-adapter-and-differential-gate)
-> will compile source scans into the backend-neutral checked language and close the Dense adapter and
-> differential gate; it does not include JAX scan lowering or execution.
+> compiled source scans into the backend-neutral checked language and closed the Dense adapter and
+> differential gate; it did not include JAX scan lowering or execution, which remain open.
 
 | Common stage | Experimental JAX implementation | Current status |
 |---|---|---|

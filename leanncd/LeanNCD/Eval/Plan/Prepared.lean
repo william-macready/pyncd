@@ -77,10 +77,15 @@ def checkBindings (inputSlots : Array TensorSlot) (bindings : Array SlotBinding)
   else
     .error (.notAPermutation inputSlots (bindings.map (·.slot)))
 
-/-- `materializedNames` is NOT deduplicated by name — exactly one entry per statement in
-    `RawEvalPlan.steps`, in schedule order (§5.4's literal text: "every name produced by a
-    `sched.stmts` entry"). A name reassigned twice appears twice; `unpack` (Task 3) relies on this,
-    inserting each in order so the LAST entry for a repeated name is the one that survives. -/
+/-- `materializedNames` is NOT deduplicated by name — one entry per PERSISTENT OUTPUT, in schedule
+    order. That is one entry per `PlanStep.assign` (§5.4's literal text: "every name produced by a
+    `sched.stmts` entry"), but one entry per persistent STATE for a `PlanStep.scan`: since Wave F F4
+    admitted source scans, a single coupled scan step publishes one complete history per state (see
+    `Compile.lean`'s scan arm, which pushes one binding per `compiled.stateNames` entry, and
+    `ScanCompileTest.lean`'s fixture B, where one scan step yields `#[G, H]`). Block-local scratch
+    inside a scan is deliberately NOT here — it never becomes an outer slot or a materialized name.
+    A name reassigned twice appears twice; `unpack` (Task 3) relies on this, inserting each in order
+    so the LAST entry for a repeated name is the one that survives. -/
 structure PlanBindings where
   requiredInputs    : RequiredBindings
   materializedNames : Array SlotBinding
