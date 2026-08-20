@@ -587,9 +587,10 @@ private def scanFeatures : List (String × (ScheduledProgram → Bool)) :=
         recur.any (fun r => r.readFactors.any (fun (nm, _) => !produced.contains nm))))
   , ("contraction inside a recurrence", fun s => (scanNodesOf s).any (fun (axes, _, recur) =>
         recur.any (fun r => !(contractedAxes axes r).isEmpty)))
-  , ("extent one", fun s => s.decls.any (fun d => match d with
-        | .iter _ 1 => true
-        | _ => false))
+  , ("extent one", fun s => (scanNodesOf s).any (fun (axes, _, _) =>
+        s.decls.any (fun d => match d with
+          | .iter a 1 => axes.any (fun x => x.uid == a.uid)
+          | _ => false)))
   , ("more than one scan axis", fun s => (scanNodesOf s).any (fun (axes, _, _) => axes.length ≥ 2))
   , ("several base writes for one state", fun s => (scanNodesOf s).any (fun (_, base, _) =>
         (base.map Stmt.lhsName).length != ((base.map Stmt.lhsName).eraseDups).length))
@@ -768,22 +769,19 @@ private def scanCorpusSplit : Except String (Nat × Nat × Nat × Nat) :=
       | .rejectedAgg => pure (total + 1, accepted, nonlin, agg + 1))
     (0, 0, 0, 0)
 
+-- The counts pinned by F4's plan §0, independently re-derived from `ScanGen.lean`'s six templates:
+-- 4×template1 + 4×template2 + 2×template3 + 2×template4 + 4×template5 + 1×template6 = 17, of which
+-- template 2's four are `unsupportedNonlin` and template 5's four are `unsupportedAgg`, leaving 9
+-- admitted. Per the plan's §12.2 stop condition, an accepted case that stops compiling — or stops
+-- matching `evalScheduled` — is an F0 contract defect to REPORT, not a number to re-baseline here.
 run_cmd do
   match scanCorpusSplit with
   | .error msg => throwError s!"SCAN CORPUS GATE FAILED:\n{msg}"
   | .ok (total, accepted, nonlin, agg) =>
       dbg_trace s!"DifferentialTest scan corpus: total={total} accepted={accepted} \
 unsupportedNonlin={nonlin} unsupportedAgg={agg}"
-      pure ()
-
--- The counts pinned by F4's plan §0, independently re-derived from `ScanGen.lean`'s six templates:
--- 4×template1 + 4×template2 + 2×template3 + 2×template4 + 4×template5 + 1×template6 = 17, of which
--- template 2's four are `unsupportedNonlin` and template 5's four are `unsupportedAgg`, leaving 9
--- admitted. Per the plan's §12.2 stop condition, an accepted case that stops compiling — or stops
--- matching `evalScheduled` — is an F0 contract defect to REPORT, not a number to re-baseline here.
-#guard match scanCorpusSplit with
-  | .ok (total, accepted, nonlin, agg) =>
-      total == 17 && accepted == 9 && nonlin == 4 && agg == 4
-  | .error _ => false
+      unless total == 17 && accepted == 9 && nonlin == 4 && agg == 4 do
+        throwError s!"scan corpus split counts changed: total={total} accepted={accepted} \
+nonlin={nonlin} agg={agg}"
 
 end LeanNCD.Eval.Plan.DifferentialTest

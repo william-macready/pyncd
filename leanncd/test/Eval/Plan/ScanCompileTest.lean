@@ -760,6 +760,23 @@ def nextL : LHSSlot := .iterNext axL
       { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := .identity }]
   == some (.scan (.partialAdvancingResult "sc" "S" 0 2 1))
 
+-- the degenerate sub-case: a result advancing the RIGHT NUMBER of axes (2, matching `numAxes = 2`)
+-- but the WRONG SET (`{axR, axJ}` instead of `{axR, axC}`) — `declared` and `expected` agree as
+-- counts, so only the set disagrees.
+def partialSetSched : ScheduledProgram :=
+  { decls := [.iter axR 3, .iter axC 3, .axis axJ (some 2)]
+  , stmts := [.scan "sc2" [axR, axC]
+      [okBase2]
+      [.assign "dp" [.iterNext axR, .iterNext axJ]
+        { body := { terms := [{ factors := [.read "dp" [.axis axR, .axis axC]] }] }
+        , nonlin := .identity }] false]
+  , env := {}, extNames := insert "ROW" (∅ : Finset String)
+  , explicitSizes :=
+      (((({} : HashMap UID Nat).insert axR.uid 3).insert axC.uid 3).insert axJ.uid 2) }
+
+#guard causeOf (prepareEvalPlan partialSetSched rej2Sig)
+  == some (.scan (.partialAdvancingResult "sc2" "dp" 0 2 2))
+
 -- two producers for one scratch name.
 def scratchT : Stmt := .assign "T" []
   { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := .identity }
