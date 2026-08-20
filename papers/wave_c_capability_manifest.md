@@ -9,9 +9,14 @@ counted from an actual run on this branch, not estimated or copied from planning
 
 ## 1. Semantic and wire versions
 
-- **Semantic version:** `admittedVersion = 1`
-  ([`LeanNCD/Eval/Plan/Check.lean`](../leanncd/LeanNCD/Eval/Plan/Check.lean)). `checkPlan` rejects
-  any `RawEvalPlan.version` other than `1` with `PlanError.versionNotAdmitted`.
+- **Semantic version:** this mechanism was **removed in Wave F F3**. `checkPlan` no longer has a
+  `RawEvalPlan.version`/`admittedVersion` check to run — Wave F's `PlanStep.scan` constructor made
+  bumping the field the wrong fix once adding a stateful plan step changed the plan language's Lean
+  type directly; see
+  [`wave_f_scanplan_proposal.md` §2.3](wave_f_scanplan_proposal.md#23-remove-the-unused-in-memory-version-tag).
+  There is no version tag today; see
+  [`wave_f_capability_manifest.md` §1](wave_f_capability_manifest.md#1-semantic-and-wire-versions)
+  for what replaced it (nothing).
 - **Wire version:** N/A. C5 (canonical representation and codec — `Plan/Canonical.lean`,
   `Plan/Codec.lean`) is deliberately deferred; see
   [`wave_c_evalplan_proposal.md` A.9](wave_c_evalplan_proposal.md#a9-c5---canonical-representation-and-codec).

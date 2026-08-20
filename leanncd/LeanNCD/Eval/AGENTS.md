@@ -32,8 +32,9 @@ A second, checked evaluation path (Wave C, extended by Wave F's checked scan gra
 the legacy `Gather`/`Contract`/`Scan` evaluator above and reachable from `import LeanNCD` via
 `Eval.Plan.Adapter` (Wave C files) and, for the three Wave F additions below, direct imports in the
 top-level `LeanNCD.lean`. One line per file — see `papers/wave_c_capability_manifest.md` (Wave C
-design) and `papers/wave_f_scanplan_proposal.md` (Wave F checked-scan design) for the full designs,
-not duplicated here. Exception:
+design), `papers/wave_f_scanplan_proposal.md` (Wave F checked-scan design), and
+`papers/wave_f_capability_manifest.md` (Wave F's accepted/rejected scan constructs, corpus counts,
+and audit findings) for the full designs, not duplicated here. Exception:
 `Executable.lean` (Thread 5) is NOT reachable from `import LeanNCD` — it is consumed only by
 `experiments/jax_bridge` (the non-default `JaxExperiment` library), not by the production
 `LeanNCD` import graph, so the blanket "reachable via `Eval.Plan.Adapter`" claim above does not
