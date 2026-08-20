@@ -302,8 +302,7 @@ across all of a state's placements), and result/producer well-formedness (a scan
 state, an orphan base state, an orphan advancing result, a duplicate state result, a duplicate
 scratch producer, a duplicate axis in an LHS, an advancing axis missing from an LHS). Consult
 `Error.lean` rather than this paragraph for the authoritative list. A rejection by the checked-plan
-validator
-(`checkScanPlan`) on compiler output is neither of these; it is an internal compiler bug and
+validator (`checkScanPlan`) on compiler output is neither of these; it is an internal compiler bug and
 surfaces as `PlanCompileCause.invalidPlan`.
 
 #### 2.2.3 `env : DeclEnv`

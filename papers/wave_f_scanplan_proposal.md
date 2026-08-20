@@ -1867,16 +1867,16 @@ Known follow-ups, deliberately not fixed here:
   rejection is therefore an internal compiler bug" claim is **intact for real source**: no §7.5
   change is owed, and F5 should not act on the earlier, wider premise.
 - `checkScanPlan` never checks a state destination slot's **dtype**. It reads the state's signature
-  (`Scan.lean:310`, and again per write at `:254`) purely for `.shape`, so §5.1's "state and external
+  (`Scan.lean:332`, and again per write at `:276`) purely for `.shape`, so §5.1's "state and external
   tensors are concrete `f64`" has a sub-case the checker skips: a write-only state whose `destSlot`
-  signature says `.f32` is admitted, and `runDenseScan` (`:443-445`) then allocates `Float` data
+  signature says `.f32` is admitted, and `runDenseScan` (`:472-474`) then allocates `Float` data
   under an `f32` label. Contained downstream and therefore cosmetic — `checkAssign`
   (`Check.lean:81`) rejects a non-`f64` source, so nothing can read it as `f32`, and a state that is
-  captured is covered by `captureSignatureMismatch` (`Scan.lean:211-213`), which compares the whole
+  captured is covered by `captureSignatureMismatch` (`Scan.lean:233-235`), which compares the whole
   `TensorSignature` including dtype. Recorded because it is another instance of the shape this
   branch keeps finding: a spec sentence whose checker enforces only part of it.
-- `ScanPlanError.causalityFailure` (`Scan.lean:164`) carries `(stateIndex, termIndex, factorIndex)`,
-  but the loop that throws it (`Scan.lean:348-359`) iterates `ai` over `stepBlock.assignments` and
+- `ScanPlanError.causalityFailure` (`Scan.lean:186`) carries `(stateIndex, termIndex, factorIndex)`,
+  but the loop that throws it (`Scan.lean:370-381`) iterates `ai` over `stepBlock.assignments` and
   discards it. Two different step assignments failing at the same term/factor position therefore
   produce byte-identical payloads. The source-level sibling `ScanCompileError.stateReadNotCausal`
   (`Error.lean:126`) *does* carry `stmtIndex` — the two families disagree on locator precision.

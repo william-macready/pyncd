@@ -1616,10 +1616,13 @@ the `List.range outputShapeSize` comparison rather than rejected. It was then in
 checks downstream too: `freeExtentsAgree` matches only `.free`, `pinnedLiteralsInRange` only
 `.pinned`.
 
-The drop is only unnoticed when the count still matches, which is exactly what a SCALAR block output
-gives: `List.range 0 = []`, so `[] == []` holds no matter how many rows were dropped. (With a
-non-scalar output the count mismatch caught it by accident — which is why every fixture below uses
-the scalar-output step block.) Note that for `stateW` — rank 2, one advancing dimension — a scalar
+The drop is only unnoticed when the count still matches, which a SCALAR block output guarantees:
+`List.range 0 = []`, so `[] == []` holds no matter how many rows were dropped. A non-scalar output
+sometimes caught it by accident but not in general — e.g. state rank 3, `advancingDims := #[0]`,
+output rank 1, rows `[.advancing 0, .free 0, .advancing 0]`: dim 2 is dropped, `[0] == List.range 1`
+still holds, and it was accepted pre-fix. The scalar-output fixtures below are the smallest
+reproduction, not the only shape that reached this. (Clause 3 is universally quantified over
+non-advancing dimensions, so it rejects that rank-3 case too.) Note that for `stateW` — rank 2, one advancing dimension — a scalar
 step output admits NO valid write at all: the one non-advancing dimension must be `.free p`, and
 there is no output position for `p` to name. Every scalar-output step write here is therefore
 malformed by construction; the question is only whether the checker says so.
