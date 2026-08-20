@@ -2,6 +2,9 @@ import LeanNCD.Eval.Plan.Adapter
 import LeanNCD.Eval.Entry
 import Eval.PropertyOracle.Gen
 import Eval.PropertyOracle.Compare
+import Eval.PropertyOracle.ScanGen
+import Eval.Plan.ScanCompileTest
+import Eval.Plan.AdapterTest
 
 /-!
 # Wave C C4 — differential testing against the legacy evaluator
@@ -12,6 +15,13 @@ Capability-row accept/reject coverage, deterministic-slot/term-basis fixtures, z
 contraction, repeated-assignment, `requiredInputs`-order independence, and packing/unpacking edge
 cases are already covered by `CompileTest.lean` and `AdapterTest.lean` — this file does not
 re-derive them.
+
+Wave F F4 Task 4 extends the same treatment to SOURCE SCANS at the end of this file:
+`ScanCompileTest.lean`'s twelve acceptance fixtures assert the STRUCTURE the compiler residualized;
+the section below asserts what that structure DOES — that each one executes through
+`prepareEvalPlan`/`runPreparedDense` to a result bit-identical to `evalScheduled`, and that the
+curated `enumScanCases` generator splits exactly 9 accepted / 4 `unsupportedNonlin` /
+4 `unsupportedAgg` with every accepted case matching the legacy evaluator.
 -/
 
 namespace LeanNCD.Eval.Plan.DifferentialTest
@@ -363,5 +373,328 @@ run_cmd do
   match mutationHasTeeth foldOrigProg foldMutProg foldInputs "Y" with
   | .error e => throwError s!"mutation (c) (fold reorder) has no teeth: {e}"
   | .ok () => pure ()
+
+/-! ## Wave F F4 Task 4 — source scans: named-boundary execution and legacy parity
+
+`ScanCompileTest.lean` pins WHAT the compiler residualizes (whole `RawScanPlan` values, write maps,
+affine rows, capture slots). This section pins what that residualization COMPUTES: every admitted
+fixture there is executed through the public named API and compared against `evalScheduled`.
+
+Scope note (proposal §10, Law 1). Parity is claimed only for "the source fragment whose checked
+Jacobi semantics is observationally equal to the legacy worker". The legacy scan worker
+(`LeanNCD/Eval/Scan.lean`) is known nonconforming in two ways F0 pinned: it applies Gauss-Seidel
+rather than Jacobi update (a later `recur` statement observes an earlier sibling's just-written
+value), and it silently applies last-write-wins where the checked worker rejects colliding
+multi-base-writes. Neither is reachable from any fixture below — verified, not assumed:
+
+* Gauss-Seidel is only observable when a later recurrence statement reads a STATE at a coordinate an
+  earlier sibling already wrote this step. The multi-statement recurrences here
+  (`ScanCompileTest.coupledSched`, the generator's `template3`) all write at the ADVANCED coordinate
+  and read at the current one, so no sibling read can see a sibling write. `scratchSched`'s later
+  statement does read what its earlier sibling produced, but that name is block-local SCRATCH, which
+  both workers deliberately make visible to later statements in the same block — not state.
+* `multiBaseSched`'s two base writes are disjoint by construction (`r` pinned to different
+  literals), so last-write-wins never arbitrates anything.
+
+All twenty-one scan programs exercised here (twelve hand-written, nine generated) agree with
+`evalScheduled` exactly, so no divergence needed classifying. A future fixture that DID diverge would
+fail loudly here rather than being absorbed. -/
+
+/-- Names a scan's recurrence list produces that are NOT persistent state — block-local scratch.
+    Derived the same way `compileScan` classifies (base destinations are the states; a recurrence-
+    only destination is scratch), so this is the set that must never reach the named boundary. -/
+private def scanScratchNames (sched : ScheduledProgram) : List String :=
+  sched.stmts.flatMap (fun
+    | .scan _ _ base recur _ =>
+        let stateNames := (base.map Stmt.lhsName).eraseDups
+        ((recur.map Stmt.lhsName).eraseDups).filter (fun nm => !stateNames.contains nm)
+    | _ => [])
+
+/-- The task's seven-point execution matrix for one admitted scan fixture:
+
+    1. compile with `prepareEvalPlan` (and confirm a `PlanStep.scan` was actually emitted — an
+       execution assertion that silently stopped covering scans would otherwise still pass);
+    2. execute with `runPreparedDense`;
+    3. execute the same `ScheduledProgram` with `evalScheduled`;
+    4. compare EVERY materialized persistent state one by one, then the whole environment (the
+       per-name loop names the offender; the whole-environment check additionally catches an extra
+       or missing key that a per-name loop structurally cannot see);
+    5. verify every named input the plan does not overwrite is returned unchanged;
+    6. verify every block-local scratch name is absent from the unpacked environment AND from
+       `materializedNames` — with `expectedScratch` pinned by the caller, so a fixture that stopped
+       having scratch at all cannot make this check pass vacuously;
+    7. compare warnings as LISTS — order and payload, not count. -/
+private def scanParityCheck (name : String) (sched : ScheduledProgram)
+    (inputs : HashMap String DenseTensor) (expectedScratch : List String) :
+    Except String Unit := do
+  -- (6a) the scratch set this fixture is asserted to have.
+  let scratch := scanScratchNames sched
+  unless scratch == expectedScratch do
+    throw s!"{name}: scratch names changed: got {scratch}, expected {expectedScratch}"
+  -- (1) compile.
+  let prepared ← match prepareEvalPlan sched (InputSignature.ofDenseInputs inputs) with
+    | .ok p => pure p
+    | .error f => throw s!"{name}: prepareEvalPlan rejected an admitted scan fixture: \
+{ScanCompileTest.render f.cause}"
+  unless prepared.plan.raw.steps.any (fun s => match s with | .scan _ => true | .assign _ => false) do
+    throw s!"{name}: the compiled plan contains no scan step — this fixture no longer exercises \
+F4's source scan compiler"
+  -- (6b) scratch never becomes a published name. Checked BEFORE the run so a leak is reported as
+  -- the privacy failure it is, rather than downstream as "the legacy env is missing a key".
+  for nm in scratch do
+    if prepared.bindings.materializedNames.any (·.name == nm) then
+      throw s!"{name}: block-local scratch {nm} became a materialized name"
+  -- (2) execute through the public named API.
+  let planReport ← match runPreparedDense prepared inputs with
+    | .ok r => pure r
+    | .error e => throw s!"{name}: runPreparedDense failed on an admitted fixture \
+(warnings={e.warnings.length})"
+  -- (6c) …and never reaches the unpacked environment. `unpack` starts from the caller's own `env`,
+  -- so a leak shows up as an EXTRA key — which asserting "the expected states are present" could
+  -- never detect. Asserted against the legacy boundary too: both must keep it private.
+  for nm in scratch do
+    if (planReport.env[nm]?).isSome then
+      throw s!"{name}: block-local scratch {nm} leaked into the unpacked environment"
+  -- (3) execute the same schedule with the legacy evaluator.
+  let refReport ← match evalScheduled sched inputs with
+    | .ok r => pure r
+    | .error e => throw s!"{name}: evalScheduled failed on an admitted fixture: {e.error}"
+  for nm in scratch do
+    if (refReport.env[nm]?).isSome then
+      throw s!"{name}: the LEGACY evaluator published scratch {nm} — the two boundaries disagree \
+about privacy, which this parity check would otherwise report only as an env mismatch"
+  -- (4) every materialized persistent state, compared exactly and individually.
+  if prepared.bindings.materializedNames.isEmpty then
+    throw s!"{name}: no materialized names — nothing for the parity check to compare"
+  for b in prepared.bindings.materializedNames do
+    match planReport.env[b.name]?, refReport.env[b.name]? with
+    | some a, some c =>
+        unless denseEq a c do
+          throw s!"{name}: materialized state {b.name} diverges from the legacy evaluator: \
+plan={repr a.shape}/{repr a.data} ref={repr c.shape}/{repr c.data}"
+    | none, _ => throw s!"{name}: materialized name {b.name} is absent from the unpacked env"
+    | _, none => throw s!"{name}: materialized name {b.name} is absent from the legacy env"
+  -- (4b) whole-environment equality: same key set, `denseEq` on every key.
+  unless envEq planReport.env refReport.env do
+    throw s!"{name}: environment mismatch.\nplan env: {repr planReport.env.toList}\n\
+reference env: {repr refReport.env.toList}"
+  -- (5) named inputs the plan does not itself overwrite come back untouched.
+  for (nm, t) in inputs.toList do
+    unless prepared.bindings.materializedNames.any (·.name == nm) do
+      match planReport.env[nm]? with
+      | some t' =>
+          unless denseEq t t' do
+            throw s!"{name}: input {nm} was modified by the run: {repr t'.data}"
+      | none => throw s!"{name}: input {nm} disappeared from the unpacked env"
+  -- (7) warnings compared as lists: order AND payload.
+  unless decide (planReport.warnings = refReport.warnings) do
+    throw s!"{name}: warnings differ.\nplan: {planReport.warnings.map toString}\n\
+reference: {refReport.warnings.map toString}"
+
+/-- Every acceptance fixture `ScanCompileTest.lean` asserts structurally, run through the execution
+    matrix. The list is exhaustive over that file's Part 1 (A, B, C, D/E, F, G, H, I/J, K/L —
+    nine `ScheduledProgram`s covering its twelve lettered shapes); `G` deliberately reuses `F`'s
+    input map, exactly as the structural file does. -/
+private def scanFixtureChecks : List (Except String Unit) :=
+  [ scanParityCheck "A/selfRecur" ScanCompileTest.selfRecurSched ScanCompileTest.selfRecurInputs []
+  , scanParityCheck "B/coupled" ScanCompileTest.coupledSched ScanCompileTest.coupledInputs []
+  , scanParityCheck "C/scratch" ScanCompileTest.scratchSched ScanCompileTest.scratchInputs ["T"]
+  , scanParityCheck "D-E/contract" ScanCompileTest.contractSched ScanCompileTest.contractInputs []
+  , scanParityCheck "F/deepHistory" ScanCompileTest.deepHistorySched
+      ScanCompileTest.deepHistoryInputs []
+  , scanParityCheck "G/extentOne" ScanCompileTest.extentOneSched
+      ScanCompileTest.deepHistoryInputs []
+  , scanParityCheck "H/axisPos" ScanCompileTest.axisPosSched ScanCompileTest.axisPosInputs []
+  , scanParityCheck "I-J/multiBase" ScanCompileTest.multiBaseSched ScanCompileTest.multiBaseInputs []
+  , scanParityCheck "K-L/twoScans" ScanCompileTest.twoScanSched ScanCompileTest.twoScanInputs []
+    -- Every fixture above is warning-free, which would leave point 7 vacuous across the whole
+    -- matrix. `AdapterTest.scanWarnSched` reads two different externals past their extents from
+    -- inside the recurrence, so it carries TWO `paddedAccess` warnings and the comparison
+    -- discriminates order as well as payload. (`AdapterTest.lean` Check 15 pins that it really
+    -- carries exactly two, so this reuse cannot go quietly vacuous either.)
+  , scanParityCheck "M/scanWarnings" AdapterTest.scanWarnSched AdapterTest.scanWarnInputs [] ]
+
+run_cmd do
+  for c in scanFixtureChecks do
+    match c with
+    | .ok () => pure ()
+    | .error m => throwError s!"SCAN PARITY FAILED:\n{m}"
+
+-- ── Alpha-renaming across the whole scan surface ──
+-- `origAlphaProg`/`renamedAlphaProg` above rename a scan-FREE program's tensors. This pair renames
+-- everything a scan node carries — the scan's representative name (`S` → `Sigma`), its persistent
+-- state, its block-local scratch (`T` → `Tmp`), and both externals — while keeping every axis UID
+-- and every input VALUE identical to `ScanCompileTest.scratchSched`. The checked semantic graph
+-- must be literally the same value (names live only in `PlanBindings`), and the two runs must
+-- produce the same tensors under the renaming.
+
+private def alphaScanAxis : AxisSpec := ⟨"m", 21, .nat⟩   -- same UID as `ScanCompileTest.axM`
+
+private def renamedScanSched : ScheduledProgram :=
+  { decls := [.iter alphaScanAxis 3]
+  , stmts := [.scan "Sigma" [alphaScanAxis]
+      [ .assign "Sigma" [.iterAt alphaScanAxis 0]
+          { body := { terms := [{ factors := [.read "Init" []] }] }, nonlin := .identity } ]
+      [ .assign "Tmp" []
+          { body := { terms := [{ factors :=
+              [.read "Sigma" [.axis alphaScanAxis], .read "Kern" [.axis alphaScanAxis]] }] }
+          , nonlin := .identity }
+      , .assign "Sigma" [.iterNext alphaScanAxis]
+          { body := { terms := [{ factors := [.read "Tmp" []] }] }, nonlin := .identity } ]
+      false ]
+  , env := {}, extNames := insert "Init" (insert "Kern" (∅ : Finset String))
+  , explicitSizes := (({} : HashMap UID Nat).insert alphaScanAxis.uid 3) }
+
+private def renamedScanInputs : HashMap String DenseTensor :=
+  (({} : HashMap String DenseTensor).insert "Init" ⟨[], #[1.0]⟩).insert
+    "Kern" ⟨[3], #[2.0, 3.0, 4.0]⟩
+
+run_cmd do
+  match scanParityCheck "alpha/renamedScan" renamedScanSched renamedScanInputs ["Tmp"] with
+  | .error m => throwError s!"alpha-renamed scan failed its own parity check:\n{m}"
+  | .ok () => pure ()
+  match prepareEvalPlan ScanCompileTest.scratchSched
+          (InputSignature.ofDenseInputs ScanCompileTest.scratchInputs),
+        prepareEvalPlan renamedScanSched (InputSignature.ofDenseInputs renamedScanInputs) with
+  | .error _, _ => throwError "alpha: the original scan fixture failed to prepare"
+  | _, .error _ => throwError "alpha: the renamed scan fixture failed to prepare"
+  | .ok p1, .ok p2 =>
+      unless p1.plan.raw == p2.plan.raw do
+        throwError s!"alpha-renaming CHANGED a scan's checked semantic graph:\n\
+{repr p1.plan.raw}\nvs\n{repr p2.plan.raw}"
+      unless p1.bindings.requiredInputs.bindings != p2.bindings.requiredInputs.bindings &&
+             p1.bindings.materializedNames != p2.bindings.materializedNames do
+        throwError "alpha: renaming did NOT change the scan's bindings — they should be name-keyed"
+      -- the renaming is a bijection on the boundary: same slots, renamed names.
+      unless p1.bindings.requiredInputs.bindings.map (·.slot) ==
+             p2.bindings.requiredInputs.bindings.map (·.slot) &&
+             p1.bindings.materializedNames.map (·.slot) ==
+             p2.bindings.materializedNames.map (·.slot) do
+        throwError "alpha: renaming moved a scan's boundary SLOTS, not just its names"
+      -- and the two runs agree tensor-for-tensor under the renaming.
+      match runPreparedDense p1 ScanCompileTest.scratchInputs,
+            runPreparedDense p2 renamedScanInputs with
+      | .ok r1, .ok r2 =>
+          match r1.env["S"]?, r2.env["Sigma"]? with
+          | some a, some b =>
+              unless denseEq a b do
+                throwError s!"alpha: renamed state differs: {repr a.data} vs {repr b.data}"
+          | _, _ => throwError "alpha: a renamed state is missing from its unpacked env"
+      | _, _ => throwError "alpha: one of the two renamed runs failed"
+
+-- ── Two axes sharing a NAME but not a UID ──
+-- Axis identity is by UID everywhere in this codebase; a scan makes that load-bearing twice over
+-- (context membership and causality are both UID-keyed). This fixture scans over an axis literally
+-- named "l" while a DIFFERENT axis also named "l" is a free output dimension of the same state, so
+-- any name-based axis comparison would either treat the free axis as a context axis (and reject the
+-- program) or mis-place `advancingDims`. Cross-checked against `evalScheduled`, which resolves
+-- axes by UID too.
+
+private def sameNameIter : AxisSpec := ⟨"l", 3101, .nat⟩
+private def sameNameFree : AxisSpec := ⟨"l", 3102, .nat⟩
+
+private def sameAxisNameSched : ScheduledProgram :=
+  { decls := [.iter sameNameIter 3, .axis sameNameFree (some 2)]
+  , stmts := [.scan "S" [sameNameIter]
+      [ .assign "S" [.free sameNameFree, .iterAt sameNameIter 0]
+          { body := { terms := [{ factors := [.read "S0" [.axis sameNameFree]] }] }
+          , nonlin := .identity } ]
+      [ .assign "S" [.free sameNameFree, .iterNext sameNameIter]
+          { body := { terms :=
+              [ { factors := [.read "S" [.axis sameNameFree, .axis sameNameIter]] }
+              , { factors := [.read "W" [.axis sameNameFree]] } ] }
+          , nonlin := .identity } ]
+      false ]
+  , env := {}, extNames := insert "S0" (insert "W" (∅ : Finset String))
+  , explicitSizes :=
+      ((({} : HashMap UID Nat).insert sameNameIter.uid 3).insert sameNameFree.uid 2) }
+
+private def sameAxisNameInputs : HashMap String DenseTensor :=
+  (({} : HashMap String DenseTensor).insert "S0" ⟨[2], #[1.0, 2.0]⟩).insert
+    "W" ⟨[2], #[10.0, 20.0]⟩
+
+run_cmd do
+  match scanParityCheck "sameAxisName" sameAxisNameSched sameAxisNameInputs [] with
+  | .error m => throwError s!"same-axis-name scan case: {m}"
+  | .ok () => pure ()
+  match prepareEvalPlan sameAxisNameSched (InputSignature.ofDenseInputs sameAxisNameInputs) with
+  | .error _ => throwError "sameAxisName: prepare failed (already reported above)"
+  | .ok p =>
+      match (p.plan.raw.steps[0]? : Option PlanStep) with
+      | some (.scan s) =>
+          -- the UID-distinct free axis is dimension 0 and is NOT advancing; only the iter axis is.
+          unless s.states.map (·.advancingDims) == #[#[1]] do
+            throwError s!"sameAxisName: advancingDims resolved by NAME, not UID: \
+{repr (s.states.map (·.advancingDims))}"
+          unless s.historyExtents == #[3] do
+            throwError s!"sameAxisName: the free same-named axis leaked into the context: \
+{repr s.historyExtents}"
+      | _ => throwError "sameAxisName: step 0 is not a scan"
+
+-- ── The generated-corpus gate ──
+-- `enumScanCases` (`test/Eval/PropertyOracle/ScanGen.lean`) is a curated six-template family:
+-- template 2 (×4) applies `.pointwise .relu` inside the recurrence and template 5 (×4) uses
+-- `.max`/`.min` aggregation — both outside F4's admitted fragment — while the remaining nine are
+-- admitted. The split below is pinned by exact count AND by which capability constructor each
+-- rejection produces, so a regression that widened or narrowed the fragment cannot be absorbed by
+-- the accepted cases silently getting fewer.
+
+private inductive ScanCaseOutcome
+  | accepted
+  | rejectedNonlin
+  | rejectedAgg
+
+/-- One generated case. A rejected case is rejected at COMPILE time, so no `PreparedPlan` exists and
+    `runDensePlan` is unreachable for it by construction — the `.ok` arm below is the only path that
+    can reach execution at all, and it is the arm that demands full parity. -/
+private def checkScanCase (i : Nat) (c : LeanNCD.PropertyOracle.ScanCase) :
+    Except String ScanCaseOutcome := do
+  let sched ← match c.prog.compileToScheduled.run 0 with
+    | .ok s _ => pure s
+    | .error e _ => throw s!"scan case {i}: the generator produced a program that fails to \
+compile: {repr e}"
+  match prepareEvalPlan sched (InputSignature.ofDenseInputs c.inputs) with
+  | .error f =>
+      match f.cause with
+      | .capability (.unsupportedNonlin _) => pure .rejectedNonlin
+      | .capability (.unsupportedAgg _) => pure .rejectedAgg
+      | cause =>
+          throw s!"scan case {i}: rejected for an unexpected reason: {ScanCompileTest.render cause}"
+  | .ok _ =>
+      -- No template in `ScanGen.lean` writes a recurrence-only name, so every generated case has an
+      -- empty scratch set; asserting `[]` (rather than deriving it) keeps point 6 honest here too.
+      match scanParityCheck s!"scan case {i}" sched c.inputs [] with
+      | .ok () => pure .accepted
+      | .error m => throw m
+
+/-- (total, accepted, `unsupportedNonlin`, `unsupportedAgg`) over the whole curated corpus.
+    `foldlM` short-circuits: the first parity disagreement or unexpected rejection aborts. -/
+private def scanCorpusSplit : Except String (Nat × Nat × Nat × Nat) :=
+  (LeanNCD.PropertyOracle.enumScanCases.zipIdx).foldlM
+    (fun (acc : Nat × Nat × Nat × Nat) (ci : LeanNCD.PropertyOracle.ScanCase × Nat) => do
+      let (total, accepted, nonlin, agg) := acc
+      match ← checkScanCase ci.2 ci.1 with
+      | .accepted => pure (total + 1, accepted + 1, nonlin, agg)
+      | .rejectedNonlin => pure (total + 1, accepted, nonlin + 1, agg)
+      | .rejectedAgg => pure (total + 1, accepted, nonlin, agg + 1))
+    (0, 0, 0, 0)
+
+run_cmd do
+  match scanCorpusSplit with
+  | .error msg => throwError s!"SCAN CORPUS GATE FAILED:\n{msg}"
+  | .ok (total, accepted, nonlin, agg) =>
+      dbg_trace s!"DifferentialTest scan corpus: total={total} accepted={accepted} \
+unsupportedNonlin={nonlin} unsupportedAgg={agg}"
+      pure ()
+
+-- The counts pinned by F4's plan §0, independently re-derived from `ScanGen.lean`'s six templates:
+-- 4×template1 + 4×template2 + 2×template3 + 2×template4 + 4×template5 + 1×template6 = 17, of which
+-- template 2's four are `unsupportedNonlin` and template 5's four are `unsupportedAgg`, leaving 9
+-- admitted. Per the plan's §12.2 stop condition, an accepted case that stops compiling — or stops
+-- matching `evalScheduled` — is an F0 contract defect to REPORT, not a number to re-baseline here.
+#guard match scanCorpusSplit with
+  | .ok (total, accepted, nonlin, agg) =>
+      total == 17 && accepted == 9 && nonlin == 4 && agg == 4
+  | .error _ => false
 
 end LeanNCD.Eval.Plan.DifferentialTest
