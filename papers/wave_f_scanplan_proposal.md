@@ -1934,6 +1934,108 @@ consume checked scan APIs without importing source compilation or legacy executi
 
 Specialized PyTorch/JAX scan lowerings remain a later wave.
 
+**F5 completion record (2026-08-20).** Landed on one branch, in plan order, as `f69c2b0` (Task 1),
+`82c2175` (Task 2), `dc29155` (Task 3), and `7bb51dc` + `f791989` + the commit carrying this record
+(Task 4) — six documentation/fix commits, on top of the plan-authoring commit `59fd796` that precedes
+them.
+
+*Three under-specified error payloads sharpened* (`f69c2b0`, Task 1). `ScanPlanError.causalityFailure`
+(`Scan.lean`) gained a `stmtIndex` field between `stateIndex` and `termIndex`, so two different step
+assignments failing at the same term/factor position no longer collide on one payload.
+`ScanCompileError.duplicateAxisInLhs` gained `isBase : Bool`, so a duplicate axis in a base statement
+and one in a step statement are distinguishable. `ScanCompileError.blockReadNotAvailable` gained a new
+`ReadUnavailableCause` (`unknownName`/`forwardReference`/`selfRead`), so an unresolvable name, a
+forward reference to a later scratch producer, and a self-read are three distinguishable rejections
+instead of one. Every call site (`Compile.lean`'s two `duplicateAxisInLhs` throws, three
+`blockReadNotAvailable` throws, `Scan.lean`'s one `causalityFailure` throw) and every test fixture
+(`ScanTest.lean`, `ScanCompileTest.lean`) was updated to the new arity; a whole-tree grep for all
+three constructor names, re-run independently in this task (Step 4), confirmed no stale
+three-/four-argument construction survives anywhere in `leanncd/`.
+
+*Remaining named mutation-matrix gaps closed* (`82c2175`, Task 2). `ScanCompileTest.lean` gained a
+`partialAdvancingResult` fixture for the degenerate sub-case (a result advancing the right NUMBER of
+context axes but the wrong SET, reporting `declared = n, expected = n`) that F4's completion record
+had left uncovered. `DifferentialTest.lean`'s `scanFeatures` "extent one" predicate was tightened to
+require the extent-one axis be a member of some scan node's own `axes` list, rather than merely
+declared somewhere in the schedule — the coverage gate still passed, confirming `extentOneSched`'s
+axis genuinely is its own scan's advancing axis. `ScanOracle.lean` gained an explicit assertion that
+the two-way sweep's `advScratch` support is non-empty for at least one analyzed case, closing the
+silent-coverage-loss risk F4's record had named. `DifferentialTest.lean`'s duplicated
+`scanCorpusSplit` computation (once for a `dbg_trace`, once for the `#guard`) was merged into one
+`run_cmd` block, removing the redundant second execution of the corpus matrix.
+
+*Documentation corrected* (`dc29155`, Task 3). `DSL/AGENTS.md`'s claim that `Eval/*` never imports
+`Pipeline.Structural`/`Lowering` directly was false as of F4: `Eval/Plan/Compile.lean` imports
+`Pipeline.Lowering` directly, reusing `idxToRow` to lower a scan's affine reads exactly as
+`Lowering.lean` itself does. The claim now states that one exception explicitly.
+
+*Capability manifest published, stale cross-references corrected, final gate run* (`7bb51dc`,
+`f791989`, Task 4). `papers/wave_f_capability_manifest.md` is new, mirroring
+`papers/wave_c_capability_manifest.md`'s section shape: accepted/rejected scan constructs, the
+three-way differential gate's counted result, the missing-capability backlog reproduced from §1, and
+the import-graph/documentation audit findings below. `papers/wave_c_capability_manifest.md`'s §1 no
+longer claims `checkPlan` rejects a `RawEvalPlan.version` other than `1` — it now states the removal
+and points to the new manifest. `leanncd/LeanNCD/Eval/AGENTS.md`'s `Plan/` pointer sentence now names
+the new manifest alongside the two existing documents.
+
+*Whole-branch review (Step 4), performed for real.* Grepped every call site of `causalityFailure`,
+`duplicateAxisInLhs`, and `blockReadNotAvailable` across the whole `leanncd/` tree: every production
+call site and every test fixture matches the new arity (declaration, throw site, and `#guard`/`==`
+assertion in each case), no stale construction remains. Confirmed no file outside this plan's own File
+Structure lists was touched across all four tasks: the eight files changed since `59fd796` by Tasks
+1-3 (`LeanNCD/Eval/Plan/{Scan,Error,Compile}.lean`, `test/Eval/Plan/{ScanTest,ScanCompileTest,
+DifferentialTest}.lean`, `test/Eval/PropertyOracle/ScanOracle.lean`, `LeanNCD/DSL/AGENTS.md`) are
+exactly the union of Tasks 1-3's own Files lists; Task 4 itself touched exactly its own four named
+files.
+
+*Exact counts, re-derived independently this task from the current tree, not copied from this plan's
+own prose.* `CapabilityError` (`Error.lean`): **12** constructors (Wave C's 11 plus `noAdvancingAxis`,
+added in F2) — unchanged by Tasks 1-3. `ScanCompileError` (`Error.lean`): **24** constructors,
+unchanged in count by Tasks 1-3 (three constructors gained fields; none was added or removed). The
+curated scan corpus (`enumScanCases`, `DifferentialTest.lean`'s `scanCorpusSplit`): **17** total, split
+**9 accepted / 4 `unsupportedNonlin` / 4 `unsupportedAgg`**, pinned by that file's own `run_cmd`
+assertion, re-observed in this task's own build run (`DifferentialTest scan corpus: total=17
+accepted=9 unsupportedNonlin=4 unsupportedAgg=4`). The three-way differential gate: **21** total scan
+programs (12 hand-written + 9 accepted generated) agree bit-for-bit across the compiled checked path,
+`evalScheduled`, and the independent unrolling. The pre-existing Wave C scan-free sweep remains
+**3,832** entries, 100% accepted, 100% bit-exact — unchanged by this slice. Full `lake build`, run by
+this task: **`Build completed successfully (8652 jobs)`** — exactly the pre-F5 baseline, since no task
+in this plan added a new module.
+
+*Wave F's own Definition of Done ([§14.1](#141-definition-of-done), 11 items), closing status.* All 11
+hold today, for the admitted scan fragment the capability manifest describes — none holds for the
+missing-capability table's contents (`papers/wave_f_capability_manifest.md` §5), which is recorded
+precisely because it is NOT done:
+
+1. **Explicit checked data** (state, blocks, captures, writes, extents, traversal, boundary, snapshot,
+   materialization, causality) — holds; see the manifest's §2/§3.
+2. **Raw scan data cannot reach any worker** — holds; `checkScanPlan`/`checkPlan` gate every
+   `RawScanPlan` before `runDenseScan` runs, unchanged by this plan.
+3. **General Dense scan execution uses no source names, UIDs, AST values, callbacks, or unordered
+   maps** — holds, per F4's own semantic-field inventory; this plan added no new field to
+   `runDenseScan`.
+4. **Scan-free plans preserve Wave C behavior** — holds; the pre-existing 3,832-case sweep is still
+   green at the same job count.
+5. **Supported source scans residualize and agree with `evalScheduled` under `=obs`** — holds for the
+   admitted fragment: 12 hand-written + 9 generated = 21 programs agree bit-for-bit (manifest §4).
+6. **The independent unroller agrees with the general worker over its declared corpus** — holds, over
+   the same 21-program three-way gate.
+7. **Unsupported scan constructs fail before worker execution**, syntactic cases via `CapabilityError`,
+   post-shape cases via `ScanCompileError`, `ScanPlanError` reserved for directly constructed malformed
+   raw plans — holds; manifest §3's 12- and 24-constructor tally has no `String` escape hatch, and
+   Task 1 sharpened three existing payloads without introducing one.
+8. **Block scratch never escapes unless a later plan version explicitly materializes it** — holds; the
+   scratch-privacy checks in every gated scan program's parity check (`scanParityCheck` points 6b/6c)
+   pass for all 21.
+9. **Complete state histories and warnings survive the named boundary** — holds; `AdapterTest.lean`
+   Checks 11-16, untouched by this plan.
+10. **The Plan worker imports neither source compilation nor legacy execution** — holds, and is now the
+    capability manifest's own stated resolution (§6): `Eval.Plan.EvalPlan`/`Eval.Plan.Scan` import
+    neither `Eval.Plan.Compile` nor `DSL.Ast`; only `Eval.Plan.Adapter` and `Eval.Plan.Compile` pull in
+    the source compiler.
+11. **The full default Lean build passes with no skipped test module** — holds; `8652` jobs, green,
+    from this task's own run.
+
 ## 14. Definition of done and stop conditions
 
 ### 14.1 Definition of done
