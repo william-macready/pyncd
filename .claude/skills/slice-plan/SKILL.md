@@ -1,12 +1,12 @@
 ---
 name: slice-plan
-description: Authoring discipline for leanncd slice implementation plans (Wave C C0/C1/C2..., or any subagent-driven-development plan in this repo) — how to right-size tasks so dispatch overhead does not dominate, and how to verify plan code compiles before it ships. Use when writing or revising an implementation plan for leanncd, before executing it.
+description: Authoring discipline for leanncd slice implementation plans (Wave C/F slices, or any subagent-driven-development plan in this repo) — verifying plan code, paths, and prose claims before they ship; covering the recurring-defect siblings a diff review structurally cannot see; right-sizing tasks by fixture count so dispatch overhead does not dominate; and where review budget actually pays. Use when writing or revising an implementation plan for leanncd, before executing it.
 ---
 
 # Writing a leanncd slice plan
 
-Two disciplines, both learned from measured failures in Wave C. Apply them
-while authoring the plan — after it ships to an implementer, both are too late.
+Disciplines learned from measured failures in Waves C and F. Apply them while
+authoring the plan — after it ships to an implementer, they are all too late.
 
 Setting up the worktree to *execute* a plan is a different step: see
 `.claude/skills/new-slice/`.
@@ -85,7 +85,55 @@ from Z," diff or grep the actual functions/files it describes.** This applies to
 architecture prose and to any completion-record template the plan hands to a later task —
 templated prose is not exempt just because it looks like documentation rather than code.
 
-## 2. Right-size tasks — dispatch overhead is fixed, deliverables are not
+**Verify every path the plan names, with `ls`, at authoring time.** The same argument one more
+level down: a plan cites files, and a wrong path costs the implementer a judgment call and a
+concern round-trip. Wave F F4's plan sent Task 5 to `leanncd/docs/design/eval_ir.md`, which does
+not exist — the real file is `papers/eval_ir.md` — and omitted `DifferentialTest.lean` from that
+task's Files list even though the deliverable (a third differential leg) could only be wired
+there. Both were caught by the implementer rather than the author. Derive a task's file list from
+"where does this deliverable have to live," then `ls` each entry.
+
+**Never put line numbers in text the plan tells a task to ship.** Completion records, AGENTS.md
+rows, and design-doc edits should cite identifiers and function names, never `File.lean:NNN`. In
+F4's final fix wave the docs commit landed before the code commit (correct — it kept trivial prose
+off the critical path), and the code commit then inserted 22 lines above the cited region,
+invalidating six line references in one stroke. Identifiers survive that; line numbers cannot.
+
+## 2. Cover what a diff cannot show
+
+Review packages are diffs, and a diff cannot contain unchanged code. That is a structural blind
+spot, not a reviewer failure, and it lands precisely where this repo's recurring defect family
+lives.
+
+Wave F F4's Critical finding was in `stepWriteRowsOk`. Task 1 had edited `checkWrites` — the
+function that *calls* it — and added guards sitting immediately adjacent in the same call sequence.
+Task 1's reviewer read a diff whose hunks were inside the calling function and still could not see
+the bug, because `stepWriteRowsOk` itself was unchanged and therefore absent from the package. It
+survived five per-task reviews and surfaced only at the whole-branch tier, where finding and fixing
+it cost roughly 560k tokens across the review, its fix wave, and the re-review.
+
+It was also the **fourth** instance of one shape across two slices — a write-geometry predicate
+validating *which rows must be a given kind* without validating *which rows may not be*
+(free-extent, pinned-literal, write-map rank, then this). F4's own plan documented the third
+instance in its §0 and still left the fourth to be discovered at the most expensive tier.
+
+**Rule: when a task fixes instance _N_ of a known recurring defect family, the plan names the
+sibling functions and makes auditing them a deliverable of that same task.** The artifact is an
+explicit table — every case × class cell classified as (a) required, (b) forbidden, or (c) silently
+ignored — because **every (c) cell is a candidate instance _N+1_**. F4 eventually produced exactly
+this table over all seven of its geometry/causality predicates and it found no fifth instance;
+produced in Task 1 it would have cost perhaps 20k tokens instead of 560k.
+
+Two refinements that fell out of that sweep, worth carrying rather than re-deriving:
+
+- All four instances were **write-path** predicates, because the write helper performs no bounds
+  recovery by design while reads are backstopped by `inBoundsPerDim`. A (c) cell on a read
+  predicate is usually safe; one on a write predicate usually is not.
+- A predicate can be sound only by an **unenforced call-site precondition** — `baseWriteRowsOk` is
+  safe purely because its single caller passes `contextWidth = 0`, making one row kind
+  unclassifiable. That is a (c) cell in disguise, so audit call sites, not just predicate text.
+
+## 3. Right-size tasks — dispatch overhead is fixed, deliverables are not
 
 Each task costs one implementer dispatch plus one reviewer dispatch regardless
 of size. Measured on Wave C C1 (7 tasks, 16 dispatches, ~1M subagent tokens):
@@ -121,6 +169,22 @@ Pure-addition sequences — "define the types", "define the function over those
 types" — are usually one task. Sequential appends to one test file are usually
 two tasks, not three or four.
 
+**Size by test artifacts, not by production lines.** Wave F F4's plan rated Task 1 low-to-moderate
+risk by counting what it changed: two small, fully-specified bug fixes with known repro shapes. It
+ran ~200k tokens and 82 minutes — comparable per-token to Task 3, the slice's architectural
+centerpiece. The cost was never in the fixes; it was in 6 fixtures × 3 mutation cycles, each built
+by trial and error. **Count fixtures and mutation cycles when estimating a task, and state that
+count in the plan's own risk table** so the controller sizes the dispatch to the real work rather
+than to the diff.
+
+**Name the donor fixture for every fixture the plan requires.** Most of that trial-and-error is
+avoidable: a new fixture is nearly always a one-field mutation of an existing one, and the plan
+author usually knows which. F3's *completion record* described its own fixtures precisely this way
+("a one-field mutation of Fixture 5: dim-0 bias `1 -> 5`") — but F4's *plan* did not carry that
+forward into its fixture list, so each implementer rediscovered the donor. Write
+`clone <existing fixture>, change <one field>` beside each required fixture. This is the same
+lesson as F2's 97-minute fix-wave outlier, applied one stage earlier in the pipeline.
+
 **A task that bundles mechanical housekeeping with a claim needing verification is worth flagging
 even when it isn't worth splitting.** Wave F F2's Task 3 combined a plain import-line addition and
 an AGENTS.md table update (housekeeping, no failure mode of its own) with a completion record's
@@ -131,13 +195,36 @@ while rejecting the completion record, so the record's claims need the section-1
 treatment specifically — not folded into a generic "does this look right" pass — even when the
 task as a whole isn't worth splitting.
 
-## 3. What not to trim
+## 4. What not to trim
 
-The final whole-branch review. Both Wave C slices' most valuable findings came
-from it and from nowhere else: C0's capability matrix contradicting itself over
-`RHSExpr.agg`, and C1's tautological parity fixtures. Neither was visible in any
-individual task diff. Per-task reviews of *mechanical* tasks are the trimmable
-part; the whole-branch pass is the one earning its keep.
+The final whole-branch review. Every slice's most valuable finding has come from it and from
+nowhere else: C0's capability matrix contradicting itself over `RHSExpr.agg`, C1's tautological
+parity fixtures, F3's write-extent soundness gap, F4's `stepWriteRowsOk` Critical. None was visible
+in any individual task diff. Per-task reviews of *mechanical* tasks are the trimmable part; the
+whole-branch pass is the one earning its keep.
+
+F4 measured the split directly, and the ratio is worth knowing when a plan sets its own process
+weight:
+
+| Review tier | Tokens | Yield |
+|---|---|---|
+| 5 per-task reviews | ~647k | 1 Important (a stale doc passage) |
+| 1 final whole-branch review | ~305k | **1 Critical** (a real soundness hole) |
+
+The tempting read — cut per-task review — is the wrong one: those five reviews are why the branch
+arrived clean enough for one reviewer to go deep enough to find the Critical. The right move is
+**more depth at the tier that pays**: for a slice with a soundness surface, plan for two independent
+final reviewers with different lenses rather than one. Mid-tier models handle per-task review of
+clean, well-specified tasks adequately, which is where the budget for the second final lens comes
+from.
+
+**Sequence expensive independent verification early, not last.** F4's independent oracle — a
+from-scratch second implementation forming a third differential leg — was its single most expensive
+task (~386k tokens) and found no disagreement. That is the expected result for a differential and
+not a reason to cut it; the guarantee is the point. But it ran as terminal work, after every other
+leg already agreed, which is the position where it can teach the least. Schedule that kind of task
+while the implementation it checks is still being actively built, so a disagreement arrives when
+someone still has the context to act on it.
 
 ## Authoring checklist
 
@@ -154,8 +241,23 @@ part; the whole-branch pass is the one earning its keep.
       — "X reuses Y," "no second Z was added," "both are reachable from W" —
       checked against the actual functions/files, not asserted from the plan's
       own design intent.
+- [ ] Every file path the plan names verified with `ls`, and each task's Files
+      list derived from where its deliverable must live rather than from memory.
+- [ ] No `File.lean:NNN` line numbers in any text the plan tells a task to ship
+      (completion records, AGENTS.md rows, design-doc edits) — identifiers only,
+      since a later code commit in the same slice invalidates line numbers.
+- [ ] For any task fixing instance _N_ of a known recurring defect family: the
+      plan names the sibling functions a diff review cannot see, and requires the
+      case × class table (required / forbidden / **silently ignored**) as a
+      deliverable of that task. Every silently-ignored cell is a candidate
+      instance _N+1_.
+- [ ] Every required fixture names its donor — `clone <existing fixture>, change
+      <one field>` — rather than leaving the implementer to rediscover it.
 - [ ] Task boundaries pass the reviewer test above; tiny pure-addition tasks
       merged into neighbours.
+- [ ] Each task's risk entry states its fixture and mutation-cycle count, not
+      just its production-line count — that count, not the diff size, is what
+      the task will actually cost.
 - [ ] Global Constraints state exact values, and name anything the plan
       deliberately does *not* do (and which later slice owns it).
 - [ ] If this slice introduces a new subsystem or file tree, the plan makes it
