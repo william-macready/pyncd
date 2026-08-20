@@ -1,108 +1,147 @@
-import Eval.PropertyOracle.Compare
-import Eval.PropertyOracle.ScanGen
 import Eval.PropertyOracle.ScanUnroll
-import LeanNCD.Eval.Entry
 
 /-!
-# Scan-unrolling oracle runner (E6, Task 6)
+# Scan-unrolling oracle runner (E6; generalized for Wave F F4, Task 5)
 
-`checkScanLaw`/`runAllScans` evaluate each generated `ScanCase` and its unrolled companion
-through the full `TLProgram.eval` pipeline, then compare grid-cell-by-grid-cell via
-`sliceTensorAtMulti` + `denseEq`. Kept in its own file, separate from the scan-free harness's
-`Oracle.lean`, so a violation is unambiguously attributed to this law.
+`checkScanLaw`/`runAllScans` state the SCAN-UNROLL law over the curated generator: evaluating a
+scan program and evaluating its mechanically unrolled, scan-free companion must publish the same
+complete state histories.
+
+Two things changed in F4 relative to the E6 original:
+
+* the companion is built by `ScanUnroll.independentRun`, which handles arbitrary advancing-dimension
+  positions, deep affine history reads, multi-axis grids, several base writes per state and
+  block-local scratch — the four deficiencies plan §4.8 lists — instead of the old immediate-
+  predecessor/trailing-axis/one-2×2-template pair; and
+* the comparison reassembles histories with `DenseTensor.ofFn` from per-coordinate leaves instead of
+  slicing the scan's own output with the inverse of a scan-worker write helper.
+
+This file is the TWO-way leg (legacy evaluator versus independent unrolling) and runs over the whole
+17-case corpus, including the eight cases F4 rejects as capability failures but which the legacy
+evaluator still executes. The THREE-way gate (compiled checked plan, legacy, independent) lives in
+`test/Eval/Plan/DifferentialTest.lean`, where the compiler is in scope.
+
+Scope note: the independent unrolling implements the CHECKED (Jacobi, immutable-pre-step) reading —
+a state read inside step `u` always resolves to the pre-step snapshot. The legacy worker is
+Gauss-Seidel. No case here can tell them apart (every recurrence writes at the advanced coordinate
+and reads at the current one), so a future disagreement is a real semantic finding to report, not
+an oracle bug to tune away.
 -/
 namespace LeanNCD.PropertyOracle
-open LeanNCD LeanNCD.Eval
+open LeanNCD LeanNCD.Eval Std
 
-/-- Compare a single-axis scan's full state tensor against its unrolled per-step leaves, cell
-    by cell. `none` if every state agrees at every step, else the first mismatch message. -/
-private def compareScan1D (c : ScanCase) (scanEnv unrollEnv : Std.HashMap String DenseTensor)
-    (stateNames : List String) : Option String :=
-  let L := c.Ls.head!
-  stateNames.findSome? (fun nm =>
-    (List.range L).findSome? (fun k =>
-      match scanEnv[nm]? with
-      | none => some s!"scan output missing state {nm}"
-      | some full =>
-          let slice := sliceTensorAtMulti [(full.shape.length - 1, k)] full
-          let leafName := s!"Su_{nm}_{k}"
-          match unrollEnv[leafName]? with
-          | none      => some s!"unrolled leaf {leafName} missing"
-          | some leaf =>
-              if denseEq slice leaf then none
-              else some s!"SCAN-UNROLL law violated (1-D) at {nm}[{k}]: scan={repr slice.data} unrolled={repr leaf.data}"))
+/-- Compare two environments on the given names. `none` if they agree. -/
+def statesAgree (what : String) (names : List String)
+    (a b : HashMap String DenseTensor) : Option String :=
+  names.findSome? (fun nm =>
+    match a[nm]?, b[nm]? with
+    | some x, some y =>
+        if denseEq x y then none
+        else some s!"{what}: state {nm} differs — \
+left={repr x.shape}/{repr x.data} right={repr y.shape}/{repr y.data}"
+    | none, _ => some s!"{what}: the left environment has no {nm}"
+    | _, none => some s!"{what}: the right environment has no {nm}")
 
-/-- Compare the one 2-D template's full state tensor against its unrolled column/grid-cell
-    leaves, cell by cell. -/
-private def compareScan2D (c : ScanCase) (scanEnv unrollEnv : Std.HashMap String DenseTensor)
-    (stateNames : List String) : Option String :=
-  match c.Ls with
-  | [Lr, Lc] =>
-      stateNames.findSome? (fun nm =>
-        (List.range Lr).findSome? (fun ri =>
-          (List.range Lc).findSome? (fun ci =>
-            match scanEnv[nm]? with
-            | none => some s!"scan output missing state {nm}"
-            | some full =>
-                let slice := sliceTensorAtMulti [(0, ri), (1, ci)] full
-                if ci == 0 then
-                  match unrollEnv[s!"Su_{nm}_col0"]? with
-                  | none => some s!"unrolled col0 for {nm} missing"
-                  | some col0 =>
-                      let cell := sliceTensorAtMulti [(0, ri)] col0
-                      if denseEq slice cell then none
-                      else some s!"SCAN-UNROLL law violated (2-D) at {nm}[{ri},0]: scan={repr slice.data} unrolled={repr cell.data}"
-                else
-                  match unrollEnv[s!"Su_{nm}_{ri}_{ci}"]? with
-                  | none => some s!"unrolled leaf Su_{nm}_{ri}_{ci} missing"
-                  | some leaf =>
-                      if denseEq slice leaf then none
-                      else some s!"SCAN-UNROLL law violated (2-D) at {nm}[{ri},{ci}]: scan={repr slice.data} unrolled={repr leaf.data}")))
-  | _ => some "compareScan2D: expected exactly 2 scan axes"
-
-/-- Check the scan-unrolling law on one case. `none` if OK, else a counterexample message. -/
+/-- The scan-unrolling law on one generated case: `none` if the legacy evaluator and the
+    independent scan-free unrolling publish identical histories, else a counterexample message. -/
 def checkScanLaw (c : ScanCase) : Option String :=
-  let stateNames := (c.base.filterMap (fun s => match s with | .assign nm _ _ => some nm | _ => none)).eraseDups
-  match TLProgram.eval c.prog c.inputs with
-  | .error e => some s!"scan case did not evaluate (generator well-formedness gap): {e}\n{repr c.prog}"
-  | .ok scanReport =>
-      let unrolled := if c.axes.length == 1 then unrollScan1D c else unrollScan2D c
-      match TLProgram.eval unrolled c.inputs with
-      | .error e => some s!"unrolled companion did not evaluate: {e}\n{repr unrolled}"
-      | .ok unrollReport =>
-          if scanReport.warnings != unrollReport.warnings then
-            some s!"SCAN-UNROLL diagnostics differ: scan={scanReport.warnings.map toString}, \
-unrolled={unrollReport.warnings.map toString}"
-          else if c.axes.length == 1 then
-            compareScan1D c scanReport.env unrollReport.env stateNames
-          else
-            compareScan2D c scanReport.env unrollReport.env stateNames
+  match schedOfCase c with
+  | .error m => some m
+  | .ok sched =>
+      let names := scannedStateNames sched
+      if names.isEmpty then some "generated case publishes no scan state at all" else
+      match evalScheduled sched c.inputs, independentRun sched c.inputs with
+      | .error e, _ => some s!"the legacy evaluator rejected a generated case: {e.error}"
+      | _, .error m => some s!"the independent unrolling failed: {m}"
+      | .ok legacy, .ok indep => statesAgree "SCAN-UNROLL law violated" names legacy.env indep
 
 /-- Run the law over the whole generator; `none` if all pass, else the first failure message. -/
 def runAllScans : Option String :=
   enumScanCases.findSome? checkScanLaw
 
--- TEST-THE-TESTER (a): every generated case passes.
+-- TEST-THE-TESTER (a): every generated case passes, and the corpus is the size it claims to be.
+#guard enumScanCases.length == 17
 #guard runAllScans.isNone
 
--- TEST-THE-TESTER (b): the oracle HAS TEETH — a bogus "unrolled" program for template1's L=3
--- case, with a term dropped from the final step, must be caught by `sliceTensorAtMulti`+`denseEq`.
-private def bogusT1 : ScanCase := template1 3 false
-private def bogusUnrolled : TLProgram :=
-  { (unrollScan1D bogusT1) with
-    stmts := (unrollScan1D bogusT1).stmts.map (fun s => match s with
-      | .assign nm slots rhs =>
-          if nm == "Su_S_2" then .assign nm slots { rhs with body := { terms := [] } }
-          else .assign nm slots rhs
-      | other => other) }
-#guard
-  match TLProgram.eval bogusT1.prog bogusT1.inputs,
-      TLProgram.eval bogusUnrolled bogusT1.inputs with
-  | .ok scanReport, .ok unrollReport =>
-      match scanReport.env["S"]?, unrollReport.env["Su_S_2"]? with
-      | some full, some leaf =>
-          ! denseEq (sliceTensorAtMulti [(full.shape.length - 1, 2)] full) leaf
-      | _, _ => false
+-- TEST-THE-TESTER (b): the corpus really exercises what this leg claims. Derived structurally from
+-- the compiled schedules, not asserted by name, so a template that quietly stopped having the
+-- feature cannot keep the guard green.
+private def compiledScans : List ScheduledProgram :=
+  enumScanCases.filterMap (fun c => (schedOfCase c).toOption)
+#guard compiledScans.length == 17
+-- more than one scan axis
+#guard compiledScans.any (fun s => s.stmts.any (fun
+  | .scan _ axes _ _ _ => axes.length ≥ 2
+  | _ => false))
+-- coupled states (two persistent states in one node)
+#guard compiledScans.any (fun s => s.stmts.any (fun
+  | .scan _ _ base _ _ => ((base.map Stmt.lhsName).eraseDups).length ≥ 2
+  | _ => false))
+-- a base write that leaves an advancing axis FREE (the §5.1 boundary face, which is what makes the
+-- base region an enumeration rather than a single coordinate)
+#guard compiledScans.any (fun s => s.stmts.any (fun
+  | .scan _ axes base _ _ =>
+      base.any (fun b => b.slots.any (fun sl => match sl with
+        | .free a => axes.any (fun x => x.uid == a.uid)
+        | _ => false))
+  | _ => false))
+-- a non-identity nonlinearity and a tropical aggregation carried through the unrolling
+#guard compiledScans.any (fun s => s.stmts.any (fun
+  | .scan _ _ _ recur _ => recur.any (fun r => r.nonlinOf != Nonlin.identity)
+  | _ => false))
+#guard compiledScans.any (fun s => s.stmts.any (fun
+  | .scan _ _ _ recur _ => recur.any (fun r => match r with
+      | .assign _ _ rhs => rhs.agg == .max || rhs.agg == .min
+      | _ => false)
+  | _ => false))
+
+/-! ## TEST-THE-TESTER (c): the oracle has teeth
+
+A deliberately wrong unrolling must be caught. The mutations below are applied to the LEAF program,
+which is the surface every oracle mutation in the F4 completion record perturbs, and each is checked
+to produce a genuine value disagreement rather than a missing key. -/
+
+private def t1sched : Except String ScheduledProgram := schedOfCase (template1 3 false)
+
+/-- Evaluate a corrupted leaf program for the one-axis template and reconstruct its history. -/
+private def corruptedT1 (f : List Stmt → List Stmt) : Except String DenseTensor := do
+  let sched ← t1sched
+  let sc ← match sched.stmts.find? (fun s => match s with | .scan .. => true | _ => false) with
+    | some sc => pure sc
+    | none    => .error "template1 did not compile to a scan node"
+  let un ← unrollScanNode sched.explicitSizes sc
+  let un' := { un with stmts := f un.stmts }
+  let leafEnv ← match evalScheduled
+      { sched with stmts := un'.stmts.map ScanStmt.plain } (template1 3 false).inputs with
+    | .ok r    => pure r.env
+    | .error e => .error s!"corrupted leaf program failed: {e.error}"
+  match un'.geom.states with
+  | [st] => reconstructHistory un' st leafEnv
+  | _    => .error "template1 should have exactly one state"
+
+private def t1Reference : Option DenseTensor :=
+  match t1sched with
+  | .error _ => none
+  | .ok sched => (independentRun sched (template1 3 false).inputs).toOption.bind (·["S"]?)
+
+-- the uncorrupted reconstruction is the hand-derived history…
+#guard match t1Reference with
+  | some s => denseEq s ⟨[2, 3], #[1.0, 2.0, 4.0, 2.0, 6.0, 18.0]⟩
+  | none   => false
+
+-- …and dropping the last step's terms is caught as a VALUE difference, not a missing key.
+#guard match corruptedT1 (fun ss => ss.map (fun s => match s with
+    | .assign nm slots rhs =>
+        if nm == stateLeafName "S" [2] then .assign nm slots { rhs with body := { terms := [] } }
+        else .assign nm slots rhs
+    | other => other)), t1Reference with
+  | .ok bad, some good => !denseEq bad good
   | _, _ => false
+
+-- Deleting a base leaf entirely is caught by the completeness check, which is what keeps the
+-- `ofFn` zero default from absorbing a lost or misplaced leaf.
+#guard match corruptedT1 (fun ss => ss.filter (fun s => s.lhsName != stateLeafName "S" [0])) with
+  | .error _ => true
+  | .ok _    => false
 
 end LeanNCD.PropertyOracle

@@ -1,171 +1,540 @@
 import Eval.PropertyOracle.Compare
 import Eval.PropertyOracle.ScanGen
-import LeanNCD.Eval.Scan
 
 /-!
-# Scan-unrolling: slice extraction (E6 scan-unrolling oracle, Task 3)
+# Independent scan unroller (Wave F F4, Task 5)
 
-`sliceTensorAtMulti` is the inverse of `LeanNCD.Eval.writeSliceAtMulti`: given a scan's full
-state tensor, extract the non-iteration-axis slice at a fixed set of `(position, index)`
-iteration coordinates. New code with no existing counterpart in the codebase, so it is verified
-directly against its own inverse below before later tasks trust it inside the oracle comparison.
+A scan is unrolled into an ordinary **scan-free** program: one leaf tensor per (persistent state,
+history coordinate) and one leaf per (block-local scratch name, step iteration). The leaves are
+evaluated by the ordinary assignment evaluator — no scan construct survives the rewrite — and the
+complete history tensors are then reassembled with `DenseTensor.ofFn`.
+
+## Why this file may not call the implementations it checks
+
+This is the third leg of F4's differential gate. Legs 1 and 2 (`prepareEvalPlan → runPreparedDense`
+and `evalScheduled`) share the source language's front end; this leg reduces the program to a form
+with no scan at all, so agreement is evidence rather than tautology. Plan §4.8 therefore forbids the
+oracle from calling `runDenseScan`, `evalScan`, `writeRowKinds`, `applyAffine`, the compiler's
+residualization helpers, and the scan worker's write helpers (`writeSliceAtMulti` and friends)
+during history reconstruction. It may evaluate the mechanically generated scan-free program.
+
+Accordingly this file imports only `Eval.PropertyOracle.Compare` and `Eval.PropertyOracle.ScanGen`
+(whose own transitive `LeanNCD.Eval.Entry` provides `evalScheduled`), and the ONLY evaluation entry
+point it names is `evalScheduled`, always on a program whose statements are all `ScanStmt.plain`.
+Everything else here — geometry resolution, base-region enumeration, index substitution, leaf
+routing, and history reassembly — is written out in this file. The predecessor file's
+`sliceTensorAtMulti` (whose contract was "the inverse of `LeanNCD.Eval.writeSliceAtMulti`", and
+whose round-trip test called that worker helper directly) is gone: reconstruction from per-
+coordinate leaves needs no slicing, and dropping it removes the last worker dependency.
+
+## The fragment
+
+The admitted F4 source fragment: rectangular all-axis `+1` step geometry, `iterAt`-pinned (or
+whole-axis free) base regions, arbitrary advancing-dimension positions and order, affine history
+reads with non-positive bias, external reads, contractions, extent one, multiple scan axes, several
+disjoint base writes, and block-local scratch. Nonlinearity and aggregation are carried through
+unchanged, so the two `enumScanCases` templates F4 rejects as capability failures (`relu` steps,
+tropical aggregation) are still unrollable and still checked against the legacy evaluator.
+Everything outside the fragment (predicate factors, scatter, `recurMorphism`, non-literal history
+coordinates) is rejected with a message rather than silently mis-unrolled — plan §4.8's "the oracle
+need not support source syntax rejected by production preflight".
 -/
 namespace LeanNCD.PropertyOracle
-open LeanNCD LeanNCD.Eval
+open LeanNCD LeanNCD.Eval Std
 
-/-- The inverse of `LeanNCD.Eval.writeSliceAtMulti`: extract the non-iteration-axis slice of
-    `full` at a fixed set of `(position, index)` iteration coordinates (same coordinate
-    bookkeeping as `writeSliceAtMulti`, in reverse). -/
-def sliceTensorAtMulti (iters : List (Nat × Nat)) (full : DenseTensor) : DenseTensor :=
-  let positions := iters.map Prod.fst
-  let sliceShape := full.shape.zipIdx.filterMap (fun (d, p) => if positions.contains p then none else some d)
-  let sorted := iters.mergeSort (fun a b => a.1 ≤ b.1)
-  DenseTensor.ofFn sliceShape (fun scoord =>
-    let ocoord := sorted.foldl (fun acc (pos, idx) => acc.insertIdx pos idx) scoord
-    full.get! ocoord)
+/-! ## Affine index arithmetic -/
 
--- TEST-THE-TESTER: round-trip against `writeSliceAtMulti` (new code, no existing counterpart to
--- lean on — must be verified against its own inverse before the oracle trusts it).
-private def rtSlice : DenseTensor := ⟨[3], #[9.0, 8.0, 7.0]⟩
-private def rtFull : DenseTensor := writeSliceAtMulti (DenseTensor.zeros [2, 3]) [(0, 1)] rtSlice
-#guard denseEq (sliceTensorAtMulti [(0, 1)] rtFull) rtSlice
--- a DIFFERENT position round-trips too (position 0 is not hardcoded correctly by accident):
-private def rtSlice2 : DenseTensor := ⟨[2], #[5.0, 6.0]⟩
-private def rtFull2 : DenseTensor := writeSliceAtMulti (DenseTensor.zeros [2, 2]) [(1, 1)] rtSlice2
-#guard denseEq (sliceTensorAtMulti [(1, 1)] rtFull2) rtSlice2
--- two positions at once (the 2-D grid case, a later task):
-private def rtScalar : DenseTensor := ⟨[], #[4.0]⟩
-private def rtFull3 : DenseTensor := writeSliceAtMulti (DenseTensor.zeros [2, 2]) [(0, 1), (1, 0)] rtScalar
-#guard denseEq (sliceTensorAtMulti [(0, 1), (1, 0)] rtFull3) rtScalar
+/-- An `IdxExpr` as `(bias, [(coefficient, axis)])`, KEEPING each `AxisSpec` — unlike the DSL's
+    `idxAffineForm`, which projects to bare `UID`s and therefore cannot rebuild an `IdxExpr` for
+    the residual axes. -/
+def idxTerms : IdxExpr → Int × List (Int × AxisSpec)
+  | .axis a      => (0, [(1, a)])
+  | .const n     => (n, [])
+  | .scale c a   => (0, [(c, a)])
+  | .shift a n   => (n, [(1, a)])
+  | .affine n xs => (n, xs)
 
-/-! ## `unrollScan1D` (Task 4): mechanical substitution unroll for single-axis scans -/
+/-- Substitute literal values for the axes `σ` names, folding every substituted coefficient into
+    the bias and keeping the rest of the expression. A duplicated axis contributes once per
+    occurrence (`1 + 2r + 4r` at `r = 1` is `7`, not `3`). -/
+def substIdx (σ : UID → Option Int) (e : IdxExpr) : IdxExpr :=
+  let (c0, xs) := idxTerms e
+  -- NB: `bias` is a reserved token of the TL surface syntax, so this cannot be named `bias`.
+  let b := xs.foldl (fun acc (c, a) => match σ a.uid with
+    | some v => acc + c * v
+    | none   => acc) c0
+  let rest := xs.filter (fun (_, a) => (σ a.uid).isNone)
+  if rest.isEmpty then .const b else .affine b rest
 
-/-- Rewrite one read-factor's scan-axis position(s): a read of a name in `stateNames` (a
-    self- or cross-state recurrence read) is redirected to that state's PREVIOUS-step leaf
-    tensor (dropping the scan-axis position, since the leaf has no scan axis); a read of any
-    OTHER (external) tensor at the scan axis is redirected to a literal `.const` at this step. -/
-private def substAxisFactor (scanAxis : AxisSpec) (stateNames : List String)
-    (prevLeafOf : String → String) (stepIdx : Nat) (f : Factor) : Factor :=
-  match f with
-  | .read nm idxs =>
-      if stateNames.contains nm then
-        .read (prevLeafOf nm) (idxs.filter (fun e => match e with
-          | .axis a => a.uid != scanAxis.uid
-          | _       => true))
-      else
-        .read nm (idxs.map (fun e => match e with
-          | .axis a => if a.uid == scanAxis.uid then .const (Int.ofNat stepIdx) else e
-          | other   => other))
-  | .unaryFn op nm idxs =>
-      .unaryFn op nm (idxs.map (fun e => match e with
-        | .axis a => if a.uid == scanAxis.uid then .const (Int.ofNat stepIdx) else e
-        | other   => other))
-  | .iverson _ => f
+/-- The literal value of `e` once `σ` is applied; `none` if any axis survives substitution. -/
+def constIdx (σ : UID → Option Int) (e : IdxExpr) : Option Int :=
+  match substIdx σ e with
+  | .const n => some n
+  | _        => none
 
-/-- Drop the scan-axis LHS slot (the leaf has no scan axis; per the generator's slot-order
-    invariant, it is always the last position). -/
-private def leafSlots (scanAxis : AxisSpec) (slots : List LHSSlot) : List LHSSlot :=
-  slots.filter (fun sl => match sl with
-    | .iterAt a _ | .iterNext a => a.uid != scanAxis.uid
-    | _ => true)
+-- TEST-THE-TESTER: substitution arithmetic, including the duplicate-coefficient case plan §4.4
+-- pins by hand (`7 + 2·5 + 4·5 = 37` over a residual basis `[v]`).
+private def sx : AxisSpec := ⟨"u", 901, .nat⟩
+private def sy : AxisSpec := ⟨"v", 902, .nat⟩
+private def pinX : UID → Option Int := fun u => if u == sx.uid then some 5 else none
+#guard constIdx pinX (.affine 7 [(2, sx), (-3, sy), (4, sx)]) == none
+#guard substIdx pinX (.affine 7 [(2, sx), (-3, sy), (4, sx)]) == IdxExpr.affine 37 [(-3, sy)]
+#guard constIdx pinX (.affine 1 [(2, sx), (4, sx)]) == some 31
+#guard constIdx pinX (.shift sx (-2)) == some 3
+#guard constIdx pinX (.scale 2 sx) == some 10
+#guard constIdx pinX (.axis sx) == some 5
+#guard constIdx pinX (.const 4) == some 4
 
-/-- Unroll a single-axis scan case into a scan-free companion `TLProgram`: one leaf statement
-    `Su_<state>_<k>` per (state, step `k`), `k` from `0` to `L-1`, via mechanical substitution —
-    NOT by re-running `evalScan`'s own logic, so this stays an independently-derived check. -/
-def unrollScan1D (c : ScanCase) : TLProgram :=
-  let scanAxis := c.axes.head!
-  let L        := c.Ls.head!
-  let stateNames := (c.base.filterMap (fun s => match s with | .assign nm _ _ => some nm | _ => none)).eraseDups
-  let leafName (nm : String) (k : Nat) : String := s!"Su_{nm}_{k}"
-  let step0 : List Stmt := c.base.filterMap (fun s => match s with
-    | .assign nm slots rhs => some (.assign (leafName nm 0) (leafSlots scanAxis slots) rhs)
-    | _ => none)
-  let steps : List Stmt := (List.range (L - 1)).flatMap (fun stepIdx =>
-    c.recur.filterMap (fun s => match s with
-      | .assign nm slots rhs =>
-          let rhs' := { rhs with body := ⟨rhs.body.terms.map (fun t =>
-            ⟨t.factors.map (substAxisFactor scanAxis stateNames (fun n => leafName n stepIdx) stepIdx)⟩)⟩ }
-          some (.assign (leafName nm (stepIdx + 1)) (leafSlots scanAxis slots) rhs')
-      | _ => none))
-  { decls := c.prog.decls, stmts := step0 ++ steps }
+/-! ## Coordinate enumeration -/
 
--- TEST-THE-TESTER: template 1 (linear self-scan), hand-verified against ScanTest.lean's own
--- linear-scan point example (X=[1,2], A=[2,3], L=3 ⇒ S[:,0]=[1,2], S[:,1]=[2,6], S[:,2]=[4,18]).
-private def t1case : ScanCase := template1 3 false
-private def t1unrolled := unrollScan1D t1case
-#guard (TLProgram.eval t1unrolled t1case.inputs).toOption.isSome
+/-- Every tuple of a list of per-position ranges, lexicographically with position 0 slowest.
+    Lexicographic order refines the componentwise order, which is all the emission order below
+    needs: a step at `u` reads only coordinates `≤ u` and writes only `u + 1`. -/
+def tuplesOf : List (List Nat) → List (List Nat)
+  | []      => [[]]
+  | r :: rs => r.flatMap (fun i => (tuplesOf rs).map (fun t => i :: t))
+
+/-- Every coordinate of a rectangular extent list. -/
+def coordsOf (ext : List Nat) : List (List Nat) := tuplesOf (ext.map List.range)
+
+#guard coordsOf [2, 3] == [[0,0],[0,1],[0,2],[1,0],[1,1],[1,2]]
+#guard coordsOf [] == [[]]
+#guard coordsOf [0] == []      -- extent one ⇒ `ext - 1 = 0` step iterations
+
+/-! ## Scan geometry -/
+
+/-- One persistent state's geometry, derived from its recurrence RESULT statement's LHS — the only
+    statement guaranteed to name every context axis exactly once, and the reason the base list may
+    leave a context axis free (§5.1's free-axis boundary face) without confusing the mapping. -/
+structure StateGeom where
+  name      : String
+  rank      : Nat
+  /-- `advDim[k]` is the tensor dimension carrying context axis `k`. NOT assumed to be trailing,
+      contiguous, or in context order. -/
+  advDim    : List Nat
+  /-- The remaining tensor dimensions, ascending, and their LHS slots. -/
+  freePos   : List Nat
+  freeSlots : List LHSSlot
+
+/-- One scan node's resolved structure.
+
+    Block-local scratch comes in two shapes, which the rewrite must tell apart:
+
+    * `scratch` — a recurrence-only destination with no iteration slot at all (`ScanCompileTest`'s
+      `T`), the form F4's source compiler admits;
+    * `advScratch` — a recurrence-only destination whose LHS carries the same all-axis `+1` slots
+      the state result does, and which later statements in the SAME step read back at the current
+      coordinate. `splitNonlins` manufactures exactly this shape for a nonlinear recurrence
+      (`%nl…[j, l+1] := …` followed by `S[j, l+1] := relu(%nl…[j, l])`), so it appears in every
+      compiled `enumScanCases` template 2 case. F4's preflight rejects those programs before the
+      compiler ever sees them (plan §4.2 rule 5 calls an advancing recurrence-only destination an
+      orphan result), but the LEGACY evaluator still runs them, so the two-way leg needs it. -/
+structure ScanGeom where
+  axes       : List AxisSpec
+  ext        : List Nat
+  states     : List StateGeom
+  scratch    : List String
+  advScratch : List StateGeom
+  base       : List Stmt
+  recur      : List Stmt
+
+private def rhsOf (s : Stmt) : Except String RHSExpr :=
+  match s with
+  | .assign _ _ r         => .ok r
+  | .scatter nm _ _ _     => .error s!"scatter `{nm}` inside a scan is outside the oracle's fragment"
+  | .recurMorphism nm _ _ => .error s!"recurMorphism `{nm}` inside a scan is outside the fragment"
+
+/-- Resolve one state's dimension mapping from its recurrence result. -/
+private def buildGeom (axes : List AxisSpec) (result : Stmt) : Except String StateGeom := do
+  let nm := result.lhsName
+  let slots := result.slots
+  let advDim ← axes.mapM (fun a =>
+    match slots.zipIdx.filter (fun (sl, _) => match sl with
+      | .iterNext b => b.uid == a.uid
+      | _           => false) with
+    | [(_, p)] => pure p
+    | []       => .error s!"{nm}: the recurrence result has no `{a.name}+1` slot, so its write \
+geometry is not the admitted rectangular all-axis `+1` form"
+    | _        => .error s!"{nm}: context axis {a.name} advances in more than one slot")
+  let freePos := (List.range slots.length).filter (fun p => !advDim.contains p)
+  let freeSlots ← freePos.mapM (fun p =>
+    match slots[p]? with
+    | some (LHSSlot.free a) => pure (LHSSlot.free a)
+    | some sl        => .error s!"{nm}: dimension {p} is neither advancing nor a plain free axis \
+({repr sl}) — outside the oracle's fragment"
+    | none           => .error s!"{nm}: dimension {p} is out of range")
+  pure { name := nm, rank := slots.length, advDim, freePos, freeSlots }
+
+/-- Classify a scan node: extents, persistent states (base destinations, source order), and
+    block-local scratch (recurrence destinations with no base statement). Deliberately traverses
+    the node's own `base`/`recur` lists rather than `ScanStmt.outputs`, for plan §4.2's reasons. -/
+def analyzeScan (sizes : HashMap UID Nat) (sc : ScanStmt) : Except String ScanGeom :=
+  match sc with
+  | .scan _ axes base recur _ => do
+      if axes.isEmpty then .error "scan node with no advancing axis"
+      let ext ← axes.mapM (fun a =>
+        match sizes[a.uid]? with
+        | some 0 => .error s!"axis {a.name} has extent zero"
+        | some n => pure n
+        | none   => .error s!"axis {a.name} has no pinned extent (`explicitSizes`)")
+      let stateNames := (base.map Stmt.lhsName).eraseDups
+      let states ← stateNames.mapM (fun nm =>
+        match recur.filter (fun s => s.lhsName == nm) with
+        | [r] => buildGeom axes r
+        | []  => .error s!"state {nm} has a base case but no recurrence result"
+        | _   => .error s!"state {nm} has more than one recurrence result")
+      let localNames := ((recur.map Stmt.lhsName).eraseDups).filter
+        (fun nm => !stateNames.contains nm)
+      let locals ← localNames.mapM (fun nm =>
+        match recur.filter (fun s => s.lhsName == nm) with
+        | [s] =>
+            if s.slots.any (fun sl => match sl with
+                | .iterAt _ _ | .iterNext _ => true
+                | _ => false) then
+              (buildGeom axes s).map (fun g => (nm, some g))
+            else pure (nm, none)
+        | _ => .error s!"block-local scratch {nm} has more than one producer")
+      pure { axes, ext, states
+           , scratch := (locals.filter (fun p => p.2.isNone)).map Prod.fst
+           , advScratch := locals.filterMap Prod.snd
+           , base, recur }
+  | .plain _        => .error "analyzeScan: not a scan node"
+  | .scanPre nm _ _ => .error s!"`.scanPre` node {nm} is outside the oracle's fragment"
+
+/-! ## Leaf names
+
+`%`-prefixed so they cannot collide with a source tensor name (the DSL's own internal names use the
+same prefix). The history coordinate — not a step index — is part of a state leaf's name, so
+multi-axis scans and non-trailing advancing dimensions need no special case. -/
+
+private def tag (t : List Nat) : String := t.foldl (fun s i => s ++ "_" ++ toString i) ""
+
+/-- The leaf holding state `nm`'s value at history coordinate `t`. -/
+def stateLeafName (nm : String) (t : List Nat) : String := "%U_" ++ nm ++ tag t
+/-- The all-zero leaf for state `nm`: the value of every history coordinate no base write and no
+    step iteration ever reaches, and the target of every out-of-range state read. -/
+def zeroLeafName (nm : String) : String := "%Z_" ++ nm
+/-- The leaf holding block-local scratch `nm` produced during step iteration `u`. -/
+def scratchLeafName (nm : String) (u : List Nat) : String := "%T_" ++ nm ++ tag u
+
+/-! ## Base regions -/
+
+private def ctxSubst (axes : List AxisSpec) (t : List Nat) : UID → Option Int := fun u =>
+  (axes.zipIdx.find? (fun (a, _) => a.uid == u)).map (fun (_, k) => Int.ofNat (t.getD k 0))
+
+/-- The context coordinates one base statement writes. Each context axis is either pinned by an
+    `iterAt` literal (one coordinate) or left free (the whole axis, §5.1's boundary face). -/
+private def baseRegion (g : ScanGeom) (st : StateGeom) (s : Stmt) :
+    Except String (List (List Nat)) := do
+  if s.slots.length != st.rank then
+    .error s!"base write for {st.name} has rank {s.slots.length}, but the state has rank {st.rank}"
+  let ranges ← (g.axes.zipIdx).mapM (fun (a, k) => do
+    let p := st.advDim.getD k 0
+    let e := g.ext.getD k 0
+    match s.slots[p]? with
+    | some (.iterAt b n) =>
+        if b.uid != a.uid then
+          .error s!"base write for {st.name}: dimension {p} pins {b.name}, expected {a.name}"
+        else if n < 0 || n ≥ Int.ofNat e then
+          .error s!"base write for {st.name}: `{a.name}` pinned to {n}, outside `[0, {e})`"
+        else pure [n.toNat]
+    | some (.free b) =>
+        if b.uid != a.uid then
+          .error s!"base write for {st.name}: dimension {p} is free over {b.name}, expected {a.name}"
+        else pure (List.range e)
+    | some sl =>
+        .error s!"base write for {st.name}: dimension {p} is {repr sl}, not a pin or a free face"
+    | none => .error s!"base write for {st.name}: dimension {p} is out of range")
+  pure (tuplesOf ranges)
+
+/-- A base statement's own non-advancing LHS slots, which become the leaf's slots. -/
+private def baseFreeSlots (st : StateGeom) (s : Stmt) : Except String (List LHSSlot) :=
+  st.freePos.mapM (fun p =>
+    match s.slots[p]? with
+    | some (LHSSlot.free a) => pure (LHSSlot.free a)
+    | _ => .error s!"base write for {st.name}: dimension {p} must be a plain free axis")
+
+/-! ## The rewrite -/
+
+/-- Where a read resolves to inside the unrolled program.
+
+    * a persistent state → the leaf at the read's (literal) history coordinate, or the state's zero
+      leaf when that coordinate is out of range or was never written;
+    * block-local scratch → this step iteration's own scratch leaf (so a same-step producer is
+      visible to later statements and a previous iteration's value never is);
+    * anything else → itself, with every context axis replaced by its literal.
+
+    `stepCoord` is `none` inside a base block, where a state or scratch read is a source error the
+    production compiler rejects. -/
+private def rewriteRead (g : ScanGeom) (σ : UID → Option Int)
+    (hasLeaf : String → List Nat → Bool) (stepCoord : Option (List Nat))
+    (nm : String) (idxs : List IdxExpr) : Except String (String × List IdxExpr) := do
+  match g.states.find? (fun st => st.name == nm) with
+  | some st =>
+      if stepCoord.isNone then
+        .error s!"a base block reads persistent state {nm} — outside the admitted fragment"
+      else if idxs.length != st.rank then
+        .error s!"read of state {nm} has {idxs.length} indices, but the state has rank {st.rank}"
+      else do
+        let hist ← st.advDim.mapM (fun p =>
+          match (idxs[p]?).bind (constIdx σ) with
+          | some v => pure v
+          | none   => .error s!"read of state {nm} at dimension {p} does not reduce to a literal \
+history coordinate — outside the admitted affine fragment")
+        let frees := st.freePos.filterMap (fun p => (idxs[p]?).map (substIdx σ))
+        let inRange := (hist.zip g.ext).all (fun (v, e) => 0 ≤ v && v < Int.ofNat e)
+        if inRange && hasLeaf nm (hist.map Int.toNat) then
+          pure (stateLeafName nm (hist.map Int.toNat), frees)
+        else
+          pure (zeroLeafName nm, frees)
+  | none =>
+      if g.scratch.contains nm then
+        match stepCoord with
+        | none   => .error s!"a base block reads block-local scratch {nm}"
+        | some u => pure (scratchLeafName nm u, idxs.map (substIdx σ))
+      else match g.advScratch.find? (fun st => st.name == nm) with
+      | some st =>
+          match stepCoord with
+          | none   => .error s!"a base block reads block-local scratch {nm}"
+          | some u =>
+              if idxs.length != st.rank then
+                .error s!"read of scratch {nm} has {idxs.length} indices, expected {st.rank}"
+              else do
+                let hist ← st.advDim.mapM (fun p =>
+                  match (idxs[p]?).bind (constIdx σ) with
+                  | some v => pure v
+                  | none   => .error s!"read of scratch {nm} at dimension {p} does not reduce to a \
+literal coordinate")
+                unless hist == u.map Int.ofNat do
+                  .error s!"read of block-local scratch {nm} at {hist} during step {u}: scratch \
+does not persist across iterations, so only the current step's value is defined"
+                pure (scratchLeafName nm u, st.freePos.filterMap (fun p =>
+                  (idxs[p]?).map (substIdx σ)))
+      | none => pure (nm, idxs.map (substIdx σ))
+
+private def rewriteFactor (g : ScanGeom) (σ : UID → Option Int)
+    (hasLeaf : String → List Nat → Bool) (stepCoord : Option (List Nat)) :
+    Factor → Except String Factor
+  | .read nm idxs => do
+      let (nm', idxs') ← rewriteRead g σ hasLeaf stepCoord nm idxs
+      pure (.read nm' idxs')
+  | .unaryFn op nm idxs => do
+      let (nm', idxs') ← rewriteRead g σ hasLeaf stepCoord nm idxs
+      pure (.unaryFn op nm' idxs')
+  | .iverson _ =>
+      .error "a predicate factor inside a scan is outside the oracle's fragment"
+
+/-- Rewrite a whole RHS, preserving source term and factor order, the nonlinearity, and the
+    aggregation (so a step's `relu` or tropical contraction is applied to the leaf exactly as the
+    source applies it to the slice). -/
+private def rewriteRHS (g : ScanGeom) (σ : UID → Option Int)
+    (hasLeaf : String → List Nat → Bool) (stepCoord : Option (List Nat)) (r : RHSExpr) :
+    Except String RHSExpr := do
+  let terms ← r.body.terms.mapM (fun t => do
+    let fs ← t.factors.mapM (rewriteFactor g σ hasLeaf stepCoord)
+    pure ({ factors := fs } : ProdTerm))
+  pure { r with body := { terms } }
+
+/-- One unrolled scan node. -/
+structure Unrolled where
+  geom  : ScanGeom
+  /-- The scan-free leaf program, in dependency-safe emission order. -/
+  stmts : List Stmt
+  /-- Per state, the history coordinates that carry a real leaf (everything else is zero). -/
+  live  : List (String × List (List Nat))
+
+/-- Unroll one scan node into scan-free leaf statements.
+
+    Emission order is: every state's zero leaf, then every base write (source order, so a later
+    base statement overrides an earlier one exactly as the raw plan's ordered base writes do), then
+    the step iterations in lexicographic order. A step at `u` reads only coordinates `≤ u` and
+    writes only `u + 1`, so this order both satisfies every read and gives the checked worker's
+    immutable-pre-step (Jacobi) snapshot for free: no read inside iteration `u` can name a leaf that
+    iteration `u` writes. -/
+def unrollScanNode (sizes : HashMap UID Nat) (sc : ScanStmt) : Except String Unrolled := do
+  let g ← analyzeScan sizes sc
+  -- 1. resolve each base statement's state, leaf slots, written region and RHS.
+  let baseParts ← g.base.mapM (fun s => do
+    let st ← match g.states.find? (fun st => st.name == s.lhsName) with
+      | some st => pure st
+      | none    => .error s!"base statement writes {s.lhsName}, which is not a persistent state"
+    let fs  ← baseFreeSlots st s
+    let reg ← baseRegion g st s
+    let r   ← rhsOf s
+    pure (st, fs, reg, r))
+  -- 2. which history coordinates carry a real leaf: a base region, or a step's `u + 1`.
+  let stepCoords := coordsOf (g.ext.map (fun n => n - 1))
+  let advanced := stepCoords.map (fun u => u.map (· + 1))
+  let live : List (String × List (List Nat)) := g.states.map (fun st =>
+    let fromBase := baseParts.flatMap (fun (bst, _, reg, _) =>
+      if bst.name == st.name then reg else [])
+    (st.name, (fromBase ++ advanced).eraseDups))
+  let hasLeaf : String → List Nat → Bool := fun nm t =>
+    match live.find? (fun p => p.1 == nm) with
+    | some (_, ts) => ts.contains t
+    | none         => false
+  -- 3. zero leaves.
+  let zeroStmts : List Stmt := g.states.map (fun st =>
+    .assign (zeroLeafName st.name) st.freeSlots { body := { terms := [] }, nonlin := .identity })
+  -- 4. base leaves: one per (base statement, coordinate in its region), pins substituted.
+  let baseStmts ← baseParts.flatMapM (fun (st, fs, reg, r) =>
+    reg.mapM (fun t => do
+      let rhs ← rewriteRHS g (ctxSubst g.axes t) hasLeaf none r
+      pure (Stmt.assign (stateLeafName st.name t) fs rhs)))
+  -- 5. step leaves: the whole recurrence list, once per step iteration, in source order.
+  let stepStmts ← stepCoords.flatMapM (fun u => do
+    let σ := ctxSubst g.axes u
+    g.recur.mapM (fun s => do
+      let r   ← rhsOf s
+      let rhs ← rewriteRHS g σ hasLeaf (some u) r
+      match g.states.find? (fun st => st.name == s.lhsName) with
+      | some st => pure (Stmt.assign (stateLeafName st.name (u.map (· + 1))) st.freeSlots rhs)
+      | none =>
+          match g.advScratch.find? (fun st => st.name == s.lhsName) with
+          | some st => pure (Stmt.assign (scratchLeafName s.lhsName u) st.freeSlots rhs)
+          | none    => pure (Stmt.assign (scratchLeafName s.lhsName u) s.slots rhs)))
+  pure { geom := g, stmts := zeroStmts ++ baseStmts ++ stepStmts, live }
+
+/-! ## History reconstruction -/
+
+/-- Reassemble one state's complete history from its per-coordinate leaves with
+    `DenseTensor.ofFn`. Each output coordinate is split into its advancing part (which selects the
+    leaf) and its free part (which indexes into it) using the state's OWN dimension mapping, so
+    nothing here assumes the advancing dimensions trail, are contiguous, or follow context order —
+    and no scan-worker write helper is involved. -/
+def reconstructHistory (un : Unrolled) (st : StateGeom) (leafEnv : HashMap String DenseTensor) :
+    Except String DenseTensor := do
+  let g := un.geom
+  let zt ← match leafEnv[zeroLeafName st.name]? with
+    | some t => pure t
+    | none   => .error s!"the zero leaf for {st.name} is missing from the unrolled run"
+  if zt.shape.length != st.freePos.length then
+    .error s!"{st.name}: the zero leaf has rank {zt.shape.length}, expected {st.freePos.length}"
+  -- every coordinate a base write or a step must have produced has to be present, so a lost or
+  -- misplaced leaf fails loudly instead of silently reading as the zero default.
+  let liveCoords := match un.live.find? (fun p => p.1 == st.name) with
+    | some (_, ts) => ts
+    | none         => []
+  for t in liveCoords do
+    unless leafEnv.contains (stateLeafName st.name t) do
+      .error s!"{st.name}: leaf for history coordinate {t} was never produced by the unrolled program"
+  let advAt  : List (Nat × Nat) := st.advDim.zipIdx.map (fun (p, k) => (p, g.ext.getD k 0))
+  let freeAt : List (Nat × Nat) := st.freePos.zipIdx.map (fun (p, i) => (p, zt.shape.getD i 0))
+  let dims := (List.range st.rank).map (fun p =>
+    match (advAt ++ freeAt).find? (fun (q, _) => q == p) with
+    | some (_, d) => d
+    | none        => 0)
+  pure (DenseTensor.ofFn dims (fun coord =>
+    let hist := st.advDim.map (fun p => coord.getD p 0)
+    let free := st.freePos.map (fun p => coord.getD p 0)
+    match leafEnv[stateLeafName st.name hist]? with
+    | some t => t.get! free
+    | none   => zt.get! free))
+
+/-! ## Running a whole schedule independently -/
+
+/-- Evaluate a `ScheduledProgram` with every scan replaced by its mechanical unrolling.
+
+    Statements are processed in schedule order, so a plain statement downstream of a scan sees the
+    reconstructed history exactly as the compiled and legacy paths see the published one. Leaf names
+    stay inside the per-scan sub-evaluation and never enter the returned environment. The only
+    evaluator entry point used is `evalScheduled`, always on an all-`.plain` program. -/
+def independentRun (sched : ScheduledProgram) (inputs : HashMap String DenseTensor) :
+    Except String (HashMap String DenseTensor) := do
+  let mut env := inputs
+  for sc in sched.stmts do
+    match sc with
+    | .plain s =>
+        match evalScheduled { sched with stmts := [.plain s] } env with
+        | .ok r    => env := r.env
+        | .error e => .error s!"independent run: plain statement `{s.lhsName}` failed: {e.error}"
+    | .scan .. => do
+        let un ← unrollScanNode sched.explicitSizes sc
+        let leafEnv ← match evalScheduled { sched with stmts := un.stmts.map ScanStmt.plain } env with
+          | .ok r    => pure r.env
+          | .error e => .error s!"independent run: the unrolled scan-free program failed: {e.error}"
+        for st in un.geom.states do
+          let h ← reconstructHistory un st leafEnv
+          env := env.insert st.name h
+    | .scanPre nm _ _ => .error s!"independent run: `.scanPre` node {nm} is outside the fragment"
+  pure env
+
+/-- The persistent-state names a schedule's scans publish, in scan-then-base order. -/
+def scannedStateNames (sched : ScheduledProgram) : List String :=
+  sched.stmts.flatMap (fun
+    | .scan _ _ base _ _ => (base.map Stmt.lhsName).eraseDups
+    | _                  => [])
+
+/-- Compile a generated `ScanCase` to the scheduled form both the legacy evaluator and this oracle
+    consume. (`assignUIDs` relabels every axis, so the case's own `axes` field must never be used
+    against the compiled program.) -/
+def schedOfCase (c : ScanCase) : Except String ScheduledProgram :=
+  match c.prog.compileToScheduled.run 0 with
+  | .ok s _    => .ok s
+  | .error e _ => .error s!"the generator produced a program that fails to compile: {repr e}"
+
+/-! ## TEST-THE-TESTER
+
+Point checks with hand-derived values, so the unroller is known to be right on its own before any
+differential trusts it. -/
+
+private def unrollCaseStates (c : ScanCase) : Except String (HashMap String DenseTensor) := do
+  let sched ← schedOfCase c
+  independentRun sched c.inputs
+
+-- Template 1 (linear self-scan), the same recurrence `ScanTest.lean`'s `linearScan` encodes:
+-- `X = [1,2]`, `A = [2,3]`, `L = 3` ⇒ `S[:,0] = [1,2]`, `S[:,1] = [2,6]`, `S[:,2] = [4,18]`.
+-- The advancing axis is dimension 1 here, so this also pins that reconstruction indexes the
+-- history by the state's own dimension mapping.
 run_cmd do
-  match TLProgram.eval t1unrolled t1case.inputs with
-  | .error e => throwError (toString e)
-  | .ok report =>
-      match report.env["Su_S_0"]?, report.env["Su_S_1"]?, report.env["Su_S_2"]? with
-      | some s0, some s1, some s2 =>
-          unless denseEq s0 ⟨[2], #[1.0, 2.0]⟩ do throwError s!"Su_S_0 wrong: {repr s0.data}"
-          unless denseEq s1 ⟨[2], #[2.0, 6.0]⟩ do throwError s!"Su_S_1 wrong: {repr s1.data}"
-          unless denseEq s2 ⟨[2], #[4.0, 18.0]⟩ do throwError s!"Su_S_2 wrong: {repr s2.data}"
-      | _, _, _ => throwError "missing Su_S_k"
+  match unrollCaseStates (template1 3 false) with
+  | .error m => throwError s!"template1 unroll failed: {m}"
+  | .ok env => match env["S"]? with
+    | some s =>
+        unless denseEq s ⟨[2, 3], #[1.0, 2.0, 4.0, 2.0, 6.0, 18.0]⟩ do
+          throwError s!"template1 history wrong: {repr s.shape}/{repr s.data}"
+    | none => throwError "template1: no S in the independent environment"
 
-/-! ## `unrollScan2D` (Task 5): the one 2-D template in scope -/
-
-/-- Unroll the one 2-D template in scope: base `G[r,0] := …` (varies freely over `r`, pins `c`
-    at 0) and recur `G[r+1,c+1] := G[r,c] + …[r,c]` (advances both `r` and `c` together). NOT a
-    general N-axis walker — specialized to this exact shape, matching the design's explicit
-    scope restriction to one curated 2-D template.
-
-    Emits: ONE vector-shaped statement for the `c = 0` column (matching the base's own free-axis
-    shape, rather than `Lr` separate scalar leaves), plus one scalar leaf per OTHER grid cell —
-    a fully-advanced cell `(ri,ci)` with `ri ≥ 1` reads the diagonal predecessor `(ri-1,ci-1)`
-    (from the column vector if `ci-1 = 0`, else from a prior leaf); an unreached boundary cell
-    `(0,ci)` with `ci ≥ 1` is the aggregator's zero identity, matching `evalScan`'s zero-default. -/
-def unrollScan2D (c : ScanCase) : TLProgram :=
-  match c.axes, c.Ls, c.base, c.recur with
-  | [r, cc], [Lr, Lc], [.assign stateName _ baseRhs], [.assign _ _ recurRhs] =>
-      let col0Name := s!"Su_{stateName}_col0"
-      let leaf (ri ci : Nat) : String := s!"Su_{stateName}_{ri}_{ci}"
-      let col0 : Stmt := .assign col0Name [.free r] baseRhs
-      let substCell (pri pci : Nat) (f : Factor) : Factor :=
-        match f with
-        | .read nm idxs =>
-            if nm == stateName then
-              if pci == 0 then .read col0Name [.const (Int.ofNat pri)]
-              else .read (leaf pri pci) []
-            else
-              .read nm (idxs.map (fun e => match e with
-                | .axis a =>
-                    if a.uid == r.uid then .const (Int.ofNat pri)
-                    else if a.uid == cc.uid then .const (Int.ofNat pci)
-                    else e
-                | other => other))
-        | other => other
-      let cells : List Stmt := (List.range Lr).flatMap (fun ri =>
-        ((List.range (Lc - 1)).map (· + 1)).map (fun ci =>
-          if ri == 0 then
-            .assign (leaf 0 ci) [] { body := { terms := [] }, nonlin := .identity }
-          else
-            let rhs' := { recurRhs with body := ⟨recurRhs.body.terms.map (fun t =>
-              ⟨t.factors.map (substCell (ri - 1) (ci - 1))⟩)⟩ }
-            .assign (leaf ri ci) [] rhs'))
-      { decls := c.prog.decls, stmts := [col0] ++ cells }
-  | _, _, _, _ =>
-      -- unreachable for any case the generator actually produces (template 6 is the only
-      -- 2-axis case, and always has exactly this shape); a total (non-panicking) fallback
-      -- keeps this function total rather than partial.
-      { decls := c.prog.decls, stmts := [] }
-
--- TEST-THE-TESTER: template 6 (2-D grid-DP), hand-verified against RC6
--- (RecurrenceTest.lean) — G[1,1] = G[0,0]+A[0,0] = 1; all other non-column-0 cells stay 0.
-private def t6case : ScanCase := template6
-private def t6unrolled := unrollScan2D t6case
-#guard (TLProgram.eval t6unrolled t6case.inputs).toOption.isSome
+-- Template 6 (2-D grid DP), hand-verified against RC6 (`RecurrenceTest.lean`): the `c = 0` column
+-- is the base face, `G[1,1] = G[0,0] + A[0,0] = 1`, and `G[0,1]` is reached by neither the base nor
+-- any step, so it must come back as the zero leaf.
 run_cmd do
-  match TLProgram.eval t6unrolled t6case.inputs with
-  | .error e => throwError (toString e)
-  | .ok report =>
-      match report.env["Su_G_col0"]?, report.env["Su_G_1_1"]?, report.env["Su_G_0_1"]? with
-      | some col0, some g11, some g01 =>
-          unless denseEq col0 ⟨[2], #[0.0, 0.0]⟩ do throwError s!"Su_G_col0 wrong: {repr col0.data}"
-          unless denseEq g11 ⟨[], #[1.0]⟩ do throwError s!"Su_G_1_1 wrong: {repr g11.data}"
-          unless denseEq g01 ⟨[], #[0.0]⟩ do throwError s!"Su_G_0_1 wrong: {repr g01.data}"
-      | _, _, _ => throwError "missing Su_G_* leaves"
+  match unrollCaseStates template6 with
+  | .error m => throwError s!"template6 unroll failed: {m}"
+  | .ok env => match env["G"]? with
+    | some g =>
+        unless denseEq g ⟨[2, 2], #[0.0, 0.0, 0.0, 1.0]⟩ do
+          throwError s!"template6 history wrong: {repr g.shape}/{repr g.data}"
+    | none => throwError "template6: no G in the independent environment"
+
+-- Template 3 (coupled states) — `C = 1`; `G[0] = H[0] = 1`; `G[l+1] = G[l] + H[l]`,
+-- `H[l+1] = G[l]`. Fibonacci: G = [1,2,3], H = [1,1,2]. Both states must be reconstructed from
+-- the SAME step iteration's pre-step snapshot (`H[2] = G[1] = 2`, not the just-written `G[2]`).
+run_cmd do
+  match unrollCaseStates (template3 3) with
+  | .error m => throwError s!"template3 unroll failed: {m}"
+  | .ok env => match env["G"]?, env["H"]? with
+    | some g, some h =>
+        unless denseEq g ⟨[3], #[1.0, 2.0, 3.0]⟩ do
+          throwError s!"template3 G wrong: {repr g.data}"
+        unless denseEq h ⟨[3], #[1.0, 1.0, 2.0]⟩ do
+          throwError s!"template3 H wrong: {repr h.data}"
+    | _, _ => throwError "template3: G/H missing from the independent environment"
+
+-- The unrolled program really is scan-free and really does name per-coordinate leaves.
+run_cmd do
+  match schedOfCase (template1 3 false) with
+  | .error m => throwError m
+  | .ok sched =>
+      match sched.stmts.find? (fun s => match s with | .scan .. => true | _ => false) with
+      | none => throwError "template1 did not compile to a scan node"
+      | some sc => match unrollScanNode sched.explicitSizes sc with
+        | .error m => throwError s!"unrollScanNode failed: {m}"
+        | .ok un =>
+            let names := un.stmts.map Stmt.lhsName
+            unless names == ["%Z_S", "%U_S_0", "%U_S_1", "%U_S_2"] do
+              throwError s!"unexpected leaf statements: {names}"
+            unless un.stmts.all (fun s => match s with | .assign .. => true | _ => false) do
+              throwError "the unrolled program is not made of plain assignments"
 
 end LeanNCD.PropertyOracle

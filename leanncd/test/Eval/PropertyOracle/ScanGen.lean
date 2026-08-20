@@ -70,7 +70,10 @@ private def template2 (L : Nat) (Aneg : Bool) : ScanCase :=
 -- ===== Template 3: coupled 2-state  G[l+1]:=G[l]+H[l]; H[l+1]:=G[l] =====
 private def l3 : AxisSpec := ⟨"l", 222, .nat⟩
 
-private def template3 (L : Nat) : ScanCase :=
+/-- Public (unlike templates 2/4/5) because `ScanUnroll`'s Task 5 point-check needs a concrete,
+    named COUPLED case: it is the only template whose two states must both be reconstructed from
+    one step iteration's shared pre-step snapshot. -/
+def template3 (L : Nat) : ScanCase :=
   let l := l3
   let baseG : Stmt := .assign "G" [.iterAt l 0]
     { body := { terms := [{ factors := [.read "C" []] }] }, nonlin := .identity }

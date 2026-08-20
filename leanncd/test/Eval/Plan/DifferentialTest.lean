@@ -3,6 +3,7 @@ import LeanNCD.Eval.Entry
 import Eval.PropertyOracle.Gen
 import Eval.PropertyOracle.Compare
 import Eval.PropertyOracle.ScanGen
+import Eval.PropertyOracle.ScanUnroll
 import Eval.Plan.ScanCompileTest
 import Eval.Plan.AdapterTest
 
@@ -410,7 +411,7 @@ private def scanScratchNames (sched : ScheduledProgram) : List String :=
         ((recur.map Stmt.lhsName).eraseDups).filter (fun nm => !stateNames.contains nm)
     | _ => [])
 
-/-- The task's seven-point execution matrix for one admitted scan fixture:
+/-- The task's execution matrix for one admitted scan fixture:
 
     1. compile with `prepareEvalPlan` (and confirm a `PlanStep.scan` was actually emitted — an
        execution assertion that silently stopped covering scans would otherwise still pass);
@@ -423,7 +424,16 @@ private def scanScratchNames (sched : ScheduledProgram) : List String :=
     6. verify every block-local scratch name is absent from the unpacked environment AND from
        `materializedNames` — with `expectedScratch` pinned by the caller, so a fixture that stopped
        having scratch at all cannot make this check pass vacuously;
-    7. compare warnings as LISTS — order and payload, not count. -/
+    7. compare warnings as LISTS — order and payload, not count;
+    8. (F4 Task 5) run the THIRD leg — `PropertyOracle.independentRun`'s mechanically generated
+       scan-free unrolling, evaluated by the ordinary assignment evaluator with no scan construct
+       anywhere — and compare every materialized state against the compiled plan, plus scratch
+       privacy on that leg too.
+
+    Points 1–7 compare two implementations that share the source language's front end; point 8 is
+    what makes this a genuine differential rather than a consistency check. Warnings are compared
+    only between legs 1 and 2: the unrolling replaces every scan-axis index with a literal, so which
+    reads are STATICALLY out of extent legitimately changes, while the VALUES may not. -/
 private def scanParityCheck (name : String) (sched : ScheduledProgram)
     (inputs : HashMap String DenseTensor) (expectedScratch : List String) :
     Except String Unit := do
@@ -490,35 +500,114 @@ reference env: {repr refReport.env.toList}"
   unless decide (planReport.warnings = refReport.warnings) do
     throw s!"{name}: warnings differ.\nplan: {planReport.warnings.map toString}\n\
 reference: {refReport.warnings.map toString}"
+  -- (8) the third leg: an independently derived scan-free unrolling.
+  let indepEnv ← match PropertyOracle.independentRun sched inputs with
+    | .ok e    => pure e
+    | .error m => throw s!"{name}: the independent scan-free unrolling failed: {m}"
+  for b in prepared.bindings.materializedNames do
+    match planReport.env[b.name]?, indepEnv[b.name]? with
+    | some a, some c =>
+        unless denseEq a c do
+          throw s!"{name}: THREE-WAY DIFFERENTIAL FAILURE — materialized state {b.name} disagrees \
+with the independent scan-free unrolling.\nplan={repr a.shape}/{repr a.data}\n\
+unrolled={repr c.shape}/{repr c.data}\nThis is a semantic finding, not an oracle to retune: see \
+the plan's §12.2 stop condition."
+    | none, _ => throw s!"{name}: materialized name {b.name} is absent from the unpacked env"
+    | _, none => throw s!"{name}: the independent unrolling published no {b.name}"
+  -- scratch stays private on the third leg too: leaf names live inside the per-scan sub-evaluation
+  -- and the reconstruction only republishes persistent states.
+  for nm in scratch do
+    if (indepEnv[nm]?).isSome then
+      throw s!"{name}: block-local scratch {nm} escaped the independent unrolling"
 
 /-- Every acceptance fixture `ScanCompileTest.lean` asserts structurally, run through the execution
     matrix. The list is exhaustive over that file's Part 1 (A, B, C, D/E, F, G, H, I/J, K/L —
     nine `ScheduledProgram`s covering its twelve lettered shapes); `G` deliberately reuses `F`'s
     input map, exactly as the structural file does. -/
-private def scanFixtureChecks : List (Except String Unit) :=
-  [ scanParityCheck "A/selfRecur" ScanCompileTest.selfRecurSched ScanCompileTest.selfRecurInputs []
-  , scanParityCheck "B/coupled" ScanCompileTest.coupledSched ScanCompileTest.coupledInputs []
-  , scanParityCheck "C/scratch" ScanCompileTest.scratchSched ScanCompileTest.scratchInputs ["T"]
-  , scanParityCheck "D-E/contract" ScanCompileTest.contractSched ScanCompileTest.contractInputs []
-  , scanParityCheck "F/deepHistory" ScanCompileTest.deepHistorySched
-      ScanCompileTest.deepHistoryInputs []
-  , scanParityCheck "G/extentOne" ScanCompileTest.extentOneSched
-      ScanCompileTest.deepHistoryInputs []
-  , scanParityCheck "H/axisPos" ScanCompileTest.axisPosSched ScanCompileTest.axisPosInputs []
-  , scanParityCheck "I-J/multiBase" ScanCompileTest.multiBaseSched ScanCompileTest.multiBaseInputs []
-  , scanParityCheck "K-L/twoScans" ScanCompileTest.twoScanSched ScanCompileTest.twoScanInputs []
+private def scanFixtures :
+    List (String × ScheduledProgram × HashMap String DenseTensor × List String) :=
+  [ ("A/selfRecur", ScanCompileTest.selfRecurSched, ScanCompileTest.selfRecurInputs, [])
+  , ("B/coupled", ScanCompileTest.coupledSched, ScanCompileTest.coupledInputs, [])
+  , ("C/scratch", ScanCompileTest.scratchSched, ScanCompileTest.scratchInputs, ["T"])
+  , ("D-E/contract", ScanCompileTest.contractSched, ScanCompileTest.contractInputs, [])
+  , ("F/deepHistory", ScanCompileTest.deepHistorySched, ScanCompileTest.deepHistoryInputs, [])
+  , ("G/extentOne", ScanCompileTest.extentOneSched, ScanCompileTest.deepHistoryInputs, [])
+  , ("H/axisPos", ScanCompileTest.axisPosSched, ScanCompileTest.axisPosInputs, [])
+  , ("I-J/multiBase", ScanCompileTest.multiBaseSched, ScanCompileTest.multiBaseInputs, [])
+  , ("K-L/twoScans", ScanCompileTest.twoScanSched, ScanCompileTest.twoScanInputs, [])
     -- Every fixture above is warning-free, which would leave point 7 vacuous across the whole
     -- matrix. `AdapterTest.scanWarnSched` reads two different externals past their extents from
     -- inside the recurrence, so it carries TWO `paddedAccess` warnings and the comparison
     -- discriminates order as well as payload. (`AdapterTest.lean` Check 15 pins that it really
     -- carries exactly two, so this reuse cannot go quietly vacuous either.)
-  , scanParityCheck "M/scanWarnings" AdapterTest.scanWarnSched AdapterTest.scanWarnInputs [] ]
+  , ("M/scanWarnings", AdapterTest.scanWarnSched, AdapterTest.scanWarnInputs, []) ]
+
+private def scanFixtureChecks : List (Except String Unit) :=
+  scanFixtures.map (fun (nm, sched, inputs, scratch) => scanParityCheck nm sched inputs scratch)
 
 run_cmd do
   for c in scanFixtureChecks do
     match c with
     | .ok () => pure ()
     | .error m => throwError s!"SCAN PARITY FAILED:\n{m}"
+
+/-! ### Required feature coverage of the three-way gate
+
+Plan Task 5: "keep exact corpus counts and ensure every required feature family has an accepted
+fixture. Corpus count alone is not sufficient coverage." Each row below is derived STRUCTURALLY
+from the gated schedules, never asserted by fixture name, so a fixture that quietly stopped
+exhibiting its feature thins the gate loudly instead of silently. -/
+
+private def scanNodesOf (s : ScheduledProgram) : List (List AxisSpec × List Stmt × List Stmt) :=
+  s.stmts.filterMap (fun
+    | .scan _ axes base recur _ => some (axes, base, recur)
+    | _ => none)
+
+/-- The axes a statement's reads mention that are neither on its LHS nor scan-context axes: the
+    per-term contracted axes. -/
+private def contractedAxes (axes : List AxisSpec) (s : Stmt) : List UID :=
+  let lhs := s.slots.filterMap LHSSlot.axisUID?
+  ((s.rhsReads.flatMap (fun e => (idxAffineForm e).2.map Prod.snd)).eraseDups).filter
+    (fun u => !lhs.contains u && !axes.any (fun a => a.uid == u))
+
+private def scanFeatures : List (String × (ScheduledProgram → Bool)) :=
+  [ -- a state read biased strictly backwards: deep constant look-back, and the only shape that
+    -- forces zero padding at the start of a history
+    ("deep look-back and zero padding", fun s => (scanNodesOf s).any (fun (_, base, recur) =>
+        let states := (base.map Stmt.lhsName).eraseDups
+        recur.any (fun r => r.readFactors.any (fun (nm, es) =>
+          states.contains nm && es.any (fun e => (idxAffineForm e).1 < 0)))))
+  , ("coupled states", fun s => (scanNodesOf s).any (fun (_, base, _) =>
+        ((base.map Stmt.lhsName).eraseDups).length ≥ 2))
+  , ("block-local scratch", fun s => (scanNodesOf s).any (fun (_, base, recur) =>
+        let states := (base.map Stmt.lhsName).eraseDups
+        ((recur.map Stmt.lhsName).eraseDups).any (fun nm => !states.contains nm)))
+  , ("external reads inside a recurrence", fun s => (scanNodesOf s).any (fun (_, base, recur) =>
+        let produced := ((base ++ recur).map Stmt.lhsName).eraseDups
+        recur.any (fun r => r.readFactors.any (fun (nm, _) => !produced.contains nm))))
+  , ("contraction inside a recurrence", fun s => (scanNodesOf s).any (fun (axes, _, recur) =>
+        recur.any (fun r => !(contractedAxes axes r).isEmpty)))
+  , ("extent one", fun s => s.decls.any (fun d => match d with
+        | .iter _ 1 => true
+        | _ => false))
+  , ("more than one scan axis", fun s => (scanNodesOf s).any (fun (axes, _, _) => axes.length ≥ 2))
+  , ("several base writes for one state", fun s => (scanNodesOf s).any (fun (_, base, _) =>
+        (base.map Stmt.lhsName).length != ((base.map Stmt.lhsName).eraseDups).length))
+  , ("a non-trailing advancing dimension", fun s => (scanNodesOf s).any (fun (axes, _, recur) =>
+        recur.any (fun r => (r.slots.zipIdx).any (fun (sl, i) => match sl with
+          | .iterNext a => axes.any (fun x => x.uid == a.uid) && i + 1 != r.slots.length
+          | _ => false))))
+  , ("more than one scan in a schedule", fun s => (scanNodesOf s).length ≥ 2)
+  , ("a plain statement consuming a published history", fun s =>
+        !(scanNodesOf s).isEmpty && s.stmts.any (fun st => match st with
+          | .plain _ => true
+          | _ => false)) ]
+
+run_cmd do
+  for (feature, holds) in scanFeatures do
+    unless scanFixtures.any (fun (_, sched, _, _) => holds sched) do
+      throwError s!"THREE-WAY GATE COVERAGE GAP: no gated scan fixture exhibits \"{feature}\" \
+any more — the corpus count alone does not keep this gate honest"
 
 -- ── Alpha-renaming across the whole scan surface ──
 -- `origAlphaProg`/`renamedAlphaProg` above rename a scan-FREE program's tensors. This pair renames
