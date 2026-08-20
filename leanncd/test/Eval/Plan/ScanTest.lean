@@ -1603,6 +1603,173 @@ run_cmd do
           unless DenseTensor.approxEq H { shape := [4], data := #[1.0, 1.0, 1.0, 1.0] } do
             throwError s!"coupledStepReorder (old): expected the specific wrong value H = [1,1,1,1], got {repr H.data}"
 
+/-! ## Part 8: F4 final review — a non-`.free` row at a NON-advancing state dimension
+
+The Critical finding of F4's final whole-branch review, and the FOURTH instance of one gap shape
+across F3/F4 (free extents, pinned literals, write-map rank, this): a geometry predicate that says
+which rows MUST be a given kind without saying which rows MAY NOT be.
+
+`stepWriteRowsOk`'s clause 2 pinned every ADVANCING dimension to `.advancing i`. Its positional-cover
+clause then filtered the non-advancing dimensions with `match r with | some (.free p) => some p | _
+=> none` — so a non-`.free` row at a non-advancing dimension mapped to `none` and was DROPPED from
+the `List.range outputShapeSize` comparison rather than rejected. It was then invisible to both value
+checks downstream too: `freeExtentsAgree` matches only `.free`, `pinnedLiteralsInRange` only
+`.pinned`.
+
+The drop is only unnoticed when the count still matches, which is exactly what a SCALAR block output
+gives: `List.range 0 = []`, so `[] == []` holds no matter how many rows were dropped. (With a
+non-scalar output the count mismatch caught it by accident — which is why every fixture below uses
+the scalar-output step block.) Note that for `stateW` — rank 2, one advancing dimension — a scalar
+step output admits NO valid write at all: the one non-advancing dimension must be `.free p`, and
+there is no output position for `p` to name. Every scalar-output step write here is therefore
+malformed by construction; the question is only whether the checker says so.
+
+The `.advancing`-at-a-non-advancing-dimension case is the memory-unsafe one. Its coordinate is
+`ctx[i] + 1`, bounded by `advancingSizeMismatch` only against `stateShape[advancingDims[i]]` — a
+DIFFERENT dimension — so it reached `commitWrite`, which deliberately omits `inBoundsPerDim` and
+trusts the checker. The review's run of `advancingAtNonAdvancingScan` below reported `"checkScanPlan
+ACCEPTED the plan"` and then produced three distinct failures in one execution: `q=0` wrote coord
+`[1,1]` (flat 3, in range by luck); `q=1` wrote coord `[2,2]`, out of range on dim 1, but
+`flatIndex [4,2] [2,2] = 6` ALIASED onto a valid address and silently committed `5.0` into cell
+`(3,0)` with no diagnostic whatsoever; `q=2` wrote coord `[3,3]`, flat `9 ≥ 8`, tripping
+`lean_array_set_panic`, which dropped the write and let execution continue and return `.ok`.
+
+The `.pinned`-at-a-non-advancing-dimension case is memory-safe — `pinnedLiteralsInRange` does range
+check it — but it is still not the canonical rectangular all-axis `+1` geometry §5.1/§7.3 fixes, and
+it leaves whole slices of the state silently unwritten.
+
+Fixed by a third `stepWriteRowsOk` clause requiring every non-advancing dimension to actually BE
+`.free`, rather than merely requiring that the `.free` rows which happen to be present cover
+`List.range outputShapeSize`. -/
+
+def outerSigsW : Array TensorSignature :=
+  #[{ shape := #[2], dtype := .f64 }      -- 0 = E0, the base seed face
+  , { shape := #[3], dtype := .f64 }      -- 1 = Xw, a step-time external read over the context axis
+  , { shape := #[4, 2], dtype := .f64 }]  -- 2 = W, the state: dim 0 advances, dim 1 does not
+
+def stateW : StateSlot := { destSlot := 2, advancingDims := #[0], materialization := .completeHistory }
+
+def baseBlockW : RawPlanBlock :=
+  { contextShape := #[], tensorSigs := #[{ shape := #[2], dtype := .f64 }]
+  , inputs := #[0], assignments := #[], outputs := #[0] }
+
+def baseCaptureW : BlockCapture := { inputSlot := 0, source := .external 0 }
+
+-- W[0, j] := E0[j] — dim 0 (advancing) pinned to the lower boundary, dim 1 free onto the face.
+def baseWriteW : StateWriteMap :=
+  { outputSlot := 0, stateIndex := 0, map := { coeffs := #[#[0], #[1]], bias := #[0, 0] } }
+
+/-! ### The canonical control: a face-shaped step output, non-advancing dim genuinely `.free` -/
+
+def stepReadWCanon : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[#[0, 1]], bias := #[0] }
+  , sourceShape := #[2], oobPolicy := .zeroPad }
+
+def stepTermWCanon : TermPlan :=
+  { iterationShape := #[3, 2], contextPos := #[0], outputPos := #[1], reductionPos := #[]
+  , factors := #[stepReadWCanon] }
+
+def stepAssignWCanon : AssignPlan :=
+  { contextShape := #[3], destinationSlot := 1, outputShape := #[2], terms := #[stepTermWCanon]
+  , algebra := admittedAlgebra }
+
+def stepBlockWCanon : RawPlanBlock :=
+  { contextShape := #[3]
+  , tensorSigs := #[{ shape := #[2], dtype := .f64 }, { shape := #[2], dtype := .f64 }]
+  , inputs := #[0], assignments := #[stepAssignWCanon], outputs := #[1] }
+
+def stepCaptureWCanon : BlockCapture := { inputSlot := 0, source := .external 0 }
+
+-- W[l+1, j] := <face> — dim 0 `.advancing 0`, dim 1 `.free 0`. The intended geometry.
+def stepWriteWCanon : StateWriteMap :=
+  { outputSlot := 1, stateIndex := 0, map := { coeffs := #[#[1, 0], #[0, 1]], bias := #[1, 0] } }
+
+def canonicalWScan : RawScanPlan :=
+  { states := #[stateW]
+  , baseBlock := baseBlockW, baseCaptures := #[baseCaptureW], baseWrites := #[baseWriteW]
+  , stepBlock := stepBlockWCanon, stepCaptures := #[stepCaptureWCanon], stepWrites := #[stepWriteWCanon]
+  , historyExtents := #[4]
+  , iterationOrder := .axisZeroFastest, boundaryPolicy := .zeroThenBaseOverlay
+  , snapshotPolicy := .immutablePreStep }
+
+-- Accept: proves the new clause does not over-reject a legitimate non-advancing `.free` dimension.
+-- (`nonAdvancingScan` in Part 4 makes the same point from the read side; this one is the write side,
+-- on the very state the two rejections below mutate.)
+run_cmd do
+  match checkScanPlan outerSigsW canonicalWScan with
+  | .error e =>
+      throwError s!"checkScanPlan rejected the canonical face-shaped step write over a \
+non-advancing dimension: {repr e}"
+  | .ok _checked => pure ()
+
+/-! ### The scalar-output step block the two rejections share -/
+
+def stepReadWScalar : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[#[1]], bias := #[0] }
+  , sourceShape := #[3], oobPolicy := .zeroPad }
+
+def stepTermWScalar : TermPlan :=
+  { iterationShape := #[3], contextPos := #[0], outputPos := #[], reductionPos := #[]
+  , factors := #[stepReadWScalar] }
+
+def stepAssignWScalar : AssignPlan :=
+  { contextShape := #[3], destinationSlot := 1, outputShape := #[], terms := #[stepTermWScalar]
+  , algebra := admittedAlgebra }
+
+def stepBlockWScalar : RawPlanBlock :=
+  { contextShape := #[3]
+  , tensorSigs := #[{ shape := #[3], dtype := .f64 }, { shape := #[], dtype := .f64 }]
+  , inputs := #[0], assignments := #[stepAssignWScalar], outputs := #[1] }
+
+def stepCaptureWScalar : BlockCapture := { inputSlot := 0, source := .external 1 }
+
+/-! ### Rejection 1 — `.advancing` at a non-advancing dimension (the memory-unsafe one)
+
+Dim 0 is legitimately `.advancing 0`; dim 1 is ALSO `.advancing 0`, bound to the same context
+position, so its coordinate runs `1, 2, 3` against a declared extent of `2`. -/
+
+def advancingAtNonAdvancingStepWrite : StateWriteMap :=
+  { outputSlot := 1, stateIndex := 0, map := { coeffs := #[#[1], #[1]], bias := #[1, 1] } }
+
+def advancingAtNonAdvancingScan : RawScanPlan :=
+  { canonicalWScan with
+    stepBlock := stepBlockWScalar, stepCaptures := #[stepCaptureWScalar]
+  , stepWrites := #[advancingAtNonAdvancingStepWrite] }
+
+run_cmd do
+  match checkScanPlan outerSigsW advancingAtNonAdvancingScan with
+  | .ok _ =>
+      throwError "a step write with an `.advancing` row at a NON-advancing state dimension should \
+have been rejected — it is unbounded at `commitWrite`, which aliases onto an unrelated in-bounds \
+cell with no diagnostic and then panics in `Array.set!`"
+  | .error e =>
+      unless e == .writeGeometryNotAdmitted false 0 do
+        throwError s!"advancing-at-non-advancing-dim: wrong error {repr e}"
+
+/-! ### Rejection 2 — `.pinned` at a non-advancing dimension (memory-safe, still wrong geometry)
+
+Dim 1 is pinned to literal `1`, which `pinnedLiteralsInRange` accepts (`0 ≤ 1 < 2`), so nothing
+downstream objects. The write is still not the canonical all-axis `+1` face: it silently leaves
+`W[·, 0]` unwritten for every step. -/
+
+def pinnedAtNonAdvancingStepWrite : StateWriteMap :=
+  { outputSlot := 1, stateIndex := 0, map := { coeffs := #[#[1], #[0]], bias := #[1, 1] } }
+
+def pinnedAtNonAdvancingScan : RawScanPlan :=
+  { canonicalWScan with
+    stepBlock := stepBlockWScalar, stepCaptures := #[stepCaptureWScalar]
+  , stepWrites := #[pinnedAtNonAdvancingStepWrite] }
+
+run_cmd do
+  match checkScanPlan outerSigsW pinnedAtNonAdvancingScan with
+  | .ok _ =>
+      throwError "a step write with a `.pinned` row at a NON-advancing state dimension should have \
+been rejected — it is in range but not the canonical all-axis `+1` face, and leaves a slice of the \
+state silently unwritten"
+  | .error e =>
+      unless e == .writeGeometryNotAdmitted false 0 do
+        throwError s!"pinned-at-non-advancing-dim: wrong error {repr e}"
+
 /-!
 ## `CheckedScanPlan` construction boundary (compile-time privacy check)
 

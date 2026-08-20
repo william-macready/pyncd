@@ -43,11 +43,33 @@ def baseWriteRowsOk (advancingDims : Array Nat) (outputShapeSize : Nat)
 
 /-- A step write's rows: every advancing dimension must be `.advancing` at its own context position
     (dimension `advancingDims[i]` at context position `i`), every other dimension must be `.free`
-    in increasing order onto the block's own output axes, and no row may be unrecognized. -/
+    in increasing order onto the block's own output axes, and no row may be unrecognized.
+
+    The third clause states the "must BE `.free`" half explicitly rather than leaving it implied by
+    the fourth clause's positional cover. Without it the fourth clause's `filterMap` maps a
+    non-`.free` row at a non-advancing dimension to `none` and DROPS it from the
+    `List.range outputShapeSize` comparison entirely — so an `.advancing i` row sitting at a
+    dimension that is not `advancingDims[i]` (indeed at no advancing dimension at all) was admitted,
+    and was then invisible to both value checks downstream: `freeExtentsAgree` matches only `.free`
+    and `pinnedLiteralsInRange` only `.pinned`. Such a row reached `commitWrite` completely
+    unbounded — its coordinate is `ctx[i] + 1`, bounded only by the extent of a DIFFERENT dimension
+    (`advancingSizeMismatch` relates `stateShape[advancingDims[i]]` to `historyExtents[i]` and says
+    nothing about a dimension outside `advancingDims`). The final F4 review's repro, state `#[4,2]`
+    with `advancingDims := #[0]` and dim 1 also `.advancing 0`, produced all three failure modes in
+    one run: an in-range write by luck, a silent aliasing write into an unrelated cell, and an
+    out-of-range `Array.set!` that panicked and dropped the write with no diagnostic. The same hole
+    admitted a `.pinned` row at a non-advancing dimension too — memory-safe, since
+    `pinnedLiteralsInRange` range-checks it, but still not the canonical rectangular all-axis `+1`
+    geometry §5.1/§7.3 fix, and it leaves slices of the state silently unwritten. This is the fourth
+    instance of one gap shape across F3/F4 (free extents, pinned literals, write-map rank, this):
+    a geometry predicate that says which rows MUST be a given kind without saying which rows MAY
+    NOT be. -/
 def stepWriteRowsOk (advancingDims : Array Nat) (outputShapeSize : Nat)
     (rows : Array (Option WriteRowKind)) : Bool :=
   rows.all Option.isSome &&
   (advancingDims.toList.zipIdx.all (fun (d, i) => rows.getD d none == some (.advancing i))) &&
+  (rows.toList.zipIdx.all (fun (r, d) => advancingDims.contains d ||
+    (match r with | some (.free _) => true | _ => false))) &&
   ((rows.toList.zipIdx.filterMap (fun (r, d) =>
       if advancingDims.contains d then none else match r with
         | some (.free p) => some p | _ => none))
@@ -398,8 +420,15 @@ def mixedRadixDomainSize (D : Array Nat) : Nat := D.foldl (· * ·) 1
       it, only the free positions' RANK/ORDER was checked, so a wider output face wrote into other
       rows' cells or past the end of the tensor);
     - an `.advancing i` row is `ctx[i] + 1`, with `ctx` from `mixedRadixUnrank c.stepExtents` and
-      `stepExtents = historyExtents - 1` tied to the state's own extent by `advancingSizeMismatch`,
-      so it stays within `[1, extent)`;
+      `stepExtents = historyExtents - 1`. `advancingSizeMismatch` ties `historyExtents[i]` to
+      `stateShape[advancingDims[i]]` — and ONLY to that dimension — so this argument holds exactly
+      because `stepWriteRowsOk` now forbids an `.advancing` row anywhere outside `advancingDims`
+      (its third clause) while requiring the row at `advancingDims[i]` to be `.advancing i` (its
+      second). Given both, the row's dimension IS `advancingDims[i]` and it stays within
+      `[1, extent)`. This was the gap the final F4 review found: the third clause did not exist, an
+      `.advancing` row at a non-advancing dimension was dropped from the positional cover instead of
+      rejected, and the resulting coordinate was bounded by the wrong dimension's extent — aliasing
+      into an unrelated in-bounds cell, or panicking in `Array.set!`;
     - a `.pinned lit` row is `lit` verbatim, and `pinnedLiteralsInRange` forces `0 ≤ lit` and
       `lit < stateShape[d]`. This was the SIBLING gap of the free-extent one, found while
       documenting that fix: `baseWriteRowsOk` requires only that SOME advancing dimension be pinned
