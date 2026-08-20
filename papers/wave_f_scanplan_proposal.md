@@ -1852,11 +1852,35 @@ Known follow-ups, deliberately not fixed here:
   producer, and self-read — into one constructor discriminated only by `isBase`;
   `ScanCompileTest.lean:776` and `:795` assert identical values.
 - A wrong-arity read confined to NON-advancing dimensions inside a scan block surfaces as
-  `invalidPlan` ("internal compiler bug") for what is really a legitimate source error. This is
-  **pre-existing** — the plain Wave C path has the identical hole because `SizeInfer` has no
-  read-arity check — but it slightly weakens §7.5's "a later checker rejection is therefore an
-  internal compiler bug" claim now that scans are admitted. Worth a §7.5 note in F5 rather than a fix
-  here.
+  `invalidPlan` ("internal compiler bug") rather than as a source-level diagnostic — but the gap is
+  **unreachable from real source**, narrower than an earlier draft of this entry recorded. That
+  draft blamed `SizeInfer`'s missing read-arity check; the final whole-branch review verified the
+  belief and found the arity check simply lives elsewhere. `TLProgram.compileToScheduled`
+  (`LeanNCD/DSL/Compile.lean:37`) runs `checkReadRanks`
+  (`LeanNCD/DSL/Pipeline/Structural.lean:686-720`) as its fourth phase, and — critically — it runs
+  **pre-grouping**, walking the flat `rp.stmts` list before `finalizeScans` partitions it into base
+  and recurrence blocks. A scan's base and recurrence statements are therefore arity-checked exactly
+  like plain ones (against `DeclEnv` for declared tensors, against the first read site for
+  externals, against `stmtLhsRank` for produced-but-undeclared intermediates), throwing
+  `.rankMismatch`. The gap is reachable only from a hand-built `ScheduledProgram` that never went
+  through the front end — which is what every `ScanCompileTest` fixture is. §7.5's "a later checker
+  rejection is therefore an internal compiler bug" claim is **intact for real source**: no §7.5
+  change is owed, and F5 should not act on the earlier, wider premise.
+- `checkScanPlan` never checks a state destination slot's **dtype**. It reads the state's signature
+  (`Scan.lean:310`, and again per write at `:254`) purely for `.shape`, so §5.1's "state and external
+  tensors are concrete `f64`" has a sub-case the checker skips: a write-only state whose `destSlot`
+  signature says `.f32` is admitted, and `runDenseScan` (`:443-445`) then allocates `Float` data
+  under an `f32` label. Contained downstream and therefore cosmetic — `checkAssign`
+  (`Check.lean:81`) rejects a non-`f64` source, so nothing can read it as `f32`, and a state that is
+  captured is covered by `captureSignatureMismatch` (`Scan.lean:211-213`), which compares the whole
+  `TensorSignature` including dtype. Recorded because it is another instance of the shape this
+  branch keeps finding: a spec sentence whose checker enforces only part of it.
+- `ScanPlanError.causalityFailure` (`Scan.lean:164`) carries `(stateIndex, termIndex, factorIndex)`,
+  but the loop that throws it (`Scan.lean:348-359`) iterates `ai` over `stepBlock.assignments` and
+  discards it. Two different step assignments failing at the same term/factor position therefore
+  produce byte-identical payloads. The source-level sibling `ScanCompileError.stateReadNotCausal`
+  (`Error.lean:126`) *does* carry `stmtIndex` — the two families disagree on locator precision.
+  Pre-existing from F3.
 - `requiredInputs : RequiredBindings` is asserted in only one acceptance fixture (A); the multi-scan
   fixture K/L, where slot allocation interleaves, asserts `materializedNames` but not it.
 - `compileScan` is roughly 375 lines in a single `do` block with about fifteen mutable accumulators;

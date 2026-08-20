@@ -289,10 +289,20 @@ Wave F F4 added source scan compilation, so a `ScanStmt.scan` node whose stateme
 preflight is no longer rejected: it is specialized into a `PlanStep.scan`. Admission is narrower
 than preflight alone, and the additional obligations — which need inferred sizes and lowered affine
 maps and therefore cannot be decided syntactically — are reported as a `ScanCompileError` rather
-than a `CapabilityError`. They are: exactly one all-axis `+1` recurrence result per base
-destination; base writes that are in range, pairwise disjoint, and boundary-touching; no state read
-in a base block; no forward read of block-local scratch; a nonzero extent for every scan axis; and a
-non-positive bias on every state read's advancing rows. A rejection by the checked-plan validator
+than a `CapabilityError`. `ScanCompileError` (`LeanNCD/Eval/Plan/Error.lean:87-127`) has 24
+constructors, which that file enumerates and groups; the obligations they enforce **include**
+exactly one all-axis `+1` recurrence result per base destination; base writes that are in range,
+pairwise disjoint, and boundary-touching; no state read in a base block; no forward read of
+block-local scratch; a nonzero extent for every scan axis; and a non-positive bias on every state
+read's advancing rows. That is a sample, not the whole set. Constructors not named above cover, among
+others, the scan's context axes (no duplicate context axis, no `iterAt` in a step block or
+`iterNext` in a base block, no pinned axis that is not context, no context axis reappearing as a
+free output), per-state geometry consistency (state rank, advancing dimension, and extent must agree
+across all of a state's placements), and result/producer well-formedness (a scan with no persistent
+state, an orphan base state, an orphan advancing result, a duplicate state result, a duplicate
+scratch producer, a duplicate axis in an LHS, an advancing axis missing from an LHS). Consult
+`Error.lean` rather than this paragraph for the authoritative list. A rejection by the checked-plan
+validator
 (`checkScanPlan`) on compiler output is neither of these; it is an internal compiler bug and
 surfaces as `PlanCompileCause.invalidPlan`.
 
