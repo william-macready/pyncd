@@ -573,6 +573,28 @@ run_cmd do
   | .error e => unless e == .causalityFailure 0 0 0 0 do
       throwError s!"causalityFailure (look-ahead read): wrong error {repr e}"
 
+-- Reject, discriminating `causalityFailure`'s `stmtIndex` field: a step block with TWO
+-- assignments, where assignment 0 (`stepAssignG`, unchanged) is an ordinary valid causal
+-- computation and assignment 1 is a scratch computation (never a declared block output — Wave F's
+-- block-local-scratch construct, so it needs no state write) carrying `constReadG`'s non-causal
+-- constant read. Both fixtures above give every field of `causalityFailure`'s payload the value
+-- `0`, so they cannot tell a correctly-wired `stmtIndex` from a swapped-argument or hardcoded-zero
+-- one; this fixture's bad read sits at assignment index 1, not 0, so a correct implementation must
+-- report `stmtIndex = 1`.
+def stepScratchConstG : AssignPlan :=
+  { stepAssignG with destinationSlot := 2, terms := #[termConstG] }
+
+def stepBlockTwoAssignConstG : RawPlanBlock :=
+  { stepBlockG with
+    tensorSigs := stepBlockG.tensorSigs ++ #[{ shape := #[], dtype := .f64 }],
+    assignments := #[stepAssignG, stepScratchConstG] }
+
+run_cmd do
+  match checkScanPlan outerSigsDeepHistory { deepHistoryScan with stepBlock := stepBlockTwoAssignConstG } with
+  | .ok _ => throwError "a second assignment's constant (Jacobi-style unsafe) state read should have been rejected"
+  | .error e => unless e == .causalityFailure 0 1 0 0 do
+      throwError s!"causalityFailure (second-assignment constant read): wrong error {repr e}"
+
 /-! ### Non-advancing dimension exemption
 
 A second, independent 2-D state `Gj` (dim0 = `j`, a plain non-advancing elementwise axis, size 2;

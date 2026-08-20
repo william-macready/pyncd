@@ -2030,9 +2030,11 @@ precisely because it is NOT done:
 9. **Complete state histories and warnings survive the named boundary** — holds; `AdapterTest.lean`
    Checks 11-16, untouched by this plan.
 10. **The Plan worker imports neither source compilation nor legacy execution** — holds, and is now the
-    capability manifest's own stated resolution (§6): `Eval.Plan.EvalPlan`/`Eval.Plan.Scan` import
-    neither `Eval.Plan.Compile` nor `DSL.Ast`; only `Eval.Plan.Adapter` and `Eval.Plan.Compile` pull in
-    the source compiler.
+    capability manifest's own stated resolution (§6): `Eval.Plan.EvalPlan`/`Eval.Plan.Scan` do not
+    import `Eval.Plan.Compile`; only `Eval.Plan.Adapter` and `Eval.Plan.Compile` pull in the source
+    compiler. (Both leaves do transitively reach `DSL.Ast` via `Eval.Error`, but only for its AST type
+    definitions — no compiler, no evaluator; the manifest's §6 corrects an earlier, narrower claim that
+    this closure excluded `DSL.Ast` entirely.)
 11. **The full default Lean build passes with no skipped test module** — holds; `8652` jobs, green,
     from this task's own run.
 

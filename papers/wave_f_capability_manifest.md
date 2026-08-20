@@ -50,10 +50,11 @@ argument.
 
 Every syntactically visible rejection is a `CapabilityError` constructor
 (`LeanNCD/Eval/Plan/Error.lean`); Wave F's two changes to that closed 12-constructor family are
-`scanNode` (Wave C's `.scan`/`.scanPre` rejection — it has no producer left now that `compileScan`
-exists, but the constructor stays for `.scanPre`, which is still rejected via the separate
-`recurrenceOrCallback` constructor, not `scanNode`) and `noAdvancingAxis` (new: a `.scan` declaring an
-empty advancing-axis list).
+`scanNode` (Wave C's `.scan`/`.scanPre` rejection — `scanNode` has no producer left anywhere in the
+compiler, not even for `.scanPre`, which is rejected via the separate `recurrenceOrCallback`
+constructor; `scanNode` is retained only so the closed `CapabilityError` family stays stable for any
+consumer still holding a serialized Wave C rejection carrying it) and `noAdvancingAxis` (new: a `.scan`
+declaring an empty advancing-axis list).
 
 Every rejection that needs an inferred size or a lowered affine map — and so cannot be decided at
 capability preflight — is one of a closed **24-constructor** `ScanCompileError` family
@@ -70,6 +71,24 @@ group them into:
 | §7.4 causality | `stateReadNotCausal` |
 
 No `unsupportedScan : String` escape hatch exists in either family.
+
+**`ScanPlanError` — the other closed error family, and the one a `Scan`-only consumer actually
+meets.** `CapabilityError` and `ScanCompileError` above both live on `Eval.Plan.Compile`, the source
+compiler this manifest's §6 tells a Wave G consumer to avoid importing. A consumer that instead
+follows that advice — import `Eval.Plan.Scan` directly, build a `RawScanPlan` by hand, and call
+`checkScanPlan` — never sees either family; it sees `ScanPlanError`
+(`LeanNCD/Eval/Plan/Scan.lean`), a separate closed **39-constructor** family with no `String` escape
+hatch either. Unlike `ScanCompileError`, this family's constructors carry no inline category
+comments; the groupings below instead follow `checkScanPlan`'s own checking order (the function's
+one doc comment names the two obligations it validates: proposal §7.3's capture/write obligations
+and §7.4's causality): schedule-level shape (`noStates`, `noAdvancingAxes`, `zeroExtent` — 3), each
+state's destination slot, advancing-dimension geometry, and materialization policy (7), schedule-wide
+iteration/boundary/snapshot policy admission (3), base/step block context shape and the two blocks'
+own `BlockError` results (4), capture obligations against `checkCaptures` (8), write placement
+obligations against `checkWrites`, including the base-write-overlap check (13), and the trailing
+causality loop's single `causalityFailure` (1). A `Scan`-only consumer's error handling needs to
+account for this family in place of `CapabilityError`/`ScanCompileError`, not in addition to them —
+the two error paths (source-compiled vs. directly-constructed `RawScanPlan`) don't overlap.
 
 **Constructors this plan's audit found under-specified, now closed (Task 1).** Three payloads
 carried too little to distinguish real, distinct user errors:
@@ -169,9 +188,16 @@ re-verify them:
   imports `Eval.Plan.Adapter`, which imports `Eval.Plan.Compile` (the source compiler, including
   `compileScan`) directly. A consumer that wants checked-scan execution with **no** source compilation
   must instead import a narrower `Eval.Plan.*` leaf directly — `Eval.Plan.EvalPlan` (which imports
-  only `Eval.Plan.Scan`, which imports only `Eval.Plan.Block`, and so on down to `Eval.Plan.Error`) —
-  never `Eval.Plan.Adapter` or `Eval.Plan.Compile`. This is the concrete resolution of the Gate's
-  "without importing source compilation" clause.
+  only `Eval.Plan.Scan`, which imports only `Eval.Plan.Block`, and so on down through
+  `Eval.Plan.Error`) — never `Eval.Plan.Adapter` or `Eval.Plan.Compile`. That closure does not stop at
+  `Eval.Plan.Error`, though: `Eval.Plan.Error` imports `Eval.Error`, which in turn imports
+  `LeanNCD.DSL.Ast` (for `UnaryOp`/`LHSSlot`) — and, via `Eval.Plan.Dense`'s import of `Eval.Tensor`
+  and `DSL.Ast`'s own imports, the full closure bottoms out at leaf type-definition modules
+  `LeanNCD.DSL.Ast`, `DSL.Target`, `Base.SizeExpr`, and `Exec.Uid`. None of these supply a compiler or
+  an evaluator — `DSL.Ast` contributes only AST type definitions, reused by `Eval.Error` for its own
+  error-rendering code — so the Gate's real claim (no source compilation, no legacy evaluator reached)
+  still holds; only the earlier, narrower description of where the closure terminates was wrong. This
+  is the concrete resolution of the Gate's "without importing source compilation" clause.
 - **`DSL/AGENTS.md`'s import-direction claim, corrected (Task 3).** The claim that "`Eval/*` imports
   `DSL.Ast`/`DSL.Compile`/`Pipeline.Types`/`TraverseAxes` but never `Pipeline.Structural`/`Lowering`
   directly" was false as of F4: `Eval/Plan/Compile.lean` imports `Pipeline.Lowering` directly, reusing
@@ -186,8 +212,9 @@ re-verify them:
   contained downstream by `checkAssign`/`captureSignatureMismatch`.
 
 **Which import to use.** For checked-scan execution with no source compilation, import
-`Eval.Plan.EvalPlan`/`Eval.Plan.Scan` directly — neither imports `Eval.Plan.Compile`, `DSL.Ast`, or
-the legacy evaluator. For the named source-to-plan boundary (`prepareEvalPlan`, `pack`/`unpack`/
+`Eval.Plan.EvalPlan`/`Eval.Plan.Scan` directly — neither imports `Eval.Plan.Compile` or
+the legacy evaluator (both do transitively reach `DSL.Ast`, but only for its AST type definitions —
+see §6 above). For the named source-to-plan boundary (`prepareEvalPlan`, `pack`/`unpack`/
 `runPreparedDense`), import `Eval.Plan.Adapter` — this pulls in `Eval.Plan.Compile` and therefore
 source compilation. `import LeanNCD` pulls in everything, including the legacy `Eval.Entry` evaluator
 and the full DSL pipeline. Only a `Plan/` leaf import (`Eval.Plan.EvalPlan`/`Eval.Plan.Scan`)
