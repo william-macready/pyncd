@@ -10,6 +10,7 @@ These are the Plan-layer (UID-free, position-based) counterpart to the AST-layer
 -/
 
 namespace LeanNCD.Eval.Plan
+open LeanNCD.Eval
 
 -- Manual BEq instances for PointwiseFn and AxiswiseFn, built from their existing DecidableEq.
 instance : BEq LeanNCD.PointwiseFn := ⟨fun a b => decide (a = b)⟩
@@ -89,5 +90,16 @@ def checkAxiswise (sigs : Array TensorSignature) (a : RawAxiswisePlan) :
   unless a.axisPos < a.shape.size do
     throw (.axisPositionOutOfRange a.axisPos a.shape.size)
   return CheckedAxiswisePlan.mk a
+
+/-- Run one checked pointwise operation. Reuses `PointwiseFn.apply` (`LeanNCD.Eval.Nonlin`) — no
+    new math. -/
+def runDensePointwise (c : CheckedPointwisePlan) (src : DenseTensor) : DenseTensor :=
+  c.raw.fn.apply src
+
+/-- Run one checked axiswise operation. `[]`/`none` for `axisUids`/`mask?`: a checked
+    `RawAxiswisePlan` can never carry a mask or axis-UID — the Plan-layer `TensorSignature` is
+    UID-free by design (§3). Reuses `AxiswiseFn.apply` (`LeanNCD.Eval.Nonlin`) — no new math. -/
+def runDenseAxiswise (c : CheckedAxiswisePlan) (src : DenseTensor) : DenseTensor :=
+  c.raw.fn.apply c.raw.axisPos [] none src
 
 end LeanNCD.Eval.Plan

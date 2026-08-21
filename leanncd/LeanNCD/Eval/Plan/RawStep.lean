@@ -1,5 +1,6 @@
 -- leanncd/LeanNCD/Eval/Plan/RawStep.lean
 import LeanNCD.Eval.Plan.Kernel
+import LeanNCD.Eval.Plan.Nonlin
 
 namespace LeanNCD.Eval.Plan
 
@@ -86,11 +87,14 @@ structure RawScanPlan where
   snapshotPolicy : ScanSnapshotPolicy
   deriving DecidableEq, BEq, Repr, Inhabited
 
-/-- One outer graph node: an ordinary local assignment, or a scan. `RawEvalPlan.steps` becomes
-    `Array PlanStep` in F3 (was `Array AssignPlan`). -/
+/-- One outer graph node: an ordinary local assignment, a scan, or one of the two nonlinearity
+    operations (Thread 4). `RawEvalPlan.steps` becomes `Array PlanStep` in F3 (was `Array
+    AssignPlan`). -/
 inductive PlanStep
-  | assign (a : AssignPlan)
-  | scan   (s : RawScanPlan)
+  | assign   (a : AssignPlan)
+  | scan     (s : RawScanPlan)
+  | pointwise (p : RawPointwisePlan)
+  | axiswise  (a : RawAxiswisePlan)
   deriving DecidableEq, BEq, Repr, Inhabited
 
 end LeanNCD.Eval.Plan

@@ -209,6 +209,8 @@ def testValidPlanCandidate : Bool :=
     match (checkedPlan.checkedNodes[0]? : Option CheckedPlanStepEvidence) with
     | none => false
     | some (.scan _) => false  -- unreachable: idRaw is scan-free by construction
+    | some (.pointwise _) | some (.axiswise _) =>
+        false  -- unreachable: idRaw never contains a nonlinearity step
     | some (.assign checkedAssign) =>
       match checkBindings #[0] #[{ name := "x", slot := 0 }] with
       | .error _ => false
@@ -246,6 +248,8 @@ def testValidPlanCandidateEvidence : Bool :=
     match (checkedPlan.checkedNodes[0]? : Option CheckedPlanStepEvidence) with
     | none => false
     | some (.scan _) => false  -- unreachable: idRaw is scan-free by construction
+    | some (.pointwise _) | some (.axiswise _) =>
+        false  -- unreachable: idRaw never contains a nonlinearity step
     | some (.assign checkedAssign) =>
       match checkBindings #[0] #[{ name := "x", slot := 0 }] with
       | .error _ => false

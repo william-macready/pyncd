@@ -100,6 +100,15 @@ def _root_.LeanNCD.PointwiseFn.apply : PointwiseFn → DenseTensor → DenseTens
   | .relu => reluT | .sigmoid => sigmoidT | .tanh => tanhT | .gelu => geluT
   | .leakyrelu => leakyReluT
 
+/-- The axiswise reduction a `AxiswiseFn` denotes — owned by the enum, symmetric with
+    `PointwiseFn.apply` above. -/
+def _root_.LeanNCD.AxiswiseFn.apply (fn : AxiswiseFn) (axisPos : Nat) (axisUids : List UID)
+    (mask? : Option BoolExpr) (t : DenseTensor) : DenseTensor :=
+  match fn with
+  | .softmax     => softmaxT axisPos axisUids mask? t
+  | .normalize   => normalizeT axisPos axisUids mask? t
+  | .l2normalize => l2normalizeT axisPos axisUids mask? t
+
 /-- A nonlinearity together with everything statically resolved against one statement's own
     output slots: which axis position (if any) is the marked reduction axis, checked exactly
     once. Both `evalPlain` and `evalStmtSliceSeeded` consume this instead of each independently
@@ -130,9 +139,6 @@ def applyNonlin (rn : ResolvedNonlin) (axisUids : List UID) (t : DenseTensor) : 
   match rn with
   | .identity        => t
   | .pointwise pf    => pf.apply t
-  | .axiswise fn m p => match fn with
-      | .softmax     => softmaxT p axisUids m t
-      | .normalize   => normalizeT p axisUids m t
-      | .l2normalize => l2normalizeT p axisUids m t
+  | .axiswise fn m p => fn.apply p axisUids m t
 
 end LeanNCD.Eval

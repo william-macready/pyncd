@@ -150,6 +150,39 @@ def diamondPlan : RawEvalPlan :=
 #guard (PlanError.numericModeNotAdmitted .reference64SumProduct) == PlanError.numericModeNotAdmitted .reference64SumProduct
 
 /-!
+## Thread 4 (Task 2) regressions: `sourceSlot == destinationSlot` unreachability inside
+`checkPointwise`/`checkAxiswise` relies on `checkPlan`'s own availability discipline — these two
+fixtures pin that reliance at the `checkPlan` level, not by adding a redundant guard inside the
+Nonlin checkers themselves.
+-/
+
+/-- Minimal 2-slot table shared by both self-aliasing fixtures below. -/
+def selfAliasSigs : Array TensorSignature :=
+  #[ { shape := #[2], dtype := .f64 }, { shape := #[2], dtype := .f64 } ]
+
+/-- Never-produced case: the only step reads and writes slot 1, which is neither an input slot
+    nor produced by any earlier step. `available[1]` starts `false`, so the destination-check
+    (which only rejects an ALREADY-produced destination) passes, and the source-check then finds
+    slot 1 unavailable — `invalidForwardRead`, not `duplicateDestination`. -/
+def neverProducedSelfAliasPlan : RawEvalPlan :=
+  { tensorSigs := selfAliasSigs, inputSlots := #[]
+  , steps := #[.pointwise { sourceSlot := 1, destinationSlot := 1, shape := #[2], fn := .relu }]
+  , numericMode := .reference64SumProduct }
+
+#guard errOf (checkPlan neverProducedSelfAliasPlan) == some (.assign (.invalidForwardRead 0 0 0 1))
+
+/-- Already-produced case: an `.assign` produces slot 1 first, then a `.pointwise` step reads and
+    writes that same slot 1. `available[1]` is already `true` by the time this step's own checks
+    run, so the destination-check fires first — `duplicateDestination`, not `invalidForwardRead`. -/
+def duplicateSelfAliasPlan : RawEvalPlan :=
+  { tensorSigs := selfAliasSigs, inputSlots := #[0]
+  , steps := #[.assign (idNode 1 0)
+              , .pointwise { sourceSlot := 1, destinationSlot := 1, shape := #[2], fn := .relu }]
+  , numericMode := .reference64SumProduct }
+
+#guard errOf (checkPlan duplicateSelfAliasPlan) == some (.assign (.duplicateDestination 1 0 1))
+
+/-!
 ## `CheckedEvalPlan` privacy (compile-time check, folded into this file per A.3's module list —
 no separate privacy-test module for C3)
 -/

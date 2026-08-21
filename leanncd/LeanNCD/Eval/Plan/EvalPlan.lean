@@ -22,8 +22,10 @@ namespace LeanNCD.Eval.Plan
     `CheckedEvalPlan.checkedNodes`'s previous element type, `CheckedAssignPlan`, now that outer
     nodes are no longer uniformly assignments. -/
 inductive CheckedPlanStepEvidence
-  | assign (c : CheckedAssignPlan)
-  | scan   (c : CheckedScanPlan)
+  | assign    (c : CheckedAssignPlan)
+  | scan      (c : CheckedScanPlan)
+  | pointwise (c : CheckedPointwisePlan)
+  | axiswise  (c : CheckedAxiswisePlan)
   deriving Repr
 
 /-- A `PlanStep`'s outer-graph-visible source/destination slots — derived, not stored (proposal
@@ -40,11 +42,16 @@ def PlanStep.sourceSlots : PlanStep → Array TensorSlot
   | .assign a => a.terms.flatMap (·.factors.map (·.sourceSlot))
   | .scan s => (s.baseCaptures ++ s.stepCaptures).filterMap (fun c => match c.source with
       | .external slot => some slot | .state _ => none)
+  | .pointwise p => #[p.sourceSlot]
+  | .axiswise a => #[a.sourceSlot]
 
-/-- One destination per state for a scan; the single destination slot for an assignment. -/
+/-- One destination per state for a scan; the single destination slot for an assignment or a
+    nonlinearity step. -/
 def PlanStep.destinationSlots : PlanStep → Array TensorSlot
   | .assign a => #[a.destinationSlot]
   | .scan s => s.states.map (·.destSlot)
+  | .pointwise p => #[p.destinationSlot]
+  | .axiswise a => #[a.destinationSlot]
 
 /-- Evidence that a `RawEvalPlan`'s wiring is sound, generalized to `PlanStep`: every step is
     locally checked (via `checkAssign` or `checkScanPlan`), input slots are in-range/unique/ordered,
@@ -75,6 +82,7 @@ structure CheckedEvalPlan where private mk ::
 inductive PlanStepError
   | assign (cause : PlanError)
   | scan   (stepIndex : Nat) (cause : ScanPlanError)
+  | nonlin (stepIndex : Nat) (cause : NonlinPlanError)
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- Validate an open evaluation graph. Generalizes Wave C's `checkPlan` (previously in `Check.lean`)
@@ -114,7 +122,7 @@ def checkPlan (raw : RawEvalPlan) : Except PlanStepError CheckedEvalPlan := do
     -- this is the corrected order, not the order that first shipped.)
     match step with
     | .assign a => unless a.contextShape == #[] do throw (.assign (.topLevelContextNotEmpty ni))
-    | .scan _ => pure ()
+    | .scan _ | .pointwise _ | .axiswise _ => pure ()
     let dests := step.destinationSlots
     for dest in dests do
       match available[dest]? with
@@ -134,7 +142,7 @@ def checkPlan (raw : RawEvalPlan) : Except PlanStepError CheckedEvalPlan := do
             | none => throw (.assign (.nodeError ni (.slotOutOfRange f.sourceSlot n)))
             | some true => pure ()
             | some false => throw (.assign (.invalidForwardRead ni ti fi f.sourceSlot))
-    | .scan _ =>
+    | .scan _ | .pointwise _ | .axiswise _ =>
         for src in step.sourceSlots do
           match available[src]? with
           | none => throw (.assign (.nodeError ni (.slotOutOfRange src n)))
@@ -149,6 +157,14 @@ def checkPlan (raw : RawEvalPlan) : Except PlanStepError CheckedEvalPlan := do
         match checkScanPlan raw.tensorSigs s with
         | .error e => throw (.scan ni e)
         | .ok c => checkedNodes := checkedNodes.push (.scan c)
+    | .pointwise p =>
+        match checkPointwise raw.tensorSigs p with
+        | .error e => throw (.nonlin ni e)
+        | .ok c => checkedNodes := checkedNodes.push (.pointwise c)
+    | .axiswise a =>
+        match checkAxiswise raw.tensorSigs a with
+        | .error e => throw (.nonlin ni e)
+        | .ok c => checkedNodes := checkedNodes.push (.axiswise c)
     for dest in dests do
       available := available.set! dest true
       producedBy := producedBy.set! dest (some ni)
@@ -179,6 +195,12 @@ def runDensePlan (c : CheckedEvalPlan) (inputs : Array DenseTensor) :
     match node with
     | .assign c => store := store.set! c.plan.destinationSlot (← runDenseAssign c store)
     | .scan c => store ← runDenseScan raw.tensorSigs c store
+    | .pointwise c =>
+        store := store.set! c.raw.destinationSlot
+          (runDensePointwise c (store.getD c.raw.sourceSlot placeholder))
+    | .axiswise c =>
+        store := store.set! c.raw.destinationSlot
+          (runDenseAxiswise c (store.getD c.raw.sourceSlot placeholder))
   return store
 
 /-- §5.5's sketch, verified as-is. Relocated from `Error.lean` (see that file's note): `invalidPlan`'s

@@ -196,10 +196,14 @@ def contractPrepared : Option PreparedPlan := (prepareEvalPlan contractSched con
     (`prepareEvalPlan`'s Step D only ever emits `.assign` steps, wrapped via `stepsAcc.map .assign`),
     so the `.scan` arm should never actually be hit — made explicit here (fails the assertion, since
     `AssignPlan` derives `Inhabited`) rather than silently defaulting or re-projecting a field that no
-    longer exists directly on `PlanStep`. -/
+    longer exists directly on `PlanStep`. Same reasoning covers `.pointwise`/`.axiswise` (Thread 4):
+    `prepareEvalPlan` does not compile to those constructors yet, so they are just as unreachable
+    here as `.scan`. -/
 def assignStep : PlanStep → AssignPlan
   | .assign a => a
   | .scan _ => panic! "unreachable: CompileTest fixtures are scan-free by construction"
+  | .pointwise _ | .axiswise _ =>
+      panic! "unreachable: CompileTest fixtures never compile to a nonlinearity step"
 
 #guard contractPrepared.map (fun p => (assignStep p.plan.raw.steps[0]!).terms[0]!.iterationShape) == some #[2, 3]
 #guard contractPrepared.map (fun p => (assignStep p.plan.raw.steps[0]!).terms[0]!.outputPos) == some #[0]
