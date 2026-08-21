@@ -229,6 +229,7 @@ inductive PlanCompileCause
   | scan           (cause : ScanCompileError)
   | invalidPlan    (cause : PlanStepError)
   | bindings       (cause : BindingsError)
+  | nonlin         (cause : NonlinCompileError)
   deriving DecidableEq, BEq, Inhabited
 
 /-- Same finding applies here: `EvalWarning` also has no `Repr`, so this likewise derives

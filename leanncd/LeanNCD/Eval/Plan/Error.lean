@@ -138,6 +138,18 @@ inductive ScanCompileError
   | stateReadNotCausal       (scan state : String) (stmtIndex termIndex factorIndex : Nat)
   deriving DecidableEq, BEq, Repr, Inhabited
 
+/-- Wave "Thread 4" (nonlinearity) source-compile rejection: which sub-case of §3's LHS-slot vs
+    `Nonlin` agreement check a top-level statement fails. Discovered at the same compile tier as
+    `ScanCompileError` (after preflight admits `.freeNorm` structurally, agreement with the
+    statement's own `Nonlin` is a compile-time, not a preflight, concern) — a closed family, no
+    `unsupported : String` escape hatch, same discipline as its siblings above. -/
+inductive NonlinCompileError
+  | noMarkedReductionAxis       (stmtName : String)
+  | multipleMarkedReductionAxes (stmtName : String) (firstPos secondPos : Nat)
+  | unmarkedReductionAxis       (stmtName : String) (pos : Nat)
+  | maskedAxiswiseNotSupported  (stmtName : String)
+  deriving DecidableEq, BEq, Repr, Inhabited
+
 /-- A required signature is missing, malformed, or incompatible with the scheduled declarations
     (§5.5). Checked for every name in `sched.extNames` — by construction (`resolveDecls`,
     `Structural.lean`), every such name is read somewhere, so no separate "read before production"

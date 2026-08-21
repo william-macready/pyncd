@@ -37,9 +37,14 @@ def checkDecl : Decl → Except CapabilityError Unit
   | .axis ..      => pure ()
   | .iter ..      => pure ()
 
+/-- `.freeNorm` is admitted structurally here (Thread 4): a plain statement's LHS may now carry a
+    `·`-marked reduction axis. Whether that marker actually agrees with the statement's own
+    `Nonlin` (present exactly once, only on an unmasked `.axiswise`) is NOT this checker's job — it
+    needs the whole slot list against the statement's `Nonlin`, which preflight (per-slot, no
+    `Nonlin` in scope) cannot see. That agreement is `resolveNonlinAxis`'s job, at compile tier. -/
 def checkLHSSlot (stmtName : String) : LHSSlot → Except CapabilityError Unit
   | .free _     => pure ()
-  | .freeNorm a => throw (.unsupportedLhsSlot s!"{stmtName}: freeNorm {a.name}")
+  | .freeNorm _ => pure ()
   | .iterAt a _ => throw (.unsupportedLhsSlot s!"{stmtName}: iterAt {a.name}")
   | .iterNext a => throw (.unsupportedLhsSlot s!"{stmtName}: iterNext {a.name}")
   | .affine _   => throw (.scatterOrAffineLhs s!"{stmtName}: affine LHS slot")
@@ -49,7 +54,21 @@ def checkFactor (stmtName : String) : Factor → Except CapabilityError Unit
   | .iverson _     => throw (.maskOrPredicate s!"{stmtName}: iverson factor")
   | .unaryFn _ n _ => throw (.unaryFactor s!"{stmtName}: unary function on {n}")
 
-def checkNonlin (stmtName : String) : Nonlin → Except CapabilityError Unit
+/-- Top-level (`.plain`) statement admission (Thread 4): `.pointwise`/`.axiswise` are now
+    structurally admitted — `prepareEvalPlan`'s `.plain` branch compiles them into a real
+    `.assign → .pointwise`/`.axiswise` chain. Whether a given statement's LHS slots actually agree
+    with its `Nonlin` (a `·`-marked axis present exactly once, iff `.axiswise` and unmasked) is
+    NOT checked here — that needs the whole slot list, checked once by `resolveNonlinAxis` at
+    compile tier, not duplicated at preflight. -/
+def checkNonlinTopLevel (_stmtName : String) : Nonlin → Except CapabilityError Unit
+  | .identity    => pure ()
+  | .pointwise _ => pure ()
+  | .axiswise .. => pure ()
+
+/-- Scan-block (`base`/`recur`) statement admission: unchanged from Wave C — `.pointwise`/
+    `.axiswise` inside a scan block stay rejected, since Thread 4's compilation (Task 3) only
+    targets `prepareEvalPlan`'s `.plain` branch, not `compileScan`. -/
+def checkNonlinScanBlock (stmtName : String) : Nonlin → Except CapabilityError Unit
   | .identity    => pure ()
   | .pointwise _ => throw (.unsupportedNonlin s!"{stmtName}: pointwise nonlinearity")
   | .axiswise .. => throw (.unsupportedNonlin s!"{stmtName}: axiswise nonlinearity")
@@ -67,7 +86,7 @@ def checkStmt : Stmt → Except CapabilityError Unit
   | .assign nm slots rhs => do
       for s in slots do checkLHSSlot nm s
       checkAggOp nm rhs.agg
-      checkNonlin nm rhs.nonlin
+      checkNonlinTopLevel nm rhs.nonlin
       for t in rhs.body.terms do
         for f in t.factors do checkFactor nm f
   | .scatter nm .. => throw (.scatterOrAffineLhs nm)
@@ -105,7 +124,7 @@ def checkScanBlockStmt : Stmt → Except CapabilityError Unit
   | .assign nm slots rhs => do
       for s in slots do checkScanLHSSlot nm s
       checkAggOp nm rhs.agg
-      checkNonlin nm rhs.nonlin
+      checkNonlinScanBlock nm rhs.nonlin
       for t in rhs.body.terms do
         for f in t.factors do checkFactor nm f
   | .scatter nm .. => throw (.scatterOrAffineLhs nm)
@@ -161,6 +180,11 @@ private def liftBindings (warnings : List EvalWarning) :
   | .ok a => .ok a
   | .error e => .error { cause := .bindings e, warnings }
 
+private def liftNonlin (warnings : List EvalWarning) :
+    Except NonlinCompileError α → Except PlanCompileFailure α
+  | .ok a => .ok a
+  | .error e => .error { cause := .nonlin e, warnings }
+
 /-- The `throw`-site counterpart of the `lift*` family above, for the one phase that raises its own
     errors directly rather than adapting another checker's `Except`: `compileScan` builds a
     `ScanCompileError` at dozens of sites and has no upstream `Except` to lift, so a value
@@ -180,17 +204,21 @@ def orderedExtNames (sched : ScheduledProgram) : List String :=
       if decide (nm ∈ sched.extNames) && !acc.contains nm then acc ++ [nm] else acc) acc)
     ([] : List String)
 
-/-- Unreachable post-preflight **at its only call site**, which is `prepareEvalPlan`'s PLAIN-
-    statement branch and nothing else: `checkLHSSlot` (Step A) already rejects every non-`.free` slot
-    (`freeNorm`/`iterAt`/`iterNext` via `unsupportedLhsSlot`, `affine` via `scatterOrAffineLhs`) for
-    a plain statement before `prepareEvalPlan` ever calls this. Deliberately NOT reused by
-    `compileScan`: inside a scan block `.iterAt`/`.iterNext` are admitted (`checkScanLHSSlot`) and
-    carry real meaning, so a scan's LHS slots are destructured there against the scan's own context
-    axes rather than collapsed to "free UID or fail". Kept total for the same reason as
-    `assignPartsOrFail` below. -/
+/-- The retained placement axis of a plain statement's LHS slot — `.free` and, since Thread 4's
+    `checkLHSSlot` relaxation, `.freeNorm` alike (a `·`-marked axis is still a real output axis;
+    `resolveNonlinAxis` is what checks its marking agrees with the statement's `Nonlin`, not this
+    function). `.iterAt`/`.iterNext`/`.affine` remain unreachable post-preflight **at this
+    function's only call site**, `prepareEvalPlan`'s PLAIN-statement branch: `checkLHSSlot`
+    (Step A) already rejects them for a plain statement (`iterAt`/`iterNext` via
+    `unsupportedLhsSlot`, `affine` via `scatterOrAffineLhs`) before `prepareEvalPlan` ever calls
+    this. Deliberately NOT reused by `compileScan`: inside a scan block `.iterAt`/`.iterNext` are
+    admitted (`checkScanLHSSlot`) and carry real meaning, so a scan's LHS slots are destructured
+    there against the scan's own context axes rather than collapsed to "free UID or fail". Kept
+    total for the same reason as `assignPartsOrFail` below. -/
 private def freeUidOrFail (context : String) : LHSSlot → Except CapabilityError UID
   | .free a => pure a.uid
-  | .freeNorm _ | .iterAt .. | .iterNext _ => throw (.unsupportedLhsSlot context)
+  | .freeNorm a => pure a.uid
+  | .iterAt .. | .iterNext _ => throw (.unsupportedLhsSlot context)
   | .affine _ => throw (.scatterOrAffineLhs context)
 
 /-- Unreachable post-preflight: `checkStmt`/`checkScanBlockStmt` (Step A) already reject
@@ -740,6 +768,26 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
     , snapshotPolicy := .immutablePreStep }
   return { raw, stateNames, stateShapes }
 
+/-- Resolve which output-slot position (if any) is the axiswise reduction axis, checking it
+    agrees with the statement's own `Nonlin`. `slots` is the statement's LHS slot list — the
+    returned position indexes directly into it, and 1:1 into the `outputShape`/`retainedUids` a
+    `.free`/`.freeNorm`-only slot list produces, since `freeUidOrFail` drops no slots. -/
+def resolveNonlinAxis (stmtName : String) (nonlin : Nonlin) (slots : List LHSSlot) :
+    Except NonlinCompileError (Option Nat) := do
+  let normPositions : List Nat :=
+    slots.zipIdx.filterMap (fun (sl, i) => match sl with | .freeNorm _ => some i | _ => none)
+  match nonlin with
+  | .axiswise _ (some _) => throw (.maskedAxiswiseNotSupported stmtName)
+  | .axiswise _ none =>
+      match normPositions with
+      | [] => throw (.noMarkedReductionAxis stmtName)
+      | [p] => pure (some p)
+      | p1 :: p2 :: _ => throw (.multipleMarkedReductionAxes stmtName p1 p2)
+  | .identity | .pointwise _ =>
+      match normPositions with
+      | [] => pure none
+      | p :: _ => throw (.unmarkedReductionAxis stmtName p)
+
 def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
     Except PlanCompileFailure PreparedPlan := do
   -- Step A: capability preflight.
@@ -804,6 +852,12 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
         let retainedUids ← liftCapability warnings (slots.mapM (freeUidOrFail "lhs"))
         let outputShape ←
           liftShape warnings (retainedUids.toArray.mapM (resolveSizeOrFail sizes (.assignOutput nm)))
+        -- Thread 4: resolve the statement's `Nonlin` against its own LHS slots BEFORE allocating
+        -- any slot, so a rejection (masked axiswise, no/multiple markers, a marker on a non-
+        -- axiswise statement) throws before any `PlanStep`/`TensorSignature` is built at all —
+        -- `some p` indexes directly into `outputShape`/`retainedUids` per `resolveNonlinAxis`'s own
+        -- doc comment (`freeUidOrFail` drops no slots, so the two lists stay 1:1 with `slots`).
+        let axisPos? ← liftNonlin warnings (resolveNonlinAxis nm rhs.nonlin slots)
         -- name-environment mutation (`slotOf`/`tensorSigsAcc`/`materializedAcc`) is this plain
         -- caller's own publication policy — `residualizeAssignment` only builds the `AssignPlan`
         -- value, per its own doc comment.
@@ -822,10 +876,43 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
         let assignPlan ←
           residualizeAssignment sizes warnings nm [] #[] retainedUids ({} : HashMap UID Int)
             resolveSource destSlot outputShape rhs.body.terms
-        tensorSigsAcc := tensorSigsAcc.push { shape := outputShape, dtype := .f64 }
-        stepsAcc := stepsAcc.push (.assign assignPlan)
-        materializedAcc := materializedAcc.push { name := nm, slot := destSlot }
-        slotOf := slotOf.insert nm destSlot
+        match rhs.nonlin with
+        | .identity =>
+            -- Byte-for-byte unchanged (Thread 4 regression gate): single `.assign`, published
+            -- directly under `nm`'s own destination slot — no internal slot allocated.
+            tensorSigsAcc := tensorSigsAcc.push { shape := outputShape, dtype := .f64 }
+            stepsAcc := stepsAcc.push (.assign assignPlan)
+            materializedAcc := materializedAcc.push { name := nm, slot := destSlot }
+            slotOf := slotOf.insert nm destSlot
+        | .pointwise pf =>
+            -- Two-step chain (§3): `.assign` publishes into the INTERNAL slot `destSlot`, not
+            -- `nm`'s eventual published slot; `.pointwise` reads it and writes `publishedSlot`,
+            -- which is what `nm` resolves to for every later reader.
+            tensorSigsAcc := tensorSigsAcc.push { shape := outputShape, dtype := .f64 }
+            let publishedSlot := tensorSigsAcc.size
+            tensorSigsAcc := tensorSigsAcc.push { shape := outputShape, dtype := .f64 }
+            stepsAcc := stepsAcc.push (.assign assignPlan)
+            stepsAcc := stepsAcc.push (.pointwise
+              { sourceSlot := destSlot, destinationSlot := publishedSlot
+              , shape := outputShape, fn := pf })
+            materializedAcc := materializedAcc.push { name := nm, slot := publishedSlot }
+            slotOf := slotOf.insert nm publishedSlot
+        | .axiswise fn _ =>
+            -- `axisPos?` is provably `some _` here: `resolveNonlinAxis`'s `.axiswise _ none` branch
+            -- (the only one that can reach this arm — `.axiswise _ (some _)` already threw above,
+            -- at `liftNonlin`) never returns `none`. `getD 0` is a totality formality, not a real
+            -- fallback, matching this file's own `getD`-on-an-already-validated-value idiom
+            -- elsewhere (e.g. Phase 3/4's `resultOf.getD`/`stepCaptureOf.getD` above).
+            let axisPos := axisPos?.getD 0
+            tensorSigsAcc := tensorSigsAcc.push { shape := outputShape, dtype := .f64 }
+            let publishedSlot := tensorSigsAcc.size
+            tensorSigsAcc := tensorSigsAcc.push { shape := outputShape, dtype := .f64 }
+            stepsAcc := stepsAcc.push (.assign assignPlan)
+            stepsAcc := stepsAcc.push (.axiswise
+              { sourceSlot := destSlot, destinationSlot := publishedSlot
+              , shape := outputShape, axisPos, fn := fn })
+            materializedAcc := materializedAcc.push { name := nm, slot := publishedSlot }
+            slotOf := slotOf.insert nm publishedSlot
     | .scan scanName axes base recur _ =>
         let compiled ←
           compileScan sizes warnings scanName axes base recur tensorSigsAcc slotOf

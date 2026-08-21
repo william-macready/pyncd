@@ -41,6 +41,7 @@ def render : PlanCompileCause → String
   | .scan c           => s!"scan: {repr c}"
   | .invalidPlan c    => s!"invalidPlan: {repr c}"
   | .bindings c       => s!"bindings: {repr c}"
+  | .nonlin c         => s!"nonlin: {repr c}"
 
 /-- The `i`-th outer step as a scan, or `none` if it is an assignment / absent. -/
 def scanAt (p : PreparedPlan) (i : Nat) : Option RawScanPlan :=

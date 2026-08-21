@@ -68,12 +68,15 @@ def acceptedSched : ScheduledProgram :=
           { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity })] })
   == some (.scatterOrAffineLhs "Y: affine LHS slot")
 
--- unsupportedLhsSlot: freeNorm
-#guard errOf (capabilityPreflight
+-- `.freeNorm` at top level (Thread 4): structurally ADMITTED now, unlike Wave C — `checkLHSSlot`
+-- relaxes it to `pure ()`, same as `.free`. Whether this particular marker agrees with the
+-- statement's own `Nonlin` (here `.identity`, so it does not) is NOT this preflight's concern —
+-- that's `resolveNonlinAxis`'s compile-tier job (see `NonlinCompileTest.lean`'s
+-- `unmarkedReductionAxis` fixture for the same program rejected one phase later).
+#guard isOk (capabilityPreflight
     { acceptedSched with stmts :=
         [.plain (.assign "Y" [.freeNorm ⟨"i", 0, .nat⟩]
           { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity })] })
-  == some (.unsupportedLhsSlot "Y: freeNorm i")
 
 -- unsupportedLhsSlot: iterAt
 #guard errOf (capabilityPreflight
@@ -89,19 +92,39 @@ def acceptedSched : ScheduledProgram :=
           { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity })] })
   == some (.unsupportedLhsSlot "Y: iterNext i")
 
--- unsupportedNonlin: pointwise
-#guard errOf (capabilityPreflight
+-- `.pointwise` at top level (Thread 4): structurally ADMITTED now — `checkNonlinTopLevel` (the
+-- `.plain`-statement admission) accepts every `Nonlin`, unlike `checkNonlinScanBlock` below.
+#guard isOk (capabilityPreflight
     { acceptedSched with stmts :=
         [.plain (.assign "Y" [.free ⟨"i", 0, .nat⟩]
           { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .pointwise .relu })] })
-  == some (.unsupportedNonlin "Y: pointwise nonlinearity")
 
--- unsupportedNonlin: axiswise
-#guard errOf (capabilityPreflight
+-- `.axiswise` (mask `none`) at top level (Thread 4): structurally ADMITTED now, same as pointwise
+-- above. A masked `.axiswise` is likewise admitted at THIS tier (masking is a compile-tier
+-- rejection, `NonlinCompileError.maskedAxiswiseNotSupported` — see `NonlinCompileTest.lean`), not a
+-- capability-preflight one.
+#guard isOk (capabilityPreflight
     { acceptedSched with stmts :=
         [.plain (.assign "Y" [.free ⟨"i", 0, .nat⟩]
           { body := { terms := [{ factors := [.read "X" []] }] }
           , nonlin := .axiswise .softmax none })] })
+
+-- scan-block `.pointwise`/`.axiswise` STILL reject via `unsupportedNonlin` (unchanged from Wave C):
+-- Thread 4's Task 3 compiles only `prepareEvalPlan`'s `.plain` branch, not `compileScan` — a
+-- nonlin-bearing base/recurrence statement is exactly as rejected as before.
+#guard errOf (capabilityPreflight
+    { acceptedSched with stmts :=
+        [.scan "s" [⟨"l", 5, .nat⟩] [] [.assign "Y" [.iterNext ⟨"l", 5, .nat⟩]
+          { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .pointwise .relu }]
+          false] })
+  == some (.unsupportedNonlin "Y: pointwise nonlinearity")
+
+#guard errOf (capabilityPreflight
+    { acceptedSched with stmts :=
+        [.scan "s" [⟨"l", 5, .nat⟩] [] [.assign "Y" [.iterNext ⟨"l", 5, .nat⟩]
+          { body := { terms := [{ factors := [.read "X" []] }] }
+          , nonlin := .axiswise .softmax none }]
+          false] })
   == some (.unsupportedNonlin "Y: axiswise nonlinearity")
 
 -- maskOrPredicate: an iverson factor
@@ -192,13 +215,12 @@ def contractSig : InputSignature := InputSignature.ofDenseInputs contractInputs
 
 def contractPrepared : Option PreparedPlan := (prepareEvalPlan contractSched contractSig).toOption
 
-/-- `PlanStep` field-access helper: every fixture in this file is scan-free by construction
-    (`prepareEvalPlan`'s Step D only ever emits `.assign` steps, wrapped via `stepsAcc.map .assign`),
-    so the `.scan` arm should never actually be hit — made explicit here (fails the assertion, since
-    `AssignPlan` derives `Inhabited`) rather than silently defaulting or re-projecting a field that no
-    longer exists directly on `PlanStep`. Same reasoning covers `.pointwise`/`.axiswise` (Thread 4):
-    `prepareEvalPlan` does not compile to those constructors yet, so they are just as unreachable
-    here as `.scan`. -/
+/-- `PlanStep` field-access helper: every fixture in this file uses `nonlin := .identity` and no
+    `.scan` node, so `prepareEvalPlan`'s Step D only ever emits `.assign` steps for them (the
+    `.identity` branch's single-step, no-internal-slot path — Thread 4's Task 3 only chains a second
+    `.pointwise`/`.axiswise` step for a nonlin-bearing statement, none of which appear here) — made
+    explicit here (fails the assertion, since `AssignPlan` derives `Inhabited`) rather than silently
+    defaulting or re-projecting a field that no longer exists directly on `PlanStep`. -/
 def assignStep : PlanStep → AssignPlan
   | .assign a => a
   | .scan _ => panic! "unreachable: CompileTest fixtures are scan-free by construction"
@@ -347,6 +369,7 @@ private def renderCompileCause : PlanCompileCause → String
   | .scan c            => s!"scan: {repr c}"
   | .invalidPlan c     => s!"invalidPlan: {repr c}"
   | .bindings c        => s!"bindings: {repr c}"
+  | .nonlin c          => s!"nonlin: {repr c}"
 
 -- non-empty `warnings` surviving into a real `prepareEvalPlan` failure: a second statement's
 -- unsized-axis failure must not touch or clear warnings the first statement already accumulated.

@@ -49,7 +49,25 @@ def splitStmt (s : Stmt) : FreshM (List Stmt) := do
         -- programmatically built AST — and it is an EVAL bug, not just a routing-label one, since
         -- `compileToScheduled` runs `splitNonlins` and the evaluator reads `rhs.agg` off the result.
         -- See `papers/semantic_payload_audit.md` finding C; regression: `LoweringTest` AGG1/AGG2.
-        let linStep : Stmt := .assign interName slots
+        --
+        -- Thread 4 (nonlinearity) fix, discovered while implementing Task 3: the LINEAR step's own
+        -- LHS slots must NOT carry a `.freeNorm` marker, even when the original (unsplit) statement
+        -- had one — degrade it to a plain `.free` here. The marker names WHICH axis the upcoming
+        -- nonlin step reduces over; it has no meaning on a `.identity`-nonlin statement (this linear
+        -- step doesn't reduce anything, doesn't read the marker, and neither `resolveNonlin`
+        -- (`Eval/Nonlin.lean`) nor the contraction evaluator ever inspects it on an `.identity`
+        -- statement). Before Thread 4, this was dormant/unobservable: `checkLHSSlot`
+        -- (`Eval/Plan/Compile.lean`) unconditionally rejected EVERY `.freeNorm` slot, so no
+        -- freeNorm-marked program (split or not) could ever reach the Plan compiler. Task 3 relaxes
+        -- that rejection specifically so `.axiswise` statements become reachable — which surfaces
+        -- this: `resolveNonlinAxis` (Task 3, `Eval/Plan/Compile.lean`) treats a `.freeNorm` marker
+        -- on an `.identity` statement as user error (`NonlinCompileError.unmarkedReductionAxis`),
+        -- and WITHOUT this degrade, that fires on every single split-off linear step of every
+        -- `.axiswise` statement — the marker `splitStmt` itself put there, not the user. The `nlStep`
+        -- below is untouched: IT keeps the original marker, since IT is the statement
+        -- `resolveNonlinAxis` needs to see it on.
+        let linSlots := slots.map (fun sl => match sl with | .freeNorm a => .free a | _ => sl)
+        let linStep : Stmt := .assign interName linSlots
           { body := rhs.body, nonlin := .identity, agg := rhs.agg }
         let readIdxs := slots.filterMap LHSSlot.toReadIdx
         -- `.sum` is stated explicitly (not defaulted): `nlStep`'s body is a single read, so there is
