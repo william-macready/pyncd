@@ -1217,3 +1217,151 @@ clause in `DSL/Ast.lean`, rather than the plan's local orphan-instance approach 
 alternative, but one that would touch a file this thread's surgical-changes discipline deliberately
 leaves alone, for a theoretical future-conflict risk this codebase already tolerates identically
 for `AggOp`/`BoolExpr` today. Left as-is; flagged rather than silently overridden either way.
+
+## Completion record
+
+Tasks 1-5 completed 2026-08-20/21 on the `leanncd-thread4-nonlinearity` worktree, commits `98daf31`
+(Task 1) through `93f706d` (Task 5); this section and its surrounding doc/discoverability work are
+Task 6's own contribution, landing on top of that range. Task 1 took one fix round (`7bcef52`): drop
+a `BEq` deriving that had crept onto `CheckedPointwisePlan`/`CheckedAxiswisePlan` beyond what the
+brief specified, a fixture-naming typo, and a misleading "mutation checks" section rewritten as an
+honest note (the Row-N fixtures already prove each guard load-bearing; nothing was actually
+toggled-and-restored in the shipped file). Task 2 took one fix round with **two independent
+reviewers** (`4a23de6`, per the DoD's closed-sum requirement) — Reviewer A approved with only Minor
+findings deferred to whole-branch triage; Reviewer B found the core wiring correct but flagged two
+Important findings, both fixed: stale doc comments across `EvalPlan.lean` that still described
+`PlanStep`/`CheckedPlanStepEvidence`/`PlanStepError` as `.assign`/`.scan`-only, and a missing
+regression fixture for `PlanStepError.nonlin`'s own throw path (added to `GraphCheckTest.lean`,
+pinning that a `checkPointwise`/`checkAxiswise` failure surfaces as `.nonlin stepIndex cause`, not
+mis-wrapped through `.assign`). Task 3 took one doc-accuracy fix round (`833c887`, correcting its own
+characterization of the `Lowering.lean` fix below). Task 4 and Task 5 landed clean, no fix round.
+
+### What shipped
+
+Two new `PlanStep` constructors, `.pointwise`/`.axiswise` (`RawStep.lean`), each carrying a
+`RawPointwisePlan`/`RawAxiswisePlan` (`Eval/Plan/Nonlin.lean`, new) — single-source/single-destination
+steps with no term/factor/reduction structure at all, confirmed by direct comparison against
+`Kernel.lean`'s `AssignPlan` (which has `terms : Array TermPlan`, each with `factors : Array
+ReadPlan`): this is not a second local-operation representation, it is structurally simpler than the
+one that already exists. A shared geometry-check helper, `checkNonlinIO`, covers the seven checks
+common to both step kinds; `checkPointwise`/`checkAxiswise` build on it (the latter adding the
+`axisPos` range check); `runDensePointwise`/`runDenseAxiswise` execute a checked step by delegating
+entirely to `Eval/Nonlin.lean`'s `PointwiseFn.apply`/new `AxiswiseFn.apply` — no new math, and
+`test/Eval/NonlinTest.lean` stayed green with zero edits, confirming the `applyNonlin` refactor
+behind `AxiswiseFn.apply` is behavior-preserving. All four exhaustive matches over the closed
+`PlanStep`/`CheckedPlanStepEvidence` sums (`checkPlan`, `runDensePlan`,
+`PlanStep.sourceSlots`/`destinationSlots`) now handle all four constructors.
+
+Real top-level source compilation: `checkLHSSlot` admits `.freeNorm` (relaxed, not removed);
+`checkNonlin`'s top-level call site (inside `checkStmt`) admits `.pointwise`/`.axiswise`; the
+scan-block call site (`checkScanBlockStmt`) is unchanged and still rejects both, confirmed by the
+`ScanContractTest.lean`/`CompileTest.lean` fixtures Task 3 re-ran unedited. `resolveNonlinAxis`
+(`Compile.lean`) and a new `NonlinCompileError` family (`Error.lean`) own the freeNorm-marker/`Nonlin`
+-kind consistency check `checkNonlin` deliberately does not re-litigate. `prepareEvalPlan`'s `.plain`
+branch now compiles a nonlin-bearing statement into the two-step chain from §3 (verified by reading
+`Compile.lean` directly): `.identity` allocates one slot and pushes one `.assign`, byte-for-byte as
+before Task 3; `.pointwise`/`.axiswise` allocate an internal slot for the unchanged `AssignPlan` plus
+a published slot for the new step, in that order. A real, load-bearing bug outside the brief's own
+file list was found and fixed during Task 3: `DSL/Pipeline/Lowering.lean`'s `splitStmt` was leaving
+the original `.freeNorm` marker on the split-off *linear* half of a nonlin statement, which
+`resolveNonlinAxis` then correctly rejected as `unmarkedReductionAxis` — making every real axiswise
+program (softmax/normalize/l2normalize) uncompilable through the exact machinery meant to admit them.
+Fixed by degrading `.freeNorm → .free` on the linear step's own slots only; documented in
+`LeanNCD/DSL/AGENTS.md`'s Pitfalls section (including the phase-order caveat that makes this fix
+correct today but not permanent-by-construction), reviewed and confirmed safe by two independent
+reviewers.
+
+`RawEvalPlan.numericMode`, `NumericMode`, and `PlanError.numericModeNotAdmitted` are deleted from
+every production and test site Task 4 enumerated; `experiments/jax_bridge/EvalPlanCodegen.lean` is
+untouched (confirmed still broken independent of this thread — `lake build JaxExperiment` fails today
+exactly as before, with a stale `CheckedPlanStepEvidence.plan` field access, a non-exhaustive
+`PlanCompileCause.scan` match, `RawEvalPlan.version`/`RawEvalPlan.numericMode` field-not-found errors,
+and an `AssignPlan`/`PlanStep` literal mismatch — re-run directly during this task, not assumed).
+
+Eight new hand-built differential fixtures (`test/Eval/Plan/DifferentialTest.lean`, one per nonlin
+function — `relu`, `sigmoid`, `tanh`, `gelu`, `leakyrelu`, `normalize`, `softmax`, `l2normalize`)
+prove `prepareEvalPlan` + `runPreparedDense` agrees bit-for-bit (`envEq`, exact) with the independent
+legacy `evalScheduled` on real top-level nonlin programs — reusing Task 3's own donor
+programs/tensors verbatim. The scan corpus split was re-run, not assumed: a real `lake build
+Eval.Plan.DifferentialTest` today (2026-08-21) still reports `total=17 accepted=9 unsupportedNonlin=4
+unsupportedAgg=4`, confirming the pinned split is genuinely unchanged by this thread, per §0's
+correction of the task brief's original assumption.
+
+The two deliberate legacy-narrowing deltas from §3 are each pinned by their own fixture in
+`test/Eval/Plan/NonlinCompileTest.lean`, verified present: `spuriousMarkerPointwise` (a `.freeNorm`
+marker on an otherwise-`.pointwise` statement) shows `evalScheduled` still executes it while
+`prepareEvalPlan` rejects with `NonlinCompileError.unmarkedReductionAxis "H" 0`; `doubleMarkerAxiswise`
+(two `.freeNorm` markers on one axiswise statement) shows `evalScheduled` silently reduces over the
+first marker while `prepareEvalPlan` rejects with `NonlinCompileError.multipleMarkedReductionAxes "Y"
+0 1`.
+
+This task (6) additionally corrected `papers/jax_evalplan_architecture.md` in the three places found
+stale: §7.6's thread 4 row (now **Done — Dense-only**, with PyTorch and JAX given the distinct
+framing §2.2 rules for them — PyTorch deferred with no scheduled thread, mirroring thread 5's own
+phrasing verbatim; JAX blocked solely by `EvalPlanCodegen.lean`'s pre-existing breakage and named as
+the natural next slice); §2.2's closing paragraph (removed the now-false "checked pipeline accepts
+none of these steps" and "Once Dense, JAX, and PyTorch gain..." framing, stated that Dense's real
+support is landed while the four transcendental functions' ULP bounds remain unvalidated — no second
+backend exists to differential against yet — leaving thread 1's own status, "Specified, not
+validated," unchanged); and §5.1's `RawEvalPlan` field-table row and `checkPlan` admission sentence
+(both dropped "Format version"/"the plan version" and "numeric mode", the second stale field found
+this session by grepping the whole doc rather than assuming the original two-passage scope). Added
+`import LeanNCD.Eval.Plan.Nonlin` to `LeanNCD.lean` (already transitively reachable via `RawStep.lean`
+'s own import, but added directly per the file's documented convention of direct top-level imports for
+each Wave-F-era `Plan/` addition). Updated `LeanNCD/Eval/AGENTS.md`: the `Plan/` file table gained a
+`Nonlin.lean` row (placed immediately before `RawStep.lean`, which depends on it) and the "Find It
+Fast" file count went 16 → 17; the "Add a new nonlinearity" entry-point row now names both the legacy
+evaluator path and the distinct Plan-layer path (constructor in `DSL/Ast.lean`, one match arm in
+`PointwiseFn.apply`/`AxiswiseFn.apply`, a new fixture — nothing in `Plan/Nonlin.lean` itself changes,
+since its checker is fully function-agnostic); the `PlanCompileCause` triage row gained its `.nonlin`
+clause, pointing at `test/Eval/Plan/NonlinCompileTest.lean` for fixtures distinct from the
+`.capability`/`.scan`/`.invalidPlan` trio's own `ScanCompileTest.lean`.
+
+### What was deliberately deferred, and why (§2.2)
+
+- **Scan-block nonlinearity** stays rejected — `checkScanBlockStmt`'s `checkNonlin` call site is
+  unchanged, confirmed unedited by Task 3's own gate re-running `ScanContractTest.lean`/
+  `CompileTest.lean`'s scan-block-rejection fixtures. This is a deliberate scope boundary
+  (`Stmt.recurMorphism` structurally forces `.identity` independent of this thread), not a gap.
+- **Masked axiswise nonlinearities** (`Nonlin.axiswise fn (some _)`) are rejected at the compile
+  tier, by `resolveNonlinAxis` throwing `NonlinCompileError.maskedAxiswiseNotSupported`, before a
+  `RawAxiswisePlan` can even exist — `RawAxiswisePlan` carries no mask field at all, not a
+  reserved-but-unused one, because Plan-layer `TensorSignature` is UID-free by design and there is no
+  precedent in this codebase for a UID-free, position-based compiled predicate IR that could support
+  one.
+- **PyTorch interpreter support** is deferred with no scheduled thread — no client has asked for it,
+  mirroring thread 5's own PyTorch deferral for the executable-lowering phase.
+- **JAX interpreter support** is out of scope for this thread specifically because
+  `experiments/jax_bridge/EvalPlanCodegen.lean` is already broken against Wave F's
+  `PlanStep`/`CheckedPlanStepEvidence` generalization — confirmed again during this task by directly
+  running `lake build JaxExperiment` (failure output pasted above) — not because it is a low
+  priority: the checked types this thread introduces (`RawPointwisePlan`/`RawAxiswisePlan`/
+  `CheckedPointwisePlan`/`CheckedAxiswisePlan`) are already backend-neutral, and repairing
+  `EvalPlanCodegen.lean` then adding `.pointwise`/`.axiswise` JAX lowering on top of them is named as
+  the natural next slice, not indefinitely deferred like PyTorch.
+- **The four transcendental-call nonlin functions' ULP bounds** (`sigmoid`/`tanh`/`gelu`/`softmax`)
+  remain "specified, not validated" — architecture doc thread 1's status is unchanged by this thread.
+  `relu`/`leakyrelu`/`normalize`/`l2normalize`'s 0-ULP bounds ARE pinned, but by bit-exact fixtures
+  (Tasks 1/3), not by a named Lean constant — no second backend exists yet to differential the
+  nonzero bounds against, and an unconsumed placeholder constant would be pure decoration.
+
+### Gate, at this task's close
+
+```text
+$ lake build LeanNCD
+Build completed successfully (8542 jobs).
+$ lake build
+Build completed successfully (8656 jobs).
+```
+
+Both re-run after this task's own edits (the `LeanNCD.lean` import plus the doc/AGENTS.md changes
+above), on top of Tasks 1-5's own green state. `grep -n "Once Dense, JAX, and PyTorch"
+papers/jax_evalplan_architecture.md` returns nothing, as the Gate requires.
+
+### Outstanding
+
+The final whole-branch review (two independent reviewers, per this task's own brief and the DoD's
+last item) has **not** run yet as of this writing — it is dispatched separately, after this task's
+own implementation passes its own task-scoped review, and is not part of what this completion record
+attests to. Nothing else from Tasks 1-5's own scope is left open beyond what "What was deliberately
+deferred, and why" states above.
