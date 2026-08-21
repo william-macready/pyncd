@@ -785,4 +785,85 @@ unsupportedNonlin={nonlin} unsupportedAgg={agg}"
         throwError s!"scan corpus split counts changed: total={total} accepted={accepted} \
 nonlin={nonlin} agg={agg}"
 
+/-! ## Thread 4 (nonlinearity) Task 5 — top-level nonlin differential fixtures
+
+`NonlinCompileTest.lean`'s Section 2 confirms the compiled Dense path produces the right tensor for
+one real top-level program per nonlin function (`relu`, `sigmoid`, `tanh`, `gelu`, `leakyrelu`,
+`normalize`, `softmax`, `l2normalize`), but only against a hand-computed literal — it never runs the
+same program through the independent legacy evaluator (`evalScheduled`). This section reuses those
+exact eight donor programs/tensors/expected-values VERBATIM (no re-derivation) and adds the missing
+leg: `planAgrees` (already defined above) supplies the `checkEntry`-style differential comparison —
+`envEq`/warnings equality, exact (`denseEq`), between `runPreparedDense` and `evalScheduled` — while
+the sanity check below against Task 3's own literal stays a tolerant `DenseTensor.approxEq`, exactly
+Task 3's own convention. The exact `envEq` leg is what actually proves bit-for-bit legacy agreement;
+the literal sanity check merely confirms this section is still looking at the fixture Task 3 named. -/
+
+/-- Local tensor-literal helper, mirroring `NonlinCompileTest.lean`'s own `tl` (not imported from
+    there — this file avoids importing the sibling test file, following its own self-contained
+    convention). -/
+private def tl (shape : List Nat) (xs : List Float) : DenseTensor := ⟨shape, xs.toArray⟩
+
+private def nonlinFixtures :
+    List (String × TLProgram × HashMap String DenseTensor × String × DenseTensor) :=
+  [ ("relu", tlprog!{ H[i] := relu(W[i, j] · x[j]) },
+      HashMap.ofList [("W", tl [2,2] [1,-1,-2,1]), ("x", tl [2] [1,1])],
+      "H", tl [2] [0,0])
+  , ("sigmoid", tlprog!{ H[i] := sigmoid(W[i, j] · x[j]) },
+      HashMap.ofList [("W", tl [2,2] [1,0,0,1]), ("x", tl [2] [-2,2])],
+      "H", tl [2] [0.11920292202211755, 0.8807970779778823])
+  , ("tanh", tlprog!{ H[i] := tanh(W[i, j] · x[j]) },
+      HashMap.ofList [("W", tl [2,2] [1,0,0,1]), ("x", tl [2] [-2,2])],
+      "H", tl [2] [-0.9640275800758169, 0.9640275800758169])
+  , ("gelu", tlprog!{ H[i] := gelu(W[i, j] · x[j]) },
+      HashMap.ofList [("W", tl [2,2] [1,0,0,1]), ("x", tl [2] [-2,2])],
+      "H", tl [2] [-0.045402305912, 1.954597694088])
+  , ("leakyrelu", tlprog!{ H[i] := leakyrelu(W[i, j] · x[j]) },
+      HashMap.ofList [("W", tl [2,2] [1,0,0,1]), ("x", tl [2] [-2,2])],
+      "H", tl [2] [-0.02, 2])
+  , ("normalize", tlprog!{ Y[q, s.] := normalize(A[q, s]) },
+      HashMap.ofList [("A", tl [2,2] [1,3,2,2])],
+      "Y", tl [2,2] [0.25,0.75,0.5,0.5])
+  , ("softmax", tlprog!{ Y[q, s.] := softmax(A[q, s]) },
+      HashMap.ofList [("A", tl [2,2] [0, 0, 0, Float.log 3])],
+      "Y", tl [2,2] [0.5,0.5,0.25,0.75])
+  , ("l2normalize", tlprog!{
+        Z1n[i, d.] := l2normalize(Z1[i, d])
+        Z2n[j, d.] := l2normalize(Z2[j, d])
+        S[i, j] := Z1n[i, d] · Z2n[j, d]
+      },
+      HashMap.ofList [("Z1", tl [1,2] [3,4]), ("Z2", tl [1,2] [1,0])],
+      "S", tl [1,1] [0.6]) ]
+
+/-- One donor fixture's full check: (1) the differential leg — `planAgrees` runs the identical
+    program/inputs through both `prepareEvalPlan`+`runPreparedDense` and `evalScheduled` and demands
+    exact (`envEq`) agreement, precisely `checkEntry`'s own contract; (2) a sanity cross-check that
+    the plan's own named output still matches Task 3's literal expected value, so this section
+    cannot silently drift onto a different computation than the one Task 3 named. -/
+private def checkNonlinFixture (name : String) (p : TLProgram) (inputs : HashMap String DenseTensor)
+    (key : String) (expected : DenseTensor) : Except String Unit := do
+  match planAgrees p inputs with
+  | .error e => throw s!"{name}: differential leg failed: {e}"
+  | .ok () => pure ()
+  let sched ← match p.compileToScheduled.run 0 with
+    | .ok s _ => pure s
+    | .error e _ => throw s!"{name}: compile failed: {repr e}"
+  let prepared ← match prepareEvalPlan sched (InputSignature.ofDenseInputs inputs) with
+    | .ok pp => pure pp
+    | .error _ => throw s!"{name}: prepareEvalPlan failed (already accepted by the differential leg)"
+  let planReport ← match runPreparedDense prepared inputs with
+    | .ok r => pure r
+    | .error e => throw s!"{name}: runPreparedDense failed (warnings={e.warnings.length})"
+  match planReport.env[key]? with
+  | none => throw s!"{name}: {key} missing from the compiled plan's output"
+  | some t =>
+      unless DenseTensor.approxEq t expected do
+        throw s!"{name}: compiled plan's {key} disagrees with Task 3's expected value: \
+got {repr t.data}, expected {repr expected.data}"
+
+run_cmd do
+  for (name, p, inputs, key, expected) in nonlinFixtures do
+    match checkNonlinFixture name p inputs key expected with
+    | .ok () => pure ()
+    | .error m => throwError s!"THREAD 4 TASK 5 NONLIN DIFFERENTIAL FAILED:\n{m}"
+
 end LeanNCD.Eval.Plan.DifferentialTest
