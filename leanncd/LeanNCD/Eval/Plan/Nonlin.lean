@@ -46,12 +46,12 @@ inductive NonlinPlanError
 /-- Evidence that one `RawPointwisePlan` satisfies every local invariant. -/
 structure CheckedPointwisePlan where private mk ::
   raw : RawPointwisePlan
-  deriving Repr, BEq
+  deriving Repr
 
 /-- Evidence that one `RawAxiswisePlan` satisfies every local invariant. -/
 structure CheckedAxiswisePlan where private mk ::
   raw : RawAxiswisePlan
-  deriving Repr, BEq
+  deriving Repr
 
 /-- Shared geometry-check helper for both pointwise and axiswise operations.
     Validates rows 1-7 of §4's case×class table (slot range, dtype, shape agreement).
