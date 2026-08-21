@@ -19,7 +19,6 @@ structure RawEvalPlan where
   tensorSigs  : Array TensorSignature
   inputSlots  : Array TensorSlot
   steps       : Array PlanStep
-  numericMode : NumericMode
   deriving DecidableEq, BEq, Repr, Inhabited
 
 end LeanNCD.Eval.Plan

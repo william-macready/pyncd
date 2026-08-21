@@ -854,7 +854,7 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
   -- `compileScan` would duplicate that check without adding a locator it does not already carry.
   let raw : RawEvalPlan :=
     { tensorSigs := tensorSigsAcc, inputSlots := inputSlotsAcc
-    , steps := stepsAcc, numericMode := .reference64SumProduct }
+    , steps := stepsAcc }
   let checked ← liftPlanError warnings (checkPlan raw)
   -- Step F: assemble PreparedPlan. `requiredInputsAcc`/`inputSlotsAcc` were built positionally
   -- (hence also as a permutation) in lockstep by the same Step D loop above, so `checkBindings`

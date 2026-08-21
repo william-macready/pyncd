@@ -37,7 +37,7 @@ def chainSigs : Array TensorSignature :=
 
 def chainPlan : RawEvalPlan :=
   { tensorSigs := chainSigs, inputSlots := #[0]
-  , steps := #[.assign (idNode 1 0), .assign (idNode 2 1)], numericMode := .reference64SumProduct }
+  , steps := #[.assign (idNode 1 0), .assign (idNode 2 1)] }
 
 def isOk : Except PlanStepError CheckedEvalPlan → Bool
   | .ok _ => true | .error _ => false
@@ -72,7 +72,7 @@ def nodeC : AssignPlan :=
 def diamondPlan : RawEvalPlan :=
   { tensorSigs := diamondSigs, inputSlots := #[0, 4]
   , steps := #[.assign (idNode 1 0), .assign (idNode 2 0), .assign nodeC]
-  , numericMode := .reference64SumProduct }
+   }
 
 -- the diamond (fan-out + convergence + an unused input) is accepted
 #guard isOk (checkPlan diamondPlan)
@@ -144,11 +144,6 @@ def diamondPlan : RawEvalPlan :=
       #[.assign { idNode 1 0 with outputShape := #[3] }, .assign (idNode 2 0), .assign nodeC] })
   == some (.assign (.nodeError 0 (.destinationShapeMismatch #[3] #[2])))
 
--- numericModeNotAdmitted: structurally unreachable via checkPlan (NumericMode has exactly one
--- constructor, reference64SumProduct), same pattern as checkAssign's single-valued-vocabulary
--- unreachables — named directly instead of exercised through checkPlan.
-#guard (PlanError.numericModeNotAdmitted .reference64SumProduct) == PlanError.numericModeNotAdmitted .reference64SumProduct
-
 /-!
 ## Thread 4 (Task 2) regressions: `sourceSlot == destinationSlot` unreachability inside
 `checkPointwise`/`checkAxiswise` relies on `checkPlan`'s own availability discipline — these two
@@ -167,7 +162,7 @@ def selfAliasSigs : Array TensorSignature :=
 def neverProducedSelfAliasPlan : RawEvalPlan :=
   { tensorSigs := selfAliasSigs, inputSlots := #[]
   , steps := #[.pointwise { sourceSlot := 1, destinationSlot := 1, shape := #[2], fn := .relu }]
-  , numericMode := .reference64SumProduct }
+   }
 
 #guard errOf (checkPlan neverProducedSelfAliasPlan) == some (.assign (.invalidForwardRead 0 0 0 1))
 
@@ -178,7 +173,7 @@ def duplicateSelfAliasPlan : RawEvalPlan :=
   { tensorSigs := selfAliasSigs, inputSlots := #[0]
   , steps := #[.assign (idNode 1 0)
               , .pointwise { sourceSlot := 1, destinationSlot := 1, shape := #[2], fn := .relu }]
-  , numericMode := .reference64SumProduct }
+   }
 
 #guard errOf (checkPlan duplicateSelfAliasPlan) == some (.assign (.duplicateDestination 1 0 1))
 
@@ -199,7 +194,7 @@ def nonlinFailSigs : Array TensorSignature :=
 def nonlinFailPlan : RawEvalPlan :=
   { tensorSigs := nonlinFailSigs, inputSlots := #[0]
   , steps := #[.pointwise { sourceSlot := 0, destinationSlot := 1, shape := #[3], fn := .relu }]
-  , numericMode := .reference64SumProduct }
+   }
 
 #guard errOf (checkPlan nonlinFailPlan) == some (.nonlin 0 (.sourceShapeMismatch #[3] #[2]))
 

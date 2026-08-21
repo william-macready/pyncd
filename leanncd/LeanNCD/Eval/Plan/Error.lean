@@ -29,7 +29,6 @@ inductive PlanError
   | algebraNotAdmitted       (algebra : ContractionAlgebra)
   | policyNotAdmitted        (policy : OutOfBoundsPolicy)
   | destinationShapeMismatch (declared : Array Nat) (signature : Array Nat)
-  | numericModeNotAdmitted   (mode : NumericMode)
   | duplicateInputSlot       (slot : TensorSlot)
   | inputSlotsNotOrdered     (atIndex : Nat)
   | topLevelContextNotEmpty  (nodeIndex : Nat)

@@ -278,7 +278,7 @@ run_cmd do
 -- PlanRunCause.execution: unreachable through the full runPreparedDense pipeline — pack's own
 -- validation (Adapter.lean) and runDenseAssign's self-consistent output construction (Dense.lean)
 -- together rule out every PositionalInputError constructor once pack has already succeeded.
--- Named directly instead, same pattern as PlanError.numericModeNotAdmitted (C3).
+-- Named directly instead of exercised through the full pipeline.
 #guard (PlanRunCause.execution (.arityMismatch 2 3)) == PlanRunCause.execution (.arityMismatch 2 3)
 
 -- ── Wave F F4 Task 4: the same boundary with a compiled SCAN step behind it ──

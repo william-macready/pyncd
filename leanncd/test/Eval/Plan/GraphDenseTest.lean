@@ -48,7 +48,7 @@ def oneNodeSigs : Array TensorSignature :=
 
 def oneNodePlan : RawEvalPlan :=
   { tensorSigs := oneNodeSigs, inputSlots := #[0]
-  , steps := #[.assign (idNode 1 0)], numericMode := .reference64SumProduct }
+  , steps := #[.assign (idNode 1 0)] }
 
 def oneNodeInputs : Array DenseTensor := #[ { shape := [2], data := #[3.0, 4.0] } ]
 
@@ -66,7 +66,7 @@ def chainSigs : Array TensorSignature :=
 
 def chainPlan : RawEvalPlan :=
   { tensorSigs := chainSigs, inputSlots := #[0]
-  , steps := #[.assign (idNode 1 0), .assign (idNode 2 1)], numericMode := .reference64SumProduct }
+  , steps := #[.assign (idNode 1 0), .assign (idNode 2 1)] }
 
 def chainInputs : Array DenseTensor := #[ { shape := [2], data := #[5.0, 7.0] } ]
 
@@ -99,7 +99,7 @@ def nodeC : AssignPlan :=
 def diamondPlan : RawEvalPlan :=
   { tensorSigs := diamondSigs, inputSlots := #[0, 4]
   , steps := #[.assign (idNode 1 0), .assign (idNode 2 0), .assign nodeC]
-  , numericMode := .reference64SumProduct }
+   }
 
 -- inputs ordered by inputSlots = #[0, 4]: X first, then W.
 def diamondInputs : Array DenseTensor :=
@@ -142,7 +142,7 @@ def sumNode (dest srcA srcB : TensorSlot) : AssignPlan :=
 def placementPlan : RawEvalPlan :=
   { tensorSigs := placementSigs, inputSlots := #[0, 4]
   , steps := #[.assign (idNode 1 4), .assign (idNode 2 1), .assign (sumNode 3 2 0)]
-  , numericMode := .reference64SumProduct }
+   }
 
 /-- Inputs ordered by `inputSlots = #[0, 4]`: slot 0 first, then slot 4. -/
 def placementInputs : Array DenseTensor :=
@@ -224,7 +224,7 @@ def fosNode : AssignPlan :=
 
 def fosPlan : RawEvalPlan :=
   { tensorSigs := fosSigs, inputSlots := #[0, 1, 2]
-  , steps := #[.assign fosNode], numericMode := .reference64SumProduct }
+  , steps := #[.assign fosNode] }
 
 def fosInputs : Array DenseTensor :=
   #[ { shape := [], data := #[1e16] }, { shape := [], data := #[1.0] }

@@ -51,7 +51,7 @@ def pointwisePlan : RawEvalPlan :=
   { tensorSigs := oneNodeSigs, inputSlots := #[0]
   , steps := #[.assign (idNode 1 0)
               , .pointwise { sourceSlot := 1, destinationSlot := 2, shape := #[2], fn := .relu }]
-  , numericMode := .reference64SumProduct }
+  }
 
 def pointwiseInputs : Array DenseTensor := #[ { shape := [2], data := #[-1.0, 2.0] } ]
 
@@ -86,7 +86,7 @@ def axiswisePlan : RawEvalPlan :=
   , steps := #[.assign (idNode22 1 0)
               , .axiswise { sourceSlot := 1, destinationSlot := 2, shape := #[2,2]
                           , axisPos := 1, fn := .normalize }]
-  , numericMode := .reference64SumProduct }
+  }
 
 def axiswiseInputs : Array DenseTensor := #[ { shape := [2,2], data := #[1.0, 3.0, 2.0, 2.0] } ]
 

@@ -113,8 +113,6 @@ inductive PlanStepError
     check DOES use `sourceSlots` (none of these have term/factor structure to preserve — `ti`/`fi`
     are a genuine `0 0` placeholder there, not a lost locator). -/
 def checkPlan (raw : RawEvalPlan) : Except PlanStepError CheckedEvalPlan := do
-  unless raw.numericMode == .reference64SumProduct do
-    throw (.assign (.numericModeNotAdmitted raw.numericMode))
   let n := raw.tensorSigs.size
   for h : i in [0 : raw.inputSlots.size] do
     let s := raw.inputSlots[i]

@@ -148,7 +148,7 @@ def idAssign : AssignPlan :=
 
 def idRaw : RawEvalPlan :=
   { tensorSigs := idSigs, inputSlots := #[0]
-  , steps := #[.assign idAssign], numericMode := .reference64SumProduct }
+  , steps := #[.assign idAssign] }
 
 -- Well-formed affine-table candidate: the iteration domain has 3 coordinates (0, 1, 2), and the
 -- identity read maps each straight through to the same-numbered source index, all in-bounds.
@@ -326,7 +326,7 @@ def mixedAssign1 : AssignPlan :=
 -- (`Z[i] := Y[i]`, slot 1 → slot 2).
 def mixedRaw : RawEvalPlan :=
   { tensorSigs := mixedSigs, inputSlots := #[0]
-  , steps := #[.assign idAssign, .assign mixedAssign1], numericMode := .reference64SumProduct }
+  , steps := #[.assign idAssign, .assign mixedAssign1] }
 
 def testMixedKernelPlanEvidence : Bool :=
   match checkPlan mixedRaw with

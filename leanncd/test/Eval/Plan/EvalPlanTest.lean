@@ -53,7 +53,7 @@ def outerTensorSigs : Array TensorSignature := outerSigs ++ #[{ shape := #[3], d
 def outerPlan : RawEvalPlan :=
   { tensorSigs := outerTensorSigs, inputSlots := #[0, 1]
   , steps := #[.scan linearScan, .assign yAssign]
-  , numericMode := .reference64SumProduct }
+  }
 
 def outerInputs : Array DenseTensor :=
   #[ { shape := [], data := #[1.0] }, { shape := [3], data := #[10.0, 20.0, 30.0] } ]
@@ -150,7 +150,7 @@ def termLocatorAssign : AssignPlan :=
 def termLocatorPlan : RawEvalPlan :=
   { tensorSigs := termLocatorSigs, inputSlots := #[0]
   , steps := #[.assign termLocatorAssign]
-  , numericMode := .reference64SumProduct }
+  }
 
 -- `ti = 1`, `fi = 0`, slot = 1 — the exact locator of the bad read, not `0 0` by coincidence.
 #guard errOf (checkPlan termLocatorPlan) == some (.assign (.invalidForwardRead 0 1 0 1))
@@ -167,7 +167,7 @@ Fibonacci-shaped `G`/`H` scan: `G[0] := C; H[0] := C; G[l+1] := G[l]+H[l]; H[l+1
 def twoStateOuterPlan : RawEvalPlan :=
   { tensorSigs := outerSigsCoupled, inputSlots := #[0]
   , steps := #[.scan coupledScan]
-  , numericMode := .reference64SumProduct }
+  }
 
 def coupledOuterInputs : Array DenseTensor := #[ { shape := [], data := #[1.0] } ]
 
@@ -211,7 +211,7 @@ def preemptAssign : AssignPlan :=
 def collideOuterPlan : RawEvalPlan :=
   { tensorSigs := outerSigsCoupled, inputSlots := #[0]
   , steps := #[.assign preemptAssign, .scan coupledScan]
-  , numericMode := .reference64SumProduct }
+  }
 
 -- Reported collision is slot 2 (H), first produced by node 0 (`preemptAssign`), re-targeted by
 -- node 1 (the scan) — NOT slot 1 (G), which never collides here.

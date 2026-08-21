@@ -150,7 +150,7 @@ def topLevelBadAssign : AssignPlan :=
 def topLevelBadPlan : RawEvalPlan :=
   { tensorSigs := sigs2, inputSlots := #[0]
   , steps := #[.assign topLevelBadAssign]
-  , numericMode := .reference64SumProduct }
+   }
 
 def checkPlanErrOf : Except PlanStepError CheckedEvalPlan → Option PlanStepError
   | .ok _ => none | .error e => some e

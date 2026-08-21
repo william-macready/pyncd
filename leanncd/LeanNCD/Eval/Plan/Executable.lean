@@ -38,9 +38,8 @@ does NOT name `JaxKernelCandidate`, `AffineTableReadCandidate`, `OrderedAffineTa
 `loweringToAffineTableCandidate`/`loweringToEinsumCandidate` (`EvalPlanCodegen.lean`) — this is
 expected, not a gap: Appendix D is
 explicitly this thread's Spec-line "non-copy-ready sketch needing translation to real types" (its
-own dependent-type sketch uses a single `JaxKernel (evidence) (table : CheckedTensorScope) (mode :
-NumericMode)`, for instance, not this file's flat non-dependent `JaxKernelCandidate`/table-array
-split), and the Plan Verification Checklist's own "No copy-paste from Appendix D: Translated
+own dependent-type sketch uses parameters not present in this file's flat non-dependent
+`JaxKernelCandidate`/table-array split), and the Plan Verification Checklist's own "No copy-paste from Appendix D: Translated
 concepts, not code" line already anticipates exactly this kind of naming divergence for
 Lean-real-type plumbing and internal validation helpers that Appendix D's sketch never spells out
 at that granularity. One genuine drift worth flagging rather than silently translating: this file's

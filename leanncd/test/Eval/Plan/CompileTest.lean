@@ -148,8 +148,8 @@ def acceptedSched : ScheduledProgram :=
 -- unsupportedDtype: structurally unreachable via `capabilityPreflight` — `Decl` (`DSL/Ast.lean`)
 -- carries no dtype field on any constructor (`.tensor`/`.linear`/`.predicate` are name+axes only;
 -- dtype is an `InputSignature`/backend concept a LATER C4 step resolves, not a source declaration),
--- so nothing in this file's checkers can ever construct this value. Exercised directly, matching
--- `checkAssign`'s single-valued-vocabulary unreachables (`numericModeNotAdmitted`, C2/C3).
+-- so nothing in this file's checkers can ever construct this value. Exercised directly, same
+-- pattern as `dynamicShape` below.
 #guard (CapabilityError.unsupportedDtype "unreachable") == CapabilityError.unsupportedDtype "unreachable"
 
 -- dynamicShape: structurally unreachable via `capabilityPreflight` — `IdxExpr` (`DSL/Ast.lean`) has
