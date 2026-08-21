@@ -18,9 +18,10 @@ constraint one layer up, so both types move here too.
 
 namespace LeanNCD.Eval.Plan
 
-/-- One outer step's checked meaning: either a local assignment or a scan. Replaces
-    `CheckedEvalPlan.checkedNodes`'s previous element type, `CheckedAssignPlan`, now that outer
-    nodes are no longer uniformly assignments. -/
+/-- One outer step's checked meaning: a local assignment, a scan, or one of the two
+    nonlinearity operations (Thread 4). Replaces `CheckedEvalPlan.checkedNodes`'s previous
+    element type, `CheckedAssignPlan`, now that outer nodes are no longer uniformly
+    assignments. -/
 inductive CheckedPlanStepEvidence
   | assign    (c : CheckedAssignPlan)
   | scan      (c : CheckedScanPlan)
@@ -33,11 +34,14 @@ inductive CheckedPlanStepEvidence
     source slot (flattened across all its terms) and has one destination; a scan reads every
     EXTERNAL base/step capture (a state capture is not an outer-graph read — it is satisfied
     entirely inside the checked scan, from the scan's own persistent state) and has one destination
-    per state. These are general-purpose accessors for any future consumer that needs a step's
-    slots without caring which kind it is (proposal §6.6's own stated purpose); `checkPlan` below
-    does NOT route its own per-`.assign`-step forward-read check through `sourceSlots` — that check
-    needs the original per-term/per-factor locators (`ti`, `fi`) for `invalidForwardRead`, which
-    flattening this array away loses. -/
+    per state; a `.pointwise`/`.axiswise` step (Thread 4) has exactly one source and one
+    destination, its own `sourceSlot`/`destinationSlot` field. These are general-purpose accessors
+    for any future consumer that needs a step's slots without caring which kind it is (proposal
+    §6.6's own stated purpose); `checkPlan` below does NOT route its own per-`.assign`-step
+    forward-read check through `sourceSlots` — that check needs the original per-term/per-factor
+    locators (`ti`, `fi`) for `invalidForwardRead`, which flattening this array away loses. The
+    `.scan`/`.pointwise`/`.axiswise` forward-read check DOES use `sourceSlots` directly (see
+    `checkPlan`'s own comment below). -/
 def PlanStep.sourceSlots : PlanStep → Array TensorSlot
   | .assign a => a.terms.flatMap (·.factors.map (·.sourceSlot))
   | .scan s => (s.baseCaptures ++ s.stepCaptures).filterMap (fun c => match c.source with
@@ -54,31 +58,37 @@ def PlanStep.destinationSlots : PlanStep → Array TensorSlot
   | .axiswise a => #[a.destinationSlot]
 
 /-- Evidence that a `RawEvalPlan`'s wiring is sound, generalized to `PlanStep`: every step is
-    locally checked (via `checkAssign` or `checkScanPlan`), input slots are in-range/unique/ordered,
-    no step's destination overwrites an existing slot, every read is from an input or an earlier
-    destination, and every non-input slot is produced exactly once. A scan step's MULTIPLE
-    destination slots are all marked produced together, atomically with respect to this outer-graph
-    tracking — matching the scan's own atomic commit semantics one level up. -/
+    locally checked (via `checkAssign`, `checkScanPlan`, `checkPointwise`, or `checkAxiswise`),
+    input slots are in-range/unique/ordered, no step's destination overwrites an existing slot,
+    every read is from an input or an earlier destination, and every non-input slot is produced
+    exactly once. A scan step's MULTIPLE destination slots are all marked produced together,
+    atomically with respect to this outer-graph tracking — matching the scan's own atomic commit
+    semantics one level up. -/
 structure CheckedEvalPlan where private mk ::
   raw          : RawEvalPlan
   checkedNodes : Array CheckedPlanStepEvidence
   deriving Repr
 
 /-- `checkPlan`'s error type, generalized from bare `PlanError` now that an outer step can fail
-    either as a malformed assignment (unchanged `PlanError`, including its existing `nodeError`
-    wrapper) or a malformed scan (`ScanPlanError`, not representable inside `PlanError` itself — see
-    this plan's Architecture section for why). **`.assign` names the ERROR'S OWN SHAPE, not the
-    failing step's kind:** every graph-level `PlanError` this checker can throw — slot-range,
-    input-ordering, forward-read, overwrite, duplicate-destination, missing-production, and the
-    per-node `checkAssign` failures the `nodeError` wrapper already carried — is a `PlanError`
-    regardless of whether the OFFENDING step is itself a `.assign` or a `.scan` (a scan step can
-    just as well overwrite an input slot or collide on a destination; only a `checkScanPlan`
-    failure is scan-SPECIFIC and gets the other constructor). Do not read `.assign`/`.scan` as "step
-    kind" — read them as "which checker rejected this: the graph-level PlanError checks, or
-    checkScanPlan itself." Derives the same four classes `PlanError`/`ScanPlanError` both already
-    carry (`DecidableEq, BEq, Repr, Inhabited`), not just `Repr`, so downstream types built on top of
-    it (`PlanCompileCause` below) can keep their own existing `DecidableEq`/`BEq`/`Inhabited`
-    derivations. -/
+    as a malformed assignment (unchanged `PlanError`, including its existing `nodeError` wrapper),
+    a malformed scan (`ScanPlanError`, not representable inside `PlanError` itself — see this
+    plan's Architecture section for why), or a malformed nonlinearity operation (`NonlinPlanError`,
+    Thread 4 — likewise not a `PlanError`, since it carries `checkPointwise`/`checkAxiswise`'s own
+    geometry-check causes, not a graph-level wiring failure). **`.assign` names the ERROR'S OWN
+    SHAPE, not the failing step's kind:** every graph-level `PlanError` this checker can throw —
+    slot-range, input-ordering, forward-read, overwrite, duplicate-destination, missing-production,
+    and the per-node `checkAssign` failures the `nodeError` wrapper already carried — is a
+    `PlanError` regardless of whether the OFFENDING step is itself a `.assign`, a `.scan`, a
+    `.pointwise`, or an `.axiswise` (any of these can just as well overwrite an input slot or
+    collide on a destination via the shared graph-level checks). `.scan`/`.nonlin`, by contrast,
+    ARE step-kind-specific: a `checkScanPlan` failure always becomes `.scan ni e` and a
+    `checkPointwise`/`checkAxiswise` failure always becomes `.nonlin ni e` — for these two, the
+    failing step's own local checker is genuinely the only source, so the constructor doubles as
+    "which step kind rejected this," unlike `.assign`'s "which checker layer rejected this: the
+    graph-level PlanError checks, or checkAssign itself." Derives the same four classes
+    `PlanError`/`ScanPlanError`/`NonlinPlanError` all already carry (`DecidableEq, BEq, Repr,
+    Inhabited`), not just `Repr`, so downstream types built on top of it (`PlanCompileCause` below)
+    can keep their own existing `DecidableEq`/`BEq`/`Inhabited` derivations. -/
 inductive PlanStepError
   | assign (cause : PlanError)
   | scan   (stepIndex : Nat) (cause : ScanPlanError)
@@ -89,15 +99,19 @@ inductive PlanStepError
     to `PlanStep`: an ordinary node still uses `checkAssign` verbatim and requires empty context
     exactly as before; a scan node uses `checkScanPlan` and requires ALL of its declared destination
     slots to be currently unavailable (so none can already be produced) before checking, then marks
-    all of them available together afterward. Every `PlanError`-shaped failure from the loop below is
-    wrapped as `.assign (...)`; a `checkScanPlan` failure becomes `.scan ni e` directly (no
-    double-wrapping through `nodeError`, since `ScanPlanError` already carries its own internal
-    locators). The forward-read check for a `.assign` step is a direct per-term/per-factor loop
-    (the same shape the original pre-Wave-F `checkPlan` used), NOT routed through the generic
-    `PlanStep.sourceSlots` accessor: flattening across terms/factors loses the `ti`/`fi` locators
-    `invalidForwardRead` needs to report exactly where a bad read sits. A `.scan` step's forward-read
-    check DOES use `sourceSlots` (its external captures have no term/factor structure to preserve —
-    `ti`/`fi` are a genuine `0 0` placeholder there, not a lost locator). -/
+    all of them available together afterward; a `.pointwise`/`.axiswise` node (Thread 4) requires no
+    top-level context (like an ordinary node, but skips `checkAssign`'s specific check since it has
+    no `contextShape` field at all) and uses `checkPointwise`/`checkAxiswise` respectively. Every
+    `PlanError`-shaped failure from the loop below is wrapped as `.assign (...)`; a `checkScanPlan`
+    failure becomes `.scan ni e` directly, and a `checkPointwise`/`checkAxiswise` failure becomes
+    `.nonlin ni e` directly (no double-wrapping through `nodeError` for either, since
+    `ScanPlanError`/`NonlinPlanError` already carry their own internal locators). The forward-read
+    check for a `.assign` step is a direct per-term/per-factor loop (the same shape the original
+    pre-Wave-F `checkPlan` used), NOT routed through the generic `PlanStep.sourceSlots` accessor:
+    flattening across terms/factors loses the `ti`/`fi` locators `invalidForwardRead` needs to
+    report exactly where a bad read sits. A `.scan`/`.pointwise`/`.axiswise` step's forward-read
+    check DOES use `sourceSlots` (none of these have term/factor structure to preserve — `ti`/`fi`
+    are a genuine `0 0` placeholder there, not a lost locator). -/
 def checkPlan (raw : RawEvalPlan) : Except PlanStepError CheckedEvalPlan := do
   unless raw.numericMode == .reference64SumProduct do
     throw (.assign (.numericModeNotAdmitted raw.numericMode))
@@ -174,7 +188,9 @@ def checkPlan (raw : RawEvalPlan) : Except PlanStepError CheckedEvalPlan := do
 
 /-- Execute a checked graph over positional Dense inputs. Generalizes `runDensePlan` (previously in
     `Dense.lean`): a `.assign` node uses `runDenseAssign` exactly as before; a `.scan` node uses
-    `runDenseScan` and writes every one of its state destinations into the store. -/
+    `runDenseScan` and writes every one of its state destinations into the store; a
+    `.pointwise`/`.axiswise` node (Thread 4) uses `runDensePointwise`/`runDenseAxiswise`
+    respectively, reading its one source slot and writing its one destination slot. -/
 def runDensePlan (c : CheckedEvalPlan) (inputs : Array DenseTensor) :
     Except PositionalInputError (Array DenseTensor) := do
   let raw := c.raw

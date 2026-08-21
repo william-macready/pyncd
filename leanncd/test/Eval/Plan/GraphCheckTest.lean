@@ -183,6 +183,27 @@ def duplicateSelfAliasPlan : RawEvalPlan :=
 #guard errOf (checkPlan duplicateSelfAliasPlan) == some (.assign (.duplicateDestination 1 0 1))
 
 /-!
+## `checkPointwise` failure surfacing as `PlanStepError.nonlin` (review finding, Important #2)
+
+Mirrors `EvalPlanTest.lean`'s `scanFailPlan`/`.scan` fixture for the sibling `.nonlin`
+constructor: nothing in the original diff pinned that a `checkPointwise`/`checkAxiswise`
+failure surfaces as `.nonlin stepIndex cause` rather than being swallowed or mis-wrapped
+through `.assign`.
+-/
+
+def nonlinFailSigs : Array TensorSignature :=
+  #[ { shape := #[2], dtype := .f64 }, { shape := #[2], dtype := .f64 } ]
+
+-- The step's declared `shape := #[3]` disagrees with slot 0's actual signature shape `#[2]`;
+-- `checkNonlinIO` catches this as `sourceShapeMismatch` before any dense evaluation is possible.
+def nonlinFailPlan : RawEvalPlan :=
+  { tensorSigs := nonlinFailSigs, inputSlots := #[0]
+  , steps := #[.pointwise { sourceSlot := 0, destinationSlot := 1, shape := #[3], fn := .relu }]
+  , numericMode := .reference64SumProduct }
+
+#guard errOf (checkPlan nonlinFailPlan) == some (.nonlin 0 (.sourceShapeMismatch #[3] #[2]))
+
+/-!
 ## `CheckedEvalPlan` privacy (compile-time check, folded into this file per A.3's module list —
 no separate privacy-test module for C3)
 -/
