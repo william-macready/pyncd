@@ -78,14 +78,20 @@ def checkBindings (inputSlots : Array TensorSlot) (bindings : Array SlotBinding)
     .error (.notAPermutation inputSlots (bindings.map (·.slot)))
 
 /-- `materializedNames` is NOT deduplicated by name — one entry per PERSISTENT OUTPUT, in schedule
-    order. That is one entry per `PlanStep.assign` (§5.4's literal text: "every name produced by a
-    `sched.stmts` entry"), but one entry per persistent STATE for a `PlanStep.scan`: since Wave F F4
-    admitted source scans, a single coupled scan step publishes one complete history per state (see
+    order. That is one entry per persistent STATE for a `PlanStep.scan` (since Wave F F4 admitted
+    source scans, a single coupled scan step publishes one complete history per state — see
     `Compile.lean`'s scan arm, which pushes one binding per `compiled.stateNames` entry, and
-    `ScanCompileTest.lean`'s fixture B, where one scan step yields `#[G, H]`). Block-local scratch
-    inside a scan is deliberately NOT here — it never becomes an outer slot or a materialized name.
-    A name reassigned twice appears twice; `unpack` (Task 3) relies on this, inserting each in order
-    so the LAST entry for a repeated name is the one that survives. -/
+    `ScanCompileTest.lean`'s fixture B, where one scan step yields `#[G, H]`). For a top-level
+    statement it is NOT simply "one entry per `PlanStep.assign`" any more (Thread 4): an `.identity`
+    statement still publishes its one name off its own `.assign` step, exactly as before, but a
+    `.pointwise`/`.axiswise` statement compiles to a `.assign → .pointwise`/`.axiswise` chain whose
+    INTERNAL `.assign` publishes no materialized name at all — only the trailing `.pointwise`/
+    `.axiswise` step publishes the statement's one name (see `Compile.lean`'s `prepareEvalPlan`
+    `.plain` branch, and `NonlinCompileTest.lean` Section 3, which pins this directly: the internal
+    slot is never named). Block-local scratch inside a scan is deliberately NOT here — it never
+    becomes an outer slot or a materialized name. A name reassigned twice appears twice; `unpack`
+    (Task 3) relies on this, inserting each in order so the LAST entry for a repeated name is the one
+    that survives. -/
 structure PlanBindings where
   requiredInputs    : RequiredBindings
   materializedNames : Array SlotBinding

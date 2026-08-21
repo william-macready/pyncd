@@ -1261,7 +1261,13 @@ scan-block call site (`checkScanBlockStmt`) is unchanged and still rejects both,
 branch now compiles a nonlin-bearing statement into the two-step chain from §3 (verified by reading
 `Compile.lean` directly): `.identity` allocates one slot and pushes one `.assign`, byte-for-byte as
 before Task 3; `.pointwise`/`.axiswise` allocate an internal slot for the unchanged `AssignPlan` plus
-a published slot for the new step, in that order. A real, load-bearing bug outside the brief's own
+a published slot for the new step, in that order. For real source text, this two-step chain composes
+with `splitNonlins`' own pre-existing split (a linear step plus a nonlin step, built before
+`prepareEvalPlan` ever runs) into three compiled steps total, not two: the linear step's real
+contraction, then a redundant, value-preserving identity-copy `.assign` (this task's own internal
+slot, reading the nonlin step's trivial single-read body), then the actual `.pointwise`/`.axiswise`
+step — pinned directly by `NonlinCompileTest.lean` §3's `reluProgPrepared`/`softmaxProgPrepared`
+fixtures (`steps.size == 3`) and documented there. A real, load-bearing bug outside the brief's own
 file list was found and fixed during Task 3: `DSL/Pipeline/Lowering.lean`'s `splitStmt` was leaving
 the original `.freeNorm` marker on the split-off *linear* half of a nonlin statement, which
 `resolveNonlinAxis` then correctly rejected as `unmarkedReductionAxis` — making every real axiswise
@@ -1305,7 +1311,11 @@ support is landed while the four transcendental functions' ULP bounds remain unv
 backend exists to differential against yet — leaving thread 1's own status, "Specified, not
 validated," unchanged); and §5.1's `RawEvalPlan` field-table row and `checkPlan` admission sentence
 (both dropped "Format version"/"the plan version" and "numeric mode", the second stale field found
-this session by grepping the whole doc rather than assuming the original two-passage scope). Added
+this session by grepping the whole doc for `NumericMode`/`numericMode`/`reference64SumProduct`).
+That identifier-only grep pattern missed four further main-body passages phrased as the lowercase
+prose "numeric mode" rather than the camelCase identifier, plus one Appendix A sentence this task's
+own appendix exemption skipped even though it asserts a real (non-sketch) claim; a follow-up
+final-review pass (this dispatch) found and corrected all five. Added
 `import LeanNCD.Eval.Plan.Nonlin` to `LeanNCD.lean` (already transitively reachable via `RawStep.lean`
 's own import, but added directly per the file's documented convention of direct top-level imports for
 each Wave-F-era `Plan/` addition). Updated `LeanNCD/Eval/AGENTS.md`: the `Plan/` file table gained a

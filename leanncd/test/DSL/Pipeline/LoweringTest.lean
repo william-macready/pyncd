@@ -178,4 +178,46 @@ run_cmd do
         throwError s!"AGG2: nonlin step should be .sum; got {repr pairs}"
   | .error e _ => throwError s!"AGG: splitNonlins errored: {repr e}"
 
+-- FREENORM1/FREENORM2 (Thread 4 Task 3 fix, in `splitStmt`): the split-off LINEAR step of a
+-- `.freeNorm`-marked axiswise statement must have that marker degraded to plain `.free` — the
+-- marker names which axis the NONLIN step reduces over, and on the `.identity` linear step (which
+-- reduces nothing) it is meaningless; undegraded, it would fire
+-- `NonlinCompileError.unmarkedReductionAxis` at the Plan compiler on every axiswise statement's
+-- linear half, a marker the USER never wrote. The nonlin step itself must keep the ORIGINAL marker
+-- unchanged — it is the statement `resolveNonlinAxis` needs to see it on. This pins the fix at the
+-- layer it actually lives in (`splitStmt`), one phase upstream of where
+-- `NonlinCompileTest.lean`/`NonlinCheckTest.lean` currently exercise it. See `Lowering.lean`'s
+-- `splitStmt` comment and `LeanNCD/DSL/AGENTS.md`'s Pitfalls entry.
+run_cmd do
+  let q : AxisSpec := { name := "q", uid := 1, kind := .real }
+  let s : AxisSpec := { name := "s", uid := 2, kind := .real }
+  -- Y[q, s.] := softmax(A[q, s])  -- axiswise nonlin, freeNorm-marked reduction axis `s`.
+  let stmt : Stmt := .assign "Y" [ .free q, .freeNorm s ]
+    { body := { terms := [ { factors := [ .read "A" [.axis q, .axis s] ] } ] },
+      nonlin := .axiswise .softmax none }
+  let sp : ScanProgram := { decls := [], stmts := [ .plain stmt ], env := {}, extNames := ∅ }
+  let slotsOf : Stmt → List LHSSlot :=
+    fun | .assign _ slots _ => slots | .scatter _ slots _ _ => slots | .recurMorphism .. => []
+  let isIdentity : Stmt → Bool :=
+    fun | .assign _ _ r => (match r.nonlin with | .identity => true | _ => false)
+        | .scatter _ _ r _ => (match r.nonlin with | .identity => true | _ => false)
+        | .recurMorphism .. => true
+  let hasFreeNorm : List LHSSlot → Bool :=
+    fun slots => slots.any (fun sl => match sl with | .freeNorm _ => true | _ => false)
+  match splitNonlins sp |>.run 0 with
+  | .ok lp _ =>
+      let stmts := lp.stmts.filterMap (fun | .plain t => some t | .scan .. => none | .scanPre .. => none)
+      unless stmts.length == 2 do
+        throwError s!"FREENORM: expected 2 stmts after split, got {stmts.length}"
+      match stmts.find? isIdentity, stmts.find? (fun t => !isIdentity t) with
+      | some lin, some nl =>
+          -- FREENORM1: the linear step's slots carry no `.freeNorm` marker (degraded to `.free`).
+          unless !(hasFreeNorm (slotsOf lin)) do
+            throwError s!"FREENORM1: linear step still carries a freeNorm marker: {repr (slotsOf lin)}"
+          -- FREENORM2: the nonlin step still carries the ORIGINAL freeNorm marker.
+          unless hasFreeNorm (slotsOf nl) do
+            throwError s!"FREENORM2: nonlin step lost its freeNorm marker: {repr (slotsOf nl)}"
+      | _, _ => throwError s!"FREENORM: could not find both a linear and a nonlin step: {repr stmts}"
+  | .error e _ => throwError s!"FREENORM: splitNonlins errored: {repr e}"
+
 end LeanNCD

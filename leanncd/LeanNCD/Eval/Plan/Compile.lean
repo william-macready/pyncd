@@ -28,8 +28,9 @@ is meant to be: a compiler bug, reported as `invalidPlan`.
 namespace LeanNCD.Eval.Plan
 
 /-- Axis declarations (`.axis`, `.iter`) are structurally accepted regardless of use — rejection for
-    `freeNorm`/scan usage happens at the `LHSSlot`/`ScanStmt` check below, not at the declaring
-    axis. -/
+    scan usage happens at the `ScanStmt` check below, not at the declaring axis. `.freeNorm` usage is
+    likewise checked at the `LHSSlot` check below, but (Thread 4) only rejected there for a
+    scan-block statement — a top-level `.freeNorm` is now admitted (`checkLHSSlot`). -/
 def checkDecl : Decl → Except CapabilityError Unit
   | .tensor ..    => pure ()
   | .linear ..    => pure ()
@@ -79,9 +80,12 @@ def checkAggOp (stmtName : String) : AggOp → Except CapabilityError Unit
   | .min => throw (.unsupportedAgg s!"{stmtName}: min aggregation")
 
 /-- One `Stmt`'s capability check. Sub-construct order (LHS slots, then `agg`, then `nonlin`, then
-    factors) mirrors C0's `classifyStmt` (`test/Eval/Plan/ContractTest.lean`) exactly — the first
-    rejected sub-construct determines the reported category. `scatter`/`recurMorphism` are rejected
-    outright, without inspecting their slots/payload, matching C0's `classifyStmt` too. -/
+    factors) mirrors C0's `classifyStmt` (`test/Eval/Plan/ContractTest.lean`) — the first rejected
+    sub-construct determines the reported category. This is no longer an exact mirror for the
+    `nonlin` sub-construct specifically: C0's frozen `classifyNonlin` still rejects
+    `.pointwise`/`.axiswise` outright, while this function's own `checkNonlinTopLevel` (Thread 4)
+    admits both at top level. `scatter`/`recurMorphism` are rejected outright, without inspecting
+    their slots/payload, matching C0's `classifyStmt` too. -/
 def checkStmt : Stmt → Except CapabilityError Unit
   | .assign nm slots rhs => do
       for s in slots do checkLHSSlot nm s
@@ -93,8 +97,11 @@ def checkStmt : Stmt → Except CapabilityError Unit
   | .recurMorphism nm .. => throw (.recurrenceOrCallback nm)
 
 /-- The scan-context analogue of `checkLHSSlot`: inside a `.scan` node's own `base`/`recur` lists,
-    `.iterAt`/`.iterNext` are the very constructors that MAKE it a scan, so both are admitted here —
-    while `.freeNorm`/`.affine` stay rejected exactly as for a plain statement. Ported from F0's
+    `.iterAt`/`.iterNext` are the very constructors that MAKE it a scan, so both are admitted here.
+    `.affine` stays rejected exactly as for a plain statement. `.freeNorm` is now (Thread 4) treated
+    DIFFERENTLY from a plain statement: `checkLHSSlot` admits a top-level `.freeNorm`, but this
+    function still rejects it inside a scan block — nonlinearity compilation (Task 3) only targets
+    `prepareEvalPlan`'s `.plain` branch, not `compileScan`. Ported from F0's
     verified `PlanContract.WaveF.classifyScanLHSSlot` (`test/Eval/Plan/ScanContractTest.lean`), same
     constructor order, `Classification` replaced by a real `CapabilityError`.
 
@@ -109,10 +116,12 @@ def checkScanLHSSlot (stmtName : String) : LHSSlot → Except CapabilityError Un
   | .iterNext _ => pure ()
   | .affine _   => throw (.scatterOrAffineLhs s!"{stmtName}: affine LHS slot")
 
-/-- One base/recurrence statement's capability check: the same local-kernel restriction `checkStmt`
-    applies to a plain assignment (`agg`, then `nonlin`, then factors — identical sub-construct
-    order, identical messages), with `checkScanLHSSlot` in place of `checkLHSSlot`. Ported from F0's
-    `classifyScanBlockStmt`.
+/-- One base/recurrence statement's capability check: the same sub-construct order `checkStmt`
+    applies to a plain assignment (LHS slots, then `agg`, then `nonlin`, then factors), with
+    `checkScanLHSSlot` in place of `checkLHSSlot`. The `nonlin` sub-check itself now (Thread 4)
+    differs from a plain statement's: `checkNonlinScanBlock` still rejects `.pointwise`/`.axiswise`
+    inside a scan block, where `checkStmt`'s `checkNonlinTopLevel` admits both — `agg` and factor
+    checking stay identical. Ported from F0's `classifyScanBlockStmt`.
 
     **Necessary, not sufficient** — and deliberately so. Like F0's classifier, this is applied
     uniformly to `base ++ recur`, so it does NOT check that a base statement uses `.iterAt` rather

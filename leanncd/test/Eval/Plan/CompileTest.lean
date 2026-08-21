@@ -5,9 +5,12 @@ import LeanNCD.Eval.Plan.Compile
 # Wave C C4 capability preflight tests
 
 One baseline accepted program (`Y[i] := X[i]`) plus rejected cases for every `CapabilityError`
-category (11 total): 3 cases for `unsupportedLhsSlot` (`freeNorm`/`iterAt`/`iterNext`), 2 for
-`unsupportedNonlin` (pointwise/axiswise), 2 for `unsupportedAgg` (max/min), and one each for the
-remaining categories;
+category (11 total): 2 cases for `unsupportedLhsSlot` (`iterAt`/`iterNext` — `.freeNorm` at top
+level is now ADMITTED, Thread 4, so it is no longer one of these rejection cases; see the accepted
+fixture below instead), 2 for `unsupportedNonlin` (pointwise/axiswise, now specifically SCAN-BLOCK
+cases — Thread 4 admits both at top level too), 2 for `unsupportedAgg` (max/min), and one each for
+the remaining categories; plus three Thread-4 accepted-case fixtures pinning what preflight now
+admits at top level (`.freeNorm`, `.pointwise`, unmasked `.axiswise`) that Wave C used to reject.
 the two structurally-unreachable categories (`unsupportedDtype`, `dynamicShape`) are exercised
 directly on the constructor rather than through `capabilityPreflight`. Also covers `prepareEvalPlan`
 end-to-end on accepted programs — an identity copy, a zero-coefficient contraction, and a

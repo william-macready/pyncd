@@ -2,11 +2,12 @@ import LeanNCD.Eval.Plan.Kernel
 import LeanNCD.Eval.Nonlin
 
 /-!
-# Wave C nonlinearity steps (C2): raw types, checkers
+# Nonlinearity thread 4: raw types, checkers, and dense workers
 
-New raw types `RawPointwisePlan` and `RawAxiswisePlan` for the `.pointwise` and `.axiswise` new
-`PlanStep` cases, with a shared geometry-check helper `checkNonlinIO` and checkers built on it.
-These are the Plan-layer (UID-free, position-based) counterpart to the AST-layer `Nonlin` cases.
+New raw types `RawPointwisePlan` and `RawAxiswisePlan` for the `.pointwise` and `.axiswise`
+`PlanStep` cases, with a shared geometry-check helper `checkNonlinIO` and checkers built on it
+(Task 1), plus the dense workers `runDensePointwise`/`runDenseAxiswise` (Task 2). These are the
+Plan-layer (UID-free, position-based) counterpart to the AST-layer `Nonlin` cases.
 -/
 
 namespace LeanNCD.Eval.Plan

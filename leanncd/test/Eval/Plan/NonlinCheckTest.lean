@@ -1,7 +1,7 @@
 import LeanNCD.Eval.Plan.Nonlin
 
 /-!
-# Wave C C2 nonlinearity checker tests
+# Nonlinearity thread 4 checker tests
 
 Hand-built signature tables and fixtures, mirroring `GraphDenseTest.lean`'s style:
 one minimal 2-slot table with `shape := #[2]`, fixtures per §4's case×class table rows,

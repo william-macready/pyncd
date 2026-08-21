@@ -136,7 +136,7 @@ binary64 bit patterns, preserving exact values such as signed zero. [Section 3](
 specifies this exchange and its trust boundary.
 
 Here, **checking** is Lean's semantic validation of a `RawEvalPlan`: it verifies tensor shapes,
-slots, affine maps, iteration-basis partitions, numeric mode, and graph flow before privately
+slots, affine maps, iteration-basis partitions, and graph flow before privately
 constructing a `CheckedEvalPlan`. The remaining risks arise after that point:
 
 | Risk | Current form | Required response |
@@ -254,7 +254,7 @@ semantics and then the graph/scan semantics that every representation must prese
 
 ### 2.2 Contractions and ordered floating-point execution
 
-The raw plan's numeric mode is `reference64SumProduct`. The name is deliberately not merely
+The raw plan's arithmetic contract is `reference64SumProduct`. The name is deliberately not merely
 “use 64-bit floats”: it commits to ordered sum-product over binary64, with both the arithmetic and
 the permitted operations made explicit in the constructor name itself. For each output coordinate,
 the interpreter evaluates factors, reduction coordinates, and terms in stored order:
@@ -728,7 +728,7 @@ partition, checks affine dimensions, and establishes graph production order and 
 `PreparedPlan` adds the ordered bindings needed to pack named inputs and reconstruct materialized
 names.
 
-Wave C's `reference64SumProduct` numeric mode admits only ordered sum-product over binary64 values.
+Wave C's `reference64SumProduct` arithmetic contract admits only ordered sum-product over binary64 values.
 `binary64` specifies the scalar representation and arithmetic format; `reference64SumProduct`
 additionally specifies the identities and evaluation order:
 
@@ -1329,8 +1329,11 @@ next-state result types** (item 7), where the *behavior* is implemented and chec
 (`runDenseScan` binds an immutable `oldStates` snapshot per iteration, accumulates `nextStates`,
 and commits simultaneously; `checkScanPlan` admits only `snapshotPolicy = .immutablePreStep`) but
 both are plain `Array DenseTensor` locals rather than the distinct types Stage A specifies. Flat
-`Nat` slots therefore remain, while the numeric mode is now the closed `reference64SumProduct`
-constructor (item 3, closed by thread 6). Two further items also have correct, tested *behavior* now
+`Nat` slots therefore remain. Item 3's closed `reference64SumProduct` constructor (closed by thread
+6) has since been deleted outright by thread 4's own cleanup (ruling 3) — the `NumericMode` type and
+`RawEvalPlan.numericMode` field no longer exist — though the arithmetic contract they named, ordered
+sum-product over binary64, is unchanged and still holds structurally. Two further items also have
+correct, tested *behavior* now
 surfaced as the distinct API Stage A specifies, also closed by thread 6: `Dense.lean`'s
 `runDenseAssignAt` builds its source-declared, non-flattened factor/reduction/term order from three
 named fold functions, `factorFold`/`reductionFold`/`termFold` (item 2); `prepareEvalPlan` now builds
@@ -1705,10 +1708,11 @@ permutation from that basis to iteration order. Consequently `iterationShape`, `
 disjointness, and shape projection follow from the permutation. Densified zero coefficients still
 retain their canonical reduction axes and therefore their multiplicity. `ContractionAlgebra` encodes,
 but does not redefine, the operational contract in
-[Section 2.2](#22-contractions-and-ordered-floating-point-execution); the shipped `NumericMode`
-constructor, `reference64SumProduct` (thread 6), already corresponds one-to-one to this candidate's
-`.reference64SumProduct` case — that correspondence is realized at the non-dependent level today,
-independent of whether this dependent sketch is ever adopted. The prototype gates in
+[Section 2.2](#22-contractions-and-ordered-floating-point-execution); the `reference64SumProduct`
+arithmetic contract (thread 6; no longer a dedicated `NumericMode` constructor, since thread 4
+deleted that type) already corresponds one-to-one to this candidate's `.reference64SumProduct` case
+— that correspondence held at the non-dependent level even before the deletion, independent of
+whether this dependent sketch is ever adopted. The prototype gates in
 [Section 6](#6-adoption-plan-and-gates), including rewrite ergonomics, still decide whether this
 sketch should replace arrays plus proofs.
 
