@@ -1307,11 +1307,12 @@ implemented and tested; thread 3 (Wave F, F0-F5) is now closed outright too, as 
 and settling the first two changed the recommended order for what was then still open. Thread numbers below are stable identifiers other sections cite by number
 ([Section 2.2](#22-contractions-and-ordered-floating-point-execution) cites thread 1,
 [Section 5.4](#54-evidence-validating-the-experimental-jax-bridge) cites thread 5) — they are not a
-reading order. The table's row order is: settled threads first, then the one remaining open thread.
-Wave F (thread 3) is Part I work, not a Part III candidate; it appears here only because its timing
-relative to the others needed stating. This remains a
+reading order. As of thread 4's Dense-only close (2026-08-21), all six threads are settled; the
+table's row order reflects the sequence in which threads were scoped and settled, not open/closed
+status. Wave F (thread 3) is Part I work, not a Part III candidate; it appears here only because its
+timing relative to the others needed stating. This remains a
 planning default, not a gate enforced anywhere in [Section 6](#6-adoption-plan-and-gates) — re-derive
-the open threads' order if a reason emerges, but don't re-litigate it without one.
+the table's order if a reason emerges, but don't re-litigate it without one.
 
 **Most of Stage A didn't exist as code, but not uniformly, and less of it is missing now.** Item
 numbers below are [Section 7.1](#71-stage-a-recommended-low-risk-refinements)'s own `#` column, not
