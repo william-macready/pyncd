@@ -164,6 +164,54 @@ Suggested (not committed) task shape for the eventual plan, mirroring Thread 4's
 6. Closure: architecture doc, discoverability, completion record, whole-branch review (two
    independent reviewers, per the same soundness-relevant-closed-sum rule Thread 4 applied).
 
+## Forward-compatibility check: does this help gather/scatter/boolean dtypes/Iverson predicates?
+
+Asked and verified against real code (2026-08-21, same session) before committing to this design.
+The answer is not uniform — precise per item, not a blanket "yes":
+
+- **Affine gather: not a gap this design touches, because it's already solved and already
+  shared.** `ReadPlan`/`AffineMap`-based reads already exist inside `AssignPlan.terms[*].factors`
+  (`Kernel.lean:26-31`, built by `idxToRow` in `Compile.lean:341-353`), and `RawPlanBlock.
+  assignments` is already `Array AssignPlan` today — the *same* type the outer plan uses. A
+  scan-block statement's affine reads are already fully supported and already shared with the
+  top-level path, for a reason that predates this design entirely: `AssignPlan` is one type used
+  in both places. `BlockStep` doesn't change this at all.
+- **Scatter: yes, this design genuinely helps, via a specific mechanism.** Scatter is rejected
+  identically at both preflight sites today (`Compile.lean:96` and `:139` — same error, same
+  reason, already symmetric in its *rejection*). A scatter write would naturally be shaped like
+  the scan's own `StateWriteMap` (`RawStep.lean:54-58`) — a single `outputSlot : TensorSlot` plus
+  an `AffineMap` describing how source coordinates land inside it — not like `RawPointwisePlan`/
+  `RawAxiswisePlan`'s flat slot-to-slot shape. That AffineMap/collision-policy complexity would
+  live entirely inside the new node's own payload, invisible to the generic wiring loop (which
+  only needs one source slot and one destination slot for its own bookkeeping, regardless of what
+  happens inside). So a future `RawScatterPlan` would follow the same recipe Thread 4 used for
+  nonlinearity (its own `Raw*`/`Checked*`/checker/worker file), and this design's wiring-loop
+  generalization means wiring it into *both* `PlanStep` and `BlockStep` becomes one symmetric
+  step — add one arm to each sum, plug into the shared dispatch — rather than the second
+  independent integration effort nonlinearity itself just needed to retrofit into scans.
+- **Boolean dtypes: orthogonal, not helped by this design.** `.bool`/`.f32` already exist as
+  `ScalarDType`/`ScalarConst` constructors (`Types.lean:17-19`, `:54-58`), documented as "reserved
+  tags... no producer or consumer yet." Every dtype check (`checkNonlinIO`, `checkAssign`)
+  hard-codes `== .f64` — a single-value equality, not a membership test against an admitted set —
+  so admitting a new dtype means touching every checker individually regardless of `BlockStep`.
+  `DenseTensor.data : Array Float` is also unconditional storage, raising a deeper question (tag-
+  only vs. real second storage) this design doesn't bear on either way. Dtype admission is one
+  level below where `BlockStep`/the wiring-loop generalization operates.
+- **Iverson/predicate factors: orthogonal to `BlockStep` specifically, but already free-riding on
+  something older.** An Iverson `Factor` lives inside `ProdTerm` inside `AssignPlan.terms`, two
+  levels below the `PlanStep`/`BlockStep` step-dispatch level entirely (`Compile.lean:55` rejects
+  it at that inner factor tier, not as a step kind) — not something this design touches. But
+  because `AssignPlan`/`TermPlan`/`ReadPlan` are already the same type in both scan and non-scan
+  contexts (same fact as gather, above), whenever Iverson support eventually gets built — which
+  needs the UID-free compiled-`BoolExpr` IR already discussed and deferred above — it will be
+  scan-block-compatible for free too, for the same pre-existing reason, not because of anything
+  `BlockStep` specifically contributes.
+
+Net: of the four, this design's actual leverage is on **scatter** specifically (a genuinely new
+node kind that benefits from `BlockStep`'s symmetric-by-construction integration). Gather and
+Iverson are already-shared or will-be-shared for reasons that predate this design. Boolean dtypes
+are a separate axis of work this design neither advances nor blocks.
+
 ## Open items for the implementation plan to resolve (not decided here)
 
 - Exact Lean signature for the wiring-loop generalization's parameter record (typeclass vs.
