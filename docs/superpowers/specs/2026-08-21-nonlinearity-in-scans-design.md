@@ -1,9 +1,10 @@
 # Design: nonlinearity inside scan blocks
 
 **Status:** Brainstormed, externally reviewed (`papers/copilot_unification_critique.md`), revised
-in response, then given a further self-review pass that found one more concrete finding (§1)
-(all 2026-08-21). Not yet an implementation plan — that is a separate step
-(`slice-plan`/`writing-plans`), deliberately not done here.
+in response, given a further self-review pass, and had its one remaining architectural fork (§1)
+resolved with direct verification (all 2026-08-21). All open items that would have changed the
+plan's shape are now closed; the remaining open items (listed at the end) are implementation-
+level judgment calls, not architectural forks — ready for `slice-plan`/`writing-plans`.
 
 **Context:** Thread 4 (merged to `main` at `549adb6`, 2026-08-21) added `.pointwise`/`.axiswise`
 `PlanStep` support for top-level (`.plain`) statements only. Scan-block statements (base/step)
@@ -62,40 +63,64 @@ statements are there, split or not) is still not established — that requires r
 own implementation (likely in `Lowering.lean`/`RouteSpec.lean`, not yet done in this pass) — but
 the fact that it shares the exact input value is now certain, not inferred.
 
-Two candidate fixes, both still open pending that investigation:
+**Resolved: Option B.** Both dependencies were investigated directly (not assumed), and the
+result rules Option A out rather than clearing it:
 
-- **Option A — change `splitScan`'s `.scan` branch to not call `splitStmt`** (the original
-  proposal): scan statements stay unsplit all the way into `compileScan`, which applies the shared
-  chaining helper (§4) directly to each one. Clean, and avoids scan-block compilation inheriting
-  the top-level path's redundant identity-copy inefficiency (2 steps, not 3) — a real efficiency
-  byproduct, not something to reconcile away. Risk: touches a function shared with `route`,
-  a consumer this design doesn't otherwise touch at all.
-- **Option B — leave `splitScan`/`splitNonlins` untouched; teach `compileScan`'s Phase 1
-  classifier to recognize and recombine a split pair itself** (detect the `%nl...`-prefixed
-  linear statement immediately followed by a same-named statement whose body is a trivial read of
-  it, treat the pair as one logical nonlin-producing statement for classification purposes).
-  Contained entirely inside `Eval/Plan/Compile.lean`, a file this design already extends — leaves
-  `route`/the legacy Br lowering completely untouched. Cost: more implementation complexity
-  (detecting and undoing a transformation, rather than simply not performing it), and it would
-  *not* remove the redundant-copy inefficiency Option A avoids as a side effect.
+- **`route` does depend on the pre-split shape, and mislabels today as a result — a real,
+  pre-existing, latent bug independent of this design.** `route`'s `ScanStmt.toBrBaseP`
+  (`Lowering.lean:497-524`) picks its `BrOp` label from `ScanStmt.repStmt` (`:331-334`), which for
+  a `.scan` node is `recur.head?.orElse (fun _ => base.head?)` — the *first* statement. `splitStmt`
+  emits `[linStep, nlStep]` in that order (`:38-78`), with only `linStep` (`.identity`) first and
+  the real nonlin on `nlStep`, second. So whenever a scan's first base/recur statement is
+  nonlinear, `repStmt` today picks the identity `linStep`, and `route` labels the whole collapsed
+  scan block `.contract`/`.maxreduce`/etc. instead of `.pointwise`/`.axiswise` — silently dropping
+  the nonlinearity from the label. Confirmed unexercised by any test (`RouteWeaveTest.lean` has no
+  scan+nonlin case) and unrelated to `checkNonlinScanBlock` (which lives only in the separate
+  Eval/Plan interpreter pipeline, never called from `TLProgram.compile`). Switching to Option A
+  would *change* this mislabeling (picking the real nonlin statement instead, since an unsplit
+  scan's `repStmt` would be the original statement itself) — arguably "more correct" as a label,
+  but into a code path (Br-morphism realization of a nonlin-labeled collapsed scan step) with **no
+  confirmed support and no test coverage** for what happens next. That is real, unbounded risk in
+  a subsystem this design was never scoped to touch, for a bug this design didn't create and isn't
+  responsible for fixing.
+- **The oracle machinery has a confirmed test-level dependency on the split shape.**
+  `ScanGeom.advScratch`'s own doc comment (`ScanUnroll.lean:121-131`) states directly that
+  `splitNonlins` "manufactures exactly this shape" for the `%nl...`/nonlin pair, and
+  `ScanOracle.lean:98-110` has a live `#guard` asserting a nonempty `advScratch` specifically
+  because of it — this assertion would need rewriting under Option A.
 
-**Decision deferred to the implementation plan's own §0**, specifically pending: (1) whether
-`route`'s scan-collapsing logic actually depends on the pre-split shape (if it doesn't, Option A's
-risk evaporates and it's the clear choice); (2) whether the differential/oracle testing machinery
-(`ScanUnroll.lean`/`ScanOracle.lean`, not yet investigated by this design either) has the same
-dependency. Both must be resolved with real evidence before `splitScan` is touched, not assumed
-either way here.
+Given both, **Option A's "simpler" framing was illusory** — its actual cost is entering two
+untested, out-of-scope code paths (Br-realization's handling of a nonlin-labeled scan step;
+whatever else in the oracle machinery implicitly assumes the split shape beyond the one confirmed
+assertion) for a benefit (avoiding scan-block's own redundant-copy inefficiency, and fixing a
+pre-existing `route` bug this design didn't introduce) that isn't worth that risk. **Decision:
+`splitScan`/`splitNonlins`/`route` stay completely untouched.** `compileScan`'s Phase 1 classifier
+gains split-pair recognition instead — detect a `%nl...`-prefixed linear statement immediately
+followed by a same-named statement whose body is a trivial read of it, treat the pair as one
+logical nonlin-producing statement for classification and for the shared chaining helper (§4/§6).
+Entirely contained inside `Eval/Plan/Compile.lean`, a file this design already extends; zero
+blast radius into `route`, the oracle machinery, or any other consumer. Scan-block nonlin
+compilation inherits the top-level path's own redundant identity-copy (3 steps, not 2) as a
+consequence — not a regression, since there was never a cheaper alternative on the table that
+didn't carry the risk above.
 
-**Also worth confirming, lower stakes:** whether the legacy evaluator (`evalScheduled`) produces
-identical results on an unsplit nonlin-bearing scan statement as it does today on the split pair —
-expected to hold under Option A (splitting is a semantics-preserving transformation by
-construction: compute the contraction, then apply nonlin, whether as one statement or two), but
-must be confirmed with a real differential fixture, not assumed. And: `finalizeScans` (which
-classifies `Stmt.nonlinOf` for its `isAffine`/Prop 8.7 check, `Structural.lean:1025`) runs *before*
-`splitNonlins` regardless (`lowerArith >=> finalizeScans >=> splitNonlins >=> schedule`), so it
-already sees pre-split-status-independent, original statements either way — unaffected by either
-option, and its classification of a genuinely nonlinear scan as "not affine" remains correct under
-either option (a nonlinear scan step was never going to be affine regardless of split shape).
+**Discovered but out of scope — flag prominently, do not fix here:** `route`'s `repStmt`-based
+`BrOp` mislabeling for any nonlin-in-scan case is real and pre-existing, reachable today through
+`TLProgram.compile` (and therefore the `tl!{...}` macro) for any user program with a nonlinear
+scan statement, independent of anything in this design. This belongs to the Br/categorical
+lowering subsystem, not the Eval/Plan Backend IR this design targets. Whoever next touches
+`Lowering.lean`'s scan-routing logic, or writes a `RouteWeaveTest.lean` case with a nonlinear scan
+statement, should know this bug exists before assuming route already handles nonlin-in-scan
+correctly just because nothing currently crashes.
+
+**Also confirmed, lower stakes:** `finalizeScans` (which classifies `Stmt.nonlinOf` for its
+`isAffine`/Prop 8.7 check, `Structural.lean:1025`) runs *before* `splitNonlins` regardless
+(`lowerArith >=> finalizeScans >=> splitNonlins >=> schedule`) — unaffected by this decision, and
+its classification of a genuinely nonlinear scan as "not affine" remains correct (a nonlinear
+scan step was never going to be affine regardless of split shape). A differential fixture
+confirming `evalScheduled` still agrees with the compiled result on a real nonlin-in-scan program
+remains part of the test matrix (§12) — this decision doesn't touch the legacy evaluator at all,
+so this is a confirmatory check, not a risk.
 
 ## 2. Retained-local-axis mapping for `resolveNonlinAxis`
 
@@ -332,8 +357,8 @@ whether/how to wrap that already-built `AssignPlan` with a nonlin step afterward
 1. **The wiring loop's outer bookkeeping** (§7) — shared; per-node source-check diagnostics are
    not flattened away.
 2. **The two-step nonlin chaining logic** (§6), called from `prepareEvalPlan`'s `.plain` branch
-   (unchanged behavior) and `compileScan`'s base/step phases — on statements in whichever shape
-   §1's still-open decision lands on (unsplit, under Option A, or recombined, under Option B).
+   (unchanged behavior) and `compileScan`'s base/step phases — on the recombined split pairs
+   `compileScan`'s classifier now recognizes (§1).
 3. **Bonus find, unchanged from the original draft:** once scan blocks admit unmasked
    `.pointwise`/`.axiswise`, `checkNonlinTopLevel`/`checkNonlinScanBlock` (`Compile.lean:64-75`)
    become literally identical function bodies and should re-merge into one `checkNonlin`.
@@ -394,16 +419,10 @@ generalized version replaces them — a concrete regression technique, not just 
 Suggested (not committed) task shape, revised from the original draft to split the
 over-large first task (per critique #5) and add the pipeline-boundary work (§1):
 
-0. **Investigate first, before any of the below is scheduled as a task**: read `route`'s actual
-   implementation to determine whether it depends on scan statements arriving pre-split, and
-   check `ScanUnroll.lean`/`ScanOracle.lean` for the same dependency. This resolves §1's Option
-   A/B choice with evidence rather than either being assumed — the two options lead to
-   meaningfully different Task 1s below, so this gates the plan's own shape, not just its content.
-1. Pipeline-boundary change, per whichever option §0 supports: (Option A) `splitScan` stops
-   splitting inside `.scan` nodes, with a real differential fixture proving `evalScheduled` agrees
-   on the now-unsplit scan statement; or (Option B) `compileScan`'s Phase 1 classifier gains
-   split-pair recognition, entirely contained in `Eval/Plan/Compile.lean`. Either way: confirm
-   `finalizeScans`/`schedule` are unaffected (already argued in §1, re-confirm directly).
+1. `compileScan`'s Phase 1 classifier gains split-pair recognition (§1, Option B, resolved) —
+   detect and recombine the `%nl...`-prefixed linear statement plus its trivial-read nonlin
+   partner into one logical unit, entirely contained in `Eval/Plan/Compile.lean`. A real
+   differential fixture confirming `evalScheduled` still agrees on a real nonlin-in-scan program.
 2. Wiring-loop generalization alone (no new node kinds yet) — its own task, its own review,
    verified via the mutation/error-matrix technique above against the *existing* `.assign`/`.scan`
    behavior only.
@@ -412,12 +431,14 @@ over-large first task (per critique #5) and add the pipeline-boundary work (§1)
 4. The shared chaining helper (§6), with its publication contract as an explicit fixture set;
    refactor `prepareEvalPlan`'s `.plain` branch to use it (parity fixture: `.identity` still
    byte-for-byte unchanged).
-5. Wire `compileScan`'s Phase 3/4 to call the same helper (on unsplit statements under Option A,
-   or recombined pairs under Option B, §1); the retained-local-axis remap (§2) as its own tested
-   unit; the `.freeNorm` inventory (§8); relax `checkScanLHSSlot`; merge `checkNonlin`.
+5. Wire `compileScan`'s Phase 3/4 to call the same helper on the recombined pairs from Task 1;
+   the retained-local-axis remap (§2) as its own tested unit; the `.freeNorm` inventory (§8);
+   relax `checkScanLHSSlot`; merge `checkNonlin`.
 6. Test matrix (§12) and closure: architecture doc, discoverability, completion record,
    whole-branch review (two independent reviewers, per the same soundness-relevant-closed-sum rule
-   Thread 4 applied).
+   Thread 4 applied). The completion record should also mention the discovered-but-out-of-scope
+   `route`/`repStmt` mislabeling bug (§1) for discoverability, even though this thread doesn't fix
+   it.
 
 ## 12. Test matrix
 
@@ -447,14 +468,6 @@ Expanded from the original draft's six-fixture sketch, which covered only smoke 
 
 ## Open items for the implementation plan to resolve (not decided here)
 
-- **The highest-priority open item**: whether `route` (`TLProgram.compile`'s final phase,
-  `DSL/Compile.lean:31` — confirmed to share `splitNonlins`' exact output with the Eval/Plan
-  pipeline, §1) or the differential/oracle machinery (`ScanUnroll.lean`/`ScanOracle.lean`, not
-  yet investigated) actually *depends on* scan statements arriving pre-split, as opposed to
-  merely being fed them today. This determines the choice between §1's Option A (change
-  `splitScan`, simpler, but touches a function `route` also consumes) and Option B (leave
-  `splitScan` untouched, recombine split pairs inside `compileScan` instead, more contained but
-  more complex) — resolve with evidence before scheduling Task 1, not by assumption either way.
 - Exact Lean signature for the wiring-loop generalization's per-node source-check callback (§7) —
   a real Lean-idiom judgment call, needs `check-snippet.sh` verification against the real types.
 - The exact shape of the shared chaining helper's result value (§6) — illustrative only here, not
