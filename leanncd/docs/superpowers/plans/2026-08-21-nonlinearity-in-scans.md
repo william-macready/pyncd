@@ -1,5 +1,11 @@
 # Nonlinearity inside scan blocks
 
+**Dependency**: this plan depends on `2026-08-21-wiring-loop-generalization.md` having already landed
+on `main` — specifically, `checkPlanBlock`/`checkPlan` must already delegate to the generalized
+`WiringNode`/`checkStepGraph` implementation (that plan's own Task 1) before this plan's Task 1
+(`BlockStep`/`CheckedBlockStepEvidence`, formerly this plan's Task 2) can extend that dispatch with new
+arms. See that plan's own §3 for `WiringNode`/`checkStepGraph`'s design — not re-described here.
+
 ## 0. Session verification record (2026-08-21)
 
 Everything below was re-verified directly against the repo at `main` (`e09a270`, already pushed to
@@ -138,7 +144,7 @@ publication contract (chaining helper), a `.pointwise`/`.axiswise` `BlockStep`'s
 ALWAYS a freshly-allocated internal slot produced by the immediately-preceding `.assign` step in the
 SAME block — never a capture slot — so it can never be a captured-state read and needs no
 independent causality check. Confirmed by re-deriving the chaining helper's own slot-allocation
-scheme (Task 3/6 below): captures occupy positions `0 .. captureCount`, and internal/published slots
+scheme (Task 2/5 below): captures occupy positions `0 .. captureCount`, and internal/published slots
 are allocated starting at `captureCount + stepsProducedSoFar`, strictly after every capture.
 
 **The `route`/`repStmt` mislabeling bug the design doc's §1 documents as discovered-but-out-of-scope**
@@ -171,8 +177,8 @@ and `compileScan`'s Phase 1/3/4 correctly recombine and chain it, `template2`'s 
 (`L ∈ {2,3} × Aneg ∈ {true,false}`) are predicted to move from `.rejectedNonlin` to `.accepted`.
 `test/Eval/Plan/DifferentialTest.lean`'s `scanCorpusSplit` guard (currently pinned `total == 17 &&
 accepted == 9 && nonlin == 4 && agg == 4`) must be re-pinned to the predicted `total == 17 && accepted
-== 13 && nonlin == 0 && agg == 4` — Task 7 verifies this against a REAL `lake build` run and, if the
-real run disagrees with this prediction, that is a genuine defect in Tasks 1-6 to report, not a
+== 13 && nonlin == 0 && agg == 4` — Task 6 verifies this against a REAL `lake build` run and, if the
+real run disagrees with this prediction, that is a genuine defect in Tasks 1-5 to report, not a
 number to silently accept (mirroring this same file's own stop-condition precedent, applied in the
 opposite direction from Thread 4's "no change expected" case). `checkScanCase`'s own `| cause => throw
 "rejected for an unexpected reason"` fallback (already present, unmodified) already guards against a
@@ -224,17 +230,15 @@ Plan/ScanCompileTest.lean` — the "I-J" base fixture (`baseBlock.assignments` a
 #[3]`), used as the donor for a base-block axiswise fixture's shape.
 
 **`.claude/skills/slice-plan/check-snippet.sh` ran clean against every new Lean declaration this plan
-ships**, six scratch files, all green on final form (one authoring-time fix, noted per-snippet below):
+ships**, four scratch files, all green on final form (one authoring-time fix, noted per-snippet below):
 split-pair recombination (against the REAL `splitStmt`, not a simulated shape); the retained-local-
 axis remap (`retainedAxisPos`, six cases including the design doc's own worked "iteration slot before
 the marker" example); the shared chaining helper (`chainNonlinStep`/`NonlinChainedStep`) against the
-real `AssignPlan`/`RawPointwisePlan`/`RawAxiswisePlan`; the generalized wiring loop
-(`WiringNode`/`checkStepGraph`) instantiated TWICE — once against real `BlockError`/`CheckedAssignPlan`
-(confirming it serves the block call site) and once against real `PlanStepError`/
-`CheckedPlanStepEvidence` (confirming the SAME generic shape also serves the outer call site,
-directly resolving the design doc's own open item about this signature); and the running slot-
-accounting scheme `compileScan`'s Phase 3/4 needs once a statement can consume one or two physical
-slots. Full detail in §9 below.
+real `AssignPlan`/`RawPointwisePlan`/`RawAxiswisePlan`; and the running slot-accounting scheme
+`compileScan`'s Phase 3/4 needs once a statement can consume one or two physical slots. `WiringNode`/
+`checkStepGraph` itself (two further `check-snippet.sh` passes) is verified in
+`2026-08-21-wiring-loop-generalization.md`'s own §0/§7, not re-verified here — this plan only builds
+new cases atop it. Full detail in §9 below.
 
 ## 1. Purpose
 
@@ -300,7 +304,7 @@ representation. This closes out thread 4's own architecture-doc row (which curre
 
 - `test/Eval/Plan/DifferentialTest.lean`'s `scanCorpusSplit` guard changes from `total == 17 &&
   accepted == 9 && nonlin == 4 && agg == 4` to `total == 17 && accepted == 13 && nonlin == 0 && agg
-  == 4` (Task 7) — a predicted, designed-for change, verified against a real `lake build` run before
+  == 4` (Task 6) — a predicted, designed-for change, verified against a real `lake build` run before
   landing, not assumed.
 - `LeanNCD/Eval/AGENTS.md`'s "Find It Fast" `Plan/` row stays at **17 files** — this plan adds no new
   file, only new declarations inside existing ones (unlike Thread 4, which added `Nonlin.lean` and
@@ -402,7 +406,7 @@ exactly.
 Both callers (top-level `.plain` branch and `compileScan`'s Phase 3/4) apply this remap to
 `resolveNonlinAxis`'s output before building a `RawAxiswisePlan`, including the top-level caller
 (where it is provably a no-op, per the design doc's own instruction to make this one application of
-a shared function rather than an implicit identity — Task 4's mutation check confirms the no-op
+a shared function rather than an implicit identity — Task 3's mutation check confirms the no-op
 claim directly).
 
 ### 3.3 The shared chaining helper
@@ -446,81 +450,14 @@ block-output bookkeeping) only `publishedSlot`, never `internalSlot` — this is
 responsibility (§3.5 below), not something `chainNonlinStep` enforces internally, since it has no
 name environment or output-slot list to enforce it against.
 
-### 3.4 The generalized wiring loop
+### 3.4 The generalized wiring loop (built by a prerequisite slice)
 
-`checkPlan`'s and `checkPlanBlock`'s wiring loops differ only in: which `PlanError`-shaped failures
-get wrapped by which final constructor (`.assign`/`.wiring`), the context obligation (empty vs.
-`block.contextShape`), and whether a per-node source-check needs `.assign`'s own rich per-term/
-per-factor loop or the generic `sourceSlots`-based one. Every genuinely shared `PlanError` value
-(slot range, input ordering, overwrite, duplicate destination, missing production) is embedded
-through exactly ONE caller-supplied function, `liftWiring : PlanError → E` — this collapses design
-doc §7's six-callback sketch into one, since every one of those failures already IS a bare `PlanError`
-value at both existing call sites.
-
-```lean
-structure WiringNode (E C : Type) where
-  contextCheck     : Except E Unit
-  destinationSlots : Array TensorSlot
-  sourceCheck      : Array Bool → Except E Unit
-  localCheck       : Except E C
-
-def checkStepGraph {E C : Type} (n : Nat) (inputs : Array TensorSlot) (liftWiring : PlanError → E)
-    (nodes : Array (WiringNode E C)) : Except E (Array C) := do
-  for h : i in [0 : inputs.size] do
-    let s := inputs[i]
-    unless s < n do throw (liftWiring (.slotOutOfRange s n))
-    if h2 : i + 1 < inputs.size then
-      let s2 := inputs[i + 1]
-      if s == s2 then throw (liftWiring (.duplicateInputSlot s))
-      else if s2 < s then throw (liftWiring (.inputSlotsNotOrdered i))
-  let mut available : Array Bool := Array.replicate n false
-  let mut producedBy : Array (Option Nat) := Array.replicate n none
-  for s in inputs do available := available.set! s true
-  let mut checkedNodes : Array C := #[]
-  for h : ni in [0 : nodes.size] do
-    let node := nodes[ni]
-    node.contextCheck
-    for dest in node.destinationSlots do
-      match available[dest]? with
-      | none => throw (liftWiring (.nodeError ni (.slotOutOfRange dest n)))
-      | some isAvail =>
-          if isAvail then
-            match producedBy[dest]?.join with
-            | none => throw (liftWiring (.inputSlotOverwritten dest ni))
-            | some firstNode => throw (liftWiring (.duplicateDestination dest firstNode ni))
-    node.sourceCheck available
-    let c ← node.localCheck
-    checkedNodes := checkedNodes.push c
-    for dest in node.destinationSlots do
-      available := available.set! dest true
-      producedBy := producedBy.set! dest (some ni)
-  for h : i in [0 : n] do
-    unless available[i]! do throw (liftWiring (.missingProduction i))
-  return checkedNodes
-```
-
-`WiringNode`'s four fields are genuine FUNCTIONS/values built by the caller per node, called by the
-loop at the exact point in the per-node sequence (context → destination → source → local-check)
-`checkPlan`/`checkPlanBlock` already use today — this preserves validation order and error precedence
-by construction, not by re-deriving it, and (since Lean's `Except` values carry no side effects) a
-node past the first failure is simply never reached by the `for` loop, exactly matching today's
-short-circuiting.
-
-**Why this is the right signature, not merely a plausible one** (the design doc's own open item):
-verified via `check-snippet.sh` TWICE, independently — once instantiated with `E := BlockError`,
-`C := CheckedBlockStepEvidence` against the real `checkAssign`/`CheckedAssignPlan` (confirming it
-serves `checkPlanBlock`), and once with `E := PlanStepError`, `C := CheckedPlanStepEvidence` against
-the real `checkPointwise`/`RawPointwisePlan` (confirming the SAME generic shape also serves
-`checkPlan`, including a `.assign → .pointwise` chain accepted correctly and a shape-mismatched
-`.pointwise` rejected with `.nonlin 1 _`, never mis-wrapped through `.assign`). Both fixtures also
-independently confirmed the `sourceSlot == destinationSlot` self-aliasing argument transfers: a
-never-produced self-aliasing destination is rejected via `invalidForwardRead` (source-check runs
-against the SAME `available` snapshot the destination-check just examined, before this node's own
-destination is marked produced).
-
-`checkStepGraph`/`WiringNode` live in `Block.lean` (visible to `EvalPlan.lean` transitively via
-`Scan.lean`'s own import of `Block.lean` — confirmed by re-reading the import chain: `EvalPlan.lean →
-Scan.lean → Block.lean`; no new import needed anywhere).
+`WiringNode`/`checkStepGraph` — the shared generalization of `checkPlan`'s and `checkPlanBlock`'s
+wiring loops — is built entirely by `2026-08-21-wiring-loop-generalization.md`'s own Task 1, landed on
+`main` before this plan's own execution starts; see that plan's §3 for the type, the `liftWiring :
+PlanError → E` collapse, and its two-instantiation verification. This plan's own Task 1 (§3.5 below)
+only ADDS new `WiringNode`-building cases to `checkPlanBlock`'s existing per-node loop for the two new
+`BlockStep` arms — it does not touch `checkStepGraph`/`WiringNode` themselves.
 
 ### 3.5 `BlockStep`/`CheckedBlockStepEvidence`
 
@@ -641,7 +578,7 @@ would any checker catch it? Yes — `checkWrites` (`Scan.lean`, unchanged by thi
 requires `block.outputs.contains w.outputSlot` (`writeSourceNotBlockOutput`) and that every declared
 output is written exactly once (`blockOutputNotWritten`); PROVIDED `outputs`/`stepOutputs` themselves
 are built correctly (this plan's own new responsibility, verified above), a wrong `outputSlot`
-mapping is rejected there. Task 6 pins this with a deliberate mutation fixture (build a
+mapping is rejected there. Task 5 pins this with a deliberate mutation fixture (build a
 `StateWriteMap` pointing at the internal slot instead of the published one; confirm `checkScanPlan`
 rejects it via `writeSourceNotBlockOutput`) rather than treating the existing check as
 folklore-safe by inference.
@@ -659,120 +596,63 @@ confirmed unchanged at block level; rows 16-19 are new, specific to the block-le
 | 1-9 | slot range, dtype (×2), dtype agreement, shape agreement (×2), axisPos range, rank-0 admission | Identical semantics — `checkPointwise`/`checkAxiswise` take `sigs : Array TensorSignature`, which at block level is `block.tensorSigs` (the block's own LOCAL table), exactly mirroring how `.assign`'s own `checkAssign` already operates against `block.tensorSigs` inside `checkPlanBlock` today | **Required, unchanged from Thread 4** |
 | 10 | masked axiswise forbidden | `RawAxiswisePlan` has no mask field regardless of context — still forbidden by type absence uniformly | Forbidden by type absence |
 | 11 | negative axisPos | `axisPos : Nat` regardless of context | Forbidden by type |
-| 12 | `sourceSlot == destinationSlot` (never-produced) | The SAME unreachability argument transfers, proven by the SAME `checkStepGraph` code (not a re-derivation): destination-check-then-source-check against one shared `available` snapshot per node, identical at both call sites | Silently ignored *locally*, proven unreachable structurally — pinned by a Task 2 regression fixture at the block level too (mirroring Thread 4's own Task 2 pair) |
+| 12 | `sourceSlot == destinationSlot` (never-produced) | The SAME unreachability argument transfers, proven by the SAME `checkStepGraph` code (not a re-derivation): destination-check-then-source-check against one shared `available` snapshot per node, identical at both call sites | Silently ignored *locally*, proven unreachable structurally — pinned by a Task 1 regression fixture at the block level too (mirroring Thread 4's own Task 2 pair) |
 | 13 | duplicate destination | Owned by `checkStepGraph`'s outer bookkeeping, shared with the outer call site | Silently ignored by design, shared ownership |
 | 14 | forward read | Same | Silently ignored by design, shared ownership |
 | 15 | worker-side out-of-bounds | `runDensePointwise`/`runDenseAxiswise` reused verbatim; still shape-preserving by construction (no coordinate arithmetic that can go out of range) — unaffected by which store array `runDenseBlock` passes them versus `runDensePlan` | Not a write-path predicate at all, same reasoning as Thread 4's own row 15 |
 | 16 | block-context obligation (`blockContextMismatch`) applied to a `.pointwise`/`.axiswise` `BlockStep` | `RawPointwisePlan`/`RawAxiswisePlan` carry no `contextShape` field at all — nothing to check against, mirroring the outer level's own "skips `checkAssign`'s specific check since it has no `contextShape` field" treatment exactly | N/A by type absence, not a gap |
 | 17 | nonlin step's destination membership in `block.outputs` | Neither `checkNonlinIO` nor `checkPointwise`/`checkAxiswise` inspect `block.outputs` at all — correctly so, since `.assign` doesn't either; outputs-membership is `checkWrites`'/`checkPlanBlock`'s own outer bookkeeping, never a per-node checker's job | N/A — owned entirely by the caller's bookkeeping, identical division of labor to `.assign` |
-| 18 | internal-vs-published slot confusion (a write-map naming the wrong physical slot) | `checkNonlinIO` has zero awareness of "internal" vs. "published" — that distinction is `chainNonlinStep`'s/`compileScan`'s own responsibility. **Not silently unguarded**: `checkWrites`'s existing `writeSourceNotBlockOutput`/`blockOutputNotWritten` (`Scan.lean`, unchanged) catch a wrong mapping, PROVIDED this plan's own `outputs`/`stepOutputs` accumulator (§3.6) is itself built correctly — the safety net is pre-existing, but the precondition it relies on is THIS plan's new code, not already-proven | Silently ignored by `checkNonlinIO` itself, proven safe by an existing sibling check under a NEW precondition — pinned by Task 6's own mutation fixture (§3.6), not left as an inferred guarantee |
+| 18 | internal-vs-published slot confusion (a write-map naming the wrong physical slot) | `checkNonlinIO` has zero awareness of "internal" vs. "published" — that distinction is `chainNonlinStep`'s/`compileScan`'s own responsibility. **Not silently unguarded**: `checkWrites`'s existing `writeSourceNotBlockOutput`/`blockOutputNotWritten` (`Scan.lean`, unchanged) catch a wrong mapping, PROVIDED this plan's own `outputs`/`stepOutputs` accumulator (§3.6) is itself built correctly — the safety net is pre-existing, but the precondition it relies on is THIS plan's new code, not already-proven | Silently ignored by `checkNonlinIO` itself, proven safe by an existing sibling check under a NEW precondition — pinned by Task 5's own mutation fixture (§3.6), not left as an inferred guarantee |
 | 19 | per-step/per-base slice shape vs. a state's complete-history shape | `outputShape`/`shape` passed into `chainNonlinStep` is always the block's own local per-statement slice (from `resolveSizeOrFail` over the statement's own retained UIDs) — `checkNonlinIO` never sees, and does not need to know about, a state's complete-history shape (which lives only in the OUTER `tensorSigs` table, at the state's own `destSlot`) | Required and automatically correct by construction, mirroring how `.assign`'s own `outputShape` already works today |
 
 ## 5. Task graph and review weight
 
 ```text
-Task 1: wiring-loop generalization (no new node kinds)
-    │
-    ▼
-Task 2: BlockStep/CheckedBlockStepEvidence + assignments→steps rename ──┐
+Task 1: BlockStep/CheckedBlockStepEvidence + assignments→steps rename ──┐
                                                                           │
-Task 3: shared chaining helper + .plain branch refactor ─────────────────┤
-                                                                          ├─> Task 6: Phase 2/3/4
-Task 4: checkNonlin merge + checkScanLHSSlot relaxation ─────────────────┤    integration
+Task 2: shared chaining helper + .plain branch refactor ─────────────────┤
+                                                                          ├─> Task 5: Phase 2/3/4
+Task 3: checkNonlin merge + checkScanLHSSlot relaxation ─────────────────┤    integration
                                                                           │
-Task 5: compileScan Phase 1 split-pair recombination ────────────────────┘
+Task 4: compileScan Phase 1 split-pair recombination ────────────────────┘
                                                                                │
                                                                                ▼
-                                                                          Task 7: differential/
+                                                                          Task 6: differential/
                                                                           corpus + closure
 ```
 
-Task 2 genuinely depends on Task 1 (it wires `checkPlanBlock`/`runDenseBlock` onto the loop Task 1
-generalizes) — a real dependency, not a parallel branch. Tasks 3, 4, and 5 are each independent of
-Tasks 1/2 and of each other (different files/functions, no shared mutable state, verified above via
-three separate spike files with zero cross-dependency) and may run in parallel with Task 1/2 and with
-each other. Task 6 depends on ALL of Tasks 2-5: it needs `BlockStep` to exist (Task 2), the chaining
-helper (Task 3), the relaxed preflight so a real program can reach `compileScan` at all (Task 4), and
-recombined statements to operate on (Task 5). Task 7 depends on Task 6.
+Task 1 depends on the wiring-loop generalization slice (`2026-08-21-wiring-loop-generalization.md`)
+having already landed — it wires `checkPlanBlock`/`runDenseBlock` onto the `checkStepGraph` loop that
+slice generalizes (§3.4). Tasks 2, 3, and 4 are each independent of Task 1 and of each other (different
+files/functions, no shared mutable state, verified above via three separate spike files with zero
+cross-dependency) and may run in parallel with Task 1 and with each other. Task 5 depends on ALL of
+Tasks 1-4: it needs `BlockStep` to exist (Task 1), the chaining helper (Task 2), the relaxed preflight
+so a real program can reach `compileScan` at all (Task 3), and recombined statements to operate on
+(Task 4). Task 6 depends on Task 5.
 
-Tasks 1 and 2 touch the closed `RawPlanBlock`/`CheckedPlanBlock`/`PlanStep`/`CheckedPlanStepEvidence`
+Task 1 touches the closed `RawPlanBlock`/`CheckedPlanBlock`/`PlanStep`/`CheckedPlanStepEvidence`
 sums every backend and every existing `.assign`/`.scan` test depends on — soundness-relevant, per this
-repo's own standing rule; both get two independent reviewers. Task 6 is the architectural centerpiece
+repo's own standing rule; it gets two independent reviewers, the same standing rule the wiring-loop
+generalization slice's own Task 1 already applied to itself. Task 5 is the architectural centerpiece
 (mirrors Thread 4's own Task 3 in weight) and also gets two independent reviewers for the same reason.
 
 | Task | Outcome | Independent review reason | Risk / process weight |
 |---|---|---|---|
-| 1 | `WiringNode`/`checkStepGraph` in `Block.lean`; `checkPlan`/`checkPlanBlock` refactored onto it, behavior UNCHANGED | Refactor of already-shipped, heavily-tested checker code for a soundness-relevant closed sum — a diff showing only the refactor cannot show whether an existing behavior silently changed | **High, two independent reviewers.** Zero new fixtures — the mutation/error-matrix technique: capture the existing pass/fail set from `test/Eval/Plan/BlockTest.lean` (7 fixtures: accept, `duplicateOutputSlot`, `blockContextMismatch`, `invalidForwardRead`, `arityMismatch`, `missingProduction`, the `CheckedPlanBlock` privacy check) plus the analogous outer-level fixtures in `test/Eval/Plan/GraphCheckTest.lean`/`GraphDenseTest.lean`, confirm the identical set reproduces after the refactor. |
-| 2 | `BlockStep`/`CheckedBlockStepEvidence` (new); `RawPlanBlock.assignments` → `steps : Array BlockStep`; `checkPlanBlock`/`runDenseBlock` rewired with 3 arms; `BlockError.nonlin` (new); `Scan.lean`'s causality loop dispatches on `BlockStep` | Touches the closed sum every scan depends on, PLUS a wide mechanical rename (≈40 call sites across 3 test files) a reviewer needs the exact file list for, not a skim | **High, two independent reviewers** for the closed-sum/new-arms half; the rename half is mechanical (≈40 literal-site edits: wrap each existing `AssignPlan` in `.assign`, rename the field) verified by full-suite green, not independently risky once the type change is right. Two NEW fixtures (a pointwise and an axiswise `BlockStep`, donors named in Task 2 below) plus the two `sourceSlot==destinationSlot` regressions mirroring Thread 4's own Task 2 pair. |
-| 3 | `chainNonlinStep`/`NonlinChainedStep`; `prepareEvalPlan`'s `.plain` branch refactored onto it | New, small, isolated function plus a refactor of already-shipped compiler code with an explicit parity gate | **Moderate.** One parity fixture (`.identity` byte-for-byte unchanged — re-run an existing `NonlinCompileTest.lean` identity-path fixture unedited) plus the 3 cases already verified in §3.3. |
-| 4 | `checkNonlin` (merged); `checkScanLHSSlot` admits `.freeNorm` | Preflight-only change, independently reviewable and testable without any of Tasks 2/3/5/6 existing yet | **Low-moderate.** 3 fixture edits: invert `CompileTest.lean`'s two existing scan-block-rejection guards (`errOf ... unsupportedNonlin` → `isOk`); add one new `.freeNorm`-inside-a-scan-admitted fixture (donor: the existing top-level `.freeNorm`-admitted fixture, adapted to a `.scan` wrapper). `ScanContractTest.lean` explicitly NOT touched (§0). |
-| 5 | `ScanCompileError.malformedNonlinSplit` (new); `recombineNonlinSplitPairsCore`/wiring into Phase 1 | New logic with no precedent to copy, but self-contained (pure function over statement triples) and unit-testable without any of Tasks 2/3/4/6 | **Moderate.** Verified via `check-snippet.sh` against the REAL `splitStmt` (§0/§3.1) — the implementer re-runs the identical style of fixture as a real `test/Eval/Plan/ScanCompileTest.lean` addition (a genuine `.scan` node whose recurrence has `nonlin ≠ .identity`, run through `compileToScheduled` then Phase 1 directly, asserting the recombined triple's exact shape), plus one `malformedNonlinSplit` fixture (a hand-built triple list violating the trivial-read shape). |
-| 6 | `retainedAxisPos`; Phase 3/4 slot accounting (`allocateBlockSlots`); `resolveNonlinAxis`/`chainNonlinStep` wired into Phase 3/4; the `.freeNorm` inventory fixes; base/step `BlockStep` sequences instead of single `AssignPlan`s | Architectural centerpiece — new classification/compilation logic with no precedent to copy, the design doc's own highest-uncertainty area | **High, two independent reviewers, no fixture-count discount.** Full test matrix per §12 below: positional-correctness (≥4), publication-correctness (≥5), base-block-correctness (≥3), negative (≥4), plus the internal/published-slot mutation fixture (§3.6). Expect at least one fix round; its own gate re-runs the FULL `Eval.Plan.*` suite, not just its own new fixtures, mirroring Thread 4's Task 3 precedent for the same reason (it edits `compileScan`, the one production scan-specializer every scan fixture depends on). |
-| 7 | New end-to-end differential fixtures; re-pinned `scanCorpusSplit` (predicted `13/0/4`); doc corrections; discoverability; completion record; whole-branch review | Every prior slice's most valuable finding came from the whole-branch tier, never a per-task diff | **High, two independent reviewers.** |
+| 1 | `BlockStep`/`CheckedBlockStepEvidence` (new); `RawPlanBlock.assignments` → `steps : Array BlockStep`; `checkPlanBlock`/`runDenseBlock` rewired with 3 arms; `BlockError.nonlin` (new); `Scan.lean`'s causality loop dispatches on `BlockStep` | Touches the closed sum every scan depends on, PLUS a wide mechanical rename (≈40 call sites across 3 test files) a reviewer needs the exact file list for, not a skim | **High, two independent reviewers** for the closed-sum/new-arms half; the rename half is mechanical (≈40 literal-site edits: wrap each existing `AssignPlan` in `.assign`, rename the field) verified by full-suite green, not independently risky once the type change is right. Two NEW fixtures (a pointwise and an axiswise `BlockStep`, donors named in Task 1 below) plus the two `sourceSlot==destinationSlot` regressions mirroring Thread 4's own Task 2 pair. |
+| 2 | `chainNonlinStep`/`NonlinChainedStep`; `prepareEvalPlan`'s `.plain` branch refactored onto it | New, small, isolated function plus a refactor of already-shipped compiler code with an explicit parity gate | **Moderate.** One parity fixture (`.identity` byte-for-byte unchanged — re-run an existing `NonlinCompileTest.lean` identity-path fixture unedited) plus the 3 cases already verified in §3.3. |
+| 3 | `checkNonlin` (merged); `checkScanLHSSlot` admits `.freeNorm` | Preflight-only change, independently reviewable and testable without any of Tasks 1/2/4/5 existing yet | **Low-moderate.** 3 fixture edits: invert `CompileTest.lean`'s two existing scan-block-rejection guards (`errOf ... unsupportedNonlin` → `isOk`); add one new `.freeNorm`-inside-a-scan-admitted fixture (donor: the existing top-level `.freeNorm`-admitted fixture, adapted to a `.scan` wrapper). `ScanContractTest.lean` explicitly NOT touched (§0). |
+| 4 | `ScanCompileError.malformedNonlinSplit` (new); `recombineNonlinSplitPairsCore`/wiring into Phase 1 | New logic with no precedent to copy, but self-contained (pure function over statement triples) and unit-testable without any of Tasks 1/2/3/5 | **Moderate.** Verified via `check-snippet.sh` against the REAL `splitStmt` (§0/§3.1) — the implementer re-runs the identical style of fixture as a real `test/Eval/Plan/ScanCompileTest.lean` addition (a genuine `.scan` node whose recurrence has `nonlin ≠ .identity`, run through `compileToScheduled` then Phase 1 directly, asserting the recombined triple's exact shape), plus one `malformedNonlinSplit` fixture (a hand-built triple list violating the trivial-read shape). |
+| 5 | `retainedAxisPos`; Phase 3/4 slot accounting (`allocateBlockSlots`); `resolveNonlinAxis`/`chainNonlinStep` wired into Phase 3/4; the `.freeNorm` inventory fixes; base/step `BlockStep` sequences instead of single `AssignPlan`s | Architectural centerpiece — new classification/compilation logic with no precedent to copy, the design doc's own highest-uncertainty area | **High, two independent reviewers, no fixture-count discount.** Full test matrix per §12 below: positional-correctness (≥4), publication-correctness (≥5), base-block-correctness (≥3), negative (≥4), plus the internal/published-slot mutation fixture (§3.6). Expect at least one fix round; its own gate re-runs the FULL `Eval.Plan.*` suite, not just its own new fixtures, mirroring Thread 4's Task 3 precedent for the same reason (it edits `compileScan`, the one production scan-specializer every scan fixture depends on). |
+| 6 | New end-to-end differential fixtures; re-pinned `scanCorpusSplit` (predicted `13/0/4`); doc corrections; discoverability; completion record; whole-branch review | Every prior slice's most valuable finding came from the whole-branch tier, never a per-task diff | **High, two independent reviewers.** |
 
-## Task 1: wiring-loop generalization
-
-### Outcome
-
-`Block.lean` gains `WiringNode`/`checkStepGraph`; `checkPlanBlock` (`Block.lean`) and `checkPlan`
-(`EvalPlan.lean`) are both refactored to build `WiringNode`s and delegate to it. Every existing
-`.assign`/`.scan` behavior is byte-for-byte unchanged — no new node kind exists yet.
-
-### Files
-
-- `LeanNCD/Eval/Plan/Block.lean` (`WiringNode`, `checkStepGraph`; `checkPlanBlock` rewritten)
-- `LeanNCD/Eval/Plan/EvalPlan.lean` (`checkPlan` rewritten)
-
-### Implementation
-
-1. Add `WiringNode`/`checkStepGraph` to `Block.lean` exactly as verified in §3.4.
-2. Rewrite `checkPlanBlock`'s per-assignment loop: build one `WiringNode BlockError
-   CheckedAssignPlan` per `AssignPlan` in `block.assignments` (still `AssignPlan`-only — Task 2 adds
-   the new node kinds), with `contextCheck := unless step.contextShape == block.contextShape do throw
-   (.blockContextMismatch ni block.contextShape step.contextShape)`, `destinationSlots := #[step.
-   destinationSlot]`, `sourceCheck` the existing rich per-term/per-factor loop (unchanged, just
-   wrapped as a closure), `localCheck := match checkAssign block.tensorSigs step with .error e =>
-   throw (.wiring (.nodeError ni e)) | .ok c => pure c`. Call `checkStepGraph block.tensorSigs.size
-   block.inputs BlockError.wiring nodes`, keeping the pre-existing `outputs`-range/duplicate check
-   (§0's item (c)) as a separate step before/after the loop call, unchanged.
-3. Rewrite `checkPlan`'s three match blocks the same way, building one `WiringNode PlanStepError
-   CheckedPlanStepEvidence` per `PlanStep`, with the SAME `.assign`-rich/`.scan`-generic source-check
-   split it already has, and `localCheck` matching each of the 4 existing arms' existing dispatch to
-   `checkAssign`/`checkScanPlan`/`checkPointwise`/`checkAxiswise`. Call `checkStepGraph raw.
-   tensorSigs.size raw.inputSlots PlanStepError.assign nodes`.
-4. `runDensePlan`/`runDenseBlock` are UNCHANGED by this task (their own dispatch loops are separate
-   from the checker's wiring loop and untouched here).
-
-### Mutation/error-matrix technique (per the design doc's own risk section)
-
-Before the refactor, run `lake build Eval.Plan.BlockTest Eval.Plan.GraphCheckTest Eval.Plan.
-GraphDenseTest Eval.Plan.EvalPlanTest` and record the pass/fail outcome and, for each rejection
-fixture, the EXACT error constructor observed (already pinned by each fixture's own `#guard`/
-`run_cmd` assertion — no new capture needed beyond re-reading each file's existing assertions). After
-the refactor, re-run the identical command and confirm every fixture still asserts the SAME
-constructor. Do not add new fixtures for this task; the existing ones are the matrix.
-
-### Gate
-
-```bash
-cd leanncd
-lake build Eval.Plan.BlockTest Eval.Plan.GraphCheckTest Eval.Plan.GraphDenseTest \
-  Eval.Plan.EvalPlanTest Eval.Plan.ScanTest Eval.Plan.ScanCompileTest
-lake build Tests
-lake build LeanNCD
-```
-
-**Two independent reviewers** — refactor of a soundness-relevant closed sum's checker, per this
-repo's own standing rule; a diff showing only the new `WiringNode`-building code cannot show whether
-an existing arm's behavior silently changed.
-
-## Task 2: `BlockStep`/`CheckedBlockStepEvidence`
+## Task 1: `BlockStep`/`CheckedBlockStepEvidence`
 
 ### Outcome
 
 `RawPlanBlock.steps : Array BlockStep` (renamed from `assignments : Array AssignPlan`);
 `CheckedPlanBlock.checkedNodes : Array CheckedBlockStepEvidence`; `checkPlanBlock`/`runDenseBlock`
-handle all 3 `BlockStep` arms via Task 1's generalized loop; `Scan.lean`'s causality loop dispatches
+handle all 3 `BlockStep` arms via the `checkStepGraph` loop from `2026-08-21-wiring-loop-generalization.md`'s
+own Task 1; `Scan.lean`'s causality loop dispatches
 on `BlockStep`; every existing `RawPlanBlock` literal across the test suite is updated to the new
 field name and wraps its existing `AssignPlan`s in `.assign`.
 
@@ -781,7 +661,8 @@ field name and wraps its existing `AssignPlan`s in `.assign`.
 - `LeanNCD/Eval/Plan/RawStep.lean` (`BlockStep`, `BlockStep.sourceSlots`/`destinationSlot`;
   `RawPlanBlock.assignments` → `steps : Array BlockStep`)
 - `LeanNCD/Eval/Plan/Block.lean` (`CheckedBlockStepEvidence`; `BlockError.nonlin`; `checkPlanBlock`/
-  `runDenseBlock` rewired with 3 arms, using Task 1's `checkStepGraph`)
+  `runDenseBlock` rewired with 3 arms, using `checkStepGraph` from `2026-08-21-wiring-loop-
+  generalization.md`'s own Task 1)
 - `LeanNCD/Eval/Plan/Scan.lean` (the causality loop's dispatch, §0's own finding)
 - `test/Eval/Plan/BlockTest.lean` (field rename in every literal; two new fixtures)
 - `test/Eval/Plan/ScanTest.lean` (field rename in every literal — ≈25 sites, no behavior change)
@@ -797,10 +678,11 @@ field name and wraps its existing `AssignPlan`s in `.assign`.
    Array BlockStep`.
 2. `Block.lean`: add `CheckedBlockStepEvidence` (§3.5); add `BlockError.nonlin (nodeIndex : Nat)
    (cause : NonlinPlanError)`, re-deriving `BlockError`'s existing `DecidableEq, BEq, Repr, Inhabited`
-   (all already-supported field types). Rewrite `checkPlanBlock`'s node-building (from Task 1's
-   `AssignPlan`-only `WiringNode`-per-assignment loop) into a `match step with | .assign a => ... |
+   (all already-supported field types). Rewrite `checkPlanBlock`'s node-building (from the
+   `AssignPlan`-only `WiringNode`-per-assignment loop built by `2026-08-21-wiring-loop-
+   generalization.md`'s own Task 1) into a `match step with | .assign a => ... |
    .pointwise p => ... | .axiswise a => ...` building each field per arm — `.assign`'s arm is
-   Task 1's own code unchanged; `.pointwise`/`.axiswise` use `BlockStep.sourceSlots`/
+   that other plan's own code unchanged; `.pointwise`/`.axiswise` use `BlockStep.sourceSlots`/
    `destinationSlot` for the generic source-check/destination-slots fields (placeholder locators
    `0 0`, mirroring `checkPlan`'s own `.scan`/`.pointwise`/`.axiswise` treatment) and `checkPointwise`/
    `checkAxiswise` for `localCheck`, wrapping a failure as `.nonlin ni e`. Rewrite `runDenseBlock`'s
@@ -811,7 +693,7 @@ field name and wraps its existing `AssignPlan`s in `.assign`.
    justification (a nonlin `BlockStep`'s source is always a freshly-allocated internal slot,
    never a capture).
 4. Every other `.assignments` read/construction site in `Scan.lean`/`Block.lean`/`Compile.lean` is
-   Task 6's concern (Phase 3/4 construction) except the ones this task must fix for the TEST suite to
+   Task 5's concern (Phase 3/4 construction) except the ones this task must fix for the TEST suite to
    keep compiling: `BlockTest.lean`/`ScanTest.lean`/`ScanCompileTest.lean`'s own literals, updated
    mechanically (`assignments := #[a1, a2]` → `steps := #[.assign a1, .assign a2]`; every
    `.assignments.getD i default`/`.assignments.size`/`.assignments.map (...)` read updated to `.steps`
@@ -852,7 +734,7 @@ lake build LeanNCD
 **Two independent reviewers** — new arms on a soundness-relevant closed sum every scan depends on,
 per this repo's own standing rule; mirrors Thread 4's own Task 2 precedent exactly.
 
-## Task 3: shared chaining helper
+## Task 2: shared chaining helper
 
 ### Outcome
 
@@ -903,14 +785,14 @@ lake build LeanNCD
 
 Independent task review.
 
-## Task 4: `checkNonlin` merge + `checkScanLHSSlot` relaxation
+## Task 3: `checkNonlin` merge + `checkScanLHSSlot` relaxation
 
 ### Outcome
 
 `checkNonlin` (one function, replacing `checkNonlinTopLevel`/`checkNonlinScanBlock`) admits all three
 `Nonlin` kinds at both call sites (`checkStmt`/`checkScanBlockStmt`). `checkScanLHSSlot` admits
 `.freeNorm`. A scan-block statement carrying `.pointwise`/`.axiswise`/`.freeNorm` now passes
-`capabilityPreflight` — it is NOT yet correctly compiled (Task 6), but preflight no longer stands in
+`capabilityPreflight` — it is NOT yet correctly compiled (Task 5), but preflight no longer stands in
 its way.
 
 ### Files
@@ -939,7 +821,7 @@ its way.
   node (mirroring `ScanContractTest.lean`'s `freeNormBase` shape: `.assign "S" [.freeNorm j, .iterAt l
   0] {...; nonlin := .identity}` as a base statement) — confirm `capabilityPreflight` now accepts it.
   (This one fixture alone, with `.identity` nonlin, will still be REJECTED downstream by
-  `resolveNonlinAxis` as `unmarkedReductionAxis` once Task 6 lands — that is correct and expected,
+  `resolveNonlinAxis` as `unmarkedReductionAxis` once Task 5 lands — that is correct and expected,
   exactly mirroring the top-level `spuriousMarkerPointwise` fixture's own intentional-narrowing shape;
   this task's own fixture only asserts the PREFLIGHT-level acceptance, not full compilation.)
 
@@ -959,14 +841,14 @@ lake build LeanNCD
 
 Independent task review.
 
-## Task 5: `compileScan` Phase 1 split-pair recombination
+## Task 4: `compileScan` Phase 1 split-pair recombination
 
 ### Outcome
 
 `ScanCompileError.malformedNonlinSplit` exists; `recombineNonlinSplitPairsCore` exists and is wired
 into `compileScan`'s Phase 1, replacing `baseParts`/`recurParts` with their recombined forms before
-state/scratch classification runs. Not yet reachable end-to-end from a real program (Task 4's
-preflight relaxation and Task 6's chaining wiring are both still needed) — unit-tested directly.
+state/scratch classification runs. Not yet reachable end-to-end from a real program (Task 3's
+preflight relaxation and Task 5's chaining wiring are both still needed) — unit-tested directly.
 
 ### Files
 
@@ -1015,7 +897,7 @@ lake build LeanNCD
 
 Independent task review.
 
-## Task 6: Phase 2/3/4 integration — `compileScan` fully admits scan-block nonlinearity
+## Task 5: Phase 2/3/4 integration — `compileScan` fully admits scan-block nonlinearity
 
 ### Outcome
 
@@ -1054,7 +936,7 @@ as at top level.
 4. Rewrite Phase 4 (step block) identically, renaming `stepAssigns` to `stepSteps`, with
    `resultSlotOf`/`scratchSlotOf` recording `publishedSlot`.
 5. `RawScanPlan`'s `baseBlock`/`stepBlock` literal construction (Phase 6, assembly) uses `steps :=
-   baseSteps`/`steps := stepSteps` (matching Task 2's rename) and `outputs := <the incrementally-built
+   baseSteps`/`steps := stepSteps` (matching Task 1's rename) and `outputs := <the incrementally-built
    published-slot array>` (base) / `stepOutputs` (step, already incrementally built for the
    per-state write loop — Phase 4's OWN state-result loop, which iterates `stateNames` not
    statements, is UNCHANGED by this task, since a state's result slot is looked up via
@@ -1080,7 +962,7 @@ as at top level.
   a free-face base write, one of the two nonlinear.
 - **Negative**: masked axiswise in base and step (donor: `NonlinCompileTest.lean`'s `sampleMask`),
   confirm `maskedAxiswiseNotSupported`; a `.freeNorm` marker on a `.pointwise` scan-block statement
-  (donor: Task 4's own new preflight-only fixture, now run all the way through — confirm
+  (donor: Task 3's own new preflight-only fixture, now run all the way through — confirm
   `unmarkedReductionAxis`).
 - **The internal/published-slot mutation** (§3.6's own safety-net dependency): hand-build a
   `StateWriteMap` whose `outputSlot` is deliberately set to the internal (pre-nonlin) slot rather than
@@ -1108,7 +990,7 @@ lake build LeanNCD
 **Two independent reviewers**, no fixture-count discount — architectural centerpiece, per the task
 brief's own instruction.
 
-## Task 7: differential/corpus re-verification and closure
+## Task 6: differential/corpus re-verification and closure
 
 ### Outcome
 
@@ -1129,14 +1011,14 @@ code/output, and flags the `route`/`repStmt` bug for the next reader.
 
 ### Implementation
 
-1. Add end-to-end differential fixtures for the scan-block nonlin cases Task 6 introduced (reusing
-   Task 6's own donor programs/tensors verbatim, comparing `prepareEvalPlan` + `runPreparedDense`
+1. Add end-to-end differential fixtures for the scan-block nonlin cases Task 5 introduced (reusing
+   Task 5's own donor programs/tensors verbatim, comparing `prepareEvalPlan` + `runPreparedDense`
    against `evalScheduled` bit-for-bit via `envEq`, exactly as `DifferentialTest.lean`'s existing
    `checkScanCase`/`scanParityCheck` machinery already does for every other accepted case — no new
    comparison machinery needed).
 2. Re-run `scanCorpusSplit` for real and update the pinned guard from `total == 17 && accepted == 9 &&
    nonlin == 4 && agg == 4` to the observed values. **If the observed values do not match this plan's
-   own predicted `13/0/4` split** (§0), that is a genuine Task 1-6 defect to report and fix, per this
+   own predicted `13/0/4` split** (§0), that is a genuine Task 1-5 defect to report and fix, per this
    file's own established stop-condition precedent — do not silently accept a different number
    without understanding why `template2` did not fully admit.
 3. `papers/jax_evalplan_architecture.md`: correct thread 4's row — replace "scan-block nonlinearity
@@ -1178,13 +1060,13 @@ lake build   # full suite
 
 **Two independent whole-branch reviewers**, per this repo's own standing lesson (skill §4: the
 whole-branch tier is where every prior slice's most valuable finding came from) — do not compress
-this because Tasks 1-6 land clean.
+this because Tasks 1-5 land clean.
 
 ## 6. Definition of done
 
-- [ ] `checkStepGraph`/`WiringNode` exist in `Block.lean`; `checkPlan`/`checkPlanBlock` both use it;
-      every pre-existing `.assign`/`.scan` fixture (BlockTest/GraphCheckTest/GraphDenseTest/
-      EvalPlanTest) still asserts the identical error constructor.
+- [ ] Precondition confirmed: `2026-08-21-wiring-loop-generalization.md` has already landed on
+      `main` — `checkStepGraph`/`WiringNode` exist in `Block.lean` and `checkPlan`/`checkPlanBlock`
+      already delegate to them, before this plan's own Task 1 begins.
 - [ ] `RawPlanBlock.steps : Array BlockStep`; `CheckedBlockStepEvidence` exists; `checkPlanBlock`/
       `runDenseBlock` handle all 3 arms; `BlockError.nonlin` exists; `Scan.lean`'s causality loop
       dispatches on `BlockStep`, skipping `.pointwise`/`.axiswise` with the stated justification.
@@ -1202,32 +1084,34 @@ this because Tasks 1-6 land clean.
       outputSlot`/block `outputs` — pinned by the internal/published-slot mutation fixture.
 - [ ] A masked axiswise statement inside a scan block is rejected identically to the top-level case
       (`maskedAxiswiseNotSupported`).
-- [ ] Full positional/publication/base-block/negative test matrix (§12-style, Task 6) passes.
+- [ ] Full positional/publication/base-block/negative test matrix (§12-style, Task 5) passes.
 - [ ] `scanCorpusSplit` re-pinned to its REAL observed value, confirmed matching the predicted
       `13/0/4` split (or investigated and explained if not).
 - [ ] `papers/jax_evalplan_architecture.md`'s thread 4 row and `LeanNCD/Eval/AGENTS.md`'s Plan/-table
       rows and entry-point rows are updated; no line numbers appear in any of it.
 - [ ] The `route`/`repStmt` mislabeling bug is flagged in the completion record for discoverability.
 - [ ] `lake build` (full suite) green.
-- [ ] Two independent reviewers signed off on Tasks 1, 2, and 6, and two independent reviewers signed
-      off on the final whole-branch review (Task 7).
+- [ ] Two independent reviewers signed off on Tasks 1 and 5, and two independent reviewers signed
+      off on the final whole-branch review (Task 6).
 
 ## 7. Risks and stop conditions
 
 ### 7.1 Expected high-effort areas
 
-- Task 6's Phase 3/4 rewrite touches `compileScan`, the one production scan-specializer every scan
+- Task 5's Phase 3/4 rewrite touches `compileScan`, the one production scan-specializer every scan
   fixture depends on — its gate re-runs the FULL `Eval.Plan.*` suite, not just its own new fixtures.
-- Tasks 1/2's wiring-loop refactor is exactly the shape of defect Wave F's own review found expensive
-  to catch late (a diff showing only added/refactored code cannot show whether an existing arm's
-  behavior silently changed) — hence two independent reviewers on both.
+- Task 1's closed-sum extension (`BlockStep`) is exactly the shape of defect Wave F's own review found
+  expensive to catch late (a diff showing only added/refactored code cannot show whether an existing
+  arm's behavior silently changed) — hence two independent reviewers. The wiring-loop refactor itself
+  carries this same risk shape; it is reviewed on that basis in `2026-08-21-wiring-loop-
+  generalization.md`, not here.
 
 ### 7.2 Stop rather than broaden scope
 
-- If Task 6 reveals that the `.freeNorm` inventory (§0) has a site beyond the five already found —
+- If Task 5 reveals that the `.freeNorm` inventory (§0) has a site beyond the five already found —
   stop and report; do not silently widen `compileScan`'s edits to cover it without re-scoping.
-- If Task 7's `scanCorpusSplit` re-run disagrees with the predicted `13/0/4` split — this is a genuine
-  Task 1-6 defect (per this file's own stop-condition precedent), not a number to accept without
+- If Task 6's `scanCorpusSplit` re-run disagrees with the predicted `13/0/4` split — this is a genuine
+  Task 1-5 defect (per this file's own stop-condition precedent), not a number to accept without
   understanding why.
 - Do not attempt to lift the masked-axiswise-in-scan restriction mid-implementation even if it looks
   small once `resolveNonlinAxis` is wired into scan blocks — it requires new UID-free predicate IR
@@ -1239,17 +1123,15 @@ this because Tasks 1-6 land clean.
 ## 8. Plan-authoring verification record
 
 - Every Lean declaration this plan ships was compiled via `check-snippet.sh` against the real repo
-  this session, six scratch files, all green in their final form: the split-pair recombination
+  this session, four scratch files, all green in their final form: the split-pair recombination
   (against the REAL `splitStmt`, run for real, not simulated — confirmed the `.freeNorm`-degrade fix
   is already landed and confirmed the recombined triple exactly reconstructs the original statement);
   the retained-axis remap (six cases, including the design doc's own worked example); the shared
   chaining helper (three cases against the real `AssignPlan`/`RawPointwisePlan`/`RawAxiswisePlan`);
-  the generalized wiring loop, instantiated independently against both the block call site's real
-  types (`BlockError`/`CheckedAssignPlan`/`checkAssign`) and the outer call site's real types
-  (`PlanStepError`/`CheckedPlanStepEvidence`/`checkPointwise`), confirming the single signature
-  genuinely serves both — this directly resolves the design doc's own open item about this
-  signature, rather than picking one arbitrarily; and the running slot-accounting scheme for Phase
-  3/4, confirmed order-general via both a forward and a reversed statement sequence.
+  and the running slot-accounting scheme for Phase 3/4, confirmed order-general via both a forward and
+  a reversed statement sequence. The generalized wiring loop (`WiringNode`/`checkStepGraph`) was
+  verified separately, as part of `2026-08-21-wiring-loop-generalization.md`'s own authoring session —
+  not re-verified here, since this plan only adds new cases atop it.
 - Every prose claim of the "X reuses Y"/"no second Z"/"both are reachable from W" shape was checked
   against real code before being written: `checkPlan`'s and `checkPlanBlock`'s exact three-way
   difference (context obligation, error wrapper, the block-only `outputs` check) confirmed by reading
@@ -1272,10 +1154,10 @@ this because Tasks 1-6 land clean.
   `lakefile.toml`'s `Tests` `globs` list (no new `globs` entry needed, since this plan adds no new
   test file).
 - No `File.lean:NNN` line numbers appear in any task's Implementation/Files/Gate text above, or in
-  the completion-record instructions Task 7 is handed — every locator is by function/constructor
+  the completion-record instructions Task 6 is handed — every locator is by function/constructor
   name.
 - The design doc's own citations were spot-checked against current `main` rather than trusted, per
   the task brief's own instruction; no drift was found between the design doc's claims and the real
   code EXCEPT one addition beyond its explicit scope: the causality-loop dispatch finding (§0) and
   the `scanCorpusSplit` numeric prediction, both genuinely new findings from this session, not
-  present in the design doc's own text, folded into Tasks 2 and 7 respectively above.
+  present in the design doc's own text, folded into Tasks 1 and 6 respectively above.
