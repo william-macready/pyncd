@@ -45,61 +45,103 @@ structure CheckedPlanBlock where private mk ::
   checkedNodes : Array CheckedAssignPlan
   deriving Repr
 
+/-- One node of a shared availability/production-order wiring loop, generalized from `checkPlan`'s
+    and `checkPlanBlock`'s near-identical loops (see this module's own `checkPlanBlock` and
+    `EvalPlan.lean`'s `checkPlan`, both built on this). Every genuinely shared `PlanError`-shaped
+    failure (slot range, input ordering, overwrite, duplicate destination, missing production) is
+    embedded through exactly one caller-supplied function, `liftWiring : PlanError → E`
+    (`checkStepGraph`'s own parameter, not a `WiringNode` field); what varies per call site and per
+    node is the context obligation (`contextCheck`), which slots this node writes
+    (`destinationSlots`), how its reads are validated against the current availability snapshot
+    (`sourceCheck`), and its own local checker's result (`localCheck`). -/
+structure WiringNode (E C : Type) where
+  contextCheck     : Except E Unit
+  destinationSlots : Array TensorSlot
+  sourceCheck      : Array Bool → Except E Unit
+  localCheck       : Except E C
+
+/-- Shared availability/production-order wiring loop: validate `inputs` (in-range, unique, ordered),
+    then for each node in sequence — context check, destination-availability check (every declared
+    destination, none already produced), source check against the availability snapshot as it
+    stands BEFORE this node's own destinations are marked produced (so a self-aliasing
+    source-equals-destination read is rejected via `sourceCheck`, never silently satisfied), the
+    node's own local check, then mark every declared destination produced together — and finally
+    confirm every non-input slot ended up produced. Preserves `checkPlan`/`checkPlanBlock`'s existing
+    per-node order (context → destination → source → local-check) and their `Except`-short-circuit
+    behavior by construction: a node past the first failure is never reached by the `for` loop. -/
+def checkStepGraph {E C : Type} (n : Nat) (inputs : Array TensorSlot) (liftWiring : PlanError → E)
+    (nodes : Array (WiringNode E C)) : Except E (Array C) := do
+  for h : i in [0 : inputs.size] do
+    let s := inputs[i]
+    unless s < n do throw (liftWiring (.slotOutOfRange s n))
+    if h2 : i + 1 < inputs.size then
+      let s2 := inputs[i + 1]
+      if s == s2 then throw (liftWiring (.duplicateInputSlot s))
+      else if s2 < s then throw (liftWiring (.inputSlotsNotOrdered i))
+  let mut available : Array Bool := Array.replicate n false
+  let mut producedBy : Array (Option Nat) := Array.replicate n none
+  for s in inputs do available := available.set! s true
+  let mut checkedNodes : Array C := #[]
+  for h : ni in [0 : nodes.size] do
+    let node := nodes[ni]
+    node.contextCheck
+    for dest in node.destinationSlots do
+      match available[dest]? with
+      | none => throw (liftWiring (.nodeError ni (.slotOutOfRange dest n)))
+      | some isAvail =>
+          if isAvail then
+            match producedBy[dest]?.join with
+            | none => throw (liftWiring (.inputSlotOverwritten dest ni))
+            | some firstNode => throw (liftWiring (.duplicateDestination dest firstNode ni))
+    node.sourceCheck available
+    let c ← node.localCheck
+    checkedNodes := checkedNodes.push c
+    for dest in node.destinationSlots do
+      available := available.set! dest true
+      producedBy := producedBy.set! dest (some ni)
+  for h : i in [0 : n] do
+    unless available[i]! do throw (liftWiring (.missingProduction i))
+  return checkedNodes
+
 /-- Validate one local block graph. Reuses `checkAssign` per assignment and the identical
     availability/production-order discipline `checkPlan` (`EvalPlan.lean`) already applies to the
-    outer graph — the same loop shape, parameterized by this block's own `tensorSigs`/`inputs`
-    instead of `RawEvalPlan`'s `tensorSigs`/`inputSlots`, plus the one block-specific obligation
-    `checkPlan` has no analogue for: every assignment's `contextShape` must equal the block's
-    declared `contextShape` (`checkPlan` instead requires empty context, via
-    `topLevelContextNotEmpty`). -/
+    outer graph — both now delegate their wiring loop to the shared `checkStepGraph` above,
+    parameterized by this block's own `tensorSigs`/`inputs` instead of `RawEvalPlan`'s
+    `tensorSigs`/`inputSlots`, plus the one block-specific obligation `checkPlan` has no analogue
+    for: every assignment's `contextShape` must equal the block's declared `contextShape`
+    (`checkPlan` instead requires empty context, via `topLevelContextNotEmpty`). The
+    `outputs`-range/uniqueness check has no analogue in `checkStepGraph` either — there is no
+    "declared outputs" concept at the outer-graph level — so it stays a separate step here, run
+    before the shared loop. -/
 def checkPlanBlock (block : RawPlanBlock) : Except BlockError CheckedPlanBlock := do
   let n := block.tensorSigs.size
-  for h : i in [0 : block.inputs.size] do
-    let s := block.inputs[i]
-    unless s < n do throw (.wiring (.slotOutOfRange s n))
-    if h2 : i + 1 < block.inputs.size then
-      let s2 := block.inputs[i + 1]
-      if s == s2 then throw (.wiring (.duplicateInputSlot s))
-      else if s2 < s then throw (.wiring (.inputSlotsNotOrdered i))
   for h : i in [0 : block.outputs.size] do
     let s := block.outputs[i]
     unless s < n do throw (.wiring (.slotOutOfRange s n))
   unless (block.outputs.toList).Nodup do
     throw (.duplicateOutputSlot
       ((firstDuplicateSlot block.outputs.toList).getD 0))
-  let mut available : Array Bool := Array.replicate n false
-  let mut producedBy : Array (Option Nat) := Array.replicate n none
-  for s in block.inputs do
-    available := available.set! s true
-  let mut checkedNodes : Array CheckedAssignPlan := #[]
+  let mut nodes : Array (WiringNode BlockError CheckedAssignPlan) := #[]
   for h : ni in [0 : block.assignments.size] do
     let step := block.assignments[ni]
-    unless step.contextShape == block.contextShape do
-      throw (.blockContextMismatch ni block.contextShape step.contextShape)
-    let destSlot := step.destinationSlot
-    match available[destSlot]? with
-    | none => throw (.wiring (.nodeError ni (.slotOutOfRange destSlot n)))
-    | some isAvail =>
-        if isAvail then
-          match producedBy[destSlot]?.join with
-          | none => throw (.wiring (.inputSlotOverwritten destSlot ni))
-          | some firstNode => throw (.wiring (.duplicateDestination destSlot firstNode ni))
-    for h2 : ti in [0 : step.terms.size] do
-      let t := step.terms[ti]
-      for h3 : fi in [0 : t.factors.size] do
-        let f := t.factors[fi]
-        match available[f.sourceSlot]? with
-        | none => throw (.wiring (.nodeError ni (.slotOutOfRange f.sourceSlot n)))
-        | some true => pure ()
-        | some false => throw (.wiring (.invalidForwardRead ni ti fi f.sourceSlot))
-    match checkAssign block.tensorSigs step with
-    | .error e => throw (.wiring (.nodeError ni e))
-    | .ok c =>
-        checkedNodes := checkedNodes.push c
-        available := available.set! destSlot true
-        producedBy := producedBy.set! destSlot (some ni)
-  for h : i in [0 : n] do
-    unless available[i]! do throw (.wiring (.missingProduction i))
+    nodes := nodes.push
+      { contextCheck := unless step.contextShape == block.contextShape do
+          throw (.blockContextMismatch ni block.contextShape step.contextShape)
+      , destinationSlots := #[step.destinationSlot]
+      , sourceCheck := fun available => do
+          for h2 : ti in [0 : step.terms.size] do
+            let t := step.terms[ti]
+            for h3 : fi in [0 : t.factors.size] do
+              let f := t.factors[fi]
+              match available[f.sourceSlot]? with
+              | none => throw (.wiring (.nodeError ni (.slotOutOfRange f.sourceSlot n)))
+              | some true => pure ()
+              | some false => throw (.wiring (.invalidForwardRead ni ti fi f.sourceSlot))
+      , localCheck := match checkAssign block.tensorSigs step with
+          | .error e => throw (.wiring (.nodeError ni e))
+          | .ok c => pure c
+      }
+  let checkedNodes ← checkStepGraph n block.inputs BlockError.wiring nodes
   return CheckedPlanBlock.mk block checkedNodes
 
 /-- Execute one checked block at a fixed enclosing-scan context coordinate. Positional store is

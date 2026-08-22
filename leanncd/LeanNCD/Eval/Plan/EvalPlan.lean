@@ -114,74 +114,55 @@ inductive PlanStepError
     are a genuine `0 0` placeholder there, not a lost locator). -/
 def checkPlan (raw : RawEvalPlan) : Except PlanStepError CheckedEvalPlan := do
   let n := raw.tensorSigs.size
-  for h : i in [0 : raw.inputSlots.size] do
-    let s := raw.inputSlots[i]
-    unless s < n do throw (.assign (.slotOutOfRange s n))
-    if h2 : i + 1 < raw.inputSlots.size then
-      let s2 := raw.inputSlots[i + 1]
-      if s == s2 then throw (.assign (.duplicateInputSlot s))
-      else if s2 < s then throw (.assign (.inputSlotsNotOrdered i))
-  let mut available : Array Bool := Array.replicate n false
-  let mut producedBy : Array (Option Nat) := Array.replicate n none
-  for s in raw.inputSlots do
-    available := available.set! s true
-  let mut checkedNodes : Array CheckedPlanStepEvidence := #[]
+  let mut nodes : Array (WiringNode PlanStepError CheckedPlanStepEvidence) := #[]
   for h : ni in [0 : raw.steps.size] do
     let step := raw.steps[ni]
-    -- order matches Wave C's original checkPlan exactly for `.assign`: context -> destination ->
-    -- source -> checkAssign. (An earlier draft of this function reordered these during the
-    -- PlanStep generalization — caught by Task 4's own review as a real, if silent, regression;
-    -- this is the corrected order, not the order that first shipped.)
-    match step with
-    | .assign a => unless a.contextShape == #[] do throw (.assign (.topLevelContextNotEmpty ni))
-    | .scan _ | .pointwise _ | .axiswise _ => pure ()
-    let dests := step.destinationSlots
-    for dest in dests do
-      match available[dest]? with
-      | none => throw (.assign (.nodeError ni (.slotOutOfRange dest n)))
-      | some isAvail =>
-          if isAvail then
-            match producedBy[dest]?.join with
-            | none => throw (.assign (.inputSlotOverwritten dest ni))
-            | some firstNode => throw (.assign (.duplicateDestination dest firstNode ni))
-    match step with
-    | .assign a =>
-        for h2 : ti in [0 : a.terms.size] do
-          let t := a.terms[ti]
-          for h3 : fi in [0 : t.factors.size] do
-            let f := t.factors[fi]
-            match available[f.sourceSlot]? with
-            | none => throw (.assign (.nodeError ni (.slotOutOfRange f.sourceSlot n)))
-            | some true => pure ()
-            | some false => throw (.assign (.invalidForwardRead ni ti fi f.sourceSlot))
-    | .scan _ | .pointwise _ | .axiswise _ =>
-        for src in step.sourceSlots do
-          match available[src]? with
-          | none => throw (.assign (.nodeError ni (.slotOutOfRange src n)))
-          | some true => pure ()
-          | some false => throw (.assign (.invalidForwardRead ni 0 0 src))
-    match step with
-    | .assign a =>
-        match checkAssign raw.tensorSigs a with
-        | .error e => throw (.assign (.nodeError ni e))
-        | .ok c => checkedNodes := checkedNodes.push (.assign c)
-    | .scan s =>
-        match checkScanPlan raw.tensorSigs s with
-        | .error e => throw (.scan ni e)
-        | .ok c => checkedNodes := checkedNodes.push (.scan c)
-    | .pointwise p =>
-        match checkPointwise raw.tensorSigs p with
-        | .error e => throw (.nonlin ni e)
-        | .ok c => checkedNodes := checkedNodes.push (.pointwise c)
-    | .axiswise a =>
-        match checkAxiswise raw.tensorSigs a with
-        | .error e => throw (.nonlin ni e)
-        | .ok c => checkedNodes := checkedNodes.push (.axiswise c)
-    for dest in dests do
-      available := available.set! dest true
-      producedBy := producedBy.set! dest (some ni)
-  for h : i in [0 : n] do
-    unless available[i]! do throw (.assign (.missingProduction i))
+    nodes := nodes.push
+      -- order matches Wave C's original checkPlan exactly for `.assign`: context -> destination ->
+      -- source -> checkAssign, preserved by `checkStepGraph`'s own fixed per-node call order. (An
+      -- earlier draft of this function reordered these during the PlanStep generalization —
+      -- caught by Task 4's own review as a real, if silent, regression; this is the corrected
+      -- order, not the order that first shipped.)
+      { contextCheck := match step with
+          | .assign a =>
+              unless a.contextShape == #[] do throw (.assign (.topLevelContextNotEmpty ni))
+          | .scan _ | .pointwise _ | .axiswise _ => pure ()
+      , destinationSlots := step.destinationSlots
+      , sourceCheck := fun available => match step with
+          | .assign a => do
+              for h2 : ti in [0 : a.terms.size] do
+                let t := a.terms[ti]
+                for h3 : fi in [0 : t.factors.size] do
+                  let f := t.factors[fi]
+                  match available[f.sourceSlot]? with
+                  | none => throw (.assign (.nodeError ni (.slotOutOfRange f.sourceSlot n)))
+                  | some true => pure ()
+                  | some false => throw (.assign (.invalidForwardRead ni ti fi f.sourceSlot))
+          | .scan _ | .pointwise _ | .axiswise _ => do
+              for src in step.sourceSlots do
+                match available[src]? with
+                | none => throw (.assign (.nodeError ni (.slotOutOfRange src n)))
+                | some true => pure ()
+                | some false => throw (.assign (.invalidForwardRead ni 0 0 src))
+      , localCheck := match step with
+          | .assign a =>
+              match checkAssign raw.tensorSigs a with
+              | .error e => throw (.assign (.nodeError ni e))
+              | .ok c => pure (.assign c)
+          | .scan s =>
+              match checkScanPlan raw.tensorSigs s with
+              | .error e => throw (.scan ni e)
+              | .ok c => pure (.scan c)
+          | .pointwise p =>
+              match checkPointwise raw.tensorSigs p with
+              | .error e => throw (.nonlin ni e)
+              | .ok c => pure (.pointwise c)
+          | .axiswise a =>
+              match checkAxiswise raw.tensorSigs a with
+              | .error e => throw (.nonlin ni e)
+              | .ok c => pure (.axiswise c)
+      }
+  let checkedNodes ← checkStepGraph n raw.inputSlots PlanStepError.assign nodes
   return CheckedEvalPlan.mk raw checkedNodes
 
 /-- Execute a checked graph over positional Dense inputs. Generalizes `runDensePlan` (previously in
