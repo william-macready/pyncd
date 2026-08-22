@@ -290,3 +290,45 @@ empirical (the mutation/error-matrix technique) rather than structural (a diff r
   (this slice touches no file any other in-flight work is also touching).
 - No `File.lean:NNN` line numbers appear in any task's Implementation/Files/Gate text above, or in the
   completion-record instruction in §5 — every locator is by function/constructor name.
+
+## Completion record
+
+Completed 2026-08-21/22 on branch `worktree-leanncd-wiring-loop-generalization`, commit `26cc245`.
+Shipped exactly Task 1's scope, no more: `WiringNode`/`checkStepGraph` added to `Block.lean` (§3's
+code, unmodified); `checkPlanBlock` (`Block.lean`) and `checkPlan` (`EvalPlan.lean`) both rewritten to
+build `WiringNode`s per node and delegate their wiring loop to `checkStepGraph`; zero new node kinds
+(`checkPlanBlock` still dispatches only `AssignPlan`); `runDensePlan`/`runDenseBlock` byte-for-byte
+untouched; `RawPlanBlock`/`CheckedPlanBlock`/`PlanStep`/`CheckedPlanStepEvidence` type definitions
+unchanged. The mutation/error-matrix technique confirmed every existing fixture in
+`BlockTest.lean`/`GraphCheckTest.lean`/`GraphDenseTest.lean`/`EvalPlanTest.lean` asserts the identical
+pass/fail outcome and, for rejections, the identical error constructor before and after (same gate
+command, same 8512-job count, green both times). `lake build Tests` (8654 jobs, including
+`DifferentialTest`'s unchanged 3,832-case sweep) and `lake build LeanNCD` (8542 jobs) both green.
+
+**One known, deliberate exception to "zero behavior change,"** surfaced independently by both
+reviewers: `checkPlanBlock`'s `outputs`-range/`duplicateOutputSlot` check now runs BEFORE the
+`inputs`-range/uniqueness/order check (the latter moved inside `checkStepGraph`) — the reverse of the
+pre-refactor order (inputs checked first, then outputs). This is a real, observable behavioral
+difference, not a hedge: for a `RawPlanBlock` that is invalid in BOTH ways at once (a malformed
+`outputs` array AND a malformed `inputs` array), the pre-refactor checker returned the `inputs`
+violation (`.wiring (.slotOutOfRange ...)`/`.wiring (.duplicateInputSlot ...)`/etc.) and the
+post-refactor checker now returns the `outputs` violation (`.duplicateOutputSlot ...`/etc.) instead.
+It does not move the accept/reject boundary — a doubly-invalid block is rejected either way, only the
+specific error constructor returned differs — and no fixture in any of the four test files exercises
+a simultaneously-invalid-both-ways block, so the mutation/error-matrix technique's fixture-by-fixture
+comparison never had a case that could catch this reordering. This placement is explicitly sanctioned
+by this plan's own Task 1 Implementation text ("keeping the pre-existing outputs-range/duplicate check
+as a separate step before/after the loop call, unchanged") — `checkStepGraph` has no analogue for an
+outer "declared outputs" obligation, so that check could not move inside the shared loop either way,
+and this plan text left the exact before/after placement open. This is recorded here as a known,
+accepted consequence of that permitted placement, not a defect requiring a code change — flagged
+explicitly per this repo's own standing caution about silent reorders in this exact area (§0's own
+citation of a prior incident where a `checkPlan` step reorder during the `PlanStep` generalization was
+a real, if silent, regression caught only by review).
+
+Two independent reviewers approved this task's implementation. Neither found a code defect; both
+independently rebuilt the affected test targets and got green; both independently confirmed the
+`.assign`-rich/`.scan`-generic source-check asymmetry and the context → destination → source →
+local-check per-node order are preserved exactly; both converged independently on the
+outputs-before-inputs reordering above as the one finding worth recording, and both agreed it needs
+disclosure here rather than a code change.
