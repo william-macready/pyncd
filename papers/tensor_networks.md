@@ -224,7 +224,7 @@ The generalized-container form [generalized_tensors.md](generalized_tensors.md) 
 A symmetry sector should therefore be another structured index, not the basis of a parallel tensor representation. For a `Z₂`-graded feature space with multiplicities `m(q)`, its positions can be represented as
 
 ```text
-GradedPos(m) = (q : Z₂) × Fin(m(q)).
+GradedPos(m) = Σ q : Z₂, Fin(m(q)).
 ```
 
 A tensor over the space is an ordinary Naperian tensor indexed by `GradedPos(m)`. A linear map has dense positions
@@ -353,7 +353,7 @@ map(h, extendZero(x))
     = extendZero(mapSupported(h, x))
 ```
 
-under explicit closure hypotheses for the support predicates. The `Z₂` proof then shows that charge-conserving support is closed under composition, tensor product, contraction, and the admitted nonlinearities.
+under explicit closure hypotheses for the support predicates and, for the map law, the requirement `h(0) = 0`. The `extendZero` construction also requires a zero in the scalar type and decidable support. The `Z₂` proof then shows that charge-conserving support is closed under composition, tensor product, contraction, and the admitted nonlinearities.
 
 At the plan level, the desired end-to-end statement has the shape
 
