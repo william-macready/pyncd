@@ -1300,6 +1300,16 @@ cd leanncd
 "$HOME/.elan/bin/lake" build LeanNCD
 ```
 
+> **Known pre-existing gap (confirmed 2026-08-26, during the slice plan's Task 2):** `lake build
+> JaxExperiment` fails in `experiments/jax_bridge/EvalPlanCodegen.lean` (stale `RawEvalPlan`/
+> `CheckedPlanStepEvidence` field references), and this is **not** caused by this slice's work —
+> `git diff` against every T1/T2 commit confirms `EvalPlanCodegen.lean` is untouched by either. It
+> predates this branch, matching the "repair experiments/jax_bridge" item already open from the
+> 2026-08-21 checkpoint. The `run-evalplan*.sh` scripts depend on `JaxExperiment` building and so
+> also fail. This gate line item cannot go green until that separate, out-of-scope repair lands;
+> everything else in this gate is unaffected and was independently verified green (`Tests` 8657
+> jobs, `LeanNCD` 8543 jobs).
+
 Require two reviews: one for logical/physical pipeline and route equality, one for proof evidence,
 oracle guards, and unchanged public Agreement. Task 1 succeeds only when every command is green and no
 intermediate commit exposes a broken architecture.
