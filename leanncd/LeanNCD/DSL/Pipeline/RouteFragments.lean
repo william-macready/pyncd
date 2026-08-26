@@ -19,9 +19,16 @@ this module, not the other way round, so the small accessors below are local by 
 ## The ten input classes (§2.4)
 
 Every `ScanStmt` constructor shape is classified by `fragmentClass` — there is no catch-all.
-`physicalizeOne` and `fragmentWidth` both dispatch on the *same* classifier, so they cannot
-disagree about a class (a disagreement would let `fragmentLayoutOk` agree with a miscount and hide
-it). The full table lives in `LeanNCD/DSL/AGENTS.md`.
+`physicalizeOne` and `fragmentWidth` classify **independently**: `fragmentWidth` dispatches on
+`fragmentClass`, while `physicalizeOne` re-matches the constructor surface itself (it needs the
+payload). They are tied together by `physicalizeOne_length_eq_fragmentWidth`, which forces
+agreement on every class `physicalizeOne` *accepts* — so an arm that emits statements where
+`fragmentWidth` says reject, or that emits the wrong number of them, cannot compile. That is the
+dangerous direction: it is what would let `fragmentLayoutOk` agree with a miscount and hide it.
+The converse is **not** covered — the theorem is conditional on `.ok`, so it is vacuous on the
+reject class, and relaxing `fragmentClass`'s class-6 arm to `.copy` while `physicalizeOne` still
+throws would still compile (fixture 13 is what catches that). The full table lives in
+`LeanNCD/DSL/AGENTS.md`.
 
 Class 6 — a nonlinear `.plain (.scatter …)` — is **rejected** with the existing
 `CompileError.unsupportedNonlinScatter`, never copied as one physical step. It is unreachable from
@@ -139,8 +146,11 @@ structure PhysicalizeAcc where
   fragments : List RouteFragment
 
 /-- The physicalization class of one logical node (§2.4's ten-class table). Exhaustive over the
-    `ScanStmt`/`Stmt` constructor surface: there is no catch-all arm, and `physicalizeOne` and
-    `fragmentWidth` both dispatch on THIS function, so they cannot disagree on any class. -/
+    `ScanStmt`/`Stmt` constructor surface: there is no catch-all arm. `fragmentWidth` dispatches on
+    this function; `physicalizeOne` classifies independently (it re-matches the constructor surface
+    because it needs the payload). `physicalizeOne_length_eq_fragmentWidth` ties the two together on
+    every class `physicalizeOne` accepts — but it is conditional on `.ok`, so it says nothing about
+    the reject class. -/
 inductive FragmentClass
   /-- Copied verbatim as one physical step (classes 1, 5, 7, 8, 9, 10). -/
   | copy
@@ -150,8 +160,10 @@ inductive FragmentClass
   | rejectNonlinScatter
   deriving DecidableEq, Repr
 
-/-- §2.4's ten-class classification, one arm per class. There is no catch-all: adding a `ScanStmt`,
-    `Stmt`, or `Nonlin` constructor breaks this match, which is the point. -/
+/-- §2.4's ten-class classification. Every class is reached by an explicit arm, though two pairs
+    share one arm where the handling is identical (3/4 — masked and unmasked axiswise; 8/9 — plain
+    and affine scans). There is no catch-all: adding a `ScanStmt`, `Stmt`, or `Nonlin` constructor
+    breaks this match, which is the point. -/
 def fragmentClass : ScanStmt → FragmentClass
   | .plain (.assign _ _ rhs) =>
       match rhs.nonlin with
@@ -213,10 +225,18 @@ def fragmentWidth (sc : ScanStmt) : Nat :=
   | .split => 2
   | .rejectNonlinScatter => 0
 
-/-- §2.2 obligation 5a: `fragmentWidth` agrees with `physicalizeOne` on **every** class.
-    This is what makes `fragmentLayoutOk` an independent check rather than one that can agree with
-    a `physicalizeOne` miscount: changing the class-6 arm of one without the other breaks this
-    proof at compile time. -/
+/-- §2.2 obligation 5a: on every class `physicalizeOne` **accepts**, it emits exactly
+    `fragmentWidth` statements. This is what makes `fragmentLayoutOk` an independent check rather
+    than one that can agree with a `physicalizeOne` miscount — an arm that emits the wrong number
+    of statements, or that emits at all where `fragmentWidth` says `0` (the reject class), fails to
+    compile.
+
+    **Scope (do not overstate this).** The hypothesis is `= .ok out`, so the statement is vacuous
+    on inputs `physicalizeOne` rejects. It therefore does NOT force the converse: relaxing
+    `fragmentClass`'s class-6 arm to `.copy` while `physicalizeOne` still throws typechecks fine.
+    Only the dangerous direction — silently emitting a physical step for a class that must be
+    rejected — is closed here; the other direction is covered by fixture 13 in
+    `test/DSL/Pipeline/RouteWeaveTest.lean`. -/
 theorem physicalizeOne_length_eq_fragmentWidth (sourceNames : List String)
     (logicalIndex firstStep : Nat) (sc : ScanStmt) (out : List ScanStmt × RouteFragment)
     (h : physicalizeOne sourceNames logicalIndex firstStep sc = .ok out) :

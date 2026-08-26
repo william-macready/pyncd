@@ -59,9 +59,9 @@ Strictly layered: `Syntax`→`Elab`→`Ast`/`Target`→`Traverse`/`TraverseAxes`
 `physicalizeForRoute` turns a **logical** `ScheduledProgram` (one statement per source statement, no
 generated names) into the **physical** one `routeCore` consumes, expanding each nonlinear plain
 assignment into a private producer/consumer pair. Every input class is classified explicitly by
-`fragmentClass`; there is no catch-all arm, and `fragmentWidth` is defined from the same classifier
-(`physicalizeOne_length_eq_fragmentWidth` proves the two agree on every class, so `fragmentLayoutOk`
-cannot rubber-stamp a `physicalizeOne` miscount).
+`fragmentClass`; there is no catch-all arm anywhere.
+
+`physicalizeOne` and `fragmentWidth` classify **independently** — `fragmentWidth` dispatches on `fragmentClass`, `physicalizeOne` re-matches the constructor surface because it needs the payload. `physicalizeOne_length_eq_fragmentWidth` ties them together on every class `physicalizeOne` *accepts*, so an arm that emits the wrong number of statements — or emits at all for a class `fragmentWidth` gives width `0` — fails to compile, and `fragmentLayoutOk` cannot rubber-stamp a `physicalizeOne` miscount. ⚠️ **That theorem is conditional on `.ok`, so it is vacuous on the reject class**: it closes only the dangerous direction (silently emitting a step for a class that must be rejected). Relaxing `fragmentClass`'s class-6 arm to `.copy` while `physicalizeOne` still throws typechecks fine — the guard for that direction is fixture 13 in `test/DSL/Pipeline/RouteWeaveTest.lean`, not the proof.
 
 | # | Input class | Reachable from surface `compile`? | Handling |
 |---:|---|---|---|
