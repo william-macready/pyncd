@@ -27,18 +27,19 @@ agreement on every class `physicalizeOne` *accepts* — so an arm that emits sta
 dangerous direction: it is what would let `fragmentLayoutOk` agree with a miscount and hide it.
 The converse is **not** covered — the theorem is conditional on `.ok`, so it is vacuous on the
 reject class, and relaxing `fragmentClass`'s class-6 arm to `.copy` while `physicalizeOne` still
-throws would still compile (fixture 13 is what catches that). The full table lives in
-`LeanNCD/DSL/AGENTS.md`.
+throws would still compile. Two independent fixtures in `test/DSL/Pipeline/RouteWeaveTest.lean`
+catch that direction, one per door below — fixture 13 for the `.scatter` door, fixture 14 for the
+`.assign` door. The full table lives in `LeanNCD/DSL/AGENTS.md`.
 
 Class 6 — a nonlinear **scatter-shaped write** — is **rejected** with the existing
-`CompileError.unsupportedNonlinScatter`, never copied as one physical step. It has TWO doors, and
-both must be closed here:
+`CompileError.unsupportedNonlinScatter`, never copied as one physical step. It has AT LEAST two
+known doors, both closed here:
 
 * `.plain (.scatter …)` with a non-identity `rhs.nonlin` — the already-lowered shape; and
 * `.plain (.assign nm slots rhs)` with a non-identity `rhs.nonlin` **and** `slotsBecomeScatter
   slots` (an `.affine` slot, or a diagonal LHS repeating a free-axis UID) — the surface shape.
 
-The second door matters because the split arms build the consumer's read coordinates from
+Both matter because the split arms build the consumer's read coordinates from
 `slots.filterMap LHSSlot.toReadIdx`, and `toReadIdx` maps `.affine _ => none`: splitting such a
 statement would silently DROP the affine placement rather than preserve it. Neither door is
 reachable from `TLProgram.compile` (`checkScatterNonlin` rejects both shapes first, with the
@@ -46,7 +47,17 @@ identical `unsupportedNonlinScatter` constructor and payload, and `lowerArith` a
 reclassifies every `slotsBecomeScatter` `.assign` into `Stmt.scatter`), so common-domain error
 precedence is unchanged. Both are reachable from a hand-built logical schedule handed straight to
 this boundary, which is exactly the caller set this design widens.
--/
+
+⚠️ **A third door is open and NOT closed here** (found in review, recorded in the SDD ledger, not
+yet fixed): `toReadIdx` also collapses `.iterAt a n` and `.iterNext a` to `axis a`, discarding the
+pinned literal `n` / the `+1` shift — so a `.plain (.assign …)` carrying an iteration slot (a shape
+`finalizeScans` should have already grouped into a `.scan` node, and only a hand-built schedule can
+still present here) takes the split arm and emits a producer/consumer pair whose read and write
+coordinates disagree. Same reachability class as the two doors above (unreachable from `compile`),
+same silent-mis-route risk, not yet given a rejection arm — deliberately left open pending a
+naming decision (`unsupportedNonlinScatter` would be a misnomer here; these slots do not become a
+scatter, they belong to scan grouping). See `.superpowers/sdd/2026-08-26-nonlinearity-t1-logical-schedule/progress.md`
+for the reproduction. -/
 
 namespace LeanNCD
 open Std

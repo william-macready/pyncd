@@ -670,11 +670,11 @@ therefore classify all ten classes below, and the classification must be a deliv
 | # | Input class | Reachable from surface `compile`? | Required handling |
 |---:|---|---|---|
 | 1 | `.plain (.assign …)`, `nonlin = .identity` | yes | copy, width 1 |
-| 2 | `.plain (.assign …)`, `nonlin = .pointwise _` | yes | split, width 2 |
-| 3 | `.plain (.assign …)`, `nonlin = .axiswise _ none` | yes | split, width 2 |
-| 4 | `.plain (.assign …)`, `nonlin = .axiswise _ (some mask)` | yes | split, width 2; mask rides the consumer |
+| 2 | `.plain (.assign …)`, `nonlin = .pointwise _`, **not** `slotsBecomeScatter` | yes | split, width 2 |
+| 3 | `.plain (.assign …)`, `nonlin = .axiswise _ none`, **not** `slotsBecomeScatter` | yes | split, width 2 |
+| 4 | `.plain (.assign …)`, `nonlin = .axiswise _ (some mask)`, **not** `slotsBecomeScatter` | yes | split, width 2; mask rides the consumer |
 | 5 | `.plain (.scatter …)`, `nonlin = .identity` | yes | copy, width 1 |
-| 6 | `.plain (.scatter …)`, `nonlin ≠ .identity` | **no** — `checkScatterNonlin` rejects first | **reject; never a silent copy** |
+| 6 | `.plain (.scatter …)`, `nonlin ≠ .identity`, **OR** `.plain (.assign …)`, `nonlin ≠ .identity` **AND** `slotsBecomeScatter` | **no** — `checkScatterNonlin` rejects both spellings first, byte-identical payload | **reject; never a silent copy.** At least two known doors closed (implementation review, 2026-08-26): an `.assign` with an `.affine` or diagonal LHS would otherwise take the split arm and silently drop the affine placement (`LHSSlot.toReadIdx` maps `.affine _ => none`). A third door — `.iterAt`/`.iterNext` LHS slots on a `.plain (.assign …)`, which `toReadIdx` also collapses, discarding the pinned literal/shift — is known open, not yet closed; see `LeanNCD/DSL/AGENTS.md`'s case table and the slice's SDD ledger for the reproduction. |
 | 7 | `.plain (.recurMorphism …)` | no — `unsupportedRecurMorphism` | copy, width 1 (carries no `RHSExpr`) |
 | 8 | `.scan …` (`isAffine = false`) | yes | copy verbatim, width 1 |
 | 9 | `.scan …` (`isAffine = true`) | yes | copy verbatim, width 1 |

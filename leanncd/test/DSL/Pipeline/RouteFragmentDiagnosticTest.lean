@@ -289,7 +289,9 @@ handing `route` a hand-built schedule. It matters because an intermediate revisi
 `cyclicDataflow "physicalizeForRoute: physical fragment topology failed"` and — for a single
 self-referential statement — moved which phase rejected the program, with no split-mint accounting
 to license the change (§4.3 stop condition). The duplicate gate is gone; these pin the ORIGINAL
-pre-flip payload at all three arities the phase distinction could show up in.
+pre-flip payload on three shapes the phase distinction could show up in — not exhaustive (a
+3-statement cycle is a fourth shape, not pinned here), but enough to show the message no longer
+depends on split-vs-unsplit or on single-vs-multi-statement.
 
 `selfRef .identity` is the one the removed check uniquely changed: one statement, no split, so
 physicalization was the only phase that had run. Its ReLU twin additionally confirms the message
@@ -300,8 +302,11 @@ private def selfRef (nl : Nonlin) : ScheduledProgram := {
   stmts := [.plain (.assign "A" [.free (ax "i")]
     { body := { terms := [{ factors := [.read "A" [.axis (ax "i")] ] }] }, nonlin := nl })] }
 
-/-- A cycle between two identity statements: physical-only, so `schedule` never sees it. -/
-private def physicalOnlyCycle : ScheduledProgram := {
+/-- An ordinary two-statement LOGICAL cycle (the same shape as case 16 above) — NOT physical-only
+    by nature. `routeErrorIs` hands this hand-built `ScheduledProgram` straight to `route`,
+    skipping `schedule` entirely, which is the only reason it reaches `routeCore`'s cyclic check
+    here rather than being caught upstream the way case 16 is through `compile`. -/
+private def preScheduledCycle : ScheduledProgram := {
   decls := [], env := {}, extNames := ∅, explicitSizes := {}
   stmts := [ .plain (.assign "A" [.free (ax "i")] (read1 "B" (ax "i")))
            , .plain (.assign "B" [.free (ax "i")] (read1 "A" (ax "i"))) ] }
@@ -311,7 +316,7 @@ private def cyclicRouteMsg : CompileError :=
 
 #guard routeErrorIs (selfRef .identity) cyclicRouteMsg 7 7
 #guard routeErrorIs (selfRef (.pointwise .relu)) cyclicRouteMsg 7 7
-#guard routeErrorIs physicalOnlyCycle cyclicRouteMsg 7 7
+#guard routeErrorIs preScheduledCycle cyclicRouteMsg 7 7
 
 /-! ## The nine composition observations: `compile` ≡ `compileToScheduled >>= route`
 

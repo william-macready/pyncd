@@ -625,7 +625,9 @@ def routeCore (sp : ScheduledProgram) : Except CompileError (List BrBaseP × Lis
        checked, proof-carrying `PhysicalRouteProgram` — expanding each nonlinear plain assignment
        into a private producer/consumer pair with a collision-free internal name, copying
        everything else (scans included) verbatim. It is `Except`-valued and its error is threaded
-       unchanged: §2.4 class 6 (a nonlinear `.plain (.scatter …)`) must REJECT, not silently copy.
+       unchanged: §2.4 class 6 (a nonlinear scatter-shaped write, whether spelled `.plain
+       (.scatter …)` or a `.plain (.assign …)` whose LHS `slotsBecomeScatter`) must REJECT, not
+       silently copy.
     2. the unchanged `routeCore` consumes the resulting PHYSICAL program. Every `RouteSpec` theorem
        is stated over that physical input and is untouched by this design.
 
