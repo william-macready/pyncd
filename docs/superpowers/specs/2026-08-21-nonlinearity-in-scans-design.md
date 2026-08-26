@@ -1,10 +1,19 @@
 # Design: nonlinearity inside scan blocks
 
-**Status:** Brainstormed, externally reviewed (`papers/copilot_unification_critique.md`), revised
+> **Permanently archived — do not execute or revise this design into work.** Its three-step
+> split-pair lowering, shared split schedule, and accepted redundant identity copy are superseded by
+> [`papers/nonlinearity_split_pair_direct_lowering.md`](../../../papers/nonlinearity_split_pair_direct_lowering.md).
+> The canonical design has one logical unsplit `ScheduledProgram`, a private collision-free
+> `PhysicalRouteProgram` immediately before existing `routeCore`, no second scheduler, opaque scans,
+> and unchanged `RouteSpec` statements. The replacement plan carries forward the valid block IR,
+> publication, and local-axis requirements; all pair-recognition recommendations below are historical
+> evidence only.
+
+**Status:** Permanently superseded and retained as an adversarial-review record. It was brainstormed,
+externally reviewed (`papers/copilot_unification_critique.md`), revised
 in response, given a further self-review pass, and had its one remaining architectural fork (§1)
-resolved with direct verification (all 2026-08-21). All open items that would have changed the
-plan's shape are now closed; the remaining open items (listed at the end) are implementation-
-level judgment calls, not architectural forks — ready for `slice-plan`/`writing-plans`.
+resolved with direct verification (all 2026-08-21). It is not ready for execution; follow only the
+replacement plan linked above.
 
 **Context:** Thread 4 (merged to `main` at `549adb6`, 2026-08-21) added `.pointwise`/`.axiswise`
 `PlanStep` support for top-level (`.plain`) statements only. Scan-block statements (base/step)

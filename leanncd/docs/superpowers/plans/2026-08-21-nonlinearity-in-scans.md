@@ -1,5 +1,16 @@
 # Nonlinearity inside scan blocks
 
+> **Permanently archived — do not execute any task below.** The three-step expectations,
+> split-pair recognition, and shared-split compilation in this plan are superseded by
+> [`papers/nonlinearity_split_pair_direct_lowering.md`](../../../../papers/nonlinearity_split_pair_direct_lowering.md).
+> The canonical replacement uses one logical unsplit `ScheduledProgram`, a private collision-free
+> `PhysicalRouteProgram` immediately before existing `routeCore`, no second scheduler, opaque scans,
+> and unchanged `RouteSpec` statements. The replacement plan incorporates the valid block IR,
+> publication, and local-axis work. Everything below is historical evidence, not implementation
+> guidance.
+
+**Status:** Permanently superseded; retained for provenance only.
+
 **Dependency**: this plan depends on `2026-08-21-wiring-loop-generalization.md` having already landed
 on `main` — specifically, `checkPlanBlock`/`checkPlan` must already delegate to the generalized
 `WiringNode`/`checkStepGraph` implementation (that plan's own Task 1) before this plan's Task 1
@@ -15,7 +26,8 @@ which the design doc itself warns may have drifted across its several revision p
 **Design doc read in full**:
 `docs/superpowers/specs/2026-08-21-nonlinearity-in-scans-design.md`. Its headline decision (§1,
 Option B: `splitScan`/`splitNonlins`/`route` stay untouched; `compileScan`'s own Phase 1 classifier
-gains split-pair recognition instead) is treated as settled and not re-litigated below.
+gains split-pair recognition instead) was treated as settled when this archived plan was written; it
+is now rejected by the permanent supersession banner above.
 
 **`compileScan`'s current Phase 1 classifier** (`LeanNCD/Eval/Plan/Compile.lean`) — confirmed by
 reading it directly: `checkScanBlockStmt` (`Compile.lean`) still calls `checkNonlinScanBlock`, whose

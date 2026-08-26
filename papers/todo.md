@@ -2,8 +2,14 @@
 
 ## Fork logical Eval scheduling from route-specific nonlinearity lowering
 
-**Priority:** Complete before implementing nonlinearities inside scan blocks if this rearchitecture is
-a committed direction.
+> **Permanently archived — do not execute this section.** Superseded by
+> [`papers/nonlinearity_split_pair_direct_lowering.md`](nonlinearity_split_pair_direct_lowering.md).
+> The canonical design schedules one logical unsplit `ScheduledProgram`, then uses a private,
+> collision-free `PhysicalRouteProgram` immediately before existing `routeCore`; it has no second
+> scheduler, keeps scans opaque, and reuses existing `RouteSpec` statements. The fork/shared-split and
+> generated-pair recommendations below are retained only as rejected historical context.
+
+**Priority:** Archived. Reconsider architecture only under the replacement plan's explicit triggers.
 
 ### Problem
 
