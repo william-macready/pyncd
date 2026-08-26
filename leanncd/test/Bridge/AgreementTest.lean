@@ -9,4 +9,7 @@ example (tc : ThreadedComposed) (h : tc.WellFormed) :
 #check @agree_dom
 #check @agree_cod
 #print axioms realize_fromThreadedComposed_agree   -- uses sorryAx
+-- fixture 12 (Task 2, logical-schedule flip): pin `compile_wellFormed`'s type unchanged — this
+-- file was otherwise unguarded, so a silent weakening here would go unnoticed.
+#check @compile_wellFormed
 end LeanNCD

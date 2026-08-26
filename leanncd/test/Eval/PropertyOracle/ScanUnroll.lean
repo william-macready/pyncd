@@ -124,11 +124,14 @@ structure StateGeom where
       `T`), the form F4's source compiler admits;
     * `advScratch` — a recurrence-only destination whose LHS carries the same all-axis `+1` slots
       the state result does, and which later statements in the SAME step read back at the current
-      coordinate. `splitNonlins` manufactures exactly this shape for a nonlinear recurrence
-      (`%nl…[j, l+1] := …` followed by `S[j, l+1] := relu(%nl…[j, l])`), so it appears in every
-      compiled `enumScanCases` template 2 case. F4's preflight rejects those programs before the
-      compiler ever sees them (plan §4.2 rule 5 calls an advancing recurrence-only destination an
-      orphan result), but the LEGACY evaluator still runs them, so the two-way leg needs it. -/
+      coordinate. `splitNonlins` used to manufacture exactly this shape for a nonlinear recurrence
+      (`%nl…[j, l+1] := …` followed by `S[j, l+1] := relu(%nl…[j, l])`), so it appeared in every
+      compiled `enumScanCases` template 2 case. The logical-schedule flip
+      (`papers/nonlinearity_split_pair_direct_lowering.md` §2.1) removed `splitNonlins` from
+      `compileToScheduled`, so `schedOfCase` no longer produces it — `scratch` and `advScratch` are
+      both always empty for every current `enumScanCases` case (`ScanOracle.lean` pins this). The
+      classification stays general, for any `ScheduledProgram` a future hand-built or LEGACY-only
+      fixture presents in this shape, but nothing in this generator does today. -/
 structure ScanGeom where
   axes       : List AxisSpec
   ext        : List Nat

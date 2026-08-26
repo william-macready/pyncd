@@ -180,13 +180,6 @@ def fragmentClass : ScanStmt → FragmentClass
   | .scan _ _ _ _ _              => .copy                -- 8/9  (verbatim, incl. affine scans)
   | .scanPre _ _ _               => .copy                -- 10 (opaque pre-built morphism)
 
-/-- Degrade the axiswise marker only on the private producer: `.freeNorm` names the axis the
-    *consumer* reduces over and is user error on an `.identity` statement. -/
-def producerSlots (slots : List LHSSlot) : List LHSSlot :=
-  slots.map fun
-    | .freeNorm a => .free a
-    | slot => slot
-
 /-- Physicalize one top-level logical node — one arm per §2.4 class, same order as
     `fragmentClass`. `Except`-valued because class 6 must **reject**: emitting nothing, or a
     one-step copy, would both be wrong. Scans and `scanPre` are opaque one-step fragments. -/

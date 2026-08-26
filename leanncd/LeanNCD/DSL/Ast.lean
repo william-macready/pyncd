@@ -255,6 +255,30 @@ def LHSSlot.toReadIdx : LHSSlot → Option IdxExpr
   | .iterNext a => some (.axis a)
   | .affine _   => none      -- scatter outputs: skipped (see doc above)
 
+/-- Degrade the axiswise marker for the LINEAR/private PRODUCER half of a nonlinear split.
+
+    `.freeNorm a` names the axis the *consumer* reduces over. It has no meaning on an
+    `.identity`-nonlin statement (the producer contracts, it does not reduce over the marked
+    axis), and `resolveNonlinAxis` (`Eval/Plan/Compile.lean`) treats a `.freeNorm` marker on an
+    `.identity` statement as user error (`NonlinCompileError.unmarkedReductionAxis`). So the
+    producer's own slots must carry a plain `.free`; the consumer keeps the original marker.
+
+    Lives here (like `LHSSlot.toReadIdx`) because it has exactly TWO call sites in two modules
+    that cannot see each other: `Pipeline/Lowering.lean`'s `splitStmt` (the regression-only split
+    pipeline) and `Pipeline/RouteFragments.lean`'s `physicalizeOne` (the production route
+    boundary). `RouteFragments` imports only `Pipeline/Types`, so `Ast` is the lowest module both
+    can reach.
+
+    ⚠️ **Route equality cannot detect drift between those two call sites**: `.free a` and
+    `.freeNorm a` produce the SAME `slotWeave` axes, so a copy of this degrade that diverges on
+    one side only would still route identically and ship green. The cross-call-site guard is
+    `test/DSL/Pipeline/LoweringTest.lean`'s PRODUCERSLOTS fixture, which runs `splitStmt` and
+    `physicalizeOne` on the same statement and compares their producers' slot lists directly. -/
+def producerSlots (slots : List LHSSlot) : List LHSSlot :=
+  slots.map fun
+    | .freeNorm a => .free a
+    | slot => slot
+
 /-- Output extent of one scatter LHS slot under a sizing lookup `sz`.
     The single home of the scatter-extent convention (upsample stride semantics —
     deliberately not derivable from `idxAffineForm`). `none` if a source axis is unsized. -/

@@ -11,36 +11,57 @@ open Std
 
 /-! ## Phase 4 — `compile_wellFormed`: every compiled program is `WellFormed`
 
-`compile = compileToScheduled >>= route`; `compile_eq_route` isolates `tc` as `route`'s output of a
-scheduled program `sp`, after which each `WellFormed` conjunct is a fact about `routeCore sp`. -/
+`compile = compileToScheduled >>= route`, and `route` is now two stages (§2.5): checked
+physicalization of the LOGICAL schedule into a `PhysicalRouteProgram`, then the unchanged
+`routeCore` on that program's PHYSICAL statements. `compile_eq_physical_route` walks both stages
+and isolates `tc` as `routeCore physical.scheduled`'s output, after which each `WellFormed`
+conjunct is a fact about `routeCore` exactly as before.
 
-/-- Plumbing: a successful `compile` factors as a successful `compileToScheduled` (giving `sp`) whose
-    `routeCore` produced `tc`'s steps/routing, with `tc.nExternal = sp.extNames.card`. -/
-theorem compile_eq_route {p : TLProgram} {s : Nat} {tc : ThreadedComposed} {s' : Nat}
+Agreement consumes only three things — successful `routeCore`, the external-count equality, and
+`wellFormedDom` — so no fragment evidence (coverage, contiguity, exits, freshness) is threaded
+into `wf_typeMatch`, `wf_singleOutput`, or `wf_topo`. The logical/physical distinction is invisible
+to them: they only ever see the physical program `routeCore` succeeded on. -/
+
+/-- Plumbing: a successful `compile` factors as a successful `compileToScheduled` (giving the
+    LOGICAL schedule), a successful `physicalizeForRoute` (giving the checked physical package),
+    and a `routeCore` on the physical program that produced `tc`'s steps/routing, with
+    `tc.nExternal = physical.scheduled.extNames.card`. -/
+theorem compile_eq_physical_route {p : TLProgram} {s : Nat} {tc : ThreadedComposed} {s' : Nat}
     (h : (TLProgram.compile p).run s = .ok tc s') :
-    ∃ (sp : ScheduledProgram) (s₁ : Nat), (TLProgram.compileToScheduled p).run s = .ok sp s₁ ∧
-      routeCore sp = .ok (tc.steps, tc.routing) ∧ tc.nExternal = sp.extNames.card ∧
+    ∃ (logical : ScheduledProgram) (s₁ : Nat) (physical : PhysicalRouteProgram),
+      (TLProgram.compileToScheduled p).run s = .ok logical s₁ ∧
+      physicalizeForRoute logical = .ok physical ∧
+      routeCore physical.scheduled = .ok (tc.steps, tc.routing) ∧
+      tc.nExternal = physical.scheduled.extNames.card ∧
       tc.wellFormedDom = true := by
   have hcr : TLProgram.compile p = TLProgram.compileToScheduled p >>= route := by
     simp only [TLProgram.compile, TLProgram.compileToScheduled, Bind.kleisliRight, bind_assoc]
   rw [hcr, EStateM.run_bind] at h
   cases hcs : (TLProgram.compileToScheduled p).run s with
   | error e s₁ => rw [hcs] at h; simp at h
-  | ok sp s₁ =>
+  | ok logical s₁ =>
       rw [hcs] at h
       dsimp only at h
       unfold route at h
-      rcases hrcc : routeCore sp with _ | ⟨steps, routing⟩
-      · rw [hrcc] at h; simp [EStateM.run, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at h
-      · rw [hrcc] at h
-        dsimp only at h
-        split at h
-        · rename_i hwf
-          simp only [EStateM.run, pure, EStateM.pure, EStateM.Result.ok.injEq] at h
-          obtain ⟨htc, -⟩ := h
-          subst htc
-          exact ⟨sp, s₁, rfl, hrcc, rfl, hwf⟩
-        · simp [EStateM.run, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at h
+      cases hp : physicalizeForRoute logical with
+      | error e =>
+          rw [hp] at h
+          simp [EStateM.run, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at h
+      | ok physical =>
+          rw [hp] at h
+          dsimp only at h
+          rcases hrcc : routeCore physical.scheduled with _ | ⟨steps, routing⟩
+          · rw [hrcc] at h
+            simp [EStateM.run, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at h
+          · rw [hrcc] at h
+            dsimp only at h
+            split at h
+            · rename_i hwf
+              simp only [EStateM.run, pure, EStateM.pure, EStateM.Result.ok.injEq] at h
+              obtain ⟨htc, -⟩ := h
+              subst htc
+              exact ⟨logical, s₁, physical, rfl, hp, hrcc, rfl, hwf⟩
+            · simp [EStateM.run, throw, throwThe, MonadExceptOf.throw, EStateM.throw] at h
 
 -- NOTE(phaseB): restated to `≥ 1` to match the weakened `WellFormed` conjunct 3 (multi-output scans).
 /-- Conjunct 3 (at least one output): every routed step has at least one output weave. -/
@@ -268,7 +289,7 @@ theorem wf_typeMatch {sp : ScheduledProgram} {tc : ThreadedComposed}
 
 Every external slot referenced + rank agreement across consuming ports is now established BY
 CONSTRUCTION: `route` validates `tc.wellFormedDom` and fails loud otherwise (`Lowering.lean`), so
-`compile_eq_route` yields `tc.wellFormedDom = true` directly. This replaces the former `wf_dom`
+`compile_eq_physical_route` yields `tc.wellFormedDom = true` directly. This replaces the former `wf_dom`
 sorry (which would have required threading `checkReadRanks` arity-consistency + `buildExtIndex`
 surjectivity out of `compileToScheduled`). -/
 
@@ -375,10 +396,16 @@ theorem wf_topo {sp : ScheduledProgram} {tc : ThreadedComposed}
       | none => rw [hns, hext] at hwb; simp at hwb
 
 /-- **The compiler theorem: every compiled program is `WellFormed`** (discharges `realize`'s
-    precondition on real input). -/
+    precondition on real input).
+
+    Statement UNCHANGED by the logical-schedule flip (§2.5). Only the internal witness moved: the
+    scheduled program the conjuncts are proved against is now `physical.scheduled` (the checked
+    physicalization) rather than `compileToScheduled`'s own output. `test/Bridge/AgreementTest.lean`
+    pins this exact type. -/
 theorem compile_wellFormed (p : TLProgram) (s : Nat) (tc : ThreadedComposed) (s' : Nat)
     (h : (TLProgram.compile p).run s = .ok tc s') : tc.WellFormed := by
-  obtain ⟨sp, s₁, _hsp, hrc, hne, hwfd⟩ := compile_eq_route h
+  obtain ⟨_logical, _s₁, physical, _hlogical, _hphysical, hrc, hne, hwfd⟩ :=
+    compile_eq_physical_route h
   exact ⟨hwfd, wf_typeMatch hrc hwfd hne, wf_singleOutput hrc, wf_topo hrc hne⟩
 
 /-- Every compiled program crosses the bridge: the formal morphism exists. -/

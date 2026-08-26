@@ -15,7 +15,12 @@ namespace LeanNCD
 open Lean
 
 /-- The §12.4 pipeline as an explicit `FreshM` do-bind chain (each phase narrows
-    the invariant). -/
+    the invariant).
+
+    **No `splitNonlins`** (`papers/nonlinearity_split_pair_direct_lowering.md` §2.1): the schedule
+    is LOGICAL — one statement per source statement, zero generated names — and the nonlinear
+    producer/consumer pair is built privately inside `route` (`physicalizeForRoute`), only at the
+    categorical-routing boundary. `compile = compileToScheduled >>= route` still holds. -/
 def TLProgram.compile (p : TLProgram) : FreshM ThreadedComposed := do
   let a ← assignUIDs p
   let b ← resolveDecls a
@@ -26,16 +31,18 @@ def TLProgram.compile (p : TLProgram) : FreshM ThreadedComposed := do
   let b ← checkScatterNoScan b
   let d ← lowerArith b
   let e ← finalizeScans d
-  let f ← splitNonlins e
-  let g ← schedule f
+  let g ← schedule e
   route g
 
-/-- The compile pipeline WITHOUT the final `route` — yields a ScheduledProgram that retains scan
-    bodies + lowered ops + decls (dtype). The evaluator consumes this (the routed ThreadedComposed
-    collapses scan bodies and can't be evaluated). -/
+/-- The compile pipeline WITHOUT the final `route` — yields the LOGICAL `ScheduledProgram` that
+    retains scan bodies + lowered ops + decls (dtype). The evaluator consumes this (the routed
+    ThreadedComposed collapses scan bodies and can't be evaluated).
+
+    §2.1: its statement count now equals the source statement count and it contains **no**
+    generated `%nl…` name — nonlinearities reach Eval on the statement that owns them. -/
 def TLProgram.compileToScheduled : TLProgram → FreshM ScheduledProgram :=
   assignUIDs >=> resolveDecls >=> reclassifyIterSlots >=> checkReadRanks >=> checkDtypes >=>
-    checkScatterNonlin >=> checkScatterNoScan >=> lowerArith >=> finalizeScans >=> splitNonlins >=> schedule
+    checkScatterNonlin >=> checkScatterNoScan >=> lowerArith >=> finalizeScans >=> schedule
 
 /-- Stage 1 (parse) + Stage 2 (compile) at elaboration time; embed the computable
     `ThreadedComposed` presentation via `ToExpr`. -/
