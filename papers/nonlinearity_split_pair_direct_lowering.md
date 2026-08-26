@@ -159,10 +159,16 @@ Thirteen GPT-5.6 Sol/high spikes informed and then de-risked this decision.
 8. **Independent oracle extension:** the logical schedule required only two `.freeNorm` match
    alternatives in `ScanUnroll`. Six semantic fixture groups matched direct expectations and unsplit
    legacy Eval in 5.68 seconds; four independent oracle mutations failed as intended.
-9. **Scheduled-API census:** 10 production, 27 test, and 4 experiment calls to
-   `compileToScheduled` were classified. It found no in-repository architectural blocker, but requires
+9. **Scheduled-API census:** 10 production, 27 test, and 4 experiment `compileToScheduled` sites were
+   classified. It found no in-repository architectural blocker, but requires
    public `route` compatibility, a `LinearProgram` compatibility alias, an explicit FreshM-state
    policy, and a larger verification/documentation inventory.
+   **Unit correction (2026-08-26):** the test and experiment figures are *call* counts and were
+   re-verified exactly. The production figure is a *mention* count, not calls — there is exactly
+   **one** production runtime caller, `Eval/Entry.lean`. Of the other nine: one is the definition in
+   `DSL/Compile.lean`, one is a comment in `Pipeline/Lowering.lean`, and **seven are
+   `Bridge/Agreement.lean` proof references** — which are the proof surface this work repairs, not
+   call sites to re-verify. Budget the production side as one caller plus one proof, not ten callers.
 10. **Block-step provenance:** a production-shaped checker accepted assignment-to-pointwise/axiswise
     chains, rejected direct capture and nonlinearity-to-nonlinearity sources, and preserved causal
     mapped-state chains. The sound, minimal guard is block-specific nonlinear `sourceCheck`, not a
@@ -222,8 +228,14 @@ particular, do **not** transplant the fixture support's Boolean-only package as
 
 ##### Verified baseline
 
-On 2026-08-25 all five Lean donors typechecked directly from their final durable paths. The adapter
-donor additionally passed:
+On 2026-08-25 all five Lean donors typechecked directly from their final durable paths.
+**Re-verified 2026-08-26** against `main` at `a063944`: all five still typecheck, the adapter donor
+in ~5.3s with its 15 `#guard`s and five `run_cmd` blocks silent, and all five again from inside a
+freshly prepared implementation worktree after `lake build LeanNCD`. The donors are therefore live
+against the current tree, not a stale snapshot — a later donor failure is a transplant defect, not
+base drift.
+
+The adapter donor additionally passed:
 
 - all 15 `#guard`s and five `run_cmd` checks;
 - `lake build LeanNCD.DSL.Pipeline.Lowering LeanNCD.Bridge.Agreement`;
@@ -574,6 +586,9 @@ discarded), and it must establish:
 3. fragment order equals logical statement order;
 4. identity plain assignments and scans have one physical step;
 5. nonlinear plain assignments have exactly two ordered steps;
+5a. every input class in §2.4's ten-class table is explicitly classified, and no class reaches a
+    catch-all — in particular a nonlinear `.plain (.scatter …)` is rejected, never copied as one
+    step, and `fragmentWidth` agrees with `physicalizeOne` on every class;
 6. the first nonlinear step publishes only the private internal name;
 7. the second publishes the logical output name;
 8. private names are pairwise distinct and absent from every source declaration/read/write name;
@@ -645,6 +660,52 @@ For `.scan` and `.scanPre`:
 copy node exactly
 fragment = currentStep .. currentStep
 ```
+
+**Every input class must be classified; no catch-all may absorb an unclassified one.** The three
+cases above do not cover the constructor surface. `ScanStmt.plain` also admits `Stmt.scatter` and
+`Stmt.recurMorphism`, and a `.scatter` carries its own `RHSExpr.nonlin`. Physicalization must
+therefore classify all ten classes below, and the classification must be a deliverable — a table in
+`LeanNCD/DSL/AGENTS.md` with **no cell reading "silently ignored"**:
+
+| # | Input class | Reachable from surface `compile`? | Required handling |
+|---:|---|---|---|
+| 1 | `.plain (.assign …)`, `nonlin = .identity` | yes | copy, width 1 |
+| 2 | `.plain (.assign …)`, `nonlin = .pointwise _` | yes | split, width 2 |
+| 3 | `.plain (.assign …)`, `nonlin = .axiswise _ none` | yes | split, width 2 |
+| 4 | `.plain (.assign …)`, `nonlin = .axiswise _ (some mask)` | yes | split, width 2; mask rides the consumer |
+| 5 | `.plain (.scatter …)`, `nonlin = .identity` | yes | copy, width 1 |
+| 6 | `.plain (.scatter …)`, `nonlin ≠ .identity` | **no** — `checkScatterNonlin` rejects first | **reject; never a silent copy** |
+| 7 | `.plain (.recurMorphism …)` | no — `unsupportedRecurMorphism` | copy, width 1 (carries no `RHSExpr`) |
+| 8 | `.scan …` (`isAffine = false`) | yes | copy verbatim, width 1 |
+| 9 | `.scan …` (`isAffine = true`) | yes | copy verbatim, width 1 |
+| 10 | `.scanPre …` | no from surface; yes hand-built | copy verbatim, width 1 |
+
+Class 6 is the one this design previously left implicit, and it is unsound to leave to a catch-all.
+Today's `splitStmt` handles it with `| .scatter .. => return [s]   -- always identity-nonlin here
+(rejected upstream otherwise)`. That comment is accurate **today** for exactly one reason:
+`splitStmt` is reachable only from `splitNonlins`, reachable only from the two `DSL/Compile.lean`
+chains, both of which run `checkScatterNonlin` first. The predicate is sound by an *unenforced
+call-site precondition*, not by its own text.
+
+**This design changes the caller set that precondition depends on.** Public `route` now accepts a
+logical `ScheduledProgram` from any caller — that is the point of this section — so a hand-built
+logical schedule carrying a nonlinear `.scatter` never passes `checkScatterNonlin`, reaches the
+catch-all, and is copied as one physical step. It then routes as **one** `BrBase` with the
+nonlinearity absent from the categorical presentation, silently. If `fragmentWidth` carries the same
+catch-all, `fragmentLayoutOk` agrees with the miscount and cannot detect it — so `physicalizeOne` and
+`fragmentWidth` must be changed together.
+
+Note that **no diff exhibits this**: `splitStmt`'s `.scatter` arm text does not change in this work.
+Only the set of callers relying on its precondition changes. Rejecting is the correct resolution
+because §1.6 places nonlinear scatter semantics out of scope, and "out of scope" must mean *reject*,
+not *silently mis-route*. Reuse `unsupportedNonlinScatter` rather than minting a diagnostic: nothing
+reachable from `compile` can hit it, so common-domain error precedence is unchanged.
+
+Classes 8 and 9 carry a second, *intentional* divergence to pin in the same table so a later reader
+does not read it as a defect: old `splitScan` splits nonlinearities **inside** scan base/recur
+bodies; physicalization copies the scan node verbatim. That is the scan-semantics fix of §1.2, not a
+regression. For routing it must be projection-equal, because scan routing uses a representative
+statement and does not encode the body (§2.5). Assert both halves separately.
 
 No physicalization case may:
 
@@ -1023,7 +1084,7 @@ DSL/Ast.lean                         (pipeline root)
 
 | Task | Deliverable | Planned fixtures / mutation cycles | Risk |
 |---|---|---:|---|
-| 1 | Atomic logical boundary, physical adapter, public API compatibility, decisive route equality, and Agreement restoration | 12 architecture fixtures plus 19 compile and 2 route-domain differential cases / 14 cycles; full API-census verification | High integration risk; formal proof and diagnostic feasibility established |
+| 1 | Atomic logical boundary, physical adapter, public API compatibility, decisive route equality, and Agreement restoration | 12 architecture fixtures plus a nonlinear-scatter rejection fixture, 19 compile and 2 route-domain differential cases / 15 cycles; full API-census verification | High integration risk; formal proof and diagnostic feasibility established |
 | 2 | Durable 145-case route corpus plus 19 named payload-conservation fixtures, scan opacity, realization, and ACSet regression | 13 generated families plus 19 named fixtures / 12 cycles | High categorical regression value; opacity boundary is explicit |
 | 3 | General `BlockStep` vertical slice with nonlinear-source causality guard | 9 fixtures / at least 6 cycles; 47 field occurrences on 46 code lines | High checked-IR blast radius; rehearsal bounds work at 1.5-2 days |
 | 4 | Nonlinear scan admission, independent oracle, allocation, and publication | 19 cross-layer fixtures including 6 oracle groups, plus 17-case corpus / 13 cycles | Highest runtime semantic risk |
@@ -1038,6 +1099,18 @@ failure**, **restore**, and **observe pass** in the same named fixture, proof, o
 Merely predicting a failure or mutating the assertion does not count.
 
 ### 3.3 Task 1: atomic architecture gate
+
+> **Executable plan (2026-08-26):** Task 1 has its own slice plan,
+> [`leanncd/docs/superpowers/plans/2026-08-26-nonlinearity-t1-logical-schedule.md`](../leanncd/docs/superpowers/plans/2026-08-26-nonlinearity-t1-logical-schedule.md),
+> per CLAUDE.md Rule 13 (one implementation plan per slice). It decomposes this task into three
+> dispatchable sub-tasks — the `RouteFragments` module, the atomic flip, and the diagnostic
+> differential — and maps this section's fourteen mutation cycles onto them 1:1 with none dropped.
+> **Atomicity is unchanged**: the sub-tasks share one branch, and the logical API flip, route wiring,
+> and Agreement repair still land together in the second of them. The separation exists because
+> route equality can be established *before* the flip (compare `splitNonlins → schedule → routeCore`
+> against `schedule → physicalizeForRoute → routeCore`), which makes the module independently
+> reviewable. Sections 2 and 4 of this document remain the governing contract; Tasks 2-5 below stay
+> unplanned until that slice lands.
 
 **Outcome**
 
@@ -1059,6 +1132,9 @@ invalidates a recorded donor assumption, and record any such divergence before p
 - `leanncd/LeanNCD/DSL/Ast.lean` (only if moving `LHSSlot.toReadIdx`)
 - `leanncd/LeanNCD/DSL/Pipeline/Types.lean`
 - `leanncd/LeanNCD/DSL/Pipeline/RouteFragments.lean` (new in this task)
+- `leanncd/LeanNCD.lean` (explicit import, so the new module is reachable from `import LeanNCD`
+  rather than only transitively through `Lowering`)
+- `leanncd/LeanNCD/DSL/AGENTS.md` (phase-table row plus Section 2.4's ten-class case table)
 - `leanncd/LeanNCD/DSL/Pipeline/Lowering.lean`
 - `leanncd/LeanNCD/DSL/Compile.lean`
 - `leanncd/LeanNCD/DSL/Pipeline/RouteSpec.lean`
@@ -1115,7 +1191,9 @@ invalidates a recorded donor assumption, and record any such divergence before p
    preserve oracle independence and do not import route or Plan helpers.
 9. Apply the FreshM-state policy in Section 2.1 and add exact regression for
    `compile = compileToScheduled >>= route`, including final state.
-10. Verify all 10 production, 27 test, and 4 experiment call sites classified by the API census.
+10. Verify the API census sites: 27 test calls, 4 experiment calls, and on the production side the
+    single runtime caller (`Eval/Entry.lean`) plus the seven `Bridge/Agreement.lean` proof
+    references — see the unit correction in Section 1.3 item 9 before sizing this.
 11. Preserve complete physical payloads separately from current categorical projection. Do not claim
     that route/ACSet equality represents masks, Iverson predicates, dtypes, or nested `scanPre` bodies.
 12. Add the 19-case compile and two-case direct-route differential from Section 2.8. Common-domain
@@ -1146,18 +1224,31 @@ invalidates a recorded donor assumption, and record any such divergence before p
 10. Adversarial long-`#` source names: generated names remain absent from the source set.
 11. Existing identity schedule: unchanged step, slot, and routed values.
 12. Add an exact-type regression in `Bridge/AgreementTest.lean` for the unchanged public
-    `compile_wellFormed` statement; no existing fixture currently guards that signature.
+    `compile_wellFormed` statement; no existing fixture currently guards that signature. Confirmed
+    2026-08-26: `test/Bridge/AgreementTest.lean` is 12 lines and `#check`s only
+    `@realize_fromThreadedComposed_agree`, `@agree_dom`, and `@agree_cod`, so a silent weakening of
+    `compile_wellFormed` would currently go unnoticed. Follow that file's idiom:
+    `#check @compile_wellFormed`.
+13. Hand-built logical schedule carrying a nonlinear `.plain (.scatter …)`: physicalization rejects
+    it (Section 2.4 class 6) rather than copying it as one step. This class is unreachable from
+    `TLProgram.compile` — `checkScatterNonlin` rejects first — so the fixture must construct the
+    schedule directly and call public `route`, which is precisely the surface this work widens.
 
-Diagnostic differential donors:
+Diagnostic differential donors. **Paths verified 2026-08-26** — three of these are not in the
+directory their bare name suggests, so they are given in full here:
 
-- clone rank/dtype/predicate/scatter fixtures from `DSL/Pipeline/StructuralTest`;
-- clone `MaxReduceTest`'s predicate aggregation case;
-- clone `IterDeclTest`'s undeclared scan-axis case;
-- clone `ScatterNonlinRejectTest.RSN1`;
-- clone `RejectTest.SS4` and `RejectTest.UF5`;
-- clone `LoweringTest`'s identity cycle, then add the two-ReLU `A <-> B` cycle;
-- clone the masked-attention statement from `AcsetCodecTest` guard 2, omitting its tensor declaration
-  so it is exactly case 17 in Section 2.8;
+- clone rank/dtype/predicate/scatter fixtures from `test/DSL/Pipeline/StructuralTest.lean`;
+- clone the predicate-aggregation case from `test/DSL/MaxReduceTest.lean` (**not** under
+  `test/Eval/Plan/`);
+- clone the undeclared scan-axis case from `test/DSL/IterDeclTest.lean`;
+- clone `RSN1` from `test/Eval/Portfolio/ScatterNonlinRejectTest.lean` (**not** under
+  `test/DSL/Pipeline/`);
+- clone `SS4` and `UF5` from `test/Eval/Portfolio/RejectTest.lean` (**not** under
+  `test/DSL/Pipeline/`);
+- clone the identity cycle from `test/DSL/Pipeline/LoweringTest.lean`, then add the two-ReLU
+  `A <-> B` cycle;
+- clone the masked-attention statement from `test/Bridge/AcsetCodecTest.lean` guard 2, omitting its
+  tensor declaration so it is exactly case 17 in Section 2.8;
 - add the exact `%nl2`, long-`#`, route-domain, and composition cases from Section 2.8.
 
 **Mutation checks**
@@ -1172,13 +1263,18 @@ Diagnostic differential donors:
 - Remove fragment-coverage checking; checked physicalization or the coverage theorem fails.
 - Remove fragment-exit checking; the downstream route-equality fixture fails.
 - Reverse physical topology; checked physicalization or route equality fails.
+- Restore the catch-all so a nonlinear `.plain (.scatter …)` is copied as one step instead of
+  rejected (Section 2.4 class 6); the hand-built nonlinear-scatter rejection fixture fails. Mutate
+  `physicalizeOne` and `fragmentWidth` together, since leaving both catch-alls in agreement is
+  exactly the defect being guarded.
 - Restore the old split-shape oracle guard after the logical flip; the oracle guard fails.
 - Change the production rank-error branch to emit a different constructor/payload; the diagnostic
   differential fails.
 - Swap production `checkReadRanks`/`checkDtypes`; the dual-defect precedence fixture fails.
 - Corrupt successful routed `nExternal`; exact result comparison fails.
 
-Each of these fourteen items is one production-mutation/observed-fail/restore/observed-pass cycle.
+Each of these fifteen items is one production-mutation/observed-fail/restore/observed-pass cycle.
+(The fifteenth, the class-6 catch-all, was added 2026-08-26 with Section 2.4's case table.)
 
 **Day-3 internal checkpoint**
 
@@ -1656,6 +1752,8 @@ The implementation is incomplete until its record contains:
 - retention of the deprecated `LinearProgram` alias;
 - every fragment interval and logical-output exit for regression graphs;
 - collision proof results and adversarial-name fixture;
+- Section 2.4's ten-class case table, every class classified, no cell reading "silently ignored",
+  and the class-6 nonlinear-scatter rejection fixture and its mutation cycle;
 - exact old/new `ThreadedComposed` equality for all 137 common-domain generated cases;
 - intentional old-reject/new-accept results for all eight `%nl0` collision cases;
 - all 19 named payload fixtures, distinguishing physical conservation from categorical opacity;
@@ -1710,6 +1808,10 @@ Stop and revise rather than improvise if:
 - any common-domain error constructor, payload, or precedence changes;
 - any pre-split failure state changes or any later state delta is not exactly the removed split mints;
 - implementation attempts to preserve obsolete post-split counters through compensating UID mints;
+- any physicalization input class in Section 2.4's ten-class table reaches a catch-all instead of an
+  explicit classification, or `fragmentWidth` and `physicalizeOne` disagree on any class;
+- closing class 6 (nonlinear `.plain (.scatter …)`) would change any diagnostic reachable from
+  `TLProgram.compile`;
 - physicalization changes or drops aggregation, masks, Iverson factors, dtype metadata, affine reads,
   or opaque `scanPre` bodies;
 - route/ACSet equality is presented as evidence for a payload the categorical projection omits;
@@ -1736,6 +1838,9 @@ Stop and revise rather than improvise if:
 - `LinearProgram` remains as a deprecated compatibility alias.
 - Physical route fragments are private, contiguous, collision-free, and non-rescheduling.
 - Every top-level nonlinear assignment routes as two necessary generators.
+- All ten physicalization input classes of Section 2.4 are explicitly classified in
+  `LeanNCD/DSL/AGENTS.md` with no cell reading "silently ignored"; class 6 rejects; `physicalizeOne`
+  and `fragmentWidth` agree on every class.
 - Routed presentations and existing categorical projections are unchanged on all 137 common-domain
   corpus cases; eight generated-name collision cases become newly accepted.
 - All eight nonlinearity tags route correctly; programmatic max/min nonlinear ASTs route as
@@ -1754,7 +1859,9 @@ Stop and revise rather than improvise if:
 - Retained-axis mapping works for leading, interleaved, and trailing local axes.
 - Legacy Eval, checked Plan, and independent oracle agree on all admitted source-visible results.
 - The route, payload, diagnostic, route-domain, scan-free, and 17-case 13/0/4 scan gates are green.
-- Full builds, all 48 mandatory mutation checks, and whole-branch reviews are green or adjudicated.
+- Full builds, all 49 mandatory mutation checks (14 + 1 for Section 2.4's class-6 catch-all in
+  Task 1, 12 in Task 2, 6 in Task 3, 13 in Task 4, 3 in Task 5), and whole-branch reviews are green
+  or adjudicated.
 - Documentation contains no active recommendation for split-pair shared scheduling.
 
 ### 4.5 Future architecture triggers

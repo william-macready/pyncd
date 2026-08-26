@@ -243,11 +243,12 @@ approving its neighbour.*
 
 | Task | Deliverable | Fixtures | Mutation cycles | Risk driver |
 |---|---|---:|---:|---|
-| 1 | `RouteFragments.lean` + `toReadIdx` move + case×class table + route-equality fixtures | 11 | **9** | proof volume; largest single deliverable; **verifiable without the flip** |
+| 1 | `RouteFragments.lean` + `toReadIdx` move + case×class table + route-equality fixtures | 12 | **10** | proof volume; largest single deliverable; **verifiable without the flip** |
 | 2 | Atomic flip (Types/Lowering/Compile/Agreement) + all fallout | 1 | **2** | integration blast radius: 27 test + 4 experiment call sites, 7 Agreement proof references |
 | 3 | `RouteFragmentDiagnosticTest.lean` — 19 compile + 2 route-domain + 9 composition observations | 30 obs. | **3** | exactness: every constructor, payload, and final state pinned |
 
-Total 14 mutation cycles — the master plan's §3.3 list, mapped 1:1 with none dropped:
+Total 15 mutation cycles — the master plan's §3.3 list (14, plus the class-6 cycle this planning pass
+added to it), mapped 1:1 with none dropped:
 
 | Master §3.3 mutation | Task |
 |---|---:|
@@ -260,6 +261,7 @@ Total 14 mutation cycles — the master plan's §3.3 list, mapped 1:1 with none 
 | remove fragment-coverage checking | 1 |
 | remove fragment-exit checking | 1 |
 | reverse physical topology | 1 |
+| restore the class-6 catch-all so a nonlinear `.scatter` copies instead of rejecting | 1 |
 | reinsert `splitNonlins` into `compileToScheduled` | 2 |
 | restore the old split-shape oracle guard after the flip | 2 |
 | change the production rank-error constructor/payload | 3 |
@@ -331,11 +333,12 @@ order. Copy declarations; do not redesign them:
 | 9 | Coupled scans | clone public `ScanCompileTest.coupledSched` / `coupledInputs` constructions locally |
 | 10 | Adversarial long-`#` source names | fixture 1, rename the output tensor to an all-`#` name longer than any other; generated names must still be absent from the source set |
 | 11 | Existing identity schedule unchanged | reuse a `LoweringTest` identity fixture; asserts step/slot/routed values byte-identical |
+| 13 | **Nonlinear `.plain (.scatter …)` is rejected**, not copied as one step (§0.3 class 6) | new; hand-build the logical schedule directly and call public `route` — this class is unreachable from `TLProgram.compile` (`checkScatterNonlin` rejects first), so a source-level fixture cannot reach it. Numbered 13 to match the master plan; fixture 12 is Task 2's. |
 
 Fixtures 1–2 assert route equality **only** in this task. Their "two Plan steps instead of three"
 assertions live in `NonlinCompileTest` and belong to Task 2, which is when that becomes true.
 
-**Mutation cycles (9)** — all against `RouteFragments.lean`:
+**Mutation cycles (10)** — all against `RouteFragments.lean`:
 
 1. `maxLen` instead of `maxLen + ordinal + 1` → fixture 10 fails.
 2. Reuse one internal name across fragments → fixture 4 fails.
@@ -346,6 +349,10 @@ assertions live in `NonlinCompileTest` and belong to Task 2, which is when that 
 7. Remove fragment-coverage checking → checked construction or the coverage theorem fails.
 8. Remove fragment-exit checking → fixture 3 fails.
 9. Reverse physical topology → checked construction or route equality fails.
+10. Restore the class-6 catch-all so a nonlinear `.scatter` is copied as one step instead of
+    rejected → fixture 13 fails. Mutate `physicalizeOne` **and** `fragmentWidth` together; leaving
+    both catch-alls in agreement is precisely the defect being guarded, so mutating only one would
+    prove less than it appears to.
 
 **Gate**
 
@@ -537,7 +544,7 @@ cannot be reached, stop there rather than starting Task 2.
 - All 19 compile-diagnostic + 2 route-domain + 9 composition observations exact, with every state
   delta explained as removed split mints.
 - `RouteFragments` is reachable from `import LeanNCD` and documented in `LeanNCD/DSL/AGENTS.md`.
-- All three task gates green, all **14** mutation cycles run as mutate/fail/restore/pass with the
+- All three task gates green, all **15** mutation cycles run as mutate/fail/restore/pass with the
   failing assertion named, and both whole-branch reviews green or their findings adjudicated.
 - No `sorry`, `admit`, or `axiom` added.
 
