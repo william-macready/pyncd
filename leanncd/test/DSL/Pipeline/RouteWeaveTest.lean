@@ -209,6 +209,19 @@ run_cmd do
           if physical.sourceNames.contains a || physical.sourceNames.contains b then
             throwError "F4: a private route name occurs in the source inventory"
       | gs => throwError s!"F4: expected exactly 2 generated names, got {gs.length}"
+      -- §2.4 Global Constraint: "no physicalization case may reorder logical statements."
+      -- Fragments come out in logical order …
+      unless physical.fragments.map (·.logicalIndex) == List.range logical.stmts.length do
+        throwError s!"F4: fragment logical indices are not 0…n-1: {repr (physical.fragments.map (·.logicalIndex))}"
+      -- … and fragment k's EXIT publishes logical statement k's output. This second half is the
+      -- one with teeth: `logicalIndex` is assigned by `zipIdx` INSIDE `physicalizeRaw`, so a
+      -- permutation applied before that fold still yields `0…n-1`. Comparing against
+      -- `logical.stmts` — the unpermuted input the package stores separately — is what actually
+      -- detects a reordering.
+      unless physical.fragments.map (fun f =>
+            routeOutputs (physical.scheduled.stmts.getD f.lastStep default))
+          == logical.stmts.map routeOutputs do
+        throwError "F4: physicalization REORDERED the logical statements (fragment exits do not follow logical order)"
 run_cmd sameRoutedPresentation "F4 join" f4Join
 
 /-! ### Fixture 5 — fixture 4 without the join: the second nonlinear output is never read.
