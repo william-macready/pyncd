@@ -42,7 +42,7 @@ Column "old" is the pre-flip `splitNonlins → schedule → route` state recorde
 | 16 | `cyclicDataflow "schedule: cyclic dataflow"`| @4 | @2 | 2 | two nonlinear stmts; see below |
 | 17 | success                                    | @5 | @4 | 1 | one nonlinear stmt |
 | 18 | success                                    | @3 | @2 | 1 | one nonlinear stmt |
-| 19 | old `cyclicDataflow "routeCore: …"` @3, **new success @2** | | | 1 | intentional fix; see below |
+| 19 | old: `cyclicDataflow` / new: success            | @3 | @2 | 1 | intentional fix; see below |
 
 ### Case 16 — same constructor *and* same payload string
 
@@ -177,9 +177,14 @@ private def case19 : TLProgram := {
 /-! ## Observation combinators — production `TLProgram.compile` only
 
 `compileErrorIs` pins the exact error CONSTRUCTOR, its exact PAYLOAD, and the exact final `FreshM`
-state; `compileOkIs` pins the exact routed presentation (`nExternal`, step count, full `routing`
-wire lists) and the final state. Nothing here is an "outcome shape" check: a changed payload, a
-changed precedence, or a one-off state is a failure. -/
+state. `compileOkIs` pins the routed presentation's ARITY, WIDTH, and WIRING (`nExternal`, step
+COUNT, full `routing` wire lists) and the final state — it does NOT inspect the emitted `steps`
+payload itself (`List BrBaseP`), so a step-order/content corruption that preserves those four
+values would not be caught here. That coverage lives elsewhere: `Bridge/Agreement.lean`'s
+`compile_eq_physical_route`, `Bridge/AcsetCodecTest.lean`, and `DSL/Pipeline/RouteWeaveTest.lean`
+all pin the routed steps directly (§4 below already says so for the composition-adjacent claims;
+this note is about `compileOkIs` specifically). What IS a failure here: a changed payload, a
+changed precedence, or a one-off state in nExternal/step-count/routing/finalState. -/
 
 private def compileErrorIs (p : TLProgram) (e : CompileError) (finalState : Nat)
     (start : Nat := 0) : Bool :=
