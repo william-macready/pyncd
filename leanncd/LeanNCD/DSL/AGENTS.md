@@ -25,10 +25,11 @@ Does not own: evaluation semantics (`../Eval/`) or the acset bridge (`../Bridge/
 | Pipeline intermediate types (`ResolvedProgram`, `ScanStmt`, `ScheduledProgram`) | `Types.lean` |
 | Phases 1-5 (assignUIDs/resolveDecls/checkReadRanks/checkDtypes/checkScatterNonlin/checkScatterNoScan/lowerArith/finalizeScans) | `Structural.lean` |
 | Phase 6-8 (splitNonlins/schedule/route/buildStep/routeCore) | `Lowering.lean` |
+| Private physical route fragments (logical schedule → `routeCore` input) | `RouteFragments.lean` |
 | Proofs about routeCore/buildStep (Track A, lemmas B.1-B.7) | `RouteSpec.lean` |
 
 ### Key Relationships
-Strictly layered: `Syntax`→`Elab`→`Ast`/`Target`→`Traverse`/`TraverseAxes`→`Pipeline/Types`→`Pipeline/Structural`→`Pipeline/Lowering`→`Pipeline/RouteSpec`→`Compile`. **One deliberate cross-layer exception**: `Structural.lean`'s header-comment-flagged `../Eval/Contract` import — its own header comment calls it "the ONLY cross-layer import on this branch," solely so `Stmt.uids_eq` and six `specsX_map_uid_eq` lemmas can state their RHS against `Eval.Contract`'s real UID collectors. Downstream: `Bridge/AcsetCodec.lean`/`Realize.lean` import only `DSL.Target`; `Bridge/Agreement.lean` imports `DSL.Compile` and `Pipeline.RouteSpec` directly. `Eval/*` imports `DSL.Ast`/`DSL.Compile`/`Pipeline.Types`/`TraverseAxes` — with one exception: `Eval/Plan/Compile.lean` (Wave F F4) also imports `Pipeline.Lowering` directly, reusing `idxToRow` to lower a scan's affine reads exactly as `Lowering.lean` itself does. Every other `Eval/*` file still never imports `Pipeline.Structural`/`Lowering`.
+Strictly layered: `Syntax`→`Elab`→`Ast`/`Target`→`Traverse`/`TraverseAxes`→`Pipeline/Types`→`Pipeline/Structural`→`Pipeline/Lowering`→`Pipeline/RouteSpec`→`Compile`. `Pipeline/RouteFragments` hangs off `Pipeline/Types` **only** — it must stay importable without `Lowering`, since `Lowering` will import it (Task 2) and the reverse edge would cycle. That is why `LHSSlot.toReadIdx` lives in `Ast.lean` rather than `Lowering.lean`: `splitStmt` and `physicalizeOne` build the nonlinear consumer's read coordinates from one shared definition, and only `Ast` is below both. **One deliberate cross-layer exception**: `Structural.lean`'s header-comment-flagged `../Eval/Contract` import — its own header comment calls it "the ONLY cross-layer import on this branch," solely so `Stmt.uids_eq` and six `specsX_map_uid_eq` lemmas can state their RHS against `Eval.Contract`'s real UID collectors. Downstream: `Bridge/AcsetCodec.lean`/`Realize.lean` import only `DSL.Target`; `Bridge/Agreement.lean` imports `DSL.Compile` and `Pipeline.RouteSpec` directly. `Eval/*` imports `DSL.Ast`/`DSL.Compile`/`Pipeline.Types`/`TraverseAxes` — with one exception: `Eval/Plan/Compile.lean` (Wave F F4) also imports `Pipeline.Lowering` directly, reusing `idxToRow` to lower a scan's affine reads exactly as `Lowering.lean` itself does. Every other `Eval/*` file still never imports `Pipeline.Structural`/`Lowering`.
 
 ## Public API
 
@@ -52,6 +53,47 @@ Strictly layered: `Syntax`→`Elab`→`Ast`/`Target`→`Traverse`/`TraverseAxes`
 | Add a new compile phase / validation | `Pipeline/Structural.lean` (validation-only) or `Pipeline/Lowering.lean` (transforming) |
 | Debug a routing/`buildStep` proof | `Pipeline/RouteSpec.lean` — check which B.\* lemma covers your change |
 | Change the routed-DAG wire format | `Target.lean` — ripples into `../Bridge/AGENTS.md` and `../Eval/AGENTS.md` |
+
+### Physicalization case table (`RouteFragments.lean`, §2.4 of `papers/nonlinearity_split_pair_direct_lowering.md`)
+
+`physicalizeForRoute` turns a **logical** `ScheduledProgram` (one statement per source statement, no
+generated names) into the **physical** one `routeCore` consumes, expanding each nonlinear plain
+assignment into a private producer/consumer pair. Every input class is classified explicitly by
+`fragmentClass`; there is no catch-all arm, and `fragmentWidth` is defined from the same classifier
+(`physicalizeOne_length_eq_fragmentWidth` proves the two agree on every class, so `fragmentLayoutOk`
+cannot rubber-stamp a `physicalizeOne` miscount).
+
+| # | Input class | Reachable from surface `compile`? | Handling |
+|---:|---|---|---|
+| 1 | `.plain (.assign …)`, `nonlin = .identity` | yes | copy, width 1 |
+| 2 | `.plain (.assign …)`, `nonlin = .pointwise _` | yes | split, width 2 |
+| 3 | `.plain (.assign …)`, `nonlin = .axiswise _ none` | yes | split, width 2 |
+| 4 | `.plain (.assign …)`, `nonlin = .axiswise _ (some mask)` | yes | split, width 2; the mask rides the consumer |
+| 5 | `.plain (.scatter …)`, `nonlin = .identity` | yes | copy, width 1 |
+| 6 | `.plain (.scatter …)`, `nonlin ≠ .identity` | **no** — `checkScatterNonlin` rejects first | **rejected** with `CompileError.unsupportedNonlinScatter`; never a copy |
+| 7 | `.plain (.recurMorphism …)` | no — `unsupportedRecurMorphism` | copy, width 1 (carries no `RHSExpr`) |
+| 8 | `.scan …` (`isAffine = false`) | yes | copy verbatim, width 1 |
+| 9 | `.scan …` (`isAffine = true`) | yes | copy verbatim, width 1 |
+| 10 | `.scanPre …` | no from surface; yes hand-built | copy verbatim, width 1 |
+
+Two things a later reader should not misread as defects:
+
+- **Class 6's rejection has no diff to point at.** `splitStmt`'s `.scatter` arm still says
+  `-- always identity-nonlin here (rejected upstream otherwise)`, and that comment is still accurate
+  *for `splitStmt`*, whose only caller chain runs `checkScatterNonlin` first. What changes is the
+  caller set: `physicalizeForRoute` accepts a logical schedule from **any** caller, including a
+  hand-built one that never passed validation, so the unenforced call-site precondition stops
+  holding there. Copying such a node would route it as one `BrBase` with the nonlinearity silently
+  absent from the categorical presentation. `unsupportedNonlinScatter` is reused rather than a new
+  diagnostic minted, precisely because nothing reachable from `TLProgram.compile` can hit this path
+  — so common-domain error constructor/payload/precedence are unchanged.
+- **Classes 8/9 diverge from old `splitScan` on purpose.** `splitScan` splits nonlinearities
+  *inside* scan base/recur bodies; physicalization copies the scan node verbatim. That is the
+  scan-semantics fix, not a regression. It is still route-equal because scan routing is opaque
+  (`toBrBaseP` uses a representative statement and the `BrOp` tag only, and `inputReadFactors`
+  filters out self-writes — so the split intermediate never became a wire). Assert both halves
+  separately: physical conservation (the body is byte-identical) and categorical projection
+  equality (the routed steps/wires match). See `test/DSL/Pipeline/RouteWeaveTest.lean` F7/F8/F9.
 
 ## Contracts
 Proved (verified by reading, not sorry'd): `dedupByUid_uid_nodup`; `reindexing_wellFormed`; **B.1** `buildNameToStep_lt`/`_slot_lt`; **B.3** `routeCore_routable`; **B.5** `buildStep_wires_mapM`; **B.6** `buildStep_inputWeaves`; **B.7** `buildStep_output_fixedAxes` (`RouteSpec.lean:381-395` — real proof body, closes via `outputAxesConsistent` + `fixedAxesP_mapWeave_pos`, the Phase-B capstone); downstream **M3** `buildStep_output_reducesOnlyContracted`; `buildExtIndex_injective`/`_lt_card`.

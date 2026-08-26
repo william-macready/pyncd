@@ -1,0 +1,405 @@
+-- LeanNCD/DSL/Pipeline/RouteFragments.lean
+-- The route-layer boundary between the LOGICAL schedule and the PHYSICAL `routeCore` input.
+import LeanNCD.DSL.Pipeline.Types
+
+/-!
+# Private physical route fragments
+
+`papers/nonlinearity_split_pair_direct_lowering.md` §2.2–§2.4.
+
+Nonlinearities are **not** split before scheduling (that corrupts scan semantics: `splitScan`
+splits nonlinearities *inside* scan base/recur bodies). The schedule stays logical — one statement
+per source statement, no generated names — and a nonlinear plain assignment is expanded into a
+private two-step *route fragment* only here, at the categorical-routing boundary.
+
+The module imports **only** `Pipeline/Types`. It deliberately does not depend on `Lowering`'s
+`ScanStmt.writes`/`outputs`/`reads`, `buildNameToStep`, or `routableInOrder`: `Lowering` imports
+this module, not the other way round, so the small accessors below are local by necessity.
+
+## The ten input classes (§2.4)
+
+Every `ScanStmt` constructor shape is classified by `fragmentClass` — there is no catch-all.
+`physicalizeOne` and `fragmentWidth` both dispatch on the *same* classifier, so they cannot
+disagree about a class (a disagreement would let `fragmentLayoutOk` agree with a miscount and hide
+it). The full table lives in `LeanNCD/DSL/AGENTS.md`.
+
+Class 6 — a nonlinear `.plain (.scatter …)` — is **rejected** with the existing
+`CompileError.unsupportedNonlinScatter`, never copied as one physical step. It is unreachable from
+`TLProgram.compile` (`checkScatterNonlin` rejects it first), so common-domain error precedence is
+unchanged; it is reachable from a hand-built logical schedule handed straight to this boundary,
+which is exactly the caller set this design widens.
+-/
+
+namespace LeanNCD
+open Std
+
+/-! ## Route-name inventory and collision-free private identifiers (§2.3) -/
+
+/-- Tensor names visible in a declaration. Axis declarations are deliberately excluded. -/
+def declaredTensorName? : Decl → Option String
+  | .tensor nm _ | .predicate nm _ | .linear nm _ _ => some nm
+  | .axis _ _ | .iter _ _ => none
+
+/-- Names written by one logical/physical route node. -/
+def routeWrites : ScanStmt → List String
+  | .plain s => [s.lhsName]
+  | .scan _ _ base recur _ =>
+      (base.map Stmt.lhsName ++ recur.map Stmt.lhsName).eraseDups
+  | .scanPre nm _ _ => [nm]
+
+/-- Public exits of one node. A scan publishes only names present in both halves. -/
+def routeOutputs : ScanStmt → List String
+  | .plain s => [s.lhsName]
+  | .scan _ _ base recur _ =>
+      (base.map Stmt.lhsName).filter (fun nm => (recur.map Stmt.lhsName).contains nm)
+  | .scanPre nm _ _ => [nm]
+
+/-- All tensor reads, including scan self-reads, for the collision inventory. -/
+def routeReads : ScanStmt → List String
+  | .plain s => s.readFactors.map (·.1)
+  | .scan _ _ base recur _ =>
+      ((base.flatMap Stmt.readFactors ++ recur.flatMap Stmt.readFactors).map (·.1)).eraseDups
+  | .scanPre _ _ _ => []
+
+/-- Reads that become route wires. Scan-local recurrence reads are deliberately excluded. -/
+def routeInputReads (sc : ScanStmt) : List String :=
+  match sc with
+  | .plain s => s.readFactors.map (·.1)
+  | .scan _ _ base recur _ =>
+      let reads := base.flatMap Stmt.readFactors ++ recur.flatMap Stmt.readFactors
+      (reads.filter (fun rf => !(routeWrites sc).contains rf.1)).map (·.1)
+  | .scanPre _ _ _ => []
+
+/-- Complete route-name inventory: declarations, writes, and tensor reads (including unary reads). -/
+def routeNameInventory (sp : ScheduledProgram) : List String :=
+  (sp.decls.filterMap declaredTensorName? ++
+    sp.stmts.flatMap (fun sc => routeWrites sc ++ routeReads sc)).eraseDups
+
+def maxSourceNameLength : List String → Nat
+  | [] => 0
+  | nm :: names => max nm.length (maxSourceNameLength names)
+
+/-- The executable collision-free name definition used by physicalization: `maxLen + ordinal + 1`
+    `#` characters. No prefix (`%nl` or otherwise) is reserved; freshness is proved, not assumed. -/
+def routeName (names : List String) (ordinal : Nat) : String :=
+  String.ofList (List.replicate (maxSourceNameLength names + ordinal + 1) '#')
+
+@[simp] theorem routeName_length (names : List String) (ordinal : Nat) :
+    (routeName names ordinal).length = maxSourceNameLength names + ordinal + 1 := by
+  simp [routeName, String.length]
+
+theorem length_le_maxSourceNameLength {nm : String} {names : List String}
+    (h : nm ∈ names) : nm.length ≤ maxSourceNameLength names := by
+  induction names generalizing nm with
+  | nil => simp at h
+  | cons hd tl ih =>
+      rw [List.mem_cons] at h
+      cases h with
+      | inl heq =>
+          subst nm
+          exact Nat.le_max_left _ _
+      | inr hmem =>
+          exact _root_.le_trans (ih hmem) (Nat.le_max_right _ _)
+
+theorem routeName_longer {nm : String} {names : List String} (h : nm ∈ names)
+    (ordinal : Nat) : nm.length < (routeName names ordinal).length := by
+  have hle := length_le_maxSourceNameLength h
+  rw [routeName_length]
+  omega
+
+/-- No generated private name occurs in the source inventory: it is strictly longer than every
+    name in it. -/
+theorem routeName_not_mem (names : List String) (ordinal : Nat) :
+    routeName names ordinal ∉ names := by
+  intro h
+  have := routeName_longer h ordinal
+  omega
+
+/-- Distinct ordinals yield distinct private names (their lengths differ). -/
+theorem routeName_injective (names : List String) :
+    Function.Injective (routeName names) := by
+  intro a b h
+  have hl := congrArg String.length h
+  simp only [routeName_length] at hl
+  omega
+
+/-! ## Fragments and the ten-class classifier (§2.2, §2.4) -/
+
+/-- One logical statement's physical footprint: the contiguous physical step range it occupies,
+    plus the private producer name when it was expanded into a nonlinear pair. -/
+structure RouteFragment where
+  logicalIndex : Nat
+  firstStep : Nat
+  lastStep : Nat
+  internalName : Option String
+  deriving DecidableEq, Repr
+
+structure PhysicalizeAcc where
+  stmts : List ScanStmt
+  fragments : List RouteFragment
+
+/-- The physicalization class of one logical node (§2.4's ten-class table). Exhaustive over the
+    `ScanStmt`/`Stmt` constructor surface: there is no catch-all arm, and `physicalizeOne` and
+    `fragmentWidth` both dispatch on THIS function, so they cannot disagree on any class. -/
+inductive FragmentClass
+  /-- Copied verbatim as one physical step (classes 1, 5, 7, 8, 9, 10). -/
+  | copy
+  /-- Expanded into an ordered private-producer/logical-consumer pair (classes 2, 3, 4). -/
+  | split
+  /-- Class 6: a nonlinear `.plain (.scatter …)`. Rejected, never copied. -/
+  | rejectNonlinScatter
+  deriving DecidableEq, Repr
+
+/-- §2.4's ten-class classification, one arm per class. There is no catch-all: adding a `ScanStmt`,
+    `Stmt`, or `Nonlin` constructor breaks this match, which is the point. -/
+def fragmentClass : ScanStmt → FragmentClass
+  | .plain (.assign _ _ rhs) =>
+      match rhs.nonlin with
+      | .identity              => .copy                  -- 1
+      | .pointwise _           => .split                 -- 2
+      | .axiswise _ _          => .split                 -- 3 (no mask) / 4 (mask rides the
+                                                         --   consumer, so the width is the same)
+  | .plain (.scatter _ _ rhs _) =>
+      match rhs.nonlin with
+      | .identity              => .copy                  -- 5
+      | .pointwise _           => .rejectNonlinScatter   -- 6  REJECT, never a silent copy
+      | .axiswise _ _          => .rejectNonlinScatter   -- 6
+  | .plain (.recurMorphism _ _ _) => .copy               -- 7  (carries no RHSExpr)
+  | .scan _ _ _ _ _              => .copy                -- 8/9  (verbatim, incl. affine scans)
+  | .scanPre _ _ _               => .copy                -- 10 (opaque pre-built morphism)
+
+/-- Degrade the axiswise marker only on the private producer: `.freeNorm` names the axis the
+    *consumer* reduces over and is user error on an `.identity` statement. -/
+def producerSlots (slots : List LHSSlot) : List LHSSlot :=
+  slots.map fun
+    | .freeNorm a => .free a
+    | slot => slot
+
+/-- Physicalize one top-level logical node — one arm per §2.4 class, same order as
+    `fragmentClass`. `Except`-valued because class 6 must **reject**: emitting nothing, or a
+    one-step copy, would both be wrong. Scans and `scanPre` are opaque one-step fragments. -/
+def physicalizeOne (sourceNames : List String) (logicalIndex firstStep : Nat)
+    (sc : ScanStmt) : Except CompileError (List ScanStmt × RouteFragment) :=
+  let copyOne : Except CompileError (List ScanStmt × RouteFragment) :=
+    .ok ([sc], ⟨logicalIndex, firstStep, firstStep, none⟩)
+  match sc with
+  | .plain (.assign nm slots rhs) =>
+      match rhs.nonlin with
+      | .identity => copyOne                                                        -- 1
+      | .pointwise _ | .axiswise _ _ =>                                             -- 2/3/4
+          let internal := routeName sourceNames logicalIndex
+          let producer : Stmt := .assign internal (producerSlots slots)
+            { body := rhs.body, nonlin := .identity, agg := rhs.agg }
+          let consumer : Stmt := .assign nm slots
+            { body := { terms := [{ factors :=
+                [.read internal (slots.filterMap LHSSlot.toReadIdx)] }] },
+              nonlin := rhs.nonlin, agg := .sum }
+          .ok ([.plain producer, .plain consumer],
+            ⟨logicalIndex, firstStep, firstStep + 1, some internal⟩)
+  | .plain (.scatter nm _ rhs _) =>
+      match rhs.nonlin with
+      | .identity => copyOne                                                        -- 5
+      | .pointwise _ | .axiswise _ _ => throw (.unsupportedNonlinScatter nm)        -- 6
+  | .plain (.recurMorphism _ _ _) => copyOne                                        -- 7
+  | .scan _ _ _ _ _ => copyOne                                                      -- 8/9
+  | .scanPre _ _ _ => copyOne                                                       -- 10
+
+/-- The number of physical steps a class occupies, read off `fragmentClass`.
+    `.rejectNonlinScatter`'s `0` is unreachable past `physicalizeOne`'s rejection; it is stated
+    (rather than defaulted to 1) so that a layout check on a rejected class also fails. -/
+def fragmentWidth (sc : ScanStmt) : Nat :=
+  match fragmentClass sc with
+  | .copy => 1
+  | .split => 2
+  | .rejectNonlinScatter => 0
+
+/-- §2.2 obligation 5a: `fragmentWidth` agrees with `physicalizeOne` on **every** class.
+    This is what makes `fragmentLayoutOk` an independent check rather than one that can agree with
+    a `physicalizeOne` miscount: changing the class-6 arm of one without the other breaks this
+    proof at compile time. -/
+theorem physicalizeOne_length_eq_fragmentWidth (sourceNames : List String)
+    (logicalIndex firstStep : Nat) (sc : ScanStmt) (out : List ScanStmt × RouteFragment)
+    (h : physicalizeOne sourceNames logicalIndex firstStep sc = .ok out) :
+    out.1.length = fragmentWidth sc := by
+  simp only [physicalizeOne, fragmentWidth, fragmentClass] at h ⊢
+  -- Every reject arm is closed by `simp only … at h` (a `.error` cannot equal `.ok out`); the
+  -- surviving goals are the copy/split arms, where `h` pins `out` exactly.
+  repeat' split at h
+  all_goals simp only [Except.ok.injEq, reduceCtorEq] at h
+  all_goals subst h
+  all_goals simp_all
+
+/-! ## The one left-to-right physicalization pass (§2.4) -/
+
+/-- One fold step, named separately so the coverage proof can reuse its exact executable body.
+    Note it never calls `schedule`: physicalization preserves logical order, it does not recompute
+    one. -/
+def physicalizeStep (sourceNames : List String) (acc : PhysicalizeAcc)
+    (pair : ScanStmt × Nat) : Except CompileError PhysicalizeAcc := do
+  let (emitted, fragment) ← physicalizeOne sourceNames pair.2 acc.stmts.length pair.1
+  return { stmts := acc.stmts ++ emitted, fragments := acc.fragments ++ [fragment] }
+
+/-- One left-to-right pass over the logical statements. It does not call `schedule`. -/
+def physicalizeRaw (sp : ScheduledProgram) : Except CompileError PhysicalizeAcc :=
+  sp.stmts.zipIdx.foldlM (physicalizeStep (routeNameInventory sp))
+    { stmts := [], fragments := [] }
+
+/-- Each successful fold step appends exactly one fragment. -/
+private theorem physicalizeStep_fragmentCount {sourceNames : List String} {acc acc' : PhysicalizeAcc}
+    {pair : ScanStmt × Nat} (h : physicalizeStep sourceNames acc pair = .ok acc') :
+    acc'.fragments.length = acc.fragments.length + 1 := by
+  unfold physicalizeStep at h
+  cases hp : physicalizeOne sourceNames pair.2 acc.stmts.length pair.1 with
+  | error e => rw [hp] at h; simp at h
+  | ok out => rw [hp] at h; simp at h; simp [← h]
+
+private theorem physicalizeFold_fragmentCount (sourceNames : List String)
+    (pairs : List (ScanStmt × Nat)) (acc out : PhysicalizeAcc)
+    (h : pairs.foldlM (physicalizeStep sourceNames) acc = .ok out) :
+    out.fragments.length = acc.fragments.length + pairs.length := by
+  induction pairs generalizing acc with
+  | nil =>
+      simp only [List.foldlM_nil, pure, Except.pure, Except.ok.injEq] at h
+      subst h
+      simp
+  | cons pair tail ih =>
+      rw [List.foldlM_cons] at h
+      cases hs : physicalizeStep sourceNames acc pair with
+      | error e => rw [hs] at h; simp [bind, Except.bind] at h
+      | ok acc' =>
+          rw [hs] at h
+          simp only [bind, Except.bind] at h
+          have hcount := physicalizeStep_fragmentCount hs
+          rw [ih acc' h, hcount, List.length_cons]
+          omega
+
+/-- §2.2 obligation 2 (the counting half): one fragment per logical statement. -/
+theorem physicalizeRaw_fragmentCount (sp : ScheduledProgram) (raw : PhysicalizeAcc)
+    (h : physicalizeRaw sp = .ok raw) : raw.fragments.length = sp.stmts.length := by
+  unfold physicalizeRaw at h
+  have := physicalizeFold_fragmentCount (routeNameInventory sp) sp.stmts.zipIdx _ _ h
+  simpa using this
+
+/-! ## Checkable evidence (§2.2) -/
+
+def generatedRouteNames (fragments : List RouteFragment) : List String :=
+  fragments.filterMap (·.internalName)
+
+/-- §2.2 obligation 8: private names are absent from the source inventory and pairwise distinct. -/
+def routeNamesFresh (sourceNames : List String) (fragments : List RouteFragment) : Bool :=
+  let generated := generatedRouteNames fragments
+  generated.all (fun nm => !sourceNames.contains nm) &&
+    generated.eraseDups.length == generated.length
+
+def checkFragmentAt (state : Bool × Nat)
+    (entry : (ScanStmt × RouteFragment) × Nat) : Bool × Nat :=
+  let (ok, cursor) := state
+  let ((logical, fragment), index) := entry
+  let width := fragmentWidth logical
+  let internalShapeOk :=
+    if width == 2 then fragment.internalName.isSome else fragment.internalName.isNone
+  (ok && fragment.logicalIndex == index && fragment.firstStep == cursor &&
+    fragment.lastStep + 1 == cursor + width && internalShapeOk, cursor + width)
+
+/-- §2.2 obligations 2–5: fragments form a contiguous, nonempty partition of the physical
+    statements, in logical order, with the per-class width. -/
+def fragmentLayoutOk (logical physical : List ScanStmt)
+    (fragments : List RouteFragment) : Bool :=
+  if logical.length != fragments.length then false
+  else
+    let result := (logical.zip fragments).zipIdx.foldl checkFragmentAt (true, 0)
+    result.1 && result.2 == physical.length
+
+/-- §2.2 obligations 6/7/10: every fragment exits at the logical output, and a nonlinear entry
+    publishes ONLY its private name. -/
+def fragmentExitsOk (logical physical : List ScanStmt)
+    (fragments : List RouteFragment) : Bool :=
+  (logical.zip fragments).all fun (logicalStmt, fragment) =>
+    let exitOk :=
+      routeOutputs (physical.getD fragment.lastStep default) == routeOutputs logicalStmt
+    match fragment.internalName with
+    | none => exitOk
+    | some internal =>
+        routeOutputs (physical.getD fragment.firstStep default) == [internal] && exitOk
+
+/-- Types-only physical-topology check used by the adapter before `Lowering.routeCore`: every
+    routed read resolves to a STRICTLY EARLIER physical producer. -/
+def physicalRouteInOrder (stmts : List ScanStmt) : Bool :=
+  let producerIndex : Std.HashMap String Nat :=
+    stmts.zipIdx.foldl (fun producers (sc, index) =>
+      (routeOutputs sc).foldl
+        (fun (m : Std.HashMap String Nat) nm => m.insert nm index) producers) {}
+  stmts.zipIdx.all fun (sc, index) =>
+    (routeInputReads sc).all fun nm =>
+      match producerIndex[nm]? with
+      | some producer => decide (producer < index)
+      | none => true
+
+/-! ## The checked package (§2.2) -/
+
+/-- Checked, proof-carrying package: the private physical route program.
+
+    `private mk ::` — a bare `private` on a structure does NOT privatize its constructor, and this
+    one must be private: `physicalizeForRoute` is the only way to obtain a value, so a
+    `PhysicalRouteProgram` always carries real evidence rather than asserted fields. This is not
+    checked Eval IR, a backend API, or a serialization format; it exists only between public
+    logical `route` and physical `routeCore`. -/
+structure PhysicalRouteProgram where
+  private mk ::
+  logical : ScheduledProgram
+  scheduled : ScheduledProgram
+  fragments : List RouteFragment
+  sourceNames : List String
+  sourceInventory : sourceNames = routeNameInventory logical
+  exactPhysicalization :
+    physicalizeRaw logical = .ok { stmts := scheduled.stmts, fragments := fragments }
+  declarationsPreserved : scheduled.decls = logical.decls
+  environmentPreserved : scheduled.env = logical.env
+  externalsPreserved : scheduled.extNames = logical.extNames
+  explicitSizesPreserved : scheduled.explicitSizes = logical.explicitSizes
+  fragmentCount : fragments.length = logical.stmts.length
+  layoutChecked : fragmentLayoutOk logical.stmts scheduled.stmts fragments = true
+  exitsChecked : fragmentExitsOk logical.stmts scheduled.stmts fragments = true
+  freshNames : routeNamesFresh sourceNames fragments = true
+  topological : physicalRouteInOrder scheduled.stmts = true
+
+/-- The ONLY constructor for `PhysicalRouteProgram`: build exactly (rejecting §2.4 class 6), then
+    check layout, exits, freshness, and physical topology. -/
+def physicalizeForRoute (logical : ScheduledProgram) :
+    Except CompileError PhysicalRouteProgram := do
+  let sourceNames := routeNameInventory logical
+  match hRaw : physicalizeRaw logical with
+  | .error e => throw e
+  | .ok raw =>
+    let scheduled : ScheduledProgram := { logical with stmts := raw.stmts }
+    if hLayout : fragmentLayoutOk logical.stmts scheduled.stmts raw.fragments then
+      if hExits : fragmentExitsOk logical.stmts scheduled.stmts raw.fragments then
+        if hFresh : routeNamesFresh sourceNames raw.fragments then
+          if hTopo : physicalRouteInOrder scheduled.stmts then
+            return {
+              logical, scheduled, fragments := raw.fragments, sourceNames
+              sourceInventory := rfl
+              exactPhysicalization := hRaw
+              declarationsPreserved := rfl
+              environmentPreserved := rfl
+              externalsPreserved := rfl
+              explicitSizesPreserved := rfl
+              fragmentCount := physicalizeRaw_fragmentCount logical raw hRaw
+              layoutChecked := hLayout
+              exitsChecked := hExits
+              freshNames := hFresh
+              topological := hTopo
+            }
+          else
+            throw (.cyclicDataflow "physicalizeForRoute: physical fragment topology failed")
+        else
+          throw (.shapeMismatch "physicalizeForRoute: private route-name freshness failed"
+            "fresh pairwise-distinct route names")
+      else
+        throw (.shapeMismatch "physicalizeForRoute: fragment exit check failed"
+          "logical output at every fragment exit")
+    else
+      throw (.shapeMismatch "physicalizeForRoute: fragment layout check failed"
+        "contiguous nonempty physical partition")
+
+end LeanNCD

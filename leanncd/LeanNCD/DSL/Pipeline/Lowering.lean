@@ -16,18 +16,6 @@ For each `Stmt` whose `RHSExpr.nonlin ≠ .identity`, split it into TWO stmts:
    the original nonlinearity (and its mask).
 A stmt already at `.identity` is emitted unchanged. -/
 
-/-- Axis indices that index the output of a stmt (its free/scan slots). An `.affine` slot is a
-    scatter output; `lowerArith` (Structural.lean) reclassifies every `slotsBecomeScatter`
-    `.assign` into `Stmt.scatter` before this phase runs, so no `.assign` carrying an `.affine`
-    slot can reach `splitStmt` at all — unreachable from `splitStmt` post-`lowerArith`; kept
-    total for exhaustiveness. -/
-def LHSSlot.toReadIdx : LHSSlot → Option IdxExpr
-  | .free a     => some (.axis a)
-  | .freeNorm a => some (.axis a)
-  | .iterAt a _ => some (.axis a)
-  | .iterNext a => some (.axis a)
-  | .affine _   => none      -- scatter outputs: skipped (see doc above)
-
 /-- Split one stmt's nonlinearity into (≤2) stmts. Identity stmts and scatters pass through
     unchanged. Scatters are a `.identity`-only shape by this point: `checkScatterNonlin`
     (Structural.lean, a Spike-3 Stage-0 SHORT-TERM policy — not permanent) rejects any

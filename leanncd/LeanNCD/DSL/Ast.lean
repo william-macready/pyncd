@@ -238,6 +238,23 @@ def LHSSlot.outIdx : LHSSlot → IdxExpr
   | .iterAt _ n => .const n
   | .iterNext a => .shift a 1
 
+/-- Axis indices that index the output of a stmt (its free/scan slots). An `.affine` slot is a
+    scatter output; `lowerArith` (`Pipeline/Structural.lean`) reclassifies every
+    `slotsBecomeScatter` `.assign` into `Stmt.scatter` before Phase 6 runs, so no `.assign`
+    carrying an `.affine` slot can reach `splitStmt` at all — unreachable from `splitStmt`
+    post-`lowerArith`; kept total for exhaustiveness.
+
+    Lives here (not in `Pipeline/Lowering.lean`, where it used to) so that both
+    `Pipeline/Lowering.lean`'s `splitStmt` and `Pipeline/RouteFragments.lean`'s
+    `physicalizeOne` build the nonlinear consumer's read coordinates from ONE definition —
+    `RouteFragments` imports only `Pipeline/Types`, so it cannot reach `Lowering`. -/
+def LHSSlot.toReadIdx : LHSSlot → Option IdxExpr
+  | .free a     => some (.axis a)
+  | .freeNorm a => some (.axis a)
+  | .iterAt a _ => some (.axis a)
+  | .iterNext a => some (.axis a)
+  | .affine _   => none      -- scatter outputs: skipped (see doc above)
+
 /-- Output extent of one scatter LHS slot under a sizing lookup `sz`.
     The single home of the scatter-extent convention (upsample stride semantics —
     deliberately not derivable from `idxAffineForm`). `none` if a source axis is unsized. -/
