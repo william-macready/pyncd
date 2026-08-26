@@ -47,13 +47,15 @@ Column "old" is the pre-flip `splitNonlins → schedule → route` state recorde
 ### Case 16 — same constructor *and* same payload string
 
 The plan anticipated that case 16's message might move from `schedule:` to
-`physicalizeForRoute: physical fragment topology failed`, because public `route` now surfaces
-`physicalizeForRoute`'s topology error rather than `routeCore`'s. It does **not**: the cycle
-`A := relu(B); B := relu(A)` is a cycle *between the logical statements*, so `schedule` rejects it
-before `route` is ever reached, and the payload is byte-identical to the pre-flip one. The only
-change is the state: 4 → 2, exactly the two split mints the two ReLUs no longer spend. The
+`physicalizeForRoute: physical fragment topology failed`, because an intermediate revision of
+`physicalizeForRoute` carried its own topology check that ran before `routeCore`'s. It does **not**:
+the cycle `A := relu(B); B := relu(A)` is a cycle *between the logical statements*, so `schedule`
+rejects it before `route` is ever reached, and the payload is byte-identical to the pre-flip one.
+The only change is the state: 4 → 2, exactly the two split mints the two ReLUs no longer spend. The
 message-string change is therefore unobserved on the whole 19-case corpus — recorded here so a
-future reader does not go looking for it.
+future reader does not go looking for it. (That duplicate check has since been removed, so the
+string no longer exists anywhere; the route-domain section below pins `routeCore`'s original message
+for the hand-built cyclic schedules that *were* affected.)
 
 ### Case 19 — old rejected, new accepts (intentional bug fix, not a regression)
 
@@ -231,9 +233,10 @@ moved a *pre-split* failure — a §4 stop condition, not a fixture to update. -
 
 /-! ### D16: same constructor, same payload string, two removed split mints (old @4 → new @2)
 
-Pinning the payload BYTE-FOR-BYTE is the point: the flip made public `route` surface
-`physicalizeForRoute`'s own `cyclicDataflow` text, and this guard is what proves the corpus never
-reaches it — `schedule` still owns this rejection. -/
+Pinning the payload BYTE-FOR-BYTE is the point: `schedule` owns this rejection, both before and
+after the flip, and only the state moved. (An intermediate revision briefly had `route` surface a
+`physicalizeForRoute`-owned `cyclicDataflow` text instead; that duplicate check is gone — see the
+route-domain cyclic guards below.) -/
 
 #guard compileErrorIs case16 (.cyclicDataflow "schedule: cyclic dataflow") 2
 
@@ -275,6 +278,40 @@ private def routeErrorIs (sp : ScheduledProgram) (e : CompileError) (finalState 
   (.shapeMismatch
     "route: wellFormedDom failed (unreferenced external slot or read-rank mismatch)"
     "wellFormedDom") 7 7
+
+/-! ### A cyclic logical schedule reports `routeCore`'s message, not physicalization's
+
+The 19 compile cases structurally cannot contain a self-read: `schedule` rejects a logical cycle
+before `route` is reached (see case 16 above), so this class of program is only observable by
+handing `route` a hand-built schedule. It matters because an intermediate revision of
+`physicalizeForRoute` carried its own `physicalRouteInOrder` gate, duplicating `routeCore`'s
+`routableInOrder`. Running first, it moved the payload to
+`cyclicDataflow "physicalizeForRoute: physical fragment topology failed"` and — for a single
+self-referential statement — moved which phase rejected the program, with no split-mint accounting
+to license the change (§4.3 stop condition). The duplicate gate is gone; these pin the ORIGINAL
+pre-flip payload at all three arities the phase distinction could show up in.
+
+`selfRef .identity` is the one the removed check uniquely changed: one statement, no split, so
+physicalization was the only phase that had run. Its ReLU twin additionally confirms the message
+does not depend on whether the statement was split into a pair first. -/
+
+private def selfRef (nl : Nonlin) : ScheduledProgram := {
+  decls := [], env := {}, extNames := ∅, explicitSizes := {}
+  stmts := [.plain (.assign "A" [.free (ax "i")]
+    { body := { terms := [{ factors := [.read "A" [.axis (ax "i")] ] }] }, nonlin := nl })] }
+
+/-- A cycle between two identity statements: physical-only, so `schedule` never sees it. -/
+private def physicalOnlyCycle : ScheduledProgram := {
+  decls := [], env := {}, extNames := ∅, explicitSizes := {}
+  stmts := [ .plain (.assign "A" [.free (ax "i")] (read1 "B" (ax "i")))
+           , .plain (.assign "B" [.free (ax "i")] (read1 "A" (ax "i"))) ] }
+
+private def cyclicRouteMsg : CompileError :=
+  .cyclicDataflow "routeCore: cyclic dataflow (topoSort fallback)"
+
+#guard routeErrorIs (selfRef .identity) cyclicRouteMsg 7 7
+#guard routeErrorIs (selfRef (.pointwise .relu)) cyclicRouteMsg 7 7
+#guard routeErrorIs physicalOnlyCycle cyclicRouteMsg 7 7
 
 /-! ## The nine composition observations: `compile` ≡ `compileToScheduled >>= route`
 

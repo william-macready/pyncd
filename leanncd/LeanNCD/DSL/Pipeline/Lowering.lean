@@ -367,7 +367,8 @@ def ScanStmt.isScanPre : ScanStmt → Bool
   | _              => false
 
 /-- Is this a `.scan` node flagged affine by `finalizeScans` (Prop 8.7)? Drives the
-    "scan_affine" vs "scan" op label. The flag was computed pre-`splitNonlins`. -/
+    "scan_affine" vs "scan" op label. The flag was computed on the unsplit statement, before any
+    nonlinearity split at the `route` boundary. -/
 def ScanStmt.isAffineScan : ScanStmt → Bool
   | .scan _ _ _ _ isAff => isAff
   | _                   => false
@@ -629,9 +630,12 @@ def routeCore (sp : ScheduledProgram) : Except CompileError (List BrBaseP × Lis
        is stated over that physical input and is untouched by this design.
 
     ⚠️ The input contract changed here (§2.4): a route-linearized (already split) schedule is no
-    longer a valid public-`route` input — physicalization would be a no-op on it, but its generated
-    names are already in the source inventory. Regression tests that compare the old split pipeline
-    against the new one must therefore terminate at `routeCore`, not at public `route`. -/
+    longer a valid public-`route` input — physicalization is NOT a no-op on it: the already-split
+    consumer statement is still non-identity-nonlin, so it gets split AGAIN (pinned by
+    `RouteFragmentDiagnosticTest.lean`'s case 19: a 2-statement pre-split program compiles to 3
+    physical steps, not 2), and its generated names are already in the source inventory besides.
+    Regression tests that compare the old split pipeline against the new one must therefore
+    terminate at `routeCore`, not at public `route`. -/
 def route (logical : ScheduledProgram) : FreshM ThreadedComposed := do
   match physicalizeForRoute logical with
   | .error e => throw e

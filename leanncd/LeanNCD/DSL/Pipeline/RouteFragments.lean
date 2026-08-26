@@ -30,11 +30,22 @@ reject class, and relaxing `fragmentClass`'s class-6 arm to `.copy` while `physi
 throws would still compile (fixture 13 is what catches that). The full table lives in
 `LeanNCD/DSL/AGENTS.md`.
 
-Class 6 — a nonlinear `.plain (.scatter …)` — is **rejected** with the existing
-`CompileError.unsupportedNonlinScatter`, never copied as one physical step. It is unreachable from
-`TLProgram.compile` (`checkScatterNonlin` rejects it first), so common-domain error precedence is
-unchanged; it is reachable from a hand-built logical schedule handed straight to this boundary,
-which is exactly the caller set this design widens.
+Class 6 — a nonlinear **scatter-shaped write** — is **rejected** with the existing
+`CompileError.unsupportedNonlinScatter`, never copied as one physical step. It has TWO doors, and
+both must be closed here:
+
+* `.plain (.scatter …)` with a non-identity `rhs.nonlin` — the already-lowered shape; and
+* `.plain (.assign nm slots rhs)` with a non-identity `rhs.nonlin` **and** `slotsBecomeScatter
+  slots` (an `.affine` slot, or a diagonal LHS repeating a free-axis UID) — the surface shape.
+
+The second door matters because the split arms build the consumer's read coordinates from
+`slots.filterMap LHSSlot.toReadIdx`, and `toReadIdx` maps `.affine _ => none`: splitting such a
+statement would silently DROP the affine placement rather than preserve it. Neither door is
+reachable from `TLProgram.compile` (`checkScatterNonlin` rejects both shapes first, with the
+identical `unsupportedNonlinScatter` constructor and payload, and `lowerArith` additionally
+reclassifies every `slotsBecomeScatter` `.assign` into `Stmt.scatter`), so common-domain error
+precedence is unchanged. Both are reachable from a hand-built logical schedule handed straight to
+this boundary, which is exactly the caller set this design widens.
 -/
 
 namespace LeanNCD
@@ -154,9 +165,11 @@ structure PhysicalizeAcc where
 inductive FragmentClass
   /-- Copied verbatim as one physical step (classes 1, 5, 7, 8, 9, 10). -/
   | copy
-  /-- Expanded into an ordered private-producer/logical-consumer pair (classes 2, 3, 4). -/
+  /-- Expanded into an ordered private-producer/logical-consumer pair (classes 2, 3, 4 — only
+      when the LHS is NOT scatter-shaped; otherwise class 6). -/
   | split
-  /-- Class 6: a nonlinear `.plain (.scatter …)`. Rejected, never copied. -/
+  /-- Class 6: a nonlinear scatter-shaped write, whether spelled `.plain (.scatter …)` or
+      `.plain (.assign …)` with `slotsBecomeScatter` slots. Rejected, never copied. -/
   | rejectNonlinScatter
   deriving DecidableEq, Repr
 
@@ -165,12 +178,14 @@ inductive FragmentClass
     and affine scans). There is no catch-all: adding a `ScanStmt`, `Stmt`, or `Nonlin` constructor
     breaks this match, which is the point. -/
 def fragmentClass : ScanStmt → FragmentClass
-  | .plain (.assign _ _ rhs) =>
+  | .plain (.assign _ slots rhs) =>
       match rhs.nonlin with
       | .identity              => .copy                  -- 1
-      | .pointwise _           => .split                 -- 2
-      | .axiswise _ _          => .split                 -- 3 (no mask) / 4 (mask rides the
+      | .pointwise _           =>                        -- 2
+          if slotsBecomeScatter slots then .rejectNonlinScatter else .split
+      | .axiswise _ _          =>                        -- 3 (no mask) / 4 (mask rides the
                                                          --   consumer, so the width is the same)
+          if slotsBecomeScatter slots then .rejectNonlinScatter else .split
   | .plain (.scatter _ _ rhs _) =>
       match rhs.nonlin with
       | .identity              => .copy                  -- 5
@@ -192,6 +207,8 @@ def physicalizeOne (sourceNames : List String) (logicalIndex firstStep : Nat)
       match rhs.nonlin with
       | .identity => copyOne                                                        -- 1
       | .pointwise _ | .axiswise _ _ =>                                             -- 2/3/4
+        if slotsBecomeScatter slots then throw (.unsupportedNonlinScatter nm)       -- 6 (`.assign` door)
+        else
           let internal := routeName sourceNames logicalIndex
           let producer : Stmt := .assign internal (producerSlots slots)
             { body := rhs.body, nonlin := .identity, agg := rhs.agg }
@@ -335,20 +352,16 @@ def fragmentExitsOk (logical physical : List ScanStmt)
     | some internal =>
         routeOutputs (physical.getD fragment.firstStep default) == [internal] && exitOk
 
-/-- Types-only physical-topology check used by the adapter before `Lowering.routeCore`: every
-    routed read resolves to a STRICTLY EARLIER physical producer. -/
-def physicalRouteInOrder (stmts : List ScanStmt) : Bool :=
-  let producerIndex : Std.HashMap String Nat :=
-    stmts.zipIdx.foldl (fun producers (sc, index) =>
-      (routeOutputs sc).foldl
-        (fun (m : Std.HashMap String Nat) nm => m.insert nm index) producers) {}
-  stmts.zipIdx.all fun (sc, index) =>
-    (routeInputReads sc).all fun nm =>
-      match producerIndex[nm]? with
-      | some producer => decide (producer < index)
-      | none => true
+/-! ## The checked package (§2.2)
 
-/-! ## The checked package (§2.2) -/
+**No physical-topology check lives here.** An earlier revision carried a `physicalRouteInOrder`
+predicate and a `topological` field on `PhysicalRouteProgram`. Both are gone: `Lowering.routeCore`
+— which `route` calls immediately after `physicalizeForRoute` — already gates on its own
+`routableInOrder`, and the two predicates are the same last-writer-wins check over the same two
+accessor halves (tied by `Lowering.lean`'s `routeOutputs_eq`/`routeInputReads_eq`). Duplicating it
+here only moved the rejection one phase earlier and changed the payload string a cyclic program
+reports, with no compensating guarantee. `test/DSL/Pipeline/RouteFragmentDiagnosticTest.lean`
+pins that a self-referential logical schedule reports `routeCore`'s message. -/
 
 /-- Checked, proof-carrying package: the private physical route program.
 
@@ -374,10 +387,10 @@ structure PhysicalRouteProgram where
   layoutChecked : fragmentLayoutOk logical.stmts scheduled.stmts fragments = true
   exitsChecked : fragmentExitsOk logical.stmts scheduled.stmts fragments = true
   freshNames : routeNamesFresh sourceNames fragments = true
-  topological : physicalRouteInOrder scheduled.stmts = true
 
 /-- The ONLY constructor for `PhysicalRouteProgram`: build exactly (rejecting §2.4 class 6), then
-    check layout, exits, freshness, and physical topology. -/
+    check layout, exits, and freshness. Physical topology is deliberately NOT checked here — see
+    the section note above; `routeCore`'s own `routableInOrder` is the single gate for it. -/
 def physicalizeForRoute (logical : ScheduledProgram) :
     Except CompileError PhysicalRouteProgram := do
   let sourceNames := routeNameInventory logical
@@ -388,23 +401,19 @@ def physicalizeForRoute (logical : ScheduledProgram) :
     if hLayout : fragmentLayoutOk logical.stmts scheduled.stmts raw.fragments then
       if hExits : fragmentExitsOk logical.stmts scheduled.stmts raw.fragments then
         if hFresh : routeNamesFresh sourceNames raw.fragments then
-          if hTopo : physicalRouteInOrder scheduled.stmts then
-            return {
-              logical, scheduled, fragments := raw.fragments, sourceNames
-              sourceInventory := rfl
-              exactPhysicalization := hRaw
-              declarationsPreserved := rfl
-              environmentPreserved := rfl
-              externalsPreserved := rfl
-              explicitSizesPreserved := rfl
-              fragmentCount := physicalizeRaw_fragmentCount logical raw hRaw
-              layoutChecked := hLayout
-              exitsChecked := hExits
-              freshNames := hFresh
-              topological := hTopo
-            }
-          else
-            throw (.cyclicDataflow "physicalizeForRoute: physical fragment topology failed")
+          return {
+            logical, scheduled, fragments := raw.fragments, sourceNames
+            sourceInventory := rfl
+            exactPhysicalization := hRaw
+            declarationsPreserved := rfl
+            environmentPreserved := rfl
+            externalsPreserved := rfl
+            explicitSizesPreserved := rfl
+            fragmentCount := physicalizeRaw_fragmentCount logical raw hRaw
+            layoutChecked := hLayout
+            exitsChecked := hExits
+            freshNames := hFresh
+          }
         else
           throw (.shapeMismatch "physicalizeForRoute: private route-name freshness failed"
             "fresh pairwise-distinct route names")

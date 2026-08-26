@@ -241,7 +241,8 @@ run_cmd do
 run_cmd sameRoutedPresentation "F5 unread" f5Unread
 
 /-! ### Fixture 6 — named axiswise source fixture: `.freeNorm` is degraded on the PRODUCER only.
-**Public on purpose** — the Task 2 corpus slice reuses this exact construction. -/
+**Public on purpose** — the MASTER PLAN's own (later, unrelated) Task 2, the 145-case corpus slice,
+reuses this exact construction. Not this slice's own Task 2 (already done). -/
 
 def freeNormAxiswiseProg : TLProgram := tlprog!{
   tensor Y(q, s)
@@ -493,5 +494,68 @@ private def f13ScatterLogical (nl : Nonlin) : ScheduledProgram :=
 -- and `fragmentWidth` agrees with `physicalizeOne` on both classes (obligation 5a).
 #guard fragmentWidth ((f13ScatterLogical (.pointwise .relu)).stmts.getD 0 default) == 0
 #guard fragmentWidth ((f13ScatterLogical .identity).stmts.getD 0 default) == 1
+
+/-! ### Fixture 14 — §2.4 class 6 through its OTHER door: a nonlinear `.plain (.assign …)` whose
+LHS `slotsBecomeScatter`.
+
+Fixture 13 covers the already-lowered `.plain (.scatter …)` spelling. This one covers the surface
+spelling that `lowerArith` would have reclassified — a nonlinear `.assign` with an `.affine` slot
+(`Y[i, 2*i]`) or a diagonal LHS (`Y[i, i]`). Without the `slotsBecomeScatter` qualifier on classes
+2/3/4 these went down the SPLIT arm, and the consumer's read coordinates come from
+`slots.filterMap LHSSlot.toReadIdx`, which maps `.affine _ => none` — so the affine placement was
+silently DROPPED and the program routed as if it had never been written. Unreachable from
+`TLProgram.compile` (`checkScatterNonlin` rejects both spellings first, with the byte-identical
+`unsupportedNonlinScatter` payload), reachable from a hand-built logical schedule — the widened
+caller set §2.4 names. Asserted at **public `route`**, which is what a hand-builder actually calls. -/
+
+private def f14AffineAssign (slots : List LHSSlot) (nl : Nonlin) : ScheduledProgram :=
+  let i : AxisSpec := { name := "i", uid := 1, kind := .real }
+  { decls := []
+  , stmts := [.plain (.assign "Y" slots
+      { body := { terms := [{ factors := [.read "X" [.axis i]] }] }, nonlin := nl, agg := .sum })]
+  , env := {}
+  , extNames := insert "X" (∅ : Finset String)
+  , explicitSizes := ∅ }
+
+private def f14Axis : AxisSpec := { name := "i", uid := 1, kind := .real }
+/-- Affine trigger: `Y[i, 2*i]`. -/
+private def f14AffineSlots : List LHSSlot := [.free f14Axis, .affine (.scale 2 f14Axis)]
+/-- Diagonal trigger: `Y[i, i]` repeats the free-axis UID. -/
+private def f14DiagSlots : List LHSSlot := [.free f14Axis, .free f14Axis]
+
+private def f14RouteRejects (slots : List LHSSlot) (nl : Nonlin) : Bool :=
+  match route (f14AffineAssign slots nl) |>.run 0 with
+  | .error (.unsupportedNonlinScatter "Y") _ => true
+  | _ => false
+
+-- both triggers × both nonlinearity shapes: REJECTED at public `route`, same diagnostic as F13.
+#guard f14RouteRejects f14AffineSlots (.pointwise .relu)
+#guard f14RouteRejects f14AffineSlots (.axiswise .softmax none)
+#guard f14RouteRejects f14DiagSlots (.pointwise .relu)
+#guard f14RouteRejects f14DiagSlots (.axiswise .softmax none)
+/-- The `.scatter`-door twin of `f14AffineAssign`: same LHS name, slots, RHS and nonlinearity,
+    spelled as an already-lowered `.scatter` instead of an `.assign`. Only for the payload
+    comparison below. -/
+private def f14ScatterTwin (nl : Nonlin) : ScheduledProgram :=
+  { f14AffineAssign f14AffineSlots nl with
+    stmts := [.plain (.scatter "Y" f14AffineSlots
+      { body := { terms := [{ factors := [.read "X" [.axis f14Axis]] }] }, nonlin := nl
+      , agg := .sum } { fill := 0, reduce := .sum })] }
+
+-- byte-identical to the `.scatter` door's diagnostic, error state included (the reason no new
+-- constructor was minted: the two doors are indistinguishable to a caller).
+#guard match route (f14ScatterTwin (.pointwise .relu)) |>.run 0,
+             route (f14AffineAssign f14AffineSlots (.pointwise .relu)) |>.run 0 with
+  | .error a sa, .error b sb => a == b && sa == sb
+  | _, _ => false
+-- the qualifier bites ONLY on a nonlinearity: an IDENTITY affine `.assign` is still class 1.
+#guard match route (f14AffineAssign f14AffineSlots .identity) |>.run 0 with
+  | .ok tc _ => tc.steps.length == 1
+  | .error _ _ => false
+-- `fragmentClass`/`fragmentWidth` agree with `physicalizeOne`'s rejection (obligation 5a's
+-- converse direction, which the theorem is vacuous on).
+#guard fragmentWidth ((f14AffineAssign f14AffineSlots (.pointwise .relu)).stmts.getD 0 default) == 0
+#guard fragmentWidth ((f14AffineAssign f14DiagSlots (.pointwise .relu)).stmts.getD 0 default) == 0
+#guard fragmentWidth ((f14AffineAssign f14AffineSlots .identity).stmts.getD 0 default) == 1
 
 end LeanNCD

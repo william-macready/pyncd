@@ -179,8 +179,9 @@ def Stmt.slots : Stmt → List LHSSlot
 /-- The nonlinearity wrapping a stmt's step. A `recurMorphism` is pre-built (already-lowered),
     so it is affine-neutral (`identity`). Used by `finalizeScans` to detect ScanAffine (Prop 8.7):
     a scan whose every recurrence stmt is `identity`-nonlin carries no nonlinearity and is thus
-    associative/parallel-prefix-able. This MUST be checked here (pre-`splitNonlins`), since
-    `splitNonlins` later lifts nonlinearities out of `RHSExpr.nonlin` into separate steps. -/
+    associative/parallel-prefix-able. This MUST be checked here, at the unsplit `RHSExpr.nonlin` —
+    the nonlinearity is only ever split into a separate step privately at the `route` boundary
+    (`Pipeline/RouteFragments.lean`), which `finalizeScans` runs strictly before. -/
 def Stmt.nonlinOf : Stmt → Nonlin
   | .assign _ _ r => r.nonlin
   | .scatter _ _ r _ => r.nonlin
@@ -280,6 +281,21 @@ def producerSlots (slots : List LHSSlot) : List LHSSlot :=
   slots.map fun
     | .freeNorm a => .free a
     | slot => slot
+
+/-- Will this LHS be lowered to a `scatter` (publishing its full slot-count rank)? True for an affine
+    LHS (`Out[2*i,2*j]`) or a diagonal LHS with a repeated free axis (`Y[i,i]`).
+
+    Lives here (like `LHSSlot.toReadIdx` and `producerSlots`, and for the same import-graph reason)
+    because it has THREE call sites in two layers that cannot see each other:
+    `Pipeline/Structural.lean`'s read-rank guard (`stmtLhsRank`) and `lowerArith` — which must agree
+    on the published rank — and `Pipeline/RouteFragments.lean`'s `fragmentClass`/`physicalizeOne`,
+    which reject a nonlinear scatter-shaped `.assign` at the route boundary (§2.4 class 6). It used
+    to live in `Structural.lean`; `RouteFragments` imports only `Pipeline/Types`, so `Ast` is the
+    lowest module all three call sites reach. -/
+def slotsBecomeScatter (slots : List LHSSlot) : Bool :=
+  slots.any (fun sl => match sl with | .affine _ => true | _ => false)
+  || (let us := slots.filterMap (·.freeUID?)
+      us.length ≠ us.eraseDups.length)
 
 /-- Output extent of one scatter LHS slot under a sizing lookup `sz`.
     The single home of the scatter-extent convention (upsample stride semantics —
