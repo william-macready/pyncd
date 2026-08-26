@@ -263,11 +263,13 @@ def LHSSlot.toReadIdx : LHSSlot → Option IdxExpr
     `.identity` statement as user error (`NonlinCompileError.unmarkedReductionAxis`). So the
     producer's own slots must carry a plain `.free`; the consumer keeps the original marker.
 
-    Lives here (like `LHSSlot.toReadIdx`) because it has exactly TWO call sites in two modules
-    that cannot see each other: `Pipeline/Lowering.lean`'s `splitStmt` (the regression-only split
-    pipeline) and `Pipeline/RouteFragments.lean`'s `physicalizeOne` (the production route
-    boundary). `RouteFragments` imports only `Pipeline/Types`, so `Ast` is the lowest module both
-    can reach.
+    Lives here (like `LHSSlot.toReadIdx`) because it has exactly TWO call sites:
+    `Pipeline/Lowering.lean`'s `splitStmt` (the regression-only split pipeline) and
+    `Pipeline/RouteFragments.lean`'s `physicalizeOne` (the production route boundary).
+    `RouteFragments` imports only `Pipeline/Types` and cannot see `Lowering` (`Lowering` imports
+    `RouteFragments`, not the reverse), so `Ast` is the lowest module both can reach — even though,
+    since the logical-schedule flip, `Lowering` could in principle reach a definition placed in
+    `RouteFragments` instead.
 
     ⚠️ **Route equality cannot detect drift between those two call sites**: `.free a` and
     `.freeNorm a` produce the SAME `slotWeave` axes, so a copy of this degrade that diverges on

@@ -109,6 +109,7 @@ private def analyzedScans : List ScanGeom :=
         | some sc => (analyzeScan sched.explicitSizes sc).toOption)
 #guard analyzedScans.length == 17
 #guard analyzedScans.all (fun g => g.advScratch.isEmpty)
+#guard analyzedScans.all (fun g => g.scratch.isEmpty)
 
 /-! ## TEST-THE-TESTER (c): the oracle has teeth
 

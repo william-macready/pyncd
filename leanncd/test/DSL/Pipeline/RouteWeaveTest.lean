@@ -43,15 +43,9 @@ private def toLogicalScan : TLProgram → FreshM ScanProgram :=
   assignUIDs >=> resolveDecls >=> reclassifyIterSlots >=> checkReadRanks >=> checkDtypes >=>
     checkScatterNonlin >=> checkScatterNoScan >=> lowerArith >=> finalizeScans
 
-/-- `schedule` still takes `LinearProgram` in Task 1 (the type alias is Task 2's); a
-    `ScanProgram` and a `LinearProgram` have the same four fields, so scheduling the LOGICAL
-    program is a record conversion here. -/
-private def scheduleLogical (sp : ScanProgram) : FreshM ScheduledProgram :=
-  schedule { decls := sp.decls, stmts := sp.stmts, env := sp.env, extNames := sp.extNames }
-
 /-- NEW leg: logical schedule (no split) → checked physicalization → unchanged `routeCore`. -/
 private def newRouteCore (sp : ScanProgram) : FreshM (List BrBaseP × List (List Wire)) := do
-  let sched ← scheduleLogical sp
+  let sched ← schedule sp
   match physicalizeForRoute sched with
   | .error e => throw e
   | .ok physical =>
@@ -86,7 +80,7 @@ private def logicalAndPhysical (p : TLProgram) :
   match (toLogicalScan p).run 0 with
   | .error e _ => .error e
   | .ok sp s =>
-      match (scheduleLogical sp).run s with
+      match (schedule sp).run s with
       | .error e _ => .error e
       | .ok logical _ => (physicalizeForRoute logical).map (fun ph => (logical, ph))
 
