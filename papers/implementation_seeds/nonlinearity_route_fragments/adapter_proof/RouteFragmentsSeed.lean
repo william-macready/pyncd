@@ -16,10 +16,40 @@ def declaredTensorName? : Decl → Option String
   | .tensor nm _ | .predicate nm _ | .linear nm _ _ => some nm
   | .axis _ _ | .iter _ _ => none
 
+/-- Names written by one logical/physical route node. -/
+def routeWrites : ScanStmt → List String
+  | .plain s => [s.lhsName]
+  | .scan _ _ base recur _ =>
+      (base.map Stmt.lhsName ++ recur.map Stmt.lhsName).eraseDups
+  | .scanPre nm _ _ => [nm]
+
+/-- Public exits of one node. A scan publishes only names present in both halves. -/
+def routeOutputs : ScanStmt → List String
+  | .plain s => [s.lhsName]
+  | .scan _ _ base recur _ =>
+      (base.map Stmt.lhsName).filter (fun nm => (recur.map Stmt.lhsName).contains nm)
+  | .scanPre nm _ _ => [nm]
+
+/-- All tensor reads, including scan self-reads, for collision inventory. -/
+def routeReads : ScanStmt → List String
+  | .plain s => s.readFactors.map (·.1)
+  | .scan _ _ base recur _ =>
+      ((base.flatMap Stmt.readFactors ++ recur.flatMap Stmt.readFactors).map (·.1)).eraseDups
+  | .scanPre _ _ _ => []
+
+/-- Reads that become route wires. Scan-local recurrence reads are deliberately excluded. -/
+def routeInputReads (sc : ScanStmt) : List String :=
+  match sc with
+  | .plain s => s.readFactors.map (·.1)
+  | .scan _ _ base recur _ =>
+      let reads := base.flatMap Stmt.readFactors ++ recur.flatMap Stmt.readFactors
+      (reads.filter (fun rf => !(routeWrites sc).contains rf.1)).map (·.1)
+  | .scanPre _ _ _ => []
+
 /-- Complete route-name inventory: declarations, writes, and tensor reads (including unary reads). -/
 def routeNameInventory (sp : ScheduledProgram) : List String :=
   (sp.decls.filterMap declaredTensorName? ++
-    sp.stmts.flatMap (fun sc => sc.writes ++ sc.reads)).eraseDups
+    sp.stmts.flatMap (fun sc => routeWrites sc ++ routeReads sc)).eraseDups
 
 def maxSourceNameLength : List String → Nat
   | [] => 0
@@ -44,7 +74,7 @@ theorem length_le_maxSourceNameLength {nm : String} {names : List String}
           subst nm
           exact Nat.le_max_left _ _
       | inr hmem =>
-          exact le_trans (ih hmem) (Nat.le_max_right _ _)
+          exact _root_.le_trans (ih hmem) (Nat.le_max_right _ _)
 
 theorem routeName_longer {nm : String} {names : List String} (h : nm ∈ names)
     (ordinal : Nat) : nm.length < (routeName names ordinal).length := by
@@ -123,7 +153,8 @@ private theorem physicalizeFold_fragmentCount (sourceNames : List String)
   | cons pair tail ih =>
       simp only [List.foldl_cons]
       rw [ih]
-      simp [physicalizeStep, Nat.add_assoc]
+      simp [physicalizeStep]
+      omega
 
 theorem physicalizeRaw_fragmentCount (sp : ScheduledProgram) :
     (physicalizeRaw sp).fragments.length = sp.stmts.length := by
@@ -165,11 +196,24 @@ def fragmentLayoutOk (logical physical : List ScanStmt)
 def fragmentExitsOk (logical physical : List ScanStmt)
     (fragments : List RouteFragment) : Bool :=
   (logical.zip fragments).all fun (logicalStmt, fragment) =>
-    let exitOk := (physical.getD fragment.lastStep default).outputs == logicalStmt.outputs
+    let exitOk :=
+      routeOutputs (physical.getD fragment.lastStep default) == routeOutputs logicalStmt
     match fragment.internalName with
     | none => exitOk
     | some internal =>
-        (physical.getD fragment.firstStep default).outputs == [internal] && exitOk
+        routeOutputs (physical.getD fragment.firstStep default) == [internal] && exitOk
+
+/-- Types-only physical-topology check used by the adapter before `Lowering.routeCore`. -/
+def physicalRouteInOrder (stmts : List ScanStmt) : Bool :=
+  let producerIndex : Std.HashMap String Nat :=
+    stmts.zipIdx.foldl (fun producers (sc, index) =>
+      (routeOutputs sc).foldl
+        (fun (m : Std.HashMap String Nat) nm => m.insert nm index) producers) {}
+  stmts.zipIdx.all fun (sc, index) =>
+    (routeInputReads sc).all fun nm =>
+      match producerIndex[nm]? with
+      | some producer => decide (producer < index)
+      | none => true
 
 /-- Checked, proof-carrying package. Its evidence cannot be discarded by a successful constructor. -/
 structure PhysicalRouteProgram where
@@ -189,7 +233,7 @@ structure PhysicalRouteProgram where
   layoutChecked : fragmentLayoutOk logical.stmts scheduled.stmts fragments = true
   exitsChecked : fragmentExitsOk logical.stmts scheduled.stmts fragments = true
   freshNames : routeNamesFresh sourceNames fragments = true
-  topological : routableInOrder scheduled.stmts = true
+  topological : physicalRouteInOrder scheduled.stmts = true
 
 /-- The only seed constructor for `PhysicalRouteProgram`: build exactly, then check freshness/topology. -/
 def physicalizeForRoute (logical : ScheduledProgram) :
@@ -201,7 +245,7 @@ def physicalizeForRoute (logical : ScheduledProgram) :
   if hLayout : fragmentLayoutOk logical.stmts scheduled.stmts raw.fragments then
     if hExits : fragmentExitsOk logical.stmts scheduled.stmts raw.fragments then
       if hFresh : routeNamesFresh sourceNames raw.fragments then
-        if hTopo : routableInOrder scheduled.stmts then
+        if hTopo : physicalRouteInOrder scheduled.stmts then
           return {
             logical, scheduled, fragments := raw.fragments, sourceNames
             sourceInventory := rfl
@@ -343,58 +387,142 @@ private def escapedPrefixCollisionProgram : TLProgram :=
         { body := { terms := [{ factors := [.read "X" [.axis i]] }] },
           nonlin := .pointwise .relu, agg := .sum }] }
 
-/-- Compare routed results while intentionally ignoring the obsolete split-mint counter. -/
-private def compileOutcome :
-    EStateM.Result CompileError Nat ThreadedComposed → Except CompileError ThreadedComposed
-  | .ok tc _ => .ok tc
-  | .error e _ => .error e
+/-- A physical-order failure that the checked adapter must reject. -/
+private def cyclicLogicalProgram : ScheduledProgram :=
+  let i : AxisSpec := { name := "i", uid := 1, kind := .real }
+  let read (nm : String) : SumExpr :=
+    { terms := [{ factors := [.read nm [.axis i]] }] }
+  { decls := []
+    stmts := [
+      .plain (.assign "A" [.free i]
+        { body := read "B", nonlin := .pointwise .relu, agg := .sum }),
+      .plain (.assign "B" [.free i]
+        { body := read "A", nonlin := .identity, agg := .sum })]
+    env := {}
+    extNames := {}
+    explicitSizes := {} }
 
-/-- Exact FreshM composition, including final state, at zero and nonzero starts. -/
-#guard (compile reluProgram).run 0 == (compileToScheduled reluProgram >>= route).run 0
-#guard (compile softmaxProgram).run 17 ==
-  (compileToScheduled softmaxProgram >>= route).run 17
-#guard (compile chainProgram).run 41 ==
-  (compileToScheduled chainProgram >>= route).run 41
+private def sameThreadedComposed (left right : ThreadedComposed) : Bool :=
+  decide (left.steps = right.steps) &&
+    decide (left.routing = right.routing) &&
+    left.nExternal == right.nExternal
 
-/-- Common-domain routed presentations remain exactly equal to the current split pipeline. -/
-#guard compileOutcome ((compile reluProgram).run 3) ==
-  compileOutcome ((TLProgram.compile reluProgram).run 3)
-#guard compileOutcome ((compile softmaxProgram).run 11) ==
-  compileOutcome ((TLProgram.compile softmaxProgram).run 11)
-#guard compileOutcome ((compile chainProgram).run 29) ==
-  compileOutcome ((TLProgram.compile chainProgram).run 29)
-#guard compileOutcome ((compile opaqueScanProgram).run 47) ==
-  compileOutcome ((TLProgram.compile opaqueScanProgram).run 47)
+private def sameCompileRun
+    (left right : EStateM.Result CompileError Nat ThreadedComposed) : Bool :=
+  match left, right with
+  | .ok leftTc leftState, .ok rightTc rightState =>
+      sameThreadedComposed leftTc rightTc && leftState == rightState
+  | .error leftError leftState, .error rightError rightState =>
+      decide (leftError = rightError) && leftState == rightState
+  | _, _ => false
+
+private def sameCompileOutcome
+    (left right : EStateM.Result CompileError Nat ThreadedComposed) : Bool :=
+  match left, right with
+  | .ok leftTc _, .ok rightTc _ => sameThreadedComposed leftTc rightTc
+  | .error leftError _, .error rightError _ => decide (leftError = rightError)
+  | _, _ => false
+
+/- Exact FreshM composition, including final state, at zero and nonzero starts. -/
+#guard sameCompileRun (compile reluProgram |>.run 0)
+  ((compileToScheduled reluProgram >>= route).run 0)
+#guard sameCompileRun (compile softmaxProgram |>.run 17)
+  ((compileToScheduled softmaxProgram >>= route).run 17)
+#guard sameCompileRun (compile chainProgram |>.run 41)
+  ((compileToScheduled chainProgram >>= route).run 41)
+
+/- Exact result and FreshM-state assertions. The old pipeline has one additional split mint. -/
+#guard match (compile reluProgram).run 9, (TLProgram.compile reluProgram).run 9 with
+  | .ok new 10, .ok old 11 => sameThreadedComposed new old
+  | _, _ => false
+#guard match (compile softmaxProgram).run 23, (TLProgram.compile softmaxProgram).run 23 with
+  | .ok new 25, .ok old 26 => sameThreadedComposed new old
+  | _, _ => false
+#guard match (compile chainProgram).run 31, (TLProgram.compile chainProgram).run 31 with
+  | .ok new 32, .ok old 33 => sameThreadedComposed new old
+  | _, _ => false
+#guard match (compile opaqueScanProgram).run 47, (TLProgram.compile opaqueScanProgram).run 47 with
+  | .ok new 50, .ok old 51 => sameThreadedComposed new old
+  | _, _ => false
+
+/- Representative rejected evidence shapes and checked-adapter topology failure. -/
+#guard routeNamesFresh ["##"] [
+  (⟨0, 0, 1, some "##"⟩ : RouteFragment)] == false
+#guard routeNamesFresh [] [
+  (⟨0, 0, 1, some "###"⟩ : RouteFragment),
+  (⟨1, 2, 3, some "###"⟩ : RouteFragment)] == false
+#guard fragmentLayoutOk cyclicLogicalProgram.stmts [] [
+  (⟨0, 0, 1, some "###"⟩ : RouteFragment),
+  (⟨1, 3, 3, none⟩ : RouteFragment)] == false
+#guard match physicalizeForRoute cyclicLogicalProgram with
+  | .error (.cyclicDataflow _) => true
+  | _ => false
+
+/- Common-domain routed presentations remain exactly equal when state is intentionally erased. -/
+#guard sameCompileOutcome ((compile reluProgram).run 3)
+  ((TLProgram.compile reluProgram).run 3)
+#guard sameCompileOutcome ((compile softmaxProgram).run 11)
+  ((TLProgram.compile softmaxProgram).run 11)
+#guard sameCompileOutcome ((compile chainProgram).run 29)
+  ((TLProgram.compile chainProgram).run 29)
+#guard sameCompileOutcome ((compile opaqueScanProgram).run 47)
+  ((TLProgram.compile opaqueScanProgram).run 47)
 
 run_cmd do
-  let checkTwo (label : String) (p : TLProgram) (state : Nat) := do
+  let checkTwo (label : String) (p : TLProgram) (state expectedState : Nat) := do
     match (compileToScheduled p).run state with
     | .error e _ => throwError s!"{label}: logical compile failed: {repr e}"
     | .ok logical s' =>
-        if logical.stmts.length != 1 then
-          throwError s!"{label}: expected one logical statement"
-        if s' < state then
-          throwError s!"{label}: FreshM state regressed from {state} to {s'}"
+        if s' != expectedState then
+          throwError s!"{label}: expected exact FreshM state {expectedState}, got {s'}"
         match (compile p).run state with
         | .error e _ => throwError s!"{label}: routed compile failed: {repr e}"
         | .ok _ routedState =>
-            if routedState != s' then
-              throwError s!"{label}: route changed FreshM state {s'} → {routedState}"
+            if routedState != expectedState then
+              throwError s!"{label}: route changed FreshM state to {routedState}"
         match physicalizeForRoute logical with
         | .error e => throwError s!"{label}: physicalization failed: {repr e}"
         | .ok physical =>
-            if physical.scheduled.stmts.length != 2 then
-              throwError s!"{label}: expected two physical statements"
-  checkTwo "relu" reluProgram 9
-  checkTwo "softmax" softmaxProgram 23
+            match logical.stmts, physical.scheduled.stmts, physical.fragments with
+            | [.plain (.assign output slots rhs)],
+                [.plain (.assign internal linSlots linRhs),
+                  .plain (.assign physicalOutput outputSlots nonlinRhs)],
+                [fragment] =>
+                let expectedInternal := routeName physical.sourceNames 0
+                let expectedRead : SumExpr :=
+                  { terms := [{ factors :=
+                    [.read internal (slots.filterMap LHSSlot.toReadIdx)] }] }
+                if internal != expectedInternal || physicalOutput != output then
+                  throwError s!"{label}: exact producer/exit names changed"
+                if linSlots != producerSlots slots || linRhs.body != rhs.body ||
+                    linRhs.nonlin != .identity || linRhs.agg != rhs.agg then
+                  throwError s!"{label}: producer payload was not preserved exactly"
+                if outputSlots != slots || nonlinRhs.body != expectedRead ||
+                    nonlinRhs.nonlin != rhs.nonlin || nonlinRhs.agg != .sum then
+                  throwError s!"{label}: consumer payload changed"
+                if fragment != ⟨0, 0, 1, some internal⟩ then
+                  throwError s!"{label}: exact route fragment changed"
+            | _, _, _ => throwError s!"{label}: expected exact one-logical/two-physical shape"
+  checkTwo "relu" reluProgram 9 10
+  checkTwo "softmax" softmaxProgram 23 25
 
 run_cmd do
   match (compileToScheduled chainProgram).run 31 with
   | .error e _ => throwError s!"chain: logical compile failed: {repr e}"
-  | .ok logical _ =>
+  | .ok logical state =>
+      if state != 32 then
+        throwError s!"chain: expected exact FreshM state 32, got {state}"
       match physicalizeForRoute logical with
       | .error e => throwError s!"chain: physicalization failed: {repr e}"
       | .ok physical =>
+          match physical.fragments with
+          | [first, second] =>
+              if first.logicalIndex != 0 || first.firstStep != 0 || first.lastStep != 1 ||
+                  first.internalName.isNone then
+                throwError "chain: nonlinear fragment interval changed"
+              if second != ⟨1, 2, 2, none⟩ then
+                throwError "chain: identity fragment interval changed"
+          | _ => throwError "chain: expected exactly two covering fragments"
           if logical.stmts.length != 2 || physical.scheduled.stmts.length != 3 then
             throwError "chain: expected 2 logical / 3 physical statements"
           match routeCore physical.scheduled with
@@ -404,21 +532,30 @@ run_cmd do
 run_cmd do
   match (compileToScheduled opaqueScanProgram).run 5 with
   | .error e _ => throwError s!"opaque scan: logical compile failed: {repr e}"
-  | .ok logical _ =>
+  | .ok logical state =>
+      if state != 8 then
+        throwError s!"opaque scan: expected exact FreshM state 8, got {state}"
       match physicalizeForRoute logical with
       | .error e => throwError s!"opaque scan: physicalization failed: {repr e}"
       | .ok physical =>
           match logical.stmts, physical.scheduled.stmts, physical.fragments with
-          | [.scan ..], [.scan ..], [fragment] =>
-              if fragment.firstStep != 0 || fragment.lastStep != 0 ||
-                  fragment.internalName.isSome then
-                throwError "opaque scan: expected one unchanged opaque fragment"
+          | [.scan logicalName logicalAxes logicalBase logicalRecur logicalAffine],
+              [.scan physicalName physicalAxes physicalBase physicalRecur physicalAffine],
+              [fragment] =>
+              if logicalName != physicalName || logicalAxes != physicalAxes ||
+                  logicalBase != physicalBase || logicalRecur != physicalRecur ||
+                  logicalAffine != physicalAffine then
+                throwError "opaque scan: payload was not copied exactly"
+              if fragment != ⟨0, 0, 0, none⟩ then
+                throwError "opaque scan: expected exact unchanged fragment"
           | _, _, _ => throwError "opaque scan: node shape changed"
 
 run_cmd do
   match (compileToScheduled collisionProgram).run 7 with
   | .error e _ => throwError s!"collision: logical compile failed: {repr e}"
-  | .ok logical _ =>
+  | .ok logical state =>
+      if state != 8 then
+        throwError s!"collision: expected exact FreshM state 8, got {state}"
       match physicalizeForRoute logical with
       | .error e => throwError s!"collision: physicalization failed: {repr e}"
       | .ok physical =>
@@ -432,7 +569,9 @@ run_cmd do
 
 run_cmd do
   match (compile escapedPrefixCollisionProgram).run 7 with
-  | .ok _ _ => pure ()
+  | .ok _ 8 => pure ()
+  | .ok _ state =>
+      throwError s!"escaped %nl collision: expected exact FreshM state 8, got {state}"
   | .error e _ =>
       throwError s!"escaped %nl collision: collision-free seed unexpectedly failed: {repr e}"
 

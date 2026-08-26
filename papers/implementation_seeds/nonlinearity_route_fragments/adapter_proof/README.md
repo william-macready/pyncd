@@ -13,9 +13,10 @@ production dependency.
   - one-pass `physicalizeForRoute`, including producer `.freeNorm → .free`, payload preservation,
     contiguous fragment layout, logical-exit checks, freshness, and physical topology checks;
   - logical `compileToScheduled`, public-logical-route-shaped `route`, and source `compile`;
-  - exact FreshM composition/state guards;
+  - exact FreshM composition/result/state guards (including old-pipeline split-mint deltas);
   - ReLU, softmax, downstream chain, opaque nonlinear scan, long-`#` collision, and old/new routed
     presentation checks;
+  - negative freshness, duplicate-name, noncontiguous-layout, and cyclic-physical-route checks;
   - `compile_eq_physical_route` and the repaired, unchanged-shape `compile_wellFormed`.
 
 Agreement remains in this single file because a directly checked file outside `leanncd/` cannot
@@ -24,15 +25,23 @@ forbids. Split the marked Agreement declarations during production transplantati
 
 ## Transplant map and safe order
 
-1. **`LeanNCD/DSL/Ast.lean`**: move `LHSSlot.toReadIdx` here unchanged from current
+1. **`LeanNCD/DSL/Ast.lean`**: move the existing `LHSSlot.toReadIdx` declaration here from
    `Pipeline/Lowering.lean`; the donor calls that shared declaration.
 2. **`LeanNCD/DSL/Pipeline/Types.lean`**: make `LinearProgram` a deprecated alias of the logical
    schedulable scan-program shape. Change `schedule` to accept that logical shape.
 3. **new `LeanNCD/DSL/Pipeline/RouteFragments.lean`** (imports `Types` only): transplant
-   `declaredTensorName?` through `physicalizeForRoute`, including all route-name proofs, fragment
-   checks, and package evidence. Make the real package constructor private.
+   `declaredTensorName?`, the `routeWrites`/`routeOutputs`/`routeReads`/`routeInputReads` accessors,
+   `routeNameInventory`, `maxSourceNameLength`, `routeName`, the three route-name theorems,
+   `RouteFragment`, `PhysicalizeAcc`, `producerSlots`, `physicalizeOne`, `physicalizeStep`,
+   `physicalizeRaw`, `physicalizeRaw_fragmentCount`, `generatedRouteNames`, `routeNamesFresh`,
+   `fragmentWidth`, `checkFragmentAt`, `fragmentLayoutOk`, `fragmentExitsOk`,
+   `physicalRouteInOrder`, `PhysicalRouteProgram`, and `physicalizeForRoute`. Keep the fold-count
+   helper private and make the real package constructor/private representation inaccessible outside
+   the route boundary. The local accessors/topology check intentionally avoid depending on
+   `Lowering`'s `ScanStmt.writes`/`outputs`/`reads`, `buildNameToStep`, or `routableInOrder`.
 4. **`LeanNCD/DSL/Pipeline/Lowering.lean`**: import `RouteFragments`; keep `routeCore` unchanged;
-   replace public `route` with the donor wrapper. Keep `splitNonlins` only for regression callers.
+   replace public `route` with the donor wrapper body. Keep `splitStmt`, `splitScan`, and
+   `splitNonlins` only for regression callers.
 5. **`LeanNCD/DSL/Compile.lean`**: transplant the donor `compileToScheduled` and `compile`, removing
    `splitNonlins` from the production chain. After step 2, delete the donor-only `scheduleLogical`
    record adapter and call `schedule` directly.
@@ -41,8 +50,9 @@ forbids. Split the marked Agreement declarations during production transplantati
 7. **`LeanNCD/Bridge/Agreement.lean`**: replace `compile_eq_route` with
    `compile_eq_physical_route`; transplant the donor `compile_wellFormed` proof body. Do not thread
    fragment evidence into `wf_typeMatch`, `wf_singleOutput`, or `wf_topo`.
-8. Only after all preceding edits are in one green gate, migrate/add the Task 1 test modules and
-   Lake globs described by the canonical plan.
+8. **Tests only, not production**: move the private source fixtures, exact-state/result guards,
+   malformed-fragment checks, and `run_cmd` payload checks into the Task 1 test modules named by the
+   canonical plan. Only then add their Lake globs.
 
 ## Assumptions and intentional seed differences
 
@@ -62,6 +72,14 @@ forbids. Split the marked Agreement declarations during production transplantati
   payloads.
 - This donor proves the Agreement repair and checks representative old/new route equality. It is not
   the full 145-case Task 2 corpus or the Task 1 diagnostic differential suite.
+- Exact nonzero-start states pinned by the seed are: ReLU `9 → 10` (old split pipeline `→ 11`),
+  softmax `23 → 25` (old `→ 26`), chain `31 → 32` (old `→ 33`), opaque scan `47 → 50` (old
+  `→ 51`), and escaped `%nl8` acceptance `7 → 8`. At a zero start, `assignUIDs` intentionally spends
+  an extra mint to avoid UID zero; the composition guard compares that case without hard-coding a
+  misleading nonzero-start delta.
+- The negative guards exercise the public Boolean checks and a cyclic `ScheduledProgram`; malformed
+  packages cannot be passed to `route` through `physicalizeForRoute` because successful construction
+  fixes statements/fragments to `physicalizeRaw`.
 
 ## Required verification
 
@@ -69,14 +87,23 @@ Run from repository root:
 
 ```bash
 cd leanncd
-lake env lean ../papers/implementation_seeds/nonlinearity_route_fragments/adapter_proof/RouteFragmentsSeed.lean
-lake build LeanNCD.DSL.Pipeline.Lowering LeanNCD.Bridge.Agreement
-lake build Tests LeanNCD
+"$HOME/.elan/bin/lake" env lean ../papers/implementation_seeds/nonlinearity_route_fragments/adapter_proof/RouteFragmentsSeed.lean
+"$HOME/.elan/bin/lake" build LeanNCD.DSL.Pipeline.Lowering LeanNCD.Bridge.Agreement
+"$HOME/.elan/bin/lake" build Tests LeanNCD
 ```
 
-The first command must always target the final durable path. At preservation time, command execution
-was attempted but denied by the tool permission boundary; therefore this README does **not** claim a
-successful Lean check. Re-run all commands before transplanting.
+The first command must always target the final durable path. On 2026-08-25 all three commands above
+completed successfully. The direct check executed 15 `#guard`s and five `run_cmd` blocks, including
+exact result/state, old/new presentation, malformed evidence, payload, scan-opacity, collision, and
+escaped-prefix checks. The builds retained existing dependency warnings, including the repository's
+known `St`/`Br` `sorry` declarations and unrelated linter warnings; this donor itself contains no
+`sorry`, `admit`, or `axiom`.
+
+Four donor-local implementation mutation cycles were also run as mutate/fail/restore/pass:
+reinserting `splitNonlins`, removing strict route-name growth, mapping a nonlinear fragment exit to
+its entry, and corrupting routed `nExternal`. The restored file passed the direct check after every
+cycle. This is not the plan's complete 14-cycle Task 1 production mutation gate, the 145-case Task 2
+corpus, or a production transplant; those remain required when the donor is moved into production.
 
 ## Prohibition
 
