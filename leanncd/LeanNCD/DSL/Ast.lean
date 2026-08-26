@@ -179,8 +179,9 @@ def Stmt.slots : Stmt → List LHSSlot
 /-- The nonlinearity wrapping a stmt's step. A `recurMorphism` is pre-built (already-lowered),
     so it is affine-neutral (`identity`). Used by `finalizeScans` to detect ScanAffine (Prop 8.7):
     a scan whose every recurrence stmt is `identity`-nonlin carries no nonlinearity and is thus
-    associative/parallel-prefix-able. This MUST be checked here (pre-`splitNonlins`), since
-    `splitNonlins` later lifts nonlinearities out of `RHSExpr.nonlin` into separate steps. -/
+    associative/parallel-prefix-able. This MUST be checked here, at the unsplit `RHSExpr.nonlin` —
+    the nonlinearity is only ever split into a separate step privately at the `route` boundary
+    (`Pipeline/RouteFragments.lean`), which `finalizeScans` runs strictly before. -/
 def Stmt.nonlinOf : Stmt → Nonlin
   | .assign _ _ r => r.nonlin
   | .scatter _ _ r _ => r.nonlin
@@ -237,6 +238,64 @@ def LHSSlot.outIdx : LHSSlot → IdxExpr
   | .freeNorm a => .axis a
   | .iterAt _ n => .const n
   | .iterNext a => .shift a 1
+
+/-- Axis indices that index the output of a stmt (its free/scan slots). An `.affine` slot is a
+    scatter output; `lowerArith` (`Pipeline/Structural.lean`) reclassifies every
+    `slotsBecomeScatter` `.assign` into `Stmt.scatter` before Phase 6 runs, so no `.assign`
+    carrying an `.affine` slot can reach `splitStmt` at all — unreachable from `splitStmt`
+    post-`lowerArith`; kept total for exhaustiveness.
+
+    Lives here (not in `Pipeline/Lowering.lean`, where it used to) so that both
+    `Pipeline/Lowering.lean`'s `splitStmt` and `Pipeline/RouteFragments.lean`'s
+    `physicalizeOne` build the nonlinear consumer's read coordinates from ONE definition —
+    `RouteFragments` imports only `Pipeline/Types`, so it cannot reach `Lowering`. -/
+def LHSSlot.toReadIdx : LHSSlot → Option IdxExpr
+  | .free a     => some (.axis a)
+  | .freeNorm a => some (.axis a)
+  | .iterAt a _ => some (.axis a)
+  | .iterNext a => some (.axis a)
+  | .affine _   => none      -- scatter outputs: skipped (see doc above)
+
+/-- Degrade the axiswise marker for the LINEAR/private PRODUCER half of a nonlinear split.
+
+    `.freeNorm a` names the axis the *consumer* reduces over. It has no meaning on an
+    `.identity`-nonlin statement (the producer contracts, it does not reduce over the marked
+    axis), and `resolveNonlinAxis` (`Eval/Plan/Compile.lean`) treats a `.freeNorm` marker on an
+    `.identity` statement as user error (`NonlinCompileError.unmarkedReductionAxis`). So the
+    producer's own slots must carry a plain `.free`; the consumer keeps the original marker.
+
+    Lives here (like `LHSSlot.toReadIdx`) because it has exactly TWO call sites:
+    `Pipeline/Lowering.lean`'s `splitStmt` (the regression-only split pipeline) and
+    `Pipeline/RouteFragments.lean`'s `physicalizeOne` (the production route boundary).
+    `RouteFragments` imports only `Pipeline/Types` and cannot see `Lowering` (`Lowering` imports
+    `RouteFragments`, not the reverse), so `Ast` is the lowest module both can reach — even though,
+    since the logical-schedule flip, `Lowering` could in principle reach a definition placed in
+    `RouteFragments` instead.
+
+    ⚠️ **Route equality cannot detect drift between those two call sites**: `.free a` and
+    `.freeNorm a` produce the SAME `slotWeave` axes, so a copy of this degrade that diverges on
+    one side only would still route identically and ship green. The cross-call-site guard is
+    `test/DSL/Pipeline/LoweringTest.lean`'s PRODUCERSLOTS fixture, which runs `splitStmt` and
+    `physicalizeOne` on the same statement and compares their producers' slot lists directly. -/
+def producerSlots (slots : List LHSSlot) : List LHSSlot :=
+  slots.map fun
+    | .freeNorm a => .free a
+    | slot => slot
+
+/-- Will this LHS be lowered to a `scatter` (publishing its full slot-count rank)? True for an affine
+    LHS (`Out[2*i,2*j]`) or a diagonal LHS with a repeated free axis (`Y[i,i]`).
+
+    Lives here (like `LHSSlot.toReadIdx` and `producerSlots`, and for the same import-graph reason)
+    because it has THREE call sites in two layers that cannot see each other:
+    `Pipeline/Structural.lean`'s read-rank guard (`stmtLhsRank`) and `lowerArith` — which must agree
+    on the published rank — and `Pipeline/RouteFragments.lean`'s `fragmentClass`/`physicalizeOne`,
+    which reject a nonlinear scatter-shaped `.assign` at the route boundary (§2.4 class 6). It used
+    to live in `Structural.lean`; `RouteFragments` imports only `Pipeline/Types`, so `Ast` is the
+    lowest module all three call sites reach. -/
+def slotsBecomeScatter (slots : List LHSSlot) : Bool :=
+  slots.any (fun sl => match sl with | .affine _ => true | _ => false)
+  || (let us := slots.filterMap (·.freeUID?)
+      us.length ≠ us.eraseDups.length)
 
 /-- Output extent of one scatter LHS slot under a sizing lookup `sz`.
     The single home of the scatter-extent convention (upsample stride semantics —

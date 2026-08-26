@@ -14,7 +14,7 @@ and each `#guard` asserts a structural fact calibrated to what the pipeline actu
   let tc := tl!{ Y[i,j] := W[i,k] · X[k,j] }
   (tc.steps.head!.outputWeaves.head!.filter (· == WeaveSlotP.tiled)).length == 1
 
--- 2. Causal masked attention. After `splitNonlins` the masked-softmax statement becomes a
+-- 2. Causal masked attention. At the `route` boundary the masked-softmax statement becomes a
 --    linear pre-activation step + a `softmax` step ⇒ ≥2 steps, one of which is `op == "softmax"`.
 #guard
   let tc := tl!{

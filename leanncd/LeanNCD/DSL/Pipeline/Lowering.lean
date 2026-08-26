@@ -1,13 +1,25 @@
 -- LeanNCD/DSL/Pipeline/Lowering.lean
--- Phases 6–8 of the tensor-logic DSL back-end. Phase 6 (`splitNonlins`) isolates each
--- nonlinearity (relu/softmax/normalize) into its own step so contraction steps and
--- nonlinearity steps don't mix. Phases 1–5 live in `Structural.lean`.
+-- Phases 7–8 of the tensor-logic DSL back-end. Phases 1–5 live in `Structural.lean`; the
+-- former Phase 6 (`splitNonlins`) is no longer on the production chain — see below.
 import LeanNCD.DSL.Pipeline.Structural
+import LeanNCD.DSL.Pipeline.RouteFragments
 import LeanNCD.DSL.Target
 
 namespace LeanNCD
 
-/-! ## Phase 6 — `splitNonlins`
+/-! ## Former Phase 6 — `splitNonlins` (REGRESSION-ONLY, off the production chain)
+
+`splitNonlins` used to run between `finalizeScans` and `schedule`, splitting every nonlinear
+`Stmt` into a linear producer plus a nonlinear consumer BEFORE scheduling. That corrupted scan
+semantics (`splitScan` splits nonlinearities *inside* scan base/recur bodies) and leaked
+generated `%nl{uid}` names into the scheduled program that Eval consumes. Per
+`papers/nonlinearity_split_pair_direct_lowering.md` §2.1, the schedule is now LOGICAL — one
+statement per source statement, zero generated names — and the split happens privately at the
+`route` boundary instead (`Pipeline/RouteFragments.lean`'s `physicalizeForRoute`).
+
+These three declarations survive **only** as regression helpers: `test/DSL/Pipeline/*` uses them
+as the OLD leg of the route-equality comparison against the new physicalization. Nothing in
+`DSL/Compile.lean` or `Eval/` calls them. Do not put them back on the production chain.
 
 For each `Stmt` whose `RHSExpr.nonlin ≠ .identity`, split it into TWO stmts:
 1. a LINEAR step computing the pre-activation into a fresh intermediate tensor
@@ -15,18 +27,6 @@ For each `Stmt` whose `RHSExpr.nonlin ≠ .identity`, split it into TWO stmts:
 2. a NONLIN step that READS that intermediate at the output's own coordinates and carries
    the original nonlinearity (and its mask).
 A stmt already at `.identity` is emitted unchanged. -/
-
-/-- Axis indices that index the output of a stmt (its free/scan slots). An `.affine` slot is a
-    scatter output; `lowerArith` (Structural.lean) reclassifies every `slotsBecomeScatter`
-    `.assign` into `Stmt.scatter` before this phase runs, so no `.assign` carrying an `.affine`
-    slot can reach `splitStmt` at all — unreachable from `splitStmt` post-`lowerArith`; kept
-    total for exhaustiveness. -/
-def LHSSlot.toReadIdx : LHSSlot → Option IdxExpr
-  | .free a     => some (.axis a)
-  | .freeNorm a => some (.axis a)
-  | .iterAt a _ => some (.axis a)
-  | .iterNext a => some (.axis a)
-  | .affine _   => none      -- scatter outputs: skipped (see doc above)
 
 /-- Split one stmt's nonlinearity into (≤2) stmts. Identity stmts and scatters pass through
     unchanged. Scatters are a `.identity`-only shape by this point: `checkScatterNonlin`
@@ -47,27 +47,19 @@ def splitStmt (s : Stmt) : FreshM (List Stmt) := do
         -- Unreachable from surface syntax (`tl_nonlin (…)` and `tl_agg (…)` are mutually exclusive
         -- `tl_rhs` alternatives, so `relu(maxreduce(…))` cannot parse) but reachable for a
         -- programmatically built AST — and it is an EVAL bug, not just a routing-label one, since
-        -- `compileToScheduled` runs `splitNonlins` and the evaluator reads `rhs.agg` off the result.
-        -- See `papers/semantic_payload_audit.md` finding C; regression: `LoweringTest` AGG1/AGG2.
+        -- `splitNonlins` used to run inside `compileToScheduled`, whose result the evaluator reads
+        -- `rhs.agg` off. See `papers/semantic_payload_audit.md` finding C; regression:
+        -- `LoweringTest` AGG1/AGG2.
         --
         -- Thread 4 (nonlinearity) fix, discovered while implementing Task 3: the LINEAR step's own
         -- LHS slots must NOT carry a `.freeNorm` marker, even when the original (unsplit) statement
-        -- had one — degrade it to a plain `.free` here. The marker names WHICH axis the upcoming
-        -- nonlin step reduces over; it has no meaning on a `.identity`-nonlin statement (this linear
-        -- step doesn't reduce anything, doesn't read the marker, and neither `resolveNonlin`
-        -- (`Eval/Nonlin.lean`) nor the contraction evaluator ever inspects it on an `.identity`
-        -- statement). Before Thread 4, this was dormant/unobservable: `checkLHSSlot`
-        -- (`Eval/Plan/Compile.lean`) unconditionally rejected EVERY `.freeNorm` slot, so no
-        -- freeNorm-marked program (split or not) could ever reach the Plan compiler. Task 3 relaxes
-        -- that rejection specifically so `.axiswise` statements become reachable — which surfaces
-        -- this: `resolveNonlinAxis` (Task 3, `Eval/Plan/Compile.lean`) treats a `.freeNorm` marker
-        -- on an `.identity` statement as user error (`NonlinCompileError.unmarkedReductionAxis`),
-        -- and WITHOUT this degrade, that fires on every single split-off linear step of every
-        -- `.axiswise` statement — the marker `splitStmt` itself put there, not the user. The `nlStep`
-        -- below is untouched: IT keeps the original marker, since IT is the statement
-        -- `resolveNonlinAxis` needs to see it on.
-        let linSlots := slots.map (fun sl => match sl with | .freeNorm a => .free a | _ => sl)
-        let linStep : Stmt := .assign interName linSlots
+        -- had one — `producerSlots` (`DSL/Ast.lean`) degrades it to a plain `.free`. That is the
+        -- SHARED definition `RouteFragments.physicalizeOne` also uses for its private producer;
+        -- see its docstring for why the two call sites cannot be told apart by route equality and
+        -- what guards them (LoweringTest's PRODUCERSLOTS fixture). The `nlStep` below is untouched:
+        -- IT keeps the original marker, since IT is the statement `resolveNonlinAxis`
+        -- (`Eval/Plan/Compile.lean`) needs to see it on.
+        let linStep : Stmt := .assign interName (producerSlots slots)
           { body := rhs.body, nonlin := .identity, agg := rhs.agg }
         let readIdxs := slots.filterMap LHSSlot.toReadIdx
         -- `.sum` is stated explicitly (not defaulted): `nlStep`'s body is a single read, so there is
@@ -90,8 +82,10 @@ def splitScan (sc : ScanStmt) : FreshM (List ScanStmt) := do
       return [ ScanStmt.scan nm ax base' recur' isAff ]
   | .scanPre nm ax tc => return [ ScanStmt.scanPre nm ax tc ]
 
-/-- Isolate every relu/softmax/normalize into its own step across the whole program. -/
-def splitNonlins (sp : ScanProgram) : FreshM LinearProgram := do
+/-- Isolate every relu/softmax/normalize into its own step across the whole program.
+    **Regression-only** — not on the production chain (see the section header). Returns the same
+    schedulable `ScanProgram` type `schedule` accepts, so the old leg still composes. -/
+def splitNonlins (sp : ScanProgram) : FreshM ScanProgram := do
   let stmts' ← sp.stmts.flatMapM splitScan
   return { decls := sp.decls, stmts := stmts', env := sp.env,
            extNames := sp.extNames }
@@ -121,6 +115,31 @@ def ScanStmt.reads : ScanStmt → List String
   | .plain s        => s.readNames
   | .scan _ _ b r _ => (b.flatMap Stmt.readNames ++ r.flatMap Stmt.readNames).eraseDups
   | .scanPre _ _ _  => []
+
+/-! ### Drift guard: the route-boundary accessors agree with these four
+
+`Pipeline/RouteFragments.lean` needs the same four notions of "what does this node write / publish
+/ read / route an input from", but it imports only `Pipeline/Types` (`Lowering` imports IT, and the
+reverse edge would cycle), so it cannot call `ScanStmt.writes`/`outputs`/`reads`/`inputReadFactors`.
+The definitions are therefore genuinely duplicated, and the copies are **not** distinguishable by
+route equality on their own.
+
+`Lowering` is the lowest module that can see both, so the agreement is pinned HERE, as four
+theorems. Editing either copy without the other fails to compile. They are deliberately not
+`@[simp]`: the `routeX` forms must not start rewriting inside the ~20 `RouteSpec` proofs stated
+over `sc.outputs`/`sc.inputReadFactors`. -/
+
+theorem routeWrites_eq (sc : ScanStmt) : routeWrites sc = sc.writes := by
+  cases sc <;> rfl
+
+theorem routeOutputs_eq (sc : ScanStmt) : routeOutputs sc = sc.outputs := by
+  cases sc <;> rfl
+
+theorem routeReads_eq (sc : ScanStmt) : routeReads sc = sc.reads := by
+  have hrn : Stmt.readNames = fun s => s.readFactors.map (·.1) := rfl
+  cases sc <;> simp [routeReads, ScanStmt.reads, hrn, List.map_flatMap]
+
+-- (`routeInputReads_eq` is stated below, next to `ScanStmt.inputReadFactors`.)
 
 /-! ### Topological sort (stable Kahn's algorithm)
 
@@ -182,7 +201,10 @@ def isTopoOrdered (all : List ScanStmt) (ordered : List ScanStmt) : Bool :=
       (ok && eligible sc all emitted, emitted ++ sc.writes))
     (true, ([] : List String))).1
 
-def schedule (lp : LinearProgram) : FreshM ScheduledProgram := do
+/-- Phase 7. Accepts the post-`finalizeScans` **logical** program directly (§2.1): nonlinearities
+    are not split before scheduling, so one source statement stays one scheduled statement and no
+    generated name enters the schedule. -/
+def schedule (lp : ScanProgram) : FreshM ScheduledProgram := do
   let ordered   := topoSort lp.stmts
   -- Fail loud on cyclic dataflow (Spike 1h): topoSort cannot fully order a cycle, and its
   -- fallback silently returns source order. routeCore already rejects cycles (cyclicDataflow);
@@ -345,7 +367,8 @@ def ScanStmt.isScanPre : ScanStmt → Bool
   | _              => false
 
 /-- Is this a `.scan` node flagged affine by `finalizeScans` (Prop 8.7)? Drives the
-    "scan_affine" vs "scan" op label. The flag was computed pre-`splitNonlins`. -/
+    "scan_affine" vs "scan" op label. The flag was computed on the unsplit statement, before any
+    nonlinearity split at the `route` boundary. -/
 def ScanStmt.isAffineScan : ScanStmt → Bool
   | .scan _ _ _ _ isAff => isAff
   | _                   => false
@@ -381,6 +404,12 @@ def ScanStmt.inputReadFactors (sc : ScanStmt) : List (String × List IdxExpr) :=
       let ws := sc.writes
       (b.flatMap Stmt.readFactors ++ r.flatMap Stmt.readFactors).filter (fun rf => !ws.contains rf.1)
   | .scanPre _ _ _  => []
+
+/-- Drift guard (see the four-accessor note above): `RouteFragments`' `routeInputReads` is exactly
+    the NAME projection of `inputReadFactors` — same filter, same order. -/
+theorem routeInputReads_eq (sc : ScanStmt) :
+    routeInputReads sc = sc.inputReadFactors.map (·.1) := by
+  cases sc <;> simp [routeInputReads, ScanStmt.inputReadFactors, routeWrites_eq, ScanStmt.writes]
 
 /-- The defining stmt of output slot `s` (= `writes[s]`): the LAST stmt in `stepStmts` that writes it
     (for a `.scan`, the recurrence stmt — full output rank, incl. the iteration axis). Used so the
@@ -588,18 +617,41 @@ def routeCore (sp : ScheduledProgram) : Except CompileError (List BrBaseP × Lis
   else
     throw (CompileError.cyclicDataflow "routeCore: cyclic dataflow (topoSort fallback)")
 
-/-- Phase 8: route the scheduled statements into a `ThreadedComposed`. -/
-def route (sp : ScheduledProgram) : FreshM ThreadedComposed := do
-  let nExternal := sp.extNames.card
-  match routeCore sp with
-  | .ok (steps, routing) =>
-      let tc : ThreadedComposed := { steps, routing, nExternal }
-      -- Validate the domain well-formedness (every external slot referenced + rank agreement) on the
-      -- built morphism. FAIL LOUD rather than emit a `tc` the bridge can't realize; this is the
-      -- `WellFormed` conjunct-1 invariant carried by construction (see `wf_dom`).
-      if tc.wellFormedDom then return tc
-      else throw (CompileError.shapeMismatch
-        "route: wellFormedDom failed (unreferenced external slot or read-rank mismatch)" "wellFormedDom")
-  | .error e             => throw e
+/-- Phase 8: route a **logical** scheduled program into a `ThreadedComposed` (§2.4, §2.5).
+
+    Two stages, and the split between them is the whole point of this design:
+
+    1. `physicalizeForRoute` (`Pipeline/RouteFragments.lean`) turns the logical schedule into a
+       checked, proof-carrying `PhysicalRouteProgram` — expanding each nonlinear plain assignment
+       into a private producer/consumer pair with a collision-free internal name, copying
+       everything else (scans included) verbatim. It is `Except`-valued and its error is threaded
+       unchanged: §2.4 class 6 (a nonlinear scatter-shaped write, whether spelled `.plain
+       (.scatter …)` or a `.plain (.assign …)` whose LHS `slotsBecomeScatter`) must REJECT, not
+       silently copy.
+    2. the unchanged `routeCore` consumes the resulting PHYSICAL program. Every `RouteSpec` theorem
+       is stated over that physical input and is untouched by this design.
+
+    ⚠️ The input contract changed here (§2.4): a route-linearized (already split) schedule is no
+    longer a valid public-`route` input — physicalization is NOT a no-op on it: the already-split
+    consumer statement is still non-identity-nonlin, so it gets split AGAIN (pinned by
+    `RouteFragmentDiagnosticTest.lean`'s case 19: a 2-statement pre-split program compiles to 3
+    physical steps, not 2), and its generated names are already in the source inventory besides.
+    Regression tests that compare the old split pipeline against the new one must therefore
+    terminate at `routeCore`, not at public `route`. -/
+def route (logical : ScheduledProgram) : FreshM ThreadedComposed := do
+  match physicalizeForRoute logical with
+  | .error e => throw e
+  | .ok physical =>
+      let nExternal := physical.scheduled.extNames.card
+      match routeCore physical.scheduled with
+      | .ok (steps, routing) =>
+          let tc : ThreadedComposed := { steps, routing, nExternal }
+          -- Validate the domain well-formedness (every external slot referenced + rank agreement) on the
+          -- built morphism. FAIL LOUD rather than emit a `tc` the bridge can't realize; this is the
+          -- `WellFormed` conjunct-1 invariant carried by construction (see `wf_dom`).
+          if tc.wellFormedDom then return tc
+          else throw (CompileError.shapeMismatch
+            "route: wellFormedDom failed (unreferenced external slot or read-rank mismatch)" "wellFormedDom")
+      | .error e             => throw e
 
 end LeanNCD

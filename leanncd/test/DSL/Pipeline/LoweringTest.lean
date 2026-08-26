@@ -220,4 +220,39 @@ run_cmd do
       | _, _ => throwError s!"FREENORM: could not find both a linear and a nonlin step: {repr stmts}"
   | .error e _ => throwError s!"FREENORM: splitNonlins errored: {repr e}"
 
+-- PRODUCERSLOTS (Task 2, logical-schedule flip): `splitStmt` (regression leg, above) and
+-- `RouteFragments.physicalizeOne` (production route boundary) both degrade a `.freeNorm` marker on
+-- their split-off LINEAR/producer step via the SAME shared `Ast.producerSlots` — route equality
+-- cannot see the two call sites drift (`.free`/`.freeNorm` yield identical `slotWeave` axes), so
+-- this fixture compares their producers' slot lists directly. Runs both on the identical statement
+-- used by FREENORM1/2 above.
+run_cmd do
+  let q : AxisSpec := { name := "q", uid := 1, kind := .real }
+  let s : AxisSpec := { name := "s", uid := 2, kind := .real }
+  let stmt : Stmt := .assign "Y" [ .free q, .freeNorm s ]
+    { body := { terms := [ { factors := [ .read "A" [.axis q, .axis s] ] } ] },
+      nonlin := .axiswise .softmax none }
+  let slotsOf : Stmt → List LHSSlot :=
+    fun | .assign _ slots _ => slots | .scatter _ slots _ _ => slots | .recurMorphism .. => []
+  let isIdentity : Stmt → Bool :=
+    fun | .assign _ _ r => (match r.nonlin with | .identity => true | _ => false)
+        | .scatter _ _ r _ => (match r.nonlin with | .identity => true | _ => false)
+        | .recurMorphism .. => true
+  match splitStmt stmt |>.run 0 with
+  | .error e _ => throwError s!"PRODUCERSLOTS: splitStmt errored: {repr e}"
+  | .ok splitStmts _ =>
+      match splitStmts.find? isIdentity with
+      | none => throwError s!"PRODUCERSLOTS: splitStmt produced no linear step: {repr splitStmts}"
+      | some regressionProducer =>
+          match physicalizeOne [] 0 0 (.plain stmt) with
+          | .error e => throwError s!"PRODUCERSLOTS: physicalizeOne errored: {repr e}"
+          | .ok (physStmts, _) =>
+              match physStmts.find? (fun sc => match sc with | .plain t => isIdentity t | _ => false) with
+              | some (.plain physProducer) =>
+                  unless slotsOf regressionProducer == slotsOf physProducer do
+                    throwError s!"PRODUCERSLOTS: producer slots diverged — \
+splitStmt={repr (slotsOf regressionProducer)} physicalizeOne={repr (slotsOf physProducer)}"
+              | _ => throwError s!"PRODUCERSLOTS: physicalizeOne produced no linear step \
+(got {physStmts.length} stmts)"
+
 end LeanNCD

@@ -437,6 +437,15 @@ cd leanncd
 "$HOME/.elan/bin/lake" build LeanNCD
 ```
 
+> **Known pre-existing gap (confirmed 2026-08-26, while executing Task 2):** `lake build
+> JaxExperiment` fails in `experiments/jax_bridge/EvalPlanCodegen.lean` — stale `RawEvalPlan`/
+> `CheckedPlanStepEvidence` field references, untouched by any Task 1/2 commit (`git diff` against
+> each confirms it), so this predates the branch. Matches the "repair experiments/jax_bridge" item
+> already open from the 2026-08-21 checkpoint. The `run-evalplan*.sh` scripts depend on
+> `JaxExperiment` and so also fail. Out of scope for Task 2; everything else in the gate was
+> independently verified green (`Tests` 8657 jobs, `LeanNCD` 8543 jobs, commits `4e49935` +
+> `041696a`). Carried into the master plan (§3.3) too.
+
 ---
 
 ### Task 3 — diagnostic differential

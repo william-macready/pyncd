@@ -95,19 +95,21 @@ private def compiledScans : List ScheduledProgram :=
       | _ => false)
   | _ => false))
 
--- `advScratch` (`ScanUnroll.lean`'s `ScanGeom` field, the `%nl` shape `splitNonlins` manufactures
--- for a nonlinear recurrence) is populated only by the `relu`-template generated cases; assert that
--- at least one still does, so a future template change that silently drops those cases is caught
--- here instead of by a later audit.
+-- `advScratch` (`ScanUnroll.lean`'s `ScanGeom` field) used to be populated by the `%nl` shape
+-- `splitNonlins` manufactured for a nonlinear recurrence, in every `relu`-template generated case.
+-- The logical-schedule flip (`papers/nonlinearity_split_pair_direct_lowering.md` §2.1) removed
+-- `splitNonlins` from `compileToScheduled`, so `schedOfCase` no longer produces that shape at all —
+-- assert the new reality (zero, not "at least one") so a future change that reintroduces
+-- schedule-level splitting is caught here instead of by a later audit.
 private def analyzedScans : List ScanGeom :=
   enumScanCases.filterMap (fun c => match schedOfCase c with
     | .error _ => none
     | .ok sched => match sched.stmts.find? (fun s => match s with | .scan .. => true | _ => false) with
         | none => none
         | some sc => (analyzeScan sched.explicitSizes sc).toOption)
--- at least one generated case actually populates advScratch (the recurrence-only nonlinear-carry
--- destination `splitNonlins` manufactures) — previously implicit in which templates happen to exist.
-#guard analyzedScans.any (fun g => !g.advScratch.isEmpty)
+#guard analyzedScans.length == 17
+#guard analyzedScans.all (fun g => g.advScratch.isEmpty)
+#guard analyzedScans.all (fun g => g.scratch.isEmpty)
 
 /-! ## TEST-THE-TESTER (c): the oracle has teeth
 

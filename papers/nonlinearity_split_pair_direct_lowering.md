@@ -670,11 +670,11 @@ therefore classify all ten classes below, and the classification must be a deliv
 | # | Input class | Reachable from surface `compile`? | Required handling |
 |---:|---|---|---|
 | 1 | `.plain (.assign …)`, `nonlin = .identity` | yes | copy, width 1 |
-| 2 | `.plain (.assign …)`, `nonlin = .pointwise _` | yes | split, width 2 |
-| 3 | `.plain (.assign …)`, `nonlin = .axiswise _ none` | yes | split, width 2 |
-| 4 | `.plain (.assign …)`, `nonlin = .axiswise _ (some mask)` | yes | split, width 2; mask rides the consumer |
+| 2 | `.plain (.assign …)`, `nonlin = .pointwise _`, **not** `slotsBecomeScatter` | yes | split, width 2 |
+| 3 | `.plain (.assign …)`, `nonlin = .axiswise _ none`, **not** `slotsBecomeScatter` | yes | split, width 2 |
+| 4 | `.plain (.assign …)`, `nonlin = .axiswise _ (some mask)`, **not** `slotsBecomeScatter` | yes | split, width 2; mask rides the consumer |
 | 5 | `.plain (.scatter …)`, `nonlin = .identity` | yes | copy, width 1 |
-| 6 | `.plain (.scatter …)`, `nonlin ≠ .identity` | **no** — `checkScatterNonlin` rejects first | **reject; never a silent copy** |
+| 6 | `.plain (.scatter …)`, `nonlin ≠ .identity`, **OR** `.plain (.assign …)`, `nonlin ≠ .identity` **AND** `slotsBecomeScatter` | **no** — `checkScatterNonlin` rejects both spellings first, byte-identical payload | **reject; never a silent copy.** At least two known doors closed (implementation review, 2026-08-26): an `.assign` with an `.affine` or diagonal LHS would otherwise take the split arm and silently drop the affine placement (`LHSSlot.toReadIdx` maps `.affine _ => none`). A third door — `.iterAt`/`.iterNext` LHS slots on a `.plain (.assign …)`, which `toReadIdx` also collapses, discarding the pinned literal/shift — is known open, not yet closed; see `LeanNCD/DSL/AGENTS.md`'s case table and the slice's SDD ledger for the reproduction. |
 | 7 | `.plain (.recurMorphism …)` | no — `unsupportedRecurMorphism` | copy, width 1 (carries no `RHSExpr`) |
 | 8 | `.scan …` (`isAffine = false`) | yes | copy verbatim, width 1 |
 | 9 | `.scan …` (`isAffine = true`) | yes | copy verbatim, width 1 |
@@ -1299,6 +1299,16 @@ cd leanncd
 "$HOME/.elan/bin/lake" build Tests
 "$HOME/.elan/bin/lake" build LeanNCD
 ```
+
+> **Known pre-existing gap (confirmed 2026-08-26, during the slice plan's Task 2):** `lake build
+> JaxExperiment` fails in `experiments/jax_bridge/EvalPlanCodegen.lean` (stale `RawEvalPlan`/
+> `CheckedPlanStepEvidence` field references), and this is **not** caused by this slice's work —
+> `git diff` against every T1/T2 commit confirms `EvalPlanCodegen.lean` is untouched by either. It
+> predates this branch, matching the "repair experiments/jax_bridge" item already open from the
+> 2026-08-21 checkpoint. The `run-evalplan*.sh` scripts depend on `JaxExperiment` building and so
+> also fail. This gate line item cannot go green until that separate, out-of-scope repair lands;
+> everything else in this gate is unaffected and was independently verified green (`Tests` 8657
+> jobs, `LeanNCD` 8543 jobs).
 
 Require two reviews: one for logical/physical pipeline and route equality, one for proof evidence,
 oracle guards, and unchanged public Agreement. Task 1 succeeds only when every command is green and no

@@ -39,11 +39,18 @@ structure ScanProgram where
   env      : DeclEnv
   extNames : Finset String
 
-structure LinearProgram where
-  decls    : List Decl
-  stmts    : List ScanStmt     -- no nonlinearity in RHSExpr.nonlin
-  env      : DeclEnv
-  extNames : Finset String
+/-- **Deprecated compatibility alias** for `ScanProgram` (§2.1).
+
+    This used to be a distinct structure whose only difference from `ScanProgram` was an
+    unenforced prose invariant ("no nonlinearity in `RHSExpr.nonlin`") established by
+    `splitNonlins`. Nonlinearities are no longer split before scheduling — the schedule is
+    LOGICAL and a nonlinear plain assignment is expanded into a private route fragment at the
+    `route` boundary (`Pipeline/RouteFragments.lean`) — so the invariant is neither established
+    nor relied on. `schedule` accepts the post-`finalizeScans` logical `ScanProgram` directly.
+
+    Retained only so the regression-only `splitNonlins` callers keep reading naturally. New code
+    should say `ScanProgram`. -/
+abbrev LinearProgram := ScanProgram
 
 structure ScheduledProgram where
   decls    : List Decl

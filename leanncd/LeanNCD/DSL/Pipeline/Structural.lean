@@ -668,14 +668,6 @@ private def Decl.axisCount : Decl → Nat
 private def stmtReads (s : Stmt) : List (String × Nat) :=
   s.readFactors.map (fun (nm, es) => (nm, es.length))
 
-/-- Will this LHS be lowered to a `scatter` (publishing its full slot-count rank)? True for an affine
-    LHS (`Out[2*i,2*j]`) or a diagonal LHS with a repeated free axis (`Y[i,i]`). Shared by the
-    read-rank guard (`stmtLhsRank`) and `lowerArith` so they agree on the published rank. -/
-def slotsBecomeScatter (slots : List LHSSlot) : Bool :=
-  slots.any (fun sl => match sl with | .affine _ => true | _ => false)
-  || (let us := slots.filterMap (·.freeUID?)
-      us.length ≠ us.eraseDups.length)
-
 /-- The produced (published) rank of a stmt's LHS — what a reader's arity must match. A LHS that
     becomes a `scatter` (`slotsBecomeScatter`: affine `Out[2*i,2*j]` ⇒ 2, or diagonal `Y[i,i]` ⇒ 2)
     publishes its full placement rank (`ls.length`); otherwise it publishes the dedup'd free-axis

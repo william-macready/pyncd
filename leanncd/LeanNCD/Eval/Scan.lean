@@ -100,9 +100,11 @@ def evalScan (decls : List Decl) (env : HashMap String DenseTensor) (sizes : Has
         for s in recur do
           let (nm, slice) ← evalStmtSliceSeeded decls stepEnv sizes seed s
           -- classify by NAME: only the allocated scan states (`stateNames`) are written into `work`.
-          -- A per-step intermediate may itself carry an iteration slot (e.g. a `splitNonlins`-lifted
-          -- `%nl…` derived from the recurrence), but it is NOT an allocated state — keep it as a raw
-          -- slice in the step env only. (This is the crucial distinction from a slot-based test.)
+          -- A per-step intermediate may itself carry an iteration slot (a recurrence-only
+          -- destination with the same all-axis `+1` shape as a state result — nothing in the
+          -- production chain manufactures this today, but a hand-built schedule still can), and it
+          -- is NOT an allocated state — keep it as a raw slice in the step env only. (This is the
+          -- crucial distinction from a slot-based test.)
           if stateNames.contains nm then
             -- a state slice: write at (position, currentIndex+1) for each of THIS stmt's advancing axes
             let iters := (iterSlotPositions s).map (fun (u, p) => (p, ((seed[u]?).getD 0).toNat + 1))

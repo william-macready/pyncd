@@ -179,16 +179,19 @@ by grep before writing these) — the mutation check that "always allocate an in
 `.identity`" is a silent regression needs a fixture that actually counts slots/steps, not merely
 `.toOption.isSome`.
 
-**A real finding from writing these, worth stating plainly**: a source-text-authored nonlin
-statement compiles through TWO independent splitting layers, not one — `splitNonlins`
-(`DSL/Pipeline/Lowering.lean`, pre-existing, unrelated to Thread 4) ALREADY splits any
-non-`.identity` statement into a linear step (`%nl{uid}`) plus a nonlin step reading it, before
-`ScheduledProgram`/`prepareEvalPlan` ever see it; `prepareEvalPlan`'s own two-step chain (this task)
-then splits the nonlin step's OWN body a second time (a redundant, but harmless, identity-copy
-`.assign` immediately followed by the real `.pointwise`/`.axiswise` step). The two isolated fixtures
-right below use a hand-built, `splitNonlins`-free `ScheduledProgram` (via `axiswiseSched` from
-Section 1) to pin TASK 3's OWN two-slot/two-step contribution cleanly; the TLProgram-sourced
-fixtures further down additionally pin the composed (both-layers) reality real source text produces. -/
+**Historical note, kept because the fixture numbers below moved because of it**: a
+source-text-authored nonlin statement used to compile through TWO independent splitting layers.
+`splitNonlins` (`DSL/Pipeline/Lowering.lean`) split any non-`.identity` statement into a linear
+step (`%nl{uid}`) plus a nonlin step reading it BEFORE `ScheduledProgram`/`prepareEvalPlan` ever
+saw it, and `prepareEvalPlan`'s own two-step chain (this task) then split the nonlin step's OWN
+body a second time. The logical-schedule flip
+(`papers/nonlinearity_split_pair_direct_lowering.md` §2.1) removed the first layer from the
+production chain: `compileToScheduled` now hands Eval the LOGICAL schedule (one statement per
+source statement, zero generated names) and the private producer/consumer pair is built inside
+`route`, which the Eval path never calls. So there is exactly ONE splitting layer today — this
+task's. The isolated fixtures right below use a hand-built `ScheduledProgram` (via `axiswiseSched`
+from Section 1) to pin TASK 3's OWN two-slot/two-step contribution cleanly; the TLProgram-sourced
+fixtures further down pin what real source text now produces end to end. -/
 
 /-- `PlanStep` field-access helper for pinning the exact step-kind sequence a nonlin-bearing
     statement compiles to. -/
@@ -220,11 +223,14 @@ def axiswiseIsolatedPrepared : Option PreparedPlan :=
 #guard axiswiseIsolatedPrepared.map (fun p => p.plan.raw.steps.size) == some 2
 #guard axiswiseIsolatedPrepared.map (fun p => p.plan.raw.steps.map stepKind) == some #["assign", "axiswise"]
 
--- The COMPOSED reality for real source text: `splitNonlins` contributes its own extra `%nl`
--- linear step ahead of Task 3's two-step chain, so a real `relu` program's total is
--- `.identity`-isolated's 2-slot/1-step PLUS `splitNonlins`' 1 extra slot/step PLUS Task 3's own
--- 1 extra slot/step = 5 slots / 3 steps overall (one MORE input than the isolated fixtures above,
--- since this program has two external tensors, W and x).
+-- The reality for real source text. There is now exactly ONE splitting layer, not two: the
+-- schedule `compileToScheduled` hands to `prepareEvalPlan` is LOGICAL (§2.1 — `splitNonlins` left
+-- the production chain; the private producer/consumer pair is built inside `route`, which the Eval
+-- path never calls), so the only split here is Task 3's own two-step chain. The relu program's
+-- total is therefore `.identity`-isolated's 2-slot/1-step PLUS Task 3's own 1 extra slot/step,
+-- PLUS one more input than the isolated fixtures (this program has two external tensors, W and x)
+-- = 4 slots / 2 steps. Before the logical-schedule flip this read 5 slots / 3 steps, the extra
+-- slot/step being the `%nl{uid}` linear statement `splitNonlins` manufactured.
 def reluProg : TLProgram := tlprog!{ H[i] := relu(W[i, j] · x[j]) }
 def reluProgInputs : HashMap String DenseTensor :=
   HashMap.ofList [("W", tl [2,2] [1,-1, -2,1]), ("x", tl [2] [1,1])]
@@ -233,14 +239,16 @@ def reluProgPrepared : Option PreparedPlan := Id.run do
   | .error _ _ => none
   | .ok sched _ => (prepareEvalPlan sched (InputSignature.ofDenseInputs reluProgInputs)).toOption
 
-#guard reluProgPrepared.map (fun p => p.plan.raw.tensorSigs.size) == some 5
-#guard reluProgPrepared.map (fun p => p.plan.raw.steps.size) == some 3
-#guard reluProgPrepared.map (fun p => p.plan.raw.steps.map stepKind) == some #["assign", "assign", "pointwise"]
--- Only "H" (the final published name) and the `splitNonlins`-minted "%nl..." intermediate are
--- materialized under a name — Task 3's OWN internal slot (this task's two-step chain's middle slot)
--- is never named, exactly as the isolated fixtures above already pin.
+#guard reluProgPrepared.map (fun p => p.plan.raw.tensorSigs.size) == some 4
+#guard reluProgPrepared.map (fun p => p.plan.raw.steps.size) == some 2
+#guard reluProgPrepared.map (fun p => p.plan.raw.steps.map stepKind) == some #["assign", "pointwise"]
+-- Only "H" (the final published name) is materialized under a name — Task 3's OWN internal slot
+-- (this task's two-step chain's middle slot) is never named, exactly as the isolated fixtures
+-- above already pin. §2.1 property: NO generated name reaches the Plan compiler at all now, so
+-- there is no `%nl…` materialized name beside it either — pinned exactly below.
 #guard reluProgPrepared.map (fun p => (p.bindings.materializedNames.map (·.name)).contains "H")
   == some true
+#guard reluProgPrepared.map (fun p => p.bindings.materializedNames.map (·.name)) == some #["H"]
 
 def softmaxProg : TLProgram := tlprog!{ Y[q, s.] := softmax(A[q, s]) }
 def softmaxProgInputs : HashMap String DenseTensor :=
@@ -250,10 +258,11 @@ def softmaxProgPrepared : Option PreparedPlan := Id.run do
   | .error _ _ => none
   | .ok sched _ => (prepareEvalPlan sched (InputSignature.ofDenseInputs softmaxProgInputs)).toOption
 
--- Same composed shape as `relu` above, but with only ONE external input (A): 4 slots, 3 steps.
-#guard softmaxProgPrepared.map (fun p => p.plan.raw.tensorSigs.size) == some 4
-#guard softmaxProgPrepared.map (fun p => p.plan.raw.steps.size) == some 3
-#guard softmaxProgPrepared.map (fun p => p.plan.raw.steps.map stepKind) == some #["assign", "assign", "axiswise"]
+-- Same shape as `relu` above, but with only ONE external input (A): 3 slots, 2 steps.
+-- (Was 4 slots / 3 steps before the logical-schedule flip.)
+#guard softmaxProgPrepared.map (fun p => p.plan.raw.tensorSigs.size) == some 3
+#guard softmaxProgPrepared.map (fun p => p.plan.raw.steps.size) == some 2
+#guard softmaxProgPrepared.map (fun p => p.plan.raw.steps.map stepKind) == some #["assign", "axiswise"]
 
 /-! ## Section 4 — deliberate legacy-narrowing fixtures (§3)
 
