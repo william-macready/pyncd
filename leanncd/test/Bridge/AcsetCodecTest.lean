@@ -5,8 +5,9 @@ import LeanNCD.Bridge.AcsetCodec
 
 Computational witness of the Task C theorem `AcsetCodec.toThreadedComposed_fromThreadedComposed`:
 decoding the encoded acset tables recovers the original `ThreadedComposed` on the nose, checked by
-`decide` over the §12.1 example programs. A `#guard` failure means the encode/decode pair drifted out
-of sync (fires at `lake build`). -/
+`decide` over the §12.1 example programs (fixtures 1-5) plus nonlinear-routing round trips added by
+`nonlinearity_split_pair_direct_lowering.md` §3.4's slice (fixtures 6-9). A `#guard` failure means
+the encode/decode pair drifted out of sync (fires at `lake build`). -/
 
 namespace LeanNCD
 open LeanNCD.AcsetCodec
@@ -61,7 +62,7 @@ open LeanNCD.AcsetCodec
         = tl!{ Y[q, s.] := softmax(A[q, s]) }
 
 -- 8. Nonlinear chain round trip (T2 Task 3, B3): TWO nonlinear statements, the second reading the
--- first's output. Clone of fixture 6 (B1 above), with a second ReLU-split fragment appended.
+-- first's output. Clone of fixture 6 (B1 above), with a second tanh-split fragment appended.
 #guard toThreadedComposed (fromThreadedComposed (tl!{
           H[i] := relu(W[i, j] · x[j])
           Z[i] := tanh(H[i]) }))

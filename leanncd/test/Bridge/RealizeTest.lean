@@ -94,11 +94,16 @@ example : tcB5.codObj.length = 1 := by rfl         -- cod: the consumer's one ou
 example : (tcB5.wirePlan.1.map (·.sel)) = [[0, 1], [0]] := by rfl
 example : tcB5.wirePlan.2.2 = [0] := by rfl
 
--- B7: routed nonlinear CHAIN (`RouteWeaveTest`'s fixture-3 shape) -- the downstream read must wire
--- to the fragment's EXIT (the consumer, physical step 1), never its private producer (step 0).
--- `externalPort 2` (V) resolves to step 2, and the chain's 3rd physical step's wirePlan selection
--- length is 3 (V plus the two live carries from steps 0-1), confirming the exit, not the entry, is
--- what the downstream statement actually wires to.
+-- B7: routed nonlinear CHAIN (`RouteWeaveTest`'s fixture-3 shape, `f3Chain`). `RouteWeaveTest`'s
+-- own F3 already pins, at the `.routing` level, that the downstream statement wires to the
+-- fragment's EXIT (physical step 1, the consumer) and never its private producer (step 0): step 2
+-- reads `Wire.internal 1 0`. Pinned again here directly (not left implicit in a derived value --
+-- `wirePlan` is a pure function of `steps`/`routing`, so ITS shape below follows deterministically
+-- from the same routing fact, not an independent check of the exit-vs-entry invariant). B7's real
+-- new coverage is the realization SHAPE (`realizeDom`/`codObj`/`wirePlan`) of a ROUTED nonlinear
+-- chain, which nothing else in this file exercises -- `externalPort 2` is NOT a discriminator for
+-- exit-vs-entry (it resolves to `(2, 1)` under either routing; only the `wirePlan` selections and
+-- the `.internal` guard below actually differ).
 private def tcB7 : ThreadedComposed := tl!{
   H[i] := relu(W[i, j] · x[j])
   Z[k] := H[i] · V[i, k]
@@ -107,6 +112,7 @@ private def tcB7 : ThreadedComposed := tl!{
 #guard tcB7.externalPort 1 == some (0, 1)
 #guard tcB7.externalPort 2 == some (2, 1)
 #guard tcB7.wellFormedDom
+#guard (tcB7.routing.getD 2 []).contains (Wire.internal 1 0)   -- the exit invariant, asserted directly
 example : (realizeDom tcB7).length = 3 := by rfl   -- dom: nExternal = 3 (W, x, V)
 example : tcB7.codObj.length = 1 := by rfl         -- cod: Z, the last step's sole output
 example : (tcB7.wirePlan.1.map (·.sel)) = [[0, 1, 2], [0, 1], [0, 1]] := by rfl
@@ -120,6 +126,7 @@ private def tcB8 : ThreadedComposed := tl!{
   G[j, 0]    := X[j]
   G[j, l +1] := relu(G[j, l] · W_G[j, k]) }
 #guard tcB8.steps.length == 1
+#guard tcB8.steps.map (·.op) == [BrOp.scan]   -- the internal ReLU never surfaces as its own op
 #guard tcB8.externalPort 0 == some (0, 0)
 #guard tcB8.externalPort 1 == some (0, 1)
 #guard tcB8.wellFormedDom
