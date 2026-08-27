@@ -15,8 +15,8 @@ ACSet decode∘encode round trip — between the OLD split pipeline and producti
 the LOGICAL schedule. The eight deliberate `%nl0` collisions pin the old-rejection/new-acceptance
 transition. The five scan families pin physicalization opacity (G22 — categorical opacity for the
 same 40 cases is exactly G20 restricted to those ids, not recomputed separately), and one
-mechanical guard forbids the
-still-open **third class-6 door**.
+mechanical guard defends against the **third class-6 door** (now closed, see
+`RouteFragments.lean`'s header) ever appearing in this corpus.
 
 ⚠️ **145 corpus cases, not 145 distinct programs, and only 16 distinct ROUTED presentations.**
 `chainProgram`'s `ScheduledProgram` depends on `n` only through `n % 4` (its LHS names are `H{q}`,
@@ -404,12 +404,14 @@ run_cmd check "G22 scan payload opacity (40 cases, 32 split-body)" scanPayloadOb
 
 /-! ### G23 — the third class-6 door stays shut for this corpus
 
-`LHSSlot.toReadIdx` collapses `.iterAt a n` and `.iterNext a` to `.axis a`, discarding the pinned
-literal / the `+1` shift, so a `.plain (.assign …)` carrying an iteration slot would take
-`physicalizeOne`'s split arm and emit a producer/consumer pair whose read and write coordinates
-disagree. `finalizeScans` structurally cannot produce that shape, but this corpus bypasses
-`finalizeScans` — so the invariant is ASSERTED here rather than inherited. The door itself remains
-open and is a later slice's work (`LeanNCD/DSL/Pipeline/RouteFragments.lean`'s header). -/
+`LHSSlot.toReadIdx` still collapses `.iterAt a n` and `.iterNext a` to `.axis a`, discarding the
+pinned literal / the `+1` shift — that definition is unchanged — but `physicalizeOne` now rejects
+a `.plain (.assign …)` carrying an iteration slot before ever reaching that call
+(`CompileError.unsupportedNonlinIterSlot`), so the door itself is CLOSED (`RouteFragments.lean`'s
+header, `slotsCarryIterSlot`). `finalizeScans` structurally cannot produce this shape, but this
+corpus bypasses `finalizeScans` — so the invariant is ASSERTED here rather than inherited. This
+guard stays as defense-in-depth, so a future corpus family that does hit the shape fails loud
+instead of silently mis-routing. -/
 
 def plainIterSlots (sp : ScheduledProgram) : Bool :=
   sp.stmts.any fun

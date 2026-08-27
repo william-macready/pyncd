@@ -48,16 +48,28 @@ reclassifies every `slotsBecomeScatter` `.assign` into `Stmt.scatter`), so commo
 precedence is unchanged. Both are reachable from a hand-built logical schedule handed straight to
 this boundary, which is exactly the caller set this design widens.
 
-⚠️ **A third door is open and NOT closed here** (found in review, recorded in the SDD ledger, not
-yet fixed): `toReadIdx` also collapses `.iterAt a n` and `.iterNext a` to `axis a`, discarding the
-pinned literal `n` / the `+1` shift — so a `.plain (.assign …)` carrying an iteration slot (a shape
-`finalizeScans` should have already grouped into a `.scan` node, and only a hand-built schedule can
-still present here) takes the split arm and emits a producer/consumer pair whose read and write
-coordinates disagree. Same reachability class as the two doors above (unreachable from `compile`),
-same silent-mis-route risk, not yet given a rejection arm — deliberately left open pending a
-naming decision (`unsupportedNonlinScatter` would be a misnomer here; these slots do not become a
-scatter, they belong to scan grouping). See `.superpowers/sdd/2026-08-26-nonlinearity-t1-logical-schedule/progress.md`
-for the reproduction.
+✅ **A third door was open and is now CLOSED** (found in review, recorded in the SDD ledger,
+closed here): `toReadIdx` also collapsed `.iterAt a n` and `.iterNext a` to `axis a`, discarding
+the pinned literal `n` / the `+1` shift — so a `.plain (.assign …)` carrying an iteration slot (a
+shape `finalizeScans` should already have grouped into a `.scan` node, and only a hand-built
+schedule can still present here) took the split arm and emitted a producer/consumer pair whose
+read and write coordinates disagreed. Same reachability class as the two doors above (unreachable
+from `compile`).
+
+Fixed not by correcting `toReadIdx` — `.iterAt`/`.iterNext` slots have no defined meaning on a
+`.plain` (non-scan) node: outside a scan body there is no "current iteration" for `.iterNext`'s
+`+1` to shift relative to, and per `LHSSlot.outIdx` itself, `.iterAt a n`/`.iterNext a` write the
+exact same coordinates as `.affine (.const n)`/`.affine (.shift a 1)` — a standalone `.plain`
+node carrying either slot IS a scatter-shaped write in every way that matters at this boundary,
+just one `slotsBecomeScatter` was never asked to look for (deliberately: inside a REAL scan body
+these slots are not scatter-shaped at all, see `LHSSlot.isAffine`). Rejected instead, mirroring
+class 6's existing policy: a new local predicate `slotsCarryIterSlot` (this file — local because,
+unlike `slotsBecomeScatter`, it has no cross-layer caller) flags any `.iterAt`/`.iterNext` slot,
+and `fragmentClass`/`physicalizeOne`'s nonlinear `.assign` arms reject when it holds, with a new
+`CompileError.unsupportedNonlinIterSlot` diagnostic — `unsupportedNonlinScatter` would have been
+a misnomer, since these slots never become a scatter through the surface compiler; they only
+behave like one when illegally isolated from the scan grouping that should own them. See
+`test/DSL/Pipeline/RouteWeaveTest.lean`'s fixture 16 for the regression.
 
 ✅ **A fourth door was found (whole-branch review, 2026-08-27) and is now CLOSED.**
 `slotsBecomeScatter`'s diagonal-write detector (`Ast.lean`) went through `LHSSlot.freeUID?`,
