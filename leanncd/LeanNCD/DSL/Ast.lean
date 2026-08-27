@@ -225,7 +225,7 @@ def LHSSlot.axisUID? (sl : LHSSlot) : Option UID := (sl.axisSpec?).map (·.uid)
     and `Y[i, i.]` name the same mathematical shape). Intentionally selective: a repeated
     `freeUID?` across a stmt's slots is how a diagonal LHS is detected and routed to `scatter`.
     NOT `axisUID?` (which also counts `iterAt`/`iterNext`, whose repeats mean something else —
-    see the third class-6 door, still open, `RouteFragments.lean`'s header).
+    see the third class-6 door (now closed), `RouteFragments.lean`'s header).
 
     ⚠️ Fixed 2026-08-27 (found in whole-branch review, the "fourth class-6 door"): this used to
     match only `.free`, so `[.free a, .freeNorm a]` (the same axis) counted as ONE free UID and

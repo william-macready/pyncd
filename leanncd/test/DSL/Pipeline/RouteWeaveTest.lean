@@ -584,4 +584,48 @@ private def f15RouteRejects (nl : Nonlin) : Bool :=
 #guard f15RouteRejects (.pointwise .relu)
 #guard f15RouteRejects (.axiswise .softmax none)
 
+/-! ### Fixture 16 — §2.4 class 6, the third door: a nonlinear `.plain (.assign …)` whose LHS
+carries a scan iteration slot (`.iterAt`/`.iterNext`). `finalizeScans` always groups a statement
+with a nonempty `iterInfo` into a `.scan` node (never leaves it `.plain`), so this shape is
+reachable only from a hand-built `ScheduledProgram` fed straight to `physicalizeForRoute`/`route` —
+same reachability class as fixtures 14/15. Before this fix, `toReadIdx` collapsed `.iterAt a n`/
+`.iterNext a` to `.axis a`, silently discarding the pinned literal/shift and emitting a
+producer/consumer pair with mismatched read/write coordinates (see `RouteFragments.lean`'s header).
+Closed here by rejecting instead, mirroring class 6. Asserted at public `route`, mirroring
+fixtures 14/15. -/
+
+private def f16Axis : AxisSpec := { name := "l", uid := 1, kind := .nat }
+/-- Base-case trigger: a pinned literal write `Y[2]`. -/
+private def f16IterAtSlots : List LHSSlot := [.iterAt f16Axis 2]
+/-- Recurrence trigger: a shifted write `Y[l+1]`. -/
+private def f16IterNextSlots : List LHSSlot := [.iterNext f16Axis]
+
+private def f16IterAssign (slots : List LHSSlot) (nl : Nonlin) : ScheduledProgram :=
+  { decls := []
+  , stmts := [.plain (.assign "Y" slots
+      { body := { terms := [{ factors := [.read "X" [.axis f16Axis]] }] }, nonlin := nl, agg := .sum })]
+  , env := {}
+  , extNames := insert "X" (∅ : Finset String)
+  , explicitSizes := ∅ }
+
+private def f16RouteRejects (slots : List LHSSlot) (nl : Nonlin) : Bool :=
+  match route (f16IterAssign slots nl) |>.run 0 with
+  | .error (.unsupportedNonlinIterSlot "Y") _ => true
+  | _ => false
+
+-- both triggers × both nonlinearity shapes: REJECTED at public `route`.
+#guard f16RouteRejects f16IterAtSlots (.pointwise .relu)
+#guard f16RouteRejects f16IterAtSlots (.axiswise .softmax none)
+#guard f16RouteRejects f16IterNextSlots (.pointwise .relu)
+#guard f16RouteRejects f16IterNextSlots (.axiswise .softmax none)
+-- the qualifier bites ONLY on a nonlinearity: an IDENTITY `.iterAt` `.assign` is still class 1/copy.
+#guard match route (f16IterAssign f16IterAtSlots .identity) |>.run 0 with
+  | .ok tc _ => tc.steps.length == 1
+  | .error _ _ => false
+-- `fragmentClass`/`fragmentWidth` agree with `physicalizeOne`'s rejection (obligation 5a's
+-- converse direction, which the theorem is vacuous on).
+#guard fragmentWidth ((f16IterAssign f16IterAtSlots (.pointwise .relu)).stmts.getD 0 default) == 0
+#guard fragmentWidth ((f16IterAssign f16IterNextSlots (.pointwise .relu)).stmts.getD 0 default) == 0
+#guard fragmentWidth ((f16IterAssign f16IterAtSlots .identity).stmts.getD 0 default) == 1
+
 end LeanNCD
