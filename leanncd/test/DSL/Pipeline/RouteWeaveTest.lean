@@ -558,4 +558,30 @@ private def f14ScatterTwin (nl : Nonlin) : ScheduledProgram :=
 #guard fragmentWidth ((f14AffineAssign f14DiagSlots (.pointwise .relu)).stmts.getD 0 default) == 0
 #guard fragmentWidth ((f14AffineAssign f14AffineSlots .identity).stmts.getD 0 default) == 1
 
+/-! ### Fixture 15 — §2.4 class 6, the fourth door: a nonlinear `.plain (.assign …)` whose LHS
+combines `.free a` and `.freeNorm a` on the SAME axis. Fixture 14 covers the plain-diagonal and
+affine triggers of `slotsBecomeScatter`; this covers the `.freeNorm` trigger found in whole-branch
+review (2026-08-27) and fixed here — `slotsBecomeScatter`'s `freeUID?` now counts `.freeNorm` too.
+Asserted at public `route`, mirroring fixture 14 exactly. -/
+
+private def f15Axis : AxisSpec := { name := "i", uid := 1, kind := .real }
+/-- FreeNorm-diagonal trigger: `Y[i, i.]` — the SAME axis, once plain once norm-marked. -/
+private def f15FreeNormDiagSlots : List LHSSlot := [.free f15Axis, .freeNorm f15Axis]
+
+private def f15FreeNormDiagAssign (nl : Nonlin) : ScheduledProgram :=
+  { decls := []
+  , stmts := [.plain (.assign "Y" f15FreeNormDiagSlots
+      { body := { terms := [{ factors := [.read "X" [.axis f15Axis]] }] }, nonlin := nl, agg := .sum })]
+  , env := {}
+  , extNames := insert "X" (∅ : Finset String)
+  , explicitSizes := ∅ }
+
+private def f15RouteRejects (nl : Nonlin) : Bool :=
+  match route (f15FreeNormDiagAssign nl) |>.run 0 with
+  | .error (.unsupportedNonlinScatter "Y") _ => true
+  | _ => false
+
+#guard f15RouteRejects (.pointwise .relu)
+#guard f15RouteRejects (.axiswise .softmax none)
+
 end LeanNCD

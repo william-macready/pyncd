@@ -443,12 +443,11 @@ def freeNormStructural (c : CorpusCase) : Bool :=
             -- … the PRODUCER degrades it, exactly as `producerSlots` prescribes …
             producer == producerSlots slots && !slotsHaveFreeNorm producer &&
             -- … the degraded producer is not ITSELF scatter-shaped (the fourth class-6 door,
-            -- found in whole-branch review 2026-08-27: `slotsBecomeScatter`'s diagonal-write
-            -- detector only recognizes `.free`-marked axes via `freeUID?`, so `[.free a,
-            -- .freeNorm a]` is not flagged at the logical level, yet degrading `.freeNorm a`
-            -- to `.free a` CAN produce a diagonal `[.free a, .free a]` producer that no gate
-            -- checked. None of the 9 corpus cases hit this shape today -- `freeNormProgram`
-            -- uses three distinct axes -- so this conjunct is free here; it exists so a future
+            -- found in whole-branch review 2026-08-27 and CLOSED by broadening `freeUID?`
+            -- (`Ast.lean`) to also count `.freeNorm` UIDs — see `RouteFragments.lean`'s header.
+            -- A `[.free a, .freeNorm a]` logical LHS is now rejected by `checkScatterNonlin`
+            -- before physicalization ever runs, so this conjunct is unreachable-false by
+            -- construction rather than merely untested; kept as defense-in-depth, so a future
             -- case that does hit the shape fails the build instead of silently mis-routing) …
             !slotsBecomeScatter producer &&
             -- … and the CONSUMER keeps it.
