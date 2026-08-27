@@ -206,6 +206,16 @@ inductive FragmentClass
   | rejectNonlinScatter
   deriving DecidableEq, Repr
 
+/-- Does this LHS carry a scan iteration slot (`.iterAt`/`.iterNext`)? Local to this file (unlike
+    `slotsBecomeScatter`, which needs three cross-layer call sites, §1) — mirrors
+    `Pipeline/Structural.lean`'s `checkScatterNoScan`'s inline `hasIterSlot`, checked here at the
+    route boundary instead of pre-`finalizeScans`: post-`finalizeScans`, EVERY well-formed
+    `ScanStmt.plain` has empty `iterInfo` (a stmt with any iteration slot is always grouped into
+    `.scan` — see `finalizeScans`'s `plainStmts` filter), so a nonempty result here can only come
+    from a hand-built `ScheduledProgram` that bypassed that grouping (the third class-6 door). -/
+def slotsCarryIterSlot (slots : List LHSSlot) : Bool :=
+  slots.any (fun sl => match sl with | .iterAt .. | .iterNext _ => true | _ => false)
+
 /-- §2.4's ten-class classification. Every class is reached by an explicit arm, though two pairs
     share one arm where the handling is identical (3/4 — masked and unmasked axiswise; 8/9 — plain
     and affine scans). There is no catch-all: adding a `ScanStmt`, `Stmt`, or `Nonlin` constructor
@@ -215,10 +225,12 @@ def fragmentClass : ScanStmt → FragmentClass
       match rhs.nonlin with
       | .identity              => .copy                  -- 1
       | .pointwise _           =>                        -- 2
-          if slotsBecomeScatter slots then .rejectNonlinScatter else .split
+          if slotsBecomeScatter slots || slotsCarryIterSlot slots then .rejectNonlinScatter
+          else .split
       | .axiswise _ _          =>                        -- 3 (no mask) / 4 (mask rides the
                                                          --   consumer, so the width is the same)
-          if slotsBecomeScatter slots then .rejectNonlinScatter else .split
+          if slotsBecomeScatter slots || slotsCarryIterSlot slots then .rejectNonlinScatter
+          else .split
   | .plain (.scatter _ _ rhs _) =>
       match rhs.nonlin with
       | .identity              => .copy                  -- 5
@@ -241,6 +253,7 @@ def physicalizeOne (sourceNames : List String) (logicalIndex firstStep : Nat)
       | .identity => copyOne                                                        -- 1
       | .pointwise _ | .axiswise _ _ =>                                             -- 2/3/4
         if slotsBecomeScatter slots then throw (.unsupportedNonlinScatter nm)       -- 6 (`.assign` door)
+        else if slotsCarryIterSlot slots then throw (.unsupportedNonlinIterSlot nm) -- 6 (third door)
         else
           let internal := routeName sourceNames logicalIndex
           let producer : Stmt := .assign internal (producerSlots slots)

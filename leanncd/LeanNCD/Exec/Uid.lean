@@ -50,6 +50,17 @@ inductive CompileError
                                                              -- out of scope for now; see `checkScatterNonlin`
                                                              -- (Structural.lean) and `splitStmt`'s `.scatter` arm
                                                              -- (Lowering.lean)
+  | unsupportedNonlinIterSlot : String → CompileError        -- the third class-6 door: a nonlinear
+                                                               -- `.plain (.assign …)`'s LHS carries a
+                                                               -- scan iteration slot (`.iterAt`/
+                                                               -- `.iterNext`) at the route boundary.
+                                                               -- `finalizeScans` always groups such a
+                                                               -- statement into a `.scan` node, so
+                                                               -- this shape is reachable only from a
+                                                               -- hand-built `ScheduledProgram` that
+                                                               -- bypasses that grouping — see
+                                                               -- `RouteFragments.lean`'s header and
+                                                               -- `slotsCarryIterSlot`
   | scanAxisNotIter      : String → CompileError            -- #5b: an axis used as a scan recurrence
                                                              -- (an LHS slot shifted by exactly 1) is not
                                                              -- declared `iter` — `iter l = N` is required;
