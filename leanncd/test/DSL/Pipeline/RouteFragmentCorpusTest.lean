@@ -462,4 +462,406 @@ run_cmd do
                 throwError "G25: the logical consumer must KEEP the `.freeNorm` marker"
           | _, _ => throwError "G25: unexpected logical/physical statement shape"
 
+/-! ## §4 The 19-case named payload matrix (slice T2 Task 2)
+
+Nineteen **named** fixtures, each a clone of a specific existing donor with **exactly one field
+changed**, counted entirely separately from §1's 145 generated cases. `fixtures` and `corpus` are
+disjoint lists with disjoint guards (`fixtures.length == 19` is P1; `corpus.length == 145` is G1);
+neither may ever be allowed to inflate the other's count.
+
+Donors (§0.5 of the slice plan verified each one's visibility):
+
+| Fixtures | Donor | The single changed field |
+|---|---|---|
+| `sigmoid`, `tanh`, `gelu`, `leaky-relu` | `NonlinCompileTest.reluProg` (public) | the `PointwiseFn` tag |
+| `normalize`, `l2-normalize` | `NonlinCompileTest.softmaxProg` (public) | the `AxiswiseFn` tag |
+| `relu-over-max`, `relu-over-min` | `LoweringTest`'s AGG1 construction | `agg` → `.max` / `.min` |
+| `causal-mask`, `negated-causal-mask` | `AcsetCodecTest` fixture 2's causal mask | the mask predicate (negated) |
+| `band-iverson`, `negated-band-iverson` | `ParsePredicatesTest.band` (**private** — CLONED, not imported) | the Iverson predicate (negated) |
+| `tensor-metadata`, `predicate-metadata` | `CompileTest.acceptedSched`'s decl/env shape (public) | the `Decl` → `.tensor` / `.predicate` |
+| `scale-read`, `shift-read` | `LoweringTest`'s strided read | the `IdxExpr` |
+| `general-affine-read` | `AcsetCodecTest` fixture 3's strided convolution read | the `IdxExpr` |
+| `scan-pre-operation`, `scan-pre-output-weave` | `RecurMorphismTest.stepTC` (**private** — CLONED, not imported) | the nested `op` / the nested output weave |
+
+`ParsePredicatesTest.band` and `RecurMorphismTest.stepTC` are `private def`s, so they are
+unreachable by import and are reproduced here by construction; the remaining donors are public and
+this section reproduces their *construction*, not their identity — nothing under `papers/` is
+imported and no donor module is edited.
+
+### Two kinds of payload, and the assertion families that separate them
+
+* **Represented** (11 fixtures — the pointwise/axiswise tags, aggregation, affine reads): the field
+  survives physicalization *and* reaches the categorical output, so the old split leg and production
+  `route` must agree exactly (P3).
+* **Opaque** (8 fixtures in 4 pairs — masks, Iverson predicates, dtype metadata, nested `scanPre`
+  bodies): the field survives physicalization (P2) but the *current* categorical projection does not
+  carry it, so the two members of each pair route identically (P4).
+
+⚠️ **P4 is a statement about the projection, never about semantics.** Each pair carries **two
+separate claims**, deliberately not merged into one sentence: (a) the physical payload really does
+differ between the two members, named field by field; and (b) their routed presentations and ACSet
+encodings are nonetheless equal — i.e. *the current projection omits this field*. `causal-mask` and
+`negated-causal-mask` are NOT semantically equivalent programs, and nothing here asserts that they
+are; if the projection is ever widened to carry masks, (b) is expected to break and that break is
+the correct signal, not a regression.
+
+### No local physicalizer, same rule as §1
+
+The physical leg below is production `physicalizeForRoute` (its `.scheduled` field) and the routing
+legs are §2's `oldTC`/`newTC`. The donor seed's local `physicalize`/`privateName`/`oldPhysicalize`/
+`routeOf`/`acsetOf` and its four `enable…Mutation` toggles are deliberately absent: every mutation
+cycle for this section mutates **production** `LeanNCD/DSL/Pipeline/RouteFragments.lean`.
+-/
+
+/-! ### §4.1 Fixture construction -/
+
+/-- Axes are §1's `i`/`j`/`k` (`mkAxis "i" 1` etc.) — the payload fixtures deliberately share the
+    corpus' axis inventory rather than minting a parallel one. -/
+def readBody (name : String) (idxs : List IdxExpr) : SumExpr :=
+  { terms := [{ factors := [.read name idxs] }] }
+
+/-- A one-statement logical program. Distinct from §1's `scheduled` (which takes a statement LIST
+    and no `env`/`explicitSizes`): the metadata fixtures need both of those fields populated. -/
+def one (stmt : ScanStmt) (decls : List Decl := []) (env : DeclEnv := {})
+    (exts : Finset String := {"X"}) (explicitSizes : Std.HashMap UID Nat := {}) :
+    ScheduledProgram :=
+  { decls, env, extNames := exts, explicitSizes, stmts := [stmt] }
+
+inductive PayloadClass
+  | represented
+  | opaqueMask
+  | opaqueIverson
+  | opaqueMetadata
+  | opaqueScanPre
+  deriving DecidableEq, Repr
+
+structure NamedPayloadFixture where
+  name : String
+  logical : ScheduledProgram
+  payloadClass : PayloadClass
+
+/-- Clone of `NonlinCompileTest.reluProg`'s shape (`H[i] := relu(W[i,j] · x[j])` reduced to a single
+    read), varying **only** the `PointwiseFn` tag. -/
+def pointwise (name : String) (fn : PointwiseFn) : NamedPayloadFixture :=
+  { name, payloadClass := .represented
+    logical := one (.plain (.assign "Y" [.free i]
+      { body := readBody "X" [.axis i], nonlin := .pointwise fn })) }
+
+/-- Clone of `NonlinCompileTest.softmaxProg`'s shape (`Y[q, s.] := softmax(A[q, s])`), varying
+    **only** the `AxiswiseFn` tag. The `.freeNorm` marker is the `s.` of the donor's surface form. -/
+def axiswise (name : String) (fn : AxiswiseFn) : NamedPayloadFixture :=
+  { name, payloadClass := .represented
+    logical := one (.plain (.assign "Y" [.free i, .freeNorm j]
+      { body := readBody "X" [.axis i, .axis j], nonlin := .axiswise fn none })) }
+
+/-- Clone of `LoweringTest`'s AGG1 construction (`Y[i] := relu(maxreduce over j of P[i,j])`, built
+    programmatically there for the same reason — the shape is not spellable in surface syntax),
+    varying **only** `agg`. -/
+def aggregate (name : String) (agg : AggOp) : NamedPayloadFixture :=
+  { name, payloadClass := .represented
+    logical := one (.plain (.assign "Y" [.free i]
+      { body := readBody "X" [.axis i, .axis k], nonlin := .pointwise .relu, agg })) }
+
+/-- `AcsetCodecTest` fixture 2's causal mask, `where s ≤ q`. -/
+def causal : BoolExpr := .rel .le (.embed (.axis j)) (.embed (.axis i))
+def antiCausal : BoolExpr := .not causal
+
+def masked (name : String) (mask : BoolExpr) : NamedPayloadFixture :=
+  { name, payloadClass := .opaqueMask
+    logical := one (.plain (.assign "Y" [.free i, .freeNorm j]
+      { body := readBody "X" [.axis i, .axis j],
+        nonlin := .axiswise .softmax (some mask) })) }
+
+/-- Clone of `ParsePredicatesTest.band`'s tridiagonal band predicate (`private` there, so cloned by
+    construction), lifted into the ReLU donor's body as an Iverson factor. -/
+def band : BoolExpr :=
+  .and (.rel .le (.embed (.axis i)) (.embed (.axis j)))
+    (.rel .lt (.embed (.axis j)) (.embed (.shift i 2)))
+
+/-- The parameter is `pred`, not the donor's `predicate`: this module imports
+    `DSL.Pipeline.RouteWeaveTest → LeanNCD.DSL.Compile → LeanNCD.DSL.Elab`, which registers
+    `predicate` as a TL surface-syntax **token**, so a binder of that name fails to parse. Same
+    class of collision as §1's `mkAxis` rename; the body is otherwise the donor's verbatim. -/
+def iversonFixture (name : String) (pred : BoolExpr) : NamedPayloadFixture :=
+  { name, payloadClass := .opaqueIverson
+    logical := one (.plain (.assign "Y" [.free i]
+      { body := { terms := [{ factors := [
+          .read "X" [.axis i], .iverson pred] }] },
+        nonlin := .pointwise .relu })) }
+
+/-- Clone of `CompileTest.acceptedSched`'s declaration/environment shape, varying **only** the
+    `Decl` constructor. -/
+def metadataFixture (name : String) (decl : Decl) : NamedPayloadFixture :=
+  { name, payloadClass := .opaqueMetadata
+    logical := one (.plain (.assign "Y" [.free i]
+      { body := readBody "X" [.axis i], nonlin := .identity }))
+      [decl] (({} : DeclEnv).insert "Meta" decl) {"X"}
+      (({} : Std.HashMap UID Nat).insert i.uid 4) }
+
+/-- `scale-read`/`shift-read` clone `LoweringTest`'s strided read; `general-affine-read` clones
+    `AcsetCodecTest` fixture 3's strided convolution read. Only the `IdxExpr` varies. -/
+def affineFixture (name : String) (idx : IdxExpr) : NamedPayloadFixture :=
+  { name, payloadClass := .represented
+    logical := one (.plain (.assign "Y" [.free i]
+      { body := readBody "X" [idx], nonlin := .pointwise .relu })) }
+
+/-- Clones of `RecurMorphismTest.stepTC` (`private` there). `nestedStepA` changes only the `op`
+    (`.contract` → `.relu`) and `nestedStepB` changes only the output weave (`[[.tiled]]` → `[[]]`
+    on the `A` side); the two differ from each other in exactly one field each. -/
+def nestedStepA : BrBaseP :=
+  { op := .relu, degree := [], inputWeaves := [], outputWeaves := [[]], reindexings := [] }
+
+def nestedStepB : BrBaseP :=
+  { op := .softmax, degree := [], inputWeaves := [], outputWeaves := [[.tiled]], reindexings := [] }
+
+def nestedA : ThreadedComposed := { steps := [nestedStepA], routing := [[]], nExternal := 0 }
+def nestedB : ThreadedComposed := { steps := [nestedStepB], routing := [[]], nExternal := 0 }
+
+def scanPreFixture (name : String) (nested : ThreadedComposed) : NamedPayloadFixture :=
+  { name, payloadClass := .opaqueScanPre
+    logical := one (.scanPre "S" i nested) [] {} ∅ }
+
+def causalMaskFixture := masked "causal-mask" causal
+def negatedMaskFixture := masked "negated-causal-mask" antiCausal
+def bandIversonFixture := iversonFixture "band-iverson" band
+def negatedIversonFixture := iversonFixture "negated-band-iverson" (.not band)
+def tensorMetadataFixture := metadataFixture "tensor-metadata" (.tensor "Meta" [i])
+def predicateMetadataFixture := metadataFixture "predicate-metadata" (.predicate "Meta" [i])
+def scanPreOperationFixture := scanPreFixture "scan-pre-operation" nestedA
+def scanPreWeaveFixture := scanPreFixture "scan-pre-output-weave" nestedB
+
+/-- The 19. **Kept out of `corpus` deliberately** — P1 and G1 are independent counts. -/
+def fixtures : List NamedPayloadFixture := [
+  pointwise "sigmoid" .sigmoid,
+  pointwise "tanh" .tanh,
+  pointwise "gelu" .gelu,
+  pointwise "leaky-relu" .leakyrelu,
+  axiswise "normalize" .normalize,
+  axiswise "l2-normalize" .l2normalize,
+  aggregate "relu-over-max" .max,
+  aggregate "relu-over-min" .min,
+  causalMaskFixture,
+  negatedMaskFixture,
+  bandIversonFixture,
+  negatedIversonFixture,
+  tensorMetadataFixture,
+  predicateMetadataFixture,
+  affineFixture "scale-read" (.scale 2 i),
+  affineFixture "shift-read" (.shift i 1),
+  affineFixture "general-affine-read" (.affine 1 [(2, i), (-1, j)]),
+  scanPreOperationFixture,
+  scanPreWeaveFixture
+]
+
+/-! ### §4.2 The physical leg and the payload-conservation predicates
+
+The physical leg is production `physicalizeForRoute` only (§1's "No local physicalizer" note applies
+verbatim); the routing legs are §2's `oldTC`/`newTC`. -/
+
+/-- Production `physicalizeForRoute`'s physical schedule. `none` on rejection, which every P-guard
+    below treats as a failure — no fixture in this matrix may be rejected at the route boundary. -/
+def physicalOf (sp : ScheduledProgram) : Option ScheduledProgram :=
+  match physicalizeForRoute sp with
+  | .ok physical => some physical.scheduled
+  | .error _ => none
+
+/-- Byte-exact conservation across the producer/consumer split: the producer carries the logical
+    body and `agg` at `.identity`, with `.freeNorm` degraded exactly as production `producerSlots`
+    prescribes; the consumer republishes the logical name and slots, carries the logical `nonlin`
+    (mask included), and contracts nothing (`agg = .sum`). An unsplit (identity-nonlin) fixture must
+    come through untouched. -/
+def plainPayloadConserved (logical physical : ScheduledProgram) : Bool :=
+  match logical.stmts, physical.stmts with
+  | [.plain (.assign logicalName logicalSlots rhs)],
+      [.plain (.assign _ producer producerRhs),
+       .plain (.assign publishedName consumerSlots consumerRhs)] =>
+      producerRhs.body == rhs.body &&
+      producerRhs.agg == rhs.agg &&
+      producerRhs.nonlin == .identity &&
+      producer == producerSlots logicalSlots &&
+      publishedName == logicalName &&
+      consumerSlots == logicalSlots &&
+      consumerRhs.nonlin == rhs.nonlin &&
+      consumerRhs.agg == .sum
+  | [.plain logicalStmt], [.plain physicalStmt] => logicalStmt == physicalStmt
+  | _, _ => false
+
+/-- Declarations, externals, explicit sizes, and the declaration environment all survive
+    physicalization unchanged. -/
+def metadataConserved (logical physical : ScheduledProgram) : Bool :=
+  logical.decls == physical.decls &&
+  logical.extNames == physical.extNames &&
+  logical.explicitSizes.toList == physical.explicitSizes.toList &&
+  logical.env.toList == physical.env.toList
+
+/-- A `.scanPre` node is opaque: name, iteration axis, and the whole nested `ThreadedComposed` are
+    copied byte-for-byte. -/
+def scanPreConserved (logical physical : ScheduledProgram) : Bool :=
+  match logical.stmts, physical.stmts with
+  | [.scanPre logicalName logicalAxis logicalBody],
+      [.scanPre physicalName physicalAxis physicalBody] =>
+      logicalName == physicalName && logicalAxis == physicalAxis &&
+        logicalBody == physicalBody
+  | _, _ => false
+
+def payloadConserved (fixture : NamedPayloadFixture) : Bool :=
+  match physicalOf fixture.logical with
+  | none => false
+  | some physical =>
+      metadataConserved fixture.logical physical &&
+        match fixture.logical.stmts with
+        | [.scanPre ..] => scanPreConserved fixture.logical physical
+        | _ => plainPayloadConserved fixture.logical physical
+
+/-- P3's per-fixture body: for a `.represented` payload the old split leg and production `route`
+    must produce the identical `ThreadedComposed`, the identical ACSet encoding, and a decode∘encode
+    identity. Vacuously true on the opaque classes — P4 owns those. -/
+def representedMatchesOld (fixture : NamedPayloadFixture) : Bool :=
+  if fixture.payloadClass != .represented then true else
+    match oldTC fixture.logical, newTC fixture.logical with
+    | some old, some new =>
+        old == new &&
+        fromThreadedComposed old == fromThreadedComposed new &&
+        toThreadedComposed (fromThreadedComposed new) == new &&
+        new.wellFormedDom
+    | _, _ => false
+
+/-! ### §4.3 P1 — the matrix's own shape, counted separately from the corpus -/
+
+private def fixtureNames : List String := fixtures.map (·.name)
+
+-- `fixtures` is a separate list of a separate type from `corpus`; the two counts are pinned
+-- independently and neither list may ever absorb the other's members.
+#guard fixtures.length == 19                                                          -- P1
+#guard fixtureNames.eraseDups.length == 19                                            -- P1
+#guard (fixtures.filter (·.payloadClass == .represented)).length == 11                -- P1
+#guard (fixtures.filter (·.payloadClass != .represented)).length == 8                 -- P1
+-- G23's third-class-6-door guard, extended to the payload matrix (plan §5).
+#guard fixtures.all fun f => !plainIterSlots f.logical                                -- P1
+
+/-! ### §4.4 P2/P3 — physical conservation, and represented-class route agreement
+
+Reported through the same `<label>: N FAILURES` idiom §3 uses, so a mutation cycle yields an
+OBSERVED count and the failing fixture NAMES rather than a bare `false`. -/
+
+private def checkFixtures (label : String) (p : NamedPayloadFixture → Bool) :
+    Lean.Elab.Command.CommandElabM Unit := do
+  let bad := (fixtures.filter (fun f => !p f)).map (·.name)
+  unless bad.isEmpty do
+    throwError s!"{label}: {bad.length} FAILURES, fixtures {bad}"
+
+run_cmd checkFixtures "P2 physical payload conservation (19 fixtures)" payloadConserved
+run_cmd checkFixtures "P3 represented route/ACSet agreement (11)" representedMatchesOld
+
+/-! ### §4.5 P4 — the four opacity pairs, as TWO separate claims
+
+For each pair the guard asserts, independently and with independently reported failures:
+
+* **(a) the physical payloads DIFFER** in the named field — the mask, the Iverson predicate, the
+  declaration metadata, or the nested `scanPre` body really is a different value after production
+  `physicalizeForRoute`; and
+* **(b) the routed presentations and their ACSet encodings are EQUAL** — *the current categorical
+  projection omits that field*.
+
+These are not one claim. (b) says nothing whatever about the two programs computing the same thing:
+`causal-mask` and `negated-causal-mask` compute different tensors, and this file never says
+otherwise. (a) is what makes (b) informative rather than vacuous — without it, "equal routes" could
+mean the two fixtures were simply the same program. If the projection is later widened to carry any
+of these fields, (b) breaks by design and that break is the signal, not a regression. -/
+
+private def consumerNonlin? (sp : ScheduledProgram) : Option Nonlin :=
+  match sp.stmts with
+  | [.plain _, .plain (.assign _ _ rhs)] => some rhs.nonlin
+  | _ => none
+
+private def producerBody? (sp : ScheduledProgram) : Option SumExpr :=
+  match sp.stmts with
+  | [.plain (.assign _ _ rhs), .plain _] => some rhs.body
+  | _ => none
+
+private def scanPreBody? (sp : ScheduledProgram) : Option ThreadedComposed :=
+  match sp.stmts with
+  | [.scanPre _ _ nested] => some nested
+  | _ => none
+
+structure OpacityPair where
+  label : String
+  /-- The physical field claim (a) is about — named, so a failure says WHICH field stopped
+      differing rather than only that two programs became equal. -/
+  field : String
+  left : NamedPayloadFixture
+  right : NamedPayloadFixture
+  /-- Claim (a), over the two PHYSICAL programs. -/
+  physicalPayloadsDiffer : ScheduledProgram → ScheduledProgram → Bool
+
+def opacityPairs : List OpacityPair := [
+  { label := "causal-mask vs negated-causal-mask"
+    field := "the axiswise mask riding the physical consumer's `nonlin`"
+    left := causalMaskFixture, right := negatedMaskFixture
+    physicalPayloadsDiffer := fun a b =>
+      match consumerNonlin? a, consumerNonlin? b with
+      | some na, some nb => na != nb
+      | _, _ => false },
+  { label := "band-iverson vs negated-band-iverson"
+    field := "the Iverson predicate inside the physical producer's body"
+    left := bandIversonFixture, right := negatedIversonFixture
+    physicalPayloadsDiffer := fun a b =>
+      match producerBody? a, producerBody? b with
+      | some ba, some bb => ba != bb
+      | _, _ => false },
+  { label := "tensor-metadata vs predicate-metadata"
+    field := "the physical program's `decls` and `env`"
+    left := tensorMetadataFixture, right := predicateMetadataFixture
+    physicalPayloadsDiffer := fun a b =>
+      a.decls != b.decls && a.env.toList != b.env.toList },
+  { label := "scan-pre-operation vs scan-pre-output-weave"
+    field := "the nested `ThreadedComposed` carried by the physical `.scanPre` node"
+    left := scanPreOperationFixture, right := scanPreWeaveFixture
+    physicalPayloadsDiffer := fun a b =>
+      match scanPreBody? a, scanPreBody? b with
+      | some na, some nb => na != nb
+      | _, _ => false }
+]
+
+#guard opacityPairs.length == 4
+
+/-- Claim (a) for one pair, over the two PHYSICAL programs. -/
+def opacityPhysicalDiffers (pair : OpacityPair) : Bool :=
+  match physicalOf pair.left.logical, physicalOf pair.right.logical with
+  | some physLeft, some physRight => pair.physicalPayloadsDiffer physLeft physRight
+  | _, _ => false
+
+/-- Claim (b)'s precondition, reported separately so a route *rejection* is never misread as a
+    route *divergence* — the two say very different things about the projection. -/
+def opacityBothRoute (pair : OpacityPair) : Bool :=
+  (newTC pair.left.logical).isSome && (newTC pair.right.logical).isSome
+
+/-- Claim (b) for one pair, over the two ROUTED programs. Deliberately independent of claim (a):
+    a mutation may break one without the other, and the ledger records which. -/
+def opacityRouteEqual (pair : OpacityPair) : Bool :=
+  match newTC pair.left.logical, newTC pair.right.logical with
+  | some tcLeft, some tcRight =>
+      tcLeft == tcRight && fromThreadedComposed tcLeft == fromThreadedComposed tcRight
+  | _, _ => false
+
+-- The claims are reported independently and none short-circuits the others, so a mutation cycle
+-- can observe (for instance) that the physical payload stopped differing while the routes stayed
+-- equal — the mirror of §3's G24/G20 split.
+run_cmd do
+  let badRoute := (opacityPairs.filter (fun p => !opacityBothRoute p)).map (·.label)
+  let badA := (opacityPairs.filter (fun p => !opacityPhysicalDiffers p)).map (·.label)
+  let badB := (opacityPairs.filter (fun p => opacityBothRoute p && !opacityRouteEqual p)).map (·.label)
+  unless badRoute.isEmpty do
+    Lean.logError s!"P4 precondition [both members route]: {badRoute.length} FAILURES, \
+pairs {badRoute} — `route` REJECTED a member, so claim (b) is un-evaluable for those pairs \
+(this is not the same as the routes differing)"
+  unless badA.isEmpty do
+    Lean.logError s!"P4 claim (a) [physical payloads DIFFER]: {badA.length} FAILURES, \
+pairs {badA} — the differing field became equal, so claim (b) is vacuous for those pairs"
+  unless badB.isEmpty do
+    Lean.logError s!"P4 claim (b) [route + ACSet EQUAL, i.e. the projection omits the field]: \
+{badB.length} FAILURES, pairs {badB}"
+  unless badRoute.isEmpty && badA.isEmpty && badB.isEmpty do
+    throwError "P4 opacity pairs failed (see the per-claim errors above)"
+
 end RouteFragmentCorpusTest
