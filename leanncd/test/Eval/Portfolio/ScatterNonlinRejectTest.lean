@@ -66,4 +66,15 @@ run_cmd do
   | .error e _ => throwError s!"RSN4: wrong CompileError: {repr e}"
   | .ok _ _    => throwError "RSN4: expected unsupportedNonlinScatter, compile succeeded"
 
+-- RSN5  freeNorm-diagonal trigger: `Y[i, i.]` — the SAME axis, once plain once norm-marked. The
+--   fourth class-6 door (whole-branch review, 2026-08-27, fixed here): `slotsBecomeScatter`'s
+--   `freeUID?` used to count only `.free`, so this slipped past undetected while `producerSlots`
+--   degraded it to a genuine `[.free i, .free i]` diagonal producer downstream. Same rejection as
+--   the plain-diagonal control (RSN4).
+run_cmd do
+  match TLProgram.compile (tlprog!{ Y[i, i.] := softmax(X[i]) }) |>.run 0 with
+  | .error (.unsupportedNonlinScatter "Y") _ => pure ()
+  | .error e _ => throwError s!"RSN5: wrong CompileError: {repr e}"
+  | .ok _ _    => throwError "RSN5: expected unsupportedNonlinScatter, compile succeeded"
+
 end LeanNCD.Eval

@@ -217,12 +217,25 @@ def LHSSlot.axisSpec? : LHSSlot → Option AxisSpec
 /-- The UID of a slot's retained placement axis (`none` for `affine`). -/
 def LHSSlot.axisUID? (sl : LHSSlot) : Option UID := (sl.axisSpec?).map (·.uid)
 
-/-- The UID of a *plain* `free` slot only (`none` for freeNorm/iter/affine).
-    Intentionally selective: a repeated `freeUID?` across a stmt's slots is how a
-    diagonal LHS (`Y[i,i]`) is detected and routed to `scatter`. NOT `axisUID?`. -/
+/-- The UID of a `free` or `freeNorm` slot — the axes that place an output coordinate directly
+    (as opposed to `iterAt`/`iterNext`, which place a *scan* coordinate, or `affine`, which is
+    itself the scatter trigger). `.free` and `.freeNorm` are both "free placement" axes per
+    `.freeNorm`'s own doc comment above — differing only by the reduction marker, not by where
+    they place the output — so a repeated UID across either is the same diagonal LHS (`Y[i,i]`
+    and `Y[i, i.]` name the same mathematical shape). Intentionally selective: a repeated
+    `freeUID?` across a stmt's slots is how a diagonal LHS is detected and routed to `scatter`.
+    NOT `axisUID?` (which also counts `iterAt`/`iterNext`, whose repeats mean something else —
+    see the third class-6 door, still open, `RouteFragments.lean`'s header).
+
+    ⚠️ Fixed 2026-08-27 (found in whole-branch review, the "fourth class-6 door"): this used to
+    match only `.free`, so `[.free a, .freeNorm a]` (the same axis) counted as ONE free UID and
+    slipped past `slotsBecomeScatter`'s duplicate check. See `RouteFragments.lean`'s header for the
+    full account and `ScatterNonlinRejectTest.lean`'s `RSN5` / `RouteWeaveTest.lean`'s fixture 15
+    for the regression. -/
 def LHSSlot.freeUID? : LHSSlot → Option UID
-  | .free a => some a.uid
-  | _       => none
+  | .free a     => some a.uid
+  | .freeNorm a => some a.uid
+  | _           => none
 
 /-- The UID of the slot marked (`m.`) as the softmax/normalize reduction axis
     (`freeNorm`), if any. Intentionally selective: this is how the reduction axis
