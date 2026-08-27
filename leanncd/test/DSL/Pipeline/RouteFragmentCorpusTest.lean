@@ -13,19 +13,34 @@ A deterministic generator materializes exactly **145** cases in **13** families.
 common-domain cases must compare *exactly* equal — complete `ThreadedComposed`, ACSet encoding, and
 ACSet decode∘encode round trip — between the OLD split pipeline and production's public `route` on
 the LOGICAL schedule. The eight deliberate `%nl0` collisions pin the old-rejection/new-acceptance
-transition. The five scan families pin categorical opacity, and one mechanical guard forbids the
+transition. The five scan families pin physicalization opacity (G22 — categorical opacity for the
+same 40 cases is exactly G20 restricted to those ids, not recomputed separately), and one
+mechanical guard forbids the
 still-open **third class-6 door**.
 
-⚠️ **145 corpus cases, not 145 distinct programs.** `chainProgram`'s `ScheduledProgram` depends on
-`n` only through `n % 4` (its LHS names are `H{q}`, never `H{n}{q}`), so the 32 `chains` cases are 4
-distinct shapes repeated 8× each. Every other family varies genuinely per case (`contractionProgram`
-names its output `Y{n}`, so its 24 cases stay distinct despite `idxs` cycling on `n % 3`). Measured:
-**117 distinct `ScheduledProgram` values out of 145** (found in review, 2026-08-26). This is
-inherited from `RouteFragmentCorpusSeed.lean` verbatim, per the plan's transplant requirement — not
-an implementation defect — but the count is worth stating honestly rather than read as 145
-independent structural shapes. The repeats are not wasted: they still confirm route equality holds
-identically on repeated calls to the same generator, which has some determinism value even where it
-adds no new structural coverage.
+⚠️ **145 corpus cases, not 145 distinct programs, and only 16 distinct ROUTED presentations.**
+`chainProgram`'s `ScheduledProgram` depends on `n` only through `n % 4` (its LHS names are `H{q}`,
+never `H{n}{q}`), so the 32 `chains` cases are 4 distinct shapes repeated 8× each. Every other
+family's SOURCE program varies per case (`contractionProgram` names its output `Y{n}`, so its 24
+cases stay distinct despite `idxs` cycling on `n % 3`), giving **117 distinct `ScheduledProgram`
+values out of 145** (found in review, 2026-08-26) — inherited from `RouteFragmentCorpusSeed.lean`
+verbatim, per the plan's transplant requirement, not an implementation defect.
+
+But `ThreadedComposed`/`BrBaseP` carry NO TENSOR NAMES — names enter the routed presentation only
+as synthetic external-axis labels (`X_0`, not `X`), so most of that source-level variation is
+projected away before G20/G21/P3 ever compare anything. Measured (whole-branch review,
+2026-08-27): **only 16 distinct routed `ThreadedComposed` values across all 145 cases** (15 among
+the 137 non-collision cases), with multiplicities up to 16. Two cross-family collapses:
+`chains`-depth-1 and `contractions`-rank-1 route to the SAME `[contract, relu]` presentation; and
+`nonlinearBase`/`nonlinearRecurrence` route to the SAME `[scan]` presentation, because WHICH half
+of a scan's recurrence carries the nonlinearity is invisible at the routed level. This does not
+weaken G20/G21/P3 — every comparison is still real and independently confirmed correct — but a
+prior version of this note claimed "every other family varies genuinely per case" without
+qualifying "at the source level, not the routed level", which reads stronger than what the guards
+actually exercise. The repeats are not wasted: they confirm route equality holds identically on
+repeated/converging inputs, which has determinism value even where it adds no new distinct-route
+coverage. G26 below asserts the measured route-diversity floor so a future generator change that
+silently collapses coverage further fails the build.
 
 ## The old leg terminates at `routeCore`, never at public `route`
 
@@ -374,6 +389,10 @@ def scanPayloadObservation (c : CorpusCase) : Bool :=
   if !isScanFamily c.family then true else
     match physicalizeForRoute c.logical, oldSplitSchedule? c.logical with
     | .ok physical, some old =>
+        -- non-emptiness is checked explicitly so a scan-family generator that stopped emitting a
+        -- `.scan` node would fail here (a byte-identity check on `[] == []` passes vacuously) --
+        -- measured today: 0 of 40 scan cases have an empty payload list.
+        !(scanPayloads c.logical).isEmpty &&
         scanPayloads physical.scheduled == scanPayloads c.logical &&
         (if c.family == .aroundScans then
             scanPayloads old == scanPayloads c.logical
@@ -423,6 +442,15 @@ def freeNormStructural (c : CorpusCase) : Bool :=
             slotsHaveFreeNorm slots &&
             -- … the PRODUCER degrades it, exactly as `producerSlots` prescribes …
             producer == producerSlots slots && !slotsHaveFreeNorm producer &&
+            -- … the degraded producer is not ITSELF scatter-shaped (the fourth class-6 door,
+            -- found in whole-branch review 2026-08-27: `slotsBecomeScatter`'s diagonal-write
+            -- detector only recognizes `.free`-marked axes via `freeUID?`, so `[.free a,
+            -- .freeNorm a]` is not flagged at the logical level, yet degrading `.freeNorm a`
+            -- to `.free a` CAN produce a diagonal `[.free a, .free a]` producer that no gate
+            -- checked. None of the 9 corpus cases hit this shape today -- `freeNormProgram`
+            -- uses three distinct axes -- so this conjunct is free here; it exists so a future
+            -- case that does hit the shape fails the build instead of silently mis-routing) …
+            !slotsBecomeScatter producer &&
             -- … and the CONSUMER keeps it.
             consumer == slots && slotsHaveFreeNorm consumer
         | _ => false
@@ -461,6 +489,19 @@ run_cmd do
               unless consumer == slots && slotsHaveFreeNorm consumer do
                 throwError "G25: the logical consumer must KEEP the `.freeNorm` marker"
           | _, _ => throwError "G25: unexpected logical/physical statement shape"
+
+/-! ### G26 — the corpus's actual route-diversity floor
+
+The header's ⚠️ note above measures 16 distinct routed `ThreadedComposed` values across the 145
+cases (15 among the 137 non-collision cases) — far fewer than 145, because `ThreadedComposed`
+carries no tensor names. This does not weaken G20/G21/P3 (every individual comparison is still a
+real, independently-checked equality), but a future edit to any generator that collapses coverage
+FURTHER should fail the build rather than silently shrink what the corpus actually distinguishes. -/
+
+run_cmd do
+  let distinctRoutes := (corpus.filterMap (fun c => newTC c.logical)).eraseDups
+  unless distinctRoutes.length == 16 do
+    throwError s!"G26: expected 16 distinct routed presentations, got {distinctRoutes.length}"
 
 /-! ## §4 The 19-case named payload matrix (slice T2 Task 2)
 
@@ -636,6 +677,14 @@ def bandIversonFixture := iversonFixture "band-iverson" band
 def negatedIversonFixture := iversonFixture "negated-band-iverson" (.not band)
 def tensorMetadataFixture := metadataFixture "tensor-metadata" (.tensor "Meta" [i])
 def predicateMetadataFixture := metadataFixture "predicate-metadata" (.predicate "Meta" [i])
+-- These two fixtures assert that the CURRENT categorical projection omits the nested `.scanPre`
+-- body (P4 below) — NOT that this was always a benign design choice. `RecurMorphismTest.lean`
+-- records audit finding #4 (2026-07-30): a routed `.scanPre` step used to have empty
+-- degree/inputWeaves/reindexings and a dropped iteration axis, a real payload-loss bug severe
+-- enough that `TLProgram.compile` now REJECTS every surface `.scanPre` construction outright
+-- (`unsupportedRecurMorphism`) — this class is reachable only via a hand-built schedule, same
+-- as this fixture. The opacity claim below is real and independently verified, but it is about
+-- an unreachable-from-surface-syntax class whose only prior history at this boundary was a bug.
 def scanPreOperationFixture := scanPreFixture "scan-pre-operation" nestedA
 def scanPreWeaveFixture := scanPreFixture "scan-pre-output-weave" nestedB
 
@@ -842,6 +891,20 @@ def opacityPairs : List OpacityPair := [
 ]
 
 #guard opacityPairs.length == 4
+
+-- P4's fourth pair positively asserts scan-body opacity only for `.scanPre` (class 10) — the class
+-- `TLProgram.compile` cannot reach (see the note above `scanPreOperationFixture`). The classes
+-- surface syntax CAN reach, `.scan`/`.scanAffine` (8/9), get only INDIRECT evidence elsewhere in
+-- this slice (B8's `steps.map (·.op) == [BrOp.scan]`, plus a negative mutation observation in the
+-- ledger). Assert the positive claim directly, on the reachable class, from surface syntax: two
+-- scans differing ONLY in the recurrence nonlinearity route identically -- the projection omits
+-- the scan body here too, not only for the unreachable `.scanPre` construct.
+#guard (tl!{ iter l = 3
+             G[j, 0]    := X[j]
+             G[j, l +1] := relu(G[j, l] · W_G[j, k]) })
+     == (tl!{ iter l = 3
+              G[j, 0]    := X[j]
+              G[j, l +1] := tanh(G[j, l] · W_G[j, k]) })
 
 /-- Claim (a) for one pair, over the two PHYSICAL programs. -/
 def opacityPhysicalDiffers (pair : OpacityPair) : Bool :=

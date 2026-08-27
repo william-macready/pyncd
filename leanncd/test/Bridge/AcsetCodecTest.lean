@@ -72,7 +72,8 @@ open LeanNCD.AcsetCodec
 
 -- 9. Nonlinear scan round trip (T2 Task 3, B4). Clone of fixture 5 (coupled scan), reduced to a
 -- single ReLU recurrence: the scan node is copied opaquely at the route boundary (class 8/9), so
--- the split lives entirely outside the categorical presentation this round trip exercises.
+-- the ReLU split lives entirely INSIDE the scan node's own payload -- invisible to, hence outside
+-- of, the categorical presentation this round trip exercises.
 #guard toThreadedComposed (fromThreadedComposed (tl!{
           iter l = 3
           G[j, 0]    := X[j]

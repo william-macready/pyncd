@@ -112,7 +112,9 @@ private def tcB7 : ThreadedComposed := tl!{
 #guard tcB7.externalPort 1 == some (0, 1)
 #guard tcB7.externalPort 2 == some (2, 1)
 #guard tcB7.wellFormedDom
-#guard (tcB7.routing.getD 2 []).contains (Wire.internal 1 0)   -- the exit invariant, asserted directly
+-- the exit invariant, asserted directly and exactly -- excludes entry routing (`.internal 0 0`),
+-- not merely permits the exit alongside it:
+#guard tcB7.routing.getD 2 [] == [Wire.internal 1 0, Wire.external 2]
 example : (realizeDom tcB7).length = 3 := by rfl   -- dom: nExternal = 3 (W, x, V)
 example : tcB7.codObj.length = 1 := by rfl         -- cod: Z, the last step's sole output
 example : (tcB7.wirePlan.1.map (·.sel)) = [[0, 1, 2], [0, 1], [0, 1]] := by rfl
