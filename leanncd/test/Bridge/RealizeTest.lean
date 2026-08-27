@@ -1,5 +1,6 @@
 -- test/Bridge/RealizeTest.lean
 import LeanNCD.Bridge.Realize
+import LeanNCD.DSL.Compile
 namespace LeanNCD
 -- typecheck (noncomputable ⇒ no #eval):
 noncomputable example (a : AxisP) : Axis := realizeAxis a
@@ -72,4 +73,68 @@ private def tcFan : ThreadedComposed :=
   { steps := [mkStep 1 1, mkStep 1 1], routing := [[.external 0], [.external 0]], nExternal := 1 }
 #guard (tcFan.wirePlan.1.map (·.sel)) == [[0, 0], [1]]
 #guard tcFan.wirePlan.2.2 == [0]
+
+/-! ## Routed nonlinear programs (T2 Task 3, B5-B8)
+
+Same shaped surrogates as above, over `tl!{...}`-routed `ThreadedComposed` values instead of
+hand-built ones -- `realize` stays noncomputable and unevaluated; every value below was OBSERVED
+from a real run and transcribed, not predicted. -/
+
+-- B5: routed ReLU (`H[i] := relu(W[i, j] · x[j])`) -- one logical statement, physicalized into a
+-- private producer/consumer pair (2 physical steps). Clone of `tcMatmul`'s assertion block.
+private def tcB5 : ThreadedComposed := tl!{ H[i] := relu(W[i, j] · x[j]) }
+#guard tcB5.externalPort 0 == some (0, 0)
+#guard tcB5.externalPort 1 == some (0, 1)
+#guard tcB5.wellFormedDom
+example : (realizeDom tcB5).length = 2 := by rfl   -- dom: nExternal = 2 (W, x)
+example : tcB5.codObj.length = 1 := by rfl         -- cod: the consumer's one output (H)
+
+-- B6: the same routed ReLU's `wirePlan`. Clone of `tc2Layer`'s `wirePlan` block: step 0 (the
+-- private producer) reads both externals; step 1 (the consumer) reads step 0's sole output.
+example : (tcB5.wirePlan.1.map (·.sel)) = [[0, 1], [0]] := by rfl
+example : tcB5.wirePlan.2.2 = [0] := by rfl
+
+-- B7: routed nonlinear CHAIN (`RouteWeaveTest`'s fixture-3 shape, `f3Chain`). `RouteWeaveTest`'s
+-- own F3 already pins, at the `.routing` level, that the downstream statement wires to the
+-- fragment's EXIT (physical step 1, the consumer) and never its private producer (step 0): step 2
+-- reads `Wire.internal 1 0`. Pinned again here directly (not left implicit in a derived value --
+-- `wirePlan` is a pure function of `steps`/`routing`, so ITS shape below follows deterministically
+-- from the same routing fact, not an independent check of the exit-vs-entry invariant). B7's real
+-- new coverage is the realization SHAPE (`realizeDom`/`codObj`/`wirePlan`) of a ROUTED nonlinear
+-- chain, which nothing else in this file exercises -- `externalPort 2` is NOT a discriminator for
+-- exit-vs-entry (it resolves to `(2, 1)` under either routing; only the `wirePlan` selections and
+-- the `.internal` guard below actually differ).
+private def tcB7 : ThreadedComposed := tl!{
+  H[i] := relu(W[i, j] · x[j])
+  Z[k] := H[i] · V[i, k]
+}
+#guard tcB7.externalPort 0 == some (0, 0)
+#guard tcB7.externalPort 1 == some (0, 1)
+#guard tcB7.externalPort 2 == some (2, 1)
+#guard tcB7.wellFormedDom
+-- the exit invariant, asserted directly and exactly -- excludes entry routing (`.internal 0 0`),
+-- not merely permits the exit alongside it:
+#guard tcB7.routing.getD 2 [] == [Wire.internal 1 0, Wire.external 2]
+example : (realizeDom tcB7).length = 3 := by rfl   -- dom: nExternal = 3 (W, x, V)
+example : tcB7.codObj.length = 1 := by rfl         -- cod: Z, the last step's sole output
+example : (tcB7.wirePlan.1.map (·.sel)) = [[0, 1, 2], [0, 1], [0, 1]] := by rfl
+example : tcB7.wirePlan.2.2 = [0] := by rfl
+
+-- B8: routed opaque SCAN (B4's single-ReLU-recurrence source) -- the whole scan node routes as
+-- ONE opaque physical step (class 8/9: copied verbatim, the split lives entirely inside it,
+-- invisible to this categorical presentation).
+private def tcB8 : ThreadedComposed := tl!{
+  iter l = 3
+  G[j, 0]    := X[j]
+  G[j, l +1] := relu(G[j, l] · W_G[j, k]) }
+#guard tcB8.steps.length == 1
+#guard tcB8.steps.map (·.op) == [BrOp.scan]   -- the internal ReLU never surfaces as its own op
+#guard tcB8.externalPort 0 == some (0, 0)
+#guard tcB8.externalPort 1 == some (0, 1)
+#guard tcB8.wellFormedDom
+example : (realizeDom tcB8).length = 2 := by rfl   -- dom: nExternal = 2 (X, W_G)
+example : tcB8.codObj.length = 1 := by rfl         -- cod: the scan's one published state (G)
+example : (tcB8.wirePlan.1.map (·.sel)) = [[0, 1]] := by rfl
+example : tcB8.wirePlan.2.2 = [0] := by rfl
+
 end LeanNCD
