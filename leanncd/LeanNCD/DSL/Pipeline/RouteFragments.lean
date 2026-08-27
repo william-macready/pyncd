@@ -59,28 +59,27 @@ naming decision (`unsupportedNonlinScatter` would be a misnomer here; these slot
 scatter, they belong to scan grouping). See `.superpowers/sdd/2026-08-26-nonlinearity-t1-logical-schedule/progress.md`
 for the reproduction.
 
-⚠️ **A FOURTH door is open and NOT closed here** (found in whole-branch review, 2026-08-27,
-recorded in the SDD ledger, not yet fixed) — MORE SEVERE than the other three: it is reachable
-from **surface `tlprog!` syntax through public `TLProgram.compile`**, not only from a hand-built
-schedule. `slotsBecomeScatter`'s diagonal-write detector (`Ast.lean`) goes through
-`LHSSlot.freeUID?`, which returns `some` only for `.free` — never `.freeNorm`. So an LHS like
-`[.free a, .freeNorm a]` (the SAME axis, once plain and once norm-marked) has exactly one free
-UID by that count, is NOT classified scatter-shaped, and takes the ordinary split arm — but
-`producerSlots` then degrades `.freeNorm a → .free a` on the producer, turning it into
-`[.free a, .free a]`: a genuine diagonal LHS that no gate ever checked. Confirmed:
-`tlprog!{ Y[i, i.] := softmax(X[i]) }` is ACCEPTED by `TLProgram.compile` (steps
-`[contract, softmax]`), while the control `tlprog!{ Y[i, i] := softmax(X[i]) }` is correctly
-REJECTED with `unsupportedNonlinScatter "Y"` — same mathematical shape, one spelling silently
-mis-routed. `wellFormedDom` does not catch it (checks external-slot rank agreement only). Root
-cause: `checkScatterNonlin` (`Structural.lean`) and `fragmentClass`/`physicalizeOne` both consult
-the SAME `slotsBecomeScatter`, so both gates are blind to this shape at once. Not introduced by
-this slice or the prior one — pre-existing in `slotsBecomeScatter`/`producerSlots` — but this
-slice's own `.freeNorm`-sweeping fixture (`freeNormProgram` in
-`test/DSL/Pipeline/RouteFragmentCorpusTest.lean`) walks past it by using three distinct axes per
-case rather than combining `.free a`/`.freeNorm a` on the same axis. See
-`.superpowers/sdd/2026-08-26-nonlinearity-t2-route-corpus/progress.md` for the reproduction and
-the planned fix (closing this needs `slotsBecomeScatter` — or an equivalent duplicate-UID check —
-to also count `.freeNorm` UIDs, then the usual `fragmentClass`/`physicalizeOne` pairing). -/
+✅ **A fourth door was found (whole-branch review, 2026-08-27) and is now CLOSED.**
+`slotsBecomeScatter`'s diagonal-write detector (`Ast.lean`) went through `LHSSlot.freeUID?`,
+which used to return `some` only for `.free` — never `.freeNorm`. So an LHS like `[.free a,
+.freeNorm a]` (the SAME axis, once plain and once norm-marked) had exactly one free UID by that
+count, was NOT classified scatter-shaped, and took the ordinary split arm — but `producerSlots`
+then degraded `.freeNorm a → .free a` on the producer, turning it into `[.free a, .free a]`: a
+genuine diagonal LHS that no gate had checked. It was reachable from **surface `tlprog!` syntax
+through public `TLProgram.compile`**, not only from a hand-built schedule — more severe than the
+doors above. Root cause: `checkScatterNonlin` (`Structural.lean`) and
+`fragmentClass`/`physicalizeOne` both consult the SAME `slotsBecomeScatter`, so both gates were
+blind to this shape at once.
+
+Fixed by broadening `LHSSlot.freeUID?` to also return `some a.uid` for `.freeNorm a` — `.free`
+and `.freeNorm` are both "free placement" axes per `.freeNorm`'s own doc comment, differing only
+by the reduction marker, so both belong in the diagonal-UID count. `slotsBecomeScatter` now
+flags `[.free a, .freeNorm a]` exactly like the plain-diagonal control `[.free a, .free a]`, and
+`checkScatterNonlin` rejects it with the same `unsupportedNonlinScatter` diagnostic before
+physicalization ever runs. Regression: `test/Eval/Portfolio/ScatterNonlinRejectTest.lean`'s
+`RSN5` (the `TLProgram.compile` entry point) and `test/DSL/Pipeline/RouteWeaveTest.lean`'s
+fixture 15 (the hand-built-schedule / `route` entry point, mirroring fixture 14's `.assign`
+door). -/
 
 namespace LeanNCD
 open Std
