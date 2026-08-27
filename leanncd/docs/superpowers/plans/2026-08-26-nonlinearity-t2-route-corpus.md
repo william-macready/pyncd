@@ -452,7 +452,7 @@ class-6 door.
 4. Ship the §0.4 `plainIterSlots` guard and assert it is `false` for every one of the 145 cases.
 5. Register the module in `lakefile.toml`.
 
-**Fixtures and guards** — 145 generated cases plus 14 named guards. Every generator's donor is the
+**Fixtures and guards** — 145 generated cases plus 25 named guards (G1–G25 below). Every generator's donor is the
 same file; the per-family donor shapes are recorded in the seed's own README table.
 
 | # | Guard | Expected (measured 2026-08-26) |

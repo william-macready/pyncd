@@ -16,6 +16,17 @@ the LOGICAL schedule. The eight deliberate `%nl0` collisions pin the old-rejecti
 transition. The five scan families pin categorical opacity, and one mechanical guard forbids the
 still-open **third class-6 door**.
 
+⚠️ **145 corpus cases, not 145 distinct programs.** `chainProgram`'s `ScheduledProgram` depends on
+`n` only through `n % 4` (its LHS names are `H{q}`, never `H{n}{q}`), so the 32 `chains` cases are 4
+distinct shapes repeated 8× each. Every other family varies genuinely per case (`contractionProgram`
+names its output `Y{n}`, so its 24 cases stay distinct despite `idxs` cycling on `n % 3`). Measured:
+**117 distinct `ScheduledProgram` values out of 145** (found in review, 2026-08-26). This is
+inherited from `RouteFragmentCorpusSeed.lean` verbatim, per the plan's transplant requirement — not
+an implementation defect — but the count is worth stating honestly rather than read as 145
+independent structural shapes. The repeats are not wasted: they still confirm route equality holds
+identically on repeated calls to the same generator, which has some determinism value even where it
+adds no new structural coverage.
+
 ## The old leg terminates at `routeCore`, never at public `route`
 
 Public `route` *physicalizes*. Handing it an already-split program splits the still-nonlinear
@@ -241,29 +252,23 @@ def toLinear (sp : ScheduledProgram) : LinearProgram :=
 /-- OLD leg: `splitNonlins → schedule → routeCore`, wrapped into a complete `ThreadedComposed`.
     It must NOT end at public `route`: `route` physicalizes, so it would split the already-split
     consumer a second time (2 steps become 3). -/
+private def oldRun (sp : ScheduledProgram) : FreshM ThreadedComposed := do
+  let split ← splitNonlins (toLinear sp)
+  let ordered ← schedule split
+  match routeCore { ordered with explicitSizes := sp.explicitSizes } with
+  | .error e => throw e
+  | .ok (steps, routing) =>
+      return ({ steps, routing, nExternal := ordered.extNames.card } : ThreadedComposed)
+
 def oldTC (sp : ScheduledProgram) : Option ThreadedComposed :=
-  match (do
-      let split ← splitNonlins (toLinear sp)
-      let ordered ← schedule split
-      match routeCore { ordered with explicitSizes := sp.explicitSizes } with
-      | .error e => throw e
-      | .ok (steps, routing) =>
-          return ({ steps, routing, nExternal := ordered.extNames.card } :
-            ThreadedComposed)).run 0 with
+  match (oldRun sp).run 0 with
   | .ok tc _ => some tc
   | .error .. => none
 
-/-- `oldTC`'s error companion: the same body, reporting the `CompileError` instead of the value.
+/-- `oldTC`'s error companion: the same `oldRun`, reporting the `CompileError` instead of the value.
     Supplies the `%nl0` family's old-rejection observation (G21). -/
 def oldErr (sp : ScheduledProgram) : Option CompileError :=
-  match (do
-      let split ← splitNonlins (toLinear sp)
-      let ordered ← schedule split
-      match routeCore { ordered with explicitSizes := sp.explicitSizes } with
-      | .error e => throw e
-      | .ok (steps, routing) =>
-          return ({ steps, routing, nExternal := ordered.extNames.card } :
-            ThreadedComposed)).run 0 with
+  match (oldRun sp).run 0 with
   | .ok .. => none
   | .error e _ => some e
 
@@ -428,8 +433,12 @@ run_cmd check "G24 .freeNorm structural degrade (9 cases)" freeNormStructural
 /-! ### G25 — the single source-level `.freeNorm` cross-check
 
 `RouteWeaveTest.freeNormAxiswiseProg` is public for exactly this purpose (its own docstring says
-so). Everything else in this file is hand-built, so this is the one case proving the same
-producer/consumer slot relationship survives the whole surface pipeline. -/
+so). Everything else in this file is hand-built, so this is the one case in THIS module going
+through the real `tlprog!` surface pipeline (`assignUIDs`/`lowerArith`/`finalizeScans`) rather than
+a directly-constructed `ScheduledProgram`. `RouteWeaveTest`'s own fixture 6 already asserts the same
+producer/consumer slot relationship on this exact program (and more: internal name, full payloads)
+— G25 does not add coverage `RouteWeaveTest` lacks, it corroborates it from the corpus module's own
+hand-built-vs-surface-syntax boundary. -/
 
 run_cmd do
   match (TLProgram.compileToScheduled freeNormAxiswiseProg).run 0 with
