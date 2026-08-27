@@ -513,10 +513,12 @@ legs are §2's `oldTC`/`newTC`. The donor seed's local `physicalize`/`privateNam
 cycle for this section mutates **production** `LeanNCD/DSL/Pipeline/RouteFragments.lean`.
 -/
 
-/-! ### §4.1 Fixture construction -/
+/-! ### §4.1 Fixture construction
 
-/-- Axes are §1's `i`/`j`/`k` (`mkAxis "i" 1` etc.) — the payload fixtures deliberately share the
-    corpus' axis inventory rather than minting a parallel one. -/
+Axes are §1's `i`/`j`/`k` (`mkAxis "i" 1` etc.) — the payload fixtures deliberately share the
+corpus' axis inventory rather than minting a parallel one. -/
+
+/-- One `.read` factor wrapped as a single-term sum. -/
 def readBody (name : String) (idxs : List IdxExpr) : SumExpr :=
   { terms := [{ factors := [.read name idxs] }] }
 
@@ -572,8 +574,12 @@ def masked (name : String) (mask : BoolExpr) : NamedPayloadFixture :=
       { body := readBody "X" [.axis i, .axis j],
         nonlin := .axiswise .softmax (some mask) })) }
 
-/-- Clone of `ParsePredicatesTest.band`'s tridiagonal band predicate (`private` there, so cloned by
-    construction), lifted into the ReLU donor's body as an Iverson factor. -/
+/-- A two-wide band predicate in `ParsePredicatesTest.band`'s spirit (`private` there, so cloned
+    by construction) — NOT a faithful clone: the donor is the symmetric tridiagonal `|i - j| ≤ 1`
+    (using `PredArith.iabs`, the reason that file exists); this is the asymmetric one-sided band
+    `i ≤ j < i + 2`, expressed without `iabs`. Lifted into the ReLU donor's body as an Iverson
+    factor. Both are legitimate Iverson-predicate fixtures for P4's negation-pairing purpose; only
+    the "clone" relationship to the donor is looser than for this matrix's other fixtures. -/
 def band : BoolExpr :=
   .and (.rel .le (.embed (.axis i)) (.embed (.axis j)))
     (.rel .lt (.embed (.axis j)) (.embed (.shift i 2)))
@@ -605,14 +611,17 @@ def affineFixture (name : String) (idx : IdxExpr) : NamedPayloadFixture :=
     logical := one (.plain (.assign "Y" [.free i]
       { body := readBody "X" [idx], nonlin := .pointwise .relu })) }
 
-/-- Clones of `RecurMorphismTest.stepTC` (`private` there). `nestedStepA` changes only the `op`
-    (`.contract` → `.relu`) and `nestedStepB` changes only the output weave (`[[.tiled]]` → `[[]]`
-    on the `A` side); the two differ from each other in exactly one field each. -/
+/-- Clones of `RecurMorphismTest.stepTC` (`private` there — `{ op := .contract, outputWeaves :=
+    [[.tiled]], ... }`). `nestedStepA` changes only the `op` (`.contract` → `.relu`), keeping the
+    donor's `outputWeaves`. `nestedStepB` changes only `outputWeaves` (`[[.tiled]]` → `[[]]`),
+    keeping the donor's `op`. Each differs from the donor in exactly one field, and from each
+    other in both — which is exactly what `scan-pre-operation`/`scan-pre-output-weave`'s names
+    claim to isolate. -/
 def nestedStepA : BrBaseP :=
-  { op := .relu, degree := [], inputWeaves := [], outputWeaves := [[]], reindexings := [] }
+  { op := .relu, degree := [], inputWeaves := [], outputWeaves := [[.tiled]], reindexings := [] }
 
 def nestedStepB : BrBaseP :=
-  { op := .softmax, degree := [], inputWeaves := [], outputWeaves := [[.tiled]], reindexings := [] }
+  { op := .contract, degree := [], inputWeaves := [], outputWeaves := [[]], reindexings := [] }
 
 def nestedA : ThreadedComposed := { steps := [nestedStepA], routing := [[]], nExternal := 0 }
 def nestedB : ThreadedComposed := { steps := [nestedStepB], routing := [[]], nExternal := 0 }
@@ -665,11 +674,15 @@ def physicalOf (sp : ScheduledProgram) : Option ScheduledProgram :=
   | .ok physical => some physical.scheduled
   | .error _ => none
 
-/-- Byte-exact conservation across the producer/consumer split: the producer carries the logical
-    body and `agg` at `.identity`, with `.freeNorm` degraded exactly as production `producerSlots`
-    prescribes; the consumer republishes the logical name and slots, carries the logical `nonlin`
-    (mask included), and contracts nothing (`agg = .sum`). An unsplit (identity-nonlin) fixture must
-    come through untouched. -/
+/-- Conservation of every field this split is SUPPOSED to preserve, across the producer/consumer
+    split: the producer carries the logical body and `agg` at `.identity`, with `.freeNorm`
+    degraded exactly as production `producerSlots` prescribes; the consumer republishes the
+    logical name and slots, carries the logical `nonlin` (mask included), and contracts nothing
+    (`agg = .sum`). An unsplit (identity-nonlin) fixture must come through untouched (and only
+    counts if it actually IS identity-nonlin — see the guard below). Deliberately NOT checked,
+    because they are not conserved by design: the producer's freshly-minted internal name (owned
+    by Task 1's freshness/injectivity proofs, not this matrix), and the consumer's body (derived
+    from `LHSSlot.toReadIdx`, not copied from the logical statement). -/
 def plainPayloadConserved (logical physical : ScheduledProgram) : Bool :=
   match logical.stmts, physical.stmts with
   | [.plain (.assign logicalName logicalSlots rhs)],
@@ -683,7 +696,11 @@ def plainPayloadConserved (logical physical : ScheduledProgram) : Bool :=
       consumerSlots == logicalSlots &&
       consumerRhs.nonlin == rhs.nonlin &&
       consumerRhs.agg == .sum
-  | [.plain logicalStmt], [.plain physicalStmt] => logicalStmt == physicalStmt
+  | [.plain (.assign nm slots rhs)], [.plain physicalStmt] =>
+      -- Only for identity-nonlin fixtures (the metadata pair): guarded so a hypothetical defect
+      -- that silently stopped splitting a NONLINEAR statement can't pass here by construction —
+      -- an unconditional `logicalStmt == physicalStmt` would be vacuously true for that case too.
+      rhs.nonlin == .identity && Stmt.assign nm slots rhs == physicalStmt
   | _, _ => false
 
 /-- Declarations, externals, explicit sizes, and the declaration environment all survive
@@ -736,8 +753,9 @@ private def fixtureNames : List String := fixtures.map (·.name)
 #guard fixtureNames.eraseDups.length == 19                                            -- P1
 #guard (fixtures.filter (·.payloadClass == .represented)).length == 11                -- P1
 #guard (fixtures.filter (·.payloadClass != .represented)).length == 8                 -- P1
--- G23's third-class-6-door guard, extended to the payload matrix (plan §5).
-#guard fixtures.all fun f => !plainIterSlots f.logical                                -- P1
+-- G23's third-class-6-door guard, extended to the payload matrix (plan §5's "0 of the 19 payload
+-- fixtures" requirement) -- not a P1 shape/count guard, tagged separately.
+#guard fixtures.all fun f => !plainIterSlots f.logical                          -- door guard
 
 /-! ### §4.4 P2/P3 — physical conservation, and represented-class route agreement
 
