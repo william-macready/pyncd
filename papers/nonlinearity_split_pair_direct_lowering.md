@@ -1109,8 +1109,12 @@ Merely predicting a failure or mutating the assertion does not count.
 > and Agreement repair still land together in the second of them. The separation exists because
 > route equality can be established *before* the flip (compare `splitNonlins → schedule → routeCore`
 > against `schedule → physicalizeForRoute → routeCore`), which makes the module independently
-> reviewable. Sections 2 and 4 of this document remain the governing contract; Tasks 2-5 below stay
-> unplanned until that slice lands.
+> reviewable. Sections 2 and 4 of this document remain the governing contract.
+>
+> **Complete (merged 2026-08-26).** All three sub-tasks landed on `main`; the atomic flip, route
+> wiring, and Agreement repair are in production. The one known gap (`JaxExperiment`/
+> `experiments/jax_bridge/EvalPlanCodegen.lean`, pre-existing and out of this slice's scope) is
+> recorded above the Day-5 gate and remains open for a separate repair.
 
 **Outcome**
 
@@ -1315,6 +1319,22 @@ oracle guards, and unchanged public Agreement. Task 1 succeeds only when every c
 intermediate commit exposes a broken architecture.
 
 ### 3.4 Task 2: durable nonlinear route corpus and realization regression
+
+> **Executable plan (2026-08-26), complete (merged 2026-08-27):** Task 2 has its own slice plan,
+> [`leanncd/docs/superpowers/plans/2026-08-26-nonlinearity-t2-route-corpus.md`](../leanncd/docs/superpowers/plans/2026-08-26-nonlinearity-t2-route-corpus.md),
+> per CLAUDE.md Rule 13 (one implementation plan per slice), decomposed into three dispatchable
+> sub-tasks (the 145-case generated corpus, the 19-case named payload matrix, and the Bridge/ACSet
+> and realization regression). All three landed on `main`, with both required whole-branch reviews
+> (route/indexing lens; scan/realization/ACSet-preservation lens) adjudicated.
+>
+> Those reviews found two real, pre-existing production soundness bugs in the class-6 physicalization
+> boundary (Section 2.4's case table), out of this tests-only slice's scope by design — each closed in
+> its own dedicated follow-up slice, per CLAUDE.md Rule 13:
+> [`leanncd/docs/superpowers/plans/2026-08-27-nonlinearity-fourth-door-fix.md`](../leanncd/docs/superpowers/plans/2026-08-27-nonlinearity-fourth-door-fix.md)
+> (the `.freeNorm`-diagonal door, reachable from surface `tlprog!` syntax) and
+> [`leanncd/docs/superpowers/plans/2026-08-27-nonlinearity-third-door-fix.md`](../leanncd/docs/superpowers/plans/2026-08-27-nonlinearity-third-door-fix.md)
+> (the `.iterAt`/`.iterNext` door, reachable only from a hand-built schedule). Both are merged; no
+> open class-6 door remains documented in Section 2.4's table.
 
 **Outcome**
 
