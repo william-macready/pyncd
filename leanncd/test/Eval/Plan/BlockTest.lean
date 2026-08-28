@@ -153,6 +153,113 @@ run_cmd do
       unless e == .wiring (.missingProduction 2) do
         throwError s!"missing production: wrong error {repr e}"
 
+/-! ## Nonlinear block steps (Task 3)
+
+`RawPlanBlock.steps` admits `.pointwise`/`.axiswise` alongside `.assign`. These five fixtures are
+the first to exercise that: two positive (checking plus Dense execution, one per nonlinear kind) and
+three negative, covering the ordinary wiring failures a nonlinear step can hit and the one
+obligation that is specific to it — a nonlinear step's source must be a PRECEDING `.assign` step's
+destination.
+
+Expected values are the ones observed from the pre-implementation rehearsal in
+`papers/implementation_seeds/nonlinearity_route_fragments/blockstep_migration/`, re-derived here
+against the production types.
+-/
+
+-- Fixture 1. `stepBlock` plus a ReLU over the assignment's own result. X[ctx,o] at ctx=0 is
+-- [1,-2,3], so the ReLU is [1,0,3].
+def pointwiseBlock : RawPlanBlock :=
+  { contextShape := #[2]
+  , tensorSigs := blockSigs ++ #[{ shape := #[3], dtype := .f64 }]
+  , inputs := #[0]
+  , steps := #[.assign blockAssign,
+      .pointwise { sourceSlot := 1, destinationSlot := 2, shape := #[3], fn := .relu }]
+  , outputs := #[2] }
+
+run_cmd do
+  match checkPlanBlock pointwiseBlock with
+  | .error e => throwError s!"checkPlanBlock rejected a well-formed pointwise block: {repr e}"
+  | .ok checked =>
+      let x : DenseTensor := { shape := [2,3], data := #[1,-2,3,4,-5,6] }
+      match runDenseBlock checked [0] #[x] with
+      | .error e => throwError s!"pointwise execution failed: {repr e}"
+      | .ok store => unless store[2]!.data == #[1,0,3] do
+          throwError s!"pointwise wrong result: {repr store[2]!.data}"
+
+-- Fixture 2. The same block with an axiswise `normalize` instead. At ctx=0 the assignment yields
+-- [1,2,3], which sum-normalizes to [1/6, 2/6, 3/6] — asserted as an exact sum plus strict
+-- monotonicity rather than by pinning three Float literals.
+def axiswiseBlock : RawPlanBlock :=
+  { contextShape := #[2]
+  , tensorSigs := blockSigs ++ #[{ shape := #[3], dtype := .f64 }]
+  , inputs := #[0]
+  , steps := #[.assign blockAssign,
+      .axiswise { sourceSlot := 1, destinationSlot := 2, shape := #[3]
+                , axisPos := 0, fn := .normalize }]
+  , outputs := #[2] }
+
+run_cmd do
+  match checkPlanBlock axiswiseBlock with
+  | .error e => throwError s!"checkPlanBlock rejected a well-formed axiswise block: {repr e}"
+  | .ok checked =>
+      let x : DenseTensor := { shape := [2,3], data := #[1,2,3,4,5,6] }
+      match runDenseBlock checked [0] #[x] with
+      | .error e => throwError s!"axiswise execution failed: {repr e}"
+      | .ok store =>
+          let d := store[2]!.data
+          unless d.size == 3 && d[0]! < d[1]! && d[1]! < d[2]! &&
+              ((d[0]! + d[1]! + d[2]!) - 1.0).abs < 0.000001 do
+            throwError s!"axiswise wrong result: {repr d}"
+
+-- Fixture 3. A `.pointwise` step reading a slot whose producer is placed AFTER it — the same
+-- forward-read failure `forwardReadBlock` pins for assignments, now reached through a nonlinear
+-- step's own source check.
+def unproducedPointwiseBlock : RawPlanBlock :=
+  { contextShape := #[], tensorSigs := fwdSigs, inputs := #[0]
+  , steps := #[
+      .pointwise { sourceSlot := 1, destinationSlot := 2, shape := #[4], fn := .relu },
+      .assign fwdAssignB]
+  , outputs := #[2] }
+
+run_cmd do
+  match checkPlanBlock unproducedPointwiseBlock with
+  | .ok _ => throwError "a pointwise read of a not-yet-produced slot should have been rejected"
+  | .error e => unless e == .wiring (.invalidForwardRead 0 0 0 1) do
+      throwError s!"pointwise forward read: wrong error {repr e}"
+
+-- Fixture 4. Source production restored, but a later assignment collides on the pointwise step's
+-- destination — ordinary duplicate-destination wiring, reported against the nonlinear step as the
+-- first producer.
+def collidingPointwiseDestinationBlock : RawPlanBlock :=
+  { contextShape := #[], tensorSigs := fwdSigs, inputs := #[0]
+  , steps := #[.assign fwdAssignB,
+      .pointwise { sourceSlot := 1, destinationSlot := 2, shape := #[4], fn := .relu },
+      .assign fwdAssignA]
+  , outputs := #[2] }
+
+run_cmd do
+  match checkPlanBlock collidingPointwiseDestinationBlock with
+  | .ok _ => throwError "a duplicate destination on a pointwise step should have been rejected"
+  | .error e => unless e == .wiring (.duplicateDestination 2 1 2) do
+      throwError s!"pointwise duplicate destination: wrong error {repr e}"
+
+-- Fixture 7. Nonlinearity chained directly onto nonlinearity: an axiswise step sourcing the
+-- pointwise step's result. Its source IS available and IS produced by a preceding step — but that
+-- step is not an `.assign`, so provenance rejects it.
+def nonlinearChainBlock : RawPlanBlock :=
+  { pointwiseBlock with
+    tensorSigs := pointwiseBlock.tensorSigs ++ #[{ shape := #[3], dtype := .f64 }]
+    steps := pointwiseBlock.steps ++ #[
+      .axiswise { sourceSlot := 2, destinationSlot := 3, shape := #[3]
+                , axisPos := 0, fn := .normalize }]
+    outputs := #[3] }
+
+run_cmd do
+  match checkPlanBlock nonlinearChainBlock with
+  | .ok _ => throwError "an axiswise step sourcing a pointwise result should have been rejected"
+  | .error e => unless e == .nonlinearSourceNotLocalAssignment 2 2 do
+      throwError s!"nonlinearity-onto-nonlinearity provenance: wrong error {repr e}"
+
 /-!
 ## `CheckedPlanBlock` construction boundary (compile-time privacy check)
 

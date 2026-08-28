@@ -573,14 +573,18 @@ run_cmd do
   | .error e => unless e == .causalityFailure 0 0 0 0 do
       throwError s!"causalityFailure (look-ahead read): wrong error {repr e}"
 
--- Reject, discriminating `causalityFailure`'s `stmtIndex` field: a step block with TWO
+-- Reject, discriminating `causalityFailure`'s `blockStepIndex` field: a step block with TWO
 -- assignments, where assignment 0 (`stepAssignG`, unchanged) is an ordinary valid causal
 -- computation and assignment 1 is a scratch computation (never a declared block output — Wave F's
 -- block-local-scratch construct, so it needs no state write) carrying `constReadG`'s non-causal
 -- constant read. Both fixtures above give every field of `causalityFailure`'s payload the value
--- `0`, so they cannot tell a correctly-wired `stmtIndex` from a swapped-argument or hardcoded-zero
--- one; this fixture's bad read sits at assignment index 1, not 0, so a correct implementation must
--- report `stmtIndex = 1`.
+-- `0`, so they cannot tell a correctly-wired `blockStepIndex` from a swapped-argument or
+-- hardcoded-zero one; this fixture's bad read sits at index 1, not 0, so a correct implementation
+-- must report `blockStepIndex = 1`.
+--
+-- What this fixture does NOT discriminate: both its steps are `.assign`, so its block-step index
+-- and its filtered-assignment index coincide. `stepBlockNonlinBetweenAssignsG` below is the
+-- fixture that separates those two readings.
 def stepScratchConstG : AssignPlan :=
   { stepAssignG with destinationSlot := 2, terms := #[termConstG] }
 
@@ -594,6 +598,120 @@ run_cmd do
   | .ok _ => throwError "a second assignment's constant (Jacobi-style unsafe) state read should have been rejected"
   | .error e => unless e == .causalityFailure 0 1 0 0 do
       throwError s!"causalityFailure (second-assignment constant read): wrong error {repr e}"
+
+/-! ### Nonlinear block steps inside a scan's step block (Task 3)
+
+Four fixtures covering the interaction between a step block's nonlinear steps and scan causality.
+Two properties are at stake, and they pull in opposite directions:
+
+* **Provenance keeps assignment-only causality complete.** `checkPlanBlock` admits a nonlinear step
+  only when its source is a PRECEDING `.assign` step's destination, so a captured state can never
+  reach a nonlinearity except through an assignment `checkScanPlan`'s loop already inspects.
+  Fixtures 5 and 6 are the two ways to try to evade that, both rejected before causality runs.
+* **Skipping nonlinear steps must not weaken or over-tighten causality itself.** Fixture 8 is a
+  genuinely causal scan that must still be accepted with a nonlinear step present; fixture 9 is a
+  genuinely non-causal one that must still be rejected.
+
+`stepBlockNonlinBetweenAssignsG` then pins what `blockStepIndex` actually indexes. -/
+
+-- Fixture 5. A `.pointwise` step sourcing the captured state slot (input 0) DIRECTLY. Block
+-- checking rejects it on provenance grounds before `checkScanPlan` ever reaches causality — the
+-- capture is not a preceding `.assign` destination.
+def capturedPointwiseBlockG : RawPlanBlock :=
+  { stepBlockLookAheadG with
+    tensorSigs := #[{ shape := #[5], dtype := .f64 }, { shape := #[5], dtype := .f64 }]
+    steps := #[.pointwise { sourceSlot := 0, destinationSlot := 1, shape := #[5], fn := .relu }] }
+
+run_cmd do
+  match checkPlanBlock capturedPointwiseBlockG with
+  | .ok _ => throwError "a pointwise step sourcing a captured state slot directly should have been rejected"
+  | .error e => unless e == .nonlinearSourceNotLocalAssignment 0 0 do
+      throwError s!"captured-pointwise provenance: wrong error {repr e}"
+
+-- Fixture 6. The laundering attempt: a `.pointwise` reads the capture into a scratch slot, and the
+-- look-ahead assignment then reads the scratch instead of the capture. The rejection still fires on
+-- the pointwise step itself (index 0), so the laundering path never reaches scan causality at all.
+def launderedLookAheadReadG : ReadPlan := { lookAheadReadG with sourceSlot := 2 }
+def launderedLookAheadTermG : TermPlan := { termLookAheadG with factors := #[launderedLookAheadReadG] }
+def launderedLookAheadAssignG : AssignPlan :=
+  { stepAssignLookAheadG with terms := #[launderedLookAheadTermG] }
+
+def launderingBlockG : RawPlanBlock :=
+  { stepBlockLookAheadG with
+    tensorSigs := stepBlockLookAheadG.tensorSigs ++ #[{ shape := #[5], dtype := .f64 }]
+    steps := #[ .pointwise { sourceSlot := 0, destinationSlot := 2, shape := #[5], fn := .relu }
+              , .assign launderedLookAheadAssignG ] }
+
+run_cmd do
+  match checkPlanBlock launderingBlockG with
+  | .ok _ => throwError "laundering a captured state through a pointwise step should have been rejected"
+  | .error e => unless e == .nonlinearSourceNotLocalAssignment 0 0 do
+      throwError s!"laundering provenance: wrong error {repr e}"
+
+-- Fixture 8. Accept: `deepHistoryScan`'s causal read is unchanged, and a scalar `.pointwise` is
+-- appended reading that assignment's own destination. Provenance holds (its source IS a preceding
+-- assignment's destination) and causality still passes on the assignment.
+def deepHistoryThenPointwiseBlockG : RawPlanBlock :=
+  { stepBlockG with
+    tensorSigs := stepBlockG.tensorSigs ++ #[{ shape := #[], dtype := .f64 }]
+    steps := stepBlockG.steps ++ #[
+      .pointwise { sourceSlot := 1, destinationSlot := 2, shape := #[], fn := .relu }] }
+
+run_cmd do
+  match checkScanPlan outerSigsDeepHistory
+      { deepHistoryScan with stepBlock := deepHistoryThenPointwiseBlockG } with
+  | .error e => throwError s!"a causal deep-history scan with a trailing pointwise step was rejected: {repr e}"
+  | .ok _checked => pure ()
+
+-- Fixture 9. Reject: the same shape, but over the NON-causal look-ahead assignment. Block
+-- provenance accepts the chain (the pointwise step's source is a preceding assignment), and then
+-- `checkScanPlan` rejects the underlying assignment at its own block-step index 0 — unchanged from
+-- before nonlinear steps existed.
+def lookAheadThenPointwiseBlockG : RawPlanBlock :=
+  { stepBlockLookAheadG with
+    tensorSigs := stepBlockLookAheadG.tensorSigs ++ #[{ shape := #[], dtype := .f64 }]
+    steps := stepBlockLookAheadG.steps ++ #[
+      .pointwise { sourceSlot := 1, destinationSlot := 2, shape := #[], fn := .relu }] }
+
+run_cmd do
+  match checkScanPlan outerSigsDeepHistory
+      { deepHistoryScan with stepBlock := lookAheadThenPointwiseBlockG } with
+  | .ok _ => throwError "a look-ahead read followed by a pointwise step should have been rejected"
+  | .error e => unless e == .causalityFailure 0 0 0 0 do
+      throwError s!"causalityFailure (look-ahead then pointwise): wrong error {repr e}"
+
+-- Fixture 10. What `blockStepIndex` indexes, pinned. Three steps, with a nonlinear step BETWEEN two
+-- assignments: `.assign stepAssignG` (valid, causal) at 0, `.pointwise` reading its destination at
+-- 1, and the non-causal constant-read scratch assignment at 2. Slots 2 and 3 are block-local
+-- scratch, never declared outputs, so no state write is needed for either.
+--
+-- `stepBlockTwoAssignConstG` above cannot distinguish a block-step index from a filtered-assignment
+-- index, because all its steps are assignments and the two readings coincide. Here they diverge:
+-- the offending assignment is block step 2 but filtered assignment 1. A correct implementation
+-- reports 2; one that filters `steps` to its `.assign` payloads before enumerating reports 1.
+def stepNonlinBetweenAssignsSigsG : Array TensorSignature :=
+  stepBlockG.tensorSigs ++ #[{ shape := #[], dtype := .f64 }, { shape := #[], dtype := .f64 }]
+
+def stepScratchConstAt3G : AssignPlan :=
+  { stepAssignG with destinationSlot := 3, terms := #[termConstG] }
+
+def stepBlockNonlinBetweenAssignsG : RawPlanBlock :=
+  { stepBlockG with
+    tensorSigs := stepNonlinBetweenAssignsSigsG
+    steps := #[ .assign stepAssignG
+              , .pointwise { sourceSlot := 1, destinationSlot := 2, shape := #[], fn := .relu }
+              , .assign stepScratchConstAt3G ] }
+
+run_cmd do
+  -- block checking must ACCEPT: every nonlinear source is a preceding assignment destination.
+  match checkPlanBlock stepBlockNonlinBetweenAssignsG with
+  | .error e => throwError s!"nonlin-between-assigns block was rejected by block checking: {repr e}"
+  | .ok _ => pure ()
+  match checkScanPlan outerSigsDeepHistory
+      { deepHistoryScan with stepBlock := stepBlockNonlinBetweenAssignsG } with
+  | .ok _ => throwError "the third step's constant state read should have been rejected"
+  | .error e => unless e == .causalityFailure 0 2 0 0 do
+      throwError s!"causalityFailure blockStepIndex: expected block-step index 2, got {repr e}"
 
 /-! ### Non-advancing dimension exemption
 

@@ -356,9 +356,12 @@ Since Task 1 it indexes `stepBlock.steps`, not a statement list, and Task 1 left
 apologising for the name instead of fixing it. Fixture 10 below is what makes the new name an
 honest claim rather than a relabel.
 
-> **Trap — do not `sed` this.** `stmtIndex` appears on **14 other constructors**, all in
+> **Trap — do not `sed` this.** `stmtIndex` appears on **13 other constructors**, all in
 > `LeanNCD/Eval/Plan/Error.lean`'s `ScanCompileError`, a different error family where the field
 > genuinely still means "the offending statement's index within its own `base`/`recur` list."
+> (Counted exactly 2026-08-27: `grep -c stmtIndex Error.lean` reports **15 lines** — 12 constructor
+> lines beginning `|`, one continuation line for a 13th constructor whose own `|` line does not
+> carry the field, and 2 comment mentions. Use 15 as the post-rename grep gate, not 13.)
 > **Those must not change.** Exactly one declaration is in scope: the `causalityFailure` line in
 > `Scan.lean`'s `ScanPlanError`. Verified 2026-08-27: the only other references to the old name are
 > three comment lines in `ScanTest.lean` (above `stepBlockTwoAssignConstG`) and one clause in

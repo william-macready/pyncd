@@ -183,7 +183,7 @@ inductive ScanPlanError
   | boundaryPolicyNotAdmitted     (policy : ScanBoundaryPolicy)
   | snapshotPolicyNotAdmitted     (policy : ScanSnapshotPolicy)
   | materializationPolicyNotAdmitted (stateIndex : Nat) (policy : MaterializationPolicy)
-  | causalityFailure              (stateIndex stmtIndex termIndex factorIndex : Nat)  -- Task 2
+  | causalityFailure              (stateIndex blockStepIndex termIndex factorIndex : Nat)  -- F3 Task 2
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- Evidence that one `RawScanPlan` is a sound checked scan: both blocks are checked, every
@@ -322,9 +322,12 @@ private def checkWrites (sigs : Array TensorSignature) (block : RawPlanBlock)
     result. So every path from a captured state into a nonlinearity passes through an assignment
     this loop already inspects.
 
-    The loop enumerates the UNFILTERED `steps` array so `causalityFailure`'s index stays a genuine
-    block-step position (its field is named `stmtIndex` for historical reasons; it indexes
-    `stepBlock.steps`, not a filtered assignment sublist). -/
+    The loop enumerates the UNFILTERED `steps` array, so `causalityFailure`'s `blockStepIndex` is a
+    position in `stepBlock.steps` — NOT a position in a filtered assignment sublist. The two
+    coincide in any block whose steps are all assignments, which is why every pre-existing fixture
+    passes either way; `ScanTest.lean`'s `stepBlockNonlinBetweenAssignsG` is the one that pins the
+    difference, by putting a nonlinear step between two assignments so the offending assignment sits
+    at block-step index 2 and filtered index 1. -/
 def checkScanPlan (sigs : Array TensorSignature) (raw : RawScanPlan) :
     Except ScanPlanError CheckedScanPlan := do
   if raw.states.isEmpty then throw .noStates else pure ()
