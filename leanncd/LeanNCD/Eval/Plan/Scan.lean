@@ -316,11 +316,28 @@ private def checkWrites (sigs : Array TensorSignature) (block : RawPlanBlock)
     (`.pointwise`/`.axiswise`) have no term/factor structure and so no state read to classify, but
     that alone would not justify skipping them — a nonlinear step reading a captured state
     directly, or an assignment reading a nonlinear step that read one, would launder a non-causal
-    read past this loop. Neither is reachable: `checkPlanBlock` (`Block.lean`) runs first, above,
-    and its `nonlinearSourceNotLocalAssignment` obligation admits a nonlinear step only when its
-    source is a PRECEDING `.assign` step's destination — never a capture, never another nonlinear
-    result. So every path from a captured state into a nonlinearity passes through an assignment
-    this loop already inspects.
+    read past this loop.
+
+    Neither is reachable, but **the argument needs four guards, not one**, and three of them live
+    outside this function. `checkPlanBlock` (`Block.lean`) runs first, above; then:
+
+    1. its `nonlinearSourceNotLocalAssignment` admits a nonlinear step only when its source is a
+       PRECEDING `.assign` step's destination;
+    2. `checkStepGraph`'s `inputSlotOverwritten` stops an assignment ever writing a declared block
+       input, so `.assign` destinations are disjoint from `block.inputs`;
+    3. `checkCaptures`' `captureTargetsNonInput` (this file, above) forces every state capture's
+       `inputSlot` to BE a declared block input;
+    4. `checkStepGraph`'s `duplicateDestination` stops a nonlinear step aliasing a preceding
+       assignment's destination.
+
+    (1)∧(2)∧(3) is what actually yields "a nonlinear step's source is never a capture" — (1) alone
+    does not. (4) yields "never another nonlinear step's result." Given those, every path from a
+    captured state into a nonlinearity passes through an assignment this loop inspects, and an
+    assignment reading a nonlinear result reads a non-capture slot, so no obligation is dropped.
+    **Weakening any one of the four reopens the hole**, including in files this one does not
+    mention — see `checkPlanBlock`'s own docstring for the worked failure scenario. The block-level
+    fixtures pinning legs (1) and (2), and the scan-level fixture pinning that block checking runs
+    before this loop at all, are in `test/Eval/Plan/ScanTest.lean` and `BlockTest.lean`.
 
     The loop enumerates the UNFILTERED `steps` array, so `causalityFailure`'s `blockStepIndex` is a
     position in `stepBlock.steps` — NOT a position in a filtered assignment sublist. The two
@@ -432,8 +449,28 @@ def mixedRadixDomainSize (D : Array Nat) : Nat := D.foldl (· * ·) 1
     **Bounds obligation this relies on.** Unlike `gatherFactor` (`Dense.lean`) and
     `Executable.lean`, this function does NOT call `inBoundsPerDim` before `flatIndex`: it performs
     no bounds recovery, trusting `checkScanPlan` the same way the base/step phases of
-    `runDenseScan` below trust it. Row by row, per `writeRowKinds`/`baseWriteRowsOk`/
-    `stepWriteRowsOk`:
+    `runDenseScan` below trust it.
+
+    **First, a premise the row analysis below silently assumes: `out.shape` is a RUNTIME value, and
+    every checker that bounds it reasons over the DECLARED `block.tensorSigs[w.outputSlot].shape`.**
+    The two must agree. Before block steps generalized, that was one short step — `runDenseAssignAt`
+    returns exactly `a.outputShape` and `checkAssign` forces `destSig.shape == a.outputShape`. A
+    block output may now be produced by a `.pointwise`/`.axiswise` step instead, and the agreement
+    then rests on a longer chain that lives in another file: `checkNonlinIO` (`Nonlin.lean`) forcing
+    `srcSig.shape == declared shape == destSig.shape`, AND every arm of `PointwiseFn.apply`/
+    `AxiswiseFn.apply` (`Eval/Nonlin.lean`) being shape-preserving — the axiswise arms via `perRow`,
+    which only writes into an existing `acc` and never rebuilds a shape. All arms were audited and
+    the invariant holds today.
+
+    **If a future `AxiswiseFn` constructor ever reduces along its axis** (a `sum`/`argmax` that drops
+    a dimension), that change looks entirely local to `Nonlin.lean` and `checkNonlinIO`'s
+    shape-equality clause — and it would silently break this function: a step write whose output slot
+    is that step's destination would enumerate a runtime shape smaller than the declared region the
+    row checks approved, writing into another row's cells or panicking in `Array.set!`. That is
+    verbatim the F3 free-extent / F4 advancing-row bug class. `checkNonlinIO`'s shape equality is
+    therefore load-bearing for scan writes, not merely local geometry.
+
+    Given that premise, row by row, per `writeRowKinds`/`baseWriteRowsOk`/`stepWriteRowsOk`:
     - a `.free p` row ranges over exactly `out.shape[p]`, which `freeExtentsAgree` forces to equal
       the state's own extent at that dimension (this was the gap the final F3 review found: before
       it, only the free positions' RANK/ORDER was checked, so a wider output face wrote into other

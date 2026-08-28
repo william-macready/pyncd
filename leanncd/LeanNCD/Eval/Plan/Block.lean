@@ -142,10 +142,38 @@ def checkStepGraph {E C : Type} (n : Nat) (inputs : Array TensorSlot) (liftWirin
     `.assign` step in this same block — enforced in `sourceCheck`, after the ordinary
     range/availability check and before the step's own local checker runs, against a snapshot
     taken before this node's destinations are marked produced (so a nonlinear step can never
-    source its own result). This is what keeps assignment-only scan causality complete: because a
-    captured state can reach a nonlinearity only through an assignment, `Scan.lean`'s
-    `checkScanPlan` can walk `.assign` payloads alone without a nonlinear step laundering a
-    non-causal read past it.
+    source its own result). Note the `ti`/`fi` in a nonlinear step's `invalidForwardRead` are a
+    deliberate `0 0` placeholder, not a lost locator: these steps have no term/factor structure to
+    point into. `checkPlan` uses and documents the same convention.
+
+    **This obligation is one of FOUR guards that together keep assignment-only scan causality
+    complete. Do not read it as sufficient on its own** — the conclusion "a nonlinear step can
+    never read a captured state" does NOT follow from this check alone:
+
+    1. this obligation — a nonlinear source is some preceding `.assign` step's destination;
+    2. `checkStepGraph`'s `inputSlotOverwritten` — an assignment can never write a slot that is a
+       declared block input, so the set of `.assign` destinations is disjoint from `inputs`;
+    3. `Scan.lean`'s `checkCaptures`/`captureTargetsNonInput` — every state capture's `inputSlot`
+       IS a declared block input;
+    4. `checkStepGraph`'s `duplicateDestination` — a nonlinear step cannot alias a preceding
+       assignment's destination, which is what rules out "never another nonlinear step's result."
+
+    (1)∧(2)∧(3) is what gives "never a capture"; all four run before `checkScanPlan`'s causality
+    loop. **Weakening any one of them reopens the hole**, including guards that live in this file's
+    shared wiring loop or in `Scan.lean` rather than here — e.g. relaxing `inputSlotOverwritten` to
+    permit an in-place update of a block input would let an assignment write the captured-state slot,
+    admit that slot into `precedingAssignments`, and hand a nonlinear step the full unwritten history
+    with no diagnostic anywhere.
+
+    The rule is also deliberately STRICTER than soundness strictly requires, and a future author
+    should not mistake the strictness for necessity. The precise requirement is "the transitive read
+    root is not a state capture"; this is a conservative one-step approximation of it. Consequences:
+    a base block cannot compute `relu(externalInput)` directly (base blocks cannot have state
+    captures at all, per `stateCaptureInBaseBlock`), and neither can a step block read an *external*
+    capture into a nonlinearity, though externals carry no causality obligation either. Both cost one
+    extra copy assignment. This is acceptable today because the source lowering
+    (`papers/nonlinearity_split_pair_direct_lowering.md` §3.5) always emits `assign → pointwise/
+    axiswise` anyway, so the compiler never wants the direct form.
 
     The `outputs`-range/uniqueness check has no analogue in `checkStepGraph` either — there is no
     "declared outputs" concept at the outer-graph level — so it stays a separate step here, run

@@ -260,6 +260,41 @@ run_cmd do
   | .error e => unless e == .nonlinearSourceNotLocalAssignment 2 2 do
       throwError s!"nonlinearity-onto-nonlinearity provenance: wrong error {repr e}"
 
+-- `BlockError.nonlin` reachability. Every fixture above carries a geometrically VALID nonlinear
+-- step, so none of them shows that a `checkPointwise`/`checkAxiswise` failure surfaces as
+-- `.nonlin ni e` rather than being swallowed or mis-wrapped as `.wiring (.nodeError ni …)`. This
+-- one has a pointwise step whose declared `shape` disagrees with its source slot's signature.
+-- It also pins the node index, which is otherwise free to drift to a constant.
+def badShapeNonlinBlock : RawPlanBlock :=
+  { pointwiseBlock with
+    steps := #[.assign blockAssign,
+      .pointwise { sourceSlot := 1, destinationSlot := 2, shape := #[7], fn := .relu }] }
+
+run_cmd do
+  match checkPlanBlock badShapeNonlinBlock with
+  | .ok _ => throwError "a pointwise step with a mismatched declared shape should have been rejected"
+  | .error e => unless e == .nonlin 1 (.sourceShapeMismatch #[7] #[3]) do
+      throwError s!"BlockError.nonlin routing: wrong error {repr e}"
+
+-- Check ORDER, pinned. `checkPlanBlock`'s docstring states that provenance is enforced inside
+-- `sourceCheck`, hence before the step's own local checker runs. This block's pointwise step
+-- violates BOTH — it sources a block input (not a preceding assignment) AND declares a shape its
+-- slot does not have. A correct implementation reports the provenance failure; one that ran
+-- `localCheck` first would report `.nonlin`.
+def badProvenanceAndShapeBlock : RawPlanBlock :=
+  { contextShape := #[2]
+  , tensorSigs := blockSigs ++ #[{ shape := #[3], dtype := .f64 }]
+  , inputs := #[0]
+  , steps := #[.assign blockAssign,
+      .pointwise { sourceSlot := 0, destinationSlot := 2, shape := #[7], fn := .relu }]
+  , outputs := #[2] }
+
+run_cmd do
+  match checkPlanBlock badProvenanceAndShapeBlock with
+  | .ok _ => throwError "a pointwise step violating both provenance and shape should have been rejected"
+  | .error e => unless e == .nonlinearSourceNotLocalAssignment 1 0 do
+      throwError s!"provenance must precede local check: wrong error {repr e}"
+
 /-!
 ## `CheckedPlanBlock` construction boundary (compile-time privacy check)
 

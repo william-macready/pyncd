@@ -713,6 +713,83 @@ run_cmd do
   | .error e => unless e == .causalityFailure 0 2 0 0 do
       throwError s!"causalityFailure blockStepIndex: expected block-step index 2, got {repr e}"
 
+/-! ### The causality-completeness argument, pinned at the scan level
+
+`checkScanPlan` walks only `.assign` payloads, which is sound only because block checking runs
+FIRST and rejects the shapes that would launder a state read past the walk. The three fixtures
+above assert at `checkPlanBlock` level; on their own they say nothing about whether `checkScanPlan`
+actually invokes block checking, nor about the two guards outside `checkPlanBlock`'s own provenance
+rule that the argument depends on. These three close that.
+
+Between them they pin legs 1-3 of the four-guard argument in `checkScanPlan`'s docstring. Leg 4
+(`duplicateDestination`) is already pinned by `BlockTest.lean`'s fixture 4. -/
+
+-- Leg 1, at the SCAN level: the laundering block must be rejected by `checkScanPlan`, wrapped as a
+-- `.stepBlockError`. Without this, block checking could be moved after (or out of) the causality
+-- walk and no fixture would notice — its causality walk is vacuous, since the laundered read
+-- targets a scratch slot that is not a capture.
+run_cmd do
+  match checkScanPlan outerSigsDeepHistory { deepHistoryScan with stepBlock := launderingBlockG } with
+  | .ok _ => throwError "checkScanPlan admitted a block that launders a state read through a pointwise step"
+  | .error e => unless e == .stepBlockError (.nonlinearSourceNotLocalAssignment 0 0) do
+      throwError s!"scan-level laundering rejection: wrong error {repr e}"
+
+-- Leg 2: an assignment may never write a slot that is a declared block input. This is what makes
+-- `precedingAssignments` disjoint from the captured-state slots — relax it (e.g. to allow in-place
+-- update of an input) and a nonlinear step can read the full unwritten state history.
+def overwriteCaptureAssignG : AssignPlan :=
+  { stepAssignG with destinationSlot := 0, outputShape := #[5] }
+
+def overwriteCaptureBlockG : RawPlanBlock :=
+  { stepBlockG with
+    tensorSigs := #[{ shape := #[5], dtype := .f64 }, { shape := #[5], dtype := .f64 }]
+    steps := #[.assign overwriteCaptureAssignG]
+    outputs := #[1] }
+
+run_cmd do
+  match checkPlanBlock overwriteCaptureBlockG with
+  | .ok _ => throwError "an assignment writing a declared block input should have been rejected"
+  | .error e => unless e == .wiring (.inputSlotOverwritten 0 0) do
+      throwError s!"inputSlotOverwritten (leg 2): wrong error {repr e}"
+
+-- A nonlinear step's result reaching `commitWrite`. Fixture 8 shows such a block is ACCEPTED;
+-- nothing yet showed one EXECUTES correctly through a state write. Here the block's declared
+-- output is the pointwise destination, so `G[l+1] = relu(G[l-2])` and the nonlinear result flows
+-- through `StateWriteMap` into `commitWrite`. This is the composition `commitWrite`'s bounds
+-- docstring depends on: a runtime tensor produced by `runDensePointwise`, written into a region
+-- bounded against the DECLARED signature.
+def stepBlockReluOutG : RawPlanBlock :=
+  { stepBlockG with
+    tensorSigs := stepBlockG.tensorSigs ++ #[{ shape := #[], dtype := .f64 }]
+    steps := stepBlockG.steps ++ #[
+      .pointwise { sourceSlot := 1, destinationSlot := 2, shape := #[], fn := .relu }]
+    outputs := #[2] }
+
+def reluOutScan : RawScanPlan :=
+  { deepHistoryScan with
+    stepBlock := stepBlockReluOutG
+    stepWrites := #[{ outputSlot := 2, stateIndex := 0
+                    , map := { coeffs := #[#[1]], bias := #[1] } }] }
+
+run_cmd do
+  match checkScanPlan outerSigsDeepHistory reluOutScan with
+  | .error e => throwError s!"a scan whose block output is a pointwise result was rejected: {repr e}"
+  | .ok checked =>
+      -- seed 3: G[0]=3, G[3]=relu(G[0])=3, the rest zero-padded reads of pre-history.
+      let outer3 : Array DenseTensor :=
+        #[{ shape := [], data := #[3.0] }, { shape := [5], data := Array.replicate 5 0.0 }]
+      match runDenseScan outerSigsDeepHistory checked outer3 with
+      | .error e => throwError s!"reluOutScan (seed 3) failed: {repr e}"
+      | .ok st => unless st[1]!.data == #[3, 0, 0, 3, 0] do
+          throwError s!"reluOutScan (seed 3) wrong: {repr st[1]!.data}"
+      -- seed -3: G[0]=-3, and G[3]=relu(-3)=0 — the ReLU is genuinely applied, not a copy.
+      let outerNeg : Array DenseTensor :=
+        #[{ shape := [], data := #[-3.0] }, { shape := [5], data := Array.replicate 5 0.0 }]
+      match runDenseScan outerSigsDeepHistory checked outerNeg with
+      | .error e => throwError s!"reluOutScan (seed -3) failed: {repr e}"
+      | .ok st => unless st[1]!.data == #[-3, 0, 0, 0, 0] do
+          throwError s!"reluOutScan (seed -3) wrong: {repr st[1]!.data}"
+
 /-! ### Non-advancing dimension exemption
 
 A second, independent 2-D state `Gj` (dim0 = `j`, a plain non-advancing elementwise axis, size 2;
