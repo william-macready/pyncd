@@ -176,3 +176,118 @@ running two focused reviews.
 
 Until authentic source/input pairs are recovered or the governing plan explicitly replaces the six
 recorded fixtures, Task 4 must remain stopped at Phase 2.
+
+## Oracle fixture authoring
+
+These are fresh observed oracles, not attempts to recover or reproduce the superseded §3.6 floats.
+All six run through the legacy evaluator. The authored fixtures are logical `ScheduledProgram`s so
+their required slot and write structure can be asserted directly. The two adopted fixtures import
+and therefore re-run their original test modules; their exact programs are also transcribed into the
+seed so their values can be printed in the same raw run.
+
+### Fixture 1 — leading pointwise scratch
+
+| Field | Record |
+|---|---|
+| Program source (verbatim) | <pre><code>def fixture1 : ScheduledProgram :=<br>  { decls := [.iter f1l 3]<br>  , stmts := [.scan "S" [f1l]<br>      [.assign "S" [.free f1i, .iterAt f1l 0] (rhs "X" [.axis f1i])]<br>      [ .assign "T" [.free f1i]<br>          (rhs2 "S" [.axis f1i, .axis f1l] "K" [.axis f1i] (.pointwise .relu))<br>      , .assign "S" [.free f1i, .iterNext f1l] (rhs "T" [.axis f1i]) ]<br>      false]<br>  , env := {}<br>  , extNames := {"X", "K"}<br>  , explicitSizes := ({} : HashMap UID Nat).insert f1l.uid 3 }</code></pre> |
+| Inputs (verbatim) | <pre><code>def fixture1Inputs : HashMap String DenseTensor :=<br>  (({} : HashMap String DenseTensor).insert "X" (tensorOf [2] [-1, 2])).insert<br>    "K" (tensorOf [2] [-2, 3])</code></pre> |
+| Observed legacy value | `S shape [2, 3] = #[-1.000000, 2.000000, 0.000000, 2.000000, 6.000000, 18.000000]` |
+| Structural facts | Scratch `T` has LHS slots `[0: .free f1i]`: its local axis is at index 0 and there is no `.iterAt` slot. Across base and recurrence, `T` has exactly one writing statement. The following state write reads `T`. All are asserted in the seed. |
+
+### Fixture 2 — interleaved axiswise
+
+| Field | Record |
+|---|---|
+| Program source (verbatim) | <pre><code>def fixture2 : ScheduledProgram :=<br>  { decls := [.iter f2l 3, .iter f2m 3]<br>  , stmts := [.scan "S" [f2l, f2m]<br>      [.assign "S" [.iterAt f2l 0, .free f2i, .iterAt f2m 0] (rhs "X" [.axis f2i])]<br>      [.assign "S" [.iterNext f2l, .freeNorm f2i, .iterNext f2m]<br>        (rhs "S" [.axis f2l, .axis f2i, .axis f2m] (.axiswise .normalize none))]<br>      false]<br>  , env := {}<br>  , extNames := {"X"}<br>  , explicitSizes :=<br>      (({} : HashMap UID Nat).insert f2l.uid 3).insert f2m.uid 3 }</code></pre> |
+| Inputs (verbatim) | <pre><code>def fixture2Inputs : HashMap String DenseTensor :=<br>  ({} : HashMap String DenseTensor).insert "X" (tensorOf [2] [1, 3])</code></pre> |
+| Observed legacy value | `S shape [3, 2, 3] = #[1.000000, 0.000000, 0.000000, 3.000000, 0.000000, 0.000000, 0.000000, 0.250000, 0.000000, 0.000000, 0.750000, 0.000000, 0.000000, 0.000000, 0.250000, 0.000000, 0.000000, 0.750000]` |
+| Structural facts | Recurrence LHS slots are `[0: .iterNext f2l, 1: .freeNorm f2i, 2: .iterNext f2m]`. Thus the normalized local axis is strictly after one genuine iteration axis and strictly before the other. The nonlinearity is `.axiswise .normalize none` (unmasked). |
+
+### Fixture 3 — adopted leading persistent nonlinear
+
+| Field | Record |
+|---|---|
+| Program source (verbatim) | <pre><code>def fixture3 : ScheduledProgram :=<br>  { decls := []<br>  , stmts := [.scan "S" [f3l]<br>      [.assign "S" [.free f3j, .iterAt f3l 0] (rhs "X" [.axis f3j])]<br>      [.assign "S" [.free f3j, .iterNext f3l]<br>        (rhs2 "S" [.axis f3j, .axis f3l] "A" [.axis f3j] (.pointwise .relu))]<br>      false]<br>  , env := {}<br>  , extNames := {"X", "A"}<br>  , explicitSizes :=<br>      (({} : HashMap UID Nat).insert f3j.uid 1).insert f3l.uid 2 }</code></pre> |
+| Inputs (verbatim) | <pre><code>def fixture3Inputs : HashMap String DenseTensor :=<br>  (({} : HashMap String DenseTensor).insert "X" (tensorOf [1] [1])).insert<br>    "A" (tensorOf [1] [-1])</code></pre> |
+| Observed legacy value | `S shape [1, 2] = #[1.000000, 0.000000]` |
+| Structural facts | Persistent `S` has both a base write and a recurrence write; the base is `.identity` and its own recurrence is `.pointwise .relu`. |
+
+This exactly transcribes and re-runs the imported `Eval.ScanTest` ReLU scan. It still reproduces
+the recorded `S = [1, 0]`.
+
+### Fixture 4 — nonlinear base
+
+| Field | Record |
+|---|---|
+| Program source (verbatim) | <pre><code>def fixture4 : ScheduledProgram :=<br>  { decls := [.iter f4l 3]<br>  , stmts := [.scan "S" [f4l]<br>      [.assign "S" [.free f4i, .iterAt f4l 0]<br>        (rhs "X" [.axis f4i] (.pointwise .relu))]<br>      [.assign "S" [.free f4i, .iterNext f4l]<br>        (rhs2 "S" [.axis f4i, .axis f4l] "A" [.axis f4i])]<br>      false]<br>  , env := {}<br>  , extNames := {"X", "A"}<br>  , explicitSizes := ({} : HashMap UID Nat).insert f4l.uid 3 }</code></pre> |
+| Inputs (verbatim) | <pre><code>def fixture4Inputs : HashMap String DenseTensor :=<br>  (({} : HashMap String DenseTensor).insert "X" (tensorOf [2] [-2, 3])).insert<br>    "A" (tensorOf [2] [2, -1])</code></pre> |
+| Observed legacy value | `S shape [2, 3] = #[0.000000, 0.000000, 0.000000, 3.000000, -3.000000, 3.000000]` |
+| Structural facts | The base statement's `nonlin` is `.pointwise .relu`; the recurrence's is `.identity`. This is the opposite placement from fixtures 1 and 3. |
+
+### Fixture 5 — scratch → scratch → state
+
+| Field | Record |
+|---|---|
+| Program source (verbatim) | <pre><code>def fixture5 : ScheduledProgram :=<br>  { decls := [.iter f5l 3]<br>  , stmts := [.scan "S" [f5l]<br>      [.assign "S" [.iterAt f5l 0] (rhs "X" [])]<br>      [ .assign "T" [] (rhs2 "S" [.axis f5l] "A" [.axis f5l] (.pointwise .relu))<br>      , .assign "U" [] (rhs2 "T" [] "B" [.axis f5l])<br>      , .assign "S" [.iterNext f5l] (rhs "U" []) ]<br>      false]<br>  , env := {}<br>  , extNames := {"X", "A", "B"}<br>  , explicitSizes := ({} : HashMap UID Nat).insert f5l.uid 3 }</code></pre> |
+| Inputs (verbatim) | <pre><code>def fixture5Inputs : HashMap String DenseTensor :=<br>  ((({} : HashMap String DenseTensor).insert "X" (tensorOf [] [1])).insert<br>    "A" (tensorOf [3] [2, -3, 4])).insert "B" (tensorOf [3] [3, 2, 1])</code></pre> |
+| Observed legacy value | `S shape [3] = #[1.000000, 6.000000, 0.000000]` |
+| Structural facts | Destinations are `T → U → S` in dependency order. `T` and `U` have no base write; `S` does. `T` is `.pointwise .relu`, `U` reads `T`, and the state write reads `U`; all are asserted. |
+
+### Fixture 6 — adopted coupled states
+
+| Field | Record |
+|---|---|
+| Program source (verbatim) | <pre><code>def fixture6Program : TLProgram := tlprog!{<br>  iter l = 3<br>  G[j, 0]    := X[j]<br>  G[j, l +1] := relu(G[j, l] · W_G[j, k] + H[j, l] · U[j, k])<br>  H[j, 0]    := Y[j]<br>  H[j, l +1] := relu(H[j, l] · W_H[j, k] + G[j, l] · V[j, k])<br>}</code></pre> |
+| Inputs (verbatim) | <pre><code>def fixture6Inputs : HashMap String DenseTensor :=<br>  (((((({} : HashMap String DenseTensor).insert "X" (tensorOf [1] [1])).insert<br>    "Y" (tensorOf [1] [2])).insert "W_G" (tensorOf [1, 1] [1])).insert<br>    "U" (tensorOf [1, 1] [1])).insert "W_H" (tensorOf [1, 1] [1])).insert<br>    "V" (tensorOf [1, 1] [1])</code></pre> |
+| Observed legacy value | `G shape [1, 3] = #[1.000000, 3.000000, 6.000000]; H shape [1, 3] = #[2.000000, 3.000000, 6.000000]` |
+| Structural facts | Coupled persistent states `G` and `H` each have a base and nonlinear recurrence; each recurrence reads both pre-step states. |
+
+This exactly transcribes and re-runs imported `Eval.EvalExamplesTest` example 5. It still reproduces
+the recorded `G = [1, 3, 6]`, `H = [2, 3, 6]`.
+
+### Decisions not fixed by the brief
+
+- Fixture 1 uses two features, `X = [-1, 2]`, `K = [-2, 3]`, and three history positions.
+- Fixture 2 uses unmasked `normalize`, two local values `[1, 3]`, and two iteration axes of extent 3.
+- Fixture 4 uses `X = [-2, 3]`, a linear multiplier `A = [2, -1]`, and extent 3.
+- Fixture 5 uses scalar state, ReLU scratch `T`, linear scratch `U`, and extent 3.
+- Fresh UIDs are local to this standalone seed. No fixture uses a mask, predicate, scatter, max/min,
+  or anything other than `f64`.
+
+### Direct seed output
+
+Command, from `leanncd/`:
+
+```bash
+"$HOME/.elan/bin/lake" env lean ../papers/implementation_seeds/nonlinearity_route_fragments/nonlinear_scan_admission/OracleFixtureSeed.lean
+```
+
+Raw stdout, verbatim:
+
+```text
+FIXTURE 1: S shape [2, 3] = #[-1.000000, 2.000000, 0.000000, 2.000000, 6.000000, 18.000000]
+FIXTURE 2: S shape [3, 2, 3] = #[1.000000, 0.000000, 0.000000, 3.000000, 0.000000, 0.000000, 0.000000, 0.250000, 0.000000, 0.000000, 0.750000,
+  0.000000, 0.000000, 0.000000, 0.250000, 0.000000, 0.000000, 0.750000]
+FIXTURE 3 (adopted Eval.ScanTest ReLU scan): S shape [1, 2] = #[1.000000, 0.000000]
+FIXTURE 4: S shape [2, 3] = #[0.000000, 0.000000, 0.000000, 3.000000, -3.000000, 3.000000]
+FIXTURE 5: S shape [3] = #[1.000000, 6.000000, 0.000000]
+FIXTURE 6 (adopted Eval.EvalExamplesTest example 5): G shape [1, 3] = #[1.000000, 3.000000, 6.000000]; H shape [1, 3] = #[2.000000, 3.000000, 6.000000]
+```
+
+### Final gates
+
+```bash
+"$HOME/.elan/bin/lake" build Tests
+```
+
+```text
+Build completed successfully (8657 jobs).
+```
+
+```bash
+"$HOME/.elan/bin/lake" build LeanNCD
+```
+
+```text
+Build completed successfully (8543 jobs).
+```
