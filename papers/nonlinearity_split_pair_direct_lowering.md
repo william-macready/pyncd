@@ -1507,6 +1507,20 @@ Require two reviews: route/indexing equality and scan/realization/ACSet preserva
 
 ### 3.5 Task 3: generalize Plan blocks
 
+> **Executable plan (2026-08-27), not yet executed:** Task 3 has its own slice plan,
+> [`leanncd/docs/superpowers/plans/2026-08-27-nonlinearity-t3-blockstep-migration.md`](../leanncd/docs/superpowers/plans/2026-08-27-nonlinearity-t3-blockstep-migration.md),
+> per CLAUDE.md Rule 13 (one implementation plan per slice). It decomposes this task into two
+> dispatchable sub-tasks rather than three or four: Lean's exhaustiveness checking forces the
+> `BlockStep` field-type change, the generalized `checkPlanBlock`/`runDenseBlock`, and the scan
+> causality restriction to land together in one commit (there is no buildable intermediate state
+> with the field renamed but the checker still assignment-only), so the natural split is instead
+> "the full migration, behavior-unchanged" (Task 1) versus "fixtures and mutation cycles proving the
+> new capability is real and soundly guarded" (Task 2). The plan's own §0 independently re-verified
+> the donor seed and all three production gates against `main` at `fe436f7` with zero drift from the
+> seed's own 2026-08-27 audit at `d8ef77b`, and re-derived the exact 47-occurrence/46-line migration
+> inventory line-by-line rather than trusting the seed README's count. Sections 2 and 4 of this
+> document remain the governing contract.
+
 **Outcome**
 
 `RawPlanBlock.steps : Array BlockStep` replaces assignment-only blocks. Checking, execution, and scan
