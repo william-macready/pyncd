@@ -308,9 +308,23 @@ private def checkWrites (sigs : Array TensorSignature) (block : RawPlanBlock)
   return rowsByState
 
 /-- Validate an unchecked scan node (proposal §7.3), INCLUDING causality: the final loop before
-    `return` walks every step-block factor that reads a captured state and requires
+    `return` walks every `.assign` step-block factor that reads a captured state and requires
     `stateReadCausal` of it, so a look-ahead or loop-axis-ignoring state read is rejected here
-    rather than left as a worker-side assumption (proposal §7.4). -/
+    rather than left as a worker-side assumption (proposal §7.4).
+
+    **Why walking only `.assign` steps is complete.** A block's nonlinear steps
+    (`.pointwise`/`.axiswise`) have no term/factor structure and so no state read to classify, but
+    that alone would not justify skipping them — a nonlinear step reading a captured state
+    directly, or an assignment reading a nonlinear step that read one, would launder a non-causal
+    read past this loop. Neither is reachable: `checkPlanBlock` (`Block.lean`) runs first, above,
+    and its `nonlinearSourceNotLocalAssignment` obligation admits a nonlinear step only when its
+    source is a PRECEDING `.assign` step's destination — never a capture, never another nonlinear
+    result. So every path from a captured state into a nonlinearity passes through an assignment
+    this loop already inspects.
+
+    The loop enumerates the UNFILTERED `steps` array so `causalityFailure`'s index stays a genuine
+    block-step position (its field is named `stmtIndex` for historical reasons; it indexes
+    `stepBlock.steps`, not a filtered assignment sublist). -/
 def checkScanPlan (sigs : Array TensorSignature) (raw : RawScanPlan) :
     Except ScanPlanError CheckedScanPlan := do
   if raw.states.isEmpty then throw .noStates else pure ()

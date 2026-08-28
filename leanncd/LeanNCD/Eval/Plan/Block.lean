@@ -2,21 +2,31 @@
 import LeanNCD.Eval.Plan.Dense
 
 /-!
-# Wave F checked plan-block vertical slice (F2)
+# Wave F checked plan-block vertical slice (F2), generalized to `BlockStep`
 
 A local, acyclic, context-parameterized dataflow graph — the base block or the step block of a
-future scan (`papers/wave_f_scanplan_proposal.md` §6.2). Local assignments are plain `AssignPlan`s
-sharing this block's `contextShape` — the same node type the outer graph uses (`Graph.lean`'s
-`RawEvalPlan.steps`), so F2 introduces no second local-operation representation.
+scan (`papers/wave_f_scanplan_proposal.md` §6.2). A block's steps are `BlockStep`s
+(`RawStep.lean`): an ordinary `AssignPlan` sharing this block's `contextShape`, or one of the two
+nonlinearity operations. F2 shipped this file assignment-only; Task 3 of
+`papers/nonlinearity_split_pair_direct_lowering.md` (§3.5) generalized it so a block can express
+the `assign → pointwise/axiswise` chain a nonlinear statement lowers to — without introducing a
+second local-operation representation, since all three kinds are the node types the outer graph
+already uses (`Graph.lean`'s `RawEvalPlan.steps`).
 `checkPlanBlock` is the local-graph analogue of `checkPlan` (proposal §7.2), not a special
-evaluator convention: it reuses `checkAssign` per node and the identical availability/production-
-order wiring loop `checkPlan` already applies to the outer graph. `runDenseBlock` is the
-corresponding analogue of `runDensePlan`, reusing `runDenseAssignAt` per node. No scan constructor
-exists yet — `RawEvalPlan` is untouched by this file.
+evaluator convention: it reuses `checkAssign`/`checkPointwise`/`checkAxiswise` per node and the
+identical availability/production-order wiring loop `checkPlan` already applies to the outer graph.
+`runDenseBlock` is the corresponding analogue of `runDensePlan`, dispatching each checked step to
+`runDenseAssignAt`/`runDensePointwise`/`runDenseAxiswise`. No scan constructor exists in this file
+— `RawEvalPlan` is untouched by it.
 -/
 
 namespace LeanNCD.Eval.Plan
 
+/-- Evidence that one `BlockStep` passed the local checker for its own kind, tagged by kind so
+    `runDenseBlock` can dispatch exhaustively without re-inspecting the raw step. Each payload's
+    own constructor is `private mk ::` in its defining module (`CheckedAssignPlan` in `Check.lean`,
+    the other two in `Nonlin.lean`), so a value of this type cannot be assembled around
+    `checkAssign`/`checkPointwise`/`checkAxiswise`. -/
 inductive CheckedBlockStepEvidence
   | assign (c : CheckedAssignPlan)
   | pointwise (c : CheckedPointwisePlan)
@@ -27,8 +37,12 @@ inductive CheckedBlockStepEvidence
     every failure mode `checkPlanBlock`'s wiring loop shares with `checkPlan`'s outer-graph loop
     (slot range, input uniqueness/order, overwrite, duplicate destination, missing production,
     invalid forward read, and per-node `checkAssign` failure) — no second copy of those
-    constructors. Only the two obligations a block has and the outer plan does not get their own
-    constructors. -/
+    constructors. The remaining four are the obligations a block has and the outer plan does not:
+    declared-output uniqueness, per-step context agreement, a nonlinear step's own local-checker
+    failure (`nonlin`, wrapping `NonlinPlanError` rather than flattening it), and nonlinear-source
+    provenance (`nonlinearSourceNotLocalAssignment` — a `.pointwise`/`.axiswise` step may read only
+    a PRECEDING `.assign` step's destination, never a block input/capture and never another
+    nonlinear step's result). -/
 inductive BlockError
   | wiring                (cause : PlanError)
   | duplicateOutputSlot   (slot : TensorSlot)
@@ -44,10 +58,11 @@ private def firstDuplicateSlot : List TensorSlot → Option TensorSlot
   | [] => none
   | s :: rest => if rest.contains s then some s else firstDuplicateSlot rest
 
-/-- Evidence that one `RawPlanBlock` is a sound local graph: every local assignment is checked
-    against `block.contextShape`, inputs are in-range/unique/ordered, outputs are in-range/unique,
-    no assignment overwrites an input, and every non-input local slot — outputs included — is
-    produced exactly once. -/
+/-- Evidence that one `RawPlanBlock` is a sound local graph: every `.assign` step is checked
+    against `block.contextShape` and every nonlinear step against its own signature obligations,
+    every nonlinear step reads a preceding `.assign` step's destination, inputs are
+    in-range/unique/ordered, outputs are in-range/unique, no step overwrites an input, and every
+    non-input local slot — outputs included — is produced exactly once. -/
 structure CheckedPlanBlock where private mk ::
   raw          : RawPlanBlock
   checkedNodes : Array CheckedBlockStepEvidence
@@ -111,14 +126,28 @@ def checkStepGraph {E C : Type} (n : Nat) (inputs : Array TensorSlot) (liftWirin
     unless available[i]! do throw (liftWiring (.missingProduction i))
   return checkedNodes
 
-/-- Validate one local block graph. Reuses `checkAssign` per assignment and the identical
-    availability/production-order discipline `checkPlan` (`EvalPlan.lean`) already applies to the
-    outer graph — both now delegate their wiring loop to the shared `checkStepGraph` above,
-    parameterized by this block's own `tensorSigs`/`inputs` instead of `RawEvalPlan`'s
-    `tensorSigs`/`inputSlots`, plus the one block-specific obligation `checkPlan` has no analogue
-    for: every assignment's `contextShape` must equal the block's declared `contextShape`
-    (`checkPlan` instead requires empty context, via `topLevelContextNotEmpty`). The
-    `outputs`-range/uniqueness check has no analogue in `checkStepGraph` either — there is no
+/-- Validate one local block graph. Reuses `checkAssign`/`checkPointwise`/`checkAxiswise` per step
+    and the identical availability/production-order discipline `checkPlan` (`EvalPlan.lean`)
+    already applies to the outer graph — both delegate their wiring loop to the shared
+    `checkStepGraph` above, parameterized by this block's own `tensorSigs`/`inputs` instead of
+    `RawEvalPlan`'s `tensorSigs`/`inputSlots`, plus the two block-specific obligations `checkPlan`
+    has no analogue for.
+
+    First, every `.assign` step's `contextShape` must equal the block's declared `contextShape`
+    (`checkPlan` instead requires empty context, via `topLevelContextNotEmpty`); the nonlinearity
+    operations carry no context of their own, so `BlockStep.contextShape?` yields `none` and the
+    obligation is vacuous for them rather than silently compared against a default.
+
+    Second, a `.pointwise`/`.axiswise` step's source must be the destination of a PRECEDING
+    `.assign` step in this same block — enforced in `sourceCheck`, after the ordinary
+    range/availability check and before the step's own local checker runs, against a snapshot
+    taken before this node's destinations are marked produced (so a nonlinear step can never
+    source its own result). This is what keeps assignment-only scan causality complete: because a
+    captured state can reach a nonlinearity only through an assignment, `Scan.lean`'s
+    `checkScanPlan` can walk `.assign` payloads alone without a nonlinear step laundering a
+    non-causal read past it.
+
+    The `outputs`-range/uniqueness check has no analogue in `checkStepGraph` either — there is no
     "declared outputs" concept at the outer-graph level — so it stays a separate step here, run
     before the shared loop. -/
 def checkPlanBlock (block : RawPlanBlock) : Except BlockError CheckedPlanBlock := do
@@ -185,9 +214,11 @@ def checkPlanBlock (block : RawPlanBlock) : Except BlockError CheckedPlanBlock :
   return CheckedPlanBlock.mk block checkedNodes
 
 /-- Execute one checked block at a fixed enclosing-scan context coordinate. Positional store is
-    local to this invocation — sized to the block's own `tensorSigs`, not the outer plan's. Reuses
-    `runDenseAssignAt` per node exactly as `runDensePlan` does for the outer graph; this is the only
-    place F2 evaluates a local assignment. -/
+    local to this invocation — sized to the block's own `tensorSigs`, not the outer plan's.
+    Dispatches each checked step to the existing worker for its kind —
+    `runDenseAssignAt`/`runDensePointwise`/`runDenseAxiswise` — exactly as `runDensePlan` does for
+    the outer graph; this is the only place a local block step is evaluated. No Dense math is
+    defined here, only the wiring to workers `Dense.lean` and `Nonlin.lean` already provide. -/
 def runDenseBlock (c : CheckedPlanBlock) (ctx : List Int) (inputs : Array DenseTensor) :
     Except PositionalInputError (Array DenseTensor) := do
   let raw := c.raw
