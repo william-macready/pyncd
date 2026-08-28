@@ -529,3 +529,49 @@ Stop and report rather than improvise (CLAUDE.md Rule 13's "genuinely blocked" c
 **Not done here, and not to be quietly started:** nonlinear Plan scan admission (compiler emitting
 `.pointwise`/`.axiswise` scan sources), the independent oracle, allocation/publication changes, the
 differential documentation sweep, or repairing `experiments/jax_bridge`. Those are Task 4 and Task 5.
+
+---
+
+## §6 Execution record
+
+**Task 1** — executed 2026-08-27, commit `65e27ce`, with a comment-only docstring follow-up in
+`2bfd7f1`. Migration exact: the residual-`assignments` grep returned 0/1/0/4/0/3/0 = 8 comment
+matches, matching the predicted table cell for cell. Gates green at unchanged counts
+(8,511 / 8,657 / 8,543). No boundary violation: no `papers/` import, no seed mutation toggles, no
+donor-only scan adapter, `checkStepGraph` untouched.
+
+**Task 2** — executed 2026-08-27, commit `bc6cdf5`. All ten fixtures passed on the first build.
+Gates green at **unchanged** counts (8,511 / 8,657 / 8,543): the fixtures are `run_cmd`/`#guard`
+blocks inside existing modules, so Lake's module-level job count does not move. The DoD's "plus
+whatever new job count Task 2's ten fixtures add" is therefore **zero** — recorded because the
+phrasing anticipated a delta that does not exist.
+
+Rename: `ScanPlanError.causalityFailure`'s second field is `blockStepIndex`. `Error.lean` verified
+untouched at 15 matching lines. **Count correction:** this plan originally said "14 other
+constructors"; the exact figure is **13** (12 constructor lines beginning `|`, one continuation line
+at the `writeCoeffRankMismatch`-adjacent constructor, and 2 comment mentions = 15 lines). Corrected
+in the trap note above.
+
+### Mutation cycles — all seven, observed not predicted
+
+Each ran as mutate → observe fail → restore → observe pass, with the restore verified byte-exact by
+`git diff --quiet` before the confirming build. Failures below are the literal assertion text.
+
+| # | Mutation | Observed failure |
+|---:|---|---|
+| 1 | drop `.pointwise` Dense dispatch | `BlockTest.lean:179: pointwise wrong result: #[]` |
+| 2 | drop `.axiswise` Dense dispatch | `BlockTest.lean:201: axiswise wrong result: #[]` |
+| 3 | route nonlinear steps through `checkAssign` | **5 fixtures** — fixtures 1, 2, 4, 7 in `BlockTest.lean` and fixture 8 in `ScanTest.lean` (`stepBlockError`). Broader than the donor seed predicted (it expected fixtures 1-2 only), because this plan's fixtures 4, 7 and 8 also depend on nonlinear checking succeeding |
+| 4 | drop the shared preceding-local-assignment guard | **exactly 3**, all "should have been rejected": fixture 7 (`BlockTest.lean:257`), fixture 5 (`ScanTest.lean:625`), fixture 6 (`ScanTest.lean:645`). One guard, three structurally different attacks, all admitted together |
+| 5 | skip `stateReadCausal` on `.assign` payloads | **5 fixtures**: the three pre-existing causality rejections (`:556`, `:570`, `:596`) plus fixtures 9 (`:676`) and 10 (`:705`) |
+| 6 | bogus rule rejecting any negative-bias historical read | fixture 8 (`ScanTest.lean:660`) wrongly **rejected**, plus the pre-existing deep-history acceptances at `:541` and `:844` and the locator fixtures at `:596`/`:705`. Confirms fixture 8's acceptance depends on real causal-row analysis, not on bias sign |
+| 7 | filter `steps` to `.assign` payloads before enumerating | **exactly one fixture**: `ScanTest.lean:705: causalityFailure blockStepIndex: expected block-step index 2, got …causalityFailure 0 1 0 0`. Fixtures 8 and 9 stayed **green**, as did every pre-existing causality fixture |
+
+**Cycle 7 is the result this slice's locator work exists for.** It changes no accept/reject verdict —
+only the diagnostic's index — so every fixture that existed before this slice passes under it. The
+single failure is fixture 10, and only because its nonlinear step sits between two assignments. Had
+the plan shipped without fixture 10, the "retain original block-step indices" requirement would have
+had no test capable of failing, and the `blockStepIndex` rename would have been an unbacked relabel.
+
+**Still open at this point:** the two independent whole-branch review lenses in §3. Nothing in this
+record substitutes for them.
