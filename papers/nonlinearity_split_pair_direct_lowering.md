@@ -1520,6 +1520,30 @@ Require two reviews: route/indexing equality and scan/realization/ACSet preserva
 > seed's own 2026-08-27 audit at `d8ef77b`, and re-derived the exact 47-occurrence/46-line migration
 > inventory line-by-line rather than trusting the seed README's count. Sections 2 and 4 of this
 > document remain the governing contract.
+>
+> **Complete (merged 2026-08-28).** Both sub-tasks landed, with one fix wave after two independent
+> whole-branch reviews (checker/dispatch; adversarial provenance/causality). Neither review found a
+> defect in production behavior. `RawPlanBlock.steps : Array BlockStep` is in production, block
+> checking and Dense dispatch cover all three step kinds, and scan causality walks `.assign`
+> payloads only. Gates green throughout at 8,511 / 8,657 / 8,543 — unchanged, since the slice adds
+> no module.
+>
+> Two things this task's execution changed about the plan as written, both recorded in the slice
+> plan's §6. First, the mutation-cycle count grew from 6 to **9**: the plan's own "retain original
+> block-step indices" requirement turned out to have no fixture capable of failing (every
+> pre-existing step block holds only assignments, so a block-step index and a filtered-assignment
+> index coincide), which was found only when a rename came to depend on it. A fixture with a
+> nonlinear step *between* two assignments now separates the two readings. Second, the reviews found
+> the causality-completeness argument in this document's §2.7 neighbourhood is stated with one guard
+> where it needs **four** — `nonlinearSourceNotLocalAssignment` ∧ `inputSlotOverwritten` ∧
+> `captureTargetsNonInput`, plus `duplicateDestination`, two of them in files other than the one
+> asserting the conclusion. Both production docstrings now enumerate all four; **Task 4 must not
+> weaken any of them without re-deriving the argument.**
+>
+> Also relevant to Task 4: `commitWrite`'s write-region bounds now depend on every
+> `PointwiseFn`/`AxiswiseFn` arm being shape-preserving, because a block output may be a nonlinear
+> step's destination. Audited and holding, now documented at `commitWrite` — but a future *reducing*
+> axiswise constructor would silently reintroduce the F3/F4 write-region bug class.
 
 **Outcome**
 
