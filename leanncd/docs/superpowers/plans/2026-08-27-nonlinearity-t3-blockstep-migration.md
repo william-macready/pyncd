@@ -191,7 +191,11 @@ Exact values, and what is deliberately excluded.
   `nonlinearSourceNotLocalAssignment`.
 - **No production file outside the four listed in Task 1 changes**
   (`RawStep.lean`, `Block.lean`, `Scan.lean`, `Compile.lean`). No `lakefile.toml` edit — no new file
-  is added, only existing modules change.
+  is added, only existing modules change. Task 2's own production footprint is exactly one
+  declaration line in `Scan.lean` (the `causalityFailure` field rename) plus `Eval/AGENTS.md`.
+- **`Error.lean` is not in this slice at any point.** Its `ScanCompileError` constructors carry a
+  `stmtIndex` field that means something different and is still correct; Task 2's rename must not
+  reach it.
 - **No `sorry`, `admit`, or `axiom`.**
 - **Every mutation cycle is a production mutation** (toggle production logic, observe failure,
   restore, observe pass) — never predict a failure or mutate the assertion.
@@ -210,7 +214,7 @@ approving its neighbour*) **and** by what Lean's type system forces to land toge
 | Task | Deliverable | Fixtures / assertions touched | Mutation cycles | Risk driver |
 |---|---:|---:|---:|---|
 | 1 | `BlockStep` type, full checker/dispatch/causality generalization, 47-occurrence migration, all EXISTING fixtures behavior-unchanged | 0 new; ~42 existing lines mechanically migrated across 6 files | 0 (nothing new to break yet) | wide blast radius, but every step is either type-forced or a byte-for-byte copy from an already-verified donor |
-| 2 | 9 new fixtures proving pointwise/axiswise checking+execution, nonlinear-source provenance, and assign-only scan causality actually work | 9 new (5 in `BlockTest.lean`, 4 in `ScanTest.lean`) | 6 (all mandatory) | the entire soundness claim of this slice — a provenance or causality gap here is the failure mode Task 3 exists to prevent |
+| 2 | 10 new fixtures proving pointwise/axiswise checking+execution, nonlinear-source provenance, and assign-only scan causality actually work; plus the `causalityFailure` field rename and the two stale `Eval/AGENTS.md` rows | 10 new (5 in `BlockTest.lean`, 5 in `ScanTest.lean`) | 7 (all mandatory) | the entire soundness claim of this slice — a provenance or causality gap here is the failure mode Task 3 exists to prevent |
 
 **Why this is not three or four tasks, unlike Task 1's and Task 2's own slice plans.** The instant
 `RawPlanBlock.assignments : Array AssignPlan` becomes `RawPlanBlock.steps : Array BlockStep`, every
@@ -328,18 +332,47 @@ so soundness has no evidence to review until Task 2.
 
 ---
 
-### Task 2 — fixtures proving the new capability, and the six mandatory mutation cycles
+### Task 2 — fixtures proving the new capability, and the seven mandatory mutation cycles
 
-**Outcome.** Nine fixtures demonstrate, for the first time, that pointwise/axiswise checking and
+**Outcome.** Ten fixtures demonstrate, for the first time, that pointwise/axiswise checking and
 execution work, that a nonlinear node's source must be a preceding local assignment (rejecting
 direct-capture, laundering, and nonlinearity-chained sources), and that scan causality still applies
-correctly to `.assign` payloads once nonlinear nodes are mixed into the same block. Six mutation
-cycles prove each of these guards has teeth.
+correctly to `.assign` payloads once nonlinear nodes are mixed into the same block. Seven mutation
+cycles prove each of these guards has teeth. Two housekeeping items fold in here (see "Folded-in
+items" below): the `causalityFailure` field rename its new fixture finally justifies, and the two
+`Eval/AGENTS.md` rows Task 1's generalization made stale.
 
 **Files**
 
 - `leanncd/test/Eval/Plan/BlockTest.lean` (fixtures 1-4, 7)
-- `leanncd/test/Eval/Plan/ScanTest.lean` (fixtures 5, 6, 8, 9)
+- `leanncd/test/Eval/Plan/ScanTest.lean` (fixtures 5, 6, 8, 9, 10)
+- `leanncd/LeanNCD/Eval/Plan/Scan.lean` (the `causalityFailure` field rename only)
+- `leanncd/LeanNCD/Eval/AGENTS.md` (two stale rows)
+
+**Folded-in items**
+
+*(1) Rename `ScanPlanError.causalityFailure`'s second field from `stmtIndex` to `blockStepIndex`.*
+Since Task 1 it indexes `stepBlock.steps`, not a statement list, and Task 1 left a docstring
+apologising for the name instead of fixing it. Fixture 10 below is what makes the new name an
+honest claim rather than a relabel.
+
+> **Trap — do not `sed` this.** `stmtIndex` appears on **14 other constructors**, all in
+> `LeanNCD/Eval/Plan/Error.lean`'s `ScanCompileError`, a different error family where the field
+> genuinely still means "the offending statement's index within its own `base`/`recur` list."
+> **Those must not change.** Exactly one declaration is in scope: the `causalityFailure` line in
+> `Scan.lean`'s `ScanPlanError`. Verified 2026-08-27: the only other references to the old name are
+> three comment lines in `ScanTest.lean` (above `stepBlockTwoAssignConstG`) and one clause in
+> `Scan.lean`'s own `checkScanPlan` docstring; update those, and drop the docstring's now-obsolete
+> "named `stmtIndex` for historical reasons" aside. Every fixture matches the constructor
+> positionally (`.causalityFailure 0 1 0 0`), so no assertion needs rewriting.
+
+*(2) Update the two stale rows in `leanncd/LeanNCD/Eval/AGENTS.md`.* Verified stale 2026-08-27:
+the `Block.lean` row still says it "reuses `checkAssign`/`runDenseAssignAt` per node" (now also
+`checkPointwise`/`checkAxiswise` and `runDensePointwise`/`runDenseAxiswise`, plus the new
+`CheckedBlockStepEvidence` and the nonlinear-source provenance obligation), and the `RawStep.lean`
+row's vocabulary list omits `BlockStep` entirely while still implying `RawPlanBlock` holds
+assignments. The `Nonlin.lean` row's "no second local-operation representation" claim was
+re-checked and remains true — do not edit it.
 
 **Fixtures — each names its donor, `clone <existing fixture>, change <one thing>`**
 
@@ -354,14 +387,27 @@ cycles prove each of these guards has teeth.
 | 7 | `BlockTest.lean` | clone fixture 1's block, append a second nonlinear node (`.axiswise`, `fn := .normalize`) sourcing the first nonlinear node's own result | rejected: `.nonlinearSourceNotLocalAssignment 2 2` — nonlinearity chained directly onto nonlinearity, not onto a local assignment |
 | 8 | `ScanTest.lean` | clone `deepHistoryScan` (causal read, `bias = -2`), append a scalar `.pointwise` (`fn := .relu`) reading the causal assignment's destination | accepted by both `checkPlanBlock` provenance and `checkScanPlan` causality |
 | 9 | `ScanTest.lean` | clone `stepBlockLookAheadG`'s scan, append a scalar `.pointwise` after the look-ahead assignment | accepted by `checkPlanBlock` provenance (the pointwise node's source IS a preceding local assignment); rejected by `checkScanPlan`: `.causalityFailure 0 0 0 0` — the underlying look-ahead assignment itself is still non-causal, unchanged from before this slice |
+| 10 | `ScanTest.lean` | clone `stepBlockG`, then build a **three-step** block where the indices diverge: `.assign stepAssignG` (valid, causal) at step 0, `.pointwise` sourcing its destination at step 1, and a third step `.assign { stepAssignG with destinationSlot := 3, terms := #[termConstG] }` carrying `constReadG`'s non-causal constant read at step 2. `tensorSigs` is `stepBlockG.tensorSigs ++ #[scalar, scalar]` (slots 2 and 3 are block-local scratch, never declared outputs — the same construct `stepBlockTwoAssignConstG` already uses) | `checkPlanBlock` accepts (provenance holds); `checkScanPlan` rejects with **`.causalityFailure 0 2 0 0`** — index **2**, the block-step position. **Observed 2026-08-27** by running this exact construction against production, not predicted |
 
-Every value above is transcribed from §0.1's already-observed seed run, not predicted — the
+**Why fixture 10 exists, and why the plan lacked it until now.** Task 1's spec required
+`causalityFailure` to "retain original block-step indices," and nothing could have caught a
+violation. The existing `stepBlockTwoAssignConstG` fixture was built precisely to discriminate that
+field — but its block holds **two `.assign` steps**, so the block-step index and the
+filtered-assignment index coincide at 1 and it cannot distinguish them. Donor fixtures 8 and 9 both
+fail at index 0, where they coincide too. Fixture 10 is the first block where a nonlinear step sits
+*between* two assignments, forcing the two indexings apart: correct is 2, filtered is 1. Without it,
+the rename above would be a relabel with no test behind it, and mutation cycle 7 would have nothing
+to fail. This is the "guard that cannot fail" shape the `slice-plan` skill warns about, found in
+this plan's own Task 1 spec.
+
+Every value above is transcribed from §0.1's already-observed seed run (fixture 10's from the
+direct production run recorded in its own row), not predicted — the
 implementer is copying a measured result into the production fixture location, adapting only the
 surrounding `RawPlanBlock`/`RawScanPlan` scaffolding to the target file's existing donor names
 (e.g. fixture 1 clones `BlockTest.stepBlock`, not the seed's own `blockAssign`/`pointwiseBlock`
 locals, which exist only because the seed could not import `BlockTest.lean`).
 
-**Mutation cycles (6, all mandatory)** — toggle the named production logic, observe the named
+**Mutation cycles (7, all mandatory)** — toggle the named production logic, observe the named
 fixture(s) fail with the stated symptom, restore, observe pass again. Record the *observed* failure
 in the completion record, not the prediction.
 
@@ -373,13 +419,20 @@ in the completion record, not the prediction.
 | 4 | In `checkPlanBlock`'s `sourceCheck`, remove the `precedingAssignments.contains …` guard for both `.pointwise` and `.axiswise` | 5, 6, 7 | all three wrongly **accepted** (direct capture, laundering, and nonlinearity-chaining all become admissible) |
 | 5 | In `Scan.lean`'s causality loop, skip the `stateReadCausal` check entirely for `.assign` payloads (`unless … do throw` → `pure ()`) | 9 | wrongly **accepted** — the look-ahead read's noncausal geometry is no longer caught |
 | 6 | In `Scan.lean`'s causality loop, add a bogus extra rule rejecting any historical read with negative bias, regardless of `stateReadCausal` | 8 | wrongly **rejected** — proves fixture 8's acceptance depends on the real causal-row analysis, not merely "bias happens to be non-negative" |
+| 7 | In `Scan.lean`'s causality loop, filter `steps` to its `.assign` payloads *before* enumerating (e.g. `steps.filterMap BlockStep.assign?`) and index that sublist — the natural-looking simplification the loop deliberately avoids | **10** | reports `.causalityFailure 0 1 0 0` instead of `0 2 0 0` — the locator silently points at the wrong block step. Fixtures 8 and 9 stay **green** under this mutation, which is the point of the cycle: record both observations |
 
-Cycles 1-3 exercise Task 1's dispatch/checker generalization for the first time; cycles 4-6 exercise
-the two soundness guards (`Block.lean`'s provenance, `Scan.lean`'s causality) this slice's outcome
-depends on. Cycle 4 is the most informative: it demonstrates that without the shared
-preceding-local-assignment guard, three structurally different attacks (direct capture, laundering,
-nonlinearity-chaining) all succeed simultaneously — one guard closes all three, so a partial fix
-(guarding only direct capture, say) would still fail two of the three fixtures.
+Cycles 1-3 exercise Task 1's dispatch/checker generalization for the first time; cycles 4-7 exercise
+the three soundness properties (`Block.lean`'s provenance, `Scan.lean`'s causality, and its
+locator's meaning) this slice's outcome depends on. Two are especially informative:
+
+- **Cycle 4** demonstrates that without the shared preceding-local-assignment guard, three
+  structurally different attacks (direct capture, laundering, nonlinearity-chaining) all succeed
+  simultaneously — one guard closes all three, so a partial fix (guarding only direct capture, say)
+  would still fail two of the three fixtures.
+- **Cycle 7** is the mirror of Task 2's other "the obvious check can't see this" case: it produces a
+  *wrong locator*, not a wrong accept/reject verdict, so every other causality fixture passes while
+  the diagnostic quietly lies. Only fixture 10 can catch it, and only because its nonlinear step
+  sits between two assignments.
 
 **Gate**
 
@@ -396,12 +449,15 @@ touches "the checked-node sum and all block dispatch":
 1. **Checker/dispatch lens** — cycles 1-3; confirms `runDenseBlock`'s three dispatch arms are each
    independently exercised and that `checkPlanBlock`'s `.pointwise`/`.axiswise` `localCheck` really
    calls `checkPointwise`/`checkAxiswise` (not a disguised `checkAssign`).
-2. **Provenance/causality-soundness lens** — cycles 4-6 and fixtures 5-9 specifically; confirms the
+2. **Provenance/causality-soundness lens** — cycles 4-7 and fixtures 5-10 specifically; confirms the
    preceding-local-assignment guard closes direct-capture, laundering, and chaining simultaneously
-   (cycle 4), and that the scan-causality restriction to `.assign` payloads neither admits a
+   (cycle 4), that the scan-causality restriction to `.assign` payloads neither admits a
    noncausal look-ahead through a nonlinear detour (fixture 6, cycle 5) nor rejects a genuinely
    causal deep-history read merely because a nonlinear node now sits later in the same block
-   (fixture 8, cycle 6).
+   (fixture 8, cycle 6), and that `causalityFailure`'s locator is a real block-step index rather
+   than a filtered-sublist position (fixture 10, cycle 7). This reviewer also owns the rename:
+   confirm `blockStepIndex` is backed by fixture 10 and that `Error.lean`'s 14 `ScanCompileError`
+   `stmtIndex` fields were **not** swept up in it.
 
 ---
 
@@ -421,6 +477,11 @@ Stop and report rather than improvise (CLAUDE.md Rule 13's "genuinely blocked" c
   source lowering is leaking into this slice, which is Task 4's scope;
 - a causality fixture can only be made to pass by filtering `raw.stepBlock.steps` before indexing
   (breaking `causalityFailure`'s block-step-index locator);
+- fixture 10 cannot be constructed as an otherwise-valid block — i.e. block checking rejects it for
+  some reason other than causality, so the three-step assign/pointwise/assign shape turns out to be
+  unreachable. That would mean the block-step index can never diverge from a filtered-assignment
+  index in practice, which makes both the rename and cycle 7 meaningless; stop and report rather
+  than renaming the field on an argument no fixture can exercise;
 - any mutation cycle produces **zero** observed failures — the guard is vacuous, a defect in the
   fixture, not a pass;
 - `CheckedPlanBlock`/`CheckedScanPlan` need a `BEq`/`DecidableEq` instance to write a fixture — that
@@ -445,12 +506,19 @@ Stop and report rather than improvise (CLAUDE.md Rule 13's "genuinely blocked" c
 - `Compile.lean` wraps every compiler-produced assignment as `.assign`; no nonlinear scan source is
   admitted.
 - Every fixture that passed before this slice still passes with an unchanged observed value.
-- All nine new fixtures (5 in `BlockTest.lean`, 4 in `ScanTest.lean`) pass with the exact values
-  transcribed from §0.1's seed run.
-- All six mandatory mutation cycles ran as mutate/observe-fail/restore/observe-pass, with the
-  observed failure recorded (not merely predicted).
+- All ten new fixtures (5 in `BlockTest.lean`, 5 in `ScanTest.lean`) pass with the exact values
+  transcribed from §0.1's seed run, and fixture 10 with the separately-observed
+  `.causalityFailure 0 2 0 0`.
+- All seven mandatory mutation cycles ran as mutate/observe-fail/restore/observe-pass, with the
+  observed failure recorded (not merely predicted). Cycle 7's record must state both halves: that
+  fixture 10 failed **and** that fixtures 8-9 stayed green.
+- `ScanPlanError.causalityFailure`'s second field is named `blockStepIndex`, backed by fixture 10;
+  `Error.lean`'s 14 `ScanCompileError` `stmtIndex` fields are untouched, and `Scan.lean`'s
+  docstring no longer carries the "historical reasons" aside.
+- `leanncd/LeanNCD/Eval/AGENTS.md`'s `Block.lean` and `RawStep.lean` rows describe the generalized
+  representation; its `Nonlin.lean` row is unchanged.
 - Both task gates green at unchanged job counts (8,511 / 8,657 / 8,543) plus whatever new job count
-  Task 2's nine fixtures add; both Task 2 reviews green or their findings adjudicated.
+  Task 2's ten fixtures add; both Task 2 reviews green or their findings adjudicated.
 - The completion record states: the §0 re-verification (no drift since the donor's own audit), the
   exact observed job-count delta from Task 2's new fixtures, and every mutation cycle's actually
   observed failure symptom.
