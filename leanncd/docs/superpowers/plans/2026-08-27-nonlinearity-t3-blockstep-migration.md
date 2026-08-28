@@ -573,5 +573,74 @@ single failure is fixture 10, and only because its nonlinear step sits between t
 the plan shipped without fixture 10, the "retain original block-step indices" requirement would have
 had no test capable of failing, and the `blockStepIndex` rename would have been an unbacked relabel.
 
-**Still open at this point:** the two independent whole-branch review lenses in §3. Nothing in this
-record substitutes for them.
+### Review round and fix wave
+
+Two independent whole-branch lenses ran 2026-08-27 (checker/dispatch; adversarial
+provenance/causality). **Neither found a defect in production behavior.** Both independently
+confirmed the causality-completeness conclusion, that the `blockStepIndex` locator is genuine and
+fixture 10 discriminates, that `checkStepGraph` is byte-identical and sound to leave unchanged, and
+that `Error.lean` is untouched. The provenance lens attacked five evasion routes with executed
+counterexamples (assignment overwriting a capture slot, direct capture read, self-referential
+source, snapshot timing, transitive laundering) and could not construct an accepted plan that
+launders a non-causal state read. They converged independently on three findings, which is the
+corroboration signal worth having from two lenses.
+
+Fix wave landed in `a536cc8`. What it changed and why:
+
+1. **The safety argument was under-stated, and that was the round's most valuable finding.** Both
+   docstrings claimed "a nonlinear step's source is never a capture" follows from
+   `nonlinearSourceNotLocalAssignment`. It does not. It requires that rule **∧**
+   `checkStepGraph`'s `inputSlotOverwritten` **∧** `checkCaptures`' `captureTargetsNonInput`; the
+   "never another nonlinear result" half additionally needs `duplicateDestination`. Two of those
+   four live outside the file whose docstring asserted the conclusion, so relaxing
+   `inputSlotOverwritten` — a locally reasonable change, e.g. to permit in-place update of a block
+   input — would reopen the hole with nothing pointing at it. Both docstrings now enumerate all
+   four and say explicitly that weakening any one reopens it.
+2. **`commitWrite`'s bounds argument acquired an undocumented cross-file dependency.** It enumerates
+   a RUNTIME `out.shape` while every checker bounding it reasons over the DECLARED signature. That
+   agreement was one step when block outputs came only from assignments; a block output may now be a
+   nonlinear step's destination, so it now rests on `checkNonlinIO` plus every `PointwiseFn`/
+   `AxiswiseFn` arm being shape-preserving. All eight arms were audited (the invariant holds) and
+   the dependency is now named, including the concrete way a future reducing `AxiswiseFn` would
+   silently reintroduce the F3/F4 write-region bug class.
+3. Five fixtures for guards nothing could fail on: the laundering block asserted through
+   `checkScanPlan` rather than only `checkPlanBlock`; an assignment writing a declared block input
+   (leg 2 of the argument); a scan whose block output IS a pointwise result, executed end to end
+   through `commitWrite`; `BlockError.nonlin` reachability with its node index pinned; and a step
+   violating provenance AND shape, pinning that provenance precedes the local checker.
+4. §6's own residual-grep record corrected (see the count note below).
+
+Two reviewer claims did **not** survive checking, recorded so they are not re-derived:
+
+- The checker lens claimed moving `checkPlanBlock` later in `checkScanPlan` makes the laundering
+  block return `.ok`. Measured: it returns `.stepBlockError (.nonlinearSourceNotLocalAssignment
+  0 0)`. `checkedStep` is consumed by the `return`, so moving the binding still executes it. The
+  finding (no fixture tied block provenance to scan causality) was real; the mechanism was not.
+- Its stronger implication — that block checking could go missing unnoticed — was already false:
+  the pre-existing fixture at `ScanTest.lean`'s "a checkPlanBlock-invalid step block should have
+  been rejected" catches wholesale removal. The new fixture still earns its place by pinning the
+  *soundness consequence* rather than merely that the call happens.
+
+**Count correction (self-caught overclaim).** This record originally said the residual grep was
+`0/1/0/4/0/3/0` "cell for cell." That was true at `65e27ce` but not at the commit the sentence was
+written against: `2bfd7f1` removed the word from `Block.lean`'s module docstring and added one to
+`RawStep.lean`'s new `assign?` docstring, making it `1/0/0/4/0/3/0`. The total and the migration's
+exactness were never in question. Restating a measured claim at a later commit without re-deriving
+it is the pattern this repo keeps recording; it is logged here rather than silently fixed.
+
+### Two further mutation cycles, verifying the fix wave's own fixtures
+
+| # | Mutation | Observed |
+|---:|---|---|
+| 8 | `throw (.nonlin ni e)` → `throw (.nonlin 0 e)` in both nonlinear `localCheck` arms | **exactly one fixture**: `BlockTest.lean` `BlockError.nonlin routing: wrong error …nonlin 0 (…sourceShapeMismatch #[7] #[3])` |
+| 9 | `checkScanPlan` checks the BASE block twice, never the step block (a plausible copy-paste bug) | 5 fixtures, including the new `ScanTest.lean:` "checkScanPlan admitted a block that launders a state read through a pointwise step" — confirming the new scan-level fixture catches it |
+
+Nine mutation cycles total across Task 2 and the fix wave, every one observed rather than predicted.
+
+**Remaining known gaps, deliberately not closed:** `.axiswise` still never appears inside a scan
+step block (only inside plain blocks, `BlockTest` fixtures 2 and 7); `BlockStep.sourceSlots` remains
+call-site-free, retained deliberately as the symmetric half of the accessor pair and documented as
+such; and `runDensePointwise`/`runDenseAxiswise` have no `validateStore` analogue to
+`runDenseAssignAt`'s, which is safe inside `runDenseBlock` (the store is locally constructed and its
+input arm validates shape and storage) but means the codebase's stated runtime-trust-boundary
+discipline is not applied uniformly across the three workers.
