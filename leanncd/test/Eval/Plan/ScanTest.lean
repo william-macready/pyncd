@@ -95,7 +95,7 @@ def stateS : StateSlot := { destSlot := 2, advancingDims := #[0], materializatio
 -- input slot is already "available", so it counts as produced without a copy step).
 def baseBlock : RawPlanBlock :=
   { contextShape := #[], tensorSigs := #[{ shape := #[], dtype := .f64 }]
-  , inputs := #[0], assignments := #[], outputs := #[0] }
+  , inputs := #[0], steps := #[], outputs := #[0] }
 
 def baseCaptureS0 : BlockCapture := { inputSlot := 0, source := .external 0 }
 
@@ -122,7 +122,7 @@ def stepAssign : AssignPlan :=
 def stepBlock : RawPlanBlock :=
   { contextShape := #[2]
   , tensorSigs := #[{ shape := #[3], dtype := .f64 }, { shape := #[3], dtype := .f64 }, { shape := #[], dtype := .f64 }]
-  , inputs := #[0, 1], assignments := #[stepAssign], outputs := #[2] }
+  , inputs := #[0, 1], steps := #[.assign stepAssign], outputs := #[2] }
 
 def stepCaptureX : BlockCapture := { inputSlot := 0, source := .external 1 }
 def stepCaptureS : BlockCapture := { inputSlot := 1, source := .state 0 }
@@ -167,7 +167,7 @@ ever inspects a block's own content (the whole states-validation pass and the tw
 checks all precede `checkPlanBlock`). -/
 
 def emptyBlock : RawPlanBlock :=
-  { contextShape := #[], tensorSigs := #[], inputs := #[], assignments := #[], outputs := #[] }
+  { contextShape := #[], tensorSigs := #[], inputs := #[], steps := #[], outputs := #[] }
 
 -- noStates
 run_cmd do
@@ -397,7 +397,7 @@ def baseIdAssign : AssignPlan :=
   , algebra := admittedAlgebra }
 
 def baseBlockExtra : RawPlanBlock :=
-  { contextShape := #[], tensorSigs := baseSigsExtra, inputs := #[0], assignments := #[baseIdAssign]
+  { contextShape := #[], tensorSigs := baseSigsExtra, inputs := #[0], steps := #[.assign baseIdAssign]
   , outputs := #[0, 1] }
 
 def overlapWrite1 : StateWriteMap :=
@@ -467,7 +467,7 @@ def stepExtraAssign : AssignPlan :=
 def stepBlockExtra : RawPlanBlock :=
   { stepBlock with
     tensorSigs := stepBlock.tensorSigs ++ #[{ shape := #[], dtype := .f64 }],
-    assignments := stepBlock.assignments ++ #[stepExtraAssign],
+    steps := stepBlock.steps ++ #[.assign stepExtraAssign],
     outputs := #[2, 3] }
 
 def stepWriteExtra : StateWriteMap :=
@@ -500,7 +500,7 @@ def stateG : StateSlot := { destSlot := 1, advancingDims := #[0], materializatio
 
 def baseBlockG : RawPlanBlock :=
   { contextShape := #[], tensorSigs := #[{ shape := #[], dtype := .f64 }]
-  , inputs := #[0], assignments := #[], outputs := #[0] }
+  , inputs := #[0], steps := #[], outputs := #[0] }
 
 def baseCaptureG0 : BlockCapture := { inputSlot := 0, source := .external 0 }
 
@@ -521,7 +521,7 @@ def stepAssignG : AssignPlan :=
 def stepBlockG : RawPlanBlock :=
   { contextShape := #[4]
   , tensorSigs := #[{ shape := #[5], dtype := .f64 }, { shape := #[], dtype := .f64 }]
-  , inputs := #[0], assignments := #[stepAssignG], outputs := #[1] }
+  , inputs := #[0], steps := #[.assign stepAssignG], outputs := #[1] }
 
 def stepCaptureG : BlockCapture := { inputSlot := 0, source := .state 0 }
 
@@ -551,7 +551,7 @@ run_cmd do
 def constReadG : ReadPlan := { stepReadG with map := { coeffs := #[#[0]], bias := #[1] } }
 def termConstG : TermPlan := { termG with factors := #[constReadG] }
 def stepAssignConstG : AssignPlan := { stepAssignG with terms := #[termConstG] }
-def stepBlockConstG : RawPlanBlock := { stepBlockG with assignments := #[stepAssignConstG] }
+def stepBlockConstG : RawPlanBlock := { stepBlockG with steps := #[.assign stepAssignConstG] }
 
 run_cmd do
   match checkScanPlan outerSigsDeepHistory { deepHistoryScan with stepBlock := stepBlockConstG } with
@@ -565,7 +565,7 @@ run_cmd do
 def lookAheadReadG : ReadPlan := { stepReadG with map := { coeffs := #[#[1]], bias := #[1] } }
 def termLookAheadG : TermPlan := { termG with factors := #[lookAheadReadG] }
 def stepAssignLookAheadG : AssignPlan := { stepAssignG with terms := #[termLookAheadG] }
-def stepBlockLookAheadG : RawPlanBlock := { stepBlockG with assignments := #[stepAssignLookAheadG] }
+def stepBlockLookAheadG : RawPlanBlock := { stepBlockG with steps := #[.assign stepAssignLookAheadG] }
 
 run_cmd do
   match checkScanPlan outerSigsDeepHistory { deepHistoryScan with stepBlock := stepBlockLookAheadG } with
@@ -587,7 +587,7 @@ def stepScratchConstG : AssignPlan :=
 def stepBlockTwoAssignConstG : RawPlanBlock :=
   { stepBlockG with
     tensorSigs := stepBlockG.tensorSigs ++ #[{ shape := #[], dtype := .f64 }],
-    assignments := #[stepAssignG, stepScratchConstG] }
+    steps := #[.assign stepAssignG, .assign stepScratchConstG] }
 
 run_cmd do
   match checkScanPlan outerSigsDeepHistory { deepHistoryScan with stepBlock := stepBlockTwoAssignConstG } with
@@ -612,7 +612,7 @@ def stateGj : StateSlot := { destSlot := 1, advancingDims := #[1], materializati
 
 def baseBlockGj : RawPlanBlock :=
   { contextShape := #[], tensorSigs := #[{ shape := #[2], dtype := .f64 }]
-  , inputs := #[0], assignments := #[], outputs := #[0] }
+  , inputs := #[0], steps := #[], outputs := #[0] }
 
 def baseCaptureG0j : BlockCapture := { inputSlot := 0, source := .external 0 }
 
@@ -639,7 +639,7 @@ def stepAssignGj : AssignPlan :=
 def stepBlockGj : RawPlanBlock :=
   { contextShape := #[2]
   , tensorSigs := #[{ shape := #[2, 3], dtype := .f64 }, { shape := #[2], dtype := .f64 }]
-  , inputs := #[0], assignments := #[stepAssignGj], outputs := #[1] }
+  , inputs := #[0], steps := #[.assign stepAssignGj], outputs := #[1] }
 
 -- Gj[j, l+1] := <expr> — j free (output position 0), l advancing (context position 0).
 def stepWriteGj : StateWriteMap :=
@@ -669,7 +669,7 @@ def readGjWild : ReadPlan :=
 
 def termGjWild : TermPlan := { termGj with factors := #[readGjWild] }
 def stepAssignGjWild : AssignPlan := { stepAssignGj with terms := #[termGjWild] }
-def stepBlockGjWild : RawPlanBlock := { stepBlockGj with assignments := #[stepAssignGjWild] }
+def stepBlockGjWild : RawPlanBlock := { stepBlockGj with steps := #[.assign stepAssignGjWild] }
 
 run_cmd do
   match checkScanPlan outerSigsGj { nonAdvancingScan with stepBlock := stepBlockGjWild } with
@@ -761,7 +761,7 @@ def stepAssignSExtentOne : AssignPlan :=
 def stepBlockExtentOne : RawPlanBlock :=
   { contextShape := #[0]
   , tensorSigs := #[{ shape := #[1], dtype := .f64 }, { shape := #[], dtype := .f64 }]
-  , inputs := #[0], assignments := #[stepAssignSExtentOne], outputs := #[1] }
+  , inputs := #[0], steps := #[.assign stepAssignSExtentOne], outputs := #[1] }
 def stepCaptureSExtentOne : BlockCapture := { inputSlot := 0, source := .state 0 }
 def stepWriteSExtentOne : StateWriteMap :=
   { outputSlot := 1, stateIndex := 0, map := { coeffs := #[#[1]], bias := #[1] } }
@@ -815,7 +815,7 @@ def baseIdAssignCoupled : AssignPlan :=
   , algebra := admittedAlgebra }
 def baseBlockCoupled : RawPlanBlock :=
   { contextShape := #[], tensorSigs := #[{ shape := #[], dtype := .f64 }, { shape := #[], dtype := .f64 }]
-  , inputs := #[0], assignments := #[baseIdAssignCoupled], outputs := #[0, 1] }
+  , inputs := #[0], steps := #[.assign baseIdAssignCoupled], outputs := #[0, 1] }
 
 def baseCaptureCCoupled : BlockCapture := { inputSlot := 0, source := .external 0 }
 def baseWriteGCoupled : StateWriteMap :=
@@ -851,7 +851,7 @@ def stepBlockCoupled : RawPlanBlock :=
   { contextShape := #[3]
   , tensorSigs := #[{ shape := #[4], dtype := .f64 }, { shape := #[4], dtype := .f64 }
                   , { shape := #[], dtype := .f64 }, { shape := #[], dtype := .f64 }]
-  , inputs := #[0, 1], assignments := #[stepAssignGCoupled, stepAssignHCoupled], outputs := #[2, 3] }
+  , inputs := #[0, 1], steps := #[.assign stepAssignGCoupled, .assign stepAssignHCoupled], outputs := #[2, 3] }
 
 def stepCaptureGCoupled : BlockCapture := { inputSlot := 0, source := .state 0 }
 def stepCaptureHCoupled : BlockCapture := { inputSlot := 1, source := .state 1 }
@@ -913,7 +913,7 @@ def stateDpMulti : StateSlot :=
 def baseBlockMultiBase : RawPlanBlock :=
   { contextShape := #[]
   , tensorSigs := #[{ shape := #[2], dtype := .f64 }, { shape := #[], dtype := .f64 }]
-  , inputs := #[0, 1], assignments := #[], outputs := #[0, 1] }
+  , inputs := #[0, 1], steps := #[], outputs := #[0, 1] }
 
 def baseCaptureRowfaceMulti : BlockCapture := { inputSlot := 0, source := .external 0 }
 def baseCaptureOneMulti : BlockCapture := { inputSlot := 1, source := .external 1 }
@@ -936,7 +936,7 @@ def stepAssignDpMulti : AssignPlan :=
 def stepBlockMultiBase : RawPlanBlock :=
   { contextShape := #[1,1]
   , tensorSigs := #[{ shape := #[2,2], dtype := .f64 }, { shape := #[2,2], dtype := .f64 }, { shape := #[], dtype := .f64 }]
-  , inputs := #[0, 1], assignments := #[stepAssignDpMulti], outputs := #[2] }
+  , inputs := #[0, 1], steps := #[.assign stepAssignDpMulti], outputs := #[2] }
 def stepCaptureDpMulti : BlockCapture := { inputSlot := 0, source := .state 0 }
 def stepCaptureTMulti : BlockCapture := { inputSlot := 1, source := .external 2 }
 def stepWriteDpMulti : StateWriteMap := { dpStepWrite with outputSlot := 2 }
@@ -1069,7 +1069,7 @@ def stateGAsym : StateSlot := { destSlot := 2, advancingDims := #[0,1], material
 
 def baseBlockAsym : RawPlanBlock :=
   { contextShape := #[], tensorSigs := #[{ shape := #[2], dtype := .f64 }]
-  , inputs := #[0], assignments := #[], outputs := #[0] }
+  , inputs := #[0], steps := #[], outputs := #[0] }
 
 def baseCaptureZAsym : BlockCapture := { inputSlot := 0, source := .external 0 }
 
@@ -1095,7 +1095,7 @@ def stepAssignAsym : AssignPlan :=
 def stepBlockAsym : RawPlanBlock :=
   { contextShape := #[1,2]
   , tensorSigs := #[{ shape := #[2,3], dtype := .f64 }, { shape := #[2,3], dtype := .f64 }, { shape := #[], dtype := .f64 }]
-  , inputs := #[0, 1], assignments := #[stepAssignAsym], outputs := #[2] }
+  , inputs := #[0, 1], steps := #[.assign stepAssignAsym], outputs := #[2] }
 def stepCaptureGAsym : BlockCapture := { inputSlot := 0, source := .state 0 }
 def stepCaptureAAsym : BlockCapture := { inputSlot := 1, source := .external 1 }
 def stepWriteGAsym : StateWriteMap :=
@@ -1486,7 +1486,7 @@ def stateH3 : StateSlot := { destSlot := 3, advancingDims := #[0], materializati
 def baseBlockReorder : RawPlanBlock :=
   { contextShape := #[]
   , tensorSigs := #[{ shape := #[], dtype := .f64 }, { shape := #[], dtype := .f64 }]
-  , inputs := #[0, 1], assignments := #[], outputs := #[0, 1] }
+  , inputs := #[0, 1], steps := #[], outputs := #[0, 1] }
 
 -- Deliberately reversed: the capture for input slot `1` is stored BEFORE the capture for input
 -- slot `0`.
@@ -1514,7 +1514,7 @@ def stepBlockReorder : RawPlanBlock :=
   { contextShape := #[0]
   , tensorSigs := #[{ shape := #[1], dtype := .f64 }, { shape := #[1], dtype := .f64 }
                   , { shape := #[], dtype := .f64 }, { shape := #[], dtype := .f64 }]
-  , inputs := #[0, 1], assignments := #[stepAssignG3, stepAssignH3], outputs := #[2, 3] }
+  , inputs := #[0, 1], steps := #[.assign stepAssignG3, .assign stepAssignH3], outputs := #[2, 3] }
 def stepCaptureG3 : BlockCapture := { inputSlot := 0, source := .state 0 }
 def stepCaptureH3 : BlockCapture := { inputSlot := 1, source := .state 1 }
 def stepWriteG3 : StateWriteMap :=
@@ -1676,7 +1676,7 @@ def stateW : StateSlot := { destSlot := 2, advancingDims := #[0], materializatio
 
 def baseBlockW : RawPlanBlock :=
   { contextShape := #[], tensorSigs := #[{ shape := #[2], dtype := .f64 }]
-  , inputs := #[0], assignments := #[], outputs := #[0] }
+  , inputs := #[0], steps := #[], outputs := #[0] }
 
 def baseCaptureW : BlockCapture := { inputSlot := 0, source := .external 0 }
 
@@ -1701,7 +1701,7 @@ def stepAssignWCanon : AssignPlan :=
 def stepBlockWCanon : RawPlanBlock :=
   { contextShape := #[3]
   , tensorSigs := #[{ shape := #[2], dtype := .f64 }, { shape := #[2], dtype := .f64 }]
-  , inputs := #[0], assignments := #[stepAssignWCanon], outputs := #[1] }
+  , inputs := #[0], steps := #[.assign stepAssignWCanon], outputs := #[1] }
 
 def stepCaptureWCanon : BlockCapture := { inputSlot := 0, source := .external 0 }
 
@@ -1744,7 +1744,7 @@ def stepAssignWScalar : AssignPlan :=
 def stepBlockWScalar : RawPlanBlock :=
   { contextShape := #[3]
   , tensorSigs := #[{ shape := #[3], dtype := .f64 }, { shape := #[], dtype := .f64 }]
-  , inputs := #[0], assignments := #[stepAssignWScalar], outputs := #[1] }
+  , inputs := #[0], steps := #[.assign stepAssignWScalar], outputs := #[1] }
 
 def stepCaptureWScalar : BlockCapture := { inputSlot := 0, source := .external 1 }
 

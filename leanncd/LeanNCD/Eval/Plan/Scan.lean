@@ -367,18 +367,20 @@ def checkScanPlan (sigs : Array TensorSignature) (raw : RawScanPlan) :
   let stateCaptureFor : TensorSlot → Option Nat := fun inputSlot =>
     (raw.stepCaptures.find? (fun c => c.inputSlot == inputSlot)).bind (fun c => match c.source with
       | .state si => some si | .external _ => none)
-  for h : ai in [0 : raw.stepBlock.assignments.size] do
-    let a := raw.stepBlock.assignments[ai]
-    for h2 : ti in [0 : a.terms.size] do
-      let t := a.terms[ti]
-      for h3 : fi in [0 : t.factors.size] do
-        let f := t.factors[fi]
-        match stateCaptureFor f.sourceSlot with
-        | none => pure ()
-        | some si =>
-            let st := raw.states.getD si default
-            unless stateReadCausal st.advancingDims t.contextPos f do
-              throw (.causalityFailure si ai ti fi)
+  for h : ai in [0 : raw.stepBlock.steps.size] do
+    match raw.stepBlock.steps[ai] with
+    | .pointwise _ | .axiswise _ => pure ()
+    | .assign a =>
+        for h2 : ti in [0 : a.terms.size] do
+          let t := a.terms[ti]
+          for h3 : fi in [0 : t.factors.size] do
+            let f := t.factors[fi]
+            match stateCaptureFor f.sourceSlot with
+            | none => pure ()
+            | some si =>
+                let st := raw.states.getD si default
+                unless stateReadCausal st.advancingDims t.contextPos f do
+                  throw (.causalityFailure si ai ti fi)
   return CheckedScanPlan.mk raw checkedBase checkedStep stepExtents
 
 /-- `rank_D(q) = sum_i q[i] * product_{j<i} D[j]` (proposal §6.6): axis `0` varies fastest. -/

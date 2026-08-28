@@ -124,13 +124,14 @@ def selfRecurExpected : RawScanPlan :=
       { contextShape := #[]
       , tensorSigs := #[{ shape := #[], dtype := .f64 }, { shape := #[], dtype := .f64 }]
       , inputs := #[0]
-      , assignments := #[
-          { contextShape := #[], destinationSlot := 1, outputShape := #[]
-          , terms := #[{ iterationShape := #[], contextPos := #[], outputPos := #[]
-                       , reductionPos := #[]
-                       , factors := #[{ sourceSlot := 0, map := { coeffs := #[], bias := #[] }
-                                      , sourceShape := #[], oobPolicy := .zeroPad }] }]
-          , algebra := admittedAlgebra }]
+      , steps := #[
+          .assign
+            { contextShape := #[], destinationSlot := 1, outputShape := #[]
+            , terms := #[{ iterationShape := #[], contextPos := #[], outputPos := #[]
+                         , reductionPos := #[]
+                         , factors := #[{ sourceSlot := 0, map := { coeffs := #[], bias := #[] }
+                                        , sourceShape := #[], oobPolicy := .zeroPad }] }]
+            , algebra := admittedAlgebra }]
       , outputs := #[1] }
   , baseCaptures := #[{ inputSlot := 0, source := .external 0 }]
   , baseWrites := #[{ outputSlot := 1, stateIndex := 0
@@ -140,16 +141,17 @@ def selfRecurExpected : RawScanPlan :=
       , tensorSigs := #[{ shape := #[3], dtype := .f64 }, { shape := #[3], dtype := .f64 }
                        , { shape := #[], dtype := .f64 }]
       , inputs := #[0, 1]
-      , assignments := #[
-          { contextShape := #[2], destinationSlot := 2, outputShape := #[]
-          , terms := #[
-              { iterationShape := #[2], contextPos := #[0], outputPos := #[], reductionPos := #[]
-              , factors := #[{ sourceSlot := 0, map := { coeffs := #[#[1]], bias := #[0] }
-                             , sourceShape := #[3], oobPolicy := .zeroPad }] }
-            , { iterationShape := #[2], contextPos := #[0], outputPos := #[], reductionPos := #[]
-              , factors := #[{ sourceSlot := 1, map := { coeffs := #[#[1]], bias := #[0] }
-                             , sourceShape := #[3], oobPolicy := .zeroPad }] }]
-          , algebra := admittedAlgebra }]
+      , steps := #[
+          .assign
+            { contextShape := #[2], destinationSlot := 2, outputShape := #[]
+            , terms := #[
+                { iterationShape := #[2], contextPos := #[0], outputPos := #[], reductionPos := #[]
+                , factors := #[{ sourceSlot := 0, map := { coeffs := #[#[1]], bias := #[0] }
+                               , sourceShape := #[3], oobPolicy := .zeroPad }] }
+              , { iterationShape := #[2], contextPos := #[0], outputPos := #[], reductionPos := #[]
+                , factors := #[{ sourceSlot := 1, map := { coeffs := #[#[1]], bias := #[0] }
+                               , sourceShape := #[3], oobPolicy := .zeroPad }] }]
+            , algebra := admittedAlgebra }]
       , outputs := #[2] }
   , stepCaptures := #[{ inputSlot := 0, source := .state 0 }
                      , { inputSlot := 1, source := .external 1 }]
@@ -302,13 +304,14 @@ def scratchCheck : Except String Unit :=
         -- block slots: 0 = state capture `S`, 1 = external capture `K`, 2 = `T`, 3 = `S`'s result.
         expectEq "C: step captures" s.stepCaptures
           #[{ inputSlot := 0, source := .state 0 }, { inputSlot := 1, source := .external 1 }]
-        expectEq "C: step assignment dests" (s.stepBlock.assignments.map (·.destinationSlot))
+        expectEq "C: step assignment dests"
+          (s.stepBlock.steps.filterMap BlockStep.assign? |>.map (·.destinationSlot))
           #[2, 3]
         -- only the state result is a block OUTPUT; `T` is produced but never leaves the block.
         expectEq "C: step block outputs" s.stepBlock.outputs #[3]
         -- and the result assignment reads `T` at its own local slot, not at a capture.
         expectEq "C: result reads scratch slot"
-          ((s.stepBlock.assignments.getD 1 default).terms.getD 0 default).factors
+          (((s.stepBlock.steps.getD 1 default).assign?.getD default).terms.getD 0 default).factors
           #[{ sourceSlot := 2, map := { coeffs := #[], bias := #[] }
             , sourceShape := #[], oobPolicy := .zeroPad }]
         checkerAgrees "C" p 0)
@@ -345,7 +348,7 @@ def contractCheck : Except String Unit :=
     match scanAt p 0 with
     | none => .error "D-E: step 0 is not a scan"
     | some s => do
-        let t := (s.stepBlock.assignments.getD 0 default).terms.getD 0 default
+        let t := ((s.stepBlock.steps.getD 0 default).assign?.getD default).terms.getD 0 default
         -- basis is `[l, k]`: context first, then this TERM's own contracted axis. `l` is the STEP
         -- extent (3 = 4 - 1), `k` its ordinary size.
         expectEq "D-E: iterationShape" t.iterationShape #[3, 2]
@@ -392,7 +395,7 @@ def deepHistoryCheck : Except String Unit :=
     match scanAt p 0 with
     | none => .error "F: step 0 is not a scan"
     | some s => do
-        let a := s.stepBlock.assignments.getD 0 default
+        let a := (s.stepBlock.steps.getD 0 default).assign?.getD default
         expectEq "F: immediate read" ((a.terms.getD 0 default).factors.getD 0 default).map
           { coeffs := #[#[1]], bias := #[0] }
         expectEq "F: look-back read" ((a.terms.getD 1 default).factors.getD 0 default).map
@@ -434,7 +437,7 @@ def extentOneCheck : Except String Unit :=
         expectEq "G: state shape" (p.plan.raw.tensorSigs.getD 1 { shape := #[9], dtype := .f64 })
           { shape := #[1], dtype := .f64 }
         expectEq "G: term iterationShape"
-          ((s.stepBlock.assignments.getD 0 default).terms.getD 0 default).iterationShape #[0]
+          (((s.stepBlock.steps.getD 0 default).assign?.getD default).terms.getD 0 default).iterationShape #[0]
         checkerAgrees "G" p 0)
 
 run_cmd match extentOneCheck with | .ok _ => pure () | .error m => throwError m
@@ -476,7 +479,7 @@ def axisPosCheck : Except String Unit :=
           { coeffs := #[#[0, 1], #[1, 0]], bias := #[0, 1] }
         -- causality is checked at the state's OWN advancing dimension (1), not at dimension 0.
         expectEq "H: state read map"
-          (((s.stepBlock.assignments.getD 0 default).terms.getD 0 default).factors.getD 0 default).map
+          ((((s.stepBlock.steps.getD 0 default).assign?.getD default).terms.getD 0 default).factors.getD 0 default).map
           { coeffs := #[#[0, 1], #[1, 0]], bias := #[0, 0] }
         checkerAgrees "H" p 0)
 
@@ -530,13 +533,14 @@ def multiBaseCheck : Except String Unit :=
         expectEq "I-J: point write" (s.baseWrites.getD 1 default).map
           { coeffs := #[#[], #[]], bias := #[1, 0] }
         -- the pin substitution: `1 + 2r + 4r` at `r = 1` collapses to bias 7 over an EMPTY basis.
-        let pointTerm := (s.baseBlock.assignments.getD 1 default).terms.getD 0 default
+        let pointTerm := ((s.baseBlock.steps.getD 1 default).assign?.getD default).terms.getD 0 default
         expectEq "I-J: pinned basis is empty" pointTerm.iterationShape #[]
         expectEq "I-J: pinned axis is not contracted" pointTerm.reductionPos #[]
         expectEq "I-J: pinned bias accumulation" (pointTerm.factors.getD 0 default).map
           { coeffs := #[#[]], bias := #[7] }
         -- the face write's own assignment keeps `c` as a real free output axis of extent 3.
-        expectEq "I-J: face output shape" (s.baseBlock.assignments.getD 0 default).outputShape #[3]
+        expectEq "I-J: face output shape"
+          ((s.baseBlock.steps.getD 0 default).assign?.getD default).outputShape #[3]
         checkerAgrees "I-J" p 0)
 
 run_cmd match multiBaseCheck with | .ok _ => pure () | .error m => throwError m

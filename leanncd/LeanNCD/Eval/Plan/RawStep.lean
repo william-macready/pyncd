@@ -57,6 +57,30 @@ structure StateWriteMap where
   map        : AffineMap
   deriving DecidableEq, BEq, Repr, Inhabited
 
+inductive BlockStep
+  | assign (a : AssignPlan)
+  | pointwise (p : RawPointwisePlan)
+  | axiswise (a : RawAxiswisePlan)
+  deriving DecidableEq, BEq, Repr, Inhabited
+
+def BlockStep.sourceSlots : BlockStep → Array TensorSlot
+  | .assign a => a.terms.flatMap (·.factors.map (·.sourceSlot))
+  | .pointwise p => #[p.sourceSlot]
+  | .axiswise a => #[a.sourceSlot]
+
+def BlockStep.destinationSlots : BlockStep → Array TensorSlot
+  | .assign a => #[a.destinationSlot]
+  | .pointwise p => #[p.destinationSlot]
+  | .axiswise a => #[a.destinationSlot]
+
+def BlockStep.contextShape? : BlockStep → Option (Array Nat)
+  | .assign a => some a.contextShape
+  | .pointwise _ | .axiswise _ => none
+
+def BlockStep.assign? : BlockStep → Option AssignPlan
+  | .assign a => some a
+  | .pointwise _ | .axiswise _ => none
+
 /-- A local, acyclic, context-parameterized dataflow graph — the base block or the step block of a
     scan (proposal §6.2). Relocated from `Block.lean` (F2): this type only ever needed
     `Kernel.lean` (`AssignPlan`, `TensorSlot`, `TensorSignature`) — `checkPlanBlock`/`runDenseBlock`
@@ -67,7 +91,7 @@ structure RawPlanBlock where
   contextShape : Array Nat
   tensorSigs   : Array TensorSignature
   inputs       : Array TensorSlot
-  assignments  : Array AssignPlan
+  steps        : Array BlockStep
   outputs      : Array TensorSlot
   deriving DecidableEq, BEq, Repr, Inhabited
 

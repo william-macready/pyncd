@@ -17,6 +17,12 @@ exists yet — `RawEvalPlan` is untouched by this file.
 
 namespace LeanNCD.Eval.Plan
 
+inductive CheckedBlockStepEvidence
+  | assign (c : CheckedAssignPlan)
+  | pointwise (c : CheckedPointwisePlan)
+  | axiswise (c : CheckedAxiswisePlan)
+  deriving Repr
+
 /-- A raw `RawPlanBlock` violates a local-graph invariant. `wiring` reuses `PlanError` verbatim for
     every failure mode `checkPlanBlock`'s wiring loop shares with `checkPlan`'s outer-graph loop
     (slot range, input uniqueness/order, overwrite, duplicate destination, missing production,
@@ -27,6 +33,8 @@ inductive BlockError
   | wiring                (cause : PlanError)
   | duplicateOutputSlot   (slot : TensorSlot)
   | blockContextMismatch  (nodeIndex : Nat) (expected actual : Array Nat)
+  | nonlin (nodeIndex : Nat) (cause : NonlinPlanError)
+  | nonlinearSourceNotLocalAssignment (nodeIndex : Nat) (sourceSlot : TensorSlot)
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- First slot in `slots` that recurs later in the list, if any. Mirrors `Prepared.lean`'s
@@ -42,7 +50,7 @@ private def firstDuplicateSlot : List TensorSlot → Option TensorSlot
     produced exactly once. -/
 structure CheckedPlanBlock where private mk ::
   raw          : RawPlanBlock
-  checkedNodes : Array CheckedAssignPlan
+  checkedNodes : Array CheckedBlockStepEvidence
   deriving Repr
 
 /-- One node of a shared availability/production-order wiring loop, generalized from `checkPlan`'s
@@ -121,26 +129,58 @@ def checkPlanBlock (block : RawPlanBlock) : Except BlockError CheckedPlanBlock :
   unless (block.outputs.toList).Nodup do
     throw (.duplicateOutputSlot
       ((firstDuplicateSlot block.outputs.toList).getD 0))
-  let mut nodes : Array (WiringNode BlockError CheckedAssignPlan) := #[]
-  for h : ni in [0 : block.assignments.size] do
-    let step := block.assignments[ni]
+  let mut nodes : Array (WiringNode BlockError CheckedBlockStepEvidence) := #[]
+  let mut precedingAssignmentDestinations : Array TensorSlot := #[]
+  for h : ni in [0 : block.steps.size] do
+    let step := block.steps[ni]
+    let precedingAssignments := precedingAssignmentDestinations
     nodes := nodes.push
-      { contextCheck := unless step.contextShape == block.contextShape do
-          throw (.blockContextMismatch ni block.contextShape step.contextShape)
-      , destinationSlots := #[step.destinationSlot]
-      , sourceCheck := fun available => do
-          for h2 : ti in [0 : step.terms.size] do
-            let t := step.terms[ti]
-            for h3 : fi in [0 : t.factors.size] do
-              let f := t.factors[fi]
-              match available[f.sourceSlot]? with
-              | none => throw (.wiring (.nodeError ni (.slotOutOfRange f.sourceSlot n)))
+      { contextCheck := match step.contextShape? with
+          | some actual =>
+              unless actual == block.contextShape do
+                throw (.blockContextMismatch ni block.contextShape actual)
+          | none => pure ()
+      , destinationSlots := step.destinationSlots
+      , sourceCheck := fun available => match step with
+          | .assign a => do
+              for h2 : ti in [0 : a.terms.size] do
+                let t := a.terms[ti]
+                for h3 : fi in [0 : t.factors.size] do
+                  let f := t.factors[fi]
+                  match available[f.sourceSlot]? with
+                  | none => throw (.wiring (.nodeError ni (.slotOutOfRange f.sourceSlot n)))
+                  | some true => pure ()
+                  | some false => throw (.wiring (.invalidForwardRead ni ti fi f.sourceSlot))
+          | .pointwise p => do
+              match available[p.sourceSlot]? with
+              | none => throw (.wiring (.nodeError ni (.slotOutOfRange p.sourceSlot n)))
+              | some false => throw (.wiring (.invalidForwardRead ni 0 0 p.sourceSlot))
               | some true => pure ()
-              | some false => throw (.wiring (.invalidForwardRead ni ti fi f.sourceSlot))
-      , localCheck := match checkAssign block.tensorSigs step with
-          | .error e => throw (.wiring (.nodeError ni e))
-          | .ok c => pure c
-      }
+              unless precedingAssignments.contains p.sourceSlot do
+                throw (.nonlinearSourceNotLocalAssignment ni p.sourceSlot)
+          | .axiswise a => do
+              match available[a.sourceSlot]? with
+              | none => throw (.wiring (.nodeError ni (.slotOutOfRange a.sourceSlot n)))
+              | some false => throw (.wiring (.invalidForwardRead ni 0 0 a.sourceSlot))
+              | some true => pure ()
+              unless precedingAssignments.contains a.sourceSlot do
+                throw (.nonlinearSourceNotLocalAssignment ni a.sourceSlot)
+      , localCheck := match step with
+          | .assign a => match checkAssign block.tensorSigs a with
+              | .error e => throw (.wiring (.nodeError ni e))
+              | .ok c => pure (.assign c)
+          | .pointwise p =>
+              match checkPointwise block.tensorSigs p with
+              | .error e => throw (.nonlin ni e)
+              | .ok c => pure (.pointwise c)
+          | .axiswise a =>
+              match checkAxiswise block.tensorSigs a with
+              | .error e => throw (.nonlin ni e)
+              | .ok c => pure (.axiswise c) }
+    match step with
+    | .assign a => precedingAssignmentDestinations :=
+        precedingAssignmentDestinations.push a.destinationSlot
+    | .pointwise _ | .axiswise _ => pure ()
   let checkedNodes ← checkStepGraph n block.inputs BlockError.wiring nodes
   return CheckedPlanBlock.mk block checkedNodes
 
@@ -166,8 +206,15 @@ def runDenseBlock (c : CheckedPlanBlock) (ctx : List Int) (inputs : Array DenseT
       throw (.storageMismatch slot t.shape t.data.size)
     store := store.set! slot t
   for node in c.checkedNodes do
-    let result ← runDenseAssignAt node ctx store
-    store := store.set! node.plan.destinationSlot result
+    match node with
+    | .assign a =>
+        store := store.set! a.plan.destinationSlot (← runDenseAssignAt a ctx store)
+    | .pointwise p =>
+        store := store.set! p.raw.destinationSlot
+          (runDensePointwise p (store.getD p.raw.sourceSlot placeholder))
+    | .axiswise a =>
+        store := store.set! a.raw.destinationSlot
+          (runDenseAxiswise a (store.getD a.raw.sourceSlot placeholder))
   return store
 
 end LeanNCD.Eval.Plan

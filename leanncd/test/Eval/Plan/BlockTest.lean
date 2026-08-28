@@ -31,7 +31,7 @@ def blockAssign : AssignPlan :=
 
 def stepBlock : RawPlanBlock :=
   { contextShape := #[2], tensorSigs := blockSigs, inputs := #[0]
-  , assignments := #[blockAssign], outputs := #[1] }
+  , steps := #[.assign blockAssign], outputs := #[1] }
 
 run_cmd do
   match checkPlanBlock stepBlock with
@@ -54,7 +54,7 @@ run_cmd do
 def wrongContextAssign : AssignPlan := { blockAssign with contextShape := #[3] }
 
 def wrongContextBlock : RawPlanBlock :=
-  { stepBlock with assignments := #[wrongContextAssign] }
+  { stepBlock with steps := #[.assign wrongContextAssign] }
 
 run_cmd do
   match checkPlanBlock wrongContextBlock with
@@ -123,7 +123,7 @@ def fwdAssignB : AssignPlan :=
 
 def forwardReadBlock : RawPlanBlock :=
   { contextShape := #[], tensorSigs := fwdSigs, inputs := #[0]
-  , assignments := #[fwdAssignA, fwdAssignB], outputs := #[2] }
+  , steps := #[.assign fwdAssignA, .assign fwdAssignB], outputs := #[2] }
 
 run_cmd do
   match checkPlanBlock forwardReadBlock with
@@ -143,7 +143,7 @@ def scratchAssign : AssignPlan :=
 
 def missingProductionBlock : RawPlanBlock :=
   { contextShape := #[], tensorSigs := fwdSigs, inputs := #[0]
-  , assignments := #[scratchAssign], outputs := #[1] }
+  , steps := #[.assign scratchAssign], outputs := #[1] }
 
 run_cmd do
   match checkPlanBlock missingProductionBlock with

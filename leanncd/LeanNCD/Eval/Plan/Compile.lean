@@ -759,7 +759,7 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
     { states
     , baseBlock :=
         { contextShape := #[], tensorSigs := baseSigs, inputs := Array.range baseInputCount
-        , assignments := baseAssigns
+        , steps := baseAssigns.map .assign
         , outputs := (Array.range baseParts.size).map (· + baseInputCount) }
     , baseCaptures := (Array.range baseInputCount).map (fun i =>
         { inputSlot := i, source := .external (slotOf.getD (baseCapNames.getD i "") 0) })
@@ -767,7 +767,7 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
     , stepBlock :=
         { contextShape := stepExtents, tensorSigs := stepSigs
         , inputs := Array.range stepInputCount
-        , assignments := stepAssigns, outputs := stepOutputs }
+        , steps := stepAssigns.map .assign, outputs := stepOutputs }
     , stepCaptures := (Array.range stepInputCount).map (fun i =>
         { inputSlot := i, source := (stepCapNames.getD i ("", .state 0)).2 })
     , stepWrites
