@@ -185,7 +185,10 @@ Thirteen GPT-5.6 Sol/high spikes informed and then de-risked this decision.
 13. **`BlockStep` migration rehearsal:** the complete 47-occurrence migration, checked-step sum,
     block-local provenance, Dense dispatch, compiler wrapping, and assignment-only causality traversal
     compiled without new imports or production files. Targeted tests, 3,832 differential cases,
-    `Tests`, and `LeanNCD` passed. Task 3 is bounded at 1.5-2 focused days.
+    `Tests`, and `LeanNCD` passed. Task 3 is bounded at 1.5-2 focused days. **Re-run 2026-08-27**
+    against `main` at `d8ef77b`, after Tasks 1 and 2 both landed: the migration inventory is
+    unchanged, and a durable artifact preserving this rehearsal is now at
+    `implementation_seeds/nonlinearity_route_fragments/blockstep_migration/` (Section 1.3.1).
 
 The route-fragment prototype covered:
 
@@ -220,6 +223,8 @@ source tree and must never become a production dependency.
 | [`fixtures/PayloadConservationSeed.lean`](implementation_seeds/nonlinearity_route_fragments/fixtures/PayloadConservationSeed.lean) | Nineteen named payload fixtures separating physical conservation from categorical opacity | Direct donor for Task 2's corpus test and Bridge assertions | Route/ACSet projection equality is not source-semantic equality for opaque fields |
 | [`fixtures/RouteFragmentCorpusSeed.lean`](implementation_seeds/nonlinearity_route_fragments/fixtures/RouteFragmentCorpusSeed.lean) | Deterministic 145-case/13-family corpus, 137 common-domain exact comparisons, eight collision transitions, scan-opacity counts, and mutation hooks | Direct donor for Task 2's `RouteFragmentCorpusTest` | It does not execute `Bridge.realize` and does not test runtime Plan scan admission |
 | [`fixtures/README.md`](implementation_seeds/nonlinearity_route_fragments/fixtures/README.md) | Exact case outcomes, fixture provenance, caller/proof census, mutation-to-defect map, limitations, and transplant order | Task 1/2 test migration checklist | It does not supersede the production files and commands listed in Sections 3.3 and 3.4 |
+| [`blockstep_migration/BlockStepMigrationSeed.lean`](implementation_seeds/nonlinearity_route_fragments/blockstep_migration/BlockStepMigrationSeed.lean) | Local `BlockStep` sum (`.assign`/`.pointwise`/`.axiswise`), the `RawPlanBlock.steps` field, checked-step wiring through unchanged production `checkStepGraph`, block-specific nonlinear `sourceCheck`/`nonlinearSourceNotLocalAssignment`, exhaustive Dense dispatch, `.assign`-only scan causality, all nine donor-derived fixtures, and six mutation toggles | Direct donor for Task 3's `BlockStep` migration | Its scan adapter delegates geometry/capture/write validation to the production scan checker but performs the assignment-only causality traversal itself with local types, because the spike could not touch production files; production must transplant that logic into the real types, not import or retain this adapter |
+| [`blockstep_migration/README.md`](implementation_seeds/nonlinearity_route_fragments/blockstep_migration/README.md) | Re-audited 47-occurrence/46-line rename inventory (verified against `main` after Tasks 1 and 2 both landed), fixture provenance and exact observed outcomes, mutation-to-defect map, transplant order, and effort estimate | Task 3 handoff checklist; read before copying any declaration | It does not replace Task 3's own full production mutation gate |
 
 When the two implementations differ, the adapter/proof donor is authoritative for production
 physicalization and the fixture donors are authoritative for their recorded observations. In
@@ -248,6 +253,16 @@ arity, mask/aggregation/metadata/`scanPre` conservation, private-name reuse, `.f
 degradation, and fragment-exit routing. These results establish that the artifacts are sound starting
 points. They do not waive re-running the checks after declarations are transplanted into production:
 imports, privacy, API types, and theorem dependencies all change during that move.
+
+**A sixth donor, `blockstep_migration/BlockStepMigrationSeed.lean`, was added 2026-08-27** against
+`main` at `d8ef77b`, after Task 1 and Task 2 both landed — independently re-verified by the
+controller session, not merely accepted from its own README: the seed compiles cleanly and its two
+printed fixture outputs match the README's claims byte-for-byte; all three gate commands (the four
+targeted modules, `Tests`, `LeanNCD`) reproduce the README's own reported job counts exactly
+(8,511 / 8,657 / 8,543); and the README's audited "47 occurrences on 46 lines" table was
+cross-checked line-by-line against an independent raw count and found internally consistent. This
+donor is therefore live against the current tree, matching the same "not a stale snapshot" standard
+as the first five.
 
 ##### Claude startup and integration workflow
 
@@ -356,6 +371,42 @@ and nested `scanPre` bodies must retain exact physical fields while explicitly d
 current categorical projection omits them. Never rewrite the second observation as semantic
 equivalence.
 
+##### Task 3 BlockStep migration transplant
+
+Use [`BlockStepMigrationSeed.lean`](implementation_seeds/nonlinearity_route_fragments/blockstep_migration/BlockStepMigrationSeed.lean),
+per its own README's transplant map:
+
+1. In `LeanNCD/Eval/Plan/RawStep.lean`, transplant `BlockStep` and its accessors; rename
+   `RawPlanBlock.assignments` to `steps`.
+2. Across all seven migration files the artifact audited (`RawStep.lean`, `Block.lean`, `Scan.lean`,
+   `Compile.lean`, `BlockTest.lean`, `ScanTest.lean`, `ScanCompileTest.lean`), apply the audited
+   47-occurrence field migration exactly — wrap every existing assignment literal/array element in
+   `.assign`, and update structural assertions to extract the nested assignment before comparing.
+3. In `LeanNCD/Eval/Plan/Block.lean`, transplant `CheckedBlockStepEvidence`, the nonlinear error
+   wrappers, and `nonlinearSourceNotLocalAssignment`. Keep `checkStepGraph` unchanged; build
+   `WiringNode`s in block-step order and snapshot only preceding `.assign` destinations for nonlinear
+   `sourceCheck`.
+4. In the same file, replace the assignment-only execution loop with exhaustive checked-step dispatch
+   to the three existing Dense workers (`runDenseAssignAt`, `runDensePointwise`, `runDenseAxiswise`).
+5. In `LeanNCD/Eval/Plan/Compile.lean`, map `baseAssigns`/`stepAssigns` through `.assign`; do not admit
+   nonlinear scan source lowering in this task — that is Task 4's scope.
+6. In `LeanNCD/Eval/Plan/Scan.lean`, causality-walk only `.assign` payloads after block checking,
+   enumerating the unfiltered `steps` array so `causalityFailure.stmtIndex` remains a block-step
+   index.
+7. In tests, transplant all nine fixtures. Pattern-match `Except` results rather than comparing
+   directly (checked blocks intentionally lack `BEq`), and pattern-match `.assign` before any
+   assignment-field assertion.
+
+The seed's own scan adapter is donor-only: it delegates unchanged geometry/capture/write validation
+to the production scan checker but performs the assignment-only causality traversal itself with local
+types, because the spike was forbidden from touching production files. Production must transplant
+that logic into the real `BlockStep`/scan types rather than import or retain the seed's adapter.
+
+The seed reconfirms the "47 occurrences on 46 lines" inventory first reported before Task 1 and
+Task 2 existed — re-audited against `main` at `d8ef77b`, after both had landed — and retains the
+original **1.5-2 focused engineer-day** estimate: neither prior task introduced a new Task 3
+migration site.
+
 ##### Commands and completion boundary
 
 Run the donor baseline from `leanncd/`:
@@ -366,13 +417,16 @@ Run the donor baseline from `leanncd/`:
 "$HOME/.elan/bin/lake" env lean ../papers/implementation_seeds/nonlinearity_route_fragments/fixtures/RouteFragmentDiagnosticSeed.lean
 "$HOME/.elan/bin/lake" env lean ../papers/implementation_seeds/nonlinearity_route_fragments/fixtures/PayloadConservationSeed.lean
 "$HOME/.elan/bin/lake" env lean ../papers/implementation_seeds/nonlinearity_route_fragments/fixtures/RouteFragmentCorpusSeed.lean
+"$HOME/.elan/bin/lake" env lean ../papers/implementation_seeds/nonlinearity_route_fragments/blockstep_migration/BlockStepMigrationSeed.lean
 ```
 
-Then use the targeted and full production commands in Sections 3.3, 3.4, and 4. The artifacts speed
-implementation by supplying compiled declaration shapes, proofs, fixtures, expected values, and
+Then use the targeted and full production commands in Sections 3.3, 3.4, 3.5, and 4. The artifacts
+speed implementation by supplying compiled declaration shapes, proofs, fixtures, expected values, and
 mutation targets. They do not change the completion boundary: Task 1 still requires the atomic
 logical/physical API flip and Agreement restoration; Task 2 still requires production corpus,
-realization, and ACSet wiring; the branch still requires the full builds and independent reviews.
+realization, and ACSet wiring; Task 3 still requires the full `BlockStep` migration, checked-step
+dispatch, and scan-causality repair implemented directly in production types; the branch still
+requires the full builds and independent reviews.
 
 ##### Non-negotiable donor boundaries
 
@@ -389,6 +443,9 @@ realization, and ACSet wiring; the branch still requires the full builds and ind
   intentionally omitted by the categorical projection.
 - Never hand-copy observed values from this prose without retaining the executable guard that produced
   them.
+- Never transplant the `BlockStep` migration seed's donor-only scan-causality adapter; implement
+  causality checking directly over the real `BlockStep`/scan types in production, per Task 3's own
+  transplant instructions above.
 
 ### 1.4 Selected architecture
 
@@ -1455,6 +1512,14 @@ Require two reviews: route/indexing equality and scan/realization/ACSet preserva
 `RawPlanBlock.steps : Array BlockStep` replaces assignment-only blocks. Checking, execution, and scan
 causality support assign, pointwise, and axiswise nodes while every assignment-only plan remains
 unchanged.
+
+**Acceleration artifacts**
+
+Begin with the [Task 3 BlockStep migration transplant](#task-3-blockstep-migration-transplant)
+instructions in Section 1.3.1. The seed supplies a re-audited rename inventory, all nine fixtures
+with exact observed outcomes, and all six mutation cycles, re-verified against `main` after Tasks 1
+and 2 landed. Replace its donor-only scan-causality adapter with the real production implementation
+rather than retaining or importing it.
 
 **Files**
 
