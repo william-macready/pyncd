@@ -1,6 +1,11 @@
 # Logical nonlinearity scheduling and private route fragments
 
-**Status:** Detailed design and implementation plan; not yet executed.
+**Status:** Partially executed. **Tasks 1, 2 and 3 are complete and merged** (§3.3, §3.4, §3.5 —
+each carries its own completion blockquote naming the slice plan that executed it). **Task 4 (§3.6)
+is BLOCKED on a plan defect**, not merely unstarted: its six recorded oracle-group values cannot be
+reproduced, because no source program or input set for them survives anywhere in the repository's
+history. See the blockquote at the head of §3.6 before planning it. Task 5 (§3.7) depends on Task 4.
+Sections 2 and 4 remain the governing contract throughout.
 
 **Decision:** Preserve nonlinear assignments in the shared `ScheduledProgram`. Schedule once over
 logical tensor names. Eval consumers lower or execute that logical assignment directly. Immediately
@@ -225,6 +230,8 @@ source tree and must never become a production dependency.
 | [`fixtures/README.md`](implementation_seeds/nonlinearity_route_fragments/fixtures/README.md) | Exact case outcomes, fixture provenance, caller/proof census, mutation-to-defect map, limitations, and transplant order | Task 1/2 test migration checklist | It does not supersede the production files and commands listed in Sections 3.3 and 3.4 |
 | [`blockstep_migration/BlockStepMigrationSeed.lean`](implementation_seeds/nonlinearity_route_fragments/blockstep_migration/BlockStepMigrationSeed.lean) | Local `BlockStep` sum (`.assign`/`.pointwise`/`.axiswise`), the `RawPlanBlock.steps` field, checked-step wiring through unchanged production `checkStepGraph`, block-specific nonlinear `sourceCheck`/`nonlinearSourceNotLocalAssignment`, exhaustive Dense dispatch, `.assign`-only scan causality, all nine donor-derived fixtures, and six mutation toggles | Direct donor for Task 3's `BlockStep` migration | Its scan adapter delegates geometry/capture/write validation to the production scan checker but performs the assignment-only causality traversal itself with local types, because the spike could not touch production files; production must transplant that logic into the real types, not import or retain this adapter |
 | [`blockstep_migration/README.md`](implementation_seeds/nonlinearity_route_fragments/blockstep_migration/README.md) | Re-audited 47-occurrence/46-line rename inventory (verified against `main` after Tasks 1 and 2 both landed), fixture provenance and exact observed outcomes, mutation-to-defect map, transplant order, and effort estimate | Task 3 handoff checklist; read before copying any declaration | It does not replace Task 3's own full production mutation gate |
+| [`nonlinear_scan_admission/NonlinearScanAdmissionSeed.lean`](implementation_seeds/nonlinearity_route_fragments/nonlinear_scan_admission/NonlinearScanAdmissionSeed.lean) | Task 4's `retainedAxisPos` helper rehearsed over leading/interleaved/trailing local-axis positions; a byte-faithful local clone of private `ScanAffineTest.reluScan`'s source syntax; and legacy `evalScheduled` executions of the three public `ScanCompileTest` donors with their exact retained inputs | **Not a transplant donor.** Phase-1 helper evidence plus an executable stop report | It contains no scan unroller, no oracle, no nonlinear lowering, no allocation/publication helper, and no mutation toggle. It proves none of §3.6's six recorded values |
+| [`nonlinear_scan_admission/README.md`](implementation_seeds/nonlinearity_route_fragments/nonlinear_scan_admission/README.md) | The Phase-2 source-recovery finding: a donor-by-donor account of what survives, a group-by-group non-reproduction table, and the forensic search (all reachable refs, every Git blob including unreachable objects, and the retained session store) establishing the six spike source/input pairs are gone | **Read this before planning Task 4** — it is why §3.6 is blocked | It establishes "not recoverable from retained evidence," NOT mathematical impossibility. New source programs of the same six shapes remain perfectly constructible |
 
 When the two implementations differ, the adapter/proof donor is authoritative for production
 physicalization and the fixture donors are authoritative for their recorded observations. In
@@ -263,6 +270,21 @@ targeted modules, `Tests`, `LeanNCD`) reproduce the README's own reported job co
 cross-checked line-by-line against an independent raw count and found internally consistent. This
 donor is therefore live against the current tree, matching the same "not a stale snapshot" standard
 as the first five.
+
+**A seventh artifact, `nonlinear_scan_admission/`, was added 2026-08-28** (commit `c4d58a4`, built
+against `2e1b8e8`, now an ancestor of `main`). It is categorically unlike the other six: it is a
+**stop report**, not a donor. Independently re-verified by the controller session rather than
+accepted from its own README — the seed compiles and its printed output matches the README
+byte-for-byte, and all three gate commands reproduce the recorded counts (8,511 / 8,657 / 8,543).
+
+**Its central claim was independently re-derived, not trusted.** The README states that no source
+program for any of §3.6's six recorded oracle groups survives. An independent scan of every Git
+object in the repository — `git cat-file --batch-all-objects`, unreachable objects included — for
+the distinctive float `9915205505990216` (from group 2's recorded history) returns matches in
+exactly **two paths**: this document itself, and the seed's own README. No Lean source, no test, no
+fixture. The controller's blob count (84) differs from the README's (82) by exactly the two blobs
+`c4d58a4` itself introduced, which corroborates rather than contradicts. **The finding is
+confirmed.**
 
 ##### Claude startup and integration workflow
 
@@ -418,7 +440,12 @@ Run the donor baseline from `leanncd/`:
 "$HOME/.elan/bin/lake" env lean ../papers/implementation_seeds/nonlinearity_route_fragments/fixtures/PayloadConservationSeed.lean
 "$HOME/.elan/bin/lake" env lean ../papers/implementation_seeds/nonlinearity_route_fragments/fixtures/RouteFragmentCorpusSeed.lean
 "$HOME/.elan/bin/lake" env lean ../papers/implementation_seeds/nonlinearity_route_fragments/blockstep_migration/BlockStepMigrationSeed.lean
+"$HOME/.elan/bin/lake" env lean ../papers/implementation_seeds/nonlinearity_route_fragments/nonlinear_scan_admission/NonlinearScanAdmissionSeed.lean
 ```
+
+The seventh command is a stop report, not a donor baseline: it prints `PHASE 1 COMPLETE`, four
+donor-candidate observations, then `PHASE 2 STOP` and `PHASES 3–7 NOT EXECUTED`. That output is the
+expected, correct result — it is not a failure to repair.
 
 Then use the targeted and full production commands in Sections 3.3, 3.4, 3.5, and 4. The artifacts
 speed implementation by supplying compiled declaration shapes, proofs, fixtures, expected values, and
@@ -446,6 +473,10 @@ requires the full builds and independent reviews.
 - Never transplant the `BlockStep` migration seed's donor-only scan-causality adapter; implement
   causality checking directly over the real `BlockStep`/scan types in production, per Task 3's own
   transplant instructions above.
+- Never reverse-engineer a source program or input set to reproduce one of §3.6's recorded oracle
+  floats. Fitting a fixture to a remembered answer pins nothing and silently converts a differential
+  guarantee into a tautology. If the authentic pair is unrecoverable — and for all six groups it is,
+  see §3.6's blockquote — author a new program of the same shape and take its value from a real run.
 
 ### 1.4 Selected architecture
 
@@ -1645,6 +1676,41 @@ task can survive an architecture fallback in principle, it must not start before
 plan.
 
 ### 3.6 Task 4: admit nonlinear Plan scans
+
+> **BLOCKED on a plan defect (2026-08-28) — read before writing Task 4's slice plan.**
+>
+> The six oracle-group values this section records below ("leading pointwise
+> `[2,3,20,300,200,30000]`", the interleaved-axiswise history, and four more) **cannot be
+> reproduced, because no source program or input set for any of them survives.** A Task-4 rehearsal
+> ([`nonlinear_scan_admission/`](implementation_seeds/nonlinearity_route_fragments/nonlinear_scan_admission/),
+> commit `c4d58a4`) stopped at exactly this boundary rather than reverse-engineering programs to fit
+> the recorded floats, which was the correct call. Its forensic search — all reachable refs, every
+> Git blob including unreachable objects, and the retained session store — found the values only in
+> this document and in the seed's own drafts. **Independently re-derived by the controller session
+> and confirmed** (see §1.3.1's Verified baseline).
+>
+> What the rehearsal DID settle: `retainedAxisPos` (§3.6 step 3) is rehearsed and working over
+> leading, interleaved, and trailing local-axis positions. Everything else in this section is
+> untouched.
+>
+> **What this does and does not invalidate.** The six *shapes* are sound and remain the right
+> coverage. Only the six recorded *numbers* are unrecoverable. Those numbers were never a
+> correctness anchor: their purpose is to be a differential target, and §2.8's guarantee is that
+> **three independent implementations agree** — legacy `evalScheduled`, the checked Plan path, and
+> the independent unroller — not that any of them matches a historical float. A freshly authored
+> source program of the same shape, with its expected value derived by running legacy (which already
+> executes nonlinear scans correctly; it is the Plan path that rejects them, hence the corpus's four
+> `unsupportedNonlin` cases), delivers exactly the same three-way guarantee.
+>
+> **Recommended resolution, requiring an explicit decision before Task 4 is planned:** re-author all
+> six groups as new source/input pairs of the same six shapes, derive each expected value from
+> legacy, and replace this section's recorded floats with the newly observed ones. The only thing
+> forfeited is a cross-check against the spike's own historical numbers — weak, since legacy is
+> already the reference for every other value in this plan. Do **not** reverse-engineer a program to
+> hit a recorded float: that fits the fixture to the answer and pins nothing.
+>
+> Until that decision is made and this section's fixture list is updated, Task 4 stays stopped.
+> Task 5 (§3.7) depends on Task 4 and is therefore also blocked.
 
 **Outcome**
 
