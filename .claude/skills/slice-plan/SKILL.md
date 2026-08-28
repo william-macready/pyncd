@@ -48,7 +48,30 @@ the shape lookup the slice existed to build. Break the thing under test,
 confirm the fixture fails, restore, confirm it passes. Record both observations
 in the plan so the implementer can re-run the same check.
 
-**Re-verify after assembly, not just during drafting.** A large plan is
+**A locator, index, or ordering requirement is invisible to every value-comparing
+test.** This is the sharp case of the rule above, and mutation-testing the fixtures
+you *have* will not save you — the problem is the fixture's SHAPE, not its absence.
+Violating such a requirement changes no accept/reject verdict and no computed value;
+it changes only which position an error payload names. Every fixture that compares
+results still passes.
+
+The nonlinearity plan's Task 3 (`papers/nonlinearity_split_pair_direct_lowering.md`
+§3.5) shipped requiring `causalityFailure` to "retain original block-step indices"
+after a block's element type gained non-assignment cases. Nothing
+could have caught a violation: every pre-existing step block held only assignments,
+so a block-step index and a filtered-assignment index *coincide* in all of them. The
+requirement survived plan authoring, an external agent's execution, and a review of
+that execution — surfacing only when a field rename came to depend on it. The fix was
+one fixture with a non-assignment step *between* two assignments, forcing the two
+indexings apart (correct reports 2, filtered reports 1). The mutation that proves it
+fails exactly that one fixture and leaves every other test green.
+
+**Rule: when a plan states a requirement about an index, a locator, a check order, or
+a diagnostic's payload, name the fixture that could fail if it were violated — and
+check that the fixture's own construction can distinguish the two readings.** If every
+candidate fixture makes the two readings coincide, you have no test, however many you
+write. The same argument applies to a check-ORDER claim ("X is enforced before Y"): it
+needs a fixture violating both X and Y at once, or nothing pins the order.
 usually built from several verified pieces (one per task, sometimes drafted by
 different subagents) and then combined into one document. That combination
 step is itself an edit — reformatting a multi-line snippet, inlining a `let`
@@ -237,6 +260,11 @@ someone still has the context to act on it.
 - [ ] Every asserted fixture value observed from a real run, not hand-derived.
 - [ ] Every regression/parity fixture mutation-tested, with both observations
       recorded in the plan.
+- [ ] For every requirement about an index, locator, check order, or diagnostic
+      payload: the plan names a fixture that could FAIL if it were violated, and
+      that fixture's construction actually distinguishes the two readings (the
+      common trap is a fixture in which both readings coincide, so it pins
+      nothing). Order claims need a fixture violating both conditions at once.
 - [ ] Every claim in the plan's prose or a completion-record template it produces
       — "X reuses Y," "no second Z was added," "both are reachable from W" —
       checked against the actual functions/files, not asserted from the plan's
