@@ -1,13 +1,11 @@
-import Eval.ScanTest
-import Eval.EvalExamplesTest
 import LeanNCD.Eval.Entry
 
 /-!
 # Task 4 oracle fixture seed
 
 Six legacy-evaluator fixtures for the nonlinear-scan shapes required by Task 4. Fixtures 3 and 6
-are exact transcriptions of the imported, already-asserted examples; fixtures 1, 2, 4, and 5 are
-fresh programs. All inputs and nonlinearities are unmasked `f64`.
+are adopted source tests, re-run as child Lean processes so their inline assertions execute;
+fixtures 1, 2, 4, and 5 are fresh programs. All inputs and nonlinearities are unmasked `f64`.
 -/
 
 namespace LeanNCD.OracleFixtureSeed
@@ -59,6 +57,17 @@ def evaluationHas (sched : ScheduledProgram) (inputs : HashMap String DenseTenso
   match evalScheduled sched inputs with
   | .error _ => false
   | .ok report => names.all fun name => report.env.contains name
+
+def runAdoptedSource (label source assertion : String) : IO Unit := do
+  let some home ← IO.getEnv "HOME"
+    | throw (IO.userError "HOME is not set; cannot locate Elan's lake executable")
+  let output ← IO.Process.output
+    { cmd := home ++ "/.elan/bin/lake", args := #["env", "lean", source] }
+  unless output.stdout.isEmpty do IO.print output.stdout
+  unless output.stderr.isEmpty do IO.eprint output.stderr
+  unless output.exitCode == 0 do
+    throw (IO.userError s!"{label}: {source} exited {output.exitCode}")
+  IO.println s!"{label}: SOURCE ASSERTIONS PASSED ({source} exited 0; {assertion})"
 
 /-! ## Fixture 1 — leading pointwise scratch -/
 
@@ -125,37 +134,6 @@ def fixture2Inputs : HashMap String DenseTensor :=
 
 #guard evaluationHas fixture2 fixture2Inputs ["S"]
 
-/-! ## Fixture 3 — adopted leading persistent nonlinear recurrence
-
-Exact transcription of `Eval.ScanTest`'s imported ReLU-scan `run_cmd`.
--/
-
-def f3j := mkAxis "j" 301
-def f3l := mkAxis "l" 302
-
-def fixture3 : ScheduledProgram :=
-  { decls := []
-  , stmts := [.scan "S" [f3l]
-      [.assign "S" [.free f3j, .iterAt f3l 0] (rhs "X" [.axis f3j])]
-      [.assign "S" [.free f3j, .iterNext f3l]
-        (rhs2 "S" [.axis f3j, .axis f3l] "A" [.axis f3j] (.pointwise .relu))]
-      false]
-  , env := {}
-  , extNames := {"X", "A"}
-  , explicitSizes :=
-      (({} : HashMap UID Nat).insert f3j.uid 1).insert f3l.uid 2 }
-
-def fixture3Inputs : HashMap String DenseTensor :=
-  (({} : HashMap String DenseTensor).insert "X" (tensorOf [1] [1])).insert
-    "A" (tensorOf [1] [-1])
-
-#guard match fixture3.stmts with
-  | [.scan _ _ [.assign "S" _ base] [.assign "S" _ recur] _] =>
-      base.nonlin == .identity && recur.nonlin == .pointwise .relu
-  | _ => false
-
-#guard evaluationHas fixture3 fixture3Inputs ["S"]
-
 /-! ## Fixture 4 — nonlinear base, linear recurrence -/
 
 def f4i := mkAxis "i" 401
@@ -218,47 +196,14 @@ def fixture5Inputs : HashMap String DenseTensor :=
 
 #guard evaluationHas fixture5 fixture5Inputs ["S"]
 
-/-! ## Fixture 6 — adopted coupled states
-
-Exact source from imported `Eval.EvalExamplesTest` example 5.
--/
-
-def fixture6Program : TLProgram := tlprog!{
-  iter l = 3
-  G[j, 0]    := X[j]
-  G[j, l +1] := relu(G[j, l] · W_G[j, k] + H[j, l] · U[j, k])
-  H[j, 0]    := Y[j]
-  H[j, l +1] := relu(H[j, l] · W_H[j, k] + G[j, l] · V[j, k])
-}
-
-def fixture6Inputs : HashMap String DenseTensor :=
-  (((((({} : HashMap String DenseTensor).insert "X" (tensorOf [1] [1])).insert
-    "Y" (tensorOf [1] [2])).insert "W_G" (tensorOf [1, 1] [1])).insert
-    "U" (tensorOf [1, 1] [1])).insert "W_H" (tensorOf [1, 1] [1])).insert
-    "V" (tensorOf [1, 1] [1])
-
-def fixture6Scheduled? : Option ScheduledProgram :=
-  match fixture6Program.compileToScheduled.run 0 with
-  | .ok sched _ => some sched
-  | .error _ _ => none
-
-#guard fixture6Scheduled?.isSome
-
-#guard match fixture6Scheduled? with
-  | some sched => evaluationHas sched fixture6Inputs ["G", "H"]
-  | none => false
-
 run_cmd do
-  Lean.logInfo (observedLine "FIXTURE 1" fixture1 fixture1Inputs ["S"])
-  Lean.logInfo (observedLine "FIXTURE 2" fixture2 fixture2Inputs ["S"])
-  Lean.logInfo (observedLine "FIXTURE 3 (adopted Eval.ScanTest ReLU scan)"
-    fixture3 fixture3Inputs ["S"])
-  Lean.logInfo (observedLine "FIXTURE 4" fixture4 fixture4Inputs ["S"])
-  Lean.logInfo (observedLine "FIXTURE 5" fixture5 fixture5Inputs ["S"])
-  match fixture6Scheduled? with
-  | none => throwError "FIXTURE 6 source did not compile"
-  | some sched =>
-      Lean.logInfo (observedLine "FIXTURE 6 (adopted Eval.EvalExamplesTest example 5)"
-        sched fixture6Inputs ["G", "H"])
+  IO.println (observedLine "FIXTURE 1" fixture1 fixture1Inputs ["S"])
+  IO.println (observedLine "FIXTURE 2" fixture2 fixture2Inputs ["S"])
+  runAdoptedSource "FIXTURE 3 ADOPTED" "test/Eval/ScanTest.lean"
+    "its inline ReLU-scan command asserts S = [1, 0]"
+  IO.println (observedLine "FIXTURE 4" fixture4 fixture4Inputs ["S"])
+  IO.println (observedLine "FIXTURE 5" fixture5 fixture5Inputs ["S"])
+  runAdoptedSource "FIXTURE 6 ADOPTED" "test/Eval/EvalExamplesTest.lean"
+    "its inline example 5 command asserts G = [1, 3, 6] and H = [2, 3, 6]"
 
 end LeanNCD.OracleFixtureSeed

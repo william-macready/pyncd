@@ -180,10 +180,11 @@ recorded fixtures, Task 4 must remain stopped at Phase 2.
 ## Oracle fixture authoring
 
 These are fresh observed oracles, not attempts to recover or reproduce the superseded §3.6 floats.
-All six run through the legacy evaluator. The authored fixtures are logical `ScheduledProgram`s so
-their required slot and write structure can be asserted directly. The two adopted fixtures import
-and therefore re-run their original test modules; their exact programs are also transcribed into the
-seed so their values can be printed in the same raw run.
+The four authored fixtures are logical `ScheduledProgram`s run directly by the seed, so their
+required slot/write structure and observed values are reported there. The two adopted fixtures are
+not transcribed or imported into the seed: it invokes Lean on each original source test file, which
+executes that file's inline `run_cmd` assertions. The seed relays child stdout/stderr, fails on a
+nonzero exit, and treats exit 0 only as confirmation of the values asserted by those source commands.
 
 ### Fixture 1 — leading pointwise scratch
 
@@ -207,13 +208,13 @@ seed so their values can be printed in the same raw run.
 
 | Field | Record |
 |---|---|
-| Program source (verbatim) | <pre><code>def fixture3 : ScheduledProgram :=<br>  { decls := []<br>  , stmts := [.scan "S" [f3l]<br>      [.assign "S" [.free f3j, .iterAt f3l 0] (rhs "X" [.axis f3j])]<br>      [.assign "S" [.free f3j, .iterNext f3l]<br>        (rhs2 "S" [.axis f3j, .axis f3l] "A" [.axis f3j] (.pointwise .relu))]<br>      false]<br>  , env := {}<br>  , extNames := {"X", "A"}<br>  , explicitSizes :=<br>      (({} : HashMap UID Nat).insert f3j.uid 1).insert f3l.uid 2 }</code></pre> |
-| Inputs (verbatim) | <pre><code>def fixture3Inputs : HashMap String DenseTensor :=<br>  (({} : HashMap String DenseTensor).insert "X" (tensorOf [1] [1])).insert<br>    "A" (tensorOf [1] [-1])</code></pre> |
-| Observed legacy value | `S shape [1, 2] = #[1.000000, 0.000000]` |
+| Adopted source command (verbatim; executed in place) | <pre><code>run_cmd do<br>  let j := ax "j" 1; let l := ax "l" 9<br>  let X := tensorOf [1] [1]; let A := tensorOf [1] [-1]<br>  let env : HashMap String DenseTensor := (({} : HashMap String DenseTensor).insert "X" X).insert "A" A<br>  let sizes := (({} : HashMap UID Nat).insert 1 1).insert 9 2<br>  let base : Stmt := .assign "S" [.free j, .iterAt l 0] { body := { terms := [{ factors := [.read "X" [.axis j]] }] }, nonlin := .identity }<br>  let recur : Stmt := .assign "S" [.free j, .iterNext l] { body := { terms := [{ factors := [.read "S" [.axis j, .axis l], .read "A" [.axis j]] }] }, nonlin := .pointwise .relu }<br>  match evalScan [] env sizes (.scan "S" [l] [base] [recur] false) with<br>  | .error e => throwError (toString e)<br>  | .ok outs => match outs.find? (·.1 == "S") with<br>    | some (_, S) => unless DenseTensor.approxEq S (tensorOf [1,2] [1, 0]) do throwError s!"relu scan wrong: {repr S.data}"<br>    | none => throwError "no S"</code></pre> |
+| Inputs | `X = [1]`, `A = [-1]`, with `j = 1` and `l = 2`; the exact source declarations are included in the command above. |
+| Adopted assertion confirmed | `test/Eval/ScanTest.lean` exited 0, confirming its exact inline command's assertion `S = [1, 0]`. The adopted command emits no value on success; this is not a seed-authored output. |
 | Structural facts | Persistent `S` has both a base write and a recurrence write; the base is `.identity` and its own recurrence is `.pointwise .relu`. |
 
-This exactly transcribes and re-runs the imported `Eval.ScanTest` ReLU scan. It still reproduces
-the recorded `S = [1, 0]`.
+The seed runs `lake env lean test/Eval/ScanTest.lean`, so the original command above—not a
+transcription—still confirms the recorded `S = [1, 0]`.
 
 ### Fixture 4 — nonlinear base
 
@@ -237,13 +238,13 @@ the recorded `S = [1, 0]`.
 
 | Field | Record |
 |---|---|
-| Program source (verbatim) | <pre><code>def fixture6Program : TLProgram := tlprog!{<br>  iter l = 3<br>  G[j, 0]    := X[j]<br>  G[j, l +1] := relu(G[j, l] · W_G[j, k] + H[j, l] · U[j, k])<br>  H[j, 0]    := Y[j]<br>  H[j, l +1] := relu(H[j, l] · W_H[j, k] + G[j, l] · V[j, k])<br>}</code></pre> |
-| Inputs (verbatim) | <pre><code>def fixture6Inputs : HashMap String DenseTensor :=<br>  (((((({} : HashMap String DenseTensor).insert "X" (tensorOf [1] [1])).insert<br>    "Y" (tensorOf [1] [2])).insert "W_G" (tensorOf [1, 1] [1])).insert<br>    "U" (tensorOf [1, 1] [1])).insert "W_H" (tensorOf [1, 1] [1])).insert<br>    "V" (tensorOf [1, 1] [1])</code></pre> |
-| Observed legacy value | `G shape [1, 3] = #[1.000000, 3.000000, 6.000000]; H shape [1, 3] = #[2.000000, 3.000000, 6.000000]` |
+| Adopted source command (verbatim; executed in place) | <pre><code>run_cmd do<br>  let e0 : HashMap String DenseTensor := {}<br>  let env := (((((e0.insert "X" (tensorOf [1] [1.0])).insert "Y" (tensorOf [1] [2.0])).insert "W_G"<br>      (tensorOf [1,1] [1.0])).insert "U" (tensorOf [1,1] [1.0])).insert "W_H"<br>      (tensorOf [1,1] [1.0])).insert "V" (tensorOf [1,1] [1.0])<br>  match TLProgram.eval (tlprog!{<br>    iter l = 3<br>    G[j, 0]    := X[j]<br>    G[j, l +1] := relu(G[j, l] · W_G[j, k] + H[j, l] · U[j, k])<br>    H[j, 0]    := Y[j]<br>    H[j, l +1] := relu(H[j, l] · W_H[j, k] + G[j, l] · V[j, k])<br>  }) env with<br>  | .error e => throwError s!"scan: {e}"<br>  | .ok report => match report.env["G"]?, report.env["H"]? with<br>    | some G, some H =><br>        unless DenseTensor.approxEq G (tensorOf [1,3] [1,3,6]) do<br>          throwError s!"scan G wrong: {repr G.data}"<br>        unless DenseTensor.approxEq H (tensorOf [1,3] [2,3,6]) do<br>          throwError s!"scan H wrong: {repr H.data}"<br>    | _, _ => throwError "scan: no G/H"</code></pre> |
+| Inputs | `X = [1]`, `Y = [2]`, and `W_G = U = W_H = V = [[1]]`; the exact source declarations are included in the command above. |
+| Adopted assertion confirmed | `test/Eval/EvalExamplesTest.lean` exited 0, confirming example 5's exact inline assertions `G = [1, 3, 6]` and `H = [2, 3, 6]`. The adopted command emits no values on success; these are not seed-authored outputs. |
 | Structural facts | Coupled persistent states `G` and `H` each have a base and nonlinear recurrence; each recurrence reads both pre-step states. |
 
-This exactly transcribes and re-runs imported `Eval.EvalExamplesTest` example 5. It still reproduces
-the recorded `G = [1, 3, 6]`, `H = [2, 3, 6]`.
+The seed runs `lake env lean test/Eval/EvalExamplesTest.lean`, so original example 5 above—not a
+transcription—still confirms the recorded `G = [1, 3, 6]`, `H = [2, 3, 6]`.
 
 ### Decisions not fixed by the brief
 
@@ -251,8 +252,8 @@ the recorded `G = [1, 3, 6]`, `H = [2, 3, 6]`.
 - Fixture 2 uses unmasked `normalize`, two local values `[1, 3]`, and two iteration axes of extent 3.
 - Fixture 4 uses `X = [-2, 3]`, a linear multiplier `A = [2, -1]`, and extent 3.
 - Fixture 5 uses scalar state, ReLU scratch `T`, linear scratch `U`, and extent 3.
-- Fresh UIDs are local to this standalone seed. No fixture uses a mask, predicate, scatter, max/min,
-  or anything other than `f64`.
+- Fresh UIDs are local to the four authored fixtures. None of the six fixtures uses a mask,
+  predicate, scatter, max/min, or anything other than `f64`.
 
 ### Direct seed output
 
@@ -268,10 +269,10 @@ Raw stdout, verbatim:
 FIXTURE 1: S shape [2, 3] = #[-1.000000, 2.000000, 0.000000, 2.000000, 6.000000, 18.000000]
 FIXTURE 2: S shape [3, 2, 3] = #[1.000000, 0.000000, 0.000000, 3.000000, 0.000000, 0.000000, 0.000000, 0.250000, 0.000000, 0.000000, 0.750000,
   0.000000, 0.000000, 0.000000, 0.250000, 0.000000, 0.000000, 0.750000]
-FIXTURE 3 (adopted Eval.ScanTest ReLU scan): S shape [1, 2] = #[1.000000, 0.000000]
+FIXTURE 3 ADOPTED: SOURCE ASSERTIONS PASSED (test/Eval/ScanTest.lean exited 0; its inline ReLU-scan command asserts S = [1, 0])
 FIXTURE 4: S shape [2, 3] = #[0.000000, 0.000000, 0.000000, 3.000000, -3.000000, 3.000000]
 FIXTURE 5: S shape [3] = #[1.000000, 6.000000, 0.000000]
-FIXTURE 6 (adopted Eval.EvalExamplesTest example 5): G shape [1, 3] = #[1.000000, 3.000000, 6.000000]; H shape [1, 3] = #[2.000000, 3.000000, 6.000000]
+FIXTURE 6 ADOPTED: SOURCE ASSERTIONS PASSED (test/Eval/EvalExamplesTest.lean exited 0; its inline example 5 command asserts G = [1, 3, 6] and H = [2, 3, 6])
 ```
 
 ### Final gates
