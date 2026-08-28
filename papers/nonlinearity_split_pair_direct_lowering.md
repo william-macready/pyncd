@@ -2,10 +2,11 @@
 
 **Status:** Partially executed. **Tasks 1, 2 and 3 are complete and merged** (§3.3, §3.4, §3.5 —
 each carries its own completion blockquote naming the slice plan that executed it). **Task 4 (§3.6)
-is BLOCKED on a plan defect**, not merely unstarted: its six recorded oracle-group values cannot be
-reproduced, because no source program or input set for them survives anywhere in the repository's
-history. See the blockquote at the head of §3.6 before planning it. Task 5 (§3.7) depends on Task 4.
-Sections 2 and 4 remain the governing contract throughout.
+is planned but not started**; its six oracle-group values were lost and have been re-authored, with
+programs and structural facts in
+[`nonlinear_scan_admission/`](implementation_seeds/nonlinearity_route_fragments/nonlinear_scan_admission/)
+— read §3.6's opening note before planning it. Task 5 (§3.7) depends on Task 4. Sections 2 and 4
+remain the governing contract throughout.
 
 **Decision:** Preserve nonlinear assignments in the shared `ScheduledProgram`. Schedule once over
 logical tensor names. Eval consumers lower or execute that logical assignment directly. Immediately
@@ -231,7 +232,8 @@ source tree and must never become a production dependency.
 | [`blockstep_migration/BlockStepMigrationSeed.lean`](implementation_seeds/nonlinearity_route_fragments/blockstep_migration/BlockStepMigrationSeed.lean) | Local `BlockStep` sum (`.assign`/`.pointwise`/`.axiswise`), the `RawPlanBlock.steps` field, checked-step wiring through unchanged production `checkStepGraph`, block-specific nonlinear `sourceCheck`/`nonlinearSourceNotLocalAssignment`, exhaustive Dense dispatch, `.assign`-only scan causality, all nine donor-derived fixtures, and six mutation toggles | Direct donor for Task 3's `BlockStep` migration | Its scan adapter delegates geometry/capture/write validation to the production scan checker but performs the assignment-only causality traversal itself with local types, because the spike could not touch production files; production must transplant that logic into the real types, not import or retain this adapter |
 | [`blockstep_migration/README.md`](implementation_seeds/nonlinearity_route_fragments/blockstep_migration/README.md) | Re-audited 47-occurrence/46-line rename inventory (verified against `main` after Tasks 1 and 2 both landed), fixture provenance and exact observed outcomes, mutation-to-defect map, transplant order, and effort estimate | Task 3 handoff checklist; read before copying any declaration | It does not replace Task 3's own full production mutation gate |
 | [`nonlinear_scan_admission/NonlinearScanAdmissionSeed.lean`](implementation_seeds/nonlinearity_route_fragments/nonlinear_scan_admission/NonlinearScanAdmissionSeed.lean) | Task 4's `retainedAxisPos` helper rehearsed over leading/interleaved/trailing local-axis positions; a byte-faithful local clone of private `ScanAffineTest.reluScan`'s source syntax; and legacy `evalScheduled` executions of the three public `ScanCompileTest` donors with their exact retained inputs | **Not a transplant donor.** Phase-1 helper evidence plus an executable stop report | It contains no scan unroller, no oracle, no nonlinear lowering, no allocation/publication helper, and no mutation toggle. It proves none of §3.6's six recorded values |
-| [`nonlinear_scan_admission/README.md`](implementation_seeds/nonlinearity_route_fragments/nonlinear_scan_admission/README.md) | The Phase-2 source-recovery finding: a donor-by-donor account of what survives, a group-by-group non-reproduction table, and the forensic search (all reachable refs, every Git blob including unreachable objects, and the retained session store) establishing the six spike source/input pairs are gone | **Read this before planning Task 4** — it is why §3.6 is blocked | It establishes "not recoverable from retained evidence," NOT mathematical impossibility. New source programs of the same six shapes remain perfectly constructible |
+| [`nonlinear_scan_admission/OracleFixtureSeed.lean`](implementation_seeds/nonlinearity_route_fragments/nonlinear_scan_admission/OracleFixtureSeed.lean) | The six replacement oracle fixtures: four freshly authored logical `ScheduledProgram`s (leading pointwise scratch, interleaved axiswise, nonlinear base, scratch→scratch→state) with inputs, structural `#guard`s, and printed legacy values; plus in-place re-execution of the two adopted source tests | **Direct donor for Task 4's fixture list** — the programs and values §3.6 now records | It executes only the legacy path. It proves no checked-Plan admission, no oracle agreement, and no publication/write safety — all still Task 4's work |
+| [`nonlinear_scan_admission/README.md`](implementation_seeds/nonlinearity_route_fragments/nonlinear_scan_admission/README.md) | Two records. The Phase-2 source-recovery finding (donor-by-donor account, group-by-group non-reproduction table, and the forensic search establishing the six spike source/input pairs are gone); and "Oracle fixture authoring", the full per-fixture record of the replacements | **Read before planning Task 4** — the first half is why the values were re-authored, the second is what replaced them | The recovery finding establishes "not recoverable from retained evidence," NOT mathematical impossibility. The adopted fixtures' confirmation is an exit-0 check on the whole source file, which is sound but weaker than observing their values directly |
 
 When the two implementations differ, the adapter/proof donor is authoritative for production
 physicalization and the fixture donors are authoritative for their recorded observations. In
@@ -441,6 +443,7 @@ Run the donor baseline from `leanncd/`:
 "$HOME/.elan/bin/lake" env lean ../papers/implementation_seeds/nonlinearity_route_fragments/fixtures/RouteFragmentCorpusSeed.lean
 "$HOME/.elan/bin/lake" env lean ../papers/implementation_seeds/nonlinearity_route_fragments/blockstep_migration/BlockStepMigrationSeed.lean
 "$HOME/.elan/bin/lake" env lean ../papers/implementation_seeds/nonlinearity_route_fragments/nonlinear_scan_admission/NonlinearScanAdmissionSeed.lean
+"$HOME/.elan/bin/lake" env lean ../papers/implementation_seeds/nonlinearity_route_fragments/nonlinear_scan_admission/OracleFixtureSeed.lean
 ```
 
 The seventh command is a stop report, not a donor baseline: it prints `PHASE 1 COMPLETE`, four
@@ -1677,40 +1680,39 @@ plan.
 
 ### 3.6 Task 4: admit nonlinear Plan scans
 
-> **BLOCKED on a plan defect (2026-08-28) — read before writing Task 4's slice plan.**
+> **Oracle values were lost and have been re-authored (resolved 2026-08-28) — read before writing
+> Task 4's slice plan.**
 >
-> The six oracle-group values this section records below ("leading pointwise
-> `[2,3,20,300,200,30000]`", the interleaved-axiswise history, and four more) **cannot be
-> reproduced, because no source program or input set for any of them survives.** A Task-4 rehearsal
-> ([`nonlinear_scan_admission/`](implementation_seeds/nonlinearity_route_fragments/nonlinear_scan_admission/),
-> commit `c4d58a4`) stopped at exactly this boundary rather than reverse-engineering programs to fit
-> the recorded floats, which was the correct call. Its forensic search — all reachable refs, every
-> Git blob including unreachable objects, and the retained session store — found the values only in
-> this document and in the seed's own drafts. **Independently re-derived by the controller session
-> and confirmed** (see §1.3.1's Verified baseline).
+> The six oracle-group values this section originally recorded (`[2,3,20,300,200,30000]`, an
+> interleaved-axiswise history, and four more) came from an early spike and **could not be
+> reproduced: no source program or input set for any of them survived.** A Task-4 rehearsal
+> ([`nonlinear_scan_admission/NonlinearScanAdmissionSeed.lean`](implementation_seeds/nonlinearity_route_fragments/nonlinear_scan_admission/NonlinearScanAdmissionSeed.lean),
+> commit `c4d58a4`) stopped at exactly that boundary rather than reverse-engineering programs to fit
+> the recorded floats — the correct call. Its forensic search (all reachable refs, every Git blob
+> including unreachable objects, the retained session store) found the values only in this document
+> and in its own drafts; independently re-derived and confirmed (see §1.3.1's Verified baseline).
 >
-> What the rehearsal DID settle: `retainedAxisPos` (§3.6 step 3) is rehearsed and working over
-> leading, interleaved, and trailing local-axis positions. Everything else in this section is
-> untouched.
+> **This is resolved, not open.** The six *shapes* were always the coverage that mattered; the
+> numbers were a differential target, and §2.8's guarantee is that **three independent
+> implementations agree** — legacy `evalScheduled`, the checked Plan path, the independent unroller —
+> not that any matches a historical float. Fresh programs of the same six shapes, with values taken
+> from real legacy runs, deliver the identical guarantee. Those now exist: see the replaced fixture
+> list further down this section, and
+> [`OracleFixtureSeed.lean`](implementation_seeds/nonlinearity_route_fragments/nonlinear_scan_admission/OracleFixtureSeed.lean)
+> for the programs. Four were authored, two adopted from existing tests; all six were re-run and
+> hand-checked by the controller session.
 >
-> **What this does and does not invalidate.** The six *shapes* are sound and remain the right
-> coverage. Only the six recorded *numbers* are unrecoverable. Those numbers were never a
-> correctness anchor: their purpose is to be a differential target, and §2.8's guarantee is that
-> **three independent implementations agree** — legacy `evalScheduled`, the checked Plan path, and
-> the independent unroller — not that any of them matches a historical float. A freshly authored
-> source program of the same shape, with its expected value derived by running legacy (which already
-> executes nonlinear scans correctly; it is the Plan path that rejects them, hence the corpus's four
-> `unsupportedNonlin` cases), delivers exactly the same three-way guarantee.
+> **Two things carried forward into the fixture list.** Groups 1 and 3 are now distinguished by
+> ruling (scratch vs. persistent) because the lost values could no longer settle it. And every newly
+> authored value is accompanied by **structural facts**, because a value with no independent record
+> anywhere else pins a number without pinning the shape it came from — a fixture can then run, return
+> that number, and exercise the wrong shape silently.
 >
-> **Recommended resolution, requiring an explicit decision before Task 4 is planned:** re-author all
-> six groups as new source/input pairs of the same six shapes, derive each expected value from
-> legacy, and replace this section's recorded floats with the newly observed ones. The only thing
-> forfeited is a cross-check against the spike's own historical numbers — weak, since legacy is
-> already the reference for every other value in this plan. Do **not** reverse-engineer a program to
-> hit a recorded float: that fits the fixture to the answer and pins nothing.
+> Also settled by the rehearsal: `retainedAxisPos` (step 3 below) is rehearsed and working over
+> leading, interleaved, and trailing local-axis positions.
 >
-> Until that decision is made and this section's fixture list is updated, Task 4 stays stopped.
-> Task 5 (§3.7) depends on Task 4 and is therefore also blocked.
+> **Still forbidden:** reverse-engineering a program to hit any recorded float, here or anywhere.
+> §1.3.1's donor boundaries state this as a rule.
 
 **Outcome**
 
@@ -1786,18 +1788,44 @@ Negative/write-safety fixtures:
 18. State write pointed at preactivation while outputs retain result.
 19. Mixed identity/nonlinear outputs contain results only.
 
-The following six fixture groups must also execute through the independent oracle with the observed
-values from the spike:
+The following six fixture groups must also execute through the independent oracle. **The values
+below replace the six recorded in this section until 2026-08-28**, which were unrecoverable — no
+source program or input set for any of them survived (see the resolved note at the head of this
+section). These are freshly authored, executed against the legacy evaluator, and independently
+hand-checked; each program, its inputs, and its structural facts live in
+[`nonlinear_scan_admission/OracleFixtureSeed.lean`](implementation_seeds/nonlinearity_route_fragments/nonlinear_scan_admission/OracleFixtureSeed.lean)
+with the full record in that directory's `README.md` under "Oracle fixture authoring".
 
-1. leading pointwise: `[2,3,20,300,200,30000]`;
-2. interleaved axiswise:
-   `G[0]=[1,2,-1,1]`,
-   `G[1]=[.268941,.731059,.880797,.119203]`,
-   `G[2]=[.386484,.613516,.991521,.008479]`;
-3. leading persistent nonlinear: `[1,0,0,2,6,18]`;
-4. nonlinear base: `[0,3,0,3]`;
-5. scratch-to-scratch-to-state: `[1,5,5,2,0,0]`;
-6. coupled states: `G=[1,0,0]`, `H=[1,1,0]`.
+**Groups 1 and 3 are distinguished as follows** — the recorded values could not settle it and the
+distinction is now fixed by ruling, not inference. Group 1 is a pointwise nonlinearity on a
+**block-local scratch** (a destination with a recurrence write and *no* base write). Group 3 is a
+pointwise nonlinearity on a **persistent state's own recurrence** (base *and* recurrence writes).
+This keeps "persistent" in group 3's name load-bearing and gives the two groups genuinely distinct
+coverage rather than near-duplicates.
+
+1. **leading pointwise (scratch)** — `S[i,0] := X[i]`; scratch `T[i] := relu(S[i,l]·K[i])`;
+   `S[i,l+1] := T[i]`. With `X=[-1,2]`, `K=[-2,3]`, extent 3:
+   `S` shape `[2,3]` = `[-1, 2, 0, 2, 6, 18]`. Scratch `T`'s local axis is at slot index 0 with no
+   `.iterAt` slot, and `T` has exactly one writing statement.
+2. **interleaved axiswise** — `S[l+1, i., m+1] := normalize(S[l,i,m])` over two iteration axes.
+   With `X=[1,3]`, both extents 3: `S` shape `[3,2,3]`, nonzero only on the advancing diagonal —
+   `S[0,:,0]=[1,3]`, `S[1,:,1]=[.25,.75]`, `S[2,:,2]=[.25,.75]`. The `.freeNorm` slot sits at index
+   1, strictly between iteration slots 0 and 2. Unmasked.
+3. **leading persistent nonlinear** — adopted unchanged from `test/Eval/ScanTest.lean`'s ReLU-scan
+   command: `S[j,0]:=X[j]`; `S[j,l+1] := relu(S[j,l]·A[j])`, `X=[1]`, `A=[-1]`, `L=2` ⇒ `S = [1,0]`.
+4. **nonlinear base** — base `S[i,0] := relu(X[i])`, linear recurrence `S[i,l+1] := S[i,l]·A[i]`.
+   With `X=[-2,3]`, `A=[2,-1]`, extent 3: `S` shape `[2,3]` = `[0, 0, 0, 3, -3, 3]`. The base's
+   `nonlin` is pointwise and the recurrence's is `.identity` — the opposite of groups 1 and 3.
+5. **scratch → scratch → state** — `T := relu(S[l]·A[l])`; `U := T·B[l]`; `S[l+1] := U`. With
+   `X=1`, `A=[2,-3,4]`, `B=[3,2,1]`: `S` shape `[3]` = `[1, 6, 0]`. `T` and `U` have no base write;
+   `S` does.
+6. **coupled states** — adopted unchanged from `test/Eval/EvalExamplesTest.lean` example 5:
+   `G=[1,3,6]`, `H=[2,3,6]`.
+
+Groups 3 and 6 are **adopted**: they are existing tests whose assertions already pin these values,
+and Task 4 should reference them rather than re-transcribe them. Groups 1, 2, 4 and 5 are newly
+authored and their values exist nowhere else — a Task 4 fixture asserting one of them must carry the
+structural facts above too, or it pins a number without pinning the shape that number came from.
 
 **Mutation checks**
 
