@@ -163,6 +163,7 @@ geometry is not the admitted rectangular all-axis `+1` form"
   let freeSlots ← freePos.mapM (fun p =>
     match slots[p]? with
     | some (LHSSlot.free a) => pure (LHSSlot.free a)
+    | some (LHSSlot.freeNorm a) => pure (LHSSlot.freeNorm a)
     | some sl        => .error s!"{nm}: dimension {p} is neither advancing nor a plain free axis \
 ({repr sl}) — outside the oracle's fragment"
     | none           => .error s!"{nm}: dimension {p} is out of range")
@@ -255,6 +256,7 @@ private def baseFreeSlots (st : StateGeom) (s : Stmt) : Except String (List LHSS
   st.freePos.mapM (fun p =>
     match s.slots[p]? with
     | some (LHSSlot.free a) => pure (LHSSlot.free a)
+    | some (LHSSlot.freeNorm a) => pure (LHSSlot.freeNorm a)
     | _ => .error s!"base write for {st.name}: dimension {p} must be a plain free axis")
 
 /-! ## The rewrite -/

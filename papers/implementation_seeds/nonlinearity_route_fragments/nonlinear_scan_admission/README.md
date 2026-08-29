@@ -292,3 +292,58 @@ Build completed successfully (8657 jobs).
 ```text
 Build completed successfully (8543 jobs).
 ```
+
+## Oracle `.freeNorm` extension
+
+### Complete `ScanUnroll.lean` diff
+
+```diff
+diff --git a/leanncd/test/Eval/PropertyOracle/ScanUnroll.lean b/leanncd/test/Eval/PropertyOracle/ScanUnroll.lean
+index fddfe6b..077a79d 100644
+--- a/leanncd/test/Eval/PropertyOracle/ScanUnroll.lean
++++ b/leanncd/test/Eval/PropertyOracle/ScanUnroll.lean
+@@ -165,0 +166 @@ geometry is not the admitted rectangular all-axis `+1` form"
++    | some (LHSSlot.freeNorm a) => pure (LHSSlot.freeNorm a)
+@@ -257,0 +259 @@ private def baseFreeSlots (st : StateGeom) (s : Stmt) : Except String (List LHSS
++    | some (LHSSlot.freeNorm a) => pure (LHSSlot.freeNorm a)
+```
+
+### Before
+
+```text
+LEGACY: S shape [3, 2, 3] = #[1.000000, 0.000000, 0.000000, 3.000000, 0.000000, 0.000000, 0.000000, 0.250000, 0.000000, 0.000000, 0.750000,
+  0.000000, 0.000000, 0.000000, 0.250000, 0.000000, 0.000000, 0.750000]
+INDEPENDENT ERROR: S: dimension 1 is neither advancing nor a plain free axis (LeanNCD.LHSSlot.freeNorm { name := "i", uid := 202, kind := LeanNCD.AxisKind.real }) — outside the oracle's fragment
+```
+
+### After
+
+```text
+LEGACY: S shape [3, 2, 3] = #[1.000000, 0.000000, 0.000000, 3.000000, 0.000000, 0.000000, 0.000000, 0.250000, 0.000000, 0.000000, 0.750000,
+  0.000000, 0.000000, 0.000000, 0.250000, 0.000000, 0.000000, 0.750000]
+INDEPENDENT: S shape [3, 2, 3] = #[1.000000, 0.000000, 0.000000, 3.000000, 0.000000, 0.000000, 0.000000, 0.250000, 0.000000, 0.000000, 0.750000,
+  0.000000, 0.000000, 0.000000, 0.250000, 0.000000, 0.000000, 0.750000]
+```
+
+The legacy and independent results agree.
+
+### Gate job counts
+
+```text
+Build completed successfully (8505 jobs).
+Build completed successfully (8657 jobs).
+Build completed successfully (8543 jobs).
+```
+
+### Import audit
+
+`ScanUnroll.lean`'s import list is unchanged:
+
+```lean
+import Eval.PropertyOracle.Compare
+import Eval.PropertyOracle.ScanGen
+```
+
+### Decisions
+
+No decisions beyond the brief were required.
