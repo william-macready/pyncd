@@ -518,7 +518,15 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
         throw (scanErr warnings (.orphanAdvancingResult scanName nm ri))
       for sl in slots do
         match sl with
-        | .free a =>
+        | .free a | .freeNorm a =>
+            -- a scratch's retained axis (`.free` or, since Task 4, a `.freeNorm` marker) may never
+            -- name a scan context axis. `.free` was already guarded; the `.freeNorm` case was the one
+            -- silently-ignored cell of the retained-vs-context audit. The sibling cells are covered
+            -- without a `.freeNorm`-specific guard: a state result carries `.iterNext` on every
+            -- context axis, so a `.freeNorm` on one duplicates it (`firstDuplicateUID`) or leaves it
+            -- non-advancing (`partialAdvancingResult`); a base's stray free/freeNorm context axis is
+            -- rejected downstream by `checkScanPlan`'s base-write geometry check (a base must pin each
+            -- advancing dim, so a free one is not admitted).
             if (ctxIndexOf a.uid).isSome then
               throw (scanErr warnings (.contextAxisAsFreeOutput scanName nm ri a.uid))
         | _ => pure ()

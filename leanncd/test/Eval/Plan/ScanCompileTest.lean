@@ -1207,4 +1207,280 @@ def axiswiseBaseCheck : Except String Unit :=
   t4shape "T4.13 axiswiseBase" axiswiseBase axiswiseBaseInputs "S" [2, 3]
 run_cmd match axiswiseBaseCheck with | .ok _ => pure () | .error m => throwError m
 
+/-! ## Part 5: Thread 4 Task 4 — soundness matrix (publication/dependency + negative/write-safety)
+
+Task 2 of the slice plan. The publication/dependency fixtures (6-10) pin that preactivations are
+never published or state-written and that a nonlinear step's dependency wiring is correct; the
+negative fixtures (14-19) pin that masked axiswise, an inconsistent `.freeNorm` marker, a `.freeNorm`
+on a context axis, and a preactivation write source are all rejected at their named constructor. -/
+
+/-- Compile a source scan and return its failure cause (`none` if accepted, itself a fixture failure
+    for the negative cases). -/
+def t4cause (sched : ScheduledProgram) (inputs : HashMap String DenseTensor) : Option PlanCompileCause :=
+  causeOf (prepareEvalPlan sched (InputSignature.ofDenseInputs inputs))
+
+/-! ### Fixture 6 — nonlinear scratch consumed by a later scratch (= OracleFixtureSeed.fixture5)
+`T := relu(S[l]·A[l])`; `U := T·B[l]`; `S[l+1] := U`, `X=1`, `A=[2,-3,4]`, `B=[3,2,1]` ⇒ `S=[1,6,0]`.
+Value plus the publication structural fact: only the state result is a block output; `T`/`U` are
+internal (never materialized, never block outputs). -/
+def p6l : AxisSpec := ⟨"l", 4601, .nat⟩
+def scratchToScratchToState : ScheduledProgram :=
+  { decls := [.iter p6l 3]
+  , stmts := [.scan "S" [p6l]
+      [.assign "S" [.iterAt p6l 0] (t4rhs "X" [])]
+      [ .assign "T" [] (t4rhs2 "S" [.axis p6l] "A" [.axis p6l] (.pointwise .relu))
+      , .assign "U" [] (t4rhs2 "T" [] "B" [.axis p6l])
+      , .assign "S" [.iterNext p6l] (t4rhs "U" []) ]
+      false]
+  , env := {}, extNames := {"X", "A", "B"}
+  , explicitSizes := ({} : HashMap UID Nat).insert p6l.uid 3 }
+def scratchToScratchToStateInputs : HashMap String DenseTensor :=
+  ((({} : HashMap String DenseTensor).insert "X" ⟨[], #[1]⟩).insert
+    "A" ⟨[3], #[2, -3, 4]⟩).insert "B" ⟨[3], #[3, 2, 1]⟩
+def fixture6Check : Except String Unit :=
+  t4run "T4.6 scratchToScratchToState" scratchToScratchToState scratchToScratchToStateInputs "S"
+    ⟨[3], #[1, 6, 0]⟩
+run_cmd match fixture6Check with | .ok _ => pure () | .error m => throwError m
+-- publication: `T`/`U` are neither materialized names nor step-block outputs; only `S`'s result is.
+def fixture6Publication : Except String Unit :=
+  withPrepared "T4.6 publication" scratchToScratchToState scratchToScratchToStateInputs (fun p => do
+    match scanAt p 0 with
+    | none => .error "T4.6: step 0 is not a scan"
+    | some s => do
+        expectEq "T4.6: materialized names" (p.bindings.materializedNames.map (·.name)) #["S"]
+        expectEq "T4.6: step block output count" s.stepBlock.outputs.size 1)
+run_cmd match fixture6Publication with | .ok _ => pure () | .error m => throwError m
+
+/-! ### Fixture 7 — nonlinear scratch consumed by a state (clone fixture 6, drop the second scratch)
+`T := relu(S[l]·A[l])`; `S[l+1] := T`, same inputs ⇒ `S=[1,2,0]`. -/
+def p7l : AxisSpec := ⟨"l", 4701, .nat⟩
+def scratchToState : ScheduledProgram :=
+  { decls := [.iter p7l 3]
+  , stmts := [.scan "S" [p7l]
+      [.assign "S" [.iterAt p7l 0] (t4rhs "X" [])]
+      [ .assign "T" [] (t4rhs2 "S" [.axis p7l] "A" [.axis p7l] (.pointwise .relu))
+      , .assign "S" [.iterNext p7l] (t4rhs "T" []) ]
+      false]
+  , env := {}, extNames := {"X", "A"}
+  , explicitSizes := ({} : HashMap UID Nat).insert p7l.uid 3 }
+def scratchToStateInputs : HashMap String DenseTensor :=
+  (({} : HashMap String DenseTensor).insert "X" ⟨[], #[1]⟩).insert "A" ⟨[3], #[2, -3, 4]⟩
+def fixture7Check : Except String Unit :=
+  t4run "T4.7 scratchToState" scratchToState scratchToStateInputs "S" ⟨[3], #[1, 2, 0]⟩
+run_cmd match fixture7Check with | .ok _ => pure () | .error m => throwError m
+
+/-! ### Fixture 8 — persistent state's own nonlinear recurrence (base + recurrence writes)
+`S[j,0]:=X[j]`; `S[j,l+1] := relu(S[j,l]·A[j])`, `X=[1]`, `A=[-1]`, extent 2 ⇒ `S=[1,0]`. -/
+def p8j : AxisSpec := ⟨"j", 4811, .real⟩
+def p8l : AxisSpec := ⟨"l", 4812, .nat⟩
+def persistentNonlinRecur : ScheduledProgram :=
+  { decls := [.iter p8l 2]
+  , stmts := [.scan "S" [p8l]
+      [.assign "S" [.free p8j, .iterAt p8l 0] (t4rhs "X" [.axis p8j])]
+      [.assign "S" [.free p8j, .iterNext p8l]
+        (t4rhs2 "S" [.axis p8j, .axis p8l] "A" [.axis p8j] (.pointwise .relu))]
+      false]
+  , env := {}, extNames := {"X", "A"}
+  , explicitSizes := ({} : HashMap UID Nat).insert p8l.uid 2 }
+def persistentNonlinRecurInputs : HashMap String DenseTensor :=
+  (({} : HashMap String DenseTensor).insert "X" ⟨[1], #[1]⟩).insert "A" ⟨[1], #[-1]⟩
+def fixture8Check : Except String Unit :=
+  t4run "T4.8 persistentNonlinRecur" persistentNonlinRecur persistentNonlinRecurInputs "S"
+    ⟨[1, 2], #[1, 0]⟩
+run_cmd match fixture8Check with | .ok _ => pure () | .error m => throwError m
+
+/-! ### Fixture 9 — coupled linear/nonlinear states (= EvalExamplesTest example 5)
+`G[j,0]:=X`; `G[j,l+1]:=relu(G·W_G + H·U)`; `H[j,0]:=Y`; `H[j,l+1]:=relu(H·W_H + G·V)`, all weights
+`[[1]]`, `X=[1]`, `Y=[2]` ⇒ `G=[1,3,6]`, `H=[2,3,6]`. -/
+def cj : AxisSpec := ⟨"j", 4911, .real⟩
+def ck : AxisSpec := ⟨"k", 4912, .real⟩
+def cl : AxisSpec := ⟨"l", 4913, .nat⟩
+def coupledScan : ScheduledProgram :=
+  { decls := [.iter cl 3]
+  , stmts := [.scan "G" [cl]
+      [ .assign "G" [.free cj, .iterAt cl 0] (t4rhs "X" [.axis cj])
+      , .assign "H" [.free cj, .iterAt cl 0] (t4rhs "Y" [.axis cj]) ]
+      [ .assign "G" [.free cj, .iterNext cl]
+          { body := { terms :=
+              [ { factors := [.read "G" [.axis cj, .axis cl], .read "W_G" [.axis cj, .axis ck]] }
+              , { factors := [.read "H" [.axis cj, .axis cl], .read "U" [.axis cj, .axis ck]] } ] }
+          , nonlin := .pointwise .relu }
+      , .assign "H" [.free cj, .iterNext cl]
+          { body := { terms :=
+              [ { factors := [.read "H" [.axis cj, .axis cl], .read "W_H" [.axis cj, .axis ck]] }
+              , { factors := [.read "G" [.axis cj, .axis cl], .read "V" [.axis cj, .axis ck]] } ] }
+          , nonlin := .pointwise .relu } ]
+      false]
+  , env := {}
+  , extNames := insert "X" (insert "Y" (insert "W_G" (insert "U" (insert "W_H"
+      (insert "V" (∅ : Finset String))))))
+  , explicitSizes := ({} : HashMap UID Nat).insert cl.uid 3 }
+def coupledScanInputs : HashMap String DenseTensor :=
+  ((((((({} : HashMap String DenseTensor).insert "X" ⟨[1], #[1]⟩).insert "Y" ⟨[1], #[2]⟩).insert
+    "W_G" ⟨[1, 1], #[1]⟩).insert "U" ⟨[1, 1], #[1]⟩).insert "W_H" ⟨[1, 1], #[1]⟩).insert
+    "V" ⟨[1, 1], #[1]⟩)
+def fixture9CheckG : Except String Unit :=
+  t4run "T4.9 coupled G" coupledScan coupledScanInputs "G" ⟨[1, 3], #[1, 3, 6]⟩
+def fixture9CheckH : Except String Unit :=
+  t4run "T4.9 coupled H" coupledScan coupledScanInputs "H" ⟨[1, 3], #[2, 3, 6]⟩
+run_cmd match fixture9CheckG with | .ok _ => pure () | .error m => throwError m
+run_cmd match fixture9CheckH with | .ok _ => pure () | .error m => throwError m
+
+/-! ### Fixture 10 — exact capture order after a nonlinear logical statement
+`T := relu(S[l]·A[l])`; `S[l+1] := T·C[l]` — the external `C` is read in the statement AFTER the
+nonlinear `T`. The step-block captures must be `S` (state), then `A`, then `C` in source order; a
+capture set derived out of order (mutation 6) reorders them. -/
+def p10l : AxisSpec := ⟨"l", 41001, .nat⟩
+def captureOrderScan : ScheduledProgram :=
+  { decls := [.iter p10l 3]
+  , stmts := [.scan "S" [p10l]
+      [.assign "S" [.iterAt p10l 0] (t4rhs "X" [])]
+      [ .assign "T" [] (t4rhs2 "S" [.axis p10l] "A" [.axis p10l] (.pointwise .relu))
+      , .assign "S" [.iterNext p10l] (t4rhs2 "T" [] "C" [.axis p10l]) ]
+      false]
+  , env := {}, extNames := insert "X" (insert "A" (insert "C" (∅ : Finset String)))
+  , explicitSizes := ({} : HashMap UID Nat).insert p10l.uid 3 }
+def captureOrderInputs : HashMap String DenseTensor :=
+  ((({} : HashMap String DenseTensor).insert "X" ⟨[], #[1]⟩).insert "A" ⟨[3], #[2, -3, 4]⟩).insert
+    "C" ⟨[3], #[1, 1, 1]⟩
+def fixture10Check : Except String Unit :=
+  withPrepared "T4.10 captureOrder" captureOrderScan captureOrderInputs (fun p => do
+    match scanAt p 0 with
+    | none => .error "T4.10: step 0 is not a scan"
+    | some s =>
+        expectEq "T4.10: step capture sources"
+          (s.stepCaptures.map (·.source)) #[.state 0, .external 1, .external 2])
+run_cmd match fixture10Check with | .ok _ => pure () | .error m => throwError m
+
+/-! ### Negative fixtures 14-19 -/
+
+def t4mask : BoolExpr := .rel .eq (.embed (.const 0)) (.embed (.const 0))
+
+/-- Fixture 14 — masked axiswise BASE: rejected at `resolveNonlinAxis`, not preflight. -/
+def p14i : AxisSpec := ⟨"i", 41401, .real⟩
+def p14l : AxisSpec := ⟨"l", 41402, .nat⟩
+def maskedAxiswiseBase : ScheduledProgram :=
+  { decls := [.iter p14l 3]
+  , stmts := [.scan "S" [p14l]
+      [.assign "S" [.freeNorm p14i, .iterAt p14l 0]
+        (t4rhs "X" [.axis p14i] (.axiswise .normalize (some t4mask)))]
+      [.assign "S" [.free p14i, .iterNext p14l]
+        (t4rhs2 "S" [.axis p14i, .axis p14l] "A" [.axis p14i])]
+      false]
+  , env := {}, extNames := {"X", "A"}
+  , explicitSizes := ({} : HashMap UID Nat).insert p14l.uid 3 }
+def maskedAxiswiseBaseInputs : HashMap String DenseTensor :=
+  (({} : HashMap String DenseTensor).insert "X" ⟨[2], #[1, 3]⟩).insert "A" ⟨[2], #[2, -1]⟩
+#guard t4cause maskedAxiswiseBase maskedAxiswiseBaseInputs
+  == some (.nonlin (.maskedAxiswiseNotSupported "S"))
+
+/-- Fixture 15 — masked axiswise RECURRENCE: rejected at `resolveNonlinAxis`. -/
+def p15i : AxisSpec := ⟨"i", 41501, .real⟩
+def p15l : AxisSpec := ⟨"l", 41502, .nat⟩
+def maskedAxiswiseRecur : ScheduledProgram :=
+  { decls := [.iter p15l 3]
+  , stmts := [.scan "S" [p15l]
+      [.assign "S" [.iterAt p15l 0, .free p15i] (t4rhs "X" [.axis p15i])]
+      [.assign "S" [.iterNext p15l, .freeNorm p15i]
+        (t4rhs "S" [.axis p15l, .axis p15i] (.axiswise .normalize (some t4mask)))]
+      false]
+  , env := {}, extNames := {"X"}
+  , explicitSizes := ({} : HashMap UID Nat).insert p15l.uid 3 }
+def maskedAxiswiseRecurInputs : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "X" ⟨[2], #[1, 3]⟩
+#guard t4cause maskedAxiswiseRecur maskedAxiswiseRecurInputs
+  == some (.nonlin (.maskedAxiswiseNotSupported "S"))
+
+/-- Fixture 16 — `.freeNorm` marker on a `.pointwise` statement (inconsistent): rejected as
+    `unmarkedReductionAxis` at `resolveNonlinAxis`. -/
+def p16l : AxisSpec := ⟨"l", 41601, .nat⟩
+def p16j : AxisSpec := ⟨"j", 41602, .real⟩
+def freeNormPointwise : ScheduledProgram :=
+  { decls := [.iter p16l 3]
+  , stmts := [.scan "S" [p16l]
+      [.assign "S" [.iterAt p16l 0, .free p16j] (t4rhs "X" [.axis p16j])]
+      [.assign "S" [.iterNext p16l, .freeNorm p16j]
+        (t4rhs "S" [.axis p16l, .axis p16j] (.pointwise .relu))]
+      false]
+  , env := {}, extNames := {"X"}
+  , explicitSizes := ({} : HashMap UID Nat).insert p16l.uid 3 }
+def freeNormPointwiseInputs : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "X" ⟨[2], #[1, 3]⟩
+#guard t4cause freeNormPointwise freeNormPointwiseInputs
+  == some (.nonlin (.unmarkedReductionAxis "S" 1))
+
+/-- Fixture 17 — `.freeNorm` on a scan CONTEXT axis in a scratch: rejected as
+    `contextAxisAsFreeOutput`. A scratch `T` normalizes over the scan's own iteration axis `l`, which
+    is never a legal retained output axis. This is the locator for the scratch context-axis
+    `.freeNorm` guard (mutation 5). -/
+def p17l : AxisSpec := ⟨"l", 41701, .nat⟩
+def freeNormContextAxis : ScheduledProgram :=
+  { decls := [.iter p17l 3]
+  , stmts := [.scan "S" [p17l]
+      [.assign "S" [.iterAt p17l 0] (t4rhs "X" [])]
+      [ .assign "T" [.freeNorm p17l] (t4rhs "S" [.axis p17l] (.axiswise .normalize none))
+      , .assign "S" [.iterNext p17l] (t4rhs "T" [.axis p17l]) ]
+      false]
+  , env := {}, extNames := {"X"}
+  , explicitSizes := ({} : HashMap UID Nat).insert p17l.uid 3 }
+def freeNormContextAxisInputs : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "X" ⟨[], #[1]⟩
+#guard t4cause freeNormContextAxis freeNormContextAxisInputs
+  == some (.scan (.contextAxisAsFreeOutput "S" "T" 0 p17l.uid))
+
+/-- Fixture 18 — a state write map that targets the PREACTIVATION slot instead of the published
+    result slot is rejected by `checkScanPlan` as `writeSourceNotBlockOutput`, because the
+    preactivation is never a block output. Built by compiling a real nonlinear scan
+    (`persistentNonlinRecur`) and repointing its step write at the nonlinear step's source (the
+    preactivation), which the compiler itself never does. -/
+def fixture18Check : Except String Unit :=
+  withPrepared "T4.18 stateWriteToPreact" persistentNonlinRecur persistentNonlinRecurInputs (fun p => do
+    match scanAt p 0 with
+    | none => .error "T4.18: step 0 is not a scan"
+    | some raw =>
+        let preacts := raw.stepBlock.steps.filterMap (fun st => match st with
+          | .pointwise q => some q.sourceSlot | .axiswise a => some a.sourceSlot | .assign _ => none)
+        match preacts[0]?, raw.stepWrites[0]? with
+        | some preSlot, some w0 =>
+            let bad := { raw with
+              stepWrites := raw.stepWrites.set! 0 { w0 with outputSlot := preSlot } }
+            match checkScanPlan p.plan.raw.tensorSigs bad with
+            | .error (.writeSourceNotBlockOutput false 0 s) =>
+                if s == preSlot then .ok ()
+                else .error s!"T4.18: rejected slot {s}, expected preactivation {preSlot}"
+            | other => .error s!"T4.18: expected writeSourceNotBlockOutput, got {repr other}"
+        | _, _ => .error "T4.18: no preactivation step or step write found")
+run_cmd match fixture18Check with | .ok _ => pure () | .error m => throwError m
+
+/-- Fixture 19 — mixed identity + nonlinear state outputs: the block outputs hold each state's RESULT
+    slot and no preactivation. `G` advances by an identity recurrence, `H` by a pointwise nonlinear
+    one; the step block publishes exactly the two result slots. This is the sharper witness for the
+    `Array.range`-outputs regression (Task 1 mutation 3, re-confirmed here). -/
+def m19j : AxisSpec := ⟨"j", 41901, .real⟩
+def m19l : AxisSpec := ⟨"l", 41902, .nat⟩
+def mixedIdentityNonlinear : ScheduledProgram :=
+  { decls := [.iter m19l 3]
+  , stmts := [.scan "G" [m19l]
+      [ .assign "G" [.free m19j, .iterAt m19l 0] (t4rhs "X" [.axis m19j])
+      , .assign "H" [.free m19j, .iterAt m19l 0] (t4rhs "Y" [.axis m19j]) ]
+      [ .assign "G" [.free m19j, .iterNext m19l] (t4rhs2 "G" [.axis m19j, .axis m19l] "A" [.axis m19j])
+      , .assign "H" [.free m19j, .iterNext m19l]
+          (t4rhs2 "H" [.axis m19j, .axis m19l] "B" [.axis m19j] (.pointwise .relu)) ]
+      false]
+  , env := {}, extNames := insert "X" (insert "Y" (insert "A" (insert "B" (∅ : Finset String))))
+  , explicitSizes := ({} : HashMap UID Nat).insert m19l.uid 3 }
+def mixedIdentityNonlinearInputs : HashMap String DenseTensor :=
+  (((({} : HashMap String DenseTensor).insert "X" ⟨[1], #[1]⟩).insert "Y" ⟨[1], #[-1]⟩).insert
+    "A" ⟨[1], #[2]⟩).insert "B" ⟨[1], #[-3]⟩
+def fixture19Check : Except String Unit :=
+  withPrepared "T4.19 mixedIdentityNonlinear" mixedIdentityNonlinear mixedIdentityNonlinearInputs
+    (fun p => do
+      match scanAt p 0 with
+      | none => .error "T4.19: step 0 is not a scan"
+      | some s => do
+          -- two states published, each its own result slot; no preactivation leaks in.
+          expectEq "T4.19: step output count" s.stepBlock.outputs.size 2
+          expectEq "T4.19: materialized names" (p.bindings.materializedNames.map (·.name)) #["G", "H"])
+run_cmd match fixture19Check with | .ok _ => pure () | .error m => throwError m
+
 end LeanNCD.Eval.Plan.ScanCompileTest

@@ -370,6 +370,9 @@ a nonlinear source that is not a preceding local assignment is rejected; masked 
 
 **Files**
 
+- `leanncd/LeanNCD/Eval/Plan/Compile.lean` — one production line: the scratch context-axis guard
+  now covers `.freeNorm` as well as `.free` (a Task 1 gap surfaced by fixture 17; see the execution
+  record). This was not in the plan's original Task 2 footprint.
 - `leanncd/test/Eval/Plan/ScanCompileTest.lean`
 - `leanncd/test/Eval/Plan/ScanTest.lean`
 - `leanncd/test/Eval/Plan/CompileTest.lean` (negative/diagnostic cases)
@@ -588,3 +591,53 @@ Restore after each cycle verified byte-clean against the pre-mutation copy.
 `Eval.PropertyOracle.ScanOracle Eval.PropertyOracleScanTest` 8,505; `Tests` 8,657; `LeanNCD` 8,543.
 The `Tests` and oracle counts are unchanged from §0.1, and `ScanCompileTest`/`ScanTest` build with
 every pre-existing fixture value unchanged — Task 1's donor-free safety net.
+
+### Task 2 — executed 2026-08-29
+
+**Production change** (one line, `Compile.lean`): the scratch context-axis guard in `compileScan`'s
+Phase 1 now matches `.free a | .freeNorm a`, not `.free a` alone — a `.freeNorm` marking a scan
+context axis on a scratch was the one silently-ignored cell of the retained-vs-context audit. Sibling
+cells are covered elsewhere and were left unchanged: a state result's `.freeNorm` on a context axis
+duplicates that axis's mandatory `.iterNext` and is caught by `firstDuplicateUID`/`partialAdvancingResult`;
+a base's stray free/freeNorm context axis is rejected downstream by `checkScanPlan`'s base-write
+geometry check (a base must pin each advancing dim). This gap was invisible to Task 1's diff review —
+the guard it needed to change was unchanged code — and surfaced exactly as the skill predicts, via
+fixture 17.
+
+**Test changes** (`ScanCompileTest.lean` Part 5): eleven fixtures. Publication/dependency 6–10 assert
+compiled values and structure via `runPreparedDense`/`scanAt`; negatives 14–19 assert the named
+rejection. All observed:
+
+| # | Shape | Observed |
+|---|---|---|
+| 6 | scratch→scratch→state | `S` `[3]` = `[1,6,0]`; `T`/`U` not materialized, 1 step output |
+| 7 | scratch→state | `S` `[3]` = `[1,2,0]` |
+| 8 | persistent nonlinear recurrence | `S` `[1,2]` = `[1,0]` |
+| 9 | coupled states | `G` `[1,3]` = `[1,3,6]`, `H` `[1,3]` = `[2,3,6]` |
+| 10 | capture order | `stepCaptures` sources `[state 0, external 1, external 2]` |
+| 14 | masked axiswise base | `nonlin (maskedAxiswiseNotSupported "S")` |
+| 15 | masked axiswise recurrence | `nonlin (maskedAxiswiseNotSupported "S")` |
+| 16 | `.freeNorm` + pointwise | `nonlin (unmarkedReductionAxis "S" 1)` |
+| 17 | `.freeNorm` on context-axis scratch | `scan (contextAxisAsFreeOutput "S" "T" 0 …)` |
+| 18 | state write → preactivation slot | `scan (writeSourceNotBlockOutput false 0 preSlot)` (compiled then repointed) |
+| 19 | mixed identity/nonlinear outputs | 2 step outputs, materialized `[G, H]`, no preactivation |
+
+**Mutation cycles** (six production mutations → observed fail in the named fixture → restore → pass;
+all observed):
+
+| # | Mutation | Observed failure |
+|---|---|---|
+| 1 | step allocation by statement ordinal (`stepInputCount + ri`) | `T4.6` (+4/7/9/10) fail `invalidPlan/scan` (slot desync) |
+| 2 | drop `.freeNorm` from `outputUids` (base+step) | `T4.2/5`, `T4.13` (+1/3) fail `invalidPlan/scan` |
+| 3 | drop `.freeNorm` from the base-write loop | only `T4.13` fails `unsupportedLhsSlot "S: base LHS slot"` |
+| 4 | drop `.freeNorm` from the step-write loop | `T4.2/5` (+1/3) fail `unsupportedLhsSlot "S: state-result LHS slot"` |
+| 5 | drop `.freeNorm` from the scratch context-axis guard | only `T4.17` `#guard` fails (no longer rejects) |
+| 6 | reorder captures (`stepCapNames.reverse`) | `T4.10` fails `[external 2, external 1, …]` vs `[state 0, external 1, external 2]`; also breaks pre-existing A/B/C capture fixtures |
+
+Mutation 6 is a realizable **proxy** for the plan's "derive captures after allocation": the literal
+restructuring is not a one-line toggle, so the cycle reverses the derived capture order instead,
+which exercises the same invariant fixture 10 pins (capture order is source-determined and stable).
+Restore after each cycle verified byte-clean.
+
+**Gates** (all green, unchanged from §0.1 except the intended corpus flip): targeted 8,525; oracle
+8,505; `Tests` 8,657; `LeanNCD` 8,543 (the one-line production guard added no regression).
