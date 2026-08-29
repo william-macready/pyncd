@@ -1,12 +1,12 @@
 # Logical nonlinearity scheduling and private route fragments
 
-**Status:** Partially executed. **Tasks 1, 2 and 3 are complete and merged** (§3.3, §3.4, §3.5 —
-each carries its own completion blockquote naming the slice plan that executed it). **Task 4 (§3.6)
-is planned but not started**; its six oracle-group values were lost and have been re-authored, with
-programs and structural facts in
-[`nonlinear_scan_admission/`](implementation_seeds/nonlinearity_route_fragments/nonlinear_scan_admission/)
-— read §3.6's opening note before planning it. Task 5 (§3.7) depends on Task 4. Sections 2 and 4
-remain the governing contract throughout.
+**Status:** Substantially executed. **Tasks 1, 2, 3 and 4 are complete and merged** (§3.3, §3.4,
+§3.5, §3.6 — each carries its own completion blockquote naming the slice plan that executed it).
+Nonlinear scan admission is live: the compiler lowers pointwise and axiswise scan sources into
+checked block steps, and legacy Eval, the checked Plan path, and the independent unroller agree on
+all six oracle groups. **Task 5 (§3.7 — differential documentation, stale-document sweep, and
+whole-branch closure) is the single remaining slice.** Sections 2 and 4 remain the governing contract
+throughout.
 
 **Decision:** Preserve nonlinear assignments in the shared `ScheduledProgram`. Schedule once over
 logical tensor names. Eval consumers lower or execute that logical assignment directly. Immediately
@@ -1680,8 +1680,38 @@ plan.
 
 ### 3.6 Task 4: admit nonlinear Plan scans
 
-> **Oracle values were lost and have been re-authored (resolved 2026-08-28) — read before writing
-> Task 4's slice plan.**
+> **Executable plan (2026-08-28), complete (merged 2026-08-29):** Task 4 has its own slice plan,
+> [`leanncd/docs/superpowers/plans/2026-08-28-nonlinearity-t4-scan-admission.md`](../leanncd/docs/superpowers/plans/2026-08-28-nonlinearity-t4-scan-admission.md),
+> per CLAUDE.md Rule 13, decomposed into three dispatchable sub-tasks (compiler lowering in
+> `compileScan`; the soundness matrix; independent-oracle agreement). All three landed
+> (`a2daa1a`…`b878b58`), with **two independent whole-branch reviews** — a compiler/causality lens
+> and a publication/oracle lens — **both clean on soundness**. Gates green at 8,525 / 8,505 / 8,657 /
+> 8,543, and **the 17-case corpus now reads 13 / 0 / 4**, observed rather than asserted.
+>
+> Three things the execution changed about the plan as written, recorded so they are not re-derived:
+>
+> 1. **The plan's Task-3 Files list was wrong, and the constraint correctly won.** It named
+>    `ScanOracle.lean` as the host for the three-way gate — but the oracle must not import the Plan
+>    compiler (§2.8; the differential is circular if it does), so `ScanOracle` cannot host a
+>    comparison against the compiled path. The gate lives in `DifferentialTest.lean`, which already
+>    imports both sides, as `scanParityCheck` over `nonlinearScanFixtures`.
+> 2. **Twelve mutation cycles, not thirteen** (3 in Task 1, 6 in Task 2, 3 in Task 3). The unroller
+>    applies a nonlinearity inline, with no preactivation/result slot, so the planned "skip nonlinear
+>    leaf evaluation" and "publish preactivation" oracle mutations *coincide* there. Splitting the
+>    drop into the base-leaf and step-leaf paths instead gives groups 1 and 4 distinct witnesses,
+>    which is strictly better than two mutations that cannot be told apart.
+> 3. **The six oracle groups are not additional fixtures.** §3.2's "19 cross-layer fixtures including
+>    6 oracle groups" is exact: the six are fixtures 4, 5, 6, 8, 9 and 11 routed through a *third*
+>    assertion path, not six more programs. Task 3 added zero new fixtures.
+>
+> **One doc-accuracy finding adjudicated** (no code change, no soundness hole): a scratch-guard
+> comment claimed a base `free`/`freeNorm` context axis is rejected downstream. It is in fact
+> **admitted by design as a boundary face** (§2.7's `dp[0,c]` over the full history extent, exercised
+> by `multiBaseSched`); only a *non-boundary* base write is rejected. Corrected in place. This is the
+> whole-branch tier catching an inaccurate prose claim about *unchanged* code that per-task review
+> accepted — the recurring failure mode this document's own history keeps recording.
+>
+> **Historical note — oracle values were lost and re-authored (resolved 2026-08-28).**
 >
 > The six oracle-group values this section originally recorded (`[2,3,20,300,200,30000]`, an
 > interleaved-axiswise history, and four more) came from an early spike and **could not be
@@ -1858,6 +1888,15 @@ Require reviews for compiler allocation/axis mapping/diagnostics and for publica
 independence/Dense semantics.
 
 ### 3.7 Task 5: differential documentation and closure
+
+> **The single remaining slice (as of 2026-08-29).** Tasks 1-4 are merged; their dependencies on this
+> task are discharged. Two cautions for whoever plans it. First, its Files list is ~20 documents and
+> the sweep is mostly prose — but this document's own history is a run of inaccurate prose claims
+> about *unchanged* code caught only at the final review tier, most recently in Task 4. Treat the
+> sweep as claim-verification against the tree, not as light work because it is documentation.
+> Second, several of the passages it must correct describe Tasks 1-4 as unbuilt or describe the
+> pre-Task-3 assignment-only block representation; those are now four slices stale, so grep for
+> current identifiers rather than trusting any passage's own framing.
 
 **Outcome**
 
