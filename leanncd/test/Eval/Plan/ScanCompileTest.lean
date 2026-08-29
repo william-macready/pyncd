@@ -1483,4 +1483,39 @@ def fixture19Check : Except String Unit :=
           expectEq "T4.19: materialized names" (p.bindings.materializedNames.map (·.name)) #["G", "H"])
 run_cmd match fixture19Check with | .ok _ => pure () | .error m => throwError m
 
+/-! ### Structural facts for the four freshly-authored oracle groups (§3.6)
+
+The values of groups 1, 2, 4, 5 exist nowhere else, so asserting the number alone would pin a number
+without pinning the shape it came from. These guards pin the shape each group's value must come from,
+so a fixture that ran and returned the right number while exercising the wrong shape cannot pass. -/
+
+-- group 1 (leadingPointwiseScratch): scratch `T`'s local axis is at slot index 0 with no `.iterAt`
+-- slot, and `T` has exactly one writing statement.
+#guard match leadingPointwiseScratch.stmts with
+  | [.scan _ _ base recur _] =>
+      (recur.filterMap (fun s => match s with | .assign "T" sl _ => some sl | _ => none)) == [[.free p4i]]
+      && ((base ++ recur).filter (fun s => match s with | .assign "T" _ _ => true | _ => false)).length == 1
+  | _ => false
+-- group 2 (interleavedAxiswise): the `.freeNorm` slot sits at index 1, strictly between iteration
+-- slots 0 and 2; unmasked normalize.
+#guard match interleavedAxiswise.stmts with
+  | [.scan _ _ _ [.assign _ slots rhs] _] =>
+      slots == [.iterNext p2l, .freeNorm p2i, .iterNext p2m] && rhs.nonlin == .axiswise .normalize none
+  | _ => false
+-- group 4 (nonlinearBase): the base statement's nonlin is pointwise and the recurrence's is identity
+-- — the opposite of groups 1/3.
+#guard match nonlinearBase.stmts with
+  | [.scan _ _ [.assign _ _ base] [.assign _ _ recur] _] =>
+      base.nonlin == .pointwise .relu && recur.nonlin == .identity
+  | _ => false
+-- group 5 (scratchToScratchToState): three destinations `T`, `U`, `S` in dependency order; the two
+-- scratches have no base write while the state does.
+#guard match scratchToScratchToState.stmts with
+  | [.scan _ _ base recur _] =>
+      (recur.filterMap (fun s => match s with | .assign nm _ _ => some nm | _ => none)) == ["T", "U", "S"]
+      && !(base.any (fun s => match s with | .assign "T" _ _ => true | _ => false))
+      && !(base.any (fun s => match s with | .assign "U" _ _ => true | _ => false))
+      && base.any (fun s => match s with | .assign "S" _ _ => true | _ => false)
+  | _ => false
+
 end LeanNCD.Eval.Plan.ScanCompileTest

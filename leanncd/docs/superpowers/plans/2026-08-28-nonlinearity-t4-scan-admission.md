@@ -234,10 +234,12 @@ implementer must not author the six programs twice.
 |---|---|---:|---:|---|
 | 1 | `compileScan` admits/lowers nonlinear sources; the three preflight sites open; accept-path fixtures assert compiled values; 17-case corpus rebaselined to 13/0/4 | 8 (positional 1–5, base 11–13) | 3 | **highest** — the architectural centerpiece, written against a contract with no production donor (§0.7): allocation, two-step emission, `retainedAxisPos`, publication policy |
 | 2 | Soundness matrix — publication/dependency and negative/write-safety fixtures — plus the six production mutation cycles that prove the reject-path and dependency guards are real | 11 (publication 6–10, negative 14–19) | 6 | the entire soundness claim: a publication leak or a provenance/causality gap is the failure mode Task 4 exists to prevent |
-| 3 | Six **already-built** fixtures (4, 5, 6, 8, 9, 11) routed through the independent unroller for legacy-vs-checked-vs-unroller agreement, plus the four oracle mutation cycles | 0 (third assertion path over existing fixtures) | 4 | oracle independence and the differential's teeth — a circular or toothless oracle reports agreement it does not verify |
+| 3 | Six **already-built** fixtures (4, 5, 6, 8, 9, 11) routed through the independent unroller for legacy-vs-checked-vs-unroller agreement, plus three oracle mutation cycles | 0 (third assertion path over existing fixtures) | 3 | oracle independence and the differential's teeth — a circular or toothless oracle reports agreement it does not verify |
 
-Nine production mutation cycles total (3 in Task 1, 6 in Task 2) plus four oracle mutation cycles in
-Task 3 — thirteen, matching master §4.4's "13 in Task 4".
+Nine production mutation cycles total (3 in Task 1, 6 in Task 2) plus three oracle mutation cycles in
+Task 3 — twelve. (The master plan's §4.4 estimate of thirteen assumed four oracle cycles; the unroller
+applies the nonlinearity inline, with no preactivation/result slot to confuse, so its distinct
+surfaces are three, not four — see Task 3.)
 
 **Why three, not two or four.** Task 1 and Task 2 split on the same axis Task 3's own plan used:
 Task 1 makes the accept path exist, produces correct *values*, and **carries its own three mutation
@@ -426,35 +428,37 @@ of an accept-path fixture (above), which is what keeps that cost bounded.
 
 ---
 
-### Task 3 — route six existing fixtures through the independent oracle, and its four mutation cycles
+### Task 3 — route six existing fixtures through the independent oracle, and its oracle mutations
 
 **Outcome.** Six of the nineteen fixtures Tasks 1–2 already built — the oracle groups — gain a
 **third assertion path**: in addition to legacy `evalScheduled` and the checked Plan, each is run
 through the independent unroller, and all three agree on the §0.4 values. **No new program is
 authored here** (that is the fixture-accounting point in §2): these are fixtures 4, 5, 6, 8, 9, 11,
-re-asserted under the unroller. The unroller's teeth are proven by four oracle mutations. Step 10
+re-asserted under the unroller. The unroller's teeth are proven by the oracle mutations below. Step 10
 (the unroller's `.freeNorm` arms) is already merged (§0.5) and is not re-implemented.
 
 **Files**
 
-- `leanncd/test/Eval/PropertyOracle/ScanOracle.lean`
-- `leanncd/test/Eval/PropertyOracleScanTest.lean`
+- `leanncd/test/Eval/Plan/DifferentialTest.lean` — the three-way parity list (`nonlinearScanFixtures`
+  through `scanParityCheck`). This is the genuine three-way integration point per master §2.8: it
+  already imports both the compiler (`Adapter`, `ScanCompileTest`) and the unroller (`ScanUnroll`),
+  which `ScanOracle.lean`/`PropertyOracleScanTest.lean` (the plan's original guess) deliberately
+  cannot, since the oracle must not import the Plan compiler.
+- `leanncd/test/Eval/Plan/ScanCompileTest.lean` — the §3.6 structural-fact guards for the four
+  freshly-authored groups (co-located with the programs).
 
 **Implementation**
 
 1. Reference the six programs Tasks 1–2 built (see the mapping below), not fresh copies — they are
-   `ScheduledProgram`s already living in the checked-Plan test files after Tasks 1–2. Where a program
-   is not importable across test modules without duplicating scaffolding, share it through the same
-   helper the existing oracle fixtures use rather than re-transcribing its statements. The two
-   **adopted** groups (3 and 6) are confirmed elsewhere by an exit-0 check on a whole source file
-   (§1.3/README), weaker than observing the value directly — so assert their value explicitly here
-   where the unroller can observe it.
-2. For each, assert three-way agreement: legacy `evalScheduled`, `checkScanCase`/checked Plan, and
-   the unroller, all equal to the §0.4 value. Groups 1, 2, 4, 5 are freshly authored and their values
-   exist nowhere else, so each must **also** assert the structural facts §3.6 records (e.g. group 1's
-   scratch has its local axis at slot index 0 and exactly one writing statement; group 2's `.freeNorm`
-   slot is strictly between iteration slots) — a value with no independent record pins a number
-   without pinning the shape it came from.
+   public `ScheduledProgram` defs in `ScanCompileTest`, in scope in `DifferentialTest` via its
+   existing `import Eval.Plan.ScanCompileTest`. Route each through `scanParityCheck`, which runs the
+   compiled Plan (`runPreparedDense`), legacy `evalScheduled`, and `PropertyOracle.independentRun` and
+   asserts all three agree on every materialized state plus scratch privacy on all three legs.
+2. Groups 1, 2, 4, 5 are freshly authored and their values exist nowhere else, so each also asserts
+   the structural facts §3.6 records (group 1's scratch local axis at slot index 0 and its single
+   writing statement; group 2's `.freeNorm` slot strictly between iteration slots; group 4's pointwise
+   base and identity recurrence; group 5's three destinations in dependency order) — a value with no
+   independent record pins a number without pinning the shape it came from.
 
 **Oracle-group → fixture mapping** (all six built by Tasks 1–2; none new):
 
@@ -467,15 +471,21 @@ re-asserted under the unroller. The unroller's teeth are proven by four oracle m
 | 5 | scratch→scratch→state (`fixture5`) | 6 (Task 2) |
 | 6 | coupled states (adopted example 5) | 9 (Task 2) |
 
-**Mutation cycles** (four; mutate the **independent oracle**, not production — this is the one place
-the skill sanctions oracle mutation, because the oracle is the thing under test):
+**Mutation cycles** (three; mutate the **independent oracle** (`ScanUnroll`), not production — this is
+the one place the skill sanctions oracle mutation, because the oracle is the thing under test). The
+plan originally listed four, but this unroller applies the nonlinearity **inline** on each leaf — it
+has no preactivation/result slot to confuse — so the plan's "skip nonlinear leaf evaluation" and
+"publish preactivation" are the *same* mutation here (not applying the nonlinearity IS publishing the
+preactivation). The three surfaces the oracle genuinely has are split so each names a distinct group:
 
-| # | Mutation in the unroller | Fixture that must fail | Why it distinguishes |
+| # | Mutation in the unroller (`ScanUnroll`) | Group that must fail | Why it distinguishes |
 |---|---|---|---|
-| 1 | use the wrong retained-axis mapping | group 2 | interleaved marker |
-| 2 | skip nonlinear leaf evaluation | group 1 / 4 | result depends on the nonlinearity |
-| 3 | publish the preactivation | group 3 | preactivation ≠ result on the ReLU'd negative |
-| 4 | confuse base and result slots | group 4 | nonlinear base vs linear recurrence differ |
+| 1 | `buildGeom` drops the `.freeNorm` marker (retained-axis mapping) | 2 | only group 2 carries an axiswise marker |
+| 2 | the STEP (recurrence) leaf rewrite drops the nonlinearity | 1 (also 3, 5, 6) | recurrence nonlinearity is load-bearing |
+| 3 | the BASE leaf rewrite drops the nonlinearity | 4 | only group 4's nonlinearity is on the base |
+
+Together the three break every one of the six groups (2; 1/3/5/6; 4), so the oracle is proven to
+actually apply each group's nonlinearity rather than agree vacuously.
 
 **Risk / cost.** **Zero new fixtures** — this task adds a third assertion path plus its own file
 scaffolding over six fixtures Tasks 1–2 already built, so it is the cheapest of the three despite
@@ -518,7 +528,7 @@ admission.
   from written result slots, never `Array.range`.
 - Legacy Eval, checked Plan, and the independent oracle agree on all six oracle-group values and on
   every accept-path fixture, at the §0.4 numbers.
-- All 13 mutation cycles (3 production in Task 1, 6 production in Task 2, 4 oracle in Task 3) show
+- All 12 mutation cycles (3 production in Task 1, 6 production in Task 2, 3 oracle in Task 3) show
   fail-on-mutation and pass-on-restore in their **named** fixtures, recorded observed-not-predicted.
 - The 17-case scan corpus reads 13/0/4; **`Eval.Plan.ScanCompileTest` and `Eval.Plan.ScanTest` build
   with every pre-existing fixture's observed value unchanged**, recorded as two targeted build
@@ -641,3 +651,39 @@ Restore after each cycle verified byte-clean.
 
 **Gates** (all green, unchanged from §0.1 except the intended corpus flip): targeted 8,525; oracle
 8,505; `Tests` 8,657; `LeanNCD` 8,543 (the one-line production guard added no regression).
+
+### Task 3 — executed 2026-08-29
+
+**No production change.** The six oracle-group programs (built in Tasks 1–2, referenced not
+re-authored) are routed through `DifferentialTest.lean`'s `scanParityCheck` as `nonlinearScanFixtures`
+— the genuine three-way gate (compiled `runPreparedDense`, legacy `evalScheduled`, independent
+`PropertyOracle.independentRun`), which also asserts scratch privacy on all three legs. All six pass:
+groups 1/5 with scratch sets `["T"]`/`["T","U"]`, the rest none. Master §2.8 places this three-way
+gate in `DifferentialTest` (which imports both the compiler and the unroller); the plan's original
+Task 3 Files guess (`ScanOracle`/`PropertyOracleScanTest`) was wrong because those files must not
+import the compiler. Four §3.6 structural-fact guards for the freshly-authored groups (1, 2, 4, 5)
+were added to `ScanCompileTest.lean`, co-located with the programs.
+
+**Import independence re-checked:** `ScanUnroll.lean` imports exactly `Eval.PropertyOracle.Compare`
+and `Eval.PropertyOracle.ScanGen` — no `Eval.Plan`/`DSL.Pipeline`/`Adapter`/`Compile` import (the two
+`grep` hits for those strings are docstring prose, not imports). An oracle that reached into the Plan
+path would make the differential circular.
+
+**Oracle mutation cycles** (three; mutate `ScanUnroll`'s `independentRun`, observe a three-way
+disagreement in the named group, restore, observe pass — all observed):
+
+| # | Mutation | Observed failure |
+|---|---|---|
+| 1 | `buildGeom` maps `.freeNorm a` to `.free a` (drops the marker) | `group2/interleavedAxiswise` fails: "applies normalize but no output axis is marked" |
+| 2 | STEP (recurrence) leaf rewrite forces `nonlin := .identity` | `group1/leadingPointwiseScratch` fails THREE-WAY (also corpus case 4, a `template2` ReLU scan) |
+| 3 | BASE leaf rewrite forces `nonlin := .identity` | only `group4/nonlinearBase` fails THREE-WAY (recurrence-nonlinear groups untouched) |
+
+The three break every group (2; 1/3/5/6; 4), proving the oracle applies each group's nonlinearity
+rather than agreeing vacuously. Only three cycles, not the plan's four: the unroller applies the
+nonlinearity inline (no preactivation/result slot), so "skip nonlinear leaf eval" and "publish
+preactivation" coincide — splitting the nonlinearity drop into the recurrence and base paths gives
+groups 1 and 4 distinct witnesses, which is finer coverage than the plan's original grouping.
+Restore after each cycle verified byte-clean.
+
+**Gates** (all green): targeted 8,525; oracle 8,505; `Tests` 8,657; `LeanNCD` 8,543 — all unchanged
+from §0.1 except the corpus flip. Total slice mutation cycles: 3 + 6 + 3 = **12**.

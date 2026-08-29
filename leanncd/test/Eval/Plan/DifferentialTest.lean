@@ -552,6 +552,36 @@ run_cmd do
     | .ok () => pure ()
     | .error m => throwError s!"SCAN PARITY FAILED:\n{m}"
 
+/-! ### Thread 4 Task 4 — the six nonlinear oracle groups, three-way
+
+The six oracle-group programs Tasks 1-2 built (referenced here, not re-authored) routed through the
+full three-way `scanParityCheck`: compiled checked Plan, legacy `evalScheduled`, and the independent
+`PropertyOracle.independentRun` unroller must agree on every materialized state, and scratch stays
+private on all three legs. This is where the independent leg (`ScanUnroll`, which never imports the
+Plan compiler) meets the compiler-side legs, per master §2.8. The four oracle mutation cycles for
+this slice mutate `independentRun` and observe a three-way disagreement in the named group here. -/
+private def nonlinearScanFixtures :
+    List (String × ScheduledProgram × HashMap String DenseTensor × List String) :=
+  [ ("group1/leadingPointwiseScratch", ScanCompileTest.leadingPointwiseScratch,
+      ScanCompileTest.leadingPointwiseScratchInputs, ["T"])
+  , ("group2/interleavedAxiswise", ScanCompileTest.interleavedAxiswise,
+      ScanCompileTest.interleavedAxiswiseInputs, [])
+  , ("group3/persistentNonlinRecur", ScanCompileTest.persistentNonlinRecur,
+      ScanCompileTest.persistentNonlinRecurInputs, [])
+  , ("group4/nonlinearBase", ScanCompileTest.nonlinearBase, ScanCompileTest.nonlinearBaseInputs, [])
+  , ("group5/scratchToScratchToState", ScanCompileTest.scratchToScratchToState,
+      ScanCompileTest.scratchToScratchToStateInputs, ["T", "U"])
+  , ("group6/coupledScan", ScanCompileTest.coupledScan, ScanCompileTest.coupledScanInputs, []) ]
+
+private def nonlinearScanFixtureChecks : List (Except String Unit) :=
+  nonlinearScanFixtures.map (fun (nm, sched, inputs, scratch) => scanParityCheck nm sched inputs scratch)
+
+run_cmd do
+  for c in nonlinearScanFixtureChecks do
+    match c with
+    | .ok () => pure ()
+    | .error m => throwError s!"NONLINEAR SCAN PARITY FAILED:\n{m}"
+
 /-! ### Required feature coverage of the three-way gate
 
 Plan Task 5: "keep exact corpus counts and ensure every required feature family has an accepted
