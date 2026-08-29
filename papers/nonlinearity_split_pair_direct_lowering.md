@@ -1889,14 +1889,51 @@ independence/Dense semantics.
 
 ### 3.7 Task 5: differential documentation and closure
 
-> **The single remaining slice (as of 2026-08-29).** Tasks 1-4 are merged; their dependencies on this
-> task are discharged. Two cautions for whoever plans it. First, its Files list is ~20 documents and
-> the sweep is mostly prose — but this document's own history is a run of inaccurate prose claims
-> about *unchanged* code caught only at the final review tier, most recently in Task 4. Treat the
-> sweep as claim-verification against the tree, not as light work because it is documentation.
-> Second, several of the passages it must correct describe Tasks 1-4 as unbuilt or describe the
-> pre-Task-3 assignment-only block representation; those are now four slices stale, so grep for
-> current identifiers rather than trusting any passage's own framing.
+> **The single remaining slice (as of 2026-08-29), and it is smaller than the text below implies.**
+> Tasks 1-4 are merged. A read-only staleness audit has already run
+> ([`…/briefs/2026-08-29-task5-stale-doc-audit-RESULTS.md`](../leanncd/docs/superpowers/briefs/2026-08-29-task5-stale-doc-audit-RESULTS.md),
+> commit `2cd1234`); its findings were spot-checked against the tree and hold. Plan Task 5 against
+> the four corrections below, not against this section's original text.
+>
+> **Steps 1, 2 and 3 are ALREADY SATISFIED — do not re-implement them.** Verified directly:
+>
+> | Step | Status | Evidence |
+> |---|---|---|
+> | 1 — differential cases for the five nonlinear shapes | **done** (Task 4) | `nonlinearScanFixtures` in `DifferentialTest.lean` covers all five (plus a sixth), each through the three-way `scanParityCheck` |
+> | 2 — compare exact source-visible keys and warning order | **done** | `scanParityCheck` does whole-environment `envEq` and compares warnings by *list equality*, so order and payload both count |
+> | 3 — confirm the 3,832 scan-free gate and the 13/0/4 split | **done** | both assertions are live in `DifferentialTest.lean` |
+>
+> What remains is therefore steps 4-7: **the documentation sweep, plus the completion record.**
+>
+> **The sweep is ~31 stale passages across ~12 documents**, not 24 documents' worth of rewriting.
+> They concentrate in `realize.md`, `SORRY_INVENTORY.md`, `eval_ir.md`, `leanncd.md`,
+> `code_walkthrough.md`, and `wave_f_scanplan_proposal.md`, and most belong to one family — prose
+> presenting `splitNonlins`/`%nl`/`LinearProgram` as live production pipeline elements — so the fixes
+> largely share a template. The audit's table gives each passage, its claim, and the code fact that
+> settles it; work from that rather than re-deriving.
+>
+> **Two traps the audit surfaced, both of which would cause wrong edits:**
+>
+> 1. **The step-7 scan produces false positives.** `LeanNCD/DSL/AGENTS.md`'s phase table matches only
+>    because the regex spans two adjacent rows — its prose is already correct ("`splitNonlins`
+>    survives only as a regression-only helper, off the production chain"). `papers/todo.md`'s matches
+>    all sit inside a permanent archival banner. Neither is stale; "fixing" either would be a
+>    regression. The scan is a blunt substring gate, not a verdict.
+> 2. **Correctly-banner'd history is not staleness.** `DSL/AGENTS.md`'s "runs constantly" claim is
+>    immediately followed by an inline superseded banner that states current behaviour; the
+>    `wiring-loop-generalization.md` record describing `RawPlanBlock.assignments` is accurate history
+>    of a completed slice. Preserve both. Only that document's *active next-slice pointer* — which
+>    directs readers to the archived `2026-08-21-nonlinearity-in-scans.md` — is a genuine defect.
+>
+> **The Files list has a gap.** It predates Tasks 3-4 and omits `leanncd/AGENTS.md`, the subsystem
+> navigation doc, which references the `splitNonlins` `agg`-drop as a live `[fail-loud]` violation.
+> That pass is now off-chain and the drop is provably vacuous (a non-sum `agg` statement has
+> `nonlin = .identity` by construction, so the split never carries one) — so the entry needs
+> re-checking, not deletion. **No real code defect was found anywhere in the audit.**
+>
+> The original caution still stands for whatever the audit could not reach: this document's own
+> history is a run of inaccurate prose claims about *unchanged* code caught only at the final review
+> tier, most recently in Task 4. Treat every edit as claim-verification against the tree.
 
 **Outcome**
 
@@ -1943,10 +1980,14 @@ Verification-only:
 
 **Implementation**
 
-1. Add differential cases for persistent nonlinear state, interleaved axiswise recurrence,
-   scratch-to-state, nonlinear base, and coupled states.
-2. Compare exact source-visible keys and warning order; no generated-name projection is allowed.
-3. Confirm the 3,832-case scan-free gate and 17-case 13/0/4 scan split.
+1. ~~Add differential cases for persistent nonlinear state, interleaved axiswise recurrence,
+   scratch-to-state, nonlinear base, and coupled states.~~ **SATISFIED by Task 4** —
+   `nonlinearScanFixtures` covers all five plus a sixth; verify, do not rebuild.
+2. ~~Compare exact source-visible keys and warning order; no generated-name projection is allowed.~~
+   **SATISFIED** — `scanParityCheck` does whole-environment key equality and compares warnings by
+   list equality (order and payload).
+3. ~~Confirm the 3,832-case scan-free gate and 17-case 13/0/4 scan split.~~ **SATISFIED** — both
+   assertions are live in `DifferentialTest.lean`. Re-run them as a gate; add nothing.
 4. Document logical scheduling, private proof-carrying physicalization, collision proof, opaque scans,
    public logical `route`, the deprecated `LinearProgram` alias, FreshM compatibility, Plan block
    steps, and checked/backend boundaries in every active architecture inventory above.
