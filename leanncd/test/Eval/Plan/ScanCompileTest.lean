@@ -1,4 +1,5 @@
 import LeanNCD.Eval.Plan.Compile
+import LeanNCD.Eval.Plan.Adapter
 
 /-!
 # Wave F F4 Task 3: source scan admission and residualization tests
@@ -678,14 +679,10 @@ Every category `checkScanBlockStmt` can reject, exercised on BOTH sides — the 
 recurrence list — since `checkScanStmt` walks `base ++ recur` and a rule applied to only one of them
 would still pass a base-only or recur-only fixture. -/
 
-def badFreeNorm (nm : String) (adv : LHSSlot) : Stmt := .assign nm [.freeNorm axJ, adv]
-  { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := .identity }
 def badAffineLhs (nm : String) : Stmt := .assign nm [.affine (.axis axL)]
   { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := .identity }
 def badAgg (nm : String) (adv : LHSSlot) (op : AggOp) : Stmt := .assign nm [adv]
   { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := .identity, agg := op }
-def badNonlin (nm : String) (adv : LHSSlot) (n : Nonlin) : Stmt := .assign nm [adv]
-  { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := n }
 def badIverson (nm : String) (adv : LHSSlot) : Stmt := .assign nm [adv]
   { body := { terms := [{ factors := [.iverson (.rel .eq (.embed (.const 0)) (.embed (.const 0)))] }] }
   , nonlin := .identity }
@@ -698,29 +695,22 @@ def badRecurMorphism (nm : String) : Stmt := .recurMorphism nm axL default
 def pinL : LHSSlot := .iterAt axL 0
 def nextL : LHSSlot := .iterNext axL
 
--- in the BASE list
-#guard rej [badFreeNorm "S" pinL] [okRecur] == some (.capability (.unsupportedLhsSlot "S: freeNorm j"))
+-- in the BASE list. `.freeNorm`, `.pointwise`, and `.axiswise` are NO LONGER preflight rejections
+-- (Thread 4 Task 4): `compileScan` now admits and lowers them. Their positive coverage is the
+-- accept-path fixtures (below and in `ScanTest.lean`); the marker-consistency and masked-axiswise
+-- negatives — which now surface at the `resolveNonlinAxis` tier, not preflight — are Task 4's Task 2.
 #guard rej [badAffineLhs "S"] [okRecur] == some (.capability (.scatterOrAffineLhs "S: affine LHS slot"))
 #guard rej [badAgg "S" pinL .max] [okRecur] == some (.capability (.unsupportedAgg "S: max aggregation"))
 #guard rej [badAgg "S" pinL .min] [okRecur] == some (.capability (.unsupportedAgg "S: min aggregation"))
-#guard rej [badNonlin "S" pinL (.pointwise .relu)] [okRecur]
-  == some (.capability (.unsupportedNonlin "S: pointwise nonlinearity"))
-#guard rej [badNonlin "S" pinL (.axiswise .softmax none)] [okRecur]
-  == some (.capability (.unsupportedNonlin "S: axiswise nonlinearity"))
 #guard rej [badIverson "S" pinL] [okRecur] == some (.capability (.maskOrPredicate "S: iverson factor"))
 #guard rej [badUnary "S" pinL] [okRecur] == some (.capability (.unaryFactor "S: unary function on X"))
 #guard rej [badScatter "S"] [okRecur] == some (.capability (.scatterOrAffineLhs "S"))
 #guard rej [badRecurMorphism "S"] [okRecur] == some (.capability (.recurrenceOrCallback "S"))
 
--- in the RECURRENCE list
-#guard rej [okBase] [badFreeNorm "S" nextL] == some (.capability (.unsupportedLhsSlot "S: freeNorm j"))
+-- in the RECURRENCE list (`.freeNorm`/`.pointwise`/`.axiswise` admitted now — see the BASE note)
 #guard rej [okBase] [badAffineLhs "S"] == some (.capability (.scatterOrAffineLhs "S: affine LHS slot"))
 #guard rej [okBase] [badAgg "S" nextL .max] == some (.capability (.unsupportedAgg "S: max aggregation"))
 #guard rej [okBase] [badAgg "S" nextL .min] == some (.capability (.unsupportedAgg "S: min aggregation"))
-#guard rej [okBase] [badNonlin "S" nextL (.pointwise .relu)]
-  == some (.capability (.unsupportedNonlin "S: pointwise nonlinearity"))
-#guard rej [okBase] [badNonlin "S" nextL (.axiswise .softmax none)]
-  == some (.capability (.unsupportedNonlin "S: axiswise nonlinearity"))
 #guard rej [okBase] [badIverson "S" nextL] == some (.capability (.maskOrPredicate "S: iverson factor"))
 #guard rej [okBase] [badUnary "S" nextL] == some (.capability (.unaryFactor "S: unary function on X"))
 #guard rej [okBase] [badScatter "S"] == some (.capability (.scatterOrAffineLhs "S"))
@@ -1010,8 +1000,8 @@ wins, regardless of how many later phases the same program would also fail. -/
 -- Unsupported nested syntax (phase A) PLUS a missing input signature (phase B): capability wins.
 def emptySig : InputSignature := InputSignature.mk ({} : HashMap String TensorSignature)
 #guard causeOf (prepareEvalPlan
-    (rejSched [okBase] [badNonlin "S" nextL (.pointwise .relu)]) emptySig)
-  == some (.capability (.unsupportedNonlin "S: pointwise nonlinearity"))
+    (rejSched [okBase] [badAffineLhs "S"]) emptySig)
+  == some (.capability (.scatterOrAffineLhs "S: affine LHS slot"))
 
 -- Valid syntax, an unsized scan axis (phase C/geometry-sizing) AND an orphan base (phase D pairing):
 -- the shape failure wins, and the pairing failure is never reported. `axis l` — deliberately not
@@ -1026,5 +1016,195 @@ def shapeBeforePairingSched : ScheduledProgram :=
 -- and the SAME program with `l` pinned does report the pairing failure, proving the fixture above
 -- is really about precedence and not about the pairing check being absent.
 #guard rej [okBase] [] == some (.scan (.orphanBaseState "sc" "S"))
+
+/-! ## Part 4: Thread 4 Task 4 — nonlinear scan source admission (accept path)
+
+`compileScan` now admits and lowers unmasked pointwise/axiswise base/recurrence statements into the
+`.assign → .pointwise`/`.axiswise` block-step chain. These fixtures pin that the compiled checked-Plan
+output equals the value the legacy evaluator produces — the six values re-observed in
+`papers/implementation_seeds/nonlinearity_route_fragments/nonlinear_scan_admission/OracleFixtureSeed.lean`
+(§0.4 of this slice's plan). The value-bearing fixtures (4, 2/5, 11) run the whole pipeline through
+`runPreparedDense`; the structural fixtures (1, 3, 12, 13) pin acceptance and the materialized shape
+for shapes whose legacy value is not one of the pinned numbers. -/
+
+def t4rhs (name : String) (idxs : List IdxExpr) (nonlin := Nonlin.identity) : RHSExpr :=
+  { body := { terms := [{ factors := [.read name idxs] }] }, nonlin }
+def t4rhs2 (a : String) (ai : List IdxExpr) (b : String) (bi : List IdxExpr)
+    (nonlin := Nonlin.identity) : RHSExpr :=
+  { body := { terms := [{ factors := [.read a ai, .read b bi] }] }, nonlin }
+
+/-- Compile a source scan, run it through the checked Plan path (`runPreparedDense`), and assert the
+    materialized output tensor approx-equals `expected`. Reports the real compile/run cause on
+    failure rather than a bare `none`. -/
+def t4run (name : String) (sched : ScheduledProgram) (inputs : HashMap String DenseTensor)
+    (outName : String) (expected : DenseTensor) : Except String Unit :=
+  match prepareEvalPlan sched (InputSignature.ofDenseInputs inputs) with
+  | .error e => .error s!"{name}: expected acceptance, got {render e.cause}"
+  | .ok p =>
+    match runPreparedDense p inputs with
+    | .error f => .error s!"{name}: run failed: {repr f.cause}"
+    | .ok report =>
+      match report.env[outName]? with
+      | none => .error s!"{name}: no materialized {outName}"
+      | some tOut =>
+          if DenseTensor.approxEq tOut expected then .ok ()
+          else .error
+            s!"{name}: got {repr tOut.shape}/{repr tOut.data}, expected {repr expected.shape}/{repr expected.data}"
+
+/-- Compile a source scan, run it, and assert only the materialized output SHAPE (a structural
+    acceptance check for shapes whose legacy value is not one of the pinned §0.4 numbers). -/
+def t4shape (name : String) (sched : ScheduledProgram) (inputs : HashMap String DenseTensor)
+    (outName : String) (expectedShape : List Nat) : Except String Unit :=
+  match prepareEvalPlan sched (InputSignature.ofDenseInputs inputs) with
+  | .error e => .error s!"{name}: expected acceptance, got {render e.cause}"
+  | .ok p =>
+    match runPreparedDense p inputs with
+    | .error f => .error s!"{name}: run failed: {repr f.cause}"
+    | .ok report =>
+      match report.env[outName]? with
+      | none => .error s!"{name}: no materialized {outName}"
+      | some tOut =>
+          if tOut.shape == expectedShape then .ok ()
+          else .error s!"{name}: got shape {repr tOut.shape}, expected {repr expectedShape}"
+
+/-! ### Fixture 4 — leading-axis pointwise scratch (value; = OracleFixtureSeed.fixture1)
+`S[i,0]:=X[i]`; scratch `T[i]:=relu(S[i,l]·K[i])`; `S[i,l+1]:=T[i]`, `X=[-1,2]`, `K=[-2,3]`. -/
+def p4i : AxisSpec := ⟨"i", 4141, .real⟩
+def p4l : AxisSpec := ⟨"l", 4142, .nat⟩
+def leadingPointwiseScratch : ScheduledProgram :=
+  { decls := [.iter p4l 3]
+  , stmts := [.scan "S" [p4l]
+      [.assign "S" [.free p4i, .iterAt p4l 0] (t4rhs "X" [.axis p4i])]
+      [ .assign "T" [.free p4i]
+          (t4rhs2 "S" [.axis p4i, .axis p4l] "K" [.axis p4i] (.pointwise .relu))
+      , .assign "S" [.free p4i, .iterNext p4l] (t4rhs "T" [.axis p4i]) ]
+      false]
+  , env := {}, extNames := {"X", "K"}
+  , explicitSizes := ({} : HashMap UID Nat).insert p4l.uid 3 }
+def leadingPointwiseScratchInputs : HashMap String DenseTensor :=
+  (({} : HashMap String DenseTensor).insert "X" ⟨[2], #[-1, 2]⟩).insert "K" ⟨[2], #[-2, 3]⟩
+def leadingPointwiseScratchCheck : Except String Unit :=
+  t4run "T4.4 leadingPointwiseScratch" leadingPointwiseScratch leadingPointwiseScratchInputs "S"
+    ⟨[2, 3], #[-1, 2, 0, 2, 6, 18]⟩
+run_cmd match leadingPointwiseScratchCheck with | .ok _ => pure () | .error m => throwError m
+
+/-! ### Fixtures 2 and 5 — interleaved axiswise (value; = OracleFixtureSeed.fixture2)
+`S[l+1, i., m+1] := normalize(S[l,i,m])` over two iteration axes; marker `.freeNorm i` at LHS index 1,
+strictly between iteration slots 0 and 2. `X=[1,3]`, both extents 3. The marker's non-leading LHS
+position makes this the retained-axis-mapping locator (Task 1 mutation 2). -/
+def p2l : AxisSpec := ⟨"l", 4121, .nat⟩
+def p2i : AxisSpec := ⟨"i", 4122, .real⟩
+def p2m : AxisSpec := ⟨"m", 4123, .nat⟩
+def interleavedAxiswise : ScheduledProgram :=
+  { decls := [.iter p2l 3, .iter p2m 3]
+  , stmts := [.scan "S" [p2l, p2m]
+      [.assign "S" [.iterAt p2l 0, .free p2i, .iterAt p2m 0] (t4rhs "X" [.axis p2i])]
+      [.assign "S" [.iterNext p2l, .freeNorm p2i, .iterNext p2m]
+        (t4rhs "S" [.axis p2l, .axis p2i, .axis p2m] (.axiswise .normalize none))]
+      false]
+  , env := {}, extNames := {"X"}
+  , explicitSizes := (({} : HashMap UID Nat).insert p2l.uid 3).insert p2m.uid 3 }
+def interleavedAxiswiseInputs : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "X" ⟨[2], #[1, 3]⟩
+def interleavedAxiswiseCheck : Except String Unit :=
+  t4run "T4.2/5 interleavedAxiswise" interleavedAxiswise interleavedAxiswiseInputs "S"
+    ⟨[3, 2, 3], #[1, 0, 0, 3, 0, 0, 0, 0.25, 0, 0, 0.75, 0, 0, 0, 0.25, 0, 0, 0.75]⟩
+run_cmd match interleavedAxiswiseCheck with | .ok _ => pure () | .error m => throwError m
+
+/-! ### Fixture 11 — pointwise nonlinear base, linear recurrence (value; = OracleFixtureSeed.fixture4)
+base `S[i,0] := relu(X[i])`, recurrence `S[i,l+1] := S[i,l]·A[i]`, `X=[-2,3]`, `A=[2,-1]`. The base's
+preactivation (`relu(X)`) and result differ on the negative input: this is the
+preactivation-vs-result locator (Task 1 mutation 1). -/
+def p11i : AxisSpec := ⟨"i", 4111, .real⟩
+def p11l : AxisSpec := ⟨"l", 4112, .nat⟩
+def nonlinearBase : ScheduledProgram :=
+  { decls := [.iter p11l 3]
+  , stmts := [.scan "S" [p11l]
+      [.assign "S" [.free p11i, .iterAt p11l 0] (t4rhs "X" [.axis p11i] (.pointwise .relu))]
+      [.assign "S" [.free p11i, .iterNext p11l]
+        (t4rhs2 "S" [.axis p11i, .axis p11l] "A" [.axis p11i])]
+      false]
+  , env := {}, extNames := {"X", "A"}
+  , explicitSizes := ({} : HashMap UID Nat).insert p11l.uid 3 }
+def nonlinearBaseInputs : HashMap String DenseTensor :=
+  (({} : HashMap String DenseTensor).insert "X" ⟨[2], #[-2, 3]⟩).insert "A" ⟨[2], #[2, -1]⟩
+def nonlinearBaseCheck : Except String Unit :=
+  t4run "T4.11 nonlinearBase" nonlinearBase nonlinearBaseInputs "S" ⟨[2, 3], #[0, 0, 0, 3, -3, 3]⟩
+run_cmd match nonlinearBaseCheck with | .ok _ => pure () | .error m => throwError m
+
+/-! ### Fixture 1 — softmax recurrence, marker FIRST (local axis position 0; structural) -/
+def p1l : AxisSpec := ⟨"l", 4101, .nat⟩
+def p1j : AxisSpec := ⟨"j", 4102, .real⟩
+def softmaxMarkerFirst : ScheduledProgram :=
+  { decls := [.iter p1l 3]
+  , stmts := [.scan "S" [p1l]
+      [.assign "S" [.iterAt p1l 0, .free p1j] (t4rhs "X" [.axis p1j])]
+      [.assign "S" [.iterNext p1l, .freeNorm p1j]
+        (t4rhs "S" [.axis p1l, .axis p1j] (.axiswise .softmax none))]
+      false]
+  , env := {}, extNames := {"X"}
+  , explicitSizes := ({} : HashMap UID Nat).insert p1l.uid 3 }
+def softmaxMarkerFirstInputs : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "X" ⟨[2], #[1, 3]⟩
+def softmaxMarkerFirstCheck : Except String Unit :=
+  t4shape "T4.1 softmaxMarkerFirst" softmaxMarkerFirst softmaxMarkerFirstInputs "S" [3, 2]
+run_cmd match softmaxMarkerFirstCheck with | .ok _ => pure () | .error m => throwError m
+
+/-! ### Fixture 3 — normalize recurrence, marker LAST among several local axes (structural) -/
+def p3l : AxisSpec := ⟨"l", 4131, .nat⟩
+def p3a : AxisSpec := ⟨"a", 4132, .real⟩
+def p3j : AxisSpec := ⟨"j", 4133, .real⟩
+def normalizeMarkerLast : ScheduledProgram :=
+  { decls := [.iter p3l 3]
+  , stmts := [.scan "S" [p3l]
+      [.assign "S" [.iterAt p3l 0, .free p3a, .free p3j] (t4rhs "X" [.axis p3a, .axis p3j])]
+      [.assign "S" [.iterNext p3l, .free p3a, .freeNorm p3j]
+        (t4rhs "S" [.axis p3l, .axis p3a, .axis p3j] (.axiswise .normalize none))]
+      false]
+  , env := {}, extNames := {"X"}
+  , explicitSizes := ({} : HashMap UID Nat).insert p3l.uid 3 }
+def normalizeMarkerLastInputs : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "X" ⟨[2, 2], #[1, 3, 2, 4]⟩
+def normalizeMarkerLastCheck : Except String Unit :=
+  t4shape "T4.3 normalizeMarkerLast" normalizeMarkerLast normalizeMarkerLastInputs "S" [3, 2, 2]
+run_cmd match normalizeMarkerLastCheck with | .ok _ => pure () | .error m => throwError m
+
+/-! ### Fixture 12 — nonlinear base over a 2-D free face plus point override (structural) -/
+def p12i : AxisSpec := ⟨"i", 4151, .real⟩
+def p12j : AxisSpec := ⟨"j", 4152, .real⟩
+def p12l : AxisSpec := ⟨"l", 4153, .nat⟩
+def nonlinearBaseFace : ScheduledProgram :=
+  { decls := [.iter p12l 3]
+  , stmts := [.scan "S" [p12l]
+      [.assign "S" [.free p12i, .free p12j, .iterAt p12l 0]
+        (t4rhs "X" [.axis p12i, .axis p12j] (.pointwise .relu))]
+      [.assign "S" [.free p12i, .free p12j, .iterNext p12l]
+        (t4rhs2 "S" [.axis p12i, .axis p12j, .axis p12l] "A" [.axis p12i])]
+      false]
+  , env := {}, extNames := {"X", "A"}
+  , explicitSizes := ({} : HashMap UID Nat).insert p12l.uid 3 }
+def nonlinearBaseFaceInputs : HashMap String DenseTensor :=
+  (({} : HashMap String DenseTensor).insert "X" ⟨[2, 2], #[-1, 2, 3, -4]⟩).insert "A" ⟨[2], #[1, 1]⟩
+def nonlinearBaseFaceCheck : Except String Unit :=
+  t4shape "T4.12 nonlinearBaseFace" nonlinearBaseFace nonlinearBaseFaceInputs "S" [2, 2, 3]
+run_cmd match nonlinearBaseFaceCheck with | .ok _ => pure () | .error m => throwError m
+
+/-! ### Fixture 13 — axiswise nonlinear base, linear recurrence (structural) -/
+def p13i : AxisSpec := ⟨"i", 4161, .real⟩
+def p13l : AxisSpec := ⟨"l", 4162, .nat⟩
+def axiswiseBase : ScheduledProgram :=
+  { decls := [.iter p13l 3]
+  , stmts := [.scan "S" [p13l]
+      [.assign "S" [.freeNorm p13i, .iterAt p13l 0] (t4rhs "X" [.axis p13i] (.axiswise .normalize none))]
+      [.assign "S" [.free p13i, .iterNext p13l]
+        (t4rhs2 "S" [.axis p13i, .axis p13l] "A" [.axis p13i])]
+      false]
+  , env := {}, extNames := {"X", "A"}
+  , explicitSizes := ({} : HashMap UID Nat).insert p13l.uid 3 }
+def axiswiseBaseInputs : HashMap String DenseTensor :=
+  (({} : HashMap String DenseTensor).insert "X" ⟨[2], #[1, 3]⟩).insert "A" ⟨[2], #[2, -1]⟩
+def axiswiseBaseCheck : Except String Unit :=
+  t4shape "T4.13 axiswiseBase" axiswiseBase axiswiseBaseInputs "S" [2, 3]
+run_cmd match axiswiseBaseCheck with | .ok _ => pure () | .error m => throwError m
 
 end LeanNCD.Eval.Plan.ScanCompileTest

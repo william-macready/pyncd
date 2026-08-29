@@ -535,3 +535,56 @@ targeted `ScanCompileTest`/`ScanTest` build results confirming unchanged pre-exi
 new fixture's observed value, all 13 mutation cycles observed-not-predicted, the oracle
 import-boundary re-check, and both whole-branch review adjudications. Cite identifiers, never
 `File.lean:NNN` line numbers.)*
+
+### Task 1 — executed 2026-08-28
+
+**Production change** (`LeanNCD/Eval/Plan/Compile.lean`): `checkNonlinScanBlock` and
+`checkScanLHSSlot` now admit `.pointwise`/`.axiswise`/`.freeNorm` (identical to the top-level
+`checkNonlinTopLevel`/`checkLHSSlot`); `resolveNonlinAxis` moved above `compileScan` and a new
+`retainedAxisPos` helper added beside it; `compileScan`'s base and step phases generalized to resolve
+each statement's `Nonlin`, allocate every destination from the current signature count, emit one
+`.assign` block step for identity and a preactivation `.assign` + one `.pointwise`/`.axiswise` step
+for a nonlinear statement, bind a scratch/state name to its post-nonlinearity **result** slot, and
+publish block outputs explicitly (`baseResultSlots` / `stepOutputs`) — the `Array.range` base-output
+derivation is gone. Phase-5 causality iterates the preactivation assigns (`stepAssignPlans`).
+
+**Test changes.** `CompileTest.lean`: two scan-block preflight fixtures flipped from
+`errOf … == unsupportedNonlin` to `isOk` (the shapes are now admitted). `ScanCompileTest.lean`:
+the three now-admitted shapes (`.freeNorm`, `.pointwise`, `.axiswise`) removed from the section-2.2
+preflight-rejection enumeration and their orphaned `badFreeNorm`/`badNonlin` helpers deleted; the
+precedence fixture reworded to a still-rejected shape (`badAffineLhs`); a new Part 4 adds the eight
+accept-path fixtures. `DifferentialTest.lean`: corpus assertion rebaselined 9/4/0/4 → 13/0/4.
+
+**Corpus.** Observed `total=17 accepted=13 unsupportedNonlin=0 unsupportedAgg=4`. Because the sweep
+short-circuits on the first parity disagreement, `accepted=13` also asserts the four newly-admitted
+`template2` ReLU-scan cases match `evalScheduled` byte-for-byte.
+
+**Accept-path fixture values** (compiled checked-Plan output via `runPreparedDense`, all observed):
+
+| Fixture | Program | Observed |
+|---|---|---|
+| 4 | leading pointwise scratch | `S` `[2,3]` = `[-1,2,0,2,6,18]` |
+| 2/5 | interleaved axiswise | `S` `[3,2,3]` = `[1,0,0,3,0,0,0,.25,0,0,.75,0,0,0,.25,0,0,.75]` |
+| 11 | pointwise nonlinear base | `S` `[2,3]` = `[0,0,0,3,-3,3]` |
+| 1 | softmax marker-first | accepted; `S` shape `[3,2]` |
+| 3 | normalize marker-last | accepted; `S` shape `[3,2,2]` |
+| 12 | nonlinear base 2-D face | accepted; `S` shape `[2,2,3]` |
+| 13 | axiswise nonlinear base | accepted; `S` shape `[2,3]` |
+
+Fixtures 4, 2/5, 11 match `OracleFixtureSeed`'s legacy values exactly.
+
+**Mutation cycles** (production mutation → observed fail in the named fixture → restore → observed
+pass; all observed, not predicted):
+
+| # | Mutation | Observed failure |
+|---|---|---|
+| 1 | base `.pointwise` publishes `preSlot` not the result slot | only `T4.11` fails: `got [-2,-4,-8,3,-3,3]` vs `[0,0,0,3,-3,3]` (raw `X` propagated, not `relu(X)`) |
+| 2 | drop `retainedAxisPos` (use raw all-slots index) | `T4.2/5`, `T4.1`, `T4.3` fail `invalidPlan/scan` (axisPos out of range); `T4.13` correctly unaffected (its marker is genuinely at position 0) |
+| 3 | step outputs from statement count (`Array.range`) | `T4.4` fails `writeSourceNotBlockOutput`; also breaks the pre-existing `C/scratch` fixture, confirming the invariant is broadly load-bearing |
+
+Restore after each cycle verified byte-clean against the pre-mutation copy.
+
+**Gates** (all green): targeted `CompileTest ScanCompileTest ScanTest DifferentialTest` 8,525;
+`Eval.PropertyOracle.ScanOracle Eval.PropertyOracleScanTest` 8,505; `Tests` 8,657; `LeanNCD` 8,543.
+The `Tests` and oracle counts are unchanged from §0.1, and `ScanCompileTest`/`ScanTest` build with
+every pre-existing fixture value unchanged — Task 1's donor-free safety net.

@@ -66,13 +66,17 @@ def checkNonlinTopLevel (_stmtName : String) : Nonlin → Except CapabilityError
   | .pointwise _ => pure ()
   | .axiswise .. => pure ()
 
-/-- Scan-block (`base`/`recur`) statement admission: unchanged from Wave C — `.pointwise`/
-    `.axiswise` inside a scan block stay rejected, since Thread 4's compilation (Task 3) only
-    targets `prepareEvalPlan`'s `.plain` branch, not `compileScan`. -/
-def checkNonlinScanBlock (stmtName : String) : Nonlin → Except CapabilityError Unit
+/-- Scan-block (`base`/`recur`) statement admission (Thread 4 Task 4): `.pointwise`/`.axiswise` are
+    now structurally admitted, identically to `checkNonlinTopLevel` above — `compileScan` compiles a
+    nonlinear base/recurrence statement into the same `.assign → .pointwise`/`.axiswise` block-step
+    chain the plain path builds. Whether the slot list agrees with the `Nonlin` (a `·`-marked axis
+    present exactly once, iff `.axiswise` and unmasked) is again NOT checked here — `resolveNonlinAxis`
+    at compile tier does it, once, against the whole slot list, and a masked `.axiswise` is rejected
+    there (`maskedAxiswiseNotSupported`), not at this preflight. -/
+def checkNonlinScanBlock (_stmtName : String) : Nonlin → Except CapabilityError Unit
   | .identity    => pure ()
-  | .pointwise _ => throw (.unsupportedNonlin s!"{stmtName}: pointwise nonlinearity")
-  | .axiswise .. => throw (.unsupportedNonlin s!"{stmtName}: axiswise nonlinearity")
+  | .pointwise _ => pure ()
+  | .axiswise .. => pure ()
 
 def checkAggOp (stmtName : String) : AggOp → Except CapabilityError Unit
   | .sum => pure ()
@@ -98,10 +102,9 @@ def checkStmt : Stmt → Except CapabilityError Unit
 
 /-- The scan-context analogue of `checkLHSSlot`: inside a `.scan` node's own `base`/`recur` lists,
     `.iterAt`/`.iterNext` are the very constructors that MAKE it a scan, so both are admitted here.
-    `.affine` stays rejected exactly as for a plain statement. `.freeNorm` is now (Thread 4) treated
-    DIFFERENTLY from a plain statement: `checkLHSSlot` admits a top-level `.freeNorm`, but this
-    function still rejects it inside a scan block — nonlinearity compilation (Task 3) only targets
-    `prepareEvalPlan`'s `.plain` branch, not `compileScan`. Ported from F0's
+    `.affine` stays rejected exactly as for a plain statement. `.freeNorm` is now (Thread 4 Task 4)
+    admitted here too, identically to the top-level `checkLHSSlot`: a `·`-marked axis is a real
+    output axis on a nonlinear scan statement, which `compileScan` now lowers. Ported from F0's
     verified `PlanContract.WaveF.classifyScanLHSSlot` (`test/Eval/Plan/ScanContractTest.lean`), same
     constructor order, `Classification` replaced by a real `CapabilityError`.
 
@@ -111,24 +114,25 @@ def checkStmt : Stmt → Except CapabilityError Unit
     decided by `checkScanStmt`'s constructor, not by inspecting the slot. -/
 def checkScanLHSSlot (stmtName : String) : LHSSlot → Except CapabilityError Unit
   | .free _     => pure ()
-  | .freeNorm a => throw (.unsupportedLhsSlot s!"{stmtName}: freeNorm {a.name}")
+  | .freeNorm _ => pure ()
   | .iterAt ..  => pure ()
   | .iterNext _ => pure ()
   | .affine _   => throw (.scatterOrAffineLhs s!"{stmtName}: affine LHS slot")
 
 /-- One base/recurrence statement's capability check: the same sub-construct order `checkStmt`
     applies to a plain assignment (LHS slots, then `agg`, then `nonlin`, then factors), with
-    `checkScanLHSSlot` in place of `checkLHSSlot`. The `nonlin` sub-check itself now (Thread 4)
-    differs from a plain statement's: `checkNonlinScanBlock` still rejects `.pointwise`/`.axiswise`
-    inside a scan block, where `checkStmt`'s `checkNonlinTopLevel` admits both — `agg` and factor
-    checking stay identical. Ported from F0's `classifyScanBlockStmt`.
+    `checkScanLHSSlot` in place of `checkLHSSlot`. The `nonlin` sub-check `checkNonlinScanBlock` now
+    (Thread 4 Task 4) admits `.pointwise`/`.axiswise` identically to `checkStmt`'s
+    `checkNonlinTopLevel` — `agg` and factor checking stay identical. Ported from F0's
+    `classifyScanBlockStmt`.
 
     **Necessary, not sufficient** — and deliberately so. Like F0's classifier, this is applied
     uniformly to `base ++ recur`, so it does NOT check that a base statement uses `.iterAt` rather
     than `.iterNext` (or vice versa for recurrence), nor that each state has exactly one all-axis
-    `.iterNext` result. Those need the scan's context-axis list and, for extents/geometry, inferred
-    sizes — neither available at preflight — so they belong to `compileScan`'s `ScanCompileError`
-    tier further down this file, not here. -/
+    `.iterNext` result, nor that a `·`-marked axis agrees with the statement's `Nonlin`. Those need
+    the scan's context-axis list and, for extents/geometry, inferred sizes — neither available at
+    preflight — so they belong to `compileScan`'s `ScanCompileError`/`resolveNonlinAxis` tier further
+    down this file, not here. -/
 def checkScanBlockStmt : Stmt → Except CapabilityError Unit
   | .assign nm slots rhs => do
       for s in slots do checkScanLHSSlot nm s
@@ -360,6 +364,39 @@ private def residualizeAssignment (sizes : HashMap UID Nat) (warnings : List Eva
   return { contextShape, destinationSlot := destSlot, outputShape, terms := termsAcc
           , algebra := admittedAlgebra }
 
+/-- Resolve which output-slot position (if any) is the axiswise reduction axis, checking it
+    agrees with the statement's own `Nonlin`. `slots` is the statement's LHS slot list — the
+    returned position indexes directly into it. For a plain statement it also indexes 1:1 into the
+    `outputShape`/`retainedUids` a `.free`/`.freeNorm`-only slot list produces (`freeUidOrFail` drops
+    no slots); for a scan statement, whose slot list also carries `.iterAt`/`.iterNext`, the caller
+    remaps this all-slots index to the output-axis index with `retainedAxisPos`. -/
+def resolveNonlinAxis (stmtName : String) (nonlin : Nonlin) (slots : List LHSSlot) :
+    Except NonlinCompileError (Option Nat) := do
+  let normPositions : List Nat :=
+    slots.zipIdx.filterMap (fun (sl, i) => match sl with | .freeNorm _ => some i | _ => none)
+  match nonlin with
+  | .axiswise _ (some _) => throw (.maskedAxiswiseNotSupported stmtName)
+  | .axiswise _ none =>
+      match normPositions with
+      | [] => throw (.noMarkedReductionAxis stmtName)
+      | [p] => pure (some p)
+      | p1 :: p2 :: _ => throw (.multipleMarkedReductionAxes stmtName p1 p2)
+  | .identity | .pointwise _ =>
+      match normPositions with
+      | [] => pure none
+      | p :: _ => throw (.unmarkedReductionAxis stmtName p)
+
+/-- The output-axis position of the LHS slot at all-slots index `p`: the count of preceding retained
+    (`.free`/`.freeNorm`) slots, excluding `.iterAt`/`.iterNext` iteration slots. This is what maps
+    the all-slots index `resolveNonlinAxis` returns into the axis position of the local output tensor
+    (which only carries the retained axes), for a scan statement whose LHS interleaves iteration and
+    retained slots. Rehearsed over leading/interleaved/trailing marker positions in the Task-4
+    admission seed (`papers/implementation_seeds/nonlinearity_route_fragments/nonlinear_scan_admission/NonlinearScanAdmissionSeed.lean`). -/
+def retainedAxisPos (slots : List LHSSlot) (p : Nat) : Nat :=
+  (slots.take p).countP (fun sl => match sl with
+    | .free _ | .freeNorm _ => true
+    | _ => false)
+
 /-- One compiled source scan: the raw scan node, plus the persistent states' source names and
     complete-history shapes in persistent-state order. The two arrays are returned rather than the
     outer signature/name-environment updates themselves because publication is the CALLER's policy
@@ -570,30 +607,61 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
     (fun m i => m.insert (baseCapNames.getD i "") i) {}
   let mut baseSigs : Array TensorSignature := baseCapNames.map (fun rn =>
     outerSigs.getD (slotOf.getD rn 0) { shape := #[], dtype := .f64 })
-  let mut baseAssigns : Array AssignPlan := #[]
+  let mut baseSteps : Array BlockStep := #[]
+  let mut baseResultSlots : Array TensorSlot := #[]
   let mut baseWrites : Array StateWriteMap := #[]
   for h : bi in [0 : baseParts.size] do
     let (nm, slots, rhs) := baseParts[bi]
     let si := (stateNames.findIdx? (· == nm)).getD 0
+    -- a `·`-marked axis is a real output axis (Task 4), so `.freeNorm` joins `.free` in the
+    -- output-tensor basis exactly as the top-level `freeUidOrFail` does.
     let outputUids : List UID :=
-      slots.filterMap (fun sl => match sl with | .free a => some a.uid | _ => none)
+      slots.filterMap (fun sl => match sl with
+        | .free a | .freeNorm a => some a.uid | _ => none)
     let outputShape ←
       liftShape warnings (outputUids.toArray.mapM (resolveSizeOrFail sizes (.assignOutput nm)))
     -- §4.4: the `.iterAt` literals seed RHS evaluation as pins, not just write placement.
     let pins : HashMap UID Int := slots.foldl (fun m sl => match sl with
       | .iterAt a lit => m.insert a.uid lit | _ => m) ({} : HashMap UID Int)
-    let destSlot := baseInputCount + bi
+    -- resolve the `Nonlin` against the whole LHS slot list before allocating anything, so a
+    -- rejection (masked axiswise, mismatched marker) throws before any slot/step is built.
+    let axisPos? ← liftNonlin warnings (resolveNonlinAxis nm rhs.nonlin slots)
+    let preSlot := baseSigs.size
     let sigsNow := baseSigs
     let resolveSource (name : String) : TensorSlot × Array Nat :=
       let s := baseLocalOf.getD name 0
       (s, (sigsNow.getD s { shape := #[], dtype := .f64 }).shape)
     let plan ← residualizeAssignment sizes warnings nm [] #[] outputUids pins resolveSource
-      destSlot outputShape rhs.body.terms
+      preSlot outputShape rhs.body.terms
     baseSigs := baseSigs.push { shape := outputShape, dtype := .f64 }
-    baseAssigns := baseAssigns.push plan
+    -- identity emits one `.assign` publishing under `preSlot`; a nonlinear statement emits the
+    -- preactivation `.assign` (internal `preSlot`) followed by one `.pointwise`/`.axiswise` step
+    -- into a freshly allocated result slot. Only the result slot is ever written or published.
+    let resultSlot : TensorSlot ← match rhs.nonlin with
+      | .identity => do
+          baseSteps := baseSteps.push (.assign plan)
+          pure preSlot
+      | .pointwise pf => do
+          let resSlot := baseSigs.size
+          baseSigs := baseSigs.push { shape := outputShape, dtype := .f64 }
+          baseSteps := baseSteps.push (.assign plan)
+          baseSteps := baseSteps.push (.pointwise
+            { sourceSlot := preSlot, destinationSlot := resSlot, shape := outputShape, fn := pf })
+          pure resSlot
+      | .axiswise fn _ => do
+          -- `axisPos?` is `some _` here (`resolveNonlinAxis`'s `.axiswise _ none` branch never
+          -- returns `none`); `retainedAxisPos` maps its all-slots index to the output-axis index.
+          let axisPos := retainedAxisPos slots (axisPos?.getD 0)
+          let resSlot := baseSigs.size
+          baseSigs := baseSigs.push { shape := outputShape, dtype := .f64 }
+          baseSteps := baseSteps.push (.assign plan)
+          baseSteps := baseSteps.push (.axiswise
+            { sourceSlot := preSlot, destinationSlot := resSlot, shape := outputShape, axisPos, fn })
+          pure resSlot
+    baseResultSlots := baseResultSlots.push resultSlot
     -- write placement: a pin becomes an all-zero coefficient row with the literal as bias; a free
-    -- position becomes a single `1` at its own output position. Domain is the output slice alone
-    -- (base writes carry no context), so every row is `outputShape.size` wide.
+    -- position (`.free` or `.freeNorm`) becomes a single `1` at its own output position. Domain is
+    -- the output slice alone (base writes carry no context), so every row is `outputShape.size` wide.
     let width := outputShape.size
     let mut coeffs : Array (Array Int) := #[]
     let mut biasArr : Array Int := #[]
@@ -603,16 +671,16 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
       | .iterAt _ lit =>
           coeffs := coeffs.push (Array.replicate width 0)
           biasArr := biasArr.push lit
-      | .free _ =>
+      | .free _ | .freeNorm _ =>
           coeffs := coeffs.push ((Array.range width).map (fun p => if p == freeSeen then 1 else 0))
           biasArr := biasArr.push 0
           freeSeen := freeSeen + 1
-      | .freeNorm _ | .iterNext _ | .affine _ =>
-          -- unreachable: Phase 1 rejected `.iterNext` here and preflight rejected `.freeNorm`/
+      | .iterNext _ | .affine _ =>
+          -- unreachable: Phase 1 rejected `.iterNext` in a base block, and preflight rejected
           -- `.affine` in any scan block.
           liftCapability warnings (throw (.unsupportedLhsSlot s!"{nm}: base LHS slot"))
     baseWrites := baseWrites.push
-      { outputSlot := destSlot, stateIndex := si, map := { coeffs, bias := biasArr } }
+      { outputSlot := resultSlot, stateIndex := si, map := { coeffs, bias := biasArr } }
   ---------------------------------------------------------------------------
   -- Phase 4: step block — captures, assignments in source order, one write per state.
   ---------------------------------------------------------------------------
@@ -646,30 +714,56 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
   let mut stepSigs : Array TensorSignature := stepCapNames.map (fun (_, src) => match src with
     | .state si => { shape := stateShapes.getD si #[], dtype := .f64 }
     | .external outerSlot => outerSigs.getD outerSlot { shape := #[], dtype := .f64 })
-  let mut stepAssigns : Array AssignPlan := #[]
+  let mut stepSteps : Array BlockStep := #[]
+  let mut stepAssignPlans : Array AssignPlan := #[]
   let mut resultSlotOf : HashMap String TensorSlot := {}
   let mut scratchSlotOf : HashMap String TensorSlot := {}
   for h : ri in [0 : recurParts.size] do
     let (nm, slots, rhs) := recurParts[ri]
     let outputUids : List UID :=
-      slots.filterMap (fun sl => match sl with | .free a => some a.uid | _ => none)
+      slots.filterMap (fun sl => match sl with
+        | .free a | .freeNorm a => some a.uid | _ => none)
     let outputShape ←
       liftShape warnings (outputUids.toArray.mapM (resolveSizeOrFail stepSizes (.assignOutput nm)))
-    let destSlot := stepInputCount + ri
+    let axisPos? ← liftNonlin warnings (resolveNonlinAxis nm rhs.nonlin slots)
+    let preSlot := stepSigs.size
     let sigsNow := stepSigs
     let scratchNow := scratchSlotOf
     let resolveSource (name : String) : TensorSlot × Array Nat :=
       -- captures first: a state's capture slot can never be displaced by a later scratch binding.
+      -- a scratch resolves to its RESULT slot (post-nonlinearity), so a consumer reads the
+      -- nonlinear output, never the preactivation.
       let s := match stepCaptureOf[name]? with
         | some c => c
         | none => scratchNow.getD name 0
       (s, (sigsNow.getD s { shape := #[], dtype := .f64 }).shape)
     let plan ← residualizeAssignment stepSizes warnings nm ctxUids stepExtents outputUids
-      ({} : HashMap UID Int) resolveSource destSlot outputShape rhs.body.terms
+      ({} : HashMap UID Int) resolveSource preSlot outputShape rhs.body.terms
     stepSigs := stepSigs.push { shape := outputShape, dtype := .f64 }
-    stepAssigns := stepAssigns.push plan
-    if stateNames.contains nm then resultSlotOf := resultSlotOf.insert nm destSlot
-    else scratchSlotOf := scratchSlotOf.insert nm destSlot
+    stepAssignPlans := stepAssignPlans.push plan
+    -- one `.assign` for identity (published under `preSlot`); preactivation `.assign` plus one
+    -- nonlinear step for pointwise/axiswise (published under a freshly allocated result slot).
+    let resultSlot : TensorSlot ← match rhs.nonlin with
+      | .identity => do
+          stepSteps := stepSteps.push (.assign plan)
+          pure preSlot
+      | .pointwise pf => do
+          let resSlot := stepSigs.size
+          stepSigs := stepSigs.push { shape := outputShape, dtype := .f64 }
+          stepSteps := stepSteps.push (.assign plan)
+          stepSteps := stepSteps.push (.pointwise
+            { sourceSlot := preSlot, destinationSlot := resSlot, shape := outputShape, fn := pf })
+          pure resSlot
+      | .axiswise fn _ => do
+          let axisPos := retainedAxisPos slots (axisPos?.getD 0)
+          let resSlot := stepSigs.size
+          stepSigs := stepSigs.push { shape := outputShape, dtype := .f64 }
+          stepSteps := stepSteps.push (.assign plan)
+          stepSteps := stepSteps.push (.axiswise
+            { sourceSlot := preSlot, destinationSlot := resSlot, shape := outputShape, axisPos, fn })
+          pure resSlot
+    if stateNames.contains nm then resultSlotOf := resultSlotOf.insert nm resultSlot
+    else scratchSlotOf := scratchSlotOf.insert nm resultSlot
   -- step writes, in persistent-state order: `.iterNext` on context axis `i` becomes the canonical
   -- `context[i] + 1` row (the `+1` is built HERE — `checkScanPlan` recognizes it, it does not
   -- supply it); every other dimension passes its output position through.
@@ -691,14 +785,14 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
           let i := (ctxIndexOf a.uid).getD 0
           coeffs := coeffs.push ((Array.range width).map (fun p => if p == i then 1 else 0))
           biasArr := biasArr.push 1
-      | .free _ =>
+      | .free _ | .freeNorm _ =>
           coeffs := coeffs.push ((Array.range width).map
             (fun p => if p == numAxes + freeSeen then 1 else 0))
           biasArr := biasArr.push 0
           freeSeen := freeSeen + 1
-      | .freeNorm _ | .iterAt .. | .affine _ =>
+      | .iterAt .. | .affine _ =>
           -- unreachable: Phase 1 established that a state result's slots are `.iterNext` on every
-          -- context axis and `.free` elsewhere.
+          -- context axis and `.free`/`.freeNorm` elsewhere.
           liftCapability warnings (throw (.unsupportedLhsSlot s!"{st}: state-result LHS slot"))
     stepWrites := stepWrites.push
       { outputSlot := outSlot, stateIndex := si, map := { coeffs, bias := biasArr } }
@@ -737,8 +831,8 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
             throw (scanErr warnings (.baseWritesOverlap scanName st mine[a].1 mine[b].1))
   let capturedState : Array (Option Nat) := stepCapNames.map (fun (_, src) => match src with
     | .state si => some si | .external _ => none)
-  for h : ri in [0 : stepAssigns.size] do
-    let a := stepAssigns[ri]
+  for h : ri in [0 : stepAssignPlans.size] do
+    let a := stepAssignPlans[ri]
     for h2 : ti in [0 : a.terms.size] do
       let t := a.terms[ti]
       for h3 : fi in [0 : t.factors.size] do
@@ -759,15 +853,15 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
     { states
     , baseBlock :=
         { contextShape := #[], tensorSigs := baseSigs, inputs := Array.range baseInputCount
-        , steps := baseAssigns.map .assign
-        , outputs := (Array.range baseParts.size).map (· + baseInputCount) }
+        , steps := baseSteps
+        , outputs := baseResultSlots }
     , baseCaptures := (Array.range baseInputCount).map (fun i =>
         { inputSlot := i, source := .external (slotOf.getD (baseCapNames.getD i "") 0) })
     , baseWrites
     , stepBlock :=
         { contextShape := stepExtents, tensorSigs := stepSigs
         , inputs := Array.range stepInputCount
-        , steps := stepAssigns.map .assign, outputs := stepOutputs }
+        , steps := stepSteps, outputs := stepOutputs }
     , stepCaptures := (Array.range stepInputCount).map (fun i =>
         { inputSlot := i, source := (stepCapNames.getD i ("", .state 0)).2 })
     , stepWrites
@@ -776,26 +870,6 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
     , boundaryPolicy := .zeroThenBaseOverlay
     , snapshotPolicy := .immutablePreStep }
   return { raw, stateNames, stateShapes }
-
-/-- Resolve which output-slot position (if any) is the axiswise reduction axis, checking it
-    agrees with the statement's own `Nonlin`. `slots` is the statement's LHS slot list — the
-    returned position indexes directly into it, and 1:1 into the `outputShape`/`retainedUids` a
-    `.free`/`.freeNorm`-only slot list produces, since `freeUidOrFail` drops no slots. -/
-def resolveNonlinAxis (stmtName : String) (nonlin : Nonlin) (slots : List LHSSlot) :
-    Except NonlinCompileError (Option Nat) := do
-  let normPositions : List Nat :=
-    slots.zipIdx.filterMap (fun (sl, i) => match sl with | .freeNorm _ => some i | _ => none)
-  match nonlin with
-  | .axiswise _ (some _) => throw (.maskedAxiswiseNotSupported stmtName)
-  | .axiswise _ none =>
-      match normPositions with
-      | [] => throw (.noMarkedReductionAxis stmtName)
-      | [p] => pure (some p)
-      | p1 :: p2 :: _ => throw (.multipleMarkedReductionAxes stmtName p1 p2)
-  | .identity | .pointwise _ =>
-      match normPositions with
-      | [] => pure none
-      | p :: _ => throw (.unmarkedReductionAxis stmtName p)
 
 def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
     Except PlanCompileFailure PreparedPlan := do

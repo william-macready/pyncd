@@ -112,23 +112,23 @@ def acceptedSched : ScheduledProgram :=
           { body := { terms := [{ factors := [.read "X" []] }] }
           , nonlin := .axiswise .softmax none })] })
 
--- scan-block `.pointwise`/`.axiswise` STILL reject via `unsupportedNonlin` (unchanged from Wave C):
--- Thread 4's Task 3 compiles only `prepareEvalPlan`'s `.plain` branch, not `compileScan` — a
--- nonlin-bearing base/recurrence statement is exactly as rejected as before.
-#guard errOf (capabilityPreflight
+-- scan-block `.pointwise`/`.axiswise` are now ADMITTED at preflight (Thread 4 Task 4), identically
+-- to the top-level `.plain` cases above: `compileScan` compiles a nonlinear base/recurrence
+-- statement into the same `.assign → .pointwise`/`.axiswise` block-step chain. A masked `.axiswise`
+-- is likewise admitted here and rejected later at `resolveNonlinAxis`
+-- (`NonlinCompileError.maskedAxiswiseNotSupported`), not at preflight.
+#guard isOk (capabilityPreflight
     { acceptedSched with stmts :=
         [.scan "s" [⟨"l", 5, .nat⟩] [] [.assign "Y" [.iterNext ⟨"l", 5, .nat⟩]
           { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .pointwise .relu }]
           false] })
-  == some (.unsupportedNonlin "Y: pointwise nonlinearity")
 
-#guard errOf (capabilityPreflight
+#guard isOk (capabilityPreflight
     { acceptedSched with stmts :=
         [.scan "s" [⟨"l", 5, .nat⟩] [] [.assign "Y" [.iterNext ⟨"l", 5, .nat⟩]
           { body := { terms := [{ factors := [.read "X" []] }] }
           , nonlin := .axiswise .softmax none }]
           false] })
-  == some (.unsupportedNonlin "Y: axiswise nonlinearity")
 
 -- maskOrPredicate: an iverson factor
 #guard errOf (capabilityPreflight

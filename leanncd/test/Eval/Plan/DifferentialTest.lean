@@ -772,16 +772,19 @@ private def scanCorpusSplit : Except String (Nat × Nat × Nat × Nat) :=
 
 -- The counts pinned by F4's plan §0, independently re-derived from `ScanGen.lean`'s six templates:
 -- 4×template1 + 4×template2 + 2×template3 + 2×template4 + 4×template5 + 1×template6 = 17, of which
--- template 2's four are `unsupportedNonlin` and template 5's four are `unsupportedAgg`, leaving 9
--- admitted. Per the plan's §12.2 stop condition, an accepted case that stops compiling — or stops
--- matching `evalScheduled` — is an F0 contract defect to REPORT, not a number to re-baseline here.
+-- template 5's four are `unsupportedAgg`, leaving 13 admitted. Thread 4 Task 4 admitted nonlinear
+-- scan sources, so template 2's four ReLU-scan cases moved from `unsupportedNonlin` to `accepted`
+-- (9→13; nonlin 4→0). The sweep short-circuits on the first parity disagreement, so `accepted=13`
+-- also asserts those four now match `evalScheduled` byte-for-byte. Per the plan's stop condition, an
+-- accepted case that stops compiling — or stops matching `evalScheduled` — is a contract defect to
+-- REPORT, not a number to re-baseline here.
 run_cmd do
   match scanCorpusSplit with
   | .error msg => throwError s!"SCAN CORPUS GATE FAILED:\n{msg}"
   | .ok (total, accepted, nonlin, agg) =>
       dbg_trace s!"DifferentialTest scan corpus: total={total} accepted={accepted} \
 unsupportedNonlin={nonlin} unsupportedAgg={agg}"
-      unless total == 17 && accepted == 9 && nonlin == 4 && agg == 4 do
+      unless total == 17 && accepted == 13 && nonlin == 0 && agg == 4 do
         throwError s!"scan corpus split counts changed: total={total} accepted={accepted} \
 nonlin={nonlin} agg={agg}"
 
