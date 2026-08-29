@@ -609,10 +609,12 @@ Phase 1 now matches `.free a | .freeNorm a`, not `.free a` alone — a `.freeNor
 context axis on a scratch was the one silently-ignored cell of the retained-vs-context audit. Sibling
 cells are covered elsewhere and were left unchanged: a state result's `.freeNorm` on a context axis
 duplicates that axis's mandatory `.iterNext` and is caught by `firstDuplicateUID`/`partialAdvancingResult`;
-a base's stray free/freeNorm context axis is rejected downstream by `checkScanPlan`'s base-write
-geometry check (a base must pin each advancing dim). This gap was invisible to Task 1's diff review —
-the guard it needed to change was unchanged code — and surfaced exactly as the skill predicts, via
-fixture 17.
+a base statement, by contrast, may **legitimately** leave a context axis free (a boundary face
+spanning the full history extent, e.g. `dp[0, c]` — master §2.7, exercised by `multiBaseSched`), so a
+free/freeNorm context axis is admitted there by design — only a base write anchored nowhere at the
+boundary is rejected (Phase 5's `baseWriteNotAtBoundary`). This gap was invisible to Task 1's diff
+review — the guard it needed to change was unchanged code — and surfaced exactly as the skill
+predicts, via fixture 17.
 
 **Test changes** (`ScanCompileTest.lean` Part 5): eleven fixtures. Publication/dependency 6–10 assert
 compiled values and structure via `runPreparedDense`/`scanAt`; negatives 14–19 assert the named
@@ -687,3 +689,33 @@ Restore after each cycle verified byte-clean.
 
 **Gates** (all green): targeted 8,525; oracle 8,505; `Tests` 8,657; `LeanNCD` 8,543 — all unchanged
 from §0.1 except the corpus flip. Total slice mutation cycles: 3 + 6 + 3 = **12**.
+
+### Whole-branch reviews — 2026-08-29 (slice closure)
+
+Two independent reviewers, different model families and lenses, over the full `5fab993..HEAD` diff
+with instructions to read the unchanged bodies a per-task diff cannot show.
+
+- **Compiler lens** (Claude Opus 4.8): allocation/axis-mapping/diagnostics/causality. **No issues.**
+  Verified the four-guard causality argument holds for compiler output (a nonlinear statement's
+  captured-state reads live in the preactivation `.assign`, which `checkScanPlan`'s causality loop
+  walks, so a look-ahead/deep-history read cannot launder past the `.pointwise`/`.axiswise` node,
+  which reads only the non-capture `preSlot`); sequential two-slot allocation never desyncs
+  `baseWrites`/`stepWrites`/`stepOutputs`/`capturedState`; `retainedAxisPos` is always in range and
+  never indexes an iteration axis; the normative diagnostic order and the block-step `causalityFailure`
+  index survive; and no reducing `AxiswiseFn` constructor exists, so `commitWrite`'s shape-preservation
+  dependency holds.
+- **Publication / oracle lens** (GPT-5.6): publication policy, retained-vs-context guard completeness,
+  oracle independence/non-vacuity, Dense semantics, replacement negatives. **No soundness issues.**
+  It produced the explicit case × class table for the retained-vs-context guard family and found **no
+  silently-ignored cell**: scratch rejects both `.free`/`.freeNorm` context axes
+  (`contextAxisAsFreeOutput`), a state result rejects them
+  (`duplicateAxisInLhs`/`partialAdvancingResult`), and a base **legitimately admits** a free context
+  axis as a boundary face (by design; only a non-boundary base write rejects, via
+  `baseWriteNotAtBoundary`/`writeGeometryNotAdmitted`).
+
+**One finding, adjudicated (doc-accuracy, not code):** the publication reviewer's table showed the
+Task 2 execution record and the scratch-guard code comment over-claimed that a base free/freeNorm
+context axis is *rejected* downstream — it is in fact admitted as a valid boundary face. Corrected in
+both `Compile.lean`'s comment and this record; no code change (no soundness hole). This is the
+whole-branch tier doing exactly its job — catching an inaccurate prose claim about unchanged code that
+per-task review accepted.

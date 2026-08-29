@@ -521,12 +521,14 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
         | .free a | .freeNorm a =>
             -- a scratch's retained axis (`.free` or, since Task 4, a `.freeNorm` marker) may never
             -- name a scan context axis. `.free` was already guarded; the `.freeNorm` case was the one
-            -- silently-ignored cell of the retained-vs-context audit. The sibling cells are covered
-            -- without a `.freeNorm`-specific guard: a state result carries `.iterNext` on every
-            -- context axis, so a `.freeNorm` on one duplicates it (`firstDuplicateUID`) or leaves it
-            -- non-advancing (`partialAdvancingResult`); a base's stray free/freeNorm context axis is
-            -- rejected downstream by `checkScanPlan`'s base-write geometry check (a base must pin each
-            -- advancing dim, so a free one is not admitted).
+            -- silently-ignored cell of the retained-vs-context audit. The sibling roles need no
+            -- `.freeNorm`-specific guard, but for DIFFERENT reasons: a state result carries `.iterNext`
+            -- on every context axis, so a `.freeNorm` on one duplicates it (`firstDuplicateUID`) or
+            -- leaves it non-advancing (`partialAdvancingResult`) — forbidden; a base statement, by
+            -- contrast, may LEGITIMATELY leave a context axis free (a boundary face spanning the full
+            -- history extent, e.g. `dp[0, c]` — see §2.7 and `multiBaseSched`), so a free/freeNorm
+            -- context axis is admitted there by design, not a case needing rejection (only a base
+            -- write anchored nowhere at the boundary is rejected, in Phase 5).
             if (ctxIndexOf a.uid).isSome then
               throw (scanErr warnings (.contextAxisAsFreeOutput scanName nm ri a.uid))
         | _ => pure ()
