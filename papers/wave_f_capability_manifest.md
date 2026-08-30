@@ -133,10 +133,16 @@ The curated `enumScanCases` generator (`test/Eval/PropertyOracle/ScanGen.lean`) 
 `ScanCompileTest.lean` fixtures together give the real, counted evidence for Law 1 over scans
 (`test/Eval/Plan/DifferentialTest.lean`):
 
-- **17** generated cases total, split **9 accepted / 4 `unsupportedNonlin` / 4 `unsupportedAgg`** —
+- **17** generated cases total, split **13 accepted / 0 `unsupportedNonlin` / 4 `unsupportedAgg`** —
   pinned by `DifferentialTest.lean`'s `scanCorpusSplit` `run_cmd` assertion (`total == 17 && accepted
-  == 9 && nonlin == 4 && agg == 4`), which fails loudly rather than silently re-baselining if the
+  == 13 && nonlin == 0 && agg == 4`), which fails loudly rather than silently re-baselining if the
   accept/reject boundary ever shifts.
+
+  *The split was **9 / 4 / 4** when Wave F wrote this manifest. The nonlinearity plan's Task 4
+  (`nonlinearity_split_pair_direct_lowering.md` §3.6) taught `compileScan` to admit and lower
+  pointwise/axiswise scan sources, moving all four `unsupportedNonlin` cases into the accepted
+  column. The boundary this bullet describes shifted exactly as the assertion was designed to
+  catch — the count above is the post-Task-4 one, re-observed on this branch.*
 - **21** total scan programs pass the three-way differential gate: **12 hand-written** (the nine
   acceptance schedules covering `ScanCompileTest.lean`'s twelve lettered shapes, a two-warning
   fixture, a whole-surface alpha-rename, and a scan over an axis sharing a NAME but not a UID with a

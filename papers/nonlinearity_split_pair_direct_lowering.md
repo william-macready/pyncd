@@ -2068,6 +2068,34 @@ independence/Dense semantics.
 > `envEq`) exist at the exact locations the mutation records name. The updated scan gate residual
 > remains exactly the two documented false positives.
 >
+> **Addendum (2026-08-30) — the same blind spot had two more instances, both now fixed.** The
+> `Eval/AGENTS.md` miss above was not unique. A controller check ran the search that would have
+> caught it — grepping the stale *values* (`9 accepted`, `accepted == 9`, `unsupportedNonlin=4`)
+> repo-wide rather than the vocabulary — and found two more active reference documents, neither in
+> §3.7's Files list:
+>
+> - **`papers/wave_f_capability_manifest.md`** quoted `scanCorpusSplit`'s assertion **verbatim** as
+>   `total == 17 && accepted == 9 && nonlin == 4 && agg == 4` and presented the 9/4/4 split as
+>   current, under a header insisting "Every number below was counted from an actual run on this
+>   branch." Genuinely stale; corrected to 13/0/4 with a dated note explaining that Task 4 moved the
+>   four cases and that the boundary shifted exactly as the assertion was designed to catch.
+> - **`papers/wave_f_scanplan_proposal.md`**'s F5 completion record. Substantively this *is* history
+>   — the paragraph opens "re-derived independently this task" and its `lake build` figure is the
+>   F5-era 8,652 — but nothing at the corpus sentence said so, and a reader landing mid-paragraph
+>   would take 9/4/4 as current. Given a dated qualifier rather than a rewrite, matching the
+>   past-tense framing the sweep already used elsewhere in that file.
+>
+> Everything else the value-grep surfaced is dated slice plans and drafts, correct as history —
+> the sweep confirmed rather than expanded.
+>
+> **Why three safeguards all missed the same thing.** The audit's marker `rg`, the sweep's
+> end-to-end re-read, and §3.7's Files list share one blind spot: **a document nobody looked at is
+> invisible to all three.** The re-read only covers documents already in the edit set, and the Files
+> list predates Tasks 3-4. The cheap countermeasure is the one used here — **grep the stale values,
+> not the vocabulary.** Values are what go stale, and unlike prose they are exactly greppable. A
+> future capability-boundary change should run a value-grep across the whole repository before
+> declaring a documentation sweep complete.
+>
 > A separate lesson from this round: my Lens-2 background reviewer hung mid-investigation (~10h
 > elapsed, no turns emitted, no response to a cancel message). Falling back to running the review
 > directly, per CLAUDE.md's "do the task yourself" guidance, is what surfaced the `Eval/AGENTS.md`

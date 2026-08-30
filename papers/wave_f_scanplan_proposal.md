@@ -2015,7 +2015,11 @@ unchanged in count by Tasks 1-3 (three constructors gained fields; none was adde
 curated scan corpus (`enumScanCases`, `DifferentialTest.lean`'s `scanCorpusSplit`): **17** total, split
 **9 accepted / 4 `unsupportedNonlin` / 4 `unsupportedAgg`**, pinned by that file's own `run_cmd`
 assertion, re-observed in this task's own build run (`DifferentialTest scan corpus: total=17
-accepted=9 unsupportedNonlin=4 unsupportedAgg=4`). The three-way differential gate: **21** total scan
+accepted=9 unsupportedNonlin=4 unsupportedAgg=4`). *[Wave F-era counts. The nonlinearity plan's
+Task 4 later moved all four `unsupportedNonlin` cases into the accepted column; the assertion now
+reads `total == 17 && accepted == 13 && nonlin == 0 && agg == 4`, and the `lake build` figure below
+is likewise the pre-Task-4 baseline. The numbers in this paragraph are what F5 observed, not what
+the tree says today.]* The three-way differential gate: **21** total scan
 programs (12 hand-written + 9 accepted generated) agree bit-for-bit across the compiled checked path,
 `evalScheduled`, and the independent unrolling. The pre-existing Wave C scan-free sweep remains
 **3,832** entries, 100% accepted, 100% bit-exact — unchanged by this slice. Full `lake build`, run by
