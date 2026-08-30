@@ -108,6 +108,21 @@ from Z," diff or grep the actual functions/files it describes.** This applies to
 architecture prose and to any completion-record template the plan hands to a later task —
 templated prose is not exempt just because it looks like documentation rather than code.
 
+**The failure under all of these is one shape: a plan restates an inherited claim instead of
+re-measuring it.** Every claim in a plan or completion record has a provenance — it was either
+*measured this slice* (a fixture run, a diff, a grep, a `lake build` count) or *inherited and
+restated* from an earlier slice's prose. A measured claim carries its own evidence; an inherited one
+carries only the fact that it was true once. A claim's decay risk is set by that provenance, not by
+its format — and the inherited ones are what go stale, because the slice that would have re-measured
+them is exactly the one that instead copied them forward. Two shapes of this have each cost a review
+tier: a stale gaps bullet and a stale capability value in a document nobody reopened. They are the
+*same* defect in different clothing, which is why no single safeguard caught both. The durable rule
+is one question, asked of provenance rather than wording: **at each slice boundary, re-measure every
+claim you inherit before restating it — ask "is this still true?" of anything the plan carries
+forward rather than counts.** The two tactics below are how that question gets asked for the two
+shapes seen so far; a third shape will need its own tactic, but the question is the part that
+transfers.
+
 **A carried-forward "known gaps" list is a prose claim about code, and decays like one — but no
 safeguard is pointed at it.** A completion record's gaps list gets copied slice to slice because it
 reads as settled fact. It is not: the next slice's whole job is often to close one of those gaps,
@@ -124,6 +139,21 @@ sat in a gaps bullet. It was caught only when someone asked "do we actually stil
 per entry is usually enough — the axiswise one dissolved in a single spike printing the compiled
 block's step kinds. Restating an inherited gap without re-deriving it is the same defect as
 restating a measured claim at a later commit, and it hides better.
+
+**The other shape of the same defect hides in a document's *location*, not its format — and the
+tactic against it is: grep the stale values, not the vocabulary.** A gaps bullet hides because no
+tool is pointed at its format; a stale capability value hides because it sits in a document not in
+the edit set, not in any plan's Files list — invisible to an end-to-end re-read (which only covers
+documents you already opened) and to a marker-`rg` audit (whose vocabulary you have to think to
+include). The nonlinearity plan's §3.7 sweep declared itself complete while
+`papers/wave_f_capability_manifest.md` still asserted the pre-Task-4 split verbatim
+(`total == 17 && accepted == 9 && nonlin == 4`), under a header insisting every number below was
+counted from an actual run. What surfaced it was grepping the stale *values* themselves
+(`9 accepted`, `accepted == 9`, `unsupportedNonlin=4`) across the whole repository: a value is
+exactly what goes stale and, unlike prose, is exactly greppable, so the search finds every document
+regardless of whether anyone remembered it existed. **Rule: before declaring any capability-boundary
+documentation sweep complete, value-grep the whole repo for the numbers the boundary just moved —
+every document, not only the ones you edited.**
 
 **Verify every path the plan names, with `ls`, at authoring time.** The same argument one more
 level down: a plan cites files, and a wrong path costs the implementer a judgment call and a
@@ -292,6 +322,12 @@ someone still has the context to act on it.
       re-derived against the tree before being restated. A gap list reads as
       settled fact and is aimed at by none of the usual safeguards, so an entry
       the previous slice closed will otherwise propagate indefinitely.
+- [ ] For any slice that moves a capability boundary: before its documentation
+      sweep is declared complete, value-grep the whole repo for the numbers that
+      moved (`9 accepted`, `accepted == 9`, …) — the stale values, not the
+      surrounding vocabulary — so a stale claim in a document not in the edit set
+      is caught. A re-read covers only documents already opened and a marker-`rg`
+      audit only vocabulary you thought to list; both miss a document nobody reopened.
 - [ ] No `File.lean:NNN` line numbers in any text the plan tells a task to ship
       (completion records, AGENTS.md rows, design-doc edits) — identifiers only,
       since a later code commit in the same slice invalidates line numbers.
