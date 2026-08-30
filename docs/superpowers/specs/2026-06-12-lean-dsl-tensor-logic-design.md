@@ -439,9 +439,12 @@ TLProgram
   →[unifyAxes]     CanonicalProgram      -- axis UIDs are canonical (pure)
   →[lowerArith]    LoweredProgram        -- no const/affine IdxExprs in reads; Scatter fill initialized
   →[finalizeScans] ScanProgram           -- no bare iterAt/iterNext LHSSlots
-  →[splitNonlins]  LinearProgram         -- no nonlinearity in RHSExpr.nonlin
   →[schedule]      ScheduledProgram      -- live stmts in reverse-topological order
-  →[route]         ThreadedComposed
+  →[route]         ThreadedComposed      -- private physicalizeForRoute expands each nonlinear plain
+                                          --   statement into a producer/consumer pair before the
+                                          --   unchanged routeCore runs; the former splitNonlins
+                                          --   phase (`Pipeline/Lowering.lean`) survives only as
+                                          --   a regression-only helper, off the production chain
 ```
 
 | Phase | What it does | Key Lean idiom |
@@ -451,7 +454,7 @@ TLProgram
 | **unifyAxes** | Collects `(uid_a, uid_b)` pairs from positional matching of axis occurrences across stmts; computes transitive closure; returns a canonical-representative map and `CanonicalProgram` with all UIDs normalized. **Pure function** — the full program is known statically, so no incremental update loop is needed. | `HashMap UID UID` (transitive closure); pure |
 | **lowerArith** | `IdxExpr.const n` reads → fresh `Slice` intermediate stmt; `IdxExpr.affine` reads → fresh `Reindex` intermediate stmt; affine `LHSSlot`s → `Scatter` (injectivity checked; `ScatterOpts.reduce = some "sum"` required for non-injective maps). Scatter with a non-zero fill value also emits a fill-initialization stmt before the scatter write. All auxiliary stmts are **emitted into a writer**, not registered into a global. | `WriterT (DList Stmt) (StateT UID Id)` |
 | **finalizeScans** | Groups stmts by name + iteration axis UID; pairs `iterAt`/`iterNext` slots into `Scan` nodes; stmts sharing the same iteration-axis UID across different tensor names are grouped into a coupled `Scan` (`n_states > 1`). `Stmt.recurMorphism` stubs supply the step morphism directly, bypassing equation lowering for that scan state. Forward references resolve without pre-declaration because the full stmt list is available. Validates: every `recur_step` has a matching `base_case`; no `l+1` on the RHS for the same iteration axis. | Pure `List Stmt → List ScanStmt` |
-| **splitNonlins** | Lifts `relu`/`softmax`/`normalize` out of `RHSExpr.nonlin` into a separate composed step, emitting the new step into the writer. Masked softmax also emits an alignment-permutation step computed from the `where` mask. | `WriterT (DList ScanStmt) Id` |
+| **splitNonlins** *(regression-only helper, off the production chain)* | Historically lifted `relu`/`softmax`/`normalize` out of `RHSExpr.nonlin` into a separate composed step. `compileToScheduled` no longer runs it; the schedule is logical and one statement per source statement, and the pre-activation / nonlinearity separation now happens privately inside `route` (`Pipeline/RouteFragments.lean` `physicalizeForRoute`) or inside `prepareEvalPlan` as a two-step `assign → pointwise/axiswise` chain. The definition is retained in `Pipeline/Lowering.lean` so regression comparators can still run the old lift; new code should not schedule it. | `WriterT (DList ScanStmt) Id` — regression path only |
 | **schedule** | Backward reachability BFS from the output name simultaneously determines liveness (DCE) and produces a valid reverse-topological order. Two passes in Python; one in Lean because the BFS visit order is already a reverse topo order. | Pure `String → List ScanStmt → List ScanStmt` |
 | **route** | For each stmt: detects contracted axes (axes appearing in a `ProdTerm` but absent from the LHS), builds a `Broadcasted` morphism (using ∃/∧ contraction for predicate-typed outputs per `DeclEnv`, Σ otherwise). Assigns each external input and produced intermediate an index slot; builds `ThreadedComposed.routing` and `n_external`. Automatic associative-scan detection (pure syntactic check on recurrence `IdxExpr`) selects `ScanAffine` where applicable. | Pure `List ScanStmt → DeclEnv → Context → ThreadedComposed` |
 

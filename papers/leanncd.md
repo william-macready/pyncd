@@ -1275,8 +1275,8 @@ inductive AxisKind
 -- generator minted in Stage 2 (§7.2). The real/nat tag is the §2.3 DType of coordinates along
 -- the axis (fixing the assembled array's `ArrayType.dtype`). The softmax/normalize reduction
 -- axis is NO LONGER an AxisKind: it is marked on the output slot (`LHSSlot.freeNorm`, below) and
--- consumed by the evaluator / `splitNonlins` (§14.5) directly — a per-statement property, not an
--- intrinsic axis kind (the same axis can be a softmax axis in one stmt and a contraction in another).
+-- consumed by `route`'s physicalization / `prepareEvalPlan` directly (§14.5) — a per-statement property,
+-- not an intrinsic axis kind (the same axis can be a softmax axis in one stmt and a contraction in another).
 
 structure AxisSpec where
   name : String
@@ -1634,12 +1634,11 @@ structure ScanProgram where
   extNames : Finset String
   ctx      : Context AxisSpec
 
-structure LinearProgram where
-  decls    : List Decl
-  stmts    : List ScanStmt             -- no nonlinearity in RHSExpr.nonlin (split into BrBase ops)
-  env      : DeclEnv
-  extNames : Finset String
-  ctx      : Context AxisSpec
+/-- Deprecated compatibility alias: `LinearProgram` is now the same structure as `ScanProgram`.
+    Nonlinearities are no longer split before scheduling — the schedule is logical and one
+    statement per source statement. Retained only so the regression-only `splitNonlins` callers
+    keep reading naturally; new code should say `ScanProgram`. -/
+abbrev LinearProgram := ScanProgram
 
 structure ScheduledProgram where
   decls    : List Decl
@@ -1698,12 +1697,15 @@ structure ThreadedComposed where
 /-- Lower a TLProgram to a ThreadedComposed morphism.
     Runs in FreshM (= EStateM CompileError ℕ, Lean core Init.Control.EStateM):
     mints fresh UIDs for synthetic intermediates and throws CompileError on
-    validation failures. Kleisli composition (>=> from Init.Core) sequences
-    the typed phases; each phase narrows the type invariant. -/
+    validation failures. `compile = compileToScheduled >>= route`: `compileToScheduled`
+    produces a LOGICAL `ScheduledProgram` (one statement per source statement, no generated
+    `%nl…` names); `route` then privately physicalizes each nonlinear plain statement into
+    a producer/consumer pair at the categorical-routing boundary (`Pipeline/RouteFragments.lean`
+    `physicalizeForRoute`) before the unchanged `routeCore` runs. The former `splitNonlins`
+    phase does not run on this chain (`Pipeline/Lowering.lean` retains it as a regression-only
+    helper). -/
 def TLProgram.compile : TLProgram → FreshM ThreadedComposed :=
-  assignUIDs >=> resolveDecls >=> checkReadRanks >=> checkDtypes
-             >=> unifyAxes >=> lowerArith
-             >=> finalizeScans >=> splitNonlins >=> schedule >=> route
+  compileToScheduled >=> route
 ```
 
 The pipeline is a typed chain; each phase boundary carries a more constrained intermediate type so that Python-comment invariants become enforced by construction:
@@ -1717,9 +1719,14 @@ TLProgram
   →[unifyAxes]      CanonicalProgram      -- axis UIDs are canonical (pure)
   →[lowerArith]     LoweredProgram        -- affine-LHS assigns reclassified to Stmt.scatter
   →[finalizeScans]  ScanProgram           -- iterAt/iterNext grouped into ScanStmt.scan nodes
-  →[splitNonlins]   LinearProgram         -- nonlinearity isolated into its own step
   →[schedule]       ScheduledProgram      -- live stmts (DCE); root = last stmt's output
   →[route]          ThreadedComposed      -- one BrBaseP per stmt; routing wires + nExternal
+                                          -- (route privately physicalizes each nonlinear plain
+                                          --  statement into a producer/consumer pair — see
+                                          --  Pipeline/RouteFragments.lean's physicalizeForRoute —
+                                          --  before the unchanged routeCore runs; the former
+                                          --  splitNonlins phase survives only as a regression-
+                                          --  only helper, off the production chain)
 ```
 
 | Phase | What it does | Key Lean idiom |
@@ -1731,7 +1738,7 @@ TLProgram
 | **unifyAxes** | The [§7.4](#74-the-seam-concrete-union-find-realizes-the-coequalizer) UID coequalizer, computed in batch. Collects the `(uid_a, uid_b)` identifications from axis occurrences sharing a name within program scope (Domingos' name-binding, [§14.2](#142-bnf-grammar)), feeds them to `Context.merge`, and applies the result with `Context.apply`. The canonical representative is the **largest UID** — the universal cocone vertex of [§7.3](#73-composition-as-pushout) — so a DSL-built morphism and a CSV-built one agree on axis identity on the nose. The whole program is known statically, so this runs once rather than incrementally (Python's `Context.append_iter`), but it is the *same* coequalizer with the *same* representative rule. | Pure (`ResolvedProgram → CanonicalProgram`); lifted to `FreshM` by `pure`; `Context` / `EqClass` ([§7.4](#74-the-seam-concrete-union-find-realizes-the-coequalizer)) |
 | **lowerArith** | `IdxExpr.const` reads → fresh `Slice` intermediate; `IdxExpr.affine` reads → fresh `Reindex` intermediate; affine `LHSSlot`s → `Scatter` (injectivity checked; `reduce = some "sum"` required for non-injective maps). Each is a `BrBase` ([§2.3](#23-br--free-category-over-broadcasted-base-morphisms)) whose `reindexings` field carries the affine map as an `St` stride matrix `StMat` — the locus where `St` lives inside `Br`. Non-zero fill prepends a fill-initialization stmt. Auxiliary stmts are stored in `LoweredProgram.auxStmts : Array Stmt`, not a global. | `FreshM`; `freshUData` mints UIDs for synthetic intermediates; auxiliary stmts in output type, not a writer monad |
 | **finalizeScans** | Groups stmts by name + iteration axis UID; pairs `iterAt`/`iterNext` slots into `Scan` nodes; stmts sharing the same iteration-axis UID across names form a coupled `Scan` (`n_states > 1`). Each `Scan` is the `cata(step)` of the `TemporalGraded` mixin ([§6.1](#61-temporalgraded--scan)) over the iteration axis as temporal object `L`; the prefix-restriction and batching laws it obeys are Props 8.7–8.8. `Stmt.recurMorphism` supplies the step morphism directly, bypassing equation lowering for that scan state. Validates: every `recur_step` has a matching `base_case`; `l+1` absent from RHS for the iteration axis. | `FreshM`; pure grouping; `throw` on missing base case |
-| **splitNonlins** | Lifts `relu`/`softmax`/`normalize` out of `RHSExpr.nonlin` into a separate composed step. These are genuinely nonlinear, so they are not reindexings (`StMat` is affine); each becomes a `BrBase` op ([§2.3](#23-br--free-category-over-broadcasted-base-morphisms)) whose numeric semantics are supplied by the Algebra functor `F : C → V` into the target actegory ([§8](#8-algebras-and-construct)). For `softmax`/`normalize` the reduction dimension is the output slot marked `m.` (`LHSSlot.freeNorm`, [§14.3](#143-abstract-syntax)); masked variants emit an alignment-permutation step computed from the `where` mask. Stmts with `agg = .max` (`maxreduce`) have `nonlin = identity` by construction, so `splitNonlins` is a no-op for them; the `agg` field passes through unchanged to `route`. | `FreshM`; `freshUData` mints UIDs for nonlin step intermediates |
+| **splitNonlins** *(regression-only helper, off the production chain)* | Historically lifted `relu`/`softmax`/`normalize` out of `RHSExpr.nonlin` into a separate composed step. `compileToScheduled` no longer runs it — the schedule is logical and one statement per source statement (`Pipeline/Lowering.lean`), and the pre-activation / nonlinearity separation now happens privately inside `route` (`Pipeline/RouteFragments.lean` `physicalizeForRoute`) or inside `prepareEvalPlan` (`Eval/Plan/Compile.lean`, two-step `assign → pointwise/axiswise`). The definition is retained so regression comparators can still run the old lift; new code should not schedule it. Stmts with `agg = .max` (`maxreduce`) have `nonlin = identity` by construction, so the old lift was a no-op on them. | `FreshM`; `freshUData` — regression path only |
 | **schedule** | Backward reachability BFS from the output name simultaneously determines liveness (DCE) and produces a valid reverse-topological order. Two passes in Python; one here because the BFS visit order is already a reverse topo order. | Pure (`String → List ScanStmt → List ScanStmt`); lifted to `FreshM` by `pure` |
 | **route** | Detects contracted axes (present in a `ProdTerm` but absent from the LHS) and builds one `BrBase` ([§2.3](#23-br--free-category-over-broadcasted-base-morphisms)) per stmt,·  carrying the `tensor`/`predicate` tag from `DeclEnv`. The contraction *arithmetic* is not fixed here but at evaluation, by the Algebra's value semiring `R` ([§8](#8-algebras-and-construct)): `R = ℝ` (×, then Σ) for `tensor` outputs, `R = Bool` (∧, then ∃) for `predicate` outputs — the ∃/∧-vs-Σ split is exactly that choice of `R`. `agg = .max` stmts are assigned `op="maxreduce"` (overriding the default `"contract"` for assign stmts); the reduction `(×, max, −∞·)` is then selected at eval time. *Note: this is not the tropical semiring, but supports max contraction often used in deep learning.* Assigns index slots; builds `ThreadedComposed.routing` and `n_external`. Automatic associative-scan detection (nonlinearity-free recurrence, flagged in `finalizeScans`) tags the routed step `op="scan_affine"` — the `ScanAffine` case where the step algebra factors through a monoid, i.e. Prop 8.7's `O(log N)` parallel prefix; a `recurMorphism` step is tagged `op="scan_pre"`. | Pure (`List ScanStmt → DeclEnv → Context → ThreadedComposed`); lifted to `FreshM` by `pure` |
 
@@ -1741,7 +1748,7 @@ TLProgram
 - **assignUIDs** binds by axis *name* (the parser emits `uid := 0` for every axis), reusing the [§14.4](#144-concrete-syntax-and-elaboration) `traverseUID`; a `freshNonZero` guard skips the sentinel `0`.
 - **resolveDecls** is purely constructive (it never throws): an undeclared read name is an *external input* (the [§14.2](#142-bnf-grammar) examples read `W`/`X`/`Q`/`K` with no `tensor` decl), so `extNames` = read-not-produced. `linear`-weight arity, shape consistency, and bias materialization are deferred (no example declares a `linear` weight); `extraStmts := #[]`. The `tensor`/`predicate` value-semiring tagging is an [§8](#8-algebras-and-construct) *semantic* concern deferred to the bridge, not carried in the presentation.
 - **lowerArith** reclassifies affine-LHS assigns to `Stmt.scatter` with a conservative injectivity guard (`overlappingScatter` on a dimension-collapsing constant coordinate); affine *reads* are left in place and folded into the consuming step's `reindexings` at `route` (which is exactly where `St` lives inside `BrBase`, [§2.3](#23-br--free-category-over-broadcasted-base-morphisms)) rather than emitted as separate Slice/Reindex steps; `auxStmts := #[]`.
-- **finalizeScans** groups by iteration-axis UID into (coupled) `Scan` nodes; a pre-pass makes each base case adopt a same-named recurrence's iteration axis (the parser emits scan base cases with a placeholder iteration-axis name); `missingBaseCase`/`causalityViolation` guards fire; a `recurMorphism` stmt becomes `ScanStmt.scanPre`, and the `isAffine` flag on `ScanStmt.scan` is set here (before `splitNonlins`) when the recurrence is nonlinearity-free.
+- **finalizeScans** groups by iteration-axis UID into (coupled) `Scan` nodes; a pre-pass makes each base case adopt a same-named recurrence's iteration axis (the parser emits scan base cases with a placeholder iteration-axis name); `missingBaseCase`/`causalityViolation` guards fire; a `recurMorphism` stmt becomes `ScanStmt.scanPre`, and the `isAffine` flag on `ScanStmt.scan` is set here when the recurrence's own `RHSExpr.nonlin` is `.identity`.
 - **schedule** does backward-reachability DCE; the output root is the last stmt's written name(s) (single-result-at-tail — a genuine multi-output-not-at-tail program would need an explicit outputs field).
 - **route** builds one `BrBaseP` per stmt with contracted axes (read axes absent from the LHS) as `tiled` weave slots; each read's affine `IdxExpr` becomes an integer-coefficient `StMatP` via an `idxToRow` translation; inputs are wired to their producer step or to the external sentinel (`step = nExternal`). The `ScanAffine` fast path is implemented as an `op` tag — `op="scan_affine"` when the recurrence is nonlinearity-free, `op="scan_pre"` for a `recurMorphism` step, else `op="scan"` (so routed scan steps carry `op ∈ {scan, scan_affine, scan_pre}`); the value-semiring contraction arithmetic is deferred to the bridge. For non-scan assign stmts, `op` is `"contract"` by default and `"maxreduce"` when `rhs.agg = .max`; for scatter stmts the op string is unaffected by `agg` (scatter uses `opts.reduce` instead).
 

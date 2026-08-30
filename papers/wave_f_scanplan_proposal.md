@@ -185,19 +185,30 @@ still cannot run; checked semantic data remains positional and backend-neutral; 
 metadata; failures remain typed; and `evalScheduled` remains an independent source-level oracle.
 Wave F adds explicit checked state-transition nodes rather than a second evaluation pipeline.
 
-The source compiler should initially admit scans only when every base and step operation is already
+The source compiler initially admitted scans only when every base and step operation was already
 representable by the checked Wave C local kernel: `f64`, real sum-product, identity nonlinearity,
-plain read factors, affine reads, and zero padding. This still covers linear recurrences, coupled
-recurrences, external per-step reads, contractions in a recurrence, and rectangular uniform
-n-dimensional scans with advancing dimensions in arbitrary tensor positions.
+plain read factors, affine reads, and zero padding. That initial scope already covered linear
+recurrences, coupled recurrences, external per-step reads, contractions in a recurrence, and
+rectangular uniform n-dimensional scans with advancing dimensions in arbitrary tensor positions.
 
-This limitation belongs to Wave C's checked `EvalPlan`, not to the broader source language or legacy
-`evalScheduled` evaluator. Source programs can contain pointwise or axiswise nonlinearities, Boolean
-factors and predicates, unary factors, and max/min aggregation, and the legacy path supports relevant
-cases; `prepareEvalPlan` currently rejects them with typed `CapabilityError` values because
-`AssignPlan` cannot represent their semantics. Wave F does not broaden that local kernel merely
-because such constructs also occur inside current scan examples. They remain orthogonal plan-kernel
-extensions and retain typed source rejection on the checked-plan path.
+> **Nonlinearity-thread update — 2026-08-29.** Thread 4 Task 4 widened this: pointwise and axiswise
+> nonlinearities in scan `base` and `recur` blocks are now **structurally admitted** by
+> `checkNonlinScanBlock` and lowered by `compileScan` (`Eval/Plan/Compile.lean`), identically to the
+> top-level admission (`Eval/AGENTS.md`). `RawPlanBlock`'s element type is `BlockStep`
+> (`.assign`/`.pointwise`/`.axiswise`), and the differential's `enumScanCases` corpus now splits
+> **13 accepted / 0 `unsupportedNonlin` / 4 `unsupportedAgg`** (was 9 / 4 / 4 at F4 authoring time;
+> `DifferentialTest.lean`). The remaining §5.1 restrictions on Boolean factors, unary factors,
+> max/min aggregation, `.scanPre`, etc. are unchanged.
+
+Historically, the "no nonlinearities" limit belonged to Wave C's checked `EvalPlan`, not to the
+broader source language or legacy `evalScheduled` evaluator. Source programs can contain pointwise or
+axiswise nonlinearities, Boolean factors and predicates, unary factors, and max/min aggregation, and
+the legacy path supports relevant cases. As of thread 4, `prepareEvalPlan` **admits and residualizes**
+pointwise and axiswise nonlinearities (both at top level and inside scan blocks); the remaining
+rejections above still return typed `CapabilityError` values because `AssignPlan` cannot represent
+their semantics. Wave F does not broaden the local kernel further merely because such constructs also
+occur inside current scan examples. They remain orthogonal plan-kernel extensions and retain typed
+source rejection on the checked-plan path.
 
 **Functionality still missing after Wave F lands.** Completing Wave F will **not** make
 `CheckedEvalPlan` feature-equivalent to the source language or `evalScheduled`. The following remain
@@ -205,13 +216,13 @@ outside the checked-plan path:
 
 | Missing capability | Consequence after Wave F |
 |---|---|
-| Pointwise and axiswise nonlinearities | Rejected in both ordinary `PlanStep.assign` operations and scan base/step blocks. |
+| Pointwise and axiswise nonlinearities | **Admitted** (thread 4): top-level (`checkNonlinTopLevel`) and inside scan `base`/`recur` blocks (`checkNonlinScanBlock`), residualized into a two-step `assign → pointwise/axiswise` chain. `unsupportedNonlin == 0` in the `DifferentialTest.lean` scan corpus. |
 | Masks, predicates, Iverson/Boolean factors, and Boolean outputs | Rejected rather than represented in `AssignPlan` or `CheckedPlanBlock`. |
 | Unary factor functions | Rejected in ordinary assignments and scans. |
 | Max/min aggregation | Only real sum-product reduction is admitted. |
 | Scatter and affine LHS writes | Wave D source semantics are not yet represented by checked `EvalPlan`. |
 | Dtypes beyond the admitted concrete `f64` mode and dynamic shapes | Still rejected at the checked-plan preparation boundary. |
-| `.scanPre`, callbacks, nonlinear scan bodies, and predicate-dispatch scan bodies | Still rejected even though `PlanStep.scan` exists. |
+| `.scanPre`, callbacks, and predicate-dispatch scan bodies | Still rejected even though `PlanStep.scan` exists (nonlinear scan bodies themselves are now admitted — see the first row). |
 | General n-dimensional recurrence geometry and arbitrary state writes | The first checked scan remains the rectangular uniform all-axis `+1` fragment. |
 | Multi-face full-boundary writes — a state initialized by two or more *free-axis* faces (the standard n-D tabulation-DP pattern, e.g. row-0-plus-column-0) — and genuinely overlapping writes with no declared precedence | Neither is achievable in this version. Both need the same missing capability: an offset/restricted-range or conflict-resolving base-write geometry beyond pin-plus-full-free. **Known defect**: an earlier draft of this proposal incorrectly claimed the first case was accepted; see the corrected limit in [§5.1](#51-accepted-source-fragment) and the narrower geometry actually admitted in [§6.5](#65-write-geometry). Only a main free-axis face plus disjoint fully-pinned point overrides is admitted here. |
 | PyTorch/JAX execution and optimized `lax.scan`, compact-carry, wavefront, or parallel-prefix lowering | Dense remains the only general checked worker delivered by Wave F. |
@@ -629,17 +640,21 @@ RawPlanBlock
   contextShape
   tensorSignatures
   inputs
-  ordered assignments
+  steps           -- Array BlockStep = .assign | .pointwise | .axiswise
   outputs
 ```
 
 Block slots are local to the block. Inputs explicitly identify what one invocation receives; outputs
 explicitly identify what the surrounding scan may commit. Scratch slots are produced and consumed
-inside the block and disappear after invocation.
+inside the block and disappear after invocation. As of thread 4 Task 4, `steps` is `Array BlockStep`
+— i.e. the block admits `.assign`, `.pointwise`, and `.axiswise` step kinds (was `Array AssignPlan`
+in the initial F3 proposal).
 
-`CheckedPlanBlock` has a private constructor. `checkPlanBlock` composes `checkAssign`, validates local
-input availability and production order, and verifies that every declared output exists with its
-declared signature.
+`CheckedPlanBlock` has a private constructor. `checkPlanBlock` composes `checkAssign`,
+`checkPointwise`, and `checkAxiswise`, validates local input availability and production order, and
+verifies that every declared output exists with its declared signature. One additional block-local
+obligation has no outer-graph analogue: a `.pointwise`/`.axiswise` step's source must be a
+preceding `.assign` step's destination.
 
 The base block has empty context. The step block's context is the scan recurrence domain
 `stepExtents`, derived from `historyExtents.map (· - 1)`. `checkScanPlan` establishes these exact
@@ -981,10 +996,14 @@ The compiler, not the worker, classifies:
 - scratch: every other recurrence-list destination; and
 - externals: reads not produced by the block and present before the outer scan node.
 
-Compiler-generated nonlinearity scratch remains rejected in the initial fragment because
-nonlinearities are not yet plan operations. When a later plan-kernel wave admits them, those values
-must remain block-local scratch; they must never become state merely because a generated name appears
-in a base list.
+Compiler-generated nonlinearity scratch is now handled directly: thread 4 Task 4 admitted
+`.pointwise` and `.axiswise` as **plan operations** (both at the outer `PlanStep` level and inside
+`RawPlanBlock`'s `BlockStep` element type), and `compileScan` residualizes each nonlinear scan-block
+statement into an internal `.assign` scratch step immediately followed by the real `.pointwise`
+or `.axiswise` step. That scratch is block-local by construction — the residualizer emits it inside
+the scan block — so it never becomes state merely because a generated name appears in a base list.
+(The initial F3 draft of this section framed nonlinearities as "not yet plan operations"; that is
+the historical, pre-Thread-4 scope.)
 
 ### 8.4 Base compilation
 
@@ -1765,20 +1784,21 @@ shared DSL accessor reused is `idxAffineForm` (`DSL/Ast.lean`), a five-construct
 `IdxExpr` used by both the compile path and the eval size solver — an AST reader, not an
 implementation under comparison; a second copy would have been duplication for its own sake.
 
-*Exact counts.* The curated `enumScanCases` corpus splits **17 total / 9 accepted / 4
+*Exact counts.* The curated `enumScanCases` corpus splits **17 total / 13 accepted / 0
 `unsupportedNonlin` / 4 `unsupportedAgg`**, pinned by `#guard` and by which capability constructor
-each rejection produces. Twenty-one scan programs pass the three-way gate: twelve hand-written (the
-nine acceptance schedules, a two-warning fixture, a whole-surface alpha-rename, and a scan over an
-axis sharing a NAME but not a UID with a free output axis) plus the nine accepted generated cases.
-All twenty-one agree bit-for-bit across `prepareEvalPlan -> runPreparedDense`, `evalScheduled`, and
-the independent unrolling; no checked-versus-legacy divergence arose, so nothing needed classifying
-under Law 1. Warnings are compared between the first two legs only: the unrolling replaces every
-scan-axis index with a literal, so which reads are STATICALLY out of extent legitimately changes
-while the values may not. Because count alone is not coverage, `DifferentialTest.lean` also asserts a
-structurally derived feature table — deep look-back and zero padding, coupled states, scratch,
-external reads, contraction, extent one, more than one scan axis, several base writes for one state,
-a non-trailing advancing dimension, more than one scan in a schedule, and a plain consumer of a
-published history — each checked against the gated schedules themselves rather than by fixture name.
+each rejection produces (was 9 accepted / 4 `unsupportedNonlin` / 4 `unsupportedAgg` at F4
+authoring time; thread 4 Task 4 admitted pointwise/axiswise scan-block nonlinearities and moved
+four cases from the rejection into the accepted column). All accepted programs pass the three-way
+gate — hand-written schedules together with the accepted generated cases — and agree bit-for-bit
+across `prepareEvalPlan -> runPreparedDense`, `evalScheduled`, and the independent unrolling; no
+checked-versus-legacy divergence arose, so nothing needed classifying under Law 1. Warnings are
+compared between the first two legs only: the unrolling replaces every scan-axis index with a
+literal, so which reads are STATICALLY out of extent legitimately changes while the values may not.
+Because count alone is not coverage, `DifferentialTest.lean` also asserts a structurally derived
+feature table — deep look-back and zero padding, coupled states, scratch, external reads,
+contraction, extent one, more than one scan axis, several base writes for one state, a non-trailing
+advancing dimension, more than one scan in a schedule, and a plain consumer of a published history
+— each checked against the gated schedules themselves rather than by fixture name.
 `ScanOracle.lean` additionally runs the two-way law (legacy versus independent unrolling) over all
 seventeen generated cases, including the eight F4 rejects, by carrying nonlinearity and aggregation
 through the rewrite unchanged. Full `lake build` green at **8,652 jobs**; the pre-existing 3,832-case

@@ -107,19 +107,28 @@ are the other statement forms.
 
 ### 3.2 The compilation pipeline
 
-`TLProgram.compile` (`LeanNCD/DSL/Compile.lean`) chains nine phases:
+`TLProgram.compile` (`LeanNCD/DSL/Compile.lean`) is `compileToScheduled >>= route`. The logical
+`compileToScheduled` chains ten phases, ending in a `ScheduledProgram` whose statement count equals
+the source's — one statement per source statement, and no generated `%nl…` names:
 
 ```
-assignUIDs → resolveDecls → checkReadRanks → checkDtypes → unifyAxes
-           → lowerArith → finalizeScans → splitNonlins → schedule → route
+assignUIDs → resolveDecls → reclassifyIterSlots → checkReadRanks → checkDtypes
+           → checkScatterNonlin → checkScatterNoScan → lowerArith
+           → finalizeScans → schedule
 ```
 
-Two phases determine the graph's shape:
+`route` then produces the routed `ThreadedComposed`. Two things determine the shape of that routed
+graph:
 
-- **`splitNonlins`** peels each nonlinearity onto its own node. Statement 1 has no nonlinearity and
-  stays as one `contract` node. Statement 2 splits into a `contract` node computing
-  `T[i,j] = W2[j,k] · H[i,k]` and a `relu` node computing `Y[i,j] = relu(T[i,j])`. Total: three
-  nodes.
+- **Nonlinearity physicalization at the `route` boundary.** `route` calls a private
+  `physicalizeForRoute` (`LeanNCD/DSL/Pipeline/RouteFragments.lean`) that expands each nonlinear
+  plain statement into a producer/consumer pair before the unchanged `routeCore` runs. Statement 1
+  has no nonlinearity and stays as one `contract` node. Statement 2 physicalizes into a `contract`
+  node computing `T[i,j] = W2[j,k] · H[i,k]` and a `relu` node computing `Y[i,j] = relu(T[i,j])`.
+  Total: three nodes. The pair is private to `route`; the logical `ScheduledProgram` that Eval
+  consumes still holds Statement 2 as one statement carrying its `relu` nonlinearity. The former
+  `splitNonlins` phase (`Lowering.lean`) survives only as a regression-only helper, off the
+  production chain.
 - **`schedule`** does dead-code elimination (backward-reachability liveness `filter`) and currently
   **preserves source order** — it does *not* yet topologically sort (despite earlier wording here).
   `realize`'s fold relies on a topological order; today that holds only because the example programs
@@ -169,7 +178,8 @@ H[i,k] := W1[k,d] · X[i,d]
 Y[i,j] := relu(W2[j,k] · H[i,k])
 ```
 
-After compilation (`splitNonlins` + `schedule` + `route`):
+After compilation (`compileToScheduled`, then `route`'s private `physicalizeForRoute` +
+`routeCore`):
 
 ```
 nExternal = 3         externals: W1 → slot 0,  X → slot 1,  W2 → slot 2
@@ -191,7 +201,7 @@ applies the nonlinearity and produces the output `Y`.
 
 | Tensor logic program | Routed DAG (`ThreadedComposed`) |
 |---|---|
-| one primitive after `splitNonlins` | one node (`BrBaseP`) |
+| one primitive after route-boundary physicalization | one node (`BrBaseP`) |
 | output + contracted axes | `degree` |
 | how a tensor sits in those axes | `inputWeaves` / `outputWeaves` |
 | affine index expression (`W1[k+1,d]`, transpose, stride) | `reindexing` (`StMat`) |

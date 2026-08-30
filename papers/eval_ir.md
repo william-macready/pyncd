@@ -272,14 +272,19 @@ Iverson predicate appears as `Factor.iverson predicate`. An axiswise mask is fou
 `Stmt` matching is applied to the statements in its base and recurrence lists instead of to a
 `ScanStmt.plain` payload.
 
-The [`splitNonlins`](#226-construction-and-producer-invariants) phase isolates a non-identity
-`RHSExpr.nonlin` into two scheduled statements: an identity-nonlinearity assignment computes the
-pre-activation into a generated `%nl...` tensor, and a second statement reads that tensor and carries
-the original nonlinearity. For axiswise operations, only the second statement retains the
-`LHSSlot.freeNorm` marker that identifies the reduction axis. Plan preparation then lowers the second
-scheduled statement to its own assignment-plus-nonlinearity pair, so one nonlinear expression in a
-compiler-produced source program currently yields three plan steps:
-`PlanStep.assign`, `PlanStep.assign`, and `PlanStep.pointwise` or `PlanStep.axiswise`.
+A source statement carrying a non-identity `RHSExpr.nonlin` is lowered into two plan steps at
+the plan-preparation boundary rather than in the compile pipeline. `compileToScheduled`
+(`Compile.lean`) emits one `ScanStmt` per source statement — no generated `%nl…` names, and no
+`splitNonlins` (the former phase survives only as a regression-only helper, off the production
+chain; `Pipeline/Lowering.lean`). The pre-activation / nonlinearity separation happens in one of
+two places: for the routed artifact, in a private `physicalizeForRoute`
+(`Pipeline/RouteFragments.lean`) at the `route` boundary; for the checked plan, in
+`prepareEvalPlan`, which lowers the source statement into an internal `PlanStep.assign` whose
+result publishes no name, immediately followed by a `PlanStep.pointwise` or `PlanStep.axiswise`
+step that publishes the statement's one materialized name. For axiswise operations, only the
+second step carries the `LHSSlot.freeNorm` marker that identifies the reduction axis. So one
+nonlinear source statement currently yields two plan steps (assign → pointwise/axiswise), and its
+appearance in the schedule is a single source-level statement.
 
 `prepareEvalPlan` lowers the following source fragment:
 
@@ -292,15 +297,20 @@ compiler-produced source program currently yields three plan steps:
   UID. A missing or duplicate marker, a marker on a non-axiswise statement, or an axiswise mask
   produces a typed `NonlinCompileError`.
 - A `ScanStmt.scan` becomes a `PlanStep.scan` when its base and recurrence statements use ordinary
-  tensor-read factors, `sum` aggregation, and identity nonlinearity. Nonlinearities and
-  `LHSSlot.freeNorm` remain unsupported inside scan blocks; a `RawPlanBlock` therefore still contains
-  `Array AssignPlan`, not general `PlanStep`s.
+  tensor-read factors, `sum` aggregation, and either identity nonlinearity or an admitted
+  pointwise/axiswise nonlinearity (Thread 4 Task 4 admits and lowers the latter through `compileScan`
+  — see `LeanNCD/Eval/Plan/Compile.lean` `checkNonlinScanBlock` and the accepted-fixture rationale in
+  `test/Eval/Plan/DifferentialTest.lean`). A `RawPlanBlock`'s element type is `BlockStep`
+  (`.assign`/`.pointwise`/`.axiswise`) with the block's `steps : Array BlockStep`
+  (`LeanNCD/Eval/Plan/RawStep.lean`), not the earlier assignment-only element type.
 
 Capability preflight returns a typed `CapabilityError` for predicate declarations and Iverson
 factors, unary factors, `max` or `min` aggregation, scatters or affine LHS writes, `scanPre` nodes,
-nonlinear scan-block statements, normalized-axis slots inside scan blocks, and scans with no
-advancing axis. Constructs rejected at this boundary do not appear in the `CheckedEvalPlan` inside
-the [`PreparedPlan`](#24-prepareevalplan-output-preparedplan).
+and scans with no advancing axis. Nonlinear scan-block statements and normalized-axis slots inside
+scan blocks are **now structurally admitted** at this boundary — Thread 4 Task 4 shifted them out
+of the rejection set — with any residual obligations reported as `ScanCompileError` instead.
+Constructs rejected at this boundary do not appear in the `CheckedEvalPlan` inside the
+[`PreparedPlan`](#24-prepareevalplan-output-preparedplan).
 
 Scan admission is narrower than capability preflight alone. The additional obligations need inferred
 sizes and lowered affine maps and therefore are reported as a `ScanCompileError` rather than a
@@ -378,8 +388,14 @@ Before constructing `ScheduledProgram`, `compileToScheduled` runs the following 
 7. `checkScatterNoScan` rejects scatter-shaped writes in scan iteration slots.
 8. `lowerArith` lowers source index arithmetic and classifies affine or diagonal writes as scatters.
 9. `finalizeScans` groups matching base and recurrence statements into `ScanStmt.scan` nodes.
-10. `splitNonlins` isolates nonlinear operations into separate statements.
-11. `schedule` topologically orders the result and rejects cyclic dataflow.
+10. `schedule` topologically orders the result and rejects cyclic dataflow.
+
+Neither the compile chain nor the resulting `ScheduledProgram` runs `splitNonlins` or introduces
+generated `%nl…` names: a source statement carrying a nonlinearity remains a single `ScanStmt` in
+the schedule, and the pre-activation / nonlinearity separation is performed only later, privately
+inside `route` (`Pipeline/RouteFragments.lean` `physicalizeForRoute`) or inside `prepareEvalPlan`.
+The former `splitNonlins` phase (`Pipeline/Lowering.lean`) survives only as a regression-only
+helper, off the production chain.
 
 Consequently, a compiler-produced `ScheduledProgram` satisfies important producer invariants:
 
@@ -493,10 +509,13 @@ Its three fields separate semantic computation from the source-facing boundary:
   agree. For a compiler-produced plan, `materializedNames` has one entry per persistent scheduled
   output in schedule order. An identity statement publishes its `PlanStep.assign` destination. A
   pointwise or axiswise statement publishes only its trailing nonlinear step's destination; the
-  internal assignment introduced by plan compilation has no name. A generated `%nl...` statement
-  created earlier by `splitNonlins` is itself a scheduled source-level statement and therefore does
-  have a materialized entry. A scan publishes one entry per persistent state, so a coupled scan
-  contributes several entries from a single step. Block-local scan scratch is never an entry.
+  internal assignment introduced by plan compilation has no name. `compileToScheduled` emits no
+  generated `%nl…` names — the pre-activation is minted only as the internal `PlanStep.assign`
+  inside `prepareEvalPlan`'s two-step chain (`Eval/Plan/Compile.lean`) and publishes no name; the
+  regression-only `splitNonlins` helper (`Pipeline/Lowering.lean`) is the only remaining source of a
+  `%nl…` name, and it does not run on the production chain. A scan publishes one entry per
+  persistent state, so a coupled scan contributes several entries from a single step. Block-local
+  scan scratch is never an entry.
   Repeated materialized names are retained so the final publication wins.
 - `warnings` preserves nonfatal warnings produced during static shape inference and preparation.
 

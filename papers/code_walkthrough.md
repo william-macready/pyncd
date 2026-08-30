@@ -375,7 +375,7 @@ What the declarations contribute:
 - `Decl.axis` pins the size of `l` to 4. The pipeline stores this in [`explicitSizes`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Types.lean#L65-L66) so the evaluator and bridge can use concrete dimensions without further inference.
 - `Decl.linear` marks `A` as a *linear* (weight/parameter) tensor rather than a plain data tensor. This affects how `resolveDecls` classifies inputs: `A` will appear in the [`DeclEnv`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Types.lean#L10-L10) with its declared rank, so `checkReadRanks` can validate that every read of `A` uses exactly 2 indices.
 
-The `LHSSlot.iterNext` slot on `l` is what tells the pipeline this is a recurrence — the output is the value of `S` at step `l+1`. The read of `S[j, l]` in the RHS refers to the value at the *current* step. `finalizeScans` later pairs these into a [`ScanStmt.scan`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Types.lean#L17-L18) structure, and `splitNonlins` separates the linear contraction from the `relu` into two scheduled steps.
+The `LHSSlot.iterNext` slot on `l` is what tells the pipeline this is a recurrence — the output is the value of `S` at step `l+1`. The read of `S[j, l]` in the RHS refers to the value at the *current* step. `finalizeScans` later pairs these into a [`ScanStmt.scan`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Types.lean#L17-L18) structure. The linear-contraction/`relu` separation is not performed as a schedule-time phase: [`compileToScheduled`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Compile.lean#L43-L45) emits one `ScanStmt` per source statement, and the split into a pre-activation node and a `relu` node happens privately at the `route` boundary (`Pipeline/RouteFragments.lean`'s `physicalizeForRoute`) or, for the checked plan, inside `prepareEvalPlan`'s two-step `assign → pointwise/axiswise` chain.
 
 ### 4.4 Stage 3: compile entrypoint and macro
 
@@ -407,14 +407,17 @@ Pipeline chain (exact order):
 
 1. [`assignUIDs`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Structural.lean#L87-L98)
 2. [`resolveDecls`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Structural.lean#L126-L136)
-3. [`checkReadRanks`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Structural.lean#L184-L209)
-4. [`checkDtypes`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Structural.lean#L228-L249)
-5. [`unifyAxes`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Structural.lean#L265-L305)
-6. [`lowerArith`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Structural.lean#L307-L403)
-7. [`finalizeScans`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Structural.lean#L404-L453)
-8. [`splitNonlins`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Lowering.lean#L59-L63)
-9. [`schedule`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Lowering.lean#L150-L166)
-10. [`route`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Lowering.lean#L583-L588)
+3. [`reclassifyIterSlots`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Structural.lean#L644-L644)
+4. [`checkReadRanks`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Structural.lean#L184-L209)
+5. [`checkDtypes`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Structural.lean#L228-L249)
+6. [`checkScatterNonlin`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Structural.lean#L777-L777)
+7. [`checkScatterNoScan`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Structural.lean#L789-L801)
+8. [`lowerArith`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Structural.lean#L307-L403)
+9. [`finalizeScans`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Structural.lean#L404-L453)
+10. [`schedule`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Lowering.lean#L150-L166)
+11. [`route`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Lowering.lean#L583-L588) (private preprocessing: [`physicalizeForRoute`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/RouteFragments.lean) expands each nonlinear plain statement into a producer/consumer pair before the unchanged [`routeCore`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Lowering.lean#L573-L579) runs)
+
+The historical [`splitNonlins`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Lowering.lean) phase — which formerly ran between `finalizeScans` and `schedule` — survives as a regression-only helper in `Pipeline/Lowering.lean` and is not on the production chain.
 
 **What is `FreshM`?**
 
@@ -448,25 +451,26 @@ abbrev FreshM := EStateM CompileError Nat
 def TLProgram.compile (p : TLProgram) : FreshM ThreadedComposed := do
   let a ← assignUIDs p
   let b ← resolveDecls a
+  let b ← reclassifyIterSlots b
   let b ← checkReadRanks b
   let b ← checkDtypes b
-  let c ← unifyAxes b
-  let d ← lowerArith c
+  let b ← checkScatterNonlin b
+  let b ← checkScatterNoScan b
+  let d ← lowerArith b
   let e ← finalizeScans d
-  let f ← splitNonlins e
-  let g ← schedule f
+  let g ← schedule e
   route g
 ```
 
 Each `let x ← phase y` desugars to `(phase y).bind (fun x => ...)`. `bind` for `EStateM` threads the counter state from one phase to the next and propagates any error immediately. The counter is never visible in the source — it is entirely implicit in the monadic plumbing.
 
-`TLProgram.compileToScheduled` makes the same pipeline explicit using the **Kleisli fish operator** `>=>`:
+`TLProgram.compileToScheduled` makes the same pipeline explicit using the **Kleisli fish operator** `>=>`, stopping one phase short of `route` so the evaluator can consume a LOGICAL `ScheduledProgram` (one statement per source statement, no generated `%nl…` names — the former `splitNonlins` phase survives only as a regression-only helper in `Pipeline/Lowering.lean`, off the production chain):
 
 ```lean
 def TLProgram.compileToScheduled : TLProgram → FreshM ScheduledProgram :=
-  assignUIDs >=> resolveDecls >=> checkReadRanks >=> checkDtypes
-             >=> unifyAxes >=> lowerArith >=> finalizeScans
-             >=> splitNonlins >=> schedule
+  assignUIDs >=> resolveDecls >=> reclassifyIterSlots >=> checkReadRanks >=> checkDtypes
+             >=> checkScatterNonlin >=> checkScatterNoScan >=> lowerArith >=> finalizeScans
+             >=> schedule
 ```
 
 `f >=> g` means "run `f`, then feed its output to `g`, threading the monad state". It is exactly function composition lifted into the monad — mathematically it is the composition law of the Kleisli category of `FreshM`. The two styles (`do`-notation and `>=>`) are equivalent; the `do` form in `compile` names intermediate values (useful for readability), while `>=>` in `compileToScheduled` is more concise for a pure pipeline.
@@ -637,24 +641,23 @@ This example shows the main structural effect of [`finalizeScans`](https://githu
 - the recurrence-body statements,
 - and the final `Bool` flag `true`, meaning this is a [`scanAffine`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Target.lean#L62-L62)-eligible scan (one advancing axis, identity nonlinearity throughout).
 
-If we changed the recurrence to `relu(S[j,l] · A[j,k])`, the structure would be the same except the recurrence stmt would still carry `nonlin := .relu` here, and the final Boolean would be `false`. The actual split into a linear pre-activation step plus a separate `relu` step happens in Stage 5, not Stage 4.
+If we changed the recurrence to `relu(S[j,l] · A[j,k])`, the structure would be the same except the recurrence stmt would still carry `nonlin := .relu` here, and the final Boolean would be `false`. The actual split into a linear pre-activation step plus a separate `relu` step does **not** happen at scheduling: it is done privately at the `route` boundary in Stage 5 by [`physicalizeForRoute`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/RouteFragments.lean), or (for the checked plan path) inside `prepareEvalPlan` as a two-step `assign → pointwise/axiswise` chain.
 
 ### 4.6 Stage 5: lowering, scans, scheduling, routing to `ThreadedComposed` (construction + inspection)
 
 This fused section has two aspects:
 
-- **Aspect A (transformation):** how Stage 5 computes the routed artifact (`splitNonlins`, `schedule`, `route`).
+- **Aspect A (transformation):** how Stage 5 computes the routed artifact (`schedule`, `route`; the `route` boundary itself is where each nonlinear plain statement is privately physicalized into a producer/consumer pair).
 - **Aspect B (artifact inspection):** what that routed artifact (`ThreadedComposed`) contains and which invariants the bridge requires.
 
 **Input:** the [`ScanProgram`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Types.lean#L45-L50) from Stage 4 — axes resolved, arithmetic normalized, and any recurrences already grouped into [`ScanStmt`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Types.lean#L15-L18) nodes — but still with no execution order and no wire assignments.
 
-**What happens:** nonlinear statements are split into two (linear pre-activation + nonlinearity-only step), statements are topologically sorted into a valid execution order, and then each statement is lowered into a [`BrBaseP`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Target.lean#L93-L99) node with explicit [`Wire`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Target.lean#L106-L109) references pointing to either external inputs or the outputs of earlier steps.
+**What happens:** the schedule is topologically sorted and each statement is lowered into a [`BrBaseP`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Target.lean#L93-L99) node with explicit [`Wire`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Target.lean#L106-L109) references. `route` first calls [`physicalizeForRoute`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/RouteFragments.lean) — a private preprocessing step that expands each nonlinear plain statement into a linear-pre-activation node followed by a nonlinearity-only node — before the unchanged [`routeCore`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Lowering.lean#L573-L579) wires them. The former `splitNonlins` phase (`Pipeline/Lowering.lean`) is retained as a regression-only helper, off the production chain.
 
 **Output:** a [`ThreadedComposed`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Target.lean#L114-L118) — an ordered list of primitive operation steps together with a routing table (one `List Wire` per step) and the count of external inputs.
 
-In [`DSL/Pipeline/Lowering.lean`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Lowering.lean#L59-L588):
+In [`DSL/Pipeline/Lowering.lean`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Lowering.lean):
 
-- [`splitNonlins`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Lowering.lean#L59-L63): separate linear compute from nonlinear ops
 - [`schedule`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Lowering.lean#L150-L166): stable topological order ([`topoSort`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Lowering.lean#L133-L134))
 - [`buildExtIndex`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Lowering.lean#L340-L362), [`buildNameToStep`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Lowering.lean#L474-L480): pass-1 indexing maps
 - [`buildStep`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Lowering.lean#L482-L553): construct one [`BrBaseP`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Target.lean#L93-L99) step + input wires
@@ -665,10 +668,6 @@ Example lemmas: [`dedupByUid_uid_nodup`](https://github.com/william-macready/pyn
 
 What the code actually does:
 
-- [`splitNonlins`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Lowering.lean#L59-L63)
-  - if statement nonlinearity is non-identity, emits two statements:
-    1) linear pre-activation into fresh `%nl...` tensor,
-    2) nonlinearity-only readback step.
 - [`finalizeScans`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Structural.lean#L404-L453) (same pipeline namespace)
   - groups iterAt/iterNext recurrence patterns into [`ScanStmt.scan`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Types.lean#L17-L18).
 - [`schedule`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Lowering.lean#L150-L166)
@@ -695,7 +694,7 @@ What the code actually does:
 
 Code anchors:
 
-- [`splitNonlins`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Lowering.lean#L59-L63)
+- [`physicalizeForRoute`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/RouteFragments.lean) (private preprocessing inside `route` — nonlinearity physicalization)
 - [`schedule`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Lowering.lean#L150-L166)
 - [`route`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Lowering.lean#L583-L588)
 
@@ -912,7 +911,7 @@ From [`test/DSL/Pipeline/ScanAffineTest.lean`](https://github.com/william-macrea
 - identity-nonlinearity recurrence routes as [`BrOp.scanAffine`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Target.lean#L62-L62)
 - nonlinear recurrence (relu) routes as [`BrOp.scan`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Target.lean#L61-L61)
 
-This cleanly demonstrates a semantic split produced by [`splitNonlins`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Lowering.lean#L59-L63) + scan lowering.
+This cleanly demonstrates a semantic split at the `route` boundary: [`physicalizeForRoute`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/RouteFragments.lean) expands each nonlinear plain statement into a producer/consumer pair before the unchanged [`routeCore`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Lowering.lean#L573-L579) runs.
 
 ### 5.3 Routing sanity example
 

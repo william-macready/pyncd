@@ -196,19 +196,30 @@ re-read §0 in full rather than proceeding from this summary.
 
 ## 1. Current pipeline and staging constraint
 
+> **Pipeline invariant update — 2026-08-29.** The `splitNonlins` phase named in the two staging
+> boxes below (§1 and §2) is **no longer on the production compile chain**: as of the nonlinearity
+> plan `papers/nonlinearity_split_pair_direct_lowering.md`, `compileToScheduled` emits a logical
+> `ScheduledProgram` with one statement per source statement, and the nonlinearity
+> producer/consumer split now happens privately inside `route` (`Pipeline/RouteFragments.lean`
+> `physicalizeForRoute`) or inside `prepareEvalPlan` as a two-step `assign → pointwise/axiswise`
+> chain. The remainder of this document is a broad historical plan and is not being modernised
+> beyond this pointer.
+
 Today the compile/eval split is already:
 
 ```text
 assignUIDs
 resolveDecls
+reclassifyIterSlots
 checkReadRanks
 checkDtypes
-unifyAxes
+checkScatterNonlin
+checkScatterNoScan
 lowerArith
 finalizeScans
-splitNonlins
 schedule
-route
+route                                    -- private physicalizeForRoute inside; former
+                                         --   splitNonlins phase is regression-only, off-chain
 inferAxisSizes
 evalPlain / evalScan / scatter evaluation
 ```
@@ -233,16 +244,20 @@ The recommended staged pipeline is:
 ```text
 assignUIDs
 resolveDecls
+reclassifyIterSlots
 checkReadRanks
 checkDtypes
-unifyAxes
+checkScatterNonlin
+checkScatterNoScan
 lowerArith
 finalizeScans
-splitNonlins
 schedule
 elaborateAffineReindexings      -- new
 checkNaperianSymbolic           -- new
-route                           -- refactored to consume symbolic typed reindexings
+route                           -- refactored to consume symbolic typed reindexings; also
+                                --   physicalizes nonlinear plain statements privately via
+                                --   physicalizeForRoute (the former splitNonlins phase is
+                                --   regression-only, off-chain)
 inferAxisSizes                  -- existing runtime/value-level affine solver
 instantiateConcreteNaperian     -- new
 evalPlain / evalScan / scatter evaluation

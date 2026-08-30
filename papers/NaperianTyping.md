@@ -32,10 +32,12 @@ It is meant as a practical bridge between:
 
 The current pipeline already has strong structure:
 
-- name/UID axis unification (`assignUIDs`, `unifyAxes`),
+- name/UID axis unification (`assignUIDs`),
 - affine index reindexing (`lowerArith`, `route` with `StMatP`),
 - implicit contraction/reduction (contracted RHS-only axes),
-- nonlinearity isolation (`splitNonlins`),
+- nonlinearity physicalization at the `route` boundary (`physicalizeForRoute` in
+  `Pipeline/RouteFragments.lean`; the former `splitNonlins` phase survives only as a
+  regression-only helper, off the production chain),
 - temporal scan extraction (`finalizeScans`, `evalScan`),
 - routed executable graph (`ThreadedComposed`).
 
@@ -175,7 +177,7 @@ From [`papers/graded_prop.md`](../papers/graded_prop.md), we already have:
 
 Keep `DGradedColoredPROP` as the base. Add semantic mixins as capabilities that reinterpret existing passes as enforcing/applying these laws, with Naperian semantics for axis points and applicative pointwise lift.
 
-**What are these mixins?** Each mixin below is a **semantic law** or **capability** that describes how one or more existing compiler passes should behave. These are not new operations; rather, they are abstractions that capture the principles behind existing transformations. A compiler morphism (like `assignUIDs`, `lowerArith`, `splitNonlins`) may satisfy one or more of these mixins. By making these laws explicit at the type level, we gain:
+**What are these mixins?** Each mixin below is a **semantic law** or **capability** that describes how one or more existing compiler passes should behave. These are not new operations; rather, they are abstractions that capture the principles behind existing transformations. A compiler morphism (like `assignUIDs` or `lowerArith` — or, historically, the `splitNonlins` pass; that responsibility now lives at the categorical-routing boundary, inside `physicalizeForRoute`) may satisfy one or more of these mixins. By making these laws explicit at the type level, we gain:
 - **Type safety**: shape and reindexing errors caught at compile time.
 - **Compositional understanding**: each pass enforces one or more mixin laws, making their roles clearer.
 - **Formal verification**: mixins are propositions that can be proved or tested.
@@ -417,7 +419,7 @@ The practical payoff (and its caveats and *projected* — not measured — sorry
 
 | Current pass | Current behavior | PROP/Naperian meaning | Key invariant to enforce |
 |---|---|---|---|
-| `splitNonlins` | isolate nonlinearities into separate stmts | `PointwiseLift` separation from multilinear contraction | nonlinearity step preserves degree; contraction step is pure contraction |
+| `splitNonlins` *(regression-only helper, off the production chain)* | historically isolated nonlinearities into separate stmts; now retained in `Pipeline/Lowering.lean` only for regression comparators. Current physicalization runs privately inside `route` (`Pipeline/RouteFragments.lean` `physicalizeForRoute`). | `PointwiseLift` separation from multilinear contraction | nonlinearity step preserves degree; contraction step is pure contraction |
 | `schedule` | backward liveness DCE | preserves semantics in free SMC composition | only live morphisms remain; source ordering remains valid |
 | `route` | build `ThreadedComposed`/`BrBaseP`; compute `degree`, `weaves`, `reindexings` | concrete realization of `BroadcastJoin` + `ReindexAction` + weave factorization | `degree` canonicalized (`lhs ++ contracted`), one affine `StMatP` per read, routing wires type-consistent |
 
@@ -790,16 +792,19 @@ For this repository, the recommended staging is:
 ```text
 assignUIDs
 resolveDecls
+reclassifyIterSlots
 checkReadRanks
 checkDtypes
-unifyAxes
+checkScatterNonlin
+checkScatterNoScan
 lowerArith
 finalizeScans
-splitNonlins
 schedule
 elaborateAffineReindexings      -- new symbolic affine/St elaboration pass
 checkNaperianSymbolic           -- new law-level Naperian/reindexing checks
-route                           -- consumes symbolic typed reindexings
+route                           -- consumes symbolic typed reindexings; already physicalizes each
+                                --   nonlinear plain statement privately via physicalizeForRoute
+                                --   (the former splitNonlins phase is regression-only, off-chain)
 inferAxisSizes                  -- existing runtime/value-level affine solver
 instantiateConcreteNaperian     -- new finite-point instantiation step
 evalPlain / evalScan / scatter evaluation

@@ -21,7 +21,7 @@ Wave F F4 Task 4 extends the same treatment to SOURCE SCANS at the end of this f
 `ScanCompileTest.lean`'s twelve acceptance fixtures assert the STRUCTURE the compiler residualized;
 the section below asserts what that structure DOES — that each one executes through
 `prepareEvalPlan`/`runPreparedDense` to a result bit-identical to `evalScheduled`, and that the
-curated `enumScanCases` generator splits exactly 9 accepted / 4 `unsupportedNonlin` /
+curated `enumScanCases` generator splits exactly 13 accepted / 0 `unsupportedNonlin` /
 4 `unsupportedAgg` with every accepted case matching the legacy evaluator.
 -/
 

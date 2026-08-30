@@ -283,11 +283,15 @@ reference" cannot both hold under one contract. This document therefore names a 
 closed contract, `reference64Transcendental`, for nonlinear steps: it fixes the function computed and
 bounds agreement by a stated per-function ULP tolerance instead of asserting bit-exactness. Differential
 testing follows the same split — affine and sum-product steps compare bit-exact against the ordered
-reference; nonlinear steps compare within their contract's ULP bound. Neither contract admits a
-checked step in the new pipeline yet: `LeanNCD/Eval/Plan/Compile.lean` rejects every pointwise and
-axiswise nonlinear statement via `unsupportedNonlin` ahead of either producer, checker, or interpreter
-support. This is separate from the legacy DSL evaluator, where `LeanNCD/Eval/Nonlin.lean` already
-computes all eight functions today for `Eval.lean`/`Scan.lean` — the same legacy evaluator
+reference; nonlinear steps compare within their contract's ULP bound. **Both contracts are now
+active in the new pipeline:** `LeanNCD/Eval/Plan/Compile.lean` **admits** pointwise and axiswise
+nonlinear statements structurally (`checkNonlinTopLevel` / `checkNonlinScanBlock`) and residualizes
+each into a two-step chain — an internal `.assign` that publishes no name, immediately followed by
+the real `.pointwise` or `.axiswise` step that publishes the statement's one materialized name
+(`Eval/AGENTS.md`; the residualizer is the shared `residualizeAssignment` core). Producer and
+checker support for the residualized nonlinear steps has landed alongside the admission (thread 4).
+This is separate from the legacy DSL evaluator, where `LeanNCD/Eval/Nonlin.lean` already computes
+all eight functions today for `Eval.lean`/`Scan.lean` — the same legacy evaluator
 [Section 2.3](#23-blocks-graph-flow-and-scans) already marks known-nonconforming and slated for
 retirement; its existing formulas ground the table below, but its numeric agreement with the ordered
 reference has never been checked.
@@ -1316,13 +1320,17 @@ the table's order if a reason emerges, but don't re-litigate it without one.
 
 **Most of Stage A didn't exist as code, but not uniformly, and less of it is missing now.** Item
 numbers below are [Section 7.1](#71-stage-a-recommended-low-risk-refinements)'s own `#` column, not
-a positional count of this paragraph's claims. **`PlanStep` now exists** (Wave F F3): it is the
-closed `.assign`/`.scan` sum in `LeanNCD/Eval/Plan/RawStep.lean`, `RawEvalPlan.steps` is an
-`Array PlanStep`, and `RawPlanBlock` (same file) gives each block its own `tensorSigs` table with
-its own `inputs`/`outputs` indices — F4 then made scan steps reachable from source syntax. So the
-real codebase today is `RawEvalPlan` → `CheckedEvalPlan` → `PreparedPlan` over assignment AND scan
-steps, with `AssignPlan`/`TermPlan`/`ReadPlan` remaining the assignment-side hierarchy. What is
-still genuinely absent is narrower than this paragraph used to claim: **distinct slot namespaces**
+a positional count of this paragraph's claims. **`PlanStep` now exists** (Wave F F3, extended by
+the nonlinearity thread 4): it is the closed
+`.assign`/`.scan`/`.pointwise`/`.axiswise` sum in `LeanNCD/Eval/Plan/RawStep.lean`,
+`RawEvalPlan.steps` is an `Array PlanStep`, and `RawPlanBlock` (same file) gives each block its own
+`tensorSigs` table with its own `inputs`/`outputs` indices — F4 then made scan steps reachable from
+source syntax, and the nonlinearity plan then extended both the outer `PlanStep` sum and the block
+element type `BlockStep` (`.assign`/`.pointwise`/`.axiswise`) with the nonlinearity constructors.
+So the real codebase today is `RawEvalPlan` → `CheckedEvalPlan` → `PreparedPlan` over assignment,
+scan, pointwise, AND axiswise steps, with `AssignPlan`/`TermPlan`/`ReadPlan` remaining the
+assignment-side hierarchy. What is still genuinely absent is narrower than this paragraph used to
+claim: **distinct slot namespaces**
 (item 1) — `TensorSlot` is a bare `abbrev TensorSlot := Nat` (`Types.lean:38`) shared by outer and
 block slots alike, so block scoping is structural, not type-level — and **distinct snapshot and
 next-state result types** (item 7), where the *behavior* is implemented and checked

@@ -67,11 +67,13 @@ change to either** — this slice adds no new capability, no new node kind, and 
 is a pure refactor whose entire acceptance criterion is "every existing fixture asserts the identical
 outcome before and after."
 
-This slice exists specifically so a later slice (nonlinearity-in-scans, already planned at
-`2026-08-21-nonlinearity-in-scans.md`, currently blocked on this one landing first) can extend
-`checkPlanBlock`'s dispatch to a new 3-arm `BlockStep` sum by adding cases to an already-generalized
-loop, rather than by hand-writing a third near-copy or by co-reviewing "is the refactor safe" and "does
-the new capability work" in the same branch.
+This slice exists specifically so a later slice (nonlinearity-in-scans, whose current authoritative
+record is `papers/nonlinearity_split_pair_direct_lowering.md` — the earlier
+`docs/superpowers/plans/2026-08-21-nonlinearity-in-scans.md` proposal is now permanently archived
+and points at the canonical record; nonlinearity-in-scans was blocked on this slice landing first)
+can extend `checkPlanBlock`'s dispatch to a new 3-arm `BlockStep` sum by adding cases to an
+already-generalized loop, rather than by hand-writing a third near-copy or by co-reviewing "is the
+refactor safe" and "does the new capability work" in the same branch.
 
 ## 2. Scope
 

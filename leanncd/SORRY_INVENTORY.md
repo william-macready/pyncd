@@ -241,10 +241,16 @@ Review findings:
 
 `LeanNCD/DSL/Pipeline/` + `Target.lean`/`Traverse.lean`/`Compile.lean` — the §12.4 compile
 pipeline — is **fully executable and `sorry`-free** (`grep -rn sorry LeanNCD/DSL/` empty;
-`lake build` green). `TLProgram.compile : TLProgram → FreshM ThreadedComposed` is the 8-phase
-Kleisli chain (assignUIDs → resolveDecls → unifyAxes → lowerArith → finalizeScans →
-splitNonlins → schedule → route), and `tl!{ … } : ThreadedComposed` compiles all five §12.1
-examples at elaboration time (`test/DSL/CompileExamplesTest.lean`).
+`lake build` green). `TLProgram.compile : TLProgram → FreshM ThreadedComposed` factors as
+`compileToScheduled >>= route`; the logical `compileToScheduled` chain (assignUIDs → resolveDecls →
+reclassifyIterSlots → checkReadRanks → checkDtypes → checkScatterNonlin → checkScatterNoScan →
+lowerArith → finalizeScans → schedule) yields a `ScheduledProgram` whose statement count equals
+the source's — no generated `%nl…` names, per `papers/nonlinearity_split_pair_direct_lowering.md`
+§2.1 — and `route` calls a private `physicalizeForRoute` (`Pipeline/RouteFragments.lean`) that
+expands each nonlinear plain statement into a producer/consumer pair before the unchanged
+`routeCore` runs. The former `splitNonlins` phase survives only as a regression-only helper, off
+the production chain (`Pipeline/Lowering.lean`). `tl!{ … } : ThreadedComposed` compiles all five
+§12.1 examples at elaboration time (`test/DSL/CompileExamplesTest.lean`).
 
 Resolved decisions / deviations from §12.4 (feed the §12.4 doc-consistency pass and E2b):
 
@@ -381,9 +387,11 @@ DSL feature-completion on the E2a pipeline — fully executable, `sorry`-free.
   how regular scans already collapse their body (deep scan-body embedding remains a future refinement).
   recurMorphism reads are not introspected (`readNames := []`).
 - **ScanAffine:** a scan whose recurrence has no nonlinearity (Prop 8.7, associative/parallel-prefix) is
-  detected in `finalizeScans` (BEFORE `splitNonlins` lifts nonlinearities out) via the `isAffine` flag on
-  `ScanStmt.scan`, and `route` emits `op="scan_affine"` (vs `"scan"`). The §12.1 coupled scan (relu
-  recurrence) stays `op="scan"`. So routed scan steps now carry `op ∈ {scan, scan_affine, scan_pre}`.
+  detected in `finalizeScans` via the `isAffine` flag on `ScanStmt.scan` (checked against the
+  recurrence statement's own `RHSExpr.nonlin`). `route` emits `op="scan_affine"` for affine
+  recurrences (vs `"scan"`). The §12.1 coupled scan (relu recurrence) stays `op="scan"`. So routed
+  scan steps now carry `op ∈ {scan, scan_affine, scan_pre}`. The former `splitNonlins` lift is now
+  off-chain and does not participate.
 
 ## Milestone H — §7.5 Algebra & construct() (signatures + sorry)
 

@@ -465,11 +465,13 @@ cross-layer correctness issues when lowering or bridge code discards the informa
 
 **Evidence: verified source design limitation.**
 
-`LabeledProgram`, `ResolvedProgram`, `LoweredProgram`, `ScanProgram`, `LinearProgram`, and
-`ScheduledProgram` are distinct types (`DSL/Pipeline/Types.lean:20-53`), which is a good start.
+`LabeledProgram`, `ResolvedProgram`, `LoweredProgram`, `ScanProgram`, and `ScheduledProgram` are
+distinct types (`DSL/Pipeline/Types.lean`), which is a good start. **`LinearProgram` is now a
+deprecated compatibility alias** (`abbrev LinearProgram := ScanProgram`, same file), retained only
+so the regression-only `splitNonlins` helper's callers keep reading naturally — it is not a
+distinct type any more, since the schedule is logical and does not restrict `RHSExpr.nonlin`.
 However, several comments describe properties not encoded by their fields. For example,
-`LinearProgram` still stores unrestricted `ScanStmt`, and `LoweredProgram` still stores unrestricted
-`Stmt`.
+`LoweredProgram` still stores unrestricted `Stmt`.
 
 Do not immediately index the entire AST with many dependent proofs; that would make ordinary compiler
 work cumbersome. Instead, introduce small phase-specific node types only where downstream code
@@ -2837,9 +2839,11 @@ failures:
    rejected plan invalid for the reference or PyTorch evaluator.
 
 After these narrow forms work, decide whether E2's larger `CoreStmt` is still warranted. If adopted,
-introduce it after `splitNonlins` with distinct constructors for contraction, nonlinearity application,
-scatter, and recurrence. Make `eval` and `route` pattern-match on those constructors rather than
-recovering categories from combinations of `rhs.nonlin`, `rhs.agg`, and statement kind.
+introduce it after the grouping phase (i.e. between grouping and scheduling; the historical
+`splitNonlins` insertion point is now regression-only and off the production chain) with distinct
+constructors for contraction, nonlinearity application, scatter, and recurrence. Make `eval` and
+`route` pattern-match on those constructors rather than recovering categories from combinations of
+`rhs.nonlin`, `rhs.agg`, and statement kind.
 
 Do not redesign recurrence and decompose `finalizeScans` simultaneously. Decide the `CoreStmt`/
 `Recurrence` representation first; otherwise Spike 5 will carefully refactor code whose parallel
@@ -2901,7 +2905,11 @@ the consolidation will entrench the total/defaulting API and cause another migra
 Start with the smallest fragment already close to complete:
 
 1. plain sum contraction with affine reads;
-2. pointwise activations lowered as isolated steps by `splitNonlins`; then
+2. pointwise activations lowered as isolated steps at the `route` boundary via
+   `physicalizeForRoute` (`Pipeline/RouteFragments.lean`), and — for the checked plan — as a
+   two-step `assign → pointwise/axiswise` chain inside `prepareEvalPlan`
+   (`Eval/Plan/Compile.lean`); the historical `splitNonlins` phase is regression-only and
+   off-chain; then
 3. other aggregators only after their identity/combine semantics are explicit.
 
 For each next class, add the necessary typed payload before marking it supported:
