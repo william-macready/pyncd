@@ -269,11 +269,9 @@ def runDenseBlock (c : CheckedPlanBlock) (ctx : List Int) (inputs : Array DenseT
     | .assign a =>
         store := store.set! a.plan.destinationSlot (← runDenseAssignAt a ctx store)
     | .pointwise p =>
-        store := store.set! p.raw.destinationSlot
-          (runDensePointwise p (store.getD p.raw.sourceSlot placeholder))
+        store := store.set! p.raw.destinationSlot (← runDensePointwise p store)
     | .axiswise a =>
-        store := store.set! a.raw.destinationSlot
-          (runDenseAxiswise a (store.getD a.raw.sourceSlot placeholder))
+        store := store.set! a.raw.destinationSlot (← runDenseAxiswise a store)
   return store
 
 end LeanNCD.Eval.Plan

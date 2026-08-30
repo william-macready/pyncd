@@ -638,9 +638,6 @@ it is the pattern this repo keeps recording; it is logged here rather than silen
 Nine mutation cycles total across Task 2 and the fix wave, every one observed rather than predicted.
 
 **Remaining known gaps, deliberately not closed:** `.axiswise` still never appears inside a scan
-step block (only inside plain blocks, `BlockTest` fixtures 2 and 7); `BlockStep.sourceSlots` remains
-call-site-free, retained deliberately as the symmetric half of the accessor pair and documented as
-such; and `runDensePointwise`/`runDenseAxiswise` have no `validateStore` analogue to
-`runDenseAssignAt`'s, which is safe inside `runDenseBlock` (the store is locally constructed and its
-input arm validates shape and storage) but means the codebase's stated runtime-trust-boundary
-discipline is not applied uniformly across the three workers.
+step block (only inside plain blocks, `BlockTest` fixtures 2 and 7); and `BlockStep.sourceSlots`
+remains call-site-free, retained deliberately as the symmetric half of the accessor pair and
+documented as such.

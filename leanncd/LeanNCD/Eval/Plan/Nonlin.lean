@@ -1,4 +1,5 @@
 import LeanNCD.Eval.Plan.Kernel
+import LeanNCD.Eval.Plan.Error
 import LeanNCD.Eval.Nonlin
 
 /-!
@@ -92,15 +93,39 @@ def checkAxiswise (sigs : Array TensorSignature) (a : RawAxiswisePlan) :
     throw (.axisPositionOutOfRange a.axisPos a.shape.size)
   return CheckedAxiswisePlan.mk a
 
-/-- Run one checked pointwise operation. Reuses `PointwiseFn.apply` (`LeanNCD.Eval.Nonlin`) — no
-    new math. -/
-def runDensePointwise (c : CheckedPointwisePlan) (src : DenseTensor) : DenseTensor :=
-  c.raw.fn.apply src
+/-- Validate the positional store against the single source shape `checkNonlinIO` already validated,
+    returning that source tensor. The exact `runDenseAssignAt`/`validateStore` (`Dense.lean`)
+    discipline, narrowed to one slot: runtime values are a separate trust boundary from plan
+    structure, so this is a value check, not a re-validation of the plan. Without it these workers
+    would read `store` through `getD … placeholder` at their call sites and silently apply the
+    function to an empty placeholder when a slot is missing or misshapen, rather than failing loud. -/
+private def validateNonlinSource (sourceSlot : TensorSlot) (shape : Array Nat)
+    (store : Array DenseTensor) : Except PositionalInputError DenseTensor := do
+  match store[sourceSlot]? with
+  | none => throw (.missingSlot sourceSlot store.size)
+  | some d =>
+      unless d.shape == shape.toList do
+        throw (.shapeMismatch sourceSlot shape d.shape)
+      unless d.data.size == shape.toList.foldl (· * ·) 1 do
+        throw (.storageMismatch sourceSlot d.shape d.data.size)
+      pure d
 
-/-- Run one checked axiswise operation. `[]`/`none` for `axisUids`/`mask?`: a checked
-    `RawAxiswisePlan` can never carry a mask or axis-UID — the Plan-layer `TensorSignature` is
-    UID-free by design (§3). Reuses `AxiswiseFn.apply` (`LeanNCD.Eval.Nonlin`) — no new math. -/
-def runDenseAxiswise (c : CheckedAxiswisePlan) (src : DenseTensor) : DenseTensor :=
-  c.raw.fn.apply c.raw.axisPos [] none src
+/-- Run one checked pointwise operation. Re-validates its source slot against the checked shape
+    first (`validateNonlinSource`) — same runtime trust boundary `runDenseAssignAt` honors — then
+    reuses `PointwiseFn.apply` (`LeanNCD.Eval.Nonlin`) — no new math. -/
+def runDensePointwise (c : CheckedPointwisePlan) (store : Array DenseTensor) :
+    Except PositionalInputError DenseTensor := do
+  let src ← validateNonlinSource c.raw.sourceSlot c.raw.shape store
+  return c.raw.fn.apply src
+
+/-- Run one checked axiswise operation. Re-validates its source slot against the checked shape first
+    (`validateNonlinSource`) — same runtime trust boundary `runDenseAssignAt` honors. `[]`/`none` for
+    `axisUids`/`mask?`: a checked `RawAxiswisePlan` can never carry a mask or axis-UID — the
+    Plan-layer `TensorSignature` is UID-free by design (§3). Reuses `AxiswiseFn.apply`
+    (`LeanNCD.Eval.Nonlin`) — no new math. -/
+def runDenseAxiswise (c : CheckedAxiswisePlan) (store : Array DenseTensor) :
+    Except PositionalInputError DenseTensor := do
+  let src ← validateNonlinSource c.raw.sourceSlot c.raw.shape store
+  return c.raw.fn.apply c.raw.axisPos [] none src
 
 end LeanNCD.Eval.Plan

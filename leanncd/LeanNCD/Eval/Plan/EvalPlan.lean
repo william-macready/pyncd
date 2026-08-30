@@ -191,11 +191,9 @@ def runDensePlan (c : CheckedEvalPlan) (inputs : Array DenseTensor) :
     | .assign c => store := store.set! c.plan.destinationSlot (← runDenseAssign c store)
     | .scan c => store ← runDenseScan raw.tensorSigs c store
     | .pointwise c =>
-        store := store.set! c.raw.destinationSlot
-          (runDensePointwise c (store.getD c.raw.sourceSlot placeholder))
+        store := store.set! c.raw.destinationSlot (← runDensePointwise c store)
     | .axiswise c =>
-        store := store.set! c.raw.destinationSlot
-          (runDenseAxiswise c (store.getD c.raw.sourceSlot placeholder))
+        store := store.set! c.raw.destinationSlot (← runDenseAxiswise c store)
   return store
 
 /-- §5.5's sketch, verified as-is. Relocated from `Error.lean` (see that file's note): `invalidPlan`'s

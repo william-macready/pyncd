@@ -93,4 +93,63 @@ def axiswiseInputs : Array DenseTensor := #[ { shape := [2,2], data := #[1.0, 3.
 -- Y := X = [[1,3],[2,2]]; Z := normalize(Y, axis 1) = [[0.25,0.75],[0.5,0.5]].
 #guard dataOf (runGraph axiswisePlan axiswiseInputs) 2 == some #[0.25, 0.75, 0.5, 0.5]
 
+/-!
+## Runtime trust boundary: the nonlinearity workers re-validate their source slot
+
+`runDensePointwise`/`runDenseAxiswise` re-check the runtime store against the shape the checker
+validated before applying the function — the same discipline `runDenseAssignAt`/`validateStore`
+(`Dense.lean`) already honor, now applied symmetrically to all three workers. These fixtures drive
+the workers directly (not through `runDensePlan`) with a deliberately malformed store, mirroring
+`KernelDenseTest.lean`'s `posErrOf` fixtures for `runDenseAssign`. Each expected error is derived by
+hand from the mismatch, not read back from the worker.
+-/
+
+-- A pointwise op reading slot 0 (shape #[2]) and writing slot 1.
+def probePointwise : RawPointwisePlan :=
+  { sourceSlot := 0, destinationSlot := 1, shape := #[2], fn := .relu }
+
+def pwErrOf (store : Array DenseTensor) : Option PositionalInputError :=
+  match checkPointwise oneNodeSigs probePointwise with
+  | .error _ => none
+  | .ok c => match runDensePointwise c store with
+             | .error e => some e
+             | .ok _ => none
+
+-- missing slot: an empty store cannot provide source slot 0.
+#guard pwErrOf #[] == some (.missingSlot 0 0)
+
+-- wrong runtime shape: slot 0 has runtime shape [3], but the checked shape is #[2].
+#guard pwErrOf #[ { shape := [3], data := #[1.0, 2.0, 3.0] } ] == some (.shapeMismatch 0 #[2] [3])
+
+-- malformed storage: slot 0 declares shape [2] but its data array holds only one element.
+#guard pwErrOf #[ { shape := [2], data := #[1.0] } ] == some (.storageMismatch 0 [2] 1)
+
+-- well-formed store: no error (the function applies).
+#guard pwErrOf #[ { shape := [2], data := #[-1.0, 2.0] } ] == none
+
+-- An axiswise op reading slot 0 (shape #[2,2]) and writing slot 1, reducing axis 1.
+def probeAxiswise : RawAxiswisePlan :=
+  { sourceSlot := 0, destinationSlot := 1, shape := #[2,2], axisPos := 1, fn := .normalize }
+
+def axErrOf (store : Array DenseTensor) : Option PositionalInputError :=
+  match checkAxiswise axiswiseSigs probeAxiswise with
+  | .error _ => none
+  | .ok c => match runDenseAxiswise c store with
+             | .error e => some e
+             | .ok _ => none
+
+-- missing slot: an empty store cannot provide source slot 0.
+#guard axErrOf #[] == some (.missingSlot 0 0)
+
+-- wrong runtime shape: slot 0 has runtime shape [2,3], but the checked shape is #[2,2].
+#guard axErrOf #[ { shape := [2,3], data := #[1.0, 2.0, 3.0, 4.0, 5.0, 6.0] } ]
+  == some (.shapeMismatch 0 #[2,2] [2,3])
+
+-- malformed storage: slot 0 declares shape [2,2] but its data array holds only three elements.
+#guard axErrOf #[ { shape := [2,2], data := #[1.0, 2.0, 3.0] } ]
+  == some (.storageMismatch 0 [2,2] 3)
+
+-- well-formed store: no error (the function applies).
+#guard axErrOf #[ { shape := [2,2], data := #[1.0, 3.0, 2.0, 2.0] } ] == none
+
 end LeanNCD.Eval.Plan.NonlinDenseTest
