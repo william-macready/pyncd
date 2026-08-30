@@ -4,13 +4,16 @@ import LeanNCD.Eval.Plan.Compile
 /-!
 # Wave C C4 capability preflight tests
 
-One baseline accepted program (`Y[i] := X[i]`) plus rejected cases for every `CapabilityError`
-category (11 total): 2 cases for `unsupportedLhsSlot` (`iterAt`/`iterNext` — `.freeNorm` at top
-level is now ADMITTED, Thread 4, so it is no longer one of these rejection cases; see the accepted
-fixture below instead), 2 for `unsupportedNonlin` (pointwise/axiswise, now specifically SCAN-BLOCK
-cases — Thread 4 admits both at top level too), 2 for `unsupportedAgg` (max/min), and one each for
-the remaining categories; plus three Thread-4 accepted-case fixtures pinning what preflight now
-admits at top level (`.freeNorm`, `.pointwise`, unmasked `.axiswise`) that Wave C used to reject.
+One baseline accepted program (`Y[i] := X[i]`) plus rejected cases for every remaining
+`CapabilityError` category (9 top-level rejection categories now): 2 cases for `unsupportedLhsSlot`
+(`iterAt`/`iterNext` — `.freeNorm` at top level is now ADMITTED, Thread 4, so it is no longer one of
+these rejection cases; see the accepted fixture below instead), 2 for `unsupportedNonlin`
+(pointwise/axiswise, now specifically SCAN-BLOCK cases — Thread 4 admits both at top level too), and
+one each for the remaining categories. `unsupportedAgg` (max/min) is likewise no longer a rejection
+category — the max/min-aggregation thread admits both (they compile to the tropical algebras), so its
+two donor programs are now accepted-case fixtures below, not rejections. Plus three Thread-4
+accepted-case fixtures pinning what preflight now admits at top level (`.freeNorm`, `.pointwise`,
+unmasked `.axiswise`) that Wave C used to reject.
 the two structurally-unreachable categories (`unsupportedDtype`, `dynamicShape`) are exercised
 directly on the constructor rather than through `capabilityPreflight`. Also covers `prepareEvalPlan`
 end-to-end on accepted programs — an identity copy, a zero-coefficient contraction, and a
@@ -146,21 +149,19 @@ def acceptedSched : ScheduledProgram :=
           { body := { terms := [{ factors := [.unaryFn .log "X" []] }] }, nonlin := .identity })] })
   == some (.unaryFactor "Y: unary function on X")
 
--- unsupportedAgg: max
-#guard errOf (capabilityPreflight
+-- unsupportedAgg: max/min are now ADMITTED (they compile to the tropical algebras) — preflight
+-- returns none, so these two donor programs become accepted-case fixtures rather than rejections.
+#guard isOk (capabilityPreflight
     { acceptedSched with stmts :=
         [.plain (.assign "Y" [.free ⟨"i", 0, .nat⟩]
           { body := { terms := [{ factors := [.read "X" []] }] }
           , nonlin := .identity, agg := .max })] })
-  == some (.unsupportedAgg "Y: max aggregation")
 
--- unsupportedAgg: min
-#guard errOf (capabilityPreflight
+#guard isOk (capabilityPreflight
     { acceptedSched with stmts :=
         [.plain (.assign "Y" [.free ⟨"i", 0, .nat⟩]
           { body := { terms := [{ factors := [.read "X" []] }] }
           , nonlin := .identity, agg := .min })] })
-  == some (.unsupportedAgg "Y: min aggregation")
 
 -- booleanOutput: a predicate decl
 #guard errOf (capabilityPreflight { acceptedSched with decls := [.predicate "P" []] })

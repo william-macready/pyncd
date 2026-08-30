@@ -133,9 +133,9 @@ The curated `enumScanCases` generator (`test/Eval/PropertyOracle/ScanGen.lean`) 
 `ScanCompileTest.lean` fixtures together give the real, counted evidence for Law 1 over scans
 (`test/Eval/Plan/DifferentialTest.lean`):
 
-- **17** generated cases total, split **13 accepted / 0 `unsupportedNonlin` / 4 `unsupportedAgg`** —
+- **17** generated cases total, split **17 accepted / 0 `unsupportedNonlin` / 0 `unsupportedAgg`** —
   pinned by `DifferentialTest.lean`'s `scanCorpusSplit` `run_cmd` assertion (`total == 17 && accepted
-  == 13 && nonlin == 0 && agg == 4`), which fails loudly rather than silently re-baselining if the
+  == 17 && nonlin == 0 && agg == 0`), which fails loudly rather than silently re-baselining if the
   accept/reject boundary ever shifts.
 
   *The split was **9 / 4 / 4** when Wave F wrote this manifest. The nonlinearity plan's Task 4
@@ -171,7 +171,7 @@ Wave F" table:
 | Pointwise and axiswise nonlinearities | **Admitted** (thread 4): top-level (`checkNonlinTopLevel`) and inside scan `base`/`recur` blocks (`checkNonlinScanBlock`), residualized into a two-step `assign → pointwise/axiswise` chain. `unsupportedNonlin == 0` in the `DifferentialTest.lean` scan corpus. |
 | Masks, predicates, Iverson/Boolean factors, and Boolean outputs | Rejected rather than represented in `AssignPlan` or `CheckedPlanBlock`. |
 | Unary factor functions | Rejected in ordinary assignments and scans. |
-| Max/min aggregation | Only real sum-product reduction is admitted. |
+| Max/min aggregation | **Admitted** (max/min-aggregation thread): `checkAggOp` admits `.max`/`.min`; the compiler selects the tropical algebra (`algebraForAgg`) and Dense reduces with `max`/`min` seeded at `−∞`/`+∞`. `unsupportedAgg == 0` in the `DifferentialTest.lean` scan corpus. |
 | Scatter and affine LHS writes | Wave D source semantics are not yet represented by checked `EvalPlan`. |
 | Dtypes beyond the admitted concrete `f64` mode and dynamic shapes | Still rejected at the checked-plan preparation boundary. |
 | `.scanPre`, callbacks, and predicate-dispatch scan bodies | Still rejected even though `PlanStep.scan` exists (nonlinear scan bodies themselves are now admitted — see the first row). |
@@ -181,11 +181,12 @@ Wave F" table:
 
 *The first row and the `.scanPre` row above were refreshed 2026-08-30 to track the proposal §1
 table they reproduce: the nonlinearity plan's Task 4 (`nonlinearity_split_pair_direct_lowering.md`
-§3.6) admitted pointwise/axiswise nonlinearities at top level and inside scan blocks, so those two
+§3.6) admitted pointwise/axiswise nonlinearities at top level and inside scan blocks, and the
+max/min-aggregation thread (`max_min_aggregation.md`) admitted `.max`/`.min` aggregation, so those
 rows no longer describe the current boundary. Everything else in this table is unchanged and
 re-derived against `capabilityPreflight` (`Eval/Plan/Compile.lean`) on this branch. The remaining
 still-rejected families are masks/predicates/Iverson factors and Boolean outputs, unary factor
-functions, max/min aggregation, scatter and affine LHS writes, non-`f64` dtypes and dynamic shapes,
+functions, scatter and affine LHS writes, non-`f64` dtypes and dynamic shapes,
 and `.scanPre`/callbacks/predicate-dispatch scan bodies.*
 
 The next semantic-expansion work after Wave F should be a named **checked local-kernel capability

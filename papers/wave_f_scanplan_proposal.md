@@ -196,19 +196,21 @@ rectangular uniform n-dimensional scans with advancing dimensions in arbitrary t
 > `checkNonlinScanBlock` and lowered by `compileScan` (`Eval/Plan/Compile.lean`), identically to the
 > top-level admission (`Eval/AGENTS.md`). `RawPlanBlock`'s element type is `BlockStep`
 > (`.assign`/`.pointwise`/`.axiswise`), and the differential's `enumScanCases` corpus now splits
-> **13 accepted / 0 `unsupportedNonlin` / 4 `unsupportedAgg`** (was 9 / 4 / 4 at F4 authoring time;
-> `DifferentialTest.lean`). The remaining §5.1 restrictions on Boolean factors, unary factors,
-> max/min aggregation, `.scanPre`, etc. are unchanged.
+> **17 accepted / 0 `unsupportedNonlin` / 0 `unsupportedAgg`** (was 9 / 4 / 4 at F4 authoring time,
+> then 13 / 0 / 4 after thread 4 admitted nonlinear scans; `DifferentialTest.lean`). The remaining
+> §5.1 restrictions on Boolean factors, unary factors, `.scanPre`, etc. are unchanged; max/min
+> aggregation is now admitted too (it compiles to the tropical algebras `evalScheduled` evaluates).
 
 Historically, the "no nonlinearities" limit belonged to Wave C's checked `EvalPlan`, not to the
 broader source language or legacy `evalScheduled` evaluator. Source programs can contain pointwise or
 axiswise nonlinearities, Boolean factors and predicates, unary factors, and max/min aggregation, and
 the legacy path supports relevant cases. As of thread 4, `prepareEvalPlan` **admits and residualizes**
-pointwise and axiswise nonlinearities (both at top level and inside scan blocks); the remaining
-rejections above still return typed `CapabilityError` values because `AssignPlan` cannot represent
-their semantics. Wave F does not broaden the local kernel further merely because such constructs also
-occur inside current scan examples. They remain orthogonal plan-kernel extensions and retain typed
-source rejection on the checked-plan path.
+pointwise and axiswise nonlinearities (both at top level and inside scan blocks), and the
+max/min-aggregation thread additionally **admits** max/min aggregation (compiled to the tropical
+algebras); the remaining rejections above still return typed `CapabilityError` values because
+`AssignPlan` cannot represent their semantics. Wave F does not broaden the local kernel further merely
+because such constructs also occur inside current scan examples. They remain orthogonal plan-kernel
+extensions and retain typed source rejection on the checked-plan path.
 
 **Functionality still missing after Wave F lands.** Completing Wave F will **not** make
 `CheckedEvalPlan` feature-equivalent to the source language or `evalScheduled`. The following remain
@@ -219,7 +221,7 @@ outside the checked-plan path:
 | Pointwise and axiswise nonlinearities | **Admitted** (thread 4): top-level (`checkNonlinTopLevel`) and inside scan `base`/`recur` blocks (`checkNonlinScanBlock`), residualized into a two-step `assign → pointwise/axiswise` chain. `unsupportedNonlin == 0` in the `DifferentialTest.lean` scan corpus. |
 | Masks, predicates, Iverson/Boolean factors, and Boolean outputs | Rejected rather than represented in `AssignPlan` or `CheckedPlanBlock`. |
 | Unary factor functions | Rejected in ordinary assignments and scans. |
-| Max/min aggregation | Only real sum-product reduction is admitted. |
+| Max/min aggregation | **Admitted** (max/min-aggregation thread): `checkAggOp` admits `.max`/`.min`; the compiler selects the tropical algebra (`algebraForAgg`) `AssignPlan` already had the reduction slot for, and Dense reduces with `max`/`min` seeded at `−∞`/`+∞`. `unsupportedAgg == 0` in the `DifferentialTest.lean` scan corpus. |
 | Scatter and affine LHS writes | Wave D source semantics are not yet represented by checked `EvalPlan`. |
 | Dtypes beyond the admitted concrete `f64` mode and dynamic shapes | Still rejected at the checked-plan preparation boundary. |
 | `.scanPre`, callbacks, and predicate-dispatch scan bodies | Still rejected even though `PlanStep.scan` exists (nonlinear scan bodies themselves are now admitted — see the first row). |
@@ -552,7 +554,6 @@ Wave F continues to reject:
 - pointwise and axiswise nonlinearities;
 - masks, predicates, Iverson factors, and Boolean state;
 - unary factors;
-- max/min aggregation;
 - scatter or affine LHS writes inside a scan block;
 - unsupported state-write geometry;
 - source scans with ambiguous state/base/result pairing;
@@ -1784,11 +1785,12 @@ shared DSL accessor reused is `idxAffineForm` (`DSL/Ast.lean`), a five-construct
 `IdxExpr` used by both the compile path and the eval size solver — an AST reader, not an
 implementation under comparison; a second copy would have been duplication for its own sake.
 
-*Exact counts.* The curated `enumScanCases` corpus splits **17 total / 13 accepted / 0
-`unsupportedNonlin` / 4 `unsupportedAgg`**, pinned by `#guard` and by which capability constructor
+*Exact counts.* The curated `enumScanCases` corpus splits **17 total / 17 accepted / 0
+`unsupportedNonlin` / 0 `unsupportedAgg`**, pinned by `#guard` and by which capability constructor
 each rejection produces (was 9 accepted / 4 `unsupportedNonlin` / 4 `unsupportedAgg` at F4
 authoring time; thread 4 Task 4 admitted pointwise/axiswise scan-block nonlinearities and moved
-four cases from the rejection into the accepted column). All accepted programs pass the three-way
+four cases into the accepted column, and the max/min-aggregation thread admitted `.max`/`.min` and
+moved the final four). All accepted programs pass the three-way
 gate — hand-written schedules together with the accepted generated cases — and agree bit-for-bit
 across `prepareEvalPlan -> runPreparedDense`, `evalScheduled`, and the independent unrolling; no
 checked-versus-legacy divergence arose, so nothing needed classifying under Law 1. Warnings are
@@ -2016,8 +2018,9 @@ curated scan corpus (`enumScanCases`, `DifferentialTest.lean`'s `scanCorpusSplit
 **9 accepted / 4 `unsupportedNonlin` / 4 `unsupportedAgg`**, pinned by that file's own `run_cmd`
 assertion, re-observed in this task's own build run (`DifferentialTest scan corpus: total=17
 accepted=9 unsupportedNonlin=4 unsupportedAgg=4`). *[Wave F-era counts. The nonlinearity plan's
-Task 4 later moved all four `unsupportedNonlin` cases into the accepted column; the assertion now
-reads `total == 17 && accepted == 13 && nonlin == 0 && agg == 4`, and the `lake build` figure below
+Task 4 later moved all four `unsupportedNonlin` cases into the accepted column, and the
+max/min-aggregation thread moved all four `unsupportedAgg` cases too; the assertion now
+reads `total == 17 && accepted == 17 && nonlin == 0 && agg == 0`, and the `lake build` figure below
 is likewise the pre-Task-4 baseline. The numbers in this paragraph are what F5 observed, not what
 the tree says today.]* The three-way differential gate: **21** total scan
 programs (12 hand-written + 9 accepted generated) agree bit-for-bit across the compiled checked path,

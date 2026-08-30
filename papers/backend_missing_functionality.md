@@ -46,7 +46,6 @@ yardstick), not a measured figure — see the rationale below the table.
 | Moderate–hard | **Boolean / predicate *outputs*** — a `.predicate` decl | `booleanOutput` | `checkDecl` | ✓ (bool semiring `Combine`) |
 | Moderate | **Masks / predicates / Iverson (Boolean) factors** — `where=`/Iverson terms | `maskOrPredicate` | `checkFactor` | ✓ (`Eval/Gather.lean` mask eval) |
 | Low–moderate | **Unary factor functions** — `log`/`exp`/`sqrt`/`recip` applied to a read inside a term | `unaryFactor` | `checkFactor` | ✓ (`Eval/Gather.lean` `applyUnaryFn`) |
-| Low | **max / min aggregation** — only `sum` is admitted | `unsupportedAgg` | `checkAggOp` | ✓ (tropical semiring `Combine`) |
 
 ### Difficulty ranking rationale (hardest → easiest)
 
@@ -74,7 +73,7 @@ what the ranking tracks.
 4. **Boolean / predicate outputs** — admit `bool` end-to-end: `ScalarDType.bool` is a reserved tag
    with no producer, and `ScalarBinOp` has no `logicalAnd`/`logicalOr` (deliberately, per its doc
    comment). So this threads a new dtype *and* a new algebra family through checker, Dense worker,
-   and result reporting. Bounded, but wider than #5–#7, and naturally coupled to #5 (predicates
+   and result reporting. Bounded, but wider than #5–#6, and naturally coupled to #5 (predicates
    consume / produce bool).
 5. **Masks / predicates / Iverson factors** — first genuine step up from a pure assign extension:
    needs a *positional* (UID-free) predicate / coordinate-arithmetic IR at the plan layer, evaluated
@@ -86,12 +85,6 @@ what the ranking tracks.
    `runDensePointwise`), or a per-factor unary op on the contraction path. The reference
    `applyUnaryFn` is the oracle; the main new work is domain-error plumbing (`log`/`sqrt`/`recip`
    fail loud via `EvalError.unaryDomain`). Localized to the assign / contraction path.
-7. **max / min aggregation** — smallest surface. Fits the *existing* `ContractionAlgebra` reduction
-   slot: add `min`/`max` to `ScalarBinOp`, widen `admittedAlgebra`'s acceptance in `Check.lean`, add
-   the reduce cases to the Dense worker. No new `PlanStep`, no new geometry, no dtype change; the
-   reference tropical semiring is the ready-made oracle. **One real subtlety:** the `zeroPad`
-   out-of-bounds policy feeds identity `0` into a sum, but a max-reduce needs identity `−∞` — the
-   pad / identity interaction is the only place this bites.
 
 ### Scan-geometry limits (not `CapabilityError` rejections)
 
@@ -109,6 +102,14 @@ fragment.
 
 ## Already closed (do not re-list as missing)
 
+- **max / min aggregation** — admitted end-to-end (top level and inside scan `base`/`recur` blocks).
+  `checkAggOp` admits `.max`/`.min`; `algebraForAgg` selects the tropical algebra
+  (`admittedAlgebraMax`/`admittedAlgebraMin`) in the *existing* `ContractionAlgebra` reduction slot —
+  no new `PlanStep`, geometry, or dtype — and Dense reduces with `max`/`min` seeded at `−∞`/`+∞`. The
+  `zeroPad` pad stays `0.0` (a factor value, not the reduction identity), matching the reference
+  `Combine.max`/`Combine.min` oracle. `unsupportedAgg == 0` in the `DifferentialTest.lean` scan
+  corpus; the constructor is retained producer-less, like `scanNode`. Closed by
+  `max_min_aggregation.md`.
 - **Pointwise + axiswise nonlinearities** — admitted at top level (`checkNonlinTopLevel`) and inside
   scan `base`/`recur` blocks (`checkNonlinScanBlock`), residualized into an `assign → pointwise` /
   `assign → axiswise` chain. `unsupportedNonlin == 0` in the `DifferentialTest.lean` scan corpus.

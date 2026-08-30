@@ -46,24 +46,25 @@ inductive OutOfBoundsPolicy
     `Float`: `Float.toBits 0.0 ≠ Float.toBits (-0.0)` whereas `(0.0 : Float) == (-0.0 : Float)`
     is `true`, so bits distinguish signed zero and preserve NaN payloads. Verified by `#eval`.
 
-    As with `ScalarDType`, only `.f64` is admitted by Wave C: `admittedAlgebra` (`Check.lean`) is
-    the sole `ContractionAlgebra` `checkAssign` accepts (its `algebraNotAdmitted` guard forces
-    `a.algebra == admittedAlgebra` exactly), and both of its constants (`factorId`, `reduceId`) are
-    `.f64 _`. `.f32`/`.bool` are reserved tags — like `ScalarDType.f32`/`.bool` — with no producer
-    or consumer yet; neither can ever appear inside a checked plan's `ContractionAlgebra`. -/
+    As with `ScalarDType`, only `.f64` is admitted by Wave C: `checkAssign`'s `algebraNotAdmitted`
+    guard forces `a.algebra ∈ admittedAlgebras` (`Check.lean`) — the real sum-product plus the two
+    tropical semirings `AggOp.max`/`.min` select — and every constant (`factorId`, `reduceId`) of all
+    three is `.f64 _`. `.f32`/`.bool` are reserved tags — like `ScalarDType.f32`/`.bool` — with no
+    producer or consumer yet; neither can ever appear inside a checked plan's `ContractionAlgebra`. -/
 inductive ScalarConst
   | f64  (bits : UInt64)
   | f32  (bits : UInt32)
   | bool (value : Bool)
   deriving DecidableEq, BEq, Repr, Inhabited
 
-/-- Closed binary scalar operations. Exactly the ones Wave C's checker and worker implement —
-    `min`/`max`/`logicalAnd`/`logicalOr` are absent by design, not oversight: max/min aggregation
-    and predicate outputs are rejected at the source boundary (proposal §3.2), so nothing could
-    construct them and no worker implements their semantics. Adding a constructor here is itself
-    a semantic-version change (§9.2). -/
+/-- Closed binary scalar operations. `min`/`max` back the tropical-semiring reductions that
+    `AggOp.max`/`.min` select (`admittedAlgebraMax`/`admittedAlgebraMin` in `Check.lean`); `add`/`mul`
+    back Wave C's real sum-product. `logicalAnd`/`logicalOr` remain absent by design — predicate
+    outputs are still rejected at the source boundary (proposal §3.2), so nothing constructs them and
+    no worker implements their semantics. Adding a constructor here is itself a semantic-version
+    change (§9.2): `min`/`max` were added by the max/min-aggregation thread. -/
 inductive ScalarBinOp
-  | add | mul
+  | add | mul | min | max
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- The operation and identity used within a factor product and across reductions/terms.

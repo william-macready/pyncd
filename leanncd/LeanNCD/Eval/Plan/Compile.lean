@@ -78,10 +78,17 @@ def checkNonlinScanBlock (_stmtName : String) : Nonlin → Except CapabilityErro
   | .pointwise _ => pure ()
   | .axiswise .. => pure ()
 
-def checkAggOp (stmtName : String) : AggOp → Except CapabilityError Unit
+/-- Aggregation-op admission. `.max`/`.min` are now admitted — they compile to the tropical
+    semirings (`algebraForAgg`) the reference `Combine.max`/`Combine.min` already evaluate. Like
+    `checkNonlinTopLevel`'s admission of `.pointwise`/`.axiswise`, this diverges from C0's frozen
+    `classifyAggOp` (`test/Eval/Plan/ContractTest.lean`), which still classifies `.max`/`.min` as
+    `unsupportedAgg`; the divergence is deliberate and documented, not a stale mirror. The
+    `stmtName` parameter is retained (unused now) so the signature stays uniform with the other
+    per-statement sub-checks. -/
+def checkAggOp (_stmtName : String) : AggOp → Except CapabilityError Unit
   | .sum => pure ()
-  | .max => throw (.unsupportedAgg s!"{stmtName}: max aggregation")
-  | .min => throw (.unsupportedAgg s!"{stmtName}: min aggregation")
+  | .max => pure ()
+  | .min => pure ()
 
 /-- One `Stmt`'s capability check. Sub-construct order (LHS slots, then `agg`, then `nonlin`, then
     factors) mirrors C0's `classifyStmt` (`test/Eval/Plan/ContractTest.lean`) — the first rejected
@@ -302,6 +309,16 @@ private def pinCheckV : AxisSpec := { name := "v", uid := 9002, kind := .nat }
       (.affine 7 [(2, pinCheckU), (-3, pinCheckV), (4, pinCheckU)]))
   == ([-3], 37)
 
+/-- Select the checked contraction algebra a source statement's aggregation op compiles to. `sum`
+    is Wave C's real sum-product; `max`/`min` are the tropical semirings, whose reduction identity
+    (`−∞`/`+∞`) differs from the `zeroPad` out-of-bounds pad (`0`) — the pad is a factor value that
+    still flows through `factorOp` (mul), so only the reduction identity changes here, matching the
+    reference `Combine.max`/`Combine.min`. -/
+def algebraForAgg : AggOp → ContractionAlgebra
+  | .sum => admittedAlgebra
+  | .max => admittedAlgebraMax
+  | .min => admittedAlgebraMin
+
 /-- The common per-statement assignment residualization core (Wave F F4 Task 2): given a
     statement's scan context (empty outside a scan step), its output (retained) basis, validated
     pins, a source-name-to-`(slot, shape)` resolver, and an already-allocated destination
@@ -326,7 +343,7 @@ private def residualizeAssignment (sizes : HashMap UID Nat) (warnings : List Eva
     (stmtName : String) (contextUids : List UID) (contextShape : Array Nat)
     (outputUids : List UID) (pins : HashMap UID Int)
     (resolveSource : String → TensorSlot × Array Nat)
-    (destSlot : TensorSlot) (outputShape : Array Nat) (terms : List ProdTerm) :
+    (destSlot : TensorSlot) (outputShape : Array Nat) (agg : AggOp) (terms : List ProdTerm) :
     Except PlanCompileFailure AssignPlan := do
   let mut termsAcc : Array TermPlan := #[]
   for term in terms do
@@ -362,7 +379,7 @@ private def residualizeAssignment (sizes : HashMap UID Nat) (warnings : List Eva
     termsAcc := termsAcc.push
       { iterationShape, contextPos, outputPos, reductionPos, factors := factorsAcc }
   return { contextShape, destinationSlot := destSlot, outputShape, terms := termsAcc
-          , algebra := admittedAlgebra }
+          , algebra := algebraForAgg agg }
 
 /-- Resolve which output-slot position (if any) is the axiswise reduction axis, checking it
     agrees with the statement's own `Nonlin`. `slots` is the statement's LHS slot list — the
@@ -642,7 +659,7 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
       let s := baseLocalOf.getD name 0
       (s, (sigsNow.getD s { shape := #[], dtype := .f64 }).shape)
     let plan ← residualizeAssignment sizes warnings nm [] #[] outputUids pins resolveSource
-      preSlot outputShape rhs.body.terms
+      preSlot outputShape rhs.agg rhs.body.terms
     baseSigs := baseSigs.push { shape := outputShape, dtype := .f64 }
     -- identity emits one `.assign` publishing under `preSlot`; a nonlinear statement emits the
     -- preactivation `.assign` (internal `preSlot`) followed by one `.pointwise`/`.axiswise` step
@@ -748,7 +765,7 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
         | none => scratchNow.getD name 0
       (s, (sigsNow.getD s { shape := #[], dtype := .f64 }).shape)
     let plan ← residualizeAssignment stepSizes warnings nm ctxUids stepExtents outputUids
-      ({} : HashMap UID Int) resolveSource preSlot outputShape rhs.body.terms
+      ({} : HashMap UID Int) resolveSource preSlot outputShape rhs.agg rhs.body.terms
     stepSigs := stepSigs.push { shape := outputShape, dtype := .f64 }
     stepAssignPlans := stepAssignPlans.push plan
     -- one `.assign` for identity (published under `preSlot`); preactivation `.assign` plus one
@@ -968,7 +985,7 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
         -- behavior exactly (Task 2's whole point; see `residualizeAssignment`'s doc comment).
         let assignPlan ←
           residualizeAssignment sizes warnings nm [] #[] retainedUids ({} : HashMap UID Int)
-            resolveSource destSlot outputShape rhs.body.terms
+            resolveSource destSlot outputShape rhs.agg rhs.body.terms
         match rhs.nonlin with
         | .identity =>
             -- Byte-for-byte unchanged (Thread 4 regression gate): single `.assign`, published

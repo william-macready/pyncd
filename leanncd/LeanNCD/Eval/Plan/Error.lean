@@ -61,7 +61,9 @@ inductive CapabilityError
   | unsupportedNonlin    (context : String)  -- pointwise/axiswise nonlinearities
   | maskOrPredicate      (context : String)  -- masks, predicates, Iverson factors
   | unaryFactor          (context : String)
-  | unsupportedAgg       (context : String)  -- max/min aggregation
+  | unsupportedAgg       (context : String)  -- max/min aggregation: RETAINED, no producer left
+                                             -- (checkAggOp admits max/min since they compile to the
+                                             -- tropical algebras); kept per §9.2, like scanNode
   | booleanOutput        (context : String)
   | unsupportedDtype     (context : String)  -- any dtype other than the declared f64 mode
   | dynamicShape         (context : String)  -- backend- or value-dependent shapes

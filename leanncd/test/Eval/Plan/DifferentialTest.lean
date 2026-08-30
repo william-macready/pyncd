@@ -21,8 +21,8 @@ Wave F F4 Task 4 extends the same treatment to SOURCE SCANS at the end of this f
 `ScanCompileTest.lean`'s twelve acceptance fixtures assert the STRUCTURE the compiler residualized;
 the section below asserts what that structure DOES — that each one executes through
 `prepareEvalPlan`/`runPreparedDense` to a result bit-identical to `evalScheduled`, and that the
-curated `enumScanCases` generator splits exactly 13 accepted / 0 `unsupportedNonlin` /
-4 `unsupportedAgg` with every accepted case matching the legacy evaluator.
+curated `enumScanCases` generator splits exactly 17 accepted / 0 `unsupportedNonlin` /
+0 `unsupportedAgg` with every accepted case matching the legacy evaluator.
 -/
 
 namespace LeanNCD.Eval.Plan.DifferentialTest
@@ -282,6 +282,70 @@ run_cmd do
                   unless denseEq z ⟨[2], #[100.0, 200.0]⟩ do
                     throwError s!"Z did not read the LAST write of Y: {repr z.data}"
               | _, _ => throwError "Y or Z missing from repeated-assignment plan env"
+
+-- ── Plain (non-scan) max/min aggregation, end-to-end through the CHECKED PLAN path. The scan corpus
+-- (template 5) pins the scan-RECURRENCE `residualizeAssignment` call site (`sum` base + `max` recur),
+-- but the plain top-level call site and the scan-base call site are otherwise only preflight-/compile-
+-- tested — `CompileTest.lean`'s max/min fixtures stop at `isOk (capabilityPreflight …)`, and
+-- `KernelDenseTest.lean` sets the algebra directly, bypassing `algebraForAgg`'s threading entirely.
+-- A regression hardcoding `admittedAlgebra` at the plain call site would escape all of those. These
+-- two fixtures close that hole: each runs a plain `maxreduce`/`minreduce` program through the full
+-- `prepareEvalPlan` → `runPreparedDense` pipeline AND cross-checks `evalScheduled` via `planAgrees`.
+-- The inputs are chosen so `max`/`min` and `sum` DISAGREE (row sums 4/6 vs max 3/5, min 1/1), so the
+-- fixtures fail — not pass vacuously — if the tropical algebra is not actually threaded to this site. ──
+
+private def maxPlainProg : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  axis j : ℕ = 2
+  Y[i] := maxreduce(A[i, j])
+}
+
+private def minPlainProg : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  axis j : ℕ = 2
+  Y[i] := minreduce(A[i, j])
+}
+
+private def plainAggInputs : HashMap String DenseTensor :=
+  (({} : HashMap String DenseTensor).insert "A" ⟨[2, 2], #[3.0, 1.0, 1.0, 5.0]⟩)
+
+run_cmd do
+  -- max: rows [3,1] and [1,5] ⇒ Y = [3, 5] (sum would be [4, 6]).
+  match planAgrees maxPlainProg plainAggInputs with
+  | .error e => throwError s!"plain max case: {e}"
+  | .ok () => pure ()
+  match maxPlainProg.compileToScheduled.run 0 with
+  | .error e _ => throwError s!"maxPlainProg compile failed: {repr e}"
+  | .ok sched _ =>
+      match prepareEvalPlan sched (InputSignature.ofDenseInputs plainAggInputs) with
+      | .error _ => throwError "maxPlainProg prepare failed (unexpected — planAgrees already accepted it)"
+      | .ok prepared =>
+          match runPreparedDense prepared plainAggInputs with
+          | .error e => throwError s!"maxPlainProg run failed (warnings={e.warnings.length})"
+          | .ok report =>
+              match report.env["Y"]? with
+              | some y =>
+                  unless denseEq y ⟨[2], #[3.0, 5.0]⟩ do
+                    throwError s!"plain max: expected row maxima [3,5], got {repr y.data}"
+              | none => throwError "Y missing from plain max plan env"
+  -- min: rows [3,1] and [1,5] ⇒ Y = [1, 1] (sum would be [4, 6]).
+  match planAgrees minPlainProg plainAggInputs with
+  | .error e => throwError s!"plain min case: {e}"
+  | .ok () => pure ()
+  match minPlainProg.compileToScheduled.run 0 with
+  | .error e _ => throwError s!"minPlainProg compile failed: {repr e}"
+  | .ok sched _ =>
+      match prepareEvalPlan sched (InputSignature.ofDenseInputs plainAggInputs) with
+      | .error _ => throwError "minPlainProg prepare failed (unexpected — planAgrees already accepted it)"
+      | .ok prepared =>
+          match runPreparedDense prepared plainAggInputs with
+          | .error e => throwError s!"minPlainProg run failed (warnings={e.warnings.length})"
+          | .ok report =>
+              match report.env["Y"]? with
+              | some y =>
+                  unless denseEq y ⟨[2], #[1.0, 1.0]⟩ do
+                    throwError s!"plain min: expected row minima [1,1], got {repr y.data}"
+              | none => throwError "Y missing from plain min plan env"
 
 /-- Confirm mutating `original` into `mutated` actually changes `outputName`'s value relative to
     `original`'s OWN `evalScheduled` result — a mutation that doesn't break agreement is worse than
@@ -755,10 +819,12 @@ run_cmd do
 -- ── The generated-corpus gate ──
 -- `enumScanCases` (`test/Eval/PropertyOracle/ScanGen.lean`) is a curated six-template family:
 -- template 2 (×4) applies `.pointwise .relu` inside the recurrence and template 5 (×4) uses
--- `.max`/`.min` aggregation — both outside F4's admitted fragment — while the remaining nine are
--- admitted. The split below is pinned by exact count AND by which capability constructor each
--- rejection produces, so a regression that widened or narrowed the fragment cannot be absorbed by
--- the accepted cases silently getting fewer.
+-- `.max`/`.min` aggregation. Both were once outside the admitted fragment; both are now admitted —
+-- nonlinear scans by Thread 4, and `.max`/`.min` by the max/min-aggregation thread (they compile to
+-- the tropical algebras `evalScheduled` already evaluates). So all 17 cases are admitted. The split
+-- below is still pinned by exact count AND by which capability constructor each rejection produces,
+-- so if the fragment ever narrows again, the regression cannot be absorbed by the accepted cases
+-- silently getting fewer.
 
 private inductive ScanCaseOutcome
   | accepted
@@ -796,16 +862,22 @@ private def scanCorpusSplit : Except String (Nat × Nat × Nat × Nat) :=
       let (total, accepted, nonlin, agg) := acc
       match ← checkScanCase ci.2 ci.1 with
       | .accepted => pure (total + 1, accepted + 1, nonlin, agg)
+      -- Both rejection arms are now unreached — no template produces an `unsupportedNonlin` or
+      -- `unsupportedAgg` rejection any longer — but kept so a future fragment narrowing is counted
+      -- here rather than surfacing as an "unexpected reason" throw.
       | .rejectedNonlin => pure (total + 1, accepted, nonlin + 1, agg)
       | .rejectedAgg => pure (total + 1, accepted, nonlin, agg + 1))
     (0, 0, 0, 0)
 
--- The counts pinned by F4's plan §0, independently re-derived from `ScanGen.lean`'s six templates:
--- 4×template1 + 4×template2 + 2×template3 + 2×template4 + 4×template5 + 1×template6 = 17, of which
--- template 5's four are `unsupportedAgg`, leaving 13 admitted. Thread 4 Task 4 admitted nonlinear
--- scan sources, so template 2's four ReLU-scan cases moved from `unsupportedNonlin` to `accepted`
--- (9→13; nonlin 4→0). The sweep short-circuits on the first parity disagreement, so `accepted=13`
--- also asserts those four now match `evalScheduled` byte-for-byte. Per the plan's stop condition, an
+-- The counts, independently re-derived from `ScanGen.lean`'s six templates:
+-- 4×template1 + 4×template2 + 2×template3 + 2×template4 + 4×template5 + 1×template6 = 17, all now
+-- admitted. Two threads closed the former rejections: Thread 4 admitted nonlinear scans, moving
+-- template 2's four ReLU-scan cases from `unsupportedNonlin` to `accepted` (nonlin 4→0); the
+-- max/min-aggregation thread admitted `.max`/`.min`, moving template 5's four tropical-scan cases
+-- from `unsupportedAgg` to `accepted` (agg 4→0). So `accepted` went 9→13→17. The sweep
+-- short-circuits on the first parity disagreement, so `accepted=17` also asserts all seventeen match
+-- `evalScheduled` byte-for-byte — including the four tropical scans, whose reduction seeds at `−∞`/
+-- `+∞` while the zero-pad still feeds `0` as a factor value. Per the plan's stop condition, an
 -- accepted case that stops compiling — or stops matching `evalScheduled` — is a contract defect to
 -- REPORT, not a number to re-baseline here.
 run_cmd do
@@ -814,7 +886,7 @@ run_cmd do
   | .ok (total, accepted, nonlin, agg) =>
       dbg_trace s!"DifferentialTest scan corpus: total={total} accepted={accepted} \
 unsupportedNonlin={nonlin} unsupportedAgg={agg}"
-      unless total == 17 && accepted == 13 && nonlin == 0 && agg == 4 do
+      unless total == 17 && accepted == 17 && nonlin == 0 && agg == 0 do
         throwError s!"scan corpus split counts changed: total={total} accepted={accepted} \
 nonlin={nonlin} agg={agg}"
 

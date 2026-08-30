@@ -29,6 +29,26 @@ def admittedAlgebra : ContractionAlgebra :=
   { factorOp := .mul, factorId := .f64 (Float.toBits 1.0)
   , reduceOp := .add, reduceId := .f64 (Float.toBits 0.0) }
 
+/-- Tropical max-product `(×, max, −∞)` — the algebra `AggOp.max` compiles to. Identity `−∞` so an
+    all-negative reduction still returns its greatest element (a `0` identity would spuriously win).
+    Mirrors the reference `Combine.max`. -/
+def admittedAlgebraMax : ContractionAlgebra :=
+  { factorOp := .mul, factorId := .f64 (Float.toBits 1.0)
+  , reduceOp := .max, reduceId := .f64 (Float.toBits (-1.0 / 0.0)) }
+
+/-- Tropical min-product `(×, min, +∞)` — the algebra `AggOp.min` compiles to. Identity `+∞` so an
+    all-positive reduction still returns its least element. Mirrors the reference `Combine.min`. -/
+def admittedAlgebraMin : ContractionAlgebra :=
+  { factorOp := .mul, factorId := .f64 (Float.toBits 1.0)
+  , reduceOp := .min, reduceId := .f64 (Float.toBits (1.0 / 0.0)) }
+
+/-- The algebras `checkAssign` admits: real sum-product plus the two tropical semirings that
+    `AggOp.max`/`.min` select. The out-of-bounds `zeroPad` policy still pads reads with `0` in all
+    three — a padded read is a factor value flowing through `factorOp` (mul), never the reduction
+    identity — so only `reduceOp`/`reduceId` differ between them. -/
+def admittedAlgebras : List ContractionAlgebra :=
+  [admittedAlgebra, admittedAlgebraMax, admittedAlgebraMin]
+
 /-- The extents this term projects onto the output, in `outputPos` order. -/
 def TermPlan.outputProjection (t : TermPlan) : Array Nat :=
   t.outputPos.filterMap (fun p => t.iterationShape[p]?)
@@ -61,7 +81,7 @@ def checkAssign (sigs : Array TensorSignature) (a : AssignPlan) :
     throw (.dtypeNotAdmitted a.destinationSlot destSig.dtype)
   unless destSig.shape == a.outputShape do
     throw (.destinationShapeMismatch a.outputShape destSig.shape)
-  unless a.algebra == admittedAlgebra do throw (.algebraNotAdmitted a.algebra)
+  unless admittedAlgebras.contains a.algebra do throw (.algebraNotAdmitted a.algebra)
   unless constMatchesDtype destSig.dtype a.algebra.factorId do
     throw (.constDtypeMismatch destSig.dtype a.algebra.factorId)
   unless constMatchesDtype destSig.dtype a.algebra.reduceId do

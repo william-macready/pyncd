@@ -51,6 +51,55 @@ def dataOf : Except String DenseTensor → Option (Array Float)
 -- ΣB = 6, so Y[i] = A[i] · 6.  Verified by execution and by hand.
 #guard dataOf (runIt sigs contractPlan storeAB) == some #[60.0, 600.0, 6000.0, 60000.0]
 
+-- Tropical reductions: clone `contractPlan`, change only the algebra. `Y[i] := A[i] · B[j]` reduced
+-- over `j` under max/min instead of sum. The out-of-bounds zero-pad is untouched (there are no OOB
+-- reads here); only the reduction identity/operator changes.
+
+-- max over B = [1,2,3] is 3, so Y[i] = A[i] · 3.  Verified by execution.
+def maxContractPlan : AssignPlan := { contractPlan with algebra := admittedAlgebraMax }
+#guard dataOf (runIt sigs maxContractPlan storeAB) == some #[30.0, 300.0, 3000.0, 30000.0]
+
+-- min over B = [1,2,3] is 1, so Y[i] = A[i] · 1.  Verified by execution.
+def minContractPlan : AssignPlan := { contractPlan with algebra := admittedAlgebraMin }
+#guard dataOf (runIt sigs minContractPlan storeAB) == some #[10.0, 100.0, 1000.0, 10000.0]
+
+-- Identity is load-bearing: with an all-NEGATIVE `B = [-1,-2,-3]`, max reduces to -1, so
+-- Y[i] = A[i]·(-1). Only the `−∞` reduction seed makes this right — a `0` seed would win every
+-- column and yield `[0,0,0,0]`. This is the fixture the §3.2 identity mutation flips (and only it,
+-- since the two above have positive column maxima the seed never beats). Verified by execution.
+def storeNegB : Array DenseTensor :=
+  #[ { shape := [4], data := #[10.0, 100.0, 1000.0, 10000.0] }
+   , { shape := [3], data := #[-1.0, -2.0, -3.0] }
+   , { shape := [4], data := #[] } ]
+#guard dataOf (runIt sigs maxContractPlan storeNegB) == some #[-10.0, -100.0, -1000.0, -10000.0]
+
+-- Out-of-bounds interaction with a tropical reduction — the plan's central subtlety, exercised
+-- directly. `Y[i] := max_j A[i,j]` with the reduction axis `j` ranging over {0,1,2} but `A` only
+-- 2 columns wide, so the read at `j=2` is out of bounds and `zeroPad` returns `0.0`. That `0.0`
+-- is a FACTOR value (it flows through `factorFold`'s mul, `1.0 · 0.0 = 0.0`) and so enters the max
+-- fold as a genuine term value of `0.0` — it is NOT the reduction identity (which is `−∞`). With
+-- all-negative valid data the padded `0.0` therefore WINS the max: `Y[i] = max(A[i,0], A[i,1], 0.0)
+-- = 0.0`. This is observable and consistent with the reference's identical zero-extension (the pad
+-- affects the result, it just does so the same way in both evaluators), not an implementation
+-- divergence. Verified by execution.
+def oobSigs : Array TensorSignature :=
+  #[ { shape := #[2, 2], dtype := .f64 }, { shape := #[2], dtype := .f64 } ]
+
+def oobReadA : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[#[1, 0], #[0, 1]], bias := #[0, 0] }
+  , sourceShape := #[2, 2], oobPolicy := .zeroPad }
+
+def oobMaxPlan : AssignPlan :=
+  { contextShape := #[], destinationSlot := 1, outputShape := #[2]
+  , terms := #[{ iterationShape := #[2, 3], contextPos := #[], outputPos := #[0], reductionPos := #[1]
+               , factors := #[oobReadA] }]
+  , algebra := admittedAlgebraMax }
+
+def oobStore : Array DenseTensor :=
+  #[ { shape := [2, 2], data := #[-1.0, -2.0, -3.0, -4.0] }, { shape := [2], data := #[] } ]
+
+#guard dataOf (runIt oobSigs oobMaxPlan oobStore) == some #[0.0, 0.0]
+
 /-!
 ## Additional fixtures (Step 3)
 -/

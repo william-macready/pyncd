@@ -30,15 +30,17 @@ private def gatherFactor (store : Array DenseTensor) (f : ReadPlan) (iter : List
 private def applyOp : ScalarBinOp → Float → Float → Float
   | .add => (· + ·)
   | .mul => (· * ·)
+  | .min => fun a b => Min.min a b
+  | .max => fun a b => Max.max a b
 
 /-- Decode a checked plan's scalar constant to its `Float` value. The catch-all `_ => 0.0` arm is
     dead code in practice, not a real default: `checkAssign`'s `algebraNotAdmitted` guard
-    (`Check.lean`) forces `a.algebra == admittedAlgebra` exactly, and `admittedAlgebra`'s
-    `factorId`/`reduceId` are both `.f64 _` — the only `ScalarConst` values a `CheckedAssignPlan`
-    can ever carry here. Kept as a total match (rather than an exhaustive `.f64`-only one) so this
-    function does not need to change shape if `ScalarConst` grows a new constructor; see
-    `ScalarConst`'s own doc comment (`Types.lean`) for why `.f32`/`.bool` can never actually reach
-    here. -/
+    (`Check.lean`) forces `a.algebra ∈ admittedAlgebras`, and every `factorId`/`reduceId` of those
+    three algebras (real sum-product plus the two tropical semirings) is `.f64 _` — the only
+    `ScalarConst` values a `CheckedAssignPlan` can ever carry here. Kept as a total match (rather than
+    an exhaustive `.f64`-only one) so this function does not need to change shape if `ScalarConst`
+    grows a new constructor; see `ScalarConst`'s own doc comment (`Types.lean`) for why `.f32`/`.bool`
+    can never actually reach here. -/
 private def constFloat : ScalarConst → Float
   | .f64 bits => Float.ofBits bits
   | _ => 0.0

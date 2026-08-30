@@ -629,8 +629,10 @@ def rejInputs : HashMap String DenseTensor :=
 
 def rejSig : InputSignature := InputSignature.ofDenseInputs rejInputs
 
-/-- Compile a one-axis playground program and return its failure cause (`none` if it was accepted —
-    which is itself a fixture failure everywhere below). -/
+/-- Compile a one-axis playground program and return its failure cause (`none` if it was accepted).
+    Most fixtures below expect a specific rejection cause, so `none` is a failure for them; the
+    `badAgg … == none` fixtures are the exception — max/min aggregation is admitted, so acceptance
+    (`none`) is exactly what they assert. -/
 def rej (base recur : List Stmt) : Option PlanCompileCause :=
   causeOf (prepareEvalPlan (rejSched base recur) rejSig)
 
@@ -695,22 +697,24 @@ def badRecurMorphism (nm : String) : Stmt := .recurMorphism nm axL default
 def pinL : LHSSlot := .iterAt axL 0
 def nextL : LHSSlot := .iterNext axL
 
--- in the BASE list. `.freeNorm`, `.pointwise`, and `.axiswise` are NO LONGER preflight rejections
--- (Thread 4 Task 4): `compileScan` now admits and lowers them. Their positive coverage is the
--- accept-path fixtures (below and in `ScanTest.lean`); the marker-consistency and masked-axiswise
--- negatives — which now surface at the `resolveNonlinAxis` tier, not preflight — are Task 4's Task 2.
+-- in the BASE list. `.freeNorm`, `.pointwise`, `.axiswise`, and `.max`/`.min` aggregation are NO
+-- LONGER preflight rejections: `compileScan` now admits and lowers the nonlinearities (Thread 4
+-- Task 4), and `.max`/`.min` compile to the tropical algebras (max/min-aggregation thread). Their
+-- positive coverage is the accept-path fixtures (the `== none` `badAgg` cases below, plus
+-- `ScanTest.lean`); the marker-consistency and masked-axiswise negatives — which now surface at the
+-- `resolveNonlinAxis` tier, not preflight — are Task 4's Task 2.
 #guard rej [badAffineLhs "S"] [okRecur] == some (.capability (.scatterOrAffineLhs "S: affine LHS slot"))
-#guard rej [badAgg "S" pinL .max] [okRecur] == some (.capability (.unsupportedAgg "S: max aggregation"))
-#guard rej [badAgg "S" pinL .min] [okRecur] == some (.capability (.unsupportedAgg "S: min aggregation"))
+#guard rej [badAgg "S" pinL .max] [okRecur] == none   -- max agg now admitted
+#guard rej [badAgg "S" pinL .min] [okRecur] == none   -- min agg now admitted
 #guard rej [badIverson "S" pinL] [okRecur] == some (.capability (.maskOrPredicate "S: iverson factor"))
 #guard rej [badUnary "S" pinL] [okRecur] == some (.capability (.unaryFactor "S: unary function on X"))
 #guard rej [badScatter "S"] [okRecur] == some (.capability (.scatterOrAffineLhs "S"))
 #guard rej [badRecurMorphism "S"] [okRecur] == some (.capability (.recurrenceOrCallback "S"))
 
--- in the RECURRENCE list (`.freeNorm`/`.pointwise`/`.axiswise` admitted now — see the BASE note)
+-- in the RECURRENCE list (`.freeNorm`/`.pointwise`/`.axiswise` and `.max`/`.min` admitted — see note)
 #guard rej [okBase] [badAffineLhs "S"] == some (.capability (.scatterOrAffineLhs "S: affine LHS slot"))
-#guard rej [okBase] [badAgg "S" nextL .max] == some (.capability (.unsupportedAgg "S: max aggregation"))
-#guard rej [okBase] [badAgg "S" nextL .min] == some (.capability (.unsupportedAgg "S: min aggregation"))
+#guard rej [okBase] [badAgg "S" nextL .max] == none   -- max agg now admitted
+#guard rej [okBase] [badAgg "S" nextL .min] == none   -- min agg now admitted
 #guard rej [okBase] [badIverson "S" nextL] == some (.capability (.maskOrPredicate "S: iverson factor"))
 #guard rej [okBase] [badUnary "S" nextL] == some (.capability (.unaryFactor "S: unary function on X"))
 #guard rej [okBase] [badScatter "S"] == some (.capability (.scatterOrAffineLhs "S"))
