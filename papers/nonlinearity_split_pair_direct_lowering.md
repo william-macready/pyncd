@@ -1,12 +1,12 @@
 # Logical nonlinearity scheduling and private route fragments
 
-**Status:** Substantially executed. **Tasks 1, 2, 3 and 4 are complete and merged** (§3.3, §3.4,
-§3.5, §3.6 — each carries its own completion blockquote naming the slice plan that executed it).
-Nonlinear scan admission is live: the compiler lowers pointwise and axiswise scan sources into
-checked block steps, and legacy Eval, the checked Plan path, and the independent unroller agree on
-all six oracle groups. **Task 5 (§3.7 — differential documentation, stale-document sweep, and
-whole-branch closure) is the single remaining slice.** Sections 2 and 4 remain the governing contract
-throughout.
+**Status:** **Fully executed.** All five tasks are complete and merged (§3.3, §3.4,
+§3.5, §3.6, §3.7 — each carries its own completion blockquote naming the slice plan that executed
+it). Nonlinear scan admission is live: the compiler lowers pointwise and axiswise scan sources into
+checked block steps, legacy Eval, the checked Plan path, and the independent unroller agree on
+all six oracle groups, and the active documentation inventory now describes one logical schedule
+and the private physical route adapter — the stale-recommendation scan residual is exactly the two
+documented false positives. Sections 2 and 4 remain the governing contract throughout.
 
 **Decision:** Preserve nonlinear assignments in the shared `ScheduledProgram`. Schedule once over
 logical tensor names. Eval consumers lower or execute that logical assignment directly. Immediately
@@ -1934,6 +1934,109 @@ independence/Dense semantics.
 > The original caution still stands for whatever the audit could not reach: this document's own
 > history is a run of inaccurate prose claims about *unchanged* code caught only at the final review
 > tier, most recently in Task 4. Treat every edit as claim-verification against the tree.
+
+> **Complete (2026-08-29).** Executed against `main` at `2531a5e` in this worktree, per
+> [`leanncd/docs/superpowers/plans/2026-08-29-nonlinearity-t5-differential-closure.md`](../leanncd/docs/superpowers/plans/2026-08-29-nonlinearity-t5-differential-closure.md).
+> The doc sweep landed in commit `cd8ff98`; the completion record and this blockquote land in the
+> commit that carries this diff. §3.7 steps 1–3 remain satisfied by Task 4; this slice executed
+> steps 4–7.
+>
+> **Scan gate.** `bash leanncd/spikes/scan.sh` residual is exactly the two documented false
+> positives — `LeanNCD/DSL/AGENTS.md`'s phase table (whose prose already states "`splitNonlins`
+> survives only as a regression-only helper, off the production chain") and `papers/todo.md`'s
+> permanent archival banner. Both were preserved unchanged; §3.7's Trap 1 predicted this exact
+> residual.
+>
+> **Documents corrected.** The audit's ~31 flagged passages across 14 files, plus five unflagged
+> Task-1-category claims the end-to-end re-read surfaced:
+>
+> | File | Rows fixed | Unflagged additions |
+> |---|---|---|
+> | `leanncd/realize.md` | L110-115, L119-122, L172, L194 | — |
+> | `leanncd/SORRY_INVENTORY.md` | L244-246, L383-384 | — (one `unifyAxes` reference recorded but out of Task-1 scope) |
+> | `papers/eval_ir.md` | L275-282, L294-297, L299-302, L381, L496-497 | — |
+> | `papers/leanncd.md` | L1637-1642, L1703-1706, L1720, L1734, L1744 | L1278 (`splitNonlins` freeNorm consumer) |
+> | `papers/code_walkthrough.md` | L378, L455-456, L468-469, L640-671, L914 | numbered phase list L406-417 (10-phase chain refresh) |
+> | `papers/NaperianTyping.md` | L38, L420, L797-799 | L180 (splitNonlins as example passing morphism) |
+> | `papers/NaperianTypingIntegrationPlan.md` | L201-214, L233-249 + dated pointer | — (scoped per §Task 1) |
+> | `docs/superpowers/specs/2026-06-12-lean-dsl-tensor-logic-design.md` | L441-442, L454 | — |
+> | `leanncd/test/Eval/Plan/DifferentialTest.lean` | L24-25 (comment only; assertion at L811 unchanged) | — |
+> | `papers/jax_evalplan_architecture.md` | L286-288, L1319-1322 | — |
+> | `papers/copilot_code_analysis.md` | L468-471, L2904 | L2842 (`splitNonlins` insertion-point reference) |
+> | `papers/wave_f_scanplan_proposal.md` | L188-190 (judgment call), L214, L632, L984-985 | L1787-1791 (9/4/4 corpus count) |
+> | `leanncd/docs/superpowers/plans/2026-08-21-wiring-loop-generalization.md` | L70-74 active pointer only; historical `RawPlanBlock.assignments` record preserved | — |
+> | `leanncd/AGENTS.md` | L145 `[fail-loud]` entry reframed as history | — |
+>
+> **Judgment call recorded** (plan Task 2, `wave_f_scanplan_proposal.md` L188-190 "should
+> initially admit only identity nonlinearity"): **STALE, read as current capability.** Grammatical
+> mood ("should initially") superficially reads as historical, but the surrounding paragraph
+> continues in present tense ("currently rejects") and L214's non-goals row reinforces "still
+> rejected." Thread 4 Task 4 has since widened the admission set, so the original wording leaves
+> a live-sounding restriction that contradicts current code. Fix: rewrite in past tense, add an
+> inline "Nonlinearity-thread update — 2026-08-29" callout summarising the widening and the new
+> 13 / 0 / 4 corpus split. Remaining §5.1 restrictions (Boolean factors, unary factors, max/min
+> agg, `.scanPre`) are unchanged and explicitly named as unchanged in the callout.
+>
+> **End-to-end re-reads.** Each edited document was re-read end to end after edit; unflagged
+> stale claims discovered by the re-read were either fixed (five, listed above) or recorded as
+> out-of-scope for this slice (three: `SORRY_INVENTORY.md`'s `unifyAxes` phase description
+> inside the E2a resolved-decisions record; `wave_f_scanplan_proposal.md` L1898-1900's
+> `ScanPlanError.causalityFailure` field enumeration missing `blockStepIndex`; and the same
+> file's L1474 "steps→assignments" historical field-rename arrow). Recording per plan §2 rather
+> than fixing.
+>
+> **Mutation cycles — observed, not predicted.**
+>
+> 1. **Scan mutation (§3.7 third).** Re-inserted `finalizeScans → splitNonlins → schedule` into
+>    `realize.md`. Observed: `bash leanncd/spikes/scan.sh` matched `realize.md:117`. Restored;
+>    residual returned to the two documented false positives.
+> 2. **Differential cycle 1 (§3.7 first) — remove one logical result from the report before
+>    comparison, on a named nonlinear group.** Erased key `"S"` from `planReport.env` for
+>    `group4/nonlinearBase` immediately before the `envEq` check inside `scanParityCheck`.
+>    Observed: `lake build Eval.Plan.DifferentialTest` failed with
+>    `NONLINEAR SCAN PARITY FAILED: group4/nonlinearBase: environment mismatch. plan env:
+>    [("X", …), ("A", …)]  reference env: [("X", …), ("S", …), ("A", …)]`. Restored; build
+>    reports `total=17 accepted=13 unsupportedNonlin=0 unsupportedAgg=4` and passes.
+> 3. **Differential cycle 2 (§3.7 second) — compare a preactivation-like value instead of the
+>    result on `group4/nonlinearBase`.** In the per-materialized-state comparison, replaced
+>    `a.data` with `a.data.map (fun x => -x - 1.0)` for `S` on that fixture (mimicking a read
+>    of a pre-relu-analog rather than the true post-relu state). Observed: build failed with
+>    `NONLINEAR SCAN PARITY FAILED: group4/nonlinearBase: materialized state S diverges from
+>    the legacy evaluator: plan=[2,3]/#[-1.0, -1.0, -1.0, -4.0, 2.0, -4.0]
+>    ref=[2,3]/#[0.0, 0.0, 0.0, 3.0, -3.0, 3.0]`. Restored; build green.
+>
+> All three cycles: mutate → observe named check fail → restore → observe pass.
+>
+> **Gate results.** From `leanncd/`:
+>
+> | Target | Result |
+> |---|---|
+> | `DSL.Pipeline.RouteWeaveTest Bridge.AcsetCodecTest Bridge.AgreementTest Bridge.RealizeTest` | 8506 jobs, green; `realize_fromThreadedComposed_agree` axioms `[propext, Classical.choice, Quot.sound]` unchanged |
+> | `Eval.Plan.DifferentialTest Eval.PropertyOracle.ScanOracle` | 8524 jobs, green; corpus counts observed `total=3832 accepted=3832 rejected=0` and `total=17 accepted=13 unsupportedNonlin=0 unsupportedAgg=4` |
+> | `Tests` | 8657 jobs, green |
+> | `LeanNCD` | 8543 jobs, green |
+>
+> No `sorry`, no `admit`, no `axiom` introduced. No production code changed; the only Lean edit
+> was `DifferentialTest.lean`'s stale 9/4/4 header comment, and its L811 assertion was already
+> correct and did not move.
+>
+> **Two things this task's execution changed about the plan as written.** First, the scan gate is
+> sensitive to token adjacency in ways the plan didn't call out: rewriting a paragraph to
+> describe *current* behaviour still trips the multiline regex whenever
+> `splitNonlins.{0,80}(schedule|route|LinearProgram)` or `finalizeScans.{0,80}splitNonlins` come
+> within 80 chars — including across a paragraph break, because `--multiline-dotall`. Three of my
+> first-pass replacements in `leanncd.md`, `SORRY_INVENTORY.md`, `NaperianTyping.md`, and
+> `copilot_code_analysis.md` had to be re-worded to keep the trigger words farther apart while
+> still describing the current pipeline correctly. Second, the plan's Task 1 numbered-list phase
+> chains in `code_walkthrough.md` and `NaperianTypingIntegrationPlan.md`'s two staging boxes were
+> also stale about *other* phase renames (`unifyAxes` removed; `reclassifyIterSlots` /
+> `checkScatterNonlin` / `checkScatterNoScan` added); the audit did not flag these because it
+> was scoped to nonlinearity markers, but the substitution templates named in the plan implicitly
+> require the surrounding chain to be current. These were updated inline where they appeared in
+> already-edited files.
+>
+> **What is not done here.** The two whole-branch reviews are pending; run them after this
+> commit lands and record their adjudications inline below.
 
 **Outcome**
 
