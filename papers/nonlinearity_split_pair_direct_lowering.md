@@ -2038,6 +2038,42 @@ independence/Dense semantics.
 > **What is not done here.** The two whole-branch reviews are pending; run them after this
 > commit lands and record their adjudications inline below.
 
+> **Review adjudications (2026-08-30).**
+>
+> **Lens 1 — logical scheduling / categorical adapter / routed semantics.** *Clean.* Verified
+> every corrected passage against the tree (`compileToScheduled >>= route`, the 10 named phases,
+> `abbrev LinearProgram := ScanProgram`, `splitNonlins`'s regression-only docstring header, `route`
+> and `physicalizeForRoute` locations). Confirmed the archived/banner'd content is intact —
+> `LeanNCD/DSL/AGENTS.md` (both L26-27 false positive and the L125-126 "runs constantly" entry with
+> its inline Superseded banner), `papers/todo.md`, `papers/nonlinearity_split_pair_reconstruction_archived.md`,
+> `leanncd/docs/superpowers/plans/2026-08-21-nonlinearity-in-scans.md`, and
+> `docs/superpowers/specs/2026-08-21-nonlinearity-in-scans-design.md` show no changes; the
+> wiring-loop generalization's historical `RawPlanBlock.assignments` account at L82-83/L88/L94/L199/L210
+> is untouched and only its L70-74 next-slice pointer moved. `git diff --name-only main..HEAD`
+> returns zero paths under `LeanNCD/DSL/Pipeline/` or the four route/bridge tests, so
+> `realize_fromThreadedComposed_agree`'s axiom set `[propext, Classical.choice, Quot.sound]` is
+> unchanged by construction.
+>
+> **Lens 2 — checked Plan / oracle independence / differential soundness / stale-doc inventory.**
+> *One finding, fixed.* `leanncd/LeanNCD/Eval/AGENTS.md` L192 still asserted the Wave F F4
+> corpus split as "17 cases: 9 accepted, 4 `unsupportedNonlin`, 4 `unsupportedAgg`" — a
+> Task-2-category current-capability claim the audit's marker `rg` did not catch (its marker set
+> did not include the "9 accepted / 4" phrasing) and my end-to-end re-read missed (the doc was not
+> otherwise in the edit set). Corrected in place with the same past-tense framing used for
+> `wave_f_scanplan_proposal.md` L1787-1791. Verified all other Plan-layer identifiers named in the
+> sweep against the tree (`BlockStep`, `RawPlanBlock.steps : Array BlockStep`, `PlanStep`,
+> `ScanPlanError.causalityFailure (stateIndex blockStepIndex termIndex factorIndex : Nat)`,
+> `checkNonlinScanBlock`, `checkNonlinTopLevel`, `residualizeAssignment`) and confirmed the
+> mutation-cycle code paths (`scanParityCheck`'s per-name `denseEq a c` and whole-environment
+> `envEq`) exist at the exact locations the mutation records name. The updated scan gate residual
+> remains exactly the two documented false positives.
+>
+> A separate lesson from this round: my Lens-2 background reviewer hung mid-investigation (~10h
+> elapsed, no turns emitted, no response to a cancel message). Falling back to running the review
+> directly, per CLAUDE.md's "do the task yourself" guidance, is what surfaced the `Eval/AGENTS.md`
+> miss quickly. Recording the delegation failure so the next slice's review dispatch either
+> tightens the scope or plans to bail out earlier.
+
 **Outcome**
 
 All executable paths agree on source-visible results. Active documentation describes one logical
