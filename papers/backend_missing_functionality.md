@@ -5,6 +5,15 @@ support. Scope is the static compiler backend only — the reference dense inter
 already evaluates most of the constructs listed here, so nearly every row is a *backend-parity* gap
 (the checked plan compiler has not caught up to the reference semantics), not a missing semantic.
 
+## Contents
+
+- [Authoritative source — re-derive, don't trust this copy](#authoritative-source--re-derive-dont-trust-this-copy)
+- [Missing capabilities](#missing-capabilities)
+  - [Difficulty ranking rationale (hardest → easiest)](#difficulty-ranking-rationale-hardest--easiest)
+  - [Scan-geometry limits (not `CapabilityError` rejections)](#scan-geometry-limits-not-capabilityerror-rejections)
+- [Already closed (do not re-list as missing)](#already-closed-do-not-re-list-as-missing)
+- [Related documents](#related-documents)
+
 ## Authoritative source — re-derive, don't trust this copy
 
 Every syntactically visible rejection the backend can make is one constructor of the closed enum
