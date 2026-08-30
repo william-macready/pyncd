@@ -168,16 +168,25 @@ Wave F" table:
 
 | Missing capability | Consequence after Wave F |
 |---|---|
-| Pointwise and axiswise nonlinearities | Rejected in both ordinary `PlanStep.assign` operations and scan base/step blocks. |
+| Pointwise and axiswise nonlinearities | **Admitted** (thread 4): top-level (`checkNonlinTopLevel`) and inside scan `base`/`recur` blocks (`checkNonlinScanBlock`), residualized into a two-step `assign → pointwise/axiswise` chain. `unsupportedNonlin == 0` in the `DifferentialTest.lean` scan corpus. |
 | Masks, predicates, Iverson/Boolean factors, and Boolean outputs | Rejected rather than represented in `AssignPlan` or `CheckedPlanBlock`. |
 | Unary factor functions | Rejected in ordinary assignments and scans. |
 | Max/min aggregation | Only real sum-product reduction is admitted. |
 | Scatter and affine LHS writes | Wave D source semantics are not yet represented by checked `EvalPlan`. |
 | Dtypes beyond the admitted concrete `f64` mode and dynamic shapes | Still rejected at the checked-plan preparation boundary. |
-| `.scanPre`, callbacks, nonlinear scan bodies, and predicate-dispatch scan bodies | Still rejected even though `PlanStep.scan` exists. |
+| `.scanPre`, callbacks, and predicate-dispatch scan bodies | Still rejected even though `PlanStep.scan` exists (nonlinear scan bodies themselves are now admitted — see the first row). |
 | General n-dimensional recurrence geometry and arbitrary state writes | The first checked scan remains the rectangular uniform all-axis `+1` fragment. |
 | Multi-face full-boundary writes (the standard n-D tabulation-DP pattern, e.g. row-0-plus-column-0) and genuinely overlapping writes with no declared precedence | Neither is achievable in this version — both need an offset/restricted-range or conflict-resolving base-write geometry beyond pin-plus-full-free. |
 | PyTorch/JAX execution and optimized `lax.scan`/compact-carry/wavefront/parallel-prefix lowering | Dense remains the only general checked worker delivered by Wave F. |
+
+*The first row and the `.scanPre` row above were refreshed 2026-08-30 to track the proposal §1
+table they reproduce: the nonlinearity plan's Task 4 (`nonlinearity_split_pair_direct_lowering.md`
+§3.6) admitted pointwise/axiswise nonlinearities at top level and inside scan blocks, so those two
+rows no longer describe the current boundary. Everything else in this table is unchanged and
+re-derived against `capabilityPreflight` (`Eval/Plan/Compile.lean`) on this branch. The remaining
+still-rejected families are masks/predicates/Iverson factors and Boolean outputs, unary factor
+functions, max/min aggregation, scatter and affine LHS writes, non-`f64` dtypes and dynamic shapes,
+and `.scanPre`/callbacks/predicate-dispatch scan bodies.*
 
 The next semantic-expansion work after Wave F should be a named **checked local-kernel capability
 wave**, extending `AssignPlan`, its checker, and Dense interpretation one operation family at a time,
