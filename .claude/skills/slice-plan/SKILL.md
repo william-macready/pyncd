@@ -108,6 +108,23 @@ from Z," diff or grep the actual functions/files it describes.** This applies to
 architecture prose and to any completion-record template the plan hands to a later task —
 templated prose is not exempt just because it looks like documentation rather than code.
 
+**A carried-forward "known gaps" list is a prose claim about code, and decays like one — but no
+safeguard is pointed at it.** A completion record's gaps list gets copied slice to slice because it
+reads as settled fact. It is not: the next slice's whole job is often to close one of those gaps,
+and nothing re-checks the list afterwards.
+
+Real example, the nonlinearity plan: Task 3's record noted "`.axiswise` never appears inside a scan
+step block" — true then, since the compiler could not yet emit nonlinear scan steps. **Task 4 closed
+it.** The entry was nonetheless carried verbatim into Task 4's notes, Task 5's plan, and the final
+checkpoint, and survived a documentation audit, a full doc sweep, two whole-branch review lenses, and
+a repo-wide value-grep — because every one of those was aimed at *documents*, while the stale claim
+sat in a gaps bullet. It was caught only when someone asked "do we actually still need that?"
+
+**Rule: at each slice boundary, re-derive every gap you inherit before restating it.** One command
+per entry is usually enough — the axiswise one dissolved in a single spike printing the compiled
+block's step kinds. Restating an inherited gap without re-deriving it is the same defect as
+restating a measured claim at a later commit, and it hides better.
+
 **Verify every path the plan names, with `ls`, at authoring time.** The same argument one more
 level down: a plan cites files, and a wrong path costs the implementer a judgment call and a
 concern round-trip. Wave F F4's plan sent Task 5 to `leanncd/docs/design/eval_ir.md`, which does
@@ -271,6 +288,10 @@ someone still has the context to act on it.
       own design intent.
 - [ ] Every file path the plan names verified with `ls`, and each task's Files
       list derived from where its deliverable must live rather than from memory.
+- [ ] Every "known gap" inherited from a previous slice's completion record
+      re-derived against the tree before being restated. A gap list reads as
+      settled fact and is aimed at by none of the usual safeguards, so an entry
+      the previous slice closed will otherwise propagate indefinitely.
 - [ ] No `File.lean:NNN` line numbers in any text the plan tells a task to ship
       (completion records, AGENTS.md rows, design-doc edits) — identifiers only,
       since a later code commit in the same slice invalidates line numbers.

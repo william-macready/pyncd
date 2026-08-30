@@ -637,7 +637,16 @@ it is the pattern this repo keeps recording; it is logged here rather than silen
 
 Nine mutation cycles total across Task 2 and the fix wave, every one observed rather than predicted.
 
-**Remaining known gaps, deliberately not closed:** `.axiswise` still never appears inside a scan
-step block (only inside plain blocks, `BlockTest` fixtures 2 and 7); and `BlockStep.sourceSlots`
-remains call-site-free, retained deliberately as the symmetric half of the accessor pair and
-documented as such.
+**Remaining known gaps, deliberately not closed:** `BlockStep.sourceSlots` remains call-site-free,
+retained deliberately as the symmetric half of the accessor pair and documented as such.
+
+> **Correction (2026-08-30).** This list previously also carried "`.axiswise` never appears inside a
+> scan step block (only inside plain blocks, `BlockTest` fixtures 2 and 7)". That was true when
+> written — at Task 3, `compileScan` could not emit nonlinear scan steps at all, so the only
+> scan-block fixtures were hand-built `RawScanPlan`s and none used axiswise. **Task 4 closed it**:
+> compiling `ScanCompileTest.interleavedAxiswise` (an axiswise scan recurrence with a `.freeNorm`
+> slot) yields `STEP block kinds: #[assign, axiswise]`, and that program runs end-to-end through the
+> three-way parity gate as `group2/interleavedAxiswise`. The claim was carried forward unchecked
+> through Tasks 4 and 5 before being re-derived — the same "restate a measured claim at a later
+> commit without re-deriving it" pattern this project keeps recording, here applied to a *gap list*
+> rather than a document.
