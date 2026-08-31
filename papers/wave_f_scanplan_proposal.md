@@ -198,19 +198,21 @@ rectangular uniform n-dimensional scans with advancing dimensions in arbitrary t
 > (`.assign`/`.pointwise`/`.axiswise`), and the differential's `enumScanCases` corpus now splits
 > **17 accepted / 0 `unsupportedNonlin` / 0 `unsupportedAgg`** (was 9 / 4 / 4 at F4 authoring time,
 > then 13 / 0 / 4 after thread 4 admitted nonlinear scans; `DifferentialTest.lean`). The remaining
-> §5.1 restrictions on Boolean factors, unary factors, `.scanPre`, etc. are unchanged; max/min
-> aggregation is now admitted too (it compiles to the tropical algebras `evalScheduled` evaluates).
+> §5.1 restrictions on Boolean factors, `.scanPre`, etc. are unchanged; max/min aggregation and unary
+> factors are now admitted too (max/min compiles to the tropical algebras `evalScheduled` evaluates;
+> unary factors lower to a `ReadPlan.unary` field applied after the out-of-bounds pad).
 
 Historically, the "no nonlinearities" limit belonged to Wave C's checked `EvalPlan`, not to the
 broader source language or legacy `evalScheduled` evaluator. Source programs can contain pointwise or
 axiswise nonlinearities, Boolean factors and predicates, unary factors, and max/min aggregation, and
 the legacy path supports relevant cases. As of thread 4, `prepareEvalPlan` **admits and residualizes**
-pointwise and axiswise nonlinearities (both at top level and inside scan blocks), and the
+pointwise and axiswise nonlinearities (both at top level and inside scan blocks), the
 max/min-aggregation thread additionally **admits** max/min aggregation (compiled to the tropical
-algebras); the remaining rejections above still return typed `CapabilityError` values because
-`AssignPlan` cannot represent their semantics. Wave F does not broaden the local kernel further merely
-because such constructs also occur inside current scan examples. They remain orthogonal plan-kernel
-extensions and retain typed source rejection on the checked-plan path.
+algebras), and the unary-factor thread **admits** unary factors (`log`/`exp`/…, lowered to a
+`ReadPlan.unary` field); the remaining rejections above still return typed `CapabilityError` values
+because `AssignPlan` cannot represent their semantics. Wave F does not broaden the local kernel further
+merely because such constructs also occur inside current scan examples. They remain orthogonal
+plan-kernel extensions and retain typed source rejection on the checked-plan path.
 
 **Functionality still missing after Wave F lands.** Completing Wave F will **not** make
 `CheckedEvalPlan` feature-equivalent to the source language or `evalScheduled`. The following remain
@@ -220,7 +222,7 @@ outside the checked-plan path:
 |---|---|
 | Pointwise and axiswise nonlinearities | **Admitted** (thread 4): top-level (`checkNonlinTopLevel`) and inside scan `base`/`recur` blocks (`checkNonlinScanBlock`), residualized into a two-step `assign → pointwise/axiswise` chain. `unsupportedNonlin == 0` in the `DifferentialTest.lean` scan corpus. |
 | Masks, predicates, Iverson/Boolean factors, and Boolean outputs | Rejected rather than represented in `AssignPlan` or `CheckedPlanBlock`. |
-| Unary factor functions | Rejected in ordinary assignments and scans. |
+| Unary factor functions | **Admitted** (unary-factor thread): `checkFactor` admits `.unaryFn`; `residualizeAssignment` lowers it to a `ReadPlan` with a new `unary : Option UnaryOp` field, and Dense's `gatherFactor` applies the function after the `zeroPad` out-of-bounds pad (so an OOB read contributes `f(0)`). The math lives once in `UnaryOp.applyChecked`, shared with the reference `applyUnaryFn`; `log`/`sqrt`/`recip` fail loud (`PositionalInputError.unaryDomain`). |
 | Max/min aggregation | **Admitted** (max/min-aggregation thread): `checkAggOp` admits `.max`/`.min`; the compiler selects the tropical algebra (`algebraForAgg`) `AssignPlan` already had the reduction slot for, and Dense reduces with `max`/`min` seeded at `−∞`/`+∞`. `unsupportedAgg == 0` in the `DifferentialTest.lean` scan corpus. |
 | Scatter and affine LHS writes | Wave D source semantics are not yet represented by checked `EvalPlan`. |
 | Dtypes beyond the admitted concrete `f64` mode and dynamic shapes | Still rejected at the checked-plan preparation boundary. |
@@ -553,7 +555,6 @@ Wave F continues to reject:
 - zero-length scan extents in the first plan version;
 - pointwise and axiswise nonlinearities;
 - masks, predicates, Iverson factors, and Boolean state;
-- unary factors;
 - scatter or affine LHS writes inside a scan block;
 - unsupported state-write geometry;
 - source scans with ambiguous state/base/result pairing;

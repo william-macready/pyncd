@@ -50,10 +50,17 @@ def checkLHSSlot (stmtName : String) : LHSSlot → Except CapabilityError Unit
   | .iterNext a => throw (.unsupportedLhsSlot s!"{stmtName}: iterNext {a.name}")
   | .affine _   => throw (.scatterOrAffineLhs s!"{stmtName}: affine LHS slot")
 
+/-- `.unaryFn` is now structurally admitted (unary-factor thread): `residualizeAssignment` lowers it
+    to a `ReadPlan` carrying `unary := some op`, and Dense's `gatherFactor` applies the function after
+    the out-of-bounds pad. This diverges from C0's frozen `classifyFactor`
+    (`test/Eval/Plan/ContractTest.lean`), which still classifies `.unaryFn` as `.rejected
+    "unaryFactor"` — the same deliberate divergence `checkNonlinTopLevel`/`checkAggOp` carry for the
+    constructs their threads admitted. The `unaryFactor` `CapabilityError` constructor is retained
+    producer-less (like `scanNode`), since a serialized Wave C rejection may still carry it. -/
 def checkFactor (stmtName : String) : Factor → Except CapabilityError Unit
   | .read ..       => pure ()
   | .iverson _     => throw (.maskOrPredicate s!"{stmtName}: iverson factor")
-  | .unaryFn _ n _ => throw (.unaryFactor s!"{stmtName}: unary function on {n}")
+  | .unaryFn _ _ _ => pure ()
 
 /-- Top-level (`.plain`) statement admission (Thread 4): `.pointwise`/`.axiswise` are now
     structurally admitted — `prepareEvalPlan`'s `.plain` branch compiles them into a real
@@ -374,8 +381,16 @@ private def residualizeAssignment (sizes : HashMap UID Nat) (warnings : List Eva
             { sourceSlot, map := { coeffs, bias := biasArr }, sourceShape, oobPolicy := .zeroPad }
       | .iverson _ => liftCapability warnings (throw (.maskOrPredicate "factor"))
           -- unreachable post-preflight (checkFactor/Step A already rejected .iverson)
-      | .unaryFn .. => liftCapability warnings (throw (.unaryFactor "factor"))
-          -- unreachable post-preflight (checkFactor/Step A already rejected .unaryFn)
+      | .unaryFn op name idxs =>
+          -- Reads exactly like `.read name idxs` (same slot resolution, same affine rows, same
+          -- zero-pad), then carries the unary function so `gatherFactor` applies it after the pad.
+          let (sourceSlot, sourceShape) := resolveSource name
+          let rows := idxs.map (fun e => substitutePins pins basisUids (idxToRow basisUids e))
+          let coeffs : Array (Array Int) := (rows.map (fun r => r.1.toArray)).toArray
+          let biasArr : Array Int := (rows.map (fun r => r.2)).toArray
+          factorsAcc := factorsAcc.push
+            { sourceSlot, map := { coeffs, bias := biasArr }, sourceShape, oobPolicy := .zeroPad
+            , unary := some op }
     termsAcc := termsAcc.push
       { iterationShape, contextPos, outputPos, reductionPos, factors := factorsAcc }
   return { contextShape, destinationSlot := destSlot, outputShape, terms := termsAcc

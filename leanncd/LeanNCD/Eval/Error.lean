@@ -202,7 +202,22 @@ inductive UnaryDomainOp
   | log
   | sqrt
   | recip
-  deriving DecidableEq
+  deriving DecidableEq, BEq, Repr
+
+/-- The single, context-free home for every unary transcendental's math and domain partiality
+    (`log`/`sqrt`/`recip` fail loud; `exp`/`sin`/`cos` are total). Both evaluators call this and wrap
+    the returned `UnaryDomainOp` into their own error channel — the reference `applyUnaryFn` below
+    re-attaches its `EvalContext` (`EvalError.unaryDomain`), the checked-plan `gatherFactor`
+    (`Eval/Plan/Dense.lean`) attaches a positional slot (`PositionalInputError.unaryDomain`). Adding a
+    future unary operator is one `UnaryOp` constructor and one arm here; both evaluators inherit it
+    and parity holds by construction. -/
+def _root_.LeanNCD.UnaryOp.applyChecked : LeanNCD.UnaryOp → Float → Except UnaryDomainOp Float
+  | .log,   v => if v ≤ 0.0 then .error .log else .ok (Float.log v)
+  | .sqrt,  v => if v < 0.0 then .error .sqrt else .ok (Float.sqrt v)
+  | .exp,   v => .ok (Float.exp v)
+  | .sin,   v => .ok (Float.sin v)
+  | .cos,   v => .ok (Float.cos v)
+  | .recip, v => if v == 0.0 then .error .recip else .ok (1.0 / v)
 
 /-- Why `resolveNonlin` rejected an `.axiswise` nonlinearity. Both cases are direct, unconditional
     throws in `resolveNonlin` (no solver, no context) — a closed two-case enum, not a bare string,

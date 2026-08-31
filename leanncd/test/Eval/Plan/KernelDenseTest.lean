@@ -100,6 +100,40 @@ def oobStore : Array DenseTensor :=
 
 #guard dataOf (runIt oobSigs oobMaxPlan oobStore) == some #[0.0, 0.0]
 
+-- Unary factors apply after the out-of-bounds zero-pad and fail loud on domain violations.
+-- These fixtures set `ReadPlan.unary` directly, independent of source lowering.
+def unarySigs : Array TensorSignature :=
+  #[ { shape := #[4], dtype := .f64 }, { shape := #[4], dtype := .f64 } ]
+
+def unaryRead (op : UnaryOp) (bias : Int) : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[#[1]], bias := #[bias] }
+  , sourceShape := #[4], oobPolicy := .zeroPad, unary := some op }
+
+def unaryPlan (op : UnaryOp) (bias : Int) : AssignPlan :=
+  { contextShape := #[], destinationSlot := 1, outputShape := #[4]
+  , terms := #[{ iterationShape := #[4], contextPos := #[], outputPos := #[0], reductionPos := #[]
+               , factors := #[unaryRead op bias] }]
+  , algebra := admittedAlgebra }
+
+def unaryPow2Store : Array DenseTensor :=
+  #[ { shape := [4], data := #[1.0, 2.0, 4.0, 8.0] }, { shape := [4], data := #[] } ]
+
+#guard dataOf (runIt unarySigs (unaryPlan .log 0) unaryPow2Store) ==
+  some #[Float.log 1.0, Float.log 2.0, Float.log 4.0, Float.log 8.0]
+
+#guard dataOf (runIt unarySigs (unaryPlan .sqrt 0) unaryPow2Store) ==
+  some #[Float.sqrt 1.0, Float.sqrt 2.0, Float.sqrt 4.0, Float.sqrt 8.0]
+
+def unaryOnesStore : Array DenseTensor :=
+  #[ { shape := [4], data := #[1.0, 1.0, 1.0, 1.0] }, { shape := [4], data := #[] } ]
+
+#guard dataOf (runIt unarySigs (unaryPlan .exp 0) unaryOnesStore) ==
+  some #[Float.exp 1.0, Float.exp 1.0, Float.exp 1.0, Float.exp 1.0]
+
+-- The final read is out of bounds, so zero-pad feeds `0.0` to `exp` and yields `exp 0 = 1.0`.
+#guard dataOf (runIt unarySigs (unaryPlan .exp 1) unaryOnesStore) ==
+  some #[Float.exp 1.0, Float.exp 1.0, Float.exp 1.0, Float.exp 0.0]
+
 /-!
 ## Additional fixtures (Step 3)
 -/
@@ -442,6 +476,19 @@ def badDataStore : Array DenseTensor :=
   #[ { shape := [4], data := #[10.0, 100.0, 1000.0] } ]
 
 #guard posErrOf sigs contractPlan badDataStore == some (.storageMismatch 0 [4] 3)
+
+-- Unary domain errors report the operator, offending value bits, and positional source slot.
+def unarySqrtBadStore : Array DenseTensor :=
+  #[ { shape := [4], data := #[1.0, -4.0, 4.0, 9.0] }, { shape := [4], data := #[] } ]
+
+#guard posErrOf unarySigs (unaryPlan .sqrt 0) unarySqrtBadStore ==
+  some (.unaryDomain .sqrt 13839561654909534208 0)
+
+def unaryRecipBadStore : Array DenseTensor :=
+  #[ { shape := [4], data := #[2.0, 0.0, 4.0, 8.0] }, { shape := [4], data := #[] } ]
+
+#guard posErrOf unarySigs (unaryPlan .recip 0) unaryRecipBadStore ==
+  some (.unaryDomain .recip 0 0)
 
 /-!
 ## Context-sensitive fixtures (Step 3)

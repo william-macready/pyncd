@@ -347,6 +347,95 @@ run_cmd do
                     throwError s!"plain min: expected row minima [1,1], got {repr y.data}"
               | none => throwError "Y missing from plain min plan env"
 
+-- ── Unary-factor end-to-end fixtures. These follow the plain max/min pattern above: each compiles
+-- source TL, prepares and runs the checked plan, checks `evalScheduled` parity via `planAgrees`, and
+-- asserts an explicit output value. ──
+
+private def xentProg : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  L[] := Y[i] · log(P[i])
+}
+
+private def xentInputs : HashMap String DenseTensor :=
+  (({} : HashMap String DenseTensor).insert "Y" ⟨[2], #[1.0, 0.0]⟩).insert
+    "P" ⟨[2], #[0.5, 0.5]⟩
+
+private def expOobProg : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  E[i] := exp(A[i + 1])
+}
+
+private def expOobInputs : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "A" ⟨[3], #[0.0, 1.0, 2.0]⟩
+
+private def divProg : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  Y[i] := X[i] / Z[i]
+}
+
+private def divInputs : HashMap String DenseTensor :=
+  ((({} : HashMap String DenseTensor).insert "X" ⟨[3], #[6.0, 8.0, 9.0]⟩).insert
+    "Z" ⟨[3], #[2.0, 4.0, 3.0]⟩)
+
+-- A unary factor INSIDE a scan recurrence: the recurrence reads previous state `S[j,l]` and scales it
+-- by `exp(Z[j])` (a total function, so unconditionally domain-safe). This exercises the one
+-- composition the plain fixtures above do not — that the scan worker's `runDenseAssignAt`/`gatherFactor`
+-- applies the unary identically — via `planAgrees`' byte-for-byte plan-vs-`evalScheduled` check.
+private def scanUnaryProg : TLProgram := tlprog!{
+  iter l = 2
+  S[j, 0]    := X[j]
+  S[j, l +1] := S[j, l] · exp(Z[j])
+}
+
+private def scanUnaryInputs : HashMap String DenseTensor :=
+  (({} : HashMap String DenseTensor).insert "X" ⟨[2], #[1.0, 2.0]⟩).insert
+    "Z" ⟨[2], #[0.0, 0.5]⟩
+
+private def checkedPlanOutputEq (label : String) (p : TLProgram)
+    (inputs : HashMap String DenseTensor) (outputName : String) (expected : DenseTensor) :
+    Except String Unit := do
+  match planAgrees p inputs with
+  | .error e => throw s!"{label}: {e}"
+  | .ok () => pure ()
+  match p.compileToScheduled.run 0 with
+  | .error e _ => throw s!"{label} compile failed: {repr e}"
+  | .ok sched _ =>
+      match prepareEvalPlan sched (InputSignature.ofDenseInputs inputs) with
+      | .error _ => throw s!"{label} prepare failed (unexpected — planAgrees already accepted it)"
+      | .ok prepared =>
+          match runPreparedDense prepared inputs with
+          | .error e => throw s!"{label} run failed (warnings={e.warnings.length})"
+          | .ok report =>
+              match report.env[outputName]? with
+              | some got =>
+                 unless denseEq got expected do
+                   throw s!"{label}: expected {repr expected.data}, got {repr got.data}"
+              | none => throw s!"{outputName} missing from {label} plan env"
+
+run_cmd do
+  -- L = Σᵢ Y[i]·log(P[i]) = 1·log(0.5) + 0·log(0.5) = log 0.5.  `planAgrees` proves plan == reference
+  -- byte-for-byte; the explicit value is built from the same `Float.log` the evaluator uses, so it is
+  -- exact rather than a lossy decimal.
+  match checkedPlanOutputEq "xentProg" xentProg xentInputs "L" ⟨[], #[Float.log 0.5]⟩ with
+  | .error e => throwError e
+  | .ok () => pure ()
+  -- E[i] = exp(A[i+1]); the last element is `exp(0) = 1.0` from the out-of-bounds read at `i = 2`.
+  match checkedPlanOutputEq "expOobProg" expOobProg expOobInputs "E"
+      ⟨[3], #[Float.exp 1.0, Float.exp 2.0, Float.exp 0.0]⟩ with
+  | .error e => throwError e
+  | .ok () => pure ()
+  -- Y[i] = X[i]·recip(Z[i]) = X[i]·(1/Z[i]); built from the same ops so `9·(1/3)` matches exactly.
+  match checkedPlanOutputEq "divProg" divProg divInputs "Y"
+      ⟨[3], #[6.0 * (1.0 / 2.0), 8.0 * (1.0 / 4.0), 9.0 * (1.0 / 3.0)]⟩ with
+  | .error e => throwError e
+  | .ok () => pure ()
+  -- Unary factor inside a scan recurrence: `planAgrees` proves the checked plan matches
+  -- `evalScheduled` byte-for-byte over the whole scan history (teeth: dropping the unary would make
+  -- the plan compute `S·1` instead of `S·exp(Z)` and disagree).
+  match planAgrees scanUnaryProg scanUnaryInputs with
+  | .error e => throwError s!"scanUnaryProg: {e}"
+  | .ok () => pure ()
+
 /-- Confirm mutating `original` into `mutated` actually changes `outputName`'s value relative to
     `original`'s OWN `evalScheduled` result — a mutation that doesn't break agreement is worse than
     no mutation test at all. -/

@@ -181,12 +181,13 @@ Wave F" table:
 
 *The first row and the `.scanPre` row above were refreshed 2026-08-30 to track the proposal §1
 table they reproduce: the nonlinearity plan's Task 4 (`nonlinearity_split_pair_direct_lowering.md`
-§3.6) admitted pointwise/axiswise nonlinearities at top level and inside scan blocks, and the
-max/min-aggregation thread (`max_min_aggregation.md`) admitted `.max`/`.min` aggregation, so those
+§3.6) admitted pointwise/axiswise nonlinearities at top level and inside scan blocks, the
+max/min-aggregation thread (`max_min_aggregation.md`) admitted `.max`/`.min` aggregation, and the
+unary-factor thread (`unary_factor_functions.md`) admitted unary factors, so those
 rows no longer describe the current boundary. Everything else in this table is unchanged and
 re-derived against `capabilityPreflight` (`Eval/Plan/Compile.lean`) on this branch. The remaining
-still-rejected families are masks/predicates/Iverson factors and Boolean outputs, unary factor
-functions, scatter and affine LHS writes, non-`f64` dtypes and dynamic shapes,
+still-rejected families are masks/predicates/Iverson factors and Boolean outputs,
+scatter and affine LHS writes, non-`f64` dtypes and dynamic shapes,
 and `.scanPre`/callbacks/predicate-dispatch scan bodies.*
 
 The next semantic-expansion work after Wave F should be a named **checked local-kernel capability

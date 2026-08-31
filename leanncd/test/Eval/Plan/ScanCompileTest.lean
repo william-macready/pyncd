@@ -689,7 +689,7 @@ def badIverson (nm : String) (adv : LHSSlot) : Stmt := .assign nm [adv]
   { body := { terms := [{ factors := [.iverson (.rel .eq (.embed (.const 0)) (.embed (.const 0)))] }] }
   , nonlin := .identity }
 def badUnary (nm : String) (adv : LHSSlot) : Stmt := .assign nm [adv]
-  { body := { terms := [{ factors := [.unaryFn .log "X" [.axis axL]] }] }, nonlin := .identity }
+  { body := { terms := [{ factors := [.unaryFn .log "S0" []] }] }, nonlin := .identity }
 def badScatter (nm : String) : Stmt :=
   .scatter nm [] { body := { terms := [] }, nonlin := .identity } {}
 def badRecurMorphism (nm : String) : Stmt := .recurMorphism nm axL default
@@ -697,9 +697,11 @@ def badRecurMorphism (nm : String) : Stmt := .recurMorphism nm axL default
 def pinL : LHSSlot := .iterAt axL 0
 def nextL : LHSSlot := .iterNext axL
 
--- in the BASE list. `.freeNorm`, `.pointwise`, `.axiswise`, and `.max`/`.min` aggregation are NO
+-- in the BASE list. `.freeNorm`, `.pointwise`, `.axiswise`, `.max`/`.min` aggregation, and unary
+-- factors are NO
 -- LONGER preflight rejections: `compileScan` now admits and lowers the nonlinearities (Thread 4
--- Task 4), and `.max`/`.min` compile to the tropical algebras (max/min-aggregation thread). Their
+-- Task 4), `.max`/`.min` compile to the tropical algebras (max/min-aggregation thread), and unary
+-- factors lower to unary-carrying `ReadPlan`s. Their
 -- positive coverage is the accept-path fixtures (the `== none` `badAgg` cases below, plus
 -- `ScanTest.lean`); the marker-consistency and masked-axiswise negatives — which now surface at the
 -- `resolveNonlinAxis` tier, not preflight — are Task 4's Task 2.
@@ -707,16 +709,17 @@ def nextL : LHSSlot := .iterNext axL
 #guard rej [badAgg "S" pinL .max] [okRecur] == none   -- max agg now admitted
 #guard rej [badAgg "S" pinL .min] [okRecur] == none   -- min agg now admitted
 #guard rej [badIverson "S" pinL] [okRecur] == some (.capability (.maskOrPredicate "S: iverson factor"))
-#guard rej [badUnary "S" pinL] [okRecur] == some (.capability (.unaryFactor "S: unary function on X"))
+#guard rej [badUnary "S" pinL] [okRecur] == none   -- unary factor now admitted
 #guard rej [badScatter "S"] [okRecur] == some (.capability (.scatterOrAffineLhs "S"))
 #guard rej [badRecurMorphism "S"] [okRecur] == some (.capability (.recurrenceOrCallback "S"))
 
--- in the RECURRENCE list (`.freeNorm`/`.pointwise`/`.axiswise` and `.max`/`.min` admitted — see note)
+-- in the RECURRENCE list (`.freeNorm`/`.pointwise`/`.axiswise`, `.max`/`.min`, and unary factors
+-- admitted — see note)
 #guard rej [okBase] [badAffineLhs "S"] == some (.capability (.scatterOrAffineLhs "S: affine LHS slot"))
 #guard rej [okBase] [badAgg "S" nextL .max] == none   -- max agg now admitted
 #guard rej [okBase] [badAgg "S" nextL .min] == none   -- min agg now admitted
 #guard rej [okBase] [badIverson "S" nextL] == some (.capability (.maskOrPredicate "S: iverson factor"))
-#guard rej [okBase] [badUnary "S" nextL] == some (.capability (.unaryFactor "S: unary function on X"))
+#guard rej [okBase] [badUnary "S" nextL] == none   -- unary factor now admitted
 #guard rej [okBase] [badScatter "S"] == some (.capability (.scatterOrAffineLhs "S"))
 #guard rej [okBase] [badRecurMorphism "S"] == some (.capability (.recurrenceOrCallback "S"))
 

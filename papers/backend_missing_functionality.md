@@ -45,7 +45,6 @@ yardstick), not a measured figure — see the rationale below the table.
 | Hard | **Scatter statements + affine (strided/offset) LHS writes** — e.g. `Out[2*i] = …` | `scatterOrAffineLhs` | `checkStmt` / `checkLHSSlot` | ✓ (`Eval/Scatter.lean`) |
 | Moderate–hard | **Boolean / predicate *outputs*** — a `.predicate` decl | `booleanOutput` | `checkDecl` | ✓ (bool semiring `Combine`) |
 | Moderate | **Masks / predicates / Iverson (Boolean) factors** — `where=`/Iverson terms | `maskOrPredicate` | `checkFactor` | ✓ (`Eval/Gather.lean` mask eval) |
-| Low–moderate | **Unary factor functions** — `log`/`exp`/`sqrt`/`recip` applied to a read inside a term | `unaryFactor` | `checkFactor` | ✓ (`Eval/Gather.lean` `applyUnaryFn`) |
 
 ### Difficulty ranking rationale (hardest → easiest)
 
@@ -73,18 +72,13 @@ what the ranking tracks.
 4. **Boolean / predicate outputs** — admit `bool` end-to-end: `ScalarDType.bool` is a reserved tag
    with no producer, and `ScalarBinOp` has no `logicalAnd`/`logicalOr` (deliberately, per its doc
    comment). So this threads a new dtype *and* a new algebra family through checker, Dense worker,
-   and result reporting. Bounded, but wider than #5–#6, and naturally coupled to #5 (predicates
+   and result reporting. Bounded, but wider than #5, and naturally coupled to #5 (predicates
    consume / produce bool).
 5. **Masks / predicates / Iverson factors** — first genuine step up from a pure assign extension:
    needs a *positional* (UID-free) predicate / coordinate-arithmetic IR at the plan layer, evaluated
    per contraction coordinate, plus its checker. No output-geometry or dtype change, and the
    reference `PredArith` / mask eval is the oracle — but the coordinate-predicate IR is new
    vocabulary the plan layer does not have yet.
-6. **Unary factor functions** — cheap *because the nonlinearity thread already shipped pointwise*.
-   `f(read)` residualizes into a `.pointwise` temp the term then reads (reusing `RawPointwisePlan` /
-   `runDensePointwise`), or a per-factor unary op on the contraction path. The reference
-   `applyUnaryFn` is the oracle; the main new work is domain-error plumbing (`log`/`sqrt`/`recip`
-   fail loud via `EvalError.unaryDomain`). Localized to the assign / contraction path.
 
 ### Scan-geometry limits (not `CapabilityError` rejections)
 
@@ -102,6 +96,15 @@ fragment.
 
 ## Already closed (do not re-list as missing)
 
+- **Unary factor functions** — admitted end-to-end (top level and inside scan `base`/`recur` blocks).
+  `checkFactor` admits `.unaryFn`; `residualizeAssignment` lowers it to the same `ReadPlan` a `.read`
+  produces with a new `unary : Option UnaryOp` field, and Dense's `gatherFactor` applies the function
+  *after* the `zeroPad` out-of-bounds pad — so an out-of-bounds read contributes `f(0)`, matching the
+  reference `gather`. The math and domain partiality live once in `UnaryOp.applyChecked`, which the
+  reference `applyUnaryFn` also wraps (`log`/`sqrt`/`recip` fail loud — the checked path as
+  `PositionalInputError.unaryDomain`, the reference as `EvalError.unaryDomain`). No new `PlanStep`,
+  geometry, or dtype. The `unaryFactor` constructor is retained producer-less, like `scanNode`. Closed
+  by `unary_factor_functions.md`.
 - **max / min aggregation** — admitted end-to-end (top level and inside scan `base`/`recur` blocks).
   `checkAggOp` admits `.max`/`.min`; `algebraForAgg` selects the tropical algebra
   (`admittedAlgebraMax`/`admittedAlgebraMin`) in the *existing* `ContractionAlgebra` reduction slot —
@@ -128,3 +131,5 @@ fragment.
 - [`wave_f_scanplan_proposal.md`](wave_f_scanplan_proposal.md) §1 — the "functionality still missing"
   table this inventory expands, kept current by the thread that changes the boundary.
 - [`eval_ir.md`](eval_ir.md) — the eval-IR pipeline and backend-execution reference.
+- [`unary_factor_functions.md`](unary_factor_functions.md) — the plan that closed the unary-factor row.
+- [`max_min_aggregation.md`](max_min_aggregation.md) — the plan that closed the max/min-aggregation row.

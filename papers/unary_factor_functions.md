@@ -367,39 +367,55 @@ minimal churn, matching how the max/min thread kept `badAgg`.
 directly, locking the Dense worker's apply-after-pad and fail-loud behavior independently of Task 1's
 lowering. Add a two-slot signature (`A` at slot 0 shape `#[4]`, `Y` at slot 1 shape `#[4]`, both
 `f64`) and a single-factor identity plan `Y[i] := f(A[i])`; **donor for the factor: `readA`'s shape**,
-adding `unary := some op` and using coeff row `#[#[1]]` for the rank-1 iteration basis. Observed
-values (from §5 — confirm via run, do not hand-derive):
+adding `unary := some op` and using coeff row `#[#[1]]` for the rank-1 iteration basis.
 
-| Fixture | `unary` / store | Observed `Y` |
+**Assert transcendental results via exact `Float` expressions, not decimal literals.** The `Y` values
+below are shown as 6-digit *displays*; the actual results are full-precision floats (e.g. `log 2` is
+`0.6931471805599453`), so a rounded decimal literal will NOT compare equal. Write each `#guard` against
+the same `Float` operation the evaluator uses — `some #[Float.log 1.0, Float.log 2.0, Float.log 4.0,
+Float.log 8.0]` for the log fixture, etc. — which is exact by construction and still checks the right
+function is applied. (The domain-violation fixtures compare exact `UInt64` bits, so they use literals.)
+
+| Fixture | `unary` / store | Result `Y` (assert via `Float.<fn>`; display shown) |
 |---|---|---|
-| log | `some .log`, `A=[1,2,4,8]` | `#[0.0, 0.693147, 1.386294, 2.079442]` |
-| sqrt | `some .sqrt`, `A=[1,2,4,8]` | `#[1.0, 1.414214, 2.0, 2.828427]` |
-| exp | `some .exp`, `A=[1,1,1,1]` | `#[2.718282, 2.718282, 2.718282, 2.718282]` |
-| **exp OOB** (`f(0)` at edge) | `some .exp`, bias `+1`, `A=[1,1,1,1]` | `#[2.718282, 2.718282, 2.718282, 1.0]` |
+| log | `some .log`, `A=[1,2,4,8]` | `#[Float.log 1.0, …2.0, …4.0, …8.0]` (`≈[0.0, 0.693147, 1.386294, 2.079442]`) |
+| sqrt | `some .sqrt`, `A=[1,2,4,8]` | `#[Float.sqrt 1.0, …2.0, …4.0, …8.0]` (`≈[1.0, 1.414214, 2.0, 2.828427]`) |
+| exp | `some .exp`, `A=[1,1,1,1]` | `#[Float.exp 1.0, ×4]` (`≈[2.718282, ×4]`) |
+| **exp OOB** (`f(0)` at edge) | `some .exp`, bias `+1`, `A=[1,1,1,1]` | `#[Float.exp 1.0, …1.0, …1.0, Float.exp 0.0]` (`≈[2.718282, 2.718282, 2.718282, 1.0]`) |
 | **sqrt domain violation** | `some .sqrt`, `A=[1,-4,4,9]` | `.error (.unaryDomain .sqrt 13839561654909534208 0)` |
 | **recip domain violation** | `some .recip`, `A=[2,0,4,8]` | `.error (.unaryDomain .recip 0 0)` |
 
 `13839561654909534208 == Float.toBits (-4.0)` and `0 == Float.toBits (0.0)` (observed, §5). The exp-OOB
-fixture (last element `1.0 = exp(0)`) is what distinguishes the correct apply-after-pad from a
+fixture (last element `Float.exp 0.0 = 1.0`) is what distinguishes the correct apply-after-pad from a
 pointwise-temp lowering (which would give `0.0`); the two domain fixtures distinguish op, value, and
 slot in the payload — each has exactly one violating element, so the reported value is unambiguous.
 
-**(d) `DifferentialTest.lean` — end-to-end parity fixtures (the load-bearing check).** Add three
+**(d) `DifferentialTest.lean` — end-to-end parity fixtures (the load-bearing check).** Add four
 dedicated fixtures on the `maxPlainProg` pattern (compile → `prepareEvalPlan` → `runPreparedDense`,
-cross-checked against `evalScheduled` via `planAgrees`, plus an explicit expected value). Observed
-values from §5:
+cross-checked against `evalScheduled` via `planAgrees` — this is the byte-exact differential proof and
+needs no literal — plus an explicit expected value built from the same `Float` ops, for the same
+exact-vs-rounded reason as (c)):
 
-- **`xentProg`**: `L[] := Y[i]·log(P[i])`, `Y=[1,0]`, `P=[0.5,0.5]` ⇒ plan `L = [-0.693147]` = reference
-  `L`. **Mutation-verified (teeth):** dropping the unary threading (`unary := none` in the
-  `residualizeAssignment` `.unaryFn` case) makes the plan compute `Y·P = [0.5]`, disagreeing with the
-  reference `[-0.693147]` — a `DISAGREEMENT (env)` via `planAgrees`. Restoring returns it to green.
-  Record both observations in the completion note.
-- **`expOobProg`**: `E[i] := exp(A[i + 1])`, `A=[0,1,2]` ⇒ plan `E = [2.718282, 7.389056, 1.0]` =
-  reference `E`. The last element (`exp(0)=1` from the out-of-bounds read at `i=2`) is the end-to-end
-  confirmation of Subtlety 1 through the whole TL pipeline. Write the shift with spaces (`A[i + 1]`):
-  the DSL tokenizes `A[i +1]` differently (`+1` as a signed literal).
-- **`divProg`**: `Y[i] := X[i] / Z[i]`, `X=[6,8,9]`, `Z=[2,4,3]` ⇒ plan `Y = [3.0, 2.0, 3.0]` =
-  reference `Y`. Exercises the friendly `/` sugar (`Factor.unaryFn .recip`) end-to-end.
+- **`xentProg`**: `L[] := Y[i]·log(P[i])`, `Y=[1,0]`, `P=[0.5,0.5]` ⇒ `L = #[Float.log 0.5]`
+  (`≈[-0.693147]`), plan == reference. **Mutation-verified (teeth):** dropping the unary threading
+  (`unary := none` in the `residualizeAssignment` `.unaryFn` case) makes the plan compute `Y·P = [0.5]`,
+  disagreeing with the reference — a `DISAGREEMENT (env)` via `planAgrees`. Restoring returns it to
+  green. Record both observations in the completion note.
+- **`expOobProg`**: `E[i] := exp(A[i + 1])`, `A=[0,1,2]` ⇒ `E = #[Float.exp 1.0, Float.exp 2.0,
+  Float.exp 0.0]` (`≈[2.718282, 7.389056, 1.0]`), plan == reference. The last element
+  (`Float.exp 0.0 = 1.0` from the out-of-bounds read at `i=2`) is the end-to-end confirmation of
+  Subtlety 1 through the whole TL pipeline. Write the shift with spaces (`A[i + 1]`): the DSL tokenizes
+  `A[i +1]` differently (`+1` as a signed literal).
+- **`divProg`**: `Y[i] := X[i] / Z[i]`, `X=[6,8,9]`, `Z=[2,4,3]` ⇒ `Y = #[6.0*(1.0/2.0), 8.0*(1.0/4.0),
+  9.0*(1.0/3.0)]` (`≈[3.0, 2.0, 3.0]`), plan == reference. Built from the same `·recip` ops the sugar
+  lowers to (`9·(1/3)` is not exactly `3.0` in `f64`). Exercises the friendly `/` sugar
+  (`Factor.unaryFn .recip`) end-to-end.
+- **`scanUnaryProg`**: a unary factor INSIDE a scan recurrence —
+  `S[j,l+1] := S[j,l] · exp(Z[j])` (base `S[j,0] := X[j]`), with `exp` total so it is unconditionally
+  domain-safe. Checked via `planAgrees` alone (byte-for-byte plan-vs-`evalScheduled` over the whole
+  scan history — no literal needed). This closes the one composition the plain fixtures do not cover:
+  that the scan worker's `runDenseAssignAt`/`gatherFactor` applies the unary identically. Teeth: the
+  same `unary := none` mutation makes the plan compute `S·1` and disagree (`exp(0.5) ≠ 1`).
 
 The `enumPrograms` sweep and its `total == 3832 && accepted == 3832` gate are **not** touched: no unary
 case is woven into the generator (which would risk a reference-side domain error becoming a hard sweep

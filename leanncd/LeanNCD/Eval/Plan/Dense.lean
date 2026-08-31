@@ -17,15 +17,23 @@ open LeanNCD.Eval
 
 /-- Gather one factor. Every source dimension is range-tested BEFORE flattening (`inBoundsPerDim`,
     `Coordinates.lean`): testing the flat offset instead can alias distinct invalid coordinates onto
-    a valid address (proposal §8.3). -/
-private def gatherFactor (store : Array DenseTensor) (f : ReadPlan) (iter : List Int) : Float :=
-  match store[f.sourceSlot]? with
-  | none => 0.0
-  | some t =>
-      let src := applyAffine f.map iter
-      let shape := f.sourceShape.toList
-      if inBoundsPerDim shape src then (t.data[flatIndex shape (src.map Int.toNat)]?).getD 0.0
-      else 0.0
+    a valid address (proposal §8.3). A `unary` function is applied to the gathered value AFTER the
+    out-of-bounds zero-pad (so an out-of-bounds read contributes `f(0)`, matching the reference
+    `gather`), and can fail loud on a domain violation (`log`/`sqrt`/`recip`) via the shared
+    `UnaryOp.applyChecked` — the same oracle the reference `applyUnaryFn` wraps. -/
+private def gatherFactor (store : Array DenseTensor) (f : ReadPlan) (iter : List Int) :
+    Except PositionalInputError Float :=
+  let base : Float :=
+    match store[f.sourceSlot]? with
+    | none => 0.0
+    | some t =>
+        let src := applyAffine f.map iter
+        let shape := f.sourceShape.toList
+        if inBoundsPerDim shape src then (t.data[flatIndex shape (src.map Int.toNat)]?).getD 0.0
+        else 0.0
+  match f.unary with
+  | none => .ok base
+  | some op => (op.applyChecked base).mapError (fun dop => .unaryDomain dop (Float.toBits base) f.sourceSlot)
 
 private def applyOp : ScalarBinOp → Float → Float → Float
   | .add => (· + ·)
@@ -126,21 +134,22 @@ def runDenseAssignAt (c : CheckedAssignPlan) (ctx : List Int) (store : Array Den
   validateStore c store
   let a := c.plan
   let alg := a.algebra
-  let out : List Float := (allCoords a.outputShape.toList).map (fun oc =>
-    let termAccs : List Float := a.terms.toList.map (fun t =>
+  let out ← (allCoords a.outputShape.toList).mapM (fun oc => do
+    let termAccs ← a.terms.toList.mapM (fun t => do
       let redShape := t.reductionPos.toList.filterMap (fun p => t.iterationShape[p]?)
-      let prods : List Float := (allCoords redShape).map (fun rc =>
+      let prods ← (allCoords redShape).mapM (fun rc => do
         let iter : Array Int := Id.run do
           let mut iter : Array Int := Array.replicate t.iterationShape.size 0
           for (p, v) in t.contextPos.toList.zip ctx do iter := iter.set! p v
           for (p, v) in t.outputPos.toList.zip oc do iter := iter.set! p v
           for (p, v) in t.reductionPos.toList.zip rc do iter := iter.set! p v
           return iter
-        let factorVals : List Float := t.factors.toList.map (fun f => gatherFactor store f iter.toList)
-        factorFold alg factorVals)
-      reductionFold alg prods)
-    termFold alg termAccs)
+        let factorVals ← t.factors.toList.mapM (fun f => gatherFactor store f iter.toList)
+        return factorFold alg factorVals)
+      return reductionFold alg prods)
+    return termFold alg termAccs)
   return { shape := a.outputShape.toList, data := out.toArray }
+
 
 /-- The empty-context wrapper every existing (scan-free) call site uses. -/
 def runDenseAssign (c : CheckedAssignPlan) (store : Array DenseTensor) :

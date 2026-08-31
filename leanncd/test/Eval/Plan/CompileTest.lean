@@ -142,12 +142,13 @@ def acceptedSched : ScheduledProgram :=
           , nonlin := .identity })] })
   == some (.maskOrPredicate "Y: iverson factor")
 
--- unaryFactor
-#guard errOf (capabilityPreflight
+-- unaryFactor: log/exp/… are now ADMITTED (they lower to a unary-carrying `ReadPlan` factor) —
+-- preflight returns none, so this donor program becomes an accepted-case fixture rather than a
+-- rejection.
+#guard isOk (capabilityPreflight
     { acceptedSched with stmts :=
         [.plain (.assign "Y" [.free ⟨"i", 0, .nat⟩]
           { body := { terms := [{ factors := [.unaryFn .log "X" []] }] }, nonlin := .identity })] })
-  == some (.unaryFactor "Y: unary function on X")
 
 -- unsupportedAgg: max/min are now ADMITTED (they compile to the tropical algebras) — preflight
 -- returns none, so these two donor programs become accepted-case fixtures rather than rejections.

@@ -305,10 +305,12 @@ appearance in the schedule is a single source-level statement.
   (`LeanNCD/Eval/Plan/RawStep.lean`), not the earlier assignment-only element type.
 
 Capability preflight returns a typed `CapabilityError` for predicate declarations and Iverson
-factors, unary factors, `max` or `min` aggregation, scatters or affine LHS writes, `scanPre` nodes,
+factors, scatters or affine LHS writes, `scanPre` nodes,
 and scans with no advancing axis. Nonlinear scan-block statements and normalized-axis slots inside
 scan blocks are **now structurally admitted** at this boundary — Thread 4 Task 4 shifted them out
-of the rejection set — with any residual obligations reported as `ScanCompileError` instead.
+of the rejection set; `max`/`min` aggregation (the max/min-aggregation thread) and unary factors
+(`log`/`exp`/…, the unary-factor thread) are likewise **now admitted** — with any residual
+obligations reported as `ScanCompileError` instead.
 Constructs rejected at this boundary do not appear in the `CheckedEvalPlan` inside the
 [`PreparedPlan`](#24-prepareevalplan-output-preparedplan).
 
@@ -543,7 +545,12 @@ An `AssignPlan` describes one destination tensor and the contraction algebra use
 `contextShape` supports block-local execution inside scans. Its `TermPlan`s describe product terms and
 classify their iteration coordinates as context, output, or reduction positions. Each factor is a
 `ReadPlan`, which names a positional `sourceSlot` and records how those iteration coordinates select
-a coordinate from that source tensor.
+a coordinate from that source tensor. A `ReadPlan` may also carry a `unary : Option UnaryOp` — an
+inline transcendental function (`log`/`exp`/`sin`/`cos`/`sqrt`/`recip`) that Dense's `gatherFactor`
+applies to the gathered value *after* the out-of-bounds zero-pad, so an out-of-bounds read contributes
+`f(0)`. The math and its domain partiality live once in `UnaryOp.applyChecked` (shared with the
+reference `applyUnaryFn`); `log`/`sqrt`/`recip` fail loud on a domain violation as
+`PositionalInputError.unaryDomain`.
 
 That coordinate transformation is represented explicitly by
 [`AffineMap`](../leanncd/LeanNCD/Eval/Plan/Kernel.lean):

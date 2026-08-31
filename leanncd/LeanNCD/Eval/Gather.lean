@@ -60,15 +60,8 @@ def gatherRead (env : HashMap String DenseTensor) (coord : HashMap UID Int)
     was gathered from — carried on `EvalError.unaryDomain` for future/typed inspection, but NOT
     part of the initial rendered message (see `Error.lean`'s `EvalContext` doc). -/
 def applyUnaryFn (ctx : EvalContext) : UnaryOp → Float → Except EvalError Float
-  | .log,  v => if v ≤ 0.0 then .error (.unaryDomain .log v ctx)
-                else .ok (Float.log v)
-  | .sqrt, v => if v < 0.0 then .error (.unaryDomain .sqrt v ctx)
-                else .ok (Float.sqrt v)
-  | .exp,  v => .ok (Float.exp v)
-  | .sin,  v => .ok (Float.sin v)
-  | .cos,  v => .ok (Float.cos v)
-  | .recip, v => if v == 0.0 then .error (.unaryDomain .recip v ctx)
-                 else .ok (1.0 / v)
+  | op, v => (op.applyChecked v).mapError (fun dop => .unaryDomain dop v ctx)
+
 
 /-- Gather one factor's value at a coordinate, from the input tensors.
     `.read nm es`: map each `eᵢ` to its source coord via `evalIdx`; out-of-range (any coord < 0

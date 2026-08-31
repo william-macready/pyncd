@@ -1,4 +1,6 @@
 import LeanNCD.Eval.Plan.Types
+import LeanNCD.DSL.Ast
+
 
 /-!
 # Wave C local operation IR (C2)
@@ -11,6 +13,11 @@ compiled away before an `AssignPlan` exists.
 
 namespace LeanNCD.Eval.Plan
 
+/-- `UnaryOp` (`DSL/Ast.lean`) derives `DecidableEq` but not `BEq`; `ReadPlan` derives `BEq`, so it
+    needs one for its `Option UnaryOp` field. Mirrors the manual instances `Plan/Nonlin.lean` adds
+    for `PointwiseFn`/`AxiswiseFn`. -/
+instance : BEq LeanNCD.UnaryOp := ⟨fun a b => decide (a = b)⟩
+
 /-- An integer-affine map `sourceCoordinate = coeffs * iterationCoordinate + bias`, with one
     `coeffs` row and one `bias` component per SOURCE dimension, each row of term-basis width.
     Kept as one row per source dimension rather than a flattened offset because zero-padding
@@ -22,12 +29,15 @@ structure AffineMap where
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- One factor: a gather from `sourceSlot` through `map`, against a shape the checker has already
-    verified equals that slot's signature. -/
+    verified equals that slot's signature. `unary`, when present, is a transcendental function
+    (`log`/`exp`/…) applied to the gathered value AFTER the out-of-bounds zero-pad — so an
+    out-of-bounds read contributes `f(0)`, matching the reference `gather` exactly. -/
 structure ReadPlan where
   sourceSlot  : TensorSlot
   map         : AffineMap
   sourceShape : Array Nat
   oobPolicy   : OutOfBoundsPolicy
+  unary       : Option UnaryOp := none
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- One product term. `iterationShape` is the term's coordinate basis (retained output axes
