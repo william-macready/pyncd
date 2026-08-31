@@ -131,5 +131,7 @@ fragment.
 - [`wave_f_scanplan_proposal.md`](wave_f_scanplan_proposal.md) §1 — the "functionality still missing"
   table this inventory expands, kept current by the thread that changes the boundary.
 - [`eval_ir.md`](eval_ir.md) — the eval-IR pipeline and backend-execution reference.
+- [`predicate_boolean_backend_parity.md`](predicate_boolean_backend_parity.md) — detailed design and
+  task division for the remaining predicate-factor, axiswise-mask, and Boolean-tensor rows.
 - [`unary_factor_functions.md`](unary_factor_functions.md) — the plan that closed the unary-factor row.
 - [`max_min_aggregation.md`](max_min_aggregation.md) — the plan that closed the max/min-aggregation row.
