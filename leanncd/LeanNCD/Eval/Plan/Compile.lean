@@ -303,47 +303,6 @@ private def substitutePins (pins : HashMap UID Int) (basis : List UID) (row : Li
   let residualCoeffs := indexed.filterMap (fun (u, c) => if (pins[u]?).isSome then none else some c)
   (residualCoeffs, bias + extraBias)
 
-/-- Disposable lowering evidence. UIDs remain here for basis inspection, never in `expression`. -/
-structure PredicateLoweringEvidence where
-  initialBasis : List UID
-  residualBasis : List UID
-  expression : PosBoolExpr
-  deriving DecidableEq, Repr
-
-private def lowerPosArith (pins : HashMap UID Int) (basis : List UID) :
-    PredArith → PosPredArith
-  | .embed idx =>
-      let row := substitutePins pins basis (idxToRow basis idx)
-      .affine { coeffs := row.1.toArray, bias := row.2 }
-  | .mul a b => .mul (lowerPosArith pins basis a) (lowerPosArith pins basis b)
-  | .iabs a => .iabs (lowerPosArith pins basis a)
-
-private def lowerPosBool (pins : HashMap UID Int) (basis : List UID) :
-    BoolExpr → PosBoolExpr
-  | .rel op a b => .rel op (lowerPosArith pins basis a) (lowerPosArith pins basis b)
-  | .and a b => .and (lowerPosBool pins basis a) (lowerPosBool pins basis b)
-  | .or a b => .or (lowerPosBool pins basis a) (lowerPosBool pins basis b)
-  | .not a => .not (lowerPosBool pins basis a)
-  | .ieq a b => .ieq (lowerPosArith pins basis a) (lowerPosArith pins basis b)
-
-private def lowerPredicateWithBasis (basis : List UID) (pins : HashMap UID Int)
-    (predicate : BoolExpr) : PredicateLoweringEvidence :=
-  { initialBasis := basis
-  , residualBasis := basis.filter (fun u => (pins[u]?).isNone)
-  , expression := lowerPosBool pins basis predicate }
-
-/-- Temporary Iverson-factor policy: context, output, then this term's first-seen reductions. -/
-def lowerFactorPredicate (contextUids outputUids : List UID) (pins : HashMap UID Int)
-    (term : ProdTerm) (predicate : BoolExpr) : PredicateLoweringEvidence :=
-  let contracted := (termAxisUIDs term).eraseDups.filter
-    (fun u => !contextUids.contains u && !outputUids.contains u)
-  lowerPredicateWithBasis (contextUids ++ outputUids ++ contracted) pins predicate
-
-/-- Temporary mask policy: exactly the caller-supplied local, non-seeded output basis and no pins. -/
-def lowerMaskPredicate (localOutputUids : List UID) (predicate : BoolExpr) :
-    PredicateLoweringEvidence :=
-  lowerPredicateWithBasis localOutputUids ({} : HashMap UID Int) predicate
-
 /-- Hand-worked sanity check (proposal §4.4's own worked example): pinning `u := 5` into
     `7 + 2u - 3v + 4u` over basis `[u, v]` leaves residual basis `[v]`, coefficient row `[-3]`
     (`2 + 4 = 6` on `u`, dropped), bias `7 + 6·5 = 37`. Checked directly here (`substitutePins` is

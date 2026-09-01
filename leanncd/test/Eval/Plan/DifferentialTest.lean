@@ -864,10 +864,10 @@ run_cmd do
 -- program) or mis-place `advancingDims`. Cross-checked against `evalScheduled`, which resolves
 -- axes by UID too.
 
-def sameNameIter : AxisSpec := ⟨"l", 3101, .nat⟩
-def sameNameFree : AxisSpec := ⟨"l", 3102, .nat⟩
+private def sameNameIter : AxisSpec := ⟨"l", 3101, .nat⟩
+private def sameNameFree : AxisSpec := ⟨"l", 3102, .nat⟩
 
-def sameAxisNameSched : ScheduledProgram :=
+private def sameAxisNameSched : ScheduledProgram :=
   { decls := [.iter sameNameIter 3, .axis sameNameFree (some 2)]
   , stmts := [.scan "S" [sameNameIter]
       [ .assign "S" [.free sameNameFree, .iterAt sameNameIter 0]
