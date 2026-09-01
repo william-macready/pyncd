@@ -2,10 +2,13 @@
 
 ## Result
 
-**Recommendation: GO** for Slice 5, preserving two explicit policies:
+**Recommendation: REVISE** for Slice 5. The architecture is supported, but the fixture/oracle plan
+must be revised around one unmeasured mask case:
 
 - **Factor policy — confirmed:** `context ++ output ++ per-term reduction` in first-encounter order, UID identity, and base-pin substitution in every affine leaf.
-- **Mask policy — confirmed:** exactly the statement's local non-seeded output coordinates; missing UIDs become zero. In scan unrolling, source seeds become zero, while eliminated non-seeded `.free`/`.freeNorm` slots become their enumerated coordinates.
+- **Mask policy — partially confirmed:** source seeds become zero, while eliminated non-seeded plain
+  `.free` slots become their enumerated coordinates. The spike did not exercise an eliminated
+  `.freeNorm` slot.
 
 The spike needed no `FactorPlan` or `RawAxiswisePlan` mask field, did not widen admission, and left `TermPlan.factors` unchanged. Temporary code was committed for audit and then reverted.
 
@@ -20,6 +23,7 @@ The spike needed no `FactorPlan` or `RawAxiswisePlan` mask field, did not widen 
 | Default baseline | `cd leanncd && "$HOME/.elan/bin/lake" build`, exit 0, 8,659 jobs; time/warnings not recorded |
 | Temporary commits | Task 1 `93d2d4f4fca07a2dc0a20952011c8a3e2fc425e5`; Task 2 `8eef26cf2e066c19cee6aa80c6e8d3d33b35c092` |
 | Reviews | Both supplied independent reviews were CLEAN |
+| Post-revert default at `cd497c6` | `cd leanncd && "$HOME/.elan/bin/lake" build`, exit 0; `Build completed successfully (8659 jobs)`; `real 6.46`, `user 3.52`, `sys 4.94`; 11 replayed pre-existing warnings |
 
 Task 1 command (`C1`) exited 0 with 8,536 jobs; differential replay was 3,832/3,832 accepted and scan corpus 17/17:
 
@@ -64,7 +68,7 @@ The width guard observed `.affineWidthMismatch 2 1`, never truncation/defaulting
 | T2-F2 | NM4; only `normalize`→`softmax`, excluded `A[0,0]` `1`→`1000` | Source/adapter `[0.000000,0.268941,0.731059,0.000000,0.500000,0.500000]` | Excluded `1000` did not enter maximum |
 | T2-F3 | `ScanCompileTest.maskedAxiswiseRecur`; only mask→`l=0` | Source/adapter/unroll `[1,3,.25,.75,.25,.75]` | Two masks `(0=0)`; seeded `l` absent |
 | T2-F4 | `ScanCompileTest.okBase` + `badIverson "S" nextL`; predicate→`l=0` | Source/unroll `[1,1,0]` | Iversons `(0=0)`,`(1=0)`; `l` absent |
-| T2-F5 | `ScanGen.template6`; retained extent-two `i` on `G/Z/A`, `.freeNorm`, base `normalize(where r!=0)`, nonzero `Z` | Shape `[2,2,2]`; source/unroll `[0,0,0,0,.25,1,.75,1]` | Base masks `(0!=0)`,`(1!=0)`; eliminated `r,c` absent |
+| T2-F5 | `ScanGen.template6`; retained extent-two `.freeNorm i` on `G/Z/A`, base `normalize(where r!=0)`, nonzero `Z` | Shape `[2,2,2]`; source/unroll `[0,0,0,0,.25,1,.75,1]` | The eliminated non-seeded scan coordinate was `.free r`, while `c` was seeded; base masks `(0!=0)`,`(1!=0)` and absent `r,c` therefore do not evidence eliminated `.freeNorm` |
 
 The exact T2-F2 representation was additionally measured with:
 
@@ -77,21 +81,29 @@ It printed `#[0.000000, 0.268941, 0.731059, 0.000000, 0.500000, 0.500000]`.
 
 ## Eleven mutation fail/restore/pass observations
 
-Every mutation was visible in the diff against its temporary tree. Each `C1`/`C2` failure below exited 1; after restoration to the named tree, the identical command exited 0 and reproduced the fixture values above. Mutation/replay elapsed times were not recorded.
+Every mutation was visible in the diff against its temporary tree. The ledger records the exact
+M1-M4 command (`S1`) as:
+
+```sh
+cd leanncd && "$HOME/.elan/bin/lake" build Eval.Plan.PredicateCoordinateSpikeTest
+```
+
+Each `S1`/`C2` failure below exited 1; after restoration to the named tree, the identical command
+exited 0 and reproduced the fixture values above. Mutation/replay elapsed times were not recorded.
 
 | ID | Tree / command | Failing diagnostic and values | Restore / pass |
 |---|---|---|---|
-| M1 | `93d2d4f`; C1; `context++reduction++output` | T1-F2 `basis: [1202,1201]`; T1-F3 `[2,3,1]` | `93d2d4f`; C1 exit 0, 8,536 jobs |
-| M2 | `93d2d4f`; C1; reverse reductions | T1-F3 `basis: [1,3,2]` | `93d2d4f`; C1 exit 0 |
-| M3 | `93d2d4f`; C1; name-based densification | T1-F4 `UID basis: [3102,3102]` | `93d2d4f`; C1 exit 0; rows `#[1,0]`,`#[0,1]` |
-| M4 | `93d2d4f`; C1; bypass pins | T1-F5 leaves `#[1],0`, `#[1],-2`, `#[0],1` | `93d2d4f`; C1 exit 0; empty rows/biases `1,-1,1`, true |
+| M1 | `93d2d4f`; S1; `context++reduction++output` | T1-F2 `basis: [1202,1201]`; T1-F3 `[2,3,1]` | `93d2d4f`; S1 exit 0 |
+| M2 | `93d2d4f`; S1; reverse reductions | T1-F3 `basis: [1,3,2]` | `93d2d4f`; S1 exit 0 |
+| M3 | `93d2d4f`; S1; name-based densification | T1-F4 `UID basis: [3102,3102]` | `93d2d4f`; S1 exit 0; rows `#[1,0]`,`#[0,1]` |
+| M4 | `93d2d4f`; S1; bypass pins | T1-F5 leaves `#[1],0`, `#[1],-2`, `#[0],1` | `93d2d4f`; S1 exit 0; empty rows/biases `1,-1,1`, true |
 | M5 | `8eef26c`; C2; `masked := included c` | T2-F1 source/adapter `[1,0,0,1,0,0]`; full replay also failed other mask users | `8eef26c`; C2 exit 0, 8,539 jobs; `[0,.4,.6,0,.5,.5]` |
 | M6 | `8eef26c`; C2; masked values enter max | T2-F2 source/adapter `#[0.000000,0.000000,0.000000,0.000000,0.500000,0.500000]` | `8eef26c`; C2 exit 0; exact values above |
 | M7 | `8eef26c`; C2; mask basis `[i]`→`[l,i]` | T2-F3 adapter `.affineWidthMismatch 2 1` | `8eef26c`; C2 exit 0; source/adapter parity |
 | M8 | `8eef26c`; C2; seeded zero→live `sigma` | T2-F3 source `#[1,3,.25,.75,.25,.75]`, independent `#[1,3,.25,.75,0,0]` | `8eef26c`; C2 exit 0; both later rows `.25,.75` |
 | M9 | `8eef26c`; C2; leave Iverson unchanged | T2-F4 source `#[1,1,0]`, independent `#[1,1,1]` | `8eef26c`; C2 exit 0; `(0=0),(1=0)` |
 | M10 | `8eef26c`; C2; leave masks unchanged | T2-F3 reached structural failure with two live `axis l (uid 42502)=0` masks; replay also had T2-F5 source `#[0,0,0,0,.25,1,.75,1]` vs independent `#[0,0,0,0,0,1,0,1]` | `8eef26c`; C2 exit 0; `(0=0),(0=0)`, no seeded UID |
-| M11 | `8eef26c`; C2; eliminated free `sigma`→zero | T2-F5 source `#[0,0,0,0,.25,1,.75,1]`, independent `#[0,0,0,0,0,1,0,1]` | `8eef26c`; C2 exit 0; `(0!=0),(1!=0)` |
+| M11 | `8eef26c`; C2; eliminated `.free r`→zero | T2-F5 source `#[0,0,0,0,.25,1,.75,1]`, independent `#[0,0,0,0,0,1,0,1]` | `8eef26c`; C2 exit 0; `(0!=0),(1!=0)` |
 
 The supplied independent reviewers were CLEAN. M10 proves value parity alone cannot prove recurrence-mask rewriting: a missing seeded UID accidentally behaves as zero, so the structural no-UID check is load-bearing.
 
@@ -121,7 +133,11 @@ The oracle was therefore independent of checked predicate lowering, positional e
 - Production integration must still add the real plan representation while preserving current admission boundaries.
 - Ten discriminating fixtures are not a broad property proof over arbitrary nested predicates, mixed pins, or richer scan geometry.
 - The oracle shares source AST and `evalScheduled`; it is an independent rewrite/execution shape, not separately specified semantics.
+- The temporary `ScanUnroll` geometry rejects an eliminated `.freeNorm`, and an axiswise operation
+  couples leaves. Slice 5 must add direct checked/reference coverage and either grouped oracle support
+  or an explicitly narrower oracle plus equivalent independent coverage.
 - No performance conclusion is available because total timings were not recorded.
 - Boolean tensors/dtypes/algebra, corpus expansion, and JAX remain out of scope.
 
-These risks do not contradict the measured policies. The measurements confirm, but do not alter, the architecture/task split in `papers/predicate_boolean_backend_parity.md`; that paper remains byte-for-byte unchanged.
+The measurements support the architecture and the confirmed portions of the policies, but the
+fixture/oracle plan in `papers/predicate_boolean_backend_parity.md` must be revised before Slice 5.
