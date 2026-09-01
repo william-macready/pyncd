@@ -2,15 +2,30 @@
 
 ## Result
 
-**Recommendation: GO** for the source-reachable Slice 5 fragment:
+**Recommendation: REVISE** for Slice 5. The architecture is supported, but the fixture/oracle plan
+must be revised around one mask case that the original spike did not measure:
 
 - **Factor policy — confirmed:** `context ++ output ++ per-term reduction` in first-encounter order, UID identity, and base-pin substitution in every affine leaf.
-- **Mask policy — confirmed for every source-reachable eliminated scan-coordinate class:** source
-  seeds become zero, while eliminated non-seeded plain `.free` slots become their enumerated
-  coordinates. Retained `.freeNorm` output coordinates remain expressions, as in T2-F5's retained
-  `.freeNorm i`.
+- **Mask policy — partially confirmed:** source seeds become zero, while eliminated non-seeded plain
+  `.free` slots become their enumerated coordinates. A follow-up adjudication proved that an
+  eliminated `.freeNorm` slot is source-reachable, but did not close its backend parity obligation.
 
 The spike needed no `FactorPlan` or `RawAxiswisePlan` mask field, did not widen admission, and left `TermPlan.factors` unchanged. Temporary code was committed for audit and then reverted.
+
+The follow-up compiled this exact source program successfully, despite the occurrence-local kinds
+sharing one UID:
+
+```text
+iter r = 2, c = 2
+tensor Z(r)
+G[r.,0] := normalize(where r != 0)(Z[r])
+G[r+1,c+1] := G[r,c]
+```
+
+With `Z = [1,3]`, source evaluation produced shape `[2,2]` and data `[0,0,1,0]`. `assignUIDs`
+shares the UID while preserving the occurrence-local kind, so `checkDtypes` accepts the `.freeNorm`
+occurrence as real and the `.iterNext` occurrence as nat. T2-F5's retained `.freeNorm` therefore
+does not close this eliminated-`.freeNorm` case.
 
 ## Setup and checkpoints
 
@@ -68,7 +83,7 @@ The width guard observed `.affineWidthMismatch 2 1`, never truncation/defaulting
 | T2-F2 | NM4; only `normalize`→`softmax`, excluded `A[0,0]` `1`→`1000` | Source/adapter `[0.000000,0.268941,0.731059,0.000000,0.500000,0.500000]` | Excluded `1000` did not enter maximum |
 | T2-F3 | `ScanCompileTest.maskedAxiswiseRecur`; only mask→`l=0` | Source/adapter/unroll `[1,3,.25,.75,.25,.75]` | Two masks `(0=0)`; seeded `l` absent |
 | T2-F4 | `ScanCompileTest.okBase` + `badIverson "S" nextL`; predicate→`l=0` | Source/unroll `[1,1,0]` | Iversons `(0=0)`,`(1=0)`; `l` absent |
-| T2-F5 | `ScanGen.template6`; retained extent-two `.freeNorm i` on `G/Z/A`, base `normalize(where r!=0)`, nonzero `Z` | Shape `[2,2,2]`; source/unroll `[0,0,0,0,.25,1,.75,1]` | The eliminated non-seeded scan coordinate was `.free r`, `c` was seeded, and the separate retained `.freeNorm i` remained an expression; base masks were `(0!=0)`,`(1!=0)` |
+| T2-F5 | `ScanGen.template6`; retained extent-two `.freeNorm i` on `G/Z/A`, base `normalize(where r!=0)`, nonzero `Z` | Shape `[2,2,2]`; source/unroll `[0,0,0,0,.25,1,.75,1]` | The eliminated non-seeded scan coordinate was `.free r`, while `c` was seeded; base masks `(0!=0)`,`(1!=0)` and absent `r,c` therefore do not evidence eliminated `.freeNorm`. The retained `.freeNorm i` does not close the eliminated-`.freeNorm` case |
 
 The exact T2-F2 representation was additionally measured with:
 
@@ -133,12 +148,13 @@ The oracle was therefore independent of checked predicate lowering, positional e
 - Production integration must still add the real plan representation while preserving current admission boundaries.
 - Ten discriminating fixtures are not a broad property proof over arbitrary nested predicates, mixed pins, or richer scan geometry.
 - The oracle shares source AST and `evalScheduled`; it is an independent rewrite/execution shape, not separately specified semantics.
-- `DSL/Pipeline/Structural.lean::checkDtypes` requires `iterAt`/`iterNext` axes to be `.nat` and
-  `freeNorm` axes to be `.real`. A source-reachable scan/context axis therefore cannot itself be an
-  eliminated `.freeNorm`; this is not a missing spike case. A hand-built, kind-inconsistent
-  `ScheduledProgram` lies outside the source parity fragment and must not drive this plan.
+- The follow-up source counterexample proves that an eliminated `.freeNorm` is reachable. Because an
+  axiswise operation couples the per-coordinate leaves, Slice 5 explicitly leaves grouped
+  `ScanUnroll` support out of scope: the oracle must reject this fragment, while Task 5.3 pins it
+  independently with source/checked/hand-expected parity and a mutation that zeroes the eliminated
+  coordinate.
 - No performance conclusion is available because total timings were not recorded.
 - Boolean tensors/dtypes/algebra, corpus expansion, and JAX remain out of scope.
 
-The measurements support the architecture and the source-reachable factor and mask policies. Slice 5
-can proceed with the corrected fixture/oracle plan in `papers/predicate_boolean_backend_parity.md`.
+The measurements support the architecture and the confirmed portions of the policies, but the
+fixture/oracle plan in `papers/predicate_boolean_backend_parity.md` must be revised before Slice 5.

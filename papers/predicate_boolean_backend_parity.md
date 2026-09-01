@@ -562,7 +562,7 @@ support check that routes the checked axiswise case to the generic unsupported-s
 - `leanncd/test/Eval/Plan/NonlinCompileTest.lean`
 - `leanncd/test/Eval/Plan/ScanCompileTest.lean`
 
-**Fixtures: 13; mutation cycles: 7**
+**Fixtures: 14; mutation cycles: 8**
 
 | Fixture | Donor and minimal change |
 |---|---|
@@ -576,9 +576,12 @@ support check that routes the checked axiswise case to the generic unsupported-s
 | Masked recurrence | Convert `ScanCompileTest.maskedAxiswiseRecur` |
 | Seeded-axis-zero parity | Recurrence donor; use `where l = 0`, which is always true under the current missing-seeded-UID behavior but would vary if live context were substituted |
 | Non-seeded plain-free scan coordinate | Derive from `ScanGen.template6`; retain the separate `.freeNorm i` and use the base mask `r != 0` over the eliminated non-seeded `.free r` coordinate |
+| Eliminated freeNorm scan coordinate | Use the exact source `iter r = 2, c = 2; tensor Z(r); G[r.,0] := normalize(where r != 0)(Z[r]); G[r+1,c+1] := G[r,c]` with `Z = [1,3]`; require source, the checked backend, and the hand-expected tensor of shape `[2,2]` with data `[0,0,1,0]` all to agree |
 | Masked axiswise JAX rejection | Compile the masked top-level donor and require the generic located unsupported-step error before Python emission |
 
 Retain `NonlinCompileError.maskedAxiswiseNotSupported` with no producer.
+The eliminated-`.freeNorm` mutation must zero that coordinate during lowering and must fail this
+fixture.
 
 ### Task 5.4 - Independent oracle, separate predicate corpus, and JAX rejection gates
 
@@ -610,10 +613,11 @@ by Tasks 5.1 and 5.3.
 including axiswise masks, while preserving factor order. The new oracle code may reuse source AST
 traversal conventions but must not call checked predicate lowering/evaluation.
 
-`DSL/Pipeline/Structural.lean::checkDtypes` requires scan `iterAt`/`iterNext` axes to be `.nat` and
-`freeNorm` axes to be `.real`, so an eliminated scan/context `.freeNorm` case is source-unreachable.
-T2-F5's retained separate `.freeNorm i` plus eliminated `.free r` is the required reachable
-construction. Do not add support for kind-inconsistent hand-built schedules.
+`ScanUnroll`'s Slice 5 fragment must explicitly reject an axiswise operation whose normalization
+axis is an eliminated scan coordinate, with the named error
+`ScanUnroll.fragment.eliminatedNormalizationAxis`. Do not add grouped `ScanUnroll` support in Slice
+5. The eliminated-`.freeNorm` case is independently pinned in Task 5.3 by its hand-expected tensor,
+source/checked comparison, and the mutation that zeroes the eliminated coordinate.
 
 Do not append these cases to `PropertyOracle.enumPrograms`. The affine JAX corpus consumes that list
 wholesale and treats every affine-reference rejection as fatal, while Iverson and masked programs
