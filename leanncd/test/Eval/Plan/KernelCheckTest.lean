@@ -26,7 +26,7 @@ def readB : ReadPlan :=
 def goodPlan : AssignPlan :=
   { contextShape := #[], destinationSlot := 2, outputShape := #[4]
   , terms := #[{ iterationShape := #[4, 3], contextPos := #[], outputPos := #[0], reductionPos := #[1]
-               , factors := #[readA, readB] }]
+               , factors := #[.read readA, .read readB] }]
   , algebra := admittedAlgebra }
 
 def isOk : Except PlanError CheckedAssignPlan → Bool
@@ -41,7 +41,7 @@ def errOf : Except PlanError CheckedAssignPlan → Option PlanError
 -- source slot outside the signature table
 #guard errOf (checkAssign sigs
   { goodPlan with terms := #[{ goodPlan.terms[0]! with
-      factors := #[{ readA with sourceSlot := 99 }] }] }) == some (.slotOutOfRange 99 3)
+      factors := #[.read { readA with sourceSlot := 99 }] }] }) == some (.slotOutOfRange 99 3)
 
 -- destination slot outside the signature table
 #guard errOf (checkAssign sigs { goodPlan with destinationSlot := 99 })
@@ -50,7 +50,7 @@ def errOf : Except PlanError CheckedAssignPlan → Option PlanError
 -- coefficient row no longer matches the term-basis width
 #guard errOf (checkAssign sigs
   { goodPlan with terms := #[{ goodPlan.terms[0]! with
-      factors := #[{ readA with map := { coeffs := #[#[1]], bias := #[0] } }] }] })
+      factors := #[.read { readA with map := { coeffs := #[#[1]], bias := #[0] } }] }] })
   == some (.affineWidthMismatch 0 0 2 1)
 
 -- positions no longer partition the iteration basis
@@ -61,7 +61,7 @@ def errOf : Except PlanError CheckedAssignPlan → Option PlanError
 -- declared source shape disagrees with the signature table
 #guard errOf (checkAssign sigs
   { goodPlan with terms := #[{ goodPlan.terms[0]! with
-      factors := #[{ readA with sourceShape := #[7] }] }] })
+      factors := #[.read { readA with sourceShape := #[7] }] }] })
   == some (.sourceShapeMismatch 0 0 #[7] #[4])
 
 -- a non-admitted algebra
@@ -91,8 +91,8 @@ def errOf : Except PlanError CheckedAssignPlan → Option PlanError
 -- affine map rank does not match source rank (2 coeff rows for a rank-1 source)
 #guard errOf (checkAssign sigs
   { goodPlan with terms := #[{ goodPlan.terms[0]! with
-      factors := #[{ readA with map := { coeffs := #[#[1, 0], #[0, 1]], bias := #[0] } }
-                 , readB] }] })
+      factors := #[.read { readA with map := { coeffs := #[#[1, 0], #[0, 1]], bias := #[0] } }
+                 , .read readB] }] })
   == some (.affineRankMismatch 0 0 1 2)
 
 -- a term's outputPos projects extents that disagree with the declared outputShape
@@ -134,7 +134,7 @@ def readX2 : ReadPlan :=
 def badContextPlan : AssignPlan :=
   { contextShape := #[3], destinationSlot := 1, outputShape := #[3]
   , terms := #[{ iterationShape := #[2,3], contextPos := #[0], outputPos := #[1], reductionPos := #[]
-               , factors := #[readX2] }]
+               , factors := #[.read readX2] }]
   , algebra := admittedAlgebra }
 
 #guard errOf (checkAssign sigs2 badContextPlan) == some (.contextProjectionMismatch 0 #[2] #[3])
@@ -144,7 +144,7 @@ def badContextPlan : AssignPlan :=
 def topLevelBadAssign : AssignPlan :=
   { contextShape := #[2], destinationSlot := 1, outputShape := #[3]
   , terms := #[{ iterationShape := #[2,3], contextPos := #[0], outputPos := #[1]
-               , reductionPos := #[], factors := #[readX2] }]
+               , reductionPos := #[], factors := #[.read readX2] }]
   , algebra := admittedAlgebra }
 
 def topLevelBadPlan : RawEvalPlan :=
@@ -156,5 +156,43 @@ def checkPlanErrOf : Except PlanStepError CheckedEvalPlan → Option PlanStepErr
   | .ok _ => none | .error e => some e
 
 #guard checkPlanErrOf (checkPlan topLevelBadPlan) == some (.assign (.topLevelContextNotEmpty 0))
+
+/-! ## Task 5.1: positional Iverson factors in the checker
+
+Direct hand-built checked-plan fixtures (source Iverson stays rejected; these carry
+`FactorPlan.iverson` in a hand-built `AssignPlan`). `goodPlan`'s iteration basis is `#[4, 3]`
+(size 2), so a correctly-sized predicate leaf has coefficient width 2. Each locator fixture places a
+NON-read factor BEFORE the failing read, so the all-factor index diverges from any filtered-read (or
+filtered-predicate) index — today the two coincide in every read-only fixture, so a migration that
+reindexed filtered factors would pass silently. -/
+
+-- A predicate true at every coordinate (`0 < 1`), both leaves of the correct width (2).
+def truePred2 : PosBoolExpr :=
+  .rel .lt (.affine { coeffs := #[0, 0], bias := 0 }) (.affine { coeffs := #[0, 0], bias := 1 })
+
+-- Same predicate, but its FIRST leaf has width 1 (≠ iterationShape.size = 2).
+def badWidthPred : PosBoolExpr :=
+  .rel .lt (.affine { coeffs := #[0], bias := 0 }) (.affine { coeffs := #[0, 0], bias := 1 })
+
+-- Fixture: accepted positional Iverson. A correctly-sized predicate inserted BETWEEN the two reads
+-- (all-factor index 1) — the checker's predicate arm accepts it.
+#guard isOk (checkAssign sigs
+  { goodPlan with terms := #[{ goodPlan.terms[0]! with
+      factors := #[.read readA, .iverson truePred2, .read readB] }] })
+
+-- Fixture: predicate-width locator. The mis-sized predicate sits at all-factor index 1; the checker
+-- reports `affineWidthMismatch 0 1 2 1` — `fi = 1` (all-factor), NOT a filtered-predicate index 0.
+#guard errOf (checkAssign sigs
+  { goodPlan with terms := #[{ goodPlan.terms[0]! with
+      factors := #[.read readA, .iverson badWidthPred, .read readB] }] })
+  == some (.affineWidthMismatch 0 1 2 1)
+
+-- Fixture: read-after-predicate locator. Term is `[iverson(ok), read(bad shape)]`; the failing read
+-- sits at all-factor index 1, so `sourceShapeMismatch 0 1 #[7] #[4]` reports `fi = 1` (all-factor),
+-- NOT filtered-read 0.
+#guard errOf (checkAssign sigs
+  { goodPlan with terms := #[{ goodPlan.terms[0]! with
+      factors := #[.iverson truePred2, .read { readA with sourceShape := #[7] }] }] })
+  == some (.sourceShapeMismatch 0 1 #[7] #[4])
 
 end LeanNCD.Eval.Plan.KernelCheckTest

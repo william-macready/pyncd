@@ -23,7 +23,7 @@ def idRead (slot : TensorSlot) : ReadPlan :=
 def idNode (dest src : TensorSlot) : AssignPlan :=
   { contextShape := #[], destinationSlot := dest, outputShape := #[2]
   , terms := #[{ iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
-               , factors := #[idRead src] }]
+               , factors := #[.read (idRead src)] }]
   , algebra := admittedAlgebra }
 
 def runGraph (raw : RawEvalPlan) (inputs : Array DenseTensor) :
@@ -91,9 +91,9 @@ def diamondSigs : Array TensorSignature :=
 def nodeC : AssignPlan :=
   { contextShape := #[], destinationSlot := 3, outputShape := #[2]
   , terms := #[ { iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
-                , factors := #[idRead 1] }
+                , factors := #[.read (idRead 1)] }
               , { iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
-                , factors := #[idRead 2] } ]
+                , factors := #[.read (idRead 2)] } ]
   , algebra := admittedAlgebra }
 
 def diamondPlan : RawEvalPlan :=
@@ -134,9 +134,9 @@ def placementSigs : Array TensorSignature :=
 def sumNode (dest srcA srcB : TensorSlot) : AssignPlan :=
   { contextShape := #[], destinationSlot := dest, outputShape := #[2]
   , terms := #[ { iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
-                , factors := #[idRead srcA] }
+                , factors := #[.read (idRead srcA)] }
               , { iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
-                , factors := #[idRead srcB] } ]
+                , factors := #[.read (idRead srcB)] } ]
   , algebra := admittedAlgebra }
 
 def placementPlan : RawEvalPlan :=
@@ -216,7 +216,7 @@ def fosRead (slot : TensorSlot) : ReadPlan :=
 
 def fosTerm (slot : TensorSlot) : TermPlan :=
   { iterationShape := #[1], contextPos := #[], outputPos := #[0], reductionPos := #[]
-  , factors := #[fosRead slot] }
+  , factors := #[.read (fosRead slot)] }
 
 def fosNode : AssignPlan :=
   { contextShape := #[], destinationSlot := 3, outputShape := #[1]

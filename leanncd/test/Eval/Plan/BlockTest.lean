@@ -26,7 +26,7 @@ def blockReadX : ReadPlan :=
 def blockAssign : AssignPlan :=
   { contextShape := #[2], destinationSlot := 1, outputShape := #[3]
   , terms := #[{ iterationShape := #[2,3], contextPos := #[0], outputPos := #[1], reductionPos := #[]
-               , factors := #[blockReadX] }]
+               , factors := #[.read blockReadX] }]
   , algebra := admittedAlgebra }
 
 def stepBlock : RawPlanBlock :=
@@ -111,14 +111,14 @@ def fwdReadSlot1 : ReadPlan :=
 def fwdAssignA : AssignPlan :=
   { contextShape := #[], destinationSlot := 2, outputShape := #[4]
   , terms := #[{ iterationShape := #[4], contextPos := #[], outputPos := #[0], reductionPos := #[]
-               , factors := #[fwdReadSlot1] }]
+               , factors := #[.read fwdReadSlot1] }]
   , algebra := admittedAlgebra }
 
 -- B: writes slot 1, reads slot 0 — the true producer of slot 1, placed after A.
 def fwdAssignB : AssignPlan :=
   { contextShape := #[], destinationSlot := 1, outputShape := #[4]
   , terms := #[{ iterationShape := #[4], contextPos := #[], outputPos := #[0], reductionPos := #[]
-               , factors := #[fwdReadSlot0] }]
+               , factors := #[.read fwdReadSlot0] }]
   , algebra := admittedAlgebra }
 
 def forwardReadBlock : RawPlanBlock :=
@@ -133,12 +133,41 @@ run_cmd do
       unless e == .wiring (.invalidForwardRead 0 0 0 1) do
         throwError s!"forward read: wrong error {repr e}"
 
+-- Task 5.1: block forward-read locator with an Iverson factor BEFORE the failing read. Assignment A's
+-- term becomes `[iverson, read(slot 1)]` (iteration basis `#[4]`, size 1, so leaf width 1). Block
+-- checking skips the predicate but keeps the all-factor index, so it reports `fi = 1`, NOT filtered-
+-- read 0.
+def fwdBlockPred : PosBoolExpr :=
+  .rel .lt (.affine { coeffs := #[0], bias := 0 }) (.affine { coeffs := #[0], bias := 1 })
+
+def fwdAssignAIverson : AssignPlan :=
+  { fwdAssignA with terms := #[{ fwdAssignA.terms[0]! with
+      factors := #[.iverson fwdBlockPred, .read fwdReadSlot1] }] }
+
+def forwardReadBlockIverson : RawPlanBlock :=
+  { forwardReadBlock with steps := #[.assign fwdAssignAIverson, .assign fwdAssignB] }
+
+run_cmd do
+  match checkPlanBlock forwardReadBlockIverson with
+  | .ok _ => throwError "forward read (with a preceding Iverson factor) should have been rejected"
+  | .error e =>
+      unless e == .wiring (.invalidForwardRead 0 0 1 1) do
+        throwError s!"forward read (Iverson): wrong error {repr e}"
+
+-- Task 5.1: `BlockStep.sourceSlots` excludes Iverson factors (filterMap reads). An assign whose term
+-- is `[read(slot 0), iverson, read(slot 1)]` yields only the two read slots, in order.
+def blockSourceSlotIversonAssign : AssignPlan :=
+  { fwdAssignA with terms := #[{ fwdAssignA.terms[0]! with
+      factors := #[.read fwdReadSlot0, .iverson fwdBlockPred, .read fwdReadSlot1] }] }
+
+#guard (BlockStep.assign blockSourceSlotIversonAssign).sourceSlots == #[0, 1]
+
 -- Mutation: reaching `.wiring (.missingProduction ...)` — a scratch slot (slot 2) is declared in
 -- `tensorSigs` but is neither a block input nor produced by any assignment.
 def scratchAssign : AssignPlan :=
   { contextShape := #[], destinationSlot := 1, outputShape := #[4]
   , terms := #[{ iterationShape := #[4], contextPos := #[], outputPos := #[0], reductionPos := #[]
-               , factors := #[fwdReadSlot0] }]
+               , factors := #[.read fwdReadSlot0] }]
   , algebra := admittedAlgebra }
 
 def missingProductionBlock : RawPlanBlock :=

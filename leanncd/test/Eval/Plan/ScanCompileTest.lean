@@ -130,8 +130,7 @@ def selfRecurExpected : RawScanPlan :=
             { contextShape := #[], destinationSlot := 1, outputShape := #[]
             , terms := #[{ iterationShape := #[], contextPos := #[], outputPos := #[]
                          , reductionPos := #[]
-                         , factors := #[{ sourceSlot := 0, map := { coeffs := #[], bias := #[] }
-                                        , sourceShape := #[], oobPolicy := .zeroPad }] }]
+                         , factors := #[.read { sourceSlot := 0, map := { coeffs := #[], bias := #[] }, sourceShape := #[], oobPolicy := .zeroPad }] }]
             , algebra := admittedAlgebra }]
       , outputs := #[1] }
   , baseCaptures := #[{ inputSlot := 0, source := .external 0 }]
@@ -147,11 +146,9 @@ def selfRecurExpected : RawScanPlan :=
             { contextShape := #[2], destinationSlot := 2, outputShape := #[]
             , terms := #[
                 { iterationShape := #[2], contextPos := #[0], outputPos := #[], reductionPos := #[]
-                , factors := #[{ sourceSlot := 0, map := { coeffs := #[#[1]], bias := #[0] }
-                               , sourceShape := #[3], oobPolicy := .zeroPad }] }
+                , factors := #[.read { sourceSlot := 0, map := { coeffs := #[#[1]], bias := #[0] }, sourceShape := #[3], oobPolicy := .zeroPad }] }
               , { iterationShape := #[2], contextPos := #[0], outputPos := #[], reductionPos := #[]
-                , factors := #[{ sourceSlot := 1, map := { coeffs := #[#[1]], bias := #[0] }
-                               , sourceShape := #[3], oobPolicy := .zeroPad }] }]
+                , factors := #[.read { sourceSlot := 1, map := { coeffs := #[#[1]], bias := #[0] }, sourceShape := #[3], oobPolicy := .zeroPad }] }]
             , algebra := admittedAlgebra }]
       , outputs := #[2] }
   , stepCaptures := #[{ inputSlot := 0, source := .state 0 }
@@ -313,8 +310,7 @@ def scratchCheck : Except String Unit :=
         -- and the result assignment reads `T` at its own local slot, not at a capture.
         expectEq "C: result reads scratch slot"
           (((s.stepBlock.steps.getD 1 default).assign?.getD default).terms.getD 0 default).factors
-          #[{ sourceSlot := 2, map := { coeffs := #[], bias := #[] }
-            , sourceShape := #[], oobPolicy := .zeroPad }]
+          #[.read { sourceSlot := 2, map := { coeffs := #[], bias := #[] }, sourceShape := #[], oobPolicy := .zeroPad }]
         checkerAgrees "C" p 0)
 
 run_cmd match scratchCheck with | .ok _ => pure () | .error m => throwError m
@@ -357,13 +353,13 @@ def contractCheck : Except String Unit :=
         expectEq "D-E: outputPos" t.outputPos #[]
         expectEq "D-E: reductionPos" t.reductionPos #[1]
         -- `S[l]`: one row (rank-1 state history), `1` on the context column.
-        expectEq "D-E: state read map" (t.factors.getD 0 default).map
+        expectEq "D-E: state read map" (t.factors.getD 0 default).readOrDefault.map
           { coeffs := #[#[1, 0]], bias := #[0] }
         -- `M[k, l]`: read at the CURRENT coordinate — row 0 selects `k`, row 1 selects `l` with no
         -- bias — against `M`'s full declared shape, which is the history length, not the step count.
-        expectEq "D-E: external read map" (t.factors.getD 1 default).map
+        expectEq "D-E: external read map" (t.factors.getD 1 default).readOrDefault.map
           { coeffs := #[#[0, 1], #[1, 0]], bias := #[0, 0] }
-        expectEq "D-E: external read shape" (t.factors.getD 1 default).sourceShape #[2, 4]
+        expectEq "D-E: external read shape" (t.factors.getD 1 default).readOrDefault.sourceShape #[2, 4]
         checkerAgrees "D-E" p 0)
 
 run_cmd match contractCheck with | .ok _ => pure () | .error m => throwError m
@@ -397,11 +393,11 @@ def deepHistoryCheck : Except String Unit :=
     | none => .error "F: step 0 is not a scan"
     | some s => do
         let a := (s.stepBlock.steps.getD 0 default).assign?.getD default
-        expectEq "F: immediate read" ((a.terms.getD 0 default).factors.getD 0 default).map
+        expectEq "F: immediate read" ((a.terms.getD 0 default).factors.getD 0 default).readOrDefault.map
           { coeffs := #[#[1]], bias := #[0] }
-        expectEq "F: look-back read" ((a.terms.getD 1 default).factors.getD 0 default).map
+        expectEq "F: look-back read" ((a.terms.getD 1 default).factors.getD 0 default).readOrDefault.map
           { coeffs := #[#[1]], bias := #[-2] }
-        expectEq "F: zero padding" ((a.terms.getD 1 default).factors.getD 0 default).oobPolicy
+        expectEq "F: zero padding" ((a.terms.getD 1 default).factors.getD 0 default).readOrDefault.oobPolicy
           .zeroPad
         -- both reads share ONE state capture; a second capture of the same state would break the
         -- immutable-pre-step snapshot into two independently-bound inputs.
@@ -480,7 +476,7 @@ def axisPosCheck : Except String Unit :=
           { coeffs := #[#[0, 1], #[1, 0]], bias := #[0, 1] }
         -- causality is checked at the state's OWN advancing dimension (1), not at dimension 0.
         expectEq "H: state read map"
-          ((((s.stepBlock.steps.getD 0 default).assign?.getD default).terms.getD 0 default).factors.getD 0 default).map
+          ((((s.stepBlock.steps.getD 0 default).assign?.getD default).terms.getD 0 default).factors.getD 0 default).readOrDefault.map
           { coeffs := #[#[0, 1], #[1, 0]], bias := #[0, 0] }
         checkerAgrees "H" p 0)
 
@@ -537,7 +533,7 @@ def multiBaseCheck : Except String Unit :=
         let pointTerm := ((s.baseBlock.steps.getD 1 default).assign?.getD default).terms.getD 0 default
         expectEq "I-J: pinned basis is empty" pointTerm.iterationShape #[]
         expectEq "I-J: pinned axis is not contracted" pointTerm.reductionPos #[]
-        expectEq "I-J: pinned bias accumulation" (pointTerm.factors.getD 0 default).map
+        expectEq "I-J: pinned bias accumulation" (pointTerm.factors.getD 0 default).readOrDefault.map
           { coeffs := #[#[]], bias := #[7] }
         -- the face write's own assignment keeps `c` as a real free output axis of extent 3.
         expectEq "I-J: face output shape"
@@ -602,7 +598,7 @@ def twoScanCheck : Except String Unit :=
     | none => .error "K-L: step 2 is not an assignment"
     | some a =>
         expectEq "K-L: plain consumer sources"
-          ((a.terms.getD 0 default).factors.map (·.sourceSlot)) #[2, 3]
+          ((a.terms.getD 0 default).factors.map (·.readOrDefault.sourceSlot)) #[2, 3]
     checkerAgrees "K-L: scan 0" p 0
     checkerAgrees "K-L: scan 1" p 1)
 

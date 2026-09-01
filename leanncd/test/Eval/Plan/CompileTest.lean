@@ -237,9 +237,9 @@ def assignStep : PlanStep → AssignPlan
 #guard contractPrepared.map (fun p => (assignStep p.plan.raw.steps[0]!).terms[0]!.reductionPos) == some #[1]
 #guard contractPrepared.map (fun p => (assignStep p.plan.raw.steps[0]!).terms[0]!.contextPos) == some #[]
 #guard contractPrepared.map (fun p => (assignStep p.plan.raw.steps[0]!).contextShape) == some #[]
-#guard contractPrepared.map (fun p => (assignStep p.plan.raw.steps[0]!).terms[0]!.factors[0]!.map.coeffs) ==
+#guard contractPrepared.map (fun p => (assignStep p.plan.raw.steps[0]!).terms[0]!.factors[0]!.readOrDefault.map.coeffs) ==
   some #[#[1, 0]]   -- A[i]: zero coefficient in the j (contracted) column — still counted
-#guard contractPrepared.map (fun p => (assignStep p.plan.raw.steps[0]!).terms[0]!.factors[1]!.map.coeffs) ==
+#guard contractPrepared.map (fun p => (assignStep p.plan.raw.steps[0]!).terms[0]!.factors[1]!.readOrDefault.map.coeffs) ==
   some #[#[0, 1]]   -- B[j]
 
 -- Example 2b: multiple factors and ORDERED reductions `Y[i] := A[i,j]·B[j,k]·C[k]`, contracting
@@ -282,15 +282,15 @@ def multiReductionPrepared : Option PreparedPlan :=
     (fun p => (assignStep p.plan.raw.steps[0]!).terms[0]!.contextPos) == some #[]
 -- A[i,j]: one row per read dimension, over basis [i, j, k].
 #guard multiReductionPrepared.map
-    (fun p => (assignStep p.plan.raw.steps[0]!).terms[0]!.factors[0]!.map.coeffs) ==
+    (fun p => (assignStep p.plan.raw.steps[0]!).terms[0]!.factors[0]!.readOrDefault.map.coeffs) ==
   some #[#[1, 0, 0], #[0, 1, 0]]
 -- B[j,k]
 #guard multiReductionPrepared.map
-    (fun p => (assignStep p.plan.raw.steps[0]!).terms[0]!.factors[1]!.map.coeffs) ==
+    (fun p => (assignStep p.plan.raw.steps[0]!).terms[0]!.factors[1]!.readOrDefault.map.coeffs) ==
   some #[#[0, 1, 0], #[0, 0, 1]]
 -- C[k]
 #guard multiReductionPrepared.map
-    (fun p => (assignStep p.plan.raw.steps[0]!).terms[0]!.factors[2]!.map.coeffs) ==
+    (fun p => (assignStep p.plan.raw.steps[0]!).terms[0]!.factors[2]!.readOrDefault.map.coeffs) ==
   some #[#[0, 0, 1]]
 
 -- Example 3: repeated assignment `Y[i]:=A[i]; Y[i]:=B[i]; Z[i]:=Y[i]`, axis i : ℕ = 2.

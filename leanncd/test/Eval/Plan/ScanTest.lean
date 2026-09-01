@@ -110,10 +110,10 @@ def stepReadS : ReadPlan :=
   { sourceSlot := 1, map := { coeffs := #[#[1]], bias := #[0] }, sourceShape := #[3], oobPolicy := .zeroPad }
 
 def termX : TermPlan :=
-  { iterationShape := #[2], contextPos := #[0], outputPos := #[], reductionPos := #[], factors := #[stepReadX] }
+  { iterationShape := #[2], contextPos := #[0], outputPos := #[], reductionPos := #[], factors := #[.read stepReadX] }
 
 def termS : TermPlan :=
-  { iterationShape := #[2], contextPos := #[0], outputPos := #[], reductionPos := #[], factors := #[stepReadS] }
+  { iterationShape := #[2], contextPos := #[0], outputPos := #[], reductionPos := #[], factors := #[.read stepReadS] }
 
 def stepAssign : AssignPlan :=
   { contextShape := #[2], destinationSlot := 2, outputShape := #[], terms := #[termX, termS]
@@ -390,7 +390,7 @@ def baseIdRead : ReadPlan :=
   { sourceSlot := 0, map := { coeffs := #[], bias := #[] }, sourceShape := #[], oobPolicy := .zeroPad }
 
 def baseIdTerm : TermPlan :=
-  { iterationShape := #[], contextPos := #[], outputPos := #[], reductionPos := #[], factors := #[baseIdRead] }
+  { iterationShape := #[], contextPos := #[], outputPos := #[], reductionPos := #[], factors := #[.read baseIdRead] }
 
 def baseIdAssign : AssignPlan :=
   { contextShape := #[], destinationSlot := 1, outputShape := #[], terms := #[baseIdTerm]
@@ -512,7 +512,7 @@ def stepReadG : ReadPlan :=
   { sourceSlot := 0, map := { coeffs := #[#[1]], bias := #[-2] }, sourceShape := #[5], oobPolicy := .zeroPad }
 
 def termG : TermPlan :=
-  { iterationShape := #[4], contextPos := #[0], outputPos := #[], reductionPos := #[], factors := #[stepReadG] }
+  { iterationShape := #[4], contextPos := #[0], outputPos := #[], reductionPos := #[], factors := #[.read stepReadG] }
 
 def stepAssignG : AssignPlan :=
   { contextShape := #[4], destinationSlot := 1, outputShape := #[], terms := #[termG]
@@ -549,7 +549,7 @@ run_cmd do
 -- matches a positive `.shift`, so it does NOT catch this; `stateReadCausal` does, because the
 -- read's sole row then has zero nonzero coefficients.
 def constReadG : ReadPlan := { stepReadG with map := { coeffs := #[#[0]], bias := #[1] } }
-def termConstG : TermPlan := { termG with factors := #[constReadG] }
+def termConstG : TermPlan := { termG with factors := #[.read constReadG] }
 def stepAssignConstG : AssignPlan := { stepAssignG with terms := #[termConstG] }
 def stepBlockConstG : RawPlanBlock := { stepBlockG with steps := #[.assign stepAssignConstG] }
 
@@ -563,7 +563,7 @@ run_cmd do
 -- G[l]) — the same single-unit-coefficient row shape as a causal advancing read, but with a
 -- positive bias.
 def lookAheadReadG : ReadPlan := { stepReadG with map := { coeffs := #[#[1]], bias := #[1] } }
-def termLookAheadG : TermPlan := { termG with factors := #[lookAheadReadG] }
+def termLookAheadG : TermPlan := { termG with factors := #[.read lookAheadReadG] }
 def stepAssignLookAheadG : AssignPlan := { stepAssignG with terms := #[termLookAheadG] }
 def stepBlockLookAheadG : RawPlanBlock := { stepBlockG with steps := #[.assign stepAssignLookAheadG] }
 
@@ -632,7 +632,7 @@ run_cmd do
 -- look-ahead assignment then reads the scratch instead of the capture. The rejection still fires on
 -- the pointwise step itself (index 0), so the laundering path never reaches scan causality at all.
 def launderedLookAheadReadG : ReadPlan := { lookAheadReadG with sourceSlot := 2 }
-def launderedLookAheadTermG : TermPlan := { termLookAheadG with factors := #[launderedLookAheadReadG] }
+def launderedLookAheadTermG : TermPlan := { termLookAheadG with factors := #[.read launderedLookAheadReadG] }
 def launderedLookAheadAssignG : AssignPlan :=
   { stepAssignLookAheadG with terms := #[launderedLookAheadTermG] }
 
@@ -712,6 +712,38 @@ run_cmd do
   | .ok _ => throwError "the third step's constant state read should have been rejected"
   | .error e => unless e == .causalityFailure 0 2 0 0 do
       throwError s!"causalityFailure blockStepIndex: expected block-step index 2, got {repr e}"
+
+-- Task 5.1: checked-scan causality DOUBLE locator. The noncausal scratch assignment's term becomes
+-- `[iverson, read(noncausal state)]` (termG iteration basis `#[4]`, size 1, so leaf width 1). The
+-- causality walk skips the predicate but keeps the all-factor index, so `causalityFailure si ai ti
+-- fi` reports the all-block-step `ai = 2` AND the all-factor `fi = 1` — both diverge from their
+-- filtered indexings simultaneously (block step 2 is filtered-assignment 1; the read is filtered-read
+-- 0). A migration that reindexed EITHER would miss this.
+def scanDoublePred : PosBoolExpr :=
+  .rel .lt (.affine { coeffs := #[0], bias := 0 }) (.affine { coeffs := #[0], bias := 1 })
+
+def termConstGIverson : TermPlan :=
+  { termG with factors := #[.iverson scanDoublePred, .read constReadG] }
+
+def stepScratchConstAt3GIverson : AssignPlan :=
+  { stepAssignG with destinationSlot := 3, terms := #[termConstGIverson] }
+
+def stepBlockNonlinBetweenAssignsGIverson : RawPlanBlock :=
+  { stepBlockG with
+    tensorSigs := stepNonlinBetweenAssignsSigsG
+    steps := #[ .assign stepAssignG
+              , .pointwise { sourceSlot := 1, destinationSlot := 2, shape := #[], fn := .relu }
+              , .assign stepScratchConstAt3GIverson ] }
+
+run_cmd do
+  match checkPlanBlock stepBlockNonlinBetweenAssignsGIverson with
+  | .error e => throwError s!"nonlin-between-assigns (Iverson) block was rejected by block checking: {repr e}"
+  | .ok _ => pure ()
+  match checkScanPlan outerSigsDeepHistory
+      { deepHistoryScan with stepBlock := stepBlockNonlinBetweenAssignsGIverson } with
+  | .ok _ => throwError "the third step's constant state read (behind an Iverson factor) should have been rejected"
+  | .error e => unless e == .causalityFailure 0 2 0 1 do
+      throwError s!"causalityFailure double locator: expected (0 2 0 1), got {repr e}"
 
 /-! ### The causality-completeness argument, pinned at the scan level
 
@@ -825,7 +857,7 @@ def readGjCanonical : ReadPlan :=
 
 def termGj : TermPlan :=
   { iterationShape := #[2, 2], contextPos := #[0], outputPos := #[1], reductionPos := #[]
-  , factors := #[readGjCanonical] }
+  , factors := #[.read readGjCanonical] }
 
 def stepAssignGj : AssignPlan :=
   { contextShape := #[2], destinationSlot := 1, outputShape := #[2], terms := #[termGj]
@@ -862,7 +894,7 @@ def readGjWild : ReadPlan :=
     map := { coeffs := readGjCanonical.map.coeffs.set! 0 #[7, -3]
            , bias := readGjCanonical.map.bias.set! 0 42 } }
 
-def termGjWild : TermPlan := { termGj with factors := #[readGjWild] }
+def termGjWild : TermPlan := { termGj with factors := #[.read readGjWild] }
 def stepAssignGjWild : AssignPlan := { stepAssignGj with terms := #[termGjWild] }
 def stepBlockGjWild : RawPlanBlock := { stepBlockGj with steps := #[.assign stepAssignGjWild] }
 
@@ -949,7 +981,7 @@ def stepReadSExtentOne : ReadPlan :=
   { sourceSlot := 0, map := { coeffs := #[#[1]], bias := #[0] }, sourceShape := #[1], oobPolicy := .zeroPad }
 def termSExtentOne : TermPlan :=
   { iterationShape := #[0], contextPos := #[0], outputPos := #[], reductionPos := #[]
-  , factors := #[stepReadSExtentOne] }
+  , factors := #[.read stepReadSExtentOne] }
 def stepAssignSExtentOne : AssignPlan :=
   { contextShape := #[0], destinationSlot := 1, outputShape := #[], terms := #[termSExtentOne]
   , algebra := admittedAlgebra }
@@ -1004,7 +1036,7 @@ def baseIdReadCoupled : ReadPlan :=
   { sourceSlot := 0, map := { coeffs := #[], bias := #[] }, sourceShape := #[], oobPolicy := .zeroPad }
 def baseIdTermCoupled : TermPlan :=
   { iterationShape := #[], contextPos := #[], outputPos := #[], reductionPos := #[]
-  , factors := #[baseIdReadCoupled] }
+  , factors := #[.read baseIdReadCoupled] }
 def baseIdAssignCoupled : AssignPlan :=
   { contextShape := #[], destinationSlot := 1, outputShape := #[], terms := #[baseIdTermCoupled]
   , algebra := admittedAlgebra }
@@ -1027,13 +1059,13 @@ def readGForHCoupled : ReadPlan :=
 
 def termGGCoupled : TermPlan :=
   { iterationShape := #[3], contextPos := #[0], outputPos := #[], reductionPos := #[]
-  , factors := #[readGForGCoupled] }
+  , factors := #[.read readGForGCoupled] }
 def termHGCoupled : TermPlan :=
   { iterationShape := #[3], contextPos := #[0], outputPos := #[], reductionPos := #[]
-  , factors := #[readHForGCoupled] }
+  , factors := #[.read readHForGCoupled] }
 def termGHCoupled : TermPlan :=
   { iterationShape := #[3], contextPos := #[0], outputPos := #[], reductionPos := #[]
-  , factors := #[readGForHCoupled] }
+  , factors := #[.read readGForHCoupled] }
 
 def stepAssignGCoupled : AssignPlan :=
   { contextShape := #[3], destinationSlot := 2, outputShape := #[], terms := #[termGGCoupled, termHGCoupled]
@@ -1121,10 +1153,10 @@ def stepReadTMulti : ReadPlan :=
   , oobPolicy := .zeroPad }
 def termDpReadMulti : TermPlan :=
   { iterationShape := #[1,1], contextPos := #[0,1], outputPos := #[], reductionPos := #[]
-  , factors := #[stepReadDpMulti] }
+  , factors := #[.read stepReadDpMulti] }
 def termTReadMulti : TermPlan :=
   { iterationShape := #[1,1], contextPos := #[0,1], outputPos := #[], reductionPos := #[]
-  , factors := #[stepReadTMulti] }
+  , factors := #[.read stepReadTMulti] }
 def stepAssignDpMulti : AssignPlan :=
   { contextShape := #[1,1], destinationSlot := 2, outputShape := #[], terms := #[termDpReadMulti, termTReadMulti]
   , algebra := admittedAlgebra }
@@ -1280,10 +1312,10 @@ def stepReadAAsym : ReadPlan :=
   , oobPolicy := .zeroPad }
 def termGAsym : TermPlan :=
   { iterationShape := #[1,2], contextPos := #[0,1], outputPos := #[], reductionPos := #[]
-  , factors := #[stepReadGAsym] }
+  , factors := #[.read stepReadGAsym] }
 def termAAsym : TermPlan :=
   { iterationShape := #[1,2], contextPos := #[0,1], outputPos := #[], reductionPos := #[]
-  , factors := #[stepReadAAsym] }
+  , factors := #[.read stepReadAAsym] }
 def stepAssignAsym : AssignPlan :=
   { contextShape := #[1,2], destinationSlot := 2, outputShape := #[], terms := #[termGAsym, termAAsym]
   , algebra := admittedAlgebra }
@@ -1698,9 +1730,9 @@ def stepReadG3 : ReadPlan :=
 def stepReadH3 : ReadPlan :=
   { sourceSlot := 1, map := { coeffs := #[#[1]], bias := #[0] }, sourceShape := #[1], oobPolicy := .zeroPad }
 def termG3 : TermPlan :=
-  { iterationShape := #[0], contextPos := #[0], outputPos := #[], reductionPos := #[], factors := #[stepReadG3] }
+  { iterationShape := #[0], contextPos := #[0], outputPos := #[], reductionPos := #[], factors := #[.read stepReadG3] }
 def termH3 : TermPlan :=
-  { iterationShape := #[0], contextPos := #[0], outputPos := #[], reductionPos := #[], factors := #[stepReadH3] }
+  { iterationShape := #[0], contextPos := #[0], outputPos := #[], reductionPos := #[], factors := #[.read stepReadH3] }
 def stepAssignG3 : AssignPlan :=
   { contextShape := #[0], destinationSlot := 2, outputShape := #[], terms := #[termG3], algebra := admittedAlgebra }
 def stepAssignH3 : AssignPlan :=
@@ -1887,7 +1919,7 @@ def stepReadWCanon : ReadPlan :=
 
 def stepTermWCanon : TermPlan :=
   { iterationShape := #[3, 2], contextPos := #[0], outputPos := #[1], reductionPos := #[]
-  , factors := #[stepReadWCanon] }
+  , factors := #[.read stepReadWCanon] }
 
 def stepAssignWCanon : AssignPlan :=
   { contextShape := #[3], destinationSlot := 1, outputShape := #[2], terms := #[stepTermWCanon]
@@ -1930,7 +1962,7 @@ def stepReadWScalar : ReadPlan :=
 
 def stepTermWScalar : TermPlan :=
   { iterationShape := #[3], contextPos := #[0], outputPos := #[], reductionPos := #[]
-  , factors := #[stepReadWScalar] }
+  , factors := #[.read stepReadWScalar] }
 
 def stepAssignWScalar : AssignPlan :=
   { contextShape := #[3], destinationSlot := 1, outputShape := #[], terms := #[stepTermWScalar]

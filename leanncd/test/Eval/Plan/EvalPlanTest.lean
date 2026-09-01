@@ -43,7 +43,7 @@ def readS : ReadPlan :=
 def yAssign : AssignPlan :=
   { contextShape := #[], destinationSlot := 3, outputShape := #[3]
   , terms := #[{ iterationShape := #[3], contextPos := #[], outputPos := #[0], reductionPos := #[]
-               , factors := #[readS] }]
+               , factors := #[.read readS] }]
   , algebra := admittedAlgebra }
 
 -- Outer slots: `0 = S0`, `1 = X`, `2 = S` (`ScanTest.outerSigs`, reused verbatim), plus a new
@@ -136,11 +136,11 @@ def termLocatorReadZ : ReadPlan :=
 
 def termLocatorTerm0 : TermPlan :=
   { iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
-  , factors := #[termLocatorReadA] }
+  , factors := #[.read termLocatorReadA] }
 
 def termLocatorTerm1 : TermPlan :=
   { iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
-  , factors := #[termLocatorReadZ] }
+  , factors := #[.read termLocatorReadZ] }
 
 -- `C[i] := A[i] + Z[i]`: term 0 (index 0) is fine; term 1 (index 1) is the bad read.
 def termLocatorAssign : AssignPlan :=
@@ -154,6 +154,34 @@ def termLocatorPlan : RawEvalPlan :=
 
 -- `ti = 1`, `fi = 0`, slot = 1 — the exact locator of the bad read, not `0 0` by coincidence.
 #guard errOf (checkPlan termLocatorPlan) == some (.assign (.invalidForwardRead 0 1 0 1))
+
+-- Task 5.1: outer forward-read locator with an Iverson factor BEFORE the failing read. The bad term
+-- becomes `[iverson, read(Z)]` (iteration basis `#[2]`, size 1, so leaf width 1). The forward-read
+-- check skips the predicate but keeps the all-factor index, so it reports `fi = 1`, NOT filtered-read
+-- 0 — the two would coincide in the read-only `termLocatorPlan` above.
+def termLocatorPredZ : PosBoolExpr :=
+  .rel .lt (.affine { coeffs := #[0], bias := 0 }) (.affine { coeffs := #[0], bias := 1 })
+
+def termLocatorTerm1Iverson : TermPlan :=
+  { termLocatorTerm1 with factors := #[.iverson termLocatorPredZ, .read termLocatorReadZ] }
+
+def termLocatorAssignIverson : AssignPlan :=
+  { termLocatorAssign with terms := #[termLocatorTerm0, termLocatorTerm1Iverson] }
+
+def termLocatorPlanIverson : RawEvalPlan :=
+  { tensorSigs := termLocatorSigs, inputSlots := #[0]
+  , steps := #[.assign termLocatorAssignIverson] }
+
+#guard errOf (checkPlan termLocatorPlanIverson) == some (.assign (.invalidForwardRead 0 1 1 1))
+
+-- Task 5.1: `PlanStep.sourceSlots` excludes Iverson factors (filterMap reads). An assign whose term
+-- is `[read(slot 0), iverson, read(slot 1)]` yields only the two read slots, in order — the Iverson
+-- factor is omitted (unchanged accessor code a diff cannot show; this assertion is the guard).
+def sourceSlotIversonAssign : AssignPlan :=
+  { termLocatorAssign with terms := #[{ termLocatorTerm0 with
+      factors := #[.read termLocatorReadA, .iverson termLocatorPredZ, .read termLocatorReadZ] }] }
+
+#guard (PlanStep.assign sourceSlotIversonAssign).sourceSlots == #[0, 1]
 
 /-! ## Fix-wave addition: a genuine two-state scan, exercised through the multi-destination path
 
@@ -202,7 +230,7 @@ def preemptRead : ReadPlan :=
 
 def preemptTerm : TermPlan :=
   { iterationShape := #[4], contextPos := #[], outputPos := #[0], reductionPos := #[]
-  , factors := #[preemptRead] }
+  , factors := #[.read preemptRead] }
 
 def preemptAssign : AssignPlan :=
   { contextShape := #[], destinationSlot := 2, outputShape := #[4]

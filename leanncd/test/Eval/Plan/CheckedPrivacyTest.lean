@@ -52,7 +52,7 @@ def readB : ReadPlan :=
 def goodPlan : AssignPlan :=
   { contextShape := #[], destinationSlot := 2, outputShape := #[4]
   , terms := #[{ iterationShape := #[4, 3], contextPos := #[], outputPos := #[0], reductionPos := #[1]
-               , factors := #[readA, readB] }]
+               , factors := #[.read readA, .read readB] }]
   , algebra := admittedAlgebra }
 
 -- normal construction via the checker succeeds

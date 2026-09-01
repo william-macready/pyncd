@@ -27,7 +27,7 @@ def readB : ReadPlan :=
 def contractPlan : AssignPlan :=
   { contextShape := #[], destinationSlot := 2, outputShape := #[4]
   , terms := #[{ iterationShape := #[4, 3], contextPos := #[], outputPos := #[0], reductionPos := #[1]
-               , factors := #[readA, readB] }]
+               , factors := #[.read readA, .read readB] }]
   , algebra := admittedAlgebra }
 
 def storeAB : Array DenseTensor :=
@@ -92,7 +92,7 @@ def oobReadA : ReadPlan :=
 def oobMaxPlan : AssignPlan :=
   { contextShape := #[], destinationSlot := 1, outputShape := #[2]
   , terms := #[{ iterationShape := #[2, 3], contextPos := #[], outputPos := #[0], reductionPos := #[1]
-               , factors := #[oobReadA] }]
+               , factors := #[.read oobReadA] }]
   , algebra := admittedAlgebraMax }
 
 def oobStore : Array DenseTensor :=
@@ -112,7 +112,7 @@ def unaryRead (op : UnaryOp) (bias : Int) : ReadPlan :=
 def unaryPlan (op : UnaryOp) (bias : Int) : AssignPlan :=
   { contextShape := #[], destinationSlot := 1, outputShape := #[4]
   , terms := #[{ iterationShape := #[4], contextPos := #[], outputPos := #[0], reductionPos := #[]
-               , factors := #[unaryRead op bias] }]
+               , factors := #[.read (unaryRead op bias)] }]
   , algebra := admittedAlgebra }
 
 def unaryPow2Store : Array DenseTensor :=
@@ -150,7 +150,7 @@ def identityRead : ReadPlan :=
 def identityPlan : AssignPlan :=
   { contextShape := #[], destinationSlot := 1, outputShape := #[3]
   , terms := #[{ iterationShape := #[3], contextPos := #[], outputPos := #[0], reductionPos := #[]
-               , factors := #[identityRead] }]
+               , factors := #[.read identityRead] }]
   , algebra := admittedAlgebra }
 
 def identityStore : Array DenseTensor :=
@@ -171,7 +171,7 @@ def transposeRead : ReadPlan :=
 def transposePlan : AssignPlan :=
   { contextShape := #[], destinationSlot := 1, outputShape := #[2, 3]
   , terms := #[{ iterationShape := #[2, 3], contextPos := #[], outputPos := #[0, 1], reductionPos := #[]
-               , factors := #[transposeRead] }]
+               , factors := #[.read transposeRead] }]
   , algebra := admittedAlgebra }
 
 def transposeStore : Array DenseTensor :=
@@ -195,7 +195,7 @@ def shiftRead : ReadPlan :=
 def shiftPlan : AssignPlan :=
   { contextShape := #[], destinationSlot := 1, outputShape := #[5]
   , terms := #[{ iterationShape := #[5], contextPos := #[], outputPos := #[0], reductionPos := #[]
-               , factors := #[shiftRead] }]
+               , factors := #[.read shiftRead] }]
   , algebra := admittedAlgebra }
 
 def shiftStore : Array DenseTensor :=
@@ -218,7 +218,7 @@ def strideRead : ReadPlan :=
 def stridePlan : AssignPlan :=
   { contextShape := #[], destinationSlot := 1, outputShape := #[4]
   , terms := #[{ iterationShape := #[4], contextPos := #[], outputPos := #[0], reductionPos := #[]
-               , factors := #[strideRead] }]
+               , factors := #[.read strideRead] }]
   , algebra := admittedAlgebra }
 
 def strideStore : Array DenseTensor :=
@@ -240,7 +240,7 @@ def maffRead : ReadPlan :=
 def maffPlan : AssignPlan :=
   { contextShape := #[], destinationSlot := 1, outputShape := #[2, 3]
   , terms := #[{ iterationShape := #[2, 3], contextPos := #[], outputPos := #[0, 1], reductionPos := #[]
-               , factors := #[maffRead] }]
+               , factors := #[.read maffRead] }]
   , algebra := admittedAlgebra }
 
 def maffStore : Array DenseTensor :=
@@ -271,9 +271,9 @@ def mtermReadB : ReadPlan :=
 def mtermPlan : AssignPlan :=
   { contextShape := #[], destinationSlot := 2, outputShape := #[2]
   , terms := #[ { iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
-                , factors := #[mtermReadA] }
+                , factors := #[.read mtermReadA] }
               , { iterationShape := #[2, 3], contextPos := #[], outputPos := #[0], reductionPos := #[1]
-                , factors := #[mtermReadB] } ]
+                , factors := #[.read mtermReadB] } ]
   , algebra := admittedAlgebra }
 
 def mtermStore : Array DenseTensor :=
@@ -315,9 +315,9 @@ def ptcReadV : ReadPlan :=
 def ptcPlan : AssignPlan :=
   { contextShape := #[], destinationSlot := 4, outputShape := #[2]
   , terms := #[ { iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
-                , factors := #[ptcReadU, ptcReadA] }
+                , factors := #[.read ptcReadU, .read ptcReadA] }
               , { iterationShape := #[2, 2], contextPos := #[], outputPos := #[0], reductionPos := #[1]
-                , factors := #[ptcReadW, ptcReadV] } ]
+                , factors := #[.read ptcReadW, .read ptcReadV] } ]
   , algebra := admittedAlgebra }
 
 def ptcStore : Array DenseTensor :=
@@ -375,7 +375,7 @@ def zerdRead : ReadPlan :=
 def zerdPlan : AssignPlan :=
   { contextShape := #[], destinationSlot := 1, outputShape := #[2]
   , terms := #[{ iterationShape := #[2, 0], contextPos := #[], outputPos := #[0], reductionPos := #[1]
-               , factors := #[zerdRead] }]
+               , factors := #[.read zerdRead] }]
   , algebra := admittedAlgebra }
 
 def zerdStore : Array DenseTensor :=
@@ -397,7 +397,7 @@ def zoeRead : ReadPlan :=
 def zoePlan : AssignPlan :=
   { contextShape := #[], destinationSlot := 1, outputShape := #[0]
   , terms := #[{ iterationShape := #[0], contextPos := #[], outputPos := #[0], reductionPos := #[]
-               , factors := #[zoeRead] }]
+               , factors := #[.read zoeRead] }]
   , algebra := admittedAlgebra }
 
 def zoeStore : Array DenseTensor :=
@@ -422,7 +422,7 @@ def fosRead (slot : TensorSlot) : ReadPlan :=
 
 def fosTerm (slot : TensorSlot) : TermPlan :=
   { iterationShape := #[1], contextPos := #[], outputPos := #[0], reductionPos := #[]
-  , factors := #[fosRead slot] }
+  , factors := #[.read (fosRead slot)] }
 
 def fosPlan : AssignPlan :=
   { contextShape := #[], destinationSlot := 3, outputShape := #[1]
@@ -503,7 +503,7 @@ def ctxReadX : ReadPlan :=
 def ctxPlan : AssignPlan :=
   { contextShape := #[2], destinationSlot := 1, outputShape := #[3]
   , terms := #[{ iterationShape := #[2,3], contextPos := #[0], outputPos := #[1], reductionPos := #[]
-               , factors := #[ctxReadX] }]
+               , factors := #[.read ctxReadX] }]
   , algebra := admittedAlgebra }
 
 run_cmd do
@@ -548,7 +548,7 @@ def readCR : ReadPlan :=
 def crPlan : AssignPlan :=
   { contextShape := #[2], destinationSlot := 1, outputShape := #[3]
   , terms := #[{ iterationShape := #[2,3,4], contextPos := #[0], outputPos := #[1], reductionPos := #[2]
-               , factors := #[readCR] }]
+               , factors := #[.read readCR] }]
   , algebra := admittedAlgebra }
 
 run_cmd do
@@ -593,7 +593,7 @@ def permutedRead : ReadPlan :=
 def permutedPlan : AssignPlan :=
   { contextShape := #[], destinationSlot := 1, outputShape := #[2]
   , terms := #[{ iterationShape := #[3, 2], contextPos := #[], outputPos := #[1], reductionPos := #[0]
-               , factors := #[permutedRead] }]
+               , factors := #[.read permutedRead] }]
   , algebra := admittedAlgebra }
 
 def permutedStore : Array DenseTensor :=
@@ -618,7 +618,7 @@ def factorOrderSigs : Array TensorSignature :=
 def factorOrderPlanFor (slots : Array TensorSlot) : AssignPlan :=
   { contextShape := #[], destinationSlot := 3, outputShape := #[1]
   , terms := #[{ iterationShape := #[1], contextPos := #[], outputPos := #[0], reductionPos := #[]
-               , factors := slots.map fosRead }]
+               , factors := (slots.map fosRead).map .read }]
   , algebra := admittedAlgebra }
 
 def factorOrderPlan : AssignPlan := factorOrderPlanFor #[0, 1, 2]
@@ -657,7 +657,7 @@ def emptySourceRead : ReadPlan :=
 def emptySourcePlan : AssignPlan :=
   { contextShape := #[], destinationSlot := 1, outputShape := #[2]
   , terms := #[{ iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
-               , factors := #[emptySourceRead] }]
+               , factors := #[.read emptySourceRead] }]
   , algebra := admittedAlgebra }
 
 def emptySourceStore : Array DenseTensor :=
@@ -696,7 +696,7 @@ def scalingProbeReadX : ReadPlan :=
 def scalingProbePlan : AssignPlan :=
   { contextShape := #[], destinationSlot := 2, outputShape := #[64]
   , terms := #[{ iterationShape := #[64, 64], contextPos := #[], outputPos := #[0], reductionPos := #[1]
-               , factors := #[scalingProbeReadW, scalingProbeReadX] }]
+               , factors := #[.read scalingProbeReadW, .read scalingProbeReadX] }]
   , algebra := admittedAlgebra }
 
 def scalingProbeStore : Array DenseTensor :=
@@ -710,5 +710,35 @@ def scalingProbeStore : Array DenseTensor :=
         | .error _ => none
         | .ok c => (runDenseAssign c scalingProbeStore).toOption.map DenseTensor.data)
   == some ((Array.range 64).map (fun _ => (64.0 : Float)))
+
+/-! ## Task 5.1: positional Iverson factor execution
+
+Hand-built checked plans carrying a `FactorPlan.iverson` (source Iverson stays rejected). Donor is
+`contractPlan` (`Y[i] := Σⱼ A[i]·B[j]`, `iterationShape = #[4, 3]`, size 2). A predicate contributes
+`1.0` when true (the term is unchanged) and `0.0` when false (it annihilates the whole term). The
+predicates here are coordinate-independent (all-zero coefficients), so they are uniformly true or
+false at every iteration coordinate. -/
+
+-- `0 < 1`: true at every coordinate; both leaves of width 2.
+def truePredD : PosBoolExpr :=
+  .rel .lt (.affine { coeffs := #[0, 0], bias := 0 }) (.affine { coeffs := #[0, 0], bias := 1 })
+
+-- `0 > 1`: false at every coordinate.
+def falsePredD : PosBoolExpr :=
+  .rel .gt (.affine { coeffs := #[0, 0], bias := 0 }) (.affine { coeffs := #[0, 0], bias := 1 })
+
+def truePredPlan : AssignPlan :=
+  { contractPlan with terms := #[{ contractPlan.terms[0]! with
+      factors := #[.read readA, .iverson truePredD, .read readB] }] }
+
+def falsePredPlan : AssignPlan :=
+  { contractPlan with terms := #[{ contractPlan.terms[0]! with
+      factors := #[.read readA, .iverson falsePredD, .read readB] }] }
+
+-- True predicate contributes 1.0: Y is unchanged from `contractPlan` (ΣB = 6, Y[i] = A[i]·6).
+#guard dataOf (runIt sigs truePredPlan storeAB) == some #[60.0, 600.0, 6000.0, 60000.0]
+
+-- False predicate contributes 0.0: it annihilates every term, so Y is all zeros.
+#guard dataOf (runIt sigs falsePredPlan storeAB) == some #[0.0, 0.0, 0.0, 0.0]
 
 end LeanNCD.Eval.Plan.KernelDenseTest

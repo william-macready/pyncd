@@ -143,7 +143,7 @@ def idRead : ReadPlan :=
 def idAssign : AssignPlan :=
   { contextShape := #[], destinationSlot := 1, outputShape := #[3]
   , terms := #[{ iterationShape := #[3], contextPos := #[], outputPos := #[0], reductionPos := #[]
-               , factors := #[idRead] }]
+               , factors := #[.read idRead] }]
   , algebra := admittedAlgebra }
 
 def idRaw : RawEvalPlan :=
@@ -198,6 +198,54 @@ def testValidEinsumCandidate : Bool :=
       | .error _ => false
 
 #guard testValidEinsumCandidate
+
+-- === Task 5.1: candidate validators exclude Iverson factors ===
+--
+-- An Iverson predicate factor is not a read: `validateAffineTable`/`validateEinsum` must reject any
+-- candidate whose term carries one. These plans are hand-built (source Iverson stays rejected) but
+-- pass `checkAssign` (their predicate leaf has width 1 == `iterationShape.size`). The validator code
+-- itself is unchanged in shape from a diff's view for a read-only term — these assertions are the
+-- only regression guard that the `.read`-only restriction bites.
+def iversonPred1 : PosBoolExpr :=
+  .rel .lt (.affine { coeffs := #[0], bias := 0 }) (.affine { coeffs := #[0], bias := 1 })
+
+def idAssignIverson : AssignPlan :=
+  { idAssign with terms := #[{ idAssign.terms[0]! with
+      factors := #[.read idRead, .iverson iversonPred1] }] }
+
+-- `checkAssign` accepts the plan itself (the predicate leaf is correctly sized).
+#guard (match checkAssign idSigs idAssignIverson with | .ok _ => true | .error _ => false)
+
+-- `validateAffineTable` rejects: even with a correctly-lengthed table array (one entry per factor),
+-- the second factor is an Iverson predicate, not a read.
+def testIversonAffineCandidateRejected : Bool :=
+  match checkAssign idSigs idAssignIverson with
+  | .error _ => false
+  | .ok checked =>
+      let table : AffineTableReadCandidate :=
+        { source := 0, safeIndex := #[0, 1, 2], validMask := #[true, true, true] }
+      let kernel : OrderedAffineTableKernelCandidate :=
+        { semanticAssignment := checked, tables := #[#[table, table]] }
+      match validateAndConstructKernel (.affineTable kernel) with
+      | .ok _ => false      -- must NOT validate
+      | .error _ => true    -- correctly rejected
+
+#guard testIversonAffineCandidateRejected
+
+-- `validateEinsum` rejects: the operand-row count matches the factor count, but the second factor is
+-- an Iverson predicate with no einsum operand.
+def testIversonEinsumCandidateRejected : Bool :=
+  match checkAssign idSigs idAssignIverson with
+  | .error _ => false
+  | .ok checked =>
+      let kernel : EinsumExperimentKernelCandidate :=
+        { semanticAssignment := checked, destination := 1
+        , operands := #[#[0, 0], #[0]], outputAxes := #[0] }
+      match validateAndConstructKernel (.einsum kernel) with
+      | .ok _ => false      -- must NOT validate
+      | .error _ => true    -- correctly rejected
+
+#guard testIversonEinsumCandidateRejected
 
 -- Plan-level: a real `PreparedPlan` (via `checkPlan` + `checkBindings`, no `sorry`), wrapping the
 -- single validated affine kernel above into a `JaxExecutableCandidate`; the plan-level validator
@@ -319,7 +367,7 @@ def mixedRead12 : ReadPlan :=
 def mixedAssign1 : AssignPlan :=
   { contextShape := #[], destinationSlot := 2, outputShape := #[3]
   , terms := #[{ iterationShape := #[3], contextPos := #[], outputPos := #[0], reductionPos := #[]
-               , factors := #[mixedRead12] }]
+               , factors := #[.read mixedRead12] }]
   , algebra := admittedAlgebra }
 
 -- Step 0 reuses `idAssign` (`Y[i] := X[i]`, slot 0 → slot 1) unchanged; step 1 is `mixedAssign1`

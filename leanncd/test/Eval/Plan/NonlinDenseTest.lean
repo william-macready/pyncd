@@ -20,7 +20,7 @@ def idRead (slot : TensorSlot) : ReadPlan :=
 def idNode (dest src : TensorSlot) : AssignPlan :=
   { contextShape := #[], destinationSlot := dest, outputShape := #[2]
   , terms := #[{ iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
-               , factors := #[idRead src] }]
+               , factors := #[.read (idRead src)] }]
   , algebra := admittedAlgebra }
 
 def runGraph (raw : RawEvalPlan) (inputs : Array DenseTensor) :
@@ -78,7 +78,7 @@ def idRead22 (slot : TensorSlot) : ReadPlan :=
 def idNode22 (dest src : TensorSlot) : AssignPlan :=
   { contextShape := #[], destinationSlot := dest, outputShape := #[2,2]
   , terms := #[{ iterationShape := #[2,2], contextPos := #[], outputPos := #[0,1]
-               , reductionPos := #[], factors := #[idRead22 src] }]
+               , reductionPos := #[], factors := #[.read (idRead22 src)] }]
   , algebra := admittedAlgebra }
 
 def axiswisePlan : RawEvalPlan :=

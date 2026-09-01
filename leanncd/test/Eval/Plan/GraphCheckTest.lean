@@ -23,7 +23,7 @@ def idRead (slot : TensorSlot) : ReadPlan :=
 def idNode (dest src : TensorSlot) : AssignPlan :=
   { contextShape := #[], destinationSlot := dest, outputShape := #[2]
   , terms := #[{ iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
-               , factors := #[idRead src] }]
+               , factors := #[.read (idRead src)] }]
   , algebra := admittedAlgebra }
 
 /-!
@@ -64,9 +64,9 @@ def diamondSigs : Array TensorSignature :=
 def nodeC : AssignPlan :=
   { contextShape := #[], destinationSlot := 3, outputShape := #[2]
   , terms := #[ { iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
-                , factors := #[idRead 1] }
+                , factors := #[.read (idRead 1)] }
               , { iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
-                , factors := #[idRead 2] } ]
+                , factors := #[.read (idRead 2)] } ]
   , algebra := admittedAlgebra }
 
 def diamondPlan : RawEvalPlan :=
@@ -104,14 +104,14 @@ def diamondPlan : RawEvalPlan :=
 -- factor instead of slot 1. Wrapped with node context, same as the destination case above.
 #guard errOf (checkPlan
   { diamondPlan with steps := #[.assign (idNode 1 0), .assign (idNode 2 0),
-      .assign { nodeC with terms := #[{ nodeC.terms[0]! with factors := #[idRead 99] }, nodeC.terms[1]!] }] })
+      .assign { nodeC with terms := #[{ nodeC.terms[0]! with factors := #[.read (idRead 99)] }, nodeC.terms[1]!] }] })
   == some (.assign (.nodeError 2 (.slotOutOfRange 99 5)))
 
 -- invalid forward read: nodeC (index 2) reads slot 3 (its own not-yet-produced destination) via
 -- its first term/first factor instead of slot 1
 #guard errOf (checkPlan
   { diamondPlan with steps := #[.assign (idNode 1 0), .assign (idNode 2 0),
-      .assign { nodeC with terms := #[{ nodeC.terms[0]! with factors := #[idRead 3] }, nodeC.terms[1]!] }] })
+      .assign { nodeC with terms := #[{ nodeC.terms[0]! with factors := #[.read (idRead 3)] }, nodeC.terms[1]!] }] })
   == some (.assign (.invalidForwardRead 2 0 0 3))
 
 -- reordering a DEPENDENT node is rejected outright, not merely "a different but valid result":
