@@ -40,6 +40,12 @@ inductive JaxCodegenError
   | bindingSlotOutOfRange (slot tableSize : Nat)
   | missingFixtureInput   (name : String)
   | labelTableExhausted   (nodeIndex termIndex position : Nat)
+  -- The one located rejection for any checked step this JAX backend cannot lower to a supported
+  -- kernel: a `.pointwise`, `.axiswise`, or `.scan` node (Thread 4 / Wave F) has no affine/einsum
+  -- lowering here, so routing it yields this error carrying the FIRST such step's outer-graph index
+  -- (not a per-term/factor locator — these kinds have no term/factor structure). Assignment steps
+  -- never reach it; they route through the existing affine/einsum path unchanged.
+  | unsupportedStep       (stepIndex : Nat)
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-! ## 2. Deterministic Python string rendering (shared by both modes) -/
@@ -173,8 +179,9 @@ def lowerAssign (nodeIndex : Nat) (a : AssignPlan) :
 def lowerPlan (c : CheckedEvalPlan) : Except JaxCodegenError (Array NodeLowering) := do
   let mut nodes : Array NodeLowering := #[]
   for h : ni in [0 : c.checkedNodes.size] do
-    let node ← lowerAssign ni c.checkedNodes[ni].plan
-    nodes := nodes.push node
+    match c.checkedNodes[ni] with
+    | .assign a => nodes := nodes.push (← lowerAssign ni a.plan)
+    | .scan _ | .pointwise _ | .axiswise _ => throw (.unsupportedStep ni)
   return nodes
 
 def renderTermLine (indent : String) (tl : TermLowering) (varName : String) : String :=
@@ -260,8 +267,10 @@ def renderCompileCause : PlanCompileCause → String
   | .inputSignature c => s!"inputSignature: {repr c}"
   | .capability c     => s!"capability: {repr c}"
   | .shape c          => s!"shape: {c}"
+  | .scan c           => s!"scan: {repr c}"
   | .invalidPlan c    => s!"invalidPlan: {repr c}"
   | .bindings c       => s!"bindings: {repr c}"
+  | .nonlin c         => s!"nonlin: {repr c}"
 
 /-! ## 6. `affineReference`: exact per-factor lookup tables from the shared coordinate primitives -/
 
@@ -311,10 +320,16 @@ def renderAffineNode (a : AssignPlan) : String :=
   ", \"terms\": [" ++ terms ++ "]}"
 
 /-- Every checked node in graph order (`checkedNodes` order is exactly raw-graph order, by
-    `checkPlan`'s construction). -/
-def renderAffineNodesArray (c : CheckedEvalPlan) : String :=
-  "[" ++ String.intercalate ", " (c.checkedNodes.toList.map (fun cn => renderAffineNode cn.plan))
-    ++ "]"
+    `checkPlan`'s construction). Total over assignment-only graphs; a `.pointwise`/`.axiswise`/
+    `.scan` node has no affine-table lowering here, so the array build rejects it with the one
+    located unsupported-step error carrying that node's outer-graph index. -/
+def renderAffineNodesArray (c : CheckedEvalPlan) : Except JaxCodegenError String := do
+  let mut entries : Array String := #[]
+  for h : ni in [0 : c.checkedNodes.size] do
+    match c.checkedNodes[ni] with
+    | .assign a => entries := entries.push (renderAffineNode a.plan)
+    | .scan _ | .pointwise _ | .axiswise _ => throw (.unsupportedStep ni)
+  return "[" ++ String.intercalate ", " entries.toList ++ "]"
 
 def renderBindingList (bs : Array SlotBinding) : String :=
   "[" ++ String.intercalate ", "
@@ -322,21 +337,23 @@ def renderBindingList (bs : Array SlotBinding) : String :=
 
 /-- Positional `CheckedEvalPlan` static plan data: slot count, ordered input slots, and every
     checked node's affine tables. The complete-graph boundary. -/
-def renderAffinePlanPositional (c : CheckedEvalPlan) : String :=
-  "{\"num_slots\": " ++ toString c.raw.tensorSigs.size ++
-  ", \"input_slots\": " ++ pyNatListLit c.raw.inputSlots ++
-  ", \"nodes\": " ++ renderAffineNodesArray c ++ "}"
+def renderAffinePlanPositional (c : CheckedEvalPlan) : Except JaxCodegenError String := do
+  let nodes ← renderAffineNodesArray c
+  return "{\"num_slots\": " ++ toString c.raw.tensorSigs.size ++
+    ", \"input_slots\": " ++ pyNatListLit c.raw.inputSlots ++
+    ", \"nodes\": " ++ nodes ++ "}"
 
 /-- Named `PreparedPlan` static plan data: the positional plan plus its source-name bindings
     (`requiredInputs` in `inputSlots` order, `materializedNames` in schedule order). The
     source/corpus boundary. -/
-def renderAffinePlanNamed (plan : PreparedPlan) : String :=
+def renderAffinePlanNamed (plan : PreparedPlan) : Except JaxCodegenError String := do
   let c := plan.plan
-  "{\"num_slots\": " ++ toString c.raw.tensorSigs.size ++
-  ", \"input_slots\": " ++ pyNatListLit c.raw.inputSlots ++
-  ", \"required_inputs\": " ++ renderBindingList plan.bindings.requiredInputs.bindings ++
-  ", \"materialized\": " ++ renderBindingList plan.bindings.materializedNames ++
-  ", \"nodes\": " ++ renderAffineNodesArray c ++ "}"
+  let nodes ← renderAffineNodesArray c
+  return "{\"num_slots\": " ++ toString c.raw.tensorSigs.size ++
+    ", \"input_slots\": " ++ pyNatListLit c.raw.inputSlots ++
+    ", \"required_inputs\": " ++ renderBindingList plan.bindings.requiredInputs.bindings ++
+    ", \"materialized\": " ++ renderBindingList plan.bindings.materializedNames ++
+    ", \"nodes\": " ++ nodes ++ "}"
 
 /-- Positional single `CheckedAssignPlan` static data (one node, no synthetic graph or source
     names). Its runtime call accepts a positional store and returns one result tensor, directly
@@ -376,7 +393,7 @@ def generateNamed (mode : LoweringMode) (plan : PreparedPlan) :
     Except JaxCodegenError String :=
   match mode with
   | .einsumOnly       => generateForward plan
-  | .affineReference  => .ok (renderAffinePlanNamed plan)
+  | .affineReference  => renderAffinePlanNamed plan
 
 /-! ## 8. Candidate routing (Thread 5, Tasks 4–5)
 
@@ -446,17 +463,29 @@ def loweringToEinsumCandidate (assign : CheckedAssignPlan) :
     bare `CheckedEvalPlan`. There were zero existing callers of this function at the time of the
     signature fix (verified by grep), so the change is safe and contained.
 
-    Routes each assignment through `loweringToAffineTableCandidate` only (reference evidence) —
+    Routes each `.assign` step through `loweringToAffineTableCandidate` only (reference evidence) —
     matching the "Routes each assignment through affineReference (reference evidence)" doc comment
     already on this function from Task 4; `loweringToEinsumCandidate` is deliberately not called
     here (see its own doc comment for why). Iterates `plan.plan.checkedNodes` (each a
-    `CheckedAssignPlan`) in checked-node order, which is exactly raw-graph order by
-    `CheckedEvalPlan`'s own construction invariant.
+    `CheckedPlanStepEvidence`) in checked-node order, which is exactly raw-graph order by
+    `CheckedEvalPlan`'s own construction invariant. A `.pointwise`/`.axiswise`/`.scan` step has no
+    supported JAX kernel lowering here, so it is rejected with the one located `unsupportedStep`
+    error carrying that step's outer-graph index (the FIRST such step, since the loop throws on
+    reaching it) — which is why the error type is now `JaxCodegenError`, not the bare `String` the
+    stub returned. A well-formed assignment whose affine-table candidate somehow fails validation
+    (never reached for any current Wave C plan — the affine path admits all of them) surfaces the
+    same located error for that step index rather than being silently dropped.
 -/
 def lowerCheckPlanToCandidate (plan : PreparedPlan) :
-    Except String JaxExecutableCandidate := do
-  let steps ← plan.plan.checkedNodes.mapM (fun assign =>
-    validateAndConstructKernel (.affineTable (loweringToAffineTableCandidate assign)))
+    Except JaxCodegenError JaxExecutableCandidate := do
+  let mut steps : Array SomeJaxKernel := #[]
+  for h : ni in [0 : plan.plan.checkedNodes.size] do
+    match plan.plan.checkedNodes[ni] with
+    | .assign a =>
+        match validateAndConstructKernel (.affineTable (loweringToAffineTableCandidate a)) with
+        | .ok k => steps := steps.push k
+        | .error _ => throw (.unsupportedStep ni)
+    | .scan _ | .pointwise _ | .axiswise _ => throw (.unsupportedStep ni)
   return { source := plan, steps
          , evidence := aggregateEvidenceList (steps.map (·.evidence))
          , aggregated := rfl }
@@ -485,8 +514,8 @@ def idAssign : AssignPlan :=
   , algebra := admittedAlgebra }
 
 def idRaw : RawEvalPlan :=
-  { version := admittedVersion, tensorSigs := idSigs, inputSlots := #[0]
-  , steps := #[idAssign], numericMode := .reference64SumProduct }
+  { tensorSigs := idSigs, inputSlots := #[0]
+  , steps := #[PlanStep.assign idAssign] }
 
 /-- `loweringToAffineTableCandidate` on the identity fixture produces a candidate
     `validateAndConstructKernel` accepts. -/
@@ -534,5 +563,138 @@ def testLowerCheckPlanToCandidateValid : Bool :=
         | .error _ => false
 
 #guard testLowerCheckPlanToCandidateValid
+
+/-! ### Located unsupported-step rejections (Slice 5, Task 5.0)
+
+Three fixtures, each a checked `[assign@0, <unsupported>@1]` graph: a valid identity assignment at
+step index 0 and a `.pointwise`/`.axiswise`/`.scan` step at index 1. `lowerCheckPlanToCandidate`
+must route the assignment through the affine path, then reject the unsupported step with the one
+located `unsupportedStep` error carrying index `1` (NOT `0` — the valid assignment ahead of it is
+what makes the required location non-tautological). A `.pointwise`/`.axiswise`/`.scan` step cannot
+be a repackaged assignment: each carries its own `RawPointwisePlan`/`RawAxiswisePlan`/`RawScanPlan`
+payload, built minimal-but-`checkPlan`-valid here (the scan geometry mirrors
+`test/Eval/Plan/ScanTest.lean`'s `linearScan`, which that suite proves `checkScanPlan` admits). -/
+
+def rejectSigs : Array TensorSignature :=
+  #[ { shape := #[3], dtype := .f64 }, { shape := #[3], dtype := .f64 }, { shape := #[3], dtype := .f64 } ]
+
+-- `[assign Y[i]:=X[i] @0, pointwise relu(X)->slot2 @1]`.
+def pointwiseStep : RawPointwisePlan :=
+  { sourceSlot := 0, destinationSlot := 2, shape := #[3], fn := .relu }
+
+def pointwiseRejectRaw : RawEvalPlan :=
+  { tensorSigs := rejectSigs, inputSlots := #[0]
+  , steps := #[PlanStep.assign idAssign, PlanStep.pointwise pointwiseStep] }
+
+-- `[assign Y[i]:=X[i] @0, axiswise softmax(X, axis 0)->slot2 @1]`.
+def axiswiseStep : RawAxiswisePlan :=
+  { sourceSlot := 0, destinationSlot := 2, shape := #[3], axisPos := 0, fn := .softmax }
+
+def axiswiseRejectRaw : RawEvalPlan :=
+  { tensorSigs := rejectSigs, inputSlots := #[0]
+  , steps := #[PlanStep.assign idAssign, PlanStep.axiswise axiswiseStep] }
+
+/-! A minimal linear self-recurrence scan, geometry copied verbatim from `ScanTest.linearScan`:
+outer slots `0 = S0` (scalar), `1 = X` (`[3]`), `2 = S` (`[3]`). Base `S[iterAt l 0] := S0`; step
+`S[iterNext l] := S[l] + X[l]`. -/
+
+def scanState : StateSlot :=
+  { destSlot := 2, advancingDims := #[0], materialization := .completeHistory }
+
+def scanBaseBlock : RawPlanBlock :=
+  { contextShape := #[], tensorSigs := #[{ shape := #[], dtype := .f64 }]
+  , inputs := #[0], steps := #[], outputs := #[0] }
+
+def scanBaseCapture : BlockCapture := { inputSlot := 0, source := .external 0 }
+
+def scanBaseWrite : StateWriteMap :=
+  { outputSlot := 0, stateIndex := 0, map := { coeffs := #[#[]], bias := #[0] } }
+
+def scanStepReadX : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[#[1]], bias := #[0] }, sourceShape := #[3], oobPolicy := .zeroPad }
+
+def scanStepReadS : ReadPlan :=
+  { sourceSlot := 1, map := { coeffs := #[#[1]], bias := #[0] }, sourceShape := #[3], oobPolicy := .zeroPad }
+
+def scanTermX : TermPlan :=
+  { iterationShape := #[2], contextPos := #[0], outputPos := #[], reductionPos := #[], factors := #[scanStepReadX] }
+
+def scanTermS : TermPlan :=
+  { iterationShape := #[2], contextPos := #[0], outputPos := #[], reductionPos := #[], factors := #[scanStepReadS] }
+
+def scanStepAssign : AssignPlan :=
+  { contextShape := #[2], destinationSlot := 2, outputShape := #[], terms := #[scanTermX, scanTermS]
+  , algebra := admittedAlgebra }
+
+def scanStepBlock : RawPlanBlock :=
+  { contextShape := #[2]
+  , tensorSigs := #[{ shape := #[3], dtype := .f64 }, { shape := #[3], dtype := .f64 }, { shape := #[], dtype := .f64 }]
+  , inputs := #[0, 1], steps := #[.assign scanStepAssign], outputs := #[2] }
+
+def scanStepCaptureX : BlockCapture := { inputSlot := 0, source := .external 1 }
+def scanStepCaptureS : BlockCapture := { inputSlot := 1, source := .state 0 }
+
+def scanStepWrite : StateWriteMap :=
+  { outputSlot := 2, stateIndex := 0, map := { coeffs := #[#[1]], bias := #[1] } }
+
+def scanPlanStep : RawScanPlan :=
+  { states := #[scanState]
+  , baseBlock := scanBaseBlock, baseCaptures := #[scanBaseCapture], baseWrites := #[scanBaseWrite]
+  , stepBlock := scanStepBlock, stepCaptures := #[scanStepCaptureX, scanStepCaptureS], stepWrites := #[scanStepWrite]
+  , historyExtents := #[3]
+  , iterationOrder := .axisZeroFastest, boundaryPolicy := .zeroThenBaseOverlay
+  , snapshotPolicy := .immutablePreStep }
+
+-- Outer slots `0 = S0`, `1 = X`, `2 = S` (scan dest), plus `3 = Y` (the step-0 assign's dest).
+def scanRejectSigs : Array TensorSignature :=
+  #[ { shape := #[], dtype := .f64 }, { shape := #[3], dtype := .f64 }
+   , { shape := #[3], dtype := .f64 }, { shape := #[3], dtype := .f64 } ]
+
+-- `Y[i] := X[i]` reading input slot 1 into a fresh slot 3, so the scan (step 1) is not step 0.
+def scanAssignRead : ReadPlan :=
+  { sourceSlot := 1, map := { coeffs := #[#[1]], bias := #[0] }, sourceShape := #[3], oobPolicy := .zeroPad }
+
+def scanAssign : AssignPlan :=
+  { contextShape := #[], destinationSlot := 3, outputShape := #[3]
+  , terms := #[{ iterationShape := #[3], contextPos := #[], outputPos := #[0], reductionPos := #[]
+               , factors := #[scanAssignRead] }]
+  , algebra := admittedAlgebra }
+
+def scanRejectRaw : RawEvalPlan :=
+  { tensorSigs := scanRejectSigs, inputSlots := #[0, 1]
+  , steps := #[PlanStep.assign scanAssign, PlanStep.scan scanPlanStep] }
+
+/-- Shared assertion: `checkPlan`-accept, `PreparedPlan`-wrap with the given input bindings, then
+    `lowerCheckPlanToCandidate` must reject with `unsupportedStep 1`. -/
+def rejectsLocatedAt1 (raw : RawEvalPlan) (inputBindings : Array SlotBinding) : Bool :=
+  match checkPlan raw with
+  | .error _ => false
+  | .ok checkedPlan =>
+    match checkBindings raw.inputSlots inputBindings with
+    | .error _ => false
+    | .ok requiredInputs =>
+      let prepared : PreparedPlan :=
+        { plan := checkedPlan, bindings := { requiredInputs, materializedNames := #[] }, warnings := [] }
+      match lowerCheckPlanToCandidate prepared with
+      | .error (.unsupportedStep idx) => idx == 1
+      | _ => false
+
+/-- A `.pointwise` step at index 1 is rejected with the located error carrying index `1`. -/
+def testPointwiseStepRejectedLocated : Bool :=
+  rejectsLocatedAt1 pointwiseRejectRaw #[{ name := "x", slot := 0 }]
+
+#guard testPointwiseStepRejectedLocated
+
+/-- A `.axiswise` step at index 1 is rejected with the located error carrying index `1`. -/
+def testAxiswiseStepRejectedLocated : Bool :=
+  rejectsLocatedAt1 axiswiseRejectRaw #[{ name := "x", slot := 0 }]
+
+#guard testAxiswiseStepRejectedLocated
+
+/-- A `.scan` step at index 1 is rejected with the located error carrying index `1`. -/
+def testScanStepRejectedLocated : Bool :=
+  rejectsLocatedAt1 scanRejectRaw #[{ name := "s0", slot := 0 }, { name := "x", slot := 1 }]
+
+#guard testScanStepRejectedLocated
 
 end JaxBridge
