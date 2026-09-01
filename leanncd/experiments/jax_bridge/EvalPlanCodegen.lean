@@ -46,6 +46,11 @@ inductive JaxCodegenError
   -- (not a per-term/factor locator — these kinds have no term/factor structure). Assignment steps
   -- never reach it; they route through the existing affine/einsum path unchanged.
   | unsupportedStep       (stepIndex : Nat)
+  -- A `.iverson` predicate factor inside an assignment term: this JAX backend lowers only affine
+  -- reads to einsum/affine-table kernels, so a term carrying an Iverson factor is rejected here with
+  -- its node/term/factor location. (Predicate/mask execution is not lowered to JAX — Global
+  -- Constraints. Reads route through the unchanged path.)
+  | iversonFactor         (nodeIndex termIndex factorIndex : Nat)
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-! ## 2. Deterministic Python string rendering (shared by both modes) -/
@@ -143,12 +148,14 @@ def lowerTerm (nodeIndex termIndex : Nat) (t : TermPlan) :
   let mut factorSlots : Array TensorSlot := #[]
   let mut coveredAll : Array Bool := Array.replicate t.iterationShape.size false
   for h : fi in [0 : t.factors.size] do
-    let f := t.factors[fi]
-    let (labels, covered) ← lowerFactor nodeIndex termIndex fi f
-    factorSubs := factorSubs.push (String.ofList labels.toList)
-    factorSlots := factorSlots.push f.sourceSlot
-    for p in covered do
-      coveredAll := coveredAll.set! p true
+    match t.factors[fi] with
+    | .iverson _ => throw (.iversonFactor nodeIndex termIndex fi)
+    | .read f =>
+      let (labels, covered) ← lowerFactor nodeIndex termIndex fi f
+      factorSubs := factorSubs.push (String.ofList labels.toList)
+      factorSlots := factorSlots.push f.sourceSlot
+      for p in covered do
+        coveredAll := coveredAll.set! p true
   for h : p in [0 : coveredAll.size] do
     unless coveredAll[p] do throw (.uncoveredPosition nodeIndex termIndex p)
   let mut outLabels : Array Char := #[]
@@ -304,20 +311,30 @@ def renderAffineFactor (iterationShape : Array Nat) (f : ReadPlan) : String :=
   ", \"safe_index\": " ++ pyNatListLit idxs ++
   ", \"mask\": " ++ pyBoolListLit masks ++ "}"
 
-def renderAffineTerm (t : TermPlan) : String :=
-  let facs := String.intercalate ", " (t.factors.toList.map (renderAffineFactor t.iterationShape))
-  "{\"iteration_shape\": " ++ pyNatListLit t.iterationShape ++
-  ", \"output_pos\": " ++ pyNatListLit t.outputPos ++
-  ", \"reduction_pos\": " ++ pyNatListLit t.reductionPos ++
-  ", \"factors\": [" ++ facs ++ "]}"
+def renderAffineTerm (nodeIndex termIndex : Nat) (t : TermPlan) :
+    Except JaxCodegenError String := do
+  let mut facStrs : Array String := #[]
+  for h : fi in [0 : t.factors.size] do
+    match t.factors[fi] with
+    | .iverson _ => throw (.iversonFactor nodeIndex termIndex fi)
+    | .read f => facStrs := facStrs.push (renderAffineFactor t.iterationShape f)
+  let facs := String.intercalate ", " facStrs.toList
+  return "{\"iteration_shape\": " ++ pyNatListLit t.iterationShape ++
+    ", \"output_pos\": " ++ pyNatListLit t.outputPos ++
+    ", \"reduction_pos\": " ++ pyNatListLit t.reductionPos ++
+    ", \"factors\": [" ++ facs ++ "]}"
 
 /-- One assignment node's static data: destination slot, output shape, and every term's precomputed
-    tables in checked term-array order. -/
-def renderAffineNode (a : AssignPlan) : String :=
-  let terms := String.intercalate ", " (a.terms.toList.map renderAffineTerm)
-  "{\"dest\": " ++ toString a.destinationSlot ++
-  ", \"output_shape\": " ++ pyNatListLit a.outputShape ++
-  ", \"terms\": [" ++ terms ++ "]}"
+    tables in checked term-array order. Rejects a term carrying an Iverson factor with its located
+    error (via `renderAffineTerm`). -/
+def renderAffineNode (nodeIndex : Nat) (a : AssignPlan) : Except JaxCodegenError String := do
+  let mut termStrs : Array String := #[]
+  for h : ti in [0 : a.terms.size] do
+    termStrs := termStrs.push (← renderAffineTerm nodeIndex ti a.terms[ti])
+  let terms := String.intercalate ", " termStrs.toList
+  return "{\"dest\": " ++ toString a.destinationSlot ++
+    ", \"output_shape\": " ++ pyNatListLit a.outputShape ++
+    ", \"terms\": [" ++ terms ++ "]}"
 
 /-- Every checked node in graph order (`checkedNodes` order is exactly raw-graph order, by
     `checkPlan`'s construction). Total over assignment-only graphs; a `.pointwise`/`.axiswise`/
@@ -327,7 +344,7 @@ def renderAffineNodesArray (c : CheckedEvalPlan) : Except JaxCodegenError String
   let mut entries : Array String := #[]
   for h : ni in [0 : c.checkedNodes.size] do
     match c.checkedNodes[ni] with
-    | .assign a => entries := entries.push (renderAffineNode a.plan)
+    | .assign a => entries := entries.push (← renderAffineNode ni a.plan)
     | .scan _ | .pointwise _ | .axiswise _ => throw (.unsupportedStep ni)
   return "[" ++ String.intercalate ", " entries.toList ++ "]"
 
@@ -357,9 +374,10 @@ def renderAffinePlanNamed (plan : PreparedPlan) : Except JaxCodegenError String 
 
 /-- Positional single `CheckedAssignPlan` static data (one node, no synthetic graph or source
     names). Its runtime call accepts a positional store and returns one result tensor, directly
-    paralleling `runDenseAssign`. The checked-kernel boundary. -/
-def renderAffineAssign (c : CheckedAssignPlan) : String :=
-  renderAffineNode c.plan
+    paralleling `runDenseAssign`. The checked-kernel boundary. Uses node index `0` (a single node)
+    for any located Iverson rejection. -/
+def renderAffineAssign (c : CheckedAssignPlan) : Except JaxCodegenError String :=
+  renderAffineNode 0 c.plan
 
 /-- Check, Dense-run, and render one checked-assignment fixture as a `FIXTURES`-list entry:
     `{"name", "kind": "assign", "assign", "store", "expected"}`. The one assign-fixture builder
@@ -374,8 +392,11 @@ def buildAssignFixture (name : String) (sigs : Array TensorSignature) (a : Assig
     | .ok d => pure d
     | .error e => throw (IO.userError s!"{name} Dense run failed: {repr e}")
   let storeEntries := String.intercalate ", " (store.toList.map pyTensorEntry)
+  let rendered ← match renderAffineAssign checked with
+    | .ok s => pure s
+    | .error e => throw (IO.userError s!"{name} render failed: {repr e}")
   pure ("{\"name\": " ++ pyStrLit name ++ ", \"kind\": \"assign\", \"assign\": " ++
-    renderAffineAssign checked ++ ", \"store\": [" ++ storeEntries ++ "], \"expected\": " ++
+    rendered ++ ", \"store\": [" ++ storeEntries ++ "], \"expected\": " ++
     pyTensorEntry expected ++ "}")
 
 /-! ## 7. Explicit mode selection -/
@@ -412,9 +433,11 @@ function's own doc comment for the two Task 5 signature/scope rulings this refle
 def loweringToAffineTableCandidate (assign : CheckedAssignPlan) :
     OrderedAffineTableKernelCandidate :=
   let tables := assign.plan.terms.map (fun term =>
-    term.factors.map (fun f =>
-      let (safeIndex, validMask) := buildFactorTable term.iterationShape f
-      ({ source := f.sourceSlot, safeIndex, validMask } : AffineTableReadCandidate)))
+    term.factors.filterMap (fun f => match f with
+      | .read r =>
+          let (safeIndex, validMask) := buildFactorTable term.iterationShape r
+          some ({ source := r.sourceSlot, safeIndex, validMask } : AffineTableReadCandidate)
+      | .iverson _ => none))
   { semanticAssignment := assign, tables }
 
 /-- Convert `einsumOnly` lowering to `EinsumExperimentKernelCandidate`, reusing
@@ -450,8 +473,9 @@ def loweringToEinsumCandidate (assign : CheckedAssignPlan) :
       { semanticAssignment := assign, destination := assign.plan.destinationSlot
       , operands := #[], outputAxes := #[] }
   | some term =>
-      let operands := term.factors.map (fun f =>
-        #[f.sourceSlot] ++ f.map.coeffs.filterMap rowProjectionTarget)
+      let operands := term.factors.filterMap (fun f => match f with
+        | .read r => some (#[r.sourceSlot] ++ r.map.coeffs.filterMap rowProjectionTarget)
+        | .iverson _ => none)
       { semanticAssignment := assign, destination := assign.plan.destinationSlot
       , operands, outputAxes := term.outputPos }
 
@@ -510,7 +534,7 @@ def idRead : ReadPlan :=
 def idAssign : AssignPlan :=
   { contextShape := #[], destinationSlot := 1, outputShape := #[3]
   , terms := #[{ iterationShape := #[3], contextPos := #[], outputPos := #[0], reductionPos := #[]
-               , factors := #[idRead] }]
+               , factors := #[.read idRead] }]
   , algebra := admittedAlgebra }
 
 def idRaw : RawEvalPlan :=
@@ -617,10 +641,10 @@ def scanStepReadS : ReadPlan :=
   { sourceSlot := 1, map := { coeffs := #[#[1]], bias := #[0] }, sourceShape := #[3], oobPolicy := .zeroPad }
 
 def scanTermX : TermPlan :=
-  { iterationShape := #[2], contextPos := #[0], outputPos := #[], reductionPos := #[], factors := #[scanStepReadX] }
+  { iterationShape := #[2], contextPos := #[0], outputPos := #[], reductionPos := #[], factors := #[.read scanStepReadX] }
 
 def scanTermS : TermPlan :=
-  { iterationShape := #[2], contextPos := #[0], outputPos := #[], reductionPos := #[], factors := #[scanStepReadS] }
+  { iterationShape := #[2], contextPos := #[0], outputPos := #[], reductionPos := #[], factors := #[.read scanStepReadS] }
 
 def scanStepAssign : AssignPlan :=
   { contextShape := #[2], destinationSlot := 2, outputShape := #[], terms := #[scanTermX, scanTermS]
@@ -657,7 +681,7 @@ def scanAssignRead : ReadPlan :=
 def scanAssign : AssignPlan :=
   { contextShape := #[], destinationSlot := 3, outputShape := #[3]
   , terms := #[{ iterationShape := #[3], contextPos := #[], outputPos := #[0], reductionPos := #[]
-               , factors := #[scanAssignRead] }]
+               , factors := #[.read scanAssignRead] }]
   , algebra := admittedAlgebra }
 
 def scanRejectRaw : RawEvalPlan :=

@@ -135,11 +135,15 @@ def affineFactorTableValid (iterationShape : Array Nat) (factor : ReadPlan)
 
 /-- Whether one term's array of per-factor tables corresponds to that term's own factor list
     (one table per factor, `tables.size = term.factors.size`) and each table is individually valid
-    (`affineFactorTableValid`) against that term's own iteration basis (`term.iterationShape`). -/
+    (`affineFactorTableValid`) against that term's own iteration basis (`term.iterationShape`).
+    An `.iverson` predicate factor is NOT a read: a term containing one has no valid affine-table
+    lowering, so any such factor makes the whole candidate invalid (its `.read` extraction fails). -/
 def affineTermTablesValid (term : TermPlan) (tables : Array AffineTableReadCandidate) : Bool :=
   tables.size == term.factors.size &&
   (term.factors.zip tables).all
-    (fun (factor, table) => affineFactorTableValid term.iterationShape factor table)
+    (fun (factor, table) => match factor with
+      | .read r => affineFactorTableValid term.iterationShape r table
+      | .iverson _ => false)
 
 /-- Validate an affine-table kernel candidate against its own semantic source: one table array per
     term (`tables.size = semanticAssignment.plan.terms.size`, per `OrderedAffineTableKernelCandidate`'s
@@ -185,11 +189,13 @@ def validateEinsum (kernel : EinsumExperimentKernelCandidate) : Bool :=
   | some term =>
       let rank := term.iterationShape.size
       kernel.operands.size == term.factors.size &&
-      (term.factors.zip kernel.operands).all (fun (factor, opRow) =>
-        opRow.size ≥ 1 && opRow.getD 0 0 == factor.sourceSlot &&
-        (opRow.extract 1 opRow.size).all (· < rank) &&
-        factor.map.bias.all (· == 0) &&
-        opRow.size - 1 == factor.map.coeffs.size) &&
+      (term.factors.zip kernel.operands).all (fun (factor, opRow) => match factor with
+        | .iverson _ => false  -- a predicate factor has no einsum operand; not an einsum candidate
+        | .read f =>
+          opRow.size ≥ 1 && opRow.getD 0 0 == f.sourceSlot &&
+          (opRow.extract 1 opRow.size).all (· < rank) &&
+          f.map.bias.all (· == 0) &&
+          opRow.size - 1 == f.map.coeffs.size) &&
       kernel.outputAxes.all (· < rank)
 
 /-- Combined kernel-candidate validity check, real implementation (Task 5): dispatches to

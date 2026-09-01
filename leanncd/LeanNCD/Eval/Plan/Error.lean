@@ -48,6 +48,11 @@ inductive PositionalInputError
   | arityMismatch   (expected : Nat) (actual : Nat)
   | contextShapeMismatch (expected : Array Nat) (actual : List Int)
   | unaryDomain     (op : UnaryDomainOp) (valueBits : UInt64) (slot : TensorSlot)
+  -- A positional Iverson predicate leaf's coefficient width disagrees with the term's iteration
+  -- basis at RUNTIME. Unreachable for any plan `checkAssign` admits (its `.iverson` width check
+  -- already forces every leaf width == `iterationShape.size`); carried so the Dense predicate
+  -- evaluator fails loud rather than silently, if ever handed an unchecked plan.
+  | predicateWidthMismatch (expected : Nat) (actual : Nat)
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- Wave C capability rejection (proposal §3.1/§3.2): which construct in the initial scan-free `f64`

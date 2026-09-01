@@ -40,17 +40,73 @@ structure ReadPlan where
   unary       : Option UnaryOp := none
   deriving DecidableEq, BEq, Repr, Inhabited
 
+/-- One affine predicate leaf over a positional iteration coordinate. -/
+structure PosAffine where
+  coeffs : Array Int
+  bias : Int
+  deriving DecidableEq, BEq, Repr, Inhabited
+
+/-- UID-free predicate arithmetic. -/
+inductive PosPredArith
+  | affine : PosAffine → PosPredArith
+  | mul : PosPredArith → PosPredArith → PosPredArith
+  | iabs : PosPredArith → PosPredArith
+  deriving DecidableEq, BEq, Repr, Inhabited
+
+/-- UID-free Boolean predicate. -/
+inductive PosBoolExpr
+  | rel : RelOp → PosPredArith → PosPredArith → PosBoolExpr
+  | and : PosBoolExpr → PosBoolExpr → PosBoolExpr
+  | or : PosBoolExpr → PosBoolExpr → PosBoolExpr
+  | not : PosBoolExpr → PosBoolExpr
+  | ieq : PosPredArith → PosPredArith → PosBoolExpr
+  deriving DecidableEq, BEq, Repr, Inhabited
+
+/-- Ordered factor: a tensor read or a positional Iverson predicate, in source order. -/
+inductive FactorPlan
+  | read : ReadPlan → FactorPlan
+  | iverson : PosBoolExpr → FactorPlan
+  deriving DecidableEq, BEq, Repr, Inhabited
+
+/-- The underlying read of a factor, or a default `ReadPlan` for a predicate factor. A convenience
+    for accessors and tests that operate over read factors only (every factor a source program
+    compiles to is a `.read` today, so this never actually hits the predicate arm there). -/
+def FactorPlan.readOrDefault : FactorPlan → ReadPlan
+  | .read r => r
+  | .iverson _ => default
+
+/-- Every affine leaf's coefficient-row width in a positional predicate arithmetic tree, in
+    left-to-right leaf order. The checker compares each against the term's `iterationShape.size`;
+    a UID-free predicate leaf must span exactly the term's positional iteration basis. -/
+def PosPredArith.affineWidths : PosPredArith → List Nat
+  | .affine a => [a.coeffs.size]
+  | .mul x y => x.affineWidths ++ y.affineWidths
+  | .iabs x => x.affineWidths
+
+/-- Every affine leaf's coefficient-row width in a positional Boolean predicate, in left-to-right
+    leaf order (delegating to `PosPredArith.affineWidths` at each arithmetic operand). -/
+def PosBoolExpr.affineWidths : PosBoolExpr → List Nat
+  | .rel _ a b => a.affineWidths ++ b.affineWidths
+  | .and a b => a.affineWidths ++ b.affineWidths
+  | .or a b => a.affineWidths ++ b.affineWidths
+  | .not a => a.affineWidths
+  | .ieq a b => a.affineWidths ++ b.affineWidths
+
 /-- One product term. `iterationShape` is the term's coordinate basis (retained output axes
     followed by that term's contracted axes); `contextPos`/`outputPos`/`reductionPos` classify
     every position of that basis. The classification is explicit rather than rediscovered from
     affine coefficients: a syntactically-mentioned axis can densify to a zero coefficient yet still
-    belong to the reduction domain, and so still affect multiplicity (proposal §7.4). -/
+    belong to the reduction domain, and so still affect multiplicity (proposal §7.4).
+
+    `factors` is ONE ordered array of `FactorPlan` (`read | iverson`) in source order — never two
+    parallel arrays. Every filtered traversal (source-slot discovery, forward-read/causality checks)
+    keeps the ORIGINAL all-factor index, never a reindexed filtered-read index. -/
 structure TermPlan where
   iterationShape : Array Nat
   contextPos     : Array Nat
   outputPos      : Array Nat
   reductionPos   : Array Nat
-  factors        : Array ReadPlan
+  factors        : Array FactorPlan
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- One complete local operation: terms combined into one destination tensor under one algebra,

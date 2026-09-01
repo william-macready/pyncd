@@ -37,11 +37,15 @@ private def bit (n : Nat) (present : Bool) : Nat := if present then 2 ^ n else 0
 
 private def rows (plan : PreparedPlan) : Array (Array Int) :=
   plan.plan.checkedNodes.flatMap fun c =>
-    c.plan.terms.flatMap fun t => t.factors.flatMap fun f => f.map.coeffs
+    c.plan.terms.flatMap fun t => t.factors.flatMap fun f => match f with
+      | .read r => r.map.coeffs
+      | .iverson _ => #[]
 
 private def factors (plan : PreparedPlan) : Array (TermPlan × ReadPlan) :=
   plan.plan.checkedNodes.flatMap fun c =>
-    c.plan.terms.flatMap fun t => t.factors.map fun f => (t, f)
+    c.plan.terms.flatMap fun t => t.factors.filterMap fun f => match f with
+      | .read r => some (t, r)
+      | .iverson _ => none
 
 private def isUnitProjection (row : Array Int) : Bool :=
   row.toList.filter (· != 0) == [1]

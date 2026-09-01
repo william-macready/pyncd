@@ -94,21 +94,30 @@ def checkAssign (sigs : Array TensorSignature) (a : AssignPlan) :
     unless t.contextProjection == a.contextShape do
       throw (.contextProjectionMismatch ti t.contextProjection a.contextShape)
     for h2 : fi in [0 : t.factors.size] do
-      let f := t.factors[fi]
-      let srcSig ← match sigs[f.sourceSlot]? with
-        | some s => pure s
-        | none => throw (.slotOutOfRange f.sourceSlot sigs.size)
-      unless srcSig.dtype == .f64 do throw (.dtypeNotAdmitted f.sourceSlot srcSig.dtype)
-      unless srcSig.dtype == destSig.dtype do
-        throw (.dtypeMismatch destSig.dtype srcSig.dtype)
-      unless f.sourceShape == srcSig.shape do
-        throw (.sourceShapeMismatch ti fi f.sourceShape srcSig.shape)
-      unless f.oobPolicy == .zeroPad do throw (.policyNotAdmitted f.oobPolicy)
-      unless f.map.coeffs.size == f.sourceShape.size && f.map.bias.size == f.sourceShape.size do
-        throw (.affineRankMismatch ti fi f.sourceShape.size f.map.coeffs.size)
-      for row in f.map.coeffs do
-        unless row.size == t.iterationShape.size do
-          throw (.affineWidthMismatch ti fi t.iterationShape.size row.size)
+      match t.factors[fi] with
+      | .iverson b =>
+          -- A positional Iverson predicate: no source slot, no affine read. Each Boolean-leaf
+          -- coefficient row must span exactly the term's iteration basis; a width failure reuses the
+          -- same `affineWidthMismatch ti fi` locator a read affine row throws, `fi` kept at the
+          -- all-factor index.
+          for w in b.affineWidths do
+            unless w == t.iterationShape.size do
+              throw (.affineWidthMismatch ti fi t.iterationShape.size w)
+      | .read f =>
+        let srcSig ← match sigs[f.sourceSlot]? with
+          | some s => pure s
+          | none => throw (.slotOutOfRange f.sourceSlot sigs.size)
+        unless srcSig.dtype == .f64 do throw (.dtypeNotAdmitted f.sourceSlot srcSig.dtype)
+        unless srcSig.dtype == destSig.dtype do
+          throw (.dtypeMismatch destSig.dtype srcSig.dtype)
+        unless f.sourceShape == srcSig.shape do
+          throw (.sourceShapeMismatch ti fi f.sourceShape srcSig.shape)
+        unless f.oobPolicy == .zeroPad do throw (.policyNotAdmitted f.oobPolicy)
+        unless f.map.coeffs.size == f.sourceShape.size && f.map.bias.size == f.sourceShape.size do
+          throw (.affineRankMismatch ti fi f.sourceShape.size f.map.coeffs.size)
+        for row in f.map.coeffs do
+          unless row.size == t.iterationShape.size do
+            throw (.affineWidthMismatch ti fi t.iterationShape.size row.size)
   return CheckedAssignPlan.mk a
 
 -- `CheckedEvalPlan`/`checkPlan` used to live here (C3), but now that the outer graph can contain a

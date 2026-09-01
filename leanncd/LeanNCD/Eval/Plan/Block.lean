@@ -203,11 +203,13 @@ def checkPlanBlock (block : RawPlanBlock) : Except BlockError CheckedPlanBlock :
               for h2 : ti in [0 : a.terms.size] do
                 let t := a.terms[ti]
                 for h3 : fi in [0 : t.factors.size] do
-                  let f := t.factors[fi]
-                  match available[f.sourceSlot]? with
-                  | none => throw (.wiring (.nodeError ni (.slotOutOfRange f.sourceSlot n)))
-                  | some true => pure ()
-                  | some false => throw (.wiring (.invalidForwardRead ni ti fi f.sourceSlot))
+                  match t.factors[fi] with
+                  | .iverson _ => pure ()  -- predicate factor reads no slot; keep `fi` at all-factor index
+                  | .read f =>
+                    match available[f.sourceSlot]? with
+                    | none => throw (.wiring (.nodeError ni (.slotOutOfRange f.sourceSlot n)))
+                    | some true => pure ()
+                    | some false => throw (.wiring (.invalidForwardRead ni ti fi f.sourceSlot))
           | .pointwise p => do
               match available[p.sourceSlot]? with
               | none => throw (.wiring (.nodeError ni (.slotOutOfRange p.sourceSlot n)))

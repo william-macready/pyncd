@@ -366,7 +366,7 @@ private def residualizeAssignment (sizes : HashMap UID Nat) (warnings : List Eva
     let outputPos : Array Nat := (Array.range outputUids.length).map (· + contextUids.length)
     let reductionPos : Array Nat :=
       (Array.range reductionUids.length).map (· + contextUids.length + outputUids.length)
-    let mut factorsAcc : Array ReadPlan := #[]
+    let mut factorsAcc : Array FactorPlan := #[]
     for factor in term.factors do
       match factor with
       | .read name idxs =>
@@ -378,7 +378,7 @@ private def residualizeAssignment (sizes : HashMap UID Nat) (warnings : List Eva
           let coeffs : Array (Array Int) := (rows.map (fun r => r.1.toArray)).toArray
           let biasArr : Array Int := (rows.map (fun r => r.2)).toArray
           factorsAcc := factorsAcc.push
-            { sourceSlot, map := { coeffs, bias := biasArr }, sourceShape, oobPolicy := .zeroPad }
+            (.read { sourceSlot, map := { coeffs, bias := biasArr }, sourceShape, oobPolicy := .zeroPad })
       | .iverson _ => liftCapability warnings (throw (.maskOrPredicate "factor"))
           -- unreachable post-preflight (checkFactor/Step A already rejected .iverson)
       | .unaryFn op name idxs =>
@@ -389,8 +389,8 @@ private def residualizeAssignment (sizes : HashMap UID Nat) (warnings : List Eva
           let coeffs : Array (Array Int) := (rows.map (fun r => r.1.toArray)).toArray
           let biasArr : Array Int := (rows.map (fun r => r.2)).toArray
           factorsAcc := factorsAcc.push
-            { sourceSlot, map := { coeffs, bias := biasArr }, sourceShape, oobPolicy := .zeroPad
-            , unary := some op }
+            (.read { sourceSlot, map := { coeffs, bias := biasArr }, sourceShape
+                   , oobPolicy := .zeroPad, unary := some op })
     termsAcc := termsAcc.push
       { iterationShape, contextPos, outputPos, reductionPos, factors := factorsAcc }
   return { contextShape, destinationSlot := destSlot, outputShape, terms := termsAcc
@@ -878,13 +878,15 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
     for h2 : ti in [0 : a.terms.size] do
       let t := a.terms[ti]
       for h3 : fi in [0 : t.factors.size] do
-        let f := t.factors[fi]
-        match (capturedState.getD f.sourceSlot none) with
-        | none => pure ()
-        | some si =>
-            unless stateReadCausal (stateAdvDims.getD si #[]) t.contextPos f do
-              throw (scanErr warnings
-                (.stateReadNotCausal scanName (stateNames.getD si "") ri ti fi))
+        match t.factors[fi] with
+        | .iverson _ => pure ()  -- predicate factor captures no state; keep `fi` at all-factor index
+        | .read f =>
+          match (capturedState.getD f.sourceSlot none) with
+          | none => pure ()
+          | some si =>
+              unless stateReadCausal (stateAdvDims.getD si #[]) t.contextPos f do
+                throw (scanErr warnings
+                  (.stateReadNotCausal scanName (stateNames.getD si "") ri ti fi))
   ---------------------------------------------------------------------------
   -- Phase 6: assemble. Every closed policy is Wave F's single admitted value.
   ---------------------------------------------------------------------------

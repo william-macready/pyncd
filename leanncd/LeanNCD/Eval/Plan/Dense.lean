@@ -15,6 +15,52 @@ application, flattening, and the per-dimension bounds predicate live in `Coordin
 namespace LeanNCD.Eval.Plan
 open LeanNCD.Eval
 
+/-- The Dense positional predicate evaluator's only failure: an Iverson leaf whose coefficient width
+    disagrees with the iteration coordinate it is evaluated against. The checker (`checkAssign`)
+    forbids this at plan-check time, so it is unreachable for any checked plan; kept so the evaluator
+    is total and fails loud. Distinct from `PositionalInputError` (this is the predicate arithmetic's
+    own error, mapped into `PositionalInputError.predicateWidthMismatch` at the one Dense call site
+    that runs it). -/
+inductive PosPredicateError
+  | affineWidthMismatch (expected : Nat) (actual : Nat)
+  deriving DecidableEq, BEq, Repr, Inhabited
+
+/-- Evaluate one positional affine leaf `coeffs · iter + bias` at an iteration coordinate. Rejects a
+    width mismatch rather than silently truncating the shorter of the two — a UID-free leaf must span
+    exactly the positional basis. -/
+def evalPosAffine (a : PosAffine) (iter : List Int) : Except PosPredicateError Int :=
+  if a.coeffs.size == iter.length then
+    .ok ((a.coeffs.toList.zip iter).foldl (fun acc (c, v) => acc + c * v) a.bias)
+  else
+    .error (.affineWidthMismatch a.coeffs.size iter.length)
+
+/-- Evaluate positional predicate arithmetic at an iteration coordinate → `Int`. Mirrors the source
+    `evalPred` (`Eval/Gather.lean`) exactly — `mul` multiplies, `iabs` takes `Int.natAbs` cast back
+    to `Int` — but over the UID-free positional leaf instead of a `HashMap UID Int` coordinate. -/
+def evalPosPredArith (iter : List Int) : PosPredArith → Except PosPredicateError Int
+  | .affine a => evalPosAffine a iter
+  | .mul a b => do return (← evalPosPredArith iter a) * (← evalPosPredArith iter b)
+  | .iabs a => do return ((← evalPosPredArith iter a).natAbs : Int)
+
+/-- Evaluate a positional Boolean predicate at an iteration coordinate → `Bool`. Mirrors the source
+    `evalBool` (`Eval/Gather.lean`): `.ieq` is the same structural-`Int`-equality approximation of the
+    DSL's modular equality. Imports neither `Eval.Gather` nor the source `evalPred`/`evalBool`. -/
+def evalPosBool (iter : List Int) : PosBoolExpr → Except PosPredicateError Bool
+  | .rel op a b => do
+      let x ← evalPosPredArith iter a
+      let y ← evalPosPredArith iter b
+      return (match op with
+        | .lt => decide (x < y)
+        | .le => decide (x ≤ y)
+        | .eq => decide (x = y)
+        | .ne => decide (x ≠ y)
+        | .ge => decide (x ≥ y)
+        | .gt => decide (x > y))
+  | .and a b => do return (← evalPosBool iter a) && (← evalPosBool iter b)
+  | .or a b => do return (← evalPosBool iter a) || (← evalPosBool iter b)
+  | .not a => do return !(← evalPosBool iter a)
+  | .ieq a b => do return (← evalPosPredArith iter a) == (← evalPosPredArith iter b)
+
 /-- Gather one factor. Every source dimension is range-tested BEFORE flattening (`inBoundsPerDim`,
     `Coordinates.lean`): testing the flat offset instead can alias distinct invalid coordinates onto
     a valid address (proposal §8.3). A `unary` function is applied to the gathered value AFTER the
@@ -104,13 +150,16 @@ private def validateStore (c : CheckedAssignPlan) (store : Array DenseTensor) :
     Except PositionalInputError Unit := do
   for t in c.plan.terms do
     for f in t.factors do
-      match store[f.sourceSlot]? with
-      | none => throw (.missingSlot f.sourceSlot store.size)
-      | some d =>
-          unless d.shape == f.sourceShape.toList do
-            throw (.shapeMismatch f.sourceSlot f.sourceShape d.shape)
-          unless d.data.size == f.sourceShape.toList.foldl (· * ·) 1 do
-            throw (.storageMismatch f.sourceSlot d.shape d.data.size)
+      match f with
+      | .iverson _ => pure ()  -- a predicate factor reads no store slot
+      | .read f =>
+        match store[f.sourceSlot]? with
+        | none => throw (.missingSlot f.sourceSlot store.size)
+        | some d =>
+            unless d.shape == f.sourceShape.toList do
+              throw (.shapeMismatch f.sourceSlot f.sourceShape d.shape)
+            unless d.data.size == f.sourceShape.toList.foldl (· * ·) 1 do
+              throw (.storageMismatch f.sourceSlot d.shape d.data.size)
 
 /-- Validate a runtime context coordinate against the checked context shape: same rank, and every
     component in range. A separate check from `checkAssign`'s structural work — `ctx` is a runtime
@@ -144,7 +193,13 @@ def runDenseAssignAt (c : CheckedAssignPlan) (ctx : List Int) (store : Array Den
           for (p, v) in t.outputPos.toList.zip oc do iter := iter.set! p v
           for (p, v) in t.reductionPos.toList.zip rc do iter := iter.set! p v
           return iter
-        let factorVals ← t.factors.toList.mapM (fun f => gatherFactor store f iter.toList)
+        let factorVals ← t.factors.toList.mapM (fun f => match f with
+          | .read r => gatherFactor store r iter.toList
+          | .iverson b =>
+              (evalPosBool iter.toList b
+                |>.mapError (fun e => match e with
+                  | .affineWidthMismatch exp act => PositionalInputError.predicateWidthMismatch exp act)).map
+                (fun v => if v then 1.0 else 0.0))
         return factorFold alg factorVals)
       return reductionFold alg prods)
     return termFold alg termAccs)
