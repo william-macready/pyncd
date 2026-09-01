@@ -1,6 +1,7 @@
 # Predicate and Boolean parity for the checked `EvalPlan` backend
 
-**Status:** Detailed design proposal; not implemented. This document covers items 5 and 4 of
+**Status:** Detailed design proposal, revised after the predicate coordinate-parity spike; not
+implemented. This document covers items 5 and 4 of
 [`backend_missing_functionality.md`](backend_missing_functionality.md), in that implementation
 order:
 
@@ -10,6 +11,13 @@ order:
 This is an architecture and task-division document, not one executable SDD slice plan. Execution
 should use two sequential slice plans, one for each item, so each slice can be implemented, built,
 reviewed as a whole, and landed before the next plan is finalized.
+
+The disposable
+[`predicate-coordinate-parity spike plan`](../docs/superpowers/plans/2026-08-31-predicate-coordinate-parity-spike.md)
+tested the coordinate policies behind item 5 before production migration. Its
+[`measured results`](predicate_coordinate_parity_spike_results.md) confirm the common positional
+predicate representation and the distinct Iverson/mask lowering policies, and motivate the
+eliminated-`.freeNorm` fixture plus the explicit `ScanUnroll` fragment boundary in Tasks 5.3-5.4.
 
 No corpus total, build-job count, JAX artifact measurement, or fixture value is predicted here.
 Every such value must be measured when the corresponding slice plan is authored and again after
