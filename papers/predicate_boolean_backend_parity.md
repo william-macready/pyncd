@@ -576,7 +576,7 @@ support check that routes the checked axiswise case to the generic unsupported-s
 | Masked recurrence | Convert `ScanCompileTest.maskedAxiswiseRecur` |
 | Seeded-axis-zero parity | Recurrence donor; use `where l = 0`, which is always true under the current missing-seeded-UID behavior but would vary if live context were substituted |
 | Non-seeded plain-free scan coordinate | Derive from `ScanGen.template6`; retain the separate `.freeNorm i` and use the base mask `r != 0` over the eliminated non-seeded `.free r` coordinate |
-| Eliminated freeNorm scan coordinate | Use the exact source `iter r = 2, c = 2; tensor Z(r); G[r.,0] := normalize(where r != 0)(Z[r]); G[r+1,c+1] := G[r,c]` with `Z = [1,3]`; require source, the checked backend, and the hand-expected tensor of shape `[2,2]` with data `[0,0,1,0]` all to agree |
+| Eliminated freeNorm scan coordinate | Use the exact source `iter r = 2, c = 2; tensor Z(r); G[r.,0] := normalize(where r ≠ 0)(Z[r]); G[r+1,c+1] := G[r,c]` with `Z = [1,3]`; require source, the checked backend, and the hand-expected tensor of shape `[2,2]` with data `[0,0,1,0]` all to agree |
 | Masked axiswise JAX rejection | Compile the masked top-level donor and require the generic located unsupported-step error before Python emission |
 
 Retain `NonlinCompileError.maskedAxiswiseNotSupported` with no producer.

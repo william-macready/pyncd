@@ -18,7 +18,7 @@ sharing one UID:
 ```text
 iter r = 2, c = 2
 tensor Z(r)
-G[r.,0] := normalize(where r != 0)(Z[r])
+G[r.,0] := normalize(where r ≠ 0)(Z[r])
 G[r+1,c+1] := G[r,c]
 ```
 
