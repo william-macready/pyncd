@@ -128,16 +128,4 @@ def runDenseAxiswise (c : CheckedAxiswisePlan) (store : Array DenseTensor) :
   let src ← validateNonlinSource c.raw.sourceSlot c.raw.shape store
   return c.raw.fn.apply c.raw.axisPos [] none src
 
-/-- Temporary spike adapter: apply an optional UID-free positional mask, supplied separately from
-    `RawAxiswisePlan`, against each entry's complete local output coordinate. -/
-def applyPositionalAxiswise (evalMask : Array Int → PosBoolExpr → Except ε Bool)
-    (a : RawAxiswisePlan) (mask? : Option PosBoolExpr)
-    (src : DenseTensor) : Except ε DenseTensor := do
-  let decisions ← DenseTensor.allCoords src.shape |>.mapM (fun c =>
-    match mask? with
-    | none => pure (c, true)
-    | some mask => (evalMask (c.map Int.ofNat).toArray mask).map (fun b => (c, b)))
-  return a.fn.applyIncluded a.axisPos
-    (fun c => (decisions.find? (fun d => d.1 == c)).map (·.2) |>.getD false) src
-
 end LeanNCD.Eval.Plan

@@ -35,10 +35,9 @@ reads with non-positive bias, external reads, contractions, extent one, multiple
 disjoint base writes, and block-local scratch. Nonlinearity and aggregation are carried through
 unchanged, so the two `enumScanCases` templates F4 rejects as capability failures (`relu` steps,
 tropical aggregation) are still unrollable and still checked against the legacy evaluator.
-Everything outside the fragment (scatter, `recurMorphism`, non-literal history coordinates) is
-rejected with a message rather than silently mis-unrolled — plan §4.8's "the oracle need not support
-source syntax rejected by production preflight". Predicate factors and axiswise masks are rewritten
-independently in this file.
+Everything outside the fragment (predicate factors, scatter, `recurMorphism`, non-literal history
+coordinates) is rejected with a message rather than silently mis-unrolled — plan §4.8's "the oracle
+need not support source syntax rejected by production preflight".
 -/
 namespace LeanNCD.PropertyOracle
 open LeanNCD LeanNCD.Eval Std
@@ -66,20 +65,6 @@ def substIdx (σ : UID → Option Int) (e : IdxExpr) : IdxExpr :=
     | none   => acc) c0
   let rest := xs.filter (fun (_, a) => (σ a.uid).isNone)
   if rest.isEmpty then .const b else .affine b rest
-
-/-- Recursively substitute index leaves in source predicate arithmetic. -/
-def substPredArith (σ : UID → Option Int) : PredArith → PredArith
-  | .embed e => .embed (substIdx σ e)
-  | .mul a b => .mul (substPredArith σ a) (substPredArith σ b)
-  | .iabs a => .iabs (substPredArith σ a)
-
-/-- Recursively substitute every predicate-arithmetic leaf in a source Boolean expression. -/
-def substBool (σ : UID → Option Int) : BoolExpr → BoolExpr
-  | .rel op a b => .rel op (substPredArith σ a) (substPredArith σ b)
-  | .and a b => .and (substBool σ a) (substBool σ b)
-  | .or a b => .or (substBool σ a) (substBool σ b)
-  | .not a => .not (substBool σ a)
-  | .ieq a b => .ieq (substPredArith σ a) (substPredArith σ b)
 
 /-- The literal value of `e` once `σ` is applied; `none` if any axis survives substitution. -/
 def constIdx (σ : UID → Option Int) (e : IdxExpr) : Option Int :=
@@ -341,31 +326,19 @@ private def rewriteFactor (g : ScanGeom) (σ : UID → Option Int)
   | .unaryFn op nm idxs => do
       let (nm', idxs') ← rewriteRead g σ hasLeaf stepCoord nm idxs
       pure (.unaryFn op nm' idxs')
-  | .iverson b => pure (.iverson (substBool σ b))
-
-private def maskSubst (g : ScanGeom) (sourceSeeds : List UID) (slots : List LHSSlot)
-    (σ : UID → Option Int) : UID → Option Int := fun u =>
-  if sourceSeeds.contains u then some 0
-  else if g.axes.any (fun a => a.uid == u) && slots.any (fun
-      | .free a | .freeNorm a => a.uid == u
-      | _ => false) then σ u
-  else none
+  | .iverson _ =>
+      .error "a predicate factor inside a scan is outside the oracle's fragment"
 
 /-- Rewrite a whole RHS, preserving source term and factor order, the nonlinearity, and the
     aggregation (so a step's `relu` or tropical contraction is applied to the leaf exactly as the
     source applies it to the slice). -/
 private def rewriteRHS (g : ScanGeom) (σ : UID → Option Int)
-    (sourceSeeds : List UID) (slots : List LHSSlot)
     (hasLeaf : String → List Nat → Bool) (stepCoord : Option (List Nat)) (r : RHSExpr) :
     Except String RHSExpr := do
   let terms ← r.body.terms.mapM (fun t => do
     let fs ← t.factors.mapM (rewriteFactor g σ hasLeaf stepCoord)
     pure ({ factors := fs } : ProdTerm))
-  let nonlin := match r.nonlin with
-    | .axiswise fn (some mask) =>
-        .axiswise fn (some (substBool (maskSubst g sourceSeeds slots σ) mask))
-    | other => other
-  pure { r with body := { terms }, nonlin }
+  pure { r with body := { terms } }
 
 /-- One unrolled scan node. -/
 structure Unrolled where
@@ -393,12 +366,12 @@ def unrollScanNode (sizes : HashMap UID Nat) (sc : ScanStmt) : Except String Unr
     let fs  ← baseFreeSlots st s
     let reg ← baseRegion g st s
     let r   ← rhsOf s
-    pure (st, fs, reg, r, s))
+    pure (st, fs, reg, r))
   -- 2. which history coordinates carry a real leaf: a base region, or a step's `u + 1`.
   let stepCoords := coordsOf (g.ext.map (fun n => n - 1))
   let advanced := stepCoords.map (fun u => u.map (· + 1))
   let live : List (String × List (List Nat)) := g.states.map (fun st =>
-    let fromBase := baseParts.flatMap (fun (bst, _, reg, _, _) =>
+    let fromBase := baseParts.flatMap (fun (bst, _, reg, _) =>
       if bst.name == st.name then reg else [])
     (st.name, (fromBase ++ advanced).eraseDups))
   let hasLeaf : String → List Nat → Bool := fun nm t =>
@@ -409,19 +382,16 @@ def unrollScanNode (sizes : HashMap UID Nat) (sc : ScanStmt) : Except String Unr
   let zeroStmts : List Stmt := g.states.map (fun st =>
     .assign (zeroLeafName st.name) st.freeSlots { body := { terms := [] }, nonlin := .identity })
   -- 4. base leaves: one per (base statement, coordinate in its region), pins substituted.
-  let baseStmts ← baseParts.flatMapM (fun (st, fs, reg, r, s) =>
+  let baseStmts ← baseParts.flatMapM (fun (st, fs, reg, r) =>
     reg.mapM (fun t => do
-      let sourceSeeds := s.slots.filterMap (fun
-        | .iterAt a _ => some a.uid
-        | _ => none)
-      let rhs ← rewriteRHS g (ctxSubst g.axes t) sourceSeeds s.slots hasLeaf none r
+      let rhs ← rewriteRHS g (ctxSubst g.axes t) hasLeaf none r
       pure (Stmt.assign (stateLeafName st.name t) fs rhs)))
   -- 5. step leaves: the whole recurrence list, once per step iteration, in source order.
   let stepStmts ← stepCoords.flatMapM (fun u => do
     let σ := ctxSubst g.axes u
     g.recur.mapM (fun s => do
       let r   ← rhsOf s
-      let rhs ← rewriteRHS g σ (g.axes.map (·.uid)) s.slots hasLeaf (some u) r
+      let rhs ← rewriteRHS g σ hasLeaf (some u) r
       match g.states.find? (fun st => st.name == s.lhsName) with
       | some st => pure (Stmt.assign (stateLeafName st.name (u.map (· + 1))) st.freeSlots rhs)
       | none =>
@@ -555,155 +525,6 @@ run_cmd do
         unless denseEq h ⟨[3], #[1.0, 1.0, 2.0]⟩ do
           throwError s!"template3 H wrong: {repr h.data}"
     | _, _ => throwError "template3: G/H missing from the independent environment"
-
-private def scanNodeOf (sched : ScheduledProgram) : Except String ScanStmt :=
-  match sched.stmts with
-  | [sc@(.scan ..)] => .ok sc
-  | _ => .error "expected exactly one scan node"
-
-private def sourceState (sched : ScheduledProgram) (inputs : HashMap String DenseTensor)
-    (name : String) : Except String DenseTensor :=
-  match evalScheduled sched inputs with
-  | .error e => .error s!"source failed: {e.error}"
-  | .ok report => match report.env[name]? with
-    | some t => .ok t
-    | none => .error s!"source state {name} missing"
-
-private def independentState (sched : ScheduledProgram) (inputs : HashMap String DenseTensor)
-    (name : String) : Except String DenseTensor := do
-  let env ← independentRun sched inputs
-  match env[name]? with
-  | some t => .ok t
-  | none => .error s!"independent state {name} missing"
-
-private def masksOf (un : Unrolled) : List BoolExpr :=
-  un.stmts.filterMap (fun
-    | .assign _ _ { nonlin := .axiswise _ (some mask), .. } => some mask
-    | _ => none)
-
-private def iversonsOf (un : Unrolled) : List BoolExpr :=
-  un.stmts.flatMap (fun
-    | .assign _ _ rhs => rhs.body.terms.flatMap (fun t => t.factors.filterMap (fun
-        | .iverson b => some b
-        | _ => none))
-    | _ => [])
-
--- T2-F3 unroller leg: a recurrence seed is zero in every rewritten mask, not the live step value.
-private def t2f3i : AxisSpec := ⟨"i", 42501, .real⟩
-private def t2f3l : AxisSpec := ⟨"l", 42502, .nat⟩
-private def t2f3mask : BoolExpr :=
-  .rel .eq (.embed (.axis t2f3l)) (.embed (.const 0))
-private def t2f3Sched : ScheduledProgram :=
-  { decls := [.iter t2f3l 3]
-  , stmts := [.scan "S" [t2f3l]
-      [.assign "S" [.iterAt t2f3l 0, .free t2f3i]
-        { body := { terms := [{ factors := [.read "X" [.axis t2f3i]] }] }
-        , nonlin := .identity }]
-      [.assign "S" [.iterNext t2f3l, .freeNorm t2f3i]
-        { body := { terms := [{ factors := [.read "S" [.axis t2f3l, .axis t2f3i]] }] }
-        , nonlin := .axiswise .normalize (some t2f3mask) }]
-      false]
-  , env := {}, extNames := {"X"}
-  , explicitSizes := ({} : HashMap UID Nat).insert t2f3l.uid 3 }
-private def t2f3Inputs : HashMap String DenseTensor :=
-  ({} : HashMap String DenseTensor).insert "X" ⟨[2], #[1,3]⟩
-
-run_cmd do
-  let source ← match sourceState t2f3Sched t2f3Inputs "S" with
-    | .ok t => pure t | .error m => throwError s!"T2-F3 {m}"
-  let independent ← match independentState t2f3Sched t2f3Inputs "S" with
-    | .ok t => pure t | .error m => throwError s!"T2-F3 {m}"
-  let expected : DenseTensor := ⟨[3,2], #[1,3, 0.25,0.75, 0.25,0.75]⟩
-  unless denseEq source expected && denseEq independent expected do
-    throwError s!"T2-F3 values source={repr source.data}, independent={repr independent.data}"
-  let sc ← match scanNodeOf t2f3Sched with
-    | .ok sc => pure sc | .error m => throwError m
-  let un ← match unrollScanNode t2f3Sched.explicitSizes sc with
-    | .ok un => pure un | .error m => throwError s!"T2-F3 unroll: {m}"
-  let masks := masksOf un
-  let expectedMask := BoolExpr.rel .eq (.embed (.const 0)) (.embed (.const 0))
-  unless masks == [expectedMask, expectedMask] &&
-      masks.all (fun b => !(boolAxisUIDs b).contains t2f3l.uid) do
-    throwError s!"T2-F3 rewritten masks: {repr masks}"
-
--- T2-F4: Iverson factors receive actual eliminated scan coordinates.
-private def t2f4l : AxisSpec := ⟨"l", 42601, .nat⟩
-private def t2f4pred : BoolExpr :=
-  .rel .eq (.embed (.axis t2f4l)) (.embed (.const 0))
-private def t2f4Sched : ScheduledProgram :=
-  { decls := [.iter t2f4l 3]
-  , stmts := [.scan "S" [t2f4l]
-      [.assign "S" [.iterAt t2f4l 0]
-        { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := .identity }]
-      [.assign "S" [.iterNext t2f4l]
-        { body := { terms := [{ factors := [.iverson t2f4pred] }] }, nonlin := .identity }]
-      false]
-  , env := {}, extNames := {"S0"}
-  , explicitSizes := ({} : HashMap UID Nat).insert t2f4l.uid 3 }
-private def t2f4Inputs : HashMap String DenseTensor :=
-  ({} : HashMap String DenseTensor).insert "S0" ⟨[], #[1]⟩
-
-run_cmd do
-  let source ← match sourceState t2f4Sched t2f4Inputs "S" with
-    | .ok t => pure t | .error m => throwError s!"T2-F4 {m}"
-  let independent ← match independentState t2f4Sched t2f4Inputs "S" with
-    | .ok t => pure t | .error m => throwError s!"T2-F4 {m}"
-  let expected : DenseTensor := ⟨[3], #[1,1,0]⟩
-  unless denseEq source expected && denseEq independent expected do
-    throwError s!"T2-F4 values source={repr source.data}, independent={repr independent.data}"
-  let sc ← match scanNodeOf t2f4Sched with
-    | .ok sc => pure sc | .error m => throwError m
-  let un ← match unrollScanNode t2f4Sched.explicitSizes sc with
-    | .ok un => pure un | .error m => throwError s!"T2-F4 unroll: {m}"
-  let ps := iversonsOf un
-  let p0 := BoolExpr.rel .eq (.embed (.const 0)) (.embed (.const 0))
-  let p1 := BoolExpr.rel .eq (.embed (.const 1)) (.embed (.const 0))
-  unless ps == [p0, p1] && ps.all (fun b => !(boolAxisUIDs b).contains t2f4l.uid) do
-    throwError s!"T2-F4 rewritten factors: {repr ps}"
-
--- T2-F5: template6 geometry plus retained normalized axis `i`; free scan axis `r` is enumerated.
-private def t2f5r : AxisSpec := ⟨"r", 42701, .nat⟩
-private def t2f5c : AxisSpec := ⟨"c", 42702, .nat⟩
-private def t2f5i : AxisSpec := ⟨"i", 42703, .real⟩
-private def t2f5mask : BoolExpr :=
-  .rel .ne (.embed (.axis t2f5r)) (.embed (.const 0))
-private def t2f5Sched : ScheduledProgram :=
-  { decls := [.iter t2f5r 2, .iter t2f5c 2, .axis t2f5i (some 2)]
-  , stmts := [.scan "G" [t2f5r, t2f5c]
-      [.assign "G" [.free t2f5r, .freeNorm t2f5i, .iterAt t2f5c 0]
-        { body := { terms := [{ factors := [.read "Z" [.axis t2f5r, .axis t2f5i]] }] }
-        , nonlin := .axiswise .normalize (some t2f5mask) }]
-      [.assign "G" [.iterNext t2f5r, .free t2f5i, .iterNext t2f5c]
-        { body := { terms :=
-            [{ factors := [.read "G" [.axis t2f5r, .axis t2f5i, .axis t2f5c]] }
-            ,{ factors := [.read "A" [.axis t2f5r, .axis t2f5i, .axis t2f5c]] }] }
-        , nonlin := .identity }]
-      false]
-  , env := {}, extNames := {"Z", "A"}
-  , explicitSizes := ((({} : HashMap UID Nat).insert t2f5r.uid 2)
-      |>.insert t2f5c.uid 2).insert t2f5i.uid 2 }
-private def t2f5Inputs : HashMap String DenseTensor :=
-  (({} : HashMap String DenseTensor).insert "Z" ⟨[2,2], #[2,2, 1,3]⟩)
-    |>.insert "A" ⟨[2,2,2], #[1,1,1,1, 1,1,1,1]⟩
-
-run_cmd do
-  let source ← match sourceState t2f5Sched t2f5Inputs "G" with
-    | .ok t => pure t | .error m => throwError s!"T2-F5 {m}"
-  let independent ← match independentState t2f5Sched t2f5Inputs "G" with
-    | .ok t => pure t | .error m => throwError s!"T2-F5 {m}"
-  let expected : DenseTensor := ⟨[2,2,2], #[0,0, 0,0, 0.25,1, 0.75,1]⟩
-  unless denseEq source expected && denseEq independent expected do
-    throwError s!"T2-F5 values source={repr source.data}, independent={repr independent.data}"
-  let sc ← match scanNodeOf t2f5Sched with
-    | .ok sc => pure sc | .error m => throwError m
-  let un ← match unrollScanNode t2f5Sched.explicitSizes sc with
-    | .ok un => pure un | .error m => throwError s!"T2-F5 unroll: {m}"
-  let masks := masksOf un
-  let m0 := BoolExpr.rel .ne (.embed (.const 0)) (.embed (.const 0))
-  let m1 := BoolExpr.rel .ne (.embed (.const 1)) (.embed (.const 0))
-  unless masks == [m0, m1] && masks.all (fun b =>
-      !(boolAxisUIDs b).contains t2f5r.uid && !(boolAxisUIDs b).contains t2f5c.uid) do
-    throwError s!"T2-F5 rewritten base masks: {repr masks}"
 
 -- The unrolled program really is scan-free and really does name per-coordinate leaves.
 run_cmd do

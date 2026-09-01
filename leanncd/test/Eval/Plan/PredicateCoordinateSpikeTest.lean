@@ -1,6 +1,5 @@
 import LeanNCD.Eval.Plan.Compile
 import LeanNCD.Eval.Plan.Dense
-import LeanNCD.Eval.Plan.Nonlin
 import Eval.Plan.CompileTest
 import Eval.Plan.ScanCompileTest
 import Eval.Plan.DifferentialTest
@@ -12,23 +11,6 @@ open LeanNCD LeanNCD.Eval LeanNCD.Eval.Plan Std
 private def iversonData (shape : List Nat) (e : PosBoolExpr) :
     Except PosPredicateError (Array Float) :=
   (allCoords shape).mapM (fun c => evalPosIverson c.toArray e) |>.map List.toArray
-
-private def sourceOutput (p : TLProgram) (inputs : HashMap String DenseTensor) (name : String) :
-    Except String DenseTensor :=
-  match TLProgram.eval p inputs with
-  | .error e => .error (toString e)
-  | .ok report => match report.env[name]? with
-    | some t => .ok t
-    | none => .error s!"missing source output {name}"
-
-private def positionalMaskData (fn : AxiswiseFn) (shape : Array Nat) (axisPos : Nat)
-    (basis : List UID) (mask : BoolExpr) (src : DenseTensor) : Except String DenseTensor :=
-  let raw : RawAxiswisePlan :=
-    { sourceSlot := 0, destinationSlot := 1, shape, axisPos, fn }
-  let lowered := lowerMaskPredicate basis mask
-  match applyPositionalAxiswise evalPosBool raw (some lowered.expression) src with
-  | .ok t => .ok t
-  | .error e => .error s!"positional mask evaluation failed: {repr e}"
 
 -- T1-F1: Portfolio/RelationalTest RL1, copied exactly.
 private def rl1Prog : TLProgram := tlprog!{
@@ -192,81 +174,5 @@ run_cmd do
     (.rel .eq (.embed (.axis f2i)) (.embed (.axis f2j)))
   mask.initialBasis == [f2i.uid] && mask.residualBasis == [f2i.uid] &&
     evalPosBool #[2] mask.expression == .ok false
-
--- T2-F1: NM4 unchanged, through the public source wrapper and positional-mask adapter.
-private def f1q : AxisSpec := ⟨"q", 2101, .real⟩
-private def f1s : AxisSpec := ⟨"s", 2102, .real⟩
-private def f1mask : BoolExpr :=
-  .rel .ne (.embed (.axis f1s)) (.embed (.const 0))
-private def nm4Prog : TLProgram := tlprog!{
-  Y[q, s.] := normalize(where s ≠ 0)(A[q, s])
-}
-
-run_cmd do
-  let input : DenseTensor := ⟨[2,3], #[1,2,3, 4,1,1]⟩
-  let expected : DenseTensor := ⟨[2,3], #[0,0.4,0.6, 0,0.5,0.5]⟩
-  let source ← match sourceOutput nm4Prog (HashMap.ofList [("A", input)]) "Y" with
-    | .ok t => pure t
-    | .error m => throwError s!"T2-F1 source failed: {m}"
-  let positional ← match positionalMaskData .normalize #[2,3] 1 [f1q.uid, f1s.uid] f1mask input with
-    | .ok t => pure t
-    | .error m => throwError s!"T2-F1 adapter failed: {m}"
-  unless DenseTensor.approxEq source expected && DenseTensor.approxEq positional expected &&
-      DenseTensor.approxEq source positional do
-    throwError s!"T2-F1 values source={repr source.data}, positional={repr positional.data}"
-
--- T2-F2: excluded 1000 must not enter the softmax maximum.
-private def nm4SoftmaxProg : TLProgram := tlprog!{
-  Y[q, s.] := softmax(where s ≠ 0)(A[q, s])
-}
-
-run_cmd do
-  let input : DenseTensor := ⟨[2,3], #[1000,2,3, 4,1,1]⟩
-  let e := Float.exp 1.0
-  let expected : DenseTensor := ⟨[2,3], #[0, 1/(1+e), e/(1+e), 0,0.5,0.5]⟩
-  let source ← match sourceOutput nm4SoftmaxProg (HashMap.ofList [("A", input)]) "Y" with
-    | .ok t => pure t
-    | .error m => throwError s!"T2-F2 source failed: {m}"
-  let positional ← match positionalMaskData .softmax #[2,3] 1 [f1q.uid, f1s.uid] f1mask input with
-    | .ok t => pure t
-    | .error m => throwError s!"T2-F2 adapter failed: {m}"
-  unless DenseTensor.approxEq source expected && DenseTensor.approxEq positional expected &&
-      DenseTensor.approxEq source positional do
-    throwError s!"T2-F2 values source={repr source.data}, positional={repr positional.data}"
-
--- T2-F3 adapter leg: recurrence mask `l = 0`; the local output basis is exactly `[i]`.
-private def f3mask : BoolExpr :=
-  .rel .eq (.embed (.axis ScanCompileTest.p15l)) (.embed (.const 0))
-private def f3Sched : ScheduledProgram :=
-  { ScanCompileTest.maskedAxiswiseRecur with
-    stmts := [.scan "S" [ScanCompileTest.p15l]
-      [.assign "S" [.iterAt ScanCompileTest.p15l 0, .free ScanCompileTest.p15i]
-        (ScanCompileTest.t4rhs "X" [.axis ScanCompileTest.p15i])]
-      [.assign "S" [.iterNext ScanCompileTest.p15l, .freeNorm ScanCompileTest.p15i]
-        (ScanCompileTest.t4rhs "S" [.axis ScanCompileTest.p15l, .axis ScanCompileTest.p15i]
-          (.axiswise .normalize (some f3mask)))]
-      false] }
-
-run_cmd do
-  let inputs := ScanCompileTest.maskedAxiswiseRecurInputs
-  let source ← match evalScheduled f3Sched inputs with
-    | .ok r => match r.env["S"]? with
-      | some t => pure t
-      | none => throwError "T2-F3 source output missing"
-    | .error e => throwError s!"T2-F3 source failed: {e}"
-  let raw : RawAxiswisePlan :=
-    { sourceSlot := 0, destinationSlot := 1, shape := #[2], axisPos := 0, fn := .normalize }
-  let lowered := lowerMaskPredicate [ScanCompileTest.p15i.uid] f3mask
-  let step1 ← match applyPositionalAxiswise evalPosBool raw
-      (some lowered.expression) ⟨[2], #[1,3]⟩ with
-    | .ok t => pure t
-    | .error e => throwError s!"T2-F3 adapter step 1: {repr e}"
-  let step2 ← match applyPositionalAxiswise evalPosBool raw (some lowered.expression) step1 with
-    | .ok t => pure t
-    | .error e => throwError s!"T2-F3 adapter step 2: {repr e}"
-  let manual : DenseTensor := ⟨[3,2], #[1,3] ++ step1.data ++ step2.data⟩
-  unless DenseTensor.approxEq source manual &&
-      DenseTensor.approxEq manual ⟨[3,2], #[1,3, 0.25,0.75, 0.25,0.75]⟩ do
-    throwError s!"T2-F3 adapter parity source={repr source.data}, manual={repr manual.data}"
 
 end LeanNCD.Eval.Plan.PredicateCoordinateSpikeTest
