@@ -15,6 +15,39 @@ application, flattening, and the per-dimension bounds predicate live in `Coordin
 namespace LeanNCD.Eval.Plan
 open LeanNCD.Eval
 
+/-- Evaluate one temporary positional affine leaf, rejecting rather than truncating unequal widths. -/
+def evalPosAffine (coord : Array Int) (a : PosAffine) : Except PosPredicateError Int := do
+  unless a.coeffs.size == coord.size do
+    throw (.affineWidthMismatch a.coeffs.size coord.size)
+  return (a.coeffs.zip coord).foldl (fun acc (c, x) => acc + c * x) a.bias
+
+/-- Evaluate temporary positional predicate arithmetic independently of the source evaluator. -/
+def evalPosPredArith (coord : Array Int) : PosPredArith → Except PosPredicateError Int
+  | .affine a => evalPosAffine coord a
+  | .mul a b => return (← evalPosPredArith coord a) * (← evalPosPredArith coord b)
+  | .iabs a => return (((← evalPosPredArith coord a).natAbs : Nat) : Int)
+
+/-- Evaluate a temporary positional Boolean predicate independently of `Eval.Gather`. -/
+def evalPosBool (coord : Array Int) : PosBoolExpr → Except PosPredicateError Bool
+  | .rel op a b => do
+      let x ← evalPosPredArith coord a
+      let y ← evalPosPredArith coord b
+      return match op with
+        | .lt => x < y
+        | .le => x ≤ y
+        | .eq => x = y
+        | .ne => x ≠ y
+        | .ge => x ≥ y
+        | .gt => x > y
+  | .and a b => return (← evalPosBool coord a) && (← evalPosBool coord b)
+  | .or a b => return (← evalPosBool coord a) || (← evalPosBool coord b)
+  | .not a => return !(← evalPosBool coord a)
+  | .ieq a b => return (← evalPosPredArith coord a) == (← evalPosPredArith coord b)
+
+/-- Thin Iverson conversion used by the spike fixtures. -/
+def evalPosIverson (coord : Array Int) (e : PosBoolExpr) : Except PosPredicateError Float :=
+  (evalPosBool coord e).map (fun b => if b then 1.0 else 0.0)
+
 /-- Gather one factor. Every source dimension is range-tested BEFORE flattening (`inBoundsPerDim`,
     `Coordinates.lean`): testing the flat offset instead can alias distinct invalid coordinates onto
     a valid address (proposal §8.3). A `unary` function is applied to the gathered value AFTER the

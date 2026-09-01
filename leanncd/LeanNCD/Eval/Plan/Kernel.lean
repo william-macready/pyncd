@@ -18,6 +18,33 @@ namespace LeanNCD.Eval.Plan
     for `PointwiseFn`/`AxiswiseFn`. -/
 instance : BEq LeanNCD.UnaryOp := ⟨fun a b => decide (a = b)⟩
 
+/-- Temporary spike representation of one affine predicate leaf over a positional coordinate. -/
+structure PosAffine where
+  coeffs : Array Int
+  bias : Int
+  deriving DecidableEq, BEq, Repr
+
+/-- Temporary UID-free predicate arithmetic. -/
+inductive PosPredArith
+  | affine : PosAffine → PosPredArith
+  | mul : PosPredArith → PosPredArith → PosPredArith
+  | iabs : PosPredArith → PosPredArith
+  deriving DecidableEq, BEq, Repr
+
+/-- Temporary UID-free Boolean predicate. -/
+inductive PosBoolExpr
+  | rel : RelOp → PosPredArith → PosPredArith → PosBoolExpr
+  | and : PosBoolExpr → PosBoolExpr → PosBoolExpr
+  | or : PosBoolExpr → PosBoolExpr → PosBoolExpr
+  | not : PosBoolExpr → PosBoolExpr
+  | ieq : PosPredArith → PosPredArith → PosBoolExpr
+  deriving DecidableEq, BEq, Repr
+
+/-- Runtime failures of the temporary positional predicate evaluator. -/
+inductive PosPredicateError
+  | affineWidthMismatch (coeffCount coordinateCount : Nat)
+  deriving DecidableEq, BEq, Repr
+
 /-- An integer-affine map `sourceCoordinate = coeffs * iterationCoordinate + bias`, with one
     `coeffs` row and one `bias` component per SOURCE dimension, each row of term-basis width.
     Kept as one row per source dimension rather than a flattened offset because zero-padding
