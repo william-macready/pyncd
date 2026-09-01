@@ -449,7 +449,10 @@ as `orderedReference64`.
 
 ## 6. Slice 5 tasks
 
-Slice 5 lands first and closes Iverson factors and axiswise masks.
+Slice 5 lands first and closes Iverson factors and axiswise masks. The executable,
+author-verified version of these tasks is
+[`docs/superpowers/plans/2026-09-01-slice-5-predicate-mask-parity.md`](../docs/superpowers/plans/2026-09-01-slice-5-predicate-mask-parity.md)
+(gitignored; verified paths, compiled snippets, named donors, locator fixtures).
 
 ### Task 5.0 - Restore the optional JAX target baseline
 
