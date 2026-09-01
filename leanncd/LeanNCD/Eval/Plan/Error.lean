@@ -65,7 +65,10 @@ inductive CapabilityError
   | scatterOrAffineLhs   (context : String)  -- scatter statements, affine LHS slots
   | unsupportedLhsSlot   (context : String)  -- freeNorm, iterAt, iterNext
   | unsupportedNonlin    (context : String)  -- pointwise/axiswise nonlinearities
-  | maskOrPredicate      (context : String)  -- masks, predicates, Iverson factors
+  | maskOrPredicate      (context : String)  -- masks, predicates, Iverson factors: RETAINED, no
+                                             -- producer left (predicate/mask parity thread admits
+                                             -- source Iverson factors, lowered via
+                                             -- `lowerFactorPredicate`); kept per §9.2, like scanNode
   | unaryFactor          (context : String)
   | unsupportedAgg       (context : String)  -- max/min aggregation: RETAINED, no producer left
                                              -- (checkAggOp admits max/min since they compile to the

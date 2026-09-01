@@ -1060,4 +1060,220 @@ run_cmd do
     | .ok () => pure ()
     | .error m => throwError s!"THREAD 4 TASK 5 NONLIN DIFFERENTIAL FAILED:\n{m}"
 
+/-! ## Predicate/mask parity Task 5.2 — source Iverson predicate differential fixtures
+
+Every fixture below runs a source program carrying an Iverson predicate factor through BOTH
+`prepareEvalPlan`+`runPreparedDense` (the checked positional-plan path this task just taught to lower
+predicates) AND the reference `evalScheduled`, and demands byte-for-byte agreement — so each is a
+genuine source→checked differential, not a self-consistency check. The plain fixtures additionally
+pin the observed source value; the scan fixtures go through `scanParityCheck`, whose third leg is an
+independently generated scan-free unrolling.
+
+The fixtures are chosen so that a specific lowering bug breaks a specific one: predicate-only output
+basis (pure Iverson), output-before-reduction basis order (prefix sum), first-seen reduction order
+(multi-reduction), identity by UID not axis name (two same-named axes), scan base/recurrence
+admission, and pin-into-leaf-bias residualization. -/
+
+-- Fixture 1 — Pure Iverson (RL1 donor): a predicate-only term, no reads. `I[i,j] := [i = j]` is the
+-- identity matrix; every axis is a retained output axis, so the predicate basis is `[i, j]` with no
+-- reduction. Dropping Iverson factors in Dense (mutation 5) would make this all-ones.
+private def pureIversonProg : TLProgram := tlprog!{ axis i : ℕ = 3, j : ℕ = 3
+  I[i, j] := [i = j] }
+private def pureIversonInputs : HashMap String DenseTensor := {}
+
+-- Fixture 2 — Retained/reduction order (RC3 donor): prefix sum `C[i] := X[j] · [j ≤ i]`. `i` is the
+-- retained output axis, `j` the reduction; the predicate basis is `output ++ reduction = [i, j]`, so
+-- swapping that order (mutation 2) turns `[j ≤ i]` into `[i ≤ j]` and breaks the result.
+private def prefixSumProg : TLProgram := tlprog!{ axis i : ℕ = 3, j : ℕ = 3
+  C[i] := X[j] · [j ≤ i] }
+private def prefixSumInputs : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "X" ⟨[3], #[1.0, 2.0, 3.0]⟩
+
+-- Fixture 3 — Multiple reductions (`CompileTest.multiReductionSched` donor + `[j < k]`): a
+-- three-factor term contracting TWO axes with a predicate over both, so first-seen reduction order
+-- `j` then `k` is load-bearing. Reversing the two reductions (mutation 3) mis-columns `[j < k]`.
+private def multiRedPredProg : TLProgram := tlprog!{ axis i : ℕ = 2, j : ℕ = 2, k : ℕ = 2
+  Y[i] := A[i, j] · B[j, k] · C[k] · [j < k] }
+private def multiRedPredInputs : HashMap String DenseTensor :=
+  ((({} : HashMap String DenseTensor).insert "A" ⟨[2, 2], #[1.0, 2.0, 3.0, 4.0]⟩).insert
+    "B" ⟨[2, 2], #[1.0, 1.0, 1.0, 1.0]⟩).insert "C" ⟨[2], #[1.0, 1.0]⟩
+
+run_cmd do
+  -- Fixture 1: source value is the 3×3 identity.
+  match planAgrees pureIversonProg pureIversonInputs with
+  | .error e => throwError s!"pure-Iverson differential: {e}"
+  | .ok () => pure ()
+  match envOf pureIversonProg pureIversonInputs with
+  | .error e => throwError s!"pure-Iverson reference eval: {e}"
+  | .ok env => match env["I"]? with
+    | some t => unless denseEq t ⟨[3, 3], #[1,0,0, 0,1,0, 0,0,1]⟩ do
+        throwError s!"pure-Iverson source value changed: {repr t.data}"
+    | none => throwError "pure-Iverson: I missing"
+  -- Fixture 2: prefix sum [1, 3, 6].
+  match planAgrees prefixSumProg prefixSumInputs with
+  | .error e => throwError s!"prefix-sum differential: {e}"
+  | .ok () => pure ()
+  match envOf prefixSumProg prefixSumInputs with
+  | .error e => throwError s!"prefix-sum reference eval: {e}"
+  | .ok env => match env["C"]? with
+    | some t => unless denseEq t ⟨[3], #[1, 3, 6]⟩ do
+        throwError s!"prefix-sum source value changed: {repr t.data}"
+    | none => throwError "prefix-sum: C missing"
+  -- Fixture 3: with `B` all-ones and `[j < k]` keeping only (j=0,k=1), Y[i] = A[i,0] = [1, 3].
+  match planAgrees multiRedPredProg multiRedPredInputs with
+  | .error e => throwError s!"multi-reduction predicate differential: {e}"
+  | .ok () => pure ()
+  match envOf multiRedPredProg multiRedPredInputs with
+  | .error e => throwError s!"multi-reduction reference eval: {e}"
+  | .ok env => match env["Y"]? with
+    | some t => unless denseEq t ⟨[2], #[1, 3]⟩ do
+        throwError s!"multi-reduction source value changed: {repr t.data}"
+    | none => throwError "multi-reduction: Y missing"
+
+-- Fixture 4 — UID not name: a scan over an axis literally named `l` while a DIFFERENT axis also named
+-- `l` (distinct UID) is a free output dimension, with an Iverson `[l_iter = l_free]` on the
+-- recurrence's state-read term. Identity is by UID: the two same-named axes occupy DISTINCT predicate
+-- basis positions (context 0, output 1), so the mask is a real `iter == free` filter. Resolving
+-- predicate axes by NAME (mutation 1) would collapse them into `[l = l]` (always true), erasing the
+-- mask — a divergence from `evalScheduled`, which resolves by UID.
+private def unIter : AxisSpec := ⟨"l", 7201, .nat⟩
+private def unFree : AxisSpec := ⟨"l", 7202, .nat⟩
+private def uidNotNameSched : ScheduledProgram :=
+  { decls := [.iter unIter 3, .axis unFree (some 2)]
+  , stmts := [.scan "S" [unIter]
+      [ .assign "S" [.free unFree, .iterAt unIter 0]
+          { body := { terms := [{ factors := [.read "S0" [.axis unFree]] }] }, nonlin := .identity } ]
+      [ .assign "S" [.free unFree, .iterNext unIter]
+          { body := { terms :=
+              [ { factors := [ .read "S" [.axis unFree, .axis unIter]
+                             , .iverson (.rel .eq (.embed (.axis unIter)) (.embed (.axis unFree))) ] }
+              , { factors := [.read "W" [.axis unFree]] } ] }
+          , nonlin := .identity } ]
+      false ]
+  , env := {}, extNames := insert "S0" (insert "W" (∅ : Finset String))
+  , explicitSizes := ((({} : HashMap UID Nat).insert unIter.uid 3).insert unFree.uid 2) }
+private def uidNotNameInputs : HashMap String DenseTensor :=
+  (({} : HashMap String DenseTensor).insert "S0" ⟨[2], #[1.0, 2.0]⟩).insert
+    "W" ⟨[2], #[10.0, 20.0]⟩
+
+-- Fixture 5 — Scan base Iverson: a predicate factor alongside the base read. Exercises base-block
+-- admission and the base residualization's `.iverson` arm.
+private def blL : AxisSpec := ⟨"l", 7301, .nat⟩
+private def baseIversonSched : ScheduledProgram :=
+  { decls := [.iter blL 3]
+  , stmts := [.scan "S" [blL]
+      [ .assign "S" [.iterAt blL 0]
+          { body := { terms := [{ factors :=
+              [ .read "S0" []
+              , .iverson (.rel .lt (.embed (.const 0)) (.embed (.const 1))) ] }] }
+          , nonlin := .identity } ]
+      [ .assign "S" [.iterNext blL]
+          { body := { terms := [{ factors := [.read "S" [.axis blL]] }] }, nonlin := .identity } ]
+      false ]
+  , env := {}, extNames := insert "S0" (∅ : Finset String)
+  , explicitSizes := (({} : HashMap UID Nat).insert blL.uid 3) }
+private def baseIversonInputs : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "S0" ⟨[], #[5.0]⟩
+
+-- Fixture 6 — Scan recurrence Iverson: a predicate over the live context axis `l`. `[l ≥ 1]`
+-- annihilates the state-carry at step 0, so `S = [S0, 0, 0]` — a value that DEPENDS on the predicate
+-- (not always-true), while the read `S[l]` stays causal (the Iverson is skipped in causality).
+private def rlL : AxisSpec := ⟨"l", 7401, .nat⟩
+private def recurIversonSched : ScheduledProgram :=
+  { decls := [.iter rlL 3]
+  , stmts := [.scan "S" [rlL]
+      [ .assign "S" [.iterAt rlL 0]
+          { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := .identity } ]
+      [ .assign "S" [.iterNext rlL]
+          { body := { terms := [{ factors :=
+              [ .read "S" [.axis rlL]
+              , .iverson (.rel .ge (.embed (.axis rlL)) (.embed (.const 1))) ] }] }
+          , nonlin := .identity } ]
+      false ]
+  , env := {}, extNames := insert "S0" (∅ : Finset String)
+  , explicitSizes := (({} : HashMap UID Nat).insert rlL.uid 3) }
+private def recurIversonInputs : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "S0" ⟨[], #[5.0]⟩
+
+-- Fixture 7 — Pin + context residualization (`multiBaseSched`-shaped): a two-axis scan whose second
+-- base write pins BOTH `r := 1` and `c := 0`, carrying a predicate `[iabs(r · r) < 100]` over the
+-- pinned axis — every predicate leaf column must fold into the leaf bias via `substitutePins`,
+-- leaving an EMPTY basis (width 0). Omitting `substitutePins` in predicate leaves (mutation 4) would
+-- leave a width-2 leaf against a size-0 iteration basis, which `checkAssign` rejects. The recurrence
+-- predicate `[iabs(r · c) ≥ 0]` keeps both context axes in the basis (no pins there).
+private def pcR : AxisSpec := ⟨"r", 7501, .nat⟩
+private def pcC : AxisSpec := ⟨"c", 7502, .nat⟩
+private def pinCtxSched : ScheduledProgram :=
+  { decls := [.iter pcR 3, .iter pcC 3]
+  , stmts := [.scan "dp" [pcR, pcC]
+      [ .assign "dp" [.iterAt pcR 0, .free pcC]
+          { body := { terms := [{ factors := [.read "ROW" [.axis pcC]] }] }, nonlin := .identity }
+      , .assign "dp" [.iterAt pcR 1, .iterAt pcC 0]
+          { body := { terms := [{ factors :=
+              [ .read "ROW" [.axis pcC]
+              , .iverson (.rel .lt
+                  (.iabs (.mul (.embed (.axis pcR)) (.embed (.axis pcR)))) (.embed (.const 100))) ] }] }
+          , nonlin := .identity } ]
+      [ .assign "dp" [.iterNext pcR, .iterNext pcC]
+          { body := { terms := [{ factors :=
+              [ .read "dp" [.axis pcR, .axis pcC]
+              , .iverson (.rel .ge
+                  (.iabs (.mul (.embed (.axis pcR)) (.embed (.axis pcC)))) (.embed (.const 0))) ] }] }
+          , nonlin := .identity } ]
+      false ]
+  , env := {}, extNames := insert "ROW" (∅ : Finset String)
+  , explicitSizes := ((({} : HashMap UID Nat).insert pcR.uid 3).insert pcC.uid 3) }
+private def pinCtxInputs : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "ROW" ⟨[3], #[1.0, 2.0, 3.0]⟩
+
+/-- Two-way scan differential: compile through `prepareEvalPlan` (confirming a real `.scan` step was
+    emitted), run through `runPreparedDense`, and compare EVERY environment key and the warning list
+    against the reference `evalScheduled`. This is the scan analogue of `planAgrees` for the plain
+    path. It deliberately omits `scanParityCheck`'s THIRD leg (`PropertyOracle.independentRun`): that
+    oracle's scan-free unrolling explicitly does not admit predicate factors inside a scan ("outside
+    the oracle's fragment"), so the checked positional plan vs the reference interpreter is the
+    genuine two-implementation differential available for a source Iverson inside a scan. -/
+private def scanParity2 (name : String) (sched : ScheduledProgram)
+    (inputs : HashMap String DenseTensor) : Except String Unit := do
+  let prepared ← match prepareEvalPlan sched (InputSignature.ofDenseInputs inputs) with
+    | .ok p => pure p
+    | .error f => throw s!"{name}: prepareEvalPlan rejected an admitted scan fixture: \
+{ScanCompileTest.render f.cause}"
+  unless prepared.plan.raw.steps.any (fun s => match s with
+      | .scan _ => true | .assign _ | .pointwise _ | .axiswise _ => false) do
+    throw s!"{name}: the compiled plan contains no scan step"
+  let planReport ← match runPreparedDense prepared inputs with
+    | .ok r => pure r
+    | .error e => throw s!"{name}: runPreparedDense failed (warnings={e.warnings.length})"
+  let refReport ← match evalScheduled sched inputs with
+    | .ok r => pure r
+    | .error e => throw s!"{name}: evalScheduled failed: {e.error}"
+  unless envEq planReport.env refReport.env do
+    throw s!"{name}: environment mismatch.\nplan env: {repr planReport.env.toList}\n\
+reference env: {repr refReport.env.toList}"
+  unless decide (planReport.warnings = refReport.warnings) do
+    throw s!"{name}: warnings differ.\nplan: {planReport.warnings.map toString}\n\
+reference: {refReport.warnings.map toString}"
+
+run_cmd do
+  match scanParity2 "uidNotName-pred" uidNotNameSched uidNotNameInputs with
+  | .error m => throwError s!"UID-not-name predicate scan: {m}"
+  | .ok () => pure ()
+  match scanParity2 "scanBaseIverson" baseIversonSched baseIversonInputs with
+  | .error m => throwError s!"scan base Iverson: {m}"
+  | .ok () => pure ()
+  match scanParity2 "scanRecurIverson" recurIversonSched recurIversonInputs with
+  | .error m => throwError s!"scan recurrence Iverson: {m}"
+  | .ok () => pure ()
+  -- fixture 6's observed source value: [S0, 0, 0] — the predicate genuinely gates the carry.
+  match evalScheduled recurIversonSched recurIversonInputs with
+  | .error e => throwError s!"scan recurrence Iverson reference eval: {e.error}"
+  | .ok r => match r.env["S"]? with
+    | some t => unless denseEq t ⟨[3], #[5.0, 0.0, 0.0]⟩ do
+        throwError s!"scan recurrence Iverson source value changed: {repr t.data}"
+    | none => throwError "scan recurrence Iverson: S missing"
+  match scanParity2 "pinCtxPred" pinCtxSched pinCtxInputs with
+  | .error m => throwError s!"pin+context predicate scan: {m}"
+  | .ok () => pure ()
+
 end LeanNCD.Eval.Plan.DifferentialTest

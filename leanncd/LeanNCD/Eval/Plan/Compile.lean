@@ -56,10 +56,16 @@ def checkLHSSlot (stmtName : String) : LHSSlot → Except CapabilityError Unit
     (`test/Eval/Plan/ContractTest.lean`), which still classifies `.unaryFn` as `.rejected
     "unaryFactor"` — the same deliberate divergence `checkNonlinTopLevel`/`checkAggOp` carry for the
     constructs their threads admitted. The `unaryFactor` `CapabilityError` constructor is retained
-    producer-less (like `scanNode`), since a serialized Wave C rejection may still carry it. -/
-def checkFactor (stmtName : String) : Factor → Except CapabilityError Unit
+    producer-less (like `scanNode`), since a serialized Wave C rejection may still carry it.
+
+    `.iverson` is likewise now structurally admitted (predicate/mask parity thread):
+    `residualizeAssignment` lowers a source Iverson `BoolExpr` into a positional `PosBoolExpr` factor
+    through `lowerFactorPredicate`. This preflight's `.iverson` arm was one of the two
+    `CapabilityError.maskOrPredicate` producers removed in that thread; the constructor is retained
+    producer-less, same discipline as `unaryFactor`/`scanNode`. -/
+def checkFactor (_stmtName : String) : Factor → Except CapabilityError Unit
   | .read ..       => pure ()
-  | .iverson _     => throw (.maskOrPredicate s!"{stmtName}: iverson factor")
+  | .iverson _     => pure ()
   | .unaryFn _ _ _ => pure ()
 
 /-- Top-level (`.plain`) statement admission (Thread 4): `.pointwise`/`.axiswise` are now
@@ -316,6 +322,55 @@ private def pinCheckV : AxisSpec := { name := "v", uid := 9002, kind := .nat }
       (.affine 7 [(2, pinCheckU), (-3, pinCheckV), (4, pinCheckU)]))
   == ([-3], 37)
 
+/-- The private recursive `PredArith → PosPredArith` half of the shared predicate-lowering core.
+    Each `.embed`ded source `IdxExpr` becomes a positional affine leaf: `idxToRow basis e` densifies
+    it over the ordered `basis` (one coefficient per basis position), then `substitutePins` folds
+    every pinned axis into the leaf bias and drops its column — the very arithmetic a `.read` factor's
+    affine row uses in `residualizeAssignment` below, so a predicate coordinate and a read coordinate
+    over the same basis agree by construction. The produced `PosAffine` is UID-free: it carries only
+    positional coefficients, never an `AxisSpec`/UID/axis name. Reached only through
+    `lowerFactorPredicate` (and Task 5.3's `lowerMaskPredicate`), never directly. -/
+private def lowerPredArithPos (pins : HashMap UID Int) (basis : List UID) :
+    PredArith → PosPredArith
+  | .embed e =>
+      let (coeffs, bias) := substitutePins pins basis (idxToRow basis e)
+      .affine { coeffs := coeffs.toArray, bias }
+  | .mul a b => .mul (lowerPredArithPos pins basis a) (lowerPredArithPos pins basis b)
+  | .iabs a => .iabs (lowerPredArithPos pins basis a)
+
+/-- The private recursive `BoolExpr → PosBoolExpr` core: the single lowering shared by
+    `lowerFactorPredicate` (factor policy: `context ++ output ++ reduction`, real pins) and Task 5.3's
+    `lowerMaskPredicate` (mask policy). Both entry points build the ordered `basis` and `pins` and
+    then hand off here; no compiler call site reaches this core (or `lowerPredArithPos`) directly.
+    Structural over the Boolean connectives, delegating every arithmetic operand to
+    `lowerPredArithPos`; the `RelOp` label is preserved verbatim, so identity by basis position is the
+    only place UIDs are resolved. -/
+private def lowerBoolExprPos (pins : HashMap UID Int) (basis : List UID) :
+    BoolExpr → PosBoolExpr
+  | .rel op a b => .rel op (lowerPredArithPos pins basis a) (lowerPredArithPos pins basis b)
+  | .and a b => .and (lowerBoolExprPos pins basis a) (lowerBoolExprPos pins basis b)
+  | .or a b => .or (lowerBoolExprPos pins basis a) (lowerBoolExprPos pins basis b)
+  | .not a => .not (lowerBoolExprPos pins basis a)
+  | .ieq a b => .ieq (lowerPredArithPos pins basis a) (lowerPredArithPos pins basis b)
+
+/-- Factor-policy predicate lowering — one of the TWO public entry points to the private
+    `BoolExpr → PosBoolExpr` core (`lowerBoolExprPos`); the other is Task 5.3's `lowerMaskPredicate`,
+    which will reuse the same core with the mask policy (local non-seeded output basis, empty pins).
+    Given a statement's scan context (empty outside a scan), its output (retained) basis, the
+    validated pins, the product `term`, and a source Iverson `pred`, derive THAT term's contracted
+    axes (`termAxisUIDs` minus context/output, in first-encountered order — exactly as
+    `residualizeAssignment` derives them for reads), build the ordered basis
+    `context ++ output ++ reduction`, and lower `pred` over it with the real pins folded into every
+    leaf. Identity is by basis position (via `idxToRow`), never by axis name — two same-named axes
+    with distinct UIDs occupy distinct basis positions. -/
+def lowerFactorPredicate (contextUids outputUids : List UID) (pins : HashMap UID Int)
+    (term : ProdTerm) (pred : BoolExpr) : PosBoolExpr :=
+  let termUids := (termAxisUIDs term).eraseDups
+  let contractedUids :=
+    termUids.filter (fun u => !contextUids.contains u && !outputUids.contains u)
+  let basisUids := contextUids ++ outputUids ++ contractedUids
+  lowerBoolExprPos pins basisUids pred
+
 /-- Select the checked contraction algebra a source statement's aggregation op compiles to. `sum`
     is Wave C's real sum-product; `max`/`min` are the tropical semirings, whose reduction identity
     (`−∞`/`+∞`) differs from the `zeroPad` out-of-bounds pad (`0`) — the pad is a factor value that
@@ -379,8 +434,15 @@ private def residualizeAssignment (sizes : HashMap UID Nat) (warnings : List Eva
           let biasArr : Array Int := (rows.map (fun r => r.2)).toArray
           factorsAcc := factorsAcc.push
             (.read { sourceSlot, map := { coeffs, bias := biasArr }, sourceShape, oobPolicy := .zeroPad })
-      | .iverson _ => liftCapability warnings (throw (.maskOrPredicate "factor"))
-          -- unreachable post-preflight (checkFactor/Step A already rejected .iverson)
+      | .iverson pred =>
+          -- A source Iverson predicate lowers to a positional `PosBoolExpr` over the SAME ordered
+          -- basis a `.read` factor uses here (`context ++ output ++ reduction`, real pins folded in),
+          -- through the shared `lowerFactorPredicate`. A true predicate contributes `1.0` and a false
+          -- one annihilates the term (Dense's `evalPosBool`); `checkAssign`'s `.iverson` width check
+          -- forces every leaf to span the term's iteration basis. This is where the two Task 5.1
+          -- `.iverson` rejection producers (this arm and `checkFactor`) are replaced by real lowering.
+          factorsAcc := factorsAcc.push
+            (.iverson (lowerFactorPredicate contextUids outputUids pins term pred))
       | .unaryFn op name idxs =>
           -- Reads exactly like `.read name idxs` (same slot resolution, same affine rows, same
           -- zero-pad), then carries the unary function so `gatherFactor` applies it after the pad.

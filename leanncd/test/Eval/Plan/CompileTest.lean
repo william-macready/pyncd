@@ -133,14 +133,17 @@ def acceptedSched : ScheduledProgram :=
           , nonlin := .axiswise .softmax none }]
           false] })
 
--- maskOrPredicate: an iverson factor
-#guard errOf (capabilityPreflight
+-- maskOrPredicate: an iverson factor is now ADMITTED (the predicate/mask parity thread lowers it to
+-- a positional `PosBoolExpr` factor via `lowerFactorPredicate`) — preflight returns none, so this
+-- donor program becomes an accepted-case fixture rather than a rejection, exactly like the
+-- `unaryFactor` and max/min conversions above. Its executing/value coverage is the differential
+-- fixtures in `DifferentialTest.lean` (pure-Iverson identity and the reduction-order cases).
+#guard isOk (capabilityPreflight
     { acceptedSched with stmts :=
         [.plain (.assign "Y" [.free ⟨"i", 0, .nat⟩]
           { body := { terms := [{ factors :=
               [.iverson (.rel .eq (.embed (.const 0)) (.embed (.const 0)))] }] }
           , nonlin := .identity })] })
-  == some (.maskOrPredicate "Y: iverson factor")
 
 -- unaryFactor: log/exp/… are now ADMITTED (they lower to a unary-carrying `ReadPlan` factor) —
 -- preflight returns none, so this donor program becomes an accepted-case fixture rather than a

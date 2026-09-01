@@ -693,28 +693,30 @@ def badRecurMorphism (nm : String) : Stmt := .recurMorphism nm axL default
 def pinL : LHSSlot := .iterAt axL 0
 def nextL : LHSSlot := .iterNext axL
 
--- in the BASE list. `.freeNorm`, `.pointwise`, `.axiswise`, `.max`/`.min` aggregation, and unary
--- factors are NO
+-- in the BASE list. `.freeNorm`, `.pointwise`, `.axiswise`, `.max`/`.min` aggregation, unary
+-- factors, and now Iverson predicate factors are NO
 -- LONGER preflight rejections: `compileScan` now admits and lowers the nonlinearities (Thread 4
--- Task 4), `.max`/`.min` compile to the tropical algebras (max/min-aggregation thread), and unary
--- factors lower to unary-carrying `ReadPlan`s. Their
--- positive coverage is the accept-path fixtures (the `== none` `badAgg` cases below, plus
--- `ScanTest.lean`); the marker-consistency and masked-axiswise negatives — which now surface at the
+-- Task 4), `.max`/`.min` compile to the tropical algebras (max/min-aggregation thread), unary
+-- factors lower to unary-carrying `ReadPlan`s, and a source Iverson predicate lowers to a positional
+-- `PosBoolExpr` factor (predicate/mask parity thread, via `lowerFactorPredicate`). Their
+-- positive coverage is the accept-path fixtures (the `== none` `badAgg`/`badIverson` cases below,
+-- plus `ScanTest.lean` and the `DifferentialTest.lean` scan-Iverson parity fixtures); the
+-- marker-consistency and masked-axiswise negatives — which now surface at the
 -- `resolveNonlinAxis` tier, not preflight — are Task 4's Task 2.
 #guard rej [badAffineLhs "S"] [okRecur] == some (.capability (.scatterOrAffineLhs "S: affine LHS slot"))
 #guard rej [badAgg "S" pinL .max] [okRecur] == none   -- max agg now admitted
 #guard rej [badAgg "S" pinL .min] [okRecur] == none   -- min agg now admitted
-#guard rej [badIverson "S" pinL] [okRecur] == some (.capability (.maskOrPredicate "S: iverson factor"))
+#guard rej [badIverson "S" pinL] [okRecur] == none   -- iverson factor now admitted (base leg)
 #guard rej [badUnary "S" pinL] [okRecur] == none   -- unary factor now admitted
 #guard rej [badScatter "S"] [okRecur] == some (.capability (.scatterOrAffineLhs "S"))
 #guard rej [badRecurMorphism "S"] [okRecur] == some (.capability (.recurrenceOrCallback "S"))
 
--- in the RECURRENCE list (`.freeNorm`/`.pointwise`/`.axiswise`, `.max`/`.min`, and unary factors
--- admitted — see note)
+-- in the RECURRENCE list (`.freeNorm`/`.pointwise`/`.axiswise`, `.max`/`.min`, unary factors, and
+-- Iverson predicate factors admitted — see note)
 #guard rej [okBase] [badAffineLhs "S"] == some (.capability (.scatterOrAffineLhs "S: affine LHS slot"))
 #guard rej [okBase] [badAgg "S" nextL .max] == none   -- max agg now admitted
 #guard rej [okBase] [badAgg "S" nextL .min] == none   -- min agg now admitted
-#guard rej [okBase] [badIverson "S" nextL] == some (.capability (.maskOrPredicate "S: iverson factor"))
+#guard rej [okBase] [badIverson "S" nextL] == none   -- iverson factor now admitted (recurrence leg)
 #guard rej [okBase] [badUnary "S" nextL] == none   -- unary factor now admitted
 #guard rej [okBase] [badScatter "S"] == some (.capability (.scatterOrAffineLhs "S"))
 #guard rej [okBase] [badRecurMorphism "S"] == some (.capability (.recurrenceOrCallback "S"))
@@ -994,6 +996,24 @@ output-slice column rather than a context column (slice-dependent). -/
           , { factors := [.read "X" [.axis axL], .read "S" [.shift axL 1]] } ] }
       , nonlin := .identity }]
   == some (.scan (.stateReadNotCausal "sc" "S" 0 1 1))
+
+-- Source causality factor locator (predicate/mask parity thread): the SAME term-1 shape as the
+-- fixture above, but with an Iverson predicate factor inserted IMMEDIATELY BEFORE the noncausal
+-- state read. `compileScan`'s Phase-5 causality loop skips the `.iverson` factor yet keeps the
+-- ORIGINAL all-factor index, so the noncausal `S[l + 1]` read now sits at all-factor index `fi = 2`
+-- (not the filtered-read index `1`). The reported locator must therefore be `… "S" 0 1 2`: this is
+-- the fixture that first EXERCISES the locator invariant with a real source Iverson, and a filtered-
+-- read reindexing of the loop would (wrongly) report `1` here. Without the inserted Iverson the read
+-- index and factor index coincide (they do in the donor above), so only an Iverson-bearing term can
+-- separate them.
+#guard rej [okBase] [.assign "S" [.iterNext axL]
+      { body := { terms :=
+          [ { factors := [.read "X" [.axis axL]] }
+          , { factors := [ .read "X" [.axis axL]
+                         , .iverson (.rel .eq (.embed (.const 0)) (.embed (.const 0)))
+                         , .read "S" [.shift axL 1] ] } ] }
+      , nonlin := .identity }]
+  == some (.scan (.stateReadNotCausal "sc" "S" 0 1 2))
 
 /-! ## Part 3: precedence
 
