@@ -2,13 +2,13 @@
 
 ## Result
 
-**Recommendation: REVISE** for Slice 5. The architecture is supported, but the fixture/oracle plan
-must be revised around one unmeasured mask case:
+**Recommendation: GO** for the source-reachable Slice 5 fragment:
 
 - **Factor policy — confirmed:** `context ++ output ++ per-term reduction` in first-encounter order, UID identity, and base-pin substitution in every affine leaf.
-- **Mask policy — partially confirmed:** source seeds become zero, while eliminated non-seeded plain
-  `.free` slots become their enumerated coordinates. The spike did not exercise an eliminated
-  `.freeNorm` slot.
+- **Mask policy — confirmed for every source-reachable eliminated scan-coordinate class:** source
+  seeds become zero, while eliminated non-seeded plain `.free` slots become their enumerated
+  coordinates. Retained `.freeNorm` output coordinates remain expressions, as in T2-F5's retained
+  `.freeNorm i`.
 
 The spike needed no `FactorPlan` or `RawAxiswisePlan` mask field, did not widen admission, and left `TermPlan.factors` unchanged. Temporary code was committed for audit and then reverted.
 
@@ -68,7 +68,7 @@ The width guard observed `.affineWidthMismatch 2 1`, never truncation/defaulting
 | T2-F2 | NM4; only `normalize`→`softmax`, excluded `A[0,0]` `1`→`1000` | Source/adapter `[0.000000,0.268941,0.731059,0.000000,0.500000,0.500000]` | Excluded `1000` did not enter maximum |
 | T2-F3 | `ScanCompileTest.maskedAxiswiseRecur`; only mask→`l=0` | Source/adapter/unroll `[1,3,.25,.75,.25,.75]` | Two masks `(0=0)`; seeded `l` absent |
 | T2-F4 | `ScanCompileTest.okBase` + `badIverson "S" nextL`; predicate→`l=0` | Source/unroll `[1,1,0]` | Iversons `(0=0)`,`(1=0)`; `l` absent |
-| T2-F5 | `ScanGen.template6`; retained extent-two `.freeNorm i` on `G/Z/A`, base `normalize(where r!=0)`, nonzero `Z` | Shape `[2,2,2]`; source/unroll `[0,0,0,0,.25,1,.75,1]` | The eliminated non-seeded scan coordinate was `.free r`, while `c` was seeded; base masks `(0!=0)`,`(1!=0)` and absent `r,c` therefore do not evidence eliminated `.freeNorm` |
+| T2-F5 | `ScanGen.template6`; retained extent-two `.freeNorm i` on `G/Z/A`, base `normalize(where r!=0)`, nonzero `Z` | Shape `[2,2,2]`; source/unroll `[0,0,0,0,.25,1,.75,1]` | The eliminated non-seeded scan coordinate was `.free r`, `c` was seeded, and the separate retained `.freeNorm i` remained an expression; base masks were `(0!=0)`,`(1!=0)` |
 
 The exact T2-F2 representation was additionally measured with:
 
@@ -133,11 +133,12 @@ The oracle was therefore independent of checked predicate lowering, positional e
 - Production integration must still add the real plan representation while preserving current admission boundaries.
 - Ten discriminating fixtures are not a broad property proof over arbitrary nested predicates, mixed pins, or richer scan geometry.
 - The oracle shares source AST and `evalScheduled`; it is an independent rewrite/execution shape, not separately specified semantics.
-- The temporary `ScanUnroll` geometry rejects an eliminated `.freeNorm`, and an axiswise operation
-  couples leaves. Slice 5 must add direct checked/reference coverage and either grouped oracle support
-  or an explicitly narrower oracle plus equivalent independent coverage.
+- `DSL/Pipeline/Structural.lean::checkDtypes` requires `iterAt`/`iterNext` axes to be `.nat` and
+  `freeNorm` axes to be `.real`. A source-reachable scan/context axis therefore cannot itself be an
+  eliminated `.freeNorm`; this is not a missing spike case. A hand-built, kind-inconsistent
+  `ScheduledProgram` lies outside the source parity fragment and must not drive this plan.
 - No performance conclusion is available because total timings were not recorded.
 - Boolean tensors/dtypes/algebra, corpus expansion, and JAX remain out of scope.
 
-The measurements support the architecture and the confirmed portions of the policies, but the
-fixture/oracle plan in `papers/predicate_boolean_backend_parity.md` must be revised before Slice 5.
+The measurements support the architecture and the source-reachable factor and mask policies. Slice 5
+can proceed with the corrected fixture/oracle plan in `papers/predicate_boolean_backend_parity.md`.
