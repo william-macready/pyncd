@@ -52,6 +52,7 @@ implementation.
 | Predicate affine leaves | Store one coefficient array plus one integer bias. Do not misuse the vector-valued `AffineMap` or synthesize fake `AxisSpec`s. |
 | Assignment lowering | Reuse `termAxisUIDs`, `idxToRow`, `substitutePins`, and the existing `context ++ output ++ reduction` basis. |
 | Axiswise mask lowering | Use the local output-tensor basis. In scans, match the current reference behavior exactly: seeded/context UIDs are absent and therefore evaluate as coordinate zero. |
+| Lowering API | Keep one private recursive core, but expose separate `lowerFactorPredicate` and `lowerMaskPredicate` entry points so callers cannot silently exchange factor context/pins with the mask basis. Do not add coordinate metadata to `ScheduledProgram` or persistent plan IR. |
 | Nonlinear math | Generalize the existing row implementation around a coordinate-inclusion callback. Keep one implementation of softmax, normalize, and L2 normalize. |
 | Boolean contraction | Reuse `ScalarBinOp.min/max`, `ScalarConst.bool`, `ContractionAlgebra`, and the existing Dense folds. Add no logical-operation constructors. |
 | Boolean carrier | Match the reference interpreter: Boolean is an algebra/signature tag over Float storage, not native Boolean storage. Admit f64 and Bool reads into either f64 or Bool assignments; keep f32 rejected. |
@@ -210,8 +211,10 @@ filtered reads.
 
 ### 4.4 Assignment predicate residualization
 
-Add a recursive lowering helper in `Eval/Plan/Compile.lean`. It receives the existing ordered basis
-and pin map.
+Add one private recursive lowering core in `Eval/Plan/Compile.lean`. It receives an ordered basis
+and pin map, but is not the API used directly by compiler call sites. Expose a named
+`lowerFactorPredicate` entry point that receives `contextUids`, `outputUids`, pins, the term, and
+the predicate; it derives that term's reductions and invokes the private core.
 
 For each embedded `IdxExpr`:
 
@@ -230,6 +233,14 @@ This gives the required behavior without a second axis-discovery implementation:
 - base `iterAt` values are folded into affine biases;
 - axes mentioned only in an Iverson factor become contracted axes through `termAxisUIDs`;
 - identity is by UID, never by axis name.
+
+Do not add an `AssignmentCoordinateScope` or other coordinate-context field to `ScheduledProgram`
+or checked plan IR. The explicit arguments already exist at the three assignment construction
+sites, and the coordinate-parity spike's disposable implementation needed only the two named
+wrappers. If production wiring reveals repeated derivation at two or more call sites, the
+implementation may extract a private compiler-local helper or structure, but only when it removes
+measured duplication. The separate factor/mask entry points and their policies remain the public
+shape inside `Compile.lean`; callers must not reach a generic basis-and-pins entry point.
 
 ### 4.5 Checked validation and Dense execution
 
@@ -250,6 +261,10 @@ Their behavior for reads must not otherwise change.
 ### 4.6 Axiswise mask representation and lowering
 
 Add `mask : Option PosBoolExpr := none` to `RawAxiswisePlan`.
+
+Lower it through a separate `lowerMaskPredicate` entry point that accepts only the local output
+basis and predicate. It supplies an empty pin map internally, so a caller cannot accidentally pass
+factor context or base pins to a mask.
 
 Its basis is the axis order of the local tensor:
 
@@ -526,7 +541,8 @@ target uncompilable between Tasks 5.1 and 5.4.
 **Deliverable**
 
 Remove the two `.iverson` rejection producers and recursively translate the existing UID-bearing
-`BoolExpr` into `PosBoolExpr` using the assignment's existing basis and pins.
+`BoolExpr` into `PosBoolExpr` through `lowerFactorPredicate`, using the assignment's existing
+context, output basis, and pins. Keep the generic recursive basis-and-pins core private.
 
 **Files**
 
@@ -555,9 +571,12 @@ Retain `CapabilityError.maskOrPredicate` with no producer.
 
 **Deliverable**
 
-Add `RawAxiswisePlan.mask`, its checker and Dense adapter, source lowering at all three compiler
-construction sites, the shared coordinate-inclusion nonlinear core, and the complete-step JAX
-support check that routes the checked axiswise case to the generic unsupported-step error.
+Add `RawAxiswisePlan.mask`, its checker and Dense adapter, source lowering through
+`lowerMaskPredicate` at all three compiler construction sites, the shared coordinate-inclusion
+nonlinear core, and the complete-step JAX support check that routes the checked axiswise case to
+the generic unsupported-step error. Do not introduce a schedule/plan coordinate-context field.
+Extract a private compiler-local helper or structure only after completed wiring demonstrates
+identical derivation at two or more sites; record the duplicated expressions it replaces.
 
 **Files**
 
@@ -940,6 +959,7 @@ Each slice completion record must contain:
 ## 13. Explicit non-goals
 
 - No parameterization or replacement of the source predicate AST.
+- No coordinate-context field on `ScheduledProgram` or persistent checked-plan values.
 - No source `BoolExpr` retained in checked plan IR.
 - No predicate truth tables stored in checked plans.
 - No native Bool tensor storage.
