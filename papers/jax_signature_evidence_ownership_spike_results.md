@@ -246,3 +246,61 @@ Variant A reviews:
 Both specification and code-quality re-reviews after `6a8d4ac` reported no significant remaining
 ownership issue. Default build, targeted JAX/Executable build, and direct corpus elaboration all
 returned exit 0 after the fixes.
+
+### Variant B — validator-supplied complete context
+
+Commits: implementation `2b1d361`; direct validator guards `0f87b88`.
+
+Measured public signatures:
+
+```text
+lowerAssign (sigs : Array TensorSignature) (nodeIndex : Nat) (checked : CheckedAssignPlan)
+renderAffineAssign (sigs : Array TensorSignature) (c : CheckedAssignPlan)
+loweringToAffineTableCandidate (sigs : Array TensorSignature) (nodeIndex : Nat)
+  (assign : CheckedAssignPlan) : Except JaxCodegenError OrderedAffineTableKernelCandidate
+loweringToEinsumCandidate (sigs : Array TensorSignature) (nodeIndex : Nat)
+  (assign : CheckedAssignPlan) : Except JaxCodegenError EinsumExperimentKernelCandidate
+validateAffineTable (sigs : Array TensorSignature) (kernel : OrderedAffineTableKernelCandidate)
+validateEinsum (sigs : Array TensorSignature) (kernel : EinsumExperimentKernelCandidate)
+kernelWellFormedBool (sigs : Array TensorSignature) (candidate : JaxKernelCandidate)
+JaxKernelWellFormed (sigs : Array TensorSignature) (candidate : JaxKernelCandidate)
+validateAndConstructKernel (sigs : Array TensorSignature) (candidate : JaxKernelCandidate)
+  : Except JaxKernelValidationError SomeJaxKernel
+```
+
+Raw `OrderedAffineTableKernelCandidate` and `EinsumExperimentKernelCandidate` retain their original
+fields: neither stores signatures. `JaxKernel` privately stores the one complete
+`signatureContext` used by its validator together with
+`valid : JaxKernelWellFormed signatureContext candidate`; evidence therefore remains checkable from
+the validated value. `JaxExecutableWellFormed` compares each validated kernel's stored context to
+`PreparedPlan.plan.raw.tensorSigs` and its assignment to the corresponding checked step.
+Plan-level renderers/conversion retain direct one-plan signatures and derive that table internally;
+no caller-selectable parallel table exists.
+
+The standalone API adds one complete-table argument at each nearest public semantic boundary.
+Context is not repeated through recursive helpers, which are private. Existing raw candidate types
+do not change. A plan still has one stored table value in each validated kernel witness (needed to
+make evidence checkable), but it does not also put the table in public raw candidates. All-real
+inline validator calls add one `idSigs`/`mixedSigs` argument; all plan-level JAX drivers remain
+direct.
+
+Validation:
+
+- Production/check/test/Jax builds: exit 0. Warm timings: 8,497 jobs in 6.23 s; 8,514 jobs in
+  6.25 s. Direct corpus elaboration: exit 0.
+- `run-evalplan.sh`: exit 0, 20.67 s; eager/JIT/gradient smoke passed.
+- `run-evalplan-affine.sh`: exit 0, 30.58 s; all 20 fixtures passed bit-identically.
+- `run-evalplan-affine-corpus.sh`: exit 0, 730.74 s; 3,832 cases, zero eager mismatches,
+  65 JIT cases, artifact 3,424,195 bytes.
+- `run-scaling-probe.sh`: exit 0, 27.60 s; 177,547-byte artifact; eager/JIT bit-identical.
+
+Variant B mutation cycles:
+
+| ID | Concrete mutation | Observed fail | Restored pass |
+|---|---|---|---|
+| B1 | Skip source dtype rejection while retaining destination/algebra/unary/Iverson policy | Exit 1: direct `checkJaxAssignSupport`, affine/einsum validator, contextual well-formedness, private constructor, all renderer/lowerer, IO fixture, and F3 guards fail | `ExecutableTest` + Codegen pass |
+| B2 | At plan conversion, replace authoritative signatures with a same-shape all-`f64` mapped table | Exit 1: direct plan-conversion F2 gate and F3 step-1 gate fail | Codegen passes |
+| B3 | Change the plan conversion signature to accept caller context and supply all-real context only for F3 | Exit 1: exact F3 plan-boundary guard fails | Codegen passes after restoring the one-argument, deriving API |
+| B4 | Rotate context removal across the lowerAssign dominator, affine render dominator, affine candidate conversion, and einsum candidate conversion | Named failures cover every retained renderer/lowerer/candidate-conversion entry, including both plan modes and `buildAssignFixture` | All rotations restored; direct guards pass |
+| B5 | Skip support validation and validate/construct with an all-real forged table before assigning evidence | Exit 1: both candidate-kind F2 guards and plan context/assignment guards fail; affine candidate can otherwise expose `orderedReference64` | `ExecutableTest` + Codegen pass |
+| B6 | Compare only the first validated kernel's cached context, then ignore later kernel contexts | Exit 1: F3 step-1 context-substitution guard fails; F4's step-0 check remains intact | Codegen passes |
