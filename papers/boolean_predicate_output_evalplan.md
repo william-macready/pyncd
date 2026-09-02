@@ -227,13 +227,23 @@ Before either experimental JAX rendering mode or candidate construction:
 4. visit factors in original term/factor order and reject a non-`f64` read or a unary read;
 5. retain the existing located Iverson and unsupported-step rejections.
 
-Add typed `JaxCodegenError` cases for unsupported dtype, algebra, and unary factor with available
-step/term/factor/slot locators. Assignment algebra and unary-factor support are visible in the current
-candidate semantic source, but a Boolean source feeding a real destination is not: standalone
-`CheckedAssignPlan` candidates carry no signature table. The required pre-Task-5 spike in §8 decides
-where that signature/support context lives. Task 5 must apply the chosen context to every public
-renderer and candidate/evidence entry point; it may not claim that the current
-`validateAffineTable`/`validateEinsum` signatures can prove source-dtype support.
+Add typed `JaxCodegenError` cases for unsupported dtype, algebra, unary factor, and structurally
+incompatible standalone signature context with available step/term/factor/slot locators. The
+completed [signature/evidence ownership spike](jax_signature_evidence_ownership_spike_results.md)
+selected validator-supplied context (**GO B**):
+
+- raw affine/einsum candidates retain no signature table;
+- standalone renderers, candidate conversions, and validators take one explicit complete
+  `Array TensorSignature`, re-run `checkAssign` under it, and treat it as their semantic authority;
+- plan-level paths accept no parallel table and derive only
+  `PreparedPlan.plan.raw.tensorSigs`;
+- private `JaxKernel` stores the validated complete table with
+  `JaxKernelWellFormed table candidate`;
+- executable well-formedness ties every stored table and semantic assignment to the corresponding
+  prepared checked step; and
+- the pre-validation evidence-label helper and context-free semantic helpers are private.
+
+Thus `orderedReference64` is exposed only after source dtype and all existing structural checks pass.
 
 The required sibling-audit artifact is this completed table, populated from implemented code:
 
@@ -269,6 +279,7 @@ have an independent failure mode and rollback surface.
 - `leanncd/test/Eval/Plan/AdapterTest.lean`
 - `leanncd/test/Eval/Plan/ScanCompileTest.lean`
 - `leanncd/experiments/jax_bridge/EvalPlanCodegen.lean`
+- `leanncd/experiments/jax_bridge/EvalPlanAffineSmoke.lean`
 
 **Deliverable**
 
@@ -493,26 +504,41 @@ to the full recurring write-geometry audit before continuing.
 
 **Deliverable**
 
-Run and record the mandatory §8 JAX evidence-shape spike first. Implement its chosen signature/support
-context across every public renderer and candidate/evidence entry point, extend the separate predicate
-differential corpus with Boolean outputs without changing the 3,832 affine corpus, remeasure all
-boundary counts, and update current-state documentation.
+Implement the completed §8 spike's validator-supplied signature/support context across every public
+renderer and candidate/evidence entry point, extend the separate predicate differential corpus with
+Boolean outputs without changing the 3,832 affine corpus, remeasure all boundary counts, and update
+current-state documentation.
 
-**Fixtures: 10; planned mutation cycles: 6**
+The spike selected these exact public signatures (line breaks abbreviated):
+
+```text
+lowerAssign sigs nodeIndex checked
+renderAffineAssign sigs checked
+loweringToAffineTableCandidate sigs nodeIndex checked
+loweringToEinsumCandidate sigs nodeIndex checked
+validateAffineTable sigs candidate
+validateEinsum sigs candidate
+kernelWellFormedBool sigs candidate
+JaxKernelWellFormed sigs candidate
+validateAndConstructKernel sigs candidate
+```
+
+`lowerPlan`, `generateForward`, both plan renderers, `generateNamed`, and
+`lowerCheckPlanToCandidate` derive the checked/prepared table and retain no context parameter.
+`lowerFactor`, `lowerTerm`, `renderTermLine`, `renderNodeLines`, affine factor/term/node/array
+renderers, affine table recomputation helpers, `jaxAssignSupported`, and
+`candidateEvidenceLabel` are private. `checkJaxAssignSupport` remains the typed, context-bearing
+cross-module helper. Raw candidate records remain unchanged; `JaxKernel` gains the validated table.
+
+**Fixtures: 10; planned mutation cycles: 10**
 
 1. Clone `ExecutableTest.idRaw`; change destination signature and assignment algebra to Boolean;
    require both kernel validators and executable construction to reject it.
 2. Clone `idRaw`; change only the source signature to `bool`; require checked-plan acceptance and
-   typed JAX dtype rejection before candidate creation. Exercise the same semantic mutation through
-   every public semantic path that remains public after the spike:
-   `lowerAssign`, `lowerPlan`, `generateForward`, `generateNamed`, `renderAffineNode`,
-   `renderAffineNodesArray`, `renderAffineAssign`, `renderAffinePlanPositional`,
-   `renderAffinePlanNamed`, `buildAssignFixture`, `lowerCheckPlanToCandidate`,
-   `loweringToAffineTableCandidate`, `loweringToEinsumCandidate`, `candidateEvidenceLabel`,
-   `validateAffineTable`, `validateEinsum`, `kernelWellFormedBool`, `JaxKernelWellFormed`,
-   `validateAndConstructKernel`, `JaxExecutableWellFormed`, and executable construction. Helpers
-   intentionally made private by the spike need direct tests through their nearest public caller
-   instead. No public path may lack the signature/support context chosen by the spike.
+   exact `.sourceDType 0 0 0 .bool` rejection. Exercise the public signatures listed above plus
+   `lowerPlan`, `generateForward`, both `generateNamed` modes, both plan renderers,
+   `buildAssignFixture`, `lowerCheckPlanToCandidate`, `JaxExecutableWellFormed`, and executable
+   construction. Test private helpers through their nearest public caller.
 3. Clone `idRaw` twice; change only its algebra to `admittedAlgebraMax` and
    `admittedAlgebraMin`; require typed unsupported-algebra rejection.
 4. Clone `idRaw`; change only `idRead.unary` to `some .exp`; require a located unary rejection from
@@ -528,10 +554,18 @@ boundary counts, and update current-state documentation.
    agreement plus its observed value. Do not add them to `PropertyOracle.enumPrograms`.
 9. Add Task 4 fixtures 1 and 2 to the curated three-way scan set; require checked, reference, and
    independent-unroll equality.
+10. Retain the spike's authority attacks: (a) F4, a Boolean-source `PreparedPlan` plus a same-shape
+    all-real table, must have no caller-table plan API and a manually substituted validated kernel
+    must fail executable construction; (b) a standalone all-real table with mismatched shapes must
+    fail the re-run `checkAssign`; (c) a two-step plan whose Boolean read is only at step 1 must reject
+    at step 1 when step 0's valid context/result is cached or reused.
 
-Mutations must bypass the dtype gate across every public entry point, bypass algebra and unary gates,
-bypass the direct candidate validators, misreport step 0 for fixture 6, and drop the new Boolean
-corpus entries. Record failing and restored observations.
+Run ten mutation cycles: bypass source dtype across every public path; reverse destination/source
+support order; bypass algebra; bypass unary; construct evidence before contextual validation; add a
+caller-selectable all-real plan table; remove the per-step context/assignment tie (including cached
+step-0 context); rotate context removal through every surviving public entry and skip standalone
+`checkAssign`; hard-code outer locator 0; and drop the new Boolean corpus entries. Record every
+failing and restored observation.
 
 ## 4. Risk sizing
 
@@ -541,8 +575,8 @@ corpus entries. Record failing and restored observations.
 | 2 | wrong Boolean identities/algebra or accidental type tightening | 12 | 7 | Local checker/Dense semantics can be rejected independently |
 | 3 | signature authority, top-level allocation, result metadata | 12 | 7 | Public top-level boundary can fail while raw execution is correct |
 | 4 | one missed scan `f64`, unsound write dtype, oracle self-mismatch | 8 | 9 | Scan semantics and write evidence are a separate soundness surface |
-| 5 | JAX evidence-shape spike, unsupported semantics stamped as reference, stale boundary docs | 10 | 6 | Experimental backend evidence/docs can be rejected without rolling back Dense |
-| **Total** |  | **53** | **35** |  |
+| 5 | JAX context authority, unsupported semantics stamped as reference, stale boundary docs | 10 | 10 | Experimental backend evidence/docs can be rejected without rolling back Dense |
+| **Total** |  | **53** | **39** |  |
 
 The fixture count, not expected production-line count, makes Tasks 2–4 high-review work. Do not split
 tiny type additions from the checker/compiler that produces them; they have no independent failure
@@ -666,18 +700,17 @@ explicitly adjudicated before landing.
 
 ## 8. Risky unknowns / follow-up spikes
 
-### Required before Task 5 — JAX signature/evidence ownership
+### Resolved before Task 5 — JAX signature/evidence ownership
 
-Current static inspection proves the support hole but cannot select a sound public API:
+The mandatory spike is complete:
+[results and mutation record](jax_signature_evidence_ownership_spike_results.md). Decision:
+**GO B — validator-supplied complete context**.
 
-| Unknown | Why static inspection cannot settle it | Decision blocked | Bounded spike | Expected artifact/result | Must precede implementation? |
-|---|---|---|---|---|---|
-| Where JAX source-dtype support evidence lives | `PreparedPlan`/`CheckedEvalPlan` retain `tensorSigs`, but standalone `CheckedAssignPlan`, `OrderedAffineTableKernelCandidate`, and `EinsumExperimentKernelCandidate` do not. A Boolean source feeding a real destination is therefore observationally identical to an all-real assignment at the current candidate validators. Both enriching candidates and requiring validator-side signature context are type-correct architectural options with different public API and evidence-invariant costs. | Task 5's candidate types, validator signatures, renderer signatures, and the proposition tying `orderedReference64` to the semantic source | In gitignored `leanncd/spikes/`, prototype two minimal variants: **A**, carry the assignment's complete signature table/support witness in each candidate; **B**, require explicit signatures at standalone renderer/validator construction and tie executable candidates back to `PreparedPlan.plan.raw.tensorSigs`. Compile both, then attempt the same real-destination/Boolean-source assignment through every currently public semantic path: `lowerAssign`, `lowerPlan`, `generateForward`, `generateNamed`, `renderAffineNode`, `renderAffineNodesArray`, `renderAffineAssign`, both plan renderers, `buildAssignFixture`, `lowerCheckPlanToCandidate`, `loweringToAffineTableCandidate`, `loweringToEinsumCandidate`, `candidateEvidenceLabel`, `validateAffineTable`, `validateEinsum`, `kernelWellFormedBool`, `JaxKernelWellFormed`, `validateAndConstructKernel`, `JaxExecutableWellFormed`, and executable construction. Audit every other non-private definition in the two JAX modules and classify it as non-semantic or add it to this matrix. For each semantic helper, either provide source-dtype context or make it private and test its nearest public caller. Temporarily remove the chosen context at each surviving public entry point and confirm the unsupported case becomes constructible or the proof no longer elaborates. | A short decision record naming the chosen type signatures and invariant, a complete public-entry-point matrix, compiling spike snippets, and observed fail/pass mutation results. Update Task 5's exact file/API checklist from that record before editing production code. | **Yes for Task 5.** It does not block Tasks 1–4 and should run while those tasks are active. |
-
-Selection criteria, in order: no candidate can acquire `orderedReference64` without source-dtype
-context; one signature authority rather than copied tags; direct public APIs fail loud; all-real
-callers remain straightforward; and the evidence proposition is checkable from the candidate's own
-stored source/context. Do not solve the spike by deleting standalone APIs or weakening evidence.
+Both candidates-in-context and validator-supplied context passed the support, plan-authority,
+locator, evidence, and all-real gates. B preserves the raw candidate record shapes and stores the
+complete table only in the validated `JaxKernel`, while standalone APIs receive one explicit table
+and plan APIs derive the sole authority from `PreparedPlan.plan.raw.tensorSigs`. The exact signatures,
+private-helper decisions, fixtures, and ten production mutation cycles are now in Task 5 above.
 
 ### No other architecture spike is warranted
 

@@ -320,3 +320,32 @@ Variant B reviews:
 
 The post-`063436d` code-quality re-review reported no significant remaining issue. Default build,
 targeted JAX/Executable build, and direct corpus elaboration returned exit 0 after the fixes.
+
+## Decision: GO B
+
+Both variants satisfy selection criteria 1–4: all F2/F3 semantic paths reject before Python,
+candidate/evidence, or executable success; F4 cannot override the prepared table; plan authority is
+`PreparedPlan.plan.raw.tensorSigs`; and standalone errors preserve original locators.
+
+Variant B wins criteria 5–6 from measured—not predicted—differences:
+
+1. Plan-level all-real callers are equally direct in A and B.
+2. Standalone render/candidate conversion takes the same one complete-table argument in both.
+3. B adds a complete-table argument at standalone validation, but preserves both stable raw
+   candidate record shapes. A instead changes both candidate records and makes every raw candidate
+   carry the complete table before validation.
+4. Both must retain one complete context in each validated kernel so its evidence proposition remains
+   checkable. B stores it only at that evidence-bearing boundary, avoiding a second authority in the
+   public raw candidate.
+
+Selected invariant: a standalone supplied table is its semantic authority and must first re-establish
+`checkAssign` for the same raw assignment, then pass the JAX support policy before Python, a candidate,
+or evidence is returned. A plan-level API never accepts a parallel table; it derives the prepared raw
+table. `JaxKernel` privately stores the validator's table and a proof of contextual well-formedness.
+`JaxExecutableWellFormed` requires each stored table to equal the prepared table and each candidate
+assignment to equal the corresponding checked step. Only then may private construction expose
+`orderedReference64`.
+
+The one unresolved production follow-up is the pre-existing einsum exact-axis recomputation weakness
+identified during Variant A review. It does not affect this A/B choice, was not worsened, and is
+removed from the final branch tree together with every temporary prototype.
