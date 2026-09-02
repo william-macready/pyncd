@@ -299,8 +299,24 @@ Variant B mutation cycles:
 | ID | Concrete mutation | Observed fail | Restored pass |
 |---|---|---|---|
 | B1 | Skip source dtype rejection while retaining destination/algebra/unary/Iverson policy | Exit 1: direct `checkJaxAssignSupport`, affine/einsum validator, contextual well-formedness, private constructor, all renderer/lowerer, IO fixture, and F3 guards fail | `ExecutableTest` + Codegen pass |
-| B2 | At plan conversion, replace authoritative signatures with a same-shape all-`f64` mapped table | Exit 1: direct plan-conversion F2 gate and F3 step-1 gate fail | Codegen passes |
+| B2 | Temporarily add a caller table to plan conversion and pass F4's same-shape all-`f64` substitute | Exit 1: `testVariantBPlanAuthoritySubstitutionRejected` fails specifically at the plan boundary | Codegen passes after restoring the deriving-only signature |
 | B3 | Change the plan conversion signature to accept caller context and supply all-real context only for F3 | Exit 1: exact F3 plan-boundary guard fails | Codegen passes after restoring the one-argument, deriving API |
-| B4 | Rotate context removal across the lowerAssign dominator, affine render dominator, affine candidate conversion, and einsum candidate conversion | Named failures cover every retained renderer/lowerer/candidate-conversion entry, including both plan modes and `buildAssignFixture` | All rotations restored; direct guards pass |
+| B4a | Remove `lowerAssign`'s support gate | Named failures: `lowerAssign`, `lowerPlan`, `generateForward`, einsum `generateNamed` | Each named guard passes after restore |
+| B4b | Remove affine-node support gate | Named failures: positional/named plan render, standalone render, affine `generateNamed`, `buildAssignFixture` | Each named guard passes after restore |
+| B4c | Remove affine candidate-conversion gate | Named failures: affine conversion, plan conversion, F3 exact-step guard | Each named guard passes after restore |
+| B4d | Remove einsum candidate-conversion gate | Named failure: einsum conversion | Guard passes after restore |
+| B4e | Stop re-running `checkAssign` under standalone supplied context | All four mismatched-shape context guards fail: `lowerAssign`, standalone affine render, both candidate conversions | All four pass after restore |
 | B5 | Skip support validation and validate/construct with an all-real forged table before assigning evidence | Exit 1: both candidate-kind F2 guards and plan context/assignment guards fail; affine candidate can otherwise expose `orderedReference64` | `ExecutableTest` + Codegen pass |
 | B6 | Compare only the first validated kernel's cached context, then ignore later kernel contexts | Exit 1: F3 step-1 context-substitution guard fails; F4's step-0 check remains intact | Codegen passes |
+
+Variant B reviews:
+
+| Lens | Finding | Resolution |
+|---|---|---|
+| Specification | No significant issue | No change |
+| Code quality | Standalone supplied tables checked dtype support but were not re-run through structural `checkAssign` | Fixed in `063436d`; `invalidSignatureContext` is located and four mismatched-shape guards fail/restore/pass under B4e |
+| Code quality | Three context-free affine validation helpers remained public | Fixed in `063436d`; helpers are private behind contextual `validateAffineTable` |
+| Code quality | B2 did not directly trip F4; B4 record was aggregate | B2 re-run with a caller-table mutation against the F4 guard; B4a-e now record each named fail/restore/pass rotation |
+
+The post-`063436d` code-quality re-review reported no significant remaining issue. Default build,
+targeted JAX/Executable build, and direct corpus elaboration returned exit 0 after the fixes.
