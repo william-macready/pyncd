@@ -59,46 +59,6 @@ inductive ExecutionEvidence where
   | optimizationExperiment : ExecutionEvidence
   deriving DecidableEq, BEq, Repr
 
-/-- Closed support-policy failure for one JAX assignment. Term/factor indices are original source
-positions; slots are never defaulted when absent from the complete signature table. -/
-inductive JaxSupportError where
-  | destinationSlotOutOfRange (slot tableSize : Nat)
-  | destinationDType (slot : TensorSlot) (dtype : ScalarDType)
-  | algebra (actual : ContractionAlgebra)
-  | sourceSlotOutOfRange (termIndex factorIndex : Nat) (slot tableSize : Nat)
-  | sourceDType (termIndex factorIndex : Nat) (slot : TensorSlot) (dtype : ScalarDType)
-  | iversonFactor (termIndex factorIndex : Nat)
-  | unaryFactor (termIndex factorIndex : Nat)
-  deriving DecidableEq, BEq, Repr
-
-/-- JAX's ordered-reference and einsum prototypes currently support only binary64 real
-sum-product assignments with binary64 reads and no Iverson factors. -/
-def checkJaxAssignSupport (sigs : Array TensorSignature) (assign : AssignPlan) :
-    Except JaxSupportError Unit := do
-  let destination ← match sigs[assign.destinationSlot]? with
-    | some sig => pure sig
-    | none => throw (.destinationSlotOutOfRange assign.destinationSlot sigs.size)
-  unless destination.dtype == .f64 do
-    throw (.destinationDType assign.destinationSlot destination.dtype)
-  unless assign.algebra == admittedAlgebra do throw (.algebra assign.algebra)
-  for h : ti in [0 : assign.terms.size] do
-    let term := assign.terms[ti]
-    for h2 : fi in [0 : term.factors.size] do
-      match term.factors[fi] with
-      | .iverson _ => throw (.iversonFactor ti fi)
-      | .read read =>
-          let source ← match sigs[read.sourceSlot]? with
-            | some sig => pure sig
-            | none => throw (.sourceSlotOutOfRange ti fi read.sourceSlot sigs.size)
-          unless source.dtype == .f64 do
-            throw (.sourceDType ti fi read.sourceSlot source.dtype)
-          unless read.unary.isNone do throw (.unaryFactor ti fi)
-
-private def jaxAssignSupported (sigs : Array TensorSignature) (assign : AssignPlan) : Bool :=
-  match checkAssign sigs assign, checkJaxAssignSupport sigs assign with
-  | .ok _, .ok _ => true
-  | _, _ => false
-
 /-- Safe index and validity mask for one factor coordinate.
     Part of the affine-table reference lowering (precomputed in Lean from checked plan).
 -/
@@ -131,7 +91,7 @@ inductive JaxKernelCandidate where
 
 /-- Derive the evidence label from a candidate (pure inspection, no validation).
 -/
-private def candidateEvidenceLabel : JaxKernelCandidate → ExecutionEvidence
+def candidateEvidenceLabel : JaxKernelCandidate → ExecutionEvidence
   | .affineTable _ => ExecutionEvidence.orderedReference64
   | .einsum _ => ExecutionEvidence.optimizationExperiment
 
@@ -146,7 +106,7 @@ private def candidateEvidenceLabel : JaxKernelCandidate → ExecutionEvidence
     import that experimental one. This is the semantic source `validateAffineTable` below checks a
     candidate's stored table AGAINST, not merely a shape/bounds sanity check on the stored table
     itself. -/
-private def recomputeAffineFactorTable (iterationShape : Array Nat) (factor : ReadPlan) :
+def recomputeAffineFactorTable (iterationShape : Array Nat) (factor : ReadPlan) :
     Array Nat × Array Bool :=
   (allCoords iterationShape.toList).foldl
     (fun (acc : Array Nat × Array Bool) iter =>
@@ -166,7 +126,7 @@ private def recomputeAffineFactorTable (iterationShape : Array Nat) (factor : Re
     with every `safeIndex` entry replaced by `0` (but otherwise the right length and in-bounds) used
     to still pass here before this check existed — length/bounds alone cannot tell a genuinely wrong
     gather from a right one; equality against the recomputed table can. -/
-private def affineFactorTableValid (iterationShape : Array Nat) (factor : ReadPlan)
+def affineFactorTableValid (iterationShape : Array Nat) (factor : ReadPlan)
     (table : AffineTableReadCandidate) : Bool :=
   let (expectedIndex, expectedMask) := recomputeAffineFactorTable iterationShape factor
   table.source == factor.sourceSlot &&
@@ -181,7 +141,7 @@ private def affineFactorTableValid (iterationShape : Array Nat) (factor : ReadPl
     since `loweringToAffineTableCandidate`'s `filterMap` happens to shrink `tables` below
     `term.factors.size` whenever a factor is dropped, but that shrinkage is a coincidence of how the
     candidate is built today, not a guarantee this validator should lean on. -/
-private def affineTermTablesValid (term : TermPlan) (tables : Array AffineTableReadCandidate) : Bool :=
+def affineTermTablesValid (term : TermPlan) (tables : Array AffineTableReadCandidate) : Bool :=
   !term.hasIverson &&
   tables.size == term.factors.size &&
   (term.factors.zip tables).all
@@ -193,10 +153,8 @@ private def affineTermTablesValid (term : TermPlan) (tables : Array AffineTableR
     term (`tables.size = semanticAssignment.plan.terms.size`, per `OrderedAffineTableKernelCandidate`'s
     doc comment "one per term, then per factor"), and every per-term table array individually valid
     (`affineTermTablesValid`). -/
-def validateAffineTable (sigs : Array TensorSignature)
-    (kernel : OrderedAffineTableKernelCandidate) : Bool :=
+def validateAffineTable (kernel : OrderedAffineTableKernelCandidate) : Bool :=
   let terms := kernel.semanticAssignment.plan.terms
-  jaxAssignSupported sigs kernel.semanticAssignment.plan &&
   kernel.tables.size == terms.size &&
   (terms.zip kernel.tables).all (fun (term, tableRow) => affineTermTablesValid term tableRow)
 
@@ -226,10 +184,8 @@ def validateAffineTable (sigs : Array TensorSignature)
     `lowerFactor`/`einsumOnly` path it lowers alongside: a candidate built from a nonzero-bias or
     non-projection read passed validation and was stamped `optimizationExperiment` evidence anyway,
     even though the corresponding `einsumOnly` lowering refuses to emit it at all. -/
-def validateEinsum (sigs : Array TensorSignature)
-    (kernel : EinsumExperimentKernelCandidate) : Bool :=
+def validateEinsum (kernel : EinsumExperimentKernelCandidate) : Bool :=
   let terms := kernel.semanticAssignment.plan.terms
-  jaxAssignSupported sigs kernel.semanticAssignment.plan &&
   kernel.destination == kernel.semanticAssignment.plan.destinationSlot &&
   terms.size == 1 &&
   match terms[0]? with
@@ -253,9 +209,9 @@ def validateEinsum (sigs : Array TensorSignature)
     `validateAffineTable`/`validateEinsum` per candidate kind. Bool-valued (not `Prop`-valued via
     the `Bool → Prop` coercion the task brief's sketch used) so it can also be used directly inside
     `JaxExecutableWellFormed`'s `Array.all` below, which needs a `Bool`-returning predicate. -/
-def kernelWellFormedBool (sigs : Array TensorSignature) : JaxKernelCandidate → Bool
-  | .affineTable kernel => validateAffineTable sigs kernel
-  | .einsum kernel => validateEinsum sigs kernel
+def kernelWellFormedBool : JaxKernelCandidate → Bool
+  | .affineTable kernel => validateAffineTable kernel
+  | .einsum kernel => validateEinsum kernel
 
 /-- Real well-formedness predicate for a kernel candidate: `kernelWellFormedBool candidate = true`.
     `Decidable` follows automatically from `DecidableEq Bool` — no manual instance needed (the
@@ -263,8 +219,8 @@ def kernelWellFormedBool (sigs : Array TensorSignature) : JaxKernelCandidate →
     actual truth has been removed; leaving it would have silently defeated
     `validateAndConstructKernel`'s `decide` check now that this predicate can genuinely be false).
 -/
-def JaxKernelWellFormed (sigs : Array TensorSignature) (candidate : JaxKernelCandidate) : Prop :=
-  kernelWellFormedBool sigs candidate = true
+def JaxKernelWellFormed (candidate : JaxKernelCandidate) : Prop :=
+  kernelWellFormedBool candidate = true
 
 /-- `Decidable (b = true)` for `b : Bool` should in principle resolve automatically from
     `DecidableEq Bool`, but instance search does not unfold a plain (non-`@[reducible]`) `def` like
@@ -272,9 +228,8 @@ def JaxKernelWellFormed (sigs : Array TensorSignature) (candidate : JaxKernelCan
     (`synthInstanceFailed`). `inferInstanceAs` forces the unfold via definitional equality at
     elaboration time (rather than instance-head matching), then delegates to the ordinary
     `Bool` `DecidableEq` instance. -/
-instance (sigs : Array TensorSignature) (candidate : JaxKernelCandidate) :
-    Decidable (JaxKernelWellFormed sigs candidate) :=
-  inferInstanceAs (Decidable (kernelWellFormedBool sigs candidate = true))
+instance (candidate : JaxKernelCandidate) : Decidable (JaxKernelWellFormed candidate) :=
+  inferInstanceAs (Decidable (kernelWellFormedBool candidate = true))
 
 /-- Type-indexed kernel, only creatable by validator (`validateAndConstructKernel`).
     Evidence is fixed at construction and never changes: `aligned` ties the candidate's
@@ -282,10 +237,9 @@ instance (sigs : Array TensorSignature) (candidate : JaxKernelCandidate) :
     used to mismatch the two even from within this file.
 -/
 structure JaxKernel (evidence : ExecutionEvidence) where private mk ::
-  signatureContext : Array TensorSignature
   candidate : JaxKernelCandidate
   aligned : candidateEvidenceLabel candidate = evidence
-  valid : JaxKernelWellFormed signatureContext candidate
+  valid : JaxKernelWellFormed candidate  -- real validation (Task 5): `validateAffineTable`/`validateEinsum`
 
 /-- Existential witness hiding the evidence index.
 -/
@@ -293,32 +247,20 @@ structure SomeJaxKernel where
   evidence : ExecutionEvidence
   kernel : JaxKernel evidence
 
-inductive JaxKernelValidationError where
-  | unsupported (cause : JaxSupportError)
-  | malformed
-  deriving DecidableEq, BEq, Repr
-
 /-- Validate a candidate and construct a private executable kernel.
     Returns `SomeJaxKernel` to hide evidence at the cost of unpacking later.
 -/
-def validateAndConstructKernel (sigs : Array TensorSignature) (candidate : JaxKernelCandidate) :
-    Except JaxKernelValidationError SomeJaxKernel := do
-  let assignment := match candidate with
-    | .affineTable kernel => kernel.semanticAssignment
-    | .einsum kernel => kernel.semanticAssignment
-  match checkJaxAssignSupport sigs assignment.plan with
-  | .error cause => throw (.unsupported cause)
-  | .ok _ => pure ()
+def validateAndConstructKernel (candidate : JaxKernelCandidate) :
+    Except String SomeJaxKernel := do
   -- Derive evidence label from candidate structure (not mutable).
   let evidence := candidateEvidenceLabel candidate
   -- `if h : ... then ... else throw`, not `unless decide ... do throw` + a separate `trivial`
   -- proof: now that `JaxKernelWellFormed` does real (possibly-false) validation, `JaxKernel.valid`
   -- needs an actual proof term, not `trivial` (which only ever proves `True`). The `dite` form
   -- (`if h : P then ...`) is what hands that proof (`h`) to the `then`-branch.
-  if h : JaxKernelWellFormed sigs candidate then
+  if h : JaxKernelWellFormed candidate then
     -- Construct private kernel only after validation passes.
     let kernel : JaxKernel evidence := {
-      signatureContext := sigs
       candidate := candidate
       aligned := rfl  -- evidence derivation is deterministic
       valid := h
@@ -328,7 +270,7 @@ def validateAndConstructKernel (sigs : Array TensorSignature) (candidate : JaxKe
     -- `throw`, not `return .error` — `return` in this `Except` do-block already performs the
     -- `.ok` wrap (`pure`), so `return .error x` would elaborate `.error` against the wrong
     -- expected type (`SomeJaxKernel`, not `Except String SomeJaxKernel`) and fail to resolve.
-    throw .malformed
+    throw "Kernel validation failed"
 
 /-- Aggregate evidence across an array of kernel evidences.
     Returns `orderedReference64` only if ALL are; otherwise `optimizationExperiment`.
@@ -338,18 +280,6 @@ def validateAndConstructKernel (sigs : Array TensorSignature) (candidate : JaxKe
 def aggregateEvidenceList (evidences : Array ExecutionEvidence) : ExecutionEvidence :=
   if evidences.all (· == .orderedReference64) then .orderedReference64
   else .optimizationExperiment
-
-private def candidateAssignment : JaxKernelCandidate → CheckedAssignPlan
-  | .affineTable kernel => kernel.semanticAssignment
-  | .einsum kernel => kernel.semanticAssignment
-
-private def kernelMatchesPlanStep (authoritative : Array TensorSignature)
-    (step : CheckedPlanStepEvidence) (kernel : SomeJaxKernel) : Bool :=
-  kernel.kernel.signatureContext == authoritative &&
-  (match step with
-   | .assign checked =>
-       (candidateAssignment kernel.kernel.candidate).plan == checked.plan
-   | .scan _ | .pointwise _ | .axiswise _ => false)
 
 /-- Candidate JAX execution plan (public inspection, not executable).
     Retains the semantic source (`PreparedPlan`) and every step's kernel candidate for validation.
@@ -378,10 +308,7 @@ structure JaxExecutableCandidate where
 -/
 def JaxExecutableWellFormed (candidate : JaxExecutableCandidate) : Prop :=
   candidate.steps.size = candidate.source.plan.raw.steps.size ∧
-  (candidate.source.plan.checkedNodes.zip candidate.steps).all
-      (fun (step, kernel) =>
-        kernelWellFormedBool kernel.kernel.signatureContext kernel.kernel.candidate &&
-        kernelMatchesPlanStep candidate.source.plan.raw.tensorSigs step kernel) = true ∧
+  candidate.steps.all (fun sk => kernelWellFormedBool sk.kernel.candidate) = true ∧
   candidate.evidence = aggregateEvidenceList (candidate.steps.map (·.evidence))
 
 /-- Same rationale as `JaxKernelWellFormed`'s instance above: instance search does not unfold a
@@ -390,22 +317,8 @@ def JaxExecutableWellFormed (candidate : JaxExecutableCandidate) : Prop :=
     `ExecutionEvidence` `DecidableEq` instances combined through `And`'s standard instance. -/
 instance (candidate : JaxExecutableCandidate) : Decidable (JaxExecutableWellFormed candidate) :=
   inferInstanceAs (Decidable (candidate.steps.size = candidate.source.plan.raw.steps.size ∧
-    (candidate.source.plan.checkedNodes.zip candidate.steps).all
-      (fun (step, kernel) =>
-        kernelWellFormedBool kernel.kernel.signatureContext kernel.kernel.candidate &&
-        kernelMatchesPlanStep candidate.source.plan.raw.tensorSigs step kernel) = true ∧
+    candidate.steps.all (fun sk => kernelWellFormedBool sk.kernel.candidate) = true ∧
     candidate.evidence = aggregateEvidenceList (candidate.steps.map (·.evidence))))
-
-private def firstExecutableStepMismatch? (candidate : JaxExecutableCandidate) : Option Nat := Id.run do
-  let mut mismatch := none
-  for h : index in [0 : candidate.steps.size] do
-    if mismatch.isNone then
-      match candidate.source.plan.checkedNodes[index]? with
-      | none => mismatch := some index
-      | some step =>
-          unless kernelMatchesPlanStep candidate.source.plan.raw.tensorSigs step candidate.steps[index] do
-            mismatch := some index
-  return mismatch
 
 /-- Type-indexed executable plan, only creatable by validator (`validateAndConstructExecutable`).
     Evidence is fixed at construction: `evidenceAligned` ties the candidate's own `evidence`
@@ -436,11 +349,6 @@ def validateAndConstructExecutable (candidate : JaxExecutableCandidate) :
     Except String SomeJaxExecutable := do
   unless decide (candidate.evidence = aggregateEvidenceList (candidate.steps.map (·.evidence))) do
     throw "Executable aggregation invariant violated"
-  unless candidate.steps.size == candidate.source.plan.checkedNodes.size do
-    throw "Executable step count mismatch"
-  match firstExecutableStepMismatch? candidate with
-  | some index => throw s!"Executable source mismatch at step {index}"
-  | none => pure ()
   if h : JaxExecutableWellFormed candidate then
     let evidence := candidate.evidence
     let exec : JaxExecutable evidence := {

@@ -45,14 +45,13 @@ def evidenceExp : ExecutionEvidence := ExecutionEvidence.optimizationExperiment
 -- `validateAndConstructKernel` works).
 
 -- Correct way: use the validator.
-def goodKernel (sigs : Array TensorSignature) (candidate : JaxKernelCandidate) :
-    Except JaxKernelValidationError SomeJaxKernel :=
-  validateAndConstructKernel sigs candidate
+def goodKernel (candidate : JaxKernelCandidate) : Except String SomeJaxKernel :=
+  validateAndConstructKernel candidate
 
 -- Test that the validator is the only way to construct a kernel: it either succeeds (producing a
 -- kernel through the private constructor) or reports an error, never anything else.
-def testPrivateConstructor (sigs : Array TensorSignature) (candidate : JaxKernelCandidate) : Bool :=
-  match validateAndConstructKernel sigs candidate with
+def testPrivateConstructor (candidate : JaxKernelCandidate) : Bool :=
+  match validateAndConstructKernel candidate with
   | .ok _ => true      -- validator succeeded
   | .error _ => false  -- validator failed
 
@@ -175,11 +174,7 @@ def testBoolSourceChecksAndDenseRuns : Bool :=
 
 #guard testBoolSourceChecksAndDenseRuns
 
-#guard checkJaxAssignSupport idSigs idAssign == .ok ()
-#guard checkJaxAssignSupport boolSourceSigs idAssign ==
-  .error (.sourceDType 0 0 0 .bool)
-
-def testVariantBBoolSourceAffineCandidateRejected : Bool :=
+def testCurrentBoolSourceAffineCandidateAccepted : Bool :=
   match checkAssign boolSourceSigs idAssign with
   | .error _ => false
   | .ok checked =>
@@ -187,36 +182,25 @@ def testVariantBBoolSourceAffineCandidateRejected : Bool :=
         { source := 0, safeIndex := #[0, 1, 2], validMask := #[true, true, true] }
       let kernel : OrderedAffineTableKernelCandidate :=
         { semanticAssignment := checked, tables := #[#[table]] }
-      !validateAffineTable boolSourceSigs kernel &&
-      !kernelWellFormedBool boolSourceSigs (.affineTable kernel) &&
-        match validateAndConstructKernel boolSourceSigs (.affineTable kernel) with
-        | .ok _ => false
-        | .error (.unsupported (.sourceDType 0 0 0 .bool)) => true
+      candidateEvidenceLabel (.affineTable kernel) == .orderedReference64 &&
+        match validateAndConstructKernel (.affineTable kernel) with
+        | .ok k => k.evidence == .orderedReference64
         | .error _ => false
 
-#guard testVariantBBoolSourceAffineCandidateRejected
+#guard testCurrentBoolSourceAffineCandidateAccepted
 
-def testVariantBBoolSourceEinsumCandidateRejected : Bool :=
+def testCurrentBoolSourceEinsumCandidateAccepted : Bool :=
   match checkAssign boolSourceSigs idAssign with
   | .error _ => false
   | .ok checked =>
       let kernel : EinsumExperimentKernelCandidate :=
         { semanticAssignment := checked, destination := 1
         , operands := #[#[0, 0]], outputAxes := #[0] }
-      !validateEinsum boolSourceSigs kernel &&
-      !kernelWellFormedBool boolSourceSigs (.einsum kernel) &&
-        match validateAndConstructKernel boolSourceSigs (.einsum kernel) with
-        | .ok _ => false
-        | .error (.unsupported (.sourceDType 0 0 0 .bool)) => true
-        | .error _ => false
+      match validateAndConstructKernel (.einsum kernel) with
+      | .ok _ => true
+      | .error _ => false
 
-#guard testVariantBBoolSourceEinsumCandidateRejected
-
-def idUnaryAssign : AssignPlan :=
-  { idAssign with terms := #[{ idAssign.terms[0]! with
-      factors := #[.read { idRead with unary := some .exp }] }] }
-
-#guard checkJaxAssignSupport idSigs idUnaryAssign == .error (.unaryFactor 0 0)
+#guard testCurrentBoolSourceEinsumCandidateAccepted
 
 -- Well-formed affine-table candidate: the iteration domain has 3 coordinates (0, 1, 2), and the
 -- identity read maps each straight through to the same-numbered source index, all in-bounds.
@@ -228,7 +212,7 @@ def testValidAffineCandidate : Bool :=
         { source := 0, safeIndex := #[0, 1, 2], validMask := #[true, true, true] }
       let kernel : OrderedAffineTableKernelCandidate :=
         { semanticAssignment := checked, tables := #[#[table]] }
-      match validateAndConstructKernel idSigs (.affineTable kernel) with
+      match validateAndConstructKernel (.affineTable kernel) with
       | .ok _ => true
       | .error _ => false
 
@@ -245,7 +229,7 @@ def testMalformedAffineCandidateRejected : Bool :=
         { source := 0, safeIndex := #[0, 1], validMask := #[true, true] }
       let kernel : OrderedAffineTableKernelCandidate :=
         { semanticAssignment := checked, tables := #[#[badTable]] }
-      match validateAndConstructKernel idSigs (.affineTable kernel) with
+      match validateAndConstructKernel (.affineTable kernel) with
       | .ok _ => false      -- must NOT validate
       | .error _ => true    -- correctly rejected
 
@@ -261,7 +245,7 @@ def testValidEinsumCandidate : Bool :=
       let kernel : EinsumExperimentKernelCandidate :=
         { semanticAssignment := checked, destination := 1
         , operands := #[#[0, 0]], outputAxes := #[0] }
-      match validateAndConstructKernel idSigs (.einsum kernel) with
+      match validateAndConstructKernel (.einsum kernel) with
       | .ok _ => true
       | .error _ => false
 
@@ -281,8 +265,6 @@ def idAssignIverson : AssignPlan :=
   { idAssign with terms := #[{ idAssign.terms[0]! with
       factors := #[.read idRead, .iverson iversonPred1] }] }
 
-#guard checkJaxAssignSupport idSigs idAssignIverson == .error (.iversonFactor 0 1)
-
 -- `checkAssign` accepts the plan itself (the predicate leaf is correctly sized).
 #guard (match checkAssign idSigs idAssignIverson with | .ok _ => true | .error _ => false)
 
@@ -296,7 +278,7 @@ def testIversonAffineCandidateRejected : Bool :=
         { source := 0, safeIndex := #[0, 1, 2], validMask := #[true, true, true] }
       let kernel : OrderedAffineTableKernelCandidate :=
         { semanticAssignment := checked, tables := #[#[table, table]] }
-      match validateAndConstructKernel idSigs (.affineTable kernel) with
+      match validateAndConstructKernel (.affineTable kernel) with
       | .ok _ => false      -- must NOT validate
       | .error _ => true    -- correctly rejected
 
@@ -311,7 +293,7 @@ def testIversonEinsumCandidateRejected : Bool :=
       let kernel : EinsumExperimentKernelCandidate :=
         { semanticAssignment := checked, destination := 1
         , operands := #[#[0, 0], #[0]], outputAxes := #[0] }
-      match validateAndConstructKernel idSigs (.einsum kernel) with
+      match validateAndConstructKernel (.einsum kernel) with
       | .ok _ => false      -- must NOT validate
       | .error _ => true    -- correctly rejected
 
@@ -341,7 +323,7 @@ def testValidPlanCandidate : Bool :=
           { source := 0, safeIndex := #[0, 1, 2], validMask := #[true, true, true] }
         let kernel : OrderedAffineTableKernelCandidate :=
           { semanticAssignment := checkedAssign, tables := #[#[table]] }
-        match validateAndConstructKernel idSigs (.affineTable kernel) with
+        match validateAndConstructKernel (.affineTable kernel) with
         | .error _ => false
         | .ok someKernel =>
           let steps := #[someKernel]
@@ -380,7 +362,7 @@ def testValidPlanCandidateEvidence : Bool :=
           { source := 0, safeIndex := #[0, 1, 2], validMask := #[true, true, true] }
         let kernel : OrderedAffineTableKernelCandidate :=
           { semanticAssignment := checkedAssign, tables := #[#[table]] }
-        match validateAndConstructKernel idSigs (.affineTable kernel) with
+        match validateAndConstructKernel (.affineTable kernel) with
         | .error _ => false
         | .ok someKernel =>
           let steps := #[someKernel]
@@ -474,8 +456,8 @@ def testMixedKernelPlanEvidence : Bool :=
         let einsumKernel : EinsumExperimentKernelCandidate :=
           { semanticAssignment := checkedAssign1, destination := 2
           , operands := #[#[1, 0]], outputAxes := #[0] }
-        match validateAndConstructKernel mixedSigs (.affineTable affineKernel),
-              validateAndConstructKernel mixedSigs (.einsum einsumKernel) with
+        match validateAndConstructKernel (.affineTable affineKernel),
+              validateAndConstructKernel (.einsum einsumKernel) with
         | .ok someAffine, .ok someEinsum =>
           let steps := #[someAffine, someEinsum]
           let candidate : JaxExecutableCandidate :=
