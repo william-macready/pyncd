@@ -169,7 +169,8 @@ Wave F" table:
 | Missing capability | Consequence after Wave F |
 |---|---|
 | Pointwise and axiswise nonlinearities | **Admitted** (thread 4): top-level (`checkNonlinTopLevel`) and inside scan `base`/`recur` blocks (`checkNonlinScanBlock`), residualized into a two-step `assign → pointwise/axiswise` chain. `unsupportedNonlin == 0` in the `DifferentialTest.lean` scan corpus. |
-| Masks, predicates, Iverson/Boolean factors, and Boolean outputs | Rejected rather than represented in `AssignPlan` or `CheckedPlanBlock`. |
+| Masks, predicates, and Iverson factors | **Admitted** (Slice 5, `predicate_boolean_backend_parity.md`): a positional UID-free predicate IR (`PosBoolExpr`) plus an ordered `FactorPlan` (`read | iverson`); `checkAssign` width-checks predicate leaves and Dense evaluates them per contraction coordinate (`true` ⇒ `1.0`, `false` annihilates). Source `BoolExpr` lowers via `lowerFactorPredicate`; axiswise `where=` masks via `RawAxiswisePlan.mask` + `lowerMaskPredicate`. `maskOrPredicate`/`maskedAxiswiseNotSupported` retained producer-less. |
+| Boolean/predicate declared outputs | Rejected (`booleanOutput`) rather than represented in `AssignPlan` or `CheckedPlanBlock`. |
 | Unary factor functions | Rejected in ordinary assignments and scans. |
 | Max/min aggregation | **Admitted** (max/min-aggregation thread): `checkAggOp` admits `.max`/`.min`; the compiler selects the tropical algebra (`algebraForAgg`) and Dense reduces with `max`/`min` seeded at `−∞`/`+∞`. `unsupportedAgg == 0` in the `DifferentialTest.lean` scan corpus. |
 | Scatter and affine LHS writes | Wave D source semantics are not yet represented by checked `EvalPlan`. |
@@ -184,9 +185,11 @@ table they reproduce: the nonlinearity plan's Task 4 (`nonlinearity_split_pair_d
 §3.6) admitted pointwise/axiswise nonlinearities at top level and inside scan blocks, the
 max/min-aggregation thread (`max_min_aggregation.md`) admitted `.max`/`.min` aggregation, and the
 unary-factor thread (`unary_factor_functions.md`) admitted unary factors, so those
-rows no longer describe the current boundary. Everything else in this table is unchanged and
-re-derived against `capabilityPreflight` (`Eval/Plan/Compile.lean`) on this branch. The remaining
-still-rejected families are masks/predicates/Iverson factors and Boolean outputs,
+rows no longer describe the current boundary. The masks/predicates/Iverson-factors row was
+refreshed for Slice 5 (`predicate_boolean_backend_parity.md`), which admitted predicate factors and
+axiswise `where=` masks (Boolean *declared outputs* remain rejected). Everything else in this table
+is unchanged and re-derived against `capabilityPreflight` (`Eval/Plan/Compile.lean`) on this branch.
+The remaining still-rejected families are Boolean declared outputs,
 scatter and affine LHS writes, non-`f64` dtypes and dynamic shapes,
 and `.scanPre`/callbacks/predicate-dispatch scan bodies.*
 
