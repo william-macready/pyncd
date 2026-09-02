@@ -160,4 +160,60 @@ Current external callers are: `EvalPlanSmoke.generateNamed`; `EvalPlanAffineSmok
 
 ## Variant measurements
 
-To be completed after both independently compiled prototypes and all mutations.
+### Variant A — candidate-owned complete context
+
+Commits: implementation `f57430b`; per-entry mutation guards `d7975a7`.
+
+Measured public signatures:
+
+```text
+lowerAssign (sigs : Array TensorSignature) (nodeIndex : Nat) (a : AssignPlan)
+renderAffineAssign (sigs : Array TensorSignature) (c : CheckedAssignPlan)
+loweringToAffineTableCandidate (sigs : Array TensorSignature) (nodeIndex : Nat)
+  (assign : CheckedAssignPlan) : Except JaxCodegenError OrderedAffineTableKernelCandidate
+loweringToEinsumCandidate (sigs : Array TensorSignature) (nodeIndex : Nat)
+  (assign : CheckedAssignPlan) : Except JaxCodegenError EinsumExperimentKernelCandidate
+```
+
+`lowerPlan`, `generateForward`, both affine plan renderers, `generateNamed`, and
+`lowerCheckPlanToCandidate` retain direct plan-level signatures and derive only
+`PreparedPlan.plan.raw.tensorSigs` (or the same table from `CheckedEvalPlan.raw`). `lowerFactor`,
+`lowerTerm`, `renderTermLine`, `renderNodeLines`, and the affine factor/term/node/array renderers
+became private. `candidateEvidenceLabel` became private. Both candidate records gained
+`signatureContext : Array TensorSignature`; validator signatures stayed direct because they inspect
+that stored table.
+
+Every candidate therefore owns one complete table value. A two-step plan has two candidate fields
+containing the complete table (Lean arrays may structurally share at runtime, but the API/proof
+surface duplicates authority per step). Per kernel, well-formedness re-runs `checkAssign` under the
+stored table, checks JAX destination/algebra/source support, and checks affine/einsum structure.
+Executable well-formedness adds two step obligations: candidate table equals the prepared table and
+candidate assignment equals the corresponding checked assignment. The first mismatch is reported
+at the real outer index.
+
+All-real caller migration: inline candidate tests pass one complete `idSigs`/`mixedSigs` table at
+the conversion boundary; plan-level callers remain one-argument/direct. The two non-default affine
+drivers also needed temporary adaptation to the current `CheckedPlanStepEvidence` sum and existing
+`Except` render signatures; those failures existed at the Task 0 SHA and are not attributed to the
+ownership prototype.
+
+Validation:
+
+- Production/check/test/Jax builds: exit 0. Warm timings: 8,497 jobs in 6.50 s; 8,514 jobs in
+  6.46 s. Direct `EvalPlanAffineCorpus.lean` elaboration: exit 0 after its temporary caller migration.
+- `run-evalplan.sh`: exit 0, 27.37 s; einsum eager/JIT/gradient smoke passed.
+- `run-evalplan-affine.sh`: exit 0, 31.69 s; 20 fixtures eager/JIT bit-identical to Dense.
+- `run-evalplan-affine-corpus.sh`: exit 0, 743.70 s; 3,832 cases, zero eager mismatches,
+  65 JIT cases, artifact 3,424,195 bytes.
+- `run-scaling-probe.sh`: exit 0, 28.28 s; 177,547-byte artifact; eager/JIT bit-identical.
+
+Variant A mutation cycles:
+
+| ID | Concrete mutation | Observed fail | Restored pass |
+|---|---|---|---|
+| A1 | Replace source-dtype rejection with `pure ()` while retaining destination/algebra checks | Exit 1: both kernel-kind F2 guards, every rendering-mode aggregate, IO fixture, and F3 guard fail | `ExecutableTest` + Codegen pass |
+| A2 | Remove complete-table equality from `kernelMatchesPlanStep` | Exit 1: F4 step-0 substitution and F3 step-1 context-substitution guards fail | Codegen passes |
+| A3 | Replace corresponding-assignment equality with `true` | Exit 1: step-0-kernel-reused-at-step-1 guard fails at its expected step-1 assertion | Codegen passes |
+| A4 | Rotate the single contextual dominator through all retained entries: remove `lowerAssign` gate, affine-node gate, affine-candidate gate, then einsum-candidate gate | Named direct guards fail respectively for `lowerAssign`/`lowerPlan`/`generateForward`/einsum `generateNamed`; both affine plan renderers/standalone renderer/affine `generateNamed`/`buildAssignFixture`; affine conversion/plan conversion; einsum conversion | Each rotation restored; all 11 direct guards pass |
+| A5 | Make `candidateEvidenceLabel` public and assert F2 cannot observe ordered evidence | Exit 1: F2 directly returns `orderedReference64` before validation | `ExecutableTest` passes; helper private again |
+| A6 | Emit outer index `0` for every support failure | Exit 1: F3 exact step-1 guard fails | Codegen passes |
