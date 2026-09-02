@@ -187,10 +187,12 @@ def testVariantBBoolSourceAffineCandidateRejected : Bool :=
         { source := 0, safeIndex := #[0, 1, 2], validMask := #[true, true, true] }
       let kernel : OrderedAffineTableKernelCandidate :=
         { semanticAssignment := checked, tables := #[#[table]] }
-      match validateAndConstructKernel boolSourceSigs (.affineTable kernel) with
-      | .ok _ => false
-      | .error (.unsupported (.sourceDType 0 0 0 .bool)) => true
-      | .error _ => false
+      !validateAffineTable boolSourceSigs kernel &&
+      !kernelWellFormedBool boolSourceSigs (.affineTable kernel) &&
+        match validateAndConstructKernel boolSourceSigs (.affineTable kernel) with
+        | .ok _ => false
+        | .error (.unsupported (.sourceDType 0 0 0 .bool)) => true
+        | .error _ => false
 
 #guard testVariantBBoolSourceAffineCandidateRejected
 
@@ -201,10 +203,12 @@ def testVariantBBoolSourceEinsumCandidateRejected : Bool :=
       let kernel : EinsumExperimentKernelCandidate :=
         { semanticAssignment := checked, destination := 1
         , operands := #[#[0, 0]], outputAxes := #[0] }
-      match validateAndConstructKernel boolSourceSigs (.einsum kernel) with
-      | .ok _ => false
-      | .error (.unsupported (.sourceDType 0 0 0 .bool)) => true
-      | .error _ => false
+      !validateEinsum boolSourceSigs kernel &&
+      !kernelWellFormedBool boolSourceSigs (.einsum kernel) &&
+        match validateAndConstructKernel boolSourceSigs (.einsum kernel) with
+        | .ok _ => false
+        | .error (.unsupported (.sourceDType 0 0 0 .bool)) => true
+        | .error _ => false
 
 #guard testVariantBBoolSourceEinsumCandidateRejected
 
