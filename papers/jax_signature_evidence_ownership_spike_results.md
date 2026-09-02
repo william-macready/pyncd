@@ -13,7 +13,7 @@
 - `lake build JaxExperiment Eval.Plan.ExecutableTest`: exit 0, 8,513 jobs, 6.61 s replay
   (user 3.75 s, sys 5.15 s).
 - `lake env lean experiments/jax_bridge/EvalPlanAffineCorpus.lean` exposed a pre-existing,
-  non-default-driver failure at `c8ed102`: four projections of `.plan` from
+  non-default-driver failure at `c8ed102`: five projections of `.plan` from
   `CheckedPlanStepEvidence` no longer elaborate. Both candidate prototypes include the required
   temporary caller migration and the final revert restores this starting behavior; no retained
   production repair is claimed by this disposable spike.
@@ -347,8 +347,9 @@ assignment to equal the corresponding checked step. Only then may private constr
 `orderedReference64`.
 
 The one unresolved production follow-up is the pre-existing einsum exact-axis recomputation weakness
-identified during Variant A review. It does not affect this A/B choice, was not worsened, and is
-removed from the final branch tree together with every temporary prototype.
+identified during Variant A review. It does not affect this A/B choice and was not worsened. It
+remains in the restored `c8ed102` production tree; only the temporary ownership prototypes were
+removed.
 
 ## Audit trail and final restoration
 
