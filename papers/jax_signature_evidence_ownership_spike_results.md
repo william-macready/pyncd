@@ -36,7 +36,7 @@ Harness mutations:
 | ID | Mutation | Observed failure | Restore |
 |---|---|---|---|
 | H1 | Restore `.f64`-only reads and dtype equality | Exit 1; three `ExecutableTest` F2 guards plus Codegen F2/F3/F4 guards fail | Restored; targeted builds pass |
-| H2 | Put F3's Boolean-read assignment at step 0 while retaining expected step 1 | Exit 1; `firstBoolReadLocation ... == some (1,0,0,1)` fails | Restored; Codegen builds |
+| H2 | Put F3's Boolean-read assignment at step 0 while retaining expected step 1 | Re-run after the review fix: exit 1; `firstBoolReadLocation ... == some (1,0,0,2)` fails | Restored; Codegen builds |
 
 ## Complete Task 1 public-definition inventory
 
