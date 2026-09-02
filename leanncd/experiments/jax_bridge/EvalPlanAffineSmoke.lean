@@ -157,11 +157,8 @@ def buildNamedFixture (name : String) (prog : TLProgram) (inputs : HashMap Strin
   let (prepared, report) ← prepareNamed name prog inputs
   let inputsDict ← renderInputsDict prepared inputs
   let expectedDict ← renderExpectedDict prepared report
-  let renderedPlan ← match renderAffinePlanNamed prepared with
-    | .ok rendered => pure rendered
-    | .error error => throw (IO.userError s!"{name} JAX render failed: {repr error}")
   pure ("{\"name\": " ++ pyStrLit name ++ ", \"kind\": \"named\", \"plan\": " ++
-    renderedPlan ++ ", \"inputs\": " ++ inputsDict ++
+    renderAffinePlanNamed prepared ++ ", \"inputs\": " ++ inputsDict ++
     ", \"expected\": " ++ expectedDict ++ "}")
 
 def buildPositionalFixture (name : String) (raw : RawEvalPlan) (inputs : Array DenseTensor) :
@@ -174,11 +171,8 @@ def buildPositionalFixture (name : String) (raw : RawEvalPlan) (inputs : Array D
     | .error e => throw (IO.userError s!"{name} Dense graph run failed: {repr e}")
   let inputEntries := String.intercalate ", " (inputs.toList.map pyTensorEntry)
   let expectedEntries := String.intercalate ", " (expected.toList.map pyTensorEntry)
-  let renderedPlan ← match renderAffinePlanPositional checked with
-    | .ok rendered => pure rendered
-    | .error error => throw (IO.userError s!"{name} JAX render failed: {repr error}")
   pure ("{\"name\": " ++ pyStrLit name ++ ", \"kind\": \"positional\", \"plan\": " ++
-    renderedPlan ++ ", \"inputs\": [" ++ inputEntries ++
+    renderAffinePlanPositional checked ++ ", \"inputs\": [" ++ inputEntries ++
     "], \"expected_store\": [" ++ expectedEntries ++ "]}")
 
 end JaxBridge.AffineSmoke
