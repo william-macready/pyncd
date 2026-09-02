@@ -1,10 +1,10 @@
-# Boolean / predicate outputs in the checked `EvalPlan` backend
+# Task 4 — Boolean / predicate outputs in the checked `EvalPlan` backend
 
 **Status:** implementation plan, verified against the tree at commit `ae00fcc`; not implemented.
 This closes the current checked-backend rejection of `Decl.predicate` by
 `CapabilityError.booleanOutput`. It does not add native Boolean storage or JAX Boolean execution.
 
-This plan supersedes the Item 4 sketch in
+This plan supersedes the Task 4 sketch in
 [`predicate_boolean_backend_parity.md`](predicate_boolean_backend_parity.md). That sketch correctly
 identified the Float carrier and most signature plumbing, but current inspection found three
 additional requirements: direct `ScheduledProgram` inputs must defensively re-establish predicate
@@ -264,7 +264,10 @@ Task boundaries pass the reviewer-rejection test: declaration authority, local c
 source-facing top-level compilation, scan state/write semantics, and experimental backend/docs each
 have an independent failure mode and rollback surface.
 
-### Task 1 — Make declaration and source-invariant authority coherent
+The backend inventory's Task 4 is split into five independently reviewable implementation tasks,
+numbered 4.1–4.5.
+
+### Task 4.1 — Make declaration and source-invariant authority coherent
 
 **Files**
 
@@ -316,8 +319,8 @@ preflight yet; this task can land with the old Boolean-output rejection.
 9. Clone CompileTest's `contractSched` two-input donor, give both real inputs the same shape, and
    remove `B` from `sched.extNames`. Require distinct ordered input bindings and verify the second
    read resolves to `B`'s slot rather than slot zero. Repeat with one extra unused cached external
-   name and require the same prepared bindings. Keep this Task 1 fixture all-real so it lands before
-   Boolean preflight/read admission; Task 3 fixture 4 adds the predicate-signature variant.
+   name and require the same prepared bindings. Keep this Task 4.1 fixture all-real so it lands before
+   Boolean preflight/read admission; Task 4.3 fixture 4 adds the predicate-signature variant.
 
 Mutation cycles must temporarily restore last-wins insertion, let axis declarations participate in
 `combineFor`, swap predicate aggregation/nonlinearity check order, and skip each defensive direct-
@@ -326,7 +329,7 @@ its mutation and pass after restoration. Build `Eval.Plan.CompileTest`, `Eval.Pl
 `Eval.Plan.ScanCompileTest`, and non-default `JaxExperiment` before this task is considered
 independently landable.
 
-### Task 2 — Admit Boolean local assignments and Float-backed Dense execution
+### Task 4.2 — Admit Boolean local assignments and Float-backed Dense execution
 
 **Files**
 
@@ -368,7 +371,7 @@ constant decoding. Keep `f32` rejected and keep nonlinear checkers unchanged.
 Mutate Boolean `reduceOp` to `add`, Boolean identities independently, `.bool` constant decoding, the
 mixed-source admission, and each `f32` rejection. Record observed values and the restored pass.
 
-### Task 3 — Admit top-level predicate outputs and expose signatures
+### Task 4.3 — Admit top-level predicate outputs and expose signatures
 
 **Files**
 
@@ -395,7 +398,7 @@ into admission. Retain `booleanOutput` without producers.
    `ofDenseInputs` guard unchanged.
 3. Clone GnnScatterTest GN2; compile its schedule and construct the declaration-aware signature;
    require `edge : bool` and `X : f64`.
-4. Clone Task 1 fixture 9, declare `B` as predicate while keeping it absent from cached
+4. Clone Task 4.1 fixture 9, declare `B` as predicate while keeping it absent from cached
    `sched.extNames`, then run two variants: change only `B`'s explicit signature to `f64`, then only
    `A`'s to `bool`; require exact `InputSignatureError.dtypeMismatch` expected/actual payloads. The
    `B` variant proves authoritative external-name derivation reaches declaration-aware Boolean
@@ -422,7 +425,7 @@ destination dtype for algebra, accept contradictory explicit signatures, dedupli
 names, reintroduce `booleanOutput`, and add a 0/1 runtime check. Each mutation has a fixture above that
 fails independently.
 
-### Task 4 — Preserve Boolean state and scratch semantics through scans
+### Task 4.4 — Preserve Boolean state and scratch semantics through scans
 
 **Files**
 
@@ -474,13 +477,13 @@ Mutation-test each former compiler `f64` site independently: state signature, ba
 result, state capture, scratch result, and published history (six cycles), plus base/step write dtype
 checks and generated oracle declarations (three cycles). A single endpoint test is not sufficient.
 
-Because dtype is newly live in `checkWrites`, Task 4 must append a row to the existing write
+Because dtype is newly live in `checkWrites`, Task 4.4 must append a row to the existing write
 case-by-class audit. Re-read unchanged siblings `baseWriteRowsOk`, `stepWriteRowsOk`,
 `freeExtentsAgree`, `pinnedLiteralsInRange`, `writesCollide`, and their call sites. Record every cell
 as required, forbidden, or intentionally ignored. If any geometry predicate changes, stop and expand
 to the full recurring write-geometry audit before continuing.
 
-### Task 5 — Close experimental backend gates, corpus, and documentation
+### Task 4.5 — Close experimental backend gates, corpus, and documentation
 
 **Files**
 
@@ -549,10 +552,10 @@ cross-module helper. Raw candidate records remain unchanged; `JaxKernel` gains t
    rejection to name step 1, distinguishing outer index from “first assignment” index 0.
 7. Clone fixture 1 and make its source Boolean too; require destination-dtype rejection before source
    traversal, distinguishing the declared support-check order.
-8. Extend DifferentialTest's existing `predicatePrograms` from its six current entries with Task 3
+8. Extend DifferentialTest's existing `predicatePrograms` from its six current entries with Task 4.3
    fixtures 3, 5, 6, and 7; pin the new exact length and run every entry through checked/reference
    agreement plus its observed value. Do not add them to `PropertyOracle.enumPrograms`.
-9. Add Task 4 fixtures 1 and 2 to the curated three-way scan set; require checked, reference, and
+9. Add Task 4.4 fixtures 1 and 2 to the curated three-way scan set; require checked, reference, and
    independent-unroll equality.
 10. Retain the spike's authority attacks: (a) F4, a Boolean-source `PreparedPlan` plus a same-shape
     all-real table, must have no caller-table plan API and a manually substituted validated kernel
@@ -571,30 +574,30 @@ failing and restored observation.
 
 | Task | Main risk | Fixtures | Mutation cycles | Reviewer rejection boundary |
 |---|---|---:|---:|---|
-| 1 | declaration ambiguity, external-name authority, diagnostic precedence | 11 | 6 | Source semantics can be rejected while all plan execution work stands |
-| 2 | wrong Boolean identities/algebra or accidental type tightening | 12 | 7 | Local checker/Dense semantics can be rejected independently |
-| 3 | signature authority, top-level allocation, result metadata | 12 | 7 | Public top-level boundary can fail while raw execution is correct |
-| 4 | one missed scan `f64`, unsound write dtype, oracle self-mismatch | 8 | 9 | Scan semantics and write evidence are a separate soundness surface |
-| 5 | JAX context authority, unsupported semantics stamped as reference, stale boundary docs | 10 | 10 | Experimental backend evidence/docs can be rejected without rolling back Dense |
+| 4.1 | declaration ambiguity, external-name authority, diagnostic precedence | 11 | 6 | Source semantics can be rejected while all plan execution work stands |
+| 4.2 | wrong Boolean identities/algebra or accidental type tightening | 12 | 7 | Local checker/Dense semantics can be rejected independently |
+| 4.3 | signature authority, top-level allocation, result metadata | 12 | 7 | Public top-level boundary can fail while raw execution is correct |
+| 4.4 | one missed scan `f64`, unsound write dtype, oracle self-mismatch | 8 | 9 | Scan semantics and write evidence are a separate soundness surface |
+| 4.5 | JAX context authority, unsupported semantics stamped as reference, stale boundary docs | 10 | 10 | Experimental backend evidence/docs can be rejected without rolling back Dense |
 | **Total** |  | **53** | **39** |  |
 
-The fixture count, not expected production-line count, makes Tasks 2–4 high-review work. Do not split
-tiny type additions from the checker/compiler that produces them; they have no independent failure
-mode. Do not merge Task 4 into Task 3: a reviewer can approve top-level Bool while rejecting scan
-write evidence or oracle independence.
+The fixture count, not expected production-line count, makes Tasks 4.2–4.4 high-review work. Do not
+split tiny type additions from the checker/compiler that produces them; they have no independent
+failure mode. Do not merge Task 4.4 into Task 4.3: a reviewer can approve top-level Bool while
+rejecting scan write evidence or oracle independence.
 
 ## 5. Diagnostics, order, and mutation requirements
 
 The following order claims each have a distinguishing fixture:
 
-- duplicate declarations before rank checking: Task 1 fixture 4;
+- duplicate declarations before rank checking: Task 4.1 fixture 4;
 - source predicate nonlinearity before predicate aggregation and before plan capability/signature
-  checks: Task 1 fixtures 6–8;
-- first-seen external binding order without cached-`extNames` filtering: Task 1 fixture 9;
-- declaration admission followed by normal statement preflight: Task 3 fixture 11;
-- scan write dtype before rank/geometry: Task 4 fixture 7;
-- JAX outer step index and destination-before-source support checks: Task 5 fixtures 6–7;
-- original all-factor index for Iverson remains pinned by Task 5 fixture 5.
+  checks: Task 4.1 fixtures 6–8;
+- first-seen external binding order without cached-`extNames` filtering: Task 4.1 fixture 9;
+- declaration admission followed by normal statement preflight: Task 4.3 fixture 11;
+- scan write dtype before rank/geometry: Task 4.4 fixture 7;
+- JAX outer step index and destination-before-source support checks: Task 4.5 fixtures 6–7;
+- original all-factor index for Iverson remains pinned by Task 4.5 fixture 5.
 
 All failure assertions compare full constructors and payloads, not only `.isError`. Any new index is an
 index into the original unfiltered source array. No new diagnostic in this plan needs a declaration
@@ -700,7 +703,7 @@ explicitly adjudicated before landing.
 
 ## 8. Risky unknowns / follow-up spikes
 
-### Resolved before Task 5 — JAX signature/evidence ownership
+### Resolved before Task 4.5 — JAX signature/evidence ownership
 
 The mandatory spike is complete:
 [results and mutation record](jax_signature_evidence_ownership_spike_results.md). Decision:
@@ -714,7 +717,7 @@ remained public. B alone passed every selection criterion. It preserves the raw 
 shapes and stores the complete table only in the validated `JaxKernel`, while standalone APIs
 receive one explicit table and plan APIs derive the sole authority from
 `PreparedPlan.plan.raw.tensorSigs`. The exact signatures, private-helper decisions, fixtures, and
-ten production mutation cycles are now in Task 5 above.
+ten production mutation cycles are now in Task 4.5 above.
 
 ### No other architecture spike is warranted
 
@@ -734,8 +737,8 @@ justifies a spike:
 
 | Unknown | Why static inspection cannot settle it | Decision blocked | Bounded experiment | Expected artifact/result | Must precede implementation? |
 |---|---|---|---|---|---|
-| Exact new corpus/build counts | Counts depend on final fixture additions and Lake's compiled target graph | Final documentation numbers only | Run targeted corpus commands and full `lake build`, capture printed counts/jobs, then value-grep old values | Completion-record command log and updated current-state docs | No; run before Task 5 documentation is finalized |
-| New fixture values for coupled Bool/real scans | Several iterations and Float `min`/`max` folds make hand transcription unsafe | Expected-value assertions only | Run the unmodified reference evaluator on each final source donor, then run checked and independent legs | Recorded reference tensors followed by three-way equality | No; run while implementing Tasks 3–4 before assertions are committed |
+| Exact new corpus/build counts | Counts depend on final fixture additions and Lake's compiled target graph | Final documentation numbers only | Run targeted corpus commands and full `lake build`, capture printed counts/jobs, then value-grep old values | Completion-record command log and updated current-state docs | No; run before Task 4.5 documentation is finalized |
+| New fixture values for coupled Bool/real scans | Several iterations and Float `min`/`max` folds make hand transcription unsafe | Expected-value assertions only | Run the unmodified reference evaluator on each final source donor, then run checked and independent legs | Recorded reference tensors followed by three-way equality | No; run while implementing Tasks 4.3–4.4 before assertions are committed |
 
 If either measurement contradicts the semantic contract—rather than merely changing a count—stop.
 Do not redesign storage, coerce values, weaken checker evidence, or broaden JAX execution inside this
