@@ -756,6 +756,8 @@ slice.
   unroller and JAX support siblings above are current, newly re-derived couplings.
 - Independent high-reasoning reviews caught and the assembled plan corrected unreachable scan dtype
   fixtures, exhaustive error-renderer omissions, stale external-name authority, incomplete
-  documentation surfaces, and the JAX signature/evidence unknown now isolated as a mandatory spike.
+  documentation surfaces, and the JAX signature/evidence unknown, which the linked mandatory spike
+  subsequently resolved as GO B.
 - This document contains no Lean code block, so `check-snippet.sh` is not applicable.
-- No implementation code was changed; this branch contains only the planning document.
+- At original plan authoring, no implementation code was changed; this spike branch likewise retains
+  documentation only after reverting every temporary Lean prototype.

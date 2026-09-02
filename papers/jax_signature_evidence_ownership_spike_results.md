@@ -349,3 +349,25 @@ assignment to equal the corresponding checked step. Only then may private constr
 The one unresolved production follow-up is the pre-existing einsum exact-axis recomputation weakness
 identified during Variant A review. It does not affect this A/B choice, was not worsened, and is
 removed from the final branch tree together with every temporary prototype.
+
+## Audit trail and final restoration
+
+| Stage | Commits |
+|---|---|
+| Task 0 | `c8ed102` |
+| Temporary admission/harness | `c1f8c6e`; Task 1 review fixes `4a7358a`, mutation-record correction `a18e038` |
+| Variant A | `f57430b`, guard commit `d7975a7`, review fix `6a8d4ac`; explicit revert `64991fc` |
+| Variant B | `2b1d361`, guard commit `0f87b88`, review fix `063436d`; explicit revert `090bd30` |
+| Harness/shim removal | `4493a7e` |
+
+After both reverts:
+
+- `git diff --exit-code c8ed102 -- leanncd`: exit 0.
+- `git status --porcelain=v1 --untracked-files=all -- leanncd`: empty.
+- final `lake build`: exit 0, 8,659 jobs, 101.62 s (user 94.08 s, sys 79.25 s).
+- final `lake build JaxExperiment Eval.Plan.ExecutableTest`: exit 0, 8,513 jobs, 13.84 s
+  (user 7.69 s, sys 7.83 s).
+- `git diff --name-status c8ed102...HEAD` contains only this new results paper and the updated
+  Boolean-output plan.
+- Repository status contains only the prepared, gitignored `.superpowers/` SDD ledger; it was not
+  modified or removed.
