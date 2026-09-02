@@ -32,12 +32,16 @@ coordinate leaves needs no slicing, and dropping it removes the last worker depe
 The admitted F4 source fragment: rectangular all-axis `+1` step geometry, `iterAt`-pinned (or
 whole-axis free) base regions, arbitrary advancing-dimension positions and order, affine history
 reads with non-positive bias, external reads, contractions, extent one, multiple scan axes, several
-disjoint base writes, and block-local scratch. Nonlinearity and aggregation are carried through
-unchanged, so the two `enumScanCases` templates F4 rejects as capability failures (`relu` steps,
-tropical aggregation) are still unrollable and still checked against the legacy evaluator.
-Everything outside the fragment (predicate factors, scatter, `recurMorphism`, non-literal history
-coordinates) is rejected with a message rather than silently mis-unrolled — plan §4.8's "the oracle
-need not support source syntax rejected by production preflight".
+disjoint base writes, block-local scratch, and — for the predicate/mask parity thread (Task 5.4) —
+source Iverson predicate factors and axiswise `where`-masks, rewritten to the leaf's own coordinates
+by `substBool` (an Iverson takes the actual scan coordinate; a mask zeros every eliminated scan
+seed). Nonlinearity and aggregation are carried through unchanged, so the two `enumScanCases`
+templates F4 rejects as capability failures (`relu` steps, tropical aggregation) are still unrollable
+and still checked against the legacy evaluator. Everything outside the fragment (scatter,
+`recurMorphism`, non-literal history coordinates, and an axiswise reduction along an ELIMINATED scan
+coordinate — `fragment.eliminatedNormalizationAxis`) is rejected with a message rather than silently
+mis-unrolled — plan §4.8's "the oracle need not support source syntax rejected by production
+preflight".
 -/
 namespace LeanNCD.PropertyOracle
 open LeanNCD LeanNCD.Eval Std
@@ -84,6 +88,51 @@ private def pinX : UID → Option Int := fun u => if u == sx.uid then some 5 els
 #guard constIdx pinX (.scale 2 sx) == some 10
 #guard constIdx pinX (.axis sx) == some 5
 #guard constIdx pinX (.const 4) == some 4
+
+/-! ## Predicate / mask index substitution
+
+The oracle rewrites a source Iverson factor and a source axiswise mask INDEPENDENTLY of the checked
+predicate lowering it cross-checks: it substitutes its own literal coordinates into every `IdxExpr`
+leaf of the UID-bearing source `PredArith`/`BoolExpr` with the same `substIdx` used for reads, and
+never calls `lowerFactorPredicate`/`lowerMaskPredicate`, the private positional core, or any
+`PosBoolExpr`/`evalPosBool` machinery. `substPredArith`/`substBool` are the arithmetic/Boolean lifts
+of `substIdx`; a substituted-away axis becomes a literal, an unsubstituted one stays an expression
+that the ordinary assignment evaluator resolves against the leaf's own coordinate. -/
+
+/-- Substitute `σ` into every `IdxExpr` leaf of a `PredArith`, folding literals as `substIdx` does. -/
+def substPredArith (σ : UID → Option Int) : PredArith → PredArith
+  | .embed e => .embed (substIdx σ e)
+  | .mul a b => .mul (substPredArith σ a) (substPredArith σ b)
+  | .iabs a  => .iabs (substPredArith σ a)
+
+/-- Substitute `σ` into every `IdxExpr` leaf of a `BoolExpr`, preserving the Boolean/`RelOp`
+    structure verbatim. -/
+def substBool (σ : UID → Option Int) : BoolExpr → BoolExpr
+  | .rel op a b => .rel op (substPredArith σ a) (substPredArith σ b)
+  | .and a b    => .and (substBool σ a) (substBool σ b)
+  | .or a b     => .or (substBool σ a) (substBool σ b)
+  | .not a      => .not (substBool σ a)
+  | .ieq a b    => .ieq (substPredArith σ a) (substPredArith σ b)
+
+-- TEST-THE-TESTER: an Iverson-style substitution takes the actual scan coordinate; a mask-style one
+-- zeros the seed. Over the pin `sx = 5` (from the block above), `[sx = 5]` becomes `[5 = 5]` and
+-- `[sx = 0]` over the zeroing map becomes `[0 = 0]`.
+private def zeroX : UID → Option Int := fun u => if u == sx.uid then some 0 else none
+#guard substBool pinX (.rel .eq (.embed (.axis sx)) (.embed (.const 5)))
+  == BoolExpr.rel .eq (.embed (.const 5)) (.embed (.const 5))
+#guard substBool zeroX (.rel .eq (.embed (.axis sx)) (.embed (.const 0)))
+  == BoolExpr.rel .eq (.embed (.const 0)) (.embed (.const 0))
+#guard substBool pinX (.rel .lt (.embed (.axis sy)) (.embed (.axis sx)))
+  == BoolExpr.rel .lt (.embed (.affine 0 [(1, sy)])) (.embed (.const 5))
+
+/-- The named fragment rejection for an axiswise operation whose normalization axis is an
+    ELIMINATED scan coordinate. The per-coordinate leaf unroller writes one scan-free leaf per
+    history coordinate, so it cannot group leaves for a reduction along an axis it has already
+    eliminated into leaf coordinates; that shape is pinned directly in Task 5.3, not re-verified by
+    an unrolling here, so the oracle refuses it loudly rather than mis-unrolling. -/
+def fragment.eliminatedNormalizationAxis : String :=
+  "ScanUnroll.fragment.eliminatedNormalizationAxis: an axiswise normalization axis is an eliminated \
+scan coordinate — the per-coordinate leaf unroller cannot group those leaves"
 
 /-! ## Coordinate enumeration -/
 
@@ -326,19 +375,48 @@ private def rewriteFactor (g : ScanGeom) (σ : UID → Option Int)
   | .unaryFn op nm idxs => do
       let (nm', idxs') ← rewriteRead g σ hasLeaf stepCoord nm idxs
       pure (.unaryFn op nm' idxs')
-  | .iverson _ =>
-      .error "a predicate factor inside a scan is outside the oracle's fragment"
+  | .iverson b =>
+      -- A predicate factor takes the ACTUAL scan coordinate: `σ` maps every eliminated scan axis to
+      -- its literal step/base coordinate and leaves every retained output axis as an expression, so
+      -- `substBool σ b` is the residual predicate the ordinary evaluator resolves against the leaf.
+      pure (.iverson (substBool σ b))
 
-/-- Rewrite a whole RHS, preserving source term and factor order, the nonlinearity, and the
-    aggregation (so a step's `relu` or tropical contraction is applied to the leaf exactly as the
-    source applies it to the slice). -/
+/-- Rewrite one statement's nonlinearity for the leaf program. `identity`/`pointwise` pass through.
+    An `.axiswise` operation whose marked normalization axis (`.freeNorm` among `outSlots`, the
+    leaf's own output slots) is an eliminated scan coordinate is REJECTED with the named fragment
+    error — the per-coordinate leaf unroller cannot reduce along an axis it has eliminated. Its mask
+    (when present) is rewritten with the MASK policy, DISTINCT from the Iverson-factor policy: every
+    source seed (scan axis) reads ZERO, mirroring the checked lowering's absence of a seeded axis
+    from the local non-seeded output basis; every eliminated non-seeded `.free`/`.freeNorm` output
+    slot and every retained output axis stays an expression, resolved against the leaf's own
+    enumerated coordinate. -/
+private def rewriteNonlin (g : ScanGeom) (σ : UID → Option Int) (outSlots : List LHSSlot) :
+    Nonlin → Except String Nonlin
+  | .axiswise fn m => do
+      match outSlots.findSome? (fun sl => match sl with | .freeNorm a => some a | _ => none) with
+      | some a =>
+          if g.axes.any (·.uid == a.uid) then .error fragment.eliminatedNormalizationAxis
+      | none => pure ()
+      -- Mask policy (DISTINCT from the Iverson-factor policy `σ`): every source seed (scan axis)
+      -- reads ZERO, never the live step coordinate `σ` — mirroring the checked lowering, whose local
+      -- non-seeded output basis omits the seeded axis so it densifies to coordinate 0 every step.
+      let σmask : UID → Option Int := fun u => if g.axes.any (·.uid == u) then some 0 else none
+      pure (.axiswise fn (m.map (substBool σmask)))
+  | other => pure other
+
+/-- Rewrite a whole RHS, preserving source term and factor order, and rewriting the nonlinearity
+    (`rewriteNonlin`) — the mask must be lowered to the leaf's coordinates and an eliminated-axis
+    reduction rejected — so a step's `relu` or masked contraction is applied to the leaf exactly as
+    the source applies it to the slice. -/
 private def rewriteRHS (g : ScanGeom) (σ : UID → Option Int)
-    (hasLeaf : String → List Nat → Bool) (stepCoord : Option (List Nat)) (r : RHSExpr) :
+    (hasLeaf : String → List Nat → Bool) (stepCoord : Option (List Nat))
+    (outSlots : List LHSSlot) (r : RHSExpr) :
     Except String RHSExpr := do
   let terms ← r.body.terms.mapM (fun t => do
     let fs ← t.factors.mapM (rewriteFactor g σ hasLeaf stepCoord)
     pure ({ factors := fs } : ProdTerm))
-  pure { r with body := { terms } }
+  let nonlin ← rewriteNonlin g σ outSlots r.nonlin
+  pure { r with body := { terms }, nonlin }
 
 /-- One unrolled scan node. -/
 structure Unrolled where
@@ -384,20 +462,25 @@ def unrollScanNode (sizes : HashMap UID Nat) (sc : ScanStmt) : Except String Unr
   -- 4. base leaves: one per (base statement, coordinate in its region), pins substituted.
   let baseStmts ← baseParts.flatMapM (fun (st, fs, reg, r) =>
     reg.mapM (fun t => do
-      let rhs ← rewriteRHS g (ctxSubst g.axes t) hasLeaf none r
+      let rhs ← rewriteRHS g (ctxSubst g.axes t) hasLeaf none fs r
       pure (Stmt.assign (stateLeafName st.name t) fs rhs)))
   -- 5. step leaves: the whole recurrence list, once per step iteration, in source order.
   let stepStmts ← stepCoords.flatMapM (fun u => do
     let σ := ctxSubst g.axes u
     g.recur.mapM (fun s => do
       let r   ← rhsOf s
-      let rhs ← rewriteRHS g σ hasLeaf (some u) r
-      match g.states.find? (fun st => st.name == s.lhsName) with
-      | some st => pure (Stmt.assign (stateLeafName st.name (u.map (· + 1))) st.freeSlots rhs)
-      | none =>
-          match g.advScratch.find? (fun st => st.name == s.lhsName) with
-          | some st => pure (Stmt.assign (scratchLeafName s.lhsName u) st.freeSlots rhs)
-          | none    => pure (Stmt.assign (scratchLeafName s.lhsName u) s.slots rhs)))
+      -- The leaf's own output slots (`.freeNorm`/`.free` faces), resolved BEFORE the rewrite so the
+      -- mask/normalization rewrite sees them: a state or advancing-scratch leaf keeps the state's
+      -- non-advancing free slots, a plain scratch keeps its own slots.
+      let (leafName, leafSlots) :=
+        match g.states.find? (fun st => st.name == s.lhsName) with
+        | some st => (stateLeafName st.name (u.map (· + 1)), st.freeSlots)
+        | none =>
+            match g.advScratch.find? (fun st => st.name == s.lhsName) with
+            | some st => (scratchLeafName s.lhsName u, st.freeSlots)
+            | none    => (scratchLeafName s.lhsName u, s.slots)
+      let rhs ← rewriteRHS g σ hasLeaf (some u) leafSlots r
+      pure (Stmt.assign leafName leafSlots rhs)))
   pure { geom := g, stmts := zeroStmts ++ baseStmts ++ stepStmts, live }
 
 /-! ## History reconstruction -/

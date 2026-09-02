@@ -745,4 +745,61 @@ def testScanStepRejectedLocated : Bool :=
 
 #guard testScanStepRejectedLocated
 
+/-! ### Slice 5.4 — Iverson factor JAX rejection gate (`idRaw` family)
+
+The predicate/mask parity thread admits a source Iverson factor into the checked plan (Task 5.2), but
+this JAX backend lowers only affine reads to einsum/affine-table kernels — a term carrying an Iverson
+predicate has no JAX lowering and is rejected with the located `JaxCodegenError.iversonFactor`
+established in Task 5.1. The fixture inserts an Iverson at factor index 1 of the identity assignment's
+single term (`Y[i] := X[i] · [predicate]`, the `idRaw` family), so `checkPlan` admits it (the
+predicate leaf has width 1 == the term's `iterationShape.size`) but both JAX lowering entry points —
+the einsum body (`generateNamed .einsumOnly` → `lowerTerm`) and the affine-reference static data
+(`generateNamed .affineReference` → `renderAffineTerm`) — reject it with `.iversonFactor 0 0 1`
+(node 0, term 0, all-factor index 1, NOT the filtered-read index 0). -/
+
+def idIversonPred : PosBoolExpr :=
+  .rel .eq (.affine ⟨#[0], 0⟩) (.affine ⟨#[0], 0⟩)
+
+-- `Y[i] := X[i] · [0 = 0]`: the identity read at factor index 0, an Iverson at all-factor index 1.
+def idIversonAssign : AssignPlan :=
+  { idAssign with terms := #[{ idAssign.terms[0]! with
+      factors := #[.read idRead, .iverson idIversonPred] }] }
+
+def idIversonRaw : RawEvalPlan :=
+  { tensorSigs := idSigs, inputSlots := #[0]
+  , steps := #[PlanStep.assign idIversonAssign] }
+
+/-- `checkPlan` admits the Iverson-bearing plan (predicate leaf width 1 == `iterationShape.size`). -/
+def testIversonPlanChecks : Bool :=
+  match checkPlan idIversonRaw with | .ok _ => true | .error _ => false
+
+#guard testIversonPlanChecks
+
+/-- Wrap `idIversonRaw` into a real `PreparedPlan` (via `checkPlan` + `checkBindings`), then generate
+    under `mode`; success is a rejection with the located `iversonFactor 0 0 1`. -/
+def iversonRejectedUnder (mode : LoweringMode) : Bool :=
+  match checkPlan idIversonRaw with
+  | .error _ => false
+  | .ok checkedPlan =>
+    match checkBindings idIversonRaw.inputSlots #[{ name := "x", slot := 0 }] with
+    | .error _ => false
+    | .ok requiredInputs =>
+      let prepared : PreparedPlan :=
+        { plan := checkedPlan
+        , bindings := { requiredInputs, materializedNames := #[{ name := "y", slot := 1 }] }
+        , warnings := [] }
+      match generateNamed mode prepared with
+      | .error (.iversonFactor n t f) => n == 0 && t == 0 && f == 1
+      | _ => false
+
+/-- The einsum lowering body rejects the Iverson factor with its located `iversonFactor 0 0 1`. -/
+def testIversonEinsumRejectedLocated : Bool := iversonRejectedUnder .einsumOnly
+
+#guard testIversonEinsumRejectedLocated
+
+/-- The affine-reference static-plan lowering rejects the same factor with the same located error. -/
+def testIversonAffineRejectedLocated : Bool := iversonRejectedUnder .affineReference
+
+#guard testIversonAffineRejectedLocated
+
 end JaxBridge

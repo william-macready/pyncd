@@ -1276,4 +1276,210 @@ run_cmd do
   | .error m => throwError s!"pin+context predicate scan: {m}"
   | .ok () => pure ()
 
+/-! ## Predicate/mask parity Task 5.4 — curated corpus, three-way scan oracle, and JAX gates
+
+This section closes the slice's differential story:
+
+* a SEPARATE compact `predicatePrograms` corpus of scan-free Iverson/masked donors (RL1, RL6, RL7,
+  RL8, NM4, AT12), run through the checked-vs-reference `planAgrees` differential plus an observed
+  value — kept OUT of `enumPrograms` (which the affine JAX corpus consumes wholesale and treats every
+  affine-reference rejection as fatal, whereas Iverson/masked programs must be JAX-REJECTED, exercised
+  in `EvalPlanCodegen.lean`);
+* the THREE-way scan oracle (`scanParityCheck`) for a curated set of scan predicate/mask cases,
+  enabled by teaching `ScanUnroll` to rewrite predicates and masks (Task 5.4). The 5.2 scan-Iverson
+  fixtures above still use the two-way `scanParity2`; these are the additive three-way runs;
+* a STRUCTURAL check that the unrolled masks carry no eliminated scan coordinate (values alone cannot
+  see a missing substitution — `evalIdx` defaults an absent UID to 0), and the oracle's own
+  `fragment.eliminatedNormalizationAxis` rejection.
+
+The affine JAX corpus's `enumPrograms` source list and positional indices are untouched (this section
+adds NO entry to `enumPrograms`; grep-stable). -/
+
+private def tl54 (shape : List Nat) (xs : List Float) : DenseTensor := ⟨shape, xs.toArray⟩
+
+/-- The curated scan-free predicate/mask corpus, kept SEPARATE from `enumPrograms`. Each entry:
+    name, program, inputs, output key, expected value. RL1/RL6/RL7/RL8 are integer Iverson masks;
+    NM4/AT12 are masked axiswise reductions (`where`-masks). -/
+def predicatePrograms :
+    List (String × TLProgram × HashMap String DenseTensor × String × DenseTensor) :=
+  [ ("RL1 identity",
+      tlprog!{ axis i : ℕ = 3, j : ℕ = 3
+        I[i, j] := [i = j] },
+      ({} : HashMap String DenseTensor), "I",
+      tl54 [3,3] [1,0,0, 0,1,0, 0,0,1])
+  , ("RL6 window-and",
+      tlprog!{ axis i : ℕ = 4, j : ℕ = 4
+        S[i, j] := A[i, j] · [i ≤ j ∧ j ≤ i + 2] },
+      ({} : HashMap String DenseTensor).insert "A" (tl54 [4,4] [1,1,1,1, 1,1,1,1, 1,1,1,1, 1,1,1,1]),
+      "S", tl54 [4,4] [1,1,1,0, 0,1,1,1, 0,0,1,1, 0,0,0,1])
+  , ("RL7 ieq-imul",
+      tlprog!{ axis i : ℕ = 3, j : ℕ = 5
+        M[i, j] := A[i, j] · [ieq(imul(i, 2), j)] },
+      ({} : HashMap String DenseTensor).insert "A" (tl54 [3,5] [1,1,1,1,1, 1,1,1,1,1, 1,1,1,1,1]),
+      "M", tl54 [3,5] [1,0,0,0,0, 0,0,1,0,0, 0,0,0,0,1])
+  , ("RL8 negate-diag",
+      tlprog!{ axis i : ℕ = 2, j : ℕ = 2
+        M[i, j] := A[i, j] · [¬(i = j)] },
+      ({} : HashMap String DenseTensor).insert "A" (tl54 [2,2] [1,2, 3,4]),
+      "M", tl54 [2,2] [0,2, 3,0])
+  , ("NM4 masked-normalize",
+      tlprog!{ axis q : ℕ = 2, s : ℕ = 3
+        Y[q, s.] := normalize(where s ≠ 0)(A[q, s]) },
+      ({} : HashMap String DenseTensor).insert "A" (tl54 [2,3] [1,2,3, 4,1,1]),
+      "Y", tl54 [2,3] [0, 0.4, 0.6, 0, 0.5, 0.5])
+  , ("AT12 sparse-attn",
+      tlprog!{ axis q : ℕ = 3, s : ℕ = 3, d : ℕ = 3
+        tensor A(q, s)
+        A[q, s.] := softmax(where |q - s| ≤ 1 ∨ s = 0)(Q[q, d] · K[s, d]) },
+      (({} : HashMap String DenseTensor).insert "Q" (tl54 [3,3] [1,0,0, 0,1,0, 0,0,1])).insert
+        "K" (tl54 [3,3] [1,0,0, 0,1,0, 0,0,1]),
+      "A", tl54 [3,3] [0.7310585786300049, 0.2689414213699951, 0.0,
+                       0.21194155761708544, 0.5761168847658291, 0.21194155761708544,
+                       0.21194155761708544, 0.21194155761708544, 0.5761168847658291]) ]
+
+/-- One curated case: the checked-vs-reference differential (`planAgrees`, exact `envEq`) plus a
+    tolerant observed-value assertion (`approxEq`, so the softmax/normalize donors compare). -/
+private def checkPredicateProgram
+    (entry : String × TLProgram × HashMap String DenseTensor × String × DenseTensor) :
+    Except String Unit := do
+  let (name, p, inputs, key, expected) := entry
+  match planAgrees p inputs with
+  | .error e => throw s!"{name}: differential leg failed: {e}"
+  | .ok () => pure ()
+  match envOf p inputs with
+  | .error e => throw s!"{name}: reference eval failed: {e}"
+  | .ok env => match env[key]? with
+    | some t =>
+        unless DenseTensor.approxEq t expected do
+          throw s!"{name}: observed {key}={repr t.data}, expected {repr expected.data}"
+    | none => throw s!"{name}: {key} missing from the reference environment"
+
+run_cmd do
+  for entry in predicatePrograms do
+    match checkPredicateProgram entry with
+    | .ok () => pure ()
+    | .error m => throwError s!"PREDICATE CORPUS (5.4) FAILED:\n{m}"
+
+/-! ### Curated three-way scan predicate/mask cases
+
+Now that `ScanUnroll` rewrites predicates and masks, these run through the full THREE-way
+`scanParityCheck` (checked plan, legacy `evalScheduled`, independent scan-free unrolling). -/
+
+-- Recurrence Iverson `S[l+1] := S[l]·[l = 0]` (S0 = 5): the predicate depends on the ACTUAL scan
+-- coordinate, so history `S = [5, 5, 0]` (l=0 keeps the first carry, l=1 drops the second). Omitting
+-- the oracle's Iverson substitution (mutation 1) would read `l = 0` always (`evalIdx` default 0),
+-- giving `[5, 5, 5]` — a three-way disagreement.
+private def orL : AxisSpec := ⟨"l", 7601, .nat⟩
+private def oracleRecurIversonSched : ScheduledProgram :=
+  { decls := [.iter orL 3]
+  , stmts := [.scan "S" [orL]
+      [ .assign "S" [.iterAt orL 0]
+          { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := .identity } ]
+      [ .assign "S" [.iterNext orL]
+          { body := { terms := [{ factors :=
+              [ .read "S" [.axis orL]
+              , .iverson (.rel .eq (.embed (.axis orL)) (.embed (.const 0))) ] }] }
+          , nonlin := .identity } ]
+      false ]
+  , env := {}, extNames := insert "S0" (∅ : Finset String)
+  , explicitSizes := (({} : HashMap UID Nat).insert orL.uid 3) }
+private def oracleRecurIversonInputs : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "S0" ⟨[], #[5.0]⟩
+
+run_cmd do
+  -- 1. recurrence Iverson, three-way.
+  match scanParityCheck "T5.4 recurIverson[l=0]" oracleRecurIversonSched oracleRecurIversonInputs [] with
+  | .ok () => pure ()
+  | .error m => throwError s!"T5.4 recurrence Iverson three-way: {m}"
+  match evalScheduled oracleRecurIversonSched oracleRecurIversonInputs with
+  | .ok r => match r.env["S"]? with
+    | some t => unless denseEq t ⟨[3], #[5.0, 5.0, 0.0]⟩ do
+        throwError s!"T5.4 recurrence Iverson value changed: {repr t.data}"
+    | none => throwError "T5.4 recurrence Iverson: S missing"
+  | .error e => throwError s!"T5.4 recurrence Iverson reference eval: {e.error}"
+  -- 2. one base Iverson, three-way (reuses the 5.2 fixture through the newly-enabled third leg).
+  match scanParityCheck "T5.4 baseIverson" baseIversonSched baseIversonInputs [] with
+  | .ok () => pure ()
+  | .error m => throwError s!"T5.4 base Iverson three-way: {m}"
+  -- 3. masked recurrence (trivial mask), three-way.
+  match scanParityCheck "T5.4 maskedRecur" ScanCompileTest.maskedAxiswiseRecur
+      ScanCompileTest.maskedAxiswiseRecurInputs [] with
+  | .ok () => pure ()
+  | .error m => throwError s!"T5.4 masked recurrence three-way: {m}"
+  -- 4. seeded-axis-zero (scan-axis mask `where l = 0`), three-way. This is also the masked
+  --    recurrence whose VALUE disagrees under a live-context mask substitution (mutation 3): the
+  --    seeded `l` must read 0, so the mask is always true and the value equals the unmasked
+  --    recurrence.
+  match scanParityCheck "T5.4 seededAxisZero" ScanCompileTest.seededAxisZero
+      ScanCompileTest.seededAxisZeroInputs [] with
+  | .ok () => pure ()
+  | .error m => throwError s!"T5.4 seeded-axis-zero three-way: {m}"
+  -- 5. template6-derived non-seeded `.free` scan-axis mask, three-way.
+  match scanParityCheck "T5.4 eliminatedFree" ScanCompileTest.eliminatedFree
+      ScanCompileTest.eliminatedFreeInputs [] with
+  | .ok () => pure ()
+  | .error m => throwError s!"T5.4 eliminated-free mask three-way: {m}"
+
+/-! ### Structural check: no eliminated scan coordinate survives in an unrolled mask
+
+Values alone cannot detect a missing mask substitution — `evalIdx` defaults an absent UID to 0, so
+an unsubstituted `[l = 0]` and the substituted `[0 = 0]` evaluate identically. This walks the
+unrolled `seededAxisZero` leaves and asserts NO mask carries the seeded scan-axis UID. Omitting the
+mask substitution (mutation 2) leaves `l` in the mask and fails this check even though every value
+still agrees. -/
+
+private def idxUids54 (e : IdxExpr) : List UID := (idxAffineForm e).2.map Prod.snd
+private def predUids54 : PredArith → List UID
+  | .embed e => idxUids54 e
+  | .mul a b => predUids54 a ++ predUids54 b
+  | .iabs a  => predUids54 a
+private def boolUids54 : BoolExpr → List UID
+  | .rel _ a b => predUids54 a ++ predUids54 b
+  | .and a b   => boolUids54 a ++ boolUids54 b
+  | .or a b    => boolUids54 a ++ boolUids54 b
+  | .not a     => boolUids54 a
+  | .ieq a b   => predUids54 a ++ predUids54 b
+
+private def maskUidsOfStmt (s : Stmt) : List UID :=
+  match s.nonlinOf with
+  | .axiswise _ (some m) => boolUids54 m
+  | _                    => []
+
+run_cmd do
+  let sched := ScanCompileTest.seededAxisZero
+  match sched.stmts.find? (fun s => match s with | .scan .. => true | _ => false) with
+  | none => throwError "T5.4 structural: seededAxisZero has no scan node"
+  | some sc =>
+      match PropertyOracle.unrollScanNode sched.explicitSizes sc with
+      | .error m => throwError s!"T5.4 structural: unroll failed: {m}"
+      | .ok un =>
+          let leaked := un.stmts.flatMap maskUidsOfStmt
+          -- the unrolled program must carry at least one axiswise mask (else the check is vacuous)…
+          unless un.stmts.any (fun s => match s.nonlinOf with
+              | .axiswise _ (some _) => true | _ => false) do
+            throwError "T5.4 structural: no mask survived the unrolling — the check would be vacuous"
+          -- …and none of them may name the seeded scan axis.
+          if leaked.contains ScanCompileTest.p9l.uid then
+            throwError s!"T5.4 structural: the seeded scan axis {ScanCompileTest.p9l.uid} leaked \
+into an unrolled mask — its coordinate was not substituted"
+
+/-! ### The oracle's own `eliminatedNormalizationAxis` fragment rejection
+
+An axiswise reduction along an ELIMINATED scan coordinate cannot be grouped by the per-coordinate
+leaf unroller. `freeNormContextAxis` (a scratch that normalizes over the scan's own iteration axis,
+which the checked path independently rejects as `contextAxisAsFreeOutput`, pinned in Task 5.3) is the
+witness: the oracle must refuse it with its named fragment error. Removing that rejection (mutation 6)
+lets the oracle accept the shape and fails this fixture. -/
+
+run_cmd do
+  let sched := ScanCompileTest.freeNormContextAxis
+  match sched.stmts.find? (fun s => match s with | .scan .. => true | _ => false) with
+  | none => throwError "T5.4 fragment: freeNormContextAxis has no scan node"
+  | some sc =>
+      match PropertyOracle.unrollScanNode sched.explicitSizes sc with
+      | .error m =>
+          unless m == PropertyOracle.fragment.eliminatedNormalizationAxis do
+            throwError s!"T5.4 fragment: wrong rejection message: {m}"
+      | .ok _ => throwError "T5.4 fragment: the oracle accepted an eliminated-normalization-axis shape"
+
 end LeanNCD.Eval.Plan.DifferentialTest
