@@ -68,6 +68,7 @@ inductive JaxSupportError where
   | sourceSlotOutOfRange (termIndex factorIndex : Nat) (slot tableSize : Nat)
   | sourceDType (termIndex factorIndex : Nat) (slot : TensorSlot) (dtype : ScalarDType)
   | iversonFactor (termIndex factorIndex : Nat)
+  | unaryFactor (termIndex factorIndex : Nat)
   deriving DecidableEq, BEq, Repr
 
 /-- JAX's ordered-reference and einsum prototypes currently support only binary64 real
@@ -84,15 +85,16 @@ def checkJaxAssignSupport (sigs : Array TensorSignature) (assign : AssignPlan) :
     let term := assign.terms[ti]
     for h2 : fi in [0 : term.factors.size] do
       match term.factors[fi] with
-      | .iverson _ => pure ()
+      | .iverson _ => throw (.iversonFactor ti fi)
       | .read read =>
           let source ← match sigs[read.sourceSlot]? with
             | some sig => pure sig
             | none => throw (.sourceSlotOutOfRange ti fi read.sourceSlot sigs.size)
           unless source.dtype == .f64 do
             throw (.sourceDType ti fi read.sourceSlot source.dtype)
+          unless read.unary.isNone do throw (.unaryFactor ti fi)
 
-def jaxAssignSupported (sigs : Array TensorSignature) (assign : AssignPlan) : Bool :=
+private def jaxAssignSupported (sigs : Array TensorSignature) (assign : AssignPlan) : Bool :=
   match checkAssign sigs assign, checkJaxAssignSupport sigs assign with
   | .ok _, .ok _ => true
   | _, _ => false
@@ -289,11 +291,22 @@ structure SomeJaxKernel where
   evidence : ExecutionEvidence
   kernel : JaxKernel evidence
 
+inductive JaxKernelValidationError where
+  | unsupported (cause : JaxSupportError)
+  | malformed
+  deriving DecidableEq, BEq, Repr
+
 /-- Validate a candidate and construct a private executable kernel.
     Returns `SomeJaxKernel` to hide evidence at the cost of unpacking later.
 -/
 def validateAndConstructKernel (candidate : JaxKernelCandidate) :
-    Except String SomeJaxKernel := do
+    Except JaxKernelValidationError SomeJaxKernel := do
+  let (assignment, signatures) := match candidate with
+    | .affineTable kernel => (kernel.semanticAssignment, kernel.signatureContext)
+    | .einsum kernel => (kernel.semanticAssignment, kernel.signatureContext)
+  match checkJaxAssignSupport signatures assignment.plan with
+  | .error cause => throw (.unsupported cause)
+  | .ok _ => pure ()
   -- Derive evidence label from candidate structure (not mutable).
   let evidence := candidateEvidenceLabel candidate
   -- `if h : ... then ... else throw`, not `unless decide ... do throw` + a separate `trivial`
@@ -312,7 +325,7 @@ def validateAndConstructKernel (candidate : JaxKernelCandidate) :
     -- `throw`, not `return .error` — `return` in this `Except` do-block already performs the
     -- `.ok` wrap (`pure`), so `return .error x` would elaborate `.error` against the wrong
     -- expected type (`SomeJaxKernel`, not `Except String SomeJaxKernel`) and fail to resolve.
-    throw "Kernel validation failed"
+    throw .malformed
 
 /-- Aggregate evidence across an array of kernel evidences.
     Returns `orderedReference64` only if ALL are; otherwise `optimizationExperiment`.

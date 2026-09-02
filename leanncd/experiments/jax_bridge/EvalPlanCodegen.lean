@@ -179,10 +179,12 @@ private def requireJaxSupport (sigs : Array TensorSignature) (nodeIndex : Nat)
     (assign : AssignPlan) : Except JaxCodegenError Unit :=
   match checkJaxAssignSupport sigs assign with
   | .ok _ => pure ()
+  | .error (.iversonFactor term factor) => throw (.iversonFactor nodeIndex term factor)
   | .error cause => throw (.unsupportedAssignment nodeIndex cause)
 
-def lowerAssign (sigs : Array TensorSignature) (nodeIndex : Nat) (a : AssignPlan) :
+def lowerAssign (sigs : Array TensorSignature) (nodeIndex : Nat) (checked : CheckedAssignPlan) :
     Except JaxCodegenError NodeLowering := do
+  let a := checked.plan
   requireJaxSupport sigs nodeIndex a
   unless a.terms.size > 0 do throw (.emptyAssign nodeIndex)
   let mut terms : Array TermLowering := #[]
@@ -195,7 +197,7 @@ def lowerPlan (c : CheckedEvalPlan) : Except JaxCodegenError (Array NodeLowering
   let mut nodes : Array NodeLowering := #[]
   for h : ni in [0 : c.checkedNodes.size] do
     match c.checkedNodes[ni] with
-    | .assign a => nodes := nodes.push (← lowerAssign c.raw.tensorSigs ni a.plan)
+    | .assign a => nodes := nodes.push (← lowerAssign c.raw.tensorSigs ni a)
     | .scan _ | .pointwise _ | .axiswise _ => throw (.unsupportedStep ni)
   return nodes
 
@@ -653,7 +655,7 @@ def f2PublicEntryRejects {α : Type}
   | .ok checked, some prepared => isBoolSourceRejection 0 0 (entry checked prepared)
   | _, _ => false
 
-#guard f2PublicEntryRejects fun _ _ => lowerAssign boolSourceSigs 0 idAssign
+#guard f2PublicEntryRejects fun checked _ => lowerAssign boolSourceSigs 0 checked
 #guard f2PublicEntryRejects fun _ prepared => lowerPlan prepared.plan
 #guard f2PublicEntryRejects fun _ prepared => generateForward prepared
 #guard f2PublicEntryRejects fun _ prepared => renderAffinePlanPositional prepared.plan
@@ -678,7 +680,7 @@ def testVariantABoolSourcePublicPathsRejected : Bool :=
       let einsumCandidate : EinsumExperimentKernelCandidate :=
         { semanticAssignment := checked, signatureContext := boolSourceSigs
         , destination := 1, operands := #[#[0, 0]], outputAxes := #[0] }
-      isBoolSourceRejection 0 0 (lowerAssign boolSourceSigs 0 idAssign) &&
+      isBoolSourceRejection 0 0 (lowerAssign boolSourceSigs 0 checked) &&
       isBoolSourceRejection 0 0 (lowerPlan prepared.plan) &&
       isBoolSourceRejection 0 0 (generateForward prepared) &&
       isBoolSourceRejection 0 0 (renderAffinePlanPositional prepared.plan) &&
