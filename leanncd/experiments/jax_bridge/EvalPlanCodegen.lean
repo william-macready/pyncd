@@ -647,6 +647,26 @@ def isBoolSourceRejection (node slot : Nat) {α : Type} : Except JaxCodegenError
       actualNode == node && term == 0 && factor == 0 && actualSlot == slot
   | _ => false
 
+def f2PublicEntryRejects {α : Type}
+    (entry : CheckedAssignPlan → PreparedPlan → Except JaxCodegenError α) : Bool :=
+  match checkAssign boolSourceSigs idAssign, boolSourcePrepared? with
+  | .ok checked, some prepared => isBoolSourceRejection 0 0 (entry checked prepared)
+  | _, _ => false
+
+#guard f2PublicEntryRejects fun _ _ => lowerAssign boolSourceSigs 0 idAssign
+#guard f2PublicEntryRejects fun _ prepared => lowerPlan prepared.plan
+#guard f2PublicEntryRejects fun _ prepared => generateForward prepared
+#guard f2PublicEntryRejects fun _ prepared => renderAffinePlanPositional prepared.plan
+#guard f2PublicEntryRejects fun _ prepared => renderAffinePlanNamed prepared
+#guard f2PublicEntryRejects fun checked _ => renderAffineAssign boolSourceSigs checked
+#guard f2PublicEntryRejects fun _ prepared => generateNamed .einsumOnly prepared
+#guard f2PublicEntryRejects fun _ prepared => generateNamed .affineReference prepared
+#guard f2PublicEntryRejects fun checked _ =>
+  loweringToAffineTableCandidate boolSourceSigs 0 checked
+#guard f2PublicEntryRejects fun checked _ =>
+  loweringToEinsumCandidate boolSourceSigs 0 checked
+#guard f2PublicEntryRejects fun _ prepared => lowerCheckPlanToCandidate prepared
+
 /-- Variant A gates every retained public semantic lowering/rendering/candidate path. -/
 def testVariantABoolSourcePublicPathsRejected : Bool :=
   match checkAssign boolSourceSigs idAssign, boolSourcePrepared? with
