@@ -106,9 +106,8 @@ def acceptedSched : ScheduledProgram :=
           { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .pointwise .relu })] })
 
 -- `.axiswise` (mask `none`) at top level (Thread 4): structurally ADMITTED now, same as pointwise
--- above. A masked `.axiswise` is likewise admitted at THIS tier (masking is a compile-tier
--- rejection, `NonlinCompileError.maskedAxiswiseNotSupported` — see `NonlinCompileTest.lean`), not a
--- capability-preflight one.
+-- above. A masked `.axiswise` is likewise admitted at THIS tier; Slice 5.3 now lowers it through
+-- `lowerMaskPredicate` (it is no longer a compile-tier rejection).
 #guard isOk (capabilityPreflight
     { acceptedSched with stmts :=
         [.plain (.assign "Y" [.free ⟨"i", 0, .nat⟩]
@@ -118,8 +117,7 @@ def acceptedSched : ScheduledProgram :=
 -- scan-block `.pointwise`/`.axiswise` are now ADMITTED at preflight (Thread 4 Task 4), identically
 -- to the top-level `.plain` cases above: `compileScan` compiles a nonlinear base/recurrence
 -- statement into the same `.assign → .pointwise`/`.axiswise` block-step chain. A masked `.axiswise`
--- is likewise admitted here and rejected later at `resolveNonlinAxis`
--- (`NonlinCompileError.maskedAxiswiseNotSupported`), not at preflight.
+-- is likewise admitted here and (Slice 5.3) lowered via `lowerMaskPredicate`, not rejected.
 #guard isOk (capabilityPreflight
     { acceptedSched with stmts :=
         [.scan "s" [⟨"l", 5, .nat⟩] [] [.assign "Y" [.iterNext ⟨"l", 5, .nat⟩]

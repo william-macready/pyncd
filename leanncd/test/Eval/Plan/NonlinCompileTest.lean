@@ -102,15 +102,14 @@ def axiswiseSig : InputSignature :=
     (prepareEvalPlan (axiswiseSched [.free axQ1, .free axS1] (.axiswise .softmax none)) axiswiseSig)
   == some (.nonlin (.noMarkedReductionAxis "Y"))
 
--- 1d. Masked-axiswise rejection: rejected unconditionally by `resolveNonlinAxis`'s FIRST match arm,
--- before `normPositions` is even inspected — confirming the rejection happens before any
--- `RawAxiswisePlan` could be built, regardless of whether a marker is present.
+-- 1d. Masked-axiswise ADMISSION (Slice 5.3): a masked `.axiswise` is now lowered, not rejected.
+-- `resolveNonlinAxis` resolves its marked axis like any axiswise; the mask lowers via
+-- `lowerMaskPredicate` (local non-seeded output basis, empty pins). `sampleMask` (always-true,
+-- width-2 over the `[q,s]` basis) satisfies `checkAxiswise`'s mask width check, so it compiles.
 def sampleMask : BoolExpr := .rel .eq (.embed (.const 0)) (.embed (.const 0))
-#guard compileCauseOf
-    (prepareEvalPlan
+#guard (prepareEvalPlan
       (axiswiseSched [.free axQ1, .freeNorm axS1] (.axiswise .softmax (some sampleMask)))
-      axiswiseSig)
-  == some (.nonlin (.maskedAxiswiseNotSupported "Y"))
+      axiswiseSig).toOption.isSome
 
 -- 1e. Marker-present-but-pointwise rejection: a `.freeNorm` marker with no `.axiswise` to belong to.
 #guard compileCauseOf
@@ -294,5 +293,85 @@ def doubleMarkerAxiswiseInputs : HashMap String DenseTensor :=
 #guard legacyAccepts doubleMarkerAxiswise doubleMarkerAxiswiseInputs
 #guard sourceCompileCauseOf doubleMarkerAxiswise doubleMarkerAxiswiseInputs
   == some (.nonlin (.multipleMarkedReductionAxes "Y" 0 1))
+
+/-! ## Section 5 — Slice 5.3 masked-axiswise fixtures (source→checked differential)
+
+Each fixture below carries a source `(where …)` mask through the WHOLE compiled pipeline
+(`runPreparedDense`, the checked path — `compiledEqB`) AND through the legacy reference evaluator
+(`TLProgram.eval` — `sourceEvalOf`), asserting BOTH agree with the same hand/spike value. That makes
+each a source→checked differential, not a one-sided pin: the checked mask (`lowerMaskPredicate` +
+`RawAxiswisePlan.mask` + `runDenseAxiswise`) reproduces the reference masked reduction exactly.
+
+Inclusion polarity: a mask TRUE at a coordinate INCLUDES it. An all-masked row → zeros (never a
+uniform row). Softmax excludes masked entries from the row MAXIMUM as well as the sum. -/
+
+/-- The legacy reference evaluator's output tensor for one named key, `none` on any failure. -/
+def sourceEvalOf (p : TLProgram) (inputs : HashMap String DenseTensor) (key : String) :
+    Option DenseTensor :=
+  match TLProgram.eval p inputs with
+  | .error _ => none
+  | .ok report => report.env[key]?
+
+/-- Source→checked differential: BOTH the checked pipeline and the legacy reference evaluator
+    approx-equal `expect`. -/
+def diffEqB (p : TLProgram) (inputs : HashMap String DenseTensor) (key : String)
+    (expect : DenseTensor) : Bool :=
+  compiledEqB p inputs key expect &&
+    (match sourceEvalOf p inputs key with
+     | some t => DenseTensor.approxEq t expect
+     | none => false)
+
+def nm4Inputs : HashMap String DenseTensor := HashMap.ofList [("A", tl [2,3] [1,2,3, 4,1,1])]
+
+-- Fixture: Top-level masked normalize (donor NM4, unchanged). Mask `s ≠ 0` keeps the survivors and
+-- renormalizes; masked column → 0. row0 [1,2,3]→[0,0.4,0.6], row1 [4,1,1]→[0,0.5,0.5].
+#guard diffEqB (tlprog!{ Y[q, s.] := normalize(where s ≠ 0)(A[q, s]) })
+    nm4Inputs "Y" (tl [2,3] [0, 0.4, 0.6, 0, 0.5, 0.5])
+
+-- Fixture: Masked softmax (NM4, function changed to softmax). Masked entries leave BOTH the row sum
+-- and the row maximum. row0 survivors [2,3]→[0, e^{-1}/(1+e^{-1}), 1/(1+e^{-1})]; row1 [1,1]→[0,½,½].
+#guard diffEqB (tlprog!{ Y[q, s.] := softmax(where s ≠ 0)(A[q, s]) })
+    nm4Inputs "Y"
+    (tl [2,3] [0, 0.2689414213699951, 0.7310585786300049, 0, 0.5, 0.5])
+
+-- Fixture: Masked L2 normalize (NM4, function changed to l2normalize). row0 survivors [2,3] →
+-- [0, 2/√13, 3/√13]; row1 [1,1] → [0, 1/√2, 1/√2].
+#guard diffEqB (tlprog!{ Y[q, s.] := l2normalize(where s ≠ 0)(A[q, s]) })
+    nm4Inputs "Y"
+    (tl [2,3] [0, 0.5547001962252291, 0.8320502943378437, 0, 0.7071067811865475, 0.7071067811865475])
+
+-- Fixture: Three all-masked rows — one per axiswise function — `where s < 0` masks EVERY entry, so
+-- each row is zeros (NOT a uniform distribution). One `#guard` per function.
+def allMaskedInputs : HashMap String DenseTensor := HashMap.ofList [("A", tl [2,3] [1,2,3, 4,1,1])]
+#guard diffEqB (tlprog!{ Y[q, s.] := normalize(where s < 0)(A[q, s]) })
+    allMaskedInputs "Y" (tl [2,3] [0,0,0, 0,0,0])
+#guard diffEqB (tlprog!{ Y[q, s.] := softmax(where s < 0)(A[q, s]) })
+    allMaskedInputs "Y" (tl [2,3] [0,0,0, 0,0,0])
+#guard diffEqB (tlprog!{ Y[q, s.] := l2normalize(where s < 0)(A[q, s]) })
+    allMaskedInputs "Y" (tl [2,3] [0,0,0, 0,0,0])
+
+-- Fixture: Masked extreme — softmax, with `1000` planted in the already-excluded `s=0` entry
+-- (mask `s ≠ 0`). The `1000` must NEVER enter the row maximum: max over the unmasked survivors of
+-- row0 is `max(2,3)=3`, so row0 = [0, e^{-1}/(1+e^{-1}), 1/(1+e^{-1})] ≈ [0,.269,.731]. Were `1000`
+-- admitted to the max, `exp(2-1000)=exp(3-1000)=0` would collapse the row to all-zeros/NaN.
+#guard diffEqB (tlprog!{ Y[q, s.] := softmax(where s ≠ 0)(A[q, s]) })
+    (HashMap.ofList [("A", tl [2,3] [1000,2,3, 4,1,1])]) "Y"
+    (tl [2,3] [0, 0.2689414213699951, 0.7310585786300049, 0, 0.5, 0.5])
+
+-- Fixture: Non-last mask basis (donor NM5, adding the asymmetric `where s < q`). The reduction axis
+-- is `s` (`A[s., q]`), so the mask basis is the OUTPUT order `[s, q]`. Q=K=I₂ ⇒ scores S[s,q]=[s=q].
+-- column q=0: mask `s<0` excludes both ⇒ zeros; column q=1: mask `s<1` keeps only s=0 (value 0) ⇒
+-- softmax of the single survivor = 1. Result (row-major A[s][q]) = [0,1, 0,0]. Swapping the two
+-- mask basis positions would compute `q<s` and yield [0,0, 1,0] instead — mutation 7's target.
+#guard diffEqB (tlprog!{ A[s., q] := softmax(where s < q)(Q[q, d] · K[s, d]) })
+    (HashMap.ofList [("Q", tl [2,2] [1,0, 0,1]), ("K", tl [2,2] [1,0, 0,1])])
+    "A" (tl [2,2] [0,1, 0,0])
+
+-- Fixture: Unmasked nonlinear unchanged — the `included?`-callback refactor changes no unmasked
+-- value. Re-pins the Section-2 donors' exact values through the same differential harness.
+#guard diffEqB (tlprog!{ Y[q, s.] := normalize(A[q, s]) })
+    (HashMap.ofList [("A", tl [2,2] [1,3, 2,2])]) "Y" (tl [2,2] [0.25,0.75, 0.5,0.5])
+#guard diffEqB (tlprog!{ Y[q, s.] := softmax(A[q, s]) })
+    (HashMap.ofList [("A", tl [2,2] [0, 0, 0, Float.log 3])]) "Y" (tl [2,2] [0.5,0.5, 0.25,0.75])
 
 end LeanNCD.Eval.Plan.NonlinCompileTest

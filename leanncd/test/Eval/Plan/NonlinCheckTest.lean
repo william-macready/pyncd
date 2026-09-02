@@ -194,6 +194,36 @@ def rank0Axiswise : RawAxiswisePlan :=
   | _ => false
 
 -- ============================================================================
+-- Row 10: mask leaf width == shape.size (maskWidthMismatch — axiswise only)
+-- A DISTINCT check from the Iverson-FACTOR width check in `checkAssign`: this one lives on the
+-- axiswise plan and reports the MASK, via its own `maskWidthMismatch` constructor.
+-- ============================================================================
+
+/-- A width-2 mask over the `#[2]`-shaped baseline: `coord·[0] + 0 = 0` (always true). Both leaves
+    are width 1 = `shape.size`, so `checkAxiswise` admits it. -/
+def wellSizedMask : PosBoolExpr :=
+  .rel .eq (.affine ⟨#[0], 0⟩) (.affine ⟨#[0], 0⟩)
+
+def axiswiseWellSizedMask : RawAxiswisePlan :=
+  { sourceSlot := 0, destinationSlot := 1, shape := #[2], axisPos := 0, fn := .softmax
+  , mask := some wellSizedMask }
+
+#guard (checkAxiswise baselineSigs axiswiseWellSizedMask).isOk
+
+/-- A mask whose FIRST leaf is width 3, over the `#[2]`-shaped (`shape.size = 1`) baseline. The
+    checker must report the mask leaf's width mismatch, not any factor's. -/
+def badWidthMask : PosBoolExpr :=
+  .rel .eq (.affine ⟨#[0,0,0], 0⟩) (.affine ⟨#[0], 0⟩)
+
+def axiswiseMaskWidthMismatch : RawAxiswisePlan :=
+  { sourceSlot := 0, destinationSlot := 1, shape := #[2], axisPos := 0, fn := .softmax
+  , mask := some badWidthMask }
+
+#guard match checkAxiswise baselineSigs axiswiseMaskWidthMismatch with
+  | .error (.maskWidthMismatch 1 3) => true
+  | _ => false
+
+-- ============================================================================
 -- Mutation verification (development-time verification activity, not a test)
 -- ============================================================================
 

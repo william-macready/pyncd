@@ -152,4 +152,31 @@ def axErrOf (store : Array DenseTensor) : Option PositionalInputError :=
 -- well-formed store: no error (the function applies).
 #guard axErrOf #[ { shape := [2,2], data := #[1.0, 3.0, 2.0, 2.0] } ] == none
 
+/-!
+## Masked axiswise Dense adapter: `runDenseAxiswise` honors `RawAxiswisePlan.mask`
+
+The checked adapter builds its `included?` predicate from the positional mask and evaluates it per
+output coordinate via `evalPosBool`. A mask `coord[1] ≠ 0` (over the width-2 output basis) excludes
+column 0; `normalize` over axis 1 then renormalizes each row's single survivor. Hand-derived:
+`[[1,3],[2,2]]` → row0 survivor `3` → `[0,1]`; row1 survivor `2` → `[0,1]` ⇒ `[0,1,0,1]`.
+-/
+
+/-- `coord·[0,1] + 0 ≠ 0` — TRUE (included) iff the axis-1 coordinate is nonzero. -/
+def maskExcludeCol0 : PosBoolExpr :=
+  .rel .ne (.affine ⟨#[0,1], 0⟩) (.affine ⟨#[0,0], 0⟩)
+
+def probeAxiswiseMasked : RawAxiswisePlan :=
+  { sourceSlot := 0, destinationSlot := 1, shape := #[2,2], axisPos := 1, fn := .normalize
+  , mask := some maskExcludeCol0 }
+
+/-- Drive `runDenseAxiswise` directly on a well-formed store, returning the output data. -/
+def maskedAxOut (store : Array DenseTensor) : Option (Array Float) :=
+  match checkAxiswise axiswiseSigs probeAxiswiseMasked with
+  | .error _ => none
+  | .ok c => match runDenseAxiswise c store with
+             | .error _ => none
+             | .ok t => some t.data
+
+#guard maskedAxOut #[ { shape := [2,2], data := #[1.0, 3.0, 2.0, 2.0] } ] == some #[0.0, 1.0, 0.0, 1.0]
+
 end LeanNCD.Eval.Plan.NonlinDenseTest

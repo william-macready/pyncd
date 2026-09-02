@@ -1,5 +1,6 @@
 import LeanNCD.Eval.Plan.Compile
 import LeanNCD.Eval.Plan.Adapter
+import LeanNCD.Eval.Eval
 
 /-!
 # Wave F F4 Task 3: source scan admission and residualization tests
@@ -1090,6 +1091,25 @@ def t4shape (name : String) (sched : ScheduledProgram) (inputs : HashMap String 
           if tOut.shape == expectedShape then .ok ()
           else .error s!"{name}: got shape {repr tOut.shape}, expected {repr expectedShape}"
 
+/-- Source→checked DIFFERENTIAL for a scan: `t4run`'s checked-path value check PLUS the legacy
+    reference evaluator (`evalScheduled`) on the same source `ScheduledProgram`, both asserted to
+    approx-equal `expected`. Used by Slice 5.3's masked-scan fixtures so "the checked masked
+    reduction" and "the reference masked reduction" are two separate, both-asserted facts. -/
+def t4diff (name : String) (sched : ScheduledProgram) (inputs : HashMap String DenseTensor)
+    (outName : String) (expected : DenseTensor) : Except String Unit :=
+  match t4run name sched inputs outName expected with
+  | .error m => .error m
+  | .ok _ =>
+    match evalScheduled sched inputs with
+    | .error _ => .error s!"{name}: source (reference) eval failed"
+    | .ok report =>
+      match report.env[outName]? with
+      | none => .error s!"{name}: source produced no {outName}"
+      | some tOut =>
+          if DenseTensor.approxEq tOut expected then .ok ()
+          else .error
+            s!"{name}: SOURCE got {repr tOut.shape}/{repr tOut.data}, expected {repr expected.data}"
+
 /-! ### Fixture 4 — leading-axis pointwise scratch (value; = OracleFixtureSeed.fixture1)
 `S[i,0]:=X[i]`; scratch `T[i]:=relu(S[i,l]·K[i])`; `S[i,l+1]:=T[i]`, `X=[-1,2]`, `K=[-2,3]`. -/
 def p4i : AxisSpec := ⟨"i", 4141, .real⟩
@@ -1375,11 +1395,19 @@ def fixture10Check : Except String Unit :=
           (s.stepCaptures.map (·.source)) #[.state 0, .external 1, .external 2])
 run_cmd match fixture10Check with | .ok _ => pure () | .error m => throwError m
 
-/-! ### Negative fixtures 14-19 -/
+/-! ### Fixtures 14-15 — masked axiswise scan (Slice 5.3: rejection → ACCEPT + value)
+
+Formerly negative (`maskedAxiswiseNotSupported`); Slice 5.3 lowers a scan-block mask through
+`lowerMaskPredicate` (local NON-SEEDED output basis, empty pins) so both are now accepted and
+value-checked, source→checked differential. Both `t4mask`s below are trivially true, so the value
+equals the unmasked reduction — what they pin is that a masked base / masked recurrence COMPILES and
+RUNS through the checked path (mask width check, non-seeded basis) and agrees with the reference. -/
 
 def t4mask : BoolExpr := .rel .eq (.embed (.const 0)) (.embed (.const 0))
 
-/-- Fixture 14 — masked axiswise BASE: rejected at `resolveNonlinAxis`, not preflight. -/
+/-- Fixture 14 — masked axiswise BASE, now accepted. `normalize(where 0=0)(X)` over `i`, then
+    `S[i,l+1] := S[i,l]·A[i]`. `X=[1,3]`→base `normalize([1,3])=[0.25,0.75]`; `A=[2,-1]` ⇒ history
+    (row-major `S[i][l]`) `[0.25,0.5,1.0, 0.75,-0.75,0.75]`. -/
 def p14i : AxisSpec := ⟨"i", 41401, .real⟩
 def p14l : AxisSpec := ⟨"l", 41402, .nat⟩
 def maskedAxiswiseBase : ScheduledProgram :=
@@ -1394,10 +1422,13 @@ def maskedAxiswiseBase : ScheduledProgram :=
   , explicitSizes := ({} : HashMap UID Nat).insert p14l.uid 3 }
 def maskedAxiswiseBaseInputs : HashMap String DenseTensor :=
   (({} : HashMap String DenseTensor).insert "X" ⟨[2], #[1, 3]⟩).insert "A" ⟨[2], #[2, -1]⟩
-#guard t4cause maskedAxiswiseBase maskedAxiswiseBaseInputs
-  == some (.nonlin (.maskedAxiswiseNotSupported "S"))
+def maskedAxiswiseBaseCheck : Except String Unit :=
+  t4diff "T5.3 maskedAxiswiseBase" maskedAxiswiseBase maskedAxiswiseBaseInputs "S"
+    ⟨[2, 3], #[0.25, 0.5, 1.0, 0.75, -0.75, 0.75]⟩
+run_cmd match maskedAxiswiseBaseCheck with | .ok _ => pure () | .error m => throwError m
 
-/-- Fixture 15 — masked axiswise RECURRENCE: rejected at `resolveNonlinAxis`. -/
+/-- Fixture 15 — masked axiswise RECURRENCE, now accepted. `S[l+1,i] := normalize(where 0=0)(S[l,i])`
+    over `i`; `S[0]=X=[1,3]` ⇒ history (row-major `S[l][i]`) `[1,3, 0.25,0.75, 0.25,0.75]`. -/
 def p15i : AxisSpec := ⟨"i", 41501, .real⟩
 def p15l : AxisSpec := ⟨"l", 41502, .nat⟩
 def maskedAxiswiseRecur : ScheduledProgram :=
@@ -1411,8 +1442,96 @@ def maskedAxiswiseRecur : ScheduledProgram :=
   , explicitSizes := ({} : HashMap UID Nat).insert p15l.uid 3 }
 def maskedAxiswiseRecurInputs : HashMap String DenseTensor :=
   ({} : HashMap String DenseTensor).insert "X" ⟨[2], #[1, 3]⟩
-#guard t4cause maskedAxiswiseRecur maskedAxiswiseRecurInputs
-  == some (.nonlin (.maskedAxiswiseNotSupported "S"))
+def maskedAxiswiseRecurCheck : Except String Unit :=
+  t4diff "T5.3 maskedAxiswiseRecur" maskedAxiswiseRecur maskedAxiswiseRecurInputs "S"
+    ⟨[3, 2], #[1, 3, 0.25, 0.75, 0.25, 0.75]⟩
+run_cmd match maskedAxiswiseRecurCheck with | .ok _ => pure () | .error m => throwError m
+
+/-! ### Fixture — Seeded-axis-zero parity (Slice 5.3)
+
+The recurrence donor (fixture 15) with `where l = 0`. `l` is the SEEDED scan axis (`.iterNext`), so
+it is ABSENT from the mask's non-seeded output basis `[i]`; `lowerMaskPredicate` densifies it to no
+column and its EMPTY pins never bind it, so `l` evaluates as coordinate 0 at EVERY step. Hence
+`l = 0` is TRUE every step ⇒ no masking ⇒ the value equals fixture 15's unmasked recurrence. Were
+live scan context substituted for `l` (mutation 4), `l = 0` would be false at `l = 1`, all-masking
+that step's row → zeros, giving `[1,3,0.25,0.75,0,0]` instead. -/
+def p9i : AxisSpec := ⟨"i", 41901, .real⟩
+def p9l : AxisSpec := ⟨"l", 41902, .nat⟩
+def seededAxisZeroMask : BoolExpr := .rel .eq (.embed (.axis p9l)) (.embed (.const 0))
+def seededAxisZero : ScheduledProgram :=
+  { decls := [.iter p9l 3]
+  , stmts := [.scan "S" [p9l]
+      [.assign "S" [.iterAt p9l 0, .free p9i] (t4rhs "X" [.axis p9i])]
+      [.assign "S" [.iterNext p9l, .freeNorm p9i]
+        (t4rhs "S" [.axis p9l, .axis p9i] (.axiswise .normalize (some seededAxisZeroMask)))]
+      false]
+  , env := {}, extNames := {"X"}
+  , explicitSizes := ({} : HashMap UID Nat).insert p9l.uid 3 }
+def seededAxisZeroInputs : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "X" ⟨[2], #[1, 3]⟩
+def seededAxisZeroCheck : Except String Unit :=
+  t4diff "T5.3 seededAxisZero" seededAxisZero seededAxisZeroInputs "S"
+    ⟨[3, 2], #[1, 3, 0.25, 0.75, 0.25, 0.75]⟩
+run_cmd match seededAxisZeroCheck with | .ok _ => pure () | .error m => throwError m
+
+/-! ### Fixture — Eliminated `.free` scan coordinate (Slice 5.3, template6-derived)
+
+A `c`-scan whose base reduces over a SEPARATE `.freeNorm i` while retaining a non-seeded `.free r`,
+with base mask `where r ≠ 0`. `r` is NOT the reduction axis, yet it is a non-seeded output axis, so
+it keeps its own column in the mask basis `[r, i]` and the mask sees its ACTUAL coordinate. With
+`Z=[[1,3],[2,6]]`: the `r=0` face is all-masked (`0≠0` false) → zeros; the `r=1` face includes and
+`normalize([2,6])=[0.25,0.75]`. The recurrence copies each `c=0` face forward to `c=1`. Substituting
+0 for `r`'s coordinate during lowering (mutation 5) would all-mask the `r=1` face too → all zeros. -/
+def p10r : AxisSpec := ⟨"r", 42010, .nat⟩
+def p10i : AxisSpec := ⟨"i", 42011, .real⟩
+def p10c : AxisSpec := ⟨"c", 42012, .nat⟩
+def elimFreeMask : BoolExpr := .rel .ne (.embed (.axis p10r)) (.embed (.const 0))
+def eliminatedFree : ScheduledProgram :=
+  { decls := [.iter p10c 2]
+  , stmts := [.scan "G" [p10c]
+      [.assign "G" [.free p10r, .freeNorm p10i, .iterAt p10c 0]
+        (t4rhs "Z" [.axis p10r, .axis p10i] (.axiswise .normalize (some elimFreeMask)))]
+      [.assign "G" [.free p10r, .free p10i, .iterNext p10c]
+        (t4rhs "G" [.axis p10r, .axis p10i, .axis p10c])]
+      false]
+  , env := {}, extNames := {"Z"}
+  , explicitSizes := ((({} : HashMap UID Nat).insert p10r.uid 2).insert p10i.uid 2).insert p10c.uid 2 }
+def eliminatedFreeInputs : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "Z" ⟨[2,2], #[1, 3, 2, 6]⟩
+def eliminatedFreeCheck : Except String Unit :=
+  t4diff "T5.3 eliminatedFree" eliminatedFree eliminatedFreeInputs "G"
+    ⟨[2, 2, 2], #[0, 0, 0, 0, 0.25, 0.25, 0.75, 0.75]⟩
+run_cmd match eliminatedFreeCheck with | .ok _ => pure () | .error m => throwError m
+
+/-! ### Fixture — Eliminated `.freeNorm` scan coordinate (Slice 5.3, exact source)
+
+`iter r = 2, c = 2; tensor Z(r); G[r., 0] := normalize(where r ≠ 0)(Z[r]); G[r+1, c+1] := G[r, c]`,
+`Z=[1,3]`. Here the ELIMINATED (reduction, `.freeNorm`) axis `r` is itself the mask's only basis
+axis: `normalize(where r≠0)` over `r` excludes `r=0` and keeps `r=1` (`Z=3`) ⇒ base column
+`G[:,0]=[0,1]`; the diagonal recurrence copies `G[0,0]→G[1,1]`. Source == checked == hand-expected
+`[0,0,1,0]` (shape `[2,2]`). Zeroing `r`'s coordinate during lowering (mutation 6) makes `r≠0` false
+everywhere → all-masked → `G[:,0]=[0,0]` → all zeros. Pinned HERE, NOT by the Task 5.4 oracle. -/
+def p11r : AxisSpec := ⟨"r", 42110, .nat⟩
+def p11c : AxisSpec := ⟨"c", 42111, .nat⟩
+def elimFreeNormMask : BoolExpr := .rel .ne (.embed (.axis p11r)) (.embed (.const 0))
+def eliminatedFreeNorm : ScheduledProgram :=
+  { decls := [.iter p11r 2, .iter p11c 2]
+  , stmts := [.scan "G" [p11r, p11c]
+      [.assign "G" [.freeNorm p11r, .iterAt p11c 0]
+        (t4rhs "Z" [.axis p11r] (.axiswise .normalize (some elimFreeNormMask)))]
+      [.assign "G" [.iterNext p11r, .iterNext p11c]
+        (t4rhs "G" [.axis p11r, .axis p11c])]
+      false]
+  , env := {}, extNames := {"Z"}
+  , explicitSizes := (({} : HashMap UID Nat).insert p11r.uid 2).insert p11c.uid 2 }
+def eliminatedFreeNormInputs : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "Z" ⟨[2], #[1, 3]⟩
+def eliminatedFreeNormCheck : Except String Unit :=
+  t4diff "T5.3 eliminatedFreeNorm" eliminatedFreeNorm eliminatedFreeNormInputs "G"
+    ⟨[2, 2], #[0, 0, 1, 0]⟩
+run_cmd match eliminatedFreeNormCheck with | .ok _ => pure () | .error m => throwError m
+
+/-! ### Negative fixtures 16-19 -/
 
 /-- Fixture 16 — `.freeNorm` marker on a `.pointwise` statement (inconsistent): rejected as
     `unmarkedReductionAxis` at `resolveNonlinAxis`. -/
