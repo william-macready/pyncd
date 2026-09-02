@@ -371,6 +371,19 @@ def lowerFactorPredicate (contextUids outputUids : List UID) (pins : HashMap UID
   let basisUids := contextUids ++ outputUids ++ contractedUids
   lowerBoolExprPos pins basisUids pred
 
+/-- Mask-policy predicate lowering — the SECOND public entry point to the private
+    `BoolExpr → PosBoolExpr` core (`lowerBoolExprPos`), beside `lowerFactorPredicate`. The mask
+    policy is a LOCAL NON-SEEDED OUTPUT basis (`outputUids`, the statement's `.free`/`.freeNorm`
+    axes — a seeded `.iterAt`/`.iterNext` scan axis is deliberately NOT among them) with EMPTY pins,
+    BOTH supplied INTERNALLY here: a caller passes only its non-seeded output UIDs and the source
+    mask `BoolExpr`, and so cannot inject factor context or base pins the way `lowerFactorPredicate`
+    does. Consequences pinned by fixtures: a UID absent from the basis (a seeded scan axis)
+    densifies to no column (`idxToRow`), so it evaluates as coordinate 0 at every step; and every
+    output axis — including an eliminated `.free`/`.freeNorm` reduction axis — keeps its own column,
+    so the mask sees its ACTUAL enumerated coordinate, never zero. Identity is by basis position. -/
+def lowerMaskPredicate (outputUids : List UID) (mask : BoolExpr) : PosBoolExpr :=
+  lowerBoolExprPos ({} : HashMap UID Int) outputUids mask
+
 /-- Select the checked contraction algebra a source statement's aggregation op compiles to. `sum`
     is Wave C's real sum-product; `max`/`min` are the tropical semirings, whose reduction identity
     (`−∞`/`+∞`) differs from the `zeroPad` out-of-bounds pad (`0`) — the pad is a factor value that
@@ -469,8 +482,11 @@ def resolveNonlinAxis (stmtName : String) (nonlin : Nonlin) (slots : List LHSSlo
   let normPositions : List Nat :=
     slots.zipIdx.filterMap (fun (sl, i) => match sl with | .freeNorm _ => some i | _ => none)
   match nonlin with
-  | .axiswise _ (some _) => throw (.maskedAxiswiseNotSupported stmtName)
-  | .axiswise _ none =>
+  | .axiswise _ _ =>
+      -- Masked and unmasked axiswise alike resolve their marked reduction axis here; the mask (if
+      -- any) is lowered separately via `lowerMaskPredicate` at each construction site. The masked
+      -- rejection producer for `NonlinCompileError.maskedAxiswiseNotSupported` was removed with
+      -- Slice 5's mask parity; the constructor is kept producer-less as a compatibility marker.
       match normPositions with
       | [] => throw (.noMarkedReductionAxis stmtName)
       | [p] => pure (some p)
@@ -752,15 +768,19 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
           baseSteps := baseSteps.push (.pointwise
             { sourceSlot := preSlot, destinationSlot := resSlot, shape := outputShape, fn := pf })
           pure resSlot
-      | .axiswise fn _ => do
-          -- `axisPos?` is `some _` here (`resolveNonlinAxis`'s `.axiswise _ none` branch never
+      | .axiswise fn m => do
+          -- `axisPos?` is `some _` here (`resolveNonlinAxis`'s `.axiswise` branch never
           -- returns `none`); `retainedAxisPos` maps its all-slots index to the output-axis index.
           let axisPos := retainedAxisPos slots (axisPos?.getD 0)
           let resSlot := baseSigs.size
           baseSigs := baseSigs.push { shape := outputShape, dtype := .f64 }
           baseSteps := baseSteps.push (.assign plan)
+          -- Mask policy: local non-seeded output basis (`outputUids` — this base block's
+          -- `.free`/`.freeNorm` axes; the seeded `.iterAt` scan axis is absent), empty pins,
+          -- both supplied internally by `lowerMaskPredicate`.
           baseSteps := baseSteps.push (.axiswise
-            { sourceSlot := preSlot, destinationSlot := resSlot, shape := outputShape, axisPos, fn })
+            { sourceSlot := preSlot, destinationSlot := resSlot, shape := outputShape, axisPos, fn
+            , mask := m.map (lowerMaskPredicate outputUids) })
           pure resSlot
     baseResultSlots := baseResultSlots.push resultSlot
     -- write placement: a pin becomes an all-zero coefficient row with the literal as bias; a free
@@ -858,13 +878,17 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
           stepSteps := stepSteps.push (.pointwise
             { sourceSlot := preSlot, destinationSlot := resSlot, shape := outputShape, fn := pf })
           pure resSlot
-      | .axiswise fn _ => do
+      | .axiswise fn m => do
           let axisPos := retainedAxisPos slots (axisPos?.getD 0)
           let resSlot := stepSigs.size
           stepSigs := stepSigs.push { shape := outputShape, dtype := .f64 }
           stepSteps := stepSteps.push (.assign plan)
+          -- Mask policy: local non-seeded output basis (`outputUids` — this recurrence's
+          -- `.free`/`.freeNorm` axes; the seeded `.iterNext` scan axis is absent, so a mask over it
+          -- reads it as coordinate 0 every step), empty pins, both internal to `lowerMaskPredicate`.
           stepSteps := stepSteps.push (.axiswise
-            { sourceSlot := preSlot, destinationSlot := resSlot, shape := outputShape, axisPos, fn })
+            { sourceSlot := preSlot, destinationSlot := resSlot, shape := outputShape, axisPos, fn
+            , mask := m.map (lowerMaskPredicate outputUids) })
           pure resSlot
     if stateNames.contains nm then resultSlotOf := resultSlotOf.insert nm resultSlot
     else scratchSlotOf := scratchSlotOf.insert nm resultSlot
@@ -1086,20 +1110,22 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
               , shape := outputShape, fn := pf })
             materializedAcc := materializedAcc.push { name := nm, slot := publishedSlot }
             slotOf := slotOf.insert nm publishedSlot
-        | .axiswise fn _ =>
-            -- `axisPos?` is provably `some _` here: `resolveNonlinAxis`'s `.axiswise _ none` branch
-            -- (the only one that can reach this arm — `.axiswise _ (some _)` already threw above,
-            -- at `liftNonlin`) never returns `none`. `getD 0` is a totality formality, not a real
-            -- fallback, matching this file's own `getD`-on-an-already-validated-value idiom
-            -- elsewhere (e.g. Phase 3/4's `resultOf.getD`/`stepCaptureOf.getD` above).
+        | .axiswise fn m =>
+            -- `axisPos?` is provably `some _` here: `resolveNonlinAxis`'s `.axiswise` branch never
+            -- returns `none`. `getD 0` is a totality formality, not a real fallback, matching this
+            -- file's own `getD`-on-an-already-validated-value idiom elsewhere.
             let axisPos := axisPos?.getD 0
             tensorSigsAcc := tensorSigsAcc.push { shape := outputShape, dtype := .f64 }
             let publishedSlot := tensorSigsAcc.size
             tensorSigsAcc := tensorSigsAcc.push { shape := outputShape, dtype := .f64 }
             stepsAcc := stepsAcc.push (.assign assignPlan)
+            -- Mask policy: local non-seeded output basis (`retainedUids` — a top-level statement has
+            -- no seeded scan axes, so these are exactly its output axes), empty pins, both internal
+            -- to `lowerMaskPredicate`.
             stepsAcc := stepsAcc.push (.axiswise
               { sourceSlot := destSlot, destinationSlot := publishedSlot
-              , shape := outputShape, axisPos, fn := fn })
+              , shape := outputShape, axisPos, fn := fn
+              , mask := m.map (lowerMaskPredicate retainedUids) })
             materializedAcc := materializedAcc.push { name := nm, slot := publishedSlot }
             slotOf := slotOf.insert nm publishedSlot
     | .scan scanName axes base recur _ =>

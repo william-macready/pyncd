@@ -715,6 +715,30 @@ def testAxiswiseStepRejectedLocated : Bool :=
 
 #guard testAxiswiseStepRejectedLocated
 
+/-! Slice 5.3: a MASKED `.axiswise` step (`RawAxiswisePlan.mask` present) is routed to the SAME
+generic located `unsupportedStep` error before any Python emission — the complete-step JAX support
+check never special-cases the mask into an emittable path. `maskInclude` is a width-1 always-true
+positional mask over the `#[3]`-shaped step, so `checkPlan` admits the step; JAX still rejects it. -/
+
+def maskInclude : PosBoolExpr :=
+  .rel .eq (.affine ⟨#[0], 0⟩) (.affine ⟨#[0], 0⟩)
+
+-- `[assign Y[i]:=X[i] @0, axiswise softmax(where 0=0)(X, axis 0)->slot2 @1]`.
+def maskedAxiswiseStep : RawAxiswisePlan :=
+  { sourceSlot := 0, destinationSlot := 2, shape := #[3], axisPos := 0, fn := .softmax
+  , mask := some maskInclude }
+
+def maskedAxiswiseRejectRaw : RawEvalPlan :=
+  { tensorSigs := rejectSigs, inputSlots := #[0]
+  , steps := #[PlanStep.assign idAssign, PlanStep.axiswise maskedAxiswiseStep] }
+
+/-- A MASKED `.axiswise` step at index 1 is rejected with the same located error carrying index `1` —
+    masking does not create a new emittable JAX path. -/
+def testMaskedAxiswiseStepRejectedLocated : Bool :=
+  rejectsLocatedAt1 maskedAxiswiseRejectRaw #[{ name := "x", slot := 0 }]
+
+#guard testMaskedAxiswiseStepRejectedLocated
+
 /-- A `.scan` step at index 1 is rejected with the located error carrying index `1`. -/
 def testScanStepRejectedLocated : Bool :=
   rejectsLocatedAt1 scanRejectRaw #[{ name := "s0", slot := 0 }, { name := "x", slot := 1 }]

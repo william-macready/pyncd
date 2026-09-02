@@ -1,4 +1,5 @@
 import LeanNCD.Eval.Plan.Kernel
+import LeanNCD.Eval.Plan.Coordinates
 import LeanNCD.Eval.Plan.Error
 import LeanNCD.Eval.Nonlin
 
@@ -27,13 +28,18 @@ structure RawPointwisePlan where
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- One axiswise (reduction along one axis) nonlinearity operation. `axisPos` is the position
-    (0-indexed) of the reduction axis within the tensor's shape. -/
+    (0-indexed) of the reduction axis within the tensor's shape. `mask`, when present, is a UID-free
+    positional predicate over the LOCAL output coordinate (its non-seeded output basis) whose leaves
+    are each `shape.size` wide (`checkAxiswise`'s mask width check); a coordinate the mask evaluates
+    TRUE is INCLUDED in the reduction, one FALSE is excluded. There is no mask-axis-UID field: the
+    positional width is exactly `shape.size`. -/
 structure RawAxiswisePlan where
   sourceSlot      : TensorSlot
   destinationSlot : TensorSlot
   shape           : Array Nat
   axisPos         : Nat
   fn              : LeanNCD.AxiswiseFn
+  mask            : Option PosBoolExpr := none
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- Geometry-checking errors for pointwise and axiswise operations. -/
@@ -44,6 +50,7 @@ inductive NonlinPlanError
   | sourceShapeMismatch      (declared : Array Nat) (signature : Array Nat)
   | destinationShapeMismatch (declared : Array Nat) (signature : Array Nat)
   | axisPositionOutOfRange   (position : Nat) (size : Nat)
+  | maskWidthMismatch        (expected : Nat) (actual : Nat)
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- Evidence that one `RawPointwisePlan` satisfies every local invariant. -/
@@ -91,6 +98,13 @@ def checkAxiswise (sigs : Array TensorSignature) (a : RawAxiswisePlan) :
   let _ ← checkNonlinIO sigs a.sourceSlot a.destinationSlot a.shape
   unless a.axisPos < a.shape.size do
     throw (.axisPositionOutOfRange a.axisPos a.shape.size)
+  -- Mask width: each positional mask leaf must span exactly the local output basis (`shape.size`).
+  -- A DISTINCT check from `checkAssign`'s Iverson-FACTOR width check — this one reports the mask.
+  match a.mask with
+  | none => pure ()
+  | some m => match m.affineWidths.find? (· != a.shape.size) with
+      | some w => throw (.maskWidthMismatch a.shape.size w)
+      | none => pure ()
   return CheckedAxiswisePlan.mk a
 
 /-- Validate the positional store against the single source shape `checkNonlinIO` already validated,
@@ -119,13 +133,20 @@ def runDensePointwise (c : CheckedPointwisePlan) (store : Array DenseTensor) :
   return c.raw.fn.apply src
 
 /-- Run one checked axiswise operation. Re-validates its source slot against the checked shape first
-    (`validateNonlinSource`) — same runtime trust boundary `runDenseAssignAt` honors. `[]`/`none` for
-    `axisUids`/`mask?`: a checked `RawAxiswisePlan` can never carry a mask or axis-UID — the
-    Plan-layer `TensorSignature` is UID-free by design (§3). Reuses `AxiswiseFn.apply`
-    (`LeanNCD.Eval.Nonlin`) — no new math. -/
+    (`validateNonlinSource`) — same runtime trust boundary `runDenseAssignAt` honors. Builds the
+    full-coordinate `included?` predicate from the checked `mask` (`evalPosBool` over the positional
+    output coordinate; a `none` mask includes every coordinate, so an unmasked reduction is
+    byte-for-byte the pre-mask behavior) and hands it to `AxiswiseFn.applyCore` — the SAME single
+    softmax/normalize/L2 implementation the SOURCE `AxiswiseFn.apply` uses, differing only in which
+    predicate language it evaluates. `getD true` on an `evalPosBool` failure is unreachable for a
+    checked plan (`checkAxiswise`'s mask width check forbids the only failure mode). -/
 def runDenseAxiswise (c : CheckedAxiswisePlan) (store : Array DenseTensor) :
     Except PositionalInputError DenseTensor := do
   let src ← validateNonlinSource c.raw.sourceSlot c.raw.shape store
-  return c.raw.fn.apply c.raw.axisPos [] none src
+  let included? : List Nat → Bool := fun coord =>
+    match c.raw.mask with
+    | none => true
+    | some m => (evalPosBool (coord.map (Int.ofNat ·)) m).toOption.getD true
+  return c.raw.fn.applyCore c.raw.axisPos included? src
 
 end LeanNCD.Eval.Plan

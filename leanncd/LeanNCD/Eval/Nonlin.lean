@@ -45,28 +45,30 @@ private def rowsAlong (axisPos : Nat) (shape : List Nat) : List (List (List Nat 
     (keyed.filter (fun e => e.1 == k)).map (fun e => (e.2.1, e.2.2)))
 
 /-- Apply a per-row normalization `f` (given the list of (value, masked?) entries it returns the
-    list of output values, in the same order) along `axisPos`, with optional mask. -/
-private def perRow (axisPos : Nat) (axisUids : List UID) (mask? : Option BoolExpr)
+    list of output values, in the same order) along `axisPos`, with an `included?` predicate over the
+    FULL coordinate. `included? c = true` keeps entry `c`; `false` masks it. This is the single row
+    engine both nonlinearity backends share: the SOURCE wrapper (`AxiswiseFn.apply`) builds `included?`
+    from a source `BoolExpr` + axis UIDs; the CHECKED adapter (`Plan/Nonlin.lean`'s `runDenseAxiswise`)
+    builds it from a UID-free `PosBoolExpr`. -/
+private def perRowCore (axisPos : Nat) (included? : List Nat → Bool)
     (f : List (Float × Bool) → List Float) (t : DenseTensor) : DenseTensor :=
   let rows := rowsAlong axisPos t.shape
   rows.foldl (fun acc row =>
     let entries : List (Float × Bool) := row.map (fun (c, fi) =>
       let x := acc.data.getD fi 0.0
-      let masked := match mask? with
-        | none => false
-        | some b => ! evalBool (coordMap axisUids c) b
-      (x, masked))
+      (x, ! included? c))
     let ys := f entries
     -- write outputs back at each flatIdx.
     ((row.zip ys).foldl (fun (cur : DenseTensor) ((_, fi), y) => ⟨cur.shape, cur.data.set! fi y⟩) acc))
     t
 
-/-- softmax along `axisPos`, with an optional mask. For each row: masked entries are excluded
-    (treated as -∞ ⇒ exp 0); `y = exp(x - rowMax) / Σ exp(x - rowMax)` over unmasked entries.
-    The `mask?`/`axisUids` let `evalBool` see the coordinate (axis-UID → Int) for masking. -/
-def softmaxT (axisPos : Nat) (axisUids : List UID) (mask? : Option BoolExpr)
+/-- softmax along `axisPos`, with an `included?` coordinate predicate. For each row: masked entries
+    (`included? c = false`) are excluded (treated as -∞ ⇒ exp 0), and — critically — excluded from
+    the row MAXIMUM too; `y = exp(x - rowMax) / Σ exp(x - rowMax)` over unmasked entries. An
+    all-masked row normalizes to zeros (never a uniform row). -/
+def softmaxT (axisPos : Nat) (included? : List Nat → Bool)
     (t : DenseTensor) : DenseTensor :=
-  perRow axisPos axisUids mask? (fun entries =>
+  perRowCore axisPos included? (fun entries =>
     let unmasked := entries.filterMap (fun (x, m) => if m then none else some x)
     let m := match unmasked with
       | []      => 0.0
@@ -76,20 +78,20 @@ def softmaxT (axisPos : Nat) (axisUids : List UID) (mask? : Option BoolExpr)
     (entries.zip es).map (fun ((_, masked), e) =>
       if masked || s == 0.0 then 0.0 else e / s)) t
 
-/-- normalize along `axisPos` (+ optional mask): y = x / Σ x over unmasked entries in the row. -/
-def normalizeT (axisPos : Nat) (axisUids : List UID) (mask? : Option BoolExpr)
+/-- normalize along `axisPos` (+ `included?`): y = x / Σ x over unmasked entries in the row. -/
+def normalizeT (axisPos : Nat) (included? : List Nat → Bool)
     (t : DenseTensor) : DenseTensor :=
-  perRow axisPos axisUids mask? (fun entries =>
+  perRowCore axisPos included? (fun entries =>
     let s := entries.foldl (fun a (x, masked) => if masked then a else a + x) 0.0
     entries.map (fun (x, masked) =>
       if masked || s == 0.0 then 0.0 else x / s)) t
 
-/-- L2-normalize along `axisPos` (+ optional mask): y = x / ‖x‖₂ = x / √(Σ x²) over unmasked
+/-- L2-normalize along `axisPos` (+ `included?`): y = x / ‖x‖₂ = x / √(Σ x²) over unmasked
     entries in the row. An all-zero row (‖x‖₂ = 0) normalizes to zero, matching `normalizeT`'s
     convention (not a domain error — see SC8's precedent for softmax). -/
-def l2normalizeT (axisPos : Nat) (axisUids : List UID) (mask? : Option BoolExpr)
+def l2normalizeT (axisPos : Nat) (included? : List Nat → Bool)
     (t : DenseTensor) : DenseTensor :=
-  perRow axisPos axisUids mask? (fun entries =>
+  perRowCore axisPos included? (fun entries =>
     let s := Float.sqrt (entries.foldl (fun a (x, masked) => if masked then a else a + x*x) 0.0)
     entries.map (fun (x, masked) =>
       if masked || s == 0.0 then 0.0 else x / s)) t
@@ -100,14 +102,26 @@ def _root_.LeanNCD.PointwiseFn.apply : PointwiseFn → DenseTensor → DenseTens
   | .relu => reluT | .sigmoid => sigmoidT | .tanh => tanhT | .gelu => geluT
   | .leakyrelu => leakyReluT
 
-/-- The axiswise reduction a `AxiswiseFn` denotes — owned by the enum, symmetric with
-    `PointwiseFn.apply` above. -/
+/-- The axiswise reduction a `AxiswiseFn` denotes, dispatched over its ONE `included?`-parametric
+    softmax/normalize/L2 implementation. Both the source `AxiswiseFn.apply` and the checked
+    `runDenseAxiswise` funnel through here, so there is exactly one implementation of each function
+    regardless of which backend supplies the inclusion predicate. -/
+def _root_.LeanNCD.AxiswiseFn.applyCore (fn : AxiswiseFn) (axisPos : Nat)
+    (included? : List Nat → Bool) (t : DenseTensor) : DenseTensor :=
+  match fn with
+  | .softmax     => softmaxT axisPos included? t
+  | .normalize   => normalizeT axisPos included? t
+  | .l2normalize => l2normalizeT axisPos included? t
+
+/-- The SOURCE axiswise wrapper: build the full-coordinate `included?` predicate from a source
+    `BoolExpr` mask (`evalBool` over the `axisUids → Int` coordinate map) and hand it to `applyCore`.
+    A `none` mask includes every coordinate, so an unmasked reduction is byte-for-byte the pre-mask
+    behavior. Owned by the enum, symmetric with `PointwiseFn.apply`. -/
 def _root_.LeanNCD.AxiswiseFn.apply (fn : AxiswiseFn) (axisPos : Nat) (axisUids : List UID)
     (mask? : Option BoolExpr) (t : DenseTensor) : DenseTensor :=
-  match fn with
-  | .softmax     => softmaxT axisPos axisUids mask? t
-  | .normalize   => normalizeT axisPos axisUids mask? t
-  | .l2normalize => l2normalizeT axisPos axisUids mask? t
+  fn.applyCore axisPos (fun c => match mask? with
+    | none => true
+    | some b => evalBool (coordMap axisUids c) b) t
 
 /-- A nonlinearity together with everything statically resolved against one statement's own
     output slots: which axis position (if any) is the marked reduction axis, checked exactly
