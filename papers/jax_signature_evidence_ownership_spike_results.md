@@ -167,13 +167,23 @@ Commits: implementation `f57430b`; per-entry mutation guards `d7975a7`.
 Measured public signatures:
 
 ```text
-lowerAssign (sigs : Array TensorSignature) (nodeIndex : Nat) (a : AssignPlan)
+lowerAssign (sigs : Array TensorSignature) (nodeIndex : Nat) (checked : CheckedAssignPlan)
 renderAffineAssign (sigs : Array TensorSignature) (c : CheckedAssignPlan)
 loweringToAffineTableCandidate (sigs : Array TensorSignature) (nodeIndex : Nat)
   (assign : CheckedAssignPlan) : Except JaxCodegenError OrderedAffineTableKernelCandidate
 loweringToEinsumCandidate (sigs : Array TensorSignature) (nodeIndex : Nat)
   (assign : CheckedAssignPlan) : Except JaxCodegenError EinsumExperimentKernelCandidate
 ```
+
+After specification review, the standalone `lowerAssign` signature was tightened to take
+`checked : CheckedAssignPlan` rather than raw `AssignPlan`; it cannot bypass structural
+`checkAssign`. `validateAndConstructKernel` now returns
+`Except JaxKernelValidationError SomeJaxKernel`, where
+`JaxKernelValidationError.unsupported` retains exact term/factor/slot `JaxSupportError` payloads.
+Direct guards observe F1 `.ok ()`, F2 `.sourceDType 0 0 0 .bool`, unary `.unaryFactor 0 0`, and
+Iverson `.iversonFactor 0 1`. `JaxSupportError` is public diagnostic data;
+`checkJaxAssignSupport` is the context-bearing public cross-module helper; `jaxAssignSupported` and
+the raw evidence-label helper are private. `JaxKernelValidationError` is diagnostic data.
 
 `lowerPlan`, `generateForward`, both affine plan renderers, `generateNamed`, and
 `lowerCheckPlanToCandidate` retain direct plan-level signatures and derive only
@@ -212,8 +222,27 @@ Variant A mutation cycles:
 | ID | Concrete mutation | Observed fail | Restored pass |
 |---|---|---|---|
 | A1 | Replace source-dtype rejection with `pure ()` while retaining destination/algebra checks | Exit 1: both kernel-kind F2 guards, every rendering-mode aggregate, IO fixture, and F3 guard fail | `ExecutableTest` + Codegen pass |
-| A2 | Remove complete-table equality from `kernelMatchesPlanStep` | Exit 1: F4 step-0 substitution and F3 step-1 context-substitution guards fail | Codegen passes |
-| A3 | Replace corresponding-assignment equality with `true` | Exit 1: step-0-kernel-reused-at-step-1 guard fails at its expected step-1 assertion | Codegen passes |
+| A2 | At the plan conversion boundary, replace `PreparedPlan.plan.raw.tensorSigs` with a same-shape all-`f64` mapped table | Exit 1: direct `lowerCheckPlanToCandidate` F2 gate and F3 exact-step gate fail | Codegen passes |
+| A3 | Remove complete-table equality from executable step correspondence | Exit 1: F4 step-0 substitution and F3 step-1 context-substitution guards fail | Codegen passes |
 | A4 | Rotate the single contextual dominator through all retained entries: remove `lowerAssign` gate, affine-node gate, affine-candidate gate, then einsum-candidate gate | Named direct guards fail respectively for `lowerAssign`/`lowerPlan`/`generateForward`/einsum `generateNamed`; both affine plan renderers/standalone renderer/affine `generateNamed`/`buildAssignFixture`; affine conversion/plan conversion; einsum conversion | Each rotation restored; all 11 direct guards pass |
 | A5 | Make `candidateEvidenceLabel` public and assert F2 cannot observe ordered evidence | Exit 1: F2 directly returns `orderedReference64` before validation | `ExecutableTest` passes; helper private again |
 | A6 | Emit outer index `0` for every support failure | Exit 1: F3 exact step-1 guard fails | Codegen passes |
+
+An additional assignment-correspondence attack replaced the per-step assignment equality with
+`true`; the step-0-kernel-reused-at-step-1 guard failed, then passed after restoration. For A4, the
+four rotations are the four real contextual dominators, not four exemplar APIs: their named errors
+cover all eleven retained entry assertions. Removing the source policy itself after review produced
+individual failures for all eleven guards in one build, confirming none was hidden by the aggregate.
+
+Variant A reviews:
+
+| Lens | Finding | Resolution |
+|---|---|---|
+| Specification | Candidate validator returned generic text; `lowerAssign` accepted raw plans; new public helper inventory absent | Fixed in `6a8d4ac`: structured exact support errors, checked standalone input, inventory delta/direct policy guards added here |
+| Specification | A2/A3 mutation meanings and A4 rotation evidence were unclear | A2 and A3 re-run separately as specified; assignment tie attacked separately; every A4 entry has a named failure |
+| Code quality | Unary and Iverson were not rejected by the shared support policy | Fixed with located support errors; existing codegen Iverson locator preserved |
+| Code quality | Einsum validator does not recompute exact projection/output axes | Adjudicated pre-existing at `c8ed102`, unrelated to signature ownership and carrying only `optimizationExperiment`; neither prototype changes or weakens it, and all temporary code is reverted. Production follow-up remains warranted. |
+
+Both specification and code-quality re-reviews after `6a8d4ac` reported no significant remaining
+ownership issue. Default build, targeted JAX/Executable build, and direct corpus elaboration all
+returned exit 0 after the fixes.
