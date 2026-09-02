@@ -1,4 +1,5 @@
 import LeanNCD.Eval.Plan.Executable
+import LeanNCD.Eval.Plan.Dense
 
 /-!
 # Thread 5 (Tasks 1-5) — `ExecutionEvidence` / kernel-candidate / executable tests
@@ -149,6 +150,57 @@ def idAssign : AssignPlan :=
 def idRaw : RawEvalPlan :=
   { tensorSigs := idSigs, inputSlots := #[0]
   , steps := #[.assign idAssign] }
+
+/-! Disposable signature-ownership spike harness.
+
+`boolSourceSigs` changes only identity fixture slot 0's signature tag. The destination, assignment
+algebra, affine map, shape, and Float-backed Dense value remain unchanged. The temporary checker shim
+admits this future Boolean-source/real-destination shape so the current JAX support hole is observable.
+-/
+
+def boolSourceSigs : Array TensorSignature :=
+  #[ { shape := #[3], dtype := .bool }, { shape := #[3], dtype := .f64 } ]
+
+def boolSourceStore : Array DenseTensor :=
+  #[{ shape := [3], data := #[0.0, 1.0, 1.0] }]
+
+def testBoolSourceChecksAndDenseRuns : Bool :=
+  match checkAssign boolSourceSigs idAssign with
+  | .error _ => false
+  | .ok checked =>
+      match runDenseAssign checked boolSourceStore with
+      | .ok out => out.shape == [3] && out.data == #[0.0, 1.0, 1.0]
+      | .error _ => false
+
+#guard testBoolSourceChecksAndDenseRuns
+
+def testCurrentBoolSourceAffineCandidateAccepted : Bool :=
+  match checkAssign boolSourceSigs idAssign with
+  | .error _ => false
+  | .ok checked =>
+      let table : AffineTableReadCandidate :=
+        { source := 0, safeIndex := #[0, 1, 2], validMask := #[true, true, true] }
+      let kernel : OrderedAffineTableKernelCandidate :=
+        { semanticAssignment := checked, tables := #[#[table]] }
+      candidateEvidenceLabel (.affineTable kernel) == .orderedReference64 &&
+        match validateAndConstructKernel (.affineTable kernel) with
+        | .ok k => k.evidence == .orderedReference64
+        | .error _ => false
+
+#guard testCurrentBoolSourceAffineCandidateAccepted
+
+def testCurrentBoolSourceEinsumCandidateAccepted : Bool :=
+  match checkAssign boolSourceSigs idAssign with
+  | .error _ => false
+  | .ok checked =>
+      let kernel : EinsumExperimentKernelCandidate :=
+        { semanticAssignment := checked, destination := 1
+        , operands := #[#[0, 0]], outputAxes := #[0] }
+      match validateAndConstructKernel (.einsum kernel) with
+      | .ok _ => true
+      | .error _ => false
+
+#guard testCurrentBoolSourceEinsumCandidateAccepted
 
 -- Well-formed affine-table candidate: the iteration domain has 3 coordinates (0, 1, 2), and the
 -- identity read maps each straight through to the same-numbered source index, all in-bounds.

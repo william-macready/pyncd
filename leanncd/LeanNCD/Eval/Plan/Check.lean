@@ -107,9 +107,10 @@ def checkAssign (sigs : Array TensorSignature) (a : AssignPlan) :
         let srcSig ← match sigs[f.sourceSlot]? with
           | some s => pure s
           | none => throw (.slotOutOfRange f.sourceSlot sigs.size)
-        unless srcSig.dtype == .f64 do throw (.dtypeNotAdmitted f.sourceSlot srcSig.dtype)
-        unless srcSig.dtype == destSig.dtype do
-          throw (.dtypeMismatch destSig.dtype srcSig.dtype)
+        -- DISPOSABLE SPIKE SHIM: model Slice 4's future Boolean-source admission without changing
+        -- destinations, algebras, constants, shapes, storage, or any other dtype.
+        unless srcSig.dtype == .f64 || srcSig.dtype == .bool do
+          throw (.dtypeNotAdmitted f.sourceSlot srcSig.dtype)
         unless f.sourceShape == srcSig.shape do
           throw (.sourceShapeMismatch ti fi f.sourceShape srcSig.shape)
         unless f.oobPolicy == .zeroPad do throw (.policyNotAdmitted f.oobPolicy)
