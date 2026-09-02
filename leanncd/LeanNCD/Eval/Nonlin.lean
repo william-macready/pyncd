@@ -146,9 +146,11 @@ def resolveNonlin (nl : Nonlin) (slots : List LHSSlot) (axisUids : List UID) :
           | none   => throw (.invalidNormAxis .notAmongOutputAxes)
       | none    => throw (.invalidNormAxis .notMarked)
 
-/-- Dispatch: apply a resolved Nonlin. `axisUids` is still needed by `softmaxT`/`normalizeT`/
-    `l2normalizeT` for their coordinate/mask math; the axis *position* itself already lives in
-    `rn` for the `.axiswise` case, resolved once by `resolveNonlin` rather than re-derived here. -/
+/-- Dispatch: apply a resolved Nonlin. `axisUids` is only consumed by `AxiswiseFn.apply` to build
+    the `included?` coordinate map from the source mask; `softmaxT`/`normalizeT`/`l2normalizeT`
+    themselves take that `included?` predicate directly. The axis *position* itself already lives
+    in `rn` for the `.axiswise` case, resolved once by `resolveNonlin` rather than re-derived
+    here. -/
 def applyNonlin (rn : ResolvedNonlin) (axisUids : List UID) (t : DenseTensor) : DenseTensor :=
   match rn with
   | .identity        => t
