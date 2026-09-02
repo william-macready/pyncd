@@ -706,11 +706,15 @@ The mandatory spike is complete:
 [results and mutation record](jax_signature_evidence_ownership_spike_results.md). Decision:
 **GO B — validator-supplied complete context**.
 
-Both candidates-in-context and validator-supplied context passed the support, plan-authority,
-locator, evidence, and all-real gates. B preserves the raw candidate record shapes and stores the
-complete table only in the validated `JaxKernel`, while standalone APIs receive one explicit table
-and plan APIs derive the sole authority from `PreparedPlan.plan.raw.tensorSigs`. The exact signatures,
-private-helper decisions, fixtures, and ten production mutation cycles are now in Task 5 above.
+Both candidates-in-context and validator-supplied context passed the Boolean-support,
+plan-authority, locator, evidence, and all-real probes. Candidate-owned context did not satisfy the
+full standalone fail-loud/helper-privacy criterion: its renderer/candidate-conversion entry gates
+did not re-run `checkAssign` against structurally incompatible context, and three geometry helpers
+remained public. B alone passed every selection criterion. It preserves the raw candidate record
+shapes and stores the complete table only in the validated `JaxKernel`, while standalone APIs
+receive one explicit table and plan APIs derive the sole authority from
+`PreparedPlan.plan.raw.tensorSigs`. The exact signatures, private-helper decisions, fixtures, and
+ten production mutation cycles are now in Task 5 above.
 
 ### No other architecture spike is warranted
 

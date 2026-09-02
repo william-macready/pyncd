@@ -176,8 +176,9 @@ loweringToEinsumCandidate (sigs : Array TensorSignature) (nodeIndex : Nat)
 ```
 
 After specification review, the standalone `lowerAssign` signature was tightened to take
-`checked : CheckedAssignPlan` rather than raw `AssignPlan`; it cannot bypass structural
-`checkAssign`. `validateAndConstructKernel` now returns
+`checked : CheckedAssignPlan` rather than raw `AssignPlan`; callers cannot pass an unchecked raw
+assignment, but Variant A does not re-run `checkAssign` under its stored signature table.
+`validateAndConstructKernel` now returns
 `Except JaxKernelValidationError SomeJaxKernel`, where
 `JaxKernelValidationError.unsupported` retains exact term/factor/slot `JaxSupportError` payloads.
 Direct guards observe F1 `.ok ()`, F2 `.sourceDType 0 0 0 .bool`, unary `.unaryFactor 0 0`, and
@@ -189,14 +190,21 @@ the raw evidence-label helper are private. `JaxKernelValidationError` is diagnos
 `lowerCheckPlanToCandidate` retain direct plan-level signatures and derive only
 `PreparedPlan.plan.raw.tensorSigs` (or the same table from `CheckedEvalPlan.raw`). `lowerFactor`,
 `lowerTerm`, `renderTermLine`, `renderNodeLines`, and the affine factor/term/node/array renderers
-became private. `candidateEvidenceLabel` became private. Both candidate records gained
+became private. `candidateEvidenceLabel` became private. Three geometry-only helpers in
+`Executable.lean` -- `recomputeAffineFactorTable`, `affineFactorTableValid`, and
+`affineTermTablesValid` -- remained public despite their Task 1 **H** classification. They cannot
+emit Python or certify evidence directly, but leaving them public missed the prototype's intended
+helper-privacy gate. Both candidate records gained
 `signatureContext : Array TensorSignature`; validator signatures stayed direct because they inspect
 that stored table.
 
 Every candidate therefore owns one complete table value. A two-step plan has two candidate fields
 containing the complete table (Lean arrays may structurally share at runtime, but the API/proof
-surface duplicates authority per step). Per kernel, well-formedness re-runs `checkAssign` under the
-stored table, checks JAX destination/algebra/source support, and checks affine/einsum structure.
+surface duplicates authority per step). Per kernel, `jaxAssignSupported` re-runs `checkAssign`
+under the stored table, checks JAX destination/algebra/source support, and the candidate validator
+checks affine/einsum structure. The limitation above is narrower: Variant A's standalone
+renderer/candidate-conversion entry gates themselves accepted a `CheckedAssignPlan` without
+re-running `checkAssign` against the supplied table.
 Executable well-formedness adds two step obligations: candidate table equals the prepared table and
 candidate assignment equals the corresponding checked assignment. The first mismatch is reported
 at the real outer index.
@@ -242,10 +250,12 @@ Variant A reviews:
 | Specification | A2/A3 mutation meanings and A4 rotation evidence were unclear | A2 and A3 re-run separately as specified; assignment tie attacked separately; every A4 entry has a named failure |
 | Code quality | Unary and Iverson were not rejected by the shared support policy | Fixed with located support errors; existing codegen Iverson locator preserved |
 | Code quality | Einsum validator does not recompute exact projection/output axes | Adjudicated pre-existing at `c8ed102`, unrelated to signature ownership and carrying only `optimizationExperiment`; neither prototype changes or weakens it, and all temporary code is reverted. Production follow-up remains warranted. |
+| Final ownership re-review | Variant A's standalone renderer/candidate-conversion gates did not re-run `checkAssign` against their supplied table, and three H-class geometry helpers remained public | Record corrected. Variant A's kernel validators did re-run `checkAssign` through `jaxAssignSupported`; the entry-gate and helper-visibility shortcomings are not retained production changes. Variant B validates at the standalone entry and made the three helpers private, strengthening the GO B decision. |
 
-Both specification and code-quality re-reviews after `6a8d4ac` reported no significant remaining
-ownership issue. Default build, targeted JAX/Executable build, and direct corpus elaboration all
-returned exit 0 after the fixes.
+The original specification and code-quality re-reviews after `6a8d4ac` reported no significant
+remaining ownership issue, but the final independent ownership re-review found the two record
+corrections above. Default build, targeted JAX/Executable build, and direct corpus elaboration all
+returned exit 0 after the implementation fixes.
 
 ### Variant B — validator-supplied complete context
 
@@ -323,9 +333,13 @@ targeted JAX/Executable build, and direct corpus elaboration returned exit 0 aft
 
 ## Decision: GO B
 
-Both variants satisfy selection criteria 1–4: all F2/F3 semantic paths reject before Python,
-candidate/evidence, or executable success; F4 cannot override the prepared table; plan authority is
-`PreparedPlan.plan.raw.tensorSigs`; and standalone errors preserve original locators.
+Both variants pass the F2/F3 Boolean-support, F4 plan-authority, and locator probes. Variant A does
+not satisfy the full standalone fail-loud criterion: its standalone renderer/candidate-conversion
+entry gates do not re-run `checkAssign` against a structurally incompatible supplied table, and
+three H-class geometry helpers remain public. Variant B alone satisfies all selection criteria
+1–4: it rejects unsupported or structurally incompatible standalone context before Python,
+candidate/evidence, or executable success; derives plan authority from
+`PreparedPlan.plan.raw.tensorSigs`; and preserves original locators.
 
 Variant B wins criteria 5–6 from measured—not predicted—differences:
 
@@ -373,8 +387,12 @@ After both reverts:
 - Repository status contains only the prepared, gitignored `.superpowers/` SDD ledger; it was not
   modified or removed.
 
-Final independent ownership/API and mutation/reversion reviews found two documentation inaccuracies:
+The first final ownership/API and mutation/reversion reviews found two documentation inaccuracies:
 the baseline direct corpus failure had five (not four) bad projections, and the pre-existing einsum
-weakness remains after restoration. Commit `a1bd86b` corrected both. Re-running both review lenses
-reported no significant remaining issue. The final default and targeted builds were then re-run and
-again completed successfully (8,659 and 8,513 jobs).
+weakness remains after restoration. Commit `a1bd86b` corrected both. A later independent ownership
+review found two additional Variant A overstatements: its standalone renderer/candidate-conversion
+gates did not re-run `checkAssign` against the supplied table (although its kernel validators did),
+and three H-class geometry helpers remained public. The record now states both limitations; neither
+affects Variant B's measured implementation or the GO B decision. The final
+default and targeted builds were re-run after the implementation/revert sequence and completed
+successfully (8,659 and 8,513 jobs).
