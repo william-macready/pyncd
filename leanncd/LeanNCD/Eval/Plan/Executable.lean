@@ -146,7 +146,7 @@ private def candidateEvidenceLabel : JaxKernelCandidate → ExecutionEvidence
     import that experimental one. This is the semantic source `validateAffineTable` below checks a
     candidate's stored table AGAINST, not merely a shape/bounds sanity check on the stored table
     itself. -/
-def recomputeAffineFactorTable (iterationShape : Array Nat) (factor : ReadPlan) :
+private def recomputeAffineFactorTable (iterationShape : Array Nat) (factor : ReadPlan) :
     Array Nat × Array Bool :=
   (allCoords iterationShape.toList).foldl
     (fun (acc : Array Nat × Array Bool) iter =>
@@ -166,7 +166,7 @@ def recomputeAffineFactorTable (iterationShape : Array Nat) (factor : ReadPlan) 
     with every `safeIndex` entry replaced by `0` (but otherwise the right length and in-bounds) used
     to still pass here before this check existed — length/bounds alone cannot tell a genuinely wrong
     gather from a right one; equality against the recomputed table can. -/
-def affineFactorTableValid (iterationShape : Array Nat) (factor : ReadPlan)
+private def affineFactorTableValid (iterationShape : Array Nat) (factor : ReadPlan)
     (table : AffineTableReadCandidate) : Bool :=
   let (expectedIndex, expectedMask) := recomputeAffineFactorTable iterationShape factor
   table.source == factor.sourceSlot &&
@@ -181,7 +181,7 @@ def affineFactorTableValid (iterationShape : Array Nat) (factor : ReadPlan)
     since `loweringToAffineTableCandidate`'s `filterMap` happens to shrink `tables` below
     `term.factors.size` whenever a factor is dropped, but that shrinkage is a coincidence of how the
     candidate is built today, not a guarantee this validator should lean on. -/
-def affineTermTablesValid (term : TermPlan) (tables : Array AffineTableReadCandidate) : Bool :=
+private def affineTermTablesValid (term : TermPlan) (tables : Array AffineTableReadCandidate) : Bool :=
   !term.hasIverson &&
   tables.size == term.factors.size &&
   (term.factors.zip tables).all

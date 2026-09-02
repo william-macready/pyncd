@@ -52,6 +52,7 @@ inductive JaxCodegenError
   -- Constraints. Reads route through the unchanged path.)
   | iversonFactor         (nodeIndex termIndex factorIndex : Nat)
   | unsupportedAssignment (nodeIndex : Nat) (cause : JaxSupportError)
+  | invalidSignatureContext (nodeIndex : Nat) (cause : PlanError)
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-! ## 2. Deterministic Python string rendering (shared by both modes) -/
@@ -177,10 +178,13 @@ structure NodeLowering where
 
 private def requireJaxSupport (sigs : Array TensorSignature) (nodeIndex : Nat)
     (assign : AssignPlan) : Except JaxCodegenError Unit :=
-  match checkJaxAssignSupport sigs assign with
-  | .ok _ => pure ()
-  | .error (.iversonFactor term factor) => throw (.iversonFactor nodeIndex term factor)
-  | .error cause => throw (.unsupportedAssignment nodeIndex cause)
+  match checkAssign sigs assign with
+  | .error cause => throw (.invalidSignatureContext nodeIndex cause)
+  | .ok _ =>
+      match checkJaxAssignSupport sigs assign with
+      | .ok _ => pure ()
+      | .error (.iversonFactor term factor) => throw (.iversonFactor nodeIndex term factor)
+      | .error cause => throw (.unsupportedAssignment nodeIndex cause)
 
 def lowerAssign (sigs : Array TensorSignature) (nodeIndex : Nat) (checked : CheckedAssignPlan) :
     Except JaxCodegenError NodeLowering := do
@@ -668,6 +672,27 @@ def f2PublicEntryRejects {α : Type}
 #guard f2PublicEntryRejects fun checked _ =>
   loweringToEinsumCandidate boolSourceSigs 0 checked
 #guard f2PublicEntryRejects fun _ prepared => lowerCheckPlanToCandidate prepared
+
+def mismatchedStandaloneSigs : Array TensorSignature :=
+  #[ { shape := #[4], dtype := .f64 }, { shape := #[4], dtype := .f64 } ]
+
+def rejectsMismatchedStandaloneContext {α : Type}
+    (entry : CheckedAssignPlan → Except JaxCodegenError α) : Bool :=
+  match checkAssign idSigs idAssign with
+  | .error _ => false
+  | .ok checked =>
+      match entry checked with
+      | .error (.invalidSignatureContext 0 _) => true
+      | _ => false
+
+#guard rejectsMismatchedStandaloneContext fun checked =>
+  lowerAssign mismatchedStandaloneSigs 0 checked
+#guard rejectsMismatchedStandaloneContext fun checked =>
+  renderAffineAssign mismatchedStandaloneSigs checked
+#guard rejectsMismatchedStandaloneContext fun checked =>
+  loweringToAffineTableCandidate mismatchedStandaloneSigs 0 checked
+#guard rejectsMismatchedStandaloneContext fun checked =>
+  loweringToEinsumCandidate mismatchedStandaloneSigs 0 checked
 
 /-- Variant B gates every retained public semantic lowering/rendering/candidate path. -/
 def testVariantBBoolSourcePublicPathsRejected : Bool :=
