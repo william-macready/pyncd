@@ -243,6 +243,10 @@ selected validator-supplied context (**GO B**):
   prepared checked step; and
 - the pre-validation evidence-label helper and context-free semantic helpers are private.
 
+Independently of the signature-support policy, einsum validation recomputes every exact operand axis
+from the checked factor maps and requires exact output-axis equality with the checked term. Same-rank,
+in-range permutations or duplicates are invalid candidates.
+
 Thus `orderedReference64` is exposed only after source dtype and all existing structural checks pass.
 
 The required sibling-audit artifact is this completed table, populated from implemented code:
@@ -512,6 +516,15 @@ renderer and candidate/evidence entry point, extend the separate predicate diffe
 Boolean outputs without changing the 3,832 affine corpus, remeasure all boundary counts, and update
 current-state documentation.
 
+Before threading the new context, close the pre-existing einsum exact-axis recomputation weakness
+recorded by the spike. `validateEinsum` must recompute each expected operand row from the checked
+term as the factor's source slot followed by the exact single-projection target of every coefficient
+row, and require exact equality with the candidate row. It must likewise require
+`kernel.outputAxes == term.outputPos`, not merely that every stored position is in range. Add a
+private production-local projection-target helper in `Executable.lean`; do not import the
+experimental `rowProjectionTarget` against the dependency direction, and do not change the raw
+candidate record. Establish this sound validator baseline before applying the Variant B API changes.
+
 The spike selected these exact public signatures (line breaks abbreviated):
 
 ```text
@@ -533,7 +546,7 @@ renderers, affine table recomputation helpers, `jaxAssignSupported`, and
 `candidateEvidenceLabel` are private. `checkJaxAssignSupport` remains the typed, context-bearing
 cross-module helper. Raw candidate records remain unchanged; `JaxKernel` gains the validated table.
 
-**Fixtures: 10; planned mutation cycles: 10**
+**Fixtures: 11; planned mutation cycles: 11**
 
 1. Clone `ExecutableTest.idRaw`; change destination signature and assignment algebra to Boolean;
    require both kernel validators and executable construction to reject it.
@@ -557,13 +570,20 @@ cross-module helper. Raw candidate records remain unchanged; `JaxKernel` gains t
    agreement plus its observed value. Do not add them to `PropertyOracle.enumPrograms`.
 9. Add Task 4.4 fixtures 1 and 2 to the curated three-way scan set; require checked, reference, and
    independent-unroll equality.
-10. Retain the spike's authority attacks: (a) F4, a Boolean-source `PreparedPlan` plus a same-shape
+10. Clone `NonlinDenseTest.idNode22` into `ExecutableTest` as a single-term two-dimensional identity
+    candidate. Require the exact operand row `#[sourceSlot, 0, 1]` and output axes `#[0, 1]` to pass.
+    From that baseline, change only the operand axes to `#[1, 0]`, then only the output axes to
+    `#[1, 0]`, then only the output axes to `#[0, 0]`; require all three same-rank, in-range candidates
+    to fail. These mutations distinguish exact semantic recomputation from the current
+    bounds-and-length checks.
+11. Retain the spike's authority attacks: (a) F4, a Boolean-source `PreparedPlan` plus a same-shape
     all-real table, must have no caller-table plan API and a manually substituted validated kernel
     must fail executable construction; (b) a standalone all-real table with mismatched shapes must
     fail the re-run `checkAssign`; (c) a two-step plan whose Boolean read is only at step 1 must reject
     at step 1 when step 0's valid context/result is cached or reused.
 
-Run ten mutation cycles: bypass source dtype across every public path; reverse destination/source
+Run eleven mutation cycles: replace exact einsum operand/output equality with the previous
+bounds-and-length checks; bypass source dtype across every public path; reverse destination/source
 support order; bypass algebra; bypass unary; construct evidence before contextual validation; add a
 caller-selectable all-real plan table; remove the per-step context/assignment tie (including cached
 step-0 context); rotate context removal through every surviving public entry and skip standalone
@@ -578,8 +598,8 @@ failing and restored observation.
 | 4.2 | wrong Boolean identities/algebra or accidental type tightening | 12 | 7 | Local checker/Dense semantics can be rejected independently |
 | 4.3 | signature authority, top-level allocation, result metadata | 12 | 7 | Public top-level boundary can fail while raw execution is correct |
 | 4.4 | one missed scan `f64`, unsound write dtype, oracle self-mismatch | 8 | 9 | Scan semantics and write evidence are a separate soundness surface |
-| 4.5 | JAX context authority, unsupported semantics stamped as reference, stale boundary docs | 10 | 10 | Experimental backend evidence/docs can be rejected without rolling back Dense |
-| **Total** |  | **53** | **39** |  |
+| 4.5 | exact einsum axes, JAX context authority, unsupported semantics stamped as reference, stale boundary docs | 11 | 11 | Experimental backend evidence/docs can be rejected without rolling back Dense |
+| **Total** |  | **54** | **40** |  |
 
 The fixture count, not expected production-line count, makes Tasks 4.2–4.4 high-review work. Do not
 split tiny type additions from the checker/compiler that produces them; they have no independent
@@ -596,6 +616,7 @@ The following order claims each have a distinguishing fixture:
 - first-seen external binding order without cached-`extNames` filtering: Task 4.1 fixture 9;
 - declaration admission followed by normal statement preflight: Task 4.3 fixture 11;
 - scan write dtype before rank/geometry: Task 4.4 fixture 7;
+- exact einsum operand/output axes rather than same-rank in-range substitutes: Task 4.5 fixture 10;
 - JAX outer step index and destination-before-source support checks: Task 4.5 fixtures 6–7;
 - original all-factor index for Iverson remains pinned by Task 4.5 fixture 5.
 
@@ -695,8 +716,8 @@ Run two independent reviews over the entire branch, not task diffs:
    oracle separation, and Acset/Bridge non-claims.
 2. **Soundness and fail-loud lens:** checker private-constructor evidence, all scan signature
    allocation/capture/write sites, write dtype order and locators, unchanged geometry/causality
-   siblings, direct-schedule source invariants, JAX support table, original factor/step indices, and
-   mutation-test integrity.
+   siblings, direct-schedule source invariants, exact einsum operand/output recomputation, JAX
+   support table, original factor/step indices, and mutation-test integrity.
 
 Any real finding is fixed, targeted mutations rerun, full build rerun, and both lenses repeated or
 explicitly adjudicated before landing.
@@ -717,7 +738,7 @@ remained public. B alone passed every selection criterion. It preserves the raw 
 shapes and stores the complete table only in the validated `JaxKernel`, while standalone APIs
 receive one explicit table and plan APIs derive the sole authority from
 `PreparedPlan.plan.raw.tensorSigs`. The exact signatures, private-helper decisions, fixtures, and
-ten production mutation cycles are now in Task 4.5 above.
+eleven production mutation cycles are now in Task 4.5 above.
 
 ### No other architecture spike is warranted
 
@@ -731,6 +752,11 @@ Static inspection settles the risky semantic questions:
 - oracle gap: generated leaf names are visibly absent from the preserved declaration list.
 
 These are known engineering changes, not experiments.
+
+The ownership spike also found the pre-existing einsum exact-axis recomputation weakness. Task 4.5
+now closes it before threading Variant B context, using a non-symmetric two-dimensional fixture and
+an explicit regression mutation. Its failure mode and direct repair are known, so it warrants
+implementation and mutation testing rather than another spike.
 
 Two additional values remain unknown because they exist only after implementation, but neither
 justifies a spike:
