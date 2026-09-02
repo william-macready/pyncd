@@ -51,6 +51,7 @@ inductive JaxCodegenError
   -- its node/term/factor location. (Predicate/mask execution is not lowered to JAX — Global
   -- Constraints. Reads route through the unchanged path.)
   | iversonFactor         (nodeIndex termIndex factorIndex : Nat)
+  | unsupportedAssignment (nodeIndex : Nat) (cause : JaxSupportError)
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-! ## 2. Deterministic Python string rendering (shared by both modes) -/
@@ -113,7 +114,7 @@ def rowProjectionTarget (row : Array Int) : Option Nat :=
 
 /-- One factor's derived `einsum` input subscript (one label per source dimension) and the set of
     iteration-basis positions it covers. Fails loud on any nonzero bias or non-projection row. -/
-def lowerFactor (nodeIndex termIndex factorIndex : Nat) (f : ReadPlan) :
+private def lowerFactor (nodeIndex termIndex factorIndex : Nat) (f : ReadPlan) :
     Except JaxCodegenError (Array Char × Array Nat) := do
   let mut labels : Array Char := #[]
   let mut covered : Array Nat := #[]
@@ -139,7 +140,7 @@ structure TermLowering where
   outputSubscript  : String
   deriving Repr
 
-def lowerTerm (nodeIndex termIndex : Nat) (t : TermPlan) :
+private def lowerTerm (nodeIndex termIndex : Nat) (t : TermPlan) :
     Except JaxCodegenError TermLowering := do
   unless t.factors.size > 0 do throw (.emptyTerm nodeIndex termIndex)
   unless t.iterationShape.size ≤ labelTable.size do
@@ -174,8 +175,17 @@ structure NodeLowering where
   terms           : Array TermLowering
   deriving Repr
 
-def lowerAssign (nodeIndex : Nat) (a : AssignPlan) :
+private def requireJaxSupport (sigs : Array TensorSignature) (nodeIndex : Nat)
+    (assign : AssignPlan) : Except JaxCodegenError Unit :=
+  match checkJaxAssignSupport sigs assign with
+  | .ok _ => pure ()
+  | .error (.iversonFactor term factor) => throw (.iversonFactor nodeIndex term factor)
+  | .error cause => throw (.unsupportedAssignment nodeIndex cause)
+
+def lowerAssign (sigs : Array TensorSignature) (nodeIndex : Nat) (checked : CheckedAssignPlan) :
     Except JaxCodegenError NodeLowering := do
+  let a := checked.plan
+  requireJaxSupport sigs nodeIndex a
   unless a.terms.size > 0 do throw (.emptyAssign nodeIndex)
   let mut terms : Array TermLowering := #[]
   for h : ti in [0 : a.terms.size] do
@@ -187,17 +197,17 @@ def lowerPlan (c : CheckedEvalPlan) : Except JaxCodegenError (Array NodeLowering
   let mut nodes : Array NodeLowering := #[]
   for h : ni in [0 : c.checkedNodes.size] do
     match c.checkedNodes[ni] with
-    | .assign a => nodes := nodes.push (← lowerAssign ni a.plan)
+    | .assign a => nodes := nodes.push (← lowerAssign c.raw.tensorSigs ni a)
     | .scan _ | .pointwise _ | .axiswise _ => throw (.unsupportedStep ni)
   return nodes
 
-def renderTermLine (indent : String) (tl : TermLowering) (varName : String) : String :=
+private def renderTermLine (indent : String) (tl : TermLowering) (varName : String) : String :=
   let subs := String.intercalate "," tl.factorSubscripts.toList
   let sig := pyStrLit (subs ++ "->" ++ tl.outputSubscript)
   let args := String.intercalate ", " (tl.factorSlots.toList.map (fun s => s!"slots[{s}]"))
   s!"{indent}{varName} = jnp.einsum({sig}, {args}, optimize=False)"
 
-def renderNodeLines (indent : String) (n : NodeLowering) : Array String :=
+private def renderNodeLines (indent : String) (n : NodeLowering) : Array String :=
   let termVar (ti : Nat) := s!"n{n.nodeIndex}_term{ti}"
   let termLines := n.terms.mapIdx (fun ti tl => renderTermLine indent tl (termVar ti))
   let combine := String.intercalate " + " ((List.range n.terms.size).map termVar)
@@ -305,13 +315,13 @@ def buildFactorTable (iterationShape : Array Nat) (f : ReadPlan) : Array Nat × 
         (idxs.push 0, masks.push false))
     (#[], #[])
 
-def renderAffineFactor (iterationShape : Array Nat) (f : ReadPlan) : String :=
+private def renderAffineFactor (iterationShape : Array Nat) (f : ReadPlan) : String :=
   let (idxs, masks) := buildFactorTable iterationShape f
   "{\"source_slot\": " ++ toString f.sourceSlot ++
   ", \"safe_index\": " ++ pyNatListLit idxs ++
   ", \"mask\": " ++ pyBoolListLit masks ++ "}"
 
-def renderAffineTerm (nodeIndex termIndex : Nat) (t : TermPlan) :
+private def renderAffineTerm (nodeIndex termIndex : Nat) (t : TermPlan) :
     Except JaxCodegenError String := do
   let mut facStrs : Array String := #[]
   for h : fi in [0 : t.factors.size] do
@@ -327,7 +337,9 @@ def renderAffineTerm (nodeIndex termIndex : Nat) (t : TermPlan) :
 /-- One assignment node's static data: destination slot, output shape, and every term's precomputed
     tables in checked term-array order. Rejects a term carrying an Iverson factor with its located
     error (via `renderAffineTerm`). -/
-def renderAffineNode (nodeIndex : Nat) (a : AssignPlan) : Except JaxCodegenError String := do
+private def renderAffineNode (sigs : Array TensorSignature) (nodeIndex : Nat)
+    (a : AssignPlan) : Except JaxCodegenError String := do
+  requireJaxSupport sigs nodeIndex a
   let mut termStrs : Array String := #[]
   for h : ti in [0 : a.terms.size] do
     termStrs := termStrs.push (← renderAffineTerm nodeIndex ti a.terms[ti])
@@ -340,11 +352,11 @@ def renderAffineNode (nodeIndex : Nat) (a : AssignPlan) : Except JaxCodegenError
     `checkPlan`'s construction). Total over assignment-only graphs; a `.pointwise`/`.axiswise`/
     `.scan` node has no affine-table lowering here, so the array build rejects it with the one
     located unsupported-step error carrying that node's outer-graph index. -/
-def renderAffineNodesArray (c : CheckedEvalPlan) : Except JaxCodegenError String := do
+private def renderAffineNodesArray (c : CheckedEvalPlan) : Except JaxCodegenError String := do
   let mut entries : Array String := #[]
   for h : ni in [0 : c.checkedNodes.size] do
     match c.checkedNodes[ni] with
-    | .assign a => entries := entries.push (← renderAffineNode ni a.plan)
+    | .assign a => entries := entries.push (← renderAffineNode c.raw.tensorSigs ni a.plan)
     | .scan _ | .pointwise _ | .axiswise _ => throw (.unsupportedStep ni)
   return "[" ++ String.intercalate ", " entries.toList ++ "]"
 
@@ -376,8 +388,9 @@ def renderAffinePlanNamed (plan : PreparedPlan) : Except JaxCodegenError String 
     names). Its runtime call accepts a positional store and returns one result tensor, directly
     paralleling `runDenseAssign`. The checked-kernel boundary. Uses node index `0` (a single node)
     for any located Iverson rejection. -/
-def renderAffineAssign (c : CheckedAssignPlan) : Except JaxCodegenError String :=
-  renderAffineNode 0 c.plan
+def renderAffineAssign (sigs : Array TensorSignature) (c : CheckedAssignPlan) :
+    Except JaxCodegenError String :=
+  renderAffineNode sigs 0 c.plan
 
 /-- Check, Dense-run, and render one checked-assignment fixture as a `FIXTURES`-list entry:
     `{"name", "kind": "assign", "assign", "store", "expected"}`. The one assign-fixture builder
@@ -392,7 +405,7 @@ def buildAssignFixture (name : String) (sigs : Array TensorSignature) (a : Assig
     | .ok d => pure d
     | .error e => throw (IO.userError s!"{name} Dense run failed: {repr e}")
   let storeEntries := String.intercalate ", " (store.toList.map pyTensorEntry)
-  let rendered ← match renderAffineAssign checked with
+  let rendered ← match renderAffineAssign sigs checked with
     | .ok s => pure s
     | .error e => throw (IO.userError s!"{name} render failed: {repr e}")
   pure ("{\"name\": " ++ pyStrLit name ++ ", \"kind\": \"assign\", \"assign\": " ++
@@ -430,15 +443,16 @@ function's own doc comment for the two Task 5 signature/scope rulings this refle
     factor's safe-index/validity-mask table, one table array per term (outer), one table per factor
     within that term (inner) — matching `tables`'s documented "one per term, then per factor" shape.
 -/
-def loweringToAffineTableCandidate (assign : CheckedAssignPlan) :
-    OrderedAffineTableKernelCandidate :=
+def loweringToAffineTableCandidate (sigs : Array TensorSignature) (nodeIndex : Nat)
+    (assign : CheckedAssignPlan) : Except JaxCodegenError OrderedAffineTableKernelCandidate := do
+  requireJaxSupport sigs nodeIndex assign.plan
   let tables := assign.plan.terms.map (fun term =>
     term.factors.filterMap (fun f => match f with
       | .read r =>
           let (safeIndex, validMask) := buildFactorTable term.iterationShape r
           some ({ source := r.sourceSlot, safeIndex, validMask } : AffineTableReadCandidate)
       | .iverson _ => none))
-  { semanticAssignment := assign, tables }
+  return { semanticAssignment := assign, tables }
 
 /-- Convert `einsumOnly` lowering to `EinsumExperimentKernelCandidate`, reusing
     `rowProjectionTarget` (§3) to recognize each factor's pure-projection rows the same way
@@ -466,18 +480,19 @@ def loweringToAffineTableCandidate (assign : CheckedAssignPlan) :
     but this function is total over the type, so it still needs a defined answer) returns empty
     `operands`/`outputAxes`.
 -/
-def loweringToEinsumCandidate (assign : CheckedAssignPlan) :
-    EinsumExperimentKernelCandidate :=
+def loweringToEinsumCandidate (sigs : Array TensorSignature) (nodeIndex : Nat)
+    (assign : CheckedAssignPlan) : Except JaxCodegenError EinsumExperimentKernelCandidate := do
+  requireJaxSupport sigs nodeIndex assign.plan
   match assign.plan.terms[0]? with
   | none =>
-      { semanticAssignment := assign, destination := assign.plan.destinationSlot
-      , operands := #[], outputAxes := #[] }
+      return { semanticAssignment := assign, destination := assign.plan.destinationSlot
+             , operands := #[], outputAxes := #[] }
   | some term =>
       let operands := term.factors.filterMap (fun f => match f with
         | .read r => some (#[r.sourceSlot] ++ r.map.coeffs.filterMap rowProjectionTarget)
         | .iverson _ => none)
-      { semanticAssignment := assign, destination := assign.plan.destinationSlot
-      , operands, outputAxes := term.outputPos }
+      return { semanticAssignment := assign, destination := assign.plan.destinationSlot
+             , operands, outputAxes := term.outputPos }
 
 /-- Lower a checked plan to an executable candidate.
 
@@ -506,7 +521,8 @@ def lowerCheckPlanToCandidate (plan : PreparedPlan) :
   for h : ni in [0 : plan.plan.checkedNodes.size] do
     match plan.plan.checkedNodes[ni] with
     | .assign a =>
-        match validateAndConstructKernel (.affineTable (loweringToAffineTableCandidate a)) with
+        let lowered ← loweringToAffineTableCandidate plan.plan.raw.tensorSigs ni a
+        match validateAndConstructKernel plan.plan.raw.tensorSigs (.affineTable lowered) with
         | .ok k => steps := steps.push k
         | .error _ => throw (.unsupportedStep ni)
     | .scan _ | .pointwise _ | .axiswise _ => throw (.unsupportedStep ni)
@@ -547,9 +563,12 @@ def testAffineLoweringValid : Bool :=
   match checkAssign idSigs idAssign with
   | .error _ => false
   | .ok checked =>
-      match validateAndConstructKernel (.affineTable (loweringToAffineTableCandidate checked)) with
-      | .ok _ => true
+      match loweringToAffineTableCandidate idSigs 0 checked with
       | .error _ => false
+      | .ok candidate =>
+          match validateAndConstructKernel idSigs (.affineTable candidate) with
+          | .ok _ => true
+          | .error _ => false
 
 #guard testAffineLoweringValid
 
@@ -560,9 +579,12 @@ def testEinsumLoweringValid : Bool :=
   match checkAssign idSigs idAssign with
   | .error _ => false
   | .ok checked =>
-      match validateAndConstructKernel (.einsum (loweringToEinsumCandidate checked)) with
-      | .ok _ => true
+      match loweringToEinsumCandidate idSigs 0 checked with
       | .error _ => false
+      | .ok candidate =>
+          match validateAndConstructKernel idSigs (.einsum candidate) with
+          | .ok _ => true
+          | .error _ => false
 
 #guard testEinsumLoweringValid
 
@@ -621,42 +643,68 @@ def boolSourcePrepared? : Option PreparedPlan :=
             , bindings := { requiredInputs, materializedNames := #[{ name := "y", slot := 1 }] }
             , warnings := [] }
 
-/-- F2 reaches every currently public semantic lowering/rendering/candidate path. -/
-def testCurrentBoolSourcePublicPathsAccepted : Bool :=
+/-- Exact F2 support rejection, including the outer node and original factor/slot locators. -/
+def isBoolSourceRejection (node slot : Nat) {α : Type} : Except JaxCodegenError α → Bool
+  | .error (.unsupportedAssignment actualNode (.sourceDType term factor actualSlot .bool)) =>
+      actualNode == node && term == 0 && factor == 0 && actualSlot == slot
+  | _ => false
+
+def f2PublicEntryRejects {α : Type}
+    (entry : CheckedAssignPlan → PreparedPlan → Except JaxCodegenError α) : Bool :=
   match checkAssign boolSourceSigs idAssign, boolSourcePrepared? with
-  | .ok checked, some prepared =>
-      let affineCandidate := loweringToAffineTableCandidate checked
-      let einsumCandidate := loweringToEinsumCandidate checked
-      spikeExceptOk (lowerFactor 0 0 0 idRead) &&
-      spikeExceptOk (lowerTerm 0 0 idAssign.terms[0]!) &&
-      spikeExceptOk (lowerAssign 0 idAssign) &&
-      spikeExceptOk (lowerPlan prepared.plan) &&
-      spikeExceptOk (generateForward prepared) &&
-      !(renderAffineFactor #[3] idRead).isEmpty &&
-      spikeExceptOk (renderAffineTerm 0 0 idAssign.terms[0]!) &&
-      spikeExceptOk (renderAffineNode 0 idAssign) &&
-      spikeExceptOk (renderAffineNodesArray prepared.plan) &&
-      spikeExceptOk (renderAffinePlanPositional prepared.plan) &&
-      spikeExceptOk (renderAffinePlanNamed prepared) &&
-      spikeExceptOk (renderAffineAssign checked) &&
-      spikeExceptOk (generateNamed .einsumOnly prepared) &&
-      spikeExceptOk (generateNamed .affineReference prepared) &&
-      candidateEvidenceLabel (.affineTable affineCandidate) == .orderedReference64 &&
-      spikeExceptOk (validateAndConstructKernel (.affineTable affineCandidate)) &&
-      spikeExceptOk (validateAndConstructKernel (.einsum einsumCandidate)) &&
-      match lowerCheckPlanToCandidate prepared with
-      | .error _ => false
-      | .ok candidate => spikeExceptOk (validateAndConstructExecutable candidate)
+  | .ok checked, some prepared => isBoolSourceRejection 0 0 (entry checked prepared)
   | _, _ => false
 
-#guard testCurrentBoolSourcePublicPathsAccepted
+#guard f2PublicEntryRejects fun checked _ => lowerAssign boolSourceSigs 0 checked
+#guard f2PublicEntryRejects fun _ prepared => lowerPlan prepared.plan
+#guard f2PublicEntryRejects fun _ prepared => generateForward prepared
+#guard f2PublicEntryRejects fun _ prepared => renderAffinePlanPositional prepared.plan
+#guard f2PublicEntryRejects fun _ prepared => renderAffinePlanNamed prepared
+#guard f2PublicEntryRejects fun checked _ => renderAffineAssign boolSourceSigs checked
+#guard f2PublicEntryRejects fun _ prepared => generateNamed .einsumOnly prepared
+#guard f2PublicEntryRejects fun _ prepared => generateNamed .affineReference prepared
+#guard f2PublicEntryRejects fun checked _ =>
+  loweringToAffineTableCandidate boolSourceSigs 0 checked
+#guard f2PublicEntryRejects fun checked _ =>
+  loweringToEinsumCandidate boolSourceSigs 0 checked
+#guard f2PublicEntryRejects fun _ prepared => lowerCheckPlanToCandidate prepared
 
-/- `buildAssignFixture` is an `IO` public boundary, so exercise it by evaluation rather than a
-pure `#guard`. Any check, Dense, or render failure makes this command fail elaboration. -/
+/-- Variant B gates every retained public semantic lowering/rendering/candidate path. -/
+def testVariantBBoolSourcePublicPathsRejected : Bool :=
+  match checkAssign boolSourceSigs idAssign, boolSourcePrepared? with
+  | .ok checked, some prepared =>
+      let table : AffineTableReadCandidate :=
+        { source := 0, safeIndex := #[0, 1, 2], validMask := #[true, true, true] }
+      let affineCandidate : OrderedAffineTableKernelCandidate :=
+        { semanticAssignment := checked, tables := #[#[table]] }
+      let einsumCandidate : EinsumExperimentKernelCandidate :=
+        { semanticAssignment := checked, destination := 1
+        , operands := #[#[0, 0]], outputAxes := #[0] }
+      isBoolSourceRejection 0 0 (lowerAssign boolSourceSigs 0 checked) &&
+      isBoolSourceRejection 0 0 (lowerPlan prepared.plan) &&
+      isBoolSourceRejection 0 0 (generateForward prepared) &&
+      isBoolSourceRejection 0 0 (renderAffinePlanPositional prepared.plan) &&
+      isBoolSourceRejection 0 0 (renderAffinePlanNamed prepared) &&
+      isBoolSourceRejection 0 0 (renderAffineAssign boolSourceSigs checked) &&
+      isBoolSourceRejection 0 0 (generateNamed .einsumOnly prepared) &&
+      isBoolSourceRejection 0 0 (generateNamed .affineReference prepared) &&
+      isBoolSourceRejection 0 0 (loweringToAffineTableCandidate boolSourceSigs 0 checked) &&
+      isBoolSourceRejection 0 0 (loweringToEinsumCandidate boolSourceSigs 0 checked) &&
+      !spikeExceptOk (validateAndConstructKernel boolSourceSigs (.affineTable affineCandidate)) &&
+      !spikeExceptOk (validateAndConstructKernel boolSourceSigs (.einsum einsumCandidate)) &&
+      isBoolSourceRejection 0 0 (lowerCheckPlanToCandidate prepared)
+  | _, _ => false
+
+#guard testVariantBBoolSourcePublicPathsRejected
+
+/- The `IO` fixture boundary must also reject before returning Python. -/
 #eval do
-  let rendered ← buildAssignFixture "boolSource" boolSourceSigs idAssign boolSourceStore
-  unless rendered.contains "\"name\": \"boolSource\"" do
-    throw (IO.userError "F2 buildAssignFixture produced the wrong fixture")
+  let rejected ←
+    try
+      let _ ← buildAssignFixture "boolSource" boolSourceSigs idAssign boolSourceStore
+      pure false
+    catch _ => pure true
+  unless rejected do throw (IO.userError "F2 buildAssignFixture did not reject at JAX support")
 
 def locatedStep0Read : ReadPlan :=
   { idRead with sourceSlot := 0 }
@@ -680,7 +728,7 @@ def locatedBoolSigs : Array TensorSignature :=
   #[ { shape := #[3], dtype := .f64 }, { shape := #[3], dtype := .f64 }
    , { shape := #[3], dtype := .bool }, { shape := #[3], dtype := .f64 } ]
 
-/-- F3: the Boolean external input is slot 1, but its only read is at outer step 1. -/
+/-- F3: the Boolean external input is slot 2, but its only read is at outer step 1. -/
 def locatedBoolRaw : RawEvalPlan :=
   { tensorSigs := locatedBoolSigs, inputSlots := #[0, 2]
   , steps := #[.assign locatedStep0Assign, .assign locatedStep1Assign] }
@@ -721,37 +769,97 @@ def firstBoolReadLocation
 
 #guard firstBoolReadLocation locatedBoolRaw == some (1, 0, 0, 2)
 
-def testCurrentLocatedBoolExecutableAccepted : Bool :=
+def testVariantBLocatedBoolRejectedAt1 : Bool :=
   match locatedBoolPrepared? with
   | none => false
   | some prepared =>
       match lowerCheckPlanToCandidate prepared with
-      | .error _ => false
-      | .ok candidate => spikeExceptOk (validateAndConstructExecutable candidate)
+      | .error (.unsupportedAssignment 1 (.sourceDType 0 0 2 .bool)) => true
+      | _ => false
 
-#guard testCurrentLocatedBoolExecutableAccepted
+#guard testVariantBLocatedBoolRejectedAt1
 
 def allRealSubstituteSigs : Array TensorSignature := idSigs
 
-/-- F4: the source `PreparedPlan` owns the Boolean table, while this manually-built kernel was
-checked against an equal-shaped all-real substitute. The pre-spike executable validator accepts it,
-proving that step count alone does not establish plan authority. -/
-def testCurrentPlanAuthoritySubstitutionAccepted : Bool :=
+/-- F4: a same-shaped all-real candidate cannot override the Boolean `PreparedPlan` authority. -/
+def testVariantBPlanAuthoritySubstitutionRejected : Bool :=
   match boolSourcePrepared?, checkAssign allRealSubstituteSigs idAssign with
   | some prepared, .ok substituteChecked =>
-      match validateAndConstructKernel
-          (.affineTable (loweringToAffineTableCandidate substituteChecked)) with
+      match loweringToAffineTableCandidate allRealSubstituteSigs 0 substituteChecked with
       | .error _ => false
-      | .ok kernel =>
-          let steps := #[kernel]
-          let candidate : JaxExecutableCandidate :=
-            { source := prepared, steps
-            , evidence := aggregateEvidenceList (steps.map (·.evidence))
-            , aggregated := rfl }
-          spikeExceptOk (validateAndConstructExecutable candidate)
+      | .ok lowered =>
+          match validateAndConstructKernel allRealSubstituteSigs (.affineTable lowered) with
+          | .error _ => false
+          | .ok kernel =>
+              let steps := #[kernel]
+              let candidate : JaxExecutableCandidate :=
+                { source := prepared, steps
+                , evidence := aggregateEvidenceList (steps.map (·.evidence))
+                , aggregated := rfl }
+              match validateAndConstructExecutable candidate with
+              | .error message => message == "Executable source mismatch at step 0"
+              | .ok _ => false
   | _, _ => false
 
-#guard testCurrentPlanAuthoritySubstitutionAccepted
+#guard testVariantBPlanAuthoritySubstitutionRejected
+
+def locatedAllRealSigs : Array TensorSignature :=
+  locatedBoolSigs.map fun sig => { sig with dtype := .f64 }
+
+/-- The complete context may differ first at step 1's support use; the executable reports step 1,
+not a cached step-0 decision. -/
+def testVariantBLocatedContextSubstitutionRejectedAt1 : Bool :=
+  match locatedBoolPrepared? with
+  | none => false
+  | some prepared =>
+      match (prepared.plan.checkedNodes[0]? : Option CheckedPlanStepEvidence),
+            (prepared.plan.checkedNodes[1]? : Option CheckedPlanStepEvidence) with
+      | some (.assign checked0), some (.assign checked1) =>
+          match loweringToAffineTableCandidate locatedBoolSigs 0 checked0,
+                loweringToAffineTableCandidate locatedAllRealSigs 1 checked1 with
+          | .ok lowered0, .ok lowered1 =>
+              match validateAndConstructKernel locatedBoolSigs (.affineTable lowered0),
+                    validateAndConstructKernel locatedAllRealSigs (.affineTable lowered1) with
+              | .ok kernel0, .ok kernel1 =>
+                  let steps := #[kernel0, kernel1]
+                  let candidate : JaxExecutableCandidate :=
+                    { source := prepared, steps
+                    , evidence := aggregateEvidenceList (steps.map (·.evidence))
+                    , aggregated := rfl }
+                  match validateAndConstructExecutable candidate with
+                  | .error message => message == "Executable source mismatch at step 1"
+                  | .ok _ => false
+              | _, _ => false
+          | _, _ => false
+      | _, _ => false
+
+#guard testVariantBLocatedContextSubstitutionRejectedAt1
+
+/-- Even with the authoritative complete context, a step-0 assignment candidate cannot be reused
+for step 1. This is the assignment-correspondence half of executable well-formedness. -/
+def testVariantBAssignmentTieRejectedAt1 : Bool :=
+  match locatedBoolPrepared? with
+  | none => false
+  | some prepared =>
+      match (prepared.plan.checkedNodes[0]? : Option CheckedPlanStepEvidence) with
+      | some (.assign checked0) =>
+          match loweringToAffineTableCandidate locatedBoolSigs 0 checked0 with
+          | .error _ => false
+          | .ok lowered =>
+              match validateAndConstructKernel locatedBoolSigs (.affineTable lowered) with
+              | .error _ => false
+              | .ok kernel =>
+                  let steps := #[kernel, kernel]
+                  let candidate : JaxExecutableCandidate :=
+                    { source := prepared, steps
+                    , evidence := aggregateEvidenceList (steps.map (·.evidence))
+                    , aggregated := rfl }
+                  match validateAndConstructExecutable candidate with
+                  | .error message => message == "Executable source mismatch at step 1"
+                  | .ok _ => false
+      | _ => false
+
+#guard testVariantBAssignmentTieRejectedAt1
 
 /-! ### Located unsupported-step rejections (Slice 5, Task 5.0)
 
