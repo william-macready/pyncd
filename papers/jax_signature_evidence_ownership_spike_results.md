@@ -28,7 +28,7 @@ all rank/shape/affine/OOB checks, and `.f32` rejection are unchanged.
 |---|---|---|
 | F1 | Existing `idSigs`/`idAssign` | Existing all-real guards and both candidate validators pass; affine evidence is `orderedReference64`. |
 | F2 | Only source slot 0's tag changes from `f64` to `bool`; Float data and real destination/algebra are unchanged | `checkAssign`, Dense, every public semantic renderer/lowerer, both candidates, both kernel validators, plan lowering, and executable construction pass. This is the hole. |
-| F3 | Four slots; external slot 1 is Boolean; step 0 reads real slot 0 to slot 2; step 1 reads Boolean slot 1 to slot 3 | `checkPlan` and current executable construction pass. Harness locator is exactly `(step=1, term=0, factor=0, slot=1)`. |
+| F3 | Four slots; external slot 2 is Boolean; step 0 reads real slot 0 to slot 1; step 1 reads Boolean slot 2 to slot 3 | `checkPlan` and current executable construction pass. Harness locator is exactly `(step=1, term=0, factor=0, slot=2)`, so step and slot cannot be confused. |
 | F4 | F2 `PreparedPlan` owns the Boolean table; a manually built same-shape kernel is checked with all-real `idSigs` | Current executable validation accepts the substitute because it checks only count/kernel shape/aggregation. |
 
 Harness mutations:
@@ -88,13 +88,13 @@ test-only fixture. “Nearest gate” identifies why a D row cannot emit or cert
 | `labelTable` | D | Static alphabet. |
 | `rowProjectionTarget` | D | Pure affine-row recognizer. |
 | `lowerFactor` | H | Assignment semantic helper; make private behind contextual `lowerAssign`. |
-| `TermLowering` | D | Lowered data only; creation is gated. |
+| `TermLowering` | H | Publicly constructible semantic IR feeds a Python renderer; renderer must become private behind a contextual gate. |
 | `lowerTerm` | H | Assignment semantic helper; make private. |
-| `NodeLowering` | D | Lowered data only; creation is gated. |
+| `NodeLowering` | H | Publicly constructible semantic IR feeds destination-writing Python; renderer must become private. |
 | `lowerAssign` | E | Standalone/raw semantic lowerer; require complete context. |
 | `lowerPlan` | E | Complete checked-plan lowerer; derive `raw.tensorSigs`. |
-| `renderTermLine` | D | Renders already-gated `TermLowering`; cannot inspect source slots/dtypes. |
-| `renderNodeLines` | D | Renders already-gated `NodeLowering`. |
+| `renderTermLine` | H | Emits `jnp.einsum` from publicly constructible IR; make private behind contextual lowering. |
+| `renderNodeLines` | H | Emits destination writes from publicly constructible IR; make private behind contextual lowering. |
 | `renderShapeCheckLine` | D | Shape-only input guard; generator is semantic gate. |
 | `renderSlotInitLines` | D | Shape/init lines only; generator is semantic gate. |
 | `renderOutputLines` | D | Name/slot projection only. |
@@ -127,32 +127,32 @@ Every remaining public definition in this module is a **T** row:
 | `testAffineLoweringValid` | T | `testEinsumLoweringValid` | T |
 | `testLowerCheckPlanToCandidateValid` | T | `spikeExceptOk` | T |
 | `boolSourceSigs` | T | `boolSourceRaw` | T |
-| `boolSourcePrepared?` | T | `testCurrentBoolSourcePublicPathsAccepted` | T |
-| `locatedStep0Read` | T | `locatedStep1Read` | T |
-| `locatedStep0Assign` | T | `locatedStep1Assign` | T |
-| `locatedBoolSigs` | T | `locatedBoolRaw` | T |
-| `locatedBoolPrepared?` | T | `firstBoolReadLocation` | T |
-| `testCurrentLocatedBoolExecutableAccepted` | T | `allRealSubstituteSigs` | T |
-| `testCurrentPlanAuthoritySubstitutionAccepted` | T | `rejectSigs` | T |
-| `pointwiseStep` | T | `pointwiseRejectRaw` | T |
-| `axiswiseStep` | T | `axiswiseRejectRaw` | T |
-| `scanState` | T | `scanBaseBlock` | T |
-| `scanBaseCapture` | T | `scanBaseWrite` | T |
-| `scanStepReadX` | T | `scanStepReadS` | T |
-| `scanTermX` | T | `scanTermS` | T |
-| `scanStepAssign` | T | `scanStepBlock` | T |
-| `scanStepCaptureX` | T | `scanStepCaptureS` | T |
-| `scanStepWrite` | T | `scanPlanStep` | T |
-| `scanRejectSigs` | T | `scanAssignRead` | T |
-| `scanAssign` | T | `scanRejectRaw` | T |
-| `rejectsLocatedAt1` | T | `testPointwiseStepRejectedLocated` | T |
-| `testAxiswiseStepRejectedLocated` | T | `maskInclude` | T |
-| `maskedAxiswiseStep` | T | `maskedAxiswiseRejectRaw` | T |
-| `testMaskedAxiswiseStepRejectedLocated` | T | `testScanStepRejectedLocated` | T |
-| `idIversonPred` | T | `idIversonAssign` | T |
-| `idIversonRaw` | T | `testIversonPlanChecks` | T |
-| `iversonRejectedUnder` | T | `testIversonEinsumRejectedLocated` | T |
-| `testIversonAffineRejectedLocated` | T |  |  |
+| `boolSourceStore` | T | `boolSourcePrepared?` | T |
+| `testCurrentBoolSourcePublicPathsAccepted` | T | `locatedStep0Read` | T |
+| `locatedStep1Read` | T | `locatedStep0Assign` | T |
+| `locatedStep1Assign` | T | `locatedBoolSigs` | T |
+| `locatedBoolRaw` | T | `locatedBoolPrepared?` | T |
+| `firstBoolReadLocation` | T | `testCurrentLocatedBoolExecutableAccepted` | T |
+| `allRealSubstituteSigs` | T | `testCurrentPlanAuthoritySubstitutionAccepted` | T |
+| `rejectSigs` | T | `pointwiseStep` | T |
+| `pointwiseRejectRaw` | T | `axiswiseStep` | T |
+| `axiswiseRejectRaw` | T | `scanState` | T |
+| `scanBaseBlock` | T | `scanBaseCapture` | T |
+| `scanBaseWrite` | T | `scanStepReadX` | T |
+| `scanStepReadS` | T | `scanTermX` | T |
+| `scanTermS` | T | `scanStepAssign` | T |
+| `scanStepBlock` | T | `scanStepCaptureX` | T |
+| `scanStepCaptureS` | T | `scanStepWrite` | T |
+| `scanPlanStep` | T | `scanRejectSigs` | T |
+| `scanAssignRead` | T | `scanAssign` | T |
+| `scanRejectRaw` | T | `rejectsLocatedAt1` | T |
+| `testPointwiseStepRejectedLocated` | T | `testAxiswiseStepRejectedLocated` | T |
+| `maskInclude` | T | `maskedAxiswiseStep` | T |
+| `maskedAxiswiseRejectRaw` | T | `testMaskedAxiswiseStepRejectedLocated` | T |
+| `testScanStepRejectedLocated` | T | `idIversonPred` | T |
+| `idIversonAssign` | T | `idIversonRaw` | T |
+| `testIversonPlanChecks` | T | `iversonRejectedUnder` | T |
+| `testIversonEinsumRejectedLocated` | T | `testIversonAffineRejectedLocated` | T |
 
 Current external callers are: `EvalPlanSmoke.generateNamed`; `EvalPlanAffineSmoke`'s
 `renderAffinePlanNamed`, `renderAffinePlanPositional`, and ten `buildAssignFixture` calls;
@@ -161,4 +161,3 @@ Current external callers are: `EvalPlanSmoke.generateNamed`; `EvalPlanAffineSmok
 ## Variant measurements
 
 To be completed after both independently compiled prototypes and all mutations.
-

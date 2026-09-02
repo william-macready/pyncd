@@ -606,6 +606,9 @@ def boolSourceRaw : RawEvalPlan :=
   { tensorSigs := boolSourceSigs, inputSlots := #[0]
   , steps := #[PlanStep.assign idAssign] }
 
+def boolSourceStore : Array DenseTensor :=
+  #[{ shape := [3], data := #[0.0, 1.0, 1.0] }]
+
 def boolSourcePrepared? : Option PreparedPlan :=
   match checkPlan boolSourceRaw with
   | .error _ => none
@@ -648,14 +651,21 @@ def testCurrentBoolSourcePublicPathsAccepted : Bool :=
 
 #guard testCurrentBoolSourcePublicPathsAccepted
 
+/- `buildAssignFixture` is an `IO` public boundary, so exercise it by evaluation rather than a
+pure `#guard`. Any check, Dense, or render failure makes this command fail elaboration. -/
+#eval do
+  let rendered ← buildAssignFixture "boolSource" boolSourceSigs idAssign boolSourceStore
+  unless rendered.contains "\"name\": \"boolSource\"" do
+    throw (IO.userError "F2 buildAssignFixture produced the wrong fixture")
+
 def locatedStep0Read : ReadPlan :=
   { idRead with sourceSlot := 0 }
 
 def locatedStep1Read : ReadPlan :=
-  { idRead with sourceSlot := 1 }
+  { idRead with sourceSlot := 2 }
 
 def locatedStep0Assign : AssignPlan :=
-  { contextShape := #[], destinationSlot := 2, outputShape := #[3]
+  { contextShape := #[], destinationSlot := 1, outputShape := #[3]
   , terms := #[{ iterationShape := #[3], contextPos := #[], outputPos := #[0], reductionPos := #[]
                , factors := #[.read locatedStep0Read] }]
   , algebra := admittedAlgebra }
@@ -667,26 +677,26 @@ def locatedStep1Assign : AssignPlan :=
   , algebra := admittedAlgebra }
 
 def locatedBoolSigs : Array TensorSignature :=
-  #[ { shape := #[3], dtype := .f64 }, { shape := #[3], dtype := .bool }
-   , { shape := #[3], dtype := .f64 }, { shape := #[3], dtype := .f64 } ]
+  #[ { shape := #[3], dtype := .f64 }, { shape := #[3], dtype := .f64 }
+   , { shape := #[3], dtype := .bool }, { shape := #[3], dtype := .f64 } ]
 
 /-- F3: the Boolean external input is slot 1, but its only read is at outer step 1. -/
 def locatedBoolRaw : RawEvalPlan :=
-  { tensorSigs := locatedBoolSigs, inputSlots := #[0, 1]
+  { tensorSigs := locatedBoolSigs, inputSlots := #[0, 2]
   , steps := #[.assign locatedStep0Assign, .assign locatedStep1Assign] }
 
 def locatedBoolPrepared? : Option PreparedPlan :=
   match checkPlan locatedBoolRaw with
   | .error _ => none
   | .ok checkedPlan =>
-      match checkBindings #[0, 1] #[{ name := "real", slot := 0 }, { name := "pred", slot := 1 }] with
+      match checkBindings #[0, 2] #[{ name := "real", slot := 0 }, { name := "pred", slot := 2 }] with
       | .error _ => none
       | .ok requiredInputs =>
           some
             { plan := checkedPlan
             , bindings :=
                 { requiredInputs
-                , materializedNames := #[{ name := "r", slot := 2 }, { name := "z", slot := 3 }] }
+                , materializedNames := #[{ name := "r", slot := 1 }, { name := "z", slot := 3 }] }
             , warnings := [] }
 
 def firstBoolReadLocation
@@ -709,7 +719,7 @@ def firstBoolReadLocation
     | .scan _ | .pointwise _ | .axiswise _ => pure ()
   return found
 
-#guard firstBoolReadLocation locatedBoolRaw == some (1, 0, 0, 1)
+#guard firstBoolReadLocation locatedBoolRaw == some (1, 0, 0, 2)
 
 def testCurrentLocatedBoolExecutableAccepted : Bool :=
   match locatedBoolPrepared? with
