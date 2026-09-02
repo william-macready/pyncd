@@ -372,3 +372,8 @@ After both reverts:
   Boolean-output plan.
 - Repository status contains only the prepared, gitignored `.superpowers/` SDD ledger; it was not
   modified or removed.
+
+Final independent ownership/API and mutation/reversion reviews found two documentation inaccuracies:
+the baseline direct corpus failure had five (not four) bad projections, and the pre-existing einsum
+weakness remains after restoration. Commit `a1bd86b` corrected both. Re-running both review lenses
+reported no significant remaining issue.
