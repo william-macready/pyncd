@@ -376,4 +376,5 @@ After both reverts:
 Final independent ownership/API and mutation/reversion reviews found two documentation inaccuracies:
 the baseline direct corpus failure had five (not four) bad projections, and the pre-existing einsum
 weakness remains after restoration. Commit `a1bd86b` corrected both. Re-running both review lenses
-reported no significant remaining issue.
+reported no significant remaining issue. The final default and targeted builds were then re-run and
+again completed successfully (8,659 and 8,513 jobs).
