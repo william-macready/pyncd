@@ -1,6 +1,7 @@
 # Task 4 — Boolean / predicate outputs in the checked `EvalPlan` backend
 
-**Status:** implementation plan, verified against the tree at commit `ae00fcc`; not implemented.
+**Status:** implementation plan, preflight-verified against the tree at commit `429673f`; not
+implemented.
 This closes the current checked-backend rejection of `Decl.predicate` by
 `CapabilityError.booleanOutput`. It does not add native Boolean storage or JAX Boolean execution.
 
@@ -142,7 +143,8 @@ nonlinearity are invalid source, not valid-but-unsupported backend capabilities.
 In `LeanNCD/Eval/Plan/Signature.lean`, add one declaration-aware constructor:
 `InputSignature.ofDenseInputsForDecls`. It takes the validated `DeclEnv`, copies Dense shapes, and
 labels declared predicates `bool`, all other names `f64`. Keep `ofDenseInputs` unchanged as the
-all-`f64` compatibility helper.
+all-`f64` compatibility helper. Import `LeanNCD.DSL.Pipeline.Types` to name `DeclEnv`; this is a new
+one-way dependency and creates no import cycle.
 
 During preparation:
 
@@ -294,7 +296,8 @@ Implement the shared duplicate-safe declaration builder, tensor-only reference l
 predicate-output invariant check, authoritative scheduled external-name derivation, and
 `sourceInvariant` preparation failure. Update every exhaustive `PlanCompileCause` renderer in the
 same task, including the non-default JAX renderer. Do not admit predicate declarations at capability
-preflight yet; this task can land with the old Boolean-output rejection.
+preflight yet; this task can land with the old Boolean-output rejection. Since `resolveDecls` becomes
+fallible, update its “never throws” production doc comment and the matching StructuralTest message.
 
 **Fixtures: 11; planned mutation cycles: 6**
 
@@ -331,7 +334,9 @@ Mutation cycles must temporarily restore last-wins insertion, let axis declarati
 schedule check, including authoritative external-name derivation. Each named fixture must fail under
 its mutation and pass after restoration. Build `Eval.Plan.CompileTest`, `Eval.Plan.AdapterTest`,
 `Eval.Plan.ScanCompileTest`, and non-default `JaxExperiment` before this task is considered
-independently landable.
+independently landable. Also run the 3,832-case scan-free corpus, the 17-case scan corpus, Portfolio,
+and RouteWeave coverage before landing; confirm no current program declares one tensor-bearing name
+twice. A count change is a blocker to investigate, not an expected consequence of duplicate safety.
 
 ### Task 4.2 — Admit Boolean local assignments and Float-backed Dense execution
 
@@ -448,11 +453,12 @@ Replace shape-only compiler state metadata with full signatures, enforce write d
 make the independent leaf oracle preserve predicate declarations. Do not alter write geometry or
 causality.
 
-**Fixtures: 8; planned mutation cycles: 9**
+**Fixtures: 8; planned mutation cycles: 11**
 
 1. Clone `PropertyOracle.ScanGen.template4`; add `predicate S(l)`, set every `X` element to `1.0`,
-   and retain the two recurrence terms `S[l] + X[l]`; require a history of all `1.0`, distinguishing
-   Boolean disjunction from numeric accumulation.
+   and retain the two recurrence terms `S[l] + X[l]`; keep the clone inside `ScanGen.lean` because
+   `template4` is private. Require a history of all `1.0`, distinguishing Boolean disjunction from
+   numeric accumulation.
 2. Clone public `PropertyOracle.ScanGen.template3`; declare only `G` as predicate and retain `H` as
    real; require both published histories to agree across checked, reference, and unrolled legs.
    Observe and record the values from the real run before placing them in a completion record.
@@ -474,12 +480,17 @@ causality.
    dtype checking precedes rank/geometry. This fixture distinguishes the stated order because the
    block remains valid and either write check would fail on its own.
 8. Clone ScanUnroll's existing `template1` leaf-name assertion using fixture 1's predicate state;
-   require generated `%Z_S` and every `%U_S_*` declaration to be predicate, then run the three-way
-   oracle. Temporarily omit generated predicate declarations and observe the real-sum disagreement.
+   require generated `%Z_S` and every `%U_S_*` declaration to be predicate, then register and run the
+   three-way oracle in `DifferentialTest.lean`; `ScanOracle.lean` remains the two-way leg. Temporarily
+   omit generated predicate declarations and observe the real-sum disagreement.
 
-Mutation-test each former compiler `f64` site independently: state signature, base result, recurrence
-result, state capture, scratch result, and published history (six cycles), plus base/step write dtype
-checks and generated oracle declarations (three cycles). A single endpoint test is not sufficient.
+Mutation-test each actual former compiler `f64` allocation independently: base assignment,
+pointwise, and axiswise results; the state capture; step assignment, pointwise, and axiswise results
+(shared by recurrence and scratch according to later classification); and the published complete
+history in `prepareEvalPlan` (eight cycles). There is no separate state-signature allocation site:
+the state dtype and published history are established together. Also mutate base and step write dtype
+checks and generated oracle declarations (three cycles), for **11 planned mutation cycles** total. A
+single endpoint test is not sufficient.
 
 Because dtype is newly live in `checkWrites`, Task 4.4 must append a row to the existing write
 case-by-class audit. Re-read unchanged siblings `baseWriteRowsOk`, `stepWriteRowsOk`,
@@ -542,9 +553,11 @@ validateAndConstructKernel sigs candidate
 `lowerPlan`, `generateForward`, both plan renderers, `generateNamed`, and
 `lowerCheckPlanToCandidate` derive the checked/prepared table and retain no context parameter.
 `lowerFactor`, `lowerTerm`, `renderTermLine`, `renderNodeLines`, affine factor/term/node/array
-renderers, affine table recomputation helpers, `jaxAssignSupported`, and
-`candidateEvidenceLabel` are private. `checkJaxAssignSupport` remains the typed, context-bearing
-cross-module helper. Raw candidate records remain unchanged; `JaxKernel` gains the validated table.
+renderers and affine table recomputation helpers are private. Add private `jaxAssignSupported` and
+make the new `checkJaxAssignSupport` the typed, context-bearing cross-module helper.
+`candidateEvidenceLabel`, currently public in `Executable.lean`, becomes private; adapt its direct
+`ExecutableTest` coverage to assert through the nearest public validator. Raw candidate records
+remain unchanged; `JaxKernel` gains the validated table.
 
 **Fixtures: 11; planned mutation cycles: 11**
 
@@ -553,8 +566,8 @@ cross-module helper. Raw candidate records remain unchanged; `JaxKernel` gains t
 2. Clone `idRaw`; change only the source signature to `bool`; require checked-plan acceptance and
    exact `.sourceDType 0 0 0 .bool` rejection. Exercise the public signatures listed above plus
    `lowerPlan`, `generateForward`, both `generateNamed` modes, both plan renderers,
-   `buildAssignFixture`, `lowerCheckPlanToCandidate`, `JaxExecutableWellFormed`, and executable
-   construction. Test private helpers through their nearest public caller.
+   `EvalPlanCodegen.buildAssignFixture`, `lowerCheckPlanToCandidate`, `JaxExecutableWellFormed`, and
+   executable construction. Test private helpers through their nearest public caller.
 3. Clone `idRaw` twice; change only its algebra to `admittedAlgebraMax` and
    `admittedAlgebraMin`; require typed unsupported-algebra rejection.
 4. Clone `idRaw`; change only `idRead.unary` to `some .exp`; require a located unary rejection from
@@ -597,9 +610,9 @@ failing and restored observation.
 | 4.1 | declaration ambiguity, external-name authority, diagnostic precedence | 11 | 6 | Source semantics can be rejected while all plan execution work stands |
 | 4.2 | wrong Boolean identities/algebra or accidental type tightening | 12 | 7 | Local checker/Dense semantics can be rejected independently |
 | 4.3 | signature authority, top-level allocation, result metadata | 12 | 7 | Public top-level boundary can fail while raw execution is correct |
-| 4.4 | one missed scan `f64`, unsound write dtype, oracle self-mismatch | 8 | 9 | Scan semantics and write evidence are a separate soundness surface |
+| 4.4 | one missed scan `f64`, unsound write dtype, oracle self-mismatch | 8 | 11 | Scan semantics and write evidence are a separate soundness surface |
 | 4.5 | exact einsum axes, JAX context authority, unsupported semantics stamped as reference, stale boundary docs | 11 | 11 | Experimental backend evidence/docs can be rejected without rolling back Dense |
-| **Total** |  | **54** | **40** |  |
+| **Total** |  | **54** | **42** |  |
 
 The fixture count, not expected production-line count, makes Tasks 4.2–4.4 high-review work. Do not
 split tiny type additions from the checker/compiler that produces them; they have no independent
@@ -640,6 +653,8 @@ After implementation, remeasure rather than copy:
 
 - `CapabilityError`: 12 constructors, expected 4 live producer families and 8 retained/unreachable
   families after this slice; verify throw sites rather than trusting this expectation;
+- `CompileTest`'s current “9 top-level rejection categories” claim and assertion; record the new
+  count after predicate-output admission;
 - scan-free `enumPrograms`: currently source-pinned at 3,832 accepted of 3,832 and intentionally
   unchanged;
 - `predicatePrograms`: currently 6 entries; record its actual new total;
@@ -668,7 +683,9 @@ Update `papers/leanncd.md`'s semantic-compilation section so it no longer says a
 evaluation is deferred; distinguish admitted reference/checked Dense semantics from the still-real
 routed `BrBaseP` dtype gap.
 
-Historical plans remain historical unless they claim the current boundary.
+Historical plans remain historical unless they claim the current boundary. Pre-classify
+`test/Eval/Plan/ContractTest.lean`'s Wave C capability rows as historical/frozen: its predicate,
+Iverson, max, and min classifications are intentionally not a current capability table.
 
 ## 7. Validation and review
 
@@ -772,7 +789,11 @@ slice.
 
 ## 9. Authoring verification record
 
-- All paths named in task file lists were verified present on commit `ae00fcc`.
+- All paths named in task file lists and every fixture donor were re-verified present on commit
+  `429673f`.
+- The `ae00fcc..429673f` production drift was inspected. Commit `c8ed102` added indexed read-factor
+  helpers and Iverson rejection wiring but did not change the declaration, Boolean allocation,
+  scan-write, or geometry surfaces this plan relies on.
 - The current boundary was re-derived from `CapabilityError` and every throw site in
   `Eval/Plan/Compile.lean`; no inventory count was inherited.
 - Current corpus values were read from active source guards: 3,832 scan-free cases, 6 separate
