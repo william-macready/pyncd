@@ -174,33 +174,32 @@ def testBoolSourceChecksAndDenseRuns : Bool :=
 
 #guard testBoolSourceChecksAndDenseRuns
 
-def testCurrentBoolSourceAffineCandidateAccepted : Bool :=
+def testVariantABoolSourceAffineCandidateRejected : Bool :=
   match checkAssign boolSourceSigs idAssign with
   | .error _ => false
   | .ok checked =>
       let table : AffineTableReadCandidate :=
         { source := 0, safeIndex := #[0, 1, 2], validMask := #[true, true, true] }
       let kernel : OrderedAffineTableKernelCandidate :=
-        { semanticAssignment := checked, tables := #[#[table]] }
-      candidateEvidenceLabel (.affineTable kernel) == .orderedReference64 &&
-        match validateAndConstructKernel (.affineTable kernel) with
-        | .ok k => k.evidence == .orderedReference64
-        | .error _ => false
+        { semanticAssignment := checked, signatureContext := boolSourceSigs, tables := #[#[table]] }
+      match validateAndConstructKernel (.affineTable kernel) with
+      | .ok _ => false
+      | .error _ => true
 
-#guard testCurrentBoolSourceAffineCandidateAccepted
+#guard testVariantABoolSourceAffineCandidateRejected
 
-def testCurrentBoolSourceEinsumCandidateAccepted : Bool :=
+def testVariantABoolSourceEinsumCandidateRejected : Bool :=
   match checkAssign boolSourceSigs idAssign with
   | .error _ => false
   | .ok checked =>
       let kernel : EinsumExperimentKernelCandidate :=
-        { semanticAssignment := checked, destination := 1
+        { semanticAssignment := checked, signatureContext := boolSourceSigs, destination := 1
         , operands := #[#[0, 0]], outputAxes := #[0] }
       match validateAndConstructKernel (.einsum kernel) with
-      | .ok _ => true
-      | .error _ => false
+      | .ok _ => false
+      | .error _ => true
 
-#guard testCurrentBoolSourceEinsumCandidateAccepted
+#guard testVariantABoolSourceEinsumCandidateRejected
 
 -- Well-formed affine-table candidate: the iteration domain has 3 coordinates (0, 1, 2), and the
 -- identity read maps each straight through to the same-numbered source index, all in-bounds.
@@ -211,7 +210,7 @@ def testValidAffineCandidate : Bool :=
       let table : AffineTableReadCandidate :=
         { source := 0, safeIndex := #[0, 1, 2], validMask := #[true, true, true] }
       let kernel : OrderedAffineTableKernelCandidate :=
-        { semanticAssignment := checked, tables := #[#[table]] }
+        { semanticAssignment := checked, signatureContext := idSigs, tables := #[#[table]] }
       match validateAndConstructKernel (.affineTable kernel) with
       | .ok _ => true
       | .error _ => false
@@ -228,7 +227,7 @@ def testMalformedAffineCandidateRejected : Bool :=
       let badTable : AffineTableReadCandidate :=
         { source := 0, safeIndex := #[0, 1], validMask := #[true, true] }
       let kernel : OrderedAffineTableKernelCandidate :=
-        { semanticAssignment := checked, tables := #[#[badTable]] }
+        { semanticAssignment := checked, signatureContext := idSigs, tables := #[#[badTable]] }
       match validateAndConstructKernel (.affineTable kernel) with
       | .ok _ => false      -- must NOT validate
       | .error _ => true    -- correctly rejected
@@ -243,7 +242,7 @@ def testValidEinsumCandidate : Bool :=
   | .error _ => false
   | .ok checked =>
       let kernel : EinsumExperimentKernelCandidate :=
-        { semanticAssignment := checked, destination := 1
+        { semanticAssignment := checked, signatureContext := idSigs, destination := 1
         , operands := #[#[0, 0]], outputAxes := #[0] }
       match validateAndConstructKernel (.einsum kernel) with
       | .ok _ => true
@@ -277,7 +276,7 @@ def testIversonAffineCandidateRejected : Bool :=
       let table : AffineTableReadCandidate :=
         { source := 0, safeIndex := #[0, 1, 2], validMask := #[true, true, true] }
       let kernel : OrderedAffineTableKernelCandidate :=
-        { semanticAssignment := checked, tables := #[#[table, table]] }
+        { semanticAssignment := checked, signatureContext := idSigs, tables := #[#[table, table]] }
       match validateAndConstructKernel (.affineTable kernel) with
       | .ok _ => false      -- must NOT validate
       | .error _ => true    -- correctly rejected
@@ -291,7 +290,7 @@ def testIversonEinsumCandidateRejected : Bool :=
   | .error _ => false
   | .ok checked =>
       let kernel : EinsumExperimentKernelCandidate :=
-        { semanticAssignment := checked, destination := 1
+        { semanticAssignment := checked, signatureContext := idSigs, destination := 1
         , operands := #[#[0, 0], #[0]], outputAxes := #[0] }
       match validateAndConstructKernel (.einsum kernel) with
       | .ok _ => false      -- must NOT validate
@@ -322,7 +321,7 @@ def testValidPlanCandidate : Bool :=
         let table : AffineTableReadCandidate :=
           { source := 0, safeIndex := #[0, 1, 2], validMask := #[true, true, true] }
         let kernel : OrderedAffineTableKernelCandidate :=
-          { semanticAssignment := checkedAssign, tables := #[#[table]] }
+          { semanticAssignment := checkedAssign, signatureContext := idSigs, tables := #[#[table]] }
         match validateAndConstructKernel (.affineTable kernel) with
         | .error _ => false
         | .ok someKernel =>
@@ -361,7 +360,7 @@ def testValidPlanCandidateEvidence : Bool :=
         let table : AffineTableReadCandidate :=
           { source := 0, safeIndex := #[0, 1, 2], validMask := #[true, true, true] }
         let kernel : OrderedAffineTableKernelCandidate :=
-          { semanticAssignment := checkedAssign, tables := #[#[table]] }
+          { semanticAssignment := checkedAssign, signatureContext := idSigs, tables := #[#[table]] }
         match validateAndConstructKernel (.affineTable kernel) with
         | .error _ => false
         | .ok someKernel =>
@@ -449,12 +448,13 @@ def testMixedKernelPlanEvidence : Bool :=
         let affineTable : AffineTableReadCandidate :=
           { source := 0, safeIndex := #[0, 1, 2], validMask := #[true, true, true] }
         let affineKernel : OrderedAffineTableKernelCandidate :=
-          { semanticAssignment := checkedAssign0, tables := #[#[affineTable]] }
+          { semanticAssignment := checkedAssign0, signatureContext := mixedSigs
+          , tables := #[#[affineTable]] }
         -- Step 1: einsum kernel (`optimizationExperiment`) for `Z[i] := Y[i]` — the identity read
         -- is a pure projection (coefficient row `#[1]`, zero bias) onto position 0, so the operand
         -- row is `#[sourceSlot, coveredPosition] = #[1, 0]`.
         let einsumKernel : EinsumExperimentKernelCandidate :=
-          { semanticAssignment := checkedAssign1, destination := 2
+          { semanticAssignment := checkedAssign1, signatureContext := mixedSigs, destination := 2
           , operands := #[#[1, 0]], outputAxes := #[0] }
         match validateAndConstructKernel (.affineTable affineKernel),
               validateAndConstructKernel (.einsum einsumKernel) with
