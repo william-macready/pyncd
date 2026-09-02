@@ -134,26 +134,25 @@ def runDensePointwise (c : CheckedPointwisePlan) (store : Array DenseTensor) :
 
 /-- Run one checked axiswise operation. Re-validates its source slot against the checked shape first
     (`validateNonlinSource`) — same runtime trust boundary `runDenseAssignAt` honors. Before building
-    the `included?` predicate, validates the checked `mask` (if any) against every output coordinate,
-    mapping any `evalPosBool` failure into `PositionalInputError.predicateWidthMismatch` — the exact
-    mapping `runDenseAssignAt` (`Dense.lean`) applies to the Iverson factor's `evalPosBool` failure —
-    so this path fails loud rather than the fail-open `included? = true` a raw `.toOption.getD true`
-    would give an unreachable-in-practice error. Unreachable for any checked plan (`checkAxiswise`'s
-    mask width check forbids the only failure mode). Once validated, builds the full-coordinate
-    `included?` predicate from the mask (a `none` mask includes every coordinate, so an unmasked
-    reduction is byte-for-byte the pre-mask behavior) and hands it to `AxiswiseFn.applyCore` — the
-    SAME single softmax/normalize/L2 implementation the SOURCE `AxiswiseFn.apply` uses, differing
-    only in which predicate language it evaluates. -/
+    the `included?` predicate, re-checks the mask's (if any) leaf widths against the local output
+    basis with the SAME cheap symbolic check `checkAxiswise` already ran (`affineWidths` vs
+    `shape.size`, not a per-coordinate `evalPosBool` pass), mapping a mismatch into
+    `PositionalInputError.predicateWidthMismatch` so this path fails loud rather than the fail-open
+    `included? = true` a raw `.toOption.getD true` would give — an unreachable-in-practice error
+    (`checkAxiswise`'s mask width check forbids the only failure mode), guarded here at leaf-count
+    cost instead of coordinate-count cost. Once validated, builds the full-coordinate `included?`
+    predicate from the mask (a `none` mask includes every coordinate, so an unmasked reduction is
+    byte-for-byte the pre-mask behavior) and hands it to `AxiswiseFn.applyCore` — the SAME single
+    softmax/normalize/L2 implementation the SOURCE `AxiswiseFn.apply` uses, differing only in which
+    predicate language it evaluates. -/
 def runDenseAxiswise (c : CheckedAxiswisePlan) (store : Array DenseTensor) :
     Except PositionalInputError DenseTensor := do
   let src ← validateNonlinSource c.raw.sourceSlot c.raw.shape store
   match c.raw.mask with
   | none => pure ()
-  | some m =>
-      for coord in allCoords c.raw.shape.toList do
-        match evalPosBool coord m with
-        | .ok _ => pure ()
-        | .error (.affineWidthMismatch exp act) => throw (.predicateWidthMismatch exp act)
+  | some m => match m.affineWidths.find? (· != c.raw.shape.size) with
+      | some w => throw (.predicateWidthMismatch c.raw.shape.size w)
+      | none => pure ()
   let included? : List Nat → Bool := fun coord =>
     match c.raw.mask with
     | none => true

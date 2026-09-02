@@ -43,8 +43,7 @@ inductive CheckedPlanStepEvidence
     `.scan`/`.pointwise`/`.axiswise` forward-read check DOES use `sourceSlots` directly (see
     `checkPlan`'s own comment below). -/
 def PlanStep.sourceSlots : PlanStep → Array TensorSlot
-  | .assign a => a.terms.flatMap (·.factors.filterMap (fun f => match f with
-      | .read r => some r.sourceSlot | .iverson _ => none))
+  | .assign a => a.terms.flatMap TermPlan.readSourceSlots
   | .scan s => (s.baseCaptures ++ s.stepCaptures).filterMap (fun c => match c.source with
       | .external slot => some slot | .state _ => none)
   | .pointwise p => #[p.sourceSlot]
@@ -133,14 +132,11 @@ def checkPlan (raw : RawEvalPlan) : Except PlanStepError CheckedEvalPlan := do
           | .assign a => do
               for h2 : ti in [0 : a.terms.size] do
                 let t := a.terms[ti]
-                for h3 : fi in [0 : t.factors.size] do
-                  match t.factors[fi] with
-                  | .iverson _ => pure ()  -- predicate factor reads no slot; keep `fi` at all-factor index
-                  | .read f =>
-                    match available[f.sourceSlot]? with
-                    | none => throw (.assign (.nodeError ni (.slotOutOfRange f.sourceSlot n)))
-                    | some true => pure ()
-                    | some false => throw (.assign (.invalidForwardRead ni ti fi f.sourceSlot))
+                for (fi, f) in t.readFactorsIndexed do
+                  match available[f.sourceSlot]? with
+                  | none => throw (.assign (.nodeError ni (.slotOutOfRange f.sourceSlot n)))
+                  | some true => pure ()
+                  | some false => throw (.assign (.invalidForwardRead ni ti fi f.sourceSlot))
           | .scan _ | .pointwise _ | .axiswise _ => do
               for src in step.sourceSlots do
                 match available[src]? with

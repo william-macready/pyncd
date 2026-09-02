@@ -124,7 +124,13 @@ fragment.
   serves both the source wrapper and the checked adapter. Every filtered read traversal keeps the
   original all-factor index; `maskOrPredicate` and `NonlinCompileError.maskedAxiswiseNotSupported`
   are retained producer-less, like `scanNode`. Boolean/predicate *declared outputs* (`booleanOutput`)
-  remain the separate open row. Closed by `predicate_boolean_backend_parity.md`.
+  remain the separate open row. **Caveat:** a scan `where=` mask's basis (`lowerMaskPredicate`,
+  `Compile.lean`) is deliberately the statement's non-seeded output axes only — it cannot reference
+  the scan's own `.iterAt`/`.iterNext` iteration axis, which densifies to a constant 0 instead. A
+  scan recurrence expressing causal masking via `where= j <= l` (the pattern this repo's CLAUDE.md
+  points at as the replacement for the reverted `causal_softmax` operator) therefore does NOT see
+  the live step `l` here — it compiles and runs, silently wrong, not rejected. Closed by
+  `predicate_boolean_backend_parity.md`.
 - **Scan nodes** with at least one advancing axis — `scanNode` has no producer left in the compiler.
   Only `noAdvancingAxis` (an empty advancing-axis list) is still an error, and that is a genuine
   input error, not a capability gap.

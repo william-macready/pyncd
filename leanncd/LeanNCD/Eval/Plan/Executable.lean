@@ -137,8 +137,12 @@ def affineFactorTableValid (iterationShape : Array Nat) (factor : ReadPlan)
     (one table per factor, `tables.size = term.factors.size`) and each table is individually valid
     (`affineFactorTableValid`) against that term's own iteration basis (`term.iterationShape`).
     An `.iverson` predicate factor is NOT a read: a term containing one has no valid affine-table
-    lowering, so any such factor makes the whole candidate invalid (its `.read` extraction fails). -/
+    lowering, so `hasIverson` rejects it explicitly up front — NOT relying on the size check alone,
+    since `loweringToAffineTableCandidate`'s `filterMap` happens to shrink `tables` below
+    `term.factors.size` whenever a factor is dropped, but that shrinkage is a coincidence of how the
+    candidate is built today, not a guarantee this validator should lean on. -/
 def affineTermTablesValid (term : TermPlan) (tables : Array AffineTableReadCandidate) : Bool :=
+  !term.hasIverson &&
   tables.size == term.factors.size &&
   (term.factors.zip tables).all
     (fun (factor, table) => match factor with
@@ -188,6 +192,9 @@ def validateEinsum (kernel : EinsumExperimentKernelCandidate) : Bool :=
   | none => false
   | some term =>
       let rank := term.iterationShape.size
+      -- `hasIverson` is the real guard, not the `operands.size` coincidence below (see
+      -- `affineTermTablesValid`'s doc comment for why the two must not be conflated).
+      !term.hasIverson &&
       kernel.operands.size == term.factors.size &&
       (term.factors.zip kernel.operands).all (fun (factor, opRow) => match factor with
         | .iverson _ => false  -- a predicate factor has no einsum operand; not an einsum candidate

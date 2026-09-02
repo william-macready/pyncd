@@ -173,6 +173,7 @@ Small subsystems (no dedicated node — each <170 lines, single-file or near it)
 - **The R=Bool XOR-ring trap** (`Algebra/AGENTS.md`) — Mathlib's `Bool` ring instance is XOR, not `(∨,∧)`; `Mat Bool` typechecks but computes the wrong thing.
 - **`scatterOutDim`/`scatterOutShape` must stay in sync with no import enforcing it** (`Eval/AGENTS.md`) — a real, previously-shipped soundness bug (fixed, but structurally re-introducible).
 - **`brCancelPoint` (`Base/`) is a known-hard, well-scoped open sorry**, not a mystery — it needs a non-bijective gs-monoidal/cospan model; the bijective-wiring approach (`spikes/BrNF.lean`) is proven inadequate. Nothing load-bearing (Bridge/Eval/DSL) depends on it.
+- **A checked-plan scan `where=` mask can't see the live scan axis** (`lowerMaskPredicate`, `Eval/Plan/Compile.lean`) — its basis is deliberately the statement's non-seeded output axes only, so a mask referencing the scan's own `.iterAt`/`.iterNext` axis densifies that axis to a constant 0 instead of erroring. This means the top-level pyncd `CLAUDE.md`'s "causal masking goes through `softmax(..., where=predicate)`" guidance does not carry over to a scan recurrence in the checked backend — that specific shape compiles and runs silently wrong, not rejected. Tested/documented as an intentional Slice 5 scope limit, not a bug (`papers/predicate_boolean_backend_parity.md`, `backend_missing_functionality.md`'s masks/predicates entry).
 
 ### Boundaries
 

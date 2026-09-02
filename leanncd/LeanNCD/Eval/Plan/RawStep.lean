@@ -78,8 +78,7 @@ inductive BlockStep
     single `sourceSlot` field directly. Retained as the symmetric half of the accessor pair; it has
     no call site today. -/
 def BlockStep.sourceSlots : BlockStep → Array TensorSlot
-  | .assign a => a.terms.flatMap (·.factors.filterMap (fun f => match f with
-      | .read r => some r.sourceSlot | .iverson _ => none))
+  | .assign a => a.terms.flatMap TermPlan.readSourceSlots
   | .pointwise p => #[p.sourceSlot]
   | .axiswise a => #[a.sourceSlot]
 

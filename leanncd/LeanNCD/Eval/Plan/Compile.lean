@@ -71,9 +71,9 @@ def checkFactor (_stmtName : String) : Factor → Except CapabilityError Unit
 /-- Top-level (`.plain`) statement admission (Thread 4): `.pointwise`/`.axiswise` are now
     structurally admitted — `prepareEvalPlan`'s `.plain` branch compiles them into a real
     `.assign → .pointwise`/`.axiswise` chain. Whether a given statement's LHS slots actually agree
-    with its `Nonlin` (a `·`-marked axis present exactly once, iff `.axiswise` and unmasked) is
-    NOT checked here — that needs the whole slot list, checked once by `resolveNonlinAxis` at
-    compile tier, not duplicated at preflight. -/
+    with its `Nonlin` (a `·`-marked axis present exactly once, masked or not — Slice 5 admitted
+    masked axiswise too) is NOT checked here — that needs the whole slot list, checked once by
+    `resolveNonlinAxis` at compile tier, not duplicated at preflight. -/
 def checkNonlinTopLevel (_stmtName : String) : Nonlin → Except CapabilityError Unit
   | .identity    => pure ()
   | .pointwise _ => pure ()
@@ -83,9 +83,10 @@ def checkNonlinTopLevel (_stmtName : String) : Nonlin → Except CapabilityError
     now structurally admitted, identically to `checkNonlinTopLevel` above — `compileScan` compiles a
     nonlinear base/recurrence statement into the same `.assign → .pointwise`/`.axiswise` block-step
     chain the plain path builds. Whether the slot list agrees with the `Nonlin` (a `·`-marked axis
-    present exactly once, iff `.axiswise` and unmasked) is again NOT checked here — `resolveNonlinAxis`
-    at compile tier does it, once, against the whole slot list, and a masked `.axiswise` is rejected
-    there (`maskedAxiswiseNotSupported`), not at this preflight. -/
+    present exactly once, masked or not) is again NOT checked here — `resolveNonlinAxis` at compile
+    tier does it, once, against the whole slot list. Masked axiswise is admitted there too (Slice 5),
+    lowered via `lowerMaskPredicate`; `NonlinCompileError.maskedAxiswiseNotSupported` has no producer
+    left. -/
 def checkNonlinScanBlock (_stmtName : String) : Nonlin → Except CapabilityError Unit
   | .identity    => pure ()
   | .pointwise _ => pure ()
@@ -355,20 +356,14 @@ private def lowerBoolExprPos (pins : HashMap UID Int) (basis : List UID) :
 
 /-- Factor-policy predicate lowering — one of the TWO public entry points to the private
     `BoolExpr → PosBoolExpr` core (`lowerBoolExprPos`); the other is Task 5.3's `lowerMaskPredicate`,
-    which will reuse the same core with the mask policy (local non-seeded output basis, empty pins).
-    Given a statement's scan context (empty outside a scan), its output (retained) basis, the
-    validated pins, the product `term`, and a source Iverson `pred`, derive THAT term's contracted
-    axes (`termAxisUIDs` minus context/output, in first-encountered order — exactly as
-    `residualizeAssignment` derives them for reads), build the ordered basis
-    `context ++ output ++ reduction`, and lower `pred` over it with the real pins folded into every
-    leaf. Identity is by basis position (via `idxToRow`), never by axis name — two same-named axes
-    with distinct UIDs occupy distinct basis positions. -/
-def lowerFactorPredicate (contextUids outputUids : List UID) (pins : HashMap UID Int)
-    (term : ProdTerm) (pred : BoolExpr) : PosBoolExpr :=
-  let termUids := (termAxisUIDs term).eraseDups
-  let contractedUids :=
-    termUids.filter (fun u => !contextUids.contains u && !outputUids.contains u)
-  let basisUids := contextUids ++ outputUids ++ contractedUids
+    which reuses the same core with the mask policy (local non-seeded output basis, empty pins).
+    The factor policy is `context ++ output ++ reduction` with the real pins folded into every leaf
+    — the SAME ordered basis `residualizeAssignment` builds for that term's `.read` factors, so the
+    caller passes its already-derived `basisUids` here rather than this function re-deriving it from
+    a `ProdTerm`. Identity is by basis position (via `idxToRow`), never by axis name — two
+    same-named axes with distinct UIDs occupy distinct basis positions. -/
+def lowerFactorPredicate (pins : HashMap UID Int) (basisUids : List UID) (pred : BoolExpr) :
+    PosBoolExpr :=
   lowerBoolExprPos pins basisUids pred
 
 /-- Mask-policy predicate lowering — the SECOND public entry point to the private
@@ -455,7 +450,7 @@ private def residualizeAssignment (sizes : HashMap UID Nat) (warnings : List Eva
           -- forces every leaf to span the term's iteration basis. This is where the two Task 5.1
           -- `.iverson` rejection producers (this arm and `checkFactor`) are replaced by real lowering.
           factorsAcc := factorsAcc.push
-            (.iverson (lowerFactorPredicate contextUids outputUids pins term pred))
+            (.iverson (lowerFactorPredicate pins basisUids pred))
       | .unaryFn op name idxs =>
           -- Reads exactly like `.read name idxs` (same slot resolution, same affine rows, same
           -- zero-pad), then carries the unary function so `gatherFactor` applies it after the pad.
@@ -963,16 +958,13 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
     let a := stepAssignPlans[ri]
     for h2 : ti in [0 : a.terms.size] do
       let t := a.terms[ti]
-      for h3 : fi in [0 : t.factors.size] do
-        match t.factors[fi] with
-        | .iverson _ => pure ()  -- predicate factor captures no state; keep `fi` at all-factor index
-        | .read f =>
-          match (capturedState.getD f.sourceSlot none) with
-          | none => pure ()
-          | some si =>
-              unless stateReadCausal (stateAdvDims.getD si #[]) t.contextPos f do
-                throw (scanErr warnings
-                  (.stateReadNotCausal scanName (stateNames.getD si "") ri ti fi))
+      for (fi, f) in t.readFactorsIndexed do
+        match (capturedState.getD f.sourceSlot none) with
+        | none => pure ()
+        | some si =>
+            unless stateReadCausal (stateAdvDims.getD si #[]) t.contextPos f do
+              throw (scanErr warnings
+                (.stateReadNotCausal scanName (stateNames.getD si "") ri ti fi))
   ---------------------------------------------------------------------------
   -- Phase 6: assemble. Every closed policy is Wave F's single admitted value.
   ---------------------------------------------------------------------------

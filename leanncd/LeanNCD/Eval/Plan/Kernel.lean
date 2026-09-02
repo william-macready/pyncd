@@ -68,9 +68,12 @@ inductive FactorPlan
   | iverson : PosBoolExpr → FactorPlan
   deriving DecidableEq, BEq, Repr, Inhabited
 
-/-- The underlying read of a factor, or a default `ReadPlan` for a predicate factor. A convenience
-    for accessors and tests that operate over read factors only (every factor a source program
-    compiles to is a `.read` today, so this never actually hits the predicate arm there). -/
+/-- The underlying read of a factor, or a default `ReadPlan` for a predicate factor. TEST-ONLY: a
+    convenience for fixtures that operate over read factors only (every factor a source program
+    compiles to is a `.read` today, so this never actually hits the predicate arm there) and index
+    straight into `.factors` without the `.iverson`-skip discipline production code uses. Production
+    code must go through `TermPlan.forEachReadFactor`/`readSourceSlots`/`hasIverson` instead — those
+    skip `.iverson` factors rather than silently substituting a garbage default `ReadPlan` for one. -/
 def FactorPlan.readOrDefault : FactorPlan → ReadPlan
   | .read r => r
   | .iverson _ => default
@@ -108,6 +111,28 @@ structure TermPlan where
   reductionPos   : Array Nat
   factors        : Array FactorPlan
   deriving DecidableEq, BEq, Repr, Inhabited
+
+/-- This term's `.read` factors only, paired with each one's original all-factor index (`fi`) —
+    never a reindexed read-only index — dropping `.iverson` factors (they read no store slot,
+    capture no scan state, and have no source slot to check). This is the ONE shared derivation
+    behind every "skip predicate factors, check the rest" site: `Block.lean`/`EvalPlan.lean`'s
+    forward-read checks, `Scan.lean`/`Compile.lean`'s causality checks, and `Dense.lean`'s runtime
+    store validation — each still iterates the result with its own ordinary `for`, so it keeps
+    throwing its own error type with no monad-genericity indirection. -/
+def TermPlan.readFactorsIndexed (t : TermPlan) : List (Nat × ReadPlan) :=
+  t.factors.toList.zipIdx.filterMap (fun (f, fi) => match f with
+    | .read r => some (fi, r) | .iverson _ => none)
+
+/-- Every `.read` factor's source slot, in source order, dropping `.iverson` factors. Shared by
+    `PlanStep.sourceSlots`/`BlockStep.sourceSlots`'s `.assign` arm — both flatten the same shape
+    over the same `TermPlan`, so it lives once here. -/
+def TermPlan.readSourceSlots (t : TermPlan) : Array TensorSlot :=
+  t.factors.filterMap (fun f => match f with
+    | .read r => some r.sourceSlot | .iverson _ => none)
+
+/-- Whether this term carries at least one Iverson predicate factor. -/
+def TermPlan.hasIverson (t : TermPlan) : Bool :=
+  t.factors.any (fun f => match f with | .iverson _ => true | .read _ => false)
 
 /-- One complete local operation: terms combined into one destination tensor under one algebra,
     evaluated at one runtime context coordinate (empty for a top-level, scan-free assignment). -/

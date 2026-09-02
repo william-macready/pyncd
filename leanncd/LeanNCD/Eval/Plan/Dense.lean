@@ -103,17 +103,14 @@ example (alg : ContractionAlgebra) (xs : List Float) (x : Float) :
 private def validateStore (c : CheckedAssignPlan) (store : Array DenseTensor) :
     Except PositionalInputError Unit := do
   for t in c.plan.terms do
-    for f in t.factors do
-      match f with
-      | .iverson _ => pure ()  -- a predicate factor reads no store slot
-      | .read f =>
-        match store[f.sourceSlot]? with
-        | none => throw (.missingSlot f.sourceSlot store.size)
-        | some d =>
-            unless d.shape == f.sourceShape.toList do
-              throw (.shapeMismatch f.sourceSlot f.sourceShape d.shape)
-            unless d.data.size == f.sourceShape.toList.foldl (· * ·) 1 do
-              throw (.storageMismatch f.sourceSlot d.shape d.data.size)
+    for (_, f) in t.readFactorsIndexed do
+      match store[f.sourceSlot]? with
+      | none => throw (.missingSlot f.sourceSlot store.size)
+      | some d =>
+          unless d.shape == f.sourceShape.toList do
+            throw (.shapeMismatch f.sourceSlot f.sourceShape d.shape)
+          unless d.data.size == f.sourceShape.toList.foldl (· * ·) 1 do
+            throw (.storageMismatch f.sourceSlot d.shape d.data.size)
 
 /-- Validate a runtime context coordinate against the checked context shape: same rank, and every
     component in range. A separate check from `checkAssign`'s structural work — `ctx` is a runtime

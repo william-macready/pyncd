@@ -407,16 +407,13 @@ def checkScanPlan (sigs : Array TensorSignature) (raw : RawScanPlan) :
     | .assign a =>
         for h2 : ti in [0 : a.terms.size] do
           let t := a.terms[ti]
-          for h3 : fi in [0 : t.factors.size] do
-            match t.factors[fi] with
-            | .iverson _ => pure ()  -- predicate factor captures no state; keep `fi` at all-factor index
-            | .read f =>
-              match stateCaptureFor f.sourceSlot with
-              | none => pure ()
-              | some si =>
-                  let st := raw.states.getD si default
-                  unless stateReadCausal st.advancingDims t.contextPos f do
-                    throw (.causalityFailure si ai ti fi)
+          for (fi, f) in t.readFactorsIndexed do
+            match stateCaptureFor f.sourceSlot with
+            | none => pure ()
+            | some si =>
+                let st := raw.states.getD si default
+                unless stateReadCausal st.advancingDims t.contextPos f do
+                  throw (.causalityFailure si ai ti fi)
   return CheckedScanPlan.mk raw checkedBase checkedStep stepExtents
 
 /-- `rank_D(q) = sum_i q[i] * product_{j<i} D[j]` (proposal §6.6): axis `0` varies fastest. -/
