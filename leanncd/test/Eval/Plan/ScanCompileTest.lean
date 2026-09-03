@@ -872,6 +872,55 @@ def lateNopeSched : ScheduledProgram :=
   == some (.sourceInvariant
        (.cyclicDataflow "prepareEvalPlan: statements are not in producer-before-consumer order"))
 
+-- the sibling hole Step 0's ORDER invariant structurally cannot see: `NOPE` is produced AHEAD of
+-- the read (so `isTopoOrdered` is satisfied) and is not external either (`ScanStmt.writes` counts a
+-- recurrence-only destination as produced), yet only a scan's STATES are published into `slotOf`,
+-- so a PLAIN statement reading it resolved to slot ZERO — silently aliasing the input bound there
+-- (`S0`), accepted, wrong answer, no diagnostic. `prepareEvalPlan`'s plain branch now requires every
+-- read name to be present in `slotOf` before it allocates a destination slot or residualizes,
+-- reporting the source pipeline's own `undeclaredName`. `Y`'s output axis is `axJ`, explicitly
+-- sized, so shape inference cannot reject this program first and the rejection is provably this
+-- guard's. (The scan under test is the playground's own accepted `[okBase] [okRecur]`, so nothing
+-- inside it can fail either.)
+def scratchThenPlainReadSched : ScheduledProgram :=
+  { rejSched [okBase] [okRecur] with
+      stmts := [ .scan "pre" [axL]
+                   [ .assign "P" [.iterAt axL 0]
+                       { body := { terms := [{ factors := [.read "S0" []] }] }
+                       , nonlin := .identity } ]
+                   [ .assign "NOPE" []
+                       { body := { terms := [{ factors := [.read "S0" []] }] }
+                       , nonlin := .identity }
+                   , .assign "P" [.iterNext axL]
+                       { body := { terms := [{ factors := [.read "P" [.axis axL]] }] }
+                       , nonlin := .identity } ]
+                   false
+               , .scan "sc" [axL] [okBase] [okRecur] false
+               , .plain (.assign "Y" [.free axJ]
+                   { body := { terms := [{ factors := [.read "NOPE" []] }] }
+                   , nonlin := .identity }) ] }
+
+#guard causeOf (prepareEvalPlan scratchThenPlainReadSched rejSig)
+  == some (.sourceInvariant (.undeclaredName "NOPE"))
+
+-- the same program with the plain statement reading the scan's published STATE `S` instead of its
+-- private scratch: the guard rejects unpublished names, not locally produced ones, so this must
+-- still compile and `Y` must read `S`'s own materialized outer slot rather than an input slot.
+def statePlainReadSched : ScheduledProgram :=
+  { scratchThenPlainReadSched with
+      stmts := (scratchThenPlainReadSched.stmts.dropLast ++
+        [ .plain (.assign "Y" [.free axL]
+            { body := { terms := [{ factors := [.read "S" [.axis axL]] }] }
+            , nonlin := .identity }) ]) }
+
+#guard causeOf (prepareEvalPlan statePlainReadSched rejSig) == none
+-- and it reads `S`'s materialized slot, not an input slot: `S0` is the only name this program reads
+-- without producing, so it alone owns input slot 0; slot 1 is `pre`'s published state `P` and slot 2
+-- is `sc`'s published state `S`. A slot-zero fallback would show up here as `#[0]`.
+#guard (prepared statePlainReadSched rejInputs).bind (fun p => (assignAt p 2).map
+    (fun a => (a.terms.getD 0 default).factors.map (·.readOrDefault.sourceSlot)))
+  == some #[2]
+
 /-! ### 2.5 `ScanCompileError` — context axes and per-state geometry -/
 
 -- the same axis declared twice as scan context.

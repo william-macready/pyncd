@@ -1105,6 +1105,24 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
         -- `some p` indexes directly into `outputShape`/`retainedUids` per `resolveNonlinAxis`'s own
         -- doc comment (`freeUidOrFail` drops no slots, so the two lists stay 1:1 with `slots`).
         let axisPos? ← liftNonlin warnings (resolveNonlinAxis nm rhs.nonlin slots)
+        -- Every read name must ALREADY be resolvable in `slotOf`, checked before the destination
+        -- slot is allocated and before `residualizeAssignment` builds anything — otherwise
+        -- `resolveSource`'s `getD` below would silently resolve it to slot ZERO, aliasing whatever
+        -- tensor happens to live there. Step 0's `isTopoOrdered` guard covers the out-of-order case
+        -- (a producer that comes LATER); this covers the sibling one it cannot see:
+        -- produced-but-never-PUBLISHED. A name written only inside an earlier `.scan`'s recurrence
+        -- is block-local scratch — counted as produced by `ScanStmt.writes`, so `orderedExtNames`
+        -- never classifies it external — yet only a scan's STATES are published into `slotOf`
+        -- (§4.6), so nothing outside that scan can read it. The same guard covers any future
+        -- produced-but-unpublished name by construction, since it asks about `slotOf` rather than
+        -- about scans. `CompileError.undeclaredName` is the source pipeline's own diagnostic for a
+        -- read that resolves to nothing (`DSL/Pipeline/Lowering.lean`), reused unchanged so a direct
+        -- schedule and its source-produced equivalent report the same thing. The scan-block paths
+        -- keep their own `blockReadNotAvailable … .unknownName`: those resolve names against
+        -- block-local environments and carry block-local locators.
+        for (rn, _) in rhs.readFactors do
+          unless slotOf.contains rn do
+            throw { cause := .sourceInvariant (.undeclaredName rn), warnings }
         -- name-environment mutation (`slotOf`/`tensorSigsAcc`/`materializedAcc`) is this plain
         -- caller's own publication policy — `residualizeAssignment` only builds the `AssignPlan`
         -- value, per its own doc comment.
@@ -1113,15 +1131,14 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
         let slotsNow := slotOf
         let resolveSource (name : String) : TensorSlot × Array Nat :=
           -- resolved against `slotOf` as it stands BEFORE this statement's destination slot is
-          -- allocated. Every read name is either external (allocated above) or produced by an
-          -- earlier statement — `ScheduledProgram.stmts`'s own doc ("producers precede consumers"),
-          -- no longer merely assumed of a direct schedule but ENFORCED by Step 0's `isTopoOrdered`
-          -- guard, which is what makes `orderedExtNames`' reads-minus-produced classification agree
-          -- with this lookup. Known residual, out of that guard's scope: a name written only inside
-          -- an earlier `.scan`'s recurrence is scratch — counted as produced by `ScanStmt.writes`,
-          -- so not external, but never published into `slotOf` (only states are) — so a plain read
-          -- of it still lands on this `getD` default. The scan-block path fails loud on the same
-          -- shape (`blockReadNotAvailable … .unknownName`); this path does not.
+          -- allocated. Every read name is either external (allocated above) or produced AND
+          -- published by an earlier statement — `ScheduledProgram.stmts`'s own doc ("producers
+          -- precede consumers"), no longer merely assumed of a direct schedule but ENFORCED by
+          -- Step 0's `isTopoOrdered` guard (which is what makes `orderedExtNames`'
+          -- reads-minus-produced classification agree with this lookup) together with the
+          -- `slotOf.contains` guard just above (which rules out a produced-but-unpublished name,
+          -- e.g. an earlier scan's recurrence-only scratch). The `getD` default is therefore
+          -- unreachable and is a totality formality, not a fallback.
           let sourceSlot := slotsNow.getD name 0
           (sourceSlot, (sigsNow.getD sourceSlot { shape := #[], dtype := .f64 }).shape)
         -- plain assignment: empty scan context, no pins — reproduces this Step D's pre-extraction
