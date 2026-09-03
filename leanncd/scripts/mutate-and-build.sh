@@ -26,16 +26,16 @@ set -euo pipefail
 
 if [[ $# -lt 5 ]]; then
   sed -n '2,21p' "$0"
-  exit 2
+  exit 125
 fi
 
 leanncd_dir=$1 file=$2 old=$3 new=$4
 shift 4
 targets=("$@")
 
-cd -- "$leanncd_dir"
-[[ -f lakefile.toml ]] || { echo "error: $leanncd_dir is not a leanncd checkout (no lakefile.toml)" >&2; exit 2; }
-[[ -f "$file" ]] || { echo "error: no such file: $file (relative to $leanncd_dir)" >&2; exit 2; }
+cd -- "$leanncd_dir" || exit 125
+[[ -f lakefile.toml ]] || { echo "error: $leanncd_dir is not a leanncd checkout (no lakefile.toml)" >&2; exit 125; }
+[[ -f "$file" ]] || { echo "error: no such file: $file (relative to $leanncd_dir)" >&2; exit 125; }
 
 backup=$(mktemp)
 logfile=$(mktemp)
@@ -49,7 +49,8 @@ path, old, new = sys.argv[1], sys.argv[2], sys.argv[3]
 s = open(path).read()
 n = s.count(old)
 if n != 1:
-    sys.exit(f"error: old-string occurs {n} times in {path} (expected exactly 1)")
+    print(f"error: old-string occurs {n} times in {path} (expected exactly 1)", file=sys.stderr)
+    sys.exit(125)
 open(path, "w").write(s.replace(old, new))
 PY
 

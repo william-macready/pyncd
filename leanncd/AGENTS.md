@@ -29,7 +29,8 @@ For a mutation that is one exact textual replacement in one Lean file, always us
 Pass the target worktree's `leanncd/` directory as the second argument; the wrapper delegates the
 unique-match mutation to `mutate-and-build.sh`, verifies an optional hash manifest after restoration,
 and runs the same Lake targets again to record the restored pass. It exits successfully only when
-the mutation breaks the build, restoration succeeds, and the restored build passes.
+the mutation reaches Lake and breaks the build, restoration succeeds, and the restored build passes;
+missing/ambiguous strings and other setup refusals fail the cycle rather than counting as mutations.
 
 ```bash
 bash leanncd/scripts/mutation-cycle.sh \
@@ -50,6 +51,9 @@ The repository permissions allow both relative and primary-checkout absolute inv
 wrapper so mutation cycles and Lake builds do not require confirmation. If a mutation requires
 multiple files, multiple intentional matches, a non-Lake command, or verification beyond build
 failure, extend the wrapper for that case instead of using an ad hoc mutate/restore command.
+The controlling session should invoke mutation cycles directly rather than delegating the shell
+command to a subagent: subagent permission scope is loaded from the creator session's worktree,
+which may predate these allow rules even when the target implementation worktree contains them.
 
 **`lake env lean <file>` does not rebuild the file's dependencies — it only typechecks that one
 file against whatever `.olean`s already exist.** If you edit module `A.lean` and then run

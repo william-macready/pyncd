@@ -23,10 +23,11 @@
 # <file> <old-string> <new-string> <lake-target>...  passed straight through to
 #   mutate-and-build.sh, then <lake-target>... is reused for the restored rebuild
 #
-# Exits 0 only if ALL of: the mutation broke the build (mutate-and-build.sh exits
-# nonzero), the restore-hash check (if given) passed, and the restored rebuild of
-# the same targets passed. A mutation that did NOT break the build is reported as
-# a real finding (the fixture may not cover it), not silently treated as fine.
+# Exits 0 only if ALL of: the mutation reached Lake and broke the build,
+# the restore-hash check (if given) passed, and the restored rebuild of the same
+# targets passed. Setup/refusal failures use exit 125 and fail the cycle. A mutation
+# that did NOT break the build is reported as a real finding (the fixture may not
+# cover it), not silently treated as fine.
 
 set -euo pipefail
 
@@ -45,7 +46,7 @@ fi
 
 if [[ $# -lt 6 ]]; then
   sed -n '2,25p' "$0"
-  exit 2
+  exit 125
 fi
 
 label=$1 leanncd_dir=$2 file=$3 old=$4 new=$5
@@ -58,6 +59,13 @@ bash "$script_dir/mutate-and-build.sh" "$leanncd_dir" "$file" "$old" "$new" "${t
 mutation_status=$?
 set -e
 echo "=== $label MUTATE exit=$mutation_status ==="
+
+if [[ "$mutation_status" -eq 125 ]]; then
+  echo "$label: ERROR - mutation setup was refused before Lake ran" >&2
+  echo "=== $label SUMMARY: mutation_exit=$mutation_status restore_hash_exit=skipped restored_build_exit=skipped ==="
+  echo "$label: FAIL"
+  exit 1
+fi
 
 hash_status=0
 if [[ -n "$hashes" ]]; then
@@ -83,7 +91,8 @@ if [[ "$mutation_status" -eq 0 ]]; then
   echo "$label: WARNING - mutation did not break the build; fixture may not cover it" >&2
 fi
 
-if [[ "$mutation_status" -ne 0 && "$hash_status" -eq 0 && "$restored_build_status" -eq 0 ]]; then
+if [[ "$mutation_status" -ne 0 && "$mutation_status" -ne 125 &&
+      "$hash_status" -eq 0 && "$restored_build_status" -eq 0 ]]; then
   echo "$label: PASS"
   exit 0
 fi
