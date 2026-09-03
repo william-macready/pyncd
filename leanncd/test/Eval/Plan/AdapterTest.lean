@@ -85,6 +85,7 @@ private def renderCompileCause : PlanCompileCause → String
   | .invalidPlan c     => s!"invalidPlan: {repr c}"
   | .bindings c        => s!"bindings: {repr c}"
   | .nonlin c          => s!"nonlin: {repr c}"
+  | .sourceInvariant c => s!"sourceInvariant: {repr c}"
 
 -- ── Checks 1–4: full adapter round-trip (cross-checked against the legacy evaluator), an unpack
 -- preserving an unrelated extra input, a missing-env-binding failure, and a shape-mismatch

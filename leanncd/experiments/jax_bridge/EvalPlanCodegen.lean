@@ -278,6 +278,7 @@ def renderCompileCause : PlanCompileCause → String
   | .invalidPlan c    => s!"invalidPlan: {repr c}"
   | .bindings c       => s!"bindings: {repr c}"
   | .nonlin c         => s!"nonlin: {repr c}"
+  | .sourceInvariant c => s!"sourceInvariant: {repr c}"
 
 /-! ## 6. `affineReference`: exact per-factor lookup tables from the shared coordinate primitives -/
 

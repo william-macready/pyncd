@@ -201,6 +201,18 @@ def isTopoOrdered (all : List ScanStmt) (ordered : List ScanStmt) : Bool :=
       (ok && eligible sc all emitted, emitted ++ sc.writes))
     (true, ([] : List String))).1
 
+/-- External read names in first-seen scheduled-read order: every name READ by some statement and
+    PRODUCED by none. The one external-name rule, shared by `schedule` (which caches it as
+    `ScheduledProgram.extNames`) and `Eval.Plan.prepareEvalPlan` (which re-derives it, because a
+    hand-built schedule's cached set can be missing or extra). Order is the traversal's own
+    first-seen order — the same idiom `buildExtIndex` uses for route indices. -/
+def orderedExternalNames (stmts : List ScanStmt) : List String :=
+  let produced : List String := stmts.flatMap ScanStmt.writes
+  stmts.foldl (fun acc sc =>
+    sc.reads.foldl (fun acc nm =>
+      if produced.contains nm || acc.contains nm then acc else acc ++ [nm]) acc)
+    ([] : List String)
+
 /-- Phase 7. Accepts the post-`finalizeScans` **logical** program directly (§2.1): nonlinearities
     are not split before scheduling, so one source statement stays one scheduled statement and no
     generated name enters the schedule. -/
@@ -217,8 +229,11 @@ def schedule (lp : ScanProgram) : FreshM ScheduledProgram := do
     | .axis ax (some n) => m.insert ax.uid n
     | .iter ax n        => m.insert ax.uid n
     | _                 => m) {}
-  let orderedReads := ordered.flatMap ScanStmt.reads
-  let liveExtNames := lp.extNames.filter (fun nm => orderedReads.contains nm)
+  -- Never-read external inputs are still dropped, and a read-but-produced name is still internal:
+  -- both fall out of `orderedExternalNames`' reads-minus-produced traversal over the ORDERED
+  -- statements, which is also what the checked backend re-derives.
+  let liveExtNames : Finset String :=
+    (orderedExternalNames ordered).foldl (fun s n => insert n s) ∅
   return { decls := lp.decls, stmts := ordered, env := lp.env, extNames := liveExtNames,
            explicitSizes }
 

@@ -15,8 +15,9 @@ Ports C0's already-verified classification logic (`PlanContract.classify*`,
 (`PlanContract.WaveF.classifyScan*`, `test/Eval/Plan/ScanContractTest.lean`) from test-only
 `Classification`-valued classifiers into real production entry points that throw `CapabilityError`.
 
-`prepareEvalPlan` runs the phases proposal §7.5 fixes, in this order and no other: capability
-preflight (A), external signature validation (B), static shape inference over plain AND scan
+`prepareEvalPlan` runs the phases proposal §7.5 fixes, in this order and no other: source-invariant
+re-establishment for a direct schedule (0 — declaration environment and predicate-output rules,
+shared with the source pipeline), capability preflight (A), external signature validation (B), static shape inference over plain AND scan
 base/recurrence assignments (C), source-ordered specialization (D), checked-plan validation (E),
 and bindings (F). Per-statement assignment residualization is shared by all three assignment kinds
 through `residualizeAssignment` (F4 Task 2); `compileScan` (F4 Task 3) adds everything a scan needs
@@ -226,17 +227,19 @@ private def liftNonlin (warnings : List EvalWarning) :
 private def scanErr (warnings : List EvalWarning) (e : ScanCompileError) : PlanCompileFailure :=
   { cause := .scan e, warnings }
 
-/-- External names in first-seen-read order, restricted to `sched.extNames`. NOT `sched.decls`
-    filtered to `extNames` (see Global Constraints — an implicitly-external, never-`Decl`ared name
-    would be silently dropped), and NOT `sched.extNames.toList` (noncomputable — `Finset.toList`
-    needs `Classical.choice`). Mirrors `Lowering.lean`'s own `buildExtIndex` idiom (same traversal,
-    same "membership decidable, order from traversal" pattern), returning the ordered `List String`
-    directly instead of a name→index `HashMap`. -/
+/-- External names in first-seen-read order, DERIVED from `sched.stmts` (reads minus produced) by
+    the shared `orderedExternalNames` (`DSL/Pipeline/Lowering.lean`) — the same calculation
+    `schedule` caches into `ScheduledProgram.extNames`.
+
+    It is deliberately NOT filtered through `sched.extNames`: that field is a cached pipeline
+    product, and a hand-built schedule can present a missing entry (the read would then never be
+    allocated an input slot, and `resolveSource`'s `getD` would silently resolve it to slot ZERO —
+    aliasing a same-shaped input) or an extra one (a signature demanded for a name nothing reads).
+    A direct schedule must behave exactly like the structurally equivalent source-produced one.
+    `sched.extNames` is retained for compatibility; this preparation path is no longer one of its
+    consumers. -/
 def orderedExtNames (sched : ScheduledProgram) : List String :=
-  sched.stmts.foldl (fun acc sc =>
-    sc.reads.foldl (fun acc nm =>
-      if decide (nm ∈ sched.extNames) && !acc.contains nm then acc ++ [nm] else acc) acc)
-    ([] : List String)
+  orderedExternalNames sched.stmts
 
 /-- The retained placement axis of a plain statement's LHS slot — `.free` and, since Thread 4's
     `checkLHSSlot` relaxation, `.freeNorm` alike (a `·`-marked axis is still a real output axis;
@@ -995,6 +998,26 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
 
 def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
     Except PlanCompileFailure PreparedPlan := do
+  -- Step 0: source invariants, defensively re-established for a DIRECT schedule.
+  -- `sched.decls` and `sched.stmts` are authoritative; `sched.env` is a cached pipeline product and
+  -- is never consulted. This runs BEFORE capability preflight, shape inference, and signature
+  -- validation: an invalid source combination (a name declared tensor-bearing twice, a predicate
+  -- output carrying a nonlinearity or a non-sum aggregation) is not a valid-but-unsupported backend
+  -- capability, so it must not surface as one. Per-statement order is source order and, within a
+  -- statement, nonlinearity before aggregation — exactly `checkDtypes`'s own order, because it is
+  -- the same shared `checkPredicateOutput` rule.
+  let declEnv ← match buildDeclEnv sched.decls with
+    | .ok e    => pure e
+    | .error e => throw { cause := .sourceInvariant e, warnings := [] }
+  for sc in sched.stmts do
+    let sourceStmts : List Stmt := match sc with
+      | .plain s => [s]
+      | .scan _ _ base recur _ => base ++ recur
+      | .scanPre .. => []   -- carries no `Stmt` at all; Step A rejects it
+    for s in sourceStmts do
+      match checkPredicateOutput declEnv s with
+      | .ok ()   => pure ()
+      | .error e => throw { cause := .sourceInvariant e, warnings := [] }
   -- Step A: capability preflight.
   match capabilityPreflight sched with
   | .error e => throw { cause := .capability e, warnings := [] }

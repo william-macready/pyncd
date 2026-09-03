@@ -66,6 +66,16 @@ run_cmd do
     match evalAssignDtyped [.predicate "Result" []] env sizes "Result" [] rhs with
     | .error e => throwError (toString e)
     | .ok (_, R) => unless DenseTensor.approxEq R (tensorOf [] [1.0]) do throwError s!"Bool agg wrong: {repr R.data}"
+    -- Task 4.1 fixture 5: an EARLIER `.axis` declaration whose axis name is also `Result` must not
+    -- hide the later `predicate Result`. `combineFor` scans tensor-bearing declarations only, so
+    -- this still selects the Boolean algebra (1.0); a scan over ALL declarations would find the
+    -- axis first and silently fall back to real sum-product (2.0).
+    match evalAssignDtyped
+        [.axis { name := "Result", uid := 99, kind := .real } none, .predicate "Result" []]
+        env sizes "Result" [] rhs with
+    | .error e => throwError (toString e)
+    | .ok (_, R) => unless DenseTensor.approxEq R (tensorOf [] [1.0]) do
+        throwError s!"axis-shadowed Bool agg wrong: {repr R.data} (an axis decl hid the predicate)"
 
 -- 4b: a term with an EMPTY factor list must fold to the Combine's `unit1`, not a hard-coded 1.0.
 -- Use a synthetic min-plus-style Combine (mul = add, combine = min) to make the difference

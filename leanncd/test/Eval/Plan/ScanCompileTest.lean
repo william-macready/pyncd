@@ -44,6 +44,7 @@ def render : PlanCompileCause → String
   | .invalidPlan c    => s!"invalidPlan: {repr c}"
   | .bindings c       => s!"bindings: {repr c}"
   | .nonlin c         => s!"nonlin: {repr c}"
+  | .sourceInvariant c => s!"sourceInvariant: {repr c}"
 
 /-- The `i`-th outer step as a scan, or `none` if it is an assignment / absent. -/
 def scanAt (p : PreparedPlan) (i : Nat) : Option RawScanPlan :=
@@ -633,6 +634,21 @@ def rejSig : InputSignature := InputSignature.ofDenseInputs rejInputs
 def rej (base recur : List Stmt) : Option PlanCompileCause :=
   causeOf (prepareEvalPlan (rejSched base recur) rejSig)
 
+/-- `rej` plus a LATER outer producer for `NOPE`, so a block read of `NOPE` is neither state,
+    scratch, an already-materialized outer tensor, nor an external input. Preparation derives
+    external names authoritatively from the statements (reads minus produced), so a name that
+    nothing produces is an external input needing a signature — the only remaining way to reach
+    `blockReadNotAvailable … .unknownName` is a forward reference to a later outer producer, which
+    `compileScan` rejects before that producer's own statement is ever compiled. -/
+def rejLateNope (base recur : List Stmt) : Option PlanCompileCause :=
+  causeOf (prepareEvalPlan
+    { rejSched base recur with
+        stmts := [ .scan "sc" [axL] base recur false
+                 , .plain (.assign "NOPE" []
+                     { body := { terms := [{ factors := [.read "S0" []] }] }
+                     , nonlin := .identity }) ] }
+    rejSig)
+
 def okBase : Stmt := .assign "S" [.iterAt axL 0]
   { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := .identity }
 def okRecur : Stmt := .assign "S" [.iterNext axL]
@@ -793,8 +809,11 @@ def scratchT : Stmt := .assign "T" []
     , okRecur ]
   == some (.scan (.blockReadNotAvailable "sc" false 0 "T" .forwardReference))
 
--- a base read of a name that is neither a state nor an available outer tensor.
-#guard rej [.assign "S" [.iterAt axL 0]
+-- a base read of a name that is neither a state nor an available outer tensor. `NOPE` is PRODUCED
+-- by a later outer statement, so it is not an external input either: preparation now derives
+-- external names from the statements themselves (reads minus produced), so reaching this rejection
+-- needs a genuinely unavailable name rather than one merely missing from the cached `extNames`.
+#guard rejLateNope [.assign "S" [.iterAt axL 0]
       { body := { terms := [{ factors := [.read "NOPE" []] }] }, nonlin := .identity }] [okRecur]
   == some (.scan (.blockReadNotAvailable "sc" true 0 "NOPE" .unknownName))
 
@@ -814,8 +833,8 @@ def scratchT : Stmt := .assign "T" []
 
 -- a step read of a name that is neither state, nor scratch, nor an available outer tensor (the
 -- recurrence-side counterpart of the base-side fixture above — the two blocks resolve names through
--- separate code paths).
-#guard rej [okBase]
+-- separate code paths). Same later-outer-producer construction, for the same reason.
+#guard rejLateNope [okBase]
     [ .assign "T" [] { body := { terms := [{ factors := [.read "NOPE" []] }] }
                      , nonlin := .identity }
     , okRecur ]

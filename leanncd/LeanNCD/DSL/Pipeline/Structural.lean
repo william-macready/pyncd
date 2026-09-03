@@ -586,20 +586,40 @@ def assignUIDs (p : TLProgram) : FreshM LabeledProgram := do
 /-! ## The `resolveDecls` phase
 
 Builds the `DeclEnv` and classifies tensor names as external inputs vs internally produced.
-Per the §12.1 contract this phase is purely constructive: §12.1 example programs READ names like
-`W`, `X`, `Q`, `K` with no `tensor` declaration, so an undeclared read is an external input — not
-an error. `resolveDecls` therefore NEVER throws. -/
+Per the §12.1 contract this phase is purely constructive for USE sites: §12.1 example programs READ
+names like `W`, `X`, `Q`, `K` with no `tensor` declaration, so an undeclared read is an external
+input — not an error. Its one rejection is about the DECLARATIONS themselves: a tensor-bearing name
+declared twice (`duplicateTensorDecl`, via `buildDeclEnv`). -/
 
 /-- The tensor names a stmt reads (from `.read`/`.unaryFn` factors; iverson reads nothing). -/
 def Stmt.readNames (s : Stmt) : List String := s.readFactors.map (·.1)
 
+/-- The one tensor-declaration classification rule, shared by `resolveDecls` (source pipeline) and
+    `Eval.Plan.prepareEvalPlan` (checked backend, over a possibly hand-built `ScheduledProgram`'s
+    own `decls`).
+
+    `.axis`/`.iter` name an axis, not a tensor, and stay out of the env; `.tensor`, `.linear`, and
+    `.predicate` are tensor-bearing and land in it. A second tensor-bearing declaration of an
+    already-declared name is REJECTED rather than silently overwriting the first: last-wins
+    insertion left a `DeclEnv` lookup (which saw the LAST declaration) and a linear `decls` scan
+    (`Eval.combineFor`, which sees the FIRST) able to disagree about one name's kind — precisely the
+    disagreement Boolean/real algebra selection cannot tolerate. -/
+def buildDeclEnv (decls : List Decl) : Except CompileError DeclEnv :=
+  decls.foldlM (fun (m : DeclEnv) d => match d with
+    | .axis _ _ => pure m
+    | .iter _ _ => pure m
+    | _ =>
+        if m.contains d.name then throw (CompileError.duplicateTensorDecl d.name)
+        else pure (m.insert d.name d))
+    ({} : DeclEnv)
+
 /-- Build the declaration environment and classify external-input names.
-    `extNames` = names READ in some stmt but never PRODUCED (never a stmt LHS). Never throws. -/
+    `extNames` = names READ in some stmt but never PRODUCED (never a stmt LHS). Throws only
+    `duplicateTensorDecl` (from `buildDeclEnv`). -/
 def resolveDecls (lp : LabeledProgram) : FreshM ResolvedProgram := do
-  let env : DeclEnv := lp.decls.foldl (fun m d => match d with
-    | .axis _ _ => m                  -- axis decls name an axis, not a tensor: keep them out of the env
-    | .iter _ _ => m                  -- iter decls ALSO name an axis, not a tensor — same reason
-    | _         => m.insert d.name d) {}
+  let env : DeclEnv ← match buildDeclEnv lp.decls with
+    | .ok e   => pure e
+    | .error e => throw e
   let produced : List String := lp.stmts.map Stmt.lhsName
   let reads    : List String := lp.stmts.flatMap Stmt.readNames
   let extNames : Finset String :=
@@ -724,6 +744,24 @@ to such an output is a semantic error. Reading a predicate tensor on the RHS is 
 private def isNat : AxisKind → Bool | .nat => true | _ => false
 private def isReal : AxisKind → Bool | .real => true | _ => false
 
+/-- Check B, extracted as one pure rule so the source pipeline (`checkDtypes`, below) and the
+    checked backend's direct-schedule entry (`Eval.Plan.prepareEvalPlan`) enforce the SAME
+    predicate-output invariant rather than two independently drifting copies.
+
+    Order is nonlinearity BEFORE aggregation, matching `checkDtypes`'s original arm: a statement
+    violating both reports `predicateNonlin`. `.recurMorphism` carries no predicate obligation here
+    (`checkDtypes` rejects it outright for an unrelated reason — see its own arm). -/
+def checkPredicateOutput (env : DeclEnv) (s : Stmt) : Except CompileError Unit :=
+  match s with
+  | .assign nm _ rhs | .scatter nm _ rhs _ =>
+      match env[nm]? with
+      | some (.predicate _ _) =>
+          if !(rhs.nonlin == .identity) then throw (CompileError.predicateNonlin nm)
+          else if !(rhs.agg == .sum) then throw (CompileError.predicateAgg nm)
+          else pure ()
+      | _ => pure ()
+  | .recurMorphism _ _ _ => pure ()
+
 def checkDtypes (rp : ResolvedProgram) : FreshM ResolvedProgram := do
   for s in rp.stmts do
     -- Check A: axis kinds on LHS slots
@@ -739,10 +777,10 @@ def checkDtypes (rp : ResolvedProgram) : FreshM ResolvedProgram := do
       | _ => pure ()
     -- Check B: predicate outputs must have identity nonlinearity and sum aggregation
     match s with
-    | .assign nm _ rhs | .scatter nm _ rhs _ =>
-        if let some (.predicate _ _) := rp.env[nm]? then
-          unless rhs.nonlin == .identity do throw (.predicateNonlin nm)
-          unless rhs.agg   == .sum       do throw (.predicateAgg nm)
+    | .assign _ _ _ | .scatter _ _ _ _ =>
+        match checkPredicateOutput rp.env s with
+        | .ok ()   => pure ()
+        | .error e => throw e
     | .recurMorphism nm _ _ =>
         -- Audit finding #4 (probed 2026-07-30): `compile` accepted this and emitted
         -- `ops=[BrOp.scanPre]`, while `eval` reported "scanPre unsupported" — and `toBrBaseP`

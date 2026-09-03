@@ -363,6 +363,70 @@ def emptySig : InputSignature := InputSignature.mk ({} : HashMap String TensorSi
 #guard causeOf (prepareEvalPlan unsizedSched emptySig) ==
   some { cause := .shape (.unsizedAxis 1 (.assignOutput "Y")), warnings := [] }
 
+-- ── Task 4.1: direct-schedule source invariants and authoritative external-name derivation ──
+
+/-- Fixture 7: `acceptedSched`'s shape, but `Y` is DECLARED a predicate and its statement violates
+    BOTH predicate-output invariants (relu nonlinearity, max aggregation). Its LHS is the affine
+    slot from the `scatterOrAffineLhs` donor above, and `X`'s required input signature is omitted.
+    Source-invariant validation runs first, so the reported cause is `sourceInvariant
+    predicateNonlin` — not the capability rejection its LHS would earn, not the missing signature,
+    and not the `booleanOutput` its predicate declaration still earns at preflight. -/
+def predicateSourceSched : ScheduledProgram :=
+  { acceptedSched with
+      decls := [.tensor "X" [], .predicate "Y" []]
+    , stmts := [.plain (.assign "Y" [.affine (.axis ⟨"i", 0, .nat⟩)]
+        { body := { terms := [{ factors := [.read "X" []] }] }
+        , nonlin := .pointwise .relu, agg := .max })] }
+
+#guard causeOf (prepareEvalPlan predicateSourceSched emptySig) ==
+  some { cause := .sourceInvariant (.predicateNonlin "Y"), warnings := [] }
+
+/-- Fixture 8: fixture 7 with identity nonlinearity restored and max aggregation retained ⇒
+    `sourceInvariant predicateAgg`. Changing exactly one field distinguishes the two arms. -/
+def predicateAggSched : ScheduledProgram :=
+  { predicateSourceSched with
+      stmts := [.plain (.assign "Y" [.affine (.axis ⟨"i", 0, .nat⟩)]
+        { body := { terms := [{ factors := [.read "X" []] }] }
+        , nonlin := .identity, agg := .max })] }
+
+#guard causeOf (prepareEvalPlan predicateAggSched emptySig) ==
+  some { cause := .sourceInvariant (.predicateAgg "Y"), warnings := [] }
+
+/-- Fixture 9: `contractSched`'s two-input donor with both inputs given the SAME shape (so a
+    slot-zero fallback could not be caught by shape checking) and `B` deliberately absent from the
+    cached `sched.extNames`. Preparation derives external names from the statements themselves, so
+    `A` and `B` still get distinct ordered bindings and `B[j]`'s read resolves to `B`'s own slot. -/
+def sameShapeSched : ScheduledProgram :=
+  { contractSched with
+      extNames := insert "A" (∅ : Finset String)   -- `B` omitted from the cached set
+    , explicitSizes := ((({} : HashMap UID Nat).insert axI2.uid 2).insert axJ2.uid 2) }
+def sameShapeSig : InputSignature :=
+  InputSignature.mk
+    ((({} : HashMap String TensorSignature).insert "A" { shape := #[2], dtype := .f64 }).insert
+      "B" { shape := #[2], dtype := .f64 })
+def sameShapePrepared : Option PreparedPlan := (prepareEvalPlan sameShapeSched sameShapeSig).toOption
+
+#guard sameShapePrepared.map (fun p => p.bindings.requiredInputs.bindings) ==
+  some #[{ name := "A", slot := 0 }, { name := "B", slot := 1 }]
+-- B[j] is the term's SECOND factor: it must read slot 1, not the slot-zero default.
+#guard sameShapePrepared.map
+    (fun p => (assignStep p.plan.raw.steps[0]!).terms[0]!.factors[1]!.readOrDefault.sourceSlot) ==
+  some 1
+
+/-- Fixture 9, repeated with one EXTRA cached external name that nothing reads: the derived names,
+    ordered bindings, and resolved read slot are identical — an extra cached entry demands no
+    signature and allocates no slot. -/
+def extraCachedSched : ScheduledProgram :=
+  { sameShapeSched with extNames := insert "A" (insert "NEVER_READ" (∅ : Finset String)) }
+def extraCachedPrepared : Option PreparedPlan :=
+  (prepareEvalPlan extraCachedSched sameShapeSig).toOption
+
+#guard extraCachedPrepared.map (fun p => p.bindings.requiredInputs.bindings) ==
+  some #[{ name := "A", slot := 0 }, { name := "B", slot := 1 }]
+#guard extraCachedPrepared.map
+    (fun p => (assignStep p.plan.raw.steps[0]!).terms[0]!.factors[1]!.readOrDefault.sourceSlot) ==
+  some 1
+
 /-- Manual renderer for `PlanCompileCause` (used only for test-failure messages): the type
     deliberately has no `Repr`/`ToString` (`ShapeError` — nested via `.shape` — has neither), so a
     diagnosable message has to dispatch per-constructor to whichever rendering each nested cause
@@ -376,6 +440,7 @@ private def renderCompileCause : PlanCompileCause → String
   | .invalidPlan c     => s!"invalidPlan: {repr c}"
   | .bindings c        => s!"bindings: {repr c}"
   | .nonlin c          => s!"nonlin: {repr c}"
+  | .sourceInvariant c => s!"sourceInvariant: {repr c}"
 
 -- non-empty `warnings` surviving into a real `prepareEvalPlan` failure: a second statement's
 -- unsized-axis failure must not touch or clear warnings the first statement already accumulated.
