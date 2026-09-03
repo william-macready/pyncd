@@ -164,10 +164,16 @@ inductive NonlinCompileError
 /-- A required signature is missing, malformed, or incompatible with the scheduled declarations
     (§5.5). Checked for every name in `sched.extNames` — by construction (`resolveDecls`,
     `Structural.lean`), every such name is read somewhere, so no separate "read before production"
-    filter is needed here. -/
+    filter is needed here. `dtypeNotAdmitted` fires when the supplied signature names a dtype no
+    worker implements at all (`f32`); `dtypeMismatch` (Task 4.3) fires when the supplied dtype IS
+    admitted but disagrees with the one the source DECLARATION commits this name to (a `.predicate`
+    declaration expects `bool`, everything else expects `f64`) — a genuinely different failure: the
+    signature is well-formed on its own, just contradicts what the program itself says about this
+    name. -/
 inductive InputSignatureError
   | missingSignature (name : String)
   | dtypeNotAdmitted (name : String) (dtype : ScalarDType)
+  | dtypeMismatch    (name : String) (expected actual : ScalarDType)
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- Failure of `Prepared.lean`'s `checkBindings`: a candidate `requiredInputs` array does not align

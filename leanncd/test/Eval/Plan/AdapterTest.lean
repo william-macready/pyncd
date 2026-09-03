@@ -458,4 +458,38 @@ run_cmd do
 PlanRunCause.execution is NOT unreachable and Check 16's reasoning is stale: {repr e}"
             | .ok _ => pure ()
 
+-- ── Task 4.3, Check 17: a declared-predicate destination through the full pack/runDensePlan/unpack
+-- boundary (fixture 9) — clones the zero-coefficient named round trip's pattern above with fixture
+-- 5's declared-predicate identity program instead, using DECLARATION-AWARE signatures
+-- (`ofDenseInputsForDecls`). Confirms the round trip preserves the Float data through a Boolean
+-- destination AND that `PreparedPlan.materializedSignatures` exposes `I : bool` (not `f64`) through
+-- the prepared accessor. ──
+
+private def predIdentityProg : TLProgram := tlprog!{ axis i : ℕ = 3, j : ℕ = 3
+  predicate I(i, j)
+  I[i, j] := [i = j] }
+
+private def predIdentityInputs : HashMap String DenseTensor := {}
+
+run_cmd do
+  match predIdentityProg.compileToScheduled.run 0 with
+  | .error e _ => throwError s!"predIdentity compile failed: {repr e}"
+  | .ok sched _ =>
+    match prepareEvalPlan sched (InputSignature.ofDenseInputsForDecls sched.decls predIdentityInputs) with
+    | .error f => throwError s!"predIdentity prepare failed: {renderCompileCause f.cause}"
+    | .ok prepared =>
+        unless prepared.materializedSignatures.map (fun e => (e.1, e.2.dtype)) == #[("I", .bool)] do
+          throwError s!"predIdentity: materializedSignatures wrong: \
+{repr (prepared.materializedSignatures.map (fun e => (e.1, e.2.dtype)))}"
+        match pack prepared predIdentityInputs with
+        | .error e => throwError s!"predIdentity: pack failed: {repr e}"
+        | .ok packed =>
+            match runDensePlan prepared.plan packed with
+            | .error e => throwError s!"predIdentity: runDensePlan failed: {repr e}"
+            | .ok result =>
+                let unpacked := unpack prepared.bindings predIdentityInputs result
+                unless expectTensor (unpacked["I"]?) [3, 3]
+                    #[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0] do
+                  throwError s!"predIdentity: I value wrong: {repr (unpacked["I"]?)}"
+
 end LeanNCD.Eval.Plan.AdapterTest

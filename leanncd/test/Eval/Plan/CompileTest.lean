@@ -5,13 +5,16 @@ import LeanNCD.Eval.Plan.Compile
 # Wave C C4 capability preflight tests
 
 One baseline accepted program (`Y[i] := X[i]`) plus rejected cases for every remaining
-`CapabilityError` category (9 top-level rejection categories now): 2 cases for `unsupportedLhsSlot`
+`CapabilityError` category (8 top-level rejection categories now): 2 cases for `unsupportedLhsSlot`
 (`iterAt`/`iterNext` — `.freeNorm` at top level is now ADMITTED, Thread 4, so it is no longer one of
 these rejection cases; see the accepted fixture below instead), 2 for `unsupportedNonlin`
 (pointwise/axiswise, now specifically SCAN-BLOCK cases — Thread 4 admits both at top level too), and
 one each for the remaining categories. `unsupportedAgg` (max/min) is likewise no longer a rejection
 category — the max/min-aggregation thread admits both (they compile to the tropical algebras), so its
-two donor programs are now accepted-case fixtures below, not rejections. Plus three Thread-4
+two donor programs are now accepted-case fixtures below, not rejections. `booleanOutput` (Task 4.3) is
+likewise no longer a rejection category — a `.predicate` declaration is now structurally admitted, so
+its former rejection fixture becomes an accepted-case fixture below (immediately followed by a
+donor confirming the NEXT statement is still checked, not skipped). Plus three Thread-4
 accepted-case fixtures pinning what preflight now admits at top level (`.freeNorm`, `.pointwise`,
 unmasked `.axiswise`) that Wave C used to reject.
 the two structurally-unreachable categories (`unsupportedDtype`, `dynamicShape`) are exercised
@@ -19,7 +22,10 @@ directly on the constructor rather than through `capabilityPreflight`. Also cove
 end-to-end on accepted programs — an identity copy, a zero-coefficient contraction, and a
 repeated-assignment (no-dedup) case — every `PlanCompileCause` variant reached through the real
 pipeline (`inputSignature`, `capability`, `shape`), and non-empty preparation warnings surviving a
-later `shape` failure unchanged.
+later `shape` failure unchanged. Task 4.3 adds declared-predicate-destination coverage: a required
+input signature contradicting the source declaration (`inputSignature.dtypeMismatch`, both
+directions), an external input's validated dtype carried into the checked plan rather than
+hard-coded, and `PreparedPlan.materializedSignatures`'s repeated-name, per-slot dtype ordering.
 -/
 
 namespace LeanNCD.Eval.Plan.CompileTest
@@ -165,9 +171,24 @@ def acceptedSched : ScheduledProgram :=
           { body := { terms := [{ factors := [.read "X" []] }] }
           , nonlin := .identity, agg := .min })] })
 
--- booleanOutput: a predicate decl
-#guard errOf (capabilityPreflight { acceptedSched with decls := [.predicate "P" []] })
-  == some (.booleanOutput "P")
+-- booleanOutput (Task 4.3, fixture 10): a predicate decl is now structurally ADMITTED — changing
+-- no field except the expected result from the pre-4.3 rejection above.
+#guard isOk (capabilityPreflight { acceptedSched with decls := [.predicate "P" []] })
+
+-- (Task 4.3, fixture 11): the SAME predicate decl, with the existing `scatterOrAffineLhs` scatter
+-- donor appended as its one statement. Distinguishes "predicate admitted, the next statement in
+-- source order is still checked" from a preflight that accidentally short-circuits after admitting
+-- a predicate declaration and skips statement checking entirely.
+#guard errOf (capabilityPreflight
+    { acceptedSched with
+        decls := [.predicate "P" []]
+      , stmts := [.plain (.scatter "Out" [] { body := { terms := [] }, nonlin := .identity } {})] })
+  == some (.scatterOrAffineLhs "Out")
+
+-- `booleanOutput` has no producer left in this file (Task 4.3 replaced its one throw site), but the
+-- constructor is retained on `CapabilityError` — deleting a shipped closed-family constructor is
+-- itself a semantic version change, same discipline as `scanNode`/`unsupportedDtype`/`dynamicShape`.
+#guard (CapabilityError.booleanOutput "retained") == CapabilityError.booleanOutput "retained"
 
 -- recurrenceOrCallback: a recurMorphism stmt
 #guard errOf (capabilityPreflight
@@ -320,6 +341,18 @@ def repeatYSlots : Option (Array TensorSlot) :=
   repeatPrepared.map (fun p => (p.bindings.materializedNames.filter (·.name == "Y")).map (·.slot))
 #guard repeatYSlots.map (fun ss => ss[0]! == ss[1]!) == some false   -- two DISTINCT "Y" slots
 
+-- Task 4.3, fixture 8: `repeatSched`'s shape with `Y` declared a predicate and `Z` left real —
+-- `materializedSignatures` must show the destination-derived dtype in the SAME repeated-name,
+-- per-slot order `materializedNames` already establishes (Task 4.1): two `bool` entries for `Y`
+-- (one per write, since `checkPredicateOutput` re-validates BOTH writes independently), then one
+-- `f64` entry for `Z`.
+def repeatPredSched : ScheduledProgram :=
+  { repeatSched with decls := repeatSched.decls ++ [.predicate "Y" []] }
+#guard (prepareEvalPlan repeatPredSched repeatSig).toOption.isSome
+def repeatPredPrepared : Option PreparedPlan := (prepareEvalPlan repeatPredSched repeatSig).toOption
+#guard repeatPredPrepared.map (fun p => p.materializedSignatures.map (fun e => (e.1, e.2.dtype))) ==
+  some #[("Y", .bool), ("Y", .bool), ("Z", .f64)]
+
 -- Deterministic slot assignment: same input, same structural output.
 -- `RequiredBindings` has no derived `BEq` (same established precedent as `PreparedPlan` itself, per
 -- `Prepared.lean`'s own doc comment: private-constructor types compare through field projections,
@@ -334,10 +367,21 @@ def causeOf (r : Except PlanCompileFailure PreparedPlan) : Option PlanCompileFai
   match r with | .ok _ => none | .error e => some e
 #guard causeOf (prepareEvalPlan identitySched (InputSignature.mk ({} : HashMap String TensorSignature))) ==
   some { cause := .inputSignature (.missingSignature "X"), warnings := [] }
+-- (Task 4.3) `X` is undeclared in `identitySched` (no `.tensor`/`.predicate` decl at all), so its
+-- expected dtype is `f64`; supplying `bool` is an ADMITTED dtype that disagrees with that
+-- expectation, not an inadmissible one — `dtypeMismatch`, not `dtypeNotAdmitted`. Confirmed against
+-- `dtypeOfDecl none = .f64`.
 def badDtypeSig : InputSignature :=
   InputSignature.mk (({} : HashMap String TensorSignature).insert "X" { shape := #[3], dtype := .bool })
 #guard causeOf (prepareEvalPlan identitySched badDtypeSig) ==
-  some { cause := .inputSignature (.dtypeNotAdmitted "X" .bool), warnings := [] }
+  some { cause := .inputSignature (.dtypeMismatch "X" .f64 .bool), warnings := [] }
+
+-- `dtypeNotAdmitted` still has a real producer: a signature naming `f32` — inadmissible regardless
+-- of what the (absent) declaration expects.
+def f32Sig : InputSignature :=
+  InputSignature.mk (({} : HashMap String TensorSignature).insert "X" { shape := #[3], dtype := .f32 })
+#guard causeOf (prepareEvalPlan identitySched f32Sig) ==
+  some { cause := .inputSignature (.dtypeNotAdmitted "X" .f32), warnings := [] }
 
 -- `prepareEvalPlan`'s OWN capability-rejection path: Step A runs `capabilityPreflight` before
 -- shape inference, so an axis-less `.scan` statement is rejected with a `.capability`-tagged
@@ -412,6 +456,45 @@ def sameShapePrepared : Option PreparedPlan := (prepareEvalPlan sameShapeSched s
 #guard sameShapePrepared.map
     (fun p => (assignStep p.plan.raw.steps[0]!).terms[0]!.factors[1]!.readOrDefault.sourceSlot) ==
   some 1
+
+/-- Task 4.3, fixture 4: fixture 9's `sameShapeSched`, with `B` additionally declared a predicate —
+    still absent from the cached `sched.extNames`, so the checked BASELINE below also confirms
+    authoritative external-name derivation (not the cached, incomplete set) reaches
+    declaration-aware Boolean validation. `A` stays undeclared (expects `f64`). -/
+def declaredBSched : ScheduledProgram :=
+  { sameShapeSched with decls := sameShapeSched.decls ++ [.predicate "B" [axJ2]] }
+def declaredBCorrectSig : InputSignature :=
+  InputSignature.mk
+    ((({} : HashMap String TensorSignature).insert "A" { shape := #[2], dtype := .f64 }).insert
+      "B" { shape := #[2], dtype := .bool })
+#guard (prepareEvalPlan declaredBSched declaredBCorrectSig).toOption.isSome
+def declaredBPrepared : Option PreparedPlan :=
+  (prepareEvalPlan declaredBSched declaredBCorrectSig).toOption
+-- The external half of "top-level destination dtype derivation": `B`'s own input slot carries the
+-- VALIDATED `.bool` signature dtype through into the checked plan, rather than a hard-coded `f64`.
+#guard declaredBPrepared.map (fun p =>
+    (p.plan.raw.tensorSigs.getD
+      ((p.bindings.requiredInputs.bindings.find? (·.name == "B")).map (·.slot) |>.getD 999)
+      { shape := #[], dtype := .f64 }).dtype) ==
+  some .bool
+
+-- Variant 1: change only `B`'s explicit signature to `f64` (`B` is declared predicate ⇒ expects
+-- `bool`) ⇒ `dtypeMismatch "B" .bool .f64`.
+def declaredBWrongSigB : InputSignature :=
+  InputSignature.mk
+    ((({} : HashMap String TensorSignature).insert "A" { shape := #[2], dtype := .f64 }).insert
+      "B" { shape := #[2], dtype := .f64 })
+#guard causeOf (prepareEvalPlan declaredBSched declaredBWrongSigB) ==
+  some { cause := .inputSignature (.dtypeMismatch "B" .bool .f64), warnings := [] }
+
+-- Variant 2: change only `A`'s explicit signature to `bool` (`A` is undeclared ⇒ expects `f64`) ⇒
+-- `dtypeMismatch "A" .f64 .bool`.
+def declaredBWrongSigA : InputSignature :=
+  InputSignature.mk
+    ((({} : HashMap String TensorSignature).insert "A" { shape := #[2], dtype := .bool }).insert
+      "B" { shape := #[2], dtype := .bool })
+#guard causeOf (prepareEvalPlan declaredBSched declaredBWrongSigA) ==
+  some { cause := .inputSignature (.dtypeMismatch "A" .f64 .bool), warnings := [] }
 
 /-- Fixture 9, repeated with one EXTRA cached external name that nothing reads: the derived names,
     ordered bindings, and resolved read slot are identical — an extra cached entry demands no

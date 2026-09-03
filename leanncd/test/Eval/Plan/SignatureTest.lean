@@ -20,6 +20,38 @@ private def conversionInputs : HashMap String DenseTensor :=
   some ({ shape := #[2, 3], dtype := .f64 } : TensorSignature)
 #guard (InputSignature.ofDenseInputs conversionInputs).tensors["Missing"]? == none
 
+-- Task 4.3, fixture 1: `conversionInputs`, with `X` declared a predicate — `ofDenseInputsForDecls`
+-- derives `bool` for it, not `f64`.
+#guard (InputSignature.ofDenseInputsForDecls [.predicate "X" []] conversionInputs).tensors["X"]? ==
+  some ({ shape := #[2, 3], dtype := .bool } : TensorSignature)
+
+-- Task 4.3, fixture 2: the SAME fixture with no declaration at all — `f64`, and the existing
+-- `ofDenseInputs` guard just above stays byte-for-byte unchanged (it is not declaration-aware and
+-- this task does not touch it).
+#guard (InputSignature.ofDenseInputsForDecls [] conversionInputs).tensors["X"]? ==
+  some ({ shape := #[2, 3], dtype := .f64 } : TensorSignature)
+
+-- Task 4.3, fixture 3: `GnnScatterTest`'s GN2 shape (`predicate edge(i, j); H[i, f] := edge[i, j]
+-- · X[j, f]`, `test/Eval/Portfolio/GnnScatterTest.lean`) compiled to a schedule, then its
+-- declaration-aware signature constructed directly from `sched.decls`: `edge` (declared predicate)
+-- is `bool`, `X` (undeclared) is `f64`.
+private def gn2Prog : TLProgram := tlprog!{ predicate edge(i, j)
+  H[i, f] := edge[i, j] · X[j, f] }
+
+private def gn2Inputs : HashMap String DenseTensor :=
+  (({} : HashMap String DenseTensor).insert "edge" ⟨[2, 2], #[0.0, 1.0, 1.0, 0.0]⟩).insert
+    "X" ⟨[2, 2], #[1.0, 2.0, 3.0, 4.0]⟩
+
+run_cmd do
+  match gn2Prog.compileToScheduled.run 0 with
+  | .error e _ => throwError s!"GN2 clone compile failed: {repr e}"
+  | .ok sched _ =>
+      let sig := InputSignature.ofDenseInputsForDecls sched.decls gn2Inputs
+      unless sig.tensors["edge"]?.map (·.dtype) == some .bool do
+        throwError s!"GN2 clone: edge dtype wrong: {repr (sig.tensors["edge"]?)}"
+      unless sig.tensors["X"]?.map (·.dtype) == some .f64 do
+        throwError s!"GN2 clone: X dtype wrong: {repr (sig.tensors["X"]?)}"
+
 /-- Run both shape-inference adapters over the same schedule and concrete inputs, and assert
     their outcomes agree exactly — the Gate's own criterion, applied directly rather than
     re-derived by hand. -/

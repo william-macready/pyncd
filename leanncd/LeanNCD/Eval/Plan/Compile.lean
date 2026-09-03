@@ -31,11 +31,17 @@ namespace LeanNCD.Eval.Plan
 /-- Axis declarations (`.axis`, `.iter`) are structurally accepted regardless of use — rejection for
     scan usage happens at the `ScanStmt` check below, not at the declaring axis. `.freeNorm` usage is
     likewise checked at the `LHSSlot` check below, but (Thread 4) only rejected there for a
-    scan-block statement — a top-level `.freeNorm` is now admitted (`checkLHSSlot`). -/
+    scan-block statement — a top-level `.freeNorm` is now admitted (`checkLHSSlot`). A `.predicate`
+    declaration is now (Task 4.3) structurally ADMITTED too: `prepareEvalPlan` derives its Boolean
+    destination signature/algebra from `dtypeOfDecl` (`Signature.lean`) instead of rejecting it here.
+    `booleanOutput` has no producer left in this file, retained on `CapabilityError` for the same
+    reason `scanNode`/`unaryFactor`/`maskOrPredicate` are — a serialized rejection from before this
+    thread may still carry it, and deleting a shipped closed-family constructor is itself a semantic
+    version change (§9.2). -/
 def checkDecl : Decl → Except CapabilityError Unit
   | .tensor ..    => pure ()
   | .linear ..    => pure ()
-  | .predicate n _ => throw (.booleanOutput n)
+  | .predicate .. => pure ()
   | .axis ..      => pure ()
   | .iter ..      => pure ()
 
@@ -397,6 +403,23 @@ def algebraForAgg : AggOp → ContractionAlgebra
   | .sum => admittedAlgebra
   | .max => admittedAlgebraMax
   | .min => admittedAlgebraMin
+
+/-- Select the checked contraction algebra a TOP-LEVEL destination compiles to (Task 4.3): the
+    DESTINATION's dtype (`dtypeOfDecl`, `Signature.lean`) selects the algebra, not any source
+    factor's — a `bool` destination always compiles to `admittedAlgebraBool` regardless of `agg`
+    (`checkPredicateOutput`, re-established at `prepareEvalPlan`'s Step 0, already forces a predicate
+    destination's own statement to carry `agg = .sum`, so `agg` genuinely never disagrees for one);
+    an `f64` (or reserved `f32`) destination falls back to `algebraForAgg agg` exactly as before this
+    task. Kept as a separate function, applied by OVERRIDING `residualizeAssignment`'s returned
+    `AssignPlan.algebra` at its top-level call site, rather than threading a `destDtype` parameter
+    through `residualizeAssignment` itself — the scan base/step call sites stay byte-for-byte
+    unchanged (Task 4.4 scope, not this one), and this function's own selection logic stays
+    independently mutation-testable from the destination-dtype DERIVATION it consumes. -/
+def algebraForDest (destDtype : ScalarDType) (agg : AggOp) : ContractionAlgebra :=
+  match destDtype with
+  | .bool => admittedAlgebraBool
+  | .f64  => algebraForAgg agg
+  | .f32  => algebraForAgg agg   -- unreachable: an `f32` destination is already `dtypeNotAdmitted`
 
 /-- The common per-statement assignment residualization core (Wave F F4 Task 2): given a
     statement's scan context (empty outside a scan step), its output (retained) basis, validated
@@ -1041,14 +1064,24 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
   match capabilityPreflight sched with
   | .error e => throw { cause := .capability e, warnings := [] }
   | .ok () => pure ()
-  -- Step B: input signature validation, in first-seen-read order.
+  -- Step B: input signature validation, in first-seen-read order. Every dtype the checked plan
+  -- admits at all (`dtypeAdmitted`, `Check.lean`) is checked first, THEN the declaration-derived
+  -- expectation (`dtypeOfDecl declEnv[nm]?`, Task 4.3): a `.predicate`-declared external name
+  -- expects `bool`, everything else (a `.tensor`/`.linear` declaration, or none at all) expects
+  -- `f64`. The two checks are deliberately separate: an inadmissible dtype (`f32`) is
+  -- `dtypeNotAdmitted` regardless of what the declaration expects, while an admitted-but-wrong
+  -- dtype (e.g. `bool` supplied for a non-predicate name) is the newer `dtypeMismatch`, carrying
+  -- both the expected and actual dtype so a caller does not have to re-derive either.
   let extOrder := orderedExtNames sched
   for nm in extOrder do
     match sig.tensors[nm]? with
     | none => throw { cause := .inputSignature (.missingSignature nm), warnings := [] }
     | some ts =>
-        unless ts.dtype == .f64 do
+        unless dtypeAdmitted ts.dtype do
           throw { cause := .inputSignature (.dtypeNotAdmitted nm ts.dtype), warnings := [] }
+        let expected := dtypeOfDecl (declEnv[nm]?)
+        unless ts.dtype == expected do
+          throw { cause := .inputSignature (.dtypeMismatch nm expected ts.dtype), warnings := [] }
   -- Step C: shape inference.
   -- Plain, base, and recurrence assignments in SOURCE order (plan §4.5), interleaved exactly as
   -- `sched.stmts` presents them. `inferAxisSizesCore` (`Eval/SizeInfer.lean`) derives constraints
@@ -1078,11 +1111,16 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
   let mut inputSlotsAcc : Array TensorSlot := #[]
   let mut requiredInputsAcc : Array SlotBinding := #[]
   for nm in extOrder do
-    -- validated present + f64 in Step B; `getD` avoids needing `Inhabited TensorSignature`
-    -- (mirrors `runDensePlan`'s identical idiom in `Dense.lean`).
+    -- validated present + admitted + declaration-agreeing in Step B; `getD` avoids needing
+    -- `Inhabited TensorSignature` (mirrors `runDensePlan`'s identical idiom in `Dense.lean`).
+    -- `dtype := ts.dtype` (Task 4.3) carries the VALIDATED signature dtype through, rather than
+    -- hard-coding `.f64`: Step B already forced `ts.dtype == dtypeOfDecl (declEnv[nm]?)`, so this is
+    -- never anything OTHER than what the declaration commits to — but it must be read from `ts`,
+    -- not re-derived or defaulted, or a `bool`-declared external input would silently carry an
+    -- `f64` tensor signature into the checked plan.
     let ts := sig.tensors.getD nm { shape := #[], dtype := .f64 }
     let slot := tensorSigsAcc.size
-    tensorSigsAcc := tensorSigsAcc.push { shape := ts.shape, dtype := .f64 }
+    tensorSigsAcc := tensorSigsAcc.push { shape := ts.shape, dtype := ts.dtype }
     slotOf := slotOf.insert nm slot
     inputSlotsAcc := inputSlotsAcc.push slot
     requiredInputsAcc := requiredInputsAcc.push { name := nm, slot := slot }
@@ -1148,16 +1186,26 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
             resolveSource destSlot outputShape rhs.agg rhs.body.terms
         match rhs.nonlin with
         | .identity =>
-            -- Byte-for-byte unchanged (Thread 4 regression gate): single `.assign`, published
-            -- directly under `nm`'s own destination slot — no internal slot allocated.
-            tensorSigsAcc := tensorSigsAcc.push { shape := outputShape, dtype := .f64 }
-            stepsAcc := stepsAcc.push (.assign assignPlan)
+            -- Byte-for-byte unchanged for a REAL destination (Thread 4 regression gate): single
+            -- `.assign`, published directly under `nm`'s own destination slot — no internal slot
+            -- allocated. Task 4.3: the destination's OWN declaration (never any source factor's)
+            -- selects both its `TensorSignature.dtype` and its `AssignPlan.algebra` — a `.predicate`
+            -- declaration compiles to `bool`/`admittedAlgebraBool`, everything else to `f64`/
+            -- `algebraForAgg rhs.agg` exactly as before this task. `checkPredicateOutput`
+            -- (re-established at Step 0) already forces a predicate destination's own statement to
+            -- have `agg = .sum`, so `algebraForDest` never has to reconcile a predicate `nm` with a
+            -- disagreeing `agg` here.
+            let destDtype := dtypeOfDecl (declEnv[nm]?)
+            tensorSigsAcc := tensorSigsAcc.push { shape := outputShape, dtype := destDtype }
+            stepsAcc := stepsAcc.push (.assign { assignPlan with algebra := algebraForDest destDtype rhs.agg })
             materializedAcc := materializedAcc.push { name := nm, slot := destSlot }
             slotOf := slotOf.insert nm destSlot
         | .pointwise pf =>
             -- Two-step chain (§3): `.assign` publishes into the INTERNAL slot `destSlot`, not
             -- `nm`'s eventual published slot; `.pointwise` reads it and writes `publishedSlot`,
-            -- which is what `nm` resolves to for every later reader.
+            -- which is what `nm` resolves to for every later reader. Always `f64`: a predicate
+            -- destination can never reach this branch (`checkPredicateOutput` forces
+            -- `nonlin = .identity` for one), so no destination-dtype derivation is needed here.
             tensorSigsAcc := tensorSigsAcc.push { shape := outputShape, dtype := .f64 }
             let publishedSlot := tensorSigsAcc.size
             tensorSigsAcc := tensorSigsAcc.push { shape := outputShape, dtype := .f64 }

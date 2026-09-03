@@ -107,4 +107,17 @@ structure PreparedPlan where
   bindings : PlanBindings
   warnings : List EvalWarning
 
+/-- Ordered materialized SIGNATURES (Task 4.3): pairs each `PlanBindings.materializedNames` entry
+    with its own slot's `TensorSignature`, read from the checked plan's `raw.tensorSigs` table —
+    same order, including repeats, as `materializedNames` itself (its own doc comment: NOT
+    deduplicated; a name reassigned twice appears twice here too, each with its own slot's
+    signature). Exposes the destination dtype `prepareEvalPlan`'s Step D derives from the source
+    declaration (`dtypeOfDecl`, `Signature.lean`) at the one boundary a caller can observe it without
+    reaching into `plan.raw` and re-deriving the pairing by hand. The `getD` default is a totality
+    formality: every slot a `materializedNames` entry names is one `prepareEvalPlan` itself already
+    allocated in `tensorSigs`, so it is always present for any `PreparedPlan` this codebase produces. -/
+def PreparedPlan.materializedSignatures (p : PreparedPlan) : Array (String × TensorSignature) :=
+  p.bindings.materializedNames.map (fun b =>
+    (b.name, p.plan.raw.tensorSigs.getD b.slot { shape := #[], dtype := .f64 }))
+
 end LeanNCD.Eval.Plan

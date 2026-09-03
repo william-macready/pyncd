@@ -1482,4 +1482,93 @@ run_cmd do
             throwError s!"T5.4 fragment: wrong rejection message: {m}"
       | .ok _ => throwError "T5.4 fragment: the oracle accepted an eliminated-normalization-axis shape"
 
+/-! ## Task 4.3 — declared predicate destinations (top-level, checked/reference agreement)
+
+Three fixtures closing Task 4.3's own differential story: a declared-predicate clone of the RL1
+identity donor (fixture 5), and a scalar Boolean contraction cloned from `test/Eval/ContractTest.lean`'s
+"Masked aggregation" example as a source program with a declared predicate destination — once with
+its original all-1/identity-edge values (fixture 6, real sum-product 2.0 vs Boolean 1.0) and once
+with non-binary Float sources 0.25/0.75 (fixture 7, literal `min`/`max` behavior, no runtime
+truth-check or coercion). -/
+
+private def renderCompileCause43 : PlanCompileCause → String
+  | .inputSignature c => s!"inputSignature: {repr c}"
+  | .capability c     => s!"capability: {repr c}"
+  | .shape c          => s!"shape: {c}"
+  | .scan c            => s!"scan: {repr c}"
+  | .invalidPlan c     => s!"invalidPlan: {repr c}"
+  | .bindings c        => s!"bindings: {repr c}"
+  | .nonlin c          => s!"nonlin: {repr c}"
+  | .sourceInvariant c => s!"sourceInvariant: {repr c}"
+
+-- Fixture 5: the RL1 donor (`I[i, j] := [i = j]`, `pureIversonProg` above), with `I` additionally
+-- declared a predicate. No external inputs, so `planAgrees`'s `InputSignature.ofDenseInputs {}`
+-- signature is already complete — this fixture is purely about DESTINATION admission/agreement, not
+-- external-signature validation. Checked/reference agreement plus the same identity matrix.
+private def predIdentityProg43 : TLProgram := tlprog!{ axis i : ℕ = 3, j : ℕ = 3
+  predicate I(i, j)
+  I[i, j] := [i = j] }
+private def predIdentityInputs43 : HashMap String DenseTensor := {}
+
+run_cmd do
+  match planAgrees predIdentityProg43 predIdentityInputs43 with
+  | .error e => throwError s!"T4.3 declared-predicate identity differential: {e}"
+  | .ok () => pure ()
+  match envOf predIdentityProg43 predIdentityInputs43 with
+  | .error e => throwError s!"T4.3 declared-predicate identity reference eval: {e}"
+  | .ok env => match env["I"]? with
+    | some t => unless denseEq t ⟨[3, 3], #[1, 0, 0, 0, 1, 0, 0, 0, 1]⟩ do
+        throwError s!"T4.3 declared-predicate identity value changed: {repr t.data}"
+    | none => throwError "T4.3 declared-predicate identity: I missing"
+
+-- Fixtures 6/7: `test/Eval/ContractTest.lean`'s "Masked aggregation" scalar contraction
+-- (`Result[] := F[t,i]·F[t,j]·edge[i,j]`, contracting all three axes), as a SOURCE program with
+-- `Result` declared a predicate destination. `F=[[1,1]]`, `edge`=2×2 identity: real sum-product
+-- there is 2.0 (`(t,i,j)=(0,0,0)` and `(0,1,1)` each contribute `1.0`), while the Boolean
+-- (min-factor/max-reduce) algebra a predicate destination selects gives 1.0 (a true term exists).
+private def boolScalarProg : TLProgram := tlprog!{ axis t : ℕ = 1, i : ℕ = 2, j : ℕ = 2
+  predicate Result()
+  Result[] := F[t, i] · F[t, j] · edge[i, j] }
+
+private def boolScalarInputsAllTrue : HashMap String DenseTensor :=
+  (({} : HashMap String DenseTensor).insert "F" ⟨[1, 2], #[1.0, 1.0]⟩).insert
+    "edge" ⟨[2, 2], #[1.0, 0.0, 0.0, 1.0]⟩
+
+-- Fixture 7: the SAME program, `F` replaced by non-binary Floats `0.25`/`0.75`. At (i,j)=(0,0):
+-- min(0.25,0.25,1)=0.25; at (i,j)=(1,1): min(0.75,0.75,1)=0.75; the other two (i,j) pairs read
+-- `edge=0` and contribute `0.0`. Boolean max-reduce over all four gives `0.75` — literal Float
+-- min/max, not a value coerced to {0,1} or rejected as non-binary.
+private def boolScalarInputsNonBinary : HashMap String DenseTensor :=
+  (({} : HashMap String DenseTensor).insert "F" ⟨[1, 2], #[0.25, 0.75]⟩).insert
+    "edge" ⟨[2, 2], #[1.0, 0.0, 0.0, 1.0]⟩
+
+private def checkBoolScalar (name : String) (inputs : HashMap String DenseTensor) (expected : Float) :
+    Except String Unit := do
+  match boolScalarProg.compileToScheduled.run 0 with
+  | .error e _ => throw s!"{name}: compile failed: {repr e}"
+  | .ok sched _ =>
+      let sig := InputSignature.ofDenseInputsForDecls sched.decls inputs
+      match prepareEvalPlan sched sig with
+      | .error f => throw s!"{name}: prepare failed: {renderCompileCause43 f.cause}"
+      | .ok prepared =>
+          match runPreparedDense prepared inputs, evalScheduled sched inputs with
+          | .error e, _ => throw s!"{name}: checked run failed: {repr e.cause}"
+          | _, .error e => throw s!"{name}: reference eval failed: {e.error}"
+          | .ok planReport, .ok refReport =>
+              match planReport.env["Result"]?, refReport.env["Result"]? with
+              | some pt, some rt =>
+                  unless DenseTensor.approxEq pt ⟨[], #[expected]⟩ do
+                    throw s!"{name}: checked Result wrong: {repr pt.data}, expected {expected}"
+                  unless DenseTensor.approxEq rt ⟨[], #[expected]⟩ do
+                    throw s!"{name}: reference Result wrong: {repr rt.data}, expected {expected}"
+              | _, _ => throw s!"{name}: Result missing from one of the reports"
+
+run_cmd do
+  match checkBoolScalar "T4.3 bool-scalar all-true" boolScalarInputsAllTrue 1.0 with
+  | .error m => throwError m
+  | .ok () => pure ()
+  match checkBoolScalar "T4.3 bool-scalar non-binary" boolScalarInputsNonBinary 0.75 with
+  | .error m => throwError m
+  | .ok () => pure ()
+
 end LeanNCD.Eval.Plan.DifferentialTest
