@@ -22,6 +22,27 @@ cd leanncd && "$HOME/.elan/bin/lake" build
 Do not assume `lake` is on `PATH`, and do not run it from the repository root: the Lake
 configuration lives under `leanncd/`. Replace `build` with the desired target or Lake command.
 
+### Mutation testing
+
+For a mutation that is one exact textual replacement in one Lean file, always use
+`leanncd/scripts/mutate-and-build.sh` rather than editing and restoring the file manually. Pass the
+target worktree's `leanncd/` directory as the first argument; the script requires one unique match,
+runs the requested Lake targets, propagates Lake's exit code, and restores the source file on
+success, failure, or interruption. After observing the intended fixture failure, run the same Lake
+targets without the mutation to record the restored pass.
+
+```bash
+bash leanncd/scripts/mutate-and-build.sh \
+  /path/to/worktree/leanncd LeanNCD/Eval/Plan/Check.lean \
+  ', reduceId := .bool false }' ', reduceId := .bool true }' \
+  Eval.Plan.KernelCheckTest Eval.Plan.KernelDenseTest
+```
+
+The repository permissions allow both relative and primary-checkout absolute invocations of this
+script so mutation cycles and Lake builds do not require confirmation. If a mutation requires
+multiple files, multiple intentional matches, a non-Lake command, or verification beyond build
+failure, extend the script for that case instead of using an ad hoc mutate/restore command.
+
 **`lake env lean <file>` does not rebuild the file's dependencies — it only typechecks that one
 file against whatever `.olean`s already exist.** If you edit module `A.lean` and then run
 `lake env lean` on a file `B.lean` that imports `A`, `B` is checked against `A`'s STALE `.olean`
