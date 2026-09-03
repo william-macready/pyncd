@@ -427,6 +427,48 @@ def extraCachedPrepared : Option PreparedPlan :=
     (fun p => (assignStep p.plan.raw.steps[0]!).terms[0]!.factors[1]!.readOrDefault.sourceSlot) ==
   some 1
 
+/-- Fixture 10 (per-task review finding): an OUT-OF-ORDER direct schedule — `Y[i] := A[i]·Z[j]`
+    reads `Z`, which the statement AFTER it produces. Reads-minus-produced is order-insensitive, so
+    `Z` was classified internal (no input slot, no signature demanded) while `resolveSource`'s `getD`
+    resolved it to slot ZERO, aliasing `A` and computing a wrong answer with no diagnostic: the
+    cached `extNames` is the honest `{A, B}` here, both inputs are the same shape, and every later
+    phase passed. `prepareEvalPlan` Step 0 now re-establishes the statement ORDER invariant
+    (`ScheduledProgram.stmts`: "producers precede consumers") with `schedule`'s own `isTopoOrdered`
+    predicate and its own `cyclicDataflow` error, and rejects — it does not reorder. -/
+def outOfOrderStmts : List ScanStmt :=
+  [ .plain (.assign "Y" [.free axI2]
+      { body := { terms := [{ factors := [.read "A" [.axis axI2], .read "Z" [.axis axJ2]] }] }
+      , nonlin := .identity })
+  , .plain (.assign "Z" [.free axJ2]
+      { body := { terms := [{ factors := [.read "B" [.axis axJ2]] }] }, nonlin := .identity }) ]
+
+def outOfOrderSched : ScheduledProgram :=
+  { decls := [.axis axI2 (some 2), .axis axJ2 (some 2)]
+  , stmts := outOfOrderStmts
+  , env := {}, extNames := insert "A" (insert "B" (∅ : Finset String))
+  , explicitSizes := ((({} : HashMap UID Nat).insert axI2.uid 2).insert axJ2.uid 2) }
+
+#guard causeOf (prepareEvalPlan outOfOrderSched sameShapeSig) ==
+  some { cause := .sourceInvariant
+           (.cyclicDataflow "prepareEvalPlan: statements are not in producer-before-consumer order")
+       , warnings := [] }
+
+/-- Fixture 10's ORDERED twin — the identical two statements, producer first, which is what
+    `schedule` would have emitted for this program. It must still compile, and `Z` must resolve to
+    its own materialized slot (2), never to an input slot: rejecting fixture 10 is an order check,
+    not a blanket rejection of programs whose statements read a locally produced tensor. External
+    binding order is first-seen over the ORDERED statements, so `B` (read first) precedes `A`. -/
+def orderedTwinSched : ScheduledProgram :=
+  { outOfOrderSched with stmts := outOfOrderStmts.reverse }
+def orderedTwinPrepared : Option PreparedPlan :=
+  (prepareEvalPlan orderedTwinSched sameShapeSig).toOption
+
+#guard orderedTwinPrepared.map (fun p => p.bindings.requiredInputs.bindings) ==
+  some #[{ name := "B", slot := 0 }, { name := "A", slot := 1 }]
+#guard orderedTwinPrepared.map
+    (fun p => (assignStep p.plan.raw.steps[1]!).terms[0]!.factors.map (·.readOrDefault.sourceSlot)) ==
+  some #[1, 2]
+
 /-- Manual renderer for `PlanCompileCause` (used only for test-failure messages): the type
     deliberately has no `Repr`/`ToString` (`ShapeError` — nested via `.shape` — has neither), so a
     diagnosable message has to dispatch per-constructor to whichever rendering each nested cause

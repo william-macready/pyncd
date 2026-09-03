@@ -237,7 +237,13 @@ private def scanErr (warnings : List EvalWarning) (e : ScanCompileError) : PlanC
     aliasing a same-shaped input) or an extra one (a signature demanded for a name nothing reads).
     A direct schedule must behave exactly like the structurally equivalent source-produced one.
     `sched.extNames` is retained for compatibility; this preparation path is no longer one of its
-    consumers. -/
+    consumers.
+
+    **Precondition: `sched.stmts` is in producer-before-consumer order.** "Reads minus produced" does
+    not look at WHERE a name is produced, so on an out-of-order list a read whose producer comes
+    later is classified internal — no input slot, no signature — and `resolveSource` then aliases it
+    to slot zero. `prepareEvalPlan`'s Step 0 rejects such a list (`isTopoOrdered` ⇒
+    `sourceInvariant (.cyclicDataflow …)`) before this function is ever called on it. -/
 def orderedExtNames (sched : ScheduledProgram) : List String :=
   orderedExternalNames sched.stmts
 
@@ -1018,6 +1024,19 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
       match checkPredicateOutput declEnv s with
       | .ok ()   => pure ()
       | .error e => throw { cause := .sourceInvariant e, warnings := [] }
+  -- Statement ORDER is the third source invariant, and the one `orderedExtNames` below silently
+  -- depends on: "reads minus produced" is order-INSENSITIVE, so a read whose producer comes LATER
+  -- is classified internal (no input slot, no signature demanded) while `resolveSource`'s `getD`
+  -- then resolves it to slot ZERO — a same-shaped input aliased, a wrong answer, no diagnostic.
+  -- `schedule` establishes the order (`topoSort`) and fails loud on what it cannot order
+  -- (`isTopoOrdered` ⇒ `cyclicDataflow`); a hand-built schedule bypasses both, so re-establish it
+  -- here with the SAME predicate and the same error, over `sched.stmts` as presented. Rejecting is
+  -- the whole point: reordering here would silently accept a schedule whose statement order —
+  -- `ScheduledProgram.stmts`' own documented "producers precede consumers" — is already wrong.
+  unless isTopoOrdered sched.stmts sched.stmts do
+    throw { cause := .sourceInvariant
+              (.cyclicDataflow "prepareEvalPlan: statements are not in producer-before-consumer order")
+          , warnings := [] }
   -- Step A: capability preflight.
   match capabilityPreflight sched with
   | .error e => throw { cause := .capability e, warnings := [] }
@@ -1094,9 +1113,15 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
         let slotsNow := slotOf
         let resolveSource (name : String) : TensorSlot × Array Nat :=
           -- resolved against `slotOf` as it stands BEFORE this statement's destination slot is
-          -- allocated. `getD` default is never reached: every read name is either external
-          -- (allocated above) or produced by an earlier statement (schedule is topological, per
-          -- `ScheduledProgram.stmts`'s own doc: "producers precede consumers").
+          -- allocated. Every read name is either external (allocated above) or produced by an
+          -- earlier statement — `ScheduledProgram.stmts`'s own doc ("producers precede consumers"),
+          -- no longer merely assumed of a direct schedule but ENFORCED by Step 0's `isTopoOrdered`
+          -- guard, which is what makes `orderedExtNames`' reads-minus-produced classification agree
+          -- with this lookup. Known residual, out of that guard's scope: a name written only inside
+          -- an earlier `.scan`'s recurrence is scratch — counted as produced by `ScanStmt.writes`,
+          -- so not external, but never published into `slotOf` (only states are) — so a plain read
+          -- of it still lands on this `getD` default. The scan-block path fails loud on the same
+          -- shape (`blockReadNotAvailable … .unknownName`); this path does not.
           let sourceSlot := slotsNow.getD name 0
           (sourceSlot, (sigsNow.getD sourceSlot { shape := #[], dtype := .f64 }).shape)
         -- plain assignment: empty scan context, no pins — reproduces this Step D's pre-extraction

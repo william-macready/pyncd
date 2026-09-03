@@ -205,7 +205,15 @@ def isTopoOrdered (all : List ScanStmt) (ordered : List ScanStmt) : Bool :=
     PRODUCED by none. The one external-name rule, shared by `schedule` (which caches it as
     `ScheduledProgram.extNames`) and `Eval.Plan.prepareEvalPlan` (which re-derives it, because a
     hand-built schedule's cached set can be missing or extra). Order is the traversal's own
-    first-seen order — the same idiom `buildExtIndex` uses for route indices. -/
+    first-seen order — the same idiom `buildExtIndex` uses for route indices.
+
+    **Only meaningful on a producer-before-consumer ordered list.** "Produced by none" is a question
+    about the WHOLE list, not about what precedes the reading statement, so on an out-of-order list a
+    read whose producer comes later is classified internal — and every consumer of that answer then
+    has to resolve a name no earlier statement bound. Both callers establish the order first, and
+    both fail loud rather than reorder: `schedule` sorts (`topoSort`) and rejects what it cannot
+    order, `prepareEvalPlan`'s Step 0 rejects a direct schedule that is not already ordered — the
+    same `isTopoOrdered` predicate and the same `CompileError.cyclicDataflow` in both. -/
 def orderedExternalNames (stmts : List ScanStmt) : List String :=
   let produced : List String := stmts.flatMap ScanStmt.writes
   stmts.foldl (fun acc sc =>

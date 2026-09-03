@@ -634,19 +634,31 @@ def rejSig : InputSignature := InputSignature.ofDenseInputs rejInputs
 def rej (base recur : List Stmt) : Option PlanCompileCause :=
   causeOf (prepareEvalPlan (rejSched base recur) rejSig)
 
-/-- `rej` plus a LATER outer producer for `NOPE`, so a block read of `NOPE` is neither state,
-    scratch, an already-materialized outer tensor, nor an external input. Preparation derives
-    external names authoritatively from the statements (reads minus produced), so a name that
-    nothing produces is an external input needing a signature — the only remaining way to reach
-    `blockReadNotAvailable … .unknownName` is a forward reference to a later outer producer, which
-    `compileScan` rejects before that producer's own statement is ever compiled. -/
-def rejLateNope (base recur : List Stmt) : Option PlanCompileCause :=
+/-- `rej` plus an EARLIER scan that produces `NOPE` as block-local SCRATCH, so a block read of
+    `NOPE` in the scan under test is neither state, scratch, an already-materialized outer tensor,
+    nor an external input. Preparation derives external names authoritatively from the statements
+    (reads minus produced), so a name that nothing produces is an external input needing a
+    signature — and a name produced by a LATER statement is now rejected outright at Step 0
+    (`sourceInvariant (.cyclicDataflow …)`, see `lateNopeSched` below). What remains, and is what
+    these fixtures use, is a name that IS produced ahead of the read and still never becomes an
+    outer slot: a scan's scratch (a recurrence-only destination) is counted by `ScanStmt.writes`
+    but only its STATES are published into `slotOf` (§4.6), so `NOPE` is invisible outside the scan
+    that produced it. -/
+def rejScratchNope (base recur : List Stmt) : Option PlanCompileCause :=
   causeOf (prepareEvalPlan
     { rejSched base recur with
-        stmts := [ .scan "sc" [axL] base recur false
-                 , .plain (.assign "NOPE" []
-                     { body := { terms := [{ factors := [.read "S0" []] }] }
-                     , nonlin := .identity }) ] }
+        stmts := [ .scan "pre" [axL]
+                     [ .assign "P" [.iterAt axL 0]
+                         { body := { terms := [{ factors := [.read "S0" []] }] }
+                         , nonlin := .identity } ]
+                     [ .assign "NOPE" []
+                         { body := { terms := [{ factors := [.read "S0" []] }] }
+                         , nonlin := .identity }
+                     , .assign "P" [.iterNext axL]
+                         { body := { terms := [{ factors := [.read "P" [.axis axL]] }] }
+                         , nonlin := .identity } ]
+                     false
+                 , .scan "sc" [axL] base recur false ] }
     rejSig)
 
 def okBase : Stmt := .assign "S" [.iterAt axL 0]
@@ -810,10 +822,11 @@ def scratchT : Stmt := .assign "T" []
   == some (.scan (.blockReadNotAvailable "sc" false 0 "T" .forwardReference))
 
 -- a base read of a name that is neither a state nor an available outer tensor. `NOPE` is PRODUCED
--- by a later outer statement, so it is not an external input either: preparation now derives
--- external names from the statements themselves (reads minus produced), so reaching this rejection
--- needs a genuinely unavailable name rather than one merely missing from the cached `extNames`.
-#guard rejLateNope [.assign "S" [.iterAt axL 0]
+-- as block-local scratch by an EARLIER scan, so it is not an external input either: preparation
+-- derives external names from the statements themselves (reads minus produced), so reaching this
+-- rejection needs a genuinely unavailable name rather than one merely missing from the cached
+-- `extNames`.
+#guard rejScratchNope [.assign "S" [.iterAt axL 0]
       { body := { terms := [{ factors := [.read "NOPE" []] }] }, nonlin := .identity }] [okRecur]
   == some (.scan (.blockReadNotAvailable "sc" true 0 "NOPE" .unknownName))
 
@@ -833,12 +846,31 @@ def scratchT : Stmt := .assign "T" []
 
 -- a step read of a name that is neither state, nor scratch, nor an available outer tensor (the
 -- recurrence-side counterpart of the base-side fixture above — the two blocks resolve names through
--- separate code paths). Same later-outer-producer construction, for the same reason.
-#guard rejLateNope [okBase]
+-- separate code paths). Same earlier-scan-scratch construction, for the same reason.
+#guard rejScratchNope [okBase]
     [ .assign "T" [] { body := { terms := [{ factors := [.read "NOPE" []] }] }
                      , nonlin := .identity }
     , okRecur ]
   == some (.scan (.blockReadNotAvailable "sc" false 0 "NOPE" .unknownName))
+
+-- the FORWARD-reference outer shape the two fixtures above used to be built on — the scan reads
+-- `NOPE`, and the plain statement producing it comes after. That is no longer a scan-block
+-- resolution failure at all: `prepareEvalPlan`'s Step 0 rejects the statement ORDER first, with
+-- `schedule`'s own topological predicate and error, before any statement is compiled.
+def lateNopeSched : ScheduledProgram :=
+  { rejSched [okBase] [okRecur] with
+      stmts := [ .scan "sc" [axL]
+                   [ .assign "S" [.iterAt axL 0]
+                       { body := { terms := [{ factors := [.read "NOPE" []] }] }
+                       , nonlin := .identity } ]
+                   [okRecur] false
+               , .plain (.assign "NOPE" []
+                   { body := { terms := [{ factors := [.read "S0" []] }] }
+                   , nonlin := .identity }) ] }
+
+#guard causeOf (prepareEvalPlan lateNopeSched rejSig)
+  == some (.sourceInvariant
+       (.cyclicDataflow "prepareEvalPlan: statements are not in producer-before-consumer order"))
 
 /-! ### 2.5 `ScanCompileError` — context axes and per-state geometry -/
 
