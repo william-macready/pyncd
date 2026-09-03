@@ -100,21 +100,23 @@ def errOf : Except PlanError CheckedAssignPlan → Option PlanError
   { goodPlan with terms := #[{ goodPlan.terms[0]! with iterationShape := #[5, 3] }] })
   == some (.outputProjectionMismatch 0 #[5] #[4])
 
-/- `dtypeMismatch` is unreachable via `checkAssign` given Wave C's single-valued (`.f64`-only)
-   dtype vocabulary: by the time the `srcSig.dtype == destSig.dtype` check runs, an earlier
-   `unless srcSig.dtype == .f64` guard has already forced `srcSig.dtype = .f64`, and an even
-   earlier guard has already forced `destSig.dtype = .f64` — so the two are always equal and the
-   branch cannot fire. Confirmed empirically: constructing a source signature with `dtype := .f32`
-   is rejected by `dtypeNotAdmitted`, never `dtypeMismatch`. Named directly instead. -/
+/- Fixture 11: `dtypeMismatch` is no longer produced by `checkAssign` AT ALL — assignment checking
+   intentionally dropped source/destination dtype equality as an obligation (Task 4.2): the
+   DESTINATION selects the algebra and gathering is dtype-blind, so `bool → f64` and `f64 → bool`
+   reads are both admitted (fixtures 2 and 1 above). It is retained as a producer-less compatibility
+   constructor. Nonlinearity checking is unaffected and keeps its own separate dtype-equality error,
+   `NonlinPlanError.dtypeMismatch` (`Nonlin.lean`, exercised by `NonlinCheckTest`). Named directly
+   instead. -/
 #guard (PlanError.dtypeMismatch .f64 .f32) == PlanError.dtypeMismatch .f64 .f32
 
 /- `constDtypeMismatch` is unreachable via `checkAssign` as written: reaching either
-   `constMatchesDtype` check requires `a.algebra == admittedAlgebra` to have already succeeded,
-   which pins `factorId`/`reduceId` to the exact `.f64` identities `admittedAlgebra` carries — so
+   `constMatchesDtype` check requires `(admittedAlgebrasFor destSig.dtype).contains a.algebra` to
+   have already succeeded, and every algebra in a row carries exactly that row's dtype constants —
+   `.f64` identities in the `f64` row, `.bool` identities in the `bool` row — so
    `constMatchesDtype destSig.dtype algebra.factorId/reduceId` is always `true` by the time either
-   check runs. Confirmed empirically: an algebra with `factorId := .bool true` is rejected by
-   `algebraNotAdmitted` (since it now differs from `admittedAlgebra`), never `constDtypeMismatch`.
-   Named directly instead. -/
+   check runs. Confirmed empirically: an algebra with `factorId := .bool true` under an `f64`
+   destination is rejected by `algebraNotAdmitted` (it is in no `f64` row), never
+   `constDtypeMismatch`. Named directly instead. -/
 #guard (PlanError.constDtypeMismatch .f64 (.bool true)) == PlanError.constDtypeMismatch .f64 (.bool true)
 
 /- `policyNotAdmitted` is unreachable via `checkAssign`: Wave C's `OutOfBoundsPolicy` has exactly
@@ -194,5 +196,69 @@ def badWidthPred : PosBoolExpr :=
   { goodPlan with terms := #[{ goodPlan.terms[0]! with
       factors := #[.iverson truePred2, .read { readA with sourceShape := #[7] }] }] })
   == some (.sourceShapeMismatch 0 1 #[7] #[4])
+
+/-! ## Task 4.2: Boolean destinations, mixed source dtypes, and `f32` still rejected
+
+`goodPlan` unchanged except for the one field each fixture names. `sigs` is
+`[0: A f64 #[4], 1: B f64 #[3], 2: Y f64 #[4]]`; the Boolean variants below retag exactly one slot.
+Acceptance means `checkAssign` returns evidence — the Dense semantics these algebras denote are
+pinned separately, in `KernelDenseTest`. -/
+
+-- Slot 2 (the destination) retagged `bool`; sources stay `f64`.
+def boolDestSigs : Array TensorSignature :=
+  #[ { shape := #[4], dtype := .f64 }
+   , { shape := #[3], dtype := .f64 }
+   , { shape := #[4], dtype := .bool } ]
+
+-- Slot 0 (a source) retagged `bool`; destination stays `f64`.
+def boolSrcSigs : Array TensorSignature :=
+  #[ { shape := #[4], dtype := .bool }
+   , { shape := #[3], dtype := .f64 }
+   , { shape := #[4], dtype := .f64 } ]
+
+-- Slot 0 AND slot 2 retagged `bool`.
+def boolBothSigs : Array TensorSignature :=
+  #[ { shape := #[4], dtype := .bool }
+   , { shape := #[3], dtype := .f64 }
+   , { shape := #[4], dtype := .bool } ]
+
+def boolPlan : AssignPlan := { goodPlan with algebra := admittedAlgebraBool }
+
+-- Fixture 1: destination signature and assignment algebra Boolean, both sources still `f64`.
+-- A real source feeding a predicate destination is admitted — the destination selects the algebra.
+#guard isOk (checkAssign boolDestSigs boolPlan)
+
+-- Fixture 2: source slot 0 Boolean, destination `f64`, real sum-product retained. A predicate
+-- source feeding a real destination is admitted; source dtype does not change gathering.
+#guard isOk (checkAssign boolSrcSigs goodPlan)
+
+-- Fixture 3: Boolean source into the Boolean destination of fixture 1. Fixture 1 is this same plan
+-- with source slot 0 restored to `f64`, so the pair pins that BOTH source dtypes reach a predicate
+-- destination.
+#guard isOk (checkAssign boolBothSigs boolPlan)
+
+-- Fixture 4: fixture 1 with the assignment algebra restored to real sum-product. Algebra admission
+-- is destination-specific, so `admittedAlgebra` is NOT admitted at a Boolean destination.
+#guard errOf (checkAssign boolDestSigs goodPlan) == some (.algebraNotAdmitted admittedAlgebra)
+
+-- Fixture 4b, the other direction: the Boolean algebra is not admitted at an `f64` destination.
+-- Without this, "admit every algebra everywhere" would still pass fixtures 1-4.
+#guard errOf (checkAssign sigs boolPlan) == some (.algebraNotAdmitted admittedAlgebraBool)
+
+-- Fixture 5: the two `f32` guards above (destination slot 2, source slot 0) are retained unchanged
+-- with their exact `dtypeNotAdmitted` slot payloads. Here is the third, Boolean-path case: `f32` is
+-- rejected at a source of a Boolean destination too, i.e. widening reads to `bool` did not widen
+-- them to "anything but f64".
+#guard errOf (checkAssign
+  #[ { shape := #[4], dtype := .f32 }, { shape := #[3], dtype := .f64 }
+   , { shape := #[4], dtype := .bool } ] boolPlan)
+  == some (.dtypeNotAdmitted 0 .f32)
+
+-- ... and at a Boolean-algebra destination itself: `f32` admits no algebra at all, but the earlier
+-- destination-dtype guard is what reports it, naming the slot.
+#guard errOf (checkAssign
+  #[ { shape := #[4], dtype := .f64 }, { shape := #[3], dtype := .f64 }
+   , { shape := #[4], dtype := .f32 } ] boolPlan)
+  == some (.dtypeNotAdmitted 2 .f32)
 
 end LeanNCD.Eval.Plan.KernelCheckTest
