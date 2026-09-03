@@ -7,13 +7,19 @@
 # ad hoc chain that no permission rule can safely allow-list.
 #
 # Usage:
-#   mutation-cycle.sh [--hashes <manifest>] <label> <leanncd-dir> <file> \
-#     <old-string> <new-string> <lake-target>...
+#   mutation-cycle.sh [--cd <dir>] [--hashes <manifest>] <label> <leanncd-dir> \
+#     <file> <old-string> <new-string> <lake-target>...
 #
+# --cd <dir>       change directory to <dir> before resolving anything else below --
+#                   equivalent to prefixing the whole command with `cd <dir> &&`, but
+#                   self-contained so one fixed permission rule covers every worktree
+#                   instead of needing a literal `cd <worktree> &&`-anchored rule per
+#                   worktree. Must come first if given.
 # <label>          short name printed in the banner lines, e.g. 'M6b (source f32 guard)'
 # --hashes <path>  optional `shasum -c` manifest, resolved relative to <leanncd-dir>
 #                  (matching `file`'s own resolution) and checked after the mutation
 #                  is restored; the step is skipped if this flag is omitted
+# <leanncd-dir>    absolute, or relative to <dir> if --cd was given
 # <file> <old-string> <new-string> <lake-target>...  passed straight through to
 #   mutate-and-build.sh, then <lake-target>... is reused for the restored rebuild
 #
@@ -26,6 +32,11 @@ set -euo pipefail
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)
 
+if [[ "${1:-}" == "--cd" ]]; then
+  cd -- "$2"
+  shift 2
+fi
+
 hashes=""
 if [[ "${1:-}" == "--hashes" ]]; then
   hashes=$2
@@ -33,7 +44,7 @@ if [[ "${1:-}" == "--hashes" ]]; then
 fi
 
 if [[ $# -lt 6 ]]; then
-  sed -n '2,20p' "$0"
+  sed -n '2,25p' "$0"
   exit 2
 fi
 

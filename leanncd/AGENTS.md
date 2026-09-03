@@ -39,6 +39,13 @@ bash leanncd/scripts/mutation-cycle.sh \
   Eval.Plan.KernelCheckTest Eval.Plan.KernelDenseTest
 ```
 
+Two optional flags, given first if used: `--cd <dir>` changes directory before resolving anything
+else — equivalent to prefixing the whole command with `cd <dir> &&`, but self-contained, so a
+single fixed permission rule covers every worktree instead of needing a literal `cd
+<worktree> &&`-anchored rule per worktree; `--hashes <manifest>` runs `shasum -c` against a
+pre-recorded manifest (paths resolved relative to `<leanncd-dir>`, same as `<file>`) after
+restoration, for stronger evidence than the wrapper's own restore alone.
+
 The repository permissions allow both relative and primary-checkout absolute invocations of this
 wrapper so mutation cycles and Lake builds do not require confirmation. If a mutation requires
 multiple files, multiple intentional matches, a non-Lake command, or verification beyond build
