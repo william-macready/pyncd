@@ -25,23 +25,24 @@ configuration lives under `leanncd/`. Replace `build` with the desired target or
 ### Mutation testing
 
 For a mutation that is one exact textual replacement in one Lean file, always use
-`leanncd/scripts/mutate-and-build.sh` rather than editing and restoring the file manually. Pass the
-target worktree's `leanncd/` directory as the first argument; the script requires one unique match,
-runs the requested Lake targets, propagates Lake's exit code, and restores the source file on
-success, failure, or interruption. After observing the intended fixture failure, run the same Lake
-targets without the mutation to record the restored pass.
+`leanncd/scripts/mutation-cycle.sh` rather than editing, restoring, and rebuilding the file manually.
+Pass the target worktree's `leanncd/` directory as the second argument; the wrapper delegates the
+unique-match mutation to `mutate-and-build.sh`, verifies an optional hash manifest after restoration,
+and runs the same Lake targets again to record the restored pass. It exits successfully only when
+the mutation breaks the build, restoration succeeds, and the restored build passes.
 
 ```bash
-bash leanncd/scripts/mutate-and-build.sh \
+bash leanncd/scripts/mutation-cycle.sh \
+  'M7 (Boolean reduction identity)' \
   /path/to/worktree/leanncd LeanNCD/Eval/Plan/Check.lean \
   ', reduceId := .bool false }' ', reduceId := .bool true }' \
   Eval.Plan.KernelCheckTest Eval.Plan.KernelDenseTest
 ```
 
 The repository permissions allow both relative and primary-checkout absolute invocations of this
-script so mutation cycles and Lake builds do not require confirmation. If a mutation requires
+wrapper so mutation cycles and Lake builds do not require confirmation. If a mutation requires
 multiple files, multiple intentional matches, a non-Lake command, or verification beyond build
-failure, extend the script for that case instead of using an ad hoc mutate/restore command.
+failure, extend the wrapper for that case instead of using an ad hoc mutate/restore command.
 
 **`lake env lean <file>` does not rebuild the file's dependencies — it only typechecks that one
 file against whatever `.olean`s already exist.** If you edit module `A.lean` and then run

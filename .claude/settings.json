@@ -99,6 +99,8 @@
       "Bash(cd /Users/williammacready/code/python/pyncd/leanncd && \"$HOME/.elan/bin/lake\" *)",
       "Bash(bash leanncd/scripts/mutate-and-build.sh *)",
       "Bash(bash /Users/williammacready/code/python/pyncd/leanncd/scripts/mutate-and-build.sh *)",
+      "Bash(bash leanncd/scripts/mutation-cycle.sh *)",
+      "Bash(bash /Users/williammacready/code/python/pyncd/leanncd/scripts/mutation-cycle.sh *)",
       "Bash(\"$HOME/.elan/bin/lake\" build)",
       "Bash(\"$HOME/.elan/bin/lake\" build *)",
       "Bash(\"$HOME/.elan/bin/lake\" env lean *)",
