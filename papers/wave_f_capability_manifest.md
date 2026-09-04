@@ -229,8 +229,8 @@ axiswise `where=` masks. The Boolean/predicate declared outputs row was refreshe
 scan signatures for state, scratch, and published histories — the experimental JAX backend remains
 fail-loud and still rejects Boolean semantics via `checkJaxAssignSupport`. Everything else in this
 table is unchanged and re-derived against `capabilityPreflight` (`Eval/Plan/Compile.lean`) on this
-branch. The remaining still-rejected families are scatter and affine LHS writes, non-`f64` dtypes and
-dynamic shapes, and `.scanPre`/callbacks/predicate-dispatch scan bodies.*
+branch. The remaining still-rejected families are scatter and affine LHS writes, `f32` and other
+unimplemented dtypes, dynamic shapes, and `.scanPre`/callbacks/predicate-dispatch scan bodies.*
 
 The next semantic-expansion work after Wave F should be a named **checked local-kernel capability
 wave**, extending `AssignPlan`, its checker, and Dense interpretation one operation family at a time,
