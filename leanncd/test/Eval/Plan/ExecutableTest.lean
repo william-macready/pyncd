@@ -927,4 +927,129 @@ def wideOperands (rank : Nat) : Array (Array Nat) := #[#[0] ++ (List.range rank)
 #guard rejectedBy .invalidCandidate
   (einsumOutcome (wideSigs 27) (wideAssign 27) (wideOperands 27) #[0])
 
+/-! ### Re-review fixture 13 — einsum label extents must equal the checked iteration extents
+
+Fixture 12 made acceptance imply the emitter RENDERS the term; it did not make the rendering MEAN
+the same function. The re-review reproduced the remaining gap with a zero-padded read whose source
+is shorter than its own iteration basis: `Y[i] := V[i]` with `sourceShape = #[2]` and
+`iterationShape = outputShape = #[3]` is admitted by `checkAssign` (`.zeroPad` is the ONLY policy it
+admits) and executed by Dense to THREE values, the third the zero pad. `lowerTerm` renders it
+without complaint as `a->a` — and `jnp.einsum` takes label `a`'s extent from the OPERAND, so the
+rendered kernel returns two. `validateEinsum` now requires every source extent to equal the
+iteration extent of the label it is emitted with (`einsumTermLabelExtentsAgree`), so no
+`ExecutionEvidence` is issued for it. The emitter half — it still renders, which is exactly why the
+evidence boundary, not renderability, has to be the gate — is asserted inline in
+`experiments/jax_bridge/EvalPlanCodegen.lean`. -/
+
+/-- `Y[i] := V[i]` over a `#[3]` iteration/output basis, reading a source of extent `srcExtent`.
+    `srcExtent = 3` is the exact-match acceptance sibling, `srcExtent = 2` the zero-padded mismatch;
+    nothing else differs between them — same affine map, same policy, same destination, same output
+    shape, same operand row, same output axes. -/
+def padSigs (srcExtent : Nat) : Array TensorSignature :=
+  #[ { shape := #[srcExtent], dtype := .f64 }, { shape := #[3], dtype := .f64 } ]
+
+def padRead (srcExtent : Nat) : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[#[1]], bias := #[0] }
+  , sourceShape := #[srcExtent], oobPolicy := .zeroPad }
+
+def padAssign (srcExtent : Nat) : AssignPlan :=
+  { contextShape := #[], destinationSlot := 1, outputShape := #[3]
+  , terms := #[{ iterationShape := #[3], contextPos := #[], outputPos := #[0], reductionPos := #[]
+               , factors := #[.read (padRead srcExtent)] }]
+  , algebra := admittedAlgebra }
+
+#guard (match checkAssign (padSigs 2) (padAssign 2) with | .ok _ => true | .error _ => false)
+#guard (match checkAssign (padSigs 3) (padAssign 3) with | .ok _ => true | .error _ => false)
+
+/-- The semantics at stake, not merely the verdict: Dense zero-pads iteration coordinate 2 (outside
+    the extent-2 source) and returns a THREE-element result, while the `a->a` the einsum lowering
+    emits is evaluated at the operand's own extent and returns two. That length disagreement is what
+    the new conjunct exists to keep out of `ExecutionEvidence`. -/
+def padDenseResult : Option (List Nat × Array Float) :=
+  match checkAssign (padSigs 2) (padAssign 2) with
+  | .error _ => none
+  | .ok checked =>
+      match runDenseAssign checked
+          #[ { shape := [2], data := #[1.0, 2.0] }, { shape := [3], data := #[0.0, 0.0, 0.0] } ] with
+      | .error _ => none
+      | .ok t => some (t.shape, t.data)
+
+#guard padDenseResult == some ([3], #[1.0, 2.0, 0.0])
+
+-- The operand row is EXACTLY the one `padRead` means (`#[sourceSlot, 0]`) and `outputAxes` is
+-- exactly the term's `outputPos`, so extent agreement is the only thing separating the two.
+#guard rejectedBy .invalidCandidate (einsumOutcome (padSigs 2) (padAssign 2) #[#[0, 0]] #[0])
+#guard (match einsumOutcome (padSigs 3) (padAssign 3) #[#[0, 0]] #[0] with
+  | .ok none => true | _ => false)
+
+/-- The nearest public `Bool`/`Prop` validators agree with the constructor gate for the mismatch. -/
+def padEinsumCandidate? (srcExtent : Nat) : Option JaxKernelCandidate :=
+  match checkAssign (padSigs srcExtent) (padAssign srcExtent) with
+  | .error _ => none
+  | .ok checked =>
+      some (.einsum { semanticAssignment := checked, destination := 1
+                    , operands := #[#[0, 0]], outputAxes := #[0] })
+
+#guard (match padEinsumCandidate? 2 with
+  | some c => !(kernelWellFormedBool (padSigs 2) c) && !(decide (JaxKernelWellFormed (padSigs 2) c))
+  | none => false)
+#guard (match padEinsumCandidate? 3 with
+  | some c => kernelWellFormedBool (padSigs 3) c && decide (JaxKernelWellFormed (padSigs 3) c)
+  | none => false)
+
+/-- The correct affine table for the mismatch read over the `#[3]` basis: coordinate 2 falls outside
+    the extent-2 source, so it is masked invalid with index `0` — the zero-pad einsum cannot express
+    but the reference path does. Scoping guard: the new conjunct is einsum-only. -/
+def padTable : AffineTableReadCandidate :=
+  { source := 0, safeIndex := #[0, 1, 0], validMask := #[true, true, false] }
+
+#guard (match affineOutcome (padSigs 2) (padAssign 2) #[#[padTable]] with
+  | .ok none => true | _ => false)
+
+def padRaw : RawEvalPlan :=
+  { tensorSigs := padSigs 2, inputSlots := #[0], steps := #[.assign (padAssign 2)] }
+
+private def padPrepared? : Option PreparedPlan :=
+  preparedOf padRaw #[{ name := "v", slot := 0 }] #[{ name := "y", slot := 1 }]
+
+/-- Executable construction over the mismatch plan still SUCCEEDS through the affine path — which
+    also proves the plan below is genuinely constructible, so the rejection guard that follows
+    cannot pass merely because `preparedOf` failed. -/
+def testExtentMismatchAffineExecutableAccepted : Bool :=
+  match padPrepared?, checkAssign (padSigs 2) (padAssign 2) with
+  | some prepared, .ok checked =>
+    match validateAndConstructKernel (padSigs 2)
+        (.affineTable { semanticAssignment := checked, tables := #[#[padTable]] }) with
+    | .error _ => false
+    | .ok k => executableAccepted prepared #[k]
+  | _, _ => false
+
+#guard testExtentMismatchAffineExecutableAccepted
+
+/-- The exact-match sibling's einsum kernel IS validated, so `optimizationExperiment` evidence
+    genuinely exists — for it. -/
+def padOkEinsumKernel? : Option SomeJaxKernel :=
+  match checkAssign (padSigs 3) (padAssign 3) with
+  | .error _ => none
+  | .ok checked =>
+      match validateAndConstructKernel (padSigs 3)
+          (.einsum { semanticAssignment := checked, destination := 1
+                   , operands := #[#[0, 0]], outputAxes := #[0] }) with
+      | .ok k => some k
+      | .error _ => none
+
+#guard (match padOkEinsumKernel? with
+  | some k => k.evidence == .optimizationExperiment | none => false)
+
+/-- Executable construction cannot receive that evidence for the MISMATCH step: no einsum kernel can
+    be validated for it at all, so the only remaining attempt is to substitute the sibling's — and
+    the per-step tie rejects it (its stored context is not this plan's signature table, and its
+    candidate assignment is not this step's checked assignment). -/
+def testExtentMismatchExecutableRejected : Bool :=
+  match padPrepared?, padOkEinsumKernel? with
+  | some prepared, some k => !(executableAccepted prepared #[k])
+  | _, _ => false
+
+#guard testExtentMismatchExecutableRejected
+
 end LeanNCD.Eval.Plan.ExecutableTest

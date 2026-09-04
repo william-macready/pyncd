@@ -54,6 +54,13 @@ lowering actually renders — previously a factor-free, over-rank, or partially-
 certified by the validator and then rejected by `lowerTerm`. `einsumLabelLimit` is the one
 codegen-derived constant this file states (the emitter's subscript-alphabet size, mirrored not
 imported for the dependency-direction reason below, and pinned by a `#guard` on the emitter's side).
+Renderability is necessary but not sufficient: `einsumTermLabelExtentsAgree` additionally requires
+every source extent to equal the iteration extent of the label it is emitted with, because a
+zero-padded read shorter than its iteration basis renders perfectly well (`a->a`) and returns a
+result of a different SHAPE than the checked plan means (`jnp.einsum` takes each label's extent from
+the operand, the checked plan takes it from `iterationShape` and zero-pads the rest). That conjunct
+therefore has no emitter counterpart at all — it is the evidence boundary refusing to certify a
+lowering that renders but does not agree.
 
 Spec: `papers/jax_evalplan_architecture.md` §4.3, §7.1 rows 5–6, Appendix D.
 
@@ -380,6 +387,52 @@ private def einsumTermRenderable (term : TermPlan) : Bool :=
   term.iterationShape.size ≤ einsumLabelLimit &&
   (List.range term.iterationShape.size).all (fun p => covered.contains p)
 
+/-- Whether one checked read factor's SOURCE EXTENTS agree with the iteration extents of the labels
+    it would be emitted with: source dimension `d`, whose coefficient row projects onto iteration
+    position `p` (`einsumFactorPositions`), must satisfy `sourceShape[d] = iterationShape[p]`.
+
+    This is a SEMANTIC precondition of the einsum lowering that no structural check above can see —
+    the emitter itself has no such rejection, because it never looks at an extent: `jnp.einsum`
+    derives every label's extent from the OPERAND array the label appears on, whereas the checked
+    plan derives it from `iterationShape` and zero-pads (`oobPolicy = .zeroPad`, which `checkAssign`
+    forces) every source coordinate that falls outside `sourceShape`. When the two disagree the
+    rendered contraction does not merely lose precision, it computes a DIFFERENT-SHAPED result:
+    `Y[i] := V[i]` with `sourceShape = #[2]` and `iterationShape = #[3]` is a valid checked
+    assignment that Dense executes to three values (the third the zero-pad), and renders as `a->a`,
+    which returns two. Requiring exact equality is what makes the zero-pad region empty, and only
+    then does the rendered einsum mean the same function as the checked plan.
+
+    Fails closed at EVERY source dimension: a factor with no projection at all (`none`), a source
+    dimension with no coefficient row of its own, or a projected position outside `iterationShape`
+    each answer `false` rather than being skipped. No explicit `positions.size = sourceShape.size`
+    tie is coded on top of that: the iteration is over the source dimensions, so a SHORT projection
+    array already fails closed (`positions[d]? = none`), and a long one is unreachable —
+    `checkAssign`, which the support gate re-runs under `sigs` before any of this, forces
+    `map.coeffs.size = sourceShape.size` (`affineRankMismatch`). Coding the tie anyway would be dead
+    logic no fixture can reach — confirmed by mutation rather than assumed: bypassing such a tie
+    breaks no guard, because nothing can construct the state it excludes. Same judgement
+    `einsumTermRenderable` records for the emitter's `.labelTableExhausted`. -/
+private def einsumFactorLabelExtentsAgree (iterationShape : Array Nat) (f : ReadPlan) : Bool :=
+  match einsumFactorPositions f with
+  | none => false
+  | some positions =>
+      (List.range f.sourceShape.size).all (fun d =>
+        match f.sourceShape[d]?, positions[d]? with
+        | some extent, some p => iterationShape[p]? == some extent
+        | _, _ => false)
+
+/-- `einsumFactorLabelExtentsAgree` over EVERY factor of one term, against that term's own iteration
+    basis. Kept separate from `einsumTermRenderable`, which mirrors the emitter's own located
+    rejections one-for-one: this conjunct has no emitter counterpart at all (`lowerTerm` renders the
+    mismatch happily), so it is a validation/evidence-boundary check — the einsum lowering exists,
+    it simply does not mean the checked assignment, and no `ExecutionEvidence` may be issued for it.
+    A `.iverson` factor answers `false` (it has no einsum operand at all — the same fail-closed
+    verdict `validateEinsum`'s own `hasIverson` conjunct already reaches first). -/
+private def einsumTermLabelExtentsAgree (term : TermPlan) : Bool :=
+  term.factors.all (fun factor => match factor with
+    | .read f => einsumFactorLabelExtentsAgree term.iterationShape f
+    | .iverson _ => false)
+
 /-- Validate an einsum kernel candidate against its own semantic source AND against the
     caller-supplied complete signature table, this standalone entry's semantic authority: as in
     `validateAffineTable`, `checkJaxAssignSupport` re-runs `checkAssign` under `sigs` and applies the
@@ -394,6 +447,10 @@ private def einsumTermRenderable (term : TermPlan) : Bool :=
       the emitter's subscript alphabet, and complete iteration-position coverage — the three
       structural preconditions `lowerTerm` imposes (`.emptyTerm`/`.rankTooLarge`/
       `.uncoveredPosition`) that no per-factor row check can see
+    - every factor's source extents agree with the iteration extents of the labels it is emitted
+      with (`einsumTermLabelExtentsAgree`) — the one conjunct with NO emitter counterpart: a
+      zero-padded read whose source is shorter than the iteration basis renders fine and returns a
+      different-shaped result than the checked plan means
     - `operands.size` matches that term's factor count, one operand row per factor
     - each operand row is EXACTLY the row that factor's own affine map means
       (`expectedEinsumOperandRow`): the factor's `sourceSlot` followed by the single projection
@@ -411,7 +468,9 @@ private def einsumTermRenderable (term : TermPlan) : Bool :=
     Taken together with `einsumTermRenderable`, acceptance here now implies `lowerAssign` renders:
     every located rejection `lowerAssign`/`lowerTerm`/`lowerFactor` can make is mirrored by a
     conjunct above (the support gate covers their `requireJaxSupport` half, `hasIverson` their
-    `.iversonFactor`, and exact row recomputation their bias/projection pair). -/
+    `.iversonFactor`, and exact row recomputation their bias/projection pair). The converse does NOT
+    hold, deliberately: `einsumTermLabelExtentsAgree` rejects candidates the emitter still renders,
+    because renderability is not the standard for evidence — meaning the same function is. -/
 def validateEinsum (sigs : Array TensorSignature)
     (kernel : EinsumExperimentKernelCandidate) : Bool :=
   let terms := kernel.semanticAssignment.plan.terms
@@ -425,6 +484,7 @@ def validateEinsum (sigs : Array TensorSignature)
       -- `affineTermTablesValid`'s doc comment for why the two must not be conflated).
       !term.hasIverson &&
       einsumTermRenderable term &&
+      einsumTermLabelExtentsAgree term &&
       kernel.operands.size == term.factors.size &&
       (term.factors.zip kernel.operands).all (fun (factor, opRow) => match factor with
         | .iverson _ => false  -- a predicate factor has no einsum operand; not an einsum candidate

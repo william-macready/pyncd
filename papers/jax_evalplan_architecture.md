@@ -55,21 +55,31 @@ selected gradients.
 That evidence is broad structurally and narrow numerically. The corpus is a bounded enumeration over
 two axes of extent two, so no tensor in it exceeds four elements, its 3,832 programs collapse to 45
 distinct structural feature classes, and five of the twelve tracked features are supplied only by the
-curated fixtures. It establishes that the affine grammar is interpreted correctly, and it says nothing
-about scale — the evidence base contains no scaling measurement at all
-([Section 5.4](#54-evidence-validating-the-experimental-jax-bridge)). That absence matters because the
-reference lowering emits one index and one validity bit per iteration coordinate per factor, so its
-table size is the product of a term's full iteration domain, contracted axes included. Whether that
-path is usable beyond toy scale is therefore an open measurement, not a settled one.
+curated fixtures. It establishes that the affine grammar is interpreted correctly, and the corpus
+itself still says nothing about scale. *That gap is no longer open, and the sentence that used to
+stand here — "the evidence base contains no scaling measurement at all" — is historical.* It was
+closed on 2026-08-13 by a separate, deliberately out-of-corpus measurement
+([Section 5.4](#54-evidence-validating-the-experimental-jax-bridge); thread 2 in
+[Section 7.6](#76-sequencing-across-threads) is **Measured**): one 4,096-coordinate contraction
+(`Y[i] := Σⱼ W[i,j]·x[j]`, `i,j` over 64) generates a 177,547-byte artifact — about 5% of the whole
+3,832-case corpus from a single case — and its JIT steady-state call is ~34 µs against native
+`jnp.einsum`'s ~7 µs, about 4.9× slower. That matters because the reference lowering emits one index
+and one validity bit per iteration coordinate per factor, so its table size is the product of a
+term's full iteration domain, contracted axes included. The measurement is one fixture, not a scaling
+curve: the growth relationship beyond it is extrapolated, not measured.
 
 The bridge is therefore a strong semantic reference, but not yet a production boundary: after
-checking, Lean emits generated Python source or untyped nested dictionaries and lists. Before the rest
-of **Wave F**—the extension that adds checked recurrent scans, whose F0 contract fixtures, F1
-context fields, F2 checked plan-block layer, and F3 checked scan graph have landed while the
-source-compiler/adapter closure (F4) has not—or production use,
-the existing `EvalPlan` should evolve into a phase-separated **Backend Eval IR**: the common,
-backend-neutral execution language interpreted by Dense and JAX today, keeping a PyTorch evaluator
-possible without committing to build one. **PyTorch is a potential future backend, not scheduled
+checking, Lean emits generated Python source or untyped nested dictionaries and lists. Before
+production use, the existing `EvalPlan` should evolve into a phase-separated **Backend Eval IR**: the
+common, backend-neutral execution language interpreted by Dense and JAX today, keeping a PyTorch
+evaluator possible without committing to build one. *The clause that used to open this paragraph —
+"Before the rest of **Wave F** … whose F0–F3 have landed while the source-compiler/adapter closure
+(F4) has not" — is likewise historical: **Wave F (F0–F5) is complete** as of 2026-08-20
+([Section 7.6](#76-sequencing-across-threads) thread 3), including F4's source compiler, adapter, and
+three-way differential gate, and the checked scan fragment has since grown further (Float-backed
+Boolean state/scratch, predicates and masks, unary factors, max/min aggregation, and pointwise/
+axiswise nonlinearity inside scan blocks — see `wave_f_capability_manifest.md` §2).*
+**PyTorch is a potential future backend, not scheduled
 work**: no client has asked for it, and [Section 7.6](#76-sequencing-across-threads) schedules no
 PyTorch implementation. Design decisions that follow keep the IR backend-neutral so a PyTorch
 evaluator remains straightforward to add later; they are not a claim that one is being built now.

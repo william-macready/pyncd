@@ -173,6 +173,17 @@ mirrors exactly these preconditions (`einsumTermRenderable`, sharing `einsumLabe
 `labelTable` through a `#guard`), so an einsum candidate is certified only if `lowerAssign` really
 renders it — before the Task 4.5 re-review it could be certified and then rejected at emission.
 
+There is also one restriction the VALIDATOR makes that this emitter deliberately does not: label
+extents. A zero-padded read whose source extent is smaller than its own iteration extent (say
+`sourceShape = #[2]` against `iterationShape = #[3]`) is a checked, Dense-executable assignment that
+`lowerTerm` renders without complaint as `a->a` — but `jnp.einsum` takes label `a`'s extent from the
+operand, so the rendered kernel returns two elements where Dense returns three (the third the zero
+pad). No `JaxCodegenError` is added for it, because the emitted string is perfectly well-formed
+einsum; instead `validateEinsum`'s `einsumTermLabelExtentsAgree` refuses to issue
+`optimizationExperiment` evidence for it, which is the one place renderability and certification are
+intentionally not the same test. `affineReference` renders and validates it either way — its tables
+carry the zero-pad mask explicitly.
+
 The gate is `LeanNCD.Eval.Plan.checkJaxAssignSupport`, applied in declared order (destination dtype,
 algebra, then factors in original term/factor order: source dtype before unary). Signature-context
 ownership follows the completed spike's selection (GO B,

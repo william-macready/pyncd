@@ -1263,4 +1263,61 @@ def wideAssign (rank : Nat) : AssignPlan :=
 #guard einsumRenderAgrees (wideSigs 27) (wideAssign 27) (.rankTooLarge 0 0 27)
 #guard einsumRenderAgreesAccepted (wideSigs 26) (wideAssign 26)
 
+/-! ### Task 4.5 re-review — label extents: rendering is not the standard for evidence
+
+The one place where the emitter and the validator deliberately DISAGREE, and the reason the gate has
+to sit at the evidence boundary rather than be inferred from renderability. A zero-padded read whose
+source extent (2) is smaller than its own iteration extent (3) is a checked, Dense-executable
+assignment (`ExecutableTest`'s fixture 13 pins the three-element zero-padded Dense result); this
+emitter renders it as `a->a` — no rejection exists here, and none is added, because the string is
+perfectly well-formed einsum. It is simply a DIFFERENT function: `jnp.einsum` takes label `a`'s
+extent from the operand, so the rendered kernel returns two elements where Dense returns three.
+`validateEinsum`'s `einsumTermLabelExtentsAgree` conjunct is what refuses to stamp
+`optimizationExperiment` on it. -/
+
+/-- `lowerAssign` RENDERS the assignment, with exactly `expectedSubscripts` (one `"lhs->rhs"` per
+    term), and `validateEinsum` nevertheless rejects the candidate the conversion builds for the
+    same assignment. The rendered string is pinned, not merely the success, so this guard also
+    records WHICH contraction the emitter would have produced. -/
+private def einsumRendersButNotCertified (sigs : Array TensorSignature) (a : AssignPlan)
+    (expectedSubscripts : Array String) : Bool :=
+  match checkAssign sigs a with
+  | .error _ => false
+  | .ok checked =>
+      (match lowerAssign sigs 0 checked with
+       | .error _ => false
+       | .ok nl => nl.terms.map (fun tl =>
+           String.intercalate "," tl.factorSubscripts.toList ++ "->" ++ tl.outputSubscript)
+             == expectedSubscripts) &&
+      (match loweringToEinsumCandidate sigs 0 checked with
+       | .error _ => false  -- the conversion is total here; the VALIDATOR must be the gate
+       | .ok candidate => !(validateEinsum sigs candidate))
+
+def padSigs (srcExtent : Nat) : Array TensorSignature :=
+  #[ { shape := #[srcExtent], dtype := .f64 }, { shape := #[3], dtype := .f64 } ]
+
+def padRead (srcExtent : Nat) : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[#[1]], bias := #[0] }
+  , sourceShape := #[srcExtent], oobPolicy := .zeroPad }
+
+def padAssign (srcExtent : Nat) : AssignPlan :=
+  { contextShape := #[], destinationSlot := 1, outputShape := #[3]
+  , terms := #[{ iterationShape := #[3], contextPos := #[], outputPos := #[0], reductionPos := #[]
+               , factors := #[.read (padRead srcExtent)] }]
+  , algebra := admittedAlgebra }
+
+#guard einsumRendersButNotCertified (padSigs 2) (padAssign 2) #["a->a"]
+
+-- The exact-match sibling renders the SAME string, so the rendering cannot be what separates them:
+-- the helper's validator half is what flips, and the two halves then agree on accepting it.
+#guard !(einsumRendersButNotCertified (padSigs 3) (padAssign 3) #["a->a"])
+#guard einsumRenderAgreesAccepted (padSigs 3) (padAssign 3)
+
+-- The affine mode still renders the mismatch (its tables carry the zero-pad mask explicitly), so
+-- the tightening is einsum-scoped, exactly as for fixture 12's three preconditions.
+#guard (match checkAssign (padSigs 2) (padAssign 2) with
+  | .error _ => false
+  | .ok checked => (match renderAffineAssign (padSigs 2) checked with
+      | .ok _ => true | .error _ => false))
+
 end JaxBridge

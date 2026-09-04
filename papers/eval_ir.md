@@ -294,28 +294,37 @@ appearance in the schedule is a single source-level statement.
 
 `prepareEvalPlan` lowers the following source fragment:
 
-- A top-level `ScanStmt.plain` assignment may contain ordinary tensor-read factors, `sum`
-  aggregation, and an identity, pointwise, or unmasked axiswise nonlinearity. A pointwise or axiswise
-  statement becomes an internal `PlanStep.assign` followed by `PlanStep.pointwise` or
-  `PlanStep.axiswise`; the nonlinear step publishes the statement's result.
+- A top-level `ScanStmt.plain` assignment may contain ordinary tensor-read factors, inline unary
+  read factors (`log`/`exp`/…), and Iverson predicate factors; `sum`, `max`, or `min` aggregation;
+  a real or Float-backed `bool` destination; and an identity, pointwise, or axiswise nonlinearity,
+  masked or unmasked. A pointwise or axiswise statement becomes an internal `PlanStep.assign`
+  followed by `PlanStep.pointwise` or `PlanStep.axiswise`; the nonlinear step publishes the
+  statement's result.
 - An axiswise statement must have exactly one `LHSSlot.freeNorm` marker. Preparation resolves that
   source marker to `RawAxiswisePlan.axisPos`, after which the checked graph no longer retains an axis
-  UID. A missing or duplicate marker, a marker on a non-axiswise statement, or an axiswise mask
-  produces a typed `NonlinCompileError`.
-- A `ScanStmt.scan` becomes a `PlanStep.scan` when its base and recurrence statements use ordinary
-  tensor-read factors, `sum` aggregation, and either identity nonlinearity or an admitted
-  pointwise/axiswise nonlinearity (Thread 4 Task 4 admits and lowers the latter through `compileScan`
-  — see `LeanNCD/Eval/Plan/Compile.lean` `checkNonlinScanBlock` and the accepted-fixture rationale in
-  `test/Eval/Plan/DifferentialTest.lean`). A `RawPlanBlock`'s element type is `BlockStep`
+  UID. A missing or duplicate marker, or a marker on a non-axiswise statement, produces a typed
+  `NonlinCompileError`. An axiswise `where=` mask no longer does: Slice 5 lowers it through
+  `lowerMaskPredicate` into `RawAxiswisePlan.mask`, and `NonlinCompileError.maskedAxiswiseNotSupported`
+  is retained with no producer left.
+- A `ScanStmt.scan` becomes a `PlanStep.scan` when its base and recurrence statements stay inside
+  that same fragment — the scan-block admission functions are now the top-level ones
+  (`checkNonlinScanBlock` = `checkNonlinTopLevel`, and `checkAggOp`/`checkFactor` are shared
+  outright), so pointwise/axiswise nonlinearity (Thread 4 Task 4, lowered through `compileScan`),
+  `max`/`min` aggregation, unary factors, Iverson factors, and Boolean state/scratch (Task 4.4) are
+  all admitted in a scan block too; see `LeanNCD/Eval/Plan/Compile.lean` and the accepted-fixture
+  rationale in `test/Eval/Plan/DifferentialTest.lean`. A `RawPlanBlock`'s element type is `BlockStep`
   (`.assign`/`.pointwise`/`.axiswise`) with the block's `steps : Array BlockStep`
   (`LeanNCD/Eval/Plan/RawStep.lean`), not the earlier assignment-only element type.
 
-Capability preflight returns a typed `CapabilityError` for predicate declarations and Iverson
-factors, scatters or affine LHS writes, `scanPre` nodes,
-and scans with no advancing axis. Nonlinear scan-block statements and normalized-axis slots inside
-scan blocks are **now structurally admitted** at this boundary — Thread 4 Task 4 shifted them out
-of the rejection set; `max`/`min` aggregation (the max/min-aggregation thread) and unary factors
-(`log`/`exp`/…, the unary-factor thread) are likewise **now admitted** — with any residual
+Capability preflight returns a typed `CapabilityError` for scatters or affine LHS writes, `scanPre`
+nodes and pre-built recurrence morphisms, `iterAt`/`iterNext` slots outside a scan node, and scans
+with no advancing axis. It no longer rejects predicate declarations or Iverson factors: source
+Iverson factors lower via `lowerFactorPredicate` and a Boolean declared output is a signature/algebra
+tag (Task 4), so `maskOrPredicate` and `booleanOutput` are both retained with no producer left.
+Nonlinear scan-block statements and normalized-axis slots inside scan blocks are likewise **now
+structurally admitted** at this boundary — Thread 4 Task 4 shifted them out of the rejection set;
+`max`/`min` aggregation (the max/min-aggregation thread) and unary factors (`log`/`exp`/…, the
+unary-factor thread) are **now admitted** too — with any residual
 obligations reported as `ScanCompileError` instead.
 Constructs rejected at this boundary do not appear in the `CheckedEvalPlan` inside the
 [`PreparedPlan`](#24-prepareevalplan-output-preparedplan).

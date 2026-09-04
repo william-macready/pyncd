@@ -24,9 +24,29 @@ planning text.
 ## 2. Accepted scan source constructs
 
 The source compiler admits a `.scan` only when every base and step operation already fits the
-checked Wave C local kernel: `f64`, real sum-product contraction, identity nonlinearity, plain/affine
-read factors, and zero padding (proposal §5.1). Within that kernel, the admitted fragment is a
-rectangular uniform lattice recurrence, confirmed by the three-way differential gate in §4 below:
+checked local kernel — a kernel that has grown well past Wave C's original one. Measured from the
+admission functions themselves (`LeanNCD/Eval/Plan/Check.lean`, `LeanNCD/Eval/Plan/Compile.lean`) on
+this branch, that kernel is:
+
+- **dtypes** — `f64` and the Float-backed `bool` tag (`dtypeAdmitted`), at destinations and at read
+  sources alike; a `bool` source may feed an `f64` destination and vice versa, since gathering is
+  dtype-blind and the DESTINATION selects the algebra. `f32` is still rejected outright
+  (`dtypeNotAdmitted`) — no worker implements binary32 rounding;
+- **algebras** — destination-selected (`admittedAlgebrasFor`): real sum-product plus the two tropical
+  semirings `AggOp.max`/`.min` compile to (`admittedAlgebraMax`/`Min`) for an `f64` destination, and
+  Boolean conjunction/disjunction (`admittedAlgebraBool`, `min`/`max` over the same Float storage)
+  for a `bool` one. No cross-dtype algebra is admitted in either direction;
+- **nonlinearity** — identity, `.pointwise`, and `.axiswise` (masked included), inside scan
+  `base`/`recur` blocks exactly as at top level (`checkNonlinScanBlock` = `checkNonlinTopLevel`);
+- **factors** — plain/affine read factors, inline unary reads (`.unaryFn`, lowered to a `ReadPlan`
+  carrying `unary` and applied after the pad), and Iverson predicate/mask factors (`checkFactor`
+  admits all three; `CapabilityError.unaryFactor`/`maskOrPredicate` are retained producer-less);
+- **out-of-bounds policy** — zero padding, still the only admitted policy (`policyNotAdmitted`).
+
+Genuinely rejected, not merely unexercised: `f32` anywhere, an `.affine` LHS slot, `.scatter`,
+`.recurMorphism`/`.scanPre`, and any non-`zeroPad` policy — see §3 for the full closed families.
+Within that kernel, the admitted fragment is a rectangular uniform lattice recurrence, confirmed by
+the three-way differential gate in §4 below:
 
 - rectangular uniform n-dimensional scans, with every advancing axis writing `q + 1`;
 - advancing dimensions in arbitrary tensor positions — they need not trail, be contiguous, or follow
