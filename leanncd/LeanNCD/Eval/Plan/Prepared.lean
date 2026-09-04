@@ -113,11 +113,25 @@ structure PreparedPlan where
     deduplicated; a name reassigned twice appears twice here too, each with its own slot's
     signature). Exposes the destination dtype `prepareEvalPlan`'s Step D derives from the source
     declaration (`dtypeOfDecl`, `Signature.lean`) at the one boundary a caller can observe it without
-    reaching into `plan.raw` and re-deriving the pairing by hand. The `getD` default is a totality
-    formality: every slot a `materializedNames` entry names is one `prepareEvalPlan` itself already
-    allocated in `tensorSigs`, so it is always present for any `PreparedPlan` this codebase produces. -/
-def PreparedPlan.materializedSignatures (p : PreparedPlan) : Array (String × TensorSignature) :=
-  p.bindings.materializedNames.map (fun b =>
-    (b.name, p.plan.raw.tensorSigs.getD b.slot { shape := #[], dtype := .f64 }))
+    reaching into `plan.raw` and re-deriving the pairing by hand.
+
+    Fails loud rather than defaulting: a `materializedNames` slot outside `raw.tensorSigs` is
+    `PlanError.slotOutOfRange` (the existing constructor every other slot-table lookup in this
+    subsystem already raises — `Check.lean`, `Nonlin.lean`, `Block.lean`), carrying the offending
+    slot and the table size. It is unreachable for any plan `prepareEvalPlan` produces (it allocates
+    every materialized slot in `tensorSigs` itself), but `PreparedPlan`'s constructor is public and
+    stays public — `AdapterTest`'s authority-substitution checks build one by struct update — so
+    "unreachable via the real producer" is a producer-discipline fact, not a type-level guarantee,
+    exactly as `RequiredBindings`'s own doc comment says of its alignment against
+    `plan.raw.inputSlots`. The boundary is fixed here, at the accessor: an out-of-range slot names
+    itself instead of being silently reported as a scalar `f64` signature (which would misdescribe a
+    Boolean destination as real) or filtered out of the array (which would silently break the
+    positional correspondence with `materializedNames` that this accessor exists to expose). -/
+def PreparedPlan.materializedSignatures (p : PreparedPlan) :
+    Except PlanError (Array (String × TensorSignature)) :=
+  p.bindings.materializedNames.mapM (fun b =>
+    match p.plan.raw.tensorSigs[b.slot]? with
+    | some ts => .ok (b.name, ts)
+    | none    => .error (.slotOutOfRange b.slot p.plan.raw.tensorSigs.size))
 
 end LeanNCD.Eval.Plan

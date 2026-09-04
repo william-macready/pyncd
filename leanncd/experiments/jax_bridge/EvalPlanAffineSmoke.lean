@@ -157,8 +157,17 @@ def buildNamedFixture (name : String) (prog : TLProgram) (inputs : HashMap Strin
   let (prepared, report) ← prepareNamed name prog inputs
   let inputsDict ← renderInputsDict prepared inputs
   let expectedDict ← renderExpectedDict prepared report
+  -- `renderAffinePlanNamed` is `Except JaxCodegenError String` (it rejects the semantics this
+  -- backend implements no lowering for — Boolean dtypes, tropical algebras, unary factors,
+  -- contextful assignments, non-assignment steps). Unwrap it and fail loud with the fixture and
+  -- mode that produced it; never append the `Except` itself to the emitted Python.
+  let planData ← match renderAffinePlanNamed prepared with
+    | .ok s => pure s
+    | .error e =>
+        throw (IO.userError
+          s!"{name} affineReference render failed at the named PreparedPlan boundary: {repr e}")
   pure ("{\"name\": " ++ pyStrLit name ++ ", \"kind\": \"named\", \"plan\": " ++
-    renderAffinePlanNamed prepared ++ ", \"inputs\": " ++ inputsDict ++
+    planData ++ ", \"inputs\": " ++ inputsDict ++
     ", \"expected\": " ++ expectedDict ++ "}")
 
 def buildPositionalFixture (name : String) (raw : RawEvalPlan) (inputs : Array DenseTensor) :
@@ -171,8 +180,14 @@ def buildPositionalFixture (name : String) (raw : RawEvalPlan) (inputs : Array D
     | .error e => throw (IO.userError s!"{name} Dense graph run failed: {repr e}")
   let inputEntries := String.intercalate ", " (inputs.toList.map pyTensorEntry)
   let expectedEntries := String.intercalate ", " (expected.toList.map pyTensorEntry)
+  let planData ← match renderAffinePlanPositional checked with
+    | .ok s => pure s
+    | .error e =>
+        throw (IO.userError
+          s!"{name} affineReference render failed at the positional CheckedEvalPlan \
+boundary: {repr e}")
   pure ("{\"name\": " ++ pyStrLit name ++ ", \"kind\": \"positional\", \"plan\": " ++
-    renderAffinePlanPositional checked ++ ", \"inputs\": [" ++ inputEntries ++
+    planData ++ ", \"inputs\": [" ++ inputEntries ++
     "], \"expected_store\": [" ++ expectedEntries ++ "]}")
 
 end JaxBridge.AffineSmoke

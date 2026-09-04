@@ -111,9 +111,15 @@ private def checkEntry (p : TLProgram) (env : HashMap String DenseTensor)
   -- declaration and is rejected outright, by design — Task 4.3). It defaults to `false`, so the
   -- 3,832-case `enumPrograms` sweep below is byte-for-byte the same run it always was; only the
   -- separate curated predicate corpus opts in, and for its six pre-existing all-real entries the
-  -- two builders agree anyway (no declaration, no `bool`).
-  let sig := if declAware then InputSignature.ofDenseInputsForDecls sched.decls env
-             else InputSignature.ofDenseInputs env
+  -- two builders agree anyway (no declaration, no `bool`). The declaration-aware builder is
+  -- `Except`-valued (whole-branch review finding 1): a malformed `decls` list aborts this entry
+  -- with a diagnostic, exactly like the compile failure just above, rather than degrading to an
+  -- all-`f64` signature that would then be compared as if it were the declared one.
+  let sig ← if declAware then
+      match InputSignature.ofDenseInputsForDecls sched.decls env with
+      | .ok s => pure s
+      | .error e => throw s!"declaration-aware signature rejected the schedule's decls: {repr e}"
+    else pure (InputSignature.ofDenseInputs env)
   match capabilityPreflight sched with
   | .error capErr =>
       match prepareEvalPlan sched sig with
@@ -1651,7 +1657,9 @@ private def checkBoolScalar (name : String) (inputs : HashMap String DenseTensor
   match boolScalarProg.compileToScheduled.run 0 with
   | .error e _ => throw s!"{name}: compile failed: {repr e}"
   | .ok sched _ =>
-      let sig := InputSignature.ofDenseInputsForDecls sched.decls inputs
+      let sig ← match InputSignature.ofDenseInputsForDecls sched.decls inputs with
+        | .ok s => pure s
+        | .error e => throw s!"{name}: declaration-aware signature rejected sched.decls: {repr e}"
       match prepareEvalPlan sched sig with
       | .error f => throw s!"{name}: prepare failed: {renderCompileCause43 f.cause}"
       | .ok prepared =>

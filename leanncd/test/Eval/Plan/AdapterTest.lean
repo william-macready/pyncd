@@ -475,12 +475,19 @@ run_cmd do
   match predIdentityProg.compileToScheduled.run 0 with
   | .error e _ => throwError s!"predIdentity compile failed: {repr e}"
   | .ok sched _ =>
-    match prepareEvalPlan sched (InputSignature.ofDenseInputsForDecls sched.decls predIdentityInputs) with
+    let sig ← match InputSignature.ofDenseInputsForDecls sched.decls predIdentityInputs with
+      | .ok s => pure s
+      | .error e => throwError s!"predIdentity: declaration-aware signature rejected \
+sched.decls: {repr e}"
+    match prepareEvalPlan sched sig with
     | .error f => throwError s!"predIdentity prepare failed: {renderCompileCause f.cause}"
     | .ok prepared =>
-        unless prepared.materializedSignatures.map (fun e => (e.1, e.2.dtype)) == #[("I", .bool)] do
+        let matSigs ← match prepared.materializedSignatures with
+          | .ok ss => pure ss
+          | .error e => throwError s!"predIdentity: materializedSignatures failed: {repr e}"
+        unless matSigs.map (fun e => (e.1, e.2.dtype)) == #[("I", .bool)] do
           throwError s!"predIdentity: materializedSignatures wrong: \
-{repr (prepared.materializedSignatures.map (fun e => (e.1, e.2.dtype)))}"
+{repr (matSigs.map (fun e => (e.1, e.2.dtype)))}"
         match pack prepared predIdentityInputs with
         | .error e => throwError s!"predIdentity: pack failed: {repr e}"
         | .ok packed =>

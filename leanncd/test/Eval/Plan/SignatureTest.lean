@@ -8,6 +8,12 @@ Covers `papers/wave_c_evalplan_proposal.md` §A.5's six test bullets for the sta
 boundary: signature conversion, existing-shape-test parity, corpus parity, an
 `explicitSizes`-only extent, a pinned-size/input conflict, and warning preservation across a
 later failure.
+
+The declaration-aware constructor `InputSignature.ofDenseInputsForDecls` is `Except CompileError`-
+valued (whole-branch review finding 1), so its fixtures below come in three flavours over the SAME
+input map: declared-predicate (`bool`), undeclared (`f64`), and malformed `decls` (rejected with
+`buildDeclEnv`'s own `duplicateTensorDecl`) — the last is what distinguishes a genuine rejection
+from the silent `f64` degradation the old `.toOption.getD {}` fallback produced.
 -/
 
 namespace LeanNCD.Eval.Plan.SignatureTest
@@ -21,15 +27,50 @@ private def conversionInputs : HashMap String DenseTensor :=
 #guard (InputSignature.ofDenseInputs conversionInputs).tensors["Missing"]? == none
 
 -- Task 4.3, fixture 1: `conversionInputs`, with `X` declared a predicate — `ofDenseInputsForDecls`
--- derives `bool` for it, not `f64`.
-#guard (InputSignature.ofDenseInputsForDecls [.predicate "X" []] conversionInputs).tensors["X"]? ==
-  some ({ shape := #[2, 3], dtype := .bool } : TensorSignature)
+-- derives `bool` for it, not `f64`. Declaration-aware construction is `Except`-valued (whole-branch
+-- review finding 1), so each guard below asserts the `.ok` outcome explicitly rather than through a
+-- default that would also accept a rejection.
+#guard match InputSignature.ofDenseInputsForDecls [.predicate "X" []] conversionInputs with
+  | .ok sig => sig.tensors["X"]? == some ({ shape := #[2, 3], dtype := .bool } : TensorSignature)
+  | .error _ => false
 
 -- Task 4.3, fixture 2: the SAME fixture with no declaration at all — `f64`, and the existing
 -- `ofDenseInputs` guard just above stays byte-for-byte unchanged (it is not declaration-aware and
 -- this task does not touch it).
-#guard (InputSignature.ofDenseInputsForDecls [] conversionInputs).tensors["X"]? ==
-  some ({ shape := #[2, 3], dtype := .f64 } : TensorSignature)
+#guard match InputSignature.ofDenseInputsForDecls [] conversionInputs with
+  | .ok sig => sig.tensors["X"]? == some ({ shape := #[2, 3], dtype := .f64 } : TensorSignature)
+  | .error _ => false
+
+-- Whole-branch review finding 1: a MALFORMED `decls` list fails loud with `buildDeclEnv`'s own
+-- error, instead of degrading to "no declaration at all" and silently yielding the `f64` signature
+-- fixture 2 above asserts. The duplicate is deliberately MIXED-kind (`predicate X` then `tensor X`)
+-- and the shared `conversionInputs` fixture supplies `X`: under the old `.toOption.getD {}`
+-- fallback this returned `.ok` with exactly fixture 2's `f64` signature for `X` — the two sibling
+-- guards above are what distinguish the three outcomes (bool / f64 / rejected), so this fixture
+-- pins the exact error rather than merely "not bool".
+#guard match InputSignature.ofDenseInputsForDecls
+    [.predicate "X" [], .tensor "X" []] conversionInputs with
+  | .error (.duplicateTensorDecl "X") => true
+  | _ => false
+
+-- The same duplicate in the other kind order, and a same-kind duplicate: `buildDeclEnv` names the
+-- duplicated tensor only (no declaration index, no kind), so all three report identically.
+#guard match InputSignature.ofDenseInputsForDecls
+    [.tensor "X" [], .predicate "X" []] conversionInputs with
+  | .error (.duplicateTensorDecl "X") => true
+  | _ => false
+#guard match InputSignature.ofDenseInputsForDecls
+    [.predicate "X" [], .predicate "X" []] conversionInputs with
+  | .error (.duplicateTensorDecl "X") => true
+  | _ => false
+
+-- An `.axis` declaration sharing a tensor-bearing name is NOT a duplicate (`buildDeclEnv` skips
+-- `.axis`/`.iter` entirely), so this still succeeds and still resolves `X` as the predicate —
+-- the boundary between "malformed" and "merely repeated name" is where `buildDeclEnv` puts it.
+#guard match InputSignature.ofDenseInputsForDecls
+    [.axis ⟨"X", 0, .nat⟩ (some 2), .predicate "X" []] conversionInputs with
+  | .ok sig => sig.tensors["X"]? == some ({ shape := #[2, 3], dtype := .bool } : TensorSignature)
+  | .error _ => false
 
 -- Task 4.3, fixture 3: `GnnScatterTest`'s GN2 shape (`predicate edge(i, j); H[i, f] := edge[i, j]
 -- · X[j, f]`, `test/Eval/Portfolio/GnnScatterTest.lean`) compiled to a schedule, then its
@@ -46,7 +87,10 @@ run_cmd do
   match gn2Prog.compileToScheduled.run 0 with
   | .error e _ => throwError s!"GN2 clone compile failed: {repr e}"
   | .ok sched _ =>
-      let sig := InputSignature.ofDenseInputsForDecls sched.decls gn2Inputs
+      let sig ← match InputSignature.ofDenseInputsForDecls sched.decls gn2Inputs with
+        | .ok s => pure s
+        | .error e => throwError s!"GN2 clone: declaration-aware signature rejected \
+sched.decls: {repr e}"
       unless sig.tensors["edge"]?.map (·.dtype) == some .bool do
         throwError s!"GN2 clone: edge dtype wrong: {repr (sig.tensors["edge"]?)}"
       unless sig.tensors["X"]?.map (·.dtype) == some .f64 do

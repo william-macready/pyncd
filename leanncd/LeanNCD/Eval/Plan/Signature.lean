@@ -44,17 +44,23 @@ def dtypeOfDecl : Option Decl → ScalarDType
     `resolveDecls` and `prepareEvalPlan`'s Step 0 apply — rather than a linear `decls` scan
     (`Eval.combineFor`'s pattern), so this cannot disagree with either about which declaration wins
     when a name is declared more than once (the pitfall `combineFor`'s own doc comment already
-    names). A malformed `decls` list (a genuine `duplicateTensorDecl`) degrades to treating every
-    name as undeclared (`f64`) rather than failing: every real caller passes an already
-    schedule-validated `decls` list (`buildDeclEnv` already succeeded once, during `resolveDecls` or
-    `prepareEvalPlan`'s own Step 0), so this fallback is unreached by anything this codebase actually
-    calls, and keeping the function total matches `ofDenseInputs`'s own shape. -/
+    names). Its `decls` argument is the authority and is re-validated here: a malformed list (a
+    genuine `duplicateTensorDecl`) FAILS LOUD with `buildDeclEnv`'s own `CompileError`, never
+    degrades to "every name undeclared, therefore `f64`". A silent degradation would be exactly the
+    silent semantic drop the fail-loud convention forbids: it would hand back an all-real signature
+    for a program that declares a predicate, and the resulting `f64` expectation would then be
+    enforced downstream (`prepareEvalPlan` Step B) against the very declaration set that is
+    malformed. Callers cannot substitute an already-validated `DeclEnv` and skip this: a cached
+    `sched.env` is a pipeline product, not the schedule's authority (`prepareEvalPlan`'s Step 0 says
+    the same and rebuilds it from `sched.decls` too). `ofDenseInputs` stays total because it consults
+    no declaration at all. -/
 def InputSignature.ofDenseInputsForDecls (decls : List Decl) (inputs : HashMap String DenseTensor) :
-    InputSignature :=
-  let env : DeclEnv := (buildDeclEnv decls).toOption.getD {}
-  { tensors := inputs.toList.foldl
-      (fun acc (nm, t) => acc.insert nm { shape := t.shape.toArray, dtype := dtypeOfDecl env[nm]? })
-      {} }
+    Except CompileError InputSignature := do
+  let env : DeclEnv ← buildDeclEnv decls
+  let tensors : HashMap String TensorSignature := inputs.toList.foldl
+    (fun acc (nm, t) => acc.insert nm { shape := t.shape.toArray, dtype := dtypeOfDecl env[nm]? })
+    {}
+  return { tensors }
 
 /-- Signature-driven counterpart of `Eval.inferAxisSizes`: same fixpoint, sourced from a static
     `InputSignature` instead of concrete tensors. `ScheduledProgram.explicitSizes` is passed

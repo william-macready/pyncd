@@ -26,6 +26,10 @@ later `shape` failure unchanged. Task 4.3 adds declared-predicate-destination co
 input signature contradicting the source declaration (`inputSignature.dtypeMismatch`, both
 directions), an external input's validated dtype carried into the checked plan rather than
 hard-coded, and `PreparedPlan.materializedSignatures`'s repeated-name, per-slot dtype ordering.
+The whole-branch review adds that accessor's failure side: `materializedSignatures` is
+`Except PlanError`-valued, and two hand-built `PreparedPlan`s (a leading and a trailing slot
+outside `plan.raw.tensorSigs`) pin the exact `slotOutOfRange` it must raise instead of
+defaulting to a scalar `f64` signature.
 -/
 
 namespace LeanNCD.Eval.Plan.CompileTest
@@ -345,13 +349,54 @@ def repeatYSlots : Option (Array TensorSlot) :=
 -- `materializedSignatures` must show the destination-derived dtype in the SAME repeated-name,
 -- per-slot order `materializedNames` already establishes (Task 4.1): two `bool` entries for `Y`
 -- (one per write, since `checkPredicateOutput` re-validates BOTH writes independently), then one
--- `f64` entry for `Z`.
+-- `f64` entry for `Z`. This is the VALID repeated-name ordering sibling of the adversarial
+-- out-of-range fixture below: both slots are in range, so the accessor succeeds and the array is
+-- positionally aligned with `materializedNames`, repeats included.
 def repeatPredSched : ScheduledProgram :=
   { repeatSched with decls := repeatSched.decls ++ [.predicate "Y" []] }
 #guard (prepareEvalPlan repeatPredSched repeatSig).toOption.isSome
 def repeatPredPrepared : Option PreparedPlan := (prepareEvalPlan repeatPredSched repeatSig).toOption
-#guard repeatPredPrepared.map (fun p => p.materializedSignatures.map (fun e => (e.1, e.2.dtype))) ==
-  some #[("Y", .bool), ("Y", .bool), ("Z", .f64)]
+/-- `materializedSignatures` under an `Option` — annotated so the `#guard` matches below can use
+    dotted `.ok`/`.error` patterns (an un-annotated `Option.map` leaves the `Except` type a
+    metavariable). -/
+def matSigsOf (p : Option PreparedPlan) :
+    Option (Except PlanError (Array (String × TensorSignature))) :=
+  p.map (·.materializedSignatures)
+
+#guard match matSigsOf repeatPredPrepared with
+  | some (.ok sigs) =>
+      sigs.map (fun e => (e.1, e.2.dtype)) == #[("Y", .bool), ("Y", .bool), ("Z", .f64)]
+  | _ => false
+
+-- Whole-branch review finding 2: `materializedSignatures` is a PUBLIC accessor on a PUBLIC
+-- structure, so a `PreparedPlan` whose `materializedNames` names a slot outside `plan.raw.tensorSigs`
+-- is constructible by struct update (the same authority-substitution idiom `AdapterTest` Check 5
+-- uses to reorder `requiredInputs`) — `prepareEvalPlan` is merely the only PRODUCER that cannot
+-- emit one. Slot 99 against this plan's 5-entry signature table must be the located
+-- `PlanError.slotOutOfRange 99 5`, not a fabricated scalar `f64` signature (which would misreport
+-- `Y`'s declared-`bool` destination as real) and not a silently shortened array (which would break
+-- the positional correspondence with `materializedNames` that the fixture above pins).
+#guard repeatPredPrepared.map (fun p => p.plan.raw.tensorSigs.size) == some 5
+
+def repeatPredBadSlot : Option PreparedPlan :=
+  repeatPredPrepared.map (fun p =>
+    { p with bindings := { p.bindings with
+        materializedNames := #[{ name := "Y", slot := 99 }] } })
+
+#guard match matSigsOf repeatPredBadSlot with
+  | some (.error (.slotOutOfRange 99 5)) => true
+  | _ => false
+
+-- The out-of-range entry is rejected even when it TRAILS legal ones — the accessor's failure is not
+-- "the first entry is bad", and a valid prefix does not license a partial array.
+def repeatPredTrailingBadSlot : Option PreparedPlan :=
+  repeatPredPrepared.map (fun p =>
+    { p with bindings := { p.bindings with
+        materializedNames := p.bindings.materializedNames.push { name := "Z", slot := 7 } } })
+
+#guard match matSigsOf repeatPredTrailingBadSlot with
+  | some (.error (.slotOutOfRange 7 5)) => true
+  | _ => false
 
 -- Deterministic slot assignment: same input, same structural output.
 -- `RequiredBindings` has no derived `BEq` (same established precedent as `PreparedPlan` itself, per

@@ -135,15 +135,20 @@ both affine runners were silently unrunnable. The literals now use named-field s
 `KernelDenseTest` fixtures, which survives field additions. **Run the runners after any change to
 `Eval/Plan` types — a green `lake build` does not typecheck these drivers.**
 
-**Current driver status (2026-09-03, re-measured for Task 4.5).** `lake env lean` elaborates
-`EvalPlanSmoke.lean`, `ScalingProbe.lean`, and `EvalPlanAffineCorpus.lean`; the corpus driver's five
-stale `CheckedPlanStepEvidence.plan` projections were repaired by that task and it regenerates the
-3,832-case module at exactly 3,424,195 bytes, unchanged. `EvalPlanAffineSmoke.lean` still does NOT
-elaborate: `renderAffinePlanNamed`/`renderAffinePlanPositional` became `Except`-returning when the
-located Iverson rejection landed (Slice 5.4), and this driver still string-appends their results
-(two `HAppend String (Except JaxCodegenError String)` failures). That is a pre-existing driver
-breakage, untouched by Task 4.5. `BridgeSmoke.lean` needs the upstream `Jax` module fetched by
-`run.sh` and does not elaborate standalone.
+**Current driver status (2026-09-04, whole-branch review finding 3).** `lake env lean` elaborates
+`EvalPlanSmoke.lean`, `ScalingProbe.lean`, `EvalPlanAffineCorpus.lean`, and — as of this fix —
+`EvalPlanAffineSmoke.lean`; the corpus driver's five stale `CheckedPlanStepEvidence.plan`
+projections were repaired by Task 4.5 and it regenerates the 3,832-case module at exactly
+3,424,195 bytes, unchanged. `EvalPlanAffineSmoke.lean` did NOT elaborate between Slice 5.4 and this
+fix: `renderAffinePlanNamed`/`renderAffinePlanPositional` became `Except`-returning when the located
+Iverson rejection landed, and the driver still string-appended their results (two `HAppend String
+(Except JaxCodegenError String)` failures). Both call sites now unwrap the `Except` and throw
+`IO.userError` naming the fixture and the `affineReference` boundary (named `PreparedPlan` /
+positional `CheckedEvalPlan`) that rejected — a render rejection aborts generation loudly instead of
+being stringified into the emitted Python. Re-measured 2026-09-04: `lake env lean --run
+EvalPlanAffineSmoke.lean <out>` regenerates the 20-fixture curated module (11,509 bytes; the Python
+verifier leg was not re-run, so no new eager/JIT timings are recorded here). `BridgeSmoke.lean`
+needs the upstream `Jax` module fetched by `run.sh` and does not elaborate standalone.
 
 ### What this backend REJECTS (Task 4.5, 2026-09-03)
 

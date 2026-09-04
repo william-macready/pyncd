@@ -494,10 +494,21 @@ def InputSignature.ofDenseInputs
     (inputs : HashMap String DenseTensor) : InputSignature
 ```
 `InputSignature.ofDenseInputsForDecls` is its declaration-aware sibling: it copies the same shapes
-but labels each name from the validated declaration environment (`buildDeclEnv`), so a name declared
-`predicate` gets `bool` and every other name `f64`. Preparation derives the same dtype from the same
+but labels each name from the declaration environment it builds itself (`buildDeclEnv`), so a name
+declared `predicate` gets `bool` and every other name `f64`:
+```lean
+def InputSignature.ofDenseInputsForDecls
+    (decls : List Decl) (inputs : HashMap String DenseTensor) : Except CompileError InputSignature
+```
+It is `Except`-valued, not total: a `decls` list that declares one tensor-bearing name twice is
+propagated as `buildDeclEnv`'s own `CompileError.duplicateTensorDecl`, never degraded to "no
+declaration at all, therefore `f64`" — that degradation would hand back an all-real signature for a
+program that declares a predicate. `decls` is the authority and is re-validated on every call; a
+cached `ScheduledProgram.env` is a pipeline product and is not accepted as a substitute (the same
+rule `prepareEvalPlan`'s Step 0 states for itself). Preparation derives the same dtype from the same
 declarations, so the two agree by construction; `ofDenseInputs` remains the all-`f64` compatibility
-helper and is correct exactly when no tensor-bearing name is declared `predicate`.
+helper (total — it consults no declaration) and is correct exactly when no tensor-bearing name is
+declared `predicate`.
 
 This is a convenience for callers and tests. It does not collapse preparation and execution into one
 phase: only shape and dtype metadata enter `prepareEvalPlan`; the `DenseTensor` values are later
