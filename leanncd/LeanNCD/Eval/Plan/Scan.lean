@@ -171,6 +171,8 @@ inductive ScanPlanError
   | blockOutputNotWritten         (isBase : Bool) (outputSlot : TensorSlot)
   | duplicateWriteForOutput       (isBase : Bool) (outputSlot : TensorSlot)
                                   (firstWriteIndex secondWriteIndex : Nat)
+  | writeDtypeMismatch            (isBase : Bool) (writeIndex stateIndex : Nat)
+                                  (expected actual : ScalarDType)
   | writeCoeffRankMismatch        (isBase : Bool) (writeIndex stateIndex expected actual : Nat)
   | writeBiasRankMismatch         (isBase : Bool) (writeIndex stateIndex expected actual : Nat)
   | writeGeometryNotAdmitted      (isBase : Bool) (writeIndex : Nat)
@@ -256,7 +258,17 @@ private def checkCaptures (sigs : Array TensorSignature) (block : RawPlanBlock)
     classifications PAIRED with each write's original global index `wi` (so a caller needing a real
     locator — e.g. `multipleStepWritesForState`'s first/second write index — doesn't have to
     re-derive it), so the caller can additionally require exactly one step write and at least one
-    base write. -/
+    base write.
+
+    **Dtype equality (Task 4.4)**: a write's own block-local output-slot dtype must equal the
+    state's own destination dtype. `checkCaptures` above already compares COMPLETE
+    `TensorSignature`s (shape AND dtype) for a capture; before this task `checkWrites` compared only
+    shape/geometry for a write, so a Boolean state could accept a block output whose destination
+    signature had silently reverted to `f64` (or vice versa) with no rejection anywhere on the write
+    side. Checked FIRST, before `writeCoeffRankMismatch`/`writeBiasRankMismatch` and before any
+    geometry predicate — a corrupted coefficient rank on a dtype-mismatched write must still surface
+    as the dtype error, not a rank error, so a caller always sees the more fundamental disagreement
+    first. -/
 private def checkWrites (sigs : Array TensorSignature) (block : RawPlanBlock)
     (writes : Array StateWriteMap) (states : Array StateSlot) (isBase : Bool) :
     Except ScanPlanError (Array (Array (Nat × Array (Option WriteRowKind)))) := do
@@ -273,7 +285,11 @@ private def checkWrites (sigs : Array TensorSignature) (block : RawPlanBlock)
     | some firstWi => throw (.duplicateWriteForOutput isBase w.outputSlot firstWi wi)
     | none => writtenOutputs := writtenOutputs.set! w.outputSlot (some wi)
     let st := states.getD w.stateIndex default
-    let stateShape := (sigs.getD st.destSlot { shape := #[], dtype := .f64 }).shape
+    let stateSig := sigs.getD st.destSlot { shape := #[], dtype := .f64 }
+    let stateShape := stateSig.shape
+    let outputDtype := (block.tensorSigs.getD w.outputSlot { shape := #[], dtype := .f64 }).dtype
+    unless stateSig.dtype == outputDtype do
+      throw (.writeDtypeMismatch isBase wi w.stateIndex stateSig.dtype outputDtype)
     let contextWidth := if isBase then 0 else st.advancingDims.size
     unless w.map.coeffs.size == stateShape.size do
       throw (.writeCoeffRankMismatch isBase wi w.stateIndex stateShape.size w.map.coeffs.size)

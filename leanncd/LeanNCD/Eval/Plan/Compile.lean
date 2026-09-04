@@ -535,17 +535,23 @@ def retainedAxisPos (slots : List LHSSlot) (p : Nat) : Nat :=
     | _ => false)
 
 /-- One compiled source scan: the raw scan node, plus the persistent states' source names and
-    complete-history shapes in persistent-state order. The two arrays are returned rather than the
-    outer signature/name-environment updates themselves because publication is the CALLER's policy
-    (same division of labour `residualizeAssignment` already establishes): `compileScan` fixes the
-    state destination slots as `outerSigs.size + i` and the caller must append exactly those
-    signatures, in exactly this order, immediately after the scan step. A desync would not be silent
-    — `checkPlan`/`checkScanPlan` reject it (`slotOutOfRange`, `missingProduction`, or
-    `advancingSizeMismatch`) — but the coupling is stated here rather than left to be rediscovered. -/
+    complete-history SIGNATURES (shape AND dtype — Task 4.4; previously shape-only) in
+    persistent-state order. The two arrays are returned rather than the outer signature/name-
+    environment updates themselves because publication is the CALLER's policy (same division of
+    labour `residualizeAssignment` already establishes): `compileScan` fixes the state destination
+    slots as `outerSigs.size + i` and the caller must append exactly those signatures, in exactly
+    this order, immediately after the scan step. A desync would not be silent — `checkPlan`/
+    `checkScanPlan` reject it (`slotOutOfRange`, `missingProduction`, or `advancingSizeMismatch`) —
+    but the coupling is stated here rather than left to be rediscovered.
+
+    `stateSigs`' dtype and the caller's published complete-history signature are established
+    TOGETHER, not by two independently-drifting derivations: `prepareEvalPlan` reads
+    `compiled.stateSigs` directly rather than re-deriving a state's dtype from `declEnv` a second
+    time. -/
 private structure CompiledScan where
   raw         : RawScanPlan
   stateNames  : Array String
-  stateShapes : Array (Array Nat)
+  stateSigs   : Array TensorSignature
 
 /-- Specialize one admitted source `.scan` node into a `RawScanPlan` (proposal §8.3-§8.5).
 
@@ -574,7 +580,7 @@ private structure CompiledScan where
     `idxToRow`, not from sizes — so an external read `X[l]` still gathers `X` at the current
     coordinate with its own declared `sourceShape`. -/
 private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
-    (scanName : String) (axes : List AxisSpec) (base recur : List Stmt)
+    (declEnv : DeclEnv) (scanName : String) (axes : List AxisSpec) (base recur : List Stmt)
     (outerSigs : Array TensorSignature) (slotOf : HashMap String TensorSlot) :
     Except PlanCompileFailure CompiledScan := do
   ---------------------------------------------------------------------------
@@ -679,8 +685,13 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
   ---------------------------------------------------------------------------
   let mut stateAdvDims : Array (Array Nat) := #[]
   let mut stateShapes : Array (Array Nat) := #[]
+  -- one-time-per-state dtype derivation (Task 4.4), shared unchanged by state capture (Phase 4)
+  -- and the published complete-history signature the caller reads off `CompiledScan.stateSigs` —
+  -- there is no second, independently-drifting derivation of a state's dtype anywhere else.
+  let mut stateDtypes : Array ScalarDType := #[]
   for h : si in [0 : stateNames.size] do
     let st := stateNames[si]
+    stateDtypes := stateDtypes.push (dtypeOfDecl (declEnv[st]?))
     -- every placement of this state, in source order: its base statements first (so the BASE list
     -- establishes rank/geometry and the result is checked against it), then its one result.
     let placements : Array (Bool × Nat × List LHSSlot) :=
@@ -780,7 +791,20 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
       (s, (sigsNow.getD s { shape := #[], dtype := .f64 }).shape)
     let plan ← residualizeAssignment sizes warnings nm [] #[] outputUids pins resolveSource
       preSlot outputShape rhs.agg rhs.body.terms
-    baseSigs := baseSigs.push { shape := outputShape, dtype := .f64 }
+    -- Task 4.4: this statement's OWN destination (`nm`, a state or block-local scratch —
+    -- classification happens later, once `stateNames.contains nm` is checked in Phase 1 above) may
+    -- be `.predicate`-declared exactly like a top-level destination (`Compile.lean`'s `prepareEvalPlan`
+    -- Step D, Task 4.3). `destDtype` selects the preactivation slot's dtype AND (via `algebraForDest`)
+    -- the `.assign` step's own algebra — `checkPredicateOutput` (re-established at `prepareEvalPlan`'s
+    -- Step 0 for every base/recurrence statement) already forces a predicate destination's own
+    -- statement to `nonlin = .identity`, so the `.pointwise`/`.axiswise` branches below can never
+    -- actually be reached with `destDtype = .bool`; their OWN result-slot pushes stay literal `.f64`
+    -- exactly as before this task (an `f64` destination reaching either nonlinear branch is common —
+    -- every `enumScanCases` template-2/relu-scan fixture does — and mutation-tests that literal
+    -- independently of anything Boolean).
+    let destDtype := dtypeOfDecl (declEnv[nm]?)
+    let plan := { plan with algebra := algebraForDest destDtype rhs.agg }
+    baseSigs := baseSigs.push { shape := outputShape, dtype := destDtype }
     -- identity emits one `.assign` publishing under `preSlot`; a nonlinear statement emits the
     -- preactivation `.assign` (internal `preSlot`) followed by one `.pointwise`/`.axiswise` step
     -- into a freshly allocated result slot. Only the result slot is ever written or published.
@@ -863,7 +887,11 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
   let stepCaptureOf : HashMap String TensorSlot := (Array.range stepInputCount).foldl
     (fun m i => m.insert (stepCapNames.getD i ("", .state 0)).1 i) {}
   let mut stepSigs : Array TensorSignature := stepCapNames.map (fun (_, src) => match src with
-    | .state si => { shape := stateShapes.getD si #[], dtype := .f64 }
+    -- Task 4.4: a captured STATE's dtype comes from the shared per-state derivation (Phase 2's
+    -- `stateDtypes`), not a hardcoded `.f64` — a Boolean state's pre-step snapshot must itself carry
+    -- `.bool`, or `checkCaptures`' full-`TensorSignature` comparison against the (later-published)
+    -- outer state signature would reject every predicate-state recurrence as `captureSignatureMismatch`.
+    | .state si => { shape := stateShapes.getD si #[], dtype := stateDtypes.getD si .f64 }
     | .external outerSlot => outerSigs.getD outerSlot { shape := #[], dtype := .f64 })
   let mut stepSteps : Array BlockStep := #[]
   let mut stepAssignPlans : Array AssignPlan := #[]
@@ -890,7 +918,14 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
       (s, (sigsNow.getD s { shape := #[], dtype := .f64 }).shape)
     let plan ← residualizeAssignment stepSizes warnings nm ctxUids stepExtents outputUids
       ({} : HashMap UID Int) resolveSource preSlot outputShape rhs.agg rhs.body.terms
-    stepSigs := stepSigs.push { shape := outputShape, dtype := .f64 }
+    -- Task 4.4: same per-statement destination-dtype derivation as the base block above — `nm`
+    -- here may be a persistent state's recurrence result OR block-local scratch (classification is
+    -- still `stateNames.contains nm`, decided below, AFTER this push — "shared by recurrence and
+    -- scratch" is exactly this: one allocation site serving both, since a scratch destination may
+    -- ALSO be `.predicate`-declared, e.g. `ScanCompileTest.scratchPredicateSched`'s `T`).
+    let destDtype := dtypeOfDecl (declEnv[nm]?)
+    let plan := { plan with algebra := algebraForDest destDtype rhs.agg }
+    stepSigs := stepSigs.push { shape := outputShape, dtype := destDtype }
     stepAssignPlans := stepAssignPlans.push plan
     -- one `.assign` for identity (published under `preSlot`); preactivation `.assign` plus one
     -- nonlinear step for pointwise/axiswise (published under a freshly allocated result slot).
@@ -1023,7 +1058,9 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
     , iterationOrder := .axisZeroFastest
     , boundaryPolicy := .zeroThenBaseOverlay
     , snapshotPolicy := .immutablePreStep }
-  return { raw, stateNames, stateShapes }
+  let stateSigs : Array TensorSignature := (Array.range stateNames.size).map (fun si =>
+    { shape := stateShapes.getD si #[], dtype := stateDtypes.getD si .f64 })
+  return { raw, stateNames, stateSigs }
 
 def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
     Except PlanCompileFailure PreparedPlan := do
@@ -1235,17 +1272,19 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
             slotOf := slotOf.insert nm publishedSlot
     | .scan scanName axes base recur _ =>
         let compiled ←
-          compileScan sizes warnings scanName axes base recur tensorSigsAcc slotOf
+          compileScan sizes warnings declEnv scanName axes base recur tensorSigsAcc slotOf
         stepsAcc := stepsAcc.push (.scan compiled.raw)
         -- All state histories publish together, AFTER the scan step (§4.6): the outer signatures
         -- must land at exactly the destination slots `compileScan` already fixed
         -- (`tensorSigsAcc.size + i`, in persistent-state order), and no state name is visible to the
-        -- scan's own base/step reads.
+        -- scan's own base/step reads. Task 4.4: the published signature's dtype comes straight off
+        -- `compiled.stateSigs` (established together with the state's own capture dtype inside
+        -- `compileScan`, Phase 2/6) — never re-derived or hardcoded here.
         for h : si in [0 : compiled.stateNames.size] do
           let nm := compiled.stateNames[si]
           let destSlot := tensorSigsAcc.size
           tensorSigsAcc :=
-            tensorSigsAcc.push { shape := compiled.stateShapes.getD si #[], dtype := .f64 }
+            tensorSigsAcc.push (compiled.stateSigs.getD si { shape := #[], dtype := .f64 })
           materializedAcc := materializedAcc.push { name := nm, slot := destSlot }
           slotOf := slotOf.insert nm destSlot
     | .scanPre nm .. =>

@@ -425,6 +425,24 @@ structure Unrolled where
   stmts : List Stmt
   /-- Per state, the history coordinates that carry a real leaf (everything else is zero). -/
   live  : List (String × List (List Nat))
+  /-- Generated `.predicate` declarations for every leaf whose ORIGINAL source name (a state or
+      block-local scratch) is itself `.predicate`-declared in the caller's `decls` (Task 4.4). The
+      leaf names (`%Z_…`, `%U_…_*`, `%T_…_*`) never appear in the source program's own `decls`, so
+      without this the leaf-name lookup `combineFor`/`dtypeOfDecl` performs against `decls` always
+      misses and a Boolean scan state's independent unrolling would silently run real sum-product
+      instead of Boolean disjunction/conjunction — the gap the plan's §1 (`predicate_boolean_
+      backend_parity.md` supersession note) names as one of the three requirements this whole plan
+      closes. `independentRun` merges this list into the schedule it hands to `evalScheduled`. -/
+  decls : List Decl
+
+/-- Whether `nm` (an ORIGINAL source name — a state, a scratch, or any statement's LHS) is declared
+    `.predicate` in `decls`. Mirrors `Contract.lean`'s `combineFor`: `.axis`/`.iter` declarations
+    name an axis, not a tensor, and must be excluded before matching by name, or an axis sharing a
+    tensor's name could hide its real declaration. -/
+private def isPredicateName (decls : List Decl) (nm : String) : Bool :=
+  match decls.find? (fun d => match d with | .axis _ _ | .iter _ _ => false | _ => d.name == nm) with
+  | some (.predicate _ _) => true
+  | _ => false
 
 /-- Unroll one scan node into scan-free leaf statements.
 
@@ -434,7 +452,8 @@ structure Unrolled where
     writes only `u + 1`, so this order both satisfies every read and gives the checked worker's
     immutable-pre-step (Jacobi) snapshot for free: no read inside iteration `u` can name a leaf that
     iteration `u` writes. -/
-def unrollScanNode (sizes : HashMap UID Nat) (sc : ScanStmt) : Except String Unrolled := do
+def unrollScanNode (sizes : HashMap UID Nat) (decls : List Decl) (sc : ScanStmt) :
+    Except String Unrolled := do
   let g ← analyzeScan sizes sc
   -- 1. resolve each base statement's state, leaf slots, written region and RHS.
   let baseParts ← g.base.mapM (fun s => do
@@ -459,11 +478,16 @@ def unrollScanNode (sizes : HashMap UID Nat) (sc : ScanStmt) : Except String Unr
   -- 3. zero leaves.
   let zeroStmts : List Stmt := g.states.map (fun st =>
     .assign (zeroLeafName st.name) st.freeSlots { body := { terms := [] }, nonlin := .identity })
+  let zeroDecls : List Decl := g.states.filterMap (fun st =>
+    if isPredicateName decls st.name then some (.predicate (zeroLeafName st.name) []) else none)
   -- 4. base leaves: one per (base statement, coordinate in its region), pins substituted.
   let baseStmts ← baseParts.flatMapM (fun (st, fs, reg, r) =>
     reg.mapM (fun t => do
       let rhs ← rewriteRHS g (ctxSubst g.axes t) hasLeaf none fs r
       pure (Stmt.assign (stateLeafName st.name t) fs rhs)))
+  let baseDecls : List Decl := baseParts.flatMap (fun (st, _, reg, _) =>
+    if isPredicateName decls st.name then reg.map (fun t => .predicate (stateLeafName st.name t) [])
+    else [])
   -- 5. step leaves: the whole recurrence list, once per step iteration, in source order.
   let stepStmts ← stepCoords.flatMapM (fun u => do
     let σ := ctxSubst g.axes u
@@ -481,7 +505,19 @@ def unrollScanNode (sizes : HashMap UID Nat) (sc : ScanStmt) : Except String Unr
             | none    => (scratchLeafName s.lhsName u, s.slots)
       let rhs ← rewriteRHS g σ hasLeaf (some u) leafSlots r
       pure (Stmt.assign leafName leafSlots rhs)))
-  pure { geom := g, stmts := zeroStmts ++ baseStmts ++ stepStmts, live }
+  -- `nm`/`u` here mirror the SAME leaf-name derivation as step 5 above, but predicate-lookup is
+  -- always keyed by the ORIGINAL recurrence destination `s.lhsName` (state or scratch alike),
+  -- matching `checkPredicateOutput`'s own dispatch on the LHS name.
+  let stepDecls : List Decl := stepCoords.flatMap (fun u =>
+    g.recur.filterMap (fun s =>
+      if isPredicateName decls s.lhsName then
+        let leafName := match g.states.find? (fun st => st.name == s.lhsName) with
+          | some st => stateLeafName st.name (u.map (· + 1))
+          | none    => scratchLeafName s.lhsName u
+        some (.predicate leafName [])
+      else none))
+  pure { geom := g, stmts := zeroStmts ++ baseStmts ++ stepStmts
+       , live, decls := zeroDecls ++ baseDecls ++ stepDecls }
 
 /-! ## History reconstruction -/
 
@@ -537,8 +573,14 @@ def independentRun (sched : ScheduledProgram) (inputs : HashMap String DenseTens
         | .ok r    => env := r.env
         | .error e => .error s!"independent run: plain statement `{s.lhsName}` failed: {e.error}"
     | .scan .. => do
-        let un ← unrollScanNode sched.explicitSizes sc
-        let leafEnv ← match evalScheduled { sched with stmts := un.stmts.map ScanStmt.plain } env with
+        let un ← unrollScanNode sched.explicitSizes sched.decls sc
+        -- Task 4.4: the leaf program's OWN decls are `sched.decls` (needed by a `.plain` statement
+        -- reading an unrelated declared name) PLUS the generated predicate decls for THIS scan's
+        -- leaves (`un.decls`) — the leaf names never collide with any source name (`%`-prefixed),
+        -- so appending is safe and there is nothing to deduplicate.
+        let leafEnv ←
+            match evalScheduled { sched with stmts := un.stmts.map ScanStmt.plain
+                                            , decls := sched.decls ++ un.decls } env with
           | .ok r    => pure r.env
           | .error e => .error s!"independent run: the unrolled scan-free program failed: {e.error}"
         for st in un.geom.states do
@@ -616,7 +658,7 @@ run_cmd do
   | .ok sched =>
       match sched.stmts.find? (fun s => match s with | .scan .. => true | _ => false) with
       | none => throwError "template1 did not compile to a scan node"
-      | some sc => match unrollScanNode sched.explicitSizes sc with
+      | some sc => match unrollScanNode sched.explicitSizes sched.decls sc with
         | .error m => throwError s!"unrollScanNode failed: {m}"
         | .ok un =>
             let names := un.stmts.map Stmt.lhsName
@@ -624,5 +666,32 @@ run_cmd do
               throwError s!"unexpected leaf statements: {names}"
             unless un.stmts.all (fun s => match s with | .assign .. => true | _ => false) do
               throwError "the unrolled program is not made of plain assignments"
+
+/- Task 4.4, fixture 8: the same leaf-name assertion above, cloned onto `template4Bool` (Task 4.4
+   fixture 1's `predicate S(l)` case) instead of `template1` — its ONE state `S` has no free axis,
+   so its leaves are exactly the un-tagged `%Z_S`/`%U_S_0`/`%U_S_1`/`%U_S_2` (for `L = 3`). Every
+   generated declaration for them must be `.predicate`, since `S` itself is: without it (temporarily
+   verified by dropping the decl-generation entirely, see the mutation cycle for this site) the
+   independent leg's leaf assignments have no declaration at all, `combineFor` defaults to
+   `Combine.real`, and the leaf history disagrees with the checked/legacy legs (a real running sum
+   instead of Boolean disjunction) — a THREE-WAY differential failure the registration below (in
+   `DifferentialTest.lean`) is what actually observes. -/
+run_cmd do
+  match schedOfCase (template4Bool 3) with
+  | .error m => throwError m
+  | .ok sched =>
+      match sched.stmts.find? (fun s => match s with | .scan .. => true | _ => false) with
+      | none => throwError "template4Bool did not compile to a scan node"
+      | some sc => match unrollScanNode sched.explicitSizes sched.decls sc with
+        | .error m => throwError s!"unrollScanNode (template4Bool) failed: {m}"
+        | .ok un =>
+            let names := un.stmts.map Stmt.lhsName
+            unless names == ["%Z_S", "%U_S_0", "%U_S_1", "%U_S_2"] do
+              throwError s!"template4Bool: unexpected leaf statements: {names}"
+            let declNames := un.decls.map Decl.name
+            unless declNames == ["%Z_S", "%U_S_0", "%U_S_1", "%U_S_2"] do
+              throwError s!"template4Bool: unexpected generated decls: {declNames}"
+            unless un.decls.all (fun d => match d with | .predicate _ _ => true | _ => false) do
+              throwError s!"template4Bool: every generated declaration must be predicate: {repr un.decls}"
 
 end LeanNCD.PropertyOracle

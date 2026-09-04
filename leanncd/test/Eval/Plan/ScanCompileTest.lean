@@ -317,6 +317,44 @@ def scratchCheck : Except String Unit :=
 
 run_cmd match scratchCheck with | .ok _ => pure () | .error m => throwError m
 
+/-- Task 4.4, fixture 3: `scratchSched` with its block-local scratch `T` declared a predicate while
+    the persistent state `S` stays real — the paired negative case to fixture 1/2's Boolean STATE:
+    a Boolean SCRATCH must ALSO derive its local block signature dtype from the declaration, not the
+    former hardcoded `.f64` (`compileScan`'s step-assignment site, Task 4.4). `S`'s later recurrence
+    assignment reads `T` unchanged (`S[m+1] := T[]`) — an `f64` destination reading a `bool` source
+    is admitted (plan §1.2.2), so this does not additionally require `S` to become Boolean. -/
+def scratchPredicateSched : ScheduledProgram :=
+  { decls := [.iter axM 3, .predicate "T" []]
+  , stmts := [.scan "S" [axM]
+      [ .assign "S" [.iterAt axM 0]
+          { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := .identity } ]
+      [ .assign "T"
+          [] { body := { terms := [{ factors := [.read "S" [.axis axM], .read "K" [.axis axM]] }] }
+             , nonlin := .identity }
+      , .assign "S" [.iterNext axM]
+          { body := { terms := [{ factors := [.read "T" []] }] }, nonlin := .identity } ]
+      false ]
+  , env := {}, extNames := insert "S0" (insert "K" (∅ : Finset String))
+  , explicitSizes := (({} : HashMap UID Nat).insert axM.uid 3) }
+
+def scratchPredicateInputs : HashMap String DenseTensor := scratchInputs
+
+def scratchPredicateCheck : Except String Unit :=
+  withPrepared "T4.4/scratchPredicate" scratchPredicateSched scratchPredicateInputs (fun p => do
+    match scanAt p 0 with
+    | none => .error "T4.4/scratchPredicate: step 0 is not a scan"
+    | some s => do
+        -- `S` (the persistent state) is unaffected: still `f64`, same outer table as `scratchSched`.
+        expectEq "T4.4/scratchPredicate: outer tensorSigs" p.plan.raw.tensorSigs
+          #[{ shape := #[], dtype := .f64 }, { shape := #[3], dtype := .f64 }
+           , { shape := #[3], dtype := .f64 }]
+        -- block slot 2 is `T`'s own (block-local, never published) result — now `bool`.
+        expectEq "T4.4/scratchPredicate: scratch signature"
+          (s.stepBlock.tensorSigs.getD 2 { shape := #[], dtype := .f64 }) { shape := #[], dtype := .bool }
+        checkerAgrees "T4.4/scratchPredicate" p 0)
+
+run_cmd match scratchPredicateCheck with | .ok _ => pure () | .error m => throwError m
+
 /-! ### D/E. External current-coordinate reads and contractions inside a recurrence
 
 `S[l+1] := Σ_k S[l] · M[k, l]` contracts over `k`, which is neither context nor output, while `M`

@@ -125,7 +125,7 @@ private def corruptedT1 (f : List Stmt → List Stmt) : Except String DenseTenso
   let sc ← match sched.stmts.find? (fun s => match s with | .scan .. => true | _ => false) with
     | some sc => pure sc
     | none    => .error "template1 did not compile to a scan node"
-  let un ← unrollScanNode sched.explicitSizes sc
+  let un ← unrollScanNode sched.explicitSizes sched.decls sc
   let un' := { un with stmts := f un.stmts }
   let leafEnv ← match evalScheduled
       { sched with stmts := un'.stmts.map ScanStmt.plain } (template1 3 false).inputs with

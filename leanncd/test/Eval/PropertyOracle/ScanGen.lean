@@ -118,6 +118,41 @@ private def template4 (L : Nat) : ScanCase :=
               stmts := [base, recur] },
     inputs := inputs, axes := [l], Ls := [L], base := [base], recur := [recur] }
 
+/-- Task 4.4, fixture 1: a `predicate S(l)` clone of `template4`, kept HERE (rather than in
+    `DifferentialTest.lean`) precisely because `template4` above is `private` — this file is the
+    only place that can build the clone by copying its statements directly. Same base/recurrence
+    shape (`S[l+1] := S[l] + X[l]`, two summed terms), with every `X` element `1.0` (`template4`'s
+    original `X` counts up `1,2,3,…`, which would make a Boolean history saturate to `1.0` after
+    step 0 for an uninteresting reason — every element here is already `1.0`, so a REAL sum would
+    strictly grow past `1.0` starting at step 1 while the Boolean disjunction this predicate
+    declaration selects stays exactly `1.0` throughout: the two algebras are DISTINGUISHABLE on this
+    input, not merely both `≥ 1`). `C0 = 1.0` seeds `S[0] = 1.0`. Public (unlike `template4`) so
+    `ScanUnroll.lean`'s Task 4.4 fixture 8 and `DifferentialTest.lean`'s three-way registration can
+    both reference it. -/
+def template4Bool (L : Nat) : ScanCase :=
+  let l := l4
+  let base : Stmt := .assign "S" [.iterAt l 0]
+    { body := { terms := [{ factors := [.read "C0" []] }] }, nonlin := .identity }
+  let recur : Stmt := .assign "S" [.iterNext l]
+    { body := { terms := [{ factors := [.read "S" [.axis l]] }, { factors := [.read "X" [.axis l]] }] },
+      nonlin := .identity }
+  let xData : Array Float := Array.replicate L 1.0
+  let inputs : Std.HashMap String DenseTensor :=
+    (({} : Std.HashMap String DenseTensor).insert "C0" ⟨[], #[1.0]⟩).insert "X" ⟨[L], xData⟩
+  { prog := { decls := [.axis l (some L), .tensor "C0" [], .tensor "X" [l], .predicate "S" [l]],
+              stmts := [base, recur] },
+    inputs := inputs, axes := [l], Ls := [L], base := [base], recur := [recur] }
+
+-- REGRESSION GUARD: `template4Bool`'s history must be all `1.0` — Boolean disjunction of
+-- already-`1.0` values, not a real running sum (which would read `[1, 2, 3]` for `L = 3`).
+run_cmd do
+  match TLProgram.eval (template4Bool 3).prog (template4Bool 3).inputs with
+  | .error e => throwError (toString e)
+  | .ok report => match report.env["S"]? with
+    | some s => unless denseEq s ⟨[3], #[1.0, 1.0, 1.0]⟩ do
+        throwError s!"template4Bool wrong: {repr s.data}"
+    | none => throwError "template4Bool: no S in output"
+
 -- ===== Template 5: tropical aggregator  M[j,l+1] := maxreduce/minreduce(M[j,l]·W[j,k]) =====
 private def j5 : AxisSpec := ⟨"j", 241, .real⟩
 private def k5 : AxisSpec := ⟨"k", 242, .real⟩

@@ -2063,4 +2063,125 @@ it commented out, exercising only the positive half (normal construction via `ch
 already exercised by every fixture above).
 -/
 
+/-! ## Task 4.4 — Boolean scan states: a hand-built raw donor + write-dtype equality (fixtures 4-7)
+
+Fixture 4 clones `linearScan`/`outerSigs`/`stateS` (Part 2) into an ACCEPTED Boolean raw donor: the
+outer seed `S0` and the state `S` become `.bool` (`X` stays `.f64` — a real source may feed a
+Boolean assignment, plan §1.2.2), the step block's captured `S` and its own assignment's algebra
+become Boolean (`admittedAlgebraBool`, real `termX`/`termS` reads UNCHANGED), and the base block's
+"input-is-output shortcut" (Part 2's single slot serving as both capture and published output, with
+no `.assign` step at all) is replaced with a genuine separate input/output pair joined by an
+explicit Boolean identity assignment — matching the shape every OTHER base block in this file
+already has, and letting fixture 5 corrupt that assignment's OWN output slot independently of the
+capture. Fixtures 5-7 corrupt it to exercise `checkWrites`' new `writeDtypeMismatch` check
+(Task 4.4), including its precedence over the pre-existing rank checks. -/
+
+def outerSigsBool : Array TensorSignature :=
+  #[{ shape := #[], dtype := .bool }, { shape := #[3], dtype := .f64 }, { shape := #[3], dtype := .bool }]
+
+-- Base block: input slot 0 (captured seed, Boolean) and output slot 1 (Boolean identity result).
+def baseIdentityRead : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[], bias := #[] }, sourceShape := #[], oobPolicy := .zeroPad }
+
+def baseIdentityTerm : TermPlan :=
+  { iterationShape := #[], contextPos := #[], outputPos := #[], reductionPos := #[]
+  , factors := #[.read baseIdentityRead] }
+
+def baseIdentityAssign : AssignPlan :=
+  { contextShape := #[], destinationSlot := 1, outputShape := #[], terms := #[baseIdentityTerm]
+  , algebra := admittedAlgebraBool }
+
+def baseBlockBool : RawPlanBlock :=
+  { contextShape := #[]
+  , tensorSigs := #[{ shape := #[], dtype := .bool }, { shape := #[], dtype := .bool }]
+  , inputs := #[0], steps := #[.assign baseIdentityAssign], outputs := #[1] }
+
+def baseWriteBoolS : StateWriteMap :=
+  { outputSlot := 1, stateIndex := 0, map := { coeffs := #[#[]], bias := #[0] } }
+
+-- Step block: `S`'s capture and result become Boolean; `X`'s capture (real) and the term/read
+-- structure are Part 2's `termX`/`termS` verbatim, only the algebra changes.
+def stepAssignBool : AssignPlan :=
+  { contextShape := #[2], destinationSlot := 2, outputShape := #[], terms := #[termX, termS]
+  , algebra := admittedAlgebraBool }
+
+def stepBlockBool : RawPlanBlock :=
+  { contextShape := #[2]
+  , tensorSigs :=
+      #[{ shape := #[3], dtype := .f64 }, { shape := #[3], dtype := .bool }, { shape := #[], dtype := .bool }]
+  , inputs := #[0, 1], steps := #[.assign stepAssignBool], outputs := #[2] }
+
+def linearScanBool : RawScanPlan :=
+  { states := #[stateS]
+  , baseBlock := baseBlockBool, baseCaptures := #[baseCaptureS0], baseWrites := #[baseWriteBoolS]
+  , stepBlock := stepBlockBool, stepCaptures := #[stepCaptureX, stepCaptureS], stepWrites := #[stepWriteS]
+  , historyExtents := #[3]
+  , iterationOrder := .axisZeroFastest, boundaryPolicy := .zeroThenBaseOverlay
+  , snapshotPolicy := .immutablePreStep }
+
+-- Fixture 4: accepted Boolean donor. `checkScanPlan` succeeds, and `runDenseScan` computes the
+-- Boolean disjunction `S[l+1] := S[l] ∨ X[l]` (both `S0` and `X` are `1.0`/true throughout, so the
+-- whole history stays `1.0` — distinguishing this from a real sum, which would strictly grow).
+def outerStoreBoolLinear : Array DenseTensor :=
+  #[ { shape := [], data := #[1.0] }
+   , { shape := [3], data := #[1.0, 1.0, 1.0] }
+   , { shape := [3], data := Array.replicate 3 0.0 } ]
+
+run_cmd do
+  match checkScanPlan outerSigsBool linearScanBool with
+  | .error e => throwError s!"F4.4 fixture 4 (bool linear scan) checkScanPlan rejected: {repr e}"
+  | .ok checked =>
+      match runDenseScan outerSigsBool checked outerStoreBoolLinear with
+      | .error e => throwError s!"F4.4 fixture 4 (bool linear scan) runDenseScan error: {repr e}"
+      | .ok result =>
+          let S := result.getD 2 { shape := [], data := #[] }
+          unless DenseTensor.approxEq S { shape := [3], data := #[1.0, 1.0, 1.0] } do
+            throwError s!"F4.4 fixture 4 (bool linear scan): wrong result {repr S.data}"
+
+-- Fixture 5: the base block's output dtype reverts to `f64` and its assignment algebra to admitted
+-- real sum-product, while the STATE destination (`outerSigsBool`) stays Boolean. Both fields change
+-- together so the LOCAL block check (`checkPlanBlock`/`checkAssign`, which only compares a block's
+-- own destination signature against its own algebra) stays internally consistent and the fixture
+-- really reaches `checkWrites`' cross-check against the state's own dtype.
+def baseBlockDtypeMismatch : RawPlanBlock :=
+  { baseBlockBool with
+    tensorSigs := #[{ shape := #[], dtype := .bool }, { shape := #[], dtype := .f64 }]
+    , steps := #[.assign { baseIdentityAssign with algebra := admittedAlgebra }] }
+
+run_cmd do
+  match checkScanPlan outerSigsBool { linearScanBool with baseBlock := baseBlockDtypeMismatch } with
+  | .ok _ => throwError "F4.4 fixture 5: base write/state dtype mismatch should have been rejected"
+  | .error e =>
+      unless e == .writeDtypeMismatch true 0 0 .bool .f64 do
+        throwError s!"F4.4 fixture 5: wrong error {repr e}"
+
+-- Fixture 6: the SAME paired change, only in the step block.
+def stepBlockDtypeMismatch : RawPlanBlock :=
+  { stepBlockBool with
+    tensorSigs :=
+      #[{ shape := #[3], dtype := .f64 }, { shape := #[3], dtype := .bool }, { shape := #[], dtype := .f64 }]
+    , steps := #[.assign { stepAssignBool with algebra := admittedAlgebra }] }
+
+run_cmd do
+  match checkScanPlan outerSigsBool { linearScanBool with stepBlock := stepBlockDtypeMismatch } with
+  | .ok _ => throwError "F4.4 fixture 6: step write/state dtype mismatch should have been rejected"
+  | .error e =>
+      unless e == .writeDtypeMismatch false 0 0 .bool .f64 do
+        throwError s!"F4.4 fixture 6: wrong error {repr e}"
+
+-- Fixture 7: fixture 5's base dtype/algebra corruption, ADDITIONALLY with a corrupted write-map
+-- coefficient rank (0 rows instead of the state's rank 1). Proves dtype checking precedes rank/
+-- geometry: if rank were checked first this would report `writeCoeffRankMismatch`, not the dtype
+-- error — either check alone would reject this write, so the ORDER is what this fixture pins.
+def baseWriteBoolBadRank : StateWriteMap :=
+  { baseWriteBoolS with map := { baseWriteBoolS.map with coeffs := #[] } }
+
+run_cmd do
+  match checkScanPlan outerSigsBool
+      { linearScanBool with baseBlock := baseBlockDtypeMismatch, baseWrites := #[baseWriteBoolBadRank] } with
+  | .ok _ => throwError "F4.4 fixture 7: dtype+rank corruption should have been rejected"
+  | .error e =>
+      unless e == .writeDtypeMismatch true 0 0 .bool .f64 do
+        throwError s!"F4.4 fixture 7: wrong error (expected dtype to precede rank): {repr e}"
+
 end LeanNCD.Eval.Plan.ScanTest

@@ -1450,7 +1450,7 @@ run_cmd do
   match sched.stmts.find? (fun s => match s with | .scan .. => true | _ => false) with
   | none => throwError "T5.4 structural: seededAxisZero has no scan node"
   | some sc =>
-      match PropertyOracle.unrollScanNode sched.explicitSizes sc with
+      match PropertyOracle.unrollScanNode sched.explicitSizes sched.decls sc with
       | .error m => throwError s!"T5.4 structural: unroll failed: {m}"
       | .ok un =>
           let leaked := un.stmts.flatMap maskUidsOfStmt
@@ -1476,7 +1476,7 @@ run_cmd do
   match sched.stmts.find? (fun s => match s with | .scan .. => true | _ => false) with
   | none => throwError "T5.4 fragment: freeNormContextAxis has no scan node"
   | some sc =>
-      match PropertyOracle.unrollScanNode sched.explicitSizes sc with
+      match PropertyOracle.unrollScanNode sched.explicitSizes sched.decls sc with
       | .error m =>
           unless m == PropertyOracle.fragment.eliminatedNormalizationAxis do
             throwError s!"T5.4 fragment: wrong rejection message: {m}"
@@ -1569,6 +1569,62 @@ run_cmd do
   | .ok () => pure ()
   match checkBoolScalar "T4.3 bool-scalar non-binary" boolScalarInputsNonBinary 0.75 with
   | .error m => throwError m
+  | .ok () => pure ()
+
+/-! ## Task 4.4 — Boolean scan state/scratch semantics through the checked scan compiler
+
+Three source-level scan fixtures, each registered through the full THREE-way `scanParityCheck`
+(compiled checked plan, legacy `evalScheduled`, and `PropertyOracle.independentRun`'s scan-free
+unrolling — `ScanOracle.lean` remains the two-way legacy/independent-only leg over the curated
+17-case corpus, unchanged by this task). -/
+
+-- Fixture 1/8: `PropertyOracle.template4Bool` (Task 4.4 fixture 1's `predicate S(l)` clone of
+-- `template4`, kept in `ScanGen.lean` since `template4` itself is private). `ScanGen.lean` already
+-- pins the plain `TLProgram.eval` history as all `1.0` (a regression guard, mirroring `template6`'s
+-- own convention); the three-way check here is the ADDITIONAL, stronger claim that the COMPILED
+-- checked plan agrees with both the legacy evaluator and the independent scan-free unrolling — the
+-- latter is exactly what Task 4.4 fixture 8 asks to "register and run" (the generated-leaf-decl
+-- assertion itself lives in `ScanUnroll.lean`, alongside `template1`'s own leaf-name assertion).
+run_cmd do
+  match schedOfCase (template4Bool 3) with
+  | .error m => throwError s!"T4.4 fixture 1/8: template4Bool failed to compile: {m}"
+  | .ok sched =>
+      match scanParityCheck "T4.4 template4Bool" sched (template4Bool 3).inputs [] with
+      | .error m => throwError s!"T4.4 fixture 1/8: three-way parity failed: {m}"
+      | .ok () => pure ()
+
+-- Fixture 2: a `predicate G(l)` clone of PUBLIC `PropertyOracle.template3` (the coupled two-state
+-- `G[l+1] := G[l] + H[l]`, `H[l+1] := G[l]` case) — `H` stays real. `template3` is public, so unlike
+-- fixture 1 the clone does not need to live inside `ScanGen.lean`; it borrows `template3`'s OWN
+-- `AxisSpec` (via `ScanCase.axes`) rather than needing direct access to the file-private axis value.
+-- Observed real run (recorded here per the plan's "observe before asserting" instruction, with
+-- `C = 1.0`, `L = 3`): checked = legacy = independent unrolling on BOTH `G` and `H`, `G = [1,1,1]`,
+-- `H = [1,1,1]` — every reduction saturates to `1.0` immediately since the Boolean destination's
+-- `max`-reduce of already-true values stays true (a real sum, by contrast, would have grown past
+-- `1.0` from step 1 onward). The fixture's REQUIREMENT is the three-way agreement itself, not this
+-- particular value.
+private def template3BoolCase (L : Nat) : ScanCase :=
+  let c := PropertyOracle.template3 L
+  let lAxis := c.axes.getD 0 default
+  { c with prog := { c.prog with decls := c.prog.decls ++ [.predicate "G" [lAxis]] } }
+
+run_cmd do
+  match schedOfCase (template3BoolCase 3) with
+  | .error m => throwError s!"T4.4 fixture 2: template3Bool failed to compile: {m}"
+  | .ok sched =>
+      match scanParityCheck "T4.4 template3Bool" sched (template3BoolCase 3).inputs [] with
+      | .error m => throwError s!"T4.4 fixture 2: three-way parity failed: {m}"
+      | .ok () => pure ()
+
+-- Fixture 3: `ScanCompileTest.scratchPredicateSched` (block-local scratch `T` declared a predicate,
+-- persistent state `S` left real) — the plan's own requirement is "checked/reference agreement";
+-- the three-way check here is a strict superset (it additionally requires the independent
+-- unrolling's generated `%T_T_*` scratch-leaf declarations to be predicate too, exercising the SAME
+-- decl-generation logic fixture 8 pins for a STATE leaf, now for a SCRATCH leaf).
+run_cmd do
+  match scanParityCheck "T4.4 scratchPredicate" ScanCompileTest.scratchPredicateSched
+      ScanCompileTest.scratchPredicateInputs ["T"] with
+  | .error m => throwError s!"T4.4 fixture 3: three-way parity failed: {m}"
   | .ok () => pure ()
 
 end LeanNCD.Eval.Plan.DifferentialTest
