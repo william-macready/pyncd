@@ -56,7 +56,18 @@ reads by [`KernelCheckTest.lean:94`](../leanncd/test/Eval/Plan/KernelCheckTest.l
 
 Every rejection is a typed `CapabilityError` constructor
 ([`LeanNCD/Eval/Plan/Error.lean`](../leanncd/LeanNCD/Eval/Plan/Error.lean)) — there is no
-`unsupported : String` escape hatch. All 11 categories:
+`unsupported : String` escape hatch. All 11 categories, **as of Wave C**:
+
+> **Current-state note (re-derived 2026-09-03, Task 4 of
+> [`boolean_predicate_output_evalplan.md`](boolean_predicate_output_evalplan.md)).** The enum has
+> since grown a twelfth constructor (`noAdvancingAxis`) and, more importantly, most of the rows
+> below no longer have a producer: static throw-site inspection of `capabilityPreflight` finds
+> **4 live producer families** — `scatterOrAffineLhs`, `unsupportedLhsSlot`,
+> `recurrenceOrCallback`, and `noAdvancingAxis` — and **8 producer-less or structurally unreachable
+> constructors** (`scanNode`, `unsupportedNonlin`, `maskOrPredicate`, `unaryFactor`,
+> `unsupportedAgg`, `booleanOutput`, `unsupportedDtype`, `dynamicShape`). Enum size is unchanged by
+> design: a closed constructor is retained for compatibility once its last producer is removed. Read
+> the rows below as the Wave C boundary, not as today's.
 
 | Constructor | Rejects |
 |---|---|
@@ -67,7 +78,7 @@ Every rejection is a typed `CapabilityError` constructor
 | `maskOrPredicate` | masks, predicates, Iverson factors |
 | `unaryFactor` | unary functions on a factor |
 | `unsupportedAgg` | max/min aggregation |
-| `booleanOutput` | Boolean/predicate declared outputs |
+| `booleanOutput` | Boolean/predicate declared outputs — RETAINED, no producer left (Task 4 admits a `.predicate` declaration; `checkDecl`'s predicate arm is `pure ()`), kept like `scanNode` |
 | `unsupportedDtype` | any dtype other than the declared `f64` mode |
 | `dynamicShape` | backend- or value-dependent shapes |
 | `recurrenceOrCallback` | recurrence- or callback-bearing payloads |

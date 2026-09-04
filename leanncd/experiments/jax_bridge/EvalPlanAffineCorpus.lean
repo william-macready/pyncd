@@ -35,15 +35,27 @@ def featureNames : Array String :=
 
 private def bit (n : Nat) (present : Bool) : Nat := if present then 2 ^ n else 0
 
+/-- Every checked ASSIGNMENT step's plan, in graph order. `CheckedEvalPlan.checkedNodes` holds
+    `CheckedPlanStepEvidence` (a sum over assignment/scan/pointwise/axiswise steps) since Wave F's
+    F3 Task 4, so a bare `.plan` projection no longer typechecks; the term/factor feature bits below
+    are assignment properties and read assignment steps only. Every `enumPrograms` case is in fact
+    assignment-only (its generator emits no scan, scatter, predicate, nonlinearity, or aggregation
+    construct), so this filter changes no feature value — the node COUNT bit below still counts all
+    checked nodes, exactly as before. -/
+private def assignPlans (plan : PreparedPlan) : Array AssignPlan :=
+  plan.plan.checkedNodes.filterMap fun c => match c with
+    | .assign a => some a.plan
+    | .scan _ | .pointwise _ | .axiswise _ => none
+
 private def rows (plan : PreparedPlan) : Array (Array Int) :=
-  plan.plan.checkedNodes.flatMap fun c =>
-    c.plan.terms.flatMap fun t => t.factors.flatMap fun f => match f with
+  (assignPlans plan).flatMap fun a =>
+    a.terms.flatMap fun t => t.factors.flatMap fun f => match f with
       | .read r => r.map.coeffs
       | .iverson _ => #[]
 
 private def factors (plan : PreparedPlan) : Array (TermPlan × ReadPlan) :=
-  plan.plan.checkedNodes.flatMap fun c =>
-    c.plan.terms.flatMap fun t => t.factors.filterMap fun f => match f with
+  (assignPlans plan).flatMap fun a =>
+    a.terms.flatMap fun t => t.factors.filterMap fun f => match f with
       | .read r => some (t, r)
       | .iverson _ => none
 
@@ -57,8 +69,8 @@ private def hasNegativeInvalid (plan : PreparedPlan) : Bool :=
 
 /-- Structural features are read from the checked plan, not inferred from output values or names. -/
 def featureMask (plan : PreparedPlan) : Nat :=
-  let nodes := plan.plan.checkedNodes
-  let allTerms := nodes.flatMap fun c => c.plan.terms
+  let nodes := assignPlans plan
+  let allTerms := nodes.flatMap fun a => a.terms
   let allFactors := factors plan
   let allRows := rows plan
   let inputSlots := plan.plan.raw.inputSlots
@@ -67,13 +79,13 @@ def featureMask (plan : PreparedPlan) : Nat :=
   bit 2 (hasNegativeInvalid plan) +
   bit 3 (allRows.any fun row => row.all (· == 0)) +
   bit 4 (allTerms.any fun t => t.factors.size > 1) +
-  bit 5 (nodes.any fun c => c.plan.terms.size > 1) +
+  bit 5 (nodes.any fun a => a.terms.size > 1) +
   bit 6 (allTerms.any fun t => !t.reductionPos.isEmpty) +
-  bit 7 (nodes.size > 1) +
+  bit 7 (plan.plan.checkedNodes.size > 1) +
   bit 8 (allFactors.any fun (_, f) => !inputSlots.contains f.sourceSlot) +
   bit 9 (plan.plan.raw.tensorSigs.any fun s => s.shape.any (· == 0)) +
   bit 10 (allTerms.any fun t => t.factors.isEmpty) +
-  bit 11 (nodes.any fun c => c.plan.terms.isEmpty)
+  bit 11 (nodes.any fun a => a.terms.isEmpty)
 
 private def renderInputs (plan : PreparedPlan) (env : HashMap String DenseTensor) : IO String := do
   let mut entries : Array String := #[]

@@ -51,7 +51,52 @@ inductive JaxCodegenError
   -- its node/term/factor location. (Predicate/mask execution is not lowered to JAX — Global
   -- Constraints. Reads route through the unchanged path.)
   | iversonFactor         (nodeIndex termIndex factorIndex : Nat)
+  -- Task 4.5 — the located support rejections this backend now makes BEFORE emitting any Python,
+  -- building any candidate, or exposing any `ExecutionEvidence`. Each mirrors one
+  -- `LeanNCD.Eval.Plan.JaxSupportError` constructor (see `codegenErrorOfSupport` below); the split
+  -- into destination/source dtype keeps the destination's slot and the source's original
+  -- term/factor locators, which a single shared constructor could not carry at once.
+  | unsupportedDestDType   (nodeIndex : Nat) (slot : TensorSlot) (dtype : ScalarDType)
+  | unsupportedAlgebra     (nodeIndex : Nat)
+  | unsupportedSourceDType (nodeIndex termIndex factorIndex : Nat) (dtype : ScalarDType)
+  | unaryFactor            (nodeIndex termIndex factorIndex : Nat)
+  -- The supplied standalone signature table is not even structurally compatible with the same raw
+  -- assignment (`checkAssign` re-run under it fails): a caller-supplied table is that entry's
+  -- semantic authority, so it is rejected outright rather than consulted for its dtype tags alone.
+  | invalidSignatureContext (nodeIndex : Nat) (cause : PlanError)
   deriving DecidableEq, BEq, Repr, Inhabited
+
+/-- Map the production support gate's located error into this module's own closed diagnostic
+    vocabulary. One-to-one; no case is collapsed and no locator is dropped. -/
+def codegenErrorOfSupport : JaxSupportError → JaxCodegenError
+  | .destinationDType n slot dt      => .unsupportedDestDType n slot dt
+  | .unsupportedAlgebra n _          => .unsupportedAlgebra n
+  | .sourceDType n ti fi dt          => .unsupportedSourceDType n ti fi dt
+  | .unaryFactor n ti fi             => .unaryFactor n ti fi
+  | .invalidSignatureContext n cause => .invalidSignatureContext n cause
+
+/-- The one shared support gate every semantic entry point in this module runs first: the supplied
+    complete table is the assignment's authority (`checkAssign` is re-run under it), then the JAX
+    support policy decides. Located at `nodeIndex` — the real outer step index at a plan-level
+    caller, `0` at a standalone one. -/
+def requireJaxSupport (sigs : Array TensorSignature) (nodeIndex : Nat)
+    (checked : CheckedAssignPlan) : Except JaxCodegenError Unit :=
+  match checkJaxAssignSupport sigs nodeIndex checked with
+  | .ok _ => .ok ()
+  | .error e => .error (codegenErrorOfSupport e)
+
+/-- The candidate conversions' own Iverson gate, carrying the ORIGINAL all-factor index (never a
+    reindexed read-only one) — the same located `iversonFactor` both rendering modes already throw.
+    Without it a candidate conversion would silently `filterMap` the predicate factor away and hand
+    the shortened table array to a validator, which rejects it (`hasIverson`) but with no location
+    at all. -/
+def requireNoIverson (nodeIndex : Nat) (a : AssignPlan) : Except JaxCodegenError Unit := do
+  for h : ti in [0 : a.terms.size] do
+    let t := a.terms[ti]
+    for h2 : fi in [0 : t.factors.size] do
+      match t.factors[fi] with
+      | .iverson _ => throw (.iversonFactor nodeIndex ti fi)
+      | .read _ => pure ()
 
 /-! ## 2. Deterministic Python string rendering (shared by both modes) -/
 
@@ -112,8 +157,12 @@ def rowProjectionTarget (row : Array Int) : Option Nat :=
   | _ => none
 
 /-- One factor's derived `einsum` input subscript (one label per source dimension) and the set of
-    iteration-basis positions it covers. Fails loud on any nonzero bias or non-projection row. -/
-def lowerFactor (nodeIndex termIndex factorIndex : Nat) (f : ReadPlan) :
+    iteration-basis positions it covers. Fails loud on any nonzero bias or non-projection row.
+
+    PRIVATE (Task 4.5): an assignment-semantic helper reachable only behind the contextual
+    `lowerAssign` gate, so no caller can lower a factor's meaning without first establishing the
+    signature context that decides whether the surrounding assignment is supported at all. -/
+private def lowerFactor (nodeIndex termIndex factorIndex : Nat) (f : ReadPlan) :
     Except JaxCodegenError (Array Char × Array Nat) := do
   let mut labels : Array Char := #[]
   let mut covered : Array Nat := #[]
@@ -139,7 +188,8 @@ structure TermLowering where
   outputSubscript  : String
   deriving Repr
 
-def lowerTerm (nodeIndex termIndex : Nat) (t : TermPlan) :
+/-- One term's derived `einsum` lowering. PRIVATE for the same reason as `lowerFactor`. -/
+private def lowerTerm (nodeIndex termIndex : Nat) (t : TermPlan) :
     Except JaxCodegenError TermLowering := do
   unless t.factors.size > 0 do throw (.emptyTerm nodeIndex termIndex)
   unless t.iterationShape.size ≤ labelTable.size do
@@ -174,8 +224,17 @@ structure NodeLowering where
   terms           : Array TermLowering
   deriving Repr
 
-def lowerAssign (nodeIndex : Nat) (a : AssignPlan) :
+/-- One checked assignment's `einsum`-mode lowering, under an explicit complete signature table
+    (Task 4.5). `sigs` is this standalone entry's semantic authority: `requireJaxSupport` re-runs
+    `checkAssign` under it and applies the JAX support policy before a single subscript is derived,
+    so a Boolean destination/source, a tropical algebra, a unary read, or a structurally
+    incompatible table is rejected here with its located error rather than silently rendered. The
+    input is a `CheckedAssignPlan`, not a raw `AssignPlan`: a caller cannot hand this function an
+    unchecked assignment at all. -/
+def lowerAssign (sigs : Array TensorSignature) (nodeIndex : Nat) (checked : CheckedAssignPlan) :
     Except JaxCodegenError NodeLowering := do
+  requireJaxSupport sigs nodeIndex checked
+  let a := checked.plan
   unless a.terms.size > 0 do throw (.emptyAssign nodeIndex)
   let mut terms : Array TermLowering := #[]
   for h : ti in [0 : a.terms.size] do
@@ -183,21 +242,29 @@ def lowerAssign (nodeIndex : Nat) (a : AssignPlan) :
     terms := terms.push tl
   return { nodeIndex, destinationSlot := a.destinationSlot, terms }
 
+/-- Every checked node's `einsum`-mode lowering, in graph order. Plan-level: takes NO caller table
+    and derives the checked plan's own `raw.tensorSigs` as the authority for every step (Task 4.5,
+    spike decision GO B) — there is deliberately no way for a caller to supply a parallel,
+    same-shape all-real table here. -/
 def lowerPlan (c : CheckedEvalPlan) : Except JaxCodegenError (Array NodeLowering) := do
+  let sigs := c.raw.tensorSigs
   let mut nodes : Array NodeLowering := #[]
   for h : ni in [0 : c.checkedNodes.size] do
     match c.checkedNodes[ni] with
-    | .assign a => nodes := nodes.push (← lowerAssign ni a.plan)
+    | .assign a => nodes := nodes.push (← lowerAssign sigs ni a)
     | .scan _ | .pointwise _ | .axiswise _ => throw (.unsupportedStep ni)
   return nodes
 
-def renderTermLine (indent : String) (tl : TermLowering) (varName : String) : String :=
+/-- PRIVATE (Task 4.5): emits `jnp.einsum` from publicly constructible IR, so it is reachable only
+    behind `lowerAssign`'s contextual gate. -/
+private def renderTermLine (indent : String) (tl : TermLowering) (varName : String) : String :=
   let subs := String.intercalate "," tl.factorSubscripts.toList
   let sig := pyStrLit (subs ++ "->" ++ tl.outputSubscript)
   let args := String.intercalate ", " (tl.factorSlots.toList.map (fun s => s!"slots[{s}]"))
   s!"{indent}{varName} = jnp.einsum({sig}, {args}, optimize=False)"
 
-def renderNodeLines (indent : String) (n : NodeLowering) : Array String :=
+/-- PRIVATE (Task 4.5): emits the destination write from publicly constructible IR; same gate. -/
+private def renderNodeLines (indent : String) (n : NodeLowering) : Array String :=
   let termVar (ti : Nat) := s!"n{n.nodeIndex}_term{ti}"
   let termLines := n.terms.mapIdx (fun ti tl => renderTermLine indent tl (termVar ti))
   let combine := String.intercalate " + " ((List.range n.terms.size).map termVar)
@@ -306,13 +373,16 @@ def buildFactorTable (iterationShape : Array Nat) (f : ReadPlan) : Array Nat × 
         (idxs.push 0, masks.push false))
     (#[], #[])
 
-def renderAffineFactor (iterationShape : Array Nat) (f : ReadPlan) : String :=
+/-- PRIVATE (Task 4.5): emits one factor's gather semantics; reachable only behind
+    `renderAffineNode`'s contextual support gate. -/
+private def renderAffineFactor (iterationShape : Array Nat) (f : ReadPlan) : String :=
   let (idxs, masks) := buildFactorTable iterationShape f
   "{\"source_slot\": " ++ toString f.sourceSlot ++
   ", \"safe_index\": " ++ pyNatListLit idxs ++
   ", \"mask\": " ++ pyBoolListLit masks ++ "}"
 
-def renderAffineTerm (nodeIndex termIndex : Nat) (t : TermPlan) :
+/-- PRIVATE (Task 4.5): emits one term's semantics; same gate. -/
+private def renderAffineTerm (nodeIndex termIndex : Nat) (t : TermPlan) :
     Except JaxCodegenError String := do
   let mut facStrs : Array String := #[]
   for h : fi in [0 : t.factors.size] do
@@ -327,8 +397,16 @@ def renderAffineTerm (nodeIndex termIndex : Nat) (t : TermPlan) :
 
 /-- One assignment node's static data: destination slot, output shape, and every term's precomputed
     tables in checked term-array order. Rejects a term carrying an Iverson factor with its located
-    error (via `renderAffineTerm`). -/
-def renderAffineNode (nodeIndex : Nat) (a : AssignPlan) : Except JaxCodegenError String := do
+    error (via `renderAffineTerm`).
+
+    PRIVATE (Task 4.5), and the single contextual gate of the whole `affineReference` mode: every
+    public affine emitter — both plan renderers and the standalone `renderAffineAssign` — reaches a
+    node only through here, so `requireJaxSupport` is applied exactly once per node, under the
+    table that entry point established (derived for a plan, explicit for a standalone call). -/
+private def renderAffineNode (sigs : Array TensorSignature) (nodeIndex : Nat)
+    (checked : CheckedAssignPlan) : Except JaxCodegenError String := do
+  requireJaxSupport sigs nodeIndex checked
+  let a := checked.plan
   let mut termStrs : Array String := #[]
   for h : ti in [0 : a.terms.size] do
     termStrs := termStrs.push (← renderAffineTerm nodeIndex ti a.terms[ti])
@@ -341,11 +419,12 @@ def renderAffineNode (nodeIndex : Nat) (a : AssignPlan) : Except JaxCodegenError
     `checkPlan`'s construction). Total over assignment-only graphs; a `.pointwise`/`.axiswise`/
     `.scan` node has no affine-table lowering here, so the array build rejects it with the one
     located unsupported-step error carrying that node's outer-graph index. -/
-def renderAffineNodesArray (c : CheckedEvalPlan) : Except JaxCodegenError String := do
+private def renderAffineNodesArray (c : CheckedEvalPlan) : Except JaxCodegenError String := do
+  let sigs := c.raw.tensorSigs
   let mut entries : Array String := #[]
   for h : ni in [0 : c.checkedNodes.size] do
     match c.checkedNodes[ni] with
-    | .assign a => entries := entries.push (← renderAffineNode ni a.plan)
+    | .assign a => entries := entries.push (← renderAffineNode sigs ni a)
     | .scan _ | .pointwise _ | .axiswise _ => throw (.unsupportedStep ni)
   return "[" ++ String.intercalate ", " entries.toList ++ "]"
 
@@ -376,11 +455,19 @@ def renderAffinePlanNamed (plan : PreparedPlan) : Except JaxCodegenError String 
 /-- Positional single `CheckedAssignPlan` static data (one node, no synthetic graph or source
     names). Its runtime call accepts a positional store and returns one result tensor, directly
     paralleling `runDenseAssign`. The checked-kernel boundary. Uses node index `0` (a single node)
-    for any located Iverson rejection. -/
-def renderAffineAssign (c : CheckedAssignPlan) : Except JaxCodegenError String :=
-  renderAffineNode 0 c.plan
+    for any located Iverson or support rejection.
 
-/-- Check, Dense-run, and render one checked-assignment fixture as a `FIXTURES`-list entry:
+    Standalone, so it takes the complete signature table explicitly (Task 4.5): that table is this
+    call's semantic authority, re-established through `checkAssign` and then the support policy by
+    `renderAffineNode`'s gate. -/
+def renderAffineAssign (sigs : Array TensorSignature) (c : CheckedAssignPlan) :
+    Except JaxCodegenError String :=
+  renderAffineNode sigs 0 c
+
+/-- Check, Dense-run, and render one checked-assignment fixture as a `FIXTURES`-list entry. Its
+    existing `sigs` argument is now that fixture's explicit semantic authority (Task 4.5): the same
+    table checks the assignment and gates its rendering, so a Boolean-source or otherwise
+    unsupported fixture fails loud here instead of producing Python.
     `{"name", "kind": "assign", "assign", "store", "expected"}`. The one assign-fixture builder
     every `jax_bridge` driver needs — shared here, on `EvalPlanCodegen`, so a new driver can call it
     directly instead of re-deriving the same check→run→render sequence. -/
@@ -393,7 +480,7 @@ def buildAssignFixture (name : String) (sigs : Array TensorSignature) (a : Assig
     | .ok d => pure d
     | .error e => throw (IO.userError s!"{name} Dense run failed: {repr e}")
   let storeEntries := String.intercalate ", " (store.toList.map pyTensorEntry)
-  let rendered ← match renderAffineAssign checked with
+  let rendered ← match renderAffineAssign sigs checked with
     | .ok s => pure s
     | .error e => throw (IO.userError s!"{name} render failed: {repr e}")
   pure ("{\"name\": " ++ pyStrLit name ++ ", \"kind\": \"assign\", \"assign\": " ++
@@ -430,16 +517,24 @@ function's own doc comment for the two Task 5 signature/scope rulings this refle
     `buildFactorTable` (§6, the exact primitive `renderAffineFactor` already calls) to compute each
     factor's safe-index/validity-mask table, one table array per term (outer), one table per factor
     within that term (inner) — matching `tables`'s documented "one per term, then per factor" shape.
+
+    Standalone conversion, so the complete signature table is explicit and is this call's semantic
+    authority (Task 4.5): `requireJaxSupport` re-runs `checkAssign` under `sigs` and applies the
+    support policy BEFORE a candidate exists, so an unsupported assignment can never be handed to
+    `validateAndConstructKernel` (which would reject it too) or inspected for evidence. The produced
+    record itself still stores no signatures — raw candidates are unchanged by this task.
 -/
-def loweringToAffineTableCandidate (assign : CheckedAssignPlan) :
-    OrderedAffineTableKernelCandidate :=
+def loweringToAffineTableCandidate (sigs : Array TensorSignature) (nodeIndex : Nat)
+    (assign : CheckedAssignPlan) : Except JaxCodegenError OrderedAffineTableKernelCandidate := do
+  requireJaxSupport sigs nodeIndex assign
+  requireNoIverson nodeIndex assign.plan
   let tables := assign.plan.terms.map (fun term =>
     term.factors.filterMap (fun f => match f with
       | .read r =>
           let (safeIndex, validMask) := buildFactorTable term.iterationShape r
           some ({ source := r.sourceSlot, safeIndex, validMask } : AffineTableReadCandidate)
       | .iverson _ => none))
-  { semanticAssignment := assign, tables }
+  return { semanticAssignment := assign, tables }
 
 /-- Convert `einsumOnly` lowering to `EinsumExperimentKernelCandidate`, reusing
     `rowProjectionTarget` (§3) to recognize each factor's pure-projection rows the same way
@@ -467,18 +562,20 @@ def loweringToAffineTableCandidate (assign : CheckedAssignPlan) :
     but this function is total over the type, so it still needs a defined answer) returns empty
     `operands`/`outputAxes`.
 -/
-def loweringToEinsumCandidate (assign : CheckedAssignPlan) :
-    EinsumExperimentKernelCandidate :=
+def loweringToEinsumCandidate (sigs : Array TensorSignature) (nodeIndex : Nat)
+    (assign : CheckedAssignPlan) : Except JaxCodegenError EinsumExperimentKernelCandidate := do
+  requireJaxSupport sigs nodeIndex assign
+  requireNoIverson nodeIndex assign.plan
   match assign.plan.terms[0]? with
   | none =>
-      { semanticAssignment := assign, destination := assign.plan.destinationSlot
-      , operands := #[], outputAxes := #[] }
+      return { semanticAssignment := assign, destination := assign.plan.destinationSlot
+             , operands := #[], outputAxes := #[] }
   | some term =>
       let operands := term.factors.filterMap (fun f => match f with
         | .read r => some (#[r.sourceSlot] ++ r.map.coeffs.filterMap rowProjectionTarget)
         | .iverson _ => none)
-      { semanticAssignment := assign, destination := assign.plan.destinationSlot
-      , operands, outputAxes := term.outputPos }
+      return { semanticAssignment := assign, destination := assign.plan.destinationSlot
+             , operands, outputAxes := term.outputPos }
 
 /-- Lower a checked plan to an executable candidate.
 
@@ -503,13 +600,16 @@ def loweringToEinsumCandidate (assign : CheckedAssignPlan) :
 -/
 def lowerCheckPlanToCandidate (plan : PreparedPlan) :
     Except JaxCodegenError JaxExecutableCandidate := do
+  let sigs := plan.plan.raw.tensorSigs
   let mut steps : Array SomeJaxKernel := #[]
   for h : ni in [0 : plan.plan.checkedNodes.size] do
     match plan.plan.checkedNodes[ni] with
     | .assign a =>
-        match validateAndConstructKernel (.affineTable (loweringToAffineTableCandidate a)) with
+        let candidate ← loweringToAffineTableCandidate sigs ni a
+        match validateAndConstructKernel sigs (.affineTable candidate) with
         | .ok k => steps := steps.push k
-        | .error _ => throw (.unsupportedStep ni)
+        | .error (.unsupported e) => throw (codegenErrorOfSupport e)
+        | .error .invalidCandidate => throw (.unsupportedStep ni)
     | .scan _ | .pointwise _ | .axiswise _ => throw (.unsupportedStep ni)
   return { source := plan, steps
          , evidence := aggregateEvidenceList (steps.map (·.evidence))
@@ -548,9 +648,12 @@ def testAffineLoweringValid : Bool :=
   match checkAssign idSigs idAssign with
   | .error _ => false
   | .ok checked =>
-      match validateAndConstructKernel (.affineTable (loweringToAffineTableCandidate checked)) with
-      | .ok _ => true
+      match loweringToAffineTableCandidate idSigs 0 checked with
       | .error _ => false
+      | .ok candidate =>
+        match validateAndConstructKernel idSigs (.affineTable candidate) with
+        | .ok _ => true
+        | .error _ => false
 
 #guard testAffineLoweringValid
 
@@ -561,9 +664,12 @@ def testEinsumLoweringValid : Bool :=
   match checkAssign idSigs idAssign with
   | .error _ => false
   | .ok checked =>
-      match validateAndConstructKernel (.einsum (loweringToEinsumCandidate checked)) with
-      | .ok _ => true
+      match loweringToEinsumCandidate idSigs 0 checked with
       | .error _ => false
+      | .ok candidate =>
+        match validateAndConstructKernel idSigs (.einsum candidate) with
+        | .ok _ => true
+        | .error _ => false
 
 #guard testEinsumLoweringValid
 
@@ -802,5 +908,238 @@ def testIversonEinsumRejectedLocated : Bool := iversonRejectedUnder .einsumOnly
 def testIversonAffineRejectedLocated : Bool := iversonRejectedUnder .affineReference
 
 #guard testIversonAffineRejectedLocated
+
+/-! ### Task 4.5 — the JAX support gate across every public renderer, lowerer, and conversion
+
+Every fixture here is ADMITTED by the checked backend and rejected only by this experimental
+backend. `ExecutableTest` covers the same policy at the validator/executable boundary; what is
+exercised here and NOT there is the emission surface: both rendering modes, both plan renderers,
+`buildAssignFixture`, both candidate conversions, and the located OUTER STEP INDEX that only a
+plan-level walk can produce. -/
+
+/-- Rejected with exactly `expected` (the value is irrelevant; only rejection and its locator are). -/
+private def rejectedWith {α : Type} (expected : JaxCodegenError) : Except JaxCodegenError α → Bool
+  | .error e => e == expected
+  | .ok _ => false
+
+private def preparedOf (raw : RawEvalPlan) (inputs materialized : Array SlotBinding) :
+    Option PreparedPlan :=
+  match checkPlan raw with
+  | .error _ => none
+  | .ok checkedPlan =>
+    match checkBindings raw.inputSlots inputs with
+    | .error _ => none
+    | .ok requiredInputs =>
+        some { plan := checkedPlan
+             , bindings := { requiredInputs, materializedNames := materialized }
+             , warnings := [] }
+
+/-! #### Fixture 2 — only the SOURCE signature is Boolean (`bool` slot 0 feeding the real slot 1).
+The checked plan accepts it; every public JAX entry point must reject it with the same located
+`.unsupportedSourceDType 0 0 0 .bool` (or, at the plan level, that error at the real step index). -/
+
+def boolSourceSigs : Array TensorSignature :=
+  #[ { shape := #[3], dtype := .bool }, { shape := #[3], dtype := .f64 } ]
+
+def boolSourceRaw : RawEvalPlan :=
+  { tensorSigs := boolSourceSigs, inputSlots := #[0], steps := #[PlanStep.assign idAssign] }
+
+def boolSourceStore : Array DenseTensor :=
+  #[ { shape := [3], data := #[1.0, 0.0, 1.0] }, { shape := [3], data := #[0.0, 0.0, 0.0] } ]
+
+def boolSourcePrepared? : Option PreparedPlan :=
+  preparedOf boolSourceRaw #[{ name := "x", slot := 0 }] #[{ name := "y", slot := 1 }]
+
+#guard boolSourcePrepared?.isSome
+
+-- The checked backend admits the Boolean source (Task 4.2: the DESTINATION selects the algebra).
+#guard (match checkPlan boolSourceRaw with | .ok _ => true | .error _ => false)
+
+private def boolSourceError : JaxCodegenError := .unsupportedSourceDType 0 0 0 .bool
+
+-- Standalone entries, each taking the complete table explicitly.
+#guard (match checkAssign boolSourceSigs idAssign with
+  | .error _ => false
+  | .ok checked =>
+      rejectedWith boolSourceError (lowerAssign boolSourceSigs 0 checked) &&
+      rejectedWith boolSourceError (renderAffineAssign boolSourceSigs checked) &&
+      rejectedWith boolSourceError (loweringToAffineTableCandidate boolSourceSigs 0 checked) &&
+      rejectedWith boolSourceError (loweringToEinsumCandidate boolSourceSigs 0 checked))
+
+-- Plan-level entries, each DERIVING the table from the checked/prepared plan — none of them can be
+-- handed a parallel all-real table by a caller.
+#guard (match checkPlan boolSourceRaw, boolSourcePrepared? with
+  | .ok checkedPlan, some prepared =>
+      rejectedWith boolSourceError (lowerPlan checkedPlan) &&
+      rejectedWith boolSourceError (renderAffinePlanPositional checkedPlan) &&
+      rejectedWith boolSourceError (renderAffinePlanNamed prepared) &&
+      rejectedWith boolSourceError (generateForward prepared) &&
+      rejectedWith boolSourceError (generateNamed .einsumOnly prepared) &&
+      rejectedWith boolSourceError (generateNamed .affineReference prepared) &&
+      rejectedWith boolSourceError (lowerCheckPlanToCandidate prepared)
+  | _, _ => false)
+
+-- `buildAssignFixture` is `IO`, so its guard is an `#eval` that throws on the wrong outcome: the
+-- fixture builder must fail at the RENDER step (the checker and the Dense run both succeed on a
+-- Boolean source), so the reported message is the render one.
+#eval show IO Unit from do
+  let outcome ← try
+      let _ ← buildAssignFixture "boolSource" boolSourceSigs idAssign boolSourceStore
+      pure "accepted"
+    catch e => pure (toString e)
+  unless (outcome.splitOn "render failed").length == 2 do
+    throw (IO.userError s!"buildAssignFixture did not reject the Boolean source at render: {outcome}")
+
+/-! #### Fixture 4 (rendering half) — an inline unary read is a located rejection in BOTH modes. -/
+
+def unaryRead : ReadPlan := { idRead with unary := some .exp }
+
+def unaryAssign : AssignPlan :=
+  { idAssign with terms := #[{ idAssign.terms[0]! with factors := #[.read unaryRead] }] }
+
+def unaryRaw : RawEvalPlan :=
+  { tensorSigs := idSigs, inputSlots := #[0], steps := #[PlanStep.assign unaryAssign] }
+
+def unaryPrepared? : Option PreparedPlan :=
+  preparedOf unaryRaw #[{ name := "x", slot := 0 }] #[{ name := "y", slot := 1 }]
+
+#guard (match checkPlan unaryRaw with | .ok _ => true | .error _ => false)
+
+#guard (match unaryPrepared? with
+  | some prepared =>
+      rejectedWith (.unaryFactor 0 0 0) (generateNamed .einsumOnly prepared) &&
+      rejectedWith (.unaryFactor 0 0 0) (generateNamed .affineReference prepared)
+  | none => false)
+
+#guard (match checkAssign idSigs unaryAssign with
+  | .error _ => false
+  | .ok checked =>
+      rejectedWith (.unaryFactor 0 0 0) (loweringToAffineTableCandidate idSigs 0 checked) &&
+      rejectedWith (.unaryFactor 0 0 0) (loweringToEinsumCandidate idSigs 0 checked))
+
+/-! #### Fixture 5 — the Iverson factor keeps its ORIGINAL all-factor index `1` through the new
+contextual candidate conversions, exactly as both rendering modes already report it
+(`iversonFactor 0 0 1`, asserted above). The read at factor index 0 is what makes the index
+non-tautological: a reindexed read-only walk would report `0`. -/
+
+#guard (match checkAssign idSigs idIversonAssign with
+  | .error _ => false
+  | .ok checked =>
+      rejectedWith (.iversonFactor 0 0 1) (loweringToAffineTableCandidate idSigs 0 checked) &&
+      rejectedWith (.iversonFactor 0 0 1) (loweringToEinsumCandidate idSigs 0 checked))
+
+/-! #### Fixture 6 — a two-step plan whose step 1 (not step 0) has the Boolean destination. The
+rejection must name step `1`: the outer graph index, not "the first assignment" (`0`) and not the
+first Boolean thing seen. -/
+
+def mixedBoolDestSigs : Array TensorSignature :=
+  #[ { shape := #[3], dtype := .f64 }, { shape := #[3], dtype := .f64 }
+   , { shape := #[3], dtype := .bool } ]
+
+def mixedRead12 : ReadPlan :=
+  { sourceSlot := 1, map := { coeffs := #[#[1]], bias := #[0] }
+  , sourceShape := #[3], oobPolicy := .zeroPad }
+
+/-- Step 1: `Z[i] := Y[i]` into the Boolean slot 2, under the Boolean algebra (both must change
+    together or `checkAssign` would reject the step before the JAX gate ran). -/
+def mixedBoolDestAssign : AssignPlan :=
+  { contextShape := #[], destinationSlot := 2, outputShape := #[3]
+  , terms := #[{ iterationShape := #[3], contextPos := #[], outputPos := #[0], reductionPos := #[]
+               , factors := #[.read mixedRead12] }]
+  , algebra := admittedAlgebraBool }
+
+def mixedBoolDestRaw : RawEvalPlan :=
+  { tensorSigs := mixedBoolDestSigs, inputSlots := #[0]
+  , steps := #[PlanStep.assign idAssign, PlanStep.assign mixedBoolDestAssign] }
+
+def mixedBoolDestPrepared? : Option PreparedPlan :=
+  preparedOf mixedBoolDestRaw #[{ name := "x", slot := 0 }]
+    #[{ name := "y", slot := 1 }, { name := "z", slot := 2 }]
+
+#guard (match checkPlan mixedBoolDestRaw with | .ok _ => true | .error _ => false)
+
+#guard (match checkPlan mixedBoolDestRaw, mixedBoolDestPrepared? with
+  | .ok checkedPlan, some prepared =>
+      rejectedWith (.unsupportedDestDType 1 2 .bool) (lowerPlan checkedPlan) &&
+      rejectedWith (.unsupportedDestDType 1 2 .bool) (renderAffinePlanNamed prepared) &&
+      rejectedWith (.unsupportedDestDType 1 2 .bool) (lowerCheckPlanToCandidate prepared)
+  | _, _ => false)
+
+/-! #### Fixture 11 — plan authority and standalone context attacks
+
+(a) The plan-level conversion has NO caller table: it derives `PreparedPlan.plan.raw.tensorSigs`, so
+the Boolean-source plan above cannot be validated by supplying a same-shape all-real substitute. The
+guard is the rejection itself — a caller-selectable table (or a plan API that mapped its derived
+table to all-`f64`) would make it accept. -/
+
+def allRealSubstituteSigs : Array TensorSignature :=
+  boolSourceSigs.map (fun sig => { sig with dtype := ScalarDType.f64 })
+
+-- The substitute really is same-shape and all-real, so the attack is about AUTHORITY, not shape.
+#guard allRealSubstituteSigs == idSigs
+
+def testVariantBPlanAuthoritySubstitutionRejected : Bool :=
+  match boolSourcePrepared? with
+  | none => false
+  | some prepared =>
+      rejectedWith boolSourceError (lowerCheckPlanToCandidate prepared) &&
+      rejectedWith boolSourceError (generateNamed .affineReference prepared)
+
+#guard testVariantBPlanAuthoritySubstitutionRejected
+
+/-! (b) A standalone all-real table whose SHAPES do not match the assignment is rejected by the
+re-run `checkAssign`, not silently consulted for its dtype tags. Every standalone entry does this. -/
+
+def mismatchedShapeSigs : Array TensorSignature :=
+  #[ { shape := #[4], dtype := .f64 }, { shape := #[3], dtype := .f64 } ]
+
+private def contextError : JaxCodegenError :=
+  .invalidSignatureContext 0 (.sourceShapeMismatch 0 0 #[3] #[4])
+
+#guard (match checkAssign idSigs idAssign with
+  | .error _ => false
+  | .ok checked =>
+      rejectedWith contextError (lowerAssign mismatchedShapeSigs 0 checked) &&
+      rejectedWith contextError (renderAffineAssign mismatchedShapeSigs checked) &&
+      rejectedWith contextError (loweringToAffineTableCandidate mismatchedShapeSigs 0 checked) &&
+      rejectedWith contextError (loweringToEinsumCandidate mismatchedShapeSigs 0 checked))
+
+/-! (c) A two-step plan whose Boolean READ is only at step 1. Step 0 is fully supported, so a
+per-step decision that cached or reused step 0's context/result would accept the plan; the located
+rejection must name step 1. -/
+
+def step1BoolSigs : Array TensorSignature :=
+  #[ { shape := #[3], dtype := .f64 }, { shape := #[3], dtype := .f64 }
+   , { shape := #[3], dtype := .bool }, { shape := #[3], dtype := .f64 } ]
+
+def boolRead2 : ReadPlan :=
+  { sourceSlot := 2, map := { coeffs := #[#[1]], bias := #[0] }
+  , sourceShape := #[3], oobPolicy := .zeroPad }
+
+def step1BoolAssign : AssignPlan :=
+  { contextShape := #[], destinationSlot := 3, outputShape := #[3]
+  , terms := #[{ iterationShape := #[3], contextPos := #[], outputPos := #[0], reductionPos := #[]
+               , factors := #[.read boolRead2] }]
+  , algebra := admittedAlgebra }
+
+def step1BoolRaw : RawEvalPlan :=
+  { tensorSigs := step1BoolSigs, inputSlots := #[0, 2]
+  , steps := #[PlanStep.assign idAssign, PlanStep.assign step1BoolAssign] }
+
+def step1BoolPrepared? : Option PreparedPlan :=
+  preparedOf step1BoolRaw #[{ name := "x", slot := 0 }, { name := "v", slot := 2 }]
+    #[{ name := "y", slot := 1 }, { name := "w", slot := 3 }]
+
+#guard (match checkPlan step1BoolRaw with | .ok _ => true | .error _ => false)
+
+-- The exact locator: step 1, term 0, factor 0, `bool` — step and slot cannot be confused (the
+-- Boolean slot is 2, the step is 1, and the term/factor are both 0).
+#guard (match checkPlan step1BoolRaw, step1BoolPrepared? with
+  | .ok checkedPlan, some prepared =>
+      rejectedWith (.unsupportedSourceDType 1 0 0 .bool) (lowerPlan checkedPlan) &&
+      rejectedWith (.unsupportedSourceDType 1 0 0 .bool) (renderAffinePlanPositional checkedPlan) &&
+      rejectedWith (.unsupportedSourceDType 1 0 0 .bool) (generateForward prepared) &&
+      rejectedWith (.unsupportedSourceDType 1 0 0 .bool) (lowerCheckPlanToCandidate prepared)
+  | _, _ => false)
 
 end JaxBridge

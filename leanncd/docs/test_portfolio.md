@@ -519,6 +519,8 @@ gap is closed — a built-in regression alarm. Cross-referenced above by `KG-*`.
 | normalize (± mask) | normalize | NM1, NM4 |
 | maxreduce / minreduce | max-pool | CV5, GN4, TR3 (max); TR6, TR7, RC7 (min); RC5 (max-in-1-D-scan), RC10 (max-in-multi-axis-scan) |
 | Iverson / predicates | band, masked-agg | RL1–RL7, RC3 |
+| Boolean/predicate DECLARED outputs (`predicate P(…)`) through the CHECKED backend | — | `Eval.Plan.DifferentialTest`'s curated `predicatePrograms` corpus — **10 entries** (Task 4.5): the six Iverson/mask donors RL1/RL6/RL7/RL8/NM4/AT12 plus four declared-predicate programs (GN2's predicate adjacency as a `bool` SOURCE into a real destination, an RL1 clone with `predicate I(i, j)`, and a scalar Boolean contraction twice — all-true and non-binary `0.25`/`0.75`). Each runs checked-vs-reference agreement under declaration-aware input signatures plus its observed value; the length is pinned by `#guard`. Deliberately OUTSIDE `PropertyOracle.enumPrograms`, which the affine JAX corpus consumes wholesale |
+| Boolean scan state / scratch (three-way oracle) | — | `Eval.Plan.DifferentialTest`'s curated three-way scan set — 7 entries, of which two are Boolean (`template4Bool`'s `predicate S(l)` and `template3BoolCase`'s coupled `predicate G(l)` / real `H`): compiled checked plan, legacy `evalScheduled`, and the independent scan-free unrolling must all agree |
 | Affine reads (conv/dilation/look-back) | strided conv, look-back | CV1,CV2,CV4, EC1,EC2,EC12 |
 | Scatter (affine/diagonal write) | upsample | EC7, EC9 |
 | Scans / recurrence | coupled scan | RC2, RC4, RC5 (maxreduce-in-scan) |

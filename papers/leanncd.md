@@ -1819,7 +1819,7 @@ predicate) is read from the decls and the `RHSExpr.agg` field via a `Combine` st
 - **`Combine.bool`** `(min, max, 0.0)` — Boolean `(∧, ∃)` contraction on 0/1 Floats (`R = Bool`); selected for `predicate`-declared outputs
 - **`Combine.max`** `(×, max, −∞)` — max contraction (not tropical semiring); selected when `agg = .max` (`maxreduce`). Identity `−∞` (IEEE 754 `−1.0/0.0`) ensures all-negative inputs reduce to the true maximum rather than `0`.
 
-`combineFor` chooses: `agg = .max` → `Combine.max`; else `predicate` → `Combine.bool`; else `Combine.real`. This sidesteps the deferred `BrBaseP` dtype gap. All thirteen
+`combineFor` chooses: `agg = .max` → `Combine.max`; else `predicate` → `Combine.bool`; else `Combine.real`. Its `.sum` arm searches only TENSOR-BEARING declarations (`.tensor`/`.linear`/`.predicate`), so an earlier same-named `.axis` declaration cannot hide a later `predicate` one (Task 4.1 of [`boolean_predicate_output_evalplan.md`](boolean_predicate_output_evalplan.md)). The checked `Eval/Plan/` backend mirrors this exact choice: a `bool`-signature destination selects `admittedAlgebraBool` (`min`/`true` per factor, `max`/`false` per contracted coordinate and per term), over the same Float-backed storage — Boolean is a semantic algebra/signature tag there too, not a native carrier. This sidesteps the deferred `BrBaseP` dtype gap. All thirteen
 example programs (the seven §14.2/predicate examples plus look-back, outer product, contraction+relu,
 normalize, and unrolled/scan transformer examples) evaluate with hand-checked numeric assertions in `test/Eval/EvalExamplesTest.lean`;
 max-reduction programs are tested in `test/DSL/MaxReduceTest.lean`.

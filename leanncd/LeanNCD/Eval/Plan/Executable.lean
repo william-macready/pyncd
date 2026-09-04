@@ -18,11 +18,36 @@ source, or whose einsum lowering silently dropped an axis or a nonzero affine bi
 not merely shape-checked.
 
 No lowering logic lives here — `EvalPlanCodegen.lean`'s `einsumOnly`/`affineReference` modes
-already exist and are untouched, and so is the routing in that file's `loweringToAffineTableCandidate`
+already exist, and so is the routing in that file's `loweringToAffineTableCandidate`
 /`loweringToEinsumCandidate`/`lowerCheckPlanToCandidate`. This file only imports
 `LeanNCD.Eval.Plan.Coordinates` for `validateAffineTable`'s own recomputation check (below), the
 same shared row-major primitives `EvalPlanCodegen.lean`'s `buildFactorTable` composes — no
 JAX/lookup-table/source-name/codegen concept is introduced here.
+
+Task 4.5 (Boolean/predicate outputs) added the SUPPORT half of the gate and the signature-context
+ownership the completed spike selected (`papers/jax_signature_evidence_ownership_spike_results.md`,
+decision GO B):
+
+* `JaxSupportError`/`checkJaxAssignSupport` reject, with a located typed error, every assignment the
+  checked backend admits but this experimental backend cannot render at all — a Boolean destination,
+  a Boolean source, tropical max/min algebra, and an inline unary read. Rejection happens BEFORE any
+  candidate, evidence label, or Python emission.
+* A standalone entry (`validateAffineTable`/`validateEinsum`/`kernelWellFormedBool`/
+  `validateAndConstructKernel`, and the experimental renderers/conversions) takes ONE explicit
+  complete `Array TensorSignature` and treats it as its semantic authority: `checkAssign` is re-run
+  under it, so a structurally incompatible table fails as `invalidSignatureContext` instead of being
+  silently consulted for dtype only. Plan-level entry points accept no such parameter; they derive
+  `PreparedPlan.plan.raw.tensorSigs`.
+* The raw candidate records store NO signatures. `JaxKernel` stores the validated table
+  (`signatureContext`) together with `valid : JaxKernelWellFormed signatureContext candidate`, and
+  `JaxExecutableWellFormed` requires every stored table to equal the prepared plan's own and every
+  candidate assignment to equal the corresponding checked step.
+* `candidateEvidenceLabel` and the context-free geometry helpers are private; the label is derived
+  only inside `validateAndConstructKernel`, after validation.
+
+Independently of that ownership question, `validateEinsum` recomputes every operand axis exactly
+from the checked factor maps and requires exact `outputAxes = term.outputPos` equality, so a
+same-rank, in-range permutation or duplicate is not a valid candidate.
 
 Spec: `papers/jax_evalplan_architecture.md` §4.3, §7.1 rows 5–6, Appendix D.
 
@@ -89,11 +114,108 @@ inductive JaxKernelCandidate where
   | affineTable (kernel : OrderedAffineTableKernelCandidate) : JaxKernelCandidate
   | einsum (kernel : EinsumExperimentKernelCandidate) : JaxKernelCandidate
 
+/-- The checked assignment a candidate of either kind refines. -/
+private def candidateAssignment : JaxKernelCandidate → CheckedAssignPlan
+  | .affineTable k => k.semanticAssignment
+  | .einsum k => k.semanticAssignment
+
 /-- Derive the evidence label from a candidate (pure inspection, no validation).
--/
-def candidateEvidenceLabel : JaxKernelCandidate → ExecutionEvidence
+
+    PRIVATE (Task 4.5, spike selection GO B): a public pre-validation label is the direct bypass of
+    the whole gate — a Boolean-source, tropical, or unary-read affine candidate could be handed this
+    function and read `orderedReference64` off it before any validator ran. The label is now
+    reachable only through `validateAndConstructKernel`'s validated `SomeJaxKernel.evidence`;
+    `ExecutableTest` asserts its behavior through that nearest public validator instead of calling
+    it directly. -/
+private def candidateEvidenceLabel : JaxKernelCandidate → ExecutionEvidence
   | .affineTable _ => ExecutionEvidence.orderedReference64
   | .einsum _ => ExecutionEvidence.optimizationExperiment
+
+/-! ## JAX support policy (Task 4.5)
+
+The experimental JAX backend implements exactly ONE assignment semantics: a real `f64` destination
+under real sum-product, gathering plain (non-unary) `f64` reads. Boolean algebra, tropical max/min,
+a Boolean source, and an inline unary read are all admitted by the CHECKED plan and executed by
+Dense, but have no JAX rendering at all — so they must be rejected with a located, typed error
+BEFORE any Python is emitted, any candidate is built, or any `ExecutionEvidence` is exposed. That is
+the fail-loud half of the sibling-audit table in
+`papers/boolean_predicate_output_evalplan.md` §2.5: every "forbidden" cell is a located rejection
+here, not a silently-stamped `orderedReference64`.
+
+The supplied `Array TensorSignature` is the caller-facing SEMANTIC AUTHORITY for a standalone entry
+point (spike decision GO B): `checkJaxAssignSupport` first re-establishes `checkAssign` for the same
+raw assignment UNDER THAT TABLE — a structurally incompatible table is rejected as
+`invalidSignatureContext`, not silently used for dtype only — and only then applies the support
+policy. Plan-level entry points never accept a caller table; they derive
+`PreparedPlan.plan.raw.tensorSigs`. -/
+
+/-- Every located way the experimental JAX backend refuses an otherwise-checked assignment.
+
+    Locators are the ones actually available at each rejection: the outer step index everywhere, the
+    ORIGINAL all-factor term/factor indices for a per-factor rejection (never a reindexed
+    read-only index), and the slot for the destination rejection. A source rejection carries its
+    dtype rather than its slot — the slot is recoverable from the term/factor locator, and the
+    4-tuple `nodeIndex termIndex factorIndex dtype` is what the fixtures pin exactly. -/
+inductive JaxSupportError
+  | destinationDType       (nodeIndex : Nat) (slot : TensorSlot) (dtype : ScalarDType)
+  | unsupportedAlgebra     (nodeIndex : Nat) (algebra : ContractionAlgebra)
+  | sourceDType            (nodeIndex termIndex factorIndex : Nat) (dtype : ScalarDType)
+  | unaryFactor            (nodeIndex termIndex factorIndex : Nat)
+  | invalidSignatureContext (nodeIndex : Nat) (cause : PlanError)
+  deriving DecidableEq, BEq, Repr
+
+/-- The support policy itself, over a raw assignment already known to check against `sigs`.
+    PRIVATE: the context-free half is never a gate on its own — `checkJaxAssignSupport` below is the
+    only way in, precisely so a caller cannot skip the `checkAssign` re-run and hand this function a
+    table the assignment does not actually satisfy.
+
+    Declared order, which fixtures pin: destination dtype, then algebra, then factors in original
+    term/factor order (source dtype before unary within each factor). A Boolean-destination
+    assignment whose source is ALSO Boolean therefore reports the destination, not the source. -/
+private def jaxAssignSupported (sigs : Array TensorSignature) (nodeIndex : Nat) (a : AssignPlan) :
+    Except JaxSupportError Unit := do
+  match sigs[a.destinationSlot]? with
+  | none => throw (.invalidSignatureContext nodeIndex (.slotOutOfRange a.destinationSlot sigs.size))
+  | some destSig =>
+      unless destSig.dtype == .f64 do
+        throw (.destinationDType nodeIndex a.destinationSlot destSig.dtype)
+  unless a.algebra == admittedAlgebra do
+    throw (.unsupportedAlgebra nodeIndex a.algebra)
+  for h : ti in [0 : a.terms.size] do
+    let t := a.terms[ti]
+    for h2 : fi in [0 : t.factors.size] do
+      match t.factors[fi] with
+      | .iverson _ => pure ()  -- the existing located Iverson rejection owns this case
+      | .read f =>
+        match sigs[f.sourceSlot]? with
+        | none => throw (.invalidSignatureContext nodeIndex (.slotOutOfRange f.sourceSlot sigs.size))
+        | some srcSig =>
+            unless srcSig.dtype == .f64 do
+              throw (.sourceDType nodeIndex ti fi srcSig.dtype)
+        unless f.unary.isNone do
+          throw (.unaryFactor nodeIndex ti fi)
+
+/-- The typed, context-bearing cross-module support gate: the supplied complete signature table is
+    the assignment's semantic authority, so `checkAssign` is RE-RUN under it before the JAX support
+    policy is applied. A table that is structurally incompatible with the same raw assignment (a
+    different shape at a read slot, say) fails as `invalidSignatureContext` carrying the checker's
+    own `PlanError`, rather than being used for its dtype tags alone.
+
+    This is the one helper both the production validators here and the experimental renderers /
+    candidate conversions in `experiments/jax_bridge/EvalPlanCodegen.lean` call; the latter maps its
+    result into that module's own `JaxCodegenError` vocabulary. -/
+def checkJaxAssignSupport (sigs : Array TensorSignature) (nodeIndex : Nat)
+    (checked : CheckedAssignPlan) : Except JaxSupportError Unit := do
+  match checkAssign sigs checked.plan with
+  | .error e => throw (.invalidSignatureContext nodeIndex e)
+  | .ok _ => pure ()
+  jaxAssignSupported sigs nodeIndex checked.plan
+
+/-- `Bool` view of the support gate, for the `Bool`-valued validators below. -/
+private def jaxSupportOk (sigs : Array TensorSignature) (checked : CheckedAssignPlan) : Bool :=
+  match checkJaxAssignSupport sigs 0 checked with
+  | .ok _ => true
+  | .error _ => false
 
 /-- Recompute the correct `(safeIndex, validMask)` pair for one factor against a given iteration
     basis, straight from the shared coordinate primitives (`Coordinates.lean`): enumerate the basis
@@ -106,7 +228,7 @@ def candidateEvidenceLabel : JaxKernelCandidate → ExecutionEvidence
     import that experimental one. This is the semantic source `validateAffineTable` below checks a
     candidate's stored table AGAINST, not merely a shape/bounds sanity check on the stored table
     itself. -/
-def recomputeAffineFactorTable (iterationShape : Array Nat) (factor : ReadPlan) :
+private def recomputeAffineFactorTable (iterationShape : Array Nat) (factor : ReadPlan) :
     Array Nat × Array Bool :=
   (allCoords iterationShape.toList).foldl
     (fun (acc : Array Nat × Array Bool) iter =>
@@ -126,7 +248,7 @@ def recomputeAffineFactorTable (iterationShape : Array Nat) (factor : ReadPlan) 
     with every `safeIndex` entry replaced by `0` (but otherwise the right length and in-bounds) used
     to still pass here before this check existed — length/bounds alone cannot tell a genuinely wrong
     gather from a right one; equality against the recomputed table can. -/
-def affineFactorTableValid (iterationShape : Array Nat) (factor : ReadPlan)
+private def affineFactorTableValid (iterationShape : Array Nat) (factor : ReadPlan)
     (table : AffineTableReadCandidate) : Bool :=
   let (expectedIndex, expectedMask) := recomputeAffineFactorTable iterationShape factor
   table.source == factor.sourceSlot &&
@@ -141,7 +263,7 @@ def affineFactorTableValid (iterationShape : Array Nat) (factor : ReadPlan)
     since `loweringToAffineTableCandidate`'s `filterMap` happens to shrink `tables` below
     `term.factors.size` whenever a factor is dropped, but that shrinkage is a coincidence of how the
     candidate is built today, not a guarantee this validator should lean on. -/
-def affineTermTablesValid (term : TermPlan) (tables : Array AffineTableReadCandidate) : Bool :=
+private def affineTermTablesValid (term : TermPlan) (tables : Array AffineTableReadCandidate) : Bool :=
   !term.hasIverson &&
   tables.size == term.factors.size &&
   (term.factors.zip tables).all
@@ -149,16 +271,62 @@ def affineTermTablesValid (term : TermPlan) (tables : Array AffineTableReadCandi
       | .read r => affineFactorTableValid term.iterationShape r table
       | .iverson _ => false)
 
-/-- Validate an affine-table kernel candidate against its own semantic source: one table array per
-    term (`tables.size = semanticAssignment.plan.terms.size`, per `OrderedAffineTableKernelCandidate`'s
-    doc comment "one per term, then per factor"), and every per-term table array individually valid
-    (`affineTermTablesValid`). -/
-def validateAffineTable (kernel : OrderedAffineTableKernelCandidate) : Bool :=
+/-- Validate an affine-table kernel candidate against its own semantic source AND against the
+    caller-supplied complete signature table, which is this standalone entry's semantic authority
+    (spike decision GO B): `checkJaxAssignSupport` re-runs `checkAssign` under `sigs` and applies the
+    JAX support policy FIRST, so a Boolean-destination, Boolean-source, tropical, or unary-read
+    assignment can never reach the structural table check and be stamped `orderedReference64`.
+    Structurally: one table array per term (`tables.size = semanticAssignment.plan.terms.size`, per
+    `OrderedAffineTableKernelCandidate`'s doc comment "one per term, then per factor"), and every
+    per-term table array individually valid (`affineTermTablesValid`). -/
+def validateAffineTable (sigs : Array TensorSignature)
+    (kernel : OrderedAffineTableKernelCandidate) : Bool :=
   let terms := kernel.semanticAssignment.plan.terms
+  jaxSupportOk sigs kernel.semanticAssignment &&
   kernel.tables.size == terms.size &&
   (terms.zip kernel.tables).all (fun (term, tableRow) => affineTermTablesValid term tableRow)
 
-/-- Validate an einsum kernel candidate against its own semantic source.
+/-- Whether one `AffineMap` row is a pure single-`1` projection, and onto which iteration position.
+    `none` covers every non-projection shape at once (a zero row, a non-unit coefficient, or more
+    than one nonzero entry).
+
+    Deliberately a PRIVATE, production-local copy of `EvalPlanCodegen.lean`'s `rowProjectionTarget`
+    rather than an import of it: `experiments/jax_bridge` depends on `LeanNCD`, never the reverse, so
+    importing the experimental recognizer here would invert the dependency direction. Same
+    duplicate-for-dependency-direction rationale as `recomputeAffineFactorTable` above (which mirrors
+    that module's `buildFactorTable`), and the same consequence: this copy is the SEMANTIC SOURCE
+    `validateEinsum` recomputes a candidate's operand row from, not a re-use of the builder's own
+    output. -/
+private def rowProjectionPosition (row : Array Int) : Option Nat :=
+  let nonzero := (List.range row.size).zip row.toList |>.filter (fun (_, c) => c != 0)
+  match nonzero with
+  | [(p, 1)] => some p
+  | _ => none
+
+/-- The EXACT einsum operand row one checked read factor must lower to: its own source slot,
+    followed by the single projection target of EVERY coefficient row, in coefficient-row order.
+    `none` — no valid einsum operand row at all — when any coefficient row is not a pure single-`1`
+    projection (`rowProjectionPosition`) or any bias entry is nonzero, exactly the two shapes
+    `lowerFactor` (`EvalPlanCodegen.lean`) rejects as `.nonProjectionRow`/`.nonzeroAffineBias`.
+
+    This is a recomputation from the CHECKED factor, not an inspection of the candidate's stored row:
+    `validateEinsum` compares the stored row against this one for exact equality, so a same-rank,
+    in-range permutation (`#[slot, 1, 0]` for an identity read) or a duplicate (`#[slot, 0, 0]`) is
+    rejected — neither is the row this factor means. -/
+private def expectedEinsumOperandRow (f : ReadPlan) : Option (Array Nat) :=
+  if f.map.bias.all (· == 0) then
+    f.map.coeffs.foldl
+      (fun (acc : Option (Array Nat)) row => match acc, rowProjectionPosition row with
+        | some row?, some p => some (row?.push p)
+        | _, _ => none)
+      (some #[f.sourceSlot])
+  else
+    none
+
+/-- Validate an einsum kernel candidate against its own semantic source AND against the
+    caller-supplied complete signature table, this standalone entry's semantic authority: as in
+    `validateAffineTable`, `checkJaxAssignSupport` re-runs `checkAssign` under `sigs` and applies the
+    JAX support policy before any structural check.
     `EinsumExperimentKernelCandidate` has one flat `operands`/`outputAxes` pair with no per-term
     dimension, so it can only faithfully represent a SINGLE-TERM `AssignPlan` (see
     `EvalPlanCodegen.lean`'s `loweringToEinsumCandidate` doc comment for the full ruling this
@@ -166,61 +334,55 @@ def validateAffineTable (kernel : OrderedAffineTableKernelCandidate) : Bool :=
     - the semantic source has exactly one term
     - `destination` matches the semantic assignment's own `destinationSlot`
     - `operands.size` matches that term's factor count, one operand row per factor
-    - each operand row's first entry is that factor's own `sourceSlot`
-    - every axis position named in an operand row (after the leading slot) or in `outputAxes` is
-      within the term's iteration basis (`< term.iterationShape.size`)
-    - the factor's own affine map has zero bias in every row (`f.map.bias.all (· == 0)`) — a
-      nonzero-bias read (e.g. `X[i+1]`) is rejected, matching `lowerFactor`'s (`EvalPlanCodegen.lean`)
-      `.nonzeroAffineBias` rejection of the very same shape
-    - the operand row's axis count (after the leading source-slot entry) equals the factor's own
-      coefficient-row count (`f.map.coeffs.size`) — `loweringToEinsumCandidate` builds each operand
-      row via `f.map.coeffs.filterMap rowProjectionTarget`, which silently DROPS any row that isn't a
-      genuine single-`1` projection (e.g. `X[-i]`); a dropped row shrinks the operand row below the
-      factor's own coefficient count, so this count check is exactly the projection-only restriction
-      `lowerFactor`'s `.nonProjectionRow` rejection enforces, applied post hoc to the candidate's
-      already-built (and otherwise unable to distinguish "genuine 1-D factor" from "3-D factor that
-      lost two axes to `filterMap`") operand row.
-    Without these last two checks this validator was strictly WEAKER than the pre-existing
-    `lowerFactor`/`einsumOnly` path it lowers alongside: a candidate built from a nonzero-bias or
-    non-projection read passed validation and was stamped `optimizationExperiment` evidence anyway,
-    even though the corresponding `einsumOnly` lowering refuses to emit it at all. -/
-def validateEinsum (kernel : EinsumExperimentKernelCandidate) : Bool :=
+    - each operand row is EXACTLY the row that factor's own affine map means
+      (`expectedEinsumOperandRow`): the factor's `sourceSlot` followed by the single projection
+      target of every coefficient row, in coefficient-row order. This subsumes the previous
+      leading-slot, in-range, zero-bias, and row-count checks — a nonzero bias or a non-projection
+      row has NO expected row at all, and a wrong axis order or a repeated axis is a different array
+    - `outputAxes` is EXACTLY the checked term's own `outputPos`, not merely a same-rank in-range
+      array
+    The previous bounds-and-length form of these two checks was strictly weaker than exact
+    recomputation: `#[slot, 1, 0]` (a transposed 2-D read), `outputAxes := #[1, 0]` (a transposed
+    result), and `outputAxes := #[0, 0]` (a duplicated axis) are all same-rank and in-range, so all
+    three passed and were stamped with evidence even though `einsumOnly` would emit a different
+    contraction. Recomputing from the checked factor maps is what distinguishes them. -/
+def validateEinsum (sigs : Array TensorSignature)
+    (kernel : EinsumExperimentKernelCandidate) : Bool :=
   let terms := kernel.semanticAssignment.plan.terms
+  jaxSupportOk sigs kernel.semanticAssignment &&
   kernel.destination == kernel.semanticAssignment.plan.destinationSlot &&
   terms.size == 1 &&
   match terms[0]? with
   | none => false
   | some term =>
-      let rank := term.iterationShape.size
       -- `hasIverson` is the real guard, not the `operands.size` coincidence below (see
       -- `affineTermTablesValid`'s doc comment for why the two must not be conflated).
       !term.hasIverson &&
       kernel.operands.size == term.factors.size &&
       (term.factors.zip kernel.operands).all (fun (factor, opRow) => match factor with
         | .iverson _ => false  -- a predicate factor has no einsum operand; not an einsum candidate
-        | .read f =>
-          opRow.size ≥ 1 && opRow.getD 0 0 == f.sourceSlot &&
-          (opRow.extract 1 opRow.size).all (· < rank) &&
-          f.map.bias.all (· == 0) &&
-          opRow.size - 1 == f.map.coeffs.size) &&
-      kernel.outputAxes.all (· < rank)
+        | .read f => expectedEinsumOperandRow f == some opRow) &&
+      kernel.outputAxes == term.outputPos
 
 /-- Combined kernel-candidate validity check, real implementation (Task 5): dispatches to
     `validateAffineTable`/`validateEinsum` per candidate kind. Bool-valued (not `Prop`-valued via
     the `Bool → Prop` coercion the task brief's sketch used) so it can also be used directly inside
     `JaxExecutableWellFormed`'s `Array.all` below, which needs a `Bool`-returning predicate. -/
-def kernelWellFormedBool : JaxKernelCandidate → Bool
-  | .affineTable kernel => validateAffineTable kernel
-  | .einsum kernel => validateEinsum kernel
+def kernelWellFormedBool (sigs : Array TensorSignature) : JaxKernelCandidate → Bool
+  | .affineTable kernel => validateAffineTable sigs kernel
+  | .einsum kernel => validateEinsum sigs kernel
 
-/-- Real well-formedness predicate for a kernel candidate: `kernelWellFormedBool candidate = true`.
+/-- Real well-formedness predicate for a kernel candidate UNDER one complete signature table:
+    `kernelWellFormedBool sigs candidate = true`. The table is part of the proposition, not an
+    ambient assumption — that is what makes a validated kernel's evidence checkable later
+    (`JaxExecutableWellFormed` compares each kernel's stored table against the prepared plan's own).
     `Decidable` follows automatically from `DecidableEq Bool` — no manual instance needed (the
     earlier stub instance that always answered `.isTrue trivial` regardless of the predicate's
     actual truth has been removed; leaving it would have silently defeated
     `validateAndConstructKernel`'s `decide` check now that this predicate can genuinely be false).
 -/
-def JaxKernelWellFormed (candidate : JaxKernelCandidate) : Prop :=
-  kernelWellFormedBool candidate = true
+def JaxKernelWellFormed (sigs : Array TensorSignature) (candidate : JaxKernelCandidate) : Prop :=
+  kernelWellFormedBool sigs candidate = true
 
 /-- `Decidable (b = true)` for `b : Bool` should in principle resolve automatically from
     `DecidableEq Bool`, but instance search does not unfold a plain (non-`@[reducible]`) `def` like
@@ -228,18 +390,26 @@ def JaxKernelWellFormed (candidate : JaxKernelCandidate) : Prop :=
     (`synthInstanceFailed`). `inferInstanceAs` forces the unfold via definitional equality at
     elaboration time (rather than instance-head matching), then delegates to the ordinary
     `Bool` `DecidableEq` instance. -/
-instance (candidate : JaxKernelCandidate) : Decidable (JaxKernelWellFormed candidate) :=
-  inferInstanceAs (Decidable (kernelWellFormedBool candidate = true))
+instance (sigs : Array TensorSignature) (candidate : JaxKernelCandidate) :
+    Decidable (JaxKernelWellFormed sigs candidate) :=
+  inferInstanceAs (Decidable (kernelWellFormedBool sigs candidate = true))
 
 /-- Type-indexed kernel, only creatable by validator (`validateAndConstructKernel`).
     Evidence is fixed at construction and never changes: `aligned` ties the candidate's
     derived evidence label to the index `evidence`, so the private constructor cannot be
     used to mismatch the two even from within this file.
+
+    `signatureContext` is the ONE complete table the validator actually used (spike decision GO B):
+    the public raw candidate records deliberately store no signatures, so this validated witness is
+    the single place a table becomes authority-bearing, and `valid` is indexed by it. Storing it
+    here is what lets `JaxExecutableWellFormed` tie every step's validation context back to the
+    prepared plan instead of trusting a kernel validated under some other table.
 -/
 structure JaxKernel (evidence : ExecutionEvidence) where private mk ::
   candidate : JaxKernelCandidate
+  signatureContext : Array TensorSignature
   aligned : candidateEvidenceLabel candidate = evidence
-  valid : JaxKernelWellFormed candidate  -- real validation (Task 5): `validateAffineTable`/`validateEinsum`
+  valid : JaxKernelWellFormed signatureContext candidate  -- real contextual validation (Task 4.5)
 
 /-- Existential witness hiding the evidence index.
 -/
@@ -247,21 +417,38 @@ structure SomeJaxKernel where
   evidence : ExecutionEvidence
   kernel : JaxKernel evidence
 
-/-- Validate a candidate and construct a private executable kernel.
-    Returns `SomeJaxKernel` to hide evidence at the cost of unpacking later.
+/-- Why `validateAndConstructKernel` refused to expose evidence for a candidate: either the JAX
+    support policy rejected the assignment under the supplied context (retaining the exact located
+    `JaxSupportError`), or the candidate's own tables/operands do not match its semantic source. -/
+inductive JaxKernelValidationError
+  | unsupported (cause : JaxSupportError)
+  | invalidCandidate
+  deriving DecidableEq, BEq, Repr
+
+/-- Validate a candidate UNDER one complete signature table and construct a private executable
+    kernel. Returns `SomeJaxKernel` to hide evidence at the cost of unpacking later.
+
+    The support gate runs FIRST and returns its exact located cause; only then is structural
+    well-formedness decided, and only then — inside the `then`-branch, after `h` exists — is the
+    evidence label derived at all. An unsupported candidate therefore never reaches
+    `candidateEvidenceLabel`, which is itself private for the same reason.
 -/
-def validateAndConstructKernel (candidate : JaxKernelCandidate) :
-    Except String SomeJaxKernel := do
-  -- Derive evidence label from candidate structure (not mutable).
-  let evidence := candidateEvidenceLabel candidate
+def validateAndConstructKernel (sigs : Array TensorSignature) (candidate : JaxKernelCandidate) :
+    Except JaxKernelValidationError SomeJaxKernel := do
+  match checkJaxAssignSupport sigs 0 (candidateAssignment candidate) with
+  | .error e => throw (.unsupported e)
+  | .ok _ => pure ()
   -- `if h : ... then ... else throw`, not `unless decide ... do throw` + a separate `trivial`
   -- proof: now that `JaxKernelWellFormed` does real (possibly-false) validation, `JaxKernel.valid`
   -- needs an actual proof term, not `trivial` (which only ever proves `True`). The `dite` form
   -- (`if h : P then ...`) is what hands that proof (`h`) to the `then`-branch.
-  if h : JaxKernelWellFormed candidate then
-    -- Construct private kernel only after validation passes.
+  if h : JaxKernelWellFormed sigs candidate then
+    -- Derive the evidence label only after validation passed, and construct the private kernel
+    -- with the very table the validation used.
+    let evidence := candidateEvidenceLabel candidate
     let kernel : JaxKernel evidence := {
       candidate := candidate
+      signatureContext := sigs
       aligned := rfl  -- evidence derivation is deterministic
       valid := h
     }
@@ -269,8 +456,9 @@ def validateAndConstructKernel (candidate : JaxKernelCandidate) :
   else
     -- `throw`, not `return .error` — `return` in this `Except` do-block already performs the
     -- `.ok` wrap (`pure`), so `return .error x` would elaborate `.error` against the wrong
-    -- expected type (`SomeJaxKernel`, not `Except String SomeJaxKernel`) and fail to resolve.
-    throw "Kernel validation failed"
+    -- expected type (`SomeJaxKernel`, not `Except JaxKernelValidationError SomeJaxKernel`) and
+    -- fail to resolve.
+    throw .invalidCandidate
 
 /-- Aggregate evidence across an array of kernel evidences.
     Returns `orderedReference64` only if ALL are; otherwise `optimizationExperiment`.
@@ -292,15 +480,39 @@ structure JaxExecutableCandidate where
   evidence : ExecutionEvidence
   aggregated : evidence = aggregateEvidenceList (steps.map (·.evidence))
 
-/-- Validate an executable plan against its own semantic source, real implementation (Task 5):
+/-- Whether one validated kernel really is THIS prepared plan's step `stepIndex` (Task 4.5, spike
+    decision GO B). Three obligations, all of which a plan-level caller must satisfy and none of
+    which a kernel validated in isolation can supply on its own:
+
+    * its stored validation context is exactly the prepared plan's own complete signature table — a
+      kernel validated under some other (say, same-shape all-real) table is not evidence about this
+      plan, even if its assignment matches;
+    * its candidate's semantic assignment is exactly the checked assignment at that step index —
+      re-using step 0's validated kernel at step 1 is rejected, which is what keeps a per-step
+      support decision from being cached across steps; and
+    * it is still well-formed under that stored table (the same contextual predicate the private
+      constructor already required, restated here so the plan-level proposition is self-contained).
+
+    A `.scan`/`.pointwise`/`.axiswise` step has no JAX kernel at all, so any candidate claiming one
+    at that index fails the second obligation. -/
+private def stepTiedToPreparedStep (prepared : PreparedPlan) (stepIndex : Nat)
+    (sk : SomeJaxKernel) : Bool :=
+  sk.kernel.signatureContext == prepared.plan.raw.tensorSigs &&
+  (match prepared.plan.checkedNodes[stepIndex]? with
+   | some (.assign checked) => checked.plan == (candidateAssignment sk.kernel.candidate).plan
+   | _ => false) &&
+  kernelWellFormedBool sk.kernel.signatureContext sk.kernel.candidate
+
+/-- Validate an executable plan against its own semantic source, real implementation (Task 5,
+    extended by Task 4.5):
     - step count matches the raw semantic plan's own step count (`candidate.source : PreparedPlan`,
       per the Task 5 ruling that corrected `JaxExecutableCandidate.source`'s type — see
       `EvalPlanCodegen.lean`'s `lowerCheckPlanToCandidate` doc comment for the full ruling)
-    - every step's kernel candidate is itself well-formed (`kernelWellFormedBool`, not the
-      `Prop`-valued `JaxKernelWellFormed` the task brief's sketch used directly inside
-      `Array.all` — `Array.all` needs a `Bool`-returning predicate, and `Prop` cannot be
-      implicitly used as `Bool`, so `Array.all` is applied to the `Bool`-valued helper instead,
-      with the `= true` making the whole conjunct a `Prop` again)
+    - every step's validated kernel is tied to the corresponding prepared step
+      (`stepTiedToPreparedStep`: stored context = prepared table, candidate assignment = that
+      step's checked assignment, and contextual well-formedness under the stored table). This
+      replaces the previous context-free `kernelWellFormedBool` conjunct, which could accept a
+      kernel validated under an unrelated all-real table, or the same kernel repeated at every step
     - the evidence-aggregation invariant, restated as the same proposition
       `JaxExecutableCandidate.aggregated` is itself a proof OF (`candidate.aggregated` names a
       proof TERM, not the proposition — the brief's sketch conjoined the term directly, which does
@@ -308,7 +520,7 @@ structure JaxExecutableCandidate where
 -/
 def JaxExecutableWellFormed (candidate : JaxExecutableCandidate) : Prop :=
   candidate.steps.size = candidate.source.plan.raw.steps.size ∧
-  candidate.steps.all (fun sk => kernelWellFormedBool sk.kernel.candidate) = true ∧
+  (candidate.steps.mapIdx (fun i sk => stepTiedToPreparedStep candidate.source i sk)).all id = true ∧
   candidate.evidence = aggregateEvidenceList (candidate.steps.map (·.evidence))
 
 /-- Same rationale as `JaxKernelWellFormed`'s instance above: instance search does not unfold a
@@ -317,7 +529,8 @@ def JaxExecutableWellFormed (candidate : JaxExecutableCandidate) : Prop :=
     `ExecutionEvidence` `DecidableEq` instances combined through `And`'s standard instance. -/
 instance (candidate : JaxExecutableCandidate) : Decidable (JaxExecutableWellFormed candidate) :=
   inferInstanceAs (Decidable (candidate.steps.size = candidate.source.plan.raw.steps.size ∧
-    candidate.steps.all (fun sk => kernelWellFormedBool sk.kernel.candidate) = true ∧
+    (candidate.steps.mapIdx (fun i sk => stepTiedToPreparedStep candidate.source i sk)).all id
+      = true ∧
     candidate.evidence = aggregateEvidenceList (candidate.steps.map (·.evidence))))
 
 /-- Type-indexed executable plan, only creatable by validator (`validateAndConstructExecutable`).

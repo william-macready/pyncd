@@ -452,15 +452,22 @@ Those obligations are established at later boundaries.
 first-seen-read order:
 
 1. every required external name must have a `TensorSignature`;
-2. every required external tensor must currently have dtype `f64`;
+2. every required external tensor must have an ADMITTED dtype (`f64` or `bool`; `f32` is rejected as
+   `InputSignatureError.dtypeNotAdmitted`) that also EQUALS the dtype its source declaration commits
+   the name to — a name declared `predicate` is `bool`, every other declaration or none at all is
+   `f64`. A contradicting explicit signature is rejected as `InputSignatureError.dtypeMismatch`,
+   never silently rewritten;
 3. `inferAxisSizesFromSignature` combines `explicitSizes` with external tensor shapes and the source
    statements to solve axis extents;
 4. any required output or contracted axis that remains unsized produces a typed `ShapeError`;
 5. the resulting shapes are compiled into positional `TensorSignature` entries in `RawEvalPlan`.
 
 Extra signature entries are permitted because preparation consults only names required by the
-schedule. Although `ScalarDType` reserves `f32` and `bool` tags for future capabilities, the current
-Backend Eval IR compiler admits only `f64`.
+schedule. `ScalarDType.f32` remains a reserved tag with no worker; `bool` is live (Task 4,
+[`boolean_predicate_output_evalplan.md`](boolean_predicate_output_evalplan.md)) as a **semantic
+algebra/signature tag over the unchanged Float-backed storage**, not a native carrier: a `bool`
+destination selects the Boolean min/max algebra (`admittedAlgebraBool`), a `bool` source may feed an
+`f64` destination and vice versa, and `DenseTensor` still stores `Array Float` throughout.
 
 #### 2.3.2 Derivation from runtime inputs
 
@@ -471,6 +478,12 @@ assigning dtype `f64`:
 def InputSignature.ofDenseInputs
     (inputs : HashMap String DenseTensor) : InputSignature
 ```
+`InputSignature.ofDenseInputsForDecls` is its declaration-aware sibling: it copies the same shapes
+but labels each name from the validated declaration environment (`buildDeclEnv`), so a name declared
+`predicate` gets `bool` and every other name `f64`. Preparation derives the same dtype from the same
+declarations, so the two agree by construction; `ofDenseInputs` remains the all-`f64` compatibility
+helper and is correct exactly when no tensor-bearing name is declared `predicate`.
+
 This is a convenience for callers and tests. It does not collapse preparation and execution into one
 phase: only shape and dtype metadata enter `prepareEvalPlan`; the `DenseTensor` values are later
 resolved by name, checked against the prepared positional signatures, and packed for execution.

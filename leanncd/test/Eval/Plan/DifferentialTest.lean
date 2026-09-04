@@ -101,12 +101,19 @@ private inductive SweepOutcome
     compared against `evalScheduled`, since they are legitimately outside Wave C's fragment.
     Accepted entries are compared bit-for-bit against `evalScheduled`. Any inconsistency or
     disagreement is a real bug and aborts the whole sweep with a diagnostic message. -/
-private def checkEntry (p : TLProgram) (env : HashMap String DenseTensor) :
-    Except String SweepOutcome := do
+private def checkEntry (p : TLProgram) (env : HashMap String DenseTensor)
+    (declAware : Bool := false) : Except String SweepOutcome := do
   let sched ← match p.compileToScheduled.run 0 with
     | .ok sched _ => pure sched
     | .error e _ => throw s!"generator produced a program that fails to compile: {repr e}"
-  let sig := InputSignature.ofDenseInputs env
+  -- `declAware` (Task 4.5) selects the declaration-aware input signature, which is REQUIRED for a
+  -- program declaring an external predicate input (an all-`f64` signature contradicts the
+  -- declaration and is rejected outright, by design — Task 4.3). It defaults to `false`, so the
+  -- 3,832-case `enumPrograms` sweep below is byte-for-byte the same run it always was; only the
+  -- separate curated predicate corpus opts in, and for its six pre-existing all-real entries the
+  -- two builders agree anyway (no declaration, no `bool`).
+  let sig := if declAware then InputSignature.ofDenseInputsForDecls sched.decls env
+             else InputSignature.ofDenseInputs env
   match capabilityPreflight sched with
   | .error capErr =>
       match prepareEvalPlan sched sig with
@@ -190,6 +197,15 @@ private def envOf (p : TLProgram) (env : HashMap String DenseTensor) :
 
 private def planAgrees (p : TLProgram) (env : HashMap String DenseTensor) : Except String Unit := do
   match checkEntry p env with
+  | .ok .accepted => pure ()
+  | .ok (.rejected cat) => throw s!"expected an accepted case, got rejected ({cat})"
+  | .error e => throw e
+
+/-- `planAgrees` under declaration-aware input signatures (Task 4.5): the same accepted-and-agreeing
+    requirement, for a program whose external inputs may be declared predicates. -/
+private def planAgreesForDecls (p : TLProgram) (env : HashMap String DenseTensor) :
+    Except String Unit := do
+  match checkEntry p env (declAware := true) with
   | .ok .accepted => pure ()
   | .ok (.rejected cat) => throw s!"expected an accepted case, got rejected ({cat})"
   | .error e => throw e
@@ -1297,9 +1313,52 @@ adds NO entry to `enumPrograms`; grep-stable). -/
 
 private def tl54 (shape : List Nat) (xs : List Float) : DenseTensor := ⟨shape, xs.toArray⟩
 
+/-! ### Task 4.5 — the four Boolean entries this corpus gains
+
+Task 4.3's own differential fixtures (its fixtures 3, 5, 6 and 7) are curated corpus material, not
+one-off assertions: they are the only programs in the tree that exercise a declared predicate
+DESTINATION and a declared predicate SOURCE end-to-end. Their programs/inputs are defined here so
+`predicatePrograms` can name them, and Task 4.3's own assertion blocks further down reference the
+same definitions — one definition per program, two harnesses, no possibility of drift.
+
+They stay OUT of `PropertyOracle.enumPrograms` for the same reason the six original entries do: the
+affine JAX corpus consumes `enumPrograms` wholesale and treats every affine-reference rejection as
+fatal, while a Boolean-source program must be JAX-REJECTED (exercised in `EvalPlanCodegen.lean`). -/
+
+-- Task 4.3 fixture 3: `GnnScatterTest`'s GN2 shape, message passing over a PREDICATE adjacency.
+-- `edge` is an external input DECLARED predicate (so its signature is `bool`) feeding an ordinary
+-- real destination `H` under real sum-product: the "bool source into real destination" row of the
+-- assignment/backends table. `edge` = the 2×2 swap, `X` = [[1,2],[3,4]], so `H[i, f] = X[1-i, f]`.
+private def gn2PredicateProg : TLProgram := tlprog!{ predicate edge(i, j)
+  H[i, f] := edge[i, j] · X[j, f] }
+
+private def gn2PredicateInputs : HashMap String DenseTensor :=
+  (({} : HashMap String DenseTensor).insert "edge" ⟨[2, 2], #[0.0, 1.0, 1.0, 0.0]⟩).insert
+    "X" ⟨[2, 2], #[1.0, 2.0, 3.0, 4.0]⟩
+
+-- Task 4.3 fixture 5 (see its assertion block further down for the full rationale).
+private def predIdentityProg43 : TLProgram := tlprog!{ axis i : ℕ = 3, j : ℕ = 3
+  predicate I(i, j)
+  I[i, j] := [i = j] }
+private def predIdentityInputs43 : HashMap String DenseTensor := {}
+
+-- Task 4.3 fixtures 6/7 (likewise).
+private def boolScalarProg : TLProgram := tlprog!{ axis t : ℕ = 1, i : ℕ = 2, j : ℕ = 2
+  predicate Result()
+  Result[] := F[t, i] · F[t, j] · edge[i, j] }
+
+private def boolScalarInputsAllTrue : HashMap String DenseTensor :=
+  (({} : HashMap String DenseTensor).insert "F" ⟨[1, 2], #[1.0, 1.0]⟩).insert
+    "edge" ⟨[2, 2], #[1.0, 0.0, 0.0, 1.0]⟩
+
+private def boolScalarInputsNonBinary : HashMap String DenseTensor :=
+  (({} : HashMap String DenseTensor).insert "F" ⟨[1, 2], #[0.25, 0.75]⟩).insert
+    "edge" ⟨[2, 2], #[1.0, 0.0, 0.0, 1.0]⟩
+
 /-- The curated scan-free predicate/mask corpus, kept SEPARATE from `enumPrograms`. Each entry:
     name, program, inputs, output key, expected value. RL1/RL6/RL7/RL8 are integer Iverson masks;
-    NM4/AT12 are masked axiswise reductions (`where`-masks). -/
+    NM4/AT12 are masked axiswise reductions (`where`-masks); the four `T4.3/*` entries (Task 4.5)
+    are the declared-predicate destination/source programs. -/
 def predicatePrograms :
     List (String × TLProgram × HashMap String DenseTensor × String × DenseTensor) :=
   [ ("RL1 identity",
@@ -1335,7 +1394,19 @@ def predicatePrograms :
         "K" (tl54 [3,3] [1,0,0, 0,1,0, 0,0,1]),
       "A", tl54 [3,3] [0.7310585786300049, 0.2689414213699951, 0.0,
                        0.21194155761708544, 0.5761168847658291, 0.21194155761708544,
-                       0.21194155761708544, 0.21194155761708544, 0.5761168847658291]) ]
+                       0.21194155761708544, 0.21194155761708544, 0.5761168847658291])
+  , ("T4.3/3 GN2 predicate-adjacency", gn2PredicateProg, gn2PredicateInputs,
+      "H", tl54 [2,2] [3, 4, 1, 2])
+  , ("T4.3/5 declared-predicate identity", predIdentityProg43, predIdentityInputs43,
+      "I", tl54 [3,3] [1,0,0, 0,1,0, 0,0,1])
+  , ("T4.3/6 boolean scalar contraction", boolScalarProg, boolScalarInputsAllTrue,
+      "Result", tl54 [] [1.0])
+  , ("T4.3/7 boolean scalar non-binary", boolScalarProg, boolScalarInputsNonBinary,
+      "Result", tl54 [] [0.75]) ]
+
+-- Exact length, pinned (Task 4.5): six original Iverson/mask entries plus the four Boolean ones.
+-- A silently dropped Boolean entry fails here rather than shrinking the corpus unnoticed.
+#guard predicatePrograms.length == 10
 
 /-- One curated case: the checked-vs-reference differential (`planAgrees`, exact `envEq`) plus a
     tolerant observed-value assertion (`approxEq`, so the softmax/normalize donors compare). -/
@@ -1343,7 +1414,11 @@ private def checkPredicateProgram
     (entry : String × TLProgram × HashMap String DenseTensor × String × DenseTensor) :
     Except String Unit := do
   let (name, p, inputs, key, expected) := entry
-  match planAgrees p inputs with
+  -- Declaration-aware signatures (Task 4.5): the `T4.3/3` entry declares its EXTERNAL `edge` input a
+  -- predicate, so an all-`f64` signature would be a contradiction the preparation boundary rejects
+  -- outright. For the six original entries (no tensor-bearing declarations at all) the two signature
+  -- builders produce the same table, so their differential leg is unchanged.
+  match planAgreesForDecls p inputs with
   | .error e => throw s!"{name}: differential leg failed: {e}"
   | .ok () => pure ()
   match envOf p inputs with
@@ -1363,7 +1438,30 @@ run_cmd do
 /-! ### Curated three-way scan predicate/mask cases
 
 Now that `ScanUnroll` rewrites predicates and masks, these run through the full THREE-way
-`scanParityCheck` (checked plan, legacy `evalScheduled`, independent scan-free unrolling). -/
+`scanParityCheck` (checked plan, legacy `evalScheduled`, independent scan-free unrolling).
+
+Task 4.5 added entries 6 and 7: Task 4.4's two Boolean scan-state fixtures (`template4Bool`'s
+`predicate S(l)` single-state clone and `template3BoolCase`'s coupled `predicate G(l)` / real `H`
+clone). They belong in this curated set rather than in standalone blocks — the independent
+scan-free unrolling leg is exactly what proves the generated `%Z_`/`%U_` leaf declarations keep
+their predicate kind, which is what makes a Boolean scan state agree three ways instead of
+degenerating into a real sum. -/
+
+-- Task 4.4 fixture 2: a `predicate G(l)` clone of PUBLIC `PropertyOracle.template3` (the coupled
+-- two-state `G[l+1] := G[l] + H[l]`, `H[l+1] := G[l]` case) — `H` stays real. `template3` is public,
+-- so unlike Task 4.4 fixture 1 (whose donor `template4` is private, forcing that clone to live in
+-- `ScanGen.lean`) this clone can live here; it borrows `template3`'s OWN `AxisSpec` via
+-- `ScanCase.axes` rather than needing the file-private axis value.
+--
+-- Observed real run (recorded per the plan's "observe before asserting" instruction, `C = 1.0`,
+-- `L = 3`): checked = legacy = independent unrolling on BOTH `G` and `H`, `G = [1,1,1]`,
+-- `H = [1,1,1]` — every reduction saturates to `1.0` immediately, since the Boolean destination's
+-- `max`-reduce of already-true values stays true (a real sum would have grown past `1.0` from step 1
+-- onward). The fixture's REQUIREMENT is the three-way agreement itself, not this particular value.
+private def template3BoolCase (L : Nat) : ScanCase :=
+  let c := PropertyOracle.template3 L
+  let lAxis := c.axes.getD 0 default
+  { c with prog := { c.prog with decls := c.prog.decls ++ [.predicate "G" [lAxis]] } }
 
 -- Recurrence Iverson `S[l+1] := S[l]·[l = 0]` (S0 = 5): the predicate depends on the ACTUAL scan
 -- coordinate, so history `S = [5, 5, 0]` (l=0 keeps the first carry, l=1 drops the second). Omitting
@@ -1419,6 +1517,23 @@ run_cmd do
       ScanCompileTest.eliminatedFreeInputs [] with
   | .ok () => pure ()
   | .error m => throwError s!"T5.4 eliminated-free mask three-way: {m}"
+  -- 6. Task 4.4 fixture 1/8: single Boolean state `predicate S(l)`, `S[l+1] := S[l] + X[l]` with
+  --    every `X` element `1.0`. `ScanGen.lean` already pins the plain `TLProgram.eval` history as
+  --    all `1.0`; this leg is the stronger claim that the compiled checked plan, the legacy
+  --    evaluator, and the independent scan-free unrolling all agree.
+  match schedOfCase (template4Bool 3) with
+  | .error m => throwError s!"T4.4 template4Bool failed to compile: {m}"
+  | .ok sched =>
+      match scanParityCheck "T4.4 template4Bool" sched (template4Bool 3).inputs [] with
+      | .ok () => pure ()
+      | .error m => throwError s!"T4.4 template4Bool three-way: {m}"
+  -- 7. Task 4.4 fixture 2: coupled Boolean `G` / real `H`; both published histories compared.
+  match schedOfCase (template3BoolCase 3) with
+  | .error m => throwError s!"T4.4 template3Bool failed to compile: {m}"
+  | .ok sched =>
+      match scanParityCheck "T4.4 template3Bool" sched (template3BoolCase 3).inputs [] with
+      | .ok () => pure ()
+      | .error m => throwError s!"T4.4 template3Bool three-way: {m}"
 
 /-! ### Structural check: no eliminated scan coordinate survives in an unrolled mask
 
@@ -1505,10 +1620,9 @@ private def renderCompileCause43 : PlanCompileCause → String
 -- declared a predicate. No external inputs, so `planAgrees`'s `InputSignature.ofDenseInputs {}`
 -- signature is already complete — this fixture is purely about DESTINATION admission/agreement, not
 -- external-signature validation. Checked/reference agreement plus the same identity matrix.
-private def predIdentityProg43 : TLProgram := tlprog!{ axis i : ℕ = 3, j : ℕ = 3
-  predicate I(i, j)
-  I[i, j] := [i = j] }
-private def predIdentityInputs43 : HashMap String DenseTensor := {}
+-- (`predIdentityProg43`/`predIdentityInputs43` themselves are defined next to `predicatePrograms`
+-- above: Task 4.5 added them to that curated corpus, and a corpus entry must be able to name them.
+-- One definition, two harnesses — the assertions here are unchanged.)
 
 run_cmd do
   match planAgrees predIdentityProg43 predIdentityInputs43 with
@@ -1526,21 +1640,11 @@ run_cmd do
 -- `Result` declared a predicate destination. `F=[[1,1]]`, `edge`=2×2 identity: real sum-product
 -- there is 2.0 (`(t,i,j)=(0,0,0)` and `(0,1,1)` each contribute `1.0`), while the Boolean
 -- (min-factor/max-reduce) algebra a predicate destination selects gives 1.0 (a true term exists).
-private def boolScalarProg : TLProgram := tlprog!{ axis t : ℕ = 1, i : ℕ = 2, j : ℕ = 2
-  predicate Result()
-  Result[] := F[t, i] · F[t, j] · edge[i, j] }
-
-private def boolScalarInputsAllTrue : HashMap String DenseTensor :=
-  (({} : HashMap String DenseTensor).insert "F" ⟨[1, 2], #[1.0, 1.0]⟩).insert
-    "edge" ⟨[2, 2], #[1.0, 0.0, 0.0, 1.0]⟩
-
--- Fixture 7: the SAME program, `F` replaced by non-binary Floats `0.25`/`0.75`. At (i,j)=(0,0):
--- min(0.25,0.25,1)=0.25; at (i,j)=(1,1): min(0.75,0.75,1)=0.75; the other two (i,j) pairs read
--- `edge=0` and contribute `0.0`. Boolean max-reduce over all four gives `0.75` — literal Float
--- min/max, not a value coerced to {0,1} or rejected as non-binary.
-private def boolScalarInputsNonBinary : HashMap String DenseTensor :=
-  (({} : HashMap String DenseTensor).insert "F" ⟨[1, 2], #[0.25, 0.75]⟩).insert
-    "edge" ⟨[2, 2], #[1.0, 0.0, 0.0, 1.0]⟩
+-- Fixture 7 is the SAME program with `F` replaced by non-binary Floats `0.25`/`0.75`: at
+-- (i,j)=(0,0) min(0.25,0.25,1)=0.25, at (1,1) min(0.75,0.75,1)=0.75, the other two read `edge=0`
+-- and contribute `0.0`; Boolean max-reduce gives `0.75` — literal Float min/max, not a value
+-- coerced to {0,1} or rejected as non-binary.
+-- (`boolScalarProg` and both input maps are likewise defined next to `predicatePrograms` above.)
 
 private def checkBoolScalar (name : String) (inputs : HashMap String DenseTensor) (expected : Float) :
     Except String Unit := do
@@ -1578,43 +1682,11 @@ Three source-level scan fixtures, each registered through the full THREE-way `sc
 unrolling — `ScanOracle.lean` remains the two-way legacy/independent-only leg over the curated
 17-case corpus, unchanged by this task). -/
 
--- Fixture 1/8: `PropertyOracle.template4Bool` (Task 4.4 fixture 1's `predicate S(l)` clone of
--- `template4`, kept in `ScanGen.lean` since `template4` itself is private). `ScanGen.lean` already
--- pins the plain `TLProgram.eval` history as all `1.0` (a regression guard, mirroring `template6`'s
--- own convention); the three-way check here is the ADDITIONAL, stronger claim that the COMPILED
--- checked plan agrees with both the legacy evaluator and the independent scan-free unrolling — the
--- latter is exactly what Task 4.4 fixture 8 asks to "register and run" (the generated-leaf-decl
--- assertion itself lives in `ScanUnroll.lean`, alongside `template1`'s own leaf-name assertion).
-run_cmd do
-  match schedOfCase (template4Bool 3) with
-  | .error m => throwError s!"T4.4 fixture 1/8: template4Bool failed to compile: {m}"
-  | .ok sched =>
-      match scanParityCheck "T4.4 template4Bool" sched (template4Bool 3).inputs [] with
-      | .error m => throwError s!"T4.4 fixture 1/8: three-way parity failed: {m}"
-      | .ok () => pure ()
-
--- Fixture 2: a `predicate G(l)` clone of PUBLIC `PropertyOracle.template3` (the coupled two-state
--- `G[l+1] := G[l] + H[l]`, `H[l+1] := G[l]` case) — `H` stays real. `template3` is public, so unlike
--- fixture 1 the clone does not need to live inside `ScanGen.lean`; it borrows `template3`'s OWN
--- `AxisSpec` (via `ScanCase.axes`) rather than needing direct access to the file-private axis value.
--- Observed real run (recorded here per the plan's "observe before asserting" instruction, with
--- `C = 1.0`, `L = 3`): checked = legacy = independent unrolling on BOTH `G` and `H`, `G = [1,1,1]`,
--- `H = [1,1,1]` — every reduction saturates to `1.0` immediately since the Boolean destination's
--- `max`-reduce of already-true values stays true (a real sum, by contrast, would have grown past
--- `1.0` from step 1 onward). The fixture's REQUIREMENT is the three-way agreement itself, not this
--- particular value.
-private def template3BoolCase (L : Nat) : ScanCase :=
-  let c := PropertyOracle.template3 L
-  let lAxis := c.axes.getD 0 default
-  { c with prog := { c.prog with decls := c.prog.decls ++ [.predicate "G" [lAxis]] } }
-
-run_cmd do
-  match schedOfCase (template3BoolCase 3) with
-  | .error m => throwError s!"T4.4 fixture 2: template3Bool failed to compile: {m}"
-  | .ok sched =>
-      match scanParityCheck "T4.4 template3Bool" sched (template3BoolCase 3).inputs [] with
-      | .error m => throwError s!"T4.4 fixture 2: three-way parity failed: {m}"
-      | .ok () => pure ()
+-- Fixtures 1/8 and 2 (`template4Bool`, `template3BoolCase`) are registered in the CURATED three-way
+-- scan set above, which Task 4.5 extended with them (entries 6 and 7) rather than leaving them as
+-- standalone blocks here. Their assertions are unchanged: same scheds, same inputs, same
+-- `scanParityCheck` three-way requirement; `ScanUnroll.lean` still owns fixture 8's own
+-- generated-leaf-declaration structural assertion.
 
 -- Fixture 3: `ScanCompileTest.scratchPredicateSched` (block-local scratch `T` declared a predicate,
 -- persistent state `S` left real) — the plan's own requirement is "checked/reference agreement";

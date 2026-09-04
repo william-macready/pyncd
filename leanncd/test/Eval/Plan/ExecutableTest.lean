@@ -44,13 +44,14 @@ def evidenceExp : ExecutionEvidence := ExecutionEvidence.optimizationExperiment
 -- `validateAndConstructKernel` works).
 
 -- Correct way: use the validator.
-def goodKernel (candidate : JaxKernelCandidate) : Except String SomeJaxKernel :=
-  validateAndConstructKernel candidate
+def goodKernel (sigs : Array TensorSignature) (candidate : JaxKernelCandidate) :
+    Except JaxKernelValidationError SomeJaxKernel :=
+  validateAndConstructKernel sigs candidate
 
 -- Test that the validator is the only way to construct a kernel: it either succeeds (producing a
 -- kernel through the private constructor) or reports an error, never anything else.
-def testPrivateConstructor (candidate : JaxKernelCandidate) : Bool :=
-  match validateAndConstructKernel candidate with
+def testPrivateConstructor (sigs : Array TensorSignature) (candidate : JaxKernelCandidate) : Bool :=
+  match validateAndConstructKernel sigs candidate with
   | .ok _ => true      -- validator succeeded
   | .error _ => false  -- validator failed
 
@@ -160,7 +161,7 @@ def testValidAffineCandidate : Bool :=
         { source := 0, safeIndex := #[0, 1, 2], validMask := #[true, true, true] }
       let kernel : OrderedAffineTableKernelCandidate :=
         { semanticAssignment := checked, tables := #[#[table]] }
-      match validateAndConstructKernel (.affineTable kernel) with
+      match validateAndConstructKernel idSigs (.affineTable kernel) with
       | .ok _ => true
       | .error _ => false
 
@@ -177,7 +178,7 @@ def testMalformedAffineCandidateRejected : Bool :=
         { source := 0, safeIndex := #[0, 1], validMask := #[true, true] }
       let kernel : OrderedAffineTableKernelCandidate :=
         { semanticAssignment := checked, tables := #[#[badTable]] }
-      match validateAndConstructKernel (.affineTable kernel) with
+      match validateAndConstructKernel idSigs (.affineTable kernel) with
       | .ok _ => false      -- must NOT validate
       | .error _ => true    -- correctly rejected
 
@@ -193,7 +194,7 @@ def testValidEinsumCandidate : Bool :=
       let kernel : EinsumExperimentKernelCandidate :=
         { semanticAssignment := checked, destination := 1
         , operands := #[#[0, 0]], outputAxes := #[0] }
-      match validateAndConstructKernel (.einsum kernel) with
+      match validateAndConstructKernel idSigs (.einsum kernel) with
       | .ok _ => true
       | .error _ => false
 
@@ -226,7 +227,7 @@ def testIversonAffineCandidateRejected : Bool :=
         { source := 0, safeIndex := #[0, 1, 2], validMask := #[true, true, true] }
       let kernel : OrderedAffineTableKernelCandidate :=
         { semanticAssignment := checked, tables := #[#[table, table]] }
-      match validateAndConstructKernel (.affineTable kernel) with
+      match validateAndConstructKernel idSigs (.affineTable kernel) with
       | .ok _ => false      -- must NOT validate
       | .error _ => true    -- correctly rejected
 
@@ -241,7 +242,7 @@ def testIversonEinsumCandidateRejected : Bool :=
       let kernel : EinsumExperimentKernelCandidate :=
         { semanticAssignment := checked, destination := 1
         , operands := #[#[0, 0], #[0]], outputAxes := #[0] }
-      match validateAndConstructKernel (.einsum kernel) with
+      match validateAndConstructKernel idSigs (.einsum kernel) with
       | .ok _ => false      -- must NOT validate
       | .error _ => true    -- correctly rejected
 
@@ -271,7 +272,7 @@ def testValidPlanCandidate : Bool :=
           { source := 0, safeIndex := #[0, 1, 2], validMask := #[true, true, true] }
         let kernel : OrderedAffineTableKernelCandidate :=
           { semanticAssignment := checkedAssign, tables := #[#[table]] }
-        match validateAndConstructKernel (.affineTable kernel) with
+        match validateAndConstructKernel idSigs (.affineTable kernel) with
         | .error _ => false
         | .ok someKernel =>
           let steps := #[someKernel]
@@ -310,7 +311,7 @@ def testValidPlanCandidateEvidence : Bool :=
           { source := 0, safeIndex := #[0, 1, 2], validMask := #[true, true, true] }
         let kernel : OrderedAffineTableKernelCandidate :=
           { semanticAssignment := checkedAssign, tables := #[#[table]] }
-        match validateAndConstructKernel (.affineTable kernel) with
+        match validateAndConstructKernel idSigs (.affineTable kernel) with
         | .error _ => false
         | .ok someKernel =>
           let steps := #[someKernel]
@@ -404,8 +405,8 @@ def testMixedKernelPlanEvidence : Bool :=
         let einsumKernel : EinsumExperimentKernelCandidate :=
           { semanticAssignment := checkedAssign1, destination := 2
           , operands := #[#[1, 0]], outputAxes := #[0] }
-        match validateAndConstructKernel (.affineTable affineKernel),
-              validateAndConstructKernel (.einsum einsumKernel) with
+        match validateAndConstructKernel mixedSigs (.affineTable affineKernel),
+              validateAndConstructKernel mixedSigs (.einsum einsumKernel) with
         | .ok someAffine, .ok someEinsum =>
           let steps := #[someAffine, someEinsum]
           let candidate : JaxExecutableCandidate :=
@@ -419,5 +420,346 @@ def testMixedKernelPlanEvidence : Bool :=
     | _, _ => false
 
 #guard testMixedKernelPlanEvidence
+
+-- === Task 4.5 fixture 10: exact einsum operand/output axis recomputation ===
+--
+-- A two-dimensional single-term identity candidate, cloned from `NonlinDenseTest.idNode22`
+-- (`Y[i, j] := X[i, j]` over `#[2,2]`, coefficient rows `#[1,0]`/`#[0,1]`, `outputPos := #[0,1]`).
+-- Rank 2 is what makes the mutations below observable at all: at rank 1 there is no distinct
+-- permutation of `#[0]`, so the previous bounds-and-length checks and exact recomputation cannot be
+-- told apart. All four candidates here are SAME-RANK and IN-RANGE — only exact recomputation from
+-- the checked factor maps (`expectedEinsumOperandRow`) and exact `outputAxes == term.outputPos`
+-- equality separate the one correct lowering from the three wrong ones.
+
+def sigs22 : Array TensorSignature :=
+  #[ { shape := #[2, 2], dtype := .f64 }, { shape := #[2, 2], dtype := .f64 } ]
+
+def read22 : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[#[1, 0], #[0, 1]], bias := #[0, 0] }
+  , sourceShape := #[2, 2], oobPolicy := .zeroPad }
+
+def assign22 : AssignPlan :=
+  { contextShape := #[], destinationSlot := 1, outputShape := #[2, 2]
+  , terms := #[{ iterationShape := #[2, 2], contextPos := #[], outputPos := #[0, 1]
+               , reductionPos := #[], factors := #[.read read22] }]
+  , algebra := admittedAlgebra }
+
+/-- Validate a 2-D einsum candidate with the given operand rows and output axes against the checked
+    `assign22`. -/
+def einsum22Accepted (operands : Array (Array Nat)) (outputAxes : Array Nat) : Bool :=
+  match checkAssign sigs22 assign22 with
+  | .error _ => false
+  | .ok checked =>
+      let kernel : EinsumExperimentKernelCandidate :=
+        { semanticAssignment := checked, destination := 1, operands, outputAxes }
+      match validateAndConstructKernel sigs22 (.einsum kernel) with
+      | .ok _ => true
+      | .error _ => false
+
+-- Baseline: the exact operand row `#[sourceSlot, 0, 1]` and output axes `#[0, 1]` pass.
+#guard einsum22Accepted #[#[0, 0, 1]] #[0, 1]
+
+-- Only the operand axes are permuted (`#[1, 0]` instead of `#[0, 1]`): a transposed read, same rank,
+-- both entries in range.
+#guard !(einsum22Accepted #[#[0, 1, 0]] #[0, 1])
+
+-- Only the output axes are permuted: a transposed result, same rank, both entries in range.
+#guard !(einsum22Accepted #[#[0, 0, 1]] #[1, 0])
+
+-- Only the output axes are duplicated: same rank, both entries in range, but not the term's
+-- `outputPos`.
+#guard !(einsum22Accepted #[#[0, 0, 1]] #[0, 0])
+
+
+/-! ## Task 4.5 — JAX support policy, contextual validation, and plan authority
+
+Every fixture below is ADMITTED by the checked backend (`checkAssign`/`checkPlan` succeed) and
+rejected only by the experimental JAX gate — that is the whole point: these are semantics Dense
+executes correctly and JAX cannot render at all, so they must fail loud before a candidate, an
+`ExecutionEvidence` label, or an executable exists. The renderer/lowering halves of the same
+fixtures (both rendering modes, both plan renderers, `buildAssignFixture`, the candidate
+conversions, and the located outer-step index) live inline in
+`experiments/jax_bridge/EvalPlanCodegen.lean`: this default-build module cannot import that
+non-default experimental library. -/
+
+/-- Reject/accept outcome of a candidate validator, keeping the CHECKED backend's own verdict
+    separate: `.error e` means `checkAssign` itself refused the fixture (which would make a
+    rejection guard pass for the wrong reason), `.ok none` means the JAX gate accepted, and
+    `.ok (some e)` means it rejected with exactly `e`. -/
+private def jaxOutcome (sigs : Array TensorSignature) (a : AssignPlan)
+    (mkCandidate : CheckedAssignPlan → JaxKernelCandidate) :
+    Except PlanError (Option JaxKernelValidationError) :=
+  match checkAssign sigs a with
+  | .error e => .error e
+  | .ok checked =>
+      match validateAndConstructKernel sigs (mkCandidate checked) with
+      | .ok _ => .ok none
+      | .error e => .ok (some e)
+
+/-- The one correct affine table for a `#[3]`-wide identity read of slot 0. -/
+def idTable3 : AffineTableReadCandidate :=
+  { source := 0, safeIndex := #[0, 1, 2], validMask := #[true, true, true] }
+
+private def affineOutcome (sigs : Array TensorSignature) (a : AssignPlan)
+    (tables : Array (Array AffineTableReadCandidate)) :
+    Except PlanError (Option JaxKernelValidationError) :=
+  jaxOutcome sigs a (fun checked => .affineTable { semanticAssignment := checked, tables })
+
+private def einsumOutcome (sigs : Array TensorSignature) (a : AssignPlan)
+    (operands : Array (Array Nat)) (outputAxes : Array Nat) :
+    Except PlanError (Option JaxKernelValidationError) :=
+  jaxOutcome sigs a (fun checked =>
+    .einsum { semanticAssignment := checked, destination := a.destinationSlot
+            , operands, outputAxes })
+
+/-- The checked backend accepted and the JAX gate rejected with exactly `expected`. -/
+private def rejectedBy (expected : JaxKernelValidationError) :
+    Except PlanError (Option JaxKernelValidationError) → Bool
+  | .ok (some e) => e == expected
+  | _ => false
+
+/-- Wrap a checked raw plan into a real `PreparedPlan` (no `sorry`, real `checkBindings`). -/
+private def preparedOf (raw : RawEvalPlan) (inputs materialized : Array SlotBinding) :
+    Option PreparedPlan :=
+  match checkPlan raw with
+  | .error _ => none
+  | .ok checkedPlan =>
+    match checkBindings raw.inputSlots inputs with
+    | .error _ => none
+    | .ok requiredInputs =>
+        some { plan := checkedPlan
+             , bindings := { requiredInputs, materializedNames := materialized }
+             , warnings := [] }
+
+private def executableAccepted (prepared : PreparedPlan) (steps : Array SomeJaxKernel) : Bool :=
+  let candidate : JaxExecutableCandidate :=
+    { source := prepared, steps
+    , evidence := aggregateEvidenceList (steps.map (·.evidence))
+    , aggregated := rfl }
+  match validateAndConstructExecutable candidate with
+  | .ok _ => true
+  | .error _ => false
+
+/-- The single validated all-real identity kernel every authority attack below substitutes: it is
+    genuinely well-formed under `idSigs`, which is exactly why only the plan-level context tie can
+    reject it when it is placed against a plan whose own table is different. -/
+private def idAffineKernel? : Option SomeJaxKernel :=
+  match checkAssign idSigs idAssign with
+  | .error _ => none
+  | .ok checked =>
+      match validateAndConstructKernel idSigs
+          (.affineTable { semanticAssignment := checked, tables := #[#[idTable3]] }) with
+      | .ok k => some k
+      | .error _ => none
+
+#guard idAffineKernel?.isSome
+
+/-! ### Fixture 1 — a Boolean destination is rejected by both kernel validators and by executable
+construction. `idRaw`'s clone changes exactly two things: destination slot 1's signature dtype and
+the assignment algebra (both must change together, or `checkAssign` would reject the fixture for
+algebra/dtype disagreement before the JAX gate ever ran). -/
+
+def boolDestSigs : Array TensorSignature :=
+  #[ { shape := #[3], dtype := .f64 }, { shape := #[3], dtype := .bool } ]
+
+def boolDestAssign : AssignPlan := { idAssign with algebra := admittedAlgebraBool }
+
+def boolDestRaw : RawEvalPlan :=
+  { tensorSigs := boolDestSigs, inputSlots := #[0], steps := #[.assign boolDestAssign] }
+
+-- The CHECKED backend admits it (Task 4.2/4.3): this is a supported Dense semantics.
+#guard (match checkAssign boolDestSigs boolDestAssign with | .ok _ => true | .error _ => false)
+#guard (match checkPlan boolDestRaw with | .ok _ => true | .error _ => false)
+
+#guard rejectedBy (.unsupported (.destinationDType 0 1 .bool))
+  (affineOutcome boolDestSigs boolDestAssign #[#[idTable3]])
+#guard rejectedBy (.unsupported (.destinationDType 0 1 .bool))
+  (einsumOutcome boolDestSigs boolDestAssign #[#[0, 0]] #[0])
+
+/-- Executable construction: no kernel can be validated for the Boolean-destination step at all, so
+    the only way to attempt an executable is to substitute a kernel validated elsewhere — and the
+    per-step context tie rejects that. -/
+def testBoolDestExecutableRejected : Bool :=
+  match preparedOf boolDestRaw #[{ name := "x", slot := 0 }] #[{ name := "y", slot := 1 }],
+        idAffineKernel? with
+  | some prepared, some k => !(executableAccepted prepared #[k])
+  | _, _ => false
+
+#guard testBoolDestExecutableRejected
+
+/-! ### Fixture 2 (validator/executable half) — only the SOURCE signature becomes Boolean. The
+checked plan accepts it (a `bool` source may feed an `f64` destination; the destination selects the
+algebra), and the JAX gate rejects it with the exact located `.sourceDType 0 0 0 .bool`. -/
+
+def boolSourceSigs : Array TensorSignature :=
+  #[ { shape := #[3], dtype := .bool }, { shape := #[3], dtype := .f64 } ]
+
+def boolSourceRaw : RawEvalPlan :=
+  { tensorSigs := boolSourceSigs, inputSlots := #[0], steps := #[.assign idAssign] }
+
+#guard (match checkAssign boolSourceSigs idAssign with | .ok _ => true | .error _ => false)
+#guard (match checkPlan boolSourceRaw with | .ok _ => true | .error _ => false)
+
+-- The typed, context-bearing cross-module helper reports the exact locator directly.
+#guard (match checkAssign boolSourceSigs idAssign with
+  | .error _ => false
+  | .ok checked =>
+      match checkJaxAssignSupport boolSourceSigs 0 checked with
+      | .error e => e == JaxSupportError.sourceDType 0 0 0 .bool
+      | .ok _ => false)
+
+#guard rejectedBy (.unsupported (.sourceDType 0 0 0 .bool))
+  (affineOutcome boolSourceSigs idAssign #[#[idTable3]])
+#guard rejectedBy (.unsupported (.sourceDType 0 0 0 .bool))
+  (einsumOutcome boolSourceSigs idAssign #[#[0, 0]] #[0])
+
+-- The Bool-valued validators and the contextual proposition agree with the constructor gate.
+def boolSourceAffineCandidate? : Option JaxKernelCandidate :=
+  match checkAssign boolSourceSigs idAssign with
+  | .error _ => none
+  | .ok checked => some (.affineTable { semanticAssignment := checked, tables := #[#[idTable3]] })
+
+#guard (match boolSourceAffineCandidate? with
+  | some c => !(kernelWellFormedBool boolSourceSigs c) && !(decide (JaxKernelWellFormed boolSourceSigs c))
+  | none => false)
+
+-- ... and the same candidate IS well-formed under the all-real table, proving the rejection is the
+-- signature context talking, not a structural defect in the candidate's tables.
+#guard (match checkAssign idSigs idAssign with
+  | .error _ => false
+  | .ok checked =>
+      kernelWellFormedBool idSigs (.affineTable { semanticAssignment := checked
+                                                , tables := #[#[idTable3]] }))
+
+/-- Executable construction over the Boolean-source plan: same substitution attack as fixture 1. -/
+def testBoolSourceExecutableRejected : Bool :=
+  match preparedOf boolSourceRaw #[{ name := "x", slot := 0 }] #[{ name := "y", slot := 1 }],
+        idAffineKernel? with
+  | some prepared, some k => !(executableAccepted prepared #[k])
+  | _, _ => false
+
+#guard testBoolSourceExecutableRejected
+
+/-! ### Fixture 3 — tropical max/min algebras are typed unsupported-algebra rejections, not silent
+`orderedReference64`. Only the algebra changes; destination and source stay `f64`. -/
+
+def maxAlgebraAssign : AssignPlan := { idAssign with algebra := admittedAlgebraMax }
+def minAlgebraAssign : AssignPlan := { idAssign with algebra := admittedAlgebraMin }
+
+#guard (match checkAssign idSigs maxAlgebraAssign with | .ok _ => true | .error _ => false)
+#guard (match checkAssign idSigs minAlgebraAssign with | .ok _ => true | .error _ => false)
+
+#guard rejectedBy (.unsupported (.unsupportedAlgebra 0 admittedAlgebraMax))
+  (affineOutcome idSigs maxAlgebraAssign #[#[idTable3]])
+#guard rejectedBy (.unsupported (.unsupportedAlgebra 0 admittedAlgebraMax))
+  (einsumOutcome idSigs maxAlgebraAssign #[#[0, 0]] #[0])
+#guard rejectedBy (.unsupported (.unsupportedAlgebra 0 admittedAlgebraMin))
+  (affineOutcome idSigs minAlgebraAssign #[#[idTable3]])
+#guard rejectedBy (.unsupported (.unsupportedAlgebra 0 admittedAlgebraMin))
+  (einsumOutcome idSigs minAlgebraAssign #[#[0, 0]] #[0])
+
+/-! ### Fixture 4 (validator half) — an inline unary read (`ReadPlan.unary`) is a located rejection.
+`checkAssign` and Dense both implement it (`gatherFactor` applies the function after the OOB pad);
+neither JAX lowering does. -/
+
+def unaryRead : ReadPlan := { idRead with unary := some .exp }
+
+def unaryAssign : AssignPlan :=
+  { idAssign with terms := #[{ idAssign.terms[0]! with factors := #[.read unaryRead] }] }
+
+#guard (match checkAssign idSigs unaryAssign with | .ok _ => true | .error _ => false)
+
+#guard rejectedBy (.unsupported (.unaryFactor 0 0 0))
+  (affineOutcome idSigs unaryAssign #[#[idTable3]])
+#guard rejectedBy (.unsupported (.unaryFactor 0 0 0))
+  (einsumOutcome idSigs unaryAssign #[#[0, 0]] #[0])
+
+/-! ### Fixture 7 — declared support-check ORDER: a Boolean destination whose source is Boolean too
+reports the DESTINATION, not the source. Without a declared order this fixture would be satisfied by
+either error, which is exactly why fixture 1 (real source) and this one (Boolean source) are
+separate. -/
+
+def boolBothSigs : Array TensorSignature :=
+  #[ { shape := #[3], dtype := .bool }, { shape := #[3], dtype := .bool } ]
+
+#guard (match checkAssign boolBothSigs boolDestAssign with | .ok _ => true | .error _ => false)
+
+#guard rejectedBy (.unsupported (.destinationDType 0 1 .bool))
+  (affineOutcome boolBothSigs boolDestAssign #[#[idTable3]])
+#guard rejectedBy (.unsupported (.destinationDType 0 1 .bool))
+  (einsumOutcome boolBothSigs boolDestAssign #[#[0, 0]] #[0])
+
+/-! ### Fixture 11 — plan authority attacks (executable half)
+
+(a) F4: a Boolean-source `PreparedPlan` plus a kernel validated under a same-shape ALL-REAL table.
+The kernel is genuinely valid on its own terms and its assignment matches the plan's step exactly;
+only the stored validation context differs, and that alone must sink executable construction —
+otherwise "validated" would mean "validated against some table", not "against this plan's".
+`testBoolSourceExecutableRejected` above is that attack; the guard below pins the two halves that
+make it non-tautological: the substituted kernel really is valid under its own table, and the same
+plan is accepted once its own table matches. -/
+
+def testF4SubstitutionIsotropy : Bool :=
+  match preparedOf idRaw #[{ name := "x", slot := 0 }] #[{ name := "y", slot := 1 }],
+        idAffineKernel? with
+  | some preparedAllReal, some k =>
+      -- Same kernel, same assignment: accepted against the all-real plan, rejected against the
+      -- Boolean-source plan (`testBoolSourceExecutableRejected`).
+      executableAccepted preparedAllReal #[k]
+  | _, _ => false
+
+#guard testF4SubstitutionIsotropy
+
+/-! (c) A two-step plan whose Boolean read is only at step 1: step 0 is a perfectly supported
+identity assignment, so its kernel validates under the plan's own table. Re-using that cached,
+validated step-0 kernel at step 1 must still fail — the per-step tie compares the candidate's
+assignment against the checked assignment AT THAT INDEX, so a cached context/result cannot stand in
+for a step that was never validated. -/
+
+def step1BoolSigs : Array TensorSignature :=
+  #[ { shape := #[3], dtype := .f64 }, { shape := #[3], dtype := .f64 }
+   , { shape := #[3], dtype := .bool }, { shape := #[3], dtype := .f64 } ]
+
+def boolRead2 : ReadPlan :=
+  { sourceSlot := 2, map := { coeffs := #[#[1]], bias := #[0] }
+  , sourceShape := #[3], oobPolicy := .zeroPad }
+
+/-- Step 1: `W[i] := V[i]` reading the Boolean external slot 2 into real slot 3. -/
+def step1BoolAssign : AssignPlan :=
+  { contextShape := #[], destinationSlot := 3, outputShape := #[3]
+  , terms := #[{ iterationShape := #[3], contextPos := #[], outputPos := #[0], reductionPos := #[]
+               , factors := #[.read boolRead2] }]
+  , algebra := admittedAlgebra }
+
+def step1BoolRaw : RawEvalPlan :=
+  { tensorSigs := step1BoolSigs, inputSlots := #[0, 2]
+  , steps := #[.assign idAssign, .assign step1BoolAssign] }
+
+#guard (match checkPlan step1BoolRaw with | .ok _ => true | .error _ => false)
+
+-- Step 0 is supported under the plan's own table; step 1 is not, and names its own factor.
+#guard (match affineOutcome step1BoolSigs idAssign #[#[idTable3]] with
+  | .ok none => true | _ => false)
+#guard rejectedBy (.unsupported (.sourceDType 0 0 0 .bool))
+  (affineOutcome step1BoolSigs step1BoolAssign #[#[{ idTable3 with source := 2 }]])
+
+/-- The cached step-0 kernel, validated under the two-step plan's OWN table (so the context tie
+    cannot be what rejects it), re-used at step 1. -/
+def testCachedStep0KernelRejectedAtStep1 : Bool :=
+  match preparedOf step1BoolRaw #[{ name := "x", slot := 0 }, { name := "v", slot := 2 }]
+          #[{ name := "y", slot := 1 }, { name := "w", slot := 3 }] with
+  | none => false
+  | some prepared =>
+    match checkAssign step1BoolSigs idAssign with
+    | .error _ => false
+    | .ok checkedStep0 =>
+      match validateAndConstructKernel step1BoolSigs
+          (.affineTable { semanticAssignment := checkedStep0, tables := #[#[idTable3]] }) with
+      | .error _ => false
+      | .ok k0 =>
+          -- Step 0's kernel is valid; the plan is still rejected, because step 1 is not step 0.
+          !(executableAccepted prepared #[k0, k0])
+
+#guard testCachedStep0KernelRejectedAtStep1
 
 end LeanNCD.Eval.Plan.ExecutableTest

@@ -135,6 +135,47 @@ both affine runners were silently unrunnable. The literals now use named-field s
 `KernelDenseTest` fixtures, which survives field additions. **Run the runners after any change to
 `Eval/Plan` types — a green `lake build` does not typecheck these drivers.**
 
+**Current driver status (2026-09-03, re-measured for Task 4.5).** `lake env lean` elaborates
+`EvalPlanSmoke.lean`, `ScalingProbe.lean`, and `EvalPlanAffineCorpus.lean`; the corpus driver's five
+stale `CheckedPlanStepEvidence.plan` projections were repaired by that task and it regenerates the
+3,832-case module at exactly 3,424,195 bytes, unchanged. `EvalPlanAffineSmoke.lean` still does NOT
+elaborate: `renderAffinePlanNamed`/`renderAffinePlanPositional` became `Except`-returning when the
+located Iverson rejection landed (Slice 5.4), and this driver still string-appends their results
+(two `HAppend String (Except JaxCodegenError String)` failures). That is a pre-existing driver
+breakage, untouched by Task 4.5. `BridgeSmoke.lean` needs the upstream `Jax` module fetched by
+`run.sh` and does not elaborate standalone.
+
+### What this backend REJECTS (Task 4.5, 2026-09-03)
+
+The checked Dense backend admits several semantics this experimental JAX backend implements no
+rendering for. They are now rejected with a located, typed `JaxCodegenError` **before** any Python is
+emitted, any candidate is built, or any `ExecutionEvidence` label exists — never silently stamped
+`orderedReference64`:
+
+| Assignment feature | Dense checked plan | JAX render | JAX candidate evidence |
+|---|---|---|---|
+| `f64`, real algebra, plain read | required | required | required |
+| `f64`, tropical max/min (`admittedAlgebraMax`/`Min`) | required | forbidden (`unsupportedAlgebra`) | forbidden |
+| `bool` destination, Boolean algebra | required | forbidden (`unsupportedDestDType`) | forbidden |
+| `bool` source into a real destination | required | forbidden (`unsupportedSourceDType`) | forbidden |
+| unary read (`ReadPlan.unary`) | required | forbidden (`unaryFactor`) | forbidden |
+| Iverson factor | required | forbidden (`iversonFactor`, original all-factor index) | forbidden |
+
+**There is no JAX Boolean execution and none is planned here** — this is a fail-loud support
+boundary, not a semantic gap in the checked backend, which executes all six rows correctly.
+
+The gate is `LeanNCD.Eval.Plan.checkJaxAssignSupport`, applied in declared order (destination dtype,
+algebra, then factors in original term/factor order: source dtype before unary). Signature-context
+ownership follows the completed spike's selection (GO B,
+`papers/jax_signature_evidence_ownership_spike_results.md`): a STANDALONE entry — `lowerAssign`,
+`renderAffineAssign`, `buildAssignFixture`, both candidate conversions, both candidate validators,
+`validateAndConstructKernel` — takes one explicit complete `Array TensorSignature` and treats it as
+its semantic authority, re-running `checkAssign` under it (a structurally incompatible table is
+rejected as `invalidSignatureContext`). A PLAN-level entry — `lowerPlan`, `generateForward`, both
+plan renderers, `generateNamed`, `lowerCheckPlanToCandidate` — takes no such parameter and derives
+`PreparedPlan.plan.raw.tensorSigs`, so no caller can substitute a same-shape all-real table.
+Rejections at a plan level carry the real outer step index, not `0`.
+
 Generated cases cover nonzero bias, non-unit/multi-axis coefficient rows, multiple factors/terms,
 reduction domains, multiple graph nodes, and internal reads. Curated cases uniquely supply
 negative-coordinate invalidity, zero-coefficient rows, zero extents, empty factors, and empty terms.

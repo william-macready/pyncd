@@ -1974,6 +1974,30 @@ correct row-major address, every physical index is safe for nonempty storage, an
 the no-gather branch. Einsum axes are structural positions rather than characters; an interpreter may
 render labels only after checking backend limits.
 
+**Current-state addendum (2026-09-03, Task 4.5 of
+[`boolean_predicate_output_evalplan.md`](boolean_predicate_output_evalplan.md)).** Two properties of
+the shipped implementation in `LeanNCD/Eval/Plan/Executable.lean` are stronger than this sketch:
+
+1. *Einsum validation recomputes axes exactly.* `validateEinsum` derives each expected operand row
+   from the checked factor's own affine map (source slot followed by the single projection target of
+   every coefficient row, rejecting any nonzero bias or non-projection row outright) and requires
+   exact equality, plus exact `outputAxes = term.outputPos`. The earlier bounds-and-length form
+   accepted same-rank, in-range permutations (`#[slot, 1, 0]` for a 2-D identity) and duplicates
+   (`outputAxes := #[0, 0]`) — different contractions carrying the same evidence.
+2. *Evidence is contextual, and unsupported semantics are rejected before it exists.* The validators,
+   the combined `kernelWellFormedBool`, the evidence proposition `JaxKernelWellFormed`, and
+   `validateAndConstructKernel` all take one explicit complete `Array TensorSignature`; each
+   re-establishes `checkAssign` under that table and then applies a JAX support policy that rejects a
+   Boolean destination, a Boolean source, tropical max/min algebra, and an inline unary read with a
+   located typed `JaxSupportError`. Plan-level entry points take no caller table and derive
+   `PreparedPlan.plan.raw.tensorSigs`. `JaxKernel` privately stores the validated table, and
+   `JaxExecutableWellFormed` requires every stored table to equal the prepared plan's own and every
+   candidate assignment to equal the corresponding checked step, so a kernel validated elsewhere —
+   or step 0's kernel reused at step 1 — cannot stand in for a step. The pre-validation evidence
+   label (`candidateEvidenceLabel`) and the context-free geometry helpers are private. The checked
+   Dense backend executes all four of those rejected semantics correctly; this is a JAX support
+   boundary, not a semantic gap, and there is no JAX Boolean execution.
+
 The evidence index is decisive: only ordered affine-table/reference constructors inhabit
 `orderedReference64`; einsum only inhabits `optimizationExperiment`. The same rule applies separately
 to JAX and PyTorch, so neither can attach reference evidence after constructing an experimental
