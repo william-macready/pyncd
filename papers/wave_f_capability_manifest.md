@@ -110,10 +110,12 @@ anywhere.
 
 **Gaps deliberately left, named and non-blocking:**
 
-- `checkScanPlan` never checks a state destination slot's **dtype** — it reads the state's signature
-  purely for `.shape`. Contained downstream: `checkAssign` separately rejects any non-`f64` source, so
-  nothing can actually populate a mis-labeled state; a captured state is separately covered by
-  `captureSignatureMismatch`, which compares the whole signature including dtype.
+- **Historical, closed by Task 4.4** (`boolean_predicate_output_evalplan.md`): `checkScanPlan` used to
+  check a state destination slot's signature purely for `.shape`, never its **dtype** — contained
+  downstream only by `checkAssign` rejecting a non-`f64` source and by `captureSignatureMismatch` for a
+  captured state. `checkWrites` now reports `ScanPlanError.writeDtypeMismatch` directly for a state
+  write whose source dtype disagrees with the destination's declared dtype, checked before write rank,
+  geometry, and causality.
 - The **wrong-arity-read gap**: a wrong-arity read confined to non-advancing dimensions inside a scan
   block surfaces as `invalidPlan` ("internal compiler bug") rather than a source-level diagnostic —
   but this plan's audit confirmed it is **unreachable from real source**. `TLProgram.compileToScheduled`
@@ -171,10 +173,10 @@ Wave F" table:
 | Pointwise and axiswise nonlinearities | **Admitted** (thread 4): top-level (`checkNonlinTopLevel`) and inside scan `base`/`recur` blocks (`checkNonlinScanBlock`), residualized into a two-step `assign → pointwise/axiswise` chain. `unsupportedNonlin == 0` in the `DifferentialTest.lean` scan corpus. |
 | Masks, predicates, and Iverson factors | **Admitted** (Slice 5, `predicate_boolean_backend_parity.md`): a positional UID-free predicate IR (`PosBoolExpr`) plus an ordered `FactorPlan` (`read | iverson`); `checkAssign` width-checks predicate leaves and Dense evaluates them per contraction coordinate (`true` ⇒ `1.0`, `false` annihilates). Source `BoolExpr` lowers via `lowerFactorPredicate`; axiswise `where=` masks via `RawAxiswisePlan.mask` + `lowerMaskPredicate`. `maskOrPredicate`/`maskedAxiswiseNotSupported` retained producer-less. |
 | Boolean/predicate declared outputs | **Admitted** (Task 4, `boolean_predicate_output_evalplan.md`): `ScalarDType.bool` is a semantic algebra/signature tag over the unchanged Float-backed storage, not a native carrier. A predicate destination selects `admittedAlgebraBool` (factor `min`/identity `true`, reduction and term `max`/identity `false`, mirroring the reference `Combine.bool`); a `bool` source may feed an `f64` destination and vice versa, since the DESTINATION selects the algebra and gathering is dtype-blind. Scan state, scratch, and published histories carry full `TensorSignature`s (`CompiledScan.stateSigs`) and `checkWrites` enforces write-dtype equality (`ScanPlanError.writeDtypeMismatch`). `booleanOutput` retained producer-less. `f32` stays rejected; no native `Array Bool`, no truth-value validation, and no JAX Boolean execution (the experimental backend REJECTS Boolean semantics, see below). |
-| Unary factor functions | Rejected in ordinary assignments and scans. |
+| Unary factor functions | **Admitted** (`unary_factor_functions.md`): `checkFactor`/`ReadPlan.unary` admit a unary factor (`log`/`exp`/`sin`/`cos`/`sqrt`/`recip`) in ordinary assignments and inside scan `base`/`recur` blocks, applied after gather/pad by Dense. The experimental JAX backend's `checkJaxAssignSupport` still rejects an inline unary read with a located typed error — Dense executes it, JAX does not. |
 | Max/min aggregation | **Admitted** (max/min-aggregation thread): `checkAggOp` admits `.max`/`.min`; the compiler selects the tropical algebra (`algebraForAgg`) and Dense reduces with `max`/`min` seeded at `−∞`/`+∞`. `unsupportedAgg == 0` in the `DifferentialTest.lean` scan corpus. |
 | Scatter and affine LHS writes | Wave D source semantics are not yet represented by checked `EvalPlan`. |
-| Dtypes beyond the admitted concrete `f64` mode and dynamic shapes | Still rejected at the checked-plan preparation boundary. |
+| Dtypes beyond the admitted concrete `f64` mode (including its Float-backed `bool` semantic-tag variant, see the Boolean/predicate row above) and dynamic shapes | Still rejected at the checked-plan preparation boundary. |
 | `.scanPre`, callbacks, and predicate-dispatch scan bodies | Still rejected even though `PlanStep.scan` exists (nonlinear scan bodies themselves are now admitted — see the first row). |
 | General n-dimensional recurrence geometry and arbitrary state writes | The first checked scan remains the rectangular uniform all-axis `+1` fragment. |
 | Multi-face full-boundary writes (the standard n-D tabulation-DP pattern, e.g. row-0-plus-column-0) and genuinely overlapping writes with no declared precedence | Neither is achievable in this version — both need an offset/restricted-range or conflict-resolving base-write geometry beyond pin-plus-full-free. |
@@ -187,11 +189,13 @@ max/min-aggregation thread (`max_min_aggregation.md`) admitted `.max`/`.min` agg
 unary-factor thread (`unary_factor_functions.md`) admitted unary factors, so those
 rows no longer describe the current boundary. The masks/predicates/Iverson-factors row was
 refreshed for Slice 5 (`predicate_boolean_backend_parity.md`), which admitted predicate factors and
-axiswise `where=` masks (Boolean *declared outputs* remain rejected). Everything else in this table
-is unchanged and re-derived against `capabilityPreflight` (`Eval/Plan/Compile.lean`) on this branch.
-The remaining still-rejected families are Boolean declared outputs,
-scatter and affine LHS writes, non-`f64` dtypes and dynamic shapes,
-and `.scanPre`/callbacks/predicate-dispatch scan bodies.*
+axiswise `where=` masks. The Boolean/predicate declared outputs row was refreshed for Task 4
+(`boolean_predicate_output_evalplan.md`), which admitted Boolean/predicate declared outputs and full
+scan signatures for state, scratch, and published histories — the experimental JAX backend remains
+fail-loud and still rejects Boolean semantics via `checkJaxAssignSupport`. Everything else in this
+table is unchanged and re-derived against `capabilityPreflight` (`Eval/Plan/Compile.lean`) on this
+branch. The remaining still-rejected families are scatter and affine LHS writes, non-`f64` dtypes and
+dynamic shapes, and `.scanPre`/callbacks/predicate-dispatch scan bodies.*
 
 The next semantic-expansion work after Wave F should be a named **checked local-kernel capability
 wave**, extending `AssignPlan`, its checker, and Dense interpretation one operation family at a time,
@@ -227,9 +231,11 @@ re-verify them:
 - **Checker/error mutation-matrix work.** Task 1/2 of this plan closed three real gaps found by this
   plan's own audit — `causalityFailure`, `duplicateAxisInLhs`, and `blockReadNotAvailable` each
   under-specified a locator that let two genuinely distinct user errors collide on one payload (§3
-  above has the detail). The wrong-arity-read gap and the state-destination dtype gap are named, not
-  fixed, for the reasons given in §3: the former is unreachable from real source, and the latter is
-  contained downstream by `checkAssign`/`captureSignatureMismatch`.
+  above has the detail). The wrong-arity-read gap is named, not fixed, for the reason given in §3: it
+  is unreachable from real source. The state-destination dtype gap named in §3 above was **closed by
+  Task 4.4** (`boolean_predicate_output_evalplan.md`): `checkWrites` now reports
+  `ScanPlanError.writeDtypeMismatch` directly for a mismatched state write, checked before write rank
+  and geometry.
 
 **Which import to use.** For checked-scan execution with no source compilation, import
 `Eval.Plan.EvalPlan`/`Eval.Plan.Scan` directly — neither imports `Eval.Plan.Compile` or
