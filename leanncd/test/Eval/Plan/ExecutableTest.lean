@@ -1052,4 +1052,247 @@ def testExtentMismatchExecutableRejected : Bool :=
 
 #guard testExtentMismatchExecutableRejected
 
+/-! ### Closure fixture 14 — a CONTEXTFUL assignment has no JAX kernel at all
+
+The last silently-accepted semantics of the Task 4.5 support gate. An `AssignPlan` with a non-empty
+`contextShape` is evaluated at a RUNTIME CONTEXT COORDINATE: `Dense.runDenseAssignAt` binds `ctx` at
+every term's `contextPos` positions and holds it fixed across the output/reduction loops, so one
+checked assignment denotes a FAMILY of results, one per context coordinate. Neither JAX lowering has
+a kernel parameter for that coordinate, and neither notices its absence: `einsumOnly` treats the
+context position as an ordinary subscript label and CONTRACTS it away (`a->` for the fixture below),
+while `affineReference` emits `iteration_shape`/`output_pos`/`reduction_pos` with no `context_pos`
+key at all. Both used to be stamped with evidence — `orderedReference64` for the affine one, a
+bit-exact reference claim for a kernel that cannot see the coordinate its own semantic source is
+indexed by. `checkJaxAssignSupport` now rejects the assignment outright, so no candidate, evidence
+label, or Python exists for it.
+
+Where the gate sits, and why here: `checkPlan` already refuses a contextful TOP-LEVEL step
+(`topLevelContextNotEmpty`, pinned below), so a contextful assignment reaches this backend only
+through the standalone `CheckedAssignPlan` entries — the kernel validators here and the renderers /
+candidate conversions in `experiments/jax_bridge/EvalPlanCodegen.lean` (whose halves of this fixture
+live there, including the located `.unsupportedContext`). Both route through the one shared gate, so
+neither can drift from the other. -/
+
+def ctxSigs : Array TensorSignature :=
+  #[ { shape := #[2], dtype := .f64 }, { shape := #[], dtype := .f64 } ]
+
+def ctxRead : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[#[1]], bias := #[0] }
+  , sourceShape := #[2], oobPolicy := .zeroPad }
+
+/-- `Y[] := X[l]` at context coordinate `l`: a scalar destination, one rank-1 term whose single
+    iteration position is the CONTEXT position. -/
+def ctxAssign : AssignPlan :=
+  { contextShape := #[2], destinationSlot := 1, outputShape := #[]
+  , terms := #[{ iterationShape := #[2], contextPos := #[0], outputPos := #[], reductionPos := #[]
+               , factors := #[.read ctxRead] }]
+  , algebra := admittedAlgebra }
+
+/-- The context-free sibling: the SAME read, the same affine map, the same source extent, the same
+    algebra. Exactly one thing differs — the single iteration position is classified `outputPos`
+    instead of `contextPos`, which is what makes the destination `#[2]`-shaped rather than scalar
+    (an output position is written, a context position is not). -/
+def ctxFreeSigs : Array TensorSignature :=
+  #[ { shape := #[2], dtype := .f64 }, { shape := #[2], dtype := .f64 } ]
+
+def ctxFreeAssign : AssignPlan :=
+  { contextShape := #[], destinationSlot := 1, outputShape := #[2]
+  , terms := #[{ iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
+               , factors := #[.read ctxRead] }]
+  , algebra := admittedAlgebra }
+
+-- The CHECKED backend admits the contextful donor: this is supported Dense semantics, not a
+-- malformed plan.
+#guard (match checkAssign ctxSigs ctxAssign with | .ok _ => true | .error _ => false)
+#guard (match checkAssign ctxFreeSigs ctxFreeAssign with | .ok _ => true | .error _ => false)
+
+/-- The semantics at stake, not merely the verdict: the same checked assignment run at context `0`
+    and context `1` returns DIFFERENT values. Any context-free kernel gets at most one of them
+    right, which is why renderability could never have been the standard here. -/
+def ctxDenseAt (c : Int) : Option (List Nat × Array Float) :=
+  match checkAssign ctxSigs ctxAssign with
+  | .error _ => none
+  | .ok checked =>
+      match runDenseAssignAt checked [c]
+          #[ { shape := [2], data := #[10.0, 20.0] }, { shape := [], data := #[0.0] } ] with
+      | .error _ => none
+      | .ok t => some (t.shape, t.data)
+
+#guard ctxDenseAt 0 == some ([], #[10.0])
+#guard ctxDenseAt 1 == some ([], #[20.0])
+
+-- The shared gate reports the exact located cause: the outer step index and the rejected context
+-- shape (the assignment-level locator pair, like `unsupportedAlgebra`'s).
+#guard (match checkAssign ctxSigs ctxAssign with
+  | .error _ => false
+  | .ok checked =>
+      match checkJaxAssignSupport ctxSigs 0 checked with
+      | .error e => e == JaxSupportError.contextualAssignment 0 #[2]
+      | .ok _ => false)
+
+/-- The one correct affine table for a `#[2]`-wide identity read of slot 0 — shared by the
+    contextful donor and its context-free sibling, since they read the same source over the same
+    iteration basis. The candidates below are therefore structurally PERFECT: before the gate
+    existed, both were validated and stamped with evidence. -/
+def ctxTable2 : AffineTableReadCandidate :=
+  { source := 0, safeIndex := #[0, 1], validMask := #[true, true] }
+
+#guard rejectedBy (.unsupported (.contextualAssignment 0 #[2]))
+  (affineOutcome ctxSigs ctxAssign #[#[ctxTable2]])
+#guard rejectedBy (.unsupported (.contextualAssignment 0 #[2]))
+  (einsumOutcome ctxSigs ctxAssign #[#[0, 0]] #[])
+
+-- The `Bool`/`Prop` validators agree with the constructor gate, for both candidate kinds.
+def ctxCandidates? : Option (JaxKernelCandidate × JaxKernelCandidate) :=
+  match checkAssign ctxSigs ctxAssign with
+  | .error _ => none
+  | .ok checked =>
+      some (.affineTable { semanticAssignment := checked, tables := #[#[ctxTable2]] },
+            .einsum { semanticAssignment := checked, destination := 1
+                    , operands := #[#[0, 0]], outputAxes := #[] })
+
+#guard (match ctxCandidates? with
+  | some (aff, ein) =>
+      !(kernelWellFormedBool ctxSigs aff) && !(decide (JaxKernelWellFormed ctxSigs aff)) &&
+      !(kernelWellFormedBool ctxSigs ein) && !(decide (JaxKernelWellFormed ctxSigs ein))
+  | none => false)
+
+/-- The context-free sibling's SAME table and SAME operand row are accepted, and its affine kernel
+    really does carry `orderedReference64` — so the rejection above is the context talking, not a
+    structural defect in either candidate. -/
+def ctxFreeAffineKernel? : Option SomeJaxKernel :=
+  match checkAssign ctxFreeSigs ctxFreeAssign with
+  | .error _ => none
+  | .ok checked =>
+      match validateAndConstructKernel ctxFreeSigs
+          (.affineTable { semanticAssignment := checked, tables := #[#[ctxTable2]] }) with
+      | .ok k => some k
+      | .error _ => none
+
+#guard (match ctxFreeAffineKernel? with
+  | some k => k.evidence == .orderedReference64 | none => false)
+#guard (match einsumOutcome ctxFreeSigs ctxFreeAssign #[#[0, 0]] #[0] with
+  | .ok none => true | _ => false)
+
+/-! #### Executable construction
+
+Two independent reasons a contextful step can never reach a validated executable, both pinned:
+
+* no kernel exists to put in `JaxExecutableCandidate.steps` — `validateAndConstructKernel` refuses
+  to build one for either lowering (guards above), and `steps : Array SomeJaxKernel` admits nothing
+  else; and
+* the plan level cannot even pose the question — `checkPlan` rejects a contextful top-level step
+  with `topLevelContextNotEmpty`, so no `PreparedPlan` naming one exists to be the candidate's
+  `source`. (A contextful assignment is legal only inside a scan block, and every `.scan` step is
+  already a located `unsupportedStep` rejection in the codegen module.)
+
+The acceptance sibling below builds a real executable through the same functions, so neither guard
+passes merely because the fixture could not be constructed. -/
+
+def ctxRaw : RawEvalPlan :=
+  { tensorSigs := ctxSigs, inputSlots := #[0], steps := #[.assign ctxAssign] }
+
+#guard (match checkPlan ctxRaw with
+  | .error e => e == PlanStepError.assign (.topLevelContextNotEmpty 0)
+  | .ok _ => false)
+
+def ctxFreeRaw : RawEvalPlan :=
+  { tensorSigs := ctxFreeSigs, inputSlots := #[0], steps := #[.assign ctxFreeAssign] }
+
+def testContextFreeSiblingExecutableAccepted : Bool :=
+  match preparedOf ctxFreeRaw #[{ name := "x", slot := 0 }] #[{ name := "y", slot := 1 }],
+        ctxFreeAffineKernel? with
+  | some prepared, some k => executableAccepted prepared #[k]
+  | _, _ => false
+
+#guard testContextFreeSiblingExecutableAccepted
+
+/-! #### Declared check ORDER around the new gate
+
+The context check sits between the algebra check and the factor loop, mirroring `checkAssign`'s own
+coarse order (destination, algebra, per-term context projection, factors). Both directions are
+pinned here, so a reordering breaks a fixture either way: what PRECEDES the context check still wins
+over it, and what FOLLOWS it does not. Every variant below differs from `ctxAssign`/`ctxSigs` in
+exactly one property. -/
+
+-- Destination dtype precedes: a contextful assignment into a Boolean destination reports the
+-- DESTINATION. (Signature dtype and algebra must change together or `checkAssign` rejects first.)
+def ctxBoolDestSigs : Array TensorSignature :=
+  #[ { shape := #[2], dtype := .f64 }, { shape := #[], dtype := .bool } ]
+
+def ctxBoolDestAssign : AssignPlan := { ctxAssign with algebra := admittedAlgebraBool }
+
+#guard (match checkAssign ctxBoolDestSigs ctxBoolDestAssign with | .ok _ => true | .error _ => false)
+#guard rejectedBy (.unsupported (.destinationDType 0 1 .bool))
+  (affineOutcome ctxBoolDestSigs ctxBoolDestAssign #[#[ctxTable2]])
+
+-- Algebra precedes: a contextful assignment under the tropical max algebra reports the ALGEBRA.
+def ctxMaxAssign : AssignPlan := { ctxAssign with algebra := admittedAlgebraMax }
+
+#guard (match checkAssign ctxSigs ctxMaxAssign with | .ok _ => true | .error _ => false)
+#guard rejectedBy (.unsupported (.unsupportedAlgebra 0 admittedAlgebraMax))
+  (affineOutcome ctxSigs ctxMaxAssign #[#[ctxTable2]])
+
+-- Source dtype FOLLOWS: a contextful assignment reading a Boolean source reports the CONTEXT.
+def ctxBoolSourceSigs : Array TensorSignature :=
+  #[ { shape := #[2], dtype := .bool }, { shape := #[], dtype := .f64 } ]
+
+#guard (match checkAssign ctxBoolSourceSigs ctxAssign with | .ok _ => true | .error _ => false)
+#guard rejectedBy (.unsupported (.contextualAssignment 0 #[2]))
+  (affineOutcome ctxBoolSourceSigs ctxAssign #[#[ctxTable2]])
+
+-- The unary factor check FOLLOWS too: a contextful assignment with an inline unary read reports the
+-- CONTEXT, not `unaryFactor`.
+def ctxUnaryAssign : AssignPlan :=
+  { ctxAssign with terms := #[{ ctxAssign.terms[0]! with
+      factors := #[.read { ctxRead with unary := some .exp }] }] }
+
+#guard (match checkAssign ctxSigs ctxUnaryAssign with | .ok _ => true | .error _ => false)
+#guard rejectedBy (.unsupported (.contextualAssignment 0 #[2]))
+  (affineOutcome ctxSigs ctxUnaryAssign #[#[ctxTable2]])
+
+-- The `checkAssign` RE-RUN precedes the whole policy: a contextful assignment handed a standalone
+-- table it does not satisfy reports `invalidSignatureContext` with the checker's own `PlanError`,
+-- not the context rejection. (`jaxOutcome` checks and validates under one table, so this attack —
+-- check under `ctxSigs`, validate under another — is spelled out directly.)
+def ctxMismatchedSigs : Array TensorSignature :=
+  #[ { shape := #[4], dtype := .f64 }, { shape := #[], dtype := .f64 } ]
+
+#guard (match checkAssign ctxSigs ctxAssign with
+  | .error _ => false
+  | .ok checked =>
+      match validateAndConstructKernel ctxMismatchedSigs
+          (.affineTable { semanticAssignment := checked, tables := #[#[ctxTable2]] }) with
+      | .error e =>
+          e == JaxKernelValidationError.unsupported
+            (.invalidSignatureContext 0 (.sourceShapeMismatch 0 0 #[2] #[4]))
+      | .ok _ => false)
+
+/-! #### `contextPos`/`contextShape` consistency is `checkAssign`'s job, never conflated with this
+
+The gate reads `AssignPlan.contextShape` alone, and codes no parallel `terms.any (·.contextPos ≠
+#[])` conjunct, because `checkAssign` — re-run under `sigs` before the policy — already forces
+`t.contextProjection == a.contextShape` for every term. A term/assignment disagreement in EITHER
+direction is therefore a `contextProjectionMismatch` at CHECK time, so no `CheckedAssignPlan` for it
+ever exists to reach the JAX gate at all, and the new rejection cannot absorb a malformed plan. -/
+
+-- Malformed direction (a): the assignment declares no context, but its term binds position 0 as a
+-- context position.
+def ctxPosWithoutShapeAssign : AssignPlan :=
+  { ctxAssign with contextShape := #[] }
+
+#guard (match checkAssign ctxSigs ctxPosWithoutShapeAssign with
+  | .error e => e == PlanError.contextProjectionMismatch 0 #[2] #[]
+  | .ok _ => false)
+
+-- Malformed direction (b): the assignment declares a context, but its term classifies position 0 as
+-- a reduction position instead.
+def ctxShapeWithoutPosAssign : AssignPlan :=
+  { ctxAssign with terms := #[{ ctxAssign.terms[0]! with
+      contextPos := #[], reductionPos := #[0] }] }
+
+#guard (match checkAssign ctxSigs ctxShapeWithoutPosAssign with
+  | .error e => e == PlanError.contextProjectionMismatch 0 #[] #[2]
+  | .ok _ => false)
+
 end LeanNCD.Eval.Plan.ExecutableTest

@@ -91,8 +91,9 @@ runtime carrier.
 - No `f32`, dynamic shapes, scatter support, callback morphisms, or nonlinear predicate outputs.
 - No change to source `BoolExpr`, positional predicate IR, Iverson lowering, or mask lowering.
 - No dtype field in shared `EvalReport`; dtype is queried from the prepared plan.
-- No JAX Boolean, tropical, or unary execution. This slice makes unsupported semantics fail before
-  candidate evidence or Python emission.
+- No JAX Boolean, tropical, unary, or contextful execution. This slice makes unsupported semantics
+  fail before candidate evidence or Python emission; no context parameter or runtime context support
+  is added to the JAX kernels.
 - No Acset/Bridge dtype implementation. That routed branch is a separate capability gap and must not
   be implied closed by this checked-backend slice.
 - No deletion or renaming of `CapabilityError.booleanOutput`; retain it as a compatibility
@@ -226,8 +227,11 @@ Before either experimental JAX rendering mode or candidate construction:
 1. visit checked nodes in outer step order;
 2. reject a non-`f64` destination;
 3. reject any algebra other than real sum-product;
-4. visit factors in original term/factor order and reject a non-`f64` read or a unary read;
-5. retain the existing located Iverson and unsupported-step rejections.
+4. reject a contextful assignment — non-empty `AssignPlan.contextShape` (added by the Task 4.5
+   closure finding: JAX assignment kernels support only context-free assignments, and both lowerings
+   previously rendered a contextful one context-free and stamped it with evidence);
+5. visit factors in original term/factor order and reject a non-`f64` read or a unary read;
+6. retain the existing located Iverson and unsupported-step rejections.
 
 Add typed `JaxCodegenError` cases for unsupported dtype, algebra, unary factor, and structurally
 incompatible standalone signature context with available step/term/factor/slot locators. The
@@ -261,6 +265,7 @@ The required sibling-audit artifact is this completed table, populated from impl
 | `bool` source into real destination | required | forbidden | forbidden |
 | unary read | required | forbidden | forbidden |
 | Iverson factor | required | forbidden | forbidden |
+| contextful assignment (non-empty `contextShape`) | required | forbidden | forbidden |
 
 Every forbidden cell needs a located test. No cell may be silently ignored.
 
@@ -675,8 +680,8 @@ Update current-state docs to say:
 - predicate factors/masks and declared predicate outputs are admitted by Dense;
 - Boolean values remain Float-backed and unvalidated;
 - source declarations determine static signature/algebra;
-- JAX explicitly rejects Boolean, tropical, unary, Iverson, nonlinear, and scan semantics it does
-  not implement;
+- JAX explicitly rejects Boolean, tropical, unary, contextful, Iverson, nonlinear, and scan
+  semantics it does not implement;
 - Acset/Bridge routed dtype remains a separate gap.
 
 Update `papers/leanncd.md`'s semantic-compilation section so it no longer says all predicate

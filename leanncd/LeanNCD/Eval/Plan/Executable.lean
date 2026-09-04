@@ -30,8 +30,8 @@ decision GO B):
 
 * `JaxSupportError`/`checkJaxAssignSupport` reject, with a located typed error, every assignment the
   checked backend admits but this experimental backend cannot render at all — a Boolean destination,
-  a Boolean source, tropical max/min algebra, and an inline unary read. Rejection happens BEFORE any
-  candidate, evidence label, or Python emission.
+  a Boolean source, tropical max/min algebra, an inline unary read, and (Task 4.5 closure) a
+  CONTEXTFUL assignment. Rejection happens BEFORE any candidate, evidence label, or Python emission.
 * A standalone entry (`validateAffineTable`/`validateEinsum`/`kernelWellFormedBool`/
   `validateAndConstructKernel`, and the experimental renderers/conversions) takes ONE explicit
   complete `Array TensorSignature` and treats it as its semantic authority: `checkAssign` is re-run
@@ -147,13 +147,13 @@ private def candidateEvidenceLabel : JaxKernelCandidate → ExecutionEvidence
 /-! ## JAX support policy (Task 4.5)
 
 The experimental JAX backend implements exactly ONE assignment semantics: a real `f64` destination
-under real sum-product, gathering plain (non-unary) `f64` reads. Boolean algebra, tropical max/min,
-a Boolean source, and an inline unary read are all admitted by the CHECKED plan and executed by
-Dense, but have no JAX rendering at all — so they must be rejected with a located, typed error
-BEFORE any Python is emitted, any candidate is built, or any `ExecutionEvidence` is exposed. That is
-the fail-loud half of the sibling-audit table in
-`papers/boolean_predicate_output_evalplan.md` §2.5: every "forbidden" cell is a located rejection
-here, not a silently-stamped `orderedReference64`.
+under real sum-product, gathering plain (non-unary) `f64` reads, at NO runtime context coordinate.
+Boolean algebra, tropical max/min, a Boolean source, an inline unary read, and a contextful
+assignment are all admitted by the CHECKED plan and executed by Dense, but have no JAX rendering at
+all — so they must be rejected with a located, typed error BEFORE any Python is emitted, any
+candidate is built, or any `ExecutionEvidence` is exposed. That is the fail-loud half of the
+sibling-audit table in `papers/boolean_predicate_output_evalplan.md` §2.5: every "forbidden" cell is
+a located rejection here, not a silently-stamped `orderedReference64`.
 
 The supplied `Array TensorSignature` is the caller-facing SEMANTIC AUTHORITY for a standalone entry
 point (spike decision GO B): `checkJaxAssignSupport` first re-establishes `checkAssign` for the same
@@ -172,6 +172,12 @@ policy. Plan-level entry points never accept a caller table; they derive
 inductive JaxSupportError
   | destinationDType       (nodeIndex : Nat) (slot : TensorSlot) (dtype : ScalarDType)
   | unsupportedAlgebra     (nodeIndex : Nat) (algebra : ContractionAlgebra)
+  -- Task 4.5 closure: the assignment is evaluated at a runtime context coordinate
+  -- (`AssignPlan.contextShape` non-empty, every term binding it at its own `contextPos`), which
+  -- this backend's kernels have no parameter for at all. Assignment-level, like
+  -- `unsupportedAlgebra`: the outer step index is the only locator available, and the rejected
+  -- `contextShape` is carried for the same reason that constructor carries its algebra.
+  | contextualAssignment   (nodeIndex : Nat) (contextShape : Array Nat)
   | sourceDType            (nodeIndex termIndex factorIndex : Nat) (dtype : ScalarDType)
   | unaryFactor            (nodeIndex termIndex factorIndex : Nat)
   | invalidSignatureContext (nodeIndex : Nat) (cause : PlanError)
@@ -182,9 +188,26 @@ inductive JaxSupportError
     only way in, precisely so a caller cannot skip the `checkAssign` re-run and hand this function a
     table the assignment does not actually satisfy.
 
-    Declared order, which fixtures pin: destination dtype, then algebra, then factors in original
-    term/factor order (source dtype before unary within each factor). A Boolean-destination
-    assignment whose source is ALSO Boolean therefore reports the destination, not the source. -/
+    Declared order, which fixtures pin: destination dtype, then algebra, then the context shape, then
+    factors in original term/factor order (source dtype before unary within each factor). This
+    mirrors `checkAssign`'s own coarse order (destination, algebra, per-term context projection,
+    then factors), so the two agree on WHERE the context sits among the properties they both
+    inspect. Consequences the fixtures pin in both directions: a Boolean-destination assignment
+    whose source is ALSO Boolean reports the destination, a contextful assignment with a Boolean
+    DESTINATION or a tropical algebra reports that (they precede), and a contextful assignment with
+    a Boolean SOURCE or a unary read reports the CONTEXT (it precedes them).
+
+    The context check reads `a.contextShape` alone; no parallel `terms.any (·.contextPos ≠ #[])`
+    conjunct is coded on top of it, because that state is unreachable rather than merely unlikely.
+    `checkAssign` — re-run under `sigs` by the gate below before any of this — forces
+    `t.contextProjection == a.contextShape` (`contextProjectionMismatch`) and
+    `t.positionsPartition`, and the latter puts every `contextPos` entry in range, so
+    `contextShape = #[]` implies every term's `contextPos = #[]` for anything that can reach here. A
+    term/assignment disagreement is therefore rejected by the `checkAssign` re-run as
+    `invalidSignatureContext` carrying the checker's own `PlanError` — NOT conflated into this
+    rejection — which the fixtures pin. Same judgement (and same reason: mutation cannot reach a
+    conjunct nothing can construct the state for) that `einsumFactorLabelExtentsAgree` records for
+    its own absent size tie. -/
 private def jaxAssignSupported (sigs : Array TensorSignature) (nodeIndex : Nat) (a : AssignPlan) :
     Except JaxSupportError Unit := do
   match sigs[a.destinationSlot]? with
@@ -194,6 +217,8 @@ private def jaxAssignSupported (sigs : Array TensorSignature) (nodeIndex : Nat) 
         throw (.destinationDType nodeIndex a.destinationSlot destSig.dtype)
   unless a.algebra == admittedAlgebra do
     throw (.unsupportedAlgebra nodeIndex a.algebra)
+  unless a.contextShape.isEmpty do
+    throw (.contextualAssignment nodeIndex a.contextShape)
   for h : ti in [0 : a.terms.size] do
     let t := a.terms[ti]
     for h2 : fi in [0 : t.factors.size] do
@@ -287,8 +312,9 @@ private def affineTermTablesValid (term : TermPlan) (tables : Array AffineTableR
 /-- Validate an affine-table kernel candidate against its own semantic source AND against the
     caller-supplied complete signature table, which is this standalone entry's semantic authority
     (spike decision GO B): `checkJaxAssignSupport` re-runs `checkAssign` under `sigs` and applies the
-    JAX support policy FIRST, so a Boolean-destination, Boolean-source, tropical, or unary-read
-    assignment can never reach the structural table check and be stamped `orderedReference64`.
+    JAX support policy FIRST, so a Boolean-destination, Boolean-source, tropical, unary-read, or
+    contextful assignment can never reach the structural table check and be stamped
+    `orderedReference64`.
     Structurally: one table array per term (`tables.size = semanticAssignment.plan.terms.size`, per
     `OrderedAffineTableKernelCandidate`'s doc comment "one per term, then per factor"), and every
     per-term table array individually valid (`affineTermTablesValid`). -/

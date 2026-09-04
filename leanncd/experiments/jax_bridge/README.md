@@ -160,9 +160,23 @@ emitted, any candidate is built, or any `ExecutionEvidence` label exists — nev
 | `bool` source into a real destination | required | forbidden (`unsupportedSourceDType`) | forbidden |
 | unary read (`ReadPlan.unary`) | required | forbidden (`unaryFactor`) | forbidden |
 | Iverson factor | required | forbidden (`iversonFactor`, original all-factor index) | forbidden |
+| contextful assignment (`AssignPlan.contextShape` non-empty) | required | forbidden (`unsupportedContext`) | forbidden |
 
 **There is no JAX Boolean execution and none is planned here** — this is a fail-loud support
-boundary, not a semantic gap in the checked backend, which executes all six rows correctly.
+boundary, not a semantic gap in the checked backend, which executes all seven rows correctly.
+
+The contextful row is the Task 4.5 CLOSURE finding, and it is about a runtime parameter rather than
+a dtype or an algebra: a checked assignment with a non-empty `contextShape` denotes a FAMILY of
+results indexed by a context coordinate (`runDenseAssignAt` binds it at every term's `contextPos`),
+and neither lowering here has a kernel parameter for that coordinate. Neither noticed its absence
+either: `einsumOnly` treated a context position as an ordinary subscript label and CONTRACTED it
+away (`Y[] := X[l]` rendered as `a->`), and `affineReference` emitted its terms with no
+`context_pos` key at all — while Dense returns `10` at context `0` and `20` at context `1` for the
+same plan. Both were being stamped with evidence, `orderedReference64` for the affine one. **JAX
+assignment kernels support only CONTEXT-FREE assignments**; adding a context parameter or runtime
+support was explicitly not attempted. Note that `checkPlan` already refuses a contextful TOP-LEVEL
+step (`topLevelContextNotEmpty`), so this reaches the backend only through the standalone
+`CheckedAssignPlan` entries — which is exactly where the gate now sits.
 
 Three further restrictions are `einsumOnly`-ONLY, and are structural rather than about dtypes or
 algebra: a term must have at least one factor (`emptyTerm`), its iteration rank must fit the 26-letter
@@ -185,7 +199,13 @@ intentionally not the same test. `affineReference` renders and validates it eith
 carry the zero-pad mask explicitly.
 
 The gate is `LeanNCD.Eval.Plan.checkJaxAssignSupport`, applied in declared order (destination dtype,
-algebra, then factors in original term/factor order: source dtype before unary). Signature-context
+algebra, context shape, then factors in original term/factor order: source dtype before unary) — the
+same coarse order `checkAssign` itself uses, which is why the context check sits between the algebra
+and the factors. A contextful assignment with a Boolean destination or a tropical algebra therefore
+reports THAT, and one with a Boolean source or a unary read reports the CONTEXT; both directions are
+pinned by fixtures. `contextPos`/`contextShape` disagreement is never conflated with the context
+rejection — `checkAssign` rejects it first as `contextProjectionMismatch`, so no `CheckedAssignPlan`
+for it exists to reach the gate. Signature-context
 ownership follows the completed spike's selection (GO B,
 `papers/jax_signature_evidence_ownership_spike_results.md`): a STANDALONE entry — `lowerAssign`,
 `renderAffineAssign`, `buildAssignFixture`, both candidate conversions, both candidate validators,

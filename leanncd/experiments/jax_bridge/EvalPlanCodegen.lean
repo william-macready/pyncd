@@ -58,6 +58,12 @@ inductive JaxCodegenError
   -- term/factor locators, which a single shared constructor could not carry at once.
   | unsupportedDestDType   (nodeIndex : Nat) (slot : TensorSlot) (dtype : ScalarDType)
   | unsupportedAlgebra     (nodeIndex : Nat)
+  -- Task 4.5 closure — the assignment is evaluated at a runtime context coordinate
+  -- (`AssignPlan.contextShape` non-empty): neither lowering has a kernel parameter for it, so both
+  -- would silently emit a context-free kernel (`einsumOnly` contracts the context axis away as an
+  -- ordinary label, `affineReference` emits no `context_pos` key at all). Assignment-level, so it
+  -- carries the node index and the rejected shape, no term/factor locator.
+  | unsupportedContext     (nodeIndex : Nat) (contextShape : Array Nat)
   | unsupportedSourceDType (nodeIndex termIndex factorIndex : Nat) (dtype : ScalarDType)
   | unaryFactor            (nodeIndex termIndex factorIndex : Nat)
   -- The supplied standalone signature table is not even structurally compatible with the same raw
@@ -71,6 +77,7 @@ inductive JaxCodegenError
 def codegenErrorOfSupport : JaxSupportError → JaxCodegenError
   | .destinationDType n slot dt      => .unsupportedDestDType n slot dt
   | .unsupportedAlgebra n _          => .unsupportedAlgebra n
+  | .contextualAssignment n ctx      => .unsupportedContext n ctx
   | .sourceDType n ti fi dt          => .unsupportedSourceDType n ti fi dt
   | .unaryFactor n ti fi             => .unaryFactor n ti fi
   | .invalidSignatureContext n cause => .invalidSignatureContext n cause
@@ -234,10 +241,10 @@ structure NodeLowering where
 /-- One checked assignment's `einsum`-mode lowering, under an explicit complete signature table
     (Task 4.5). `sigs` is this standalone entry's semantic authority: `requireJaxSupport` re-runs
     `checkAssign` under it and applies the JAX support policy before a single subscript is derived,
-    so a Boolean destination/source, a tropical algebra, a unary read, or a structurally
-    incompatible table is rejected here with its located error rather than silently rendered. The
-    input is a `CheckedAssignPlan`, not a raw `AssignPlan`: a caller cannot hand this function an
-    unchecked assignment at all. -/
+    so a Boolean destination/source, a tropical algebra, a unary read, a contextful assignment, or a
+    structurally incompatible table is rejected here with its located error rather than silently
+    rendered. The input is a `CheckedAssignPlan`, not a raw `AssignPlan`: a caller cannot hand this
+    function an unchecked assignment at all. -/
 def lowerAssign (sigs : Array TensorSignature) (nodeIndex : Nat) (checked : CheckedAssignPlan) :
     Except JaxCodegenError NodeLowering := do
   requireJaxSupport sigs nodeIndex checked
@@ -1319,5 +1326,127 @@ def padAssign (srcExtent : Nat) : AssignPlan :=
   | .error _ => false
   | .ok checked => (match renderAffineAssign (padSigs 2) checked with
       | .ok _ => true | .error _ => false))
+
+/-! ### Task 4.5 closure — a CONTEXTFUL assignment has no rendering in EITHER mode
+
+The emission half of `test/Eval/Plan/ExecutableTest.lean`'s fixture 14. An `AssignPlan` with a
+non-empty `contextShape` denotes a family of results indexed by a runtime context coordinate
+(`Dense.runDenseAssignAt` binds it at every term's `contextPos`), and neither mode here has a kernel
+parameter for that coordinate — nor did either notice: `einsumOnly` used to render the fixture below
+as `a->` (the context position treated as an ordinary label and CONTRACTED away) and
+`affineReference` used to emit its terms with no `context_pos` key at all, while Dense returns
+`10` at context `0` and `20` at context `1`. Both are now the one located
+`unsupportedContext` rejection from the shared gate, before any Python.
+
+Unlike the Boolean/tropical/unary fixtures above, there is no plan-level half to assert: `checkPlan`
+refuses a contextful top-level step outright (`topLevelContextNotEmpty`, pinned below), so no
+`CheckedEvalPlan`/`PreparedPlan` naming one can be built for `lowerPlan`/`renderAffinePlanNamed`/
+`generateNamed`/`lowerCheckPlanToCandidate` to be handed. Those entries are covered structurally
+instead: each routes every `.assign` step through the same `requireJaxSupport` the standalone
+entries below call, so they cannot drift apart. (A contextful assignment is legal only inside a scan
+block, and every `.scan` step is already the located `unsupportedStep` rejection asserted above.) -/
+
+def ctxSigs : Array TensorSignature :=
+  #[ { shape := #[2], dtype := .f64 }, { shape := #[], dtype := .f64 } ]
+
+def ctxRead : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[#[1]], bias := #[0] }
+  , sourceShape := #[2], oobPolicy := .zeroPad }
+
+/-- `Y[] := X[l]` at context coordinate `l`. -/
+def ctxAssign : AssignPlan :=
+  { contextShape := #[2], destinationSlot := 1, outputShape := #[]
+  , terms := #[{ iterationShape := #[2], contextPos := #[0], outputPos := #[], reductionPos := #[]
+               , factors := #[.read ctxRead] }]
+  , algebra := admittedAlgebra }
+
+/-- The context-free sibling: same read, same affine map, same source extent, same algebra — the one
+    iteration position is classified `outputPos` instead of `contextPos`, which is what makes the
+    destination `#[2]`-shaped instead of scalar. -/
+def ctxFreeSigs : Array TensorSignature :=
+  #[ { shape := #[2], dtype := .f64 }, { shape := #[2], dtype := .f64 } ]
+
+def ctxFreeAssign : AssignPlan :=
+  { contextShape := #[], destinationSlot := 1, outputShape := #[2]
+  , terms := #[{ iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
+               , factors := #[.read ctxRead] }]
+  , algebra := admittedAlgebra }
+
+def ctxStore : Array DenseTensor :=
+  #[ { shape := [2], data := #[10.0, 20.0] }, { shape := [], data := #[0.0] } ]
+
+-- The checked backend admits both; only this backend rejects the contextful one.
+#guard (match checkAssign ctxSigs ctxAssign with | .ok _ => true | .error _ => false)
+#guard (match checkAssign ctxFreeSigs ctxFreeAssign with | .ok _ => true | .error _ => false)
+
+private def ctxError : JaxCodegenError := .unsupportedContext 0 #[2]
+
+-- Every standalone entry — both rendering modes and both candidate conversions — rejects with the
+-- same located cause under the table the caller supplied as its semantic authority.
+#guard (match checkAssign ctxSigs ctxAssign with
+  | .error _ => false
+  | .ok checked =>
+      rejectedWith ctxError (lowerAssign ctxSigs 0 checked) &&
+      rejectedWith ctxError (renderAffineAssign ctxSigs checked) &&
+      rejectedWith ctxError (loweringToAffineTableCandidate ctxSigs 0 checked) &&
+      rejectedWith ctxError (loweringToEinsumCandidate ctxSigs 0 checked))
+
+-- The context-free sibling still renders in BOTH modes and is still certified through both
+-- conversions, so the gate rejects the context, not the read.
+#guard (match checkAssign ctxFreeSigs ctxFreeAssign with
+  | .error _ => false
+  | .ok checked =>
+      (match lowerAssign ctxFreeSigs 0 checked with
+       | .error _ => false
+       | .ok nl => nl.terms.map (fun tl =>
+           String.intercalate "," tl.factorSubscripts.toList ++ "->" ++ tl.outputSubscript)
+             == #["a->a"]) &&
+      (match renderAffineAssign ctxFreeSigs checked with | .ok _ => true | .error _ => false))
+
+#guard einsumRenderAgreesAccepted ctxFreeSigs ctxFreeAssign
+
+#guard (match checkAssign ctxFreeSigs ctxFreeAssign with
+  | .error _ => false
+  | .ok checked =>
+      match loweringToAffineTableCandidate ctxFreeSigs 0 checked with
+      | .error _ => false
+      | .ok candidate =>
+        match validateAndConstructKernel ctxFreeSigs (.affineTable candidate) with
+        | .ok k => k.evidence == ExecutionEvidence.orderedReference64
+        | .error _ => false)
+
+-- Plan level: the contextful assignment cannot even be posed as a top-level step, while the
+-- context-free sibling's plan renders and lowers end to end through the plan-level entries.
+def ctxRaw : RawEvalPlan :=
+  { tensorSigs := ctxSigs, inputSlots := #[0], steps := #[PlanStep.assign ctxAssign] }
+
+#guard (match checkPlan ctxRaw with
+  | .error e => e == PlanStepError.assign (.topLevelContextNotEmpty 0)
+  | .ok _ => false)
+
+def ctxFreeRaw : RawEvalPlan :=
+  { tensorSigs := ctxFreeSigs, inputSlots := #[0], steps := #[PlanStep.assign ctxFreeAssign] }
+
+def ctxFreePrepared? : Option PreparedPlan :=
+  preparedOf ctxFreeRaw #[{ name := "x", slot := 0 }] #[{ name := "y", slot := 1 }]
+
+#guard (match ctxFreePrepared? with
+  | some prepared =>
+      (match generateNamed .einsumOnly prepared with | .ok _ => true | .error _ => false) &&
+      (match generateNamed .affineReference prepared with | .ok _ => true | .error _ => false) &&
+      (match lowerCheckPlanToCandidate prepared with | .ok _ => true | .error _ => false)
+  | none => false)
+
+-- `buildAssignFixture` cannot emit a contextful fixture either, and fails BEFORE the render gate:
+-- it Dense-runs at the empty context coordinate, which a contextful assignment rejects
+-- (`validateContext`). The render gate itself is pinned directly by `renderAffineAssign` above; the
+-- point here is that no driver can smuggle one in through the shared fixture builder.
+#eval show IO Unit from do
+  let outcome ← try
+      let _ ← buildAssignFixture "ctxAssign" ctxSigs ctxAssign ctxStore
+      pure "accepted"
+    catch e => pure (toString e)
+  unless (outcome.splitOn "Dense run failed").length == 2 do
+    throw (IO.userError s!"buildAssignFixture did not reject the contextful assignment: {outcome}")
 
 end JaxBridge

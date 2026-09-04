@@ -2012,14 +2012,21 @@ the shipped implementation in `LeanNCD/Eval/Plan/Executable.lean` are stronger t
    the combined `kernelWellFormedBool`, the evidence proposition `JaxKernelWellFormed`, and
    `validateAndConstructKernel` all take one explicit complete `Array TensorSignature`; each
    re-establishes `checkAssign` under that table and then applies a JAX support policy that rejects a
-   Boolean destination, a Boolean source, tropical max/min algebra, and an inline unary read with a
-   located typed `JaxSupportError`. Plan-level entry points take no caller table and derive
+   Boolean destination, a Boolean source, tropical max/min algebra, an inline unary read, and a
+   CONTEXTFUL assignment (non-empty `AssignPlan.contextShape`) with a located typed
+   `JaxSupportError`. The contextual rejection is the closure finding on this task: §2.4 above makes
+   assignments contextual — the canonical term basis is `context ++ output ++ reduction` — but JAX
+   assignment kernels take no context coordinate, so both lowerings rendered a contextful assignment
+   context-free (`einsumOnly` contracting the context label away, `affineReference` emitting no
+   `context_pos`) and were stamped with evidence. JAX assignment kernels support only CONTEXT-FREE
+   assignments; the check order is destination dtype, algebra, context shape, then factors, which is
+   `checkAssign`'s own coarse order. Plan-level entry points take no caller table and derive
    `PreparedPlan.plan.raw.tensorSigs`. `JaxKernel` privately stores the validated table, and
    `JaxExecutableWellFormed` requires every stored table to equal the prepared plan's own and every
    candidate assignment to equal the corresponding checked step, so a kernel validated elsewhere —
    or step 0's kernel reused at step 1 — cannot stand in for a step. The pre-validation evidence
    label (`candidateEvidenceLabel`) and the context-free geometry helpers are private. The checked
-   Dense backend executes all four of those rejected semantics correctly; this is a JAX support
+   Dense backend executes all five of those rejected semantics correctly; this is a JAX support
    boundary, not a semantic gap, and there is no JAX Boolean execution.
 
 The evidence index is decisive: only ordered affine-table/reference constructors inhabit
