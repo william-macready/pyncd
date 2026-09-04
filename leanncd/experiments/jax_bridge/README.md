@@ -164,6 +164,15 @@ emitted, any candidate is built, or any `ExecutionEvidence` label exists — nev
 **There is no JAX Boolean execution and none is planned here** — this is a fail-loud support
 boundary, not a semantic gap in the checked backend, which executes all six rows correctly.
 
+Three further restrictions are `einsumOnly`-ONLY, and are structural rather than about dtypes or
+algebra: a term must have at least one factor (`emptyTerm`), its iteration rank must fit the 26-letter
+subscript alphabet (`rankTooLarge`), and every iteration position must be covered by some factor's
+projection (`uncoveredPosition`). `affineReference` renders all three shapes, which is why the curated
+affine corpus can and does contain empty-factor/empty-term cases. `Executable.lean`'s `validateEinsum`
+mirrors exactly these preconditions (`einsumTermRenderable`, sharing `einsumLabelLimit` with
+`labelTable` through a `#guard`), so an einsum candidate is certified only if `lowerAssign` really
+renders it — before the Task 4.5 re-review it could be certified and then rejected at emission.
+
 The gate is `LeanNCD.Eval.Plan.checkJaxAssignSupport`, applied in declared order (destination dtype,
 algebra, then factors in original term/factor order: source dtype before unary). Signature-context
 ownership follows the completed spike's selection (GO B,

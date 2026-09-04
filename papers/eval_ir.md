@@ -119,10 +119,16 @@ The experimental JAX path is designed to preserve the same separation: lowering 
 to runtime JAX arrays; it returns another Python dictionary mapping materialized result names to JAX
 arrays. The plan's bindings perform the name-to-slot and slot-to-name correspondence.
 
-This is currently a target architecture rather than a working end-to-end evaluator. The checked
-graph contains assignment, scan, pointwise, and axiswise steps, but the non-default JAX experiment
-still assumes assignment-only checked nodes and does not build against that representation. See
-[Section 3.3.2](#332-experimental-jax-evaluator) for the status of each component.
+This is currently a target architecture rather than a working end-to-end evaluator — but for a
+narrower reason than this section used to give. The non-default `JaxExperiment` library DOES build
+(`lake build JaxExperiment`, green): it was migrated to the current multi-variant
+`CheckedPlanStepEvidence`, and it is assignment-only by SCOPE, fail-loud rather than broken. A
+`.scan`/`.pointwise`/`.axiswise` step is rejected with a located `unsupportedStep <stepIndex>`, and
+an assignment the backend cannot render — a Boolean destination or source, a tropical `max`/`min`
+algebra, an inline unary read, an Iverson factor — is rejected with its own located typed error
+before any Python is emitted. What is still missing is the end-to-end wiring: nothing consumes a
+validated `SomeJaxExecutable` to emit Python, and no JAX runtime is exercised by this project's
+build. See [Section 3.3.2](#332-experimental-jax-evaluator) for the status of each component.
 
 ## 2. Plan preparation
 
@@ -851,19 +857,20 @@ The experimental JAX path is intended to compile the prepared semantic plan befo
 execution.
 
 > **Current implementation status:** The table below maps the intended JAX architecture to the code
-> that presently exists; it does not describe a working end-to-end evaluator. The experiment still
-> assumes assignment-only checked nodes. It has not been migrated to the current assignment, scan,
-> pointwise, and axiswise `CheckedPlanStepEvidence` variants and therefore does not build.
+> that presently exists; it does not describe a working end-to-end evaluator. The experiment builds
+> (`lake build JaxExperiment`) against the current assignment, scan, pointwise, and axiswise
+> `CheckedPlanStepEvidence` variants; it is assignment-only by scope and fail-loud, rejecting every
+> other step kind with a located `unsupportedStep`, not by failing to compile.
 
 | Common stage | Experimental JAX implementation | Current status |
 |---|---|---|
-| Backend lowering | `lowerCheckPlanToCandidate` | Source exists, but assumes assignment-only checked nodes and does not compile against the current graph |
-| Executable validation | `validateAndConstructExecutable` | Checks step count, assignment-kernel well-formedness, and evidence aggregation; no scan or nonlinearity representation |
+| Backend lowering | `lowerCheckPlanToCandidate` | Builds against the current graph; routes assignment steps through the affine-table path and rejects a scan/pointwise/axiswise step with a located `unsupportedStep` |
+| Executable validation | `validateAndConstructExecutable` | Checks step count, per-step context/assignment ties, assignment-kernel well-formedness, and evidence aggregation; no scan or nonlinearity representation |
 | Backend executable | `SomeJaxExecutable`, containing `JaxExecutable evidence` | Types and validator are implemented, but code generation is not wired to consume this executable |
 | Named runtime tensors | Python `dict[str, jax.Array]` | Interface emitted by the assignment-only generator; not currently available end to end |
-| Runtime binding | Generated or interpreted name-to-slot initialization | Implemented for scan-free plans; experiment currently does not build |
+| Runtime binding | Generated or interpreted name-to-slot initialization | Implemented for scan-free plans |
 | Positional execution | Generated `jnp.einsum` or Python interpretation of emitted affine tables | Assignment paths exist; scan, pointwise, and axiswise lowering and execution are not implemented |
-| Output materialization | Generated or interpreted slot-to-name construction | Implemented for scan-free plans; experiment currently does not build |
+| Output materialization | Generated or interpreted slot-to-name construction | Implemented for scan-free plans |
 | Result | Python `dict[str, jax.Array]` | Intended generated-function result; no currently buildable end-to-end path |
 
 Two partially separate paths currently exist in the experiment. Candidate-lowering code is intended
@@ -876,16 +883,19 @@ function containing restricted projection-only `jnp.einsum` contractions. `affin
 emits static safe-index and validity-mask tables, which
 [`evalplan_affine_runtime.py`](../leanncd/experiments/jax_bridge/evalplan_affine_runtime.py)
 interprets with ordered factor, reduction, and term folds. Both modes read `PreparedPlan` directly
-and are incompatible with the current multi-variant checked graph. The function form below applies
-specifically to `einsumOnly`:
+and lower its assignment steps only, rejecting a scan, pointwise, or axiswise step of the current
+multi-variant checked graph with a located error rather than failing to compile against it. The
+function form below applies specifically to `einsumOnly`:
 ```python
 def forward(inputs):
     ...
     return outputs
 ```
-When that path is restored, `inputs` will be a Python dictionary mapping source names to actual JAX
-arrays. The generated function will place those arrays into positional slots, evaluate the supported
-operations, and return a Python dictionary mapping materialized result names to JAX arrays.
+At runtime, `inputs` is a Python dictionary mapping source names to actual JAX arrays. The generated
+function places those arrays into positional slots, evaluates the supported operations, and returns
+a Python dictionary mapping materialized result names to JAX arrays. That Python side is not
+exercised by this project's build (no JAX toolchain is installed here), which is why the path is not
+described as end to end.
 
 The intended distinction remains that Dense interprets `CheckedEvalPlan`, while JAX lowers it before
 runtime. Both are meant to preserve the `PreparedPlan` boundary's name-to-slot,

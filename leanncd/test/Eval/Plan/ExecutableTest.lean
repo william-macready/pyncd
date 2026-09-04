@@ -762,4 +762,169 @@ def testCachedStep0KernelRejectedAtStep1 : Bool :=
 
 #guard testCachedStep0KernelRejectedAtStep1
 
+/-! ### Re-review fixture 12 — the einsum emitter's three TERM-level preconditions
+
+`validateEinsum` used to check only per-factor operand rows and exact output axes, so a candidate
+whose term the einsum lowering cannot render AT ALL was still certified: the re-review reproduced a
+factor-free assignment as `validator=accepted; emitter=rejected emptyTerm 0 0`. The validator now
+also mirrors `EvalPlanCodegen.lean`'s `lowerTerm` preconditions (`einsumTermRenderable`): non-empty
+factors, rank within `einsumLabelLimit`, and complete iteration-position coverage.
+
+Each fixture below pairs the unrenderable term with an ACCEPTANCE SIBLING differing in exactly the
+one property under test, so a validator that merely rejected more would fail the sibling; and each
+rejection is `.invalidCandidate` (the structural verdict), never `.unsupported` — these assignments
+are fully supported semantics, they simply have no einsum rendering. Every one of them is still
+admitted by `checkAssign`, executed by Dense, and — crucially — still renderable and validatable on
+the AFFINE path, which is the path `lowerCheckPlanToCandidate` and the whole 3,832-case corpus
+actually use; the guards below pin that scoping. The emitter half (the located
+`.emptyTerm`/`.uncoveredPosition`/`.rankTooLarge` each fixture draws, and the two halves agreeing)
+is asserted inline in `experiments/jax_bridge/EvalPlanCodegen.lean`, which this default-build module
+cannot import. -/
+
+/-- (a) A factor-free term. `Check.lean` requires no factor at all, so `Y := <empty product>` is a
+    checked, Dense-executable assignment (the algebra's factor identity); einsum has no operand list
+    to emit for it. Rank 0 keeps the fixture minimal — the only difference from its sibling is the
+    presence of a factor. -/
+def scalarSigs : Array TensorSignature :=
+  #[ { shape := #[], dtype := .f64 }, { shape := #[], dtype := .f64 } ]
+
+def scalarRead : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[], bias := #[] }
+  , sourceShape := #[], oobPolicy := .zeroPad }
+
+def factorFreeAssign : AssignPlan :=
+  { contextShape := #[], destinationSlot := 1, outputShape := #[]
+  , terms := #[{ iterationShape := #[], contextPos := #[], outputPos := #[], reductionPos := #[]
+               , factors := #[] }]
+  , algebra := admittedAlgebra }
+
+/-- The acceptance sibling: the same rank-0 term with ONE scalar read factor. -/
+def scalarFactorAssign : AssignPlan :=
+  { factorFreeAssign with
+    terms := #[{ factorFreeAssign.terms[0]! with factors := #[.read scalarRead] }] }
+
+#guard (match checkAssign scalarSigs factorFreeAssign with | .ok _ => true | .error _ => false)
+#guard (match checkAssign scalarSigs scalarFactorAssign with | .ok _ => true | .error _ => false)
+
+#guard rejectedBy .invalidCandidate (einsumOutcome scalarSigs factorFreeAssign #[] #[])
+#guard (match einsumOutcome scalarSigs scalarFactorAssign #[#[0]] #[] with
+  | .ok none => true | _ => false)
+
+-- Scoping: the SAME factor-free assignment is a valid affine-table candidate (that path renders it
+-- as an empty factor list), so the new einsum conjuncts did not tighten the reference path.
+#guard (match affineOutcome scalarSigs factorFreeAssign #[#[]] with | .ok none => true | _ => false)
+
+/-- (b) An uncovered iteration position: `Y[i] := Σ_j V[i]` reads only slot 1 through position 0,
+    leaving reduction position 1 covered by no factor. The checked plan means "repeat over `j` and
+    reduce", which Dense and the affine tables both execute; `jnp.einsum` cannot express a free label
+    that appears on no operand. The acceptance sibling contracts the SAME basis with a matrix read
+    covering both positions — same destination, same `outputPos`/`reductionPos`, same iteration
+    shape, so coverage is the only difference. -/
+def covSigs : Array TensorSignature :=
+  #[ { shape := #[2, 2], dtype := .f64 }, { shape := #[2], dtype := .f64 }
+   , { shape := #[2], dtype := .f64 } ]
+
+def vecRead : ReadPlan :=
+  { sourceSlot := 1, map := { coeffs := #[#[1, 0]], bias := #[0] }
+  , sourceShape := #[2], oobPolicy := .zeroPad }
+
+def matRead : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[#[1, 0], #[0, 1]], bias := #[0, 0] }
+  , sourceShape := #[2, 2], oobPolicy := .zeroPad }
+
+def uncoveredAssign : AssignPlan :=
+  { contextShape := #[], destinationSlot := 2, outputShape := #[2]
+  , terms := #[{ iterationShape := #[2, 2], contextPos := #[], outputPos := #[0]
+               , reductionPos := #[1], factors := #[.read vecRead] }]
+  , algebra := admittedAlgebra }
+
+def coveredAssign : AssignPlan :=
+  { uncoveredAssign with
+    terms := #[{ uncoveredAssign.terms[0]! with factors := #[.read matRead] }] }
+
+#guard (match checkAssign covSigs uncoveredAssign with | .ok _ => true | .error _ => false)
+#guard (match checkAssign covSigs coveredAssign with | .ok _ => true | .error _ => false)
+
+#guard rejectedBy .invalidCandidate (einsumOutcome covSigs uncoveredAssign #[#[1, 0]] #[0])
+#guard (match einsumOutcome covSigs coveredAssign #[#[0, 0, 1]] #[0] with
+  | .ok none => true | _ => false)
+
+/-- The nearest public `Bool`/`Prop` validators agree with the constructor gate for the uncovered
+    candidate (the operand row is exactly the one `vecRead` means, and `outputAxes` is exactly
+    `outputPos` — only renderability rejects it). -/
+def uncoveredEinsumCandidate? : Option JaxKernelCandidate :=
+  match checkAssign covSigs uncoveredAssign with
+  | .error _ => none
+  | .ok checked =>
+      some (.einsum { semanticAssignment := checked, destination := 2
+                    , operands := #[#[1, 0]], outputAxes := #[0] })
+
+#guard (match uncoveredEinsumCandidate? with
+  | some c => !(kernelWellFormedBool covSigs c) && !(decide (JaxKernelWellFormed covSigs c))
+  | none => false)
+
+/-- The correct affine table for `vecRead` over the `#[2, 2]` basis: row-major coordinates
+    `(0,0) (0,1) (1,0) (1,1)` gather source indices `0 0 1 1`, all in bounds. -/
+def uncoveredVecTable : AffineTableReadCandidate :=
+  { source := 1, safeIndex := #[0, 0, 1, 1], validMask := #[true, true, true, true] }
+
+def uncoveredRaw : RawEvalPlan :=
+  { tensorSigs := covSigs, inputSlots := #[0, 1], steps := #[.assign uncoveredAssign] }
+
+/-- Executable construction over the uncovered plan still SUCCEEDS through the affine path: the
+    einsum tightening rejects an einsum candidate, not the assignment, and the plan-level path
+    (`lowerCheckPlanToCandidate`, the corpus) routes every step through affine tables. -/
+def testUncoveredAffineExecutableAccepted : Bool :=
+  match preparedOf uncoveredRaw #[{ name := "m", slot := 0 }, { name := "v", slot := 1 }]
+          #[{ name := "y", slot := 2 }] with
+  | none => false
+  | some prepared =>
+    match checkAssign covSigs uncoveredAssign with
+    | .error _ => false
+    | .ok checked =>
+      match validateAndConstructKernel covSigs
+          (.affineTable { semanticAssignment := checked, tables := #[#[uncoveredVecTable]] }) with
+      | .error _ => false
+      | .ok k => executableAccepted prepared #[k]
+
+#guard testUncoveredAffineExecutableAccepted
+
+/-- (c) Label-table overflow: a rank-`n` term over an all-`1` iteration basis whose single read
+    projects position `p` with coefficient row `p`. Every position is covered and every row is an
+    exact single-`1` projection, so rank is the ONLY thing separating the accepted `n = 26` sibling
+    from the rejected `n = 27` — the emitter has exactly 26 subscript letters. -/
+def wideShape (rank : Nat) : Array Nat := Array.replicate rank 1
+
+def wideRow (rank p : Nat) : Array Int :=
+  (List.range rank).toArray.map (fun q => if q == p then 1 else 0)
+
+def wideRead (rank : Nat) : ReadPlan :=
+  { sourceSlot := 0
+  , map := { coeffs := (List.range rank).toArray.map (wideRow rank)
+           , bias := Array.replicate rank (0 : Int) }
+  , sourceShape := wideShape rank, oobPolicy := .zeroPad }
+
+def wideSigs (rank : Nat) : Array TensorSignature :=
+  #[ { shape := wideShape rank, dtype := .f64 }, { shape := #[1], dtype := .f64 } ]
+
+def wideAssign (rank : Nat) : AssignPlan :=
+  { contextShape := #[], destinationSlot := 1, outputShape := #[1]
+  , terms := #[{ iterationShape := wideShape rank, contextPos := #[], outputPos := #[0]
+               , reductionPos := ((List.range rank).drop 1).toArray
+               , factors := #[.read (wideRead rank)] }]
+  , algebra := admittedAlgebra }
+
+/-- The exact operand row `wideRead rank` means: its source slot, then positions `0 … rank-1`. -/
+def wideOperands (rank : Nat) : Array (Array Nat) := #[#[0] ++ (List.range rank).toArray]
+
+#guard einsumLabelLimit == 26
+
+#guard (match checkAssign (wideSigs 26) (wideAssign 26) with | .ok _ => true | .error _ => false)
+#guard (match checkAssign (wideSigs 27) (wideAssign 27) with | .ok _ => true | .error _ => false)
+
+#guard (match einsumOutcome (wideSigs 26) (wideAssign 26) (wideOperands 26) #[0] with
+  | .ok none => true | _ => false)
+#guard rejectedBy .invalidCandidate
+  (einsumOutcome (wideSigs 27) (wideAssign 27) (wideOperands 27) #[0])
+
 end LeanNCD.Eval.Plan.ExecutableTest

@@ -47,7 +47,13 @@ decision GO B):
 
 Independently of that ownership question, `validateEinsum` recomputes every operand axis exactly
 from the checked factor maps and requires exact `outputAxes = term.outputPos` equality, so a
-same-rank, in-range permutation or duplicate is not a valid candidate.
+same-rank, in-range permutation or duplicate is not a valid candidate. It also mirrors the emitter's
+three TERM-level structural preconditions (`einsumTermRenderable`: non-empty factors, rank within
+`einsumLabelLimit`, complete iteration-position coverage), so acceptance here implies the einsum
+lowering actually renders — previously a factor-free, over-rank, or partially-covered candidate was
+certified by the validator and then rejected by `lowerTerm`. `einsumLabelLimit` is the one
+codegen-derived constant this file states (the emitter's subscript-alphabet size, mirrored not
+imported for the dependency-direction reason below, and pinned by a `#guard` on the emitter's side).
 
 Spec: `papers/jax_evalplan_architecture.md` §4.3, §7.1 rows 5–6, Appendix D.
 
@@ -303,25 +309,76 @@ private def rowProjectionPosition (row : Array Int) : Option Nat :=
   | [(p, 1)] => some p
   | _ => none
 
+/-- The iteration positions one checked read factor's coefficient rows project onto, in
+    coefficient-row order — i.e. the labels `lowerFactor` (`EvalPlanCodegen.lean`) would emit for it.
+    `none` — no valid einsum operand at all — when any coefficient row is not a pure single-`1`
+    projection (`rowProjectionPosition`) or any bias entry is nonzero, exactly the two shapes that
+    function rejects as `.nonProjectionRow`/`.nonzeroAffineBias`.
+
+    Split out of `expectedEinsumOperandRow` below because the same recomputation answers two
+    different questions the emitter asks: which row this factor must lower to, and which iteration
+    positions it COVERS (`einsumTermRenderable`). -/
+private def einsumFactorPositions (f : ReadPlan) : Option (Array Nat) :=
+  if f.map.bias.all (· == 0) then
+    f.map.coeffs.foldl
+      (fun (acc : Option (Array Nat)) row => match acc, rowProjectionPosition row with
+        | some ps, some p => some (ps.push p)
+        | _, _ => none)
+      (some #[])
+  else
+    none
+
 /-- The EXACT einsum operand row one checked read factor must lower to: its own source slot,
-    followed by the single projection target of EVERY coefficient row, in coefficient-row order.
-    `none` — no valid einsum operand row at all — when any coefficient row is not a pure single-`1`
-    projection (`rowProjectionPosition`) or any bias entry is nonzero, exactly the two shapes
-    `lowerFactor` (`EvalPlanCodegen.lean`) rejects as `.nonProjectionRow`/`.nonzeroAffineBias`.
+    followed by the single projection target of EVERY coefficient row, in coefficient-row order
+    (`einsumFactorPositions`). `none` exactly when that recomputation has no answer.
 
     This is a recomputation from the CHECKED factor, not an inspection of the candidate's stored row:
     `validateEinsum` compares the stored row against this one for exact equality, so a same-rank,
     in-range permutation (`#[slot, 1, 0]` for an identity read) or a duplicate (`#[slot, 0, 0]`) is
     rejected — neither is the row this factor means. -/
 private def expectedEinsumOperandRow (f : ReadPlan) : Option (Array Nat) :=
-  if f.map.bias.all (· == 0) then
-    f.map.coeffs.foldl
-      (fun (acc : Option (Array Nat)) row => match acc, rowProjectionPosition row with
-        | some row?, some p => some (row?.push p)
-        | _, _ => none)
-      (some #[f.sourceSlot])
-  else
-    none
+  (einsumFactorPositions f).map (fun ps => #[f.sourceSlot] ++ ps)
+
+/-- How many distinct subscript labels one einsum term may use: the size of the emitter's own
+    subscript alphabet (`EvalPlanCodegen.lean`'s `labelTable`, `'a'`–`'z'`).
+
+    Mirrored here rather than imported, for the same dependency-direction reason as
+    `rowProjectionPosition`/`recomputeAffineFactorTable` (`experiments/jax_bridge` depends on
+    `LeanNCD`, never the reverse) — but PUBLIC, unlike those two, precisely so the emitter can pin
+    its own table against it (`#guard labelTable.size == einsumLabelLimit`) rather than letting the
+    two drift apart silently. -/
+def einsumLabelLimit : Nat := 26
+
+/-- Every structural precondition `EvalPlanCodegen.lean`'s `lowerTerm` imposes on ONE checked term,
+    over and above the per-factor row shape `expectedEinsumOperandRow` already recomputes. Each
+    conjunct mirrors one located emitter rejection:
+
+    * `factors` is non-empty — `.emptyTerm`. `checkAssign` genuinely admits a factor-free term
+      (nothing in `Check.lean` requires a factor), Dense executes it as the algebra's factor
+      identity, and the affine-table path renders it as `"factors": []`; einsum has no operand list
+      to emit at all. This is the precondition whose absence let a factor-free candidate be
+      certified `optimizationExperiment` for a lowering that rejects it.
+    * `iterationShape.size ≤ einsumLabelLimit` — `.rankTooLarge`. This also covers the emitter's
+      per-label `.labelTableExhausted`: `checkAssign` — re-run under `sigs` by the support gate
+      before any of this runs — forces every coefficient row's width to equal `iterationShape.size`
+      (`affineWidthMismatch`) and `positionsPartition` forces every `outputPos` entry below it, so
+      no label position can exceed the limit once the rank does not.
+    * every iteration position is covered by some factor's projection — `.uncoveredPosition`. An
+      uncovered position is a free label appearing on no operand, which `jnp.einsum` cannot express
+      at all, whereas the checked plan means a genuine repeat/reduction over that axis (which the
+      affine-table path does honor). Recomputed from the CHECKED factors, like every other einsum
+      check here, never read off the candidate's stored operand rows. -/
+private def einsumTermRenderable (term : TermPlan) : Bool :=
+  let covered := term.factors.foldl
+    (fun (acc : Array Nat) factor => match factor with
+      | .read f => match einsumFactorPositions f with
+        | some ps => acc ++ ps
+        | none => acc
+      | .iverson _ => acc)
+    #[]
+  !term.factors.isEmpty &&
+  term.iterationShape.size ≤ einsumLabelLimit &&
+  (List.range term.iterationShape.size).all (fun p => covered.contains p)
 
 /-- Validate an einsum kernel candidate against its own semantic source AND against the
     caller-supplied complete signature table, this standalone entry's semantic authority: as in
@@ -331,8 +388,12 @@ private def expectedEinsumOperandRow (f : ReadPlan) : Option (Array Nat) :=
     dimension, so it can only faithfully represent a SINGLE-TERM `AssignPlan` (see
     `EvalPlanCodegen.lean`'s `loweringToEinsumCandidate` doc comment for the full ruling this
     reflects). Checks:
-    - the semantic source has exactly one term
+    - the semantic source has exactly one term (which also subsumes the emitter's `.emptyAssign`)
     - `destination` matches the semantic assignment's own `destinationSlot`
+    - the term itself is renderable at all (`einsumTermRenderable`): non-empty factors, rank within
+      the emitter's subscript alphabet, and complete iteration-position coverage — the three
+      structural preconditions `lowerTerm` imposes (`.emptyTerm`/`.rankTooLarge`/
+      `.uncoveredPosition`) that no per-factor row check can see
     - `operands.size` matches that term's factor count, one operand row per factor
     - each operand row is EXACTLY the row that factor's own affine map means
       (`expectedEinsumOperandRow`): the factor's `sourceSlot` followed by the single projection
@@ -345,7 +406,12 @@ private def expectedEinsumOperandRow (f : ReadPlan) : Option (Array Nat) :=
     recomputation: `#[slot, 1, 0]` (a transposed 2-D read), `outputAxes := #[1, 0]` (a transposed
     result), and `outputAxes := #[0, 0]` (a duplicated axis) are all same-rank and in-range, so all
     three passed and were stamped with evidence even though `einsumOnly` would emit a different
-    contraction. Recomputing from the checked factor maps is what distinguishes them. -/
+    contraction. Recomputing from the checked factor maps is what distinguishes them.
+
+    Taken together with `einsumTermRenderable`, acceptance here now implies `lowerAssign` renders:
+    every located rejection `lowerAssign`/`lowerTerm`/`lowerFactor` can make is mirrored by a
+    conjunct above (the support gate covers their `requireJaxSupport` half, `hasIverson` their
+    `.iversonFactor`, and exact row recomputation their bias/projection pair). -/
 def validateEinsum (sigs : Array TensorSignature)
     (kernel : EinsumExperimentKernelCandidate) : Bool :=
   let terms := kernel.semanticAssignment.plan.terms
@@ -358,12 +424,12 @@ def validateEinsum (sigs : Array TensorSignature)
       -- `hasIverson` is the real guard, not the `operands.size` coincidence below (see
       -- `affineTermTablesValid`'s doc comment for why the two must not be conflated).
       !term.hasIverson &&
+      einsumTermRenderable term &&
       kernel.operands.size == term.factors.size &&
       (term.factors.zip kernel.operands).all (fun (factor, opRow) => match factor with
         | .iverson _ => false  -- a predicate factor has no einsum operand; not an einsum candidate
         | .read f => expectedEinsumOperandRow f == some opRow) &&
       kernel.outputAxes == term.outputPos
-
 /-- Combined kernel-candidate validity check, real implementation (Task 5): dispatches to
     `validateAffineTable`/`validateEinsum` per candidate kind. Bool-valued (not `Prop`-valued via
     the `Bool → Prop` coercion the task brief's sketch used) so it can also be used directly inside

@@ -148,6 +148,13 @@ def pyTensorEntry (t : DenseTensor) : String :=
     time (each term restarts from `a`). -/
 def labelTable : Array Char := "abcdefghijklmnopqrstuvwxyz".toList.toArray
 
+-- Drift guard: `Executable.lean`'s `validateEinsum` certifies exactly the ranks this table can
+-- label, using its own mirrored `einsumLabelLimit` (it cannot import this experimental module —
+-- `experiments/jax_bridge` depends on `LeanNCD`, never the reverse). If this table ever grows or
+-- shrinks, the two must be changed together or the validator would start certifying a rank
+-- `lowerTerm` rejects (or rejecting one it renders).
+#guard labelTable.size == einsumLabelLimit
+
 /-- Whether one `AffineMap` row is a pure single-`1` projection, and onto which position. `none`
     covers every non-projection shape at once. -/
 def rowProjectionTarget (row : Array Int) : Option Nat :=
@@ -1141,5 +1148,119 @@ def step1BoolPrepared? : Option PreparedPlan :=
       rejectedWith (.unsupportedSourceDType 1 0 0 .bool) (generateForward prepared) &&
       rejectedWith (.unsupportedSourceDType 1 0 0 .bool) (lowerCheckPlanToCandidate prepared)
   | _, _ => false)
+
+/-! ### Task 4.5 re-review — the einsum emitter's TERM-level preconditions, both halves agreeing
+
+The validator half of these three fixtures lives in `test/Eval/Plan/ExecutableTest.lean` (fixture
+12). What is exercised HERE is the emitter half plus the agreement itself: each assignment is
+checked, `lowerAssign` rejects it with its located error, and `validateEinsum` — which used to
+certify all three — now rejects the corresponding candidate too. Before the fix, every
+`einsumRenderAgrees` call below returned `false` on its `validateEinsum` conjunct while the located
+emitter rejection already held, which is exactly the validator/emitter disagreement the re-review
+reproduced (`validator=accepted; emitter=rejected emptyTerm 0 0`). -/
+
+/-- `lowerAssign` rejects with exactly `expected` AND `validateEinsum` rejects the candidate the
+    conversion builds for the same assignment: agreement, not merely two rejections. -/
+private def einsumRenderAgrees (sigs : Array TensorSignature) (a : AssignPlan)
+    (expected : JaxCodegenError) : Bool :=
+  match checkAssign sigs a with
+  | .error _ => false
+  | .ok checked =>
+      rejectedWith expected (lowerAssign sigs 0 checked) &&
+      (match loweringToEinsumCandidate sigs 0 checked with
+       | .error _ => false  -- the conversion itself is total here; the VALIDATOR must be the gate
+       | .ok candidate => !(validateEinsum sigs candidate))
+
+/-- …and the mirror image: `lowerAssign` renders it and `validateEinsum` accepts the same
+    conversion's candidate. The acceptance siblings are what keep the guards above from being
+    satisfiable by a validator that simply rejects everything. -/
+private def einsumRenderAgreesAccepted (sigs : Array TensorSignature) (a : AssignPlan) : Bool :=
+  match checkAssign sigs a with
+  | .error _ => false
+  | .ok checked =>
+      (match lowerAssign sigs 0 checked with | .ok _ => true | .error _ => false) &&
+      (match loweringToEinsumCandidate sigs 0 checked with
+       | .error _ => false
+       | .ok candidate => validateEinsum sigs candidate)
+
+-- (a) Factor-free term: `.emptyTerm 0 0` — the case the re-review reproduced.
+def scalarSigs : Array TensorSignature :=
+  #[ { shape := #[], dtype := .f64 }, { shape := #[], dtype := .f64 } ]
+
+def scalarRead : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[], bias := #[] }
+  , sourceShape := #[], oobPolicy := .zeroPad }
+
+def factorFreeAssign : AssignPlan :=
+  { contextShape := #[], destinationSlot := 1, outputShape := #[]
+  , terms := #[{ iterationShape := #[], contextPos := #[], outputPos := #[], reductionPos := #[]
+               , factors := #[] }]
+  , algebra := admittedAlgebra }
+
+def scalarFactorAssign : AssignPlan :=
+  { factorFreeAssign with
+    terms := #[{ factorFreeAssign.terms[0]! with factors := #[.read scalarRead] }] }
+
+#guard einsumRenderAgrees scalarSigs factorFreeAssign (.emptyTerm 0 0)
+#guard einsumRenderAgreesAccepted scalarSigs scalarFactorAssign
+
+-- The affine mode still renders the factor-free term (empty factor list), so the tightening is
+-- einsum-scoped: the plan-level path and the corpus route through `affineReference`.
+#guard (match checkAssign scalarSigs factorFreeAssign with
+  | .error _ => false
+  | .ok checked => (match renderAffineAssign scalarSigs checked with
+      | .ok _ => true | .error _ => false))
+
+-- (b) Uncovered iteration position: `Y[i] := Σ_j V[i]` leaves position 1 on no operand.
+def covSigs : Array TensorSignature :=
+  #[ { shape := #[2, 2], dtype := .f64 }, { shape := #[2], dtype := .f64 }
+   , { shape := #[2], dtype := .f64 } ]
+
+def vecRead : ReadPlan :=
+  { sourceSlot := 1, map := { coeffs := #[#[1, 0]], bias := #[0] }
+  , sourceShape := #[2], oobPolicy := .zeroPad }
+
+def matRead : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[#[1, 0], #[0, 1]], bias := #[0, 0] }
+  , sourceShape := #[2, 2], oobPolicy := .zeroPad }
+
+def uncoveredAssign : AssignPlan :=
+  { contextShape := #[], destinationSlot := 2, outputShape := #[2]
+  , terms := #[{ iterationShape := #[2, 2], contextPos := #[], outputPos := #[0]
+               , reductionPos := #[1], factors := #[.read vecRead] }]
+  , algebra := admittedAlgebra }
+
+def coveredAssign : AssignPlan :=
+  { uncoveredAssign with
+    terms := #[{ uncoveredAssign.terms[0]! with factors := #[.read matRead] }] }
+
+#guard einsumRenderAgrees covSigs uncoveredAssign (.uncoveredPosition 0 0 1)
+#guard einsumRenderAgreesAccepted covSigs coveredAssign
+
+-- (c) Label-table overflow: rank 27 > `labelTable.size`, every position covered, every row an exact
+-- single-`1` projection — only the rank separates it from the accepted rank-26 sibling.
+def wideShape (rank : Nat) : Array Nat := Array.replicate rank 1
+
+def wideRow (rank p : Nat) : Array Int :=
+  (List.range rank).toArray.map (fun q => if q == p then 1 else 0)
+
+def wideRead (rank : Nat) : ReadPlan :=
+  { sourceSlot := 0
+  , map := { coeffs := (List.range rank).toArray.map (wideRow rank)
+           , bias := Array.replicate rank (0 : Int) }
+  , sourceShape := wideShape rank, oobPolicy := .zeroPad }
+
+def wideSigs (rank : Nat) : Array TensorSignature :=
+  #[ { shape := wideShape rank, dtype := .f64 }, { shape := #[1], dtype := .f64 } ]
+
+def wideAssign (rank : Nat) : AssignPlan :=
+  { contextShape := #[], destinationSlot := 1, outputShape := #[1]
+  , terms := #[{ iterationShape := wideShape rank, contextPos := #[], outputPos := #[0]
+               , reductionPos := ((List.range rank).drop 1).toArray
+               , factors := #[.read (wideRead rank)] }]
+  , algebra := admittedAlgebra }
+
+#guard einsumRenderAgrees (wideSigs 27) (wideAssign 27) (.rankTooLarge 0 0 27)
+#guard einsumRenderAgreesAccepted (wideSigs 26) (wideAssign 26)
 
 end JaxBridge

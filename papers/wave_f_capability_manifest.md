@@ -140,19 +140,34 @@ The curated `enumScanCases` generator (`test/Eval/PropertyOracle/ScanGen.lean`) 
   == 17 && nonlin == 0 && agg == 0`), which fails loudly rather than silently re-baselining if the
   accept/reject boundary ever shifts.
 
-  *The split was **9 / 4 / 4** when Wave F wrote this manifest. The nonlinearity plan's Task 4
+  *The split was **9 / 4 / 4** when Wave F wrote this manifest, and TWO threads closed those
+  rejections, not one. The nonlinearity plan's Task 4
   (`nonlinearity_split_pair_direct_lowering.md` §3.6) taught `compileScan` to admit and lower
-  pointwise/axiswise scan sources, moving all four `unsupportedNonlin` cases into the accepted
-  column. The boundary this bullet describes shifted exactly as the assertion was designed to
-  catch — the count above is the post-Task-4 one, re-observed on this branch.*
-- **21** total scan programs pass the three-way differential gate: **12 hand-written** (the nine
-  acceptance schedules covering `ScanCompileTest.lean`'s twelve lettered shapes, a two-warning
-  fixture, a whole-surface alpha-rename, and a scan over an axis sharing a NAME but not a UID with a
-  free output axis) plus the **9** accepted generated cases.
-- All 21 agree bit-for-bit across three independent legs: the compiled checked path
-  (`prepareEvalPlan` → `runPreparedDense`), the legacy `evalScheduled` oracle, and the independent
-  scan-free unrolling (`PropertyOracle.independentRun`) — compared on materialized state, whole
-  environment, and (between the first two legs only) preparation warnings.
+  pointwise/axiswise scan sources, moving template 2's four `unsupportedNonlin` cases into the
+  accepted column; the max/min-aggregation thread then admitted `.max`/`.min` (they compile to the
+  tropical algebras `evalScheduled` already evaluates), moving template 5's four `unsupportedAgg`
+  cases too — so `accepted` went 9 → 13 → 17. The boundary this bullet describes shifted exactly as
+  the assertion was designed to catch — the count above is the post-both-threads one, re-observed on
+  this branch (`DifferentialTest scan corpus: total=17 accepted=17 unsupportedNonlin=0
+  unsupportedAgg=0`).*
+- **29** scan programs pass the three-way differential gate *within this manifest's own Wave F
+  scope*: **12 hand-written** (the nine acceptance schedules covering `ScanCompileTest.lean`'s twelve
+  lettered shapes, a two-warning fixture, a whole-surface alpha-rename, and a scan over an axis
+  sharing a NAME but not a UID with a free output axis) plus the **17** accepted generated cases.
+
+  *This bullet said **21** = 12 + **9** when Wave F wrote it. The 12 hand-written fixtures are
+  unchanged; only the generated half moved, by exactly the accept-boundary shift the bullet above
+  records (9 → 13 → 17). Later threads then ADDED hand-written three-way scan fixtures outside this
+  manifest's scope, so `DifferentialTest.lean` today gates **43** scan programs in total: the 12
+  above, plus **6** nonlinearity-thread oracle groups (`nonlinearScanFixtures`), plus the **7**-entry
+  curated predicate/mask scan set (Slice 5.4's five, extended by Task 4.5 with Task 4.4's two Boolean
+  scan-state clones), plus Task 4.4's `scratchPredicate` fixture, plus the 17 generated cases. Those
+  14 additions belong to their own threads' manifests; they are named here so this count cannot be
+  read as the whole file's inventory.*
+- All 29 (and, with the later additions, all 43) agree bit-for-bit across three independent legs: the
+  compiled checked path (`prepareEvalPlan` → `runPreparedDense`), the legacy `evalScheduled` oracle,
+  and the independent scan-free unrolling (`PropertyOracle.independentRun`) — compared on
+  materialized state, whole environment, and (between the first two legs only) preparation warnings.
 - Beyond raw count, `DifferentialTest.lean` asserts a structurally derived feature table over the
   gated schedules themselves (not by fixture name): deep look-back and zero padding, coupled states,
   scratch, external reads, contraction, extent one, more than one scan axis, several base writes for
