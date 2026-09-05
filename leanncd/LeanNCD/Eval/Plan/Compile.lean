@@ -1065,16 +1065,30 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
 def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
     Except PlanCompileFailure PreparedPlan := do
   -- Step 0: source invariants, defensively re-established for a DIRECT schedule.
-  -- `sched.decls` and `sched.stmts` are authoritative; `sched.env` is a cached pipeline product and
-  -- is never consulted. This runs BEFORE capability preflight, shape inference, and signature
-  -- validation: an invalid source combination (a name declared tensor-bearing twice, a predicate
-  -- output carrying a nonlinearity or a non-sum aggregation) is not a valid-but-unsupported backend
-  -- capability, so it must not surface as one. Per-statement order is source order and, within a
-  -- statement, nonlinearity before aggregation — exactly `checkDtypes`'s own order, because it is
-  -- the same shared `checkPredicateOutput` rule.
+  -- `sched.decls` and `sched.stmts` are authoritative; `sched.env` and `sched.explicitSizes` are
+  -- cached pipeline products and are never consulted. This runs BEFORE capability preflight, shape
+  -- inference, and signature validation: an invalid source combination (a name declared
+  -- tensor-bearing twice, a predicate output carrying a nonlinearity or a non-sum aggregation) is
+  -- not a valid-but-unsupported backend capability, so it must not surface as one. Per-statement
+  -- order is source order and, within a statement, nonlinearity before aggregation — exactly
+  -- `checkDtypes`'s own order, because it is the same shared `checkPredicateOutput` rule.
   let declEnv ← match buildDeclEnv sched.decls with
     | .ok e    => pure e
     | .error e => throw { cause := .sourceInvariant e, warnings := [] }
+  -- The pinned axis sizes Step C seeds shape inference with are DERIVED from `sched.decls` here,
+  -- through the same `declaredAxisSizes` rule `schedule` itself uses, rather than read out of the
+  -- cached `sched.explicitSizes` field. Same authority rule, and same reason, as `orderedExtNames`
+  -- below (which re-derives instead of filtering through `sched.extNames`) and Step 0's own
+  -- `buildDeclEnv` (which ignores `sched.env`): on a hand-built `ScheduledProgram` nothing ties the
+  -- cached map to the declarations, so `axis i : ℕ = 3` paired with a cached `i ↦ 4` would seed
+  -- inference with an extent the source never declares — silently allocating and indexing every
+  -- `i`-shaped tensor at the WRONG size wherever no input shape contradicts it, with no diagnostic.
+  -- Re-deriving is preferred to comparing-and-rejecting for the same reason it is there: the
+  -- declarations already say everything the map can say, so a disagreement has no information to
+  -- report, and an entry with no declaration behind it (an unsized `axis a : ℕ` with a cached size)
+  -- is dropped rather than honored — leaving that axis to ordinary inference, which fails loud if it
+  -- cannot be determined.
+  let explicitSizes : HashMap UID Nat := declaredAxisSizes sched.decls
   for sc in sched.stmts do
     let sourceStmts : List Stmt := match sc with
       | .plain s => [s]
@@ -1130,7 +1144,7 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
     | .plain s => [s]
     | .scan _ _ base recur _ => base ++ recur
     | .scanPre .. => [])   -- unreachable post-preflight (Step A already rejected this)
-  let (sizes, warnings) ← match inferAxisSizesFromSignature sched.explicitSizes sig flatStmts with
+  let (sizes, warnings) ← match inferAxisSizesFromSignature explicitSizes sig flatStmts with
     | .ok r => pure r
     | .error f =>
         match f.error with

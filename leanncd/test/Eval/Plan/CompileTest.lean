@@ -1,5 +1,6 @@
 import LeanNCD.Eval.Entry
 import LeanNCD.Eval.Plan.Compile
+import LeanNCD.Eval.Plan.Adapter   -- `runPreparedDense`: the explicitSizes-authority fixture runs its plan
 
 /-!
 # Wave C C4 capability preflight tests
@@ -484,10 +485,18 @@ def predicateAggSched : ScheduledProgram :=
 /-- Fixture 9: `contractSched`'s two-input donor with both inputs given the SAME shape (so a
     slot-zero fallback could not be caught by shape checking) and `B` deliberately absent from the
     cached `sched.extNames`. Preparation derives external names from the statements themselves, so
-    `A` and `B` still get distinct ordered bindings and `B[j]`'s read resolves to `B`'s own slot. -/
+    `A` and `B` still get distinct ordered bindings and `B[j]`'s read resolves to `B`'s own slot.
+
+    `j`'s extent is equalized to 2 in the DECLARATIONS, not merely in the cached `explicitSizes` map:
+    since the whole-branch review, `prepareEvalPlan` re-derives pinned sizes from `sched.decls`
+    (`declaredAxisSizes`) instead of trusting that cached field, so a fixture that shrank `j` only in
+    the cache would now be seeded with `contractSched`'s declared `j = 3` and fail its own signature.
+    The cached map is left in place and honest — this fixture is about external NAMES, and its
+    `explicitSizes`-authority sibling lives at the end of this file. -/
 def sameShapeSched : ScheduledProgram :=
   { contractSched with
-      extNames := insert "A" (∅ : Finset String)   -- `B` omitted from the cached set
+      decls := [.axis axI2 (some 2), .axis axJ2 (some 2)]
+    , extNames := insert "A" (∅ : Finset String)   -- `B` omitted from the cached set
     , explicitSizes := ((({} : HashMap UID Nat).insert axI2.uid 2).insert axJ2.uid 2) }
 def sameShapeSig : InputSignature :=
   InputSignature.mk
@@ -650,5 +659,155 @@ run_cmd do
         | some baseline =>
             unless f.warnings == baseline.warnings do
               throwError s!"combined warnings diverged from statement-1-alone: {f.warnings} vs {baseline.warnings}"
+
+-- ── Task 4 whole-branch review — `explicitSizes` is a cached pipeline product, not authority ──
+--
+-- `ScheduledProgram.explicitSizes` is what `schedule` derived from the declarations; on a
+-- hand-built schedule nothing ties the two together. `prepareEvalPlan` used to seed shape inference
+-- with that cached map directly, so `axis i : ℕ = 3` paired with a cached `i ↦ 4` allocated and
+-- indexed every `i`-shaped tensor at 4 — silently, with no diagnostic, wherever no input shape
+-- contradicts it. Step 0 now re-derives the map from `sched.decls` through the same
+-- `declaredAxisSizes` rule `schedule` itself uses (the identical authority move Step 0 already made
+-- for `sched.env` and `orderedExtNames` made for `sched.extNames`).
+--
+-- The attack needs an axis NO input shape can pin, or the disagreement would surface as an ordinary
+-- `sizeConflict` instead of silently winning: `Y[i] := X[j]` contracts over `j` (pinned by `X`'s own
+-- shape) and leaves `i` free on the LHS, where the declaration is its ONLY source of extent.
+def axICache : AxisSpec := { name := "i", uid := 1, kind := .nat }
+def axJCache : AxisSpec := { name := "j", uid := 2, kind := .nat }
+
+def cacheSchedWith (cachedI : Nat) : ScheduledProgram :=
+  { decls := [.axis axICache (some 3), .axis axJCache (some 2)]
+  , stmts := [.plain (.assign "Y" [.free axICache]
+      { body := { terms := [{ factors := [.read "X" [.axis axJCache]] }] }, nonlin := .identity })]
+  , env := {}, extNames := insert "X" (∅ : Finset String)
+  , explicitSizes := ((({} : HashMap UID Nat).insert axICache.uid cachedI).insert axJCache.uid 2) }
+
+def cacheInputs : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "X" (⟨[2], #[1.0, 10.0]⟩ : DenseTensor)
+def cacheSig : InputSignature := InputSignature.ofDenseInputs cacheInputs
+
+def cachePreparedWith (cachedI : Nat) : Option PreparedPlan :=
+  (prepareEvalPlan (cacheSchedWith cachedI) cacheSig).toOption
+
+-- The DECLARED extent (3) decides, whatever the cached map says — the lying cache (4) and the
+-- honest one (3) produce byte-identical plans, iteration shape included.
+#guard (cachePreparedWith 4).map
+    (fun p => (assignStep p.plan.raw.steps[0]!).terms[0]!.iterationShape) == some #[3, 2]
+#guard (cachePreparedWith 3).map
+    (fun p => (assignStep p.plan.raw.steps[0]!).terms[0]!.iterationShape) == some #[3, 2]
+#guard (cachePreparedWith 4).map (fun p => (assignStep p.plan.raw.steps[0]!).outputShape) == some #[3]
+#guard (cachePreparedWith 3).map (fun p => (assignStep p.plan.raw.steps[0]!).outputShape) == some #[3]
+
+-- …and the executed result is three elements of `ΣX = 11`, not four. Running it is what makes the
+-- fixture about SEMANTICS rather than a metadata field: under the cached map the plan allocated a
+-- four-element `Y`. The REFERENCE evaluator is required to agree element-for-element — it seeds
+-- inference from the same re-derived map, so the fix cannot trade one silent wrong answer (both
+-- backends at extent 4) for a silent disagreement (checked 3, reference 4).
+run_cmd do
+  match cachePreparedWith 4 with
+  | none => throwError "explicitSizes attack fixture: prepareEvalPlan unexpectedly failed"
+  | some prepared =>
+      match runPreparedDense prepared cacheInputs with
+      | .error e => throwError s!"explicitSizes attack fixture: run failed: {repr e.cause}"
+      | .ok report =>
+          match report.env.get? "Y" with
+          | none => throwError "explicitSizes attack fixture: Y missing from the result"
+          | some y =>
+              unless y.shape == [3] && y.data == #[11.0, 11.0, 11.0] do
+                throwError s!"explicitSizes attack fixture: Y is {repr y.shape} {repr y.data}"
+      match evalScheduled (cacheSchedWith 4) cacheInputs with
+      | .error f => throwError s!"explicitSizes attack fixture: evalScheduled failed: {f.error}"
+      | .ok legacy =>
+          match legacy.env.get? "Y" with
+          | none => throwError "explicitSizes attack fixture: reference Y missing"
+          | some y =>
+              unless y.shape == [3] && y.data == #[11.0, 11.0, 11.0] do
+                throwError s!"explicitSizes attack fixture: reference Y is {repr y.shape} {repr y.data}"
+
+-- The sibling with an axis the cache pins and the declaration does NOT: `declaredAxisSizes` drops
+-- the fabricated entry, so the axis falls to ordinary inference — which fails loud here rather than
+-- honouring a size the source never declares.
+def cacheUnsizedSched : ScheduledProgram :=
+  { cacheSchedWith 4 with decls := [.axis axICache none, .axis axJCache (some 2)] }
+
+#guard match causeOf (prepareEvalPlan cacheUnsizedSched cacheSig) with
+  | some f => f.cause == .shape (.unsizedAxis axICache.uid (.assignOutput "Y"))
+  | none => false
+
+-- ── Task 4 whole-branch review — duplicate tensor-bearing declarations at the DIRECT evaluator ──
+--
+-- `Eval.combineFor` picks a statement's whole contraction algebra by scanning `decls` for the
+-- destination's declaration and taking the FIRST tensor-bearing match, while a `DeclEnv` built from
+-- the same list sees the LAST. On `[tensor Y, predicate Y]` that disagreement decides real-vs-Boolean
+-- semantics silently. `resolveDecls` rules the list out in the source pipeline and `prepareEvalPlan`'s
+-- Step 0 rules it out for the checked backend, but `evalScheduled` — a public boundary that accepts a
+-- hand-built `ScheduledProgram` — used to evaluate it. It now re-runs the same `buildDeclEnv` first.
+--
+-- Both fixtures use `Y[i] := A[i] + B[i]` with `A = B = [1, 1]`, where the two readings genuinely
+-- differ: real sum-product gives `2.0` per element, the Boolean `(∧, ∃)` reading gives `1.0`.
+def axIDup : AxisSpec := { name := "i", uid := 1, kind := .nat }
+
+def dupDeclStmts : List ScanStmt :=
+  [ .plain (.assign "Y" [.free axIDup]
+      { body := { terms := [ { factors := [.read "A" [.axis axIDup]] }
+                           , { factors := [.read "B" [.axis axIDup]] } ] }
+      , nonlin := .identity }) ]
+
+def dupDeclInputs : HashMap String DenseTensor :=
+  (({} : HashMap String DenseTensor).insert "A" (⟨[2], #[1.0, 1.0]⟩ : DenseTensor)).insert
+    "B" (⟨[2], #[1.0, 1.0]⟩ : DenseTensor)
+def dupDeclSig : InputSignature := InputSignature.ofDenseInputs dupDeclInputs
+
+/-- `Y` declared tensor-bearing TWICE (`tensor` then `predicate`) — the exact list `combineFor` and
+    `DeclEnv` disagree about. -/
+def dupDeclSched : ScheduledProgram :=
+  { decls := [.axis axIDup (some 2), .tensor "Y" [axIDup], .predicate "Y" [axIDup]]
+  , stmts := dupDeclStmts
+  , env := {}, extNames := insert "A" (insert "B" (∅ : Finset String))
+  , explicitSizes := (({} : HashMap UID Nat).insert axIDup.uid 2) }
+
+/-- The VALID sibling: an `.axis` declaration sharing the predicate's NAME is a different namespace,
+    so it is not a duplicate — and `combineFor`'s tensor-bearing-only scan still finds the predicate
+    (Task 4.1's own fixture pins that at `evalAssignDtyped`, in `test/Eval/ContractTest.lean`; this
+    one pins it through the whole `evalScheduled` boundary, past the new validation). -/
+def axShadowSched : ScheduledProgram :=
+  { dupDeclSched with
+      decls := [ .axis axIDup (some 2)
+               , .axis { name := "Y", uid := 77, kind := .real } none
+               , .predicate "Y" [axIDup] ] }
+
+run_cmd do
+  -- reference path: the duplicate is rejected, with the source pipeline's own typed cause.
+  match evalScheduled dupDeclSched dupDeclInputs with
+  | .ok report =>
+      throwError s!"evalScheduled accepted a doubly-declared tensor name: {repr (report.env.get? "Y")}"
+  | .error failure =>
+      match failure.error with
+      | .compile (.duplicateTensorDecl nm) =>
+          unless nm == "Y" do
+            throwError s!"duplicate declaration named the wrong tensor: {nm}"
+      | e => throwError s!"wrong reference cause for a duplicate declaration: {e}"
+      unless failure.warnings == [] do
+        throwError s!"duplicate-declaration failure carried warnings: {failure.warnings}"
+  -- checked path: the SAME `CompileError`, nested in `sourceInvariant` — parity, not merely "both
+  -- reject".
+  match causeOf (prepareEvalPlan dupDeclSched dupDeclSig) with
+  | none => throwError "prepareEvalPlan accepted a doubly-declared tensor name"
+  | some f =>
+      unless f.cause == .sourceInvariant (.duplicateTensorDecl "Y") do
+        throwError s!"wrong checked cause for a duplicate declaration: {renderCompileCause f.cause}"
+  -- the axis-shadow sibling is accepted by BOTH, and still reads as a predicate: `1.0`, not `2.0`.
+  match evalScheduled axShadowSched dupDeclInputs with
+  | .error failure => throwError s!"axis-shadow sibling rejected by evalScheduled: {failure.error}"
+  | .ok report =>
+      match report.env.get? "Y" with
+      | none => throwError "axis-shadow sibling: Y missing from the result"
+      | some y =>
+          unless y.shape == [2] && y.data == #[1.0, 1.0] do
+            throwError s!"axis-shadow sibling lost the Boolean reading: {repr y.data}"
+  match causeOf (prepareEvalPlan axShadowSched dupDeclSig) with
+  | none => pure ()
+  | some f => throwError s!"axis-shadow sibling rejected by prepareEvalPlan: {renderCompileCause f.cause}"
 
 end LeanNCD.Eval.Plan.CompileTest

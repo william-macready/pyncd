@@ -2184,4 +2184,113 @@ run_cmd do
       unless e == .writeDtypeMismatch true 0 0 .bool .f64 do
         throwError s!"F4.4 fixture 7: wrong error (expected dtype to precede rank): {repr e}"
 
+/-! ## Task 4 whole-branch review — unsupported dtypes on the scan path, and the signature-context tie
+
+Fixtures 8-10 (`f32` admission) and 11-13 (`runDenseScan`'s stored signature table), both built on
+the accepted Boolean donor above so they differ from it in exactly one thing. -/
+
+-- Fixture 8: the STATE's own destination dtype is `f32`. Nothing on the scan path asked before: a
+-- state destination is an OUTER slot, so `checkPlanBlock`'s per-step `checkAssign` (which does apply
+-- `dtypeAdmitted`) never sees it, and both cross-checks that DO compare it — `checkWrites`'
+-- `writeDtypeMismatch` and `checkCaptures`' `captureSignatureMismatch` — are equality checks a
+-- matching pair of `f32`s satisfies perfectly. The state loop now rejects it outright, and BEFORE
+-- the write check, so the diagnostic names the unsupported dtype rather than a downstream
+-- disagreement with the (still Boolean) block output.
+def outerSigsF32State : Array TensorSignature :=
+  #[{ shape := #[], dtype := .bool }, { shape := #[3], dtype := .f64 }, { shape := #[3], dtype := .f32 }]
+
+run_cmd do
+  match checkScanPlan outerSigsF32State linearScanBool with
+  | .ok _ => throwError "review fixture 8: an f32 state destination should have been rejected"
+  | .error e =>
+      unless e == .stateDtypeNotAdmitted 0 2 .f32 do
+        throwError s!"review fixture 8: wrong error {repr e}"
+
+-- Fixture 9: an `f32` CAPTURE that no step ever reads. The base block gains a second input slot
+-- (block-local slot 2) bound to a new outer slot 3, both `f32` — so the two signatures agree exactly
+-- and `captureSignatureMismatch` cannot fire, while no `.assign` step reads the slot so
+-- `checkAssign`'s own `dtypeNotAdmitted` never sees it either. Before this check the whole plan was
+-- accepted and executed, passing an `f32`-tagged tensor through the same `Array Float` storage.
+def outerSigsF32Capture : Array TensorSignature :=
+  outerSigsBool.push { shape := #[], dtype := .f32 }
+
+def baseBlockF32Capture : RawPlanBlock :=
+  { baseBlockBool with
+    tensorSigs := baseBlockBool.tensorSigs.push { shape := #[], dtype := .f32 }
+    , inputs := #[0, 2] }
+
+def f32CaptureExtra : BlockCapture := { inputSlot := 2, source := .external 3 }
+
+run_cmd do
+  match checkScanPlan outerSigsF32Capture
+      { linearScanBool with baseBlock := baseBlockF32Capture
+                          , baseCaptures := #[baseCaptureS0, f32CaptureExtra] } with
+  | .ok _ => throwError "review fixture 9: an f32 capture should have been rejected"
+  | .error e =>
+      unless e == .captureDtypeNotAdmitted true 1 2 .f32 do
+        throwError s!"review fixture 9: wrong error {repr e}"
+
+-- Fixture 10: the acceptance sibling — the SAME extra unread input, `f64` instead of `f32`. One
+-- dtype is all that separates it from fixture 9, so the rejection is about the dtype and not about
+-- the extra capture, the extra input slot, or the widened outer table.
+def outerSigsF64Capture : Array TensorSignature :=
+  outerSigsBool.push { shape := #[], dtype := .f64 }
+
+def baseBlockF64Capture : RawPlanBlock :=
+  { baseBlockBool with
+    tensorSigs := baseBlockBool.tensorSigs.push { shape := #[], dtype := .f64 }
+    , inputs := #[0, 2] }
+
+run_cmd do
+  match checkScanPlan outerSigsF64Capture
+      { linearScanBool with baseBlock := baseBlockF64Capture
+                          , baseCaptures := #[baseCaptureS0, f32CaptureExtra] } with
+  | .error e => throwError s!"review fixture 10: the f64 sibling was rejected: {repr e}"
+  | .ok _ => pure ()
+
+-- Fixtures 11-13: `CheckedScanPlan` now STORES the table it was validated against, and
+-- `runDenseScan` runs from that table while requiring the caller's argument to equal it exactly.
+-- Before the tie, `checkScanPlan` could validate the `#[3]`-shaped state above and `runDenseScan` be
+-- handed a table saying `#[1]`: allocation followed the caller, `commitWrite`'s advancing row then
+-- wrote at index 1 of a one-element tensor, and the run returned `.ok` with an `Array.set!` panic
+-- message emitted. Both substitutions below are now typed rejections, and fixture 4 above is the
+-- valid sibling (same checked plan, its own table, correct Boolean history).
+
+/-- Same SHAPES, different dtypes: every slot is `f64` where the validated table said `bool`. Not a
+    shape attack at all — it would allocate identically — which is exactly why the tie is EXACT
+    equality of the table rather than a shape comparison. -/
+def outerSigsBoolAsReal : Array TensorSignature :=
+  outerSigsBool.map (fun s => { s with dtype := .f64 })
+
+/-- Different SHAPE at the state's own destination slot: the shape the panic came from. -/
+def outerSigsShortState : Array TensorSignature :=
+  outerSigsBool.set! 2 { shape := #[1], dtype := .bool }
+
+run_cmd do
+  match checkScanPlan outerSigsBool linearScanBool with
+  | .error e => throwError s!"review fixtures 11-13: the donor was rejected: {repr e}"
+  | .ok checked =>
+      -- 11: the stored table IS the one `checkScanPlan` validated against.
+      unless checked.sigs == outerSigsBool do
+        throwError s!"review fixture 11: stored signature context drifted: {repr checked.sigs}"
+      -- 12: same-shape, different-dtype substitution.
+      match runDenseScan outerSigsBoolAsReal checked outerStoreBoolLinear with
+      | .ok _ => throwError "review fixture 12: an all-f64 substitute table was accepted"
+      | .error e =>
+          unless e == .signatureContextMismatch outerSigsBool outerSigsBoolAsReal do
+            throwError s!"review fixture 12: wrong error {repr e}"
+      -- 13: different-shape substitution — the one that used to panic in `Array.set!`.
+      match runDenseScan outerSigsShortState checked outerStoreBoolLinear with
+      | .ok _ => throwError "review fixture 13: a shorter-state substitute table was accepted"
+      | .error e =>
+          unless e == .signatureContextMismatch outerSigsBool outerSigsShortState do
+            throwError s!"review fixture 13: wrong error {repr e}"
+      -- and the valid sibling still runs, from the stored table, to the Boolean history.
+      match runDenseScan outerSigsBool checked outerStoreBoolLinear with
+      | .error e => throwError s!"review fixtures 11-13: the honest table was rejected: {repr e}"
+      | .ok result =>
+          let S := result.getD 2 { shape := [], data := #[] }
+          unless DenseTensor.approxEq S { shape := [3], data := #[1.0, 1.0, 1.0] } do
+            throwError s!"review fixtures 11-13: wrong result {repr S.data}"
+
 end LeanNCD.Eval.Plan.ScanTest

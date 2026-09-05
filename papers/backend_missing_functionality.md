@@ -152,8 +152,10 @@ fragment.
   (`ScanPlanError.writeDtypeMismatch`) BEFORE rank/geometry. `booleanOutput` is retained
   producer-less, like `scanNode`. `f32` remains rejected. **Not** included: JAX Boolean execution —
   the experimental `jax_bridge` backend now REJECTS a Boolean destination, a Boolean source, tropical
-  algebra, and a unary read with located typed errors before emitting Python or stamping evidence
-  (see `jax_evalplan_architecture.md`). Closed by `boolean_predicate_output_evalplan.md`.
+  algebra, a unary read, and a CONTEXTFUL assignment (non-empty `AssignPlan.contextShape`) with
+  located typed errors before emitting Python or stamping evidence, plus — in `einsumOnly` mode only
+  — a zero-padded read whose source extent disagrees with its own iteration extent
+  (`labelExtentMismatch`) (see `jax_evalplan_architecture.md`). Closed by `boolean_predicate_output_evalplan.md`.
 - **Scan nodes** with at least one advancing axis — `scanNode` has no producer left in the compiler.
   Only `noAdvancingAxis` (an empty advancing-axis list) is still an error, and that is a genuine
   input error, not a capability gap.
@@ -177,4 +179,5 @@ fragment.
 - [`max_min_aggregation.md`](max_min_aggregation.md) — the plan that closed the max/min-aggregation row.
 - [`boolean_predicate_output_evalplan.md`](boolean_predicate_output_evalplan.md) — the plan that
   closed the Boolean/predicate declared-output row and made the experimental JAX backend reject
-  Boolean, tropical, and unary semantics rather than stamping them with reference evidence.
+  Boolean, tropical, unary, and contextful semantics rather than stamping them with reference
+  evidence.

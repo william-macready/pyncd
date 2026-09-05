@@ -935,11 +935,14 @@ is shorter than its own iteration basis: `Y[i] := V[i]` with `sourceShape = #[2]
 `iterationShape = outputShape = #[3]` is admitted by `checkAssign` (`.zeroPad` is the ONLY policy it
 admits) and executed by Dense to THREE values, the third the zero pad. `lowerTerm` renders it
 without complaint as `a->a` — and `jnp.einsum` takes label `a`'s extent from the OPERAND, so the
-rendered kernel returns two. `validateEinsum` now requires every source extent to equal the
-iteration extent of the label it is emitted with (`einsumTermLabelExtentsAgree`), so no
-`ExecutionEvidence` is issued for it. The emitter half — it still renders, which is exactly why the
-evidence boundary, not renderability, has to be the gate — is asserted inline in
-`experiments/jax_bridge/EvalPlanCodegen.lean`. -/
+rendered kernel returns two. `validateEinsum` requires every source extent to equal the iteration
+extent of the label it is emitted with, so no `ExecutionEvidence` is issued for it.
+
+The whole-branch review closed the other half: the extent recomputation is now the PUBLIC, located
+`einsumTermLabelExtents`, and `EvalPlanCodegen.lean`'s public `lowerAssign` calls it (rather than
+copying it) and refuses to emit the program at all, with a located `.labelExtentMismatch`. The
+guards below pin this module's half — the verdict values and the validator's rejection; the emitter
+half and the two-sided agreement are asserted inline in that file. -/
 
 /-- `Y[i] := V[i]` over a `#[3]` iteration/output basis, reading a source of extent `srcExtent`.
     `srcExtent = 3` is the exact-match acceptance sibling, `srcExtent = 2` the zero-padded mismatch;
@@ -975,6 +978,21 @@ def padDenseResult : Option (List Nat × Array Float) :=
       | .ok t => some (t.shape, t.data)
 
 #guard padDenseResult == some ([3], #[1.0, 2.0, 0.0])
+
+-- Whole-branch review: the located verdict the emitter's `.labelExtentMismatch` is derived from.
+-- Factor 0's source dimension 0 projects onto iteration position 0, whose extent (3) disagrees with
+-- the source's own (2); the exact-match sibling agrees. Both directions are pinned, so neither a
+-- verdict that never fires nor one that always fires can pass.
+#guard (padAssign 2).terms.map einsumTermLabelExtents == #[.mismatch 0 0 0 2 (some 3)]
+#guard (padAssign 3).terms.map einsumTermLabelExtents == #[EinsumLabelExtents.agree]
+
+-- The fail-closed verdict: an `.iverson` factor has no einsum operand at all, so it is `noOperand`
+-- (never `agree`) — the shape `validateEinsum`'s `hasIverson` conjunct and `lowerTerm`'s
+-- `.iversonFactor` each reject with their own diagnostic.
+#guard (match (padAssign 3).terms[0]? with
+  | some t => einsumTermLabelExtents { t with factors := t.factors.push (.iverson iversonPred1) }
+      == .noOperand 1
+  | none => false)
 
 -- The operand row is EXACTLY the one `padRead` means (`#[sourceSlot, 0]`) and `outputAxes` is
 -- exactly the term's `outputPos`, so extent agreement is the only thing separating the two.

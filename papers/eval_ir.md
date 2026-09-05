@@ -125,8 +125,10 @@ narrower reason than this section used to give. The non-default `JaxExperiment` 
 `CheckedPlanStepEvidence`, and it is assignment-only by SCOPE, fail-loud rather than broken. A
 `.scan`/`.pointwise`/`.axiswise` step is rejected with a located `unsupportedStep <stepIndex>`, and
 an assignment the backend cannot render — a Boolean destination or source, a tropical `max`/`min`
-algebra, an inline unary read, an Iverson factor — is rejected with its own located typed error
-before any Python is emitted. What is still missing is the end-to-end wiring: nothing consumes a
+algebra, an inline unary read, an Iverson factor, a CONTEXTFUL assignment (non-empty
+`AssignPlan.contextShape`, which neither lowering has a kernel parameter for), or, in `einsumOnly`
+mode, a zero-padded read whose source extent disagrees with its own iteration extent — is rejected
+with its own located typed error before any Python is emitted. What is still missing is the end-to-end wiring: nothing consumes a
 validated `SomeJaxExecutable` to emit Python, and no JAX runtime is exercised by this project's
 build. See [Section 3.3.2](#332-experimental-jax-evaluator) for the status of each component.
 
@@ -387,7 +389,14 @@ preparation records those external names in first-seen-read order.
 - `iter a = n` contributes `a.uid -> n`.
 
 UIDs are canonical by the time this map is constructed. The map is the initial seed for
-signature-driven axis-size inference. It does not claim that every axis is already sized; remaining
+signature-driven axis-size inference — but it is a CACHED pipeline product, not authority. Both
+public boundaries that accept a hand-built `ScheduledProgram` re-derive it from `sched.decls`
+(`declaredAxisSizes`, the same rule `schedule` itself uses) rather than reading the stored field:
+`prepareEvalPlan` at Step 0 and `evalScheduled` at its own seed, so a schedule whose cached map
+contradicts its declarations is seeded with what the declarations say — and the checked and
+reference backends still agree. This is the same authority rule Step 0 applies to `sched.env`
+(rebuilt by `buildDeclEnv`, at both boundaries) and `sched.extNames` (rebuilt by
+`orderedExternalNames`). It does not claim that every axis is already sized; remaining
 sizes may be inferred from input tensor signatures. An unresolved required axis is a typed shape
 error during plan preparation rather than a default extent.
 
@@ -858,7 +867,7 @@ unpack
   (bindings : PlanBindings)
   (env : NamedDenseEnv)
   (result : Array DenseTensor) :
-  NamedDenseEnv
+  Except PlanError NamedDenseEnv
 
 runPreparedDense
   (plan : PreparedPlan)
@@ -866,10 +875,14 @@ runPreparedDense
   Except PlanRunFailure EvalReport
 ```
 `pack` returns positional inputs, `runDensePlan` returns the complete positional store, and `unpack`
-returns the original named environment updated with materialized results.
+returns the original named environment updated with materialized results. `unpack` resolves every
+`materializedNames` entry through the shared `PlanBindings.materializedWith` — the same path
+`PreparedPlan.materializedSignatures` uses against the signature table — so a binding naming a slot
+outside the result store is `PlanError.slotOutOfRange`, raised before any name is published, rather
+than an empty tensor fabricated under a real output name.
 On success, `EvalReport.env` contains the original named environment updated with every materialized
 result, and `EvalReport.warnings` contains the preparation warnings. On failure, `PlanRunFailure`
-records the binding or positional-execution cause together with those warnings.
+records the binding, positional-execution, or materialization cause together with those warnings.
 
 #### 3.3.2 Experimental JAX evaluator
 

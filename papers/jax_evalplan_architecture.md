@@ -2008,6 +2008,19 @@ the shipped implementation in `LeanNCD/Eval/Plan/Executable.lean` are stronger t
    pinned against the emitter's own `labelTable` by a `#guard`. This is exactly the sketch's
    "an interpreter may render labels only after checking backend limits", enforced at the point
    evidence is issued: acceptance by `validateEinsum` now implies `lowerAssign` renders.
+
+   *Extended again 2026-09-04 (whole-branch review).* Renderability is necessary but not sufficient,
+   and the gap runs in BOTH directions. A zero-padded read whose source extent is smaller than its
+   own iteration extent (`sourceShape = #[2]`, `iterationShape = #[3]`) renders a well-formed
+   `a->a` that `jnp.einsum` evaluates at the OPERAND's extent, returning two elements where Dense
+   returns three. The re-review closed this at the evidence boundary only; the whole-branch review
+   ruled that insufficient, since `lowerAssign` is itself a public entry (and `generateForward`/the
+   plan renderers emit Python through it), so a public lowering must not return a semantically
+   unsupported program either. The rule is now the PUBLIC located `einsumTermLabelExtents`
+   (`Executable.lean`): `validateEinsum` consumes its `Bool` view and the emitter calls the SAME
+   function, mapping its `.mismatch` verdict to a located `JaxCodegenError.labelExtentMismatch`.
+   `affineReference` still renders and validates the shape — its tables carry the zero-pad mask —
+   so the restriction is `einsumOnly`-scoped.
 2. *Evidence is contextual, and unsupported semantics are rejected before it exists.* The validators,
    the combined `kernelWellFormedBool`, the evidence proposition `JaxKernelWellFormed`, and
    `validateAndConstructKernel` all take one explicit complete `Array TensorSignature`; each
@@ -2026,8 +2039,9 @@ the shipped implementation in `LeanNCD/Eval/Plan/Executable.lean` are stronger t
    candidate assignment to equal the corresponding checked step, so a kernel validated elsewhere —
    or step 0's kernel reused at step 1 — cannot stand in for a step. The pre-validation evidence
    label (`candidateEvidenceLabel`) and the context-free geometry helpers are private. The checked
-   Dense backend executes all five of those rejected semantics correctly; this is a JAX support
-   boundary, not a semantic gap, and there is no JAX Boolean execution.
+   Dense backend executes all five of those rejected semantics correctly (six, counting the
+   `einsumOnly`-scoped label-extent restriction in item 1); this is a JAX support boundary, not a
+   semantic gap, and there is no JAX Boolean execution.
 
 The evidence index is decisive: only ordered affine-table/reference constructors inhabit
 `orderedReference64`; einsum only inhabits `optimizationExperiment`. The same rule applies separately

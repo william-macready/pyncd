@@ -166,9 +166,11 @@ emitted, any candidate is built, or any `ExecutionEvidence` label exists — nev
 | unary read (`ReadPlan.unary`) | required | forbidden (`unaryFactor`) | forbidden |
 | Iverson factor | required | forbidden (`iversonFactor`, original all-factor index) | forbidden |
 | contextful assignment (`AssignPlan.contextShape` non-empty) | required | forbidden (`unsupportedContext`) | forbidden |
+| zero-padded read shorter than its iteration basis | required | `einsumOnly` forbidden (`labelExtentMismatch`); `affineReference` required | einsum forbidden, affine required |
 
 **There is no JAX Boolean execution and none is planned here** — this is a fail-loud support
-boundary, not a semantic gap in the checked backend, which executes all seven rows correctly.
+boundary, not a semantic gap in the checked backend, which executes all eight rows correctly. The
+last row is the only mode-SPLIT one (whole-branch review): see the label-extent paragraph below.
 
 The contextful row is the Task 4.5 CLOSURE finding, and it is about a runtime parameter rather than
 a dtype or an algebra: a checked assignment with a non-empty `contextShape` denotes a FAMILY of
@@ -192,16 +194,20 @@ mirrors exactly these preconditions (`einsumTermRenderable`, sharing `einsumLabe
 `labelTable` through a `#guard`), so an einsum candidate is certified only if `lowerAssign` really
 renders it — before the Task 4.5 re-review it could be certified and then rejected at emission.
 
-There is also one restriction the VALIDATOR makes that this emitter deliberately does not: label
-extents. A zero-padded read whose source extent is smaller than its own iteration extent (say
-`sourceShape = #[2]` against `iterationShape = #[3]`) is a checked, Dense-executable assignment that
-`lowerTerm` renders without complaint as `a->a` — but `jnp.einsum` takes label `a`'s extent from the
+A fourth `einsumOnly`-only restriction is about MEANING rather than structure: label extents. A
+zero-padded read whose source extent is smaller than its own iteration extent (say
+`sourceShape = #[2]` against `iterationShape = #[3]`) is a checked, Dense-executable assignment whose
+einsum string, `a->a`, is perfectly well-formed — but `jnp.einsum` takes label `a`'s extent from the
 operand, so the rendered kernel returns two elements where Dense returns three (the third the zero
-pad). No `JaxCodegenError` is added for it, because the emitted string is perfectly well-formed
-einsum; instead `validateEinsum`'s `einsumTermLabelExtentsAgree` refuses to issue
-`optimizationExperiment` evidence for it, which is the one place renderability and certification are
-intentionally not the same test. `affineReference` renders and validates it either way — its tables
-carry the zero-pad mask explicitly.
+pad). It is a DIFFERENT function. The Task 4.5 re-review closed this at the evidence boundary only
+(`validateEinsum` refused to certify it while `lowerAssign` still rendered it — the one deliberate
+validator/emitter disagreement); the whole-branch review ruled that insufficient, because
+`lowerAssign` is itself a public entry and `generateForward`/the plan renderers reach emitted Python
+through it. Both sides now reject, through the SAME recomputation: `Executable.lean`'s public,
+located `einsumTermLabelExtents` decides, `validateEinsum` consumes its `Bool` view, and this
+emitter maps its `.mismatch` verdict to the located `labelExtentMismatch` (node, term, factor, source
+dimension, iteration position, and both extents). `affineReference` renders and validates it either
+way — its tables carry the zero-pad mask explicitly — so the restriction stays einsum-scoped.
 
 The gate is `LeanNCD.Eval.Plan.checkJaxAssignSupport`, applied in declared order (destination dtype,
 algebra, context shape, then factors in original term/factor order: source dtype before unary) — the

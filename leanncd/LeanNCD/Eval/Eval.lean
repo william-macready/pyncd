@@ -3,6 +3,7 @@ import LeanNCD.Eval.Scatter
 import LeanNCD.Eval.SizeInfer   -- `inferAxisSizes`, called directly below
 import LeanNCD.Eval.Error
 import LeanNCD.Eval.Report      -- `EvalReport` (C4): moved to a neutral leaf shared with `Plan/Adapter.lean`
+import LeanNCD.DSL.Pipeline.Structural  -- `buildDeclEnv`: the shared declaration-authority rule
 namespace LeanNCD.Eval
 open Std
 
@@ -35,13 +36,43 @@ def evalPlain (decls : List Decl) (env : HashMap String DenseTensor) (sizes : Ha
 
 /-- Evaluate a `ScheduledProgram` on concrete inputs. This worker is compiler-independent: callers
     that start from a source `TLProgram` use `Entry.lean`, while future plan/backend work can invoke
-    this scheduled boundary without importing the source compiler. -/
+    this scheduled boundary without importing the source compiler.
+
+    **Declaration validity first.** `sched.decls` is not merely carried along: `combineFor`
+    (`Contract.lean`) selects a statement's whole contraction algebra by scanning it for the
+    destination's declaration, taking the FIRST tensor-bearing match. On a list declaring one
+    tensor-bearing name twice — `tensor Y` then `predicate Y` — that first match silently decides
+    real-vs-Boolean semantics for `Y`, while a `DeclEnv` built from the same list would see the
+    LAST. The source pipeline rules that list out (`resolveDecls` → `buildDeclEnv` →
+    `duplicateTensorDecl`) and so does the checked backend (`prepareEvalPlan`'s Step 0), but this
+    boundary accepts a hand-built `ScheduledProgram` that never passed either. `buildDeclEnv` is
+    therefore re-run here, over `sched.decls` as presented, BEFORE size inference or any statement
+    executes — the same shared rule, reporting the same `CompileError` in source order, nested in
+    the existing `EvalError.compile` constructor (`Entry.lean` already reports source-compile
+    failures that way, so no new error shape is introduced and no cause is stringified). `sched.env`
+    is a cached pipeline product and stays unconsulted, exactly as in `prepareEvalPlan`.
+    `.axis`/`.iter` declarations are a separate namespace and are skipped by `buildDeclEnv`, so an
+    axis sharing a predicate's name is still legal here and still resolves to the predicate.
+
+    **Pinned sizes likewise.** `sched.explicitSizes` is the OTHER cached pipeline product, and size
+    inference seeds from it: a seeded UID is treated as already known (`inferAxisSizesCore`'s
+    `let mut sizes := seed`), so a free LHS axis that no read constrains takes its extent from the
+    seed unchallenged. On a hand-built schedule declaring `axis i : ℕ = 3` with a cached `i ↦ 4`,
+    that silently allocates and indexes every `i`-shaped tensor at 4. The seed is therefore
+    re-derived here from `sched.decls` through the shared `declaredAxisSizes`, the same rule
+    `schedule` used to build the cached field and the same rule `prepareEvalPlan`'s Step 0 applies —
+    which is what keeps the reference and checked backends answering identically for a schedule
+    whose cache disagrees with its declarations, rather than trading one silent wrong answer for a
+    silent disagreement. -/
 def evalScheduled (sched : ScheduledProgram) (inputs : HashMap String DenseTensor) :
     Except EvalFailure EvalReport :=
+  match buildDeclEnv sched.decls with
+  | .error e => .error { error := .compile e, warnings := [] }
+  | .ok _ =>
   -- gather ALL underlying stmts (plain + scan base/recur) to infer axis sizes from the inputs:
   let allStmts : List Stmt := sched.stmts.flatMap (fun
     | .plain s => [s] | .scan _ _ b r _ => b ++ r | .scanPre _ _ _ => [])
-  match inferAxisSizes sched.explicitSizes inputs allStmts with
+  match inferAxisSizes (declaredAxisSizes sched.decls) inputs allStmts with
   | .error failure => .error failure
   | .ok (sizes, warnings) =>
       -- Execute under the workers' narrow `Except EvalError` type, then attach the already-known

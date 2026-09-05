@@ -47,6 +47,14 @@ inductive PositionalInputError
   | storageMismatch (slot : TensorSlot) (shape : List Nat) (dataSize : Nat)
   | arityMismatch   (expected : Nat) (actual : Nat)
   | contextShapeMismatch (expected : Array Nat) (actual : List Int)
+  /-- A worker was handed a complete signature table that is not the one its checked evidence was
+      validated against. Raised by `runDenseScan` (`Scan.lean`), whose `CheckedScanPlan` stores the
+      table `checkScanPlan` used: the checked scan's state shapes, capture signatures, and write
+      geometry are all facts about THAT table, so indexing a different one would allocate and commit
+      against extents nothing checked — the shape of failure this replaces was an `Array.set!` panic
+      inside `commitWrite` with an `.ok` result still returned. Carries both tables so the caller can
+      see which slot disagrees. -/
+  | signatureContextMismatch (expected actual : Array TensorSignature)
   | unaryDomain     (op : UnaryDomainOp) (valueBits : UInt64) (slot : TensorSlot)
   -- A positional Iverson predicate leaf's coefficient width disagrees with the term's iteration
   -- basis at RUNTIME. Unreachable for any plan `checkAssign` admits (its `.iverson` width check
@@ -221,13 +229,22 @@ inductive InputBindingError
   | storageMismatch   (name : String) (slot : TensorSlot) (shape : List Nat) (dataSize : Nat)
   deriving DecidableEq, BEq, Repr, Inhabited
 
-/-- The runtime counterpart of `PlanCompileCause`: a `PreparedPlan` failed either at the named
-    binding boundary (`pack`) or inside the positional worker (`runDensePlan`). Both
-    `InputBindingError` and `PositionalInputError` derive `Repr` (unlike `PlanCompileCause`'s
-    `ShapeError` sibling) — verified, not assumed by analogy — so `PlanRunCause` derives `Repr` too. -/
+/-- The runtime counterpart of `PlanCompileCause`: a `PreparedPlan` failed at the named binding
+    boundary on the way IN (`pack`), inside the positional worker (`runDensePlan`), or at the named
+    binding boundary on the way OUT (`unpack`). All three payload types derive `Repr` (verified, not
+    assumed by analogy — unlike `PlanCompileCause`'s `ShapeError` sibling) so `PlanRunCause` derives
+    `Repr` too.
+
+    `materialization` carries a `PlanError` rather than a fourth bespoke type: `unpack` resolves
+    `PlanBindings.materializedNames` against the positional result store through the shared
+    `PlanBindings.materializedWith` (`Prepared.lean`), whose failure is the same
+    `PlanError.slotOutOfRange` every other slot-table lookup in this subsystem raises — and the same
+    value `PreparedPlan.materializedSignatures` reports for the identical malformation, which is the
+    point of sharing the path. -/
 inductive PlanRunCause
-  | binding   (cause : InputBindingError)
-  | execution (cause : PositionalInputError)
+  | binding        (cause : InputBindingError)
+  | execution      (cause : PositionalInputError)
+  | materialization (cause : PlanError)
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- Failure type of `runPreparedDense`. `warnings` is always `plan.warnings` (the preparation

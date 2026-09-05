@@ -107,6 +107,34 @@ structure PreparedPlan where
   bindings : PlanBindings
   warnings : List EvalWarning
 
+/-- Resolve every `materializedNames` binding against ONE slot-indexed table, pairing each entry's
+    name with that slot's value — the SINGLE materialized-binding validation/access path in this
+    subsystem, shared by the metadata accessor (`materializedSignatures`, over `raw.tensorSigs`) and
+    by execution (`Adapter.unpack`, over the positional result store). They used to be independent:
+    the accessor failed loud on an out-of-range slot while `unpack` silently substituted an empty
+    scalar tensor for it and published that under the binding's name, so the two boundaries could —
+    and did — disagree about the same `PlanBindings`. Sharing the traversal is what stops them
+    drifting again; a caller supplies the table, this function supplies the discipline.
+
+    Order and repeats are `materializedNames`' own (see its doc comment: NOT deduplicated), so the
+    result stays positionally parallel to it and `unpack`'s "later insertion wins" semantics for a
+    repeated name is preserved exactly.
+
+    Fails loud rather than defaulting: a slot outside `table` is `PlanError.slotOutOfRange` (the
+    existing constructor every other slot-table lookup in this subsystem already raises —
+    `Check.lean`, `Nonlin.lean`, `Block.lean`), carrying the offending slot and the table size.
+    `mapM` short-circuits at the FIRST offending entry, so no prefix of a malformed binding list is
+    ever handed back to a caller half-resolved. Neither fabricating a value nor filtering the entry
+    out is acceptable: fabricating misdescribes the binding (a scalar `f64` signature for a Boolean
+    destination, an empty tensor for a real result), and filtering silently breaks the positional
+    correspondence with `materializedNames` that both consumers rely on. -/
+def PlanBindings.materializedWith {α : Type} (b : PlanBindings) (table : Array α) :
+    Except PlanError (Array (String × α)) :=
+  b.materializedNames.mapM (fun sb =>
+    match table[sb.slot]? with
+    | some v => .ok (sb.name, v)
+    | none   => .error (.slotOutOfRange sb.slot table.size))
+
 /-- Ordered materialized SIGNATURES (Task 4.3): pairs each `PlanBindings.materializedNames` entry
     with its own slot's `TensorSignature`, read from the checked plan's `raw.tensorSigs` table —
     same order, including repeats, as `materializedNames` itself (its own doc comment: NOT
@@ -115,23 +143,17 @@ structure PreparedPlan where
     declaration (`dtypeOfDecl`, `Signature.lean`) at the one boundary a caller can observe it without
     reaching into `plan.raw` and re-deriving the pairing by hand.
 
-    Fails loud rather than defaulting: a `materializedNames` slot outside `raw.tensorSigs` is
-    `PlanError.slotOutOfRange` (the existing constructor every other slot-table lookup in this
-    subsystem already raises — `Check.lean`, `Nonlin.lean`, `Block.lean`), carrying the offending
-    slot and the table size. It is unreachable for any plan `prepareEvalPlan` produces (it allocates
-    every materialized slot in `tensorSigs` itself), but `PreparedPlan`'s constructor is public and
-    stays public — `AdapterTest`'s authority-substitution checks build one by struct update — so
+    The traversal itself is `materializedWith` above, shared with `Adapter.unpack`: this accessor is
+    that path applied to the signature table, nothing more. Failure is therefore identical at both
+    boundaries — `PlanError.slotOutOfRange`, carrying the offending slot and the table size.
+    Out-of-range is unreachable for any plan `prepareEvalPlan` produces (it allocates every
+    materialized slot in `tensorSigs` itself), but `PreparedPlan`'s constructor is public and stays
+    public — `AdapterTest`'s authority-substitution checks build one by struct update — so
     "unreachable via the real producer" is a producer-discipline fact, not a type-level guarantee,
     exactly as `RequiredBindings`'s own doc comment says of its alignment against
-    `plan.raw.inputSlots`. The boundary is fixed here, at the accessor: an out-of-range slot names
-    itself instead of being silently reported as a scalar `f64` signature (which would misdescribe a
-    Boolean destination as real) or filtered out of the array (which would silently break the
-    positional correspondence with `materializedNames` that this accessor exists to expose). -/
+    `plan.raw.inputSlots`. -/
 def PreparedPlan.materializedSignatures (p : PreparedPlan) :
     Except PlanError (Array (String × TensorSignature)) :=
-  p.bindings.materializedNames.mapM (fun b =>
-    match p.plan.raw.tensorSigs[b.slot]? with
-    | some ts => .ok (b.name, ts)
-    | none    => .error (.slotOutOfRange b.slot p.plan.raw.tensorSigs.size))
+  p.bindings.materializedWith p.plan.raw.tensorSigs
 
 end LeanNCD.Eval.Plan

@@ -37,6 +37,19 @@ inductive JaxCodegenError
   | nonProjectionRow      (nodeIndex termIndex factorIndex rowIndex : Nat) (row : Array Int)
   | uncoveredPosition     (nodeIndex termIndex position : Nat)
   | rankTooLarge          (nodeIndex termIndex rank : Nat)
+  -- Whole-branch review — the term's SOURCE extents disagree with the iteration extents of the
+  -- labels it would be emitted with, so the einsum string, though perfectly well-formed, denotes a
+  -- different function than the checked assignment: `jnp.einsum` takes each label's extent from the
+  -- operand it appears on, while the checked plan takes it from `iterationShape` and zero-pads
+  -- every source coordinate outside `sourceShape`. `Y[i] := V[i]` with `sourceShape = #[2]` and
+  -- `iterationShape = #[3]` renders `a->a` and returns TWO elements where Dense returns three.
+  -- Located at the offending factor's source dimension and the iteration position it projects onto,
+  -- carrying both extents (`iterationExtent = none` when the position is outside the iteration
+  -- basis). Decided by `LeanNCD.Eval.Plan.einsumTermLabelExtents` — the production validator's OWN
+  -- recomputation, called rather than copied, so `validateEinsum` and this emitter cannot disagree
+  -- about which candidates have compatible extents.
+  | labelExtentMismatch   (nodeIndex termIndex factorIndex sourceDim position sourceExtent : Nat)
+                          (iterationExtent : Option Nat)
   | bindingSlotOutOfRange (slot tableSize : Nat)
   | missingFixtureInput   (name : String)
   | labelTableExhausted   (nodeIndex termIndex position : Nat)
@@ -244,7 +257,25 @@ structure NodeLowering where
     so a Boolean destination/source, a tropical algebra, a unary read, a contextful assignment, or a
     structurally incompatible table is rejected here with its located error rather than silently
     rendered. The input is a `CheckedAssignPlan`, not a raw `AssignPlan`: a caller cannot hand this
-    function an unchecked assignment at all. -/
+    function an unchecked assignment at all.
+
+    **Label extents (whole-branch review).** After each term lowers, its source extents must agree
+    with the iteration extents of the labels it was emitted with — `einsumTermLabelExtents`, the
+    production validator's own recomputation (`Eval/Plan/Executable.lean`), imported rather than
+    re-derived. This gate exists because renderability is NOT the standard for a public lowering
+    entry: a zero-padded read shorter than its own iteration basis renders a perfectly well-formed
+    `a->a`, which `jnp.einsum` then evaluates at the OPERAND's extent and returns a shorter result
+    than the checked plan means. `validateEinsum` already refused to certify such a candidate, but
+    this function is itself a public entry (and `generateForward`/the plan renderers reach Python
+    through it), so returning the program at all would hand a caller a semantically unsupported
+    einsum. It runs AFTER `lowerTerm` so every pre-existing located rejection — `.emptyTerm`,
+    `.rankTooLarge`, `.uncoveredPosition`, `.nonzeroAffineBias`, `.nonProjectionRow`,
+    `.iversonFactor` — keeps strict priority over it, and so that `einsumTermLabelExtents`'
+    `noOperand` verdict is unreachable here: it names exactly the factor shapes `lowerTerm` has
+    already rejected with a locator of its own (plus a coefficient/source rank disagreement, which
+    the support gate's `checkAssign` re-run rules out via `affineRankMismatch`). The affine-reference
+    mode is deliberately NOT gated: its tables carry the zero-pad mask explicitly, so it renders the
+    mismatch correctly. -/
 def lowerAssign (sigs : Array TensorSignature) (nodeIndex : Nat) (checked : CheckedAssignPlan) :
     Except JaxCodegenError NodeLowering := do
   requireJaxSupport sigs nodeIndex checked
@@ -252,7 +283,13 @@ def lowerAssign (sigs : Array TensorSignature) (nodeIndex : Nat) (checked : Chec
   unless a.terms.size > 0 do throw (.emptyAssign nodeIndex)
   let mut terms : Array TermLowering := #[]
   for h : ti in [0 : a.terms.size] do
-    let tl ← lowerTerm nodeIndex ti a.terms[ti]
+    let t := a.terms[ti]
+    let tl ← lowerTerm nodeIndex ti t
+    match einsumTermLabelExtents t with
+    | .mismatch fi d p srcExtent iterExtent =>
+        throw (.labelExtentMismatch nodeIndex ti fi d p srcExtent iterExtent)
+    | .agree => pure ()
+    | .noOperand _ => pure ()  -- unreachable: `lowerTerm` above rejects exactly these factors
     terms := terms.push tl
   return { nodeIndex, destinationSlot := a.destinationSlot, terms }
 
@@ -1270,36 +1307,29 @@ def wideAssign (rank : Nat) : AssignPlan :=
 #guard einsumRenderAgrees (wideSigs 27) (wideAssign 27) (.rankTooLarge 0 0 27)
 #guard einsumRenderAgreesAccepted (wideSigs 26) (wideAssign 26)
 
-/-! ### Task 4.5 re-review — label extents: rendering is not the standard for evidence
+/-! ### Whole-branch review — label extents: the public einsum lowering must not emit a program it
+does not mean
 
-The one place where the emitter and the validator deliberately DISAGREE, and the reason the gate has
-to sit at the evidence boundary rather than be inferred from renderability. A zero-padded read whose
-source extent (2) is smaller than its own iteration extent (3) is a checked, Dense-executable
-assignment (`ExecutableTest`'s fixture 13 pins the three-element zero-padded Dense result); this
-emitter renders it as `a->a` — no rejection exists here, and none is added, because the string is
-perfectly well-formed einsum. It is simply a DIFFERENT function: `jnp.einsum` takes label `a`'s
-extent from the operand, so the rendered kernel returns two elements where Dense returns three.
-`validateEinsum`'s `einsumTermLabelExtentsAgree` conjunct is what refuses to stamp
-`optimizationExperiment` on it. -/
+A zero-padded read whose source extent (2) is smaller than its own iteration extent (3) is a
+checked, Dense-executable assignment (`ExecutableTest`'s fixture 13 pins the three-element
+zero-padded Dense result). The einsum string it lowers to, `a->a`, is perfectly well-formed — but
+`jnp.einsum` takes label `a`'s extent from the OPERAND, so the rendered kernel returns two elements
+where Dense returns three. It is a DIFFERENT function.
 
-/-- `lowerAssign` RENDERS the assignment, with exactly `expectedSubscripts` (one `"lhs->rhs"` per
-    term), and `validateEinsum` nevertheless rejects the candidate the conversion builds for the
-    same assignment. The rendered string is pinned, not merely the success, so this guard also
-    records WHICH contraction the emitter would have produced. -/
-private def einsumRendersButNotCertified (sigs : Array TensorSignature) (a : AssignPlan)
-    (expectedSubscripts : Array String) : Bool :=
-  match checkAssign sigs a with
-  | .error _ => false
-  | .ok checked =>
-      (match lowerAssign sigs 0 checked with
-       | .error _ => false
-       | .ok nl => nl.terms.map (fun tl =>
-           String.intercalate "," tl.factorSubscripts.toList ++ "->" ++ tl.outputSubscript)
-             == expectedSubscripts) &&
-      (match loweringToEinsumCandidate sigs 0 checked with
-       | .error _ => false  -- the conversion is total here; the VALIDATOR must be the gate
-       | .ok candidate => !(validateEinsum sigs candidate))
+Round 2 closed this at the evidence boundary only: `validateEinsum` refused to certify it while
+`lowerAssign` still rendered it, a deliberate one-sided disagreement pinned here by a fixture named
+`einsumRendersButNotCertified`. The whole-branch review ruled that insufficient — `lowerAssign` is
+itself a public entry, and `generateForward`/the plan renderers reach emitted Python through it, so
+returning the program at all hands a caller a semantically unsupported einsum. Both sides now reject,
+through the SAME recomputation (`LeanNCD.Eval.Plan.einsumTermLabelExtents`, called by the emitter,
+not copied), and the fixtures below pin the agreement plus the exact located emitter error.
 
+The affine-reference mode still renders the mismatch, and must: its tables carry the zero-pad mask
+explicitly, so it computes what the checked plan means. -/
+
+/-- `lowerAssign` rejects with exactly `expected` AND `validateEinsum` rejects the candidate the
+    conversion builds for the same assignment — `einsumRenderAgrees`, fixture 12's own agreement
+    helper, reused unchanged for the extent rule. -/
 def padSigs (srcExtent : Nat) : Array TensorSignature :=
   #[ { shape := #[srcExtent], dtype := .f64 }, { shape := #[3], dtype := .f64 } ]
 
@@ -1313,12 +1343,49 @@ def padAssign (srcExtent : Nat) : AssignPlan :=
                , factors := #[.read (padRead srcExtent)] }]
   , algebra := admittedAlgebra }
 
-#guard einsumRendersButNotCertified (padSigs 2) (padAssign 2) #["a->a"]
+-- The exact located rejection: term 0, factor 0, source dimension 0, iteration position 0, source
+-- extent 2 against iteration extent 3 — and `validateEinsum` rejects the same conversion's candidate.
+#guard einsumRenderAgrees (padSigs 2) (padAssign 2)
+  (.labelExtentMismatch 0 0 0 0 0 2 (some 3))
 
--- The exact-match sibling renders the SAME string, so the rendering cannot be what separates them:
--- the helper's validator half is what flips, and the two halves then agree on accepting it.
-#guard !(einsumRendersButNotCertified (padSigs 3) (padAssign 3) #["a->a"])
+-- …and the plan-level einsum entries inherit it, since every one routes each `.assign` step through
+-- `lowerAssign`. `bit`-for-bit the same located cause, at step 0.
+def padRaw : RawEvalPlan :=
+  { tensorSigs := padSigs 2, inputSlots := #[0], steps := #[PlanStep.assign (padAssign 2)] }
+
+def padPrepared? : Option PreparedPlan :=
+  preparedOf padRaw #[{ name := "v", slot := 0 }] #[{ name := "y", slot := 1 }]
+
+#guard (match checkPlan padRaw, padPrepared? with
+  | .ok checkedPlan, some prepared =>
+      rejectedWith (.labelExtentMismatch 0 0 0 0 0 2 (some 3)) (lowerPlan checkedPlan) &&
+      rejectedWith (.labelExtentMismatch 0 0 0 0 0 2 (some 3)) (generateForward prepared) &&
+      rejectedWith (.labelExtentMismatch 0 0 0 0 0 2 (some 3)) (generateNamed .einsumOnly prepared)
+  | _, _ => false)
+
+-- The exact-match sibling differs in exactly one number (the source extent) and renders `a->a` —
+-- the SAME string the mismatch would have produced — so the rendering cannot be what separates
+-- them; both halves accept it, and its plan renders end to end in einsum mode.
 #guard einsumRenderAgreesAccepted (padSigs 3) (padAssign 3)
+
+#guard (match checkAssign (padSigs 3) (padAssign 3) with
+  | .error _ => false
+  | .ok checked =>
+      (match lowerAssign (padSigs 3) 0 checked with
+       | .error _ => false
+       | .ok nl => nl.terms.map (fun tl =>
+           String.intercalate "," tl.factorSubscripts.toList ++ "->" ++ tl.outputSubscript)
+             == #["a->a"]))
+
+def padOkRaw : RawEvalPlan :=
+  { tensorSigs := padSigs 3, inputSlots := #[0], steps := #[PlanStep.assign (padAssign 3)] }
+
+def padOkPrepared? : Option PreparedPlan :=
+  preparedOf padOkRaw #[{ name := "v", slot := 0 }] #[{ name := "y", slot := 1 }]
+
+#guard (match padOkPrepared? with
+  | some prepared => (match generateForward prepared with | .ok _ => true | .error _ => false)
+  | none => false)
 
 -- The affine mode still renders the mismatch (its tables carry the zero-pad mask explicitly), so
 -- the tightening is einsum-scoped, exactly as for fixture 12's three preconditions.
@@ -1326,6 +1393,11 @@ def padAssign (srcExtent : Nat) : AssignPlan :=
   | .error _ => false
   | .ok checked => (match renderAffineAssign (padSigs 2) checked with
       | .ok _ => true | .error _ => false))
+
+#guard (match padPrepared? with
+  | some prepared => (match generateNamed .affineReference prepared with
+      | .ok _ => true | .error _ => false)
+  | none => false)
 
 /-! ### Task 4.5 closure — a CONTEXTFUL assignment has no rendering in EITHER mode
 

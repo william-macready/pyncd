@@ -232,11 +232,10 @@ def schedule (lp : ScanProgram) : FreshM ScheduledProgram := do
   -- "unknown tensor".
   if !isTopoOrdered lp.stmts ordered then
     throw (CompileError.cyclicDataflow "schedule: cyclic dataflow")
-  -- collect the sizes pinned by `axis … = n` and `iter … = n` decls (UIDs are canonical by this phase).
-  let explicitSizes : Std.HashMap UID Nat := lp.decls.foldl (fun m d => match d with
-    | .axis ax (some n) => m.insert ax.uid n
-    | .iter ax n        => m.insert ax.uid n
-    | _                 => m) {}
+  -- collect the sizes pinned by `axis … = n` and `iter … = n` decls (UIDs are canonical by this
+  -- phase). `declaredAxisSizes` (`Structural.lean`) is the one rule, shared with the checked
+  -- backend, which re-derives rather than trusting the cached field below.
+  let explicitSizes : Std.HashMap UID Nat := declaredAxisSizes lp.decls
   -- Never-read external inputs are still dropped, and a read-but-produced name is still internal:
   -- both fall out of `orderedExternalNames`' reads-minus-produced traversal over the ORDERED
   -- statements, which is also what the checked backend re-derives.

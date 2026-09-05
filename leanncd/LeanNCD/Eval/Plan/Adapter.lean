@@ -72,17 +72,32 @@ def pack (plan : PreparedPlan) (env : NamedDenseEnv) :
     (preserving every entry `pack` never consulted — extra inputs the plan doesn't read), then
     inserts every `PlanBindings.materializedNames` entry IN ORDER; a name written twice by the
     schedule appears twice here too, and since `HashMap.insert` overwrites, the later insertion
-    (the plan's own last write) naturally wins — no separate "most recent" bookkeeping needed. -/
+    (the plan's own last write) naturally wins — no separate "most recent" bookkeeping needed.
+
+    Resolution goes through the shared `PlanBindings.materializedWith` (`Prepared.lean`), the same
+    path `PreparedPlan.materializedSignatures` uses against the signature table, so the metadata and
+    execution boundaries cannot disagree about which bindings a `PlanBindings` resolves. A binding
+    naming a slot outside `result` is therefore `PlanError.slotOutOfRange` — reported BEFORE any
+    name is published, since `mapM` short-circuits — rather than the empty scalar tensor this
+    function used to substitute silently and then insert under that binding's name. That default was
+    the worst possible lie here: `materializedNames` is public and caller-constructible (`PlanBindings`
+    has a public constructor and `AdapterTest` builds one by struct update), so an out-of-range slot
+    is genuinely reachable, and an empty tensor published under a real output name is indistinguishable
+    from a legitimately empty result.
+
+    `pack`'s sibling `raw.tensorSigs.getD` default is NOT the same situation and is deliberately left
+    alone: it indexes `raw.inputSlots`, which `checkPlan` bounds against `tensorSigs.size`
+    (`checkStepGraph`'s first loop) before a `CheckedEvalPlan` exists at all, so no `PreparedPlan` —
+    however hand-built its bindings — can present an out-of-range input slot there. -/
 def unpack (bindings : PlanBindings) (env : NamedDenseEnv) (result : Array DenseTensor) :
-    NamedDenseEnv :=
-  bindings.materializedNames.foldl
-    (fun acc b => acc.insert b.name (result.getD b.slot ({ shape := [], data := #[] } : DenseTensor)))
-    env
+    Except PlanError NamedDenseEnv :=
+  (bindings.materializedWith result).map (fun pairs =>
+    pairs.foldl (fun acc (nm, t) => acc.insert nm t) env)
 
 /-- Run a prepared plan against a named environment: `pack` into positional slots, run the
     positional worker, `unpack` the result back into the named environment, preserving `plan`'s
-    preparation warnings through every outcome (success, a `pack` failure, or a `runDensePlan`
-    failure). -/
+    preparation warnings through every outcome (success, a `pack` failure, a `runDensePlan` failure,
+    or an `unpack` failure). -/
 def runPreparedDense (plan : PreparedPlan) (env : NamedDenseEnv) :
     Except PlanRunFailure EvalReport := do
   let packed ← match pack plan env with
@@ -91,6 +106,9 @@ def runPreparedDense (plan : PreparedPlan) (env : NamedDenseEnv) :
   let result ← match runDensePlan plan.plan packed with
     | .ok r => pure r
     | .error e => throw { cause := .execution e, warnings := plan.warnings }
-  return { env := unpack plan.bindings env result, warnings := plan.warnings }
+  let unpacked ← match unpack plan.bindings env result with
+    | .ok e => pure e
+    | .error e => throw { cause := .materialization e, warnings := plan.warnings }
+  return { env := unpacked, warnings := plan.warnings }
 
 end LeanNCD.Eval.Plan

@@ -613,6 +613,27 @@ def buildDeclEnv (decls : List Decl) : Except CompileError DeclEnv :=
         else pure (m.insert d.name d))
     ({} : DeclEnv)
 
+/-- The one PINNED-AXIS-SIZE rule, shared by `schedule` (source pipeline, which caches its result as
+    `ScheduledProgram.explicitSizes`) and `Eval.Plan.prepareEvalPlan` (checked backend, which
+    re-derives it from a possibly hand-built `ScheduledProgram`'s own `decls` rather than trusting
+    that cached field).
+
+    `axis a : ℕ = n` and `iter a = n` pin `a` to `n`; an UNSIZED `axis a : ℕ` (`.axis _ none`) pins
+    nothing and leaves `a` to be inferred from the input shapes, and a tensor-bearing declaration
+    names no axis at all. Later declarations win over earlier ones for the same UID, which is
+    `HashMap.insert`'s own behaviour and exactly what the fold this replaces already did — no
+    duplicate rule is imposed here, because an axis UID is canonical by this phase and the DSL's own
+    duplicate-axis handling belongs to `assignUIDs`, not to size collection.
+
+    Shared for the same reason `buildDeclEnv` above is: two independent copies of a
+    declaration-classification rule are exactly where a checked backend and its source pipeline
+    silently drift apart. -/
+def declaredAxisSizes (decls : List Decl) : Std.HashMap UID Nat :=
+  decls.foldl (fun (m : Std.HashMap UID Nat) d => match d with
+    | .axis ax (some n) => m.insert ax.uid n
+    | .iter ax n        => m.insert ax.uid n
+    | _                 => m) {}
+
 /-- Build the declaration environment and classify external-input names.
     `extNames` = names READ in some stmt but never PRODUCED (never a stmt LHS). Throws only
     `duplicateTensorDecl` (from `buildDeclEnv`). -/

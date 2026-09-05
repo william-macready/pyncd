@@ -146,6 +146,84 @@ run_cmd do
             throwError s!"wrong storageMismatch payload: name={nm} slot={slot} shape={repr shape} dataSize={dataSize}"
       | .error e => throwError s!"wrong error kind for a storage mismatch: {repr e}"
 
+-- ── Task 4 whole-branch review, Check 18: a materialized binding naming a slot outside the
+-- positional RESULT store must fail loud at EXECUTION, not publish a fabricated empty tensor. ──
+--
+-- `PreparedPlan`/`PlanBindings` have public constructors (Check 5 above already builds one by
+-- struct update), so a `materializedNames` entry naming an out-of-range slot is constructible even
+-- though `prepareEvalPlan` cannot emit one. `PreparedPlan.materializedSignatures` has reported that
+-- as `PlanError.slotOutOfRange` since the previous review round (`CompileTest`'s own fixtures), but
+-- `unpack` — the EXECUTION half of the same binding list — silently substituted
+-- `{ shape := [], data := #[] }` and inserted it under the binding's name, so the metadata boundary
+-- and the runtime boundary disagreed about the same `PlanBindings`. Both now go through the one
+-- shared `PlanBindings.materializedWith`, so the failure value is identical at both.
+--
+-- Three fixtures, all over `zeroCoeffProg`'s own prepared plan (3 slots: A, B, Y):
+--   (a) a LEADING out-of-range entry — nothing is published, `runPreparedDense` reports
+--       `PlanRunCause.materialization`;
+--   (b) a TRAILING out-of-range entry after a legal one — a valid prefix does not license a partial
+--       publication (`Y` must be absent from the failed run, which only an ordered check can show);
+--   (c) the VALID repeated-name sibling — the same name bound twice, in order, LAST write winning —
+--       so the guards above cannot be satisfied by a check that simply rejects every binding list.
+
+run_cmd do
+  match zeroCoeffProg.compileToScheduled.run 0 with
+  | .error e _ => throwError s!"zeroCoeff compile failed: {repr e}"
+  | .ok sched _ =>
+    match prepareEvalPlan sched (InputSignature.ofDenseInputs zeroCoeffInputs) with
+    | .error f => throwError s!"zeroCoeff prepare failed: {renderCompileCause f.cause}"
+    | .ok prepared =>
+      let tableSize := prepared.plan.raw.tensorSigs.size
+      unless tableSize == 3 do
+        throwError s!"fixture drifted: expected a 3-slot table, got {tableSize}"
+      let ySlot := (prepared.bindings.materializedNames[0]!).slot
+      -- (a) leading out-of-range slot: rejected before anything is published.
+      let leadingBad : PreparedPlan :=
+        { prepared with bindings := { prepared.bindings with
+            materializedNames := #[{ name := "Y", slot := 99 }, { name := "Y", slot := ySlot }] } }
+      match runPreparedDense leadingBad zeroCoeffInputs with
+      | .ok report =>
+          throwError s!"leading out-of-range materialized slot was accepted: {repr (report.env.get? "Y")}"
+      | .error failure =>
+          unless failure.cause == .materialization (.slotOutOfRange 99 3) do
+            throwError s!"wrong cause for a leading out-of-range slot: {repr failure.cause}"
+          unless failure.warnings == prepared.warnings do
+            throwError s!"materialization-failure warnings dropped/changed: {failure.warnings}"
+      -- …and the same list through `unpack` directly: the typed error, and NO name published.
+      match pack leadingBad zeroCoeffInputs with
+      | .error e => throwError s!"pack unexpectedly failed: {repr e}"
+      | .ok packed =>
+        match runDensePlan leadingBad.plan packed with
+        | .error e => throwError s!"runDensePlan unexpectedly failed: {repr e}"
+        | .ok result =>
+            match unpack leadingBad.bindings zeroCoeffInputs result with
+            | .ok env =>
+                throwError s!"unpack published a fabricated tensor: {repr (env.get? "Y")}"
+            | .error e =>
+                unless e == .slotOutOfRange 99 3 do
+                  throwError s!"unpack: wrong error for a leading out-of-range slot: {repr e}"
+            -- (b) TRAILING out-of-range entry: the legal prefix must not be published either.
+            let trailingBad : PlanBindings :=
+              { prepared.bindings with
+                materializedNames := #[{ name := "Y", slot := ySlot }, { name := "W", slot := 7 }] }
+            match unpack trailingBad zeroCoeffInputs result with
+            | .ok env =>
+                throwError s!"unpack published a partial array: {repr (env.get? "Y")}"
+            | .error e =>
+                unless e == .slotOutOfRange 7 3 do
+                  throwError s!"unpack: wrong error for a trailing out-of-range slot: {repr e}"
+            -- (c) VALID repeats: `Y` bound twice — to `A`'s slot first, then its own — so the LAST
+            -- entry is what survives. A `foldr`/reversed traversal would publish `A`'s tensor here.
+            let repeats : PlanBindings :=
+              { prepared.bindings with
+                materializedNames :=
+                  #[{ name := "Y", slot := 0 }, { name := "Y", slot := ySlot }] }
+            match unpack repeats zeroCoeffInputs result with
+            | .error e => throwError s!"valid repeated-name bindings were rejected: {repr e}"
+            | .ok env =>
+                unless expectTensor env["Y"]? [2] #[60.0, 600.0] do
+                  throwError s!"repeated-name last-write semantics broken: {repr (env.get? "Y")}"
+
 -- ── Checks 5–9: reordering `requiredInputs` (Check 5, kept exactly as designed — proves the
 -- `Perm` choice over positional equality), and `checkBindings`-boundary rejections for a genuine
 -- duplicate slot binding, an extra binding naming a slot the plan doesn't need, a
@@ -494,7 +572,9 @@ sched.decls: {repr e}"
             match runDensePlan prepared.plan packed with
             | .error e => throwError s!"predIdentity: runDensePlan failed: {repr e}"
             | .ok result =>
-                let unpacked := unpack prepared.bindings predIdentityInputs result
+                let unpacked ← match unpack prepared.bindings predIdentityInputs result with
+                  | .ok e => pure e
+                  | .error e => throwError s!"predIdentity: unpack failed: {repr e}"
                 unless expectTensor (unpacked["I"]?) [3, 3]
                     #[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0] do
                   throwError s!"predIdentity: I value wrong: {repr (unpacked["I"]?)}"
