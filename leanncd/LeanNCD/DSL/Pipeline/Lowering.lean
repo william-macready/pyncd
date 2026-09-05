@@ -2,6 +2,7 @@
 -- Phases 7–8 of the tensor-logic DSL back-end. Phases 1–5 live in `Structural.lean`; the
 -- former Phase 6 (`splitNonlins`) is no longer on the production chain — see below.
 import LeanNCD.DSL.Pipeline.Structural
+import LeanNCD.DSL.Pipeline.ScheduledValidation
 import LeanNCD.DSL.Pipeline.RouteFragments
 import LeanNCD.DSL.Target
 
@@ -97,12 +98,6 @@ output, so the scheduler keeps all top-level statements and lets the caller igno
 keys). Statements are topologically sorted so producers precede their consumers.
 Never-read *external* input names are still dropped (`liveExtNames`). -/
 
-/-- Tensor names a ScanStmt writes (its LHS name(s)). -/
-def ScanStmt.writes : ScanStmt → List String
-  | .plain s        => [s.lhsName]
-  | .scan _ _ b r _ => (b.map Stmt.lhsName ++ r.map Stmt.lhsName).eraseDups
-  | .scanPre nm _ _ => [nm]
-
 /-- The true output names of a ScanStmt: for `.scan`, names written by BOTH base AND recur
     (drops `%nl` intermediates that appear in only one side). -/
 def ScanStmt.outputs : ScanStmt → List String
@@ -110,15 +105,9 @@ def ScanStmt.outputs : ScanStmt → List String
   | .scan _ _ b r _ => (b.map Stmt.lhsName).filter (fun n => (r.map Stmt.lhsName).contains n)
   | .scanPre nm _ _ => [nm]
 
-/-- Tensor names a ScanStmt reads. -/
-def ScanStmt.reads : ScanStmt → List String
-  | .plain s        => s.readNames
-  | .scan _ _ b r _ => (b.flatMap Stmt.readNames ++ r.flatMap Stmt.readNames).eraseDups
-  | .scanPre _ _ _  => []
+/-! ### Drift guard: the route-boundary accessors agree with these two
 
-/-! ### Drift guard: the route-boundary accessors agree with these four
-
-`Pipeline/RouteFragments.lean` needs the same four notions of "what does this node write / publish
+`Pipeline/RouteFragments.lean` needs the same notions of "what does this node write / publish
 / read / route an input from", but it imports only `Pipeline/Types` (`Lowering` imports IT, and the
 reverse edge would cycle), so it cannot call `ScanStmt.writes`/`outputs`/`reads`/`inputReadFactors`.
 The definitions are therefore genuinely duplicated, and the copies are **not** distinguishable by
@@ -140,86 +129,6 @@ theorem routeReads_eq (sc : ScanStmt) : routeReads sc = sc.reads := by
   cases sc <;> simp [routeReads, ScanStmt.reads, hrn, List.map_flatMap]
 
 -- (`routeInputReads_eq` is stated below, next to `ScanStmt.inputReadFactors`.)
-
-/-! ### Topological sort (stable Kahn's algorithm)
-
-`topoSortFuel` repeatedly emits the first currently-eligible statement — one whose
-internal-read dependencies are all already emitted — scanning `remaining` in source order
-on each pass to get a stable, no-op-on-already-sorted output.
-
-An **internal dependency** is a read name that some stmt in the full list writes.
-**Self-edges** (a stmt's reads ∩ its own writes) are excluded: scan nodes read their own
-state names across iterations, which is not a forward dependency.
-
-Termination: on each recursive call with `fuel > 0`, at least one stmt is emitted (or
-`remaining` is already empty), so the fuel strictly decreases. Setting `fuel := stmts.length`
-is sufficient. Using a `Nat` fuel parameter (rather than `partial`) means Lean accepts the
-definition without a `decreasing_by` proof, and equation lemmas exist for Phase 4. -/
-
-/-- Is `sc` eligible to emit given `emitted` names? Eligible iff every name it reads that
-    is an internal dependency (written by some OTHER stmt in `all`, excluding self-edges)
-    is already in `emitted`. -/
-private def eligible (sc : ScanStmt) (all : List ScanStmt) (emitted : List String) : Bool :=
-  let selfWrites := sc.writes
-  sc.reads.all (fun r =>
-    -- not an internal dep: either a self-edge or not written by any other stmt
-    selfWrites.contains r ||
-    all.all (fun s => s.writes == selfWrites || !s.writes.contains r) ||
-    emitted.contains r)
-
-/-- Fuel-bounded stable Kahn's sort. `all` is the full stmt list (fixed); `remaining` is
-    what's left to emit; `emitted` accumulates written names of already-emitted stmts;
-    `acc` accumulates emitted stmts in order. -/
-def topoSortFuel : Nat → List ScanStmt → List ScanStmt → List String →
-    List ScanStmt → List ScanStmt
-  | 0,    _,   remaining, _,       acc => acc ++ remaining   -- fuel gone: append as-is
-  | _,    _,   [],        _,       acc => acc
-  | n+1,  all, remaining, emitted, acc =>
-      match remaining.findIdx? (fun sc => eligible sc all emitted) with
-      | none   => acc ++ remaining   -- cycle: shouldn't occur in valid DAGs
-      | some i =>
-          let sc   := remaining[i]!
-          let rest := remaining.eraseIdx i
-          topoSortFuel n all rest (emitted ++ sc.writes) (acc ++ [sc])
-
-/-- Topological sort of a list of `ScanStmt`s: producers precede consumers.
-    Stable — already-sorted input is returned unchanged (first-eligible-in-source-order). -/
-def topoSort (stmts : List ScanStmt) : List ScanStmt :=
-  topoSortFuel stmts.length stmts stmts [] []
-
-/-- Is `ordered` a valid topological order of `all`? Walks `ordered` left to right, replaying
-    the same `eligible`/`emitted` bookkeeping `topoSortFuel` uses: each stmt must be `eligible`
-    given only the names emitted by stmts strictly before it. On a genuine DAG this always
-    holds for `topoSort`'s output; on a cycle, `topoSortFuel`'s fallback (`acc ++ remaining`)
-    appends the un-orderable remainder in source order, so the first such stmt fails
-    `eligible` here (its internal-dependency read was never emitted before it). External reads
-    (not written by any stmt in `all`) are not internal dependencies, so `eligible` already
-    treats them as vacuously satisfied — they never cause a false cycle report. -/
-def isTopoOrdered (all : List ScanStmt) (ordered : List ScanStmt) : Bool :=
-  (ordered.foldl (fun (acc : Bool × List String) sc =>
-      let (ok, emitted) := acc
-      (ok && eligible sc all emitted, emitted ++ sc.writes))
-    (true, ([] : List String))).1
-
-/-- External read names in first-seen scheduled-read order: every name READ by some statement and
-    PRODUCED by none. The one external-name rule, shared by `schedule` (which caches it as
-    `ScheduledProgram.extNames`) and `Eval.Plan.prepareEvalPlan` (which re-derives it, because a
-    hand-built schedule's cached set can be missing or extra). Order is the traversal's own
-    first-seen order — the same idiom `buildExtIndex` uses for route indices.
-
-    **Only meaningful on a producer-before-consumer ordered list.** "Produced by none" is a question
-    about the WHOLE list, not about what precedes the reading statement, so on an out-of-order list a
-    read whose producer comes later is classified internal — and every consumer of that answer then
-    has to resolve a name no earlier statement bound. Both callers establish the order first, and
-    both fail loud rather than reorder: `schedule` sorts (`topoSort`) and rejects what it cannot
-    order, `prepareEvalPlan`'s Step 0 rejects a direct schedule that is not already ordered — the
-    same `isTopoOrdered` predicate and the same `CompileError.cyclicDataflow` in both. -/
-def orderedExternalNames (stmts : List ScanStmt) : List String :=
-  let produced : List String := stmts.flatMap ScanStmt.writes
-  stmts.foldl (fun acc sc =>
-    sc.reads.foldl (fun acc nm =>
-      if produced.contains nm || acc.contains nm then acc else acc ++ [nm]) acc)
-    ([] : List String)
 
 /-- Phase 7. Accepts the post-`finalizeScans` **logical** program directly (§2.1): nonlinearities
     are not split before scheduling, so one source statement stays one scheduled statement and no

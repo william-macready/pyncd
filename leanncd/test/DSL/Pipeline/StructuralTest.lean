@@ -183,6 +183,34 @@ run_cmd do
   | .error e _                       => throwError s!"wrong error: {repr e}"
   | .ok _ _                          => throwError "expected rankMismatch for wrong-rank read"
 
+-- Declared destinations use their raw syntactic LHS rank, not the published rank of an
+-- undeclared intermediate.
+run_cmd do
+  let i : AxisSpec := { name := "i", uid := 1, kind := .real }
+  let j : AxisSpec := { name := "j", uid := 2, kind := .real }
+  let rp : ResolvedProgram :=
+    { decls := [.tensor "Y" [i, j]]
+    , env := ({} : DeclEnv).insert "Y" (.tensor "Y" [i, j])
+    , extNames := ∅
+    , stmts := [.assign "Y" [.free i] { body := { terms := [] }, nonlin := .identity }] }
+  match checkReadRanks rp |>.run 0 with
+  | .error (.rankMismatch "Y" 2 1) _ => pure ()
+  | .error e _ => throwError s!"wrong declared destination under-rank error: {repr e}"
+  | .ok _ _ => throwError "expected declared destination under-rank rejection"
+
+run_cmd do
+  let i : AxisSpec := { name := "i", uid := 1, kind := .real }
+  let j : AxisSpec := { name := "j", uid := 2, kind := .real }
+  let rp : ResolvedProgram :=
+    { decls := [.tensor "Y" [i]]
+    , env := ({} : DeclEnv).insert "Y" (.tensor "Y" [i])
+    , extNames := ∅
+    , stmts := [.assign "Y" [.free i, .free j] { body := { terms := [] }, nonlin := .identity }] }
+  match checkReadRanks rp |>.run 0 with
+  | .error (.rankMismatch "Y" 1 2) _ => pure ()
+  | .error e _ => throwError s!"wrong declared destination over-rank error: {repr e}"
+  | .ok _ _ => throwError "expected declared destination over-rank rejection"
+
 -- Task 4.1 fixture 4: the SAME wrong-rank read, plus duplicate `W` declarations. `resolveDecls`
 -- runs before `checkReadRanks`, so the duplicate declaration is reported and the (still present,
 -- still wrong) read rank is never reached — the distinguishing fixture for that order.

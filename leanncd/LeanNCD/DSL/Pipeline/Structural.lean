@@ -644,7 +644,7 @@ def declaredAxisSizes (decls : List Decl) : Std.HashMap UID Nat :=
     Order-INSENSITIVE by construction ("produced by none" is a question about the whole list), which
     is exactly right for read-rank checking: an out-of-order schedule is rejected elsewhere
     (`isTopoOrdered`), and either classification — external or produced-but-undeclared — still puts
-    the name under an arity rule here. `orderedExternalNames` (`Lowering.lean`) is the ORDERED
+    the name under an arity rule here. `orderedExternalNames` (`ScheduledValidation.lean`) is the ORDERED
     `ScanStmt`-level sibling of this rule, needed where input-slot ORDER matters; this one answers
     only membership, so it stays a `Finset` and stays at `Stmt` granularity. -/
 def externalReadNames (stmts : List Stmt) : Finset String :=
@@ -711,6 +711,8 @@ with `nm`'s declaration. Two cases:
 - **Declared tensors** (`nm ∈ env`): `idxExprs.length` must equal the decl's axis count.
 - **External tensors** (`nm ∈ extNames`): no declaration exists, so we check internal consistency —
   all reads of the same external name must agree on arity (first read wins as the expected rank).
+  Declared assignment and scatter destinations likewise require their raw LHS slot count to equal
+  the declaration's axis count.
 
 `recurMorphism` stmts are invisible here (their reads are empty), consistent with how the
 rest of the pipeline treats that escape hatch. -/
@@ -771,6 +773,17 @@ def checkReadRanksIn (env : DeclEnv) (extNames : Finset String) (stmts : List St
       match producedRank[nm]? with
       | some r => if arity != r then throw (.rankMismatch nm r arity)
       | none   => pure ()
+  -- A declared destination must have exactly the declaration's syntactic LHS positions. This is
+  -- intentionally distinct from `stmtLhsRank`, which describes an undeclared producer's output.
+  for s in stmts do
+    match s with
+    | .assign nm slots _ | .scatter nm slots _ _ =>
+        match env[nm]? with
+        | some decl =>
+            let expected := decl.axisCount
+            if slots.length != expected then throw (.rankMismatch nm expected slots.length)
+        | none => pure ()
+    | .recurMorphism _ _ _ => pure ()
 
 def checkReadRanks (rp : ResolvedProgram) : FreshM ResolvedProgram := do
   match checkReadRanksIn rp.env rp.extNames rp.stmts with

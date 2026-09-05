@@ -3,7 +3,7 @@ import LeanNCD.Eval.Scatter
 import LeanNCD.Eval.SizeInfer   -- `inferAxisSizes`, called directly below
 import LeanNCD.Eval.Error
 import LeanNCD.Eval.Report      -- `EvalReport` (C4): moved to a neutral leaf shared with `Plan/Adapter.lean`
-import LeanNCD.DSL.Pipeline.Structural  -- `buildDeclEnv`: the shared declaration-authority rule
+import LeanNCD.DSL.Pipeline.ScheduledValidation
 namespace LeanNCD.Eval
 open Std
 
@@ -92,19 +92,14 @@ def evalPlain (decls : List Decl) (env : HashMap String DenseTensor) (sizes : Ha
     silent disagreement. -/
 def evalScheduled (sched : ScheduledProgram) (inputs : HashMap String DenseTensor) :
     Except EvalFailure EvalReport :=
-  match buildDeclEnv sched.decls with
+  match validateScheduled sched with
   | .error e => .error { error := .compile e, warnings := [] }
-  | .ok declEnv =>
-  match checkScheduledReadRanks declEnv sched.stmts with
-  | .error e => .error { error := .compile e, warnings := [] }
-  | .ok () =>
-  match checkPredicateOutputs declEnv sched.stmts with
-  | .error e => .error { error := .compile e, warnings := [] }
-  | .ok () =>
+  | .ok checked =>
+  let sched := checked.program
   -- gather ALL underlying stmts (plain + scan base/recur) to infer axis sizes from the inputs:
   let allStmts : List Stmt := sched.stmts.flatMap (fun
     | .plain s => [s] | .scan _ _ b r _ => b ++ r | .scanPre _ _ _ => [])
-  match inferAxisSizes (declaredAxisSizes sched.decls) inputs allStmts with
+  match inferAxisSizes checked.explicitSizes inputs allStmts with
   | .error failure => .error failure
   | .ok (sizes, warnings) =>
       -- Execute under the workers' narrow `Except EvalError` type, then attach the already-known

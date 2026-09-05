@@ -908,7 +908,7 @@ def lateNopeSched : ScheduledProgram :=
 
 #guard causeOf (prepareEvalPlan lateNopeSched rejSig)
   == some (.sourceInvariant
-       (.cyclicDataflow "prepareEvalPlan: statements are not in producer-before-consumer order"))
+       (.cyclicDataflow "scheduled program: statements are not in producer-before-consumer order"))
 
 -- the sibling hole Step 0's ORDER invariant structurally cannot see: `NOPE` is produced AHEAD of
 -- the read (so `isTopoOrdered` is satisfied) and is not external either (`ScanStmt.writes` counts a

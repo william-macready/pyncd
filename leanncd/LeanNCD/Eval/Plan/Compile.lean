@@ -6,6 +6,7 @@ import LeanNCD.Eval.Plan.EvalPlan
 import LeanNCD.Eval.Plan.Signature
 import LeanNCD.Eval.Contract
 import LeanNCD.DSL.Pipeline.Lowering
+import LeanNCD.DSL.Pipeline.ScheduledValidation
 
 /-!
 # Source compiler: capability preflight (Wave C C4) and scan specialization (Wave F F4)
@@ -1080,9 +1081,11 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
   -- traversal `Eval.evalScheduled` also uses (so the two direct entries agree on WHICH statements
   -- carry the obligation, not merely on the rule); `checkScheduledReadRanks` shares that traversal
   -- for the same reason.
-  let declEnv ← match buildDeclEnv sched.decls with
-    | .ok e    => pure e
+  let checked ← match validateScheduled sched with
+    | .ok checked => pure checked
     | .error e => throw { cause := .sourceInvariant e, warnings := [] }
+  let sched := checked.program
+  let declEnv := checked.declEnv
   -- The pinned axis sizes Step C seeds shape inference with are DERIVED from `sched.decls` here,
   -- through the same `declaredAxisSizes` rule `schedule` itself uses, rather than read out of the
   -- cached `sched.explicitSizes` field. Same authority rule, and same reason, as `orderedExtNames`
@@ -1096,7 +1099,7 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
   -- report, and an entry with no declaration behind it (an unsized `axis a : ℕ` with a cached size)
   -- is dropped rather than honored — leaving that axis to ordinary inference, which fails loud if it
   -- cannot be determined.
-  let explicitSizes : HashMap UID Nat := declaredAxisSizes sched.decls
+  let explicitSizes := checked.explicitSizes
   -- Read ARITY is the second source invariant, in the source pipeline's own position: `resolveDecls`
   -- (duplicate declarations) then `checkReadRanks` then `checkDtypes` (the predicate rule below),
   -- so a schedule violating both a rank rule and a predicate rule reports the rank. Neither direct
@@ -1107,12 +1110,6 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
   -- shared `checkScheduledReadRanks` (`Structural.lean`) is the same rule AND the same
   -- `.plain`/scan-`base ++ recur` traversal `checkPredicateOutputs` below uses, over `sched.stmts`
   -- as presented, with `extNames` re-derived rather than read from the cached field.
-  match checkScheduledReadRanks declEnv sched.stmts with
-  | .ok ()   => pure ()
-  | .error e => throw { cause := .sourceInvariant e, warnings := [] }
-  match checkPredicateOutputs declEnv sched.stmts with
-  | .ok ()   => pure ()
-  | .error e => throw { cause := .sourceInvariant e, warnings := [] }
   -- Statement ORDER is the third source invariant, and the one `orderedExtNames` below silently
   -- depends on: "reads minus produced" is order-INSENSITIVE, so a read whose producer comes LATER
   -- is classified internal (no input slot, no signature demanded) while `resolveSource`'s `getD`
@@ -1122,10 +1119,6 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
   -- here with the SAME predicate and the same error, over `sched.stmts` as presented. Rejecting is
   -- the whole point: reordering here would silently accept a schedule whose statement order —
   -- `ScheduledProgram.stmts`' own documented "producers precede consumers" — is already wrong.
-  unless isTopoOrdered sched.stmts sched.stmts do
-    throw { cause := .sourceInvariant
-              (.cyclicDataflow "prepareEvalPlan: statements are not in producer-before-consumer order")
-          , warnings := [] }
   -- Step A: capability preflight.
   match capabilityPreflight sched with
   | .error e => throw { cause := .capability e, warnings := [] }
@@ -1138,7 +1131,7 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
   -- `dtypeNotAdmitted` regardless of what the declaration expects, while an admitted-but-wrong
   -- dtype (e.g. `bool` supplied for a non-predicate name) is the newer `dtypeMismatch`, carrying
   -- both the expected and actual dtype so a caller does not have to re-derive either.
-  let extOrder := orderedExtNames sched
+  let extOrder := checked.extNames
   for nm in extOrder do
     match sig.tensors[nm]? with
     | none => throw { cause := .inputSignature (.missingSignature nm), warnings := [] }

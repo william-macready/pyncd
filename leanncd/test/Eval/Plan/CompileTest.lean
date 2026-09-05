@@ -470,7 +470,7 @@ def emptySig : InputSignature := InputSignature.mk ({} : HashMap String TensorSi
 def predicateSourceSched : ScheduledProgram :=
   { acceptedSched with
       decls := [.tensor "X" [], .predicate "Y" []]
-    , stmts := [.plain (.assign "Y" [.affine (.axis ⟨"i", 0, .nat⟩)]
+    , stmts := [.plain (.assign "Y" []
         { body := { terms := [{ factors := [.read "X" []] }] }
         , nonlin := .pointwise .relu, agg := .max })] }
 
@@ -481,7 +481,7 @@ def predicateSourceSched : ScheduledProgram :=
     `sourceInvariant predicateAgg`. Changing exactly one field distinguishes the two arms. -/
 def predicateAggSched : ScheduledProgram :=
   { predicateSourceSched with
-      stmts := [.plain (.assign "Y" [.affine (.axis ⟨"i", 0, .nat⟩)]
+      stmts := [.plain (.assign "Y" []
         { body := { terms := [{ factors := [.read "X" []] }] }
         , nonlin := .identity, agg := .max })] }
 
@@ -593,8 +593,29 @@ def outOfOrderSched : ScheduledProgram :=
 
 #guard causeOf (prepareEvalPlan outOfOrderSched sameShapeSig) ==
   some { cause := .sourceInvariant
-           (.cyclicDataflow "prepareEvalPlan: statements are not in producer-before-consumer order")
+          (.cyclicDataflow "scheduled program: statements are not in producer-before-consumer order")
        , warnings := [] }
+
+def topologyInputs : HashMap String DenseTensor :=
+  (({} : HashMap String DenseTensor).insert "A" ⟨[2], #[2.0, 3.0]⟩).insert
+    "B" ⟨[2], #[5.0, 7.0]⟩ |>.insert "Z" ⟨[2], #[11.0, 13.0]⟩
+
+-- The shared topology failure precedes input-signature lookup.
+#guard causeOf (prepareEvalPlan outOfOrderSched emptySig) ==
+  some { cause := .sourceInvariant
+           (.cyclicDataflow "scheduled program: statements are not in producer-before-consumer order")
+       , warnings := [] }
+
+run_cmd do
+  match evalScheduled outOfOrderSched topologyInputs with
+  | .error failure =>
+      match failure.error with
+      | .compile (.cyclicDataflow
+          "scheduled program: statements are not in producer-before-consumer order") =>
+          unless failure.warnings == [] do
+            throwError "out-of-order direct evaluation retained warnings"
+      | _ => throwError s!"out-of-order direct evaluation reported: {failure.error}"
+  | .ok _ => throwError "out-of-order direct evaluation was accepted"
 
 /-- Fixture 10's ORDERED twin — the identical two statements, producer first, which is what
     `schedule` would have emitted for this program. It must still compile, and `Z` must resolve to
@@ -611,6 +632,20 @@ def orderedTwinPrepared : Option PreparedPlan :=
 #guard orderedTwinPrepared.map
     (fun p => (assignStep p.plan.raw.steps[1]!).terms[0]!.factors.map (·.readOrDefault.sourceSlot)) ==
   some #[1, 2]
+
+run_cmd do
+  let prepared ← match prepareEvalPlan orderedTwinSched (InputSignature.ofDenseInputs topologyInputs) with
+    | .ok p => pure p
+    | .error _ => throwError "ordered topology sibling failed preparation"
+  match evalScheduled orderedTwinSched topologyInputs, runPreparedDense prepared topologyInputs with
+  | .ok direct, .ok dense =>
+      match direct.env.get? "Y", dense.env.get? "Y" with
+      | some directY, some denseY =>
+          unless directY.shape == denseY.shape && directY.data == denseY.data do
+            throwError "ordered topology sibling disagreed between direct and prepared Dense evaluation"
+      | _, _ => throwError "ordered topology sibling did not publish Y"
+  | .error e, _ => throwError s!"ordered topology direct evaluation failed: {e.error}"
+  | _, .error e => throwError s!"ordered topology prepared Dense evaluation failed: {repr e.cause}"
 
 /-- Manual renderer for `PlanCompileCause` (used only for test-failure messages): the type
     deliberately has no `Repr`/`ToString` (`ShapeError` — nested via `.shape` — has neither), so a
@@ -1237,6 +1272,38 @@ run_cmd do
   | some f =>
       throwError s!"valid read-rank sibling rejected by prepareEvalPlan: {renderCompileCause f.cause}"
 
+-- ── Declared destination rank at all three source/direct boundaries ──
+
+def destinationRankSched (decls : List Decl) (slots : List LHSSlot) (readIdx : List IdxExpr) :
+    ScheduledProgram :=
+  { decls
+  , stmts := [.plain (.assign "Y" slots
+      { body := { terms := [{ factors := [.read "X" readIdx] }] }, nonlin := .identity })]
+  , env := {}, extNames := insert "X" ∅
+  , explicitSizes := (({} : HashMap UID Nat).insert axIRank.uid 2).insert axJRank.uid 2 }
+
+run_cmd do
+  assertReadRankParity "declared destination under-rank"
+    (destinationRankSched
+      [.axis axIRank (some 2), .axis axJRank (some 2), .tensor "X" [axIRank], .tensor "Y" [axIRank, axJRank]]
+      [.free axIRank] [.axis axIRank])
+    (.rankMismatch "Y" 2 1)
+
+run_cmd do
+  assertReadRankParity "declared destination over-rank"
+    (destinationRankSched
+      [.axis axIRank (some 2), .axis axJRank (some 2), .tensor "X" [axIRank], .tensor "Y" [axIRank]]
+      [.free axIRank, .free axJRank] [.axis axIRank])
+    (.rankMismatch "Y" 1 2)
+
+run_cmd do
+  assertReadRankParity "read rank before declared destination rank"
+    (destinationRankSched
+      [.axis axIRank (some 2), .axis axJRank (some 2), .tensor "X" [axIRank, axJRank]
+      , .tensor "Y" [axIRank, axJRank]]
+      [.free axIRank] [.axis axIRank])
+    (.rankMismatch "X" 2 1)
+
 -- ── The same rule inside a `.scan` node (both halves of `base ++ recur`) ──
 --
 -- Donor: `tensor A(j)`, `S[j,0] := A[j]`, `S[j,l+1] := S[j,l] + A[j]`, over `axis j = 2`,
@@ -1288,6 +1355,34 @@ def rankScanOrderSched : ScheduledProgram :=
 run_cmd do
   assertReadRankParity "scan base is checked before the recurrence" rankScanOrderSched
     (.rankMismatch "A" 1 2)
+
+def rankScanDestinationSched (baseSlots recurSlots : List LHSSlot) : ScheduledProgram :=
+  { rankScanSched [.axis axJRankScan] [.axis axJRankScan] with
+      stmts := [.scan "S" [axLRankScan]
+        [.assign "S" baseSlots
+          { body := { terms := [{ factors := [.read "A" [.axis axJRankScan]] }] }, nonlin := .identity }]
+        [.assign "S" recurSlots
+          { body := { terms := [{ factors := [.read "S" [.axis axJRankScan, .axis axLRankScan]] }
+                               , { factors := [.read "A" [.axis axJRankScan]] }] }
+          , nonlin := .identity }]
+        false] }
+
+run_cmd do
+  assertReadRankParity "scan base declared destination under-rank"
+    (rankScanDestinationSched [.free axJRankScan] [.free axJRankScan, .iterNext axLRankScan])
+    (.rankMismatch "S" 2 1)
+
+run_cmd do
+  assertReadRankParity "scan recurrence declared destination over-rank"
+    (rankScanDestinationSched [.free axJRankScan, .iterAt axLRankScan 0]
+      [.free axJRankScan, .iterNext axLRankScan, .free axJRankScan])
+    (.rankMismatch "S" 2 3)
+
+run_cmd do
+  assertReadRankParity "scan base destination precedes recurrence destination"
+    (rankScanDestinationSched [.free axJRankScan]
+      [.free axJRankScan, .iterNext axLRankScan, .free axJRankScan])
+    (.rankMismatch "S" 2 1)
 
 -- The VALID scan sibling: both halves correctly ranked, so `evalScheduled` runs it to the real
 -- history `[1, 2, 3]` per `j`.
