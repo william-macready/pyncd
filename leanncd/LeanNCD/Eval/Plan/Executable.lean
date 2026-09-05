@@ -662,84 +662,6 @@ structure JaxExecutableCandidate where
   evidence : ExecutionEvidence
   aggregated : evidence = aggregateEvidenceList (steps.map (·.evidence))
 
-/-- Why a candidate's own semantic source (`JaxExecutableCandidate.source : PreparedPlan`) does not
-    tie its source-name bindings to its OWN checked raw plan (whole-branch review round 4).
-
-    Every constructor reuses an existing typed failure rather than inventing a parallel vocabulary:
-    `requiredInputs` carries `checkBindings`' own `BindingsError` (the very rule the required
-    bindings were originally built by, re-applied against `raw.inputSlots`), and `materializedSlot`
-    carries the `PlanError.slotOutOfRange` the shared `PlanBindings.materializedWith` path already
-    raises everywhere else in this subsystem. `materializedNotPublished` is the one genuinely new
-    shape — see `checkPreparedBindings` for what it asserts and why. -/
-inductive PreparedBindingsError
-  | requiredInputs           (cause : BindingsError)
-  | materializedSlot         (cause : PlanError)
-  | materializedNotPublished (index : Nat) (slot : TensorSlot)
-  deriving DecidableEq, BEq, Repr
-
-/-- Does this `PreparedPlan`'s `PlanBindings` describe THIS `PreparedPlan`'s own raw plan (Task 4.5
-    closure, whole-branch review round 4)?
-
-    `JaxExecutableWellFormed` used to ignore `source.bindings` entirely: it tied every STEP to the
-    prepared plan (context table, checked assignment, contextual well-formedness) but nothing tied
-    the source-name sidecar to anything. So a `PreparedPlan` carrying a materialized binding at slot
-    99 over a two-slot plan, or a `requiredInputs` built by `checkBindings` against a DIFFERENT
-    plan's `inputSlots`, received real executable evidence — evidence about a plan that cannot
-    honour it, since `unpack`/`materializedSignatures` reject the first and `pack` cannot resolve
-    the second.
-
-    Three obligations, all decidable from `plan.raw` alone — no source AST, no fabricated name, no
-    caller-supplied context:
-
-    * **required tie.** `checkBindings raw.inputSlots requiredInputs.bindings` must succeed: the
-      binding slots are a permutation of the raw plan's OWN `inputSlots` and no source name is bound
-      twice. Deliberately the SAME rule (and the same error family) `RequiredBindings` was
-      constructed by, just re-applied against `raw.inputSlots` instead of the `inputSlots` field the
-      value happens to store — which is exactly the coupling `RequiredBindings`' doc comment says
-      its own `aligned` proof does NOT establish. `Perm`, not positional equality, because `pack`
-      resolves by NAME: a reordered `bindings` array is legal (`AdapterTest` Check 5 pins that) and
-      stays legal here, while a missing, extra, duplicated, or out-of-plan slot is not.
-    * **materialized in range.** Resolved through the shared `PreparedPlan.materializedSignatures`
-      (i.e. `PlanBindings.materializedWith` over `raw.tensorSigs`) rather than a private re-check,
-      so "this executable's bindings are valid" and "this plan's materialized signatures resolve"
-      are the same statement, reported with the same `PlanError.slotOutOfRange` value.
-    * **materialized publication order.** `prepareEvalPlan` publishes each materialized name at a
-      FRESH destination slot allocated after every input slot and after every earlier publication
-      (Step D allocates every input first, then pushes each destination at `tensorSigsAcc.size`), so
-      the slot sequence is strictly increasing and disjoint from `raw.inputSlots`. Both halves are
-      re-derivable from `raw` alone, so both are checked: an entry not strictly greater than every
-      input slot and every previous materialized slot is `materializedNotPublished`, carrying its
-      index and slot. That is what rejects an in-range materialized binding naming an INPUT slot
-      (publishing an input's own tensor under an output name) or naming one destination twice. It
-      constrains SLOTS, not names: a name legitimately reassigned by a later statement appears twice
-      with two different, increasing slots (`materializedNames`' own doc comment), and stays valid.
-
-    What is deliberately NOT checked, because it is not re-derivable here: WHICH name belongs to
-    which slot. `raw` carries no source names at all, so a candidate that swaps two required
-    bindings' names between two input slots, or renames a materialized binding, satisfies every
-    obligation above. Establishing that would need the source AST (or a caller-supplied name table);
-    fabricating either would be worse than the gap, because the name-to-slot association's authority
-    is `prepareEvalPlan`, and this file must not invent a second one. -/
-def checkPreparedBindings (source : PreparedPlan) : Except PreparedBindingsError Unit := do
-  let raw := source.plan.raw
-  match checkBindings raw.inputSlots source.bindings.requiredInputs.bindings with
-  | .error e => throw (.requiredInputs e)
-  | .ok _    => pure ()
-  match source.materializedSignatures with
-  | .error e => throw (.materializedSlot e)
-  | .ok _    => pure ()
-  -- The lower bound starts at the largest input slot (computed by fold rather than read off the end
-  -- of `inputSlots`, so this does not silently depend on `checkStepGraph`'s ascending-order
-  -- guarantee), then advances to each materialized slot in turn.
-  let mut bound : Option TensorSlot :=
-    raw.inputSlots.foldl (fun acc s => some (match acc with | some m => max m s | none => s)) none
-  for h : i in [0 : source.bindings.materializedNames.size] do
-    let b := source.bindings.materializedNames[i]
-    match bound with
-    | some m => unless m < b.slot do throw (.materializedNotPublished i b.slot)
-    | none   => pure ()
-    bound := some b.slot
-
 /-- `checkPreparedBindings` as the decidable `Bool` `JaxExecutableWellFormed` conjoins. Defined in
     terms of that function, never re-deriving the rule, so the proposition and the error a caller
     receives cannot disagree about which candidates are valid. -/
@@ -795,7 +717,6 @@ private def stepTiedToPreparedStep (prepared : PreparedPlan) (stepIndex : Nat)
 def JaxExecutableWellFormed (candidate : JaxExecutableCandidate) : Prop :=
   candidate.steps.size = candidate.source.plan.raw.steps.size ∧
   (candidate.steps.mapIdx (fun i sk => stepTiedToPreparedStep candidate.source i sk)).all id = true ∧
-  preparedBindingsTied candidate.source = true ∧
   candidate.evidence = aggregateEvidenceList (candidate.steps.map (·.evidence))
 
 /-- Same rationale as `JaxKernelWellFormed`'s instance above: instance search does not unfold a
@@ -806,7 +727,6 @@ instance (candidate : JaxExecutableCandidate) : Decidable (JaxExecutableWellForm
   inferInstanceAs (Decidable (candidate.steps.size = candidate.source.plan.raw.steps.size ∧
     (candidate.steps.mapIdx (fun i sk => stepTiedToPreparedStep candidate.source i sk)).all id
       = true ∧
-    preparedBindingsTied candidate.source = true ∧
     candidate.evidence = aggregateEvidenceList (candidate.steps.map (·.evidence))))
 
 /-- Type-indexed executable plan, only creatable by validator (`validateAndConstructExecutable`).
@@ -815,6 +735,7 @@ instance (candidate : JaxExecutableCandidate) : Decidable (JaxExecutableWellForm
 -/
 structure JaxExecutable (evidence : ExecutionEvidence) where private mk ::
   candidate : JaxExecutableCandidate
+  checkedBindings : CheckedPreparedBindings
   evidenceAligned : evidence = candidate.evidence
   valid : JaxExecutableWellFormed candidate
 
@@ -855,13 +776,14 @@ def validateAndConstructExecutable (candidate : JaxExecutableCandidate) :
     Except JaxExecutableValidationError SomeJaxExecutable := do
   unless decide (candidate.evidence = aggregateEvidenceList (candidate.steps.map (·.evidence))) do
     throw .aggregationMismatch
-  match checkPreparedBindings candidate.source with
-  | .error e => throw (.invalidBindings e)
-  | .ok _    => pure ()
+  let checkedBindings ← match checkPreparedBindings candidate.source with
+    | .error e => throw (.invalidBindings e)
+    | .ok checked => pure checked
   if h : JaxExecutableWellFormed candidate then
     let evidence := candidate.evidence
     let exec : JaxExecutable evidence := {
       candidate := candidate
+      checkedBindings
       evidenceAligned := rfl
       valid := h
     }

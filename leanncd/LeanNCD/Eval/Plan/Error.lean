@@ -221,6 +221,14 @@ inductive BindingsError
   | duplicateName   (name : String)
   deriving DecidableEq, BEq, Repr, Inhabited
 
+/-- A public prepared plan's name bindings do not describe its own raw positional plan.  This is
+    structural slot validation only: raw plans retain no source or publication names. -/
+inductive PreparedBindingsError
+  | requiredInputs    (cause : BindingsError)
+  | materializedSlot  (cause : PlanError)
+  | publicationSlots  (expected actual : Array TensorSlot)
+  deriving DecidableEq, BEq, Repr, Inhabited
+
 /- `PlanCompileCause`/`PlanCompileFailure` used to live here (§5.5's sketch), but `invalidPlan`'s
    payload is now `PlanStepError` (`EvalPlan.lean`), which itself depends on `ScanPlanError`
    (`Scan.lean`) — one layer downstream of where this file sits in the import graph (`Error` is
@@ -228,7 +236,7 @@ inductive BindingsError
    relocated to `EvalPlan.lean`, the first module downstream of everything they need to reference.
    See `EvalPlan.lean` for their current definitions. -/
 
-/-- Everything `pack` can detect wrong with the concrete tensor `env` supplies once `requiredInputs`
+/-- Everything `pack` can detect wrong with the concrete tensor `env` supplies once prepared bindings
     itself is already known-good (`PlanBindings.requiredInputs : RequiredBindings`, checked by
     `checkBindings` — a clean, name-unique bijection, but onto `RequiredBindings`' OWN stored
     `inputSlots` field, NOT — by anything the type system enforces — onto the enclosing
@@ -244,6 +252,7 @@ inductive BindingsError
     `env`), `shapeMismatch`/`storageMismatch` (a name resolved, but its tensor doesn't conform to
     the plan's declared signature). -/
 inductive InputBindingError
+  | invalidPreparedBindings (cause : PreparedBindingsError)
   | missingEnvBinding (name : String)
   | shapeMismatch     (name : String) (slot : TensorSlot) (expected : Array Nat) (actual : List Nat)
   | storageMismatch   (name : String) (slot : TensorSlot) (shape : List Nat) (dataSize : Nat)
@@ -274,9 +283,10 @@ inductive InputBindingError
     built at exactly `tensorSigs.size` — which is the point: the store `unpack` accepts is now
     pinned to the checked plan rather than to whatever the caller passes. -/
 inductive PlanRunCause
-  | binding        (cause : InputBindingError)
-  | execution      (cause : PositionalInputError)
-  | resultStore    (cause : PositionalInputError)
+  | binding         (cause : InputBindingError)
+  | invalidBindings (cause : PreparedBindingsError)
+  | execution       (cause : PositionalInputError)
+  | resultStore     (cause : PositionalInputError)
   | materialization (cause : PlanError)
   deriving DecidableEq, BEq, Repr, Inhabited
 

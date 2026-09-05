@@ -196,14 +196,19 @@ run_cmd do
       | .ok report =>
           throwError s!"leading out-of-range materialized slot was accepted: {repr (report.env.get? "Y")}"
       | .error failure =>
-          unless failure.cause == .materialization (.slotOutOfRange 99 3) do
-            throwError s!"wrong cause for a leading out-of-range slot: {repr failure.cause}"
+        unless failure.cause ==
+            .binding (.invalidPreparedBindings (.materializedSlot (.slotOutOfRange 99 3))) do
+          throwError s!"wrong cause for a leading out-of-range slot: {repr failure.cause}"
           unless failure.warnings == prepared.warnings do
             throwError s!"materialization-failure warnings dropped/changed: {failure.warnings}"
+      match pack leadingBad zeroCoeffInputs with
+      | .ok _ => throwError "pack accepted invalid materialized bindings"
+      | .error (.invalidPreparedBindings (.materializedSlot (.slotOutOfRange 99 3))) => pure ()
+      | .error e => throwError s!"pack reported the wrong invalid-binding cause: {repr e}"
       -- …and the same list through `unpack` directly: the SAME typed cause `runPreparedDense`
       -- reported just above (`unpack` is now `PlanRunCause`-valued and that function propagates it
       -- verbatim), and NO name published.
-      match pack leadingBad zeroCoeffInputs with
+      match pack prepared zeroCoeffInputs with
       | .error e => throwError s!"pack unexpectedly failed: {repr e}"
       | .ok packed =>
         match runDensePlan leadingBad.plan packed with
@@ -215,7 +220,7 @@ run_cmd do
             | .ok env =>
                 throwError s!"unpack published a fabricated tensor: {repr (env.get? "Y")}"
             | .error c =>
-                unless c == .materialization (.slotOutOfRange 99 3) do
+                unless c == .invalidBindings (.materializedSlot (.slotOutOfRange 99 3)) do
                   throwError s!"unpack: wrong error for a leading out-of-range slot: {repr c}"
             -- (b) TRAILING out-of-range entry: the legal prefix must not be published either.
             let trailingBad : PreparedPlan :=
@@ -225,7 +230,7 @@ run_cmd do
             | .ok env =>
                 throwError s!"unpack published a partial array: {repr (env.get? "Y")}"
             | .error c =>
-                unless c == .materialization (.slotOutOfRange 7 3) do
+                unless c == .invalidBindings (.materializedSlot (.slotOutOfRange 7 3)) do
                   throwError s!"unpack: wrong error for a trailing out-of-range slot: {repr c}"
             -- (c) VALID repeats: `Y` bound twice — to `A`'s slot first, then its own — so the LAST
             -- entry is what survives. A `foldr`/reversed traversal would publish `A`'s tensor here.
@@ -234,10 +239,11 @@ run_cmd do
                   materializedNames :=
                     #[{ name := "Y", slot := 0 }, { name := "Y", slot := ySlot }] } }
             match unpack repeats zeroCoeffInputs result with
-            | .error c => throwError s!"valid repeated-name bindings were rejected: {repr c}"
-            | .ok env =>
-                unless expectTensor env["Y"]? [2] #[60.0, 600.0] do
-                  throwError s!"repeated-name last-write semantics broken: {repr (env.get? "Y")}"
+            | .ok _ => throwError "non-publication input slot was accepted"
+            | .error (.invalidBindings (.publicationSlots expected actual)) =>
+                unless expected == #[ySlot] && actual == #[0, ySlot] do
+                  throwError s!"wrong repeated publication payload: {repr expected} {repr actual}"
+            | .error c => throwError s!"wrong repeated-name rejection: {repr c}"
             -- (d) OVERSIZED store: a binding at slot 3 is in range for the 4-entry store the caller
             -- hands over, and out of range for the 3-slot CHECKED PLAN. The plan is the authority,
             -- so this is a wrong STORE (`resultStore`), decided before any binding is resolved —
@@ -250,7 +256,7 @@ run_cmd do
             | .ok env =>
                 throwError s!"an oversized store licensed an out-of-plan slot: {repr (env.get? "Y")}"
             | .error c =>
-                unless c == .resultStore (.storeArityMismatch 3 4) do
+                unless c == .invalidBindings (.materializedSlot (.slotOutOfRange 3 3)) do
                   throwError s!"unpack: wrong error for an oversized store: {repr c}"
             -- …and the plan's OWN (valid) bindings against that same oversized store are rejected
             -- too: the store is wrong regardless of which bindings ride on it.
@@ -403,6 +409,17 @@ run_cmd do
           match failure.cause with
           | .binding (.missingEnvBinding nm) => unless nm == "X" do throwError s!"wrong missing name: {nm}"
           | c => throwError s!"expected a binding failure, got: {repr c}"
+      -- A malformed sidecar precedes environment lookup and retains the same nonempty warning list.
+      let malformed : PreparedPlan :=
+        { prepared with bindings := { prepared.bindings with materializedNames := #[] } }
+      match runPreparedDense malformed (({} : HashMap String DenseTensor)) with
+      | .ok _ => throwError "malformed publication bindings were accepted"
+      | .error failure =>
+          unless failure.warnings == prepared.warnings do
+            throwError s!"invalid-binding warnings dropped/changed: {failure.warnings}"
+          match failure.cause with
+          | .binding (.invalidPreparedBindings (.publicationSlots _ #[])) => pure ()
+          | c => throwError s!"expected invalid prepared bindings before environment lookup, got: {repr c}"
 
 -- PlanRunCause.execution: unreachable through the full runPreparedDense pipeline — pack's own
 -- validation (Adapter.lean) and runDenseAssign's self-consistent output construction (Dense.lean)

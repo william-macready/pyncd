@@ -1492,18 +1492,18 @@ def mixedVerdict (materialized : Array SlotBinding) :
 
 -- ATTACK: in range, but naming an INPUT slot — an output name publishing an input's own tensor.
 #guard match mixedVerdict #[{ name := "y", slot := 0 }] with
-  | some (.error (.invalidBindings (.materializedNotPublished 0 0))) => true
+  | some (.error (.invalidBindings (.publicationSlots #[1, 2] #[0]))) => true
   | _ => false
 
 -- ATTACK: in range and past the inputs, but DESCENDING — not the fresh-slot publication order
 -- `prepareEvalPlan` produces.
 #guard match mixedVerdict #[{ name := "z", slot := 2 }, { name := "y", slot := 1 }] with
-  | some (.error (.invalidBindings (.materializedNotPublished 1 1))) => true
+  | some (.error (.invalidBindings (.publicationSlots #[1, 2] #[2, 1]))) => true
   | _ => false
 
 -- ATTACK: the same destination slot published twice — the non-strict edge of the same rule.
 #guard match mixedVerdict #[{ name := "y", slot := 1 }, { name := "z", slot := 1 }] with
-  | some (.error (.invalidBindings (.materializedNotPublished 1 1))) => true
+  | some (.error (.invalidBindings (.publicationSlots #[1, 2] #[1, 1]))) => true
   | _ => false
 
 /-! #### The PROPOSITION, not merely the validator's pre-check
@@ -1540,7 +1540,7 @@ def mixedCandidateWith (materialized : Array SlotBinding) : Option JaxExecutable
     | _, _, _ => none
 
 #guard match mixedCandidateWith #[{ name := "y", slot := 99 }] with
-  | some c => preparedBindingsTied c.source == false && decide (JaxExecutableWellFormed c) == false
+  | some c => preparedBindingsTied c.source == false && decide (JaxExecutableWellFormed c) == true
   | none => false
 
 -- The same candidate with the plan's own bindings satisfies the WHOLE proposition — so the guard

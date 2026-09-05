@@ -50,6 +50,7 @@ inductive JaxCodegenError
   -- about which candidates have compatible extents.
   | labelExtentMismatch   (nodeIndex termIndex factorIndex sourceDim position sourceExtent : Nat)
                           (iterationExtent : Option Nat)
+  | invalidBindings       (cause : PreparedBindingsError)
   | bindingSlotOutOfRange (slot tableSize : Nat)
   | missingFixtureInput   (name : String)
   | labelTableExhausted   (nodeIndex termIndex position : Nat)
@@ -323,7 +324,7 @@ private def renderNodeLines (indent : String) (n : NodeLowering) : Array String 
 
 /-! ## 5. `einsumOnly`: slot init, shape checks, and output reconstruction -/
 
-def renderShapeCheckLine (indent : String) (raw : RawEvalPlan) (b : SlotBinding) :
+private def renderShapeCheckLine (indent : String) (raw : RawEvalPlan) (b : SlotBinding) :
     Except JaxCodegenError String := do
   match raw.tensorSigs[b.slot]? with
   | none => throw (.bindingSlotOutOfRange b.slot raw.tensorSigs.size)
@@ -334,7 +335,7 @@ def renderShapeCheckLine (indent : String) (raw : RawEvalPlan) (b : SlotBinding)
         s!"{indent}    raise ValueError(" ++ pyStrLit "input " ++ " + " ++ nm ++ " + " ++
         pyStrLit s!" expected shape {shape}, got " ++ " + str(tuple(inputs[" ++ nm ++ "].shape)))"
 
-def renderSlotInitLines (indent : String) (raw : RawEvalPlan) (requiredInputs : Array SlotBinding) :
+private def renderSlotInitLines (indent : String) (raw : RawEvalPlan) (requiredInputs : Array SlotBinding) :
     Except JaxCodegenError (Array String) := do
   let mut lines : Array String := #[]
   for b in requiredInputs do
@@ -343,25 +344,33 @@ def renderSlotInitLines (indent : String) (raw : RawEvalPlan) (requiredInputs : 
     lines := lines.push s!"{indent}slots[{b.slot}] = inputs[{pyStrLit b.name}]"
   return lines
 
-def renderOutputLines (indent : String) (materializedNames : Array SlotBinding) : Array String :=
+private def renderOutputLines (indent : String) (materializedNames : Array SlotBinding) : Array String :=
   materializedNames.map (fun b => s!"{indent}outputs[{pyStrLit b.name}] = slots[{b.slot}]")
 
 /-- The full `forward(inputs)` function body, generated entirely from `PreparedPlan`. -/
-def generateForward (plan : PreparedPlan) : Except JaxCodegenError String := do
+private def generateForwardChecked (plan : PreparedPlan) (checked : CheckedPreparedBindings) :
+    Except JaxCodegenError String := do
   let raw := plan.plan.raw
   let nodes ← lowerPlan plan.plan
-  let slotInitLines ← renderSlotInitLines "    " raw plan.bindings.requiredInputs.bindings
+  let slotInitLines ← renderSlotInitLines "    " raw checked.requiredInputs.bindings
   let nodeLines := nodes.flatMap (renderNodeLines "    ")
-  let outputLines := renderOutputLines "    " plan.bindings.materializedNames
+  let outputLines := renderOutputLines "    " checked.materializedBindings
   let lines : Array String :=
     #["def forward(inputs):", s!"    slots = [None] * {raw.tensorSigs.size}"]
     ++ slotInitLines ++ nodeLines
     ++ #["    outputs = {}"] ++ outputLines ++ #["    return outputs"]
   return String.intercalate "\n" lines.toList
 
+/-- The full `forward(inputs)` function body, generated entirely from a validated `PreparedPlan`. -/
+def generateForward (plan : PreparedPlan) : Except JaxCodegenError String := do
+  let checked ← match checkPreparedBindings plan with
+    | .ok checked => pure checked
+    | .error e => throw (.invalidBindings e)
+  generateForwardChecked plan checked
+
 /-- Renders the module-level input constants (checked shape + `Float.toBits` payload) the einsum
     smoke's Python consumer reconstructs concrete tensors from. -/
-def renderInputConstants (raw : RawEvalPlan) (requiredInputs : Array SlotBinding)
+private def renderInputConstantsRaw (raw : RawEvalPlan) (requiredInputs : Array SlotBinding)
     (inputs : HashMap String DenseTensor) : Except JaxCodegenError String := do
   let mut shapeLines : Array String := #[]
   let mut bitsLines : Array String := #[]
@@ -378,6 +387,14 @@ def renderInputConstants (raw : RawEvalPlan) (requiredInputs : Array SlotBinding
   let shapesBlock := "INPUT_SHAPES = {\n" ++ String.intercalate "\n" shapeLines.toList ++ "\n}"
   let bitsBlock := "INPUT_BITS = {\n" ++ String.intercalate "\n" bitsLines.toList ++ "\n}"
   return shapesBlock ++ "\n" ++ bitsBlock
+
+/-- Render smoke inputs only after validating the complete prepared-plan binding sidecar. -/
+def renderInputConstants (plan : PreparedPlan) (inputs : HashMap String DenseTensor) :
+    Except JaxCodegenError String := do
+  let checked ← match checkPreparedBindings plan with
+    | .ok checked => pure checked
+    | .error e => throw (.invalidBindings e)
+  renderInputConstantsRaw plan.plan.raw checked.requiredInputs.bindings inputs
 
 /-- Renders the einsum smoke's independent expected-output constants (Dense-executed result). -/
 def renderExpectedOutputConstants (name : String) (t : DenseTensor) : String :=
@@ -479,7 +496,7 @@ private def renderAffineNodesArray (c : CheckedEvalPlan) : Except JaxCodegenErro
     | .scan _ | .pointwise _ | .axiswise _ => throw (.unsupportedStep ni)
   return "[" ++ String.intercalate ", " entries.toList ++ "]"
 
-def renderBindingList (bs : Array SlotBinding) : String :=
+private def renderBindingList (bs : Array SlotBinding) : String :=
   "[" ++ String.intercalate ", "
     (bs.toList.map (fun b => "(" ++ pyStrLit b.name ++ ", " ++ toString b.slot ++ ")")) ++ "]"
 
@@ -495,12 +512,15 @@ def renderAffinePlanPositional (c : CheckedEvalPlan) : Except JaxCodegenError St
     (`requiredInputs` in `inputSlots` order, `materializedNames` in schedule order). The
     source/corpus boundary. -/
 def renderAffinePlanNamed (plan : PreparedPlan) : Except JaxCodegenError String := do
+  let checked ← match checkPreparedBindings plan with
+    | .ok checked => pure checked
+    | .error e => throw (.invalidBindings e)
   let c := plan.plan
   let nodes ← renderAffineNodesArray c
   return "{\"num_slots\": " ++ toString c.raw.tensorSigs.size ++
     ", \"input_slots\": " ++ pyNatListLit c.raw.inputSlots ++
-    ", \"required_inputs\": " ++ renderBindingList plan.bindings.requiredInputs.bindings ++
-    ", \"materialized\": " ++ renderBindingList plan.bindings.materializedNames ++
+    ", \"required_inputs\": " ++ renderBindingList checked.requiredInputs.bindings ++
+    ", \"materialized\": " ++ renderBindingList checked.materializedBindings ++
     ", \"nodes\": " ++ nodes ++ "}"
 
 /-- Positional single `CheckedAssignPlan` static data (one node, no synthetic graph or source
@@ -651,6 +671,9 @@ def loweringToEinsumCandidate (sigs : Array TensorSignature) (nodeIndex : Nat)
 -/
 def lowerCheckPlanToCandidate (plan : PreparedPlan) :
     Except JaxCodegenError JaxExecutableCandidate := do
+  match checkPreparedBindings plan with
+  | .error e => throw (.invalidBindings e)
+  | .ok _ => pure ()
   let sigs := plan.plan.raw.tensorSigs
   let mut steps : Array SomeJaxKernel := #[]
   for h : ni in [0 : plan.plan.checkedNodes.size] do
@@ -746,6 +769,27 @@ def testLowerCheckPlanToCandidateValid : Bool :=
 
 #guard testLowerCheckPlanToCandidateValid
 
+/-! ### Prepared-binding boundary coverage -/
+
+def idPreparedWith (materializedNames : Array SlotBinding) : Option PreparedPlan :=
+  match checkPlan idRaw, checkBindings #[0] #[{ name := "x", slot := 0 }] with
+  | .ok plan, .ok requiredInputs =>
+      some { plan, bindings := { requiredInputs, materializedNames }, warnings := [] }
+  | _, _ => none
+
+def namedEntriesRejectMissingPublication : Bool :=
+  match idPreparedWith #[] with
+  | some p =>
+      match generateForward p, renderAffinePlanNamed p, lowerCheckPlanToCandidate p with
+      | .error e1, .error e2, .error e3 =>
+          e1 == .invalidBindings (.publicationSlots #[1] #[]) &&
+          e2 == .invalidBindings (.publicationSlots #[1] #[]) &&
+          e3 == .invalidBindings (.publicationSlots #[1] #[])
+      | _, _, _ => false
+  | none => false
+
+#guard namedEntriesRejectMissingPublication
+
 /-! ### Located unsupported-step rejections (Slice 5, Task 5.0)
 
 Three fixtures, each a checked `[assign@0, <unsupported>@1]` graph: a valid identity assignment at
@@ -762,7 +806,7 @@ def rejectSigs : Array TensorSignature :=
 
 -- `[assign Y[i]:=X[i] @0, pointwise relu(X)->slot2 @1]`.
 def pointwiseStep : RawPointwisePlan :=
-  { sourceSlot := 0, destinationSlot := 2, shape := #[3], fn := .relu }
+  { sourceSlot := 1, destinationSlot := 2, shape := #[3], fn := .relu }
 
 def pointwiseRejectRaw : RawEvalPlan :=
   { tensorSigs := rejectSigs, inputSlots := #[0]
@@ -770,7 +814,7 @@ def pointwiseRejectRaw : RawEvalPlan :=
 
 -- `[assign Y[i]:=X[i] @0, axiswise softmax(X, axis 0)->slot2 @1]`.
 def axiswiseStep : RawAxiswisePlan :=
-  { sourceSlot := 0, destinationSlot := 2, shape := #[3], axisPos := 0, fn := .softmax }
+  { sourceSlot := 1, destinationSlot := 2, shape := #[3], axisPos := 0, fn := .softmax }
 
 def axiswiseRejectRaw : RawEvalPlan :=
   { tensorSigs := rejectSigs, inputSlots := #[0]
@@ -848,7 +892,8 @@ def scanRejectRaw : RawEvalPlan :=
 
 /-- Shared assertion: `checkPlan`-accept, `PreparedPlan`-wrap with the given input bindings, then
     `lowerCheckPlanToCandidate` must reject with `unsupportedStep 1`. -/
-def rejectsLocatedAt1 (raw : RawEvalPlan) (inputBindings : Array SlotBinding) : Bool :=
+def rejectsLocatedAt1 (raw : RawEvalPlan) (inputBindings : Array SlotBinding)
+    (materializedSlots : Array TensorSlot) : Bool :=
   match checkPlan raw with
   | .error _ => false
   | .ok checkedPlan =>
@@ -856,20 +901,23 @@ def rejectsLocatedAt1 (raw : RawEvalPlan) (inputBindings : Array SlotBinding) : 
     | .error _ => false
     | .ok requiredInputs =>
       let prepared : PreparedPlan :=
-        { plan := checkedPlan, bindings := { requiredInputs, materializedNames := #[] }, warnings := [] }
+        { plan := checkedPlan
+        , bindings := { requiredInputs
+                      , materializedNames := materializedSlots.map (fun slot => { name := "out", slot }) }
+        , warnings := [] }
       match lowerCheckPlanToCandidate prepared with
       | .error (.unsupportedStep idx) => idx == 1
       | _ => false
 
 /-- A `.pointwise` step at index 1 is rejected with the located error carrying index `1`. -/
 def testPointwiseStepRejectedLocated : Bool :=
-  rejectsLocatedAt1 pointwiseRejectRaw #[{ name := "x", slot := 0 }]
+  rejectsLocatedAt1 pointwiseRejectRaw #[{ name := "x", slot := 0 }] #[2]
 
 #guard testPointwiseStepRejectedLocated
 
 /-- A `.axiswise` step at index 1 is rejected with the located error carrying index `1`. -/
 def testAxiswiseStepRejectedLocated : Bool :=
-  rejectsLocatedAt1 axiswiseRejectRaw #[{ name := "x", slot := 0 }]
+  rejectsLocatedAt1 axiswiseRejectRaw #[{ name := "x", slot := 0 }] #[2]
 
 #guard testAxiswiseStepRejectedLocated
 
@@ -883,7 +931,7 @@ def maskInclude : PosBoolExpr :=
 
 -- `[assign Y[i]:=X[i] @0, axiswise softmax(where 0=0)(X, axis 0)->slot2 @1]`.
 def maskedAxiswiseStep : RawAxiswisePlan :=
-  { sourceSlot := 0, destinationSlot := 2, shape := #[3], axisPos := 0, fn := .softmax
+  { sourceSlot := 1, destinationSlot := 2, shape := #[3], axisPos := 0, fn := .softmax
   , mask := some maskInclude }
 
 def maskedAxiswiseRejectRaw : RawEvalPlan :=
@@ -893,13 +941,13 @@ def maskedAxiswiseRejectRaw : RawEvalPlan :=
 /-- A MASKED `.axiswise` step at index 1 is rejected with the same located error carrying index `1` —
     masking does not create a new emittable JAX path. -/
 def testMaskedAxiswiseStepRejectedLocated : Bool :=
-  rejectsLocatedAt1 maskedAxiswiseRejectRaw #[{ name := "x", slot := 0 }]
+  rejectsLocatedAt1 maskedAxiswiseRejectRaw #[{ name := "x", slot := 0 }] #[2]
 
 #guard testMaskedAxiswiseStepRejectedLocated
 
 /-- A `.scan` step at index 1 is rejected with the located error carrying index `1`. -/
 def testScanStepRejectedLocated : Bool :=
-  rejectsLocatedAt1 scanRejectRaw #[{ name := "s0", slot := 0 }, { name := "x", slot := 1 }]
+  rejectsLocatedAt1 scanRejectRaw #[{ name := "s0", slot := 0 }, { name := "x", slot := 1 }] #[3, 2]
 
 #guard testScanStepRejectedLocated
 

@@ -37,11 +37,11 @@ abbrev NamedDenseEnv := HashMap String DenseTensor
     per-input validation performs, reproduced here (not literally shared, since that helper is
     private and typed to `PositionalInputError`) so a NAMED failure is diagnosable without waiting
     for the positional worker to run. -/
-def pack (plan : PreparedPlan) (env : NamedDenseEnv) :
-    Except InputBindingError (Array DenseTensor) := do
+private def packChecked (plan : PreparedPlan) (checked : CheckedPreparedBindings)
+    (env : NamedDenseEnv) : Except InputBindingError (Array DenseTensor) := do
   let raw := plan.plan.raw
   let slotName : HashMap TensorSlot String :=
-    plan.bindings.requiredInputs.bindings.foldl (fun acc b => acc.insert b.slot b.name) {}
+    checked.requiredInputs.bindings.foldl (fun acc b => acc.insert b.slot b.name) {}
   let mut out : Array DenseTensor := #[]
   for slot in raw.inputSlots do
     -- `slotName` has an entry for every slot in `raw.inputSlots` FOR EVERY `PreparedPlan`
@@ -67,6 +67,13 @@ def pack (plan : PreparedPlan) (env : NamedDenseEnv) :
       throw (.storageMismatch name slot t.shape t.data.size)
     out := out.push t
   return out
+
+def pack (plan : PreparedPlan) (env : NamedDenseEnv) :
+    Except InputBindingError (Array DenseTensor) := do
+  let checked ← match checkPreparedBindings plan with
+    | .ok checked => pure checked
+    | .error e => throw (.invalidPreparedBindings e)
+  packChecked plan checked env
 
 /-- Reconstruct the named environment from a positional result. Starts from the ORIGINAL `env`
     (preserving every entry `pack` never consulted — extra inputs the plan doesn't read), then
@@ -109,14 +116,22 @@ def pack (plan : PreparedPlan) (env : NamedDenseEnv) :
     alone: it indexes `raw.inputSlots`, which `checkPlan` bounds against `tensorSigs.size`
     (`checkStepGraph`'s first loop) before a `CheckedEvalPlan` exists at all, so no `PreparedPlan` —
     however hand-built its bindings — can present an out-of-range input slot there. -/
-def unpack (plan : PreparedPlan) (env : NamedDenseEnv) (result : Array DenseTensor) :
+private def unpackChecked (plan : PreparedPlan) (checked : CheckedPreparedBindings)
+    (env : NamedDenseEnv) (result : Array DenseTensor) :
     Except PlanRunCause NamedDenseEnv := do
   let expected := plan.plan.raw.tensorSigs.size
   unless result.size == expected do
     throw (.resultStore (.storeArityMismatch expected result.size))
-  match plan.bindings.materializedWith result with
+  match checked.materializedWith result with
   | .error e => throw (.materialization e)
   | .ok pairs => return pairs.foldl (fun acc (nm, t) => acc.insert nm t) env
+
+def unpack (plan : PreparedPlan) (env : NamedDenseEnv) (result : Array DenseTensor) :
+    Except PlanRunCause NamedDenseEnv := do
+  let checked ← match checkPreparedBindings plan with
+    | .ok checked => pure checked
+    | .error e => throw (.invalidBindings e)
+  unpackChecked plan checked env result
 
 /-- Run a prepared plan against a named environment: `pack` into positional slots, run the
     positional worker, `unpack` the result back into the named environment, preserving `plan`'s
@@ -125,13 +140,16 @@ def unpack (plan : PreparedPlan) (env : NamedDenseEnv) (result : Array DenseTens
     sees here and the value direct `unpack` returns are the same). -/
 def runPreparedDense (plan : PreparedPlan) (env : NamedDenseEnv) :
     Except PlanRunFailure EvalReport := do
-  let packed ← match pack plan env with
+  let checked ← match checkPreparedBindings plan with
+    | .ok checked => pure checked
+    | .error e => throw { cause := .binding (.invalidPreparedBindings e), warnings := plan.warnings }
+  let packed ← match packChecked plan checked env with
     | .ok a => pure a
     | .error e => throw { cause := .binding e, warnings := plan.warnings }
   let result ← match runDensePlan plan.plan packed with
     | .ok r => pure r
     | .error e => throw { cause := .execution e, warnings := plan.warnings }
-  let unpacked ← match unpack plan env result with
+  let unpacked ← match unpackChecked plan checked env result with
     | .ok e => pure e
     | .error c => throw { cause := c, warnings := plan.warnings }
   return { env := unpacked, warnings := plan.warnings }

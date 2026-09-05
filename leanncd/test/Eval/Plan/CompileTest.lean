@@ -367,7 +367,7 @@ def repeatPredPrepared : Option PreparedPlan := (prepareEvalPlan repeatPredSched
     dotted `.ok`/`.error` patterns (an un-annotated `Option.map` leaves the `Except` type a
     metavariable). -/
 def matSigsOf (p : Option PreparedPlan) :
-    Option (Except PlanError (Array (String × TensorSignature))) :=
+    Option (Except PreparedBindingsError (Array (String × TensorSignature))) :=
   p.map (·.materializedSignatures)
 
 #guard match matSigsOf repeatPredPrepared with
@@ -391,7 +391,7 @@ def repeatPredBadSlot : Option PreparedPlan :=
         materializedNames := #[{ name := "Y", slot := 99 }] } })
 
 #guard match matSigsOf repeatPredBadSlot with
-  | some (.error (.slotOutOfRange 99 5)) => true
+  | some (.error (.materializedSlot (.slotOutOfRange 99 5))) => true
   | _ => false
 
 -- The out-of-range entry is rejected even when it TRAILS legal ones — the accessor's failure is not
@@ -402,8 +402,35 @@ def repeatPredTrailingBadSlot : Option PreparedPlan :=
         materializedNames := p.bindings.materializedNames.push { name := "Z", slot := 7 } } })
 
 #guard match matSigsOf repeatPredTrailingBadSlot with
-  | some (.error (.slotOutOfRange 7 5)) => true
+  | some (.error (.materializedSlot (.slotOutOfRange 7 5))) => true
   | _ => false
+
+-- Exact publication is structural slot identity, not name authentication.  Omitting the middle
+-- output is rejected even though the remaining slots are increasing; changing only names is valid.
+def repeatPredMissingPublication : Option PreparedPlan :=
+  repeatPredPrepared.map (fun p =>
+    { p with bindings := { p.bindings with
+        materializedNames := p.bindings.materializedNames.take 1 ++ p.bindings.materializedNames.drop 2 } })
+
+#guard match repeatPredPrepared, repeatPredMissingPublication with
+  | some valid, some malformed =>
+      match checkPreparedBindings malformed with
+      | .error (.publicationSlots expected actual) =>
+          expected == valid.bindings.materializedNames.map (·.slot) &&
+            actual == malformed.bindings.materializedNames.map (·.slot)
+      | _ => false
+  | _, _ => false
+
+#guard match matSigsOf repeatPredMissingPublication with
+  | some (.error (.publicationSlots _ _)) => true
+  | _ => false
+
+#guard repeatPredPrepared.map (fun p =>
+  match checkPreparedBindings
+      { p with bindings := { p.bindings with
+          materializedNames := p.bindings.materializedNames.map fun b => { b with name := "renamed" } } } with
+  | .ok _ => true
+  | .error _ => false) == some true
 
 -- Deterministic slot assignment: same input, same structural output.
 -- `RequiredBindings` has no derived `BEq` (same established precedent as `PreparedPlan` itself, per

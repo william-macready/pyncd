@@ -132,7 +132,7 @@ def prepareNamed (name : String) (prog : TLProgram) (inputs : HashMap String Den
   pure (prepared, report)
 
 /-- A `{name: tensorEntry, ...}` dict over `requiredInputs`, resolving each concrete tensor. -/
-def renderInputsDict (prepared : PreparedPlan) (inputs : HashMap String DenseTensor) :
+private def renderInputsDict (prepared : PreparedPlan) (inputs : HashMap String DenseTensor) :
     IO String := do
   let mut parts : Array String := #[]
   for b in prepared.bindings.requiredInputs.bindings do
@@ -143,7 +143,7 @@ def renderInputsDict (prepared : PreparedPlan) (inputs : HashMap String DenseTen
   pure ("{" ++ String.intercalate ", " parts.toList ++ "}")
 
 /-- A `{name: tensorEntry, ...}` dict over `materializedNames`, resolving each Dense output. -/
-def renderExpectedDict (prepared : PreparedPlan) (report : EvalReport) : IO String := do
+private def renderExpectedDict (prepared : PreparedPlan) (report : EvalReport) : IO String := do
   let mut parts : Array String := #[]
   for b in prepared.bindings.materializedNames do
     let t ← match report.env[b.name]? with

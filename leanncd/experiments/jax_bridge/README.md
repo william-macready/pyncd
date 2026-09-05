@@ -75,6 +75,8 @@ upstream `NetSpec`:
    resulting `PreparedPlan` — reading only checker-produced positional data and source-name
    bindings, never source syntax or axis UIDs. It also confirms an affine-shift fixture
    (`Y[i] := A[i + 1]`) is rejected by a typed codegen error before any Python is emitted for it.
+   Every named codegen entry first validates the prepared binding sidecar against the raw plan's
+   exact publication slots; raw IR cannot authenticate the user-visible names themselves.
 2. [`evalplan_smoke.py`](./evalplan_smoke.py) enables `jax_enable_x64`, reconstructs inputs and
    the independent Dense-computed expected output from the emitted `Float.toBits` payloads,
    AST-asserts the generated module contains a real `jnp.einsum("ab,b->a", ...)` call, and checks

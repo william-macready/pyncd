@@ -68,7 +68,7 @@ private def hasNegativeInvalid (plan : PreparedPlan) : Bool :=
       (applyAffine f.map coord).any (· < 0)
 
 /-- Structural features are read from the checked plan, not inferred from output values or names. -/
-def featureMask (plan : PreparedPlan) : Nat :=
+private def featureMask (plan : PreparedPlan) : Nat :=
   let nodes := assignPlans plan
   let allTerms := nodes.flatMap fun a => a.terms
   let allFactors := factors plan

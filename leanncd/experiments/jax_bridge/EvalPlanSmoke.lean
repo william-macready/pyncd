@@ -63,7 +63,7 @@ def main (args : List String) : IO Unit := do
     | .ok src => pure src
     | .error e => throw (IO.userError s!"affineProg codegen failed: {repr e}")
   let inputConsts ← match
-      renderInputConstants prepared.plan.raw prepared.bindings.requiredInputs.bindings affineInputs with
+      renderInputConstants prepared affineInputs with
     | .ok s => pure s
     | .error e => throw (IO.userError s!"input-constant rendering failed: {repr e}")
   let outputConsts := renderExpectedOutputConstants "Y" yTensor
