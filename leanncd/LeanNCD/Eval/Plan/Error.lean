@@ -55,8 +55,9 @@ inductive PositionalInputError
       inside `commitWrite` with an `.ok` result still returned. Carries both tables so the caller can
       see which slot disagrees. -/
   | signatureContextMismatch (expected actual : Array TensorSignature)
-  /-- A worker was handed a positional outer store whose LENGTH is not the one its checked
-      signature context describes. Raised by `runDenseScan` (`Scan.lean`), where the store is both
+  /-- A worker or a store-consuming boundary was handed a positional store whose LENGTH is not the
+      one its checked signature context describes. Raised by `runDenseScan` (`Scan.lean`), where the
+      store is both
       read (external captures) and WRITTEN (each state's destination slot), and the destination
       slots are facts about `CheckedScanPlan.sigs` — so a store shorter than that table drove
       `Array.set!` out of range in the final destination loop: a `lean_array_set_panic` message with
@@ -66,7 +67,13 @@ inductive PositionalInputError
       and the `signatureContextMismatch` tie beside it — a store built to a different length was
       built against a different table, which is the very thing that tie exists to reject. Distinct
       from `arityMismatch` (a positional INPUT array against `inputSlots`) and from `missingSlot`
-      (one slot absent, discovered during a read). -/
+      (one slot absent, discovered during a read).
+
+      Also raised by `Adapter.unpack` (whole-branch review round 4), whose RESULT store is the same
+      kind of value against the same kind of stored evidence: a positional store that must be the
+      one `unpack`'s own `PreparedPlan` was checked against, sized by `plan.raw.tensorSigs.size`.
+      Carried there under `PlanRunCause.resultStore`, not `.execution`, so the boundary that
+      rejected it stays distinguishable — same constructor, same meaning, different reporter. -/
   | storeArityMismatch (expected actual : Nat)
   | unaryDomain     (op : UnaryDomainOp) (valueBits : UInt64) (slot : TensorSlot)
   -- A positional Iverson predicate leaf's coefficient width disagrees with the term's iteration
@@ -243,20 +250,33 @@ inductive InputBindingError
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- The runtime counterpart of `PlanCompileCause`: a `PreparedPlan` failed at the named binding
-    boundary on the way IN (`pack`), inside the positional worker (`runDensePlan`), or at the named
-    binding boundary on the way OUT (`unpack`). All three payload types derive `Repr` (verified, not
-    assumed by analogy — unlike `PlanCompileCause`'s `ShapeError` sibling) so `PlanRunCause` derives
-    `Repr` too.
+    boundary on the way IN (`pack`), inside the positional worker (`runDensePlan`), or at the
+    boundary on the way OUT (`unpack`) — either because the positional RESULT STORE itself is not
+    the one the checked plan describes (`resultStore`) or because a materialized binding cannot be
+    resolved against it (`materialization`). All payload types derive `Repr` (verified, not assumed
+    by analogy — unlike `PlanCompileCause`'s `ShapeError` sibling) so `PlanRunCause` derives `Repr`
+    too.
 
     `materialization` carries a `PlanError` rather than a fourth bespoke type: `unpack` resolves
     `PlanBindings.materializedNames` against the positional result store through the shared
     `PlanBindings.materializedWith` (`Prepared.lean`), whose failure is the same
     `PlanError.slotOutOfRange` every other slot-table lookup in this subsystem raises — and the same
     value `PreparedPlan.materializedSignatures` reports for the identical malformation, which is the
-    point of sharing the path. -/
+    point of sharing the path.
+
+    `resultStore` is the OUT-boundary sibling of `execution`, and carries the same
+    `PositionalInputError` family for the same reason `materialization` reuses `PlanError`: the
+    malformation (`storeArityMismatch`) is a positional-store fact with an existing constructor that
+    already means exactly this. It is deliberately NOT folded into `execution`: `unpack` is
+    callable directly on a store no worker produced (`AdapterTest`'s own fixtures do exactly that),
+    so attributing a caller-supplied store's arity to `runDensePlan` would name a boundary that may
+    never have run. Through `runPreparedDense` it is unreachable — `runDensePlan` returns a store
+    built at exactly `tensorSigs.size` — which is the point: the store `unpack` accepts is now
+    pinned to the checked plan rather than to whatever the caller passes. -/
 inductive PlanRunCause
   | binding        (cause : InputBindingError)
   | execution      (cause : PositionalInputError)
+  | resultStore    (cause : PositionalInputError)
   | materialization (cause : PlanError)
   deriving DecidableEq, BEq, Repr, Inhabited
 

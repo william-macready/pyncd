@@ -1068,12 +1068,18 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
   -- `sched.decls` and `sched.stmts` are authoritative; `sched.env` and `sched.explicitSizes` are
   -- cached pipeline products and are never consulted. This runs BEFORE capability preflight, shape
   -- inference, and signature validation: an invalid source combination (a name declared
-  -- tensor-bearing twice, a predicate output carrying a nonlinearity or a non-sum aggregation) is
-  -- not a valid-but-unsupported backend capability, so it must not surface as one. Per-statement
-  -- order is source order and, within a statement, nonlinearity before aggregation — exactly
-  -- `checkDtypes`'s own order, because it is the same shared `checkPredicateOutput` rule, reached
-  -- through the shared `checkPredicateOutputs` traversal `Eval.evalScheduled` also uses (so the two
-  -- direct entries agree on WHICH statements carry the obligation, not merely on the rule).
+  -- tensor-bearing twice, a read whose arity contradicts its declaration, a predicate output
+  -- carrying a nonlinearity or a non-sum aggregation) is not a valid-but-unsupported backend
+  -- capability, so it must not surface as one. The ORDER of the four checks below is the source
+  -- pipeline's own — `resolveDecls`, `checkReadRanks`, `checkDtypes`, `schedule` (`DSL/Compile.lean`)
+  -- — so a schedule violating several reports what the source compiler would report: a duplicate
+  -- declaration before a rank mismatch, a rank mismatch before a predicate violation, a predicate
+  -- violation before a statement-order violation. Per-statement order is source order and, within a
+  -- statement, nonlinearity before aggregation — exactly `checkDtypes`'s own order, because it is
+  -- the same shared `checkPredicateOutput` rule, reached through the shared `checkPredicateOutputs`
+  -- traversal `Eval.evalScheduled` also uses (so the two direct entries agree on WHICH statements
+  -- carry the obligation, not merely on the rule); `checkScheduledReadRanks` shares that traversal
+  -- for the same reason.
   let declEnv ← match buildDeclEnv sched.decls with
     | .ok e    => pure e
     | .error e => throw { cause := .sourceInvariant e, warnings := [] }
@@ -1091,6 +1097,19 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
   -- is dropped rather than honored — leaving that axis to ordinary inference, which fails loud if it
   -- cannot be determined.
   let explicitSizes : HashMap UID Nat := declaredAxisSizes sched.decls
+  -- Read ARITY is the second source invariant, in the source pipeline's own position: `resolveDecls`
+  -- (duplicate declarations) then `checkReadRanks` then `checkDtypes` (the predicate rule below),
+  -- so a schedule violating both a rank rule and a predicate rule reports the rank. Neither direct
+  -- entry checked it before: a `tensor X(i, j)` declaration read as `X[i]` reached Step D, which
+  -- resolved the read against whatever rank-1 signature the caller supplied for `X` and compiled a
+  -- plan the source pipeline rejects outright (`CompileError.rankMismatch`) — the two entries
+  -- disagreeing about the same program, which is the defect class this Step exists to close. The
+  -- shared `checkScheduledReadRanks` (`Structural.lean`) is the same rule AND the same
+  -- `.plain`/scan-`base ++ recur` traversal `checkPredicateOutputs` below uses, over `sched.stmts`
+  -- as presented, with `extNames` re-derived rather than read from the cached field.
+  match checkScheduledReadRanks declEnv sched.stmts with
+  | .ok ()   => pure ()
+  | .error e => throw { cause := .sourceInvariant e, warnings := [] }
   match checkPredicateOutputs declEnv sched.stmts with
   | .ok ()   => pure ()
   | .error e => throw { cause := .sourceInvariant e, warnings := [] }

@@ -110,7 +110,9 @@ structure PreparedPlan where
 /-- Resolve every `materializedNames` binding against ONE slot-indexed table, pairing each entry's
     name with that slot's value — the SINGLE materialized-binding validation/access path in this
     subsystem, shared by the metadata accessor (`materializedSignatures`, over `raw.tensorSigs`) and
-    by execution (`Adapter.unpack`, over the positional result store). They used to be independent:
+    by execution (`Adapter.unpack`, over the positional result store — pinned by `unpack` itself to
+    exactly `plan.raw.tensorSigs.size` before it calls this, so the two callers share the table SIZE
+    as well as the traversal). They used to be independent:
     the accessor failed loud on an out-of-range slot while `unpack` silently substituted an empty
     scalar tensor for it and published that under the binding's name, so the two boundaries could —
     and did — disagree about the same `PlanBindings`. Sharing the traversal is what stops them

@@ -54,6 +54,18 @@ def evalPlain (decls : List Decl) (env : HashMap String DenseTensor) (sizes : Ha
     `.axis`/`.iter` declarations are a separate namespace and are skipped by `buildDeclEnv`, so an
     axis sharing a predicate's name is still legal here and still resolves to the predicate.
 
+    **Read arity likewise.** A read's index count must agree with its name's declaration (`tensor
+    X(i, j)` read as `X[i]`), with the other reads of the same external name, and with its
+    producer's published rank. The source pipeline enforces that in `checkReadRanks`, between
+    `resolveDecls` and `checkDtypes`; a hand-built schedule bypasses it, and this worker then
+    evaluated the malformed read anyway — `evalAssignDtyped` resolves a short read against whatever
+    the input's real rank is — while the checked backend rejected the same program. The shared
+    `checkScheduledReadRanks` (`Structural.lean`) — the same rule AND the same
+    `.plain`/scan-`base ++ recur` traversal as the predicate check below — therefore runs here too,
+    in the source pipeline's own position: AFTER `buildDeclEnv` (a declaration is what a declared
+    read's arity is checked against) and BEFORE the predicate rule, so a program violating both
+    reports `rankMismatch`, exactly as `TLProgram.compile` would.
+
     **Predicate-output invariants likewise.** A `predicate`-declared destination carries {0,1}
     values, so its statement may carry neither a nonlinearity (`applyNonlin` would map `relu`/
     `softmax`/`normalize` over Boolean data) nor a non-`sum` aggregation (`combineFor` selects the
@@ -83,6 +95,9 @@ def evalScheduled (sched : ScheduledProgram) (inputs : HashMap String DenseTenso
   match buildDeclEnv sched.decls with
   | .error e => .error { error := .compile e, warnings := [] }
   | .ok declEnv =>
+  match checkScheduledReadRanks declEnv sched.stmts with
+  | .error e => .error { error := .compile e, warnings := [] }
+  | .ok () =>
   match checkPredicateOutputs declEnv sched.stmts with
   | .error e => .error { error := .compile e, warnings := [] }
   | .ok () =>

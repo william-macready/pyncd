@@ -634,19 +634,33 @@ def declaredAxisSizes (decls : List Decl) : Std.HashMap UID Nat :=
     | .iter ax n        => m.insert ax.uid n
     | _                 => m) {}
 
+/-- The one EXTERNAL-NAME rule at `Stmt` granularity: a name READ by some statement and PRODUCED
+    (written) by none. Shared by `resolveDecls` (source pipeline, which caches the result as
+    `ResolvedProgram.extNames`) and by `checkScheduledReadRanks` below, which re-derives it over a
+    possibly hand-built `ScheduledProgram`'s own flattened statements rather than trusting the
+    cached `extNames` field — the same authority rule, and the same reason, as `buildDeclEnv`
+    (which ignores `sched.env`) and `declaredAxisSizes` (which ignores `sched.explicitSizes`).
+
+    Order-INSENSITIVE by construction ("produced by none" is a question about the whole list), which
+    is exactly right for read-rank checking: an out-of-order schedule is rejected elsewhere
+    (`isTopoOrdered`), and either classification — external or produced-but-undeclared — still puts
+    the name under an arity rule here. `orderedExternalNames` (`Lowering.lean`) is the ORDERED
+    `ScanStmt`-level sibling of this rule, needed where input-slot ORDER matters; this one answers
+    only membership, so it stays a `Finset` and stays at `Stmt` granularity. -/
+def externalReadNames (stmts : List Stmt) : Finset String :=
+  let produced : List String := stmts.map Stmt.lhsName
+  (stmts.flatMap Stmt.readNames).foldl
+    (fun s n => if produced.contains n then s else insert n s) ∅
+
 /-- Build the declaration environment and classify external-input names.
-    `extNames` = names READ in some stmt but never PRODUCED (never a stmt LHS). Throws only
-    `duplicateTensorDecl` (from `buildDeclEnv`). -/
+    `extNames` = names READ in some stmt but never PRODUCED (never a stmt LHS), via the shared
+    `externalReadNames` rule above. Throws only `duplicateTensorDecl` (from `buildDeclEnv`). -/
 def resolveDecls (lp : LabeledProgram) : FreshM ResolvedProgram := do
   let env : DeclEnv ← match buildDeclEnv lp.decls with
     | .ok e   => pure e
     | .error e => throw e
-  let produced : List String := lp.stmts.map Stmt.lhsName
-  let reads    : List String := lp.stmts.flatMap Stmt.readNames
-  let extNames : Finset String :=
-    reads.foldl (fun s n => if produced.contains n then s else insert n s) ∅
   return { decls := lp.decls, stmts := lp.stmts, env,
-           extNames }
+           extNames := externalReadNames lp.stmts }
 
 /-! ## The `reclassifyIterSlots` phase (between `resolveDecls` and `checkReadRanks`/`checkDtypes`/
 `checkScatterNonlin`/`lowerArith` — MUST run before all four, since each of those inspects LHS slot
@@ -721,17 +735,29 @@ private def stmtLhsRank (s : Stmt) : Nat :=
       else (ls.filterMap (·.axisUID?)).eraseDups.length
   | .recurMorphism _ _ _ => 0
 
-def checkReadRanks (rp : ResolvedProgram) : FreshM ResolvedProgram := do
-  let reads : List (String × Nat) := rp.stmts.flatMap stmtReads
+/-- The read-arity rule itself, extracted as one pure function over an explicit `(env, extNames,
+    stmts)` triple so the source pipeline (`checkReadRanks`, below) and the two direct
+    `ScheduledProgram`-accepting entries (`Eval.Plan.prepareEvalPlan`'s Step 0 and
+    `Eval.evalScheduled`, both through `checkScheduledReadRanks`) enforce the SAME invariant rather
+    than two independently drifting copies — the same discipline `buildDeclEnv`,
+    `declaredAxisSizes`, and `checkPredicateOutput`/`checkPredicateOutputs` already follow.
+
+    Order of the three passes is preserved exactly as it was when this body lived inside
+    `checkReadRanks`: declared tensors first (the DECLARATION is the strongest authority), then
+    external names (first read establishes the expected arity), then produced-but-undeclared
+    intermediates. A program violating more than one reports the first in that order. -/
+def checkReadRanksIn (env : DeclEnv) (extNames : Finset String) (stmts : List Stmt) :
+    Except CompileError Unit := do
+  let reads : List (String × Nat) := stmts.flatMap stmtReads
   -- declared tensors: check against DeclEnv
   for (nm, arity) in reads do
-    if let some decl := rp.env[nm]? then
+    if let some decl := env[nm]? then
       let expected := decl.axisCount
       if arity != expected then throw (.rankMismatch nm expected arity)
   -- external tensors: check internal consistency (first read site establishes expected rank)
   let mut extRanks : HashMap String Nat := {}
   for (nm, arity) in reads do
-    if nm ∈ rp.extNames then
+    if nm ∈ extNames then
       match extRanks[nm]? with
       | none   => extRanks := extRanks.insert nm arity
       | some r => if arity != r then throw (.rankMismatch nm r arity)
@@ -739,13 +765,48 @@ def checkReadRanks (rp : ResolvedProgram) : FreshM ResolvedProgram := do
   -- arity ≠ the produced (dedup'd) rank is malformed (Track A #1). FAIL LOUD rather than route an
   -- ill-typed reindexing / silently broadcast at eval.
   let producedRank : HashMap String Nat :=
-    rp.stmts.foldl (fun m s => m.insert s.lhsName (stmtLhsRank s)) {}
+    stmts.foldl (fun m s => m.insert s.lhsName (stmtLhsRank s)) {}
   for (nm, arity) in reads do
-    unless rp.env.contains nm || decide (nm ∈ rp.extNames) do
+    unless env.contains nm || decide (nm ∈ extNames) do
       match producedRank[nm]? with
       | some r => if arity != r then throw (.rankMismatch nm r arity)
       | none   => pure ()
+
+def checkReadRanks (rp : ResolvedProgram) : FreshM ResolvedProgram := do
+  match checkReadRanksIn rp.env rp.extNames rp.stmts with
+  | .ok ()   => pure ()
+  | .error e => throw e
   return rp
+
+/-- `checkReadRanksIn` lifted to a whole SCHEDULED statement list — the shape both direct
+    (`ScheduledProgram`-accepting) entries meet: `Eval.Plan.prepareEvalPlan`'s Step 0 and
+    `Eval.evalScheduled`. The source pipeline reaches the rule through `checkReadRanks` instead,
+    because that phase runs before `finalizeScans` has produced any `ScanStmt` at all.
+
+    The TRAVERSAL is shared for the same reason the rule is, and it is deliberately the SAME
+    traversal `checkPredicateOutputs` uses (`.plain` → its one statement; `.scan` → `base ++ recur`;
+    `.scanPre` → nothing, rejected on each entry's own terms): every scan-block statement carries
+    the read-arity obligation exactly as a top-level one does, and the flattened list is precisely
+    what the source pipeline's own `checkReadRanks` saw before `finalizeScans` grouped those very
+    statements into a scan node. Neither direct entry checked read ranks at all before this round,
+    so a declared rank-2 `X` read with one index reached the checked backend — where source
+    compilation rejects it as `rankMismatch` — and was resolved against a rank-1 input signature
+    instead.
+
+    `extNames` is RE-DERIVED (shared `externalReadNames`) from those flattened statements rather
+    than read out of the cached `ScheduledProgram.extNames` field, on the same authority argument
+    the rest of Step 0 already makes: on a hand-built schedule nothing ties the cached set to the
+    statements, and a name wrongly listed there would be arity-checked as an external instead of
+    against its producer's published rank. `env` is passed in (not re-derived) because both callers
+    have already built it through the shared `buildDeclEnv` and its own failure —
+    `duplicateTensorDecl` — must be reported BEFORE this, exactly as `resolveDecls` precedes
+    `checkReadRanks` in the source pipeline. -/
+def checkScheduledReadRanks (env : DeclEnv) (stmts : List ScanStmt) : Except CompileError Unit :=
+  let flat : List Stmt := stmts.flatMap (fun sc => match sc with
+    | .plain s => [s]
+    | .scan _ _ base recur _ => base ++ recur
+    | .scanPre .. => [])
+  checkReadRanksIn env (externalReadNames flat) flat
 
 /-! ## The `checkDtypes` phase
 

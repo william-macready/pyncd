@@ -353,8 +353,14 @@ def repeatYSlots : Option (Array TensorSlot) :=
 -- `f64` entry for `Z`. This is the VALID repeated-name ordering sibling of the adversarial
 -- out-of-range fixture below: both slots are in range, so the accessor succeeds and the array is
 -- positionally aligned with `materializedNames`, repeats included.
+-- (Round 4: the declaration is `.predicate "Y" [axI3]`, not `.predicate "Y" []`. `Y` is read
+-- `Y[i]` by the third statement, so a zero-axis declaration is a rank contradiction the source
+-- pipeline's `checkReadRanks` has always rejected — and which `prepareEvalPlan`'s Step 0 now
+-- re-establishes for a direct schedule. The declared AXES were never what this fixture is about:
+-- `dtypeOfDecl` reads the constructor, so the plan, its five slots, and the dtype ordering below
+-- are unchanged.)
 def repeatPredSched : ScheduledProgram :=
-  { repeatSched with decls := repeatSched.decls ++ [.predicate "Y" []] }
+  { repeatSched with decls := repeatSched.decls ++ [.predicate "Y" [axI3]] }
 #guard (prepareEvalPlan repeatPredSched repeatSig).toOption.isSome
 def repeatPredPrepared : Option PreparedPlan := (prepareEvalPlan repeatPredSched repeatSig).toOption
 /-- `materializedSignatures` under an `Option` — annotated so the `#guard` matches below can use
@@ -1057,5 +1063,242 @@ run_cmd do
       | some s =>
           unless s.shape == [1, 3] && s.data == #[1.0, 1.0, 1.0] do
             throwError s!"valid Boolean scan sibling lost the Boolean reading: {repr s.shape} {repr s.data}"
+
+-- ── Whole-branch review round 4 — READ ARITY at both direct-schedule entries ──
+--
+-- `checkReadRanks` (source pipeline, between `resolveDecls` and `checkDtypes`) rejects a read whose
+-- index count contradicts its name's declaration, the other reads of the same external name, or its
+-- producer's published rank. Neither `prepareEvalPlan`'s Step 0 nor `evalScheduled` re-established
+-- it, so a `tensor X(i, j)` read as `X[i]` — `CompileError.rankMismatch` from source — compiled and
+-- ran against a rank-1 input signature on both direct entries. Both now reach the rule through the
+-- shared `checkScheduledReadRanks` (`Structural.lean`): the same rule AND the same
+-- `.plain`/scan-`base ++ recur` traversal `checkPredicateOutputs` uses, with `extNames` re-derived
+-- from the statements rather than read out of the cached field.
+--
+-- Fixtures assert PARITY (same `CompileError`, nested in each entry's own wrapper) plus the phase
+-- order: declarations, then read ranks, then predicate invariants, then statement order — the source
+-- pipeline's own `assignUIDs → resolveDecls → checkReadRanks → checkDtypes → … → schedule`.
+
+def axIRank : AxisSpec := { name := "i", uid := 21, kind := .nat }
+def axJRank : AxisSpec := { name := "j", uid := 22, kind := .nat }
+
+def rankInputs : HashMap String DenseTensor :=
+  (({} : HashMap String DenseTensor).insert "X" (⟨[2], #[1.0, 1.0]⟩ : DenseTensor)).insert
+    "A" (⟨[2], #[1.0, 1.0]⟩ : DenseTensor)
+
+/-- Both direct entries reject `sched` with the SAME `CompileError`: the reference evaluator nests
+    it in `EvalError.compile`, the checked backend in `PlanCompileCause.sourceInvariant`. Neither
+    may carry warnings — read ranks are checked before anything that can warn. -/
+def assertReadRankParity (label : String) (sched : ScheduledProgram) (expected : CompileError) :
+    Lean.Elab.Command.CommandElabM Unit := do
+  match evalScheduled sched rankInputs with
+  | .ok report => throwError s!"{label}: evalScheduled accepted it: {repr (report.env.get? "Y")}"
+  | .error failure =>
+      match failure.error with
+      | .compile c =>
+          unless c == expected do throwError s!"{label}: wrong reference CompileError: {repr c}"
+      | e => throwError s!"{label}: wrong reference cause: {e}"
+      unless failure.warnings == [] do
+        throwError s!"{label}: reference failure carried warnings: {failure.warnings}"
+  match causeOf (prepareEvalPlan sched (InputSignature.ofDenseInputs rankInputs)) with
+  | none => throwError s!"{label}: prepareEvalPlan accepted it"
+  | some f =>
+      unless f.cause == .sourceInvariant expected do
+        throwError s!"{label}: wrong checked cause: {renderCompileCause f.cause}"
+      unless f.warnings == [] do
+        throwError s!"{label}: checked failure carried warnings: {f.warnings}"
+
+/-- The donor: `Y[i] := X[…]`, with the read's index list the only thing that varies. -/
+def rankSched (decls : List Decl) (readIdx : List IdxExpr) : ScheduledProgram :=
+  { decls
+  , stmts := [.plain (.assign "Y" [.free axIRank]
+      { body := { terms := [{ factors := [.read "X" readIdx] }] }, nonlin := .identity })]
+  , env := {}, extNames := insert "X" (∅ : Finset String)
+  , explicitSizes := (({} : HashMap UID Nat).insert axIRank.uid 2) }
+
+def rankDecls2 : List Decl :=
+  [.axis axIRank (some 2), .axis axJRank (some 2), .tensor "X" [axIRank, axJRank]]
+
+-- The finding's own program: `X` DECLARED rank 2, read with one index, and a rank-1 tensor supplied
+-- for it. Source compilation rejects this outright; both direct entries used to accept it and
+-- resolve the read against the rank-1 signature instead.
+run_cmd do
+  assertReadRankParity "declared rank 2, read with one index"
+    (rankSched rankDecls2 [.axis axIRank]) (.rankMismatch "X" 2 1)
+
+-- The other direction — a declared rank-1 name over-indexed — so the rule is not read as "too few
+-- indices only".
+run_cmd do
+  assertReadRankParity "declared rank 1, read with two indices"
+    (rankSched [.axis axIRank (some 2), .tensor "X" [axIRank]] [.axis axIRank, .axis axIRank])
+    (.rankMismatch "X" 1 2)
+
+/-- EXTERNAL name (no declaration at all): the first read site fixes the expected arity and every
+    later read of the same name must agree. `X` is read `X[i]` then `X[i, i]` in the same
+    statement. -/
+def rankExtSched : ScheduledProgram :=
+  { rankSched [.axis axIRank (some 2)] [.axis axIRank] with
+      stmts := [.plain (.assign "Y" [.free axIRank]
+        { body := { terms := [ { factors := [.read "X" [.axis axIRank]] }
+                             , { factors := [.read "X" [.axis axIRank, .axis axIRank]] } ] }
+        , nonlin := .identity })] }
+
+run_cmd do
+  assertReadRankParity "external name read at two arities" rankExtSched (.rankMismatch "X" 1 2)
+
+/-- PRODUCED-but-undeclared intermediate: `T` is written at rank 1 and read at rank 2. Neither the
+    declaration pass nor the external pass covers this name — only the producer-rank pass does. -/
+def rankProducedSched : ScheduledProgram :=
+  { rankSched [.axis axIRank (some 2)] [.axis axIRank] with
+      stmts := [ .plain (.assign "T" [.free axIRank]
+                   { body := { terms := [{ factors := [.read "X" [.axis axIRank]] }] }
+                   , nonlin := .identity })
+               , .plain (.assign "Y" [.free axIRank]
+                   { body := { terms := [{ factors := [.read "T" [.axis axIRank, .axis axIRank]] }] }
+                   , nonlin := .identity }) ] }
+
+run_cmd do
+  assertReadRankParity "produced-but-undeclared intermediate over-indexed"
+    rankProducedSched (.rankMismatch "T" 1 2)
+
+-- ── Phase ORDER, one fixture per neighbouring phase ──
+
+-- Declarations first: a doubly-declared tensor name AND a rank violation ⇒ `duplicateTensorDecl`.
+-- Until `buildDeclEnv` succeeds, "which declaration is `X`" — hence what rank a read of it must
+-- have — is not even well-defined, which is exactly why `resolveDecls` precedes `checkReadRanks` in
+-- the source pipeline.
+run_cmd do
+  assertReadRankParity "duplicate declaration before read rank"
+    (rankSched (rankDecls2 ++ [.tensor "X" [axIRank]]) [.axis axIRank])
+    (.duplicateTensorDecl "X")
+
+/-- Read ranks before predicate invariants (`checkReadRanks` precedes `checkDtypes`): the statement
+    violates both — a `predicate` destination carrying `relu`, and a rank-2 `X` read with one
+    index. -/
+def rankPredSched : ScheduledProgram :=
+  { rankSched (rankDecls2 ++ [.predicate "Y" [axIRank]]) [.axis axIRank] with
+      stmts := [.plain (.assign "Y" [.free axIRank]
+        { body := { terms := [{ factors := [.read "X" [.axis axIRank]] }] }
+        , nonlin := .pointwise .relu })] }
+
+run_cmd do
+  assertReadRankParity "read rank before predicate invariants" rankPredSched (.rankMismatch "X" 2 1)
+
+/-- Read ranks before capability preflight (Step A) and signature validation (Step B): the statement
+    ALSO has an affine (scatter) LHS, which preflight rejects as `scatterOrAffineLhs`. -/
+def rankScatterSched : ScheduledProgram :=
+  { rankSched rankDecls2 [.axis axIRank] with
+      stmts := [.plain (.assign "Y" [.affine (.scale 2 axIRank)]
+        { body := { terms := [{ factors := [.read "X" [.axis axIRank]] }] }
+        , nonlin := .identity })] }
+
+run_cmd do
+  assertReadRankParity "read rank before capability preflight"
+    rankScatterSched (.rankMismatch "X" 2 1)
+
+/-- Read ranks before sizing and execution: the statement also reads `C`, which no input supplies
+    (`missingSignature` on the checked backend, an execution failure on the reference one). -/
+def rankUnreadableSched : ScheduledProgram :=
+  { rankSched rankDecls2 [.axis axIRank] with
+      stmts := [.plain (.assign "Y" [.free axIRank]
+        { body := { terms := [ { factors := [.read "X" [.axis axIRank]] }
+                             , { factors := [.read "C" [.axis axIRank]] } ] }
+        , nonlin := .identity })] }
+
+run_cmd do
+  assertReadRankParity "read rank before sizing and execution"
+    rankUnreadableSched (.rankMismatch "X" 2 1)
+
+/-- Read ranks before the STATEMENT-ORDER invariant (`schedule`'s `isTopoOrdered`, re-established at
+    Step 0 after both rules above): consumer before producer AND a rank violation. -/
+def rankOutOfOrderSched : ScheduledProgram :=
+  { rankProducedSched with
+      decls := rankDecls2
+    , stmts := rankProducedSched.stmts.reverse }
+
+run_cmd do
+  assertReadRankParity "read rank before statement order"
+    rankOutOfOrderSched (.rankMismatch "X" 2 1)
+
+-- The VALID sibling: the same donor with a correctly-ranked read. Accepted by both entries, and the
+-- value is the real one — the new validation costs no legal program.
+run_cmd do
+  let valid := rankSched [.axis axIRank (some 2), .tensor "X" [axIRank]] [.axis axIRank]
+  match evalScheduled valid rankInputs with
+  | .error failure => throwError s!"valid read-rank sibling rejected by evalScheduled: {failure.error}"
+  | .ok report =>
+      match report.env.get? "Y" with
+      | none => throwError "valid read-rank sibling: Y missing from the result"
+      | some y =>
+          unless y.shape == [2] && y.data == #[1.0, 1.0] do
+            throwError s!"valid read-rank sibling: Y is {repr y.shape} {repr y.data}"
+  match causeOf (prepareEvalPlan valid (InputSignature.ofDenseInputs rankInputs)) with
+  | none => pure ()
+  | some f =>
+      throwError s!"valid read-rank sibling rejected by prepareEvalPlan: {renderCompileCause f.cause}"
+
+-- ── The same rule inside a `.scan` node (both halves of `base ++ recur`) ──
+--
+-- Donor: `tensor A(j)`, `S[j,0] := A[j]`, `S[j,l+1] := S[j,l] + A[j]`, over `axis j = 2`,
+-- `iter l = 3`. Each half's read of `A` is what varies.
+
+def axJRankScan : AxisSpec := { name := "j", uid := 23, kind := .nat }
+def axLRankScan : AxisSpec := { name := "l", uid := 24, kind := .nat }
+
+def rankScanBase (readIdx : List IdxExpr) : Stmt :=
+  .assign "S" [.free axJRankScan, .iterAt axLRankScan 0]
+    { body := { terms := [{ factors := [.read "A" readIdx] }] }, nonlin := .identity }
+
+def rankScanRecur (readIdx : List IdxExpr) : Stmt :=
+  .assign "S" [.free axJRankScan, .iterNext axLRankScan]
+    { body := { terms := [ { factors := [.read "S" [.axis axJRankScan, .axis axLRankScan]] }
+                         , { factors := [.read "A" readIdx] } ] }
+    , nonlin := .identity }
+
+def rankScanSched (baseIdx recurIdx : List IdxExpr) : ScheduledProgram :=
+  { decls := [.axis axJRankScan (some 2), .iter axLRankScan 3, .tensor "A" [axJRankScan]
+             , .tensor "S" [axJRankScan, axLRankScan]]
+  , stmts := [.scan "S" [axLRankScan] [rankScanBase baseIdx] [rankScanRecur recurIdx] false]
+  , env := {}, extNames := insert "A" (∅ : Finset String)
+  , explicitSizes := ((({} : HashMap UID Nat).insert axJRankScan.uid 2).insert axLRankScan.uid 3) }
+
+-- The scan BASE half.
+run_cmd do
+  assertReadRankParity "scan base: declared rank 1 read with two indices"
+    (rankScanSched [.axis axJRankScan, .axis axJRankScan] [.axis axJRankScan])
+    (.rankMismatch "A" 1 2)
+
+-- The scan RECURRENCE half — reached only because the traversal continues past a valid base list.
+run_cmd do
+  assertReadRankParity "scan recurrence: declared rank 1 read with two indices"
+    (rankScanSched [.axis axJRankScan] [.axis axJRankScan, .axis axJRankScan])
+    (.rankMismatch "A" 1 2)
+
+/-- ORDER within the node: the base over-indexes `A` (declared rank 1 ⇒ expected 1, actual 2) and
+    the recurrence under-indexes `S` (declared rank 2 ⇒ expected 2, actual 1). `base ++ recur`
+    reports the BASE's `A`; a recurrence-first traversal would report `S`. -/
+def rankScanOrderSched : ScheduledProgram :=
+  { rankScanSched [.axis axJRankScan, .axis axJRankScan] [.axis axJRankScan] with
+      stmts := [.scan "S" [axLRankScan]
+                  [rankScanBase [.axis axJRankScan, .axis axJRankScan]]
+                  [.assign "S" [.free axJRankScan, .iterNext axLRankScan]
+                     { body := { terms := [{ factors := [.read "S" [.axis axJRankScan]] }] }
+                     , nonlin := .identity }] false] }
+
+run_cmd do
+  assertReadRankParity "scan base is checked before the recurrence" rankScanOrderSched
+    (.rankMismatch "A" 1 2)
+
+-- The VALID scan sibling: both halves correctly ranked, so `evalScheduled` runs it to the real
+-- history `[1, 2, 3]` per `j`.
+run_cmd do
+  match evalScheduled (rankScanSched [.axis axJRankScan] [.axis axJRankScan]) rankInputs with
+  | .error failure => throwError s!"valid scan read-rank sibling rejected: {failure.error}"
+  | .ok report =>
+      match report.env.get? "S" with
+      | none => throwError "valid scan read-rank sibling: S missing from the result"
+      | some s =>
+          unless s.shape == [2, 3] && s.data == #[1.0, 2.0, 3.0, 1.0, 2.0, 3.0] do
+            throwError s!"valid scan read-rank sibling: S is {repr s.shape} {repr s.data}"
 
 end LeanNCD.Eval.Plan.CompileTest

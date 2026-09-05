@@ -396,7 +396,13 @@ public boundaries that accept a hand-built `ScheduledProgram` re-derive it from 
 contradicts its declarations is seeded with what the declarations say — and the checked and
 reference backends still agree. This is the same authority rule Step 0 applies to `sched.env`
 (rebuilt by `buildDeclEnv`, at both boundaries) and `sched.extNames` (rebuilt by
-`orderedExternalNames`). It does not claim that every axis is already sized; remaining
+`orderedExternalNames`, and re-derived again by `checkScheduledReadRanks` for its own read-arity
+question). Both boundaries also re-establish the source pipeline's own statement-level invariants,
+in the source pipeline's order — declarations (`buildDeclEnv`), read arity
+(`checkScheduledReadRanks`), predicate outputs (`checkPredicateOutputs`), and, on the checked
+backend, statement order (`isTopoOrdered`) — each through one shared rule and one shared
+`ScanStmt` traversal, so a hand-built schedule cannot be rejected by one backend and silently
+executed by the other. It does not claim that every axis is already sized; remaining
 sizes may be inferred from input tensor signatures. An unresolved required axis is a typed shape
 error during plan preparation rather than a default extent.
 
@@ -556,7 +562,8 @@ Its three fields separate semantic computation from the source-facing boundary:
   `RequiredBindings` proves that its entries are a permutation of its own stored `inputSlots` array
   and rejects duplicate names. `prepareEvalPlan` constructs that array and
   `plan.raw.inputSlots` together, but the public `PreparedPlan` type does not itself prove that they
-  agree. For a compiler-produced plan, `materializedNames` has one entry per persistent scheduled
+  agree; the JAX executable gate re-establishes the agreement against `plan.raw` before it will
+  issue evidence (`checkPreparedBindings`, `Eval/Plan/Executable.lean`). For a compiler-produced plan, `materializedNames` has one entry per persistent scheduled
   output in schedule order. An identity statement publishes its `PlanStep.assign` destination. A
   pointwise or axiswise statement publishes only its trailing nonlinear step's destination; the
   internal assignment introduced by plan compilation has no name. `compileToScheduled` emits no
@@ -864,10 +871,10 @@ runDensePlan
   Except PositionalInputError (Array DenseTensor)
 
 unpack
-  (bindings : PlanBindings)
+  (plan : PreparedPlan)
   (env : NamedDenseEnv)
   (result : Array DenseTensor) :
-  Except PlanError NamedDenseEnv
+  Except PlanRunCause NamedDenseEnv
 
 runPreparedDense
   (plan : PreparedPlan)
@@ -875,14 +882,20 @@ runPreparedDense
   Except PlanRunFailure EvalReport
 ```
 `pack` returns positional inputs, `runDensePlan` returns the complete positional store, and `unpack`
-returns the original named environment updated with materialized results. `unpack` resolves every
+returns the original named environment updated with materialized results. `unpack` takes the whole
+`PreparedPlan` and requires the result store to hold exactly `plan.raw.tensorSigs.size` entries
+(`PlanRunCause.resultStore (PositionalInputError.storeArityMismatch …)`) before resolving any
+binding: which slots exist is a fact about the checked plan, not about the store a caller supplies,
+so an oversized store cannot license a binding the plan itself rejects. It then resolves every
 `materializedNames` entry through the shared `PlanBindings.materializedWith` — the same path
 `PreparedPlan.materializedSignatures` uses against the signature table — so a binding naming a slot
-outside the result store is `PlanError.slotOutOfRange`, raised before any name is published, rather
-than an empty tensor fabricated under a real output name.
+outside the plan is `PlanRunCause.materialization (PlanError.slotOutOfRange …)`, raised before any
+name is published, rather than an empty tensor fabricated under a real output name.
 On success, `EvalReport.env` contains the original named environment updated with every materialized
 result, and `EvalReport.warnings` contains the preparation warnings. On failure, `PlanRunFailure`
-records the binding, positional-execution, or materialization cause together with those warnings.
+records the binding, positional-execution, result-store, or materialization cause together with
+those warnings; `runPreparedDense` propagates `unpack`'s cause verbatim, so a direct `unpack` call
+reports the identical value.
 
 #### 3.3.2 Experimental JAX evaluator
 

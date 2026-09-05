@@ -1313,4 +1313,240 @@ def ctxShapeWithoutPosAssign : AssignPlan :=
   | .error e => e == PlanError.contextProjectionMismatch 0 #[] #[2]
   | .ok _ => false)
 
+/-! ### Whole-branch review round 4 — the prepared BINDINGS must describe the prepared PLAN
+
+`JaxExecutableWellFormed` tied every STEP to its prepared source (stored table, checked assignment,
+contextual well-formedness) but ignored `source.bindings` entirely, so the source-name sidecar was
+free to describe some other plan: a materialized binding at slot 99 over a three-slot plan, or a
+`requiredInputs` validly built by `checkBindings` against a DIFFERENT plan's `inputSlots`, still
+received real executable evidence. `checkPreparedBindings` (`Executable.lean`) is the new tie, and
+`preparedBindingsTied` is the `Bool` the proposition itself conjoins — so the fixtures below hit both
+the reported error and the proposition.
+
+Two donors: `mixedRaw` (3 slots, one input at 0, destinations 1 and 2) for the MATERIALIZED half,
+and a two-input plan below for the REQUIRED half (one input is not enough to distinguish a
+reordering from a substitution). -/
+
+-- `V[i]` at slot 1, read identically to `X[i]` at slot 0.
+def twoInRead1 : ReadPlan :=
+  { sourceSlot := 1, map := { coeffs := #[#[1]], bias := #[0] }
+  , sourceShape := #[3], oobPolicy := .zeroPad }
+
+-- `W[i] := X[i] · V[i]`: reads slots 0 and 1, writes slot 2.
+def twoInAssign : AssignPlan :=
+  { contextShape := #[], destinationSlot := 2, outputShape := #[3]
+  , terms := #[{ iterationShape := #[3], contextPos := #[], outputPos := #[0], reductionPos := #[]
+               , factors := #[.read idRead, .read twoInRead1] }]
+  , algebra := admittedAlgebra }
+
+def twoInRaw : RawEvalPlan :=
+  { tensorSigs := mixedSigs, inputSlots := #[0, 1], steps := #[.assign twoInAssign] }
+
+def idTable : AffineTableReadCandidate :=
+  { source := 0, safeIndex := #[0, 1, 2], validMask := #[true, true, true] }
+
+def twoInTable1 : AffineTableReadCandidate :=
+  { source := 1, safeIndex := #[0, 1, 2], validMask := #[true, true, true] }
+
+/-- The two-input fixture's own executable candidate with `bindings` substituted into its prepared
+    source, run through the real validator. `none` means the fixture's OWN plumbing failed
+    (`checkPlan`/kernel validation), which would be a fixture bug rather than a binding verdict. -/
+def twoInExecutableWith (bindings : PlanBindings) :
+    Option (Except JaxExecutableValidationError SomeJaxExecutable) :=
+  match checkPlan twoInRaw with
+  | .error _ => none
+  | .ok checkedPlan =>
+    match (checkedPlan.checkedNodes[0]? : Option CheckedPlanStepEvidence) with
+    | some (.assign checkedAssign) =>
+      let kernel : OrderedAffineTableKernelCandidate :=
+        { semanticAssignment := checkedAssign, tables := #[#[idTable, twoInTable1]] }
+      match validateAndConstructKernel mixedSigs (.affineTable kernel) with
+      | .error _ => none
+      | .ok someKernel =>
+        let steps := #[someKernel]
+        some (validateAndConstructExecutable
+          { source := { plan := checkedPlan, bindings, warnings := [] }
+          , steps, evidence := aggregateEvidenceList (steps.map (·.evidence))
+          , aggregated := rfl })
+    | _ => none
+
+/-- Build a `PlanBindings` whose `requiredInputs` is genuinely CHECKED — against `inputSlots`, which
+    is not necessarily the raw plan's. That is the whole point: `checkBindings` succeeding proves
+    alignment with the array it was given, never with a particular plan's `raw.inputSlots`. -/
+def bindingsWith (inputSlots : Array TensorSlot) (required materialized : Array SlotBinding) :
+    Option PlanBindings :=
+  match checkBindings inputSlots required with
+  | .error _ => none
+  | .ok requiredInputs => some { requiredInputs, materializedNames := materialized }
+
+def twoInVerdict (inputSlots : Array TensorSlot) (required materialized : Array SlotBinding) :
+    Option (Except JaxExecutableValidationError SomeJaxExecutable) :=
+  (bindingsWith inputSlots required materialized).bind twoInExecutableWith
+
+-- The VALID two-input candidate: both required bindings, both materialized-free (`W` published at
+-- slot 2).
+#guard match twoInVerdict #[0, 1] #[{ name := "x", slot := 0 }, { name := "v", slot := 1 }]
+    #[{ name := "w", slot := 2 }] with
+  | some (.ok _) => true
+  | _ => false
+
+-- VALID sibling: the required bindings REORDERED, each name keeping its own slot. `pack` resolves by
+-- name, and `RequiredBindings` is `Perm`-based for exactly this reason, so the tie must not demand
+-- positional equality.
+#guard match twoInVerdict #[0, 1] #[{ name := "v", slot := 1 }, { name := "x", slot := 0 }]
+    #[{ name := "w", slot := 2 }] with
+  | some (.ok _) => true
+  | _ => false
+
+-- ATTACK: a MISSING required binding — checked against `#[0]`, so `checkBindings` itself is happy,
+-- but the plan needs slots 0 AND 1.
+#guard match twoInVerdict #[0] #[{ name := "x", slot := 0 }] #[{ name := "w", slot := 2 }] with
+  | some (.error (.invalidBindings (.requiredInputs (.notAPermutation e o)))) =>
+      e == #[0, 1] && o == #[0]
+  | _ => false
+
+-- ATTACK: an EXTRA required binding, naming a slot the plan does not take as input (slot 2 is its
+-- destination).
+#guard match twoInVerdict #[0, 1, 2]
+    #[{ name := "x", slot := 0 }, { name := "v", slot := 1 }, { name := "w", slot := 2 }]
+    #[{ name := "w", slot := 2 }] with
+  | some (.error (.invalidBindings (.requiredInputs (.notAPermutation e o)))) =>
+      e == #[0, 1] && o == #[0, 1, 2]
+  | _ => false
+
+-- ATTACK: a WRONG-SLOT required binding — the right NUMBER of bindings, every one validly checked,
+-- but against slots `#[1, 2]` instead of this plan's `#[0, 1]`. This is also the SAME-SHAPE
+-- substitution case: all three signatures here are `#[3]`/`f64`, so nothing about shapes
+-- distinguishes the substituted slots — only the plan's own `inputSlots` does.
+#guard match twoInVerdict #[1, 2] #[{ name := "x", slot := 1 }, { name := "v", slot := 2 }]
+    #[{ name := "w", slot := 2 }] with
+  | some (.error (.invalidBindings (.requiredInputs (.notAPermutation e o)))) =>
+      e == #[0, 1] && o == #[1, 2]
+  | _ => false
+
+-- DOCUMENTED LIMIT, pinned rather than left to surprise: swapping the two NAMES between the two
+-- input slots is accepted. `raw` carries no source names at all, so which name belongs to which slot
+-- is not re-derivable here (see `checkPreparedBindings`' doc comment) — closing it would mean
+-- fabricating names or taking a caller-supplied table, both of which would put the authority for the
+-- name↔slot association somewhere other than `prepareEvalPlan`. If a later change closes this gap,
+-- this guard fails and the doc comment must be updated with it.
+#guard match twoInVerdict #[0, 1] #[{ name := "v", slot := 0 }, { name := "x", slot := 1 }]
+    #[{ name := "w", slot := 2 }] with
+  | some (.ok _) => true
+  | _ => false
+
+-- A duplicate NAME across two slots cannot reach this tie at all: `checkBindings` rejects it at
+-- construction (`duplicateName`), so no `RequiredBindings` carrying one exists to substitute.
+#guard match checkBindings #[0, 1] #[{ name := "x", slot := 0 }, { name := "x", slot := 1 }] with
+  | .error (.duplicateName nm) => nm == "x"
+  | _ => false
+
+/-! #### The materialized half, over `mixedRaw` (3 slots, input at 0, destinations 1 and 2) -/
+
+def mixedExecutableWith (bindings : PlanBindings) :
+    Option (Except JaxExecutableValidationError SomeJaxExecutable) :=
+  match checkPlan mixedRaw with
+  | .error _ => none
+  | .ok checkedPlan =>
+    match (checkedPlan.checkedNodes[0]? : Option CheckedPlanStepEvidence),
+          (checkedPlan.checkedNodes[1]? : Option CheckedPlanStepEvidence) with
+    | some (.assign checkedAssign0), some (.assign checkedAssign1) =>
+      let affineKernel : OrderedAffineTableKernelCandidate :=
+        { semanticAssignment := checkedAssign0, tables := #[#[idTable]] }
+      let einsumKernel : EinsumExperimentKernelCandidate :=
+        { semanticAssignment := checkedAssign1, destination := 2
+        , operands := #[#[1, 0]], outputAxes := #[0] }
+      match validateAndConstructKernel mixedSigs (.affineTable affineKernel),
+            validateAndConstructKernel mixedSigs (.einsum einsumKernel) with
+      | .ok someAffine, .ok someEinsum =>
+        let steps := #[someAffine, someEinsum]
+        some (validateAndConstructExecutable
+          { source := { plan := checkedPlan, bindings, warnings := [] }
+          , steps, evidence := aggregateEvidenceList (steps.map (·.evidence))
+          , aggregated := rfl })
+      | _, _ => none
+    | _, _ => none
+
+def mixedVerdict (materialized : Array SlotBinding) :
+    Option (Except JaxExecutableValidationError SomeJaxExecutable) :=
+  (bindingsWith #[0] #[{ name := "x", slot := 0 }] materialized).bind mixedExecutableWith
+
+-- VALID: the plan's own publications, in `prepareEvalPlan`'s order.
+#guard match mixedVerdict #[{ name := "y", slot := 1 }, { name := "z", slot := 2 }] with
+  | some (.ok _) => true
+  | _ => false
+
+-- VALID sibling: a name REASSIGNED — the same name twice, at two increasing slots, which is exactly
+-- what a repeated source assignment produces (`materializedNames` is not deduplicated). The order
+-- rule constrains slots, not names.
+#guard match mixedVerdict #[{ name := "y", slot := 1 }, { name := "y", slot := 2 }] with
+  | some (.ok _) => true
+  | _ => false
+
+-- ATTACK: the finding's own case — a materialized slot outside the plan's signature table. Reported
+-- through the shared resolution path, so the value is the same `PlanError.slotOutOfRange`
+-- `materializedSignatures` and `Adapter.unpack` report for it.
+#guard match mixedVerdict #[{ name := "y", slot := 99 }] with
+  | some (.error (.invalidBindings (.materializedSlot (.slotOutOfRange 99 3)))) => true
+  | _ => false
+
+-- ATTACK: in range, but naming an INPUT slot — an output name publishing an input's own tensor.
+#guard match mixedVerdict #[{ name := "y", slot := 0 }] with
+  | some (.error (.invalidBindings (.materializedNotPublished 0 0))) => true
+  | _ => false
+
+-- ATTACK: in range and past the inputs, but DESCENDING — not the fresh-slot publication order
+-- `prepareEvalPlan` produces.
+#guard match mixedVerdict #[{ name := "z", slot := 2 }, { name := "y", slot := 1 }] with
+  | some (.error (.invalidBindings (.materializedNotPublished 1 1))) => true
+  | _ => false
+
+-- ATTACK: the same destination slot published twice — the non-strict edge of the same rule.
+#guard match mixedVerdict #[{ name := "y", slot := 1 }, { name := "z", slot := 1 }] with
+  | some (.error (.invalidBindings (.materializedNotPublished 1 1))) => true
+  | _ => false
+
+/-! #### The PROPOSITION, not merely the validator's pre-check
+
+`validateAndConstructExecutable` reports the located cause before deciding the whole predicate, so
+these guards confirm the tie lives in `JaxExecutableWellFormed` itself — the proposition
+`JaxExecutable.valid` stores. The candidate carries its REAL two kernels, so every OTHER conjunct
+(step count, per-step tie, aggregation) holds and the bindings tie is the only thing that can
+decide it: without the conjunct, `decide` answers `true` for the malformed one too. -/
+
+def mixedCandidateWith (materialized : Array SlotBinding) : Option JaxExecutableCandidate :=
+  match checkPlan mixedRaw with
+  | .error _ => none
+  | .ok checkedPlan =>
+    match (checkedPlan.checkedNodes[0]? : Option CheckedPlanStepEvidence),
+          (checkedPlan.checkedNodes[1]? : Option CheckedPlanStepEvidence),
+          checkBindings #[0] #[{ name := "x", slot := 0 }] with
+    | some (.assign checkedAssign0), some (.assign checkedAssign1), .ok requiredInputs =>
+      let affineKernel : OrderedAffineTableKernelCandidate :=
+        { semanticAssignment := checkedAssign0, tables := #[#[idTable]] }
+      let einsumKernel : EinsumExperimentKernelCandidate :=
+        { semanticAssignment := checkedAssign1, destination := 2
+        , operands := #[#[1, 0]], outputAxes := #[0] }
+      match validateAndConstructKernel mixedSigs (.affineTable affineKernel),
+            validateAndConstructKernel mixedSigs (.einsum einsumKernel) with
+      | .ok someAffine, .ok someEinsum =>
+        let steps := #[someAffine, someEinsum]
+        some { source := { plan := checkedPlan
+                         , bindings := { requiredInputs, materializedNames := materialized }
+                         , warnings := [] }
+             , steps, evidence := aggregateEvidenceList (steps.map (·.evidence))
+             , aggregated := rfl }
+      | _, _ => none
+    | _, _, _ => none
+
+#guard match mixedCandidateWith #[{ name := "y", slot := 99 }] with
+  | some c => preparedBindingsTied c.source == false && decide (JaxExecutableWellFormed c) == false
+  | none => false
+
+-- The same candidate with the plan's own bindings satisfies the WHOLE proposition — so the guard
+-- above is about the bindings conjunct, not about some other conjunct these fixtures happen to miss.
+#guard match mixedCandidateWith #[{ name := "y", slot := 1 }, { name := "z", slot := 2 }] with
+  | some c => preparedBindingsTied c.source == true && decide (JaxExecutableWellFormed c) == true
+  | none => false
+
 end LeanNCD.Eval.Plan.ExecutableTest

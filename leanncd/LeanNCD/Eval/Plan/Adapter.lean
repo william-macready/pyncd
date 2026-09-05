@@ -74,30 +74,55 @@ def pack (plan : PreparedPlan) (env : NamedDenseEnv) :
     schedule appears twice here too, and since `HashMap.insert` overwrites, the later insertion
     (the plan's own last write) naturally wins — no separate "most recent" bookkeeping needed.
 
-    Resolution goes through the shared `PlanBindings.materializedWith` (`Prepared.lean`), the same
-    path `PreparedPlan.materializedSignatures` uses against the signature table, so the metadata and
-    execution boundaries cannot disagree about which bindings a `PlanBindings` resolves. A binding
-    naming a slot outside `result` is therefore `PlanError.slotOutOfRange` — reported BEFORE any
-    name is published, since `mapM` short-circuits — rather than the empty scalar tensor this
-    function used to substitute silently and then insert under that binding's name. That default was
-    the worst possible lie here: `materializedNames` is public and caller-constructible (`PlanBindings`
-    has a public constructor and `AdapterTest` builds one by struct update), so an out-of-range slot
-    is genuinely reachable, and an empty tensor published under a real output name is indistinguishable
-    from a legitimately empty result.
+    **The store's arity is the plan's, not the caller's (whole-branch review round 4).** This takes
+    the whole `PreparedPlan`, not a bare `PlanBindings`, and requires `result.size` to equal
+    `plan.raw.tensorSigs.size` EXACTLY before any binding is resolved. It used to validate
+    `materializedNames` against `result.size` alone, so the caller's own store decided which
+    bindings were legal: a binding naming slot 3 — out of range for a checked THREE-slot plan, and
+    rejected as `slotOutOfRange 3 3` against a conforming store — succeeded the moment the caller
+    handed over a four-element one, publishing whatever tensor happened to sit at slot 3 under that
+    binding's name. Slot validity is a fact about the CHECKED PLAN, so the checked plan is what
+    supplies the table size; a store of any other length is `PositionalInputError.storeArityMismatch`
+    (the constructor `runDenseScan` already raises for exactly this, `Error.lean`), reported under
+    `PlanRunCause.resultStore` — before bindings are looked at, so a too-long store is rejected as a
+    wrong store rather than silently licensing extra slots, and a too-short one is rejected as a
+    wrong store rather than mis-diagnosed as an out-of-range binding.
+
+    Binding resolution itself then goes through the shared `PlanBindings.materializedWith`
+    (`Prepared.lean`), the same path `PreparedPlan.materializedSignatures` uses against the
+    signature table, so the metadata and execution boundaries cannot disagree about which bindings a
+    `PlanBindings` resolves — and now cannot disagree about the table SIZE either, since
+    `result.size = raw.tensorSigs.size` is established above. A binding naming a slot outside the
+    plan is therefore `PlanError.slotOutOfRange` under `PlanRunCause.materialization` — reported
+    BEFORE any name is published, since `mapM` short-circuits — rather than the empty scalar tensor
+    this function once substituted silently and then inserted under that binding's name. That
+    default was the worst possible lie here: `materializedNames` is public and caller-constructible
+    (`PlanBindings` has a public constructor and `AdapterTest` builds one by struct update), so an
+    out-of-range slot is genuinely reachable, and an empty tensor published under a real output name
+    is indistinguishable from a legitimately empty result.
+
+    The return type is `PlanRunCause` (not `PlanError`) precisely so a DIRECT `unpack` call reports
+    the exact value `runPreparedDense` reports for the same malformation: that function now
+    propagates this cause verbatim rather than re-tagging it.
 
     `pack`'s sibling `raw.tensorSigs.getD` default is NOT the same situation and is deliberately left
     alone: it indexes `raw.inputSlots`, which `checkPlan` bounds against `tensorSigs.size`
     (`checkStepGraph`'s first loop) before a `CheckedEvalPlan` exists at all, so no `PreparedPlan` —
     however hand-built its bindings — can present an out-of-range input slot there. -/
-def unpack (bindings : PlanBindings) (env : NamedDenseEnv) (result : Array DenseTensor) :
-    Except PlanError NamedDenseEnv :=
-  (bindings.materializedWith result).map (fun pairs =>
-    pairs.foldl (fun acc (nm, t) => acc.insert nm t) env)
+def unpack (plan : PreparedPlan) (env : NamedDenseEnv) (result : Array DenseTensor) :
+    Except PlanRunCause NamedDenseEnv := do
+  let expected := plan.plan.raw.tensorSigs.size
+  unless result.size == expected do
+    throw (.resultStore (.storeArityMismatch expected result.size))
+  match plan.bindings.materializedWith result with
+  | .error e => throw (.materialization e)
+  | .ok pairs => return pairs.foldl (fun acc (nm, t) => acc.insert nm t) env
 
 /-- Run a prepared plan against a named environment: `pack` into positional slots, run the
     positional worker, `unpack` the result back into the named environment, preserving `plan`'s
     preparation warnings through every outcome (success, a `pack` failure, a `runDensePlan` failure,
-    or an `unpack` failure). -/
+    or an `unpack` failure — whose typed cause is carried through unchanged, so the value a caller
+    sees here and the value direct `unpack` returns are the same). -/
 def runPreparedDense (plan : PreparedPlan) (env : NamedDenseEnv) :
     Except PlanRunFailure EvalReport := do
   let packed ← match pack plan env with
@@ -106,9 +131,9 @@ def runPreparedDense (plan : PreparedPlan) (env : NamedDenseEnv) :
   let result ← match runDensePlan plan.plan packed with
     | .ok r => pure r
     | .error e => throw { cause := .execution e, warnings := plan.warnings }
-  let unpacked ← match unpack plan.bindings env result with
+  let unpacked ← match unpack plan env result with
     | .ok e => pure e
-    | .error e => throw { cause := .materialization e, warnings := plan.warnings }
+    | .error c => throw { cause := c, warnings := plan.warnings }
   return { env := unpacked, warnings := plan.warnings }
 
 end LeanNCD.Eval.Plan
