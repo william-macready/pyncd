@@ -1,7 +1,9 @@
 # Task 4 — Boolean / predicate outputs in the checked `EvalPlan` backend
 
-**Status:** implementation plan, preflight-verified against the tree at commit `429673f`; not
-implemented.
+**Status:** Tasks 4.1–4.5 are implemented on `agents/task4-boolean-output` through commit
+`ce1a0f7`. Task 4.6 below is a pre-integration closure amendment, re-measured against that commit;
+it is not yet implemented. Its two invariant boundaries were independently researched and the
+assembled amendment received an adversarial plan review before execution.
 This closes the current checked-backend rejection of `Decl.predicate` by
 `CapabilityError.booleanOutput`. It does not add native Boolean storage or JAX Boolean execution.
 
@@ -608,6 +610,336 @@ step-0 context); rotate context removal through every surviving public entry and
 `checkAssign`; hard-code outer locator 0; and drop the new Boolean corpus entries. Record every
 failing and restored observation.
 
+### Task 4.6 — Consolidate scheduled-program and prepared-binding validation boundaries
+
+#### Why this closure task exists
+
+Tasks 4.1–4.5 established the intended Boolean semantics, but the final whole-branch reviews found
+one recurring architectural defect rather than another Boolean-algebra defect: public,
+hand-constructible values can reach several consumers, and those consumers independently
+re-establish only the subset of invariants they happen to need. The result is a moving bypass
+surface:
+
+- `prepareEvalPlan` and `evalScheduled` do not currently share one whole-schedule check;
+- declared source read ranks are checked, but declared destination ranks are not;
+- `evalScheduled` does not reject a direct schedule whose producer appears after its consumer;
+- `pack`, `unpack`, metadata queries, named JAX emission, and executable construction do not share
+  one exact `PreparedPlan.bindings` check;
+- current materialization validation accepts a strictly increasing subsequence even when it omits a
+  real publication, and positional raw IR alone cannot recover the publication names to compensate.
+
+Do not add another caller-specific guard. This task introduces exactly two shared validation
+boundaries and routes every public consumer through them. Keep the two work packages as separate,
+independently reviewable commits: either validator can be rejected without rolling back the other.
+
+#### Verified files
+
+**Scheduled-program boundary**
+
+- `leanncd/LeanNCD/DSL/Pipeline/Structural.lean`
+- `leanncd/LeanNCD/DSL/Pipeline/ScheduledValidation.lean` (new neutral module)
+- `leanncd/LeanNCD/DSL/Pipeline/Lowering.lean`
+- `leanncd/LeanNCD/Eval/Eval.lean`
+- `leanncd/LeanNCD/Eval/Plan/Compile.lean`
+- `leanncd/test/DSL/Pipeline/StructuralTest.lean`
+- `leanncd/test/Eval/Plan/CompileTest.lean`
+
+**Prepared-binding boundary**
+
+- `leanncd/LeanNCD/Eval/Plan/Error.lean`
+- `leanncd/LeanNCD/Eval/Plan/Prepared.lean`
+- `leanncd/LeanNCD/Eval/Plan/Adapter.lean`
+- `leanncd/LeanNCD/Eval/Plan/Executable.lean`
+- `leanncd/experiments/jax_bridge/EvalPlanCodegen.lean`
+- `leanncd/experiments/jax_bridge/EvalPlanSmoke.lean`
+- `leanncd/experiments/jax_bridge/EvalPlanAffineSmoke.lean`
+- `leanncd/experiments/jax_bridge/EvalPlanAffineCorpus.lean`
+- `leanncd/test/Eval/Plan/AdapterTest.lean`
+- `leanncd/test/Eval/Plan/ExecutableTest.lean`
+- `leanncd/test/Eval/Plan/NonlinCompileTest.lean`
+- `leanncd/test/Eval/Plan/ScanCompileTest.lean`
+
+**Documentation and validation surfaces**
+
+- `leanncd/LeanNCD/Eval/AGENTS.md`
+- `leanncd/LeanNCD/DSL/AGENTS.md`
+- `leanncd/experiments/jax_bridge/README.md`
+- `leanncd/test/Eval/Plan/DifferentialTest.lean`
+
+All paths above except the explicitly new `ScheduledValidation.lean` exist at `ce1a0f7`. Do not
+broaden the task into private constructors for `PlanBindings` or `PreparedPlan`: their public
+construction remains useful for authority-attack fixtures, and public validation remains necessary
+at deserialization or foreign-function boundaries even if constructors are restricted later.
+
+#### Landed-validation preservation and migration
+
+Task 4.6 starts from `ce1a0f7`; it does not reopen the behavior established by the preceding
+review-fix commits. Treat the current validators and their fixtures as the migration baseline:
+
+| Invariant already enforced at `ce1a0f7` | Current authority | Task 4.6 treatment |
+|---|---|---|
+| Duplicate-safe declarations | `Structural.buildDeclEnv`, called independently by preparation and direct evaluation | Reuse unchanged inside the shared scheduled validator; remove only duplicate call sequences |
+| Declared and external source-read ranks | `Structural.checkScheduledReadRanks`, called independently by both direct boundaries | Preserve checks, payloads, and traversal order; extend the same structural boundary with declared destination ranks |
+| Predicate-output identity/sum rules | `Structural.checkPredicateOutputs`, called independently by both direct boundaries | Reuse unchanged inside the shared scheduled validator |
+| Declaration-derived explicit sizes | `Structural.declaredAxisSizes`, independently recomputed by both direct boundaries | Compute once in the shared result and consume that value; never restore trust in the schedule cache |
+| Ordered external names | `Lowering.orderedExternalNames`, re-derived by `prepareEvalPlan` | Preserve the current first-read order and expose it through the shared result; direct evaluation need not allocate positional slots but must validate the same schedule |
+| Producer-before-consumer order | `Lowering.isTopoOrdered`, re-established by `prepareEvalPlan` only | Move the neutral predicate into `ScheduledValidation.lean`, preserve its verdict, intentionally migrate preparation's boundary-specific message to one shared payload, and add the missing direct-evaluation consumer |
+| Materialized slot bounds and store-size checks | `PlanBindings.materializedWith`, `PreparedPlan.materializedSignatures`, and `Adapter.unpack` | Retain the shared bounds helper and adapter store-size diagnostics after the new exact binding check; do not replace their typed payloads with a generic failure |
+| Required-input tie and increasing materialized slots | `Executable.checkPreparedBindings` | Move the general check to `Prepared.lean`; preserve its required-input cause, then strengthen materialization from increasing slots to exact publication equality |
+| JAX semantic/context/evidence gates | `Executable.lean` and `EvalPlanCodegen.lean` | Leave semantic validation in place; run the general prepared-binding check before it rather than folding JAX support into the shared validator |
+
+The implementation review must compare behavior before and after each move. A landed validator may
+disappear from its old caller only in the same commit that wires that caller to the shared result.
+Do not temporarily weaken a public boundary, rewrite an existing semantic check, or delete its
+fixture because a stronger aggregate fixture exists. Task 4.6 adds only three new invariant
+classes: declared destination rank, topology at direct evaluation, and exact prepared publication
+slots. Everything else is relocation, reuse, or public-consumer coverage. Two malformed-value
+diagnostic migrations are intentional and must be fixture-pinned: direct preparation's
+boundary-specific topology string becomes the shared neutral topology string, and malformed
+prepared bindings precede consumer-specific environment/store/JAX errors. Existing payloads remain
+unchanged whenever the new earlier check succeeds.
+
+#### Work package A — one scheduled-program invariant result
+
+1. Extend the shared `Stmt`-level structural rank routine used by both `checkReadRanks` and
+   `checkScheduledReadRanks`; do not add a scheduled-only destination pass. Preserve its existing
+   three read-validation passes and their diagnostic order, then traverse destinations in source
+   order. For a declared `.assign` or `.scatter`, require the raw syntactic LHS `slots.length` to
+   equal `Decl.axisCount` and report `CompileError.rankMismatch lhsName expected actual`.
+   Deliberately do not use `stmtLhsRank`: its deduplicated/scatter-sensitive value describes the
+   published rank of an undeclared intermediate, not whether a declared LHS contains the declared
+   number of syntactic positions. Exclude `.recurMorphism`; skip undeclared scratch destinations.
+   For scheduled scans, flatten `.plain`, then each `.scan`'s `base ++ recur`, and ignore
+   `.scanPre` exactly as the current shared traversals do.
+2. Create neutral `DSL/Pipeline/ScheduledValidation.lean`; do not make `Eval.lean` import all of
+   `Lowering.lean` and thereby acquire routing/target dependencies just to validate a schedule.
+   Move `ScanStmt.writes`, `ScanStmt.reads`, private `eligible`, `topoSortFuel`, `topoSort`,
+   `isTopoOrdered`, and `orderedExternalNames` together into this module: the sorter and validators
+   depend on the shared accessors/eligibility predicate, so moving only the public validation
+   functions would either fail to compile or duplicate their authority. Export `topoSort` for
+   `schedule`; keep implementation helpers private. Have `Lowering.lean`, `Eval.lean`, and
+   `Eval/Plan/Compile.lean` import the neutral module; remove `Compile.lean`'s broader
+   `Lowering.lean` import if no separately used symbol remains after the move.
+3. Define an unforgeable checked context `CheckedScheduledProgram` with a private constructor and
+   public projections for the original `ScheduledProgram`, duplicate-safe `DeclEnv`,
+   declaration-derived explicit sizes, and authoritative ordered external names. Define
+   `validateScheduled : ScheduledProgram → Except CompileError CheckedScheduledProgram`. It runs,
+   in order: `buildDeclEnv`; all scheduled read passes followed by declared destination ranks;
+   `checkPredicateOutputs`; `isTopoOrdered`. Its topology failure is exactly
+   `CompileError.cyclicDataflow "scheduled program: statements are not in producer-before-consumer order"`.
+4. `prepareEvalPlan` must consume that checked context for declarations, explicit sizes, external
+   input allocation, and statements. Map validator failure to
+   `PlanCompileCause.sourceInvariant` with `warnings := []`. `evalScheduled` must consume the same
+   context for declarations, explicit sizes, and statements, mapping failure to `EvalError.compile`
+   with `warnings := []`. Neither caller may trust `ScheduledProgram.env`,
+   `ScheduledProgram.explicitSizes`, or `ScheduledProgram.extNames`.
+5. The neutral topology string intentionally replaces preparation's current
+   `"prepareEvalPlan: statements are not in producer-before-consumer order"` payload so the two
+   direct boundaries report the identical `CompileError`. Update that exact fixture; all other
+   landed diagnostic constructors, payloads, and precedence remain unchanged.
+6. Audit and classify every public `ScheduledProgram` consumer. `prepareEvalPlan` and
+   `evalScheduled` are the two execution/preparation boundaries that must require
+   `CheckedScheduledProgram`. `capabilityPreflight`, `orderedExtNames`,
+   `elaborateAffineReindexings`, `routeCore`, `routeNameInventory`, `physicalizeRaw`,
+   `physicalizeForRoute`, and `route` are phase-local or routing APIs: do not silently force the
+   EvalPlan validator into them. Record for each whether it operates before scheduling invariants
+   exist, consumes a schedule already produced by `schedule`, or enforces a distinct route-specific
+   contract. The completion record must contain this inventory rather than claiming that every
+   function accepting the structure is an execution boundary. Also classify
+   `PropertyOracle.independentRun`: it remains an independent test oracle with a valid-source
+   precondition and reaches the shared validator only through its scan-free `evalScheduled` calls;
+   do not couple its independent unrolling logic to checked-plan preparation.
+
+**Scheduled-program fixture matrix — 10 fixture groups**
+
+| Fixture | Donor and distinguishing change | Required observation |
+|---|---|---|
+| Plain destination under-rank | Clone the valid one-dimensional direct rank fixture in `CompileTest`; declare the destination with two axes while retaining a one-index LHS and a valid RHS | Source checking, preparation, and direct evaluation report the same destination `rankMismatch`; no later shape error substitutes |
+| Plain destination over-rank | Clone the same fixture; declare one destination axis and write two LHS indices | The three boundaries reject with the inverse expected/actual rank payload |
+| Read-before-write precedence | Clone the under-rank fixture and also remove one RHS read index | The pre-existing source read `rankMismatch` wins at every boundary, pinning read passes before the new destination pass |
+| Scan-base destination rank | Clone `rankScanBase`/`rankScanSched`; change only the base destination's index count | Source checking, preparation, and direct evaluation reject the base statement |
+| Scan-recurrence destination rank | Clone `rankScanRecur`/`rankScanSched`; change only the recurrence destination's index count | The same three boundaries reject the recurrence statement |
+| Scan traversal order | Clone `rankScanSched`; make both base and recurrence destination ranks invalid in distinguishable ways | The base diagnostic wins, pinning `base ++ recur` rather than recurrence-first or a filtered traversal |
+| Direct consumer-before-producer | Reuse `outOfOrderSched`, but provide a same-shaped caller value for the future-produced name so accidental external treatment would otherwise execute | Both `prepareEvalPlan` and `evalScheduled` reject producer order; the supplied environment cannot turn the future producer into an input |
+| Producer-first valid sibling | Clone `outOfOrderSched` and swap only the two statements | Both direct boundaries accept and direct evaluation agrees with the prepared Dense run |
+| Topology-before-consumer failures | Clone `outOfOrderSched` twice: omit its required `InputSignature` entry for preparation, and give direct evaluation an input that would produce a later shape/runtime failure | The shared topology error wins at both boundaries, proving validation occurs before consumer-specific work rather than merely eventually rejecting |
+| Shared invariant parity | Reuse the existing duplicate-declaration, direct read-rank, predicate-output, stale-size, and stale-external-name fixtures in `StructuralTest`/`CompileTest` | Each failure or success remains identical through source compilation where applicable, preparation, and direct evaluation; this row prevents consolidation from dropping an older check |
+
+Observe the valid sibling's actual tensors through both evaluators before fixing the expected value.
+The order fixtures are invalid if their two candidate traversals produce the same diagnostic; keep
+their ranks and names distinct enough to prove which pass or statement won.
+
+**Scheduled-program mutation cycles — 4**
+
+1. Disable only declared-destination rank validation; the five destination-only fixture groups fail,
+   while the combined read/write-invalid fixture still fails through the older read check.
+2. Disable only the shared producer-order check; the out-of-order fixture fails while its valid
+   sibling stays green.
+3. Bypass the shared result at `prepareEvalPlan`; at least the direct out-of-order and stale-cache
+   preparation fixtures fail.
+4. Bypass the shared result at `evalScheduled`; the matching direct-evaluation fixtures fail.
+
+Run each cycle with `mutation-cycle.sh` against
+`Eval.Plan.CompileTest` and `DSL.Pipeline.StructuralTest`; include the narrow direct-evaluator target
+if it remains separate after implementation.
+
+**Commit**
+
+`refactor(eval-plan): share scheduled invariant validation`
+
+#### Work package B — one exact prepared-binding validator
+
+1. Move the neutral `PreparedBindingsError` data type from `Executable.lean` to `Error.lean`, which
+   is already upstream of `Prepared.lean` and the adapter error types. Keep
+   `.requiredInputs (cause : BindingsError)` and `.materializedSlot (cause : PlanError)`, and replace
+   `.materializedNotPublished` with
+   `.publicationSlots (expected actual : Array TensorSlot)`. Move the validator itself and the raw
+   publication derivation to `Prepared.lean`; executable construction remains a consumer.
+2. Define an unforgeable `CheckedPreparedBindings` view with a private constructor and projections
+   for the checked required bindings and materialized bindings. Define
+   `checkPreparedBindings : PreparedPlan → Except PreparedBindingsError CheckedPreparedBindings`.
+   Public entry points validate once, then pass this checked view to private/internal workers rather
+   than rerunning the check along one call path. The validator uses a private raw slot-resolution
+   helper; it must not call public `materializedSignatures`, which itself calls the validator.
+   Replace public `PlanBindings.materializedWith` with a checked-view resolver or make the raw helper
+   private so callers cannot retain an unchecked lower-level bypass.
+3. Add one pure raw-plan publication-slot derivation in `Prepared.lean`. Traverse `raw.steps` by
+   index:
+   - for `.assign a`, append `a.destinationSlot` unless the immediately following step is
+     `.pointwise p` or `.axiswise p` with `p.sourceSlot == a.destinationSlot`;
+   - for `.pointwise p` or `.axiswise p`, append `p.destinationSlot`;
+   - for `.scan s`, append `s.states.map (·.destSlot)` in stored state order.
+   `AssignPlan` has no identity/nonlinearity tag, so do not describe or implement the raw rule as
+   “identity assignment.” The adjacent consuming step is the only derivable distinction. A
+   hand-built checked raw plan with the same adjacent shape receives the same interpretation because
+   raw IR carries no compiler-provenance bit. Preserve array order without sorting or deduplication.
+   Compiler-produced repeated output names have distinct publication slots; do not claim that a
+   checked plan permits repeated destination slots.
+4. The shared validator runs in this exact order:
+   - rerun `checkBindings raw.inputSlots requiredInputs.bindings`, preserving its name-unique
+     **slot-multiset permutation** semantics; binding-array reorder remains legal;
+   - resolve every materialized slot against `raw.tensorSigs`, preserving
+     `.materializedSlot (.slotOutOfRange slot tableSize)`;
+   - compare `materializedNames.map (·.slot)` with the raw-derived publication array by full array
+     equality and report `.publicationSlots expected actual`.
+   This proves attachment to raw input slots and exact output slots, length, order, and repetition.
+   It does not impose positional equality on required bindings.
+5. Specify the public error migrations:
+   - `PreparedPlan.materializedSignatures` returns
+     `Except PreparedBindingsError (Array (String × TensorSignature))`;
+   - `InputBindingError` gains `.invalidPreparedBindings (cause : PreparedBindingsError)`, used by
+     `pack` before consulting the environment;
+   - `PlanRunCause` gains `.invalidBindings (cause : PreparedBindingsError)`, used by direct
+     `unpack` before result-store arity; `runPreparedDense` maps `pack` failure through its existing
+     `.binding` wrapper and relies on the checked adapter workers rather than validating twice;
+   - `JaxCodegenError` gains `.invalidBindings (cause : PreparedBindingsError)`;
+   - `JaxExecutableValidationError.invalidBindings` retains the same cause type after its move.
+6. Route every public `PreparedPlan` consumer through the validator before consumer-specific work:
+   `PreparedPlan.materializedSignatures`, `Adapter.pack`, direct `Adapter.unpack`,
+   `generateForward`, `renderAffinePlanNamed`, `generateNamed`,
+   `lowerCheckPlanToCandidate`, and executable validation. `runPreparedDense` delegates through
+   checked adapter workers; do not add a third redundant check. Prescribe the adapter flow:
+   public `pack` validates then calls private `packChecked`; public `unpack` validates then calls
+   private `unpackChecked`; `runPreparedDense` obtains the checked view on its pack-side path,
+   maps validator failure through `.binding (.invalidPreparedBindings cause)`, and passes the same
+   view to `unpackChecked`. Public `materializedSignatures` validates and then uses the same private
+   raw resolver as the validator without recursion.
+7. Replace public raw/bare-binding render helpers with a checked boundary:
+   `renderShapeCheckLine`, `renderSlotInitLines`, `renderOutputLines`, and `renderBindingList` become
+   private/internal helpers over a checked view. Replace the public
+   `renderInputConstants raw requiredInputs inputs` surface with a plan-level wrapper that accepts a
+   `PreparedPlan`, validates it, then calls a private raw renderer. Update `EvalPlanSmoke` to use that
+   wrapper. Make `EvalPlanAffineSmoke.renderInputsDict` and `renderExpectedDict` private unless an
+   actual external caller is found; the private `EvalPlanAffineCorpus` helpers remain behind their
+   validated caller. Classify `EvalPlanAffineCorpus.featureMask` as binding-independent checked-plan
+   metadata and either make it private or narrow its argument to `CheckedEvalPlan`; it must not
+   remain a public `PreparedPlan` consumer that appears to have passed binding validation.
+8. Malformed prepared bindings precede caller environment lookup, direct-unpack result-store arity,
+   JAX semantic lowering, kernel/evidence construction, and executable aggregation validation.
+   These precedence changes for malformed hand-built plans are intentional. When bindings are
+   valid, preserve the existing store-arity, environment shape/storage, JAX support, aggregation,
+   and warning payloads. Pin every precedence claim with a fixture violating both conditions.
+9. State the deliberate limit precisely in code documentation and the completion record:
+   positional `RawEvalPlan` can derive required and publication **slots**, but cannot recover source
+   or publication **names**. This task therefore proves structural slot identity and
+   required-binding name uniqueness; it neither invents a caller-supplied name table nor claims that
+   an arbitrary materialized name is source-authentic. Names produced by `prepareEvalPlan` remain
+   authoritative.
+10. Migrate `EvalPlanCodegen.rejectsLocatedAt1` rather than changing its expected error. Its
+    hand-built prepared plans currently use an empty publication list and will be intercepted by
+    exact binding validation. Give the pointwise, axiswise, and masked-axiswise cases publication
+    slot `#[2]`, and the scan case slots `#[3, 2]`, matching their raw step order. Preserve every
+    existing `.unsupportedStep 1` assertion so the new binding gate does not erase the landed JAX
+    locator coverage.
+
+**Prepared-binding fixture matrix — 10 fixture groups**
+
+| Fixture | Donor and distinguishing change | Required observation |
+|---|---|---|
+| Extra/missing/wrong required input | Reuse `ExecutableTest.bindingsWith`; construct each `RequiredBindings` legally with `checkBindings` against a different input-slot array, then pair it with the target plan | Every prepared-plan boundary rejects with `.requiredInputs`; the fixture must not attempt to bypass the private `RequiredBindings` constructor |
+| Reordered required inputs | Reuse `AdapterTest`'s asymmetric name-based permutation fixture | Reordering the binding array remains valid and produces the observed contraction result; exact means slot-multiset permutation, not positional equality |
+| Input published as output | Clone `zeroCoeffProg`'s prepared plan; replace its `Y` publication slot with input slot zero | Metadata, `unpack`, full adapter execution, named JAX emission, and executable validation all report expected versus actual publication slots |
+| Missing publication | Clone `mixedVerdict`'s valid prepared plan; omit one real publication while leaving the remaining slots increasing | Rejected everywhere; this is the distinguishing fixture against the old increasing-subsequence rule |
+| Extra in-range publication | Reuse `NonlinCompileTest.pointwiseIsolatedPrepared`; insert the internal assign destination before the real nonlinear publication | Rejected by exact equality although both slots are in range and increasing; an out-of-range append is only a bounds fixture |
+| Reordered and duplicated publication | Reuse the corresponding `mixedVerdict` attacks in `ExecutableTest` | Both reject by exact sequence equality, not by separate ad hoc order predicates |
+| Unauthenticated names | Clone `mixedVerdict`'s valid slot sequence and change only materialized names | Deliberately accepted by structural validation; raw IR cannot authenticate names, and the test prevents the implementation from claiming otherwise |
+| Identity valid sibling | Use `zeroCoeffProg` unchanged | Every consumer accepts; metadata and runtime still publish `Y` |
+| Nonlinear publication sequence | Reuse `pointwiseIsolatedPrepared` and `axiswiseIsolatedPrepared` in `NonlinCompileTest`; strengthen them to assert publication slots `#[2]` and exclusion of internal slot `1`, not merely names and step kinds | Both raw assign-plus-nonlinearity pairs pass exact validation |
+| Scan and repeated-name sequence | Reuse `ScanCompileTest`'s two-state persistent-order fixture, its scratch-exclusion sibling, and `CompileTest.repeatPredPrepared` | Scan states publish in stored state order, scratch is absent, and repeated output names with distinct slots remain legal; unpack's later name insertion still wins |
+
+For precedence, extend the extra-required-input fixture with a missing environment binding, the
+input-as-output fixture with a wrong-sized result store, one unsupported-Boolean named JAX fixture
+with invalid bindings, and an executable candidate with both invalid aggregation and invalid
+bindings. Each must report the boundary's typed invalid-binding wrapper. Retain the existing
+out-of-range materialized fixture to prove `.materializedSlot (.slotOutOfRange ...)` precedes exact
+sequence comparison. Add a malformed-binding failure over `AdapterTest.warnProg` so warning
+preservation is observed with a nonempty warning list. The valid compiler-produced repeated-name
+sibling prevents an implementation from satisfying the attacks by rejecting duplicate names.
+
+**Prepared-binding mutation cycles — 10**
+
+1. Weaken exact required-input equality to subset or in-range membership.
+2. Replace exact publication equality with the old strictly-increasing-after-inputs approximation.
+3. Bypass the shared validator in `PreparedPlan.materializedSignatures`.
+4. Bypass it in `Adapter.pack`.
+5. Bypass it in direct `Adapter.unpack`.
+6. Bypass it in `generateForward`; exercise `generateNamed .einsumOnly` through the same public
+   route.
+7. Bypass it in `renderAffinePlanNamed`; exercise `generateNamed .affineReference` through the same
+   public route.
+8. Bypass it in direct `lowerCheckPlanToCandidate`.
+9. Bypass the validating plan-level input-constant renderer used by `EvalPlanSmoke`.
+10. Bypass it in executable validation.
+
+Run adapter/executable mutations against `Eval.Plan.AdapterTest`,
+`Eval.Plan.ExecutableTest`, `Eval.Plan.CompileTest`, `Eval.Plan.NonlinCompileTest`, and
+`Eval.Plan.ScanCompileTest`; run named-codegen mutations against
+`experiments.jax_bridge.EvalPlanCodegen` and the smoke driver target. Do not add redundant
+`runPreparedDense` or `generateNamed` mutations when those wrappers demonstrably delegate to the
+already-mutated public boundary. A mutation counts only when the named fixture fails under the
+mutation and passes after restoration. Record before/after hashes with the mutation runner.
+
+**Commit**
+
+`refactor(eval-plan): validate prepared bindings once`
+
+#### Completion gate
+
+- Execute the two work packages through separate implementation-agent contexts. After each package,
+  run its targeted tests and mutations, commit it, and give that complete commit to a fresh
+  read-only reviewer before starting the next package. Do not split either package into tiny
+  type-only and caller-only dispatches: their correctness is the end-to-end validator migration.
+- The two commits receive separate per-work-package reviews.
+- One final invariant matrix lists every public scheduled-program consumer and every public
+  prepared-binding consumer, the shared validator it calls, and the fixture proving the edge.
+- Run the scan-free and scan differential corpora after both work packages; the validators may
+  reject malformed authority attacks but must not alter accepted-program values.
+- Run the full `lake build`.
+- Run two independent whole-branch reviews with different lenses:
+  1. source/direct-evaluator parity, diagnostic precedence, and import layering;
+  2. prepared-binding authority, publication derivation, adapter/JAX bypasses, and mutation strength.
+- Integrate locally only when both reviews are clean or every finding is explicitly adjudicated.
+
 ## 4. Risk sizing
 
 | Task | Main risk | Fixtures | Mutation cycles | Reviewer rejection boundary |
@@ -617,12 +949,15 @@ failing and restored observation.
 | 4.3 | signature authority, top-level allocation, result metadata | 12 | 7 | Public top-level boundary can fail while raw execution is correct |
 | 4.4 | one missed scan `f64`, unsound write dtype, oracle self-mismatch | 8 | 11 | Scan semantics and write evidence are a separate soundness surface |
 | 4.5 | exact einsum axes, JAX context authority, unsupported semantics stamped as reference, stale boundary docs | 11 | 11 | Experimental backend evidence/docs can be rejected without rolling back Dense |
-| **Total** |  | **54** | **42** |  |
+| 4.6 | duplicated schedule/binding authority and consumer bypasses | 20 fixture groups | 14 | Either shared validator can be rejected without rolling back the other |
+| **Total** |  | **54 pre-4.6 fixtures plus 20 reused/extended/new 4.6 groups** | **56** |  |
 
-The fixture count, not expected production-line count, makes Tasks 4.2–4.4 high-review work. Do not
+The fixture count, not expected production-line count, makes Tasks 4.2–4.6 high-review work. Do not
 split tiny type additions from the checker/compiler that produces them; they have no independent
 failure mode. Do not merge Task 4.4 into Task 4.3: a reviewer can approve top-level Bool while
-rejecting scan write evidence or oracle independence.
+rejecting scan write evidence or oracle independence. Task 4.6 remains one closure task, but its two
+validator work packages are separate commits and review units because either can be rejected while
+the other stands.
 
 ## 5. Diagnostics, order, and mutation requirements
 
@@ -636,7 +971,15 @@ The following order claims each have a distinguishing fixture:
 - scan write dtype before rank/geometry: Task 4.4 fixture 7;
 - exact einsum operand/output axes rather than same-rank in-range substitutes: Task 4.5 fixture 10;
 - JAX outer step index and destination-before-source support checks: Task 4.5 fixtures 6–7;
-- original all-factor index for Iverson remains pinned by Task 4.5 fixture 5.
+- original all-factor index for Iverson remains pinned by Task 4.5 fixture 5;
+- source read ranks before declared destination ranks: Task 4.6's combined read/write-rank fixture;
+- scan base before recurrence destination ranks: Task 4.6's dual-invalid scan fixture;
+- shared scheduled-program checks before preparation/evaluation: Task 4.6's out-of-order direct
+  fixture with a same-shaped caller value;
+- prepared-binding validity before caller environment, result-store, or JAX support failures:
+  Task 4.6's three dual-invalid binding fixtures;
+- exact publication sequence rather than increasing-subsequence admission: Task 4.6's missing
+  middle publication fixture.
 
 All failure assertions compare full constructors and payloads, not only `.isError`. Any new index is an
 index into the original unfiltered source array. No new diagnostic in this plan needs a declaration
@@ -700,21 +1043,26 @@ before direct test-file checks so stale `.olean` files cannot produce false evid
 ### Targeted validation
 
 1. Build the edited production modules:
-   `LeanNCD.DSL.Pipeline.Structural`, `LeanNCD.Eval.Contract`,
+   `LeanNCD.DSL.Pipeline.Structural`, `LeanNCD.DSL.Pipeline.ScheduledValidation`,
+   `LeanNCD.DSL.Pipeline.Lowering`,
+   `LeanNCD.Eval.Eval`, `LeanNCD.Eval.Contract`,
    `LeanNCD.Eval.Plan.Check`, `LeanNCD.Eval.Plan.Dense`,
    `LeanNCD.Eval.Plan.Signature`, `LeanNCD.Eval.Plan.Prepared`,
-   `LeanNCD.Eval.Plan.Compile`, `LeanNCD.Eval.Plan.Scan`,
+   `LeanNCD.Eval.Plan.Adapter`, `LeanNCD.Eval.Plan.Compile`, `LeanNCD.Eval.Plan.Scan`,
    `LeanNCD.Eval.Plan.Executable`.
 2. Run the affected default test modules:
    `DSL.Pipeline.StructuralTest`, `Eval.ContractTest`,
    `Eval.Plan.KernelCheckTest`, `Eval.Plan.KernelDenseTest`,
    `Eval.Plan.NonlinCheckTest`, `Eval.Plan.NonlinDenseTest`,
+   `Eval.Plan.NonlinCompileTest`,
    `Eval.Plan.SignatureTest`, `Eval.Plan.CompileTest`,
    `Eval.Plan.AdapterTest`, `Eval.Plan.ScanCompileTest`,
    `Eval.Plan.ScanTest`, `Eval.PropertyOracle.ScanUnroll`,
    `Eval.PropertyOracle.ScanOracle`, `Eval.Plan.DifferentialTest`,
    and `Eval.Plan.ExecutableTest`.
 3. Build non-default `JaxExperiment`, then directly elaborate
+   `experiments/jax_bridge/EvalPlanCodegen.lean`,
+   `experiments/jax_bridge/EvalPlanSmoke.lean`, and
    `experiments/jax_bridge/EvalPlanAffineCorpus.lean`. Run
    `experiments/jax_bridge/run-evalplan-affine.sh` and
    `experiments/jax_bridge/run-evalplan-affine-corpus.sh`; supported all-real corpus behavior must
@@ -735,11 +1083,13 @@ Run two independent reviews over the entire branch, not task diffs:
 1. **Semantic parity and boundary lens:** source declaration authority, mixed source/destination
    dtype policy, authoritative external-name derivation, Boolean `min`/`max` and identities,
    non-binary Float behavior, top-level versus scan parity, result signature visibility, independent
-   oracle separation, and Acset/Bridge non-claims.
+   oracle separation, shared scheduled-program validation, destination-rank/read-rank precedence,
+   producer order at both direct boundaries, and Acset/Bridge non-claims.
 2. **Soundness and fail-loud lens:** checker private-constructor evidence, all scan signature
    allocation/capture/write sites, write dtype order and locators, unchanged geometry/causality
    siblings, direct-schedule source invariants, exact einsum operand/output recomputation, JAX
-   support table, original factor/step indices, and mutation-test integrity.
+   support table, original factor/step indices, exact prepared publication derivation,
+   adapter/metadata/named-JAX/executable consumer coverage, and mutation-test integrity.
 
 Any real finding is fixed, targeted mutations rerun, full build rerun, and both lenses repeated or
 explicitly adjudicated before landing.
