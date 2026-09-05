@@ -54,6 +54,20 @@ def evalPlain (decls : List Decl) (env : HashMap String DenseTensor) (sizes : Ha
     `.axis`/`.iter` declarations are a separate namespace and are skipped by `buildDeclEnv`, so an
     axis sharing a predicate's name is still legal here and still resolves to the predicate.
 
+    **Predicate-output invariants likewise.** A `predicate`-declared destination carries {0,1}
+    values, so its statement may carry neither a nonlinearity (`applyNonlin` would map `relu`/
+    `softmax`/`normalize` over Boolean data) nor a non-`sum` aggregation (`combineFor` selects the
+    Boolean `(∧, ∃)` algebra from the DECLARATION, so a `.max`/`.min` `agg` is silently ignored
+    rather than honoured). The source pipeline rules both out (`checkDtypes`), and so does
+    `prepareEvalPlan`'s Step 0 — but this boundary used to EXECUTE them, so the same malformed
+    schedule was a typed `sourceInvariant (.predicateNonlin/.predicateAgg)` on the checked backend
+    and a silently-wrong answer here. The shared `checkPredicateOutputs` (`Structural.lean`) — the
+    same rule AND the same traversal both direct entries use — therefore runs here too, over
+    `sched.stmts` as presented: every `.plain` statement and every `.scan` node's base and
+    recurrence statements, in source order. It runs AFTER `buildDeclEnv` (a duplicate declaration
+    makes "which declaration is `Y`" ambiguous, so the predicate obligation is not even
+    well-defined until the env is) and BEFORE size inference and execution, exactly as in Step 0.
+
     **Pinned sizes likewise.** `sched.explicitSizes` is the OTHER cached pipeline product, and size
     inference seeds from it: a seeded UID is treated as already known (`inferAxisSizesCore`'s
     `let mut sizes := seed`), so a free LHS axis that no read constrains takes its extent from the
@@ -68,7 +82,10 @@ def evalScheduled (sched : ScheduledProgram) (inputs : HashMap String DenseTenso
     Except EvalFailure EvalReport :=
   match buildDeclEnv sched.decls with
   | .error e => .error { error := .compile e, warnings := [] }
-  | .ok _ =>
+  | .ok declEnv =>
+  match checkPredicateOutputs declEnv sched.stmts with
+  | .error e => .error { error := .compile e, warnings := [] }
+  | .ok () =>
   -- gather ALL underlying stmts (plain + scan base/recur) to infer axis sizes from the inputs:
   let allStmts : List Stmt := sched.stmts.flatMap (fun
     | .plain s => [s] | .scan _ _ b r _ => b ++ r | .scanPre _ _ _ => [])

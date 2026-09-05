@@ -2293,4 +2293,114 @@ run_cmd do
           unless DenseTensor.approxEq S { shape := [3], data := #[1.0, 1.0, 1.0] } do
             throwError s!"review fixtures 11-13: wrong result {repr S.data}"
 
+-- Fixtures 14-19: the outer STORE's arity, the other half of the same boundary. The signature tie
+-- above pins WHICH table the slots are indexed into; nothing pinned that the store actually HAS
+-- those slots. `outerSigsBool` describes three, and every slot this function touches — each
+-- capture's `.external slot`, each state's `destSlot` — is an index into it, so a store of length 2
+-- sent the final destination loop's `Array.set! 2` out of range: `Array.set!` emits a panic message
+-- and returns the array UNCHANGED, so the run reported `.ok` with `S` simply absent from the result.
+-- The required length is now derived from `c.sigs` (the stored evidence, never the caller's `sigs`
+-- argument) and checked before anything is allocated, read, or committed.
+--
+-- Equality is EXACT, in both directions and for the same reason as the tie: `runDensePlan` builds
+-- the store it hands here at exactly `raw.tensorSigs.size` and checks its own input array with the
+-- same exact `arityMismatch` rule, so a store of any other length was built against a different
+-- table. Fixtures are ordered short → empty → long → tie-precedence → the two acceptance siblings.
+
+/-- Too SHORT by one: slots 0 and 1 exist, the state's destination slot 2 does not. The exact store
+    that reached `Array.set!` out of range and still returned `.ok`. -/
+def outerStoreShort : Array DenseTensor := outerStoreBoolLinear.take 2
+
+/-- Empty: the degenerate short case, where the failure would have been a wrong VALUE rather than a
+    panic — `getD` resolves the base capture's slot 0 to an empty placeholder tensor, which
+    `runDenseBlock` then rejects as a shape mismatch against the block's own signature. Rejected
+    here instead, with the same store-level diagnosis as any other wrong length. -/
+def outerStoreEmpty : Array DenseTensor := #[]
+
+/-- Too LONG by one: every real slot is present and correct, plus a fourth the table never names. -/
+def outerStoreLong : Array DenseTensor :=
+  outerStoreBoolLinear.push { shape := [], data := #[0.0] }
+
+/-- Right length, wrong per-tensor shape: slot 0 (the base block's captured seed, declared `#[]`)
+    carries a `[2]` tensor. The arity check must not swallow the per-tensor checks that already
+    existed — this still reaches `runDenseBlock`'s own `shapeMismatch`, in the BLOCK's slot
+    numbering (its input slot 0), not a store-level verdict. -/
+def outerStoreBadSeedShape : Array DenseTensor :=
+  outerStoreBoolLinear.set! 0 { shape := [2], data := #[1.0, 1.0] }
+
+-- Each fixture is its OWN `run_cmd` (a batched block aborts at its first `throwError`, which would
+-- let one regression mask every fixture after it), re-deriving `checked` from the same donor.
+
+-- 14: one slot short — the store the panic came from.
+run_cmd do
+  match checkScanPlan outerSigsBool linearScanBool with
+  | .error e => throwError s!"review fixture 14: the donor was rejected: {repr e}"
+  | .ok checked =>
+      match runDenseScan outerSigsBool checked outerStoreShort with
+      | .ok r => throwError s!"review fixture 14: a two-slot store was accepted: {repr r.size}"
+      | .error e =>
+          unless e == .storeArityMismatch 3 2 do
+            throwError s!"review fixture 14: wrong error {repr e}"
+
+-- 15: empty store.
+run_cmd do
+  match checkScanPlan outerSigsBool linearScanBool with
+  | .error e => throwError s!"review fixture 15: the donor was rejected: {repr e}"
+  | .ok checked =>
+      match runDenseScan outerSigsBool checked outerStoreEmpty with
+      | .ok _ => throwError "review fixture 15: an empty store was accepted"
+      | .error e =>
+          unless e == .storeArityMismatch 3 0 do
+            throwError s!"review fixture 15: wrong error {repr e}"
+
+-- 16: one slot too many.
+run_cmd do
+  match checkScanPlan outerSigsBool linearScanBool with
+  | .error e => throwError s!"review fixture 16: the donor was rejected: {repr e}"
+  | .ok checked =>
+      match runDenseScan outerSigsBool checked outerStoreLong with
+      | .ok _ => throwError "review fixture 16: a four-slot store was accepted"
+      | .error e =>
+          unless e == .storeArityMismatch 3 4 do
+            throwError s!"review fixture 16: wrong error {repr e}"
+
+-- 17: PRECEDENCE, pinned deterministically — a substitute table AND a wrong-length store report the
+-- signature tie, because the required length is derived from the stored table and a caller
+-- disagreeing about that table has not yet earned a verdict about its store.
+run_cmd do
+  match checkScanPlan outerSigsBool linearScanBool with
+  | .error e => throwError s!"review fixture 17: the donor was rejected: {repr e}"
+  | .ok checked =>
+      match runDenseScan outerSigsBoolAsReal checked outerStoreLong with
+      | .ok _ => throwError "review fixture 17: table + store attack was accepted"
+      | .error e =>
+          unless e == .signatureContextMismatch outerSigsBool outerSigsBoolAsReal do
+            throwError s!"review fixture 17: the store arity check pre-empted the signature tie: {repr e}"
+
+-- 18: the per-tensor shape checks survive, at the BLOCK's own slot numbering.
+run_cmd do
+  match checkScanPlan outerSigsBool linearScanBool with
+  | .error e => throwError s!"review fixture 18: the donor was rejected: {repr e}"
+  | .ok checked =>
+      match runDenseScan outerSigsBool checked outerStoreBadSeedShape with
+      | .ok _ => throwError "review fixture 18: a mis-shaped seed was accepted"
+      | .error e =>
+          unless e == .shapeMismatch 0 #[] [2] do
+            throwError s!"review fixture 18: wrong error {repr e}"
+
+-- 19: the acceptance sibling — the honest store of the honest length still runs to the Boolean
+-- history, with the store's own length unchanged.
+run_cmd do
+  match checkScanPlan outerSigsBool linearScanBool with
+  | .error e => throwError s!"review fixture 19: the donor was rejected: {repr e}"
+  | .ok checked =>
+      match runDenseScan outerSigsBool checked outerStoreBoolLinear with
+      | .error e => throwError s!"review fixture 19: the honest store was rejected: {repr e}"
+      | .ok result =>
+          unless result.size == 3 do
+            throwError s!"review fixture 19: store length changed: {repr result.size}"
+          let S := result.getD 2 { shape := [], data := #[] }
+          unless DenseTensor.approxEq S { shape := [3], data := #[1.0, 1.0, 1.0] } do
+            throwError s!"review fixture 19: wrong result {repr S.data}"
+
 end LeanNCD.Eval.Plan.ScanTest

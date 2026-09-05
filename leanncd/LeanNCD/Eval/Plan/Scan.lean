@@ -602,10 +602,24 @@ private def commitWrite (target : DenseTensor) (w : StateWriteMap) (blockStore :
     array is only guaranteed order-INSENSITIVE-valid by `checkCaptures` (every input captured exactly
     once, as a set); nothing ties its storage order to `block.inputs`' sorted order, so a caller
     supplying captures in any other order would otherwise have this function silently bind the wrong
-    tensor to the wrong `runDenseBlock` input position. -/
+    tensor to the wrong `runDenseBlock` input position.
+
+    **Store arity.** The outer store's LENGTH is checked against `c.sigs.size` — the stored table,
+    the same authority the state shapes come from — immediately after the signature tie and BEFORE
+    anything is allocated, read, or committed. Every slot this function touches (each capture's
+    `.external slot`, each state's `destSlot`) is an index INTO that table, so a store of any other
+    length is not a store for this plan: a shorter one sent the final destination loop's
+    `Array.set!` out of range, which emits a panic message and returns the array UNCHANGED — an
+    `.ok` result whose destination slot was never written. Equality is exact rather than
+    "long enough", matching both `runDensePlan`'s `arityMismatch` boundary (whose own store is
+    built at exactly `raw.tensorSigs.size` and handed here unchanged) and the signature tie above:
+    a differently-sized store is evidence the caller built it against a different table, which is
+    the same lie the tie rejects. -/
 def runDenseScan (sigs : Array TensorSignature) (c : CheckedScanPlan) (outerStore : Array DenseTensor) :
     Except PositionalInputError (Array DenseTensor) := do
   unless sigs == c.sigs do throw (.signatureContextMismatch c.sigs sigs)
+  unless outerStore.size == c.sigs.size do
+    throw (.storeArityMismatch c.sigs.size outerStore.size)
   let raw := c.raw
   let mut states : Array DenseTensor := raw.states.map (fun st =>
     let sig := c.sigs.getD st.destSlot { shape := #[], dtype := .f64 }

@@ -1071,7 +1071,9 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
   -- tensor-bearing twice, a predicate output carrying a nonlinearity or a non-sum aggregation) is
   -- not a valid-but-unsupported backend capability, so it must not surface as one. Per-statement
   -- order is source order and, within a statement, nonlinearity before aggregation — exactly
-  -- `checkDtypes`'s own order, because it is the same shared `checkPredicateOutput` rule.
+  -- `checkDtypes`'s own order, because it is the same shared `checkPredicateOutput` rule, reached
+  -- through the shared `checkPredicateOutputs` traversal `Eval.evalScheduled` also uses (so the two
+  -- direct entries agree on WHICH statements carry the obligation, not merely on the rule).
   let declEnv ← match buildDeclEnv sched.decls with
     | .ok e    => pure e
     | .error e => throw { cause := .sourceInvariant e, warnings := [] }
@@ -1089,15 +1091,9 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
   -- is dropped rather than honored — leaving that axis to ordinary inference, which fails loud if it
   -- cannot be determined.
   let explicitSizes : HashMap UID Nat := declaredAxisSizes sched.decls
-  for sc in sched.stmts do
-    let sourceStmts : List Stmt := match sc with
-      | .plain s => [s]
-      | .scan _ _ base recur _ => base ++ recur
-      | .scanPre .. => []   -- carries no `Stmt` at all; Step A rejects it
-    for s in sourceStmts do
-      match checkPredicateOutput declEnv s with
-      | .ok ()   => pure ()
-      | .error e => throw { cause := .sourceInvariant e, warnings := [] }
+  match checkPredicateOutputs declEnv sched.stmts with
+  | .ok ()   => pure ()
+  | .error e => throw { cause := .sourceInvariant e, warnings := [] }
   -- Statement ORDER is the third source invariant, and the one `orderedExtNames` below silently
   -- depends on: "reads minus produced" is order-INSENSITIVE, so a read whose producer comes LATER
   -- is classified internal (no input slot, no signature demanded) while `resolveSource`'s `getD`

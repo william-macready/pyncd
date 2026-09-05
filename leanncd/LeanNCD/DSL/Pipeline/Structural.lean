@@ -783,6 +783,32 @@ def checkPredicateOutput (env : DeclEnv) (s : Stmt) : Except CompileError Unit :
       | _ => pure ()
   | .recurMorphism _ _ _ => pure ()
 
+/-- `checkPredicateOutput` lifted to a whole SCHEDULED statement list — the shape both direct
+    (`ScheduledProgram`-accepting) entries meet: `Eval.Plan.prepareEvalPlan`'s Step 0 and
+    `Eval.evalScheduled`. The source pipeline reaches the rule through `checkDtypes` instead,
+    because it runs before `groupScans` has produced any `ScanStmt` at all.
+
+    The TRAVERSAL is shared for the same reason the per-statement rule is: the two direct entries
+    each held their own copy of "which statements does a `ScanStmt` contain", and one of them
+    (`evalScheduled`) held no copy at all — so a predicate destination carrying `relu` or a
+    `.max`/`.min` aggregation was rejected by the checked backend and silently EXECUTED by the
+    reference evaluator, with `applyNonlin`/`combineFor` doing exactly what the invariant forbids.
+
+    Order is source order over `stmts`, and within a `.scan` node its `base` list before its
+    `recur` list — `ScheduledProgram.stmts`' own order, not a re-derived one — so both entries
+    report the same statement's violation, and within one statement `checkPredicateOutput`'s own
+    nonlinearity-before-aggregation precedence decides. `.scanPre` carries no `Stmt` and is
+    skipped here; each entry rejects it on its own terms (capability preflight, respectively
+    `unsupportedRecurMorphism`). -/
+def checkPredicateOutputs (env : DeclEnv) (stmts : List ScanStmt) : Except CompileError Unit := do
+  for sc in stmts do
+    let sourceStmts : List Stmt := match sc with
+      | .plain s => [s]
+      | .scan _ _ base recur _ => base ++ recur
+      | .scanPre .. => []
+    for s in sourceStmts do
+      checkPredicateOutput env s
+
 def checkDtypes (rp : ResolvedProgram) : FreshM ResolvedProgram := do
   for s in rp.stmts do
     -- Check A: axis kinds on LHS slots

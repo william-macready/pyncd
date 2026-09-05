@@ -55,6 +55,19 @@ inductive PositionalInputError
       inside `commitWrite` with an `.ok` result still returned. Carries both tables so the caller can
       see which slot disagrees. -/
   | signatureContextMismatch (expected actual : Array TensorSignature)
+  /-- A worker was handed a positional outer store whose LENGTH is not the one its checked
+      signature context describes. Raised by `runDenseScan` (`Scan.lean`), where the store is both
+      read (external captures) and WRITTEN (each state's destination slot), and the destination
+      slots are facts about `CheckedScanPlan.sigs` — so a store shorter than that table drove
+      `Array.set!` out of range in the final destination loop: a `lean_array_set_panic` message with
+      the ORIGINAL store still returned as `.ok`, i.e. a successful-looking run whose destination is
+      simply absent. `expected` is `c.sigs.size` (derived from the stored evidence, never from the
+      caller's arguments); equality is exact, matching `runDensePlan`'s own `arityMismatch` boundary
+      and the `signatureContextMismatch` tie beside it — a store built to a different length was
+      built against a different table, which is the very thing that tie exists to reject. Distinct
+      from `arityMismatch` (a positional INPUT array against `inputSlots`) and from `missingSlot`
+      (one slot absent, discovered during a read). -/
+  | storeArityMismatch (expected actual : Nat)
   | unaryDomain     (op : UnaryDomainOp) (valueBits : UInt64) (slot : TensorSlot)
   -- A positional Iverson predicate leaf's coefficient width disagrees with the term's iteration
   -- basis at RUNTIME. Unreachable for any plan `checkAssign` admits (its `.iverson` width check

@@ -810,4 +810,252 @@ run_cmd do
   | none => pure ()
   | some f => throwError s!"axis-shadow sibling rejected by prepareEvalPlan: {renderCompileCause f.cause}"
 
+-- ── Task 4 whole-branch review — predicate-output invariants at the DIRECT evaluator ──
+--
+-- A `predicate`-declared destination carries {0,1} values, so its statement may carry neither a
+-- nonlinearity nor a non-`sum` aggregation. `checkDtypes` rules both out in the source pipeline and
+-- `prepareEvalPlan`'s Step 0 rules them out for the checked backend — but `evalScheduled`, the other
+-- boundary accepting a hand-built `ScheduledProgram`, used to EXECUTE them: `applyNonlin` mapped
+-- `relu` over Boolean data, and `combineFor` selected the Boolean algebra from the DECLARATION while
+-- the statement's `.max`/`.min` `agg` was silently ignored. Same schedule, typed rejection on one
+-- backend and a silent answer on the other. Both entries now reach the rule through the SAME shared
+-- traversal (`checkPredicateOutputs`, `Structural.lean`), so the fixtures below assert parity, not
+-- merely "both reject".
+--
+-- The donor is the section above's: `Y[i] := A[i] + B[i]` with `A = B = [1, 1]`, where the readings
+-- genuinely differ (real sum-product `2.0`, Boolean `(∧, ∃)` `1.0`), so the VALID siblings prove the
+-- new validation did not cost the Boolean semantics it protects.
+
+/-- The donor statement, parameterized by exactly the two fields the invariant constrains. -/
+def predStmt (dest : String) (nl : Nonlin) (ag : AggOp) : ScanStmt :=
+  .plain (.assign dest [.free axIDup]
+    { body := { terms := [ { factors := [.read "A" [.axis axIDup]] }
+                         , { factors := [.read "B" [.axis axIDup]] } ] }
+    , nonlin := nl, agg := ag })
+
+/-- `predicate Y(i)` plus the donor statement. `Y` is the only tensor-bearing declaration besides the
+    two inputs, so `buildDeclEnv` succeeds and every rejection below is the per-statement rule's. -/
+def predSchedWith (nl : Nonlin) (ag : AggOp) : ScheduledProgram :=
+  { decls := [.axis axIDup (some 2), .tensor "A" [axIDup], .tensor "B" [axIDup]
+             , .predicate "Y" [axIDup]]
+  , stmts := [predStmt "Y" nl ag]
+  , env := {}, extNames := insert "A" (insert "B" (∅ : Finset String))
+  , explicitSizes := (({} : HashMap UID Nat).insert axIDup.uid 2) }
+
+/-- Both backends reject `sched` with the SAME `CompileError`: the reference evaluator nests it in
+    `EvalError.compile`, the checked backend in `PlanCompileCause.sourceInvariant`. Neither may carry
+    warnings — both checks run before any warning can accrue. -/
+def assertPredicateParity (label : String) (sched : ScheduledProgram) (expected : CompileError) :
+    Lean.Elab.Command.CommandElabM Unit := do
+  match evalScheduled sched dupDeclInputs with
+  | .ok report => throwError s!"{label}: evalScheduled accepted it: {repr (report.env.get? "Y")}"
+  | .error failure =>
+      match failure.error with
+      | .compile c =>
+          unless c == expected do throwError s!"{label}: wrong reference CompileError: {repr c}"
+      | e => throwError s!"{label}: wrong reference cause: {e}"
+      unless failure.warnings == [] do
+        throwError s!"{label}: reference failure carried warnings: {failure.warnings}"
+  match causeOf (prepareEvalPlan sched dupDeclSig) with
+  | none => throwError s!"{label}: prepareEvalPlan accepted it"
+  | some f =>
+      unless f.cause == .sourceInvariant expected do
+        throwError s!"{label}: wrong checked cause: {renderCompileCause f.cause}"
+      unless f.warnings == [] do
+        throwError s!"{label}: checked failure carried warnings: {f.warnings}"
+
+-- Each fixture is its OWN `run_cmd`: a batched block aborts at its first `throwError`, which would
+-- let one regression mask every fixture after it in the same block.
+
+-- A nonlinearity on a predicate destination: the `relu` case named in the finding.
+run_cmd do
+  assertPredicateParity "relu on a predicate output"
+    (predSchedWith (.pointwise .relu) .sum) (.predicateNonlin "Y")
+
+-- …and an axiswise one, so the rule is not read as "pointwise only".
+run_cmd do
+  assertPredicateParity "softmax on a predicate output"
+    (predSchedWith (.axiswise .softmax none) .sum) (.predicateNonlin "Y")
+
+-- A non-`sum` aggregation, both directions of the finding's `.max`/`.min`.
+run_cmd do
+  assertPredicateParity "max aggregation on a predicate output"
+    (predSchedWith .identity .max) (.predicateAgg "Y")
+
+run_cmd do
+  assertPredicateParity "min aggregation on a predicate output"
+    (predSchedWith .identity .min) (.predicateAgg "Y")
+
+-- PRECEDENCE, within one statement: both invariants violated ⇒ nonlinearity is reported, on both
+-- backends. Task 4.1's order, unchanged, because it is literally the same `checkPredicateOutput`.
+run_cmd do
+  assertPredicateParity "both invariants violated"
+    (predSchedWith (.pointwise .relu) .max) (.predicateNonlin "Y")
+
+-- PRECEDENCE, across phases: a duplicate tensor-bearing declaration AND a predicate violation in the
+-- same schedule reports the DECLARATION failure. `buildDeclEnv` runs first for a reason — until it
+-- succeeds, "which declaration is `Y`" is ambiguous, so the predicate obligation is not yet
+-- well-defined.
+def predDupSched : ScheduledProgram :=
+  { predSchedWith (.pointwise .relu) .max with
+      decls := [.axis axIDup (some 2), .tensor "A" [axIDup], .tensor "B" [axIDup]
+               , .tensor "Y" [axIDup], .predicate "Y" [axIDup]] }
+
+run_cmd do
+  assertPredicateParity "duplicate declaration before predicate violation"
+    predDupSched (.duplicateTensorDecl "Y")
+
+-- PRECEDENCE, over size inference and execution: the violating statement reads `C`, which no input
+-- supplies. Without the check this schedule fails somewhere in sizing/execution instead; with it,
+-- the source invariant is reported first, on both backends.
+def predUnreadableSched : ScheduledProgram :=
+  { predSchedWith (.pointwise .relu) .sum with
+      stmts := [.plain (.assign "Y" [.free axIDup]
+        { body := { terms := [{ factors := [.read "C" [.axis axIDup]] }] }
+        , nonlin := .pointwise .relu })] }
+
+run_cmd do
+  assertPredicateParity "predicate violation before sizing/execution"
+    predUnreadableSched (.predicateNonlin "Y")
+
+-- STATEMENT ORDER: two predicate destinations, the FIRST valid and the second violating ⇒ the second
+-- is reported (the loop does not stop at the first statement), and with both violating ⇒ the FIRST is
+-- reported (it does not run to the last one either). `Z`'s aggregation distinguishes the two.
+def predTwoStmtSched (firstNl : Nonlin) : ScheduledProgram :=
+  { predSchedWith .identity .sum with
+      decls := [.axis axIDup (some 2), .tensor "A" [axIDup], .tensor "B" [axIDup]
+               , .predicate "Y" [axIDup], .predicate "Z" [axIDup]]
+    , stmts := [predStmt "Y" firstNl .sum, predStmt "Z" .identity .max] }
+
+run_cmd do
+  assertPredicateParity "second statement's violation is reached"
+    (predTwoStmtSched .identity) (.predicateAgg "Z")
+
+run_cmd do
+  assertPredicateParity "first statement's violation wins"
+    (predTwoStmtSched (.pointwise .relu)) (.predicateNonlin "Y")
+
+-- The VALID plain sibling: identity nonlinearity, `sum` aggregation, predicate destination. Accepted
+-- by both, and still the Boolean reading — `1.0`, not the real `2.0`.
+run_cmd do
+  match evalScheduled (predSchedWith .identity .sum) dupDeclInputs with
+  | .error failure =>
+      throwError s!"valid predicate sibling rejected by evalScheduled: {failure.error}"
+  | .ok report =>
+      match report.env.get? "Y" with
+      | none => throwError "valid predicate sibling: Y missing from the result"
+      | some y =>
+          unless y.shape == [2] && y.data == #[1.0, 1.0] do
+            throwError s!"valid predicate sibling lost the Boolean reading: {repr y.data}"
+  match causeOf (prepareEvalPlan (predSchedWith .identity .sum) dupDeclSig) with
+  | none => pure ()
+  | some f => throwError s!"valid predicate sibling rejected by prepareEvalPlan: {renderCompileCause f.cause}"
+
+-- …and the non-predicate control: the SAME statement fields on a `tensor`-declared destination are
+-- unconstrained. `relu` of the real sum `2.0` is `2.0`, so the rule really is keyed on the
+-- declaration and not on the nonlinearity alone.
+def predRealDestSched : ScheduledProgram :=
+  { predSchedWith (.pointwise .relu) .sum with
+      decls := [.axis axIDup (some 2), .tensor "A" [axIDup], .tensor "B" [axIDup]
+               , .tensor "Y" [axIDup]] }
+
+run_cmd do
+  match evalScheduled predRealDestSched dupDeclInputs with
+  | .error failure => throwError s!"real-destination control rejected: {failure.error}"
+  | .ok report =>
+      match report.env.get? "Y" with
+      | none => throwError "real-destination control: Y missing from the result"
+      | some y =>
+          unless y.shape == [2] && y.data == #[2.0, 2.0] do
+            throwError s!"real-destination control: {repr y.data}"
+
+-- ── The same invariant inside a `.scan` node (both halves of `base ++ recur`) ──
+--
+-- `checkPredicateOutputs` flattens a `.scan` into its base list followed by its recurrence list, so
+-- both halves carry the obligation and their ORDER is fixed. The donor is a Boolean scan:
+-- `predicate S(j, l)`, `S[j,0] := X[j]`, `S[j,l+1] := S[j,l] + A[j]` — where the readings again
+-- differ, the real one growing (1, 2, 3) and the Boolean one saturating (1, 1, 1).
+def axJScan : AxisSpec := { name := "j", uid := 11, kind := .nat }
+def axLScan : AxisSpec := { name := "l", uid := 12, kind := .nat }
+
+def scanBase (nl : Nonlin) (ag : AggOp) : Stmt :=
+  .assign "S" [.free axJScan, .iterAt axLScan 0]
+    { body := { terms := [{ factors := [.read "X" [.axis axJScan]] }] }, nonlin := nl, agg := ag }
+
+def scanRecur (nl : Nonlin) (ag : AggOp) : Stmt :=
+  .assign "S" [.free axJScan, .iterNext axLScan]
+    { body := { terms := [ { factors := [.read "S" [.axis axJScan, .axis axLScan]] }
+                         , { factors := [.read "A" [.axis axJScan]] } ] }
+    , nonlin := nl, agg := ag }
+
+def scanPredSchedWith (baseNl : Nonlin) (baseAg : AggOp) (recurNl : Nonlin) (recurAg : AggOp) :
+    ScheduledProgram :=
+  { decls := [.axis axJScan (some 1), .iter axLScan 3, .tensor "X" [axJScan]
+             , .tensor "A" [axJScan], .predicate "S" [axJScan, axLScan]]
+  , stmts := [.scan "S" [axLScan] [scanBase baseNl baseAg] [scanRecur recurNl recurAg] false]
+  , env := {}, extNames := insert "X" (insert "A" (∅ : Finset String))
+  , explicitSizes := ((({} : HashMap UID Nat).insert axJScan.uid 1).insert axLScan.uid 3) }
+
+def scanPredInputs : HashMap String DenseTensor :=
+  (({} : HashMap String DenseTensor).insert "X" (⟨[1], #[1.0]⟩ : DenseTensor)).insert
+    "A" (⟨[1], #[1.0]⟩ : DenseTensor)
+
+def assertScanPredicateParity (label : String) (sched : ScheduledProgram) (expected : CompileError) :
+    Lean.Elab.Command.CommandElabM Unit := do
+  match evalScheduled sched scanPredInputs with
+  | .ok report => throwError s!"{label}: evalScheduled accepted it: {repr (report.env.get? "S")}"
+  | .error failure =>
+      match failure.error with
+      | .compile c =>
+          unless c == expected do throwError s!"{label}: wrong reference CompileError: {repr c}"
+      | e => throwError s!"{label}: wrong reference cause: {e}"
+      unless failure.warnings == [] do
+        throwError s!"{label}: reference failure carried warnings: {failure.warnings}"
+  match causeOf (prepareEvalPlan sched (InputSignature.ofDenseInputs scanPredInputs)) with
+  | none => throwError s!"{label}: prepareEvalPlan accepted it"
+  | some f =>
+      unless f.cause == .sourceInvariant expected do
+        throwError s!"{label}: wrong checked cause: {renderCompileCause f.cause}"
+
+-- base statement alone violating
+run_cmd do
+  assertScanPredicateParity "scan base: relu on a predicate state"
+    (scanPredSchedWith (.pointwise .relu) .sum .identity .sum) (.predicateNonlin "S")
+
+run_cmd do
+  assertScanPredicateParity "scan base: max aggregation on a predicate state"
+    (scanPredSchedWith .identity .max .identity .sum) (.predicateAgg "S")
+
+-- recurrence statement alone violating — the base list is valid, so this is reached only because
+-- the traversal continues past it.
+run_cmd do
+  assertScanPredicateParity "scan recurrence: relu on a predicate state"
+    (scanPredSchedWith .identity .sum (.pointwise .relu) .sum) (.predicateNonlin "S")
+
+run_cmd do
+  assertScanPredicateParity "scan recurrence: min aggregation on a predicate state"
+    (scanPredSchedWith .identity .sum .identity .min) (.predicateAgg "S")
+
+-- ORDER within the node: base violates the AGGREGATION rule, recurrence the NONLINEARITY rule.
+-- `base ++ recur` reports `predicateAgg`; a recurrence-first traversal would report
+-- `predicateNonlin`, so this fixture pins the order and not merely the coverage.
+run_cmd do
+  assertScanPredicateParity "scan base is checked before the recurrence"
+    (scanPredSchedWith .identity .max (.pointwise .relu) .sum) (.predicateAgg "S")
+
+-- The VALID scan sibling: `evalScheduled` runs it to the saturating Boolean history `[1, 1, 1]` —
+-- the real reading would be `[1, 2, 3]`. (The CHECKED backend is not asserted here: a Boolean scan's
+-- acceptance is `compileScan`'s own question, and this fixture is about the reference evaluator's
+-- new validation not costing a legal program. The rejection fixtures above already pin parity, and
+-- they reach `sourceInvariant` before any scan compilation happens.)
+run_cmd do
+  match evalScheduled (scanPredSchedWith .identity .sum .identity .sum) scanPredInputs with
+  | .error failure => throwError s!"valid Boolean scan sibling rejected: {failure.error}"
+  | .ok report =>
+      match report.env.get? "S" with
+      | none => throwError "valid Boolean scan sibling: S missing from the result"
+      | some s =>
+          unless s.shape == [1, 3] && s.data == #[1.0, 1.0, 1.0] do
+            throwError s!"valid Boolean scan sibling lost the Boolean reading: {repr s.shape} {repr s.data}"
+
 end LeanNCD.Eval.Plan.CompileTest
