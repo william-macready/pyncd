@@ -289,4 +289,90 @@ run_cmd do
     | .error _ => Lean.logInfo "S9 prepare failed"
   | _ => Lean.logInfo "S9 compile failed"
 
+-- SPIKE 10 (fix round 1, row D5) — `PreparedPlan.warnings` is unvalidated: can a hand-built plan
+-- drop a real preparation warning, or invent one that never happened?
+private def warnProg : TLProgram := tlprog!{
+  axis i : ℕ = 4
+  axis j : ℕ = 3
+  Y[i, j] := X[2 * i + j]
+}
+
+private def warnInputs : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "X" ⟨[6], #[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]⟩
+
+run_cmd do
+  match warnProg.compileToScheduled.run 0 with
+  | .error e _ => Lean.logInfo s!"S10 compile failed: {repr e}"
+  | .ok sched _ =>
+    match prepareEvalPlan sched (InputSignature.ofDenseInputs warnInputs) with
+    | .error _ => Lean.logInfo "S10 prepare failed"
+    | .ok prepared =>
+      Lean.logInfo s!"S10 producer warnings count: {prepared.warnings.length} \
+[{String.intercalate " | " (prepared.warnings.map toString)}]"
+      let silenced : PreparedPlan := { prepared with warnings := [] }
+      Lean.logInfo s!"S10 checkPreparedBindings on silenced plan: \
+{repr (checkPreparedBindings silenced |>.toOption.isSome)}"
+      match runPreparedDense silenced warnInputs with
+      | .error f => Lean.logInfo s!"S10 silenced run REJECTED: {repr f.cause}"
+      | .ok r => Lean.logInfo s!"S10 silenced run .ok, warnings reported = {r.warnings.length} \
+(a real paddedAccess warning was dropped, Y = {expect r.env["Y"]?})"
+      -- and the reverse: a fabricated warning on a plan that has none.
+      match swapProg.compileToScheduled.run 0 with
+      | .ok sched2 _ =>
+        match prepareEvalPlan sched2 (InputSignature.ofDenseInputs swapInputs) with
+        | .ok clean =>
+          Lean.logInfo s!"S10 clean plan producer warnings: {clean.warnings.length}"
+          let fabricated : PreparedPlan := { clean with warnings := prepared.warnings }
+          match runPreparedDense fabricated swapInputs with
+          | .error f => Lean.logInfo s!"S10 fabricated run REJECTED: {repr f.cause}"
+          | .ok r => Lean.logInfo s!"S10 fabricated run .ok, warnings reported = {r.warnings.length} \
+[{String.intercalate " | " (r.warnings.map toString)}]"
+        | .error _ => Lean.logInfo "S10 clean prepare failed"
+      | _ => Lean.logInfo "S10 clean compile failed"
+
+-- SPIKE 11 (fix round 1, row E10) — locator loss in the JAX support gate. Step 1 of a two-statement
+-- plan has a Boolean destination; the located gate reports index 1, but the only PUBLIC entry a
+-- caller can reach reports index 0, because `validateAndConstructKernel` hardcodes
+-- `checkJaxAssignSupport sigs 0`.
+private def twoStmtProg : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  axis j : ℕ = 2
+  predicate P(i)
+  R[i] := X[i] · Y[j]
+  P[i] := X[i] · Y[j]
+}
+
+run_cmd do
+  match twoStmtProg.compileToScheduled.run 0 with
+  | .error e _ => Lean.logInfo s!"S11 compile failed: {repr e}"
+  | .ok sched _ =>
+    match InputSignature.ofDenseInputsForDecls sched.decls fuzzyInputs with
+    | .error e => Lean.logInfo s!"S11 signature failed: {repr e}"
+    | .ok sig =>
+      match prepareEvalPlan sched sig with
+      | .error _ => Lean.logInfo "S11 prepare failed"
+      | .ok prepared =>
+        let raw := prepared.plan.raw
+        Lean.logInfo s!"S11 step kinds: {repr (raw.steps.map stepKind)}"
+        match (raw.steps[1]? : Option PlanStep) with
+        | some (.assign a) =>
+          match checkAssign raw.tensorSigs a, a.terms[0]? with
+          | .ok checked, some term =>
+            -- the LOCATED gate, called with this step's real index:
+            match checkJaxAssignSupport raw.tensorSigs 1 checked with
+            | .ok _ => Lean.logInfo "S11 located gate ACCEPTED a Boolean destination (!!)"
+            | .error e => Lean.logInfo s!"S11 located gate at nodeIndex 1: {repr e}"
+            -- the public kernel entry, which is the only way a caller reaches the same policy:
+            let opRows : Array (Array Nat) := term.factors.map (fun f => match f with
+              | .read r => #[r.sourceSlot] ++ (Array.range r.map.coeffs.size)
+              | .iverson _ => #[])
+            let cand : EinsumExperimentKernelCandidate :=
+              { semanticAssignment := checked, destination := a.destinationSlot
+              , operands := opRows, outputAxes := term.outputPos }
+            match validateAndConstructKernel raw.tensorSigs (.einsum cand) with
+            | .ok _ => Lean.logInfo "S11 public entry ACCEPTED a Boolean destination (!!)"
+            | .error e => Lean.logInfo s!"S11 public kernel entry reports: {repr e}"
+          | _, _ => Lean.logInfo "S11 checkAssign/term unavailable"
+        | other => Lean.logInfo s!"S11 step 1 is not an assign: {repr (other.map stepKind)}"
+
 end AxisAProbe

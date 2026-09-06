@@ -120,3 +120,152 @@ design decision, not a mechanical fix, and it should be settled *before* Scatter
 destination-side geometry beside `requiredInputs` — any new sidecar field inherits the same
 checked-shape/unchecked-pairing posture by default. BND-03 is a three-comment edit and can ride
 along with whatever lands first.
+
+---
+
+# Fix round 1 — report
+
+**Status: DONE.** All four Important and all four Minor findings addressed. Two new construction
+spikes were built to supply the evidence the promoted findings need. No production code changed.
+
+**Build:** `cd leanncd && "$HOME/.elan/bin/lake" build` → `Build completed successfully (8660 jobs)`
+— unchanged from baseline.
+**Diff:** `git diff 2159d28 HEAD -- leanncd/LeanNCD/` → **empty**.
+
+## Disposition
+
+### Important 1 — the unchecked-name axis is a documented, test-pinned deliberate decision
+
+Verified all four cited sites myself before citing them:
+
+| Site | Text confirmed |
+|---|---|
+| `Prepared.lean`, `checkPreparedBindings` doc | "Names remain deliberately unauthenticated: positional raw IR can prove slots and required-name uniqueness, not origins." |
+| `LeanNCD/Eval/AGENTS.md`, `Prepared.lean` row | "Raw plans prove slots but cannot authenticate names." |
+| `test/Eval/Plan/CompileTest.lean` | comment "Exact publication is structural slot identity, not name authentication. … changing only names is valid", followed by a live `#guard` asserting `checkPreparedBindings` returns `.ok` on `materializedNames.map fun b => { b with name := "renamed" }` |
+| `experiments/jax_bridge/README.md` | "…raw IR cannot authenticate the user-visible names themselves." |
+
+Changes made:
+- New Verified-facts row recording all four, cited by identifier/file.
+- The single row "No existing test covers the name↔slot pairing swap" was **split in two**, because
+  it was true only of BND-01's axis: one row states BND-01's axis is untested; a second states
+  BND-02's axis is tested and pins acceptance as intended.
+- Rows A6, B4, D4, E8 now name the documentation in their "Producer establishes" cell.
+- BND-01 and BND-02 each gained a paragraph stating this explicitly, with BND-01's noting that the
+  brief's Rule-12 instruction is why the verdict is unchanged.
+- Retire-list added to §Suggested handling below: a fix must retire the `CompileTest.lean` `#guard`,
+  the `checkPreparedBindings` doc sentence, `Eval/AGENTS.md`'s contract line, and
+  `experiments/jax_bridge/README.md`'s line. Nothing was edited — the constraint to cite, not
+  change, was respected.
+
+### Important 2 — BND-03's rationale was factually wrong
+
+Confirmed: `checkPreparedBindings`' doc comment does state the name gap, in the same file as the
+`RequiredBindings` comment BND-03 criticises. The old paragraph claiming the comments "say nothing
+about the name pairing" is deleted. The replacement argues the correct thing: the defect is
+**misdirection about the slot axis** — an implementer is told the slot alignment is the fragile,
+producer-discipline-only property and that `missingEnvBinding` is its safety net, and both halves
+are false, so the hardening effort that claim invites is spent on an already-re-checked coupling.
+BND-03 kept.
+
+### Important 3 — §6 arithmetic
+
+Corrected. **B4 was missing from the enumeration** — the row BND-02 rests on. §6 now reads: 41 rows,
+**8** `assumed-unchecked` (A6, A7, B4, C6, D4, D5, E8, E10), and the follow-on prose is rewritten to
+say that D4 spans both name axes and B4 is the materialized one, rather than the earlier muddled
+"three of those are the same defect".
+
+### Important 4 — finding numbering vs the mechanical rule
+
+Reconciled in both directions, with a new §4.1 reconciliation table that a controller can check
+mechanically:
+
+- **D5 promoted to BND-04** (`assumed-unchecked` / `silent no-op`).
+- **E10 promoted to BND-05** (`assumed-unchecked` / `silent no-op`).
+- **BND-03 kept but explicitly labelled out-of-rule**, with its row (A8, `re-checked` /
+  `loud typed error`) and the reason stated at the top of §4 and again in §6.
+- **A7 and C6 depart from the closed Failure-mode vocabulary** (`n/a (no invariant)`), and that
+  departure is now stated three times: a preamble to §3, the §4.1 table, and §6.
+
+Counting `assumed-unchecked` rows with a non-`loud` failure mode gives 6 rows → **4** rule-derived
+findings (BND-01, BND-02, BND-04, BND-05), with BND-03 listed as an explicitly out-of-rule fifth.
+That reconciliation is stated in the fragment so a merging controller gets the same number.
+
+Both promoted findings needed construction evidence the first pass did not have (§5 had said of
+E10 that it "was read, not constructed"). Two spikes were added:
+
+- **S10** (BND-04): on `Y[i, j] := X[2 * i + j]` with a 6-element `X`, the producer records one real
+  `paddedAccess` warning. `{ prepared with warnings := [] }` runs `.ok` reporting **0** warnings
+  while `Y`'s trailing zeros are genuinely zero-padded reads; and a plan with no padded read at all,
+  given a borrowed warning list, runs `.ok` reporting **1** warning about a read it does not
+  contain. Both directions silent.
+- **S11** (BND-05): on a two-statement plan whose step **1** has a Boolean destination, the located
+  gate called directly gives `JaxSupportError.destinationDType 1 3 bool`, while the only public
+  entry a caller can reach reports `destinationDType 0 3 bool`. The locator is not absent but
+  **wrong**, which is worse — `0` is a plausible answer. `S8` already supplied the plan-level half
+  (bare `invalidCandidate`, no index, no cause).
+
+### Minor 5 — BND-03's stale-site list was incomplete
+
+Both additions verified before citing. The list is now six sites in two groups:
+
+*Stale producer-discipline / `missingEnvBinding` claim (4):* `Adapter.lean` `packChecked` doc;
+`Adapter.lean` `packChecked` inline loop comment; `Prepared.lean` `RequiredBindings` doc;
+**`Error.lean` `InputBindingError` doc** — "If that coupling were ever broken by a hand-built
+`PreparedPlan`, `pack` still fails loud — a `.missingEnvBinding` naming the unmatched slot".
+
+*Misnamed shared resolver (2):* `Adapter.lean` `unpackChecked` doc and **`Error.lean`
+`PlanRunCause.materialization` doc**, both saying "the shared `PlanBindings.materializedWith`" when
+the function is `CheckedPreparedBindings.materializedWith` — a difference that is exactly the point
+of the round-4 fix, since resolution is reachable only after validation.
+
+### Minor 6 — A7/C6 failure mode imported another boundary's behavior
+
+Agreed, it was a category slip. Both rows now read `n/a (no invariant)` in the Failure-mode column,
+and their "Producer establishes" / "Consumer re-checks" cells say plainly that nothing establishes
+the claim, nothing checks it, and the system does not hold it. The `jaxAssignSupported` reference is
+removed from those cells; it survives only in §4.7 as one of the three refutation counts, where it
+belongs. The vocabulary departure is stated in §3's preamble rather than buried in a cell.
+
+### Minor 7 — `PlanBindings` grep overstatement
+
+Corrected and re-measured. `grep -rn --include=*.lean "PlanBindings" LeanNCD/ experiments/` returns
+**16** hits: one `structure` declaration, one `PreparedPlan.bindings` field, fourteen doc-comment
+mentions. (The review said 15; 16 is what the command returns here, over `LeanNCD/` plus
+`experiments/`.) The row now states the substantive claim precisely — no function anywhere takes
+`PlanBindings` as a parameter — and gives the breakdown instead of the false "returns only its own
+declaration".
+
+### Minor 8 — census exhaustiveness
+
+`SomeJaxKernel` and `SomeJaxExecutable` are now named in the census row with the reason for
+excluding them: each has a dependent second field (`kernel : JaxKernel evidence`,
+`executable : JaxExecutable evidence`) that forces the exposed index to be the one a validated
+payload was built with, so the wrapper admits no state its payload does not already permit. The row
+no longer claims the three-type set is the whole public complement — it claims it is the set that
+admits genuinely unconstrained field values.
+
+## Suggested handling (updated; for the controller, not acted on)
+
+BND-01 and BND-02 remain one fix: a name-authenticity obligation. The cheapest shape is still for
+`prepareEvalPlan` to hand the name↔slot map forward as part of the checked artifact rather than as
+an unvalidated sidecar, since `raw` deliberately carries no names and cannot re-derive it.
+
+**A fix wave must be warned that this is a documented contract change, not a bug fix.** Landing it
+turns a green test red and contradicts two prose contracts. The retire-list:
+
+1. `test/Eval/Plan/CompileTest.lean` — the `#guard` asserting `checkPreparedBindings` accepts
+   `materializedNames.map fun b => { b with name := "renamed" }`, and the comment above it
+   ("changing only names is valid"). **The build goes red the moment the check is added if this is
+   not retired in the same commit.**
+2. `Prepared.lean` — `checkPreparedBindings`' doc sentence "Names remain deliberately
+   unauthenticated…".
+3. `LeanNCD/Eval/AGENTS.md` — the `Prepared.lean` row's contract line "Raw plans prove slots but
+   cannot authenticate names."
+4. `experiments/jax_bridge/README.md` — "raw IR cannot authenticate the user-visible names
+   themselves."
+5. Re-grep for further siblings of (1) before assuming the list is complete (§5 item 5).
+
+BND-03 (six comment sites) and BND-05 (locator plumbing) are independent and can land in any order.
+BND-04 is a design question — whether `warnings` should be a projection of the checked artifact
+rather than a public field — and should not be bundled with the name fix.

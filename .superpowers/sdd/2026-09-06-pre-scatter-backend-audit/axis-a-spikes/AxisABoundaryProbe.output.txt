@@ -34,3 +34,18 @@ S8 executable rejected: LeanNCD.Eval.Plan.JaxExecutableValidationError.invalidCa
 S9 baseline checkPlan: ACCEPTED (!!)
 S9 inputSlots := #[99]: LeanNCD.Eval.Plan.PlanStepError.assign (LeanNCD.Eval.Plan.PlanError.slotOutOfRange 99 3)
 S9 extra unproduced tensorSig slot: LeanNCD.Eval.Plan.PlanStepError.assign (LeanNCD.Eval.Plan.PlanError.missingProduction 3)
+S10 producer warnings count: 1 [padded-access warning: X[LeanNCD.IdxExpr.affine
+  0
+  [(2, { name := "i", uid := 1, kind := LeanNCD.AxisKind.real }),
+   (1, { name := "j", uid := 2, kind := LeanNCD.AxisKind.real })]] max-index 8 ≥ dim 6; out-of-range reads will be zero-padded]
+S10 checkPreparedBindings on silenced plan: true
+S10 silenced run .ok, warnings reported = 0 (a real paddedAccess warning was dropped, Y = shape=[4, 3] data=#[1.000000, 2.000000, 3.000000, 3.000000, 4.000000, 5.000000, 5.000000, 6.000000, 0.000000, 0.000000, 0.000000, 0.000000])
+S10 clean plan producer warnings: 0
+S10 fabricated run .ok, warnings reported = 1 [padded-access warning: X[LeanNCD.IdxExpr.affine
+  0
+  [(2, { name := "i", uid := 1, kind := LeanNCD.AxisKind.real }),
+   (1, { name := "j", uid := 2, kind := LeanNCD.AxisKind.real })]] max-index 8 ≥ dim 6; out-of-range reads will be zero-padded]
+S11 step kinds: #["assign", "assign"]
+S11 located gate at nodeIndex 1: LeanNCD.Eval.Plan.JaxSupportError.destinationDType 1 3 (LeanNCD.Eval.Plan.ScalarDType.bool)
+S11 public kernel entry reports: LeanNCD.Eval.Plan.JaxKernelValidationError.unsupported
+  (LeanNCD.Eval.Plan.JaxSupportError.destinationDType 0 3 (LeanNCD.Eval.Plan.ScalarDType.bool))
