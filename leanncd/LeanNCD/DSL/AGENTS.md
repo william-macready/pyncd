@@ -24,7 +24,7 @@ Does not own: evaluation semantics (`../Eval/`) or the acset bridge (`../Bridge/
 |---|---|
 | Pipeline intermediate types (`ResolvedProgram`, `ScanStmt`, `ScheduledProgram`) | `Types.lean` |
 | Phases 1-5 (assignUIDs/resolveDecls/checkReadRanks/checkDtypes/checkScatterNonlin/checkScatterNoScan/lowerArith/finalizeScans) | `Structural.lean` |
-| Shared statement-level source-invariant rules (`buildDeclEnv`, `declaredAxisSizes`, `externalReadNames`, read and declared-destination ranks, predicate outputs) | `Structural.lean` |
+| Shared statement-level source-invariant rules (`buildDeclEnv`, `declaredAxisSizes`, `externalReadNames`, read and declared-destination ranks, LHS axis kinds, predicate outputs) | `Structural.lean` |
 | Whole scheduled-program validation, topological helpers, and authoritative external-name order | `Pipeline/ScheduledValidation.lean` — `validateScheduled` is the direct execution/preparation boundary |
 | Phase 6-8 (schedule/route/buildStep/routeCore; `splitNonlins` survives only as a regression-only helper, off the production chain) | `Lowering.lean` |
 | Private physical route fragments (logical schedule → `routeCore` input) | `RouteFragments.lean` |

@@ -1456,4 +1456,136 @@ run_cmd do
           unless s.shape == [2, 3] && s.data == #[1.0, 2.0, 3.0, 1.0, 2.0, 3.0] do
             throwError s!"valid scan read-rank sibling: S is {repr s.shape} {repr s.data}"
 
+-- ── Final semantic review — LHS axis kinds at both direct-schedule entries ──
+
+def axisKindInputs : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "X" ⟨[2], #[1.0, 1.0]⟩
+
+/-- Both direct entries must reject a hand-built schedule with the same source `CompileError`,
+    before capability, predicate, shape, or execution-specific validation. -/
+def assertAxisKindParity (label : String) (sched : ScheduledProgram) (expected : CompileError) :
+    Lean.Elab.Command.CommandElabM Unit := do
+  match evalScheduled sched axisKindInputs with
+  | .ok _ => throwError s!"{label}: evalScheduled accepted it"
+  | .error failure =>
+      match failure.error with
+      | .compile actual =>
+         unless actual == expected do
+           throwError s!"{label}: wrong reference CompileError: {repr actual}"
+      | actual => throwError s!"{label}: wrong reference error: {actual}"
+      unless failure.warnings == [] do
+       throwError s!"{label}: reference failure carried warnings: {failure.warnings}"
+  match causeOf (prepareEvalPlan sched (InputSignature.ofDenseInputs axisKindInputs)) with
+  | none => throwError s!"{label}: prepareEvalPlan accepted it"
+  | some failure =>
+      unless failure.cause == .sourceInvariant expected do
+       throwError s!"{label}: wrong checked cause: {renderCompileCause failure.cause}"
+      unless failure.warnings == [] do
+       throwError s!"{label}: checked failure carried warnings: {failure.warnings}"
+
+def plainAxisKindSched (ax : AxisSpec) (slot : LHSSlot) (outDecl : Decl)
+    (nonlin : Nonlin := .identity) : ScheduledProgram :=
+  { decls := [.axis ax (some 2), .tensor "X" [ax], outDecl]
+  , stmts := [.plain (.assign outDecl.name [slot]
+      { body := { terms := [{ factors := [.read "X" [.axis ax]] }] }, nonlin })]
+  , env := {}, extNames := insert "X" ∅
+  , explicitSizes := ({} : HashMap UID Nat).insert ax.uid 2 }
+
+def realIterAxis : AxisSpec := { name := "plainRealIter", uid := 31, kind := .real }
+def natNormAxis : AxisSpec := { name := "plainNatNorm", uid := 32, kind := .nat }
+
+-- Distinguish both iteration-slot constructors on a plain statement. The source invariant must win
+-- over `checkLHSSlot`'s later `unsupportedLhsSlot`.
+run_cmd do
+  assertAxisKindParity "plain iterAt on a real axis"
+    (plainAxisKindSched realIterAxis (.iterAt realIterAxis 0) (.tensor "Y" [realIterAxis]))
+    (.iterAxisNotNat "plainRealIter")
+
+run_cmd do
+  assertAxisKindParity "plain iterNext on a real axis"
+    (plainAxisKindSched realIterAxis (.iterNext realIterAxis) (.tensor "Y" [realIterAxis]))
+    (.iterAxisNotNat "plainRealIter")
+
+-- A normalization marker has the inverse kind requirement.
+run_cmd do
+  assertAxisKindParity "plain freeNorm on a nat axis"
+    (plainAxisKindSched natNormAxis (.freeNorm natNormAxis) (.tensor "Y" [natNormAxis])
+      (.axiswise .softmax none))
+    (.normAxisNotReal "plainNatNorm")
+
+def realScanAxis : AxisSpec := { name := "scanRealIter", uid := 33, kind := .real }
+def natScanAxis : AxisSpec := { realScanAxis with kind := .nat }
+
+def scanAxisKindSched (baseSlot recurSlot : LHSSlot) : ScheduledProgram :=
+  { decls := [.iter natScanAxis 2, .tensor "S" [natScanAxis]]
+  , stmts := [.scan "S" [natScanAxis]
+      [.assign "S" [baseSlot] { body := { terms := [] }, nonlin := .identity }]
+      [.assign "S" [recurSlot]
+       { body := { terms := [{ factors := [.read "S" [.axis natScanAxis]] }] }
+       , nonlin := .identity }]
+      false]
+  , env := {}, extNames := ∅
+  , explicitSizes := ({} : HashMap UID Nat).insert natScanAxis.uid 2 }
+
+-- The scan lift checks both halves: a valid base reaches the malformed recurrence.
+run_cmd do
+  assertAxisKindParity "scan recurrence iterNext on a real axis"
+    (scanAxisKindSched (.iterAt natScanAxis 0) (.iterNext realScanAxis))
+    (.iterAxisNotNat "scanRealIter")
+
+-- `base ++ recur` order is observable when both halves are malformed.
+def realScanBaseAxis : AxisSpec := { name := "scanBaseReal", uid := 34, kind := .real }
+def realScanRecurAxis : AxisSpec := { name := "scanRecurReal", uid := 35, kind := .real }
+
+run_cmd do
+  assertAxisKindParity "scan base axis kind precedes recurrence axis kind"
+    (scanAxisKindSched (.iterAt realScanBaseAxis 0) (.iterNext realScanRecurAxis))
+    (.iterAxisNotNat "scanBaseReal")
+
+-- Axis kinds precede predicate-output rules at the shared scheduled boundary.
+run_cmd do
+  assertAxisKindParity "axis kind before predicate output"
+    (plainAxisKindSched natNormAxis (.freeNorm natNormAxis) (.predicate "P" [natNormAxis])
+      (.pointwise .relu))
+    (.normAxisNotReal "plainNatNorm")
+
+-- Source order still wins across statements: a predicate violation in the first statement precedes
+-- an axis-kind violation in the second, matching `checkDtypes` rather than globally grouping kinds.
+def dtypeSourceOrderSched : ScheduledProgram :=
+  { plainAxisKindSched natNormAxis (.freeNorm natNormAxis) (.tensor "Y" [natNormAxis])
+      (.axiswise .softmax none) with
+      decls := [.axis natNormAxis (some 2), .tensor "X" [natNormAxis]
+               , .predicate "P" [natNormAxis], .tensor "Y" [natNormAxis]]
+    , stmts :=
+        [ .plain (.assign "P" [.free natNormAxis]
+            { body := { terms := [{ factors := [.read "X" [.axis natNormAxis]] }] }
+            , nonlin := .pointwise .relu })
+        , .plain (.assign "Y" [.freeNorm natNormAxis]
+            { body := { terms := [{ factors := [.read "X" [.axis natNormAxis]] }] }
+            , nonlin := .axiswise .softmax none }) ] }
+
+run_cmd do
+  assertAxisKindParity "dtype checks preserve statement source order"
+    dtypeSourceOrderSched (.predicateNonlin "P")
+
+-- Valid sibling: a real normalization axis remains accepted and executable at both boundaries.
+def realNormAxis : AxisSpec := { name := "realNorm", uid := 36, kind := .real }
+def validAxisKindSched : ScheduledProgram :=
+  plainAxisKindSched realNormAxis (.freeNorm realNormAxis) (.tensor "Y" [realNormAxis])
+    (.axiswise .softmax none)
+
+run_cmd do
+  match causeOf (prepareEvalPlan validAxisKindSched (InputSignature.ofDenseInputs axisKindInputs)) with
+  | some failure =>
+      throwError s!"valid axis-kind sibling rejected by prepareEvalPlan: {renderCompileCause failure.cause}"
+  | none => pure ()
+  match evalScheduled validAxisKindSched axisKindInputs with
+  | .error failure => throwError s!"valid axis-kind sibling rejected by evalScheduled: {failure.error}"
+  | .ok report =>
+      match report.env.get? "Y" with
+      | none => throwError "valid axis-kind sibling: Y missing from result"
+      | some y =>
+         unless DenseTensor.approxEq y ⟨[2], #[0.5, 0.5]⟩ do
+           throwError s!"valid axis-kind sibling: Y is {repr y.shape} {repr y.data}"
+
 end LeanNCD.Eval.Plan.CompileTest

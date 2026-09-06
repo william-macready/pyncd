@@ -1069,18 +1069,17 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
   -- `sched.decls` and `sched.stmts` are authoritative; `sched.env` and `sched.explicitSizes` are
   -- cached pipeline products and are never consulted. This runs BEFORE capability preflight, shape
   -- inference, and signature validation: an invalid source combination (a name declared
-  -- tensor-bearing twice, a read whose arity contradicts its declaration, a predicate output
-  -- carrying a nonlinearity or a non-sum aggregation) is not a valid-but-unsupported backend
-  -- capability, so it must not surface as one. The ORDER of the four checks below is the source
+  -- tensor-bearing twice, a read whose arity contradicts its declaration, a wrongly-kinded
+  -- iteration/normalization LHS axis, or a predicate output carrying a nonlinearity or a non-sum
+  -- aggregation) is not a valid-but-unsupported backend capability, so it must not surface as one.
+  -- The ORDER of the four checks below is the source
   -- pipeline's own — `resolveDecls`, `checkReadRanks`, `checkDtypes`, `schedule` (`DSL/Compile.lean`)
   -- — so a schedule violating several reports what the source compiler would report: a duplicate
-  -- declaration before a rank mismatch, a rank mismatch before a predicate violation, a predicate
-  -- violation before a statement-order violation. Per-statement order is source order and, within a
-  -- statement, nonlinearity before aggregation — exactly `checkDtypes`'s own order, because it is
-  -- the same shared `checkPredicateOutput` rule, reached through the shared `checkPredicateOutputs`
-  -- traversal `Eval.evalScheduled` also uses (so the two direct entries agree on WHICH statements
-  -- carry the obligation, not merely on the rule); `checkScheduledReadRanks` shares that traversal
-  -- for the same reason.
+  -- declaration before a rank mismatch, then each statement's LHS axis-kind check before that
+  -- statement's predicate check, followed by the statement-order invariant. This preserves source
+  -- order and scan `base ++ recur` order exactly as `checkDtypes` does; within a predicate statement,
+  -- nonlinearity still precedes aggregation. All scheduled statement-level checks share
+  -- `ScanStmt.sourceStmts`.
   let checked ← match validateScheduled sched with
     | .ok checked => pure checked
     | .error e => throw { cause := .sourceInvariant e, warnings := [] }

@@ -1649,12 +1649,13 @@ axis: `normalize(where r≠0)` over `r` excludes `r=0` and keeps `r=1` (`Z=3`) �
 `[0,0,1,0]` (shape `[2,2]`). Zeroing `r`'s coordinate during lowering (mutation 6) makes `r≠0` false
 everywhere → all-masked → `G[:,0]=[0,0]` → all zeros. Pinned HERE, NOT by the Task 5.4 oracle. -/
 def p11r : AxisSpec := ⟨"r", 42110, .nat⟩
+def p11rNorm : AxisSpec := { p11r with kind := .real }
 def p11c : AxisSpec := ⟨"c", 42111, .nat⟩
 def elimFreeNormMask : BoolExpr := .rel .ne (.embed (.axis p11r)) (.embed (.const 0))
 def eliminatedFreeNorm : ScheduledProgram :=
   { decls := [.iter p11r 2, .iter p11c 2]
   , stmts := [.scan "G" [p11r, p11c]
-      [.assign "G" [.freeNorm p11r, .iterAt p11c 0]
+      [.assign "G" [.freeNorm p11rNorm, .iterAt p11c 0]
         (t4rhs "Z" [.axis p11r] (.axiswise .normalize (some elimFreeNormMask)))]
       [.assign "G" [.iterNext p11r, .iterNext p11c]
         (t4rhs "G" [.axis p11r, .axis p11c])]
@@ -1693,11 +1694,12 @@ def freeNormPointwiseInputs : HashMap String DenseTensor :=
     is never a legal retained output axis. This is the locator for the scratch context-axis
     `.freeNorm` guard (mutation 5). -/
 def p17l : AxisSpec := ⟨"l", 41701, .nat⟩
+def p17lNorm : AxisSpec := { p17l with kind := .real }
 def freeNormContextAxis : ScheduledProgram :=
   { decls := [.iter p17l 3]
   , stmts := [.scan "S" [p17l]
       [.assign "S" [.iterAt p17l 0] (t4rhs "X" [])]
-      [ .assign "T" [.freeNorm p17l] (t4rhs "S" [.axis p17l] (.axiswise .normalize none))
+      [ .assign "T" [.freeNorm p17lNorm] (t4rhs "S" [.axis p17l] (.axiswise .normalize none))
       , .assign "S" [.iterNext p17l] (t4rhs "T" [.axis p17l]) ]
       false]
   , env := {}, extNames := {"X"}

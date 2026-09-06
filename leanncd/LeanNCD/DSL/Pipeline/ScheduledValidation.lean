@@ -73,7 +73,7 @@ structure CheckedScheduledProgram where private mk ::
 def validateScheduled (sched : ScheduledProgram) : Except CompileError CheckedScheduledProgram := do
   let declEnv ← buildDeclEnv sched.decls
   checkScheduledReadRanks declEnv sched.stmts
-  checkPredicateOutputs declEnv sched.stmts
+  checkScheduledDtypes declEnv sched.stmts
   unless isTopoOrdered sched.stmts sched.stmts do
     throw (.cyclicDataflow "scheduled program: statements are not in producer-before-consumer order")
   return { program := sched

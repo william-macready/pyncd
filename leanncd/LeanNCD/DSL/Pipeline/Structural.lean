@@ -791,6 +791,14 @@ def checkReadRanks (rp : ResolvedProgram) : FreshM ResolvedProgram := do
   | .error e => throw e
   return rp
 
+/-- Source statements carried by a scheduled node, in source order. `.scanPre` has no `Stmt`
+    payload. Shared by every scheduled lifting of a source statement invariant so their coverage
+    and scan `base ++ recur` order cannot drift. -/
+def ScanStmt.sourceStmts : ScanStmt → List Stmt
+  | .plain s => [s]
+  | .scan _ _ base recur _ => base ++ recur
+  | .scanPre .. => []
+
 /-- `checkReadRanksIn` lifted to a whole SCHEDULED statement list — the shape both direct
     (`ScheduledProgram`-accepting) entries meet: `Eval.Plan.prepareEvalPlan`'s Step 0 and
     `Eval.evalScheduled`. The source pipeline reaches the rule through `checkReadRanks` instead,
@@ -815,10 +823,7 @@ def checkReadRanks (rp : ResolvedProgram) : FreshM ResolvedProgram := do
     `duplicateTensorDecl` — must be reported BEFORE this, exactly as `resolveDecls` precedes
     `checkReadRanks` in the source pipeline. -/
 def checkScheduledReadRanks (env : DeclEnv) (stmts : List ScanStmt) : Except CompileError Unit :=
-  let flat : List Stmt := stmts.flatMap (fun sc => match sc with
-    | .plain s => [s]
-    | .scan _ _ base recur _ => base ++ recur
-    | .scanPre .. => [])
+  let flat : List Stmt := stmts.flatMap ScanStmt.sourceStmts
   checkReadRanksIn env (externalReadNames flat) flat
 
 /-! ## The `checkDtypes` phase
@@ -838,6 +843,19 @@ to such an output is a semantic error. Reading a predicate tensor on the RHS is 
 
 private def isNat : AxisKind → Bool | .nat => true | _ => false
 private def isReal : AxisKind → Bool | .real => true | _ => false
+
+/-- Check the LHS axis-kind half of `checkDtypes` for one source statement. -/
+def checkStmtAxisKinds (s : Stmt) : Except CompileError Unit := do
+  let slots : List LHSSlot := match s with
+    | .assign _ ls _ | .scatter _ ls _ _ => ls
+    | .recurMorphism _ _ _ => []
+  for slot in slots do
+    match slot with
+    | .iterAt a _ | .iterNext a =>
+        unless isNat a.kind do throw (.iterAxisNotNat a.name)
+    | .freeNorm a =>
+        unless isReal a.kind do throw (.normAxisNotReal a.name)
+    | _ => pure ()
 
 /-- Check B, extracted as one pure rule so the source pipeline (`checkDtypes`, below) and the
     checked backend's direct-schedule entry (`Eval.Plan.prepareEvalPlan`) enforce the SAME
@@ -876,26 +894,24 @@ def checkPredicateOutput (env : DeclEnv) (s : Stmt) : Except CompileError Unit :
     `unsupportedRecurMorphism`). -/
 def checkPredicateOutputs (env : DeclEnv) (stmts : List ScanStmt) : Except CompileError Unit := do
   for sc in stmts do
-    let sourceStmts : List Stmt := match sc with
-      | .plain s => [s]
-      | .scan _ _ base recur _ => base ++ recur
-      | .scanPre .. => []
-    for s in sourceStmts do
+    for s in sc.sourceStmts do
+      checkPredicateOutput env s
+
+/-- The source `checkDtypes` statement checks lifted over a schedule: LHS axis kinds before
+    predicate-output semantics for each statement, preserving top-level source order and each scan
+    node's `base ++ recur` order. -/
+def checkScheduledDtypes (env : DeclEnv) (stmts : List ScanStmt) : Except CompileError Unit := do
+  for sc in stmts do
+    for s in sc.sourceStmts do
+      checkStmtAxisKinds s
       checkPredicateOutput env s
 
 def checkDtypes (rp : ResolvedProgram) : FreshM ResolvedProgram := do
   for s in rp.stmts do
     -- Check A: axis kinds on LHS slots
-    let slots : List LHSSlot := match s with
-      | .assign _ ls _ | .scatter _ ls _ _ => ls
-      | .recurMorphism _ _ _ => []
-    for slot in slots do
-      match slot with
-      | .iterAt a _ | .iterNext a =>
-          unless isNat a.kind do throw (.iterAxisNotNat a.name)
-      | .freeNorm a =>
-          unless isReal a.kind do throw (.normAxisNotReal a.name)
-      | _ => pure ()
+    match checkStmtAxisKinds s with
+    | .ok ()   => pure ()
+    | .error e => throw e
     -- Check B: predicate outputs must have identity nonlinearity and sum aggregation
     match s with
     | .assign _ _ _ | .scatter _ _ _ _ =>

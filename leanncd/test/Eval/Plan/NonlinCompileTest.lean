@@ -76,7 +76,7 @@ re-run here through `prepareEvalPlan` end-to-end: a hand-built two-axis `Y[·] :
 LHS slots and `Nonlin`. -/
 
 def axQ1 : AxisSpec := { name := "q", uid := 101, kind := .nat }
-def axS1 : AxisSpec := { name := "s", uid := 102, kind := .nat }
+def axS1 : AxisSpec := { name := "s", uid := 102, kind := .real }
 
 def axiswiseSched (slots : List LHSSlot) (nonlin : Nonlin) : ScheduledProgram :=
   { decls := [.axis axQ1 (some 2), .axis axS1 (some 2)]
