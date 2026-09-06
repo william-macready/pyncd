@@ -644,6 +644,39 @@ run_cmd do
       | _ => throwError s!"out-of-order direct evaluation reported: {failure.error}"
   | .ok _ => throwError "out-of-order direct evaluation was accepted"
 
+/-- A plain assignment cannot satisfy its own read from the caller's input environment. The same
+    dependency predicate rejects it at source scheduling and at both direct schedule boundaries. -/
+def selfReadStmt : ScanStmt :=
+  .plain (.assign "Y" [.free axI2]
+    { body := { terms := [{ factors := [.read "Y" [.axis axI2]] }] }, nonlin := .identity })
+
+def selfReadSched : ScheduledProgram :=
+  { decls := [.axis axI2 (some 2), .tensor "Y" [axI2]]
+  , stmts := [selfReadStmt]
+  , env := {}, extNames := ∅
+  , explicitSizes := (({} : HashMap UID Nat).insert axI2.uid 2) }
+
+def selfReadInputs : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "Y" ⟨[2], #[11.0, 13.0]⟩
+
+#guard match (schedule
+    { decls := selfReadSched.decls, stmts := [selfReadStmt], env := {}, extNames := ∅ }).run 0 with
+  | .error (.cyclicDataflow "schedule: cyclic dataflow") _ => true
+  | _ => false
+
+#guard causeOf (prepareEvalPlan selfReadSched (InputSignature.ofDenseInputs selfReadInputs)) ==
+  some { cause := .sourceInvariant
+          (.cyclicDataflow "scheduled program: statements are not in producer-before-consumer order")
+       , warnings := [] }
+
+run_cmd do
+  match evalScheduled selfReadSched selfReadInputs with
+  | .error { error := .compile (.cyclicDataflow
+      "scheduled program: statements are not in producer-before-consumer order"), warnings := [] } =>
+      pure ()
+  | .error failure => throwError s!"plain self-read direct evaluation reported: {failure.error}"
+  | .ok _ => throwError "plain self-read consumed the caller-provided destination"
+
 /-- Fixture 10's ORDERED twin — the identical two statements, producer first, which is what
     `schedule` would have emitted for this program. It must still compile, and `Z` must resolve to
     its own materialized slot (2), never to an input slot: rejecting fixture 10 is an order check,

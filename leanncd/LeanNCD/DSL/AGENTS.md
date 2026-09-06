@@ -52,7 +52,9 @@ Strictly layered: `Syntax`→`Elab`→`Ast`/`Target`→`Traverse`/`TraverseAxes`
 
 - `prepareEvalPlan` and `evalScheduled` are the two public preparation/execution boundaries; both
   require `validateScheduled` and consume its declarations, explicit sizes, external-name order, and
-  original statements.
+  original statements. Its topology state advances by `ScanStmt.outputs`, not `writes`: recurrence
+  scratch stays block-local, plain statements cannot read their own destination, and scan-internal
+  state/scratch dependencies remain legal.
 - `schedule` establishes the invariant for source programs. `capabilityPreflight` and
   `orderedExtNames` are preparation-phase helpers called only after the checked boundary.
 - `elaborateAffineReindexings`, `routeCore`, `routeNameInventory`, `physicalizeRaw`,

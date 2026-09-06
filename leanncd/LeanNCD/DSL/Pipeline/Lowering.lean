@@ -98,13 +98,6 @@ output, so the scheduler keeps all top-level statements and lets the caller igno
 keys). Statements are topologically sorted so producers precede their consumers.
 Never-read *external* input names are still dropped (`liveExtNames`). -/
 
-/-- The true output names of a ScanStmt: for `.scan`, names written by BOTH base AND recur
-    (drops `%nl` intermediates that appear in only one side). -/
-def ScanStmt.outputs : ScanStmt → List String
-  | .plain s        => [s.lhsName]
-  | .scan _ _ b r _ => (b.map Stmt.lhsName).filter (fun n => (r.map Stmt.lhsName).contains n)
-  | .scanPre nm _ _ => [nm]
-
 /-! ### Drift guard: the route-boundary accessors agree with these two
 
 `Pipeline/RouteFragments.lean` needs the same notions of "what does this node write / publish

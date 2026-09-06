@@ -672,16 +672,9 @@ def rejSig : InputSignature := InputSignature.ofDenseInputs rejInputs
 def rej (base recur : List Stmt) : Option PlanCompileCause :=
   causeOf (prepareEvalPlan (rejSched base recur) rejSig)
 
-/-- `rej` plus an EARLIER scan that produces `NOPE` as block-local SCRATCH, so a block read of
-    `NOPE` in the scan under test is neither state, scratch, an already-materialized outer tensor,
-    nor an external input. Preparation derives external names authoritatively from the statements
-    (reads minus produced), so a name that nothing produces is an external input needing a
-    signature — and a name produced by a LATER statement is now rejected outright at Step 0
-    (`sourceInvariant (.cyclicDataflow …)`, see `lateNopeSched` below). What remains, and is what
-    these fixtures use, is a name that IS produced ahead of the read and still never becomes an
-    outer slot: a scan's scratch (a recurrence-only destination) is counted by `ScanStmt.writes`
-    but only its STATES are published into `slotOf` (§4.6), so `NOPE` is invisible outside the scan
-    that produced it. -/
+/-- `rej` plus an earlier scan that writes `NOPE` as block-local scratch. Such a write is not a
+    publication, so a later scan read must fail the shared topology check rather than reach
+    block-local resolution. -/
 def rejScratchNope (base recur : List Stmt) : Option PlanCompileCause :=
   causeOf (prepareEvalPlan
     { rejSched base recur with
@@ -866,7 +859,8 @@ def scratchT : Stmt := .assign "T" []
 -- `extNames`.
 #guard rejScratchNope [.assign "S" [.iterAt axL 0]
       { body := { terms := [{ factors := [.read "NOPE" []] }] }, nonlin := .identity }] [okRecur]
-  == some (.scan (.blockReadNotAvailable "sc" true 0 "NOPE" .unknownName))
+  == some (.sourceInvariant
+       (.cyclicDataflow "scheduled program: statements are not in producer-before-consumer order"))
 
 -- a base block reading persistent state (proposal §8.4: initialization must not become a second,
 -- implicit state machine).
@@ -889,7 +883,8 @@ def scratchT : Stmt := .assign "T" []
     [ .assign "T" [] { body := { terms := [{ factors := [.read "NOPE" []] }] }
                      , nonlin := .identity }
     , okRecur ]
-  == some (.scan (.blockReadNotAvailable "sc" false 0 "NOPE" .unknownName))
+  == some (.sourceInvariant
+       (.cyclicDataflow "scheduled program: statements are not in producer-before-consumer order"))
 
 -- the FORWARD-reference outer shape the two fixtures above used to be built on — the scan reads
 -- `NOPE`, and the plain statement producing it comes after. That is no longer a scan-block
@@ -910,16 +905,10 @@ def lateNopeSched : ScheduledProgram :=
   == some (.sourceInvariant
        (.cyclicDataflow "scheduled program: statements are not in producer-before-consumer order"))
 
--- the sibling hole Step 0's ORDER invariant structurally cannot see: `NOPE` is produced AHEAD of
--- the read (so `isTopoOrdered` is satisfied) and is not external either (`ScanStmt.writes` counts a
--- recurrence-only destination as produced), yet only a scan's STATES are published into `slotOf`,
--- so a PLAIN statement reading it resolved to slot ZERO — silently aliasing the input bound there
--- (`S0`), accepted, wrong answer, no diagnostic. `prepareEvalPlan`'s plain branch now requires every
--- read name to be present in `slotOf` before it allocates a destination slot or residualizes,
--- reporting the source pipeline's own `undeclaredName`. `Y`'s output axis is `axJ`, explicitly
--- sized, so shape inference cannot reject this program first and the rejection is provably this
--- guard's. (The scan under test is the playground's own accepted `[okBase] [okRecur]`, so nothing
--- inside it can fail either.)
+-- A recurrence-only destination is block-local scratch, not a scan publication. The shared
+-- topology predicate must therefore reject a following plain read before either backend can treat
+-- caller input under that name as its value. The scan itself remains valid: its recurrence reads
+-- its own persistent state, and valid scan-internal self-dependencies stay eligible.
 def scratchThenPlainReadSched : ScheduledProgram :=
   { rejSched [okBase] [okRecur] with
       stmts := [ .scan "pre" [axL]
@@ -939,7 +928,17 @@ def scratchThenPlainReadSched : ScheduledProgram :=
                    , nonlin := .identity }) ] }
 
 #guard causeOf (prepareEvalPlan scratchThenPlainReadSched rejSig)
-  == some (.sourceInvariant (.undeclaredName "NOPE"))
+  == some (.sourceInvariant
+       (.cyclicDataflow "scheduled program: statements are not in producer-before-consumer order"))
+
+run_cmd do
+  let inputs := rejInputs.insert "NOPE" ⟨[], #[37.0]⟩
+  match evalScheduled scratchThenPlainReadSched inputs with
+  | .error { error := .compile (.cyclicDataflow
+      "scheduled program: statements are not in producer-before-consumer order"), warnings := [] } =>
+      pure ()
+  | .error failure => throwError s!"post-scan scratch read reported: {failure.error}"
+  | .ok _ => throwError "post-scan scratch read consumed caller-provided scratch"
 
 -- the same program with the plain statement reading the scan's published STATE `S` instead of its
 -- private scratch: the guard rejects unpublished names, not locally produced ones, so this must
