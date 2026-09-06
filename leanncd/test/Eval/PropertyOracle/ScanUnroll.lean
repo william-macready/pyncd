@@ -702,7 +702,7 @@ run_cmd do
 private def retainedPredL : AxisSpec := ⟨"l", 7701, .nat⟩
 private def retainedPredJ : AxisSpec := ⟨"j", 7702, .nat⟩
 
-private def retainedPredicateSched : ScheduledProgram :=
+def retainedPredicateSched : ScheduledProgram :=
   { decls := [.iter retainedPredL 3, .axis retainedPredJ (some 2),
               .predicate "S" [retainedPredJ, retainedPredL]]
   , stmts := [.scan "S" [retainedPredL]
@@ -719,7 +719,7 @@ private def retainedPredicateSched : ScheduledProgram :=
   , explicitSizes := ((({} : HashMap UID Nat).insert retainedPredL.uid 3).insert
       retainedPredJ.uid 2) }
 
-private def retainedPredicateInputs : HashMap String DenseTensor :=
+def retainedPredicateInputs : HashMap String DenseTensor :=
   (({} : HashMap String DenseTensor).insert "S0" ⟨[2], #[0.0, 1.0]⟩).insert
     "X" ⟨[2, 3], #[1.0, 0.0, 0.0, 0.0, 0.0, 0.0]⟩
 

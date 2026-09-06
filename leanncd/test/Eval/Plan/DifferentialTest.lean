@@ -1707,4 +1707,13 @@ run_cmd do
   | .error m => throwError s!"T4.4 fixture 3: three-way parity failed: {m}"
   | .ok () => pure ()
 
+-- The retained-axis predicate fixture also belongs in the three-way gate: its structural check in
+-- `ScanUnroll.lean` proves every generated leaf declaration retains `j`, while this comparison
+-- proves the checked plan, legacy evaluator, and scan-free unrolling compute the same rank-2 `S`.
+run_cmd do
+  match scanParityCheck "retained-axis predicate" PropertyOracle.retainedPredicateSched
+      PropertyOracle.retainedPredicateInputs [] with
+  | .error m => throwError s!"retained-axis predicate three-way parity failed: {m}"
+  | .ok () => pure ()
+
 end LeanNCD.Eval.Plan.DifferentialTest
