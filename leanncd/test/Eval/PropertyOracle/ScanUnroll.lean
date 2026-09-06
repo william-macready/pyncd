@@ -444,6 +444,14 @@ private def isPredicateName (decls : List Decl) (nm : String) : Bool :=
   | some (.predicate _ _) => true
   | _ => false
 
+/-- Declare a generated predicate leaf over exactly the axes retained by its assignment. -/
+private def predicateLeafDecl (decls : List Decl) (sourceName : String) (leaf : Stmt) : Option Decl :=
+  if isPredicateName decls sourceName then
+    match leaf with
+    | .assign leafName slots _ => some (.predicate leafName (slots.filterMap (·.axisSpec?)))
+    | _ => none
+  else none
+
 /-- Unroll one scan node into scan-free leaf statements.
 
     Emission order is: every state's zero leaf, then every base write (source order, so a later
@@ -476,20 +484,22 @@ def unrollScanNode (sizes : HashMap UID Nat) (decls : List Decl) (sc : ScanStmt)
     | some (_, ts) => ts.contains t
     | none         => false
   -- 3. zero leaves.
-  let zeroStmts : List Stmt := g.states.map (fun st =>
-    .assign (zeroLeafName st.name) st.freeSlots { body := { terms := [] }, nonlin := .identity })
-  let zeroDecls : List Decl := g.states.filterMap (fun st =>
-    if isPredicateName decls st.name then some (.predicate (zeroLeafName st.name) []) else none)
+  let zeroParts : List (String × Stmt) := g.states.map (fun st =>
+    (st.name, .assign (zeroLeafName st.name) st.freeSlots
+      { body := { terms := [] }, nonlin := .identity }))
+  let zeroStmts := zeroParts.map Prod.snd
+  let zeroDecls := zeroParts.filterMap (fun (sourceName, leaf) =>
+    predicateLeafDecl decls sourceName leaf)
   -- 4. base leaves: one per (base statement, coordinate in its region), pins substituted.
-  let baseStmts ← baseParts.flatMapM (fun (st, fs, reg, r) =>
+  let baseParts' ← baseParts.flatMapM (fun (st, fs, reg, r) =>
     reg.mapM (fun t => do
       let rhs ← rewriteRHS g (ctxSubst g.axes t) hasLeaf none fs r
-      pure (Stmt.assign (stateLeafName st.name t) fs rhs)))
-  let baseDecls : List Decl := baseParts.flatMap (fun (st, _, reg, _) =>
-    if isPredicateName decls st.name then reg.map (fun t => .predicate (stateLeafName st.name t) [])
-    else [])
+      pure (st.name, Stmt.assign (stateLeafName st.name t) fs rhs)))
+  let baseStmts := baseParts'.map Prod.snd
+  let baseDecls := baseParts'.filterMap (fun (sourceName, leaf) =>
+    predicateLeafDecl decls sourceName leaf)
   -- 5. step leaves: the whole recurrence list, once per step iteration, in source order.
-  let stepStmts ← stepCoords.flatMapM (fun u => do
+  let stepParts ← stepCoords.flatMapM (fun u => do
     let σ := ctxSubst g.axes u
     g.recur.mapM (fun s => do
       let r   ← rhsOf s
@@ -504,18 +514,10 @@ def unrollScanNode (sizes : HashMap UID Nat) (decls : List Decl) (sc : ScanStmt)
             | some st => (scratchLeafName s.lhsName u, st.freeSlots)
             | none    => (scratchLeafName s.lhsName u, s.slots)
       let rhs ← rewriteRHS g σ hasLeaf (some u) leafSlots r
-      pure (Stmt.assign leafName leafSlots rhs)))
-  -- `nm`/`u` here mirror the SAME leaf-name derivation as step 5 above, but predicate-lookup is
-  -- always keyed by the ORIGINAL recurrence destination `s.lhsName` (state or scratch alike),
-  -- matching `checkPredicateOutput`'s own dispatch on the LHS name.
-  let stepDecls : List Decl := stepCoords.flatMap (fun u =>
-    g.recur.filterMap (fun s =>
-      if isPredicateName decls s.lhsName then
-        let leafName := match g.states.find? (fun st => st.name == s.lhsName) with
-          | some st => stateLeafName st.name (u.map (· + 1))
-          | none    => scratchLeafName s.lhsName u
-        some (.predicate leafName [])
-      else none))
+      pure (s.lhsName, Stmt.assign leafName leafSlots rhs)))
+  let stepStmts := stepParts.map Prod.snd
+  let stepDecls := stepParts.filterMap (fun (sourceName, leaf) =>
+    predicateLeafDecl decls sourceName leaf)
   pure { geom := g, stmts := zeroStmts ++ baseStmts ++ stepStmts
        , live, decls := zeroDecls ++ baseDecls ++ stepDecls }
 
@@ -693,5 +695,51 @@ run_cmd do
               throwError s!"template4Bool: unexpected generated decls: {declNames}"
             unless un.decls.all (fun d => match d with | .predicate _ _ => true | _ => false) do
               throwError s!"template4Bool: every generated declaration must be predicate: {repr un.decls}"
+
+/- A predicate state retaining `j` distinguishes scalar leaf declarations from correctly ranked
+   ones. Its generated leaves assign over `[j]`, so each declaration must carry that same AxisSpec
+   (including UID 7702), while the scan coordinate `l` is eliminated into the leaf name. -/
+private def retainedPredL : AxisSpec := ⟨"l", 7701, .nat⟩
+private def retainedPredJ : AxisSpec := ⟨"j", 7702, .nat⟩
+
+private def retainedPredicateSched : ScheduledProgram :=
+  { decls := [.iter retainedPredL 3, .axis retainedPredJ (some 2),
+              .predicate "S" [retainedPredJ, retainedPredL]]
+  , stmts := [.scan "S" [retainedPredL]
+      [ .assign "S" [.free retainedPredJ, .iterAt retainedPredL 0]
+          { body := { terms := [{ factors := [.read "S0" [.axis retainedPredJ]] }] },
+            nonlin := .identity } ]
+      [ .assign "S" [.free retainedPredJ, .iterNext retainedPredL]
+          { body := { terms := [
+              { factors := [.read "S" [.axis retainedPredJ, .axis retainedPredL]] },
+              { factors := [.read "X" [.axis retainedPredJ, .axis retainedPredL]] }] },
+            nonlin := .identity } ]
+      false ]
+  , env := {}, extNames := insert "S0" (insert "X" (∅ : Finset String))
+  , explicitSizes := ((({} : HashMap UID Nat).insert retainedPredL.uid 3).insert
+      retainedPredJ.uid 2) }
+
+private def retainedPredicateInputs : HashMap String DenseTensor :=
+  (({} : HashMap String DenseTensor).insert "S0" ⟨[2], #[0.0, 1.0]⟩).insert
+    "X" ⟨[2, 3], #[1.0, 0.0, 0.0, 0.0, 0.0, 0.0]⟩
+
+run_cmd do
+  match retainedPredicateSched.stmts.find? (fun s => match s with | .scan .. => true | _ => false) with
+  | none => throwError "retained predicate fixture has no scan node"
+  | some sc =>
+      match unrollScanNode retainedPredicateSched.explicitSizes retainedPredicateSched.decls sc with
+      | .error m => throwError s!"retained predicate fixture failed to unroll: {m}"
+      | .ok un =>
+          unless un.decls.all (fun d => match d with
+              | .predicate _ [a] => a.uid == retainedPredJ.uid
+              | _ => false) do
+            throwError s!"retained predicate leaf declarations lost axis j: {repr un.decls}"
+  match independentRun retainedPredicateSched retainedPredicateInputs with
+  | .error m => throwError s!"retained predicate independent run failed: {m}"
+  | .ok env => match env["S"]? with
+    | some s =>
+        unless denseEq s ⟨[2, 3], #[0.0, 1.0, 1.0, 1.0, 1.0, 1.0]⟩ do
+          throwError s!"retained predicate history wrong: {repr s.shape}/{repr s.data}"
+    | none => throwError "retained predicate fixture: no S in the independent environment"
 
 end LeanNCD.PropertyOracle
