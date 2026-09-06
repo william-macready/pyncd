@@ -75,6 +75,8 @@ upstream `NetSpec`:
    resulting `PreparedPlan` — reading only checker-produced positional data and source-name
    bindings, never source syntax or axis UIDs. It also confirms an affine-shift fixture
    (`Y[i] := A[i + 1]`) is rejected by a typed codegen error before any Python is emitted for it.
+   Every named codegen entry first validates the prepared binding sidecar against the raw plan's
+   exact publication slots; raw IR cannot authenticate the user-visible names themselves.
 2. [`evalplan_smoke.py`](./evalplan_smoke.py) enables `jax_enable_x64`, reconstructs inputs and
    the independent Dense-computed expected output from the emitted `Float.toBits` payloads,
    AST-asserts the generated module contains a real `jnp.einsum("ab,b->a", ...)` call, and checks
@@ -134,6 +136,98 @@ belong to no Lake target (`JaxExperiment` globs only `EvalPlanCodegen`), `lake b
 both affine runners were silently unrunnable. The literals now use named-field syntax like the
 `KernelDenseTest` fixtures, which survives field additions. **Run the runners after any change to
 `Eval/Plan` types — a green `lake build` does not typecheck these drivers.**
+
+**Current driver status (2026-09-04, whole-branch review finding 3).** `lake env lean` elaborates
+`EvalPlanSmoke.lean`, `ScalingProbe.lean`, `EvalPlanAffineCorpus.lean`, and — as of this fix —
+`EvalPlanAffineSmoke.lean`; the corpus driver's five stale `CheckedPlanStepEvidence.plan`
+projections were repaired by Task 4.5 and it regenerates the 3,832-case module at exactly
+3,424,195 bytes, unchanged. `EvalPlanAffineSmoke.lean` did NOT elaborate between Slice 5.4 and this
+fix: `renderAffinePlanNamed`/`renderAffinePlanPositional` became `Except`-returning when the located
+Iverson rejection landed, and the driver still string-appended their results (two `HAppend String
+(Except JaxCodegenError String)` failures). Both call sites now unwrap the `Except` and throw
+`IO.userError` naming the fixture and the `affineReference` boundary (named `PreparedPlan` /
+positional `CheckedEvalPlan`) that rejected — a render rejection aborts generation loudly instead of
+being stringified into the emitted Python. Re-measured 2026-09-04: `lake env lean --run
+EvalPlanAffineSmoke.lean <out>` regenerates the 20-fixture curated module (11,509 bytes; the Python
+verifier leg was not re-run, so no new eager/JIT timings are recorded here). `BridgeSmoke.lean`
+needs the upstream `Jax` module fetched by `run.sh` and does not elaborate standalone.
+
+### What this backend REJECTS (Task 4.5, 2026-09-03)
+
+The checked Dense backend admits several semantics this experimental JAX backend implements no
+rendering for. They are now rejected with a located, typed `JaxCodegenError` **before** any Python is
+emitted, any candidate is built, or any `ExecutionEvidence` label exists — never silently stamped
+`orderedReference64`:
+
+| Assignment feature | Dense checked plan | JAX render | JAX candidate evidence |
+|---|---|---|---|
+| `f64`, real algebra, plain read | required | required | required |
+| `f64`, tropical max/min (`admittedAlgebraMax`/`Min`) | required | forbidden (`unsupportedAlgebra`) | forbidden |
+| `bool` destination, Boolean algebra | required | forbidden (`unsupportedDestDType`) | forbidden |
+| `bool` source into a real destination | required | forbidden (`unsupportedSourceDType`) | forbidden |
+| unary read (`ReadPlan.unary`) | required | forbidden (`unaryFactor`) | forbidden |
+| Iverson factor | required | forbidden (`iversonFactor`, original all-factor index) | forbidden |
+| contextful assignment (`AssignPlan.contextShape` non-empty) | required | forbidden (`unsupportedContext`) | forbidden |
+| zero-padded read shorter than its iteration basis | required | `einsumOnly` forbidden (`labelExtentMismatch`); `affineReference` required | einsum forbidden, affine required |
+
+**There is no JAX Boolean execution and none is planned here** — this is a fail-loud support
+boundary, not a semantic gap in the checked backend, which executes all eight rows correctly. The
+last row is the only mode-SPLIT one (whole-branch review): see the label-extent paragraph below.
+
+The contextful row is the Task 4.5 CLOSURE finding, and it is about a runtime parameter rather than
+a dtype or an algebra: a checked assignment with a non-empty `contextShape` denotes a FAMILY of
+results indexed by a context coordinate (`runDenseAssignAt` binds it at every term's `contextPos`),
+and neither lowering here has a kernel parameter for that coordinate. Neither noticed its absence
+either: `einsumOnly` treated a context position as an ordinary subscript label and CONTRACTED it
+away (`Y[] := X[l]` rendered as `a->`), and `affineReference` emitted its terms with no
+`context_pos` key at all — while Dense returns `10` at context `0` and `20` at context `1` for the
+same plan. Both were being stamped with evidence, `orderedReference64` for the affine one. **JAX
+assignment kernels support only CONTEXT-FREE assignments**; adding a context parameter or runtime
+support was explicitly not attempted. Note that `checkPlan` already refuses a contextful TOP-LEVEL
+step (`topLevelContextNotEmpty`), so this reaches the backend only through the standalone
+`CheckedAssignPlan` entries — which is exactly where the gate now sits.
+
+Three further restrictions are `einsumOnly`-ONLY, and are structural rather than about dtypes or
+algebra: a term must have at least one factor (`emptyTerm`), its iteration rank must fit the 26-letter
+subscript alphabet (`rankTooLarge`), and every iteration position must be covered by some factor's
+projection (`uncoveredPosition`). `affineReference` renders all three shapes, which is why the curated
+affine corpus can and does contain empty-factor/empty-term cases. `Executable.lean`'s `validateEinsum`
+mirrors exactly these preconditions (`einsumTermRenderable`, sharing `einsumLabelLimit` with
+`labelTable` through a `#guard`), so an einsum candidate is certified only if `lowerAssign` really
+renders it — before the Task 4.5 re-review it could be certified and then rejected at emission.
+
+A fourth `einsumOnly`-only restriction is about MEANING rather than structure: label extents. A
+zero-padded read whose source extent is smaller than its own iteration extent (say
+`sourceShape = #[2]` against `iterationShape = #[3]`) is a checked, Dense-executable assignment whose
+einsum string, `a->a`, is perfectly well-formed — but `jnp.einsum` takes label `a`'s extent from the
+operand, so the rendered kernel returns two elements where Dense returns three (the third the zero
+pad). It is a DIFFERENT function. The Task 4.5 re-review closed this at the evidence boundary only
+(`validateEinsum` refused to certify it while `lowerAssign` still rendered it — the one deliberate
+validator/emitter disagreement); the whole-branch review ruled that insufficient, because
+`lowerAssign` is itself a public entry and `generateForward`/the plan renderers reach emitted Python
+through it. Both sides now reject, through the SAME recomputation: `Executable.lean`'s public,
+located `einsumTermLabelExtents` decides, `validateEinsum` consumes its `Bool` view, and this
+emitter maps its `.mismatch` verdict to the located `labelExtentMismatch` (node, term, factor, source
+dimension, iteration position, and both extents). `affineReference` renders and validates it either
+way — its tables carry the zero-pad mask explicitly — so the restriction stays einsum-scoped.
+
+The gate is `LeanNCD.Eval.Plan.checkJaxAssignSupport`, applied in declared order (destination dtype,
+algebra, context shape, then factors in original term/factor order: source dtype before unary) — the
+same coarse order `checkAssign` itself uses, which is why the context check sits between the algebra
+and the factors. A contextful assignment with a Boolean destination or a tropical algebra therefore
+reports THAT, and one with a Boolean source or a unary read reports the CONTEXT; both directions are
+pinned by fixtures. `contextPos`/`contextShape` disagreement is never conflated with the context
+rejection — `checkAssign` rejects it first as `contextProjectionMismatch`, so no `CheckedAssignPlan`
+for it exists to reach the gate. Signature-context
+ownership follows the completed spike's selection (GO B,
+`papers/jax_signature_evidence_ownership_spike_results.md`): a STANDALONE entry — `lowerAssign`,
+`renderAffineAssign`, `buildAssignFixture`, both candidate conversions, both candidate validators,
+`validateAndConstructKernel` — takes one explicit complete `Array TensorSignature` and treats it as
+its semantic authority, re-running `checkAssign` under it (a structurally incompatible table is
+rejected as `invalidSignatureContext`). A PLAN-level entry — `lowerPlan`, `generateForward`, both
+plan renderers, `generateNamed`, `lowerCheckPlanToCandidate` — takes no such parameter and derives
+`PreparedPlan.plan.raw.tensorSigs`, so no caller can substitute a same-shape all-real table.
+Rejections at a plan level carry the real outer step index, not `0`.
 
 Generated cases cover nonzero bias, non-unit/multi-axis coefficient rows, multiple factors/terms,
 reduction domains, multiple graph nodes, and internal reads. Curated cases uniquely supply

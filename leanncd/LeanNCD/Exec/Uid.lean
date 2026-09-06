@@ -75,7 +75,19 @@ inductive CompileError
                                                              -- scans"); reject it here instead, at
                                                              -- compile time, mirroring
                                                              -- checkScatterNonlin
-  deriving Repr, DecidableEq
+  | duplicateTensorDecl : String → CompileError             -- one tensor-bearing name
+                                                             -- (`tensor`/`linear`/`predicate`) is
+                                                             -- declared twice. The declaration
+                                                             -- environment used to be built by
+                                                             -- last-wins insertion, so a second
+                                                             -- declaration silently replaced the
+                                                             -- first and the two consumers of a
+                                                             -- name's declaration (`DeclEnv`
+                                                             -- lookup vs. a linear scan over
+                                                             -- `decls`) could disagree about its
+                                                             -- kind. Names the duplicated tensor
+                                                             -- only — no declaration index
+  deriving Repr, DecidableEq, BEq, Inhabited
 
 /-- Combined error + UID-counter monad (`EStateM ε σ α = σ → Result ε σ α`, Lean core). Mints fresh
     UIDs and validates structure; the executable side of the seam (it computes, proves nothing). -/

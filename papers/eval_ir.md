@@ -119,10 +119,18 @@ The experimental JAX path is designed to preserve the same separation: lowering 
 to runtime JAX arrays; it returns another Python dictionary mapping materialized result names to JAX
 arrays. The plan's bindings perform the name-to-slot and slot-to-name correspondence.
 
-This is currently a target architecture rather than a working end-to-end evaluator. The checked
-graph contains assignment, scan, pointwise, and axiswise steps, but the non-default JAX experiment
-still assumes assignment-only checked nodes and does not build against that representation. See
-[Section 3.3.2](#332-experimental-jax-evaluator) for the status of each component.
+This is currently a target architecture rather than a working end-to-end evaluator — but for a
+narrower reason than this section used to give. The non-default `JaxExperiment` library DOES build
+(`lake build JaxExperiment`, green): it was migrated to the current multi-variant
+`CheckedPlanStepEvidence`, and it is assignment-only by SCOPE, fail-loud rather than broken. A
+`.scan`/`.pointwise`/`.axiswise` step is rejected with a located `unsupportedStep <stepIndex>`, and
+an assignment the backend cannot render — a Boolean destination or source, a tropical `max`/`min`
+algebra, an inline unary read, an Iverson factor, a CONTEXTFUL assignment (non-empty
+`AssignPlan.contextShape`, which neither lowering has a kernel parameter for), or, in `einsumOnly`
+mode, a zero-padded read whose source extent disagrees with its own iteration extent — is rejected
+with its own located typed error before any Python is emitted. What is still missing is the end-to-end wiring: nothing consumes a
+validated `SomeJaxExecutable` to emit Python, and no JAX runtime is exercised by this project's
+build. See [Section 3.3.2](#332-experimental-jax-evaluator) for the status of each component.
 
 ## 2. Plan preparation
 
@@ -288,28 +296,37 @@ appearance in the schedule is a single source-level statement.
 
 `prepareEvalPlan` lowers the following source fragment:
 
-- A top-level `ScanStmt.plain` assignment may contain ordinary tensor-read factors, `sum`
-  aggregation, and an identity, pointwise, or unmasked axiswise nonlinearity. A pointwise or axiswise
-  statement becomes an internal `PlanStep.assign` followed by `PlanStep.pointwise` or
-  `PlanStep.axiswise`; the nonlinear step publishes the statement's result.
+- A top-level `ScanStmt.plain` assignment may contain ordinary tensor-read factors, inline unary
+  read factors (`log`/`exp`/…), and Iverson predicate factors; `sum`, `max`, or `min` aggregation;
+  a real or Float-backed `bool` destination; and an identity, pointwise, or axiswise nonlinearity,
+  masked or unmasked. A pointwise or axiswise statement becomes an internal `PlanStep.assign`
+  followed by `PlanStep.pointwise` or `PlanStep.axiswise`; the nonlinear step publishes the
+  statement's result.
 - An axiswise statement must have exactly one `LHSSlot.freeNorm` marker. Preparation resolves that
   source marker to `RawAxiswisePlan.axisPos`, after which the checked graph no longer retains an axis
-  UID. A missing or duplicate marker, a marker on a non-axiswise statement, or an axiswise mask
-  produces a typed `NonlinCompileError`.
-- A `ScanStmt.scan` becomes a `PlanStep.scan` when its base and recurrence statements use ordinary
-  tensor-read factors, `sum` aggregation, and either identity nonlinearity or an admitted
-  pointwise/axiswise nonlinearity (Thread 4 Task 4 admits and lowers the latter through `compileScan`
-  — see `LeanNCD/Eval/Plan/Compile.lean` `checkNonlinScanBlock` and the accepted-fixture rationale in
-  `test/Eval/Plan/DifferentialTest.lean`). A `RawPlanBlock`'s element type is `BlockStep`
+  UID. A missing or duplicate marker, or a marker on a non-axiswise statement, produces a typed
+  `NonlinCompileError`. An axiswise `where=` mask no longer does: Slice 5 lowers it through
+  `lowerMaskPredicate` into `RawAxiswisePlan.mask`, and `NonlinCompileError.maskedAxiswiseNotSupported`
+  is retained with no producer left.
+- A `ScanStmt.scan` becomes a `PlanStep.scan` when its base and recurrence statements stay inside
+  that same fragment — the scan-block admission functions are now the top-level ones
+  (`checkNonlinScanBlock` = `checkNonlinTopLevel`, and `checkAggOp`/`checkFactor` are shared
+  outright), so pointwise/axiswise nonlinearity (Thread 4 Task 4, lowered through `compileScan`),
+  `max`/`min` aggregation, unary factors, Iverson factors, and Boolean state/scratch (Task 4.4) are
+  all admitted in a scan block too; see `LeanNCD/Eval/Plan/Compile.lean` and the accepted-fixture
+  rationale in `test/Eval/Plan/DifferentialTest.lean`. A `RawPlanBlock`'s element type is `BlockStep`
   (`.assign`/`.pointwise`/`.axiswise`) with the block's `steps : Array BlockStep`
   (`LeanNCD/Eval/Plan/RawStep.lean`), not the earlier assignment-only element type.
 
-Capability preflight returns a typed `CapabilityError` for predicate declarations and Iverson
-factors, scatters or affine LHS writes, `scanPre` nodes,
-and scans with no advancing axis. Nonlinear scan-block statements and normalized-axis slots inside
-scan blocks are **now structurally admitted** at this boundary — Thread 4 Task 4 shifted them out
-of the rejection set; `max`/`min` aggregation (the max/min-aggregation thread) and unary factors
-(`log`/`exp`/…, the unary-factor thread) are likewise **now admitted** — with any residual
+Capability preflight returns a typed `CapabilityError` for scatters or affine LHS writes, `scanPre`
+nodes and pre-built recurrence morphisms, `iterAt`/`iterNext` slots outside a scan node, and scans
+with no advancing axis. It no longer rejects predicate declarations or Iverson factors: source
+Iverson factors lower via `lowerFactorPredicate` and a Boolean declared output is a signature/algebra
+tag (Task 4), so `maskOrPredicate` and `booleanOutput` are both retained with no producer left.
+Nonlinear scan-block statements and normalized-axis slots inside scan blocks are likewise **now
+structurally admitted** at this boundary — Thread 4 Task 4 shifted them out of the rejection set;
+`max`/`min` aggregation (the max/min-aggregation thread) and unary factors (`log`/`exp`/…, the
+unary-factor thread) are **now admitted** too — with any residual
 obligations reported as `ScanCompileError` instead.
 Constructs rejected at this boundary do not appear in the `CheckedEvalPlan` inside the
 [`PreparedPlan`](#24-prepareevalplan-output-preparedplan).
@@ -372,7 +389,20 @@ preparation records those external names in first-seen-read order.
 - `iter a = n` contributes `a.uid -> n`.
 
 UIDs are canonical by the time this map is constructed. The map is the initial seed for
-signature-driven axis-size inference. It does not claim that every axis is already sized; remaining
+signature-driven axis-size inference — but it is a CACHED pipeline product, not authority. Both
+public boundaries that accept a hand-built `ScheduledProgram` re-derive it from `sched.decls`
+(`declaredAxisSizes`, the same rule `schedule` itself uses) rather than reading the stored field:
+`prepareEvalPlan` at Step 0 and `evalScheduled` at its own seed, so a schedule whose cached map
+contradicts its declarations is seeded with what the declarations say — and the checked and
+reference backends still agree. This is the same authority rule Step 0 applies to `sched.env`
+(rebuilt by `buildDeclEnv`, at both boundaries) and `sched.extNames` (rebuilt by
+`orderedExternalNames`, and re-derived again by `checkScheduledReadRanks` for its own read-arity
+question). Both boundaries also re-establish the source pipeline's own statement-level invariants,
+in the source pipeline's order — declarations (`buildDeclEnv`), read arity
+(`checkScheduledReadRanks`), predicate outputs (`checkPredicateOutputs`), and, on the checked
+backend, statement order (`isTopoOrdered`) — each through one shared rule and one shared
+`ScanStmt` traversal, so a hand-built schedule cannot be rejected by one backend and silently
+executed by the other. It does not claim that every axis is already sized; remaining
 sizes may be inferred from input tensor signatures. An unresolved required axis is a typed shape
 error during plan preparation rather than a default extent.
 
@@ -452,15 +482,22 @@ Those obligations are established at later boundaries.
 first-seen-read order:
 
 1. every required external name must have a `TensorSignature`;
-2. every required external tensor must currently have dtype `f64`;
+2. every required external tensor must have an ADMITTED dtype (`f64` or `bool`; `f32` is rejected as
+   `InputSignatureError.dtypeNotAdmitted`) that also EQUALS the dtype its source declaration commits
+   the name to — a name declared `predicate` is `bool`, every other declaration or none at all is
+   `f64`. A contradicting explicit signature is rejected as `InputSignatureError.dtypeMismatch`,
+   never silently rewritten;
 3. `inferAxisSizesFromSignature` combines `explicitSizes` with external tensor shapes and the source
    statements to solve axis extents;
 4. any required output or contracted axis that remains unsized produces a typed `ShapeError`;
 5. the resulting shapes are compiled into positional `TensorSignature` entries in `RawEvalPlan`.
 
 Extra signature entries are permitted because preparation consults only names required by the
-schedule. Although `ScalarDType` reserves `f32` and `bool` tags for future capabilities, the current
-Backend Eval IR compiler admits only `f64`.
+schedule. `ScalarDType.f32` remains a reserved tag with no worker; `bool` is live (Task 4,
+[`boolean_predicate_output_evalplan.md`](boolean_predicate_output_evalplan.md)) as a **semantic
+algebra/signature tag over the unchanged Float-backed storage**, not a native carrier: a `bool`
+destination selects the Boolean min/max algebra (`admittedAlgebraBool`), a `bool` source may feed an
+`f64` destination and vice versa, and `DenseTensor` still stores `Array Float` throughout.
 
 #### 2.3.2 Derivation from runtime inputs
 
@@ -471,6 +508,23 @@ assigning dtype `f64`:
 def InputSignature.ofDenseInputs
     (inputs : HashMap String DenseTensor) : InputSignature
 ```
+`InputSignature.ofDenseInputsForDecls` is its declaration-aware sibling: it copies the same shapes
+but labels each name from the declaration environment it builds itself (`buildDeclEnv`), so a name
+declared `predicate` gets `bool` and every other name `f64`:
+```lean
+def InputSignature.ofDenseInputsForDecls
+    (decls : List Decl) (inputs : HashMap String DenseTensor) : Except CompileError InputSignature
+```
+It is `Except`-valued, not total: a `decls` list that declares one tensor-bearing name twice is
+propagated as `buildDeclEnv`'s own `CompileError.duplicateTensorDecl`, never degraded to "no
+declaration at all, therefore `f64`" — that degradation would hand back an all-real signature for a
+program that declares a predicate. `decls` is the authority and is re-validated on every call; a
+cached `ScheduledProgram.env` is a pipeline product and is not accepted as a substitute (the same
+rule `prepareEvalPlan`'s Step 0 states for itself). Preparation derives the same dtype from the same
+declarations, so the two agree by construction; `ofDenseInputs` remains the all-`f64` compatibility
+helper (total — it consults no declaration) and is correct exactly when no tensor-bearing name is
+declared `predicate`.
+
 This is a convenience for callers and tests. It does not collapse preparation and execution into one
 phase: only shape and dtype metadata enter `prepareEvalPlan`; the `DenseTensor` values are later
 resolved by name, checked against the prepared positional signatures, and packed for execution.
@@ -508,7 +562,8 @@ Its three fields separate semantic computation from the source-facing boundary:
   `RequiredBindings` proves that its entries are a permutation of its own stored `inputSlots` array
   and rejects duplicate names. `prepareEvalPlan` constructs that array and
   `plan.raw.inputSlots` together, but the public `PreparedPlan` type does not itself prove that they
-  agree. For a compiler-produced plan, `materializedNames` has one entry per persistent scheduled
+  agree; the JAX executable gate re-establishes the agreement against `plan.raw` before it will
+  issue evidence (`checkPreparedBindings`, `Eval/Plan/Executable.lean`). For a compiler-produced plan, `materializedNames` has one entry per persistent scheduled
   output in schedule order. An identity statement publishes its `PlanStep.assign` destination. A
   pointwise or axiswise statement publishes only its trailing nonlinear step's destination; the
   internal assignment introduced by plan compilation has no name. `compileToScheduled` emits no
@@ -816,10 +871,10 @@ runDensePlan
   Except PositionalInputError (Array DenseTensor)
 
 unpack
-  (bindings : PlanBindings)
+  (plan : PreparedPlan)
   (env : NamedDenseEnv)
   (result : Array DenseTensor) :
-  NamedDenseEnv
+  Except PlanRunCause NamedDenseEnv
 
 runPreparedDense
   (plan : PreparedPlan)
@@ -827,10 +882,20 @@ runPreparedDense
   Except PlanRunFailure EvalReport
 ```
 `pack` returns positional inputs, `runDensePlan` returns the complete positional store, and `unpack`
-returns the original named environment updated with materialized results.
+returns the original named environment updated with materialized results. `unpack` takes the whole
+`PreparedPlan` and requires the result store to hold exactly `plan.raw.tensorSigs.size` entries
+(`PlanRunCause.resultStore (PositionalInputError.storeArityMismatch …)`) before resolving any
+binding: which slots exist is a fact about the checked plan, not about the store a caller supplies,
+so an oversized store cannot license a binding the plan itself rejects. It then resolves every
+`materializedNames` entry through the shared `PlanBindings.materializedWith` — the same path
+`PreparedPlan.materializedSignatures` uses against the signature table — so a binding naming a slot
+outside the plan is `PlanRunCause.materialization (PlanError.slotOutOfRange …)`, raised before any
+name is published, rather than an empty tensor fabricated under a real output name.
 On success, `EvalReport.env` contains the original named environment updated with every materialized
 result, and `EvalReport.warnings` contains the preparation warnings. On failure, `PlanRunFailure`
-records the binding or positional-execution cause together with those warnings.
+records the binding, positional-execution, result-store, or materialization cause together with
+those warnings; `runPreparedDense` propagates `unpack`'s cause verbatim, so a direct `unpack` call
+reports the identical value.
 
 #### 3.3.2 Experimental JAX evaluator
 
@@ -838,19 +903,20 @@ The experimental JAX path is intended to compile the prepared semantic plan befo
 execution.
 
 > **Current implementation status:** The table below maps the intended JAX architecture to the code
-> that presently exists; it does not describe a working end-to-end evaluator. The experiment still
-> assumes assignment-only checked nodes. It has not been migrated to the current assignment, scan,
-> pointwise, and axiswise `CheckedPlanStepEvidence` variants and therefore does not build.
+> that presently exists; it does not describe a working end-to-end evaluator. The experiment builds
+> (`lake build JaxExperiment`) against the current assignment, scan, pointwise, and axiswise
+> `CheckedPlanStepEvidence` variants; it is assignment-only by scope and fail-loud, rejecting every
+> other step kind with a located `unsupportedStep`, not by failing to compile.
 
 | Common stage | Experimental JAX implementation | Current status |
 |---|---|---|
-| Backend lowering | `lowerCheckPlanToCandidate` | Source exists, but assumes assignment-only checked nodes and does not compile against the current graph |
-| Executable validation | `validateAndConstructExecutable` | Checks step count, assignment-kernel well-formedness, and evidence aggregation; no scan or nonlinearity representation |
+| Backend lowering | `lowerCheckPlanToCandidate` | Builds against the current graph; routes assignment steps through the affine-table path and rejects a scan/pointwise/axiswise step with a located `unsupportedStep` |
+| Executable validation | `validateAndConstructExecutable` | Checks step count, per-step context/assignment ties, assignment-kernel well-formedness, and evidence aggregation; no scan or nonlinearity representation |
 | Backend executable | `SomeJaxExecutable`, containing `JaxExecutable evidence` | Types and validator are implemented, but code generation is not wired to consume this executable |
 | Named runtime tensors | Python `dict[str, jax.Array]` | Interface emitted by the assignment-only generator; not currently available end to end |
-| Runtime binding | Generated or interpreted name-to-slot initialization | Implemented for scan-free plans; experiment currently does not build |
+| Runtime binding | Generated or interpreted name-to-slot initialization | Implemented for scan-free plans |
 | Positional execution | Generated `jnp.einsum` or Python interpretation of emitted affine tables | Assignment paths exist; scan, pointwise, and axiswise lowering and execution are not implemented |
-| Output materialization | Generated or interpreted slot-to-name construction | Implemented for scan-free plans; experiment currently does not build |
+| Output materialization | Generated or interpreted slot-to-name construction | Implemented for scan-free plans |
 | Result | Python `dict[str, jax.Array]` | Intended generated-function result; no currently buildable end-to-end path |
 
 Two partially separate paths currently exist in the experiment. Candidate-lowering code is intended
@@ -863,16 +929,19 @@ function containing restricted projection-only `jnp.einsum` contractions. `affin
 emits static safe-index and validity-mask tables, which
 [`evalplan_affine_runtime.py`](../leanncd/experiments/jax_bridge/evalplan_affine_runtime.py)
 interprets with ordered factor, reduction, and term folds. Both modes read `PreparedPlan` directly
-and are incompatible with the current multi-variant checked graph. The function form below applies
-specifically to `einsumOnly`:
+and lower its assignment steps only, rejecting a scan, pointwise, or axiswise step of the current
+multi-variant checked graph with a located error rather than failing to compile against it. The
+function form below applies specifically to `einsumOnly`:
 ```python
 def forward(inputs):
     ...
     return outputs
 ```
-When that path is restored, `inputs` will be a Python dictionary mapping source names to actual JAX
-arrays. The generated function will place those arrays into positional slots, evaluate the supported
-operations, and return a Python dictionary mapping materialized result names to JAX arrays.
+At runtime, `inputs` is a Python dictionary mapping source names to actual JAX arrays. The generated
+function places those arrays into positional slots, evaluates the supported operations, and returns
+a Python dictionary mapping materialized result names to JAX arrays. That Python side is not
+exercised by this project's build (no JAX toolchain is installed here), which is why the path is not
+described as end to end.
 
 The intended distinction remains that Dense interprets `CheckedEvalPlan`, while JAX lowers it before
 runtime. Both are meant to preserve the `PreparedPlan` boundary's name-to-slot,

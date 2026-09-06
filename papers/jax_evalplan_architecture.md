@@ -55,21 +55,31 @@ selected gradients.
 That evidence is broad structurally and narrow numerically. The corpus is a bounded enumeration over
 two axes of extent two, so no tensor in it exceeds four elements, its 3,832 programs collapse to 45
 distinct structural feature classes, and five of the twelve tracked features are supplied only by the
-curated fixtures. It establishes that the affine grammar is interpreted correctly, and it says nothing
-about scale — the evidence base contains no scaling measurement at all
-([Section 5.4](#54-evidence-validating-the-experimental-jax-bridge)). That absence matters because the
-reference lowering emits one index and one validity bit per iteration coordinate per factor, so its
-table size is the product of a term's full iteration domain, contracted axes included. Whether that
-path is usable beyond toy scale is therefore an open measurement, not a settled one.
+curated fixtures. It establishes that the affine grammar is interpreted correctly, and the corpus
+itself still says nothing about scale. *That gap is no longer open, and the sentence that used to
+stand here — "the evidence base contains no scaling measurement at all" — is historical.* It was
+closed on 2026-08-13 by a separate, deliberately out-of-corpus measurement
+([Section 5.4](#54-evidence-validating-the-experimental-jax-bridge); thread 2 in
+[Section 7.6](#76-sequencing-across-threads) is **Measured**): one 4,096-coordinate contraction
+(`Y[i] := Σⱼ W[i,j]·x[j]`, `i,j` over 64) generates a 177,547-byte artifact — about 5% of the whole
+3,832-case corpus from a single case — and its JIT steady-state call is ~34 µs against native
+`jnp.einsum`'s ~7 µs, about 4.9× slower. That matters because the reference lowering emits one index
+and one validity bit per iteration coordinate per factor, so its table size is the product of a
+term's full iteration domain, contracted axes included. The measurement is one fixture, not a scaling
+curve: the growth relationship beyond it is extrapolated, not measured.
 
 The bridge is therefore a strong semantic reference, but not yet a production boundary: after
-checking, Lean emits generated Python source or untyped nested dictionaries and lists. Before the rest
-of **Wave F**—the extension that adds checked recurrent scans, whose F0 contract fixtures, F1
-context fields, F2 checked plan-block layer, and F3 checked scan graph have landed while the
-source-compiler/adapter closure (F4) has not—or production use,
-the existing `EvalPlan` should evolve into a phase-separated **Backend Eval IR**: the common,
-backend-neutral execution language interpreted by Dense and JAX today, keeping a PyTorch evaluator
-possible without committing to build one. **PyTorch is a potential future backend, not scheduled
+checking, Lean emits generated Python source or untyped nested dictionaries and lists. Before
+production use, the existing `EvalPlan` should evolve into a phase-separated **Backend Eval IR**: the
+common, backend-neutral execution language interpreted by Dense and JAX today, keeping a PyTorch
+evaluator possible without committing to build one. *The clause that used to open this paragraph —
+"Before the rest of **Wave F** … whose F0–F3 have landed while the source-compiler/adapter closure
+(F4) has not" — is likewise historical: **Wave F (F0–F5) is complete** as of 2026-08-20
+([Section 7.6](#76-sequencing-across-threads) thread 3), including F4's source compiler, adapter, and
+three-way differential gate, and the checked scan fragment has since grown further (Float-backed
+Boolean state/scratch, predicates and masks, unary factors, max/min aggregation, and pointwise/
+axiswise nonlinearity inside scan blocks — see `wave_f_capability_manifest.md` §2).*
+**PyTorch is a potential future backend, not scheduled
 work**: no client has asked for it, and [Section 7.6](#76-sequencing-across-threads) schedules no
 PyTorch implementation. Design decisions that follow keep the IR backend-neutral so a PyTorch
 evaluator remains straightforward to add later; they are not a claim that one is being built now.
@@ -326,8 +336,11 @@ Dense: turning a reasoned bound into a validated one needs a second backend to d
 and none exists yet — the checked pipeline now accepts these steps, but only one interpreter does.
 **PyTorch** interpreter support is deferred with no scheduled thread (mirrors
 [Section 7.6](#76-sequencing-across-threads) thread 5's own PyTorch deferral). **JAX** support is
-blocked solely by `EvalPlanCodegen.lean`'s pre-existing `PlanStep` breakage and is the natural next
-slice, not indefinitely deferred like PyTorch. Once a second backend (most likely JAX) gains checked
+not blocked by a broken experiment any more (`lake build JaxExperiment` is green as of 2026-09-04;
+the `PlanStep` breakage this sentence recorded has been repaired) — the experiment simply has no
+`.pointwise`/`.axiswise` lowering yet and rejects those steps with a located `unsupportedStep`, so it
+is the natural next slice, not indefinitely deferred like PyTorch. Once a second backend (most likely
+JAX) gains checked
 nonlinear support, re-measure against real output, turn each of the four still-open bounds into an
 actual Lean constant with a pinning test the way `reference64SumProduct`'s fold order already has, and
 tighten or loosen these numbers accordingly; treat this table as the closing decision Stage A needs
@@ -1374,8 +1387,8 @@ rather than new graph structure.
 | 2 | Run the affine-table scaling measurement: one mid-sized contraction, timed and sized | **Measured** | Nothing | [Section 5.4](#54-evidence-validating-the-experimental-jax-bridge): one 4,096-coordinate contraction is already ~5% of the entire corpus's artifact size, and its compiled steady-state runtime is measurably (~5×) slower than native `jnp.einsum`. Both findings reordered thread 5 below. |
 | 6 | Closed Stage A's remaining refinements: explicit named factor/reduction/term fold functions in `Dense.lean` (`factorFold`/`reductionFold`/`termFold`), `reference64SumProduct` as the actual closed `NumericMode` constructor (renamed from the open `reference64` tag), and length-correct `RequiredBindings` in `Prepared.lean` | **Done** | Nothing | The three Stage A items neither thread 3 nor thread 5 needed. Cheaper than either — two of the three surfaced already-correct, already-tested behavior as a named API/type, not building new structure. Blocked on nothing and blocked nothing else, so it ran right after the other zero-dependency threads, in parallel with threads 5/3/4. |
 | 5 | Compact/evidence-indexed kernels for JAX ([Section 4.3](#43-evidence-indexed-executable-lowering)) | **Done** | Thread 2's outcome | Artifact size grows too fast for the affine-table oracle to stay usable past near-term needs, and its compiled steady-state runtime is a real, measured gap, not merely comparable. Built the validated, evidence-indexed executable-lowering discipline Stage A describes (private validated constructors, evidence-indexed kernels — [Section 7.1](#71-stage-a-recommended-low-risk-refinements)) around the lowering that already existed via the experimental JAX bridge, not a second lowering: `LeanNCD/Eval/Plan/Executable.lean`'s `ExecutionEvidence`, kernel/plan `Candidate` types, and private-constructor `JaxKernel`/`JaxExecutable`, gated by `validateAffineTable`/`validateEinsum` (the latter also closes a validation gap found in review — rejecting nonzero-bias and dropped-projection-axis einsum candidates the way `EvalPlanCodegen.lean`'s pre-existing `lowerFactor` already does). **JAX only**: the PyTorch backend (also sketched in Appendix D) is explicitly out of scope here — no client has asked for it, so it is deferred with no scheduled thread, not merely sequenced later. |
-| 3 | Continue Wave F (F4: source compiler, adapter, and differential gate) | **Done** — Wave F (F0-F5) is complete (2026-08-20) | Nothing beyond what F0/F1/F2/F3 already landed | This *is* Backend Eval IR's scan-half implementation per [Section 2.3](#23-blocks-graph-flow-and-scans) reaching source-level closure, not prerequisite work backend IR waits on — F2 and F3 already built the block-scoped slot tables and the `PlanStep` assign/scan interface that section requires (as hand-built checked plans, not reachable from source syntax), and implemented the immutable-pre-step snapshot and simultaneous next-state commit *as worker behavior*, though not yet as the distinct types Stage A item 7 asks for. F4 taught the source compiler and adapter to reach them and added the differential gate: `prepareEvalPlan` now compiles a `ScanStmt.scan` into a `PlanStep.scan`, and 21 scan programs agree bit-for-bit across the compiled checked path, `evalScheduled`, and an independent scan-free unrolling (see the F4 completion record in [`wave_f_scanplan_proposal.md`](wave_f_scanplan_proposal.md#f4---source-compiler-adapter-and-differential-gate)). **Wave F is now finished**: F5 (adversarial audit and handoff — checker/error mutation matrix, import-direction audit, updated capability manifest) landed 2026-08-20; see its completion record in the same file and the published [`wave_f_capability_manifest.md`](wave_f_capability_manifest.md) for what the checked-scan boundary now accepts, rejects, and still leaves for a later wave. Neither F4 nor F5 included JAX scan lowering or execution, so the non-default `JaxExperiment` target still does not build — that remains a later, unscheduled wave, not a Wave F gap. Proceeded independently of threads 1, 2, and 4, subject to [Section 7.2](#72-stage-b-candidate-dependent-contraction-prototype)'s existing constraint against combining it with the Stage B rewrite. Thread 5's completion (above) did not unblock anything here — the "after thread 5" sequencing in earlier drafts of this table was a priority ordering (thread 5 addressed a measured, worsening gap; thread 3 did not depend on thread 5's output), not a real dependency, and thread 3 was never blocked on it. |
-| 4 | Implement nonlinearity: new `PlanStep` pointwise/axiswise cases, Dense/JAX interpreter support | **Done** — Dense-only (2026-08-21) | Thread 1 (specified). The former dependency on thread 3 is **discharged**: `PlanStep` exists (`RawStep.lean`) as of F3. | `PlanStep` now has `.pointwise`/`.axiswise` (thread 4), checked and executed by Dense, reachable from top-level source syntax, serving as the reference semantics a future JAX lowering must match; scan-block nonlinearity stays rejected (deliberate scope boundary, [Section 2.2](#22-contractions-and-ordered-floating-point-execution) above). **PyTorch**: no client has asked for it, so PyTorch interpreter support is deferred with no scheduled thread, not merely sequenced later — mirrors thread 5's own PyTorch deferral above. **JAX**: blocked solely by `EvalPlanCodegen.lean`'s pre-existing `PlanStep`/`CheckedPlanStepEvidence` breakage (confirmed by directly running `lake build JaxExperiment`, unrelated to this thread — see thread 3's row above); repairing that file and adding `.pointwise`/`.axiswise` JAX lowering on top of the now backend-neutral checked types (`RawPointwisePlan`/`RawAxiswisePlan`/`CheckedPointwisePlan`/`CheckedAxiswisePlan`) is the natural next slice, not indefinitely deferred like PyTorch. |
+| 3 | Continue Wave F (F4: source compiler, adapter, and differential gate) | **Done** — Wave F (F0-F5) is complete (2026-08-20) | Nothing beyond what F0/F1/F2/F3 already landed | This *is* Backend Eval IR's scan-half implementation per [Section 2.3](#23-blocks-graph-flow-and-scans) reaching source-level closure, not prerequisite work backend IR waits on — F2 and F3 already built the block-scoped slot tables and the `PlanStep` assign/scan interface that section requires (as hand-built checked plans, not reachable from source syntax), and implemented the immutable-pre-step snapshot and simultaneous next-state commit *as worker behavior*, though not yet as the distinct types Stage A item 7 asks for. F4 taught the source compiler and adapter to reach them and added the differential gate: `prepareEvalPlan` now compiles a `ScanStmt.scan` into a `PlanStep.scan`, and 21 scan programs agreed bit-for-bit across the compiled checked path, `evalScheduled`, and an independent scan-free unrolling at F4's close (see the F4 completion record in [`wave_f_scanplan_proposal.md`](wave_f_scanplan_proposal.md#f4---source-compiler-adapter-and-differential-gate)). *Re-measured 2026-09-04: that gate now carries **43** scan programs — 29 within Wave F's own scope (the same 12 hand-written fixtures plus 17 accepted generated cases, up from 9 as the nonlinearity and max/min threads widened the admitted fragment) and 14 added later by the nonlinearity, predicate/mask, and Boolean threads; see [`wave_f_capability_manifest.md` §4](wave_f_capability_manifest.md#4-law-1-corpus-coverage-for-scans) for the split.* **Wave F is now finished**: F5 (adversarial audit and handoff — checker/error mutation matrix, import-direction audit, updated capability manifest) landed 2026-08-20; see its completion record in the same file and the published [`wave_f_capability_manifest.md`](wave_f_capability_manifest.md) for what the checked-scan boundary now accepts, rejects, and still leaves for a later wave. Neither F4 nor F5 included JAX scan lowering or execution. *Corrected 2026-09-04: the non-default `JaxExperiment` target DOES build (`lake build JaxExperiment`, green) — it was migrated to the multi-variant `CheckedPlanStepEvidence` and is assignment-only by scope, rejecting a `.scan`/`.pointwise`/`.axiswise` step with a located `unsupportedStep <stepIndex>` rather than failing to compile.* JAX scan lowering and execution remain a later, unscheduled wave, not a Wave F gap. Proceeded independently of threads 1, 2, and 4, subject to [Section 7.2](#72-stage-b-candidate-dependent-contraction-prototype)'s existing constraint against combining it with the Stage B rewrite. Thread 5's completion (above) did not unblock anything here — the "after thread 5" sequencing in earlier drafts of this table was a priority ordering (thread 5 addressed a measured, worsening gap; thread 3 did not depend on thread 5's output), not a real dependency, and thread 3 was never blocked on it. |
+| 4 | Implement nonlinearity: new `PlanStep` pointwise/axiswise cases, Dense/JAX interpreter support | **Done** — Dense-only (2026-08-21) | Thread 1 (specified). The former dependency on thread 3 is **discharged**: `PlanStep` exists (`RawStep.lean`) as of F3. | `PlanStep` now has `.pointwise`/`.axiswise` (thread 4), checked and executed by Dense, reachable from top-level source syntax, serving as the reference semantics a future JAX lowering must match. *Corrected 2026-09-04: scan-block nonlinearity is no longer rejected — Thread 4's own Task 4 admitted `.pointwise`/`.axiswise` inside `base`/`recur` blocks (`checkNonlinScanBlock`, `Compile.lean`), which is what moved the generated scan corpus's four `unsupportedNonlin` cases into the accepted column.* **PyTorch**: no client has asked for it, so PyTorch interpreter support is deferred with no scheduled thread, not merely sequenced later — mirrors thread 5's own PyTorch deferral above. **JAX**: *re-measured 2026-09-04 by running `lake build JaxExperiment` (green) — the `PlanStep`/`CheckedPlanStepEvidence` breakage this row recorded has been repaired.* What remains is the lowering itself: `EvalPlanCodegen.lean` rejects a `.pointwise`/`.axiswise`/`.scan` step with a located `unsupportedStep`, so adding that lowering on top of the backend-neutral checked types (`RawPointwisePlan`/`RawAxiswisePlan`/`CheckedPointwisePlan`/`CheckedAxiswisePlan`) is the natural next slice, not indefinitely deferred like PyTorch. |
 
 ## 8. Appendices
 
@@ -1973,6 +1986,62 @@ Affine-table validation proves table length equals iteration-domain size, every 
 correct row-major address, every physical index is safe for nonempty storage, and empty storage takes
 the no-gather branch. Einsum axes are structural positions rather than characters; an interpreter may
 render labels only after checking backend limits.
+
+**Current-state addendum (2026-09-03, Task 4.5 of
+[`boolean_predicate_output_evalplan.md`](boolean_predicate_output_evalplan.md)).** Two properties of
+the shipped implementation in `LeanNCD/Eval/Plan/Executable.lean` are stronger than this sketch:
+
+1. *Einsum validation recomputes axes exactly, and mirrors the emitter's term-level preconditions.*
+   `validateEinsum` derives each expected operand row
+   from the checked factor's own affine map (source slot followed by the single projection target of
+   every coefficient row, rejecting any nonzero bias or non-projection row outright) and requires
+   exact equality, plus exact `outputAxes = term.outputPos`. The earlier bounds-and-length form
+   accepted same-rank, in-range permutations (`#[slot, 1, 0]` for a 2-D identity) and duplicates
+   (`outputAxes := #[0, 0]`) — different contractions carrying the same evidence.
+
+   *Extended 2026-09-04 (Task 4.5 re-review).* Per-factor rows alone were still not enough: a
+   candidate could be certified for a term the einsum lowering rejects outright — reproduced as a
+   factor-free assignment (`validator=accepted; emitter=rejected emptyTerm 0 0`), and likewise for a
+   term whose rank exceeds the emitter's 26-letter subscript alphabet or that leaves an iteration
+   position on no operand. `einsumTermRenderable` now mirrors all three (`.emptyTerm`,
+   `.rankTooLarge`, `.uncoveredPosition`), with the alphabet size shared as `einsumLabelLimit` and
+   pinned against the emitter's own `labelTable` by a `#guard`. This is exactly the sketch's
+   "an interpreter may render labels only after checking backend limits", enforced at the point
+   evidence is issued: acceptance by `validateEinsum` now implies `lowerAssign` renders.
+
+   *Extended again 2026-09-04 (whole-branch review).* Renderability is necessary but not sufficient,
+   and the gap runs in BOTH directions. A zero-padded read whose source extent is smaller than its
+   own iteration extent (`sourceShape = #[2]`, `iterationShape = #[3]`) renders a well-formed
+   `a->a` that `jnp.einsum` evaluates at the OPERAND's extent, returning two elements where Dense
+   returns three. The re-review closed this at the evidence boundary only; the whole-branch review
+   ruled that insufficient, since `lowerAssign` is itself a public entry (and `generateForward`/the
+   plan renderers emit Python through it), so a public lowering must not return a semantically
+   unsupported program either. The rule is now the PUBLIC located `einsumTermLabelExtents`
+   (`Executable.lean`): `validateEinsum` consumes its `Bool` view and the emitter calls the SAME
+   function, mapping its `.mismatch` verdict to a located `JaxCodegenError.labelExtentMismatch`.
+   `affineReference` still renders and validates the shape — its tables carry the zero-pad mask —
+   so the restriction is `einsumOnly`-scoped.
+2. *Evidence is contextual, and unsupported semantics are rejected before it exists.* The validators,
+   the combined `kernelWellFormedBool`, the evidence proposition `JaxKernelWellFormed`, and
+   `validateAndConstructKernel` all take one explicit complete `Array TensorSignature`; each
+   re-establishes `checkAssign` under that table and then applies a JAX support policy that rejects a
+   Boolean destination, a Boolean source, tropical max/min algebra, an inline unary read, and a
+   CONTEXTFUL assignment (non-empty `AssignPlan.contextShape`) with a located typed
+   `JaxSupportError`. The contextual rejection is the closure finding on this task: §2.4 above makes
+   assignments contextual — the canonical term basis is `context ++ output ++ reduction` — but JAX
+   assignment kernels take no context coordinate, so both lowerings rendered a contextful assignment
+   context-free (`einsumOnly` contracting the context label away, `affineReference` emitting no
+   `context_pos`) and were stamped with evidence. JAX assignment kernels support only CONTEXT-FREE
+   assignments; the check order is destination dtype, algebra, context shape, then factors, which is
+   `checkAssign`'s own coarse order. Plan-level entry points take no caller table and derive
+   `PreparedPlan.plan.raw.tensorSigs`. `JaxKernel` privately stores the validated table, and
+   `JaxExecutableWellFormed` requires every stored table to equal the prepared plan's own and every
+   candidate assignment to equal the corresponding checked step, so a kernel validated elsewhere —
+   or step 0's kernel reused at step 1 — cannot stand in for a step. The pre-validation evidence
+   label (`candidateEvidenceLabel`) and the context-free geometry helpers are private. The checked
+   Dense backend executes all five of those rejected semantics correctly (six, counting the
+   `einsumOnly`-scoped label-extent restriction in item 1); this is a JAX support boundary, not a
+   semantic gap, and there is no JAX Boolean execution.
 
 The evidence index is decisive: only ordered affine-table/reference constructors inhabit
 `orderedReference64`; einsum only inhabits `optimizationExperiment`. The same rule applies separately

@@ -44,6 +44,7 @@ def render : PlanCompileCause → String
   | .invalidPlan c    => s!"invalidPlan: {repr c}"
   | .bindings c       => s!"bindings: {repr c}"
   | .nonlin c         => s!"nonlin: {repr c}"
+  | .sourceInvariant c => s!"sourceInvariant: {repr c}"
 
 /-- The `i`-th outer step as a scan, or `none` if it is an assignment / absent. -/
 def scanAt (p : PreparedPlan) (i : Nat) : Option RawScanPlan :=
@@ -315,6 +316,44 @@ def scratchCheck : Except String Unit :=
         checkerAgrees "C" p 0)
 
 run_cmd match scratchCheck with | .ok _ => pure () | .error m => throwError m
+
+/-- Task 4.4, fixture 3: `scratchSched` with its block-local scratch `T` declared a predicate while
+    the persistent state `S` stays real — the paired negative case to fixture 1/2's Boolean STATE:
+    a Boolean SCRATCH must ALSO derive its local block signature dtype from the declaration, not the
+    former hardcoded `.f64` (`compileScan`'s step-assignment site, Task 4.4). `S`'s later recurrence
+    assignment reads `T` unchanged (`S[m+1] := T[]`) — an `f64` destination reading a `bool` source
+    is admitted (plan §1.2.2), so this does not additionally require `S` to become Boolean. -/
+def scratchPredicateSched : ScheduledProgram :=
+  { decls := [.iter axM 3, .predicate "T" []]
+  , stmts := [.scan "S" [axM]
+      [ .assign "S" [.iterAt axM 0]
+          { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := .identity } ]
+      [ .assign "T"
+          [] { body := { terms := [{ factors := [.read "S" [.axis axM], .read "K" [.axis axM]] }] }
+             , nonlin := .identity }
+      , .assign "S" [.iterNext axM]
+          { body := { terms := [{ factors := [.read "T" []] }] }, nonlin := .identity } ]
+      false ]
+  , env := {}, extNames := insert "S0" (insert "K" (∅ : Finset String))
+  , explicitSizes := (({} : HashMap UID Nat).insert axM.uid 3) }
+
+def scratchPredicateInputs : HashMap String DenseTensor := scratchInputs
+
+def scratchPredicateCheck : Except String Unit :=
+  withPrepared "T4.4/scratchPredicate" scratchPredicateSched scratchPredicateInputs (fun p => do
+    match scanAt p 0 with
+    | none => .error "T4.4/scratchPredicate: step 0 is not a scan"
+    | some s => do
+        -- `S` (the persistent state) is unaffected: still `f64`, same outer table as `scratchSched`.
+        expectEq "T4.4/scratchPredicate: outer tensorSigs" p.plan.raw.tensorSigs
+          #[{ shape := #[], dtype := .f64 }, { shape := #[3], dtype := .f64 }
+           , { shape := #[3], dtype := .f64 }]
+        -- block slot 2 is `T`'s own (block-local, never published) result — now `bool`.
+        expectEq "T4.4/scratchPredicate: scratch signature"
+          (s.stepBlock.tensorSigs.getD 2 { shape := #[], dtype := .f64 }) { shape := #[], dtype := .bool }
+        checkerAgrees "T4.4/scratchPredicate" p 0)
+
+run_cmd match scratchPredicateCheck with | .ok _ => pure () | .error m => throwError m
 
 /-! ### D/E. External current-coordinate reads and contractions inside a recurrence
 
@@ -633,6 +672,26 @@ def rejSig : InputSignature := InputSignature.ofDenseInputs rejInputs
 def rej (base recur : List Stmt) : Option PlanCompileCause :=
   causeOf (prepareEvalPlan (rejSched base recur) rejSig)
 
+/-- `rej` plus an earlier scan that writes `NOPE` as block-local scratch. Such a write is not a
+    publication, so a later scan read must fail the shared topology check rather than reach
+    block-local resolution. -/
+def rejScratchNope (base recur : List Stmt) : Option PlanCompileCause :=
+  causeOf (prepareEvalPlan
+    { rejSched base recur with
+        stmts := [ .scan "pre" [axL]
+                     [ .assign "P" [.iterAt axL 0]
+                         { body := { terms := [{ factors := [.read "S0" []] }] }
+                         , nonlin := .identity } ]
+                     [ .assign "NOPE" []
+                         { body := { terms := [{ factors := [.read "S0" []] }] }
+                         , nonlin := .identity }
+                     , .assign "P" [.iterNext axL]
+                         { body := { terms := [{ factors := [.read "P" [.axis axL]] }] }
+                         , nonlin := .identity } ]
+                     false
+                 , .scan "sc" [axL] base recur false ] }
+    rejSig)
+
 def okBase : Stmt := .assign "S" [.iterAt axL 0]
   { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := .identity }
 def okRecur : Stmt := .assign "S" [.iterNext axL]
@@ -793,10 +852,15 @@ def scratchT : Stmt := .assign "T" []
     , okRecur ]
   == some (.scan (.blockReadNotAvailable "sc" false 0 "T" .forwardReference))
 
--- a base read of a name that is neither a state nor an available outer tensor.
-#guard rej [.assign "S" [.iterAt axL 0]
+-- a base read of a name that is neither a state nor an available outer tensor. `NOPE` is PRODUCED
+-- as block-local scratch by an EARLIER scan, so it is not an external input either: preparation
+-- derives external names from the statements themselves (reads minus produced), so reaching this
+-- rejection needs a genuinely unavailable name rather than one merely missing from the cached
+-- `extNames`.
+#guard rejScratchNope [.assign "S" [.iterAt axL 0]
       { body := { terms := [{ factors := [.read "NOPE" []] }] }, nonlin := .identity }] [okRecur]
-  == some (.scan (.blockReadNotAvailable "sc" true 0 "NOPE" .unknownName))
+  == some (.sourceInvariant
+       (.cyclicDataflow "scheduled program: statements are not in producer-before-consumer order"))
 
 -- a base block reading persistent state (proposal §8.4: initialization must not become a second,
 -- implicit state machine).
@@ -814,12 +878,85 @@ def scratchT : Stmt := .assign "T" []
 
 -- a step read of a name that is neither state, nor scratch, nor an available outer tensor (the
 -- recurrence-side counterpart of the base-side fixture above — the two blocks resolve names through
--- separate code paths).
-#guard rej [okBase]
+-- separate code paths). Same earlier-scan-scratch construction, for the same reason.
+#guard rejScratchNope [okBase]
     [ .assign "T" [] { body := { terms := [{ factors := [.read "NOPE" []] }] }
                      , nonlin := .identity }
     , okRecur ]
-  == some (.scan (.blockReadNotAvailable "sc" false 0 "NOPE" .unknownName))
+  == some (.sourceInvariant
+       (.cyclicDataflow "scheduled program: statements are not in producer-before-consumer order"))
+
+-- the FORWARD-reference outer shape the two fixtures above used to be built on — the scan reads
+-- `NOPE`, and the plain statement producing it comes after. That is no longer a scan-block
+-- resolution failure at all: `prepareEvalPlan`'s Step 0 rejects the statement ORDER first, with
+-- `schedule`'s own topological predicate and error, before any statement is compiled.
+def lateNopeSched : ScheduledProgram :=
+  { rejSched [okBase] [okRecur] with
+      stmts := [ .scan "sc" [axL]
+                   [ .assign "S" [.iterAt axL 0]
+                       { body := { terms := [{ factors := [.read "NOPE" []] }] }
+                       , nonlin := .identity } ]
+                   [okRecur] false
+               , .plain (.assign "NOPE" []
+                   { body := { terms := [{ factors := [.read "S0" []] }] }
+                   , nonlin := .identity }) ] }
+
+#guard causeOf (prepareEvalPlan lateNopeSched rejSig)
+  == some (.sourceInvariant
+       (.cyclicDataflow "scheduled program: statements are not in producer-before-consumer order"))
+
+-- A recurrence-only destination is block-local scratch, not a scan publication. The shared
+-- topology predicate must therefore reject a following plain read before either backend can treat
+-- caller input under that name as its value. The scan itself remains valid: its recurrence reads
+-- its own persistent state, and valid scan-internal self-dependencies stay eligible.
+def scratchThenPlainReadSched : ScheduledProgram :=
+  { rejSched [okBase] [okRecur] with
+      stmts := [ .scan "pre" [axL]
+                   [ .assign "P" [.iterAt axL 0]
+                       { body := { terms := [{ factors := [.read "S0" []] }] }
+                       , nonlin := .identity } ]
+                   [ .assign "NOPE" []
+                       { body := { terms := [{ factors := [.read "S0" []] }] }
+                       , nonlin := .identity }
+                   , .assign "P" [.iterNext axL]
+                       { body := { terms := [{ factors := [.read "P" [.axis axL]] }] }
+                       , nonlin := .identity } ]
+                   false
+               , .scan "sc" [axL] [okBase] [okRecur] false
+               , .plain (.assign "Y" [.free axJ]
+                   { body := { terms := [{ factors := [.read "NOPE" []] }] }
+                   , nonlin := .identity }) ] }
+
+#guard causeOf (prepareEvalPlan scratchThenPlainReadSched rejSig)
+  == some (.sourceInvariant
+       (.cyclicDataflow "scheduled program: statements are not in producer-before-consumer order"))
+
+run_cmd do
+  let inputs := rejInputs.insert "NOPE" ⟨[], #[37.0]⟩
+  match evalScheduled scratchThenPlainReadSched inputs with
+  | .error { error := .compile (.cyclicDataflow
+      "scheduled program: statements are not in producer-before-consumer order"), warnings := [] } =>
+      pure ()
+  | .error failure => throwError s!"post-scan scratch read reported: {failure.error}"
+  | .ok _ => throwError "post-scan scratch read consumed caller-provided scratch"
+
+-- the same program with the plain statement reading the scan's published STATE `S` instead of its
+-- private scratch: the guard rejects unpublished names, not locally produced ones, so this must
+-- still compile and `Y` must read `S`'s own materialized outer slot rather than an input slot.
+def statePlainReadSched : ScheduledProgram :=
+  { scratchThenPlainReadSched with
+      stmts := (scratchThenPlainReadSched.stmts.dropLast ++
+        [ .plain (.assign "Y" [.free axL]
+            { body := { terms := [{ factors := [.read "S" [.axis axL]] }] }
+            , nonlin := .identity }) ]) }
+
+#guard causeOf (prepareEvalPlan statePlainReadSched rejSig) == none
+-- and it reads `S`'s materialized slot, not an input slot: `S0` is the only name this program reads
+-- without producing, so it alone owns input slot 0; slot 1 is `pre`'s published state `P` and slot 2
+-- is `sc`'s published state `S`. A slot-zero fallback would show up here as `#[0]`.
+#guard (prepared statePlainReadSched rejInputs).bind (fun p => (assignAt p 2).map
+    (fun a => (a.terms.getD 0 default).factors.map (·.readOrDefault.sourceSlot)))
+  == some #[2]
 
 /-! ### 2.5 `ScanCompileError` — context axes and per-state geometry -/
 
@@ -1512,12 +1649,13 @@ axis: `normalize(where r≠0)` over `r` excludes `r=0` and keeps `r=1` (`Z=3`) �
 `[0,0,1,0]` (shape `[2,2]`). Zeroing `r`'s coordinate during lowering (mutation 6) makes `r≠0` false
 everywhere → all-masked → `G[:,0]=[0,0]` → all zeros. Pinned HERE, NOT by the Task 5.4 oracle. -/
 def p11r : AxisSpec := ⟨"r", 42110, .nat⟩
+def p11rNorm : AxisSpec := { p11r with kind := .real }
 def p11c : AxisSpec := ⟨"c", 42111, .nat⟩
 def elimFreeNormMask : BoolExpr := .rel .ne (.embed (.axis p11r)) (.embed (.const 0))
 def eliminatedFreeNorm : ScheduledProgram :=
   { decls := [.iter p11r 2, .iter p11c 2]
   , stmts := [.scan "G" [p11r, p11c]
-      [.assign "G" [.freeNorm p11r, .iterAt p11c 0]
+      [.assign "G" [.freeNorm p11rNorm, .iterAt p11c 0]
         (t4rhs "Z" [.axis p11r] (.axiswise .normalize (some elimFreeNormMask)))]
       [.assign "G" [.iterNext p11r, .iterNext p11c]
         (t4rhs "G" [.axis p11r, .axis p11c])]
@@ -1556,11 +1694,12 @@ def freeNormPointwiseInputs : HashMap String DenseTensor :=
     is never a legal retained output axis. This is the locator for the scratch context-axis
     `.freeNorm` guard (mutation 5). -/
 def p17l : AxisSpec := ⟨"l", 41701, .nat⟩
+def p17lNorm : AxisSpec := { p17l with kind := .real }
 def freeNormContextAxis : ScheduledProgram :=
   { decls := [.iter p17l 3]
   , stmts := [.scan "S" [p17l]
       [.assign "S" [.iterAt p17l 0] (t4rhs "X" [])]
-      [ .assign "T" [.freeNorm p17l] (t4rhs "S" [.axis p17l] (.axiswise .normalize none))
+      [ .assign "T" [.freeNorm p17lNorm] (t4rhs "S" [.axis p17l] (.axiswise .normalize none))
       , .assign "S" [.iterNext p17l] (t4rhs "T" [.axis p17l]) ]
       false]
   , env := {}, extNames := {"X"}

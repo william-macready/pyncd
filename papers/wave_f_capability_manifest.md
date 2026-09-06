@@ -24,9 +24,29 @@ planning text.
 ## 2. Accepted scan source constructs
 
 The source compiler admits a `.scan` only when every base and step operation already fits the
-checked Wave C local kernel: `f64`, real sum-product contraction, identity nonlinearity, plain/affine
-read factors, and zero padding (proposal §5.1). Within that kernel, the admitted fragment is a
-rectangular uniform lattice recurrence, confirmed by the three-way differential gate in §4 below:
+checked local kernel — a kernel that has grown well past Wave C's original one. Measured from the
+admission functions themselves (`LeanNCD/Eval/Plan/Check.lean`, `LeanNCD/Eval/Plan/Compile.lean`) on
+this branch, that kernel is:
+
+- **dtypes** — `f64` and the Float-backed `bool` tag (`dtypeAdmitted`), at destinations and at read
+  sources alike; a `bool` source may feed an `f64` destination and vice versa, since gathering is
+  dtype-blind and the DESTINATION selects the algebra. `f32` is still rejected outright
+  (`dtypeNotAdmitted`) — no worker implements binary32 rounding;
+- **algebras** — destination-selected (`admittedAlgebrasFor`): real sum-product plus the two tropical
+  semirings `AggOp.max`/`.min` compile to (`admittedAlgebraMax`/`Min`) for an `f64` destination, and
+  Boolean conjunction/disjunction (`admittedAlgebraBool`, `min`/`max` over the same Float storage)
+  for a `bool` one. No cross-dtype algebra is admitted in either direction;
+- **nonlinearity** — identity, `.pointwise`, and `.axiswise` (masked included), inside scan
+  `base`/`recur` blocks exactly as at top level (`checkNonlinScanBlock` = `checkNonlinTopLevel`);
+- **factors** — plain/affine read factors, inline unary reads (`.unaryFn`, lowered to a `ReadPlan`
+  carrying `unary` and applied after the pad), and Iverson predicate/mask factors (`checkFactor`
+  admits all three; `CapabilityError.unaryFactor`/`maskOrPredicate` are retained producer-less);
+- **out-of-bounds policy** — zero padding, still the only admitted policy (`policyNotAdmitted`).
+
+Genuinely rejected, not merely unexercised: `f32` anywhere, an `.affine` LHS slot, `.scatter`,
+`.recurMorphism`/`.scanPre`, and any non-`zeroPad` policy — see §3 for the full closed families.
+Within that kernel, the admitted fragment is a rectangular uniform lattice recurrence, confirmed by
+the three-way differential gate in §4 below:
 
 - rectangular uniform n-dimensional scans, with every advancing axis writing `q + 1`;
 - advancing dimensions in arbitrary tensor positions — they need not trail, be contiguous, or follow
@@ -77,15 +97,15 @@ meets.** `CapabilityError` and `ScanCompileError` above both live on `Eval.Plan.
 compiler this manifest's §6 tells a Wave G consumer to avoid importing. A consumer that instead
 follows that advice — import `Eval.Plan.Scan` directly, build a `RawScanPlan` by hand, and call
 `checkScanPlan` — never sees either family; it sees `ScanPlanError`
-(`LeanNCD/Eval/Plan/Scan.lean`), a separate closed **39-constructor** family with no `String` escape
+(`LeanNCD/Eval/Plan/Scan.lean`), a separate closed **42-constructor** family with no `String` escape
 hatch either. Unlike `ScanCompileError`, this family's constructors carry no inline category
 comments; the groupings below instead follow `checkScanPlan`'s own checking order (the function's
 one doc comment names the two obligations it validates: proposal §7.3's capture/write obligations
 and §7.4's causality): schedule-level shape (`noStates`, `noAdvancingAxes`, `zeroExtent` — 3), each
-state's destination slot, advancing-dimension geometry, and materialization policy (7), schedule-wide
+state's destination slot, dtype, advancing-dimension geometry, and materialization policy (8), schedule-wide
 iteration/boundary/snapshot policy admission (3), base/step block context shape and the two blocks'
-own `BlockError` results (4), capture obligations against `checkCaptures` (8), write placement
-obligations against `checkWrites`, including the base-write-overlap check (13), and the trailing
+own `BlockError` results (4), capture obligations against `checkCaptures` (9), write placement
+obligations against `checkWrites`, including the base-write-overlap check (14), and the trailing
 causality loop's single `causalityFailure` (1). A `Scan`-only consumer's error handling needs to
 account for this family in place of `CapabilityError`/`ScanCompileError`, not in addition to them —
 the two error paths (source-compiled vs. directly-constructed `RawScanPlan`) don't overlap.
@@ -110,10 +130,12 @@ anywhere.
 
 **Gaps deliberately left, named and non-blocking:**
 
-- `checkScanPlan` never checks a state destination slot's **dtype** — it reads the state's signature
-  purely for `.shape`. Contained downstream: `checkAssign` separately rejects any non-`f64` source, so
-  nothing can actually populate a mis-labeled state; a captured state is separately covered by
-  `captureSignatureMismatch`, which compares the whole signature including dtype.
+- **Historical, closed by Task 4.4** (`boolean_predicate_output_evalplan.md`): `checkScanPlan` used to
+  check a state destination slot's signature purely for `.shape`, never its **dtype** — contained
+  downstream only by `checkAssign` rejecting a non-`f64` source and by `captureSignatureMismatch` for a
+  captured state. `checkWrites` now reports `ScanPlanError.writeDtypeMismatch` directly for a state
+  write whose source dtype disagrees with the destination's declared dtype, checked before write rank,
+  geometry, and causality.
 - The **wrong-arity-read gap**: a wrong-arity read confined to non-advancing dimensions inside a scan
   block surfaces as `invalidPlan` ("internal compiler bug") rather than a source-level diagnostic —
   but this plan's audit confirmed it is **unreachable from real source**. `TLProgram.compileToScheduled`
@@ -138,19 +160,34 @@ The curated `enumScanCases` generator (`test/Eval/PropertyOracle/ScanGen.lean`) 
   == 17 && nonlin == 0 && agg == 0`), which fails loudly rather than silently re-baselining if the
   accept/reject boundary ever shifts.
 
-  *The split was **9 / 4 / 4** when Wave F wrote this manifest. The nonlinearity plan's Task 4
+  *The split was **9 / 4 / 4** when Wave F wrote this manifest, and TWO threads closed those
+  rejections, not one. The nonlinearity plan's Task 4
   (`nonlinearity_split_pair_direct_lowering.md` §3.6) taught `compileScan` to admit and lower
-  pointwise/axiswise scan sources, moving all four `unsupportedNonlin` cases into the accepted
-  column. The boundary this bullet describes shifted exactly as the assertion was designed to
-  catch — the count above is the post-Task-4 one, re-observed on this branch.*
-- **21** total scan programs pass the three-way differential gate: **12 hand-written** (the nine
-  acceptance schedules covering `ScanCompileTest.lean`'s twelve lettered shapes, a two-warning
-  fixture, a whole-surface alpha-rename, and a scan over an axis sharing a NAME but not a UID with a
-  free output axis) plus the **9** accepted generated cases.
-- All 21 agree bit-for-bit across three independent legs: the compiled checked path
-  (`prepareEvalPlan` → `runPreparedDense`), the legacy `evalScheduled` oracle, and the independent
-  scan-free unrolling (`PropertyOracle.independentRun`) — compared on materialized state, whole
-  environment, and (between the first two legs only) preparation warnings.
+  pointwise/axiswise scan sources, moving template 2's four `unsupportedNonlin` cases into the
+  accepted column; the max/min-aggregation thread then admitted `.max`/`.min` (they compile to the
+  tropical algebras `evalScheduled` already evaluates), moving template 5's four `unsupportedAgg`
+  cases too — so `accepted` went 9 → 13 → 17. The boundary this bullet describes shifted exactly as
+  the assertion was designed to catch — the count above is the post-both-threads one, re-observed on
+  this branch (`DifferentialTest scan corpus: total=17 accepted=17 unsupportedNonlin=0
+  unsupportedAgg=0`).*
+- **29** scan programs pass the three-way differential gate *within this manifest's own Wave F
+  scope*: **12 hand-written** (the nine acceptance schedules covering `ScanCompileTest.lean`'s twelve
+  lettered shapes, a two-warning fixture, a whole-surface alpha-rename, and a scan over an axis
+  sharing a NAME but not a UID with a free output axis) plus the **17** accepted generated cases.
+
+  *This bullet said **21** = 12 + **9** when Wave F wrote it. The 12 hand-written fixtures are
+  unchanged; only the generated half moved, by exactly the accept-boundary shift the bullet above
+  records (9 → 13 → 17). Later threads then ADDED hand-written three-way scan fixtures outside this
+  manifest's scope, so `DifferentialTest.lean` today gates **43** scan programs in total: the 12
+  above, plus **6** nonlinearity-thread oracle groups (`nonlinearScanFixtures`), plus the **7**-entry
+  curated predicate/mask scan set (Slice 5.4's five, extended by Task 4.5 with Task 4.4's two Boolean
+  scan-state clones), plus Task 4.4's `scratchPredicate` fixture, plus the 17 generated cases. Those
+  14 additions belong to their own threads' manifests; they are named here so this count cannot be
+  read as the whole file's inventory.*
+- All 29 (and, with the later additions, all 43) agree bit-for-bit across three independent legs: the
+  compiled checked path (`prepareEvalPlan` → `runPreparedDense`), the legacy `evalScheduled` oracle,
+  and the independent scan-free unrolling (`PropertyOracle.independentRun`) — compared on
+  materialized state, whole environment, and (between the first two legs only) preparation warnings.
 - Beyond raw count, `DifferentialTest.lean` asserts a structurally derived feature table over the
   gated schedules themselves (not by fixture name): deep look-back and zero padding, coupled states,
   scratch, external reads, contraction, extent one, more than one scan axis, several base writes for
@@ -170,11 +207,11 @@ Wave F" table:
 |---|---|
 | Pointwise and axiswise nonlinearities | **Admitted** (thread 4): top-level (`checkNonlinTopLevel`) and inside scan `base`/`recur` blocks (`checkNonlinScanBlock`), residualized into a two-step `assign → pointwise/axiswise` chain. `unsupportedNonlin == 0` in the `DifferentialTest.lean` scan corpus. |
 | Masks, predicates, and Iverson factors | **Admitted** (Slice 5, `predicate_boolean_backend_parity.md`): a positional UID-free predicate IR (`PosBoolExpr`) plus an ordered `FactorPlan` (`read | iverson`); `checkAssign` width-checks predicate leaves and Dense evaluates them per contraction coordinate (`true` ⇒ `1.0`, `false` annihilates). Source `BoolExpr` lowers via `lowerFactorPredicate`; axiswise `where=` masks via `RawAxiswisePlan.mask` + `lowerMaskPredicate`. `maskOrPredicate`/`maskedAxiswiseNotSupported` retained producer-less. |
-| Boolean/predicate declared outputs | Rejected (`booleanOutput`) rather than represented in `AssignPlan` or `CheckedPlanBlock`. |
-| Unary factor functions | Rejected in ordinary assignments and scans. |
+| Boolean/predicate declared outputs | **Admitted** (Task 4, `boolean_predicate_output_evalplan.md`): `ScalarDType.bool` is a semantic algebra/signature tag over the unchanged Float-backed storage, not a native carrier. A predicate destination selects `admittedAlgebraBool` (factor `min`/identity `true`, reduction and term `max`/identity `false`, mirroring the reference `Combine.bool`); a `bool` source may feed an `f64` destination and vice versa, since the DESTINATION selects the algebra and gathering is dtype-blind. Scan state, scratch, and published histories carry full `TensorSignature`s (`CompiledScan.stateSigs`) and `checkWrites` enforces write-dtype equality (`ScanPlanError.writeDtypeMismatch`). `booleanOutput` retained producer-less. `f32` stays rejected; no native `Array Bool`, no truth-value validation, and no JAX Boolean execution (the experimental backend REJECTS Boolean semantics, see below). |
+| Unary factor functions | **Admitted** (`unary_factor_functions.md`): `checkFactor`/`ReadPlan.unary` admit a unary factor (`log`/`exp`/`sin`/`cos`/`sqrt`/`recip`) in ordinary assignments and inside scan `base`/`recur` blocks, applied after gather/pad by Dense. The experimental JAX backend's `checkJaxAssignSupport` still rejects an inline unary read with a located typed error — Dense executes it, JAX does not. |
 | Max/min aggregation | **Admitted** (max/min-aggregation thread): `checkAggOp` admits `.max`/`.min`; the compiler selects the tropical algebra (`algebraForAgg`) and Dense reduces with `max`/`min` seeded at `−∞`/`+∞`. `unsupportedAgg == 0` in the `DifferentialTest.lean` scan corpus. |
 | Scatter and affine LHS writes | Wave D source semantics are not yet represented by checked `EvalPlan`. |
-| Dtypes beyond the admitted concrete `f64` mode and dynamic shapes | Still rejected at the checked-plan preparation boundary. |
+| Dtypes beyond the admitted concrete `f64` mode (including its Float-backed `bool` semantic-tag variant, see the Boolean/predicate row above) and dynamic shapes | Still rejected at the checked-plan preparation boundary. |
 | `.scanPre`, callbacks, and predicate-dispatch scan bodies | Still rejected even though `PlanStep.scan` exists (nonlinear scan bodies themselves are now admitted — see the first row). |
 | General n-dimensional recurrence geometry and arbitrary state writes | The first checked scan remains the rectangular uniform all-axis `+1` fragment. |
 | Multi-face full-boundary writes (the standard n-D tabulation-DP pattern, e.g. row-0-plus-column-0) and genuinely overlapping writes with no declared precedence | Neither is achievable in this version — both need an offset/restricted-range or conflict-resolving base-write geometry beyond pin-plus-full-free. |
@@ -187,11 +224,13 @@ max/min-aggregation thread (`max_min_aggregation.md`) admitted `.max`/`.min` agg
 unary-factor thread (`unary_factor_functions.md`) admitted unary factors, so those
 rows no longer describe the current boundary. The masks/predicates/Iverson-factors row was
 refreshed for Slice 5 (`predicate_boolean_backend_parity.md`), which admitted predicate factors and
-axiswise `where=` masks (Boolean *declared outputs* remain rejected). Everything else in this table
-is unchanged and re-derived against `capabilityPreflight` (`Eval/Plan/Compile.lean`) on this branch.
-The remaining still-rejected families are Boolean declared outputs,
-scatter and affine LHS writes, non-`f64` dtypes and dynamic shapes,
-and `.scanPre`/callbacks/predicate-dispatch scan bodies.*
+axiswise `where=` masks. The Boolean/predicate declared outputs row was refreshed for Task 4
+(`boolean_predicate_output_evalplan.md`), which admitted Boolean/predicate declared outputs and full
+scan signatures for state, scratch, and published histories — the experimental JAX backend remains
+fail-loud and still rejects Boolean semantics via `checkJaxAssignSupport`. Everything else in this
+table is unchanged and re-derived against `capabilityPreflight` (`Eval/Plan/Compile.lean`) on this
+branch. The remaining still-rejected families are scatter and affine LHS writes, `f32` and other
+unimplemented dtypes, dynamic shapes, and `.scanPre`/callbacks/predicate-dispatch scan bodies.*
 
 The next semantic-expansion work after Wave F should be a named **checked local-kernel capability
 wave**, extending `AssignPlan`, its checker, and Dense interpretation one operation family at a time,
@@ -227,9 +266,11 @@ re-verify them:
 - **Checker/error mutation-matrix work.** Task 1/2 of this plan closed three real gaps found by this
   plan's own audit — `causalityFailure`, `duplicateAxisInLhs`, and `blockReadNotAvailable` each
   under-specified a locator that let two genuinely distinct user errors collide on one payload (§3
-  above has the detail). The wrong-arity-read gap and the state-destination dtype gap are named, not
-  fixed, for the reasons given in §3: the former is unreachable from real source, and the latter is
-  contained downstream by `checkAssign`/`captureSignatureMismatch`.
+  above has the detail). The wrong-arity-read gap is named, not fixed, for the reason given in §3: it
+  is unreachable from real source. The state-destination dtype gap named in §3 above was **closed by
+  Task 4.4** (`boolean_predicate_output_evalplan.md`): `checkWrites` now reports
+  `ScanPlanError.writeDtypeMismatch` directly for a mismatched state write, checked before write rank
+  and geometry.
 
 **Which import to use.** For checked-scan execution with no source compilation, import
 `Eval.Plan.EvalPlan`/`Eval.Plan.Scan` directly — neither imports `Eval.Plan.Compile` or

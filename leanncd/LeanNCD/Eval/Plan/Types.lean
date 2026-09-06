@@ -12,8 +12,10 @@ concrete shape and dtype metadata, no tensor values. See `papers/wave_c_evalplan
 namespace LeanNCD.Eval.Plan
 open Std
 
-/-- Closed concrete-storage dtype vocabulary. Only `f64` is admitted by Wave C; `f32`/`bool` are
-    reserved tags for later plan capabilities with no producer or consumer yet. -/
+/-- Closed concrete-storage dtype vocabulary. `f64` and `bool` are admitted by the checked plan
+    layer — `bool` as a *semantic algebra/signature tag over the same Float-backed storage*, not a
+    native carrier (`admittedAlgebraBool`, `Check.lean`). `f32` remains a reserved tag with no
+    producer or consumer. -/
 inductive ScalarDType
   | f64 | f32 | bool
   deriving DecidableEq, BEq, Repr
@@ -46,11 +48,13 @@ inductive OutOfBoundsPolicy
     `Float`: `Float.toBits 0.0 ≠ Float.toBits (-0.0)` whereas `(0.0 : Float) == (-0.0 : Float)`
     is `true`, so bits distinguish signed zero and preserve NaN payloads. Verified by `#eval`.
 
-    As with `ScalarDType`, only `.f64` is admitted by Wave C: `checkAssign`'s `algebraNotAdmitted`
-    guard forces `a.algebra ∈ admittedAlgebras` (`Check.lean`) — the real sum-product plus the two
-    tropical semirings `AggOp.max`/`.min` select — and every constant (`factorId`, `reduceId`) of all
-    three is `.f64 _`. `.f32`/`.bool` are reserved tags — like `ScalarDType.f32`/`.bool` — with no
-    producer or consumer yet; neither can ever appear inside a checked plan's `ContractionAlgebra`. -/
+    As with `ScalarDType`, `.f64` and `.bool` are admitted: `checkAssign`'s `algebraNotAdmitted`
+    guard forces `a.algebra ∈ admittedAlgebrasFor destDtype` (`Check.lean`) — a real destination
+    selects the real sum-product plus the two tropical semirings `AggOp.max`/`.min` select, all of
+    whose constants (`factorId`, `reduceId`) are `.f64 _`, and a predicate destination selects
+    `admittedAlgebraBool`, whose constants are `.bool true`/`.bool false` (decoded to `1.0`/`0.0` by
+    `Dense.constFloat`). `.f32` remains a reserved tag — like `ScalarDType.f32` — with no producer or
+    consumer; it can never appear inside a checked plan's `ContractionAlgebra`. -/
 inductive ScalarConst
   | f64  (bits : UInt64)
   | f32  (bits : UInt32)
@@ -58,11 +62,13 @@ inductive ScalarConst
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- Closed binary scalar operations. `min`/`max` back the tropical-semiring reductions that
-    `AggOp.max`/`.min` select (`admittedAlgebraMax`/`admittedAlgebraMin` in `Check.lean`); `add`/`mul`
-    back Wave C's real sum-product. `logicalAnd`/`logicalOr` remain absent by design — predicate
-    outputs are still rejected at the source boundary (proposal §3.2), so nothing constructs them and
-    no worker implements their semantics. Adding a constructor here is itself a semantic-version
-    change (§9.2): `min`/`max` were added by the max/min-aggregation thread. -/
+    `AggOp.max`/`.min` select (`admittedAlgebraMax`/`admittedAlgebraMin` in `Check.lean`) AND the
+    Boolean conjunction/disjunction a predicate destination compiles to (`admittedAlgebraBool`);
+    `add`/`mul` back Wave C's real sum-product. `logicalAnd`/`logicalOr` remain absent by design —
+    Boolean semantics is exactly Float `min`/`max` over `1.0`/`0.0`, per the reference `Combine.bool`,
+    so a dedicated pair of constructors would duplicate an existing semantics rather than add one.
+    Adding a constructor here is itself a semantic-version change (§9.2): `min`/`max` were added by
+    the max/min-aggregation thread. -/
 inductive ScalarBinOp
   | add | mul | min | max
   deriving DecidableEq, BEq, Repr, Inhabited

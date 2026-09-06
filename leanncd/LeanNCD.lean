@@ -121,6 +121,7 @@ import LeanNCD.DSL.Target
 import LeanNCD.DSL.Traverse
 import LeanNCD.DSL.Pipeline.Types
 import LeanNCD.DSL.Pipeline.Structural
+import LeanNCD.DSL.Pipeline.ScheduledValidation
 import LeanNCD.DSL.Pipeline.RouteFragments
 import LeanNCD.DSL.Pipeline.Lowering
 import LeanNCD.DSL.Pipeline.RouteSpec

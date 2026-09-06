@@ -208,6 +208,13 @@ inductive PlanCompileCause
   | invalidPlan    (cause : PlanStepError)
   | bindings       (cause : BindingsError)
   | nonlin         (cause : NonlinCompileError)
+  /-- A hand-built `ScheduledProgram` violates an invariant the SOURCE pipeline establishes
+      (duplicate tensor declaration, predicate-output nonlinearity/aggregation). Reported FIRST,
+      before capability preflight, shape inference, or input-signature validation: an invalid
+      source combination is not a valid-but-unsupported backend capability. Carries the pipeline's
+      own `CompileError` unchanged so a direct schedule and its source-produced equivalent report
+      the same diagnostic. -/
+  | sourceInvariant (cause : CompileError)
   deriving DecidableEq, BEq, Inhabited
 
 /-- Same finding applies here: `EvalWarning` also has no `Repr`, so this likewise derives

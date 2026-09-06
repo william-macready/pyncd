@@ -24,6 +24,8 @@ Does not own: evaluation semantics (`../Eval/`) or the acset bridge (`../Bridge/
 |---|---|
 | Pipeline intermediate types (`ResolvedProgram`, `ScanStmt`, `ScheduledProgram`) | `Types.lean` |
 | Phases 1-5 (assignUIDs/resolveDecls/checkReadRanks/checkDtypes/checkScatterNonlin/checkScatterNoScan/lowerArith/finalizeScans) | `Structural.lean` |
+| Shared statement-level source-invariant rules (`buildDeclEnv`, `declaredAxisSizes`, `externalReadNames`, read and declared-destination ranks, LHS axis kinds, predicate outputs) | `Structural.lean` |
+| Whole scheduled-program validation, topological helpers, and authoritative external-name order | `Pipeline/ScheduledValidation.lean` — `validateScheduled` is the direct execution/preparation boundary |
 | Phase 6-8 (schedule/route/buildStep/routeCore; `splitNonlins` survives only as a regression-only helper, off the production chain) | `Lowering.lean` |
 | Private physical route fragments (logical schedule → `routeCore` input) | `RouteFragments.lean` |
 | Proofs about routeCore/buildStep (Track A, lemmas B.1-B.7) | `RouteSpec.lean` |
@@ -45,6 +47,23 @@ Strictly layered: `Syntax`→`Elab`→`Ast`/`Target`→`Traverse`/`TraverseAxes`
 - `TLProgram { decls, stmts }`; `Stmt = assign | scatter | recurMorphism`; `LHSSlot = free | freeNorm | iterAt | iterNext | affine` (the scatter/plain/scan classifier); `Nonlin = identity | pointwise PointwiseFn | axiswise AxiswiseFn (Option BoolExpr)` (mask-typed-in by construction).
 - `ScanStmt = plain Stmt | scan (base recur : List Stmt) (isAffine) | scanPre` — post-`finalizeScans` unit grouping coupled recurrences.
 - `ThreadedComposed { steps : List BrBaseP; routing : List (List Wire); nExternal }`; `Wire = external Nat | internal Nat Nat`; `StMatP { domLen codLen : Nat; coeffs; bias }` with `.wellFormed`/`.validate`.
+
+### ScheduledProgram consumer inventory
+
+- `prepareEvalPlan` and `evalScheduled` are the two public preparation/execution boundaries; both
+  require `validateScheduled` and consume its declarations, explicit sizes, external-name order, and
+  original statements. Its topology state advances by `ScanStmt.outputs`, not `writes`: recurrence
+  scratch stays block-local, plain statements cannot read their own destination, and scan-internal
+  state/scratch dependencies remain legal.
+- `schedule` establishes the invariant for source programs. `capabilityPreflight` and
+  `orderedExtNames` are preparation-phase helpers called only after the checked boundary.
+- `elaborateAffineReindexings`, `routeCore`, `routeNameInventory`, `physicalizeRaw`,
+  `physicalizeForRoute`, and `route` are routing/phase-local APIs. They either consume
+  `schedule`'s result or enforce route-specific contracts; they do not silently invoke evaluation
+  validation.
+- `PropertyOracle.independentRun` remains an independent oracle with a valid-source precondition;
+  its scan-free calls reach the shared boundary through `evalScheduled`, without coupling its
+  unrolling logic to plan preparation.
 
 ## Entry Points
 | Task | Start Here |

@@ -107,4 +107,100 @@ structure PreparedPlan where
   bindings : PlanBindings
   warnings : List EvalWarning
 
+/-- Raw resolver used only behind `CheckedPreparedBindings`, pairing each already-validated binding's
+    name with its slot value.  Metadata and execution share it after one whole-sidecar validation.
+    the accessor failed loud on an out-of-range slot while `unpack` silently substituted an empty
+    scalar tensor for it and published that under the binding's name, so the two boundaries could —
+    and did — disagree about the same `PlanBindings`. Sharing the traversal is what stops them
+    drifting again; a caller supplies the table, this function supplies the discipline.
+
+    Order and repeats are `materializedNames`' own (see its doc comment: NOT deduplicated), so the
+    result stays positionally parallel to it and `unpack`'s "later insertion wins" semantics for a
+    repeated name is preserved exactly.
+
+    Fails loud rather than defaulting: a slot outside `table` is `PlanError.slotOutOfRange` (the
+    existing constructor every other slot-table lookup in this subsystem already raises —
+    `Check.lean`, `Nonlin.lean`, `Block.lean`), carrying the offending slot and the table size.
+    `mapM` short-circuits at the FIRST offending entry, so no prefix of a malformed binding list is
+    ever handed back to a caller half-resolved. Neither fabricating a value nor filtering the entry
+    out is acceptable: fabricating misdescribes the binding (a scalar `f64` signature for a Boolean
+    destination, an empty tensor for a real result), and filtering silently breaks the positional
+    correspondence with `materializedNames` that both consumers rely on. -/
+private def rawMaterializedWith {α : Type} (bindings : Array SlotBinding) (table : Array α) :
+    Except PlanError (Array (String × α)) :=
+  bindings.mapM (fun sb =>
+    match table[sb.slot]? with
+    | some v => .ok (sb.name, v)
+    | none   => .error (.slotOutOfRange sb.slot table.size))
+
+/-- The output slots a raw plan actually publishes.  The adjacent nonlinearity rule is necessarily
+    syntactic: raw IR records no compiler-provenance or identity/nonlinearity tag. -/
+private def rawPublicationSlots (raw : RawEvalPlan) : Array TensorSlot :=
+  (Array.range raw.steps.size).foldl (fun acc i =>
+    match (raw.steps[i]? : Option PlanStep) with
+    | some (PlanStep.assign a) =>
+        match (raw.steps[i + 1]? : Option PlanStep) with
+        | some (PlanStep.pointwise p) =>
+            if p.sourceSlot == a.destinationSlot then acc else acc.push a.destinationSlot
+        | some (PlanStep.axiswise p) =>
+            if p.sourceSlot == a.destinationSlot then acc else acc.push a.destinationSlot
+        | _ => acc.push a.destinationSlot
+    | some (PlanStep.pointwise p) => acc.push p.destinationSlot
+    | some (PlanStep.axiswise p) => acc.push p.destinationSlot
+    | some (PlanStep.scan s) => acc ++ s.states.map (·.destSlot)
+    | none => acc) #[]
+
+/-- Checked view of a `PreparedPlan`'s bindings.  Its constructor is private so public consumers
+    cannot retain an unchecked raw binding list after crossing the prepared-plan boundary. -/
+structure CheckedPreparedBindings where private mk ::
+  requiredInputs : RequiredBindings
+  materializedBindings : Array SlotBinding
+
+/-- Validate the name sidecar against this plan's own raw slots.  Names remain deliberately
+    unauthenticated: positional raw IR can prove slots and required-name uniqueness, not origins. -/
+def checkPreparedBindings (source : PreparedPlan) :
+    Except PreparedBindingsError CheckedPreparedBindings := do
+  let raw := source.plan.raw
+  let requiredInputs ← match checkBindings raw.inputSlots source.bindings.requiredInputs.bindings with
+    | .ok checked => pure checked
+    | .error e => throw (.requiredInputs e)
+  match rawMaterializedWith source.bindings.materializedNames raw.tensorSigs with
+  | .error e => throw (.materializedSlot e)
+  | .ok _ => pure ()
+  let expected := rawPublicationSlots raw
+  let actual := source.bindings.materializedNames.map (·.slot)
+  unless actual == expected do
+    throw (.publicationSlots expected actual)
+  return { requiredInputs, materializedBindings := source.bindings.materializedNames }
+
+/-- Resolve the materialized bindings after `checkPreparedBindings` has established that their
+    slots are exactly the raw plan's publication sequence. -/
+def CheckedPreparedBindings.materializedWith {α : Type} (checked : CheckedPreparedBindings)
+    (table : Array α) : Except PlanError (Array (String × α)) :=
+  rawMaterializedWith checked.materializedBindings table
+
+/-- Ordered materialized SIGNATURES (Task 4.3): pairs each `PlanBindings.materializedNames` entry
+    with its own slot's `TensorSignature`, read from the checked plan's `raw.tensorSigs` table —
+    same order, including repeats, as `materializedNames` itself (its own doc comment: NOT
+    deduplicated; a name reassigned twice appears twice here too, each with its own slot's
+    signature). Exposes the destination dtype `prepareEvalPlan`'s Step D derives from the source
+    declaration (`dtypeOfDecl`, `Signature.lean`) at the one boundary a caller can observe it without
+    reaching into `plan.raw` and re-deriving the pairing by hand.
+
+    This accessor validates the whole sidecar first, then uses the checked resolver against the
+    signature table.  Its failure is a `PreparedBindingsError`, preserving the nested
+    `PlanError.slotOutOfRange` when bounds are the first failed obligation.
+    Out-of-range is unreachable for any plan `prepareEvalPlan` produces (it allocates every
+    materialized slot in `tensorSigs` itself), but `PreparedPlan`'s constructor is public and stays
+    public — `AdapterTest`'s authority-substitution checks build one by struct update — so
+    "unreachable via the real producer" is a producer-discipline fact, not a type-level guarantee,
+    exactly as `RequiredBindings`'s own doc comment says of its alignment against
+    `plan.raw.inputSlots`. -/
+def PreparedPlan.materializedSignatures (p : PreparedPlan) :
+    Except PreparedBindingsError (Array (String × TensorSignature)) := do
+  let checked ← checkPreparedBindings p
+  match checked.materializedWith p.plan.raw.tensorSigs with
+  | .ok values => pure values
+  | .error e => throw (.materializedSlot e)
+
 end LeanNCD.Eval.Plan

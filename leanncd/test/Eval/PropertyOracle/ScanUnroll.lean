@@ -34,8 +34,9 @@ whole-axis free) base regions, arbitrary advancing-dimension positions and order
 reads with non-positive bias, external reads, contractions, extent one, multiple scan axes, several
 disjoint base writes, block-local scratch, and — for the predicate/mask parity thread (Task 5.4) —
 source Iverson predicate factors and axiswise `where`-masks, rewritten to the leaf's own coordinates
-by `substBool` (an Iverson takes the actual scan coordinate; a mask zeros every eliminated scan
-seed). Nonlinearity and aggregation are carried through unchanged, so the two `enumScanCases`
+by `substBool` (an Iverson takes the actual scan coordinate; a mask zeros seeded scan axes and takes
+the current coordinate of free base scan axes). Nonlinearity and aggregation are carried through
+unchanged, so the two `enumScanCases`
 templates F4 rejects as capability failures (`relu` steps, tropical aggregation) are still unrollable
 and still checked against the legacy evaluator. Everything outside the fragment (scatter,
 `recurMorphism`, non-literal history coordinates, and an axiswise reduction along an ELIMINATED scan
@@ -381,28 +382,47 @@ private def rewriteFactor (g : ScanGeom) (σ : UID → Option Int)
       -- `substBool σ b` is the residual predicate the ordinary evaluator resolves against the leaf.
       pure (.iverson (substBool σ b))
 
+/-- The mask substitution induced by a source statement's LHS. Seeded scan axes are absent from the
+    local output basis and therefore read as zero; a scan axis left free by a base statement is
+    evaluated at the current base coordinate represented by `σ`. -/
+private def maskSubst (g : ScanGeom) (σ : UID → Option Int) (sourceSlots : List LHSSlot) :
+    UID → Option Int := fun u =>
+  if g.axes.any (·.uid == u) then
+    if sourceSlots.any (fun
+        | .free a | .freeNorm a => a.uid == u
+        | _ => false) then σ u
+    else some 0
+  else none
+
 /-- Rewrite one statement's nonlinearity for the leaf program. `identity`/`pointwise` pass through.
-    An `.axiswise` operation whose marked normalization axis (`.freeNorm` among `outSlots`, the
-    leaf's own output slots) is an eliminated scan coordinate is REJECTED with the named fragment
+    An `.axiswise` operation whose marked normalization axis (`.freeNorm` among `sourceSlots`) is an
+    eliminated scan coordinate is REJECTED with the named fragment
     error — the per-coordinate leaf unroller cannot reduce along an axis it has eliminated. Its mask
     (when present) is rewritten with the MASK policy, DISTINCT from the Iverson-factor policy: every
-    source seed (scan axis) reads ZERO, mirroring the checked lowering's absence of a seeded axis
-    from the local non-seeded output basis; every eliminated non-seeded `.free`/`.freeNorm` output
-    slot and every retained output axis stays an expression, resolved against the leaf's own
-    enumerated coordinate. -/
-private def rewriteNonlin (g : ScanGeom) (σ : UID → Option Int) (outSlots : List LHSSlot) :
+    seeded scan axis reads ZERO, while a free base scan axis takes its enumerated base coordinate;
+    every retained non-scan output axis stays an expression resolved against the leaf's coordinate. -/
+private def rewriteNonlin (g : ScanGeom) (σ : UID → Option Int) (sourceSlots : List LHSSlot) :
     Nonlin → Except String Nonlin
   | .axiswise fn m => do
-      match outSlots.findSome? (fun sl => match sl with | .freeNorm a => some a | _ => none) with
+      match sourceSlots.findSome? (fun sl => match sl with | .freeNorm a => some a | _ => none) with
       | some a =>
           if g.axes.any (·.uid == a.uid) then .error fragment.eliminatedNormalizationAxis
       | none => pure ()
-      -- Mask policy (DISTINCT from the Iverson-factor policy `σ`): every source seed (scan axis)
-      -- reads ZERO, never the live step coordinate `σ` — mirroring the checked lowering, whose local
-      -- non-seeded output basis omits the seeded axis so it densifies to coordinate 0 every step.
-      let σmask : UID → Option Int := fun u => if g.axes.any (·.uid == u) then some 0 else none
-      pure (.axiswise fn (m.map (substBool σmask)))
+      pure (.axiswise fn (m.map (substBool (maskSubst g σ sourceSlots))))
   | other => pure other
+
+private def maskTestGeom : ScanGeom :=
+  { axes := [sx], ext := [6], states := [], scratch := [], advScratch := [], base := [], recur := [] }
+
+private def scanAxisMask : BoolExpr :=
+  .rel .eq (.embed (.axis sx)) (.embed (.const 5))
+
+-- A free base scan axis remains an output coordinate before leaf specialization, whereas a seeded
+-- scan axis is absent from the output basis and therefore reads as zero.
+#guard substBool (maskSubst maskTestGeom pinX [.free sx, .freeNorm sy]) scanAxisMask
+  == BoolExpr.rel .eq (.embed (.const 5)) (.embed (.const 5))
+#guard substBool (maskSubst maskTestGeom pinX [.iterAt sx 0, .freeNorm sy]) scanAxisMask
+  == BoolExpr.rel .eq (.embed (.const 0)) (.embed (.const 5))
 
 /-- Rewrite a whole RHS, preserving source term and factor order, and rewriting the nonlinearity
     (`rewriteNonlin`) — the mask must be lowered to the leaf's coordinates and an eliminated-axis
@@ -425,6 +445,32 @@ structure Unrolled where
   stmts : List Stmt
   /-- Per state, the history coordinates that carry a real leaf (everything else is zero). -/
   live  : List (String × List (List Nat))
+  /-- Generated `.predicate` declarations for every leaf whose ORIGINAL source name (a state or
+      block-local scratch) is itself `.predicate`-declared in the caller's `decls` (Task 4.4). The
+      leaf names (`%Z_…`, `%U_…_*`, `%T_…_*`) never appear in the source program's own `decls`, so
+      without this the leaf-name lookup `combineFor`/`dtypeOfDecl` performs against `decls` always
+      misses and a Boolean scan state's independent unrolling would silently run real sum-product
+      instead of Boolean disjunction/conjunction — the gap the plan's §1 (`predicate_boolean_
+      backend_parity.md` supersession note) names as one of the three requirements this whole plan
+      closes. `independentRun` merges this list into the schedule it hands to `evalScheduled`. -/
+  decls : List Decl
+
+/-- Whether `nm` (an ORIGINAL source name — a state, a scratch, or any statement's LHS) is declared
+    `.predicate` in `decls`. Mirrors `Contract.lean`'s `combineFor`: `.axis`/`.iter` declarations
+    name an axis, not a tensor, and must be excluded before matching by name, or an axis sharing a
+    tensor's name could hide its real declaration. -/
+private def isPredicateName (decls : List Decl) (nm : String) : Bool :=
+  match decls.find? (fun d => match d with | .axis _ _ | .iter _ _ => false | _ => d.name == nm) with
+  | some (.predicate _ _) => true
+  | _ => false
+
+/-- Declare a generated predicate leaf over exactly the axes retained by its assignment. -/
+private def predicateLeafDecl (decls : List Decl) (sourceName : String) (leaf : Stmt) : Option Decl :=
+  if isPredicateName decls sourceName then
+    match leaf with
+    | .assign leafName slots _ => some (.predicate leafName (slots.filterMap (·.axisSpec?)))
+    | _ => none
+  else none
 
 /-- Unroll one scan node into scan-free leaf statements.
 
@@ -434,7 +480,8 @@ structure Unrolled where
     writes only `u + 1`, so this order both satisfies every read and gives the checked worker's
     immutable-pre-step (Jacobi) snapshot for free: no read inside iteration `u` can name a leaf that
     iteration `u` writes. -/
-def unrollScanNode (sizes : HashMap UID Nat) (sc : ScanStmt) : Except String Unrolled := do
+def unrollScanNode (sizes : HashMap UID Nat) (decls : List Decl) (sc : ScanStmt) :
+    Except String Unrolled := do
   let g ← analyzeScan sizes sc
   -- 1. resolve each base statement's state, leaf slots, written region and RHS.
   let baseParts ← g.base.mapM (fun s => do
@@ -444,12 +491,12 @@ def unrollScanNode (sizes : HashMap UID Nat) (sc : ScanStmt) : Except String Unr
     let fs  ← baseFreeSlots st s
     let reg ← baseRegion g st s
     let r   ← rhsOf s
-    pure (st, fs, reg, r))
+    pure (st, fs, reg, s.slots, r))
   -- 2. which history coordinates carry a real leaf: a base region, or a step's `u + 1`.
   let stepCoords := coordsOf (g.ext.map (fun n => n - 1))
   let advanced := stepCoords.map (fun u => u.map (· + 1))
   let live : List (String × List (List Nat)) := g.states.map (fun st =>
-    let fromBase := baseParts.flatMap (fun (bst, _, reg, _) =>
+    let fromBase := baseParts.flatMap (fun (bst, _, reg, _, _) =>
       if bst.name == st.name then reg else [])
     (st.name, (fromBase ++ advanced).eraseDups))
   let hasLeaf : String → List Nat → Bool := fun nm t =>
@@ -457,21 +504,28 @@ def unrollScanNode (sizes : HashMap UID Nat) (sc : ScanStmt) : Except String Unr
     | some (_, ts) => ts.contains t
     | none         => false
   -- 3. zero leaves.
-  let zeroStmts : List Stmt := g.states.map (fun st =>
-    .assign (zeroLeafName st.name) st.freeSlots { body := { terms := [] }, nonlin := .identity })
+  let zeroParts : List (String × Stmt) := g.states.map (fun st =>
+    (st.name, .assign (zeroLeafName st.name) st.freeSlots
+      { body := { terms := [] }, nonlin := .identity }))
+  let zeroStmts := zeroParts.map Prod.snd
+  let zeroDecls := zeroParts.filterMap (fun (sourceName, leaf) =>
+    predicateLeafDecl decls sourceName leaf)
   -- 4. base leaves: one per (base statement, coordinate in its region), pins substituted.
-  let baseStmts ← baseParts.flatMapM (fun (st, fs, reg, r) =>
+  let baseParts' ← baseParts.flatMapM (fun (st, fs, reg, sourceSlots, r) =>
     reg.mapM (fun t => do
-      let rhs ← rewriteRHS g (ctxSubst g.axes t) hasLeaf none fs r
-      pure (Stmt.assign (stateLeafName st.name t) fs rhs)))
+      let rhs ← rewriteRHS g (ctxSubst g.axes t) hasLeaf none sourceSlots r
+      pure (st.name, Stmt.assign (stateLeafName st.name t) fs rhs)))
+  let baseStmts := baseParts'.map Prod.snd
+  let baseDecls := baseParts'.filterMap (fun (sourceName, leaf) =>
+    predicateLeafDecl decls sourceName leaf)
   -- 5. step leaves: the whole recurrence list, once per step iteration, in source order.
-  let stepStmts ← stepCoords.flatMapM (fun u => do
+  let stepParts ← stepCoords.flatMapM (fun u => do
     let σ := ctxSubst g.axes u
     g.recur.mapM (fun s => do
       let r   ← rhsOf s
-      -- The leaf's own output slots (`.freeNorm`/`.free` faces), resolved BEFORE the rewrite so the
-      -- mask/normalization rewrite sees them: a state or advancing-scratch leaf keeps the state's
-      -- non-advancing free slots, a plain scratch keeps its own slots.
+      -- A state or advancing-scratch leaf keeps the state's non-advancing free slots; a plain
+      -- scratch keeps its own slots. The rewrite separately receives the source slots because mask
+      -- treatment depends on whether each scan axis was seeded or free before leaf specialization.
       let (leafName, leafSlots) :=
         match g.states.find? (fun st => st.name == s.lhsName) with
         | some st => (stateLeafName st.name (u.map (· + 1)), st.freeSlots)
@@ -479,9 +533,13 @@ def unrollScanNode (sizes : HashMap UID Nat) (sc : ScanStmt) : Except String Unr
             match g.advScratch.find? (fun st => st.name == s.lhsName) with
             | some st => (scratchLeafName s.lhsName u, st.freeSlots)
             | none    => (scratchLeafName s.lhsName u, s.slots)
-      let rhs ← rewriteRHS g σ hasLeaf (some u) leafSlots r
-      pure (Stmt.assign leafName leafSlots rhs)))
-  pure { geom := g, stmts := zeroStmts ++ baseStmts ++ stepStmts, live }
+      let rhs ← rewriteRHS g σ hasLeaf (some u) s.slots r
+      pure (s.lhsName, Stmt.assign leafName leafSlots rhs)))
+  let stepStmts := stepParts.map Prod.snd
+  let stepDecls := stepParts.filterMap (fun (sourceName, leaf) =>
+    predicateLeafDecl decls sourceName leaf)
+  pure { geom := g, stmts := zeroStmts ++ baseStmts ++ stepStmts
+       , live, decls := zeroDecls ++ baseDecls ++ stepDecls }
 
 /-! ## History reconstruction -/
 
@@ -537,8 +595,14 @@ def independentRun (sched : ScheduledProgram) (inputs : HashMap String DenseTens
         | .ok r    => env := r.env
         | .error e => .error s!"independent run: plain statement `{s.lhsName}` failed: {e.error}"
     | .scan .. => do
-        let un ← unrollScanNode sched.explicitSizes sc
-        let leafEnv ← match evalScheduled { sched with stmts := un.stmts.map ScanStmt.plain } env with
+        let un ← unrollScanNode sched.explicitSizes sched.decls sc
+        -- Task 4.4: the leaf program's OWN decls are `sched.decls` (needed by a `.plain` statement
+        -- reading an unrelated declared name) PLUS the generated predicate decls for THIS scan's
+        -- leaves (`un.decls`) — the leaf names never collide with any source name (`%`-prefixed),
+        -- so appending is safe and there is nothing to deduplicate.
+        let leafEnv ←
+            match evalScheduled { sched with stmts := un.stmts.map ScanStmt.plain
+                                            , decls := sched.decls ++ un.decls } env with
           | .ok r    => pure r.env
           | .error e => .error s!"independent run: the unrolled scan-free program failed: {e.error}"
         for st in un.geom.states do
@@ -616,7 +680,7 @@ run_cmd do
   | .ok sched =>
       match sched.stmts.find? (fun s => match s with | .scan .. => true | _ => false) with
       | none => throwError "template1 did not compile to a scan node"
-      | some sc => match unrollScanNode sched.explicitSizes sc with
+      | some sc => match unrollScanNode sched.explicitSizes sched.decls sc with
         | .error m => throwError s!"unrollScanNode failed: {m}"
         | .ok un =>
             let names := un.stmts.map Stmt.lhsName
@@ -624,5 +688,81 @@ run_cmd do
               throwError s!"unexpected leaf statements: {names}"
             unless un.stmts.all (fun s => match s with | .assign .. => true | _ => false) do
               throwError "the unrolled program is not made of plain assignments"
+
+/- Task 4.4, fixture 8: the same leaf-name assertion above, cloned onto `template4Bool` (Task 4.4
+   fixture 1's `predicate S(l)` case) instead of `template1` — its ONE state `S` has no free axis,
+   so its leaves are exactly the un-tagged `%Z_S`/`%U_S_0`/`%U_S_1`/`%U_S_2` (for `L = 3`). Every
+   generated declaration for them must be `.predicate`, since `S` itself is: without it (temporarily
+   verified by dropping the decl-generation entirely, see the mutation cycle for this site) the
+   independent leg's leaf assignments have no declaration at all, `combineFor` defaults to
+   `Combine.real`, and the leaf history disagrees with the checked/legacy legs (a real running sum
+   instead of Boolean disjunction) — a THREE-WAY differential failure the registration below (in
+   `DifferentialTest.lean`) is what actually observes. -/
+run_cmd do
+  match schedOfCase (template4Bool 3) with
+  | .error m => throwError m
+  | .ok sched =>
+      match sched.stmts.find? (fun s => match s with | .scan .. => true | _ => false) with
+      | none => throwError "template4Bool did not compile to a scan node"
+      | some sc => match unrollScanNode sched.explicitSizes sched.decls sc with
+        | .error m => throwError s!"unrollScanNode (template4Bool) failed: {m}"
+        | .ok un =>
+            let names := un.stmts.map Stmt.lhsName
+            unless names == ["%Z_S", "%U_S_0", "%U_S_1", "%U_S_2"] do
+              throwError s!"template4Bool: unexpected leaf statements: {names}"
+            let declNames := un.decls.map Decl.name
+            unless declNames == ["%Z_S", "%U_S_0", "%U_S_1", "%U_S_2"] do
+              throwError s!"template4Bool: unexpected generated decls: {declNames}"
+            unless un.decls.all (fun d => match d with | .predicate _ _ => true | _ => false) do
+              throwError s!"template4Bool: every generated declaration must be predicate: {repr un.decls}"
+
+/- A predicate state retaining `j` distinguishes scalar leaf declarations from correctly ranked
+   ones. Its generated leaves assign over `[j]`, so each declaration must carry that same AxisSpec
+   (including UID 7702), while the scan coordinate `l` is eliminated into the leaf name. -/
+private def retainedPredL : AxisSpec := ⟨"l", 7701, .nat⟩
+private def retainedPredJ : AxisSpec := ⟨"j", 7702, .nat⟩
+
+def retainedPredicateSched : ScheduledProgram :=
+  { decls := [.iter retainedPredL 3, .axis retainedPredJ (some 2),
+              .predicate "S" [retainedPredJ, retainedPredL]]
+  , stmts := [.scan "S" [retainedPredL]
+      [ .assign "S" [.free retainedPredJ, .iterAt retainedPredL 0]
+          { body := { terms := [{ factors := [.read "S0" [.axis retainedPredJ]] }] },
+            nonlin := .identity } ]
+      [ .assign "S" [.free retainedPredJ, .iterNext retainedPredL]
+          { body := { terms := [
+              { factors := [.read "S" [.axis retainedPredJ, .axis retainedPredL]] },
+              { factors := [.read "X" [.axis retainedPredJ, .axis retainedPredL]] }] },
+            nonlin := .identity } ]
+      false ]
+  , env := {}, extNames := insert "S0" (insert "X" (∅ : Finset String))
+  , explicitSizes := ((({} : HashMap UID Nat).insert retainedPredL.uid 3).insert
+      retainedPredJ.uid 2) }
+
+def retainedPredicateInputs : HashMap String DenseTensor :=
+  (({} : HashMap String DenseTensor).insert "S0" ⟨[2], #[0.0, 1.0]⟩).insert
+    "X" ⟨[2, 3], #[1.0, 1.0, 0.0, 1.0, 0.0, 0.0]⟩
+
+run_cmd do
+  match retainedPredicateSched.stmts.find? (fun s => match s with | .scan .. => true | _ => false) with
+  | none => throwError "retained predicate fixture has no scan node"
+  | some sc =>
+      match unrollScanNode retainedPredicateSched.explicitSizes retainedPredicateSched.decls sc with
+      | .error m => throwError s!"retained predicate fixture failed to unroll: {m}"
+      | .ok un =>
+          let declNames := un.decls.map Decl.name
+          unless declNames == ["%Z_S", "%U_S_0", "%U_S_1", "%U_S_2"] do
+            throwError s!"retained predicate fixture has unexpected generated decls: {declNames}"
+          unless un.decls.all (fun d => match d with
+              | .predicate _ [a] => a.uid == retainedPredJ.uid
+              | _ => false) do
+            throwError s!"retained predicate leaf declarations lost axis j: {repr un.decls}"
+  match independentRun retainedPredicateSched retainedPredicateInputs with
+  | .error m => throwError s!"retained predicate independent run failed: {m}"
+  | .ok env => match env["S"]? with
+    | some s =>
+        unless denseEq s ⟨[2, 3], #[0.0, 1.0, 1.0, 1.0, 1.0, 1.0]⟩ do
+          throwError s!"retained predicate history wrong: {repr s.shape}/{repr s.data}"
+    | none => throwError "retained predicate fixture: no S in the independent environment"
 
 end LeanNCD.PropertyOracle

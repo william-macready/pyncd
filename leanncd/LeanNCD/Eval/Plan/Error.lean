@@ -47,6 +47,34 @@ inductive PositionalInputError
   | storageMismatch (slot : TensorSlot) (shape : List Nat) (dataSize : Nat)
   | arityMismatch   (expected : Nat) (actual : Nat)
   | contextShapeMismatch (expected : Array Nat) (actual : List Int)
+  /-- A worker was handed a complete signature table that is not the one its checked evidence was
+      validated against. Raised by `runDenseScan` (`Scan.lean`), whose `CheckedScanPlan` stores the
+      table `checkScanPlan` used: the checked scan's state shapes, capture signatures, and write
+      geometry are all facts about THAT table, so indexing a different one would allocate and commit
+      against extents nothing checked — the shape of failure this replaces was an `Array.set!` panic
+      inside `commitWrite` with an `.ok` result still returned. Carries both tables so the caller can
+      see which slot disagrees. -/
+  | signatureContextMismatch (expected actual : Array TensorSignature)
+  /-- A worker or a store-consuming boundary was handed a positional store whose LENGTH is not the
+      one its checked signature context describes. Raised by `runDenseScan` (`Scan.lean`), where the
+      store is both
+      read (external captures) and WRITTEN (each state's destination slot), and the destination
+      slots are facts about `CheckedScanPlan.sigs` — so a store shorter than that table drove
+      `Array.set!` out of range in the final destination loop: a `lean_array_set_panic` message with
+      the ORIGINAL store still returned as `.ok`, i.e. a successful-looking run whose destination is
+      simply absent. `expected` is `c.sigs.size` (derived from the stored evidence, never from the
+      caller's arguments); equality is exact, matching `runDensePlan`'s own `arityMismatch` boundary
+      and the `signatureContextMismatch` tie beside it — a store built to a different length was
+      built against a different table, which is the very thing that tie exists to reject. Distinct
+      from `arityMismatch` (a positional INPUT array against `inputSlots`) and from `missingSlot`
+      (one slot absent, discovered during a read).
+
+      Also raised by `Adapter.unpack` (whole-branch review round 4), whose RESULT store is the same
+      kind of value against the same kind of stored evidence: a positional store that must be the
+      one `unpack`'s own `PreparedPlan` was checked against, sized by `plan.raw.tensorSigs.size`.
+      Carried there under `PlanRunCause.resultStore`, not `.execution`, so the boundary that
+      rejected it stays distinguishable — same constructor, same meaning, different reporter. -/
+  | storeArityMismatch (expected actual : Nat)
   | unaryDomain     (op : UnaryDomainOp) (valueBits : UInt64) (slot : TensorSlot)
   -- A positional Iverson predicate leaf's coefficient width disagrees with the term's iteration
   -- basis at RUNTIME. Unreachable for any plan `checkAssign` admits (its `.iverson` width check
@@ -164,10 +192,16 @@ inductive NonlinCompileError
 /-- A required signature is missing, malformed, or incompatible with the scheduled declarations
     (§5.5). Checked for every name in `sched.extNames` — by construction (`resolveDecls`,
     `Structural.lean`), every such name is read somewhere, so no separate "read before production"
-    filter is needed here. -/
+    filter is needed here. `dtypeNotAdmitted` fires when the supplied signature names a dtype no
+    worker implements at all (`f32`); `dtypeMismatch` (Task 4.3) fires when the supplied dtype IS
+    admitted but disagrees with the one the source DECLARATION commits this name to (a `.predicate`
+    declaration expects `bool`, everything else expects `f64`) — a genuinely different failure: the
+    signature is well-formed on its own, just contradicts what the program itself says about this
+    name. -/
 inductive InputSignatureError
   | missingSignature (name : String)
   | dtypeNotAdmitted (name : String) (dtype : ScalarDType)
+  | dtypeMismatch    (name : String) (expected actual : ScalarDType)
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- Failure of `Prepared.lean`'s `checkBindings`: a candidate `requiredInputs` array does not align
@@ -187,6 +221,14 @@ inductive BindingsError
   | duplicateName   (name : String)
   deriving DecidableEq, BEq, Repr, Inhabited
 
+/-- A public prepared plan's name bindings do not describe its own raw positional plan.  This is
+    structural slot validation only: raw plans retain no source or publication names. -/
+inductive PreparedBindingsError
+  | requiredInputs    (cause : BindingsError)
+  | materializedSlot  (cause : PlanError)
+  | publicationSlots  (expected actual : Array TensorSlot)
+  deriving DecidableEq, BEq, Repr, Inhabited
+
 /- `PlanCompileCause`/`PlanCompileFailure` used to live here (§5.5's sketch), but `invalidPlan`'s
    payload is now `PlanStepError` (`EvalPlan.lean`), which itself depends on `ScanPlanError`
    (`Scan.lean`) — one layer downstream of where this file sits in the import graph (`Error` is
@@ -194,7 +236,7 @@ inductive BindingsError
    relocated to `EvalPlan.lean`, the first module downstream of everything they need to reference.
    See `EvalPlan.lean` for their current definitions. -/
 
-/-- Everything `pack` can detect wrong with the concrete tensor `env` supplies once `requiredInputs`
+/-- Everything `pack` can detect wrong with the concrete tensor `env` supplies once prepared bindings
     itself is already known-good (`PlanBindings.requiredInputs : RequiredBindings`, checked by
     `checkBindings` — a clean, name-unique bijection, but onto `RequiredBindings`' OWN stored
     `inputSlots` field, NOT — by anything the type system enforces — onto the enclosing
@@ -210,18 +252,42 @@ inductive BindingsError
     `env`), `shapeMismatch`/`storageMismatch` (a name resolved, but its tensor doesn't conform to
     the plan's declared signature). -/
 inductive InputBindingError
+  | invalidPreparedBindings (cause : PreparedBindingsError)
   | missingEnvBinding (name : String)
   | shapeMismatch     (name : String) (slot : TensorSlot) (expected : Array Nat) (actual : List Nat)
   | storageMismatch   (name : String) (slot : TensorSlot) (shape : List Nat) (dataSize : Nat)
   deriving DecidableEq, BEq, Repr, Inhabited
 
-/-- The runtime counterpart of `PlanCompileCause`: a `PreparedPlan` failed either at the named
-    binding boundary (`pack`) or inside the positional worker (`runDensePlan`). Both
-    `InputBindingError` and `PositionalInputError` derive `Repr` (unlike `PlanCompileCause`'s
-    `ShapeError` sibling) — verified, not assumed by analogy — so `PlanRunCause` derives `Repr` too. -/
+/-- The runtime counterpart of `PlanCompileCause`: a `PreparedPlan` failed at the named binding
+    boundary on the way IN (`pack`), inside the positional worker (`runDensePlan`), or at the
+    boundary on the way OUT (`unpack`) — either because the positional RESULT STORE itself is not
+    the one the checked plan describes (`resultStore`) or because a materialized binding cannot be
+    resolved against it (`materialization`). All payload types derive `Repr` (verified, not assumed
+    by analogy — unlike `PlanCompileCause`'s `ShapeError` sibling) so `PlanRunCause` derives `Repr`
+    too.
+
+    `materialization` carries a `PlanError` rather than a fourth bespoke type: `unpack` resolves
+    `PlanBindings.materializedNames` against the positional result store through the shared
+    `PlanBindings.materializedWith` (`Prepared.lean`), whose failure is the same
+    `PlanError.slotOutOfRange` every other slot-table lookup in this subsystem raises — and the same
+    value `PreparedPlan.materializedSignatures` reports for the identical malformation, which is the
+    point of sharing the path.
+
+    `resultStore` is the OUT-boundary sibling of `execution`, and carries the same
+    `PositionalInputError` family for the same reason `materialization` reuses `PlanError`: the
+    malformation (`storeArityMismatch`) is a positional-store fact with an existing constructor that
+    already means exactly this. It is deliberately NOT folded into `execution`: `unpack` is
+    callable directly on a store no worker produced (`AdapterTest`'s own fixtures do exactly that),
+    so attributing a caller-supplied store's arity to `runDensePlan` would name a boundary that may
+    never have run. Through `runPreparedDense` it is unreachable — `runDensePlan` returns a store
+    built at exactly `tensorSigs.size` — which is the point: the store `unpack` accepts is now
+    pinned to the checked plan rather than to whatever the caller passes. -/
 inductive PlanRunCause
-  | binding   (cause : InputBindingError)
-  | execution (cause : PositionalInputError)
+  | binding         (cause : InputBindingError)
+  | invalidBindings (cause : PreparedBindingsError)
+  | execution       (cause : PositionalInputError)
+  | resultStore     (cause : PositionalInputError)
+  | materialization (cause : PlanError)
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- Failure type of `runPreparedDense`. `warnings` is always `plan.warnings` (the preparation

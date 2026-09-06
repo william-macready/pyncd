@@ -33,7 +33,7 @@ run_cmd do
       unless decide ("W" ∈ rp.extNames) && decide ("X" ∈ rp.extNames) do
         throwError "W,X should be external"
       unless ¬ decide ("Y" ∈ rp.extNames) do throwError "Y must not be external (it is produced)"
-  | .error e _ => throwError s!"resolveDecls errored (should never throw): {repr e}"
+  | .error e _ => throwError s!"resolveDecls errored (only duplicateTensorDecl is possible): {repr e}"
 
 -- a `tensor` decl lands in env.
 run_cmd do
@@ -42,6 +42,42 @@ run_cmd do
   match (assignUIDs p >>= resolveDecls) |>.run 0 with
   | .ok rp _ => unless rp.env.contains "A" do throwError "env missing declared A"
   | .error e _ => throwError s!"errored: {repr e}"
+
+-- Task 4.1 fixture 1: a name declared `tensor` TWICE ⇒ duplicateTensorDecl (not last-wins).
+run_cmd do
+  let p : TLProgram := { decls := [ .tensor "A" [], .tensor "A" [] ], stmts := [
+    .assign "A" [] { body := { terms := [] }, nonlin := .identity } ] }
+  match (assignUIDs p >>= resolveDecls) |>.run 0 with
+  | .error (.duplicateTensorDecl "A") _ => pure ()
+  | .error e _ => throwError s!"wrong error: {repr e}"
+  | .ok _ _    => throwError "expected duplicateTensorDecl for a doubly-declared tensor"
+
+-- Task 4.1 fixture 2: the same for two `predicate` decls of one name.
+run_cmd do
+  let p : TLProgram := { decls := [ .predicate "A" [], .predicate "A" [] ], stmts := [
+    .assign "A" [] { body := { terms := [] }, nonlin := .identity } ] }
+  match (assignUIDs p >>= resolveDecls) |>.run 0 with
+  | .error (.duplicateTensorDecl "A") _ => pure ()
+  | .error e _ => throwError s!"wrong error: {repr e}"
+  | .ok _ _    => throwError "expected duplicateTensorDecl for a doubly-declared predicate"
+
+-- Task 4.1 fixture 3: MIXED kinds, both orders — this is the disagreement Boolean admission cannot
+-- tolerate (a `DeclEnv` lookup would see the last decl, a linear `decls` scan the first).
+run_cmd do
+  let p : TLProgram := { decls := [ .tensor "A" [], .predicate "A" [] ], stmts := [
+    .assign "A" [] { body := { terms := [] }, nonlin := .identity } ] }
+  match (assignUIDs p >>= resolveDecls) |>.run 0 with
+  | .error (.duplicateTensorDecl "A") _ => pure ()
+  | .error e _ => throwError s!"wrong error (tensor-then-predicate): {repr e}"
+  | .ok _ _    => throwError "expected duplicateTensorDecl for tensor-then-predicate"
+
+run_cmd do
+  let p : TLProgram := { decls := [ .predicate "A" [], .tensor "A" [] ], stmts := [
+    .assign "A" [] { body := { terms := [] }, nonlin := .identity } ] }
+  match (assignUIDs p >>= resolveDecls) |>.run 0 with
+  | .error (.duplicateTensorDecl "A") _ => pure ()
+  | .error e _ => throwError s!"wrong error (predicate-then-tensor): {repr e}"
+  | .ok _ _    => throwError "expected duplicateTensorDecl for predicate-then-tensor"
 
 -- lowerArith
 -- Upsample: Out[2*i, 2*j] := X[i,j] — affine LHS ⇒ reclassified to Stmt.scatter, injective (no error).
@@ -146,6 +182,50 @@ run_cmd do
   | .error (.rankMismatch "W" 2 1) _ => pure ()
   | .error e _                       => throwError s!"wrong error: {repr e}"
   | .ok _ _                          => throwError "expected rankMismatch for wrong-rank read"
+
+-- Declared destinations use their raw syntactic LHS rank, not the published rank of an
+-- undeclared intermediate.
+run_cmd do
+  let i : AxisSpec := { name := "i", uid := 1, kind := .real }
+  let j : AxisSpec := { name := "j", uid := 2, kind := .real }
+  let rp : ResolvedProgram :=
+    { decls := [.tensor "Y" [i, j]]
+    , env := ({} : DeclEnv).insert "Y" (.tensor "Y" [i, j])
+    , extNames := ∅
+    , stmts := [.assign "Y" [.free i] { body := { terms := [] }, nonlin := .identity }] }
+  match checkReadRanks rp |>.run 0 with
+  | .error (.rankMismatch "Y" 2 1) _ => pure ()
+  | .error e _ => throwError s!"wrong declared destination under-rank error: {repr e}"
+  | .ok _ _ => throwError "expected declared destination under-rank rejection"
+
+run_cmd do
+  let i : AxisSpec := { name := "i", uid := 1, kind := .real }
+  let j : AxisSpec := { name := "j", uid := 2, kind := .real }
+  let rp : ResolvedProgram :=
+    { decls := [.tensor "Y" [i]]
+    , env := ({} : DeclEnv).insert "Y" (.tensor "Y" [i])
+    , extNames := ∅
+    , stmts := [.assign "Y" [.free i, .free j] { body := { terms := [] }, nonlin := .identity }] }
+  match checkReadRanks rp |>.run 0 with
+  | .error (.rankMismatch "Y" 1 2) _ => pure ()
+  | .error e _ => throwError s!"wrong declared destination over-rank error: {repr e}"
+  | .ok _ _ => throwError "expected declared destination over-rank rejection"
+
+-- Task 4.1 fixture 4: the SAME wrong-rank read, plus duplicate `W` declarations. `resolveDecls`
+-- runs before `checkReadRanks`, so the duplicate declaration is reported and the (still present,
+-- still wrong) read rank is never reached — the distinguishing fixture for that order.
+run_cmd do
+  let ax (nm : String) : AxisSpec := { name := nm, uid := 0, kind := .real }
+  let p : TLProgram := {
+    decls := [.tensor "W" [ax "i", ax "k"], .tensor "W" [ax "i", ax "k"]],   -- declared TWICE
+    stmts := [.assign "Y" [.free (ax "i")]
+      { body := { terms := [{ factors := [
+            .read "W" [.axis (ax "i")] ] }] },  -- read rank 1, still wrong
+        nonlin := .identity }] }
+  match (assignUIDs p >>= resolveDecls >>= checkReadRanks) |>.run 0 with
+  | .error (.duplicateTensorDecl "W") _ => pure ()
+  | .error e _ => throwError s!"expected duplicateTensorDecl before rankMismatch, got: {repr e}"
+  | .ok _ _    => throwError "expected duplicateTensorDecl for doubly-declared W"
 
 -- checkReadRanks: external tensor with consistent read arity passes through.
 run_cmd do
@@ -277,6 +357,21 @@ run_cmd do
   match checkDtypes rp |>.run 0 with
   | .ok _ _    => pure ()
   | .error e _ => throwError s!"predicate with identity should not error: {repr e}"
+
+-- Task 4.1 fixture 6: MaxReduceTest's predicate max-aggregation rejection, made pointwise as well.
+-- Both invariants are violated; nonlinearity is checked FIRST, so `predicateNonlin` is the reported
+-- diagnostic — the distinguishing fixture for that order (shared by `checkDtypes` and
+-- `prepareEvalPlan`'s direct-schedule check through `checkPredicateOutput`).
+run_cmd do
+  let ax : AxisSpec := { name := "i", uid := 1, kind := .real }
+  let s : Stmt := .assign "P" [.free ax]
+    { body := { terms := [] }, nonlin := .pointwise .relu, agg := .max }
+  let env : DeclEnv := ({} : Std.HashMap String Decl).insert "P" (.predicate "P" [ax])
+  let rp : ResolvedProgram := { decls := [], env, extNames := ∅, stmts := [s] }
+  match checkDtypes rp |>.run 0 with
+  | .error (.predicateNonlin "P") _ => pure ()
+  | .error e _ => throwError s!"expected predicateNonlin before predicateAgg, got: {repr e}"
+  | .ok _ _    => throwError "expected predicateNonlin for a pointwise max-agg predicate output"
 
 -- checkScatterNoScan: a scatter-shaped LHS (Out[2*i]) combined with an iteration slot (l+1 on
 -- another dimension) must be rejected at compile time — today it silently compiles, and is only

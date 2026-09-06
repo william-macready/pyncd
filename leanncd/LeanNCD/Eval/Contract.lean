@@ -171,12 +171,19 @@ def Combine.max : Combine := ⟨(· * ·), fun (a b : Float) => Max.max a b, -1.
 def Combine.min : Combine := ⟨(· * ·), fun (a b : Float) => Min.min a b, 1.0 / 0.0, 1.0⟩
 
 /-- Pick the `Combine` for an output given its decl and the RHS aggregation op.
-    Priority: `agg = .max` ⇒ tropical max; `agg = .min` ⇒ tropical min; `predicate` ⇒ bool; else real. -/
+    Priority: `agg = .max` ⇒ tropical max; `agg = .min` ⇒ tropical min; `predicate` ⇒ bool; else real.
+
+    The `.sum` scan searches TENSOR-BEARING declarations only (`.tensor`/`.linear`/`.predicate`).
+    `.axis`/`.iter` declarations name an axis, not a tensor, and are excluded from `DeclEnv`
+    (`resolveDecls`) — including them here let an earlier `axis Result` hide a later
+    `predicate Result` and silently select real sum-product for a Boolean output. -/
 def combineFor (decls : List Decl) (nm : String) (agg : AggOp) : Combine :=
   match agg with
   | .max => Combine.max
   | .min => Combine.min
-  | .sum => match decls.find? (fun d => d.name == nm) with
+  | .sum => match decls.find? (fun d => match d with
+      | .axis _ _ | .iter _ _ => false
+      | _                     => d.name == nm) with
       | some (.predicate _ _) => Combine.bool
       | _                     => Combine.real
 

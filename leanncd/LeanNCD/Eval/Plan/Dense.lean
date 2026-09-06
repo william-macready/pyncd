@@ -41,22 +41,25 @@ private def applyOp : ScalarBinOp → Float → Float → Float
   | .min => fun a b => Min.min a b
   | .max => fun a b => Max.max a b
 
-/-- Decode a checked plan's scalar constant to its `Float` value. The catch-all `_ => 0.0` arm is
-    dead code in practice, not a real default: `checkAssign`'s `algebraNotAdmitted` guard
-    (`Check.lean`) forces `a.algebra ∈ admittedAlgebras`, and every `factorId`/`reduceId` of those
-    three algebras (real sum-product plus the two tropical semirings) is `.f64 _` — the only
-    `ScalarConst` values a `CheckedAssignPlan` can ever carry here. Kept as a total match (rather than
-    an exhaustive `.f64`-only one) so this function does not need to change shape if `ScalarConst`
-    grows a new constructor; see `ScalarConst`'s own doc comment (`Types.lean`) for why `.f32`/`.bool`
-    can never actually reach here. -/
+/-- Decode a checked plan's scalar constant to its `Float` value. `.bool` is a semantic tag over the
+    same Float storage, so `true`/`false` decode to the reference evaluator's Boolean identities
+    `1.0`/`0.0` (`Combine.bool`'s `unit0`/`unit1`) — no separate Boolean carrier, no coercion of
+    gathered values. The catch-all `_ => 0.0` arm now covers `.f32` only, and is dead code in
+    practice rather than a real default: `checkAssign`'s `algebraNotAdmitted` guard (`Check.lean`)
+    forces `a.algebra ∈ admittedAlgebrasFor destDtype`, whose `.f32` row is empty and whose other
+    rows carry only `.f64`/`.bool` constants — the only `ScalarConst` values a `CheckedAssignPlan`
+    can ever carry here. Kept as a total match so this function does not need to change shape if
+    `ScalarConst` grows a new constructor. -/
 private def constFloat : ScalarConst → Float
   | .f64 bits => Float.ofBits bits
+  | .bool true => 1.0
+  | .bool false => 0.0
   | _ => 0.0
 
-/-- Fold one term's factor product, left to right in stored factor order (architecture doc §2.2:
-    `factorFold([]) = float64(1)`, `factorFold(xs ++ [x]) = float64(factorFold(xs) * x)`). Named
-    separately from `reductionFold`/`termFold` even though all three are left folds over `applyOp`
-    because §2.2 gives each its own operation/identity — factors use `factorOp`/`factorId`, never
+/-- Fold one term's factors left to right in stored order. For the original real specialization this
+    is architecture doc §2.2's `factorFold([]) = float64(1)` and multiplication step; generally the
+    checked destination algebra supplies that identity and operation. Named separately from
+    `reductionFold`/`termFold` because factors use `factorOp`/`factorId`, never
     `reduceOp`/`reduceId`. -/
 private def factorFold (alg : ContractionAlgebra) (xs : List Float) : Float :=
   xs.foldl (applyOp alg.factorOp) (constFloat alg.factorId)
@@ -67,10 +70,10 @@ example (alg : ContractionAlgebra) (xs : List Float) (x : Float) :
     factorFold alg (xs ++ [x]) = applyOp alg.factorOp (factorFold alg xs) x := by
   simp [factorFold, List.foldl_append]
 
-/-- Fold one term's reduction coordinates, left to right in row-major order (architecture doc §2.2:
-    `reductionFold([]) = float64(0)`, `reductionFold(xs ++ [x]) = float64(reductionFold(xs) + x)`).
-    Each `x` here is that reduction coordinate's factor product (`factorFold`'s result), not a raw
-    factor value. -/
+/-- Fold one term's reduction coordinates left to right in row-major order. For the original real
+    specialization this is architecture doc §2.2's zero-initialized addition; generally the checked
+    destination algebra supplies the identity and operation. Each value is that reduction
+    coordinate's factor product (`factorFold`'s result), not a raw factor value. -/
 private def reductionFold (alg : ContractionAlgebra) (xs : List Float) : Float :=
   xs.foldl (applyOp alg.reduceOp) (constFloat alg.reduceId)
 
@@ -80,14 +83,12 @@ example (alg : ContractionAlgebra) (xs : List Float) (x : Float) :
     reductionFold alg (xs ++ [x]) = applyOp alg.reduceOp (reductionFold alg xs) x := by
   simp [reductionFold, List.foldl_append]
 
-/-- Fold completed terms into one output coordinate's value, left to right in term-array order
-    (architecture doc §2.2: `termFold([]) = float64(0)`, `termFold(xs ++ [x]) =
-    float64(termFold(xs) + x)`). Defined with the same `reduceOp`/`reduceId` as `reductionFold` —
-    not a coincidence: `ContractionAlgebra`'s own doc comment (`Types.lean`) states that term
-    combination and reduction intentionally share one op/identity pair, mirroring the reference
-    evaluator's `Combine.combine`/`unit0`. Kept as its own named function (rather than reusing
-    `reductionFold` under a second name) so each of §2.2's three fold equations has exactly one
-    Lean definition to pin it to. -/
+/-- Fold completed terms into one output coordinate's value, left to right in term-array order.
+    Defined with the same `reduceOp`/`reduceId` as `reductionFold` — not a coincidence:
+    `ContractionAlgebra`'s own doc comment (`Types.lean`) states that term combination and reduction
+    intentionally share one op/identity pair, mirroring the reference evaluator's
+    `Combine.combine`/`unit0`. Kept as its own named function rather than reusing `reductionFold`
+    under a second name so each semantic fold remains explicit. -/
 private def termFold (alg : ContractionAlgebra) (xs : List Float) : Float :=
   xs.foldl (applyOp alg.reduceOp) (constFloat alg.reduceId)
 

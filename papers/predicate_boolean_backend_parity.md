@@ -1,7 +1,19 @@
 # Predicate and Boolean parity for the checked `EvalPlan` backend
 
-**Status:** Detailed design proposal, revised after the predicate coordinate-parity spike; not
-implemented. This document covers items 5 and 4 of
+**Status (2026-09-03): BOTH items are now implemented and landed.** Item 5 (masks, predicates,
+Iverson factors) landed from this document's own Slice 5 tasks. Item 4 (Boolean/predicate tensors)
+landed from the SEPARATE executable slice plan
+[`boolean_predicate_output_evalplan.md`](boolean_predicate_output_evalplan.md), which **supersedes
+§5 and §7 of this document**: that plan's preflight against the tree found three additional
+requirements this design did not anticipate (direct `ScheduledProgram` inputs must defensively
+re-establish predicate source invariants and external-name classification; the independent scan
+unroller must copy predicate declarations onto generated leaf tensors; JAX's standalone candidate
+APIs need explicit signature context before they can distinguish Boolean sources), plus the
+existing JAX support-gate siblings — tropical algebras and unary reads — that must be rejected
+alongside Boolean semantics rather than silently receiving `orderedReference64` evidence. Read §5/§7
+below as the original design intent, not as the shipped boundary.
+
+This document covers items 5 and 4 of
 [`backend_missing_functionality.md`](backend_missing_functionality.md), in that implementation
 order:
 
@@ -61,7 +73,7 @@ implementation.
 | Predicate destination with max/min | Continue treating this as invalid source. Backend parity in these slices is for schedules satisfying the DSL pipeline's existing `checkDtypes` invariant; add the same typed rejection at the direct `ScheduledProgram` boundary. |
 | Input signatures | Keep `InputSignature.ofDenseInputs` as its existing f64 compatibility helper. Add a separate declaration-aware helper. |
 | Result dtype | Keep shared `EvalReport` unchanged. Expose materialized name/signature pairs from `PreparedPlan`. |
-| JAX | Reject Iverson factors, masked axiswise operations, and Bool algebra/dtypes explicitly. Do not implement JAX predicate semantics in these slices. |
+| JAX | Reject Iverson factors, masked axiswise operations, and Bool algebra/dtypes explicitly. Do not implement JAX predicate semantics in these slices. **As shipped** (Task 4.5 and its reviews): the rejection is a located typed gate (`JaxSupportError`/`checkJaxAssignSupport`) covering a Boolean destination, a Boolean source, tropical max/min algebra, an inline unary read, and a CONTEXTFUL assignment (non-empty `AssignPlan.contextShape`, `contextualAssignment` — neither lowering has a kernel parameter for the runtime context coordinate), applied at every public renderer, lowerer, candidate conversion, and validator before Python or evidence exists. Iverson factors keep their own located `iversonFactor`, and `einsumOnly` additionally rejects a zero-padded read whose source extent disagrees with its own iteration extent (`labelExtentMismatch`, decided by the validator's own `einsumTermLabelExtents`). |
 | Capability errors | Retain `maskOrPredicate`, `maskedAxiswiseNotSupported`, and `booleanOutput` as producer-less compatibility constructors after their last producer is removed. |
 
 ## 2. Three different meanings of "predicate"

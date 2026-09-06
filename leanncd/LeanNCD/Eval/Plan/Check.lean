@@ -42,12 +42,38 @@ def admittedAlgebraMin : ContractionAlgebra :=
   { factorOp := .mul, factorId := .f64 (Float.toBits 1.0)
   , reduceOp := .min, reduceId := .f64 (Float.toBits (1.0 / 0.0)) }
 
-/-- The algebras `checkAssign` admits: real sum-product plus the two tropical semirings that
-    `AggOp.max`/`.min` select. The out-of-bounds `zeroPad` policy still pads reads with `0` in all
-    three — a padded read is a factor value flowing through `factorOp` (mul), never the reduction
-    identity — so only `reduceOp`/`reduceId` differ between them. -/
+/-- Boolean conjunction/disjunction `(min, max)` with identities `true`/`false` — the algebra a
+    predicate destination compiles to. `min` with identity `true` conjoins a term's factors; `max`
+    with identity `false` disjoins both a term's contracted coordinates and the completed terms,
+    mirroring the reference `Combine.bool` exactly.
+
+    `.bool` here is a SEMANTIC tag over Float-backed storage, not a native carrier: `Dense.constFloat`
+    decodes `.bool true` to `1.0` and `.bool false` to `0.0`, and `applyOp` runs the same Float
+    `min`/`max` the reference evaluator does. Runtime values are therefore NOT restricted to `0.0`/
+    `1.0`; a non-binary Float retains literal `min`/`max` behavior rather than being coerced or
+    rejected. The out-of-bounds `zeroPad` policy needs no Boolean special case: a padded read is a
+    factor value of `0.0` = false, which is exactly what `min` should propagate. -/
+def admittedAlgebraBool : ContractionAlgebra :=
+  { factorOp := .min, factorId := .bool true
+  , reduceOp := .max, reduceId := .bool false }
+
+/-- The algebras `checkAssign` admits for an `f64` destination: real sum-product plus the two
+    tropical semirings that `AggOp.max`/`.min` select. The out-of-bounds `zeroPad` policy still pads
+    reads with `0` in all three — a padded read is a factor value flowing through `factorOp` (mul),
+    never the reduction identity — so only `reduceOp`/`reduceId` differ between them. -/
 def admittedAlgebras : List ContractionAlgebra :=
   [admittedAlgebra, admittedAlgebraMax, admittedAlgebraMin]
+
+/-- Algebra admission is DESTINATION-SPECIFIC: the destination dtype selects the algebra, and no
+    other dtype's algebras are admitted alongside it. A real destination may not carry the Boolean
+    algebra and a predicate destination may not carry real sum-product or a tropical semiring —
+    either would silently give a destination semantics its declared dtype does not name. `f32` admits
+    nothing; it is already rejected by the earlier `dtypeNotAdmitted` destination guard, and this
+    empty list keeps that fact local to the table rather than relying on the guard's order. -/
+def admittedAlgebrasFor : ScalarDType → List ContractionAlgebra
+  | .f64  => admittedAlgebras
+  | .bool => [admittedAlgebraBool]
+  | .f32  => []
 
 /-- The extents this term projects onto the output, in `outputPos` order. -/
 def TermPlan.outputProjection (t : TermPlan) : Array Nat :=
@@ -71,17 +97,25 @@ def constMatchesDtype : ScalarDType → ScalarConst → Bool
   | .bool, .bool _ => true
   | _, _ => false
 
+/-- The storage dtypes a checked assignment may name, at a destination or at a read: `f64` and the
+    Float-backed Boolean tag. `f32` remains rejected — no worker implements binary32 rounding, so
+    admitting the tag would silently execute it as binary64. -/
+def dtypeAdmitted : ScalarDType → Bool
+  | .f64 | .bool => true
+  | .f32 => false
+
 /-- Validate one operation against the positional signature table. -/
 def checkAssign (sigs : Array TensorSignature) (a : AssignPlan) :
     Except PlanError CheckedAssignPlan := do
   let destSig ← match sigs[a.destinationSlot]? with
     | some s => pure s
     | none => throw (.slotOutOfRange a.destinationSlot sigs.size)
-  unless destSig.dtype == .f64 do
+  unless dtypeAdmitted destSig.dtype do
     throw (.dtypeNotAdmitted a.destinationSlot destSig.dtype)
   unless destSig.shape == a.outputShape do
     throw (.destinationShapeMismatch a.outputShape destSig.shape)
-  unless admittedAlgebras.contains a.algebra do throw (.algebraNotAdmitted a.algebra)
+  unless (admittedAlgebrasFor destSig.dtype).contains a.algebra do
+    throw (.algebraNotAdmitted a.algebra)
   unless constMatchesDtype destSig.dtype a.algebra.factorId do
     throw (.constDtypeMismatch destSig.dtype a.algebra.factorId)
   unless constMatchesDtype destSig.dtype a.algebra.reduceId do
@@ -107,9 +141,14 @@ def checkAssign (sigs : Array TensorSignature) (a : AssignPlan) :
         let srcSig ← match sigs[f.sourceSlot]? with
           | some s => pure s
           | none => throw (.slotOutOfRange f.sourceSlot sigs.size)
-        unless srcSig.dtype == .f64 do throw (.dtypeNotAdmitted f.sourceSlot srcSig.dtype)
-        unless srcSig.dtype == destSig.dtype do
-          throw (.dtypeMismatch destSig.dtype srcSig.dtype)
+        -- A source dtype does not have to equal the destination's: the DESTINATION selects the
+        -- algebra, and gathering is dtype-blind (`Dense.gatherFactor` reads the same `Array Float`
+        -- either way, applies no truth check, and performs no conversion). So an `f64` source may
+        -- feed a predicate destination and a `bool` source may feed a real one; only `f32` — which
+        -- no worker implements — is rejected. `PlanError.dtypeMismatch` is deliberately no longer
+        -- produced here (see `KernelCheckTest`); nonlinearity checking keeps its own separate
+        -- dtype-equality error, `NonlinPlanError.dtypeMismatch`.
+        unless dtypeAdmitted srcSig.dtype do throw (.dtypeNotAdmitted f.sourceSlot srcSig.dtype)
         unless f.sourceShape == srcSig.shape do
           throw (.sourceShapeMismatch ti fi f.sourceShape srcSig.shape)
         unless f.oobPolicy == .zeroPad do throw (.policyNotAdmitted f.oobPolicy)

@@ -28,7 +28,12 @@ branch** — read the `throw` sites, do not assume this table is current. Two ro
 `wave_f_capability_manifest.md` table went stale this way when the nonlinearity thread closed
 nonlinear scans and updated the proposal but not the manifest's copy.
 
-Last re-derived against the tree: **2026-08-30**.
+Last re-derived against the tree: **2026-09-03** (Task 4, `boolean_predicate_output_evalplan.md`).
+
+Static throw-site inspection of `capabilityPreflight` at that date finds **4 live producer
+families** — `scatterOrAffineLhs`, `unsupportedLhsSlot`, `recurrenceOrCallback`, `noAdvancingAxis` —
+out of the enum's **12 constructors**; the other **8** are retained producer-less or are
+structurally unreachable. Removing a producer never removes a constructor.
 
 ## Missing capabilities
 
@@ -41,9 +46,8 @@ yardstick), not a measured figure — see the rationale below the table.
 | Difficulty | Missing capability | `CapabilityError` | Preflight site | Ref. interp. does it? |
 |---|---|---|---|---|
 | Foundational / modeling-contradiction | **`.scanPre` + recurrence / callback morphisms** — the pre-built step-morphism escape hatch | `recurrenceOrCallback` | `checkScanStmt` / `checkStmt` | partial (`Stmt.recurMorphism`) |
-| Foundational (dynamic-shape half) | **Non-`f64` dtypes; dynamic / value-dependent shapes** | `unsupportedDtype`, `dynamicShape` | not reachable from preflight (f64-only by construction); `checkAssign` rejects non-`f64` sources downstream | n/a (mode boundary) |
+| Foundational (dynamic-shape half) | **`f32`; dynamic / value-dependent shapes** — `bool` is no longer in this row (see the closed Boolean/predicate-output entry below) | `unsupportedDtype`, `dynamicShape` (both producer-less/unreachable) | not reachable from preflight; `checkAssign`'s `dtypeAdmitted` rejects `f32` at a destination or a read (`PlanError.dtypeNotAdmitted`), and admits `f64`/`bool` | n/a (mode boundary) |
 | Hard | **Scatter statements + affine (strided/offset) LHS writes** — e.g. `Out[2*i] = …` | `scatterOrAffineLhs` | `checkStmt` / `checkLHSSlot` | ✓ (`Eval/Scatter.lean`) |
-| Moderate–hard | **Boolean / predicate *outputs*** — a `.predicate` decl | `booleanOutput` | `checkDecl` | ✓ (bool semiring `Combine`) |
 
 ### Difficulty ranking rationale (hardest → easiest)
 
@@ -58,8 +62,9 @@ what the ranking tracks.
    *checked* meaning contradicts the reason the checked plan exists (no opaque steps); the proposal
    keeps it explicitly as the escape hatch. Landing it means designing a whole new structured surface
    for what the callback expresses, not writing a lowering — you cannot validate an opaque function.
-2. **Non-`f64` dtypes; dynamic / value-dependent shapes** — two very different things bundled. `f32`
-   is mostly storage plumbing and `bool` overlaps #4, but **dynamic shapes is foundational**: the
+2. **`f32`; dynamic / value-dependent shapes** — two very different things bundled. `f32`
+   is mostly storage plumbing (and `bool` has since been closed separately, as a semantic tag over
+   Float storage rather than a new carrier), but **dynamic shapes is foundational**: the
    whole checked plan assumes statically-known extents (shape inference, geometry, write maps, corpus
    gates all resolve sizes at compile time), so value-dependent shapes mean symbolic extents
    pervasively. That half is the deepest single change on the list.
@@ -68,12 +73,6 @@ what the ranking tracks.
    scatter-aware Dense worker. Partly scaffolded — `RawScanPlan` already carries `StateWriteMap`
    machinery scatter could model on — but write geometry is this repo's recurring defect family (the
    `stepWriteRowsOk` Critical), so the validation surface is where the cost lives.
-4. **Boolean / predicate outputs** — admit `bool` end-to-end: `ScalarDType.bool` is a reserved tag
-   with no producer, and `ScalarBinOp` has no `logicalAnd`/`logicalOr` (deliberately, per its doc
-   comment). So this threads a new dtype *and* a new algebra family through checker, Dense worker,
-   and result reporting. Bounded, but wider than the now-closed masks/predicates/Iverson-factors
-   work, and naturally coupled to it (predicates consume / produce bool).
-
 ### Scan-geometry limits (not `CapabilityError` rejections)
 
 These are rejected deeper in `compileScan`/`checkScanPlan` (via `ScanCompileError`), once inferred
@@ -123,14 +122,40 @@ fragment.
   row worker refactored around a shared `included?` callback so one `softmax`/`normalize`/`l2`
   serves both the source wrapper and the checked adapter. Every filtered read traversal keeps the
   original all-factor index; `maskOrPredicate` and `NonlinCompileError.maskedAxiswiseNotSupported`
-  are retained producer-less, like `scanNode`. Boolean/predicate *declared outputs* (`booleanOutput`)
-  remain the separate open row. **Caveat:** a scan `where=` mask's basis (`lowerMaskPredicate`,
+  are retained producer-less, like `scanNode`. Boolean/predicate *declared outputs* are now closed
+  too (see the row above). **Caveat:** a scan `where=` mask's basis (`lowerMaskPredicate`,
   `Compile.lean`) is deliberately the statement's non-seeded output axes only — it cannot reference
   the scan's own `.iterAt`/`.iterNext` iteration axis, which densifies to a constant 0 instead. A
   scan recurrence expressing causal masking via `where= j <= l` (the pattern this repo's CLAUDE.md
   points at as the replacement for the reverted `causal_softmax` operator) therefore does NOT see
   the live step `l` here — it compiles and runs, silently wrong, not rejected. Closed by
   `predicate_boolean_backend_parity.md`.
+- **Boolean / predicate declared outputs** — admitted end-to-end (top level, scan state, scan
+  scratch, published histories, and downstream reads). `ScalarDType.bool` is a **semantic
+  algebra/signature tag over unchanged Float-backed storage**, not a native carrier: no `Array Bool`,
+  no bit-packing, no truth-value validation, no coercion step. A predicate destination selects
+  `admittedAlgebraBool` (factor `min` with identity `true`, contracted-coordinate and term `max` with
+  identity `false`), mirroring the reference `Combine.bool`; `Dense.constFloat` decodes `.bool
+  true`/`.bool false` to `1.0`/`0.0` and the ordinary Float `min`/`max` run, so a non-binary value
+  keeps literal min/max behavior rather than being coerced or rejected. Algebra admission is
+  destination-specific (`admittedAlgebrasFor`): real sum-product plus the two tropical semirings for
+  `f64`, Boolean min/max only for `bool`, nothing for `f32`. Source/destination dtype EQUALITY was
+  deliberately removed as an assignment obligation — the destination selects the algebra and
+  gathering is dtype-blind — so a `bool` source may feed an `f64` destination and vice versa;
+  `PlanError.dtypeMismatch` is retained producer-less (nonlinearity checking keeps its own separate
+  `NonlinPlanError.dtypeMismatch`). Declarations are authoritative: `buildDeclEnv` rejects a repeated
+  tensor-bearing name (`CompileError.duplicateTensorDecl`), `InputSignature.ofDenseInputsForDecls`
+  labels declared predicates `bool`, and an explicit input signature contradicting the declaration is
+  rejected (`InputSignatureError.dtypeMismatch`), never silently rewritten. Scans carry full
+  `TensorSignature`s (`CompiledScan.stateSigs`) through state destinations, captures, base/step
+  results, scratch, and published histories, and `checkWrites` enforces write-dtype equality
+  (`ScanPlanError.writeDtypeMismatch`) BEFORE rank/geometry. `booleanOutput` is retained
+  producer-less, like `scanNode`. `f32` remains rejected. **Not** included: JAX Boolean execution —
+  the experimental `jax_bridge` backend now REJECTS a Boolean destination, a Boolean source, tropical
+  algebra, a unary read, and a CONTEXTFUL assignment (non-empty `AssignPlan.contextShape`) with
+  located typed errors before emitting Python or stamping evidence, plus — in `einsumOnly` mode only
+  — a zero-padded read whose source extent disagrees with its own iteration extent
+  (`labelExtentMismatch`) (see `jax_evalplan_architecture.md`). Closed by `boolean_predicate_output_evalplan.md`.
 - **Scan nodes** with at least one advancing axis — `scanNode` has no producer left in the compiler.
   Only `noAdvancingAxis` (an empty advancing-axis list) is still an error, and that is a genuine
   input error, not a capability gap.
@@ -146,7 +171,13 @@ fragment.
   table this inventory expands, kept current by the thread that changes the boundary.
 - [`eval_ir.md`](eval_ir.md) — the eval-IR pipeline and backend-execution reference.
 - [`predicate_boolean_backend_parity.md`](predicate_boolean_backend_parity.md) — detailed design and
-  task division that closed the predicate-factor and axiswise-mask rows (Slice 5); the Boolean
-  declared-output row (`booleanOutput`) remains open.
+  task division that closed the predicate-factor and axiswise-mask rows (Slice 5). Its own Task 4
+  sketch for Boolean declared outputs is superseded by
+  [`boolean_predicate_output_evalplan.md`](boolean_predicate_output_evalplan.md), the plan that
+  actually closed that row.
 - [`unary_factor_functions.md`](unary_factor_functions.md) — the plan that closed the unary-factor row.
 - [`max_min_aggregation.md`](max_min_aggregation.md) — the plan that closed the max/min-aggregation row.
+- [`boolean_predicate_output_evalplan.md`](boolean_predicate_output_evalplan.md) — the plan that
+  closed the Boolean/predicate declared-output row and made the experimental JAX backend reject
+  Boolean, tropical, unary, and contextful semantics rather than stamping them with reference
+  evidence.

@@ -6,6 +6,7 @@ import LeanNCD.Eval.Plan.EvalPlan
 import LeanNCD.Eval.Plan.Signature
 import LeanNCD.Eval.Contract
 import LeanNCD.DSL.Pipeline.Lowering
+import LeanNCD.DSL.Pipeline.ScheduledValidation
 
 /-!
 # Source compiler: capability preflight (Wave C C4) and scan specialization (Wave F F4)
@@ -15,8 +16,9 @@ Ports C0's already-verified classification logic (`PlanContract.classify*`,
 (`PlanContract.WaveF.classifyScan*`, `test/Eval/Plan/ScanContractTest.lean`) from test-only
 `Classification`-valued classifiers into real production entry points that throw `CapabilityError`.
 
-`prepareEvalPlan` runs the phases proposal §7.5 fixes, in this order and no other: capability
-preflight (A), external signature validation (B), static shape inference over plain AND scan
+`prepareEvalPlan` runs the phases proposal §7.5 fixes, in this order and no other: source-invariant
+re-establishment for a direct schedule (0 — declaration environment and predicate-output rules,
+shared with the source pipeline), capability preflight (A), external signature validation (B), static shape inference over plain AND scan
 base/recurrence assignments (C), source-ordered specialization (D), checked-plan validation (E),
 and bindings (F). Per-statement assignment residualization is shared by all three assignment kinds
 through `residualizeAssignment` (F4 Task 2); `compileScan` (F4 Task 3) adds everything a scan needs
@@ -30,11 +32,17 @@ namespace LeanNCD.Eval.Plan
 /-- Axis declarations (`.axis`, `.iter`) are structurally accepted regardless of use — rejection for
     scan usage happens at the `ScanStmt` check below, not at the declaring axis. `.freeNorm` usage is
     likewise checked at the `LHSSlot` check below, but (Thread 4) only rejected there for a
-    scan-block statement — a top-level `.freeNorm` is now admitted (`checkLHSSlot`). -/
+    scan-block statement — a top-level `.freeNorm` is now admitted (`checkLHSSlot`). A `.predicate`
+    declaration is now (Task 4.3) structurally ADMITTED too: `prepareEvalPlan` derives its Boolean
+    destination signature/algebra from `dtypeOfDecl` (`Signature.lean`) instead of rejecting it here.
+    `booleanOutput` has no producer left in this file, retained on `CapabilityError` for the same
+    reason `scanNode`/`unaryFactor`/`maskOrPredicate` are — a serialized rejection from before this
+    thread may still carry it, and deleting a shipped closed-family constructor is itself a semantic
+    version change (§9.2). -/
 def checkDecl : Decl → Except CapabilityError Unit
   | .tensor ..    => pure ()
   | .linear ..    => pure ()
-  | .predicate n _ => throw (.booleanOutput n)
+  | .predicate .. => pure ()
   | .axis ..      => pure ()
   | .iter ..      => pure ()
 
@@ -226,17 +234,25 @@ private def liftNonlin (warnings : List EvalWarning) :
 private def scanErr (warnings : List EvalWarning) (e : ScanCompileError) : PlanCompileFailure :=
   { cause := .scan e, warnings }
 
-/-- External names in first-seen-read order, restricted to `sched.extNames`. NOT `sched.decls`
-    filtered to `extNames` (see Global Constraints — an implicitly-external, never-`Decl`ared name
-    would be silently dropped), and NOT `sched.extNames.toList` (noncomputable — `Finset.toList`
-    needs `Classical.choice`). Mirrors `Lowering.lean`'s own `buildExtIndex` idiom (same traversal,
-    same "membership decidable, order from traversal" pattern), returning the ordered `List String`
-    directly instead of a name→index `HashMap`. -/
+/-- External names in first-seen-read order, DERIVED from `sched.stmts` (reads minus produced) by
+    the shared `orderedExternalNames` (`DSL/Pipeline/Lowering.lean`) — the same calculation
+    `schedule` caches into `ScheduledProgram.extNames`.
+
+    It is deliberately NOT filtered through `sched.extNames`: that field is a cached pipeline
+    product, and a hand-built schedule can present a missing entry (the read would then never be
+    allocated an input slot, and `resolveSource`'s `getD` would silently resolve it to slot ZERO —
+    aliasing a same-shaped input) or an extra one (a signature demanded for a name nothing reads).
+    A direct schedule must behave exactly like the structurally equivalent source-produced one.
+    `sched.extNames` is retained for compatibility; this preparation path is no longer one of its
+    consumers.
+
+    **Precondition: `sched.stmts` is in producer-before-consumer order.** "Reads minus produced" does
+    not look at WHERE a name is produced, so on an out-of-order list a read whose producer comes
+    later is classified internal — no input slot, no signature — and `resolveSource` then aliases it
+    to slot zero. `prepareEvalPlan`'s Step 0 rejects such a list (`isTopoOrdered` ⇒
+    `sourceInvariant (.cyclicDataflow …)`) before this function is ever called on it. -/
 def orderedExtNames (sched : ScheduledProgram) : List String :=
-  sched.stmts.foldl (fun acc sc =>
-    sc.reads.foldl (fun acc nm =>
-      if decide (nm ∈ sched.extNames) && !acc.contains nm then acc ++ [nm] else acc) acc)
-    ([] : List String)
+  orderedExternalNames sched.stmts
 
 /-- The retained placement axis of a plain statement's LHS slot — `.free` and, since Thread 4's
     `checkLHSSlot` relaxation, `.freeNorm` alike (a `·`-marked axis is still a real output axis;
@@ -389,6 +405,23 @@ def algebraForAgg : AggOp → ContractionAlgebra
   | .max => admittedAlgebraMax
   | .min => admittedAlgebraMin
 
+/-- Select the checked contraction algebra a TOP-LEVEL destination compiles to (Task 4.3): the
+    DESTINATION's dtype (`dtypeOfDecl`, `Signature.lean`) selects the algebra, not any source
+    factor's — a `bool` destination always compiles to `admittedAlgebraBool` regardless of `agg`
+    (`checkPredicateOutput`, re-established at `prepareEvalPlan`'s Step 0, already forces a predicate
+    destination's own statement to carry `agg = .sum`, so `agg` genuinely never disagrees for one);
+    an `f64` (or reserved `f32`) destination falls back to `algebraForAgg agg` exactly as before this
+    task. Kept as a separate function, applied by OVERRIDING `residualizeAssignment`'s returned
+    `AssignPlan.algebra` at its top-level call site, rather than threading a `destDtype` parameter
+    through `residualizeAssignment` itself — the scan base/step call sites stay byte-for-byte
+    unchanged (Task 4.4 scope, not this one), and this function's own selection logic stays
+    independently mutation-testable from the destination-dtype DERIVATION it consumes. -/
+def algebraForDest (destDtype : ScalarDType) (agg : AggOp) : ContractionAlgebra :=
+  match destDtype with
+  | .bool => admittedAlgebraBool
+  | .f64  => algebraForAgg agg
+  | .f32  => algebraForAgg agg   -- unreachable: an `f32` destination is already `dtypeNotAdmitted`
+
 /-- The common per-statement assignment residualization core (Wave F F4 Task 2): given a
     statement's scan context (empty outside a scan step), its output (retained) basis, validated
     pins, a source-name-to-`(slot, shape)` resolver, and an already-allocated destination
@@ -503,17 +536,23 @@ def retainedAxisPos (slots : List LHSSlot) (p : Nat) : Nat :=
     | _ => false)
 
 /-- One compiled source scan: the raw scan node, plus the persistent states' source names and
-    complete-history shapes in persistent-state order. The two arrays are returned rather than the
-    outer signature/name-environment updates themselves because publication is the CALLER's policy
-    (same division of labour `residualizeAssignment` already establishes): `compileScan` fixes the
-    state destination slots as `outerSigs.size + i` and the caller must append exactly those
-    signatures, in exactly this order, immediately after the scan step. A desync would not be silent
-    — `checkPlan`/`checkScanPlan` reject it (`slotOutOfRange`, `missingProduction`, or
-    `advancingSizeMismatch`) — but the coupling is stated here rather than left to be rediscovered. -/
+    complete-history SIGNATURES (shape AND dtype — Task 4.4; previously shape-only) in
+    persistent-state order. The two arrays are returned rather than the outer signature/name-
+    environment updates themselves because publication is the CALLER's policy (same division of
+    labour `residualizeAssignment` already establishes): `compileScan` fixes the state destination
+    slots as `outerSigs.size + i` and the caller must append exactly those signatures, in exactly
+    this order, immediately after the scan step. A desync would not be silent — `checkPlan`/
+    `checkScanPlan` reject it (`slotOutOfRange`, `missingProduction`, or `advancingSizeMismatch`) —
+    but the coupling is stated here rather than left to be rediscovered.
+
+    `stateSigs`' dtype and the caller's published complete-history signature are established
+    TOGETHER, not by two independently-drifting derivations: `prepareEvalPlan` reads
+    `compiled.stateSigs` directly rather than re-deriving a state's dtype from `declEnv` a second
+    time. -/
 private structure CompiledScan where
   raw         : RawScanPlan
   stateNames  : Array String
-  stateShapes : Array (Array Nat)
+  stateSigs   : Array TensorSignature
 
 /-- Specialize one admitted source `.scan` node into a `RawScanPlan` (proposal §8.3-§8.5).
 
@@ -542,7 +581,7 @@ private structure CompiledScan where
     `idxToRow`, not from sizes — so an external read `X[l]` still gathers `X` at the current
     coordinate with its own declared `sourceShape`. -/
 private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
-    (scanName : String) (axes : List AxisSpec) (base recur : List Stmt)
+    (declEnv : DeclEnv) (scanName : String) (axes : List AxisSpec) (base recur : List Stmt)
     (outerSigs : Array TensorSignature) (slotOf : HashMap String TensorSlot) :
     Except PlanCompileFailure CompiledScan := do
   ---------------------------------------------------------------------------
@@ -647,8 +686,13 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
   ---------------------------------------------------------------------------
   let mut stateAdvDims : Array (Array Nat) := #[]
   let mut stateShapes : Array (Array Nat) := #[]
+  -- one-time-per-state dtype derivation (Task 4.4), shared unchanged by state capture (Phase 4)
+  -- and the published complete-history signature the caller reads off `CompiledScan.stateSigs` —
+  -- there is no second, independently-drifting derivation of a state's dtype anywhere else.
+  let mut stateDtypes : Array ScalarDType := #[]
   for h : si in [0 : stateNames.size] do
     let st := stateNames[si]
+    stateDtypes := stateDtypes.push (dtypeOfDecl (declEnv[st]?))
     -- every placement of this state, in source order: its base statements first (so the BASE list
     -- establishes rank/geometry and the result is checked against it), then its one result.
     let placements : Array (Bool × Nat × List LHSSlot) :=
@@ -748,7 +792,20 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
       (s, (sigsNow.getD s { shape := #[], dtype := .f64 }).shape)
     let plan ← residualizeAssignment sizes warnings nm [] #[] outputUids pins resolveSource
       preSlot outputShape rhs.agg rhs.body.terms
-    baseSigs := baseSigs.push { shape := outputShape, dtype := .f64 }
+    -- Task 4.4: this statement's OWN destination (`nm`, a state or block-local scratch —
+    -- classification happens later, once `stateNames.contains nm` is checked in Phase 1 above) may
+    -- be `.predicate`-declared exactly like a top-level destination (`Compile.lean`'s `prepareEvalPlan`
+    -- Step D, Task 4.3). `destDtype` selects the preactivation slot's dtype AND (via `algebraForDest`)
+    -- the `.assign` step's own algebra — `checkPredicateOutput` (re-established at `prepareEvalPlan`'s
+    -- Step 0 for every base/recurrence statement) already forces a predicate destination's own
+    -- statement to `nonlin = .identity`, so the `.pointwise`/`.axiswise` branches below can never
+    -- actually be reached with `destDtype = .bool`; their OWN result-slot pushes stay literal `.f64`
+    -- exactly as before this task (an `f64` destination reaching either nonlinear branch is common —
+    -- every `enumScanCases` template-2/relu-scan fixture does — and mutation-tests that literal
+    -- independently of anything Boolean).
+    let destDtype := dtypeOfDecl (declEnv[nm]?)
+    let plan := { plan with algebra := algebraForDest destDtype rhs.agg }
+    baseSigs := baseSigs.push { shape := outputShape, dtype := destDtype }
     -- identity emits one `.assign` publishing under `preSlot`; a nonlinear statement emits the
     -- preactivation `.assign` (internal `preSlot`) followed by one `.pointwise`/`.axiswise` step
     -- into a freshly allocated result slot. Only the result slot is ever written or published.
@@ -831,7 +888,11 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
   let stepCaptureOf : HashMap String TensorSlot := (Array.range stepInputCount).foldl
     (fun m i => m.insert (stepCapNames.getD i ("", .state 0)).1 i) {}
   let mut stepSigs : Array TensorSignature := stepCapNames.map (fun (_, src) => match src with
-    | .state si => { shape := stateShapes.getD si #[], dtype := .f64 }
+    -- Task 4.4: a captured STATE's dtype comes from the shared per-state derivation (Phase 2's
+    -- `stateDtypes`), not a hardcoded `.f64` — a Boolean state's pre-step snapshot must itself carry
+    -- `.bool`, or `checkCaptures`' full-`TensorSignature` comparison against the (later-published)
+    -- outer state signature would reject every predicate-state recurrence as `captureSignatureMismatch`.
+    | .state si => { shape := stateShapes.getD si #[], dtype := stateDtypes.getD si .f64 }
     | .external outerSlot => outerSigs.getD outerSlot { shape := #[], dtype := .f64 })
   let mut stepSteps : Array BlockStep := #[]
   let mut stepAssignPlans : Array AssignPlan := #[]
@@ -858,7 +919,14 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
       (s, (sigsNow.getD s { shape := #[], dtype := .f64 }).shape)
     let plan ← residualizeAssignment stepSizes warnings nm ctxUids stepExtents outputUids
       ({} : HashMap UID Int) resolveSource preSlot outputShape rhs.agg rhs.body.terms
-    stepSigs := stepSigs.push { shape := outputShape, dtype := .f64 }
+    -- Task 4.4: same per-statement destination-dtype derivation as the base block above — `nm`
+    -- here may be a persistent state's recurrence result OR block-local scratch (classification is
+    -- still `stateNames.contains nm`, decided below, AFTER this push — "shared by recurrence and
+    -- scratch" is exactly this: one allocation site serving both, since a scratch destination may
+    -- ALSO be `.predicate`-declared, e.g. `ScanCompileTest.scratchPredicateSched`'s `T`).
+    let destDtype := dtypeOfDecl (declEnv[nm]?)
+    let plan := { plan with algebra := algebraForDest destDtype rhs.agg }
+    stepSigs := stepSigs.push { shape := outputShape, dtype := destDtype }
     stepAssignPlans := stepAssignPlans.push plan
     -- one `.assign` for identity (published under `preSlot`); preactivation `.assign` plus one
     -- nonlinear step for pointwise/axiswise (published under a freshly allocated result slot).
@@ -991,22 +1059,87 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
     , iterationOrder := .axisZeroFastest
     , boundaryPolicy := .zeroThenBaseOverlay
     , snapshotPolicy := .immutablePreStep }
-  return { raw, stateNames, stateShapes }
+  let stateSigs : Array TensorSignature := (Array.range stateNames.size).map (fun si =>
+    { shape := stateShapes.getD si #[], dtype := stateDtypes.getD si .f64 })
+  return { raw, stateNames, stateSigs }
 
 def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
     Except PlanCompileFailure PreparedPlan := do
+  -- Step 0: source invariants, defensively re-established for a DIRECT schedule.
+  -- `sched.decls` and `sched.stmts` are authoritative; `sched.env` and `sched.explicitSizes` are
+  -- cached pipeline products and are never consulted. This runs BEFORE capability preflight, shape
+  -- inference, and signature validation: an invalid source combination (a name declared
+  -- tensor-bearing twice, a read whose arity contradicts its declaration, a wrongly-kinded
+  -- iteration/normalization LHS axis, or a predicate output carrying a nonlinearity or a non-sum
+  -- aggregation) is not a valid-but-unsupported backend capability, so it must not surface as one.
+  -- The ORDER of the four checks below is the source
+  -- pipeline's own — `resolveDecls`, `checkReadRanks`, `checkDtypes`, `schedule` (`DSL/Compile.lean`)
+  -- — so a schedule violating several reports what the source compiler would report: a duplicate
+  -- declaration before a rank mismatch, then each statement's LHS axis-kind check before that
+  -- statement's predicate check, followed by the statement-order invariant. This preserves source
+  -- order and scan `base ++ recur` order exactly as `checkDtypes` does; within a predicate statement,
+  -- nonlinearity still precedes aggregation. All scheduled statement-level checks share
+  -- `ScanStmt.sourceStmts`.
+  let checked ← match validateScheduled sched with
+    | .ok checked => pure checked
+    | .error e => throw { cause := .sourceInvariant e, warnings := [] }
+  let sched := checked.program
+  let declEnv := checked.declEnv
+  -- The pinned axis sizes Step C seeds shape inference with are DERIVED from `sched.decls` here,
+  -- through the same `declaredAxisSizes` rule `schedule` itself uses, rather than read out of the
+  -- cached `sched.explicitSizes` field. Same authority rule, and same reason, as `orderedExtNames`
+  -- below (which re-derives instead of filtering through `sched.extNames`) and Step 0's own
+  -- `buildDeclEnv` (which ignores `sched.env`): on a hand-built `ScheduledProgram` nothing ties the
+  -- cached map to the declarations, so `axis i : ℕ = 3` paired with a cached `i ↦ 4` would seed
+  -- inference with an extent the source never declares — silently allocating and indexing every
+  -- `i`-shaped tensor at the WRONG size wherever no input shape contradicts it, with no diagnostic.
+  -- Re-deriving is preferred to comparing-and-rejecting for the same reason it is there: the
+  -- declarations already say everything the map can say, so a disagreement has no information to
+  -- report, and an entry with no declaration behind it (an unsized `axis a : ℕ` with a cached size)
+  -- is dropped rather than honored — leaving that axis to ordinary inference, which fails loud if it
+  -- cannot be determined.
+  let explicitSizes := checked.explicitSizes
+  -- Read ARITY is the second source invariant, in the source pipeline's own position: `resolveDecls`
+  -- (duplicate declarations) then `checkReadRanks` then `checkDtypes` (the predicate rule below),
+  -- so a schedule violating both a rank rule and a predicate rule reports the rank. Neither direct
+  -- entry checked it before: a `tensor X(i, j)` declaration read as `X[i]` reached Step D, which
+  -- resolved the read against whatever rank-1 signature the caller supplied for `X` and compiled a
+  -- plan the source pipeline rejects outright (`CompileError.rankMismatch`) — the two entries
+  -- disagreeing about the same program, which is the defect class this Step exists to close. The
+  -- shared `checkScheduledReadRanks` (`Structural.lean`) is the same rule AND the same
+  -- `.plain`/scan-`base ++ recur` traversal `checkPredicateOutputs` below uses, over `sched.stmts`
+  -- as presented, with `extNames` re-derived rather than read from the cached field.
+  -- Statement ORDER is the third source invariant, and the one `orderedExtNames` below silently
+  -- depends on: "reads minus produced" is order-INSENSITIVE, so a read whose producer comes LATER
+  -- is classified internal (no input slot, no signature demanded) while `resolveSource`'s `getD`
+  -- then resolves it to slot ZERO — a same-shaped input aliased, a wrong answer, no diagnostic.
+  -- `schedule` establishes the order (`topoSort`) and fails loud on what it cannot order
+  -- (`isTopoOrdered` ⇒ `cyclicDataflow`); a hand-built schedule bypasses both, so re-establish it
+  -- here with the SAME predicate and the same error, over `sched.stmts` as presented. Rejecting is
+  -- the whole point: reordering here would silently accept a schedule whose statement order —
+  -- `ScheduledProgram.stmts`' own documented "producers precede consumers" — is already wrong.
   -- Step A: capability preflight.
   match capabilityPreflight sched with
   | .error e => throw { cause := .capability e, warnings := [] }
   | .ok () => pure ()
-  -- Step B: input signature validation, in first-seen-read order.
-  let extOrder := orderedExtNames sched
+  -- Step B: input signature validation, in first-seen-read order. Every dtype the checked plan
+  -- admits at all (`dtypeAdmitted`, `Check.lean`) is checked first, THEN the declaration-derived
+  -- expectation (`dtypeOfDecl declEnv[nm]?`, Task 4.3): a `.predicate`-declared external name
+  -- expects `bool`, everything else (a `.tensor`/`.linear` declaration, or none at all) expects
+  -- `f64`. The two checks are deliberately separate: an inadmissible dtype (`f32`) is
+  -- `dtypeNotAdmitted` regardless of what the declaration expects, while an admitted-but-wrong
+  -- dtype (e.g. `bool` supplied for a non-predicate name) is the newer `dtypeMismatch`, carrying
+  -- both the expected and actual dtype so a caller does not have to re-derive either.
+  let extOrder := checked.extNames
   for nm in extOrder do
     match sig.tensors[nm]? with
     | none => throw { cause := .inputSignature (.missingSignature nm), warnings := [] }
     | some ts =>
-        unless ts.dtype == .f64 do
+        unless dtypeAdmitted ts.dtype do
           throw { cause := .inputSignature (.dtypeNotAdmitted nm ts.dtype), warnings := [] }
+        let expected := dtypeOfDecl (declEnv[nm]?)
+        unless ts.dtype == expected do
+          throw { cause := .inputSignature (.dtypeMismatch nm expected ts.dtype), warnings := [] }
   -- Step C: shape inference.
   -- Plain, base, and recurrence assignments in SOURCE order (plan §4.5), interleaved exactly as
   -- `sched.stmts` presents them. `inferAxisSizesCore` (`Eval/SizeInfer.lean`) derives constraints
@@ -1018,7 +1151,7 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
     | .plain s => [s]
     | .scan _ _ base recur _ => base ++ recur
     | .scanPre .. => [])   -- unreachable post-preflight (Step A already rejected this)
-  let (sizes, warnings) ← match inferAxisSizesFromSignature sched.explicitSizes sig flatStmts with
+  let (sizes, warnings) ← match inferAxisSizesFromSignature explicitSizes sig flatStmts with
     | .ok r => pure r
     | .error f =>
         match f.error with
@@ -1036,11 +1169,16 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
   let mut inputSlotsAcc : Array TensorSlot := #[]
   let mut requiredInputsAcc : Array SlotBinding := #[]
   for nm in extOrder do
-    -- validated present + f64 in Step B; `getD` avoids needing `Inhabited TensorSignature`
-    -- (mirrors `runDensePlan`'s identical idiom in `Dense.lean`).
+    -- validated present + admitted + declaration-agreeing in Step B; `getD` avoids needing
+    -- `Inhabited TensorSignature` (mirrors `runDensePlan`'s identical idiom in `Dense.lean`).
+    -- `dtype := ts.dtype` (Task 4.3) carries the VALIDATED signature dtype through, rather than
+    -- hard-coding `.f64`: Step B already forced `ts.dtype == dtypeOfDecl (declEnv[nm]?)`, so this is
+    -- never anything OTHER than what the declaration commits to — but it must be read from `ts`,
+    -- not re-derived or defaulted, or a `bool`-declared external input would silently carry an
+    -- `f64` tensor signature into the checked plan.
     let ts := sig.tensors.getD nm { shape := #[], dtype := .f64 }
     let slot := tensorSigsAcc.size
-    tensorSigsAcc := tensorSigsAcc.push { shape := ts.shape, dtype := .f64 }
+    tensorSigsAcc := tensorSigsAcc.push { shape := ts.shape, dtype := ts.dtype }
     slotOf := slotOf.insert nm slot
     inputSlotsAcc := inputSlotsAcc.push slot
     requiredInputsAcc := requiredInputsAcc.push { name := nm, slot := slot }
@@ -1063,6 +1201,15 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
         -- `some p` indexes directly into `outputShape`/`retainedUids` per `resolveNonlinAxis`'s own
         -- doc comment (`freeUidOrFail` drops no slots, so the two lists stay 1:1 with `slots`).
         let axisPos? ← liftNonlin warnings (resolveNonlinAxis nm rhs.nonlin slots)
+        -- Every read name must ALREADY be resolvable in `slotOf`, checked before the destination
+        -- slot is allocated and before `residualizeAssignment` builds anything — otherwise
+        -- `resolveSource`'s `getD` below would silently resolve it to slot ZERO, aliasing whatever
+        -- tensor happens to live there. Step 0's shared topology guard now covers both later
+        -- producers and earlier scans' unpublished recurrence scratch; this remains the local
+        -- fail-loud assertion that its checked invariant agrees with actual slot publication.
+        for (rn, _) in rhs.readFactors do
+          unless slotOf.contains rn do
+            throw { cause := .sourceInvariant (.undeclaredName rn), warnings }
         -- name-environment mutation (`slotOf`/`tensorSigsAcc`/`materializedAcc`) is this plain
         -- caller's own publication policy — `residualizeAssignment` only builds the `AssignPlan`
         -- value, per its own doc comment.
@@ -1071,9 +1218,12 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
         let slotsNow := slotOf
         let resolveSource (name : String) : TensorSlot × Array Nat :=
           -- resolved against `slotOf` as it stands BEFORE this statement's destination slot is
-          -- allocated. `getD` default is never reached: every read name is either external
-          -- (allocated above) or produced by an earlier statement (schedule is topological, per
-          -- `ScheduledProgram.stmts`'s own doc: "producers precede consumers").
+          -- allocated. Every read name is either external (allocated above) or produced AND
+          -- published by an earlier statement — `ScheduledProgram.stmts`'s own doc ("producers
+          -- precede consumers"), no longer merely assumed of a direct schedule but ENFORCED by
+          -- Step 0's `isTopoOrdered` guard (which tracks published outputs, not all scan writes)
+          -- together with the `slotOf.contains` assertion just above. The `getD` default is therefore
+          -- unreachable and is a totality formality, not a fallback.
           let sourceSlot := slotsNow.getD name 0
           (sourceSlot, (sigsNow.getD sourceSlot { shape := #[], dtype := .f64 }).shape)
         -- plain assignment: empty scan context, no pins — reproduces this Step D's pre-extraction
@@ -1083,16 +1233,26 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
             resolveSource destSlot outputShape rhs.agg rhs.body.terms
         match rhs.nonlin with
         | .identity =>
-            -- Byte-for-byte unchanged (Thread 4 regression gate): single `.assign`, published
-            -- directly under `nm`'s own destination slot — no internal slot allocated.
-            tensorSigsAcc := tensorSigsAcc.push { shape := outputShape, dtype := .f64 }
-            stepsAcc := stepsAcc.push (.assign assignPlan)
+            -- Byte-for-byte unchanged for a REAL destination (Thread 4 regression gate): single
+            -- `.assign`, published directly under `nm`'s own destination slot — no internal slot
+            -- allocated. Task 4.3: the destination's OWN declaration (never any source factor's)
+            -- selects both its `TensorSignature.dtype` and its `AssignPlan.algebra` — a `.predicate`
+            -- declaration compiles to `bool`/`admittedAlgebraBool`, everything else to `f64`/
+            -- `algebraForAgg rhs.agg` exactly as before this task. `checkPredicateOutput`
+            -- (re-established at Step 0) already forces a predicate destination's own statement to
+            -- have `agg = .sum`, so `algebraForDest` never has to reconcile a predicate `nm` with a
+            -- disagreeing `agg` here.
+            let destDtype := dtypeOfDecl (declEnv[nm]?)
+            tensorSigsAcc := tensorSigsAcc.push { shape := outputShape, dtype := destDtype }
+            stepsAcc := stepsAcc.push (.assign { assignPlan with algebra := algebraForDest destDtype rhs.agg })
             materializedAcc := materializedAcc.push { name := nm, slot := destSlot }
             slotOf := slotOf.insert nm destSlot
         | .pointwise pf =>
             -- Two-step chain (§3): `.assign` publishes into the INTERNAL slot `destSlot`, not
             -- `nm`'s eventual published slot; `.pointwise` reads it and writes `publishedSlot`,
-            -- which is what `nm` resolves to for every later reader.
+            -- which is what `nm` resolves to for every later reader. Always `f64`: a predicate
+            -- destination can never reach this branch (`checkPredicateOutput` forces
+            -- `nonlin = .identity` for one), so no destination-dtype derivation is needed here.
             tensorSigsAcc := tensorSigsAcc.push { shape := outputShape, dtype := .f64 }
             let publishedSlot := tensorSigsAcc.size
             tensorSigsAcc := tensorSigsAcc.push { shape := outputShape, dtype := .f64 }
@@ -1122,17 +1282,19 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
             slotOf := slotOf.insert nm publishedSlot
     | .scan scanName axes base recur _ =>
         let compiled ←
-          compileScan sizes warnings scanName axes base recur tensorSigsAcc slotOf
+          compileScan sizes warnings declEnv scanName axes base recur tensorSigsAcc slotOf
         stepsAcc := stepsAcc.push (.scan compiled.raw)
         -- All state histories publish together, AFTER the scan step (§4.6): the outer signatures
         -- must land at exactly the destination slots `compileScan` already fixed
         -- (`tensorSigsAcc.size + i`, in persistent-state order), and no state name is visible to the
-        -- scan's own base/step reads.
+        -- scan's own base/step reads. Task 4.4: the published signature's dtype comes straight off
+        -- `compiled.stateSigs` (established together with the state's own capture dtype inside
+        -- `compileScan`, Phase 2/6) — never re-derived or hardcoded here.
         for h : si in [0 : compiled.stateNames.size] do
           let nm := compiled.stateNames[si]
           let destSlot := tensorSigsAcc.size
           tensorSigsAcc :=
-            tensorSigsAcc.push { shape := compiled.stateShapes.getD si #[], dtype := .f64 }
+            tensorSigsAcc.push (compiled.stateSigs.getD si { shape := #[], dtype := .f64 })
           materializedAcc := materializedAcc.push { name := nm, slot := destSlot }
           slotOf := slotOf.insert nm destSlot
     | .scanPre nm .. =>

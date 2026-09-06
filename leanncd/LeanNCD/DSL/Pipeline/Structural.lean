@@ -586,26 +586,81 @@ def assignUIDs (p : TLProgram) : FreshM LabeledProgram := do
 /-! ## The `resolveDecls` phase
 
 Builds the `DeclEnv` and classifies tensor names as external inputs vs internally produced.
-Per the §12.1 contract this phase is purely constructive: §12.1 example programs READ names like
-`W`, `X`, `Q`, `K` with no `tensor` declaration, so an undeclared read is an external input — not
-an error. `resolveDecls` therefore NEVER throws. -/
+Per the §12.1 contract this phase is purely constructive for USE sites: §12.1 example programs READ
+names like `W`, `X`, `Q`, `K` with no `tensor` declaration, so an undeclared read is an external
+input — not an error. Its one rejection is about the DECLARATIONS themselves: a tensor-bearing name
+declared twice (`duplicateTensorDecl`, via `buildDeclEnv`). -/
 
 /-- The tensor names a stmt reads (from `.read`/`.unaryFn` factors; iverson reads nothing). -/
 def Stmt.readNames (s : Stmt) : List String := s.readFactors.map (·.1)
 
+/-- The one tensor-declaration classification rule, shared by `resolveDecls` (source pipeline) and
+    `Eval.Plan.prepareEvalPlan` (checked backend, over a possibly hand-built `ScheduledProgram`'s
+    own `decls`).
+
+    `.axis`/`.iter` name an axis, not a tensor, and stay out of the env; `.tensor`, `.linear`, and
+    `.predicate` are tensor-bearing and land in it. A second tensor-bearing declaration of an
+    already-declared name is REJECTED rather than silently overwriting the first: last-wins
+    insertion left a `DeclEnv` lookup (which saw the LAST declaration) and a linear `decls` scan
+    (`Eval.combineFor`, which sees the FIRST) able to disagree about one name's kind — precisely the
+    disagreement Boolean/real algebra selection cannot tolerate. -/
+def buildDeclEnv (decls : List Decl) : Except CompileError DeclEnv :=
+  decls.foldlM (fun (m : DeclEnv) d => match d with
+    | .axis _ _ => pure m
+    | .iter _ _ => pure m
+    | _ =>
+        if m.contains d.name then throw (CompileError.duplicateTensorDecl d.name)
+        else pure (m.insert d.name d))
+    ({} : DeclEnv)
+
+/-- The one PINNED-AXIS-SIZE rule, shared by `schedule` (source pipeline, which caches its result as
+    `ScheduledProgram.explicitSizes`) and `Eval.Plan.prepareEvalPlan` (checked backend, which
+    re-derives it from a possibly hand-built `ScheduledProgram`'s own `decls` rather than trusting
+    that cached field).
+
+    `axis a : ℕ = n` and `iter a = n` pin `a` to `n`; an UNSIZED `axis a : ℕ` (`.axis _ none`) pins
+    nothing and leaves `a` to be inferred from the input shapes, and a tensor-bearing declaration
+    names no axis at all. Later declarations win over earlier ones for the same UID, which is
+    `HashMap.insert`'s own behaviour and exactly what the fold this replaces already did — no
+    duplicate rule is imposed here, because an axis UID is canonical by this phase and the DSL's own
+    duplicate-axis handling belongs to `assignUIDs`, not to size collection.
+
+    Shared for the same reason `buildDeclEnv` above is: two independent copies of a
+    declaration-classification rule are exactly where a checked backend and its source pipeline
+    silently drift apart. -/
+def declaredAxisSizes (decls : List Decl) : Std.HashMap UID Nat :=
+  decls.foldl (fun (m : Std.HashMap UID Nat) d => match d with
+    | .axis ax (some n) => m.insert ax.uid n
+    | .iter ax n        => m.insert ax.uid n
+    | _                 => m) {}
+
+/-- The one EXTERNAL-NAME rule at `Stmt` granularity: a name READ by some statement and PRODUCED
+    (written) by none. Shared by `resolveDecls` (source pipeline, which caches the result as
+    `ResolvedProgram.extNames`) and by `checkScheduledReadRanks` below, which re-derives it over a
+    possibly hand-built `ScheduledProgram`'s own flattened statements rather than trusting the
+    cached `extNames` field — the same authority rule, and the same reason, as `buildDeclEnv`
+    (which ignores `sched.env`) and `declaredAxisSizes` (which ignores `sched.explicitSizes`).
+
+    Order-INSENSITIVE by construction ("produced by none" is a question about the whole list), which
+    is exactly right for read-rank checking: an out-of-order schedule is rejected elsewhere
+    (`isTopoOrdered`), and either classification — external or produced-but-undeclared — still puts
+    the name under an arity rule here. `orderedExternalNames` (`ScheduledValidation.lean`) is the ORDERED
+    `ScanStmt`-level sibling of this rule, needed where input-slot ORDER matters; this one answers
+    only membership, so it stays a `Finset` and stays at `Stmt` granularity. -/
+def externalReadNames (stmts : List Stmt) : Finset String :=
+  let produced : List String := stmts.map Stmt.lhsName
+  (stmts.flatMap Stmt.readNames).foldl
+    (fun s n => if produced.contains n then s else insert n s) ∅
+
 /-- Build the declaration environment and classify external-input names.
-    `extNames` = names READ in some stmt but never PRODUCED (never a stmt LHS). Never throws. -/
+    `extNames` = names READ in some stmt but never PRODUCED (never a stmt LHS), via the shared
+    `externalReadNames` rule above. Throws only `duplicateTensorDecl` (from `buildDeclEnv`). -/
 def resolveDecls (lp : LabeledProgram) : FreshM ResolvedProgram := do
-  let env : DeclEnv := lp.decls.foldl (fun m d => match d with
-    | .axis _ _ => m                  -- axis decls name an axis, not a tensor: keep them out of the env
-    | .iter _ _ => m                  -- iter decls ALSO name an axis, not a tensor — same reason
-    | _         => m.insert d.name d) {}
-  let produced : List String := lp.stmts.map Stmt.lhsName
-  let reads    : List String := lp.stmts.flatMap Stmt.readNames
-  let extNames : Finset String :=
-    reads.foldl (fun s n => if produced.contains n then s else insert n s) ∅
+  let env : DeclEnv ← match buildDeclEnv lp.decls with
+    | .ok e   => pure e
+    | .error e => throw e
   return { decls := lp.decls, stmts := lp.stmts, env,
-           extNames }
+           extNames := externalReadNames lp.stmts }
 
 /-! ## The `reclassifyIterSlots` phase (between `resolveDecls` and `checkReadRanks`/`checkDtypes`/
 `checkScatterNonlin`/`lowerArith` — MUST run before all four, since each of those inspects LHS slot
@@ -656,6 +711,8 @@ with `nm`'s declaration. Two cases:
 - **Declared tensors** (`nm ∈ env`): `idxExprs.length` must equal the decl's axis count.
 - **External tensors** (`nm ∈ extNames`): no declaration exists, so we check internal consistency —
   all reads of the same external name must agree on arity (first read wins as the expected rank).
+  Declared assignment and scatter destinations likewise require their raw LHS slot count to equal
+  the declaration's axis count.
 
 `recurMorphism` stmts are invisible here (their reads are empty), consistent with how the
 rest of the pipeline treats that escape hatch. -/
@@ -680,17 +737,29 @@ private def stmtLhsRank (s : Stmt) : Nat :=
       else (ls.filterMap (·.axisUID?)).eraseDups.length
   | .recurMorphism _ _ _ => 0
 
-def checkReadRanks (rp : ResolvedProgram) : FreshM ResolvedProgram := do
-  let reads : List (String × Nat) := rp.stmts.flatMap stmtReads
+/-- The read-arity rule itself, extracted as one pure function over an explicit `(env, extNames,
+    stmts)` triple so the source pipeline (`checkReadRanks`, below) and the two direct
+    `ScheduledProgram`-accepting entries (`Eval.Plan.prepareEvalPlan`'s Step 0 and
+    `Eval.evalScheduled`, both through `checkScheduledReadRanks`) enforce the SAME invariant rather
+    than two independently drifting copies — the same discipline `buildDeclEnv`,
+    `declaredAxisSizes`, and `checkPredicateOutput`/`checkPredicateOutputs` already follow.
+
+    Order of the three passes is preserved exactly as it was when this body lived inside
+    `checkReadRanks`: declared tensors first (the DECLARATION is the strongest authority), then
+    external names (first read establishes the expected arity), then produced-but-undeclared
+    intermediates. A program violating more than one reports the first in that order. -/
+def checkReadRanksIn (env : DeclEnv) (extNames : Finset String) (stmts : List Stmt) :
+    Except CompileError Unit := do
+  let reads : List (String × Nat) := stmts.flatMap stmtReads
   -- declared tensors: check against DeclEnv
   for (nm, arity) in reads do
-    if let some decl := rp.env[nm]? then
+    if let some decl := env[nm]? then
       let expected := decl.axisCount
       if arity != expected then throw (.rankMismatch nm expected arity)
   -- external tensors: check internal consistency (first read site establishes expected rank)
   let mut extRanks : HashMap String Nat := {}
   for (nm, arity) in reads do
-    if nm ∈ rp.extNames then
+    if nm ∈ extNames then
       match extRanks[nm]? with
       | none   => extRanks := extRanks.insert nm arity
       | some r => if arity != r then throw (.rankMismatch nm r arity)
@@ -698,13 +767,64 @@ def checkReadRanks (rp : ResolvedProgram) : FreshM ResolvedProgram := do
   -- arity ≠ the produced (dedup'd) rank is malformed (Track A #1). FAIL LOUD rather than route an
   -- ill-typed reindexing / silently broadcast at eval.
   let producedRank : HashMap String Nat :=
-    rp.stmts.foldl (fun m s => m.insert s.lhsName (stmtLhsRank s)) {}
+    stmts.foldl (fun m s => m.insert s.lhsName (stmtLhsRank s)) {}
   for (nm, arity) in reads do
-    unless rp.env.contains nm || decide (nm ∈ rp.extNames) do
+    unless env.contains nm || decide (nm ∈ extNames) do
       match producedRank[nm]? with
       | some r => if arity != r then throw (.rankMismatch nm r arity)
       | none   => pure ()
+  -- A declared destination must have exactly the declaration's syntactic LHS positions. This is
+  -- intentionally distinct from `stmtLhsRank`, which describes an undeclared producer's output.
+  for s in stmts do
+    match s with
+    | .assign nm slots _ | .scatter nm slots _ _ =>
+        match env[nm]? with
+        | some decl =>
+            let expected := decl.axisCount
+            if slots.length != expected then throw (.rankMismatch nm expected slots.length)
+        | none => pure ()
+    | .recurMorphism _ _ _ => pure ()
+
+def checkReadRanks (rp : ResolvedProgram) : FreshM ResolvedProgram := do
+  match checkReadRanksIn rp.env rp.extNames rp.stmts with
+  | .ok ()   => pure ()
+  | .error e => throw e
   return rp
+
+/-- Source statements carried by a scheduled node, in source order. `.scanPre` has no `Stmt`
+    payload. Shared by every scheduled lifting of a source statement invariant so their coverage
+    and scan `base ++ recur` order cannot drift. -/
+def ScanStmt.sourceStmts : ScanStmt → List Stmt
+  | .plain s => [s]
+  | .scan _ _ base recur _ => base ++ recur
+  | .scanPre .. => []
+
+/-- `checkReadRanksIn` lifted to a whole SCHEDULED statement list — the shape both direct
+    (`ScheduledProgram`-accepting) entries meet: `Eval.Plan.prepareEvalPlan`'s Step 0 and
+    `Eval.evalScheduled`. The source pipeline reaches the rule through `checkReadRanks` instead,
+    because that phase runs before `finalizeScans` has produced any `ScanStmt` at all.
+
+    The TRAVERSAL is shared for the same reason the rule is, and it is deliberately the SAME
+    traversal `checkPredicateOutputs` uses (`.plain` → its one statement; `.scan` → `base ++ recur`;
+    `.scanPre` → nothing, rejected on each entry's own terms): every scan-block statement carries
+    the read-arity obligation exactly as a top-level one does, and the flattened list is precisely
+    what the source pipeline's own `checkReadRanks` saw before `finalizeScans` grouped those very
+    statements into a scan node. Neither direct entry checked read ranks at all before this round,
+    so a declared rank-2 `X` read with one index reached the checked backend — where source
+    compilation rejects it as `rankMismatch` — and was resolved against a rank-1 input signature
+    instead.
+
+    `extNames` is RE-DERIVED (shared `externalReadNames`) from those flattened statements rather
+    than read out of the cached `ScheduledProgram.extNames` field, on the same authority argument
+    the rest of Step 0 already makes: on a hand-built schedule nothing ties the cached set to the
+    statements, and a name wrongly listed there would be arity-checked as an external instead of
+    against its producer's published rank. `env` is passed in (not re-derived) because both callers
+    have already built it through the shared `buildDeclEnv` and its own failure —
+    `duplicateTensorDecl` — must be reported BEFORE this, exactly as `resolveDecls` precedes
+    `checkReadRanks` in the source pipeline. -/
+def checkScheduledReadRanks (env : DeclEnv) (stmts : List ScanStmt) : Except CompileError Unit :=
+  let flat : List Stmt := stmts.flatMap ScanStmt.sourceStmts
+  checkReadRanksIn env (externalReadNames flat) flat
 
 /-! ## The `checkDtypes` phase
 
@@ -724,25 +844,80 @@ to such an output is a semantic error. Reading a predicate tensor on the RHS is 
 private def isNat : AxisKind → Bool | .nat => true | _ => false
 private def isReal : AxisKind → Bool | .real => true | _ => false
 
+/-- Check the LHS axis-kind half of `checkDtypes` for one source statement. -/
+def checkStmtAxisKinds (s : Stmt) : Except CompileError Unit := do
+  let slots : List LHSSlot := match s with
+    | .assign _ ls _ | .scatter _ ls _ _ => ls
+    | .recurMorphism _ _ _ => []
+  for slot in slots do
+    match slot with
+    | .iterAt a _ | .iterNext a =>
+        unless isNat a.kind do throw (.iterAxisNotNat a.name)
+    | .freeNorm a =>
+        unless isReal a.kind do throw (.normAxisNotReal a.name)
+    | _ => pure ()
+
+/-- Check B, extracted as one pure rule so the source pipeline (`checkDtypes`, below) and the
+    checked backend's direct-schedule entry (`Eval.Plan.prepareEvalPlan`) enforce the SAME
+    predicate-output invariant rather than two independently drifting copies.
+
+    Order is nonlinearity BEFORE aggregation, matching `checkDtypes`'s original arm: a statement
+    violating both reports `predicateNonlin`. `.recurMorphism` carries no predicate obligation here
+    (`checkDtypes` rejects it outright for an unrelated reason — see its own arm). -/
+def checkPredicateOutput (env : DeclEnv) (s : Stmt) : Except CompileError Unit :=
+  match s with
+  | .assign nm _ rhs | .scatter nm _ rhs _ =>
+      match env[nm]? with
+      | some (.predicate _ _) =>
+          if !(rhs.nonlin == .identity) then throw (CompileError.predicateNonlin nm)
+          else if !(rhs.agg == .sum) then throw (CompileError.predicateAgg nm)
+          else pure ()
+      | _ => pure ()
+  | .recurMorphism _ _ _ => pure ()
+
+/-- `checkPredicateOutput` lifted to a whole SCHEDULED statement list — the shape both direct
+    (`ScheduledProgram`-accepting) entries meet: `Eval.Plan.prepareEvalPlan`'s Step 0 and
+    `Eval.evalScheduled`. The source pipeline reaches the rule through `checkDtypes` instead,
+    because it runs before `groupScans` has produced any `ScanStmt` at all.
+
+    The TRAVERSAL is shared for the same reason the per-statement rule is: the two direct entries
+    each held their own copy of "which statements does a `ScanStmt` contain", and one of them
+    (`evalScheduled`) held no copy at all — so a predicate destination carrying `relu` or a
+    `.max`/`.min` aggregation was rejected by the checked backend and silently EXECUTED by the
+    reference evaluator, with `applyNonlin`/`combineFor` doing exactly what the invariant forbids.
+
+    Order is source order over `stmts`, and within a `.scan` node its `base` list before its
+    `recur` list — `ScheduledProgram.stmts`' own order, not a re-derived one — so both entries
+    report the same statement's violation, and within one statement `checkPredicateOutput`'s own
+    nonlinearity-before-aggregation precedence decides. `.scanPre` carries no `Stmt` and is
+    skipped here; each entry rejects it on its own terms (capability preflight, respectively
+    `unsupportedRecurMorphism`). -/
+def checkPredicateOutputs (env : DeclEnv) (stmts : List ScanStmt) : Except CompileError Unit := do
+  for sc in stmts do
+    for s in sc.sourceStmts do
+      checkPredicateOutput env s
+
+/-- The source `checkDtypes` statement checks lifted over a schedule: LHS axis kinds before
+    predicate-output semantics for each statement, preserving top-level source order and each scan
+    node's `base ++ recur` order. -/
+def checkScheduledDtypes (env : DeclEnv) (stmts : List ScanStmt) : Except CompileError Unit := do
+  for sc in stmts do
+    for s in sc.sourceStmts do
+      checkStmtAxisKinds s
+      checkPredicateOutput env s
+
 def checkDtypes (rp : ResolvedProgram) : FreshM ResolvedProgram := do
   for s in rp.stmts do
     -- Check A: axis kinds on LHS slots
-    let slots : List LHSSlot := match s with
-      | .assign _ ls _ | .scatter _ ls _ _ => ls
-      | .recurMorphism _ _ _ => []
-    for slot in slots do
-      match slot with
-      | .iterAt a _ | .iterNext a =>
-          unless isNat a.kind do throw (.iterAxisNotNat a.name)
-      | .freeNorm a =>
-          unless isReal a.kind do throw (.normAxisNotReal a.name)
-      | _ => pure ()
+    match checkStmtAxisKinds s with
+    | .ok ()   => pure ()
+    | .error e => throw e
     -- Check B: predicate outputs must have identity nonlinearity and sum aggregation
     match s with
-    | .assign nm _ rhs | .scatter nm _ rhs _ =>
-        if let some (.predicate _ _) := rp.env[nm]? then
-          unless rhs.nonlin == .identity do throw (.predicateNonlin nm)
-          unless rhs.agg   == .sum       do throw (.predicateAgg nm)
+    | .assign _ _ _ | .scatter _ _ _ _ =>
+        match checkPredicateOutput rp.env s with
+        | .ok ()   => pure ()
+        | .error e => throw e
     | .recurMorphism nm _ _ =>
         -- Audit finding #4 (probed 2026-07-30): `compile` accepted this and emitted
         -- `ops=[BrOp.scanPre]`, while `eval` reported "scanPre unsupported" — and `toBrBaseP`

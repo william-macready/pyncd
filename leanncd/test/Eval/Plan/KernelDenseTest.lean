@@ -741,4 +741,106 @@ def falsePredPlan : AssignPlan :=
 -- False predicate contributes 0.0: it annihilates every term, so Y is all zeros.
 #guard dataOf (runIt sigs falsePredPlan storeAB) == some #[0.0, 0.0, 0.0, 0.0]
 
+/-! ## Task 4.2: Float-backed Boolean execution
+
+`ScalarDType.bool` is a semantic algebra tag over the SAME `Array Float` storage: `admittedAlgebraBool`
+is `min`/identity `true` within a term and `max`/identity `false` across contracted coordinates and
+terms, and `constFloat` decodes `.bool true`/`.bool false` to `1.0`/`0.0`. Every expected value below
+was observed from an actual run of this interpreter on the fixture before being asserted (a scratch
+`#eval` driver, since these Boolean values exist nowhere in a donor); the accompanying real-algebra
+contrast values are the donor's own hand-computed semantics.
+
+Fixtures 6 and 7 clone `efpPlan`/`zerdPlan` above, changing only the destination signature dtype and
+the algebra — they pin the two Boolean IDENTITIES independently: an empty factor product must yield
+`factorId = true = 1.0`, and an empty reduction domain must yield `reduceId = false = 0.0`. -/
+
+-- Fixture 6: `efpPlan`'s empty factor product, Boolean. The factor loop never runs, so the product
+-- stays at factorId = true = 1.0, and the sole empty reduction coordinate folds it into the term.
+def efpSigsBool : Array TensorSignature := #[ { shape := #[3], dtype := .bool } ]
+def efpPlanBool : AssignPlan := { efpPlan with algebra := admittedAlgebraBool }
+#guard dataOf (runIt efpSigsBool efpPlanBool efpStore) == some #[1.0, 1.0, 1.0]
+
+-- Fixture 7: `zerdPlan`'s zero-extent reduction domain, Boolean. The reduction fold never executes,
+-- so the term contributes reduceId = false = 0.0 regardless of A's values (A = [7, 8] here).
+def zerdSigsBool : Array TensorSignature :=
+  #[ { shape := #[2], dtype := .f64 }, { shape := #[2], dtype := .bool } ]
+def zerdPlanBool : AssignPlan := { zerdPlan with algebra := admittedAlgebraBool }
+#guard dataOf (runIt zerdSigsBool zerdPlanBool zerdStore) == some #[0.0, 0.0]
+
+/- Fixtures 8-10 share a two-term shape at one output coordinate: `Y[i] := <term0> + <term1>` with
+   no contracted axis, so the only fold that distinguishes the algebras is the TERM fold. Slot 0 and
+   slot 1 are same-shaped `f64` sources (real sources feeding a predicate destination — admitted by
+   `KernelCheckTest` fixture 1); slot 2 is the `bool` destination. -/
+
+def boolTwoSigs : Array TensorSignature :=
+  #[ { shape := #[4], dtype := .f64 }, { shape := #[4], dtype := .f64 }
+   , { shape := #[4], dtype := .bool } ]
+
+-- The same table with a real destination, for the numeric-sum contrast.
+def realTwoSigs : Array TensorSignature :=
+  #[ { shape := #[4], dtype := .f64 }, { shape := #[4], dtype := .f64 }
+   , { shape := #[4], dtype := .f64 } ]
+
+def readS0 : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[#[1]], bias := #[0] }
+  , sourceShape := #[4], oobPolicy := .zeroPad }
+def readS1 : ReadPlan := { readS0 with sourceSlot := 1 }
+
+def termReading (r : ReadPlan) : TermPlan :=
+  { iterationShape := #[4], contextPos := #[], outputPos := #[0], reductionPos := #[]
+  , factors := #[.read r] }
+
+-- Slot 0 all true (1.0), slot 1 all false (0.0).
+def trueFalseStore : Array DenseTensor :=
+  #[ { shape := [4], data := #[1.0, 1.0, 1.0, 1.0] }
+   , { shape := [4], data := #[0.0, 0.0, 0.0, 0.0] }
+   , { shape := [4], data := #[] } ]
+
+-- Fixture 8: TWO completed true terms at one output coordinate.
+def twoTrueTermsBool : AssignPlan :=
+  { contextShape := #[], destinationSlot := 2, outputShape := #[4]
+  , terms := #[termReading readS0, termReading readS0], algebra := admittedAlgebraBool }
+
+-- Boolean disjunction of true and true is true: 1.0, NOT the numeric sum 2.0. Observed.
+#guard dataOf (runIt boolTwoSigs twoTrueTermsBool trueFalseStore) == some #[1.0, 1.0, 1.0, 1.0]
+
+-- The same plan with a real destination and real sum-product IS the numeric sum — so fixture 8
+-- distinguishes the Boolean term fold from `add`, rather than merely observing a `1.0` that both
+-- algebras could produce. Observed.
+def twoTrueTermsReal : AssignPlan := { twoTrueTermsBool with algebra := admittedAlgebra }
+#guard dataOf (runIt realTwoSigs twoTrueTermsReal trueFalseStore) == some #[2.0, 2.0, 2.0, 2.0]
+
+-- Fixture 9: fixture 8 with a ZERO-valued source factor in the second term.
+def trueFalseTermsBool : AssignPlan :=
+  { twoTrueTermsBool with terms := #[termReading readS0, termReading readS1] }
+
+-- The false term contributes 0.0 and the disjunction keeps the true term: 1.0.  Observed.
+#guard dataOf (runIt boolTwoSigs trueFalseTermsBool trueFalseStore) == some #[1.0, 1.0, 1.0, 1.0]
+
+-- ... and that term ALONE evaluates to 0.0, pinning its contribution rather than inferring it from
+-- the disjunction above (`min(true, 0.0) = 0.0`, then `max(false, 0.0) = 0.0`). Observed.
+def falseTermOnlyBool : AssignPlan :=
+  { twoTrueTermsBool with terms := #[termReading readS1] }
+#guard dataOf (runIt boolTwoSigs falseTermOnlyBool trueFalseStore) == some #[0.0, 0.0, 0.0, 0.0]
+
+-- Fixture 10: fixture 8/9's shape with NON-BINARY factor values 0.25 and 0.75. Boolean semantics is
+-- literal Float `min`/`max` — values are not validated as binary, not rejected, and not coerced to
+-- truth values.
+def nonBinaryStore : Array DenseTensor :=
+  #[ { shape := [4], data := #[0.25, 0.25, 0.25, 0.25] }
+   , { shape := [4], data := #[0.75, 0.75, 0.75, 0.75] }
+   , { shape := [4], data := #[] } ]
+
+-- Across terms: `max(false=0.0, min(true=1.0, 0.25), min(true=1.0, 0.75)) = 0.75`.  Observed.
+#guard dataOf (runIt boolTwoSigs trueFalseTermsBool nonBinaryStore) == some #[0.75, 0.75, 0.75, 0.75]
+
+-- Within one term: `min(min(true=1.0, 0.25), 0.75) = 0.25`, then `max(false=0.0, 0.25) = 0.25` —
+-- the factor fold is the conjunction, so it selects the SMALLER value where the term fold above
+-- selects the larger.  Observed.
+def conjNonBinaryBool : AssignPlan :=
+  { twoTrueTermsBool with
+    terms := #[{ iterationShape := #[4], contextPos := #[], outputPos := #[0], reductionPos := #[]
+               , factors := #[.read readS0, .read readS1] }] }
+#guard dataOf (runIt boolTwoSigs conjNonBinaryBool nonBinaryStore) == some #[0.25, 0.25, 0.25, 0.25]
+
 end LeanNCD.Eval.Plan.KernelDenseTest
