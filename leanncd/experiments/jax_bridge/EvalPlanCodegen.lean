@@ -11,11 +11,14 @@ them (plan "Two explicit lowerings"):
 
 * `einsumOnly` — the completed smoke path. Recognizes a projection-only contraction and emits a real
   `jnp.einsum` call, rejecting every non-projection read with a closed `JaxCodegenError`.
-* `affineReference` — accepts every current Wave C `CheckedEvalPlan`. It precomputes exact
-  per-factor affine lookup tables (safe index + validity mask) in Lean using the shared coordinate
-  primitives (`Eval.Plan.Coordinates`), and emits static plan DATA that the committed generic
-  runtime (`evalplan_affine_runtime.py`) interprets with ordered factor/reduction/term folds. No
-  `einsum`/`jnp.sum`/tree reduction is used on this path.
+* `affineReference` — accepts the context-free `f64` sum-product, assignment-only fragment, with
+  every present factor a plain affine read. It precomputes exact per-factor affine lookup tables
+  (safe index + validity mask) in Lean using the shared coordinate primitives
+  (`Eval.Plan.Coordinates`), and emits static plan DATA that the committed generic runtime
+  (`evalplan_affine_runtime.py`) interprets with ordered factor/reduction/term folds. Boolean
+  sources/destinations, tropical algebras, unary or Iverson factors, contextual assignments, and
+  non-assignment steps fail loud with located typed errors. No `einsum`/`jnp.sum`/tree reduction is
+  used on this path.
 
 Kept out of the default build (registered only in the non-default `JaxExperiment` `lean_lib`), no
 `LeanNCD` public API touched, no JAX dependency added to this project's toolchain. This module
@@ -26,10 +29,10 @@ namespace JaxBridge
 
 open LeanNCD LeanNCD.Eval LeanNCD.Eval.Plan Std
 
-/-! ## 1. Closed einsum-codegen diagnostics (unchanged from the smoke) -/
+/-! ## 1. Closed JAX-codegen diagnostics -/
 
-/-- Every way the narrow `einsum`-only backend refuses an otherwise-checked plan. Closed, with a
-    node/term/factor/row location on every constructor that has one available. -/
+/-- Every way the experimental JAX backend refuses an otherwise-checked plan or concrete fixture.
+    Closed, with a node/term/factor/row or binding location wherever one is available. -/
 inductive JaxCodegenError
   | emptyTerm             (nodeIndex termIndex : Nat)
   | emptyAssign           (nodeIndex : Nat)
@@ -53,6 +56,10 @@ inductive JaxCodegenError
   | invalidBindings       (cause : PreparedBindingsError)
   | bindingSlotOutOfRange (slot tableSize : Nat)
   | missingFixtureInput   (name : String)
+  | fixtureShapeMismatch  (name : String) (slot : TensorSlot)
+                          (expected : Array Nat) (actual : List Nat)
+  | fixtureStorageMismatch (name : String) (slot : TensorSlot)
+                           (shape : List Nat) (dataSize : Nat)
   | labelTableExhausted   (nodeIndex termIndex position : Nat)
   -- The one located rejection for any checked step this JAX backend cannot lower to a supported
   -- kernel: a `.pointwise`, `.axiswise`, or `.scan` node (Thread 4 / Wave F) has no affine/einsum
@@ -368,7 +375,7 @@ def generateForward (plan : PreparedPlan) : Except JaxCodegenError String := do
     | .error e => throw (.invalidBindings e)
   generateForwardChecked plan checked
 
-/-- Renders the module-level input constants (checked shape + `Float.toBits` payload) the einsum
+/-- Renders the module-level input constants (validated shape + `Float.toBits` payload) the einsum
     smoke's Python consumer reconstructs concrete tensors from. -/
 private def renderInputConstantsRaw (raw : RawEvalPlan) (requiredInputs : Array SlotBinding)
     (inputs : HashMap String DenseTensor) : Except JaxCodegenError String := do
@@ -381,7 +388,12 @@ private def renderInputConstantsRaw (raw : RawEvalPlan) (requiredInputs : Array 
     let nm := pyStrLit b.name
     shapeLines := shapeLines.push s!"    {nm}: {pyShapeTuple sig.shape},"
     let bits ← match inputs[b.name]? with
-      | some t => pure (t.data.map Float.toBits)
+      | some t =>
+          unless t.shape == sig.shape.toList do
+            throw (.fixtureShapeMismatch b.name b.slot sig.shape t.shape)
+          unless t.data.size == DenseTensor.sizeOf sig.shape.toList do
+            throw (.fixtureStorageMismatch b.name b.slot t.shape t.data.size)
+          pure (t.data.map Float.toBits)
       | none => throw (.missingFixtureInput b.name)
     bitsLines := bitsLines.push s!"    {nm}: {pyUInt64ListLit bits},"
   let shapesBlock := "INPUT_SHAPES = {\n" ++ String.intercalate "\n" shapeLines.toList ++ "\n}"
@@ -484,9 +496,9 @@ private def renderAffineNode (sigs : Array TensorSignature) (nodeIndex : Nat)
     ", \"terms\": [" ++ terms ++ "]}"
 
 /-- Every checked node in graph order (`checkedNodes` order is exactly raw-graph order, by
-    `checkPlan`'s construction). Total over assignment-only graphs; a `.pointwise`/`.axiswise`/
-    `.scan` node has no affine-table lowering here, so the array build rejects it with the one
-    located unsupported-step error carrying that node's outer-graph index. -/
+    `checkPlan`'s construction). Supported assignments pass `renderAffineNode`'s semantic gate; a
+    `.pointwise`/`.axiswise`/`.scan` node has no affine-table lowering here, so the array build
+    rejects it with the one located unsupported-step error carrying that node's outer-graph index. -/
 private def renderAffineNodesArray (c : CheckedEvalPlan) : Except JaxCodegenError String := do
   let sigs := c.raw.tensorSigs
   let mut entries : Array String := #[]
@@ -568,7 +580,9 @@ inductive LoweringMode
 
 /-- Generate the named-plan representation for a source/corpus `PreparedPlan` under an explicit
     mode. `einsumOnly` returns the `forward(inputs)` body (or a closed `JaxCodegenError` rejection);
-    `affineReference` returns the static plan DATA, total over every current checked Wave C plan. -/
+    `affineReference` returns static plan DATA only for the context-free `f64` sum-product,
+    assignment-only plain-read fragment described at the top of this file; every unsupported
+    category fails loud with its located `JaxCodegenError`. -/
 def generateNamed (mode : LoweringMode) (plan : PreparedPlan) :
     Except JaxCodegenError String :=
   match mode with
@@ -619,10 +633,9 @@ def loweringToAffineTableCandidate (sigs : Array TensorSignature) (nodeIndex : N
     function therefore lowers only `assign.plan.terms[0]?`; `Executable.validateEinsum` separately
     and independently rejects any candidate whose semantic source has other than exactly one term,
     so a multi-term assign accidentally routed through this function still cannot pass validation.
-    `lowerCheckPlanToCandidate` below does NOT call this function — it routes every step through
-    `loweringToAffineTableCandidate` only (every current Wave C plan is admitted by that path
-    already, per `affineReference`'s own doc comment "accepts every current Wave C CheckedEvalPlan").
-    This lowering is real and available, just not yet wired into the plan-level path.
+    `lowerCheckPlanToCandidate` below does NOT call this function — it routes every supported
+    assignment through `loweringToAffineTableCandidate` only. This lowering is real and available,
+    just not yet wired into the plan-level path.
 
     Total (not `Except`-wrapped, unlike `lowerFactor`), so it cannot reject a non-projection row or
     nonzero bias the way `lowerFactor` does: `rowProjectionTarget` already returns `none` for such a
@@ -666,8 +679,8 @@ def loweringToEinsumCandidate (sigs : Array TensorSignature) (nodeIndex : Nat)
     error carrying that step's outer-graph index (the FIRST such step, since the loop throws on
     reaching it) — which is why the error type is now `JaxCodegenError`, not the bare `String` the
     stub returned. A well-formed assignment whose affine-table candidate somehow fails validation
-    (never reached for any current Wave C plan — the affine path admits all of them) surfaces the
-    same located error for that step index rather than being silently dropped.
+    after passing the support gate surfaces the same located error for that step index rather than
+    being silently dropped.
 -/
 def lowerCheckPlanToCandidate (plan : PreparedPlan) :
     Except JaxCodegenError JaxExecutableCandidate := do
@@ -769,7 +782,7 @@ def testLowerCheckPlanToCandidateValid : Bool :=
 
 #guard testLowerCheckPlanToCandidateValid
 
-/-! ### Prepared-binding boundary coverage -/
+/-! ### Prepared-binding and concrete-input boundary coverage -/
 
 def idPreparedWith (materializedNames : Array SlotBinding) : Option PreparedPlan :=
   match checkPlan idRaw, checkBindings #[0] #[{ name := "x", slot := 0 }] with
@@ -789,6 +802,54 @@ def namedEntriesRejectMissingPublication : Bool :=
   | none => false
 
 #guard namedEntriesRejectMissingPublication
+
+def validIdFixtureInputs : HashMap String DenseTensor :=
+  HashMap.ofList [("x", { shape := [3], data := #[1.0, 2.0, 3.0] })]
+
+def sameSizeWrongShapeInputs : HashMap String DenseTensor :=
+  HashMap.ofList [("x", { shape := [1, 3], data := #[1.0, 2.0, 3.0] })]
+
+def undersizedIdFixtureInputs : HashMap String DenseTensor :=
+  HashMap.ofList [("x", { shape := [3], data := #[1.0, 2.0] })]
+
+def oversizedIdFixtureInputs : HashMap String DenseTensor :=
+  HashMap.ofList [("x", { shape := [3], data := #[1.0, 2.0, 3.0, 4.0] })]
+
+-- Prepared bindings are validated before concrete fixture tensors, even when both are invalid.
+#guard (match idPreparedWith #[] with
+  | some p =>
+      match renderInputConstants p sameSizeWrongShapeInputs with
+      | .error e => e == .invalidBindings (.publicationSlots #[1] #[])
+      | .ok _ => false
+  | none => false)
+
+-- Shape validation is exact, not merely an element-count check.
+#guard (match idPreparedWith #[{ name := "y", slot := 1 }] with
+  | some p =>
+      match renderInputConstants p sameSizeWrongShapeInputs with
+      | .error e => e == .fixtureShapeMismatch "x" 0 #[3] [1, 3]
+      | .ok _ => false
+  | none => false)
+
+-- Both sides of the flat-storage-size invariant are distinguished from shape mismatch.
+#guard (match idPreparedWith #[{ name := "y", slot := 1 }] with
+  | some p =>
+      (match renderInputConstants p undersizedIdFixtureInputs with
+       | .error e => e == .fixtureStorageMismatch "x" 0 [3] 2
+       | .ok _ => false) &&
+      (match renderInputConstants p oversizedIdFixtureInputs with
+       | .error e => e == .fixtureStorageMismatch "x" 0 [3] 4
+       | .ok _ => false)
+  | none => false)
+
+-- A shape- and storage-conforming sibling still renders both constant tables.
+#guard (match idPreparedWith #[{ name := "y", slot := 1 }] with
+  | some p =>
+      match renderInputConstants p validIdFixtureInputs with
+      | .ok rendered =>
+          rendered.contains "INPUT_SHAPES" && rendered.contains "INPUT_BITS"
+      | .error _ => false
+  | none => false)
 
 /-! ### Located unsupported-step rejections (Slice 5, Task 5.0)
 
