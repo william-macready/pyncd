@@ -1,0 +1,36 @@
+S1 producer bindings   : #[{ name := "A", slot := 0 }, { name := "B", slot := 1 }]
+S1 raw.inputSlots      : #[0, 1]
+S1 checkBindings ACCEPTED the name swap
+S1 checkPreparedBindings on swapped plan: true
+S1 preparedBindingsTied on swapped plan: true
+S1 runPreparedDense .ok  W = shape=[2] data=#[110.000000, 220.000000]  (correct is shape=[2] data=#[30.000000, 300.000000])
+S1 baseline (unswapped)  W = shape=[2] data=#[30.000000, 300.000000]
+S2 donor(one-input) requiredInputs: #[{ name := "A", slot := 0 }]
+S2 host(two-input) raw.inputSlots : #[0, 1]
+S2 pack rejected with: LeanNCD.Eval.Plan.InputBindingError.invalidPreparedBindings
+  (LeanNCD.Eval.Plan.PreparedBindingsError.requiredInputs
+    (LeanNCD.Eval.Plan.BindingsError.notAPermutation #[0, 1] #[0]))
+S3 producer materializedNames: #[{ name := "W", slot := 2 }]
+S3 checkPreparedBindings on renamed: true
+S3 .ok  A = shape=[2] data=#[30.000000, 300.000000] (input A was shape=[2] #[10.0, 100.0])
+S3 .ok  W = <absent>
+S4 materializedSignatures: some #[("P", LeanNCD.Eval.Plan.ScalarDType.bool)]
+S4 CHECKED P = shape=[2] data=#[0.500000, 0.250000]
+S4 LEGACY  P = shape=[2] data=#[0.500000, 0.250000]
+S5 bool-declared: slot0 dtype=LeanNCD.Eval.Plan.ScalarDType.bool  Q = shape=[2] data=#[0.250000, 9.000000]
+S5 undeclared-f64: slot0 dtype=LeanNCD.Eval.Plan.ScalarDType.f64  Q = shape=[2] data=#[0.250000, 9.000000]
+S6 rejected, inputSignature: LeanNCD.Eval.Plan.InputSignatureError.dtypeMismatch
+  "Z"
+  (LeanNCD.Eval.Plan.ScalarDType.bool)
+  (LeanNCD.Eval.Plan.ScalarDType.f64)
+S7 runDensePlan .ok, store = #[#[7.000000, -3.000000], #[49.000000, 9.000000]]
+S7 wrong arity  : false
+S7 wrong shape  : false
+S7 wrong storage: false
+S8 step kinds: #["assign", "pointwise"]
+S8 einsum candidate operands=#[#[0, 0]] outputAxes=#[0]
+S8 step-0 kernel validated, evidence=LeanNCD.Eval.Plan.ExecutionEvidence.optimizationExperiment
+S8 executable rejected: LeanNCD.Eval.Plan.JaxExecutableValidationError.invalidCandidate
+S9 baseline checkPlan: ACCEPTED (!!)
+S9 inputSlots := #[99]: LeanNCD.Eval.Plan.PlanStepError.assign (LeanNCD.Eval.Plan.PlanError.slotOutOfRange 99 3)
+S9 extra unproduced tensorSig slot: LeanNCD.Eval.Plan.PlanStepError.assign (LeanNCD.Eval.Plan.PlanError.missingProduction 3)
