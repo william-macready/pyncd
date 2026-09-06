@@ -1540,13 +1540,23 @@ def mixedCandidateWith (materialized : Array SlotBinding) : Option JaxExecutable
     | _, _, _ => none
 
 #guard match mixedCandidateWith #[{ name := "y", slot := 99 }] with
-  | some c => preparedBindingsTied c.source == false && decide (JaxExecutableWellFormed c) == true
+  | some c =>
+      preparedBindingsTied c.source == false &&
+      decide (JaxExecutableWellFormed c) == false &&
+      (match validateAndConstructExecutable c with
+       | .error (.invalidBindings (.materializedSlot (.slotOutOfRange 99 3))) => true
+       | _ => false)
   | none => false
 
 -- The same candidate with the plan's own bindings satisfies the WHOLE proposition — so the guard
 -- above is about the bindings conjunct, not about some other conjunct these fixtures happen to miss.
 #guard match mixedCandidateWith #[{ name := "y", slot := 1 }, { name := "z", slot := 2 }] with
-  | some c => preparedBindingsTied c.source == true && decide (JaxExecutableWellFormed c) == true
+  | some c =>
+      preparedBindingsTied c.source == true &&
+      decide (JaxExecutableWellFormed c) == true &&
+      (match validateAndConstructExecutable c with
+       | .ok _ => true
+       | _ => false)
   | none => false
 
 end LeanNCD.Eval.Plan.ExecutableTest

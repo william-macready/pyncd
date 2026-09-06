@@ -717,6 +717,7 @@ private def stepTiedToPreparedStep (prepared : PreparedPlan) (stepIndex : Nat)
 def JaxExecutableWellFormed (candidate : JaxExecutableCandidate) : Prop :=
   candidate.steps.size = candidate.source.plan.raw.steps.size ∧
   (candidate.steps.mapIdx (fun i sk => stepTiedToPreparedStep candidate.source i sk)).all id = true ∧
+  preparedBindingsTied candidate.source = true ∧
   candidate.evidence = aggregateEvidenceList (candidate.steps.map (·.evidence))
 
 /-- Same rationale as `JaxKernelWellFormed`'s instance above: instance search does not unfold a
@@ -727,6 +728,7 @@ instance (candidate : JaxExecutableCandidate) : Decidable (JaxExecutableWellForm
   inferInstanceAs (Decidable (candidate.steps.size = candidate.source.plan.raw.steps.size ∧
     (candidate.steps.mapIdx (fun i sk => stepTiedToPreparedStep candidate.source i sk)).all id
       = true ∧
+    preparedBindingsTied candidate.source = true ∧
     candidate.evidence = aggregateEvidenceList (candidate.steps.map (·.evidence))))
 
 /-- Type-indexed executable plan, only creatable by validator (`validateAndConstructExecutable`).
