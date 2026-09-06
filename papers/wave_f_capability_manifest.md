@@ -97,15 +97,15 @@ meets.** `CapabilityError` and `ScanCompileError` above both live on `Eval.Plan.
 compiler this manifest's §6 tells a Wave G consumer to avoid importing. A consumer that instead
 follows that advice — import `Eval.Plan.Scan` directly, build a `RawScanPlan` by hand, and call
 `checkScanPlan` — never sees either family; it sees `ScanPlanError`
-(`LeanNCD/Eval/Plan/Scan.lean`), a separate closed **39-constructor** family with no `String` escape
+(`LeanNCD/Eval/Plan/Scan.lean`), a separate closed **42-constructor** family with no `String` escape
 hatch either. Unlike `ScanCompileError`, this family's constructors carry no inline category
 comments; the groupings below instead follow `checkScanPlan`'s own checking order (the function's
 one doc comment names the two obligations it validates: proposal §7.3's capture/write obligations
 and §7.4's causality): schedule-level shape (`noStates`, `noAdvancingAxes`, `zeroExtent` — 3), each
-state's destination slot, advancing-dimension geometry, and materialization policy (7), schedule-wide
+state's destination slot, dtype, advancing-dimension geometry, and materialization policy (8), schedule-wide
 iteration/boundary/snapshot policy admission (3), base/step block context shape and the two blocks'
-own `BlockError` results (4), capture obligations against `checkCaptures` (8), write placement
-obligations against `checkWrites`, including the base-write-overlap check (13), and the trailing
+own `BlockError` results (4), capture obligations against `checkCaptures` (9), write placement
+obligations against `checkWrites`, including the base-write-overlap check (14), and the trailing
 causality loop's single `causalityFailure` (1). A `Scan`-only consumer's error handling needs to
 account for this family in place of `CapabilityError`/`ScanCompileError`, not in addition to them —
 the two error paths (source-compiled vs. directly-constructed `RawScanPlan`) don't overlap.
