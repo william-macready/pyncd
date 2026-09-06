@@ -199,8 +199,8 @@ run_cmd do
         unless failure.cause ==
             .binding (.invalidPreparedBindings (.materializedSlot (.slotOutOfRange 99 3))) do
           throwError s!"wrong cause for a leading out-of-range slot: {repr failure.cause}"
-          unless failure.warnings == prepared.warnings do
-            throwError s!"materialization-failure warnings dropped/changed: {failure.warnings}"
+        unless failure.warnings == prepared.warnings do
+          throwError s!"materialization-failure warnings dropped/changed: {failure.warnings}"
       match pack leadingBad zeroCoeffInputs with
       | .ok _ => throwError "pack accepted invalid materialized bindings"
       | .error (.invalidPreparedBindings (.materializedSlot (.slotOutOfRange 99 3))) => pure ()

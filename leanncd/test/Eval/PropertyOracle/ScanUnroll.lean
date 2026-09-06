@@ -34,8 +34,9 @@ whole-axis free) base regions, arbitrary advancing-dimension positions and order
 reads with non-positive bias, external reads, contractions, extent one, multiple scan axes, several
 disjoint base writes, block-local scratch, and — for the predicate/mask parity thread (Task 5.4) —
 source Iverson predicate factors and axiswise `where`-masks, rewritten to the leaf's own coordinates
-by `substBool` (an Iverson takes the actual scan coordinate; a mask zeros every eliminated scan
-seed). Nonlinearity and aggregation are carried through unchanged, so the two `enumScanCases`
+by `substBool` (an Iverson takes the actual scan coordinate; a mask zeros seeded scan axes and takes
+the current coordinate of free base scan axes). Nonlinearity and aggregation are carried through
+unchanged, so the two `enumScanCases`
 templates F4 rejects as capability failures (`relu` steps, tropical aggregation) are still unrollable
 and still checked against the legacy evaluator. Everything outside the fragment (scatter,
 `recurMorphism`, non-literal history coordinates, and an axiswise reduction along an ELIMINATED scan
@@ -381,28 +382,47 @@ private def rewriteFactor (g : ScanGeom) (σ : UID → Option Int)
       -- `substBool σ b` is the residual predicate the ordinary evaluator resolves against the leaf.
       pure (.iverson (substBool σ b))
 
+/-- The mask substitution induced by a source statement's LHS. Seeded scan axes are absent from the
+    local output basis and therefore read as zero; a scan axis left free by a base statement is
+    evaluated at the current base coordinate represented by `σ`. -/
+private def maskSubst (g : ScanGeom) (σ : UID → Option Int) (sourceSlots : List LHSSlot) :
+    UID → Option Int := fun u =>
+  if g.axes.any (·.uid == u) then
+    if sourceSlots.any (fun
+        | .free a | .freeNorm a => a.uid == u
+        | _ => false) then σ u
+    else some 0
+  else none
+
 /-- Rewrite one statement's nonlinearity for the leaf program. `identity`/`pointwise` pass through.
-    An `.axiswise` operation whose marked normalization axis (`.freeNorm` among `outSlots`, the
-    leaf's own output slots) is an eliminated scan coordinate is REJECTED with the named fragment
+    An `.axiswise` operation whose marked normalization axis (`.freeNorm` among `sourceSlots`) is an
+    eliminated scan coordinate is REJECTED with the named fragment
     error — the per-coordinate leaf unroller cannot reduce along an axis it has eliminated. Its mask
     (when present) is rewritten with the MASK policy, DISTINCT from the Iverson-factor policy: every
-    source seed (scan axis) reads ZERO, mirroring the checked lowering's absence of a seeded axis
-    from the local non-seeded output basis; every eliminated non-seeded `.free`/`.freeNorm` output
-    slot and every retained output axis stays an expression, resolved against the leaf's own
-    enumerated coordinate. -/
-private def rewriteNonlin (g : ScanGeom) (σ : UID → Option Int) (outSlots : List LHSSlot) :
+    seeded scan axis reads ZERO, while a free base scan axis takes its enumerated base coordinate;
+    every retained non-scan output axis stays an expression resolved against the leaf's coordinate. -/
+private def rewriteNonlin (g : ScanGeom) (σ : UID → Option Int) (sourceSlots : List LHSSlot) :
     Nonlin → Except String Nonlin
   | .axiswise fn m => do
-      match outSlots.findSome? (fun sl => match sl with | .freeNorm a => some a | _ => none) with
+      match sourceSlots.findSome? (fun sl => match sl with | .freeNorm a => some a | _ => none) with
       | some a =>
           if g.axes.any (·.uid == a.uid) then .error fragment.eliminatedNormalizationAxis
       | none => pure ()
-      -- Mask policy (DISTINCT from the Iverson-factor policy `σ`): every source seed (scan axis)
-      -- reads ZERO, never the live step coordinate `σ` — mirroring the checked lowering, whose local
-      -- non-seeded output basis omits the seeded axis so it densifies to coordinate 0 every step.
-      let σmask : UID → Option Int := fun u => if g.axes.any (·.uid == u) then some 0 else none
-      pure (.axiswise fn (m.map (substBool σmask)))
+      pure (.axiswise fn (m.map (substBool (maskSubst g σ sourceSlots))))
   | other => pure other
+
+private def maskTestGeom : ScanGeom :=
+  { axes := [sx], ext := [6], states := [], scratch := [], advScratch := [], base := [], recur := [] }
+
+private def scanAxisMask : BoolExpr :=
+  .rel .eq (.embed (.axis sx)) (.embed (.const 5))
+
+-- A free base scan axis remains an output coordinate before leaf specialization, whereas a seeded
+-- scan axis is absent from the output basis and therefore reads as zero.
+#guard substBool (maskSubst maskTestGeom pinX [.free sx, .freeNorm sy]) scanAxisMask
+  == BoolExpr.rel .eq (.embed (.const 5)) (.embed (.const 5))
+#guard substBool (maskSubst maskTestGeom pinX [.iterAt sx 0, .freeNorm sy]) scanAxisMask
+  == BoolExpr.rel .eq (.embed (.const 0)) (.embed (.const 5))
 
 /-- Rewrite a whole RHS, preserving source term and factor order, and rewriting the nonlinearity
     (`rewriteNonlin`) — the mask must be lowered to the leaf's coordinates and an eliminated-axis
@@ -471,12 +491,12 @@ def unrollScanNode (sizes : HashMap UID Nat) (decls : List Decl) (sc : ScanStmt)
     let fs  ← baseFreeSlots st s
     let reg ← baseRegion g st s
     let r   ← rhsOf s
-    pure (st, fs, reg, r))
+    pure (st, fs, reg, s.slots, r))
   -- 2. which history coordinates carry a real leaf: a base region, or a step's `u + 1`.
   let stepCoords := coordsOf (g.ext.map (fun n => n - 1))
   let advanced := stepCoords.map (fun u => u.map (· + 1))
   let live : List (String × List (List Nat)) := g.states.map (fun st =>
-    let fromBase := baseParts.flatMap (fun (bst, _, reg, _) =>
+    let fromBase := baseParts.flatMap (fun (bst, _, reg, _, _) =>
       if bst.name == st.name then reg else [])
     (st.name, (fromBase ++ advanced).eraseDups))
   let hasLeaf : String → List Nat → Bool := fun nm t =>
@@ -491,9 +511,9 @@ def unrollScanNode (sizes : HashMap UID Nat) (decls : List Decl) (sc : ScanStmt)
   let zeroDecls := zeroParts.filterMap (fun (sourceName, leaf) =>
     predicateLeafDecl decls sourceName leaf)
   -- 4. base leaves: one per (base statement, coordinate in its region), pins substituted.
-  let baseParts' ← baseParts.flatMapM (fun (st, fs, reg, r) =>
+  let baseParts' ← baseParts.flatMapM (fun (st, fs, reg, sourceSlots, r) =>
     reg.mapM (fun t => do
-      let rhs ← rewriteRHS g (ctxSubst g.axes t) hasLeaf none fs r
+      let rhs ← rewriteRHS g (ctxSubst g.axes t) hasLeaf none sourceSlots r
       pure (st.name, Stmt.assign (stateLeafName st.name t) fs rhs)))
   let baseStmts := baseParts'.map Prod.snd
   let baseDecls := baseParts'.filterMap (fun (sourceName, leaf) =>
@@ -503,9 +523,9 @@ def unrollScanNode (sizes : HashMap UID Nat) (decls : List Decl) (sc : ScanStmt)
     let σ := ctxSubst g.axes u
     g.recur.mapM (fun s => do
       let r   ← rhsOf s
-      -- The leaf's own output slots (`.freeNorm`/`.free` faces), resolved BEFORE the rewrite so the
-      -- mask/normalization rewrite sees them: a state or advancing-scratch leaf keeps the state's
-      -- non-advancing free slots, a plain scratch keeps its own slots.
+      -- A state or advancing-scratch leaf keeps the state's non-advancing free slots; a plain
+      -- scratch keeps its own slots. The rewrite separately receives the source slots because mask
+      -- treatment depends on whether each scan axis was seeded or free before leaf specialization.
       let (leafName, leafSlots) :=
         match g.states.find? (fun st => st.name == s.lhsName) with
         | some st => (stateLeafName st.name (u.map (· + 1)), st.freeSlots)
@@ -513,7 +533,7 @@ def unrollScanNode (sizes : HashMap UID Nat) (decls : List Decl) (sc : ScanStmt)
             match g.advScratch.find? (fun st => st.name == s.lhsName) with
             | some st => (scratchLeafName s.lhsName u, st.freeSlots)
             | none    => (scratchLeafName s.lhsName u, s.slots)
-      let rhs ← rewriteRHS g σ hasLeaf (some u) leafSlots r
+      let rhs ← rewriteRHS g σ hasLeaf (some u) s.slots r
       pure (s.lhsName, Stmt.assign leafName leafSlots rhs)))
   let stepStmts := stepParts.map Prod.snd
   let stepDecls := stepParts.filterMap (fun (sourceName, leaf) =>
@@ -721,7 +741,7 @@ def retainedPredicateSched : ScheduledProgram :=
 
 def retainedPredicateInputs : HashMap String DenseTensor :=
   (({} : HashMap String DenseTensor).insert "S0" ⟨[2], #[0.0, 1.0]⟩).insert
-    "X" ⟨[2, 3], #[1.0, 0.0, 0.0, 0.0, 0.0, 0.0]⟩
+    "X" ⟨[2, 3], #[1.0, 1.0, 0.0, 1.0, 0.0, 0.0]⟩
 
 run_cmd do
   match retainedPredicateSched.stmts.find? (fun s => match s with | .scan .. => true | _ => false) with
@@ -730,6 +750,9 @@ run_cmd do
       match unrollScanNode retainedPredicateSched.explicitSizes retainedPredicateSched.decls sc with
       | .error m => throwError s!"retained predicate fixture failed to unroll: {m}"
       | .ok un =>
+          let declNames := un.decls.map Decl.name
+          unless declNames == ["%Z_S", "%U_S_0", "%U_S_1", "%U_S_2"] do
+            throwError s!"retained predicate fixture has unexpected generated decls: {declNames}"
           unless un.decls.all (fun d => match d with
               | .predicate _ [a] => a.uid == retainedPredJ.uid
               | _ => false) do
