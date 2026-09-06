@@ -1,10 +1,12 @@
 # Task 4 — Boolean / predicate outputs in the checked `EvalPlan` backend
 
-**Status:** Tasks 4.1–4.5 are implemented on `agents/task4-boolean-output` through commit
-`ce1a0f7`. Task 4.6 below is a pre-integration closure amendment, re-measured against that commit;
-it is not yet implemented. Its two invariant boundaries were independently researched and the
-assembled amendment received an adversarial plan review before execution.
-This closes the current checked-backend rejection of `Decl.predicate` by
+**Status:** Complete. Tasks 4.1–4.6 were implemented, mutation-tested, independently reviewed, and
+merged into local `main` by merge commit `eb37836` on 2026-09-06. Task 4.6's two shared validation
+boundaries landed in `0160f59` and `06604f2`; subsequent whole-branch findings and final test-oracle
+repairs were closed through `1950da1`. See §10 for the implementation and validation record. The
+prospective task text below is retained as the reviewed execution specification.
+
+The completed work closes the checked-backend rejection of `Decl.predicate` by
 `CapabilityError.booleanOutput`. It does not add native Boolean storage or JAX Boolean execution.
 
 This plan supersedes the Task 4 sketch in
@@ -1170,3 +1172,47 @@ slice.
 - This document contains no Lean code block, so `check-snippet.sh` is not applicable.
 - At original plan authoring, no implementation code was changed; this spike branch likewise retains
   documentation only after reverting every temporary Lean prototype.
+
+## 10. Implementation and validation record
+
+### 10.1 Landed architecture
+
+- Tasks 4.1–4.5 implement Boolean Dense algebra, predicate output signatures and allocation, Boolean
+  scan state/scratch/history behavior, exact JAX axis recomputation, and Variant B's explicit
+  signature-table policy.
+- Task 4.6 Work Package A landed in `0160f59`. The neutral
+  `DSL/Pipeline/ScheduledValidation.lean` boundary now re-derives declaration, explicit-size,
+  external-name, rank, dtype/LHS-axis-kind, predicate-output, and producer/publication-order
+  invariants for both checked preparation and direct scheduled evaluation.
+- Task 4.6 Work Package B landed in `06604f2`. `CheckedPreparedBindings` now authenticates the exact
+  required-input permutation and exact publication slots before metadata, adapter, named-JAX,
+  candidate, or executable consumers proceed.
+- Whole-branch review fixes distinguish scan-local writes from external publications (`e15dce1`),
+  preserve predicate-leaf retained axes and three-way parity (`a62af0b`, `6d3a02b`), tie executable
+  evidence to prepared bindings (`9046107`), and validate scheduled LHS axis kinds (`75a57b3`).
+- Final boundary fixes validate JAX fixture tensor shape and storage before rendering (`f2929ba`) and
+  make the independent scan-mask and retained-predicate oracles non-vacuous (`1950da1`).
+- The completed branch was merged locally into `main` as `eb37836`. It was not pushed as part of this
+  work.
+
+### 10.2 Final verification
+
+The final implementation passed:
+
+- all planned Task 4.6 mutation cycles, plus the review-driven mutations for publication order,
+  retained predicate axes, executable/binding evidence, scheduled LHS axis kinds, JAX fixture
+  shape/storage, free-base-axis mask substitution, retained predicate declarations, and warning
+  preservation;
+- targeted Task 4/4.6 production and test builds;
+- the scan-free differential corpus: **3,832/3,832 accepted**;
+- the scan corpus and independent unroll: **17/17 accepted**;
+- the JAX EvalPlan smoke;
+- the curated JAX affine suite: **20/20 fixtures**;
+- the JAX affine corpus: **3,832 cases, 0 eager mismatches, 65 JIT checks**;
+- the final full `lake build`: **8,660 jobs**;
+- `git diff --check` and a clean worktree.
+
+Both Task 4.6 work packages received independent commit reviews. Whole-branch semantic and
+soundness reviews were completed with every actionable finding fixed or explicitly adjudicated. The
+last consolidated test-harness repair received one isolated-diff review and was clean; no further
+open-ended whole-branch review cycle was required.
