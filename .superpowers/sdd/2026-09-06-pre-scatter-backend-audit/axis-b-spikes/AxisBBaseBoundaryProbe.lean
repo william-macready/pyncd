@@ -133,4 +133,53 @@ def sz : UID → Option Nat := fun u => if u == 1 then some 4 else if u == 2 the
       , slotsBecomeScatter [.iterNext axI, .free axJ]
       , slotsBecomeScatter [.iterAt axI 0, .iterAt axI 1] )
 
+/-! ## S16 — what actually happens to an `.advancing` row at BASE (fix round 1, Important 1)
+
+Both value predicates are asked directly, in the base phase, and then the coordinate `commitWrite`
+would compute is worked out with `applyAffine` at `ctx = []` — the real equation, not an argument.
+
+Case B (R9): rank-3 state, `advancingDims := #[0, 1]`, dim0 `.pinned 0` (satisfies clause 3),
+dim1 `.advancing 0` sitting at an ADVANCING dimension, dim2 `.free 0`. Output rank 1.
+Case A (R10): the same rows with `advancingDims := #[0]`, so dim1 is a NON-advancing dimension. -/
+
+def advAtBaseRows : Array (Option WriteRowKind) :=
+  #[some (.pinned 0), some (.advancing 0), some (.free 0)]
+
+-- Admitted by the base geometry predicate at BOTH dimension classes.
+#eval ( baseWriteRowsOk #[0, 1] 1 advAtBaseRows      -- R9: advancing @ advancing dim
+      , baseWriteRowsOk #[0] 1 advAtBaseRows )       -- R10: advancing @ non-advancing dim
+
+-- And BOTH value predicates pass it, at any extents whatsoever.
+#eval ( freeExtentsAgree #[1, 3, 3] #[3] advAtBaseRows
+      , pinnedLiteralsInRange #[1, 3, 3] advAtBaseRows
+      -- deliberately absurd state extents: dim1 has extent 1, the advancing row still passes
+      , freeExtentsAgree #[1, 1, 3] #[3] advAtBaseRows
+      , pinnedLiteralsInRange #[1, 1, 3] advAtBaseRows )
+
+-- The map those rows come from, and the coordinate `commitWrite` computes at base (`ctx = []`,
+-- so `iter = oc`). Output shape [3] => oc ranges [0], [1], [2].
+def advAtBaseMap : AffineMap :=
+  { coeffs := #[#[0], #[1], #[1]], bias := #[0, 1, 0] }
+
+#eval writeRowKinds 3 0 { outputSlot := 0, stateIndex := 0, map := advAtBaseMap }
+
+#eval ( applyAffine advAtBaseMap [(0 : Int)]
+      , applyAffine advAtBaseMap [(1 : Int)]
+      , applyAffine advAtBaseMap [(2 : Int)] )
+
+-- Those coordinates against a [1,3,3] state: `commitWrite` calls NO `inBoundsPerDim`.
+#eval ( inBoundsPerDim [1, 3, 3] (applyAffine advAtBaseMap [(0 : Int)])
+      , inBoundsPerDim [1, 3, 3] (applyAffine advAtBaseMap [(1 : Int)])
+      , inBoundsPerDim [1, 3, 3] (applyAffine advAtBaseMap [(2 : Int)]) )
+
+-- The flat addresses `flatIndex` would hand to `Array.set!` on a 9-element store.
+#eval ( flatIndex [1, 3, 3] ((applyAffine advAtBaseMap [(0 : Int)]).map Int.toNat)
+      , flatIndex [1, 3, 3] ((applyAffine advAtBaseMap [(1 : Int)]).map Int.toNat)
+      , flatIndex [1, 3, 3] ((applyAffine advAtBaseMap [(2 : Int)]).map Int.toNat) )
+
+/-! ### There is no "checked context shape" at base to bound anything against -/
+
+#eval probe "S16 (non-empty base block contextShape)"
+  { scanOff with baseBlock := { base2D with contextShape := #[2] } }
+
 end LeanNCD.Eval.Plan.AxisBProbe2

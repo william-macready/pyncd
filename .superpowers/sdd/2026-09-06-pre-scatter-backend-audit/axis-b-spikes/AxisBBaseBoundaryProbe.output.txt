@@ -7,3 +7,10 @@
 (none, none)
 (true, true, true, true, false)
 (false, true, true, true, false, false)
+(true, true)
+(true, true, true, true)
+#[some (LeanNCD.Eval.Plan.WriteRowKind.pinned 0), none, some (LeanNCD.Eval.Plan.WriteRowKind.free 0)]
+([0, 1, 0], [0, 2, 1], [0, 3, 2])
+(true, true, false)
+(3, 7, 11)
+"S16 (non-empty base block contextShape): checkScanPlan REJECTED: LeanNCD.Eval.Plan.ScanPlanError.baseBlockContextNotEmpty #[2]"

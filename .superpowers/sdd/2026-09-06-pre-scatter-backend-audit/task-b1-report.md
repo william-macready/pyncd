@@ -12,9 +12,9 @@ code changed, so the second build is definitionally identical; `git diff` agains
 | Deliverable | Where | State |
 |---|---|---|
 | The table (current row kinds only) | `axis-b-fragment.md` §B1.2 | 12 rows × 14 columns = 168 cells, every cell classified |
-| Adjudication of every `c` cell | `axis-b-fragment.md` §B1.3 | 86 `c` cells across 15 groups; 9 closed, 6 open |
-| The call-site sweep | `axis-b-fragment.md` §B1.4 | 19 production call sites + 8 type-signature positions |
-| Construction spikes | `axis-b-spikes/` (2 files + 2 captured outputs) | 15 probes, S1–S15 |
+| Adjudication of every `c` cell | `axis-b-fragment.md` §B1.3 | 86 `c` cells across 17 groups; 9 groups / 71 cells closed, 8 groups / 15 cells open |
+| The call-site sweep | `axis-b-fragment.md` §B1.4 | 19 production call sites + 11 type-signature positions |
+| Construction spikes | `axis-b-spikes/` (2 files + 2 captured outputs) | 16 probes, S1–S16 |
 
 Fragment path is exactly as briefed: `.superpowers/sdd/2026-09-06-pre-scatter-backend-audit/axis-b-fragment.md`.
 `papers/pre_scatter_backend_audit.md` was **not** created or edited. `axis-a-fragment.md` and the
@@ -26,7 +26,7 @@ Task A files (`Adapter.lean`, `Prepared.lean`, `Executable.lean`, `Signature.lea
 | ID | Finding | Verdict |
 |---|---|---|
 | B1-F1 | No write case-by-class audit over the geometry predicates exists. **Two** documents presuppose it (`boolean_predicate_output_evalplan.md` Task 4.4; `predicate_boolean_backend_parity.md` §9.4), two later ones declined it | Stale inherited obligation, confirmed |
-| B1-F2 | **Candidate gap 1** — `baseWriteRowsOk` still carries the verbatim defect-instance-4 `filterMap` and ADMITS a hand-built `.advancing` row at both dim classes. Held up *solely* by `checkWrites`' `if isBase then 0` | `c`‡ **latent, not live** — a full-plan attempt is rejected `writeGeometryNotAdmitted true 0` |
+| B1-F2 | **Candidate gap 1** — `baseWriteRowsOk` still carries the verbatim defect-instance-4 `filterMap` and ADMITS a hand-built `.advancing` row at both dim classes; so do **both value predicates**, at any extents. Held up by **two** independent barriers (fix round 1) | `c`‡ **latent, not live** — a full-plan attempt is rejected `writeGeometryNotAdmitted true 0`. **10 cells**, not 6 |
 | B1-F3 | **Candidate gap 2** — coeff-row width is genuinely unchecked, but provably irrelevant: the free-position cover bounds the single nonzero's index into the real domain, and `applyAffine`'s `zip` only ever drops zeros | **REFUTED**, with mechanism + 5 probes |
 | B1-F4 | A `free` row may sit at an **advancing** dimension in a base write; `baseWriteRowsOk` clause 2 records the position and discards the dimension | **OPEN**, memory-safe, policy-consistent, unpinned |
 | B1-F5 | Base writes need touch the lower boundary of only **one** advancing dimension; every other advancing dim's pinned literal need only be in range | **OPEN**, memory-safe; the docstring's "touches the lower boundary" gloss holds only for a 1-axis scan |
@@ -41,8 +41,8 @@ Task A files (`Adapter.lean`, `Prepared.lean`, `Executable.lean`, `Signature.lea
 | Quantity | Brief's estimate | Actual | Note |
 |---|---|---|---|
 | Adjudicable (`c`) cells | ~40 | **86** | Large overshoot, explained: 3 of 14 columns are entirely `c` by construction (36 cells) and 2 more are dimension-class-blind (20 cells). Excluding those five leaves **30**, i.e. the estimate's order. Reported in the fragment rather than forced to match. |
-| Call sites | ~21 | **19** production + 8 type positions | Close; the 8 signature positions of `WriteRowKind` are what brings it to ~27 if counted. |
-| Construction spikes | ~8 | **15 probes in 2 files** | Overshoot by probe count, not by effort — several probes are one `#eval` tuple each. |
+| Call sites | ~21 | **19** production + 11 type positions | Close; the 11 signature positions of `WriteRowKind` bring it to 30 if counted. |
+| Construction spikes | ~8 | **16 probes in 2 files** | Overshoot by probe count, not by effort — several probes are one `#eval` tuple each. |
 
 ## 4. The (a)/(b)/(c) definitions I fixed, and why
 
@@ -61,24 +61,33 @@ site is not reached in that phase" (`baseWriteRowsOk` is base-only, `stepWriteRo
 `writesCollide` base-only, so 18 cells are structurally n/a) and **▷** for "the site classifies
 *read* rows, a disjoint vocabulary" (`causalAdvancingRow`, `stateReadCausal`, 24 cells). Neither
 softens a `c`; both are honest n/a rather than a letter. **‡** flags the brief's "`c` in disguise" —
-a mark holding only via an unenforced call-site precondition.
+a mark holding only via an unenforced call-site precondition. Fix round 1 added one more, at the
+reviewer's request: **§** marks a cell that is `a` for the row *class* while a sub-case inside it is
+unconstrained by that site (only R1 × col 4, pointing at B1-F5), so the letter is not read as
+stronger than it is.
 
 ## 5. Appendability for Task B2 (the interface I owe it)
 
 The row axis is `kind × dim-class × phase`; the column axis is fixed at 14 sites. A `strided` kind
 appends **exactly four rows at the bottom** (R13–R16) with no change to any header, existing row, or
-legend entry. §B1.2's "How Task B2 appends a fourth row kind" states this plus three measured facts
-B2 needs:
+legend entry. §B1.2's "How Task B2 appends a fourth row kind" states this plus three facts B2 needs —
+**two measured, one an explicitly-labelled conditional** (corrected in fix round 1):
 
-1. `classifyWriteRow` is the single chokepoint — every coefficient ≠ 1 and every bias ∉ {0,1} is
-   `none` today [S12].
-2. A `strided` row **will be emittable at base** (unlike `advancing`, it is not gated on
-   `p < contextWidth`), so `baseWriteRowsOk`'s clause-2 `filterMap` will silently drop it and neither
-   value predicate will look at it — **the five-times defect, live rather than latent**. This is the
-   single most important handoff in the fragment.
-3. `writesCollide`'s `| _, _ => false` catch-all makes two strided base writes to one state always
-   report as colliding — over-rejecting, therefore safe, but it makes strided-plus-strided base
-   initialization inexpressible.
+1. **[measured]** `classifyWriteRow` is the single chokepoint — every coefficient ≠ 1 and every bias
+   ∉ {0,1} is `none` today [S12].
+2. **[conditional, not measured]** *If* B2's strided branch is not gated on `contextWidth` — a design
+   choice B2 owns, which nothing in the current code forces either way — then a strided row becomes
+   emittable at base, `baseWriteRowsOk`'s clause-2 `filterMap` silently drops it, neither value
+   predicate looks at it, and `commitWrite`'s `c·x + b` is unbounded. §B1.2 gives the smallest
+   exhibiting shape and states that **B2's first obligation is to decide the gating question and build
+   the construction either way** — carried forward as a test to run, not as a finding.
+3. **[measured]** `writesCollide`'s `| _, _ => false` catch-all makes two strided base writes to one
+   state always report as colliding — over-rejecting, therefore safe, but it makes
+   strided-plus-strided base initialization inexpressible.
+
+§B1.2 also now states that B2 must update **two things outside the row block**, one of which
+(§B1.5's gate summary) sits *before* the append marker: editing it in place is expected, since the
+marker exists to order new prose, not to freeze B1's counts.
 
 The fragment ends with `<!-- END OF TASK B1 SECTION — Task B2 appends below this line. -->` and no
 closing summary that would strand B2's additions. §B1.5's summary is scoped as "Axis B part 1 state
@@ -131,3 +140,123 @@ against the gate", not as a document conclusion.
   is `*`).
 - Prose cites identifiers only — no `file:NNN` line numbers anywhere in the fragment.
 - Commit prefix `docs(leanncd):`.
+
+---
+
+# Fix round 1 — report
+
+**Status: DONE.** All three Important items and all six accuracy items addressed. One new spike
+section (S16) added; no production code changed.
+
+## Evidence the coordinator required
+
+| Required | Observed |
+|---|---|
+| Build job count from a real run | `lake build` → **`Build completed successfully (8660 jobs).`** |
+| Production diff still empty | A `--stat` diff of HEAD restricted to `leanncd/LeanNCD`, `leanncd/lakefile.toml` and `leanncd/test` returns **nothing**; a short status restricted to `leanncd` likewise returns **nothing**. Only the two fragment/report files and the refreshed spike copies are modified |
+| Important 1: observed evaluation of an `.advancing` row at base through both value predicates | **S16**, below |
+
+### S16 — the construction Important 1 asked for
+
+Appended to `AxisBBaseBoundaryProbe.lean`; captured output refreshed in `axis-b-spikes/`. Rows
+`#[some (.pinned 0), some (.advancing 0), some (.free 0)]` — a rank-3 state, dim0 satisfying
+`baseWriteRowsOk` clause 3, dim1 carrying the advancing row, dim2 the free cover, output rank 1.
+
+```
+baseWriteRowsOk #[0,1] 1 / #[0] 1                     → (true, true)
+  (R9: advancing @ advancing dim; R10: advancing @ non-advancing dim — both admitted)
+
+(freeExtentsAgree #[1,3,3] #[3], pinnedLiteralsInRange #[1,3,3],
+ freeExtentsAgree #[1,1,3] #[3], pinnedLiteralsInRange #[1,1,3])
+                                                      → (true, true, true, true)
+  (both value predicates pass it at ANY extents, including dim1 extent 1)
+
+writeRowKinds 3 0 <that map>   → #[some (.pinned 0), none, some (.free 0)]
+  (the `none` at dim1 is what actually blocks it today — clause 1, not either value predicate)
+
+applyAffine <that map> [0] / [1] / [2]                → ([0,1,0], [0,2,1], [0,3,2])
+inBoundsPerDim [1,3,3] <each>                         → (true, true, false)
+flatIndex [1,3,3] <each>                              → (3, 7, 11)      -- 9-element store
+
+probe "non-empty base block contextShape"
+  → checkScanPlan REJECTED: ScanPlanError.baseBlockContextNotEmpty #[2]
+```
+
+Two silent writes into cells belonging to other coordinates, then an out-of-range `Array.set!` —
+the verbatim F4 failure signature. And the last line confirms there is no base-phase context shape to
+appeal to.
+
+## Important items
+
+**Important 1 — G6/G7 misclosure, fixed.** The four cells (R9, R10 × cols 6, 7) are now `c`‡ in the
+table and are adjudicated in a **new group G16**, open and folded into B1-F2. G6 shrank 8→6 cells
+(now R1–R4, R11, R12) and G7 8→6 (now R5–R8, R11, R12), each stating explicitly that advancing rows
+at **base** are excluded and why. I accepted the review's reasoning in full and verified each leg
+myself before rewriting: `stepWriteRowsOk` is marked `—` at base in my own table, so its clauses 2
+and 3 cannot fire there; `advancingSizeMismatch` relates `stateShape[advancingDims[i]]` to
+`historyExtents[i]` and is silent on an advancing row's presence or placement; and
+`pinnedLiteralsInRange`'s docstring appeal to "the checked output/context shapes" has no referent at
+base, since `baseBlockContextNotEmpty` forces the base context shape empty (now measured, S16).
+**The false justification is no longer quoted approvingly** — G7 now says which half of that docstring
+sentence is accurate and which is false in this phase. B1-F2's cell scope is restated as **10 cells,
+not 6**, and its own text now carries the worker-level consequence worked out rather than argued.
+
+**Important 2 — forecast presented as measurement, fixed.** §B1.2's header no longer says "all
+measured here"; it says facts 1 and 3 are measured and fact 2 is a conditional B2 must test. Fact 2 is
+rewritten as `[CONDITIONAL — not measured; no strided constructor exists to measure]`, with the design
+assumption named explicitly ("*if* B2's strided branch is not gated on `contextWidth` — which nothing
+in the current code forces either way, and which is a design choice B2 owns"). I kept the mechanism,
+since the review independently re-derived it and confirmed the substance, and added the smallest
+exhibiting shape plus a sentence making **B2's first obligation** the gating decision and the
+construction either way — "carried forward as the test to run", not as a finding. The report's §5
+mirrors this.
+
+**Important 3 — "solely" was wrong, fixed.** B1-F2 now names **two independent barriers**: barrier 1
+is `checkWrites`' `if isBase then 0` (governs every plan); barrier 2 is `Compile.lean`'s base-write
+construction loop, which can emit only an all-zero coefficient row with the literal as bias
+(`.iterAt`) or a single `1` with bias `0` (`.free`/`.freeNorm`), and has **no arm** producing
+coefficient `1` together with bias `1` — so a compiled base write could not carry an advancing row
+even at nonzero `contextWidth`. A new subsection, **"Where barrier 2 disappears"**, makes the forward
+connection the earlier draft left implicit: the same loop's `| .iterNext _ | .affine _ =>` arm is what
+B2 must lower for affine LHS writes, and **the moment it gets a real lowering, barrier 2 is gone for
+compiled programs and barrier 1 becomes the whole defence.** B1-F6 now points at that subsection, and
+the call-site sweep's "three known instances" entry 1 no longer says "sole".
+
+## Accuracy items
+
+| # | Item | Fix |
+|---|---|---|
+| 1 | B1-F1's verification narrative did not reproduce | Re-ran both greps and restated the trail from observation. Pass 1 gives **19** files in my run; I say so, and add that the count is sensitive to directories/globs and is *not* the load-bearing part. Pass 2's intersection is now a **6-row table**, each file classified once and correctly: two presuppose (both quoted), two prose-only (`wave_f_scanplan_proposal.md`, the nonlinearity-t1 plan), one is this audit's own plan, one is `Compile.lean` (source). The self-contradiction over `predicate_boolean_backend_parity.md` is gone; `Compile.lean` is no longer omitted; "this audit's own brief" is gone. Added that the two **declining** documents are absent from the intersection because neither contains `forbidden` — they came from a separate grep. |
+| 2 | G2 closed by deferral to an open group | Split into **G2a** (18 cells, closed) and **G2b** (2 cells, R5 × cols 2–3, **OPEN**, folded into B1-F4), with the reason stated: a group cannot be closed by deferral to an open group. B1-F4's cell count is now **5**. |
+| 3 | S6 and S13 never cited | Both cited. **S6** now appears in the sweep row for `writeRowKinds`, as the demonstration of what the "no rank guard at `Compile.lean`'s two sites" assumption buys — `getD` *manufactures* `.pinned 0` rows (`writeRowKinds 3 0` on one supplied row → `#[free 0, pinned 0, pinned 0]`) or silently drops them (`writeRowKinds 1 0` on three → `#[free 0]`). **S13** is a new paragraph after the sweep table showing all four standalone predicates **fail closed** off-contract. |
+| 4 | Quotation and count slips | B1-F6 no longer attributes one pattern to both loops: it states the base arm is `\| .iterNext _ \| .affine _ =>` and the step arm `\| .iterAt .. \| .affine _ =>`, verified by grep, and notes `.affine` is what they share. B1-F9: "Four distinct extent conventions" → **"Five"**. Sweep: `WriteRowKind`'s signature positions **8 → 11**, enumerated (adding `classifyWriteRow`'s return, `checkWrites`' return, `checkWrites`' `rowsByState`), verified by grepping every `WriteRowKind` occurrence in production. §B1.4's intro and the report's §1/§3 counts updated to match. |
+| 5 | R1 × col 4 `a` on the strength of an `.any` | Added legend mark **§** ("the mark holds for the row *class* but a sub-case inside the cell is unconstrained by this site"), applied to that one cell, and B1-F5 now opens by saying it is the finding the `§` points at and how to read the `a`. |
+| 6 | Appendability narrower than claimed | §B1.2's append instructions now say B2 must also update the §B1.2 cell census **and** §B1.5's gate summary, that the latter sits *before* the append marker, and that editing it in place is expected — "the marker exists so B2's new prose lands after B1's, not to freeze B1's counts." |
+
+## Verification of this round
+
+- **Census re-verified mechanically** after every edit: 12 rows × 14 columns = 168 cells,
+  `24 a / 16 b / 86 c / 18 — / 24 ▷` — unchanged, since Important 1 moved cells between *groups*, not
+  between *letters*.
+- **Group arithmetic re-verified mechanically**: 17 groups summing to 86; 9 closed / 71 cells;
+  8 open / 15 cells; B1-F4 = 5 cells, B1-F2 = 10 cells. A script also cross-checked every group's
+  declared cell count in §B1.3 against the expected value — no mismatches.
+- **Stale-count sweep**: found and fixed two leftovers ("15 adjudication groups" → 17, "8 signature
+  positions" → 11) plus five in the report.
+- Fragment still has **no** `file:NNN` citations, exactly **one** append marker as its last line, and
+  no document-level conclusion.
+- One markdown defect found and fixed in passing: an unescaped `|` inside a code span in G6 was
+  breaking that table row's cell count. A script now checks for unescaped pipes in table code spans;
+  there are none.
+
+## Residual concerns after this round
+
+1. **B1-F10 still stands and is unchanged** — 10 of 16 `b` cells have no located test, and
+   `stepWriteRowsOk`'s clause 2 remains the least-pinned clause in the file. Fix round 1 did not
+   touch it; the review confirmed it independently.
+2. **§B1.2 fact 2 is now a labelled conditional, which is honest but weaker as a handoff.** If the
+   controller wants it to be a *measurement* before the Scatter slice starts, that requires adding a
+   `strided` constructor — production code, out of scope for a findings-only audit. Flagging the
+   tradeoff rather than resolving it unilaterally.
+3. **B1-F9 remains deliberately unclosed** (whether a zero-extent scatter output is rejected further
+   down the scatter path is B2's territory). Unchanged from the initial report.
