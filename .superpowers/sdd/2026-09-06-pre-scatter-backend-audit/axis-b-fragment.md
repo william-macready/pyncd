@@ -24,14 +24,28 @@ file that imports the umbrella [snippet].
 **Finding B1-F1 (process; stale inherited obligation).** There is no required/forbidden/ignored table
 over the write-geometry predicates anywhere in the repo.
 
-Verification trail, re-run and restated in fix round 1 (the earlier draft's narrative did not
-reproduce). Pass 1: `grep -rl forbidden` over `papers/`, `docs/`, `leanncd/docs/`,
-`leanncd/experiments/` and `leanncd/LeanNCD/`, limited to `*.md` and `*.lean`, returns **19** files as
-observed here. That count is sensitive to which directories and globs are included and is *not* the
-load-bearing part of the finding — the intersection and the quotes are. Pass 2: intersecting those 19
-with files that also mention any of `classifyWriteRow`, `baseWriteRowsOk`, `stepWriteRowsOk`,
-`freeExtentsAgree`, `pinnedLiteralsInRange`, `writesCollide` leaves exactly **6**, each of which was
-then opened and read [snippet]:
+Verification trail, re-run and restated in fix round 2 (the previous two narratives did not
+reproduce). **Pass 1** — the exact commands, both run from the repository root, differing only in
+case sensitivity:
+
+```text
+grep -rl  --include='*.md' --include='*.lean' forbidden papers/ docs/ leanncd/docs/ leanncd/experiments/ leanncd/LeanNCD/   → 19 files
+grep -ril --include='*.md' --include='*.lean' forbidden papers/ docs/ leanncd/docs/ leanncd/experiments/ leanncd/LeanNCD/   → 20 files
+```
+
+**Case sensitivity is the real instability in this trail**, and it is the reason two earlier drafts
+failed to reproduce: exactly one file carries the word capitalised as "Forbidden" and is therefore
+invisible to the case-sensitive form — `leanncd/docs/superpowers/plans/2026-08-20-thread-4-nonlinearity.md`,
+the last row of the table below. (A reviewer running these same two commands observed 18 and 19
+rather than 19 and 20; the one-file difference in the *baseline* is a file that does not survive
+pass 2, so it does not move the intersection. The baseline count is the environment-sensitive
+number; the intersection is not.)
+
+**Pass 2** — intersecting each pass-1 result with files that also mention any of
+`classifyWriteRow`, `baseWriteRowsOk`, `stepWriteRowsOk`, `freeExtentsAgree`,
+`pinnedLiteralsInRange`, `writesCollide` gives **6** files from the case-sensitive list and **7**
+from the case-insensitive one — the same 6 plus the capitalised file. All 7 were opened and read
+[snippet]:
 
 | File | What it is |
 |---|---|
@@ -41,9 +55,11 @@ then opened and read [snippet]:
 | `leanncd/docs/superpowers/plans/2026-08-26-nonlinearity-t1-logical-schedule.md` | prose only ("same shape as `baseWriteRowsOk` in Wave F F4") |
 | `docs/superpowers/plans/2026-09-06-pre-scatter-backend-audit.md` | this audit's own plan |
 | `leanncd/LeanNCD/Eval/Plan/Compile.lean` | source, not a document |
+| `leanncd/docs/superpowers/plans/2026-08-20-thread-4-nonlinearity.md` | **sibling case × class table, different predicate family** — reachable only case-insensitively. Does **not** falsify B1-F1: its axes are *case × {Pointwise, Axiswise} × class* over `checkPointwise`/`checkAxiswise`, so it has no row for any write-geometry predicate; it merely *cites* `baseWriteRowsOk`/`stepWriteRowsOk` as the defect family it argues it is not an instance of. See below |
 
-No table in any of them. The two **declining** documents quoted below do *not* appear in this
-intersection, because neither contains the word `forbidden` — they were found by a separate grep for
+So: no required/forbidden/ignored table over the **write-geometry** predicates in any of them. The
+two **declining** documents quoted below appear in neither intersection, because neither contains the
+word `forbidden` in any case — they were found by a separate grep for
 `case-by-class|sibling audit|not required` [snippet].
 
 What actually exists:
@@ -66,8 +82,32 @@ What actually exists:
   [read].
 
 So the "extend the existing table" instruction has been carried forward by at least two documents
-against an artifact that does not exist, and twice explicitly declined. The table in §B1.2 below is
-built from scratch. It reuses only the JAX table's column grammar and its closing gate sentence:
+against an artifact that does not exist, and twice explicitly declined.
+
+**The closest existing precedent for the table in §B1.2, and why it is not that table.**
+`2026-08-20-thread-4-nonlinearity.md` §4 is titled *"Case × class table —
+`checkPointwise`/`checkAxiswise` geometry obligations"*, uses the Required/Forbidden vocabulary, and
+introduces itself thus:
+
+> Required per the slice-plan skill: a new geometry-checking predicate family gets this table as an
+> explicit deliverable even though it is not an *instance* of the write-geometry defect family found
+> four times in F3/F4 (free-extent, pinned-literal, write-map-rank, `stepWriteRowsOk`) — verified
+> below, not assumed, since every `(c)` cell is a candidate instance *N+1* regardless of ancestry.
+
+Its row 15 then discharges exactly that question — the nonlinearity family is not a fifth instance
+because *"there is no second 'target' tensor addressed via an independently-boundable affine map the
+way `commitWrite` (`Scan.lean`) has — this is the structural reason this family is not a 5th
+instance … not merely an unexamined absence"* [read].
+
+That is the same discipline §B1.2 applies, one predicate family over, and it is worth knowing three
+things about it. First, it **confirms** B1-F1 rather than weakening it: it exists precisely because
+the write-geometry table it defers to did not, and it never tabulates a write-geometry predicate.
+Second, its `(c)`-cells-are-candidates-regardless-of-ancestry rule is the rule §B1.3 follows. Third,
+it is the model for the appendability contract in §B1.2 — a case × class table whose classes stayed
+stable while its rows grew.
+
+The table in §B1.2 below is therefore built from scratch. It reuses only the JAX table's column
+grammar and its closing gate sentence:
 
 > Every forbidden cell needs a located test. No cell may be silently ignored.
 

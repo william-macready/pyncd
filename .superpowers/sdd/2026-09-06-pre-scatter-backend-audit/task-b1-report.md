@@ -260,3 +260,117 @@ the call-site sweep's "three known instances" entry 1 no longer says "sole".
    tradeoff rather than resolving it unilaterally.
 3. **B1-F9 remains deliberately unclosed** (whether a zero-extent scatter output is rejected further
    down the scatter path is B2's territory). Unchanged from the initial report.
+
+---
+
+# Fix round 2 — report
+
+**Status: DONE.** One item (Accuracy 1). Nothing else touched.
+
+## Evidence the coordinator required
+
+**The two grep commands, run from the repository root, and the counts they actually produce here:**
+
+```text
+grep -rl  --include='*.md' --include='*.lean' forbidden papers/ docs/ leanncd/docs/ leanncd/experiments/ leanncd/LeanNCD/
+  → 19 files → intersection 6
+
+grep -ril --include='*.md' --include='*.lean' forbidden papers/ docs/ leanncd/docs/ leanncd/experiments/ leanncd/LeanNCD/
+  → 20 files → intersection 7
+```
+
+A `diff` of the two sorted file lists gives exactly one line, the file the review named:
+`leanncd/docs/superpowers/plans/2026-08-20-thread-4-nonlinearity.md`.
+
+**Note a residual discrepancy, reported rather than smoothed over.** The review observed **18** and
+**19**; I observe **19** and **20**. The mechanism is identical (case sensitivity) and the delta file
+is identical, so the difference is one file in the *baseline* that does not survive pass 2. The
+decisive check: the **intersections match the review exactly** — 6 case-sensitive and 7
+case-insensitive, the same 7 paths, verified by re-running pass 2 against both lists:
+
+```text
+intersection, case-sensitive  (6): boolean_predicate_output_evalplan.md, predicate_boolean_backend_parity.md,
+                                   wave_f_scanplan_proposal.md, 2026-08-26-nonlinearity-t1-logical-schedule.md,
+                                   2026-09-06-pre-scatter-backend-audit.md, Eval/Plan/Compile.lean
+intersection, case-insensitive (7): the above + 2026-08-20-thread-4-nonlinearity.md
+```
+
+I did not chase the one non-intersecting baseline file, because it cannot affect the finding and the
+fragment now says so explicitly rather than claiming a stable baseline count.
+
+| Required | Observed |
+|---|---|
+| Build job count from a real run | `lake build` → **`Build completed successfully (8660 jobs).`** |
+| Production diff still empty | A `--stat` diff of HEAD restricted to `leanncd/LeanNCD`, `leanncd/lakefile.toml` and `leanncd/test` returns **nothing** |
+
+## The three required changes
+
+1. **Exact command including case sensitivity, with the count it actually produces.** B1-F1 now
+   opens with both commands in a fenced block, each annotated with the count observed here (19 and
+   20). Previously the fragment gave a bare `grep -rl forbidden` in prose and a single number, which
+   is what made it unreproducible twice.
+
+2. **Seventh row added.** `2026-08-20-thread-4-nonlinearity.md` is now the last row of the
+   intersection table, characterised as *"sibling case × class table, different predicate family —
+   reachable only case-insensitively"*, with the one-line non-falsification note the coordinator
+   asked for: its axes are *case × {Pointwise, Axiswise} × class* over
+   `checkPointwise`/`checkAxiswise`, so it has no row for any write-geometry predicate; it merely
+   *cites* `baseWriteRowsOk`/`stepWriteRowsOk` as the defect family it argues it is not an instance
+   of.
+
+3. **Hedge replaced.** The old hedge ("sensitive to which directories and globs are included") is
+   gone, along with the claim that reproducibility rests on "the intersection and the quotes" — which
+   was the part that came out wrong at 19. The new sentence names the actual cause: *"Case sensitivity
+   is the real instability in this trail, and it is the reason two earlier drafts failed to reproduce:
+   exactly one file carries the word capitalised as 'Forbidden' and is therefore invisible to the
+   case-sensitive form."* It then states that the **baseline** count is the environment-sensitive
+   number while the **intersection** is not — which is the correct division, and is now backed by
+   having run pass 2 against both lists rather than asserted.
+
+## One addition beyond the three, flagged for the reviewer's judgement
+
+The coordinator's remark that the omitted file "is not inert" was right, and I judged a single row
+insufficient for it, so B1-F1 gained a short closing subsection: **"The closest existing precedent for
+the table in §B1.2, and why it is not that table."** It quotes that file's §4 preamble — which states
+the slice-plan rule that *"a new geometry-checking predicate family gets this table as an explicit
+deliverable even though it is not an instance of the write-geometry defect family found four times in
+F3/F4 … since every `(c)` cell is a candidate instance N+1 regardless of ancestry"* — and its row 15,
+which discharges the fifth-instance question structurally (*"there is no second 'target' tensor
+addressed via an independently-boundable affine map the way `commitWrite` (`Scan.lean`) has"*).
+
+Three reasons this is worth the space rather than a citation:
+
+- it **confirms** B1-F1 instead of weakening it — that table exists precisely because the
+  write-geometry one it defers to did not, and it never tabulates a write-geometry predicate;
+- its "(c) cells are candidates regardless of ancestry" rule is the rule §B1.3 follows, so §B1.3 now
+  has a named precedent rather than looking like a convention I invented;
+- it is a worked example of the appendability contract §B1.2 owes Task B2 — a case × class table
+  whose classes stayed stable while its rows grew.
+
+If the reviewer would rather B1-F1 stayed at a one-line note, this subsection is cleanly removable
+without touching anything else.
+
+## Confirmation that nothing else moved
+
+The coordinator asked that the census, groups, spikes and other findings not be disturbed. Verified:
+
+- `git diff --stat` → **one file, 52 insertions / 12 deletions**; `git diff -U0` → **four hunks, all
+  inside B1-F1** (the surrounding-context lines name only B1-F1 prose).
+- Spikes untouched: no modification to either spike file or either captured output this round.
+- Invariants re-checked by script after the edit and **unchanged**: 12 rows × 14 columns = 168 cells,
+  `24 a / 16 b / 86 c / 18 — / 24 ▷`; 17 groups summing to 86; no unescaped pipes in table code
+  spans; no `file:NNN` citations; exactly one append marker, and it is the last line.
+- Two cosmetic defects introduced by my own first draft of this round were caught and fixed before
+  commit: a nested-italics collision inside the quoted §4 preamble (now a blockquote), and a
+  sentence accidentally glued onto the end of the precedent paragraph.
+
+## Residual concerns
+
+Unchanged from fix round 1, and the reviewer has agreed with all three dispositions: B1-F10 stands;
+§B1.2 fact 2 stays a labelled conditional (making it a measurement needs a `strided` constructor,
+i.e. production code); B1-F9 stays deliberately unclosed as B2's territory.
+
+Nothing new. The only thing I would still call out is process rather than content: this one
+verification trail took three rounds because the first two drafts reported a count without
+recording the command that produced it. The command is now in the fragment verbatim, which is what
+makes it checkable.
