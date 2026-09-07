@@ -224,8 +224,9 @@ of the round-4 fix, since resolution is reachable only after validation.
 Agreed, it was a category slip. Both rows now read `n/a (no invariant)` in the Failure-mode column,
 and their "Producer establishes" / "Consumer re-checks" cells say plainly that nothing establishes
 the claim, nothing checks it, and the system does not hold it. The `jaxAssignSupported` reference is
-removed from those cells; it survives only in §4.7 as one of the three refutation counts, where it
-belongs. The vocabulary departure is stated in §3's preamble rather than buried in a cell.
+removed from those cells; it survives in §1's scope list and row E2, where it belongs (not, as first
+written here, "only in §4.7 as one of the three refutation counts" — §4.7 does not mention it at
+all). The vocabulary departure is stated in §3's preamble rather than buried in a cell.
 
 ### Minor 7 — `PlanBindings` grep overstatement
 

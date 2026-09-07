@@ -5,7 +5,9 @@ production code was changed (`git diff 2159d28 HEAD -- leanncd/LeanNCD/` empty).
 
 Construction evidence lives in `axis-a-spikes/AxisABoundaryProbe.lean` (a copy of the gitignored
 `leanncd/spikes/AxisABoundaryProbe.lean`) with its verbatim run recorded in
-`axis-a-spikes/AxisABoundaryProbe.output.txt`. Spike blocks are cited below as `S1`…`S11`.
+`axis-a-spikes/AxisABoundaryProbe.output.txt`. Spike blocks are cited below as `S1`…`S10`. (`S11`'s
+index contrast is not sound evidence for any claim in this fragment — see BND-05, §4.6 — and is not
+cited below.)
 
 ## 1. Scope
 
@@ -36,7 +38,7 @@ Construction evidence lives in `axis-a-spikes/AxisABoundaryProbe.lean` (a copy o
 |---|---|
 | Baseline and post-audit builds are green at 8660 jobs | `[built]` `cd leanncd && lake build` → `Build completed successfully (8660 jobs).` |
 | The repo has **12** `private mk ::` declaration sites, not 16 | `[read]` `grep -rn --include=*.lean -E "^\s*(structure .* where )?private mk ::" .` (excluding `.lake`) returns 12 declaration lines; the remaining `private mk ::` grep hits are prose inside doc comments. Ten are under `Eval/Plan` (`CheckedAssignPlan`, `CheckedPointwisePlan`, `CheckedAxiswisePlan`, `CheckedScanPlan`, `CheckedPlanBlock`, `CheckedEvalPlan`, `RequiredBindings`, `CheckedPreparedBindings`, `JaxKernel`, `JaxExecutable`); the other two are `CheckedScheduledProgram` and `RouteFragments.lean`'s. No other constructor-privatization idiom is used anywhere. |
-| The hand-constructible checked-surface set audited here is **three** types, and two further public wrappers were excluded with reason | `[read]` type census of `Eval/Plan` minus the ten `private mk ::` types. Public-constructor types whose fields include an already-validated payload: `PreparedPlan`, `PlanBindings`, `JaxExecutableCandidate` — the three that admit genuinely unconstrained field values. **`SomeJaxKernel` and `SomeJaxExecutable` are also public-constructor wrappers over `private mk ::` payloads and are deliberately excluded**, not overlooked: each has a dependent second field (`kernel : JaxKernel evidence`, `executable : JaxExecutable evidence`) that forces the exposed index to be the one a validated payload was built with, so the wrapper admits no state its payload does not already permit. The brief named only `PreparedPlan` and `JaxExecutableCandidate`; `PlanBindings` is the one it omitted, and it is the type on which every finding below rests. |
+| The hand-constructible checked-surface set audited as its own boundary family here is **three** types, and other public hand-constructible types were excluded with reason | `[read]` type census of `Eval/Plan` minus the ten `private mk ::` types. Public-constructor types whose fields include an already-validated payload, audited directly as their own boundary family: `PreparedPlan`, `PlanBindings`, `JaxExecutableCandidate`. **`JaxKernelCandidate`** — a public inductive over the public structures `OrderedAffineTableKernelCandidate` and `EinsumExperimentKernelCandidate` — is also hand-constructible, and its `tables`/`operands`/`outputAxes` fields are genuinely unconstrained; it is not omitted from the audit, only from this list of three, because it is covered as row E9 (`re-checked`, via `validateAffineTable`/`validateEinsum`), and both S8 and S11 hand-build it directly as scaffolding for their own constructions. **`SomeJaxKernel` and `SomeJaxExecutable` are also public-constructor wrappers over `private mk ::` payloads and are deliberately excluded**, not overlooked: each has a dependent second field (`kernel : JaxKernel evidence`, `executable : JaxExecutable evidence`) that forces the exposed index to be the one a validated payload was built with, so the wrapper admits no state its payload does not already permit. The brief named only `PreparedPlan` and `JaxExecutableCandidate`; `PlanBindings` is the one it omitted, and it is the type on which every finding below rests. |
 | The unchecked-name axis is a **documented, test-pinned deliberate decision**, recorded in four places | `[read]` (a) `Prepared.lean`, `checkPreparedBindings`'s doc comment: "Names remain deliberately unauthenticated: positional raw IR can prove slots and required-name uniqueness, not origins."; (b) `LeanNCD/Eval/AGENTS.md`, the `Prepared.lean` row: "Raw plans prove slots but cannot authenticate names."; (c) `test/Eval/Plan/CompileTest.lean`, comment "Exact publication is structural slot identity, not name authentication … changing only names is valid", immediately followed by a live `#guard` asserting `checkPreparedBindings` returns `.ok` on a plan whose every `materializedNames` entry has been renamed to `"renamed"`; (d) `experiments/jax_bridge/README.md`: "Every named codegen entry first validates the prepared binding sidecar against the raw plan's exact publication slots; raw IR cannot authenticate the user-visible names themselves." |
 | Every production `PreparedPlan` consumer in `LeanNCD/` routes through `checkPreparedBindings` | `[read]` the complete consumer list is `pack`, `unpack`, `runPreparedDense`, `packChecked`, `unpackChecked`, `materializedSignatures`, `preparedBindingsTied`, `stepTiedToPreparedStep`, and `checkPreparedBindings` itself; each either calls it or receives the `CheckedPreparedBindings` a caller obtained from it |
 | No function anywhere takes `PlanBindings` as a parameter | `[read]` `grep -rn --include=*.lean "PlanBindings" LeanNCD/ experiments/` returns **16 hits**: one `structure` declaration, one `PreparedPlan.bindings` field, and fourteen mentions inside doc comments. None is a parameter binder — the type is reachable only through `PreparedPlan.bindings`, which is why its own invariants are checked, if at all, by `PreparedPlan`'s consumers rather than by anything it owns. |
@@ -54,7 +56,7 @@ Construction evidence lives in `axis-a-spikes/AxisABoundaryProbe.lean` (a copy o
 | The declaration-blind signature producer is caught downstream, loudly | `[snippet]` S6 — `prepareEvalPlan sched (InputSignature.ofDenseInputs …)` on a program declaring a `predicate` input fails with `InputSignatureError.dtypeMismatch "Z" bool f64` at Step B |
 | A validated JAX kernel cannot be re-used at a non-`.assign` step index | `[snippet]` S8 — `Y[i] := relu(X[i])` lowers to `#["assign", "pointwise"]`; a candidate whose step-0 einsum kernel is repeated at index 1 is rejected as `JaxExecutableValidationError.invalidCandidate` — with no step index and no underlying cause |
 | `PreparedPlan.warnings` can be silently emptied AND silently fabricated | `[snippet]` S10 — a plan whose producer recorded one real `paddedAccess` warning runs `.ok` with `warnings reported = 0` after `warnings := []`; a plan whose producer recorded none runs `.ok` reporting a borrowed warning about a read that does not exist in it |
-| The JAX support gate's step locator is wrong at every public entry | `[snippet]` S11 — for a two-statement plan whose step **1** has a Boolean destination, the located gate called directly gives `JaxSupportError.destinationDType 1 3 bool`, while the only public entry a caller can reach reports `destinationDType **0** 3 bool` — `validateAndConstructKernel` hardcodes `checkJaxAssignSupport sigs 0` |
+| The plan-level JAX executable path discards `checkJaxAssignSupport`'s located cause; the gate itself is correctly located at every real caller | `[snippet]` S8 — reusing a validated JAX kernel at a `.pointwise` step yields `JaxExecutableValidationError.invalidCandidate`, with no step index and no underlying cause; `[read]` `jaxSupportOk` hardcodes `checkJaxAssignSupport sigs 0` and returns only a `Bool`, and `validateAndConstructExecutable`'s well-formedness branch throws bare `.invalidCandidate`. `checkJaxAssignSupport` itself is a plain public `def`, correctly located, and is reached with a real outer step index by `EvalPlanCodegen.requireJaxSupport` at a plan-level call site (`renderAffineNode`); `validateAndConstructKernel`'s own hardcoded `0` is the documented standalone-entry convention, not a defect — `requireJaxSupport`'s doc states "0 at a standalone one", and `test/Eval/Plan/ExecutableTest.lean` pins exactly this: its `step1BoolAssign` fixture (commented as step 1 of the two-step `step1BoolRaw` plan) is validated in isolation via `affineOutcome`/`jaxOutcome`/`validateAndConstructKernel`, and the `#guard rejectedBy (.unsupported (.sourceDType 0 0 0 .bool))` asserting index `0` there is green. |
 | Neither `prepareEvalPlan` nor `evalScheduled` reads a cached `sched` field after validation | `[read]` `prepareEvalPlan` binds `checked.declEnv`, `checked.explicitSizes`, `checked.extNames`; `evalScheduled` binds `checked.explicitSizes`. The only raw reads on either side are `sched.decls`/`sched.stmts`, which `ScheduledProgram`'s own contract makes authoritative (not cached products), and which are the exact values `validateScheduled` validated |
 | `evalPlain sched.decls` and `checked.declEnv` provably cannot disagree | `[read]` `buildDeclEnv` rejects a second tensor-bearing declaration of a name (`CompileError.duplicateTensorDecl`), so `combineFor`'s first-match `decls.find?` and a `DeclEnv` lookup see the same declaration for every name that survives validation |
 
@@ -162,7 +164,12 @@ defect: it costs nothing today and is worth one line of cleanup if `DeclEnv` eve
 ### 4.1 Reconciliation with the brief's mechanical rule
 
 The rule: a finding is a row where Verdict = `assumed-unchecked` AND Failure mode ≠
-`loud typed error`. Applied literally to §3:
+`loud typed error`. **Amendment:** the rule presupposes an invariant that is assumed-but-unchecked —
+it has no subject to apply to on a row whose Invariant column records no invariant at all. Rows
+carrying `n/a (no invariant)` (A7, C6; see §3's preamble) therefore fall outside the rule entirely,
+regardless of whatever value happens to sit in their Failure-mode column — this is a clause on the
+rule's own domain, not an extra verdict value or an ad hoc third exception. Applied to the remaining
+rows:
 
 | Rows with Verdict `assumed-unchecked` | Failure mode | Finding under the rule? | Number |
 |---|---|---|---|
@@ -172,8 +179,8 @@ The rule: a finding is a row where Verdict = `assumed-unchecked` AND Failure mod
 | E8 | silently-wrong-answer | yes | BND-01 (its `Executable.lean` face) |
 | D5 | silent no-op | yes | BND-04 |
 | E10 | silent no-op | yes | BND-05 |
-| A7 | *n/a (no invariant)* | **no** — stated departure, §3 preamble | — |
-| C6 | *n/a (no invariant)* | **no** — stated departure, §3 preamble | — |
+| A7 | *n/a (no invariant)* | **no** — outside the rule's domain (amendment above); also §3 preamble | — |
+| C6 | *n/a (no invariant)* | **no** — outside the rule's domain (amendment above); also §3 preamble | — |
 
 **8 `assumed-unchecked` rows; 6 of them are findings under the rule; those 6 map to 4 distinct
 defects (BND-01, BND-02, BND-04, BND-05)**, because one defect spans several consumers of the same
@@ -258,6 +265,22 @@ out-of-rule entry.
 - **Note on scope:** this is not the out-of-range-slot defect the round-4 review already fixed. Slots
   are fully checked now (`slotOutOfRange`, `publicationSlots`, `storeArityMismatch` — all confirmed
   live in `AdapterTest`). It is the orthogonal *name* axis, which that fix did not touch.
+- **Retire list — required if BND-01/BND-02 are ever fixed.** Landing a name-authenticity check for
+  either axis turns currently-green documentation and a currently-green test red, and both must be
+  retired in the same commit as the fix, not left for a later agent to discover. Cited here, not
+  edited, per this audit's constraints:
+  1. `test/Eval/Plan/CompileTest.lean` — the `#guard` asserting `checkPreparedBindings` accepts
+     `materializedNames.map fun b => { b with name := "renamed" }`, and its comment above it ("Exact
+     publication is structural slot identity, not name authentication … changing only names is
+     valid"). The build goes red the moment a name check is added if this is not retired in the same
+     commit.
+  2. `Prepared.lean` — `checkPreparedBindings`'s doc sentence "Names remain deliberately
+     unauthenticated: positional raw IR can prove slots and required-name uniqueness, not origins."
+  3. `LeanNCD/Eval/AGENTS.md` — the `Prepared.lean` row's contract line "Raw plans prove slots but
+     cannot authenticate names."
+  4. `experiments/jax_bridge/README.md` — "raw IR cannot authenticate the user-visible names
+     themselves."
+  5. Re-grep for further siblings of (1) before assuming this list is complete — see §5 item 5.
 
 ### 4.4 BND-03 — four doc comments make a stale producer-discipline claim, and two misname the shared resolver (documentation defect, **outside the mechanical rule**)
 
@@ -327,32 +350,40 @@ out-of-rule entry.
   check to add short of making `warnings` a projection of the checked artifact rather than a field.
   Recorded so a fix wave can decide deliberately rather than discover it.
 
-### 4.6 BND-05 — the JAX support gate's located cause and step index do not survive to any public caller
+### 4.6 BND-05 — the plan-level JAX executable path discards `checkJaxAssignSupport`'s located cause
 
 - **Row:** E10. **Severity S4** (diagnostic-quality). **Scatter: adjacent.**
 - **What is unchecked:** `checkJaxAssignSupport` is carefully located — it takes a `nodeIndex` and
-  every `JaxSupportError` constructor carries it. Three separate layers then discard that work:
-  `validateAndConstructKernel` hardcodes `checkJaxAssignSupport sigs 0`; `jaxSupportOk` (the `Bool`
-  view the plan-level validators use) drops the located cause entirely; and
-  `validateAndConstructExecutable` collapses every per-step tie or well-formedness failure into a
-  bare `invalidCandidate` with no index.
-- **Construction and observed output** (`S11`), on a two-statement plan whose step **1** has a
-  Boolean destination:
-
-  ```
-  S11 step kinds: #["assign", "assign"]
-  S11 located gate at nodeIndex 1: JaxSupportError.destinationDType 1 3 bool
-  S11 public kernel entry reports: JaxKernelValidationError.unsupported (JaxSupportError.destinationDType 0 3 bool)
-  ```
-
-  The locator is not merely absent — it is **wrong**: the public entry reports node index `0` for a
-  failure at step 1, which is worse than reporting none, because `0` is a plausible answer.
-  `S8` shows the plan-level half: a kernel reused at a `.pointwise` step yields
-  `JaxExecutableValidationError.invalidCandidate` with no step index and no underlying cause.
-- **Judgement:** diagnostic-quality only — nothing incorrect executes, since every one of these
-  paths correctly *rejects*. But it directly contradicts the located-rejection posture
-  `Executable.lean`'s own module doc claims for this gate, and it is the layer a Scatter lowering
-  would extend with new rejection constructors.
+  every `JaxSupportError` constructor carries it, and it is correctly threaded at every real caller:
+  `EvalPlanCodegen.requireJaxSupport` passes the real outer step index at its plan-level call site
+  (`renderAffineNode`, and its `einsum`-mode sibling), and an explicit index at a standalone call.
+  The locator loss is one layer up, in the plan-level validators: `jaxSupportOk` (the `Bool` view
+  those validators use) hardcodes `checkJaxAssignSupport sigs 0` and discards the located cause down
+  to a `Bool`; `validateAndConstructKernel` likewise hardcodes `checkJaxAssignSupport sigs 0` for its
+  own single-candidate check — the correct convention there, see below, but it means nothing upstream
+  of it ever receives a per-step index either; and `validateAndConstructExecutable` collapses every
+  per-step tie or well-formedness failure — including `stepTiedToPreparedStep`'s own per-step
+  `mapIdx` check, which does know which index failed — into a bare `invalidCandidate`, with no index
+  and no cause.
+- **`0` at a standalone entry is a documented convention, not a bug.** `requireJaxSupport`'s doc
+  comment states it directly: "Located at `nodeIndex` — the real outer step index at a plan-level
+  caller, `0` at a standalone one." `test/Eval/Plan/ExecutableTest.lean` pins exactly this: its
+  `step1BoolAssign` fixture is commented as step **1** of the two-step `step1BoolRaw` plan, but the
+  `#guard rejectedBy (.unsupported (.sourceDType 0 0 0 .bool))` that checks it validates it in
+  isolation, through the standalone `affineOutcome`/`jaxOutcome`/`validateAndConstructKernel` path —
+  and asserting index `0` there is intended and green. An earlier version of this finding read that
+  `0` (from `validateAndConstructKernel`'s own hardcoded call) as evidence the locator is "wrong at
+  every public entry"; it is not — a standalone entry has no outer step to report, `0` is its
+  documented sentinel, and `checkJaxAssignSupport` itself is reached correctly-located by
+  `requireJaxSupport` at the one production entry that is NOT standalone. A future reader should not
+  re-derive this contrast as a defect.
+- **Construction and observed output** (`S8`): a validated JAX kernel, built and validated at step 0
+  of an assign/pointwise plan, reused at step 1 (a `.pointwise` step) is rejected as
+  `JaxExecutableValidationError.invalidCandidate` — no step index, no underlying cause.
+- **Judgement:** diagnostic-quality only — nothing incorrect executes, since every one of these paths
+  correctly *rejects*. But `validateAndConstructExecutable`'s collapse throws away information
+  `stepTiedToPreparedStep`/`JaxExecutableWellFormed` already compute, and it is the layer a Scatter
+  lowering would extend with new rejection constructors.
 
 ### 4.7 BND-01-candidate (input dtype at the runtime input boundaries) — **REFUTED**
 
