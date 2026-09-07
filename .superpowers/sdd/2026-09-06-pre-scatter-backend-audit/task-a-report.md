@@ -270,3 +270,98 @@ turns a green test red and contradicts two prose contracts. The retire-list:
 BND-03 (six comment sites) and BND-05 (locator plumbing) are independent and can land in any order.
 BND-04 is a design question — whether `warnings` should be a projection of the checked artifact
 rather than a public field — and should not be bundled with the name fix.
+
+---
+
+# Fix round 2 — report
+
+**Status: DONE.** All five items addressed: two round-1-introduced errors (New Important 1, New
+Important 2), two controller rulings (Ruling 1, Ruling 2), and one cosmetic correction to this
+report. No production code changed; no new construction spikes were needed.
+
+**Build:** `cd leanncd && "$HOME/.elan/bin/lake" build` → `Build completed successfully (8660 jobs)`
+— unchanged from baseline.
+**Diff:** `git diff 2159d28 HEAD -- leanncd/LeanNCD/` → **empty**.
+
+## Quote verification (required evidence)
+
+Both of the controller's quotes were checked against source before editing anything, per the
+instruction to report rather than edit around a misquote. **Both are verbatim correct:**
+
+- `EvalPlanCodegen.lean`'s `requireJaxSupport` doc comment reads exactly: "Located at `nodeIndex` —
+  the real outer step index at a plan-level caller, `0` at a standalone one."
+- `test/Eval/Plan/ExecutableTest.lean` pins `rejectedBy (.unsupported (.sourceDType 0 0 0 .bool))`
+  for `step1BoolAssign` — a fixture the file's own comment (§"(c)", line above `step1BoolSigs`)
+  labels as step **1** of the two-step `step1BoolRaw` plan — validated through the standalone
+  `affineOutcome`/`jaxOutcome`/`validateAndConstructKernel` path, which reports index `0`. Green.
+
+Also independently confirmed while re-grounding BND-05: `checkJaxAssignSupport` is a plain public
+`def` (not privatized) taking a real `nodeIndex`, and `EvalPlanCodegen.requireJaxSupport` is a real
+external caller reached at a genuine plan-level index by `renderAffineNode` (its own doc comment:
+"derived for a plan, explicit for a standalone call") — so the round-1 claim that the gate is "wrong
+at every public entry" was contradicted by evidence already in the fragment's own citations.
+
+## Disposition
+
+### New Important 1 — BND-05 re-grounded on S8; S11 index-contrast dropped
+
+- §2's Verified-facts row claiming the JAX support gate's locator is "wrong at every public entry"
+  is replaced with a row grounded on `S8` (the plan-level loss: `jaxSupportOk` hardcodes
+  `checkJaxAssignSupport sigs 0` and drops the cause to a `Bool`; `validateAndConstructExecutable`
+  throws bare `.invalidCandidate`) plus `[read]` citations of `requireJaxSupport`'s doc and the
+  `ExecutableTest.lean` guard confirming `0` is the documented standalone sentinel.
+- §4.6 (BND-05) is rewritten: title changed from "…do not survive to any public caller" (false — they
+  do, at the one real plan-level caller) to "the plan-level JAX executable path discards
+  `checkJaxAssignSupport`'s located cause". The `S11` construction block and its "wrong" conclusion
+  are removed; the section now states plainly that an earlier version misread `0` as a defect and
+  that a future reader should not re-derive the same contrast.
+- The fragment's spike-range header now reads `S1`…`S10` with a one-line note that `S11`'s index
+  contrast is not cited as evidence for any surviving claim. `S11` itself was not deleted (it is
+  gitignored scratch, and the constraint was to edit the fragment, not the spikes) and is still
+  named, correctly, in the census row as one of two spikes that hand-build `JaxKernelCandidate`.
+- Row E10 in §3.5 needed no change — its existing wording ("`validateAndConstructKernel` hardcodes
+  `nodeIndex 0`") was already accurate and was not part of the false claim.
+
+### New Important 2 — census row's exhaustiveness claim corrected
+
+The row's "the three that admit genuinely unconstrained field values" is replaced: `JaxKernelCandidate`
+(a public inductive over the public structures `OrderedAffineTableKernelCandidate` and
+`EinsumExperimentKernelCandidate`, confirmed by reading `Executable.lean`) is named explicitly as
+also hand-constructible with genuinely unconstrained `tables`/`operands`/`outputAxes` fields, audited
+separately as row E9. The three-type list is now scoped explicitly to "audited directly as their own
+boundary family" rather than implied to be the complete hand-constructible complement.
+
+### Ruling 1 — retire list lifted into the fragment
+
+The five-item retire list (verbatim from this report's "Suggested handling") is now cited directly in
+§4.3 (the BND-02 section), so it survives the fragment-only merge into
+`papers/pre_scatter_backend_audit.md`. Nothing named in the list was edited — `CompileTest.lean`'s
+`#guard`, `Prepared.lean`'s doc sentence, `Eval/AGENTS.md`'s contract line, and
+`jax_bridge/README.md`'s line are all untouched, confirmed by the empty `git diff` above (none of
+those paths are under `leanncd/LeanNCD/` in a way this diff would miss — `Eval/AGENTS.md` and
+`Prepared.lean` both are, and both show no change).
+
+### Ruling 2 — §4.1's rule statement amended, rows untouched
+
+Added an explicit clause to §4.1's mechanical-rule paragraph: rows whose Invariant column records no
+invariant (A7, C6) fall outside the rule's domain entirely, because the rule presupposes an
+invariant that is assumed-but-unchecked. This is stated as a clause on the rule's own scope, not as a
+new verdict value or an ad hoc third exception — reconciling the literal-reading count of 8 with the
+stated 6 by fixing the rule's stated domain rather than the rows. No row in §3 or §4.1's own
+per-row table had its Verdict, Failure mode, or "Finding under the rule?" substance changed; the two
+A7/C6 cells in that table gained a cross-reference to the new amendment, nothing more.
+
+### Cosmetic — Minor 6 disposition sentence
+
+Corrected in this file: `jaxAssignSupported` survives in §1's scope list and row E2, not "only in
+§4.7" (grepped: `jaxAssignSupported` does not appear anywhere in §4.7).
+
+## Constraints honored
+
+- No production code changes (`git diff 2159d28 HEAD -- leanncd/LeanNCD/` empty).
+- `lakefile.toml` untouched; no test module added; nothing "fixed".
+- No subagents dispatched.
+- Every documentation/test site named in New Important 1 and Ruling 1 — `EvalPlanCodegen.lean`,
+  `test/Eval/Plan/ExecutableTest.lean`, `test/Eval/Plan/CompileTest.lean`, `Prepared.lean`,
+  `Eval/AGENTS.md`, `jax_bridge/README.md` — was read and cited, never edited.
+- Prose citations are by identifier, not `file:NNN` line numbers.
