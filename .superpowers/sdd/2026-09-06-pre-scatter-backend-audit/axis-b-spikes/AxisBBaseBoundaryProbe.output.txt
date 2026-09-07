@@ -1,0 +1,9 @@
+(#[some (LeanNCD.Eval.Plan.WriteRowKind.pinned 0), some (LeanNCD.Eval.Plan.WriteRowKind.pinned 1)], true, true, true)
+"S14 (base write off the boundary of advancing dim 1): checkScanPlan .ok; dp = #[0.000000, 7.000000, 0.000000, 0.000000, 1.000000, 1.000000, 0.000000, 1.000000, 1.000000]"
+"S14b (base write pinned to the FAR end of advancing dim 1): checkScanPlan .ok; dp = #[0.000000, 0.000000, 7.000000, 0.000000, 1.000000, 1.000000, 0.000000, 1.000000, 1.000000]"
+"S14c (base write pinned OUT of range on advancing dim 1): checkScanPlan REJECTED: LeanNCD.Eval.Plan.ScanPlanError.writePinnedLiteralOutOfRange true 0 0 #[3, 3]"
+(some 4, some 6, some 5, some 8, some 9)
+(some 0, some 0, some 0, some 0)
+(none, none)
+(true, true, true, true, false)
+(false, true, true, true, false, false)
