@@ -6,7 +6,7 @@ do about it, in what order, and who should do which parts.
 ## Contents
 
 - [How this document is scoped](#how-this-document-is-scoped)
-- [Section 0 — the decision that gates everything](#section-0--the-decision-that-gates-everything)
+- [Section 0 — DECIDED: Decision A (base and step)](#section-0--decided-decision-a-base-and-step)
 - [Section A — Slice 1: write-geometry hardening (implementable now)](#section-a--slice-1-write-geometry-hardening-implementable-now)
 - [Section B — Slice 2: Scatter + affine LHS writes (scoped, not detailed)](#section-b--slice-2-scatter--affine-lhs-writes-scoped-not-detailed)
 - [Section C — the binding surface (independent of Scatter)](#section-c--the-binding-surface-independent-of-scatter)
@@ -23,7 +23,8 @@ a plan for all the next steps, which is in tension with that rule. The resolutio
 - **Section A is a real implementation plan.** It is specified to the standard of
   `.claude/skills/slice-plan/`, and can be executed as-is.
 - **Sections B and C are scoped, not detailed**, on purpose. Slice 2's task list is *not derivable
-  today*: it depends on Section 0's decision, and on the compile errors Slice 1's tripwire produces —
+  today*: it depended on Section 0's decision (now settled — Decision A) and still depends on the
+  compile errors Slice 1's tripwire produces —
   which are the actual work list and do not exist yet. Writing tasks against them now would be
   invention, and invented plan detail is what the audit spent three fix rounds correcting.
 - **When Slice 1 lands, Section B gets promoted into its own plan document**, authored from the
@@ -43,25 +44,63 @@ plausible-but-uncompilable code. Slice 1's changes are mechanical enumerations o
 that is better specified *as a table*; the implementer writes the Lean and compiles it. The
 `check-snippet.sh` obligation therefore sits with the implementer, and Section A says so explicitly.
 
-## Section 0 — the decision that gates everything
+## Section 0 — DECIDED: Decision A (base and step)
 
-**Are affine LHS writes wanted in `base` blocks, or only in `step` blocks?**
+### What the question actually was
 
-This is a scope question about the Scatter feature. Nothing in the code answers it, and it is the
-cheapest high-leverage action available.
+**Within a checked scan, may a strided write row appear in the `base` (initialization) block, or only
+in the `step` (recurrence) block?**
 
-| | Decision A (base allowed) | Decision B (step-only) |
-|---|---|---|
-| `B2-F1` | **16 live, unsafe cells** | 16 cells, all latent |
-| Table census | `24 a / 22 b / 122 c` | `24 a / 26 b / 118 c` |
-| Slice 2 size | larger — a base lowering arm plus a step arm | smaller — step arm only |
-| Barrier 1 | **no defence** (opposite guard polarity) | is the defence |
+This is **scan-scoped**, and an earlier draft of this section did not say so — worth stating plainly
+because the narrower reading changes how limiting the alternative looks. `writeRowKinds` has exactly
+three call sites, all scan machinery (`Scan.lean`'s `checkWrites`, and `Compile.lean`'s Phase 5
+scan-plan construction), and it operates on a `StateWriteMap` — a write into *scan state*. "Base" and
+"step" are a scan's two blocks, not two halves of scatter in general.
 
-`pre_scatter_backend_audit.md` §B2.3 carries a decision-B reading for all fourteen groups G17–G30,
-so the analysis is already written both ways. **Answer this before Slice 2 is planned.** Slice 1 does
-not depend on it.
+**What the decision was never about:** whether the backend admits a plain top-level `Out[2*i] = …`.
+That path is gated by its own `scatterOrAffineLhs` throw sites in `Compile.lean` (seven of them,
+re-counted while authoring), and Slice 2 must open it under either decision. Neither option
+restricted it.
+
+### The decision, and why
+
+**Decision A: strided rows are admitted in both the base and step blocks of a scan.**
+
+Rationale, recorded for whoever reads this after the fact:
+
+- **Excluding base is an arbitrary boundary.** "Affine LHS writes, except when initializing" is not a
+  natural restriction to bake into a capability surface.
+- **The use cases are real.** A strided base write initialises every *k*-th slot and leaves the rest
+  at the zero-fill `zeroThenBaseOverlay` already guarantees: upsample-then-recur (seed even
+  positions, let the recurrence fill the odd ones); interleaving two streams into one state at
+  alternating offsets; dilated/strided convolution state seeding; coarse-to-fine boundary conditions.
+  Under decision B each of these has to seed densely and push the striding into the recurrence —
+  sometimes fine, sometimes contorted.
+- **The cost was accepted knowingly**, see below.
+
+Decision B was the conservative, reversible option — ship step-only, admit base later, with
+`pre_scatter_backend_audit.md` §B2.3's decision-B reading for all fourteen groups G17–G30 making the
+switch a re-read rather than a re-analysis. It was rejected because the asymmetry is not worth
+carrying and because the hardening that makes A safe is work worth doing regardless.
+
+### What Decision A costs — and the consequence for sequencing
+
+| | Under Decision A |
+|---|---|
+| `B2-F1` | **16 live, unsafe cells** — not latent |
+| Table census | `24 a / 22 b / 122 c` (the audit's headline figures) |
+| Slice 2 scope | both lowering arms — a base arm *and* a step arm |
+| Barrier 1 | **no defence at all** — the strided guard has the opposite polarity (`p ≥ contextWidth`), satisfied by every `p` when `contextWidth = 0` |
+
+**Therefore Slice 1 is a blocking prerequisite for Slice 2, not a parallel nicety.** Under decision B
+it would have been prudent; under decision A the 16 cells of `B2-F1` must actually be *closed*, not
+documented, and there is no barrier left to fall back on. Section A's status is promoted accordingly.
 
 ## Section A — Slice 1: write-geometry hardening (implementable now)
+
+**Status: BLOCKING PREREQUISITE for Slice 2**, promoted from "prudent" once Section 0 settled on
+Decision A. Under Decision A `B2-F1`'s 16 cells are live and barrier 1 provides no fallback, so this
+slice is what makes Scatter safe rather than merely tidier.
 
 **Goal.** Make the write-geometry surface fail loudly when a new row kind is added, and give it tests
 that can fail — *before* Scatter extends it. No new capability; no behaviour change except where a
@@ -198,8 +237,10 @@ its failure mode lives.
 
 ## Section B — Slice 2: Scatter + affine LHS writes (scoped, not detailed)
 
-**Not planned here, on purpose.** Its task list is the compile-error list Slice 1's Task 1 produces,
-plus whichever lowering arms Section 0's decision selects. Both are unknown today.
+**Not planned here, on purpose.** Section 0 is now settled — **Decision A**, so *both* lowering arms
+are in scope (base and step) and `B2-F1`'s 16 cells are live. What is still not derivable is the
+other half of this slice's task list: the compile-error list Slice 1's Task 1 produces. Write this
+plan from that list, once it exists.
 
 What is already settled and must be carried into that plan when it is written:
 
