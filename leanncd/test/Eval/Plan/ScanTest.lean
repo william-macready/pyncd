@@ -2433,6 +2433,32 @@ compiler can produce is ever `.advancing`. Every base-phase fixture here is ther
 real `StateWriteMap` through `writeRowKinds`, not hand-assembled from constructors; the two
 hand-assembled guards are flagged as such and both stay inside the reachable kinds. -/
 
+/-! ### The chokepoint upstream of both predicates: `classifyWriteRow`'s two `c == 1` tests
+
+Neither predicate can reject a geometry `classifyWriteRow` mis-recognizes, so the unit-coefficient
+tests are load-bearing for everything below. Each of the two has its own guard here, because each
+fails independently and neither of this Part's `none`-producing fixtures pins the free one — both of
+those rows carry bias `1` as well, so they are refused for a second, independent reason and survive
+a weakening of the coefficient test.
+
+The free branch is the one directly in a strided write's path: with `c == 1` dropped from it, a
+stride-`k` row classifies as `.free 0` and is admitted exactly as if it were stride-1, invisible to
+`freeExtentsAgree` and `pinnedLiteralsInRange` alike (both match on the KIND, which now says
+`.free`). Side benefit worth stating: these guards also pin `classifyWriteRow`'s CURRENT refusal of
+non-unit coefficients, so a slice admitting strided rows must consciously edit a test here — the
+change shows up in a diff instead of arriving silently. -/
+
+-- The free branch: a stride-2 projection is not a recognized write geometry today. Base phase
+-- (`contextWidth = 0`), so the `.advancing` branch cannot absorb it and the free branch is the only
+-- one under test.
+#guard classifyWriteRow 0 #[2] 0 == none
+-- The same at step phase, in the OUTPUT half of the domain (`p = 2 ≥ contextWidth = 2`), so the
+-- guard above cannot stand in for it.
+#guard classifyWriteRow 2 #[0, 0, 2] 0 == none
+-- The advancing branch's own unit test: stride 2 at a CONTEXT position with the advancing bias.
+-- (`unrecognizedStepRows` below is the fixture that catches this one through the predicate.)
+#guard classifyWriteRow 2 #[2, 0] 1 == none
+
 /-! ### `baseWriteRowsOk`, one negated guard per clause -/
 
 -- Clause 1 (every row recognized), isolated: `pointWrite`'s dim-0 row gains coefficient `2`, which
@@ -2485,6 +2511,12 @@ def offBoundaryFaceRows : Array (Option WriteRowKind) := writeRowKinds 2 0 offBo
 -- `dpStepWrite`'s dim-1 row gains coefficient `2`, which `classifyWriteRow` refuses, and dim 1 is
 -- itself an advancing dimension, so clause 2 fails on the same row. No rows array violates clause 1
 -- alone.
+--
+-- That co-violation is not what makes this pair worth having. These two guards are the only
+-- assertions anywhere in the suite that catch a weakened `.advancing` CLASSIFICATION: dropping
+-- `c == 1` from `classifyWriteRow`'s advancing branch fails exactly this pair and nothing else, so
+-- they carry the step-phase half of the chokepoint's unit-coefficient rule, not merely a redundant
+-- record of clause 1.
 def unrecognizedStepWrite : StateWriteMap :=
   { dpStepWrite with map := { coeffs := #[#[1, 0], #[0, 2]], bias := #[1, 1] } }
 
@@ -2499,12 +2531,24 @@ def unrecognizedStepRows : Array (Option WriteRowKind) := writeRowKinds 2 2 unre
     `true` survives the whole suite, and the honest reason is that clauses 2 and 3 already imply it,
     not that no fixture covers it.
 
-    Because this copy is FROZEN, the agreement guard below is also a tripwire on clauses 2-4: any
-    change to them that the copy does not receive breaks it. That is deliberate and is the notice
-    this file wants — if a later slice weakens clause 3 (adding a row kind its fall-through admits,
-    say), clause 1 stops being redundant and the redundancy claim above stops being true, so the
-    guard should break rather than keep asserting it. Restoring it means re-deriving this copy from
-    the changed predicate and re-checking that the claim still holds. -/
+    **The proof, so a reader hitting the failure can re-derive it rather than re-guess.** Two lines,
+    for arbitrary rank and arbitrary `advancingDims`: clause 2 forces `rows.getD d none` to be
+    `some (.advancing i)` at every `(d, i)` of `advancingDims.zipIdx`, so every advancing dimension's
+    row is `some`; clause 3 forces every index NOT in `advancingDims` to be `some (.free _)`. Every
+    index of `rows` is in exactly one of those two sets, so clauses 2 ∧ 3 imply
+    `rows.all Option.isSome`, which is clause 1.
+
+    **What the agreement check below is and is not.** It is a decidable SPOT CHECK of that proof over
+    a finite window — rank-2 rows, `advancingDims ⊆ {0, 1}`, output ranks 0-2 — not a general result.
+    The general claim is the two-line argument above; the check exists so that a change invalidating
+    the argument is noticed by the build rather than by a later reader.
+
+    Because this copy is FROZEN, the check is also a tripwire on clauses 2-4: any change to them the
+    copy does not receive breaks it. That is deliberate and is the notice this file wants — if a
+    later slice weakens clause 3 (adding a row kind its fall-through admits, say), clause 1 stops
+    being redundant and the claim above stops being true, so the check should break rather than keep
+    asserting it. Restoring it means re-deriving this copy from the changed predicate and
+    re-checking the argument by hand. -/
 def stepWriteRowsOkNoClause1 (advancingDims : Array Nat) (outputShapeSize : Nat)
     (rows : Array (Option WriteRowKind)) : Bool :=
   (advancingDims.toList.zipIdx.all (fun (d, i) => rows.getD d none == some (.advancing i))) &&
@@ -2523,13 +2567,21 @@ def allRowKinds : List (Option WriteRowKind) :=
   [none, some (.pinned 0), some (.pinned 1), some (.free 0), some (.free 1)
   , some (.advancing 0), some (.advancing 1)]
 
--- Exhaustive over all 49 rank-2 rows arrays built from those kinds, all four `advancingDims`
--- subsets of `{0, 1}`, and output ranks 0-2: the two predicates agree everywhere, so clause 1 is
--- decidably redundant and no fixture can isolate it.
-#guard allRowKinds.all (fun r0 => allRowKinds.all (fun r1 =>
-  ([#[], #[0], #[1], #[0, 1]] : List (Array Nat)).all (fun adv =>
-    ([0, 1, 2] : List Nat).all (fun n =>
-      stepWriteRowsOk adv n #[r0, r1] == stepWriteRowsOkNoClause1 adv n #[r0, r1]))))
+-- The spot check: all 49 rank-2 rows arrays over those kinds x all four `advancingDims` subsets of
+-- `{0, 1}` x output ranks 0-2, 588 cases. A `run_cmd` rather than a `#guard` so the diagnostic
+-- states the CLAIM — a bare `#guard` failure prints only "Expression evaluated to false", which
+-- reads like a stale test rather than the notice it is.
+run_cmd do
+  let agree := allRowKinds.all (fun r0 => allRowKinds.all (fun r1 =>
+    ([#[], #[0], #[1], #[0, 1]] : List (Array Nat)).all (fun adv =>
+      ([0, 1, 2] : List Nat).all (fun n =>
+        stepWriteRowsOk adv n #[r0, r1] == stepWriteRowsOkNoClause1 adv n #[r0, r1]))))
+  unless agree do
+    throwError "`stepWriteRowsOk`'s clause 1 is no longer implied by clauses 2-3, or clauses 2-4 \
+changed without updating `stepWriteRowsOkNoClause1`: re-derive the copy from the current predicate \
+and re-check the two-line argument in its docstring. Do NOT weaken this check — if clause 1 has \
+become load-bearing, that is a real change to the admitted write geometry and the redundancy claim \
+in this Part's header must be retracted with it."
 
 -- Clause 2 (each advancing dimension is `.advancing i` at its OWN context position), isolated:
 -- `dpStepWrite`'s dim-0 row becomes a `.free` projection of the block output instead of the
