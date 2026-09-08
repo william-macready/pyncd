@@ -273,6 +273,22 @@ What is already settled and must be carried into that plan when it is written:
   `contextWidth` decision**, because the witness must supply a `contextWidth` value. Build this
   before, or as, the strided branch is written.
 
+  **Slice 1 also pinned part of this surface, and left a named remainder.** Slice 1's Task 2 landed
+  three `classifyWriteRow` guards after its reviewer found a **live** unpinned weakening: dropping
+  `c == 1` from the free branch survived the entire 8660-job suite, admitting a stride-k row as
+  `.free 0` — invisible to `freeExtentsAgree` and `pinnedLiteralsInRange`, and exactly this defect
+  family's shape on exactly the constructor this slice adds. Both coefficient tests
+  (free branch and advancing branch) are now pinned, each with a mutation cycle firing only its own
+  guards. **A useful side effect: `classifyWriteRow`'s current rejection of non-unit coefficients is
+  now asserted, so this slice must consciously edit a test to admit strided rows** — the change
+  appears in a diff instead of happening silently.
+
+  **The remainder, deliberately not closed by Slice 1** (out of its brief's scope, and the guards
+  belong with the branch edits rather than ahead of them): the `bias == 0` / `bias == 1` tests in
+  those same two branches, and the multi-nonzero arm, still have **no dedicated guard**. Same defect
+  family. Close them as part of writing the strided branch — a weakening of any of them would today
+  go undetected, and this slice is the one that touches them.
+
 - **The extent rule is not free to invent.** Every strided cell must be the checked-plan image of an
   `LHSSlot.outExtent` arm, and must **call** that shared formula rather than copy it. A duplicate
   formula (`scatterOutDim`) previously drifted from it and shipped a soundness bug — a downstream
