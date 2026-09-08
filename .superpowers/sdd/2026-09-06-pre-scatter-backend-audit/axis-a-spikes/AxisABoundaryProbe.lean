@@ -331,9 +331,14 @@ run_cmd do
       | _ => Lean.logInfo "S10 clean compile failed"
 
 -- SPIKE 11 (fix round 1, row E10) — locator loss in the JAX support gate. Step 1 of a two-statement
--- plan has a Boolean destination; the located gate reports index 1, but the only PUBLIC entry a
--- caller can reach reports index 0, because `validateAndConstructKernel` hardcodes
--- `checkJaxAssignSupport sigs 0`.
+-- plan has a Boolean destination; `checkJaxAssignSupport` is a plain public `def`, correctly
+-- located, and is reached with the real outer step index (1) by `EvalPlanCodegen.requireJaxSupport`
+-- at its plan-level call site (`renderAffineNode`). The `0` below is from
+-- `validateAndConstructKernel`'s own hardcoded `checkJaxAssignSupport sigs 0`, which is that
+-- function's documented standalone-entry convention (`requireJaxSupport`'s own doc: "Located at
+-- `nodeIndex` — the real outer step index at a plan-level caller, `0` at a standalone one"), not a
+-- locator defect. See BND-05, axis-a-fragment.md §4.6 — a future reader should not re-derive this
+-- contrast as a defect.
 private def twoStmtProg : TLProgram := tlprog!{
   axis i : ℕ = 2
   axis j : ℕ = 2

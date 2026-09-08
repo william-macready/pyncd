@@ -4,15 +4,15 @@ Findings-only audit of the checked-plan write-geometry predicates, taken at `267
 build (`lake build`, **8660 jobs**) [built]. No production code was changed.
 
 Evidence tags: `[built]` = whole-project build, `[read]` = identifier inspected, `[snippet]` = a
-construction spike with observed output. Two spike files, each committed with its captured output
-alongside this fragment in `axis-b-spikes/`, mirroring Task A's layout:
+construction spike with observed output. Two spike files, each committed with its captured output,
+live in `leanncd/spikes/`, mirroring Task A's layout:
 
 - `AxisBWriteGeometryProbe.lean` (+ `.output.txt`) — probes **S1–S13**
 - `AxisBBaseBoundaryProbe.lean` (+ `.output.txt`) — probes **S14–S16** (S16 added in fix round 1)
 
-To re-run, copy both into `leanncd/spikes/` (gitignored except `BrNF.lean`, so the working copies are
-not tracked there) and run `lake env lean spikes/<file>.lean` from `leanncd/`. Neither is in
-`lakefile.toml` or any default build target. Note for whoever re-runs them: they import
+Both are tracked in git via `leanncd/.gitignore` exceptions (alongside `BrNF.lean`). To re-run, run
+`lake env lean spikes/<file>.lean` from `leanncd/`. Neither is in `lakefile.toml` or any default
+build target. Note for whoever re-runs them: they import
 `LeanNCD.Eval.Plan.Scan` rather than the `LeanNCD` umbrella *deliberately* — `LeanNCD/DSL/Syntax.lean`
 declares `"bias"` as a syntax token, which makes `{ coeffs := …, bias := … }` a parse error in any
 file that imports the umbrella [snippet].
@@ -211,7 +211,9 @@ B2 must test, not inherit.**
    `.pinned`, so neither would look at it; and `commitWrite`'s `c·x + b` would then be bounded by
    nothing. The smallest shape that would exhibit it: rank-3 state, `advancingDims := #[0]`, dim0
    `.pinned 0`, dim1 strided, dim2 `.free 0`, `outputShapeSize = 1` — which passes clauses 1–3 today
-   for any dim1 kind that is `some`, as G16's `#[some (.pinned 0), some (.advancing 0), some
+   for any *new* dim1 kind that is `some` (one that is not among the three current `WriteRowKind`
+   constructors: an existing kind, e.g. a `.free 1` at dim1, breaks clause 2's positional cover
+   instead, since `[0,1] ≠ List.range 1`), as G16's `#[some (.pinned 0), some (.advancing 0), some
    (.free 0)]` construction demonstrates for the *advancing* kind at exactly those parameters
    [snippet, S16].
 
@@ -680,7 +682,7 @@ Findings-only, taken at `9680b92` with a green build (`cd leanncd && "$HOME/.ela
 committed file**.
 
 Three further spike files, each committed with its captured output alongside B1's in
-`axis-b-spikes/`:
+`leanncd/spikes/`:
 
 - `AxisBStridedProbe.lean` (+ `.output.txt`) — probes **S17–S22**, the strided row across the
   write-geometry predicates and `LHSSlot.outExtent`. Imports `LeanNCD.Eval.Plan.Scan` only.
@@ -690,8 +692,8 @@ Three further spike files, each committed with its captured output alongside B1'
   surface syntax. Imports the `LeanNCD` umbrella, so it deliberately contains no
   `{ coeffs := …, bias := … }` record literal (`DSL/Syntax.lean` declares `"bias"` as a token).
 
-Re-run exactly as B1's: copy into `leanncd/spikes/` and run `lake env lean spikes/<file>.lean` from
-`leanncd/`. None is in `lakefile.toml` or any default build target.
+Re-run exactly as B1's: run `lake env lean spikes/<file>.lean` from `leanncd/`. None is in
+`lakefile.toml` or any default build target.
 
 **One extra evidence tag, used only in this section.** `[snippet, model]` marks an observation made
 against a **transcribed model** rather than production code: a throwaway spike
@@ -699,7 +701,7 @@ against a **transcribed model** rather than production code: a throwaway spike
 copied `baseWriteRowsOk`, `stepWriteRowsOk`, `freeExtentsAgree`, `pinnedLiteralsInRange` and
 `writesCollide` **verbatim** from `Scan.lean` with no strided arm added, so that a genuinely new
 constructor could be run through the current predicate text. It was **deleted before committing** and
-is not in `axis-b-spikes/`; its observed output is reproduced inline below. A `[snippet, model]`
+is not in `leanncd/spikes/`; its observed output is reproduced inline below. A `[snippet, model]`
 claim is weaker than a `[snippet]` one — it measures a faithful copy, not the shipped function.
 
 **How each `[snippet, model]` claim is discharged, stated exactly rather than by a blanket rule.**
