@@ -1,3 +1,15 @@
 /.lake
-spikes/
+spikes/*
 !spikes/BrNF.lean
+!spikes/AxisABoundaryProbe.lean
+!spikes/AxisABoundaryProbe.output.txt
+!spikes/AxisBBaseBoundaryProbe.lean
+!spikes/AxisBBaseBoundaryProbe.output.txt
+!spikes/AxisBStridedProbe.lean
+!spikes/AxisBStridedProbe.output.txt
+!spikes/AxisBSurfaceZeroExtentProbe.lean
+!spikes/AxisBSurfaceZeroExtentProbe.output.txt
+!spikes/AxisBWriteGeometryProbe.lean
+!spikes/AxisBWriteGeometryProbe.output.txt
+!spikes/AxisBZeroExtentProbe.lean
+!spikes/AxisBZeroExtentProbe.output.txt

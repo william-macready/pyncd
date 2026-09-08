@@ -1,0 +1,7 @@
+"S26a (Out[0*i] := X[i]): eval .ok; Out shape = [0], data = #[]"
+"S26b (Out[0*i + 0] := X[i]): eval .ok; Out shape = [0], data = #[]"
+"S26c (Out[2*i] := X[i] — CONTROL): eval .ok; Out shape = [8], data = #[1.000000, 0.000000, 2.000000, 0.000000, 3.000000, 0.000000, 4.000000, 0.000000]"
+[[LHSSlot.affine (IdxExpr.scale 0 { name := "i", uid := 0, kind := AxisKind.real })]]
+[[LHSSlot.affine (IdxExpr.scale 2 { name := "i", uid := 0, kind := AxisKind.real })]]
+"S26d (Out[0*i], then Y[k] := Out[k]): eval FAILED: affine size system non-positive (uid 2) (value=0, reduced row=0, col=0); sources: [Out[LeanNCD.IdxExpr.axis { name := \"k\", uid := 2, kind := LeanNCD.AxisKind.real }] (scatter-out)]; actions: [increase effective input extent or reduce negative shifts, ensure inferred output window size stays strictly positive]; ml-hints: [ml-hint: offset/window yields non-positive extent]"
+"S26e (Out[2*i], then Y[k] := Out[k] — CONTROL): eval .ok; Out = some [8], Y = some [8]"
