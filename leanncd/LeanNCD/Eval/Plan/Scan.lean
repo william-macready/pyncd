@@ -5,7 +5,18 @@ namespace LeanNCD.Eval.Plan
 
 /-- One recognized shape for a write-map row: pinned to a literal, an order-preserving projection
     of the block's own output slice, or bound to `context[p] + 1` (step writes only). Anything else
-    is an unrecognized affine geometry and must be rejected. -/
+    is an unrecognized affine geometry and must be rejected.
+
+    **Every consumer of this type matches exhaustively over its constructors — on purpose.** Adding a
+    constructor here is meant to be a compile error at each site that would otherwise silently
+    exempt the new kind (`baseWriteRowsOk`'s positional cover, both of `stepWriteRowsOk`'s
+    non-advancing clauses, `freeExtentsAgree`, `pinnedLiteralsInRange`, `writesCollide`), which is
+    what the write-geometry surface's history of "says which rows MUST be a kind, never which rows
+    MAY NOT" cost. Do not restore a `| _ =>` arm at any of them. Two sites in this file are NOT
+    covered by that tripwire and never can be: `classifyWriteRow` *produces* the kinds (its
+    catch-all is over the nonzero-coefficient list, not over `WriteRowKind`), and
+    `causalAdvancingRow` classifies read rows and never mentions this type — a new kind must be
+    admitted in `classifyWriteRow` deliberately, since nothing will remind you. -/
 inductive WriteRowKind
   | pinned    (lit : Int)
   | free      (outputPos : Nat)
@@ -23,7 +34,7 @@ def classifyWriteRow (contextWidth : Nat) (coeffRow : Array Int) (bias : Int) : 
       if c == 1 && p < contextWidth && bias == 1 then some (.advancing p)
       else if c == 1 && p ≥ contextWidth && bias == 0 then some (.free (p - contextWidth))
       else none
-  | _ => none
+  | _ :: _ :: _ => none
 
 /-- Row classifications for one write against one state, given the complete state's rank and the
     write's declared context width (`0` for base, `advancingDims.size` for step). -/
@@ -37,7 +48,9 @@ def writeRowKinds (stateRank contextWidth : Nat) (w : StateWriteMap) : Array (Op
 def baseWriteRowsOk (advancingDims : Array Nat) (outputShapeSize : Nat)
     (rows : Array (Option WriteRowKind)) : Bool :=
   rows.all Option.isSome &&
-  ((rows.toList.filterMap (fun r => match r with | some (.free p) => some p | _ => none))
+  ((rows.toList.filterMap (fun r => match r with
+      | some (.free p) => some p
+      | some (.pinned _) | some (.advancing _) | none => none))
     == List.range outputShapeSize) &&
   advancingDims.any (fun d => rows.getD d none == some (.pinned 0))
 
@@ -69,10 +82,13 @@ def stepWriteRowsOk (advancingDims : Array Nat) (outputShapeSize : Nat)
   rows.all Option.isSome &&
   (advancingDims.toList.zipIdx.all (fun (d, i) => rows.getD d none == some (.advancing i))) &&
   (rows.toList.zipIdx.all (fun (r, d) => advancingDims.contains d ||
-    (match r with | some (.free _) => true | _ => false))) &&
+    (match r with
+      | some (.free _) => true
+      | some (.pinned _) | some (.advancing _) | none => false))) &&
   ((rows.toList.zipIdx.filterMap (fun (r, d) =>
       if advancingDims.contains d then none else match r with
-        | some (.free p) => some p | _ => none))
+        | some (.free p) => some p
+        | some (.pinned _) | some (.advancing _) | none => none))
     == List.range outputShapeSize)
 
 /-- For every `.free` row, the state's own dimension size must equal the block output's size at the
@@ -88,7 +104,7 @@ def freeExtentsAgree (stateShape : Array Nat) (outputShape : Array Nat)
     (rows : Array (Option WriteRowKind)) : Bool :=
   rows.toList.zipIdx.all (fun (r, d) => match r with
     | some (.free p) => stateShape.getD d 0 == outputShape.getD p 0
-    | _ => true)
+    | some (.pinned _) | some (.advancing _) | none => true)
 
 /-- Every `.pinned` row's literal must be a valid in-range coordinate for its own state dimension —
     proposal §7.3's write-result signature agreement extended to pinned (not just free) positions.
@@ -102,7 +118,7 @@ def freeExtentsAgree (stateShape : Array Nat) (outputShape : Array Nat)
 def pinnedLiteralsInRange (stateShape : Array Nat) (rows : Array (Option WriteRowKind)) : Bool :=
   rows.toList.zipIdx.all (fun (r, d) => match r with
     | some (.pinned lit) => 0 ≤ lit && lit.toNat < stateShape.getD d 0
-    | _ => true)
+    | some (.free _) | some (.advancing _) | none => true)
 
 /-- Two writes' declared regions collide iff no dimension forces them apart. Since every row is
     `.pinned`/`.free`/`.advancing`, a dimension forces the regions apart only when BOTH writes pin
@@ -114,7 +130,12 @@ def writesCollide (rowsA rowsB : Array (Option WriteRowKind)) : Bool :=
   ¬ (List.range rowsA.size).any (fun d =>
       match rowsA.getD d none, rowsB.getD d none with
       | some (.pinned a), some (.pinned b) => a != b
-      | _, _ => false)
+      | some (.pinned _), some (.free _)
+      | some (.pinned _), some (.advancing _)
+      | some (.pinned _), none
+      | some (.free _), _
+      | some (.advancing _), _
+      | none, _ => false)
 
 /-- Whether one read row (for state dimension `d`, whose scan-context position is `ctxPos`) is
     causal: exactly one nonzero coefficient, equal to `1`, at `ctxPos`, and non-positive bias. This
@@ -128,7 +149,7 @@ def causalAdvancingRow (row : Array Int) (bias : Int) (ctxPos : Nat) : Bool :=
   let nz := row.toList.zipIdx.filter (fun (c, _) => c != 0)
   match nz with
   | [(c, p)] => c == 1 && p == ctxPos && bias ≤ 0
-  | _ => false
+  | [] | _ :: _ :: _ => false
 
 /-- Every advancing dimension of a captured state's read must be causal at its own scan-context
     position; non-advancing dimensions are ordinary reads and carry no causality obligation. -/
