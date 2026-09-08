@@ -700,8 +700,27 @@ copied `baseWriteRowsOk`, `stepWriteRowsOk`, `freeExtentsAgree`, `pinnedLiterals
 `writesCollide` **verbatim** from `Scan.lean` with no strided arm added, so that a genuinely new
 constructor could be run through the current predicate text. It was **deleted before committing** and
 is not in `axis-b-spikes/`; its observed output is reproduced inline below. A `[snippet, model]`
-claim is weaker than a `[snippet]` one — it measures a faithful copy, not the shipped function — and
-every such claim below is paired with a `[snippet]` measurement of the real clause it models.
+claim is weaker than a `[snippet]` one — it measures a faithful copy, not the shipped function.
+
+**How each `[snippet, model]` claim is discharged, stated exactly rather than by a blanket rule.**
+Most are paired with a `[snippet]` measurement of the real clause at the same parameters, with
+`.pinned`/`.advancing` standing in for the fourth constructor — sound because the arms involved
+(`| _ => none`, `| _ => true`, `| _, _ => false`) are constructor-blind by their own text, quoted at
+each site. **Two are not so paired, and have no production counterpart in the committed spikes:**
+
+- **G17's derived-`BEq` observation** (`(some (.strided 0 2 0) == some (.pinned 0), …)` →
+  `(false, false, true, false)`). No production spike can compare against a constructor that does
+  not exist. Re-derivable at source instead: `WriteRowKind` is `deriving DecidableEq, BEq` [read], and
+  Lean's derived structural equality on a sum type is `false` between distinct constructors and
+  compares payloads within one — so the observation restates the deriving handler's specification.
+- **§B2.1 point 3's context-half row** (`classifyA 2 #[2,0,0] 0` → `none`). Re-derivable at source
+  from `classifyWriteRow`'s singleton arm as it stands: with `c == 2`, both `c == 1` conjuncts fail,
+  and a strided branch guarded on `p ≥ contextWidth` fails at `p = 0 < 2`, so every arm falls through
+  to `else none` [read].
+
+Neither carries a verdict of its own — G17 closes structurally and point 3 is a design argument — so
+nothing in B2-F1 depends on the model. A reviewer who rejects the model-to-production transfer can
+re-derive both at source by the two readings above.
 
 ---
 
@@ -740,9 +759,10 @@ branch and this is the write-geometry defect family recurring for a **sixth** ti
    `dp[0, 2*j] := ROWFACE[j]` would stay rejected — refusing half the feature to keep half a defect
    latent.
 2. **A phase gate would not be a bound, only a deferral.** Barrier 1 (`checkWrites`' `if isBase then
-   0`) is enforced by no signature and no check; B1 recorded it as an unenforced call-site
-   precondition stated in two docstrings. Decision B would add a **third** row kind resting on that
-   same unenforced value, i.e. it buys latency at the cost of one more `‡`.
+   0`, plus `Compile.lean` Phase 5's two hard-coded `0`s — **two sites**, enumerated in §B2.7) is
+   enforced by no signature and no check; B1 recorded it as an unenforced call-site precondition
+   stated in two docstrings. Decision B would add a **third** row kind resting on that same
+   unenforced value, i.e. it buys latency at the cost of one more `‡`.
 3. **`p ≥ contextWidth` is required either way**, and for a reason independent of phase: the minimal
    shape the brief specifies is `strided (outputPos : Nat) (scale : Int) (offset : Int)`, coordinate
    `scale * out[outputPos] + offset`. Its payload names an **output-slice** position, so a nonzero
@@ -835,7 +855,7 @@ existing row, or to B1's legend.
 
 | Mark | Meaning |
 |---|---|
-| **★** | on a *row label*, not a cell: every mark in this row is the mark under §B2.1's **decision A**. The letter is unchanged under decision B for columns 1, 13 and 14; for the rest, §B2.3's group entries give decision B's reading. A row-label mark contributes nothing to the cell census |
+| **★** | on a *row label*, not a cell: every mark in this row is the mark under §B2.1's **decision A**. The letter is **decision-invariant** for columns 1, 5, 9, 10, 13 and 14 — cols 1/13/14 because those sites classify nothing either way (G17, G29, G30), col 5 because `stepWriteRowsOk` is structurally `—` at base under both decisions, and cols 9–10 because they are `▷`, a disjoint read vocabulary. For the remaining eight cells of each row (cols 2, 3, 4, 6, 7, 8, 11, 12), §B2.3's group entry gives decision B's reading; **every** group covering an R13/R14 cell now carries one, and G29's entry additionally gives its decision-B open/closed *status*, which the letter alone does not settle. A row-label mark contributes nothing to the cell census |
 
 ### The appended rows
 
@@ -883,20 +903,20 @@ is `stepWriteRowsOk`, the group is a **step-phase** group and that predicate doe
 
 | Group | Cells | Site × rows | Verdict |
 |---|---|---|---|
-| G17 | 4 | col 1 × R13–R16 | **Closed structurally**, extending G1. A closed inductive cannot require or forbid. G1 anticipated exactly this constructor: *"a payload-carrying fourth constructor inherits correct equality for free"* — verified rather than assumed, since two production clauses compare against literal constructors via derived `BEq` (`baseWriteRowsOk`'s `rows.getD d none == some (.pinned 0)` and `stepWriteRowsOk`'s `== some (.advancing i)`). On a four-constructor `deriving DecidableEq, BEq` inductive, `(some (.strided 0 2 0) == some (.pinned 0), == some (.advancing 0), == some (.strided 0 2 0), == some (.strided 0 2 1))` → `(false, false, true, false)` [snippet, model] — cross-constructor comparisons are `false` and payload discrimination is exact, so neither clause silently changes meaning. |
+| G17 | 4 | col 1 × R13–R16 | **Closed structurally**, extending G1. A closed inductive cannot require or forbid. G1 anticipated exactly this constructor: *"a payload-carrying fourth constructor inherits correct equality for free"* — verified rather than assumed, since two production clauses compare against literal constructors via derived `BEq` (`baseWriteRowsOk`'s `rows.getD d none == some (.pinned 0)` and `stepWriteRowsOk`'s `== some (.advancing i)`). On a four-constructor `deriving DecidableEq, BEq` inductive, `(some (.strided 0 2 0) == some (.pinned 0), == some (.advancing 0), == some (.strided 0 2 0), == some (.strided 0 2 1))` → `(false, false, true, false)` [snippet, model] — cross-constructor comparisons are `false` and payload discrimination is exact, so neither clause silently changes meaning. **Decision B**: unchanged, letter and status both. The gating decision is a `classifyWriteRow` branch condition; the inductive has no branch to gate, and the derived-`BEq` argument holds for a four-constructor type regardless of which rows are ever built. |
 | G18 | 4 | cols 2–3 × R15, R16 | **Closed** to G-step (col 5). Both functions are dimension-class-blind by construction — `classifyWriteRow`'s signature is `(contextWidth : Nat) (coeffRow : Array Int) (bias : Int)`, no `advancingDims` and no dimension index [read] — so the whole dim-class axis is `c` here, exactly as G2a. Unlike G2b, the downstream catcher is **not** open: `stepWriteRowsOk` clause 2 (`advancingDims.toList.zipIdx.all (fun (d, i) => rows.getD d none == some (.advancing i))`) and clause 3 (`rows.toList.zipIdx.all (fun (r, d) => advancingDims.contains d \|\| (match r with \| some (.free _) => true \| _ => false))`) between them reject a strided row at every dimension, **in the step phase, which is this group's own phase**. Measured on the model at all three placements: `(stepWriteRowsOk #[0,1] 1 #[strided, advancing 1, free 0], stepWriteRowsOk #[0] 1 #[advancing 0, strided, free 0], stepWriteRowsOk #[0] 1 #[advancing 0, free 0, strided])` → `(false, false, false)` [snippet, model]. The real clauses' behaviour on a non-`.free` non-`.advancing` `some` row at the same parameters: `(stepWriteRowsOk #[0,1] 1 #[some (.pinned 0), some (.pinned 2), some (.free 0)], stepWriteRowsOk #[0] 1 #[some (.advancing 0), some (.pinned 2), some (.free 0)])` → `(false, false)` [snippet, S19]. **Decision B**: unchanged — `classifyWriteRow` admits strided at step under both decisions [snippet, model]. |
 | **G19** | 4 | cols 2–3 × R13, R14 | **OPEN — B2-F1.** Same blindness as G18, but the only downstream catcher at base is `baseWriteRowsOk`, whose own cells for these rows (G20) are open. **A group cannot be closed by deferral to an open group** — B1 established that rule at G2b, and it applies unchanged. **Decision B**: these four cells become **`b`‡** instead, on barrier 1 (`checkWrites`' `if isBase then 0`), exactly as B1 marked R9/R10 at these columns. |
 | **G20** | 2 | col 4 × R13, R14 | **OPEN — B2-F1, the sixth instance.** `baseWriteRowsOk` clause 2 is the verbatim defect-instance-4 shape and its `filterMap` arm is **constructor-blind**: `((rows.toList.filterMap (fun r => match r with \| some (.free p) => some p \| _ => none)) == List.range outputShapeSize)`. The `\| _ => none` arm drops every `some` row that is not `.free`, a fourth constructor included. Measured on the model at both dimension classes: `(baseWriteRowsOk #[0] 1 #[pinned 0, strided 0 2 0, free 0], baseWriteRowsOk #[0,1] 1 (same))` → `(true, true)` [snippet, model]. Measured on the **real** clause with the two non-`.free` constructors that exist, at the identical parameters: `(baseWriteRowsOk #[0] 1 #[some (.pinned 0), some (.pinned 2), some (.free 0)], … #[some (.pinned 0), some (.advancing 0), some (.free 0)], baseWriteRowsOk #[0,1] 1 (each of those))` → `(true, true, true, true)`, against the control in which dim 1 carries a genuine second `.free` row and the cover therefore breaks: `(baseWriteRowsOk #[0] 1 #[some (.pinned 0), some (.free 1), some (.free 0)], … #[some (.pinned 0), some (.free 0), some (.free 0)])` → `(false, false)` [snippet, S19]. That control is what makes the drop a *drop* rather than an accident of the parameters. **Decision B**: **`c`‡ latent** rather than live — the rows become `#[some (.pinned 0), none, some (.free 0)]` and clause 1 fires, `baseWriteRowsOk … = false` [snippet, model]. |
 | G21 | 2 | col 6 × R15, R16 | **Closed** by an in-phase catcher, not by kind partition alone. `freeExtentsAgree`'s `\| _ => true` arm ignores a strided row exactly as it ignores `.pinned`/`.advancing` [read], so the cell is `c`. It is closed because `checkWrites` runs `unless admitted do throw (.writeGeometryNotAdmitted isBase wi)` **before** `freeExtentsAgree` [read], and at step `admitted` is `stepWriteRowsOk`, which rejects a strided row at every dimension (G18's measurement). So the row never reaches this predicate in this phase — a stronger closure than G6's, and one whose catcher demonstrably fires here. Marked `c` rather than `—` to keep B1's column convention (B1 marks col 6 `c` for R3/R4/R12, all `b` at col 5). **Decision B**: unchanged. |
-| **G22** | 2 | col 6 × R13, R14 | **OPEN — B2-F1.** The same `\| _ => true` arm, in the **base** phase, where nothing rejects the row first: `baseWriteRowsOk` admits it (G20), so `checkWrites` proceeds to `freeExtentsAgree` and it passes at **any** extents. Measured on the model: `(freeExtentsAgree #[1,3,3] #[3] stridedRows, freeExtentsAgree #[1,1,3] #[3] stridedRows)` → `(true, true)` — the second with dim 1 at extent **1** [snippet, model]; and on the real predicate at the same parameters with `.advancing` standing in, `(freeExtentsAgree #[1,3,3] #[3] …, freeExtentsAgree #[1,1,3] #[3] …)` → `(true, true)` [snippet, S19]. **This is the load-bearing cell of the whole task**: `freeExtentsAgree` is the *one* predicate whose job is to bound a cover row's extent against the state's own dimension, and it is the predicate a strided row must extend (§B2.4). Not closed, and specifically **not** closed by citing `stepWriteRowsOk` or `advancingSizeMismatch` — neither operates at base, which is precisely G16's error. |
+| **G22** | 2 | col 6 × R13, R14 | **OPEN — B2-F1.** The same `\| _ => true` arm, in the **base** phase, where nothing rejects the row first: `baseWriteRowsOk` admits it (G20), so `checkWrites` proceeds to `freeExtentsAgree` and it passes at **any** extents. Measured on the model: `(freeExtentsAgree #[1,3,3] #[3] stridedRows, freeExtentsAgree #[1,1,3] #[3] stridedRows)` → `(true, true)` — the second with dim 1 at extent **1** [snippet, model]; and on the real predicate at the same parameters with `.advancing` standing in, `(freeExtentsAgree #[1,3,3] #[3] …, freeExtentsAgree #[1,1,3] #[3] …)` → `(true, true)` [snippet, S19]. **This is the load-bearing cell of the whole task**: `freeExtentsAgree` is the *one* predicate whose job is to bound a cover row's extent against the state's own dimension, and it is the predicate a strided row must extend (§B2.4). Not closed, and specifically **not** closed by citing `stepWriteRowsOk` or `advancingSizeMismatch` — neither operates at base, which is precisely G16's error. **Decision B**: **CLOSED**, and the cell letter becomes `c`‡. Under B the base rows are `#[some (.pinned 0), none, some (.free 0)]`, so `baseWriteRowsOk` clause 1 fires (G20's `false`) and `checkWrites` throws `writeGeometryNotAdmitted true wi` **before** it reaches `freeExtentsAgree` [read] — the G21 argument transposed to the base phase, with the same in-phase catcher. The `‡` records that this rests on barrier 1's unenforced `if isBase then 0`, so it is latent, not absent. |
 | G23 | 2 | col 7 × R15, R16 | **Closed** by the same in-phase catcher as G21. `pinnedLiteralsInRange`'s `\| _ => true` arm ignores a strided row [read]; the row never reaches it at step, because `stepWriteRowsOk` rejects first and `checkWrites` throws before calling it [read]. Recorded alongside: the predicate's docstring justification — *"`.free`/`.advancing` rows are vacuously fine (their range is already bounded by the checked output/context shapes elsewhere)"* — **enumerates exactly two kinds and would not mention a strided row at all**. B1 already established that this sentence is false for an advancing row at base (G16); for a strided row it is not false so much as absent. See B2-F3. **Decision B**: unchanged. |
-| **G24** | 2 | col 7 × R13, R14 | **OPEN — B2-F1.** As G22: reached in the base phase and passing. `pinnedLiteralsInRange #[1,3,3] stridedRows = true` and `pinnedLiteralsInRange #[1,1,3] stridedRows = true` [snippet, model]; the real predicate at the same parameters with `.advancing` standing in, `pinnedLiteralsInRange #[1,3,3] #[some (.pinned 0), some (.advancing 0), some (.free 0)]` → `true` [snippet, S19]. Not closed, and not closed by appeal to *"the checked output/context shapes"* — `checkScanPlan` forces `raw.baseBlock.contextShape == #[]`, so at base there is no context shape for that phrase to refer to (B1's S16 verified the rejection: `baseBlockContextNotEmpty #[2]`). |
+| **G24** | 2 | col 7 × R13, R14 | **OPEN — B2-F1.** As G22: reached in the base phase and passing. `pinnedLiteralsInRange #[1,3,3] stridedRows = true` and `pinnedLiteralsInRange #[1,1,3] stridedRows = true` [snippet, model]; the real predicate at the same parameters with `.advancing` standing in, `pinnedLiteralsInRange #[1,3,3] #[some (.pinned 0), some (.advancing 0), some (.free 0)]` → `true` [snippet, S19]. Not closed, and not closed by appeal to *"the checked output/context shapes"* — `checkScanPlan` forces `raw.baseBlock.contextShape == #[]`, so at base there is no context shape for that phrase to refer to (B1's S16 verified the rejection: `baseBlockContextNotEmpty #[2]`). **Decision B**: **CLOSED**, cell letter `c`‡ — identical to G22's decision-B note, since `checkWrites` throws on clause 1 before reaching `pinnedLiteralsInRange` too [read]. This is the G23 argument transposed to base. |
 | G25 | 2 | col 8 × R13, R14 | **Closed as conservative** — fact 3, now measured on a real fourth constructor. `writesCollide`'s catch-all is `\| _, _ => false`, so *"a dimension forces the regions apart only when BOTH writes pin it to DIFFERENT literals"* [read] and a strided row can never separate two base writes. Measured: `(writesCollide #[strided 0 2 0] #[strided 0 2 1], writesCollide #[pinned 0, strided 0 2 0] #[pinned 0, strided 0 2 5], writesCollide #[pinned 0, strided 0 2 0] #[pinned 1, strided 0 2 0])` → `(true, true, false)` [snippet, model] — the third separates only via its `.pinned 0` vs `.pinned 1` row at dimension 0, which is the clause doing its declared job. Real-predicate counterpart on the existing non-`.pinned` constructors: `(writesCollide #[some (.free 0)] #[some (.free 0)], writesCollide #[some (.advancing 0)] #[some (.pinned 1)], writesCollide #[some (.pinned 0), some (.advancing 0)] #[some (.pinned 0), some (.pinned 1)])` → `(true, true, true)` [snippet, S19]. The failure direction is **over**-rejection, hence safe. Two differences from G9 are worth recording rather than inheriting: G9 closed these cells as *vacuous today* because no base row can be `.advancing`; under decision A that ground disappears, so this group is closed on conservatism alone. And the expressiveness cost is real — **two strided base writes to one state are always reported as colliding**, so `dp[0, 2*j] := A[j]` alongside `dp[0, 2*j+1] := B[j]` is inexpressible, and disjointly so (`baseWritesOverlap`, pinned by `ScanTest.lean`'s fixture at `baseWritesOverlap 0 0 1` and by `ScanCompileTest.lean`'s two `.scan (.baseWritesOverlap "sc2" "dp" 0 1)` assertions [read]). **Decision B**: vacuous, as G9. |
-| **G26** | 2 | col 11 × R13, R14 | **OPEN.** Escalation of G20 to the orchestrator: `checkWrites` calls `baseWriteRowsOk` in its `if isBase then` arm as the **sole caller** [read] and adds no strided obligation. |
-| **G27** | 2 | col 12 × R13, R14 | **OPEN.** Escalation of G20 to the **public** entry. `checkScanPlan`'s own additions — `advancingDimOutOfRange`, `duplicateAdvancingDim`, `advancingDimCountMismatch`, `advancingSizeMismatch`, `baseBlockContextNotEmpty`, the four policy gates, `stateDtypeNotAdmitted`, the causality loop [read] — **change no cell in these four rows**. `advancingSizeMismatch` in particular relates `stateShape[advancingDims[i]]` to `historyExtents[i]` and says nothing about a strided row's presence, placement, or scale, at either dimension class. So B2-F1's cells reach `checkScanPlan` unchanged, exactly as B1-F2's do. |
+| **G26** | 2 | col 11 × R13, R14 | **OPEN.** Escalation of G20 to the orchestrator: `checkWrites` calls `baseWriteRowsOk` in its `if isBase then` arm as the **sole caller** [read] and adds no strided obligation. **Decision B**: **CLOSED**, cell letter `c`‡ — escalation of G20's decision-B note. `checkWrites` is the site that *throws* `writeGeometryNotAdmitted true wi` on clause 1, so under B it is the catcher rather than a pass-through, and it fires in the base phase. Latent on barrier 1, whose `if isBase then 0` is this very function's own expression — which is why the `‡` matters here more than anywhere: the catcher and the unenforced precondition are the same line of code. |
+| **G27** | 2 | col 12 × R13, R14 | **OPEN.** Escalation of G20 to the **public** entry. `checkScanPlan`'s own additions — `advancingDimOutOfRange`, `duplicateAdvancingDim`, `advancingDimCountMismatch`, `advancingSizeMismatch`, `baseBlockContextNotEmpty`, the four policy gates, `stateDtypeNotAdmitted`, the causality loop [read] — **change no cell in these four rows**. `advancingSizeMismatch` in particular relates `stateShape[advancingDims[i]]` to `historyExtents[i]` and says nothing about a strided row's presence, placement, or scale, at either dimension class. So B2-F1's cells reach `checkScanPlan` unchanged, exactly as B1-F2's do. **Decision B**: **CLOSED**, cell letter `c`‡ — escalation of G26's decision-B note. `checkScanPlan` calls `checkWrites sigs raw.baseBlock raw.baseWrites raw.states true` and propagates its `ScanPlanError` unchanged [read], so under B the plan is rejected at the public entry with the located `writeGeometryNotAdmitted true wi`. Still latent rather than absent, on the same barrier 1. |
 | G28 | 2 | col 13 × R15, R16 | **Closed** by evidence-carrying construction, in-phase. `CheckedScanPlan` has `private mk ::`, so the only way to obtain one is `checkScanPlan` [read]; a step write carrying a strided row makes `checkWrites` throw `writeGeometryNotAdmitted false wi` (G18), so no checked plan carrying such a row exists and `commitWrite` never receives one in the step phase. The missing docstring bullet is still an obligation — see B2-F3 — but it is a documentation finding, not an unclosed cell. **Decision B**: unchanged. |
-| **G29** | 2 | col 13 × R13, R14 | **OPEN — B2-F1.** This is where B2-F1's cells become memory unsafety. `commitWrite`'s own docstring states the premise: it *"does NOT call `inBoundsPerDim` before `flatIndex`: it performs no bounds recovery, trusting `checkScanPlan`"* [read] — and at base, per G20/G22/G24, `checkScanPlan` checked nothing about this row. Worked out rather than argued, on the `dp[0, 2·oc₀, oc₀]` map (`coeffs := #[#[0],#[2],#[1]]`, `bias := #[0,0,0]`) over an output of shape `[3]` against a `[1,3,3]` state: `applyAffine` at `ctx = []` gives `([0,0,0], [0,2,1], [0,4,2])`; `inBoundsPerDim [1,3,3]` gives `(true, true, false)`; and `flatIndex` gives the addresses `(0, 7, 14)` on a **9-element** store [snippet, S20]. Since `commitWrite` calls no `inBoundsPerDim`, that is one correct write, one silent write into a cell belonging to another coordinate, then an out-of-range `Array.set!` — the verbatim F3/F4 failure signature, and strictly worse than B1-F2's `3/7/11`, which at least stayed within one element of the store. Two further arithmetic modes measured at the same site: a `.shift`-flavoured strided row (`bias := #[0,5,0]`) is out of range at **every** coordinate — `applyAffine → [0,5,0]`, `inBoundsPerDim → false`, `flatIndex → 15` [snippet, S20]; and a **negative** offset (`bias := #[0,-2,0]`) is collapsed by `commitWrite`'s own `.map Int.toNat` — `applyAffine → [0,-2,0]`, `inBoundsPerDim → false`, `(…).map Int.toNat → [0,0,0]`, `flatIndex → 0` — so it aliases silently onto the lower boundary **in range**, with no panic to notice it by [snippet, S20]. That third mode is new to this task: B1-F2's advancing row cannot produce a negative coordinate, because its bias is fixed at `1`. |
-| G30 | 4 | col 14 × R13–R16 | **Closed** by evidence-carrying construction, extending G15. `runDenseScan` reads state shapes from `c.sigs` — the table `checkScanPlan` validated the plan against — rejects a differing caller table (`signatureContextMismatch`) and a differing store length (`storeArityMismatch`) before allocating [read], and imposes no per-row obligation at all. Nothing in that argument mentions a row kind, so a fourth constructor changes none of it. **Not** offered as a bound on G29: the store-arity check fixes how long the store is, not where within it `commitWrite` writes. |
+| **G29** | 2 | col 13 × R13, R14 | **OPEN — B2-F1.** This is where B2-F1's cells become memory unsafety. `commitWrite`'s own docstring states the premise: it *"does NOT call `inBoundsPerDim` before `flatIndex`: it performs no bounds recovery, trusting `checkScanPlan`"* [read] — and at base, per G20/G22/G24, `checkScanPlan` checked nothing about this row. Worked out rather than argued, on the `dp[0, 2·oc₀, oc₀]` map (`coeffs := #[#[0],#[2],#[1]]`, `bias := #[0,0,0]`) over an output of shape `[3]` against a `[1,3,3]` state: `applyAffine` at `ctx = []` gives `([0,0,0], [0,2,1], [0,4,2])`; `inBoundsPerDim [1,3,3]` gives `(true, true, false)`; and `flatIndex` gives the addresses `(0, 7, 14)` on a **9-element** store [snippet, S20]. Since `commitWrite` calls no `inBoundsPerDim`, that is one correct write, one silent write into a cell belonging to another coordinate, then an out-of-range `Array.set!` — the verbatim F3/F4 failure signature, and strictly worse than B1-F2's `3/7/11`, which at least stayed within one element of the store. Two further arithmetic modes measured at the same site: a `.shift`-flavoured strided row (`bias := #[0,5,0]`) is out of range at **every** coordinate — `applyAffine → [0,5,0]`, `inBoundsPerDim → false`, `flatIndex → 15` [snippet, S20]; and a **negative** offset (`bias := #[0,-2,0]`) is collapsed by `commitWrite`'s own `.map Int.toNat` — `applyAffine → [0,-2,0]`, `inBoundsPerDim → false`, `(…).map Int.toNat → [0,0,0]`, `flatIndex → 0` — so it aliases silently onto the lower boundary **in range**, with no panic to notice it by [snippet, S20]. That third mode is new to this task: B1-F2's advancing row cannot produce a negative coordinate, because its bias is fixed at `1`. **Decision B**: the cell **letter** stays `c` (col 13 is decision-invariant per the `★` legend), but the **status** becomes **CLOSED**, on G28's ground transposed to base: `CheckedScanPlan` has `private mk ::`, so with `checkWrites` throwing on clause 1 no checked plan carrying a strided base row exists and `commitWrite` never receives one. The arithmetic measured above is then unreachable rather than wrong — which is exactly B1-F2's own situation, and exactly why decision B buys latency rather than a bound. |
+| G30 | 4 | col 14 × R13–R16 | **Closed** by evidence-carrying construction, extending G15. `runDenseScan` reads state shapes from `c.sigs` — the table `checkScanPlan` validated the plan against — rejects a differing caller table (`signatureContextMismatch`) and a differing store length (`storeArityMismatch`) before allocating [read], and imposes no per-row obligation at all. Nothing in that argument mentions a row kind, so a fourth constructor changes none of it. **Not** offered as a bound on G29: the store-arity check fixes how long the store is, not where within it `commitWrite` writes. **Decision B**: unchanged, letter and status both — `signatureContextMismatch` and `storeArityMismatch` mention no row kind, so the argument is insensitive to which rows a checked plan can carry. |
 
 The 14 groups above account for all 36 new `c` cells: G17 4, G18 4, G19 4, G20 2, G21 2, G22 2,
 G23 2, G24 2, G25 2, G26 2, G27 2, G28 2, G29 2, G30 4.
@@ -1025,10 +1045,11 @@ counted at `DSL/Ast.lean`'s `inductive IdxExpr` and `def LHSSlot.outIdx`]. Measu
 | `.affine c0 [(c,a)]` → `(c0 + c·s).toNat` | `.affine (.affine c0 [(c,a)])` | 11 at `c0=3, c=2` | **`strided p c c0`** |
 | `.affine c0 xs`, `\|xs\| ≥ 2` | `.affine (.affine c0 xs)` | 7 at `[(1,i),(1,j)]` | **none** — B2-F6 |
 
-So **each of R13–R16 is the checked-plan image of exactly one of three arms** — `.shift a c` with
-`c ≠ 1`, `.scale c a`, or `.affine c0 [(c,a)]` — selected by the row's `(scale, offset)` payload:
-`(1, c)` → `.shift`, `(c, 0)` → `.scale`, `(c, c0)` → `.affine`. The remaining two arms are already
-taken: `.axis` is `.free`'s image and `.const` is `.pinned`'s.
+So **each of R13–R16 is the checked-plan image of a three-arm family** — `.shift a c` with `c ≠ 1`,
+`.scale c a`, and `.affine c0 [(c,a)]` — within which a **given row's `(scale, offset)` payload
+selects exactly one arm**: `(1, c)` → `.shift`, `(c, 0)` → `.scale`, `(c, c0)` with `c ≠ 1` and
+`c0 ≠ 0` → `.affine`. The row *kind* maps to the family; a row *instance* maps to one arm. The
+remaining two arms are already taken: `.axis` is `.free`'s image and `.const` is `.pinned`'s.
 
 **One collision inside the `.shift` arm, measured.** `.iterNext a` and `.affine (.shift a 1)` are the
 **same** `outIdx` and therefore the same extent: `(LHSSlot.outIdx (.iterNext axI) ==
@@ -1122,8 +1143,8 @@ S23a (Out[i - 9], extent 0):            evalPlain .ok; Out shape = [0], data = #
 S23b (Out[-2*i], extent 0):             evalPlain .ok; Out shape = [0], data = #[]
 S23c (Out[-100 + i], extent 0):         evalPlain .ok; Out shape = [0], data = #[]
 S23d (Out[iterAt i (-5)], extent 0):    evalPlain .ok; Out shape = [0], data = #[]
-S23e (Out[2*i], extent 8 — CONTROL):    evalPlain .ok; Out shape = [8],
-                                          data = #[1, 0, 2, 0, 3, 0, 4, 0]
+S23e (Out[2*i], extent 8 — CONTROL):    evalPlain .ok; Out shape = [8], data =
+  #[1.000000, 0.000000, 2.000000, 0.000000, 3.000000, 0.000000, 4.000000, 0.000000]
 ```
 
 [snippet, S23]. **The mechanism is `evalScatter`'s own bounds guard**, `if (outCoordZ.zip
@@ -1160,18 +1181,26 @@ slot that produced the extent is one statement away and unmentioned.
 
 ### The case that is actually reachable from surface syntax is a ZERO coefficient, and it is LIVE
 
-`DSL/Elab.lean`'s `elabTLLHSSlot` builds every affine LHS coefficient and offset as
-`Int.ofNat n.getNat` from a `num` literal, across all four affine arms (`$x +1`, `$n * $x + $m`,
-`$n * $x`, `$x + $n`), and `.iterAt` likewise [read]. **So none of the four negative forms B1
-measured is surface-reachable** — they require a programmatic `Stmt`, as B1's S15 and this task's S23
-both used. A **zero** coefficient is a different matter, and `outExtent`'s `.scale` arm then yields
-`(0 · s).toNat = 0`. Measured end-to-end through `tlprog!{ … }` and `TLProgram.eval`:
+`DSL/Elab.lean`'s `elabTLLHSSlot` has four affine arms, and **no** arm can produce a negative
+coefficient or offset, by two distinct mechanisms [read]:
+
+- three arms — `$n * $x + $m`, `$n * $x`, `$x + $n` — build every coefficient and offset as
+  `Int.ofNat n.getNat` from a `num` literal, so the value is a natural number cast to `Int`;
+- the fourth, `$x +1`, is **stronger still**: it does not read a `num` at all but returns
+  `.affine (.shift (idxAxis (identStr x)) 1)`, i.e. the literal `1` **hardcoded** in the arm body,
+  so the sign is fixed by the source text rather than by a cast.
+
+`.iterAt` (the `$n:num` arm) likewise uses `Int.ofNat n.getNat`. **So none of the four negative forms
+B1 measured is surface-reachable** — they require a programmatic `Stmt`, as B1's S15 and this task's
+S23 both used. A **zero** coefficient is a different matter, reachable through the two `$n * $x…`
+arms, and `outExtent`'s `.scale` arm then yields `(0 · s).toNat = 0`. Measured end-to-end through
+`tlprog!{ … }` and `TLProgram.eval`:
 
 ```
 S26a (Out[0*i] := X[i]):                  eval .ok; Out shape = [0], data = #[]
 S26b (Out[0*i + 0] := X[i]):              eval .ok; Out shape = [0], data = #[]
-S26c (Out[2*i] := X[i] — CONTROL):        eval .ok; Out shape = [8],
-                                            data = #[1, 0, 2, 0, 3, 0, 4, 0]
+S26c (Out[2*i] := X[i] — CONTROL):        eval .ok; Out shape = [8], data =
+  #[1.000000, 0.000000, 2.000000, 0.000000, 3.000000, 0.000000, 4.000000, 0.000000]
   (slots: [[LHSSlot.affine (IdxExpr.scale 0 {i})]] and [[LHSSlot.affine (IdxExpr.scale 2 {i})]])
 S26d (Out[0*i], then Y[k] := Out[k]):     eval FAILED: affine size system non-positive (uid 2) …
 S26e (Out[2*i], then Y[k] := Out[k]):     eval .ok; Out = some [8], Y = some [8]
@@ -1326,9 +1355,29 @@ case and is not being corrected here. But the Scatter slice must lift barrier 0 
 lower an affine LHS write at all, and lifting barrier 0 is also what turns B2-F6's multi-axis
 rejection from a source-locating capability error into a positional `writeGeometryNotAdmitted`.
 
-**What barrier 1 alone then covers, and what it does not.** Barrier 1 is one expression,
-`let contextWidth := if isBase then 0 else st.advancingDims.size` [read], and its whole force is that
-it makes a `p < contextWidth` test unsatisfiable, since no `p : Nat` is `< 0`. Therefore:
+**What barrier 1 alone then covers, and what it does not.** First a correction to how B1 and §B2.1
+describe it: **barrier 1 is two sites, not one expression.**
+
+1. `checkWrites`' `let contextWidth := if isBase then 0 else st.advancingDims.size` [read] — the
+   internal checker, governing **every** plan, hand-built or compiled.
+2. **`Compile.lean`'s Phase 5 source-facing pass, which hard-codes the same `0` twice** —
+   `let rows := writeRowKinds stateShape.size 0 w` in the base-boundary loop and
+   `writeRowKinds stateShape.size 0 w` in the base-collision `mine` builder [read]. B1-F6 recorded
+   these two literal `0`s; what §B2.1 and §B2.4 did not say is that they are barrier 1's *second*
+   site, so the barrier's contract is asserted in two files.
+
+Site 2 is **equally no defence for a strided row under decision A**, and for a second reason beyond
+the polarity argument below: Phase 5's hand-inlined pinned-literal check is
+`match rows[d] with | some (.pinned lit) => … | _ => pure ()` [read], whose `| _ => pure ()` arm is
+**constructor-blind** in exactly the way `pinnedLiteralsInRange`'s `| _ => true` is (G24). Its
+`baseWriteNotAtBoundary` guard is satisfied by whichever other row carries `.pinned 0`, and
+`writesCollide` can only over-reject (G25). So under decision A a strided base row passes the
+**source-facing** pass silently too — which matters because that pass exists precisely to produce a
+source locator, and B1-F6 already recorded that its absence surfaces as
+`PlanCompileCause.invalidPlan`, documented as *"a compiler bug, not a source problem"*.
+
+Barrier 1's whole force, at either site, is that it makes a `p < contextWidth` test unsatisfiable,
+since no `p : Nat` is `< 0`. Therefore:
 
 - **It covers exactly the `.advancing` kind** — the only current branch of `classifyWriteRow` whose
   guard is `p < contextWidth`. Measured by B1: `(classifyWriteRow 0 #[1] 1, classifyWriteRow 0 #[1,0]
@@ -1377,7 +1426,10 @@ third is created by the feature.
 
 Every verdict above carries either a quoted clause from the code, a construction with verbatim
 observed output, or — where a fourth constructor was unavoidable — a `[snippet, model]` observation
-against a verbatim transcription, paired with a `[snippet]` measurement of the real clause. The one
-claim that is **not** a measurement is §B2.1's scope assumption, and it is labelled as such there.
+against a verbatim transcription. Of those model observations, all but **two** are paired with a
+`[snippet]` measurement of the real clause; the two exceptions (G17's derived-`BEq` result and
+§B2.1 point 3's context-half row) are enumerated at the top of §B2 with the source reading that
+re-derives each, and neither carries a verdict. The one claim that is **not** a measurement at all
+is §B2.1's scope assumption, and it is labelled as such there.
 
 <!-- END OF TASK B1 AND B2 SECTIONS — the next task appends below this line. -->

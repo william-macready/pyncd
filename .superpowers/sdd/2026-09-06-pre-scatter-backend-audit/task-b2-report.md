@@ -68,9 +68,10 @@ input (both inductives counted, not assumed). Measured at `size(i) = 4`, all six
 `(some 4, some 6, some 5, some 7, some 8, some 11)`.
 
 Result: `.axis` is `.free`'s image, `.const` is `.pinned`'s, `.shift a 1` is `.advancing`'s, and the
-three remaining forms — `.shift a c` (c≠1), `.scale c a`, `.affine c0 [(c,a)]` — are exactly the
-strided kind's, selected by its `(scale, offset)` payload. A two-axis `.affine` has an extent
-(`some 7`) but **no** row image (B2-F6).
+three remaining forms — `.shift a c` (c≠1), `.scale c a`, `.affine c0 [(c,a)]` — form the strided
+*kind*'s three-arm family, within which a row *instance*'s `(scale, offset)` payload selects exactly
+one arm. A two-axis `.affine` has an extent (`some 7`) but **no** row image (B2-F6).
+*(Wording tightened in fix round 1, accuracy item 7.)*
 
 On call-versus-copy: the site **could call** the shared formula — every S21 probe compiled under
 `import LeanNCD.Eval.Plan.Scan` alone, and `Scan.lean` reaches `DSL.Ast` transitively via
@@ -90,7 +91,11 @@ A **third** barrier exists for the strided case that B1's case does not have —
 preflight `.affine => scatterOrAffineLhs`, called barrier 0. This does **not** correct B1: `.iterNext`
 and `.iterAt` are both *admitted* at preflight, so barrier 0 is genuinely irrelevant to B1-F2.
 
-**What barrier 1 alone covers, and does not:** barrier 1's whole force is making a `p < contextWidth`
+**What barrier 1 alone covers, and does not.** *(Fix round 1, accuracy item 4: barrier 1 is **two
+sites**, not one expression — `checkWrites`' `if isBase then 0` plus `Compile.lean` Phase 5's two
+hard-coded `0`s, and site 2's hand-inlined pinned check has a constructor-blind `| _ => pure ()` arm,
+so under decision A the source-facing pass passes a strided base row silently too. §B2.7 now
+enumerates both.)* Barrier 1's whole force, at either site, is making a `p < contextWidth`
 test unsatisfiable. It therefore covers exactly the `.advancing` kind — the only current branch with
 that guard. Under decision A the strided branch's guard is `p ≥ contextWidth`, the **opposite
 polarity**, satisfied by every `p` at `contextWidth = 0`. So barrier 1 is not a weakened defence for
@@ -140,11 +145,16 @@ copied `baseWriteRowsOk`, `stepWriteRowsOk`, `freeExtentsAgree`, `pinnedLiterals
 constructor could be run through the current predicate text. **It was deleted before committing and
 was not copied into `axis-b-spikes/`.** Its output is reproduced inline in the fragment under a new
 tag, `[snippet, model]`, declared at the top of §B2 and explicitly described as weaker than
-`[snippet]`: it measures a faithful copy, not the shipped function. **Every `[snippet, model]` claim
-in the fragment is paired with a `[snippet]` measurement of the real clause it models** — usually the
-same predicate at the same parameters with `.pinned`/`.advancing` standing in, which is sound because
-the arms in question (`| _ => none`, `| _ => true`, `| _, _ => false`) are constructor-blind by their
-own text, quoted at each site.
+`[snippet]`: it measures a faithful copy, not the shipped function. **All but two `[snippet, model]`
+claims in the fragment are paired with a `[snippet]` measurement of the real clause they model** —
+the same predicate at the same parameters with `.pinned`/`.advancing` standing in, which is sound
+because the arms in question (`| _ => none`, `| _ => true`, `| _, _ => false`) are constructor-blind
+by their own text, quoted at each site. **The two exceptions are G17's derived-`BEq` observation and
+§B2.1 point 3's context-half row**, which have no production counterpart in the committed spikes
+because neither can be expressed without the constructor; both are enumerated at the top of §B2 with
+the source reading that re-derives each, and neither carries a verdict. *(Corrected in fix round 1,
+accuracy item 5 — the original wording here was itself the exhaustiveness-overclaim shape this audit
+warns about.)*
 
 ---
 
@@ -311,3 +321,126 @@ Given how often these have been falsified in this audit, every one is listed:
 documentation sites is described as *"the located starting set… not a claim that these are the only
 affected sites"*, because the greps that produced it match on a prose pattern rather than on
 structure.
+
+---
+
+# Fix round 1 report
+
+**All seven items addressed. Status: DONE.** No verdict changed, no cell mark changed, and the
+census is unchanged — every item was a cross-reference, transcription, or scoping correction.
+
+## Evidence required before re-review
+
+| Required | Result |
+|---|---|
+| Build job count from a real run | `cd leanncd && "$HOME/.elan/bin/lake" build` → **`Build completed successfully (8660 jobs).`** |
+| Production diff still empty | `git diff HEAD --stat -- leanncd/LeanNCD leanncd/lakefile.toml leanncd/test` → **no output** |
+| Census re-verified after the edits | Independent re-parse of the committed table: **224 cells — 24 a / 22 b / 122 c / 24 — / 32 ▷**; B1's twelve rows **168 — 24 / 16 / 86 / 18 / 24** (unchanged); B2's four rows **56 — 0 a / 6 b / 36 c / 6 — / 8 ▷** |
+
+Additional constraint checks re-run after the edits:
+
+- **B1's twelve rows byte-identical** to `9680b92`'s fragment — every `| R1 |`…`| R12 |` line
+  compared string-for-string against `git show 9680b92:…/axis-b-fragment.md`, zero differences.
+- **B1's legend byte-identical** — all eight legend rows (`| Mark | Meaning |`, `**a**`, `**b**`,
+  `**c**`, `**—**`, `**▷**`, `**‡**`, `**§**`), the `Column keys:` line and the table header line
+  all present unchanged.
+- **Exactly one append marker, still the last line.**
+- **No `strided` constructor in any committed file** — `git grep -A 6 "^inductive WriteRowKind" --
+  'leanncd/LeanNCD/*'` shows the three constructors `pinned`/`free`/`advancing` unchanged, and
+  `git grep "| *strided\|\.strided" -- 'leanncd/LeanNCD/*' 'leanncd/test/*'` returns **zero hits**
+  (the 12 pre-existing `strided` hits in tracked files are all prose or comments about strided
+  *scatters*, none a constructor).
+
+## Item-by-item
+
+**Important 1 — the either-way answer, now delivered for every group.** The four missing notes
+(G22, G24, G26, G27) are added, plus G29's decision-B open/closed *status*, plus — because my own
+new legend text then asserted that *every* group carries one — G17 and G30 as well. **All 14 B2
+groups now carry a `Decision B` note**, verified mechanically (a parser asserted the substring on
+each of `| **G17** |`…`| G30 |`).
+
+The four new notes take the uniform form the coordinator derived, stated per group rather than by
+reference so each is self-contained:
+
+- **G22** (col 6) → **CLOSED**, letter `c`‡. Under B the base rows are
+  `#[some (.pinned 0), none, some (.free 0)]`, clause 1 fires, and `checkWrites` throws
+  `writeGeometryNotAdmitted true wi` **before** reaching `freeExtentsAgree` — the G21 argument
+  transposed to base, same in-phase catcher. `‡` records that it rests on barrier 1.
+- **G24** (col 7) → **CLOSED**, letter `c`‡ — identical, transposing G23.
+- **G26** (col 11) → **CLOSED**, letter `c`‡, and noted that here the catcher and the unenforced
+  precondition are *the same line of code* (`checkWrites` both throws and computes `if isBase then 0`),
+  which is why the `‡` carries more weight at this cell than anywhere else.
+- **G27** (col 12) → **CLOSED**, letter `c`‡ — `checkScanPlan` propagates `checkWrites`' error
+  unchanged, so the rejection is located at the public entry.
+- **G29** (col 13) → letter stays `c` (decision-invariant), **status becomes CLOSED** on G28's
+  ground transposed to base: `private mk ::` plus a throwing `checkWrites` means no checked plan
+  carrying such a row exists, so the measured `(0, 7, 14)` arithmetic is unreachable rather than
+  wrong — which is B1-F2's own situation, and the sharpest statement of why decision B buys latency
+  and not a bound.
+- **G17, G30** → unchanged under B, letter and status, with the reason (a type has no branch to
+  gate; `signatureContextMismatch`/`storeArityMismatch` mention no row kind).
+
+**Accuracy 2 — verbatim transcriptions.** Both `data = #[1, 0, 2, 0, 3, 0, 4, 0]` renderings (S23e
+and S26c) replaced with the captured
+`#[1.000000, 0.000000, 2.000000, 0.000000, 3.000000, 0.000000, 4.000000, 0.000000]`. Verified the
+abbreviated string no longer occurs anywhere in the fragment.
+
+**Accuracy 3 — `elabTLLHSSlot`'s `$x +1` arm.** Re-read at source and confirmed: it returns
+`.affine (.shift (idxAxis (identStr x)) 1)` with the `1` **hardcoded in the arm body**, reading no
+`num` at all. §B2.5 now splits the four affine arms into **two distinct mechanisms** — three arms
+casting `Int.ofNat n.getNat` from a `num`, and this one fixing the sign in the source text — and
+says explicitly that the fourth is **stronger**, since the value cannot vary. The conclusion (no
+negative affine LHS is surface-reachable) is unchanged and now better supported. Also tightened the
+zero-coefficient sentence: it is reachable through the two `$n * $x…` arms specifically, not through
+all four.
+
+**Accuracy 4 — barrier 1 is two sites.** §B2.7 now opens with an explicit correction to how B1 and
+§B2.1 describe it, enumerating both: `checkWrites`' `if isBase then 0` (governs every plan) and
+**`Compile.lean` Phase 5's two hard-coded `0`s** at `writeRowKinds stateShape.size 0 w` in the
+base-boundary loop and in the base-collision `mine` builder — verified at source. Added the second,
+independent reason site 2 is no defence either: Phase 5's hand-inlined pinned check is
+`match rows[d] with | some (.pinned lit) => … | _ => pure ()`, whose `| _ => pure ()` arm is
+**constructor-blind** exactly as `pinnedLiteralsInRange`'s `| _ => true` is (G24) — so under decision
+A a strided base row passes the **source-facing** pass silently too, which matters because that pass
+exists to produce a source locator. §B2.1 point 2 now cross-references the two-site enumeration.
+
+**Accuracy 5 — the overclaim, corrected in both documents.** The blanket sentence appeared in the
+**fragment** (§B2's tag preamble and §B2.8's closing paragraph) as well as in this report, so all
+three were fixed. §B2's preamble now replaces the blanket rule with an explicit discharge: most
+model claims are paired, and the **two that are not** — G17's derived-`BEq` observation and §B2.1
+point 3's `classifyA 2 #[2,0,0] 0` — are named, with the source reading that re-derives each
+(`deriving DecidableEq, BEq` gives `false` across distinct constructors and payload comparison
+within one; `c == 2` fails both `c == 1` conjuncts and `p = 0 < 2` fails the strided guard, so every
+arm falls through to `else none`). It also records that neither carries a verdict, so nothing in
+B2-F1 depends on the model. Verified the stale sentence occurs nowhere in the fragment.
+
+**Accuracy 6 — the `★` legend's invariant column list.** Extended from `1, 13, 14` to
+**`1, 5, 9, 10, 13, 14`**, with the reason per group of columns: cols 1/13/14 classify nothing
+either way (G17, G29, G30); col 5 is structurally `—` at base under both decisions; cols 9–10 are
+`▷`, a disjoint read vocabulary. The legend now also states that the remaining eight cells per row
+(cols 2, 3, 4, 6, 7, 8, 11, 12) each have a group note, and that G29's entry additionally gives its
+decision-B *status*, which the letter alone does not settle.
+
+**Accuracy 7 — §B2.4's wording.** Rewritten: a row *kind* is the image of a **three-arm family**
+(`.shift a c` with `c ≠ 1`, `.scale c a`, `.affine c0 [(c,a)]`), within which a row *instance*'s
+`(scale, offset)` payload selects exactly one arm — with the selection rule spelled out and the
+`.affine` case's side conditions (`c ≠ 1`, `c0 ≠ 0`) made explicit, since without them it overlaps
+the other two.
+
+## What did not change
+
+No `(a)`/`(b)`/`(c)` mark, no group's open/closed status **under decision A**, no census figure, no
+finding's substance, and no production file. B2-F1 remains 16 cells across 7 open groups under
+decision A; the decision-B column now says, for all 14 groups, that those same cells would be closed
+`c`‡ latent on barrier 1 — which is the tested either-way answer the task was for, and it is now
+readable off the table rather than promised in a legend.
+
+## Remaining concerns after fix round 1
+
+Concerns 1–4 and 6 from the original report stand unchanged. **Concern 5 is withdrawn** — the review
+downgraded it on the ground that every model-derived conclusion in B2-F1 is independently
+re-derivable from production source, and §B2's rewritten preamble now records that reasoning in the
+fragment itself rather than leaving it as a caveat here. The substantive open question is still
+concern 2: **§B2.1's decision A rests on a feature-scope assumption I do not have authority over**,
+and someone holding the Scatter slice's scope should confirm which decision governs. The fragment
+is now equally usable either way.
