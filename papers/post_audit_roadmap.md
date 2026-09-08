@@ -244,6 +244,35 @@ plan from that list, once it exists.
 
 What is already settled and must be carried into that plan when it is written:
 
+- **⚠️ ENTRY OBLIGATION, discovered by Slice 1 and not present in the audit: the chokepoint has no
+  compile-time guard, and the fix has to be a witness function.** Slice 1's tripwire makes six
+  consumer sites fail to compile when a fourth `WriteRowKind` constructor appears — but
+  `classifyWriteRow` and `causalAdvancingRow` **structurally cannot** be tripwired: their catch-alls
+  scrutinise `nz : List (Int × Nat)`, not a `WriteRowKind`, and Lean imposes no exhaustiveness
+  obligation on a function's **range**. `classifyWriteRow` is the audit's single chokepoint — the
+  only place a strided kind can be *admitted* — so **Slice 2's first edit lands in the one position
+  with no guard rail.**
+
+  Two readings, and only one is dangerous. If Slice 2 forgets the producing branch entirely, the
+  result is **fail-closed**: a `c == 2` row yields `nz = [(2, p)]`, both `c == 1` tests fail, the
+  result is `none`, `rows.all Option.isSome` then fails in both geometry predicates and `checkWrites`
+  throws `writeGeometryNotAdmitted`. Loud, and every acceptance fixture fails. **The dangerous
+  reading is the `contextWidth` gating**: the `.advancing`/`.free` branches discriminate on
+  `p < contextWidth` vs `p ≥ contextWidth` and subtract `contextWidth` for the output position. A
+  strided branch written without that discrimination yields a *well-formed* `.strided` whose
+  `outputPos` is off by `contextWidth` — which all six tripwired consumers happily accept. Silently
+  wrong geometry, which is this defect family's exact shape.
+
+  **The mechanism that closes it — use this one, not the obvious one.** A `#guard` set asserting
+  each existing constructor is producible does **not** work: naming `pinned`/`free`/`advancing` never
+  mentions `.strided`, so it compiles and passes unchanged when the constructor is added. What works
+  is a **witness function matching exhaustively over the type** — e.g.
+  `classifyWitness : WriteRowKind → (Nat × Array Int × Int)` with one
+  `#guard classifyWriteRow (witness k) == some k` per constructor. Adding `.strided` then breaks
+  `classifyWitness`'s own exhaustiveness, which is a compile error that additionally **forces the
+  `contextWidth` decision**, because the witness must supply a `contextWidth` value. Build this
+  before, or as, the strided branch is written.
+
 - **The extent rule is not free to invent.** Every strided cell must be the checked-plan image of an
   `LHSSlot.outExtent` arm, and must **call** that shared formula rather than copy it. A duplicate
   formula (`scatterOutDim`) previously drifted from it and shipped a soundness bug — a downstream
