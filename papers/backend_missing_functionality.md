@@ -5,6 +5,14 @@ support. Scope is the static compiler backend only — the reference dense inter
 already evaluates most of the constructs listed here, so nearly every row is a *backend-parity* gap
 (the checked plan compiler has not caught up to the reference semantics), not a missing semantic.
 
+> **The "Hard" Scatter row below has been audited in depth, and there is a plan for it.**
+> `pre_scatter_backend_audit.md` characterises the write-geometry and boundary surfaces Scatter lands
+> on (224-cell predicate table, 21 findings, twelve reproducible spikes); `post_audit_roadmap.md`
+> says what to do in what order. Read both before starting that row — in particular, one scope
+> question gates the whole thing (are affine LHS writes wanted in `base` blocks or step-only?), and a
+> hardening slice should land *before* the feature so a new row kind fails to compile rather than
+> being silently exempted from every value check.
+
 ## Contents
 
 - [Authoritative source — re-derive, don't trust this copy](#authoritative-source--re-derive-dont-trust-this-copy)
