@@ -2403,4 +2403,223 @@ run_cmd do
           unless DenseTensor.approxEq S { shape := [3], data := #[1.0, 1.0, 1.0] } do
             throwError s!"review fixture 19: wrong result {repr S.data}"
 
+/-! ## Part 9: the NEGATIVE half of the two write-geometry predicates
+
+Every pre-existing `#guard` on `baseWriteRowsOk`/`stepWriteRowsOk` in this file is a positive
+acceptance, and all three pre-existing plan-level `writeGeometryNotAdmitted` assertions carry
+`isBase = false`. So until this Part, any single clause of either predicate could be weakened to
+`true` and the whole suite still passed, and no base-phase geometry rejection was pinned anywhere —
+including against a `checkWrites` that reported the constant `false` in place of its own `isBase`
+argument. This Part closes both halves: one negated predicate-level guard per clause, each isolated
+so exactly ONE clause fails, plus three plan-level base-phase rejections that pin the
+`isBase = true` locator through `checkScanPlan`.
+
+**The one clause no fixture can isolate, and why that is redundancy rather than a hole.**
+`stepWriteRowsOk`'s first clause (`rows.all Option.isSome`) is implied by its second and third:
+clause 2 forces every advancing dimension's row to BE `some (.advancing i)`, and clause 3 forces
+every other dimension's row to BE `some (.free _)`, so no `none` row survives both. Any rows array
+violating clause 1 therefore violates clause 2 or clause 3 as well, and weakening clause 1 alone
+changes no verdict at all — the mutation that does so survives this whole file. Its guard below
+records the co-violation rather than pretending to isolate it, and `stepWriteRowsOkNoClause1`'s
+exhaustive agreement guard pins the redundancy itself, so "the mutation survives" is a checked claim
+here rather than an uncovered clause.
+`baseWriteRowsOk`'s own first clause is NOT redundant: its cover clause `filterMap`s a
+`none` row away instead of rejecting it, and its boundary clause looks only at advancing dimensions,
+so without clause 1 an unrecognized row at a non-advancing dimension is admitted.
+
+**Why no base-phase row below is `.advancing`.** `checkWrites` sets `contextWidth := 0` for a base
+write and `classifyWriteRow`'s `.advancing` arm needs `p < contextWidth`, so no base-phase row the
+compiler can produce is ever `.advancing`. Every base-phase fixture here is therefore built from a
+real `StateWriteMap` through `writeRowKinds`, not hand-assembled from constructors; the two
+hand-assembled guards are flagged as such and both stay inside the reachable kinds. -/
+
+/-! ### `baseWriteRowsOk`, one negated guard per clause -/
+
+-- Clause 1 (every row recognized), isolated: `pointWrite`'s dim-0 row gains coefficient `2`, which
+-- `classifyWriteRow` refuses as a non-unit coefficient. Clause 2 cannot see the resulting `none` —
+-- its `filterMap` drops the row and `[] == List.range 0` still holds — and dim 1 still pins
+-- advancing dimension 1 to literal `0`, so clause 1 is the only one that fails.
+def unrecognizedPointWrite : StateWriteMap :=
+  { pointWrite with map := { coeffs := #[#[2], #[]], bias := #[1, 0] } }
+
+def unrecognizedPointRows : Array (Option WriteRowKind) := writeRowKinds 2 0 unrecognizedPointWrite
+
+#guard unrecognizedPointRows == #[none, some (.pinned 0)]
+#guard baseWriteRowsOk #[0, 1] 0 unrecognizedPointRows == false
+
+-- Clause 2 (the free positions cover `List.range outputShapeSize`), isolated: `faceWrite`'s free
+-- column row moves from domain position 0 to position 1, so the cover is `[1]` where
+-- `List.range 1 = [0]`. Every row is still recognized and dim 0 is still pinned to literal `0`.
+def offsetFaceWrite : StateWriteMap :=
+  { faceWrite with map := { coeffs := #[#[0], #[0, 1]], bias := #[0, 0] } }
+
+def offsetFaceRows : Array (Option WriteRowKind) := writeRowKinds 2 0 offsetFaceWrite
+
+#guard offsetFaceRows == #[some (.pinned 0), some (.free 1)]
+#guard baseWriteRowsOk #[0] 1 offsetFaceRows == false
+
+-- The ORDER half of the same clause, which the fixture above does not exercise: a rank-3 state whose
+-- two free rows cover exactly `{0, 1}` but in DECREASING order, so the equality fails on order
+-- alone (`[1, 0]` vs `List.range 2 = [0, 1]`). Hand-assembled — the point is the row sequence, not
+-- its provenance — and every kind in it is one a base write can really produce.
+#guard baseWriteRowsOk #[2] 2 #[some (.free 1), some (.free 0), some (.pinned 0)] == false
+
+-- Clause 3 (some advancing dimension pinned to literal `0` — the write touches the lower boundary),
+-- isolated: `faceWrite`'s pinned row moves off the boundary to literal `1`. Every row is still
+-- recognized and the cover is still `[0] == List.range 1`; only the boundary rule fails.
+def offBoundaryFaceWrite : StateWriteMap :=
+  { faceWrite with map := { coeffs := #[#[0], #[1]], bias := #[1, 0] } }
+
+def offBoundaryFaceRows : Array (Option WriteRowKind) := writeRowKinds 2 0 offBoundaryFaceWrite
+
+#guard offBoundaryFaceRows == #[some (.pinned 1), some (.free 0)]
+#guard baseWriteRowsOk #[0] 1 offBoundaryFaceRows == false
+-- And NOT a range failure: literal `1` is a valid coordinate for a `[2,2]` state, so
+-- `pinnedLiteralsInRange` accepts these very rows. The rejection above is purely geometric — the
+-- same division of labour `outOfRangePointRows` documents from the other side.
+#guard pinnedLiteralsInRange #[2,2] offBoundaryFaceRows == true
+
+/-! ### `stepWriteRowsOk`, one negated guard per clause -/
+
+-- Clause 1 (every row recognized) at step phase. Co-violating by construction, per the note above:
+-- `dpStepWrite`'s dim-1 row gains coefficient `2`, which `classifyWriteRow` refuses, and dim 1 is
+-- itself an advancing dimension, so clause 2 fails on the same row. No rows array violates clause 1
+-- alone.
+def unrecognizedStepWrite : StateWriteMap :=
+  { dpStepWrite with map := { coeffs := #[#[1, 0], #[0, 2]], bias := #[1, 1] } }
+
+def unrecognizedStepRows : Array (Option WriteRowKind) := writeRowKinds 2 2 unrecognizedStepWrite
+
+#guard unrecognizedStepRows == #[some (.advancing 0), none]
+#guard stepWriteRowsOk #[0, 1] 0 unrecognizedStepRows == false
+
+/-- `stepWriteRowsOk` with its FIRST clause deleted, and nothing else changed. A local oracle copy,
+    never called by production code, whose only purpose is to turn the redundancy claim in this
+    Part's header from prose into something that can fail: the mutation that weakens clause 1 to
+    `true` survives the whole suite, and the honest reason is that clauses 2 and 3 already imply it,
+    not that no fixture covers it.
+
+    Because this copy is FROZEN, the agreement guard below is also a tripwire on clauses 2-4: any
+    change to them that the copy does not receive breaks it. That is deliberate and is the notice
+    this file wants — if a later slice weakens clause 3 (adding a row kind its fall-through admits,
+    say), clause 1 stops being redundant and the redundancy claim above stops being true, so the
+    guard should break rather than keep asserting it. Restoring it means re-deriving this copy from
+    the changed predicate and re-checking that the claim still holds. -/
+def stepWriteRowsOkNoClause1 (advancingDims : Array Nat) (outputShapeSize : Nat)
+    (rows : Array (Option WriteRowKind)) : Bool :=
+  (advancingDims.toList.zipIdx.all (fun (d, i) => rows.getD d none == some (.advancing i))) &&
+  (rows.toList.zipIdx.all (fun (r, d) => advancingDims.contains d ||
+    (match r with
+      | some (.free _) => true
+      | some (.pinned _) | some (.advancing _) | none => false))) &&
+  ((rows.toList.zipIdx.filterMap (fun (r, d) =>
+      if advancingDims.contains d then none else match r with
+        | some (.free p) => some p
+        | some (.pinned _) | some (.advancing _) | none => none))
+    == List.range outputShapeSize)
+
+/-- Every row classification reachable in a rank-2 write over a two-position domain, plus `none`. -/
+def allRowKinds : List (Option WriteRowKind) :=
+  [none, some (.pinned 0), some (.pinned 1), some (.free 0), some (.free 1)
+  , some (.advancing 0), some (.advancing 1)]
+
+-- Exhaustive over all 49 rank-2 rows arrays built from those kinds, all four `advancingDims`
+-- subsets of `{0, 1}`, and output ranks 0-2: the two predicates agree everywhere, so clause 1 is
+-- decidably redundant and no fixture can isolate it.
+#guard allRowKinds.all (fun r0 => allRowKinds.all (fun r1 =>
+  ([#[], #[0], #[1], #[0, 1]] : List (Array Nat)).all (fun adv =>
+    ([0, 1, 2] : List Nat).all (fun n =>
+      stepWriteRowsOk adv n #[r0, r1] == stepWriteRowsOkNoClause1 adv n #[r0, r1]))))
+
+-- Clause 2 (each advancing dimension is `.advancing i` at its OWN context position), isolated:
+-- `dpStepWrite`'s dim-0 row becomes a `.free` projection of the block output instead of the
+-- advancing successor — coefficient `1` at domain position 2, the first OUTPUT position, bias `0`.
+-- Both dimensions advance, so clause 3 is vacuous and clause 4's cover skips them both.
+def freeAtAdvancingStepWrite : StateWriteMap :=
+  { dpStepWrite with map := { coeffs := #[#[0, 0, 1], #[0, 1]], bias := #[0, 1] } }
+
+def freeAtAdvancingStepRows : Array (Option WriteRowKind) :=
+  writeRowKinds 2 2 freeAtAdvancingStepWrite
+
+#guard freeAtAdvancingStepRows == #[some (.free 0), some (.advancing 1)]
+#guard stepWriteRowsOk #[0, 1] 0 freeAtAdvancingStepRows == false
+
+-- The "at its OWN context position" half: both rows ARE `.advancing`, at each other's positions.
+-- Clause 2 is the only clause that can see the swap — clause 4's cover skips advancing dimensions
+-- entirely and clause 3 is vacuous when every dimension advances. Hand-assembled; `dpStepWrite`
+-- with its two bias rows swapped would produce the same pair.
+#guard stepWriteRowsOk #[0, 1] 0 #[some (.advancing 1), some (.advancing 0)] == false
+
+-- Clause 3 (every non-advancing dimension actually IS `.free`), isolated, on Part 8's `W` state
+-- (rank 2, only dimension 0 advancing) with its scalar step output: dim 1 is pinned to literal `1`
+-- rather than free. Clause 4 cannot see it — the pinned row is `filterMap`ped away and
+-- `[] == List.range 0` holds — which is exactly the F4 finding clause 3 was added for. Part 8
+-- rejects this same write through `checkScanPlan`; this is the predicate-level half.
+def pinnedAtNonAdvancingStepRows : Array (Option WriteRowKind) :=
+  writeRowKinds 2 1 pinnedAtNonAdvancingStepWrite
+
+#guard pinnedAtNonAdvancingStepRows == #[some (.advancing 0), some (.pinned 1)]
+#guard stepWriteRowsOk #[0] 0 pinnedAtNonAdvancingStepRows == false
+
+-- Clause 4 (the non-advancing dimensions' free positions cover `List.range outputShapeSize`),
+-- isolated, on Part 8's canonical face-shaped step write: dim 1's coefficient moves one domain
+-- position later, so it is still `.free` (clause 3 holds) and dim 0 is still `.advancing 0`
+-- (clause 2 holds), but the cover is `[1]` against `List.range 1 = [0]`.
+def offsetFreeStepWrite : StateWriteMap :=
+  { stepWriteWCanon with map := { coeffs := #[#[1, 0], #[0, 0, 1]], bias := #[1, 0] } }
+
+def offsetFreeStepRows : Array (Option WriteRowKind) := writeRowKinds 2 1 offsetFreeStepWrite
+
+#guard offsetFreeStepRows == #[some (.advancing 0), some (.free 1)]
+#guard stepWriteRowsOk #[0] 1 offsetFreeStepRows == false
+
+/-! ### Plan-level: `writeGeometryNotAdmitted` with `isBase = true`
+
+All three pre-existing `writeGeometryNotAdmitted` assertions carry `isBase = false`, so a
+`checkWrites` reporting the constant `false` in place of its own `isBase` argument passed the whole
+suite. These three pin the base leg of that locator, one per clause of `baseWriteRowsOk`, each
+reached through `checkScanPlan` rather than the predicate directly. All three clauses turn out to be
+plan-level constructible; nothing in `checkWrites` upstream of the geometry check inspects a
+coefficient row's WIDTH, which is what makes clauses 1 and 2 reachable. -/
+
+-- Clause 3, on Part 2's `linearScan`: the base write's single row pins advancing dimension 0 to
+-- literal `1` instead of `0`, so it no longer touches the lower boundary. `S` is `[3]`, so `1` is
+-- in range and `pinnedLiteralsInRange` would accept it — but that check never runs, because the
+-- geometry verdict comes first. Base write index 0.
+def offBoundaryBaseWriteS : StateWriteMap :=
+  { baseWriteS with map := { baseWriteS.map with bias := #[1] } }
+
+run_cmd do
+  match checkScanPlan outerSigs { linearScan with baseWrites := #[offBoundaryBaseWriteS] } with
+  | .ok _ =>
+      throwError "a base write pinning its advancing dimension off the lower boundary should have \
+been rejected"
+  | .error e =>
+      unless e == .writeGeometryNotAdmitted true 0 do
+        throwError s!"base-phase clause-3 geometry rejection: wrong error {repr e}"
+
+-- Clause 2, on Fixture 5's `multiBaseScan`: `faceWrite` is replaced by `offsetFaceWrite`, whose
+-- free row names output position 1 of a rank-1 block output. Base write index 0.
+run_cmd do
+  match checkScanPlan outerSigsMultiBase
+      { multiBaseScan with baseWrites := #[offsetFaceWrite, pointWrite] } with
+  | .ok _ =>
+      throwError "a base write whose free position does not cover the block output should have been \
+rejected"
+  | .error e =>
+      unless e == .writeGeometryNotAdmitted true 0 do
+        throwError s!"base-phase clause-2 geometry rejection: wrong error {repr e}"
+
+-- Clause 1, on the same donor, with `pointWrite` replaced by `unrecognizedPointWrite`. `faceWrite`
+-- at index 0 is admitted first, so the locator is base write index 1 — the other half of the
+-- `isBase`/`wi` pair, which no assertion in this file previously pinned at base phase.
+run_cmd do
+  match checkScanPlan outerSigsMultiBase
+      { multiBaseScan with baseWrites := #[faceWrite, unrecognizedPointWrite] } with
+  | .ok _ =>
+      throwError "a base write with an unrecognized affine row should have been rejected"
+  | .error e =>
+      unless e == .writeGeometryNotAdmitted true 1 do
+        throwError s!"base-phase clause-1 geometry rejection: wrong error {repr e}"
+
 end LeanNCD.Eval.Plan.ScanTest
