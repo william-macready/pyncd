@@ -7,22 +7,23 @@ namespace LeanNCD.Eval.Plan
     of the block's own output slice, or bound to `context[p] + 1` (step writes only). Anything else
     is an unrecognized affine geometry and must be rejected.
 
-    **Every consumer in this file matches exhaustively over its constructors — on purpose.** Adding a
+    **Every consumer matches exhaustively over its constructors — on purpose.** Adding a
     constructor here is meant to be a compile error at each site that would otherwise silently
     exempt the new kind (`baseWriteRowsOk`'s positional cover, both of `stepWriteRowsOk`'s
-    non-advancing clauses, `freeExtentsAgree`, `pinnedLiteralsInRange`, `writesCollide`), which is
-    what the write-geometry surface's history of "says which rows MUST be a kind, never which rows
-    MAY NOT" cost. Do not restore a `| _ =>` arm at any of them. Two sites in this file are NOT
-    covered by that tripwire and never can be: `classifyWriteRow` *produces* the kinds (its
-    catch-all is over the nonzero-coefficient list, not over `WriteRowKind`), and
-    `causalAdvancingRow` classifies read rows and never mentions this type — a new kind must be
-    admitted in `classifyWriteRow` deliberately, since nothing will remind you.
+    non-advancing clauses, `freeExtentsAgree`, `pinnedLiteralsInRange`, `writesCollide`, and
+    `Compile.lean`'s base-write placement loop), which is what the write-geometry surface's history
+    of "says which rows MUST be a kind, never which rows MAY NOT" cost. Do not restore a `| _ =>`
+    arm at any of them. Two sites in this file are NOT covered by that tripwire and never can be:
+    `classifyWriteRow` *produces* the kinds (its catch-all is over the nonzero-coefficient list,
+    not over `WriteRowKind`), and `causalAdvancingRow` classifies read rows and never mentions this
+    type — a new kind must be admitted in `classifyWriteRow` deliberately, since nothing will
+    remind you.
 
-    **One consumer OUTSIDE this file is still constructor-blind:** `Compile.lean`'s base-write loop
-    hand-inlines a pinned-literal range check with a fall-through arm over `Option WriteRowKind`,
-    so a new kind is silently exempt there. That copy is scheduled to be replaced by a call to
-    `pinnedLiteralsInRange`, at which point the claim above extends to it; until then, treat the
-    "every consumer" guarantee as file-local. -/
+    The boundary rule is the one place the surface decides by EQUALITY rather than by matching:
+    `baseWriteRowsOk`'s advancing-pin clause, and `Compile.lean`'s `baseWriteNotAtBoundary` guard
+    that restates it, both compare a row against `some (.pinned 0)`. No exhaustiveness obligation
+    attaches to a comparison, so a new kind is simply unequal and the write is rejected — safe by
+    default, but no compiler will point at either site. -/
 inductive WriteRowKind
   | pinned    (lit : Int)
   | free      (outputPos : Nat)

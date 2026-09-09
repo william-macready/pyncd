@@ -994,27 +994,39 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
   -- restating their rules: what this pass adds is SOURCE locators. `checkScanPlan` re-checks all of
   -- it later (Step E) as the internal safety net — a rejection there is a compiler bug reported as
   -- `invalidPlan`, which is exactly why the source-facing rejection has to happen here first.
+  -- One classification per base write, shared by the placement loop and the collision loop below:
+  -- both used to call `writeRowKinds` over the same writes and the same state shapes in the same
+  -- pass. `writeRowKinds` is total, so computing every write's rows up front cannot change which
+  -- rejection fires first.
+  let baseWriteRows : Array (Array (Option WriteRowKind)) := baseWrites.map (fun w =>
+    writeRowKinds (stateShapes.getD w.stateIndex #[]).size 0 w)
   for h : wi in [0 : baseWrites.size] do
     let w := baseWrites[wi]
     let st := stateNames.getD w.stateIndex ""
     let stateShape := stateShapes.getD w.stateIndex #[]
-    let rows := writeRowKinds stateShape.size 0 w
+    let rows := baseWriteRows.getD wi #[]
     unless (stateAdvDims.getD w.stateIndex #[]).any (fun d => rows.getD d none == some (.pinned 0)) do
       throw (scanErr warnings (.baseWriteNotAtBoundary scanName st wi))
     for h2 : d in [0 : rows.size] do
       match rows[d] with
       | some (.pinned lit) =>
-          unless 0 ≤ lit && lit.toNat < stateShape.getD d 0 do
+          -- the RULE is `Scan.lean`'s `pinnedLiteralsInRange`, called one row at a time so the
+          -- rejection can still name the offending dimension: the predicate indexes `stateShape`
+          -- by each row's own position, so a one-row slice paired with that row's own extent is
+          -- exactly the predicate's clause for dimension `d`. Only the LOCATOR lives here.
+          unless pinnedLiteralsInRange #[stateShape.getD d 0] #[rows[d]] do
             throw (scanErr warnings
               (.baseWritePinOutOfRange scanName st wi d lit (stateShape.getD d 0)))
-      | _ => pure ()
+      -- no range obligation: `pinnedLiteralsInRange` is vacuously true on these rows, whose
+      -- coordinates are bounded by the checked output/context shapes instead. Spelled out rather
+      -- than caught by `| _ =>` so a new `WriteRowKind` constructor is a compile error here too.
+      | some (.free _) | some (.advancing _) | none => pure ()
   for h : si in [0 : stateNames.size] do
     let st := stateNames[si]
-    let stateShape := stateShapes.getD si #[]
     let mine : Array (Nat × Array (Option WriteRowKind)) :=
       (Array.range baseWrites.size).filterMap (fun wi =>
-        let w := baseWrites.getD wi default
-        if w.stateIndex == si then some (wi, writeRowKinds stateShape.size 0 w) else none)
+        if (baseWrites.getD wi default).stateIndex == si then some (wi, baseWriteRows.getD wi #[])
+        else none)
     for h2 : a in [0 : mine.size] do
       for h3 : b in [0 : mine.size] do
         if a < b then
