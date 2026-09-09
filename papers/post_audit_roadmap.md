@@ -119,8 +119,16 @@ exactly this shape is what made the Boolean/predicate slice cost six review roun
   other number must be explained, not asserted.
 - **No behaviour change in Tasks 1 and 3.** The existing suite is the oracle: it must pass unchanged,
   before and after.
-- **No `strided` constructor is added in this slice.** That is Slice 2's. Task 1's tripwire proof uses
-  a *throwaway* fourth constructor in a gitignored spike, deleted before commit.
+- **No `strided` constructor is COMMITTED in this slice.** That is Slice 2's.
+  ⚠️ **Corrected mechanism (an earlier draft of this constraint named an impossible one).** Task 1's
+  tripwire proof does need a fourth constructor temporarily, but it cannot live in a throwaway
+  `leanncd/spikes/` file: **Lean inductives cannot be reopened from another module**, so no spike can
+  add a constructor to `WriteRowKind`. The real method is **in-place mutation of
+  `Eval/Plan/Scan.lean` itself** — add the constructor, rebuild, capture the error list verbatim,
+  revert, and *verify* the revert (`shasum` against a pre-recorded manifest, plus
+  `git grep -i strided` clean) before doing anything else. `leanncd/scripts/mutation-cycle.sh` is
+  built for exactly this shape and fails the cycle if restoration does not verify; prefer it to a
+  hand mutate/restore, which is how a mutation gets left in the tree.
 - **No line numbers in shipped text** — completion records, `AGENTS.md` rows and doc comments cite
   identifiers only. A later commit in the same slice invalidates line references.
 - Every Lean snippet the implementer writes is compiled via
@@ -152,12 +160,23 @@ case × class table as a deliverable when fixing instance *N* of a recurring def
 audit already produced it over the full predicate surface, which is why this task is small.)
 
 **The deliverable that matters is not the refactor — it is the proof the tripwire works.** Add a
-fourth `WriteRowKind` constructor in a throwaway `leanncd/spikes/` file, rebuild, and record the
-list of sites that now fail to compile. Expected: every site in the table above. **Any site that
-still compiles is a catch-all that was missed, and is the finding.** Delete the throwaway before
-committing; keep the recorded output in the completion record.
+fourth `WriteRowKind` constructor **in place in `Eval/Plan/Scan.lean`** (a spike cannot do it — see
+the corrected constraint above), rebuild, record the failing sites verbatim, and revert.
 
-- **Files:** `leanncd/LeanNCD/Eval/Plan/Scan.lean`; a throwaway under `leanncd/spikes/` (deleted).
+⚠️ **Expected: five of the seven rows above, not all seven.** An earlier draft of this task said
+"every site in the table above", which is wrong for two rows and would have reported a missed
+catch-all where none exists. `classifyWriteRow` and `causalAdvancingRow` scrutinise
+`nz : List (Int × Nat)`, **not** a `WriteRowKind`, and Lean imposes no exhaustiveness obligation on a
+function's **range** — so neither can ever be tripwired, however its arms are written. Concretely the
+build reports **six errors over five rows**: `baseWriteRowsOk`'s cover, *both* of
+`stepWriteRowsOk`'s non-advancing clauses, `freeExtentsAgree`, `pinnedLiteralsInRange`, and
+`writesCollide`. **Any of those six that still compiles is a catch-all that was missed, and is the
+finding.** The two un-tripwirable rows convert into a *documentation* obligation at the type
+(`WriteRowKind`'s own docstring must say that a new kind has to be admitted in `classifyWriteRow`
+deliberately, because nothing will remind you) — not a compile error to hunt for.
+
+- **Files:** `leanncd/LeanNCD/Eval/Plan/Scan.lean` only — the mutation is applied to and reverted in
+  that same file, and no new file is created.
 - **Risk:** low-moderate. **0 new fixtures, 1 mutation cycle** (the fourth-constructor proof). The
   cost is in the mutation cycle and the rebuild, not the diff.
 - **Rollback unit:** yes — independently revertible.
@@ -171,8 +190,55 @@ five are positive acceptances**, none is negated, and there are exactly **three*
 flag. So **no base-phase geometry rejection is pinned anywhere.** One existing guard even asserts
 that an out-of-range pinned point *is* admitted, documenting the gap rather than closing it.
 
-Add the Tier 1 coverage named in `pre_scatter_backend_audit.md` §B2.6. Each fixture below names its
-donor, so the implementer clones rather than rediscovers:
+> **⚠️ SUPERSEDED BASELINE — Slice 1 has landed and closed it.** The paragraph above is the premise
+> the task was written against and is left intact for that reason, but it no longer describes the
+> tree. Re-measured after Slice 1: **14** `#guard`s exercise `baseWriteRowsOk`/`stepWriteRowsOk`, of
+> which **9 are negations** (`== false`), plus **3** negative guards on the `classifyWriteRow`
+> chokepoint upstream of both — 12 negative assertions where there were none. And there are now
+> **6** plan-level `writeGeometryNotAdmitted` assertions, three `isBase = false` and three
+> `isBase = true` (`true 0`, `true 0`, `true 1`), so the base-phase locator is pinned in both
+> directions. Do not quote the pre-slice figures as current; `pre_scatter_backend_audit.md`'s
+> `B1-F10` carries the same stale measurement and now has a superseding banner of its own.
+
+Add the Tier 1 coverage named in `pre_scatter_backend_audit.md` §B2.6.
+
+> **⚠️ THE FOUR-FIXTURE TABLE BELOW IS DEFECTIVE — corrected here, and superseded by what Slice 1
+> actually built.** Two of its four rows cannot be built as written and a third asks for coverage
+> that already existed; the table is retained only so the corrections have something to point at.
+> Row by row:
+>
+> 1. *base-phase geometry rejection, assert `true 0`* — **sound, and landed three times over**, one
+>    per clause of `baseWriteRowsOk`, reached through `checkScanPlan`: `true 0`, `true 0`, `true 1`.
+>    All three clauses turned out to be plan-level constructible, because nothing upstream of the
+>    geometry check inspects a coefficient row's WIDTH.
+> 2. *`.advancing` row rejected at base, from `pointRows`* — **not constructible through the
+>    compiler's own path.** `checkWrites` sets `contextWidth := 0` for a base write and
+>    `classifyWriteRow`'s `.advancing` arm requires `p < contextWidth`, which no `p : Nat` satisfies,
+>    so no base-phase row `writeRowKinds` can produce is ever `.advancing` (this is the audit's
+>    barrier 1). Slice 1 pinned that clause with a reachable row instead — a non-unit coefficient,
+>    which `classifyWriteRow` refuses — and hand-assembled rows arrays only where the point is the
+>    row *sequence*, each kind in them one a base write can really produce.
+> 3. *out-of-range pinned literal rejected at base, "flip the existing acceptance"* — **this
+>    instruction would have asserted something FALSE.** `baseWriteRowsOk` is *correct* to admit an
+>    out-of-range pinned point: geometry admission recognises a row as `.pinned lit` without ever
+>    looking at `lit`'s value, and range-checking is `pinnedLiteralsInRange`'s job, already pinned by
+>    its own negative guards (including the negative-literal case). The existing acceptance guard
+>    documents that division of labour and **must stay green**. Flipping it would have made the suite
+>    assert the opposite of the design.
+> 4. *free-extent disagreement at base, from `faceRows`* — **already existed at `89cd767`**, verbatim
+>    and with the exact donor named: `#guard freeExtentsAgree #[2,2] #[5] faceRows == false`. Nothing
+>    to add. (`freeExtentsAgree` is also a separate check from the two geometry predicates this task
+>    is about, so it was never part of the gap the opening paragraph measures.)
+>
+> **What replaced the table:** one negated guard per clause of *both* predicates — three for
+> `baseWriteRowsOk`, four for `stepWriteRowsOk`, plus an order-half and a position-swap guard — three
+> `classifyWriteRow` chokepoint guards, three plan-level base-phase rejections, and a frozen
+> `stepWriteRowsOkNoClause1` oracle with a 588-case agreement check for the one clause no fixture can
+> isolate. Broader than four fixtures, and derived from the clause structure rather than from a
+> selected list.
+
+Each fixture below names its donor, so the implementer clones rather than rediscovers — but read the
+correction above before cloning any of them:
 
 | Fixture | Donor | Change |
 |---|---|---|
@@ -235,6 +301,73 @@ Fund the second lens by running per-task review of Tasks 1 and 3 at mid tier —
 against a specified table — and keeping Task 2's review at full tier, since fixture *shape* is where
 its failure mode lives.
 
+### Slice 1 completion record
+
+**Status: LANDED**, all three tasks, on `worktree-slice1-write-geometry-hardening` from base
+`89cd767`. Two independent whole-branch reviews, both recommending merge; the soundness lens found
+no Critical and no Important. Build green at **8660 jobs**; all twelve tracked `leanncd/spikes/`
+files still reproduce byte-identically; **no `strided` constructor in any committed file**. The
+corrections above (the impossible spike mechanism, "every site in the table", the four-fixture table,
+the superseded `B1-F10` baseline) were all found while executing this section and are folded into it
+rather than left in a workspace document — this section is the durable spec, and the plan file the
+slice was executed from is gitignored.
+
+**Task 1 — the exhaustiveness tripwire** (`03c6cb1`, plus `b5099bf`/`cedbe77` scoping the shipped
+claims). Every catch-all in the write-geometry predicates replaced by arms explicit over
+`WriteRowKind`'s three constructors plus `Option`'s `none`, result-preserving in every case.
+**Nine tripwired sites, seven of them production**, verified by adding a fourth constructor in place:
+six in `Eval/Plan/Scan.lean` (`baseWriteRowsOk`'s cover, both of `stepWriteRowsOk`'s non-advancing
+clauses, `freeExtentsAgree`, `pinnedLiteralsInRange`, `writesCollide`), one in `Eval/Plan/Compile.lean`
+(its base-write placement loop, closed by Task 3), and two in `test/Eval/Plan/ScanTest.lean`'s frozen
+`stepWriteRowsOkNoClause1` oracle. Only the six in `Scan.lean` appear in the first build; the other
+three surface as those are discharged. `classifyWriteRow` and `causalAdvancingRow` remain
+structurally un-tripwirable and are documented as such at the type.
+
+**Task 2 — the negative coverage** (`10e6ded`, `9d900da`). `ScanTest.lean` gained **Part 9: 24
+assertions** (20 `#guard` + 4 `run_cmd`), of which **9 are negated clause guards, each carrying its
+own mutation cycle**. Three results worth carrying:
+
+- **The `isBase` locator is shown failing.** Replacing `writeGeometryNotAdmitted isBase wi` with a
+  constant `false` breaks the build with **exactly and only** the three new base-phase fixtures
+  (`true 0`, `true 0`, `true 1`) — no pre-existing assertion fires, so that mutant was previously
+  undetectable and each new fixture is individually load-bearing. Reproduced by the reviewer against
+  the full default target.
+- **A live unpinned weakening was found and closed**: dropping `c == 1` from `classifyWriteRow`'s
+  free branch survived the entire suite, admitting a stride-k row as `.free 0`. Three chokepoint
+  guards now pin both coefficient tests, with disjoint failure sets.
+- **`stepWriteRowsOk`'s clause 1 is logically redundant** given clauses 2 and 3 (proved, two lines,
+  for arbitrary rank and `advancingDims`), so its mutation survives by design. Rather than ship a
+  fixture that passes either way, the redundancy itself is checked: a frozen local oracle minus
+  clause 1, plus a 588-case agreement `run_cmd`. Ruling recorded: KEEP, because the copy is never
+  called by production, so divergence *fails the build* rather than drifting silently.
+
+**Task 3 — de-duplicating `Compile.lean`'s inlined geometry rules** (`76ace2e`). Two items:
+
+- The hand-inlined **`pinnedLiteralsInRange` duplicate is now a real call** —
+  `pinnedLiteralsInRange #[extent] #[row]`, one row at a time so the located
+  `baseWritePinOutOfRange` diagnostic (dimension, literal, extent) is preserved exactly, with only
+  the LOCATOR left at the call site and the RULE in `Scan.lean`. Mutation-verified: deleting the
+  predicate's pinned-row rule now breaks `ScanCompileTest`'s two `baseWritePinOutOfRange` guards,
+  which the former inlined copy survived unchanged. Its `| _ => pure ()` arm became a tripwire site
+  in the same commit.
+- **`writeRowKinds` is hoisted**: the placement loop and the base-collision `mine` builder used to
+  compute it twice over the same writes and state shapes in one pass; there is now a single
+  `baseWriteRows` both consume. `writeRowKinds` is total, so this cannot change which rejection fires
+  first. Side effect worth knowing: the audit's barrier 1 was *"two sites, not one expression"*, whose
+  second site was these two literal `0`s — now one.
+
+**The one deliberate non-replacement, and its owner.** `Compile.lean`'s `baseWriteNotAtBoundary`
+guard still restates `baseWriteRowsOk`'s advancing-pin clause inline. Calling the *whole* predicate
+there compiles and passes the full suite — the reviewer tried it — so nothing blocks it
+mechanically; the objection is diagnostic, and it is recorded in `leanncd/LeanNCD/Eval/AGENTS.md`'s
+write-geometry contract row as well as in Section B's first inherited item. **Owner: Slice 2**, which
+reopens `baseWriteRowsOk` anyway; the fix is to lift that clause alone into a named `Scan.lean`
+predicate both sites call, not to call `baseWriteRowsOk` from `compileScan`.
+
+**What Slice 1 deliberately did NOT close**, carried into Section B: the free branch's `bias == 0`
+test and `classifyWriteRow`'s multi-nonzero arm are both genuinely unpinned (measured — see Section
+B's firing-set table), and `ScanTest.lean`'s `allRowKinds` literal is not tripwired.
+
 ## Section B — Slice 2: Scatter + affine LHS writes (scoped, not detailed)
 
 **Not planned here, on purpose.** Section 0 is now settled — **Decision A**, so *both* lowering arms
@@ -245,9 +378,33 @@ plan from that list, once it exists.
 What is already settled and must be carried into that plan when it is written:
 
 - **⚠️ ENTRY OBLIGATION, discovered by Slice 1 and not present in the audit: the chokepoint has no
-  compile-time guard, and the fix has to be a witness function.** Slice 1's tripwire makes six
-  consumer sites fail to compile when a fourth `WriteRowKind` constructor appears — but
-  `classifyWriteRow` and `causalAdvancingRow` **structurally cannot** be tripwired: their catch-alls
+  compile-time guard, and the fix has to be a witness function.** Slice 1's tripwire makes **nine
+  sites** fail to compile when a fourth `WriteRowKind` constructor appears — **seven production and
+  two test.** This is Slice 2's expected compile-error list, so both the split and the arrival order
+  matter:
+
+  | Where | Sites |
+  |---|---|
+  | `Eval/Plan/Scan.lean` (production) | **six** — `baseWriteRowsOk`'s positional cover; *both* of `stepWriteRowsOk`'s non-advancing clauses; `freeExtentsAgree`; `pinnedLiteralsInRange`; `writesCollide` |
+  | `Eval/Plan/Compile.lean` (production) | **one** — the base-write placement loop's pinned-literal match |
+  | `test/Eval/Plan/ScanTest.lean` (test) | **two** — both matches inside the frozen `stepWriteRowsOkNoClause1` oracle |
+
+  **They do not all appear in one build**, and a plan that expects nine errors at once will read the
+  first round as two sites missing. Re-measured in this slice's final fix wave by adding a throwaway
+  fourth constructor in place (Lean inductives cannot be reopened from another file, so there is no
+  way to do this from a spike): the build reported `Scan.lean`'s **six, and only those six**, because
+  a module that fails to compile blocks its dependents. `Compile.lean`'s one and `ScanTest.lean`'s
+  two surface only once the six are discharged. Expect three rounds.
+
+  The tripwire's residual limit belongs in the same breath, since it is the whole of what the
+  mechanism buys: **it forces a decision at each value check, it does not constrain the decision.**
+  Discharging all nine with `| some (.strided ..) => true`, mirroring the neighbouring arms, compiles
+  clean and reproduces the historical defect exactly — the new kind exempt from every value check,
+  just deliberately this time. Each arm's value comes from `pre_scatter_backend_audit.md`'s cell
+  table, not from its neighbours.
+
+  Two sites are worse than that: `classifyWriteRow` and `causalAdvancingRow` **structurally cannot**
+  be tripwired at all. Their catch-alls
   scrutinise `nz : List (Int × Nat)`, not a `WriteRowKind`, and Lean imposes no exhaustiveness
   obligation on a function's **range**. `classifyWriteRow` is the audit's single chokepoint — the
   only place a strided kind can be *admitted* — so **Slice 2's first edit lands in the one position
@@ -260,8 +417,8 @@ What is already settled and must be carried into that plan when it is written:
   reading is the `contextWidth` gating**: the `.advancing`/`.free` branches discriminate on
   `p < contextWidth` vs `p ≥ contextWidth` and subtract `contextWidth` for the output position. A
   strided branch written without that discrimination yields a *well-formed* `.strided` whose
-  `outputPos` is off by `contextWidth` — which all six tripwired consumers happily accept. Silently
-  wrong geometry, which is this defect family's exact shape.
+  `outputPos` is off by `contextWidth` — which every one of the seven tripwired production consumers
+  happily accepts. Silently wrong geometry, which is this defect family's exact shape.
 
   **The mechanism that closes it — use this one, not the obvious one.** A `#guard` set asserting
   each existing constructor is producible does **not** work: naming `pinned`/`free`/`advancing` never
@@ -269,30 +426,87 @@ What is already settled and must be carried into that plan when it is written:
   is a **witness function matching exhaustively over the type** — e.g.
   `classifyWitness : WriteRowKind → (Nat × Array Int × Int)` with one
   `#guard classifyWriteRow (witness k) == some k` per constructor. Adding `.strided` then breaks
-  `classifyWitness`'s own exhaustiveness, which is a compile error that additionally **forces the
-  `contextWidth` decision**, because the witness must supply a `contextWidth` value. Build this
-  before, or as, the strided branch is written.
+  `classifyWitness`'s own exhaustiveness, which is a compile error.
+
+  **What that compile error does and does not buy — corrected, because an earlier draft of this
+  bullet over-claimed on exactly the point the mechanism is sold on.** It forces the author to
+  *supply* a `contextWidth` value; it does **not** force the author to *exercise the
+  discrimination*. And a single witness does not close the dangerous reading this section itself
+  names. `contextWidth = 0` is the natural first choice and the base-phase value, and there
+  `outputPos = p - contextWidth` and a broken `outputPos = p` **coincide** — so a lone
+  `contextWidth = 0` witness passes under both the correct branch and the branch that omits the
+  `p < contextWidth` / `p ≥ contextWidth` split, and the off-by-`contextWidth` bug ships with a green
+  guard. **Requirement, therefore: at least one `contextWidth = 0` witness AND at least one
+  `contextWidth > 0` witness per constructor.** Only the second one can separate the two readings.
+
+  Slice 1 demonstrated this one layer down, and its fixtures are the precedent to copy: its three
+  `classifyWriteRow` guards are deliberately split across phases — one at `contextWidth = 0` and two
+  at `contextWidth = 2`, one of those with the nonzero coefficient in the OUTPUT half of the domain
+  (`p ≥ contextWidth`) — precisely so no base-phase guard can stand in for the step-phase rule.
+  Build the witness set before, or as, the strided branch is written.
 
   **Slice 1 also pinned part of this surface, and left a named remainder.** Slice 1's Task 2 landed
   three `classifyWriteRow` guards after its reviewer found a **live** unpinned weakening: dropping
   `c == 1` from the free branch survived the entire 8660-job suite, admitting a stride-k row as
   `.free 0` — invisible to `freeExtentsAgree` and `pinnedLiteralsInRange`, and exactly this defect
   family's shape on exactly the constructor this slice adds. Both coefficient tests
-  (free branch and advancing branch) are now pinned, each with a mutation cycle firing only its own
-  guards. **A useful side effect: `classifyWriteRow`'s current rejection of non-unit coefficients is
+  (free branch and advancing branch) are now pinned, by two mutation cycles with **disjoint** failure
+  sets — which is what makes the third guard non-redundant. The failure sets are not one guard each,
+  and an earlier draft of this bullet said they were: dropping `c == 1` from the free branch fires
+  *both* free-branch guards, and dropping it from the advancing branch fires **three** assertions —
+  the advancing-branch guard plus `unrecognizedStepRows`' row-shape guard and its
+  `stepWriteRowsOk` rejection. Both re-measured against the full default target in this slice's final
+  fix wave. **A useful side effect: `classifyWriteRow`'s current rejection of non-unit coefficients is
   now asserted, so this slice must consciously edit a test to admit strided rows** — the change
   appears in a diff instead of happening silently.
 
   **The remainder, deliberately not closed by Slice 1** (out of its brief's scope, and the guards
   belong with the branch edits rather than ahead of them): the `bias == 0` / `bias == 1` tests in
   those same two branches, and the multi-nonzero arm, still have **no dedicated guard**. Same defect
-  family. Close them as part of writing the strided branch — a weakening of any of them would today
-  go undetected, and this slice is the one that touches them.
+  family. Close them as part of writing the strided branch — this slice is the one that touches them.
+
+  **"No dedicated guard" is not the same as "undetected", and this bullet used to conflate them.**
+  An earlier draft said a weakening of any of the three *would today go undetected*. That is false
+  for one of them, and the correction matters because as written it told Slice 2 a hole exists where
+  none does — and would have made a real fixture failure look like collateral damage. Each of the
+  three was weakened in place and rebuilt against the full default target during Slice 1's final fix
+  wave; the observed firing sets:
+
+  | Weakening | Observed | Firing set |
+  |---|---|---|
+  | advancing branch, drop `bias == 1` | **build FAILS** | exactly one assertion — the pre-existing `lookAheadStepWrite` plan-level fixture in `ScanTest.lean` Part 2 (`writeGeometryNotAdmitted false 0`). With `bias == 1` gone, `stepWriteS` at bias `2` classifies `.advancing 0` instead of `none` and the look-ahead write is admitted, so that fixture throws. Pinned incidentally, by a fixture whose stated subject is the look-ahead shape rather than the bias test — hence still *no dedicated* guard |
+  | free branch, drop `bias == 0` | **build PASSES, 8660 jobs** | **empty** — genuinely unpinned |
+  | multi-nonzero arm, route length-≥2 rows through the free-branch logic on their leading nonzero | **build PASSES, 8660 jobs** | **empty** — genuinely unpinned |
+
+  So the accurate scope for Slice 2 is: **two unpinned value checks, not three** — the free branch's
+  `bias == 0` and the multi-nonzero arm. Add a dedicated guard for the advancing branch's `bias == 1`
+  too if it is cheap (an incidental pin in an unrelated fixture is a poor place for a load-bearing
+  rule to live), but do not plan it as coverage of a live hole.
+
+- **⚠️ `allRowKinds` must be extended when the constructor lands, and NOTHING will tell you.**
+  `ScanTest.lean`'s 588-case agreement check (`stepWriteRowsOk` vs the frozen
+  `stepWriteRowsOkNoClause1` oracle, over all rank-2 rows arrays × four `advancingDims` subsets ×
+  output ranks 0–2) enumerates its row kinds from `allRowKinds`, a **plain list literal** — not
+  tripwired, and its docstring claims "every row classification reachable in a rank-2 write". Once
+  the oracle's two arms are added to discharge its compile errors, the check goes on passing over a
+  window that no longer contains the new kind, while still reading as an exhaustive result. The thing
+  it exists to notice is exactly what a narrowed window hides: clause 1 ceasing to be redundant
+  because clause 3's new arm admits the strided kind. **This is the silent-narrowing shape Slice 1
+  exists to prevent, reappearing in Slice 1's own test scaffolding** — extend the literal in the same
+  commit as the oracle's arms, and re-check the two-line redundancy argument in the oracle's
+  docstring rather than assuming it survives.
 
 - **Inherited from Slice 1 Task 3: extract `baseWriteRowsOk`'s clause 3 into its own named
   predicate.** `Compile.lean`'s base-write loop still hand-inlines that one clause (the
-  advancing-pin boundary check), the last surviving duplicate of a `Scan.lean` rule. Slice 1 closed
-  the other two duplicates but deliberately left this one, and the reason is worth carrying because
+  advancing-pin boundary check), the last surviving duplicate of a `Scan.lean` rule — which is why
+  `leanncd/LeanNCD/Eval/AGENTS.md` calls it *"the one surviving duplicate"*. Precisely what Slice 1
+  did to the other items, since an earlier draft here said "closed the other two duplicates" and
+  overstated it: `B1-F6` named **two** hand-inlined duplicated *rules*, and Slice 1 closed **one** of
+  them — the pinned-literal check, now a real `pinnedLiteralsInRange` call with only the locator left
+  in `Compile.lean`. Separately it hoisted a duplicated *computation* (`writeRowKinds`, previously
+  run twice over the same states in one pass, now one `baseWriteRows` shared by the placement and
+  collision loops). One rule closed, one computation hoisted — not two duplicates closed. This one
+  was deliberately left, and the reason is worth carrying because
   the obvious reading is wrong: calling the *whole* `baseWriteRowsOk` there **compiles and passes the
   full suite** — Slice 1's reviewer tried it — so nothing blocks the replacement mechanically. The
   objection is diagnostic: clauses 1–2 hold at that point only by a **non-local invariant spanning
