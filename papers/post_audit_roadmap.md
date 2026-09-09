@@ -289,6 +289,19 @@ What is already settled and must be carried into that plan when it is written:
   family. Close them as part of writing the strided branch — a weakening of any of them would today
   go undetected, and this slice is the one that touches them.
 
+- **Inherited from Slice 1 Task 3: extract `baseWriteRowsOk`'s clause 3 into its own named
+  predicate.** `Compile.lean`'s base-write loop still hand-inlines that one clause (the
+  advancing-pin boundary check), the last surviving duplicate of a `Scan.lean` rule. Slice 1 closed
+  the other two duplicates but deliberately left this one, and the reason is worth carrying because
+  the obvious reading is wrong: calling the *whole* `baseWriteRowsOk` there **compiles and passes the
+  full suite** — Slice 1's reviewer tried it — so nothing blocks the replacement mechanically. The
+  objection is diagnostic: clauses 1–2 hold at that point only by a **non-local invariant spanning
+  Phases 1–3**, so asserting them would convert a hypothetical *compiler bug* from the `invalidPlan`
+  channel (Step E's `writeGeometryNotAdmitted`/`writeCoeffRankMismatch`, which exists as exactly that
+  net) into a source-facing `baseWriteNotAtBoundary` naming a boundary fault that is not the real
+  fault. The clean fix is to lift clause 3 alone into a named `Scan.lean` predicate both sites call.
+  **This slice reopens `baseWriteRowsOk` anyway, so it is the natural owner.**
+
 - **The extent rule is not free to invent.** Every strided cell must be the checked-plan image of an
   `LHSSlot.outExtent` arm, and must **call** that shared formula rather than copy it. A duplicate
   formula (`scatterOutDim`) previously drifted from it and shipped a soundness bug — a downstream
