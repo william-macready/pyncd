@@ -9,11 +9,18 @@ namespace LeanNCD.Eval.Plan
 
     **Every consumer matches exhaustively over its constructors — on purpose.** Adding a
     constructor here is meant to be a compile error at each site that would otherwise silently
-    exempt the new kind (`baseWriteRowsOk`'s positional cover, both of `stepWriteRowsOk`'s
-    non-advancing clauses, `freeExtentsAgree`, `pinnedLiteralsInRange`, `writesCollide`, and
-    `Compile.lean`'s base-write placement loop), which is what the write-geometry surface's history
-    of "says which rows MUST be a kind, never which rows MAY NOT" cost. Do not restore a `| _ =>`
-    arm at any of them. Two sites in this file are NOT covered by that tripwire and never can be:
+    exempt the new kind. **Nine such sites, seven of them production:** six in this file
+    (`baseWriteRowsOk`'s positional cover, both of `stepWriteRowsOk`'s non-advancing clauses,
+    `freeExtentsAgree`, `pinnedLiteralsInRange`, `writesCollide`), one in `Compile.lean` (its
+    base-write placement loop), and two in the test suite — the two matches inside `ScanTest.lean`'s
+    frozen `stepWriteRowsOkNoClause1` oracle. They do not all appear in one build: this file's six
+    are reported together, and the `Compile.lean` and `ScanTest.lean` ones surface only once those
+    six are discharged, since a module that fails to compile blocks its dependents. That tripwire is
+    what the write-geometry surface's history of "says which rows MUST be a kind, never which rows
+    MAY NOT" cost. Do not restore a `| _ =>` arm at any of them. What the tripwire buys is a
+    DECISION at each value check, not a constraint on it: discharging all nine with
+    `| some (.strided ..) => true`, mirroring the neighbouring arms, compiles clean and re-creates
+    the very defect. Two sites in this file are NOT covered by that tripwire and never can be:
     `classifyWriteRow` *produces* the kinds (its catch-all is over the nonzero-coefficient list,
     not over `WriteRowKind`), and `causalAdvancingRow` classifies read rows and never mentions this
     type — a new kind must be admitted in `classifyWriteRow` deliberately, since nothing will
@@ -121,7 +128,16 @@ def freeExtentsAgree (stateShape : Array Nat) (outputShape : Array Nat)
     `baseWriteRowsOk`'s "some advancing dimension is pinned to `0`" rule leaves every OTHER pinned
     literal — and any pinned literal on a non-advancing dimension — completely unconstrained. A base
     write like `dp[5, 0] := ONE` on a `[2,2]` state was accepted, and `runDenseScan` then either
-    panicked in `Array.set!` or committed to the wrong cell. -/
+    panicked in `Array.set!` or committed to the wrong cell.
+
+    **Callable one row at a time — a contract this function owes its second caller.** `stateShape` is
+    indexed by each row's own POSITION in `rows`, so a single-row call
+    `pinnedLiteralsInRange #[extent] #[row]` is exactly this predicate's clause for the one dimension
+    whose extent is `extent`. `Compile.lean`'s base-write placement loop relies on precisely that: it
+    calls the rule per dimension so its rejection can still name the offending dimension, while the
+    RULE stays here. Any change to how this function pairs a row with an extent (positionally, today)
+    must preserve the one-row reading, or that caller silently range-checks against the wrong
+    extent — a wrong verdict no value-comparing test at this predicate's own arity can see. -/
 def pinnedLiteralsInRange (stateShape : Array Nat) (rows : Array (Option WriteRowKind)) : Bool :=
   rows.toList.zipIdx.all (fun (r, d) => match r with
     | some (.pinned lit) => 0 ≤ lit && lit.toNat < stateShape.getD d 0

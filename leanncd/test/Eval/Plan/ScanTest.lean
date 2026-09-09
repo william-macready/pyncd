@@ -2411,8 +2411,9 @@ acceptance, and all three pre-existing plan-level `writeGeometryNotAdmitted` ass
 `true` and the whole suite still passed, and no base-phase geometry rejection was pinned anywhere —
 including against a `checkWrites` that reported the constant `false` in place of its own `isBase`
 argument. This Part closes both halves: one negated predicate-level guard per clause, each isolated
-so exactly ONE clause fails, plus three plan-level base-phase rejections that pin the
-`isBase = true` locator through `checkScanPlan`.
+so exactly ONE clause fails — with the single exception of `stepWriteRowsOk`'s clause 1, which no
+rows array can violate alone, explained immediately below — plus three plan-level base-phase
+rejections that pin the `isBase = true` locator through `checkScanPlan`.
 
 **The one clause no fixture can isolate, and why that is redundancy rather than a hole.**
 `stepWriteRowsOk`'s first clause (`rows.all Option.isSome`) is implied by its second and third:
@@ -2512,11 +2513,16 @@ def offBoundaryFaceRows : Array (Option WriteRowKind) := writeRowKinds 2 0 offBo
 -- itself an advancing dimension, so clause 2 fails on the same row. No rows array violates clause 1
 -- alone.
 --
--- That co-violation is not what makes this pair worth having. These two guards are the only
--- assertions anywhere in the suite that catch a weakened `.advancing` CLASSIFICATION: dropping
--- `c == 1` from `classifyWriteRow`'s advancing branch fails exactly this pair and nothing else, so
--- they carry the step-phase half of the chokepoint's unit-coefficient rule, not merely a redundant
--- record of clause 1.
+-- That co-violation is not what makes this pair worth having. These two guards catch a weakened
+-- `.advancing` CLASSIFICATION *through the predicate*, which no other fixture in the suite does:
+-- dropping `c == 1` from `classifyWriteRow`'s advancing branch fails exactly three assertions and
+-- nothing else — this pair, plus the advancing-branch chokepoint guard
+-- `#guard classifyWriteRow 2 #[2, 0] 1 == none` above, which asserts the same rule directly on the
+-- classifier. (Re-measured against the full default target during the final fix wave; the earlier
+-- wording here said "the only assertions anywhere in the suite" and "exactly this pair", which was
+-- true when it was written and stopped being true when that third guard was added one fix round
+-- later, in this same Part.) So the pair carries the step-phase half of the chokepoint's
+-- unit-coefficient rule, not merely a redundant record of clause 1.
 def unrecognizedStepWrite : StateWriteMap :=
   { dpStepWrite with map := { coeffs := #[#[1, 0], #[0, 2]], bias := #[1, 1] } }
 
@@ -2562,7 +2568,15 @@ def stepWriteRowsOkNoClause1 (advancingDims : Array Nat) (outputShapeSize : Nat)
         | some (.pinned _) | some (.advancing _) | none => none))
     == List.range outputShapeSize)
 
-/-- Every row classification reachable in a rank-2 write over a two-position domain, plus `none`. -/
+/-- Every row classification reachable in a rank-2 write over a two-position domain, plus `none`.
+
+    **This list is NOT tripwired — extend it by hand the moment `WriteRowKind` gains a
+    constructor.** It is a plain list literal, so a new kind leaves it silently narrower than its own
+    "every" claim: the agreement check below goes on passing over a window that no longer contains
+    the new kind, and the one thing that check exists to notice — clause 1 ceasing to be redundant
+    because clause 3's arms now admit the new kind — is precisely what would become invisible. The
+    two compile errors inside `stepWriteRowsOkNoClause1` are the only prompt, and discharging them
+    without extending this list turns the check into a tautology. -/
 def allRowKinds : List (Option WriteRowKind) :=
   [none, some (.pinned 0), some (.pinned 1), some (.free 0), some (.free 1)
   , some (.advancing 0), some (.advancing 1)]
