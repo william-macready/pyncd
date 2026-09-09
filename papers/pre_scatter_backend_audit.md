@@ -5,6 +5,62 @@ Findings-only audit of the checked `EvalPlan` backend (`leanncd/LeanNCD/Eval/Pla
 audit**, and nothing here is a fix — every entry is a finding, a refutation, or a decision recorded
 for the Scatter slice to inherit.
 
+## ⚠️ SUPERSEDING BANNER — 2026-09-09: Slice 1 (write-geometry hardening) has landed
+
+**This audit is a snapshot of the tree at `2159d28`/`267976e`/`9680b92` and is deliberately NOT
+rewritten.** Its findings, refutations and cell adjudications stand as taken, and the verbatim arm
+quotes scattered through it (`| _ => true`, `| _, _ => false`, `| _ => pure ()`, …) are evidence of
+the *pre-slice* tree — do not "correct" them; they are what the tripwire replaced. The current spec
+is `post_audit_roadmap.md` Section A, whose Slice 1 completion record supersedes this document
+wherever the two disagree.
+
+**Five load-bearing places where this audit is now stale.** One of them contradicts a shipped
+`AGENTS.md`, so read this list before quoting any of them as current:
+
+1. **`B1-F6`** — *"Two hand-inlined duplicates confirmed"* and *"the two copies will not see it"*.
+   **One of the two is gone.** Slice 1 routed the pinned-literal check through a real
+   `pinnedLiteralsInRange` call (mutation-verified: deleting the predicate's pinned-row rule now
+   breaks `ScanCompileTest`'s two `baseWritePinOutOfRange` guards, which the inlined copy survived
+   unchanged), leaving only the LOCATOR at the call site. `leanncd/LeanNCD/Eval/AGENTS.md` accordingly
+   says *"the one surviving duplicate"* — the `baseWriteNotAtBoundary` guard restating
+   `baseWriteRowsOk`'s advancing-pin clause, whose extraction is owned by the Scatter slice. **Two
+   shipped documents, opposite counts; `Eval/AGENTS.md` is the current one.** Separately, the
+   duplicated *computation* B1-F6 records alongside — `writeRowKinds` run twice over the same writes
+   in one pass — was hoisted to a single `baseWriteRows`.
+2. **`B1-F10`**, and the same measurement where it is used as this slice's justification
+   (*"Reconciling the two parts"*, item 2: *"zero base-phase geometry fixtures exist. There is
+   currently no test that could fail"*). **All of it is now false — because Slice 1 landed.** Current
+   figures: **14** `#guard`s exercise `baseWriteRowsOk`/`stepWriteRowsOk`, **9 of them negations**,
+   plus **3** negative guards on the `classifyWriteRow` chokepoint (12 negative assertions where the
+   audit correctly measured zero); and **6** plan-level `writeGeometryNotAdmitted` assertions, three
+   `isBase = false` and three `isBase = true` (`true 0`, `true 0`, `true 1`), so the base-phase leg
+   of that locator is pinned in both directions and is demonstrably load-bearing. B1-F10's *cell*
+   accounting (which of the 16/22 `b` cells has a located test) has not been re-derived against the
+   new fixtures and should be redone rather than trusted.
+3. **§B2.7's barrier-1 analysis.** Both of its site-2 observations have moved. *"`Compile.lean`'s
+   Phase 5 source-facing pass, which hard-codes the same `0` twice"* — now **once**, hoisted into the
+   shared `baseWriteRows`. And the pinned-literal check's *"`| _ => pure ()` arm is
+   constructor-blind"* — that arm now spells out `some (.free _) | some (.advancing _) | none`, so a
+   fourth constructor is a **compile error** there, not a silent pass. The polarity argument itself
+   (barrier 1 is no defence for a strided row, because `p ≥ contextWidth` holds for every `p` at
+   `contextWidth = 0`) is untouched and still governs.
+4. **"Reconciling the two parts", item 3** — *"Making each match exhaustive … is only useful at the
+   moment the fourth constructor arrives, so do it then, **not before**."* **Deliberately reversed.**
+   `post_audit_roadmap.md` Section A's "Why before Scatter, not with it" carries the argument: done
+   first it is a behaviour-preserving refactor the existing suite proves, and it installs the
+   tripwire so the constructor addition produces compile errors instead of silence; done
+   simultaneously the compile errors appear inside a larger diff and cannot be separated from the
+   new-kind work.
+5. **Two counts in the doc-obligation findings.** `WriteRowKind`'s production **signature positions
+   are 12, not 11** — Task 3 added `Compile.lean`'s `baseWriteRows` annotation to the eleven the
+   call-site sweep enumerates. And **`B2-F3`'s "four docstrings and one `AGENTS.md` node" now
+   undercounts**: Slice 1 added a second enumerating passage to that same `Eval/AGENTS.md` node (the
+   write-geometry exhaustiveness Contracts row), extended `WriteRowKind`'s and
+   `pinnedLiteralsInRange`'s docstrings with further enumerating prose, and added Part 9's prose plus
+   `allRowKinds` in `ScanTest.lean`. Note the asymmetry Slice 1 introduced: the enumerations *in
+   match arms* are now compiler-enforced, so they cannot go silently stale; only the **prose**
+   enumerations carry B2-F3's risk, and there are more of them than five.
+
 ## Why this exists
 
 The Boolean/predicate declared-outputs slice needed roughly **six whole-branch review rounds and
