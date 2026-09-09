@@ -22,6 +22,19 @@ cd leanncd && "$HOME/.elan/bin/lake" build
 Do not assume `lake` is on `PATH`, and do not run it from the repository root: the Lake
 configuration lives under `leanncd/`. Replace `build` with the desired target or Lake command.
 
+For the frequent worktree-specific case of typechecking one Lean file, use the fixed wrapper
+instead of constructing a new `cd <worktree>/leanncd && lake env lean <file>` command:
+
+```bash
+bash leanncd/scripts/lean-file.sh \
+  /path/to/worktree/leanncd test/Eval/Plan/CompileTest.lean
+```
+
+The wrapper accepts exactly one `.lean` file contained in this repository's `leanncd/` checkout in
+any worktree. Repository permissions allow relative and primary-checkout absolute invocations, so
+the checkout and file can vary without a confirmation prompt while the executable operation
+remains fixed.
+
 ### Mutation testing
 
 For a mutation that is one exact textual replacement in one Lean file, always use
