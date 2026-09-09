@@ -22,8 +22,12 @@ cd leanncd && "$HOME/.elan/bin/lake" build
 Do not assume `lake` is on `PATH`, and do not run it from the repository root: the Lake
 configuration lives under `leanncd/`. Replace `build` with the desired target or Lake command.
 
-For the frequent worktree-specific case of typechecking one Lean file, use the fixed wrapper
-instead of constructing a new `cd <worktree>/leanncd && lake env lean <file>` command:
+### Single-file typechecks: always use the wrapper
+
+**Automatic command-routing rule:** whenever a task requires typechecking exactly one `.lean` file
+with `lake env lean`, invoke `leanncd/scripts/lean-file.sh`. This applies to the current checkout and
+to every worktree; do not construct a direct `cd <worktree>/leanncd && lake env lean <file>` command
+even when it would be shorter.
 
 ```bash
 bash leanncd/scripts/lean-file.sh \
@@ -33,7 +37,9 @@ bash leanncd/scripts/lean-file.sh \
 The wrapper accepts exactly one `.lean` file contained in this repository's `leanncd/` checkout in
 any worktree. Repository permissions allow relative and primary-checkout absolute invocations, so
 the checkout and file can vary without a confirmation prompt while the executable operation
-remains fixed.
+remains fixed. If a task needs multiple files, extra Lean options, or another Lake command, do not
+force it through this wrapper; use an existing constrained command or extend the wrapper and its
+validation deliberately.
 
 ### Mutation testing
 
