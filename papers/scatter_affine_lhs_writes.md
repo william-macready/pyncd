@@ -10,9 +10,11 @@ single slice, and measurement says two, nearly disjoint. **§1** is the evidence
 breakdown in **§2.7**; **§3** is S-B's already-verified design, parked; **§4** lists the
 reconnaissance reports behind all of it.
 
-Everything asserted here was measured against the tree, not reasoned about. Where a claim of this
-document's own earlier drafts was later falsified, the correction is kept inline and marked rather
-than quietly edited away — §0 and the ⚠️ blocks in §2.2, §2.5 and §2.6.
+Everything asserted here was measured against the tree, not reasoned about. **§0's three
+corrections are load-bearing and must not be pruned**: each falsifies a claim in a document that
+still exists and is still read (the compile-error list, the audit). Corrections that only narrated
+this document's own drafting have been removed; the ⚠️ blocks that remain each prevent a specific
+wrong turn.
 
 ---
 
@@ -181,13 +183,6 @@ targets stay green at **8660 / 8513**.
 0 wrong, 13 correct-and-live, 3 correct-but-vacuous** for a scatter's compute half. Exactly one
 clause clashed (`destinationShapeMismatch`), and no second clash was found.
 
-> **⚠️ Correction to an earlier draft of this section, which said "28 validation clauses."** That
-> number was wrong — it came from counting `grep -c "unless\|throw"`, which double-counts each
-> `unless`/`throw` pair. `checkAssign` has **16** clauses, and they are **nested** (6 top-level, 3
-> per-term, 7 per-factor), not the linear block that draft described. The conclusion is unchanged
-> and slightly strengthened: 16 clauses reused rather than duplicated, with none of them wrong for
-> a scatter.
-
 **The payload mechanism, for whoever hits it:** Lean eta-expands every single-constructor type
 unconditionally, then enumerates every constructor of every non-recursive multi-constructor field;
 recursive types (`Nat`, `List`) stop at `_`. Hence `ContractionAlgebra` = 4 (`ScalarBinOp`) × 4
@@ -195,9 +190,8 @@ recursive types (`Nat`, `List`) stop at `_`. Hence `ContractionAlgebra` = 4 (`Sc
 `CollisionReduce` = **5,120**. **Sibling arm depth has zero effect** — tested both ways, so there is
 no site-to-site difference to exploit.
 
-**Mitigations exist. Revised advice: apply one TEMPORARILY while implementing, then remove it.**
-An earlier draft of this section said "apply none", on the view that the bloat was mere transient
-noise. §2.2.2 shows it is worse than noise: a 5,120-line payload **blew the 200,000-heartbeat budget
+**Mitigations exist. Apply one TEMPORARILY while implementing, then remove it.** The bloat is not
+merely noise: a 5,120-line payload **blew the 200,000-heartbeat budget
 inside a `do`-arm**, so one site reported a *timeout* instead of `Missing cases`, and a second site
 behind it **was reported by nothing at all** — found only by deleting the arm and typechecking the
 file directly. A diagnostic that silently hides a site is not an ergonomic problem. Use a mitigation
@@ -210,11 +204,6 @@ a raw `UInt64` also works (→ 1,280) but is **rejected**: it destroys the dtype
 retries them: shallow siblings, deep siblings, a single-constructor `inductive` wrapper (eta-expanded
 exactly like a structure), a reducible alias, `private mk ::`, and dropping `deriving`.
 
-> **Also corrected:** an earlier draft said the JAX leg gave "3 clean errors under A-flat and 40
-> under A-nested". **A-flat already produces a heartbeat timeout too** (`EvalPlan.lean`), so that
-> gap was narrower than reported even before the redundant algebra was removed — and with one
-> algebra it is nil.
-
 **Option B (widening `AssignPlan` with a sum-typed `target` field) remains rejected**; that
 measurement was direct and is unaffected. Details in §2.2.1.
 
@@ -223,80 +212,28 @@ compile-error sites across 9 site-bearing files** (11 touched), arriving in **tw
 distinct phases**. The old "18 across 10 files" figure was measured against a rejected variant; the
 count coincides, the file count does not, and the *composition* is the usable result.
 
-### 2.2.1 Option B, and the earlier A-flat comparison (superseded by §2.2)
+### 2.2.1 Option B — rejected, retained so it is not re-proposed
 
-
-
-**Decision: a new `PlanStep.scatter` case carrying a flat `ScatterPlan` structure ("A-flat").**
-Three candidates were built to a green build and compared; reports in
-`docs/superpowers/plans/2026-09-{09,10}-option{A,B}-error-set.md`.
-
-**Rejected — widening `AssignPlan` with a sum-typed `target` field ("Option B").** It fails on all
-three counts it was proposed to win:
+Widening `AssignPlan` with a sum-typed `target` field. Measured directly; it fails on all three
+counts it was proposed to win.
 
 1. **No value of `outputShape` can describe a scatter.** `checkAssign` pins it simultaneously to the
    destination signature (`destSig.shape == a.outputShape`) *and* to every term's iteration-basis
    projection (`t.outputProjection == a.outputShape`), and a scatter separates those two. Measured
-   for `Out[2*i] := X[i]`, `i:4`: `#[8]` gives `outputProjectionMismatch 0 #[4] #[8]`; `#[4]` against
-   a truthful destination gives `destinationShapeMismatch #[4] #[8]`; the only passing configuration
-   declares the destination at the wrong size.
+   for `Out[2*i] := X[i]`, `i:4`: `#[8]` gives `outputProjectionMismatch 0 #[4] #[8]`; `#[4]`
+   against a truthful destination gives `destinationShapeMismatch #[4] #[8]`; the only passing
+   configuration declares the destination at the wrong size.
 2. **A mandatory sum-typed field does not force construction sites.** 83 literal sites errored — but
    only **1** in production — while **59 record-update sites compiled unchanged, 3 of them in
    production `Compile.lean`**. Silent sites outnumber forcing ones 3:1 in the real compiler.
-3. **The JAX leg produced zero errors** and silently accepted a `.scattered` plan:
-   `runDenseAssign` returned `shape [4] data #[1,2,3,4]` where the correct answer is `[8]`,
-   `#[1,0,2,0,3,0,4,0]`.
+3. **The JAX leg produced zero errors** and silently accepted a `.scattered` plan: `runDenseAssign`
+   returned `shape [4] data #[1,2,3,4]` where the correct answer is `[8]`, `#[1,0,2,0,3,0,4,0]`.
 
-> **The principle that explains all three, worth carrying:** an exhaustiveness tripwire comes from
-> adding a **constructor to a type that is already matched**, never from adding a **field**, however
-> sum-typed. Nothing matches a field nobody looks at — zero exhaustiveness errors were produced
-> anywhere by Option B, because no existing `match` scrutinises the new field. This is exactly the
-> property Slice 1 spent a slice installing, and it is why the plan-step option wins.
-
-**Rejected — `ScatterPlan` *containing* an `AssignPlan` ("A-nested").** Semantically viable, and the
-reuse is real at the worker layer: `runDenseAssignAt` never mentions `destinationSlot` (grep: no
-match) and returns the correct source-domain value tensor with a wide destination in the store. But
-it is blocked at the checker layer by exactly one line — `checkAssign`'s `destinationShapeMismatch`
-— which cannot be routed around from outside `Check.lean` because `CheckedAssignPlan.mk` is
-`private`. That makes it *"edit `checkAssign`"*, not *"reuse it"*, against **105 call sites** and a
-`runDenseScan` doc comment that explicitly relies on the invariant. It also **degrades diagnostics
-badly**: the `Missing cases` payloads are already 5,120 lines each (256 `ContractionAlgebra` × 4
-`fill` × 5 `CollisionReduce`), and A-nested's two nested algebras push three sites past that into
-opaque heartbeat timeouts — `lake build JaxExperiment` reported **3** errors under A-flat and **40**
-under A-nested.
-
-**Size did not decide it.** A-flat `10 files changed, 53 insertions(+), 11 deletions(-)`; A-nested
-`54 insertions(+)`, same ten files. A wash.
-
-**What A-flat costs, stated honestly:** it restates `AssignPlan`'s five fields and will eventually
-re-derive `checkAssign`'s validation. That duplication is accepted deliberately, in exchange for a
-checker that owns its own invariant — which is precisely what lets its `outputShape` legitimately
-hold the *source* iteration domain rather than the destination shape.
-
-**The measured error set:** **18 sites** — production `LeanNCD` **7**, `Tests` **6**,
-`JaxExperiment` **3**, ad-hoc `lake env lean` drivers **2**. Rounds: 5 error rounds + green on the
-default target, 1 + green on `JaxExperiment`, 1 + green on the ad-hoc drivers. Job counts at green
-are **8660** and **8513**, unchanged from baseline — the option adds no module.
-
-**The JAX leg DOES error under A**, at `lowerPlan`, `renderAffineNodesArray` and
-`lowerCheckPlanToCandidate` — a hard `error: build failed`. This is the confirmed advantage over
-Option B, and the reason `lake build JaxExperiment` must be in the gate (§2.3).
-
-**Two findings that change the task list:**
-
-- **`ScatterPlan` is one field short.** Neither variant can name both the source iteration domain
-  and the destination extent. `outputShape` holds the source domain, `destinationSlot` says where to
-  write — but the *computed* destination extent (6, for `Out[2*i]` over `i:3`) has no home. Add an
-  explicit field for it, derived by calling `LHSSlot.outExtent` (§2.1, §3.2).
-- **⚠️ The new `PlanStep` case is UNREACHABLE from source, and nothing errors to tell you.**
-  `Compile.lean` still rejects every `Stmt.scatter` at six places. The IR node is necessary but not
-  sufficient; lifting those six is a separate deliverable with **no tripwire of its own**. Among the
-  six no-compile-error sites, also note `rawPublicationSlots`' inner lookahead
-  (`| _ => acc.push a.destinationSlot`), which silently publishes an internal scratch slot for an
-  `.assign → .scatter` chain.
-
-**Found in passing, pre-existing, not caused by this work:** `BridgeSmoke.lean` fails with
-`unknown module prefix 'Jax'` at baseline. It is in no library and no target, so nothing catches it.
+> **The principle that explains all three, worth carrying beyond this slice:** an exhaustiveness
+> tripwire comes from adding a **constructor to a type that is already matched**, never from adding
+> a **field**, however sum-typed. Nothing matches a field nobody looks at — Option B produced zero
+> exhaustiveness errors anywhere, because no existing `match` scrutinises the new field. This is
+> exactly the property Slice 1 spent a slice installing.
 
 ### 2.2.2 The measured site inventory
 
@@ -450,22 +387,21 @@ substrate:
   (`StateWriteMap`, coefficient rows, `WriteRowKind`).
 - S-B additionally needs semantics decided and DSL guard L3 lifted.
 
-> ⚠️ **Correction to an earlier draft of this section, which overstated the sharing.** It claimed
-> a shared "fill + collision commit" that both sides need. **Both halves are wrong**, and the
-> conclusion drawn from them — that collision-`sum` would later be *"one change serving both
-> clients"* — is wrong with them. Measured:
+> **⚠️ Do NOT build a shared fill/collision layer between S-A and S-B.** It looks like the obvious
+> common ground and it is not there, measured:
 >
-> - `commitWrite` [read, `Eval/Plan/Scan.lean`] does **no fill** and **no collision detection**. It
->   iterates the block output's own coordinates, maps each through `applyAffine`, and does a
->   straight `set!` — last write wins.
-> - Scan-state initialisation is owned by a different mechanism entirely,
->   `boundaryPolicy := .zeroThenBaseOverlay` [read, `Compile.lean`, `Scan.lean`].
+> - `commitWrite` [read, `Eval/Plan/Scan.lean`] does **no fill** and **no collision detection** —
+>   it iterates the block output's coordinates, maps each through `applyAffine`, and does a
+>   straight `set!`, last write wins.
+> - Scan-state initialisation is owned elsewhere entirely, by
+>   `boundaryPolicy := .zeroThenBaseOverlay`.
 > - **Scan writes cannot collide.** The iteration is exactly over the output slice, one value per
 >   output coordinate, and a strided map with `scale ≥ 1` is injective. Assign-side collisions come
->   from a source axis absent from the output (`Out[i] := X[i]·Y[j]`, with `j` summed away); the
->   scan cover rule forbids that shape by construction.
+>   from a source axis absent from the output (`Out[i] := X[i]·Y[j]`, `j` summed away); the scan
+>   cover rule forbids that shape by construction.
 >
-> So collision-`sum` serves **one** client, and fill is S-A-only.
+> So fill and collision are **S-A-only**, and collision-`sum` when it lands serves one client, not
+> two.
 
 **What is genuinely shared is real but modest:** the extent formula (both sides must *call*
 `LHSSlot.outExtent`, never restate it — see §3.2 for why) and the in-bounds argument (equality
