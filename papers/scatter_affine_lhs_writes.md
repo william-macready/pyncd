@@ -128,17 +128,78 @@ coefficient → empty tensor), because differential parity against leg 2 is the 
 Only `fill = 0` + `rejectCollisions` are surface-reachable — `lowerArith` hard-codes them and there
 is no `fill`/`reduce` syntax. The other four policies are implemented and tested but unreachable.
 
-### 2.2 The representation decision — the sharpest hazard
+### 2.2 The representation decision — DECIDED by measurement, 2026-09-10
 
-Two options, and they differ in whether the compiler helps:
+**Decision: a new `PlanStep.scatter` case carrying a flat `ScatterPlan` structure ("A-flat").**
+Three candidates were built to a green build and compared; reports in
+`docs/superpowers/plans/2026-09-{09,10}-option{A,B}-error-set.md`.
 
-- **New `PlanStep.scatter` + a `ScatterPlan` kernel type.** Every exhaustive match becomes a compile
-  error, including the JAX leg's `lowerCheckPlanToCandidate`. **Recommended** — it is the discipline
-  Slice 1 exists to install.
-- **Widen `AssignPlan`** with a write map / fill / reduce. **No compile error anywhere on the JAX
-  side**; `jaxAssignSupported` passes the new fields silently and `loweringToAffineTableCandidate`
-  renders a *dense* assignment for a plan that means a scatter — a silently wrong result stamped
-  with `ExecutionEvidence`.
+**Rejected — widening `AssignPlan` with a sum-typed `target` field ("Option B").** It fails on all
+three counts it was proposed to win:
+
+1. **No value of `outputShape` can describe a scatter.** `checkAssign` pins it simultaneously to the
+   destination signature (`destSig.shape == a.outputShape`) *and* to every term's iteration-basis
+   projection (`t.outputProjection == a.outputShape`), and a scatter separates those two. Measured
+   for `Out[2*i] := X[i]`, `i:4`: `#[8]` gives `outputProjectionMismatch 0 #[4] #[8]`; `#[4]` against
+   a truthful destination gives `destinationShapeMismatch #[4] #[8]`; the only passing configuration
+   declares the destination at the wrong size.
+2. **A mandatory sum-typed field does not force construction sites.** 83 literal sites errored — but
+   only **1** in production — while **59 record-update sites compiled unchanged, 3 of them in
+   production `Compile.lean`**. Silent sites outnumber forcing ones 3:1 in the real compiler.
+3. **The JAX leg produced zero errors** and silently accepted a `.scattered` plan:
+   `runDenseAssign` returned `shape [4] data #[1,2,3,4]` where the correct answer is `[8]`,
+   `#[1,0,2,0,3,0,4,0]`.
+
+> **The principle that explains all three, worth carrying:** an exhaustiveness tripwire comes from
+> adding a **constructor to a type that is already matched**, never from adding a **field**, however
+> sum-typed. Nothing matches a field nobody looks at — zero exhaustiveness errors were produced
+> anywhere by Option B, because no existing `match` scrutinises the new field. This is exactly the
+> property Slice 1 spent a slice installing, and it is why the plan-step option wins.
+
+**Rejected — `ScatterPlan` *containing* an `AssignPlan` ("A-nested").** Semantically viable, and the
+reuse is real at the worker layer: `runDenseAssignAt` never mentions `destinationSlot` (grep: no
+match) and returns the correct source-domain value tensor with a wide destination in the store. But
+it is blocked at the checker layer by exactly one line — `checkAssign`'s `destinationShapeMismatch`
+— which cannot be routed around from outside `Check.lean` because `CheckedAssignPlan.mk` is
+`private`. That makes it *"edit `checkAssign`"*, not *"reuse it"*, against **105 call sites** and a
+`runDenseScan` doc comment that explicitly relies on the invariant. It also **degrades diagnostics
+badly**: the `Missing cases` payloads are already 5,120 lines each (256 `ContractionAlgebra` × 4
+`fill` × 5 `CollisionReduce`), and A-nested's two nested algebras push three sites past that into
+opaque heartbeat timeouts — `lake build JaxExperiment` reported **3** errors under A-flat and **40**
+under A-nested.
+
+**Size did not decide it.** A-flat `10 files changed, 53 insertions(+), 11 deletions(-)`; A-nested
+`54 insertions(+)`, same ten files. A wash.
+
+**What A-flat costs, stated honestly:** it restates `AssignPlan`'s five fields and will eventually
+re-derive `checkAssign`'s validation. That duplication is accepted deliberately, in exchange for a
+checker that owns its own invariant — which is precisely what lets its `outputShape` legitimately
+hold the *source* iteration domain rather than the destination shape.
+
+**The measured error set:** **18 sites** — production `LeanNCD` **7**, `Tests` **6**,
+`JaxExperiment` **3**, ad-hoc `lake env lean` drivers **2**. Rounds: 5 error rounds + green on the
+default target, 1 + green on `JaxExperiment`, 1 + green on the ad-hoc drivers. Job counts at green
+are **8660** and **8513**, unchanged from baseline — the option adds no module.
+
+**The JAX leg DOES error under A**, at `lowerPlan`, `renderAffineNodesArray` and
+`lowerCheckPlanToCandidate` — a hard `error: build failed`. This is the confirmed advantage over
+Option B, and the reason `lake build JaxExperiment` must be in the gate (§2.3).
+
+**Two findings that change the task list:**
+
+- **`ScatterPlan` is one field short.** Neither variant can name both the source iteration domain
+  and the destination extent. `outputShape` holds the source domain, `destinationSlot` says where to
+  write — but the *computed* destination extent (6, for `Out[2*i]` over `i:3`) has no home. Add an
+  explicit field for it, derived by calling `LHSSlot.outExtent` (§2.1, §3.2).
+- **⚠️ The new `PlanStep` case is UNREACHABLE from source, and nothing errors to tell you.**
+  `Compile.lean` still rejects every `Stmt.scatter` at six places. The IR node is necessary but not
+  sufficient; lifting those six is a separate deliverable with **no tripwire of its own**. Among the
+  six no-compile-error sites, also note `rawPublicationSlots`' inner lookahead
+  (`| _ => acc.push a.destinationSlot`), which silently publishes an internal scratch slot for an
+  `.assign → .scatter` chain.
+
+**Found in passing, pre-existing, not caused by this work:** `BridgeSmoke.lean` fails with
+`unknown module prefix 'Jax'` at baseline. It is in no library and no target, so nothing catches it.
 
 ### 2.3 The build gate is two targets, not one
 
@@ -259,11 +320,18 @@ writes *be* scatter writes through one mechanism — a refactor of working, load
 to the hub decomposition roadmap §F defers repeatedly. That is a slice of its own, not something to
 fold into S-A.
 
-### 2.7 Still to measure before the task breakdown is written
+### 2.7 Measurement status
 
-The compile-error set produced by adding the scatter IR node — the analogue of the nine-site list
-that sized S-B. A measurement agent for this was dispatched and stopped when the session ran low; it
-had not mutated anything. **This is the first thing to do on resuming.**
+**Done (2026-09-10).** The representation is decided and its compile-error set measured — §2.2. The
+task breakdown can now be written against 18 known sites.
+
+⚠️ **Process note for whoever runs the next measurement.** The first attempt dispatched two mutating
+agents into the **same working checkout** concurrently; they overwrote each other's edits in
+`Kernel.lean` and `RawStep.lean`, and one agent's round-1 errors named the other's constructors. One
+full agent-run was discarded. Measurement that mutates tracked files is implementation for this
+purpose: **one at a time, or each in its own detached worktree** with `.lake` APFS-cloned
+(`cp -c -R`) and the 8660/8513 baseline re-verified inside the worktree before the first edit. The
+re-run did exactly that and its numbers are the ones in §2.2.
 
 ---
 
