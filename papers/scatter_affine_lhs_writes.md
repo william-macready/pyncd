@@ -520,6 +520,31 @@ approving its neighbour.
   over `scale ∈ 1..8`, `offset ∈ 0..8`, `n ∈ 1..11`. Silent disagreement between two extent
   formulas is the exact shape of the bug this repo already paid for.
 
+  **"But doesn't the affine solver determine the extent?" No — it CONSUMES it.** Expect this
+  question; it is the natural one, and getting it wrong is how the original bug shipped. The
+  division of labour is deliberate and documented in three places (`outExtent`'s docstring,
+  `Eval/Shape.lean`'s header, `Eval/Slots.lean`'s header):
+
+  - the affine machinery (`idxAffineForm`, `Eval/Shape.lean`, `SizeSolve.lean`) solves **axis
+    sizes** from **read** constraints — given `Y[i] := X[2*i]`, how large must `i` be;
+  - `outExtent` answers a different question — given known axis sizes, how large must the
+    **scatter output tensor** be. Its docstring calls this *"deliberately not derivable from
+    `idxAffineForm`"*.
+
+  It is not derivable because the affine form gives the coordinate *map*, and a map only tells you
+  which cells are written. For `Out[2*i]` over `i:3` that is `{0,2,4}` — max + 1 = **5**. The
+  convention says **6**. The extra cell is a policy choice (upsample stride semantics), and no
+  amount of affine algebra implies it.
+
+  **Why this is a trap rather than an error:** deriving the extent from the coordinate map is
+  *correct for every case except the one this feature exists to add.* For a shift, `Out[i+2]` over
+  `i:3` writes `{2,3,4}`, max + 1 = 5, and the convention also gives 5 — **they agree**. They
+  diverge only when `scale > 1`, and by exactly `scale − 1`. So the wrong derivation passes every
+  pre-existing test and fails only on strided writes.
+
+  `SizeInfer.scatterOutputShapes` is the model caller: it is wired into the sizing fixpoint and
+  obtains its extents by **calling** `outExtent`. Be like the solver — call it.
+
   **The tell that the rule has been broken:** `grep -rn "outExtent\|scatterOutputShapes" LeanNCD/`
   should show the new sites *calling* one of them. A new site that computes an extent without
   appearing in that grep is a fourth copy.
