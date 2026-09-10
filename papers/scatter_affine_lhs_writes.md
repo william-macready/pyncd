@@ -179,7 +179,14 @@ recursive types (`Nat`, `List`) stop at `_`. Hence `ContractionAlgebra` = 4 (`Sc
 `CollisionReduce` = **5,120**. **Sibling arm depth has zero effect** — tested both ways, so there is
 no site-to-site difference to exploit.
 
-**Mitigations exist; apply none.** `@[irreducible] def AlgOpaque : Type := Algebra` → 20 patterns,
+**Mitigations exist. Revised advice: apply one TEMPORARILY while implementing, then remove it.**
+An earlier draft of this section said "apply none", on the view that the bloat was mere transient
+noise. §2.2.2 shows it is worse than noise: a 5,120-line payload **blew the 200,000-heartbeat budget
+inside a `do`-arm**, so one site reported a *timeout* instead of `Missing cases`, and a second site
+behind it **was reported by nothing at all** — found only by deleting the arm and typechecking the
+file directly. A diagnostic that silently hides a site is not an ergonomic problem. Use a mitigation
+as scaffolding during the work and drop it before the slice lands, so the shipped types stay honest.
+The options: `@[irreducible] def AlgOpaque : Type := Algebra` → 20 patterns,
 and an algebra held as a `Nat` index into a table → 20, both confirmed working and both shrinking
 A-flat equally. Each costs real ergonomics to shrink a *transient* error message. Holding `fill` as
 a raw `UInt64` also works (→ 1,280) but is **rejected**: it destroys the dtype tag
@@ -195,9 +202,10 @@ exactly like a structure), a reducible alias, `private mk ::`, and dropping `der
 **Option B (widening `AssignPlan` with a sum-typed `target` field) remains rejected**; that
 measurement was direct and is unaffected. Details in §2.2.1.
 
-⚠️ **One inherited number to re-verify before the task breakdown:** the "18 sites across 10 files"
-figure comes from the earlier pass and was **not** re-measured here — a build halts at the first
-failing module, and this pass surfaced only 4. Re-derive it when sequencing tasks.
+**The site inventory is now measured against this decided design — see §2.2.2.** In short: **18
+compile-error sites across 9 site-bearing files** (11 touched), arriving in **two structurally
+distinct phases**. The old "18 across 10 files" figure was measured against a rejected variant; the
+count coincides, the file count does not, and the *composition* is the usable result.
 
 ### 2.2.1 Option B, and the earlier A-flat comparison (superseded by §2.2)
 
@@ -274,6 +282,61 @@ Option B, and the reason `lake build JaxExperiment` must be in the gate (§2.3).
 **Found in passing, pre-existing, not caused by this work:** `BridgeSmoke.lean` fails with
 `unknown module prefix 'Jax'` at baseline. It is in no library and no target, so nothing catches it.
 
+### 2.2.2 The measured site inventory
+
+Measured against the §2.2 design (one algebra, six fields), iterating to green on every target.
+
+**18 compile-error sites, 9 site-bearing files, in two phases:**
+
+| Phase | Perturbation | Sites |
+|---|---|---|
+| 1 | `ScatterPlan` + `PlanStep.scatter` | **11** |
+| 2 | `CheckedPlanStepEvidence.scatter` — **forced, not optional** | **7** |
+
+Phase 2 is mandatory, not a design choice: `checkPlan`'s `localCheck` arm must return a
+`CheckedPlanStepEvidence`, and there is no honest value for a scatter step. The only way to avoid
+it is for `checkPlan` to reject every scatter — i.e. not to ship the feature.
+
+| Target | Ph1 | Ph2 | Total | Rounds |
+|---|---|---|---|---|
+| `lake build` | 10 | 3 | **13** | 3 / 2 |
+| `lake build JaxExperiment` | 0 | 3 | **3** | 0 / 1 |
+| ad-hoc drivers (`experiments/jax_bridge/`) | 0 | 1 | **1** | 0 / 1 |
+| ad-hoc spikes (`spikes/`) | 1 | 0 | **1** | 1 / 0 |
+
+`JaxExperiment` has **zero unique Phase-1 sites** — its Phase-1 exposure is entirely library sites
+the default target already forces. Its own three arrive with Phase 2.
+
+Both targets end green at **8660** and **8513**, unchanged from baseline.
+`git diff --stat`: 11 files, 39 insertions, 12 deletions.
+
+**⚠️ Round 1 surfaces only 4 of the default target's 13.** A build halts at the first failing
+module, so the site list cannot be read off one build — this is why the earlier figure was
+untrustworthy. Worse, one of those 4 was a **heartbeat timeout**, not a `Missing cases`, and a
+fifth site behind it (`checkPlan`/`localCheck`) was **reported by nothing at all**; it was found
+only by deleting that arm and typechecking the file. A strictly mechanical iterator needs **4**
+rounds there, not 3. See §2.2's revised mitigation advice.
+
+**Three findings that shape the task list:**
+
+- **`Compile.lean` is SEVEN rejections, not six, and of two kinds** — 3 reject `Stmt.scatter` by
+  constructor, 4 reject the `.affine` LHS slot form. `Compile.lean` built **clean in every round**,
+  confirming that `PlanStep.scatter` is reachable from nothing and **no compile error says so**.
+  The seven rejections and Step D's emitter must be **one task**; split them and the slice can go
+  green with a feature that no source program can reach.
+- **`spikes/` is a fourth ad-hoc target nobody was tracking.** Six files carry
+  `Run with: lake env lean spikes/…` headers, are in no lake target, and one
+  (`AxisABoundaryProbe.stepKind`) is a genuine site. `lake build` will never surface it, and the
+  audit's twelve tracked spikes are supposed to be reproducible evidence.
+- **`rawPublicationSlots`' inner lookahead is confirmed** as a silent catch-all (the outer match
+  errored, the inner did not). Whether it is reachable under this design is **UNCERTAIN** and turns
+  on the Step D lowering shape — flagged, not asserted.
+
+**One finding for the deferred slice (S-B):** `BlockStep` has no `.scatter` case and produces no
+error, so scatter-inside-a-scan is **structurally impossible in the plan IR** — and nothing in the
+tree records that as a decision. Lifting DSL guard L3 (§3.4) is therefore necessary but nowhere
+near sufficient.
+
 ### 2.3 The build gate is two targets, not one
 
 `leanncd/lakefile.toml` sets `defaultTargets = ["LeanNCD", "Tests"]`; `JaxExperiment` carries the
@@ -281,6 +344,13 @@ comment *"Deliberately absent from `defaultTargets`: it only builds when explici
 So **`lake build` can be green while the JAX leg no longer compiles.** Both gates are required:
 default **8660 jobs**, `JaxExperiment` **8513 jobs**. The ad-hoc driver
 `experiments/jax_bridge/EvalPlanAffineCorpus.lean` is in no library and needs building by hand.
+
+**⚠️ ADD-ON, measured 2026-09-10:** two further sources are in **no** lake target and are reached
+only by `lake env lean` — `experiments/jax_bridge/` (the corpus/smoke drivers) and **`spikes/`**,
+six files carrying `Run with: lake env lean spikes/…` headers. Each contributes a real site
+(§2.2.2). Neither `lake build` nor `lake build JaxExperiment` will ever surface them, so the gate is
+**four** things to compile, not two. The audit's tracked spikes are supposed to be reproducible
+evidence, which makes a silently-rotting spike a real loss.
 
 JAX need not move in lockstep: `checkJaxAssignSupport` is an independent subset filter that already
 rejects four things the checked backend executes (Boolean destination, Boolean source, tropical
