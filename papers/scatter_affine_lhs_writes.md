@@ -159,7 +159,8 @@ structure ScatterPlan where
 passing. Note `admittedAlgebra` lives in `Check.lean`, not `Kernel.lean`, so a fixture constructing
 one imports `LeanNCD.Eval.Plan.Check`.]
 
-**`destShape` is provably not derivable from the placement map**, which is why it must be stored:
+**`destShape` is provably not derivable from the placement map**, which is why it must be stored
+(and computed by *calling* `LHSSlot.outExtent` — see the ONE EXTENT CONVENTION constraint in §2.7):
 `Out[2*i]` over `i:3` has extent **6** while max-coordinate + 1 is **5**; and `.const n` has
 coordinate `n` but extent `n+1`. Derive it by calling `LHSSlot.outExtent` (§2.1) and store the
 result. The three `Array` fields cost nothing in diagnostics (see below).
@@ -494,6 +495,34 @@ approving its neighbour.
 - **The missing-cases mitigation is scaffolding.** Apply `@[irreducible] def AlgOpaque : Type := Algebra`
   (or the table-index form) while working — §2.2 — and **remove it before the slice lands**, with a
   final build proving the shipped types are unwrapped. Leaving it in silently changes the design.
+- **⚠️ ONE EXTENT CONVENTION. This is the slice's single most dangerous rule.** The scatter output
+  extent is `scale·n + offset`, and it lives in exactly one place: `LHSSlot.outExtent`
+  (`DSL/Ast.lean`). A second copy — `scatterOutDim` — already drifted from it and **shipped a
+  soundness bug**: a downstream reader sized to 3 while the evaluator materialised 4 (fix
+  `fc10d70`, duplicate deleted `6a26825`).
+
+  This slice creates **three fresh temptations to write a fourth copy**, and each looks locally
+  reasonable:
+
+  | Task | The temptation | Why it looks right |
+  |---|---|---|
+  | 3 | inline the extent check into `checkScatter` | it is two lines of arithmetic |
+  | 4 | compute the output size when allocating the tensor | the worker needs a size anyway |
+  | 5 | copy `Eval/Eval.lean`'s `scatterOutShape` into `Compile.lean` | it is *exactly* the function wanted — same signature, same job — but it sits on the **reference** path, which the checked plan deliberately does not import (`Scan.lean`: *"imports neither"*), so copying feels like the only option |
+
+  **Every one of them CALLS the shared formula — `LHSSlot.outExtent`, in scope in both
+  `Compile.lean` and `Scan.lean` with no new import, or `SizeInfer.scatterOutputShapes`. None
+  restates it.** If a call is genuinely impossible somewhere, that is a finding to escalate, not a
+  licence to copy.
+
+  **Also forbidden: the tighter memory-sufficient bound** `scale·(n−1) + offset + 1`. It is
+  memory-safe, it passes, and it is measured to disagree with `outExtent` by exactly `scale − 1`
+  over `scale ∈ 1..8`, `offset ∈ 0..8`, `n ∈ 1..11`. Silent disagreement between two extent
+  formulas is the exact shape of the bug this repo already paid for.
+
+  **The tell that the rule has been broken:** `grep -rn "outExtent\|scatterOutputShapes" LeanNCD/`
+  should show the new sites *calling* one of them. A new site that computes an extent without
+  appearing in that grep is a fourth copy.
 - **Discharging an arm by mirroring its neighbour is the failure mode**, not the fix. Each arm cites
   the reference semantics (§2.1) or an audit cell, never the arm beside it.
 - **Do not add anything to `enumPrograms`** (§2.4), and **do not touch the six frozen classifier
@@ -540,8 +569,8 @@ rejection policy belongs in this task: an explicit `unsupportedStep`-style arm p
 **Task 3 — the `checkAssign` extraction and the scatter checker.**
 Parameterise `checkAssign`'s destination-shape clause (3 lines, +18/-5, all 100 invocations
 untouched — §2.2), then write `checkScatter` on it. It must validate: the compute half via the
-shared core; `destShape` against `LHSSlot.outExtent` **by calling it**, never restating it (§3.2's
-drift warning applies verbatim on this side); `fill` coherent with `compute.algebra.reduceId`
+shared core; `destShape` against `LHSSlot.outExtent` **by calling it**, never restating it (the
+ONE EXTENT CONVENTION constraint above — this is temptation 1 of 3); `fill` coherent with `compute.algebra.reduceId`
 (§2.5), rejecting a mismatch with a located error rather than silently normalising; and
 placement-map row widths, which are unchecked on the existing write path.
 *Fixtures:* 4 acceptance + 4 rejection. *Mutation cycles:* 4, one per new clause.
@@ -592,12 +621,10 @@ design is **UNCERTAIN** (§2.2.2).
 > - **`LHSSlot.outExtent` is in scope in `Compile.lean` with no new import** — it imports
 >   `LeanNCD.DSL.Ast` directly. Computing `destShape` is one call per slot.
 >
-> **⚠️ The trap this creates.** `Eval/Eval.lean`'s `scatterOutShape` is exactly the function Step D
-> wants — but it belongs to the **reference** path, which the checked plan deliberately does not
-> import (`Scan.lean`: *"Independent of `Eval.evalScan`/`evalScheduled` by construction — imports
-> neither"*). **Copying its body into `Compile.lean` would be a THIRD copy of the extent
-> convention**, which is precisely the `scatterOutDim` mistake. Call `LHSSlot.outExtent`, or reuse
-> `SizeInfer.scatterOutputShapes`; do not restate the formula.
+> **⚠️ The trap this creates is temptation 3 of 3** in the ONE EXTENT CONVENTION constraint above,
+> and it is the most seductive of the three because `Eval/Eval.lean`'s `scatterOutShape` is exactly
+> the function Step D wants and is unreachable by import. Call `LHSSlot.outExtent` (in scope here
+> already) or reuse `SizeInfer.scatterOutputShapes`. Do not copy the body.
 >
 > Note also that the reference fails loud on an unsized scatter axis
 > (`EvalError.shape (.unsizedScatterOutput sl)`) rather than defaulting the extent to 0. The checked
