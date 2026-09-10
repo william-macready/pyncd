@@ -14,6 +14,14 @@
 #   4. verify the synced Mathlib is actually complete, and fail loudly if not
 #   5. copy the (gitignored) plan file in, so subagents can read it
 #   6. scaffold the subagent-driven-development ledger
+#   7. resolve `lake` and report its path
+#
+# Works for DETACHED worktrees too (`git worktree add --detach`), which is what
+# measurement/spike passes want: step 2 is skipped and everything else runs.
+# Use this rather than hand-rolling a .lake copy: a hand copy that lands wrong
+# (typically `cp -R src/.lake dst/.lake` when dst/.lake already exists, which
+# nests it as dst/.lake/.lake and exits 0) leaves a worktree that passes the
+# Mathlib check and then cold-rebuilds the project. Step 4 now catches that.
 #
 # Usage:
 #   prepare-worktree.sh [--base <branch>] [--plan <path-relative-to-repo-root>]
@@ -29,7 +37,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --base) BASE_BRANCH="$2"; shift 2 ;;
     --plan) PLAN_PATH="$2"; shift 2 ;;
-    -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,32p' "$0"; exit 0 ;;
     *) echo "prepare-worktree: unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -38,7 +46,7 @@ say() { printf '  %s\n' "$*"; }
 step() { printf '\n[%s] %s\n' "$1" "$2"; }
 
 # ---------------------------------------------------------------- 1. guard ---
-step 1/6 "Verifying this is a linked worktree"
+step 1/7 "Verifying this is a linked worktree"
 
 GIT_DIR_ABS=$(cd "$(git rev-parse --git-dir)" && pwd -P)
 GIT_COMMON_ABS=$(cd "$(git rev-parse --git-common-dir)" && pwd -P)
@@ -57,15 +65,22 @@ say "branch   : ${BRANCH:-<detached>}"
 say "primary  : $MAIN_ROOT"
 
 # ------------------------------------------------------- 2. stale-base fix ---
-step 2/6 "Fast-forwarding to local '$BASE_BRANCH'"
+step 2/7 "Fast-forwarding to local '$BASE_BRANCH'"
 
-if ! git rev-parse --verify --quiet "$BASE_BRANCH" >/dev/null; then
+# A detached worktree (`git worktree add --detach <commit>`) is deliberately
+# pinned to that commit — measurement and spike passes depend on it. Advancing
+# it would silently change what is being measured, so skip.
+if [[ -z "$BRANCH" ]]; then
+  say "detached HEAD at $(git rev-parse --short HEAD) — skipping (pinned on purpose)"
+elif ! git rev-parse --verify --quiet "$BASE_BRANCH" >/dev/null; then
   echo "prepare-worktree: base branch '$BASE_BRANCH' does not exist locally." >&2
   exit 1
-fi
-
-BEFORE=$(git rev-parse --short HEAD)
-if git merge-base --is-ancestor HEAD "$BASE_BRANCH"; then
+elif ! git merge-base --is-ancestor HEAD "$BASE_BRANCH"; then
+  echo "prepare-worktree: HEAD is not an ancestor of '$BASE_BRANCH' — branches have diverged." >&2
+  echo "  Refusing to auto-merge. Resolve manually before starting slice work." >&2
+  exit 1
+else
+  BEFORE=$(git rev-parse --short HEAD)
   git merge --ff-only "$BASE_BRANCH" >/dev/null
   AFTER=$(git rev-parse --short HEAD)
   if [[ "$BEFORE" == "$AFTER" ]]; then
@@ -73,14 +88,10 @@ if git merge-base --is-ancestor HEAD "$BASE_BRANCH"; then
   else
     say "fast-forwarded $BEFORE -> $AFTER (this is the stale-base trap, now handled)"
   fi
-else
-  echo "prepare-worktree: HEAD is not an ancestor of '$BASE_BRANCH' — branches have diverged." >&2
-  echo "  Refusing to auto-merge. Resolve manually before starting slice work." >&2
-  exit 1
 fi
 
 # --------------------------------------------------------- 3+4. .lake sync ---
-step 3/6 "Locating the fullest .lake donor"
+step 3/7 "Locating the fullest .lake donor"
 
 # Count built mathlib oleans in a checkout. Must tolerate a missing directory:
 # most candidate worktrees have no .lake at all, and under `set -eo pipefail`
@@ -113,7 +124,7 @@ if [[ -z "$BEST_DONOR" ]]; then
 fi
 say "donor    : $BEST_DONOR ($BEST_COUNT mathlib oleans)"
 
-step 4/6 "Syncing .lake and verifying completeness"
+step 4/7 "Syncing .lake and verifying completeness"
 
 MINE=$(count_oleans "$WORKTREE_ROOT")
 if (( MINE >= BEST_COUNT )); then
@@ -139,8 +150,24 @@ if (( PCT < 95 )); then
   exit 1
 fi
 
+# Mathlib living under .lake/packages/ says NOTHING about the project's own
+# build output under leanncd/.lake/build. A hand-rolled `cp -c -R` has silently
+# dropped exactly that directory (exit 0, no error), leaving a worktree that
+# passes the Mathlib gate above and then rebuilds LeanNCD from scratch.
+PROJ_BUILD="$WORKTREE_ROOT/leanncd/.lake/build"
+PROJ_OLEANS=0
+[[ -d "$PROJ_BUILD" ]] && PROJ_OLEANS=$(find "$PROJ_BUILD" -name '*.olean' 2>/dev/null | wc -l | tr -d ' ')
+if (( PROJ_OLEANS == 0 )); then
+  echo "prepare-worktree: leanncd/.lake/build has no oleans — the project itself is unbuilt." >&2
+  echo "  If you copied .lake by hand, the usual cause is cp's copy-INTO-existing-directory" >&2
+  echo "  semantics: 'cp -R src/.lake dst/.lake' when dst/.lake already exists produces" >&2
+  echo "  dst/.lake/.lake, exit 0, no error. Re-run this script, which rsyncs instead." >&2
+  exit 1
+fi
+say "project  : $PROJ_OLEANS oleans in leanncd/.lake/build"
+
 # ------------------------------------------------------------ 5. plan copy ---
-step 5/6 "Copying the plan file"
+step 5/7 "Copying the plan file"
 
 LEDGER_DIR=""
 if [[ -n "$PLAN_PATH" ]]; then
@@ -158,7 +185,7 @@ else
 fi
 
 # ---------------------------------------------------------- 6. ledger init ---
-step 6/6 "Scaffolding the SDD ledger"
+step 6/7 "Scaffolding the SDD ledger"
 
 if [[ -n "$LEDGER_DIR" ]]; then
   mkdir -p "$LEDGER_DIR"
@@ -178,6 +205,21 @@ LEDGER_EOF
   fi
 else
   say "no plan given; skipping"
+fi
+
+# -------------------------------------------------------------- 7. toolchain ---
+step 7/7 "Resolving lake"
+
+# `lake` is not on the default PATH in this environment; a subagent that assumes
+# it is gets "command not found" and may conclude the toolchain is broken.
+if command -v lake >/dev/null 2>&1; then
+  say "lake     : $(command -v lake) (on PATH)"
+elif [[ -x "$HOME/.elan/bin/lake" ]]; then
+  say "lake     : $HOME/.elan/bin/lake (NOT on PATH — invoke by absolute path)"
+  say "           e.g. \"\$HOME/.elan/bin/lake\" build"
+else
+  echo "prepare-worktree: lake not found on PATH or at \$HOME/.elan/bin/lake." >&2
+  exit 1
 fi
 
 printf '\nWorktree ready. Next: pre-flight conflict scan, then Task 1.\n'
