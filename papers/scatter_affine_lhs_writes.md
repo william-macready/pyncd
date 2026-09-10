@@ -575,6 +575,34 @@ case (§1.5) so `Out[i+j]` still fails with a source locator rather than degradi
 4 in `ScanCompileTest.lean`).
 *Also confirm or refute:* `rawPublicationSlots`' inner lookahead, whose reachability under this
 design is **UNCERTAIN** (§2.2.2).
+
+> **Feasibility of the emitter: ANSWERED, 2026-09-10 — Step D already has what it needs.** This was
+> the slice's one open feasibility question and it is closed, so Task 5 starts from a known-good
+> footing rather than a probe.
+>
+> - **Step C binds `sizes` before Step D runs.** `prepareEvalPlan` calls
+>   `inferAxisSizesFromSignature explicitSizes sig flatStmts` and binds `(sizes, warnings)`; Step D
+>   is the next statement. `flatStmts` flattens `.plain s`, so a `Stmt.scatter` flows through
+>   inference [read].
+> - **The scatter output-shape derivation already exists and already runs on this path.**
+>   `SizeInfer.scatterOutputShapes (sizes : HashMap UID Nat) (stmts : List Stmt)` is wired into the
+>   sizing fixpoint (`let producedShapes := scatterOutputShapes sizes stmts`), and Step C's own
+>   comment records that `inferAxisSizesCore` inspects LHS slots *only* for `.scatter`, via that
+>   function [read].
+> - **`LHSSlot.outExtent` is in scope in `Compile.lean` with no new import** — it imports
+>   `LeanNCD.DSL.Ast` directly. Computing `destShape` is one call per slot.
+>
+> **⚠️ The trap this creates.** `Eval/Eval.lean`'s `scatterOutShape` is exactly the function Step D
+> wants — but it belongs to the **reference** path, which the checked plan deliberately does not
+> import (`Scan.lean`: *"Independent of `Eval.evalScan`/`evalScheduled` by construction — imports
+> neither"*). **Copying its body into `Compile.lean` would be a THIRD copy of the extent
+> convention**, which is precisely the `scatterOutDim` mistake. Call `LHSSlot.outExtent`, or reuse
+> `SizeInfer.scatterOutputShapes`; do not restate the formula.
+>
+> Note also that the reference fails loud on an unsized scatter axis
+> (`EvalError.shape (.unsizedScatterOutput sl)`) rather than defaulting the extent to 0. The checked
+> path owes an equivalent rejection — **not** a `getD 0`, which would silently produce an
+> empty output tensor (§2.1's second `.toNat` degeneracy, one layer up).
 **Name the fixture for the locator requirement:** "`Out[i+j]` still fails with a source locator" is
 again a diagnostic-payload claim. The distinguishing fixture compiles a two-axis affine LHS and
 asserts the `CapabilityError` constructor; if the preflight arm were dropped, the same program
@@ -615,8 +643,17 @@ extent rule, collision handling), and the final tier is where such findings have
 ### 2.8 Measurement status
 
 **Planning complete (2026-09-10).** The representation is decided (§2.2), the site inventory is
-authoritative (§2.2.2), and the task breakdown is written (§2.7). S-A is ready to execute; nothing
-further needs measuring before Task 1.
+authoritative (§2.2.2), the task breakdown is written (§2.7), and the one open feasibility question
+— whether Step D can build a `ScatterPlan` at all — is **closed affirmatively** (§2.7, Task 5).
+S-A is ready to execute; nothing further needs measuring before Task 1.
+
+**No de-risking spikes are recommended.** Three were considered and rejected on cost/benefit: a
+dense-worker spike would *be* Task 4 rather than de-risk it (the reference implementation can simply
+be read); a `rawPublicationSlots` reachability spike answers in-context for free during Task 5; and
+the emitter-feasibility spike — the only one with real value — is closed above by a ten-minute read
+instead. The genuinely mechanical external carve-out is roadmap D2, correctly queued behind Task 1,
+and now measured at **six prose sites plus one node**, not the "four docstrings plus one" that
+section still states.
 
 ⚠️ **Process note for whoever runs the next measurement.** The first attempt dispatched two mutating
 agents into the **same working checkout** concurrently; they overwrote each other's edits in
