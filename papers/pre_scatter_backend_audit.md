@@ -14,6 +14,25 @@ the *pre-slice* tree — do not "correct" them; they are what the tripwire repla
 is `post_audit_roadmap.md` Section A, whose Slice 1 completion record supersedes this document
 wherever the two disagree.
 
+**⚠️ ADDENDUM 2026-09-09 — three further places this audit misleads, found while planning the
+Scatter slice. The current authority is `papers/scatter_affine_lhs_writes.md`.**
+
+- **§B2.1's Decision A analysis concerns a path unreachable from surface syntax.** A scatter-shaped
+  LHS combined with an iteration slot is rejected at DSL phase 7 by `checkScatterNoScan`, in the
+  base block and the step block alike — measured by probe. So decisions A and B chose between two
+  currently-unreachable options, and reaching either requires lifting a deliberate DSL guard this
+  audit never mentions. The base-vs-step question is real but it is not the gate.
+- **§B2.6's Tier-1 negative-coverage list: items 1 and 3 INVERT; item 2 stands.** Both assert
+  rejection of a strided row at a *non-advancing* step dimension — which is exactly the step-phase
+  strided write Decision A admits. They must become acceptances. Item 2 (strided at an *advancing*
+  dimension) is correct under any decision: that dimension carries the recurrence.
+- **§B2.1's adopted `classifyWriteRow` branch has a live soundness hole.** It carries no guard on
+  the sign of `scale`/`offset`. Measured: within `scale ∈ 1..5`, `offset ∈ -6..-1`, `outDim ∈ 1..8`
+  there are **200** combinations where the extent check passes and a written coordinate is still
+  negative, which `commitWrite`'s `Int.toNat` collapses onto index 0 — clobbering a legitimate
+  write, no panic, no diagnostic. Add `c > 0 && bias ≥ 0`; it costs nothing a surface program can
+  express, since the elaborator builds coefficients through `Int.ofNat` (B1-F9).
+
 **Five load-bearing places where this audit is now stale.** One of them contradicts a shipped
 `AGENTS.md`, so read this list before quoting any of them as current:
 

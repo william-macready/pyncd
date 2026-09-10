@@ -168,7 +168,98 @@ max/min, contextful assignment). "Checked-plan admits, JAX declines" is the docu
 - The constructor-enumeration count is **6 prose sites + 1 AGENTS.md node**, not the "four
   docstrings and one node" Section B claims.
 
-### 2.5 Still to measure before the task breakdown is written
+### 2.5 Fill and collision policy — carry the field, defer the behaviour
+
+Collision-`sum` is wanted eventually but deferred. It is deferrable **without rework** under three
+rules, and one of them is load-bearing.
+
+**Fill is a `ScalarConst` defaulted from the destination algebra's `reduceId` — not an `Int`, and
+not a hard-coded `0`.** `ScatterOpts.fill` is `Int` [read, `DSL/Ast.lean`], which cannot express a
+tropical identity, so the plan node must **not** copy that field's type. The identities already
+exist in `Eval/Plan/Check.lean` [read]:
+
+| Algebra | `reduceId` |
+|---|---|
+| real sum-product (`admittedAlgebra`) | `0.0` |
+| tropical max-product (`admittedAlgebraMax`) | `Float.toBits (-1.0 / 0.0)` — **−∞** |
+| tropical min-product (`admittedAlgebraMin`) | `Float.toBits (1.0 / 0.0)` — **+∞** |
+| Boolean (`admittedAlgebraBool`) | `false` |
+
+`admittedAlgebraMax`'s own docstring gives the reason this matters: *"Identity `−∞` so an
+all-negative reduction still returns its greatest element (a `0` identity would spuriously win)."*
+`AssignPlan` already carries `algebra`, so the identity is in hand and fill becomes an optional
+override rather than a required datum. Today's behaviour falls out as a special case: real
+sum-product's `reduceId` **is** `0.0`, which is exactly what `lowerArith` hard-codes.
+
+**Fill and collision-reduce are the identity and the operation of one monoid.** `ScatterOpts` treats
+them as independent fields, which is how an incoherent pair arises — `reduce := .max` with
+`fill := 0` silently yields `0` for every all-negative output cell instead of its true maximum. Not
+live today (the surface hard-codes reject-with-`0`; only a hand-built `Stmt.scatter` could produce
+it), but the checked layer should make it unrepresentable rather than inherit it. If an explicit
+fill is ever supplied, validate it against the algebra's identity and reject a mismatch with a
+located error — **never silently normalise**, which is this codebase's recurring defect shape.
+`ScalarConst.f32` is documented inert in a checked plan, so the fill's dtype must track the
+destination's; reuse the existing destination-specific algebra-admission check rather than writing
+a second one.
+
+**Match `CollisionReduce` exhaustively and `throw` on the unimplemented arms** — explicit arms,
+never a catch-all:
+
+```
+| .rejectCollisions => …implement…
+| .overwrite | .sum | .max | .min => throw …
+```
+
+Fail-loud today, a compile error if a sixth policy is added, and landing `sum` later is replacing
+one `throw` with a fold — no IR change, no signature change. Note `rejectCollisions` is the
+**harder** policy: it needs the per-cell first-writer map to report which two sources collided,
+whereas `sum` only folds. The deferred arm is strictly less work, not more.
+
+**Do not defer `fill` itself.** The output array must be initialised to something, so reading the
+field is free; hard-coding `0` would be more work to undo later.
+
+### 2.6 Sequencing, and how much S-A and S-B actually share
+
+**Order: S-A first, then S-B.** The reasons are the oracle and the IR node, *not* a large shared
+substrate:
+
+- S-A has a **reference implementation to differential-test against** (`evalScatter` already does
+  fill and collision). S-B has none — `evalStmtSliceSeeded` rejects non-`.assign` in a scan slice.
+  Building the most delicate new code with no oracle is the worse order.
+- The missing IR node is an S-A problem only. S-B already has a write-map representation
+  (`StateWriteMap`, coefficient rows, `WriteRowKind`).
+- S-B additionally needs semantics decided and DSL guard L3 lifted.
+
+> ⚠️ **Correction to an earlier draft of this section, which overstated the sharing.** It claimed
+> a shared "fill + collision commit" that both sides need. **Both halves are wrong**, and the
+> conclusion drawn from them — that collision-`sum` would later be *"one change serving both
+> clients"* — is wrong with them. Measured:
+>
+> - `commitWrite` [read, `Eval/Plan/Scan.lean`] does **no fill** and **no collision detection**. It
+>   iterates the block output's own coordinates, maps each through `applyAffine`, and does a
+>   straight `set!` — last write wins.
+> - Scan-state initialisation is owned by a different mechanism entirely,
+>   `boundaryPolicy := .zeroThenBaseOverlay` [read, `Compile.lean`, `Scan.lean`].
+> - **Scan writes cannot collide.** The iteration is exactly over the output slice, one value per
+>   output coordinate, and a strided map with `scale ≥ 1` is injective. Assign-side collisions come
+>   from a source axis absent from the output (`Out[i] := X[i]·Y[j]`, with `j` summed away); the
+>   scan cover rule forbids that shape by construction.
+>
+> So collision-`sum` serves **one** client, and fill is S-A-only.
+
+**What is genuinely shared is real but modest:** the extent formula (both sides must *call*
+`LHSSlot.outExtent`, never restate it — see §3.2 for why) and the in-bounds argument (equality
+against `outExtent` ⇒ every written coordinate in range, the same lemma on both sides). One function
+and one lemma. Centralise both — that is the `scatterOutDim` drift this repo already shipped a
+soundness bug over — but do not plan S-A as "the shared substrate."
+
+The two writers have genuinely different jobs: one fills-and-reduces into a fresh tensor, the other
+overlays into persistent state something else already initialised. Unifying them means making scan
+writes *be* scatter writes through one mechanism — a refactor of working, load-bearing code adjacent
+to the hub decomposition roadmap §F defers repeatedly. That is a slice of its own, not something to
+fold into S-A.
+
+### 2.7 Still to measure before the task breakdown is written
 
 The compile-error set produced by adding the scatter IR node — the analogue of the nine-site list
 that sized S-B. A measurement agent for this was dispatched and stopped when the session ran low; it
@@ -258,6 +349,36 @@ and out-of-order or duplicated cover positions still fail.
   7 kinds → 49 rows → 588 cases arithmetic to 9 → 81 → **972**.
 - Extract `baseWriteRowsOk`'s clause 3 into a named predicate both it and `compileScan` call
   (inherited from Slice 1 Task 3).
+
+**The chokepoint guard must be a WITNESS FUNCTION, not a `#guard` set** (absorbed from roadmap
+Section B, which is now a stub). `classifyWriteRow` is structurally untripwireable, so nothing will
+remind you to guard it. A `#guard` set naming `pinned`/`free`/`advancing` never mentions `.strided`
+and keeps passing unchanged. What works is a function matching exhaustively over `WriteRowKind` —
+e.g. `classifyWitness : WriteRowKind → (Nat × Array Int × Int)` with one
+`#guard classifyWriteRow (witness k) == some k` per constructor — so a new constructor breaks the
+witness's own exhaustiveness, which is a compile error.
+
+**Require a `contextWidth = 0` witness AND a `contextWidth > 0` witness per constructor.** The
+compile error forces the author to *supply* a `contextWidth`; it does not force them to *exercise
+the discrimination*. At `contextWidth = 0` the correct `outputPos = p - contextWidth` and a broken
+`outputPos = p` coincide, so a lone base-phase witness passes under both readings and the
+off-by-`contextWidth` bug ships green. Slice 1's three `classifyWriteRow` guards are the precedent:
+one at `contextWidth = 0`, two at `contextWidth = 2`, one of those with the nonzero coefficient in
+the output half.
+
+**Two value checks in `classifyWriteRow` are genuinely unpinned** — measured in Slice 1's final fix
+wave by weakening each in place and rebuilding the full default target:
+
+| Weakening | Observed | Firing set |
+|---|---|---|
+| advancing branch, drop `bias == 1` | build FAILS | one assertion — the pre-existing `lookAheadStepWrite` fixture. Pinned incidentally, not deliberately |
+| free branch, drop `bias == 0` | build PASSES, 8660 jobs | **empty — genuinely unpinned** |
+| multi-nonzero arm, route length-≥2 rows through free-branch logic | build PASSES, 8660 jobs | **empty — genuinely unpinned** |
+
+So the accurate scope is **two unpinned checks, not three**. Add a dedicated guard for the
+advancing branch's `bias == 1` too if cheap — an incidental pin in an unrelated fixture is a poor
+home for a load-bearing rule — but do not plan it as coverage of a live hole. Note §3.1's branch
+adds `c > 0 && bias ≥ 0`, which is new surface needing its own guards.
 
 ---
 

@@ -5,13 +5,28 @@ support. Scope is the static compiler backend only — the reference dense inter
 already evaluates most of the constructs listed here, so nearly every row is a *backend-parity* gap
 (the checked plan compiler has not caught up to the reference semantics), not a missing semantic.
 
-> **The "Hard" Scatter row below has been audited in depth, and there is a plan for it.**
-> `pre_scatter_backend_audit.md` characterises the write-geometry and boundary surfaces Scatter lands
-> on (224-cell predicate table, 21 findings, twelve reproducible spikes); `post_audit_roadmap.md`
-> says what to do in what order. Read both before starting that row — in particular, one scope
-> question gates the whole thing (are affine LHS writes wanted in `base` blocks or step-only?), and a
-> hardening slice should land *before* the feature so a new row kind fails to compile rather than
-> being silently exempted from every value check.
+> **The "Hard" Scatter row below has been audited in depth. Start at
+> `papers/scatter_affine_lhs_writes.md`** — it is the current authority and supersedes
+> `post_audit_roadmap.md` Section B, which is now a stub. `pre_scatter_backend_audit.md` remains the
+> findings record (224-cell predicate table, 21 findings, twelve reproducible spikes); read its
+> superseding banner before quoting it.
+>
+> **Two corrections to an earlier version of this banner, both measured 2026-09-09:**
+>
+> 1. It said *"one scope question gates the whole thing (are affine LHS writes wanted in `base`
+>    blocks or step-only?)"*. That is **not** the gating question. A scatter-shaped LHS combined
+>    with an iteration slot is rejected at DSL phase 7 by `checkScatterNoScan` in base and step
+>    alike, so both options are unreachable from surface syntax and the decision governs a deferred
+>    slice. The real question is whether checked-backend parity is the goal now.
+> 2. The row is **two nearly-disjoint slices**, not one: top-level scatter (`Out[2*i] := X[i]`),
+>    which compiles through the whole DSL and dies at a single checked-plan barrier over a *missing
+>    IR node*; and strided writes into scan state, which are blocked at the DSL and have no
+>    reference semantics anywhere. Top-level scatter is sequenced first — it has a reference
+>    implementation to differential-test against.
+>
+> The hardening slice this banner recommended **has landed** (Slice 1, `post_audit_roadmap.md`
+> Section A), so a new write-row kind now fails to compile at nine sites rather than being silently
+> exempted. That tripwire serves the *deferred* slice.
 
 ## Contents
 
