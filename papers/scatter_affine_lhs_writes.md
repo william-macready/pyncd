@@ -128,42 +128,80 @@ coefficient → empty tensor), because differential parity against leg 2 is the 
 Only `fill = 0` + `rejectCollisions` are surface-reachable — `lowerArith` hard-codes them and there
 is no `fill`/`reduce` syntax. The other four policies are implemented and tested but unreachable.
 
-### 2.2 The representation decision — ⚠️ PROVISIONAL, RE-OPENED 2026-09-10
+### 2.2 The representation decision — DECIDED 2026-09-10
 
-> **⚠️ Do not build on this section's verdict yet.** It was recorded as decided, then re-opened the
-> same day when the reasoning behind the A-nested rejection was checked against `checkAssign` and
-> largely failed. **A-flat is not confirmed; A-nested is not eliminated.** What stands is Option B's
-> rejection (§ below), which was measured directly and is sound.
->
-> **Three of the four grounds for rejecting A-nested do not survive.** `checkAssign` is a linear
-> `do` block of 28 independent `unless … throw` clauses, and exactly **two lines** clash with a
-> scatter — `unless destSig.shape == a.outputShape`. Every other clause is not merely compatible
-> but wanted, including `t.outputProjection == a.outputShape`, which for a scatter correctly ties
-> terms to the *source iteration domain*. Extract that one clause (or parameterise the expected
-> destination shape, with `checkAssign` passing `a.outputShape` to preserve today's behaviour) and:
-> the **105-call-site objection evaporates** (the contract is unchanged); the **private
-> `CheckedAssignPlan.mk` objection evaporates** (the extraction belongs *inside* `Check.lean`, and
-> privacy only blocks routing around from outside); and the **`runDenseScan` doc-comment objection
-> evaporates** (that invariant still holds for `checkAssign`). This is the same move Slice 1 Task 3
-> made for `pinnedLiteralsInRange`, and the one owed for `baseWriteRowsOk`'s clause 3 — *"lift that
-> clause alone into a named predicate both sites call."*
->
-> **The fourth ground is real**, and confirmed arithmetically: 256 `ContractionAlgebra` × 4 `fill`
-> × 5 `CollisionReduce` = **5,120** missing-case patterns exactly. A-nested carries two
-> `ContractionAlgebra`s, squaring that term to ~1.3M, which is why three sites degraded to
-> heartbeat timeouts.
->
-> **So the actual tradeoff is transient against permanent.** A-flat's real cost is not "restates
-> five fields" as an earlier draft of this section said — it is eventually **re-deriving 28
-> validation clauses**, a second copy of a rule set that must not drift, which is the failure mode
-> that produced `scatterOutDim`. A-nested's cost is unreadable missing-case diagnostics *while the
-> arms are being added*, and nothing afterwards.
->
-> **To settle it**, re-measure A-nested with the destination clause properly extracted, and
-> establish whether the diagnostic blow-up can be mitigated. Until then this section records a
-> comparison, not a decision.
+**Decision: a new `PlanStep.scatter` case carrying `ScatterPlan`, which CONTAINS an `AssignPlan`
+("A-nested"), with exactly ONE `ContractionAlgebra` — the nested one.**
 
-### 2.2.1 The measured comparison (verdicts above are provisional)
+Six fields, and all six are needed:
+
+```
+compute   : AssignPlan          -- the compute half; its outputShape is the SOURCE iteration domain
+destShape : Array Nat           -- the computed destination extent
+outCoeffs : Array (Array Int)   -- the placement map
+outBias   : Array Int
+fill      : ScalarConst         -- see §2.5: coherent with compute.algebra.reduceId
+reduce    : CollisionReduce
+```
+
+**`destShape` is provably not derivable from the placement map**, which is why it must be stored:
+`Out[2*i]` over `i:3` has extent **6** while max-coordinate + 1 is **5**; and `.const n` has
+coordinate `n` but extent `n+1`. Derive it by calling `LHSSlot.outExtent` (§2.1) and store the
+result. The three `Array` fields cost nothing in diagnostics (see below).
+
+**Why A-nested over A-flat — the sole objection turned out to be an artifact.** A-nested carrying
+one algebra produces `lake build JaxExperiment` output **byte-for-byte the same size as A-flat**:
+15,384 total lines, per-site payloads `[5120, 5120, 5120]`, same timeout site. The 1,310,720
+blow-up that had condemned it was `256² × 20` — purely a redundant *second* `ContractionAlgebra` in
+the measured variant. A nested `AssignPlan` already owns one; a second was never needed. The square
+law was confirmed independently with a 2×2 control (two copies → 16 = 4²).
+
+**What A-nested buys, now unopposed:** it reuses `checkAssign`'s validation instead of duplicating
+it. The extraction is **3 lines in 1 file (+18/−5)**, all **100** real `checkAssign` invocations
+compile untouched (3 in `LeanNCD/`, 78 in `test/`, 17 in `experiments/`, 2 in `spikes/`), and both
+targets stay green at **8660 / 8513**.
+
+**Clause-by-clause tally over `checkAssign` — the artifact that settles viability:** **16 clauses,
+0 wrong, 13 correct-and-live, 3 correct-but-vacuous** for a scatter's compute half. Exactly one
+clause clashed (`destinationShapeMismatch`), and no second clash was found.
+
+> **⚠️ Correction to an earlier draft of this section, which said "28 validation clauses."** That
+> number was wrong — it came from counting `grep -c "unless\|throw"`, which double-counts each
+> `unless`/`throw` pair. `checkAssign` has **16** clauses, and they are **nested** (6 top-level, 3
+> per-term, 7 per-factor), not the linear block that draft described. The conclusion is unchanged
+> and slightly strengthened: 16 clauses reused rather than duplicated, with none of them wrong for
+> a scatter.
+
+**The payload mechanism, for whoever hits it:** Lean eta-expands every single-constructor type
+unconditionally, then enumerates every constructor of every non-recursive multi-constructor field;
+recursive types (`Nat`, `List`) stop at `_`. Hence `ContractionAlgebra` = 4 (`ScalarBinOp`) × 4
+(`ScalarConst`, since `Bool` splits and `UInt64` does not) × 4 × 4 = **256**, then × 4 `fill` × 5
+`CollisionReduce` = **5,120**. **Sibling arm depth has zero effect** — tested both ways, so there is
+no site-to-site difference to exploit.
+
+**Mitigations exist; apply none.** `@[irreducible] def AlgOpaque : Type := Algebra` → 20 patterns,
+and an algebra held as a `Nat` index into a table → 20, both confirmed working and both shrinking
+A-flat equally. Each costs real ergonomics to shrink a *transient* error message. Holding `fill` as
+a raw `UInt64` also works (→ 1,280) but is **rejected**: it destroys the dtype tag
+`constMatchesDtype` depends on, and §2.5's coherence rule needs it. Failed approaches, so nobody
+retries them: shallow siblings, deep siblings, a single-constructor `inductive` wrapper (eta-expanded
+exactly like a structure), a reducible alias, `private mk ::`, and dropping `deriving`.
+
+> **Also corrected:** an earlier draft said the JAX leg gave "3 clean errors under A-flat and 40
+> under A-nested". **A-flat already produces a heartbeat timeout too** (`EvalPlan.lean`), so that
+> gap was narrower than reported even before the redundant algebra was removed — and with one
+> algebra it is nil.
+
+**Option B (widening `AssignPlan` with a sum-typed `target` field) remains rejected**; that
+measurement was direct and is unaffected. Details in §2.2.1.
+
+⚠️ **One inherited number to re-verify before the task breakdown:** the "18 sites across 10 files"
+figure comes from the earlier pass and was **not** re-measured here — a build halts at the first
+failing module, and this pass surfaced only 4. Re-derive it when sequencing tasks.
+
+### 2.2.1 Option B, and the earlier A-flat comparison (superseded by §2.2)
+
+
 
 **Decision: a new `PlanStep.scatter` case carrying a flat `ScatterPlan` structure ("A-flat").**
 Three candidates were built to a green build and compared; reports in
