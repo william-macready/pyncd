@@ -141,14 +141,23 @@ is no `fill`/`reduce` syntax. The other four policies are implemented and tested
 
 Six fields, and all six are needed:
 
+```lean
+-- `CollisionReduce` has DecidableEq but not BEq; mirror Kernel.lean's existing `BEq UnaryOp`.
+instance : BEq LeanNCD.CollisionReduce := ⟨fun a b => decide (a = b)⟩
+
+structure ScatterPlan where
+  compute   : AssignPlan          -- the compute half; its outputShape is the SOURCE iteration domain
+  destShape : Array Nat           -- the computed destination extent
+  outCoeffs : Array (Array Int)   -- the placement map
+  outBias   : Array Int
+  fill      : ScalarConst         -- coherent with compute.algebra.reduceId (§2.5)
+  reduce    : LeanNCD.CollisionReduce
+  deriving DecidableEq, BEq, Repr, Inhabited
 ```
-compute   : AssignPlan          -- the compute half; its outputShape is the SOURCE iteration domain
-destShape : Array Nat           -- the computed destination extent
-outCoeffs : Array (Array Int)   -- the placement map
-outBias   : Array Int
-fill      : ScalarConst         -- see §2.5: coherent with compute.algebra.reduceId
-reduce    : CollisionReduce
-```
+
+[snippet, `scatterplan.lean` — compiles, with `#guard sampleScatter.fill == sampleScatter.compute.algebra.reduceId`
+passing. Note `admittedAlgebra` lives in `Check.lean`, not `Kernel.lean`, so a fixture constructing
+one imports `LeanNCD.Eval.Plan.Check`.]
 
 **`destShape` is provably not derivable from the placement map**, which is why it must be stored:
 `Out[2*i]` over `i:3` has extent **6** while max-coordinate + 1 is **5**; and `.const n` has
@@ -493,6 +502,19 @@ approving its neighbour.
 - No line numbers in shipped text; identifiers only. Every Lean snippet compiled via
   `bash .claude/skills/slice-plan/check-snippet.sh` before it enters a commit.
 - Worktree setup via `.claude/skills/new-slice/prepare-worktree.sh`.
+- **⚠️ A killed agent poisons `.lake/build`, and neither `git status` nor a source grep can see
+  it.** Found the hard way while authoring this plan: a stopped agent had built a nine-field
+  `ScatterPlan` into `Kernel.olean`; reverting the source left the stale declaration resident, so a
+  later snippet failed with *"`ScatterPlan` has already been declared"* against a tree that greps
+  clean. After stopping any agent that touched Lean sources, `touch` the modules it edited and
+  rebuild before trusting a measurement. This also means a `.lake` copied from a poisoned checkout
+  carries the poison.
+- **Every task that adds a checker clause owes a case audit, not just fixtures.** This repo's
+  recurring defect is a predicate that says which cases MUST hold without saying which MAY NOT.
+  Tasks 3 and 4 each deliver an explicit table over the new surface — every case × class cell
+  marked (a) required, (b) forbidden, or (c) silently ignored — because **every (c) cell is the
+  next instance**. `slice-plan` requires this of any task touching the family; producing it inside
+  the task costs ~20k tokens, and finding the same gap at the final review has cost ~560k.
 
 #### The tasks
 
@@ -523,6 +545,11 @@ drift warning applies verbatim on this side); `fill` coherent with `compute.alge
 (§2.5), rejecting a mismatch with a located error rather than silently normalising; and
 placement-map row widths, which are unchecked on the existing write path.
 *Fixtures:* 4 acceptance + 4 rejection. *Mutation cycles:* 4, one per new clause.
+**Name the fixture for the locator requirement:** "rejecting a mismatch with a located error rather
+than silently normalising" is a claim about a diagnostic payload, and no value-comparing test can
+see it. The distinguishing fixture is a `ScatterPlan` whose `fill` disagrees with
+`compute.algebra.reduceId`, asserting the specific error **constructor** — under silent
+normalisation it would instead return `.ok`, so the two readings are separable.
 
 **Task 4 — the dense worker.**
 Reproduce `Eval/Scatter.lean` exactly: initialise to `fill`; enumerate **source** coordinates (this
@@ -548,6 +575,11 @@ case (§1.5) so `Out[i+j]` still fails with a source locator rather than degradi
 4 in `ScanCompileTest.lean`).
 *Also confirm or refute:* `rawPublicationSlots`' inner lookahead, whose reachability under this
 design is **UNCERTAIN** (§2.2.2).
+**Name the fixture for the locator requirement:** "`Out[i+j]` still fails with a source locator" is
+again a diagnostic-payload claim. The distinguishing fixture compiles a two-axis affine LHS and
+asserts the `CapabilityError` constructor; if the preflight arm were dropped, the same program
+would still be *rejected* — by `writeGeometryNotAdmitted` — so a fixture asserting only "rejected"
+cannot tell the two apart and would pass either way.
 
 **Task 6 — curated corpus and differential.**
 A separate corpus mirroring `predicatePrograms` in `test/Eval/Plan/DifferentialTest.lean` (10
