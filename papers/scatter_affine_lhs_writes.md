@@ -3,10 +3,16 @@
 **Status:** planning artifact, authored 2026-09-09 against `main` = `79fa71f`, tree clean, default
 `lake build` green at **8660 jobs** and `lake build JaxExperiment` green at **8513 jobs**.
 
-**This is NOT yet an implementation plan.** It is the measured decomposition of what
-`papers/post_audit_roadmap.md` Section B calls "Slice 2", plus the design work already verified for
-one half of it. Section B assumed a single slice; measurement says two, nearly disjoint. §1 is the
-evidence, §2 the decision, §3 the parked design, §4 what remains to author.
+**This is the implementation plan for S-A (top-level scatter).** It is also the measured
+decomposition of what `papers/post_audit_roadmap.md` Section B calls "Slice 2": Section B assumed a
+single slice, and measurement says two, nearly disjoint. **§1** is the evidence for the split;
+**§2** is S-A — the decided representation, the measured 18-site inventory, and the seven-task
+breakdown in **§2.7**; **§3** is S-B's already-verified design, parked; **§4** lists the
+reconnaissance reports behind all of it.
+
+Everything asserted here was measured against the tree, not reasoned about. Where a claim of this
+document's own earlier drafts was later falsified, the correction is kept inline and marked rather
+than quietly edited away — §0 and the ⚠️ blocks in §2.2, §2.5 and §2.6.
 
 ---
 
@@ -101,7 +107,7 @@ capability the whole enquiry started from. S-B is deferred with its design alrea
 
 ---
 
-## 2. What S-A requires (outline — the detailed task breakdown is still to author)
+## 2. S-A: what it requires, and the task breakdown (§2.7)
 
 ### 2.1 The reference semantics it must reproduce, not invent
 
@@ -337,7 +343,7 @@ error, so scatter-inside-a-scan is **structurally impossible in the plan IR** �
 tree records that as a decision. Lifting DSL guard L3 (§3.4) is therefore necessary but nowhere
 near sufficient.
 
-### 2.3 The build gate is two targets, not one
+### 2.3 The build gate is FOUR targets, not one
 
 `leanncd/lakefile.toml` sets `defaultTargets = ["LeanNCD", "Tests"]`; `JaxExperiment` carries the
 comment *"Deliberately absent from `defaultTargets`: it only builds when explicitly requested."*
@@ -463,10 +469,122 @@ writes *be* scatter writes through one mechanism — a refactor of working, load
 to the hub decomposition roadmap §F defers repeatedly. That is a slice of its own, not something to
 fold into S-A.
 
-### 2.7 Measurement status
+### 2.7 Task breakdown
 
-**Done (2026-09-10).** The representation is decided and its compile-error set measured — §2.2. The
-task breakdown can now be written against 18 known sites.
+Seven tasks. Sized by fixtures and mutation cycles, not diff size, per
+`.claude/skills/slice-plan/SKILL.md`. Split only where a reviewer could reject one task while
+approving its neighbour.
+
+#### Global constraints
+
+- **FOUR build gates, not one.** `lake build` (**8660** at baseline), `lake build JaxExperiment`
+  (**8513**), the ad-hoc drivers under `experiments/jax_bridge/` via `lake env lean`, and the six
+  `spikes/` files carrying `Run with: lake env lean spikes/...` headers. The first two job counts
+  hold only while no module is added; a task that adds test modules **must explain the new number,
+  not assert it**.
+- **The missing-cases mitigation is scaffolding.** Apply `@[irreducible] def AlgOpaque : Type := Algebra`
+  (or the table-index form) while working — §2.2 — and **remove it before the slice lands**, with a
+  final build proving the shipped types are unwrapped. Leaving it in silently changes the design.
+- **Discharging an arm by mirroring its neighbour is the failure mode**, not the fix. Each arm cites
+  the reference semantics (§2.1) or an audit cell, never the arm beside it.
+- **Do not add anything to `enumPrograms`** (§2.4), and **do not touch the six frozen classifier
+  sites** in `test/Eval/Plan/ContractTest.lean` and `ScanContractTest.lean` — updating those is the
+  defect, not the fix.
+- No line numbers in shipped text; identifiers only. Every Lean snippet compiled via
+  `bash .claude/skills/slice-plan/check-snippet.sh` before it enters a commit.
+- Worktree setup via `.claude/skills/new-slice/prepare-worktree.sh`.
+
+#### The tasks
+
+**Task 1 — Phase 1: the IR node (11 sites).**
+`ScatterPlan` in `Eval/Plan/Kernel.lean` with the six fields of §2.2 and **exactly one**
+`ContractionAlgebra` (the nested `compute`'s). `PlanStep.scatter` in `Eval/Plan/RawStep.lean`.
+Discharge all 11 Phase-1 sites. Needs a hand-written `instance : BEq LeanNCD.CollisionReduce`
+(mirror the existing `BEq UnaryOp` in `Kernel.lean`). **Iterate to green — round 1 shows only 4 of
+13, and one site hid behind a heartbeat timeout.**
+*Files:* `Kernel.lean`, `RawStep.lean`, `EvalPlan.lean`, `Prepared.lean`,
+`spikes/AxisABoundaryProbe.lean`.
+
+**Task 2 — Phase 2: checked evidence and the JAX boundary (7 sites, 3 of them JAX).**
+`CheckedPlanStepEvidence.scatter` in `Eval/Plan/EvalPlan.lean` — **forced**, since `checkPlan`'s
+`localCheck` must return one. The three `JaxExperiment` sites arrive here, not in Task 1, so the JAX
+rejection policy belongs in this task: an explicit `unsupportedStep`-style arm plus fixtures in
+`test/Eval/Plan/ExecutableTest.lean`, a default target that already exercises
+`checkJaxAssignSupport` directly.
+*Reviewer question:* does the checked/JAX boundary say the right thing about scatter?
+*Fixtures:* 2 JAX-rejection assertions. *Donor:* the existing `checkJaxAssignSupport` call sites in
+`ExecutableTest.lean`.
+
+**Task 3 — the `checkAssign` extraction and the scatter checker.**
+Parameterise `checkAssign`'s destination-shape clause (3 lines, +18/-5, all 100 invocations
+untouched — §2.2), then write `checkScatter` on it. It must validate: the compute half via the
+shared core; `destShape` against `LHSSlot.outExtent` **by calling it**, never restating it (§3.2's
+drift warning applies verbatim on this side); `fill` coherent with `compute.algebra.reduceId`
+(§2.5), rejecting a mismatch with a located error rather than silently normalising; and
+placement-map row widths, which are unchecked on the existing write path.
+*Fixtures:* 4 acceptance + 4 rejection. *Mutation cycles:* 4, one per new clause.
+
+**Task 4 — the dense worker.**
+Reproduce `Eval/Scatter.lean` exactly: initialise to `fill`; enumerate **source** coordinates (this
+is source-driven, unlike the output-driven assign worker); place through the map; **skip
+out-of-range coordinates silently**; `rejectCollisions` via a first-writer map yielding the typed
+collision error. The silent skip and the two `.toNat` degeneracies are reproduced deliberately,
+because differential parity is the gate — record that as a comment, not a bug.
+*Fixtures:* 5 data-comparing, values already measured (§2.1) — `[1,0,2,0,3,0]`, `[0,1,0,2,0,3,0]`,
+`[0,0,1,2,3]`, the 3x3 diagonal, and the chained `Up`->`Z` case. Plus 1 collision fixture:
+`Out[i] := X[i]*Y[j]`, `X=[1,2,3]`, `Y=[10,100]` -> collision at output coord `[0]` between source
+coords `[0,0]` and `[0,1]`. *Donors:* `test/Eval/Portfolio/GnnScatterTest.lean` SC1-SC8 for the
+reference values; `test/Eval/ScatterTest.lean`'s `.scatterCollision` fixture for the error shape.
+*Mutation cycles:* 3 — drop the fill, drop the bounds skip, drop collision detection.
+
+**Task 5 — source reachability. ONE task, do not split.**
+Lift `Compile.lean`'s **seven** rejections (3 by `Stmt.scatter` constructor, 4 by `.affine` LHS slot
+form) **and** write Step D's emitter building a `ScatterPlan` from a `Stmt.scatter`. Measured:
+`Compile.lean` built clean in every round of Task 1's perturbation, so **the new plan step is
+reachable from nothing and no compile error will tell you.** Split this and the slice can go green
+around a feature no source program can reach. Keep a located `CapabilityError` for the multi-axis
+case (§1.5) so `Out[i+j]` still fails with a source locator rather than degrading to
+`writeGeometryNotAdmitted`. Flip the 6 category-(a) pinning fixtures here (2 in `CompileTest.lean`,
+4 in `ScanCompileTest.lean`).
+*Also confirm or refute:* `rawPublicationSlots`' inner lookahead, whose reachability under this
+design is **UNCERTAIN** (§2.2.2).
+
+**Task 6 — curated corpus and differential.**
+A separate corpus mirroring `predicatePrograms` in `test/Eval/Plan/DifferentialTest.lean` (10
+entries, kept out of `enumPrograms` with its rationale stated twice — copy that pattern verbatim).
+Parity between the checked plan and the reference evaluator over it. This is the proof the slice
+works, and the reason S-A was sequenced first.
+*Fixtures:* 6-8 corpus entries. *Donor:* `predicatePrograms`' structure; the GN/SC programs for
+content.
+
+**Task 7 — documentation and the value-grep sweep.**
+`leanncd/LeanNCD/Eval/AGENTS.md`, the six prose sites enumerating the constructor surface, and
+`papers/backend_missing_functionality.md`'s Hard row, which this slice closes. **Value-grep the
+whole repo for the numbers that move** — `3832`, `8660`, `8513`, and the curated-corpus counts —
+per §2.4. Low judgment; cheapest model; per-task review trimmable.
+
+#### Risk and size
+
+| Task | Fixtures | Mutation cycles | Risk |
+|---|---|---|---|
+| 1 IR node (11 sites) | 0 | 0 | **High** — 11 judgment calls, the mirror-the-neighbour trap, a site hidden behind a timeout |
+| 2 Evidence + JAX (7 sites) | 2 | 0 | Moderate |
+| 3 Extraction + checker | 8 | 4 | **High** — touches shared `checkAssign`; the extent rule is the drift surface |
+| 4 Dense worker | 6 | 3 | **High** — largest test cycle; reproduces deliberate misbehaviour |
+| 5 Source reachability | 6 flipped | 0 | **High** — no compile error guards it |
+| 6 Corpus + differential | 6-8 | 0 | Moderate |
+| 7 Docs + value-grep | 0 | 0 | Low |
+
+Tasks 1, 3, 4 and 5 are each independently rejectable and each is a natural rollback unit. Per
+`slice-plan`'s measured guidance, budget for **two independent final whole-branch reviewers with
+different lenses** rather than one: this slice has a real soundness surface (write geometry, the
+extent rule, collision handling), and the final tier is where such findings have always surfaced.
+
+### 2.8 Measurement status
+
+**Planning complete (2026-09-10).** The representation is decided (§2.2), the site inventory is
+authoritative (§2.2.2), and the task breakdown is written (§2.7). S-A is ready to execute; nothing
+further needs measuring before Task 1.
 
 ⚠️ **Process note for whoever runs the next measurement.** The first attempt dispatched two mutating
 agents into the **same working checkout** concurrently; they overwrote each other's edits in
