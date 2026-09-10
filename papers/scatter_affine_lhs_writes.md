@@ -128,7 +128,42 @@ coefficient → empty tensor), because differential parity against leg 2 is the 
 Only `fill = 0` + `rejectCollisions` are surface-reachable — `lowerArith` hard-codes them and there
 is no `fill`/`reduce` syntax. The other four policies are implemented and tested but unreachable.
 
-### 2.2 The representation decision — DECIDED by measurement, 2026-09-10
+### 2.2 The representation decision — ⚠️ PROVISIONAL, RE-OPENED 2026-09-10
+
+> **⚠️ Do not build on this section's verdict yet.** It was recorded as decided, then re-opened the
+> same day when the reasoning behind the A-nested rejection was checked against `checkAssign` and
+> largely failed. **A-flat is not confirmed; A-nested is not eliminated.** What stands is Option B's
+> rejection (§ below), which was measured directly and is sound.
+>
+> **Three of the four grounds for rejecting A-nested do not survive.** `checkAssign` is a linear
+> `do` block of 28 independent `unless … throw` clauses, and exactly **two lines** clash with a
+> scatter — `unless destSig.shape == a.outputShape`. Every other clause is not merely compatible
+> but wanted, including `t.outputProjection == a.outputShape`, which for a scatter correctly ties
+> terms to the *source iteration domain*. Extract that one clause (or parameterise the expected
+> destination shape, with `checkAssign` passing `a.outputShape` to preserve today's behaviour) and:
+> the **105-call-site objection evaporates** (the contract is unchanged); the **private
+> `CheckedAssignPlan.mk` objection evaporates** (the extraction belongs *inside* `Check.lean`, and
+> privacy only blocks routing around from outside); and the **`runDenseScan` doc-comment objection
+> evaporates** (that invariant still holds for `checkAssign`). This is the same move Slice 1 Task 3
+> made for `pinnedLiteralsInRange`, and the one owed for `baseWriteRowsOk`'s clause 3 — *"lift that
+> clause alone into a named predicate both sites call."*
+>
+> **The fourth ground is real**, and confirmed arithmetically: 256 `ContractionAlgebra` × 4 `fill`
+> × 5 `CollisionReduce` = **5,120** missing-case patterns exactly. A-nested carries two
+> `ContractionAlgebra`s, squaring that term to ~1.3M, which is why three sites degraded to
+> heartbeat timeouts.
+>
+> **So the actual tradeoff is transient against permanent.** A-flat's real cost is not "restates
+> five fields" as an earlier draft of this section said — it is eventually **re-deriving 28
+> validation clauses**, a second copy of a rule set that must not drift, which is the failure mode
+> that produced `scatterOutDim`. A-nested's cost is unreadable missing-case diagnostics *while the
+> arms are being added*, and nothing afterwards.
+>
+> **To settle it**, re-measure A-nested with the destination clause properly extracted, and
+> establish whether the diagnostic blow-up can be mitigated. Until then this section records a
+> comparison, not a decision.
+
+### 2.2.1 The measured comparison (verdicts above are provisional)
 
 **Decision: a new `PlanStep.scatter` case carrying a flat `ScatterPlan` structure ("A-flat").**
 Three candidates were built to a green build and compared; reports in
