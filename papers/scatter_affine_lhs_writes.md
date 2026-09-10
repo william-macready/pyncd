@@ -531,10 +531,29 @@ approving its neighbour.
     **scatter output tensor** be. Its docstring calls this *"deliberately not derivable from
     `idxAffineForm`"*.
 
-  It is not derivable because the affine form gives the coordinate *map*, and a map only tells you
-  which cells are written. For `Out[2*i]` over `i:3` that is `{0,2,4}` — max + 1 = **5**. The
-  convention says **6**. The extra cell is a policy choice (upsample stride semantics), and no
-  amount of affine algebra implies it.
+  **And yes — the solver really does compute maximal values per axis.** `SizeInfer` builds
+  `maxCoeffs`/`maxIdx` for each affine read position and `SizeSolve.mkConstraint` turns it into
+  `Σ coeffs·size(uid) ≤ rhs`, an *upper-envelope* inequality; `solveSizeConstraints` reduces the
+  batch by RREF over `ℚ` (an exact linear-constraint system, not a simplex LP with an objective).
+  So the machinery for "maximum index along each axis" already exists.
+
+  **It still cannot determine a scatter output extent, and the reason is the direction of the
+  constraint.** Each inequality bounds axis sizes *against a tensor whose dimension is already
+  known* — `maxIdx ≤ pos.dim`, where `pos.dim` is the **source** tensor's dimension. A scatter
+  output is being *produced*; there is no known dimension to constrain against. Causality runs
+  reads → constraints → axis sizes → `outExtent` → output shape, and the solver sits strictly
+  upstream of the last arrow.
+
+  **This is exactly the reasoning that produced the original bug, which is why it deserves a
+  named constraint rather than a footnote.** The deleted duplicate `scatterOutDim` was, in the
+  audit's words, *"an upper-envelope `max index + 1`"* — i.e. the solver's own idiom applied to the
+  output side. Reconstructed concretely: for `Out[2*i]` over `i:2` the coordinates are `{0,2}`,
+  so upper-envelope max + 1 = **3**, while the convention gives `2·2` = **4**. That is precisely
+  the shipped symptom the audit records — *"a downstream reader sized to 3 while the evaluator
+  materialized 4"* (fix `fc10d70`, duplicate deleted `6a26825`).
+
+  The extra cell is a policy choice — upsample stride semantics, so a stride-`k` write over `n`
+  elements yields `k·n` and interleaved writes tile exactly — and no affine algebra implies it.
 
   **Why this is a trap rather than an error:** deriving the extent from the coordinate map is
   *correct for every case except the one this feature exists to add.* For a shift, `Out[i+2]` over
