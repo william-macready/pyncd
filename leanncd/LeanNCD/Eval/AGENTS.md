@@ -36,10 +36,16 @@ Wave F addition), direct imports in the top-level `LeanNCD.lean`. One line per f
 design), `papers/wave_f_scanplan_proposal.md` (Wave F checked-scan design), and
 `papers/wave_f_capability_manifest.md` (Wave F's accepted/rejected scan constructs, corpus counts,
 and audit findings) for the full designs, not duplicated here. Exception:
-`Executable.lean` (Thread 5) is NOT reachable from `import LeanNCD` — it is consumed only by
-`experiments/jax_bridge` (the non-default `JaxExperiment` library), not by the production
-`LeanNCD` import graph, so the blanket "reachable via `Eval.Plan.Adapter`" claim above does not
-cover it.
+`Executable.lean` (Thread 5) is NOT reachable from `import LeanNCD`, so the blanket "reachable via
+`Eval.Plan.Adapter`" claim above does not cover it. ⚠️ **But do not read that as "untested" or "not
+built by default" — an earlier version of this passage said it is "consumed only by
+`experiments/jax_bridge`", and that is wrong.** `test/Eval/Plan/ExecutableTest.lean` imports
+`LeanNCD.Eval.Plan.Executable` directly and is listed in `lakefile.toml`'s `Tests` glob, and `Tests`
+is a **default target** — so a bare `lake build` does compile and exercise this module. Its other
+consumers are `experiments/jax_bridge/EvalPlanCodegen.lean` (the non-default `JaxExperiment`
+library, which a bare `lake build` does NOT build) and `spikes/AxisABoundaryProbe.lean` (no target
+at all). Three consumers, in three different build situations — check which one you mean before
+concluding a change here is unexercised.
 
 | File | Owns |
 |---|---|
