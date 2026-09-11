@@ -234,6 +234,50 @@ def fosInputs : Array DenseTensor :=
 #guard dataOf (runGraph fosPlan fosInputs) 3 == some #[0.0]
 
 /-!
+## A scatter step (S-A Task 2 wiring)
+
+The one graph in this file whose step is not an assignment. It exercises both halves of the
+outer-graph wiring at once: `checkPlan` publishes `CheckedPlanStepEvidence.scatter` (via
+`checkScatter`), and `runDensePlan` routes that evidence to `runDenseScatter` and stores the result
+at the scatter's one destination slot.
+
+`Out[2*i] := X[i]` over `X = [1, 2, 3]` — `ScatterDenseTest`'s fixture 1, whose expectation is the
+value the REFERENCE evaluator (`Eval/Scatter.lean`) was measured to produce, not a value read back
+from this interpreter's own output. The destination is SIX wide (`LHSSlot.outExtent`'s `2·3`) and
+the three odd cells are never written, keeping `fill = 0`: a `runDensePlan` that ran the compute
+half as an ordinary assignment would instead store the three-element, source-shaped `[1, 2, 3]`
+here, so this expectation separates the two.
+-/
+
+def scatterSigs : Array TensorSignature :=
+  #[ { shape := #[3], dtype := .f64 }, { shape := #[6], dtype := .f64 } ]
+
+/-- `:= X[i]` over `i : 3`. `outputShape` is the SOURCE iteration domain, not the destination's —
+    the separation a scatter has and an assignment does not. -/
+def scatterCompute : AssignPlan :=
+  { contextShape := #[], destinationSlot := 1, outputShape := #[3]
+  , terms := #[{ iterationShape := #[3], contextPos := #[], outputPos := #[0], reductionPos := #[]
+               , factors := #[.read { sourceSlot := 0, map := { coeffs := #[#[1]], bias := #[0] }
+                                    , sourceShape := #[3], oobPolicy := .zeroPad }] }]
+  , algebra := admittedAlgebra }
+
+def scatterPlan : RawEvalPlan :=
+  { tensorSigs := scatterSigs, inputSlots := #[0]
+  , steps := #[.scatter { compute := scatterCompute, destShape := #[6]
+                        , outCoeffs := #[#[2]], outBias := #[0]
+                        , fill := admittedAlgebra.reduceId, reduce := .rejectCollisions }] }
+
+def scatterInputs : Array DenseTensor := #[ { shape := [3], data := #[1.0, 2.0, 3.0] } ]
+
+#guard dataOf (runGraph scatterPlan scatterInputs) 1 == some #[1.0, 0.0, 2.0, 0.0, 3.0, 0.0]
+
+-- The stored tensor's SHAPE is the destination's, not the source iteration domain's — the data
+-- guard above already implies it, but only because the two lengths differ here.
+#guard match runGraph scatterPlan scatterInputs with
+  | .ok store => (store[1]?).map DenseTensor.shape == some [6]
+  | .error _ => false
+
+/-!
 ## `PositionalInputError` cases
 -/
 

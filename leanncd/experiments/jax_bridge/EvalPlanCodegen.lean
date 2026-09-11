@@ -311,7 +311,7 @@ def lowerPlan (c : CheckedEvalPlan) : Except JaxCodegenError (Array NodeLowering
   for h : ni in [0 : c.checkedNodes.size] do
     match c.checkedNodes[ni] with
     | .assign a => nodes := nodes.push (← lowerAssign sigs ni a)
-    | .scan _ | .pointwise _ | .axiswise _ => throw (.unsupportedStep ni)
+    | .scatter _ | .scan _ | .pointwise _ | .axiswise _ => throw (.unsupportedStep ni)
   return nodes
 
 /-- PRIVATE (Task 4.5): emits `jnp.einsum` from publicly constructible IR, so it is reachable only
@@ -497,15 +497,24 @@ private def renderAffineNode (sigs : Array TensorSignature) (nodeIndex : Nat)
 
 /-- Every checked node in graph order (`checkedNodes` order is exactly raw-graph order, by
     `checkPlan`'s construction). Supported assignments pass `renderAffineNode`'s semantic gate; a
-    `.pointwise`/`.axiswise`/`.scan` node has no affine-table lowering here, so the array build
-    rejects it with the one located unsupported-step error carrying that node's outer-graph index. -/
+    `.scatter`/`.pointwise`/`.axiswise`/`.scan` node has no affine-table lowering here, so the array
+    build rejects it with the one located unsupported-step error carrying that node's outer-graph
+    index.
+
+    A scatter (S-A) joins that bucket CATEGORICALLY, not subject to any finer per-step check: the
+    affine-table record this file emits is output-driven (`dest`/`output_shape`/`terms`, one safe
+    index and mask per DESTINATION cell), while a scatter is source-driven and additionally carries a
+    placement map, a `fill`, and a collision policy that the record has no field for at all. Whether
+    its COMPUTE half would pass `checkJaxAssignSupport` is therefore irrelevant — the placement half
+    has no rendering regardless, which is why no `checkJaxScatterSupport` counterpart exists to call
+    here. -/
 private def renderAffineNodesArray (c : CheckedEvalPlan) : Except JaxCodegenError String := do
   let sigs := c.raw.tensorSigs
   let mut entries : Array String := #[]
   for h : ni in [0 : c.checkedNodes.size] do
     match c.checkedNodes[ni] with
     | .assign a => entries := entries.push (← renderAffineNode sigs ni a)
-    | .scan _ | .pointwise _ | .axiswise _ => throw (.unsupportedStep ni)
+    | .scatter _ | .scan _ | .pointwise _ | .axiswise _ => throw (.unsupportedStep ni)
   return "[" ++ String.intercalate ", " entries.toList ++ "]"
 
 private def renderBindingList (bs : Array SlotBinding) : String :=
@@ -674,7 +683,8 @@ def loweringToEinsumCandidate (sigs : Array TensorSignature) (nodeIndex : Nat)
     already on this function from Task 4; `loweringToEinsumCandidate` is deliberately not called
     here (see its own doc comment for why). Iterates `plan.plan.checkedNodes` (each a
     `CheckedPlanStepEvidence`) in checked-node order, which is exactly raw-graph order by
-    `CheckedEvalPlan`'s own construction invariant. A `.pointwise`/`.axiswise`/`.scan` step has no
+    `CheckedEvalPlan`'s own construction invariant. A `.scatter`/`.pointwise`/`.axiswise`/`.scan`
+    step has no
     supported JAX kernel lowering here, so it is rejected with the one located `unsupportedStep`
     error carrying that step's outer-graph index (the FIRST such step, since the loop throws on
     reaching it) — which is why the error type is now `JaxCodegenError`, not the bare `String` the
@@ -697,7 +707,11 @@ def lowerCheckPlanToCandidate (plan : PreparedPlan) :
         | .ok k => steps := steps.push k
         | .error (.unsupported e) => throw (codegenErrorOfSupport e)
         | .error .invalidCandidate => throw (.unsupportedStep ni)
-    | .scan _ | .pointwise _ | .axiswise _ => throw (.unsupportedStep ni)
+    -- A scatter joins the categorical bucket for the reason `renderAffineNodesArray` states: there
+    -- is no `JaxKernelCandidate` shape a placement map fits into, so handing this loop
+    -- `s.compute` — the one thing here that IS a checked assignment — would build a kernel for the
+    -- source-shaped compute result and stamp it with this step's index.
+    | .scatter _ | .scan _ | .pointwise _ | .axiswise _ => throw (.unsupportedStep ni)
   return { source := plan, steps
          , evidence := aggregateEvidenceList (steps.map (·.evidence))
          , aggregated := rfl }

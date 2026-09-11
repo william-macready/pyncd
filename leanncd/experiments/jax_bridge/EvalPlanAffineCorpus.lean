@@ -36,16 +36,18 @@ def featureNames : Array String :=
 private def bit (n : Nat) (present : Bool) : Nat := if present then 2 ^ n else 0
 
 /-- Every checked ASSIGNMENT step's plan, in graph order. `CheckedEvalPlan.checkedNodes` holds
-    `CheckedPlanStepEvidence` (a sum over assignment/scan/pointwise/axiswise steps) since Wave F's
-    F3 Task 4, so a bare `.plan` projection no longer typechecks; the term/factor feature bits below
-    are assignment properties and read assignment steps only. Every `enumPrograms` case is in fact
-    assignment-only (its generator emits no scan, scatter, predicate, nonlinearity, or aggregation
-    construct), so this filter changes no feature value — the node COUNT bit below still counts all
-    checked nodes, exactly as before. -/
+    `CheckedPlanStepEvidence` (a sum over assignment/scatter/scan/pointwise/axiswise steps) since
+    Wave F's F3 Task 4, so a bare `.plan` projection no longer typechecks; the term/factor feature
+    bits below are assignment properties and read assignment steps only. Every `enumPrograms` case is
+    in fact assignment-only (its generator emits no scan, scatter, predicate, nonlinearity, or
+    aggregation construct), so this filter changes no feature value — the node COUNT bit below still
+    counts all checked nodes, exactly as before. `.scatter` is dropped here like every other
+    non-assignment step rather than contributing `s.compute`: its compute half is source-driven and
+    its term/factor properties are not the destination-driven ones these bits measure. -/
 private def assignPlans (plan : PreparedPlan) : Array AssignPlan :=
   plan.plan.checkedNodes.filterMap fun c => match c with
     | .assign a => some a.plan
-    | .scan _ | .pointwise _ | .axiswise _ => none
+    | .scatter _ | .scan _ | .pointwise _ | .axiswise _ => none
 
 private def rows (plan : PreparedPlan) : Array (Array Int) :=
   (assignPlans plan).flatMap fun a =>

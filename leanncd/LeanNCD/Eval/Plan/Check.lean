@@ -178,9 +178,12 @@ def checkAssign (sigs : Array TensorSignature) (a : AssignPlan)
 
 /-! ## The scatter checker (S-A Task 3)
 
-`checkScatter` is free-standing: `checkPlan` still rejects every scatter step with
-`.scatterNotChecked` (`EvalPlan.lean`), because admitting one needs both this checker AND a checked
-scatter evidence arm plus a dense worker. Wiring is a later task; this is the validator it will call.
+`checkPlan`'s `.scatter` local check (`EvalPlan.lean`) calls `checkScatter` and publishes its
+`CheckedScatterPlan` as `CheckedPlanStepEvidence.scatter` (S-A Task 2 wired this; the transient
+unconditional rejection that stood in its place between Tasks 3 and 2 is gone). A `checkScatter`
+failure surfaces as `PlanStepError.assign (.nodeError ni e)`, like `checkAssign`'s — that
+constructor names the error's SHAPE (a plain `PlanError`, which is what this function returns), not
+the step's kind. A scatter step is still unreachable from source syntax; that is Task 5.
 -/
 
 /-- Evidence that one `ScatterPlan` satisfies every local invariant. Same `private mk ::` boundary

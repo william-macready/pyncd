@@ -258,6 +258,7 @@ def testValidPlanCandidate : Bool :=
     match (checkedPlan.checkedNodes[0]? : Option CheckedPlanStepEvidence) with
     | none => false
     | some (.scan _) => false  -- unreachable: idRaw is scan-free by construction
+    | some (.scatter _) => false  -- unreachable: idRaw contains no scatter step
     | some (.pointwise _) | some (.axiswise _) =>
         false  -- unreachable: idRaw never contains a nonlinearity step
     | some (.assign checkedAssign) =>
@@ -297,6 +298,7 @@ def testValidPlanCandidateEvidence : Bool :=
     match (checkedPlan.checkedNodes[0]? : Option CheckedPlanStepEvidence) with
     | none => false
     | some (.scan _) => false  -- unreachable: idRaw is scan-free by construction
+    | some (.scatter _) => false  -- unreachable: idRaw contains no scatter step
     | some (.pointwise _) | some (.axiswise _) =>
         false  -- unreachable: idRaw never contains a nonlinearity step
     | some (.assign checkedAssign) =>
@@ -1553,6 +1555,99 @@ def mixedCandidateWith (materialized : Array SlotBinding) : Option JaxExecutable
 #guard match mixedCandidateWith #[{ name := "y", slot := 1 }, { name := "z", slot := 2 }] with
   | some c =>
       preparedBindingsTied c.source == true &&
+      decide (JaxExecutableWellFormed c) == true &&
+      (match validateAndConstructExecutable c with
+       | .ok _ => true
+       | _ => false)
+  | none => false
+
+/-! ### S-A Task 2: the checked/JAX boundary says NO to a scatter step
+
+A scatter (`PlanStep.scatter`) is now a fully checked outer step — `checkPlan` publishes real
+`CheckedPlanStepEvidence.scatter` for it and `runDensePlan` executes it — but it has NO JAX
+rendering at all, and the guards below pin that boundary from the default build target.
+
+Why there is no `checkJaxScatterSupport` to call here: `checkJaxAssignSupport` grades ONE
+assignment's own semantics, and a scatter's refusal is not a verdict about its compute half. The
+placement map, the `fill`, and the collision policy have no representation in either lowering
+(`EvalPlanCodegen.lean`'s affine-table record is destination-driven — `dest`/`output_shape`/`terms`
+— and its einsum path has no scatter form), so a scatter is refused CATEGORICALLY, exactly as
+`.scan`/`.pointwise`/`.axiswise` already are; a categorical refusal has no property to consult and
+so needs no support function. The gate that actually enforces it in THIS target is
+`JaxExecutableWellFormed`'s per-step tie, which requires the step at index `i` to be an `.assign`
+whose checked plan is exactly the candidate's semantic assignment. That is what makes the tempting
+wrong move — validating a kernel from `s.compute` and presenting it as step `i` — fail loud here
+rather than silently receive `orderedReference64` for a program that computes the source-shaped
+result under the destination's name.
+
+The two verdict guards share one compute half and one already-validated kernel; only the STEP KIND
+differs, so the rejection is attributable to scatter-ness and nothing else. The placement map is
+deliberately the IDENTITY (`outCoeffs = #[#[1]]`, `outBias = #[0]`, `destShape = #[3]`), which is
+what lets the same compute half also check as an ordinary assignment against the same signature
+table — a strided placement would change the destination signature and confound the comparison. -/
+
+/-- `idAssign` as the compute half of a scatter whose placement map is the identity. -/
+def idScatter : ScatterPlan :=
+  { compute := idAssign, destShape := #[3], outCoeffs := #[#[1]], outBias := #[0]
+  , fill := admittedAlgebra.reduceId, reduce := .rejectCollisions }
+
+/-- `idRaw` with its one step re-wrapped as a scatter; same slots, same signatures. -/
+def idScatterRaw : RawEvalPlan := { idRaw with steps := #[.scatter idScatter] }
+
+-- The wiring itself: `checkPlan` ADMITS the scatter step (it no longer rejects every one of them)
+-- and publishes `.scatter` evidence carrying that very `ScatterPlan` — not `.assign` evidence over
+-- its compute half, which is the shape that would make `runDensePlan` publish a source-shaped
+-- result under the destination slot.
+#guard match checkPlan idScatterRaw with
+  | .ok c => (match (c.checkedNodes[0]? : Option CheckedPlanStepEvidence) with
+              | some (.scatter s) => s.plan == idScatter
+              | _ => false)
+  | .error _ => false
+
+/-- A plan-level JAX candidate over `raw`, carrying one kernel validated from `idAssign` — which IS
+    `idScatter`'s compute half, so the same kernel is offered whichever step kind `raw` declares.
+    `none` means the fixture's OWN plumbing failed (`checkPlan`/`checkAssign`/kernel validation),
+    which would be a fixture bug rather than a plan-level verdict. -/
+def idStepCandidate (raw : RawEvalPlan) : Option JaxExecutableCandidate :=
+  match checkPlan raw, checkAssign idSigs idAssign,
+        checkBindings #[0] #[{ name := "x", slot := 0 }] with
+  | .ok checkedPlan, .ok checkedAssign, .ok requiredInputs =>
+    let kernel : OrderedAffineTableKernelCandidate :=
+      { semanticAssignment := checkedAssign
+      , tables := #[#[{ source := 0, safeIndex := #[0, 1, 2]
+                      , validMask := #[true, true, true] }]] }
+    match validateAndConstructKernel idSigs (.affineTable kernel) with
+    | .error _ => none
+    | .ok someKernel =>
+      let steps := #[someKernel]
+      some { source := { plan := checkedPlan
+                       , bindings := { requiredInputs
+                                     , materializedNames := #[{ name := "y", slot := 1 }] }
+                       , warnings := [] }
+           , steps, evidence := aggregateEvidenceList (steps.map (·.evidence))
+           , aggregated := rfl }
+  | _, _, _ => none
+
+-- JAX rejection. The kernel is genuinely valid — it passed `validateAndConstructKernel`'s own
+-- support gate and structural validation to exist at all, and the control below accepts the very
+-- same one — but no kernel can be tied to a SCATTER step, so the plan-level proposition is false
+-- and the validator refuses to expose evidence.
+-- `none` cannot be what makes this guard pass: the `checkPlan idScatterRaw` guard above pins that
+-- half, and the control below pins the kernel/bindings half over the same builder.
+#guard match idStepCandidate idScatterRaw with
+  | some c =>
+      decide (JaxExecutableWellFormed c) == false &&
+      (match validateAndConstructExecutable c with
+       | .error .invalidCandidate => true
+       | _ => false)
+  | none => false
+
+-- Positive control: the SAME kernel over the SAME compute half, with the step declared `.assign`
+-- instead of `.scatter`, satisfies the WHOLE proposition. So the guard above is about the step
+-- being a scatter, not about some incidental defect in the kernel, the bindings, or the
+-- aggregation — and it would go red if a scatter step were ever made to look JAX-supported.
+#guard match idStepCandidate idRaw with
+  | some c =>
       decide (JaxExecutableWellFormed c) == true &&
       (match validateAndConstructExecutable c with
        | .ok _ => true

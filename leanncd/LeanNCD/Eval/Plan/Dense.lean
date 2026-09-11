@@ -184,10 +184,11 @@ def runDenseAssign (c : CheckedAssignPlan) (store : Array DenseTensor) :
 
 /-! ## The dense scatter worker (S-A Task 4)
 
-`runDenseScatter` is free-standing: `checkPlan` still rejects every scatter step with
-`.scatterNotChecked` (`EvalPlan.lean`) and `runDensePlan` has no `.scatter` arm, because
-`CheckedPlanStepEvidence` has no `.scatter` constructor yet. Wiring is a later task; this is the
-worker it will call, exactly as `checkScatter` (`Check.lean`) is the checker it will call.
+`runDensePlan`'s `.scatter` arm (`EvalPlan.lean`) calls `runDenseScatter` and writes its result to
+`c.plan.compute.destinationSlot` — the scatter's only destination slot (S-A Task 2 wired this). It
+reaches this worker with a `CheckedScatterPlan`, never the compute half's `CheckedAssignPlan`, which
+is the point of `CheckedScatterPlan` storing no such evidence. A scatter step is still unreachable
+from source syntax; that is Task 5.
 -/
 
 /-- Execute one checked scatter over a positional store. SOURCE-driven, which is the whole structural
