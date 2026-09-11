@@ -134,7 +134,17 @@ private def rawMaterializedWith {α : Type} (bindings : Array SlotBinding) (tabl
     | none   => .error (.slotOutOfRange sb.slot table.size))
 
 /-- The output slots a raw plan actually publishes.  The adjacent nonlinearity rule is necessarily
-    syntactic: raw IR records no compiler-provenance or identity/nonlinearity tag. -/
+    syntactic: raw IR records no compiler-provenance or identity/nonlinearity tag.
+
+    A `.scatter` step publishes its one destination slot with no lookahead of its own: it carries
+    its compute half INSIDE `ScatterPlan.compute` rather than as a separate preceding step, so there
+    is no internal slot to suppress, and a non-identity nonlinearity on a scatter is rejected
+    outright on the reference path (`unsupportedScatterNonlin`), so there is no
+    `scatter → pointwise/axiswise` pair to fuse.  The `.assign` lookahead's catch-all therefore
+    publishes an assignment that precedes a scatter, which is right if that assignment is a separate
+    statement's result.  Whether a scatter lowering can produce an assign-then-scatter pair at all
+    is an OPEN question for whoever wires scatter to source syntax — it must be confirmed or refuted
+    there, not assumed here. -/
 private def rawPublicationSlots (raw : RawEvalPlan) : Array TensorSlot :=
   (Array.range raw.steps.size).foldl (fun acc i =>
     match (raw.steps[i]? : Option PlanStep) with
@@ -145,6 +155,7 @@ private def rawPublicationSlots (raw : RawEvalPlan) : Array TensorSlot :=
         | some (PlanStep.axiswise p) =>
             if p.sourceSlot == a.destinationSlot then acc else acc.push a.destinationSlot
         | _ => acc.push a.destinationSlot
+    | some (PlanStep.scatter s) => acc.push s.compute.destinationSlot
     | some (PlanStep.pointwise p) => acc.push p.destinationSlot
     | some (PlanStep.axiswise p) => acc.push p.destinationSlot
     | some (PlanStep.scan s) => acc ++ s.states.map (·.destSlot)

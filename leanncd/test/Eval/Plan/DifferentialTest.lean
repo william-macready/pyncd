@@ -622,7 +622,8 @@ private def scanParityCheck (name : String) (sched : ScheduledProgram)
     | .error f => throw s!"{name}: prepareEvalPlan rejected an admitted scan fixture: \
 {ScanCompileTest.render f.cause}"
   unless prepared.plan.raw.steps.any (fun s => match s with
-      | .scan _ => true | .assign _ | .pointwise _ | .axiswise _ => false) do
+      | .scan _ => true
+      | .assign _ | .scatter _ | .pointwise _ | .axiswise _ => false) do
     throw s!"{name}: the compiled plan contains no scan step — this fixture no longer exercises \
 F4's source scan compiler"
   -- (6b) scratch never becomes a published name. Checked BEFORE the run so a leak is reported as
@@ -1262,7 +1263,8 @@ private def scanParity2 (name : String) (sched : ScheduledProgram)
     | .error f => throw s!"{name}: prepareEvalPlan rejected an admitted scan fixture: \
 {ScanCompileTest.render f.cause}"
   unless prepared.plan.raw.steps.any (fun s => match s with
-      | .scan _ => true | .assign _ | .pointwise _ | .axiswise _ => false) do
+      | .scan _ => true
+      | .assign _ | .scatter _ | .pointwise _ | .axiswise _ => false) do
     throw s!"{name}: the compiled plan contains no scan step"
   let planReport ← match runPreparedDense prepared inputs with
     | .ok r => pure r

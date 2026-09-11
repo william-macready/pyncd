@@ -144,4 +144,44 @@ structure AssignPlan where
   algebra         : ContractionAlgebra
   deriving DecidableEq, BEq, Repr, Inhabited
 
+/-- `CollisionReduce` (`DSL/Ast.lean`) derives `DecidableEq` but not `BEq`; `ScatterPlan` derives
+    `BEq`, so it needs one for its `reduce` field. Mirrors the `BEq UnaryOp` instance above. -/
+instance : BEq LeanNCD.CollisionReduce := ⟨fun a b => decide (a = b)⟩
+
+/-- One complete top-level scatter: a compute half producing values over a SOURCE iteration domain,
+    and an affine placement map depositing each of those values into a separately-sized destination.
+
+    `compute` is an ordinary `AssignPlan` and carries the ONLY `ContractionAlgebra` here — a
+    scatter combines its RHS terms exactly the way an assignment does, so the contraction semantics
+    are the nested plan's, not a second copy. Its `outputShape` is the SOURCE iteration domain, NOT
+    the destination extent: those two coincide for an assignment and are exactly what a scatter
+    separates, which is why `destShape` is a field of its own.
+
+    `destShape` is the destination tensor's extent and is **not** derivable from `outCoeffs`/
+    `outBias`: `Out[2*i]` over `i : 3` has extent `6` while max-coordinate + 1 is `5`. Whoever
+    populates or validates it must do so by CALLING `LHSSlot.outExtent` (`DSL/Ast.lean`), the one
+    place the `scale * n + offset` convention lives, and must never restate that arithmetic — a
+    second copy of it already shipped a soundness bug once.
+
+    `outCoeffs`/`outBias` are the placement map
+    `destinationCoordinate = outCoeffs * sourceIterationCoordinate + outBias`, one row per
+    DESTINATION dimension, each row of source-iteration-basis width — the same
+    row-per-codomain-dimension convention `AffineMap` uses on the read side.
+
+    `fill` is the value every unwritten destination cell holds. It is a `ScalarConst`, not the
+    `Int` that `DSL/Ast.lean`'s `ScatterOpts.fill` carries, because it must be able to express a
+    tropical identity; it is coherent with `compute.algebra.reduceId`, which a later task checks.
+
+    `reduce` is the collision policy for two source coordinates landing on one destination
+    coordinate — independent of `compute.algebra`, which governs how ONE source coordinate's own
+    terms combine. -/
+structure ScatterPlan where
+  compute   : AssignPlan
+  destShape : Array Nat
+  outCoeffs : Array (Array Int)
+  outBias   : Array Int
+  fill      : ScalarConst
+  reduce    : LeanNCD.CollisionReduce
+  deriving DecidableEq, BEq, Repr, Inhabited
+
 end LeanNCD.Eval.Plan

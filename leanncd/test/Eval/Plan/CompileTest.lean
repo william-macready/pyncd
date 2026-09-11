@@ -256,6 +256,8 @@ def contractPrepared : Option PreparedPlan := (prepareEvalPlan contractSched con
 def assignStep : PlanStep → AssignPlan
   | .assign a => a
   | .scan _ => panic! "unreachable: CompileTest fixtures are scan-free by construction"
+  | .scatter _ =>
+      panic! "unreachable: CompileTest fixtures declare no scatter statement and no affine LHS slot"
   | .pointwise _ | .axiswise _ =>
       panic! "unreachable: CompileTest fixtures never compile to a nonlinearity step"
 
