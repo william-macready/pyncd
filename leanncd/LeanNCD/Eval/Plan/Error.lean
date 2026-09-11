@@ -112,6 +112,21 @@ inductive PositionalInputError
   -- already forces every leaf width == `iterationShape.size`); carried so the Dense predicate
   -- evaluator fails loud rather than silently, if ever handed an unchecked plan.
   | predicateWidthMismatch (expected : Nat) (actual : Nat)
+  /-- Two SOURCE coordinates of a scatter place a value at the same DESTINATION coordinate under
+      `CollisionReduce.rejectCollisions`. Raised by `runDenseScatter` (`Dense.lean`), and a runtime
+      concern rather than a `PlanError` by construction: whether a placement map is injective over a
+      given source domain is not decidable from the plan's rank/width/extent clauses, which is why
+      `checkScatter` admits a non-injective map (rank-0 destination, an all-zero placement row) and
+      names collision detection as the worker's own case-audit cell.
+
+      Payload mirrors the reference `EvalError.scatterCollision` (`Eval/Error.lean`) field for field
+      MINUS its leading tensor name: the checked layer is positional and retains no source names, and
+      the destination slot is recoverable from the plan the caller already holds. Both conflicting
+      source coordinates are carried, not just the second: naming only the write that failed leaves
+      the first writer — the other half of the conflict — undiscoverable, and the reference's own
+      `writtenBy` map exists solely to report it. `first` is whichever source coordinate row-major
+      enumeration reached first, matching the reference's `cartesian` order. -/
+  | scatterCollision (destCoord firstSource secondSource : List Nat)
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- Wave C capability rejection (proposal §3.1/§3.2): which construct in the initial scan-free `f64`
