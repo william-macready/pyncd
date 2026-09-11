@@ -196,9 +196,9 @@ worker it will call, exactly as `checkScatter` (`Check.lean`) is the checker it 
     evaluates the compute half there through the shared `denseValueAt`, and PUSHES the value to
     `outCoeffs · sourceCoordinate + outBias`. Unwritten destination cells keep `fill`.
 
-    Reproduces `Eval/Scatter.lean`'s `evalScatter` equation for equation, because differential parity
-    against that evaluator is this feature's correctness gate (plan §2.1) — including the two places
-    where matching it means NOT improving it:
+    Reproduces `Eval/Scatter.lean`'s `evalScatter` equation for equation **for the real sum-product
+    algebra**, because differential parity against that evaluator is this feature's correctness gate
+    (plan §2.1) — including the two places where matching it means NOT improving it:
 
     * **An out-of-range destination coordinate is skipped silently.** The reference tests its placed
       coordinate against the output shape and simply does not write when it fails, with no
@@ -214,6 +214,20 @@ worker it will call, exactly as `checkScatter` (`Check.lean`) is the checker it 
       because `destShape` does equal `outExtent`'s answer. Here that means `inBoundsPerDim` is false
       at every source coordinate, so every write is skipped by the rule above and the result is the
       empty tensor the reference produces. Nothing special-cases it.
+
+    **A TROPICAL-algebra scatter's unwritten cells diverge from the reference BY DESIGN, and that
+    divergence is permanent.** The scoping of the parity claim above is load-bearing, not hedging:
+    the reference's `ScatterOpts.fill` is an `Int` (`DSL/Ast.lean`) which `evalScatter` widens with
+    `Float.ofInt`, so the reference layer cannot express `±∞` at all and fills every unwritten cell
+    with an integer-valued Float — `0.0` in practice, its default. `checkScatter` meanwhile forces
+    `fill == compute.algebra.reduceId`, which for `admittedAlgebraMax`/`Min` IS `∓∞`, and the checked
+    plan's `fill : ScalarConst` can carry it. So on a max/min scatter the two implementations
+    provably disagree on every unwritten cell, and this worker is the correct one: filling with `0.0`
+    under max-product would let a spurious zero win the reduction over an all-negative cell, the
+    exact incoherence `PlanError.scatterFillNotIdentity` exists to reject. `ScatterDenseTest`'s
+    tropical-`fill` fixture pins the checked-layer value and records the divergence; a differential
+    corpus must therefore not treat a tropical scatter as a parity-checked entry without special
+    casing the unwritten cells.
 
     `writtenBy` maps a destination flat index to the FIRST source coordinate that wrote there, and
     exists only to name both halves of a conflict in `scatterCollision` — the reference's own reason

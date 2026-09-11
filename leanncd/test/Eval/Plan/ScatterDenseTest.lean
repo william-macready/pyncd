@@ -3,11 +3,18 @@ import LeanNCD.Eval.Plan.Dense
 /-!
 # S-A Task 4: the dense scatter worker
 
-Every expected tensor here is the value the REFERENCE evaluator (`Eval/Scatter.lean`, driven from
-surface syntax by `Eval/Eval.lean`) was measured to produce for the same program — the five rows of
-plan §2.1 — not a value read back from `runDenseScatter`'s own output. Differential parity against
-that evaluator is this feature's correctness gate, so a fixture whose expectation came from the
-implementation under test would assert nothing.
+**Fixtures 1–5 only:** every expected tensor is the value the REFERENCE evaluator
+(`Eval/Scatter.lean`, driven from surface syntax by `Eval/Eval.lean`) was measured to produce for the
+same program — the five rows of plan §2.1 — not a value read back from `runDenseScatter`'s own
+output. Differential parity against that evaluator is this feature's correctness gate, so a fixture
+whose expectation came from the implementation under test would assert nothing.
+
+The collision fixture and the four audit pins after it are NOT measured reference outputs and must
+not be read as such: they are hand-derived from `evalScatter`'s algorithm and from
+`ScatterCheckTest`'s already-pinned `scatterDestExtent` answers. Three of them are unreachable from
+surface syntax at all (`elabTLLHSSlot` parses no negative placement coefficient or bias), and the
+tropical-`fill` pin asserts a value the reference evaluator provably CANNOT produce — see its own
+comment.
 
 Same discipline as `KernelDenseTest` for the value fixtures and as `ScatterCheckTest` for the error
 one: the collision fixture asserts the exact `PositionalInputError` constructor AND payload, so a
@@ -233,7 +240,22 @@ reach. -/
    max-product, whose `reduceId` — and therefore, by `checkScatter`'s coherence clause, whose `fill`
    — is `-∞`. The three written cells are unchanged (`max(-∞, x) = x` through both folds); the three
    unwritten ones read `-∞`, so a worker that initialised the destination to zero, or to the real
-   algebra's identity, fails here while passing every fixture above. -/
+   algebra's identity, fails here while passing every fixture above.
+
+   **This expectation is CHECKED-LAYER-ONLY semantics that the reference evaluator cannot produce,
+   and the divergence is adjudicated, permanent, and deliberate — not a parity target.** The
+   reference's `ScatterOpts.fill` is an `Int` (`DSL/Ast.lean`) widened by `Float.ofInt`, so
+   `evalScatter` can only ever fill with an integer-valued Float: on this program it would write
+   `0.0` into the three unwritten cells, giving `#[1,0,2,0,3,0]`, never `-∞`. The checked plan's
+   `fill : ScalarConst` CAN carry an infinity, and `checkScatter` requires it to
+   (`fill == compute.algebra.reduceId`), because `0.0` under max-product would let a spurious zero
+   win the reduction over an all-negative cell — the incoherence `scatterFillNotIdentity` exists to
+   reject. So the checked worker is the correct one here and the reference is the limited one.
+
+   Consequence for whoever builds the differential corpus: a TROPICAL scatter must not be a
+   parity-checked entry unless the comparison special-cases unwritten cells. Every fixture above
+   uses real sum-product, whose `reduceId` is `0.0` — the one value both layers can express — so
+   none of them is affected. -/
 def maxScatter : ScatterPlan :=
   { placed #[6] #[#[2]] #[0] with
     compute := { srcCompute with algebra := admittedAlgebraMax }
