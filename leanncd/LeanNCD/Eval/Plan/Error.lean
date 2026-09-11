@@ -37,6 +37,37 @@ inductive PlanError
   | missingProduction        (slot : TensorSlot)
   | invalidForwardRead       (nodeIndex termIndex factorIndex : Nat) (slot : TensorSlot)
   | nodeError                (nodeIndex : Nat) (cause : PlanError)
+  /-- A `ScatterPlan`'s placement map does not carry one `outCoeffs` row and one `outBias` entry per
+      DESTINATION dimension. Carries all three counts rather than conflating them the way
+      `affineRankMismatch` does on the read side: `outCoeffs` and `outBias` are separate fields here,
+      so a single "actual" would hide which of the two disagrees. -/
+  | scatterPlacementRankMismatch  (expected coeffRows biasEntries : Nat)
+  /-- One `outCoeffs` row does not span the source iteration basis (`compute.outputShape`). The read
+      side's `affineWidthMismatch` locates by term/factor; a placement row has neither, so it locates
+      by DESTINATION dimension. This clause has no counterpart on the existing write path, where
+      placement-row widths go unchecked. -/
+  | scatterPlacementWidthMismatch (dim : Nat) (expected actual : Nat)
+  /-- The stored `destShape` disagrees, at this destination dimension, with the extent
+      `LHSSlot.outExtent` derives from the placement row. `declared` is `destShape[dim]`, `derived`
+      is `outExtent`'s answer — never a second formula's. -/
+  | scatterDestExtentMismatch     (dim : Nat) (declared derived : Nat)
+  /-- `LHSSlot.outExtent` returned `none` for this destination dimension (an unsized source axis).
+      Unreachable for any plan whose placement widths `checkScatter` has already validated — the
+      sizing lookup is `compute.outputShape` indexed by position, total once the row spans that
+      basis — and carried for the same reason `predicateWidthMismatch` below is: fail loud rather
+      than silently, if the derivation is ever reached another way. -/
+  | scatterDestExtentUnknown      (dim : Nat)
+  /-- A `ScatterPlan`'s `fill` is not the destination algebra's reduction identity. Fill and
+      collision-reduce are the identity and the operation of one monoid, so an incoherent pair
+      silently yields the identity's value for every unwritten cell instead of the true one
+      (`reduce := .max` with `fill := 0` loses every all-negative cell's maximum). Rejected here
+      rather than normalised: a checker that quietly rewrote `fill` would be indistinguishable, from
+      its return value, from one that never looked. -/
+  | scatterFillNotIdentity        (fill identity : ScalarConst)
+  /-- A `ScatterPlan` names a collision policy no worker implements. Only `rejectCollisions` is
+      admitted; the remaining four arms are matched explicitly (never a catch-all) so adding a sixth
+      policy is a compile error and landing one of these is replacing this `throw` with real logic. -/
+  | scatterReduceNotAdmitted      (reduce : LeanNCD.CollisionReduce)
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- A checked plan met a positional tensor store that does not conform to the shapes the checker
