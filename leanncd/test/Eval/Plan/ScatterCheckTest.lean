@@ -17,8 +17,9 @@ Two things are pinned that a value-comparing test would otherwise miss:
   `fill` to the identity would return `.ok` here, so the two readings are separable by this fixture.
 
 Every acceptance fixture's `destShape` is the `LHSSlot.outExtent` convention's answer, NOT
-max-coordinate + 1 and NOT the memory-sufficient bound `scale * (n - 1) + offset + 1`; `tightBound`
-below pins the strided case where all three disagree.
+max-coordinate + 1 and NOT the rejected memory-sufficient bound. Rejection fixture 4 pins the
+strided case where all three disagree: it declares the value those two alternatives produce, with
+the signature table mutated to agree with it, and asserts `scatterDestExtentMismatch`.
 -/
 
 namespace LeanNCD.Eval.Plan.ScatterCheckTest

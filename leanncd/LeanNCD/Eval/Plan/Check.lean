@@ -246,7 +246,21 @@ def scatterDestExtent (srcShape : Array Nat) (row : Array Int) (bias : Int) : Op
 
     `s.compute.contextShape` is NOT checked here: a scatter is admitted only as a top-level step, and
     `checkPlan`'s own `contextCheck` arm already discharges that obligation on the nested plan's
-    field. -/
+    field.
+
+    **Placement RANGE is not checked here either, deliberately, and it is the one case-audit cell
+    this checker leaves to the worker.** Nothing above rejects a placement map that sends some source
+    coordinate outside `[0, destShape[d])` — a negative coefficient or bias is admitted as long as
+    `destShape` equals `outExtent`'s answer for it, which for `#[-1]` over a rank-3 source domain is
+    the empty destination `#[0]`, accepted with three source values and nowhere to put them. That is
+    not an oversight to close statically: the reference evaluator `Eval/Scatter.lean` **skips an
+    out-of-range output coordinate silently**, the checked layer's obligation is to REPRODUCE that
+    (differential parity against the reference is the gate for this feature), and a static rejection
+    here would refuse plans the reference accepts. So the owner is the dense scatter worker, where the
+    per-coordinate skip belongs and where parity is measured — not this function. Mitigating fact
+    while that worker is unwritten: the shape is unreachable from surface syntax, since
+    `elabTLLHSSlot` (`DSL/Elab.lean`) parses only non-negative numeral coefficients and biases in an
+    affine LHS slot, so only a programmatic `ScatterPlan` can express it. -/
 def checkScatter (sigs : Array TensorSignature) (s : ScatterPlan) :
     Except PlanError CheckedScatterPlan := do
   let _ ← checkAssign sigs s.compute (some s.destShape)
