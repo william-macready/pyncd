@@ -270,4 +270,31 @@ run_cmd do
   assertScatterParity "S8 Out[2*i] := X[i]·Y[j]" rhsOnlyAxisProg rhsOnlyAxisEnv "Out"
     (dt [6] [10.0, 0.0, 20.0, 0.0, 30.0, 0.0])
 
+/-! ## S9 — the zero-coefficient degeneracy, `Out[0*i]`, reaches the emitter
+
+`Out[0*i]` elaborates to `.affine (.scale 0 i)` and is genuinely surface-reachable: `lowerArith`'s
+`LHSSlot.collapses` matches only `.affine (.const _)`, so it survives as a real `Stmt.scatter`.
+`LHSSlot.outExtent`'s `.scale` arm answers `0 · 3 = 0`, the placement-row reconstruction answers the
+same `0`, and the result is the empty destination tensor `checkScatter` was designed to admit and
+`ScatterCheckTest` pins at the CHECKER level.
+
+This fixture pins it at the SOURCE level, which is a different claim and the one that was briefly
+false: `checkScatterLHSSlot` decided its constant-slot rejection by asking whether the NORMALISED
+coefficient list was empty, and `normalizeCoeffs` drops zero coefficients — so `.scale 0 i` and
+`.const n` were indistinguishable to it and this program was rejected under a locator naming the
+wrong form. A checker-level pin cannot see that, because it never asks whether the emitter can
+produce the plan from source at all. -/
+
+def zeroCoeffProg : TLProgram := tlprog!{ Out[0*i] := X[i] }
+def zeroCoeffScatter : Option ScatterPlan :=
+  (preparedOf zeroCoeffProg upsampleEnv).bind (scatterStepAt · 0)
+-- The source domain is the full `i : 3` — nothing about the degeneracy shrinks the COMPUTE half …
+#guard zeroCoeffScatter.map (·.compute.outputShape) == some #[3]
+-- … only the destination, whose single row is all-zero with a zero bias, giving extent `0`.
+#guard zeroCoeffScatter.map (·.outCoeffs) == some #[#[0]]
+#guard zeroCoeffScatter.map (·.outBias) == some #[0]
+#guard zeroCoeffScatter.map (·.destShape) == some #[0]
+run_cmd do
+  assertScatterParity "S9 Out[0*i] := X[i]" zeroCoeffProg upsampleEnv "Out" (dt [0] [])
+
 end LeanNCD.Eval.Plan.ScatterCompileTest

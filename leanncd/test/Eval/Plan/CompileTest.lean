@@ -110,6 +110,25 @@ def acceptedSched : ScheduledProgram :=
           { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity } {})] })
   == some (.scatterOrAffineLhs "Out: constant affine LHS slot")
 
+-- A ZERO-coefficient scale (`Out[0*i]`) is a DIFFERENT form and is ADMITTED. It is surface-reachable
+-- (`elabTLLHSSlot`'s `n*x` arm with `n = 0`), passes `lowerArith`, and is the empty-destination
+-- degeneracy Task 3 designed `checkScatter` around — both extent derivations answer `0` for it, so
+-- there is nothing to disagree about. Pinned here because the two forms are easy to conflate: they
+-- have the SAME normalised coefficient list (`normalizeCoeffs` drops zero coefficients), and an
+-- earlier revision of `checkScatterLHSSlot` did test emptiness and rejected this one under the
+-- `.const` locator above. `ScatterCompileTest`'s S9 pins the same distinction end to end.
+#guard isOk (capabilityPreflight
+    { acceptedSched with stmts :=
+        [.plain (.scatter "Out" [.affine (.scale 0 ⟨"i", 0, .nat⟩)]
+          { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity } {})] })
+
+-- … and so is the general-affine spelling of the same thing, `Out[0*i + 5]`, whose coefficient list
+-- likewise normalises to empty but whose extent (`5`) both derivations agree on.
+#guard isOk (capabilityPreflight
+    { acceptedSched with stmts :=
+        [.plain (.scatter "Out" [.affine (.affine 5 [(0, ⟨"i", 0, .nat⟩)])]
+          { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity } {})] })
+
 -- A non-identity nonlinearity on a scatter is `unsupportedNonlin` — the constructor's restored
 -- producer. Step D's scatter emitter applies no nonlinearity, so admitting one would erase it
 -- silently; the reference evaluator's own `evalScatter` rejects it for the same reason.

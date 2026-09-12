@@ -75,28 +75,46 @@ def checkLHSSlot (stmtName : String) : LHSSlot → Except CapabilityError Unit
     which S-A does not admit and which `checkScatterNoScan` (`DSL/Pipeline/Structural.lean`) already
     refuses on the source path.
 
-    The `.affine` arm admits exactly the single-axis strided forms the extent convention is designed
-    for. Two rejections guard the other two shapes, both by CALLING `idxAffineForm`/`normalizeCoeffs`
-    rather than re-reading `IdxExpr`'s constructors: a row naming more than one source axis is
-    `multiAxisScatterLhs` (see its own doc comment for why), and a row naming NO axis at all
-    (`Out[3]`, i.e. `.affine (.const n)`) is `scatterOrAffineLhs`. The second is the only slot form
-    whose `LHSSlot.outExtent` answer (`.const`'s `n + 1`) differs from the placement-row
-    reconstruction `checkScatter` derives (`scatterDestExtent`'s `.affine` arm, `n`), so admitting it
-    would ship a silent extent disagreement between the checked path and the reference evaluator;
-    `lowerArith` rejects it on the source path too, as `overlappingScatter` (a constant coordinate
-    collapses a dimension). A row whose single coefficient is ZERO (`Out[0*i]`) is NOT rejected —
-    both paths agree on its documented empty-tensor degeneracy. -/
+    The `.affine` arm admits every form whose destination extent this file can derive in agreement
+    with both of the other two derivations of it, and rejects exactly two shapes.
+
+    **`.affine (.const n)` (`Out[3]`) — `scatterOrAffineLhs`.** The rejection is decided on the index
+    expression's own CONSTRUCTOR, deliberately, because that is precisely what the divergence turns
+    on: `.const` is the single `LHSSlot.outExtent` arm that is not `bias + Σ coeff · size` — it
+    answers `n + 1`, a constant COORDINATE re-read as an extent. The reference evaluator's
+    `scatterOutShape` calls `outExtent` on the source slot and so gets `n + 1`; this emitter derives
+    `destShape` through `scatterDestExtent`, the reconstruction `checkScatter` validates against,
+    which always takes the `.affine` arm and so gets `n`. Admitting the form would ship that silent
+    disagreement. `lowerArith` rejects it on the source path too (`overlappingScatter` — a constant
+    coordinate collapses a dimension), and `elabTLLHSSlot` has no arm producing it, so this guards a
+    hand-built `ScheduledProgram` only.
+
+    **A row naming more than one source axis (`Out[i+j]`) — `multiAxisScatterLhs`**, by CALLING
+    `idxAffineForm`/`normalizeCoeffs` rather than re-reading constructors; see that constructor's own
+    doc comment for why the form is refused.
+
+    **A ZERO coefficient is NOT a rejection, and is not the `.const` case.** `Out[0*i]` elaborates to
+    `.affine (.scale 0 i)` (`elabTLLHSSlot`'s `n*x` arm, `n = 0`), is surface-reachable, passes
+    `lowerArith` (`LHSSlot.collapses` matches only `.affine (.const _)`), and is the empty-destination
+    degeneracy Task 3 designed for and `ScatterCheckTest` pins. Both extent derivations agree on it —
+    `outExtent`'s `.scale` arm gives `0 · size = 0` and the placement-row reconstruction gives the
+    same `0` — so it compiles to a real `ScatterPlan` with `destShape = #[0]`. This is why the
+    `.const` test above is on the constructor and not on "the normalised coefficient list is empty":
+    `normalizeCoeffs` DROPS zero coefficients (`addCoeff`), so an emptiness test conflates
+    `.scale 0 i` and `.affine c₀ [(0, i)]` with `.const n` and would reject all three under a locator
+    naming only the last. It did, briefly; `CompileTest`'s `Out[0*i]` fixture and
+    `ScatterCompileTest`'s S9 now pin the distinction from both ends. -/
 def checkScatterLHSSlot (stmtName : String) : LHSSlot → Except CapabilityError Unit
   | .free _     => pure ()
   | .freeNorm _ => pure ()
   | .iterAt a _ => throw (.unsupportedLhsSlot s!"{stmtName}: iterAt {a.name}")
   | .iterNext a => throw (.unsupportedLhsSlot s!"{stmtName}: iterNext {a.name}")
+  | .affine (.const _) => throw (.scatterOrAffineLhs s!"{stmtName}: constant affine LHS slot")
   | .affine e =>
       let (_, coeffs) := idxAffineForm e
-      match SizeSolve.normalizeCoeffs coeffs with
-      | []  => throw (.scatterOrAffineLhs s!"{stmtName}: constant affine LHS slot")
-      | [_] => pure ()
-      | _   => throw (.multiAxisScatterLhs s!"{stmtName}: affine LHS slot")
+      if (SizeSolve.normalizeCoeffs coeffs).length > 1 then
+        throw (.multiAxisScatterLhs s!"{stmtName}: affine LHS slot")
+      else pure ()
 
 /-- A scatter's own nonlinearity admission, and the one restored producer of the retained
     `unsupportedNonlin` constructor. Only `.identity` is admitted, matching the reference evaluator
