@@ -62,10 +62,10 @@ inductive JaxCodegenError
                            (shape : List Nat) (dataSize : Nat)
   | labelTableExhausted   (nodeIndex termIndex position : Nat)
   -- The one located rejection for any checked step this JAX backend cannot lower to a supported
-  -- kernel: a `.pointwise`, `.axiswise`, or `.scan` node (Thread 4 / Wave F) has no affine/einsum
-  -- lowering here, so routing it yields this error carrying the FIRST such step's outer-graph index
-  -- (not a per-term/factor locator — these kinds have no term/factor structure). Assignment steps
-  -- never reach it; they route through the existing affine/einsum path unchanged.
+  -- kernel: a `.scatter`, `.pointwise`, `.axiswise`, or `.scan` node (Thread 4 / Wave F) has no
+  -- affine/einsum lowering here, so routing it yields this error carrying the FIRST such step's
+  -- outer-graph index (not a per-term/factor locator — these kinds have no term/factor structure).
+  -- Assignment steps never reach it; they route through the existing affine/einsum path unchanged.
   | unsupportedStep       (stepIndex : Nat)
   -- A `.iverson` predicate factor inside an assignment term: this JAX backend lowers only affine
   -- reads to einsum/affine-table kernels, so a term carrying an Iverson factor is rejected here with

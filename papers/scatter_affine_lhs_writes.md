@@ -654,6 +654,16 @@ authoritative (§2.2.2), the task breakdown is written (§2.7), and the one open
 — whether Step D can build a `ScatterPlan` at all — is **closed affirmatively** (§2.7, Task 5).
 S-A is ready to execute; nothing further needs measuring before Task 1.
 
+**Execution complete (S-A landed).** Tasks 1-6 are all landed and independently reviewed clean on
+`worktree-scatter-sa-task1`: the IR node (Task 1), outer-graph wiring (Task 2), checker (Task 3),
+dense worker (Task 4), source reachability (Task 5), and the curated `scatterPrograms` parity corpus
+(Task 6, 8 entries). Task 7 (this documentation + value-grep sweep) is the last. Final build-gate
+counts after Tasks 1-6: **`lake build` 8663**, **`lake build JaxExperiment` 8514** — up from the
+planning-time baseline of 8660/8513 by +3/+1, all from three new test modules (Tasks 3/4/5) and one
+new import in Task 5, each explained in the ledger. The 8660/8513 figures elsewhere in this document
+are left as written: they are a planning-time snapshot, the same way `pre_scatter_backend_audit.md`
+and `post_audit_roadmap.md` keep their own eras' counts.
+
 **No de-risking spikes are recommended.** Three were considered and rejected on cost/benefit: a
 dense-worker spike would *be* Task 4 rather than de-risk it (the reference implementation can simply
 be read); a `rawPublicationSlots` reachability spike answers in-context for free during Task 5; and

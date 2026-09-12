@@ -142,9 +142,11 @@ private def rawMaterializedWith {α : Type} (bindings : Array SlotBinding) (tabl
     outright on the reference path (`unsupportedScatterNonlin`), so there is no
     `scatter → pointwise/axiswise` pair to fuse.  The `.assign` lookahead's catch-all therefore
     publishes an assignment that precedes a scatter, which is right if that assignment is a separate
-    statement's result.  Whether a scatter lowering can produce an assign-then-scatter pair at all
-    is an OPEN question for whoever wires scatter to source syntax — it must be confirmed or refuted
-    there, not assumed here. -/
+    statement's result.  A single scatter statement never decomposes into an assign-then-scatter
+    pair: `Compile.lean`'s scatter branch emits exactly one `.scatter` step with its compute half
+    nested inside, so the only way an `.assign` precedes a `.scatter` here is when it is an earlier,
+    distinct statement's result (S-A Tasks 5/6, the latter's SA5 corpus entry pinning exactly that
+    adjacency). -/
 private def rawPublicationSlots (raw : RawEvalPlan) : Array TensorSlot :=
   (Array.range raw.steps.size).foldl (fun acc i =>
     match (raw.steps[i]? : Option PlanStep) with
