@@ -91,6 +91,8 @@ private def capabilityCategory : CapabilityError → String
   | .dynamicShape _ => "dynamicShape"
   | .recurrenceOrCallback _ => "recurrenceOrCallback"
   | .noAdvancingAxis _ => "noAdvancingAxis"
+  | .multiAxisScatterLhs _ => "multiAxisScatterLhs"
+  | .scatterOptsNotAdmitted _ => "scatterOptsNotAdmitted"
 
 private inductive SweepOutcome
   | accepted

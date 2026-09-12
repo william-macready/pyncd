@@ -152,6 +152,35 @@ inductive CapabilityError
   | dynamicShape         (context : String)  -- backend- or value-dependent shapes
   | recurrenceOrCallback (context : String)
   | noAdvancingAxis      (context : String)  -- `.scan` declaring an empty advancing-axis list
+  /-- A top-level scatter's affine LHS slot whose coefficient row names MORE THAN ONE source axis
+      (`Out[i+j]`), where the single-axis strided forms (`Out[2*i]`, `Out[i+2]`) are admitted.
+      Its own constructor rather than a reuse of `scatterOrAffineLhs`, because "a scatter is not
+      supported at all" and "this one placement form is not supported" are different facts and the
+      fixture distinguishing them has to be able to see which was meant.
+
+      Why the form is rejected rather than compiled: `LHSSlot.outExtent`'s
+      `bias + Σ coeff · size` is the upsample-stride convention, designed for one strided axis. On
+      a two-axis row it computes the sum of the two axes' extents (`i : 3`, `j : 4` ⇒ `7`) where the
+      reachable coordinate set `i + j` spans only `0 … 5`, and with a mixed-sign row it admits
+      negative reachable coordinates that the worker's out-of-range skip silently absorbs. Neither
+      is unsound, but neither is verified by this feature's worked examples or its differential
+      corpus either, so it is refused with a locator instead of shipped unexercised. Unreachable
+      from `tl!{…}` surface syntax (`elabTLLHSSlot` parses only `n*x+m`-shaped single-axis slots);
+      a hand-built `ScheduledProgram` handed to `prepareEvalPlan` is what can express it. -/
+  | multiAxisScatterLhs  (context : String)
+  /-- A top-level scatter's `ScatterOpts` naming a fill or a collision policy the checked layer does
+      not implement: a `reduce` other than `rejectCollisions` (the only policy `checkScatter`
+      admits), or a `fill` that is not the destination algebra's own reduction identity
+      (`ContractionAlgebra.reduceId` — §2.5's coherence rule: fill and collision-reduce are the
+      identity and the operation of one monoid). Both are rejected HERE, at capability tier with a
+      source locator, rather than left to surface from `checkScatter` as `invalidPlan`, which is the
+      compiler-bug channel and would misreport a legitimately out-of-fragment source program as one.
+
+      The live case is a `maxreduce`/`minreduce` scatter: `ScatterOpts.fill` is an `Int` and cannot
+      express the tropical `∓∞` its algebra's identity requires, so no admissible fill exists for
+      one. `agg = .sum` with `fill = 0`, and a predicate destination with `fill = 0` (whose Boolean
+      identity is `false`), are both coherent and admitted. -/
+  | scatterOptsNotAdmitted (context : String)
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- Why `blockReadNotAvailable` rejected a name: it never resolves to a state, a block-local

@@ -72,13 +72,70 @@ def acceptedSched : ScheduledProgram :=
 -- itself a semantic version change. Exercised directly, same pattern as `unsupportedDtype` below.
 #guard (CapabilityError.scanNode "retained") == CapabilityError.scanNode "retained"
 
--- scatterOrAffineLhs: a scatter statement
-#guard errOf (capabilityPreflight
+-- A TOP-LEVEL scatter statement is now ADMITTED (S-A): `checkStmt` checks its sub-constructs
+-- through `checkScatterLHSSlot`/`checkNonlinScatter`/`checkScatterReduce` instead of rejecting the
+-- constructor outright. The scan-block analogue still rejects — see `ScanCompileTest.lean`'s
+-- `badScatter` fixtures, which are S-B and deliberately unchanged.
+#guard isOk (capabilityPreflight
     { acceptedSched with stmts :=
         [.plain (.scatter "Out" [] { body := { terms := [] }, nonlin := .identity } {})] })
-  == some (.scatterOrAffineLhs "Out")
 
--- scatterOrAffineLhs: an affine LHS slot on an ordinary assign
+-- ... but ONLY at top level, and only in the single-axis strided placement forms. A two-axis affine
+-- LHS slot (`Out[i+j]`) is `multiAxisScatterLhs` — its own constructor, asserted here rather than a
+-- bare "rejected", since dropping this arm would still leave the program rejected (one phase later,
+-- by a different family) and a fixture checking only rejection could not tell the two apart.
+#guard errOf (capabilityPreflight
+    { acceptedSched with stmts :=
+        [.plain (.scatter "Out"
+          [.affine (.affine 0 [(1, ⟨"i", 0, .nat⟩), (1, ⟨"j", 1, .nat⟩)])]
+          { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity } {})] })
+  == some (.multiAxisScatterLhs "Out: affine LHS slot")
+
+-- The same two-axis coefficient row spelled as a REPEATED single axis is not multi-axis at all:
+-- `idxAffineForm`/`normalizeCoeffs` fold `i + i` to the single coefficient `2` on `i`, which is
+-- exactly `Out[2*i]` and is admitted. Pins that the rejection counts AXES, not list entries.
+#guard isOk (capabilityPreflight
+    { acceptedSched with stmts :=
+        [.plain (.scatter "Out"
+          [.affine (.affine 0 [(1, ⟨"i", 0, .nat⟩), (1, ⟨"i", 0, .nat⟩)])]
+          { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity } {})] })
+
+-- A constant affine LHS slot (`Out[3]`) stays rejected: it is the ONE slot form whose
+-- `LHSSlot.outExtent` answer (`.const`'s `n + 1`) disagrees with the placement-row reconstruction
+-- `checkScatter` validates against, and `lowerArith` refuses it on the source path too
+-- (`overlappingScatter` — a constant coordinate collapses a dimension).
+#guard errOf (capabilityPreflight
+    { acceptedSched with stmts :=
+        [.plain (.scatter "Out" [.affine (.const 3)]
+          { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity } {})] })
+  == some (.scatterOrAffineLhs "Out: constant affine LHS slot")
+
+-- A non-identity nonlinearity on a scatter is `unsupportedNonlin` — the constructor's restored
+-- producer. Step D's scatter emitter applies no nonlinearity, so admitting one would erase it
+-- silently; the reference evaluator's own `evalScatter` rejects it for the same reason.
+#guard errOf (capabilityPreflight
+    { acceptedSched with stmts :=
+        [.plain (.scatter "Out" [.free ⟨"i", 0, .nat⟩]
+          { body := { terms := [{ factors := [.read "X" []] }] }
+          , nonlin := .pointwise .relu } {})] })
+  == some (.unsupportedNonlin "Out: scatter nonlinearity")
+
+-- A collision policy other than `rejectCollisions` — the only one `checkScatter` admits — is
+-- refused HERE, at capability tier with a locator, rather than reaching `checkPlan` and being
+-- reported through the compiler-bug channel as `invalidPlan`.
+#guard errOf (capabilityPreflight
+    { acceptedSched with stmts :=
+        [.plain (.scatter "Out" [.free ⟨"i", 0, .nat⟩]
+          { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity }
+          { fill := 0, reduce := .sum })] })
+  == some (.scatterOptsNotAdmitted "Out: collision policy")
+
+-- scatterOrAffineLhs: an affine LHS slot on an ordinary assign. DELIBERATELY unchanged by S-A: the
+-- affine LHS form is admitted on `Stmt.scatter`, not on `Stmt.assign`, whose Step D destructuring
+-- (`freeUidOrFail`) has no meaning for one. `lowerArith` reclassifies every scatter-shaped `.assign`
+-- into `Stmt.scatter` before scheduling, so this shape reaches `prepareEvalPlan` only from a
+-- hand-built `ScheduledProgram`, and rejecting it here keeps the `"{nm}: affine LHS slot"` locator
+-- that admitting it would strip.
 #guard errOf (capabilityPreflight
     { acceptedSched with stmts :=
         [.plain (.assign "Y" [.affine (.axis ⟨"i", 0, .nat⟩)]
@@ -180,15 +237,19 @@ def acceptedSched : ScheduledProgram :=
 -- no field except the expected result from the pre-4.3 rejection above.
 #guard isOk (capabilityPreflight { acceptedSched with decls := [.predicate "P" []] })
 
--- (Task 4.3, fixture 11): the SAME predicate decl, with the existing `scatterOrAffineLhs` scatter
--- donor appended as its one statement. Distinguishes "predicate admitted, the next statement in
--- source order is still checked" from a preflight that accidentally short-circuits after admitting
--- a predicate declaration and skips statement checking entirely.
+-- (Task 4.3, fixture 11): the SAME predicate decl, with a still-rejected scatter donor appended as
+-- its one statement. Distinguishes "predicate admitted, the next statement in source order is still
+-- checked" from a preflight that accidentally short-circuits after admitting a predicate
+-- declaration and skips statement checking entirely. S-A re-donored this from the bare
+-- `scatterOrAffineLhs` scatter (now ADMITTED at top level, so it would no longer discriminate) to
+-- the two-axis affine LHS, which keeps a scatter statement as the donor and still rejects.
 #guard errOf (capabilityPreflight
     { acceptedSched with
         decls := [.predicate "P" []]
-      , stmts := [.plain (.scatter "Out" [] { body := { terms := [] }, nonlin := .identity } {})] })
-  == some (.scatterOrAffineLhs "Out")
+      , stmts := [.plain (.scatter "Out"
+          [.affine (.affine 0 [(1, ⟨"i", 0, .nat⟩), (1, ⟨"j", 1, .nat⟩)])]
+          { body := { terms := [{ factors := [.read "X" []] }] }, nonlin := .identity } {})] })
+  == some (.multiAxisScatterLhs "Out: affine LHS slot")
 
 -- `booleanOutput` has no producer left in this file (Task 4.3 replaced its one throw site), but the
 -- constructor is retained on `CapabilityError` — deleting a shipped closed-family constructor is
