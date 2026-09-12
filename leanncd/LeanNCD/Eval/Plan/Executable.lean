@@ -683,8 +683,8 @@ def preparedBindingsTied (source : PreparedPlan) : Bool :=
     * it is still well-formed under that stored table (the same contextual predicate the private
       constructor already required, restated here so the plan-level proposition is self-contained).
 
-    A `.scan`/`.pointwise`/`.axiswise` step has no JAX kernel at all, so any candidate claiming one
-    at that index fails the second obligation. -/
+    A `.scatter`/`.scan`/`.pointwise`/`.axiswise` step has no JAX kernel at all, so any candidate
+    claiming one at that index fails the second obligation. -/
 private def stepTiedToPreparedStep (prepared : PreparedPlan) (stepIndex : Nat)
     (sk : SomeJaxKernel) : Bool :=
   sk.kernel.signatureContext == prepared.plan.raw.tensorSigs &&

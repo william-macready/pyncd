@@ -63,7 +63,11 @@ structure StateWriteMap where
     `assign → pointwise/axiswise` chain a nonlinear statement lowers to
     (`papers/nonlinearity_split_pair_direct_lowering.md` §3.5). Deliberately a separate sum from
     `PlanStep` below rather than a reuse of it: a block step has no `.scan` case (scans do not
-    nest), and its nonlinear cases carry no `contextShape` of their own. -/
+    nest), and its nonlinear cases carry no `contextShape` of their own. It likewise has no
+    `.scatter` case: S-A admits a scatter only as a TOP-LEVEL step, so a scatter inside a scan block
+    is not representable here. That is a scope boundary recorded deliberately, not an oversight —
+    admitting one would be a separate piece of work, and nothing about adding `PlanStep.scatter`
+    forces a compile error here to say so. -/
 inductive BlockStep
   | assign (a : AssignPlan)
   | pointwise (p : RawPointwisePlan)
@@ -140,11 +144,12 @@ structure RawScanPlan where
   snapshotPolicy : ScanSnapshotPolicy
   deriving DecidableEq, BEq, Repr, Inhabited
 
-/-- One outer graph node: an ordinary local assignment, a scan, or one of the two nonlinearity
-    operations (Thread 4). `RawEvalPlan.steps` becomes `Array PlanStep` in F3 (was `Array
-    AssignPlan`). -/
+/-- One outer graph node: an ordinary local assignment, a top-level scatter (an affine LHS write —
+    S-A), a scan, or one of the two nonlinearity operations (Thread 4). `RawEvalPlan.steps` becomes
+    `Array PlanStep` in F3 (was `Array AssignPlan`). -/
 inductive PlanStep
   | assign   (a : AssignPlan)
+  | scatter  (s : ScatterPlan)
   | scan     (s : RawScanPlan)
   | pointwise (p : RawPointwisePlan)
   | axiswise  (a : RawAxiswisePlan)

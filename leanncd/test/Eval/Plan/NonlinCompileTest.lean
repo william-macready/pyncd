@@ -195,7 +195,8 @@ fixtures further down pin what real source text now produces end to end. -/
 /-- `PlanStep` field-access helper for pinning the exact step-kind sequence a nonlin-bearing
     statement compiles to. -/
 def stepKind : PlanStep → String
-  | .assign _ => "assign" | .scan _ => "scan" | .pointwise _ => "pointwise" | .axiswise _ => "axiswise"
+  | .assign _ => "assign" | .scatter _ => "scatter" | .scan _ => "scan"
+  | .pointwise _ => "pointwise" | .axiswise _ => "axiswise"
 
 -- Task 3's own contribution in isolation (no `splitNonlins` involved): `.identity` allocates
 -- exactly 2 slots (A input, Y destination — no internal slot) and 1 step.

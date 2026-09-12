@@ -230,7 +230,7 @@ private def nonlinInputs : HashMap String DenseTensor :=
   ({} : HashMap String DenseTensor).insert "X" ⟨[2], #[1.0, -2.0]⟩
 
 private def stepKind : PlanStep → String
-  | .assign _ => "assign" | .scan _ => "scan"
+  | .assign _ => "assign" | .scatter _ => "scatter" | .scan _ => "scan"
   | .pointwise _ => "pointwise" | .axiswise _ => "axiswise"
 
 run_cmd do

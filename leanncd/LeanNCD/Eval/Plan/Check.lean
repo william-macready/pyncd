@@ -104,16 +104,33 @@ def dtypeAdmitted : ScalarDType → Bool
   | .f64 | .bool => true
   | .f32 => false
 
-/-- Validate one operation against the positional signature table. -/
-def checkAssign (sigs : Array TensorSignature) (a : AssignPlan) :
+/-- Validate one operation against the positional signature table.
+
+    `destSigShape?` is the shape the DESTINATION SIGNATURE must carry. `none` — every existing
+    caller — means "the plan's own `outputShape`", which is the original clause verbatim: for an
+    assignment the iteration domain it writes over and the extent of the tensor it writes into are
+    the same array, and the error payload is unchanged (`destinationShapeMismatch a.outputShape
+    destSig.shape`).
+
+    A scatter is exactly the case that separates those two, which is why the clause is a parameter
+    rather than a constant. `checkScatter` passes `some s.destShape`: a scatter's registered
+    destination signature carries the DESTINATION extent, while `s.compute.outputShape` is the
+    SOURCE iteration domain — comparing the signature against the latter would reject every strided
+    write (`#[6]` against `#[3]` for `Out[2*i] := X[i]`, `i : 3`). Everything else here is checked
+    for a scatter's compute half unchanged: the destination dtype still selects the algebra, and the
+    term/factor loop still pins each term's `outputProjection` to `compute.outputShape`, which is the
+    right obligation on the source side. -/
+def checkAssign (sigs : Array TensorSignature) (a : AssignPlan)
+    (destSigShape? : Option (Array Nat) := none) :
     Except PlanError CheckedAssignPlan := do
   let destSig ← match sigs[a.destinationSlot]? with
     | some s => pure s
     | none => throw (.slotOutOfRange a.destinationSlot sigs.size)
   unless dtypeAdmitted destSig.dtype do
     throw (.dtypeNotAdmitted a.destinationSlot destSig.dtype)
-  unless destSig.shape == a.outputShape do
-    throw (.destinationShapeMismatch a.outputShape destSig.shape)
+  let expectedDestShape := destSigShape?.getD a.outputShape
+  unless destSig.shape == expectedDestShape do
+    throw (.destinationShapeMismatch expectedDestShape destSig.shape)
   unless (admittedAlgebrasFor destSig.dtype).contains a.algebra do
     throw (.algebraNotAdmitted a.algebra)
   unless constMatchesDtype destSig.dtype a.algebra.factorId do
@@ -158,6 +175,118 @@ def checkAssign (sigs : Array TensorSignature) (a : AssignPlan) :
           unless row.size == t.iterationShape.size do
             throw (.affineWidthMismatch ti fi t.iterationShape.size row.size)
   return CheckedAssignPlan.mk a
+
+/-! ## The scatter checker (S-A Task 3)
+
+`checkPlan`'s `.scatter` local check (`EvalPlan.lean`) calls `checkScatter` and publishes its
+`CheckedScatterPlan` as `CheckedPlanStepEvidence.scatter` (S-A Task 2 wired this; the transient
+unconditional rejection that stood in its place between Tasks 3 and 2 is gone). A `checkScatter`
+failure surfaces as `PlanStepError.assign (.nodeError ni e)`, like `checkAssign`'s — that
+constructor names the error's SHAPE (a plain `PlanError`, which is what this function returns), not
+the step's kind. A scatter step is still unreachable from source syntax; that is Task 5.
+-/
+
+/-- Evidence that one `ScatterPlan` satisfies every local invariant. Same `private mk ::` boundary
+    as `CheckedAssignPlan`: `checkScatter` is the only way to obtain one, projections stay public.
+
+    Deliberately stores ONLY the raw plan — not the `CheckedAssignPlan` `checkAssign` returned for
+    the compute half. A scatter's worker is source-driven and must not be able to hand that evidence
+    to `runDenseAssign`: doing so publishes the SOURCE-shaped compute result under the destination's
+    name, which is the exact silent-wrong-answer failure the rejected "widen `AssignPlan`" design was
+    measured to produce. -/
+structure CheckedScatterPlan where private mk ::
+  raw : ScatterPlan
+  deriving Repr
+
+/-- Trusted accessor for the validated payload. -/
+def CheckedScatterPlan.plan (c : CheckedScatterPlan) : ScatterPlan := c.raw
+
+/-- The `LHSSlot` one destination dimension of a scatter's placement map denotes, over a synthetic
+    positional axis basis: basis axis `k` is source-iteration position `k`, minted as an `AxisSpec`
+    whose `uid` IS that position. The uids are private to this derivation — `scatterDestExtent`
+    builds the matching sizing lookup alongside them — so they cannot collide with a program's own.
+
+    Always `outExtent`'s `.affine` arm, never its `.const` arm, and that is a fact about which slot
+    forms can reach a `ScatterPlan` rather than a convenience. `outExtent`'s `.axis`/`.scale`/
+    `.shift`/`.affine` arms are all the same `bias + Σ coeff · size` sum this reconstruction
+    reproduces; `.const` (extent `n + 1`) is reachable only from `LHSSlot.iterAt`, which is what
+    `elabTLLHSSlot` (`DSL/Elab.lean`) turns a bare numeral LHS slot into — a scan base case — and
+    `checkScatterNoScan` (`DSL/Pipeline/Structural.lean`) rejects a scatter-shaped LHS carrying any
+    iteration slot. So an all-zero placement row keeps the documented `.toNat` degeneracy of the
+    zero-coefficient slot it comes from (`Out[0*i]` has extent `0`), rather than being re-read as a
+    constant coordinate with extent `bias + 1`. -/
+def scatterPlacementSlot (row : Array Int) (bias : Int) : LHSSlot :=
+  .affine (.affine bias
+    (row.toList.zipIdx.map (fun (c, k) => (c, { name := "", uid := k, kind := .nat }))))
+
+/-- The destination extent one placement row implies, BY CALLING `LHSSlot.outExtent` — the one home
+    of the `scale * n + offset` convention (`DSL/Ast.lean`). This restates no arithmetic of its own,
+    and in particular not the memory-sufficient bound `scale * (n - 1) + offset + 1`, which is
+    measured to disagree with the convention by exactly `scale - 1`; a second extent formula has
+    already shipped a soundness bug in this repo once. `srcShape` is the source iteration domain
+    (`compute.outputShape`), indexed by position to match `scatterPlacementSlot`'s synthetic uids. -/
+def scatterDestExtent (srcShape : Array Nat) (row : Array Int) (bias : Int) : Option Nat :=
+  (scatterPlacementSlot row bias).outExtent (fun u => srcShape[u]?)
+
+/-- Validate one raw `ScatterPlan` against the positional signature table.
+
+    Clause order: the compute half through the shared `checkAssign` core, then the two scalar
+    coherence clauses (`fill`, `reduce`), then the placement map's rank and its per-dimension width
+    and extent — global facts before the loop, the same shape `checkAssign` itself uses.
+
+    The compute half is checked with `destSigShape? := some s.destShape`, which is the whole point of
+    that parameter: the registered destination signature must carry the DESTINATION extent, while
+    `s.compute.outputShape` is the SOURCE iteration domain. Every other `checkAssign` clause applies
+    to a scatter's compute half unchanged (the destination dtype selects the algebra; each term's
+    `outputProjection` pins to the source domain).
+
+    `fill`'s dtype needs no separate check: the algebra-admission clause inside `checkAssign` already
+    forces `compute.algebra` into the destination dtype's own row of `admittedAlgebrasFor`, whose
+    every member carries that dtype's constants, so `fill == compute.algebra.reduceId` makes the
+    fill's dtype track the destination's transitively. Writing a second `constMatchesDtype` check
+    here would be a second, weaker copy of that guard. `ScalarConst.f32` is unreachable in a checked
+    plan for the same reason.
+
+    `s.compute.contextShape` is NOT checked here: a scatter is admitted only as a top-level step, and
+    `checkPlan`'s own `contextCheck` arm already discharges that obligation on the nested plan's
+    field.
+
+    **Placement RANGE is not checked here either, deliberately, and it is the one case-audit cell
+    this checker leaves to the worker.** Nothing above rejects a placement map that sends some source
+    coordinate outside `[0, destShape[d])` — a negative coefficient or bias is admitted as long as
+    `destShape` equals `outExtent`'s answer for it, which for `#[-1]` over a rank-3 source domain is
+    the empty destination `#[0]`, accepted with three source values and nowhere to put them. That is
+    not an oversight to close statically: the reference evaluator `Eval/Scatter.lean` **skips an
+    out-of-range output coordinate silently**, the checked layer's obligation is to REPRODUCE that
+    (differential parity against the reference is the gate for this feature), and a static rejection
+    here would refuse plans the reference accepts. So the owner is the dense scatter worker, where the
+    per-coordinate skip belongs and where parity is measured — not this function. Mitigating fact
+    while that worker is unwritten: the shape is unreachable from surface syntax, since
+    `elabTLLHSSlot` (`DSL/Elab.lean`) parses only non-negative numeral coefficients and biases in an
+    affine LHS slot, so only a programmatic `ScatterPlan` can express it. -/
+def checkScatter (sigs : Array TensorSignature) (s : ScatterPlan) :
+    Except PlanError CheckedScatterPlan := do
+  let _ ← checkAssign sigs s.compute (some s.destShape)
+  unless s.fill == s.compute.algebra.reduceId do
+    throw (.scatterFillNotIdentity s.fill s.compute.algebra.reduceId)
+  match s.reduce with
+  | .rejectCollisions => pure ()
+  | .overwrite | .sum | .max | .min => throw (.scatterReduceNotAdmitted s.reduce)
+  unless s.outCoeffs.size == s.destShape.size && s.outBias.size == s.destShape.size do
+    throw (.scatterPlacementRankMismatch s.destShape.size s.outCoeffs.size s.outBias.size)
+  let srcRank := s.compute.outputShape.size
+  -- Zipped rather than indexed so each destination dimension's row, bias, and declared extent are
+  -- in hand together; the rank clause above makes the zip lossless.
+  for ((row, bias, declared), d) in
+      (s.outCoeffs.toList.zip (s.outBias.toList.zip s.destShape.toList)).zipIdx do
+    unless row.size == srcRank do
+      throw (.scatterPlacementWidthMismatch d srcRank row.size)
+    match scatterDestExtent s.compute.outputShape row bias with
+    | none => throw (.scatterDestExtentUnknown d)
+    | some derived =>
+        unless declared == derived do
+          throw (.scatterDestExtentMismatch d declared derived)
+  return CheckedScatterPlan.mk s
 
 -- `CheckedEvalPlan`/`checkPlan` used to live here (C3), but now that the outer graph can contain a
 -- `.scan` step, both relocated to `EvalPlan.lean` — the only module that can see both the local

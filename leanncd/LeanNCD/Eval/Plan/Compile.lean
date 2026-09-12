@@ -5,6 +5,8 @@ import LeanNCD.Eval.Plan.Prepared
 import LeanNCD.Eval.Plan.EvalPlan
 import LeanNCD.Eval.Plan.Signature
 import LeanNCD.Eval.Contract
+import LeanNCD.Eval.Scatter   -- `scatterSourceAxes`: ONE definition of a scatter's source axes,
+                              -- shared with the reference evaluator (see Step D's scatter branch)
 import LeanNCD.DSL.Pipeline.Lowering
 import LeanNCD.DSL.Pipeline.ScheduledValidation
 
@@ -57,6 +59,86 @@ def checkLHSSlot (stmtName : String) : LHSSlot → Except CapabilityError Unit
   | .iterAt a _ => throw (.unsupportedLhsSlot s!"{stmtName}: iterAt {a.name}")
   | .iterNext a => throw (.unsupportedLhsSlot s!"{stmtName}: iterNext {a.name}")
   | .affine _   => throw (.scatterOrAffineLhs s!"{stmtName}: affine LHS slot")
+
+/-- The SCATTER-statement analogue of `checkLHSSlot`, and the one place S-A's affine LHS form is
+    admitted. Deliberately a sibling rather than a relaxation of `checkLHSSlot`: that function
+    serves a plain `Stmt.assign`, whose Step D destructuring (`freeUidOrFail`) genuinely has no
+    meaning for an `.affine` slot, and relaxing it there would only move the same rejection later
+    and strip its locator (`"{nm}: affine LHS slot"` degrades to `freeUidOrFail`'s bare `"lhs"`).
+    The pairing mirrors `checkScanLHSSlot`'s own reason for existing: which rule applies is decided
+    by the STATEMENT's constructor, not by inspecting the slot.
+
+    `.free`/`.freeNorm` are admitted because a scatter's LHS need not be affine at all — a diagonal
+    write (`Y[i,i] := V[i]`) is reclassified to `Stmt.scatter` by `lowerArith`'s
+    `slotsBecomeScatter` on a REPEATED free axis, with no `.affine` slot anywhere. `.iterAt` and
+    `.iterNext` stay rejected: a scatter carrying an iteration slot is S-B (scatter inside a scan),
+    which S-A does not admit and which `checkScatterNoScan` (`DSL/Pipeline/Structural.lean`) already
+    refuses on the source path.
+
+    The `.affine` arm admits every form whose destination extent this file can derive in agreement
+    with both of the other two derivations of it, and rejects exactly two shapes.
+
+    **`.affine (.const n)` (`Out[3]`) — `scatterOrAffineLhs`.** The rejection is decided on the index
+    expression's own CONSTRUCTOR, deliberately, because that is precisely what the divergence turns
+    on: `.const` is the single `LHSSlot.outExtent` arm that is not `bias + Σ coeff · size` — it
+    answers `n + 1`, a constant COORDINATE re-read as an extent. The reference evaluator's
+    `scatterOutShape` calls `outExtent` on the source slot and so gets `n + 1`; this emitter derives
+    `destShape` through `scatterDestExtent`, the reconstruction `checkScatter` validates against,
+    which always takes the `.affine` arm and so gets `n`. Admitting the form would ship that silent
+    disagreement. `lowerArith` rejects it on the source path too (`overlappingScatter` — a constant
+    coordinate collapses a dimension), and `elabTLLHSSlot` has no arm producing it, so this guards a
+    hand-built `ScheduledProgram` only.
+
+    **A row naming more than one source axis (`Out[i+j]`) — `multiAxisScatterLhs`**, by CALLING
+    `idxAffineForm`/`normalizeCoeffs` rather than re-reading constructors; see that constructor's own
+    doc comment for why the form is refused.
+
+    **A ZERO coefficient is NOT a rejection, and is not the `.const` case.** `Out[0*i]` elaborates to
+    `.affine (.scale 0 i)` (`elabTLLHSSlot`'s `n*x` arm, `n = 0`), is surface-reachable, passes
+    `lowerArith` (`LHSSlot.collapses` matches only `.affine (.const _)`), and is the empty-destination
+    degeneracy Task 3 designed for and `ScatterCheckTest` pins. Both extent derivations agree on it —
+    `outExtent`'s `.scale` arm gives `0 · size = 0` and the placement-row reconstruction gives the
+    same `0` — so it compiles to a real `ScatterPlan` with `destShape = #[0]`. This is why the
+    `.const` test above is on the constructor and not on "the normalised coefficient list is empty":
+    `normalizeCoeffs` DROPS zero coefficients (`addCoeff`), so an emptiness test conflates
+    `.scale 0 i` and `.affine c₀ [(0, i)]` with `.const n` and would reject all three under a locator
+    naming only the last. It did, briefly; `CompileTest`'s `Out[0*i]` fixture and
+    `ScatterCompileTest`'s S9 now pin the distinction from both ends. -/
+def checkScatterLHSSlot (stmtName : String) : LHSSlot → Except CapabilityError Unit
+  | .free _     => pure ()
+  | .freeNorm _ => pure ()
+  | .iterAt a _ => throw (.unsupportedLhsSlot s!"{stmtName}: iterAt {a.name}")
+  | .iterNext a => throw (.unsupportedLhsSlot s!"{stmtName}: iterNext {a.name}")
+  | .affine (.const _) => throw (.scatterOrAffineLhs s!"{stmtName}: constant affine LHS slot")
+  | .affine e =>
+      let (_, coeffs) := idxAffineForm e
+      if (SizeSolve.normalizeCoeffs coeffs).length > 1 then
+        throw (.multiAxisScatterLhs s!"{stmtName}: affine LHS slot")
+      else pure ()
+
+/-- A scatter's own nonlinearity admission, and the one restored producer of the retained
+    `unsupportedNonlin` constructor. Only `.identity` is admitted, matching the reference evaluator
+    exactly: `evalScatter` (`Eval/Scatter.lean`) rejects a non-identity `rhs.nonlin` outright rather
+    than silently dropping it, and `checkScatterNonlin` (`DSL/Pipeline/Structural.lean`) is the
+    source path's primary gate for the same rule. Step D's scatter emitter applies no nonlinearity,
+    so anything admitted here would be silently erased — the precise defect the reference's own
+    defensive check exists to prevent. Deliberately NOT `checkNonlinTopLevel`, which admits
+    `.pointwise`/`.axiswise` because the plain branch compiles them into a real step chain. -/
+def checkNonlinScatter (stmtName : String) : Nonlin → Except CapabilityError Unit
+  | .identity    => pure ()
+  | .pointwise _ => throw (.unsupportedNonlin s!"{stmtName}: scatter nonlinearity")
+  | .axiswise .. => throw (.unsupportedNonlin s!"{stmtName}: scatter nonlinearity")
+
+/-- A scatter's collision policy admission. `.rejectCollisions` is the only policy `checkScatter`
+    (`Check.lean`) admits, so the other four must be refused HERE, at capability tier with a source
+    locator — reaching `checkPlan` with one would surface as `invalidPlan`, the compiler-bug channel.
+    Matched exhaustively rather than through a catch-all (plan §2.5), so adding a sixth policy is a
+    compile error at this site. Only `.rejectCollisions` is surface-reachable in any case:
+    `lowerArith` hard-codes it, and there is no `reduce` syntax. -/
+def checkScatterReduce (stmtName : String) : LeanNCD.CollisionReduce → Except CapabilityError Unit
+  | .rejectCollisions => pure ()
+  | .overwrite | .sum | .max | .min =>
+      throw (.scatterOptsNotAdmitted s!"{stmtName}: collision policy")
 
 /-- `.unaryFn` is now structurally admitted (unary-factor thread): `residualizeAssignment` lowers it
     to a `ReadPlan` carrying `unary := some op`, and Dense's `gatherFactor` applies the function after
@@ -117,8 +199,18 @@ def checkAggOp (_stmtName : String) : AggOp → Except CapabilityError Unit
     sub-construct determines the reported category. This is no longer an exact mirror for the
     `nonlin` sub-construct specifically: C0's frozen `classifyNonlin` still rejects
     `.pointwise`/`.axiswise` outright, while this function's own `checkNonlinTopLevel` (Thread 4)
-    admits both at top level. `scatter`/`recurMorphism` are rejected outright, without inspecting
-    their slots/payload, matching C0's `classifyStmt` too. -/
+    admits both at top level. It is also no longer an exact mirror for `.scatter`: C0's frozen
+    `classifyStmt` rejects a scatter statement outright without inspecting its payload, while S-A
+    admits a TOP-LEVEL one and checks its sub-constructs in the same order an assignment's are
+    checked (slots, `agg`, `nonlin`, factors), with `checkScatterLHSSlot`/`checkNonlinScatter` in
+    place of the assignment's own two, plus the one sub-construct only a scatter has (`ScatterOpts`,
+    via `checkScatterReduce`) last. `recurMorphism` is still rejected outright.
+
+    **Top-level only.** The scan-block analogue `checkScanBlockStmt` keeps rejecting `.scatter`:
+    a scatter inside a scan's base/recurrence is S-B, a separate deferred feature with no plan-IR
+    representation at all (`BlockStep` has no scatter case), and it is already unreachable from the
+    source path — `checkScatterNoScan` (`DSL/Pipeline/Structural.lean`) refuses a scatter-shaped LHS
+    carrying any `iterAt`/`iterNext` slot BEFORE `finalizeScans` could group it into a scan node. -/
 def checkStmt : Stmt → Except CapabilityError Unit
   | .assign nm slots rhs => do
       for s in slots do checkLHSSlot nm s
@@ -126,12 +218,23 @@ def checkStmt : Stmt → Except CapabilityError Unit
       checkNonlinTopLevel nm rhs.nonlin
       for t in rhs.body.terms do
         for f in t.factors do checkFactor nm f
-  | .scatter nm .. => throw (.scatterOrAffineLhs nm)
+  | .scatter nm slots rhs opts => do
+      for s in slots do checkScatterLHSSlot nm s
+      checkAggOp nm rhs.agg
+      checkNonlinScatter nm rhs.nonlin
+      for t in rhs.body.terms do
+        for f in t.factors do checkFactor nm f
+      checkScatterReduce nm opts.reduce
   | .recurMorphism nm .. => throw (.recurrenceOrCallback nm)
 
 /-- The scan-context analogue of `checkLHSSlot`: inside a `.scan` node's own `base`/`recur` lists,
     `.iterAt`/`.iterNext` are the very constructors that MAKE it a scan, so both are admitted here.
-    `.affine` stays rejected exactly as for a plain statement. `.freeNorm` is now (Thread 4 Task 4)
+    `.affine` stays rejected — exactly as for a plain `.assign` (`checkLHSSlot`), and NOT as for a
+    top-level `Stmt.scatter`, whose `checkScatterLHSSlot` admits the single-axis strided forms
+    (S-A). A strided write inside a scan's base/recurrence is S-B: it has no plan-IR representation
+    (`BlockStep` carries no scatter case), and `checkScatterNoScan` (`DSL/Pipeline/Structural.lean`)
+    already refuses the combination on the source path, so this arm guards a shape only a hand-built
+    `ScheduledProgram` can present. `.freeNorm` is now (Thread 4 Task 4)
     admitted here too, identically to the top-level `checkLHSSlot`: a `·`-marked axis is a real
     output axis on a nonlinear scan statement, which `compileScan` now lowers. Ported from F0's
     verified `PlanContract.WaveF.classifyScanLHSSlot` (`test/Eval/Plan/ScanContractTest.lean`), same
@@ -169,6 +272,10 @@ def checkScanBlockStmt : Stmt → Except CapabilityError Unit
       checkNonlinScanBlock nm rhs.nonlin
       for t in rhs.body.terms do
         for f in t.factors do checkFactor nm f
+  -- S-B, deferred: a scatter inside a scan's base/recurrence. Deliberately NOT relaxed alongside
+  -- `checkStmt`'s top-level arm — see this function's own doc comment above, and
+  -- `checkScanLHSSlot`'s, for the two reasons (no `BlockStep` representation; already unreachable
+  -- from source via `checkScatterNoScan`).
   | .scatter nm .. => throw (.scatterOrAffineLhs nm)
   | .recurMorphism nm .. => throw (.recurrenceOrCallback nm)
 
@@ -194,10 +301,43 @@ def checkScanStmt : ScanStmt → Except CapabilityError Unit
 
 /-- Capability preflight over a whole `ScheduledProgram`: decls in order, then stmts in order, first
     failure wins. `unsupportedDtype`/`dynamicShape` are never thrown below — see `CapabilityError`'s
-    doc comment for why they are structurally unreachable from this entry point specifically. -/
+    doc comment for why they are structurally unreachable from this entry point specifically.
+
+    After the per-`ScanStmt` checks, one further pass rejects a top-level scatter whose
+    DESTINATION is `predicate`/`bool`-declared (`predicateScatterDest`). This lookup uses `sched.decls`
+    directly rather than `sched.env` (a cached pipeline product not consulted at Step 0 either), and
+    matches on `.predicate` — the same classification `dtypeOfDecl` (`Signature.lean`) applies to
+    select a destination's dtype at Step D. Both surface shapes are inspected: an already-`.scatter`
+    statement (post-`lowerArith`, the surface path) and an `.assign` whose LHS
+    `slotsBecomeScatter` (a hand-built `ScheduledProgram` that bypassed `lowerArith`, the same shape
+    `checkScatterNoScan` inspects for the scan-block rule). Placed AFTER the per-statement
+    sub-construct checks so a program violating both (e.g. `predicate Out(i)` with `Out[i+j]`) is
+    reported by the FORM error (`multiAxisScatterLhs`) rather than by the DEST error, preserving
+    the sub-construct-first precedence the rest of this file's fixtures rely on. See the constructor
+    docstring on `CapabilityError.predicateScatterDest` for why this is a rejection and not an
+    admission. -/
 def capabilityPreflight (sched : ScheduledProgram) : Except CapabilityError Unit := do
   for d in sched.decls do checkDecl d
   for s in sched.stmts do checkScanStmt s
+  -- Post-pass: a predicate/bool scatter destination is a THIRD algebra `evalScatter`
+  -- (`Eval/Scatter.lean`) can't compute — it picks its algebra from `rhs.agg` alone and never sees
+  -- `decls` — so accepting one produces a silent divergence between the checked backend and the
+  -- reference. Reject at the same tier that already refuses tropical fills, with a locator naming
+  -- the destination. Uses a simple linear scan over `sched.decls` rather than building a HashMap:
+  -- `.predicate` declarations are few, and this preflight has no other reason to construct one.
+  let isPredicateName (nm : String) : Bool :=
+    sched.decls.any (fun d => match d with
+      | .predicate n _ => n == nm
+      | _ => false)
+  for sc in sched.stmts do
+    match sc with
+    | .plain (.scatter nm _ _ _) =>
+        if isPredicateName nm then
+          throw (.predicateScatterDest s!"{nm}: predicate scatter destination")
+    | .plain (.assign nm slots _) =>
+        if slotsBecomeScatter slots && isPredicateName nm then
+          throw (.predicateScatterDest s!"{nm}: predicate scatter destination")
+    | _ => pure ()
 
 open Std
 open LeanNCD.Eval (ShapeError EvalWarning EvalError EvalFailure termAxisUIDs)
@@ -271,17 +411,98 @@ private def freeUidOrFail (context : String) : LHSSlot → Except CapabilityErro
   | .iterAt .. | .iterNext _ => throw (.unsupportedLhsSlot context)
   | .affine _ => throw (.scatterOrAffineLhs context)
 
-/-- Unreachable post-preflight: `checkStmt`/`checkScanBlockStmt` (Step A) already reject
-    `.scatter`/`.recurMorphism` outright (`scatterOrAffineLhs`/`recurrenceOrCallback`) before
+/-- Unreachable post-preflight for BOTH of its call sites, but for two different reasons now that
+    S-A admits a top-level scatter.
+
+    `.recurMorphism` is rejected outright by `checkStmt`/`checkScanBlockStmt` (Step A) before
     `prepareEvalPlan` ever calls this — for a plain statement AND for every base/recurrence statement
     inside an admitted `.scan`, which is why `compileScan` reuses this same helper rather than
-    repeating the destructuring. Kept total (rather than assuming `.assign` via a partial match) so a
-    future `Stmt` constructor is a compile error here, not a silent fallthrough. -/
+    repeating the destructuring.
+
+    `.scatter` is still rejected by `checkScanBlockStmt`, so `compileScan`'s call sites are unchanged.
+    At top level it is now ADMITTED by `checkStmt` — but it never reaches here, because Step D's
+    `.plain` branch matches `Stmt.scatter` FIRST and hands it to the scatter emitter; only an
+    `.assign` falls through to this helper. Keeping the throw (rather than making this function
+    return scatter parts) is what keeps the S-A/S-B boundary structural instead of conventional: a
+    scatter admitted through this shared helper would be admitted for `compileScan` too, silently
+    enabling the undesigned S-B path through the back door.
+
+    Kept total (rather than assuming `.assign` via a partial match) so a future `Stmt` constructor is
+    a compile error here, not a silent fallthrough. -/
 private def assignPartsOrFail (context : String) : Stmt →
     Except CapabilityError (String × List LHSSlot × RHSExpr)
   | .assign nm slots rhs => pure (nm, slots, rhs)
   | .scatter .. => throw (.scatterOrAffineLhs context)
   | .recurMorphism .. => throw (.recurrenceOrCallback context)
+
+/-- One top-level scatter's placement map AND destination extent, in LHS-slot order: the scatter
+    analogue of `freeUidOrFail`, and deliberately not an extension of it. A plain assignment's slot
+    list collapses to ONE retained axis UID per slot (`freeUidOrFail`); a scatter's collapses to one
+    coefficient ROW per slot over the whole source basis, plus the extent that row implies — a
+    different shape of computation over the same list.
+
+    `srcUids` is the source iteration basis (`scatterSourceAxes`), so row position `k` is the
+    coefficient of `srcUids[k]` — the same column order `residualizeAssignment` gives the compute
+    half's `outputShape`, which is what makes `outCoeffs · sourceCoordinate + outBias` meaningful.
+    Rows come from `idxToRow`, the same affine-lowering primitive every read row in this file uses,
+    so a placement coordinate and a read coordinate over the same basis agree by construction.
+
+    **The extent comes from `scatterDestExtent` (`Check.lean`), which calls `LHSSlot.outExtent` —
+    the ONE home of the `scale · n + offset` convention.** No arithmetic of that shape is restated
+    here, and `LHSSlot.outExtent` is deliberately NOT called on the source slot directly: the
+    reconstruction `checkScatter` will validate this plan against is `scatterDestExtent`'s, so
+    deriving `destShape` any other way could disagree with the very checker that has to accept it —
+    a `scatterDestExtentMismatch` reported through the compiler-bug channel. Going through the
+    checker's own derivation makes the two agree by construction rather than by coincidence.
+
+    Fails loud on an unsized source axis rather than defaulting the extent to `0`, which would
+    silently produce an empty destination tensor. `ShapeError.unsizedScatterOutput` is the same
+    constructor the reference evaluator's `scatterOutShape` (`Eval/Eval.lean`) raises for the same
+    condition, carrying the same offending slot. Unreachable in practice — `srcShape` is built from
+    `srcUids` by `resolveSizeOrFail`, so every row position it indexes is present — and kept for the
+    same reason the reference keeps it. -/
+private def scatterPlacementOrFail (srcUids : List UID) (srcShape : Array Nat)
+    (slots : List LHSSlot) : Except ShapeError (Array (Array Int) × Array Int × Array Nat) := do
+  let mut coeffsAcc : Array (Array Int) := #[]
+  let mut biasAcc : Array Int := #[]
+  let mut shapeAcc : Array Nat := #[]
+  for sl in slots do
+    let (row, bias) := idxToRow srcUids sl.outIdx
+    let rowA := row.toArray
+    match scatterDestExtent srcShape rowA bias with
+    | some n =>
+        coeffsAcc := coeffsAcc.push rowA
+        biasAcc := biasAcc.push bias
+        shapeAcc := shapeAcc.push n
+    | none => throw (.unsizedScatterOutput sl)
+  return (coeffsAcc, biasAcc, shapeAcc)
+
+/-- The `ScalarConst` a source `ScatterOpts.fill` compiles to, or a located rejection (§2.5).
+
+    `ScatterPlan.fill` is a `ScalarConst` and not the `Int` the source carries, because it must be
+    able to express a tropical identity; `checkScatter` then forces `fill == compute.algebra.reduceId`
+    so that the fill and the collision-reduction stay the identity and the operation of ONE monoid.
+    This function is therefore not a widening conversion `Int → ScalarConst` but an AGREEMENT check:
+    the returned constant is always the algebra's own `reduceId`, and the source `Int` only has to
+    denote the same value. Deriving it any other way (wrapping the `Int` as an `f64` and letting
+    `checkScatter` compare) would report a legitimately out-of-fragment program as `invalidPlan`,
+    the compiler-bug channel.
+
+    Admitted: `agg = .sum` with `fill = 0` (real sum-product's identity IS `0.0`, which is exactly
+    what `lowerArith` hard-codes), and a predicate destination with `fill = 0` (the Boolean identity
+    `false` decodes to `0.0`, `Dense.constFloat`). Rejected: a `maxreduce`/`minreduce` scatter, whose
+    identity is `∓∞` and which an `Int` fill cannot denote at all — so the rejection is not a gap to
+    close later but the honest report that no admissible fill exists for one. Comparison is on the
+    stored BITS, not on decoded `Float`s, so it cannot be perturbed by float equality's own
+    conventions. -/
+private def scatterFillOrFail (context : String) (algebra : ContractionAlgebra) (fill : Int) :
+    Except CapabilityError ScalarConst :=
+  let identity := algebra.reduceId
+  let agrees : Bool := match identity with
+    | .f64 bits => bits == Float.toBits (Float.ofInt fill)
+    | .bool b   => fill == (if b then 1 else 0)
+    | .f32 _    => false   -- unreachable: `f32` is `dtypeNotAdmitted` at the destination already
+  if agrees then pure identity else throw (.scatterOptsNotAdmitted context)
 
 /-- The placement axis of one scan-block LHS slot. Unreachable `none` post-preflight
     (`checkScanLHSSlot` rejects `.affine`), so this is the scan-block analogue of
@@ -415,7 +636,14 @@ def algebraForAgg : AggOp → ContractionAlgebra
     `AssignPlan.algebra` at its top-level call site, rather than threading a `destDtype` parameter
     through `residualizeAssignment` itself — the scan base/step call sites stay byte-for-byte
     unchanged (Task 4.4 scope, not this one), and this function's own selection logic stays
-    independently mutation-testable from the destination-dtype DERIVATION it consumes. -/
+    independently mutation-testable from the destination-dtype DERIVATION it consumes.
+
+    Called on the plain-`.assign` branch AND the `.plain (.scatter …)` branch. The `.bool` arm is
+    UNREACHABLE from the scatter branch: `capabilityPreflight`'s `predicateScatterDest` post-pass
+    rejects a `predicate`/`bool`-declared scatter destination before Step D can call this on one —
+    kept for the plain assignment path (where a `bool` destination is a fully supported case,
+    Task 4.3) and to keep this function's own destination-classification total and independent from
+    the caller. -/
 def algebraForDest (destDtype : ScalarDType) (agg : AggOp) : ContractionAlgebra :=
   match destDtype with
   | .bool => admittedAlgebraBool
@@ -1202,6 +1430,56 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
   -- keeps the unreachable-post-preflight throw that used to cover all three.
   for sc in sched.stmts do
     match sc with
+    | .plain (.scatter nm slots rhs opts) =>
+        -- S-A's scatter emitter. Matched BEFORE the general `.plain s` branch below, which is what
+        -- keeps `assignPartsOrFail` (shared with `compileScan`) rejecting `.scatter` and the
+        -- S-A/S-B boundary structural — see that helper's own doc comment.
+        --
+        -- The SOURCE iteration domain is `scatterSourceAxes` (`Eval/Scatter.lean`), the very
+        -- function the reference evaluator enumerates its source coordinates with. Reused rather
+        -- than recomputed: an independently-derived "source axes" set here could drift from the
+        -- reference's on which axes are source, and differential parity against it is this
+        -- feature's correctness gate. Note what follows from `scatterSourceAxes` unioning the LHS
+        -- axes with EVERY RHS axis: no axis is left over to contract, so `residualizeAssignment`'s
+        -- per-term reduction basis is empty here and each source coordinate carries exactly one
+        -- value — which is the reference's own equation, not a coincidence of this call.
+        let srcUids := scatterSourceAxes slots rhs
+        let srcShape ←
+          liftShape warnings (srcUids.toArray.mapM (resolveSizeOrFail sizes (.assignOutput nm)))
+        -- A scatter's `Nonlin` is `.identity` (Step A's `checkNonlinScatter`), so this can only
+        -- reject a `·`-marked slot on an unmarked statement — the same `unmarkedReductionAxis` the
+        -- plain branch raises for the same LHS, rather than a marker silently ignored here.
+        let _ ← liftNonlin warnings (resolveNonlinAxis nm rhs.nonlin slots)
+        for (rn, _) in rhs.readFactors do
+          unless slotOf.contains rn do
+            throw { cause := .sourceInvariant (.undeclaredName rn), warnings }
+        -- ONE slot for the whole statement, allocated before the compute half is built and carrying
+        -- the DESTINATION extent: `ScatterPlan.compute.destinationSlot` IS the scatter's real
+        -- destination (`PlanStep.destinationSlots`, `EvalPlan.lean`), and there is no internal
+        -- preactivation slot to allocate because a scatter carries its compute half nested rather
+        -- than as a separate preceding step.
+        let destSlot := tensorSigsAcc.size
+        let sigsNow := tensorSigsAcc
+        let slotsNow := slotOf
+        let resolveSource (name : String) : TensorSlot × Array Nat :=
+          let sourceSlot := slotsNow.getD name 0
+          (sourceSlot, (sigsNow.getD sourceSlot { shape := #[], dtype := .f64 }).shape)
+        let computePlan ←
+          residualizeAssignment sizes warnings nm [] #[] srcUids ({} : HashMap UID Int)
+            resolveSource destSlot srcShape rhs.agg rhs.body.terms
+        -- Destination dtype and algebra are selected exactly as the plain branch selects them: by
+        -- the DESTINATION's own declaration, never by a source factor's.
+        let destDtype := dtypeOfDecl (declEnv[nm]?)
+        let computePlan := { computePlan with algebra := algebraForDest destDtype rhs.agg }
+        let (outCoeffs, outBias, destShape) ←
+          liftShape warnings (scatterPlacementOrFail srcUids srcShape slots)
+        let fill ←
+          liftCapability warnings (scatterFillOrFail s!"{nm}: fill" computePlan.algebra opts.fill)
+        tensorSigsAcc := tensorSigsAcc.push { shape := destShape, dtype := destDtype }
+        stepsAcc := stepsAcc.push (.scatter
+          { compute := computePlan, destShape, outCoeffs, outBias, fill, reduce := opts.reduce })
+        materializedAcc := materializedAcc.push { name := nm, slot := destSlot }
+        slotOf := slotOf.insert nm destSlot
     | .plain s =>
         let (nm, slots, rhs) ← liftCapability warnings (assignPartsOrFail "stmt" s)
         let retainedUids ← liftCapability warnings (slots.mapM (freeUidOrFail "lhs"))

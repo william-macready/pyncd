@@ -37,6 +37,37 @@ inductive PlanError
   | missingProduction        (slot : TensorSlot)
   | invalidForwardRead       (nodeIndex termIndex factorIndex : Nat) (slot : TensorSlot)
   | nodeError                (nodeIndex : Nat) (cause : PlanError)
+  /-- A `ScatterPlan`'s placement map does not carry one `outCoeffs` row and one `outBias` entry per
+      DESTINATION dimension. Carries all three counts rather than conflating them the way
+      `affineRankMismatch` does on the read side: `outCoeffs` and `outBias` are separate fields here,
+      so a single "actual" would hide which of the two disagrees. -/
+  | scatterPlacementRankMismatch  (expected coeffRows biasEntries : Nat)
+  /-- One `outCoeffs` row does not span the source iteration basis (`compute.outputShape`). The read
+      side's `affineWidthMismatch` locates by term/factor; a placement row has neither, so it locates
+      by DESTINATION dimension. This clause has no counterpart on the existing write path, where
+      placement-row widths go unchecked. -/
+  | scatterPlacementWidthMismatch (dim : Nat) (expected actual : Nat)
+  /-- The stored `destShape` disagrees, at this destination dimension, with the extent
+      `LHSSlot.outExtent` derives from the placement row. `declared` is `destShape[dim]`, `derived`
+      is `outExtent`'s answer — never a second formula's. -/
+  | scatterDestExtentMismatch     (dim : Nat) (declared derived : Nat)
+  /-- `LHSSlot.outExtent` returned `none` for this destination dimension (an unsized source axis).
+      Unreachable for any plan whose placement widths `checkScatter` has already validated — the
+      sizing lookup is `compute.outputShape` indexed by position, total once the row spans that
+      basis — and carried for the same reason `predicateWidthMismatch` below is: fail loud rather
+      than silently, if the derivation is ever reached another way. -/
+  | scatterDestExtentUnknown      (dim : Nat)
+  /-- A `ScatterPlan`'s `fill` is not the destination algebra's reduction identity. Fill and
+      collision-reduce are the identity and the operation of one monoid, so an incoherent pair
+      silently yields the identity's value for every unwritten cell instead of the true one
+      (`reduce := .max` with `fill := 0` loses every all-negative cell's maximum). Rejected here
+      rather than normalised: a checker that quietly rewrote `fill` would be indistinguishable, from
+      its return value, from one that never looked. -/
+  | scatterFillNotIdentity        (fill identity : ScalarConst)
+  /-- A `ScatterPlan` names a collision policy no worker implements. Only `rejectCollisions` is
+      admitted; the remaining four arms are matched explicitly (never a catch-all) so adding a sixth
+      policy is a compile error and landing one of these is replacing this `throw` with real logic. -/
+  | scatterReduceNotAdmitted      (reduce : LeanNCD.CollisionReduce)
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- A checked plan met a positional tensor store that does not conform to the shapes the checker
@@ -81,6 +112,21 @@ inductive PositionalInputError
   -- already forces every leaf width == `iterationShape.size`); carried so the Dense predicate
   -- evaluator fails loud rather than silently, if ever handed an unchecked plan.
   | predicateWidthMismatch (expected : Nat) (actual : Nat)
+  /-- Two SOURCE coordinates of a scatter place a value at the same DESTINATION coordinate under
+      `CollisionReduce.rejectCollisions`. Raised by `runDenseScatter` (`Dense.lean`), and a runtime
+      concern rather than a `PlanError` by construction: whether a placement map is injective over a
+      given source domain is not decidable from the plan's rank/width/extent clauses, which is why
+      `checkScatter` admits a non-injective map (rank-0 destination, an all-zero placement row) and
+      names collision detection as the worker's own case-audit cell.
+
+      Payload mirrors the reference `EvalError.scatterCollision` (`Eval/Error.lean`) field for field
+      MINUS its leading tensor name: the checked layer is positional and retains no source names, and
+      the destination slot is recoverable from the plan the caller already holds. Both conflicting
+      source coordinates are carried, not just the second: naming only the write that failed leaves
+      the first writer — the other half of the conflict — undiscoverable, and the reference's own
+      `writtenBy` map exists solely to report it. `first` is whichever source coordinate row-major
+      enumeration reached first, matching the reference's `cartesian` order. -/
+  | scatterCollision (destCoord firstSource secondSource : List Nat)
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- Wave C capability rejection (proposal §3.1/§3.2): which construct in the initial scan-free `f64`
@@ -106,6 +152,60 @@ inductive CapabilityError
   | dynamicShape         (context : String)  -- backend- or value-dependent shapes
   | recurrenceOrCallback (context : String)
   | noAdvancingAxis      (context : String)  -- `.scan` declaring an empty advancing-axis list
+  /-- A top-level scatter's affine LHS slot whose coefficient row names MORE THAN ONE source axis
+      (`Out[i+j]`), where the single-axis strided forms (`Out[2*i]`, `Out[i+2]`) are admitted.
+      Its own constructor rather than a reuse of `scatterOrAffineLhs`, because "a scatter is not
+      supported at all" and "this one placement form is not supported" are different facts and the
+      fixture distinguishing them has to be able to see which was meant.
+
+      Why the form is rejected rather than compiled: `LHSSlot.outExtent`'s
+      `bias + Σ coeff · size` is the upsample-stride convention, designed for one strided axis. On
+      a two-axis row it computes the sum of the two axes' extents (`i : 3`, `j : 4` ⇒ `7`) where the
+      reachable coordinate set `i + j` spans only `0 … 5`, and with a mixed-sign row it admits
+      negative reachable coordinates that the worker's out-of-range skip silently absorbs. Neither
+      is unsound, but neither is verified by this feature's worked examples or its differential
+      corpus either, so it is refused with a locator instead of shipped unexercised. Unreachable
+      from `tl!{…}` surface syntax (`elabTLLHSSlot` parses only `n*x+m`-shaped single-axis slots);
+      a hand-built `ScheduledProgram` handed to `prepareEvalPlan` is what can express it. -/
+  | multiAxisScatterLhs  (context : String)
+  /-- A top-level scatter's `ScatterOpts` naming a fill or a collision policy the checked layer does
+      not implement: a `reduce` other than `rejectCollisions` (the only policy `checkScatter`
+      admits), or a `fill` that is not the destination algebra's own reduction identity
+      (`ContractionAlgebra.reduceId` — §2.5's coherence rule: fill and collision-reduce are the
+      identity and the operation of one monoid). Both are rejected HERE, at capability tier with a
+      source locator, rather than left to surface from `checkScatter` as `invalidPlan`, which is the
+      compiler-bug channel and would misreport a legitimately out-of-fragment source program as one.
+
+      The live case is a `maxreduce`/`minreduce` scatter: `ScatterOpts.fill` is an `Int` and cannot
+      express the tropical `∓∞` its algebra's identity requires, so no admissible fill exists for
+      one. `agg = .sum` with `fill = 0` is coherent and admitted. A `predicate`/`bool`-declared
+      scatter destination is NOT reachable from this constructor: it is rejected upstream by
+      `predicateScatterDest` (below) at the same tier, before `scatterFillOrFail` is called at all.
+      (Prior claim that a predicate destination with `fill = 0` was "coherent and admitted" was
+      wrong — the reference `evalScatter` (`Eval/Scatter.lean`) selects its algebra from `rhs.agg`
+      only, never seeing `decls`, so a Boolean scatter destination silently diverged from the
+      reference in real sum arithmetic; the fix routes the rejection through the capability tier
+      instead.) -/
+  | scatterOptsNotAdmitted (context : String)
+  /-- A top-level scatter's DESTINATION is `predicate`/`bool`-declared. The reference evaluator
+      `evalScatter` (`Eval/Scatter.lean`) is not dtype-aware: it selects its algebra from `rhs.agg`
+      only (`.sum ⇒ Combine.real`, real sum-product), so a Boolean destination would run real
+      sum-product in the reference while the checked backend's `algebraForDest` selects
+      `admittedAlgebraBool` — a silent divergence with no diagnostic. Rejected here, at capability
+      tier, with a source locator naming the destination — the same way a `maxreduce`/`minreduce`
+      scatter (whose fill cannot denote `∓∞`) is refused, and for the same reason: no reference
+      semantics can match it, so the honest report is "not in the fragment", not a differential
+      failure downstream.
+      
+      Detected on both surface shapes a scatter can present at capability tier: a `Stmt.scatter`
+      (post-`lowerArith`, the surface-compiled case), and a `Stmt.assign` whose LHS
+      `slotsBecomeScatter` (hand-built `ScheduledProgram` bypassing the source pipeline, the same
+      shape `checkScatterNoScan` (`DSL/Pipeline/Structural.lean`) also inspects — one rule, mirrored
+      here so a hand-built schedule reaches the same verdict). S-A supports only real-sum-product
+      and the two tropical semirings (rejected via `scatterOptsNotAdmitted`); a predicate scatter
+      destination is a third algebra with no reference match, and closing it means teaching the
+      reference to be dtype-aware, not admitting it in the checked backend alone. -/
+  | predicateScatterDest (context : String)
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- Why `blockReadNotAvailable` rejected a name: it never resolves to a state, a block-local

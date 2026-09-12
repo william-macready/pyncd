@@ -91,6 +91,9 @@ private def capabilityCategory : CapabilityError → String
   | .dynamicShape _ => "dynamicShape"
   | .recurrenceOrCallback _ => "recurrenceOrCallback"
   | .noAdvancingAxis _ => "noAdvancingAxis"
+  | .multiAxisScatterLhs _ => "multiAxisScatterLhs"
+  | .scatterOptsNotAdmitted _ => "scatterOptsNotAdmitted"
+  | .predicateScatterDest _ => "predicateScatterDest"
 
 private inductive SweepOutcome
   | accepted
@@ -622,7 +625,8 @@ private def scanParityCheck (name : String) (sched : ScheduledProgram)
     | .error f => throw s!"{name}: prepareEvalPlan rejected an admitted scan fixture: \
 {ScanCompileTest.render f.cause}"
   unless prepared.plan.raw.steps.any (fun s => match s with
-      | .scan _ => true | .assign _ | .pointwise _ | .axiswise _ => false) do
+      | .scan _ => true
+      | .assign _ | .scatter _ | .pointwise _ | .axiswise _ => false) do
     throw s!"{name}: the compiled plan contains no scan step — this fixture no longer exercises \
 F4's source scan compiler"
   -- (6b) scratch never becomes a published name. Checked BEFORE the run so a leak is reported as
@@ -1262,7 +1266,8 @@ private def scanParity2 (name : String) (sched : ScheduledProgram)
     | .error f => throw s!"{name}: prepareEvalPlan rejected an admitted scan fixture: \
 {ScanCompileTest.render f.cause}"
   unless prepared.plan.raw.steps.any (fun s => match s with
-      | .scan _ => true | .assign _ | .pointwise _ | .axiswise _ => false) do
+      | .scan _ => true
+      | .assign _ | .scatter _ | .pointwise _ | .axiswise _ => false) do
     throw s!"{name}: the compiled plan contains no scan step"
   let planReport ← match runPreparedDense prepared inputs with
     | .ok r => pure r
@@ -1440,6 +1445,115 @@ run_cmd do
     match checkPredicateProgram entry with
     | .ok () => pure ()
     | .error m => throwError s!"PREDICATE CORPUS (5.4) FAILED:\n{m}"
+
+/-! ### S-A Task 6 — the curated scatter parity corpus
+
+The proof the scatter-affine-LHS-writes slice works end to end: a compact corpus of ACCEPTED scatter
+programs, run through the SAME checked-vs-reference differential (`planAgreesForDecls`, exact
+`envEq`) and observed-value assertion (`approxEq`) as `predicatePrograms`, but exercising
+`PlanStep.scatter` instead of Iverson/masked assignments. Every entry starts from real `tlprog!{…}`
+surface syntax, so it drives the whole source-to-checked-plan path (`compileToScheduled`'s
+`lowerArith` reclassifies an affine or diagonal LHS into `Stmt.scatter`), not a hand-built plan. The
+two legs are the shared, kind-generic `planAgreesForDecls`/`envOf` — no scatter-specific checker
+change was needed for these to pass.
+
+Structurally distinct placement shapes are covered: a rank-1 strided write (SA1), a diagonal
+repeated-axis write carrying no `.affine` slot at all (SA2), a two-dimensional strided write whose
+two extents differ so a swapped placement row would change the answer (SA3), an RHS-only source axis
+that lands in the compute output basis rather than being contracted (SA4), an `.assign` step
+immediately preceding a `.scatter` step (SA5), and three programs whose scatter OUTPUT is consumed
+by a LATER statement — reduced to a scalar (SA6), read through an affine/strided index (SA7), and
+fed into a downstream contraction (SA8).
+
+Kept OUT of `enumPrograms`, and for a reason distinct from `predicatePrograms`': `enumPrograms`
+(`PropertyOracle.Gen`) is a GENERATED bounded enumeration whose current size is pinned at `3832`,
+and three separate hard-coded counts read that number — the
+`total == 3832 && accepted == 3832 && rejCounts.isEmpty` guard in this file, the
+`expectedCount := 3832` guard in `experiments/jax_bridge/EvalPlanAffineCorpus.lean`, and that
+corpus driver's own fatal-on-rejection throw. Folding a scatter statement into the enumeration would
+move its generated size off `3832` and break all three at once. This corpus is therefore a SEPARATE
+list, driven by its own `run_cmd` gate below, exactly as `predicatePrograms` is. -/
+
+/-- The curated scatter parity corpus, kept SEPARATE from `enumPrograms`. Each entry:
+    name, program, inputs, output key, expected value. SA1–SA5 read only the scatter's OWN output;
+    SA6–SA8 consume it in a later statement.
+
+    Kept out of `enumPrograms` because that list's generated size is pinned at `3832` and three
+    hard-coded counts depend on it (this file's `total == 3832` guard, `EvalPlanAffineCorpus.lean`'s
+    `expectedCount := 3832`, and that driver's fatal-on-rejection throw) — adding a scatter statement
+    to the generated enumeration would move the count off `3832` and break all three. Values are
+    ported from the already-measured `ScatterCompileTest` (SA1–SA5) and `GnnScatterTest` (SA6–SA8)
+    fixtures. -/
+def scatterPrograms :
+    List (String × TLProgram × HashMap String DenseTensor × String × DenseTensor) :=
+  [ ("SA1 strided upsample",
+      tlprog!{ Out[2*i] := X[i] },
+      HashMap.ofList [("X", tl54 [3] [1,2,3])], "Out",
+      tl54 [6] [1,0,2,0,3,0])
+  , ("SA2 diagonal write",
+      tlprog!{ Y[i, i] := V[i] },
+      HashMap.ofList [("V", tl54 [3] [7,8,9])], "Y",
+      tl54 [3,3] [7,0,0, 0,8,0, 0,0,9])
+  , ("SA3 2D strided upsample",
+      tlprog!{ Out[2*i, 2*j] := X[i, j] },
+      HashMap.ofList [("X", tl54 [2,3] [1,2,3, 4,5,6])], "Out",
+      tl54 [4,6] [1,0,2,0,3,0, 0,0,0,0,0,0, 4,0,5,0,6,0, 0,0,0,0,0,0])
+  , ("SA4 RHS-only source axis",
+      tlprog!{ Out[2*i] := X[i] · Y[j] },
+      HashMap.ofList [("X", tl54 [3] [1,2,3]), ("Y", tl54 [1] [10])], "Out",
+      tl54 [6] [10,0,20,0,30,0])
+  , ("SA5 assign then scatter",
+      tlprog!{ W[i] := X[i] · X[i]
+               Out[2*i] := W[i] },
+      HashMap.ofList [("X", tl54 [3] [1,2,3])], "Out",
+      tl54 [6] [1,0,4,0,9,0])
+  , ("SA6 scatter output reduced to scalar",
+      tlprog!{ tensor Out(i, j)
+               Out[2*i, 2*j] := X[i, j]
+               total[] := Out[a, b] },
+      HashMap.ofList [("X", tl54 [2,2] [1,2, 3,4])], "total",
+      tl54 [] [10])
+  , ("SA7 affine read of scatter output",
+      tlprog!{ tensor Out(i, j)
+               Out[2*i, 2*j] := X[i, j]
+               Y[a, b] := Wk[p] · Out[a + p, b] },
+      HashMap.ofList [("X", tl54 [2,2] [1,2, 3,4]), ("Wk", tl54 [2] [1,1])], "Y",
+      tl54 [3,4] [1,0,2,0, 3,0,4,0, 3,0,4,0])
+  , ("SA8 diagonal scatter into contraction",
+      tlprog!{ tensor D(i, j)
+               D[i, i] := v[i]
+               Y[i, j] := D[i, k] · M[k, j] },
+      HashMap.ofList [("v", tl54 [2] [2,3]), ("M", tl54 [2,2] [1,1, 1,1])], "Y",
+      tl54 [2,2] [2,2, 3,3]) ]
+
+-- Exact length, pinned: eight structurally-distinct accepted scatter programs. A silently dropped
+-- entry fails here rather than shrinking the corpus unnoticed.
+#guard scatterPrograms.length == 8
+
+/-- One curated scatter case: the checked-vs-reference differential (`planAgreesForDecls`, exact
+    `envEq`) plus a tolerant observed-value assertion (`approxEq`). Identical in shape to
+    `checkPredicateProgram`, reusing the same generic differential legs (`planAgreesForDecls`,
+    `envOf`) with no scatter-specific change. -/
+private def checkScatterProgram
+    (entry : String × TLProgram × HashMap String DenseTensor × String × DenseTensor) :
+    Except String Unit := do
+  let (name, p, inputs, key, expected) := entry
+  match planAgreesForDecls p inputs with
+  | .error e => throw s!"{name}: differential leg failed: {e}"
+  | .ok () => pure ()
+  match envOf p inputs with
+  | .error e => throw s!"{name}: reference eval failed: {e}"
+  | .ok env => match env[key]? with
+    | some t =>
+        unless DenseTensor.approxEq t expected do
+          throw s!"{name}: observed {key}={repr t.data}, expected {repr expected.data}"
+    | none => throw s!"{name}: {key} missing from the reference environment"
+
+run_cmd do
+  for entry in scatterPrograms do
+    match checkScatterProgram entry with
+    | .ok () => pure ()
+    | .error m => throwError s!"SCATTER PARITY CORPUS (S-A Task 6) FAILED:\n{m}"
 
 /-! ### Curated three-way scan predicate/mask cases
 

@@ -18,12 +18,19 @@ constraint one layer up, so both types move here too.
 
 namespace LeanNCD.Eval.Plan
 
-/-- One outer step's checked meaning: a local assignment, a scan, or one of the two
-    nonlinearity operations (Thread 4). Replaces `CheckedEvalPlan.checkedNodes`'s previous
+/-- One outer step's checked meaning: a local assignment, a scatter (S-A), a scan, or one of the
+    two nonlinearity operations (Thread 4). Replaces `CheckedEvalPlan.checkedNodes`'s previous
     element type, `CheckedAssignPlan`, now that outer nodes are no longer uniformly
-    assignments. -/
+    assignments. Constructor order mirrors `PlanStep`'s own.
+
+    `.scatter` carries a `CheckedScatterPlan` and NOT the `CheckedAssignPlan` `checkScatter`'s own
+    compute-half check produced — that is `CheckedScatterPlan`'s own deliberate omission (see its
+    doc comment), and it is what stops `runDensePlan` below from being able to hand a scatter's
+    compute half to `runDenseAssign` and publish the SOURCE-shaped result under the destination's
+    name. -/
 inductive CheckedPlanStepEvidence
   | assign    (c : CheckedAssignPlan)
+  | scatter   (c : CheckedScatterPlan)
   | scan      (c : CheckedScanPlan)
   | pointwise (c : CheckedPointwisePlan)
   | axiswise  (c : CheckedAxiswisePlan)
@@ -35,24 +42,33 @@ inductive CheckedPlanStepEvidence
     EXTERNAL base/step capture (a state capture is not an outer-graph read — it is satisfied
     entirely inside the checked scan, from the scan's own persistent state) and has one destination
     per state; a `.pointwise`/`.axiswise` step (Thread 4) has exactly one source and one
-    destination, its own `sourceSlot`/`destinationSlot` field. These are general-purpose accessors
+    destination, its own `sourceSlot`/`destinationSlot` field; a scatter (S-A) reads and writes
+    exactly what its compute half does, because the placement map is arithmetic on the source
+    iteration coordinate and touches no slot. These are general-purpose accessors
     for any future consumer that needs a step's slots without caring which kind it is (proposal
-    §6.6's own stated purpose); `checkPlan` below does NOT route its own per-`.assign`-step
-    forward-read check through `sourceSlots` — that check needs the original per-term/per-factor
-    locators (`ti`, `fi`) for `invalidForwardRead`, which flattening this array away loses. The
-    `.scan`/`.pointwise`/`.axiswise` forward-read check DOES use `sourceSlots` directly (see
-    `checkPlan`'s own comment below). -/
+    §6.6's own stated purpose); `checkPlan` below does NOT route its own per-`.assign`-step or
+    per-`.scatter`-step forward-read check through `sourceSlots` — that check needs the original
+    per-term/per-factor locators (`ti`, `fi`) for `invalidForwardRead`, which flattening this array
+    away loses. The `.scan`/`.pointwise`/`.axiswise` forward-read check DOES use `sourceSlots`
+    directly (see `checkPlan`'s own comment below). -/
 def PlanStep.sourceSlots : PlanStep → Array TensorSlot
   | .assign a => a.terms.flatMap TermPlan.readSourceSlots
+  -- Every slot a scatter reads is read by its compute half: `outCoeffs`/`outBias` are integer
+  -- arithmetic on the source iteration coordinate, so the placement map touches no store slot.
+  | .scatter s => s.compute.terms.flatMap TermPlan.readSourceSlots
   | .scan s => (s.baseCaptures ++ s.stepCaptures).filterMap (fun c => match c.source with
       | .external slot => some slot | .state _ => none)
   | .pointwise p => #[p.sourceSlot]
   | .axiswise a => #[a.sourceSlot]
 
-/-- One destination per state for a scan; the single destination slot for an assignment or a
-    nonlinearity step. -/
+/-- One destination per state for a scan; the single destination slot for an assignment, a scatter,
+    or a nonlinearity step. -/
 def PlanStep.destinationSlots : PlanStep → Array TensorSlot
   | .assign a => #[a.destinationSlot]
+  -- A scatter writes exactly one tensor, and that tensor's slot is the nested compute plan's own
+  -- `destinationSlot` — A-nested carries no second destination field. Only the SHAPE differs from
+  -- an assignment's (`ScatterPlan.destShape`, not `compute.outputShape`); the slot does not.
+  | .scatter s => #[s.compute.destinationSlot]
   | .scan s => s.states.map (·.destSlot)
   | .pointwise p => #[p.destinationSlot]
   | .axiswise a => #[a.destinationSlot]
@@ -72,15 +88,25 @@ structure CheckedEvalPlan where private mk ::
 /-- `checkPlan`'s error type, generalized from bare `PlanError` now that an outer step can fail
     as a malformed assignment (unchanged `PlanError`, including its existing `nodeError` wrapper),
     a malformed scan (`ScanPlanError`, not representable inside `PlanError` itself — see this
-    plan's Architecture section for why), or a malformed nonlinearity operation (`NonlinPlanError`,
-    Thread 4 — likewise not a `PlanError`, since it carries `checkPointwise`/`checkAxiswise`'s own
+    plan's Architecture section for why), or a malformed nonlinearity operation
+    (`NonlinPlanError`, Thread 4 — likewise not a `PlanError`, since it carries
+    `checkPointwise`/`checkAxiswise`'s own
     geometry-check causes, not a graph-level wiring failure). **`.assign` names the ERROR'S OWN
     SHAPE, not the failing step's kind:** every graph-level `PlanError` this checker can throw —
     slot-range, input-ordering, forward-read, overwrite, duplicate-destination, missing-production,
     and the per-node `checkAssign` failures the `nodeError` wrapper already carried — is a
-    `PlanError` regardless of whether the OFFENDING step is itself a `.assign`, a `.scan`, a
-    `.pointwise`, or an `.axiswise` (any of these can just as well overwrite an input slot or
-    collide on a destination via the shared graph-level checks). `.scan`/`.nonlin`, by contrast,
+    `PlanError` regardless of whether the OFFENDING step is itself a `.assign`, a `.scatter`, a
+    `.scan`, a `.pointwise`, or an `.axiswise` (any of these can just as well overwrite an input
+    slot or collide on a destination via the shared graph-level checks). **A `checkScatter` failure
+    is `.assign (.nodeError ni e)` too, and for exactly that reason, not by oversight:**
+    `checkScatter` returns a plain `PlanError` (its scatter-specific causes —
+    `scatterFillNotIdentity`, `scatterReduceNotAdmitted`, `scatterPlacementRankMismatch`,
+    `scatterPlacementWidthMismatch`, `scatterDestExtentUnknown`, `scatterDestExtentMismatch` — are
+    all `PlanError`
+    constructors), so the error's own shape is the `PlanError` this constructor names, and a
+    scatter's two graph-level obligations (`topLevelContextNotEmpty`, `invalidForwardRead`) already
+    report through here. A dedicated per-kind `scatter` constructor would tag by STEP KIND, which is
+    `.scan`/`.nonlin`'s rule and not this one. `.scan`/`.nonlin`, by contrast,
     ARE step-kind-specific: a `checkScanPlan` failure always becomes `.scan ni e` and a
     `checkPointwise`/`checkAxiswise` failure always becomes `.nonlin ni e` — for these two, the
     failing step's own local checker is genuinely the only source, so the constructor doubles as
@@ -101,9 +127,17 @@ inductive PlanStepError
     slots to be currently unavailable (so none can already be produced) before checking, then marks
     all of them available together afterward; a `.pointwise`/`.axiswise` node (Thread 4) requires no
     top-level context (like an ordinary node, but skips `checkAssign`'s specific check since it has
-    no `contextShape` field at all) and uses `checkPointwise`/`checkAxiswise` respectively. Every
-    `PlanError`-shaped failure from the loop below is wrapped as `.assign (...)`; a `checkScanPlan`
-    failure becomes `.scan ni e` directly, and a `checkPointwise`/`checkAxiswise` failure becomes
+    no `contextShape` field at all) and uses `checkPointwise`/`checkAxiswise` respectively. A
+    `.scatter` node is checked for the same empty top-level context and the same forward reads as an
+    ordinary node (both obligations live on its compute half), then validated by `checkScatter`
+    (`Check.lean`), whose `CheckedScatterPlan` becomes `.scatter` evidence. That evidence is NOT the
+    compute half's `CheckedAssignPlan`, which is what keeps `runDensePlan` below from publishing a
+    source-shaped result under the destination's name. Every
+    `PlanError`-shaped failure from the loop below is wrapped as `.assign (...)` — INCLUDING
+    `checkScatter`'s, which is a plain `PlanError` like `checkAssign`'s (see `PlanStepError`'s own
+    doc comment for why that constructor is about the error's shape, not the step's kind); a
+    `checkScanPlan` failure becomes `.scan ni e` directly, and a
+    `checkPointwise`/`checkAxiswise` failure becomes
     `.nonlin ni e` directly (no double-wrapping through `nodeError` for either, since
     `ScanPlanError`/`NonlinPlanError` already carry their own internal locators). The forward-read
     check for a `.assign` step is a direct per-term/per-factor loop (the same shape the original
@@ -126,17 +160,32 @@ def checkPlan (raw : RawEvalPlan) : Except PlanStepError CheckedEvalPlan := do
       { contextCheck := match step with
           | .assign a =>
               unless a.contextShape == #[] do throw (.assign (.topLevelContextNotEmpty ni))
+          -- A scatter carries a `contextShape` of its own (its compute half's) and S-A admits a
+          -- scatter only as a TOP-LEVEL step, evaluated at no runtime context coordinate — so the
+          -- obligation is the same one `.assign` discharges, on the nested plan's field. The
+          -- `pure ()` exemption below is NOT transferable: `.scan` owns its blocks' context
+          -- internally, and the nonlinearity steps have no `contextShape` field at all.
+          | .scatter s =>
+              unless s.compute.contextShape == #[] do throw (.assign (.topLevelContextNotEmpty ni))
           | .scan _ | .pointwise _ | .axiswise _ => pure ()
       , destinationSlots := step.destinationSlots
-      , sourceCheck := fun available => match step with
-          | .assign a => do
-              for h2 : ti in [0 : a.terms.size] do
-                let t := a.terms[ti]
-                for (fi, f) in t.readFactorsIndexed do
-                  match available[f.sourceSlot]? with
-                  | none => throw (.assign (.nodeError ni (.slotOutOfRange f.sourceSlot n)))
-                  | some true => pure ()
-                  | some false => throw (.assign (.invalidForwardRead ni ti fi f.sourceSlot))
+      , sourceCheck := fun available =>
+          -- A scatter's reads are exactly its compute half's read factors, carrying the same
+          -- `ti`/`fi` locators `invalidForwardRead` reports — so it takes this term/factor
+          -- traversal, NOT the flattened `sourceSlots` path below (which is honest only for the
+          -- three step kinds that have no term/factor structure to lose). One traversal, two
+          -- callers, rather than a second copy that could drift.
+          let readCheck (terms : Array TermPlan) : Except PlanStepError Unit := do
+            for h2 : ti in [0 : terms.size] do
+              let t := terms[ti]
+              for (fi, f) in t.readFactorsIndexed do
+                match available[f.sourceSlot]? with
+                | none => throw (.assign (.nodeError ni (.slotOutOfRange f.sourceSlot n)))
+                | some true => pure ()
+                | some false => throw (.assign (.invalidForwardRead ni ti fi f.sourceSlot))
+          match step with
+          | .assign a => readCheck a.terms
+          | .scatter s => readCheck s.compute.terms
           | .scan _ | .pointwise _ | .axiswise _ => do
               for src in step.sourceSlots do
                 match available[src]? with
@@ -148,6 +197,16 @@ def checkPlan (raw : RawEvalPlan) : Except PlanStepError CheckedEvalPlan := do
               match checkAssign raw.tensorSigs a with
               | .error e => throw (.assign (.nodeError ni e))
               | .ok c => pure (.assign c)
+          -- `checkScatter` runs the compute half through `checkAssign` itself, under
+          -- `destSigShape? := some s.destShape` — which is the whole reason this arm cannot be
+          -- `checkAssign raw.tensorSigs s.compute`: the registered destination signature carries the
+          -- DESTINATION extent while `s.compute.outputShape` is the SOURCE iteration domain, and the
+          -- resulting `.assign` evidence would make `runDensePlan` publish the source-shaped compute
+          -- result under the destination slot instead of the scattered tensor.
+          | .scatter s =>
+              match checkScatter raw.tensorSigs s with
+              | .error e => throw (.assign (.nodeError ni e))
+              | .ok c => pure (.scatter c)
           | .scan s =>
               match checkScanPlan raw.tensorSigs s with
               | .error e => throw (.scan ni e)
@@ -168,7 +227,11 @@ def checkPlan (raw : RawEvalPlan) : Except PlanStepError CheckedEvalPlan := do
     `Dense.lean`): a `.assign` node uses `runDenseAssign` exactly as before; a `.scan` node uses
     `runDenseScan` and writes every one of its state destinations into the store; a
     `.pointwise`/`.axiswise` node (Thread 4) uses `runDensePointwise`/`runDenseAxiswise`
-    respectively, reading its one source slot and writing its one destination slot. -/
+    respectively, reading its one source slot and writing its one destination slot; a `.scatter`
+    node (S-A) uses `runDenseScatter` and writes its one destination slot — which is the nested
+    compute plan's own `destinationSlot`, exactly as `PlanStep.destinationSlots` derives it, since
+    A-nesting carries no second destination field. Only the SHAPE of what lands there differs from
+    an assignment's (`ScatterPlan.destShape`, which `runDenseScatter` returns). -/
 def runDensePlan (c : CheckedEvalPlan) (inputs : Array DenseTensor) :
     Except PositionalInputError (Array DenseTensor) := do
   let raw := c.raw
@@ -188,6 +251,7 @@ def runDensePlan (c : CheckedEvalPlan) (inputs : Array DenseTensor) :
   for node in c.checkedNodes do
     match node with
     | .assign c => store := store.set! c.plan.destinationSlot (← runDenseAssign c store)
+    | .scatter c => store := store.set! c.plan.compute.destinationSlot (← runDenseScatter c store)
     | .scan c => store ← runDenseScan raw.tensorSigs c store
     | .pointwise c =>
         store := store.set! c.raw.destinationSlot (← runDensePointwise c store)
