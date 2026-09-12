@@ -93,6 +93,7 @@ private def capabilityCategory : CapabilityError → String
   | .noAdvancingAxis _ => "noAdvancingAxis"
   | .multiAxisScatterLhs _ => "multiAxisScatterLhs"
   | .scatterOptsNotAdmitted _ => "scatterOptsNotAdmitted"
+  | .predicateScatterDest _ => "predicateScatterDest"
 
 private inductive SweepOutcome
   | accepted

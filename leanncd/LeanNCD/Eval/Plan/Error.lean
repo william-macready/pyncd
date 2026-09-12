@@ -178,9 +178,34 @@ inductive CapabilityError
 
       The live case is a `maxreduce`/`minreduce` scatter: `ScatterOpts.fill` is an `Int` and cannot
       express the tropical `∓∞` its algebra's identity requires, so no admissible fill exists for
-      one. `agg = .sum` with `fill = 0`, and a predicate destination with `fill = 0` (whose Boolean
-      identity is `false`), are both coherent and admitted. -/
+      one. `agg = .sum` with `fill = 0` is coherent and admitted. A `predicate`/`bool`-declared
+      scatter destination is NOT reachable from this constructor: it is rejected upstream by
+      `predicateScatterDest` (below) at the same tier, before `scatterFillOrFail` is called at all.
+      (Prior claim that a predicate destination with `fill = 0` was "coherent and admitted" was
+      wrong — the reference `evalScatter` (`Eval/Scatter.lean`) selects its algebra from `rhs.agg`
+      only, never seeing `decls`, so a Boolean scatter destination silently diverged from the
+      reference in real sum arithmetic; the fix routes the rejection through the capability tier
+      instead.) -/
   | scatterOptsNotAdmitted (context : String)
+  /-- A top-level scatter's DESTINATION is `predicate`/`bool`-declared. The reference evaluator
+      `evalScatter` (`Eval/Scatter.lean`) is not dtype-aware: it selects its algebra from `rhs.agg`
+      only (`.sum ⇒ Combine.real`, real sum-product), so a Boolean destination would run real
+      sum-product in the reference while the checked backend's `algebraForDest` selects
+      `admittedAlgebraBool` — a silent divergence with no diagnostic. Rejected here, at capability
+      tier, with a source locator naming the destination — the same way a `maxreduce`/`minreduce`
+      scatter (whose fill cannot denote `∓∞`) is refused, and for the same reason: no reference
+      semantics can match it, so the honest report is "not in the fragment", not a differential
+      failure downstream.
+      
+      Detected on both surface shapes a scatter can present at capability tier: a `Stmt.scatter`
+      (post-`lowerArith`, the surface-compiled case), and a `Stmt.assign` whose LHS
+      `slotsBecomeScatter` (hand-built `ScheduledProgram` bypassing the source pipeline, the same
+      shape `checkScatterNoScan` (`DSL/Pipeline/Structural.lean`) also inspects — one rule, mirrored
+      here so a hand-built schedule reaches the same verdict). S-A supports only real-sum-product
+      and the two tropical semirings (rejected via `scatterOptsNotAdmitted`); a predicate scatter
+      destination is a third algebra with no reference match, and closing it means teaching the
+      reference to be dtype-aware, not admitting it in the checked backend alone. -/
+  | predicateScatterDest (context : String)
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- Why `blockReadNotAvailable` rejected a name: it never resolves to a state, a block-local

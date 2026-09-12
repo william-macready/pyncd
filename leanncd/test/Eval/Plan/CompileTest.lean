@@ -280,6 +280,78 @@ def acceptedSched : ScheduledProgram :=
     { acceptedSched with stmts := [.plain (.recurMorphism "R" ⟨"l", 0, .nat⟩ default)] })
   == some (.recurrenceOrCallback "R")
 
+-- predicateScatterDest: a top-level `Stmt.scatter` whose destination is `predicate`-declared. This
+-- is the fixture pinning the Critical review finding: `Out[2*i] := A[i] + B[i]` for
+-- `predicate Out(i)` used to pass `capabilityPreflight`/`prepareEvalPlan`/`runPreparedDense` and
+-- silently return `[1, 0, 1, 0]` where the reference `evalScatter` (`Eval/Scatter.lean`) returns
+-- `[2, 0, 2, 0]` — the checked emitter selected `admittedAlgebraBool` (Boolean min/max) for the
+-- destination while `evalScatter` selected `Combine.real` from `rhs.agg` alone (never seeing
+-- `decls`). Rejected HERE, at capability tier, with a locator naming the destination — the same
+-- tier that already refuses a tropical fill for the same reason (no reference semantics can match
+-- it). Detected on the surface-compiled shape (`Stmt.scatter` post-`lowerArith`).
+#guard errOf (capabilityPreflight
+    { acceptedSched with
+        decls := [.predicate "Out" [⟨"i", 0, .nat⟩]]
+      , stmts :=
+        [.plain (.scatter "Out" [.affine (.scale 2 ⟨"i", 0, .nat⟩)]
+          { body := { terms := [{ factors := [.read "A" [.axis ⟨"i", 0, .nat⟩]] }] }
+          , nonlin := .identity } {})] })
+  == some (.predicateScatterDest "Out: predicate scatter destination")
+
+-- Same rejection on the diagonal-write shape (`Out[i, i]` for `predicate Out(i, j)`): a `.scatter`
+-- carrying repeated free-axis slots (no `.affine` slot), the shape `slotsBecomeScatter` also
+-- recognises through its duplicate-axis clause, and the second reproduction from the review.
+#guard errOf (capabilityPreflight
+    { acceptedSched with
+        decls := [.predicate "Out" [⟨"i", 0, .nat⟩, ⟨"j", 1, .nat⟩]]
+      , stmts :=
+        [.plain (.scatter "Out" [.free ⟨"i", 0, .nat⟩, .free ⟨"i", 0, .nat⟩]
+          { body := { terms := [{ factors := [.read "A" [.axis ⟨"i", 0, .nat⟩]] }] }
+          , nonlin := .identity } {})] })
+  == some (.predicateScatterDest "Out: predicate scatter destination")
+
+-- Same rejection on the hand-built-schedule shape: an `.assign` whose LHS `slotsBecomeScatter`
+-- (`lowerArith` would reclassify it to `Stmt.scatter` on the source path, but a hand-built
+-- `ScheduledProgram` reaching `prepareEvalPlan` skipped that phase — mirrors `checkScatterNoScan`'s
+-- own dual-shape inspection). Uses the DIAGONAL spelling (`Out[i, i]`, repeated `.free`) rather
+-- than an affine-LHS `.assign`, because `.assign` with `.affine` is already rejected upstream by
+-- `checkLHSSlot`'s own `scatterOrAffineLhs` arm before this post-pass sees it (see the fixture at
+-- `Y: affine LHS slot` above). The diagonal shape passes `checkLHSSlot` (`.free` is admitted
+-- everywhere) and reaches the post-pass, which is where the predicate-destination check discovers
+-- it — the same discrimination `slotsBecomeScatter`'s two clauses draw at Ast.lean's own definition.
+#guard errOf (capabilityPreflight
+    { acceptedSched with
+        decls := [.predicate "Out" [⟨"i", 0, .nat⟩, ⟨"j", 1, .nat⟩]]
+      , stmts :=
+        [.plain (.assign "Out" [.free ⟨"i", 0, .nat⟩, .free ⟨"i", 0, .nat⟩]
+          { body := { terms := [{ factors := [.read "A" [.axis ⟨"i", 0, .nat⟩]] }] }
+          , nonlin := .identity })] })
+  == some (.predicateScatterDest "Out: predicate scatter destination")
+
+-- CONTROL: a PLAIN predicate assign (non-scatter LHS) stays ADMITTED — the rejection above targets
+-- the scatter-shaped LHS specifically, not every predicate output. Same source program the review's
+-- CONTROL reproduction ran (`predicate Out(i); Out[i] := A[i] + B[i]`), where the checked backend
+-- and the reference agree on `[1, 1]`, and this fixture is the guard that keeps it accepted.
+#guard isOk (capabilityPreflight
+    { acceptedSched with
+        decls := [.predicate "Out" [⟨"i", 0, .nat⟩]]
+      , stmts :=
+        [.plain (.assign "Out" [.free ⟨"i", 0, .nat⟩]
+          { body := { terms := [{ factors := [.read "A" [.axis ⟨"i", 0, .nat⟩]] }] }
+          , nonlin := .identity })] })
+
+-- A scatter destination that is NOT `predicate`-declared (an ordinary tensor, or undeclared, both
+-- yielding `f64` under `dtypeOfDecl`) stays admitted — the new rejection targets the declared-bool
+-- destination specifically, not every scatter. Pins the discrimination the classifier turns on.
+#guard isOk (capabilityPreflight
+    { acceptedSched with
+        decls := [.tensor "Out" [⟨"i", 0, .nat⟩]]
+      , stmts :=
+        [.plain (.scatter "Out" [.affine (.scale 2 ⟨"i", 0, .nat⟩)]
+          { body := { terms := [{ factors := [.read "A" [.axis ⟨"i", 0, .nat⟩]] }] }
+          , nonlin := .identity } {})] })
+
+
 -- unsupportedDtype: structurally unreachable via `capabilityPreflight` — `Decl` (`DSL/Ast.lean`)
 -- carries no dtype field on any constructor (`.tensor`/`.linear`/`.predicate` are name+axes only;
 -- dtype is an `InputSignature`/backend concept a LATER C4 step resolves, not a source declaration),
