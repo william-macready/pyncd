@@ -763,6 +763,12 @@ def nextL : LHSSlot := .iterNext axL
 -- plus `ScanTest.lean` and the `DifferentialTest.lean` scan-Iverson parity fixtures); the
 -- marker-consistency and masked-axiswise negatives — which now surface at the
 -- `resolveNonlinAxis` tier, not preflight — are Task 4's Task 2.
+-- The two scatter-shaped rejections on each leg below are DELIBERATELY unchanged by S-A, which
+-- admits a scatter only as a TOP-LEVEL statement (`CompileTest.lean`). A strided write inside a
+-- scan's base/recurrence is S-B: `BlockStep` has no scatter case at all, so there is nothing to
+-- compile it to, and `checkScatterNoScan` (`DSL/Pipeline/Structural.lean`) already refuses a
+-- scatter-shaped LHS carrying any `iterAt`/`iterNext` slot before `finalizeScans` could group it
+-- into a scan node — so these four guard a shape only a hand-built `ScheduledProgram` can present.
 #guard rej [badAffineLhs "S"] [okRecur] == some (.capability (.scatterOrAffineLhs "S: affine LHS slot"))
 #guard rej [badAgg "S" pinL .max] [okRecur] == none   -- max agg now admitted
 #guard rej [badAgg "S" pinL .min] [okRecur] == none   -- min agg now admitted
