@@ -310,15 +310,21 @@ def acceptedSched : ScheduledProgram :=
           , nonlin := .identity } {})] })
   == some (.predicateScatterDest "Out: predicate scatter destination")
 
--- Same rejection on the hand-built-schedule shape: an `.assign` whose LHS `slotsBecomeScatter`
--- (`lowerArith` would reclassify it to `Stmt.scatter` on the source path, but a hand-built
--- `ScheduledProgram` reaching `prepareEvalPlan` skipped that phase — mirrors `checkScatterNoScan`'s
--- own dual-shape inspection). Uses the DIAGONAL spelling (`Out[i, i]`, repeated `.free`) rather
--- than an affine-LHS `.assign`, because `.assign` with `.affine` is already rejected upstream by
--- `checkLHSSlot`'s own `scatterOrAffineLhs` arm before this post-pass sees it (see the fixture at
--- `Y: affine LHS slot` above). The diagonal shape passes `checkLHSSlot` (`.free` is admitted
--- everywhere) and reaches the post-pass, which is where the predicate-destination check discovers
--- it — the same discrimination `slotsBecomeScatter`'s two clauses draw at Ast.lean's own definition.
+-- unloweredScatterAssign: a scatter-shaped `.assign` (LHS `slotsBecomeScatter`) that reached
+-- preflight WITHOUT being lowered to `Stmt.scatter`. `lowerArith` reclassifies every such assign on
+-- the source path, so only a hand-built `ScheduledProgram` reaching `prepareEvalPlan` presents this
+-- shape. It is rejected regardless of the destination's dtype, because an unlowered scatter-shaped
+-- assign has no agreed semantics — the reference reads `Out[i, i]` as a broadcast (`[[1,2],[1,2]]`)
+-- while the checked plain-assign path reads it differently (`[[1,2],[2,0]]`), and neither is the
+-- intended diagonal (`[[1,0],[0,2]]`) the properly-lowered `.scatter` produces. Uses the DIAGONAL
+-- spelling (`Out[i, i]`, repeated `.free`) rather than an affine-LHS `.assign`, because `.assign`
+-- with `.affine` is already rejected upstream by `checkLHSSlot`'s own `scatterOrAffineLhs` arm
+-- before this post-pass sees it (see the fixture at `Y: affine LHS slot` above). The diagonal shape
+-- passes `checkLHSSlot` (`.free` is admitted everywhere) and reaches the post-pass.
+--
+-- With a PREDICATE-declared destination: still `unloweredScatterAssign` (the structural
+-- unlowered-ness is the defect, not the destination algebra — a source predicate diagonal is
+-- lowered to `.scatter` and would be caught by `predicateScatterDest` instead).
 #guard errOf (capabilityPreflight
     { acceptedSched with
         decls := [.predicate "Out" [⟨"i", 0, .nat⟩, ⟨"j", 1, .nat⟩]]
@@ -326,7 +332,19 @@ def acceptedSched : ScheduledProgram :=
         [.plain (.assign "Out" [.free ⟨"i", 0, .nat⟩, .free ⟨"i", 0, .nat⟩]
           { body := { terms := [{ factors := [.read "A" [.axis ⟨"i", 0, .nat⟩]] }] }
           , nonlin := .identity })] })
-  == some (.predicateScatterDest "Out: predicate scatter destination")
+  == some (.unloweredScatterAssign "Out: scatter-shaped LHS reached as an unlowered assign")
+
+-- With an ordinary `f64`/tensor destination: SAME rejection. This is the review-hardening case — an
+-- unlowered scatter-shaped `.assign` with a non-predicate destination silently diverged before
+-- (checked `[1,2,2,0]` vs reference `[1,2,1,2]`); now it is refused at capability tier.
+#guard errOf (capabilityPreflight
+    { acceptedSched with
+        decls := [.tensor "Out" [⟨"i", 0, .nat⟩, ⟨"j", 1, .nat⟩]]
+      , stmts :=
+        [.plain (.assign "Out" [.free ⟨"i", 0, .nat⟩, .free ⟨"i", 0, .nat⟩]
+          { body := { terms := [{ factors := [.read "A" [.axis ⟨"i", 0, .nat⟩]] }] }
+          , nonlin := .identity })] })
+  == some (.unloweredScatterAssign "Out: scatter-shaped LHS reached as an unlowered assign")
 
 -- CONTROL: a PLAIN predicate assign (non-scatter LHS) stays ADMITTED — the rejection above targets
 -- the scatter-shaped LHS specifically, not every predicate output. Same source program the review's

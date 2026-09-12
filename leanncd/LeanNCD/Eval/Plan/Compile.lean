@@ -303,28 +303,38 @@ def checkScanStmt : ScanStmt → Except CapabilityError Unit
     failure wins. `unsupportedDtype`/`dynamicShape` are never thrown below — see `CapabilityError`'s
     doc comment for why they are structurally unreachable from this entry point specifically.
 
-    After the per-`ScanStmt` checks, one further pass rejects a top-level scatter whose
-    DESTINATION is `predicate`/`bool`-declared (`predicateScatterDest`). This lookup uses `sched.decls`
-    directly rather than `sched.env` (a cached pipeline product not consulted at Step 0 either), and
-    matches on `.predicate` — the same classification `dtypeOfDecl` (`Signature.lean`) applies to
-    select a destination's dtype at Step D. Both surface shapes are inspected: an already-`.scatter`
-    statement (post-`lowerArith`, the surface path) and an `.assign` whose LHS
-    `slotsBecomeScatter` (a hand-built `ScheduledProgram` that bypassed `lowerArith`, the same shape
-    `checkScatterNoScan` inspects for the scan-block rule). Placed AFTER the per-statement
-    sub-construct checks so a program violating both (e.g. `predicate Out(i)` with `Out[i+j]`) is
-    reported by the FORM error (`multiAxisScatterLhs`) rather than by the DEST error, preserving
-    the sub-construct-first precedence the rest of this file's fixtures rely on. See the constructor
-    docstring on `CapabilityError.predicateScatterDest` for why this is a rejection and not an
-    admission. -/
+    After the per-`ScanStmt` checks, one further pass over the statements rejects two scatter-shaped
+    forms that would otherwise silently diverge from the reference evaluator:
+
+    * a well-formed `Stmt.scatter` whose DESTINATION is `predicate`/`bool`-declared
+      (`predicateScatterDest`) — the reference `evalScatter` is not dtype-aware, so a Boolean
+      destination runs real sum-product there while the checked backend runs Boolean min/max. A
+      `.tensor`/`f64` scatter is fine and passes. The destination-declaration lookup scans
+      `sched.decls` directly (not the cached `sched.env`), matching `.predicate` — the same
+      classification `dtypeOfDecl` (`Signature.lean`) applies at Step D.
+    * any `Stmt.assign` whose LHS `slotsBecomeScatter` (`unloweredScatterAssign`), REGARDLESS of
+      dtype — such an assign is a scatter-shaped write that was never lowered to `Stmt.scatter`.
+      `lowerArith` reclassifies every such assign on the source path, so this fires only on a
+      hand-built `ScheduledProgram`; an unlowered scatter-shaped assign has no agreed semantics
+      between the two backends, so it is refused rather than run.
+
+    Placed AFTER the per-statement sub-construct checks so a program violating both (e.g.
+    `predicate Out(i)` with `Out[i+j]`) is reported by the FORM error (`multiAxisScatterLhs`) rather
+    than by the DEST error, preserving the sub-construct-first precedence the rest of this file's
+    fixtures rely on. See the constructor docstrings on `CapabilityError.predicateScatterDest` and
+    `CapabilityError.unloweredScatterAssign` for why each is a rejection and not an admission. -/
 def capabilityPreflight (sched : ScheduledProgram) : Except CapabilityError Unit := do
   for d in sched.decls do checkDecl d
   for s in sched.stmts do checkScanStmt s
-  -- Post-pass: a predicate/bool scatter destination is a THIRD algebra `evalScatter`
-  -- (`Eval/Scatter.lean`) can't compute — it picks its algebra from `rhs.agg` alone and never sees
-  -- `decls` — so accepting one produces a silent divergence between the checked backend and the
-  -- reference. Reject at the same tier that already refuses tropical fills, with a locator naming
-  -- the destination. Uses a simple linear scan over `sched.decls` rather than building a HashMap:
-  -- `.predicate` declarations are few, and this preflight has no other reason to construct one.
+  -- Post-pass over the statements: two scatter-shaped forms silently diverge from the reference and
+  -- are refused here (see the two constructor docstrings). A predicate/bool scatter DESTINATION is a
+  -- third algebra `evalScatter` (`Eval/Scatter.lean`) can't compute — it picks its algebra from
+  -- `rhs.agg` alone and never sees `decls` — so it is rejected when the destination is
+  -- `.predicate`-declared (a simple linear scan over `sched.decls`, which carries few predicates).
+  -- A scatter-shaped `.assign` (LHS `slotsBecomeScatter`) is an UNLOWERED scatter — `lowerArith`
+  -- turns every such assign into `Stmt.scatter` on the source path, so this fires only on a
+  -- hand-built schedule — and is refused regardless of dtype, since neither backend agrees on an
+  -- unlowered scatter-shaped assign.
   let isPredicateName (nm : String) : Bool :=
     sched.decls.any (fun d => match d with
       | .predicate n _ => n == nm
@@ -335,8 +345,8 @@ def capabilityPreflight (sched : ScheduledProgram) : Except CapabilityError Unit
         if isPredicateName nm then
           throw (.predicateScatterDest s!"{nm}: predicate scatter destination")
     | .plain (.assign nm slots _) =>
-        if slotsBecomeScatter slots && isPredicateName nm then
-          throw (.predicateScatterDest s!"{nm}: predicate scatter destination")
+        if slotsBecomeScatter slots then
+          throw (.unloweredScatterAssign s!"{nm}: scatter-shaped LHS reached as an unlowered assign")
     | _ => pure ()
 
 open Std

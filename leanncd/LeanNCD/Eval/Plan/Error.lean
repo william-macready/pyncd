@@ -197,15 +197,32 @@ inductive CapabilityError
       semantics can match it, so the honest report is "not in the fragment", not a differential
       failure downstream.
       
-      Detected on both surface shapes a scatter can present at capability tier: a `Stmt.scatter`
-      (post-`lowerArith`, the surface-compiled case), and a `Stmt.assign` whose LHS
-      `slotsBecomeScatter` (hand-built `ScheduledProgram` bypassing the source pipeline, the same
-      shape `checkScatterNoScan` (`DSL/Pipeline/Structural.lean`) also inspects — one rule, mirrored
-      here so a hand-built schedule reaches the same verdict). S-A supports only real-sum-product
-      and the two tropical semirings (rejected via `scatterOptsNotAdmitted`); a predicate scatter
-      destination is a third algebra with no reference match, and closing it means teaching the
-      reference to be dtype-aware, not admitting it in the checked backend alone. -/
+      Detected on the `Stmt.scatter` shape a source predicate scatter presents at capability tier
+      (post-`lowerArith`, the surface-compiled case). The OTHER shape a scatter-shaped write can take
+      at this tier — a `Stmt.assign` whose LHS `slotsBecomeScatter`, reachable only from a hand-built
+      `ScheduledProgram` that bypassed `lowerArith` — is rejected one step earlier by
+      `unloweredScatterAssign` (below) regardless of destination dtype, since an unlowered
+      scatter-shaped assign is malformed for a reason that does not depend on the destination's
+      declaration. S-A supports only real-sum-product and the two tropical semirings (rejected via
+      `scatterOptsNotAdmitted`); a predicate scatter destination is a third algebra with no reference
+      match, and closing it means teaching the reference to be dtype-aware, not admitting it in the
+      checked backend alone. -/
   | predicateScatterDest (context : String)
+  /-- A scatter-shaped LHS (`slotsBecomeScatter` — an affine `Out[2*i]` or diagonal `Out[i, i]`
+      write) reached capability preflight as a `Stmt.assign` node rather than a `Stmt.scatter`. The
+      source pipeline's `lowerArith` (`DSL/Pipeline/Structural.lean`) UNCONDITIONALLY reclassifies
+      every such `.assign` into `Stmt.scatter` before scheduling, so no `tl!{…}` program can produce
+      this shape; only a hand-built `ScheduledProgram` handed straight to `prepareEvalPlan` can. It is
+      rejected — independent of the destination's dtype — because an unlowered scatter-shaped assign
+      has no agreed semantics: the reference reads it as a broadcast while the checked plain-assign
+      path reads its repeated/affine axis differently, so the two backends silently diverge (e.g.
+      `Out[i, i] := A[i]` with `A = [1, 2]` gives the reference `[[1,2],[1,2]]` and the checked
+      backend `[[1,2],[2,0]]`, and NEITHER is the intended diagonal `[[1,0],[0,2]]` the
+      properly-lowered `.scatter` produces). The canonical encoding of a diagonal/affine write is
+      `Stmt.scatter`; this constructor names an assign node that should have been one. Distinct from
+      `predicateScatterDest`, which rejects a WELL-FORMED `.scatter` on the grounds of its destination
+      algebra alone. -/
+  | unloweredScatterAssign (context : String)
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- Why `blockReadNotAvailable` rejected a name: it never resolves to a state, a block-local
