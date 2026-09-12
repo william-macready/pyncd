@@ -1,16 +1,20 @@
 # Scatter and affine LHS writes — slice decomposition and verified design inputs
 
-**Status:** planning artifact, authored 2026-09-09 against `main` = `79fa71f`, tree clean, default
-`lake build` green at **8660 jobs** and `lake build JaxExperiment` green at **8513 jobs**.
+**Status:** planning artifact, authored 2026-09-09 against `main` = `79fa71f`, then updated
+2026-09-12 after S-A landed and S-B planning completed. The original baseline was default
+`lake build` green at **8660 jobs** and `lake build JaxExperiment` green at **8513 jobs**; the
+post-S-A baseline used for S-B planning is **8663 / 8514**.
 
 **This is the implementation plan for S-A (top-level scatter).** It is also the measured
 decomposition of what `papers/post_audit_roadmap.md` Section B calls "Slice 2": Section B assumed a
 single slice, and measurement says two, nearly disjoint. **§1** is the evidence for the split;
 **§2** is S-A — the decided representation, the measured 18-site inventory, and the seven-task
-breakdown in **§2.7**; **§3** is S-B's already-verified design, parked; **§4** lists the
-reconnaissance reports behind all of it.
+breakdown in **§2.7**; **§3** records S-B's finalized design and the later measurements that
+supersede its parked sketch; **§4** lists the reconnaissance reports behind all of it. The
+executable S-B task plan is
+`leanncd/docs/superpowers/plans/2026-09-12-lhs-scatter-in-scans.md`.
 
-Everything asserted here was measured against the tree, not reasoned about. **§0's three
+Everything asserted here was measured against the tree, not reasoned about. **§0's four
 corrections are load-bearing and must not be pruned**: each falsifies a claim in a document that
 still exists and is still read (the compile-error list, the audit). Corrections that only narrated
 this document's own drafting have been removed; the ⚠️ blocks that remain each prevent a specific
@@ -18,7 +22,7 @@ wrong turn.
 
 ---
 
-## 0. The three corrections to this document's own inputs
+## 0. Four corrections to this document's own inputs
 
 Each would have changed what got built.
 
@@ -50,7 +54,7 @@ Each would have changed what got built.
 > write** (`Out[i-1]` with 10,20,30,40 into a 4-cell state → `#[20,30,40,0]`), no panic, no
 > diagnostic.
 >
-> §3.1's branch therefore adds `c > 0 && bias ≥ 0`. It closes all 200 and costs nothing a surface
+> §3.2's branch therefore adds `c > 0 && bias ≥ 0`. It closes all 200 and costs nothing a surface
 > program can express (the elaborator builds coefficients through `Int.ofNat`, audit B1-F9). It is
 > also how audit §B2.6 Tier-1 item 10 gets satisfied at the classifier rather than downstream.
 
@@ -63,6 +67,28 @@ Each would have changed what got built.
 > `extentA, extentB ∈ 0..7` (~102,000 combinations) that the rule **never** claims disjoint when the
 > images intersect [snippet, `collide.lean`]. Of 300 different-scale pairs sampled only 24 (8%) are
 > genuinely disjoint, so restricting to equal scales gives up very little.
+
+> **Correction 4 — canonical even/odd interleaving requires a stride-aligned global extent.**
+>
+> The parked rule `scale*n + offset` gives different inferred state extents for the two halves of
+> the canonical example: `2*j` over `j : 3` gives 6, while `2*j+1` gives 7. The scan checker rejects
+> those writes as inconsistent before collision logic or execution can observe that their
+> coordinate images interleave.
+>
+> S-B therefore changes the shared `LHSSlot.outExtent` rule for exactly one normalized positive
+> affine axis with nonnegative bias and nonzero source extent:
+>
+> ```
+> alignedExtent(c, b, n) = c*n + floor(b/c)*c
+>                        = c*n + b - (b mod c)
+> ```
+>
+> Thus `2*j` and `2*j+1` both infer 6, while `2*j+3` infers 8 and `j+2` remains 5. This is a global
+> semantic change, so S-A's shifted-stride fixtures are rebaselined in the same task. All fallback
+> classes retain the old result: `.const`, zero source extent, zero/negative coefficient, negative
+> bias, cancellation, missing sizes, and genuine multi-axis expressions. A broader normalized-gcd
+> rule was rejected because it would change multi-axis semantics outside the admitted S-A/S-B
+> placement language.
 
 ---
 
@@ -105,7 +131,8 @@ serve S-B, not S-A.** Section B pointed the planning at the smaller and less val
 
 Chosen by the user, 2026-09-09. Reasons: it matches an already-implemented, already-tested reference
 semantics so the differential harness can prove it; it closes the Hard row; and it delivers the
-capability the whole enquiry started from. S-B is deferred with its design already verified (§3).
+capability the whole enquiry started from. S-A has since landed; S-B's implementation is still
+deferred, with its design and task plan now finalized (§3).
 
 ---
 
@@ -118,7 +145,7 @@ capability the whole enquiry started from. S-B is deferred with its design alrea
 | Program | Result |
 |---|---|
 | `Out[2*i] := X[i]`, `X=[1,2,3]` | `shape=[6] data=#[1,0,2,0,3,0]` |
-| `Out[2*i+1] := X[i]`, `X=[1,2,3]` | `shape=[7] data=#[0,1,0,2,0,3,0]` |
+| `Out[2*i+1] := X[i]`, `X=[1,2,3]` | pre-S-B: `shape=[7] data=#[0,1,0,2,0,3,0]`; S-B rebaseline: `shape=[6] data=#[0,1,0,2,0,3]` |
 | `Out[i+2] := X[i]`, `X=[1,2,3]` | `shape=[5] data=#[0,0,1,2,3]` |
 | `Y[i,i] := V[i]`, `V=[7,8,9]` (diagonal trigger, no `.affine` slot) | `shape=[3,3] data=#[7,0,0, 0,8,0, 0,0,9]` |
 | `Up[2*i] := X[i]` then `Z[k] := Up[k]` | `Z: shape=[6] data=#[1,0,2,0,3,0]` |
@@ -285,10 +312,11 @@ rounds there, not 3. See §2.2's revised mitigation advice.
   errored, the inner did not). Whether it is reachable under this design is **UNCERTAIN** and turns
   on the Step D lowering shape — flagged, not asserted.
 
-**One finding for the deferred slice (S-B):** `BlockStep` has no `.scatter` case and produces no
-error, so scatter-inside-a-scan is **structurally impossible in the plan IR** — and nothing in the
-tree records that as a decision. Lifting DSL guard L3 (§3.4) is therefore necessary but nowhere
-near sufficient.
+**One finding later corrected for S-B:** `BlockStep` has no `.scatter` case and produces no
+exhaustiveness error. That does not make scan scatter structurally impossible: the block computes
+the dense logical slice as `.assign`, while `StateWriteMap` performs affine placement into state.
+Lifting DSL guard L3 is still necessary but nowhere near sufficient; checked geometry, source
+lowering, reference semantics, and the independent oracle all need explicit S-B work (§3).
 
 ### 2.3 The build gate is FOUR targets, not one
 
@@ -381,8 +409,9 @@ field is free; hard-coding `0` would be more work to undo later.
 substrate:
 
 - S-A has a **reference implementation to differential-test against** (`evalScatter` already does
-  fill and collision). S-B has none — `evalStmtSliceSeeded` rejects non-`.assign` in a scan slice.
-  Building the most delicate new code with no oracle is the worse order.
+  fill and collision). At sequencing time S-B had none — `evalStmtSliceSeeded` rejects
+  non-`.assign` in a scan slice. Section 3.6 now specifies both the required reference semantics and
+  an independent scan-free oracle, but they remain S-B implementation work.
 - The missing IR node is an S-A problem only. S-B already has a write-map representation
   (`StateWriteMap`, coefficient rows, `WriteRowKind`).
 - S-B additionally needs semantics decided and DSL guard L3 lifted.
@@ -395,16 +424,17 @@ substrate:
 >   straight `set!`, last write wins.
 > - Scan-state initialisation is owned elsewhere entirely, by
 >   `boundaryPolicy := .zeroThenBaseOverlay`.
-> - **Scan writes cannot collide.** The iteration is exactly over the output slice, one value per
->   output coordinate, and a strided map with `scale ≥ 1` is injective. Assign-side collisions come
->   from a source axis absent from the output (`Out[i] := X[i]·Y[j]`, `j` summed away); the scan
->   cover rule forbids that shape by construction.
+> - **One admitted scan write cannot collide with itself.** The block contracts RHS-only axes into
+>   a dense logical output first, then a positive strided map injectively places one value per dense
+>   coordinate. Multiple base writes can still overlap each other, so `writesCollide` must prove
+>   their regions disjoint; S-B adds only the equal-scale/different-residue proof.
 >
-> So fill and collision are **S-A-only**, and collision-`sum` when it lands serves one client, not
-> two.
+> So configurable fill and collision reduction are **S-A-only**, and collision-`sum` when it lands
+> serves one client, not two. S-B fixes the policy at zero-fill/reject-collisions and separately
+> proves disjointness between multiple base-write regions before execution.
 
 **What is genuinely shared is real but modest:** the extent formula (both sides must *call*
-`LHSSlot.outExtent`, never restate it — see §3.2 for why) and the in-bounds argument (equality
+`LHSSlot.outExtent`, never restate it — see §3.1 for why) and the in-bounds argument (equality
 against `outExtent` ⇒ every written coordinate in range, the same lemma on both sides). One function
 and one lemma. Centralise both — that is the `scatterOutDim` drift this repo already shipped a
 soundness bug over — but do not plan S-A as "the shared substrate."
@@ -431,8 +461,9 @@ approving its neighbour.
 - **The missing-cases mitigation is scaffolding.** Apply `@[irreducible] def AlgOpaque : Type := Algebra`
   (or the table-index form) while working — §2.2 — and **remove it before the slice lands**, with a
   final build proving the shipped types are unwrapped. Leaving it in silently changes the design.
-- **⚠️ ONE EXTENT CONVENTION. This is the slice's single most dangerous rule.** The scatter output
-  extent is `scale·n + offset`, and it lives in exactly one place: `LHSSlot.outExtent`
+- **⚠️ ONE EXTENT CONVENTION. This is the slice family's single most dangerous rule.** S-A landed
+  with `scale·n + offset`; S-B deliberately replaces that global one-axis case with Correction 4's
+  stride-aligned rule. The convention still lives in exactly one place: `LHSSlot.outExtent`
   (`DSL/Ast.lean`). A second copy — `scatterOutDim` — already drifted from it and **shipped a
   soundness bug**: a downstream reader sized to 3 while the evaluator materialised 4 (fix
   `fc10d70`, duplicate deleted `6a26825`).
@@ -451,10 +482,11 @@ approving its neighbour.
   restates it.** If a call is genuinely impossible somewhere, that is a finding to escalate, not a
   licence to copy.
 
-  **Also forbidden: the tighter memory-sufficient bound** `scale·(n−1) + offset + 1`. It is
-  memory-safe, it passes, and it is measured to disagree with `outExtent` by exactly `scale − 1`
-  over `scale ∈ 1..8`, `offset ∈ 0..8`, `n ∈ 1..11`. Silent disagreement between two extent
-  formulas is the exact shape of the bug this repo already paid for.
+  **Also forbidden: deriving a local memory-sufficient bound**
+  `scale·(n−1) + offset + 1`. It can be memory-safe for one write yet assign different ambient
+  extents to writes intended to share a state. Before S-B it disagreed with `outExtent` by exactly
+  `scale − 1`; after S-B the precise difference depends on the offset residue. Either way, a second
+  formula is the exact shape of the bug this repo already paid for.
 
   **"But doesn't the affine solver determine the extent?" No — it CONSUMES it.** Expect this
   question; it is the natural one, and getting it wrong is how the original bug shipped. The
@@ -488,14 +520,17 @@ approving its neighbour.
   the shipped symptom the audit records — *"a downstream reader sized to 3 while the evaluator
   materialized 4"* (fix `fc10d70`, duplicate deleted `6a26825`).
 
-  The extra cell is a policy choice — upsample stride semantics, so a stride-`k` write over `n`
-  elements yields `k·n` and interleaved writes tile exactly — and no affine algebra implies it.
+  The aligned cell is a policy choice — upsample stride semantics, so writes in the same
+  stride-`k` residue block infer one ambient extent and can tile it — and no affine algebra implies
+  it. The bias is aligned down to its stride block rather than always extending the output by
+  `offset`.
 
   **Why this is a trap rather than an error:** deriving the extent from the coordinate map is
   *correct for every case except the one this feature exists to add.* For a shift, `Out[i+2]` over
   `i:3` writes `{2,3,4}`, max + 1 = 5, and the convention also gives 5 — **they agree**. They
-  diverge only when `scale > 1`, and by exactly `scale − 1`. So the wrong derivation passes every
-  pre-existing test and fails only on strided writes.
+  diverge only on the strided cases this feature adds. Under the S-B rule some shifted residues,
+  such as `2*i+1`, now coincide with max + 1; that does **not** make max + 1 the contract, because
+  `2*i` and `2*i+3` still demonstrate the policy boundary.
 
   `SizeInfer.scatterOutputShapes` is the model caller: it is wired into the sizing fixpoint and
   obtains its extents by **calling** `outExtent`. Be like the solver — call it.
@@ -654,15 +689,13 @@ authoritative (§2.2.2), the task breakdown is written (§2.7), and the one open
 — whether Step D can build a `ScatterPlan` at all — is **closed affirmatively** (§2.7, Task 5).
 S-A is ready to execute; nothing further needs measuring before Task 1.
 
-**Execution complete (S-A landed).** Tasks 1-6 are all landed and independently reviewed clean on
-`worktree-scatter-sa-task1`: the IR node (Task 1), outer-graph wiring (Task 2), checker (Task 3),
-dense worker (Task 4), source reachability (Task 5), and the curated `scatterPrograms` parity corpus
-(Task 6, 8 entries). Task 7 (this documentation + value-grep sweep) is the last. Final build-gate
-counts after Tasks 1-6: **`lake build` 8663**, **`lake build JaxExperiment` 8514** — up from the
-planning-time baseline of 8660/8513 by +3/+1, all from three new test modules (Tasks 3/4/5) and one
-new import in Task 5, each explained in the ledger. The 8660/8513 figures elsewhere in this document
-are left as written: they are a planning-time snapshot, the same way `pre_scatter_backend_audit.md`
-and `post_audit_roadmap.md` keep their own eras' counts.
+**Execution complete (S-A landed).** All seven tasks landed and were reviewed: the IR node,
+outer-graph wiring, checker, dense worker, source reachability, the eight-entry curated
+`scatterPrograms` parity corpus, and documentation/value-grep closure. Final S-A build-gate counts:
+**`lake build` 8663**, **`lake build JaxExperiment` 8514** — up from the planning-time baseline of
+8660/8513 by +3/+1, all from three new test modules and one new import, each explained in the
+ledger. The 8660/8513 figures elsewhere in this document remain as planning-time snapshots, the
+same way `pre_scatter_backend_audit.md` and `post_audit_roadmap.md` keep their own eras' counts.
 
 **No de-risking spikes are recommended.** Three were considered and rejected on cost/benefit: a
 dense-worker spike would *be* Task 4 rather than de-risk it (the reference implementation can simply
@@ -676,124 +709,177 @@ section still states.
 agents into the **same working checkout** concurrently; they overwrote each other's edits in
 `Kernel.lean` and `RawStep.lean`, and one agent's round-1 errors named the other's constructors. One
 full agent-run was discarded. Measurement that mutates tracked files is implementation for this
-purpose: **one at a time, or each in its own detached worktree** with `.lake` APFS-cloned
-(`cp -c -R`) and the 8660/8513 baseline re-verified inside the worktree before the first edit. The
-re-run did exactly that and its numbers are the ones in §2.2.
+purpose: **one at a time, in an isolated worktree**, prepared through
+`.claude/skills/new-slice/prepare-worktree.sh`. That procedure uses `rsync` to warm-start Mathlib
+and project oleans before re-verifying the baseline.
 
 ---
 
-## 3. S-B's design, verified and parked
+## 3. S-B's finalized design
 
-Not to be built yet. Every claim below was compiled and evaluated against the real `leanncd`
-environment via `bash .claude/skills/slice-plan/check-snippet.sh`, not reasoned about.
+Planning completed 2026-09-12. The implementation plan is
+`leanncd/docs/superpowers/plans/2026-09-12-lhs-scatter-in-scans.md`. The design below incorporates
+compiled probes, a complete routed source probe, and three independent Sol review passes. It
+supersedes the earlier parked extent and evaluator assumptions in this document.
 
-### 3.1 The classifier branch
+### 3.1 Global stride-aligned extent
 
-```lean
-| [(c, p)] =>
-    if c == 1 && p < contextWidth && bias == 1 then some (.advancing p)
-    else if c == 1 && p ≥ contextWidth && bias == 0 then some (.free (p - contextWidth))
-    else if c > 0 && bias ≥ 0 && p ≥ contextWidth then some (.strided (p - contextWidth) c bias)
-    else none
-```
+`LHSSlot.outExtent` remains the single authority. It resolves every syntactically mentioned axis
+size before normalization, normalizes coefficients by UID, and applies Correction 4's aligned rule
+only when exactly one normalized nonzero coefficient remains, with positive coefficient,
+nonnegative bias, and nonzero source extent.
 
-Audit §B2.1's adopted form plus Correction 2's sign guard. Measured: ordering is load-bearing
-(`classifyM 2 #[1,0,0] 1 == some (.advancing 0)` vs `classifyM 2 #[0,0,1] 1 == some (.strided 0 1 1)`
-— a strided branch placed *before* the advancing branch swallows every advancing row); `scale = 0`
-is not a singleton nonzero and classifies as `.pinned bias`; negative scale, negative bias and
-multi-nonzero rows all give `none`.
+Measured examples over `i : 3`:
 
-### 3.2 The extent rule — one call, and it subsumes `.free`
+| Slot | Extent |
+|---|---:|
+| `2*i` | 6 |
+| `2*i+1` | 6 |
+| `2*i+3` | 8 |
+| `i+2` | 5 |
+| duplicate terms `i+i+1` | 6 |
+| cancelling terms `i-i+1` | 1 |
+| `0*i` | 0 |
+| `-2*i+1` | 0, legacy fallback |
 
-```lean
-/-- Synthetic single-axis spec standing in for "the block output axis at `outputPos`".
-    The checked plan is positional and UID-free, so the UID is arbitrary and never escapes. -/
-private def synthAxis : AxisSpec := { name := "·", uid := 0, kind := .nat }
+Zero/cancelled raw terms still require their named sizes to resolve before normalization. `.const`,
+zero source extent, negative forms, missing sizes, and multi-axis expressions retain the legacy
+result. Checked scan geometry calls the shared `scatterDestExtent` adapter; it does not introduce a
+`stridedExtent` formula beside `outExtent`.
 
-/-- Output extent of a strided write row, obtained by CALLING the shared scatter-extent
-    formula rather than restating it. -/
-def stridedExtent (scale offset : Int) (outDim : Nat) : Option Nat :=
-  LHSSlot.outExtent (.affine (.affine offset [(scale, synthAxis)])) (fun _ => some outDim)
-```
+### 3.2 Classifier and checked geometry
 
-**This CALLS `LHSSlot.outExtent`; it does not restate it.** Recording that explicitly because a
-reviewer misread the signature alone as a second extent formula — the `scatterOutDim` duplication
-this repo already paid for once. The docstring must keep saying so.
+`WriteRowKind` gains `.strided outputPos scale offset`. Classification order is load-bearing:
+`.advancing`, then `.free`, then `.strided`, then rejection. The strided arm requires one nonzero
+coefficient in the output half, `scale > 0`, and `offset >= 0`. A zero coefficient remains
+`.pinned`; negative scale, negative bias, a context-half coefficient, and multiple nonzero
+coefficients are rejected.
 
-Measured: agrees with the `.shift` arm over `s, c ∈ 0..7`, the `.scale` arm over the same, and the
-`.affine` arm over `s, c, c₀ ∈ 0..5` — so **one call covers all three families** the payload
-selects, and a three-way dispatch is unnecessary. `stridedExtent 1 0 s == some s` for `s ∈ 0..11`,
-so it **subsumes** `freeExtentsAgree`'s `.free` equality (roadmap E5 / audit B2-F4) rather than
-sitting beside it. Reproduces audit §B2.4's S21 numbers: `(some 6, some 6, some 9)`. Compiles inside
-`namespace LeanNCD.Eval.Plan` with **no `open` and no new import**.
+Both base and recurrence phases admit strided rows, but only at **non-advancing state
+dimensions**. Advancing dimensions retain their scan meaning:
 
-**Do not write the tighter bound** `scale·(outDim − 1) + offset < stateDim`: measured to disagree
-with `outExtent` by exactly `scale − 1` over `scale ∈ 1..8`, `offset ∈ 0..8`, `outDim ∈ 1..11`. That
-is the `scatterOutDim` drift in miniature (fix `fc10d70`, duplicate deleted `6a26825`).
-
-**Why `pinnedLiteralsInRange => true` is then defensible for strided.** With the classifier's
-`c > 0 && bias ≥ 0` gate and equality `stateDim == stridedExtent scale offset outDim`, every written
-coordinate provably lands in `[0, stateDim)` — brute-forced over `scale ∈ 1..8`, `offset ∈ 0..8`,
-`outDim ∈ 1..11`. The compile-error list flags that site as a trap where the right answer and the
-lazy answer are the same text; this is what separates them, and the dependency must be recorded in
-the arm's own comment.
-
-⚠️ **Do not uniformize the pinned arm to equality.** `freeExtentsAgree` is the `.axis` arm and
-`advancingSizeMismatch` the `.shift` arm, but `pinnedLiteralsInRange` is deliberately an
-**inequality**; making it an equality would break every pinned base write.
-
-### 3.3 The cover rule — uniform across both phases
-
-**Wherever a clause counts `.free p` into the positional cover, it counts `.strided p _ _` too**, in
-both phases. Measured: B2-F1's sixth-instance cell closes (the audit's bug case
-`#[pinned 0, strided 0 2 0, free 0]` goes `true` → `false`); well-formed strided writes are admitted
-at base and step; clause 2 is untouched so a strided row at an *advancing* dimension stays forbidden;
-and out-of-order or duplicated cover positions still fail.
-
-**Consequence for audit §B2.6's Tier-1 list: item 2 stands, items 1 and 3 invert.**
-
-### 3.4 Also required for S-B, beyond the nine sites
-
-- Lift DSL guard L3 (`checkScatterNoScan`), with pins in `StructuralTest.lean` and
-  `RouteFragmentDiagnosticTest.lean` case 11.
-- Decide what a pinned literal LHS coordinate means: a bare numeral elaborates to `LHSSlot.iterAt`
-  ("scan base case on an anonymous axis"), never `.affine (.const n)`, so `dp[0, 2*j]` does not mean
-  what it looks like. There is **no surface spelling of `.affine (.const _)` at all**, which makes
-  `lowerArith`'s `overlappingScatter` guard dead from the surface.
-- Extend `allRowKinds` in the same commit as the frozen oracle's arms, and update the
-  7 kinds → 49 rows → 588 cases arithmetic to 9 → 81 → **972**.
-- Extract `baseWriteRowsOk`'s clause 3 into a named predicate both it and `compileScan` call
-  (inherited from Slice 1 Task 3).
-
-**The chokepoint guard must be a WITNESS FUNCTION, not a `#guard` set** (absorbed from roadmap
-Section B, which is now a stub). `classifyWriteRow` is structurally untripwireable, so nothing will
-remind you to guard it. A `#guard` set naming `pinned`/`free`/`advancing` never mentions `.strided`
-and keeps passing unchanged. What works is a function matching exhaustively over `WriteRowKind` —
-e.g. `classifyWitness : WriteRowKind → (Nat × Array Int × Int)` with one
-`#guard classifyWriteRow (witness k) == some k` per constructor — so a new constructor breaks the
-witness's own exhaustiveness, which is a compile error.
-
-**Require a `contextWidth = 0` witness AND a `contextWidth > 0` witness per constructor.** The
-compile error forces the author to *supply* a `contextWidth`; it does not force them to *exercise
-the discrimination*. At `contextWidth = 0` the correct `outputPos = p - contextWidth` and a broken
-`outputPos = p` coincide, so a lone base-phase witness passes under both readings and the
-off-by-`contextWidth` bug ships green. Slice 1's three `classifyWriteRow` guards are the precedent:
-one at `contextWidth = 0`, two at `contextWidth = 2`, one of those with the nonzero coefficient in
-the output half.
-
-**Two value checks in `classifyWriteRow` are genuinely unpinned** — measured in Slice 1's final fix
-wave by weakening each in place and rebuilding the full default target:
-
-| Weakening | Observed | Firing set |
+| Dimension class | Base write | Recurrence write |
 |---|---|---|
-| advancing branch, drop `bias == 1` | build FAILS | one assertion — the pre-existing `lookAheadStepWrite` fixture. Pinned incidentally, not deliberately |
-| free branch, drop `bias == 0` | build PASSES, 8660 jobs | **empty — genuinely unpinned** |
-| multi-nonzero arm, route length-≥2 rows through free-branch logic | build PASSES, 8660 jobs | **empty — genuinely unpinned** |
+| advancing | `.pinned` boundary coordinates or dense `.free` boundary faces; never `.advancing` or `.strided` | exactly the matching `.advancing` row |
+| non-advancing | `.pinned`, `.free`, or `.strided` | `.free` or `.strided` |
 
-So the accurate scope is **two unpinned checks, not three**. Add a dedicated guard for the
-advancing branch's `bias == 1` too if cheap — an incidental pin in an unrelated fixture is a poor
-home for a load-bearing rule — but do not plan it as coverage of a live hole. Note §3.1's branch
-adds `c > 0 && bias ≥ 0`, which is new surface needing its own guards.
+This distinction is not implied by the positional cover. A hand-built base row array
+`[.pinned 0, .strided 0 2 0, .free 1]` with both first dimensions advancing satisfies
+recognition, ordered cover, and boundary touch unless `baseWriteRowsOk` has an explicit
+dimension-class clause. The checker must therefore forbid both synthetic `.advancing` base rows
+and reachable `.strided` rows at base-phase advancing dimensions.
+
+Wherever a positional cover counts `.free p`, it counts `.strided p _ _` identically. Extent
+agreement treats `.free` as identity placement and `.strided` by calling `scatterDestExtent`.
+Pinned range remains an inequality; strided range is discharged by positive classification plus
+exact shared extent equality. Advancing sizes retain their history-extent check.
+
+The complete case table is a required implementation artifact, not commentary: each
+predicate-by-row-kind cell must be classified as required, forbidden, or deliberately ignored.
+This is the fifth member of the recurring write-soundness defect family where a predicate states
+which rows must be present but omits which rows may not be present.
+
+### 3.3 Collision and placement
+
+Two strided rows prove a dimension disjoint only when their positive scales are equal and their
+offsets differ modulo that scale. Different scales, free-versus-strided, and all other new
+pairings remain conservatively colliding. The rule was checked over all **102,400** tuples with
+scales `1..5`, offsets `0..7`, and source extents `0..7`: whenever it claimed disjointness, the two
+finite coordinate images had empty intersection.
+
+The write worker remains generic. `applyAffine`, `commitWrite`, and `runDenseScan` already execute
+arbitrary affine maps and need no `.strided` branch. The new work is admission, extent agreement,
+and collision proof before those functions run.
+
+### 3.4 Compute dense values, then place them
+
+S-B does **not** add `BlockStep.scatter`. A scan scatter has two independent operations:
+
+1. compute the statement's dense logical output slice with the existing `AssignPlan`, including
+   RHS-only contraction axes; and
+2. place that dense slice into persistent state through an affine `StateWriteMap`.
+
+This keeps contraction in one block-operation representation and uses the state-write map for the
+new capability. It also fixes the output-basis rule: exclude an axis only when its LHS role is
+`.iterAt` or `.iterNext`, not merely because its UID belongs to scan context. A base boundary face
+such as `.free c` is a real dense output dimension and must remain in the block output basis.
+
+Multiple base contributions may overlay one state in source order when their checked regions are
+disjoint. Exactly one recurrence write per state remains enforced.
+
+### 3.5 Source reachability and typed failures
+
+Remove `checkScatterNoScan` from both production compile chains and the test-local logical chain,
+then delete the obsolete barrier. Keep `CompileError.scatterInScan` as a producerless compatibility
+constructor rather than rewriting unrelated error APIs.
+
+A complete base-plus-recurrence scan-scatter program already reaches `route` when only that barrier
+is omitted, so routed/categorical production code needs no new scan-scatter representation.
+Diagnostic case 11 in `RouteFragmentDiagnosticTest.lean` must move from `scatterInScan "Out"` to
+the already-correct `missingBaseCase "Out"` at final fresh state 3; removing the barrier does not
+make the malformed program valid.
+
+Source lowering accepts exactly `fill == 0` with `.rejectCollisions`. Nonzero fill is rejected
+because scan state initializes once with `zeroThenBaseOverlay`; applying fill per contribution
+would overwrite unrelated state. Nonlinear placement, predicate destinations, and non-default
+reductions remain rejected.
+
+New source failures are typed and located:
+
+- `scanWriteRowNotAdmitted`: scan, destination, phase, original statement index, dimension,
+  coefficient row, and bias;
+- `scatterScratchNotAdmitted`;
+- `contextAxisAsAffineOutput`.
+
+Existing `inconsistentStateExtent` owns disagreement between otherwise valid placements, and
+`multiAxisScatterLhs` continues to own one affine slot naming multiple normalized UIDs. Capability
+checks precede shape, scan-specialization, and checked-plan failures. Locator fixtures must include
+a non-assignment statement between assignments so original and filtered statement indices differ.
+
+### 3.6 Reference evaluator and independent oracle
+
+The low-level checked worker needs no change, but both comparison legs do.
+
+The legacy scan evaluator currently accepts only dense assignments in a slice. It must compute the
+dense source slice with seeded assignment semantics, then evaluate the original LHS expressions
+independently for placement. Calling top-level `evalScatter` directly is wrong when the RHS has a
+contraction-only axis, because that path does not share the scan slice's seeded contraction
+semantics. Base overlays preserve source order.
+
+The independent scan-free oracle must not import checked geometry, compiler residualization, or
+scan-worker placement helpers. For each affine scan statement it:
+
+1. emits a dense temporary assignment that performs contraction;
+2. emits a top-level scatter reading only that temporary;
+3. gives each base contribution a private name;
+4. independently enumerates destination coordinates and rejects overlaps;
+5. merges disjoint zero-filled contributions into the canonical state leaf before recurrence;
+6. resolves recurrence reads to that canonical merged leaf; and
+7. validates leaf shapes with an oracle-local derivation of the aligned extent.
+
+Synthetic non-advancing state-slice axes and explicit sizes are required for canonical merge
+assignments. Pointwise sum is valid only because fill is fixed at zero and disjointness is proven
+independently. A test-the-tester assertion must pin that scatter leaves and the canonical merge
+cannot silently disappear.
+
+### 3.7 Test and tripwire surface
+
+The nine existing `WriteRowKind` exhaustiveness sites remain compile-time tripwires: six in
+`Eval/Plan/Scan.lean`, one in `Eval/Plan/Compile.lean`, and two in the frozen test oracle in
+`ScanTest.lean`. No wildcard is added. `allRowKinds` grows from 7 to 9 values, row pairs from 49 to
+81, and the frozen agreement window from 588 to **972** cases.
+
+The classifier needs width-zero and positive-width witnesses, including output-half witnesses that
+distinguish `p` from `p - contextWidth`, plus direct negative-scale, negative-bias, and
+multi-nonzero rejection guards. Every new checker clause gets an isolated mutation cycle,
+including the base advancing-dimension `.strided` prohibition.
+
+Corpus boundaries remain explicit:
+
+- generated scan corpus: **17 / 17 accepted**;
+- generated scan-free differential corpus: **3832 / 3832 accepted**;
+- curated S-A scatter corpus: **8 → 9**, adding shifted stride under the aligned rule;
+- new curated S-B three-way corpus: **7** cases.
 
 ---
 
@@ -808,9 +894,11 @@ All gitignored under `docs/superpowers/plans/`, all measured at `79fa71f`:
 | `2026-09-09-slice2-write-pipeline.md` | emission/checking/evaluation trace; five confirmed verdicts including that the evaluator is already generic over the coefficient |
 | `2026-09-09-slice2-test-doc-surface.md` | pinning fixtures, corpus counts, JAX gate structure, doc surface |
 
-**The evaluator needs no work for either slice.** `applyAffine`/`commitWrite`/`runDenseScan` never
-mention `WriteRowKind` and are fully generic over the coefficient, so both slices are "widen the
-checks", not "widen the checks and the evaluator".
+**The checked scan worker needs no S-B changes.** `applyAffine`/`commitWrite`/`runDenseScan` never
+mention `WriteRowKind` and are fully generic over the coefficient. The broader statement that “the
+evaluator needs no work” was wrong: the legacy scan evaluator rejects non-assignment slice
+statements and needs independent compute-then-place semantics, while the scan-free oracle needs a
+dense-temporary/scatter/merge lowering (§3.6).
 
 Two latent defects found in passing, neither in scope: coefficient-row **width** is unchecked on both
 the write side (`checkWrites` guards row count only; `applyAffine` `zip`s and truncates) and the read
