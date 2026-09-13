@@ -311,18 +311,31 @@ def slotsBecomeScatter (slots : List LHSSlot) : Bool :=
       us.length ≠ us.eraseDups.length)
 
 /-- Output extent of one scatter LHS slot under a sizing lookup `sz`.
-    The single home of the scatter-extent convention (upsample stride semantics —
-    deliberately not derivable from `idxAffineForm`). `none` if a source axis is unsized. -/
+    The single home of the scatter-extent convention. A positive one-axis affine placement uses the
+    stride-aligned boundary; every other affine form keeps the legacy linear boundary. `none` if any
+    syntactically mentioned source axis is unsized. -/
 def LHSSlot.outExtent (sl : LHSSlot) (sz : UID → Option Nat) : Option Nat :=
+  let affineExtent (c0 : Int) (cf : List (Int × UID)) : Option Nat :=
+    if cf.all (fun (_, u) => (sz u).isSome) then
+      let legacy := (cf.foldl
+        (fun acc (c, u) => acc + c * Int.ofNat ((sz u).getD 0)) c0).toNat
+      let us := (cf.map (·.2)).eraseDups
+      let coeffs := idxDensify cf us
+      match (coeffs.zip us).filter (fun (c, _) => c != 0) with
+      | [(c, u)] =>
+          let n := (sz u).getD 0
+          if c > 0 && c0 >= 0 && n > 0 then
+            some (c * Int.ofNat n + (c0 / c) * c).toNat
+          else
+            some legacy
+      | _ => some legacy
+    else
+      none
   match sl.outIdx with
-  | .axis a       => sz a.uid
-  | .const n      => some (n + 1).toNat
-  | .scale c a    => (sz a.uid).map (fun s => (c * Int.ofNat s).toNat)
-  | .shift a c    => (sz a.uid).map (fun s => (Int.ofNat s + c).toNat)
-  | .affine c0 xs =>
-      if xs.all (fun (_, a) => (sz a.uid).isSome) then
-        some (xs.foldl (fun acc (c, a) => acc + c * Int.ofNat ((sz a.uid).getD 0)) c0).toNat
-      else none
+  | .const n => some (n + 1).toNat
+  | e =>
+      let (c0, cf) := idxAffineForm e
+      affineExtent c0 cf
 
 /-- Classify a `Factor` as a tensor read: `read`/`unaryFn` keep (name, index-exprs);
     `iverson` (a mask/predicate) reads no tensor. The ONE place a new `Factor` constructor

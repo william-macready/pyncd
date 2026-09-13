@@ -93,12 +93,11 @@ destination sized by the deleted `scatterOutDim` duplicate would have length 5 a
 
 /-! ## Fixture 2 — `Out[2*i+1] := X[i]`, a non-zero placement bias
 
-Reference (§2.1): `shape=[7] data=#[0,1,0,2,0,3,0]`. The same stride shifted by one, so the values
-land at destination `1,3,5` of an extent-7 destination (`outExtent` = `1 + 2·3`) and BOTH boundary
-cells stay at `fill`. A worker that dropped `outBias` from the placement would reproduce fixture 1's
-placement inside a 7-cell destination and fail here. -/
-#guard shapeDataOf (runScatter (sigsFor #[7]) (placed #[7] #[#[2]] #[1]) (storeFor #[7]))
-  == some ([7], #[0.0, 1.0, 0.0, 2.0, 0.0, 3.0, 0.0])
+Reference (§3.1): `shape=[6] data=#[0,1,0,2,0,3]`. The same stride shifted by one, so the values
+land at destination `1,3,5` of the stride-aligned extent `6`, with no unreachable trailing cell.
+A worker that dropped `outBias` from the placement would reproduce fixture 1 and fail here. -/
+#guard shapeDataOf (runScatter (sigsFor #[6]) (placed #[6] #[#[2]] #[1]) (storeFor #[6]))
+  == some ([6], #[0.0, 1.0, 0.0, 2.0, 0.0, 3.0])
 
 /-! ## Fixture 3 — `Out[i+2] := X[i]`, a pure shift
 

@@ -884,3 +884,33 @@ Stop and report rather than improvise if:
 *(Append during implementation: task commits, exact targeted/full build job counts, all mutation
 fail/pass observations, corpus counts, stale-value grep adjudication, and both final review
 outcomes. Cite identifiers, never line numbers.)*
+
+### Task 1 — global aligned extent and S-A rebaseline
+
+- **Commit identifier:** `feat(leanncd): align affine scatter extents` (the Task 1 commit containing
+  this record).
+- **Fixtures:** all fourteen §3.1 `LHSSlot.outExtent` observations are direct guards in
+  `ScatterCheckTest`; the shifted-stride check, dense value, and source-compile parity fixtures now
+  expect shape `[6]` / data `[0,1,0,2,0,3]`; `DifferentialTest.scatterPrograms` adds `SA9` and pins
+  length `9`.
+- **M1 — restore legacy `c*n+b`:** mutation exit `1`. `ScatterCheckTest`'s shifted/aligned guards,
+  `ScatterDenseTest` fixture 2, and `ScatterCompileTest` S2 failed. A focused
+  `DifferentialTest` rerun also reported `SCATTER PARITY CORPUS (S-A Task 6) FAILED`. Both
+  seven-file hash restoration checks passed; restored builds passed at 8,527 and 8,524 jobs.
+- **M2 — skip UID coefficient normalization:** replacing `idxDensify cf us` with raw coefficients
+  exited `1`; the duplicate and cancelling-term guards failed. Hash restoration passed; restored
+  `ScatterCheckTest` passed at 8,492 jobs.
+- **M3 — skip raw-term size resolution:** bypassing the all-raw-UID size check exited `1`; the
+  zero-coefficient unsized-axis guard failed. Hash restoration passed; restored
+  `ScatterCheckTest` passed at 8,492 jobs.
+- **M4 — apply alignment to zero-size inputs:** removing `n > 0` exited `1`; the zero-source-extent
+  fallback guard failed. Hash restoration passed; restored `ScatterCheckTest` passed at 8,492 jobs.
+- **Final Task 1 gates** (all invoked with `/Users/williammacready/.elan/bin/lake`):
+  - `build Eval.Plan.ScatterCheckTest Eval.Plan.ScatterDenseTest Eval.Plan.ScatterCompileTest`:
+    pass, 8,520 jobs.
+  - `build Eval.Plan.DifferentialTest`: pass, 8,524 jobs; generated corpus
+    `total=3832 accepted=3832 rejected=0`, scan corpus `total=17 accepted=17`, curated scatter
+    corpus `9`.
+  - `build LeanNCD`: pass, 8,544 jobs (only replayed pre-existing warnings/sorries outside Task 1).
+  - `build JaxExperiment`: pass, 8,514 jobs.
+- **Stop conditions:** none. Task 2 was not started.

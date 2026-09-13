@@ -1464,7 +1464,7 @@ two extents differ so a swapped placement row would change the answer (SA3), an 
 that lands in the compute output basis rather than being contracted (SA4), an `.assign` step
 immediately preceding a `.scatter` step (SA5), and three programs whose scatter OUTPUT is consumed
 by a LATER statement — reduced to a scalar (SA6), read through an affine/strided index (SA7), and
-fed into a downstream contraction (SA8).
+fed into a downstream contraction (SA8), plus the shifted-stride rebaseline (SA9).
 
 Kept OUT of `enumPrograms`, and for a reason distinct from `predicatePrograms`': `enumPrograms`
 (`PropertyOracle.Gen`) is a GENERATED bounded enumeration whose current size is pinned at `3832`,
@@ -1476,8 +1476,8 @@ move its generated size off `3832` and break all three at once. This corpus is t
 list, driven by its own `run_cmd` gate below, exactly as `predicatePrograms` is. -/
 
 /-- The curated scatter parity corpus, kept SEPARATE from `enumPrograms`. Each entry:
-    name, program, inputs, output key, expected value. SA1–SA5 read only the scatter's OWN output;
-    SA6–SA8 consume it in a later statement.
+    name, program, inputs, output key, expected value. SA1–SA5 and SA9 read only the scatter's OWN
+    output; SA6–SA8 consume it in a later statement.
 
     Kept out of `enumPrograms` because that list's generated size is pinned at `3832` and three
     hard-coded counts depend on it (this file's `total == 3832` guard, `EvalPlanAffineCorpus.lean`'s
@@ -1525,11 +1525,15 @@ def scatterPrograms :
                D[i, i] := v[i]
                Y[i, j] := D[i, k] · M[k, j] },
       HashMap.ofList [("v", tl54 [2] [2,3]), ("M", tl54 [2,2] [1,1, 1,1])], "Y",
-      tl54 [2,2] [2,2, 3,3]) ]
+      tl54 [2,2] [2,2, 3,3])
+  , ("SA9 shifted strided upsample",
+      tlprog!{ Out[2*i + 1] := X[i] },
+      HashMap.ofList [("X", tl54 [3] [1,2,3])], "Out",
+      tl54 [6] [0,1,0,2,0,3]) ]
 
--- Exact length, pinned: eight structurally-distinct accepted scatter programs. A silently dropped
+-- Exact length, pinned: nine structurally-distinct accepted scatter programs. A silently dropped
 -- entry fails here rather than shrinking the corpus unnoticed.
-#guard scatterPrograms.length == 8
+#guard scatterPrograms.length == 9
 
 /-- One curated scatter case: the checked-vs-reference differential (`planAgreesForDecls`, exact
     `envEq`) plus a tolerant observed-value assertion (`approxEq`). Identical in shape to

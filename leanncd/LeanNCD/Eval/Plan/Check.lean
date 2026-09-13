@@ -206,25 +206,19 @@ def CheckedScatterPlan.plan (c : CheckedScatterPlan) : ScatterPlan := c.raw
     whose `uid` IS that position. The uids are private to this derivation — `scatterDestExtent`
     builds the matching sizing lookup alongside them — so they cannot collide with a program's own.
 
-    Always `outExtent`'s `.affine` arm, never its `.const` arm, and that is a fact about which slot
-    forms can reach a `ScatterPlan` rather than a convenience. `outExtent`'s `.axis`/`.scale`/
-    `.shift`/`.affine` arms are all the same `bias + Σ coeff · size` sum this reconstruction
-    reproduces; `.const` (extent `n + 1`) is reachable only from `LHSSlot.iterAt`, which is what
-    `elabTLLHSSlot` (`DSL/Elab.lean`) turns a bare numeral LHS slot into — a scan base case — and
-    `checkScatterNoScan` (`DSL/Pipeline/Structural.lean`) rejects a scatter-shaped LHS carrying any
-    iteration slot. So an all-zero placement row keeps the documented `.toNat` degeneracy of the
-    zero-coefficient slot it comes from (`Out[0*i]` has extent `0`), rather than being re-read as a
-    constant coordinate with extent `bias + 1`. -/
+    Always `outExtent`'s affine calculation, never its `.const` arm: this function constructs an
+    `.affine` expression even when the row is all zero. Thus an all-zero placement row keeps the
+    documented `.toNat` degeneracy of the zero-coefficient slot it comes from (`Out[0*i]` has extent
+    `0`), rather than being re-read as a constant coordinate with extent `bias + 1`. -/
 def scatterPlacementSlot (row : Array Int) (bias : Int) : LHSSlot :=
   .affine (.affine bias
     (row.toList.zipIdx.map (fun (c, k) => (c, { name := "", uid := k, kind := .nat }))))
 
 /-- The destination extent one placement row implies, BY CALLING `LHSSlot.outExtent` — the one home
-    of the `scale * n + offset` convention (`DSL/Ast.lean`). This restates no arithmetic of its own,
-    and in particular not the memory-sufficient bound `scale * (n - 1) + offset + 1`, which is
-    measured to disagree with the convention by exactly `scale - 1`; a second extent formula has
-    already shipped a soundness bug in this repo once. `srcShape` is the source iteration domain
-    (`compute.outputShape`), indexed by position to match `scatterPlacementSlot`'s synthetic uids. -/
+    of the normalized stride-aligned convention and its legacy fallbacks (`DSL/Ast.lean`). This
+    restates no arithmetic of its own; a second extent formula has already shipped a soundness bug
+    in this repo once. `srcShape` is the source iteration domain (`compute.outputShape`), indexed by
+    position to match `scatterPlacementSlot`'s synthetic uids. -/
 def scatterDestExtent (srcShape : Array Nat) (row : Array Int) (bias : Int) : Option Nat :=
   (scatterPlacementSlot row bias).outExtent (fun u => srcShape[u]?)
 

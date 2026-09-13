@@ -34,7 +34,7 @@ open Std
 def dt (shape : List Nat) (xs : List Float) : DenseTensor := ⟨shape, xs.toArray⟩
 
 /-- Source program → logical schedule, through the REAL compile pipeline (`assignUIDs` …
-    `checkScatterNoScan` … `lowerArith` … `schedule`). Going through `compileToScheduled` rather
+    source validation … `lowerArith` … `schedule`). Going through `compileToScheduled` rather
     than hand-writing a `ScheduledProgram` is the whole point of this file: a hand-built schedule
     could present a `Stmt.scatter` that `lowerArith` would never produce, which proves nothing about
     source reachability. -/
@@ -136,16 +136,16 @@ run_cmd do
 
 /-! ## S2-S4 — the rest of the measured reference table -/
 
--- A non-zero bias on a strided row: extent `2 · 3 + 1 = 7`.
+-- A non-zero bias on a strided row: stride-aligned extent `2 · 3 = 6`.
 def shiftedProg : TLProgram := tlprog!{ Out[2*i + 1] := X[i] }
 def shiftedScatter : Option ScatterPlan :=
   (preparedOf shiftedProg upsampleEnv).bind (scatterStepAt · 0)
 #guard shiftedScatter.map (·.outCoeffs) == some #[#[2]]
 #guard shiftedScatter.map (·.outBias) == some #[1]
-#guard shiftedScatter.map (·.destShape) == some #[7]
+#guard shiftedScatter.map (·.destShape) == some #[6]
 run_cmd do
   assertScatterParity "S2 Out[2*i + 1] := X[i]" shiftedProg upsampleEnv "Out"
-    (dt [7] [0.0, 1.0, 0.0, 2.0, 0.0, 3.0, 0.0])
+    (dt [6] [0.0, 1.0, 0.0, 2.0, 0.0, 3.0])
 
 -- A pure offset (unit coefficient): extent `1 · 3 + 2 = 5`.
 def offsetProg : TLProgram := tlprog!{ Out[i + 2] := X[i] }

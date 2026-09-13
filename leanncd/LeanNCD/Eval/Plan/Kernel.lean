@@ -160,8 +160,8 @@ instance : BEq LeanNCD.CollisionReduce := ⟨fun a b => decide (a = b)⟩
     `destShape` is the destination tensor's extent and is **not** derivable from `outCoeffs`/
     `outBias`: `Out[2*i]` over `i : 3` has extent `6` while max-coordinate + 1 is `5`. Whoever
     populates or validates it must do so by CALLING `LHSSlot.outExtent` (`DSL/Ast.lean`), the one
-    place the `scale * n + offset` convention lives, and must never restate that arithmetic — a
-    second copy of it already shipped a soundness bug once.
+    place the normalized stride-aligned convention and its legacy fallbacks live, and must never
+    restate that arithmetic — a second copy of it already shipped a soundness bug once.
 
     `outCoeffs`/`outBias` are the placement map
     `destinationCoordinate = outCoeffs * sourceIterationCoordinate + outBias`, one row per

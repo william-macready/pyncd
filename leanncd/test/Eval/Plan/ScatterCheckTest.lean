@@ -72,18 +72,17 @@ def upScatter : ScatterPlan :=
 
 #guard upScatter.destShape == #[6]
 
-/-! ## `Out[2*i+1] := X[i]` — a nonzero placement bias (extent 7) -/
+/-! ## `Out[2*i+1] := X[i]` — a stride-aligned nonzero placement bias (extent 6) -/
 
 def offsetSigs : Array TensorSignature :=
   #[ { shape := #[3], dtype := .f64 }
-   , { shape := #[7], dtype := .f64 } ]
+   , { shape := #[6], dtype := .f64 } ]
 
-/- Acceptance 2: the same placement scale with a nonzero bias. `outExtent`'s answer is `7`, matching
-   the reference evaluator's measured `shape=[7]` for this program, and the bias is carried into the
-   derivation rather than dropped — `scatterDestExtent`'s pins at the end of this file separate the
-   `outBias := #[0]` and `#[1]` cases directly. -/
+/- Acceptance 2: the same placement scale with a nonzero bias. The aligned extent remains `6`: the
+   values land at `1,3,5`, with no unreachable trailing cell. The bias is still carried into the
+   placement map. -/
 #guard isOk (checkScatter offsetSigs
-  { upScatter with destShape := #[7], outBias := #[1] })
+  { upScatter with destShape := #[6], outBias := #[1] })
 
 /-! ## `Y[i,i] := V[i]` — the diagonal trigger, a rank-2 destination -/
 
@@ -159,16 +158,46 @@ def fillMismatchScatter : ScatterPlan :=
    `constDtypeMismatch` and `policyNotAdmitted`. -/
 #guard (PlanError.scatterDestExtentUnknown 0) == PlanError.scatterDestExtentUnknown 0
 
+/-! ## Direct `LHSSlot.outExtent` contract
+
+These fourteen guards port the complete §3.1 design-probe table. They pin the narrow aligned case,
+UID normalization, resolution-before-normalization, and every legacy fallback independently of
+`scatterDestExtent`'s positional reconstruction. -/
+
+def extentI : AxisSpec := { name := "i", uid := 40, kind := .nat }
+def extentJ : AxisSpec := { name := "j", uid := 41, kind := .nat }
+def extentSizes : UID → Option Nat
+  | 40 => some 3
+  | 41 => some 4
+  | _ => none
+def zeroExtentSizes : UID → Option Nat
+  | 40 => some 0
+  | _ => none
+
+#guard (LHSSlot.affine (.scale 2 extentI)).outExtent extentSizes == some 6
+#guard (LHSSlot.affine (.affine 1 [(2, extentI)])).outExtent extentSizes == some 6
+#guard (LHSSlot.affine (.affine 3 [(2, extentI)])).outExtent extentSizes == some 8
+#guard (LHSSlot.affine (.shift extentI 2)).outExtent extentSizes == some 5
+#guard (LHSSlot.affine (.affine 1 [(1, extentI), (1, extentI)])).outExtent extentSizes == some 6
+#guard (LHSSlot.affine (.affine 1 [(1, extentI), (-1, extentI)])).outExtent extentSizes == some 1
+#guard (LHSSlot.affine (.affine 1 [(2, extentI), (1, extentJ)])).outExtent extentSizes == some 11
+#guard (LHSSlot.affine (.affine (-1) [(2, extentI)])).outExtent extentSizes == some 5
+#guard (LHSSlot.affine (.affine 1 [(-2, extentI)])).outExtent extentSizes == some 0
+#guard (LHSSlot.affine (.affine 1 [(2, extentI)])).outExtent zeroExtentSizes == some 1
+#guard (LHSSlot.affine (.scale 0 extentI)).outExtent extentSizes == some 0
+#guard (LHSSlot.affine (.affine 3 [(0, extentI)])).outExtent extentSizes == some 3
+#guard (LHSSlot.affine (.affine 0 [(0, extentJ)])).outExtent (fun _ => none) == none
+#guard (LHSSlot.iterAt extentI 3).outExtent extentSizes == some 4
+
 /-! ## The zero-coefficient degeneracy, pinned
 
 An all-zero placement row is reconstructed as `outExtent`'s `.affine` arm, never its `.const` arm:
-the `.const` arm belongs to `LHSSlot.iterAt`, and `checkScatterNoScan` rejects a scatter-shaped LHS
-carrying any iteration slot, so it cannot reach a `ScatterPlan`. `Out[0*i]` therefore keeps the
-reference evaluator's documented `.toNat` degeneracy — extent `0`, an empty destination — rather
-than being re-read as the constant coordinate `0` with extent `1`. -/
+`scatterPlacementSlot` constructs that expression directly. `Out[0*i]` therefore keeps the reference
+evaluator's documented `.toNat` degeneracy — extent `0`, an empty destination — rather than being
+re-read as the constant coordinate `0` with extent `1`. -/
 #guard scatterDestExtent #[3] #[0] 0 == some 0
 #guard scatterDestExtent #[3] #[2] 0 == some 6
-#guard scatterDestExtent #[3] #[2] 1 == some 7
+#guard scatterDestExtent #[3] #[2] 1 == some 6
 #guard scatterDestExtent #[3] #[-1] 0 == some 0
 
 end LeanNCD.Eval.Plan.ScatterCheckTest
