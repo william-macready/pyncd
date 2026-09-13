@@ -1186,8 +1186,8 @@ def outerStoreMultiBase : Array DenseTensor :=
 
 /-! #### `writeFreeExtentMismatch`: a free face WIDER than the state's own dimension
 
-The final whole-branch review's Critical finding, reproduced on this fixture. Before
-`freeExtentsAgree` existed, `checkWrites` compared only the free positions' RANK/ORDER against the
+The final whole-branch review's Critical finding, reproduced on this fixture. Before the predecessor
+of `outputRowExtentsAgree` existed, `checkWrites` compared only free positions' RANK/ORDER against the
 block output (`baseWriteRowsOk`'s `outputShapeSize` is `shape.size`, a COUNT), never their SIZE — so
 declaring `ROWFACE` as shape `[5]` while `dp`'s own free dimension is size `2` was accepted, and
 `runDenseScan` then committed `ROWFACE[2..4]` through `flatIndex` into cells belonging to other rows
@@ -1209,8 +1209,8 @@ def freeExtentMismatchScan : RawScanPlan :=
   { multiBaseScan with baseBlock := baseBlockFreeExtentMismatch }
 
 -- The predicate itself, on the exact rows involved: `faceRows`'s free row is state dim 1.
-#guard freeExtentsAgree #[2,2] #[2] faceRows == true
-#guard freeExtentsAgree #[2,2] #[5] faceRows == false
+#guard outputRowExtentsAgree #[2,2] #[2] faceRows == true
+#guard outputRowExtentsAgree #[2,2] #[5] faceRows == false
 
 -- writeFreeExtentMismatch: accepted before the fix (`checkScanPlan` returned `.ok`, and
 -- `runDenseScan` then wrote out of region), rejected now.
@@ -1858,11 +1858,11 @@ The Critical finding of F4's final whole-branch review, and the FOURTH instance 
 across F3/F4 (free extents, pinned literals, write-map rank, this): a geometry predicate that says
 which rows MUST be a given kind without saying which rows MAY NOT be.
 
-`stepWriteRowsOk`'s clause 2 pinned every ADVANCING dimension to `.advancing i`. Its positional-cover
+Before S-B, `stepWriteRowsOk`'s clause 2 pinned every ADVANCING dimension to `.advancing i`. Its positional-cover
 clause then filtered the non-advancing dimensions with `match r with | some (.free p) => some p | _
 => none` — so a non-`.free` row at a non-advancing dimension mapped to `none` and was DROPPED from
 the `List.range outputShapeSize` comparison rather than rejected. It was then invisible to both value
-checks downstream too: `freeExtentsAgree` matches only `.free`, `pinnedLiteralsInRange` only
+checks downstream too: the old free-only extent predicate matched only `.free`, `pinnedLiteralsInRange` only
 `.pinned`.
 
 The drop is only unnoticed when the count still matches, which a SCALAR block output guarantees:
@@ -1890,9 +1890,9 @@ The `.pinned`-at-a-non-advancing-dimension case is memory-safe — `pinnedLitera
 check it — but it is still not the canonical rectangular all-axis `+1` geometry §5.1/§7.3 fixes, and
 it leaves whole slices of the state silently unwritten.
 
-Fixed by a third `stepWriteRowsOk` clause requiring every non-advancing dimension to actually BE
-`.free`, rather than merely requiring that the `.free` rows which happen to be present cover
-`List.range outputShapeSize`. -/
+Fixed by a third `stepWriteRowsOk` clause requiring every non-advancing dimension to actually BE an
+output-bearing row (`.free`, and now `.strided`), rather than merely requiring that the rows which
+happen to be present cover `List.range outputShapeSize`. -/
 
 def outerSigsW : Array TensorSignature :=
   #[{ shape := #[2], dtype := .f64 }      -- 0 = E0, the base seed face
@@ -2442,20 +2442,13 @@ fails independently and neither of this Part's `none`-producing fixtures pins th
 those rows carry bias `1` as well, so they are refused for a second, independent reason and survive
 a weakening of the coefficient test.
 
-The free branch is the one directly in a strided write's path: with `c == 1` dropped from it, a
-stride-`k` row classifies as `.free 0` and is admitted exactly as if it were stride-1, invisible to
-`freeExtentsAgree` and `pinnedLiteralsInRange` alike (both match on the KIND, which now says
-`.free`). Side benefit worth stating: these guards also pin `classifyWriteRow`'s CURRENT refusal of
-non-unit coefficients, so a slice admitting strided rows must consciously edit a test here — the
-change shows up in a diff instead of arriving silently. -/
+The free branch is directly adjacent to the strided branch: with its `c == 1` check dropped, a
+stride-`k` row is mislabeled `.free 0`, bypassing the shared affine extent check. The guards below
+pin the classifier order and keep the advancing half's unit-coefficient rule explicit. -/
 
--- The free branch: a stride-2 projection is not a recognized write geometry today. Base phase
--- (`contextWidth = 0`), so the `.advancing` branch cannot absorb it and the free branch is the only
--- one under test.
-#guard classifyWriteRow 0 #[2] 0 == none
--- The same at step phase, in the OUTPUT half of the domain (`p = 2 ≥ contextWidth = 2`), so the
--- guard above cannot stand in for it.
-#guard classifyWriteRow 2 #[0, 0, 2] 0 == none
+-- Stride-2 projections are now recognized as `.strided` in the output half.
+#guard classifyWriteRow 0 #[2] 0 == some (.strided 0 2 0)
+#guard classifyWriteRow 2 #[0, 0, 2] 0 == some (.strided 0 2 0)
 -- The advancing branch's own unit test: stride 2 at a CONTEXT position with the advancing bias.
 -- (`unrecognizedStepRows` below is the fixture that catches this one through the predicate.)
 #guard classifyWriteRow 2 #[2, 0] 1 == none
@@ -2467,7 +2460,7 @@ change shows up in a diff instead of arriving silently. -/
 -- its `filterMap` drops the row and `[] == List.range 0` still holds — and dim 1 still pins
 -- advancing dimension 1 to literal `0`, so clause 1 is the only one that fails.
 def unrecognizedPointWrite : StateWriteMap :=
-  { pointWrite with map := { coeffs := #[#[2], #[]], bias := #[1, 0] } }
+  { pointWrite with map := { coeffs := #[#[-2], #[]], bias := #[1, 0] } }
 
 def unrecognizedPointRows : Array (Option WriteRowKind) := writeRowKinds 2 0 unrecognizedPointWrite
 
@@ -2560,11 +2553,11 @@ def stepWriteRowsOkNoClause1 (advancingDims : Array Nat) (outputShapeSize : Nat)
   (advancingDims.toList.zipIdx.all (fun (d, i) => rows.getD d none == some (.advancing i))) &&
   (rows.toList.zipIdx.all (fun (r, d) => advancingDims.contains d ||
     (match r with
-      | some (.free _) => true
+      | some (.free _) | some (.strided ..) => true
       | some (.pinned _) | some (.advancing _) | none => false))) &&
   ((rows.toList.zipIdx.filterMap (fun (r, d) =>
       if advancingDims.contains d then none else match r with
-        | some (.free p) => some p
+        | some (.free p) | some (.strided p ..) => some p
         | some (.pinned _) | some (.advancing _) | none => none))
     == List.range outputShapeSize)
 
@@ -2579,13 +2572,16 @@ def stepWriteRowsOkNoClause1 (advancingDims : Array Nat) (outputShapeSize : Nat)
     without extending this list turns the check into a tautology. -/
 def allRowKinds : List (Option WriteRowKind) :=
   [none, some (.pinned 0), some (.pinned 1), some (.free 0), some (.free 1)
-  , some (.advancing 0), some (.advancing 1)]
+  , some (.advancing 0), some (.advancing 1)
+  , some (.strided 0 2 0), some (.strided 1 2 1)]
 
--- The spot check: all 49 rank-2 rows arrays over those kinds x all four `advancingDims` subsets of
--- `{0, 1}` x output ranks 0-2, 588 cases. A `run_cmd` rather than a `#guard` so the diagnostic
+-- The spot check: all 81 rank-2 rows arrays over those kinds x all four `advancingDims` subsets of
+-- `{0, 1}` x output ranks 0-2, exactly 972 cases. A `run_cmd` rather than a `#guard` so the diagnostic
 -- states the CLAIM — a bare `#guard` failure prints only "Expression evaluated to false", which
 -- reads like a stale test rather than the notice it is.
 run_cmd do
+  unless allRowKinds.length * allRowKinds.length * 4 * 3 == 972 do
+    throwError "the clause-1 agreement window must contain exactly 972 cases"
   let agree := allRowKinds.all (fun r0 => allRowKinds.all (fun r1 =>
     ([#[], #[0], #[1], #[0, 1]] : List (Array Nat)).all (fun adv =>
       ([0, 1, 2] : List Nat).all (fun n =>
@@ -2687,5 +2683,210 @@ run_cmd do
   | .error e =>
       unless e == .writeGeometryNotAdmitted true 1 do
         throwError s!"base-phase clause-1 geometry rejection: wrong error {repr e}"
+
+/-! ## Part 10: S-B Task 2 — positive strided scan-write geometry
+
+All plans below are hand-built: they isolate the checked-plan boundary and do not claim source
+reachability. Source lowering is Task 6. The accepted execution fixture proves only that an admitted
+`StateWriteMap` is safe for the existing generic worker. -/
+
+/-- Match on every constructor so a future row kind makes this witness helper fail to compile. -/
+def classifyWitness (expected : WriteRowKind) (contextWidth : Nat)
+    (coeffRow : Array Int) (bias : Int) : Bool :=
+  match expected with
+  | .pinned lit => classifyWriteRow contextWidth coeffRow bias == some (.pinned lit)
+  | .free p => classifyWriteRow contextWidth coeffRow bias == some (.free p)
+  | .advancing p => classifyWriteRow contextWidth coeffRow bias == some (.advancing p)
+  | .strided p scale offset =>
+      classifyWriteRow contextWidth coeffRow bias == some (.strided p scale offset)
+
+-- Eight constructor/width witnesses.
+#guard classifyWitness (.pinned 3) 0 #[] 3
+#guard classifyWitness (.pinned 3) 2 #[0, 0, 0] 3
+#guard classifyWitness (.free 0) 0 #[1] 0
+#guard classifyWitness (.free 0) 2 #[0, 0, 1] 0
+#guard classifyWitness (.advancing 0) 2 #[1, 0] 1
+#guard classifyWriteRow 0 #[1] 1 == some (.strided 0 1 1)
+#guard classifyWitness (.strided 0 2 1) 0 #[2] 1
+#guard classifyWitness (.strided 0 2 1) 2 #[0, 0, 2] 1
+
+-- Three malformed strided rows and the two review-correction witnesses.
+#guard classifyWriteRow 0 #[-2] 0 == none
+#guard classifyWriteRow 0 #[2] (-1) == none
+#guard classifyWriteRow 0 #[2, 1] 0 == none
+#guard classifyWriteRow 2 #[1, 0] 0 == none
+#guard classifyWriteRow 0 #[1] 1 != some (.free 0)
+
+def stridedBaseRows : Array (Option WriteRowKind) :=
+  #[some (.pinned 0), some (.strided 0 2 0)]
+
+def stridedStepRows : Array (Option WriteRowKind) :=
+  #[some (.advancing 0), some (.strided 0 2 1)]
+
+-- Base and step both admit a strided row at a non-advancing dimension.
+#guard baseWriteRowsOk #[0] 1 stridedBaseRows
+#guard stepWriteRowsOk #[0] 1 stridedStepRows
+
+-- Base rows explicitly forbid `.advancing`, even in a hand-assembled width-zero boundary.
+#guard baseWriteRowsOk #[0] 0 #[some (.pinned 0), some (.advancing 0)] == false
+
+-- Review-correction donor: this satisfies recognition, cover, and boundary touch. It fails only
+-- because the strided row occupies advancing dimension 1.
+#guard baseWriteRowsOk #[0, 1] 2
+    #[some (.pinned 0), some (.strided 0 2 0), some (.free 1)] == false
+-- Moving that strided row to the non-advancing dimension is accepted; `.free` remains legal on an
+-- advancing dimension for a multi-axis boundary face.
+#guard baseWriteRowsOk #[0, 1] 2
+    #[some (.pinned 0), some (.free 0), some (.strided 1 2 0)]
+
+-- A step's advancing dimension still requires its exact `.advancing` row.
+#guard stepWriteRowsOk #[0] 1 #[some (.strided 0 2 0), some (.free 0)] == false
+
+def outerSigsStrided : Array TensorSignature :=
+  #[{ shape := #[3], dtype := .f64 }, { shape := #[3], dtype := .f64 }
+  , { shape := #[4, 6], dtype := .f64 }]
+
+def stateStrided : StateSlot :=
+  { destSlot := 2, advancingDims := #[0], materialization := .completeHistory }
+
+def baseBlockStrided : RawPlanBlock :=
+  { contextShape := #[], tensorSigs := #[{ shape := #[3], dtype := .f64 }]
+  , inputs := #[0], steps := #[], outputs := #[0] }
+
+def baseWriteStrided : StateWriteMap :=
+  { outputSlot := 0, stateIndex := 0
+  , map := { coeffs := #[#[0], #[2]], bias := #[0, 0] } }
+
+def stepReadStrided : ReadPlan :=
+  { sourceSlot := 0, map := { coeffs := #[#[0, 1]], bias := #[0] }
+  , sourceShape := #[3], oobPolicy := .zeroPad }
+
+def stepTermStrided : TermPlan :=
+  { iterationShape := #[3, 3], contextPos := #[0], outputPos := #[1], reductionPos := #[]
+  , factors := #[.read stepReadStrided] }
+
+def stepAssignStrided : AssignPlan :=
+  { contextShape := #[3], destinationSlot := 1, outputShape := #[3]
+  , terms := #[stepTermStrided], algebra := admittedAlgebra }
+
+def stepBlockStrided : RawPlanBlock :=
+  { contextShape := #[3]
+  , tensorSigs := #[{ shape := #[3], dtype := .f64 }, { shape := #[3], dtype := .f64 }]
+  , inputs := #[0], steps := #[.assign stepAssignStrided], outputs := #[1] }
+
+def stepWriteStrided : StateWriteMap :=
+  { outputSlot := 1, stateIndex := 0
+  , map := { coeffs := #[#[1, 0], #[0, 2]], bias := #[1, 1] } }
+
+def stridedScan : RawScanPlan :=
+  { states := #[stateStrided]
+  , baseBlock := baseBlockStrided
+  , baseCaptures := #[{ inputSlot := 0, source := .external 0 }]
+  , baseWrites := #[baseWriteStrided]
+  , stepBlock := stepBlockStrided
+  , stepCaptures := #[{ inputSlot := 0, source := .external 1 }]
+  , stepWrites := #[stepWriteStrided]
+  , historyExtents := #[4]
+  , iterationOrder := .axisZeroFastest
+  , boundaryPolicy := .zeroThenBaseOverlay
+  , snapshotPolicy := .immutablePreStep }
+
+def outerStoreStrided : Array DenseTensor :=
+  #[{ shape := [3], data := #[10.0, 20.0, 30.0] }
+  , { shape := [3], data := #[1.0, 2.0, 3.0] }
+  , { shape := [4, 6], data := Array.replicate 24 0.0 }]
+
+-- Both strided phases check and execute through the unchanged generic `commitWrite`.
+run_cmd do
+  match checkScanPlan outerSigsStrided stridedScan with
+  | .error e => throwError s!"strided scan was rejected: {repr e}"
+  | .ok checked =>
+      match runDenseScan outerSigsStrided checked outerStoreStrided with
+      | .error e => throwError s!"strided scan execution failed: {repr e}"
+      | .ok result =>
+          let actual := result.getD 2 { shape := [], data := #[] }
+          let expected : DenseTensor :=
+            { shape := [4, 6]
+            , data := #[10.0, 0.0, 20.0, 0.0, 30.0, 0.0,
+                        0.0, 1.0, 0.0, 2.0, 0.0, 3.0,
+                        0.0, 1.0, 0.0, 2.0, 0.0, 3.0,
+                        0.0, 1.0, 0.0, 2.0, 0.0, 3.0] }
+          unless DenseTensor.approxEq actual expected do
+            throwError s!"strided scan produced wrong state: {repr actual}"
+
+-- Exact shared extent agreement for free and strided rows.
+#guard outputRowExtentsAgree #[4, 6] #[3] stridedBaseRows
+#guard outputRowExtentsAgree #[4, 5] #[3] stridedBaseRows == false
+#guard outputRowExtentsAgree #[4, 6] #[3] stridedStepRows
+
+def outerSigsStridedBaseMismatch : Array TensorSignature :=
+  outerSigsStrided.set! 2 { shape := #[4, 5], dtype := .f64 }
+
+run_cmd do
+  match checkScanPlan outerSigsStridedBaseMismatch stridedScan with
+  | .ok _ => throwError "a strided base write with the wrong destination extent was accepted"
+  | .error e =>
+      unless e == .writeFreeExtentMismatch true 0 0 #[4, 5] #[3] do
+        throwError s!"strided base extent mismatch: wrong error {repr e}"
+
+def outerSigsStridedStepMismatch : Array TensorSignature :=
+  outerSigsStrided.set! 1 { shape := #[2], dtype := .f64 }
+
+def stepReadStridedShort : ReadPlan :=
+  { stepReadStrided with sourceShape := #[2] }
+
+def stepTermStridedShort : TermPlan :=
+  { stepTermStrided with iterationShape := #[3, 2], factors := #[.read stepReadStridedShort] }
+
+def stepAssignStridedShort : AssignPlan :=
+  { stepAssignStrided with outputShape := #[2], terms := #[stepTermStridedShort] }
+
+def stepBlockStridedShort : RawPlanBlock :=
+  { stepBlockStrided with
+    tensorSigs := #[{ shape := #[2], dtype := .f64 }, { shape := #[2], dtype := .f64 }]
+  , steps := #[.assign stepAssignStridedShort] }
+
+def stridedStepExtentMismatchScan : RawScanPlan :=
+  { stridedScan with stepBlock := stepBlockStridedShort }
+
+run_cmd do
+  match checkScanPlan outerSigsStridedStepMismatch stridedStepExtentMismatchScan with
+  | .ok _ => throwError "a strided step write with the wrong destination extent was accepted"
+  | .error e =>
+      unless e == .writeFreeExtentMismatch false 0 0 #[4, 6] #[2] do
+        throwError s!"strided step extent mismatch: wrong error {repr e}"
+
+-- Equal-scale different residues are disjoint; all other new pairings stay conservative.
+#guard writesCollide #[some (.strided 0 2 0)] #[some (.strided 0 2 1)] == false
+#guard writesCollide #[some (.strided 0 2 0)] #[some (.strided 0 2 2)] == true
+#guard writesCollide #[some (.strided 0 2 0)] #[some (.strided 0 3 1)] == true
+#guard writesCollide #[some (.free 0)] #[some (.strided 0 2 1)] == true
+
+def finiteStridedImage (scale offset : Int) (extent : Nat) : List Int :=
+  (List.range extent).map (fun i => scale * Int.ofNat i + offset)
+
+-- Exhaustive finite soundness check: 5·8·8 choices per row, hence 102,400 ordered pairs.
+run_cmd do
+  let scales : List Int := [1, 2, 3, 4, 5]
+  let offsets : List Int := [0, 1, 2, 3, 4, 5, 6, 7]
+  let extents : List Nat := [0, 1, 2, 3, 4, 5, 6, 7]
+  let mut checked := 0
+  for scaleA in scales do
+    for offsetA in offsets do
+      for extentA in extents do
+        for scaleB in scales do
+          for offsetB in offsets do
+            for extentB in extents do
+              checked := checked + 1
+              let rowsA := #[some (.strided 0 scaleA offsetA)]
+              let rowsB := #[some (.strided 0 scaleB offsetB)]
+              if !writesCollide rowsA rowsB then
+                let imageA := finiteStridedImage scaleA offsetA extentA
+                let imageB := finiteStridedImage scaleB offsetB extentB
+                if imageA.any imageB.contains then
+                  throwError s!"unsound modular disjointness: ({scaleA},{offsetA},{extentA}) / \
+                    ({scaleB},{offsetB},{extentB})"
+  unless checked == 102400 do
+    throwError s!"collision soundness corpus ran {checked} cases, expected 102400"
 
 end LeanNCD.Eval.Plan.ScanTest

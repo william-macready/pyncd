@@ -1243,7 +1243,7 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
     let st := stateNames.getD w.stateIndex ""
     let stateShape := stateShapes.getD w.stateIndex #[]
     let rows := baseWriteRows.getD wi #[]
-    unless (stateAdvDims.getD w.stateIndex #[]).any (fun d => rows.getD d none == some (.pinned 0)) do
+    unless baseWriteTouchesBoundary (stateAdvDims.getD w.stateIndex #[]) rows do
       throw (scanErr warnings (.baseWriteNotAtBoundary scanName st wi))
     for h2 : d in [0 : rows.size] do
       match rows[d] with
@@ -1258,7 +1258,7 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
       -- no range obligation: `pinnedLiteralsInRange` is vacuously true on these rows, whose
       -- coordinates are bounded by the checked output/context shapes instead. Spelled out rather
       -- than caught by `| _ =>` so a new `WriteRowKind` constructor is a compile error here too.
-      | some (.free _) | some (.advancing _) | none => pure ()
+      | some (.free _) | some (.advancing _) | some (.strided ..) | none => pure ()
   for h : si in [0 : stateNames.size] do
     let st := stateNames[si]
     let mine : Array (Nat × Array (Option WriteRowKind)) :=

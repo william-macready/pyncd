@@ -32,3 +32,41 @@ Prepared by: .claude/skills/new-slice/prepare-worktree.sh
   - `build LeanNCD` — pass, 8,544 jobs (replayed pre-existing warnings/sorries outside Task 1).
   - `build JaxExperiment` — pass, 8,514 jobs.
 - No Task 1 stop condition occurred. Task 2 not started.
+
+## Task 2 — complete
+
+- Added `WriteRowKind.strided outputPos scale offset` in classifier order after `.advancing` and
+  `.free`, requiring an output-half position, positive scale, and nonnegative offset.
+- Base and step geometry now share ordered free/strided output-position coverage and exact
+  output-row extent checking. Base writes explicitly reject `.advancing` rows and reject
+  `.strided` rows on advancing dimensions.
+- Strided extents delegate to `scatterDestExtent`; pinned range checking is unchanged. Equal
+  positive scales with distinct offset residues are the only new proven-disjoint collision case.
+- The compiler now reuses `baseWriteTouchesBoundary`. All nine exhaustiveness tripwires were
+  extended, including the frozen 9-value / 81-pair / 972-case clause-1 agreement oracle.
+- Added classifier witnesses, base/step acceptance and execution, base/step extent mismatches,
+  forbidden dimension classes, four collision cases, and the exhaustive 102,400-case finite-image
+  soundness check.
+- Mutation evidence used only
+  `/Users/williammacready/code/python/pyncd/leanncd/scripts/mutation-cycle.sh`; every listed cycle
+  reported `mutation_exit=1 restore_hash_exit=0 restored_build_exit=0` and `PASS`:
+  - M1 positive-scale guard: negative-scale classifier and base geometry guards failed.
+  - M2 nonnegative-offset guard: negative-offset classifier guard failed.
+  - M3 output-half guard: context-position classifier and step-geometry guards failed.
+  - M4 strided cover arm: the behavior-level mutation returned `none` for `.strided`; base/step
+    acceptance, execution, extent diagnostics, and the 972-case agreement oracle failed.
+  - M5 base `.advancing` prohibition: the synthetic base-row rejection failed.
+  - M6 advancing-dimension `.strided` prohibition: the isolated dimension-class rejection failed.
+  - M7 strided extent equality: predicate plus base/step plan-level mismatch fixtures failed.
+  - M8 modular disjointness: the even/odd disjointness guard failed.
+  - M9 compiler boundary predicate reuse: `ScanCompileTest` boundary locator guards failed.
+  - M10 `.advancing` bias requirement: look-ahead and classifier closure witnesses failed.
+  - M11 `.free` bias requirement: shifted-unit-stride and classifier closure witnesses failed.
+- Gates:
+  - `build Eval.Plan.ScanTest Eval.Plan.ScanCompileTest`: pass, 8,515 jobs.
+  - `build LeanNCD`: pass, 8,544 jobs.
+  - After an unsafe `lake --dir` probe selected Lean 4.33.1, an explicit Lean 4.30.0 targeted build
+    restored dependencies and passed at 8,515 jobs. A scripted M11 rerun then restored the source
+    hashes and rebuilt `LeanNCD` successfully at 8,544 jobs. Its mutated `LeanNCD` target survived,
+    as expected because that target excludes `ScanTest`; it is not counted as mutation evidence.
+- Soundness-focused review: CLEAN. No Task 2 stop condition occurred.

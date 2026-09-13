@@ -4,14 +4,15 @@ import LeanNCD.Eval.Plan.Block
 namespace LeanNCD.Eval.Plan
 
 /-- One recognized shape for a write-map row: pinned to a literal, an order-preserving projection
-    of the block's own output slice, or bound to `context[p] + 1` (step writes only). Anything else
-    is an unrecognized affine geometry and must be rejected.
+    of the block's own output slice, a positive affine placement of one output position, or bound to
+    `context[p] + 1` (step writes only). Anything else is an unrecognized affine geometry and must
+    be rejected.
 
     **Every consumer matches exhaustively over its constructors — on purpose.** Adding a
     constructor here is meant to be a compile error at each site that would otherwise silently
     exempt the new kind. **Nine such sites, seven of them production:** six in this file
-    (`baseWriteRowsOk`'s positional cover, both of `stepWriteRowsOk`'s non-advancing clauses,
-    `freeExtentsAgree`, `pinnedLiteralsInRange`, `writesCollide`), one in `Compile.lean` (its
+    (`baseWriteRowsOk`'s dimension-class clause, `outputPosOfRow`, `stepWriteRowsOk`'s
+    non-advancing clause, `outputRowExtentsAgree`, `pinnedLiteralsInRange`, `writesCollide`), one in `Compile.lean` (its
     base-write placement loop), and two in the test suite — the two matches inside `ScanTest.lean`'s
     frozen `stepWriteRowsOkNoClause1` oracle. They do not all appear in one build: this file's six
     are reported together, and the `Compile.lean` and `ScanTest.lean` ones surface only once those
@@ -27,14 +28,14 @@ namespace LeanNCD.Eval.Plan
     remind you.
 
     The boundary rule is the one place the surface decides by EQUALITY rather than by matching:
-    `baseWriteRowsOk`'s advancing-pin clause, and `Compile.lean`'s `baseWriteNotAtBoundary` guard
-    that restates it, both compare a row against `some (.pinned 0)`. No exhaustiveness obligation
-    attaches to a comparison, so a new kind is simply unequal and the write is rejected — safe by
-    default, but no compiler will point at either site. -/
+    `baseWriteTouchesBoundary` compares a row against `some (.pinned 0)`. No exhaustiveness
+    obligation attaches to a comparison, so a new kind is simply unequal and the write is rejected
+    — safe by default, but no compiler will point at this site. -/
 inductive WriteRowKind
   | pinned    (lit : Int)
   | free      (outputPos : Nat)
   | advancing (contextPos : Nat)
+  | strided   (outputPos : Nat) (scale offset : Int)
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- Classify one complete-state dimension's write row. `contextWidth` is `0` for a base write and
@@ -47,6 +48,8 @@ def classifyWriteRow (contextWidth : Nat) (coeffRow : Array Int) (bias : Int) : 
   | [(c, p)] =>
       if c == 1 && p < contextWidth && bias == 1 then some (.advancing p)
       else if c == 1 && p ≥ contextWidth && bias == 0 then some (.free (p - contextWidth))
+      else if p ≥ contextWidth && c > 0 && bias ≥ 0 then
+        some (.strided (p - contextWidth) c bias)
       else none
   | _ :: _ :: _ => none
 
@@ -56,21 +59,33 @@ def writeRowKinds (stateRank contextWidth : Nat) (w : StateWriteMap) : Array (Op
   (Array.range stateRank).map (fun d =>
     classifyWriteRow contextWidth (w.map.coeffs.getD d #[]) (w.map.bias.getD d 0))
 
-/-- A base write's rows must all be recognized, its free positions must cover `0 .. outputShape)`
-    in increasing order (order-preserving onto the block's own output axes), and at least one
-    advancing dimension must be pinned to literal `0` (touches the lower boundary). -/
+/-- The block-output position carried by an output-bearing row kind. -/
+def outputPosOfRow : Option WriteRowKind → Option Nat
+  | some (.free p) | some (.strided p ..) => some p
+  | some (.pinned _) | some (.advancing _) | none => none
+
+/-- A base write touches the scan boundary when an advancing state dimension is pinned to zero. -/
+def baseWriteTouchesBoundary (advancingDims : Array Nat)
+    (rows : Array (Option WriteRowKind)) : Bool :=
+  advancingDims.any (fun d => rows.getD d none == some (.pinned 0))
+
+/-- A base write's rows must all be recognized, every row must have a base-admitted dimension class,
+    its free/strided positions must cover `0 .. outputShape)` in increasing order, and it must touch
+    the lower boundary. Strided placement is forbidden on an advancing state dimension. -/
 def baseWriteRowsOk (advancingDims : Array Nat) (outputShapeSize : Nat)
     (rows : Array (Option WriteRowKind)) : Bool :=
   rows.all Option.isSome &&
-  ((rows.toList.filterMap (fun r => match r with
-      | some (.free p) => some p
-      | some (.pinned _) | some (.advancing _) | none => none))
-    == List.range outputShapeSize) &&
-  advancingDims.any (fun d => rows.getD d none == some (.pinned 0))
+  rows.toList.zipIdx.all (fun (r, d) => match r with
+    | some (.pinned _) | some (.free _) => true
+    | some (.strided ..) => !advancingDims.contains d
+    | some (.advancing _) => false
+    | none => false) &&
+  rows.toList.filterMap outputPosOfRow == List.range outputShapeSize &&
+  baseWriteTouchesBoundary advancingDims rows
 
 /-- A step write's rows: every advancing dimension must be `.advancing` at its own context position
-    (dimension `advancingDims[i]` at context position `i`), every other dimension must be `.free`
-    in increasing order onto the block's own output axes, and no row may be unrecognized.
+    (dimension `advancingDims[i]` at context position `i`), every other dimension must be `.free` or
+    `.strided` in increasing order onto the block's own output axes, and no row may be unrecognized.
 
     The third clause states the "must BE `.free`" half explicitly rather than leaving it implied by
     the fourth clause's positional cover. Without it the fourth clause's `filterMap` maps a
@@ -97,33 +112,30 @@ def stepWriteRowsOk (advancingDims : Array Nat) (outputShapeSize : Nat)
   (advancingDims.toList.zipIdx.all (fun (d, i) => rows.getD d none == some (.advancing i))) &&
   (rows.toList.zipIdx.all (fun (r, d) => advancingDims.contains d ||
     (match r with
-      | some (.free _) => true
-      | some (.pinned _) | some (.advancing _) | none => false))) &&
+     | some (.free _) | some (.strided ..) => true
+     | some (.pinned _) | some (.advancing _) | none => false))) &&
   ((rows.toList.zipIdx.filterMap (fun (r, d) =>
-      if advancingDims.contains d then none else match r with
-        | some (.free p) => some p
-        | some (.pinned _) | some (.advancing _) | none => none))
+      if advancingDims.contains d then none else outputPosOfRow r))
     == List.range outputShapeSize)
 
-/-- For every `.free` row, the state's own dimension size must equal the block output's size at the
-    corresponding free position — proposal §7.3's "write-result signature agreement with the
-    unpinned state dimensions", previously checked only for rank/position, never for size. Without
-    it, a write whose free face is WIDER than the state's own dimension writes out of its declared
-    region (silently into another row's cells, or past the end of the tensor entirely); a NARROWER
-    one leaves part of the region it claims to cover unwritten. At its only call site it runs AFTER
-    `baseWriteRowsOk`/`stepWriteRowsOk` have admitted the geometry, which forces `rows.size` to be
-    the state's rank and every free position to be in range — so neither `getD` default is
-    reachable there. -/
-def freeExtentsAgree (stateShape : Array Nat) (outputShape : Array Nat)
+/-- Every output-bearing row must imply exactly its state dimension's extent. Free rows use the
+    identity extent; strided rows delegate to `scatterDestExtent`, which in turn delegates to the
+    global `LHSSlot.outExtent` contract. This runs only after geometry admission has proved the
+    output positions form an ordered cover. -/
+def outputRowExtentsAgree (stateShape : Array Nat) (outputShape : Array Nat)
     (rows : Array (Option WriteRowKind)) : Bool :=
   rows.toList.zipIdx.all (fun (r, d) => match r with
     | some (.free p) => stateShape.getD d 0 == outputShape.getD p 0
+    | some (.strided p scale offset) =>
+       let row := (Array.range outputShape.size).map (fun q => if q == p then scale else 0)
+       scatterDestExtent outputShape row offset == some (stateShape.getD d 0)
     | some (.pinned _) | some (.advancing _) | none => true)
 
 /-- Every `.pinned` row's literal must be a valid in-range coordinate for its own state dimension —
     proposal §7.3's write-result signature agreement extended to pinned (not just free) positions.
-    `.free`/`.advancing` rows are vacuously fine (their range is already bounded by the checked
-    output/context shapes elsewhere). Sibling of `freeExtentsAgree`, same failure class: geometry
+    `.free`/`.advancing`/`.strided` rows are vacuously fine (their range is already bounded by the
+    checked output/context shapes and exact extent equality elsewhere). Sibling of
+    `outputRowExtentsAgree`, same failure class: geometry
     admission recognizes a row as `.pinned lit` without ever looking at `lit`'s VALUE, so
     `baseWriteRowsOk`'s "some advancing dimension is pinned to `0`" rule leaves every OTHER pinned
     literal — and any pinned literal on a non-advancing dimension — completely unconstrained. A base
@@ -141,23 +153,25 @@ def freeExtentsAgree (stateShape : Array Nat) (outputShape : Array Nat)
 def pinnedLiteralsInRange (stateShape : Array Nat) (rows : Array (Option WriteRowKind)) : Bool :=
   rows.toList.zipIdx.all (fun (r, d) => match r with
     | some (.pinned lit) => 0 ≤ lit && lit.toNat < stateShape.getD d 0
-    | some (.free _) | some (.advancing _) | none => true)
+    | some (.free _) | some (.advancing _) | some (.strided ..) | none => true)
 
-/-- Two writes' declared regions collide iff no dimension forces them apart. Since every row is
-    `.pinned`/`.free`/`.advancing`, a dimension forces the regions apart only when BOTH writes pin
-    it to DIFFERENT literals; `.free`/`.advancing` always range over their full domain and can never
-    exclude the other write. This single rule is what makes "two full free-axis faces never
-    disjoint" (proposal §5.1) a structural consequence rather than an asserted claim — verified
-    below against F0's own worked fixture. -/
+/-- Two writes' declared regions collide iff no dimension forces them apart. Different pinned
+    literals separate a dimension. Two positive strided rows also separate it when their scales are
+    equal and their offsets have different residues modulo that scale. Every other pairing remains
+    conservatively colliding. -/
 def writesCollide (rowsA rowsB : Array (Option WriteRowKind)) : Bool :=
   ¬ (List.range rowsA.size).any (fun d =>
       match rowsA.getD d none, rowsB.getD d none with
       | some (.pinned a), some (.pinned b) => a != b
+      | some (.strided _ scaleA offsetA), some (.strided _ scaleB offsetB) =>
+          scaleA > 0 && scaleA == scaleB && offsetA % scaleA != offsetB % scaleB
       | some (.pinned _), some (.free _)
       | some (.pinned _), some (.advancing _)
+      | some (.pinned _), some (.strided ..)
       | some (.pinned _), none
       | some (.free _), _
       | some (.advancing _), _
+      | some (.strided ..), _
       | none, _ => false)
 
 /-- Whether one read row (for state dimension `d`, whose scan-context position is `ctxPos`) is
@@ -330,8 +344,8 @@ private def checkCaptures (sigs : Array TensorSignature) (block : RawPlanBlock)
     can disagree with the state's rank independently of each other), base-write geometry is admitted
     and pairwise disjoint across each state's FULL write list, step-write geometry is admitted, and
     every
-    admitted write's free rows agree in SIZE with the state's own dimensions (`freeExtentsAgree` —
-    geometry admission covers only rank/position) and every pinned row's LITERAL is an in-range
+    admitted write's output-bearing rows agree in SIZE with the state's own dimensions
+    (`outputRowExtentsAgree` — geometry admission covers only rank/position) and every pinned row's LITERAL is an in-range
     coordinate of that dimension (`pinnedLiteralsInRange` — geometry admission never inspects a
     pinned literal's value beyond the single "some advancing dimension is `0`" rule). Returns, per
     state, the accepted row
@@ -387,7 +401,7 @@ private def checkWrites (sigs : Array TensorSignature) (block : RawPlanBlock)
     let admitted := if isBase then baseWriteRowsOk st.advancingDims outputShape.size rows
                     else stepWriteRowsOk st.advancingDims outputShape.size rows
     unless admitted do throw (.writeGeometryNotAdmitted isBase wi)
-    unless freeExtentsAgree stateShape outputShape rows do
+    unless outputRowExtentsAgree stateShape outputShape rows do
       throw (.writeFreeExtentMismatch isBase wi w.stateIndex stateShape outputShape)
     unless pinnedLiteralsInRange stateShape rows do
       throw (.writePinnedLiteralOutOfRange isBase wi w.stateIndex stateShape)
@@ -585,10 +599,13 @@ def mixedRadixDomainSize (D : Array Nat) : Nat := D.foldl (· * ·) 1
     therefore load-bearing for scan writes, not merely local geometry.
 
     Given that premise, row by row, per `writeRowKinds`/`baseWriteRowsOk`/`stepWriteRowsOk`:
-    - a `.free p` row ranges over exactly `out.shape[p]`, which `freeExtentsAgree` forces to equal
+    - a `.free p` row ranges over exactly `out.shape[p]`, which `outputRowExtentsAgree` forces to equal
       the state's own extent at that dimension (this was the gap the final F3 review found: before
       it, only the free positions' RANK/ORDER was checked, so a wider output face wrote into other
       rows' cells or past the end of the tensor);
+    - a `.strided p scale offset` row is positive by classification, and
+      `outputRowExtentsAgree` requires the shared `scatterDestExtent` to equal the state extent, so
+      every affine image coordinate is in range;
     - an `.advancing i` row is `ctx[i] + 1`, with `ctx` from `mixedRadixUnrank c.stepExtents` and
       `stepExtents = historyExtents - 1`. `advancingSizeMismatch` ties `historyExtents[i]` to
       `stateShape[advancingDims[i]]` — and ONLY to that dimension — so this argument holds exactly
@@ -606,7 +623,7 @@ def mixedRadixDomainSize (D : Array Nat) : Nat := D.foldl (· * ·) 1
       `dp[5, 0] := ONE` on a `[2,2]` state was accepted here and reached `Array.set!` out of range
       (`lean_array_set_panic`, or a silent commit to the wrong cell). A guard HERE could not have
       fixed it (this function returns a `DenseTensor`, not an `Except`, so it could only silently
-      drop the write) — it belongs in `checkWrites` beside `freeExtentsAgree`, which is where it
+      drop the write) — it belongs in `checkWrites` beside `outputRowExtentsAgree`, which is where it
       now lives. -/
 private def commitWrite (target : DenseTensor) (w : StateWriteMap) (blockStore : Array DenseTensor)
     (ctx : List Int) : DenseTensor := Id.run do
