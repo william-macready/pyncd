@@ -20,10 +20,18 @@ def cartesianList : List (List Nat) → List (List Nat)
   | []      => [[]]
   | r :: rs => (cartesianList rs).flatMap (fun tail => r.map (fun x => x :: tail))
 
-/-- Evaluate ONE stmt with a SET of iteration axes pinned (`seed : uid ↦ value`), over the
-    remaining (non-seeded) free axes, returning `(name, slice)` where `slice` has the non-seeded
-    free-axis shape. Reads gather from `env`, which holds the partial state at ALL iterations, so a
-    read `G[…,l]` works. The seeded axes are pinned via `evalAssignSeeded`. Applies the RHS nonlin.
+/-- LHS source axes for scan-scatter computation, de-duplicated by UID in first-seen order. -/
+def scanScatterSourceAxes (slots : List LHSSlot) : List AxisSpec :=
+  (slots.flatMap (fun sl =>
+    (IdxExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) sl.outIdx).run)).foldl
+    (fun acc a =>
+      if acc.any (fun seen => seen.uid == a.uid) then acc else acc ++ [a]) []
+
+/-- Evaluate ONE stmt with a SET of iteration axes pinned (`seed : uid ↦ value`), over its
+    remaining dense source axes, returning `(name, slice)`. Reads gather from `env`, which holds the
+    partial state at ALL iterations, so a read `G[…,l]` works. The seeded axes are pinned via
+    `evalAssignSeeded`. A scatter is computed as a plain projection over its non-seeded LHS source
+    axes; its original affine slots are used only later, when placing the completed dense slice.
 
     The slice's axes are the NON-seeded free slots in slot order (see `evalAssignSeeded`), so the
     softmax/normalize reduction axis is the position of the output slot marked `m.` (the norm flag
@@ -38,17 +46,48 @@ def evalStmtSliceSeeded (decls : List Decl) (env : HashMap String DenseTensor) (
       let sliceUids := (slots.filterMap (·.axisUID?)).filter (fun u => ! seed.contains u)
       let rn ← resolveNonlin rhs.nonlin slots sliceUids
       return (nm, applyNonlin rn sliceUids slice)
-  | _ => throw (.invalidScanNode .onlyAssignInSlice)
+  | .scatter nm slots rhs _ =>
+      if rhs.nonlin ≠ Nonlin.identity then
+        throw (.unsupportedScatterNonlin nm)
+      let sourceAxes := (scanScatterSourceAxes slots).filter (fun a => ! seed.contains a.uid)
+      evalAssignDtypedSeeded decls env sizes seed nm (sourceAxes.map LHSSlot.free) rhs
+  | .recurMorphism _ _ _ => throw (.invalidScanNode .onlyAssignInSlice)
 
-/-- Write a non-iter `slice` into the full state tensor `out`, given the iteration `(position, index)`
-    pairs (one per advancing axis of the stmt). The slice's coords are the out-coords with all
-    iteration positions removed; rebuild the full coord by inserting each iteration index at its
-    position in ASCENDING position order (so earlier insertions don't shift later ones). -/
-def writeSliceAtMulti (out : DenseTensor) (iters : List (Nat × Nat)) (slice : DenseTensor) : DenseTensor :=
-  let sorted := iters.mergeSort (fun a b => a.1 ≤ b.1)   -- ascending by position
+/-- Full persistent-state shape for one scan statement. Iteration slots retain their declared
+    history extent; every other slot uses the shared scatter-output extent rule. -/
+def scanStateShape (sizes : HashMap UID Nat) (slots : List LHSSlot) :
+    Except EvalError (List Nat) :=
+  slots.mapM (fun sl => match sl with
+    | .iterAt a _ | .iterNext a =>
+        match sizes[a.uid]? with
+        | some n => pure n
+        | none   => throw (.shape (.unsizedAxis a.uid (.scanIteration a.name)))
+    | _ =>
+        match sl.outExtent (fun u => sizes[u]?) with
+        | some n => pure n
+        | none   => throw (.shape (.unsizedScatterOutput sl)))
+
+/-- Place a completed dense source slice into a persistent scan state. Ordinary assignments retain
+    their slot-order source basis; scatters use their first-seen LHS source-axis basis. In both cases
+    every original LHS expression is evaluated only after RHS contraction has produced `slice`. -/
+def writeScanStmtSlice (out : DenseTensor) (seed : HashMap UID Int) (s : Stmt)
+    (slice : DenseTensor) : DenseTensor :=
+  let sliceUids : List UID := match s with
+    | .assign _ slots _ =>
+        (slots.filterMap LHSSlot.axisUID?).filter (fun u => ! seed.contains u)
+    | .scatter _ slots _ _ =>
+        ((scanScatterSourceAxes slots).filter
+          (fun a => ! seed.contains a.uid)).map AxisSpec.uid
+    | .recurMorphism _ _ _ => []
   (DenseTensor.allCoords slice.shape).foldl (fun cur scoord =>
-    let ocoord := sorted.foldl (fun acc (pos, idx) => acc.insertIdx pos idx) scoord
-    cur.set! ocoord (slice.get! scoord)) out
+    let coord := (sliceUids.zip scoord).foldl
+      (fun m (u, v) => m.insert u (Int.ofNat v)) seed
+    let outCoordZ := s.slots.map (fun sl => evalIdx coord sl.outIdx)
+    if outCoordZ.length == out.shape.length &&
+        (outCoordZ.zip out.shape).all (fun (z, d) => 0 ≤ z && z < (d : Int)) then
+      cur.set! (outCoordZ.map Int.toNat) (slice.get! scoord)
+    else
+      cur) out
 
 /-- Evaluate a ScanStmt → the scanned state tensors. Multi-axis (n-D) scans iterate the cartesian
     product of `[0 … L_a − 2]` over every advancing axis. Boundary semantics (zero-default): the
@@ -77,11 +116,18 @@ def evalScan (decls : List Decl) (env : HashMap String DenseTensor) (sizes : Has
         | some n => pure n
         | none   => throw (.shape (.unsizedAxis a.uid (.scanIteration a.name))))
       let stateNames := (base.map Stmt.lhsName).eraseDups
+      for s in recur do
+        if !(stateNames.contains s.lhsName) then
+          match s with
+          | .scatter _ _ _ _ => throw (.invalidScanNode .onlyAssignInSlice)
+          | _ => pure ()
       -- 1. allocate each state tensor (zeros at full shape) from its base slots.
       let mut work := env
       for s in base do
         match s with
-        | .assign nm slots _ => work := work.insert nm (DenseTensor.zeros (outputShape sizes slots))
+        | .assign nm slots _ | .scatter nm slots _ _ =>
+            let stateShape ← scanStateShape sizes slots
+            work := work.insert nm (DenseTensor.zeros stateShape)
         | _ => throw (.invalidScanNode .baseMustBeAssign)
       -- 2. fill boundaries from base stmts: each base pins a subset of axes to their literal index
       --    and fills that slice over its free axes (e.g. `G[r,0]` fills the c=0 column for all r).
@@ -89,8 +135,8 @@ def evalScan (decls : List Decl) (env : HashMap String DenseTensor) (sizes : Has
         let seed : HashMap UID Int := ((s.slots).filterMap (fun
             | .iterAt a n => some (a.uid, n) | _ => none)).foldl (fun m (u, n) => m.insert u n) {}
         let (nm, slice) ← evalStmtSliceSeeded decls work sizes seed s
-        let iters := (iterSlotPositions s).map (fun (u, p) => (p, ((seed[u]?).getD 0).toNat))
-        work := work.insert nm (writeSliceAtMulti ((work[nm]?).getD (DenseTensor.zeros [])) iters slice)
+        let priorState := (work[nm]?).getD (DenseTensor.zeros [])
+        work := work.insert nm (writeScanStmtSlice priorState seed s slice)
       -- 3. nested loop over ∏ [0 … L_a − 2]: run the recur list at each tuple; intermediates into
       --    the step env; write final state slices at (position, index+1) per advancing axis.
       let ranges := Ls.map (fun L => List.range (L - 1))
@@ -106,9 +152,8 @@ def evalScan (decls : List Decl) (env : HashMap String DenseTensor) (sizes : Has
           -- is NOT an allocated state — keep it as a raw slice in the step env only. (This is the
           -- crucial distinction from a slot-based test.)
           if stateNames.contains nm then
-            -- a state slice: write at (position, currentIndex+1) for each of THIS stmt's advancing axes
-            let iters := (iterSlotPositions s).map (fun (u, p) => (p, ((seed[u]?).getD 0).toNat + 1))
-            let updated := writeSliceAtMulti ((work[nm]?).getD (DenseTensor.zeros [])) iters slice
+            let updated :=
+              writeScanStmtSlice ((work[nm]?).getD (DenseTensor.zeros [])) seed s slice
             work := work.insert nm updated
             stepEnv := stepEnv.insert nm updated
           else

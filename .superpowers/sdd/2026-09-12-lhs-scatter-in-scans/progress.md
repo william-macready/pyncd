@@ -70,3 +70,28 @@ Prepared by: .claude/skills/new-slice/prepare-worktree.sh
     hashes and rebuilt `LeanNCD` successfully at 8,544 jobs. Its mutated `LeanNCD` target survived,
     as expected because that target excludes `ScanTest`; it is not counted as mutation evidence.
 - Soundness-focused review: CLEAN. No Task 2 stop condition occurred.
+
+## Task 3 — complete
+
+- `evalStmtSliceSeeded` now computes scan scatters as dense assignments over the first-seen,
+  non-seeded LHS source-axis basis. RHS-only axes remain contractions.
+- `scanStateShape` retains declared history extents for iteration slots and delegates every other
+  slot to `LHSSlot.outExtent`.
+- `writeScanStmtSlice` evaluates the original LHS expressions only after dense slice computation and
+  overlays base contributions in source order. Ordinary assignment slices retain their prior basis.
+- Scatter-shaped recurrence scratch is rejected before its RHS is evaluated.
+- Added complete shape/data fixtures for strided base, strided recurrence, even/odd base interleave,
+  dense contraction before placement, and a non-trailing scan dimension.
+- Scripted mutation evidence, all through
+  `/Users/williammacready/code/python/pyncd/leanncd/scripts/mutation-cycle.sh`, with
+  `mutation_exit=1 restore_hash_exit=0 restored_build_exit=0`:
+  - M1 wrote dense source coordinates directly: all five S-B value fixtures failed.
+  - M2 included RHS-only axes in the source basis: the contraction fixture failed.
+  - M3 reinitialized before each base contribution: interleave and existing multi-base fixtures
+    failed.
+  - M4 dropped affine bias: recurrence, interleave, and non-trailing-position fixtures failed.
+- Gates:
+  - Each restored focused cycle rebuilt `Eval.ScanTest` successfully at 8,488 jobs.
+  - An M4 rerun against `Tests` failed at the intended fixtures, then the restored `Tests` build
+    passed at 8,661 jobs. Generated corpus remained 3,832/3,832 and scan corpus 17/17.
+- Reference-semantics review: CLEAN. No Task 3 stop condition occurred.

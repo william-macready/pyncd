@@ -109,24 +109,26 @@ run_cmd do
       throwError s!"4c mutation check: Combine.real should give 2.0 on this rhs, got {repr R.data} \
 (if this fails, the test above may be passing for the wrong reason)"
 
--- scan/scatter boundary check (found while writing the 4g plan, not a 4g bug): a scatter-shaped
--- LHS combined with an iteration slot (e.g. `Out[2*i, l+1] := X[i,l]`) compiles successfully today
--- — lowerArith reclassifies the whole slot list to Stmt.scatter regardless of the iteration slot
--- riding on another dimension, and finalizeScans groups it into a scan's base/recur list with
--- nothing rejecting the combination at compile time. evalStmtSliceSeeded is what actually rejects
--- it, at eval time. This test locks in that rejection so evalScatter/CollisionReduce changes in
--- this plan (Tasks 2-3) can't silently make evalScatter reachable from inside a scan.
+-- A scatter-shaped per-step scratch is outside S-B: only persistent state writes may place an
+-- affine dense source slice. Reject it before evaluating the scratch RHS, even when the extent-one
+-- scan has no dynamic recurrence iterations.
 run_cmd do
   let i := ax "i" 1; let l := ax "l" 9
-  let X := tensorOf [2] [1, 2]
-  let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X" X
-  let sizes := (({} : HashMap UID Nat).insert 1 2).insert 9 3
-  let slots : List LHSSlot := [.affine (.scale 2 i), .iterNext l]
-  let rhs : RHSExpr := { body := { terms := [{ factors := [.read "X" [.axis i]] }] }, nonlin := .identity }
-  match evalStmtSliceSeeded [] env sizes {} (.scatter "Out" slots rhs { fill := 0, reduce := .rejectCollisions }) with
+  let Z := tensorOf [] [0]; let X := tensorOf [2] [1, 2]
+  let env : HashMap String DenseTensor :=
+    (({} : HashMap String DenseTensor).insert "Z" Z).insert "X" X
+  let sizes := (({} : HashMap UID Nat).insert 1 2).insert 9 1
+  let base : Stmt := .assign "S" [.iterAt l 0]
+    { body := { terms := [{ factors := [.read "Z" []] }] }, nonlin := .identity }
+  let scratch : Stmt := .scatter "Tmp" [.affine (.scale 2 i)]
+    { body := { terms := [{ factors := [.read "X" [.axis i]] }] }, nonlin := .identity }
+    { fill := 0, reduce := .rejectCollisions }
+  let recur : Stmt := .assign "S" [.iterNext l]
+    { body := { terms := [{ factors := [.read "S" [.axis l]] }] }, nonlin := .identity }
+  match evalScan [] env sizes (.scan "S" [l] [base] [scratch, recur] false) with
   | .error (.invalidScanNode .onlyAssignInSlice) => pure ()
-  | .error e => throwError s!"scan/scatter boundary: wrong error message: {e}"
-  | .ok _ => throwError "scan/scatter boundary: expected evalStmtSliceSeeded to reject a scatter stmt"
+  | .error e => throwError s!"scan-scatter scratch: wrong error: {e}"
+  | .ok _ => throwError "scan-scatter scratch: expected rejection"
 
 -- (a) External read at the CURRENT coordinate: S[l+1] := S[l] + X[l], X plain, indexed by the
 -- loop axis itself (distinct from RC4's rejected look-AHEAD X[l+1] case). Verified: S=[1,11,31].
@@ -328,5 +330,121 @@ run_cmd do
     | some (_, dp) => unless DenseTensor.approxEq dp (tensorOf [2,2] [1,1,0,2]) do
         throwError s!"collision mutation wrong: {repr dp.data}"
     | none => throwError "no dp"
+
+-- S-B 1: a strided base computes X[j] densely, places it at even state coordinates, then a dense
+-- recurrence copies the complete six-cell state slice through history.
+run_cmd do
+  let j := ax "j" 1; let o := ax "o" 2; let l := ax "l" 9
+  let X := tensorOf [3] [1, 2, 3]
+  let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X" X
+  let sizes := ((({} : HashMap UID Nat).insert 1 3).insert 2 6).insert 9 3
+  let base : Stmt := .scatter "S" [.affine (.scale 2 j), .iterAt l 0]
+    { body := { terms := [{ factors := [.read "X" [.axis j]] }] }, nonlin := .identity }
+    { fill := 0, reduce := .rejectCollisions }
+  let recur : Stmt := .assign "S" [.free o, .iterNext l]
+    { body := { terms := [{ factors := [.read "S" [.axis o, .axis l]] }] }, nonlin := .identity }
+  match evalScan [] env sizes (.scan "S" [l] [base] [recur] false) with
+  | .error e => throwError s!"S-B strided base errored: {e}"
+  | .ok outs => match outs.find? (·.1 == "S") with
+    | some (_, S) =>
+        unless S.shape == [6,3] do throwError s!"S-B strided base shape: {S.shape}"
+        unless DenseTensor.approxEq S
+            (tensorOf [6,3] [1,1,1, 0,0,0, 2,2,2, 0,0,0, 3,3,3, 0,0,0]) do
+          throwError s!"S-B strided base data: {repr S.data}"
+    | none => throwError "S-B strided base: no S"
+
+-- S-B 2: a dense base initializes all six state coordinates; the recurrence computes three dense
+-- source values and places them at odd coordinates `2*j+1`.
+run_cmd do
+  let j := ax "j" 1; let o := ax "o" 2; let l := ax "l" 9
+  let X := tensorOf [6] [1, 2, 3, 4, 5, 6]
+  let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X" X
+  let sizes := ((({} : HashMap UID Nat).insert 1 3).insert 2 6).insert 9 3
+  let base : Stmt := .assign "S" [.free o, .iterAt l 0]
+    { body := { terms := [{ factors := [.read "X" [.axis o]] }] }, nonlin := .identity }
+  let recur : Stmt := .scatter "S" [.affine (.affine 1 [(2, j)]), .iterNext l]
+    { body := { terms := [{ factors := [.read "S" [.scale 2 j, .axis l]] }] }, nonlin := .identity }
+    { fill := 0, reduce := .rejectCollisions }
+  match evalScan [] env sizes (.scan "S" [l] [base] [recur] false) with
+  | .error e => throwError s!"S-B strided recurrence errored: {e}"
+  | .ok outs => match outs.find? (·.1 == "S") with
+    | some (_, S) =>
+        unless S.shape == [6,3] do throwError s!"S-B strided recurrence shape: {S.shape}"
+        unless DenseTensor.approxEq S
+            (tensorOf [6,3] [1,0,0, 2,1,0, 3,0,0, 4,3,0, 5,0,0, 6,5,0]) do
+          throwError s!"S-B strided recurrence data: {repr S.data}"
+    | none => throwError "S-B strided recurrence: no S"
+
+-- S-B 3: two source-ordered base contributions interleave even and odd coordinates. Neither base
+-- may reinitialize the persistent state before overlay; the dense recurrence copies the result.
+run_cmd do
+  let j := ax "j" 1; let o := ax "o" 2; let l := ax "l" 9
+  let E := tensorOf [3] [1, 2, 3]; let O := tensorOf [3] [10, 20, 30]
+  let env : HashMap String DenseTensor :=
+    (({} : HashMap String DenseTensor).insert "E" E).insert "O" O
+  let sizes := ((({} : HashMap UID Nat).insert 1 3).insert 2 6).insert 9 2
+  let evenBase : Stmt := .scatter "S" [.affine (.scale 2 j), .iterAt l 0]
+    { body := { terms := [{ factors := [.read "E" [.axis j]] }] }, nonlin := .identity }
+    { fill := 0, reduce := .rejectCollisions }
+  let oddBase : Stmt := .scatter "S" [.affine (.affine 1 [(2, j)]), .iterAt l 0]
+    { body := { terms := [{ factors := [.read "O" [.axis j]] }] }, nonlin := .identity }
+    { fill := 0, reduce := .rejectCollisions }
+  let recur : Stmt := .assign "S" [.free o, .iterNext l]
+    { body := { terms := [{ factors := [.read "S" [.axis o, .axis l]] }] }, nonlin := .identity }
+  match evalScan [] env sizes (.scan "S" [l] [evenBase, oddBase] [recur] false) with
+  | .error e => throwError s!"S-B base interleave errored: {e}"
+  | .ok outs => match outs.find? (·.1 == "S") with
+    | some (_, S) =>
+        unless S.shape == [6,2] do throwError s!"S-B base interleave shape: {S.shape}"
+        unless DenseTensor.approxEq S
+            (tensorOf [6,2] [1,1, 10,10, 2,2, 20,20, 3,3, 30,30]) do
+          throwError s!"S-B base interleave data: {repr S.data}"
+    | none => throwError "S-B base interleave: no S"
+
+-- S-B 4: k is RHS-only. The evaluator must contract k into one dense value per j before affine
+-- placement, rather than treating k as another placement coordinate.
+run_cmd do
+  let j := ax "j" 1; let o := ax "o" 2; let k := ax "k" 3; let l := ax "l" 9
+  let X := tensorOf [3,2] [1,10, 2,20, 3,30]; let W := tensorOf [2] [1,2]
+  let env : HashMap String DenseTensor :=
+    (({} : HashMap String DenseTensor).insert "X" X).insert "W" W
+  let sizes := (((({} : HashMap UID Nat).insert 1 3).insert 2 6).insert 3 2).insert 9 2
+  let base : Stmt := .scatter "S" [.affine (.scale 2 j), .iterAt l 0]
+    { body := { terms := [{ factors := [.read "X" [.axis j, .axis k], .read "W" [.axis k]] }] },
+      nonlin := .identity }
+    { fill := 0, reduce := .rejectCollisions }
+  let recur : Stmt := .assign "S" [.free o, .iterNext l]
+    { body := { terms := [{ factors := [.read "S" [.axis o, .axis l]] }] }, nonlin := .identity }
+  match evalScan [] env sizes (.scan "S" [l] [base] [recur] false) with
+  | .error e => throwError s!"S-B contracted base errored: {e}"
+  | .ok outs => match outs.find? (·.1 == "S") with
+    | some (_, S) =>
+        unless S.shape == [6,2] do throwError s!"S-B contracted base shape: {S.shape}"
+        unless DenseTensor.approxEq S
+            (tensorOf [6,2] [21,21, 0,0, 42,42, 0,0, 63,63, 0,0]) do
+          throwError s!"S-B contracted base data: {repr S.data}"
+    | none => throwError "S-B contracted base: no S"
+
+-- S-B 5: the scan dimension is first, before the affine state dimension. Placement follows the
+-- original slot order rather than assuming iteration axes trail the dense source slice.
+run_cmd do
+  let j := ax "j" 1; let o := ax "o" 2; let l := ax "l" 9
+  let X := tensorOf [3] [4, 5, 6]
+  let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X" X
+  let sizes := ((({} : HashMap UID Nat).insert 1 3).insert 2 6).insert 9 3
+  let base : Stmt := .scatter "S" [.iterAt l 0, .affine (.affine 1 [(2, j)])]
+    { body := { terms := [{ factors := [.read "X" [.axis j]] }] }, nonlin := .identity }
+    { fill := 0, reduce := .rejectCollisions }
+  let recur : Stmt := .assign "S" [.iterNext l, .free o]
+    { body := { terms := [{ factors := [.read "S" [.axis l, .axis o]] }] }, nonlin := .identity }
+  match evalScan [] env sizes (.scan "S" [l] [base] [recur] false) with
+  | .error e => throwError s!"S-B non-trailing scan dimension errored: {e}"
+  | .ok outs => match outs.find? (·.1 == "S") with
+    | some (_, S) =>
+        unless S.shape == [3,6] do throwError s!"S-B non-trailing scan dimension shape: {S.shape}"
+        unless DenseTensor.approxEq S
+            (tensorOf [3,6] [0,4,0,5,0,6, 0,4,0,5,0,6, 0,4,0,5,0,6]) do
+          throwError s!"S-B non-trailing scan dimension data: {repr S.data}"
+    | none => throwError "S-B non-trailing scan dimension: no S"
 
 end LeanNCD.Eval
