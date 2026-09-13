@@ -28,7 +28,6 @@ def TLProgram.compile (p : TLProgram) : FreshM ThreadedComposed := do
   let b ← checkReadRanks b
   let b ← checkDtypes b
   let b ← checkScatterNonlin b
-  let b ← checkScatterNoScan b
   let d ← lowerArith b
   let e ← finalizeScans d
   let g ← schedule e
@@ -42,7 +41,7 @@ def TLProgram.compile (p : TLProgram) : FreshM ThreadedComposed := do
     generated `%nl…` name — nonlinearities reach Eval on the statement that owns them. -/
 def TLProgram.compileToScheduled : TLProgram → FreshM ScheduledProgram :=
   assignUIDs >=> resolveDecls >=> reclassifyIterSlots >=> checkReadRanks >=> checkDtypes >=>
-    checkScatterNonlin >=> checkScatterNoScan >=> lowerArith >=> finalizeScans >=> schedule
+    checkScatterNonlin >=> lowerArith >=> finalizeScans >=> schedule
 
 /-- Stage 1 (parse) + Stage 2 (compile) at elaboration time; embed the computable
     `ThreadedComposed` presentation via `ToExpr`. -/

@@ -66,15 +66,11 @@ inductive CompileError
                                                              -- declared `iter` — `iter l = N` is required;
                                                              -- both `l +1` and `l + 1` mean the same thing
                                                              -- and neither is a plain shifted write anymore
-  | scatterInScan        : String → CompileError            -- a scatter-shaped LHS
-                                                             -- (slotsBecomeScatter) also carries a
-                                                             -- scan iteration slot (iterAt/
-                                                             -- iterNext) — Scan.evalStmtSliceSeeded
-                                                             -- already rejects this at eval time
-                                                             -- ("only assign stmts are supported in
-                                                             -- scans"); reject it here instead, at
-                                                             -- compile time, mirroring
-                                                             -- checkScatterNonlin
+  | scatterInScan        : String → CompileError            -- producerless compatibility constructor:
+                                                             -- retained for serialized diagnostics from
+                                                             -- the former pre-lowering scan-scatter guard;
+                                                             -- scan-scatter capability failures now use
+                                                             -- their specific downstream error families
   | duplicateTensorDecl : String → CompileError             -- one tensor-bearing name
                                                              -- (`tensor`/`linear`/`predicate`) is
                                                              -- declared twice. The declaration

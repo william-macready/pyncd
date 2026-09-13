@@ -1,5 +1,5 @@
 -- test/DSL/Pipeline/StructuralTest.lean
-import LeanNCD.DSL.Pipeline.Structural
+import LeanNCD.DSL.Compile
 namespace LeanNCD
 -- matmul: Y[i,j] := W[i,k]·X[k,j].  After assignUIDs: no axis uid is 0, and the
 -- two `k` occurrences share one uid while i,j,k are pairwise distinct.
@@ -373,33 +373,30 @@ run_cmd do
   | .error e _ => throwError s!"expected predicateNonlin before predicateAgg, got: {repr e}"
   | .ok _ _    => throwError "expected predicateNonlin for a pointwise max-agg predicate output"
 
--- checkScatterNoScan: a scatter-shaped LHS (Out[2*i]) combined with an iteration slot (l+1 on
--- another dimension) must be rejected at compile time — today it silently compiles, and is only
--- rejected much later at eval time by evalStmtSliceSeeded's generic "only assign stmts" guard.
-run_cmd do
-  let i : AxisSpec := { name := "i", uid := 1, kind := .real }
-  let l : AxisSpec := { name := "l", uid := 9, kind := .nat }
-  let rhs : RHSExpr := { body := { terms := [{ factors := [.read "X" [.axis i]] }] }, nonlin := .identity }
-  let rp : ResolvedProgram :=
-    { decls := [], env := {}, extNames := ∅,
-      stmts := [.assign "Out" [.affine (.scale 2 i), .iterNext l] rhs] }
-  match checkScatterNoScan rp |>.run 0 with
-  | .error (.scatterInScan "Out") _ => pure ()
-  | .error e _ => throwError s!"checkScatterNoScan: wrong CompileError: {repr e}"
-  | .ok _ _    => throwError "checkScatterNoScan: expected scatterInScan, got success"
+private def baseScatterScan : TLProgram := tlprog!{
+  iter l = 3
+  S[2 * i, 0] := X[i]
+  S[i, l + 1] := S[i, l]
+}
 
--- checkScatterNoScan's .scatter arm (the programmatic escape hatch — a Stmt.scatter built
--- directly, bypassing lowerArith's own reclassification) must be rejected the same way.
-run_cmd do
-  let i : AxisSpec := { name := "i", uid := 1, kind := .real }
-  let l : AxisSpec := { name := "l", uid := 9, kind := .nat }
-  let rhs : RHSExpr := { body := { terms := [{ factors := [.read "X" [.axis i]] }] }, nonlin := .identity }
-  let rp : ResolvedProgram :=
-    { decls := [], env := {}, extNames := ∅,
-      stmts := [.scatter "Out" [.affine (.scale 2 i), .iterNext l] rhs { fill := 0, reduce := .rejectCollisions }] }
-  match checkScatterNoScan rp |>.run 0 with
-  | .error (.scatterInScan "Out") _ => pure ()
-  | .error e _ => throwError s!"checkScatterNoScan (.scatter arm): wrong CompileError: {repr e}"
-  | .ok _ _    => throwError "checkScatterNoScan (.scatter arm): expected scatterInScan, got success"
+private def recurScatterScan : TLProgram := tlprog!{
+  iter l = 3
+  S[i, 0] := X[i]
+  S[2 * i, l + 1] := S[i, l]
+}
+
+-- Compatibility only: the former guard's diagnostic remains a constructible serialized value.
+#guard (CompileError.scatterInScan "retained") == .scatterInScan "retained"
+
+-- The source-shaped affine assignment reaches `lowerArith`, becomes `.scatter`, and survives
+-- `finalizeScans` in the base list.
+#guard match baseScatterScan.compileToScheduled.run 0 with
+  | .ok { stmts := [.scan _ _ [.scatter ..] [.assign ..] _], .. } _ => true
+  | _ => false
+
+-- The same reachability is pinned independently for the recurrence list.
+#guard match recurScatterScan.compileToScheduled.run 0 with
+  | .ok { stmts := [.scan _ _ [.assign ..] [.scatter ..] _], .. } _ => true
+  | _ => false
 
 end LeanNCD

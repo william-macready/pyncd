@@ -672,6 +672,11 @@ def rejSig : InputSignature := InputSignature.ofDenseInputs rejInputs
 def rej (base recur : List Stmt) : Option PlanCompileCause :=
   causeOf (prepareEvalPlan (rejSched base recur) rejSig)
 
+def capabilityErr (base recur : List Stmt) : Option CapabilityError :=
+  match capabilityPreflight (rejSched base recur) with
+  | .ok _ => none
+  | .error e => some e
+
 /-- `rej` plus an earlier scan that writes `NOPE` as block-local scratch. Such a write is not a
     publication, so a later scan read must fail the shared topology check rather than reach
     block-local resolution. -/
@@ -746,8 +751,9 @@ def badIverson (nm : String) (adv : LHSSlot) : Stmt := .assign nm [adv]
   , nonlin := .identity }
 def badUnary (nm : String) (adv : LHSSlot) : Stmt := .assign nm [adv]
   { body := { terms := [{ factors := [.unaryFn .log "S0" []] }] }, nonlin := .identity }
-def badScatter (nm : String) : Stmt :=
-  .scatter nm [] { body := { terms := [] }, nonlin := .identity } {}
+def scanScatter (nm : String) (adv : LHSSlot) : Stmt :=
+  .scatter nm [.affine (.scale 2 axJ), adv]
+    { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := .identity } {}
 def badRecurMorphism (nm : String) : Stmt := .recurMorphism nm axL default
 
 def pinL : LHSSlot := .iterAt axL 0
@@ -763,18 +769,15 @@ def nextL : LHSSlot := .iterNext axL
 -- plus `ScanTest.lean` and the `DifferentialTest.lean` scan-Iverson parity fixtures); the
 -- marker-consistency and masked-axiswise negatives — which now surface at the
 -- `resolveNonlinAxis` tier, not preflight — are Task 4's Task 2.
--- The two scatter-shaped rejections on each leg below are DELIBERATELY unchanged by S-A, which
--- admits a scatter only as a TOP-LEVEL statement (`CompileTest.lean`). A strided write inside a
--- scan's base/recurrence is S-B: `BlockStep` has no scatter case at all, so there is nothing to
--- compile it to, and `checkScatterNoScan` (`DSL/Pipeline/Structural.lean`) already refuses a
--- scatter-shaped LHS carrying any `iterAt`/`iterNext` slot before `finalizeScans` could group it
--- into a scan node — so these four guard a shape only a hand-built `ScheduledProgram` can present.
+-- An affine `.assign` remains malformed on both legs. A real `.scatter`, however, now passes
+-- capability preflight on both legs; Task 6 owns lowering that admitted source form into block
+-- assignments and write maps.
 #guard rej [badAffineLhs "S"] [okRecur] == some (.capability (.scatterOrAffineLhs "S: affine LHS slot"))
 #guard rej [badAgg "S" pinL .max] [okRecur] == none   -- max agg now admitted
 #guard rej [badAgg "S" pinL .min] [okRecur] == none   -- min agg now admitted
 #guard rej [badIverson "S" pinL] [okRecur] == none   -- iverson factor now admitted (base leg)
 #guard rej [badUnary "S" pinL] [okRecur] == none   -- unary factor now admitted
-#guard rej [badScatter "S"] [okRecur] == some (.capability (.scatterOrAffineLhs "S"))
+#guard capabilityErr [scanScatter "S" pinL] [okRecur] == none
 #guard rej [badRecurMorphism "S"] [okRecur] == some (.capability (.recurrenceOrCallback "S"))
 
 -- in the RECURRENCE list (`.freeNorm`/`.pointwise`/`.axiswise`, `.max`/`.min`, unary factors, and
@@ -784,7 +787,7 @@ def nextL : LHSSlot := .iterNext axL
 #guard rej [okBase] [badAgg "S" nextL .min] == none   -- min agg now admitted
 #guard rej [okBase] [badIverson "S" nextL] == none   -- iverson factor now admitted (recurrence leg)
 #guard rej [okBase] [badUnary "S" nextL] == none   -- unary factor now admitted
-#guard rej [okBase] [badScatter "S"] == some (.capability (.scatterOrAffineLhs "S"))
+#guard capabilityErr [okBase] [scanScatter "S" nextL] == none
 #guard rej [okBase] [badRecurMorphism "S"] == some (.capability (.recurrenceOrCallback "S"))
 
 /-! ### 2.3 `ScanCompileError` — state/base/result pairing -/
@@ -1164,11 +1167,16 @@ output-slice column rather than a context column (slice-dependent). -/
 The first failure in the phase order `capability → input signature → shape → scan specialization`
 wins, regardless of how many later phases the same program would also fail. -/
 
--- Unsupported nested syntax (phase A) PLUS a missing input signature (phase B): capability wins.
+-- A multi-axis scan scatter (phase A) PLUS a missing input signature (phase B): the form rejection
+-- wins before input/shape validation.
 def emptySig : InputSignature := InputSignature.mk ({} : HashMap String TensorSignature)
+def capabilityBeforeInputScatter : Stmt :=
+  .scatter "S"
+    [.affine (.affine 0 [(1, axJ), (1, axK2)]), .iterNext axL]
+    { body := { terms := [{ factors := [.read "Missing" []] }] }, nonlin := .identity } {}
 #guard causeOf (prepareEvalPlan
-    (rejSched [okBase] [badAffineLhs "S"]) emptySig)
-  == some (.capability (.scatterOrAffineLhs "S: affine LHS slot"))
+    (rejSched [okBase] [capabilityBeforeInputScatter]) emptySig)
+  == some (.capability (.multiAxisScatterLhs "S: affine LHS slot"))
 
 -- Valid syntax, an unsized scan axis (phase C/geometry-sizing) AND an orphan base (phase D pairing):
 -- the shape failure wins, and the pairing failure is never reported. `axis l` — deliberately not

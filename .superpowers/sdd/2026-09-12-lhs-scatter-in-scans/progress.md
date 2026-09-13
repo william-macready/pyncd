@@ -126,3 +126,35 @@ Prepared by: .claude/skills/new-slice/prepare-worktree.sh
 - Gate: `build Eval.PropertyOracle.ScanUnroll Eval.PropertyOracle.ScanOracle` passed at 8,505 jobs.
 - Independence review initially found the UID-freshness blocker and missing overlap coverage; both
   were fixed and mutation-tested. Follow-up review: CLEAN. No forbidden production helper is used.
+
+## Task 5 — complete
+
+- Removed `checkScatterNoScan` and all three chain sites: direct `TLProgram.compile`,
+  `compileToScheduled`, and `RouteWeaveTest`'s logical pipeline. `CompileError.scatterInScan`
+  remains producerless for compatibility.
+- Scan block capability now admits iteration slots plus free and normalized single-axis affine
+  scatter placement, while retaining typed rejection for constant/multi-axis forms, nonlinear
+  scatters, non-default reduction, and nonzero fill.
+- Capability postflight traverses `ScanStmt.sourceStmts`, covering plain statements and scan
+  base/recurrence lists for predicate destinations and unlowered scatter-shaped assignments.
+- Route diagnostic case 11 now reaches `missingBaseCase`; a complete base-plus-recurrence scatter
+  scan compiles and remains one opaque route fragment without production route changes.
+- Added separate base/recurrence reachability, predicate/nonlinear/options/form negatives,
+  dual-defect precedence, post-pass traversal, and routed-opacity fixtures.
+- Scripted mutation evidence:
+  - M1 restored the direct compile guard inline: the complete route fixture failed with
+    `scatterInScan`.
+  - M2 restored the scheduled compile guard inline: independent base and recurrence reachability
+    guards failed.
+  - M3 restored the test-local logical-route guard inline: the logical/physical route fixture failed.
+  - M4 filtered scan nodes out of the capability post-pass: predicate-destination and unlowered
+    assignment scan fixtures failed.
+  - Review R1 moved option checks before nonlinearity: the dual-defect precedence fixture failed.
+  - Each cycle used `/Users/williammacready/code/python/pyncd/leanncd/scripts/mutation-cycle.sh` and
+    reported `mutation_exit=1 restore_hash_exit=0 restored_build_exit=0`.
+- Combined gate
+  `DSL.Pipeline.StructuralTest DSL.Pipeline.RouteWeaveTest
+  DSL.Pipeline.RouteFragmentDiagnosticTest Eval.Plan.CompileTest Eval.Plan.ScanCompileTest LeanNCD`
+  passed at 8,549 jobs.
+- Capability/reachability review: CLEAN. No routed representation change or Task 5 stop condition
+  occurred.

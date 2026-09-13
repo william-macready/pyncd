@@ -149,6 +149,85 @@ def acceptedSched : ScheduledProgram :=
           { fill := 0, reduce := .sum })] })
   == some (.scatterOptsNotAdmitted "Out: collision policy")
 
+/-! Scan-scatter capability: iteration slots plus S-A's single-axis affine forms are admitted in
+both block halves. Capability remains deliberately narrower than source syntax for constant and
+multi-axis affine slots, nonlinear scatters, and non-default options. -/
+
+def scanScatterAxis : AxisSpec := ⟨"l", 40, .nat⟩
+def scanScatterDataAxis : AxisSpec := ⟨"i", 41, .nat⟩
+
+def scanScatterStmt (nm : String) (slots : List LHSSlot) (rhs : RHSExpr :=
+    { body := { terms := [{ factors := [.read "X" [.axis scanScatterDataAxis]] }] }
+    , nonlin := .identity }) (opts : ScatterOpts := {}) : Stmt :=
+  .scatter nm slots rhs opts
+
+def scanScatterSched (base recur : List Stmt) (decls : List Decl := []) : ScheduledProgram :=
+  { acceptedSched with
+      decls := [.iter scanScatterAxis 3] ++ decls
+    , stmts := [.scan "S" [scanScatterAxis] base recur false] }
+
+#guard isOk (capabilityPreflight (scanScatterSched
+  [scanScatterStmt "S" [.affine (.scale 2 scanScatterDataAxis), .iterAt scanScatterAxis 0]]
+  [scanScatterStmt "S" [.affine (.shift scanScatterDataAxis 1), .iterNext scanScatterAxis]]))
+
+#guard errOf (capabilityPreflight (scanScatterSched
+  [scanScatterStmt "S" [.affine (.const 2), .iterAt scanScatterAxis 0]] []))
+  == some (.scatterOrAffineLhs "S: constant affine LHS slot")
+
+#guard errOf (capabilityPreflight (scanScatterSched
+  [scanScatterStmt "S"
+    [.affine (.affine 0 [(1, scanScatterDataAxis), (1, scanScatterAxis)]),
+     .iterAt scanScatterAxis 0]] []))
+  == some (.multiAxisScatterLhs "S: affine LHS slot")
+
+-- Sub-construct form checking precedes the predicate-destination post-pass.
+#guard errOf (capabilityPreflight (scanScatterSched
+  [scanScatterStmt "P"
+    [.affine (.affine 0 [(1, scanScatterDataAxis), (1, scanScatterAxis)]),
+     .iterAt scanScatterAxis 0]] []
+  [.predicate "P" [scanScatterDataAxis, scanScatterAxis]]))
+  == some (.multiAxisScatterLhs "P: affine LHS slot")
+
+#guard errOf (capabilityPreflight (scanScatterSched
+  [scanScatterStmt "S" [.free scanScatterDataAxis, .iterAt scanScatterAxis 0]
+    { body := { terms := [] }, nonlin := .pointwise .relu }] []))
+  == some (.unsupportedNonlin "S: scatter nonlinearity")
+
+-- Scatter options are checked after the RHS sub-constructs.
+#guard errOf (capabilityPreflight (scanScatterSched
+  [scanScatterStmt "S" [.free scanScatterDataAxis, .iterAt scanScatterAxis 0]
+    { body := { terms := [] }, nonlin := .pointwise .relu }
+    { fill := 1, reduce := .sum }] []))
+  == some (.unsupportedNonlin "S: scatter nonlinearity")
+
+#guard errOf (capabilityPreflight (scanScatterSched
+  [scanScatterStmt "S" [.free scanScatterDataAxis, .iterAt scanScatterAxis 0]
+    (opts := { fill := 0, reduce := .sum })] []))
+  == some (.scatterOptsNotAdmitted "S: collision policy")
+
+-- Nonzero fill is pinned once in each traversal half.
+#guard errOf (capabilityPreflight (scanScatterSched
+  [scanScatterStmt "S" [.free scanScatterDataAxis, .iterAt scanScatterAxis 0]
+    (opts := { fill := 1, reduce := .rejectCollisions })] []))
+  == some (.scatterOptsNotAdmitted "S: fill")
+
+#guard errOf (capabilityPreflight (scanScatterSched []
+  [scanScatterStmt "S" [.free scanScatterDataAxis, .iterNext scanScatterAxis]
+    (opts := { fill := 1, reduce := .rejectCollisions })]))
+  == some (.scatterOptsNotAdmitted "S: fill")
+
+-- The capability post-pass traverses scan bodies as well as plain statements.
+#guard errOf (capabilityPreflight (scanScatterSched
+  [scanScatterStmt "P" [.free scanScatterDataAxis, .iterAt scanScatterAxis 0]] []
+  [.predicate "P" [scanScatterDataAxis, scanScatterAxis]]))
+  == some (.predicateScatterDest "P: predicate scatter destination")
+
+#guard errOf (capabilityPreflight (scanScatterSched []
+  [.assign "S" [.free scanScatterDataAxis, .free scanScatterDataAxis,
+      .iterNext scanScatterAxis]
+    { body := { terms := [] }, nonlin := .identity }]))
+  == some (.unloweredScatterAssign "S: scatter-shaped LHS reached as an unlowered assign")
+
 -- scatterOrAffineLhs: an affine LHS slot on an ordinary assign. DELIBERATELY unchanged by S-A: the
 -- affine LHS form is admitted on `Stmt.scatter`, not on `Stmt.assign`, whose Step D destructuring
 -- (`freeUidOrFail`) has no meaning for one. `lowerArith` reclassifies every scatter-shaped `.assign`

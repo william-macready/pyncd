@@ -41,7 +41,7 @@ Physicalization must reproduce them exactly; if they ever need editing, route eq
 /-- Everything through `finalizeScans`: the LOGICAL program, before any nonlinearity split. -/
 private def toLogicalScan : TLProgram → FreshM ScanProgram :=
   assignUIDs >=> resolveDecls >=> reclassifyIterSlots >=> checkReadRanks >=> checkDtypes >=>
-    checkScatterNonlin >=> checkScatterNoScan >=> lowerArith >=> finalizeScans
+    checkScatterNonlin >=> lowerArith >=> finalizeScans
 
 /-- NEW leg: logical schedule (no split) → checked physicalization → unchanged `routeCore`. -/
 private def newRouteCore (sp : ScanProgram) : FreshM (List BrBaseP × List (List Wire)) := do
@@ -627,5 +627,34 @@ private def f16RouteRejects (slots : List LHSSlot) (nl : Nonlin) : Bool :=
 #guard fragmentWidth ((f16IterAssign f16IterAtSlots (.pointwise .relu)).stmts.getD 0 default) == 0
 #guard fragmentWidth ((f16IterAssign f16IterNextSlots (.pointwise .relu)).stmts.getD 0 default) == 0
 #guard fragmentWidth ((f16IterAssign f16IterAtSlots .identity).stmts.getD 0 default) == 1
+
+/-! ### Fixture 17 — a complete base-plus-recurrence scan scatter stays one opaque route fragment.
+
+Both halves use affine placement, so this exercises the full source pipeline through
+`TLProgram.compile`; the independent logical/physical observation pins that `RouteFragments`
+copies the completed scan node rather than inspecting or splitting its body. -/
+
+private def f17ScatterScan : TLProgram := tlprog!{
+  iter l = 3
+  S[2 * i, 0] := X[i]
+  S[2 * i, l + 1] := S[i, l]
+}
+
+run_cmd do
+  match f17ScatterScan.compile.run 0 with
+  | .error e _ => throwError s!"F17: production compile failed: {repr e}"
+  | .ok tc _ =>
+      unless tc.steps.length == 1 do
+        throwError s!"F17: expected one routed scan step, got {tc.steps.length}"
+  match logicalAndPhysical f17ScatterScan with
+  | .error e => throwError s!"F17: logical/physical pipeline failed: {repr e}"
+  | .ok (logical, physical) =>
+      match logical.stmts with
+      | [.scan _ _ [.scatter ..] [.scatter ..] _] => pure ()
+      | _ => throwError "F17: expected one scan with scatter base and recurrence bodies"
+      unless sameScanStmts logical.stmts physical.scheduled.stmts do
+        throwError "F17: scan-scatter node was not copied byte-for-byte"
+      unless physical.fragments == [⟨0, 0, 0, none⟩] do
+        throwError s!"F17: expected one width-1 opaque fragment, got {repr physical.fragments}"
 
 end LeanNCD

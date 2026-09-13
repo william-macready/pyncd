@@ -218,10 +218,8 @@ inductive FragmentClass
   | rejectNonlinScatter
   deriving DecidableEq, Repr
 
-/-- Does this LHS carry a scan iteration slot (`.iterAt`/`.iterNext`)? Local to this file (unlike
-    `slotsBecomeScatter`, which needs three cross-layer call sites, §1) — mirrors
-    `Pipeline/Structural.lean`'s `checkScatterNoScan`'s inline `hasIterSlot`, checked here at the
-    route boundary instead of pre-`finalizeScans`: post-`finalizeScans`, EVERY well-formed
+/-- Does this LHS carry a scan iteration slot (`.iterAt`/`.iterNext`)? Local to this file because it
+    guards only malformed plain nodes at the route boundary: post-`finalizeScans`, EVERY well-formed
     `ScanStmt.plain` has empty `iterInfo` (a stmt with any iteration slot is always grouped into
     `.scan` — see `finalizeScans`'s `plainStmts` filter), so a nonempty result here can only come
     from a hand-built `ScheduledProgram` that bypassed that grouping (the third class-6 door). -/

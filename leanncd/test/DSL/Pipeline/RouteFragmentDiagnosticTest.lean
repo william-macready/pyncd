@@ -34,7 +34,7 @@ Column "old" is the pre-flip `splitNonlins → schedule → route` state recorde
 | 8  | `predicateNonlin "P"`                      | @2 | @2 | 0 | pre-split failure |
 | 9  | `predicateAgg "P"`                         | @2 | @2 | 0 | pre-split failure |
 | 10 | `unsupportedNonlinScatter "Out"`           | @2 | @2 | 0 | pre-split failure |
-| 11 | `scatterInScan "Out"`                      | @3 | @3 | 0 | pre-split failure |
+| 11 | `missingBaseCase "Out"`                    | @3 | @3 | 0 | pre-split failure |
 | 12 | `scanAxisNotIter "l"`                      | @4 | @4 | 0 | pre-split failure |
 | 13 | `causalityViolation "S"`                   | @4 | @4 | 0 | pre-split failure |
 | 14 | `scanProjectionUnsupported "y"`            | @5 | @5 | 0 | pre-split failure |
@@ -225,7 +225,7 @@ moved a *pre-split* failure — a §4 stop condition, not a fixture to update. -
 #guard compileErrorIs case08 (.predicateNonlin "P") 2
 #guard compileErrorIs case09 (.predicateAgg "P") 2
 #guard compileErrorIs case10 (.unsupportedNonlinScatter "Out") 2
-#guard compileErrorIs case11 (.scatterInScan "Out") 3
+#guard compileErrorIs case11 (.missingBaseCase "Out") 3
 #guard compileErrorIs case12 (.scanAxisNotIter "l") 4
 #guard compileErrorIs case13 (.causalityViolation "S") 4
 #guard compileErrorIs case14 (.scanProjectionUnsupported "y") 5
