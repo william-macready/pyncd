@@ -277,6 +277,10 @@ inductive ScanCompileError
   | contextAxisAsFreeOutput  (scan name : String) (stmtIndex : Nat) (uid : UID)
   | advancingAxisNotInLhs    (scan name : String) (isBase : Bool) (stmtIndex : Nat) (uid : UID)
   | duplicateAxisInLhs       (scan name : String) (isBase : Bool) (stmtIndex : Nat) (uid : UID)
+  | scanWriteRowNotAdmitted  (scan name : String) (isBase : Bool) (stmtIndex dim : Nat)
+                              (coeffs : Array Int) (bias : Int)
+  | scatterScratchNotAdmitted (scan name : String) (stmtIndex : Nat)
+  | contextAxisAsAffineOutput (scan name : String) (isBase : Bool) (stmtIndex : Nat) (uid : UID)
   | inconsistentStateRank    (scan state : String) (isBase : Bool)
                              (stmtIndex expected actual : Nat)
   -- The two below compare one placement against the one that established the state's geometry, so

@@ -1813,4 +1813,299 @@ so a fixture that ran and returned the right number while exercising the wrong s
       && base.any (fun s => match s with | .assign "S" _ _ => true | _ => false)
   | _ => false
 
+/-! ## Part 6: S-B affine scan-write lowering -/
+
+def s6l : AxisSpec := ⟨"s6l", 6001, .nat⟩
+def s6j : AxisSpec := ⟨"s6j", 6002, .real⟩
+def s6k : AxisSpec := ⟨"s6k", 6003, .real⟩
+def s6q : AxisSpec := ⟨"s6q", 6004, .real⟩
+def s6m : AxisSpec := ⟨"s6m", 6005, .real⟩
+
+def s6rhs (name : String) (idxs : List IdxExpr) : RHSExpr :=
+ { body := { terms := [{ factors := [.read name idxs] }] }, nonlin := .identity }
+
+def s6Inputs : HashMap String DenseTensor :=
+ (((({} : HashMap String DenseTensor).insert "X3" ⟨[3], #[1, 2, 3]⟩).insert
+   "X6" ⟨[6], #[1, 2, 3, 4, 5, 6]⟩).insert
+   "Y3" ⟨[3], #[4, 5, 6]⟩).insert "Z32" ⟨[3, 2], #[0, 0, 0, 0, 0, 0]⟩
+
+def s6Decls : List Decl :=
+ [.iter s6l 3, .axis s6j (some 3), .axis s6k (some 6),
+  .axis s6q (some 2), .axis s6m (some 4)]
+
+def s6Schedule (name := "S") (base recur : List Stmt) : ScheduledProgram :=
+ { decls := s6Decls, stmts := [.scan name [s6l] base recur false]
+ , env := {}, extNames := {"X3", "X6", "Y3", "Z32"}, explicitSizes := {} }
+
+def s6AllAssign (steps : Array BlockStep) : Bool :=
+ steps.all (fun s => match s with | .assign _ => true | .pointwise _ | .axiswise _ => false)
+
+def s6Accept (label : String) (sched : ScheduledProgram) (scanIndex : Nat)
+   (stateSig : TensorSignature) (baseShapes stepShapes : Array (Array Nat))
+   (baseMaps stepMaps : Array AffineMap) (outName : String) (expected : DenseTensor) :
+   Except String Unit := do
+ let p ← match prepareEvalPlan sched (InputSignature.ofDenseInputs s6Inputs) with
+   | .ok p => pure p
+   | .error e => throw s!"{label}: expected acceptance, got {render e.cause}"
+ let s ← match scanAt p scanIndex with
+   | some s => pure s
+   | none => throw s!"{label}: selected step is not a scan"
+ let stateSlot := (s.states.getD 0 default).destSlot
+ expectEq s!"{label}: state signature"
+   (p.plan.raw.tensorSigs.getD stateSlot { shape := #[], dtype := .f64 }) stateSig
+ expectEq s!"{label}: base dense shapes"
+   (s.baseBlock.steps.filterMap BlockStep.assign? |>.map (·.outputShape)) baseShapes
+ expectEq s!"{label}: step dense shapes"
+   (s.stepBlock.steps.filterMap BlockStep.assign? |>.map (·.outputShape)) stepShapes
+ expectEq s!"{label}: base block-step kind" (s6AllAssign s.baseBlock.steps) true
+ expectEq s!"{label}: step block-step kind" (s6AllAssign s.stepBlock.steps) true
+ expectEq s!"{label}: base write maps" (s.baseWrites.map (·.map)) baseMaps
+ expectEq s!"{label}: step write maps" (s.stepWrites.map (·.map)) stepMaps
+ checkerAgrees label p scanIndex
+ match runPreparedDense p s6Inputs with
+ | .error e => throw s!"{label}: run failed: {repr e.cause}"
+ | .ok report =>
+     match report.env[outName]? with
+     | none => throw s!"{label}: no materialized {outName}"
+     | some actual =>
+         unless DenseTensor.approxEq actual expected do
+           throw s!"{label}: got {repr actual.shape}/{repr actual.data}"
+
+def s6BaseStride : ScheduledProgram := s6Schedule
+  (base := [.scatter "S" [.affine (.scale 2 s6j), .iterAt s6l 0]
+    (s6rhs "X3" [.axis s6j]) {}])
+  (recur := [.assign "S" [.free s6k, .iterNext s6l] (s6rhs "S" [.axis s6k, .axis s6l])])
+
+def s6BaseStrideCheck : Except String Unit :=
+ s6Accept "S-B/base stride" s6BaseStride 0 { shape := #[6, 3], dtype := .f64 }
+   #[#[3]] #[#[6]]
+   #[{ coeffs := #[#[2], #[0]], bias := #[0, 0] }]
+   #[{ coeffs := #[#[0, 1], #[1, 0]], bias := #[0, 1] }]
+   "S" ⟨[6, 3], #[1, 1, 1, 0, 0, 0, 2, 2, 2, 0, 0, 0, 3, 3, 3, 0, 0, 0]⟩
+run_cmd match s6BaseStrideCheck with | .ok _ => pure () | .error m => throwError m
+
+def s6StepStride : ScheduledProgram := s6Schedule
+  (base := [.assign "S" [.free s6k, .iterAt s6l 0] (s6rhs "X6" [.axis s6k])])
+  (recur := [.scatter "S" [.affine (.affine 1 [(2, s6j)]), .iterNext s6l]
+    (s6rhs "S" [.scale 2 s6j, .axis s6l]) {}])
+
+def s6StepStrideCheck : Except String Unit :=
+ s6Accept "S-B/step stride" s6StepStride 0 { shape := #[6, 3], dtype := .f64 }
+   #[#[6]] #[#[3]]
+   #[{ coeffs := #[#[1], #[0]], bias := #[0, 0] }]
+   #[{ coeffs := #[#[0, 2], #[1, 0]], bias := #[1, 1] }]
+   "S" ⟨[6, 3], #[1, 0, 0, 2, 1, 0, 3, 0, 0, 4, 3, 0, 5, 0, 0, 6, 5, 0]⟩
+run_cmd match s6StepStrideCheck with | .ok _ => pure () | .error m => throwError m
+
+def s6Interleave : ScheduledProgram := s6Schedule
+  (base :=
+    [ .scatter "S" [.affine (.scale 2 s6j), .iterAt s6l 0] (s6rhs "X3" [.axis s6j]) {}
+    , .scatter "S" [.affine (.affine 1 [(2, s6j)]), .iterAt s6l 0]
+        (s6rhs "Y3" [.axis s6j]) {} ])
+  (recur := [.assign "S" [.free s6k, .iterNext s6l] (s6rhs "S" [.axis s6k, .axis s6l])])
+
+def s6InterleaveCheck : Except String Unit :=
+ s6Accept "S-B/interleave" s6Interleave 0 { shape := #[6, 3], dtype := .f64 }
+   #[#[3], #[3]] #[#[6]]
+   #[ { coeffs := #[#[2], #[0]], bias := #[0, 0] }
+    , { coeffs := #[#[2], #[0]], bias := #[1, 0] } ]
+   #[{ coeffs := #[#[0, 1], #[1, 0]], bias := #[0, 1] }]
+   "S" ⟨[6, 3], #[1, 1, 1, 4, 4, 4, 2, 2, 2, 5, 5, 5, 3, 3, 3, 6, 6, 6]⟩
+run_cmd match s6InterleaveCheck with | .ok _ => pure () | .error m => throwError m
+
+def s6ContractBase : ScheduledProgram := s6Schedule
+  (base := [.scatter "S" [.affine (.scale 2 s6j), .iterAt s6l 0]
+    { body := { terms := [{ factors := [.read "Z32" [.axis s6j, .axis s6q]] }] }
+    , nonlin := .identity } {}])
+  (recur := [.assign "S" [.free s6k, .iterNext s6l] (s6rhs "S" [.axis s6k, .axis s6l])])
+
+def s6ContractBaseCheck : Except String Unit :=
+ s6Accept "S-B/contract before place" s6ContractBase 0 { shape := #[6, 3], dtype := .f64 }
+   #[#[3]] #[#[6]]
+   #[{ coeffs := #[#[2], #[0]], bias := #[0, 0] }]
+   #[{ coeffs := #[#[0, 1], #[1, 0]], bias := #[0, 1] }]
+   "S" ⟨[6, 3], Array.replicate 18 0⟩
+run_cmd match s6ContractBaseCheck with | .ok _ => pure () | .error m => throwError m
+
+def s6ScanFirst : ScheduledProgram := s6Schedule
+  (base := [.scatter "S" [.iterAt s6l 0, .affine (.scale 2 s6j)]
+    (s6rhs "X3" [.axis s6j]) {}])
+  (recur := [.assign "S" [.iterNext s6l, .free s6k] (s6rhs "S" [.axis s6l, .axis s6k])])
+
+def s6ScanFirstCheck : Except String Unit :=
+ s6Accept "S-B/scan first" s6ScanFirst 0 { shape := #[3, 6], dtype := .f64 }
+   #[#[3]] #[#[6]]
+   #[{ coeffs := #[#[0], #[2]], bias := #[0, 0] }]
+   #[{ coeffs := #[#[1, 0], #[0, 1]], bias := #[1, 0] }]
+   "S" ⟨[3, 6], #[1, 0, 2, 0, 3, 0, 1, 0, 2, 0, 3, 0, 1, 0, 2, 0, 3, 0]⟩
+run_cmd match s6ScanFirstCheck with | .ok _ => pure () | .error m => throwError m
+
+def s6ScanLastCheck : Except String Unit :=
+ s6Accept "S-B/scan last" s6BaseStride 0 { shape := #[6, 3], dtype := .f64 }
+   #[#[3]] #[#[6]]
+   #[{ coeffs := #[#[2], #[0]], bias := #[0, 0] }]
+   #[{ coeffs := #[#[0, 1], #[1, 0]], bias := #[0, 1] }]
+   "S" ⟨[6, 3], #[1, 1, 1, 0, 0, 0, 2, 2, 2, 0, 0, 0, 3, 3, 3, 0, 0, 0]⟩
+run_cmd match s6ScanLastCheck with | .ok _ => pure () | .error m => throwError m
+
+def s6TwoAffine : ScheduledProgram := s6Schedule
+  (base := [.scatter "S"
+   [.affine (.affine 1 [(2, s6q)]), .affine (.scale 2 s6j), .iterAt s6l 0]
+    (s6rhs "Z32" [.axis s6j, .axis s6q]) {}])
+ (recur := [.assign "S" [.free s6m, .free s6k, .iterNext s6l]
+   (s6rhs "S" [.axis s6m, .axis s6k, .axis s6l])])
+
+def s6TwoAffineCheck : Except String Unit :=
+ s6Accept "S-B/two affine dims" s6TwoAffine 0 { shape := #[4, 6, 3], dtype := .f64 }
+   #[#[2, 3]] #[#[4, 6]]
+   #[{ coeffs := #[#[2, 0], #[0, 2], #[0, 0]], bias := #[1, 0, 0] }]
+   #[{ coeffs := #[#[0, 1, 0], #[0, 0, 1], #[1, 0, 0]], bias := #[0, 0, 1] }]
+   "S" ⟨[4, 6, 3], Array.replicate 72 0⟩
+run_cmd match s6TwoAffineCheck with | .ok _ => pure () | .error m => throwError m
+
+def s6TwoScans : ScheduledProgram :=
+ { s6BaseStride with
+     stmts := selfRecurSched.stmts ++
+       [.scan "T" [s6l]
+         [.scatter "T" [.affine (.scale 2 s6j), .iterAt s6l 0]
+           (s6rhs "X3" [.axis s6j]) {}]
+         [.assign "T" [.free s6k, .iterNext s6l]
+           (s6rhs "T" [.axis s6k, .axis s6l])] false]
+   , decls := .iter axL 3 :: s6Decls
+   , extNames := {"S0", "X", "X3", "X6", "Y3", "Z32"} }
+def s6TwoScanInputs : HashMap String DenseTensor :=
+ (s6Inputs.insert "S0" ⟨[], #[5]⟩).insert "X" ⟨[3], #[1, 2, 3]⟩
+def s6TwoScansCheck : Except String Unit := do
+ let p ← match prepareEvalPlan s6TwoScans (InputSignature.ofDenseInputs s6TwoScanInputs) with
+   | .ok p => pure p | .error e => throw s!"S-B/two scans: {render e.cause}"
+ let s ← match scanAt p 1 with | some s => pure s | none => throw "S-B/two scans: missing scan"
+ expectEq "S-B/two scans: state signature"
+   (p.plan.raw.tensorSigs.getD (s.states.getD 0 default).destSlot
+     { shape := #[], dtype := .f64 })
+   { shape := #[6, 3], dtype := .f64 }
+ expectEq "S-B/two scans: dense base shape"
+   (((s.baseBlock.steps.getD 0 default).assign?).map (·.outputShape)) (some #[3])
+ expectEq "S-B/two scans: dense step shape"
+   (((s.stepBlock.steps.getD 0 default).assign?).map (·.outputShape)) (some #[6])
+ expectEq "S-B/two scans: block kind" (s6AllAssign s.baseBlock.steps && s6AllAssign s.stepBlock.steps) true
+ expectEq "S-B/two scans: base map" (s.baseWrites.getD 0 default).map
+   { coeffs := #[#[2], #[0]], bias := #[0, 0] }
+ expectEq "S-B/two scans: step map" (s.stepWrites.getD 0 default).map
+   { coeffs := #[#[0, 1], #[1, 0]], bias := #[0, 1] }
+ checkerAgrees "S-B/two scans" p 1
+ match runPreparedDense p s6TwoScanInputs with
+ | .error e => throw s!"S-B/two scans run: {repr e.cause}"
+ | .ok r =>
+     expectEq "S-B/two scans value" (r.env["T"]?.map (·.data))
+       (some (#[1, 1, 1, 0, 0, 0, 2, 2, 2, 0, 0, 0, 3, 3, 3, 0, 0, 0] :
+         Array Float))
+run_cmd match s6TwoScansCheck with | .ok _ => pure () | .error m => throwError m
+
+def s6Cause (base recur : List Stmt) : Option PlanCompileCause :=
+  causeOf (prepareEvalPlan (s6Schedule "bad" base recur)
+    (InputSignature.ofDenseInputs s6Inputs))
+
+def s6Scatter (nm : String) (slot adv : LHSSlot) (source : String)
+    (idxs : List IdxExpr) : Stmt :=
+  .scatter nm [slot, adv] (s6rhs source idxs) {}
+
+def s6ZeroBase := s6Scatter "S" (.affine (.scale 0 s6j)) (.iterAt s6l 0) "X3" [.axis s6j]
+def s6ZeroStep :=
+  s6Scatter "S" (.affine (.scale 0 s6j)) (.iterNext s6l) "S" [.scale 0 s6j, .axis s6l]
+#guard s6Cause [s6ZeroBase] [s6ZeroStep] ==
+  some (.scan (.scanWriteRowNotAdmitted "bad" "S" true 0 0 #[] 0))
+
+def s6NegBase := s6Scatter "S" (.affine (.scale (-2) s6j)) (.iterAt s6l 0) "X3" [.axis s6j]
+def s6NegStep :=
+  s6Scatter "S" (.affine (.scale (-2) s6j)) (.iterNext s6l) "S"
+    [.scale (-2) s6j, .axis s6l]
+#guard s6Cause [s6NegBase] [s6NegStep] ==
+  some (.scan (.scanWriteRowNotAdmitted "bad" "S" true 0 0 #[-2] 0))
+
+def s6NegBiasBase :=
+  s6Scatter "S" (.affine (.affine (-1) [(2, s6j)])) (.iterAt s6l 0) "X3" [.axis s6j]
+def s6NegBiasStep :=
+  s6Scatter "S" (.affine (.affine (-1) [(2, s6j)])) (.iterNext s6l) "S"
+    [.affine (-1) [(2, s6j)], .axis s6l]
+#guard s6Cause [s6NegBiasBase] [s6NegBiasStep] ==
+  some (.scan (.scanWriteRowNotAdmitted "bad" "S" true 0 0 #[2] (-1)))
+
+def s6MultiAxis : Stmt :=
+  .scatter "S" [.affine (.affine 0 [(1, s6j), (1, s6q)]), .iterAt s6l 0]
+    (s6rhs "Z32" [.axis s6j, .axis s6q]) {}
+#guard s6Cause [s6MultiAxis]
+    [.assign "S" [.free s6k, .iterNext s6l] (s6rhs "S" [.axis s6k, .axis s6l])] ==
+  some (.capability (.multiAxisScatterLhs "S: affine LHS slot"))
+
+def s6Diagonal : Stmt :=
+  .scatter "S" [.affine (.scale 2 s6j), .free s6j, .iterAt s6l 0]
+    (s6rhs "X3" [.axis s6j]) {}
+#guard s6Cause [s6Diagonal]
+    [.assign "S" [.free s6k, .free s6j, .iterNext s6l]
+      (s6rhs "S" [.axis s6k, .axis s6j, .axis s6l])] ==
+  some (.scan (.duplicateAxisInLhs "bad" "S" true 0 s6j.uid))
+
+def s6ContextAffine : Stmt :=
+  .scatter "S" [.affine (.scale 2 s6l), .iterAt s6l 0] (s6rhs "X3" [.axis s6j]) {}
+#guard s6Cause [s6ContextAffine]
+    [.assign "S" [.free s6k, .iterNext s6l]
+      (s6rhs "S" [.axis s6k, .axis s6l])] ==
+  some (.scan (.contextAxisAsAffineOutput "bad" "S" true 0 s6l.uid))
+
+def s6ScratchScatter : Stmt :=
+  .scatter "T" [.affine (.scale 2 s6j)] (s6rhs "X3" [.axis s6j]) {}
+#guard s6Cause
+    [.assign "S" [.iterAt s6l 0] (s6rhs "X3" [.const 0])]
+    [s6ScratchScatter, .assign "S" [.iterNext s6l] (s6rhs "S" [.axis s6l])] ==
+  some (.scan (.scatterScratchNotAdmitted "bad" "T" 0))
+
+def s6ExtentMismatchBase :=
+  s6Scatter "S" (.affine (.scale 2 s6j)) (.iterAt s6l 0) "X3" [.axis s6j]
+def s6ExtentMismatchStep :=
+  s6Scatter "S" (.affine (.affine 3 [(2, s6j)])) (.iterNext s6l) "S"
+    [.scale 2 s6j, .axis s6l]
+#guard s6Cause [s6ExtentMismatchBase] [s6ExtentMismatchStep] ==
+  some (.scan (.inconsistentStateExtent "bad" "S" 0 6 8))
+#guard s6Cause [s6ExtentMismatchBase] [s6NegStep] ==
+  some (.scan (.scanWriteRowNotAdmitted "bad" "S" false 0 0 #[0, -2] 0))
+
+def s6SameResidueBase :=
+  s6Scatter "S" (.affine (.scale 2 s6j)) (.iterAt s6l 0) "Y3" [.axis s6j]
+#guard s6Cause [s6ExtentMismatchBase, s6SameResidueBase]
+    [.assign "S" [.free s6k, .iterNext s6l]
+      (s6rhs "S" [.axis s6k, .axis s6l])] ==
+  some (.scan (.baseWritesOverlap "bad" "S" 0 1))
+
+def s6ScaleThreeBase :=
+  s6Scatter "S" (.affine (.scale 3 s6q)) (.iterAt s6l 0) "Z32" [.axis s6j, .axis s6q]
+#guard s6Cause [s6ExtentMismatchBase, s6ScaleThreeBase]
+    [.assign "S" [.free s6k, .iterNext s6l]
+      (s6rhs "S" [.axis s6k, .axis s6l])] ==
+  some (.scan (.baseWritesOverlap "bad" "S" 0 1))
+
+def s6LocatorSchedule : ScheduledProgram := s6Schedule "loc"
+  [ s6ExtentMismatchBase
+  , .assign "T" [.iterAt s6l 0] (s6rhs "X3" [.const 0])
+  , s6SameResidueBase ]
+  [ .assign "S" [.free s6k, .iterNext s6l] (s6rhs "S" [.axis s6k, .axis s6l])
+  , .assign "T" [.iterNext s6l] (s6rhs "T" [.axis s6l]) ]
+#guard causeOf (prepareEvalPlan s6LocatorSchedule (InputSignature.ofDenseInputs s6Inputs)) ==
+  some (.scan (.baseWritesOverlap "loc" "S" 0 2))
+
+def s6z : AxisSpec := ⟨"s6z", 6006, .real⟩
+def s6GeometryBeforeCausal : ScheduledProgram :=
+  { s6Schedule "order"
+      [s6Scatter "S" (.affine (.scale 2 s6z)) (.iterAt s6l 0) "X3" [.const 0]]
+      [s6Scatter "S" (.affine (.scale (-2) s6j)) (.iterNext s6l) "S"
+        [.scale (-2) s6j, .shift s6l 1]] with
+    decls := .axis s6z (some 0) :: s6Decls }
+#guard causeOf (prepareEvalPlan s6GeometryBeforeCausal
+    (InputSignature.ofDenseInputs s6Inputs)) ==
+  some (.scan (.scanWriteRowNotAdmitted "order" "S" false 0 0 #[0, -2] 0))
+
+-- Capability remains earlier than missing-input validation for a malformed scan scatter.
+#guard causeOf (prepareEvalPlan
+    (rejSched [okBase] [capabilityBeforeInputScatter]) emptySig) ==
+  some (.capability (.multiAxisScatterLhs "S: affine LHS slot"))
+
 end LeanNCD.Eval.Plan.ScanCompileTest

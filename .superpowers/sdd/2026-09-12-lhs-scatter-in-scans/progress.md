@@ -158,3 +158,34 @@ Prepared by: .claude/skills/new-slice/prepare-worktree.sh
   passed at 8,549 jobs.
 - Capability/reachability review: CLEAN. No routed representation change or Task 5 stop condition
   occurred.
+
+## Task 6 — complete
+
+- `compileScan` now accepts scan-local assignments and scatters through a dedicated destructurer,
+  preserving ordinary top-level assignment handling.
+- Dense output bases come from normalized LHS index expressions in first-seen LHS order, excluding
+  only context-role slots. Scan-local scatters are presented to global size inference as assignments
+  so placement shapes cannot constrain persistent-state reads.
+- State geometry validates every placement row before cross-placement extent comparison, locates
+  advancing dimensions by context-role slots, and delegates non-context extents to
+  `LHSSlot.outExtent`.
+- Base and recurrence lowering feed only the dense output basis to `residualizeAssignment`, then
+  share one affine placement-row builder. Emitted block steps remain `.assign`; affine placement
+  exists only in `StateWriteMap`.
+- Added typed source errors for inadmissible write rows, scatter-shaped recurrence scratch, and
+  context axes used as affine outputs. Original base/recur statement indices are retained.
+- Added eight acceptance fixtures, ten rejection fixtures, and three locator/order fixtures. The
+  two-affine fixture reverses LHS order relative to RHS/UID order and pins dense basis order.
+- All eight planned mutation cycles used
+  `/Users/williammacready/code/python/pyncd/leanncd/scripts/mutation-cycle.sh`, verified the three-file
+  restore manifest, and reported `mutation_exit=1 restore_hash_exit=0 restored_build_exit=0`:
+  source basis, context prefix, affine bias, state extent, phase selection, source locator, scratch
+  rejection, and dense-before-placement.
+- Compiler review found invalid rows could be masked by an extent mismatch. Row admission now runs
+  before extent comparison; review mutation R1 skips that precedence and fails the mixed
+  valid-base/invalid-recurrence fixture.
+- Independent geometry review found no soundness defect and identified one basis-order coverage gap.
+  The reversed two-affine fixture closes it; review mutation R2 reverses basis extraction and fails.
+- Final wrapper gate
+  `Eval.Plan.ScanCompileTest Eval.Plan.ScanTest Eval.Plan.AdapterTest LeanNCD` passed at 8,547 jobs.
+  Both required reviews are adjudicated; no Task 6 stop condition occurred.

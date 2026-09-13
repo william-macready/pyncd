@@ -447,9 +447,8 @@ private def freeUidOrFail (context : String) : LHSSlot → Except CapabilityErro
     repeating the destructuring.
 
     At top level a scatter never reaches here because Step D's `.plain` branch matches it first and
-    hands it to the scatter emitter. Scan scatters now pass capability preflight, but Task 5 does not
-    change `compileScan` lowering; until Task 6 gives them dedicated block destructuring they reach
-    this total fallback rather than being mistaken for assignments.
+    hands it to the scatter emitter. Scan blocks use `scanPartsOrFail` instead, so their admitted
+    scatters cannot be mistaken for plain assignments.
 
     Kept total (rather than assuming `.assign` via a partial match) so a future `Stmt` constructor is
     a compile error here, not a silent fallthrough. -/
@@ -458,6 +457,49 @@ private def assignPartsOrFail (context : String) : Stmt →
   | .assign nm slots rhs => pure (nm, slots, rhs)
   | .scatter .. => throw (.scatterOrAffineLhs context)
   | .recurMorphism .. => throw (.recurrenceOrCallback context)
+
+private def scanPartsOrFail (context : String) : Stmt →
+    Except CapabilityError (String × List LHSSlot × RHSExpr × Bool)
+  | .assign nm slots rhs => pure (nm, slots, rhs, false)
+  | .scatter nm slots rhs _ => pure (nm, slots, rhs, true)
+  | .recurMorphism .. => throw (.recurrenceOrCallback context)
+
+private def scanOutputUids (slots : List LHSSlot) : List UID :=
+  slots.flatMap (fun sl => match sl with
+    | .iterAt .. | .iterNext _ => []
+    | _ =>
+        let (_, coeffs) := idxAffineForm sl.outIdx
+        (SizeSolve.normalizeCoeffs coeffs).map (·.2))
+
+private def scanPlacementUids (slots : List LHSSlot) : List UID :=
+  slots.flatMap (fun sl => match sl with
+    | .affine e =>
+        let (_, coeffs) := idxAffineForm e
+        (SizeSolve.normalizeCoeffs coeffs).map (·.2)
+    | _ => sl.axisUID?.toList)
+
+private def scanPlacementRows (ctxUids outputUids : List UID) (isBase : Bool)
+    (slots : List LHSSlot) : Array (Array Int) × Array Int :=
+  let contextWidth := if isBase then 0 else ctxUids.length
+  let width := contextWidth + outputUids.length
+  let rows := slots.map (fun sl =>
+    match sl with
+    | .iterAt _ lit => (Array.replicate width 0, lit)
+    | .iterNext a =>
+        let i := (ctxUids.findIdx? (· == a.uid)).getD 0
+        ((Array.range width).map (fun p => if p == i then 1 else 0), 1)
+    | .free _ | .freeNorm _ | .affine _ =>
+        let (row, bias) := idxToRow outputUids sl.outIdx
+        let ctxPrefix := if isBase then #[] else Array.replicate contextWidth 0
+        (ctxPrefix ++ row.toArray, bias))
+  (rows.map (·.1) |>.toArray, rows.map (·.2) |>.toArray)
+
+private def scanOutputRowExtent (outputShape : Array Nat) : Option WriteRowKind → Option Nat
+  | some (.free p) => some (outputShape.getD p 0)
+  | some (.strided p scale offset) =>
+      let row := (Array.range outputShape.size).map (fun q => if q == p then scale else 0)
+      scatterDestExtent outputShape row offset
+  | some (.pinned _) | some (.advancing _) | none => none
 
 /-- One top-level scatter's placement map AND destination extent, in LHS-slot order: the scatter
     analogue of `freeUidOrFail`, and deliberately not an extension of it. A plain assignment's slot
@@ -527,17 +569,6 @@ private def scatterFillOrFail (context : String) (algebra : ContractionAlgebra) 
     | .bool b   => fill == (if b then 1 else 0)
     | .f32 _    => false   -- unreachable: `f32` is `dtypeNotAdmitted` at the destination already
   if agrees then pure identity else throw (.scatterOptsNotAdmitted context)
-
-/-- The placement axis of one scan-block LHS slot. Unreachable `none` post-preflight
-    (`checkScanLHSSlot` rejects `.affine`), so this is the scan-block analogue of
-    `freeUidOrFail`'s totality guard — but it keeps the whole `AxisSpec` and the slot's own kind for
-    the caller to dispatch on, which is exactly the information a scan needs and a plain statement
-    does not. -/
-private def scanSlotAxisOrFail (context : String) (sl : LHSSlot) :
-    Except CapabilityError AxisSpec :=
-  match sl.axisSpec? with
-  | some a => pure a
-  | none => throw (.scatterOrAffineLhs context)
 
 /-- First UID that recurs later in the list. Mirrors `Prepared.lean`'s `firstDuplicateName` and
     `Block.lean`'s `firstDuplicateSlot` (same shape, different element type) so a duplicate-axis
@@ -860,44 +891,51 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
   ---------------------------------------------------------------------------
   -- Phase 1: destructure, per-statement slot discipline, and state/scratch classification.
   ---------------------------------------------------------------------------
-  let baseParts ← liftCapability warnings (base.toArray.mapM (assignPartsOrFail "scan base"))
+  let baseParts ← liftCapability warnings (base.toArray.mapM (scanPartsOrFail "scan base"))
   let recurParts ←
-    liftCapability warnings (recur.toArray.mapM (assignPartsOrFail "scan recurrence"))
+    liftCapability warnings (recur.toArray.mapM (scanPartsOrFail "scan recurrence"))
   let mut stateNames : Array String := #[]
   for h : bi in [0 : baseParts.size] do
-    let (nm, _, _) := baseParts[bi]
+    let (nm, _, _, _) := baseParts[bi]
     unless stateNames.contains nm do stateNames := stateNames.push nm
   if stateNames.isEmpty then throw (scanErr warnings (.noPersistentState scanName))
   -- base slot discipline: no `.iterNext`, every pin names a context axis, no repeated axis.
   let mut baseOf : HashMap String (Array (Nat × List LHSSlot)) := {}
   for h : bi in [0 : baseParts.size] do
-    let (nm, slots, _) := baseParts[bi]
-    let slotAxes ← liftCapability warnings (slots.mapM (scanSlotAxisOrFail s!"{nm}: base LHS slot"))
-    match firstDuplicateUID (slotAxes.map (·.uid)) with
-    | some u => throw (scanErr warnings (.duplicateAxisInLhs scanName nm true bi u))
-    | none => pure ()
+    let (nm, slots, _, _) := baseParts[bi]
     for sl in slots do
       match sl with
       | .iterNext a => throw (scanErr warnings (.iterNextInBaseBlock scanName nm bi a.uid))
       | .iterAt a _ =>
           unless (ctxIndexOf a.uid).isSome do
             throw (scanErr warnings (.pinnedAxisNotContext scanName nm bi a.uid))
+      | .affine e =>
+          let (_, cs) := idxAffineForm e
+          for (_, u) in cs do
+            if (ctxIndexOf u).isSome then
+              throw (scanErr warnings (.contextAxisAsAffineOutput scanName nm true bi u))
       | _ => pure ()
+    match firstDuplicateUID (scanPlacementUids slots) with
+    | some u => throw (scanErr warnings (.duplicateAxisInLhs scanName nm true bi u))
+    | none => pure ()
     baseOf := baseOf.insert nm ((baseOf.getD nm #[]).push (bi, slots))
   -- recurrence classification: state result (all-axis `.iterNext`) vs block-local scratch.
   let mut resultOf : HashMap String (Nat × List LHSSlot) := {}
   let mut scratchOf : HashMap String Nat := {}
   for h : ri in [0 : recurParts.size] do
-    let (nm, slots, _) := recurParts[ri]
-    let slotAxes ←
-      liftCapability warnings (slots.mapM (scanSlotAxisOrFail s!"{nm}: recurrence LHS slot"))
-    match firstDuplicateUID (slotAxes.map (·.uid)) with
-    | some u => throw (scanErr warnings (.duplicateAxisInLhs scanName nm false ri u))
-    | none => pure ()
+    let (nm, slots, _, isScatter) := recurParts[ri]
     for sl in slots do
       match sl with
       | .iterAt a _ => throw (scanErr warnings (.iterAtInStepBlock scanName nm ri a.uid))
+      | .affine e =>
+          let (_, cs) := idxAffineForm e
+          for (_, u) in cs do
+            if (ctxIndexOf u).isSome then
+              throw (scanErr warnings (.contextAxisAsAffineOutput scanName nm false ri u))
       | _ => pure ()
+    match firstDuplicateUID (scanPlacementUids slots) with
+    | some u => throw (scanErr warnings (.duplicateAxisInLhs scanName nm false ri u))
+    | none => pure ()
     let advancing : List UID :=
       slots.filterMap (fun sl => match sl with | .iterNext a => some a.uid | _ => none)
     if stateNames.contains nm then
@@ -910,6 +948,8 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
           throw (scanErr warnings (.duplicateStateResult scanName nm firstRi ri))
       | none => resultOf := resultOf.insert nm (ri, slots)
     else
+      if isScatter then
+        throw (scanErr warnings (.scatterScratchNotAdmitted scanName nm ri))
       unless advancing.isEmpty do
         throw (scanErr warnings (.orphanAdvancingResult scanName nm ri))
       for sl in slots do
@@ -961,14 +1001,26 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
           unless r == slots.length do
             throw (scanErr warnings
               (.inconsistentStateRank scanName st isBase sidx r slots.length))
-      let slotAxes ← liftCapability warnings (slots.mapM (scanSlotAxisOrFail s!"{st}: LHS slot"))
-      let slotUids : Array UID := (slotAxes.map (·.uid)).toArray
+      let outputUids := scanOutputUids slots
+      let (placementCoeffs, placementBias) :=
+        scanPlacementRows ctxUids outputUids isBase slots
+      for h3 : d in [0 : placementCoeffs.size] do
+        let kind := classifyWriteRow (if isBase then 0 else numAxes)
+          placementCoeffs[d] (placementBias.getD d 0)
+        let affineWithoutSource := match slots.toArray[d]? with
+          | some sl@(.affine _) => (scanOutputUids [sl]).isEmpty
+          | _ => false
+        if kind.isNone || affineWithoutSource then
+          throw (scanErr warnings (.scanWriteRowNotAdmitted scanName st isBase sidx d
+            placementCoeffs[d] (placementBias.getD d 0)))
+      let slotsA := slots.toArray
+      let slotUids : Array (Option UID) := slotsA.map (fun sl => sl.axisUID?)
       -- UID-to-dimension mapping: each context axis occupies exactly one LHS position (uniqueness
       -- already established by Phase 1's `duplicateAxisInLhs` guard).
       let mut dims : Array Nat := #[]
       for h3 : i in [0 : numAxes] do
         let u := (axesA.getD i default).uid
-        match slotUids.findIdx? (· == u) with
+        match slotUids.findIdx? (· == some u) with
         | none => throw (scanErr warnings (.advancingAxisNotInLhs scanName st isBase sidx u))
         | some p => dims := dims.push p
       match advDims? with
@@ -979,15 +1031,25 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
               throw (scanErr warnings (.inconsistentAdvancingDim scanName st
                 ((axesA.getD i default).uid) (prev.getD i 0) (dims.getD i 0)))
       -- complete-history extent per dimension: a context axis contributes its FULL history extent,
-      -- every other placement axis its own inferred size.
+      -- every other placement dimension uses the shared LHS-slot extent contract.
       let mut dimShape : Array Nat := #[]
-      for h3 : p in [0 : slotUids.size] do
-        let u := slotUids[p]
-        match ctxIndexOf u with
-        | some i => dimShape := dimShape.push (historyExtents.getD i 0)
-        | none =>
-            let n ← liftShape warnings (resolveSizeOrFail sizes (.assignOutput st) u)
-            dimShape := dimShape.push n
+      for p in [0 : slotsA.size] do
+        match slotsA[p]? with
+        | none => pure ()
+        | some sl =>
+            match sl.axisUID?.bind ctxIndexOf with
+            | some i =>
+                match sl with
+                | .iterAt .. | .iterNext _ =>
+                    dimShape := dimShape.push (historyExtents.getD i 0)
+                | _ =>
+                    match sl.outExtent (fun uid => sizes[uid]?) with
+                    | some n => dimShape := dimShape.push n
+                    | none => liftShape warnings (throw (.unsizedScatterOutput sl))
+            | none =>
+                match sl.outExtent (fun uid => sizes[uid]?) with
+                | some n => dimShape := dimShape.push n
+                | none => liftShape warnings (throw (.unsizedScatterOutput sl))
       match shape? with
       | none => shape? := some dimShape
       | some prev =>
@@ -1006,7 +1068,7 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
   -- an outer name.
   let mut baseCapNames : Array String := #[]
   for h : bi in [0 : baseParts.size] do
-    let (_, _, rhs) := baseParts[bi]
+    let (_, _, rhs, _) := baseParts[bi]
     for (rn, _) in rhs.readFactors do
       if stateNames.contains rn then
         throw (scanErr warnings (.stateReadInBaseBlock scanName bi rn))
@@ -1022,13 +1084,11 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
   let mut baseResultSlots : Array TensorSlot := #[]
   let mut baseWrites : Array StateWriteMap := #[]
   for h : bi in [0 : baseParts.size] do
-    let (nm, slots, rhs) := baseParts[bi]
+    let (nm, slots, rhs, _) := baseParts[bi]
     let si := (stateNames.findIdx? (· == nm)).getD 0
     -- a `·`-marked axis is a real output axis (Task 4), so `.freeNorm` joins `.free` in the
     -- output-tensor basis exactly as the top-level `freeUidOrFail` does.
-    let outputUids : List UID :=
-      slots.filterMap (fun sl => match sl with
-        | .free a | .freeNorm a => some a.uid | _ => none)
+    let outputUids := scanOutputUids slots
     let outputShape ←
       liftShape warnings (outputUids.toArray.mapM (resolveSizeOrFail sizes (.assignOutput nm)))
     -- §4.4: the `.iterAt` literals seed RHS evaluation as pins, not just write placement.
@@ -1087,26 +1147,9 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
             , mask := m.map (lowerMaskPredicate outputUids) })
           pure resSlot
     baseResultSlots := baseResultSlots.push resultSlot
-    -- write placement: a pin becomes an all-zero coefficient row with the literal as bias; a free
-    -- position (`.free` or `.freeNorm`) becomes a single `1` at its own output position. Domain is
-    -- the output slice alone (base writes carry no context), so every row is `outputShape.size` wide.
-    let width := outputShape.size
-    let mut coeffs : Array (Array Int) := #[]
-    let mut biasArr : Array Int := #[]
-    let mut freeSeen := 0
-    for sl in slots do
-      match sl with
-      | .iterAt _ lit =>
-          coeffs := coeffs.push (Array.replicate width 0)
-          biasArr := biasArr.push lit
-      | .free _ | .freeNorm _ =>
-          coeffs := coeffs.push ((Array.range width).map (fun p => if p == freeSeen then 1 else 0))
-          biasArr := biasArr.push 0
-          freeSeen := freeSeen + 1
-      | .iterNext _ | .affine _ =>
-          -- unreachable: Phase 1 rejected `.iterNext` in a base block, and preflight rejected
-          -- `.affine` in any scan block.
-          liftCapability warnings (throw (.unsupportedLhsSlot s!"{nm}: base LHS slot"))
+    -- Build placement from the same dense output basis used by the assignment. Base rows have no
+    -- context prefix; affine rows remain placement-only and never enter the compute plan.
+    let (coeffs, biasArr) := scanPlacementRows ctxUids outputUids true slots
     baseWrites := baseWrites.push
       { outputSlot := resultSlot, stateIndex := si, map := { coeffs, bias := biasArr } }
   ---------------------------------------------------------------------------
@@ -1118,7 +1161,7 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
   -- slot can ever shadow a state capture.
   let mut stepCapNames : Array (String × CaptureSource) := #[]
   for h : ri in [0 : recurParts.size] do
-    let (_, _, rhs) := recurParts[ri]
+    let (_, _, rhs, _) := recurParts[ri]
     for (rn, _) in rhs.readFactors do
       match stateNames.findIdx? (· == rn) with
       | some si =>
@@ -1151,10 +1194,8 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
   let mut resultSlotOf : HashMap String TensorSlot := {}
   let mut scratchSlotOf : HashMap String TensorSlot := {}
   for h : ri in [0 : recurParts.size] do
-    let (nm, slots, rhs) := recurParts[ri]
-    let outputUids : List UID :=
-      slots.filterMap (fun sl => match sl with
-        | .free a | .freeNorm a => some a.uid | _ => none)
+    let (nm, slots, rhs, _) := recurParts[ri]
+    let outputUids := scanOutputUids slots
     let outputShape ←
       liftShape warnings (outputUids.toArray.mapM (resolveSizeOrFail stepSizes (.assignOutput nm)))
     let axisPos? ← liftNonlin warnings (resolveNonlinAxis nm rhs.nonlin slots)
@@ -1207,9 +1248,7 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
           pure resSlot
     if stateNames.contains nm then resultSlotOf := resultSlotOf.insert nm resultSlot
     else scratchSlotOf := scratchSlotOf.insert nm resultSlot
-  -- step writes, in persistent-state order: `.iterNext` on context axis `i` becomes the canonical
-  -- `context[i] + 1` row (the `+1` is built HERE — `checkScanPlan` recognizes it, it does not
-  -- supply it); every other dimension passes its output position through.
+  -- Step writes use the same builder as base writes, with the scan-context prefix prepended.
   let mut stepOutputs : Array TensorSlot := #[]
   let mut stepWrites : Array StateWriteMap := #[]
   for h : si in [0 : stateNames.size] do
@@ -1218,25 +1257,7 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
     let outSlot := resultSlotOf.getD st 0
     let outputShape := (stepSigs.getD outSlot { shape := #[], dtype := .f64 }).shape
     stepOutputs := stepOutputs.push outSlot
-    let width := numAxes + outputShape.size
-    let mut coeffs : Array (Array Int) := #[]
-    let mut biasArr : Array Int := #[]
-    let mut freeSeen := 0
-    for sl in slots do
-      match sl with
-      | .iterNext a =>
-          let i := (ctxIndexOf a.uid).getD 0
-          coeffs := coeffs.push ((Array.range width).map (fun p => if p == i then 1 else 0))
-          biasArr := biasArr.push 1
-      | .free _ | .freeNorm _ =>
-          coeffs := coeffs.push ((Array.range width).map
-            (fun p => if p == numAxes + freeSeen then 1 else 0))
-          biasArr := biasArr.push 0
-          freeSeen := freeSeen + 1
-      | .iterAt .. | .affine _ =>
-          -- unreachable: Phase 1 established that a state result's slots are `.iterNext` on every
-          -- context axis and `.free`/`.freeNorm` elsewhere.
-          liftCapability warnings (throw (.unsupportedLhsSlot s!"{st}: state-result LHS slot"))
+    let (coeffs, biasArr) := scanPlacementRows ctxUids (scanOutputUids slots) false slots
     stepWrites := stepWrites.push
       { outputSlot := outSlot, stateIndex := si, map := { coeffs, bias := biasArr } }
   ---------------------------------------------------------------------------
@@ -1259,14 +1280,24 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
     let rows := baseWriteRows.getD wi #[]
     unless baseWriteTouchesBoundary (stateAdvDims.getD w.stateIndex #[]) rows do
       throw (scanErr warnings (.baseWriteNotAtBoundary scanName st wi))
-    for h2 : d in [0 : rows.size] do
-      match rows[d] with
+    let outputShape :=
+      (baseSigs.getD w.outputSlot { shape := #[], dtype := .f64 }).shape
+    unless outputRowExtentsAgree stateShape outputShape rows do
+      for d in [0 : rows.size] do
+        match scanOutputRowExtent outputShape (rows.getD d none) with
+        | some actual =>
+            unless stateShape.getD d 0 == actual do
+              throw (scanErr warnings
+                (.inconsistentStateExtent scanName st d (stateShape.getD d 0) actual))
+        | none => pure ()
+    for d in [0 : rows.size] do
+      match rows.getD d none with
       | some (.pinned lit) =>
           -- the RULE is `Scan.lean`'s `pinnedLiteralsInRange`, called one row at a time so the
           -- rejection can still name the offending dimension: the predicate indexes `stateShape`
           -- by each row's own position, so a one-row slice paired with that row's own extent is
           -- exactly the predicate's clause for dimension `d`. Only the LOCATOR lives here.
-          unless pinnedLiteralsInRange #[stateShape.getD d 0] #[rows[d]] do
+          unless pinnedLiteralsInRange #[stateShape.getD d 0] #[rows.getD d none] do
             throw (scanErr warnings
               (.baseWritePinOutOfRange scanName st wi d lit (stateShape.getD d 0)))
       -- no range obligation: `pinnedLiteralsInRange` is vacuously true on these rows, whose
@@ -1279,17 +1310,34 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
       (Array.range baseWrites.size).filterMap (fun wi =>
         if (baseWrites.getD wi default).stateIndex == si then some (wi, baseWriteRows.getD wi #[])
         else none)
-    for h2 : a in [0 : mine.size] do
-      for h3 : b in [0 : mine.size] do
+    for a in [0 : mine.size] do
+      for b in [0 : mine.size] do
         if a < b then
-          if writesCollide mine[a].2 mine[b].2 then
-            throw (scanErr warnings (.baseWritesOverlap scanName st mine[a].1 mine[b].1))
+          let wa := mine.getD a (0, #[])
+          let wb := mine.getD b (0, #[])
+          if writesCollide wa.2 wb.2 then
+            throw (scanErr warnings (.baseWritesOverlap scanName st wa.1 wb.1))
+  for wi in [0 : stepWrites.size] do
+    let w := stepWrites.getD wi default
+    let st := stateNames.getD w.stateIndex ""
+    let stateShape := stateShapes.getD w.stateIndex #[]
+    let outputShape :=
+      (stepSigs.getD w.outputSlot { shape := #[], dtype := .f64 }).shape
+    let rows := writeRowKinds stateShape.size numAxes w
+    unless outputRowExtentsAgree stateShape outputShape rows do
+      for d in [0 : rows.size] do
+        match scanOutputRowExtent outputShape (rows.getD d none) with
+        | some actual =>
+            unless stateShape.getD d 0 == actual do
+              throw (scanErr warnings
+                (.inconsistentStateExtent scanName st d (stateShape.getD d 0) actual))
+        | none => pure ()
   let capturedState : Array (Option Nat) := stepCapNames.map (fun (_, src) => match src with
     | .state si => some si | .external _ => none)
-  for h : ri in [0 : stepAssignPlans.size] do
-    let a := stepAssignPlans[ri]
-    for h2 : ti in [0 : a.terms.size] do
-      let t := a.terms[ti]
+  for ri in [0 : stepAssignPlans.size] do
+    let a := stepAssignPlans.getD ri default
+    for ti in [0 : a.terms.size] do
+      let t := a.terms.getD ti default
       for (fi, f) in t.readFactorsIndexed do
         match (capturedState.getD f.sourceSlot none) with
         | none => pure ()
@@ -1406,14 +1454,17 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
           throw { cause := .inputSignature (.dtypeMismatch nm expected ts.dtype), warnings := [] }
   -- Step C: shape inference.
   -- Plain, base, and recurrence assignments in SOURCE order (plan §4.5), interleaved exactly as
-  -- `sched.stmts` presents them. `inferAxisSizesCore` (`Eval/SizeInfer.lean`) derives constraints
-  -- only from `Stmt.readFactors` against known input shapes — it never inspects an `.assign`'s LHS
-  -- slots at all (only `.scatter`'s, via `scatterOutputShapes`) — so `.iterAt`/`.iterNext`
-  -- statements flow through it correctly with no special handling: verified by reading that
-  -- function directly, not assumed. `.scanPre` stays unreachable (Step A rejects it).
+  -- `sched.stmts` presents them. Scan-local scatters are presented to size inference as assignments:
+  -- their LHS describes placement into persistent state, not a standalone scatter-produced tensor
+  -- whose `.iterAt` extent should constrain a later state read. Their RHS reads still contribute the
+  -- same size constraints. Top-level scatters remain unchanged so downstream scatter-output shape
+  -- inference continues to work. `.scanPre` stays unreachable (Step A rejects it).
   let flatStmts : List Stmt := sched.stmts.flatMap (fun
     | .plain s => [s]
-    | .scan _ _ base recur _ => base ++ recur
+    | .scan _ _ base recur _ =>
+        (base ++ recur).map (fun
+          | .scatter nm slots rhs _ => .assign nm slots rhs
+          | s => s)
     | .scanPre .. => [])   -- unreachable post-preflight (Step A already rejected this)
   let (sizes, warnings) ← match inferAxisSizesFromSignature explicitSizes sig flatStmts with
     | .ok r => pure r
