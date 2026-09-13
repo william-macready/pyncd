@@ -95,6 +95,24 @@ private def compiledScans : List ScheduledProgram :=
       | _ => false)
   | _ => false))
 
+-- Task 4 S-B corpus: every fixture must retain a source scatter inside its scan, and at least one
+-- unrolled leaf program must retain a top-level scatter after scan elimination.
+#guard scanScatterOracleCases.length == 5
+#guard scanScatterOracleCases.all (fun c => c.sched.stmts.any (fun
+  | .scan _ _ base recur _ => (base ++ recur).any (fun
+      | .scatter .. => true
+      | _ => false)
+  | _ => false))
+#guard scanScatterOracleCases.any (fun c =>
+  match c.sched.stmts with
+  | [sc] => match sc with
+      | .scan .. =>
+          match unrollScanNode c.sched.explicitSizes c.sched.decls sc with
+          | .ok un => un.stmts.any (fun s => match s with | .scatter .. => true | _ => false)
+          | .error _ => false
+      | _ => false
+  | _ => false)
+
 -- `advScratch` (`ScanUnroll.lean`'s `ScanGeom` field) used to be populated by the `%nl` shape
 -- `splitNonlins` manufactured for a nonlinear recurrence, in every `relu`-template generated case.
 -- The logical-schedule flip (`papers/nonlinearity_split_pair_direct_lowering.md` §2.1) removed
@@ -106,7 +124,7 @@ private def analyzedScans : List ScanGeom :=
     | .error _ => none
     | .ok sched => match sched.stmts.find? (fun s => match s with | .scan .. => true | _ => false) with
         | none => none
-        | some sc => (analyzeScan sched.explicitSizes sc).toOption)
+        | some sc => (analyzeScan sched.explicitSizes sched.decls sc).toOption)
 #guard analyzedScans.length == 17
 #guard analyzedScans.all (fun g => g.advScratch.isEmpty)
 #guard analyzedScans.all (fun g => g.scratch.isEmpty)
@@ -127,8 +145,11 @@ private def corruptedT1 (f : List Stmt → List Stmt) : Except String DenseTenso
     | none    => .error "template1 did not compile to a scan node"
   let un ← unrollScanNode sched.explicitSizes sched.decls sc
   let un' := { un with stmts := f un.stmts }
+  let leafSizes := un'.sizes.foldl (fun m (u, n) => m.insert u n) sched.explicitSizes
   let leafEnv ← match evalScheduled
-      { sched with stmts := un'.stmts.map ScanStmt.plain } (template1 3 false).inputs with
+      { sched with stmts := un'.stmts.map ScanStmt.plain
+                   , decls := sched.decls ++ un'.axisDecls ++ un'.decls
+                   , explicitSizes := leafSizes } (template1 3 false).inputs with
     | .ok r    => pure r.env
     | .error e => .error s!"corrupted leaf program failed: {e.error}"
   match un'.geom.states with

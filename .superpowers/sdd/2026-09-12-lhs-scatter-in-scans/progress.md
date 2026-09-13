@@ -95,3 +95,34 @@ Prepared by: .claude/skills/new-slice/prepare-worktree.sh
   - An M4 rerun against `Tests` failed at the intended fixtures, then the restored `Tests` build
     passed at 8,661 jobs. Generated corpus remained 3,832/3,832 and scan corpus 17/17.
 - Reference-semantics review: CLEAN. No Task 3 stop condition occurred.
+
+## Task 4 — complete
+
+- The independent unroller now preserves scatter statement parts, derives non-advancing state
+  geometry with its own aligned-extent implementation, and emits dense private assignments followed
+  by top-level scatter leaves.
+- Base contributions have source-indexed names, independently enumerated destinations, explicit
+  overlap rejection, and canonical zero-filled merge leaves before recurrence evaluation.
+- Every contribution, merge, and step leaf is shape-checked against oracle-local state-slice extents;
+  reconstruction uses the actual advancing-dimension positions.
+- Synthetic slice-axis UIDs are minted above every UID appearing in explicit sizes, declarations,
+  scan axes, LHS slots, RHS reads, predicates, and masks. The contraction fixture leaves its RHS-only
+  axis unpinned and gives it the old size-only fresh UID, directly guarding this requirement.
+- Added five exact structural/value fixtures: even/odd interleave, strided recurrence, RHS
+  contraction, non-trailing advancing dimension, and two affine non-advancing dimensions. Feature
+  guards require source and emitted scatters, assignment-then-scatter adjacency, contribution merge,
+  private-name exclusion, and exact reconstructed histories.
+- Scripted mutation evidence, all through
+  `/Users/williammacready/code/python/pyncd/leanncd/scripts/mutation-cycle.sh`, with
+  `mutation_exit=1 restore_hash_exit=0 restored_build_exit=0`:
+  - M1 restored `c*n+b`: shifted interleave failed oracle-local shape validation.
+  - M2 collapsed contribution names: interleave history and structural name guards failed.
+  - M3 removed base-to-canonical merges: recurrence reads failed on missing canonical leaves.
+  - M4 dropped affine bias: interleaved contributions overlapped and structural guards failed.
+  - M5 assumed trailing advancing dimensions: the non-trailing history fixture failed.
+  - Review R1 restored size-map-only UID freshness: the inferred contraction axis conflicted with
+    the synthetic slice axis (`uid 8106`, extents 2 versus 6).
+  - Review R2 disabled overlap rejection: the direct overlapping-base fixture was accepted.
+- Gate: `build Eval.PropertyOracle.ScanUnroll Eval.PropertyOracle.ScanOracle` passed at 8,505 jobs.
+- Independence review initially found the UID-freshness blocker and missing overlap coverage; both
+  were fixed and mutation-tested. Follow-up review: CLEAN. No forbidden production helper is used.
