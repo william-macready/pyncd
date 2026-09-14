@@ -96,9 +96,15 @@ def evalScheduled (sched : ScheduledProgram) (inputs : HashMap String DenseTenso
   | .error e => .error { error := .compile e, warnings := [] }
   | .ok checked =>
   let sched := checked.program
-  -- gather ALL underlying stmts (plain + scan base/recur) to infer axis sizes from the inputs:
+  -- A scan-local scatter's LHS describes placement into persistent state, not a standalone scatter
+  -- output whose placement extent should constrain later reads of that state.
   let allStmts : List Stmt := sched.stmts.flatMap (fun
-    | .plain s => [s] | .scan _ _ b r _ => b ++ r | .scanPre _ _ _ => [])
+    | .plain s => [s]
+    | .scan _ _ base recur _ =>
+        (base ++ recur).map (fun
+          | .scatter nm slots rhs _ => .assign nm slots rhs
+          | s => s)
+    | .scanPre .. => [])
   match inferAxisSizes checked.explicitSizes inputs allStmts with
   | .error failure => .error failure
   | .ok (sizes, warnings) =>

@@ -1,7 +1,8 @@
 # Scatter and affine LHS writes — slice decomposition and verified design inputs
 
-**Status:** planning artifact, authored 2026-09-09 against `main` = `79fa71f`, then updated
-2026-09-12 after S-A landed and S-B planning completed. The original baseline was default
+**Status:** S-A and S-B implemented; authored 2026-09-09 against `main` = `79fa71f`, updated
+2026-09-12 after S-A landed and S-B planning completed, and refreshed after S-B implementation.
+The original baseline was default
 `lake build` green at **8660 jobs** and `lake build JaxExperiment` green at **8513 jobs**; the
 post-S-A baseline used for S-B planning is **8663 / 8514**.
 
@@ -96,6 +97,10 @@ Each would have changed what got built.
 
 ### 1.1 A strided write into scan state is unreachable from surface syntax, in BOTH phases
 
+> **Historical measurement, superseded by S-B:** this subsection records the pre-S-B barrier that
+> motivated the split. The current boundary is §3: `checkScatterNoScan` is gone and the bounded
+> positive affine scan-state subset is admitted.
+
 Measured [ran `lake env lean spikes/L3Probe.lean`, probe since removed, tree clean]:
 
 ```
@@ -131,8 +136,8 @@ serve S-B, not S-A.** Section B pointed the planning at the smaller and less val
 
 Chosen by the user, 2026-09-09. Reasons: it matches an already-implemented, already-tested reference
 semantics so the differential harness can prove it; it closes the Hard row; and it delivers the
-capability the whole enquiry started from. S-A has since landed; S-B's implementation is still
-deferred, with its design and task plan now finalized (§3).
+capability the whole enquiry started from. S-A and S-B have since landed; §3 records S-B's shipped
+boundary and the task plan that implemented it.
 
 ---
 
@@ -411,7 +416,7 @@ substrate:
 - S-A has a **reference implementation to differential-test against** (`evalScatter` already does
   fill and collision). At sequencing time S-B had none — `evalStmtSliceSeeded` rejects
   non-`.assign` in a scan slice. Section 3.6 now specifies both the required reference semantics and
-  an independent scan-free oracle, but they remain S-B implementation work.
+  an independent scan-free oracle; S-B subsequently implemented both.
 - The missing IR node is an S-A problem only. S-B already has a write-map representation
   (`StateWriteMap`, coefficient rows, `WriteRowKind`).
 - S-B additionally needs semantics decided and DSL guard L3 lifted.
@@ -715,9 +720,9 @@ and project oleans before re-verifying the baseline.
 
 ---
 
-## 3. S-B's finalized design
+## 3. S-B's implemented design
 
-Planning completed 2026-09-12. The implementation plan is
+Planning completed 2026-09-12 and the slice has since landed. The implementation record is
 `leanncd/docs/superpowers/plans/2026-09-12-lhs-scatter-in-scans.md`. The design below incorporates
 compiled probes, a complete routed source probe, and three independent Sol review passes. It
 supersedes the earlier parked extent and evaluator assumptions in this document.
@@ -840,9 +845,9 @@ a non-assignment statement between assignments so original and filtered statemen
 
 The low-level checked worker needs no change, but both comparison legs do.
 
-The legacy scan evaluator currently accepts only dense assignments in a slice. It must compute the
-dense source slice with seeded assignment semantics, then evaluate the original LHS expressions
-independently for placement. Calling top-level `evalScatter` directly is wrong when the RHS has a
+The legacy scan evaluator now computes the dense source slice with seeded assignment semantics, then
+evaluates the original LHS expressions independently for placement. Calling top-level `evalScatter`
+directly would be wrong when the RHS has a
 contraction-only axis, because that path does not share the scan slice's seeded contraction
 semantics. Base overlays preserve source order.
 

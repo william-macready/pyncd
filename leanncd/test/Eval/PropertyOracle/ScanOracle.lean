@@ -113,6 +113,26 @@ private def compiledScans : List ScheduledProgram :=
       | _ => false
   | _ => false)
 
+/-- The five hand-built S-B isolation cases also compare the legacy scan evaluator with the
+    independent oracle directly. Task 7's seven source-generated cases add the checked-plan leg in
+    `DifferentialTest`; this smaller corpus remains pinned separately so its Task 4 assertions do not
+    get silently replaced. -/
+private def checkScanScatterLaw (c : ScanScatterOracleCase) : Option String :=
+  match evalScheduled c.sched c.inputs, independentRun c.sched c.inputs with
+  | .error e, _ => some s!"{c.label}: legacy evaluator failed: {e.error}"
+  | _, .error m => some s!"{c.label}: independent oracle failed: {m}"
+  | .ok legacy, .ok indep =>
+      match statesAgree s!"{c.label}: legacy versus independent oracle" ["S"] legacy.env indep with
+      | some m => some m
+      | none =>
+          match legacy.env["S"]?, indep["S"]? with
+          | some a, some b =>
+              if denseEq a c.expected && denseEq b c.expected then none
+              else some s!"{c.label}: a reference leg disagrees with the explicit expected state"
+          | _, _ => some s!"{c.label}: a reference leg omitted state S"
+
+#guard (scanScatterOracleCases.findSome? checkScanScatterLaw).isNone
+
 -- `advScratch` (`ScanUnroll.lean`'s `ScanGeom` field) used to be populated by the `%nl` shape
 -- `splitNonlins` manufactured for a nonlinear recurrence, in every `relu`-template generated case.
 -- The logical-schedule flip (`papers/nonlinearity_split_pair_direct_lowering.md` §2.1) removed

@@ -2,6 +2,7 @@ import LeanNCD.Eval.Contract
 import LeanNCD.Eval.Error
 import LeanNCD.Eval.Nonlin
 import LeanNCD.Eval.Slots
+import LeanNCD.Eval.SizeSolve
 import LeanNCD.DSL.Pipeline.Types
 namespace LeanNCD.Eval
 open Std
@@ -20,10 +21,16 @@ def cartesianList : List (List Nat) → List (List Nat)
   | []      => [[]]
   | r :: rs => (cartesianList rs).flatMap (fun tail => r.map (fun x => x :: tail))
 
-/-- LHS source axes for scan-scatter computation, de-duplicated by UID in first-seen order. -/
+/-- Normalized nonzero LHS source axes for scan-scatter computation, de-duplicated by UID in
+    first-seen order. Raw canceled axes remain sizing obligations through `LHSSlot.outExtent`, but
+    they are contractions rather than dense output coordinates. -/
 def scanScatterSourceAxes (slots : List LHSSlot) : List AxisSpec :=
   (slots.flatMap (fun sl =>
-    (IdxExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) sl.outIdx).run)).foldl
+    let rawAxes :=
+      (IdxExpr.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) sl.outIdx).run
+    let (_, coeffs) := idxAffineForm sl.outIdx
+    let normalized := SizeSolve.normalizeCoeffs coeffs
+    rawAxes.filter (fun a => normalized.any (fun (_, u) => u == a.uid)))).foldl
     (fun acc a =>
       if acc.any (fun seen => seen.uid == a.uid) then acc else acc ++ [a]) []
 

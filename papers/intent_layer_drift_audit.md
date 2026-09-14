@@ -3,6 +3,10 @@
 **Status:** findings record. Measured against `main` at `9378231`, tree clean. One fix has landed
 (`5236c75`); everything else below is **open**.
 
+> **Supersession (2026-09-13):** the `checkScatterNoScan` finding in §3.3 is a historical
+> measurement. S-B removed that guard and admitted the bounded positive affine scan-state subset;
+> the finding is retained unchanged as part of this audit record.
+
 **Why this file is tracked.** The two underlying agent reports live in
 `docs/superpowers/plans/2026-09-10-{eval,dsl}-agents-drift.md`, which is **gitignored**. This
 project has lost gitignored artifacts before, and re-running the audit costs two full agent passes.

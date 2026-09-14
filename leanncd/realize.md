@@ -108,12 +108,12 @@ are the other statement forms.
 ### 3.2 The compilation pipeline
 
 `TLProgram.compile` (`LeanNCD/DSL/Compile.lean`) is `compileToScheduled >>= route`. The logical
-`compileToScheduled` chains ten phases, ending in a `ScheduledProgram` whose statement count equals
+`compileToScheduled` chains nine phases, ending in a `ScheduledProgram` whose statement count equals
 the source's — one statement per source statement, and no generated `%nl…` names:
 
 ```
 assignUIDs → resolveDecls → reclassifyIterSlots → checkReadRanks → checkDtypes
-           → checkScatterNonlin → checkScatterNoScan → lowerArith
+           → checkScatterNonlin → lowerArith
            → finalizeScans → schedule
 ```
 

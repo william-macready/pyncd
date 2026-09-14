@@ -78,6 +78,25 @@ private def envEq (e1 e2 : HashMap String DenseTensor) : Bool :=
       | some a, some b => denseEq a b
       | _, _ => false)
 
+/-- Scan differential equality is deliberately local and explicit: exact key inventory plus exact
+    shape and value at every key. The guards distinguish it from a values-only comparison. -/
+private def scanEnvEq (e1 e2 : HashMap String DenseTensor) : Bool :=
+  let ks1 := e1.toList.map Prod.fst
+  let ks2 := e2.toList.map Prod.fst
+  ks1.length == ks2.length && ks1.all (fun k => ks2.contains k) &&
+    ks1.all (fun k => match e1[k]?, e2[k]? with
+      | some a, some b => denseEq a b
+      | _, _ => false)
+
+private def inventoryProbe : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "S" ⟨[2], #[1, 2]⟩
+private def extraKeyProbe : HashMap String DenseTensor :=
+  inventoryProbe.insert "private" ⟨[], #[0]⟩
+private def wrongShapeProbe : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "S" ⟨[1, 2], #[1, 2]⟩
+#guard !scanEnvEq inventoryProbe extraKeyProbe
+#guard !scanEnvEq inventoryProbe wrongShapeProbe
+
 private def capabilityCategory : CapabilityError → String
   | .scanNode _ => "scanNode"
   | .scatterOrAffineLhs _ => "scatterOrAffineLhs"
@@ -576,9 +595,9 @@ multi-base-writes. Neither is reachable from any fixture below — verified, not
 * `multiBaseSched`'s two base writes are disjoint by construction (`r` pinned to different
   literals), so last-write-wins never arbitrates anything.
 
-All twenty-one scan programs exercised here (twelve hand-written, nine generated) agree with
-`evalScheduled` exactly, so no divergence needed classifying. A future fixture that DID diverge would
-fail loudly here rather than being absorbed. -/
+Every admitted scan program exercised here agrees with `evalScheduled` exactly, so no divergence is
+classified away. Exact corpus counts are pinned in their own sections below; a future fixture that
+DID diverge would fail loudly rather than being absorbed. -/
 
 /-- Names a scan's recurrence list produces that are NOT persistent state — block-local scratch.
     Derived the same way `compileScan` classifies (base destinations are the states; a recurrence-
@@ -596,9 +615,8 @@ private def scanScratchNames (sched : ScheduledProgram) : List String :=
        execution assertion that silently stopped covering scans would otherwise still pass);
     2. execute with `runPreparedDense`;
     3. execute the same `ScheduledProgram` with `evalScheduled`;
-    4. compare EVERY materialized persistent state one by one, then the whole environment (the
-       per-name loop names the offender; the whole-environment check additionally catches an extra
-       or missing key that a per-name loop structurally cannot see);
+    4. compare complete environments pairwise across all three legs: exact key inventory plus exact
+       state/input shapes and values, with all three pair results in one diagnostic;
     5. verify every named input the plan does not overwrite is returned unchanged;
     6. verify every block-local scratch name is absent from the unpacked environment AND from
        `materializedNames` — with `expectedScratch` pinned by the caller, so a fixture that stopped
@@ -614,7 +632,8 @@ private def scanScratchNames (sched : ScheduledProgram) : List String :=
     only between legs 1 and 2: the unrolling replaces every scan-axis index with a literal, so which
     reads are STATICALLY out of extent legitimately changes, while the VALUES may not. -/
 private def scanParityCheck (name : String) (sched : ScheduledProgram)
-    (inputs : HashMap String DenseTensor) (expectedScratch : List String) :
+    (inputs : HashMap String DenseTensor) (expectedScratch : List String)
+    (expectedMaterialized : Option (List (String × DenseTensor)) := none) :
     Except String Unit := do
   -- (6a) the scratch set this fixture is asserted to have.
   let scratch := scanScratchNames sched
@@ -654,29 +673,9 @@ F4's source scan compiler"
     if (refReport.env[nm]?).isSome then
       throw s!"{name}: the LEGACY evaluator published scratch {nm} — the two boundaries disagree \
 about privacy, which this parity check would otherwise report only as an env mismatch"
-  -- (4) every materialized persistent state, compared exactly and individually.
+  -- (4a) there must be at least one materialized state.
   if prepared.bindings.materializedNames.isEmpty then
     throw s!"{name}: no materialized names — nothing for the parity check to compare"
-  for b in prepared.bindings.materializedNames do
-    match planReport.env[b.name]?, refReport.env[b.name]? with
-    | some a, some c =>
-        unless denseEq a c do
-          throw s!"{name}: materialized state {b.name} diverges from the legacy evaluator: \
-plan={repr a.shape}/{repr a.data} ref={repr c.shape}/{repr c.data}"
-    | none, _ => throw s!"{name}: materialized name {b.name} is absent from the unpacked env"
-    | _, none => throw s!"{name}: materialized name {b.name} is absent from the legacy env"
-  -- (4b) whole-environment equality: same key set, `denseEq` on every key.
-  unless envEq planReport.env refReport.env do
-    throw s!"{name}: environment mismatch.\nplan env: {repr planReport.env.toList}\n\
-reference env: {repr refReport.env.toList}"
-  -- (5) named inputs the plan does not itself overwrite come back untouched.
-  for (nm, t) in inputs.toList do
-    unless prepared.bindings.materializedNames.any (·.name == nm) do
-      match planReport.env[nm]? with
-      | some t' =>
-          unless denseEq t t' do
-            throw s!"{name}: input {nm} was modified by the run: {repr t'.data}"
-      | none => throw s!"{name}: input {nm} disappeared from the unpacked env"
   -- (7) warnings compared as lists: order AND payload.
   unless decide (planReport.warnings = refReport.warnings) do
     throw s!"{name}: warnings differ.\nplan: {planReport.warnings.map toString}\n\
@@ -685,21 +684,48 @@ reference: {refReport.warnings.map toString}"
   let indepEnv ← match PropertyOracle.independentRun sched inputs with
     | .ok e    => pure e
     | .error m => throw s!"{name}: the independent scan-free unrolling failed: {m}"
-  for b in prepared.bindings.materializedNames do
-    match planReport.env[b.name]?, indepEnv[b.name]? with
-    | some a, some c =>
-        unless denseEq a c do
-          throw s!"{name}: THREE-WAY DIFFERENTIAL FAILURE — materialized state {b.name} disagrees \
-with the independent scan-free unrolling.\nplan={repr a.shape}/{repr a.data}\n\
-unrolled={repr c.shape}/{repr c.data}\nThis is a semantic finding, not an oracle to retune: see \
-the plan's §12.2 stop condition."
-    | none, _ => throw s!"{name}: materialized name {b.name} is absent from the unpacked env"
-    | _, none => throw s!"{name}: the independent unrolling published no {b.name}"
   -- scratch stays private on the third leg too: leaf names live inside the per-scan sub-evaluation
   -- and the reconstruction only republishes persistent states.
   for nm in scratch do
     if (indepEnv[nm]?).isSome then
       throw s!"{name}: block-local scratch {nm} escaped the independent unrolling"
+  -- Exact whole-environment comparisons make key inventory, tensor shape, and tensor value part of
+  -- every pair. Naming all three pairs attributes a mutation to the disagreeing leg rather than
+  -- relying on transitivity through the checked result.
+  let checkedLegacy := scanEnvEq planReport.env refReport.env
+  let checkedIndependent := scanEnvEq planReport.env indepEnv
+  let legacyIndependent := scanEnvEq refReport.env indepEnv
+  unless checkedLegacy && checkedIndependent && legacyIndependent do
+    throw s!"{name}: THREE-WAY DIFFERENTIAL FAILURE \
+(checked↔legacy={checkedLegacy}, checked↔independent={checkedIndependent}, \
+legacy↔independent={legacyIndependent}).\nchecked={repr planReport.env.toList}\n\
+legacy={repr refReport.env.toList}\nindependent={repr indepEnv.toList}"
+  -- Every external input must survive unchanged on every execution leg.
+  for (nm, t) in inputs.toList do
+    unless prepared.bindings.materializedNames.any (·.name == nm) do
+      for (leg, out) in [("checked plan", planReport.env), ("legacy evaluator", refReport.env),
+          ("independent oracle", indepEnv)] do
+        match out[nm]? with
+        | some t' =>
+            unless denseEq t t' do
+              throw s!"{name}: {leg} modified external input {nm}: {repr t'.shape}/{repr t'.data}"
+        | none => throw s!"{name}: {leg} dropped external input {nm}"
+  -- Curated corpora may additionally pin the complete materialized-name inventory and independently
+  -- hand-derived state tensors. This is intentionally separate from pairwise agreement: three
+  -- mutually agreeing implementations must not bless the same missing key or wrong shape.
+  match expectedMaterialized with
+  | none => pure ()
+  | some expected =>
+      let expectedNames := (expected.map Prod.fst).toArray
+      let actualNames := prepared.bindings.materializedNames.map (·.name)
+      unless actualNames == expectedNames do
+        throw s!"{name}: materialized key inventory changed: got {actualNames}, expected {expectedNames}"
+      let expectedEnv := expected.foldl (fun e (nm, t) => e.insert nm t) inputs
+      for (leg, out) in [("checked plan", planReport.env), ("legacy evaluator", refReport.env),
+          ("independent oracle", indepEnv)] do
+        unless scanEnvEq out expectedEnv do
+          throw s!"{name}: {leg} disagrees with the explicit expected key/shape/value inventory.\n\
+got={repr out.toList}\nexpected={repr expectedEnv.toList}"
 
 /-- Every acceptance fixture `ScanCompileTest.lean` asserts structurally, run through the execution
     matrix. The list is exhaustive over that file's Part 1 (A, B, C, D/E, F, G, H, I/J, K/L —
@@ -1005,6 +1031,197 @@ unsupportedNonlin={nonlin} unsupportedAgg={agg}"
       unless total == 17 && accepted == 17 && nonlin == 0 && agg == 0 do
         throwError s!"scan corpus split counts changed: total={total} accepted={accepted} \
 nonlin={nonlin} agg={agg}"
+
+/-! ## S-B Task 7 — source-generated scan-scatter three-way corpus
+
+These seven programs are deliberately separate from both generated corpora: `enumScanCases` remains
+exactly 17 and scan-free `enumPrograms` remains exactly 3,832. Every case starts at `tlprog!` syntax,
+then `scanParityCheck` compares checked plan, legacy scan evaluation, and the independent scan-free
+oracle pairwise. The explicit materialized-state list additionally pins exact key inventory, shapes,
+and values, so three implementations cannot agree on the same omission or stale extent. -/
+
+private abbrev ScanScatterEntry :=
+  String × TLProgram × HashMap String DenseTensor × List (String × DenseTensor)
+
+private def tlSB (shape : List Nat) (xs : List Float) : DenseTensor := ⟨shape, xs.toArray⟩
+
+private def sbBaseExpected : DenseTensor :=
+  tlSB [6,3] [1,1,1, 0,0,0, 2,2,2, 0,0,0, 3,3,3, 0,0,0]
+
+def scanScatterPrograms : List ScanScatterEntry :=
+  [ ("SB1 strided base",
+      tlprog!{ iter l = 3
+              axis j : ℕ = 3, k : ℕ = 6
+              S[2*j, 0] := X[j]
+              S[k, l + 1] := S[k, l] },
+      HashMap.ofList [("X", tlSB [3] [1,2,3])],
+      [("S", sbBaseExpected)])
+  , ("SB2 strided recurrence",
+      tlprog!{ iter l = 3
+              axis j : ℕ = 3, k : ℕ = 6
+              S[k, 0] := X[k]
+              S[2*j + 1, l + 1] := S[2*j, l] },
+      HashMap.ofList [("X", tlSB [6] [1,2,3,4,5,6])],
+      [("S", tlSB [6,3] [1,0,0, 2,1,0, 3,0,0, 4,3,0, 5,0,0, 6,5,0])])
+  , ("SB3 even/odd base interleave",
+      tlprog!{ iter l = 3
+              axis j : ℕ = 3, k : ℕ = 6
+              S[2*j, 0] := E[j]
+              S[2*j + 1, 0] := O[j]
+              S[k, l + 1] := S[k, l] },
+      HashMap.ofList [("E", tlSB [3] [1,2,3]), ("O", tlSB [3] [4,5,6])],
+      [("S", tlSB [6,3] [1,1,1, 4,4,4, 2,2,2, 5,5,5, 3,3,3, 6,6,6])])
+  , ("SB4 dense contraction before placement",
+      tlprog!{ iter l = 3
+              axis j : ℕ = 3, q : ℕ = 2, k : ℕ = 6
+              S[2*j, 0] := X[j, q]
+              S[k, l + 1] := S[k, l] },
+      HashMap.ofList [("X", tlSB [3,2] [1,10, 2,20, 3,30])],
+      [("S", tlSB [6,3] [11,11,11, 0,0,0, 22,22,22, 0,0,0, 33,33,33, 0,0,0])])
+  , ("SB5 non-trailing advancing dimension",
+      tlprog!{ iter l = 3
+              axis j : ℕ = 3, k : ℕ = 6
+              S[0, 2*j] := X[j]
+              S[l + 1, k] := S[l, k] },
+      HashMap.ofList [("X", tlSB [3] [1,2,3])],
+      [("S", tlSB [3,6] [1,0,2,0,3,0, 1,0,2,0,3,0, 1,0,2,0,3,0])])
+  , ("SB6 two affine non-advancing dimensions",
+      tlprog!{ iter l = 3
+              axis j : ℕ = 3, q : ℕ = 2, k : ℕ = 6, m : ℕ = 4
+              S[2*q + 1, 2*j, 0] := X[j, q]
+              S[m, k, l + 1] := S[m, k, l] },
+      HashMap.ofList [("X", tlSB [3,2] [1,2, 3,4, 5,6])],
+      [("S", tlSB [4,6,3]
+        [0,0,0, 0,0,0, 0,0,0, 0,0,0, 0,0,0, 0,0,0,
+        1,1,1, 0,0,0, 3,3,3, 0,0,0, 5,5,5, 0,0,0,
+        0,0,0, 0,0,0, 0,0,0, 0,0,0, 0,0,0, 0,0,0,
+        2,2,2, 0,0,0, 4,4,4, 0,0,0, 6,6,6, 0,0,0])])
+  , ("SB7 two scans with one S-B node",
+      tlprog!{ iter p = 3, l = 3
+              axis j : ℕ = 3, k : ℕ = 6
+              A[0] := A0[]
+              A[p + 1] := A[p]
+              T[2*j, 0] := X[j]
+              T[k, l + 1] := T[k, l] },
+      HashMap.ofList [("A0", tlSB [] [5]), ("X", tlSB [3] [1,2,3])],
+      [("A", tlSB [3] [5,5,5]), ("T", sbBaseExpected)]) ]
+
+#guard scanScatterPrograms.length == 7
+
+private def checkScanScatterProgram (entry : ScanScatterEntry) : Except String Unit := do
+  let (name, prog, inputs, expected) := entry
+  let sched ← match prog.compileToScheduled.run 0 with
+    | .ok s _ => pure s
+    | .error e _ => throw s!"{name}: source compilation failed: {repr e}"
+  let scanCount := sched.stmts.countP (fun s => match s with | .scan .. => true | _ => false)
+  let expectedScanCount := if name == "SB7 two scans with one S-B node" then 2 else 1
+  unless scanCount == expectedScanCount do
+    throw s!"{name}: compiled scan count changed: got {scanCount}, expected {expectedScanCount}"
+  scanParityCheck name sched inputs [] (expectedMaterialized := some expected)
+
+run_cmd do
+  for entry in scanScatterPrograms do
+    match checkScanScatterProgram entry with
+    | .ok () => pure ()
+    | .error m => throwError s!"SCAN SCATTER THREE-WAY CORPUS (S-B Task 7) FAILED:\n{m}"
+
+private def sbCancelJ : AxisSpec := ⟨"sbCancelJ", 6201, .real⟩
+private def sbCancelQ : AxisSpec := ⟨"sbCancelQ", 6202, .real⟩
+private def sbCancelK : AxisSpec := ⟨"sbCancelK", 6203, .real⟩
+private def sbCancelL : AxisSpec := ⟨"sbCancelL", 6204, .nat⟩
+
+/-- A syntactically present but normalized-away LHS axis remains an RHS contraction on all three
+    execution legs. This form requires a hand-built schedule because surface affine LHS syntax is
+    intentionally single-axis. -/
+private def canceledLhsAxisSchedule : ScheduledProgram :=
+  let base : Stmt := .scatter "S"
+    [.affine (.affine 0 [(2, sbCancelJ), (1, sbCancelQ), (-1, sbCancelQ)]),
+     .iterAt sbCancelL 0]
+    { body := { terms := [{ factors := [.read "X" [.axis sbCancelJ, .axis sbCancelQ]] }] },
+      nonlin := .identity } {}
+  let recur : Stmt := .assign "S" [.free sbCancelK, .iterNext sbCancelL]
+    { body := { terms := [{ factors := [.read "S" [.axis sbCancelK, .axis sbCancelL]] }] },
+      nonlin := .identity }
+  { decls :=
+      [.axis sbCancelJ (some 3), .axis sbCancelQ (some 2), .axis sbCancelK (some 6),
+       .iter sbCancelL 3, .tensor "X" [sbCancelJ, sbCancelQ]]
+  , stmts := [.scan "S" [sbCancelL] [base] [recur] false]
+  , env := {}, extNames := {"X"}, explicitSizes := {} }
+
+run_cmd do
+  let inputs : HashMap String DenseTensor :=
+    HashMap.ofList [("X", tlSB [3,2] [1,10, 2,20, 3,30])]
+  let expected :=
+    [("S", tlSB [6,3] [11,11,11, 0,0,0, 22,22,22, 0,0,0, 33,33,33, 0,0,0])]
+  match scanParityCheck "S-B canceled LHS contraction axis" canceledLhsAxisSchedule inputs []
+      (expectedMaterialized := some expected) with
+  | .ok () => pure ()
+  | .error m => throwError m
+
+private def crossSlotCanceledSchedule : ScheduledProgram :=
+  let base : Stmt := .scatter "S"
+    [.affine (.affine 0 [(1, sbCancelQ), (-1, sbCancelQ), (1, sbCancelJ)]),
+     .affine (.axis sbCancelQ), .iterAt sbCancelL 0]
+    { body := { terms := [{ factors := [.read "X" [.axis sbCancelJ, .axis sbCancelQ]] }] },
+      nonlin := .identity } {}
+  let recur : Stmt := .assign "S"
+    [.free sbCancelJ, .free sbCancelQ, .iterNext sbCancelL]
+    { body := { terms := [{ factors :=
+        [.read "S" [.axis sbCancelJ, .axis sbCancelQ, .axis sbCancelL]] }] },
+      nonlin := .identity }
+  { decls :=
+      [.axis sbCancelJ (some 3), .axis sbCancelQ (some 2), .iter sbCancelL 2,
+       .tensor "X" [sbCancelJ, sbCancelQ]]
+  , stmts := [.scan "S" [sbCancelL] [base] [recur] false]
+  , env := {}, extNames := {"X"}, explicitSizes := {} }
+
+#guard (scanScatterSourceAxes
+  [.affine (.affine 0 [(1, sbCancelQ), (-1, sbCancelQ), (1, sbCancelJ)]),
+   .affine (.axis sbCancelQ)]).map (·.uid) == [sbCancelJ.uid, sbCancelQ.uid]
+
+run_cmd do
+  let inputs : HashMap String DenseTensor :=
+    HashMap.ofList [("X", tlSB [3,2] [1,10, 2,20, 3,30])]
+  let expected :=
+    [("S", tlSB [3,2,2] [1,1,10,10, 2,2,20,20, 3,3,30,30])]
+  match scanParityCheck "S-B cross-slot normalized axis order" crossSlotCanceledSchedule inputs []
+      (expectedMaterialized := some expected) with
+  | .ok () => pure ()
+  | .error m => throwError m
+
+private def canceledUnsizedLhsSchedule : ScheduledProgram :=
+  let canceled :=
+    LHSSlot.affine (.affine 0 [(2, sbCancelJ), (1, sbCancelQ), (-1, sbCancelQ)])
+  let base : Stmt := .scatter "S" [canceled, .iterAt sbCancelL 0]
+    { body := { terms := [{ factors := [.read "X" [.axis sbCancelJ]] }] },
+      nonlin := .identity } {}
+  let recur : Stmt := .assign "S" [.free sbCancelK, .iterNext sbCancelL]
+    { body := { terms := [{ factors := [.read "S" [.axis sbCancelK, .axis sbCancelL]] }] },
+      nonlin := .identity }
+  { decls :=
+      [.axis sbCancelJ (some 3), .axis sbCancelQ none, .axis sbCancelK (some 6),
+       .iter sbCancelL 3, .tensor "X" [sbCancelJ]]
+  , stmts := [.scan "S" [sbCancelL] [base] [recur] false]
+  , env := {}, extNames := {"X"}, explicitSizes := {} }
+
+run_cmd do
+  let inputs : HashMap String DenseTensor := HashMap.ofList [("X", tlSB [3] [1,2,3])]
+  let canceled :=
+    LHSSlot.affine (.affine 0 [(2, sbCancelJ), (1, sbCancelQ), (-1, sbCancelQ)])
+  match prepareEvalPlan canceledUnsizedLhsSchedule (InputSignature.ofDenseInputs inputs) with
+  | .ok _ => throwError "canceled LHS-only UID was not a checked-plan sizing obligation"
+  | .error e =>
+      unless e.cause == .shape (.unsizedScatterOutput canceled) do
+        throwError "canceled LHS-only UID produced the wrong checked-plan error"
+  match evalScheduled canceledUnsizedLhsSchedule inputs with
+  | .ok _ => throwError "canceled LHS-only UID was not a legacy sizing obligation"
+  | .error { error := .shape (.unsizedScatterOutput slot), .. } =>
+      unless decide (slot = canceled) do
+        throwError s!"canceled LHS-only UID named the wrong legacy slot: {repr slot}"
+  | .error e => throwError s!"canceled LHS-only UID produced the wrong legacy error: {e.error}"
+  match independentRun canceledUnsizedLhsSchedule inputs with
+  | .ok _ => throwError "canceled LHS-only UID was not an oracle sizing obligation"
+  | .error _ => pure ()
 
 /-! ## Thread 4 (nonlinearity) Task 5 — top-level nonlin differential fixtures
 
@@ -1690,7 +1907,14 @@ run_cmd do
   match sched.stmts.find? (fun s => match s with | .scan .. => true | _ => false) with
   | none => throwError "T5.4 structural: seededAxisZero has no scan node"
   | some sc =>
-      match PropertyOracle.unrollScanNode sched.explicitSizes sched.decls sc with
+      let sizeStmts := sc.sourceStmts.map (fun
+        | .scatter nm slots rhs _ => Stmt.assign nm slots rhs
+        | s => s)
+      let sizes ← match inferAxisSizes (declaredAxisSizes sched.decls)
+          ScanCompileTest.seededAxisZeroInputs sizeStmts with
+        | .ok (sizes, _) => pure sizes
+        | .error e => throwError s!"T5.4 structural: size inference failed: {e.error}"
+      match PropertyOracle.unrollScanNode sizes sched.decls sc with
       | .error m => throwError s!"T5.4 structural: unroll failed: {m}"
       | .ok un =>
           let leaked := un.stmts.flatMap maskUidsOfStmt

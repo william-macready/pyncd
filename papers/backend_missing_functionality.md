@@ -34,6 +34,9 @@ already evaluates most of the constructs listed here, so nearly every row is a *
 > the Hard row has been narrowed to the still-open second slice (strided writes into scan state, S-B).
 > The two 2026-09-09 corrections above are left as written — they accurately describe what was true
 > before S-A landed.
+>
+> **Supersession (S-B shipped, 2026-09-13):** the second slice has now landed too. The two corrections
+> above remain historical measurements; the Hard row they described has moved to “Already closed.”
 
 ## Contents
 
@@ -58,7 +61,7 @@ branch** — read the `throw` sites, do not assume this table is current. Two ro
 `wave_f_capability_manifest.md` table went stale this way when the nonlinearity thread closed
 nonlinear scans and updated the proposal but not the manifest's copy.
 
-Last re-derived against the tree: **2026-09-03** (Task 4, `boolean_predicate_output_evalplan.md`).
+Last re-derived against the tree: **2026-09-13** (S-B affine scan-state writes).
 
 Static throw-site inspection of `capabilityPreflight` at that date finds **4 live producer
 families** — `scatterOrAffineLhs`, `unsupportedLhsSlot`, `recurrenceOrCallback`, `noAdvancingAxis` —
@@ -77,7 +80,6 @@ yardstick), not a measured figure — see the rationale below the table.
 |---|---|---|---|---|
 | Foundational / modeling-contradiction | **`.scanPre` + recurrence / callback morphisms** — the pre-built step-morphism escape hatch | `recurrenceOrCallback` | `checkScanStmt` / `checkStmt` | partial (`Stmt.recurMorphism`) |
 | Foundational (dynamic-shape half) | **`f32`; dynamic / value-dependent shapes** — `bool` is no longer in this row (see the closed Boolean/predicate-output entry below) | `unsupportedDtype`, `dynamicShape` (both producer-less/unreachable) | not reachable from preflight; `checkAssign`'s `dtypeAdmitted` rejects `f32` at a destination or a read (`PlanError.dtypeNotAdmitted`), and admits `f64`/`bool` | n/a (mode boundary) |
-| Hard | **Affine (strided/offset) LHS writes INTO SCAN STATE** — the second, still-unbuilt half of the scatter row; top-level scatter (`Out[2*i] := X[i]`) has landed, see "Already closed" below | `CompileError.scatterInScan` (a DSL-phase rejection, not a `CapabilityError`) | `checkScatterNoScan` (`DSL/Pipeline/Structural.lean`), pre-`lowerArith` | ✗ (no reference semantics — `Scan.evalStmtSliceSeeded` rejects any non-`.assign` statement in a scan) |
 
 ### Difficulty ranking rationale (hardest → easiest)
 
@@ -98,14 +100,9 @@ what the ranking tracks.
    whole checked plan assumes statically-known extents (shape inference, geometry, write maps, corpus
    gates all resolve sizes at compile time), so value-dependent shapes mean symbolic extents
    pervasively. That half is the deepest single change on the list.
-3. **Scatter + affine LHS writes** — "Wave D source semantics." Changes the *write side*: affine /
-   scatter write maps, output-extent via the shared `scatterOutShape` contract (which exists), and a
-   scatter-aware Dense worker. Partly scaffolded — `RawScanPlan` already carries `StateWriteMap`
-   machinery scatter could model on — but write geometry is this repo's recurring defect family (the
-   `stepWriteRowsOk` Critical), so the validation surface is where the cost lives. **Top-level
-   scatter has since landed** (`scatter_affine_lhs_writes.md`, see "Already closed"); this ranking
-   entry now describes only the remaining scan-state half (S-B), whose write geometry is exactly that
-   recurring-defect surface.
+Scatter + affine LHS writes formerly occupied the next rank and is now closed for S-A plus S-B's
+bounded scan-state subset; see “Already closed.” General data-dependent gather/scatter and the
+rejected scan geometries below remain separate capabilities.
 ### Scan-geometry limits (not `CapabilityError` rejections)
 
 These are rejected deeper in `compileScan`/`checkScanPlan` (via `ScanCompileError`), once inferred
@@ -204,7 +201,7 @@ fragment.
   reference computed real sum) and is now REJECTED at capability tier as `predicateScatterDest`,
   same way a tropical fill is refused — the honest report that no reference match exists, deferred
   to a future slice where the reference is taught to be dtype-aware. The parity gate is the curated
-  `scatterPrograms` corpus (`DifferentialTest.lean`, 8 accepted programs), checked bit-for-bit
+  `scatterPrograms` corpus (`DifferentialTest.lean`, 9 accepted programs), checked bit-for-bit
   against the reference `Eval/Scatter.lean` evaluator over the real sum-product algebra. Still
   rejected, deliberately: a constant-affine slot (`Out[3]`, `scatterOrAffineLhs`), a multi-axis slot
   (`Out[i+j]`, `multiAxisScatterLhs`), a collision policy other than reject-on-collision
@@ -213,11 +210,20 @@ fragment.
   unwritten cells provably diverge from the reference by design and is not a parity-corpus entry.
   The experimental `jax_bridge` backend rejects a `.scatter` step categorically (`unsupportedStep`)
   — there is no JAX scatter execution.
-  **Not** included: strided writes into scan state (S-B), still open — see the narrowed Hard row above.
   **Not** included: Boolean/predicate scatter destinations — deferred, rejected at capability tier
   as `predicateScatterDest` rather than admitted; closing them requires teaching the reference
   `evalScatter` to be dtype-aware.
   Closed by `scatter_affine_lhs_writes.md`.
+- **Affine scatter writes into scan state (S-B)** — positive one-axis affine placement with
+  nonnegative bias is admitted in non-advancing state dimensions in both base and recurrence phases.
+  The block computes a dense `AssignPlan` (including contraction) and `StateWriteMap` performs
+  placement; no `BlockStep.scatter` exists. Multiple base contributions must be proven disjoint
+  (equal-scale/different-residue is the new proof), recurrence still permits exactly one write per
+  state, fill is zero, and collision policy is reject. Context-affine, multi-axis, scratch-scatter,
+  predicate/nonlinear, non-default reduction, sign, extent, and overlap forms remain typed
+  rejections. `DifferentialTest.scanScatterPrograms` pins seven source-generated cases across checked
+  plan, legacy evaluator, and independent scan-free oracle. Closed by
+  `2026-09-12-lhs-scatter-in-scans.md`.
 - **Scan nodes** with at least one advancing axis — `scanNode` has no producer left in the compiler.
   Only `noAdvancingAxis` (an empty advancing-axis list) is still an error, and that is a genuine
   input error, not a capability gap.

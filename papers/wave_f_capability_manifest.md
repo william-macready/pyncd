@@ -41,10 +41,14 @@ this branch, that kernel is:
 - **factors** — plain/affine read factors, inline unary reads (`.unaryFn`, lowered to a `ReadPlan`
   carrying `unary` and applied after the pad), and Iverson predicate/mask factors (`checkFactor`
   admits all three; `CapabilityError.unaryFactor`/`maskOrPredicate` are retained producer-less);
-- **out-of-bounds policy** — zero padding, still the only admitted policy (`policyNotAdmitted`).
+- **out-of-bounds policy** — zero padding, still the only admitted policy (`policyNotAdmitted`);
+- **scan-state placement** — dense `.free` rows plus positive one-axis affine `.strided` rows with
+  nonnegative bias in non-advancing dimensions. Base and recurrence placement are both admitted;
+  base contributions must be pairwise disjoint and recurrence retains exactly one write per state.
 
-Genuinely rejected, not merely unexercised: `f32` anywhere, an `.affine` LHS slot, `.scatter`,
-`.recurMorphism`/`.scanPre`, and any non-`zeroPad` policy — see §3 for the full closed families.
+Genuinely rejected, not merely unexercised: `f32` anywhere, constant/multi-axis/context-affine or
+scratch scatter placement, predicate/nonlinear/non-default-policy scatter, `.recurMorphism`/
+`.scanPre`, and any non-`zeroPad` read policy — see §3 for the full closed families.
 Within that kernel, the admitted fragment is a rectangular uniform lattice recurrence, confirmed by
 the three-way differential gate in §4 below:
 
@@ -58,7 +62,9 @@ the three-way differential gate in §4 below:
 - block-local scratch, private to the step block and never published past the scan's boundary;
 - more than one scan axis in a single scan;
 - more than one scan per schedule;
-- a plain (scan-free) statement consuming a published scan history downstream.
+- a plain (scan-free) statement consuming a published scan history downstream;
+- affine base and recurrence writes in non-advancing state dimensions, including disjoint even/odd
+  base interleaving, contraction-before-placement, and multiple affine dimensions.
 
 A state's boundary may be written as one free-axis "main" face plus one or more disjoint,
 fully-pinned point overrides — **not** two or more full free-axis faces (the standard
@@ -178,13 +184,13 @@ The curated `enumScanCases` generator (`test/Eval/PropertyOracle/ScanGen.lean`) 
   *This bullet said **21** = 12 + **9** when Wave F wrote it. The 12 hand-written fixtures are
   unchanged; only the generated half moved, by exactly the accept-boundary shift the bullet above
   records (9 → 13 → 17). Later threads then ADDED hand-written three-way scan fixtures outside this
-  manifest's scope, so `DifferentialTest.lean` today gates **43** scan programs in total: the 12
+  manifest's scope, so `DifferentialTest.lean` now gates **50** scan programs in total: the 12
   above, plus **6** nonlinearity-thread oracle groups (`nonlinearScanFixtures`), plus the **7**-entry
   curated predicate/mask scan set (Slice 5.4's five, extended by Task 4.5 with Task 4.4's two Boolean
-  scan-state clones), plus Task 4.4's `scratchPredicate` fixture, plus the 17 generated cases. Those
-  14 additions belong to their own threads' manifests; they are named here so this count cannot be
-  read as the whole file's inventory.*
-- All 29 (and, with the later additions, all 43) agree bit-for-bit across three independent legs: the
+  scan-state clones), plus Task 4.4's `scratchPredicate` fixture, plus the 17 generated cases, plus
+  S-B's **7** source-generated scan-scatter cases. Those additions belong to their own threads'
+  manifests; they are named here so this count cannot be read as the whole file's inventory.*
+- All 29 (and, with the later additions, all 50) agree bit-for-bit across three independent legs: the
   compiled checked path (`prepareEvalPlan` → `runPreparedDense`), the legacy `evalScheduled` oracle,
   and the independent scan-free unrolling (`PropertyOracle.independentRun`) — compared on
   materialized state, whole environment, and (between the first two legs only) preparation warnings.
@@ -195,6 +201,12 @@ The curated `enumScanCases` generator (`test/Eval/PropertyOracle/ScanGen.lean`) 
   consumer of a published history.
 - The pre-existing Wave C scan-free sweep (3,832 entries, 100% accepted, 100% bit-exact) is unchanged
   by this slice.
+- S-B adds a separate **7-case** source-generated `scanScatterPrograms` corpus without changing
+  either generated count. It pins strided base, strided recurrence, even/odd base interleave,
+  contraction-before-placement, a non-trailing advancing dimension, two affine non-advancing
+  dimensions, and two scans with one S-B node. Exact materialized keys, shapes, values, warnings,
+  unchanged inputs, and scratch privacy are checked, with explicit checked↔legacy,
+  checked↔independent, and legacy↔independent attribution.
 
 ## 5. Extension points
 
@@ -210,7 +222,7 @@ Wave F" table:
 | Boolean/predicate declared outputs | **Admitted** (Task 4, `boolean_predicate_output_evalplan.md`): `ScalarDType.bool` is a semantic algebra/signature tag over the unchanged Float-backed storage, not a native carrier. A predicate destination selects `admittedAlgebraBool` (factor `min`/identity `true`, reduction and term `max`/identity `false`, mirroring the reference `Combine.bool`); a `bool` source may feed an `f64` destination and vice versa, since the DESTINATION selects the algebra and gathering is dtype-blind. Scan state, scratch, and published histories carry full `TensorSignature`s (`CompiledScan.stateSigs`) and `checkWrites` enforces write-dtype equality (`ScanPlanError.writeDtypeMismatch`). `booleanOutput` retained producer-less. `f32` stays rejected; no native `Array Bool`, no truth-value validation, and no JAX Boolean execution (the experimental backend REJECTS Boolean semantics, see below). |
 | Unary factor functions | **Admitted** (`unary_factor_functions.md`): `checkFactor`/`ReadPlan.unary` admit a unary factor (`log`/`exp`/`sin`/`cos`/`sqrt`/`recip`) in ordinary assignments and inside scan `base`/`recur` blocks, applied after gather/pad by Dense. The experimental JAX backend's `checkJaxAssignSupport` still rejects an inline unary read with a located typed error — Dense executes it, JAX does not. |
 | Max/min aggregation | **Admitted** (max/min-aggregation thread): `checkAggOp` admits `.max`/`.min`; the compiler selects the tropical algebra (`algebraForAgg`) and Dense reduces with `max`/`min` seeded at `−∞`/`+∞`. `unsupportedAgg == 0` in the `DifferentialTest.lean` scan corpus. |
-| Scatter and affine LHS writes | Wave D source semantics are not yet represented by checked `EvalPlan`. |
+| Scatter and affine LHS writes | **Admitted for S-A and S-B's bounded subset:** top-level affine/diagonal scatter, plus positive one-axis affine base/recurrence placement in non-advancing scan-state dimensions. Still rejected: constant/multi-axis/context-affine and scratch placement, predicate/nonlinear scatter, non-default fill/reduction, nonpositive scale, negative bias, inconsistent extents, and overlap. |
 | Dtypes beyond the admitted concrete `f64` mode (including its Float-backed `bool` semantic-tag variant, see the Boolean/predicate row above) and dynamic shapes | Still rejected at the checked-plan preparation boundary. |
 | `.scanPre`, callbacks, and predicate-dispatch scan bodies | Still rejected even though `PlanStep.scan` exists (nonlinear scan bodies themselves are now admitted — see the first row). |
 | General n-dimensional recurrence geometry and arbitrary state writes | The first checked scan remains the rectangular uniform all-axis `+1` fragment. |
@@ -227,10 +239,10 @@ refreshed for Slice 5 (`predicate_boolean_backend_parity.md`), which admitted pr
 axiswise `where=` masks. The Boolean/predicate declared outputs row was refreshed for Task 4
 (`boolean_predicate_output_evalplan.md`), which admitted Boolean/predicate declared outputs and full
 scan signatures for state, scratch, and published histories — the experimental JAX backend remains
-fail-loud and still rejects Boolean semantics via `checkJaxAssignSupport`. Everything else in this
-table is unchanged and re-derived against `capabilityPreflight` (`Eval/Plan/Compile.lean`) on this
-branch. The remaining still-rejected families are scatter and affine LHS writes, `f32` and other
-unimplemented dtypes, dynamic shapes, and `.scanPre`/callbacks/predicate-dispatch scan bodies.*
+fail-loud and still rejects Boolean semantics via `checkJaxAssignSupport`. S-B then admitted the
+bounded affine scan-state subset recorded above. The remaining still-rejected families are the
+listed out-of-fragment scatter geometries/policies, `f32` and other unimplemented dtypes, dynamic
+shapes, and `.scanPre`/callbacks/predicate-dispatch scan bodies.*
 
 The next semantic-expansion work after Wave F should be a named **checked local-kernel capability
 wave**, extending `AssignPlan`, its checker, and Dense interpretation one operation family at a time,

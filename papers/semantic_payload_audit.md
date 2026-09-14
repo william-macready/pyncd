@@ -4,6 +4,10 @@
 > [`restructure_suggestions.md`](restructure_suggestions.md#review-addendum-2026-07-26-correctness-first-reprioritization).
 > Every cell carries a `file:line`; the `NONE` rows are established by grep, not inference.
 > **Nothing here is implemented.** The right-hand column is a *recommendation* awaiting a decision.
+>
+> **Supersession (2026-09-13):** this table is a historical snapshot. S-B subsequently admitted the
+> bounded positive one-axis affine scan-scatter subset through dense block assignments plus
+> `StateWriteMap` placement. See `papers/scatter_affine_lhs_writes.md` §3 for the current boundary.
 
 ## Why this exists
 

@@ -243,8 +243,8 @@ Review findings:
 pipeline — is **fully executable and `sorry`-free** (`grep -rn sorry LeanNCD/DSL/` empty;
 `lake build` green). `TLProgram.compile : TLProgram → FreshM ThreadedComposed` factors as
 `compileToScheduled >>= route`; the logical `compileToScheduled` chain (assignUIDs → resolveDecls →
-reclassifyIterSlots → checkReadRanks → checkDtypes → checkScatterNonlin → checkScatterNoScan →
-lowerArith → finalizeScans → schedule) yields a `ScheduledProgram` whose statement count equals
+reclassifyIterSlots → checkReadRanks → checkDtypes → checkScatterNonlin → lowerArith →
+finalizeScans → schedule) yields a `ScheduledProgram` whose statement count equals
 the source's — no generated `%nl…` names, per `papers/nonlinearity_split_pair_direct_lowering.md`
 §2.1 — and `route` calls a private `physicalizeForRoute` (`Pipeline/RouteFragments.lean`) that
 expands each nonlinear plain statement into a producer/consumer pair before the unchanged

@@ -64,10 +64,8 @@ structure StateWriteMap where
     (`papers/nonlinearity_split_pair_direct_lowering.md` §3.5). Deliberately a separate sum from
     `PlanStep` below rather than a reuse of it: a block step has no `.scan` case (scans do not
     nest), and its nonlinear cases carry no `contextShape` of their own. It likewise has no
-    `.scatter` case: S-A admits a scatter only as a TOP-LEVEL step, so a scatter inside a scan block
-    is not representable here. That is a scope boundary recorded deliberately, not an oversight —
-    admitting one would be a separate piece of work, and nothing about adding `PlanStep.scatter`
-    forces a compile error here to say so. -/
+    `.scatter` case: admitted scan scatters lower their dense computation to `.assign`, while affine
+    placement is represented separately by the scan's `StateWriteMap`. -/
 inductive BlockStep
   | assign (a : AssignPlan)
   | pointwise (p : RawPointwisePlan)

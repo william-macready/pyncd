@@ -89,7 +89,7 @@ carrying and because the hardening that makes A safe is work worth doing regardl
 |---|---|
 | `B2-F1` | **16 live, unsafe cells** — not latent |
 | Table census | `24 a / 22 b / 122 c` (the audit's headline figures) |
-| Slice 2 scope | both lowering arms — a base arm *and* a step arm. ⚠️ **Both are unreachable from surface syntax** (`checkScatterNoScan` rejects a scatter-shaped LHS with any iteration slot, in base and step alike), so this decision governs the DEFERRED slice; see `papers/scatter_affine_lhs_writes.md` §1 |
+| Slice 2 scope | **Historical pre-S-B measurement:** both lowering arms — a base arm *and* a step arm — were unreachable from surface syntax because `checkScatterNoScan` rejected either shape. S-B has since removed that barrier for the bounded subset; see `papers/scatter_affine_lhs_writes.md` §3. |
 | Barrier 1 | **no defence at all** — the strided guard has the opposite polarity (`p ≥ contextWidth`), satisfied by every `p` when `contextWidth = 0` |
 
 **Therefore Slice 1 is a blocking prerequisite for Slice 2, not a parallel nicety.** Under decision B

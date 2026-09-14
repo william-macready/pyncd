@@ -417,10 +417,9 @@ Before constructing `ScheduledProgram`, `compileToScheduled` runs the following 
 4. `checkReadRanks` checks tensor-read arities against known declarations and producers.
 5. `checkDtypes` checks source axis and tensor datatype compatibility.
 6. `checkScatterNonlin` rejects nonlinear scatter writes whose semantics are not defined.
-7. `checkScatterNoScan` rejects scatter-shaped writes in scan iteration slots.
-8. `lowerArith` lowers source index arithmetic and classifies affine or diagonal writes as scatters.
-9. `finalizeScans` groups matching base and recurrence statements into `ScanStmt.scan` nodes.
-10. `schedule` topologically orders the result and rejects cyclic dataflow.
+7. `lowerArith` lowers source index arithmetic and classifies affine or diagonal writes as scatters.
+8. `finalizeScans` groups matching base and recurrence statements into `ScanStmt.scan` nodes.
+9. `schedule` topologically orders the result and rejects cyclic dataflow.
 
 Neither the compile chain nor the resulting `ScheduledProgram` runs `splitNonlins` or introduces
 generated `%nl…` names: a source statement carrying a nonlinearity remains a single `ScanStmt` in

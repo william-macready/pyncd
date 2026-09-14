@@ -189,3 +189,45 @@ Prepared by: .claude/skills/new-slice/prepare-worktree.sh
 - Final wrapper gate
   `Eval.Plan.ScanCompileTest Eval.Plan.ScanTest Eval.Plan.AdapterTest LeanNCD` passed at 8,547 jobs.
   Both required reviews are adjudicated; no Task 6 stop condition occurred.
+
+## Task 7 — complete
+
+- Added exactly seven source-generated S-B differential programs covering strided base, strided
+  recurrence, even/odd base interleave, dense contraction before placement, a non-trailing advancing
+  dimension, two affine non-advancing dimensions, and two scans with one S-B node.
+- The corpus compares exact environment key inventories, tensor shapes and values, ordered warning
+  payloads, unchanged external inputs, and scratch-name privacy across checked, legacy, and independent
+  oracle legs. Explicit expected environments prevent three-way agreement on the same wrong result.
+- Added direct legacy-versus-independent checks for the five Task 4 isolation cases.
+- Global checked/legacy sizing now presents scan-local scatters as assignments, so placement extents do
+  not constrain persistent-state reads. The oracle independently derives sizes from declarations and
+  current inputs rather than cached `ScheduledProgram.explicitSizes`.
+- Soundness review found canceled LHS coefficients diverged across the three legs. Legacy source bases
+  and oracle placement bases now use normalized nonzero coefficients; the oracle also normalizes
+  residual placement expressions before ordinary scatter evaluation.
+- Follow-up review found global first-seen collection could let a canceled occurrence reserve an axis
+  position before a later live occurrence. Legacy extraction now normalizes and filters within each
+  slot before global first-seen deduplication. Regressions cover direct basis order, three-way cross-slot
+  parity, canceled RHS contraction, and unsized canceled-LHS-only UIDs.
+- Active capability, pipeline, test-portfolio, design, roadmap, tutorial, and IR documentation now
+  describes the shipped bounded S-B subset. Historical measurements are retained only with explicit
+  supersession markers.
+- Scripted mutation evidence, all through
+  `/Users/williammacready/code/python/pyncd/leanncd/scripts/mutation-cycle.sh`, with
+  `mutation_exit=1 restore_hash_exit=0 restored_build_exit=0` and final `PASS`:
+  - M1 dropped an odd base write.
+  - M2 restored the oracle's old shifted extent.
+  - M3 weakened environment comparison to values only.
+  - R1 restored legacy placement-based size inference.
+  - R2 restored cached oracle sizes.
+  - R3 retained a canceled axis in the legacy dense basis.
+  - R4 emitted an unnormalized oracle residual placement.
+  - R5 retained raw per-slot axes before global first-seen deduplication.
+- Final whole-branch soundness and semantic-independence review found one stale active-documentation
+  family and no implementation defect. The active pipeline descriptions and `BlockStep` representation
+  comment were corrected; remaining references are explicitly historical, superseded, or seed material.
+- Final wrapper gate passed all 8,665 jobs:
+  `Eval.Plan.ScatterCheckTest Eval.Plan.ScatterDenseTest Eval.Plan.ScatterCompileTest Eval.ScanTest
+  Eval.Plan.ScanTest Eval.Plan.ScanCompileTest Eval.Plan.AdapterTest Eval.PropertyOracle.ScanUnroll
+  Eval.PropertyOracle.ScanOracle Eval.Plan.DifferentialTest Tests LeanNCD JaxExperiment`.
+- No Task 7 or final-integration stop condition occurred.

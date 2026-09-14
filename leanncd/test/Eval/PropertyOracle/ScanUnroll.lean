@@ -59,6 +59,16 @@ def idxTerms : IdxExpr → Int × List (Int × AxisSpec)
   | .shift a n   => (n, [(1, a)])
   | .affine n xs => (n, xs)
 
+/-- Combine duplicate UID coefficients in first-seen order and drop canceled terms. -/
+private def normalizeIdx (e : IdxExpr) : IdxExpr :=
+  let (c0, raw) := idxTerms e
+  let axes := raw.foldl (fun acc (_, a) =>
+    if acc.any (fun b => b.uid == a.uid) then acc else acc ++ [a]) []
+  let terms := axes.filterMap (fun a =>
+    let c := raw.foldl (fun total (d, b) => if b.uid == a.uid then total + d else total) (0 : Int)
+    if c == 0 then none else some (c, a))
+  if terms.isEmpty then .const c0 else .affine c0 terms
+
 /-- Substitute literal values for the axes `σ` names, folding every substituted coefficient into
     the bias and keeping the rest of the expression. A duplicated axis contributes once per
     occurrence (`1 + 2r + 4r` at `r = 1` is `7`, not `3`). -/
@@ -391,10 +401,12 @@ private def baseRegion (g : ScanGeom) (st : StateGeom) (s : Stmt) :
     | none => .error s!"base write for {st.name}: dimension {p} is out of range")
   pure (tuplesOf ranges)
 
-/-- First-seen source-axis basis of a residual placement, independently of `scanScatterSourceAxes`. -/
+/-- First-seen normalized nonzero source-axis basis of a residual placement, independently of
+    `scanScatterSourceAxes`. Syntactically mentioned axes whose coefficients cancel remain visible to
+    the oracle's separate extent calculation, but not to dense computation. -/
 private def placementAxes (slots : List LHSSlot) : List AxisSpec :=
-  slots.flatMap (fun sl => (idxTerms sl.outIdx).2.map Prod.snd) |>.foldl
-    (fun acc a => if acc.any (fun b => b.uid == a.uid) then acc else acc ++ [a]) []
+  slots.flatMap (fun sl => (idxTerms (normalizeIdx sl.outIdx)).2.map Prod.snd)
+  |>.foldl (fun acc a => if acc.any (fun b => b.uid == a.uid) then acc else acc ++ [a]) []
 
 /-- Evaluate an affine expression without using a production placement helper. -/
 private def oracleEvalIdx (coord : HashMap UID Int) (e : IdxExpr) : Int :=
@@ -407,7 +419,7 @@ private def residualPlacement (st : StateGeom) (s : Stmt) (σ : UID → Option I
   st.slicePos.mapM (fun p => show Except String LHSSlot from match s.slots[p]? with
     | some (LHSSlot.free a)     => pure (LHSSlot.free a)
     | some (LHSSlot.freeNorm a) => pure (LHSSlot.freeNorm a)
-    | some (LHSSlot.affine e)   => pure (LHSSlot.affine (substIdx σ e))
+    | some (LHSSlot.affine e)   => pure (LHSSlot.affine (normalizeIdx (substIdx σ e)))
     | some sl => .error s!"{st.name}: unsupported residual placement {repr sl} at dimension {p}"
     | none    => .error s!"{st.name}: residual placement dimension {p} is missing")
 
@@ -859,13 +871,20 @@ def independentRun (sched : ScheduledProgram) (inputs : HashMap String DenseTens
         match evalScheduled { sched with stmts := [.plain s] } env with
         | .ok r    => env := r.env
         | .error e => .error s!"independent run: plain statement `{s.lhsName}` failed: {e.error}"
-    | .scan .. => do
-        let un ← unrollScanNode sched.explicitSizes sched.decls sc
+    | .scan _ _ base recur _ => do
+        let sizeStmts := (base ++ recur).map (fun
+          | .scatter nm slots rhs _ => Stmt.assign nm slots rhs
+          | s => s)
+        let sizes ← match inferAxisSizes (declaredAxisSizes sched.decls) env
+            sizeStmts with
+          | .ok (sizes, _) => pure sizes
+          | .error e => .error s!"independent run: scan size inference failed: {e.error}"
+        let un ← unrollScanNode sizes sched.decls sc
         -- Task 4.4: the leaf program's OWN decls are `sched.decls` (needed by a `.plain` statement
         -- reading an unrelated declared name) PLUS the generated predicate decls for THIS scan's
         -- leaves (`un.decls`) — the leaf names never collide with any source name (`%`-prefixed),
         -- so appending is safe and there is nothing to deduplicate.
-        let leafSizes := un.sizes.foldl (fun m (u, n) => m.insert u n) sched.explicitSizes
+        let leafSizes := un.sizes.foldl (fun m (u, n) => m.insert u n) sizes
         let leafEnv ←
             match evalScheduled { sched with stmts := un.stmts.map ScanStmt.plain
                                             , decls := sched.decls ++ un.axisDecls ++ un.decls

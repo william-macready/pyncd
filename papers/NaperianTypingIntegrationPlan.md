@@ -204,6 +204,10 @@ re-read §0 in full rather than proceeding from this summary.
 > `physicalizeForRoute`) or inside `prepareEvalPlan` as a two-step `assign → pointwise/axiswise`
 > chain. The remainder of this document is a broad historical plan and is not being modernised
 > beyond this pointer.
+>
+> **Pipeline invariant update — 2026-09-13.** S-B removed `checkScatterNoScan`; bounded positive
+> affine scan-state writes now pass through `lowerArith` and are checked during scan lowering. The
+> two historical staging boxes below retain the old phase only as measured context.
 
 Today the compile/eval split is already:
 

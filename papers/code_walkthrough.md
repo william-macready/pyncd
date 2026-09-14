@@ -411,11 +411,10 @@ Pipeline chain (exact order):
 4. [`checkReadRanks`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Structural.lean#L184-L209)
 5. [`checkDtypes`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Structural.lean#L228-L249)
 6. [`checkScatterNonlin`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Structural.lean#L777-L777)
-7. [`checkScatterNoScan`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Structural.lean#L789-L801)
-8. [`lowerArith`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Structural.lean#L307-L403)
-9. [`finalizeScans`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Structural.lean#L404-L453)
-10. [`schedule`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Lowering.lean#L150-L166)
-11. [`route`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Lowering.lean#L583-L588) (private preprocessing: [`physicalizeForRoute`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/RouteFragments.lean) expands each nonlinear plain statement into a producer/consumer pair before the unchanged [`routeCore`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Lowering.lean#L573-L579) runs)
+7. [`lowerArith`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Structural.lean#L307-L403)
+8. [`finalizeScans`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Structural.lean#L404-L453)
+9. [`schedule`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Lowering.lean#L150-L166)
+10. [`route`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Lowering.lean#L583-L588) (private preprocessing: [`physicalizeForRoute`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/RouteFragments.lean) expands each nonlinear plain statement into a producer/consumer pair before the unchanged [`routeCore`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Lowering.lean#L573-L579) runs)
 
 The historical [`splitNonlins`](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/DSL/Pipeline/Lowering.lean) phase — which formerly ran between `finalizeScans` and `schedule` — survives as a regression-only helper in `Pipeline/Lowering.lean` and is not on the production chain.
 
@@ -445,7 +444,7 @@ abbrev FreshM := EStateM CompileError Nat
 
 - **`ε = CompileError`** — the [15-variant sum type](https://github.com/william-macready/pyncd/blob/agents/tutorial-lean4-compilation-guide/leanncd/LeanNCD/Exec/Uid.lean#L17-L36) of everything that can go wrong (e.g. `rankMismatch`, `causalityViolation`, `cyclicDataflow`). Any pipeline phase can call `throw e`; Lean's monad machinery immediately short-circuits the rest of the chain and propagates the error upward — no manual `if`/`match`-on-error threading needed.
 
-**How `TLProgram.compile` uses it.** The entire ten-phase pipeline is written as one `do` block:
+**How `TLProgram.compile` uses it.** The entire nine-phase pipeline is written as one `do` block:
 
 ```lean
 def TLProgram.compile (p : TLProgram) : FreshM ThreadedComposed := do
@@ -455,7 +454,6 @@ def TLProgram.compile (p : TLProgram) : FreshM ThreadedComposed := do
   let b ← checkReadRanks b
   let b ← checkDtypes b
   let b ← checkScatterNonlin b
-  let b ← checkScatterNoScan b
   let d ← lowerArith b
   let e ← finalizeScans d
   let g ← schedule e
@@ -469,8 +467,7 @@ Each `let x ← phase y` desugars to `(phase y).bind (fun x => ...)`. `bind` for
 ```lean
 def TLProgram.compileToScheduled : TLProgram → FreshM ScheduledProgram :=
   assignUIDs >=> resolveDecls >=> reclassifyIterSlots >=> checkReadRanks >=> checkDtypes
-             >=> checkScatterNonlin >=> checkScatterNoScan >=> lowerArith >=> finalizeScans
-             >=> schedule
+             >=> checkScatterNonlin >=> lowerArith >=> finalizeScans >=> schedule
 ```
 
 `f >=> g` means "run `f`, then feed its output to `g`, threading the monad state". It is exactly function composition lifted into the monad — mathematically it is the composition law of the Kleisli category of `FreshM`. The two styles (`do`-notation and `>=>`) are equivalent; the `do` form in `compile` names intermediate values (useful for readability), while `>=>` in `compileToScheduled` is more concise for a pure pipeline.

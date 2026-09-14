@@ -796,7 +796,6 @@ reclassifyIterSlots
 checkReadRanks
 checkDtypes
 checkScatterNonlin
-checkScatterNoScan
 lowerArith
 finalizeScans
 schedule
