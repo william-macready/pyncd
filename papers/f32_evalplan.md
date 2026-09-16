@@ -514,6 +514,26 @@ construction, evidence aggregation, or Python emission. Expressing the gate in s
 rather than as an f32 special case, gives future complex plans the same fail-loud boundary until
 dtype-indexed JAX evidence exists.
 
+This table's own existence is the verification for most of the guard-installation fixtures below
+(Task 2's 18, 20, 21, 23, and the existence-only mutations inside 22 and 25; Task 4's 10): the
+failure mode for "add the same storage-kind guard at door N because door N−1 already has one" is
+*omission*—a door nobody remembered to check—not incorrect logic at a door someone did remember to
+guard. An isolated mutation cycle proves only that a guard someone already wrote can be observed
+failing when removed; it cannot reveal a sibling door nobody wrote a guard for in the first place.
+Tasks 2 and 4 therefore verify those fixtures as one completeness sweep each—confirm from the
+implemented call graph that every door listed above carries its required guard—rather than by an
+independent mutation cycle per door, and Task 5 item 6 closes the cumulative table with no cell left
+pending. This is not a reduction in rigor: it is the review method the failure mode actually
+requires, per the whole-branch boundary/exhaustiveness lens in Section 6.4 and the per-task sibling
+audit in Section 6.0 item 3, both of which already inspect unchanged doors a diff cannot show. The
+mutation-cycle budget this frees up is spent where the failure mode is instead subtly wrong logic
+that only a break/restore cycle exposes: Task 2's checker/evidence-boundary core (algebra selection,
+storage derivation, the first-conflict locator, capability rejection order) and Task 3's
+numerical-truthfulness fixtures, both of which keep their full per-fixture mutation cycles. The two
+genuinely order-sensitive JAX-gate mutations inside fixtures 22 and 24 (gate-before-node-iteration,
+gate-before-binding-validation) also keep their own cycles: a wrong check *order* is a different,
+harder-to-catch failure mode than a missing guard, and coincides with no other fixture's assertion.
+
 ## 4. Implementation tasks
 
 Task boundaries follow independent rejection/rollback surfaces: source/legacy admission, checked
@@ -767,7 +787,9 @@ Mutations and expected observations:
    whole-candidate predicate. The zero-step case is load-bearing because empty evidence currently
    aggregates to `orderedReference64`.
 
-**Numbered fixture groups: 25; planned mutation cycles: 32**
+**Numbered fixture groups: 25; planned mutation cycles: 23, plus one door-guard completeness sweep
+(fixtures 18, 20, 21, 23, and the existence-only mutations inside 22 and 25 — verified once against
+Section 3.5's table rather than as separate cycles; see Section 3.5 for why)**
 
 1. Clone `KernelCheckTest.goodPlan`; change every signature to f32 and the algebra to f32
    sum-product; require `checkAssignF32` success and `.float32` storage-kind evidence.
@@ -901,26 +923,19 @@ Mutations and expected observations:
   reports its exact original index and closed step kind.
 - traverse top-level source statements in reverse or by unsupported-feature category: fixture 17
   reports the second statement's nonlinearity and fails; restore reports the first statement's unary.
-- remove the local and graph Float-worker storage guards independently (two cycles): the
-  corresponding half of fixture 18 reaches Float validation/execution with f32 evidence and reports
-  a later error or value; restore rejects at each deepest public boundary.
 - remove the block-level storage-kind check: fixture 19 changes from the exact rejection to
   successful checked evidence; restore rejects the zero-step f32 block.
-- remove the Float-backed `pack` and `unpack` storage-kind guards independently (two cycles):
-  fixture 20 reaches storage/arity work or publishes Float buffers; restore rejects by storage kind;
-- remove only `runPreparedDense`'s storage-kind guard: fixture 21 reaches the later worker cause;
-  restore reports the adapter-level storage-kind cause;
-- remove the `lowerCheckPlanToCandidate` and `validateAndConstructExecutable` gates independently
-  (two cycles): fixture 23 acquires reference64 evidence or constructs an executable; restore
-  rejects before evidence;
-- remove the plan-level renderer/generator gate: fixtures 22 and 25 emit Python or report a later
-  node/binding error; restore emits nothing;
+- door-guard completeness sweep (fixtures 18, 20, 21, 23, and the shared-gate/`renderInputConstants`
+  existence checks inside 22 and 25): verified once against Section 3.5's table — every door named
+  there (`runDenseAssignAt`/`runDenseAssign`/`runDensePlan`, `pack`/`unpack`, `runPreparedDense`,
+  `lowerCheckPlanToCandidate`, `validateAndConstructExecutable`, and every plan-level
+  renderer/generator including `renderInputConstants`) carries its `.float64` guard — rather than as
+  six separate mutation cycles; see Section 3.5 for why an isolated cycle on an already-remembered
+  door cannot catch a door nobody guarded;
 - apply the JAX gate after node iteration: fixture 22 reports the located destination-dtype error;
   restore rejects before visiting the node;
 - move the JAX gate after prepared-binding validation: fixture 24 reports `invalidBindings`;
-  restore reports storage kind first;
-- remove `renderInputConstants`'s independent gate: fixture 25 emits UInt64/Float64 constants;
-  restore emits nothing.
+  restore reports storage kind first.
 
 ### Task 3 — Implement native binary32 local and graph execution
 
@@ -1080,7 +1095,8 @@ Mutations and expected observations:
    and confirm Task 2's already-closed JAX column remains accurate. No column remains pending after
    this task; Task 5 performs the final implemented-call-graph audit.
 
-**Numbered fixture groups: 15; planned mutation cycles: 17**
+**Numbered fixture groups: 15; planned mutation cycles: 14, plus fixture 10's guards folded into
+Task 2's door-guard completeness sweep (Section 3.5)**
 
 1. Clone `SignatureTest.conversionInputs`; construct native f32 tensors and f32 declarations;
    require `ofDenseInputs32ForDecls` to return f32 shapes/signatures.
@@ -1150,9 +1166,9 @@ Mutations and expected observations:
 - remove input storage validation: fixture 5 reaches execution and reports a different error; restore
   reports storage mismatch;
 - remove the result-arity guard: fixture 6 changes to success and fails; restore reports arity;
-- remove the f32 `pack32`, `unpack32`, and `runPreparedDense32` storage-kind guards independently
-  (three cycles): the corresponding part of fixture 10 reaches storage/arity or worker work; restore
-  reports storage kind at each public entry;
+- fixture 10 (`pack32`/`unpack32`/`runPreparedDense32` guards) folds into the same door-guard
+  completeness sweep as Task 2's fixtures 18/20/21/23 — verified once against Section 3.5's table
+  rather than as three separate mutation cycles;
 - remove one old-namespace `EvalReport` forwarding abbreviation: fixture 11 fails to elaborate;
   restore passes without migrating callers.
 - reject `.bool` in the Float32 adapter's signature compatibility check: fixture 12 fails; restore
@@ -1259,9 +1275,9 @@ Task 4 so its documentation closes the actual public boundary rather than a proj
 | Task | Main reviewer question | Fixture groups | Mutation cycles | Risk |
 |---|---|---:|---:|---|
 | 1 — source/legacy | Does the extensible typed declaration survive every source traversal, does bool inherit rather than select precision, does every homogeneous f32 graph hit the temporary stop, and can any legacy dtype-aware evaluator execute an f32 graph as Float? | 16 | 15 | High: `Decl` exhaustiveness and rejection order |
-| 2 — checked evidence | Can source specialization and direct raw-plan checking disagree, reject a valid real/bool graph, let f32 evidence reach an existing Float worker/adapter/JAX path, or admit an f32 zero-step block? | 25 | 32 | High: algebra, storage derivation, locator order, and interim boundary safety |
+| 2 — checked evidence | Can source specialization and direct raw-plan checking disagree, reject a valid real/bool graph, let f32 evidence reach an existing Float worker/adapter/JAX path, or admit an f32 zero-step block? | 25 | 23 + 1 sweep | High on the checker/evidence core (fixtures 1–17, 19, and the two JAX order fixtures); the door-guard sweep (fixtures 18, 20, 21, 23, and 22/25's existence checks) is Low/mechanical — see below |
 | 3 — native worker | Does the shared carrier/traversal preserve Float behavior while every f32/bool intermediate rounds in binary32, and do the new f32 entries reject Float-backed evidence? | 16 | 14 | High: numerical truthfulness and shared-worker dispatch |
-| 4 — named adapter | Do generic adapter/report shells preserve current APIs, f32-backed Boolean values, and warnings without letting either wrapper relabel another carrier? | 15 | 17 | High: public API and publication order |
+| 4 — named adapter | Do generic adapter/report shells preserve current APIs, f32-backed Boolean values, and warnings without letting either wrapper relabel another carrier? | 15 | 14 + 1 sweep | High on the core adapter logic (fixtures 1–9, 11–15); fixture 10's guards join Task 2's sweep — Low/mechanical |
 | 5 — JAX/docs | Does standalone JAX validation retain its located f32 rejection, do Task 2's plan-level gates remain closed, and are capability claims re-derived? | 2 | 1 | High: evidence boundary and stale capability prose |
 
 These tasks are intentionally not split into “add a type” or “add two guards” sub-tasks: those
@@ -1271,6 +1287,19 @@ worker may stand while the public f32 adapter is rejected; and the native backen
 standalone JAX validation and documentation closure are corrected. Task 2 is intentionally larger
 than the others because the first commit that can construct f32 evidence must atomically close every
 existing Float adapter/worker and reference64 JAX door.
+
+Risk is not uniform within Tasks 2 and 4, and the mutation-cycle budget follows that split rather
+than the "High" label attached to the task as a whole. A large share of both tasks' fixture count is
+mechanical symmetry — install the same storage-kind guard at door N because door N−1 already has
+one — and that family fails by *omission*, which the Section 3.5 completeness sweep catches and an
+individual mutation cycle structurally cannot (removing a guard someone remembered to write proves
+nothing about a guard nobody wrote). The two tasks' remaining fixtures are the actual novel-logic
+surface — algebra selection, storage derivation, the first-conflict locator, capability rejection
+order, and the two genuinely order-sensitive JAX-gate checks — and keep the full per-fixture
+mutation cycle because their failure mode is subtly wrong logic that only a break/restore cycle
+exposes. Task 3 gets no such split: every one of its fixtures is a numerical-truthfulness claim
+(bit-exact rounding, fold order, identity values), which is exactly the failure mode mutation testing
+is for, so it keeps its full weight uniformly.
 
 ## 6. Validation
 
@@ -1393,8 +1422,9 @@ The slice is complete only when all of the following are true:
   typed, located error;
 - existing Float-backed checkers/workers and the legacy evaluator cannot execute f32 evidence;
 - JAX rejects f32 before candidate construction, evidence, or Python output;
-- all 74 numbered fixture groups and 79 mutation cycles have the recorded fail/restored-pass
-  observations;
+- all 74 numbered fixture groups pass, with 67 of them backed by a recorded fail/restored-pass
+  mutation cycle and the remaining door-guard fixtures (Task 2's 18/20/21/23/22/25-existence, Task
+  4's 10) confirmed instead by the Section 3.5 completeness sweep with no cell left pending;
 - targeted builds, `JaxExperiment`, full `lake build`, documentation sweep, and two final reviews
   pass.
 
@@ -1514,8 +1544,19 @@ bit-exact JAX parity without measuring XLA's operation order.
   to the file after review.
 - The five tasks contain 74 numbered fixture groups: 16/25/16/15/2 by task. A group is one named
   test fixture and may contain several assertions or paired controls; this is the unit counted in
-  the task headers and risk table. Their mutation lists expand to 15/32/14/17/1 = 79 independently
+  the task headers and risk table. Their mutation lists expand to 15/23/14/14/1 = 67 independently
   applied and restored source changes. The two authoring-time storage-derivation mutations above
-  have observed fail/restored-pass results; the 79 implementation-dependent cycles are completion gates, not
-  claims about code that does not yet exist, and must record both observations while each task is
-  implemented.
+  have observed fail/restored-pass results; the 67 implementation-dependent cycles are completion
+  gates, not claims about code that does not yet exist, and must record both observations while each
+  task is implemented.
+- Reweighted mutation-cycle effort against risk rather than applying it uniformly across all 74
+  fixture groups: a recurring subset of Task 2's and Task 4's fixtures (18, 20, 21, 23, and the
+  existence-only half of 22/25 in Task 2; 10 in Task 4 — 12 of the original 79 cycles) install the
+  same storage-kind guard at one more door because a sibling door already has one. That family fails
+  by omission — a door nobody guarded — which the Section 3.5 completeness sweep catches and an
+  isolated mutation cycle cannot, since removing a guard someone remembered to write says nothing
+  about a guard nobody wrote elsewhere. Those fixtures remain required regression tests but are
+  verified once against Section 3.5's table rather than by a dedicated break/restore cycle each; the
+  budget this frees stays concentrated on Task 2's checker/evidence-boundary core, the two
+  genuinely order-sensitive JAX-gate mutations, and Task 3's numerical-truthfulness fixtures, where
+  the failure mode is subtly wrong logic that only a mutation cycle exposes.
