@@ -7,9 +7,10 @@ source program can declare a homogeneous
 binary32 tensor graph, compile scan-free identity assignments into a checked `EvalPlan`, execute
 sum/max/min contractions with Lean 4.30's native `Float32`, and receive native `Array Float32`
 materialized outputs through a named adapter. It is deliberately not a plan for every operation
-that currently works with Float64 storage, nor does it implement complex execution. The source,
-storage, and adapter shapes introduced here must nevertheless admit later `complex64` and
-`complex128` extensions without adding a parallel AST constructor and full adapter stack per dtype.
+that currently works with Float64 storage, nor does it implement complex execution. The source, storage, and adapter shapes introduced here must nevertheless admit later `complex64`
+and `complex128` extensions without adding a parallel AST constructor per dtype or duplicating the
+adapter's shape, binding, and publication logic per carrier. Carrier-specific public entry points
+remain explicit.
 
 ## 1. Decision and slice boundary
 
@@ -133,10 +134,12 @@ The following was measured from the current tree rather than copied from an earl
 
 - `Decl` has `tensor`, `predicate`, `linear`, `axis`, and `iter`; there is no source dtype annotation.
   The surface grammar similarly has only `tensor ...` and `predicate ...`.
-- `Decl.name`, `Decl.traverseAxes`, `buildDeclEnv`/declared-rank classification, and route-fragment
-  declaration naming all match tensor-bearing constructors explicitly. A new constructor must be
-  added to each exhaustive match; treating it as an axis declaration would silently remove it from
-  rank and external-name authority.
+- `Decl.name`, `Decl.traverseAxes`, declared-rank classification, and route-fragment declaration
+  naming all match tensor-bearing constructors explicitly. A new constructor must be added to each
+  exhaustive match; treating it as an axis declaration would silently remove it from rank and
+  external-name authority. `buildDeclEnv` is the exception: it explicitly skips `.axis`/`.iter` and
+  admits tensor-bearing declarations through its catch-all, so relocating it requires no new
+  constructor arm.
 - `ScalarDType.f32` and `ScalarConst.f32 UInt32` already exist. `TensorSignature` already carries
   `dtype`, and `PreparedPlan.materializedSignatures` already exposes complete ordered output
   signatures.
@@ -220,8 +223,8 @@ Define `TensorElementType` and `TensorStorageKind` in `DSL/Ast.lean`, where both
 and evaluator layers can depend on them without a reverse import. Add `TensorElementType.f32` and
 `Decl.typedTensor`. Extend only the existing tensor-bearing cases:
 
-`TensorElementType` derives `DecidableEq`, `Repr`, `Lean.ToExpr`, and `Inhabited`, matching the
-requirements imposed by `Decl` and `tlprog!` quotation. `TensorStorageKind` derives
+`TensorElementType` derives `DecidableEq`, `Repr`, and `Lean.ToExpr`, matching the requirements
+imposed by `Decl` and `tlprog!` quotation. `TensorStorageKind` derives
 `DecidableEq`, `BEq`, `Repr`, and `Inhabited` because it appears in checked evidence and closed
 diagnostics.
 
@@ -233,8 +236,10 @@ diagnostics.
 - the legacy reference entry rejects a scheduled graph that uses it before allocating or evaluating
   any tensor.
 
-Define a reusable per-name `storageConstraintOfDecl : Option Decl → Option TensorStorageKind` in
-`DSL/Ast.lean` next to `TensorStorageKind`:
+Move the existing `DeclEnv` alias and duplicate-rejecting `buildDeclEnv` implementation from
+`DSL/Pipeline/Types.lean` and `DSL/Pipeline/Structural.lean` to the lower-level `DSL/Ast.lean`
+without changing their names or behavior, then define a reusable per-name
+`storageConstraintOfDecl : Option Decl → Option TensorStorageKind` beside them:
 ordinary/linear/undeclared real names contribute `.float64`, `.typedTensor .f32` contributes
 `.float32`, and predicates contribute no constraint. Build the schedule-wide analysis over
 `orderedExternalNames sched.stmts` followed
@@ -247,18 +252,27 @@ contribute `some .float64`. `predicate` contributes no precision constraint. The
 pair of real constraints is rejected; no real constraint means `.float64`, preserving bool-only
 behavior. Unused declarations do not participate. `prepareEvalPlan` and `evalScheduled` consume this
 schedule-wide derivation. Direct legacy entries (`evalAssignDtypedSeeded`, `evalPlain`,
-`evalStmtSliceSeeded`, and `evalScan`) have no complete `ScheduledProgram`; they apply the shared
-per-name classifier to their destination/read/write names through the already available declaration
-environment rather than importing `ScheduledValidation.lean`. This placement is required because
+`evalStmtSliceSeeded`, and `evalScan`) have no complete `ScheduledProgram`; they first call the same
+shared `buildDeclEnv`, rejecting duplicate tensor-bearing declarations as
+`EvalError.compile (.duplicateTensorDecl name)`, and then apply the shared per-name classifier to
+their destination/read/write names through that validated environment. They do not import
+the schedule-wide derivation merely to classify one name. The shared low-level classifier is used
+at all four entries because `Eval/Contract.lean` cannot import `ScheduledValidation.lean`;
+`Eval/Eval.lean` already imports it for `evalScheduled`. This placement is required because
 `ScheduledValidation → Structural → Eval.Contract`; importing it from `Eval/Contract.lean` would
 create a cycle. Carrier-specific signature constructors also have no schedule and
 therefore consume the shared per-name constraint directly against their explicitly selected carrier;
-in particular, a predicate-only Float32 input map is valid rather than defaulting itself to Float64.
-Do not duplicate declaration classification in the compiler and adapter.
+in particular, a predicate-only Float32 input map is valid at the signature-constructor boundary
+rather than defaulting itself to Float64. It does not make a bool-only program executable through
+the f32 graph path: schedule- and signature-table-level storage derivation still selects
+`.float64` when there is no real constraint. Do not duplicate declaration classification or add a
+third declaration-environment builder in the compiler, evaluator, or adapter.
 
 The legacy rejection is enforced at every dtype-aware public door, not only at `evalScheduled`.
-`evalScheduled` performs the storage-kind check immediately after `validateScheduled` and before shape
-inference or environment lookup. `evalAssignDtypedSeeded` checks the destination and every named
+`evalScheduled` performs the **new real-storage-kind analysis** immediately after
+`validateScheduled` and before shape inference or environment lookup. This is distinct from
+`validateScheduled`'s existing `checkScheduledDtypes`, which checks axis kinds and predicate-output
+semantics rather than f32/f64 storage. `evalAssignDtypedSeeded` checks the destination and every named
 read factor before gathering; `Combine` selection is total and has no observable ordering claim.
 `evalAssignDtyped`, `evalPlain`, and scheduled
 execution inherit that deepest guard. Test both an f64 destination reading an f32-declared source
@@ -266,7 +280,8 @@ and an f32 destination reading an f64 source; a predicate alongside either preci
 conflict. A dual-invalid scheduled fixture that contains f32 and is also unsized/missing-input must
 report the dtype error, making the “before shape or environment lookup” order observable.
 
-The binary32 capability pass traverses top-level scheduled statements in source order. A scan or
+The binary32 capability pass runs after storage derivation but before the existing Step A
+`capabilityPreflight`, then traverses top-level scheduled statements in source order. A scan or
 scatter is rejected as an unsupported outer step kind; this plan makes no claim about precedence
 against an independently invalid body. Within a plain assignment, nonlinearity is checked before
 factors (unary). The dual-invalid fixture `f32BadOrderProg`
@@ -283,20 +298,22 @@ Use these stable payloads rather than ad hoc prose at each throw:
 | f32 nonlinearity | `unsupportedDtype "{name}: f32 nonlinearity"` |
 | f32 inline unary | `unsupportedDtype "{name}: f32 unary factor {termIndex}:{factorIndex}"`, where `factorIndex` is the original all-factor index |
 | direct raw f32 unary assignment | new `PlanError.unaryNotAdmittedForDtype termIndex factorIndex .f32` |
-| direct raw mixed signature table | new `PlanError.mixedStorageKinds slot firstDtype actualDtype` |
+| direct raw mixed signature table through `checkPlan` | new `PlanStepError.assign (PlanError.mixedStorageKinds slot firstDtype actualDtype)` |
 | direct raw f32 non-assignment step | new `PlanStepError.f32UnsupportedStep stepIndex kind`, with a closed `PlanStepKind` rather than a string |
 | direct raw f32 block, including zero-step/all-input | new `BlockError.storageKindNotAdmitted .float32` |
 | wrong worker | new `PositionalInputError.storageKindMismatch expected actual` |
+| impossible Float32 unary-worker dispatch | new `PositionalInputError.unaryNotAdmittedForStorage .float32 op slot` |
 | wrong named input adapter | new `InputBindingError.storageKindMismatch expected actual` |
 | wrong result adapter / prepared runner | new `PlanRunCause.storageKindMismatch expected actual` |
 | plan-level JAX evidence | new `JaxExecutableValidationError.unsupportedStorageKind actual` |
 | plan-level JAX rendering | new `JaxCodegenError.unsupportedStorageKind actual` |
 | legacy source evaluator | new `EvalError.unsupportedDtype name` |
 
-For Task 2 fixture 12 below, used-name order is `X` (ordinary/undeclared, hence f64) then `Y` (f32),
-so the required mixed-storage payload names `Y`; reversing a declaration-list scan would name `X`
-and fail. For Task 2 fixture 4, an Iverson precedes the unary read, so the required factor index is
-1 rather than the filtered-read index 0.
+For Task 2 fixture 12 below, declaration order is deliberately `Y` then `X`, while used-name order
+is `X` (ordinary/undeclared, hence f64) then `Y` (f32), so the required mixed-storage payload names
+`Y`; a declaration-list scan would instead name `X` (or miss the undeclared-`X` conflict) and fail.
+For Task 2 fixture 4, an Iverson precedes the unary read, so the required factor index is 1 rather
+than the filtered-read index 0.
 
 ### 3.2 Checked evidence and algebra
 
@@ -354,10 +371,11 @@ from acquiring evidence for an operation with no f32 worker. No global relaxatio
 
 ### 3.3 Native binary32 worker
 
-Refactor only the carrier shell to `DenseTensorOf α` with `shape : List Nat` and
+In `Eval/Tensor.lean`, refactor only the carrier shell to `DenseTensorOf α` with `shape : List Nat` and
 `data : Array α`, preserving `DenseTensor` as an alias for `DenseTensorOf Float`, then add
 `DenseTensor32` as an alias for `DenseTensorOf Float32`. Existing Float callers and behavior remain
-source-compatible. Because a Lean `abbrev` does not create aliases for the original structure's
+source-compatible, and the generic structure re-derives `Repr` and `Inhabited`. Because a Lean
+`abbrev` does not create aliases for the original structure's
 generated names, explicitly preserve `DenseTensor.mk` as a forwarding abbreviation and
 `DenseTensor.shape`/`DenseTensor.data` as forwarding definitions whose `self` parameter is explicitly
 typed as `DenseTensor` (an abbreviation of the generic projection is not usable through field
@@ -371,8 +389,11 @@ typeclass. Unsupported operations return a typed error; the interface is not a t
 `ScalarBinOp → α → α → α` that would force a future complex carrier to invent min/max semantics.
 
 Instantiate it separately for `Float` and `Float32`. The Float unary callback delegates to the
-existing `UnaryOp.applyChecked` and preserves its UInt64 diagnostic payload. The Float32 callback is
-fail-loud if reached, while checked f32 evidence makes unary reads unreachable in this slice. Define
+existing `UnaryOp.applyChecked` and preserves its UInt64 diagnostic payload. The Float32 callback
+returns
+`PositionalInputError.unaryNotAdmittedForStorage .float32 op sourceSlot` if reached; it does not
+reuse the binary64-only `unaryDomain` UInt64 payload. Checked f32 evidence makes this branch
+unreachable in this slice. Define
 private `denseValueAtWith ops` in the same module, retain the existing private Float
 `denseValueAt` wrapper used by scatter, and define the public checked-only local entries
 `runDenseAssignAt32`/`runDenseAssign32` there beside their Float siblings. No raw `AssignPlan` plus
@@ -405,7 +426,8 @@ evidence to exist. This task adds the symmetric requirement that `runDenseAssign
 wrappers over their guarded entries. Guarding only wrappers is insufficient because direct callers
 can invoke `runDenseAssignAt`.
 
-Add an assignment-only `runDensePlan32` in the outer graph module. It requires the checked plan's
+Add assignment-only `runDensePlan32` in the new `Eval/Plan/Dense32.lean`, downstream of
+`EvalPlan.lean`. It requires the checked plan's
 stored kind to be `.float32`, validates input arity/shape/storage against the checked signature table,
 accepts `.f32` and `.bool` signatures in that store, dispatches only `.assign` evidence, and writes
 native f32 tensors into the positional store. The existing `runDensePlan` requires `.float64` and
@@ -428,11 +450,11 @@ members because changing a structure to an alias does not synthesize those old n
 abbreviation, while the projection wrappers must be definitions with an explicit `EvalReport`
 parameter so field notation continues to elaborate.
 
-The existing Float-backed `pack`, `unpack`, and `runPreparedDense` also gain an explicit
+Task 2 already gives the existing Float-backed `pack`, `unpack`, and `runPreparedDense` an explicit
 `.float64` storage-kind check before shape, storage, result-arity, or publication work. Otherwise a
 direct caller could pair an f32 prepared plan with `Array Float` values and relabel those buffers
-through the old adapter without invoking a numeric worker. The f32 siblings perform the symmetric
-`.float32` check.
+through the old adapter without invoking a numeric worker during the Task 2–3 interval. This task
+preserves those guards and gives the f32 siblings the symmetric `.float32` check.
 
 `pack32` requires every required input signature to be f32 or bool and validates shape and native
 buffer length. `unpack32` requires the result-store arity to equal the plan signature table and every
@@ -471,6 +493,7 @@ It does create a new recurring risk family—checked f32 evidence reaching a Flo
 | f64/bool assignment in an f64 graph | required | forbidden | Float required / f32 forbidden | existing policy | required |
 | f32/bool assignment in an f32 graph | forbidden | required | Float forbidden / f32 required | forbidden | forbidden |
 | f32 pointwise/axiswise | no evidence | no evidence | no prepared plan | no candidate | forbidden |
+| f32 inline unary | no evidence | fail-loud unreachable `unaryNotAdmittedForStorage` branch | no prepared plan | no candidate | forbidden |
 | f32 scatter | no evidence | no evidence | no prepared plan | no candidate | forbidden |
 | f32 block/scan | no evidence | no evidence | no prepared plan | no candidate | forbidden |
 | mixed f32 and f64 signatures (bool ignored for precision selection) | no evidence | no evidence | no prepared plan | no candidate | forbidden |
@@ -536,11 +559,14 @@ evidence and specialization, native execution, the named adapter, and external s
    tensor-bearing declaration match. Preserve all existing `Decl.tensor` construction and `tensor`
    elaboration results byte-for-byte. Keep dtype parsing centralized so future complex types extend
    `TensorElementType` rather than `Decl`.
-2. Add `storageConstraintOfDecl` in `DSL/Ast.lean` and the schedule-wide storage-kind derivation in
-   `DSL/Pipeline/ScheduledValidation.lean`. Invoke the schedule-wide form from `prepareEvalPlan` to
+2. Move `DeclEnv` and the exact duplicate-rejecting `buildDeclEnv` implementation to
+   `DSL/Ast.lean`, leaving their names and callers stable. Add `storageConstraintOfDecl` there and
+   the schedule-wide storage-kind derivation in `DSL/Pipeline/ScheduledValidation.lean`. Invoke the
+   schedule-wide form from `prepareEvalPlan` to
    reject mixed f32/f64 schedules and from `evalScheduled` to reject every f32 schedule. Direct
-   legacy evaluator entries use the per-name classifier and their declaration environment, avoiding
-   the existing `ScheduledValidation → Structural → Eval.Contract` dependency cycle. Preserve
+   legacy evaluator entries call the relocated `buildDeclEnv` before the per-name classifier,
+   preserving duplicate rejection without importing the schedule-wide module and avoiding the
+   existing `ScheduledValidation → Structural → Eval.Contract` dependency cycle. Preserve
    unused-declaration behavior, make predicates precision-neutral, and retain the undeclared-real
    and bool-only f64 defaults.
    Homogeneous f32 is not admitted by checked compilation in this task: immediately after storage
@@ -565,7 +591,7 @@ evidence and specialization, native execution, the named adapter, and external s
    omission from categorical naming is observable. `DSL/Pipeline/TraverseTest` is a build-only
    regression target, not an edited Task 1 file.
 
-**Numbered fixture groups: 16; planned mutation cycles: 14**
+**Numbered fixture groups: 16; planned mutation cycles: 15**
 
 1. Clone `ParseProgramTest`'s ordinary single-tensor declaration; insert `f32` and add a second
    comma-separated tensor in the same declaration; require two `Decl.typedTensor .f32` values with
@@ -586,12 +612,14 @@ evidence and specialization, native execution, the named adapter, and external s
 7. Clone `EntryTest`'s accepted identity program; make declarations f32 and also omit an input/extent;
    require `EvalError.unsupportedDtype` before the shape or environment error.
 8. Construct a direct `evalAssignDtypedSeeded` call from `Eval/ContractTest`'s accepted
-   masked-aggregation
-   fixture (same declarations, environment, sizes, destination, slots, and RHS, plus an empty seed);
-   make only destination `Y` f32. Require exact `EvalError.unsupportedDtype "Y"`, and require
-   `evalAssignDtyped` to inherit it.
-9. Clone fixture 8; restore `Y` to f64, make read source `X` f32, and simultaneously remove `X` from
-   the environment. Require exact `EvalError.unsupportedDtype "X"` rather than the missing-input
+   masked-aggregation fixture (same `Result` destination, `F`/`edge` reads, environment, sizes,
+   slots, and RHS, plus an empty seed); make only destination `Result` f32. Require exact
+   `EvalError.unsupportedDtype "Result"`, and require `evalAssignDtyped` to inherit it. Add a
+   dual-invalid subcase with a duplicate tensor-bearing `Result` declaration and require
+   `EvalError.compile (.duplicateTensorDecl "Result")` before the dtype rejection, proving the
+   direct entry reused the shared declaration builder.
+9. Clone fixture 8; restore `Result` to f64, make read source `F` f32, and simultaneously remove `F`
+   from the environment. Require exact `EvalError.unsupportedDtype "F"` rather than the missing-input
    gather error, and require `evalAssignDtyped` to inherit it.
 10. Clone `Eval/ContractTest`'s accepted identity assignment; make destination `Y` and every read source
     f32. Direct `evalAssignDtypedSeeded` and `evalAssignDtyped` must report exact
@@ -618,9 +646,11 @@ evidence and specialization, native execution, the named adapter, and external s
     accepted.
 15. Clone `SignatureTest.conversionInputs`; pin
     `dtypeOfDecl (.typedTensor .f32 ...) = .f32` and require `ofDenseInputsForDecls` to emit an f32
-    signature. Then exercise the temporary schedule stop with two homogeneous f32 programs: clone
-    `CompileTest.acceptedSched` once with a matching concrete f32 input, and once using its admitted
-    Iverson-only assignment shape (no real external input) with an f32 destination. Both must fail
+    signature. Then exercise the temporary schedule stop with two homogeneous f32 programs based on
+    the preparation-valid `CompileTest.identitySched`: add rank-one `.typedTensor .f32`
+    declarations for `X` and `Y` using its existing `axI1` and a matching concrete f32 input; for
+    the second case, replace the read factor with an always-true Iverson and remove `X` from the
+    external names/signature so only the f32 destination remains. Both must fail
     as `PlanCompileCause.capability
     (CapabilityError.unsupportedDtype "f32 execution not yet admitted")`. Together they prove that
     explicit f32 cannot reach specialization or the existing Float worker merely because Step B has
@@ -658,6 +688,9 @@ Mutations and expected observations:
   scratch and continues to ignore the unused declaration.
 - remove the `EvalError.unsupportedDtype` equality arm: fixture 16 compares two identical errors as
   unequal and fails; restore makes equal/different names distinguish correctly.
+- replace the shared duplicate-rejecting declaration builder in the direct evaluator with a linear
+  first-match scan: fixture 8's dual-invalid subcase reports dtype or executes instead of returning
+  `EvalError.compile (.duplicateTensorDecl "Result")`; restore reports the shared declaration error.
 
 ### Task 2 — Add checked binary32 evidence and compiler specialization
 
@@ -671,6 +704,9 @@ Mutations and expected observations:
 - `leanncd/LeanNCD/Eval/Plan/Dense.lean`
 - `leanncd/LeanNCD/Eval/Plan/Block.lean`
 - `leanncd/LeanNCD/Eval/Plan/EvalPlan.lean`
+- `leanncd/LeanNCD/Eval/Plan/Adapter.lean`
+- `leanncd/LeanNCD/Eval/Plan/Executable.lean`
+- `leanncd/experiments/jax_bridge/EvalPlanCodegen.lean`
 - `leanncd/test/Eval/Plan/SignatureTest.lean`
 - `leanncd/test/Eval/Plan/KernelCheckTest.lean`
 - `leanncd/test/Eval/Plan/GraphCheckTest.lean`
@@ -680,20 +716,30 @@ Mutations and expected observations:
 - `leanncd/test/Eval/Plan/GraphDenseTest.lean`
 - `leanncd/test/Eval/Plan/BlockTest.lean`
 - `leanncd/test/Eval/Plan/CompileTest.lean`
+- `leanncd/test/Eval/Plan/CheckedPrivacyTest.lean`
+- `leanncd/test/Eval/Plan/AdapterTest.lean`
+- `leanncd/test/Eval/Plan/ExecutableTest.lean`
 
 **Implementation**
 
-1. Reuse the source-layer `TensorStorageKind`, add `storageConstraintOfDtype`, the three f32 algebras, and
-   storage-kind-bearing private checked assignment/plan evidence. Keep `dtypeAdmitted` and public
-   `checkAssign` Float-backed; add `checkAssignF32` through one shared private core.
+1. Reuse the source-layer `TensorStorageKind`, add `storageConstraintOfDtype`, the three f32
+   algebras, and storage-kind-bearing private checked assignment/plan evidence. Keep
+   `dtypeAdmitted` and public `checkAssign` Float-backed; add `checkAssignF32` through one shared
+   private core. Update `CheckedPrivacyTest` to name both checker constructors and manually
+   re-confirm that the private two-field `CheckedAssignPlan` constructor cannot be invoked outside
+   its module.
 2. Preserve the existing Float-backed relationship between `.f64` and `.bool`; compare storage
    kinds, not dtype constructors, when deriving a raw graph's carrier.
 3. Before removing Task 1's temporary homogeneous-f32 schedule stop, add `.float64` storage-kind
-   guards to the deepest existing Float entries `runDenseAssignAt` and `runDensePlan`; their wrappers
-   inherit those guards. Then replace the temporary stop with storage-aware signature validation,
-   f32 operation capability, algebra selection, and the appropriate graph checker. Mixed precision
-   remains rejected by the source storage-kind analysis before plan construction. Thus this task may
-   produce f32 evidence, but no committed public Float worker can consume it.
+   guards to every existing public boundary that could consume or relabel checked evidence:
+   `runDenseAssignAt`, `runDensePlan`, `pack`, `unpack`, and `runPreparedDense`; their true wrappers
+   inherit those guards. Install the plan-level `.float64` gates described below at every production
+   and experimental JAX candidate/generator/renderer entry in the same pre-admission phase. Only
+   after these guards and their fixtures pass may the task replace the temporary stop with
+   storage-aware signature validation, f32 operation capability, algebra selection, and the
+   appropriate graph checker. Mixed precision remains rejected by the source storage-kind analysis
+   before plan construction. Thus f32 evidence never exists in a committed state where a Float
+   worker, Float adapter, or reference64 JAX path can consume or relabel it.
    Task 1 already makes `unsupportedDtype` live for mixed precision; this task extends that producer
    to f32 operations deliberately deferred from this slice. Do not delete any error constructor.
 4. Update `Dense.lean`'s `constFloat` documentation when the f32 algebra row becomes nonempty: its
@@ -702,8 +748,9 @@ Mutations and expected observations:
    `admittedAlgebrasFor .f32` is still empty. In `Check.lean`, also replace the stale
    `dtypeAdmitted` claim that no binary32 worker exists and the `checkAssign` claim that
    `PlanError.dtypeMismatch` is deliberately producer-less; document instead that the public
-   Float checker remains f64/bool-only while the shared private core and `checkAssignF32` own f32
-   source equality.
+   Float checker remains f64/bool-only while the shared private core and `checkAssignF32` own the
+   f32-graph source rule: `.f32` and `.bool` sources are admitted, while an `.f64` source reports
+   `PlanError.dtypeMismatch .f32 .f64`.
 5. Ensure direct raw-plan construction cannot acquire f32 evidence for non-assignment steps, a
    mixed-storage signature table, or a Float-only local block. `checkPlanBlock` derives storage from
    its complete signature table before output/node wiring, wraps a mixed table through
@@ -711,8 +758,16 @@ Mutations and expected observations:
    `BlockError.storageKindNotAdmitted .float32`. This block-level check is load-bearing for an
    all-input, zero-step block, where per-node `checkAssign` calls are vacuous. Preserve original
    all-factor and outer-step indices.
+6. Add the final plan-level `.float64` gate to `lowerCheckPlanToCandidate`, `lowerPlan`,
+   `generateForward`, `renderAffinePlanPositional`, `renderAffinePlanNamed`, `generateNamed`, and
+   `renderInputConstants` before node iteration, binding/input validation, evidence aggregation, or
+   Python emission, using `JaxCodegenError.unsupportedStorageKind`. Also make
+   `validateAndConstructExecutable` reject a manually built candidate whose source plan is binary32
+   with `JaxExecutableValidationError.unsupportedStorageKind`, before binding validation and the
+   whole-candidate predicate. The zero-step case is load-bearing because empty evidence currently
+   aggregates to `orderedReference64`.
 
-**Numbered fixture groups: 19; planned mutation cycles: 23**
+**Numbered fixture groups: 25; planned mutation cycles: 32**
 
 1. Clone `KernelCheckTest.goodPlan`; change every signature to f32 and the algebra to f32
    sum-product; require `checkAssignF32` success and `.float32` storage-kind evidence.
@@ -735,7 +790,8 @@ Mutations and expected observations:
     and require `checkPlan` success with `.float32` storage-kind evidence. In a second case, clone
     `chainPlan`, append one unused fourth signature without adding it to `inputSlots`, and set the
     signature dtypes to `[f32, f32, f64, f64]`; require
-    `mixedStorageKinds 2 .f32 .f64`. The two trailing mismatches distinguish first offending slot
+    `PlanStepError.assign (PlanError.mixedStorageKinds 2 .f32 .f64)`. The two trailing mismatches
+    distinguish first offending slot
     from last offending slot; the four-entry signature table also makes the reported slot `2`
     distinct from the table-size count `4`. The unused non-input slot also makes the plan
     wiring-invalid (`missingProduction`), deliberately pinning that storage derivation runs before
@@ -754,23 +810,31 @@ Mutations and expected observations:
     `checkScatter` must still reject f32.
 10. Clone `ScanTest.linearScan`; make its state/captures/results f32; direct `checkScanPlan` must
     retain `stateDtypeNotAdmitted`.
-11. Clone `CompileTest.acceptedSched`; use f32 declarations and matching f32 signatures; require f32
-    tensor signatures, f32 sum algebra, one assignment step, and `.float32` checked storage kind.
-12. Clone fixture 11; leave `X` as ordinary `tensor`; require `unsupportedDtype` naming the first
-    differing used name `Y` with the exact mixed-storage payload above. Repeat with `X` undeclared to
-    pin the established f64 default and the same used-name order.
+11. Clone the preparation-valid `CompileTest.identitySched`; add rank-one
+    `.typedTensor .f32` declarations for `X` and `Y` using its existing `axI1`, and use matching f32
+    signatures. Require f32 tensor signatures, f32 sum algebra, one assignment step, and
+    `.float32` checked storage kind.
+12. Clone fixture 11, reorder declarations to put f32 `Y` before ordinary `X`, but retain statement
+    used-name order `X` then `Y`; require `unsupportedDtype` naming `Y` with the exact mixed-storage
+    payload above. A declaration-order scan would instead name `X`. Repeat with `X` undeclared:
+    used-name analysis still defaults `X` to f64 and rejects at `Y`, while a declaration-only scan
+    sees no conflict. These two subcases distinguish all relevant order/default readings.
 13. Clone fixture 11; supply an f64 input signature for f32-declared `X`; require
     `InputSignatureError.dtypeMismatch "X" .f32 .f64`.
 14. Build `f32BadOrderProg` from fixture 11 by adding both pointwise nonlinearity and a unary read;
     require the nonlinearity `unsupportedDtype` payload. Build `f32UnsupportedStepOrder` from
     `GraphCheckTest`'s chain donor with a valid assign before a pointwise node; require step index 1.
-15. Clone `CompileTest.acceptedSched` four times to make otherwise-valid homogeneous f32 source
-    programs containing respectively a top-level scatter, a scan, an axiswise nonlinearity, and an
-    inline unary factor. Call `prepareEvalPlan` and require the exact source-level
+15. Build four otherwise-valid homogeneous f32 source programs from concrete existing donors:
+    `CompileTest.identitySched` for the axiswise and inline-unary cases; the same identity schedule
+    with its free LHS replaced by `.affine (.scale 2 axI1)` and its output declaration adjusted for
+    the top-level scatter case; and `ScanCompileTest.selfRecurSched` for the scan case. Add
+    rank-consistent typed declarations and signatures. Call `prepareEvalPlan` and require the exact source-level
     `CapabilityError.unsupportedDtype` payload for each form before raw plan construction. The unary
     donor places an Iverson first so its reported all-factor index is 1.
-16. Use fixture 8's shape-corrected pointwise node as the pointwise case, and construct structurally
-    valid raw scatter, scan, and axiswise plans with homogeneous f32 signatures. Call outer
+16. Use fixture 8's shape-corrected pointwise node as the pointwise case; clone
+    `ScatterCheckTest.upScatter`, `ScanTest.linearScan`, and
+    `NonlinCheckTest.baselineAxiswise` for the raw scatter, scan, and axiswise cases, changing their
+    complete signature contexts to homogeneous f32. Call outer
     `checkPlan` directly and require
     `PlanStepError.f32UnsupportedStep` with the exact closed `PlanStepKind` and original outer index
     for each. Together with fixture 8 these exhaust every non-assignment `PlanStep` constructor.
@@ -790,6 +854,25 @@ Mutations and expected observations:
     check can accidentally provide the rejection. Add a second wiring-valid zero-step case with
     `tensorSigs := #[f32, f64]` and both slots listed as inputs/outputs; require exact
     `BlockError.wiring (PlanError.mixedStorageKinds 1 .f32 .f64)`.
+20. Build fixture 6's checked f32 plan into a valid `PreparedPlan`. Call the existing Float `pack`
+    with malformed Float storage and `unpack` with wrong arity simultaneously; both must report
+    storage-kind mismatch before storage/arity. These guards must land before checked f32 admission.
+21. Pass that same `.float32` prepared plan with a well-shaped Float environment to
+    `runPreparedDense`; require its own adapter-level storage-kind failure before `packChecked` or
+    `runDensePlan`. This is independent of the worker guard.
+22. In `EvalPlanCodegen.lean`, rebuild fixture 6 as a nonempty prepared plan and feed it to every
+    plan-level candidate/generator/renderer entry. Require
+    `JaxCodegenError.unsupportedStorageKind .float32` before any node-level destination-dtype error.
+23. Build equivalent all-f32, all-external, zero-step prepared plans independently in
+    `EvalPlanCodegen.lean` and `ExecutableTest.lean`, cloning `ExecutableTest.idRaw` locally and
+    removing its only step. Require `lowerCheckPlanToCandidate` and
+    `validateAndConstructExecutable` to return their exact unsupported-storage errors rather than
+    acquiring `orderedReference64` evidence.
+24. Rebuild fixture 23 with an out-of-range materialized binding (`slot := 99`) in each library;
+    require storage-kind rejection before `invalidBindings`, pinning guard order.
+25. Feed the valid experimental fixture 23 plan to both named/positional renderers,
+    `generateForward`, `generateNamed`, and `renderInputConstants`; require the storage-kind error
+    and no Python/constants text.
 
 Mutations and expected observations:
 
@@ -823,6 +906,21 @@ Mutations and expected observations:
   a later error or value; restore rejects at each deepest public boundary.
 - remove the block-level storage-kind check: fixture 19 changes from the exact rejection to
   successful checked evidence; restore rejects the zero-step f32 block.
+- remove the Float-backed `pack` and `unpack` storage-kind guards independently (two cycles):
+  fixture 20 reaches storage/arity work or publishes Float buffers; restore rejects by storage kind;
+- remove only `runPreparedDense`'s storage-kind guard: fixture 21 reaches the later worker cause;
+  restore reports the adapter-level storage-kind cause;
+- remove the `lowerCheckPlanToCandidate` and `validateAndConstructExecutable` gates independently
+  (two cycles): fixture 23 acquires reference64 evidence or constructs an executable; restore
+  rejects before evidence;
+- remove the plan-level renderer/generator gate: fixtures 22 and 25 emit Python or report a later
+  node/binding error; restore emits nothing;
+- apply the JAX gate after node iteration: fixture 22 reports the located destination-dtype error;
+  restore rejects before visiting the node;
+- move the JAX gate after prepared-binding validation: fixture 24 reports `invalidBindings`;
+  restore reports storage kind first;
+- remove `renderInputConstants`'s independent gate: fixture 25 emits UInt64/Float64 constants;
+  restore emits nothing.
 
 ### Task 3 — Implement native binary32 local and graph execution
 
@@ -830,7 +928,6 @@ Mutations and expected observations:
 
 - `leanncd/LeanNCD/Eval/Tensor.lean`
 - `leanncd/LeanNCD/Eval/Plan/Dense.lean`
-- `leanncd/LeanNCD/Eval/Plan/EvalPlan.lean`
 - `leanncd/LeanNCD/Eval/Plan/Error.lean`
 - new `leanncd/LeanNCD/Eval/Plan/Dense32.lean`
 - new `leanncd/test/Eval/Plan/KernelDense32Test.lean`
@@ -839,25 +936,30 @@ Mutations and expected observations:
 
 **Implementation**
 
-1. In `Eval/Plan/Dense.lean`, refactor the carrier shell to `DenseTensorOf α`, preserving
-   `DenseTensor` as its `Float` alias,
+1. In `Eval/Tensor.lean`, refactor the carrier shell to `DenseTensorOf α`, deriving `Repr` and
+   `Inhabited`, preserving `DenseTensor` as its `Float` alias,
    `DenseTensor.mk` as an abbreviation, and explicitly typed projection definitions. Add the
-   `DenseTensor32` alias, the private narrow fallible `ScalarKernelOps α` record (including
-   carrier-specific unary handling), private `denseValueAtWith`, native f32 constant decode and
-   admitted operations, and the public checked-only `runDenseAssignAt32` plus its empty-context
-   `runDenseAssign32` wrapper. Keep the existing private Float `denseValueAt` wrapper for scatter;
+   `DenseTensor32` alias. In `Eval/Plan/Dense.lean`, add the private narrow fallible
+   `ScalarKernelOps α` record (including carrier-specific unary handling), private
+   `denseValueAtWith`, native f32 constant decode and admitted operations, the
+   `PositionalInputError.unaryNotAdmittedForStorage` fail-loud branch, and the public checked-only
+   `runDenseAssignAt32` plus its empty-context `runDenseAssign32` wrapper. Keep the existing private
+   Float `denseValueAt` wrapper for scatter;
    neither the generic ops record nor a raw-plan generic traversal may escape the module.
    `Eval/Plan/Dense32.lean` owns only the graph-level f32 worker described below. Do not generalize
    nonlinearity, scan, or scatter execution.
 2. Reuse Task 2's runtime storage-kind-mismatch diagnostics and Float-side guards. Add symmetric
    `.float32` guards at the deepest public f32 local and graph entries before validation, gathering,
    or input allocation.
-3. Add assignment-only `runDensePlan32`, retaining the existing graph step order, input-slot
-   placement, destination replacement, shape/storage checks, and exact store arity.
+3. In the new `Eval/Plan/Dense32.lean`, downstream of `EvalPlan.lean`, add assignment-only
+   `runDensePlan32`, retaining the existing graph step order, input-slot placement, destination
+   replacement, shape/storage checks, and exact store arity. `Adapter32.lean` imports this module in
+   Task 4, making it reachable from the top-level `LeanNCD` import without introducing a cycle.
 4. Update the execution-door audit table from the actual callers for the source/legacy and
-   Float/f32 worker columns. If any route can pass f32 evidence to `Dense.lean`, or Float-backed
-   evidence to `Dense32.lean`, fix it in this task. Mark the named-adapter and JAX columns as pending
-   Tasks 4 and 5 rather than claiming the table is complete.
+   Float/f32 worker columns. If any route can pass f32 evidence to a Float worker, or Float-backed
+   evidence to the new f32 workers, fix it in this task. The JAX column was closed by Task 2 before
+   f32 evidence became constructible; mark only the named-adapter column as pending Task 4 rather
+   than claiming the table is complete.
 5. Register `Eval.Plan.KernelDense32Test` and `Eval.Plan.EvalPlan32Test` in the explicit `Tests`
    module list in `lakefile.toml` before running their targeted build names.
 
@@ -868,9 +970,12 @@ Mutations and expected observations:
    sum-product worker's `+0` reduction seed normalizes the `-0` lane to `+0`. Separately pin native
    `.f32 0x80000000` constant decoding to `Float32.toBits = 0x80000000`; do not claim the seeded
    identity assignment preserves negative zero.
-2. New fixture `f32ReductionRounding`, cloned from `KernelDenseTest.contractPlan`; reduce the
-   one-factor vector with bits for `[16777216, 1, -16777216]`. Require output bits `0`; run the
-   existing Float donor with the same numeric values and require binary64 value `1`.
+2. New fixture `f32ReductionRounding`, cloned from `KernelDenseTest.contractPlan`'s reduction shape:
+   remove `readA` and the output axis, keep one `readB`-shaped source in slot 0 with shape `#[3]`,
+   use scalar destination slot 1 with `outputShape := #[]`, `iterationShape := #[3]`,
+   `outputPos := #[]`, `reductionPos := #[0]`, and f32 signatures/store containing
+   `[16777216, 1, -16777216]`. Require output bits `0`; run the same one-factor scalar reduction
+   through the Float worker and require binary64 value `1`.
 3. New fixture `f32MultiplicationRounding`, cloned from `KernelDenseTest.identityPlan`; add a second
    scalar factor and inputs `4097`, `4097`. Require bits `1266683904` (`16785408`). The binary64
    product is the exact integer `16785409`; narrowing that one product also yields the correct f32,
@@ -889,8 +994,10 @@ Mutations and expected observations:
    `[10, 100, 1000, 10000]`, with `0x7f800000` as the load-bearing seed.
 9. Clone `KernelDenseTest.oobMaxPlan`; change to f32 and require zero-pad to win over all-negative
    valid values as f32 `+0`.
-10. Clone an existing Iverson assignment donor from `KernelDenseTest`; change its numeric signatures
-    and algebra to f32 and require native one/zero bits.
+10. Clone both `KernelDenseTest.truePredPlan` and `KernelDenseTest.falsePredPlan` with their
+    `truePredD`/`falsePredD` Iverson expressions; change numeric signatures, constants, algebra, and
+    store to f32 and require the true case's unchanged product bits and the false case's native zero
+    bits.
 11. Clone `GraphDenseTest.chainSigs`/chain plan as `f32ProductChain`: first materialize
     `P := 4097 × 4097`, then `Y := P + (-16785408)`. Require `P` bits `1266683904` and `Y` bits `0`.
     A whole-graph binary64 execution with final-only narrowing produces `Y = 1`, so this fixture
@@ -964,21 +1071,25 @@ Mutations and expected observations:
    `ofDenseInputsForDecls`'s error type: its three duplicate-declaration guards and their comments
    must now match `.declaration (.duplicateTensorDecl ...)`, while successful `.ok` cases remain
    unchanged.
-2. Add explicit storage-kind guards to existing `pack`, `unpack`, and `runPreparedDense` before
-   shape/storage/result-arity/publication work; add symmetric guards to the f32 entries. Do not rely
-   on the caller having chosen the correct adapter.
+2. Preserve Task 2's explicit `.float64` guards on `pack`, `unpack`, and `runPreparedDense`, and add
+   symmetric `.float32` guards to `pack32`, `unpack32`, and `runPreparedDense32` before
+   shape/storage/result-arity/publication work. Do not rely on the caller having chosen the correct
+   adapter.
 3. Import `Adapter32` from `LeanNCD.lean` and register the new tests in the existing `Tests` target.
 4. Update the execution-door audit table's named-adapter column from the implemented call graph,
-   leaving only the JAX column pending Task 5.
+   and confirm Task 2's already-closed JAX column remains accurate. No column remains pending after
+   this task; Task 5 performs the final implemented-call-graph audit.
 
-**Numbered fixture groups: 17; planned mutation cycles: 17**
+**Numbered fixture groups: 15; planned mutation cycles: 17**
 
 1. Clone `SignatureTest.conversionInputs`; construct native f32 tensors and f32 declarations;
    require `ofDenseInputs32ForDecls` to return f32 shapes/signatures.
 2. Clone fixture 1; make one declaration ordinary `tensor`; require a located declaration/storage
    mismatch instead of silently marking it f32.
-3. Clone `AdapterTest`'s named identity round trip; use the f32 source program and native adapter;
-   require exact input/output bits and materialized f32 signature.
+3. Clone `AdapterTest.zeroCoeffProg` and `zeroCoeffInputs`, the existing named contraction
+   round-trip; make its real declarations f32 and use native Float32 inputs. Require output bits
+   `[1114636288, 1142292480]` for `[60, 600]`, preservation of the original named inputs, and an f32
+   materialized signature.
 4. Clone `CompileTest`'s repeated-assignment schedule; make it homogeneous f32; require repeated
    materialized names in schedule order and last-write-wins native bits.
 5. Clone `AdapterTest`'s malformed-storage fixture; shorten an f32 input buffer; require storage
@@ -986,48 +1097,46 @@ Mutations and expected observations:
 6. Clone `AdapterTest`'s wrong-result-arity fixture against `unpack32`; append an extra validly shaped
    slot so every materialized binding remains in range. Require the exact store-arity error; removing
    the arity guard must change this fixture to success, making the guard observable.
-7. Clone `AdapterTest`'s warning-preservation success and failure donors; require the same warnings in
-   `EvalReport32` and in the f32 execution failure.
-8. End-to-end `f32ReductionProgram`, donated by `CompileTest.acceptedSched`: change it to a rank-1
-   reduction with a pinned extent of three, f32 declarations, and native inputs
-   `[16777216, 1, -16777216]`; require materialized `Y` bits `0`. Run the separately constructed
-   ordinary-tensor control through `runPreparedDense`; require binary64 `Y = 1`.
+7. Clone `AdapterTest.warnProg`/`warnInputs`; require the same nonempty warnings in successful
+   `EvalReport32` and in the existing reachable empty-environment
+   `InputBindingError.missingEnvBinding "X"` failure. Do not claim a
+   `PlanRunCause.execution` fixture: the current adapter tests establish that cause is unreachable
+   after successful packing.
+8. End-to-end `f32ReductionProgram`, donated by the preparation-valid
+   `CompileTest.contractSched`: remove its `A[i]` factor and free output axis, retain `B[j]` as the
+   sole factor over the pinned extent-three reduction, make `B` and scalar `Y` f32, and use native
+   inputs `[16777216, 1, -16777216]`. Require materialized `Y` bits `0`. Run the same transformed
+   ordinary-tensor schedule through `runPreparedDense`; require binary64 `Y = 1`.
 9. Reconstruct end-to-end f32 max/min programs from the source shapes of the private
    `DifferentialTest.maxPlainProg`, `minPlainProg`, and `plainAggInputs` donors (they cannot be
    referenced across modules); require max bits `[1077936128, 1084227584]`, min bits
    `[1065353216, 1065353216]`, and f32 materialized signatures.
-10. Call existing `pack` and `unpack` directly with an f32 prepared plan. Give `pack` malformed Float
-    storage and `unpack` wrong arity simultaneously; both must report storage-kind mismatch first.
-    The corresponding `pack32`/`unpack32` calls on a Float-backed plan must reject symmetrically.
-11. Clone `AdapterTest`'s `runPreparedDense` failure donor; pass a `.float32` prepared plan with a
-    well-shaped Float environment. Require the adapter-level storage-kind failure before
-    `packChecked` or `runDensePlan`. Removing only `runPreparedDense`'s own guard must instead reach
-    the worker and report an execution storage-kind cause, so this fixture observes the independent
-    guard.
-12. Add compile-time compatibility checks for `EvalReport.mk`, `EvalReport.env`, and
+10. Extend Task 2 fixtures 20–21 at the new f32 boundary: call `pack32`, `unpack32`, and
+    `runPreparedDense32` with a `.float64` prepared plan and otherwise competing malformed
+    storage/arity or well-shaped native Float32 input. Each must report its own adapter-level
+    storage-kind failure before the later condition.
+11. Add compile-time compatibility checks for `EvalReport.mk`, `EvalReport.env`, and
     `EvalReport.warnings`, and retain the current construction/projection uses in `EntryTest` and
     `AdapterTest`. This catches an alias-only refactor that removes the old generated names.
-13. Clone fixture 3 with one `predicate` input and one f32 tensor input, both represented as native
+12. Clone fixture 3 with one `predicate` input and one f32 tensor input, both represented as native
     Float32 buffers carrying non-binary Boolean-tagged values `0.25` and `0.75`. Require `pack32`,
     `runPreparedDense32`, and `unpack32` to accept the bool signature, preserve exact bits
     `1048576000` and `1061158912` without truth-value coercion, and publish the expected f32 and bool
     signatures.
-14. Call existing `InputSignature.ofDenseInputsForDecls` with a Float tensor whose used declaration
+13. Call existing `InputSignature.ofDenseInputsForDecls` with a Float tensor whose used declaration
     is `.typedTensor .f32`, and call `ofDenseInputs32ForDecls` with a native Float32 tensor whose
     declaration is ordinary `tensor`. Require the symmetric exact
     `InputSignatureBuildError.storageKindMismatch` payloads naming the input.
-15. Clone `SignatureTest`'s duplicate-declaration failure twice. For the Float constructor use
+14. Clone `SignatureTest`'s duplicate-declaration failure twice. For the Float constructor use
     duplicated `.typedTensor .f32` declarations with a Float input; for the Float32 constructor use
     duplicated ordinary `tensor` declarations with a native Float32 input. Each call therefore
     violates both declaration uniqueness and carrier compatibility, and each must report
     `.declaration (.duplicateTensorDecl ...)` before storage-kind mismatch.
-16. Mirror fixture 11 through `runPreparedDense32`: pass a `.float64` prepared plan with a
-    well-shaped native Float32 environment and require the adapter-level storage-kind failure before
-    `packChecked32` or `runDensePlan32`.
-17. Clone fixture 1 as a predicate-only native Float32 input map with no real-valued input names.
+15. Clone fixture 1 as a predicate-only native Float32 input map with no real-valued input names.
     `ofDenseInputs32ForDecls` must accept it and emit a `.bool` signature, proving that an explicitly
     chosen Float32 constructor applies per-name constraints rather than the schedule-wide bool-only
-    default.
+    default. This is constructor behavior only: a bool-only program still derives `.float64` and is
+    not executable through `runPreparedDense32`.
 
 Mutations and expected observations:
 
@@ -1036,29 +1145,26 @@ Mutations and expected observations:
 - hard-code f32 signatures to f64: fixtures 1 and 3 fail; restore passes;
 - skip declaration checking in the f32 signature constructor: fixture 2 changes to success and
   fails; restore passes;
-- deduplicate materialized names or publish in reverse order: fixture 4 fails; restore passes;
+- deduplicate materialized names, then separately publish them in reverse order (two cycles):
+  fixture 4 fails under each mutation; restore passes;
 - remove input storage validation: fixture 5 reaches execution and reports a different error; restore
   reports storage mismatch;
 - remove the result-arity guard: fixture 6 changes to success and fails; restore reports arity;
-- remove the Float-backed `pack` and `unpack` storage-kind guards independently: the corresponding
-  halves of fixture 10 report storage/arity or publish Float buffers and fail; restore reports
-  storage kind first.
-- remove only `runPreparedDense`'s storage-kind guard: fixture 11 reports the later worker execution cause
-  and fails; restore reports the adapter-level storage-kind cause.
-- remove one old-namespace `EvalReport` forwarding abbreviation: fixture 12 fails to elaborate;
+- remove the f32 `pack32`, `unpack32`, and `runPreparedDense32` storage-kind guards independently
+  (three cycles): the corresponding part of fixture 10 reaches storage/arity or worker work; restore
+  reports storage kind at each public entry;
+- remove one old-namespace `EvalReport` forwarding abbreviation: fixture 11 fails to elaborate;
   restore passes without migrating callers.
-- reject `.bool` in the Float32 adapter's signature compatibility check: fixture 13 fails; restore
+- reject `.bool` in the Float32 adapter's signature compatibility check: fixture 12 fails; restore
   lets Boolean tensors share the selected Float32 carrier.
-- coerce Boolean-tagged Float32 inputs to zero/one: fixture 13's exact non-binary bits fail; restore
+- coerce Boolean-tagged Float32 inputs to zero/one: fixture 12's exact non-binary bits fail; restore
   preserves the values;
 - remove the Float and Float32 declaration/carrier guards independently (two cycles): the
-  corresponding half of fixture 14 silently mislabels the buffer; restore reports the named
+  corresponding half of fixture 13 silently mislabels the buffer; restore reports the named
   storage-kind mismatch;
-- inspect carriers before rebuilding the declaration environment: fixture 15 reports storage kind
+- inspect carriers before rebuilding the declaration environment: fixture 14 reports storage kind
   instead of the duplicate declaration and fails; restore reports the declaration error first;
-- remove only `runPreparedDense32`'s own guard: fixture 16 reaches the f32 pack/worker path and fails
-  with a later cause; restore reports the adapter-level storage-kind cause.
-- call the schedule-wide storage derivation from `ofDenseInputs32ForDecls`: fixture 17 defaults the
+- call the schedule-wide storage derivation from `ofDenseInputs32ForDecls`: fixture 15 defaults the
   predicate-only map to Float64 and fails; restore uses the shared per-name constraint and accepts it.
 
 ### Task 5 — Preserve JAX truthfulness and close capability documentation
@@ -1066,7 +1172,6 @@ Mutations and expected observations:
 **Files**
 
 - `leanncd/LeanNCD/Eval/Plan/Executable.lean`
-- `leanncd/experiments/jax_bridge/EvalPlanCodegen.lean`
 - `leanncd/test/Eval/Plan/ExecutableTest.lean`
 - `leanncd/LeanNCD/Eval/AGENTS.md`
 - `leanncd/LeanNCD/DSL/AGENTS.md`
@@ -1074,23 +1179,36 @@ Mutations and expected observations:
 - `papers/wave_f_capability_manifest.md`
 - `papers/eval_ir.md`
 - `papers/wave_c_capability_manifest.md`
+- `papers/unary_factor_functions.md`
+- `papers/wave_f_scanplan_proposal.md`
+- `leanncd/docs/superpowers/plans/2026-09-12-lhs-scatter-in-scans.md`
 - `papers/f32_evalplan.md`
+
+The authoring-time sweep classifies the following matches as immutable historical/completed records,
+not Task 5 edit targets because they already state that status:
+`papers/boolean_predicate_output_evalplan.md`, `papers/predicate_boolean_backend_parity.md`,
+`papers/scatter_affine_lhs_writes.md`, `papers/max_min_aggregation.md`,
+`papers/wave_c_evalplan_proposal.md`, `papers/post_audit_roadmap.md`,
+`papers/restructure_suggestions.md`, `papers/copilot_code_analysis.md`,
+`papers/jax_signature_evidence_ownership_spike_results.md`,
+`docs/superpowers/specs/2026-08-21-nonlinearity-in-scans-design.md`,
+`docs/superpowers/plans/2026-09-01-slice-5-predicate-mask-parity.md`,
+`docs/superpowers/plans/2026-09-02-jax-signature-evidence-ownership-spike.md`,
+`.superpowers/sdd/2026-09-12-lhs-scatter-in-scans/progress.md`. Task 5 rechecks and records their
+historical status but does not modernize their past-tense snapshots.
 
 **Implementation**
 
 1. Revalidate standalone JAX assignment entries with the mode-appropriate checker, then retain the
    existing located rejection of binary32. Keep `orderedReference64`, `UInt64` transport, Python
    runtime, and operation renderings unchanged.
-2. Add a plan-level `.float64` storage-kind gate to `lowerCheckPlanToCandidate`, `lowerPlan`,
-   `generateForward`, `renderAffinePlanPositional`, `renderAffinePlanNamed`, `generateNamed`, and
-   `renderInputConstants` before node iteration, binding/input validation, evidence aggregation, or
-   Python emission, using `JaxCodegenError.unsupportedStorageKind`. Also make
-   `validateAndConstructExecutable` reject a manually built candidate whose source plan is binary32,
-   using `JaxExecutableValidationError.unsupportedStorageKind` before binding validation and the
-   whole-candidate predicate. Do not claim observable precedence over the aggregation equality:
-   `JaxExecutableCandidate.aggregated` already proves that equality for every constructible
-   candidate. This must reject an all-input, zero-step f32 plan; per-node support checks alone are
-   vacuous for that case.
+2. Re-audit the plan-level `.float64` gates installed by Task 2 at
+   `lowerCheckPlanToCandidate`, `lowerPlan`, `generateForward`, `renderAffinePlanPositional`,
+   `renderAffinePlanNamed`, `generateNamed`, `renderInputConstants`, and
+   `validateAndConstructExecutable`. They remain before node iteration, binding/input validation,
+   evidence aggregation, or Python emission. Do not claim observable precedence over the
+   aggregation equality: `JaxExecutableCandidate.aggregated` already proves that equality for every
+   constructible candidate.
 3. Update the two AGENTS maps so a reader starting at the documented entry points can find the native
    f32 runtime.
 4. Update current capability documents. `unsupportedDtype` becomes the tenth live family out of
@@ -1101,7 +1219,11 @@ Mutations and expected observations:
    to store complex arrays must not be reported as Tensor Logic support. Preserve completed
    historical records as historical. In every documentation file this task edits, replace existing
    `File.lean:NNN` source-line citations with stable identifiers while touching the surrounding
-   capability text; do not ship new source-line citations.
+   capability text; do not ship new source-line citations. Add explicit superseded/completed banners
+   to `wave_c_capability_manifest.md`, `unary_factor_functions.md`,
+   `wave_f_scanplan_proposal.md`, and the S-B scan-scatter implementation plan before retaining their
+   old snapshot values; a filename under `papers/` or `docs/superpowers/` is not by itself evidence
+   that present-tense capability claims are safely historical.
 5. Change this plan's status from implementation plan to completed record and append the observed
    mutation fail/restored-pass results, targeted/full build results, and both final-review
    adjudications. Do not rewrite planned claims as completed unless their evidence is recorded.
@@ -1109,59 +1231,24 @@ Mutations and expected observations:
    experimental candidate/renderer entry and the all-input zero-step case. No cell may remain marked
    pending at slice completion.
 
-**Numbered fixture groups: 6; planned mutation cycles: 7**
+**Numbered fixture groups: 2; planned mutation cycles: 1**
 
-The production and experimental halves live in different libraries and must rebuild equivalent
-fixtures locally. Assertions for `validateAndConstructExecutable` belong in `ExecutableTest.lean`,
-where `preparedOf` is private and `emptyPlanCandidate` is a local test helper. Assertions for
-`lowerCheckPlanToCandidate`, generators, renderers, and `renderInputConstants` belong inline in
-`EvalPlanCodegen.lean` under the non-default `JaxExperiment` library, with an equivalent prepared
-plan rebuilt through that module's own local checked-plan/binding helper.
+The production and experimental halves live in different libraries; Task 2 therefore rebuilt its
+equivalent plan-level fixtures locally. This task's remaining production assertion belongs in
+`ExecutableTest.lean`, where the existing standalone-validator donors already live.
 
 1. Clone `ExecutableTest.boolDestAssign`; extend its signature table by one slot, move the
    destination from slot 1 to slot 2, substitute a valid checked f32 assignment, and call the
    standalone validator with node index 7; require both deliberately changed locators and
    require `JaxSupportError.destinationDType 7 2 .f32`, not `invalidSignatureContext`.
-2. In `EvalPlanCodegen.lean`, rebuild fixture 1 as a nonempty prepared plan and feed it to every
-   plan-level candidate/generator/renderer entry. Require
-   `JaxCodegenError.unsupportedStorageKind .float32` before the node-level located
-   destination-dtype error. This is the ordering discriminator: a gate after node iteration reports
-   the located node error instead.
-3. Build equivalent all-f32, all-external, zero-step prepared plans independently in both modules:
-   clone `ExecutableTest.idRaw` locally, make both slots external, and remove its only step.
-   In `EvalPlanCodegen.lean`, `lowerCheckPlanToCandidate` must return
-   `JaxCodegenError.unsupportedStorageKind .float32`. In `ExecutableTest.lean`, build valid bindings
-   with its private `preparedOf`, wrap the result with its local `emptyPlanCandidate`, and require
-   `validateAndConstructExecutable` to return
-   `JaxExecutableValidationError.unsupportedStorageKind .float32`.
-4. Rebuild the same dual-invalid candidate separately in each module: retain `.float32` storage but
-   replace its materialized binding with the existing out-of-range-slot attack (`slot := 99`).
-   Feed the production copy to `validateAndConstructExecutable` and the experimental copy to every
-   prepared-plan generator/renderer; require storage-kind rejection before `invalidBindings`. This
-   is the observable binding-precedence fixture.
-5. In `EvalPlanCodegen.lean`, wrap its local fixture 3 plan in valid prepared bindings and feed it to
-   both named/positional plan renderers, `generateForward`, `generateNamed`, and
-   `renderInputConstants`; require
-   `JaxCodegenError.unsupportedStorageKind .float32` and no Python/constants text.
-6. Retain an empty Float-backed control plan; require its existing behavior so the new gate does not
-   become an accidental blanket ban on empty graphs.
+2. Retain Task 2's empty Float-backed control plan in the JAX experiment and production executable
+   tests; require its existing behavior so the storage gates do not become an accidental blanket
+   ban on empty graphs.
 
 Mutations and expected observations:
 
 - route standalone f32 validation through ordinary `checkAssign`: fixture 1 reports
   `invalidSignatureContext` and fails; restore reports the located destination dtype;
-- remove the `lowerCheckPlanToCandidate` gate: fixture 3 acquires `orderedReference64` and fails;
-  restore rejects before evidence;
-- remove the independent `validateAndConstructExecutable` gate: fixture 3 constructs an
-  `orderedReference64` executable and fails; restore rejects;
-- remove the plan-level renderer/generator gate: fixtures 2 and 5 emit Python or report a later
-  node/binding error and fail; restore emits nothing;
-- apply the gate after node iteration: fixture 2 reports the located destination-dtype error instead
-  of the plan storage-kind error and fails; restore rejects before visiting the node;
-- move the gate after prepared-binding validation: fixture 4 reports `invalidBindings` and fails;
-  restore reports storage kind first;
-- remove `renderInputConstants`'s independent gate: fixture 5 emits `UInt64`/Float64 constants and
-  fails; restore emits nothing.
 
 ## 5. Dependency graph and risk sizing
 
@@ -1171,18 +1258,19 @@ Task 4 so its documentation closes the actual public boundary rather than a proj
 
 | Task | Main reviewer question | Fixture groups | Mutation cycles | Risk |
 |---|---|---:|---:|---|
-| 1 — source/legacy | Does the extensible typed declaration survive every source traversal, does bool inherit rather than select precision, does every homogeneous f32 graph hit the temporary stop, and can any legacy dtype-aware evaluator execute an f32 graph as Float? | 16 | 14 | High: `Decl` exhaustiveness and rejection order |
-| 2 — checked evidence | Can source specialization and direct raw-plan checking disagree, reject a valid real/bool graph, let f32 evidence reach an existing Float worker, or admit an f32 zero-step block? | 19 | 23 | High: algebra, storage derivation, locator order, interim worker safety |
+| 1 — source/legacy | Does the extensible typed declaration survive every source traversal, does bool inherit rather than select precision, does every homogeneous f32 graph hit the temporary stop, and can any legacy dtype-aware evaluator execute an f32 graph as Float? | 16 | 15 | High: `Decl` exhaustiveness and rejection order |
+| 2 — checked evidence | Can source specialization and direct raw-plan checking disagree, reject a valid real/bool graph, let f32 evidence reach an existing Float worker/adapter/JAX path, or admit an f32 zero-step block? | 25 | 32 | High: algebra, storage derivation, locator order, and interim boundary safety |
 | 3 — native worker | Does the shared carrier/traversal preserve Float behavior while every f32/bool intermediate rounds in binary32, and do the new f32 entries reject Float-backed evidence? | 16 | 14 | High: numerical truthfulness and shared-worker dispatch |
-| 4 — named adapter | Do generic adapter/report shells preserve current APIs, f32-backed Boolean values, and warnings without letting either wrapper relabel another carrier? | 17 | 17 | High: public API and publication order |
-| 5 — JAX/docs | Can any f32 plan—including an empty one—obtain reference64 evidence or Python, and are capability claims re-derived? | 6 | 7 | High: evidence boundary and stale capability prose |
+| 4 — named adapter | Do generic adapter/report shells preserve current APIs, f32-backed Boolean values, and warnings without letting either wrapper relabel another carrier? | 15 | 17 | High: public API and publication order |
+| 5 — JAX/docs | Does standalone JAX validation retain its located f32 rejection, do Task 2's plan-level gates remain closed, and are capability claims re-derived? | 2 | 1 | High: evidence boundary and stale capability prose |
 
 These tasks are intentionally not split into “add a type” or “add two guards” sub-tasks: those
-pieces have no independent success condition and share their neighbor's mutation cycle. The five
-boundaries are independently rejectable: source propagation may stand while checked evidence is
-reworked; checked evidence may stand while numerical execution is rejected; the local worker may
-stand while the public adapter is rejected; and the native backend may stand while JAX/documentation
-closure is corrected.
+pieces have no independent success condition and share their neighbor's mutation cycle. The five boundaries are independently rejectable: source propagation may stand while checked
+evidence is reworked; checked evidence may stand while numerical execution is rejected; the local
+worker may stand while the public f32 adapter is rejected; and the native backend may stand while
+standalone JAX validation and documentation closure are corrected. Task 2 is intentionally larger
+than the others because the first commit that can construct f32 evidence must atomically close every
+existing Float adapter/worker and reference64 JAX door.
 
 ## 6. Validation
 
@@ -1214,10 +1302,12 @@ From `leanncd/`, after building every edited dependency before checking its cons
   Eval.Plan.CompileTest Eval.PropertyOracleTest`
 - Task 2: `"$HOME/.elan/bin/lake" build Eval.Plan.SignatureTest Eval.Plan.KernelCheckTest
   Eval.Plan.GraphCheckTest Eval.Plan.ScatterCheckTest Eval.Plan.ScanTest Eval.Plan.KernelDenseTest
-  Eval.Plan.GraphDenseTest Eval.Plan.BlockTest Eval.Plan.CompileTest`
+  Eval.Plan.GraphDenseTest Eval.Plan.EvalPlanTest Eval.Plan.BlockTest Eval.Plan.CompileTest
+  Eval.Plan.CheckedPrivacyTest Eval.Plan.AdapterTest Eval.Plan.ExecutableTest JaxExperiment`
 - Task 3: `"$HOME/.elan/bin/lake" build Eval.TensorTest Eval.Plan.KernelDenseTest
-  Eval.Plan.KernelDense32Test Eval.Plan.GraphDenseTest Eval.Plan.NonlinDenseTest
-  Eval.Plan.EvalPlan32Test Eval.Portfolio.ScatterNonlinRejectTest`
+  Eval.Plan.KernelDense32Test Eval.Plan.GraphDenseTest Eval.Plan.EvalPlanTest
+  Eval.Plan.ScatterDenseTest Eval.Plan.NonlinDenseTest Eval.Plan.EvalPlan32Test
+  Eval.Portfolio.ScatterNonlinRejectTest`
 - Task 4: `"$HOME/.elan/bin/lake" build Eval.Plan.SignatureTest Eval.Plan.CompileTest
   Eval.Plan.AdapterTest Eval.Plan.Adapter32Test Eval.EntryTest`
 - Task 5: `"$HOME/.elan/bin/lake" build Eval.Plan.ExecutableTest JaxExperiment`
@@ -1246,12 +1336,13 @@ Before declaring documentation complete:
    points;
 2. run a broad, case-insensitive repo-wide search for every occurrence of `f32` or `binary32` and
    classify each current documentation/comment hit; do not search only exact prose phrases, because
-   Markdown backticks, punctuation, and rewording must not hide stale claims. Separately value-grep
-   the stale copied counts `4 live`/`four live`/`8 producer-less`/`eight producer-less` and the
-   measured pre-slice counts `9 live`/`nine live`/`7 producer-less`/`seven producer-less`, allowing
-   arbitrary Markdown punctuation or whitespace between the number/word and `live` or
-   `producer-less`. Any current documentation file found by these sweeps becomes a Task 5 file even
-   if it was not known when this list was written;
+   Markdown backticks, punctuation, and rewording must not hide stale claims. Separately search every
+   Markdown line containing `live`, `producer`, or `constructor`, and re-derive every capability
+   number on those lines—including stale `4`, `8`, and `12`, current pre-slice `9`, `7`, and `16`,
+   and their word forms—rather than requiring the number to be adjacent to `producer-less`. Any
+   current document found by these sweeps becomes a Task 5 file even if it was not known when this
+   list was written. A historical match may remain unchanged only when the document carries an
+   explicit superseded/completed status that makes the old value truthful;
 3. classify each hit as current documentation to update or immutable historical record to leave with
    an explicit historical status;
 4. grep `Array Float`, `Float.toBits`, `orderedReference64`, `jnp.float64`, and `np.float64` under
@@ -1302,7 +1393,7 @@ The slice is complete only when all of the following are true:
   typed, located error;
 - existing Float-backed checkers/workers and the legacy evaluator cannot execute f32 evidence;
 - JAX rejects f32 before candidate construction, evidence, or Python output;
-- all 74 numbered fixture groups and 75 mutation cycles have the recorded fail/restored-pass
+- all 74 numbered fixture groups and 79 mutation cycles have the recorded fail/restored-pass
   observations;
 - targeted builds, `JaxExperiment`, full `lake build`, documentation sweep, and two final reviews
   pass.
@@ -1355,7 +1446,7 @@ bit-exact JAX parity without measuring XLA's operation order.
   exact located constructor directly and compiled, avoiding an unnecessary equality instance in the
   proposed API.
 - Compiled a final deriving-obligations probe against Lean 4.30. It verified
-  `TensorElementType` with `Lean.ToExpr`, `TensorStorageKind` and `PlanStepKind` with the complete
+  `TensorElementType` with `DecidableEq`/`Repr`/`Lean.ToExpr`, `TensorStorageKind` and `PlanStepKind` with the complete
   checked-diagnostic instances, and `InputSignatureBuildError` with
   `Repr`/`DecidableEq`/`BEq`/`Inhabited`, including `repr` of its wrapped
   `CompileError.duplicateTensorDecl`.
@@ -1381,6 +1472,9 @@ bit-exact JAX parity without measuring XLA's operation order.
 - A Float32 Boolean-carrier probe established `0.25` bits `1048576000` and `0.75` bits
   `1061158912`, used to ensure f32-backed Boolean algebra preserves the current non-binary
   min/max behavior rather than coercing values to zero/one.
+- A final seeded-identity probe applied the exact factor/reduction/term seed sequence to `+0`, `-0`,
+  and the least positive Float32 subnormal and observed output bits `[0, 0, 1]`. The same probe
+  established the Task 4 `zeroCoeffProg` output bits `[1114636288, 1142292480]` for `[60, 600]`.
 - The initial probe attempted `import LeanNCD` before this worktree's library objects were present
   and failed immediately with “unknown module prefix”; it was removed, replaced with the minimal
   Lean 4.30 imports, rerun successfully, and removed separately. No probe file remains.
@@ -1390,6 +1484,10 @@ bit-exact JAX parity without measuring XLA's operation order.
 - Every existing path in the task file lists was verified in this checkout. `Dense32.lean`,
   `Adapter32.lean`, `KernelDense32Test.lean`, `EvalPlan32Test.lean`, and `Adapter32Test.lean` are
   explicitly new files whose parent directories were verified.
+- A repo-wide authoring-time `f32`/`binary32`/`producer-less` sweep classified the active documents
+  that Task 5 must edit separately from immutable historical plans and records. Every classified path
+  named in Task 5 was verified in this checkout; future matches are still reclassified at
+  implementation time rather than assumed historical from this snapshot.
 - A fresh objective reference audit corrected stale donor descriptions, symbol qualification, and
   ambiguous subcase counting. Subsequent independent checklist reviews found and drove closure of
   source/raw rejection coverage, recurrence-scratch precision selection, symmetric input-carrier
@@ -1397,12 +1495,18 @@ bit-exact JAX parity without measuring XLA's operation order.
   discriminators, and Task 4's diagnostic-file scope. A later end-to-end review returned no
   blocking finding but identified four remaining clarity/coherence observations; those were batched
   into the private-kernel placement, named-adapter audit column, robust documentation sweep, and
-  test-file/donor wording now present in this revision. Section 8 records the frozen-revision
-  reviews only after both independent lenses have inspected this exact text.
-- The five tasks contain 74 numbered fixture groups: 16/19/16/17/6 by task. A group is one named
+  test-file/donor wording now present in this revision. The first frozen dual review of SHA-256
+  `d128bd779538093377c0fb95894282caddb4a858c50cdb3895bab68647801055` then found nineteen
+  architecture/evidence observations, including two blocking donor errors. They were resolved as
+  one batch rather than reviewed piecemeal. A second frozen dual review of
+  `0e78358c5ee27e63c4e5cd1fe390f6fdb2465c64f66fbc24c77d34cd7ad5a75c` found eleven further
+  donor, regression-gate, execution-table, and historical-status observations; those too were
+  resolved as one batch. To keep the final review target immutable, its SHA-256 and both verdicts
+  are recorded in the commit/session checkpoint rather than appended to the file after review.
+- The five tasks contain 74 numbered fixture groups: 16/25/16/15/2 by task. A group is one named
   test fixture and may contain several assertions or paired controls; this is the unit counted in
-  the task headers and risk table. Their mutation lists expand to 14/23/14/17/7 = 75 independently
+  the task headers and risk table. Their mutation lists expand to 15/32/14/17/1 = 79 independently
   applied and restored source changes. The two authoring-time storage-derivation mutations above
-  have observed fail/restored-pass results; the 75 implementation-dependent cycles are completion gates, not
+  have observed fail/restored-pass results; the 79 implementation-dependent cycles are completion gates, not
   claims about code that does not yet exist, and must record both observations while each task is
   implemented.
