@@ -111,9 +111,21 @@ run_cmd do
     | Except.error (.compile (.duplicateTensorDecl "Result")) => pure ()
     | Except.error e => throwError s!"fixture 8 (dual-invalid): wrong error {e}"
     | Except.ok _ => throwError "fixture 8 (dual-invalid): a duplicate declaration was accepted"
-    -- Fixture 9: `Result` is back to f64 and the READ SOURCE `F` is f32, while `F` is simultaneously
-    -- absent from the environment. The dtype refusal precedes `evalAssignSeeded`'s missing-input
-    -- check, and it names `F`, not the destination.
+
+-- Fixture 9: the same donor with `Result` back to f64 and the READ SOURCE `F` f32, while `F` is
+-- simultaneously absent from the environment. The dtype refusal precedes `evalAssignSeeded`'s
+-- missing-input check, and it names `F`, not the destination. Its own `run_cmd` so it reports
+-- independently of fixture 8 rather than being short-circuited by it.
+run_cmd do
+  let t := ax "t" 1; let i := ax "i" 2; let j := ax "j" 3
+  let F := tensorOf [1,2] [1, 1]
+  let edge := tensorOf [2,2] [1,0, 0,1]
+  let env : HashMap String DenseTensor := (({} : HashMap String DenseTensor).insert "F" F).insert "edge" edge
+  let rhs : RHSExpr := { body := { terms := [{ factors := [.read "F" [.axis t, .axis i], .read "F" [.axis t, .axis j], .read "edge" [.axis i, .axis j]] }] }, nonlin := .identity }
+  let seed : HashMap UID Int := {}
+  match inferAxisSizes {} env [.assign "Result" [] rhs] with
+  | .error e => throwError (toString e)
+  | .ok (sizes, _) => do
     let envNoF : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "edge" edge
     let decls9 : List Decl := [.tensor "Result" [], .typedTensor .f32 "F" [t, i]]
     match evalAssignDtypedSeeded decls9 envNoF sizes seed "Result" [] rhs with
