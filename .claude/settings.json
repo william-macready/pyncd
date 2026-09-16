@@ -37,6 +37,8 @@
       "Bash(grep -iA2 \"10\\\\.\")",
       "Bash(git mv *)",
       "Bash(git rm *)",
+      "Bash(git check-ignore *)",
+      "Bash(git merge-base *)",
       "Bash(git -C /Users/williammacready/code/python/pyncd show --stat --oneline HEAD)",
       "Bash(git merge --no-ff leanncd-graded-prop-revamp -m 'Merge leanncd-graded-prop-revamp: D-graded colored PROP revamp of leanncd.md *)",
       "Bash(perl -ne 'while \\(/\\(?<!\\\\\\(|#\\)\\(§[0-9][0-9.]*\\)/g\\) { print \"$.: $1\\\\n\" }' /Users/williammacready/code/python/pyncd/papers/graded_prop.md)",
@@ -107,7 +109,8 @@
       "Read(//Users/williammacready/.claude/plugins/cache/claude-plugins-official/superpowers/6.3.0/skills/subagent-driven-development/**)"
     ],
     "additionalDirectories": [
-      "/tmp"
+      "/tmp",
+      "/Users/williammacready/code/python/pyncd.worktrees/explain-backend-missing-functionality/papers"
     ]
   },
   "hooks": {
