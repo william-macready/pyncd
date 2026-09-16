@@ -809,7 +809,7 @@ Mutations and expected observations:
    whole-candidate predicate. The zero-step case is load-bearing because empty evidence currently
    aggregates to `orderedReference64`.
 
-**Numbered fixture groups: 25; planned mutation cycles: 28, plus one door-guard completeness sweep
+**Numbered fixture groups: 25; planned mutation cycles: 29, plus one door-guard completeness sweep
 (fixture 23 and the existence-only mutations inside 22 and 25 — verified once against Section 3.5's
 table rather than as separate cycles; fixtures 18, 20, and 21 each pin a check *order* against
 another pre-existing check and keep their own cycles — see Section 3.5 for why)**
@@ -936,6 +936,11 @@ Mutations and expected observations:
   fails; restore passes;
 - continue after the first mixed-signature conflict and report the last conflicting slot: fixture 6
   reports slot 3 instead of slot 2 and fails; restore stops at slot 2;
+- run `deriveStorageKind` after outer graph wiring instead of before it: fixture 6's second case
+  reports `missingProduction` from the unused non-input slot instead of `mixedStorageKinds` and
+  fails; restore reports `mixedStorageKinds` first. This is independent of the slot-locator mutation
+  above — the fixture's unused fourth slot is wiring-invalid specifically so this ordering claim has
+  a fixture that can fail if violated, per the same discipline as fixtures 18/20/21/24;
 - swap nonlinearity/factor capability order: `f32BadOrderProg` reports unary and fails; restore
   passes;
 - remove each source capability arm for scatter, scan, axiswise, and unary independently (four
@@ -1306,7 +1311,7 @@ Task 4 so its documentation closes the actual public boundary rather than a proj
 | Task | Main reviewer question | Fixture groups | Mutation cycles | Risk |
 |---|---|---:|---:|---|
 | 1 — source/legacy | Does the extensible typed declaration survive every source traversal, does bool inherit rather than select precision, does every homogeneous f32 graph hit the temporary stop, and can any legacy dtype-aware evaluator execute an f32 graph as Float? | 16 | 15 | High: `Decl` exhaustiveness and rejection order |
-| 2 — checked evidence | Can source specialization and direct raw-plan checking disagree, reject a valid real/bool graph, let f32 evidence reach an existing Float worker/adapter/JAX path, or admit an f32 zero-step block? | 25 | 28 + 1 sweep | High on the checker/evidence core (fixtures 1–21, 22/24's order checks) — this includes the door-guard *order* fixtures 18, 20, 21, which pin a guard's position against another pre-existing check and are not mechanical; only fixture 23 and 22/25's pure existence checks are the Low/mechanical sweep — see below |
+| 2 — checked evidence | Can source specialization and direct raw-plan checking disagree, reject a valid real/bool graph, let f32 evidence reach an existing Float worker/adapter/JAX path, or admit an f32 zero-step block? | 25 | 29 + 1 sweep | High on the checker/evidence core (fixtures 1–21, 22/24's order checks) — this includes fixture 6's wiring-vs-storage-derivation order check and the door-guard *order* fixtures 18, 20, 21, which pin a guard's position against another pre-existing check and are not mechanical; only fixture 23 and 22/25's pure existence checks are the Low/mechanical sweep — see below |
 | 3 — native worker | Does the shared carrier/traversal preserve Float behavior while every f32/bool intermediate rounds in binary32, and do the new f32 entries reject Float-backed evidence? | 16 | 14 | High: numerical truthfulness and shared-worker dispatch |
 | 4 — named adapter | Do generic adapter/report shells preserve current APIs, f32-backed Boolean values, and warnings without letting either wrapper relabel another carrier? | 15 | 17 | High: public API and publication order — including fixture 10, which pins its f32 guards' position against `pack32`/`unpack32`/`runPreparedDense32`'s own pre-existing checks and is not mechanical (see Section 3.5) |
 | 5 — JAX/docs | Does standalone JAX validation retain its located f32 rejection, do Task 2's plan-level gates remain closed, and are capability claims re-derived? | 2 | 1 | High: evidence boundary and stale capability prose |
@@ -1461,7 +1466,7 @@ The slice is complete only when all of the following are true:
   typed, located error;
 - existing Float-backed checkers/workers and the legacy evaluator cannot execute f32 evidence;
 - JAX rejects f32 before candidate construction, evidence, or Python output;
-- all 74 numbered fixture groups pass, with 75 of them backed by a recorded fail/restored-pass
+- all 74 numbered fixture groups pass, with 76 of them backed by a recorded fail/restored-pass
   mutation cycle and Task 2's fixture 23 and the 22/25 existence checks confirmed instead by the
   Section 3.5 completeness sweep with no cell left pending;
 - targeted builds, `JaxExperiment`, full `lake build`, documentation sweep, and two final reviews
@@ -1580,7 +1585,7 @@ bit-exact JAX parity without measuring XLA's operation order.
   claims by reading actual `import` lines — found zero observations in either lens. This is the
   first review round with nothing to batch or resolve. A fourth frozen dual review of
   `f4cc0d658c383ef62fd0cccc8973db2830fe6f9eec470696f5f321ac7477e0c5` — the revision after a
-  risk-reweighting pass folded eight fixtures into per-task completeness sweeps — split cleanly by
+  risk-reweighting pass folded seven fixtures into per-task completeness sweeps — split cleanly by
   lens: the arithmetic-verification lens independently recounted every mutation-cycle bullet and
   cross-reference and found the reweighting's own numbers exactly self-consistent (zero findings);
   the engineering-judgment lens read each reclassified fixture's full text against the actual Lean
@@ -1596,15 +1601,15 @@ bit-exact JAX parity without measuring XLA's operation order.
   review.
 - The five tasks contain 74 numbered fixture groups: 16/25/16/15/2 by task. A group is one named
   test fixture and may contain several assertions or paired controls; this is the unit counted in
-  the task headers and risk table. Their mutation lists expand to 15/28/14/17/1 = 75 independently
+  the task headers and risk table. Their mutation lists expand to 15/29/14/17/1 = 76 independently
   applied and restored source changes. The two authoring-time storage-derivation mutations above
-  have observed fail/restored-pass results; the 75 implementation-dependent cycles are completion
+  have observed fail/restored-pass results; the 76 implementation-dependent cycles are completion
   gates, not claims about code that does not yet exist, and must record both observations while each
   task is implemented.
 - Reweighted mutation-cycle effort against risk rather than applying it uniformly across all 74
   fixture groups, in response to independent review — and then corrected the reweighting itself after
-  a fourth frozen dual review found it had overreached. The first pass folded eight fixtures (Task
-  2's 18, 20, 21, 23, and the existence-only half of 22/25; Task 4's 10 — 12 of the original 79
+  a fourth frozen dual review found it had overreached. The first pass folded seven fixture groups
+  (Task 2's 18, 20, 21, 23, and the existence-only half of 22/25; Task 4's 10 — 12 of the original 79
   cycles) into a single completeness sweep on the theory that "add the same storage-kind guard at
   door N because door N−1 already has one" fails only by omission. A fourth frozen dual review's
   engineering-judgment lens (as distinct from its sibling arithmetic-verification lens, which found
@@ -1624,3 +1629,21 @@ bit-exact JAX parity without measuring XLA's operation order.
   grouping — the same restate-instead-of-re-measure failure this project's authoring discipline
   already names for gaps lists and capability counts, here appearing in a verification-method
   classification instead.
+- A fifth, confirmatory frozen dual review of `844f2a242e6fe60654aa562d6a9e858513275b2a1294997b06993662317cdcc2`
+  (the fourth round's correction) found the correction itself sound for all four restored fixtures
+  and the three that survived the sweep, verified against the actual Lean source rather than the
+  plan's prose, and closed one narrative miscount ("eight" fixture groups where the document's own
+  list named seven). It also re-applied the fourth round's own method — read each fixture's full text
+  for an order claim, not its one-line mutation-bullet summary — across the rest of Tasks 2 and 4,
+  which the fourth round's engineering-judgment lens had not done exhaustively, and found one further
+  instance of the same defect family the fourth round was reopened to fix: Task 2's fixture 6 asserts
+  ("deliberately pinning that storage derivation runs before outer graph wiring") that
+  `deriveStorageKind`'s `mixedStorageKinds` rejection must fire before the unused non-input slot's
+  independent wiring-invalidity (`missingProduction`) — an order claim with no corresponding mutation
+  cycle anywhere in the document; only fixture 6's other claim (first-vs-last conflicting slot) was
+  tested. This gap predates the reweighting entirely — fixture 6 was never touched by either
+  reweighting commit and was present, untested on this axis, since the plan's original authoring and
+  its first three review rounds. Added the missing mutation cycle and reverified Task 1's, Task 3's,
+  and Task 5's fixture lists for the same pattern independently, finding all three already covered by
+  an existing mutation cycle. Corrected totals: Task 2 28 → 29 mutation-tested cycles; plan-wide 75 →
+  76.
