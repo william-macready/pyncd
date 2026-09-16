@@ -633,7 +633,7 @@ evidence and specialization, native execution, the named adapter, and external s
    omission from categorical naming is observable. `DSL/Pipeline/TraverseTest` is a build-only
    regression target, not an edited Task 1 file.
 
-**Numbered fixture groups: 16; planned mutation cycles: 15**
+**Numbered fixture groups: 16; planned mutation cycles: 18**
 
 1. Clone `ParseProgramTest`'s ordinary single-tensor declaration; insert `f32` and add a second
    comma-separated tensor in the same declaration; require two `Decl.typedTensor .f32` values with
@@ -646,8 +646,10 @@ evidence and specialization, native execution, the named adapter, and external s
    require the same rank and duplicate-name behavior.
 5. Clone `StructuralTest`'s declaration-environment donor; pass its declarations through the new
    storage-kind classifier. Require an f32-plus-predicate used graph to select `.float32`, an
-   f64-plus-predicate graph to select `.float64`, a bool-only graph to default to `.float64`, and
-   an f32-plus-f64 graph to reject at the first conflicting real name.
+   f64-plus-predicate graph to select `.float64`, and a bool-only graph to default to `.float64`.
+   Separately build a three-real-name graph declaring `A` (f32), then `B` (f64), then `C` (f64); require
+   rejection naming `B` as the first conflicting real name, distinguishing it from `C` (a second,
+   later conflict against the same established f32) and from the three-entry declaration count.
 6. Clone `RouteFragmentCorpusTest`'s ordinary tensor metadata fixture; change only the declaration to
    `.typedTensor .f32`; require the same routed shape/name result. This is the fixture that can fail when
    route naming omits the new constructor.
@@ -716,10 +718,15 @@ Mutations and expected observations:
   capability rejection;
 - make `predicate` contribute a fixed `.float64` constraint: fixture 5's f32-plus-predicate case
   rejects and fails; restore lets bool inherit `.float32`;
+- continue past the first conflicting real name and report the last one instead: fixture 5's
+  three-real-name case names `C` instead of `B` and fails; restore names `B` first;
 - move the scheduled guard after shape inference: fixture 7 reports the shape/input error and fails;
   restore reports dtype first;
 - remove the deepest `evalAssignDtypedSeeded` guard: fixture 9 executes
   dtype-blind and fails; restore rejects.
+- implement the guard as reject-if-mixed (destination and source dtypes disagree) rather than
+  reject-if-any-operand-is-f32: fixture 10's homogeneous-f32 assignment is wrongly accepted and
+  fails; restore rejects it via `EvalError.unsupportedDtype "Y"`;
 - remove the `evalPlain` scatter guard: fixture 11 reports its unsized-output error and fails;
   restore reports dtype first;
 - remove the `evalStmtSliceSeeded` and `evalScan` entry guards independently (two cycles): fixtures
@@ -730,6 +737,9 @@ Mutations and expected observations:
   scratch and continues to ignore the unused declaration.
 - remove the `EvalError.unsupportedDtype` equality arm: fixture 16 compares two identical errors as
   unequal and fails; restore makes equal/different names distinguish correctly.
+- implement the new equality arm as `| .unsupportedDtype _, .unsupportedDtype _ => true`, ignoring
+  the name: fixture 16's different-names guard wrongly compares true and fails; restore compares by
+  name, passing both the equal- and different-names guards;
 - replace the shared duplicate-rejecting declaration builder in the direct evaluator with a linear
   first-match scan: fixture 8's dual-invalid subcase reports dtype or executes instead of returning
   `EvalError.compile (.duplicateTensorDecl "Result")`; restore reports the shared declaration error.
@@ -809,7 +819,7 @@ Mutations and expected observations:
    whole-candidate predicate. The zero-step case is load-bearing because empty evidence currently
    aggregates to `orderedReference64`.
 
-**Numbered fixture groups: 25; planned mutation cycles: 29, plus one door-guard completeness sweep
+**Numbered fixture groups: 25; planned mutation cycles: 33, plus one door-guard completeness sweep
 (fixture 23 and the existence-only mutations inside 22 and 25 — verified once against Section 3.5's
 table rather than as separate cycles; fixtures 18, 20, and 21 each pin a check *order* against
 another pre-existing check and keep their own cycles — see Section 3.5 for why)**
@@ -927,6 +937,9 @@ Mutations and expected observations:
 - admit one mixed-source direction at a time (two cycles): the corresponding half of fixture 2
   fails; restore passes;
 - remove unary rejection: fixture 4 changes from rejection to acceptance; restore passes;
+- compute the reported factor index from the Iverson-filtered read list instead of the original
+  all-factor list: fixture 4 reports index 0 instead of 1 and fails; restore reports the original
+  index 1;
 - let ordinary `checkAssign` admit f32: fixture 5 fails; restore passes;
 - compare concrete dtypes rather than storage kinds: fixture 7 rejects the existing f64/bool graph;
   restore passes;
@@ -946,6 +959,13 @@ Mutations and expected observations:
 - remove each source capability arm for scatter, scan, axiswise, and unary independently (four
   cycles): the corresponding fixture 15 case reaches plan construction or reports a later error;
   restore reports its exact source capability payload;
+- compute the source-level unary rejection's reported factor index from the Iverson-filtered list
+  instead of the original all-factor list: fixture 15's unary case reports index 0 instead of 1 and
+  fails; restore reports 1;
+- scan declarations in declaration order rather than used-name order when locating the first
+  conflicting real name (two cycles): fixture 12's first subcase names `X` instead of `Y` and fails;
+  its second subcase (undeclared `X`) reports no conflict instead of naming `Y`, since a
+  declaration-only scan never sees the undeclared name at all; restore names `Y` in both subcases;
 - remove each raw-plan dispatch arm for scatter, scan, and axiswise independently (three cycles):
   the corresponding fixture 16 case reaches the legacy checker or reports the wrong kind; restore
   reports its exact original index and closed step kind.
@@ -1013,7 +1033,7 @@ Mutations and expected observations:
 5. Register `Eval.Plan.KernelDense32Test` and `Eval.Plan.EvalPlan32Test` in the explicit `Tests`
    module list in `lakefile.toml` before running their targeted build names.
 
-**Numbered fixture groups: 16; planned mutation cycles: 14**
+**Numbered fixture groups: 16; planned mutation cycles: 15**
 
 1. New fixture `f32Identity`, cloned from `KernelDenseTest.identityPlan`; use native f32 buffers
    containing `+0`, `-0`, and the least positive subnormal. Require output bits `[0, 0, 1]`: the
@@ -1084,6 +1104,10 @@ Mutations and expected observations:
   respectively; restore passes;
 - change each f32 identity (`1`, `0`, `−∞`, `+∞`) independently: fixtures 5–8 fail; restore passes;
 - change zero-pad to the reduction identity: fixture 9 fails; restore passes;
+- swap the Iverson true/false branch handling (annihilate on true instead of false, or vice versa):
+  fixture 10's true case returns the false case's native zero bits and its false case returns
+  nonzero product bits, both wrong; restore returns the correct pass-through product for the true
+  case and native zero for the false case;
 - remove the local and graph f32-worker deepest storage guards independently (two cycles): fixtures
   13 and 14 reach validation/execution instead of failing at their own public boundary; restore
   reports storage kind first.
@@ -1130,7 +1154,7 @@ Mutations and expected observations:
    and confirm Task 2's already-closed JAX column remains accurate. No column remains pending after
    this task; Task 5 performs the final implemented-call-graph audit.
 
-**Numbered fixture groups: 15; planned mutation cycles: 17**
+**Numbered fixture groups: 15; planned mutation cycles: 19**
 
 1. Clone `SignatureTest.conversionInputs`; construct native f32 tensors and f32 declarations;
    require `ofDenseInputs32ForDecls` to return f32 shapes/signatures.
@@ -1200,6 +1224,12 @@ Mutations and expected observations:
 - remove input storage validation: fixture 5 reaches execution and reports a different error; restore
   reports storage mismatch;
 - remove the result-arity guard: fixture 6 changes to success and fails; restore reports arity;
+- drop or fail to thread `EvalReport32`'s warnings through the f32 success and failure paths: fixture
+  7's warnings become empty, or diverge from the legacy-evaluator comparison, and fail; restore
+  preserves the identical nonempty warning list on both paths;
+- hardcode the f32 adapter's algebra selection to `admittedAlgebra` (sum) rather than deriving it
+  per-node: fixture 9's max/min outputs become the sum of `plainAggInputs`'s `A` instead of the
+  correct max/min values and fail; restore reports the exact max/min bits;
 - remove the f32 `pack32`, `unpack32`, and `runPreparedDense32` storage-kind guards independently
   (three cycles): the corresponding part of fixture 10 reaches storage/arity or worker work; restore
   reports storage kind at each public entry — kept as full cycles rather than folded into Task 2's
@@ -1310,10 +1340,10 @@ Task 4 so its documentation closes the actual public boundary rather than a proj
 
 | Task | Main reviewer question | Fixture groups | Mutation cycles | Risk |
 |---|---|---:|---:|---|
-| 1 — source/legacy | Does the extensible typed declaration survive every source traversal, does bool inherit rather than select precision, does every homogeneous f32 graph hit the temporary stop, and can any legacy dtype-aware evaluator execute an f32 graph as Float? | 16 | 15 | High: `Decl` exhaustiveness and rejection order |
-| 2 — checked evidence | Can source specialization and direct raw-plan checking disagree, reject a valid real/bool graph, let f32 evidence reach an existing Float worker/adapter/JAX path, or admit an f32 zero-step block? | 25 | 29 + 1 sweep | High on the checker/evidence core (fixtures 1–21, 22/24's order checks) — this includes fixture 6's wiring-vs-storage-derivation order check and the door-guard *order* fixtures 18, 20, 21, which pin a guard's position against another pre-existing check and are not mechanical; only fixture 23 and 22/25's pure existence checks are the Low/mechanical sweep — see below |
-| 3 — native worker | Does the shared carrier/traversal preserve Float behavior while every f32/bool intermediate rounds in binary32, and do the new f32 entries reject Float-backed evidence? | 16 | 14 | High: numerical truthfulness and shared-worker dispatch |
-| 4 — named adapter | Do generic adapter/report shells preserve current APIs, f32-backed Boolean values, and warnings without letting either wrapper relabel another carrier? | 15 | 17 | High: public API and publication order — including fixture 10, which pins its f32 guards' position against `pack32`/`unpack32`/`runPreparedDense32`'s own pre-existing checks and is not mechanical (see Section 3.5) |
+| 1 — source/legacy | Does the extensible typed declaration survive every source traversal, does bool inherit rather than select precision, does every homogeneous f32 graph hit the temporary stop, and can any legacy dtype-aware evaluator execute an f32 graph as Float? | 16 | 18 | High: `Decl` exhaustiveness and rejection order, including fixture 5's first-vs-last conflicting-name locator, fixture 10's mixed-vs-any-f32 guard reading, and fixture 16's name-blind equality bug |
+| 2 — checked evidence | Can source specialization and direct raw-plan checking disagree, reject a valid real/bool graph, let f32 evidence reach an existing Float worker/adapter/JAX path, or admit an f32 zero-step block? | 25 | 33 + 1 sweep | High on the checker/evidence core (fixtures 1–21, 22/24's order checks) — this includes fixture 6's wiring-vs-storage-derivation order check, fixture 12's order/default reading distinction, fixtures 4/15's factor-index-locator checks, and the door-guard *order* fixtures 18, 20, 21, which pin a guard's position against another pre-existing check and are not mechanical; only fixture 23 and 22/25's pure existence checks are the Low/mechanical sweep — see below |
+| 3 — native worker | Does the shared carrier/traversal preserve Float behavior while every f32/bool intermediate rounds in binary32, and do the new f32 entries reject Float-backed evidence? | 16 | 15 | High: numerical truthfulness and shared-worker dispatch, including fixture 10's Iverson true/false branch-handling check |
+| 4 — named adapter | Do generic adapter/report shells preserve current APIs, f32-backed Boolean values, and warnings without letting either wrapper relabel another carrier? | 15 | 19 | High: public API and publication order — including fixture 10, which pins its f32 guards' position against `pack32`/`unpack32`/`runPreparedDense32`'s own pre-existing checks and is not mechanical; fixture 7's f32 warnings-propagation check; and fixture 9's hardcoded-algebra regression check, the same recurring defect family its own donor file documents (see Section 3.5) |
 | 5 — JAX/docs | Does standalone JAX validation retain its located f32 rejection, do Task 2's plan-level gates remain closed, and are capability claims re-derived? | 2 | 1 | High: evidence boundary and stale capability prose |
 
 These tasks are intentionally not split into “add a type” or “add two guards” sub-tasks: those
@@ -1466,7 +1496,7 @@ The slice is complete only when all of the following are true:
   typed, located error;
 - existing Float-backed checkers/workers and the legacy evaluator cannot execute f32 evidence;
 - JAX rejects f32 before candidate construction, evidence, or Python output;
-- all 74 numbered fixture groups pass, with 76 of them backed by a recorded fail/restored-pass
+- all 74 numbered fixture groups pass, with 86 of them backed by a recorded fail/restored-pass
   mutation cycle and Task 2's fixture 23 and the 22/25 existence checks confirmed instead by the
   Section 3.5 completeness sweep with no cell left pending;
 - targeted builds, `JaxExperiment`, full `lake build`, documentation sweep, and two final reviews
@@ -1601,9 +1631,9 @@ bit-exact JAX parity without measuring XLA's operation order.
   review.
 - The five tasks contain 74 numbered fixture groups: 16/25/16/15/2 by task. A group is one named
   test fixture and may contain several assertions or paired controls; this is the unit counted in
-  the task headers and risk table. Their mutation lists expand to 15/29/14/17/1 = 76 independently
+  the task headers and risk table. Their mutation lists expand to 18/33/15/19/1 = 86 independently
   applied and restored source changes. The two authoring-time storage-derivation mutations above
-  have observed fail/restored-pass results; the 76 implementation-dependent cycles are completion
+  have observed fail/restored-pass results; the 86 implementation-dependent cycles are completion
   gates, not claims about code that does not yet exist, and must record both observations while each
   task is implemented.
 - Reweighted mutation-cycle effort against risk rather than applying it uniformly across all 74
@@ -1647,3 +1677,34 @@ bit-exact JAX parity without measuring XLA's operation order.
   and Task 5's fixture lists for the same pattern independently, finding all three already covered by
   an existing mutation cycle. Corrected totals: Task 2 28 → 29 mutation-tested cycles; plan-wide 75 →
   76.
+- A sixth review round applied a differently-scoped pass: rather than re-checking the storage-kind
+  -guard-order family, two lenses independently read every fixture's full text across all five tasks
+  (Tasks 1–2 and Tasks 3–5) and checked whether every distinct claim has a mutation cycle that could
+  actually fail if the claim were violated — the general form of the fixture-6 defect, applied
+  exhaustively rather than to one family. This surfaced sixteen candidate gaps. Adjudicating each
+  against the actual Lean source, rather than trusting either lens's own severity label, found nine
+  genuine gaps and confirmed seven were either structurally guaranteed or a plain accept/reject or
+  exact-value assertion with no plausible coincidentally-right-looking wrong answer, consistent with
+  how the rest of the document already leaves comparable direct assertions uncovered by a dedicated
+  cycle. The nine fixed: Task 1's fixture 5 (whose own construction could not yet distinguish "first"
+  from "last" conflicting name — revised to an explicit three-real-name case before adding the
+  cycle), fixture 10 (reject-if-mixed vs. reject-if-any-f32), and fixture 16 (a name-blind equality
+  bug that its own two direct guards would catch, but that no *documented* verification step yet
+  confirmed); Task 2's fixture 4 and fixture 15 (both an original-vs-Iverson-filtered factor-index
+  reading, at the checked-plan and source-capability layers respectively) and fixture 12 (two cycles,
+  for a claim whose own prose says it was "purpose-built to distinguish all relevant order/default
+  readings" yet had zero mutation coverage of either subcase); Task 3's fixture 10 (an Iverson
+  true/false branch swap); and Task 4's fixture 7 (f32 warnings propagation) and fixture 9 (a
+  hardcoded-sum-algebra regression — the donor file's own comment names this exact recurring defect
+  family, and fixture 9 is a new call site for it that had no recorded verification). The seven left
+  unfixed, with reasoning recorded rather than silently dropped: Task 1's fixture 4 duplicate-name
+  half and Task 2's fixture 3 algebra-membership-first order are each structurally guaranteed (a
+  wildcard declaration-classifier match; a check that cannot even be expressed before its own
+  precondition is resolved), not merely low-probability; Task 2's fixtures 8, 9, 10, and 13, and Task
+  3's fixture 1, assert a plain accept/reject or fully-specified exact value with no adjacent
+  plausible reading that would coincide with the correct one. Corrected totals: Task 1 15 → 18, Task
+  2 29 → 33 (the sweep is unchanged at one), Task 3 14 → 15, Task 4 17 → 19; plan-wide 76 → 86.
+  Recounting also re-derived the document's own cycle-counting convention explicitly, rather than
+  assuming it: one mutation observed across several fixtures is one cycle; only an explicit "N
+  cycles" annotation, or "independently" applied to an enumerated list, counts as N. Recounted every
+  task's complete mutation bullet list by hand against that convention before committing.
