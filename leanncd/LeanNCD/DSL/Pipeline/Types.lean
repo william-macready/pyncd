@@ -5,8 +5,10 @@ import Std.Data.HashMap
 namespace LeanNCD
 open Std
 
-/-- Declaration environment built by resolveDecls (`String` has BEq+Hashable). -/
-abbrev DeclEnv := HashMap String Decl
+-- `DeclEnv` and its duplicate-rejecting builder `buildDeclEnv` now live in `DSL/Ast.lean` (the
+-- AST leaf), so the direct evaluator entries can reach them without closing a
+-- `ScheduledValidation → Structural → Eval.Contract` import cycle. They are re-exported here by
+-- this module's `import LeanNCD.DSL.Ast`; every caller's spelling is unchanged.
 
 /-- A statement after finalizeScans grouped iterAt/iterNext pairs into Scan nodes.
     `scanPre` carries a pre-built step morphism (the `Stmt.recurMorphism` escape hatch, E2c);

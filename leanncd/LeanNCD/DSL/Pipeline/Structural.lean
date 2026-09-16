@@ -594,24 +594,10 @@ declared twice (`duplicateTensorDecl`, via `buildDeclEnv`). -/
 /-- The tensor names a stmt reads (from `.read`/`.unaryFn` factors; iverson reads nothing). -/
 def Stmt.readNames (s : Stmt) : List String := s.readFactors.map (·.1)
 
-/-- The one tensor-declaration classification rule, shared by `resolveDecls` (source pipeline) and
-    `Eval.Plan.prepareEvalPlan` (checked backend, over a possibly hand-built `ScheduledProgram`'s
-    own `decls`).
-
-    `.axis`/`.iter` name an axis, not a tensor, and stay out of the env; `.tensor`, `.linear`, and
-    `.predicate` are tensor-bearing and land in it. A second tensor-bearing declaration of an
-    already-declared name is REJECTED rather than silently overwriting the first: last-wins
-    insertion left a `DeclEnv` lookup (which saw the LAST declaration) and a linear `decls` scan
-    (`Eval.combineFor`, which sees the FIRST) able to disagree about one name's kind — precisely the
-    disagreement Boolean/real algebra selection cannot tolerate. -/
-def buildDeclEnv (decls : List Decl) : Except CompileError DeclEnv :=
-  decls.foldlM (fun (m : DeclEnv) d => match d with
-    | .axis _ _ => pure m
-    | .iter _ _ => pure m
-    | _ =>
-        if m.contains d.name then throw (CompileError.duplicateTensorDecl d.name)
-        else pure (m.insert d.name d))
-    ({} : DeclEnv)
+-- `buildDeclEnv` — the one tensor-declaration classification rule this phase applies — now lives
+-- in `DSL/Ast.lean`, so the direct evaluator entries can share it without closing a
+-- `ScheduledValidation → Structural → Eval.Contract` import cycle. Its name, signature, and
+-- behaviour are unchanged; every caller here still spells it `buildDeclEnv`.
 
 /-- The one PINNED-AXIS-SIZE rule, shared by `schedule` (source pipeline, which caches its result as
     `ScheduledProgram.explicitSizes`) and `Eval.Plan.prepareEvalPlan` (checked backend, which
@@ -718,7 +704,7 @@ with `nm`'s declaration. Two cases:
 rest of the pipeline treats that escape hatch. -/
 
 private def Decl.axisCount : Decl → Nat
-  | .tensor _ ax | .predicate _ ax | .linear _ ax _ => ax.length
+  | .tensor _ ax | .typedTensor _ _ ax | .predicate _ ax | .linear _ ax _ => ax.length
   | .axis _ _ => 0   -- axis decls are excluded from DeclEnv; never reached via env lookup
   | .iter _ _ => 0   -- iter decls are ALSO excluded from DeclEnv; never reached via env lookup
 

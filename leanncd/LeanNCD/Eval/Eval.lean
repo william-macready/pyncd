@@ -20,9 +20,15 @@ def scatterOutShape (sizes : HashMap UID Nat) (slots : List LHSSlot) : Except Ev
     | some n => pure n
     | none   => throw (.shape (.unsizedScatterOutput sl)))
 
-/-- Evaluate one `.plain` stmt → (name, tensor). -/
+/-- Evaluate one `.plain` stmt → (name, tensor).
+
+    The storage refusal (`rejectUnsupportedStorage`, `Contract.lean`) is installed at the ENTRY,
+    not left to the assignment arm's deeper `evalAssignDtypedSeeded` guard: the `.scatter` arm
+    computes `scatterOutShape` and runs `evalScatter` without ever reaching that function, so an
+    f32 scatter would otherwise be reported as a shape failure — or executed in `Float`. -/
 def evalPlain (decls : List Decl) (env : HashMap String DenseTensor) (sizes : HashMap UID Nat)
     (s : Stmt) : Except EvalError (String × DenseTensor) := do
+  rejectUnsupportedStorage decls (stmtStorageNames s)
   match s with
   | .assign nm slots rhs =>
       let (_, pre) ← evalAssignDtyped decls env sizes nm slots rhs    -- contract (dtype-aware)
@@ -89,13 +95,28 @@ def evalPlain (decls : List Decl) (env : HashMap String DenseTensor) (sizes : Ha
     `schedule` used to build the cached field and the same rule `prepareEvalPlan`'s Step 0 applies —
     which is what keeps the reference and checked backends answering identically for a schedule
     whose cache disagrees with its declarations, rather than trading one silent wrong answer for a
-    silent disagreement. -/
+    silent disagreement.
+
+    **Storage kind likewise, and schedule-wide.** Every worker below computes in `Float`
+    (binary64), so a tensor an explicit `tensor f32 …` declaration commits to binary32 cannot be
+    evaluated at its declared precision here. The schedule-wide derivation
+    (`scheduleFloat32Name?`, `DSL/Pipeline/ScheduledValidation.lean`) therefore runs over
+    `sched.stmts` in USED-NAME order — external reads first, then every written name, scan scratch
+    included — and the FIRST f32 name is refused, BEFORE size inference, the environment, or any
+    statement executes. It runs AFTER `validateScheduled` for the same reason the predicate rule
+    does: a duplicate tensor-bearing declaration makes "which declaration is `Y`" ambiguous, so the
+    storage question is not well-defined until the environment is. Unlike the checked backend's
+    stop, this one is NOT temporary and is not limited to mixed schedules: a homogeneous f32
+    schedule has no correct binary64 reading either. -/
 def evalScheduled (sched : ScheduledProgram) (inputs : HashMap String DenseTensor) :
     Except EvalFailure EvalReport :=
   match validateScheduled sched with
   | .error e => .error { error := .compile e, warnings := [] }
   | .ok checked =>
   let sched := checked.program
+  match scheduleFloat32Name? checked.declEnv sched.stmts with
+  | some nm => .error { error := .unsupportedDtype nm, warnings := [] }
+  | none =>
   -- A scan-local scatter's LHS describes placement into persistent state, not a standalone scatter
   -- output whose placement extent should constrain later reads of that state.
   let allStmts : List Stmt := sched.stmts.flatMap (fun

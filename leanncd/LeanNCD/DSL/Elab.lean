@@ -37,6 +37,13 @@ def elabTLAxisKind : Syntax → MetaM AxisKind
   | `(tl_axis_kind| ℕ)          => return .nat
   | _                           => throwUnsupportedSyntax
 
+/-- The one keyword→`TensorElementType` map. No wildcard default: an unmapped `tl_elem_type`
+    production is an error, not a silent element type. Adding a precision is one `tl_elem_type`
+    grammar line, one `TensorElementType` constructor, and one arm here. -/
+def elabTLElemType : Syntax → MetaM TensorElementType
+  | `(tl_elem_type| f32)        => return .f32
+  | _                           => throwUnsupportedSyntax
+
 partial def elabTLAxisSpec : Syntax → MetaM AxisSpec
   | `(tl_axis_spec| $x:ident) =>
       return { name := identStr x, uid := 0, kind := .real }
@@ -72,6 +79,10 @@ partial def elabTLDecl : Syntax → MetaM (List Decl)
   | `(tl_decl| tensor $items:tl_named_shape,*) => do
       let pairs ← items.getElems.toList.mapM elabTLNamedShape
       return pairs.map fun (nm, axes) => .tensor nm axes
+  | `(tl_decl| tensor $ty:tl_elem_type $items:tl_named_shape,*) => do
+      let elemTy ← elabTLElemType ty
+      let pairs ← items.getElems.toList.mapM elabTLNamedShape
+      return pairs.map fun (nm, axes) => .typedTensor elemTy nm axes
   | `(tl_decl| predicate $items:tl_named_shape,*) => do
       let pairs ← items.getElems.toList.mapM elabTLNamedShape
       return pairs.map fun (nm, axes) => .predicate nm axes

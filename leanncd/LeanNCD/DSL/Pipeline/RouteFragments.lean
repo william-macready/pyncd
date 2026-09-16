@@ -100,7 +100,7 @@ open Std
 
 /-- Tensor names visible in a declaration. Axis declarations are deliberately excluded. -/
 def declaredTensorName? : Decl → Option String
-  | .tensor nm _ | .predicate nm _ | .linear nm _ _ => some nm
+  | .tensor nm _ | .typedTensor _ nm _ | .predicate nm _ | .linear nm _ _ => some nm
   | .axis _ _ | .iter _ _ => none
 
 /-- Names written by one logical/physical route node. -/

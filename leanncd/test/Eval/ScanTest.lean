@@ -1,4 +1,5 @@
 import LeanNCD.Eval.Scan
+import LeanNCD.Eval.Eval   -- `evalPlain`, exercised directly by the f32 entry-guard fixtures below
 namespace LeanNCD.Eval
 open Std
 private def ax (nm : String) (u : Nat) : AxisSpec := { name := nm, uid := u, kind := .real }
@@ -446,5 +447,114 @@ run_cmd do
             (tensorOf [3,6] [0,4,0,5,0,6, 0,4,0,5,0,6, 0,4,0,5,0,6]) do
           throwError s!"S-B non-trailing scan dimension data: {repr S.data}"
     | none => throwError "S-B non-trailing scan dimension: no S"
+
+/-! ### f32 Task 1, fixtures 11-13: each public scan-path entry refuses f32 on its own
+
+All three reuse "S-B 1: a strided base" above. That fixture passes `decls := []`, so the f32
+declarations for `X` and `S` are constructed explicitly here; each fixture additionally plants a
+COMPETING defect that the entry would otherwise report first, which is what makes the ordering
+observable rather than merely the rejection. -/
+
+-- Fixture 11: S-B 1's `base` scatter statement, called directly through `evalPlain`, with the
+-- output axis `j` unsized. `evalPlain`'s scatter arm computes `scatterOutShape` before anything
+-- else, so without an ENTRY guard this would report `.shape (.unsizedScatterOutput …)`.
+run_cmd do
+  let j := ax "j" 1; let o := ax "o" 2; let l := ax "l" 9
+  let X := tensorOf [3] [1, 2, 3]
+  let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X" X
+  let sizes := (({} : HashMap UID Nat).insert 2 6).insert 9 3   -- `j` (uid 1) deliberately unsized
+  let base : Stmt := .scatter "S" [.affine (.scale 2 j), .iterAt l 0]
+    { body := { terms := [{ factors := [.read "X" [.axis j]] }] }, nonlin := .identity }
+    { fill := 0, reduce := .rejectCollisions }
+  let decls : List Decl := [.typedTensor .f32 "X" [j], .typedTensor .f32 "S" [o, l]]
+  match evalPlain decls env sizes base with
+  | Except.error (.unsupportedDtype "S") => pure ()
+  | Except.error e => throwError s!"fixture 11: expected the dtype refusal before scatterOutShape, got {e}"
+  | Except.ok _ => throwError "fixture 11: an f32 scatter was evaluated by evalPlain"
+-- Control: with the same statement declared f64, `evalPlain` reaches and reports the planted
+-- unsized-output defect — so fixture 11's ordering claim is about precedence, not about the
+-- competing error being absent.
+run_cmd do
+  let j := ax "j" 1; let o := ax "o" 2; let l := ax "l" 9
+  let X := tensorOf [3] [1, 2, 3]
+  let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X" X
+  let sizes := (({} : HashMap UID Nat).insert 2 6).insert 9 3
+  let base : Stmt := .scatter "S" [.affine (.scale 2 j), .iterAt l 0]
+    { body := { terms := [{ factors := [.read "X" [.axis j]] }] }, nonlin := .identity }
+    { fill := 0, reduce := .rejectCollisions }
+  match evalPlain [.tensor "X" [j], .tensor "S" [o, l]] env sizes base with
+  | Except.error (.shape (.unsizedScatterOutput _)) => pure ()
+  | Except.error e => throwError s!"fixture 11 control: expected the unsized-output error, got {e}"
+  | Except.ok _ => throwError "fixture 11 control: the planted unsized output was not reported"
+
+-- Fixture 12: the SAME S-B 1 `base` statement through `evalStmtSliceSeeded`, carrying a
+-- non-identity scatter nonlinearity. The scatter arm checks that nonlinearity itself and never
+-- reaches `evalAssignDtypedSeeded`'s guard, so the refusal has to come from the public entry.
+run_cmd do
+  let j := ax "j" 1; let o := ax "o" 2; let l := ax "l" 9
+  let X := tensorOf [3] [1, 2, 3]
+  let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X" X
+  let sizes := ((({} : HashMap UID Nat).insert 1 3).insert 2 6).insert 9 3
+  let base : Stmt := .scatter "S" [.affine (.scale 2 j), .iterAt l 0]
+    { body := { terms := [{ factors := [.read "X" [.axis j]] }] }, nonlin := .pointwise .relu }
+    { fill := 0, reduce := .rejectCollisions }
+  let seed : HashMap UID Int := {}
+  match evalStmtSliceSeeded [.typedTensor .f32 "X" [j], .typedTensor .f32 "S" [o, l]]
+      env sizes seed base with
+  | Except.error (.unsupportedDtype "S") => pure ()
+  | Except.error e =>
+      throwError s!"fixture 12: expected the dtype refusal before unsupportedScatterNonlin, got {e}"
+  | Except.ok _ => throwError "fixture 12: an f32 scatter slice was evaluated"
+-- Control: the same statement declared f64 reaches and reports the planted nonlinearity defect.
+run_cmd do
+  let j := ax "j" 1; let o := ax "o" 2; let l := ax "l" 9
+  let X := tensorOf [3] [1, 2, 3]
+  let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X" X
+  let sizes := ((({} : HashMap UID Nat).insert 1 3).insert 2 6).insert 9 3
+  let base : Stmt := .scatter "S" [.affine (.scale 2 j), .iterAt l 0]
+    { body := { terms := [{ factors := [.read "X" [.axis j]] }] }, nonlin := .pointwise .relu }
+    { fill := 0, reduce := .rejectCollisions }
+  let seed : HashMap UID Int := {}
+  match evalStmtSliceSeeded [.tensor "X" [j], .tensor "S" [o, l]] env sizes seed base with
+  | Except.error (.unsupportedScatterNonlin "S") => pure ()
+  | Except.error e => throwError s!"fixture 12 control: expected unsupportedScatterNonlin, got {e}"
+  | Except.ok _ => throwError "fixture 12 control: the planted scatter nonlinearity was not reported"
+
+-- Fixture 13: the complete S-B 1 `evalScan` fixture, with f32 declarations replacing its empty
+-- declaration list and the scan iteration axis `l` removed from `sizes`. `evalScan` raises the
+-- unsized-iteration error itself, before any (also-guarded) `evalStmtSliceSeeded` call, so this
+-- pins `evalScan`'s own public door rather than inheriting a deeper one.
+run_cmd do
+  let j := ax "j" 1; let o := ax "o" 2; let l := ax "l" 9
+  let X := tensorOf [3] [1, 2, 3]
+  let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X" X
+  let sizes := (({} : HashMap UID Nat).insert 1 3).insert 2 6   -- `l` (uid 9) deliberately unsized
+  let base : Stmt := .scatter "S" [.affine (.scale 2 j), .iterAt l 0]
+    { body := { terms := [{ factors := [.read "X" [.axis j]] }] }, nonlin := .identity }
+    { fill := 0, reduce := .rejectCollisions }
+  let recur : Stmt := .assign "S" [.free o, .iterNext l]
+    { body := { terms := [{ factors := [.read "S" [.axis o, .axis l]] }] }, nonlin := .identity }
+  let decls : List Decl := [.typedTensor .f32 "X" [j], .typedTensor .f32 "S" [o, l]]
+  match evalScan decls env sizes (.scan "S" [l] [base] [recur] false) with
+  | Except.error (.unsupportedDtype "S") => pure ()
+  | Except.error e =>
+      throwError s!"fixture 13: expected the dtype refusal before the unsized-iteration error, got {e}"
+  | Except.ok _ => throwError "fixture 13: an f32 scan was evaluated"
+-- Control: the same scan declared f64 reaches and reports the planted unsized-iteration error.
+run_cmd do
+  let j := ax "j" 1; let o := ax "o" 2; let l := ax "l" 9
+  let X := tensorOf [3] [1, 2, 3]
+  let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X" X
+  let sizes := (({} : HashMap UID Nat).insert 1 3).insert 2 6
+  let base : Stmt := .scatter "S" [.affine (.scale 2 j), .iterAt l 0]
+    { body := { terms := [{ factors := [.read "X" [.axis j]] }] }, nonlin := .identity }
+    { fill := 0, reduce := .rejectCollisions }
+  let recur : Stmt := .assign "S" [.free o, .iterNext l]
+    { body := { terms := [{ factors := [.read "S" [.axis o, .axis l]] }] }, nonlin := .identity }
+  match evalScan [.tensor "X" [j], .tensor "S" [o, l]] env sizes
+      (.scan "S" [l] [base] [recur] false) with
+  | Except.error (.shape (.unsizedAxis 9 (.scanIteration "l"))) => pure ()
+  | Except.error e => throwError s!"fixture 13 control: expected the unsized-iteration error, got {e}"
+  | Except.ok _ => throwError "fixture 13 control: the planted unsized iteration axis was not reported"
 
 end LeanNCD.Eval

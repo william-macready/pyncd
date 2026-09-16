@@ -187,17 +187,63 @@ def combineFor (decls : List Decl) (nm : String) (agg : AggOp) : Combine :=
       | some (.predicate _ _) => Combine.bool
       | _                     => Combine.real
 
+/-! ## The storage boundary of the reference evaluator
+
+Every worker in `Eval/` computes in `Float` (IEEE-754 binary64): `Combine`'s four fields, the
+`evalAssignSeeded` accumulator, `DenseTensor.data`. A tensor a declaration explicitly commits to
+`f32` therefore cannot be evaluated at its declared precision here, and running it as `Float` would
+silently answer a different question than the source asks — so every public entry refuses it
+outright, BEFORE its own algebra selection, gathering, shape, scan-structure, or nonlinearity work.
+
+This is the per-NAME rule the DIRECT entries use. The schedule-wide sibling
+(`scheduleFloat32Name?`, `DSL/Pipeline/ScheduledValidation.lean`) is what `evalScheduled` uses;
+neither classifies declarations itself — both go through `storageConstraintOfName?`
+(`DSL/Ast.lean`). -/
+
+/-- The tensor names one statement commits to a storage kind, in rejection-reporting order: the
+    DESTINATION first, then its read sources in RHS traversal order. The destination is first
+    because it is what the statement's algebra and output tensor are built for; a mixed statement
+    is named by its destination, not by whichever source happens to be read first. -/
+def stmtStorageNames (s : Stmt) : List String := s.lhsName :: s.readFactors.map (·.1)
+
+/-- Refuse a statement/schedule whose declarations commit any of `names` to `.float32`.
+
+    `buildDeclEnv` (`DSL/Ast.lean`) runs FIRST, over `decls` as presented: a name declared
+    tensor-bearing twice makes "which declaration is `Y`" ambiguous, so the storage question is not
+    even well-defined until the environment is — and that is the SAME shared, duplicate-rejecting
+    builder `resolveDecls` and `prepareEvalPlan`'s Step 0 apply, reported through the existing
+    `EvalError.compile` constructor, not a second private scan.
+
+    Rejection is per-OPERAND, not per-disagreement: a homogeneously-f32 statement is refused just
+    as a mixed one is, because binary64 execution is wrong for both. -/
+def rejectUnsupportedStorage (decls : List Decl) (names : List String) :
+    Except EvalError Unit := do
+  let env : DeclEnv ← match buildDeclEnv decls with
+    | .ok e    => pure e
+    | .error e => throw (.compile e)
+  for nm in names do
+    if storageConstraintOfName? env nm == some .float32 then
+      throw (.unsupportedDtype nm)
+
 /-- dtype-aware assign, seeded or not: choose the `Combine` from the decls and `rhs.agg`, then
     evaluate. Shared by `evalPlain` (via `evalAssignDtyped`, its empty-seed wrapper) AND
     `Scan.evalStmtSliceSeeded` — before Wave B (4c), the scan path matched `rhs.agg` manually and
     could never select `Combine.bool` for a predicate state, since it never saw `decls` at all.
     `agg = .max` ⇒ tropical `(×, max, −∞)`;
     `predicate` ⇒ Boolean `(∧, ∃)`;
-    else ℝ `(×, Σ, 0)`. -/
+    else ℝ `(×, Σ, 0)`.
+
+    This is the DEEPEST public assignment entry, so the storage refusal
+    (`rejectUnsupportedStorage`) is installed here — before algebra selection and before
+    `evalAssignSeeded` validates reads against `env` or gathers anything. `evalAssignDtyped` (the
+    empty-seed wrapper), `Eval.evalPlain`'s assignment arm, and `Scan.evalStmtSliceSeeded`'s
+    assignment arm all inherit it; the scan/scatter paths that do NOT route through here get their
+    own entry guard. -/
 def evalAssignDtypedSeeded (decls : List Decl)
     (env : HashMap String DenseTensor) (sizes : HashMap UID Nat)
     (seed : HashMap UID Int) (nm : String) (slots : List LHSSlot) (rhs : RHSExpr) :
-    Except EvalError (String × DenseTensor) :=
+    Except EvalError (String × DenseTensor) := do
+  rejectUnsupportedStorage decls (nm :: readNames rhs)
   let c := combineFor decls nm rhs.agg
   evalAssignSeeded c.mul c.combine c.unit0 c.unit1 env sizes seed nm slots rhs
 

@@ -31,6 +31,7 @@ def evalErrorEq : EvalError → EvalError → Bool
   | .unsupportedRecurMorphism sa na, .unsupportedRecurMorphism sb nb =>
       decide (sa = sb ∧ na = nb)
   | .invalidScanNode a, .invalidScanNode b => decide (a = b)
+  | .unsupportedDtype a, .unsupportedDtype b => decide (a = b)
   -- Catches only cross-constructor pairs today. Adding an `EvalError` constructor needs a new
   -- arm above it here too, or two equal instances of it will silently compare unequal.
   | _, _ => false
@@ -88,5 +89,15 @@ private def failed (error : EvalError) (warnings : List EvalWarning := []) :
 #guard ! evalAgreesOn []
   (failed (.unknownTensor .gather "e") [.paddedAccess "X[i]" 3 2])
   (failed (.unknownTensor .gather "e"))
+
+-- f32 Task 1, fixture 16: the new `EvalError.unsupportedDtype` constructor needs its OWN arm above
+-- the catch-all. Without one it falls through to `| _, _ => false`, so two identical rejections
+-- compare UNEQUAL and the oracle reports a spurious divergence; with an arm that ignores the name,
+-- two rejections naming different tensors compare EQUAL and a real divergence is hidden. Both
+-- directions are asserted.
+#guard evalErrorEq (.unsupportedDtype "X") (.unsupportedDtype "X")
+#guard ! evalErrorEq (.unsupportedDtype "X") (.unsupportedDtype "Y")
+#guard evalAgreesOn [] (failed (.unsupportedDtype "X")) (failed (.unsupportedDtype "X"))
+#guard ! evalAgreesOn [] (failed (.unsupportedDtype "X")) (failed (.unsupportedDtype "Y"))
 
 end LeanNCD.PropertyOracle

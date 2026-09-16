@@ -367,7 +367,8 @@ theorem traverseAxes_const_eq_specsStmt (s : Stmt) :
 /-- Local copy of `Structural.lean`'s private `specsDecl`, for comparison only — NOT the
     source of truth. Keep byte-identical to `Structural.lean:64-66` by inspection. -/
 private def specsDecl' : Decl → List AxisSpec
-  | .tensor _ ax => ax | .predicate _ ax => ax | .linear _ ax _ => ax
+  | .tensor _ ax => ax | .typedTensor _ _ ax => ax
+  | .predicate _ ax => ax | .linear _ ax _ => ax
   | .axis ax _ => [ax]
   | .iter ax _ => [ax]
 
@@ -390,6 +391,7 @@ theorem traverseAxes_const_eq_specsDecl (d : Decl) :
         rfl
   cases d with
   | tensor nm ax => exact core ax
+  | typedTensor ty nm ax => exact core ax
   | predicate nm ax => exact core ax
   | linear nm ax b => exact core ax
   | axis ax n => rfl

@@ -449,11 +449,13 @@ def scanScatterSched (base recur : List Stmt) (decls : List Decl := []) : Schedu
           , nonlin := .identity } {})] })
 
 
--- unsupportedDtype: structurally unreachable via `capabilityPreflight` — `Decl` (`DSL/Ast.lean`)
--- carries no dtype field on any constructor (`.tensor`/`.linear`/`.predicate` are name+axes only;
--- dtype is an `InputSignature`/backend concept a LATER C4 step resolves, not a source declaration),
--- so nothing in this file's checkers can ever construct this value. Exercised directly, same
--- pattern as `dynamicShape` below.
+-- unsupportedDtype: still unreachable via `capabilityPreflight`, which is per-declaration and
+-- per-statement — `checkDecl` structurally ADMITS `.typedTensor .f32` (an f32 declaration nothing
+-- uses constrains nothing), so the element type is decided one layer up. Its real producer is
+-- `prepareEvalPlan`'s schedule-wide storage-kind step (Step 0b), exercised by fixture 15 below and
+-- by `ScanCompileTest`'s fixture 14. This guard pins only that preflight itself stays free of it.
+#guard isOk (capabilityPreflight
+    { acceptedSched with decls := [.typedTensor .f32 "Out" [⟨"i", 0, .nat⟩]] })
 #guard (CapabilityError.unsupportedDtype "unreachable") == CapabilityError.unsupportedDtype "unreachable"
 
 -- dynamicShape: structurally unreachable via `capabilityPreflight` — `IdxExpr` (`DSL/Ast.lean`) has
@@ -712,6 +714,59 @@ def f32Sig : InputSignature :=
   InputSignature.mk (({} : HashMap String TensorSignature).insert "X" { shape := #[3], dtype := .f32 })
 #guard causeOf (prepareEvalPlan identitySched f32Sig) ==
   some { cause := .inputSignature (.dtypeNotAdmitted "X" .f32), warnings := [] }
+
+/-! ### f32 Task 1, fixture 15 (schedule-stop half)
+
+Two HOMOGENEOUS f32 programs built on `identitySched` — which `prepareEvalPlan` accepts as-is
+(`#guard` above) — so the only thing that changes is the declared element type. Both must fail at
+the TEMPORARY schedule-level stop, with the fixed context `"f32 execution not yet admitted"`,
+before capability preflight, signature validation, specialization, or plan construction.
+
+The second case is the one the stop exists for: it removes `X` from the schedule entirely (an
+always-true Iverson replaces the read), so Step B has NO f32 external signature to inspect and
+nothing later in the pipeline would have objected — the program would have specialized and run in
+the existing Float worker at binary64, silently. -/
+
+def f32IdentitySched : ScheduledProgram :=
+  { identitySched with
+    decls := [.axis axI1 (some 3), .typedTensor .f32 "X" [axI1], .typedTensor .f32 "Y" [axI1]] }
+
+/-- The matching concrete f32 input signature, derived through the declaration-aware constructor
+    from the very declarations above (not hand-written), so the two halves of fixture 15 cannot
+    drift apart. -/
+def f32IdentitySig : InputSignature :=
+  match InputSignature.ofDenseInputsForDecls f32IdentitySched.decls identityInputs with
+  | .ok sig => sig
+  | .error _ => InputSignature.mk ({} : HashMap String TensorSignature)
+
+#guard (f32IdentitySig.tensors["X"]?).map (·.dtype) == some ScalarDType.f32
+#guard causeOf (prepareEvalPlan f32IdentitySched f32IdentitySig) ==
+  some { cause := .capability (.unsupportedDtype "f32 execution not yet admitted"), warnings := [] }
+
+/-- The same identity statement with its read factor replaced by an always-true Iverson and `X`
+    removed from the external names and the signature: only the f32 DESTINATION remains. -/
+def f32IversonSched : ScheduledProgram :=
+  { decls := [.axis axI1 (some 3), .typedTensor .f32 "Y" [axI1]]
+  , stmts := [.plain (.assign "Y" [.free axI1]
+      { body := { terms := [{ factors :=
+          [.iverson (.rel .le (.embed (.const 0)) (.embed (.const 0)))] }] }
+      , nonlin := .identity })]
+  , env := {}, extNames := (∅ : Finset String)
+  , explicitSizes := (({} : HashMap UID Nat).insert axI1.uid 3) }
+
+#guard causeOf (prepareEvalPlan f32IversonSched
+    (InputSignature.mk ({} : HashMap String TensorSignature))) ==
+  some { cause := .capability (.unsupportedDtype "f32 execution not yet admitted"), warnings := [] }
+
+-- Control for both: the SAME two schedules in the untyped (f64) spelling are accepted, so fixture
+-- 15 is about the element type and nothing else about the two programs.
+#guard (prepareEvalPlan
+    { f32IdentitySched with
+      decls := [.axis axI1 (some 3), .tensor "X" [axI1], .tensor "Y" [axI1]] }
+    identitySig).toOption.isSome
+#guard (prepareEvalPlan
+    { f32IversonSched with decls := [.axis axI1 (some 3), .tensor "Y" [axI1]] }
+    (InputSignature.mk ({} : HashMap String TensorSignature))).toOption.isSome
 
 -- `prepareEvalPlan`'s OWN capability-rejection path: Step A runs `capabilityPreflight` before
 -- shape inference, so an axis-less `.scan` statement is rejected with a `.capability`-tagged

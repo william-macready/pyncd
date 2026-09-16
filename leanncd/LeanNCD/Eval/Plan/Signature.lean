@@ -28,12 +28,20 @@ def InputSignature.ofDenseInputs (inputs : HashMap String DenseTensor) : InputSi
   { tensors := inputs.toList.foldl
       (fun acc (nm, t) => acc.insert nm { shape := t.shape.toArray, dtype := .f64 }) {} }
 
-/-- The top-level destination/signature dtype a declaration commits its name to: `bool` for exactly
-    a `.predicate` declaration, `f64` for every other declaration AND for no declaration at all (an
-    undeclared external name). Shared by `ofDenseInputsForDecls` below (the external-signature side)
-    and `Compile.lean`'s `prepareEvalPlan` (the produced/destination side, Step B and Step D) — one
-    rule, not two independently-drifting copies. -/
+/-- The top-level destination/signature dtype a declaration commits its name to: `f32` for exactly
+    an explicit `tensor f32 …` declaration, `bool` for exactly a `.predicate` declaration, `f64` for
+    every other declaration AND for no declaration at all (an undeclared external name). Shared by
+    `ofDenseInputsForDecls` below (the external-signature side) and `Compile.lean`'s
+    `prepareEvalPlan` (the produced/destination side, Step B and Step D) — one rule, not two
+    independently-drifting copies.
+
+    `.f32` is deliberately reported as itself rather than silently degraded to `.f64`: a degraded
+    answer would let an explicitly-f32 program construct a CHECKED f64 plan and execute it in the
+    existing `Float` worker, which is the exact silent-precision-substitution this classification
+    exists to prevent. Nothing downstream admits `.f32` today (`dtypeAdmitted`, `Check.lean`), and
+    `prepareEvalPlan` stops an f32 schedule before Step B ever consults this. -/
 def dtypeOfDecl : Option Decl → ScalarDType
+  | some (.typedTensor .f32 _ _) => .f32
   | some (.predicate _ _) => .bool
   | _ => .f64
 

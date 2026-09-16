@@ -44,9 +44,15 @@ def scanScatterSourceAxes (slots : List LHSSlot) : List AxisSpec :=
     softmax/normalize reduction axis is the position of the output slot marked `m.` (the norm flag
     lives on the output slot — see `normAxisUidOf`) within that slice-axis list. This holds uniformly
     whether or not the stmt is itself a scan-state; pinned by the `!seed.contains ·` filter, which
-    drops every seeded axis exactly as `evalAssignSeeded` does. -/
+    drops every seeded axis exactly as `evalAssignSeeded` does.
+
+    The storage refusal (`rejectUnsupportedStorage`, `Contract.lean`) is installed at the ENTRY for
+    the same reason it is on `evalPlain`: the `.scatter` arm reaches its own
+    `unsupportedScatterNonlin` check and rebuilds its slots before delegating, so an f32 scatter
+    would otherwise be reported as a nonlinearity failure rather than a dtype one. -/
 def evalStmtSliceSeeded (decls : List Decl) (env : HashMap String DenseTensor) (sizes : HashMap UID Nat)
     (seed : HashMap UID Int) (s : Stmt) : Except EvalError (String × DenseTensor) := do
+  rejectUnsupportedStorage decls (stmtStorageNames s)
   match s with
   | .assign nm slots rhs =>
       let (_, slice) ← evalAssignDtypedSeeded decls env sizes seed nm slots rhs
@@ -100,12 +106,19 @@ def writeScanStmtSlice (out : DenseTensor) (seed : HashMap UID Int) (s : Stmt)
     product of `[0 … L_a − 2]` over every advancing axis. Boundary semantics (zero-default): the
     step writes only fully-advanced cells (every advancing index `+1 ≥ 1`); boundary cells (any
     advancing index `= 0`) keep the zero-allocated state, except where an explicit base stmt pins
-    a slice at index 0. -/
+    a slice at index 0.
+
+    The storage refusal (`rejectUnsupportedStorage`, `Contract.lean`) is installed at this public
+    ENTRY, over every base and recurrence statement's names in `base ++ recur` order, BEFORE the
+    scan-structure and iteration-extent checks below — those would otherwise report an f32 scan's
+    unrelated structural or sizing defect first, and a well-formed f32 scan would never reach a
+    guard at all until `evalStmtSliceSeeded` (after state allocation). -/
 def evalScan (decls : List Decl) (env : HashMap String DenseTensor) (sizes : HashMap UID Nat) :
     ScanStmt → Except EvalError (List (String × DenseTensor))
   | .plain _      => .error (.invalidScanNode .plainNotHandledHere)
   | .scanPre nm _ _ => .error (.unsupportedRecurMorphism .evalScanNode nm)
   | .scan _ axes base recur _ => do
+      rejectUnsupportedStorage decls ((base ++ recur).flatMap stmtStorageNames)
       if axes.isEmpty then .error (.invalidScanNode .noIterationAxis) else
       let axUids := axes.map (·.uid)
       -- Per-axis length, in `axes` order. FAIL LOUD on an unsized iteration axis: an unspecified

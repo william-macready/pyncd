@@ -504,11 +504,11 @@ run_cmd do
   unless distinctRoutes.length == 16 do
     throwError s!"G26: expected 16 distinct routed presentations, got {distinctRoutes.length}"
 
-/-! ## §4 The 19-case named payload matrix (slice T2 Task 2)
+/-! ## §4 The 20-case named payload matrix (slice T2 Task 2)
 
-Nineteen **named** fixtures, each a clone of a specific existing donor with **exactly one field
+Twenty **named** fixtures, each a clone of a specific existing donor with **exactly one field
 changed**, counted entirely separately from §1's 145 generated cases. `fixtures` and `corpus` are
-disjoint lists with disjoint guards (`fixtures.length == 19` is P1; `corpus.length == 145` is G1);
+disjoint lists with disjoint guards (`fixtures.length == 20` is P1; `corpus.length == 145` is G1);
 neither may ever be allowed to inflate the other's count.
 
 Donors (§0.5 of the slice plan verified each one's visibility):
@@ -520,7 +520,7 @@ Donors (§0.5 of the slice plan verified each one's visibility):
 | `relu-over-max`, `relu-over-min` | `LoweringTest`'s AGG1 construction | `agg` → `.max` / `.min` |
 | `causal-mask`, `negated-causal-mask` | `AcsetCodecTest` fixture 2's causal mask | the mask predicate (negated) |
 | `band-iverson`, `negated-band-iverson` | `ParsePredicatesTest.band` (**private** — CLONED, not imported) | the Iverson predicate (negated) |
-| `tensor-metadata`, `predicate-metadata` | `CompileTest.acceptedSched`'s decl/env shape (public) | the `Decl` → `.tensor` / `.predicate` |
+| `tensor-metadata`, `predicate-metadata`, `typed-tensor-metadata` | `CompileTest.acceptedSched`'s decl/env shape (public) | the `Decl` → `.tensor` / `.predicate` / `.typedTensor .f32` |
 | `scale-read`, `shift-read` | `LoweringTest`'s strided read | the `IdxExpr` |
 | `general-affine-read` | `AcsetCodecTest` fixture 3's strided convolution read | the `IdxExpr` |
 | `scan-pre-operation`, `scan-pre-output-weave` | `RecurMorphismTest.stepTC` (**private** — CLONED, not imported) | the nested `op` / the nested output weave |
@@ -535,9 +535,10 @@ imported and no donor module is edited.
 * **Represented** (11 fixtures — the pointwise/axiswise tags, aggregation, affine reads): the field
   survives physicalization *and* reaches the categorical output, so the old split leg and production
   `route` must agree exactly (P3).
-* **Opaque** (8 fixtures in 4 pairs — masks, Iverson predicates, dtype metadata, nested `scanPre`
-  bodies): the field survives physicalization (P2) but the *current* categorical projection does not
-  carry it, so the two members of each pair route identically (P4).
+* **Opaque** (9 fixtures — masks, Iverson predicates, dtype metadata, nested `scanPre` bodies; 4
+  PAIRS plus `typed-tensor-metadata`, whose own opacity claim is §4.6's): the field survives
+  physicalization (P2) but the *current* categorical projection does not carry it, so the two
+  members of each pair route identically (P4).
 
 ⚠️ **P4 is a statement about the projection, never about semantics.** Each pair carries **two
 separate claims**, deliberately not merged into one sentence: (a) the physical payload really does
@@ -678,6 +679,10 @@ def bandIversonFixture := iversonFixture "band-iverson" band
 def negatedIversonFixture := iversonFixture "negated-band-iverson" (.not band)
 def tensorMetadataFixture := metadataFixture "tensor-metadata" (.tensor "Meta" [i])
 def predicateMetadataFixture := metadataFixture "predicate-metadata" (.predicate "Meta" [i])
+/-- f32 Task 1, fixture 6: the `tensor-metadata` fixture with ONLY its declaration constructor
+    changed to the explicit-element-type spelling. Its own guard is below (§4.6). -/
+def typedTensorMetadataFixture :=
+  metadataFixture "typed-tensor-metadata" (.typedTensor .f32 "Meta" [i])
 -- These two fixtures assert that the CURRENT categorical projection omits the nested `.scanPre`
 -- body (P4 below) — NOT that this was always a benign design choice. `RecurMorphismTest.lean`
 -- records audit finding #4 (2026-07-30): a routed `.scanPre` step used to have empty
@@ -689,7 +694,7 @@ def predicateMetadataFixture := metadataFixture "predicate-metadata" (.predicate
 def scanPreOperationFixture := scanPreFixture "scan-pre-operation" nestedA
 def scanPreWeaveFixture := scanPreFixture "scan-pre-output-weave" nestedB
 
-/-- The 19. **Kept out of `corpus` deliberately** — P1 and G1 are independent counts. -/
+/-- The 20. **Kept out of `corpus` deliberately** — P1 and G1 are independent counts. -/
 def fixtures : List NamedPayloadFixture := [
   pointwise "sigmoid" .sigmoid,
   pointwise "tanh" .tanh,
@@ -705,6 +710,7 @@ def fixtures : List NamedPayloadFixture := [
   negatedIversonFixture,
   tensorMetadataFixture,
   predicateMetadataFixture,
+  typedTensorMetadataFixture,
   affineFixture "scale-read" (.scale 2 i),
   affineFixture "shift-read" (.shift i 1),
   affineFixture "general-affine-read" (.affine 1 [(2, i), (-1, j)]),
@@ -799,10 +805,10 @@ private def fixtureNames : List String := fixtures.map (·.name)
 
 -- `fixtures` is a separate list of a separate type from `corpus`; the two counts are pinned
 -- independently and neither list may ever absorb the other's members.
-#guard fixtures.length == 19                                                          -- P1
-#guard fixtureNames.eraseDups.length == 19                                            -- P1
+#guard fixtures.length == 20                                                          -- P1
+#guard fixtureNames.eraseDups.length == 20                                            -- P1
 #guard (fixtures.filter (·.payloadClass == .represented)).length == 11                -- P1
-#guard (fixtures.filter (·.payloadClass != .represented)).length == 8                 -- P1
+#guard (fixtures.filter (·.payloadClass != .represented)).length == 9                 -- P1
 -- G23's third-class-6-door guard, extended to the payload matrix (plan §5's "0 of the 19 payload
 -- fixtures" requirement) -- not a P1 shape/count guard, tagged separately.
 #guard fixtures.all fun f => !plainIterSlots f.logical                          -- door guard
@@ -945,5 +951,34 @@ pairs {badA} — the differing field became equal, so claim (b) is vacuous for t
 {badB.length} FAILURES, pairs {badB}"
   unless badRoute.isEmpty && badA.isEmpty && badB.isEmpty do
     throwError "P4 opacity pairs failed (see the per-claim errors above)"
+
+/-! ### §4.6 f32 Task 1, fixture 6 — `typed-tensor-metadata` routes exactly like `tensor-metadata`
+
+Two independent claims about the fixture whose ONLY difference from `tensor-metadata` is its
+declaration constructor:
+
+* **naming** — the two programs' complete route-name inventories are EQUAL. This is the claim that
+  breaks if `declaredTensorName?` (`RouteFragments.lean`) omits the new constructor: the declared
+  name `Meta` then disappears from the typed fixture's inventory, so `maxSourceNameLength` — and
+  therefore every private name `routeName` would mint for this program — silently shrinks. It is
+  asserted directly rather than through the routed output because these fixtures are
+  `.identity`-nonlin and mint no private name, so a route comparison alone cannot see the omission.
+* **opacity** — their routed presentations and ACSet encodings are equal, i.e. the categorical
+  projection carries the element type no more than it carries `.tensor` vs `.predicate`. -/
+
+run_cmd do
+  let typed := typedTensorMetadataFixture.logical
+  let plain := tensorMetadataFixture.logical
+  unless routeNameInventory typed == routeNameInventory plain do
+    throwError s!"fixture 6 [route-name inventory]: typed-tensor-metadata's inventory \
+{routeNameInventory typed} differs from tensor-metadata's {routeNameInventory plain} — route \
+naming dropped the `.typedTensor` declaration"
+  unless (routeNameInventory typed).contains "Meta" do
+    throwError "fixture 6 [route-name inventory]: the declared name `Meta` is missing outright"
+  match newTC typed, newTC plain with
+  | some tcTyped, some tcPlain =>
+      unless tcTyped == tcPlain && fromThreadedComposed tcTyped == fromThreadedComposed tcPlain do
+        throwError "fixture 6 [opacity]: typed-tensor-metadata and tensor-metadata routed differently"
+  | _, _ => throwError "fixture 6 [precondition]: `route` rejected one of the two metadata fixtures"
 
 end RouteFragmentCorpusTest

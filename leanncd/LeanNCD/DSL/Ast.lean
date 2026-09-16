@@ -1,6 +1,7 @@
 import LeanNCD.Base.SizeExpr
 import LeanNCD.Exec.Uid   -- reuse the canonical `UID := Nat`; do NOT redefine it (duplicate-def error)
 import LeanNCD.DSL.Target
+import Std.Data.HashMap   -- `DeclEnv`, relocated here (see `buildDeclEnv` below)
 
 namespace LeanNCD
 
@@ -15,8 +16,21 @@ structure AxisSpec where
   kind : AxisKind
   deriving DecidableEq, Repr, Lean.ToExpr, Inhabited
 
+/-- The element type written in an EXPLICIT `tensor <ty> A(…)` declaration.
+
+    `Decl.tensor` — the spelling with no element type at all — remains the binary64 declaration and
+    is unchanged byte-for-byte; this family carries every element type a declaration can name
+    explicitly. Future precisions/complex types are added HERE, as one more constructor, rather
+    than as one more `Decl` constructor per dtype: every exhaustive `Decl` match then keeps a
+    single `.typedTensor` arm that dispatches on this type instead of growing with the dtype
+    vocabulary. -/
+inductive TensorElementType
+  | f32
+  deriving DecidableEq, Repr, Lean.ToExpr, Inhabited
+
 inductive Decl
   | tensor    : String → List AxisSpec → Decl
+  | typedTensor : TensorElementType → String → List AxisSpec → Decl
   | predicate : String → List AxisSpec → Decl
   | linear    : String → List AxisSpec → (bias : Bool) → Decl
   | axis      : AxisSpec → Option Nat → Decl   -- `axis l : ℕ = 3`: declares an axis's dtype + optional pinned size
@@ -165,8 +179,76 @@ structure TLProgram where
 /-- The declaration's tensor name. (`axis` decls name an AXIS, not a tensor; `resolveDecls`
     skips them when building the tensor-keyed `DeclEnv`.) -/
 def Decl.name : Decl → String
-  | .tensor n _ => n | .predicate n _ => n | .linear n _ _ => n | .axis ax _ => ax.name
+  | .tensor n _ => n | .typedTensor _ n _ => n
+  | .predicate n _ => n | .linear n _ _ => n | .axis ax _ => ax.name
   | .iter ax _  => ax.name
+
+/-- Declaration environment built by resolveDecls (`String` has BEq+Hashable). -/
+abbrev DeclEnv := Std.HashMap String Decl
+
+/-- The one tensor-declaration classification rule, shared by `resolveDecls` (source pipeline),
+    `Eval.Plan.prepareEvalPlan` (checked backend, over a possibly hand-built `ScheduledProgram`'s
+    own `decls`), and the direct legacy-evaluator entries (`Eval/Contract.lean`'s
+    `rejectUnsupportedStorage`).
+
+    `.axis`/`.iter` name an axis, not a tensor, and stay out of the env; `.tensor`,
+    `.typedTensor`, `.linear`, and `.predicate` are tensor-bearing and land in it. A second
+    tensor-bearing declaration of an already-declared name is REJECTED rather than silently
+    overwriting the first: last-wins insertion left a `DeclEnv` lookup (which saw the LAST
+    declaration) and a linear `decls` scan (`Eval.combineFor`, which sees the FIRST) able to
+    disagree about one name's kind — precisely the disagreement Boolean/real algebra selection
+    cannot tolerate.
+
+    Lives HERE, in the AST leaf, rather than in `Pipeline/Structural.lean` where it used to:
+    `Structural.lean` imports `Eval.Contract` (the one deliberate cross-layer import), so the
+    direct evaluator entries cannot reach it there without closing a
+    `ScheduledValidation → Structural → Eval.Contract` cycle. `Ast.lean` is the lowest module every
+    caller — source pipeline, checked backend, and reference evaluator — already reaches. -/
+def buildDeclEnv (decls : List Decl) : Except CompileError DeclEnv :=
+  decls.foldlM (fun (m : DeclEnv) d => match d with
+    | .axis _ _ => pure m
+    | .iter _ _ => pure m
+    | _ =>
+        if m.contains d.name then throw (CompileError.duplicateTensorDecl d.name)
+        else pure (m.insert d.name d))
+    ({} : DeclEnv)
+
+/-- The concrete floating-point storage a declaration commits its tensor to. Deliberately NOT
+    `Eval.Plan.ScalarDType`: that vocabulary lives in the plan layer (which the AST must not
+    depend on) and also carries `bool`, which is a semantic ALGEBRA tag over the same Float-backed
+    storage rather than a precision. -/
+inductive StorageKind
+  | float32
+  | float64
+  deriving DecidableEq, BEq, Repr
+
+/-- The storage constraint one declaration places on a schedule, or `none` if it places none.
+
+    * an explicit `.typedTensor .f32` commits to `.float32`;
+    * `.tensor` and `.linear` are the binary64 spellings and commit to `.float64`;
+    * `.predicate` is PRECISION-NEUTRAL — a Boolean tensor is `{0,1}` data whose algebra, not its
+      precision, is what the declaration names, so it constrains nothing and inherits whatever
+      precision the rest of the schedule establishes;
+    * `.axis`/`.iter` name an axis, not a tensor, and constrain nothing.
+
+    The per-NAME rule (which must also answer for an UNDECLARED name) is
+    `storageConstraintOfName?` below. -/
+def storageConstraintOfDecl : Decl → Option StorageKind
+  | .typedTensor .f32 _ _ => some .float32
+  | .tensor _ _           => some .float64
+  | .linear _ _ _         => some .float64
+  | .predicate _ _        => none
+  | .axis _ _             => none
+  | .iter _ _             => none
+
+/-- The storage constraint a USED tensor name places on a schedule, under a declaration
+    environment. An UNDECLARED name is a real f64 tensor — the same default `dtypeOfDecl`
+    (`Eval/Plan/Signature.lean`) applies to `none` — so it constrains storage to `.float64`; a
+    declared name defers to `storageConstraintOfDecl`. -/
+def storageConstraintOfName? (env : DeclEnv) (nm : String) : Option StorageKind :=
+  match env[nm]? with
+  | some d => storageConstraintOfDecl d
+  | none   => some .float64
 
 /-- The tensor name a stmt writes to (its LHS). -/
 def Stmt.lhsName : Stmt → String

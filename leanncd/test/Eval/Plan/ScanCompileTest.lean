@@ -355,6 +355,34 @@ def scratchPredicateCheck : Except String Unit :=
 
 run_cmd match scratchPredicateCheck with | .ok _ => pure () | .error m => throwError m
 
+/-! ### f32 Task 1, fixture 14: scan SCRATCH participates in the schedule-wide storage derivation
+
+`scratchSched`'s `T` is written by the recurrence list and has no base statement, so it is present
+in `ScanStmt.writes` but ABSENT from `ScanStmt.outputs`. Declaring it `f32` while the published
+state `S` stays `f64` is therefore a mixed-precision schedule that only a `writes`-based used-name
+scan can see; an `outputs`-based one would accept it and compile an f64 plan for an f32 tensor.
+
+The control below is the other half: an f32 declaration that is neither external nor written does
+not participate at all, so the otherwise-f64 program stays accepted. -/
+
+def scratchF32Sched : ScheduledProgram :=
+  { scratchSched with
+    decls := [.iter axM 3, .tensor "S" [axM], .typedTensor .f32 "T" []] }
+
+#guard causeOf (prepareEvalPlan scratchF32Sched (InputSignature.ofDenseInputs scratchInputs)) ==
+  some (.capability (.unsupportedDtype "T: mixed f32/f64 storage in one schedule"))
+
+/-- Control: `Unused` is f32 but appears in no read and no write, so it constrains nothing. -/
+def scratchUnusedF32Sched : ScheduledProgram :=
+  { scratchSched with
+    decls := [.iter axM 3, .tensor "S" [axM], .typedTensor .f32 "Unused" []] }
+
+run_cmd
+  match prepareEvalPlan scratchUnusedF32Sched (InputSignature.ofDenseInputs scratchInputs) with
+  | .ok _ => pure ()
+  | .error e =>
+      throwError s!"fixture 14 control: an UNUSED f32 declaration changed the verdict: {render e.cause}"
+
 /-! ### D/E. External current-coordinate reads and contractions inside a recurrence
 
 `S[l+1] := Σ_k S[l] · M[k, l]` contracts over `k`, which is neither context nor output, while `M`

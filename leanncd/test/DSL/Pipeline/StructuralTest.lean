@@ -43,6 +43,65 @@ run_cmd do
   | .ok rp _ => unless rp.env.contains "A" do throwError "env missing declared A"
   | .error e _ => throwError s!"errored: {repr e}"
 
+/-! ### f32 Task 1, fixture 4: `.typedTensor .f32` is an ordinary tensor-bearing declaration
+
+The clone of "a `tensor` decl lands in env" above, with the declaration's only change being the
+constructor. Three claims, matching the donor family: it lands in the `DeclEnv`; its axis list is
+its RANK for read-arity purposes; and a second tensor-bearing declaration of the same name is a
+`duplicateTensorDecl` exactly as for `.tensor`. -/
+
+private def axF32 : AxisSpec := { name := "i", uid := 0, kind := .real }
+
+-- lands in env
+run_cmd do
+  let p : TLProgram := { decls := [ .typedTensor .f32 "A" [axF32] ], stmts := [
+    .assign "A" [.free axF32]
+      { body := { terms := [{ factors := [.read "X" [.axis axF32]] }] }, nonlin := .identity } ] }
+  match (assignUIDs p >>= resolveDecls) |>.run 0 with
+  | .ok rp _ => unless rp.env.contains "A" do throwError "env missing declared f32 A"
+  | .error e _ => throwError s!"errored: {repr e}"
+
+-- rank: the declaration's one axis is what a read of `A` must match. A rank classifier that
+-- forgot `.typedTensor` (returning 0) would reject the correct rank-1 read below instead.
+run_cmd do
+  let p : TLProgram := { decls := [ .typedTensor .f32 "A" [axF32] ], stmts := [
+    .assign "A" [.free axF32]
+      { body := { terms := [{ factors := [.read "X" [.axis axF32]] }] }, nonlin := .identity },
+    .assign "Z" [.free axF32]
+      { body := { terms := [{ factors := [.read "A" [.axis axF32]] }] }, nonlin := .identity } ] }
+  match (assignUIDs p >>= resolveDecls >>= checkReadRanks) |>.run 0 with
+  | .ok _ _ => pure ()
+  | .error e _ => throwError s!"rank-1 read of a rank-1 f32 declaration was rejected: {repr e}"
+
+run_cmd do
+  let p : TLProgram := { decls := [ .typedTensor .f32 "A" [axF32] ], stmts := [
+    .assign "A" [.free axF32]
+      { body := { terms := [{ factors := [.read "X" [.axis axF32]] }] }, nonlin := .identity },
+    .assign "Z" [.free axF32]
+      { body := { terms := [{ factors := [.read "A" [.axis axF32, .axis axF32]] }] }
+      , nonlin := .identity } ] }
+  match (assignUIDs p >>= resolveDecls >>= checkReadRanks) |>.run 0 with
+  | .error (.rankMismatch "A" 1 2) _ => pure ()
+  | .error e _ => throwError s!"wrong error for an over-indexed f32 declaration: {repr e}"
+  | .ok _ _    => throwError "expected rankMismatch for A[i,i] against `tensor f32 A(i)`"
+
+-- duplicate-name behaviour, both same-kind and mixed against the untyped spelling
+run_cmd do
+  let p : TLProgram := { decls := [ .typedTensor .f32 "A" [], .typedTensor .f32 "A" [] ], stmts := [
+    .assign "A" [] { body := { terms := [] }, nonlin := .identity } ] }
+  match (assignUIDs p >>= resolveDecls) |>.run 0 with
+  | .error (.duplicateTensorDecl "A") _ => pure ()
+  | .error e _ => throwError s!"wrong error (f32-then-f32): {repr e}"
+  | .ok _ _    => throwError "expected duplicateTensorDecl for a doubly-declared f32 tensor"
+
+run_cmd do
+  let p : TLProgram := { decls := [ .tensor "A" [], .typedTensor .f32 "A" [] ], stmts := [
+    .assign "A" [] { body := { terms := [] }, nonlin := .identity } ] }
+  match (assignUIDs p >>= resolveDecls) |>.run 0 with
+  | .error (.duplicateTensorDecl "A") _ => pure ()
+  | .error e _ => throwError s!"wrong error (tensor-then-f32): {repr e}"
+  | .ok _ _    => throwError "expected duplicateTensorDecl for tensor-then-f32"
+
 -- Task 4.1 fixture 1: a name declared `tensor` TWICE ⇒ duplicateTensorDecl (not last-wins).
 run_cmd do
   let p : TLProgram := { decls := [ .tensor "A" [], .tensor "A" [] ], stmts := [
@@ -78,6 +137,63 @@ run_cmd do
   | .error (.duplicateTensorDecl "A") _ => pure ()
   | .error e _ => throwError s!"wrong error (predicate-then-tensor): {repr e}"
   | .ok _ _    => throwError "expected duplicateTensorDecl for predicate-then-tensor"
+
+/-! ### f32 Task 1, fixture 5: the schedule-wide storage-kind classifier
+
+The same declaration-environment donor shape as the fixtures above, pushed one layer further:
+its declarations are built into a `DeclEnv` through the shared `buildDeclEnv` and handed to
+`scheduleStorageKind` together with the schedule's statements. -/
+
+private def axS : AxisSpec := { name := "i", uid := 7, kind := .real }
+
+private def readsOf (names : List String) : RHSExpr :=
+  { body := { terms := [{ factors := names.map (fun nm => .read nm [.axis axS]) }] }
+  , nonlin := .identity }
+
+/-- Classify one hand-built (decls, single-statement) schedule. Reports `buildDeclEnv`'s own
+    failure as a distinct outcome so a malformed fixture can never read as a storage verdict. -/
+private def storageOf (decls : List Decl) (dest : String) (reads : List String) :
+    Except String (Except String StorageKind) :=
+  match buildDeclEnv decls with
+  | .error e => .error s!"buildDeclEnv rejected the fixture's decls: {repr e}"
+  | .ok env  => .ok (scheduleStorageKind env [.plain (.assign dest [.free axS] (readsOf reads))])
+
+-- (a) an f32-plus-predicate used graph selects `.float32`: the predicate is precision-neutral and
+--     inherits the f32 the real names establish, rather than contributing an f64 constraint.
+run_cmd do
+  match storageOf [.typedTensor .f32 "Y" [axS], .typedTensor .f32 "X" [axS], .predicate "P" [axS]]
+      "Y" ["X", "P"] with
+  | .error m => throwError m
+  | .ok (.ok .float32) => pure ()
+  | .ok r => throwError s!"f32-plus-predicate graph: expected .ok .float32, got {repr r}"
+
+-- (b) the same graph in the untyped (f64) spelling selects `.float64`.
+run_cmd do
+  match storageOf [.tensor "Y" [axS], .tensor "X" [axS], .predicate "P" [axS]] "Y" ["X", "P"] with
+  | .error m => throwError m
+  | .ok (.ok .float64) => pure ()
+  | .ok r => throwError s!"f64-plus-predicate graph: expected .ok .float64, got {repr r}"
+
+-- (c) a bool-only graph constrains nothing and defaults to `.float64`.
+run_cmd do
+  match storageOf [.predicate "Y" [axS], .predicate "X" [axS]] "Y" ["X"] with
+  | .error m => throwError m
+  | .ok (.ok .float64) => pure ()
+  | .ok r => throwError s!"bool-only graph: expected the .float64 default, got {repr r}"
+
+-- (d) three real names whose USED-name order is `A` (f32), then `B` (f64), then `C` (f64), reading
+--     into an unrelated f32 destination `D`. The rejection must name `B` — the FIRST name that
+--     disagrees with the f32 `A` established — not `C` (a second, later conflict against the same
+--     `A`) and not `A` (which a DECLARATION-order scan would name, since the declarations below are
+--     deliberately ordered `C`, `B`, `A`).
+run_cmd do
+  match storageOf
+      [ .tensor "C" [axS], .tensor "B" [axS], .typedTensor .f32 "A" [axS]
+      , .typedTensor .f32 "D" [axS] ]
+      "D" ["A", "B", "C"] with
+  | .error m => throwError m
+  | .ok (.error "B") => pure ()
+  | .ok r => throwError s!"three-real-name graph: expected .error \"B\", got {repr r}"
 
 -- lowerArith
 -- Upsample: Out[2*i, 2*j] := X[i,j] — affine LHS ⇒ reclassified to Stmt.scatter, injective (no error).

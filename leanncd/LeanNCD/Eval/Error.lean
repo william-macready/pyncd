@@ -266,6 +266,14 @@ inductive EvalError
   | unsupportedScatterNonlin (nm : String)
   | unsupportedRecurMorphism (site : RecurMorphismSite) (nm : String)
   | invalidScanNode (reason : InvalidScanReason)
+  /-- A tensor this evaluator was asked to compute with is declared in a storage kind it does not
+      implement. Every worker here is `Float` (IEEE-754 binary64) end to end — the accumulator, the
+      `Combine` semirings, `DenseTensor.data` — so an explicitly `f32`-declared tensor cannot be
+      evaluated at its declared precision, and executing it as `Float` would silently answer a
+      DIFFERENT question than the declaration asks. `name` is the offending tensor: the first f32
+      name in used-name order for `evalScheduled`, and the destination-then-read-sources order for
+      the direct entries. -/
+  | unsupportedDtype (name : String)
 
 /-- The sole renderer for `EvalError` — reproduces every pre-4h message byte-for-byte.
     `.unaryDomain`'s `context` is deliberately NOT rendered (its `EvalContext` carries strictly
@@ -307,6 +315,9 @@ def EvalError.render : EvalError → String
       | .plainNotHandledHere => "evalScan: plain handled by evalScheduled, not here"
       | .noIterationAxis => "evalScan: scan node has no iteration axis"
       | .baseMustBeAssign => "evalScan: base stmts must be assigns"
+  | .unsupportedDtype name =>
+      s!"unsupported dtype: tensor {name} is declared f32, which the Float (binary64) reference \
+evaluator does not implement"
 
 instance : ToString EvalError := ⟨EvalError.render⟩
 

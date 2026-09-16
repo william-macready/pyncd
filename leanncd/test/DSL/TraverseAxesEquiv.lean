@@ -244,6 +244,7 @@ theorem LHSSlot.mapUID_eq_ref (f : UData → UData) (s : LHSSlot) :
 
 private def Decl.mapUID_ref (f : UData → UData) : Decl → Decl
   | .tensor nm ax        => .tensor nm (ax.map (AxisSpec.mapUID f))
+  | .typedTensor ty nm ax => .typedTensor ty nm (ax.map (AxisSpec.mapUID f))
   | .predicate nm ax     => .predicate nm (ax.map (AxisSpec.mapUID f))
   | .linear nm ax b      => .linear nm (ax.map (AxisSpec.mapUID f)) b
   | .axis ax n           => .axis (AxisSpec.mapUID f ax) n
@@ -263,6 +264,10 @@ theorem Decl.mapUID_eq_ref (f : UData → UData) (d : Decl) :
       simp only [Decl.mapUID, Decl.traverseAxes, Decl.mapUID_ref]
       show Decl.tensor nm (Traversable.traverse (m := Id) (AxisSpec.mapUID f) ax) = Decl.tensor nm (ax.map (AxisSpec.mapUID f))
       rw [hMap ax]
+  | typedTensor ty nm ax =>
+      simp only [Decl.mapUID, Decl.traverseAxes, Decl.mapUID_ref]
+      show Decl.typedTensor ty nm (Traversable.traverse (m := Id) (AxisSpec.mapUID f) ax) = Decl.typedTensor ty nm (ax.map (AxisSpec.mapUID f))
+      rw [hMap ax]
   | predicate nm ax =>
       simp only [Decl.mapUID, Decl.traverseAxes, Decl.mapUID_ref]
       show Decl.predicate nm (Traversable.traverse (m := Id) (AxisSpec.mapUID f) ax) = Decl.predicate nm (ax.map (AxisSpec.mapUID f))
@@ -273,6 +278,19 @@ theorem Decl.mapUID_eq_ref (f : UData → UData) (d : Decl) :
       rw [hMap ax]
   | axis ax n => rfl
   | iter ax n => rfl
+
+-- Fixture 3 (direct-traversal half): the theorem above is universally quantified over `Decl`, so
+-- it already covers `.typedTensor`; this is the executable companion that says WHAT the traversal
+-- does to one — every axis UID rewritten, the element type and the name carried through
+-- untouched. A `Decl.traverseAxes` arm that dropped `.typedTensor` into a `pure`/identity case
+-- would still satisfy a reference function mutated the same way, but not this.
+private def bumpUID : UData → UData := fun u => { u with uid := u.uid + 100 }
+
+#guard Decl.mapUID bumpUID (.typedTensor .f32 "A" [⟨"i", 1, .real⟩, ⟨"j", 2, .real⟩])
+  == Decl.typedTensor .f32 "A" [⟨"i", 101, .real⟩, ⟨"j", 102, .real⟩]
+-- the collecting direction over the same declaration: every axis, in traversal order.
+#guard (Decl.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)
+    (.typedTensor .f32 "A" [⟨"i", 1, .real⟩, ⟨"j", 2, .real⟩])).run == [1, 2]
 
 private def Stmt.mapUID_ref (f : UData → UData) : Stmt → Stmt
   | .assign nm ls r      => .assign nm (ls.map (LHSSlot.mapUID_ref f)) (RHSExpr.mapUID_ref f r)

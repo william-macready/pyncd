@@ -72,6 +72,16 @@ private def conversionInputs : HashMap String DenseTensor :=
   | .ok sig => sig.tensors["X"]? == some ({ shape := #[2, 3], dtype := .bool } : TensorSignature)
   | .error _ => false
 
+-- f32 Task 1, fixture 15 (signature half): the same `conversionInputs` fixture with `X` declared
+-- an explicit `tensor f32` — `dtypeOfDecl` reports `.f32` as itself, and `ofDenseInputsForDecls`
+-- emits an f32 signature. Reporting `.f64` instead would let an explicitly-f32 program construct a
+-- CHECKED f64 plan and run it in the existing Float worker.
+#guard dtypeOfDecl (some (.typedTensor .f32 "X" [])) == ScalarDType.f32
+#guard dtypeOfDecl (some (.tensor "X" [])) == ScalarDType.f64
+#guard match InputSignature.ofDenseInputsForDecls [.typedTensor .f32 "X" []] conversionInputs with
+  | .ok sig => sig.tensors["X"]? == some ({ shape := #[2, 3], dtype := .f32 } : TensorSignature)
+  | .error _ => false
+
 -- Task 4.3, fixture 3: `GnnScatterTest`'s GN2 shape (`predicate edge(i, j); H[i, f] := edge[i, j]
 -- · X[j, f]`, `test/Eval/Portfolio/GnnScatterTest.lean`) compiled to a schedule, then its
 -- declaration-aware signature constructed directly from `sched.decls`: `edge` (declared predicate)

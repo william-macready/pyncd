@@ -43,6 +43,10 @@ namespace LeanNCD.Eval.Plan
     version change (§9.2). -/
 def checkDecl : Decl → Except CapabilityError Unit
   | .tensor ..    => pure ()
+  | .typedTensor .. => pure ()   -- an explicit element type is a SCHEDULE-wide question (which
+                                 -- precision does this whole graph run in), not a per-declaration
+                                 -- one: an f32 declaration nothing uses constrains nothing. The
+                                 -- rejection lives in `prepareEvalPlan`'s storage-kind step.
   | .linear ..    => pure ()
   | .predicate .. => pure ()
   | .axis ..      => pure ()
@@ -1430,6 +1434,33 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
   -- here with the SAME predicate and the same error, over `sched.stmts` as presented. Rejecting is
   -- the whole point: reordering here would silently accept a schedule whose statement order —
   -- `ScheduledProgram.stmts`' own documented "producers precede consumers" — is already wrong.
+  -- Step 0b: schedule-wide STORAGE KIND, derived from the same authoritative `sched.decls` through
+  -- `scheduleStorageKind` (`DSL/Pipeline/ScheduledValidation.lean`) — one scan in USED-NAME order
+  -- (external reads first, then every written name, scan scratch included), never declaration
+  -- order, and never `ScanStmt.outputs` (which omits a scan's recurrence-only scratch).
+  --
+  -- A MIXED f32/f64 schedule is rejected outright, naming the first used name that disagrees with
+  -- the kind an earlier used name established: nothing in this compiler or either worker expresses
+  -- a per-tensor precision boundary, so a mixed graph has no defined meaning to compile.
+  --
+  -- ⚠️ TEMPORARY, and deliberately broader: a HOMOGENEOUS f32 schedule is also rejected here, with
+  -- the fixed context `"f32 execution not yet admitted"`. Checked f32 evidence and the
+  -- Float-worker guards do not exist yet (Task 2 of `papers/f32_evalplan.md` adds them and removes
+  -- this arm), and every downstream phase — `dtypeAdmitted`, the algebra tables, `Dense`'s
+  -- `Array Float` storage — is binary64. Without this stop an f32 program whose external inputs
+  -- happen to present no f32 signature for Step B to inspect (an Iverson-only RHS, say) would
+  -- specialize and run in the existing Float worker, silently answering a binary64 question. So it
+  -- is placed HERE: before capability preflight, signature validation, specialization, and plan
+  -- construction, so no f32 graph reaches any of them.
+  match scheduleStorageKind declEnv sched.stmts with
+  | .error nm =>
+      throw { cause := .capability
+                (.unsupportedDtype s!"{nm}: mixed f32/f64 storage in one schedule")
+            , warnings := [] }
+  | .ok .float32 =>
+      throw { cause := .capability (.unsupportedDtype "f32 execution not yet admitted")
+            , warnings := [] }
+  | .ok .float64 => pure ()
   -- Step A: capability preflight.
   match capabilityPreflight sched with
   | .error e => throw { cause := .capability e, warnings := [] }

@@ -77,6 +77,75 @@ run_cmd do
     | .ok (_, R) => unless DenseTensor.approxEq R (tensorOf [] [1.0]) do
         throwError s!"axis-shadowed Bool agg wrong: {repr R.data} (an axis decl hid the predicate)"
 
+/-! ### f32 Task 1, fixtures 8-10: the direct assignment entries refuse f32 operands
+
+Fixtures 8 and 9 reuse the masked-aggregation fixture above verbatim — same `Result` destination,
+same `F`/`edge` reads, same environment, sizes, slots, and RHS — varying only the declarations (and,
+in fixture 9, deleting `F` from the environment). -/
+
+run_cmd do
+  let t := ax "t" 1; let i := ax "i" 2; let j := ax "j" 3
+  let F := tensorOf [1,2] [1, 1]
+  let edge := tensorOf [2,2] [1,0, 0,1]
+  let env : HashMap String DenseTensor := (({} : HashMap String DenseTensor).insert "F" F).insert "edge" edge
+  let rhs : RHSExpr := { body := { terms := [{ factors := [.read "F" [.axis t, .axis i], .read "F" [.axis t, .axis j], .read "edge" [.axis i, .axis j]] }] }, nonlin := .identity }
+  let seed : HashMap UID Int := {}
+  match inferAxisSizes {} env [.assign "Result" [] rhs] with
+  | .error e => throwError (toString e)
+  | .ok (sizes, _) => do
+    -- Fixture 8: only the DESTINATION is f32. The deepest entry refuses it, naming `Result`.
+    match evalAssignDtypedSeeded [.typedTensor .f32 "Result" []] env sizes seed "Result" [] rhs with
+    | Except.error (.unsupportedDtype "Result") => pure ()
+    | Except.error e => throwError s!"fixture 8 (seeded): wrong error {e}"
+    | Except.ok _ => throwError "fixture 8 (seeded): an f32 destination was evaluated as Float"
+    -- and the unseeded wrapper inherits exactly that rejection.
+    match evalAssignDtyped [.typedTensor .f32 "Result" []] env sizes "Result" [] rhs with
+    | Except.error (.unsupportedDtype "Result") => pure ()
+    | Except.error e => throwError s!"fixture 8 (unseeded): wrong error {e}"
+    | Except.ok _ => throwError "fixture 8 (unseeded): an f32 destination was evaluated as Float"
+    -- Fixture 8, dual-invalid subcase: `Result` is ALSO declared tensor-bearing twice. The shared
+    -- declaration builder runs first, so the malformed declaration list is what is reported — proof
+    -- that this entry reuses `buildDeclEnv` rather than scanning `decls` itself.
+    match evalAssignDtypedSeeded [.typedTensor .f32 "Result" [], .tensor "Result" []]
+        env sizes seed "Result" [] rhs with
+    | Except.error (.compile (.duplicateTensorDecl "Result")) => pure ()
+    | Except.error e => throwError s!"fixture 8 (dual-invalid): wrong error {e}"
+    | Except.ok _ => throwError "fixture 8 (dual-invalid): a duplicate declaration was accepted"
+    -- Fixture 9: `Result` is back to f64 and the READ SOURCE `F` is f32, while `F` is simultaneously
+    -- absent from the environment. The dtype refusal precedes `evalAssignSeeded`'s missing-input
+    -- check, and it names `F`, not the destination.
+    let envNoF : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "edge" edge
+    let decls9 : List Decl := [.tensor "Result" [], .typedTensor .f32 "F" [t, i]]
+    match evalAssignDtypedSeeded decls9 envNoF sizes seed "Result" [] rhs with
+    | Except.error (.unsupportedDtype "F") => pure ()
+    | Except.error e => throwError s!"fixture 9 (seeded): wrong error {e}"
+    | Except.ok _ => throwError "fixture 9 (seeded): an f32 read source was gathered as Float"
+    match evalAssignDtyped decls9 envNoF sizes "Result" [] rhs with
+    | Except.error (.unsupportedDtype "F") => pure ()
+    | Except.error e => throwError s!"fixture 9 (unseeded): wrong error {e}"
+    | Except.ok _ => throwError "fixture 9 (unseeded): an f32 read source was gathered as Float"
+
+-- Fixture 10: the accepted identity assignment `Y[i] := A[i]`, with the destination AND every read
+-- source f32 — a HOMOGENEOUS f32 assignment, in which no two operands disagree. A guard that
+-- rejected only mixed modes would accept and silently execute this in binary64; the refusal names
+-- the destination `Y`.
+run_cmd do
+  let i := ax "i" 1
+  let A := tensorOf [3] [1, 2, 3]
+  let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "A" A
+  let sizes : HashMap UID Nat := ({} : HashMap UID Nat).insert 1 3
+  let rhs : RHSExpr := { body := { terms := [{ factors := [.read "A" [.axis i]] }] }, nonlin := .identity }
+  let decls : List Decl := [.typedTensor .f32 "Y" [i], .typedTensor .f32 "A" [i]]
+  let seed : HashMap UID Int := {}
+  match evalAssignDtypedSeeded decls env sizes seed "Y" [LHSSlot.free i] rhs with
+  | Except.error (.unsupportedDtype "Y") => pure ()
+  | Except.error e => throwError s!"fixture 10 (seeded): wrong error {e}"
+  | Except.ok _ => throwError "fixture 10 (seeded): a homogeneous f32 assignment was accepted"
+  match evalAssignDtyped decls env sizes "Y" [LHSSlot.free i] rhs with
+  | Except.error (.unsupportedDtype "Y") => pure ()
+  | Except.error e => throwError s!"fixture 10 (unseeded): wrong error {e}"
+  | Except.ok _ => throwError "fixture 10 (unseeded): a homogeneous f32 assignment was accepted"
+
 -- 4b: a term with an EMPTY factor list must fold to the Combine's `unit1`, not a hard-coded 1.0.
 -- Use a synthetic min-plus-style Combine (mul = add, combine = min) to make the difference
 -- observable: if the product fold still started from a literal 1.0, this would wrongly give

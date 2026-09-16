@@ -30,6 +30,9 @@ inductive Classification
     vs Boolean) relevant to Wave C's fragment boundary. -/
 def classifyDecl : Decl → Classification
   | .tensor ..    => .accepted
+  | .typedTensor .. => .accepted  -- structurally admitted, exactly as production `checkDecl` does:
+                                   -- the element type is a SCHEDULE-wide question decided in
+                                   -- `prepareEvalPlan`, not a per-declaration capability one
   | .linear ..    => .accepted    -- bias is fully elaborated into ordinary Stmts by the time a
                                    -- ScheduledProgram exists; identical to `.tensor` for Wave C
   | .predicate .. => .rejected "booleanOutput"
@@ -129,6 +132,7 @@ open LeanNCD.PlanContract in
 section
 -- Decl
 #guard classifyDecl (.tensor "X" []) == .accepted
+#guard classifyDecl (.typedTensor .f32 "X" []) == .accepted
 #guard classifyDecl (.linear "W" [] true) == .accepted
 #guard classifyDecl (.predicate "P" []) == .rejected "booleanOutput"
 #guard classifyDecl (.axis ⟨"i", 0, .nat⟩ (some 3)) == .accepted

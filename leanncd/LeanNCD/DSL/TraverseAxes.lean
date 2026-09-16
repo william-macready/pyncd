@@ -111,6 +111,7 @@ def Stmt.traverseAxes [Applicative f] (g : AxisSpec → f AxisSpec) : Stmt → f
 
 def Decl.traverseAxes [Applicative f] (g : AxisSpec → f AxisSpec) : Decl → f Decl
   | .tensor nm ax     => Decl.tensor nm <$> Traversable.traverse g ax
+  | .typedTensor ty nm ax => Decl.typedTensor ty nm <$> Traversable.traverse g ax
   | .predicate nm ax  => Decl.predicate nm <$> Traversable.traverse g ax
   | .linear nm ax b   => (fun ax' => Decl.linear nm ax' b) <$> Traversable.traverse g ax
   | .axis ax n        => (fun ax' => Decl.axis ax' n) <$> g ax

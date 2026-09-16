@@ -148,7 +148,13 @@ inductive CapabilityError
                                              -- (checkAggOp admits max/min since they compile to the
                                              -- tropical algebras); kept per §9.2, like scanNode
   | booleanOutput        (context : String)
-  | unsupportedDtype     (context : String)  -- any dtype other than the declared f64 mode
+  /-- A schedule whose derived STORAGE KIND the compiler will not compile. Two producers, both in
+      `prepareEvalPlan`'s Step 0b (never in `capabilityPreflight`, which is per-declaration and
+      per-statement and cannot see a schedule-wide derivation): a MIXED f32/f64 schedule, whose
+      context names the first used name that disagrees; and — TEMPORARILY, until checked f32
+      evidence and the Float-worker guards exist — every homogeneous f32 schedule, with the fixed
+      context `"f32 execution not yet admitted"`. -/
+  | unsupportedDtype     (context : String)
   | dynamicShape         (context : String)  -- backend- or value-dependent shapes
   | recurrenceOrCallback (context : String)
   | noAdvancingAxis      (context : String)  -- `.scan` declaring an empty advancing-axis list

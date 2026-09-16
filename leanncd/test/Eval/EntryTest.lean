@@ -103,6 +103,33 @@ run_cmd do
       | error => throwError s!"expected size conflict after warning, got: {error}"
   | .ok _ => throwError "expected padded-conflict program to fail during shape inference"
 
+-- f32 Task 1, fixture 7: the accepted identity program above (`Y[i] := X[i]`), with both names
+-- declared `f32` AND its input omitted. The declared storage kind is refused at `evalScheduled`'s
+-- entry — BEFORE size inference (which would otherwise fail on the unconstrained `i`) and before
+-- execution reaches an environment missing `X` — naming `X`, the first f32 name in used-name
+-- order (external reads, then writes).
+private def f32IdentityProgram : TLProgram := tlprog!{
+  tensor f32 X(i), Y(i)
+  Y[i] := X[i]
+}
+
+run_cmd do
+  match TLProgram.eval f32IdentityProgram ({} : HashMap String DenseTensor) with
+  | .error { error := .unsupportedDtype "X", warnings := [] } => pure ()
+  | .error failure =>
+      throwError s!"expected the f32 rejection to precede the shape/input failure, got: {failure}"
+  | .ok _ => throwError "expected an f32-declared program to be refused by the reference evaluator"
+
+-- The same program WITH its input supplied is still refused: the rejection is about the declared
+-- storage kind, not about the missing input.
+run_cmd do
+  let inputs : HashMap String DenseTensor :=
+    ({} : HashMap String DenseTensor).insert "X" (DenseTensor.zeros [2])
+  match TLProgram.eval f32IdentityProgram inputs with
+  | .error { error := .unsupportedDtype "X", warnings := [] } => pure ()
+  | .error failure => throwError s!"wrong failure for a well-supplied f32 program: {failure}"
+  | .ok _ => throwError "expected an f32-declared program to be refused even with its input present"
+
 -- Source compilation failures remain typed causes at the entry boundary.
 run_cmd do
   match TLProgram.eval (tlprog!{

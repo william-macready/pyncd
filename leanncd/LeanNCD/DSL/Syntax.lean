@@ -20,6 +20,7 @@ open Lean
 
 declare_syntax_cat tl_size
 declare_syntax_cat tl_axis_kind
+declare_syntax_cat tl_elem_type
 declare_syntax_cat tl_axis_spec
 declare_syntax_cat tl_named_shape
 declare_syntax_cat tl_axis_decl_item
@@ -69,8 +70,16 @@ syntax ident "=" num : tl_iter_decl_item
 syntax ident "(" tl_axis_spec,* ")"        : tl_linear_item
 syntax ident "(" tl_axis_spec,* ")" "bias" : tl_linear_item
 
+-- Tensor ELEMENT types, in their own closed category so the element-type vocabulary is one
+-- grammar rule per type and one `elabTLElemType` arm — a future precision or complex type extends
+-- `TensorElementType` and this category, never `tl_decl` or `Decl`.
+syntax "f32" : tl_elem_type
+
 -- `tensor A(q, m), B(x, y)` — one or more named shapes, comma-separated, no colon.
 syntax "tensor"    tl_named_shape,+                        : tl_decl
+-- `tensor f32 A(q, m), B(x, y)` — the same grouped form with an EXPLICIT element type, which then
+-- applies to every named shape in the group.
+syntax "tensor"    tl_elem_type tl_named_shape,+           : tl_decl
 -- `predicate edge(i, j)` — same grouped form.
 syntax "predicate" tl_named_shape,+                        : tl_decl
 -- `linear W_in(dff, d), W_out(d, dff) bias` — one or more linear layer items.

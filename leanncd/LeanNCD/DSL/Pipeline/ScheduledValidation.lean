@@ -62,6 +62,51 @@ def orderedExternalNames (stmts : List ScanStmt) : List String :=
       if produced.contains nm || acc.contains nm then acc else acc ++ [nm]) acc)
     []
 
+/-! ## Schedule-wide storage-kind derivation
+
+One scan, in USED-NAME order, shared by every consumer that must answer "what precision is this
+whole schedule?" — `Eval.Plan.prepareEvalPlan` (which rejects a mixed schedule, and temporarily
+rejects every homogeneous-f32 one) and `Eval.evalScheduled` (which rejects every f32 schedule,
+since the reference workers are `Float`/binary64 throughout). -/
+
+/-- The tensor names a schedule USES, in the order the storage scan visits them: external reads
+    first (`orderedExternalNames`, first-seen-read order), then every written name.
+
+    `ScanStmt.writes`, NOT `ScanStmt.outputs`: a scan's recurrence-only destination is block-local
+    scratch that `outputs` deliberately omits, but it is still a real tensor whose declaration
+    commits it to a storage kind. Deriving from `outputs` would silently admit a mixed-precision
+    schedule whose only f32 name is scan scratch. -/
+def scheduleStorageNames (stmts : List ScanStmt) : List String :=
+  (orderedExternalNames stmts ++ stmts.flatMap ScanStmt.writes).eraseDups
+
+/-- The storage constraint each USED name places on a schedule, in `scheduleStorageNames` order;
+    names that constrain nothing (a `.predicate` declaration) are dropped. The one scan both
+    schedule-wide questions below are projections of. -/
+def scheduleStorageConstraints (env : DeclEnv) (stmts : List ScanStmt) :
+    List (String × StorageKind) :=
+  (scheduleStorageNames stmts).filterMap (fun nm =>
+    (storageConstraintOfName? env nm).map (fun k => (nm, k)))
+
+/-- The single storage kind a schedule commits to, or the FIRST used name that conflicts with the
+    kind an earlier used name already established.
+
+    The first constrained name in used-name order establishes the kind; the scan stops at the
+    first name that disagrees, so a schedule with several conflicts reports the earliest one. A
+    schedule no used name constrains (a bool-only graph) defaults to `.float64`. -/
+def scheduleStorageKind (env : DeclEnv) (stmts : List ScanStmt) : Except String StorageKind := do
+  let mut established : Option StorageKind := none
+  for (nm, k) in scheduleStorageConstraints env stmts do
+    match established with
+    | none    => established := some k
+    | some k0 => if k0 != k then throw nm
+  return established.getD .float64
+
+/-- The first USED name a schedule's declarations commit to `.float32`, if any — the question
+    `Eval.evalScheduled` asks, since the reference evaluator rejects EVERY f32 schedule (mixed or
+    homogeneous) and wants to name an actually-f32 tensor when it does. -/
+def scheduleFloat32Name? (env : DeclEnv) (stmts : List ScanStmt) : Option String :=
+  ((scheduleStorageConstraints env stmts).find? (fun nk => nk.2 == .float32)).map (·.1)
+
 /-- A scheduled program whose source invariants and derived authority have been checked. -/
 structure CheckedScheduledProgram where private mk ::
   program       : ScheduledProgram
