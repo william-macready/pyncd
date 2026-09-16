@@ -1501,8 +1501,17 @@ bit-exact JAX parity without measuring XLA's operation order.
   one batch rather than reviewed piecemeal. A second frozen dual review of
   `0e78358c5ee27e63c4e5cd1fe390f6fdb2465c64f66fbc24c77d34cd7ad5a75c` found eleven further
   donor, regression-gate, execution-table, and historical-status observations; those too were
-  resolved as one batch. To keep the final review target immutable, its SHA-256 and both verdicts
-  are recorded in the commit/session checkpoint rather than appended to the file after review.
+  resolved as one batch. A third frozen dual review of
+  `bceeb40d50f6dd7bcf1a7df0d6876f1a17030165dd62d327098bde4b6ee622cd` — one lens re-verifying every
+  checkable identifier, donor fixture, file path, fixture/mutation count, and locator/ordering
+  discriminator directly against current source, including an independent recomputation of every
+  IEEE-754 bit pattern in Section 2.4 and this section; the other independently rebuilding the
+  storage-kind sibling-door table from source rather than from this document's own audit table,
+  re-deriving three inherited numeric/status claims, and verifying both stated dependency-cycle
+  claims by reading actual `import` lines — found zero observations in either lens. This is the
+  first review round with nothing to batch or resolve. To keep each final review target immutable,
+  its SHA-256 and both verdicts are recorded in the commit/session checkpoint rather than appended
+  to the file after review.
 - The five tasks contain 74 numbered fixture groups: 16/25/16/15/2 by task. A group is one named
   test fixture and may contain several assertions or paired controls; this is the unit counted in
   the task headers and risk table. Their mutation lists expand to 15/32/14/17/1 = 79 independently
