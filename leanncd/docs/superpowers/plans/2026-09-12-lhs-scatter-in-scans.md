@@ -49,6 +49,22 @@ replaced or narrowed here:
    `.free` and `.strided`, positive width plus an explicit width-zero rejection for `.advancing`,
    and width-insensitive witnesses for `.pinned`.
 
+### 0.2 Corrections from review
+
+Two changes made after an independent review of this plan, before any task was dispatched:
+
+1. **Task 2's `classifyWitness` work now also closes two pre-existing, previously-unpinned
+   `classifyWriteRow` checks** — the `.advancing` branch's `bias == 1` requirement and the `.free`
+   branch's `bias == 0` requirement, both flagged by the original parked overview's audit as real
+   but unpinned (empty firing set), and never closed since. Neither is required for `.strided` to
+   work and neither predates this plan, but `classifyWitness` is being written fresh in Task 2
+   regardless, so the two missing negative witnesses are added at the same cost rather than left
+   open a second time. See Task 2 step 3 and its Fixtures/Mutation cycles sections.
+2. **Task 1's gate now also runs `lake build JaxExperiment`**, not only Task 7's final gate.
+   Nothing in Task 1 is JAX-facing, so this is a cheap, immediate confirmation rather than a
+   7-task-deferred one, matching S-A's own per-task convention of checking this gate wherever it is
+   plausibly reachable.
+
 ---
 
 ## 1. Goal and non-goals
@@ -289,7 +305,7 @@ being built, not after every production decision has hardened. Task 6 depends on
 | Task | Outcome | Planned fixtures / mutation cycles | Risk |
 |---|---|---:|---|
 | 1 | Global aligned extent and S-A rebaseline | 14 edge assertions, 4 affected source/value fixtures; 4 cycles | High: global semantic boundary |
-| 2 | Sound `.strided` checked geometry | 11 classifier assertions, 9 geometry, 4 collision checks, one 102,400-case exhaustive run; 9 cycles | High: recurring write-soundness surface |
+| 2 | Sound `.strided` checked geometry | 13 classifier assertions (2 closing pre-existing gaps), 9 geometry, 4 collision checks, one 102,400-case exhaustive run; 11 cycles | High: recurring write-soundness surface |
 | 3 | Legacy compute-then-place semantics | 5 execution fixtures; 4 cycles | High: new reference semantics |
 | 4 | Independent scan-free oracle support | 5 structural/value fixtures; 5 cycles | High: independent implementation |
 | 5 | DSL and capability reachability | 12 acceptance/rejection/precedence fixtures; 4 cycles | Moderate |
@@ -350,7 +366,14 @@ cd leanncd
 lake build Eval.Plan.ScatterCheckTest Eval.Plan.ScatterDenseTest Eval.Plan.ScatterCompileTest
 lake build Eval.Plan.DifferentialTest
 lake build LeanNCD
+lake build JaxExperiment
 ```
+
+Run `JaxExperiment` here too, not only at Task 7's final gate: nothing in this task should touch
+it (the extent change lives entirely in `DSL/Ast.lean`/`Eval/Plan/Kernel.lean`/`Check.lean`
+comments, none of it JAX-facing), so a clean run is a cheap, immediate confirmation rather than a
+7-task-deferred one — matching S-A's own per-task convention of checking this gate whenever it is
+plausibly reachable, not only at closure.
 
 ---
 
@@ -376,6 +399,17 @@ malformed geometry and unsound overlaps fail before `commitWrite`.
    - `.free`: width `0` and positive-width output-half witnesses;
    - `.advancing`: positive-width witness and explicit width-0 rejection;
    - `.strided`: width `0` and positive-width output-half witnesses.
+
+   **Close two pre-existing, previously-unpinned checks while this function is already being
+   touched and exhaustively witnessed.** The original parked overview's audit found two `classifyWriteRow`
+   value checks with an empty firing set — real but unpinned by any fixture: the `.advancing` branch's
+   `bias == 1` requirement, and the `.free` branch's `bias == 0` requirement. Neither is new to S-B,
+   and fixing them is not required for `.strided` to work — but `classifyWitness` is being written
+   fresh right here, so add the two missing negative witnesses at the same time rather than leaving
+   a known gap unclosed for a second time:
+   - `.advancing`-shaped input with `bias ≠ 1` must NOT classify as `.advancing` (must fall to `none`
+     or a different constructor, per the fixed classifier order in §2 item 7).
+   - `.free`-shaped input with `bias ≠ 0` must NOT classify as `.free`.
 4. Generalize base and step positional covers to count free and strided output positions.
 5. Add an explicit base dimension-class clause: forbid `.advancing` in every base row rather than
    relying on the caller's `contextWidth = 0`, and forbid `.strided` at dimensions listed in
@@ -396,7 +430,8 @@ malformed geometry and unsound overlaps fail before `commitWrite`.
 
 - Classifier donors: the existing `classifyWriteRow` chokepoint guards; add the eight witnesses
   listed above plus direct rejection checks for negative scale, negative bias, and two nonzero
-  coefficients.
+  coefficients, plus the two closure witnesses (`.advancing` with `bias ≠ 1`; `.free` with
+  `bias ≠ 0`) that close the previously-unpinned pre-existing checks.
 - Base/step acceptance donors: clone `faceWrite` and `dpStepWrite`, replacing one free row with
   scale `2`, offsets `0` and `1`.
 - Extent mismatch donors: for base, clone `freeExtentMismatchScan`; for step, clone
@@ -417,8 +452,10 @@ malformed geometry and unsound overlaps fail before `commitWrite`.
 
 Independently remove: positive-scale guard, nonnegative-offset guard, context-half guard, strided
 cover arm, base `.advancing` prohibition, base advancing-dimension `.strided` prohibition, strided
-extent equality, modular disjointness, and boundary predicate reuse. Each named fixture must fail;
-restore and rerun.
+extent equality, modular disjointness, boundary predicate reuse, the `.advancing` branch's
+`bias == 1` requirement, and the `.free` branch's `bias == 0` requirement. Each named fixture must
+fail; restore and rerun. (The last two cycles close the two pre-existing gaps step 3 flags above —
+dropping either requirement must now fail its new closure witness, where before nothing did.)
 
 ### Gate
 
@@ -861,6 +898,8 @@ Stop and report rather than improvise if:
   behavior remains green.
 - `WriteRowKind.strided` is handled explicitly at all nine tripwire sites.
 - The classifier witness, 972-case clause-1 oracle, and 102,400-case collision soundness check pass.
+- The `.advancing` branch's `bias == 1` requirement and the `.free` branch's `bias == 0`
+  requirement are each pinned by a dedicated closure witness (pre-existing gaps, closed per §0.2).
 - Base and step strided writes both compile and execute.
 - Canonical even/odd base interleaving produces one six-cell state slice with no trailing padding
   cell.
