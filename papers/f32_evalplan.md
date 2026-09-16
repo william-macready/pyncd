@@ -504,7 +504,9 @@ do not appear in a task diff: `runDenseAssignAt`, `runDenseAssign`, `runDenseSca
 `runDensePointwise`, `runDenseAxiswise`, `runDenseScan`, `runDensePlan`, `pack`, `unpack`,
 `runPreparedDense`, `evalAssignDtypedSeeded`, `evalAssignDtyped`, `evalPlain`,
 `evalStmtSliceSeeded`, `evalScan`, `evalScheduled`, `validateAffineTable`, `validateEinsum`,
-every plan-level candidate conversion, `renderInputConstants`, and both experimental render modes.
+`lowerCheckPlanToCandidate`, `validateAndConstructExecutable`, `lowerPlan`, `generateForward`,
+`generateNamed`, `renderAffinePlanPositional`, `renderAffinePlanNamed`, `renderInputConstants`, and
+both experimental render modes.
 
 The JAX gate is plan-level as well as per-assignment. Every candidate and renderer entry checks
 `CheckedEvalPlan.storageKind = .float64` before iterating nodes. This is load-bearing for an
@@ -514,25 +516,45 @@ construction, evidence aggregation, or Python emission. Expressing the gate in s
 rather than as an f32 special case, gives future complex plans the same fail-loud boundary until
 dtype-indexed JAX evidence exists.
 
-This table's own existence is the verification for most of the guard-installation fixtures below
-(Task 2's 18, 20, 21, 23, and the existence-only mutations inside 22 and 25; Task 4's 10): the
-failure mode for "add the same storage-kind guard at door N because door N−1 already has one" is
-*omission*—a door nobody remembered to check—not incorrect logic at a door someone did remember to
-guard. An isolated mutation cycle proves only that a guard someone already wrote can be observed
-failing when removed; it cannot reveal a sibling door nobody wrote a guard for in the first place.
-Tasks 2 and 4 therefore verify those fixtures as one completeness sweep each—confirm from the
-implemented call graph that every door listed above carries its required guard—rather than by an
-independent mutation cycle per door, and Task 5 item 6 closes the cumulative table with no cell left
-pending. This is not a reduction in rigor: it is the review method the failure mode actually
-requires, per the whole-branch boundary/exhaustiveness lens in Section 6.4 and the per-task sibling
-audit in Section 6.0 item 3, both of which already inspect unchanged doors a diff cannot show. The
-mutation-cycle budget this frees up is spent where the failure mode is instead subtly wrong logic
-that only a break/restore cycle exposes: Task 2's checker/evidence-boundary core (algebra selection,
-storage derivation, the first-conflict locator, capability rejection order) and Task 3's
-numerical-truthfulness fixtures, both of which keep their full per-fixture mutation cycles. The two
-genuinely order-sensitive JAX-gate mutations inside fixtures 22 and 24 (gate-before-node-iteration,
-gate-before-binding-validation) also keep their own cycles: a wrong check *order* is a different,
-harder-to-catch failure mode than a missing guard, and coincides with no other fixture's assertion.
+This table's own existence is the verification for a narrow subset of the guard-installation
+fixtures below: Task 2's fixture 23 and the existence-only mutations inside fixtures 22 and 25 (the
+plan-level JAX candidate/generator/renderer gates, including `lowerCheckPlanToCandidate` and
+`validateAndConstructExecutable` by name alongside `renderInputConstants` and the other renderers
+already listed above). For exactly these, the failure mode is *omission*—a door nobody remembered to
+check—not incorrect logic at a door someone did remember to guard, because each asserts only that a
+gate exists (or that a genuinely vacuous edge case, the zero-step plan, is positively rejected rather
+than silently defaulting to `orderedReference64`), with no competing pre-existing check in the same
+function for it to race against. An isolated mutation cycle proves only that a guard someone already
+wrote can be observed failing when removed; it cannot reveal a sibling door nobody wrote a guard for
+in the first place—so Task 2 verifies these three specifically as one completeness sweep, confirmed
+against the named-door list above as an explicit, recorded step of Task 2's own review (Section 6.0
+item 2, not deferred to item 3's unchanged-sibling pass or to the final whole-branch review), rather
+than by an independent mutation cycle each. Task 5 item 6 then closes the cumulative table with no
+cell left pending.
+
+This sweep does **not** extend to fixtures 18, 20, 21 (Task 2) or fixture 10 (Task 4), even though
+each also installs a storage-kind guard at one more structurally similar door. Each of those four
+fixtures asserts the guard fires *before a specific other pre-existing check already present in that
+same function*—`runDenseAssignAt`/`runDenseAssign`'s existing `validateContext`/`validateStore`,
+`runDensePlan`'s arity check, `pack`/`unpack`/`runPreparedDense`'s `checkPreparedBindings`, and the
+symmetric f32 siblings—not merely that a guard exists. A presence-only sweep would pass even if the
+new guard were inserted after the function's pre-existing validation instead of before it, silently
+reordering exactly the property the fixture exists to pin; only a mutation cycle (remove or
+mis-order the guard, confirm the fixture reports the wrong error, restore) discharges that claim.
+These four therefore keep their individual mutation cycles despite their door-guard-shaped one-line
+summaries—the recurring-defect-family grouping in a mutation-bullet summary is not itself evidence
+that every member of the group shares the same verification requirement, and must be checked fixture
+by fixture rather than assumed from the family label.
+
+The mutation-cycle budget saved by the three genuinely swept fixtures is spent where the failure
+mode is instead subtly wrong logic that only a break/restore cycle exposes: Task 2's
+checker/evidence-boundary core (algebra selection, storage derivation, the first-conflict locator,
+capability rejection order), the door-guard order fixtures above, and Task 3's numerical-truthfulness
+fixtures, all of which keep their full per-fixture mutation cycles. The two genuinely order-sensitive
+JAX-gate mutations inside fixtures 22 and 24 (gate-before-node-iteration, gate-before-binding-
+validation) also keep their own cycles for the same reason as 18/20/21/10: a wrong check *order* is a
+different, harder-to-catch failure mode than a missing guard, and each coincides with no other
+fixture's assertion.
 
 ## 4. Implementation tasks
 
@@ -787,9 +809,10 @@ Mutations and expected observations:
    whole-candidate predicate. The zero-step case is load-bearing because empty evidence currently
    aggregates to `orderedReference64`.
 
-**Numbered fixture groups: 25; planned mutation cycles: 23, plus one door-guard completeness sweep
-(fixtures 18, 20, 21, 23, and the existence-only mutations inside 22 and 25 — verified once against
-Section 3.5's table rather than as separate cycles; see Section 3.5 for why)**
+**Numbered fixture groups: 25; planned mutation cycles: 28, plus one door-guard completeness sweep
+(fixture 23 and the existence-only mutations inside 22 and 25 — verified once against Section 3.5's
+table rather than as separate cycles; fixtures 18, 20, and 21 each pin a check *order* against
+another pre-existing check and keep their own cycles — see Section 3.5 for why)**
 
 1. Clone `KernelCheckTest.goodPlan`; change every signature to f32 and the algebra to f32
    sum-product; require `checkAssignF32` success and `.float32` storage-kind evidence.
@@ -925,13 +948,20 @@ Mutations and expected observations:
   reports the second statement's nonlinearity and fails; restore reports the first statement's unary.
 - remove the block-level storage-kind check: fixture 19 changes from the exact rejection to
   successful checked evidence; restore rejects the zero-step f32 block.
-- door-guard completeness sweep (fixtures 18, 20, 21, 23, and the shared-gate/`renderInputConstants`
-  existence checks inside 22 and 25): verified once against Section 3.5's table — every door named
-  there (`runDenseAssignAt`/`runDenseAssign`/`runDensePlan`, `pack`/`unpack`, `runPreparedDense`,
-  `lowerCheckPlanToCandidate`, `validateAndConstructExecutable`, and every plan-level
-  renderer/generator including `renderInputConstants`) carries its `.float64` guard — rather than as
-  six separate mutation cycles; see Section 3.5 for why an isolated cycle on an already-remembered
-  door cannot catch a door nobody guarded;
+- remove the local and graph Float-worker storage guards independently (two cycles): the
+  corresponding half of fixture 18 reaches Float validation/execution with f32 evidence and reports
+  a later error or value; restore rejects at each deepest public boundary.
+- remove the Float-backed `pack` and `unpack` storage-kind guards independently (two cycles):
+  fixture 20 reaches storage/arity work or publishes Float buffers; restore rejects by storage kind;
+- remove only `runPreparedDense`'s storage-kind guard: fixture 21 reaches the later worker cause;
+  restore reports the adapter-level storage-kind cause;
+- door-guard completeness sweep (fixture 23 and the shared-gate/`renderInputConstants` existence
+  checks inside 22 and 25): verified once against Section 3.5's table — `lowerCheckPlanToCandidate`,
+  `validateAndConstructExecutable`, and every plan-level renderer/generator including
+  `renderInputConstants` each carry the `.float64`/`unsupportedStorageKind` guard for the zero-step
+  vacuous-fold case — rather than as separate mutation cycles; see Section 3.5 for why this is safe
+  here specifically (no competing pre-existing check for the guard to race against) and why fixtures
+  18/20/21 above are not folded in despite the similar one-line summary;
 - apply the JAX gate after node iteration: fixture 22 reports the located destination-dtype error;
   restore rejects before visiting the node;
 - move the JAX gate after prepared-binding validation: fixture 24 reports `invalidBindings`;
@@ -1095,8 +1125,7 @@ Mutations and expected observations:
    and confirm Task 2's already-closed JAX column remains accurate. No column remains pending after
    this task; Task 5 performs the final implemented-call-graph audit.
 
-**Numbered fixture groups: 15; planned mutation cycles: 14, plus fixture 10's guards folded into
-Task 2's door-guard completeness sweep (Section 3.5)**
+**Numbered fixture groups: 15; planned mutation cycles: 17**
 
 1. Clone `SignatureTest.conversionInputs`; construct native f32 tensors and f32 declarations;
    require `ofDenseInputs32ForDecls` to return f32 shapes/signatures.
@@ -1166,9 +1195,11 @@ Mutations and expected observations:
 - remove input storage validation: fixture 5 reaches execution and reports a different error; restore
   reports storage mismatch;
 - remove the result-arity guard: fixture 6 changes to success and fails; restore reports arity;
-- fixture 10 (`pack32`/`unpack32`/`runPreparedDense32` guards) folds into the same door-guard
-  completeness sweep as Task 2's fixtures 18/20/21/23 — verified once against Section 3.5's table
-  rather than as three separate mutation cycles;
+- remove the f32 `pack32`, `unpack32`, and `runPreparedDense32` storage-kind guards independently
+  (three cycles): the corresponding part of fixture 10 reaches storage/arity or worker work; restore
+  reports storage kind at each public entry — kept as full cycles rather than folded into Task 2's
+  sweep, since each assertion pins the guard's *order* against that function's own pre-existing
+  arity/storage checks, not merely its existence (see Section 3.5);
 - remove one old-namespace `EvalReport` forwarding abbreviation: fixture 11 fails to elaborate;
   restore passes without migrating callers.
 - reject `.bool` in the Float32 adapter's signature compatibility check: fixture 12 fails; restore
@@ -1275,9 +1306,9 @@ Task 4 so its documentation closes the actual public boundary rather than a proj
 | Task | Main reviewer question | Fixture groups | Mutation cycles | Risk |
 |---|---|---:|---:|---|
 | 1 — source/legacy | Does the extensible typed declaration survive every source traversal, does bool inherit rather than select precision, does every homogeneous f32 graph hit the temporary stop, and can any legacy dtype-aware evaluator execute an f32 graph as Float? | 16 | 15 | High: `Decl` exhaustiveness and rejection order |
-| 2 — checked evidence | Can source specialization and direct raw-plan checking disagree, reject a valid real/bool graph, let f32 evidence reach an existing Float worker/adapter/JAX path, or admit an f32 zero-step block? | 25 | 23 + 1 sweep | High on the checker/evidence core (fixtures 1–17, 19, and the two JAX order fixtures); the door-guard sweep (fixtures 18, 20, 21, 23, and 22/25's existence checks) is Low/mechanical — see below |
+| 2 — checked evidence | Can source specialization and direct raw-plan checking disagree, reject a valid real/bool graph, let f32 evidence reach an existing Float worker/adapter/JAX path, or admit an f32 zero-step block? | 25 | 28 + 1 sweep | High on the checker/evidence core (fixtures 1–21, 22/24's order checks) — this includes the door-guard *order* fixtures 18, 20, 21, which pin a guard's position against another pre-existing check and are not mechanical; only fixture 23 and 22/25's pure existence checks are the Low/mechanical sweep — see below |
 | 3 — native worker | Does the shared carrier/traversal preserve Float behavior while every f32/bool intermediate rounds in binary32, and do the new f32 entries reject Float-backed evidence? | 16 | 14 | High: numerical truthfulness and shared-worker dispatch |
-| 4 — named adapter | Do generic adapter/report shells preserve current APIs, f32-backed Boolean values, and warnings without letting either wrapper relabel another carrier? | 15 | 14 + 1 sweep | High on the core adapter logic (fixtures 1–9, 11–15); fixture 10's guards join Task 2's sweep — Low/mechanical |
+| 4 — named adapter | Do generic adapter/report shells preserve current APIs, f32-backed Boolean values, and warnings without letting either wrapper relabel another carrier? | 15 | 17 | High: public API and publication order — including fixture 10, which pins its f32 guards' position against `pack32`/`unpack32`/`runPreparedDense32`'s own pre-existing checks and is not mechanical (see Section 3.5) |
 | 5 — JAX/docs | Does standalone JAX validation retain its located f32 rejection, do Task 2's plan-level gates remain closed, and are capability claims re-derived? | 2 | 1 | High: evidence boundary and stale capability prose |
 
 These tasks are intentionally not split into “add a type” or “add two guards” sub-tasks: those
@@ -1288,18 +1319,26 @@ standalone JAX validation and documentation closure are corrected. Task 2 is int
 than the others because the first commit that can construct f32 evidence must atomically close every
 existing Float adapter/worker and reference64 JAX door.
 
-Risk is not uniform within Tasks 2 and 4, and the mutation-cycle budget follows that split rather
-than the "High" label attached to the task as a whole. A large share of both tasks' fixture count is
-mechanical symmetry — install the same storage-kind guard at door N because door N−1 already has
-one — and that family fails by *omission*, which the Section 3.5 completeness sweep catches and an
-individual mutation cycle structurally cannot (removing a guard someone remembered to write proves
-nothing about a guard nobody wrote). The two tasks' remaining fixtures are the actual novel-logic
-surface — algebra selection, storage derivation, the first-conflict locator, capability rejection
-order, and the two genuinely order-sensitive JAX-gate checks — and keep the full per-fixture
-mutation cycle because their failure mode is subtly wrong logic that only a break/restore cycle
-exposes. Task 3 gets no such split: every one of its fixtures is a numerical-truthfulness claim
-(bit-exact rounding, fold order, identity values), which is exactly the failure mode mutation testing
-is for, so it keeps its full weight uniformly.
+Risk is not uniform within Task 2, and the mutation-cycle budget follows that split rather than the
+"High" label attached to the task as a whole — but the split is narrower than "every door-guard
+fixture is mechanical." Only three of Task 2's fixtures (23, and the existence-only mutations inside
+22 and 25) are pure presence claims with no competing pre-existing check to race against; those fail
+by *omission*, which the Section 3.5 completeness sweep catches and an individual mutation cycle
+structurally cannot (removing a guard someone remembered to write proves nothing about a guard nobody
+wrote), so they are folded into one sweep. Fixtures 18, 20, and 21 install a storage-kind guard at a
+door that *already has* another pre-existing check (`validateContext`/`validateStore`,
+`runDensePlan`'s arity check, `checkPreparedBindings`) and each assertion is specifically that the
+new guard fires *before* that existing check — a claim a presence-only sweep cannot discharge, since
+a misordered guard would still exist. Task 4's fixture 10 is the exact same shape (its f32 siblings'
+guards against their own pre-existing arity/storage checks) and was reconsidered back into a full
+Task 4 mutation cycle for the same reason; Task 4 therefore keeps uniform "High" weight with no
+sweep. Task 2's remaining fixtures — algebra selection, storage derivation, the first-conflict
+locator, capability rejection order, fixtures 18/20/21, and the two genuinely order-sensitive JAX-gate
+checks (22's and 24's order mutations) — all keep the full per-fixture mutation cycle because their
+failure mode is subtly wrong logic or wrong order that only a break/restore cycle exposes. Task 3
+gets no split at all: every one of its fixtures is a numerical-truthfulness claim (bit-exact rounding,
+fold order, identity values), which is exactly the failure mode mutation testing is for, so it keeps
+its full weight uniformly.
 
 ## 6. Validation
 
@@ -1422,9 +1461,9 @@ The slice is complete only when all of the following are true:
   typed, located error;
 - existing Float-backed checkers/workers and the legacy evaluator cannot execute f32 evidence;
 - JAX rejects f32 before candidate construction, evidence, or Python output;
-- all 74 numbered fixture groups pass, with 67 of them backed by a recorded fail/restored-pass
-  mutation cycle and the remaining door-guard fixtures (Task 2's 18/20/21/23/22/25-existence, Task
-  4's 10) confirmed instead by the Section 3.5 completeness sweep with no cell left pending;
+- all 74 numbered fixture groups pass, with 75 of them backed by a recorded fail/restored-pass
+  mutation cycle and Task 2's fixture 23 and the 22/25 existence checks confirmed instead by the
+  Section 3.5 completeness sweep with no cell left pending;
 - targeted builds, `JaxExperiment`, full `lake build`, documentation sweep, and two final reviews
   pass.
 
@@ -1539,24 +1578,49 @@ bit-exact JAX parity without measuring XLA's operation order.
   storage-kind sibling-door table from source rather than from this document's own audit table,
   re-deriving three inherited numeric/status claims, and verifying both stated dependency-cycle
   claims by reading actual `import` lines — found zero observations in either lens. This is the
-  first review round with nothing to batch or resolve. To keep each final review target immutable,
-  its SHA-256 and both verdicts are recorded in the commit/session checkpoint rather than appended
-  to the file after review.
+  first review round with nothing to batch or resolve. A fourth frozen dual review of
+  `f4cc0d658c383ef62fd0cccc8973db2830fe6f9eec470696f5f321ac7477e0c5` — the revision after a
+  risk-reweighting pass folded eight fixtures into per-task completeness sweeps — split cleanly by
+  lens: the arithmetic-verification lens independently recounted every mutation-cycle bullet and
+  cross-reference and found the reweighting's own numbers exactly self-consistent (zero findings);
+  the engineering-judgment lens read each reclassified fixture's full text against the actual Lean
+  source and found three blocking gaps, all one underlying defect surfacing three ways — Task 2's
+  fixtures 18/20/21 and Task 4's fixture 10 each pin a guard's *order* against a specific
+  pre-existing check, which the sweep's presence-only verification does not discharge, and the
+  Section 6.0/6.4 cross-references the sweep leaned on for a safety net do not actually mechanize
+  re-deriving guard position. Resolved as one batch: those four fixtures were restored to individual
+  mutation cycles (Task 2: 23 → 28 mutation-tested plus a narrowed sweep; Task 4: reverted to 17 with
+  no sweep), and Section 3.5's named-door list was tightened with the two JAX-side function names the
+  review found only implicitly covered. To keep each final review target immutable, its SHA-256 and
+  both verdicts are recorded in the commit/session checkpoint rather than appended to the file after
+  review.
 - The five tasks contain 74 numbered fixture groups: 16/25/16/15/2 by task. A group is one named
   test fixture and may contain several assertions or paired controls; this is the unit counted in
-  the task headers and risk table. Their mutation lists expand to 15/23/14/14/1 = 67 independently
+  the task headers and risk table. Their mutation lists expand to 15/28/14/17/1 = 75 independently
   applied and restored source changes. The two authoring-time storage-derivation mutations above
-  have observed fail/restored-pass results; the 67 implementation-dependent cycles are completion
+  have observed fail/restored-pass results; the 75 implementation-dependent cycles are completion
   gates, not claims about code that does not yet exist, and must record both observations while each
   task is implemented.
 - Reweighted mutation-cycle effort against risk rather than applying it uniformly across all 74
-  fixture groups: a recurring subset of Task 2's and Task 4's fixtures (18, 20, 21, 23, and the
-  existence-only half of 22/25 in Task 2; 10 in Task 4 — 12 of the original 79 cycles) install the
-  same storage-kind guard at one more door because a sibling door already has one. That family fails
-  by omission — a door nobody guarded — which the Section 3.5 completeness sweep catches and an
-  isolated mutation cycle cannot, since removing a guard someone remembered to write says nothing
-  about a guard nobody wrote elsewhere. Those fixtures remain required regression tests but are
-  verified once against Section 3.5's table rather than by a dedicated break/restore cycle each; the
-  budget this frees stays concentrated on Task 2's checker/evidence-boundary core, the two
-  genuinely order-sensitive JAX-gate mutations, and Task 3's numerical-truthfulness fixtures, where
-  the failure mode is subtly wrong logic that only a mutation cycle exposes.
+  fixture groups, in response to independent review — and then corrected the reweighting itself after
+  a fourth frozen dual review found it had overreached. The first pass folded eight fixtures (Task
+  2's 18, 20, 21, 23, and the existence-only half of 22/25; Task 4's 10 — 12 of the original 79
+  cycles) into a single completeness sweep on the theory that "add the same storage-kind guard at
+  door N because door N−1 already has one" fails only by omission. A fourth frozen dual review's
+  engineering-judgment lens (as distinct from its sibling arithmetic-verification lens, which found
+  the reweighting's own numbers internally consistent) read each reclassified fixture's full text
+  rather than its one-line mutation-bullet summary and found that fixtures 18, 20, 21, and 10 are not
+  pure presence claims: each pins the new guard's *order* against a specific pre-existing check
+  already in that function (`validateContext`/`validateStore`, an arity check, or
+  `checkPreparedBindings`), which a presence-only sweep would not catch if the guard were inserted in
+  the wrong place. Only fixture 23 and the existence-only mutations inside 22 and 25 — pure presence
+  claims with no competing pre-existing check to race against — survive as the sweep; 18, 20, 21, and
+  10 were restored to individual mutation cycles, and Task 4 lost its sweep entirely, reverting to
+  uniform "High" weight. The corrected totals (Task 2: 32 → 28 + 1 sweep; Task 4: 17 throughout, since
+  its one candidate for the sweep did not survive scrutiny; plan-wide 79 → 75) were reverified against
+  the actual mutation bullet lists before this revision was committed. The surviving lesson, recorded here rather than only in the commit history: a
+  recurring-defect-family label attached to a mutation-bullet's one-line summary is itself an
+  inherited claim and must be re-checked against each fixture's full text, not trusted from the
+  grouping — the same restate-instead-of-re-measure failure this project's authoring discipline
+  already names for gaps lists and capability counts, here appearing in a verification-method
+  classification instead.
