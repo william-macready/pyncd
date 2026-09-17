@@ -206,6 +206,221 @@ no separate privacy-test module for C3)
 -- normal construction via the checker succeeds
 #guard (checkPlan diamondPlan).toOption.isSome
 
--- must NOT compile: def smuggled : CheckedEvalPlan := ⟨diamondPlan, #[]⟩
+-- must NOT compile: def smuggled : CheckedEvalPlan := ⟨diamondPlan, #[], .float64⟩
+
+/-! ## f32 slice Task 2: graph-level storage kind, mixed tables, and the assignment-only fragment
+
+Fixtures 6, 7, 8, 14's `f32UnsupportedStepOrder` half, and 16. All built from `chainPlan` /
+`nonlinFailPlan` above, changing only the fields each case names. -/
+
+def storageOf : Except PlanStepError CheckedEvalPlan → Option LeanNCD.StorageKind
+  | .ok c => some c.storageKind | .error _ => none
+
+/-! ### Fixture 6: an accepted one-node f32 graph, and a located mixed-table rejection -/
+
+/-- `chainPlan` reduced to its FIRST step (`.assign (idNode 1 0)`) and its first two signatures,
+    both retagged `f32`, with the binary32 sum-product algebra. Everything else — shapes, the
+    identity read, `inputSlots` — is `chainPlan`'s own. -/
+def f32OneNodePlan : RawEvalPlan :=
+  { tensorSigs := #[ { shape := #[2], dtype := .f32 }, { shape := #[2], dtype := .f32 } ]
+  , inputSlots := #[0]
+  , steps := #[.assign { idNode 1 0 with algebra := admittedAlgebraF32 }] }
+
+#guard isOk (checkPlan f32OneNodePlan)
+#guard storageOf (checkPlan f32OneNodePlan) == some LeanNCD.StorageKind.float32
+
+-- Control: the ORIGINAL binary64 chain records `.float64`, so fixture 6's acceptance is not an
+-- implementation that stamps `.float32` on everything.
+#guard storageOf (checkPlan chainPlan) == some LeanNCD.StorageKind.float64
+
+/-- `chainPlan` with a fourth signature appended that is NOT added to `inputSlots`, and dtypes
+    `[f32, f32, f64, f64]`. Two trailing mismatches, so first-offending-slot and
+    last-offending-slot are distinguishable; four entries, so the reported slot `2` is distinct from
+    the table-size count `4`. The unused non-input slot 3 also makes the plan wiring-invalid
+    (`missingProduction 3`), which is deliberate: it gives the "storage derivation runs BEFORE outer
+    graph wiring" claim a fixture that can fail if the order is ever reversed. -/
+def f32MixedTablePlan : RawEvalPlan :=
+  { chainPlan with
+    tensorSigs := #[ { shape := #[2], dtype := .f32 }
+                   , { shape := #[2], dtype := .f32 }
+                   , { shape := #[2], dtype := .f64 }
+                   , { shape := #[2], dtype := .f64 } ] }
+
+#guard errOf (checkPlan f32MixedTablePlan)
+  == some (.assign (.mixedStorageKinds 2 .f32 .f64))
+
+/-! ### Fixture 7: mixed real/Boolean graphs, in BOTH precisions
+
+These fail if the implementation compares concrete dtypes instead of storage kinds, or permanently
+assigns `bool` to Float64 storage. -/
+
+-- f64 case: input slot 0 alone retagged `bool`; both f64 destination nodes read that Boolean
+-- source, which `checkAssign` admits (gathering is dtype-blind).
+def f64BoolChainPlan : RawEvalPlan :=
+  { chainPlan with
+    tensorSigs := #[ { shape := #[2], dtype := .bool }
+                   , { shape := #[2], dtype := .f64 }
+                   , { shape := #[2], dtype := .f64 } ] }
+
+#guard isOk (checkPlan f64BoolChainPlan)
+#guard storageOf (checkPlan f64BoolChainPlan) == some LeanNCD.StorageKind.float64
+
+-- f32 case: signatures `[f32, bool, f32]`. Node 1 writes the Boolean slot (Boolean algebra) reading
+-- the f32 slot 0; node 2 writes the f32 slot 2 reading that Boolean slot 1 — so BOTH an f32→bool
+-- and a bool→f32 read occur, in one graph whose derived carrier is `.float32`.
+def f32BoolChainPlan : RawEvalPlan :=
+  { tensorSigs := #[ { shape := #[2], dtype := .f32 }
+                   , { shape := #[2], dtype := .bool }
+                   , { shape := #[2], dtype := .f32 } ]
+  , inputSlots := #[0]
+  , steps := #[ .assign { idNode 1 0 with algebra := admittedAlgebraBool }
+              , .assign { idNode 2 1 with algebra := admittedAlgebraF32 } ] }
+
+#guard isOk (checkPlan f32BoolChainPlan)
+#guard storageOf (checkPlan f32BoolChainPlan) == some LeanNCD.StorageKind.float32
+
+/-! ### Fixture 8: a structurally valid non-assignment step in an f32 graph
+
+`nonlinFailPlan` with its deliberately mismatched pointwise `shape` corrected from `#[3]` to `#[2]`
+(so the node is structurally valid apart from the f32 capability boundary) and both signatures
+retagged `f32`. The rejection is the CAPABILITY one at the original step index 0, not
+`checkPointwise`'s geometry error. -/
+def f32PointwiseStep : RawPointwisePlan :=
+  { sourceSlot := 0, destinationSlot := 1, shape := #[2], fn := .relu }
+
+def f32PointwisePlan : RawEvalPlan :=
+  { tensorSigs := #[ { shape := #[2], dtype := .f32 }, { shape := #[2], dtype := .f32 } ]
+  , inputSlots := #[0]
+  , steps := #[.pointwise f32PointwiseStep] }
+
+#guard errOf (checkPlan f32PointwisePlan) == some (.f32UnsupportedStep 0 .pointwise)
+
+-- Control: the SAME shape-corrected pointwise node in a BINARY64 table is accepted, so fixture 8's
+-- rejection is about the storage kind and not about the corrected shape.
+#guard isOk (checkPlan { f32PointwisePlan with
+  tensorSigs := #[ { shape := #[2], dtype := .f64 }, { shape := #[2], dtype := .f64 } ] })
+
+/-! ### Fixture 14 (second half): `f32UnsupportedStepOrder`
+
+A VALID f32 assignment at step 0 followed by a pointwise node at step 1. The reported index must be
+the original outer index `1`, distinguishing it from an index into an assignments-filtered sublist,
+which would be `0`. -/
+def f32UnsupportedStepOrder : RawEvalPlan :=
+  { tensorSigs := #[ { shape := #[2], dtype := .f32 }
+                   , { shape := #[2], dtype := .f32 }
+                   , { shape := #[2], dtype := .f32 } ]
+  , inputSlots := #[0]
+  , steps := #[ .assign { idNode 1 0 with algebra := admittedAlgebraF32 }
+              , .pointwise { sourceSlot := 1, destinationSlot := 2, shape := #[2], fn := .relu } ] }
+
+#guard errOf (checkPlan f32UnsupportedStepOrder) == some (.f32UnsupportedStep 1 .pointwise)
+
+/-! ### Fixture 16: every remaining non-assignment `PlanStep` constructor, through outer `checkPlan`
+
+One raw graph per remaining step kind, each with a HOMOGENEOUS f32 signature context and the step
+shape cloned from that kind's own accepted donor elsewhere in this suite — `ScatterCheckTest`'s
+`upScatter` (`Out[2*i] := X[i]`, `X : [3]`, extent 6), `ScanTest`'s `linearScan` (`S[iterAt l 0] :=
+S0`; `S[iterNext l] := S[l] + X[l]`), and `NonlinCheckTest`'s `baselineAxiswise` (softmax over axis
+0). Together with fixture 8's pointwise case these exhaust `PlanStep`'s four non-assignment
+constructors.
+
+Each is paired with the same graph under a BINARY64 table, which must NOT report
+`f32UnsupportedStep` — otherwise the fixture would pass for an implementation that refused these
+step kinds unconditionally rather than for binary32 specifically. -/
+
+def isF32Unsupported (i : Nat) (k : PlanStepKind) : Except PlanStepError CheckedEvalPlan → Bool
+  | .error (.f32UnsupportedStep i' k') => i == i' && k == k'
+  | _ => false
+
+-- Scatter. `upScatter`'s geometry verbatim, with the compute half's algebra and the coherent `fill`
+-- moved to the binary32 table so the plan is f32 throughout rather than half-converted.
+def f32ScatterCompute : AssignPlan :=
+  { contextShape := #[], destinationSlot := 1, outputShape := #[3]
+  , terms := #[{ iterationShape := #[3], contextPos := #[], outputPos := #[0], reductionPos := #[]
+               , factors := #[.read { sourceSlot := 0, map := { coeffs := #[#[1]], bias := #[0] }
+                                    , sourceShape := #[3], oobPolicy := .zeroPad }] }]
+  , algebra := admittedAlgebraF32 }
+
+def f32Scatter : ScatterPlan :=
+  { compute := f32ScatterCompute, destShape := #[6], outCoeffs := #[#[2]], outBias := #[0]
+  , fill := admittedAlgebraF32.reduceId, reduce := .rejectCollisions }
+
+def f32ScatterPlan : RawEvalPlan :=
+  { tensorSigs := #[ { shape := #[3], dtype := .f32 }, { shape := #[6], dtype := .f32 } ]
+  , inputSlots := #[0], steps := #[.scatter f32Scatter] }
+
+#guard errOf (checkPlan f32ScatterPlan) == some (.f32UnsupportedStep 0 .scatter)
+
+#guard !(isF32Unsupported 0 .scatter (checkPlan
+  { f32ScatterPlan with
+    tensorSigs := #[ { shape := #[3], dtype := .f64 }, { shape := #[6], dtype := .f64 } ] }))
+
+-- Scan. `linearScan`'s geometry verbatim: outer slots `0 = S0` (scalar), `1 = X : [3]`,
+-- `2 = S : [3]`; `historyExtents := #[3]`, so `stepExtents = #[2]`.
+def f32ScanState : StateSlot :=
+  { destSlot := 2, advancingDims := #[0], materialization := .completeHistory }
+
+def f32ScanBaseBlock : RawPlanBlock :=
+  { contextShape := #[], tensorSigs := #[{ shape := #[], dtype := .f32 }]
+  , inputs := #[0], steps := #[], outputs := #[0] }
+
+def f32ScanStepAssign : AssignPlan :=
+  { contextShape := #[2], destinationSlot := 2, outputShape := #[]
+  , terms := #[ { iterationShape := #[2], contextPos := #[0], outputPos := #[], reductionPos := #[]
+                , factors := #[.read { sourceSlot := 0, map := { coeffs := #[#[1]], bias := #[0] }
+                                     , sourceShape := #[3], oobPolicy := .zeroPad }] }
+              , { iterationShape := #[2], contextPos := #[0], outputPos := #[], reductionPos := #[]
+                , factors := #[.read { sourceSlot := 1, map := { coeffs := #[#[1]], bias := #[0] }
+                                     , sourceShape := #[3], oobPolicy := .zeroPad }] } ]
+  , algebra := admittedAlgebraF32 }
+
+def f32ScanStepBlock : RawPlanBlock :=
+  { contextShape := #[2]
+  , tensorSigs := #[ { shape := #[3], dtype := .f32 }, { shape := #[3], dtype := .f32 }
+                   , { shape := #[], dtype := .f32 } ]
+  , inputs := #[0, 1], steps := #[.assign f32ScanStepAssign], outputs := #[2] }
+
+def f32Scan : RawScanPlan :=
+  { states := #[f32ScanState]
+  , baseBlock := f32ScanBaseBlock
+  , baseCaptures := #[{ inputSlot := 0, source := .external 0 }]
+  , baseWrites := #[{ outputSlot := 0, stateIndex := 0, map := { coeffs := #[#[]], bias := #[0] } }]
+  , stepBlock := f32ScanStepBlock
+  , stepCaptures := #[{ inputSlot := 0, source := .external 1 }, { inputSlot := 1, source := .state 0 }]
+  , stepWrites := #[{ outputSlot := 2, stateIndex := 0, map := { coeffs := #[#[1]], bias := #[1] } }]
+  , historyExtents := #[3]
+  , iterationOrder := .axisZeroFastest, boundaryPolicy := .zeroThenBaseOverlay
+  , snapshotPolicy := .immutablePreStep }
+
+def f32ScanPlan : RawEvalPlan :=
+  { tensorSigs := #[ { shape := #[], dtype := .f32 }, { shape := #[3], dtype := .f32 }
+                   , { shape := #[3], dtype := .f32 } ]
+  , inputSlots := #[0, 1], steps := #[.scan f32Scan] }
+
+#guard errOf (checkPlan f32ScanPlan) == some (.f32UnsupportedStep 0 .scan)
+
+#guard !(isF32Unsupported 0 .scan (checkPlan
+  { f32ScanPlan with
+    tensorSigs := #[ { shape := #[], dtype := .f64 }, { shape := #[3], dtype := .f64 }
+                   , { shape := #[3], dtype := .f64 } ] }))
+
+-- Axiswise. `baselineAxiswise`'s own field values (`softmax` over axis 0, shape `#[2]`).
+def f32AxiswiseStep : RawAxiswisePlan :=
+  { sourceSlot := 0, destinationSlot := 1, shape := #[2], axisPos := 0, fn := .softmax }
+
+def f32AxiswisePlan : RawEvalPlan :=
+  { tensorSigs := #[ { shape := #[2], dtype := .f32 }, { shape := #[2], dtype := .f32 } ]
+  , inputSlots := #[0], steps := #[.axiswise f32AxiswiseStep] }
+
+#guard errOf (checkPlan f32AxiswisePlan) == some (.f32UnsupportedStep 0 .axiswise)
+
+#guard !(isF32Unsupported 0 .axiswise (checkPlan
+  { f32AxiswisePlan with
+    tensorSigs := #[ { shape := #[2], dtype := .f64 }, { shape := #[2], dtype := .f64 } ] }))
+
+/- `PlanStepKind.assign` is deliberately never a `f32UnsupportedStep` payload — an assignment is
+   exactly the step kind a binary32 graph admits (fixture 6). `PlanStep.kind` is still total over
+   it; named directly so the vocabulary's own `.assign` answer stays exercised. -/
+#guard (PlanStep.kind (.assign (idNode 1 0))) == PlanStepKind.assign
 
 end LeanNCD.Eval.Plan.GraphCheckTest

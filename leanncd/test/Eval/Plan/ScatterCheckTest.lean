@@ -200,4 +200,34 @@ re-read as the constant coordinate `0` with extent `1`. -/
 #guard scatterDestExtent #[3] #[2] 1 == some 6
 #guard scatterDestExtent #[3] #[-1] 0 == some 0
 
+/-! ## f32 slice Task 2, fixture 9: `checkScatter` stays Float-backed
+
+`upSigs`/`upScatter` above — the accepted strided upsample — with every signature and every scalar
+constant moved to binary32. `checkScatter` must STILL reject it: top-level binary32 scatter is slice
+F32-D, so there is no f32 scatter worker, and the whole point of keeping the existing block, scan,
+scatter, and nonlinearity checkers Float-backed is that direct construction cannot acquire evidence
+for an operation with no binary32 worker.
+
+The rejection comes from the shared `checkAssign` core on the compute half (`dtypeNotAdmitted` at
+the DESTINATION slot, which `checkScatter` reaches first), not from a scatter-specific clause —
+which is exactly right: `checkScatter` calls ORDINARY `checkAssign`, never `checkAssignF32`. -/
+
+def upSigsF32 : Array TensorSignature :=
+  #[ { shape := #[3], dtype := .f32 }
+   , { shape := #[6], dtype := .f32 } ]
+
+def upComputeF32 : AssignPlan := { upCompute with algebra := admittedAlgebraF32 }
+
+def upScatterF32 : ScatterPlan :=
+  { upScatter with compute := upComputeF32, fill := admittedAlgebraF32.reduceId }
+
+#guard errOf (checkScatter upSigsF32 upScatterF32) == some (.dtypeNotAdmitted 1 .f32)
+
+-- The source-side half: destination restored to `f64` (with the f64 algebra and fill it commits
+-- to), only the READ source retagged `f32`. Still rejected, now at the source slot — so the
+-- Float-backed checker's f32 refusal covers both ends of a scatter, not just its destination.
+#guard errOf (checkScatter
+  #[ { shape := #[3], dtype := .f32 }, { shape := #[6], dtype := .f64 } ] upScatter)
+  == some (.dtypeNotAdmitted 0 .f32)
+
 end LeanNCD.Eval.Plan.ScatterCheckTest

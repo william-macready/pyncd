@@ -1,4 +1,5 @@
 import LeanNCD.Eval.Plan.Dense
+import Eval.Plan.KernelCheckTest   -- f32 slice fixture 18 reuses fixture 1's checked f32 assignment
 
 /-!
 # Wave C C2 Dense interpreter tests
@@ -842,5 +843,55 @@ def conjNonBinaryBool : AssignPlan :=
     terms := #[{ iterationShape := #[4], contextPos := #[], outputPos := #[0], reductionPos := #[]
                , factors := #[.read readS0, .read readS1] }] }
 #guard dataOf (runIt boolTwoSigs conjNonBinaryBool nonBinaryStore) == some #[0.25, 0.25, 0.25, 0.25]
+
+/-! ## f32 slice Task 2, fixture 18 (local half): the Float worker's storage-kind door
+
+`KernelCheckTest`'s fixture-1 checked f32 assignment, handed straight to the BINARY64 local worker
+with inputs that are ALSO invalid in the worker's own pre-existing terms — a wrong-rank context
+coordinate for `runDenseAssignAt`, an empty store for both entries. The required answer is
+`storageKindMismatch .float64 .float32` in every case, i.e. the storage guard fires BEFORE
+`validateContext` and before `validateStore`.
+
+Ordering is the whole point here, not mere presence: a guard installed after either pre-existing
+check would still "reject an f32 plan", but would report a context or missing-slot cause for a plan
+this worker must never look at in the first place. -/
+
+def f32Checked : Option CheckedAssignPlan :=
+  (checkAssignF32 KernelCheckTest.f32Sigs KernelCheckTest.f32Plan).toOption
+
+/-- The binary64 sibling over the SAME shapes, for the controls below: `KernelCheckTest.goodPlan`
+    under its own all-f64 table. -/
+def f64Checked : Option CheckedAssignPlan :=
+  (checkAssign KernelCheckTest.sigs KernelCheckTest.goodPlan).toOption
+
+def atErr (c : Option CheckedAssignPlan) (ctx : List Int) (store : Array DenseTensor) :
+    Option PositionalInputError :=
+  match c with
+  | none => none
+  | some c => match runDenseAssignAt c ctx store with
+              | .error e => some e
+              | .ok _ => none
+
+def assignErr (c : Option CheckedAssignPlan) (store : Array DenseTensor) :
+    Option PositionalInputError :=
+  match c with
+  | none => none
+  | some c => match runDenseAssign c store with
+              | .error e => some e
+              | .ok _ => none
+
+-- `runDenseAssignAt`: wrong-rank context AND an empty store; the storage kind is reported.
+#guard atErr f32Checked [5] #[] == some (.storageKindMismatch .float64 .float32)
+
+-- Control, same call on the binary64 sibling: the pre-existing context check is what reports, so
+-- the fixture above is not passing merely because these arguments are malformed.
+#guard atErr f64Checked [5] #[] == some (.contextShapeMismatch #[] [5])
+
+-- `runDenseAssign` (the empty-context wrapper) with an empty store: still the storage kind, so the
+-- wrapper inherits the deep guard rather than needing its own.
+#guard assignErr f32Checked #[] == some (.storageKindMismatch .float64 .float32)
+
+-- Control: the binary64 sibling reaches `validateStore` and reports the missing slot.
+#guard assignErr f64Checked #[] == some (.missingSlot 0 0)
 
 end LeanNCD.Eval.Plan.KernelDenseTest

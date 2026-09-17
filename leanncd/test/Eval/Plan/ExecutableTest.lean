@@ -1654,4 +1654,78 @@ def idStepCandidate (raw : RawEvalPlan) : Option JaxExecutableCandidate :=
        | _ => false)
   | none => false
 
+/-! ## f32 slice Task 2, fixtures 23 and 24: `validateAndConstructExecutable`'s plan-level gate
+
+`idRaw` cloned LOCALLY with its only step removed, both slots turned into inputs, and the table
+retagged f32 throughout. Zero steps is the load-bearing shape: `emptyPlanCandidate` builds a
+candidate whose `steps` is `#[]`, `aggregateEvidenceList #[]` is `orderedReference64` (the identity
+of the "all" fold), and every per-step obligation in `JaxExecutableWellFormed` is vacuously
+satisfied — so without a PLAN-LEVEL storage gate this candidate validates and hands out a
+reference64 executable for a binary32 plan.
+
+This file deliberately does not import the experimental `JaxExperiment` library, so fixture 23's two
+halves are built independently there and here, as the plan requires. -/
+
+def f32ZeroStepRaw : RawEvalPlan :=
+  { tensorSigs := #[ { shape := #[3], dtype := .f32 }, { shape := #[3], dtype := .f32 } ]
+  , inputSlots := #[0, 1], steps := #[] }
+
+def preparedOfLocal (raw : RawEvalPlan) (inputs materialized : Array SlotBinding) :
+    Option PreparedPlan :=
+  match checkPlan raw, checkBindings raw.inputSlots inputs with
+  | .ok plan, .ok requiredInputs =>
+      some { plan, bindings := { requiredInputs, materializedNames := materialized }
+           , warnings := [] }
+  | _, _ => none
+
+def f32ZeroStepPrepared : Option PreparedPlan :=
+  preparedOfLocal f32ZeroStepRaw #[{ name := "x", slot := 0 }, { name := "y", slot := 1 }] #[]
+
+-- The plan really checks, really records `.float32`, and really has a valid binding sidecar — so
+-- the rejections below are not vacuous and are not disguised binding failures.
+#guard (match f32ZeroStepPrepared with
+  | some p => p.plan.storageKind == LeanNCD.StorageKind.float32
+              && (checkPreparedBindings p).toOption.isSome
+  | none => false)
+
+-- Fixture 23: the zero-step f32 candidate is refused with the plan-level storage error rather than
+-- acquiring `orderedReference64`.
+#guard (match f32ZeroStepPrepared with
+  | some p =>
+      (match validateAndConstructExecutable (emptyPlanCandidate p) with
+       | .error (.unsupportedStorageKind k) => k == LeanNCD.StorageKind.float32
+       | _ => false)
+  | none => false)
+
+-- Control: the identical zero-step plan in BINARY64 validates, so fixture 23 is about the storage
+-- kind and not about the empty step list.
+def f64ZeroStepRaw : RawEvalPlan :=
+  { tensorSigs := #[ { shape := #[3], dtype := .f64 }, { shape := #[3], dtype := .f64 } ]
+  , inputSlots := #[0, 1], steps := #[] }
+
+#guard (match preparedOfLocal f64ZeroStepRaw
+      #[{ name := "x", slot := 0 }, { name := "y", slot := 1 }] #[] with
+  | some p => testValidateExecutable p
+  | none => false)
+
+-- Fixture 24: the same f32 plan with an out-of-range materialized binding (slot 99 over a two-slot
+-- table). The storage gate must precede binding validation.
+#guard (match preparedOfLocal f32ZeroStepRaw
+      #[{ name := "x", slot := 0 }, { name := "y", slot := 1 }] #[{ name := "z", slot := 99 }] with
+  | some p =>
+      (match validateAndConstructExecutable (emptyPlanCandidate p) with
+       | .error (.unsupportedStorageKind k) => k == LeanNCD.StorageKind.float32
+       | _ => false)
+  | none => false)
+
+-- Control: the SAME out-of-range binding over the BINARY64 zero-step plan does report
+-- `invalidBindings`, so fixture 24 pins an ORDER rather than an unreachable check.
+#guard (match preparedOfLocal f64ZeroStepRaw
+      #[{ name := "x", slot := 0 }, { name := "y", slot := 1 }] #[{ name := "z", slot := 99 }] with
+  | some p =>
+      (match validateAndConstructExecutable (emptyPlanCandidate p) with
+       | .error (.invalidBindings (.materializedSlot (.slotOutOfRange 99 2))) => true
+       | _ => false)
+  | none => false)
+
 end LeanNCD.Eval.Plan.ExecutableTest

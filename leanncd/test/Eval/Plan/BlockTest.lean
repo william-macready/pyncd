@@ -364,4 +364,48 @@ works, already exercised by the fixtures above).
 
 -- must NOT compile: def smuggled : CheckedPlanBlock := ⟨stepBlock⟩
 
+/-! ## f32 slice Task 2, fixture 19: the block-level storage-kind gate
+
+`stepBlock` reshaped into an ALL-INPUT, ZERO-STEP block: one signature retained, that slot is both
+the sole input and the sole output, and `steps := #[]`. The empty step list is the point — there is
+no per-assignment `checkAssign` call for a dtype check to hide inside, so only a whole-table gate
+derived before wiring can reject it. Without that gate this block acquires checked evidence for a
+carrier `runDenseBlock` does not implement. -/
+
+def f32ZeroStepBlock : RawPlanBlock :=
+  { contextShape := #[2], tensorSigs := #[{ shape := #[2, 3], dtype := .f32 }]
+  , inputs := #[0], steps := #[], outputs := #[0] }
+
+run_cmd do
+  match checkPlanBlock f32ZeroStepBlock with
+  | .ok _ => throwError "f32 fixture 19: an all-input zero-step f32 block should have been rejected"
+  | .error e =>
+      unless e == .storageKindNotAdmitted .float32 do
+        throwError s!"f32 fixture 19: wrong error {repr e}"
+
+-- Control: the identical zero-step block with an `f64` signature is ACCEPTED, so the rejection is
+-- about the storage kind and not about the empty step list or the input-is-output shortcut.
+run_cmd do
+  match checkPlanBlock { f32ZeroStepBlock with
+      tensorSigs := #[{ shape := #[2, 3], dtype := .f64 }] } with
+  | .error e => throwError s!"f32 fixture 19 control: f64 zero-step block rejected: {repr e}"
+  | .ok _ => pure ()
+
+-- Second case: a WIRING-VALID zero-step block whose table names both real carriers. Both slots are
+-- inputs and outputs, so nothing else about this block is wrong — the located
+-- `mixedStorageKinds 1 .f32 .f64` is the only available verdict, and it arrives through
+-- `BlockError.wiring` (the per-slot `PlanError` locator) rather than the whole-table
+-- `storageKindNotAdmitted`.
+def mixedZeroStepBlock : RawPlanBlock :=
+  { contextShape := #[]
+  , tensorSigs := #[{ shape := #[2], dtype := .f32 }, { shape := #[2], dtype := .f64 }]
+  , inputs := #[0, 1], steps := #[], outputs := #[0, 1] }
+
+run_cmd do
+  match checkPlanBlock mixedZeroStepBlock with
+  | .ok _ => throwError "f32 fixture 19b: a mixed-precision block table should have been rejected"
+  | .error e =>
+      unless e == .wiring (PlanError.mixedStorageKinds 1 .f32 .f64) do
+        throwError s!"f32 fixture 19b: wrong error {repr e}"
+
 end LeanNCD.Eval.Plan.BlockTest

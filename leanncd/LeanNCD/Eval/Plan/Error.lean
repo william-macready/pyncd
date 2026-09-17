@@ -68,6 +68,40 @@ inductive PlanError
       admitted; the remaining four arms are matched explicitly (never a catch-all) so adding a sixth
       policy is a compile error and landing one of these is replacing this `throw` with real logic. -/
   | scatterReduceNotAdmitted      (reduce : LeanNCD.CollisionReduce)
+  /-- An inline unary read factor inside an assignment whose graph storage kind has no unary
+      implementation. Located at the ORIGINAL all-factor index (an Iverson ahead of the read does
+      not shift it down), matching every other per-factor locator in this family. The only producer
+      is `checkAssignF32` (`Check.lean`): binary32 unary math is deferred to slice F32-B, so an
+      `f32` graph rejects the factor at the checker rather than letting a Float32 worker invent a
+      `Float`-backed approximation. Carries the DTYPE rather than the storage kind: it is the
+      destination's own declared dtype the rejection is about, matching `dtypeNotAdmitted`. -/
+  | unaryNotAdmittedForDtype      (termIndex factorIndex : Nat) (dtype : ScalarDType)
+  /-- One signature table names two different REAL storage kinds. `slot` is the FIRST signature slot
+      whose real storage kind disagrees with the kind an earlier slot established; `first` is the
+      establishing slot's dtype and `actual` is this slot's — both concrete `ScalarDType`s, never
+      `StorageKind`s, so the diagnostic names what the table actually says. `bool` signatures are
+      skipped entirely (they are an algebra tag over whichever real carrier the table selects), so a
+      `[f32, bool]` or `[f64, bool]` table is homogeneous, not mixed.
+
+      Raised by `deriveStorageKind` (`Check.lean`) through `checkPlan` (`EvalPlan.lean`, wrapped as
+      `PlanStepError.assign`) and `checkPlanBlock` (`Block.lean`, wrapped as `BlockError.wiring`).
+      A mixed table has no meaning to compile: no worker and no algebra in this backend expresses a
+      per-tensor precision boundary, and nothing inserts a conversion. -/
+  | mixedStorageKinds             (slot : TensorSlot) (first actual : ScalarDType)
+  deriving DecidableEq, BEq, Repr, Inhabited
+
+/-- Which `PlanStep` constructor an outer graph step is, as a closed diagnostic payload rather than
+    a rendered string. Defined here beside the other plan-layer diagnostics; its one consumer,
+    `PlanStepError.f32UnsupportedStep`, lives in `EvalPlan.lean` for the same import-order reason
+    `PlanStepError` itself does (it needs `ScanPlanError`), but this vocabulary needs nothing from
+    that layer.
+
+    `.assign` is carried for completeness of the vocabulary — `PlanStep.kind` is total — and is
+    deliberately NOT a producer of `f32UnsupportedStep`: an assignment is exactly the one step kind
+    an `f32` graph admits. Derives the same four classes `PlanStepError` does so that type's own
+    derivations keep working. -/
+inductive PlanStepKind
+  | assign | scatter | scan | pointwise | axiswise
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- A checked plan met a positional tensor store that does not conform to the shapes the checker
@@ -127,6 +161,16 @@ inductive PositionalInputError
       `writtenBy` map exists solely to report it. `first` is whichever source coordinate row-major
       enumeration reached first, matching the reference's `cartesian` order. -/
   | scatterCollision (destCoord firstSource secondSource : List Nat)
+  /-- A carrier-specific worker was handed checked evidence for a DIFFERENT storage kind. `expected`
+      is the worker's own carrier (`.float64` for every `Array Float`-backed entry in this slice),
+      `actual` is the kind the checked evidence records.
+
+      Raised at the deepest public Float entries — `runDenseAssignAt` (`Dense.lean`) and
+      `runDensePlan` (`EvalPlan.lean`) — BEFORE context, store, arity, or any input is read, so
+      binary32 evidence can never be executed as binary64. Their empty-context wrappers
+      (`runDenseAssign`) inherit the guard rather than repeating it; guarding only the wrappers
+      would be insufficient, since a direct caller can invoke `runDenseAssignAt`. -/
+  | storageKindMismatch (expected actual : LeanNCD.StorageKind)
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- Wave C capability rejection (proposal §3.1/§3.2): which construct in the initial scan-free `f64`
@@ -148,12 +192,21 @@ inductive CapabilityError
                                              -- (checkAggOp admits max/min since they compile to the
                                              -- tropical algebras); kept per §9.2, like scanNode
   | booleanOutput        (context : String)
-  /-- A schedule whose derived STORAGE KIND the compiler will not compile. Two producers, both in
-      `prepareEvalPlan`'s Step 0b (never in `capabilityPreflight`, which is per-declaration and
-      per-statement and cannot see a schedule-wide derivation): a MIXED f32/f64 schedule, whose
-      context names the first used name that disagrees; and — TEMPORARILY, until checked f32
-      evidence and the Float-worker guards exist — every homogeneous f32 schedule, with the fixed
-      context `"f32 execution not yet admitted"`. -/
+  /-- A schedule the compiler will not compile FOR ITS DERIVED STORAGE KIND. Both producers are in
+      `prepareEvalPlan` (never in `capabilityPreflight`, which is per-declaration and per-statement
+      and cannot see a schedule-wide derivation):
+
+      * Step 0b — a MIXED f32/f64 schedule, context `"{name}: mixed f32/f64 storage in one
+        schedule"`, naming the first USED name that disagrees with the kind an earlier used name
+        established. An undeclared external is a real f64 tensor, so an f32 graph reading one is
+        mixed and lands here.
+      * Step 0c (`f32CapabilityCheck`) — a homogeneous-f32 schedule using a construct binary32
+        execution defers to a later slice, one context per construct: `"{name}: f32 scan"`,
+        `"{name}: f32 scatter"`, `"{name}: f32 nonlinearity"`, and
+        `"{name}: f32 unary factor {termIndex}:{factorIndex}"` (original all-factor index).
+
+      Task 1's temporary blanket `"f32 execution not yet admitted"` context is GONE: a homogeneous
+      f32 schedule inside this slice's fragment now compiles to checked binary32 evidence. -/
   | unsupportedDtype     (context : String)
   | dynamicShape         (context : String)  -- backend- or value-dependent shapes
   | recurrenceOrCallback (context : String)
@@ -383,6 +436,12 @@ inductive InputBindingError
   | missingEnvBinding (name : String)
   | shapeMismatch     (name : String) (slot : TensorSlot) (expected : Array Nat) (actual : List Nat)
   | storageMismatch   (name : String) (slot : TensorSlot) (shape : List Nat) (dataSize : Nat)
+  /-- The named INPUT adapter's own carrier does not match the prepared plan's checked storage kind.
+      `expected` is the adapter's carrier (`.float64` for `pack`), `actual` the plan's. Raised by
+      `packChecked` (`Adapter.lean`) before any shape or storage work and before any `DenseTensor`
+      is resolved out of the environment, so a binary32 plan can never have `Array Float` buffers
+      packed into its positional store and relabeled as its own. -/
+  | storageKindMismatch (expected actual : LeanNCD.StorageKind)
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- The runtime counterpart of `PlanCompileCause`: a `PreparedPlan` failed at the named binding
@@ -415,6 +474,15 @@ inductive PlanRunCause
   | execution       (cause : PositionalInputError)
   | resultStore     (cause : PositionalInputError)
   | materialization (cause : PlanError)
+  /-- The result adapter's or the prepared runner's own carrier does not match the prepared plan's
+      checked storage kind. `expected` is that entry's carrier (`.float64` for `unpack` and
+      `runPreparedDense`), `actual` the plan's. Two reporters, deliberately distinguishable from
+      each other and from `binding`'s `InputBindingError.storageKindMismatch`:
+      `unpackChecked` raises it before the result store's arity is examined or any name published,
+      and `runPreparedDense` raises its own copy FIRST — before `checkPreparedBindings`,
+      `packChecked`, and `runDensePlan` — so the composite entry fails at the adapter tier rather
+      than inheriting a nested worker or pack diagnostic. -/
+  | storageKindMismatch (expected actual : LeanNCD.StorageKind)
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- Failure type of `runPreparedDense`. `warnings` is always `plan.warnings` (the preparation

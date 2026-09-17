@@ -39,6 +39,13 @@ abbrev NamedDenseEnv := HashMap String DenseTensor
     for the positional worker to run. -/
 private def packChecked (plan : PreparedPlan) (checked : CheckedPreparedBindings)
     (env : NamedDenseEnv) : Except InputBindingError (Array DenseTensor) := do
+  -- STORAGE KIND FIRST, before any name is resolved and before any shape or storage is validated.
+  -- `NamedDenseEnv` is `HashMap String DenseTensor` — binary64 buffers — so packing them into a
+  -- `.float32` plan's positional store would relabel `Array Float` data as that plan's own
+  -- binary32 inputs without any numeric worker ever running. Placed on this private helper, not on
+  -- `pack` below, so `runPreparedDense`'s own call site inherits it too.
+  unless plan.plan.storageKind == .float64 do
+    throw (.storageKindMismatch .float64 plan.plan.storageKind)
   let raw := plan.plan.raw
   let slotName : HashMap TensorSlot String :=
     checked.requiredInputs.bindings.foldl (fun acc b => acc.insert b.slot b.name) {}
@@ -119,6 +126,12 @@ def pack (plan : PreparedPlan) (env : NamedDenseEnv) :
 private def unpackChecked (plan : PreparedPlan) (checked : CheckedPreparedBindings)
     (env : NamedDenseEnv) (result : Array DenseTensor) :
     Except PlanRunCause NamedDenseEnv := do
+  -- STORAGE KIND FIRST, before the result store's arity is examined and before any name is
+  -- published. The result environment this builds is a `NamedDenseEnv` of binary64 tensors, so
+  -- publishing a `.float32` plan's outputs through it would hand a caller `Array Float` buffers
+  -- under that plan's own output names. Same placement rationale as `packChecked`'s guard above.
+  unless plan.plan.storageKind == .float64 do
+    throw (.storageKindMismatch .float64 plan.plan.storageKind)
   let expected := plan.plan.raw.tensorSigs.size
   unless result.size == expected do
     throw (.resultStore (.storeArityMismatch expected result.size))
@@ -140,6 +153,15 @@ def unpack (plan : PreparedPlan) (env : NamedDenseEnv) (result : Array DenseTens
     sees here and the value direct `unpack` returns are the same). -/
 def runPreparedDense (plan : PreparedPlan) (env : NamedDenseEnv) :
     Except PlanRunFailure EvalReport := do
+  -- This composite entry carries its OWN storage-kind guard, first — before
+  -- `checkPreparedBindings`, before `packChecked`, and before `runDensePlan`. It is not redundant
+  -- with `packChecked`'s: this is the binary64 named runner as a whole, and a caller must see the
+  -- adapter-tier cause (`PlanRunCause.storageKindMismatch`) for "you handed the Float runner a
+  -- binary32 plan", not a nested pack or worker diagnostic that names a boundary further in. The
+  -- preparation warnings are preserved here exactly as they are on every other failure path.
+  unless plan.plan.storageKind == .float64 do
+    throw { cause := .storageKindMismatch .float64 plan.plan.storageKind
+          , warnings := plan.warnings }
   let checked ← match checkPreparedBindings plan with
     | .ok checked => pure checked
     | .error e => throw { cause := .binding (.invalidPreparedBindings e), warnings := plan.warnings }

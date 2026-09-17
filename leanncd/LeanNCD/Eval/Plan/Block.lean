@@ -49,6 +49,16 @@ inductive BlockError
   | blockContextMismatch  (nodeIndex : Nat) (expected actual : Array Nat)
   | nonlin (nodeIndex : Nat) (cause : NonlinPlanError)
   | nonlinearSourceNotLocalAssignment (nodeIndex : Nat) (sourceSlot : TensorSlot)
+  /-- This block's own signature table derives a storage kind no block worker implements. Only
+      `.float64` is: `runDenseBlock` below allocates an `Array DenseTensor` store and dispatches to
+      the Float workers, and blocks exist only inside a scan, whose binary32 support is slice F32-C.
+
+      Its own constructor rather than a `wiring (.dtypeNotAdmitted ...)`: this is a WHOLE-TABLE
+      verdict, not a statement about one slot, and it is load-bearing exactly where no per-slot
+      check can speak — an all-input, zero-step block, whose `checkAssign` calls are vacuous because
+      there are no steps at all. A MIXED table is a different failure and keeps the per-slot locator,
+      reported as `wiring (.mixedStorageKinds ...)`. -/
+  | storageKindNotAdmitted (kind : LeanNCD.StorageKind)
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- First slot in `slots` that recurs later in the list, if any. Mirrors `Prepared.lean`'s
@@ -177,9 +187,25 @@ def checkStepGraph {E C : Type} (n : Nat) (inputs : Array TensorSlot) (liftWirin
 
     The `outputs`-range/uniqueness check has no analogue in `checkStepGraph` either — there is no
     "declared outputs" concept at the outer-graph level — so it stays a separate step here, run
-    before the shared loop. -/
+    before the shared loop.
+
+    Before any of that, the block's COMPLETE signature table must derive a single admitted storage
+    kind (`deriveStorageKind`, `Check.lean`): a mixed table is `wiring (.mixedStorageKinds ...)` and
+    a `.float32` table is `storageKindNotAdmitted .float32`. See the inline comment at the top of the
+    body for why this cannot be delegated to the per-node checks. -/
 def checkPlanBlock (block : RawPlanBlock) : Except BlockError CheckedPlanBlock := do
+  -- STORAGE KIND FIRST, from this block's COMPLETE signature table, before outputs, wiring, or any
+  -- per-step local check. Two reasons it cannot be left to the per-node `checkAssign` calls below:
+  -- an all-input, zero-step block has no per-node check at all (nothing would reject it, and the
+  -- block would acquire checked evidence for a carrier no block worker implements), and a MIXED
+  -- table is a whole-table fact no single node's destination/source clause can see. `checkPlan`
+  -- (`EvalPlan.lean`) derives its own graph-level kind the same way, from the same shared
+  -- `deriveStorageKind`.
   let n := block.tensorSigs.size
+  match deriveStorageKind block.tensorSigs with
+  | .error e => throw (.wiring e)
+  | .ok .float64 => pure ()
+  | .ok kind => throw (.storageKindNotAdmitted kind)
   for h : i in [0 : block.outputs.size] do
     let s := block.outputs[i]
     unless s < n do throw (.wiring (.slotOutOfRange s n))

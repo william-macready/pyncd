@@ -715,36 +715,68 @@ def f32Sig : InputSignature :=
 #guard causeOf (prepareEvalPlan identitySched f32Sig) ==
   some { cause := .inputSignature (.dtypeNotAdmitted "X" .f32), warnings := [] }
 
-/-! ### f32 Task 1, fixture 15 (schedule-stop half)
+/-! ### f32 slice Task 2, fixtures 11-15 and 17
 
-Two HOMOGENEOUS f32 programs built on `identitySched` — which `prepareEvalPlan` accepts as-is
-(`#guard` above) — so the only thing that changes is the declared element type. Both must fail at
-the TEMPORARY schedule-level stop, with the fixed context `"f32 execution not yet admitted"`,
-before capability preflight, signature validation, specialization, or plan construction.
+Task 1's temporary blanket stop (`CapabilityError.unsupportedDtype "f32 execution not yet
+admitted"`) is GONE. A homogeneous-f32 schedule inside this slice's fragment now compiles to checked
+binary32 evidence; one outside it is rejected with the construct-specific payload naming the
+deferred slice. Both halves of Task 1's fixture 15 below become acceptance fixtures here. -/
 
-The second case is the one the stop exists for: it removes `X` from the schedule entirely (an
-always-true Iverson replaces the read), so Step B has NO f32 external signature to inspect and
-nothing later in the pipeline would have objected — the program would have specialized and run in
-the existing Float worker at binary64, silently. -/
-
+/-- Fixture 11: `identitySched` (which `prepareEvalPlan` accepts as-is, `#guard` above) with
+    rank-one `.typedTensor .f32` declarations for `X` and `Y` over its existing `axI1`. Only the
+    declared element type changes. -/
 def f32IdentitySched : ScheduledProgram :=
   { identitySched with
     decls := [.axis axI1 (some 3), .typedTensor .f32 "X" [axI1], .typedTensor .f32 "Y" [axI1]] }
 
 /-- The matching concrete f32 input signature, derived through the declaration-aware constructor
-    from the very declarations above (not hand-written), so the two halves of fixture 15 cannot
-    drift apart. -/
+    from the very declarations above (not hand-written), so the two halves cannot drift apart. -/
 def f32IdentitySig : InputSignature :=
   match InputSignature.ofDenseInputsForDecls f32IdentitySched.decls identityInputs with
   | .ok sig => sig
   | .error _ => InputSignature.mk ({} : HashMap String TensorSignature)
 
 #guard (f32IdentitySig.tensors["X"]?).map (·.dtype) == some ScalarDType.f32
-#guard causeOf (prepareEvalPlan f32IdentitySched f32IdentitySig) ==
-  some { cause := .capability (.unsupportedDtype "f32 execution not yet admitted"), warnings := [] }
 
-/-- The same identity statement with its read factor replaced by an always-true Iverson and `X`
-    removed from the external names and the signature: only the f32 DESTINATION remains. -/
+def f32IdentityPrepared : Option PreparedPlan :=
+  (prepareEvalPlan f32IdentitySched f32IdentitySig).toOption
+
+-- Accepted, with binary32 signatures on BOTH slots...
+#guard f32IdentityPrepared.map (·.plan.raw.tensorSigs) ==
+  some #[ { shape := #[3], dtype := .f32 }, { shape := #[3], dtype := .f32 } ]
+
+-- ... the binary32 SUM algebra on its one assignment (never `admittedAlgebra`, whose identities are
+-- `.f64` bit patterns)...
+#guard f32IdentityPrepared.map (fun p => (assignStep p.plan.raw.steps[0]!).algebra) ==
+  some admittedAlgebraF32
+
+-- ... exactly one step...
+#guard f32IdentityPrepared.map (·.plan.raw.steps.size) == some 1
+
+-- ... and `.float32` recorded on the checked evidence, at the plan level and on the step itself.
+#guard f32IdentityPrepared.map (·.plan.storageKind) == some LeanNCD.StorageKind.float32
+#guard f32IdentityPrepared.map (fun p => match p.plan.checkedNodes[0]? with
+  | some (CheckedPlanStepEvidence.assign c) => c.storageKind == LeanNCD.StorageKind.float32
+  | _ => false) == some true
+
+-- Control: the SAME program in the untyped (f64) spelling records `.float64` and the f64 algebra,
+-- so nothing above is an implementation that answers `.float32` unconditionally.
+#guard ((prepareEvalPlan
+    { f32IdentitySched with
+      decls := [.axis axI1 (some 3), .tensor "X" [axI1], .tensor "Y" [axI1]] }
+    identitySig).toOption.map (·.plan.storageKind)) == some LeanNCD.StorageKind.float64
+
+#guard ((prepareEvalPlan
+    { f32IdentitySched with
+      decls := [.axis axI1 (some 3), .tensor "X" [axI1], .tensor "Y" [axI1]] }
+    identitySig).toOption.map (fun p => (assignStep p.plan.raw.steps[0]!).algebra))
+  == some admittedAlgebra
+
+/-- The identity statement with its read factor replaced by an always-true Iverson and `X` removed
+    from the external names and the signature: only the f32 DESTINATION remains. This is the shape
+    Task 1's temporary stop existed for — Step B has NO f32 external signature to inspect — so it is
+    the one that would silently specialize into the Float worker if admission were incomplete. It
+    must now be accepted, with `.float32` evidence. -/
 def f32IversonSched : ScheduledProgram :=
   { decls := [.axis axI1 (some 3), .typedTensor .f32 "Y" [axI1]]
   , stmts := [.plain (.assign "Y" [.free axI1]
@@ -754,19 +786,158 @@ def f32IversonSched : ScheduledProgram :=
   , env := {}, extNames := (∅ : Finset String)
   , explicitSizes := (({} : HashMap UID Nat).insert axI1.uid 3) }
 
-#guard causeOf (prepareEvalPlan f32IversonSched
-    (InputSignature.mk ({} : HashMap String TensorSignature))) ==
-  some { cause := .capability (.unsupportedDtype "f32 execution not yet admitted"), warnings := [] }
+#guard ((prepareEvalPlan f32IversonSched
+    (InputSignature.mk ({} : HashMap String TensorSignature))).toOption.map (·.plan.storageKind))
+  == some LeanNCD.StorageKind.float32
 
--- Control for both: the SAME two schedules in the untyped (f64) spelling are accepted, so fixture
--- 15 is about the element type and nothing else about the two programs.
-#guard (prepareEvalPlan
-    { f32IdentitySched with
-      decls := [.axis axI1 (some 3), .tensor "X" [axI1], .tensor "Y" [axI1]] }
-    identitySig).toOption.isSome
-#guard (prepareEvalPlan
-    { f32IversonSched with decls := [.axis axI1 (some 3), .tensor "Y" [axI1]] }
-    (InputSignature.mk ({} : HashMap String TensorSignature))).toOption.isSome
+/-! #### Fixture 12: the mixed-precision locator scans USED names, not declarations
+
+Declaration order is `Y` (f32) then `X` (ordinary, f64); used-name order — external reads first,
+then written names — is `X` then `Y`. So the first REAL constraint is `X`'s `.float64` and the
+first conflicting name is `Y`. A declaration-order scan would name `X` instead. -/
+
+def f32MixedDeclOrderSched : ScheduledProgram :=
+  { identitySched with
+    decls := [.axis axI1 (some 3), .typedTensor .f32 "Y" [axI1], .tensor "X" [axI1]] }
+
+#guard causeOf (prepareEvalPlan f32MixedDeclOrderSched identitySig) ==
+  some { cause := .capability (.unsupportedDtype "Y: mixed f32/f64 storage in one schedule")
+       , warnings := [] }
+
+/-- The same conflict with `X` UNDECLARED. Used-name analysis still defaults `X` to `.float64`
+    (`storageConstraintOfName?`'s undeclared arm, mirroring `dtypeOfDecl none = .f64`) and rejects
+    at `Y`; a declaration-only scan never sees the undeclared name at all and would report no
+    conflict. The two subcases together distinguish every relevant order/default reading. An
+    undeclared external therefore stays f64, so every real external of an f32 graph must be
+    declared `tensor f32` — this slice inserts no cast and admits no implicit widening. -/
+def f32MixedUndeclaredSched : ScheduledProgram :=
+  { identitySched with decls := [.axis axI1 (some 3), .typedTensor .f32 "Y" [axI1]] }
+
+#guard causeOf (prepareEvalPlan f32MixedUndeclaredSched identitySig) ==
+  some { cause := .capability (.unsupportedDtype "Y: mixed f32/f64 storage in one schedule")
+       , warnings := [] }
+
+/-! #### Fixture 13: an f64 signature supplied for an f32-declared external
+
+Fixture 11 with the input signature alone changed. The schedule is homogeneous f32, so Step B's
+declaration-derived expectation for `X` is `.f32`; a supplied `.f64` is a precision disagreement
+between two known sides, reported as `dtypeMismatch` carrying both — not as a bare
+`dtypeNotAdmitted`, which would drop the expectation. -/
+def f32WrongInputSig : InputSignature :=
+  InputSignature.mk (({} : HashMap String TensorSignature).insert "X"
+    { shape := #[3], dtype := .f64 })
+
+#guard causeOf (prepareEvalPlan f32IdentitySched f32WrongInputSig) ==
+  some { cause := .inputSignature (.dtypeMismatch "X" .f32 .f64), warnings := [] }
+
+/-! #### Fixture 14 (source half): nonlinearity is checked BEFORE factors
+
+`f32BadOrderProg` is fixture 11 carrying BOTH a pointwise nonlinearity on the destination AND an
+inline unary read in the same plain assignment. Either alone is rejected; this fixture pins which
+one is REPORTED, so swapping the two capability checks fails it. -/
+def f32BadOrderProg : ScheduledProgram :=
+  { f32IdentitySched with
+    stmts := [.plain (.assign "Y" [.free axI1]
+      { body := { terms := [{ factors := [.unaryFn .log "X" [.axis axI1]] }] }
+      , nonlin := .pointwise .relu })] }
+
+#guard causeOf (prepareEvalPlan f32BadOrderProg f32IdentitySig) ==
+  some { cause := .capability (.unsupportedDtype "Y: f32 nonlinearity"), warnings := [] }
+
+/-! #### Fixture 15: the four deferred source forms, each with its exact payload
+
+Every one is an otherwise-valid homogeneous f32 source program built from a concrete existing
+donor, called through `prepareEvalPlan`, and required to fail at the SOURCE capability tier — before
+raw plan construction, so none of them can reach `checkPlan` (the compiler-bug channel) or any
+worker. -/
+
+-- (a) axiswise: the identity statement over a `·`-markable axis, with a softmax. The marked axis
+-- must be `.real`-kinded (`CompileError.normAxisNotReal`), which `identitySched`'s own `axI1` is
+-- not — so this case declares its own `s : ℝ`, exactly as `NonlinCompileTest.axiswiseSched` does,
+-- and is otherwise the same one-read f32 identity assignment.
+def f32AxS : AxisSpec := { name := "s", uid := 1102, kind := .real }
+
+def f32AxiswiseProg : ScheduledProgram :=
+  { decls := [ .axis f32AxS (some 3), .typedTensor .f32 "X" [f32AxS]
+             , .typedTensor .f32 "Y" [f32AxS] ]
+  , stmts := [.plain (.assign "Y" [.freeNorm f32AxS]
+      { body := { terms := [{ factors := [.read "X" [.axis f32AxS]] }] }
+      , nonlin := .axiswise .softmax none })]
+  , env := {}, extNames := insert "X" (∅ : Finset String)
+  , explicitSizes := (({} : HashMap UID Nat).insert f32AxS.uid 3) }
+
+#guard causeOf (prepareEvalPlan f32AxiswiseProg f32IdentitySig) ==
+  some { cause := .capability (.unsupportedDtype "Y: f32 nonlinearity"), warnings := [] }
+
+-- (b) inline unary: `identitySched` with an always-true Iverson placed FIRST, so the reported
+-- all-factor index is `1` rather than the Iverson-filtered read index `0`.
+def f32UnaryProg : ScheduledProgram :=
+  { f32IdentitySched with
+    stmts := [.plain (.assign "Y" [.free axI1]
+      { body := { terms := [{ factors :=
+          [ .iverson (.rel .le (.embed (.const 0)) (.embed (.const 0)))
+          , .unaryFn .log "X" [.axis axI1] ] }] }
+      , nonlin := .identity })] }
+
+#guard causeOf (prepareEvalPlan f32UnaryProg f32IdentitySig) ==
+  some { cause := .capability (.unsupportedDtype "Y: f32 unary factor 0:1"), warnings := [] }
+
+-- (c) top-level scatter: the identity schedule's free LHS replaced by the strided affine slot
+-- `Out[2*i]`, presented as the `Stmt.scatter` node `lowerArith` would produce for it.
+def f32ScatterProg : ScheduledProgram :=
+  { f32IdentitySched with
+    stmts := [.plain (.scatter "Y" [.affine (.scale 2 axI1)]
+      { body := { terms := [{ factors := [.read "X" [.axis axI1]] }] }, nonlin := .identity }
+      { fill := 0, reduce := .rejectCollisions })] }
+
+#guard causeOf (prepareEvalPlan f32ScatterProg f32IdentitySig) ==
+  some { cause := .capability (.unsupportedDtype "Y: f32 scatter"), warnings := [] }
+
+-- (d) scan: `ScanCompileTest.selfRecurSched`'s statement with binary32 declarations for its two
+-- externals and its state. The scan's representative name is `S`.
+def f32ScanAxL : AxisSpec := ⟨"l", 1, .nat⟩
+
+def f32ScanProg : ScheduledProgram :=
+  { decls := [ .iter f32ScanAxL 3, .typedTensor .f32 "S0" [], .typedTensor .f32 "X" [f32ScanAxL]
+             , .typedTensor .f32 "S" [f32ScanAxL] ]
+  , stmts := [.scan "S" [f32ScanAxL]
+      [ .assign "S" [.iterAt f32ScanAxL 0]
+          { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := .identity } ]
+      [ .assign "S" [.iterNext f32ScanAxL]
+          { body := { terms := [ { factors := [.read "S" [.axis f32ScanAxL]] }
+                               , { factors := [.read "X" [.axis f32ScanAxL]] } ] }
+          , nonlin := .identity } ]
+      false ]
+  , env := {}, extNames := insert "S0" (insert "X" (∅ : Finset String))
+  , explicitSizes := (({} : HashMap UID Nat).insert f32ScanAxL.uid 3) }
+
+def f32ScanSig : InputSignature :=
+  InputSignature.mk ((({} : HashMap String TensorSignature).insert "S0"
+    { shape := #[], dtype := .f32 }).insert "X" { shape := #[3], dtype := .f32 })
+
+#guard causeOf (prepareEvalPlan f32ScanProg f32ScanSig) ==
+  some { cause := .capability (.unsupportedDtype "S: f32 scan"), warnings := [] }
+
+/-! #### Fixture 17: top-level statements are traversed in SOURCE order
+
+A two-statement f32 program whose FIRST plain assignment carries an inline unary and whose SECOND
+carries a pointwise nonlinearity. The required answer is the first statement's UNARY payload, so a
+reverse traversal — or a whole-program pass that prioritises the nonlinearity category regardless of
+statement position — fails this fixture. -/
+def f32SourceOrderProg : ScheduledProgram :=
+  { decls := [ .axis axI1 (some 3), .typedTensor .f32 "X" [axI1]
+             , .typedTensor .f32 "Y" [axI1], .typedTensor .f32 "Z" [axI1] ]
+  , stmts := [ .plain (.assign "Y" [.free axI1]
+                 { body := { terms := [{ factors := [.unaryFn .log "X" [.axis axI1]] }] }
+                 , nonlin := .identity })
+             , .plain (.assign "Z" [.free axI1]
+                 { body := { terms := [{ factors := [.read "Y" [.axis axI1]] }] }
+                 , nonlin := .pointwise .relu }) ]
+  , env := {}, extNames := insert "X" (∅ : Finset String)
+  , explicitSizes := (({} : HashMap UID Nat).insert axI1.uid 3) }
+
+#guard causeOf (prepareEvalPlan f32SourceOrderProg f32IdentitySig) ==
+  some { cause := .capability (.unsupportedDtype "Y: f32 unary factor 0:0"), warnings := [] }
 
 -- `prepareEvalPlan`'s OWN capability-rejection path: Step A runs `capabilityPreflight` before
 -- shape inference, so an axis-less `.scan` statement is rejected with a `.capability`-tagged

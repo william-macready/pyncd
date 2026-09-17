@@ -759,6 +759,19 @@ inductive JaxExecutableValidationError
   | aggregationMismatch
   | invalidBindings (cause : PreparedBindingsError)
   | invalidCandidate
+  /-- The candidate's own source plan is not binary64. This backend's only reference claim is
+      `ExecutionEvidence.orderedReference64`, its fixtures and Python runtimes encode `UInt64` bits
+      and assert `np.float64`/`jnp.float64`, and there is no binary32 evidence label at all (slice
+      F32-JAX). So the gate is PLAN-LEVEL and is checked FIRST — before the aggregation equality and
+      before binding validation.
+
+      Plan-level, not per-step, because per-step support checks are VACUOUS for the case that
+      matters: an all-input, zero-step `.float32` plan has no node to inspect, and
+      `aggregateEvidenceList #[]` is `orderedReference64` (the identity of the "all" fold), so
+      without this gate such a candidate would acquire a reference64 claim about a plan carrying no
+      binary64 protection whatsoever. Expressed in storage-kind terms rather than as an f32 special
+      case, so a future complex plan meets the same fail-loud boundary. -/
+  | unsupportedStorageKind (actual : LeanNCD.StorageKind)
   deriving DecidableEq, BEq, Repr
 
 /-- Validate a candidate and construct a private executable plan.
@@ -776,6 +789,13 @@ inductive JaxExecutableValidationError
 -/
 def validateAndConstructExecutable (candidate : JaxExecutableCandidate) :
     Except JaxExecutableValidationError SomeJaxExecutable := do
+  -- PLAN-LEVEL STORAGE GATE, first — ahead of the aggregation equality, ahead of binding
+  -- validation, and ahead of the whole-candidate predicate. See `unsupportedStorageKind`'s own doc
+  -- comment: a zero-step `.float32` candidate passes all three of those (its empty evidence fold IS
+  -- `orderedReference64`, and its bindings can be perfectly well-formed), so a gate placed after any
+  -- of them would hand out a reference64 executable for a binary32 plan.
+  unless candidate.source.plan.storageKind == .float64 do
+    throw (.unsupportedStorageKind candidate.source.plan.storageKind)
   unless decide (candidate.evidence = aggregateEvidenceList (candidate.steps.map (·.evidence))) do
     throw .aggregationMismatch
   let checkedBindings ← match checkPreparedBindings candidate.source with

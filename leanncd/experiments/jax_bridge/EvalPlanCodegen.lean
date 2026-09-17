@@ -91,7 +91,20 @@ inductive JaxCodegenError
   -- assignment (`checkAssign` re-run under it fails): a caller-supplied table is that entry's
   -- semantic authority, so it is rejected outright rather than consulted for its dtype tags alone.
   | invalidSignatureContext (nodeIndex : Nat) (cause : PlanError)
+  -- f32 slice, Task 2 — the PLAN-LEVEL storage gate every candidate/generator/renderer entry here
+  -- runs FIRST, before node iteration, before prepared-binding validation, and before any Python or
+  -- constants text is produced. This backend is reference64-only: its fixtures and runtimes encode
+  -- `UInt64` bits and assert `np.float64`/`jnp.float64`, and there is no binary32 evidence label
+  -- (slice F32-JAX). Deliberately NOT a per-node check: an all-input, zero-step `.float32` plan has
+  -- no node to visit at all, so only a plan-level gate can reject it. Carries the plan's own kind.
+  | unsupportedStorageKind (actual : LeanNCD.StorageKind)
   deriving DecidableEq, BEq, Repr, Inhabited
+
+/-- The one shared plan-level storage gate every entry below opens with. Defined once so a new
+    entry point has an obvious thing to call and the eight existing doors cannot drift. -/
+def requireFloat64Plan (c : CheckedEvalPlan) : Except JaxCodegenError Unit :=
+  if c.storageKind == .float64 then .ok ()
+  else .error (.unsupportedStorageKind c.storageKind)
 
 /-- Map the production support gate's located error into this module's own closed diagnostic
     vocabulary. One-to-one; no case is collapsed and no locator is dropped. -/
@@ -306,6 +319,8 @@ def lowerAssign (sigs : Array TensorSignature) (nodeIndex : Nat) (checked : Chec
     spike decision GO B) — there is deliberately no way for a caller to supply a parallel,
     same-shape all-real table here. -/
 def lowerPlan (c : CheckedEvalPlan) : Except JaxCodegenError (Array NodeLowering) := do
+  -- Plan-level storage gate, before node iteration (`requireFloat64Plan`).
+  requireFloat64Plan c
   let sigs := c.raw.tensorSigs
   let mut nodes : Array NodeLowering := #[]
   for h : ni in [0 : c.checkedNodes.size] do
@@ -370,6 +385,8 @@ private def generateForwardChecked (plan : PreparedPlan) (checked : CheckedPrepa
 
 /-- The full `forward(inputs)` function body, generated entirely from a validated `PreparedPlan`. -/
 def generateForward (plan : PreparedPlan) : Except JaxCodegenError String := do
+  -- Plan-level storage gate, before prepared-binding validation and before any Python is emitted.
+  requireFloat64Plan plan.plan
   let checked ← match checkPreparedBindings plan with
     | .ok checked => pure checked
     | .error e => throw (.invalidBindings e)
@@ -403,6 +420,9 @@ private def renderInputConstantsRaw (raw : RawEvalPlan) (requiredInputs : Array 
 /-- Render smoke inputs only after validating the complete prepared-plan binding sidecar. -/
 def renderInputConstants (plan : PreparedPlan) (inputs : HashMap String DenseTensor) :
     Except JaxCodegenError String := do
+  -- Plan-level storage gate, before prepared-binding validation and before any constants text.
+  -- `INPUT_BITS` is `Float.toBits` — binary64 payloads — so this must never run for an f32 plan.
+  requireFloat64Plan plan.plan
   let checked ← match checkPreparedBindings plan with
     | .ok checked => pure checked
     | .error e => throw (.invalidBindings e)
@@ -524,6 +544,9 @@ private def renderBindingList (bs : Array SlotBinding) : String :=
 /-- Positional `CheckedEvalPlan` static plan data: slot count, ordered input slots, and every
     checked node's affine tables. The complete-graph boundary. -/
 def renderAffinePlanPositional (c : CheckedEvalPlan) : Except JaxCodegenError String := do
+  -- Plan-level storage gate, before node iteration. One of the two entries here with no
+  -- pre-existing check of its own to race against.
+  requireFloat64Plan c
   let nodes ← renderAffineNodesArray c
   return "{\"num_slots\": " ++ toString c.raw.tensorSigs.size ++
     ", \"input_slots\": " ++ pyNatListLit c.raw.inputSlots ++
@@ -533,6 +556,8 @@ def renderAffinePlanPositional (c : CheckedEvalPlan) : Except JaxCodegenError St
     (`requiredInputs` in `inputSlots` order, `materializedNames` in schedule order). The
     source/corpus boundary. -/
 def renderAffinePlanNamed (plan : PreparedPlan) : Except JaxCodegenError String := do
+  -- Plan-level storage gate, before prepared-binding validation and before node iteration.
+  requireFloat64Plan plan.plan
   let checked ← match checkPreparedBindings plan with
     | .ok checked => pure checked
     | .error e => throw (.invalidBindings e)
@@ -593,7 +618,11 @@ inductive LoweringMode
     assignment-only plain-read fragment described at the top of this file; every unsupported
     category fails loud with its located `JaxCodegenError`. -/
 def generateNamed (mode : LoweringMode) (plan : PreparedPlan) :
-    Except JaxCodegenError String :=
+    Except JaxCodegenError String := do
+  -- Plan-level storage gate, explicitly here as well as on both dispatch targets. Stated rather
+  -- than inherited so this named door appears in its own right in the door-guard sweep: a later
+  -- mode added to `LoweringMode` cannot reach a renderer without passing it.
+  requireFloat64Plan plan.plan
   match mode with
   | .einsumOnly       => generateForward plan
   | .affineReference  => renderAffinePlanNamed plan
@@ -694,6 +723,10 @@ def loweringToEinsumCandidate (sigs : Array TensorSignature) (nodeIndex : Nat)
 -/
 def lowerCheckPlanToCandidate (plan : PreparedPlan) :
     Except JaxCodegenError JaxExecutableCandidate := do
+  -- Plan-level storage gate, before prepared-binding validation and before node iteration. This is
+  -- the zero-step case's load-bearing door on this side: with no steps, the loop below is vacuous
+  -- and `aggregateEvidenceList #[]` is `orderedReference64`.
+  requireFloat64Plan plan.plan
   match checkPreparedBindings plan with
   | .error e => throw (.invalidBindings e)
   | .ok _ => pure ()
@@ -1643,5 +1676,158 @@ def ctxFreePrepared? : Option PreparedPlan :=
     catch e => pure (toString e)
   unless (outcome.splitOn "Dense run failed").length == 2 do
     throw (IO.userError s!"buildAssignFixture did not reject the contextful assignment: {outcome}")
+
+/-! ## f32 slice Task 2, fixtures 22-25: the plan-level JAX storage gates
+
+This backend is reference64-only and stays so until slice F32-JAX: its fixtures and Python runtimes
+encode `UInt64` bits and assert `np.float64`/`jnp.float64`, and `ExecutionEvidence` has no binary32
+label. Every candidate/generator/renderer entry here therefore refuses a `.float32` checked plan
+BEFORE iterating nodes, before validating prepared bindings, and before producing any text.
+
+Fixture 22 uses a NONEMPTY f32 plan (`GraphCheckTest`'s fixture-6 graph, rebuilt locally — this
+library cannot import the default-build test modules), so the gate races a real per-node
+destination-dtype rejection. Fixture 23 uses the ZERO-STEP, all-input plan, where per-node checks
+are vacuous and `aggregateEvidenceList #[]` is `orderedReference64`. Fixture 24 rebuilds fixture 23
+with an out-of-range materialized binding, so the gate races `invalidBindings`. Fixture 25 feeds
+fixture 23's valid plan to every remaining renderer/generator. -/
+
+/-- Fixture 22's donor: the one-node f32 graph `Y[i] := X[i]`, `i : 2` — `GraphCheckTest`'s
+    `f32OneNodePlan`, rebuilt here field for field. -/
+def f32OneNodeSigs : Array TensorSignature :=
+  #[ { shape := #[2], dtype := .f32 }, { shape := #[2], dtype := .f32 } ]
+
+def f32OneNodeAssign : AssignPlan :=
+  { contextShape := #[], destinationSlot := 1, outputShape := #[2]
+  , terms := #[{ iterationShape := #[2], contextPos := #[], outputPos := #[0], reductionPos := #[]
+               , factors := #[.read { sourceSlot := 0, map := { coeffs := #[#[1]], bias := #[0] }
+                                    , sourceShape := #[2], oobPolicy := .zeroPad }] }]
+  , algebra := admittedAlgebraF32 }
+
+def f32OneNodeRaw : RawEvalPlan :=
+  { tensorSigs := f32OneNodeSigs, inputSlots := #[0]
+  , steps := #[PlanStep.assign f32OneNodeAssign] }
+
+def f32NonemptyPrepared? : Option PreparedPlan :=
+  preparedOf f32OneNodeRaw #[{ name := "x", slot := 0 }] #[{ name := "y", slot := 1 }]
+
+/-- Fixture 23's donor: `ExecutableTest.idRaw`'s shape with its only step removed and both slots
+    turned into inputs, retagged f32 throughout. Zero steps, so nothing per-node can reject it. -/
+def f32ZeroStepRaw : RawEvalPlan :=
+  { tensorSigs := #[ { shape := #[3], dtype := .f32 }, { shape := #[3], dtype := .f32 } ]
+  , inputSlots := #[0, 1], steps := #[] }
+
+def f32ZeroStepPrepared? : Option PreparedPlan :=
+  preparedOf f32ZeroStepRaw #[{ name := "x", slot := 0 }, { name := "y", slot := 1 }] #[]
+
+/-- Fixture 24's donor: fixture 23 with an out-of-range materialized binding, which
+    `checkPreparedBindings` rejects as `materializedSlot (.slotOutOfRange 99 2)`. -/
+def f32BadBindingPrepared? : Option PreparedPlan :=
+  preparedOf f32ZeroStepRaw #[{ name := "x", slot := 0 }, { name := "y", slot := 1 }]
+    #[{ name := "z", slot := 99 }]
+
+-- The zero-step f32 plan really does check, and really does record `.float32` — otherwise every
+-- rejection below would be vacuous.
+#guard (match f32ZeroStepPrepared? with
+  | some p => p.plan.storageKind == LeanNCD.StorageKind.float32
+  | none => false)
+
+-- ... and its binding sidecar really is valid, so fixture 23's rejections are not disguised
+-- `invalidBindings`.
+#guard (match f32ZeroStepPrepared? with
+  | some p => (checkPreparedBindings p).toOption.isSome
+  | none => false)
+
+def codegenErr (r : Except JaxCodegenError String) : Option JaxCodegenError :=
+  match r with | .error e => some e | .ok _ => none
+
+/-! ### Fixture 22: the gate precedes node iteration
+
+The nonempty plan's single node would be rejected by `checkJaxAssignSupport` as
+`unsupportedDestDType 0 1 .f32` if the loop were ever entered. Requiring the STORAGE error instead
+is what pins that the gate runs first. -/
+
+#guard (match f32NonemptyPrepared? with
+  | some p =>
+      codegenErr (generateForward p) == some (.unsupportedStorageKind .float32) &&
+      codegenErr (renderAffinePlanNamed p) == some (.unsupportedStorageKind .float32) &&
+      codegenErr (renderAffinePlanPositional p.plan) == some (.unsupportedStorageKind .float32) &&
+      codegenErr (generateNamed .einsumOnly p) == some (.unsupportedStorageKind .float32) &&
+      codegenErr (generateNamed .affineReference p) == some (.unsupportedStorageKind .float32) &&
+      (match lowerPlan p.plan with
+       | .error e => e == .unsupportedStorageKind .float32
+       | .ok _ => false) &&
+      (match lowerCheckPlanToCandidate p with
+       | .error e => e == .unsupportedStorageKind .float32
+       | .ok _ => false)
+  | none => false)
+
+/-! ### Fixture 23: the zero-step, all-input plan is positively rejected
+
+`lowerCheckPlanToCandidate` on this plan has no node to visit at all; without the gate it would
+build a candidate whose evidence is the empty fold's identity, `orderedReference64`. -/
+
+#guard (match f32ZeroStepPrepared? with
+  | some p =>
+      (match lowerCheckPlanToCandidate p with
+       | .error e => e == .unsupportedStorageKind .float32
+       | .ok _ => false)
+  | none => false)
+
+/-! ### Fixture 24: the gate precedes prepared-binding validation
+
+Same zero-step plan, now with a materialized binding naming slot 99 over a two-slot table. Without
+the gate ahead of `checkPreparedBindings` this reports `invalidBindings`. -/
+
+#guard (match f32BadBindingPrepared? with
+  | some p =>
+      (match lowerCheckPlanToCandidate p with
+       | .error e => e == .unsupportedStorageKind .float32
+       | .ok _ => false)
+  | none => false)
+
+-- Control: the SAME out-of-range binding over a BINARY64 zero-step plan does report
+-- `invalidBindings`, so fixture 24's requirement is about order and not about an unreachable check.
+def f64ZeroStepRaw : RawEvalPlan :=
+  { tensorSigs := #[ { shape := #[3], dtype := .f64 }, { shape := #[3], dtype := .f64 } ]
+  , inputSlots := #[0, 1], steps := #[] }
+
+#guard (match preparedOf f64ZeroStepRaw
+      #[{ name := "x", slot := 0 }, { name := "y", slot := 1 }] #[{ name := "z", slot := 99 }] with
+  | some p =>
+      (match lowerCheckPlanToCandidate p with
+       | .error e => e == .invalidBindings (.materializedSlot (.slotOutOfRange 99 2))
+       | .ok _ => false)
+  | none => false)
+
+/-! ### Fixture 25: every renderer/generator entry, and NO emitted text
+
+The valid fixture-23 plan through both renderers, `generateForward`, both `generateNamed` modes, and
+`renderInputConstants`. Each returns the storage error; `codegenErr` returning `some` is exactly the
+claim that no Python body and no constants table was produced. -/
+
+def f32ZeroStepInputs : HashMap String DenseTensor :=
+  HashMap.ofList [("x", { shape := [3], data := #[1.0, 2.0, 3.0] })
+                 , ("y", { shape := [3], data := #[4.0, 5.0, 6.0] })]
+
+#guard (match f32ZeroStepPrepared? with
+  | some p =>
+      codegenErr (renderAffinePlanNamed p) == some (.unsupportedStorageKind .float32) &&
+      codegenErr (renderAffinePlanPositional p.plan) == some (.unsupportedStorageKind .float32) &&
+      codegenErr (generateForward p) == some (.unsupportedStorageKind .float32) &&
+      codegenErr (generateNamed .einsumOnly p) == some (.unsupportedStorageKind .float32) &&
+      codegenErr (generateNamed .affineReference p) == some (.unsupportedStorageKind .float32) &&
+      codegenErr (renderInputConstants p f32ZeroStepInputs)
+        == some (.unsupportedStorageKind .float32)
+  | none => false)
+
+-- Control: the binary64 zero-step sibling with a well-formed sidecar renders and lowers, so none of
+-- the entries above is refusing the zero-step SHAPE rather than the storage kind.
+#guard (match preparedOf f64ZeroStepRaw
+      #[{ name := "x", slot := 0 }, { name := "y", slot := 1 }] #[] with
+  | some p =>
+      (match renderAffinePlanPositional p.plan with | .ok _ => true | .error _ => false) &&
+      (match generateForward p with | .ok _ => true | .error _ => false) &&
+      (match lowerCheckPlanToCandidate p with | .ok _ => true | .error _ => false)
+  | none => false)
 
 end JaxBridge

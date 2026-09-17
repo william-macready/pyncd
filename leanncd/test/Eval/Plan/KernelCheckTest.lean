@@ -261,4 +261,130 @@ def boolPlan : AssignPlan := { goodPlan with algebra := admittedAlgebraBool }
    , { shape := #[4], dtype := .f32 } ] boolPlan)
   == some (.dtypeNotAdmitted 2 .f32)
 
+/-! ## f32 slice Task 2: `checkAssignF32`, the binary32 sibling of `checkAssign`
+
+Fixtures 1-5. Every one is `goodPlan` (or, for fixture 4, `KernelDenseTest.unaryPlan`'s read shape)
+with exactly the fields each case names changed, so a difference in outcome is attributable to the
+dtype/algebra/unary change and nothing else. Acceptance means `checkAssignF32` returns evidence AND
+that evidence records `.float32`; the binary32 Dense semantics are Task 3's, not pinned here. -/
+
+/-- The all-f32 counterpart of `sigs`: same three shapes, every dtype `f32`. -/
+def f32Sigs : Array TensorSignature :=
+  #[ { shape := #[4], dtype := .f32 }
+   , { shape := #[3], dtype := .f32 }
+   , { shape := #[4], dtype := .f32 } ]
+
+/-- `goodPlan` with the binary32 sum-product algebra. Reads, shapes, positions, and policies are
+    `goodPlan`'s own, untouched. -/
+def f32Plan : AssignPlan := { goodPlan with algebra := admittedAlgebraF32 }
+
+def storageOf : Except PlanError CheckedAssignPlan → Option LeanNCD.StorageKind
+  | .ok c => some c.storageKind | .error _ => none
+
+-- Fixture 1: the all-f32 reference plan is accepted, and its evidence records `.float32`.
+#guard isOk (checkAssignF32 f32Sigs f32Plan)
+#guard storageOf (checkAssignF32 f32Sigs f32Plan) == some LeanNCD.StorageKind.float32
+
+-- ... while the binary64 checker's evidence over the ORIGINAL table records `.float64`. Without
+-- this control an implementation that stamped `.float32` on everything would pass fixture 1.
+#guard storageOf (checkAssign sigs goodPlan) == some LeanNCD.StorageKind.float64
+
+-- Fixture 1 control: the f64 algebra under f32 destinations is NOT admitted. This is what fails if
+-- `algebraForDest`/`admittedAlgebrasForF32` ever hands an f32 destination the binary64 identities.
+#guard errOf (checkAssignF32 f32Sigs goodPlan) == some (.algebraNotAdmitted admittedAlgebra)
+
+-- Fixture 2, forward direction: fixture 1 with ONLY read source slot 0 changed back to f64. The
+-- binary32 checker reports the revived `dtypeMismatch .f32 .f64` — the graph's real carrier against
+-- this read's — not a bare `dtypeNotAdmitted`.
+#guard errOf (checkAssignF32
+  #[ { shape := #[4], dtype := .f64 }, { shape := #[3], dtype := .f32 }
+   , { shape := #[4], dtype := .f32 } ] f32Plan)
+  == some (.dtypeMismatch .f32 .f64)
+
+-- ... and slot 1, the SECOND read, reports the same thing: the rule is about the source dtype, not
+-- about which factor happens to come first.
+#guard errOf (checkAssignF32
+  #[ { shape := #[4], dtype := .f32 }, { shape := #[3], dtype := .f64 }
+   , { shape := #[4], dtype := .f32 } ] f32Plan)
+  == some (.dtypeMismatch .f32 .f64)
+
+-- Fixture 2, reversed roles through the ORDINARY checker: an f64 destination reading an f32 source
+-- still reports `dtypeNotAdmitted` at the source slot — the Float-backed checker's own diagnostic,
+-- unchanged in kind and in ORDER (the destination guard passes first, so the source guard is what
+-- reports).
+#guard errOf (checkAssign
+  #[ { shape := #[4], dtype := .f32 }, { shape := #[3], dtype := .f64 }
+   , { shape := #[4], dtype := .f64 } ] goodPlan)
+  == some (.dtypeNotAdmitted 0 .f32)
+
+-- Fixture 2 completeness: `.bool` sources ARE admitted in an f32 graph, exactly as in an f64 one —
+-- a Boolean tensor is an algebra tag over the graph's selected real carrier, not a third carrier.
+#guard isOk (checkAssignF32
+  #[ { shape := #[4], dtype := .bool }, { shape := #[3], dtype := .f32 }
+   , { shape := #[4], dtype := .f32 } ] f32Plan)
+
+-- Fixture 3: `constMatchesDtype` pinned DIRECTLY, in both directions. `.f32` accepts an `.f32`
+-- payload and rejects the two exact cross-tag payloads.
+#guard constMatchesDtype .f32 (.f32 0x3f800000) == true
+#guard constMatchesDtype .f32 (.f64 (Float.toBits 1.0)) == false
+#guard constMatchesDtype .f32 (.bool true) == false
+
+/- Deliberately NOT claimed: that `checkAssignF32` reaches `constDtypeMismatch` for a locally
+   altered algebra. Algebra MEMBERSHIP is checked first, and every member of `admittedAlgebrasForF32
+   .f32` carries `.f32` constants, so an algebra with a cross-tag identity is not in the row at all
+   and is reported as `algebraNotAdmitted` carrying the COMPLETE malformed algebra — the same shape
+   `KernelCheckTest`'s binary64 `constDtypeMismatch` note above records for `checkAssign`. -/
+def f32AlgebraWithF64Id : ContractionAlgebra :=
+  { admittedAlgebraF32 with reduceId := .f64 (Float.toBits 0.0) }
+
+#guard errOf (checkAssignF32 f32Sigs { f32Plan with algebra := f32AlgebraWithF64Id })
+  == some (.algebraNotAdmitted f32AlgebraWithF64Id)
+
+/-! ### Fixture 4: inline unary in an f32 graph
+
+`KernelDenseTest.unaryPlan`'s read shape (`sourceSlot 0`, coefficient row `#[1]`, source shape
+`#[4]`, `unary := some op`) cloned here over a rank-1 iteration basis, all-f32, with an Iverson
+factor placed BEFORE the unary read so the required all-factor index is 1 while an
+Iverson-filtered read index would be 0. -/
+
+-- A predicate true at every coordinate, both leaves of the correct width for a rank-1 basis.
+def truePred1 : PosBoolExpr :=
+  .rel .lt (.affine { coeffs := #[0], bias := 0 }) (.affine { coeffs := #[0], bias := 1 })
+
+def unaryF32Sigs : Array TensorSignature :=
+  #[ { shape := #[4], dtype := .f32 }, { shape := #[4], dtype := .f32 } ]
+
+def unaryF32Plan (unary : Option UnaryOp) : AssignPlan :=
+  { contextShape := #[], destinationSlot := 1, outputShape := #[4]
+  , terms := #[{ iterationShape := #[4], contextPos := #[], outputPos := #[0], reductionPos := #[]
+               , factors := #[ .iverson truePred1
+                             , .read { sourceSlot := 0, map := { coeffs := #[#[1]], bias := #[0] }
+                                     , sourceShape := #[4], oobPolicy := .zeroPad, unary } ] }]
+  , algebra := admittedAlgebraF32 }
+
+-- The unary read is rejected at its ORIGINAL all-factor index 1, not the filtered-read index 0.
+#guard errOf (checkAssignF32 unaryF32Sigs (unaryF32Plan (some .log)))
+  == some (.unaryNotAdmittedForDtype 0 1 .f32)
+
+-- Control: the SAME plan with the unary removed is accepted, so the rejection is about the unary
+-- and nothing else about this fixture's shape.
+#guard isOk (checkAssignF32 unaryF32Sigs (unaryF32Plan none))
+
+-- Control: an inline unary in a BINARY64 graph stays admitted — this slice narrowed nothing there.
+#guard isOk (checkAssign
+  #[ { shape := #[4], dtype := .f64 }, { shape := #[4], dtype := .f64 } ]
+  { unaryF32Plan (some .log) with algebra := admittedAlgebra })
+
+/-! ### Fixture 5: the legacy destination guard was not widened
+
+The pre-existing `f32` destination guard (`dtypeNotAdmitted 2 .f32`, above) called through ORDINARY
+`checkAssign`, on the plan that fixture 1 accepts through `checkAssignF32`. Same signature table,
+same assignment shape — only the entry point differs — so this pins that admitting binary32 through
+a sibling checker did not relax the binary64 one. -/
+#guard errOf (checkAssign f32Sigs f32Plan) == some (.dtypeNotAdmitted 2 .f32)
+
+-- ... and with the f64 algebra restored, so the rejection cannot be attributed to the algebra:
+-- the destination-dtype guard runs before the algebra clause and still reports.
+#guard errOf (checkAssign f32Sigs goodPlan) == some (.dtypeNotAdmitted 2 .f32)
+
 end LeanNCD.Eval.Plan.KernelCheckTest

@@ -83,6 +83,13 @@ def PlanStep.destinationSlots : PlanStep → Array TensorSlot
 structure CheckedEvalPlan where private mk ::
   raw          : RawEvalPlan
   checkedNodes : Array CheckedPlanStepEvidence
+  /-- The single storage kind this plan's COMPLETE signature table commits to
+      (`deriveStorageKind`, `Check.lean`), derived before any step is checked. Recorded on the
+      evidence rather than re-derived per consumer so a plan-level door can gate on it without a
+      signature table in hand — which is what the experimental JAX entries need, since an
+      all-input, zero-step `.float32` plan has no node for a per-node check to inspect and the
+      empty evidence fold would otherwise aggregate to `orderedReference64`. -/
+  storageKind  : LeanNCD.StorageKind
   deriving Repr
 
 /-- `checkPlan`'s error type, generalized from bare `PlanError` now that an outer step can fail
@@ -119,7 +126,28 @@ inductive PlanStepError
   | assign (cause : PlanError)
   | scan   (stepIndex : Nat) (cause : ScanPlanError)
   | nonlin (stepIndex : Nat) (cause : NonlinPlanError)
+  /-- A `.float32` graph contains a step kind binary32 execution does not admit. This slice's
+      binary32 fragment is assignment-only: scatter is slice F32-D, scan (and scan-local scatter)
+      is F32-C, and the two nonlinearity operations are F32-B. Carries the ORIGINAL outer step
+      index — not an index into the assignments-only sublist — and a closed `PlanStepKind`
+      (`Error.lean`) rather than a rendered string.
+
+      Step-kind-specific like `.scan`/`.nonlin`, and for the same reason: the offending step's own
+      kind IS the rejection, so the constructor doubles as "which step kind was refused." It is a
+      CAPABILITY verdict, not a wiring or local-checker failure — the step may be perfectly
+      well-formed, as `checkPlan` never gets far enough to find out. -/
+  | f32UnsupportedStep (stepIndex : Nat) (kind : PlanStepKind)
   deriving DecidableEq, BEq, Repr, Inhabited
+
+/-- Which constructor a `PlanStep` is, as the closed diagnostic payload `f32UnsupportedStep`
+    carries. Total over `PlanStep`; the `.assign` answer is never actually reported by that error,
+    since an assignment is exactly the kind a binary32 graph admits. -/
+def PlanStep.kind : PlanStep → PlanStepKind
+  | .assign _    => .assign
+  | .scatter _   => .scatter
+  | .scan _      => .scan
+  | .pointwise _ => .pointwise
+  | .axiswise _  => .axiswise
 
 /-- Validate an open evaluation graph. Generalizes Wave C's `checkPlan` (previously in `Check.lean`)
     to `PlanStep`: an ordinary node still uses `checkAssign` verbatim and requires empty context
@@ -148,6 +176,26 @@ inductive PlanStepError
     are a genuine `0 0` placeholder there, not a lost locator). -/
 def checkPlan (raw : RawEvalPlan) : Except PlanStepError CheckedEvalPlan := do
   let n := raw.tensorSigs.size
+  -- STORAGE KIND FIRST, from the COMPLETE signature table, before outer graph wiring and before any
+  -- per-step local check. A mixed f32/f64 table is `.assign (.mixedStorageKinds slot first actual)`
+  -- at its first conflicting slot — reported ahead of wiring on purpose, so a table that is BOTH
+  -- mixed and wiring-invalid reports the precision conflict rather than a `missingProduction` that
+  -- is a consequence of nothing in particular.
+  let storageKind ← match deriveStorageKind raw.tensorSigs with
+    | .ok k => pure k
+    | .error e => throw (.assign e)
+  -- CAPABILITY SECOND, for a `.float32` graph only, over `raw.steps` in ORIGINAL order: this slice's
+  -- binary32 fragment is assignment-only. Matched arm by arm rather than through a catch-all so
+  -- admitting one of these kinds later is a deliberate edit at its own arm; indexed over
+  -- `raw.steps` itself, never a filtered sublist, so the reported index is the outer-graph one.
+  if storageKind == .float32 then
+    for h : ni in [0 : raw.steps.size] do
+      match raw.steps[ni] with
+      | .assign _    => pure ()
+      | .scatter _   => throw (.f32UnsupportedStep ni .scatter)
+      | .scan _      => throw (.f32UnsupportedStep ni .scan)
+      | .pointwise _ => throw (.f32UnsupportedStep ni .pointwise)
+      | .axiswise _  => throw (.f32UnsupportedStep ni .axiswise)
   let mut nodes : Array (WiringNode PlanStepError CheckedPlanStepEvidence) := #[]
   for h : ni in [0 : raw.steps.size] do
     let step := raw.steps[ni]
@@ -193,8 +241,16 @@ def checkPlan (raw : RawEvalPlan) : Except PlanStepError CheckedEvalPlan := do
                 | some true => pure ()
                 | some false => throw (.assign (.invalidForwardRead ni 0 0 src))
       , localCheck := match step with
+          -- The graph's own storage kind selects the assignment checker. `checkAssignF32` is a
+          -- SIBLING of `checkAssign` through one shared private core (`Check.lean`), not a relaxed
+          -- mode of it: it admits `.f32`/`.bool` instead of `.f64`/`.bool`, requires an f32 algebra,
+          -- rejects inline unary, and stamps `.float32` on the evidence it returns. Every other
+          -- clause — shape, partition, affine, policy, all-factor indices — is literally the same
+          -- code, so the two cannot drift.
           | .assign a =>
-              match checkAssign raw.tensorSigs a with
+              match (match storageKind with
+                     | .float64 => checkAssign raw.tensorSigs a
+                     | .float32 => checkAssignF32 raw.tensorSigs a) with
               | .error e => throw (.assign (.nodeError ni e))
               | .ok c => pure (.assign c)
           -- `checkScatter` runs the compute half through `checkAssign` itself, under
@@ -221,7 +277,7 @@ def checkPlan (raw : RawEvalPlan) : Except PlanStepError CheckedEvalPlan := do
               | .ok c => pure (.axiswise c)
       }
   let checkedNodes ← checkStepGraph n raw.inputSlots PlanStepError.assign nodes
-  return CheckedEvalPlan.mk raw checkedNodes
+  return CheckedEvalPlan.mk raw checkedNodes storageKind
 
 /-- Execute a checked graph over positional Dense inputs. Generalizes `runDensePlan` (previously in
     `Dense.lean`): a `.assign` node uses `runDenseAssign` exactly as before; a `.scan` node uses
@@ -234,6 +290,11 @@ def checkPlan (raw : RawEvalPlan) : Except PlanStepError CheckedEvalPlan := do
     an assignment's (`ScatterPlan.destShape`, which `runDenseScatter` returns). -/
 def runDensePlan (c : CheckedEvalPlan) (inputs : Array DenseTensor) :
     Except PositionalInputError (Array DenseTensor) := do
+  -- The graph-level sibling of `runDenseAssignAt`'s guard, and for the same reason: this worker's
+  -- store is `Array DenseTensor` (binary64), so a `.float32` checked plan must be refused here,
+  -- BEFORE arity, before any input's shape is looked at, and before any input is read.
+  unless c.storageKind == .float64 do
+    throw (.storageKindMismatch .float64 c.storageKind)
   let raw := c.raw
   unless inputs.size == raw.inputSlots.size do
     throw (.arityMismatch raw.inputSlots.size inputs.size)

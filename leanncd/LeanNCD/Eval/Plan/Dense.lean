@@ -44,12 +44,17 @@ private def applyOp : ScalarBinOp → Float → Float → Float
 /-- Decode a checked plan's scalar constant to its `Float` value. `.bool` is a semantic tag over the
     same Float storage, so `true`/`false` decode to the reference evaluator's Boolean identities
     `1.0`/`0.0` (`Combine.bool`'s `unit0`/`unit1`) — no separate Boolean carrier, no coercion of
-    gathered values. The catch-all `_ => 0.0` arm now covers `.f32` only, and is dead code in
-    practice rather than a real default: `checkAssign`'s `algebraNotAdmitted` guard (`Check.lean`)
-    forces `a.algebra ∈ admittedAlgebrasFor destDtype`, whose `.f32` row is empty and whose other
-    rows carry only `.f64`/`.bool` constants — the only `ScalarConst` values a `CheckedAssignPlan`
-    can ever carry here. Kept as a total match so this function does not need to change shape if
-    `ScalarConst` grows a new constructor. -/
+    gathered values.
+
+    The catch-all `_ => 0.0` arm covers `.f32` only, and remains unreachable through this Float
+    worker — but NO LONGER because `admittedAlgebrasFor .f32` is empty. That row is still empty, yet
+    the binary32 algebra table (`admittedAlgebrasForF32`, `Check.lean`) is now non-empty, so
+    `ScalarConst.f32` constants genuinely exist inside checked evidence. Two live guards keep them
+    away from this decoder: ordinary `checkAssign` still rejects an `f32` destination and every `f32`
+    read (`dtypeAdmitted`), so no `CheckedAssignPlan` this worker can be handed carries an `f32`
+    algebra; and `runDenseAssignAt` below refuses any evidence whose recorded storage kind is not
+    `.float64` before a single constant is decoded. Kept as a total match so this function does not
+    need to change shape if `ScalarConst` grows a new constructor. -/
 private def constFloat : ScalarConst → Float
   | .f64 bits => Float.ofBits bits
   | .bool true => 1.0
@@ -167,9 +172,18 @@ private def denseValueAt (a : AssignPlan) (ctx : List Int) (store : Array DenseT
   return termFold alg termAccs
 
 /-- Execute one checked operation at a fixed context coordinate: `denseValueAt` at every output
-    coordinate, in row-major order, into a tensor of the plan's own `outputShape`. -/
+    coordinate, in row-major order, into a tensor of the plan's own `outputShape`.
+
+    **The storage-kind guard is first, before the context and store checks.** This is the deepest
+    public binary64 assignment door, and it is where checked binary32 evidence must stop: this
+    worker's store is `Array Float`, its constant decoder is `constFloat`, and its arithmetic is
+    `applyOp` over `Float`, so executing `.float32` evidence here would answer a binary32 question
+    in binary64 with no diagnostic anywhere. Guarding `runDenseAssign` alone would be insufficient —
+    that is a wrapper, and `runDenseBlock` (`Block.lean`) calls THIS entry directly. -/
 def runDenseAssignAt (c : CheckedAssignPlan) (ctx : List Int) (store : Array DenseTensor) :
     Except PositionalInputError DenseTensor := do
+  unless c.storageKind == .float64 do
+    throw (.storageKindMismatch .float64 c.storageKind)
   validateContext c.plan ctx
   validateStore c.plan store
   let a := c.plan

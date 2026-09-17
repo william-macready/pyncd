@@ -1,4 +1,5 @@
 import LeanNCD.Eval.Plan.EvalPlan
+import Eval.Plan.GraphCheckTest   -- f32 slice fixture 18 reuses fixture 6's checked f32 graph
 
 /-!
 # Wave C C3 graph interpreter tests
@@ -309,5 +310,31 @@ def posErrOf (raw : RawEvalPlan) (inputs : Array DenseTensor) : Option Positiona
 #guard posErrOf diamondPlan
     #[ { shape := [2], data := #[5.0, 7.0] }, { shape := [3], data := #[9.0, 11.0, 1.0] } ] ==
   some (.shapeMismatch 4 #[2] [3])
+
+/-! ## f32 slice Task 2, fixture 18 (graph half): the Float graph worker's storage-kind door
+
+`GraphCheckTest`'s fixture-6 checked f32 graph, handed straight to the BINARY64 graph worker with
+the WRONG INPUT ARITY (its `inputSlots` has one entry; zero inputs are supplied). The required
+answer is `storageKindMismatch .float64 .float32`, i.e. the storage guard fires before
+`runDensePlan`'s pre-existing arity check and therefore before any input is read at all.
+
+Like the local half above, this pins ORDER, not presence: a guard placed after the arity check
+would report `arityMismatch 1 0` for a plan whose buffers this worker must never touch. -/
+
+def f32GraphChecked : Option CheckedEvalPlan :=
+  (checkPlan GraphCheckTest.f32OneNodePlan).toOption
+
+def planErr (c : Option CheckedEvalPlan) (inputs : Array DenseTensor) :
+    Option PositionalInputError :=
+  match c with
+  | none => none
+  | some c => match runDensePlan c inputs with
+              | .error e => some e
+              | .ok _ => none
+
+#guard planErr f32GraphChecked #[] == some (.storageKindMismatch .float64 .float32)
+
+-- Control: the binary64 chain, same wrong arity, reaches the pre-existing arity check.
+#guard planErr (checkPlan GraphCheckTest.chainPlan).toOption #[] == some (.arityMismatch 1 0)
 
 end LeanNCD.Eval.Plan.GraphDenseTest

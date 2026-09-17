@@ -2209,8 +2209,19 @@ run_cmd do
 -- Fixture 9: an `f32` CAPTURE that no step ever reads. The base block gains a second input slot
 -- (block-local slot 2) bound to a new outer slot 3, both `f32` — so the two signatures agree exactly
 -- and `captureSignatureMismatch` cannot fire, while no `.assign` step reads the slot so
--- `checkAssign`'s own `dtypeNotAdmitted` never sees it either. Before this check the whole plan was
--- accepted and executed, passing an `f32`-tagged tensor through the same `Array Float` storage.
+-- `checkAssign`'s own `dtypeNotAdmitted` never sees it either. Before any of these checks existed
+-- the whole plan was accepted and executed, passing an `f32`-tagged tensor through the same
+-- `Array Float` storage.
+--
+-- **The rejection this fixture now pins is `checkPlanBlock`'s, not `checkCaptures`'.** The f32
+-- slice's Task 2 gave `checkPlanBlock` (`Block.lean`) a WHOLE-TABLE storage-kind gate that runs
+-- before its outputs/wiring/per-step work, and `checkScanPlan` calls `checkPlanBlock` on both blocks
+-- (lines above) BEFORE `checkCaptures`. This base block's table is `[bool, bool, f32]`, which
+-- derives `.float32`, so the block itself is refused first — a STRICTER verdict reached without
+-- consulting the capture list at all, and one that also covers an f32 block slot that is neither
+-- read nor captured. `checkCaptures`' own `dtypeAdmitted` clause is retained (see the
+-- producer-less naming guard just below) rather than deleted, per this repo's closed-family
+-- discipline.
 def outerSigsF32Capture : Array TensorSignature :=
   outerSigsBool.push { shape := #[], dtype := .f32 }
 
@@ -2227,8 +2238,16 @@ run_cmd do
                           , baseCaptures := #[baseCaptureS0, f32CaptureExtra] } with
   | .ok _ => throwError "review fixture 9: an f32 capture should have been rejected"
   | .error e =>
-      unless e == .captureDtypeNotAdmitted true 1 2 .f32 do
+      unless e == .baseBlockError (.storageKindNotAdmitted .float32) do
         throwError s!"review fixture 9: wrong error {repr e}"
+
+/- `captureDtypeNotAdmitted` has no producer left: `dtypeAdmitted` rejects only `.f32`, and any
+   block table containing an `f32` slot now derives `.float32` (or, mixed with an `f64` slot,
+   `mixedStorageKinds`) at `checkPlanBlock`, which `checkScanPlan` runs first. Retained on
+   `ScanPlanError` for the same reason every other shipped closed-family constructor is, and named
+   directly here so the payload shape stays exercised. -/
+#guard (ScanPlanError.captureDtypeNotAdmitted true 1 2 .f32)
+  == ScanPlanError.captureDtypeNotAdmitted true 1 2 .f32
 
 -- Fixture 10: the acceptance sibling — the SAME extra unread input, `f64` instead of `f32`. One
 -- dtype is all that separates it from fixture 9, so the rejection is about the dtype and not about
@@ -2888,5 +2907,35 @@ run_cmd do
                     ({scaleB},{offsetB},{extentB})"
   unless checked == 102400 do
     throwError s!"collision soundness corpus ran {checked} cases, expected 102400"
+
+/-! ## f32 slice Task 2, fixture 10: `checkScanPlan` stays Float-backed
+
+`linearScan` above — the accepted linear self-recurrence — with its state, its captures, and its
+block results all moved to binary32. `checkScanPlan` must STILL reject it, retaining
+`stateDtypeNotAdmitted`: every binary32 scan form is slice F32-C, so there is no f32 scan worker,
+and the existing scan checker is deliberately left Float-backed so direct construction cannot
+acquire evidence for one. -/
+
+def outerSigsF32 : Array TensorSignature :=
+  #[{ shape := #[], dtype := .f32 }, { shape := #[3], dtype := .f32 }, { shape := #[3], dtype := .f32 }]
+
+def baseBlockF32 : RawPlanBlock :=
+  { baseBlock with tensorSigs := #[{ shape := #[], dtype := .f32 }] }
+
+def stepBlockF32 : RawPlanBlock :=
+  { stepBlock with
+    tensorSigs := #[{ shape := #[3], dtype := .f32 }, { shape := #[3], dtype := .f32 }
+                   , { shape := #[], dtype := .f32 }]
+    , steps := #[.assign { stepAssign with algebra := admittedAlgebraF32 }] }
+
+def linearScanF32 : RawScanPlan :=
+  { linearScan with baseBlock := baseBlockF32, stepBlock := stepBlockF32 }
+
+run_cmd do
+  match checkScanPlan outerSigsF32 linearScanF32 with
+  | .ok _ => throwError "f32 fixture 10: an all-f32 scan should have been rejected"
+  | .error e =>
+      unless e == .stateDtypeNotAdmitted 0 2 .f32 do
+        throwError s!"f32 fixture 10: wrong error {repr e}"
 
 end LeanNCD.Eval.Plan.ScanTest

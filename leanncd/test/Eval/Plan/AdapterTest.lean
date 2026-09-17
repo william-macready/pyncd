@@ -1,6 +1,7 @@
 import LeanNCD.Eval.Entry
 import LeanNCD.Eval.Plan.Adapter
 import Eval.Plan.ScanCompileTest
+import Eval.Plan.GraphCheckTest   -- f32 slice fixtures 20/21 reuse fixture 6's checked f32 graph
 
 /-!
 # Wave C runtime-adaptation tests (C4)
@@ -644,5 +645,87 @@ sched.decls: {repr e}"
                 unless expectTensor (unpacked["I"]?) [3, 3]
                     #[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0] do
                   throwError s!"predIdentity: I value wrong: {repr (unpacked["I"]?)}"
+
+/-! ## f32 slice Task 2, fixtures 20 and 21: the Float named adapter's storage-kind doors
+
+`GraphCheckTest`'s fixture-6 checked f32 graph built into a VALID `PreparedPlan` — its
+`requiredInputs` really is a name-unique permutation of `inputSlots` and its `materializedNames`
+really is the raw plan's publication sequence, so `checkPreparedBindings` passes and cannot be what
+any rejection below is attributable to.
+
+Fixture 20 calls the BINARY64 `pack` and `unpack` with inputs that are additionally invalid in each
+entry's own pre-existing terms (malformed storage for `pack`, a wrong-arity result store for
+`unpack`); fixture 21 calls `runPreparedDense` with a perfectly well-shaped Float environment. All
+three must report a storage-kind cause, each at its own tier. -/
+
+def f32Prepared : Option PreparedPlan :=
+  match checkPlan GraphCheckTest.f32OneNodePlan, checkBindings #[0] #[{ name := "X", slot := 0 }] with
+  | .ok plan, .ok requiredInputs =>
+      some { plan
+           , bindings := { requiredInputs, materializedNames := #[{ name := "Y", slot := 1 }] }
+           , warnings := [] }
+  | _, _ => none
+
+-- The bindings sidecar really is valid, so nothing below is a disguised `invalidBindings`.
+#guard (match f32Prepared with
+  | some p => (checkPreparedBindings p).toOption.isSome
+  | none => false)
+
+/-- A well-shaped binary64 environment for that plan: `X : [2]`, two elements. Used as-is by
+    fixture 21; fixture 20 malforms its storage. -/
+def f32Env : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "X" ⟨[2], #[1.0, 2.0]⟩
+
+/-- The same name with a shape-conforming header but only ONE stored element — `packChecked`'s
+    pre-existing storage check rejects this, and is what fixture 20 requires the storage guard to
+    precede. -/
+def f32EnvBadStorage : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "X" ⟨[2], #[1.0]⟩
+
+def packErr (p : Option PreparedPlan) (env : HashMap String DenseTensor) :
+    Option InputBindingError :=
+  match p with
+  | none => none
+  | some p => match pack p env with
+              | .error e => some e
+              | .ok _ => none
+
+def unpackErr (p : Option PreparedPlan) (result : Array DenseTensor) : Option PlanRunCause :=
+  match p with
+  | none => none
+  | some p => match unpack p f32Env result with
+              | .error e => some e
+              | .ok _ => none
+
+def runErr (p : Option PreparedPlan) (env : HashMap String DenseTensor) : Option PlanRunCause :=
+  match p with
+  | none => none
+  | some p => match runPreparedDense p env with
+              | .error f => some f.cause
+              | .ok _ => none
+
+-- Fixture 20a: `pack` with malformed Float storage reports the storage KIND, not the storage size.
+#guard packErr f32Prepared f32EnvBadStorage
+  == some (.storageKindMismatch .float64 .float32)
+
+-- Fixture 20b: `unpack` with a wrong-arity result store (one entry for a two-slot plan) reports
+-- the storage kind, not `storeArityMismatch`.
+#guard unpackErr f32Prepared #[⟨[2], #[1.0, 2.0]⟩]
+  == some (.storageKindMismatch .float64 .float32)
+
+-- Fixture 21: `runPreparedDense` with a WELL-SHAPED Float environment fails at its own adapter tier
+-- — `PlanRunCause.storageKindMismatch` directly, not `.binding (.storageKindMismatch …)` from
+-- `packChecked` and not `.execution (.storageKindMismatch …)` from `runDensePlan`. This is
+-- independent of both of those guards, which is why it is its own cause and its own fixture.
+#guard runErr f32Prepared f32Env == some (.storageKindMismatch .float64 .float32)
+
+-- Fixture 21 control: preparation warnings survive the new failure path exactly as they do every
+-- other one. This plan carries none, so the observable claim is that the field is `plan.warnings`
+-- verbatim rather than a re-derived or dropped list.
+#guard (match f32Prepared with
+  | some p => (match runPreparedDense p f32Env with
+               | .error f => f.warnings == p.warnings
+               | .ok _ => false)
+  | none => false)
 
 end LeanNCD.Eval.Plan.AdapterTest

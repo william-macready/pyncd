@@ -45,8 +45,11 @@ def checkDecl : Decl → Except CapabilityError Unit
   | .tensor ..    => pure ()
   | .typedTensor .. => pure ()   -- an explicit element type is a SCHEDULE-wide question (which
                                  -- precision does this whole graph run in), not a per-declaration
-                                 -- one: an f32 declaration nothing uses constrains nothing. The
-                                 -- rejection lives in `prepareEvalPlan`'s storage-kind step.
+                                 -- one: an f32 declaration nothing uses constrains nothing. Mixed
+                                 -- precision is rejected by `prepareEvalPlan`'s Step 0b storage
+                                 -- derivation, and the constructs binary32 defers to later slices
+                                 -- by its Step 0c `f32CapabilityCheck` — both of which need the
+                                 -- schedule-wide kind this per-declaration pass cannot see.
   | .linear ..    => pure ()
   | .predicate .. => pure ()
   | .axis ..      => pure ()
@@ -370,6 +373,52 @@ def capabilityPreflight (sched : ScheduledProgram) : Except CapabilityError Unit
             throw (.unloweredScatterAssign s!"{nm}: scatter-shaped LHS reached as an unlowered assign")
       | .recurMorphism .. => pure ()
 
+/-! ## Binary32 source capability (f32 slice, Task 2)
+
+The constructs a HOMOGENEOUS-f32 schedule is refused for, checked once over the top-level scheduled
+statements in SOURCE order. Deliberately a second pass beside `capabilityPreflight` rather than more
+arms inside it: `capabilityPreflight` is dtype-blind by construction (it never sees `decls` except
+for the two scatter-shape post-checks), and these rejections are about the schedule's derived
+STORAGE KIND, which only `prepareEvalPlan`'s Step 0b knows. It runs AFTER storage derivation and
+BEFORE `capabilityPreflight`, so an f32 program outside this slice's fragment reports its own f32
+reason rather than a generic capability one.
+
+Every payload is `CapabilityError.unsupportedDtype` with the stable `"{name}: …"` shapes the plan
+fixes; each names the DEFERRED SLICE that will admit it (F32-B nonlinearity/unary, F32-C scan,
+F32-D scatter) rather than claiming the construct is invalid. -/
+
+/-- One top-level statement's binary32 capability check, in the plan's declared sub-construct order:
+    a scatter is refused as a whole statement kind; within a plain assignment NONLINEARITY is checked
+    BEFORE factors, so an assignment carrying both a pointwise nonlinearity and an inline unary read
+    reports the nonlinearity. The unary locator is the ORIGINAL all-factor index within its term — an
+    Iverson ahead of the read does not shift it down — matching `checkAssignF32`'s own
+    `unaryNotAdmittedForDtype` locator one layer down. -/
+def checkF32Stmt : Stmt → Except CapabilityError Unit
+  | .scatter nm _ _ _ => throw (.unsupportedDtype s!"{nm}: f32 scatter")
+  | .recurMorphism _ .. => pure ()   -- `capabilityPreflight` refuses this outright, dtype-blind
+  | .assign nm _ rhs => do
+      match rhs.nonlin with
+      | .identity => pure ()
+      | .pointwise _ | .axiswise .. => throw (.unsupportedDtype s!"{nm}: f32 nonlinearity")
+      let terms := rhs.body.terms
+      for h : ti in [0 : terms.length] do
+        let t := terms[ti]
+        for h2 : fi in [0 : t.factors.length] do
+          match t.factors[fi] with
+          | .unaryFn .. => throw (.unsupportedDtype s!"{nm}: f32 unary factor {ti}:{fi}")
+          | .read .. | .iverson _ => pure ()
+
+/-- The whole-schedule binary32 capability pass: top-level scheduled statements in SOURCE order,
+    first rejection wins. A `.scan`/`.scanPre` node is refused as an unsupported OUTER step kind
+    without descending into its blocks — this plan makes no precedence claim against an
+    independently invalid scan body, and a scan's own statements are not top-level statements. -/
+def f32CapabilityCheck (stmts : List ScanStmt) : Except CapabilityError Unit := do
+  for sc in stmts do
+    match sc with
+    | .plain s => checkF32Stmt s
+    | .scan nm .. => throw (.unsupportedDtype s!"{nm}: f32 scan")
+    | .scanPre nm .. => throw (.unsupportedDtype s!"{nm}: f32 scan")
+
 open Std
 open LeanNCD.Eval (ShapeError EvalWarning EvalError EvalFailure termAxisUIDs)
 
@@ -685,13 +734,28 @@ def algebraForAgg : AggOp → ContractionAlgebra
   | .max => admittedAlgebraMax
   | .min => admittedAlgebraMin
 
+/-- The binary32 counterpart of `algebraForAgg`: the same three aggregations over the `f32` algebra
+    table (`admittedAlgebrasF32`, `Check.lean`), whose identities are `ScalarConst.f32` bit patterns.
+    A separate function rather than a dtype parameter on `algebraForAgg` so each table stays
+    independently readable against `checkAssignF32`'s own admission list. -/
+def algebraForAggF32 : AggOp → ContractionAlgebra
+  | .sum => admittedAlgebraF32
+  | .max => admittedAlgebraF32Max
+  | .min => admittedAlgebraF32Min
+
 /-- Select the checked contraction algebra a TOP-LEVEL destination compiles to (Task 4.3): the
     DESTINATION's dtype (`dtypeOfDecl`, `Signature.lean`) selects the algebra, not any source
     factor's — a `bool` destination always compiles to `admittedAlgebraBool` regardless of `agg`
     (`checkPredicateOutput`, re-established at `prepareEvalPlan`'s Step 0, already forces a predicate
     destination's own statement to carry `agg = .sum`, so `agg` genuinely never disagrees for one);
-    an `f64` (or reserved `f32`) destination falls back to `algebraForAgg agg` exactly as before this
-    task. Kept as a separate function, applied by OVERRIDING `residualizeAssignment`'s returned
+    an `f64` destination falls back to `algebraForAgg agg` exactly as before this task, and an `f32`
+    destination — live since the f32 slice's Task 2 — selects the corresponding BINARY32 algebra
+    (`algebraForAggF32`), never the `f64` one. That arm is the single point where a homogeneous-f32
+    schedule's real algebra is chosen; selecting `algebraForAgg` there would build an `AssignPlan`
+    carrying `.f64` identities under an `.f32` destination, which `checkAssignF32` then rejects as
+    `algebraNotAdmitted` at Step E — the compiler-bug channel — rather than executing it, but the
+    honest fix is to select the right table here. Kept as a separate function, applied by OVERRIDING
+    `residualizeAssignment`'s returned
     `AssignPlan.algebra` at its top-level call site, rather than threading a `destDtype` parameter
     through `residualizeAssignment` itself — the scan base/step call sites stay byte-for-byte
     unchanged (Task 4.4 scope, not this one), and this function's own selection logic stays
@@ -707,7 +771,7 @@ def algebraForDest (destDtype : ScalarDType) (agg : AggOp) : ContractionAlgebra 
   match destDtype with
   | .bool => admittedAlgebraBool
   | .f64  => algebraForAgg agg
-  | .f32  => algebraForAgg agg   -- unreachable: an `f32` destination is already `dtypeNotAdmitted`
+  | .f32  => algebraForAggF32 agg
 
 /-- The common per-statement assignment residualization core (Wave F F4 Task 2): given a
     statement's scan context (empty outside a scan step), its output (retained) basis, validated
@@ -1441,45 +1505,62 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
   --
   -- A MIXED f32/f64 schedule is rejected outright, naming the first used name that disagrees with
   -- the kind an earlier used name established: nothing in this compiler or either worker expresses
-  -- a per-tensor precision boundary, so a mixed graph has no defined meaning to compile.
+  -- a per-tensor precision boundary, so a mixed graph has no defined meaning to compile. An
+  -- UNDECLARED external is a real f64 tensor (`storageConstraintOfName?`, `DSL/Ast.lean`, mirroring
+  -- `dtypeOfDecl none = .f64`), so an f32 graph reading one is mixed and is rejected here — every
+  -- real external in an f32 graph must be declared `tensor f32`.
   --
-  -- ⚠️ TEMPORARY, and deliberately broader: a HOMOGENEOUS f32 schedule is also rejected here, with
-  -- the fixed context `"f32 execution not yet admitted"`. Checked f32 evidence and the
-  -- Float-worker guards do not exist yet (Task 2 of `papers/f32_evalplan.md` adds them and removes
-  -- this arm), and every downstream phase — `dtypeAdmitted`, the algebra tables, `Dense`'s
-  -- `Array Float` storage — is binary64. Without this stop an f32 program whose external inputs
-  -- happen to present no f32 signature for Step B to inspect (an Iverson-only RHS, say) would
-  -- specialize and run in the existing Float worker, silently answering a binary64 question. So it
-  -- is placed HERE: before capability preflight, signature validation, specialization, and plan
-  -- construction, so no f32 graph reaches any of them.
-  match scheduleStorageKind declEnv sched.stmts with
-  | .error nm =>
-      throw { cause := .capability
-                (.unsupportedDtype s!"{nm}: mixed f32/f64 storage in one schedule")
-            , warnings := [] }
-  | .ok .float32 =>
-      throw { cause := .capability (.unsupportedDtype "f32 execution not yet admitted")
-            , warnings := [] }
-  | .ok .float64 => pure ()
+  -- A HOMOGENEOUS f32 schedule is now ADMITTED and specialized through the binary32 checker (the f32
+  -- slice's Task 2 replaced Task 1's temporary blanket stop here). `storage` selects Step B's
+  -- signature-admission rule below, Step D's destination algebra (`algebraForDest`), and Step E's
+  -- graph checker (`checkPlan` derives the same kind from the signature table it builds).
+  let storage ← match scheduleStorageKind declEnv sched.stmts with
+    | .error nm =>
+        throw { cause := .capability
+                  (.unsupportedDtype s!"{nm}: mixed f32/f64 storage in one schedule")
+              , warnings := [] }
+    | .ok k => pure k
+  -- Step 0c: binary32 source capability, for a `.float32` schedule only, over the top-level
+  -- statements in source order. Placed BEFORE Step A so an f32 program outside this slice's
+  -- fragment (nonlinearity, inline unary, top-level scatter, any scan form) reports its own f32
+  -- reason with the deferred slice named, rather than reaching a dtype-blind generic capability
+  -- rejection or — worse — Step E's `checkPlan`, which is the compiler-bug channel.
+  if storage == .float32 then
+    match f32CapabilityCheck sched.stmts with
+    | .error e => throw { cause := .capability e, warnings := [] }
+    | .ok () => pure ()
   -- Step A: capability preflight.
   match capabilityPreflight sched with
   | .error e => throw { cause := .capability e, warnings := [] }
   | .ok () => pure ()
-  -- Step B: input signature validation, in first-seen-read order. Every dtype the checked plan
-  -- admits at all (`dtypeAdmitted`, `Check.lean`) is checked first, THEN the declaration-derived
-  -- expectation (`dtypeOfDecl declEnv[nm]?`, Task 4.3): a `.predicate`-declared external name
-  -- expects `bool`, everything else (a `.tensor`/`.linear` declaration, or none at all) expects
-  -- `f64`. The two checks are deliberately separate: an inadmissible dtype (`f32`) is
-  -- `dtypeNotAdmitted` regardless of what the declaration expects, while an admitted-but-wrong
-  -- dtype (e.g. `bool` supplied for a non-predicate name) is the newer `dtypeMismatch`, carrying
-  -- both the expected and actual dtype so a caller does not have to re-derive either.
+  -- Step B: input signature validation, in first-seen-read order, now STORAGE-AWARE.
+  --
+  -- For a `.float64` schedule the rule is unchanged: every dtype the binary64 checker admits at all
+  -- (`dtypeAdmitted`, `Check.lean`) is checked first, THEN the declaration-derived expectation
+  -- (`dtypeOfDecl declEnv[nm]?`, Task 4.3). The two checks are deliberately separate: an
+  -- inadmissible dtype (`f32` — which has no checked binary64 carrier and, until the f32 slice's
+  -- Task 3, no worker at all) is `dtypeNotAdmitted` regardless of what the declaration expects,
+  -- while an admitted-but-wrong dtype (e.g. `bool` supplied for a non-predicate name) is
+  -- `dtypeMismatch`, carrying both dtypes so a caller does not have to re-derive either.
+  --
+  -- For a `.float32` schedule the admission gate is SKIPPED, not re-pointed at `dtypeAdmittedF32`.
+  -- Every real external of an f32 schedule is `tensor f32`-declared and every Boolean one is
+  -- `predicate`-declared — an UNDECLARED external would have constrained storage to `.float64` and
+  -- made Step 0b reject the schedule as mixed — so `dtypeOfDecl` commits every name here to `.f32`
+  -- or `.bool` and the expectation check below is already exhaustive. Pointing the gate at
+  -- `dtypeAdmittedF32` would only relabel the one interesting case, a supplied `.f64` signature for
+  -- an f32-declared name, from the informative `dtypeMismatch nm .f32 .f64` (two known sides
+  -- disagreeing about precision) to a bare "not admitted", losing the expectation.
   let extOrder := checked.extNames
   for nm in extOrder do
     match sig.tensors[nm]? with
     | none => throw { cause := .inputSignature (.missingSignature nm), warnings := [] }
     | some ts =>
-        unless dtypeAdmitted ts.dtype do
-          throw { cause := .inputSignature (.dtypeNotAdmitted nm ts.dtype), warnings := [] }
+        match storage with
+        | .float64 =>
+            unless dtypeAdmitted ts.dtype do
+              throw { cause := .inputSignature (.dtypeNotAdmitted nm ts.dtype), warnings := [] }
+        | .float32 => pure ()
         let expected := dtypeOfDecl (declEnv[nm]?)
         unless ts.dtype == expected do
           throw { cause := .inputSignature (.dtypeMismatch nm expected ts.dtype), warnings := [] }

@@ -38,8 +38,11 @@ def InputSignature.ofDenseInputs (inputs : HashMap String DenseTensor) : InputSi
     `.f32` is deliberately reported as itself rather than silently degraded to `.f64`: a degraded
     answer would let an explicitly-f32 program construct a CHECKED f64 plan and execute it in the
     existing `Float` worker, which is the exact silent-precision-substitution this classification
-    exists to prevent. Nothing downstream admits `.f32` today (`dtypeAdmitted`, `Check.lean`), and
-    `prepareEvalPlan` stops an f32 schedule before Step B ever consults this. -/
+    exists to prevent. Since the f32 slice's Task 2 that answer is genuinely consumed rather than
+    merely fail-loud: a homogeneous-f32 schedule compiles through `checkAssignF32` to `.float32`
+    checked evidence, and this is the rule that gives each of its names an `f32` signature and its
+    destinations an `f32` algebra. The binary64 entries (`dtypeAdmitted`, `checkAssign`, and every
+    Float worker/adapter door) still reject `.f32` outright. -/
 def dtypeOfDecl : Option Decl → ScalarDType
   | some (.typedTensor .f32 _ _) => .f32
   | some (.predicate _ _) => .bool
