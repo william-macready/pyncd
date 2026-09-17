@@ -1744,7 +1744,12 @@ def codegenErr (r : Except JaxCodegenError String) : Option JaxCodegenError :=
 
 The nonempty plan's single node would be rejected by `checkJaxAssignSupport` as
 `unsupportedDestDType 0 1 .f32` if the loop were ever entered. Requiring the STORAGE error instead
-is what pins that the gate runs first. -/
+is what pins that the gate runs first. Every plan-level candidate/generator/renderer entry is fed
+the plan, `renderInputConstants` included — its fixture inputs below are shape- and
+storage-conforming, so nothing but the gate can be what rejects it. -/
+
+def f32NonemptyInputs : HashMap String DenseTensor :=
+  HashMap.ofList [("x", { shape := [2], data := #[1.0, 2.0] })]
 
 #guard (match f32NonemptyPrepared? with
   | some p =>
@@ -1753,6 +1758,8 @@ is what pins that the gate runs first. -/
       codegenErr (renderAffinePlanPositional p.plan) == some (.unsupportedStorageKind .float32) &&
       codegenErr (generateNamed .einsumOnly p) == some (.unsupportedStorageKind .float32) &&
       codegenErr (generateNamed .affineReference p) == some (.unsupportedStorageKind .float32) &&
+      codegenErr (renderInputConstants p f32NonemptyInputs)
+        == some (.unsupportedStorageKind .float32) &&
       (match lowerPlan p.plan with
        | .error e => e == .unsupportedStorageKind .float32
        | .ok _ => false) &&
