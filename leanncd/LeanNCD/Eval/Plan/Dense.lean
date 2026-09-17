@@ -15,93 +15,147 @@ application, flattening, and the per-dimension bounds predicate live in `Coordin
 namespace LeanNCD.Eval.Plan
 open LeanNCD.Eval
 
+/-! ## The scalar kernel seam (f32 slice, Task 3)
+
+Everything ABOVE the scalar level is carrier-independent integer/Boolean work and is SHARED verbatim
+from `Coordinates.lean`: row-major coordinate enumeration (`allCoords`), affine application
+(`applyAffine`), flattening (`flatIndex`), the per-dimension bounds predicate (`inBoundsPerDim`), and
+the positional predicate evaluator (`evalPosBool`). Everything AT the scalar level is not, and
+deliberately so: a binary32 program must round independently at EVERY primitive operation, so its
+arithmetic, its constant decoders, and its exact zero/one are native `Float32` — never a binary64
+computation with a cast at the end, which gives a different answer (`[16777216, 1, -16777216]` folds
+to `+0` natively and to `1` if accumulated in binary64).
+
+`ScalarKernelOps α` is that seam. It is **private data passed to a worker**, not a global typeclass
+and not a public interface: every public door in this module takes CHECKED evidence, so no caller can
+pair an arbitrary `AssignPlan` with arbitrary scalar operations.
+
+It is also deliberately FALLIBLE rather than total. `binOp` SELECTS an implementation of one
+`ScalarBinOp` and may refuse — a total `ScalarBinOp → α → α → α` would force a future complex carrier
+to invent `min`/`max` semantics it does not have. `decodeConst` may refuse a constant tagged for the
+other real carrier instead of silently converting it. `applyUnary` may refuse inline unary math
+outright, which is exactly what the `Float32` instantiation does.
+-/
+
+/-- One carrier's scalar runtime: the complete set of scalar-level operations the assignment
+    traversal below needs, and nothing else. -/
+private structure ScalarKernelOps (α : Type) where
+  /-- Decode one checked plan constant (an algebra identity, or a scatter `fill`) into this
+      carrier's own exact value. A constant tagged for the OTHER real carrier is refused, never
+      converted — that conversion is precisely the silent precision substitution this slice exists
+      to prevent. -/
+  decodeConst : ScalarConst → Except PositionalInputError α
+  /-- This carrier's exact zero: the out-of-bounds zero-pad value, and an Iverson `false`. -/
+  zero : α
+  /-- This carrier's exact one: an Iverson `true`. -/
+  one : α
+  /-- This carrier's implementation of one binary operation, or a refusal for one it has no
+      semantics for. -/
+  binOp : ScalarBinOp → Except PositionalInputError (α → α → α)
+  /-- Apply one inline unary read operation to a value gathered from `slot`, or refuse it. -/
+  applyUnary : LeanNCD.UnaryOp → α → TensorSlot → Except PositionalInputError α
+
+/-- The BINARY64 scalar runtime: Wave C's original semantics, unchanged, now behind the seam.
+
+    `.bool` is a semantic tag over the same Float storage, so `true`/`false` decode to the reference
+    evaluator's Boolean identities `1.0`/`0.0` (`Combine.bool`'s `unit0`/`unit1`) — no separate
+    Boolean carrier, no coercion of gathered values.
+
+    The `.f32` arm is the one behavioral change: it was a silent `0.0` catch-all and is now a
+    fail-loud `storageKindMismatch`. It stays unreachable through this worker for the reasons it
+    always was — `checkAssign` rejects an `f32` destination and every `f32` read (`dtypeAdmitted`),
+    and `runDenseAssignAt` below refuses non-`.float64` evidence before a constant is decoded — but
+    "unreachable" is now enforced by the decoder itself rather than by silently answering zero.
+
+    Inline unary math delegates to the shared `UnaryOp.applyChecked` (`Eval/Error.lean`), the same
+    oracle the reference `applyUnaryFn` wraps, and keeps its `UInt64` `unaryDomain` payload. -/
+private def floatOps : ScalarKernelOps Float :=
+  { decodeConst := fun c => match c with
+      | .f64 bits => .ok (Float.ofBits bits)
+      | .bool true => .ok 1.0
+      | .bool false => .ok 0.0
+      | .f32 _ => .error (.storageKindMismatch .float64 .float32)
+  , zero := 0.0
+  , one := 1.0
+  , binOp := fun op => match op with
+      | .add => .ok (fun a b => a + b)
+      | .mul => .ok (fun a b => a * b)
+      | .min => .ok (fun a b => Min.min a b)
+      | .max => .ok (fun a b => Max.max a b)
+  , applyUnary := fun op x slot =>
+      (op.applyChecked x).mapError (fun dop => .unaryDomain dop (Float.toBits x) slot) }
+
+/-- The BINARY32 scalar runtime: native `Float32` throughout, with every value written as an exact
+    bit pattern rather than a decimal literal so the identities are auditable against IEEE-754
+    directly (`0x3f800000` is `1`, `0x00000000` is `+0`).
+
+    `.bool` decodes to THIS carrier's exact zero/one, not to a `Float` that is then converted: a
+    Boolean destination or source inside a binary32 graph lives in the same `Array Float32` store as
+    the graph's real tensors, and Boolean-tagged runtime values keep literal `min`/`max` behavior
+    exactly as they do in binary64 (they are not coerced to exact zero/one).
+
+    `applyUnary` refuses UNCONDITIONALLY. Native binary32 `log`/`exp`/`sqrt`/`recip` are slice
+    F32-B, and routing an f32 read through the binary64 helper would be false f32. The branch is
+    unreachable for any checked evidence this worker can be handed — `checkAssignF32` rejects an
+    inline unary read in a binary32 graph (`PlanError.unaryNotAdmittedForDtype`) — so this is a
+    fail-loud floor under that checker clause, not a live rejection path. -/
+private def float32Ops : ScalarKernelOps Float32 :=
+  { decodeConst := fun c => match c with
+      | .f32 bits => .ok (Float32.ofBits bits)
+      | .bool true => .ok (Float32.ofBits 0x3f800000)
+      | .bool false => .ok (Float32.ofBits 0x00000000)
+      | .f64 _ => .error (.storageKindMismatch .float32 .float64)
+  , zero := Float32.ofBits 0x00000000
+  , one := Float32.ofBits 0x3f800000
+  , binOp := fun op => match op with
+      | .add => .ok (fun a b => a + b)
+      | .mul => .ok (fun a b => a * b)
+      | .min => .ok (fun a b => Min.min a b)
+      | .max => .ok (fun a b => Max.max a b)
+  , applyUnary := fun op _ slot => .error (.unaryNotAdmittedForStorage .float32 op slot) }
+
 /-- Gather one factor. Every source dimension is range-tested BEFORE flattening (`inBoundsPerDim`,
     `Coordinates.lean`): testing the flat offset instead can alias distinct invalid coordinates onto
     a valid address (proposal §8.3). A `unary` function is applied to the gathered value AFTER the
     out-of-bounds zero-pad (so an out-of-bounds read contributes `f(0)`, matching the reference
-    `gather`), and can fail loud on a domain violation (`log`/`sqrt`/`recip`) via the shared
-    `UnaryOp.applyChecked` — the same oracle the reference `applyUnaryFn` wraps. -/
-private def gatherFactor (store : Array DenseTensor) (f : ReadPlan) (iter : List Int) :
-    Except PositionalInputError Float :=
-  let base : Float :=
+    `gather`), and can fail loud — on a binary64 domain violation (`log`/`sqrt`/`recip`) or, for a
+    carrier with no unary implementation at all, on the operation itself.
+
+    The zero-pad is the CARRIER's own exact zero (`ops.zero`), never the algebra's reduction
+    identity: a padded read is a FACTOR value flowing through `factorOp`, which is what makes a
+    padded `0` beat an all-negative column under a tropical max reduction. -/
+private def gatherFactorWith {α : Type} (ops : ScalarKernelOps α) (store : Array (DenseTensorOf α))
+    (f : ReadPlan) (iter : List Int) : Except PositionalInputError α :=
+  let base : α :=
     match store[f.sourceSlot]? with
-    | none => 0.0
+    | none => ops.zero
     | some t =>
         let src := applyAffine f.map iter
         let shape := f.sourceShape.toList
-        if inBoundsPerDim shape src then (t.data[flatIndex shape (src.map Int.toNat)]?).getD 0.0
-        else 0.0
+        if inBoundsPerDim shape src then (t.data[flatIndex shape (src.map Int.toNat)]?).getD ops.zero
+        else ops.zero
   match f.unary with
   | none => .ok base
-  | some op => (op.applyChecked base).mapError (fun dop => .unaryDomain dop (Float.toBits base) f.sourceSlot)
+  | some op => ops.applyUnary op base f.sourceSlot
 
-private def applyOp : ScalarBinOp → Float → Float → Float
-  | .add => (· + ·)
-  | .mul => (· * ·)
-  | .min => fun a b => Min.min a b
-  | .max => fun a b => Max.max a b
+/-- The ONE left-associated scalar fold behind all three of architecture doc §2.2's fold equations —
+    a term's factor product, a term's reduction over its contracted coordinates, and the combination
+    of completed terms. The three differ ONLY in which operation/identity pair the checked algebra
+    supplies and in which list they consume, so they are three CALL SITES (see `denseValueAtWith`,
+    where each is named at its use) rather than three identical functions.
 
-/-- Decode a checked plan's scalar constant to its `Float` value. `.bool` is a semantic tag over the
-    same Float storage, so `true`/`false` decode to the reference evaluator's Boolean identities
-    `1.0`/`0.0` (`Combine.bool`'s `unit0`/`unit1`) — no separate Boolean carrier, no coercion of
-    gathered values.
+    `op` and `seed` are pre-selected and pre-decoded by the caller, which is why this is total while
+    the kernel seam is fallible: selection can fail, application cannot. Left-associated in the given
+    order is the whole semantic content — floating-point addition and multiplication are not
+    associative, and the fixtures pin the declared order at every one of the three sites. -/
+private def foldScalars {α : Type} (op : α → α → α) (seed : α) (xs : List α) : α :=
+  xs.foldl op seed
 
-    The catch-all `_ => 0.0` arm covers `.f32` only, and remains unreachable through this Float
-    worker — but NO LONGER because `admittedAlgebrasFor .f32` is empty. That row is still empty, yet
-    the binary32 algebra table (`admittedAlgebrasForF32`, `Check.lean`) is now non-empty, so
-    `ScalarConst.f32` constants genuinely exist inside checked evidence. Two live guards keep them
-    away from this decoder: ordinary `checkAssign` still rejects an `f32` destination and every `f32`
-    read (`dtypeAdmitted`), so no `CheckedAssignPlan` this worker can be handed carries an `f32`
-    algebra; and `runDenseAssignAt` below refuses any evidence whose recorded storage kind is not
-    `.float64` before a single constant is decoded. Kept as a total match so this function does not
-    need to change shape if `ScalarConst` grows a new constructor. -/
-private def constFloat : ScalarConst → Float
-  | .f64 bits => Float.ofBits bits
-  | .bool true => 1.0
-  | .bool false => 0.0
-  | _ => 0.0
+example {α : Type} (op : α → α → α) (seed : α) : foldScalars op seed [] = seed := rfl
 
-/-- Fold one term's factors left to right in stored order. For the original real specialization this
-    is architecture doc §2.2's `factorFold([]) = float64(1)` and multiplication step; generally the
-    checked destination algebra supplies that identity and operation. Named separately from
-    `reductionFold`/`termFold` because factors use `factorOp`/`factorId`, never
-    `reduceOp`/`reduceId`. -/
-private def factorFold (alg : ContractionAlgebra) (xs : List Float) : Float :=
-  xs.foldl (applyOp alg.factorOp) (constFloat alg.factorId)
-
-example (alg : ContractionAlgebra) : factorFold alg [] = constFloat alg.factorId := rfl
-
-example (alg : ContractionAlgebra) (xs : List Float) (x : Float) :
-    factorFold alg (xs ++ [x]) = applyOp alg.factorOp (factorFold alg xs) x := by
-  simp [factorFold, List.foldl_append]
-
-/-- Fold one term's reduction coordinates left to right in row-major order. For the original real
-    specialization this is architecture doc §2.2's zero-initialized addition; generally the checked
-    destination algebra supplies the identity and operation. Each value is that reduction
-    coordinate's factor product (`factorFold`'s result), not a raw factor value. -/
-private def reductionFold (alg : ContractionAlgebra) (xs : List Float) : Float :=
-  xs.foldl (applyOp alg.reduceOp) (constFloat alg.reduceId)
-
-example (alg : ContractionAlgebra) : reductionFold alg [] = constFloat alg.reduceId := rfl
-
-example (alg : ContractionAlgebra) (xs : List Float) (x : Float) :
-    reductionFold alg (xs ++ [x]) = applyOp alg.reduceOp (reductionFold alg xs) x := by
-  simp [reductionFold, List.foldl_append]
-
-/-- Fold completed terms into one output coordinate's value, left to right in term-array order.
-    Defined with the same `reduceOp`/`reduceId` as `reductionFold` — not a coincidence:
-    `ContractionAlgebra`'s own doc comment (`Types.lean`) states that term combination and reduction
-    intentionally share one op/identity pair, mirroring the reference evaluator's
-    `Combine.combine`/`unit0`. Kept as its own named function rather than reusing `reductionFold`
-    under a second name so each semantic fold remains explicit. -/
-private def termFold (alg : ContractionAlgebra) (xs : List Float) : Float :=
-  xs.foldl (applyOp alg.reduceOp) (constFloat alg.reduceId)
-
-example (alg : ContractionAlgebra) : termFold alg [] = constFloat alg.reduceId := rfl
-
-example (alg : ContractionAlgebra) (xs : List Float) (x : Float) :
-    termFold alg (xs ++ [x]) = applyOp alg.reduceOp (termFold alg xs) x := by
-  simp [termFold, List.foldl_append]
+example {α : Type} (op : α → α → α) (seed : α) (xs : List α) (x : α) :
+    foldScalars op seed (xs ++ [x]) = op (foldScalars op seed xs) x := by
+  simp [foldScalars, List.foldl_append]
 
 /-- Validate the positional store against the shapes `checkAssign` already validated. Runtime
     values are a separate trust boundary from plan structure, so this is a value check, not a
@@ -112,7 +166,7 @@ example (alg : ContractionAlgebra) (xs : List Float) (x : Float) :
     boundary, not on a private helper. `runDenseScatter` validates a scatter's compute half — a raw
     `AssignPlan` reached through `CheckedScatterPlan`, which deliberately stores no
     `CheckedAssignPlan` for it — through this same function rather than a second copy. -/
-private def validateStore (a : AssignPlan) (store : Array DenseTensor) :
+private def validateStore {α : Type} (a : AssignPlan) (store : Array (DenseTensorOf α)) :
     Except PositionalInputError Unit := do
   for t in a.terms do
     for (_, f) in t.readFactorsIndexed do
@@ -132,25 +186,39 @@ private def validateContext (a : AssignPlan) (ctx : List Int) : Except Positiona
   if ctx.length == a.contextShape.size && inRange then pure ()
   else throw (.contextShapeMismatch a.contextShape ctx)
 
-/-- ONE output coordinate's value under a raw `AssignPlan`, at a fixed context coordinate. Fold order
-    is source-declared and preserved exactly: factors via `factorFold`, then that term's reduction
-    coordinates via `reductionFold`, then completed terms via `termFold`, in term-array order —
-    matching architecture doc §2.2's three fold equations one-for-one. The inner reduction fold and
-    the outer term fold are NOT flattened — `Y[i] := A[i] + P[i,j]` must add `A[i]` once, not once per
-    `j` (proposal §8.2). `ctx` is bound at every term's `contextPos` positions and held fixed here —
-    it does not get enumerated like `outputPos`/`reductionPos` do.
+/-- ONE output coordinate's value under a raw `AssignPlan`, at a fixed context coordinate, over ANY
+    carrier's scalar runtime. Fold order is source-declared and preserved exactly: factors first,
+    then that term's reduction coordinates, then completed terms in term-array order — matching
+    architecture doc §2.2's three fold equations one-for-one, each named at its `foldScalars` call
+    below. The inner reduction fold and the outer term fold are NOT flattened — `Y[i] := A[i] +
+    P[i,j]` must add `A[i]` once, not once per `j` (proposal §8.2). `ctx` is bound at every term's
+    `contextPos` positions and held fixed here — it does not get enumerated like
+    `outputPos`/`reductionPos` do.
+
+    The four scalar facts the algebra names — both operations and both identities — are selected and
+    decoded ONCE, at the top, before any coordinate is enumerated. That is where the kernel seam's
+    fallibility is discharged, which is what lets the three folds themselves be total.
+
+    Carrier-generic but NOT public, and no public entry exposes it: every door below takes CHECKED
+    evidence, whose recorded storage kind is what selects the ops record. A raw-`AssignPlan`-plus-
+    arbitrary-scalar-ops entry would be exactly the unguarded door this slice exists to prevent.
 
     Takes a raw `AssignPlan` and not a `CheckedAssignPlan` for the reason `validateStore` above does:
     the body reads plan fields only, so the checked wrapper's guarantee lives at the public API
-    boundary rather than on this helper, and both callers are already past that boundary.
-    `runDenseAssignAt` enumerates `outputShape` and maps this over it (the output-driven case);
-    `runDenseScatter` enumerates the same array as its SOURCE domain and places each value through a
-    separate map, reaching the compute half through `CheckedScatterPlan`, which deliberately stores no
-    `CheckedAssignPlan` for it. Shared rather than duplicated so the two workers cannot drift in fold
-    order, zero-pad behavior, or predicate handling. -/
-private def denseValueAt (a : AssignPlan) (ctx : List Int) (store : Array DenseTensor)
-    (oc : List Int) : Except PositionalInputError Float := do
+    boundary rather than on this helper, and every caller is already past that boundary.
+    `runDenseAssignAt`/`runDenseAssignAt32` enumerate `outputShape` and map this over it (the
+    output-driven case); `runDenseScatter` enumerates the same array as its SOURCE domain and places
+    each value through a separate map, reaching the compute half through `CheckedScatterPlan`, which
+    deliberately stores no `CheckedAssignPlan` for it. Shared rather than duplicated so no two
+    workers — and now no two CARRIERS — can drift in fold order, zero-pad behavior, or predicate
+    handling. -/
+private def denseValueAtWith {α : Type} (ops : ScalarKernelOps α) (a : AssignPlan) (ctx : List Int)
+    (store : Array (DenseTensorOf α)) (oc : List Int) : Except PositionalInputError α := do
   let alg := a.algebra
+  let factorOp ← ops.binOp alg.factorOp
+  let reduceOp ← ops.binOp alg.reduceOp
+  let factorId ← ops.decodeConst alg.factorId
+  let reduceId ← ops.decodeConst alg.reduceId
   let termAccs ← a.terms.toList.mapM (fun t => do
     let redShape := t.reductionPos.toList.filterMap (fun p => t.iterationShape[p]?)
     let prods ← (allCoords redShape).mapM (fun rc => do
@@ -161,25 +229,37 @@ private def denseValueAt (a : AssignPlan) (ctx : List Int) (store : Array DenseT
         for (p, v) in t.reductionPos.toList.zip rc do iter := iter.set! p v
         return iter
       let factorVals ← t.factors.toList.mapM (fun f => match f with
-        | .read r => gatherFactor store r iter.toList
+        | .read r => gatherFactorWith ops store r iter.toList
         | .iverson b =>
             (evalPosBool iter.toList b
               |>.mapError (fun e => match e with
                 | .affineWidthMismatch exp act => PositionalInputError.predicateWidthMismatch exp act)).map
-              (fun v => if v then 1.0 else 0.0))
-      return factorFold alg factorVals)
-    return reductionFold alg prods)
-  return termFold alg termAccs
+              (fun v => if v then ops.one else ops.zero))
+      -- §2.2 fold 1: this term's FACTORS, left to right in stored order, seeded with `factorId`.
+      return foldScalars factorOp factorId factorVals)
+    -- §2.2 fold 2: this term's REDUCTION coordinates, left to right in row-major order, seeded with
+    -- `reduceId`. Each value is that coordinate's factor product, not a raw factor value.
+    return foldScalars reduceOp reduceId prods)
+  -- §2.2 fold 3: the completed TERMS, left to right in term-array order. Uses `reduceOp`/`reduceId`
+  -- again, not a coincidence: `ContractionAlgebra`'s own doc comment (`Types.lean`) states that term
+  -- combination and reduction intentionally share one op/identity pair, mirroring the reference
+  -- evaluator's `Combine.combine`/`unit0`.
+  return foldScalars reduceOp reduceId termAccs
+
+/-- The BINARY64 specialization of `denseValueAtWith`, and the only one `runDenseScatter` uses. -/
+private def denseValueAt (a : AssignPlan) (ctx : List Int) (store : Array DenseTensor)
+    (oc : List Int) : Except PositionalInputError Float :=
+  denseValueAtWith floatOps a ctx store oc
 
 /-- Execute one checked operation at a fixed context coordinate: `denseValueAt` at every output
     coordinate, in row-major order, into a tensor of the plan's own `outputShape`.
 
     **The storage-kind guard is first, before the context and store checks.** This is the deepest
     public binary64 assignment door, and it is where checked binary32 evidence must stop: this
-    worker's store is `Array Float`, its constant decoder is `constFloat`, and its arithmetic is
-    `applyOp` over `Float`, so executing `.float32` evidence here would answer a binary32 question
-    in binary64 with no diagnostic anywhere. Guarding `runDenseAssign` alone would be insufficient —
-    that is a wrapper, and `runDenseBlock` (`Block.lean`) calls THIS entry directly. -/
+    worker's store is `Array Float` and its scalar runtime is `floatOps`, so executing `.float32`
+    evidence here would answer a binary32 question in binary64 with no diagnostic anywhere. Guarding
+    `runDenseAssign` alone would be insufficient — that is a wrapper, and `runDenseBlock`
+    (`Block.lean`) calls THIS entry directly. -/
 def runDenseAssignAt (c : CheckedAssignPlan) (ctx : List Int) (store : Array DenseTensor) :
     Except PositionalInputError DenseTensor := do
   unless c.storageKind == .float64 do
@@ -195,6 +275,45 @@ def runDenseAssignAt (c : CheckedAssignPlan) (ctx : List Int) (store : Array Den
 def runDenseAssign (c : CheckedAssignPlan) (store : Array DenseTensor) :
     Except PositionalInputError DenseTensor :=
   runDenseAssignAt c [] store
+
+/-! ## The native binary32 local worker (f32 slice, Task 3)
+
+The mirror image of the two entries above, over `float32Ops` and an `Array DenseTensor32` store.
+Structurally identical — same guard, same context/store validation, same row-major output
+enumeration, same shared traversal — because everything that is NOT scalar arithmetic is genuinely
+carrier-independent; the whole of the difference is which `ScalarKernelOps` record is handed to
+`denseValueAtWith`, and that record is where every binary32 fact lives.
+
+There is deliberately no third, generic public entry taking a raw `AssignPlan` plus an ops record:
+that would be an unchecked execution door, and the storage-kind guards below would have nothing to
+guard.
+-/
+
+/-- Execute one checked BINARY32 operation at a fixed context coordinate. Native `Float32`
+    throughout: the store's buffers are `Array Float32`, the zero-pad is native `+0`, an Iverson
+    predicate becomes native one/zero, and every factor/reduction/term fold step is a native
+    binary32 operation that rounds on its own. Nothing widens to `Float` anywhere on this path.
+
+    **The storage-kind guard is first, before the context and store checks** — the exact mirror of
+    `runDenseAssignAt`'s, and load-bearing for the same reason in the other direction: binary64
+    evidence executed here would answer a binary64 question in binary32, silently losing 29 bits of
+    significand. Guarding `runDenseAssign32` alone would be insufficient, since a direct caller can
+    invoke this entry (and `Adapter32.lean` will, in Task 4). -/
+def runDenseAssignAt32 (c : CheckedAssignPlan) (ctx : List Int) (store : Array DenseTensor32) :
+    Except PositionalInputError DenseTensor32 := do
+  unless c.storageKind == .float32 do
+    throw (.storageKindMismatch .float32 c.storageKind)
+  validateContext c.plan ctx
+  validateStore c.plan store
+  let a := c.plan
+  let out ← (allCoords a.outputShape.toList).mapM (denseValueAtWith float32Ops a ctx store)
+  return { shape := a.outputShape.toList, data := out.toArray }
+
+/-- The empty-context wrapper, the binary32 sibling of `runDenseAssign`. Inherits the guard above
+    rather than repeating it. -/
+def runDenseAssign32 (c : CheckedAssignPlan) (store : Array DenseTensor32) :
+    Except PositionalInputError DenseTensor32 :=
+  runDenseAssignAt32 c [] store
 
 /-! ## The dense scatter worker (S-A Task 4)
 
@@ -263,7 +382,7 @@ def runDenseScatter (c : CheckedScatterPlan) (store : Array DenseTensor) :
   -- The placement map's fields already ARE `AffineMap`'s, row per destination dimension and width per
   -- source position, so `applyAffine` applies as-is — no second affine evaluator.
   let placement : AffineMap := { coeffs := s.outCoeffs, bias := s.outBias }
-  let fill := constFloat s.fill
+  let fill ← floatOps.decodeConst s.fill
   let mut data : Array Float := Array.replicate (destShape.foldl (· * ·) 1) fill
   let mut writtenBy : Std.HashMap Nat (List Nat) := {}
   for sc in allCoords a.outputShape.toList do

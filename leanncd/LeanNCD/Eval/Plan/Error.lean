@@ -171,6 +171,22 @@ inductive PositionalInputError
       (`runDenseAssign`) inherit the guard rather than repeating it; guarding only the wrappers
       would be insufficient, since a direct caller can invoke `runDenseAssignAt`. -/
   | storageKindMismatch (expected actual : LeanNCD.StorageKind)
+  /-- A carrier whose scalar runtime has NO implementation of inline unary math was asked to apply
+      one. `kind` is that carrier, `op` the requested operation, `slot` the read's source slot.
+
+      The only producer is the `Float32` scalar kernel's unary callback (`Dense.lean`), and it is
+      deliberately unreachable in this slice: `checkAssignF32` rejects an inline unary read in a
+      binary32 graph outright (`PlanError.unaryNotAdmittedForDtype`), so no checked f32 evidence
+      carries one. It exists because the kernel seam's unary member is FALLIBLE rather than total —
+      a carrier without binary32 `log`/`exp`/`sqrt`/`recip` must be able to say so, instead of being
+      forced to invent an answer or to route the value through the binary64 helper, which would be
+      false f32.
+
+      Deliberately NOT a reuse of `unaryDomain`: that constructor's `valueBits` is a `UInt64`
+      `Float.toBits` payload, i.e. a binary64 fact, and this rejection is not a domain violation at
+      all — it is "this carrier does not implement the operation", which has no offending value. -/
+  | unaryNotAdmittedForStorage (kind : LeanNCD.StorageKind) (op : LeanNCD.UnaryOp)
+                               (slot : TensorSlot)
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- Wave C capability rejection (proposal §3.1/§3.2): which construct in the initial scan-free `f64`
