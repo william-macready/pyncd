@@ -290,17 +290,35 @@ structure CheckedScanPlan where private mk ::
     capture. `numStates`/`states`/`isBase` parameterize the two call sites identically rather than
     duplicating this function.
 
-    **Dtype admission.** `dtypeAdmitted` (`Check.lean` — the same predicate `checkAssign` applies to
-    a destination and to every read) is checked here, on the block-local input signature, before the
-    capture's source-specific obligations. It is a property of the capture itself, not of where the
-    value comes from, and it is the one obligation the signature EQUALITY below cannot express: a
-    capture whose outer and block-local signatures are both `f32` agrees with itself perfectly while
-    naming a dtype no worker implements — it would be executed as binary64 over the same
-    `Array Float` storage. A block input that is subsequently READ by an `.assign` step is also
-    covered by `checkPlanBlock`'s own `checkAssign` (which rejects an `f32` source), but a block
-    input that is only captured — never read, or serving as the block's own output through the
-    input-is-output shortcut — reaches no `checkAssign` at all, which is exactly the shape this
-    check closes. -/
+    **Dtype admission — CURRENTLY PRODUCER-LESS, and retained deliberately.** `dtypeAdmitted`
+    (`Check.lean` — the same predicate `checkAssign` applies to a destination and to every read) is
+    checked here, on the block-local input signature, before the capture's source-specific
+    obligations. It is a property of the capture itself, not of where the value comes from, and it
+    is an obligation the signature EQUALITY below cannot express: a capture whose outer and
+    block-local signatures are both `f32` agrees with itself perfectly while naming a dtype no
+    binary64 worker implements.
+
+    **But `captureDtypeNotAdmitted` can no longer fire, and a future author must not treat this
+    clause as a live backstop.** The f32 slice's Task 2 gave `checkPlanBlock` (`Block.lean`) a
+    WHOLE-TABLE storage-kind gate (`deriveStorageKind`) that runs before that function's outputs,
+    wiring, and per-step work — and `checkScanPlan` below calls `checkPlanBlock` on BOTH blocks
+    before it calls this function. Any block table containing an `f32` slot therefore derives
+    `.float32` (or, mixed with an `f64` slot, `mixedStorageKinds`) and is refused first, as
+    `baseBlockError`/`stepBlockError`. Since `dtypeAdmitted` rejects only `.f32`, nothing reaches
+    the throw below any more.
+
+    That block-level verdict is STRICTLY STRONGER than this clause was: it needs no capture list at
+    all, so it also covers an `f32` block slot that is neither read nor captured — including the
+    shape this clause was originally written for, a block input that is only captured (never read,
+    or serving as the block's own output through the input-is-output shortcut) and so reaches no
+    `checkAssign`. `ScanTest.lean`'s review fixture 9 pins that stronger verdict, and names
+    `captureDtypeNotAdmitted` directly so the payload shape stays exercised; the constructor is
+    retained on `ScanPlanError` per this repo's closed-family discipline, like every other shipped
+    producer-less constructor.
+
+    **Do not relax or relocate `checkPlanBlock`'s storage gate on the belief that this clause still
+    catches unread `f32` captures — it does not.** If that gate ever moves, restore a real producer
+    here (and a fixture for it) in the same change. -/
 private def checkCaptures (sigs : Array TensorSignature) (block : RawPlanBlock)
     (captures : Array BlockCapture) (numStates : Nat) (states : Array StateSlot) (isBase : Bool) :
     Except ScanPlanError Unit := do
