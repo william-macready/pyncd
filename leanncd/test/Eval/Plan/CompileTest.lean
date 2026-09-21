@@ -729,10 +729,19 @@ def f32IdentitySched : ScheduledProgram :=
   { identitySched with
     decls := [.axis axI1 (some 3), .typedTensor .f32 "X" [axI1], .typedTensor .f32 "Y" [axI1]] }
 
-/-- The matching concrete f32 input signature, derived through the declaration-aware constructor
-    from the very declarations above (not hand-written), so the two halves cannot drift apart. -/
+/-- `identityInputs`' own shape and values on the NATIVE binary32 carrier. The f32 slice's Task 4
+    made the carrier part of declaration-aware signature construction, so the f32 signature below
+    must be derived from binary32 buffers — deriving it from `identityInputs`' `Array Float` data is
+    now the named `storageKindMismatch` rejection `SignatureTest`'s fixture 13 pins. -/
+def identityInputs32 : HashMap String DenseTensor32 :=
+  ({} : HashMap String DenseTensor32).insert "X"
+    (⟨[3], #[(10.0 : Float32), 20.0, 30.0]⟩ : DenseTensor32)
+
+/-- The matching concrete f32 input signature, derived through the declaration-aware BINARY32
+    constructor from the very declarations above (not hand-written), so the two halves cannot drift
+    apart. -/
 def f32IdentitySig : InputSignature :=
-  match InputSignature.ofDenseInputsForDecls f32IdentitySched.decls identityInputs with
+  match InputSignature.ofDenseInputs32ForDecls f32IdentitySched.decls identityInputs32 with
   | .ok sig => sig
   | .error _ => InputSignature.mk ({} : HashMap String TensorSignature)
 

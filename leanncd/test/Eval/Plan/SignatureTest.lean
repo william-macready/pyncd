@@ -9,11 +9,16 @@ boundary: signature conversion, existing-shape-test parity, corpus parity, an
 `explicitSizes`-only extent, a pinned-size/input conflict, and warning preservation across a
 later failure.
 
-The declaration-aware constructor `InputSignature.ofDenseInputsForDecls` is `Except CompileError`-
-valued (whole-branch review finding 1), so its fixtures below come in three flavours over the SAME
-input map: declared-predicate (`bool`), undeclared (`f64`), and malformed `decls` (rejected with
-`buildDeclEnv`'s own `duplicateTensorDecl`) — the last is what distinguishes a genuine rejection
-from the silent `f64` degradation the old `.toOption.getD {}` fallback produced.
+The declaration-aware constructor `InputSignature.ofDenseInputsForDecls` is
+`Except InputSignatureBuildError`-valued (whole-branch review finding 1, retyped by the f32 slice's
+Task 4 so a carrier disagreement has somewhere to go), so its fixtures below come in three flavours
+over the SAME input map: declared-predicate (`bool`), undeclared (`f64`), and malformed `decls`
+(rejected with `buildDeclEnv`'s own `duplicateTensorDecl`, now wrapped as
+`.declaration (.duplicateTensorDecl …)`) — the last is what distinguishes a genuine rejection from
+the silent `f64` degradation the old `.toOption.getD {}` fallback produced.
+
+The f32 slice's Task 4 adds the BINARY32 sibling `InputSignature.ofDenseInputs32ForDecls` and its
+fixtures at the end of this file (fixtures 1, 2, 13, 14, 15).
 -/
 
 namespace LeanNCD.Eval.Plan.SignatureTest
@@ -47,21 +52,23 @@ private def conversionInputs : HashMap String DenseTensor :=
 -- and the shared `conversionInputs` fixture supplies `X`: under the old `.toOption.getD {}`
 -- fallback this returned `.ok` with exactly fixture 2's `f64` signature for `X` — the two sibling
 -- guards above are what distinguish the three outcomes (bool / f64 / rejected), so this fixture
--- pins the exact error rather than merely "not bool".
+-- pins the exact error rather than merely "not bool". The f32 slice's Task 4 retyped this
+-- constructor to `InputSignatureBuildError`, so `buildDeclEnv`'s `CompileError` now arrives wrapped
+-- in `.declaration` rather than bare — the payload itself is unchanged.
 #guard match InputSignature.ofDenseInputsForDecls
     [.predicate "X" [], .tensor "X" []] conversionInputs with
-  | .error (.duplicateTensorDecl "X") => true
+  | .error (.declaration (.duplicateTensorDecl "X")) => true
   | _ => false
 
 -- The same duplicate in the other kind order, and a same-kind duplicate: `buildDeclEnv` names the
 -- duplicated tensor only (no declaration index, no kind), so all three report identically.
 #guard match InputSignature.ofDenseInputsForDecls
     [.tensor "X" [], .predicate "X" []] conversionInputs with
-  | .error (.duplicateTensorDecl "X") => true
+  | .error (.declaration (.duplicateTensorDecl "X")) => true
   | _ => false
 #guard match InputSignature.ofDenseInputsForDecls
     [.predicate "X" [], .predicate "X" []] conversionInputs with
-  | .error (.duplicateTensorDecl "X") => true
+  | .error (.declaration (.duplicateTensorDecl "X")) => true
   | _ => false
 
 -- An `.axis` declaration sharing a tensor-bearing name is NOT a duplicate (`buildDeclEnv` skips
@@ -72,15 +79,15 @@ private def conversionInputs : HashMap String DenseTensor :=
   | .ok sig => sig.tensors["X"]? == some ({ shape := #[2, 3], dtype := .bool } : TensorSignature)
   | .error _ => false
 
--- f32 Task 1, fixture 15 (signature half): the same `conversionInputs` fixture with `X` declared
--- an explicit `tensor f32` — `dtypeOfDecl` reports `.f32` as itself, and `ofDenseInputsForDecls`
--- emits an f32 signature. Reporting `.f64` instead would let an explicitly-f32 program construct a
--- CHECKED f64 plan and run it in the existing Float worker.
+-- f32 Task 1, fixture 15 (signature half): `dtypeOfDecl` reports `.f32` as itself rather than
+-- degrading it to `.f64`. Reporting `.f64` instead would let an explicitly-f32 program construct a
+-- CHECKED f64 plan and run it in the existing Float worker. The f32 signature this classification
+-- produces is asserted at fixture 1 below, through the BINARY32 constructor — which is the only
+-- constructor that may emit one, since Task 4 (fixture 13's Float half, also below) made supplying
+-- an `Array Float` buffer for an `f32`-declared name a named carrier rejection rather than an
+-- `f32`-labelled signature over binary64 data.
 #guard dtypeOfDecl (some (.typedTensor .f32 "X" [])) == ScalarDType.f32
 #guard dtypeOfDecl (some (.tensor "X" [])) == ScalarDType.f64
-#guard match InputSignature.ofDenseInputsForDecls [.typedTensor .f32 "X" []] conversionInputs with
-  | .ok sig => sig.tensors["X"]? == some ({ shape := #[2, 3], dtype := .f32 } : TensorSignature)
-  | .error _ => false
 
 -- Task 4.3, fixture 3: `GnnScatterTest`'s GN2 shape (`predicate edge(i, j); H[i, f] := edge[i, j]
 -- · X[j, f]`, `test/Eval/Portfolio/GnnScatterTest.lean`) compiled to a schedule, then its
@@ -353,5 +360,98 @@ run_cmd do
             throwError s!"warning lists diverged between adapters: {e1.warnings} vs {e2.warnings}"
       | .ok _, _ => throwError "expected both adapters to fail on the pinned-size conflict"
       | _, .ok _ => throwError "expected both adapters to fail on the pinned-size conflict"
+
+/-! ## f32 slice Task 4: the declaration-aware BINARY32 signature constructor
+
+Fixtures 1, 2, 13, 14 and 15. All five are `conversionInputs`' own shape (`[2, 3]`, six elements)
+re-expressed on whichever carrier each case is about, so nothing below can differ from the binary64
+fixtures at the top of this file for any reason other than the carrier and the declarations. -/
+
+/-- `conversionInputs` as NATIVE binary32 buffers — `Array Float32`, not `Array Float` relabelled —
+    under two names so a per-name rule can be distinguished from a whole-map one. -/
+private def conversionInputs32 : HashMap String DenseTensor32 :=
+  (({} : HashMap String DenseTensor32).insert "X"
+      ⟨[2, 3], (#[0, 0, 0, 0, 0, 0] : Array UInt32).map Float32.ofBits⟩).insert
+    "Z" ⟨[2, 3], (#[0, 0, 0, 0, 0, 0] : Array UInt32).map Float32.ofBits⟩
+
+-- Fixture 1: both names declared `tensor f32` — `ofDenseInputs32ForDecls` emits `f32` SIGNATURES
+-- carrying each buffer's own shape. This is the claim the binary64 constructor may no longer make
+-- (see fixture 13's Float half below): an `f32` signature is only derivable from an `f32` buffer.
+#guard match InputSignature.ofDenseInputs32ForDecls
+    [.typedTensor .f32 "X" [], .typedTensor .f32 "Z" []] conversionInputs32 with
+  | .ok sig =>
+      sig.tensors["X"]? == some ({ shape := #[2, 3], dtype := .f32 } : TensorSignature) &&
+      sig.tensors["Z"]? == some ({ shape := #[2, 3], dtype := .f32 } : TensorSignature)
+  | .error _ => false
+
+-- Fixture 2: fixture 1 with ONE declaration made an ordinary `tensor` (the binary64 spelling). The
+-- constructor must LOCATE the disagreement by name rather than marking `Z` `f32` because its
+-- neighbours are, or marking it `f64` because its declaration says so while packing a binary32
+-- buffer behind it. `X` is still legally f32, so this cannot be satisfied by a constructor that
+-- rejects any mixed declaration list wholesale.
+#guard match InputSignature.ofDenseInputs32ForDecls
+    [.typedTensor .f32 "X" [], .tensor "Z" []] conversionInputs32 with
+  | .error (.storageKindMismatch "Z" .float32 .float64) => true
+  | _ => false
+
+-- Fixture 13: the two constructors' guards are exact mirrors, each naming the offending input.
+-- (a) the BINARY64 constructor handed a Float buffer whose declaration is `tensor f32`:
+#guard match InputSignature.ofDenseInputsForDecls [.typedTensor .f32 "X" []] conversionInputs with
+  | .error (.storageKindMismatch "X" .float64 .float32) => true
+  | _ => false
+-- (b) the BINARY32 constructor handed a native Float32 buffer whose declaration is ordinary
+-- `tensor`. A ONE-name map, so the reported name is the map's only entry rather than whichever of
+-- two offenders the hash order happens to reach first.
+private def soleInput32 : HashMap String DenseTensor32 :=
+  ({} : HashMap String DenseTensor32).insert "X"
+    ⟨[2, 3], (#[0, 0, 0, 0, 0, 0] : Array UInt32).map Float32.ofBits⟩
+
+#guard match InputSignature.ofDenseInputs32ForDecls [.tensor "X" []] soleInput32 with
+  | .error (.storageKindMismatch "X" .float32 .float64) => true
+  | _ => false
+
+-- Fixture 14: a call that violates BOTH declaration uniqueness and carrier compatibility reports
+-- the DECLARATION first. A malformed `decls` list has no single answer to "what precision is this
+-- name?", so a carrier verdict derived from a last-wins reading of it would name a consequence and
+-- hide the cause.
+-- (a) Float constructor, duplicated `.typedTensor .f32` declarations, Float input: the carrier
+-- disagrees (f32 declaration, binary64 buffer) AND the list is malformed.
+#guard match InputSignature.ofDenseInputsForDecls
+    [.typedTensor .f32 "X" [], .typedTensor .f32 "X" []] conversionInputs with
+  | .error (.declaration (.duplicateTensorDecl "X")) => true
+  | _ => false
+-- (b) Float32 constructor, duplicated ordinary `tensor` declarations, native Float32 input.
+#guard match InputSignature.ofDenseInputs32ForDecls
+    [.tensor "X" [], .tensor "X" []] conversionInputs32 with
+  | .error (.declaration (.duplicateTensorDecl "X")) => true
+  | _ => false
+
+-- Fixture 15: a predicate-only native binary32 input map — no real-valued input name at all. The
+-- Float32 constructor ACCEPTS it and emits a `.bool` signature, because a `.predicate` declaration
+-- is precision-NEUTRAL (`storageConstraintOfDecl`) and the rule applied here is the shared PER-NAME
+-- constraint. The schedule-wide derivation (`scheduleStorageKind`) answers a different question and
+-- DEFAULTS an unconstrained graph to `.float64`; asking it here would refuse a carrier the caller
+-- already chose by choosing this constructor.
+--
+-- Constructor behavior only: a bool-only PROGRAM still derives `.float64` at `prepareEvalPlan` Step
+-- 0b and so is not executable through `runPreparedDense32` — accepting the input map is not a claim
+-- that such a program is a binary32 one.
+private def predOnlyInputs32 : HashMap String DenseTensor32 :=
+  ({} : HashMap String DenseTensor32).insert "P"
+    ⟨[2, 3], (#[0, 0, 0, 0, 0, 0] : Array UInt32).map Float32.ofBits⟩
+
+#guard match InputSignature.ofDenseInputs32ForDecls [.predicate "P" []] predOnlyInputs32 with
+  | .ok sig => sig.tensors["P"]? == some ({ shape := #[2, 3], dtype := .bool } : TensorSignature)
+  | .error _ => false
+
+-- Control for fixture 15: the SAME predicate-only shape on the BINARY64 carrier is equally
+-- acceptable, which is what "precision-neutral" means — the `.bool` signature is not a binary32
+-- privilege, it is the absence of a precision constraint on either carrier.
+private def predOnlyInputs : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "P" ⟨[2, 3], #[0.0, 0.0, 0.0, 0.0, 0.0, 0.0]⟩
+
+#guard match InputSignature.ofDenseInputsForDecls [.predicate "P" []] predOnlyInputs with
+  | .ok sig => sig.tensors["P"]? == some ({ shape := #[2, 3], dtype := .bool } : TensorSignature)
+  | .error _ => false
 
 end LeanNCD.Eval.Plan.SignatureTest

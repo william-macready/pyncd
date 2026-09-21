@@ -400,6 +400,32 @@ inductive InputSignatureError
   | dtypeMismatch    (name : String) (expected actual : ScalarDType)
   deriving DecidableEq, BEq, Repr, Inhabited
 
+/-- Failure of a DECLARATION-AWARE `InputSignature` CONSTRUCTOR (`Signature.lean`'s
+    `ofDenseInputsForDecls` and its binary32 sibling `ofDenseInputs32ForDecls`). Distinct from
+    `InputSignatureError` above, which is `prepareEvalPlan`'s verdict on an already-built signature:
+    this one is about building one at all.
+
+    Two genuinely different malformations, checked in this order:
+
+    * `declaration` — the supplied `decls` list is itself malformed, wrapping `buildDeclEnv`'s own
+      `CompileError` (in practice `duplicateTensorDecl`) unchanged rather than restating it. It is
+      FIRST because the declaration environment is the authority every later question is asked of:
+      a list that declares one name twice has no single answer to "what precision is this name?",
+      so reporting a carrier disagreement derived from a last-wins reading of it would name a
+      consequence and hide the cause.
+    * `storageKindMismatch` — a named input's CONCRETE CARRIER contradicts the precision its own
+      declaration commits it to. `expected` is the CONSTRUCTOR's carrier (`.float64` for
+      `ofDenseInputsForDecls`, `.float32` for `ofDenseInputs32ForDecls`), `actual` the declaration's
+      (`storageConstraintOfName?`, `DSL/Ast.lean`). It names the input, because "some buffer is the
+      wrong precision" is not actionable in a map of them. A `.predicate` declaration constrains
+      nothing (a Boolean tensor's declaration names its ALGEBRA, not its precision) and so can never
+      raise this from either constructor — which is what lets one Boolean name ride along with
+      either real carrier. -/
+inductive InputSignatureBuildError
+  | declaration         (cause : LeanNCD.CompileError)
+  | storageKindMismatch (name : String) (expected actual : LeanNCD.StorageKind)
+  deriving DecidableEq, BEq, Repr, Inhabited
+
 /-- Failure of `Prepared.lean`'s `checkBindings`: a candidate `requiredInputs` array does not align
     with a plan's `inputSlots` the way a `RequiredBindings` requires. `notAPermutation` covers a
     duplicate slot, an extra slot, or a missing slot alike — every one of those breaks
