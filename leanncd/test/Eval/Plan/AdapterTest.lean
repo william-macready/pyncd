@@ -728,4 +728,42 @@ def runErr (p : Option PreparedPlan) (env : HashMap String DenseTensor) : Option
                | .ok _ => false)
   | none => false)
 
+/-! ## f32 slice Task 4, fixture 11: the `EvalReport` compatibility shim
+
+`EvalReport` is now an ALIAS for `EvalReportOf Float` (`Eval/Report.lean`), and changing a structure
+into an alias synthesizes none of the original's generated names. All three are preserved explicitly
+there; the checks below are what distinguishes a real compatibility shim from an `abbrev` that
+preserves only the type name. Removing any one of them must fail to ELABORATE here, rather than
+quietly forcing every existing caller to migrate.
+
+The pre-existing construction and projection uses stay exactly where they are and are NOT rewritten:
+`Eval/Eval.lean`'s `{ env, warnings }`, `Eval/Plan/Adapter.lean`'s same form,
+`PropertyOracle/Compare.lean`'s `.ok { env, warnings }`, and the `report.env` / `report.warnings`
+field notation this file and `EntryTest.lean` use throughout. Each form those sites actually use is
+exercised below. -/
+
+/-- `EvalReport.mk` still names the binary64 report's constructor, applied to the two original field
+    values in order. -/
+def shimReport : EvalReport :=
+  EvalReport.mk (({} : HashMap String DenseTensor).insert "Y" ⟨[1], #[7.0]⟩) []
+
+-- `EvalReport.env`/`EvalReport.warnings` are usable as standalone FUNCTION VALUES — the form a bare
+-- abbreviation of the generic projection does not support.
+#guard ((some shimReport).map EvalReport.warnings) == some ([] : List EvalWarning)
+#guard ((some shimReport).map (fun r => (EvalReport.env r).size)) == some 1
+
+-- ... and through ordinary field notation on the alias, which is the form every existing call site
+-- (`EntryTest`'s `report.warnings`/`report.env`, this file's `report.env["Y"]?`) uses.
+#guard shimReport.warnings.isEmpty
+#guard expectTensor shimReport.env["Y"]? [1] #[7.0]
+
+-- Structure-instance and anonymous-constructor notation still elaborate at the alias, which is how
+-- `Eval/Eval.lean`, `Adapter.lean` and `PropertyOracle/Compare.lean` build every report they return.
+#guard ({ env := ({} : HashMap String DenseTensor), warnings := [] } : EvalReport).warnings.isEmpty
+#guard (⟨({} : HashMap String DenseTensor), []⟩ : EvalReport).env.isEmpty
+
+-- The binary32 report is a DIFFERENT instantiation of the same shell, with native `Float32` storage
+-- — not `EvalReport` relabelled. `runPreparedDense32` returns this one (`Adapter32Test.lean`).
+#guard (⟨({} : HashMap String DenseTensor32), []⟩ : EvalReport32).env.isEmpty
+
 end LeanNCD.Eval.Plan.AdapterTest
