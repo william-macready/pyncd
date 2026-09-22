@@ -34,9 +34,11 @@ decision GO B):
   CONTEXTFUL assignment. Rejection happens BEFORE any candidate, evidence label, or Python emission.
 * A standalone entry (`validateAffineTable`/`validateEinsum`/`kernelWellFormedBool`/
   `validateAndConstructKernel`, and the experimental renderers/conversions) takes ONE explicit
-  complete `Array TensorSignature` and treats it as its semantic authority: `checkAssign` is re-run
-  under it, so a structurally incompatible table fails as `invalidSignatureContext` instead of being
-  silently consulted for dtype only. Plan-level entry points accept no such parameter; they derive
+  complete `Array TensorSignature` and treats it as its semantic authority: the assignment checker
+  matching the evidence's own storage kind (`checkAssign` / `checkAssignF32`) is re-run under it, so
+  a structurally incompatible table fails as `invalidSignatureContext` instead of being silently
+  consulted for dtype only, and a binary32 assignment fails as the located `destinationDType` rather
+  than as a signature-context defect. Plan-level entry points accept no such parameter; they derive
   `PreparedPlan.plan.raw.tensorSigs`.
 * The raw candidate records store NO signatures. `JaxKernel` stores the validated table
   (`signatureContext`) together with `valid : JaxKernelWellFormed signatureContext candidate`, and
@@ -157,11 +159,17 @@ sibling-audit table in `papers/boolean_predicate_output_evalplan.md` §2.5: ever
 a located rejection here, not a silently-stamped `orderedReference64`.
 
 The supplied `Array TensorSignature` is the caller-facing SEMANTIC AUTHORITY for a standalone entry
-point (spike decision GO B): `checkJaxAssignSupport` first re-establishes `checkAssign` for the same
-raw assignment UNDER THAT TABLE — a structurally incompatible table is rejected as
+point (spike decision GO B): `checkJaxAssignSupport` first re-establishes the evidence's own
+assignment checker (`checkAssign` for `.float64`, `checkAssignF32` for `.float32`) for the same raw
+assignment UNDER THAT TABLE — a structurally incompatible table is rejected as
 `invalidSignatureContext`, not silently used for dtype only — and only then applies the support
 policy. Plan-level entry points never accept a caller table; they derive
-`PreparedPlan.plan.raw.tensorSigs`. -/
+`PreparedPlan.plan.raw.tensorSigs`.
+
+Binary32 is refused here too (this backend is reference64-only; slice F32-JAX owns any `jnp.float32`
+artifact), but it is refused BY THE SUPPORT POLICY as a located `destinationDType … .f32`, not by
+the re-run. Running the binary64 checker over binary32 evidence would report the graph's own,
+correct carrier as a caller table defect — a true rejection for a false reason. -/
 
 /-- Every located way the experimental JAX backend refuses an otherwise-checked assignment.
 
@@ -200,7 +208,9 @@ inductive JaxSupportError
 
     The context check reads `a.contextShape` alone; no parallel `terms.any (·.contextPos ≠ #[])`
     conjunct is coded on top of it, because that state is unreachable rather than merely unlikely.
-    `checkAssign` — re-run under `sigs` by the gate below before any of this — forces
+    `checkAssignCore` — re-run under `sigs` by the gate below before any of this, through whichever
+    of `checkAssign`/`checkAssignF32` matches the evidence's storage kind; this clause is one of the
+    ones the two carriers share verbatim — forces
     `t.contextProjection == a.contextShape` (`contextProjectionMismatch`) and
     `t.positionsPartition`, and the latter puts every `contextPos` entry in range, so
     `contextShape = #[]` implies every term's `contextPos = #[]` for anything that can reach here. A
@@ -235,17 +245,34 @@ private def jaxAssignSupported (sigs : Array TensorSignature) (nodeIndex : Nat) 
           throw (.unaryFactor nodeIndex ti fi)
 
 /-- The typed, context-bearing cross-module support gate: the supplied complete signature table is
-    the assignment's semantic authority, so `checkAssign` is RE-RUN under it before the JAX support
-    policy is applied. A table that is structurally incompatible with the same raw assignment (a
-    different shape at a read slot, say) fails as `invalidSignatureContext` carrying the checker's
+    the assignment's semantic authority, so the assignment checker is RE-RUN under it before the JAX
+    support policy is applied. A table that is structurally incompatible with the same raw assignment
+    (a different shape at a read slot, say) fails as `invalidSignatureContext` carrying the checker's
     own `PlanError`, rather than being used for its dtype tags alone.
+
+    The re-run uses the MODE-APPROPRIATE checker — `checkAssign` for `.float64` evidence,
+    `checkAssignF32` for `.float32` — selected from the evidence's own `storageKind` rather than
+    fixed to the binary64 one. That is a truthfulness requirement, not a widening: this backend
+    still admits only `f64` destinations and reads (`jaxAssignSupported` below is unchanged), so a
+    binary32 assignment is still refused. What the mode selection buys is that it is refused as the
+    LOCATED `destinationDType nodeIndex slot .f32` — the real reason — instead of collapsing into
+    `invalidSignatureContext` carrying the binary64 checker's `dtypeNotAdmitted`, which would
+    misreport a perfectly well-formed binary32 assignment as a caller signature-table defect.
+    `CheckedAssignPlan.storageKind` is set by whichever public checker produced the evidence and
+    cannot be forged (`private mk ::`), so this dispatch reads the evidence's own carrier, not a
+    caller convention. There is deliberately no third arm: a later carrier extends
+    `LeanNCD.StorageKind` and this match fails to compile until its checker is named here.
 
     This is the one helper both the production validators here and the experimental renderers /
     candidate conversions in `experiments/jax_bridge/EvalPlanCodegen.lean` call; the latter maps its
     result into that module's own `JaxCodegenError` vocabulary. -/
 def checkJaxAssignSupport (sigs : Array TensorSignature) (nodeIndex : Nat)
     (checked : CheckedAssignPlan) : Except JaxSupportError Unit := do
-  match checkAssign sigs checked.plan with
+  let recheck :=
+    match checked.storageKind with
+    | .float64 => checkAssign sigs checked.plan
+    | .float32 => checkAssignF32 sigs checked.plan
+  match recheck with
   | .error e => throw (.invalidSignatureContext nodeIndex e)
   | .ok _ => pure ()
   jaxAssignSupported sigs nodeIndex checked.plan

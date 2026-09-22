@@ -1699,6 +1699,14 @@ def f32ZeroStepPrepared : Option PreparedPlan :=
 
 -- Control: the identical zero-step plan in BINARY64 validates, so fixture 23 is about the storage
 -- kind and not about the empty step list.
+--
+-- RETAINED, with its behavior still required, as f32 slice Task 5 FIXTURE 2's production half. The
+-- experimental half is the identically-shaped `f64ZeroStepRaw` control in
+-- `experiments/jax_bridge/EvalPlanCodegen.lean` (fixtures 24 and 25 there), which this module
+-- cannot import and therefore covers as a build-only regression target. Together they pin that the
+-- plan-level storage gates reject a binary32 CARRIER and never an empty GRAPH: a zero-step plan is
+-- the one shape at which every per-node check is vacuous, so it is also the shape at which an
+-- over-broad gate would be invisible everywhere except here.
 def f64ZeroStepRaw : RawEvalPlan :=
   { tensorSigs := #[ { shape := #[3], dtype := .f64 }, { shape := #[3], dtype := .f64 } ]
   , inputSlots := #[0, 1], steps := #[] }
@@ -1727,5 +1735,68 @@ def f64ZeroStepRaw : RawEvalPlan :=
        | .error (.invalidBindings (.materializedSlot (.slotOutOfRange 99 2))) => true
        | _ => false)
   | none => false)
+
+/-! ## f32 slice Task 5, fixture 1: the standalone gate re-checks in the EVIDENCE'S OWN mode
+
+`boolDestAssign`'s donor shape with three deliberate changes:
+
+* the signature table gains a THIRD slot, so the destination can move off the donor's slot 1 — a
+  fixture that left it there could not distinguish a correctly located slot from a hardcoded one;
+* the destination moves to slot 2 and the table is retagged `f32` throughout, making this a valid
+  BINARY32 assignment rather than a Boolean one;
+* the gate is called at node index 7, so the node locator is likewise not the default 0.
+
+The required error is exactly `JaxSupportError.destinationDType 7 2 .f32` — the support policy's own
+located refusal of a non-`f64` destination, carrying both changed locators. It is specifically NOT
+`invalidSignatureContext`: `checkJaxAssignSupport` re-establishes the assignment checker under the
+caller's table before applying the policy, and if that re-check is hardcoded to the binary64
+`checkAssign` it refuses `f32` itself (`dtypeNotAdmitted 2 .f32`, pinned below), so this perfectly
+well-formed binary32 assignment would be blamed on the caller's signature table instead of on the
+backend's reference64-only policy. Both outcomes reject; only one is true, and the standalone
+entries' whole contract is that the supplied table is the caller's SEMANTIC AUTHORITY — an
+`invalidSignatureContext` here is an accusation against the caller, not a capability statement.
+
+Task 5 adds no JAX execution for binary32 (slice F32-JAX owns that): `orderedReference64`, the
+`UInt64` transport, the Python runtimes, and every operation rendering are untouched. -/
+
+def f32DestSigs : Array TensorSignature :=
+  #[ { shape := #[3], dtype := .f32 }    -- slot 0 — the identity read's source
+   , { shape := #[3], dtype := .f32 }    -- slot 1 — the donor's destination slot, now a spectator
+   , { shape := #[3], dtype := .f32 } ]  -- slot 2 — the destination
+
+def f32DestAssign : AssignPlan :=
+  { idAssign with destinationSlot := 2, algebra := admittedAlgebraF32 }
+
+-- The BINARY32 checker admits it, so the rejection below is the JAX support policy talking and not
+-- a malformed fixture.
+#guard (match checkAssignF32 f32DestSigs f32DestAssign with
+  | .ok _ => true
+  | .error _ => false)
+
+-- ... and the BINARY64 checker refuses it at the destination, which is precisely the wrong answer
+-- the mode-selected re-check exists to avoid reporting. This is the value fixture 1's required
+-- error must NOT be.
+#guard (match checkAssign f32DestSigs f32DestAssign with
+  | .error e => e == PlanError.dtypeNotAdmitted 2 .f32
+  | .ok _ => false)
+
+-- The claim itself: the located destination dtype, at the changed node index and the changed slot.
+#guard (match checkAssignF32 f32DestSigs f32DestAssign with
+  | .error _ => false
+  | .ok checked =>
+      match checkJaxAssignSupport f32DestSigs 7 checked with
+      | .error e => e == JaxSupportError.destinationDType 7 2 .f32
+      | .ok _ => false)
+
+-- The kernel validator — the other standalone entry over the same helper — reports the same located
+-- refusal (at its own fixed node index 0) wrapped in `.unsupported`, so no binary32 kernel, evidence
+-- label, or executable can be constructed from this assignment either.
+#guard (match checkAssignF32 f32DestSigs f32DestAssign with
+  | .error _ => false
+  | .ok checked =>
+      match validateAndConstructKernel f32DestSigs
+          (.affineTable { semanticAssignment := checked, tables := #[#[idTable3]] }) with
+      | .error e => e == JaxKernelValidationError.unsupported (.destinationDType 0 2 .f32)
+      | .ok _ => false)
 
 end LeanNCD.Eval.Plan.ExecutableTest
