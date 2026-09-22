@@ -173,7 +173,7 @@ fragment.
 
 - **Unary factor functions** — admitted end-to-end (top level and inside scan `base`/`recur` blocks).
   `checkFactor` admits `.unaryFn`; `residualizeAssignment` lowers it to the same `ReadPlan` a `.read`
-  produces with a new `unary : Option UnaryOp` field, and Dense's `gatherFactor` applies the function
+  produces with a new `unary : Option UnaryOp` field, and Dense's `gatherFactorWith` applies the function
   *after* the `zeroPad` out-of-bounds pad — so an out-of-bounds read contributes `f(0)`, matching the
   reference `gather`. The math and domain partiality live once in `UnaryOp.applyChecked`, which the
   reference `applyUnaryFn` also wraps (`log`/`sqrt`/`recip` fail loud — the checked path as
@@ -217,7 +217,7 @@ fragment.
   algebra/signature tag over unchanged Float-backed storage**, not a native carrier: no `Array Bool`,
   no bit-packing, no truth-value validation, no coercion step. A predicate destination selects
   `admittedAlgebraBool` (factor `min` with identity `true`, contracted-coordinate and term `max` with
-  identity `false`), mirroring the reference `Combine.bool`; `Dense.constFloat` decodes `.bool
+  identity `false`), mirroring the reference `Combine.bool`; the carrier's `ScalarKernelOps.decodeConst` (`floatOps` here) decodes `.bool
   true`/`.bool false` to `1.0`/`0.0` and the ordinary Float `min`/`max` run, so a non-binary value
   keeps literal min/max behavior rather than being coerced or rejected. Algebra admission is
   destination-specific (`admittedAlgebrasFor`): real sum-product plus the two tropical semirings for

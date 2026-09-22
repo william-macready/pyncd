@@ -642,7 +642,7 @@ An `AssignPlan` describes one destination tensor and the contraction algebra use
 classify their iteration coordinates as context, output, or reduction positions. Each factor is a
 `ReadPlan`, which names a positional `sourceSlot` and records how those iteration coordinates select
 a coordinate from that source tensor. A `ReadPlan` may also carry a `unary : Option UnaryOp` — an
-inline transcendental function (`log`/`exp`/`sin`/`cos`/`sqrt`/`recip`) that Dense's `gatherFactor`
+inline transcendental function (`log`/`exp`/`sin`/`cos`/`sqrt`/`recip`) that Dense's `gatherFactorWith`
 applies to the gathered value *after* the out-of-bounds zero-pad, so an out-of-bounds read contributes
 `f(0)`. The math and its domain partiality live once in `UnaryOp.applyChecked` (shared with the
 reference `applyUnaryFn`); `log`/`sqrt`/`recip` fail loud on a domain violation as
