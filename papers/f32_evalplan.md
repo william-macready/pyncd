@@ -1667,14 +1667,17 @@ shell, TOML, and text returned **17 files**, classified as:
 - **updated as current documentation (5)** — `papers/backend_missing_functionality.md`,
   `papers/wave_f_capability_manifest.md`, `papers/eval_ir.md`, `leanncd/LeanNCD/Eval/AGENTS.md`,
   and this document;
-- **given an explicit completed/superseded banner, then left unmodernized (2)** —
-  `papers/wave_f_scanplan_proposal.md`, which still said "F2 is next", and
+- **given an explicit completed/superseded banner, then left unmodernized (3)** —
+  `papers/wave_f_scanplan_proposal.md`, which still said "F2 is next";
   `papers/f32_evalplan_handoff.md`, which still said "Implementation status: **Not started.** Zero
-  Lean source files have been modified." The handoff document was **not** on Task 5's own file list
-  and was found only by this sweep — which is exactly why Section 6.3 lets the sweep add files;
-- **confirmed immutable historical, already carrying that status, left untouched (9)** —
+  Lean source files have been modified" (this one was **not** on Task 5's own file list and was found
+  only by this sweep — exactly why Section 6.3 lets the sweep add files); and
+  `papers/scatter_affine_lhs_writes.md`, whose §2.5 is forward-looking guidance for deferred work
+  rather than a snapshot, so the document's implemented-status line did not cover it (see the close
+  calls below);
+- **confirmed immutable historical, already carrying that status, left untouched (8)** —
   `papers/boolean_predicate_output_evalplan.md`, `papers/predicate_boolean_backend_parity.md`,
-  `papers/scatter_affine_lhs_writes.md`, `papers/wave_c_evalplan_proposal.md`,
+  `papers/wave_c_evalplan_proposal.md`,
   `papers/post_audit_roadmap.md`, `papers/restructure_suggestions.md`,
   `papers/copilot_code_analysis.md`, `papers/jax_signature_evidence_ownership_spike_results.md`,
   and `docs/superpowers/specs/2026-08-21-nonlinearity-in-scans-design.md`. Each was opened and its
@@ -1683,15 +1686,30 @@ shell, TOML, and text returned **17 files**, classified as:
 - **not a documentation claim (1)** — `leanncd/scripts/mutation-cycle.sh`, whose only match is the
   string `'M6b (source f32 guard)'` in a usage example.
 
-The two close calls, recorded rather than waved through. `papers/wave_c_evalplan_proposal.md` says
-"Initially plan compilation admits only `ScalarDType.f64`; `f32` and `bool` are reserved closed tags"
-in present tense, which is now doubly false — but the sentence sits under a heading that scopes it
-("§3 Initial Wave C scope and capability boundary"), the word "Initially" scopes it again, and the
-document's Appendix A carries a per-task ✅ DONE record, so it reads as a milestone snapshot and was
-left alone. `papers/scatter_affine_lhs_writes.md` says "`ScalarConst.f32` is documented inert in a
-checked plan" in present tense, which the f32 slice falsified; it carries an explicit
-"S-A and S-B implemented" status, so the sentence is a premise of a completed design and was likewise
-left unmodernized, but a reader arriving at it out of context could be misled.
+The two close calls, recorded rather than waved through — and they resolved **differently**, which is
+the point of recording them.
+
+`papers/wave_c_evalplan_proposal.md` §5.1 ("Scalar, signature, slot, and policy vocabulary") says
+*"Initially plan compilation admits only `ScalarDType.f64`; `f32` and `bool` are reserved closed tags
+**for later plan capabilities**."* **Left unchanged, and it is not actually stale.** The sentence is
+self-scoping twice over — "Initially" scopes it to Wave C's own admission boundary, and "for later
+plan capabilities" *anticipates* exactly what has since happened (`bool` in the Boolean-output slice,
+`f32` in this one). It describes what Wave C admitted, which is still true of Wave C, and the
+document's Appendix A carries per-task ✅ DONE records. An earlier draft of this paragraph called it
+"doubly false" and placed it in §3; both were wrong, and the correction is recorded here rather than
+silently applied.
+
+`papers/scatter_affine_lhs_writes.md` §2.5 says *"`ScalarConst.f32` is documented inert in a checked
+plan, so the fill's dtype must track the destination's; reuse the existing destination-specific
+algebra-admission check."* **A corrective banner was added to §2.5.** This one is genuinely not a
+historical snapshot: §2.5 is *forward-looking guidance for deferred work* — collision-`sum`, explicit
+fills, and a binary32 scatter are all still unimplemented — so the document's "S-A and S-B
+implemented" status line does not cover it, and a `papers/` path is not by itself evidence of safe
+historicity. The premise is now false (`ScalarConst.f32` is live; `admittedAlgebraF32`/`Max`/`Min`
+are built from it), and the guidance it supports has two live consequences a future implementer needs
+— an `f32` destination is now legitimate, and "the existing algebra-admission check" now names two
+tables. Adding the banner is the same treatment five other documents received in this task, not a
+modernization of a snapshot.
 
 Four files this document's authoring-time sweep listed as historical matched nothing at all (zero
 `f32`/`binary32` occurrences) and needed no action: `papers/max_min_aggregation.md`,

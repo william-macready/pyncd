@@ -360,6 +360,22 @@ max/min, contextful assignment). "Checked-plan admits, JAX declines" is the docu
 
 ### 2.5 Fill and collision policy — carry the field, defer the behaviour
 
+> **⚠️ RE-VALIDATE THIS SECTION BEFORE ACTING ON IT — one premise has expired.** Unlike the rest of
+> this document, §2.5 is **forward-looking guidance for work that has not happened** (collision-`sum`,
+> explicit fills, and a binary32 scatter are all still deferred), so the "S-A and S-B implemented"
+> status at the top does *not* make its present-tense claims historical. One is now false: the
+> paragraph below says "`ScalarConst.f32` is documented inert in a checked plan". It is **not inert**
+> — the f32 slice made it live, and `admittedAlgebraF32`/`Max`/`Min` are built from `ScalarConst.f32`
+> payloads (see [`f32_evalplan.md`](f32_evalplan.md)). Two consequences for whoever implements this
+> section: (a) "the fill's dtype must track the destination's" is still right but no longer trivially
+> satisfied, because a destination can now legitimately be `f32`; (b) "reuse the existing
+> destination-specific algebra-admission check" now names **two** tables, `admittedAlgebrasFor` and
+> `admittedAlgebrasForF32`, selected by the graph's storage kind. Neither is reachable for a scatter
+> today: a binary32 scatter is refused at source tier as `CapabilityError.unsupportedDtype`
+> ("`{nm}: f32 scatter`") and is deferred to slice F32-D. The rest of the section — the fill/reduce
+> monoid argument, the `ScalarConst`-not-`Int` rule, and the exhaustive-`CollisionReduce` rule — is
+> unaffected and still stands.
+
 Collision-`sum` is wanted eventually but deferred. It is deferrable **without rework** under three
 rules, and one of them is load-bearing.
 

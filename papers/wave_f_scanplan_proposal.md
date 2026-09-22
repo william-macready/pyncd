@@ -14,8 +14,14 @@
 > [`backend_missing_functionality.md`](backend_missing_functionality.md). Specific traps for a reader
 > arriving from a search: §1's dtype row bundles `f32` with dynamic shapes (the f32 slice has since
 > split them and admitted the binary32 assignment fragment — see
-> [`f32_evalplan.md`](f32_evalplan.md)), and the verbatim compiler-error transcripts and
-> `File.lean:NNN` references in §§15–16 are build logs of that moment, deliberately left byte-exact.
+> [`f32_evalplan.md`](f32_evalplan.md)), and the seventeen `File.lean:NNN` source-line references
+> this document still carries are **deliberately left as written and must be assumed stale**. They
+> all sit inside §13's implementation-slice records (F0, F3, and F4 — lines 1407–1922), not in the
+> current-boundary prose: five of them are literal `error:` lines from a captured build transcript
+> in F3, which would be corrupted rather than improved by rewriting; the other twelve are
+> verification bullets recording what was read at that moment. None was re-derived for this banner,
+> and the project's ordinary rule — cite stable identifiers, never line numbers — applies to new
+> text, not to a build log.
 
 **Status (authoring-time snapshot, superseded — see the banner above):** design draft, 2026-08-07.
 F0 (executable scan contract) landed 2026-08-08; F1 (contextual
