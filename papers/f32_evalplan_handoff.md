@@ -1,5 +1,15 @@
 # f32 execution plan — implementation handoff
 
+> **✅ THE HANDOFF WAS TAKEN — all five tasks are implemented.** This document is now a completed
+> record of the moment work started, not live instructions. **Its entire "Checkpoint — exact state at
+> handoff" table is a snapshot and is retained verbatim**: "Implementation status: Not started",
+> the plan's line count, and its content SHA-256 were all true at handoff and are all false now
+> (`papers/f32_evalplan.md` has since been closed out as a completed record, so the `shasum`
+> verification below will deliberately not match). Do not run this document's setup steps or treat
+> its status table as current. Its review-history table and the standing lesson in the paragraph
+> after it remain accurate and are the reason it is kept. For what the slice actually delivered,
+> read `papers/f32_evalplan.md` §6.5.
+
 Companion to `papers/f32_evalplan.md`. Written for a fresh agent session with no prior context that
 will execute that plan. Read this file first, then the plan itself.
 

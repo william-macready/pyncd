@@ -1,6 +1,20 @@
 # Unary factor functions in the checked `EvalPlan` backend
 
-**Status:** **Plan — verified, not yet executed.** Every code block and fixture value below was
+> **✅ EXECUTED AND LANDED — this plan is a completed record, not pending work.** Unary factor
+> functions are admitted end to end (top level and inside scan `base`/`recur` blocks); see the
+> "Already closed" list in
+> [`backend_missing_functionality.md`](backend_missing_functionality.md), which names this document
+> as what closed that row. The "not yet executed" status line immediately below is the **authoring-time
+> snapshot** and is retained verbatim, along with every build count and fixture value in it, as the
+> record of what was verified before execution — do not read it as a current statement about the
+> tree. Two later capability facts this plan predates: `CapabilityError.unaryFactor` is retained
+> producer-less, and an inline unary factor is **rejected** in a binary32 graph
+> (`unaryNotAdmittedForDtype` at the checker, `CapabilityError.unsupportedDtype` at source tier),
+> because native `Float32` transcendentals are slice F32-B — see
+> [`f32_evalplan.md`](f32_evalplan.md).
+
+**Status (authoring-time snapshot, superseded — see the banner above):** **Plan — verified, not yet
+executed.** Every code block and fixture value below was
 applied to the tree in this worktree (with the `.lake` Mathlib cache synced per
 `.claude/skills/new-slice/`, so builds take seconds), compiled, and the fixture values observed from a
 real run; then **all source and test edits were reverted** — this branch currently carries only this

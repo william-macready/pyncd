@@ -2,7 +2,23 @@
 
 ## Status and purpose
 
-**Status:** design draft, 2026-08-07. F0 (executable scan contract) landed 2026-08-08; F1 (contextual
+> **✅ WAVE F IS DELIVERED — this is a completed design record, not a live plan.** F0 through F4 all
+> landed, and later threads (nonlinearity, max/min aggregation, unary factors, predicate/mask
+> parity, Boolean declared outputs, S-A and S-B scatter, and the f32 binary32 slice) have each moved
+> the boundary further since. **Every capability statement, count, build number, error-family size,
+> and "still missing" claim below is an authoring-time snapshot of 2026-08-07 and is retained
+> unmodernized as the record of the design that was executed** — including §1's "functionality still
+> missing after Wave F" table, which is reproduced and *kept current* in
+> [`wave_f_capability_manifest.md` §5](wave_f_capability_manifest.md) rather than here. For the
+> current boundary read that manifest and
+> [`backend_missing_functionality.md`](backend_missing_functionality.md). Specific traps for a reader
+> arriving from a search: §1's dtype row bundles `f32` with dynamic shapes (the f32 slice has since
+> split them and admitted the binary32 assignment fragment — see
+> [`f32_evalplan.md`](f32_evalplan.md)), and the verbatim compiler-error transcripts and
+> `File.lean:NNN` references in §§15–16 are build logs of that moment, deliberately left byte-exact.
+
+**Status (authoring-time snapshot, superseded — see the banner above):** design draft, 2026-08-07.
+F0 (executable scan contract) landed 2026-08-08; F1 (contextual
 local kernel) landed 2026-08-08 — see `papers/restructure_suggestions.md`'s wave-progress table. F2
 (checked plan-block vertical slice) is next, per §13's ordering.
 

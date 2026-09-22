@@ -50,36 +50,56 @@ already evaluates most of the constructs listed here, so nearly every row is a *
 ## Authoritative source — re-derive, don't trust this copy
 
 Every syntactically visible rejection the backend can make is one constructor of the closed enum
-[`CapabilityError`](../leanncd/LeanNCD/Eval/Plan/Error.lean), and every one is thrown from a single
-function, [`capabilityPreflight`](../leanncd/LeanNCD/Eval/Plan/Compile.lean) (decls in order, then
-statements in order, first failure wins). There is no `unsupported : String` escape hatch, so the
-enum is the whole boundary.
+[`CapabilityError`](../leanncd/LeanNCD/Eval/Plan/Error.lean). There is no `unsupported : String`
+escape hatch, so the enum is the whole boundary. It is thrown from **three** sites in
+[`Compile.lean`](../leanncd/LeanNCD/Eval/Plan/Compile.lean), all inside `prepareEvalPlan` and all
+dtype-ordered ahead of plan construction:
+
+1. `capabilityPreflight` — the dtype-blind pass (decls in order, then statements in order, first
+   failure wins). This was the only site until the f32 slice.
+2. `prepareEvalPlan`'s Step 0b storage derivation — `scheduleStorageKind` disagreement, i.e. a
+   schedule mixing `f32` and `f64` real tensors. Not part of `capabilityPreflight` because that
+   function is dtype-blind by construction; only Step 0b knows the schedule's derived storage kind.
+3. `f32CapabilityCheck` (Step 0c) — the binary32 source fragment, run for a `.float32` schedule only
+   and placed before `capabilityPreflight` so an f32 program outside the admitted fragment reports
+   its own f32 reason rather than a generic capability one.
 
 This document is a prose reproduction of that enum and will decay exactly as any carried-forward
-claim does. **Before trusting a row, re-derive it against `capabilityPreflight` on the current
-branch** — read the `throw` sites, do not assume this table is current. Two rows of the sibling
+claim does. **Before trusting a row, re-derive it against those three sites on the current branch**
+— read the `throw` sites, do not assume this table is current. Two rows of the sibling
 `wave_f_capability_manifest.md` table went stale this way when the nonlinearity thread closed
 nonlinear scans and updated the proposal but not the manifest's copy.
 
-Last re-derived against the tree: **2026-09-13** (S-B affine scan-state writes).
+Last re-derived against the tree: **2026-09-21** (f32 binary32 assignment execution).
 
-Static throw-site inspection of `capabilityPreflight` at that date finds **4 live producer
-families** — `scatterOrAffineLhs`, `unsupportedLhsSlot`, `recurrenceOrCallback`, `noAdvancingAxis` —
-out of the enum's **12 constructors**; the other **8** are retained producer-less or are
-structurally unreachable. Removing a producer never removes a constructor.
+Static throw-site inspection at that date finds **10 live producer families** —
+`scatterOrAffineLhs`, `unsupportedLhsSlot`, `unsupportedNonlin`, `multiAxisScatterLhs`,
+`scatterOptsNotAdmitted`, `recurrenceOrCallback`, `noAdvancingAxis`, `predicateScatterDest`,
+`unloweredScatterAssign`, and `unsupportedDtype` — out of the enum's **16 constructors**; the other
+**6** (`scanNode`, `maskOrPredicate`, `unaryFactor`, `unsupportedAgg`, `booleanOutput`,
+`dynamicShape`) are retained producer-less or are structurally unreachable. Removing a producer never
+removes a constructor.
+
+`unsupportedDtype` is the newest live family: it was producer-less until the f32 slice, which made it
+the producer of every binary32 rejection — the mixed-storage schedule (site 2) and each deferred f32
+construct (site 3). The pre-slice boundary was 9 live / 7 producer-less over the same 16
+constructors.
 
 ## Missing capabilities
 
-Each row names the `CapabilityError` constructor that rejects it, the preflight site that throws, and
+Each row names the `CapabilityError` constructor that rejects it, the site that throws, and
 whether the reference dense interpreter already evaluates it (a `✓` means the gap is purely
 backend-side). **Rows are ordered hardest → easiest to implement.** The difficulty column is a
 grounded *estimate* (judgment from the plan-IR structure, using the nonlinearity thread as the
 yardstick), not a measured figure — see the rationale below the table.
 
-| Difficulty | Missing capability | `CapabilityError` | Preflight site | Ref. interp. does it? |
+| Difficulty | Missing capability | `CapabilityError` | Throw site | Ref. interp. does it? |
 |---|---|---|---|---|
 | Foundational / modeling-contradiction | **`.scanPre` + recurrence / callback morphisms** — the pre-built step-morphism escape hatch | `recurrenceOrCallback` | `checkScanStmt` / `checkStmt` | partial (`Stmt.recurMorphism`) |
-| Foundational (dynamic-shape half) | **`f32`; dynamic / value-dependent shapes** — `bool` is no longer in this row (see the closed Boolean/predicate-output entry below) | `unsupportedDtype`, `dynamicShape` (both producer-less/unreachable) | not reachable from preflight; `checkAssign`'s `dtypeAdmitted` rejects `f32` at a destination or a read (`PlanError.dtypeNotAdmitted`), and admits `f64`/`bool` | n/a (mode boundary) |
+| Foundational | **Dynamic / value-dependent shapes** — extents that are not statically known | `dynamicShape` (producer-less/unreachable) | no throw site exists; the whole compiler resolves extents at compile time, so there is nothing yet to reject *at* | n/a (no surface syntax) |
+| Foundational (scalar-domain decision first) | **`complex64` / `complex128`** — complex-valued tensors | none yet; a complex declaration has no source spelling to reject | n/a | ✗ |
+| Bounded per construct | **Binary32 beyond the assignment fragment** — f32 nonlinearities, inline unary factors, top-level scatter, and every scan form | `unsupportedDtype` | `f32CapabilityCheck` / `checkF32Stmt` (Step 0c), one payload per deferred slice | ✗, permanently — the reference dense interpreter is binary64-only and refuses **any** f32 graph (`EvalError.unsupportedDtype`), so these rows have no reference oracle to differential-test against |
+| Bounded, contingent | **Mixed `f32`/`f64` in one schedule** — an explicit precision conversion | `unsupportedDtype` | `prepareEvalPlan` Step 0b, on `scheduleStorageKind` disagreement | n/a (no conversion semantics anywhere) |
 
 ### Difficulty ranking rationale (hardest → easiest)
 
@@ -94,15 +114,47 @@ what the ranking tracks.
    *checked* meaning contradicts the reason the checked plan exists (no opaque steps); the proposal
    keeps it explicitly as the escape hatch. Landing it means designing a whole new structured surface
    for what the callback expresses, not writing a lowering — you cannot validate an opaque function.
-2. **`f32`; dynamic / value-dependent shapes** — two very different things bundled. `f32`
-   is mostly storage plumbing (and `bool` has since been closed separately, as a semantic tag over
-   Float storage rather than a new carrier), but **dynamic shapes is foundational**: the
-   whole checked plan assumes statically-known extents (shape inference, geometry, write maps, corpus
-   gates all resolve sizes at compile time), so value-dependent shapes mean symbolic extents
-   pervasively. That half is the deepest single change on the list.
-Scatter + affine LHS writes formerly occupied the next rank and is now closed for S-A plus S-B's
+2. **Dynamic / value-dependent shapes** — foundational and wholly open. The whole checked plan
+   assumes statically-known extents (shape inference, geometry, write maps, corpus gates all resolve
+   sizes at compile time), so value-dependent shapes mean symbolic extents pervasively. This is the
+   deepest single change on the list, and it is dtype-independent: it was bundled with `f32` in an
+   earlier version of this table, and the two turned out to share nothing. The f32 slice closed its
+   half without touching shapes at all.
+3. **`complex64` / `complex128`** — foundational for a different reason: an unresolved *semantic*
+   decision, not an unbuilt lowering. Five things are open and none is plumbing. (a) **Scalar
+   domain**: the categorical route erases a real precision annotation because `f32` and `f64` are
+   representations of the same real scalars; complex values are a different scalar domain, so
+   erasure is unavailable and the categorical semantics must either be extended or complex
+   declarations rejected before categorical lowering. (b) **Machine carrier**: the installed
+   Mathlib `Complex` is a pair of mathematical `Real`s and is noncomputable in the ways that matter
+   here — it is not a native machine-complex runtime, so executable `ComplexF32`/`ComplexF64`
+   component carriers have to be defined outright. (c) **Operation admission**: sum-product extends
+   directly, but `min`/`max` and the tropical algebras have no ordering on ℂ and must stay rejected
+   until someone supplies explicit semantics; the Boolean tag's identities in a complex graph
+   (real Boolean storage, or the carrier's exact `0+0i`/`1+0i`?) is a separate open decision the
+   f32 slice's precision-neutral Boolean rule deliberately does not cover. (d) **Conversions**:
+   real↔complex and complex precision conversions do not exist and are not implied by the dtype.
+   (e) **JAX parity**: `jnp.complex64`/`complex128` exist, and `complex128` additionally requires
+   JAX x64 — but **JAX's ability to store a complex array is not Tensor Logic support for complex
+   tensors** and must never be reported as such. Bit-level parity would also require measuring
+   XLA's own operation order before any claim of agreement.
+4. **Binary32 beyond the assignment fragment** — bounded, one deferred slice per construct (F32-B
+   nonlinearity and inline unary, F32-C scans including scan-local scatter, F32-D top-level
+   scatter, F32-JAX). Each is genuinely bounded because the carrier, the checked evidence, the
+   algebras, the storage-kind gates at every worker/adapter/JAX door, and the named public boundary
+   already exist; what each slice adds is that construct's own binary32 numerics plus its fixtures.
+   The cost is not plumbing but *numerical truthfulness*: routing an f32 value through the existing
+   binary64 helper would be false f32, so each slice needs its own bit-level fixtures.
+5. **Mixed `f32`/`f64` in one schedule** — contingent, not merely deferred. The project invariant is
+   that a graph selects one real precision, so mixed precision is *rejected rather than converted*
+   and no conversion plan step is planned. If that invariant is ever changed, explicit conversions
+   are a slice of their own (F32-E). Boolean tensors already follow the graph's real carrier and
+   need no conversion to coexist with either precision.
+
+Scatter + affine LHS writes formerly occupied a rank here and is now closed for S-A plus S-B's
 bounded scan-state subset; see “Already closed.” General data-dependent gather/scatter and the
 rejected scan geometries below remain separate capabilities.
+
 ### Scan-geometry limits (not `CapabilityError` rejections)
 
 These are rejected deeper in `compileScan`/`checkScanPlan` (via `ScanCompileError`), once inferred
@@ -169,18 +221,27 @@ fragment.
   true`/`.bool false` to `1.0`/`0.0` and the ordinary Float `min`/`max` run, so a non-binary value
   keeps literal min/max behavior rather than being coerced or rejected. Algebra admission is
   destination-specific (`admittedAlgebrasFor`): real sum-product plus the two tropical semirings for
-  `f64`, Boolean min/max only for `bool`, nothing for `f32`. Source/destination dtype EQUALITY was
+  `f64`, Boolean min/max only for `bool`, nothing for `f32` — a binary32 graph uses the separate
+  `admittedAlgebrasForF32` table instead, added by the f32 slice; the two are deliberately not merged
+  (see the binary32 row under "Already closed"). Source/destination dtype EQUALITY was
   deliberately removed as an assignment obligation — the destination selects the algebra and
   gathering is dtype-blind — so a `bool` source may feed an `f64` destination and vice versa;
-  `PlanError.dtypeMismatch` is retained producer-less (nonlinearity checking keeps its own separate
-  `NonlinPlanError.dtypeMismatch`). Declarations are authoritative: `buildDeclEnv` rejects a repeated
+  `PlanError.dtypeMismatch` was retained producer-less by that slice (nonlinearity checking keeps its
+  own separate `NonlinPlanError.dtypeMismatch`) and has since acquired exactly one producer: the f32
+  slice's `checkAssignCore` reports an `f64` read inside a binary32 graph as
+  `dtypeMismatch .f32 .f64`, a precision *disagreement* between two known sides rather than an
+  unimplementable tag. The Boolean rule above is unaffected — it is about `bool` versus a real dtype,
+  not about two real carriers. Declarations are authoritative: `buildDeclEnv` rejects a repeated
   tensor-bearing name (`CompileError.duplicateTensorDecl`), `InputSignature.ofDenseInputsForDecls`
   labels declared predicates `bool`, and an explicit input signature contradicting the declaration is
   rejected (`InputSignatureError.dtypeMismatch`), never silently rewritten. Scans carry full
   `TensorSignature`s (`CompiledScan.stateSigs`) through state destinations, captures, base/step
   results, scratch, and published histories, and `checkWrites` enforces write-dtype equality
   (`ScanPlanError.writeDtypeMismatch`) BEFORE rank/geometry. `booleanOutput` is retained
-  producer-less, like `scanNode`. `f32` remains rejected. **Not** included: JAX Boolean execution —
+  producer-less, like `scanNode`. `f32` was rejected everywhere when this row closed; it is no longer
+  (see the binary32 row below), and the precision-neutral Boolean rule that slice added means a
+  `bool` tensor now follows whichever real carrier its graph selected. **Not** included: JAX Boolean
+  execution —
   the experimental `jax_bridge` backend now REJECTS a Boolean destination, a Boolean source, tropical
   algebra, a unary read, and a CONTEXTFUL assignment (non-empty `AssignPlan.contextShape`) with
   located typed errors before emitting Python or stamping evidence, plus — in `einsumOnly` mode only
@@ -224,6 +285,41 @@ fragment.
   rejections. `DifferentialTest.scanScatterPrograms` pins seven source-generated cases across checked
   plan, legacy evaluator, and independent scan-free oracle. Closed by
   `2026-09-12-lhs-scatter-in-scans.md`.
+- **Genuine binary32 (`f32`) execution of the scan-free assignment fragment** — admitted end to end,
+  from source syntax to native materialized outputs. `tensor f32 X(i, j)` elaborates to the single
+  extensible AST constructor `Decl.typedTensor TensorElementType String (List AxisSpec)`, which is
+  tensor-bearing everywhere `Decl.tensor` is. A schedule selects ONE real precision
+  (`scheduleStorageKind` over used names; `bool` contributes no constraint and an undeclared external
+  is real `f64`), so an `f32` graph may contain Boolean tensors but never `f64` ones. `checkAssignF32`
+  and `checkAssign` are two thin applications of one private `checkAssignCore`, differing at exactly
+  four clauses — destination dtype admission, algebra table (`admittedAlgebrasForF32`), source dtype
+  rule, and inline-unary admission — and the storage kind they record on `CheckedAssignPlan` /
+  `CheckedEvalPlan` is what every worker and adapter door then refuses to cross.
+  **`f32` means independently rounded binary32 at every primitive operation, never a binary64 run
+  with a narrowed result**: values are `Float32`, constants decode from `ScalarConst.f32` via
+  `Float32.ofBits`, and factor/reduction/term folds run through a carrier-specific `ScalarKernelOps`
+  (`float32Ops` beside the existing `floatOps`) in the shared traversal. `runDenseAssignAt32` /
+  `runDenseAssign32` / `runDensePlan32` execute it; `pack32` / `unpack32` / `runPreparedDense32` are
+  the public named boundary over `DenseTensor32`, returning an `EvalReport32`. The container
+  generalizations (`DenseTensorOf`, `NamedDenseEnvOf`, `EvalReportOf`) keep every existing Float alias
+  and field name, so no Float API changed. Boolean tensors are an algebra tag over the *selected*
+  carrier: the same non-binary min/max behavior, with `true`/`false` decoded to that carrier's exact
+  one/zero rather than coerced.
+  **Every other door is closed, fail-loud, and fixture-pinned**: the Float-backed workers, `pack` /
+  `unpack` / `runPreparedDense`, and the block checker reject `.float32` evidence; the f32 workers
+  and adapter reject Float-backed evidence (`storageKindMismatch`), each guard placed before its
+  function's own pre-existing shape/arity/binding checks; the reference dense interpreter refuses any
+  f32 graph permanently (`EvalError.unsupportedDtype` at `evalScheduled`, `evalAssignDtypedSeeded`,
+  `evalPlain`, `evalStmtSliceSeeded`, `evalScan`); and the experimental `jax_bridge` backend rejects
+  a `.float32` plan at all eight candidate/generator/renderer entries *before* node iteration,
+  binding validation, evidence aggregation, or any Python emission — the zero-step, all-input f32
+  plan is the case that makes a plan-level gate necessary, since every per-node check is vacuous
+  there and the empty evidence fold is `orderedReference64`.
+  **Deliberately still rejected, each with its own located `CapabilityError.unsupportedDtype`**:
+  f32 pointwise/axiswise nonlinearities and inline unary factors (slice F32-B), every scan form
+  including scan-local scatter (F32-C), top-level scatter (F32-D), and a schedule mixing `f32` with
+  `f64` (F32-E, contingent — see the rationale above). The JAX backend stays reference64-only
+  (F32-JAX). Closed by `f32_evalplan.md`.
 - **Scan nodes** with at least one advancing axis — `scanNode` has no producer left in the compiler.
   Only `noAdvancingAxis` (an empty advancing-axis list) is still an error, and that is a genuine
   input error, not a capability gap.
@@ -245,6 +341,10 @@ fragment.
   actually closed that row.
 - [`unary_factor_functions.md`](unary_factor_functions.md) — the plan that closed the unary-factor row.
 - [`max_min_aggregation.md`](max_min_aggregation.md) — the plan that closed the max/min-aggregation row.
+- [`f32_evalplan.md`](f32_evalplan.md) — the plan that closed the binary32 assignment row, split the
+  old combined “`f32`; dynamic shapes” entry in two, and made `unsupportedDtype` a live family. It is
+  also the authority on what binary32 does *not* yet cover (slices F32-B/C/D/E/JAX) and on why
+  complex support is a scalar-domain decision rather than another dtype.
 - [`boolean_predicate_output_evalplan.md`](boolean_predicate_output_evalplan.md) — the plan that
   closed the Boolean/predicate declared-output row and made the experimental JAX backend reject
   Boolean, tropical, unary, and contextful semantics rather than stamping them with reference

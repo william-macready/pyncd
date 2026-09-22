@@ -5,7 +5,19 @@
 admit positive, single-source-axis affine placement rows in scan-state base and recurrence writes,
 without adding a `BlockStep.scatter`.
 
-**Status:** implementation-ready. S-A (top-level `PlanStep.scatter`) is already merged. This plan
+> **✅ S-B IS IMPLEMENTED AND LANDED — this is a completed record, not pending work.** Affine scatter
+> writes into scan state are admitted for the bounded fragment this plan specifies; see the "Already
+> closed" list in
+> [`papers/backend_missing_functionality.md`](../../../../papers/backend_missing_functionality.md),
+> which names this document as what closed that row. **Every status line, baseline commit, build
+> count, capability claim, and "still rejected" list below is the authoring-time snapshot and is
+> retained unmodernized** as the record of the design that was executed; do not read any of it as a
+> current statement about the tree. One later fact this plan predates: the f32 slice made
+> `ScalarDType.f32` a live binary32 carrier, but every scan form — scan-local scatter included — is
+> refused in a binary32 schedule (slice F32-C), so nothing in this plan is reachable at binary32.
+
+**Status (authoring-time snapshot, superseded — see the banner above):** implementation-ready. S-A
+(top-level `PlanStep.scatter`) is already merged. This plan
 supersedes the exact `scale * n + offset` extent rule parked in the overview's §3.2: the user chose
 the stride-aligned global `LHSSlot.outExtent` design so `2*j` and `2*j+1` can initialize one state.
 

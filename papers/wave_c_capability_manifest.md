@@ -1,7 +1,20 @@
 # Wave C capability manifest
 
-This is a standalone reference for what the Wave C checked `EvalPlan` boundary actually accepts,
-rejects, and covers today — not a design narrative. For the architecture, the correctness laws, and
+> **⚠️ COMPLETED MILESTONE SNAPSHOT — this is the *Wave C* boundary, not the current one.** Every
+> count, accepted-construct list, and rejected-construct list below is a measurement of the Wave C
+> milestone as delivered, retained because that milestone is the reference point later waves are
+> described as deltas against. It has been overtaken repeatedly since: Wave F added `PlanStep.scan`
+> and removed the version tag; the nonlinearity, max/min, unary-factor, predicate/mask, and
+> Boolean-output threads each moved a construct from §3's rejected list into the accepted one; S-A
+> and S-B added top-level and scan-state scatter; and the f32 slice made `ScalarDType.f32` a live
+> binary32 carrier, so §2's "concrete `f64` tensor signatures" and §3's dtype rejection are both
+> milestone-scoped rather than current. **For the current boundary, read
+> [`backend_missing_functionality.md`](backend_missing_functionality.md) — re-derived against the
+> tree — and [`wave_f_capability_manifest.md`](wave_f_capability_manifest.md).** Nothing below is
+> updated in place; its value is as an immutable record of what Wave C actually shipped.
+
+This is a standalone reference for what the Wave C checked `EvalPlan` boundary accepted,
+rejected, and covered at that milestone — not a design narrative. For the architecture, the correctness laws, and
 the reasoning behind each decision, see
 [`wave_c_evalplan_proposal.md`](wave_c_evalplan_proposal.md); for the slice-by-slice delivery
 history, see [`restructure_suggestions.md`](restructure_suggestions.md). Every number below was
@@ -46,10 +59,12 @@ generator (`test/Eval/PropertyOracle/Gen.lean`) pins both axes at size 2, genera
 programs, and only produces single-axis affine reads (`.axis`, `.shift _ 1`, `.scale 2 _`) — it
 never generates a size-0/size-1 axis or a multi-axis affine expression. Two bullets above are
 validated by hand-built fixtures instead: zero/one dimensions by
-[`ContractTest.lean:490`](../leanncd/test/Eval/Plan/ContractTest.lean) and
-[`KernelDenseTest.lean:279`](../leanncd/test/Eval/Plan/KernelDenseTest.lean), and multi-axis affine
-reads by [`KernelCheckTest.lean:94`](../leanncd/test/Eval/Plan/KernelCheckTest.lean)'s two-column
-`coeffs` case and C6's own `warnProg` fixture in
+[`ContractTest.lean`](../leanncd/test/Eval/Plan/ContractTest.lean)'s `sizeVariantProgSize0` /
+`sizeVariantProgSize1` pair and
+[`KernelDenseTest.lean`](../leanncd/test/Eval/Plan/KernelDenseTest.lean)'s `zoe*` (zero output
+extent) and `fos*` (scalar-plus-size-1) fixtures, and multi-axis affine
+reads by [`KernelCheckTest.lean`](../leanncd/test/Eval/Plan/KernelCheckTest.lean)'s `readX2`
+two-column `coeffs` case and C6's own `warnProg` fixture in
 [`CompileTest.lean`](../leanncd/test/Eval/Plan/CompileTest.lean) (`X[2 * i + j]`).
 
 ## 3. Rejected source constructs

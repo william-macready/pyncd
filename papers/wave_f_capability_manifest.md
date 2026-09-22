@@ -30,8 +30,14 @@ this branch, that kernel is:
 
 - **dtypes** — `f64` and the Float-backed `bool` tag (`dtypeAdmitted`), at destinations and at read
   sources alike; a `bool` source may feed an `f64` destination and vice versa, since gathering is
-  dtype-blind and the DESTINATION selects the algebra. `f32` is still rejected outright
-  (`dtypeNotAdmitted`) — no worker implements binary32 rounding;
+  dtype-blind and the DESTINATION selects the algebra. `f32` is still rejected outright in a scan
+  (`dtypeNotAdmitted` inside the binary64 checker; and, ahead of it, `f32CapabilityCheck` refuses
+  every scan form in a binary32 schedule as `CapabilityError.unsupportedDtype`). Binary32 execution
+  now exists — the f32 slice added a native `Float32` carrier, a separate `checkAssignF32` checker,
+  the `runDense*32` workers, and a `pack32`/`unpack32`/`runPreparedDense32` named boundary — but it
+  covers the **scan-free assignment fragment only**. Scans, scan-local scatter, nonlinearities, and
+  inline unary factors are explicitly deferred (slices F32-B/C/D), so nothing on this page is
+  binary32 today. See [`f32_evalplan.md`](f32_evalplan.md);
 - **algebras** — destination-selected (`admittedAlgebrasFor`): real sum-product plus the two tropical
   semirings `AggOp.max`/`.min` compile to (`admittedAlgebraMax`/`Min`) for an `f64` destination, and
   Boolean conjunction/disjunction (`admittedAlgebraBool`, `min`/`max` over the same Float storage)
@@ -46,7 +52,7 @@ this branch, that kernel is:
   nonnegative bias in non-advancing dimensions. Base and recurrence placement are both admitted;
   base contributions must be pairwise disjoint and recurrence retains exactly one write per state.
 
-Genuinely rejected, not merely unexercised: `f32` anywhere, constant/multi-axis/context-affine or
+Genuinely rejected, not merely unexercised: `f32` anywhere in a scan, constant/multi-axis/context-affine or
 scratch scatter placement, predicate/nonlinear/non-default-policy scatter, `.recurMorphism`/
 `.scanPre`, and any non-`zeroPad` read policy — see §3 for the full closed families.
 Within that kernel, the admitted fragment is a rectangular uniform lattice recurrence, confirmed by
@@ -75,7 +81,11 @@ argument.
 ## 3. Rejected scan source constructs
 
 Every syntactically visible rejection is a `CapabilityError` constructor
-(`LeanNCD/Eval/Plan/Error.lean`); Wave F's two changes to that closed 12-constructor family are
+(`LeanNCD/Eval/Plan/Error.lean`); Wave F's two changes to that closed family — **12 constructors when
+Wave F wrote this, 16 today**, after S-A/S-B added `multiAxisScatterLhs`, `scatterOptsNotAdmitted`,
+`predicateScatterDest`, and `unloweredScatterAssign`; see
+[`backend_missing_functionality.md`](backend_missing_functionality.md) for the current live /
+producer-less split, re-derived against the tree — are
 `scanNode` (Wave C's `.scan`/`.scanPre` rejection — `scanNode` has no producer left anywhere in the
 compiler, not even for `.scanPre`, which is rejected via the separate `recurrenceOrCallback`
 constructor; `scanNode` is retained only so the closed `CapabilityError` family stays stable for any
@@ -83,8 +93,9 @@ consumer still holding a serialized Wave C rejection carrying it) and `noAdvanci
 declaring an empty advancing-axis list).
 
 Every rejection that needs an inferred size or a lowered affine map — and so cannot be decided at
-capability preflight — is one of a closed **24-constructor** `ScanCompileError` family
-(`LeanNCD/Eval/Plan/Error.lean`), organized into the same categories the type's own doc comments
+capability preflight — is one of a closed `ScanCompileError` family
+(`LeanNCD/Eval/Plan/Error.lean`) — **24 constructors when Wave F wrote this, 27 today**; the table
+below lists the Wave F set — organized into the same categories the type's own doc comments
 group them into:
 
 | Category | Constructors |
@@ -219,11 +230,14 @@ Wave F" table:
 |---|---|
 | Pointwise and axiswise nonlinearities | **Admitted** (thread 4): top-level (`checkNonlinTopLevel`) and inside scan `base`/`recur` blocks (`checkNonlinScanBlock`), residualized into a two-step `assign → pointwise/axiswise` chain. `unsupportedNonlin == 0` in the `DifferentialTest.lean` scan corpus. |
 | Masks, predicates, and Iverson factors | **Admitted** (Slice 5, `predicate_boolean_backend_parity.md`): a positional UID-free predicate IR (`PosBoolExpr`) plus an ordered `FactorPlan` (`read | iverson`); `checkAssign` width-checks predicate leaves and Dense evaluates them per contraction coordinate (`true` ⇒ `1.0`, `false` annihilates). Source `BoolExpr` lowers via `lowerFactorPredicate`; axiswise `where=` masks via `RawAxiswisePlan.mask` + `lowerMaskPredicate`. `maskOrPredicate`/`maskedAxiswiseNotSupported` retained producer-less. |
-| Boolean/predicate declared outputs | **Admitted** (Task 4, `boolean_predicate_output_evalplan.md`): `ScalarDType.bool` is a semantic algebra/signature tag over the unchanged Float-backed storage, not a native carrier. A predicate destination selects `admittedAlgebraBool` (factor `min`/identity `true`, reduction and term `max`/identity `false`, mirroring the reference `Combine.bool`); a `bool` source may feed an `f64` destination and vice versa, since the DESTINATION selects the algebra and gathering is dtype-blind. Scan state, scratch, and published histories carry full `TensorSignature`s (`CompiledScan.stateSigs`) and `checkWrites` enforces write-dtype equality (`ScanPlanError.writeDtypeMismatch`). `booleanOutput` retained producer-less. `f32` stays rejected; no native `Array Bool`, no truth-value validation, and no JAX Boolean execution (the experimental backend REJECTS Boolean semantics, see below). |
+| Boolean/predicate declared outputs | **Admitted** (Task 4, `boolean_predicate_output_evalplan.md`): `ScalarDType.bool` is a semantic algebra/signature tag over the unchanged Float-backed storage, not a native carrier. A predicate destination selects `admittedAlgebraBool` (factor `min`/identity `true`, reduction and term `max`/identity `false`, mirroring the reference `Combine.bool`); a `bool` source may feed an `f64` destination and vice versa, since the DESTINATION selects the algebra and gathering is dtype-blind. Scan state, scratch, and published histories carry full `TensorSignature`s (`CompiledScan.stateSigs`) and `checkWrites` enforces write-dtype equality (`ScanPlanError.writeDtypeMismatch`). `booleanOutput` retained producer-less. `f32` was rejected everywhere when that row closed — the f32 slice has since changed that, and made `bool` follow whichever real carrier its graph selected; see the two dtype rows below. No native `Array Bool`, no truth-value validation, and no JAX Boolean execution (the experimental backend REJECTS Boolean semantics, see below). |
 | Unary factor functions | **Admitted** (`unary_factor_functions.md`): `checkFactor`/`ReadPlan.unary` admit a unary factor (`log`/`exp`/`sin`/`cos`/`sqrt`/`recip`) in ordinary assignments and inside scan `base`/`recur` blocks, applied after gather/pad by Dense. The experimental JAX backend's `checkJaxAssignSupport` still rejects an inline unary read with a located typed error — Dense executes it, JAX does not. |
 | Max/min aggregation | **Admitted** (max/min-aggregation thread): `checkAggOp` admits `.max`/`.min`; the compiler selects the tropical algebra (`algebraForAgg`) and Dense reduces with `max`/`min` seeded at `−∞`/`+∞`. `unsupportedAgg == 0` in the `DifferentialTest.lean` scan corpus. |
 | Scatter and affine LHS writes | **Admitted for S-A and S-B's bounded subset:** top-level affine/diagonal scatter, plus positive one-axis affine base/recurrence placement in non-advancing scan-state dimensions. Still rejected: constant/multi-axis/context-affine and scratch placement, predicate/nonlinear scatter, non-default fill/reduction, nonpositive scale, negative bias, inconsistent extents, and overlap. |
-| Dtypes beyond the admitted concrete `f64` mode (including its Float-backed `bool` semantic-tag variant, see the Boolean/predicate row above) and dynamic shapes | Still rejected at the checked-plan preparation boundary. |
+| Binary32 (`f32`) | **Admitted for the scan-free assignment fragment only** (`f32_evalplan.md`): a native `Float32` carrier, a `checkAssignF32` sibling of `checkAssign` over one shared core, `runDenseAssignAt32`/`runDensePlan32`, and a `pack32`/`unpack32`/`runPreparedDense32` named boundary. A graph selects ONE real precision; `bool` is a tag over it. **Nothing on this page is binary32**: every scan form, scan-local scatter, top-level scatter, nonlinearities, and inline unary factors are refused in a binary32 schedule as `CapabilityError.unsupportedDtype` (slices F32-B/C/D), and the experimental JAX backend rejects an f32 plan at every entry (F32-JAX). |
+| Mixed `f32`/`f64` in one schedule | Still rejected, and *contingently* so rather than merely deferred: the project invariant is one real precision per graph, so mixed precision is refused (`unsupportedDtype`), never implicitly converted. |
+| `complex64`/`complex128` | Still absent, and blocked on a scalar-domain decision rather than on plumbing — see `backend_missing_functionality.md`'s difficulty rationale. JAX's ability to store complex arrays is not Tensor Logic complex support. |
+| Dynamic / value-dependent shapes | Still rejected at the checked-plan preparation boundary, and untouched by the f32 slice — the two were one row here until the f32 slice split them, and they share nothing. |
 | `.scanPre`, callbacks, and predicate-dispatch scan bodies | Still rejected even though `PlanStep.scan` exists (nonlinear scan bodies themselves are now admitted — see the first row). |
 | General n-dimensional recurrence geometry and arbitrary state writes | The first checked scan remains the rectangular uniform all-axis `+1` fragment. |
 | Multi-face full-boundary writes (the standard n-D tabulation-DP pattern, e.g. row-0-plus-column-0) and genuinely overlapping writes with no declared precedence | Neither is achievable in this version — both need an offset/restricted-range or conflict-resolving base-write geometry beyond pin-plus-full-free. |
@@ -240,9 +254,13 @@ axiswise `where=` masks. The Boolean/predicate declared outputs row was refreshe
 (`boolean_predicate_output_evalplan.md`), which admitted Boolean/predicate declared outputs and full
 scan signatures for state, scratch, and published histories — the experimental JAX backend remains
 fail-loud and still rejects Boolean semantics via `checkJaxAssignSupport`. S-B then admitted the
-bounded affine scan-state subset recorded above. The remaining still-rejected families are the
-listed out-of-fragment scatter geometries/policies, `f32` and other unimplemented dtypes, dynamic
-shapes, and `.scanPre`/callbacks/predicate-dispatch scan bodies.*
+bounded affine scan-state subset recorded above. The single "dtypes … and dynamic shapes" row was
+then split four ways by the f32 slice (`f32_evalplan.md`), which admitted genuine binary32 execution
+of the scan-free assignment fragment and left dynamic shapes, mixed precision, and complex entirely
+open; those are separate problems that happened to share a row. The remaining still-rejected families
+are the listed out-of-fragment scatter geometries/policies, every binary32 construct outside that
+assignment fragment, mixed `f32`/`f64` schedules, complex dtypes, dynamic shapes, and
+`.scanPre`/callbacks/predicate-dispatch scan bodies.*
 
 The next semantic-expansion work after Wave F should be a named **checked local-kernel capability
 wave**, extending `AssignPlan`, its checker, and Dense interpretation one operation family at a time,

@@ -107,9 +107,21 @@ PreparedPlan + named runtime tensors
 
 Thus checked positional execution and named-result reconstruction are part of the Eval IR path.
 [`runPreparedDense`](../leanncd/LeanNCD/Eval/Plan/Adapter.lean) composes `pack`, `runDensePlan`, and
-`unpack`. `runDensePlan` dispatches all four checked step variants: assignments, scans, pointwise
-operations, and axiswise operations. Future backends may lower the same checked semantic plan into
-different executable forms.
+`unpack`. `runDensePlan` dispatches all five checked step variants: assignments, scatters, scans,
+pointwise operations, and axiswise operations. Future backends may lower the same checked semantic
+plan into different executable forms.
+
+There is a **second, parallel carrier**: `runPreparedDense32`
+([`Adapter32.lean`](../leanncd/LeanNCD/Eval/Plan/Adapter32.lean)) composes `pack32`, `runDensePlan32`
+([`Dense32.lean`](../leanncd/LeanNCD/Eval/Plan/Dense32.lean)), and `unpack32` over `DenseTensor32`
+(`Array Float32`), returning an `EvalReport32`. The two are siblings, never a fallback for each
+other: every one of these six entry points checks the plan's `storageKind` before touching a buffer
+and refuses evidence built for the other carrier (`storageKindMismatch`), each guard placed ahead of
+its function's own shape, arity, and binding checks. `runDensePlan32` covers assignment steps only —
+the binary32 slice is scoped to the scan-free assignment fragment, and the other step kinds are
+refused at compile tier before any plan exists. The container types
+(`DenseTensorOf`/`NamedDenseEnvOf`/`EvalReportOf`) are generic in the element type with the original
+Float names retained as aliases, so no existing Float API changed.
 
 ### 1.4 Experimental JAX path
 
@@ -128,7 +140,17 @@ an assignment the backend cannot render — a Boolean destination or source, a t
 algebra, an inline unary read, an Iverson factor, a CONTEXTFUL assignment (non-empty
 `AssignPlan.contextShape`, which neither lowering has a kernel parameter for), or, in `einsumOnly`
 mode, a zero-padded read whose source extent disagrees with its own iteration extent — is rejected
-with its own located typed error before any Python is emitted. What is still missing is the end-to-end wiring: nothing consumes a
+with its own located typed error before any Python is emitted. It is also **binary64-only**: its
+fixtures and Python runtimes encode `UInt64` bits and assert `np.float64`/`jnp.float64`, and there is
+no binary32 evidence label at all, so a `.float32` plan is refused at every candidate, generator, and
+renderer entry (`JaxCodegenError.unsupportedStorageKind` /
+`JaxExecutableValidationError.unsupportedStorageKind`). That gate is deliberately PLAN-level rather
+than per-node: an all-input, zero-step f32 plan has no node to inspect and the empty evidence fold is
+`orderedReference64`, so only a plan-level gate can reject it. The standalone assignment entries
+additionally re-check the caller's signature table with the checker matching the evidence's own
+storage kind, so a binary32 assignment is refused as a located `destinationDType`, not misreported as
+a caller signature-table defect. A `jnp.float32` artifact and a binary32 evidence label are slice
+F32-JAX. What is still missing is the end-to-end wiring: nothing consumes a
 validated `SomeJaxExecutable` to emit Python, and no JAX runtime is exercised by this project's
 build. See [Section 3.3.2](#332-experimental-jax-evaluator) for the status of each component.
 
@@ -320,7 +342,13 @@ appearance in the schedule is a single source-level statement.
 
 Capability preflight returns a typed `CapabilityError` for scatters or affine LHS writes, `scanPre`
 nodes and pre-built recurrence morphisms, `iterAt`/`iterNext` slots outside a scan node, and scans
-with no advancing axis. It no longer rejects predicate declarations or Iverson factors: source
+with no advancing axis. `capabilityPreflight` is no longer the only site that can raise a
+`CapabilityError`: it is dtype-blind by construction, so `prepareEvalPlan` additionally rejects a
+schedule mixing `f32` and `f64` real tensors (Step 0b, from `scheduleStorageKind`) and — for a
+binary32 schedule only — every construct outside the binary32 assignment fragment
+(Step 0c, `f32CapabilityCheck`). Both report `CapabilityError.unsupportedDtype`, and both run before
+`capabilityPreflight` so an f32 program gets its own f32 reason rather than a generic capability one.
+Preflight no longer rejects predicate declarations or Iverson factors: source
 Iverson factors lower via `lowerFactorPredicate` and a Boolean declared output is a signature/algebra
 tag (Task 4), so `maskOrPredicate` and `booleanOutput` are both retained with no producer left.
 Nonlinear scan-block statements and normalized-axis slots inside scan blocks are likewise **now
@@ -333,7 +361,7 @@ Constructs rejected at this boundary do not appear in the `CheckedEvalPlan` insi
 
 Scan admission is narrower than capability preflight alone. The additional obligations need inferred
 sizes and lowered affine maps and therefore are reported as a `ScanCompileError` rather than a
-`CapabilityError`. `ScanCompileError` (`LeanNCD/Eval/Plan/Error.lean:98-139`) has 24
+`CapabilityError`. `ScanCompileError` (`LeanNCD/Eval/Plan/Error.lean`) has 27
 constructors, which that file enumerates and groups; the obligations they enforce **include**
 exactly one all-axis `+1` recurrence result per base destination; base writes that are in range,
 pairwise disjoint, and boundary-touching; no state read in a base block; no forward read of
@@ -481,22 +509,36 @@ Those obligations are established at later boundaries.
 first-seen-read order:
 
 1. every required external name must have a `TensorSignature`;
-2. every required external tensor must have an ADMITTED dtype (`f64` or `bool`; `f32` is rejected as
-   `InputSignatureError.dtypeNotAdmitted`) that also EQUALS the dtype its source declaration commits
-   the name to — a name declared `predicate` is `bool`, every other declaration or none at all is
-   `f64`. A contradicting explicit signature is rejected as `InputSignatureError.dtypeMismatch`,
-   never silently rewritten;
+2. every required external tensor must have a dtype that EQUALS the dtype its source declaration
+   commits the name to — a name declared `predicate` is `bool`, one declared `tensor f32` is `f32`,
+   every other declaration or none at all is `f64`. A contradicting explicit signature is rejected as
+   `InputSignatureError.dtypeMismatch`, never silently rewritten. This step is **storage-aware**: for
+   a `.float64` schedule an inadmissible dtype (`f32`) is rejected first as
+   `InputSignatureError.dtypeNotAdmitted`, ahead of the expectation check, because it has no binary64
+   carrier at all; for a `.float32` schedule that admission gate is deliberately SKIPPED so the one
+   interesting case — a supplied `f64` signature for an `f32`-declared name — reports the informative
+   `dtypeMismatch nm .f32 .f64` rather than a bare "not admitted". The gate can be skipped safely
+   because an undeclared external constrains storage to `.float64`, so a `.float32` schedule has a
+   declaration for every external and the expectation check is already exhaustive;
 3. `inferAxisSizesFromSignature` combines `explicitSizes` with external tensor shapes and the source
    statements to solve axis extents;
 4. any required output or contracted axis that remains unsized produces a typed `ShapeError`;
 5. the resulting shapes are compiled into positional `TensorSignature` entries in `RawEvalPlan`.
 
 Extra signature entries are permitted because preparation consults only names required by the
-schedule. `ScalarDType.f32` remains a reserved tag with no worker; `bool` is live (Task 4,
-[`boolean_predicate_output_evalplan.md`](boolean_predicate_output_evalplan.md)) as a **semantic
-algebra/signature tag over the unchanged Float-backed storage**, not a native carrier: a `bool`
-destination selects the Boolean min/max algebra (`admittedAlgebraBool`), a `bool` source may feed an
-`f64` destination and vice versa, and `DenseTensor` still stores `Array Float` throughout.
+schedule. `ScalarDType.f32` is **live** (the f32 slice,
+[`f32_evalplan.md`](f32_evalplan.md)) and denotes genuine IEEE-754 binary32 storage with an
+independently rounded binary32 result at every primitive operation — never a binary64 run with a
+narrowed output. It is a separate CARRIER, so a graph selects one real precision and mixed
+`f32`/`f64` schedules are rejected rather than converted; execution of that carrier is scoped to the
+scan-free assignment fragment (§3 and `backend_missing_functionality.md` record what is still
+deferred). `bool` is live too (Task 4,
+[`boolean_predicate_output_evalplan.md`](boolean_predicate_output_evalplan.md)) but is a **semantic
+algebra/signature tag over whichever real carrier the graph selected**, not a carrier of its own: a
+`bool` destination selects the Boolean min/max algebra (`admittedAlgebraBool`), a `bool` source may
+feed a real destination and vice versa, and `bool` contributes no precision constraint — it is
+`Array Float` in an f64 graph and `Array Float32` in an f32 one, with `true`/`false` decoded to that
+carrier's own exact one/zero rather than coerced.
 
 #### 2.3.2 Derivation from runtime inputs
 
