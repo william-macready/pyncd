@@ -1,8 +1,18 @@
 # Genuine binary32 execution on extensible typed-tensor foundations
 
-**Status:** implementation plan; not yet implemented.
+**Status: COMPLETED RECORD — all five tasks implemented, mutation-tested, and reviewed.** This was
+an implementation plan; it is now the record of what was built. Sections 1–5 are retained as the
+executed specification and are still the authority on the admitted fragment, the deferred slices, and
+the semantic decisions behind them. Section 3.5's execution-door audit table is **complete**, with no
+pending cell. Section 6.5 (added at close-out) carries the observed evidence: every mutation cycle's
+fail/restored-pass observation, the targeted and full build results, and the final-review status.
 
-This is one reviewable vertical slice and the first consumer of an extensible dtype foundation: a
+Read Sections 1.1 and 1.3 before proposing any follow-on binary32 or complex work: what `f32` *means*
+here (independently rounded binary32 at every primitive operation, never a binary64 run with a
+narrowed output) and what is deliberately **not** claimed (F32-B/C/D/E/JAX, and complex) are the two
+things most likely to be misread from a summary.
+
+This was one reviewable vertical slice and the first consumer of an extensible dtype foundation: a
 source program can declare a homogeneous
 binary32 tensor graph, compile scan-free identity assignments into a checked `EvalPlan`, execute
 sum/max/min contractions with Lean 4.30's native `Float32`, and receive native `Array Float32`
@@ -486,19 +496,26 @@ There is no widening constructor from `DenseTensor` and no narrowing constructor
 
 This change is not in the recurring write-geometry family: it changes no write-map predicate.
 It does create a new recurring risk family—checked f32 evidence reaching a Float worker—so Tasks
-2–5 must collectively complete this case × entry-point table from the implemented call graph (Task 2
+2–5 collectively completed this case × entry-point table from the implemented call graph (Task 2
 via its item 7 sweep and JAX-column closure, Task 3 item 4, Task 4 item 4, Task 5 item 6; Task 1
-predates any constructible f32 evidence and carries no audit-table deliverable):
+predates any constructible f32 evidence and carried no audit-table deliverable).
+
+> **COMPLETED, 2026-09-21 (Task 5 item 6).** The table below is the cumulative result, re-verified
+> cell by cell against current source rather than copied from Tasks 2–4's own reports. No cell is
+> pending. Tasks 2, 3, and 4 each recorded their own partial audit in their task reports rather than
+> editing this document; this is the single authoritative version, and those partial copies are
+> superseded by it.
 
 | Checked case | Float local/graph worker | f32 local/graph worker | Float/f32 named adapter | JAX candidate/render | Legacy evaluator |
 |---|---|---|---|---|---|
-| f64/bool assignment in an f64 graph | required | forbidden | Float required / f32 forbidden | existing policy | required |
-| f32/bool assignment in an f32 graph | forbidden | required | Float forbidden / f32 required | forbidden | forbidden |
-| f32 pointwise/axiswise | no evidence | no evidence | no prepared plan | no candidate | forbidden |
-| f32 inline unary | no evidence | fail-loud unreachable `unaryNotAdmittedForStorage` branch | no prepared plan | no candidate | forbidden |
-| f32 scatter | no evidence | no evidence | no prepared plan | no candidate | forbidden |
-| f32 block/scan | no evidence | no evidence | no prepared plan | no candidate | forbidden |
-| mixed f32 and f64 signatures (bool ignored for precision selection) | no evidence | no evidence | no prepared plan | no candidate | forbidden |
+| f64/bool assignment in an f64 graph | **required** — `runDenseAssignAt`/`runDenseAssign`/`runDensePlan` execute it (`runDenseAssignAt`'s `.float64` guard passes) | **forbidden** — `runDenseAssignAt32` and `runDensePlan32` each throw `storageKindMismatch .float32 .float64` ahead of their own context/store/arity checks (T3 fixtures 13/14, M12/M13) | **Float required** — `pack`/`unpack`/`runPreparedDense` accept it; **f32 forbidden** — `pack32`/`unpack32`/`runPreparedDense32` each reject at their own tier, before that entry's storage-size, result-arity, and binding work (T4 fixture 10a–10d, M10–M12 + M20) | **existing policy** — unchanged by this slice: `requireFloat64Plan` passes, then the per-assignment `checkJaxAssignSupport` applies the pre-existing Boolean/tropical/unary/contextful policy | **required** — `rejectUnsupportedStorage` finds no f32 name and every entry proceeds |
+| f32/bool assignment in an f32 graph | **forbidden** — `runDenseAssignAt`'s `.float64` guard is the FIRST statement, ahead of `validateContext`/`validateStore`; `runDensePlan` likewise ahead of its arity check (T2 fixture 18, M27/M28) | **required** — `runDenseAssignAt32`/`runDenseAssign32`/`runDensePlan32` execute it natively; every intermediate rounds in binary32 (T3 fixtures 1–12, 16) | **Float forbidden** — `packChecked`/`unpackChecked`/`runPreparedDenseOf .float64` reject it (T2 fixtures 20/21, M29–M31); **f32 required** — T4 fixtures 3/4/7/8/9/12 run it end to end on native buffers | **forbidden** — `requireFloat64Plan` rejects at all seven `EvalPlanCodegen.lean` doors and `validateAndConstructExecutable` rejects at the eighth, each FIRST (T2 fixtures 22/24/25, M32/M33); Task 5 additionally makes the standalone entries report the located `destinationDType n slot .f32` instead of `invalidSignatureContext` (T5 fixture 1, M1) | **forbidden, permanently** — `scheduleFloat32Name?` at `evalScheduled` plus `rejectUnsupportedStorage` at `evalAssignDtypedSeeded`/`evalPlain`/`evalStmtSliceSeeded`/`evalScan` (T1 fixtures 7–13, M11–M16) |
+| f32 pointwise/axiswise | **no evidence** — `checkPointwise`/`checkAxiswise` require `.f64` exactly (`checkNonlinIO`), and `checkPlan` refuses the step kind outright in a `.float32` graph (`f32UnsupportedStep ni .pointwise`/`.axiswise`) | **no evidence**; `runDensePlan32` additionally refuses every non-`.assign` evidence kind explicitly | **no prepared plan** — `prepareEvalPlan` Step 0c (`checkF32Stmt`) rejects at source tier as `unsupportedDtype "{nm}: f32 nonlinearity"`, before any `PreparedPlan` exists | **no candidate** — no prepared plan to lower; the plan-level gate would refuse it anyway | **forbidden** (row 2's guards) |
+| f32 inline unary | **no evidence** — `checkAssignF32` throws `unaryNotAdmittedForDtype ti fi .f32` at the ORIGINAL all-factor index | **fail-loud unreachable branch** — `float32Ops.applyUnary` ⇒ `unaryNotAdmittedForStorage .float32 op slot`; reachable only if the checker regressed | **no prepared plan** — Step 0c, `unsupportedDtype "{nm}: f32 unary factor {ti}:{fi}"` | **no candidate** | **forbidden** |
+| f32 scatter | **no evidence** — `checkScatter` runs its compute half through the `.float64` core; `checkPlan` also refuses the step kind (`f32UnsupportedStep ni .scatter`, M22) | **no evidence** — `runDenseScatter` is Float-only and reachable only from the guarded `runDensePlan` | **no prepared plan** — Step 0c, `unsupportedDtype "{nm}: f32 scatter"` | **no candidate** — and a `.scatter` step is refused categorically by the JAX backend regardless of dtype | **forbidden** |
+| f32 block/scan | **no evidence** — `checkPlanBlock` derives the block's kind FIRST and admits only `.float64` (`storageKindNotAdmitted`, M26); `checkScanPlan` is Float-backed; `checkPlan` refuses the step kind (`f32UnsupportedStep ni .scan`, M23) | **no evidence** — no f32 block or scan worker exists | **no prepared plan** — Step 0c, `unsupportedDtype "{nm}: f32 scan"` | **no candidate** | **forbidden** |
+| mixed f32 and f64 signatures (bool ignored for precision selection) | **no evidence** — `deriveStorageKind` throws `mixedStorageKinds i dt₀ dtᵢ` at the FIRST disagreeing slot, before any step is checked (M12) | **no evidence** | **no prepared plan** — `prepareEvalPlan` Step 0b rejects as `unsupportedDtype "{nm}: mixed f32/f64 storage in one schedule"` before Step 0c or Step A; independently, a carrier-mixed INPUT MAP cannot reach `prepareEvalPlan` at all, since `checkDeclCarriers` rejects it at signature construction naming the input (T4 fixtures 2/13) | **no candidate** | **forbidden** — `scheduleFloat32Name?` names the first f32 tensor in a mixed schedule too |
+| all-input, ZERO-STEP f32 plan (every per-node check vacuous) | **no reachable worker** — `runDensePlan`'s `.float64` guard precedes its own arity check | **admitted and trivially correct** — `runDensePlan32`'s guard passes, its arity/shape/storage checks run, the node loop is empty, and it returns the store (for an all-input plan, the inputs) | **no prepared plan from source** — an f32 program with no statements has no used name to derive `.float32` from, so this case is reachable only from a hand-built `RawEvalPlan`, which `checkPlan` accepts (`deriveStorageKind` reads the signature table, not the steps) | **forbidden, and this is the row the gate exists for** — per-step checks are vacuous and `aggregateEvidenceList #[] = orderedReference64`, so only a PLAN-level gate can reject it; T2 fixture 23 pins it in both libraries, and Task 5's fixture 2 retains the binary64 zero-step control on both sides so the gate is not an accidental blanket ban on empty graphs | **forbidden** — same schedule-wide guard |
 
 Every “forbidden” execution cell has a fail-loud fixture. No cell may silently convert or be
 classified only by a caller convention. Audit these sibling entry points even when they
@@ -576,6 +593,12 @@ fixture's assertion.
 
 Task boundaries follow independent rejection/rollback surfaces: source/legacy admission, checked
 evidence and specialization, native execution, the named adapter, and external support gates/docs.
+
+> **ALL FIVE TASKS ARE IMPLEMENTED.** Each subsection below is retained verbatim as the specification
+> that was executed, in the present/imperative tense it was written in — read it as "what this task
+> was asked to do", not as pending work. Section 6.5.1 maps each task to its commits, and each task's
+> own report under `.superpowers/sdd/f32_evalplan/task-N-report.md` records its fixture list,
+> per-cycle mutation observations, build results, and self-review findings.
 
 ### Task 1 — Add explicit source f32 and close the legacy evaluator boundary
 
@@ -1517,6 +1540,187 @@ Resolve findings, rerun affected mutations and targeted gates, then rerun the fu
 is not complete until both whole-branch reviews are clean or every finding is explicitly
 adjudicated.
 
+### 6.5 Observed results (close-out record, 2026-09-21)
+
+Added by Task 5 item 5. Everything in this subsection is an **observation**, not a plan: each figure
+was read from a command's own output, not restated from a task brief or another document.
+
+#### 6.5.1 Commits
+
+Oldest first. Each task's implementation and tests landed as one reviewable unit, followed by that
+task's review-fix commits.
+
+| Task | Commits |
+|---|---|
+| 1 — source/legacy | `38964a8` (implementation + tests), `2030415` (review fix: fixtures 7 and 9 discriminate the guard's position) |
+| 2 — checked evidence | `488617b` (implementation + tests), `b0a2fe2` (review fix: fixture 22 fed the nonempty f32 plan), `e26ae5a` (review fix: `checkCaptures`' stale docstring) |
+| 3 — native worker | `c8e3eea` |
+| 4 — named adapter | `aa00097` (production), `ce28014` (tests), `5d70a0f` (intent layer), `f4fb5ed` (review fix: fixture 10d races the guard against `checkPreparedBindings`) |
+| 5 — JAX/docs | `112145c` (mode-selected re-check + fixtures), `e11e390` (capability documents), `8938184` (intent layer), plus this close-out |
+
+#### 6.5.2 Mutation cycles — 89 applied and restored, all PASS
+
+The plan budgeted 86 (18/33/15/19/1). Three more were run than budgeted, each for a recorded reason;
+none was dropped. Every cycle ran through `leanncd/scripts/mutation-cycle.sh`, whose `PASS` verdict
+means `mutation_exit ≠ 0 && restored_build_exit = 0` — the fixture genuinely failed under the
+mutation and genuinely passed after restore.
+
+| Task | Planned | Run | Why the difference |
+|---|---:|---:|---|
+| 1 | 18 | 20 | M9/M10 are the two halves of the plan's one "first-conflict vs. declaration-order" bullet, and M11 was re-run after §5's fixture strengthening |
+| 2 | 33 | 33 | — (M29–M33 re-run after `b0a2fe2` enlarged fixture 22; both runs PASS) |
+| 3 | 15 | 15 | — |
+| 4 | 19 | 20 | M20 added in the review-fix round: the guard is RELOCATED after `checkPreparedBindings` rather than deleted, which is the defect fixture 10d exists to catch |
+| 5 | 1 | 1 | — |
+| **total** | **86** | **89** | |
+
+Per-cycle mutation text, the observed wrong value, and the restored value are recorded in each task's
+report under `.superpowers/sdd/f32_evalplan/task-N-report.md` §"Mutation-cycle log". Task 5's single
+cycle, in full:
+
+| # | Mutation | File | Fixture that failed | Observed wrong value | Restored |
+|---|---|---|---|---|---|
+| T5-M1 | route standalone f32 validation through ordinary `checkAssign` (replace the `checked.storageKind` dispatch in `checkJaxAssignSupport` with an unconditional `checkAssign sigs checked.plan`) | `LeanNCD/Eval/Plan/Executable.lean` | `ExecutableTest.lean` fixture 1, both claims (the `checkJaxAssignSupport` guard over `f32DestSigs`/`f32DestAssign`, and the `validateAndConstructKernel` guard beside it); the two controls in the same fixture still passed | `JaxSupportError.invalidSignatureContext 7 (PlanError.dtypeNotAdmitted 2 .f32)` — the caller's table blamed for the graph's own correct carrier | `JaxSupportError.destinationDType 7 2 .f32` |
+
+Both values were additionally observed directly from a compiled probe (the mutated gate transcribed
+beside the real one, both applied to fixture 1's donor), not only inferred from the build failure.
+
+Two Task 3 cycles (M3, M11) are **masked by module ordering**: `KernelDense32Test` imports
+`KernelDenseTest`, so for a mutation to the shared traversal the binary64 sibling fixture fails first
+and Lean never elaborates the importing module. Both mutations genuinely broke the build, both masked
+fixtures were independently observed failing under other cycles, and the f32 values the masked
+mutations would produce were established by compiled probes. Recorded rather than papered over; the
+alternative (dropping the donor import and duplicating a dozen plans) was judged worse.
+
+Task 2's fixture 23 and the existence-only halves of fixtures 22 and 25 were verified instead by the
+Section 3.5 completeness sweep (Task 2 implementation item 7), as this document specifies, and Task 5
+item 6 re-verified all eight doors independently against current source: seven
+`requireFloat64Plan` calls in `EvalPlanCodegen.lean` (`lowerPlan`, `generateForward`,
+`renderInputConstants`, `renderAffinePlanPositional`, `renderAffinePlanNamed`, `generateNamed`,
+`lowerCheckPlanToCandidate`) and `validateAndConstructExecutable`'s own guard in `Executable.lean`,
+each the FIRST statement of its function body, ahead of node iteration, `checkPreparedBindings`,
+evidence aggregation, and any emitted text.
+
+#### 6.5.3 Fixture groups
+
+74 numbered groups planned (16/25/16/15/2); 74 delivered, plus Task 4's group 10 grown to four
+sub-cases (10a–10d) by its review-fix round. No group was dropped or merged.
+
+#### 6.5.4 Builds
+
+Each task ran its own targeted set, the four regression gates, and a full `lake build`. Final Task 5
+results, on a clean tree:
+
+| Gate | Result |
+|---|---|
+| Task 5 targeted — `Eval.Plan.ExecutableTest JaxExperiment` | Build completed successfully (8515 jobs) |
+| Regression — `Eval.Plan.DifferentialTest Eval.PropertyOracleTest Eval.PropertyOracleScanTest Eval.Portfolio.Harness DSL.Pipeline.RouteFragmentCorpusTest` | Build completed successfully (8551 jobs) |
+| Full default `lake build` | Build completed successfully (8668 jobs) |
+
+The binary64 reference corpora are **unchanged across all five tasks**, as Section 6.2 requires:
+
+```
+DifferentialTest sweep: total=3832 accepted=3832 rejected=0 categories=[]
+DifferentialTest scan corpus: total=17 accepted=17 unsupportedNonlin=0 unsupportedAgg=0
+```
+
+No new warning was introduced by any task; the full build's warning set is byte-identical to the
+pre-slice one (`sorry` in `Base/St.lean`, `Base/Br.lean`, `Core/Weave.lean`, `Instances/StBr.lean`;
+the `brElemental` reducibility notice; the `linter.unusedSimpArgs` notices in `Bridge/`).
+
+#### 6.5.5 Reviews
+
+Per Section 6.0, each of Tasks 1–4 received an independent review of its complete commit before its
+dependent task started, and every finding was resolved or explicitly adjudicated. Three of them
+produced recorded fix commits — Task 1's `2030415`, Task 2's `b0a2fe2` and `e26ae5a`, and Task 4's
+`f4fb5ed`; Task 3's findings were adjudicated in its report without a code change. Task 5's own
+per-task review is the controller's next step after this close-out.
+
+> **Section 6.4's two independent whole-branch reviews: PENDING AT THE TIME OF WRITING.** They are
+> dispatched by the controller after Task 5 is reviewed and merged, not by Task 5 itself, so their
+> adjudications are deliberately **not** recorded here rather than being written speculatively.
+> Section 6.4 still governs: **this slice is not complete until both are clean or every finding is
+> explicitly adjudicated**, and this subsection must be updated with their outcomes when they land.
+> Until then, Section 7's last success criterion ("targeted builds, `JaxExperiment`, full
+> `lake build`, documentation sweep, and two final reviews pass") is met except for its final clause.
+
+Findings carried INTO those two reviews, deliberately not fixed by the task that found them:
+
+1. **`AdapterTest.lean` fixture 21 has the same guard-vs-`checkPreparedBindings` ordering gap that
+   Task 4's fixture 10d closed on the f32 side.** Found by Task 4's reviewer; under Task 4's M20 the
+   Float-side fixture 21 did not fail. The symmetric fix is roughly six lines mirroring 10d. Not
+   done in Task 4 (it is Task 2's fixture, outside Task 4's file list) and not in Task 5 (outside
+   its file list either).
+2. **Several `.lean` doc comments still name helpers Task 3 renamed or deleted** — `constFloat`,
+   `applyOp`, `factorFold`/`reductionFold`/`termFold`, `gatherFactor` — in `Check.lean`,
+   `Types.lean`, `Compile.lean`, `Scan.lean`, `EvalPlanCodegen.lean`, and some test files. Flagged
+   Minor by Task 3's reviewer. Task 5 fixed the instances inside the documentation files on its own
+   list; the `.lean` ones remain.
+3. **Each task recorded 4–7 further Minor findings** in its own report's self-review section, all
+   explicitly deferred here for triage rather than silently closed.
+
+#### 6.5.6 Documentation sweep (Section 6.3)
+
+Run at close-out. A case-insensitive repo-wide search for `f32`/`binary32` over Markdown, Python,
+shell, TOML, and text returned **17 files**, classified as:
+
+- **updated as current documentation (5)** — `papers/backend_missing_functionality.md`,
+  `papers/wave_f_capability_manifest.md`, `papers/eval_ir.md`, `leanncd/LeanNCD/Eval/AGENTS.md`,
+  and this document;
+- **given an explicit completed/superseded banner, then left unmodernized (2)** —
+  `papers/wave_f_scanplan_proposal.md`, which still said "F2 is next", and
+  `papers/f32_evalplan_handoff.md`, which still said "Implementation status: **Not started.** Zero
+  Lean source files have been modified." The handoff document was **not** on Task 5's own file list
+  and was found only by this sweep — which is exactly why Section 6.3 lets the sweep add files;
+- **confirmed immutable historical, already carrying that status, left untouched (9)** —
+  `papers/boolean_predicate_output_evalplan.md`, `papers/predicate_boolean_backend_parity.md`,
+  `papers/scatter_affine_lhs_writes.md`, `papers/wave_c_evalplan_proposal.md`,
+  `papers/post_audit_roadmap.md`, `papers/restructure_suggestions.md`,
+  `papers/copilot_code_analysis.md`, `papers/jax_signature_evidence_ownership_spike_results.md`,
+  and `docs/superpowers/specs/2026-08-21-nonlinearity-in-scans-design.md`. Each was opened and its
+  tense/status read rather than inferred from its path; two were close calls and are recorded as
+  such below;
+- **not a documentation claim (1)** — `leanncd/scripts/mutation-cycle.sh`, whose only match is the
+  string `'M6b (source f32 guard)'` in a usage example.
+
+The two close calls, recorded rather than waved through. `papers/wave_c_evalplan_proposal.md` says
+"Initially plan compilation admits only `ScalarDType.f64`; `f32` and `bool` are reserved closed tags"
+in present tense, which is now doubly false — but the sentence sits under a heading that scopes it
+("§3 Initial Wave C scope and capability boundary"), the word "Initially" scopes it again, and the
+document's Appendix A carries a per-task ✅ DONE record, so it reads as a milestone snapshot and was
+left alone. `papers/scatter_affine_lhs_writes.md` says "`ScalarConst.f32` is documented inert in a
+checked plan" in present tense, which the f32 slice falsified; it carries an explicit
+"S-A and S-B implemented" status, so the sentence is a premise of a completed design and was likewise
+left unmodernized, but a reader arriving at it out of context could be misled.
+
+Four files this document's authoring-time sweep listed as historical matched nothing at all (zero
+`f32`/`binary32` occurrences) and needed no action: `papers/max_min_aggregation.md`,
+`docs/superpowers/plans/2026-09-01-slice-5-predicate-mask-parity.md`,
+`docs/superpowers/plans/2026-09-02-jax-signature-evidence-ownership-spike.md`, and
+`.superpowers/sdd/2026-09-12-lhs-scatter-in-scans/progress.md`.
+
+Four further files were edited under Task 5's own file list rather than because the `f32` sweep found
+them: `leanncd/LeanNCD/DSL/AGENTS.md` (item 3), and — per item 4 — banners on
+`papers/wave_c_capability_manifest.md`, `papers/unary_factor_functions.md` (which still said "Plan —
+verified, **not yet executed**" for a row `backend_missing_functionality.md` already lists as closed
+by it), and `leanncd/docs/superpowers/plans/2026-09-12-lhs-scatter-in-scans.md` (which still said
+"implementation-ready" for a shipped slice).
+
+The separate `live`/`producer`/`constructor` capability-number sweep re-derived every count against
+source rather than against any document. Corrections made: `backend_missing_functionality.md`'s
+`4 live / 12 constructors / 8 producer-less` became **10 / 16 / 6**; its claim that every
+`CapabilityError` is thrown from `capabilityPreflight` alone became three named sites;
+`ScanCompileError` is **27** constructors, not the 24 two documents claimed; and
+`PlanError.dtypeMismatch` is no longer producer-less. The stale `12`/`24` figures inside
+`wave_f_capability_manifest.md` were re-labelled as Wave-F-era measurements beside the current ones
+rather than silently overwritten.
+
+The `Array Float` / `Float.toBits` / `orderedReference64` / `jnp.float64` / `np.float64` grep over
+`Plan/`, the tests, and the JAX experiment confirmed every remaining occurrence belongs to a
+Float-backed-only path; the JAX experiment is reference64-only by design and unchanged by this slice.
+`backend_missing_functionality.md`'s "last re-derived" date is now 2026-09-21, and its counts come
+from the enum and its throw sites, not from this plan.
+
 ## 7. Success criteria and stop conditions
 
 The slice is complete only when all of the following are true:
@@ -1544,6 +1748,15 @@ The slice is complete only when all of the following are true:
   instead by the Section 3.5 completeness sweep (Task 2 item 7) with no cell left pending;
 - targeted builds, `JaxExperiment`, full `lake build`, documentation sweep, and two final reviews
   pass.
+
+> **Close-out, 2026-09-21.** These criteria are stated as planned; **Section 6.5 records what was
+> actually observed against each of them**, and the two lists differ in one place worth naming here
+> rather than only there: 89 mutation cycles were applied and restored, not the 86 budgeted above —
+> three more than planned, each for a recorded reason, none dropped. Every other criterion in this
+> list is met **except** the final clause "two final reviews pass": Section 6.4's two independent
+> whole-branch reviews had not been run when this record was written, so the slice is **not yet
+> complete** by this document's own standard. Do not read the completed-record status banner at the
+> top as a claim that they happened.
 
 Stop and revise this plan rather than improvising if Lean 4.30 native arithmetic does not reproduce
 the measured bit patterns on the supported build target; if making `Decl.typedTensor .f32` tensor-bearing
