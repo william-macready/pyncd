@@ -485,6 +485,55 @@ def run32Err (p : Option PreparedPlan) (env : NamedDenseEnv32) : Option PlanRunC
                | .ok _ => false)
   | none => false)
 
+/-! ### Fixture 10d: the composite guard also precedes `checkPreparedBindings`
+
+10a–10c race the guard against `packBodyOf`'s storage check, `unpackBodyOf`'s arity check, and
+`packChecked32`'s own nested guard. All three donors have VALID bindings
+(`#guard (checkPreparedBindings p).toOption.isSome` above), so none of them can see a guard
+relocated to run AFTER `checkPreparedBindings` — `runPreparedDenseOf`'s very next step. This
+sub-case closes that: the SAME `.float64` plan with a deliberately out-of-range materialized slot,
+so `checkPreparedBindings` genuinely fails on it, and `runPreparedDense32` must still report its own
+adapter-tier storage kind rather than the bindings diagnostic.
+
+(`PreparedPlan`/`PlanBindings` have public constructors — `AdapterTest`'s Check 18 builds malformed
+ones the same way by struct update — so this state is constructible even though `prepareEvalPlan`
+cannot emit it.) -/
+
+def f64PreparedBadBindings : Option PreparedPlan :=
+  f64Prepared.map (fun p =>
+    { p with bindings := { p.bindings with
+        materializedNames := #[{ name := "Y", slot := 99 }] } })
+
+-- The bindings really ARE invalid, and `checkPreparedBindings` really does reject them — otherwise
+-- the assertion below would be vacuous. The two-slot plan makes `slotOutOfRange 99 2` exact.
+#guard (match f64PreparedBadBindings with
+  | some p => (match checkPreparedBindings p with
+               | .error e => e == .materializedSlot (.slotOutOfRange 99 2)
+               | .ok _ => false)
+  | none => false)
+
+-- Control: the BINARY64 runner — whose own guard admits this `.float64` plan — reaches
+-- `checkPreparedBindings` and reports exactly that, so the bindings error is a reachable,
+-- observable alternative and not a hypothetical one.
+#guard (match f64PreparedBadBindings with
+  | some p => (match runPreparedDense p CompileTest.identityInputs with
+               | .error f => f.cause == .binding (.invalidPreparedBindings
+                   (.materializedSlot (.slotOutOfRange 99 2)))
+               | .ok _ => false)
+  | none => false)
+
+-- The claim: `runPreparedDense32` reports the STORAGE KIND, not the bindings error. A guard placed
+-- after the `checkPreparedBindings` call would report `.binding (.invalidPreparedBindings …)` here.
+-- Written as `run_cmd` rather than `#guard` so a violation NAMES the cause it saw instead — the
+-- point of this sub-case is which of two specific diagnostics arrives, and "Expression" would not
+-- distinguish them.
+run_cmd do
+  match run32Err f64PreparedBadBindings wellShaped32 with
+  | some (.storageKindMismatch .float32 .float64) => pure ()
+  | other =>
+      throwError s!"fixture 10d: runPreparedDense32's own guard did not precede \
+checkPreparedBindings — expected storageKindMismatch .float32 .float64, got {repr other}"
+
 /-! ## Fixture 12: a Boolean tensor rides the binary32 carrier, uncoerced
 
 Fixture 3's shape with one `predicate` input and one `tensor f32` input, BOTH presented as native
