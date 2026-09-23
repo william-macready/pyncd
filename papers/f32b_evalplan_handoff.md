@@ -9,20 +9,20 @@ which is now a completed record.
 
 | Item | Value |
 |---|---|
-| Plan document | `papers/f32b_evalplan.md` (1642 lines) |
-| Plan content SHA-256 at handoff | `70158deba2ce692c1c37a0ddc81287dc41d958834b75e6a5758a70e2de1927bb` |
+| Plan document | `papers/f32b_evalplan.md` (1727 lines) |
+| Plan content SHA-256 at handoff | `18608d04252580e190d7b2922d53d3b54314c47cafa7705a4d5cae376f6fe7ee` |
 | Plan committed on | `main`, in the same commit as this file (`git log -1 -- papers/f32b_evalplan.md`) |
 | Base it was measured against | `main` at `6a53ce7`, where F32-A is complete and merged |
-| Authoring status | Complete, including one self-review pass against `.claude/skills/slice-plan/SKILL.md`'s checklist. **No independent review round has run yet** (§6). |
+| Authoring status | Complete. It had one self-review pass against `.claude/skills/slice-plan/SKILL.md`'s checklist, then one independent adversarial review round (2026-09-23), whose findings and re-measurements are recorded at the end of the plan's §8. |
 | Implementation status | **Not started.** No Lean source file has been modified. |
-| Open questions | Q1–Q3 in the plan's §9. **Q1 must be answered before Task 1 starts** (§5 below). |
+| Open questions | **None.** The draft's Q1–Q3 are closed decisions D1–D3 in the plan's §9: native libm transcendentals, no `f64` keyword, witness fixtures in the default `Tests` target. |
 | `main` vs `origin/main` | `main` is ahead. **Not pushed.** |
 
 Verify you have the right plan before doing anything:
 
 ```bash
 shasum -a 256 papers/f32b_evalplan.md
-# must print 70158deba2ce692c1c37a0ddc81287dc41d958834b75e6a5758a70e2de1927bb
+# must print 18608d04252580e190d7b2922d53d3b54314c47cafa7705a4d5cae376f6fe7ee
 ```
 
 If the hash differs, someone has edited the plan since handoff. Read
@@ -49,9 +49,9 @@ Task 1 and may run in either order.
 | 1 | Binary32 math core. One formula per function over a private `NonlinScalarOps` record; `UnaryOp.applyChecked32`; the binary64 golden gate | 8 | 16 |
 | 2 | Checked binary32 inline unary factors end to end, with the `unaryDomain32` payload | 11 | 6 |
 | 3 | Checked binary32 pointwise/axiswise: storage-kind evidence, guarded workers, `checkPlan`/`runDensePlan32` dispatch | 11 | 11 |
-| 4 | Compiler emission: the hard-coded binary64 nonlinear arms fixed; named end-to-end (causal attention, sigmoid, normalize) | 7 | 5 |
+| 4 | Compiler emission: the hard-coded binary64 nonlinear arms fixed; named end-to-end (causal attention, sigmoid, normalize) | 7 | 7 |
 | 5 | Capability docs, final audit of tables A/B, close-out | 0 | 0 |
-| | **Total** | **37** | **38** |
+| | **Total** | **37** | **40** |
 
 Section map of the plan:
 
@@ -69,7 +69,7 @@ Section map of the plan:
   final reviews.
 - **§7** — the definition of done, with exact bits, and the stop conditions.
 - **§8** — the authoring verification record. It says what was measured and what was not.
-- **§9** — the open questions.
+- **§9** — the three closed design decisions (D1–D3) and their rationale.
 
 ## 3. Setup
 
@@ -107,7 +107,7 @@ verified at authoring time.
    touched.** It is the only independent evidence that the binary64 refactor changed nothing. The
    legacy evaluator, the checked backend, and the scan-unroll oracle all call the functions being
    rewritten.
-2. **Every one of the 38 mutation cycles is run and recorded**, with its fail and restored-pass
+2. **Every one of the 40 mutation cycles is run and recorded**, with its fail and restored-pass
    observations. Nine already have observed wrong values from authoring: the eight named in plan
    Task 1's list, plus Task 3's M1 on `runDensePointwise`. The rest are predictions to confirm.
 3. **Guards before admission (Task 3).** The four worker guards and their order fixtures come before
@@ -120,10 +120,9 @@ verified at authoring time.
 
 ## 5. Traps
 
-- **Q1 changes Task 1.** If the user wants correctly rounded binary32 transcendentals instead of
-  native `expf`/`logf`/…, the change is confined to the record's `exp`/`tanh`/`pow` fields and
-  `applyChecked32`'s `exp`/`log`/`sin`/`cos` arms. It also inverts every witness fixture. Get the
-  answer first.
+- **Native libm transcendentals are decided (plan §9, D1).** Do not substitute correctly rounded
+  binary64-then-narrow for `expf`/`logf`/…, even though it looks more accurate. That substitution
+  is exactly what the witness fixtures and Task 1's M12/M13 cycles exist to reject.
 - **Witness fixtures are platform-specific by design** (plan §3.6). If one fails with "no lane
   separates native binary32 from binary64-then-narrow", the libm changed. Re-run the plan's §8
   witness search for new lanes. Do not weaken the precondition.
@@ -142,7 +141,8 @@ verified at authoring time.
 
 ## 6. How to behave when the plan is wrong
 
-It has had one self-review pass and no independent review. Expect findings.
+It has had one self-review pass and one independent adversarial review. Expect findings anyway:
+the review re-measured claims, but it did not execute any task.
 
 - **Verify against source, never against prose.** That covers the plan's prose, this document's,
   and any reviewer's.

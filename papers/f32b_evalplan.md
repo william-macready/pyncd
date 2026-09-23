@@ -1,7 +1,7 @@
 # Native binary32 unary factors and nonlinearities (slice F32-B)
 
-**Status: IMPLEMENTATION PLAN — authored 2026-09-23, not started.** No Lean source file has been
-changed by this plan. It is the first follow-on to the completed f32 slice
+**Status: IMPLEMENTATION PLAN — authored 2026-09-23, independently reviewed the same day (§8), not
+started.** No Lean source file has been changed by this plan. Its design decisions are closed (§9). It is the first follow-on to the completed f32 slice
 ([`f32_evalplan.md`](f32_evalplan.md), "F32-A" below), and item 1 of that plan's §1.3 deferred list
 and §1.4 recommended order. Read [`f32b_evalplan_handoff.md`](f32b_evalplan_handoff.md) before
 executing it.
@@ -47,54 +47,66 @@ Concretely:
 
 **The measured fact that constrains the fixtures.** On the authoring platform
 (`arm64-apple-darwin`, macOS 26.6.2 system libm), the binary32 routines are *not* correctly
-rounded. Computing the same primitive in binary64 and narrowing once *is* correctly rounded,
-except for double-rounding cases with probability about 2⁻²⁹. Over 1,813,754 binary32 inputs in
-[2⁻⁴, 2⁴) (every 37th bit pattern), native and binary64-then-narrow disagreed this often:
+rounded. This slice accepts that as an intentional property of native binary32 execution, not as a
+defect to engineer around (decision D1, §9). Computing the same primitive in binary64 and
+narrowing once is correctly rounded, except for double-rounding cases with probability about 2⁻²⁹
+(this assumes the binary64 routine's own error is far below one binary32 ulp). Over 1,813,754
+binary32 inputs in [2⁻⁴, 2⁴) (every 37th bit pattern), native and binary64-then-narrow disagreed
+this often:
 
 | Primitive | `exp` | `log` | `sin` | `cos` | `tanh` | `sqrt` | `recip` (`1/x`) |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | Disagreements | 10,955 | 265 | 31,283 | 16,528 | 27,882 | **0** | **0** |
 
 `sqrt` and division are correctly rounded in both carriers. The zero counts match the known result
-that double rounding is harmless for +, −, ×, ÷, and √ when the wider precision has at least
-2p+2 bits; binary64 has 53 ≥ 2·24+2. Three consequences follow, and the plan is built around them:
+that double rounding is harmless when both operands are in the narrow format of precision p and the
+wide format has precision p′: for + and − when p′ ≥ 2p+1, for × and ÷ when p′ ≥ 2p, and for √ when
+p′ ≥ 2p+2 (Figueroa, "When is double rounding innocuous?", ACM SIGNUM Newsletter 30(3), 1995, as
+restated in Martin-Dorel, Melquiond and Muller, "Some issues related to double rounding", BIT
+Numerical Mathematics, 2013, §1). Binary64 has p′ = 53 ≥ 2·24+2 = 50, so all five are covered. Three
+consequences follow, and the plan is built around them:
 
 - **Composites are where binary32 is observable, and portably so.** In `sigmoid`, `gelu`,
   `leakyrelu`, `softmax`, `normalize`, and `l2normalize`, the difference from widen-compute-narrow
   comes from rounding the *intermediate* +, ×, and ÷ results in binary32. IEEE-754 fixes those
   roundings exactly. Every native-versus-narrowed composite discriminator below was chosen so
   that each libm step it contains has a true result within at most 0.018 binary32 ulp of a
-  representable value (§2.6). A libm with error below about 0.48 ulp there must return the same
-  value. The one fold-order row has a worst margin of 0.062. So these fixtures should not depend
-  on the platform libm.
+  representable value r (§2.6). Any other binary32 value is then at least 0.982 ulp from the true
+  result, so any libm whose returned result is within 0.98 ulp of the true value must return r.
+  Equivalently, the true value is at least 0.482 ulp from a rounding boundary, so a libm whose
+  internal approximation error before its final rounding is below about 0.48 ulp also returns r.
+  The one fold-order row has a worst margin of 0.062, so there the bounds are 0.93 and 0.43 ulp. So
+  these fixtures should not depend on the platform libm. "Should not" is the honest word here: no
+  second platform was available to observe it (§8).
 - **A lone transcendental is observable only through the libm's own rounding error.** It follows
   that no portable value fixture can tell native `expf` from correctly rounded
   binary64-then-narrow. Such fixtures are therefore *witness* fixtures (§3.6). They are relational:
   the implementation must equal the native routine. They also check a precondition: at least one
   lane must be one where native and narrowed binary64 differ on the running platform. If an OS
   update makes the libm correctly rounded on all four lanes, the fixture fails loudly and names
-  that cause; it does not pass vacuously.
+  that cause; it does not pass vacuously. These fixtures stay in the default build (decision D3).
 - **For `sqrt` and `recip`, native and binary64-then-narrow are the same function**, so no value
   fixture can distinguish them. What pins native use there is the code (`Float32.sqrt`,
   `Float32.ofBits 0x3f800000 / v`) and the fixed bits of correctly rounded results.
 
-**Why native rather than per-primitive binary64-then-narrow.** Narrowing a *single* binary64
-primitive gives a correctly rounded binary32 primitive. Under the letter of F32-A §1.1 that is
-arguably still "an independently rounded binary32 result at that operation", and it is more
-accurate and more portable than `expf`. This plan nevertheless uses native routines, for three
-reasons:
+**Why native rather than per-primitive binary64-then-narrow (decision D1, §9).** Narrowing a
+*single* binary64 primitive gives a correctly rounded binary32 primitive. Under the letter of
+F32-A §1.1 that is arguably still "an independently rounded binary32 result at that operation", and
+it is more accurate and more portable than `expf`. It was considered and rejected. This slice uses
+the native routines, and that is a closed decision:
 
-- F32-A §1.3 names native `Float32.log/exp/sin/cos/sqrt` as this slice's content;
-- binary32 frameworks (XLA, PyTorch) evaluate native binary32 transcendentals, which matters for
-  F32-JAX;
+- it matches real binary32 execution: neither hardware binary32 pipelines nor PyTorch compute
+  transcendentals as correctly rounded binary64 followed by one rounding;
+- it is F32-A §1.1's "independently rounded binary32 result at every primitive operation" realized
+  with the actual binary32 runtime rather than a simulation of one, and it is what F32-A §1.3 names
+  as this slice's content (native `Float32.log/exp/sin/cos/sqrt`);
+- it keeps a later F32-JAX slice comparable with XLA's own native float32 operations;
 - the per-primitive-narrowing path invites the fused widen-the-whole-formula implementation, which
   *is* false f32 and which the composite fixtures reject.
 
-This is a real design choice, not a settled fact. It is recorded as open question Q1 (§9). If the
-user chooses correctly rounded binary32 transcendentals instead, only the `exp`/`tanh`/`pow`
-fields of §3.1's binary32 record and the `exp`/`log`/`sin`/`cos` arms of §3.2's `applyChecked32`
-change. The witness fixtures
-then invert, and every composite fixture keeps its values.
+The cost, accepted with the decision, is that a lone transcendental's bits are platform libm
+facts. That is why they are pinned only relationally, by the witness fixtures (§3.6), and why every
+hardcoded composite value was chosen to be libm-independent (above).
 
 ### 1.2 Exact admitted fragment
 
@@ -130,7 +142,7 @@ diagnostic:
   never reaches a per-step check there.
 - **Complex-A/B.**
 - **Two items F32-A §1.4 offered but this plan deliberately excludes:** the optional `f64` source
-  keyword and the default flip (open question Q2, §9).
+  keyword and the default flip (decision D2, §9).
 
 This plan's audit surfaced two existing F32-C obligations. They are named here so that F32-C's
 plan cannot miss them:
@@ -796,12 +808,12 @@ F32-A Task 4 fixture 9 pinned, one site at a time. Every site in `Compile.lean` 
 | Site | Reachable by f32 after this slice? | Class | Pin |
 |---|---|---|---|
 | plain `.identity` arm: `destDtype` + `algebraForDest` | yes | **required**, already correct (F32-A) | F32-A T2 fixture 11 |
-| plain `.pointwise` arm: 2 × `dtype := .f64` + preactivation `algebraForAgg` | **yes** | **fixed by Task 4** | 4.2, M1/M2 |
-| plain `.axiswise` arm: same 3 sites | **yes** | **fixed by Task 4** | 4.1, M3/M4 |
+| plain `.pointwise` arm: 2 × `dtype := .f64` + preactivation `algebraForAgg` | **yes** | **fixed by Task 4** | 4.2, M1/M2/M6 |
+| plain `.axiswise` arm: same 3 sites | **yes** | **fixed by Task 4** | 4.1, M3/M4/M7 |
 | `residualizeAssignment`'s default `algebraForAgg agg` | only through the arms above, which override it | **(c)** — overridden at every top-level call site after Task 4; scan call sites override it with `algebraForDest` already | 4.1–4.4 |
 | `.plain (.scatter …)` arm; `scatterFillOrFail`'s `.f32 _ => false` | no — Step 0c scatter arm | **(c)**, guarded by Step 0c. **F32-D** | existing CompileTest 15(c), FW2 |
 | `compileScan` base/step nonlinear result slots, literal `.f64` | no — Step 0c scan arm | **(c)**, guarded by Step 0c. **F32-C** must switch both to `destDtype` | existing CompileTest 15(d) |
-| `compileScan` `stateDtypes.getD si .f64` / `resolveSource` `getD … .f64` defaults | no | **(c)** totality formalities; the keys are validated before use | — |
+| `getD … { shape := #[], dtype := .f64 }` defaults: `compileScan`'s `stateDtypes`/`outerSigs`/`sigsNow`/`baseSigs`/`stepSigs` lookups, and `prepareEvalPlan`'s Step D external `sig.tensors.getD`, both `resolveSource` closures (plain and scatter arms), and scan-state publication `compiled.stateSigs.getD` | the plain `resolveSource` and the external lookup are reached by every f32 program | **(c)** totality formalities: every key is validated before use (the plain `resolveSource` by the `slotOf.contains` assertion above it), each `resolveSource` default contributes only `.shape`, and the external lookup publishes the validated `ts.dtype`, never the default | — (unreachable defaults) |
 | `checkNonlinIO`'s two `.f64` literals | yes | **fixed by Task 3** (`nonlinDtypeFor kind`) | 3.1, 3.2, M5 |
 | `floatOps`/`float32Ops` `decodeConst` cross-tag arms | yes (fail-loud) | **forbidden**, unchanged by this slice | not re-pinned here |
 
@@ -1019,7 +1031,9 @@ runs.
 **Files**
 
 - `leanncd/LeanNCD/Eval/Plan/Error.lean`: `unaryDomain32`; doc updates to
-  `unaryNotAdmittedForStorage` and `unaryNotAdmittedForDtype`, which are now producer-less.
+  `unaryNotAdmittedForStorage` and `unaryNotAdmittedForDtype`, which are now producer-less; and
+  `CapabilityError.unsupportedDtype`'s doc, whose Step 0c list names the retiring
+  `"{name}: f32 unary factor …"` context.
 - `leanncd/LeanNCD/Eval/Plan/Dense.lean`: `float32Ops.applyUnary`, and its doc comment.
 - `leanncd/LeanNCD/Eval/Plan/Check.lean`: delete the `.float32` inline-unary clause and its comment.
 - `leanncd/LeanNCD/Eval/Plan/Compile.lean`: `checkF32Stmt`'s factor loop and its doc comment.
@@ -1279,7 +1293,11 @@ Mutations:
 **Files**
 
 - `leanncd/LeanNCD/Eval/Plan/Compile.lean`: `checkF32Stmt`'s nonlinearity match, the Step D
-  `.pointwise`/`.axiswise` arms, and those arms' comments.
+  `.pointwise`/`.axiswise` arms, and those arms' comments. Also the "Binary32 source capability"
+  section doc, which names "F32-B nonlinearity/unary" as deferred, and `checkF32Stmt`'s own doc,
+  whose nonlinearity-before-factors order claim retires with the match.
+- `leanncd/LeanNCD/Eval/Plan/Error.lean`: `CapabilityError.unsupportedDtype`'s doc, whose Step 0c
+  list names the retiring `"{name}: f32 nonlinearity"` context.
 - `leanncd/test/Eval/Plan/CompileTest.lean`
 - `leanncd/test/Eval/Plan/NonlinCompileTest.lean`
 - `leanncd/test/Eval/Plan/Adapter32Test.lean`
@@ -1292,7 +1310,7 @@ Mutations:
    `checkF32Stmt`.
 2. Complete table B from the implemented source and record it in the task report.
 
-**Numbered fixture groups: 7; planned mutation cycles: 5**
+**Numbered fixture groups: 7; planned mutation cycles: 7**
 
 4.1 Donor: CompileTest fixture 15(a) (`f32AxiswiseProg`). Flip it to acceptance:
 - `storageKind .float32`;
@@ -1344,6 +1362,11 @@ Mutations:
 - **M5.** Select `algebraForAggF32 rhs.agg` unconditionally for the preactivation step. 4.4's
   binary64 twin fails under `checkAssign` as `algebraNotAdmitted`, so the change is not byte-safe
   for binary64.
+- **M6, M7** (two cycles). In the `.pointwise` arm, then independently the `.axiswise` arm, keep
+  the *internal preactivation* slot's literal `.f64` while the published slot and the algebra are
+  fixed. 4.2 (resp. 4.1) fails, predicted as `.invalidPlan (.assign (.mixedStorageKinds …))`. These
+  are the third site of each arm. Without them, two of the six hard-coded sites would be fixed by
+  Task 4 with no cycle showing that a fixture sees them.
 
 ### Task 5 — Capability documentation, final audit, and close-out
 
@@ -1392,9 +1415,9 @@ nonlinearity path and inline unary. Task 5 depends on Task 4.
 | 1 — math core | Is every binary64 formula bit-identical after the refactor, is every binary32 formula the same operation tree with native primitives and exact constants, and do the witnesses actually discriminate? | 8 | 16 | **High.** Numerical truthfulness, plus a refactor of shared binary64 code that has no independent oracle other than fixture 1.1 |
 | 2 — unary | Is the payload the gathered value's own bits at its own slot, and does a domain failure keep its warnings through the named runner? | 11 | 6 | Moderate. Small production diff, but four locator/payload fixtures, each with a distinguishing construction, plus the first `.execution` warnings pin |
 | 3 — checked nonlinearity | Can binary32 nonlinearity evidence reach a Float worker, or Float evidence a binary32 worker, and does each guard precede the store check? | 11 | 11 | **High.** New members of F32-A's §3.5 family; four order-pinning guard cycles; the table A deliverable |
-| 4 — compiler + named | Does every nonlinear arm stop hard-coding binary64 while staying byte-identical for binary64 programs? | 7 | 5 | Moderate–high. Table B's family, three end-to-end discriminators, one byte-identity pin |
+| 4 — compiler + named | Does every nonlinear arm stop hard-coding binary64 while staying byte-identical for binary64 programs? | 7 | 7 | Moderate–high. Table B's family, three end-to-end discriminators, one byte-identity pin |
 | 5 — docs/audit | Are the capability claims and the two audit tables re-derived from source, not restated? | 0 | 0 | Moderate. The sweep plus stale-value grep, the tier that has historically hidden stale claims |
-| **Total** | | **37** | **38** | |
+| **Total** | | **37** | **40** | |
 
 Task 1 is not split. Its binary64 refactor and binary32 instance are the same edit: the generic
 formula *is* both. A reviewer cannot approve one while rejecting the other. Task 2 is not merged
@@ -1515,7 +1538,7 @@ Done means all of the following are observed:
   fail as `storageKindMismatch` *before* any store check.
 - Every f32 scan and scatter form keeps its F32-A rejection. No f32 plan reaches a JAX candidate,
   and the legacy evaluator still refuses every f32 schedule.
-- All 37 fixture groups pass. All 38 mutation cycles record fail and restored-pass observations.
+- All 37 fixture groups pass. All 40 mutation cycles record fail and restored-pass observations.
   Every witness fixture's precondition holds on the build platform.
 - Tables A and B are complete with no pending cell. The documentation sweep is complete. Two final
   reviews are clean or adjudicated.
@@ -1528,8 +1551,7 @@ Stop and revise the plan, rather than improvise, if any of these happens:
   formula;
 - a binary32 nonlinearity needs a different operation tree from its binary64 counterpart to be
   reasonable (that is a semantic decision, not an implementation detail);
-- any path lets binary32 evidence into scan, scatter, or JAX code;
-- the user answers Q1 in favor of correctly rounded transcendentals.
+- any path lets binary32 evidence into scan, scatter, or JAX code.
 
 ## 8. Authoring verification record
 
@@ -1618,25 +1640,88 @@ which writes into gitignored `leanncd/spikes/` and removes the file afterwards.
   passages quoted in §2.5 and one constructor-equality `#guard`. The counterexample
   `.execution (.unaryDomain .log 0 0)` with 1 warning was observed through the real binary64
   pipeline.
-- **Not verified, and stated as such:**
-  - the Figueroa double-rounding citation is from memory; the measured zero counts are the
-    evidence relied on;
-  - no glibc or other libm was available, so "portable" means "every libm step at most 0.018 ulp
-    from representable", not "observed on a second platform".
+- **Not verified, and stated as such:** no glibc or other libm was available, so "portable" means
+  "every libm step at most 0.018 ulp (0.062 on the fold-order row) from representable", not
+  "observed on a second platform".
 
-## 9. Open questions for the user
+**Independent adversarial review (2026-09-23, before execution).** A second session re-measured
+the following against `main` at `f6b95e3` rather than trusting the draft. Each item's verdict is
+recorded here; the fixes it made are folded into the sections above.
 
-- **Q1 — native libm or correctly rounded binary32 transcendentals?** §1.1 chooses native `expf`,
-  `logf`, `sinf`, `cosf`, `tanhf`, and `powf`, following F32-A §1.3's wording. The measured
-  alternative, per-primitive binary64-then-narrow, is correctly rounded, more portable, and more
-  accurate, and is arguably still binary32 per primitive under F32-A §1.1. It differs from native
-  on up to 1.7% of inputs, by one ulp. Either is implementable, and only §3.1's record fields and
-  §3.2's function change. The choice also affects what F32-JAX can later claim against XLA.
-- **Q2 — fold the `f64` source keyword in?** F32-A §1.4 suggested it could ride along with F32-B.
-  This plan excludes it: it touches `Decl`/`TensorElementType` exhaustiveness (F32-A Task 1's
-  largest surface) and has no failure mode shared with this slice. It fits better as the first task
-  of the default-flip slice, or as its own tiny slice.
-- **Q3 — witness fixtures in the default build.** They are platform-specific by construction
-  (§3.6). This plan keeps them in the default `Tests` target, with a loud, self-explaining failure.
-  The alternative is a separate non-default target, at the cost of their protection not running on
-  a bare `lake build`.
+- **All six Lean blocks**, concatenated by the awk command above: compile, including the golden
+  `#guard`s and all five witness `run_cmd`s.
+- **libm counts, reproduced exactly.** The method is: for every 37th bit pattern `b` in
+  `[0x3d800000, 0x41800000)` (1,813,754 inputs), count the inputs where `Float32.op (ofBits b)`
+  and `(Float.op (ofBits b).toFloat).toFloat32` differ in bits, with `recip` as `ofBits 0x3f800000 /
+  x` against `1.0 / x.toFloat`. It prints `[10955, 265, 31283, 16528, 27882, 0, 0]` for
+  exp/log/sin/cos/tanh/sqrt/recip. A further stride-1009 sweep over the *whole* 32-bit pattern
+  space (about 4.26M inputs, including subnormals, negatives, and infinities) found zero
+  disagreements for `sqrt`, `1/x`, and binary `×`, `÷`, `+` against a hashed second operand.
+- **The double-rounding theorem** (§1.1), previously cited from memory, was checked against
+  Martin-Dorel, Melquiond, and Muller (BIT 2013) §1, which restates Figueroa's conditions. They
+  are p′ ≥ 2p+1 for +/−, p′ ≥ 2p for ×/÷, and p′ ≥ 2p+2 for √. The draft's single "2p+2 for all
+  five" is the strictest of the five and so is a correct sufficient condition. §1.1 now cites the
+  per-operation form.
+- **The margin argument** (§1.1) was corrected. The draft said "a libm with error below about 0.48
+  ulp must return the same value". Read as a bound on the *returned* result, that asks for better
+  than correct rounding. The bound on the returned result is 0.98 ulp; 0.48 ulp is the bound on a
+  libm's error *before* its final rounding. Both forms are now stated. Every margin in §2.6 was
+  recomputed (0.0069, 0.018, 0.018, 0.041, 0.062, log 0.032/0.032/0.024, and the rejected
+  candidate's 0.307), and so was every §2.6 native/narrowed bit pattern: the pointwise and axiswise
+  discriminators, both fold-order rows, the masked and 3×3 causal rows, the portable unary lanes,
+  the ±1-ulp difference on all twenty witness lanes, and the payload bits.
+- **Six hard-coded binary64 sites.** Reading `prepareEvalPlan` Step D confirms six: in each of the
+  `.pointwise` and `.axiswise` plain arms, two `dtype := .f64` pushes and one `.assign assignPlan`
+  that inherits `residualizeAssignment`'s `algebraForAgg`. No seventh reachable site exists. The
+  remaining `.f64` mentions in `Compile.lean` are the `getD` totality defaults, `algebraForAgg`'s
+  own definition, `scatterFillOrFail`'s `.f64` pattern arm, and `compileScan`'s literal result
+  slots. All of these are now classified in table B. Two sites had no mutation cycle, and Task 4
+  gained M6/M7 for them.
+- **The unguarded Float workers.** `runDensePointwise`/`runDenseAxiswise` open with
+  `validateNonlinSource` and carry no storage-kind guard. The 3.4/3.5 empty-store construction
+  violates the kind *and* the store at once, so it does distinguish guard-first from guard-later,
+  and M1–M4 relocate rather than delete. That is the same order-pinning shape as F32-A's fixtures
+  18/20/21/10.
+- **The three stale comments** (§2.5) are present as quoted. The binary64 counterexample was
+  reproduced: `E[i] := log(A[i + 1])`, `A = [1, 2, 4]`, run through `runPreparedDense`, gives
+  `.execution (.unaryDomain .log 0 0)` with one warning equal to `prepared.warnings`.
+- **Fixture 2.9's two subcases** (`"Y: f32 scatter"` and, reversed, `"S: f32 scan"`), fixture 1.6's
+  parity guard, and the three binary32 constants' bit patterns were observed. The corpus lines
+  printed 3832/3832 and 17/17 (8525 jobs).
+- **Paths, donors, and targets.** Every cited path exists, apart from the two new test files. Every
+  donor identifier in §8's list is defined in its file. Every §6.1/§6.2 build target has a module
+  file. No `File.lean:NNN` citation appears in either document.
+- **Doc sites added to Files lists.** Two doc sites name the retiring payloads but were in no
+  task's Files list: `CapabilityError.unsupportedDtype`'s doc in `Plan/Error.lean`, and the
+  "Binary32 source capability" section doc and `checkF32Stmt`'s doc in `Compile.lean`. They are now
+  in Tasks 2 and 4's lists; §6.3's grep would otherwise first catch them in Task 5.
+
+## 9. Decisions (closed 2026-09-23)
+
+The draft's three open questions were resolved by the user before execution. None is open, and
+none gates Task 1.
+
+- **D1 — native libm transcendentals, not correctly rounded binary64-then-narrow.** Transcendentals
+  are the platform's native `expf`, `logf`, `sinf`, `cosf`, `tanhf`, and `powf` (§1.1). The
+  rejected alternative, per-primitive binary64-then-narrow, is correctly rounded and more portable,
+  and it differs from native on up to 1.7% of inputs by one ulp (§1.1's table). Rationale:
+  - native routines match real hardware and PyTorch binary32 execution, neither of which uses
+    correctly rounded double-then-round for transcendentals;
+  - they realize F32-A §1.1's "independently rounded binary32 result at every primitive
+    operation" with the actual runtime rather than a simulation;
+  - they keep a later F32-JAX slice comparable with XLA's own native float32 operations.
+
+  Consequence: a lone transcendental's bits are a platform libm fact, pinned only by the relational
+  witness fixtures (§3.6). That is an accepted property, not a defect.
+- **D2 — the `f64` source keyword is not folded in.** F32-A §1.4 suggested it could ride along with
+  F32-B. It touches `Decl`/`TensorElementType` exhaustiveness (F32-A Task 1's largest surface) and
+  shares no failure mode with this slice. It belongs to the first task of the default-flip slice,
+  or to its own tiny slice (§1.3).
+- **D3 — witness fixtures stay in the default `Tests` target.** They are platform-specific by
+  construction (§3.6). A platform change therefore produces a loud, self-explaining failure in a
+  bare `lake build`, naming the lane set that stopped separating native from narrowed. That
+  satisfies the repository's fail-loud convention (root `CLAUDE.md` Rule 12) better than moving
+  them to a non-default target. There, a platform change would silently remove the protection,
+  because nobody would remember to run it. This repository's slices are reviewed by a person, not
+  auto-merged by CI, so someone will read the failure. The remedy on such a failure is §3.6's: re-run
+  the §8 witness search for new lanes, and never weaken the precondition.
