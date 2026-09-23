@@ -10,7 +10,8 @@ fail/restored-pass observation, the targeted and full build results, and the fin
 Read Sections 1.1 and 1.3 before proposing any follow-on binary32 or complex work: what `f32` *means*
 here (independently rounded binary32 at every primitive operation, never a binary64 run with a
 narrowed output) and what is deliberately **not** claimed (F32-B/C/D/E/JAX, and complex) are the two
-things most likely to be misread from a summary.
+things most likely to be misread from a summary. Section 1.4 records the recommended order for those
+follow-on slices and what making `f32` the default would require.
 
 This was one reviewable vertical slice and the first consumer of an extensible dtype foundation: a
 source program can declare a homogeneous
@@ -135,6 +136,57 @@ Dynamic/value-dependent shapes and `recurMorphism`/`.scanPre` remain out of scop
 dtype. No plan codec exists, so there is no f32 wire-format work in this slice. The separate
 Acset/Bridge route serializes and realizes the categorical presentation, not `EvalPlan` runtime
 buffers; no claim of binary32 execution is added there.
+
+### 1.4 Recommended follow-on order (added 2026-09-23, after this slice merged)
+
+Section 1.3 lists the required slices but fixes no order. This is the recommended order, with the
+reason for each position. It is a recommendation, not a measured result: re-check each "depends
+on" claim against the code when that slice's plan is written.
+
+1. **F32-B first.** It unlocks the most real models: softmax, relu, and the other pointwise and
+   axiswise functions all live here. The TL attention example `softmax(where s ≤ q)(Q[q, d] · K[s,
+   d])` cannot run in f32 without it. It depends on no other follow-on slice, and its hard part is
+   self-contained: native `Float32` transcendentals, a binary32 domain-error payload, and separate
+   numerical fixtures for each approximation.
+2. **F32-D second.** Also independent. It needs a binary32 scatter oracle independent of the legacy
+   binary64 scatter evaluator, plus native fill and placement execution. B and D can swap freely;
+   put D first only if scatter/GNN-style models matter more than attention and MLPs.
+3. **F32-C third.** It builds on both:
+   - scans admit nonlinear bodies, so an f32 scan with a nonlinear body needs F32-B;
+   - scan-local scatter probably reuses F32-D's fill and placement write path. This is unverified;
+     confirm it when planning F32-C.
+
+   It is also the largest risk surface (block and scan stores, snapshots, base overlays, state
+   writes, histories). Expect it to split into two slices, as binary64 scatter did.
+4. **F32-JAX: independent, schedule by demand.** It only has to cover what the binary64 JAX backend
+   covers, which is context-free assignments, and that already runs in f32. So it does not wait on
+   B, C, or D. Start it with a short feasibility spike: bit-exact binary32 agreement with XLA is
+   uncertain, because XLA's reduction order and fused multiply-add can differ from the checked
+   backend's left fold. If bit-exact agreement is unattainable, the evidence-label design changes.
+5. **Making `f32` the default comes last**, after B, C, D, and F32-JAX. Flipping the default is
+   mechanically small: plain `tensor`, `linear`, and undeclared names map to binary64 in
+   `storageConstraintOfDecl` (`DSL/Ast.lean`) and `dtypeOfDecl` (`Eval/Plan/Signature.lean`). But
+   flipping it before f32 covers everything f64 covers is a regression. Every existing program that
+   uses a nonlinearity, a unary factor, a scan, a scatter, or JAX would be *rejected*
+   (`unsupportedDtype`), not run in f64. Once coverage matches, the flip needs:
+   - **an `f64` spelling.** `tl_elem_type` has only `f32`, so without it a flipped default leaves
+     binary64 unspellable. This is one grammar rule, one elaboration arm, and one
+     `TensorElementType` constructor. It is harmless on its own, so it may be folded into F32-B's
+     plan to make the eventual flip a single-line change;
+   - **a typed `linear` form.** `linear` is hard-wired to f64 and has no `linear f32`;
+   - **undeclared names following the default.** Otherwise every program with undeclared tensors
+     (like `Q` and `K` in the example above) becomes a mixed-precision rejection;
+   - **a test and reference-data migration.** This is the real cost. The 3,832-case and 17-case
+     differential corpora are binary64 reference gates, and the property oracles, the Portfolio
+     suite, and the route-fragment corpus all assume Float values. Each one either writes `f64`
+     explicitly, so it stays an f64 regression gate, or gets new binary32 reference values from an
+     independent oracle, never by narrowing binary64 results;
+   - **a decision for the paths outside the checked backend.** The legacy evaluator, the Python
+     bridge, and the tsncd/pyncd JSON path all assume f64 today.
+
+Resulting order: **F32-B (optionally with the `f64` keyword) → F32-D → F32-C → F32-JAX → a
+default-flip-and-migration slice.** F32-E stays contingent on the single-real-precision invariant
+changing.
 
 ## 2. Re-derived current boundary
 
