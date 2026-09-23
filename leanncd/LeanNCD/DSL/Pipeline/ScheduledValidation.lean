@@ -65,8 +65,8 @@ def orderedExternalNames (stmts : List ScanStmt) : List String :=
 /-! ## Schedule-wide storage-kind derivation
 
 One scan, in USED-NAME order, shared by every consumer that must answer "what precision is this
-whole schedule?" — `Eval.Plan.prepareEvalPlan` (which rejects a mixed schedule, and temporarily
-rejects every homogeneous-f32 one) and `Eval.evalScheduled` (which rejects every f32 schedule,
+whole schedule?" — `Eval.Plan.prepareEvalPlan` (which rejects a mixed schedule) and
+`Eval.evalScheduled` (which rejects every f32 schedule,
 since the reference workers are `Float`/binary64 throughout). -/
 
 /-- The tensor names a schedule USES, in the order the storage scan visits them: external reads

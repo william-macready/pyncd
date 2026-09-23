@@ -51,26 +51,36 @@ already evaluates most of the constructs listed here, so nearly every row is a *
 
 Every syntactically visible rejection the backend can make is one constructor of the closed enum
 [`CapabilityError`](../leanncd/LeanNCD/Eval/Plan/Error.lean). There is no `unsupported : String`
-escape hatch, so the enum is the whole boundary. It is thrown from **three** sites in
-[`Compile.lean`](../leanncd/LeanNCD/Eval/Plan/Compile.lean), all inside `prepareEvalPlan` and all
-dtype-ordered ahead of plan construction:
+escape hatch, so the enum is the whole boundary. It is thrown from inside `prepareEvalPlan`
+([`Compile.lean`](../leanncd/LeanNCD/Eval/Plan/Compile.lean)) at **three pre-construction sites**,
+all ahead of Step D's plan construction, **plus one live site inside Step D itself**:
 
-1. `capabilityPreflight` — the dtype-blind pass (decls in order, then statements in order, first
-   failure wins). This was the only site until the f32 slice.
+1. `capabilityPreflight` (Step A) — the dtype-blind pass (decls in order, then statements in order,
+   first failure wins). This was the only pre-construction site until the f32 slice.
 2. `prepareEvalPlan`'s Step 0b storage derivation — `scheduleStorageKind` disagreement, i.e. a
    schedule mixing `f32` and `f64` real tensors. Not part of `capabilityPreflight` because that
    function is dtype-blind by construction; only Step 0b knows the schedule's derived storage kind.
 3. `f32CapabilityCheck` (Step 0c) — the binary32 source fragment, run for a `.float32` schedule only
    and placed before `capabilityPreflight` so an f32 program outside the admitted fragment reports
    its own f32 reason rather than a generic capability one.
+4. **Step D, `scatterFillOrFail`** — a top-level scatter whose source-level `fill` is not the
+   destination algebra's own reduction identity, which needs the algebra Step D selects and so
+   cannot be decided in preflight. Live: a top-level `maxreduce`/`minreduce` scatter passes
+   `capabilityPreflight` and is rejected here as `scatterOptsNotAdmitted "{nm}: fill"` (its identity
+   is `∓∞`, which no `Int` fill denotes).
+
+Step D also has **defensive** `CapabilityError` throws that preflight makes unreachable —
+`freeUidOrFail` and `assignPartsOrFail` in the plain-statement branch, `scanPartsOrFail` inside
+`compileScan`, and the `.scanPre` arm (`recurrenceOrCallback`). They add no producer family: each
+re-raises a constructor site 1 already produces for the same construct.
 
 This document is a prose reproduction of that enum and will decay exactly as any carried-forward
-claim does. **Before trusting a row, re-derive it against those three sites on the current branch**
+claim does. **Before trusting a row, re-derive it against those sites on the current branch**
 — read the `throw` sites, do not assume this table is current. Two rows of the sibling
 `wave_f_capability_manifest.md` table went stale this way when the nonlinearity thread closed
 nonlinear scans and updated the proposal but not the manifest's copy.
 
-Last re-derived against the tree: **2026-09-21** (f32 binary32 assignment execution).
+Last re-derived against the tree: **2026-09-23** (f32 slice final-review fix wave; the 2026-09-21 counts below were re-checked and are unchanged, and the Step D site above was added).
 
 Static throw-site inspection at that date finds **10 live producer families** —
 `scatterOrAffineLhs`, `unsupportedLhsSlot`, `unsupportedNonlin`, `multiAxisScatterLhs`,

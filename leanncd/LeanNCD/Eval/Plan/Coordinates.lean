@@ -4,7 +4,7 @@ import LeanNCD.Eval.Plan.Kernel
 # Wave C shared row-major coordinate primitives (C2)
 
 Row-major coordinate enumeration, affine application, flattening, and the per-dimension bounds
-predicate `Dense.lean`'s `gatherFactor` uses to gather one factor. Extracted from `Dense.lean`
+predicate `Dense.lean`'s `gatherFactorWith` uses to gather one factor. Extracted from `Dense.lean`
 unchanged so a future experimental backend can reuse these exact equations without introducing any
 JAX/lookup-table/source-name/codegen concept into this production module.
 -/

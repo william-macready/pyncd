@@ -339,9 +339,10 @@ from source syntax; that is Task 5.
       diagnostic. `checkScatter`'s docstring names this as the one case-audit cell it leaves to this
       worker, and rejecting it here — statically or at runtime — would refuse programs the reference
       accepts. The test is `inBoundsPerDim` (`Coordinates.lean`), the same per-dimension predicate
-      `gatherFactor` uses on the read side, and it runs BEFORE `flatIndex`: a flat-offset test can
-      alias distinct invalid coordinates onto a valid address (proposal §8.3). So `Int.toNat` on the
-      destination coordinate is never lossy here — every component is already known non-negative.
+      `gatherFactorWith` uses on the read side, and it runs BEFORE `flatIndex`: a flat-offset test
+      can alias distinct invalid coordinates onto a valid address (proposal §8.3). So `Int.toNat` on
+      the destination coordinate is never lossy here — every component is already known
+      non-negative.
     * **The `.toNat` extent degeneracies reach this worker as an empty destination, not as an
       error.** A zero or negative placement coefficient makes `LHSSlot.outExtent` clamp that
       dimension's extent to `0` (`ScatterCheckTest` pins both), and `checkScatter` admits the plan

@@ -170,8 +170,8 @@ def checkScanScatterOpts (stmtName : String) (opts : ScatterOpts) :
   checkScatterReduce stmtName opts.reduce
 
 /-- `.unaryFn` is now structurally admitted (unary-factor thread): `residualizeAssignment` lowers it
-    to a `ReadPlan` carrying `unary := some op`, and Dense's `gatherFactor` applies the function after
-    the out-of-bounds pad. This diverges from C0's frozen `classifyFactor`
+    to a `ReadPlan` carrying `unary := some op`, and Dense's `gatherFactorWith` applies the function
+    after the out-of-bounds pad. This diverges from C0's frozen `classifyFactor`
     (`test/Eval/Plan/ContractTest.lean`), which still classifies `.unaryFn` as `.rejected
     "unaryFactor"` — the same deliberate divergence `checkNonlinTopLevel`/`checkAggOp` carry for the
     constructs their threads admitted. The `unaryFactor` `CapabilityError` constructor is retained
@@ -609,18 +609,20 @@ private def scatterPlacementOrFail (srcUids : List UID) (srcShape : Array Nat)
 
     Admitted: `agg = .sum` with `fill = 0` (real sum-product's identity IS `0.0`, which is exactly
     what `lowerArith` hard-codes), and a predicate destination with `fill = 0` (the Boolean identity
-    `false` decodes to `0.0`, `Dense.constFloat`). Rejected: a `maxreduce`/`minreduce` scatter, whose
-    identity is `∓∞` and which an `Int` fill cannot denote at all — so the rejection is not a gap to
-    close later but the honest report that no admissible fill exists for one. Comparison is on the
-    stored BITS, not on decoded `Float`s, so it cannot be perturbed by float equality's own
-    conventions. -/
+    `false` decodes to `0.0`, `Dense.lean`'s `floatOps.decodeConst`). Rejected: a
+    `maxreduce`/`minreduce` scatter, whose identity is `∓∞` and which an `Int` fill cannot denote at
+    all — so the rejection is not a gap to close later but the honest report that no admissible fill
+    exists for one. Comparison is on the stored BITS, not on decoded `Float`s, so it cannot be
+    perturbed by float equality's own conventions. -/
 private def scatterFillOrFail (context : String) (algebra : ContractionAlgebra) (fill : Int) :
     Except CapabilityError ScalarConst :=
   let identity := algebra.reduceId
   let agrees : Bool := match identity with
     | .f64 bits => bits == Float.toBits (Float.ofInt fill)
     | .bool b   => fill == (if b then 1 else 0)
-    | .f32 _    => false   -- unreachable: `f32` is `dtypeNotAdmitted` at the destination already
+    -- unreachable: only a `.float32` schedule selects an f32 algebra, and Step 0c (`checkF32Stmt`)
+    -- refuses every f32 top-level scatter as `unsupportedDtype "{nm}: f32 scatter"` before Step D
+    | .f32 _    => false
   if agrees then pure identity else throw (.scatterOptsNotAdmitted context)
 
 /-- First UID that recurs later in the list. Mirrors `Prepared.lean`'s `firstDuplicateName` and
@@ -837,7 +839,8 @@ private def residualizeAssignment (sizes : HashMap UID Nat) (warnings : List Eva
             (.iverson (lowerFactorPredicate pins basisUids pred))
       | .unaryFn op name idxs =>
           -- Reads exactly like `.read name idxs` (same slot resolution, same affine rows, same
-          -- zero-pad), then carries the unary function so `gatherFactor` applies it after the pad.
+          -- zero-pad), then carries the unary function so `gatherFactorWith` applies it after the
+          -- pad.
           let (sourceSlot, sourceShape) := resolveSource name
           let rows := idxs.map (fun e => substitutePins pins basisUids (idxToRow basisUids e))
           let coeffs : Array (Array Int) := (rows.map (fun r => r.1.toArray)).toArray

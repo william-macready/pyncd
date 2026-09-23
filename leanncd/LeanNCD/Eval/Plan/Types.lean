@@ -59,7 +59,7 @@ inductive OutOfBoundsPolicy
     selects the real sum-product plus the two tropical semirings `AggOp.max`/`.min` select, all of
     whose constants (`factorId`, `reduceId`) are `.f64 _`, and a predicate destination selects
     `admittedAlgebraBool`, whose constants are `.bool true`/`.bool false` (decoded to `1.0`/`0.0` by
-    `Dense.constFloat`).
+    `Dense.lean`'s `floatOps.decodeConst`).
 
     `.f32` is a live tag since the f32 slice's Task 2: `admittedAlgebrasF32` (`Check.lean`) carries
     the three binary32 identities `0x3f800000`/`0x00000000`/`0xff800000`/`0x7f800000`, and

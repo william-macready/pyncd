@@ -4,7 +4,7 @@ import LeanNCD.Eval.Plan.Coordinates
 # Wave C shared coordinate primitives tests
 
 Covers `allCoords`, `applyAffine`, `flatIndex`, and `inBoundsPerDim` (`Coordinates.lean`)
-independently of `Dense.lean`'s `gatherFactor`, which merely calls them.
+independently of `Dense.lean`'s `gatherFactorWith`, which merely calls them.
 -/
 
 namespace LeanNCD.Eval.Plan.CoordinatesTest

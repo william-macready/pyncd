@@ -117,7 +117,11 @@ There is a **second, parallel carrier**: `runPreparedDense32`
 (`Array Float32`), returning an `EvalReport32`. The two are siblings, never a fallback for each
 other: every one of these six entry points checks the plan's `storageKind` before touching a buffer
 and refuses evidence built for the other carrier (`storageKindMismatch`), each guard placed ahead of
-its function's own shape, arity, and binding checks. `runDensePlan32` covers assignment steps only —
+its function's own shape, storage, and arity checks. It is NOT ahead of binding validation
+everywhere: `pack`/`unpack`/`pack32`/`unpack32` run `checkPreparedBindings` first and then enter the
+shared carrier-polymorphic core (`packBodyOf`/`unpackBodyOf`), whose first statement is the guard;
+only the two composite runners (`runPreparedDense`/`runPreparedDense32`, through
+`runPreparedDenseOf`) check storage kind before `checkPreparedBindings`. `runDensePlan32` covers assignment steps only —
 the binary32 slice is scoped to the scan-free assignment fragment, and the other step kinds are
 refused at compile tier before any plan exists. The container types
 (`DenseTensorOf`/`NamedDenseEnvOf`/`EvalReportOf`) are generic in the element type with the original

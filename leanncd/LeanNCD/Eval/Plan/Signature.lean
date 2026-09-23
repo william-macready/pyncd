@@ -43,11 +43,19 @@ def InputSignature.ofDenseInputs (inputs : HashMap String DenseTensor) : InputSi
     merely fail-loud: a homogeneous-f32 schedule compiles through `checkAssignF32` to `.float32`
     checked evidence, and this is the rule that gives each of its names an `f32` signature and its
     destinations an `f32` algebra. The binary64 entries (`dtypeAdmitted`, `checkAssign`, and every
-    Float worker/adapter door) still reject `.f32` outright. -/
+    Float worker/adapter door) still reject `.f32` outright.
+
+    Exhaustive, with no wildcard arm, exactly like `storageConstraintOfDecl` (`DSL/Ast.lean`): a
+    future `TensorElementType` or `Decl` constructor must fail to compile here rather than silently
+    classify as `f64`. -/
 def dtypeOfDecl : Option Decl → ScalarDType
   | some (.typedTensor .f32 _ _) => .f32
   | some (.predicate _ _) => .bool
-  | _ => .f64
+  | some (.tensor _ _) => .f64
+  | some (.linear _ _ _) => .f64
+  | some (.axis _ _) => .f64
+  | some (.iter _ _) => .f64
+  | none => .f64
 
 /-- Rebuild the declaration environment a declaration-aware constructor answers every question
     against, or fail loud with `buildDeclEnv`'s own `CompileError` wrapped in the constructor's error

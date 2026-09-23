@@ -56,12 +56,14 @@ def admittedAlgebraMin : ContractionAlgebra :=
     with identity `false` disjoins both a term's contracted coordinates and the completed terms,
     mirroring the reference `Combine.bool` exactly.
 
-    `.bool` here is a SEMANTIC tag over Float-backed storage, not a native carrier: `Dense.constFloat`
-    decodes `.bool true` to `1.0` and `.bool false` to `0.0`, and `applyOp` runs the same Float
-    `min`/`max` the reference evaluator does. Runtime values are therefore NOT restricted to `0.0`/
-    `1.0`; a non-binary Float retains literal `min`/`max` behavior rather than being coerced or
-    rejected. The out-of-bounds `zeroPad` policy needs no Boolean special case: a padded read is a
-    factor value of `0.0` = false, which is exactly what `min` should propagate. -/
+    `.bool` here is a SEMANTIC tag over whichever real carrier the graph's storage kind selects, not
+    a native carrier of its own — both graphs' tables (`admittedAlgebrasFor`,
+    `admittedAlgebrasForF32`) use this one algebra for a `bool` destination. Each carrier's private
+    scalar runtime (`floatOps`/`float32Ops`, `Dense.lean`) decodes `.bool true`/`.bool false` to its
+    own exact one/zero and runs its own `min`/`max` over them. Runtime values are therefore NOT
+    restricted to `0`/`1`; a non-binary value retains literal `min`/`max` behavior rather than being
+    coerced or rejected. The out-of-bounds `zeroPad` policy needs no Boolean special case: a padded
+    read is a factor value of `0.0` = false, which is exactly what `min` should propagate. -/
 def admittedAlgebraBool : ContractionAlgebra :=
   { factorOp := .min, factorId := .bool true
   , reduceOp := .max, reduceId := .bool false }

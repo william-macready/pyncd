@@ -592,7 +592,7 @@ def mixedRadixDomainSize (D : Array Nat) : Nat := D.foldl (· * ·) 1
     `flatIndex [] [] = 0`, so a fully-pinned/advancing write (no free positions, scalar output)
     behaves exactly as a single-coordinate commit.
 
-    **Bounds obligation this relies on.** Unlike `gatherFactor` (`Dense.lean`) and
+    **Bounds obligation this relies on.** Unlike `gatherFactorWith` (`Dense.lean`) and
     `Executable.lean`, this function does NOT call `inBoundsPerDim` before `flatIndex`: it performs
     no bounds recovery, trusting `checkScanPlan` the same way the base/step phases of
     `runDenseScan` below trust it.

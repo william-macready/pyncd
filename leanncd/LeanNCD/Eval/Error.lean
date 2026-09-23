@@ -207,10 +207,10 @@ inductive UnaryDomainOp
 /-- The single, context-free home for every unary transcendental's math and domain partiality
     (`log`/`sqrt`/`recip` fail loud; `exp`/`sin`/`cos` are total). Both evaluators call this and wrap
     the returned `UnaryDomainOp` into their own error channel — the reference `applyUnaryFn` below
-    re-attaches its `EvalContext` (`EvalError.unaryDomain`), the checked-plan `gatherFactor`
-    (`Eval/Plan/Dense.lean`) attaches a positional slot (`PositionalInputError.unaryDomain`). Adding a
-    future unary operator is one `UnaryOp` constructor and one arm here; both evaluators inherit it
-    and parity holds by construction. -/
+    re-attaches its `EvalContext` (`EvalError.unaryDomain`), the checked-plan `gatherFactorWith`
+    (`Eval/Plan/Dense.lean`, through the binary64 `floatOps.applyUnary`) attaches a positional slot
+    (`PositionalInputError.unaryDomain`). Adding a future unary operator is one `UnaryOp`
+    constructor and one arm here; both evaluators inherit it and parity holds by construction. -/
 def _root_.LeanNCD.UnaryOp.applyChecked : LeanNCD.UnaryOp → Float → Except UnaryDomainOp Float
   | .log,   v => if v ≤ 0.0 then .error .log else .ok (Float.log v)
   | .sqrt,  v => if v < 0.0 then .error .sqrt else .ok (Float.sqrt v)

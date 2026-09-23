@@ -661,8 +661,8 @@ def minAlgebraAssign : AssignPlan := { idAssign with algebra := admittedAlgebraM
   (einsumOutcome idSigs minAlgebraAssign #[#[0, 0]] #[0])
 
 /-! ### Fixture 4 (validator half) — an inline unary read (`ReadPlan.unary`) is a located rejection.
-`checkAssign` and Dense both implement it (`gatherFactor` applies the function after the OOB pad);
-neither JAX lowering does. -/
+`checkAssign` and Dense both implement it (`gatherFactorWith` applies the function after the OOB
+pad); neither JAX lowering does. -/
 
 def unaryRead : ReadPlan := { idRead with unary := some .exp }
 

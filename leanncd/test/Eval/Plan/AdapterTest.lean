@@ -728,7 +728,7 @@ def runErr (p : Option PreparedPlan) (env : HashMap String DenseTensor) : Option
                | .ok _ => false)
   | none => false)
 
-/-! ## f32 slice final-review fix wave, fixture 22: the generic cores refuse a mismatched carrier
+/-! ## f32 slice final-review fix wave, fixture FW1: the generic cores refuse a mismatched carrier
 
 The whole-branch review's probe. `packBodyOf`/`unpackBodyOf`/`runPreparedDenseOf` are public and
 carrier-polymorphic, so a caller can skip `pack`/`unpack`/`runPreparedDense` and instantiate a core
@@ -781,19 +781,20 @@ def packBodyFloat (p : Option PreparedPlan) :
 def runBodyFloat (p : Option PreparedPlan) : Option (Except PlanRunFailure EvalReport) :=
   p.map (fun p => runPreparedDenseOf (α := Float) runDensePlan p f32Env)
 
--- Fixture 22a (the probe itself): `unpackBodyOf` at `α := Float` on the `.float32` plan reports the
--- storage kind instead of publishing binary64 buffers under `Y`. `run_cmd`, so a regression NAMES
--- what it published.
+-- Fixture FW1a (the probe itself): `unpackBodyOf` at `α := Float` on the `.float32` plan reports
+-- the storage kind instead of publishing binary64 buffers under `Y`. `run_cmd`, so a regression
+-- NAMES what it published.
 run_cmd do
   match unpackBodyFloat f32Prepared with
   | some (.error (.storageKindMismatch .float64 .float32)) => pure ()
   | some (.ok env) =>
-      throwError s!"fixture 22a: unpackBodyOf at α := Float accepted the .float32 plan and \
+      throwError s!"fixture FW1a: unpackBodyOf at α := Float accepted the .float32 plan and \
 published Y = {repr ((env["Y"]?).map (·.data))}"
-  | some (.error c) => throwError s!"fixture 22a: wrong cause {repr c}"
-  | none => throwError "fixture 22a: donor plan or its bindings did not build"
+  | some (.error c) => throwError s!"fixture FW1a: wrong cause {repr c}"
+  | none => throwError "fixture FW1a: donor plan or its bindings did not build"
 
--- Fixture 22b/22c: the other two cores, same carrier mismatch, same payload the named entries give.
+-- Fixture FW1b/FW1c: the other two cores, same carrier mismatch, same payload the named entries
+-- give.
 #guard (match packBodyFloat f32Prepared with
   | some (.error e) => e == .storageKindMismatch .float64 .float32
   | _ => false)

@@ -56,8 +56,11 @@ def f32IdentityStore : Array DenseTensor32 :=
   #[ t32 [3] #[0x00000000, 0x80000000, 0x00000001], t32 [3] #[] ]
 
 -- `+0` stays `+0`; the least positive subnormal (bits `1`) survives the seeded identity assignment
--- exactly, which is the real content of the third lane — a worker that flushed subnormals or routed
--- the value through any wider carrier and back would not return bits `1`.
+-- exactly, which is the real content of the third lane — a worker that flushed subnormals to zero
+-- would return bits `0` here. This lane does NOT catch a widen-to-binary64-and-narrow-back worker:
+-- a binary32 subnormal widens exactly and narrows back to itself
+-- (`(Float32.ofBits 1).toFloat.toFloat32.toBits = 1`), so that shortcut is left to fixture 2's
+-- reduction, where the intermediate rounding differs.
 --
 -- The `-0` lane returns `+0`, and that is CORRECT rather than a lost sign: the sum-product algebra
 -- seeds its reduction and term folds with `+0` (`admittedAlgebraF32.reduceId = .f32 0x00000000`),
@@ -66,9 +69,11 @@ def f32IdentityStore : Array DenseTensor32 :=
 -- the CONSTANT `-0` is carried bit-exactly.
 #guard bitsOf (run32 identitySigs32 f32Identity f32IdentityStore) == some #[0, 0, 1]
 
--- Native `.f32` constant decoding is bit-preserving, negative zero included: this is the primitive
--- `float32Ops.decodeConst` applies to every `ScalarConst.f32`, pinned on its own because the seeded
--- assignment above cannot observe it. A decimal-literal round trip would not pin it.
+-- `Float32.ofBits`/`toBits` round-trips negative zero bit-exactly. That is a fact about the Lean
+-- primitive `float32Ops.decodeConst` calls for a `ScalarConst.f32`, not a test of `decodeConst`
+-- itself (which is private, and which the seeded assignment above cannot observe for `-0`). The
+-- decoder's own use is observed through the algebra identities in fixtures 5–8, whose outputs are
+-- exactly the decoded `factorId`/`reduceId` constants.
 #guard (Float32.ofBits 0x80000000).toBits == 0x80000000
 
 -- ... and this is why every assertion in this file goes through `toBits`: IEEE comparison cannot

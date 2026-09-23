@@ -948,6 +948,47 @@ def f32SourceOrderProg : ScheduledProgram :=
 #guard causeOf (prepareEvalPlan f32SourceOrderProg f32IdentitySig) ==
   some { cause := .capability (.unsupportedDtype "Y: f32 unary factor 0:0"), warnings := [] }
 
+/-! #### Fixture FW2 (final-review fix wave): Steps 0c and 0b run BEFORE Step A
+
+`prepareEvalPlan` promises that an f32 program reports its OWN f32 reason (Step 0c) and a mixed one
+its mixed-storage reason (Step 0b) ahead of the dtype-blind `capabilityPreflight` (Step A). Fixtures
+14/15/17 cannot observe that order: each of their programs is one `capabilityPreflight` admits, so
+Step A would have no competing answer. This one gives it one — fixture 15(c)'s f32 scatter with a
+`relu` on it, which Step A rejects on its own as a scatter nonlinearity. -/
+
+def f32ScatterReluProg : ScheduledProgram :=
+  { f32IdentitySched with
+    stmts := [.plain (.scatter "Y" [.affine (.scale 2 axI1)]
+      { body := { terms := [{ factors := [.read "X" [.axis axI1]] }] }, nonlin := .pointwise .relu }
+      { fill := 0, reduce := .rejectCollisions })] }
+
+-- The competing answer is real: Step A ALONE rejects this program, with a different payload.
+#guard errOf (capabilityPreflight f32ScatterReluProg)
+  == some (.unsupportedNonlin "Y: scatter nonlinearity")
+
+-- FW2a: through `prepareEvalPlan` the Step 0c payload arrives instead. `run_cmd`, so a reordering
+-- NAMES the capability cause it reported instead.
+run_cmd do
+  match prepareEvalPlan f32ScatterReluProg f32IdentitySig with
+  | .error { cause := .capability (.unsupportedDtype "Y: f32 scatter"), warnings := [] } => pure ()
+  | .error { cause := .capability c, .. } =>
+      throwError s!"fixture FW2a: Step 0c did not precede Step A — got capability {repr c}"
+  | .error _ => throwError "fixture FW2a: rejected, but not at the capability tier"
+  | .ok _ => throwError "fixture FW2a: accepted an f32 scatter"
+
+-- FW2b: the same statement in a MIXED schedule (`X` ordinary, `Y` f32 — fixture 12's declaration
+-- set). Step 0c never runs for a non-`.float32` schedule, so this pins Step 0b ahead of Step A.
+def f32MixedScatterReluProg : ScheduledProgram :=
+  { f32ScatterReluProg with
+    decls := [.axis axI1 (some 3), .typedTensor .f32 "Y" [axI1], .tensor "X" [axI1]] }
+
+#guard errOf (capabilityPreflight f32MixedScatterReluProg)
+  == some (.unsupportedNonlin "Y: scatter nonlinearity")
+
+#guard causeOf (prepareEvalPlan f32MixedScatterReluProg identitySig) ==
+  some { cause := .capability (.unsupportedDtype "Y: mixed f32/f64 storage in one schedule")
+       , warnings := [] }
+
 -- `prepareEvalPlan`'s OWN capability-rejection path: Step A runs `capabilityPreflight` before
 -- shape inference, so an axis-less `.scan` statement is rejected with a `.capability`-tagged
 -- `PlanCompileFailure` and `warnings := []` (Step A fails before any warnings could accrue) — the

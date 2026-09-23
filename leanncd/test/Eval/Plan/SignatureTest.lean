@@ -409,8 +409,8 @@ private def soleInput32 : HashMap String DenseTensor32 :=
 #guard match InputSignature.ofDenseInputs32ForDecls [.tensor "X" []] soleInput32 with
   | .error (.storageKindMismatch "X" .float32 .float64) => true
   | _ => false
--- (c) the two guards above are the ONLY way in: the guardless shared traversal behind both
--- constructors is private (final-review fix wave). While public, `signatureOfDenseInputs` at
+-- Fixture FW3 (final-review fix wave): the two guards above are the ONLY way in — the guardless
+-- shared traversal behind both constructors is private. While public, `signatureOfDenseInputs` at
 -- `α := Float` over `tensor f32 X` returned an `.f32` signature for `Array Float` buffers — a door
 -- around (a). `#check_failure` errors on SUCCESS, so re-exporting it fails this file.
 #check_failure signatureOfDenseInputs

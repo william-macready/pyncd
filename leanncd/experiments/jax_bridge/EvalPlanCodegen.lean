@@ -456,11 +456,11 @@ def renderCompileCause : PlanCompileCause → String
       (`inBoundsPerDim`), or the placeholder `0` otherwise; and
     * a parallel validity mask, `true` exactly when the entry is in range.
 
-    Composes only the shared coordinate primitives, byte-for-byte the pullback `Dense.gatherFactor`
-    computes — the per-dimension bounds test happens BEFORE flattening, so a distinct invalid
-    coordinate can never alias a valid flat address (proposal §8.3). The runtime gathers only
-    through safe indices and re-zeros via the mask, so it never depends on JAX's own out-of-bounds
-    gather (which may clamp rather than zero-pad). -/
+    Composes only the shared coordinate primitives, byte-for-byte the pullback
+    `Dense.gatherFactorWith` computes — the per-dimension bounds test happens BEFORE flattening, so
+    a distinct invalid coordinate can never alias a valid flat address (proposal §8.3). The runtime
+    gathers only through safe indices and re-zeros via the mask, so it never depends on JAX's own
+    out-of-bounds gather (which may clamp rather than zero-pad). -/
 def buildFactorTable (iterationShape : Array Nat) (f : ReadPlan) : Array Nat × Array Bool :=
   (allCoords iterationShape.toList).foldl
     (fun (acc : Array Nat × Array Bool) iter =>

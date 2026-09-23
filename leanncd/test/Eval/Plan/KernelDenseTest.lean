@@ -77,12 +77,13 @@ def storeNegB : Array DenseTensor :=
 -- Out-of-bounds interaction with a tropical reduction — the plan's central subtlety, exercised
 -- directly. `Y[i] := max_j A[i,j]` with the reduction axis `j` ranging over {0,1,2} but `A` only
 -- 2 columns wide, so the read at `j=2` is out of bounds and `zeroPad` returns `0.0`. That `0.0`
--- is a FACTOR value (it flows through `factorFold`'s mul, `1.0 · 0.0 = 0.0`) and so enters the max
--- fold as a genuine term value of `0.0` — it is NOT the reduction identity (which is `−∞`). With
--- all-negative valid data the padded `0.0` therefore WINS the max: `Y[i] = max(A[i,0], A[i,1], 0.0)
--- = 0.0`. This is observable and consistent with the reference's identical zero-extension (the pad
--- affects the result, it just does so the same way in both evaluators), not an implementation
--- divergence. Verified by execution.
+-- is a FACTOR value (it flows through the factor fold's mul — `foldScalars` at its factor call
+-- site in `Dense.lean` — `1.0 · 0.0 = 0.0`) and so enters the max fold as a genuine term value of
+-- `0.0` — it is NOT the reduction identity (which is `−∞`). With all-negative valid data the padded
+-- `0.0` therefore WINS the max: `Y[i] = max(A[i,0], A[i,1], 0.0) = 0.0`. This is observable and
+-- consistent with the reference's identical zero-extension (the pad affects the result, it just
+-- does so the same way in both evaluators), not an implementation divergence. Verified by
+-- execution.
 def oobSigs : Array TensorSignature :=
   #[ { shape := #[2, 2], dtype := .f64 }, { shape := #[2], dtype := .f64 } ]
 
@@ -746,10 +747,10 @@ def falsePredPlan : AssignPlan :=
 
 `ScalarDType.bool` is a semantic algebra tag over the SAME `Array Float` storage: `admittedAlgebraBool`
 is `min`/identity `true` within a term and `max`/identity `false` across contracted coordinates and
-terms, and `constFloat` decodes `.bool true`/`.bool false` to `1.0`/`0.0`. Every expected value below
-was observed from an actual run of this interpreter on the fixture before being asserted (a scratch
-`#eval` driver, since these Boolean values exist nowhere in a donor); the accompanying real-algebra
-contrast values are the donor's own hand-computed semantics.
+terms, and `floatOps.decodeConst` (`Dense.lean`) decodes `.bool true`/`.bool false` to
+`1.0`/`0.0`. Every expected value below was observed from an actual run of this interpreter on the
+fixture before being asserted (a scratch `#eval` driver, since these Boolean values exist nowhere in
+a donor); the accompanying real-algebra contrast values are the donor's own hand-computed semantics.
 
 Fixtures 6 and 7 clone `efpPlan`/`zerdPlan` above, changing only the destination signature dtype and
 the algebra — they pin the two Boolean IDENTITIES independently: an empty factor product must yield

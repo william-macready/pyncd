@@ -16,7 +16,7 @@
 > split them and admitted the binary32 assignment fragment — see
 > [`f32_evalplan.md`](f32_evalplan.md)), and the seventeen `File.lean:NNN` source-line references
 > this document still carries are **deliberately left as written and must be assumed stale**. They
-> all sit inside §13's implementation-slice records (F0, F3, and F4 — lines 1407–1922), not in the
+> all sit inside §13's implementation-slice records (F0, F3, and F4 — lines 1413–1928), not in the
 > current-boundary prose: five of them are literal `error:` lines from a captured build transcript
 > in F3, which would be corrupted rather than improved by rewriting; the other twelve are
 > verification bullets recording what was read at that moment. None was re-derived for this banner,

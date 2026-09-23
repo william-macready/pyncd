@@ -424,8 +424,9 @@ private def divInputs : HashMap String DenseTensor :=
 
 -- A unary factor INSIDE a scan recurrence: the recurrence reads previous state `S[j,l]` and scales it
 -- by `exp(Z[j])` (a total function, so unconditionally domain-safe). This exercises the one
--- composition the plain fixtures above do not — that the scan worker's `runDenseAssignAt`/`gatherFactor`
--- applies the unary identically — via `planAgrees`' byte-for-byte plan-vs-`evalScheduled` check.
+-- composition the plain fixtures above do not — that the scan worker's
+-- `runDenseAssignAt`/`gatherFactorWith` applies the unary identically — via `planAgrees`'
+-- byte-for-byte plan-vs-`evalScheduled` check.
 private def scanUnaryProg : TLProgram := tlprog!{
   iter l = 2
   S[j, 0]    := X[j]
