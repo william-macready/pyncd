@@ -1578,13 +1578,15 @@ task's review-fix commits.
 | 3 — native worker | `c8e3eea` |
 | 4 — named adapter | `aa00097` (production), `ce28014` (tests), `5d70a0f` (intent layer), `f4fb5ed` (review fix: fixture 10d races the guard against `checkPreparedBindings`) |
 | 5 — JAX/docs | `112145c` (mode-selected re-check + fixtures), `e11e390` (capability documents), `8938184` (intent layer), plus this close-out |
+| final-review fix wave (2026-09-23) | `19237e4` (adapter-core carrier guard + `signatureOfDenseInputs` privacy, fixtures FW1/FW3), `3fec9c1` (its docs), `c044f11` (truthfulness minors + Step 0c/0b order fixture FW2), plus this record |
 
-#### 6.5.2 Mutation cycles — 89 applied and restored, all PASS
+#### 6.5.2 Mutation cycles — 91 applied and restored, all PASS
 
-The plan budgeted 86 (18/33/15/19/1). Three more were run than budgeted, each for a recorded reason;
-none was dropped. Every cycle ran through `leanncd/scripts/mutation-cycle.sh`, whose `PASS` verdict
-means `mutation_exit ≠ 0 && restored_build_exit = 0` — the fixture genuinely failed under the
-mutation and genuinely passed after restore.
+The plan budgeted 86 (18/33/15/19/1). Three more were run than budgeted by Tasks 1–5, each for a
+recorded reason, and the final-review fix wave added two more; none was dropped. Every cycle ran
+through `leanncd/scripts/mutation-cycle.sh`, whose `PASS` verdict means
+`mutation_exit ≠ 0 && restored_build_exit = 0` — the fixture genuinely failed under the mutation and
+genuinely passed after restore.
 
 | Task | Planned | Run | Why the difference |
 |---|---:|---:|---|
@@ -1593,7 +1595,8 @@ mutation and genuinely passed after restore.
 | 3 | 15 | 15 | — |
 | 4 | 19 | 20 | M20 added in the review-fix round: the guard is RELOCATED after `checkPreparedBindings` rather than deleted, which is the defect fixture 10d exists to catch |
 | 5 | 1 | 1 | — |
-| **total** | **86** | **89** | |
+| fix wave | — | 2 | FW-M1 (the adapter-core guard, fixture FW1) and FW-M2 (Step 0c before Step A, fixture FW2), both required by the fix wave; table below |
+| **total** | **86** | **91** | |
 
 Per-cycle mutation text, the observed wrong value, and the restored value are recorded in each task's
 report under `.superpowers/sdd/f32_evalplan/task-N-report.md` §"Mutation-cycle log". Task 5's single
@@ -1605,6 +1608,14 @@ cycle, in full:
 
 Both values were additionally observed directly from a compiled probe (the mutated gate transcribed
 beside the real one, both applied to fixture 1's donor), not only inferred from the build failure.
+
+The final-review fix wave's two cycles, in full (each observed value is the fixture's own
+`throwError` text in the mutated build's output, not an inference):
+
+| # | Mutation | File | Fixture that failed | Observed wrong value | Restored |
+|---|---|---|---|---|---|
+| FW-M1 | delete `unpackBodyOf`'s first-statement `StorageCarrier` guard | `LeanNCD/Eval/Plan/Adapter.lean` | `AdapterTest.lean` fixture FW1a (and Task 2's fixture 20b, the named `unpack` door on the same line) | `unpackBodyOf at α := Float accepted the .float32 plan and published Y = some #[3.000000, 4.000000]` | `storageKindMismatch .float64 .float32` |
+| FW-M2 | move Step 0c (`f32CapabilityCheck`) after Step A (`capabilityPreflight`) in `prepareEvalPlan` | `LeanNCD/Eval/Plan/Compile.lean` | `CompileTest.lean` fixture FW2a only — no pre-existing fixture failed, which is the gap FW2 closes | `Step 0c did not precede Step A — got capability LeanNCD.Eval.Plan.CapabilityError.unsupportedNonlin "Y: scatter nonlinearity"` | `unsupportedDtype "Y: f32 scatter"` |
 
 Two Task 3 cycles (M3, M11) are **masked by module ordering**: `KernelDense32Test` imports
 `KernelDenseTest`, so for a mutation to the shared traversal the binary64 sibling fixture fails first
@@ -1625,7 +1636,11 @@ evidence aggregation, and any emitted text.
 #### 6.5.3 Fixture groups
 
 74 numbered groups planned (16/25/16/15/2); 74 delivered, plus Task 4's group 10 grown to four
-sub-cases (10a–10d) by its review-fix round. No group was dropped or merged.
+sub-cases (10a–10d) by its review-fix round. No group was dropped or merged. The final-review fix
+wave added three unnumbered-by-plan groups, labelled FW1–FW3 so they cannot be confused with any
+task's numbering: `AdapterTest` FW1 (the adapter cores at a mismatched carrier, with
+matching-carrier controls), `CompileTest` FW2 (Steps 0c/0b ahead of Step A), and `SignatureTest`
+FW3 (`signatureOfDenseInputs` is private).
 
 #### 6.5.4 Builds
 
@@ -1638,7 +1653,16 @@ results, on a clean tree:
 | Regression — `Eval.Plan.DifferentialTest Eval.PropertyOracleTest Eval.PropertyOracleScanTest Eval.Portfolio.Harness DSL.Pipeline.RouteFragmentCorpusTest` | Build completed successfully (8551 jobs) |
 | Full default `lake build` | Build completed successfully (8668 jobs) |
 
-The binary64 reference corpora are **unchanged across all five tasks**, as Section 6.2 requires:
+Final-review fix wave, on its last code commit (`c044f11`):
+
+| Gate | Result |
+|---|---|
+| Targeted — `Eval.Plan.SignatureTest Eval.Plan.CompileTest Eval.Plan.AdapterTest Eval.Plan.Adapter32Test Eval.Plan.KernelDense32Test Eval.EntryTest Eval.Plan.ExecutableTest JaxExperiment` | Build completed successfully (8533 jobs) |
+| Regression — `Eval.Plan.DifferentialTest Eval.PropertyOracleTest Eval.PropertyOracleScanTest Eval.Portfolio.Harness DSL.Pipeline.RouteFragmentCorpusTest` | Build completed successfully (8551 jobs) |
+| Full default `lake build` | Build completed successfully (8668 jobs) |
+
+The binary64 reference corpora are **unchanged across all five tasks and the fix wave**, as Section
+6.2 requires (the fix wave's regression run printed the same two lines):
 
 ```
 DifferentialTest sweep: total=3832 accepted=3832 rejected=0 categories=[]
@@ -1648,6 +1672,10 @@ DifferentialTest scan corpus: total=17 accepted=17 unsupportedNonlin=0 unsupport
 No new warning was introduced by any task; the full build's warning set is byte-identical to the
 pre-slice one (`sorry` in `Base/St.lean`, `Base/Br.lean`, `Core/Weave.lean`, `Instances/StBr.lean`;
 the `brElemental` reducibility notice; the `linter.unusedSimpArgs` notices in `Bridge/`).
+The fix wave's full build reports the same warning categories and files: `declaration uses 'sorry'`
+in `Base/St.lean`, `Base/Br.lean`, `Core/Weave.lean`, and `Instances/StBr.lean`; the `brElemental`
+reducibility notice; and unused-simp-argument notices in `Bridge/AcsetCodec.lean` and
+`Bridge/Agreement.lean`.
 
 #### 6.5.5 Reviews
 
@@ -1657,13 +1685,57 @@ produced recorded fix commits — Task 1's `2030415`, Task 2's `b0a2fe2` and `e2
 `f4fb5ed`; Task 3's findings were adjudicated in its report without a code change. Task 5's own
 per-task review is the controller's next step after this close-out.
 
-> **Section 6.4's two independent whole-branch reviews: PENDING AT THE TIME OF WRITING.** They are
-> dispatched by the controller after Task 5 is reviewed and merged, not by Task 5 itself, so their
-> adjudications are deliberately **not** recorded here rather than being written speculatively.
-> Section 6.4 still governs: **this slice is not complete until both are clean or every finding is
-> explicitly adjudicated**, and this subsection must be updated with their outcomes when they land.
-> Until then, Section 7's last success criterion ("targeted builds, `JaxExperiment`, full
-> `lake build`, documentation sweep, and two final reviews pass") is met except for its final clause.
+> **Section 6.4's two independent whole-branch reviews: RUN 2026-09-23, findings adjudicated in one
+> fix wave.** (Verdicts and finding counts as reported to the fix wave by the controller; the fix
+> wave did not re-run either review.)
+>
+> - **Numerical/evidence lens: ready to merge — 0 Critical, 0 Important, 3 Minor.** The three
+>   Minors are `KernelDense32Test` fixture 1's subnormal-lane comment (a widen-to-binary64-and-back
+>   worker is NOT caught there — `(Float32.ofBits 1).toFloat.toFloat32.toBits = 1`),
+>   `ScheduledValidation.lean`'s stale "temporarily rejects every homogeneous-f32" clause, and the
+>   public unguarded adapter cores — the last of which the other lens rated Important.
+> - **Boundary/exhaustiveness lens: with fixes — 1 Important + 8 Minor.** The Important finding:
+>   `packBodyOf`/`unpackBodyOf`/`runPreparedDenseOf` and `signatureOfDenseInputs` were public and
+>   unguarded, so a caller could relabel `Array Float` buffers as a binary32 plan's inputs or
+>   outputs, or build an `.f32` signature from them, without any guarded entry running.
+>
+> **What the fix wave changed.** The Important finding is closed as Section 3.5's door-list
+> blockquote records: a `StorageCarrier` class guards each adapter core at its own element type
+> (fixture FW1), and `signatureOfDenseInputs` is private (fixture FW3). Of the Minors: the two
+> comments above, plus fixture 1's decoder comment (Task 3's deferred Minor, which overstated what
+> its one assertion tests); the false-fact comments in `Compile.lean` (the f32 fill arm names
+> Step 0c) and `Check.lean` (Boolean is a tag over whichever real carrier, not "Float-backed");
+> every `.lean` reference to the deleted/renamed `constFloat`/`applyOp`/`factorFold`/`gatherFactor`
+> (item 2 of the carried-in list below); the guard-order claims in `eval_ir.md`, this document's
+> Section 3.5, `Eval/AGENTS.md`, and `Adapter.lean`, which now say `pack`/`unpack`/`pack32`/`unpack32`
+> run `checkPreparedBindings` before their guard; `backend_missing_functionality.md`'s throw-site list,
+> which now includes Step D's live `scatterOptsNotAdmitted "{nm}: fill"` and its defensive throws
+> (family counts 16/10/6 re-derived, unchanged); `dtypeOfDecl` made exhaustive; the unpinned
+> "Step 0c/0b before Step A" order, now fixture FW2 with mutation FW-M2; the Wave F banner's
+> citation range (17 citations, lines 1413–1928); Section 6.5.6's close-call wording; and a
+> `DSL/AGENTS.md` note that `f32` is now a global parser token.
+>
+> **Deferred, deliberately not touched by the fix wave:** `AdapterTest` fixture 21's
+> guard-vs-`checkPreparedBindings` ordering gap (item 1 below — the shared runner guard line is
+> pinned from the binary32 side by `Adapter32Test` 10d, so the docs were corrected instead);
+> `checkAssignCore`'s f32-graph source clause's weak locator (`dtypeMismatch .f32 dt`, the
+> plan-specified payload); `PlanStep.kind` having no production caller; `runDensePlan32`
+> duplicating `runDensePlan`'s validation loop; the unreachable non-assign arms' `.float64` payload
+> in `runDensePlan32`; the `DeclEnv` being rebuilt per call; `HashMap.toList` offender order; and
+> the other Task 1–5 Minors not named above (item 3 below).
+>
+> With both reviews run and every finding fixed or explicitly deferred here, Section 6.4's
+> condition is met on this record's terms; the fix wave itself goes to the controller's review
+> before merge.
+
+> **Where this plan's text and the shipped code differ, the code is authoritative.** Section 3.1
+> (left as written, since it is the plan that was executed) names `TensorStorageKind` deriving
+> `Inhabited` and `storageConstraintOfDecl : Option Decl → Option TensorStorageKind`; the code has
+> `LeanNCD.StorageKind` (`DSL/Ast.lean`, deriving `DecidableEq, BEq, Repr`, no `Inhabited`) and
+> `storageConstraintOfDecl : Decl → Option StorageKind`, with the undeclared-name case handled by
+> `storageConstraintOfName?` instead. Section 3.1's payload table gives the mixed-precision message
+> as `"{name}: mixed f32 and f64 tensor precision"`; the code (and Section 3.5) say
+> `"{name}: mixed f32/f64 storage in one schedule"`.
 
 Findings carried INTO those two reviews, deliberately not fixed by the task that found them:
 
@@ -1676,7 +1748,7 @@ Findings carried INTO those two reviews, deliberately not fixed by the task that
    `applyOp`, `factorFold`/`reductionFold`/`termFold`, `gatherFactor` — in `Check.lean`,
    `Types.lean`, `Compile.lean`, `Scan.lean`, `EvalPlanCodegen.lean`, and some test files. Flagged
    Minor by Task 3's reviewer. Task 5 fixed the instances inside the documentation files on its own
-   list; the `.lean` ones remain.
+   list; the `.lean` ones were fixed by the final-review fix wave.
 3. **Each task recorded 4–7 further Minor findings** in its own report's self-review section, all
    explicitly deferred here for triage rather than silently closed.
 
@@ -1789,14 +1861,15 @@ The slice is complete only when all of the following are true:
 - targeted builds, `JaxExperiment`, full `lake build`, documentation sweep, and two final reviews
   pass.
 
-> **Close-out, 2026-09-21.** These criteria are stated as planned; **Section 6.5 records what was
-> actually observed against each of them**, and the two lists differ in one place worth naming here
-> rather than only there: 89 mutation cycles were applied and restored, not the 86 budgeted above —
-> three more than planned, each for a recorded reason, none dropped. Every other criterion in this
-> list is met **except** the final clause "two final reviews pass": Section 6.4's two independent
-> whole-branch reviews had not been run when this record was written, so the slice is **not yet
-> complete** by this document's own standard. Do not read the completed-record status banner at the
-> top as a claim that they happened.
+> **Close-out, 2026-09-21; final clause met 2026-09-23.** These criteria are stated as planned;
+> **Section 6.5 records what was actually observed against each of them**, and the two lists differ
+> in one place worth naming here rather than only there: 91 mutation cycles were applied and
+> restored, not the 86 budgeted above — three more than planned by Tasks 1–5 and two from the
+> final-review fix wave, each for a recorded reason, none dropped. The final clause, "two final
+> reviews pass", is met as Section 6.5.5 records: both whole-branch reviews ran on 2026-09-23, and
+> their one Important and every Minor finding were fixed or explicitly deferred in one fix wave,
+> after which the targeted, regression, and full builds passed again (Section 6.5.4). That fix wave
+> is itself reviewed by the controller before merge.
 
 Stop and revise this plan rather than improvising if Lean 4.30 native arithmetic does not reproduce
 the measured bit patterns on the supported build target; if making `Decl.typedTensor .f32` tensor-bearing
