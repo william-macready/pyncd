@@ -72,8 +72,9 @@ def f32IdentityStore : Array DenseTensor32 :=
 -- `Float32.ofBits`/`toBits` round-trips negative zero bit-exactly. That is a fact about the Lean
 -- primitive `float32Ops.decodeConst` calls for a `ScalarConst.f32`, not a test of `decodeConst`
 -- itself (which is private, and which the seeded assignment above cannot observe for `-0`). The
--- decoder's own use is observed through the algebra identities in fixtures 5–8, whose outputs are
--- exactly the decoded `factorId`/`reduceId` constants.
+-- decoder's own use is observed through the algebra identities in fixtures 5–8: fixtures 5 and 6
+-- output the decoded `factorId`/`reduceId` constants exactly, while fixtures 7 and 8 output
+-- `A[i]·(∓1)`, which is correct only when the decoded `∓∞` seed is.
 #guard (Float32.ofBits 0x80000000).toBits == 0x80000000
 
 -- ... and this is why every assertion in this file goes through `toBits`: IEEE comparison cannot

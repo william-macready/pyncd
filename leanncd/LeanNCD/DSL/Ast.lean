@@ -215,8 +215,8 @@ def buildDeclEnv (decls : List Decl) : Except CompileError DeclEnv :=
 
 /-- The concrete floating-point storage a declaration commits its tensor to. Deliberately NOT
     `Eval.Plan.ScalarDType`: that vocabulary lives in the plan layer (which the AST must not
-    depend on) and also carries `bool`, which is a semantic ALGEBRA tag over the same Float-backed
-    storage rather than a precision. -/
+    depend on) and also carries `bool`, which is a semantic ALGEBRA tag over whichever storage its
+    schedule uses (binary64 or binary32) rather than a precision. -/
 inductive StorageKind
   | float32
   | float64

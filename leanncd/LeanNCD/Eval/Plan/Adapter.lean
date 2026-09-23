@@ -44,9 +44,12 @@ guard line per body — three in all, each shared by its binary64 and binary32 p
 per public entry: a per-entry line in front of a guarded body could be deleted without any fixture
 noticing, since the body's own line would then report the identical value. -/
 
-/-- The storage kind a scalar carrier's buffers ARE. The one fact the adapter cores need about `α`,
-    and the reason they cannot be run at a carrier whose buffers disagree with the plan's evidence:
-    there is exactly one instance per carrier the checked backend has a worker for. -/
+/-- The storage kind a scalar carrier's buffers ARE. The one fact the adapter cores need about `α`.
+    Ordinary instance resolution ties it to the element type — one instance per carrier the checked
+    backend has a worker for — so a caller cannot run a core at a carrier whose buffers disagree
+    with the plan's evidence by accident. It is not a proof: a caller who supplies a deliberately
+    false instance (`@unpackBodyOf Float ⟨.float32⟩ …`, or a local higher-priority instance) gets
+    past the guard. -/
 class StorageCarrier (α : Type) where
   kind : LeanNCD.StorageKind
 

@@ -481,9 +481,9 @@ inductive InputBindingError
   /-- The named INPUT adapter's own carrier does not match the prepared plan's checked storage kind.
       `expected` is the adapter's carrier (`.float64` for `pack`, `.float32` for `pack32`), `actual`
       the plan's. Raised by `packBodyOf` (`Adapter.lean`) as its first statement, before any shape
-      or storage work and before any `DenseTensorOf α` is resolved out of the environment, so a
-      plan can never have another carrier's buffers packed into its positional store and relabeled
-      as its own. -/
+      or storage work and before any `DenseTensorOf α` is resolved out of the environment, so —
+      under ordinary `StorageCarrier` instance resolution — a plan cannot have another carrier's
+      buffers packed into its positional store and relabeled as its own. -/
   | storageKindMismatch (expected actual : LeanNCD.StorageKind)
   deriving DecidableEq, BEq, Repr, Inhabited
 

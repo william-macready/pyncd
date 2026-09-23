@@ -587,7 +587,8 @@ each also installs a storage-kind guard at one more structurally similar door. E
 fixtures asserts the guard fires *before a specific other check in that same function*, not merely
 that a guard exists: `runDenseAssignAt`/`runDenseAssign`'s existing `validateContext`/`validateStore`
 and `runDensePlan`'s existing arity check (fixture 18); `packChecked`'s storage-shape check and
-`unpackChecked`'s result-arity check, both of which run after the already-passing
+`unpackChecked`'s result-arity check (both helpers since removed by the final-review fix wave; those
+checks now live in `packBodyOf`/`unpackBodyOf`), both of which run after the already-passing
 `checkPreparedBindings` on these fixtures' valid `PreparedPlan` (fixtures 20 and 21); and, for
 fixture 10, the equivalent checks inside `pack32`/`unpack32`/`runPreparedDense32` — which Task 4
 itself writes, so the ordering obligation there is against checks introduced in the same task rather
