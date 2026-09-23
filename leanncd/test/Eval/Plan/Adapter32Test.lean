@@ -423,7 +423,7 @@ these are ORDER claims and not existence claims:
     would otherwise report `storeArityMismatch 2 0`;
   * `runPreparedDense32` gets a perfectly well-shaped native binary32 environment, and must fail at
     its OWN adapter tier (`PlanRunCause.storageKindMismatch` directly) rather than inheriting
-    `packChecked32`'s nested `.binding (.storageKindMismatch …)`. -/
+    `packBodyOf`'s nested `.binding (.storageKindMismatch …)`. -/
 
 def f64Prepared : Option PreparedPlan :=
   (prepareEvalPlan CompileTest.identitySched CompileTest.identitySig).toOption
@@ -473,7 +473,7 @@ def run32Err (p : Option PreparedPlan) (env : NamedDenseEnv32) : Option PlanRunC
 
 -- Fixture 10c: `runPreparedDense32` fails at its own adapter tier, with a well-shaped environment —
 -- `PlanRunCause.storageKindMismatch` directly, NOT `.binding (.storageKindMismatch …)` from
--- `packChecked32` and not `.execution (…)` from `runDensePlan32`.
+-- `packBodyOf` and not `.execution (…)` from `runDensePlan32`.
 #guard run32Err f64Prepared wellShaped32 == some (.storageKindMismatch .float32 .float64)
 
 -- Fixture 10 control: preparation warnings survive this failure path exactly as they do every other
@@ -488,7 +488,7 @@ def run32Err (p : Option PreparedPlan) (env : NamedDenseEnv32) : Option PlanRunC
 /-! ### Fixture 10d: the composite guard also precedes `checkPreparedBindings`
 
 10a–10c race the guard against `packBodyOf`'s storage check, `unpackBodyOf`'s arity check, and
-`packChecked32`'s own nested guard. All three donors have VALID bindings
+`packBodyOf`'s own nested guard. All three donors have VALID bindings
 (`#guard (checkPreparedBindings p).toOption.isSome` above), so none of them can see a guard
 relocated to run AFTER `checkPreparedBindings` — `runPreparedDenseOf`'s very next step. This
 sub-case closes that: the SAME `.float64` plan with a deliberately out-of-range materialized slot,

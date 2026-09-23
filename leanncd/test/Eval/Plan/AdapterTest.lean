@@ -676,7 +676,7 @@ def f32Prepared : Option PreparedPlan :=
 def f32Env : HashMap String DenseTensor :=
   ({} : HashMap String DenseTensor).insert "X" ⟨[2], #[1.0, 2.0]⟩
 
-/-- The same name with a shape-conforming header but only ONE stored element — `packChecked`'s
+/-- The same name with a shape-conforming header but only ONE stored element — `packBodyOf`'s
     pre-existing storage check rejects this, and is what fixture 20 requires the storage guard to
     precede. -/
 def f32EnvBadStorage : HashMap String DenseTensor :=
@@ -715,7 +715,7 @@ def runErr (p : Option PreparedPlan) (env : HashMap String DenseTensor) : Option
 
 -- Fixture 21: `runPreparedDense` with a WELL-SHAPED Float environment fails at its own adapter tier
 -- — `PlanRunCause.storageKindMismatch` directly, not `.binding (.storageKindMismatch …)` from
--- `packChecked` and not `.execution (.storageKindMismatch …)` from `runDensePlan`. This is
+-- `packBodyOf` and not `.execution (.storageKindMismatch …)` from `runDensePlan`. This is
 -- independent of both of those guards, which is why it is its own cause and its own fixture.
 #guard runErr f32Prepared f32Env == some (.storageKindMismatch .float64 .float32)
 
@@ -727,6 +727,91 @@ def runErr (p : Option PreparedPlan) (env : HashMap String DenseTensor) : Option
                | .error f => f.warnings == p.warnings
                | .ok _ => false)
   | none => false)
+
+/-! ## f32 slice final-review fix wave, fixture 22: the generic cores refuse a mismatched carrier
+
+The whole-branch review's probe. `packBodyOf`/`unpackBodyOf`/`runPreparedDenseOf` are public and
+carrier-polymorphic, so a caller can skip `pack`/`unpack`/`runPreparedDense` and instantiate a core
+directly at `α := Float` on fixture 20's valid `.float32` plan. Before the fix `unpackBodyOf` did
+exactly that and returned `.ok`, publishing `Y = #[3.0, 4.0]` as `Array Float` under the binary32
+plan's own output name. Each core must now report the same `storageKindMismatch .float64 .float32`
+the named entries report.
+
+The controls are what make that a CARRIER claim rather than "the cores now reject everything": the
+same three cores at `α := Float` on a binary64 twin of the same one-node graph still succeed, and
+publish the value they were handed. -/
+
+/-- `f32Prepared`'s one-node graph with its signatures and algebra left at binary64 —
+    `GraphCheckTest.idNode`'s default is the binary64 sum-product algebra. -/
+def f64OneNodePrepared : Option PreparedPlan :=
+  let raw : RawEvalPlan :=
+    { tensorSigs := #[ { shape := #[2], dtype := .f64 }, { shape := #[2], dtype := .f64 } ]
+    , inputSlots := #[0]
+    , steps := #[.assign (GraphCheckTest.idNode 1 0)] }
+  match checkPlan raw, checkBindings #[0] #[{ name := "X", slot := 0 }] with
+  | .ok plan, .ok requiredInputs =>
+      some { plan
+           , bindings := { requiredInputs, materializedNames := #[{ name := "Y", slot := 1 }] }
+           , warnings := [] }
+  | _, _ => none
+
+-- The control donor really is a `.float64` plan with valid bindings.
+#guard f64OneNodePrepared.map (·.plan.storageKind) == some LeanNCD.StorageKind.float64
+#guard (match f64OneNodePrepared with
+  | some p => (checkPreparedBindings p).toOption.isSome
+  | none => false)
+
+/-- The reviewer's result store: two well-shaped binary64 tensors, slot 1 holding `[3, 4]`. -/
+def probeStore : Array DenseTensor := #[⟨[2], #[1.0, 2.0]⟩, ⟨[2], #[3.0, 4.0]⟩]
+
+/-- `unpackBodyOf` at `α := Float`, bypassing `unpack`. `some (.error c)`/`some (.ok env)` so a
+    failure message can show which of the two arrived. -/
+def unpackBodyFloat (p : Option PreparedPlan) :
+    Option (Except PlanRunCause (HashMap String DenseTensor)) := do
+  let p ← p
+  let checked ← (checkPreparedBindings p).toOption
+  pure (unpackBodyOf (α := Float) p checked {} probeStore)
+
+def packBodyFloat (p : Option PreparedPlan) :
+    Option (Except InputBindingError (Array DenseTensor)) := do
+  let p ← p
+  let checked ← (checkPreparedBindings p).toOption
+  pure (packBodyOf (α := Float) p checked f32Env)
+
+def runBodyFloat (p : Option PreparedPlan) : Option (Except PlanRunFailure EvalReport) :=
+  p.map (fun p => runPreparedDenseOf (α := Float) runDensePlan p f32Env)
+
+-- Fixture 22a (the probe itself): `unpackBodyOf` at `α := Float` on the `.float32` plan reports the
+-- storage kind instead of publishing binary64 buffers under `Y`. `run_cmd`, so a regression NAMES
+-- what it published.
+run_cmd do
+  match unpackBodyFloat f32Prepared with
+  | some (.error (.storageKindMismatch .float64 .float32)) => pure ()
+  | some (.ok env) =>
+      throwError s!"fixture 22a: unpackBodyOf at α := Float accepted the .float32 plan and \
+published Y = {repr ((env["Y"]?).map (·.data))}"
+  | some (.error c) => throwError s!"fixture 22a: wrong cause {repr c}"
+  | none => throwError "fixture 22a: donor plan or its bindings did not build"
+
+-- Fixture 22b/22c: the other two cores, same carrier mismatch, same payload the named entries give.
+#guard (match packBodyFloat f32Prepared with
+  | some (.error e) => e == .storageKindMismatch .float64 .float32
+  | _ => false)
+#guard (match runBodyFloat f32Prepared with
+  | some (.error f) => f.cause == .storageKindMismatch .float64 .float32
+  | _ => false)
+
+-- Controls: the same three calls at the MATCHING carrier succeed. `unpackBodyOf` publishes the
+-- store's slot-1 tensor under `Y` unchanged, and the runner computes the identity `Y = X`.
+#guard (match unpackBodyFloat f64OneNodePrepared with
+  | some (.ok env) => expectTensor env["Y"]? [2] #[3.0, 4.0]
+  | _ => false)
+#guard (match packBodyFloat f64OneNodePrepared with
+  | some (.ok store) => store.size == 1 && expectTensor store[0]? [2] #[1.0, 2.0]
+  | _ => false)
+#guard (match runBodyFloat f64OneNodePrepared with
+  | some (.ok report) => expectTensor report.env["Y"]? [2] #[1.0, 2.0]
+  | _ => false)
 
 /-! ## f32 slice Task 4, fixture 11: the `EvalReport` compatibility shim
 

@@ -479,10 +479,11 @@ inductive InputBindingError
   | shapeMismatch     (name : String) (slot : TensorSlot) (expected : Array Nat) (actual : List Nat)
   | storageMismatch   (name : String) (slot : TensorSlot) (shape : List Nat) (dataSize : Nat)
   /-- The named INPUT adapter's own carrier does not match the prepared plan's checked storage kind.
-      `expected` is the adapter's carrier (`.float64` for `pack`), `actual` the plan's. Raised by
-      `packChecked` (`Adapter.lean`) before any shape or storage work and before any `DenseTensor`
-      is resolved out of the environment, so a binary32 plan can never have `Array Float` buffers
-      packed into its positional store and relabeled as its own. -/
+      `expected` is the adapter's carrier (`.float64` for `pack`, `.float32` for `pack32`), `actual`
+      the plan's. Raised by `packBodyOf` (`Adapter.lean`) as its first statement, before any shape
+      or storage work and before any `DenseTensorOf α` is resolved out of the environment, so a
+      plan can never have another carrier's buffers packed into its positional store and relabeled
+      as its own. -/
   | storageKindMismatch (expected actual : LeanNCD.StorageKind)
   deriving DecidableEq, BEq, Repr, Inhabited
 
@@ -518,12 +519,13 @@ inductive PlanRunCause
   | materialization (cause : PlanError)
   /-- The result adapter's or the prepared runner's own carrier does not match the prepared plan's
       checked storage kind. `expected` is that entry's carrier (`.float64` for `unpack` and
-      `runPreparedDense`), `actual` the plan's. Two reporters, deliberately distinguishable from
-      each other and from `binding`'s `InputBindingError.storageKindMismatch`:
-      `unpackChecked` raises it before the result store's arity is examined or any name published,
-      and `runPreparedDense` raises its own copy FIRST — before `checkPreparedBindings`,
-      `packChecked`, and `runDensePlan` — so the composite entry fails at the adapter tier rather
-      than inheriting a nested worker or pack diagnostic. -/
+      `runPreparedDense`, `.float32` for `unpack32` and `runPreparedDense32`), `actual` the plan's.
+      Two reporters, deliberately distinguishable from each other and from `binding`'s
+      `InputBindingError.storageKindMismatch`: `unpackBodyOf` raises it as its first statement,
+      before the result store's arity is examined or any name published, and `runPreparedDenseOf`
+      raises its own copy FIRST — before `checkPreparedBindings`, `packBodyOf`, and the worker — so
+      the composite entry fails at the adapter tier rather than inheriting a nested worker or pack
+      diagnostic. -/
   | storageKindMismatch (expected actual : LeanNCD.StorageKind)
   deriving DecidableEq, BEq, Repr, Inhabited
 

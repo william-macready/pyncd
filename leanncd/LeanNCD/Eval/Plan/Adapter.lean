@@ -13,7 +13,8 @@ unpack` together, preserving `PreparedPlan.warnings` through every outcome.
 Since the f32 slice's Task 4 this file also owns the CARRIER-POLYMORPHIC cores those three entries
 are built from — `packBodyOf`, `unpackBodyOf`, `runPreparedDenseOf`. The binary32 named boundary
 (`Adapter32.lean`'s `pack32`/`unpack32`/`runPreparedDense32`) is the same three cores at
-`α := Float32` with its own carrier guards, not a second copy of this traversal.
+`α := Float32`, not a second copy of this traversal. Each core carries its own storage-kind guard,
+keyed on the `StorageCarrier` instance of its element type (f32 slice, final-review fix wave).
 -/
 
 namespace LeanNCD.Eval.Plan
@@ -29,16 +30,28 @@ abbrev NamedDenseEnv := NamedDenseEnvOf Float
 
 /-! ## Carrier-polymorphic adapter cores
 
-Each of the three bodies below is the whole of what its public entry does EXCEPT the storage-kind
-guard. That split is deliberate: the traversal genuinely has nothing carrier-specific in it (only
-`DenseTensorOf.shape` and `.data.size` are ever read, and `α` never crosses into a result of a
-different carrier), while the guard is precisely the carrier-specific part and must stay ONE
-INDEPENDENTLY EDITABLE LINE PER PUBLIC ENTRY — six of them across the two files — so each entry's
-guard can be shown to fire before that entry's OWN later checks rather than inheriting a sibling's.
+The traversal in each of the three bodies below has nothing carrier-specific in it (only
+`DenseTensorOf.shape` and `.data.size` are ever read). That does NOT make an unguarded body
+harmless: the bodies are public, and a caller can instantiate one at ANY `α`. Before the f32
+slice's final-review fix wave they carried no guard of their own, and `unpackBodyOf` at
+`α := Float` on a `.float32` plan returned `.ok`, publishing `Array Float` buffers under that
+binary32 plan's own output names — a precision relabel no numeric worker had to run for.
 
-None of these bodies can substitute one precision for another on its own: each is parametric in `α`
-and maps `NamedDenseEnvOf α` to `Array (DenseTensorOf α)` and back. What they cannot do without a
-guard is TELL a caller they reached for the wrong adapter, which is what the guards are for. -/
+So the carrier is now tied to the element type: `StorageCarrier α` names the storage kind an
+`Array α` buffer actually is, and each body's FIRST statement rejects a plan whose `storageKind`
+differs from it, with the same `storageKindMismatch` payload the named entries report. There is one
+guard line per body — three in all, each shared by its binary64 and binary32 public entry — not one
+per public entry: a per-entry line in front of a guarded body could be deleted without any fixture
+noticing, since the body's own line would then report the identical value. -/
+
+/-- The storage kind a scalar carrier's buffers ARE. The one fact the adapter cores need about `α`,
+    and the reason they cannot be run at a carrier whose buffers disagree with the plan's evidence:
+    there is exactly one instance per carrier the checked backend has a worker for. -/
+class StorageCarrier (α : Type) where
+  kind : LeanNCD.StorageKind
+
+instance : StorageCarrier Float := ⟨.float64⟩
+instance : StorageCarrier Float32 := ⟨.float32⟩
 
 /-- Resolve every input slot `runDensePlan` needs, in `raw.inputSlots` order, by NAME through
     `requiredInputs` — never by array position. `requiredInputs : RequiredBindings` is already
@@ -60,11 +73,19 @@ guard is TELL a caller they reached for the wrong adapter, which is what the gua
     private and typed to `PositionalInputError`) so a NAMED failure is diagnosable without waiting
     for the positional worker to run.
 
-    Carrier-polymorphic and GUARDLESS (f32 slice, Task 4): `packChecked`/`packChecked32` are this
-    body behind their own storage-kind door. See the section header above for why the guard is not
-    folded in here. -/
-def packBodyOf {α : Type} (plan : PreparedPlan) (checked : CheckedPreparedBindings)
-    (env : NamedDenseEnvOf α) : Except InputBindingError (Array (DenseTensorOf α)) := do
+    Carrier-polymorphic (f32 slice, Task 4) and GUARDED at its carrier (final-review fix wave).
+    STORAGE KIND FIRST, before any name is resolved and before any shape or storage is validated:
+    `NamedDenseEnvOf α` holds `Array α` buffers, so packing them into a plan of a different storage
+    kind would relabel that data as the plan's own inputs without any numeric worker ever running.
+    First specifically, not merely present — the storage-size check below would otherwise report a
+    size complaint about a buffer this carrier must never have been handed at all. `pack` and
+    `pack32` (`Adapter32.lean`) are this body at `α := Float` and `α := Float32`, and share this one
+    guard line. -/
+def packBodyOf {α : Type} [StorageCarrier α] (plan : PreparedPlan)
+    (checked : CheckedPreparedBindings) (env : NamedDenseEnvOf α) :
+    Except InputBindingError (Array (DenseTensorOf α)) := do
+  unless plan.plan.storageKind == StorageCarrier.kind α do
+    throw (.storageKindMismatch (StorageCarrier.kind α) plan.plan.storageKind)
   let raw := plan.plan.raw
   let slotName : HashMap TensorSlot String :=
     checked.requiredInputs.bindings.foldl (fun acc b => acc.insert b.slot b.name) {}
@@ -99,25 +120,14 @@ def packBodyOf {α : Type} (plan : PreparedPlan) (checked : CheckedPreparedBindi
     out := out.push t
   return out
 
-/-- `packBodyOf` behind the BINARY64 storage-kind door.
-
-    STORAGE KIND FIRST, before any name is resolved and before any shape or storage is validated.
-    `NamedDenseEnv` is `HashMap String DenseTensor` — binary64 buffers — so packing them into a
-    `.float32` plan's positional store would relabel `Array Float` data as that plan's own binary32
-    inputs without any numeric worker ever running. Placed on this private helper, not on `pack`
-    below, so `runPreparedDense`'s own call site inherits it too. -/
-private def packChecked (plan : PreparedPlan) (checked : CheckedPreparedBindings)
-    (env : NamedDenseEnv) : Except InputBindingError (Array DenseTensor) := do
-  unless plan.plan.storageKind == .float64 do
-    throw (.storageKindMismatch .float64 plan.plan.storageKind)
-  packBodyOf plan checked env
-
+/-- The BINARY64 named packer: `checkPreparedBindings`, then `packBodyOf` at `α := Float`, whose
+    first statement is the `.float64` storage-kind guard. -/
 def pack (plan : PreparedPlan) (env : NamedDenseEnv) :
     Except InputBindingError (Array DenseTensor) := do
   let checked ← match checkPreparedBindings plan with
     | .ok checked => pure checked
     | .error e => throw (.invalidPreparedBindings e)
-  packChecked plan checked env
+  packBodyOf plan checked env
 
 /-- Reconstruct the named environment from a positional result. Starts from the ORIGINAL `env`
     (preserving every entry `pack` never consulted — extra inputs the plan doesn't read), then
@@ -161,11 +171,19 @@ def pack (plan : PreparedPlan) (env : NamedDenseEnv) :
     (`checkStepGraph`'s first loop) before a `CheckedEvalPlan` exists at all, so no `PreparedPlan` —
     however hand-built its bindings — can present an out-of-range input slot there.
 
-    Carrier-polymorphic and GUARDLESS (f32 slice, Task 4): `unpackChecked`/`unpackChecked32` are
-    this body behind their own storage-kind door. -/
-def unpackBodyOf {α : Type} (plan : PreparedPlan) (checked : CheckedPreparedBindings)
-    (env : NamedDenseEnvOf α) (result : Array (DenseTensorOf α)) :
-    Except PlanRunCause (NamedDenseEnvOf α) := do
+    Carrier-polymorphic (f32 slice, Task 4) and GUARDED at its carrier (final-review fix wave).
+    STORAGE KIND FIRST, before the result store's arity is examined and before any name is
+    published: the environment this builds holds `Array α` buffers, so publishing a plan of a
+    different storage kind through it would hand a caller those buffers under that plan's own
+    output names. First specifically, not merely present — a `storeArityMismatch` would otherwise
+    be reported for a store this carrier must never have been offered. `unpack` and `unpack32`
+    (`Adapter32.lean`) are this body at `α := Float` and `α := Float32`, and share this one guard
+    line. -/
+def unpackBodyOf {α : Type} [StorageCarrier α] (plan : PreparedPlan)
+    (checked : CheckedPreparedBindings) (env : NamedDenseEnvOf α)
+    (result : Array (DenseTensorOf α)) : Except PlanRunCause (NamedDenseEnvOf α) := do
+  unless plan.plan.storageKind == StorageCarrier.kind α do
+    throw (.storageKindMismatch (StorageCarrier.kind α) plan.plan.storageKind)
   let expected := plan.plan.raw.tensorSigs.size
   unless result.size == expected do
     throw (.resultStore (.storeArityMismatch expected result.size))
@@ -173,25 +191,14 @@ def unpackBodyOf {α : Type} (plan : PreparedPlan) (checked : CheckedPreparedBin
   | .error e => throw (.materialization e)
   | .ok pairs => return pairs.foldl (fun acc (nm, t) => acc.insert nm t) env
 
-/-- `unpackBodyOf` behind the BINARY64 storage-kind door.
-
-    STORAGE KIND FIRST, before the result store's arity is examined and before any name is
-    published. The result environment this builds is a `NamedDenseEnv` of binary64 tensors, so
-    publishing a `.float32` plan's outputs through it would hand a caller `Array Float` buffers
-    under that plan's own output names. Same placement rationale as `packChecked`'s guard above. -/
-private def unpackChecked (plan : PreparedPlan) (checked : CheckedPreparedBindings)
-    (env : NamedDenseEnv) (result : Array DenseTensor) :
-    Except PlanRunCause NamedDenseEnv := do
-  unless plan.plan.storageKind == .float64 do
-    throw (.storageKindMismatch .float64 plan.plan.storageKind)
-  unpackBodyOf plan checked env result
-
+/-- The BINARY64 named unpacker: `checkPreparedBindings`, then `unpackBodyOf` at `α := Float`, whose
+    first statement is the `.float64` storage-kind guard. -/
 def unpack (plan : PreparedPlan) (env : NamedDenseEnv) (result : Array DenseTensor) :
     Except PlanRunCause NamedDenseEnv := do
   let checked ← match checkPreparedBindings plan with
     | .ok checked => pure checked
     | .error e => throw (.invalidBindings e)
-  unpackChecked plan checked env result
+  unpackBodyOf plan checked env result
 
 /-- Run a prepared plan against a named environment, over one scalar carrier: pack into positional
     slots, run the positional worker, unpack the result back into the named environment, preserving
@@ -199,45 +206,42 @@ def unpack (plan : PreparedPlan) (env : NamedDenseEnv) (result : Array DenseTens
     or an unpack failure — whose typed cause is carried through unchanged, so the value a caller
     sees here and the value a direct unpack returns are the same).
 
-    `carrier`, `packer`, `unpacker`, and `worker` are supplied by each public entry
-    (`runPreparedDense` below, `runPreparedDense32` in `Adapter32.lean`) rather than derived here,
-    for two reasons. The composite entry's OWN storage-kind guard — the `carrier` comparison
-    immediately below, first, before `checkPreparedBindings`, before the packer, and before the
-    worker — is not redundant with the packer's: this is a whole named runner, and a caller must see
-    the adapter-tier cause (`PlanRunCause.storageKindMismatch`) for "you handed the Float runner a
-    binary32 plan", not a nested pack or worker diagnostic that names a boundary further in. Passing
-    it in keeps that guard one editable line PER RUNNER instead of one shared line serving both. And
-    passing the packer/unpacker in — rather than calling the guardless bodies directly — preserves
-    each carrier's defence in depth exactly as it stood before this refactor. -/
-def runPreparedDenseOf {α : Type} (carrier : LeanNCD.StorageKind)
-    (packer : PreparedPlan → CheckedPreparedBindings → NamedDenseEnvOf α →
-      Except InputBindingError (Array (DenseTensorOf α)))
-    (unpacker : PreparedPlan → CheckedPreparedBindings → NamedDenseEnvOf α →
-      Array (DenseTensorOf α) → Except PlanRunCause (NamedDenseEnvOf α))
+    The carrier comes from `StorageCarrier α` (final-review fix wave; it used to be an explicit
+    `carrier` argument, which a caller could get wrong), and only the positional `worker` is
+    supplied by each public entry (`runPreparedDense` below, `runPreparedDense32` in
+    `Adapter32.lean`). The runner's OWN storage-kind guard — first, before `checkPreparedBindings`,
+    before `packBodyOf`, and before the worker — is not redundant with `packBodyOf`'s: this is a
+    whole named runner, and a caller must see the adapter-tier cause
+    (`PlanRunCause.storageKindMismatch`) for "you handed the Float runner a binary32 plan", not a
+    nested `.binding` or `.execution` diagnostic that names a boundary further in. It is ONE line,
+    shared by both runners: `AdapterTest` fixture 21 and `Adapter32Test` fixtures 10c/10d pin it
+    from each carrier's side. -/
+def runPreparedDenseOf {α : Type} [StorageCarrier α]
     (worker : CheckedEvalPlan → Array (DenseTensorOf α) →
       Except PositionalInputError (Array (DenseTensorOf α)))
     (plan : PreparedPlan) (env : NamedDenseEnvOf α) :
     Except PlanRunFailure (EvalReportOf α) := do
-  unless plan.plan.storageKind == carrier do
-    throw { cause := .storageKindMismatch carrier plan.plan.storageKind
+  unless plan.plan.storageKind == StorageCarrier.kind α do
+    throw { cause := .storageKindMismatch (StorageCarrier.kind α) plan.plan.storageKind
           , warnings := plan.warnings }
   let checked ← match checkPreparedBindings plan with
     | .ok checked => pure checked
     | .error e => throw { cause := .binding (.invalidPreparedBindings e), warnings := plan.warnings }
-  let packed ← match packer plan checked env with
+  let packed ← match packBodyOf plan checked env with
     | .ok a => pure a
     | .error e => throw { cause := .binding e, warnings := plan.warnings }
   let result ← match worker plan.plan packed with
     | .ok r => pure r
     | .error e => throw { cause := .execution e, warnings := plan.warnings }
-  let unpacked ← match unpacker plan checked env result with
+  let unpacked ← match unpackBodyOf plan checked env result with
     | .ok e => pure e
     | .error c => throw { cause := c, warnings := plan.warnings }
   return { env := unpacked, warnings := plan.warnings }
 
-/-- The BINARY64 named runner: `pack → runDensePlan → unpack`, with its own `.float64` guard first. -/
+/-- The BINARY64 named runner: `pack → runDensePlan → unpack`, with the runner's `.float64` guard
+    first. -/
 def runPreparedDense (plan : PreparedPlan) (env : NamedDenseEnv) :
     Except PlanRunFailure EvalReport :=
-  runPreparedDenseOf .float64 packChecked unpackChecked runDensePlan plan env
+  runPreparedDenseOf runDensePlan plan env
 
 end LeanNCD.Eval.Plan

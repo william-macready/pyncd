@@ -101,9 +101,16 @@ def checkDeclCarriers (env : DeclEnv) (carrier : LeanNCD.StorageKind) (names : L
     declaration through `dtypeOfDecl`, never from the carrier. Carries NO carrier guard of its own —
     each public constructor runs `checkDeclCarriers` with its own carrier first (see
     `ofDenseInputsForDecls`/`ofDenseInputs32ForDecls`), so that guard stays one independently
-    editable line per constructor rather than one shared line serving both. Nothing here can
-    relabel a buffer's precision: `α` is never inspected and never crosses into the result. -/
-def signatureOfDenseInputs {α : Type} (env : DeclEnv) (inputs : HashMap String (DenseTensorOf α)) :
+    editable line per constructor rather than one shared line serving both.
+
+    PRIVATE because it is guardless (f32 slice, final-review fix wave). Unguarded, it is itself a
+    relabel: called at `α := Float` over a `tensor f32`-declared name it returns an `.f32`
+    signature for `Array Float` buffers, which is exactly what `checkDeclCarriers` exists to refuse
+    and what no downstream door can catch (a signature carries no buffers to re-examine). While it
+    was public it was a door around both constructors' guards; now the two constructors below are
+    its only callers. -/
+private def signatureOfDenseInputs {α : Type} (env : DeclEnv)
+    (inputs : HashMap String (DenseTensorOf α)) :
     InputSignature :=
   { tensors := inputs.toList.foldl
       (fun acc (nm, t) => acc.insert nm { shape := t.shape.toArray, dtype := dtypeOfDecl env[nm]? })
