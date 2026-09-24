@@ -839,11 +839,13 @@ def f32WrongInputSig : InputSignature :=
 #guard causeOf (prepareEvalPlan f32IdentitySched f32WrongInputSig) ==
   some { cause := .inputSignature (.dtypeMismatch "X" .f32 .f64), warnings := [] }
 
-/-! #### Fixture 14 (source half): nonlinearity is checked BEFORE factors
+/-! #### Fixture 14 (source half): nonlinearity is the only remaining Step 0c factor-loop rejection
 
 `f32BadOrderProg` is fixture 11 carrying BOTH a pointwise nonlinearity on the destination AND an
-inline unary read in the same plain assignment. Either alone is rejected; this fixture pins which
-one is REPORTED, so swapping the two capability checks fails it. -/
+inline unary read in the same plain assignment. Before f32 slice Task 2 this pinned WHICH of two
+rejections was reported, so swapping the two capability checks used to fail it; the inline-unary
+half is no longer a rejection at all (Fixture 2.8), so this no longer pins an order — it just
+confirms the nonlinearity is still refused with the unary read sitting alongside it, unreported. -/
 def f32BadOrderProg : ScheduledProgram :=
   { f32IdentitySched with
     stmts := [.plain (.assign "Y" [.free axI1]
@@ -878,8 +880,10 @@ def f32AxiswiseProg : ScheduledProgram :=
 #guard causeOf (prepareEvalPlan f32AxiswiseProg f32IdentitySig) ==
   some { cause := .capability (.unsupportedDtype "Y: f32 nonlinearity"), warnings := [] }
 
--- (b) inline unary: `identitySched` with an always-true Iverson placed FIRST, so the reported
--- all-factor index is `1` rather than the Iverson-filtered read index `0`.
+-- (b) inline unary — RETIRED as a Fixture 15 rejection (f32 slice, Task 2): see Fixture 2.8 below,
+-- which flips this exact donor to acceptance. An always-true Iverson still sits FIRST, so the
+-- factor-index shape a locator would have needed to distinguish is preserved even though there is
+-- no longer a locator to test.
 def f32UnaryProg : ScheduledProgram :=
   { f32IdentitySched with
     stmts := [.plain (.assign "Y" [.free axI1]
@@ -888,8 +892,27 @@ def f32UnaryProg : ScheduledProgram :=
           , .unaryFn .log "X" [.axis axI1] ] }] }
       , nonlin := .identity })] }
 
-#guard causeOf (prepareEvalPlan f32UnaryProg f32IdentitySig) ==
-  some { cause := .capability (.unsupportedDtype "Y: f32 unary factor 0:1"), warnings := [] }
+/-! #### Fixture 2.8 (f32 slice, Task 2): the deferred inline-unary form is now ACCEPTED
+
+`f32UnaryProg` — Fixture 15(b)'s exact donor, an Iverson factor 0 ahead of an inline `log` read
+factor 1 — flips from a Step 0c rejection to acceptance: `checkAssignF32` (`Check.lean`) now admits
+an inline unary read structurally, and `residualizeAssignment` compiles it into a real `.assign`
+step whose factor 1 carries `unary := some .log`, factor 0 the lowered positional Iverson. -/
+#guard ((prepareEvalPlan f32UnaryProg f32IdentitySig).toOption.map (·.plan.storageKind))
+  == some LeanNCD.StorageKind.float32
+
+#guard ((prepareEvalPlan f32UnaryProg f32IdentitySig).toOption.map (·.plan.raw.steps.size))
+  == some 1
+
+#guard ((prepareEvalPlan f32UnaryProg f32IdentitySig).toOption.map
+    (fun p => (assignStep p.plan.raw.steps[0]!).algebra))
+  == some admittedAlgebraF32
+
+#guard ((prepareEvalPlan f32UnaryProg f32IdentitySig).toOption.map
+    (fun p => match (assignStep p.plan.raw.steps[0]!).terms[0]!.factors with
+      | #[.iverson _, .read r] => r.unary == some .log
+      | _ => false))
+  == some true
 
 -- (c) top-level scatter: the identity schedule's free LHS replaced by the strided affine slot
 -- `Out[2*i]`, presented as the `Stmt.scatter` node `lowerArith` would produce for it.
@@ -927,26 +950,50 @@ def f32ScanSig : InputSignature :=
 #guard causeOf (prepareEvalPlan f32ScanProg f32ScanSig) ==
   some { cause := .capability (.unsupportedDtype "S: f32 scan"), warnings := [] }
 
-/-! #### Fixture 17: top-level statements are traversed in SOURCE order
+/-! #### Fixture 2.9 (f32 slice, Task 2): re-pointing Fixture 17 — top-level statements are still
+    traversed in SOURCE order
 
-A two-statement f32 program whose FIRST plain assignment carries an inline unary and whose SECOND
-carries a pointwise nonlinearity. The required answer is the first statement's UNARY payload, so a
-reverse traversal — or a whole-program pass that prioritises the nonlinearity category regardless of
-statement position — fails this fixture. -/
-def f32SourceOrderProg : ScheduledProgram :=
-  { decls := [ .axis axI1 (some 3), .typedTensor .f32 "X" [axI1]
-             , .typedTensor .f32 "Y" [axI1], .typedTensor .f32 "Z" [axI1] ]
-  , stmts := [ .plain (.assign "Y" [.free axI1]
-                 { body := { terms := [{ factors := [.unaryFn .log "X" [.axis axI1]] }] }
-                 , nonlin := .identity })
-             , .plain (.assign "Z" [.free axI1]
-                 { body := { terms := [{ factors := [.read "Y" [.axis axI1]] }] }
-                 , nonlin := .pointwise .relu }) ]
-  , env := {}, extNames := insert "X" (∅ : Finset String)
-  , explicitSizes := (({} : HashMap UID Nat).insert axI1.uid 3) }
+The ORIGINAL Fixture 17 paired an inline unary (now admitted, Fixture 2.8) against a pointwise
+nonlinearity to pin which one `f32CapabilityCheck` reports first; that pairing no longer has two
+rejections to choose between; the inline-unary half is silently accepted. Re-pointed onto a
+different pair of deferred forms that both still reject: `f32ScatterProg`'s (Fixture 15c) top-level
+scatter statement and `f32ScanProg`'s (Fixture 15d) scan node, concatenated into one program with
+the union of their declarations. The two donors both declare an external `X`, so the scan's is
+renamed `Xs` throughout (declaration, read, `extNames`) to keep the union well-formed.
 
-#guard causeOf (prepareEvalPlan f32SourceOrderProg f32IdentitySig) ==
-  some { cause := .capability (.unsupportedDtype "Y: f32 unary factor 0:0"), warnings := [] }
+Both subcases were observed on today's tree with `f32IdentitySig` as the signature — Step 0c
+(`f32CapabilityCheck`) runs before Step B (external signature validation), so the signature naming
+only `X` is never consulted for the missing `S0`/`Xs` entries; this fixture is therefore written and
+green independent of Task 2's code change. -/
+def f32ScatterThenScanProg : ScheduledProgram :=
+  { decls := f32IdentitySched.decls ++
+      [ .iter f32ScanAxL 3, .typedTensor .f32 "S0" [], .typedTensor .f32 "Xs" [f32ScanAxL]
+      , .typedTensor .f32 "S" [f32ScanAxL] ]
+  , stmts :=
+      [ f32ScatterProg.stmts[0]!
+      , .scan "S" [f32ScanAxL]
+          [ .assign "S" [.iterAt f32ScanAxL 0]
+              { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := .identity } ]
+          [ .assign "S" [.iterNext f32ScanAxL]
+              { body := { terms := [ { factors := [.read "S" [.axis f32ScanAxL]] }
+                                   , { factors := [.read "Xs" [.axis f32ScanAxL]] } ] }
+              , nonlin := .identity } ]
+          false ]
+  , env := {}
+  , extNames := insert "X" (insert "S0" (insert "Xs" (∅ : Finset String)))
+  , explicitSizes := f32IdentitySched.explicitSizes.insert f32ScanAxL.uid 3 }
+
+-- Forward order: the scatter statement comes first, so ITS rejection is reported.
+#guard causeOf (prepareEvalPlan f32ScatterThenScanProg f32IdentitySig) ==
+  some { cause := .capability (.unsupportedDtype "Y: f32 scatter"), warnings := [] }
+
+-- Reversed order: the scan node comes first, so the reported rejection flips too — pinning that the
+-- traversal is SOURCE order, not a fixed scatter-before-scan (or any other) category priority.
+def f32ScanThenScatterProg : ScheduledProgram :=
+  { f32ScatterThenScanProg with stmts := f32ScatterThenScanProg.stmts.reverse }
+
+#guard causeOf (prepareEvalPlan f32ScanThenScatterProg f32IdentitySig) ==
+  some { cause := .capability (.unsupportedDtype "S: f32 scan"), warnings := [] }
 
 /-! #### Fixture FW2 (final-review fix wave): Steps 0c and 0b run BEFORE Step A
 

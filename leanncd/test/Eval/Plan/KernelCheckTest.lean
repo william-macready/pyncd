@@ -362,12 +362,19 @@ def unaryF32Plan (unary : Option UnaryOp) : AssignPlan :=
                                      , sourceShape := #[4], oobPolicy := .zeroPad, unary } ] }]
   , algebra := admittedAlgebraF32 }
 
--- The unary read is rejected at its ORIGINAL all-factor index 1, not the filtered-read index 0.
-#guard errOf (checkAssignF32 unaryF32Sigs (unaryF32Plan (some .log)))
-  == some (.unaryNotAdmittedForDtype 0 1 .f32)
+/-- f32 slice Task 2: an inline unary read is now admitted for every `UnaryOp`, not just rejected at
+    its all-factor index — `unaryNotAdmittedForDtype` has no producer left (retained on `PlanError`
+    for a future carrier without inline unary math; see its doc comment). Acceptance, and the
+    evidence records `.float32`, for all six ops — the Iverson-before-unary shape survives from the
+    donor unchanged, though there is no longer a rejection locator for it to pin. -/
+def unaryOpsAll : List UnaryOp := [.log, .exp, .sin, .cos, .sqrt, .recip]
 
--- Control: the SAME plan with the unary removed is accepted, so the rejection is about the unary
--- and nothing else about this fixture's shape.
+#guard unaryOpsAll.all fun op =>
+  storageOf (checkAssignF32 unaryF32Sigs (unaryF32Plan (some op)))
+    == some LeanNCD.StorageKind.float32
+
+-- Control: the SAME plan with the unary removed is ALSO accepted — admission does not depend on a
+-- factor happening to carry `unary`.
 #guard isOk (checkAssignF32 unaryF32Sigs (unaryF32Plan none))
 
 -- Control: an inline unary in a BINARY64 graph stays admitted — this slice narrowed nothing there.

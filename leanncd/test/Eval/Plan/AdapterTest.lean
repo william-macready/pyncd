@@ -422,10 +422,14 @@ run_cmd do
           | .binding (.invalidPreparedBindings (.publicationSlots _ #[])) => pure ()
           | c => throwError s!"expected invalid prepared bindings before environment lookup, got: {repr c}"
 
--- PlanRunCause.execution: unreachable through the full runPreparedDense pipeline — pack's own
--- validation (Adapter.lean) and runDenseAssign's self-consistent output construction (Dense.lean)
--- together rule out every PositionalInputError constructor once pack has already succeeded.
--- Named directly instead of exercised through the full pipeline.
+-- PlanRunCause.execution: pack's own validation (Adapter.lean) and runDenseAssign's
+-- self-consistent output construction (Dense.lean) together rule out every *shape/arity/storage*
+-- PositionalInputError constructor once pack has already succeeded — but NOT a runtime domain
+-- violation (`unaryDomain`/`unaryDomain32`), which is a fact about the gathered VALUE, not about
+-- shape agreement, and which Check 16 below and Fixture 2.11 (`Adapter32Test`'s binary32 twin)
+-- both show genuinely reaching this cause after a successful pack. This particular payload
+-- (`.arityMismatch`) is still unreachable through the full pipeline for the reason above, so it is
+-- named directly rather than exercised through it.
 #guard (PlanRunCause.execution (.arityMismatch 2 3)) == PlanRunCause.execution (.arityMismatch 2 3)
 
 -- ── Wave F F4 Task 4: the same boundary with a compiled SCAN step behind it ──
@@ -571,20 +575,28 @@ run_cmd do
               unless nm == "S0" do throwError s!"wrong missing name: {nm}"
           | c => throwError s!"expected a binding failure, got: {repr c}"
 
--- Check 16: `PlanRunCause.execution` stays unreachable once a scan step is in the plan, so
--- "warnings preserved on execution failure" has no natural trigger to test against. This is a
--- property of the code, re-verified for F4 rather than inherited: `pack` (Adapter.lean) validates
+-- Check 16: `pack` succeeding rules out every *shape/arity/storage* `PositionalInputError` once a
+-- scan step is in the plan too, so "warnings preserved on a shape/arity/storage execution failure"
+-- has no natural trigger among the four scan shapes below to test against. CORRECTED (f32 slice
+-- Task 2): the ORIGINAL comment here claimed `PlanRunCause.execution` stays UNREACHABLE once a scan
+-- step is in the plan — that is false, and always was for the assignment case too: a runtime unary
+-- domain violation (`log`/`sqrt`/`recip` over an out-of-domain gathered value) is a fact about the
+-- VALUE, not about shape/arity/storage agreement, and reaches `.execution` after a perfectly
+-- successful `pack` — Fixture 2.11 below pins it (binary64 half; `Adapter32Test`'s is the binary32
+-- half). What IS true, and what this check still establishes: `pack` (Adapter.lean) validates
 -- presence, shape, and storage of every `raw.inputSlots` entry against `raw.tensorSigs` using the
 -- SAME two predicates `runDensePlan` (EvalPlan.lean) re-applies, and returns exactly
 -- `raw.inputSlots.size` tensors in that order, so its arity, shape and storage arms are all dead
 -- once `pack` returned `.ok`; `runDenseScan` (Scan.lean) then throws only from arms its own doc
 -- comments mark unreachable-because-checked (`checkCaptures` guarantees every block input has a
--- capture, and the step context comes from `mixedRadixUnrank` over the checked `stepExtents`).
--- Pinned two ways: the constructor is named directly (same pattern as the C3/C4 precedent above),
--- and the four structurally distinct scan shapes below assert positively that `pack` succeeding
--- implies `runDensePlan` succeeding — which is exactly the statement that makes the branch dead.
--- If a future change ever DOES make it reachable, this loop fails and says so, rather than the
--- comment above silently going stale.
+-- capture, and the step context comes from `mixedRadixUnrank` over the checked `stepExtents`) OR
+-- from a genuine runtime domain violation inside a scan recurrence's own inline unary read, which
+-- none of the four fixtures below carries. Pinned two ways: the constructor is named directly (same
+-- pattern as the C3/C4 precedent above), and the four structurally distinct scan shapes below assert
+-- positively that `pack` succeeding implies `runDensePlan` succeeding for THEM — which is exactly
+-- the statement that makes their own shape/arity/storage arms dead, not a claim that `.execution` as
+-- a whole can never be reached. If a future change ever makes shape/arity/storage reachable here
+-- too, this loop fails and says so, rather than the comment above silently going stale.
 run_cmd do
   for (name, sched, inputs) in
       [ ("scratch", ScanCompileTest.scratchSched, ScanCompileTest.scratchInputs)
@@ -851,5 +863,45 @@ def shimReport : EvalReport :=
 -- The binary32 report is a DIFFERENT instantiation of the same shell, with native `Float32` storage
 -- — not `EvalReport` relabelled. `runPreparedDense32` returns this one (`Adapter32Test.lean`).
 #guard (⟨({} : HashMap String DenseTensor32), []⟩ : EvalReport32).env.isEmpty
+
+/-! ## Fixture 2.11 (f32 slice, Task 2): end-to-end domain error, binary64 half
+
+`Adapter32Test`'s Fixture 2.10 donor shape (`E[i] := exp(A[i + 1])`, `axis i : ℕ = 3`), here with
+`log` in place of `exp` and `A = [1, 2, 4]` — every VALID lane is in domain, so the failure is
+purely about the PADDED lane (`A[3]`, out of range, zero-pads to `0.0`, and `log(0.0)` is a genuine
+domain violation). Corrects the two stale "`PlanRunCause.execution` is unreachable" passages above
+(Check 16's preamble and the `#guard` just above it, both amended in place): pack rules out every
+*shape/arity/storage* cause, but not a runtime domain violation, and this fixture is the observation
+that makes it concrete on THIS carrier — `Adapter32Test`'s Fixture 2.11 is the binary32 twin. This is
+also the first fixture anywhere to pin warnings on an `.execution` failure. -/
+
+private def logDomainProg : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  E[i] := log(A[i + 1])
+}
+
+private def logDomainInputs : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "A" ⟨[3], #[1.0, 2.0, 4.0]⟩
+
+run_cmd do
+  match logDomainProg.compileToScheduled.run 0 with
+  | .error e _ => throwError s!"log-domain compile failed: {repr e}"
+  | .ok sched _ =>
+    match prepareEvalPlan sched (InputSignature.ofDenseInputs logDomainInputs) with
+    | .error f => throwError s!"log-domain prepare failed: {renderCompileCause f.cause}"
+    | .ok prepared =>
+        -- The fixture's own teeth: a genuinely non-empty, single-entry warning list to preserve,
+        -- not a vacuously-passing empty one.
+        unless prepared.warnings.length == 1 do
+          throwError s!"fixture is broken: expected exactly one preparation warning, got: \
+{prepared.warnings.map toString}"
+        match runPreparedDense prepared logDomainInputs with
+        | .ok _ => throwError "expected a binary64 domain-error failure"
+        | .error failure =>
+            unless failure.cause == .execution (.unaryDomain .log 0 0) do
+              throwError s!"log-domain: wrong cause: {repr failure.cause}"
+            unless failure.warnings == prepared.warnings do
+              throwError s!"log-domain: warnings dropped/changed on an execution failure: \
+{failure.warnings.map toString}"
 
 end LeanNCD.Eval.Plan.AdapterTest
