@@ -210,7 +210,9 @@ inductive UnaryDomainOp
     re-attaches its `EvalContext` (`EvalError.unaryDomain`), the checked-plan `gatherFactorWith`
     (`Eval/Plan/Dense.lean`, through the binary64 `floatOps.applyUnary`) attaches a positional slot
     (`PositionalInputError.unaryDomain`). Adding a future unary operator is one `UnaryOp`
-    constructor and one arm here; both evaluators inherit it and parity holds by construction. -/
+    constructor and one arm here; both evaluators inherit it and parity holds by construction.
+    This is the binary64 home; its native binary32 sibling `UnaryOp.applyChecked32` sits directly
+    below with the same domain predicates, so a new operator needs an arm in both. -/
 def _root_.LeanNCD.UnaryOp.applyChecked : LeanNCD.UnaryOp → Float → Except UnaryDomainOp Float
   | .log,   v => if v ≤ 0.0 then .error .log else .ok (Float.log v)
   | .sqrt,  v => if v < 0.0 then .error .sqrt else .ok (Float.sqrt v)
@@ -218,6 +220,22 @@ def _root_.LeanNCD.UnaryOp.applyChecked : LeanNCD.UnaryOp → Float → Except U
   | .sin,   v => .ok (Float.sin v)
   | .cos,   v => .ok (Float.cos v)
   | .recip, v => if v == 0.0 then .error .recip else .ok (1.0 / v)
+
+/-- The binary32 sibling of `UnaryOp.applyChecked`, beside it so the domain rules for both carriers
+    are read together: the SAME domain predicates (`log` rejects `≤ 0`, `sqrt` rejects `< 0`,
+    `recip` rejects `== 0`), each evaluated with IEEE binary32 comparison, and native `Float32`
+    math (never binary64-then-narrow, which computes a different function). Reuses
+    `UnaryDomainOp`. -/
+def _root_.LeanNCD.UnaryOp.applyChecked32 :
+    LeanNCD.UnaryOp → Float32 → Except UnaryDomainOp Float32
+  | .log,   v => if v ≤ Float32.ofBits 0x00000000 then .error .log else .ok (Float32.log v)
+  | .sqrt,  v => if v < Float32.ofBits 0x00000000 then .error .sqrt else .ok (Float32.sqrt v)
+  | .exp,   v => .ok (Float32.exp v)
+  | .sin,   v => .ok (Float32.sin v)
+  | .cos,   v => .ok (Float32.cos v)
+  | .recip, v =>
+      if v == Float32.ofBits 0x00000000 then .error .recip
+      else .ok (Float32.ofBits 0x3f800000 / v)
 
 /-- Why `resolveNonlin` rejected an `.axiswise` nonlinearity. Both cases are direct, unconditional
     throws in `resolveNonlin` (no solver, no context) — a closed two-case enum, not a bare string,
