@@ -225,9 +225,13 @@ def deriveStorageKind (sigs : Array TensorSignature) :
     THE one assignment checker: `checkAssign` (binary64) and `checkAssignF32` (binary32) are both
     thin applications of it, so the shape, partition, affine, policy, and all-factor-index clauses
     exist once and cannot drift between carriers. `kind` is the ONLY parameter that varies the
-    policy, and it varies it at exactly four clauses — destination dtype admission, algebra table,
-    source dtype rule, and inline-unary admission — each marked below. It is also what the returned
-    evidence records, so a worker can refuse evidence built for the other carrier.
+    policy, and it varies it at exactly three clauses — destination dtype admission, algebra table,
+    and source dtype rule — each marked below. It is also what the returned evidence records, so a
+    worker can refuse evidence built for the other carrier. Inline unary admission is NOT one of
+    these clauses (f32 slice Task 2): every carrier's own dense worker either implements inline
+    unary math or fails loud on the FACTOR VALUE at runtime (`unaryDomain`/`unaryDomain32`), so this
+    checker imposes no per-carrier unary policy at all — an inline unary read is structurally
+    admitted here regardless of `kind`.
 
     `destSigShape?` is the shape the DESTINATION SIGNATURE must carry. `none` — every existing
     caller — means "the plan's own `outputShape`", which is the original clause verbatim: for an
@@ -313,17 +317,6 @@ private def checkAssignCore (kind : LeanNCD.StorageKind) (sigs : Array TensorSig
         for row in f.map.coeffs do
           unless row.size == t.iterationShape.size do
             throw (.affineWidthMismatch ti fi t.iterationShape.size row.size)
-        -- Inline unary math is admitted in a `.float64` graph (the Float worker delegates to
-        -- `UnaryOp.applyChecked`) and rejected in a `.float32` one: native binary32 `log`/`exp`/
-        -- `sqrt`/`recip` are slice F32-B, and routing an f32 read through the binary64 helper would
-        -- be false f32. Located at the ORIGINAL all-factor index `fi`, like every other per-factor
-        -- locator here, and last among this factor's clauses so the pre-existing shape/policy/affine
-        -- diagnostics keep strict priority over it.
-        match kind with
-        | .float64 => pure ()
-        | .float32 =>
-            unless f.unary.isNone do
-              throw (.unaryNotAdmittedForDtype ti fi .f32)
   return CheckedAssignPlan.mk a kind
 
 /-- The FLOAT64 public checker: the original Wave C policy, unchanged in every clause, now naming

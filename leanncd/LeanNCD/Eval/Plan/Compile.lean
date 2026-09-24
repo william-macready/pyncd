@@ -388,25 +388,20 @@ fixes; each names the DEFERRED SLICE that will admit it (F32-B nonlinearity/unar
 F32-D scatter) rather than claiming the construct is invalid. -/
 
 /-- One top-level statement's binary32 capability check, in the plan's declared sub-construct order:
-    a scatter is refused as a whole statement kind; within a plain assignment NONLINEARITY is checked
-    BEFORE factors, so an assignment carrying both a pointwise nonlinearity and an inline unary read
-    reports the nonlinearity. The unary locator is the ORIGINAL all-factor index within its term — an
-    Iverson ahead of the read does not shift it down — matching `checkAssignF32`'s own
-    `unaryNotAdmittedForDtype` locator one layer down. -/
+    a scatter is refused as a whole statement kind; within a plain assignment, only the nonlinearity
+    is checked here. An inline unary read factor is NO LONGER checked at this tier (f32 slice
+    Task 2): `checkAssignF32` (`Check.lean`) admits it structurally, and the binary32 dense worker
+    (`float32Ops.applyUnary`, `Dense.lean`) applies it for real, failing loud on a runtime domain
+    violation exactly like the binary64 worker does. The retired factor loop's own locator sentence
+    and its "NONLINEARITY is checked BEFORE factors" order claim retire with it — there is nothing
+    left to order once factors are no longer checked here at all. -/
 def checkF32Stmt : Stmt → Except CapabilityError Unit
   | .scatter nm _ _ _ => throw (.unsupportedDtype s!"{nm}: f32 scatter")
   | .recurMorphism _ .. => pure ()   -- `capabilityPreflight` refuses this outright, dtype-blind
-  | .assign nm _ rhs => do
+  | .assign nm _ rhs =>
       match rhs.nonlin with
       | .identity => pure ()
       | .pointwise _ | .axiswise .. => throw (.unsupportedDtype s!"{nm}: f32 nonlinearity")
-      let terms := rhs.body.terms
-      for h : ti in [0 : terms.length] do
-        let t := terms[ti]
-        for h2 : fi in [0 : t.factors.length] do
-          match t.factors[fi] with
-          | .unaryFn .. => throw (.unsupportedDtype s!"{nm}: f32 unary factor {ti}:{fi}")
-          | .read .. | .iverson _ => pure ()
 
 /-- The whole-schedule binary32 capability pass: top-level scheduled statements in SOURCE order,
     first rejection wins. A `.scan`/`.scanPre` node is refused as an unsupported OUTER step kind
