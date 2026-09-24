@@ -1,7 +1,7 @@
 # Native binary32 unary factors and nonlinearities (slice F32-B)
 
-**Status: IMPLEMENTATION PLAN — authored 2026-09-23, independently reviewed the same day (§8), not
-started.** No Lean source file has been changed by this plan. Its design decisions are closed (§9). It is the first follow-on to the completed f32 slice
+**Status: IMPLEMENTATION PLAN — authored 2026-09-23, independently reviewed twice the same day
+(§8), not started.** No Lean source file has been changed by this plan. Its design decisions are closed (§9). It is the first follow-on to the completed f32 slice
 ([`f32_evalplan.md`](f32_evalplan.md), "F32-A" below), and item 1 of that plan's §1.3 deferred list
 and §1.4 recommended order. Read [`f32b_evalplan_handoff.md`](f32b_evalplan_handoff.md) before
 executing it.
@@ -50,7 +50,8 @@ Concretely:
 rounded. This slice accepts that as an intentional property of native binary32 execution, not as a
 defect to engineer around (decision D1, §9). Computing the same primitive in binary64 and
 narrowing once is correctly rounded, except for double-rounding cases with probability about 2⁻²⁹
-(this assumes the binary64 routine's own error is far below one binary32 ulp). Over 1,813,754
+(this assumes the binary64 routine is accurate to about one binary64 ulp, which is 2⁻²⁹ binary32
+ulp; a binary64 error merely "far below one binary32 ulp" would give a much larger rate). Over 1,813,754
 binary32 inputs in [2⁻⁴, 2⁴) (every 37th bit pattern), native and binary64-then-narrow disagreed
 this often:
 
@@ -61,9 +62,12 @@ this often:
 `sqrt` and division are correctly rounded in both carriers. The zero counts match the known result
 that double rounding is harmless when both operands are in the narrow format of precision p and the
 wide format has precision p′: for + and − when p′ ≥ 2p+1, for × and ÷ when p′ ≥ 2p, and for √ when
-p′ ≥ 2p+2 (Figueroa, "When is double rounding innocuous?", ACM SIGNUM Newsletter 30(3), 1995, as
-restated in Martin-Dorel, Melquiond and Muller, "Some issues related to double rounding", BIT
-Numerical Mathematics, 2013, §1). Binary64 has p′ = 53 ≥ 2·24+2 = 50, so all five are covered. Three
+p′ ≥ 2p+2, given p ≥ 4 (Figueroa, "When is double rounding innocuous?", ACM SIGNUM Newsletter
+30(3), 1995, as restated in Martin-Dorel, Melquiond and Muller, "Some issues related to double
+rounding", BIT Numerical Mathematics 53(4), 2013, introduction). That paper writes the wide
+precision as p + p′ and states the conditions on the extra bits p′ as ≥ p+1, ≥ p, and ≥ p+2; here
+p′ is the wide format's *total* precision, so the inequalities are the same ones shifted by p.
+Binary64 has p′ = 53 ≥ 2·24+2 = 50, so all five are covered. Three
 consequences follow, and the plan is built around them:
 
 - **Composites are where binary32 is observable, and portably so.** In `sigmoid`, `gelu`,
@@ -75,8 +79,11 @@ consequences follow, and the plan is built around them:
   result, so any libm whose returned result is within 0.98 ulp of the true value must return r.
   Equivalently, the true value is at least 0.482 ulp from a rounding boundary, so a libm whose
   internal approximation error before its final rounding is below about 0.48 ulp also returns r.
-  The one fold-order row has a worst margin of 0.062, so there the bounds are 0.93 and 0.43 ulp. So
-  these fixtures should not depend on the platform libm. "Should not" is the honest word here: no
+  The one fold-order row has a worst margin of 0.062, so there the bounds are 0.93 and 0.43 ulp.
+  (The argument assumes r's neighbours are a full ulp away. That fails only below a power of two,
+  where the lower neighbour is half an ulp away; the only such steps here are the exact
+  `exp(0) = 1`, and `log(1) = +0` in the unary lanes, and C's Annex F fixes both exactly rather
+  than leaving them to the margin.) So these fixtures should not depend on the platform libm. "Should not" is the honest word here: no
   second platform was available to observe it (§8).
 - **A lone transcendental is observable only through the libm's own rounding error.** It follows
   that no portable value fixture can tell native `expf` from correctly rounded
@@ -813,7 +820,7 @@ F32-A Task 4 fixture 9 pinned, one site at a time. Every site in `Compile.lean` 
 | `residualizeAssignment`'s default `algebraForAgg agg` | only through the arms above, which override it | **(c)** — overridden at every top-level call site after Task 4; scan call sites override it with `algebraForDest` already | 4.1–4.4 |
 | `.plain (.scatter …)` arm; `scatterFillOrFail`'s `.f32 _ => false` | no — Step 0c scatter arm | **(c)**, guarded by Step 0c. **F32-D** | existing CompileTest 15(c), FW2 |
 | `compileScan` base/step nonlinear result slots, literal `.f64` | no — Step 0c scan arm | **(c)**, guarded by Step 0c. **F32-C** must switch both to `destDtype` | existing CompileTest 15(d) |
-| `getD … { shape := #[], dtype := .f64 }` defaults: `compileScan`'s `stateDtypes`/`outerSigs`/`sigsNow`/`baseSigs`/`stepSigs` lookups, and `prepareEvalPlan`'s Step D external `sig.tensors.getD`, both `resolveSource` closures (plain and scatter arms), and scan-state publication `compiled.stateSigs.getD` | the plain `resolveSource` and the external lookup are reached by every f32 program | **(c)** totality formalities: every key is validated before use (the plain `resolveSource` by the `slotOf.contains` assertion above it), each `resolveSource` default contributes only `.shape`, and the external lookup publishes the validated `ts.dtype`, never the default | — (unreachable defaults) |
+| `getD … { shape := #[], dtype := .f64 }` defaults: `compileScan`'s `stateDtypes`/`outerSigs`/`sigsNow`/`baseSigs`/`stepSigs` lookups, and `prepareEvalPlan`'s Step D external `sig.tensors.getD`, both `resolveSource` closures (plain and scatter arms), and scan-state publication `compiled.stateSigs.getD` | the plain `resolveSource` and the external lookup are reached by every f32 program; the `compileScan`, scatter-arm, and scan-publication lookups are not (Step 0c) | **(c)** totality formalities: every key is validated before use (the plain `resolveSource` by the `slotOf.contains` assertion above it), each `resolveSource` default contributes only `.shape`, and the external lookup publishes the validated `ts.dtype`, never the default | — (unreachable defaults) |
 | `checkNonlinIO`'s two `.f64` literals | yes | **fixed by Task 3** (`nonlinDtypeFor kind`) | 3.1, 3.2, M5 |
 | `floatOps`/`float32Ops` `decodeConst` cross-tag arms | yes (fail-loud) | **forbidden**, unchanged by this slice | not re-pinned here |
 
@@ -1036,12 +1043,18 @@ runs.
   `"{name}: f32 unary factor …"` context.
 - `leanncd/LeanNCD/Eval/Plan/Dense.lean`: `float32Ops.applyUnary`, and its doc comment.
 - `leanncd/LeanNCD/Eval/Plan/Check.lean`: delete the `.float32` inline-unary clause and its comment.
-- `leanncd/LeanNCD/Eval/Plan/Compile.lean`: `checkF32Stmt`'s factor loop and its doc comment.
+- `leanncd/LeanNCD/Eval/Plan/Compile.lean`: `checkF32Stmt`'s factor loop and its doc comment. Two
+  of that doc's sentences retire with the loop, not with Task 4's match: the unary-locator
+  sentence, and the "NONLINEARITY is checked BEFORE factors" order claim, which has nothing left to
+  order once factors are no longer checked.
 - `leanncd/LeanNCD/Eval/Plan/Adapter.lean`: M6's mutation site only (`runPreparedDenseOf`'s
   `.execution` arm). No production edit.
 - `leanncd/test/Eval/Plan/KernelCheckTest.lean`
 - `leanncd/test/Eval/Plan/KernelDense32Test.lean`
-- `leanncd/test/Eval/Plan/CompileTest.lean`
+- `leanncd/test/Eval/Plan/CompileTest.lean`. Besides 2.8 and 2.9, fixture 14's preamble ("swapping
+  the two capability checks fails it") goes stale here for the same reason. Its `#guard` still
+  passes, because `f32BadOrderProg` still reports `"Y: f32 nonlinearity"` until Task 4 flips it
+  (4.3), so say that it no longer pins an order.
 - `leanncd/test/Eval/Plan/Adapter32Test.lean`
 - `leanncd/test/Eval/Plan/AdapterTest.lean`: fixture 2.11's binary64 half, plus the two stale
   "`.execution` is unreachable" comments (§2.5).
@@ -1114,7 +1127,8 @@ consulted. This fixture can therefore be written and made green *before* Task 2'
 2.10 End-to-end witness (platform). Donor: `DifferentialTest`'s `E[i] := exp(A[i + 1])` shape, as
 an `Adapter32Test` `tlprog!` with `tensor f32 A(i), E(i)` and `axis i : ℕ = 3`. Input `A = [0,
 1048801280, 1049583616]`. `E` must equal the native `Float32.exp` of lanes 1–2 followed by
-`1065353216`, which is observed `[1067808354, 1068064150, 1065353216]`. The precondition compares
+`1065353216`, which is observed `[1067808354, 1068064150, 1065353216]`. As in 1.8, record those
+bits in a comment only; the assertion is relational. The precondition compares
 it against the binary64 twin through `runPreparedDense`, observed narrowed as
 `[1067808353, 1068064151, 1065353216]`. The materialized dtype is `.f32`.
 
@@ -1155,8 +1169,9 @@ situation, so no masked cycle is planned. 2.3 and 2.6 are regression pins on the
 
 - `leanncd/LeanNCD/Eval/Plan/Nonlin.lean`: block 4. Also rewrite the module doc and the
   `runDensePointwise`/`runDenseAxiswise` doc comments to state the guard.
-- `leanncd/LeanNCD/Eval/Plan/EvalPlan.lean`: the `checkPlan` capability pass and dispatch; the
-  `PlanStepError.f32UnsupportedStep` doc, which now names F32-C/F32-D only.
+- `leanncd/LeanNCD/Eval/Plan/EvalPlan.lean`: the `checkPlan` capability pass and dispatch, and the
+  pass's "binary32 fragment is assignment-only" comment; the `PlanStepError.f32UnsupportedStep`
+  doc, which now names F32-C/F32-D only.
 - `leanncd/LeanNCD/Eval/Plan/Dense32.lean`: the `runDensePlan32` arms and its "Assignment-only"
   doc.
 - `leanncd/LeanNCD/Eval/Plan/Block.lean`: read-only audit target (table A). No edit is expected.
@@ -1294,10 +1309,18 @@ Mutations:
 
 - `leanncd/LeanNCD/Eval/Plan/Compile.lean`: `checkF32Stmt`'s nonlinearity match, the Step D
   `.pointwise`/`.axiswise` arms, and those arms' comments. Also the "Binary32 source capability"
-  section doc, which names "F32-B nonlinearity/unary" as deferred, and `checkF32Stmt`'s own doc,
-  whose nonlinearity-before-factors order claim retires with the match.
+  section doc, which names "F32-B nonlinearity/unary" as deferred, and what remains of
+  `checkF32Stmt`'s own doc after Task 2: its statement that a plain assignment's nonlinearity is
+  rejected.
 - `leanncd/LeanNCD/Eval/Plan/Error.lean`: `CapabilityError.unsupportedDtype`'s doc, whose Step 0c
-  list names the retiring `"{name}: f32 nonlinearity"` context.
+  list names the retiring `"{name}: f32 nonlinearity"` context. Also
+  `PositionalInputError.storageKindMismatch`'s doc, whose "raised at the deepest public Float
+  entries" list names only `runDenseAssignAt` and `runDensePlan`; Task 3 makes
+  `runDensePointwise`/`runDenseAxiswise` producers too. It lands here rather than in Task 3 so that
+  Tasks 2 and 3 stay file-disjoint (§5).
+- `leanncd/LeanNCD/Eval/Plan/EvalPlan.lean`: one comment only, in `checkPlan`'s `localCheck`
+  `.assign` arm, which says `checkAssignF32` "rejects inline unary". Task 2 falsifies it, but
+  `EvalPlan.lean` is Task 3's file, and only Task 4 lands after both.
 - `leanncd/test/Eval/Plan/CompileTest.lean`
 - `leanncd/test/Eval/Plan/NonlinCompileTest.lean`
 - `leanncd/test/Eval/Plan/Adapter32Test.lean`
@@ -1326,8 +1349,8 @@ step.
 - step 1 is `.pointwise .relu`;
 - every signature is `.f32`.
 
-The nonlinearity-before-factor *order* claim it used to pin no longer has two rejections to order,
-and the fixture's comment should say so.
+The nonlinearity-before-factor *order* claim it used to pin has had no two rejections to order
+since Task 2, whose preamble edit already says so. This flip retires the remaining rejection.
 
 4.4 Binary64 byte-identity. Donors: `identitySched` with `nonlin := .pointwise .relu`, and
 `NonlinCompileTest.axiswiseSched`, both binary64. The preactivation step's algebra is exactly
@@ -1364,9 +1387,29 @@ Mutations:
   for binary64.
 - **M6, M7** (two cycles). In the `.pointwise` arm, then independently the `.axiswise` arm, keep
   the *internal preactivation* slot's literal `.f64` while the published slot and the algebra are
-  fixed. 4.2 (resp. 4.1) fails, predicted as `.invalidPlan (.assign (.mixedStorageKinds …))`. These
-  are the third site of each arm. Without them, two of the six hard-coded sites would be fixed by
-  Task 4 with no cycle showing that a fixture sees them.
+  fixed. 4.2 (resp. 4.1) fails, predicted as `.invalidPlan (.assign (.mixedStorageKinds 1 .f32
+  .f64))`. These are the third site of each arm. Without them, two of the six hard-coded sites
+  would be fixed by Task 4 with no cycle showing that a fixture sees them.
+
+Payloads, as far as they can be observed before Task 4 exists. Both donors' tables are
+`[X, internal, published]`. The M1/M3/M6/M7 payloads, and the M2/M5 algebra errors, were observed
+in review round 2 on hand-built raw plans that match the mutated emission. The mutated compiler
+itself was not run. `checkPlan` against today's tree gives `mixedStorageKinds 1 .f32 .f64` for an
+internal `.f64` slot (M6/M7) and `mixedStorageKinds 2 .f32 .f64` for a published one (M1/M3),
+because `deriveStorageKind` runs before the capability pass. That ordering also makes the result
+independent of Task 3. `checkAssignF32` on an all-`.f32` table gives `algebraNotAdmitted
+admittedAlgebra` (M2/M4), and `checkAssign` on an all-`.f64` table gives `algebraNotAdmitted
+admittedAlgebraF32` (M5). What remains a prediction is only that Step D emits the tables above.
+Since the published and internal slots name different indices, a record of M1 and one of M6 cannot
+be confused.
+
+**Old-string uniqueness.** Once Task 4 lands, the two `dtype := destDtype` pushes within an arm
+are textually identical, and they also match the `.identity` arm's push. The
+`.assign { assignPlan with algebra := algebraForDest destDtype rhs.agg }` line is likewise the same
+in all three arms. `mutate-and-build.sh` refuses an old-string that does not occur exactly once
+(exit 125, reported as a cycle FAIL). So every Task 4 cycle, M5 included, needs a multi-line
+old-string, carrying the neighbouring `let publishedSlot` line or the arm's `nonlin` pattern as
+context.
 
 ### Task 5 — Capability documentation, final audit, and close-out
 
@@ -1641,8 +1684,8 @@ which writes into gitignored `leanncd/spikes/` and removes the file afterwards.
   `.execution (.unaryDomain .log 0 0)` with 1 warning was observed through the real binary64
   pipeline.
 - **Not verified, and stated as such:** no glibc or other libm was available, so "portable" means
-  "every libm step at most 0.018 ulp (0.062 on the fold-order row) from representable", not
-  "observed on a second platform".
+  "every libm step at most 0.018 ulp from representable on the composite discriminators, 0.041 on
+  the portable unary lanes, and 0.062 on the fold-order row", not "observed on a second platform".
 
 **Independent adversarial review (2026-09-23, before execution).** A second session re-measured
 the following against `main` at `f6b95e3` rather than trusting the draft. Each item's verdict is
@@ -1659,7 +1702,10 @@ recorded here; the fixes it made are folded into the sections above.
   disagreements for `sqrt`, `1/x`, and binary `×`, `÷`, `+` against a hashed second operand.
 - **The double-rounding theorem** (§1.1), previously cited from memory, was checked against
   Martin-Dorel, Melquiond, and Muller (BIT 2013) §1, which restates Figueroa's conditions. They
-  are p′ ≥ 2p+1 for +/−, p′ ≥ 2p for ×/÷, and p′ ≥ 2p+2 for √. The draft's single "2p+2 for all
+  are p′ ≥ 2p+1 for +/−, p′ ≥ 2p for ×/÷, and p′ ≥ 2p+2 for √, where p′ is the wide total
+  precision. (Round 2: the paper itself writes the wide precision as p + p′, so its printed
+  conditions read p′ ≥ p+1, p, p+2, with p ≥ 4. §1.1 now says so, so that a reader checking the
+  paper does not see an apparent mismatch.) The draft's single "2p+2 for all
   five" is the strictest of the five and so is a correct sufficient condition. §1.1 now cites the
   per-operation form.
 - **The margin argument** (§1.1) was corrected. The draft said "a libm with error below about 0.48
@@ -1675,8 +1721,9 @@ recorded here; the fixes it made are folded into the sections above.
   that inherits `residualizeAssignment`'s `algebraForAgg`. No seventh reachable site exists. The
   remaining `.f64` mentions in `Compile.lean` are the `getD` totality defaults, `algebraForAgg`'s
   own definition, `scatterFillOrFail`'s `.f64` pattern arm, and `compileScan`'s literal result
-  slots. All of these are now classified in table B. Two sites had no mutation cycle, and Task 4
-  gained M6/M7 for them.
+  slots. (Round 2: the list also omitted `algebraForDest`'s own `.f64 => algebraForAgg agg` arm,
+  which is the correct binary64 branch and needs no table row.) All of these are now classified in
+  table B. Two sites had no mutation cycle, and Task 4 gained M6/M7 for them.
 - **The unguarded Float workers.** `runDensePointwise`/`runDenseAxiswise` open with
   `validateNonlinSource` and carry no storage-kind guard. The 3.4/3.5 empty-store construction
   violates the kind *and* the store at once, so it does distinguish guard-first from guard-later,
@@ -1695,6 +1742,51 @@ recorded here; the fixes it made are folded into the sections above.
   task's Files list: `CapabilityError.unsupportedDtype`'s doc in `Plan/Error.lean`, and the
   "Binary32 source capability" section doc and `checkF32Stmt`'s doc in `Compile.lean`. They are now
   in Tasks 2 and 4's lists; §6.3's grep would otherwise first catch them in Task 5.
+
+**Review round 2 (2026-09-23, before execution), aimed at round 1's own edits.** A third session
+re-verified each round-1 change against source rather than against round 1's prose, on `main` at
+`c00a1f1`. It found no blocking defect. Its fixes are folded into the sections above.
+
+- **M6/M7 (Task 4).** The two sites are the `.f64` pushes of `destSlot`, the internal slot, in
+  `prepareEvalPlan` Step D's `.pointwise` and `.axiswise` arms. The predicted failure was derived
+  correctly, and it is now observed as far as it can be before Task 4 exists: hand-built raw plans
+  matching the mutated emission give `mixedStorageKinds 1 .f32 .f64` (M6/M7) and `… 2 …` (M1/M3)
+  through today's `checkPlan` (Task 4's payload note). Not observed: the mutated compiler itself.
+  Added: the old-string uniqueness note, because every Task 4 mutation's target line becomes
+  textually repeated once Task 4 lands.
+- **Double rounding.** The conditions were checked against the paper's text. They are equivalent
+  to round 1's, but the paper states them on the *extra* bits, and it requires p ≥ 4. §1.1 now
+  says both.
+- **The 2⁻²⁹ rate's assumption** had been stated as "binary64 error far below one binary32 ulp".
+  That is too weak: the rate needs about one binary64 ulp. Corrected.
+- **The ulp margin.** The 0.98/0.48 distinction is correct and consistently used. These §2.6 rows
+  were recomputed from the plan's own probe definitions, native and narrowed, and match: `sigmoid`
+  at both lanes, `gelu`, `leakyrelu`, 1-D `softmax`/`normalize`/`l2normalize`, the fold-order row,
+  and the masked `[1000, 0, 2.5]` row. The 2×2 axis-1 `normalize` and the 3×3 causal rows were not
+  re-run in this round. Every libm-step margin was also recomputed: 0.0069, 0.018, 0.0135, 0.018,
+  0.062, and for the unary lanes 0.018, 0.041, 0.032, 0.032, 0.024. Two gaps were fixed. The "every other
+  value ≥ 0.982 ulp away" step fails below a power of two, which affects only the exact `exp(0)`
+  and `log(1)`, both fixed by C Annex F; §1.1 now says so. The "not verified" line above also
+  omitted the unary lanes' 0.041.
+- **Table B's `getD` row.** Every listed default was read in `Compile.lean`. Step B's
+  `missingSignature` check makes the external `sig.tensors.getD` default unreachable, and the plain
+  `resolveSource`'s `slotOf.contains` assertion does the same for its default. The row now also
+  states that the scan and scatter lookups are unreachable by f32 (Step 0c).
+- **Files-list doc sites.** Both of round 1's sites exist as described. One attribution was
+  wrong: `checkF32Stmt`'s nonlinearity-before-factors claim retires with Task 2's factor loop, not
+  Task 4's match. That also stales CompileTest fixture 14's preamble in Task 2. Grepping the stale
+  vocabulary (`rejects inline unary`, `assignment-only`, the raised-at list) found three doc sites
+  in no Files list. `checkPlan`'s "`checkAssignF32` rejects inline unary" comment and
+  `storageKindMismatch`'s producer list now go to Task 4. The capability pass's "assignment-only"
+  comment goes to Task 3.
+- **§9.** It reads as closed decisions with rationale, and no other section argues D1 as open. One
+  D3 claim was inaccurate: "reviewed by a person, not auto-merged by CI". Root `CLAUDE.md` Rule 13
+  pre-authorizes agent merges. The real guarantee is the green-build merge gate, and D3 now says
+  that. That the user made D1–D3 is recorded only by round 1's commit message, and was not
+  independently verifiable.
+- **Counts and blocks.** The counts are 37 fixture groups and 40 cycles (16/6/11/7/0), and they
+  agree in §4, §5, §7, and the handoff. All six Lean blocks compile (awk command above). Every
+  Files-list path and §6.1/§6.2 target exists, apart from the two new test files.
 
 ## 9. Decisions (closed 2026-09-23)
 
@@ -1722,6 +1814,7 @@ none gates Task 1.
   bare `lake build`, naming the lane set that stopped separating native from narrowed. That
   satisfies the repository's fail-loud convention (root `CLAUDE.md` Rule 12) better than moving
   them to a non-default target. There, a platform change would silently remove the protection,
-  because nobody would remember to run it. This repository's slices are reviewed by a person, not
-  auto-merged by CI, so someone will read the failure. The remedy on such a failure is §3.6's: re-run
+  because nobody would remember to run it. Every merge to `main` here is gated on a green full
+  `lake build` (root `CLAUDE.md` Rule 13), so a witness failure blocks integration until someone
+  reads it and acts on it. The remedy on such a failure is §3.6's: re-run
   the §8 witness search for new lanes, and never weaken the precondition.

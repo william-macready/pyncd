@@ -9,11 +9,11 @@ which is now a completed record.
 
 | Item | Value |
 |---|---|
-| Plan document | `papers/f32b_evalplan.md` (1727 lines) |
-| Plan content SHA-256 at handoff | `18608d04252580e190d7b2922d53d3b54314c47cafa7705a4d5cae376f6fe7ee` |
+| Plan document | `papers/f32b_evalplan.md` (1820 lines) |
+| Plan content SHA-256 at handoff | `1a00bf31a64767f7b32a849939839f202d7a474370481c280fdbbb52fdc7675d` |
 | Plan committed on | `main`, in the same commit as this file (`git log -1 -- papers/f32b_evalplan.md`) |
 | Base it was measured against | `main` at `6a53ce7`, where F32-A is complete and merged |
-| Authoring status | Complete. It had one self-review pass against `.claude/skills/slice-plan/SKILL.md`'s checklist, then one independent adversarial review round (2026-09-23), whose findings and re-measurements are recorded at the end of the plan's §8. |
+| Authoring status | Complete. It had one self-review pass against `.claude/skills/slice-plan/SKILL.md`'s checklist, then two independent adversarial review rounds (2026-09-23). The second was aimed at the first round's own edits. Both are recorded at the end of the plan's §8. |
 | Implementation status | **Not started.** No Lean source file has been modified. |
 | Open questions | **None.** The draft's Q1–Q3 are closed decisions D1–D3 in the plan's §9: native libm transcendentals, no `f64` keyword, witness fixtures in the default `Tests` target. |
 | `main` vs `origin/main` | `main` is ahead. **Not pushed.** |
@@ -22,7 +22,7 @@ Verify you have the right plan before doing anything:
 
 ```bash
 shasum -a 256 papers/f32b_evalplan.md
-# must print 18608d04252580e190d7b2922d53d3b54314c47cafa7705a4d5cae376f6fe7ee
+# must print 1a00bf31a64767f7b32a849939839f202d7a474370481c280fdbbb52fdc7675d
 ```
 
 If the hash differs, someone has edited the plan since handoff. Read
@@ -110,6 +110,9 @@ verified at authoring time.
 2. **Every one of the 40 mutation cycles is run and recorded**, with its fail and restored-pass
    observations. Nine already have observed wrong values from authoring: the eight named in plan
    Task 1's list, plus Task 3's M1 on `runDensePointwise`. The rest are predictions to confirm.
+   There is one partial exception, from review round 2: Task 4's M1–M7 failure payloads were
+   observed on hand-built raw plans, but not through the mutated compiler. Their old-strings must
+   be multi-line (plan Task 4, "Old-string uniqueness").
 3. **Guards before admission (Task 3).** The four worker guards and their order fixtures come before
    `checkPointwiseF32`/`checkAxiswiseF32` can produce evidence, in the same commit.
 4. **The audit tables are deliverables.** Table A's worker/checker columns belong to Task 3, table B
@@ -141,8 +144,8 @@ verified at authoring time.
 
 ## 6. How to behave when the plan is wrong
 
-It has had one self-review pass and one independent adversarial review. Expect findings anyway:
-the review re-measured claims, but it did not execute any task.
+It has had one self-review pass and two independent adversarial reviews. Expect findings anyway:
+the reviews re-measured claims, but neither executed any task.
 
 - **Verify against source, never against prose.** That covers the plan's prose, this document's,
   and any reviewer's.
