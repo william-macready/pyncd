@@ -126,9 +126,9 @@ inductive PlanStepError
   | assign (cause : PlanError)
   | scan   (stepIndex : Nat) (cause : ScanPlanError)
   | nonlin (stepIndex : Nat) (cause : NonlinPlanError)
-  /-- A `.float32` graph contains a step kind binary32 execution does not admit. This slice's
-      binary32 fragment is assignment-only: scatter is slice F32-D, scan (and scan-local scatter)
-      is F32-C, and the two nonlinearity operations are F32-B. Carries the ORIGINAL outer step
+  /-- A `.float32` graph contains a step kind binary32 execution does not admit. Binary32 admits
+      assignments and the two nonlinearity operations (F32-B); scatter is slice F32-D, and scan
+      (and scan-local scatter) is F32-C. Carries the ORIGINAL outer step
       index — not an index into the assignments-only sublist — and a closed `PlanStepKind`
       (`Error.lean`) rather than a rendered string.
 
@@ -140,8 +140,8 @@ inductive PlanStepError
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- Which constructor a `PlanStep` is, as the closed diagnostic payload `f32UnsupportedStep`
-    carries. Total over `PlanStep`; the `.assign` answer is never actually reported by that error,
-    since an assignment is exactly the kind a binary32 graph admits. -/
+    carries. Total over `PlanStep`; the `.assign`, `.pointwise`, and `.axiswise` answers are never
+    actually reported by that error, since those are exactly the kinds a binary32 graph admits. -/
 def PlanStep.kind : PlanStep → PlanStepKind
   | .assign _    => .assign
   | .scatter _   => .scatter
@@ -155,7 +155,8 @@ def PlanStep.kind : PlanStep → PlanStepKind
     slots to be currently unavailable (so none can already be produced) before checking, then marks
     all of them available together afterward; a `.pointwise`/`.axiswise` node (Thread 4) requires no
     top-level context (like an ordinary node, but skips `checkAssign`'s specific check since it has
-    no `contextShape` field at all) and uses `checkPointwise`/`checkAxiswise` respectively. A
+    no `contextShape` field at all) and uses `checkPointwise`/`checkAxiswise` respectively (their
+    `checkPointwiseF32`/`checkAxiswiseF32` siblings in a `.float32` graph). A
     `.scatter` node is checked for the same empty top-level context and the same forward reads as an
     ordinary node (both obligations live on its compute half), then validated by `checkScatter`
     (`Check.lean`), whose `CheckedScatterPlan` becomes `.scatter` evidence. That evidence is NOT the
@@ -184,18 +185,19 @@ def checkPlan (raw : RawEvalPlan) : Except PlanStepError CheckedEvalPlan := do
   let storageKind ← match deriveStorageKind raw.tensorSigs with
     | .ok k => pure k
     | .error e => throw (.assign e)
-  -- CAPABILITY SECOND, for a `.float32` graph only, over `raw.steps` in ORIGINAL order: this slice's
-  -- binary32 fragment is assignment-only. Matched arm by arm rather than through a catch-all so
-  -- admitting one of these kinds later is a deliberate edit at its own arm; indexed over
-  -- `raw.steps` itself, never a filtered sublist, so the reported index is the outer-graph one.
+  -- CAPABILITY SECOND, for a `.float32` graph only, over `raw.steps` in ORIGINAL order: binary32
+  -- admits assignments and the two nonlinearity operations (F32-B); scatter (F32-D) and scan
+  -- (F32-C) are refused. Matched arm by arm rather than through a catch-all so admitting one of
+  -- these kinds later is a deliberate edit at its own arm; indexed over `raw.steps` itself, never a
+  -- filtered sublist, so the reported index is the outer-graph one.
   if storageKind == .float32 then
     for h : ni in [0 : raw.steps.size] do
       match raw.steps[ni] with
       | .assign _    => pure ()
       | .scatter _   => throw (.f32UnsupportedStep ni .scatter)
       | .scan _      => throw (.f32UnsupportedStep ni .scan)
-      | .pointwise _ => throw (.f32UnsupportedStep ni .pointwise)
-      | .axiswise _  => throw (.f32UnsupportedStep ni .axiswise)
+      | .pointwise _ => pure ()
+      | .axiswise _  => pure ()
   let mut nodes : Array (WiringNode PlanStepError CheckedPlanStepEvidence) := #[]
   for h : ni in [0 : raw.steps.size] do
     let step := raw.steps[ni]
@@ -267,12 +269,20 @@ def checkPlan (raw : RawEvalPlan) : Except PlanStepError CheckedEvalPlan := do
               match checkScanPlan raw.tensorSigs s with
               | .error e => throw (.scan ni e)
               | .ok c => pure (.scan c)
+          -- The two nonlinearity arms select their checker by the graph's storage kind exactly as
+          -- `.assign` does: `checkPointwiseF32`/`checkAxiswiseF32` are siblings of the binary64
+          -- checkers through one shared private core (`Nonlin.lean`), and stamp `.float32` on the
+          -- evidence they return.
           | .pointwise p =>
-              match checkPointwise raw.tensorSigs p with
+              match (match storageKind with
+                     | .float64 => checkPointwise raw.tensorSigs p
+                     | .float32 => checkPointwiseF32 raw.tensorSigs p) with
               | .error e => throw (.nonlin ni e)
               | .ok c => pure (.pointwise c)
           | .axiswise a =>
-              match checkAxiswise raw.tensorSigs a with
+              match (match storageKind with
+                     | .float64 => checkAxiswise raw.tensorSigs a
+                     | .float32 => checkAxiswiseF32 raw.tensorSigs a) with
               | .error e => throw (.nonlin ni e)
               | .ok c => pure (.axiswise c)
       }

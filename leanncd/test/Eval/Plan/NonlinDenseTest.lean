@@ -108,12 +108,18 @@ hand from the mismatch, not read back from the worker.
 def probePointwise : RawPointwisePlan :=
   { sourceSlot := 0, destinationSlot := 1, shape := #[2], fn := .relu }
 
-def pwErrOf (store : Array DenseTensor) : Option PositionalInputError :=
-  match checkPointwise oneNodeSigs probePointwise with
+/-- Drive `runDensePointwise` with the given checker result as its evidence. `pwErrOf` below is this
+    over the binary64 evidence; F32-B fixture 3.4 feeds it binary32 evidence instead. -/
+def pwErrWith (checked : Except NonlinPlanError CheckedPointwisePlan) (store : Array DenseTensor) :
+    Option PositionalInputError :=
+  match checked with
   | .error _ => none
   | .ok c => match runDensePointwise c store with
              | .error e => some e
              | .ok _ => none
+
+def pwErrOf (store : Array DenseTensor) : Option PositionalInputError :=
+  pwErrWith (checkPointwise oneNodeSigs probePointwise) store
 
 -- missing slot: an empty store cannot provide source slot 0.
 #guard pwErrOf #[] == some (.missingSlot 0 0)
@@ -131,12 +137,17 @@ def pwErrOf (store : Array DenseTensor) : Option PositionalInputError :=
 def probeAxiswise : RawAxiswisePlan :=
   { sourceSlot := 0, destinationSlot := 1, shape := #[2,2], axisPos := 1, fn := .normalize }
 
-def axErrOf (store : Array DenseTensor) : Option PositionalInputError :=
-  match checkAxiswise axiswiseSigs probeAxiswise with
+/-- Drive `runDenseAxiswise` with the given checker result as its evidence (see `pwErrWith`). -/
+def axErrWith (checked : Except NonlinPlanError CheckedAxiswisePlan) (store : Array DenseTensor) :
+    Option PositionalInputError :=
+  match checked with
   | .error _ => none
   | .ok c => match runDenseAxiswise c store with
              | .error e => some e
              | .ok _ => none
+
+def axErrOf (store : Array DenseTensor) : Option PositionalInputError :=
+  axErrWith (checkAxiswise axiswiseSigs probeAxiswise) store
 
 -- missing slot: an empty store cannot provide source slot 0.
 #guard axErrOf #[] == some (.missingSlot 0 0)
@@ -151,6 +162,31 @@ def axErrOf (store : Array DenseTensor) : Option PositionalInputError :=
 
 -- well-formed store: no error (the function applies).
 #guard axErrOf #[ { shape := [2,2], data := #[1.0, 3.0, 2.0, 2.0] } ] == none
+
+/-!
+## F32-B fixture 3.4: the binary64 workers refuse binary32 evidence FIRST
+
+`pwErrOf`/`axErrOf`'s probes, checked by the BINARY32 checkers over their signature tables retagged
+`f32`, handed to the binary64 workers. With an EMPTY store the answer must be `storageKindMismatch
+.float64 .float32`, not `missingSlot 0 0` (the first fixture of each pair above): this pins the
+guard's ORDER — first statement, before the store is looked at — not only its presence. With a
+well-formed binary64 store, where no store check could fire, the answer is the same.
+-/
+
+def oneNodeSigs32 : Array TensorSignature := oneNodeSigs.map ({ · with dtype := .f32 })
+def axiswiseSigs32 : Array TensorSignature := axiswiseSigs.map ({ · with dtype := .f32 })
+
+#guard pwErrWith (checkPointwiseF32 oneNodeSigs32 probePointwise) #[]
+  == some (.storageKindMismatch .float64 .float32)
+#guard pwErrWith (checkPointwiseF32 oneNodeSigs32 probePointwise)
+    #[ { shape := [2], data := #[-1.0, 2.0] } ]
+  == some (.storageKindMismatch .float64 .float32)
+
+#guard axErrWith (checkAxiswiseF32 axiswiseSigs32 probeAxiswise) #[]
+  == some (.storageKindMismatch .float64 .float32)
+#guard axErrWith (checkAxiswiseF32 axiswiseSigs32 probeAxiswise)
+    #[ { shape := [2,2], data := #[1.0, 3.0, 2.0, 2.0] } ]
+  == some (.storageKindMismatch .float64 .float32)
 
 /-!
 ## Masked axiswise Dense adapter: `runDenseAxiswise` honors `RawAxiswisePlan.mask`

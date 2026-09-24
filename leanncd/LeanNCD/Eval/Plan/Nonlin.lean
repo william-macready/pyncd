@@ -10,6 +10,16 @@ New raw types `RawPointwisePlan` and `RawAxiswisePlan` for the `.pointwise` and 
 `PlanStep` cases, with a shared geometry-check helper `checkNonlinIO` and checkers built on it
 (Task 1), plus the dense workers `runDensePointwise`/`runDenseAxiswise` (Task 2). These are the
 Plan-layer (UID-free, position-based) counterpart to the AST-layer `Nonlin` cases.
+
+**Both carriers (F32-B Task 3).** Checked evidence records the storage kind it was checked FOR, the
+pattern `CheckedAssignPlan` already follows. One private core per checker, parameterized by that
+kind, backs two public siblings: `checkPointwise`/`checkAxiswise` (binary64, today's behavior
+exactly) and `checkPointwiseF32`/`checkAxiswiseF32` (native binary32, admitting `.f32` slots where
+the binary64 checkers admit `.f64`). Each of the four workers — `runDensePointwise`/
+`runDenseAxiswise` over a `DenseTensor` store and `runDensePointwise32`/`runDenseAxiswise32` over a
+`DenseTensor32` store — checks the evidence's storage kind as its FIRST statement, before the store
+is looked at, so wrong-precision evidence reports `storageKindMismatch` rather than whatever the
+store happens to be missing.
 -/
 
 namespace LeanNCD.Eval.Plan
@@ -53,30 +63,43 @@ inductive NonlinPlanError
   | maskWidthMismatch        (expected : Nat) (actual : Nat)
   deriving DecidableEq, BEq, Repr, Inhabited
 
-/-- Evidence that one `RawPointwisePlan` satisfies every local invariant. -/
+/-- Evidence that one `RawPointwisePlan` satisfies every local invariant, for the storage kind it
+    records. `storageKind` is the carrier the checker admitted the slots FOR (`checkPointwise`:
+    `.float64`; `checkPointwiseF32`: `.float32`), exactly as `CheckedAssignPlan` records its own, so
+    each worker can refuse evidence checked for the other carrier. -/
 structure CheckedPointwisePlan where private mk ::
-  raw : RawPointwisePlan
+  raw         : RawPointwisePlan
+  storageKind : LeanNCD.StorageKind
   deriving Repr
 
-/-- Evidence that one `RawAxiswisePlan` satisfies every local invariant. -/
+/-- Evidence that one `RawAxiswisePlan` satisfies every local invariant, for the storage kind it
+    records (see `CheckedPointwisePlan`). -/
 structure CheckedAxiswisePlan where private mk ::
-  raw : RawAxiswisePlan
+  raw         : RawAxiswisePlan
+  storageKind : LeanNCD.StorageKind
   deriving Repr
 
-/-- Shared geometry-check helper for both pointwise and axiswise operations.
-    Validates rows 1-7 of §4's case×class table (slot range, dtype, shape agreement).
-    Returns the validated source and destination signatures on success. -/
-def checkNonlinIO (sigs : Array TensorSignature) (sourceSlot destinationSlot : TensorSlot)
-    (shape : Array Nat) : Except NonlinPlanError (TensorSignature × TensorSignature) := do
+/-- The one real dtype a nonlinearity slot may carry, per graph carrier. -/
+private def nonlinDtypeFor : LeanNCD.StorageKind → ScalarDType
+  | .float64 => .f64
+  | .float32 => .f32
+
+/-- Shared geometry-check core for both pointwise and axiswise operations, for one carrier `kind`.
+    Validates rows 1-7 of §4's case×class table (slot range, dtype, shape agreement), where the one
+    admitted dtype is `nonlinDtypeFor kind`. Returns the validated source and destination
+    signatures on success. -/
+private def checkNonlinIOCore (kind : LeanNCD.StorageKind) (sigs : Array TensorSignature)
+    (sourceSlot destinationSlot : TensorSlot) (shape : Array Nat) :
+    Except NonlinPlanError (TensorSignature × TensorSignature) := do
   let destSig ← match sigs[destinationSlot]? with
     | some s => pure s
     | none => throw (.slotOutOfRange destinationSlot sigs.size)
   let srcSig ← match sigs[sourceSlot]? with
     | some s => pure s
     | none => throw (.slotOutOfRange sourceSlot sigs.size)
-  unless destSig.dtype == .f64 do
+  unless destSig.dtype == nonlinDtypeFor kind do
     throw (.dtypeNotAdmitted destinationSlot destSig.dtype)
-  unless srcSig.dtype == .f64 do
+  unless srcSig.dtype == nonlinDtypeFor kind do
     throw (.dtypeNotAdmitted sourceSlot srcSig.dtype)
   unless srcSig.dtype == destSig.dtype do
     throw (.dtypeMismatch destSig.dtype srcSig.dtype)
@@ -86,16 +109,31 @@ def checkNonlinIO (sigs : Array TensorSignature) (sourceSlot destinationSlot : T
     throw (.destinationShapeMismatch shape destSig.shape)
   return (srcSig, destSig)
 
-/-- Validate one pointwise operation against the positional signature table. -/
-def checkPointwise (sigs : Array TensorSignature) (p : RawPointwisePlan) :
-    Except NonlinPlanError CheckedPointwisePlan := do
-  let _ ← checkNonlinIO sigs p.sourceSlot p.destinationSlot p.shape
-  return CheckedPointwisePlan.mk p
+/-- The binary64 geometry check, `checkNonlinIOCore .float64`: both slots must be `.f64`. Kept
+    public with its pre-binary32 behavior exactly. -/
+def checkNonlinIO (sigs : Array TensorSignature) (sourceSlot destinationSlot : TensorSlot)
+    (shape : Array Nat) : Except NonlinPlanError (TensorSignature × TensorSignature) :=
+  checkNonlinIOCore .float64 sigs sourceSlot destinationSlot shape
 
-/-- Validate one axiswise operation against the positional signature table. -/
-def checkAxiswise (sigs : Array TensorSignature) (a : RawAxiswisePlan) :
-    Except NonlinPlanError CheckedAxiswisePlan := do
-  let _ ← checkNonlinIO sigs a.sourceSlot a.destinationSlot a.shape
+private def checkPointwiseCore (kind : LeanNCD.StorageKind) (sigs : Array TensorSignature)
+    (p : RawPointwisePlan) : Except NonlinPlanError CheckedPointwisePlan := do
+  let _ ← checkNonlinIOCore kind sigs p.sourceSlot p.destinationSlot p.shape
+  return CheckedPointwisePlan.mk p kind
+
+/-- Validate one pointwise operation against the positional signature table, for binary64. -/
+def checkPointwise (sigs : Array TensorSignature) (p : RawPointwisePlan) :
+    Except NonlinPlanError CheckedPointwisePlan :=
+  checkPointwiseCore .float64 sigs p
+
+/-- Validate one pointwise operation for native binary32: the sibling of `checkPointwise` through
+    the same core, admitting `.f32` slots and recording `.float32`. -/
+def checkPointwiseF32 (sigs : Array TensorSignature) (p : RawPointwisePlan) :
+    Except NonlinPlanError CheckedPointwisePlan :=
+  checkPointwiseCore .float32 sigs p
+
+private def checkAxiswiseCore (kind : LeanNCD.StorageKind) (sigs : Array TensorSignature)
+    (a : RawAxiswisePlan) : Except NonlinPlanError CheckedAxiswisePlan := do
+  let _ ← checkNonlinIOCore kind sigs a.sourceSlot a.destinationSlot a.shape
   unless a.axisPos < a.shape.size do
     throw (.axisPositionOutOfRange a.axisPos a.shape.size)
   -- Mask width: each positional mask leaf must span exactly the local output basis (`shape.size`).
@@ -105,16 +143,28 @@ def checkAxiswise (sigs : Array TensorSignature) (a : RawAxiswisePlan) :
   | some m => match m.affineWidths.find? (· != a.shape.size) with
       | some w => throw (.maskWidthMismatch a.shape.size w)
       | none => pure ()
-  return CheckedAxiswisePlan.mk a
+  return CheckedAxiswisePlan.mk a kind
+
+/-- Validate one axiswise operation against the positional signature table, for binary64. -/
+def checkAxiswise (sigs : Array TensorSignature) (a : RawAxiswisePlan) :
+    Except NonlinPlanError CheckedAxiswisePlan :=
+  checkAxiswiseCore .float64 sigs a
+
+/-- Validate one axiswise operation for native binary32: the sibling of `checkAxiswise` through the
+    same core, admitting `.f32` slots and recording `.float32`. -/
+def checkAxiswiseF32 (sigs : Array TensorSignature) (a : RawAxiswisePlan) :
+    Except NonlinPlanError CheckedAxiswisePlan :=
+  checkAxiswiseCore .float32 sigs a
 
 /-- Validate the positional store against the single source shape `checkNonlinIO` already validated,
-    returning that source tensor. The exact `runDenseAssignAt`/`validateStore` (`Dense.lean`)
-    discipline, narrowed to one slot: runtime values are a separate trust boundary from plan
-    structure, so this is a value check, not a re-validation of the plan. Without it these workers
-    would read `store` through `getD … placeholder` at their call sites and silently apply the
-    function to an empty placeholder when a slot is missing or misshapen, rather than failing loud. -/
-private def validateNonlinSource (sourceSlot : TensorSlot) (shape : Array Nat)
-    (store : Array DenseTensor) : Except PositionalInputError DenseTensor := do
+    returning that source tensor. Generic over the carrier, so the workers of both precisions share
+    one copy. The exact `runDenseAssignAt`/`validateStore` (`Dense.lean`) discipline, narrowed to one
+    slot: runtime values are a separate trust boundary from plan structure, so this is a value
+    check, not a re-validation of the plan. Without it these workers would read `store` through
+    `getD … placeholder` at their call sites and silently apply the function to an empty placeholder
+    when a slot is missing or misshapen, rather than failing loud. -/
+private def validateNonlinSourceOf {α : Type} (sourceSlot : TensorSlot) (shape : Array Nat)
+    (store : Array (DenseTensorOf α)) : Except PositionalInputError (DenseTensorOf α) := do
   match store[sourceSlot]? with
   | none => throw (.missingSlot sourceSlot store.size)
   | some d =>
@@ -124,39 +174,73 @@ private def validateNonlinSource (sourceSlot : TensorSlot) (shape : Array Nat)
         throw (.storageMismatch sourceSlot d.shape d.data.size)
       pure d
 
-/-- Run one checked pointwise operation. Re-validates its source slot against the checked shape
-    first (`validateNonlinSource`) — same runtime trust boundary `runDenseAssignAt` honors — then
-    reuses `PointwiseFn.apply` (`LeanNCD.Eval.Nonlin`) — no new math. -/
-def runDensePointwise (c : CheckedPointwisePlan) (store : Array DenseTensor) :
-    Except PositionalInputError DenseTensor := do
-  let src ← validateNonlinSource c.raw.sourceSlot c.raw.shape store
-  return c.raw.fn.apply src
-
-/-- Run one checked axiswise operation. Re-validates its source slot against the checked shape first
-    (`validateNonlinSource`) — same runtime trust boundary `runDenseAssignAt` honors. Before building
-    the `included?` predicate, re-checks the mask's (if any) leaf widths against the local output
-    basis with the SAME cheap symbolic check `checkAxiswise` already ran (`affineWidths` vs
-    `shape.size`, not a per-coordinate `evalPosBool` pass), mapping a mismatch into
-    `PositionalInputError.predicateWidthMismatch` so this path fails loud rather than the fail-open
-    `included? = true` a raw `.toOption.getD true` would give — an unreachable-in-practice error
-    (`checkAxiswise`'s mask width check forbids the only failure mode), guarded here at leaf-count
-    cost instead of coordinate-count cost. Once validated, builds the full-coordinate `included?`
-    predicate from the mask (a `none` mask includes every coordinate, so an unmasked reduction is
-    byte-for-byte the pre-mask behavior) and hands it to `AxiswiseFn.applyCore` — the SAME single
-    softmax/normalize/L2 implementation the SOURCE `AxiswiseFn.apply` uses, differing only in which
-    predicate language it evaluates. -/
-def runDenseAxiswise (c : CheckedAxiswisePlan) (store : Array DenseTensor) :
-    Except PositionalInputError DenseTensor := do
-  let src ← validateNonlinSource c.raw.sourceSlot c.raw.shape store
-  match c.raw.mask with
+/-- The axiswise workers' shared mask handling, one copy for both carriers. Re-checks the mask's (if
+    any) leaf widths against the local output basis with the SAME cheap symbolic check
+    `checkAxiswise` already ran (`affineWidths` vs `shape.size`, not a per-coordinate `evalPosBool`
+    pass), mapping a mismatch into `PositionalInputError.predicateWidthMismatch` so this path fails
+    loud rather than the fail-open `included? = true` a raw `.toOption.getD true` would give — an
+    unreachable-in-practice error (`checkAxiswise`'s mask width check forbids the only failure
+    mode), guarded here at leaf-count cost instead of coordinate-count cost. Once validated, builds
+    the full-coordinate `included?` predicate from the mask (a `none` mask includes every
+    coordinate, so an unmasked reduction is byte-for-byte the pre-mask behavior). -/
+private def axiswiseIncluded (a : RawAxiswisePlan) :
+    Except PositionalInputError (List Nat → Bool) := do
+  match a.mask with
   | none => pure ()
-  | some m => match m.affineWidths.find? (· != c.raw.shape.size) with
-      | some w => throw (.predicateWidthMismatch c.raw.shape.size w)
+  | some m => match m.affineWidths.find? (· != a.shape.size) with
+      | some w => throw (.predicateWidthMismatch a.shape.size w)
       | none => pure ()
-  let included? : List Nat → Bool := fun coord =>
-    match c.raw.mask with
+  return fun coord => match a.mask with
     | none => true
     | some m => (evalPosBool (coord.map (Int.ofNat ·)) m).toOption.getD true
+
+/-- Run one checked pointwise operation over a binary64 store. **The storage-kind guard is the FIRST
+    statement, before the store is looked at:** `.float32` evidence (from `checkPointwiseF32`) is
+    refused as `storageKindMismatch .float64 .float32` even when the store is empty, rather than
+    reporting the store's `missingSlot`. Then re-validates its source slot against the checked shape
+    (`validateNonlinSourceOf`) — same runtime trust boundary `runDenseAssignAt` honors — and reuses
+    `PointwiseFn.apply` (`LeanNCD.Eval.Nonlin`) — no new math. -/
+def runDensePointwise (c : CheckedPointwisePlan) (store : Array DenseTensor) :
+    Except PositionalInputError DenseTensor := do
+  unless c.storageKind == .float64 do
+    throw (.storageKindMismatch .float64 c.storageKind)
+  let src ← validateNonlinSourceOf c.raw.sourceSlot c.raw.shape store
+  return c.raw.fn.apply src
+
+/-- Run one checked pointwise operation over a native binary32 store: the sibling of
+    `runDensePointwise`, guarded `.float32` as its FIRST statement, sharing its source validation,
+    and applying the native binary32 formula `PointwiseFn.apply32` — never binary64 math with a
+    widen/narrow. -/
+def runDensePointwise32 (c : CheckedPointwisePlan) (store : Array DenseTensor32) :
+    Except PositionalInputError DenseTensor32 := do
+  unless c.storageKind == .float32 do
+    throw (.storageKindMismatch .float32 c.storageKind)
+  let src ← validateNonlinSourceOf c.raw.sourceSlot c.raw.shape store
+  return c.raw.fn.apply32 src
+
+/-- Run one checked axiswise operation over a binary64 store. **The storage-kind guard is the FIRST
+    statement, before the store is looked at**, exactly as in `runDensePointwise`. Then
+    re-validates its source slot against the checked shape (`validateNonlinSourceOf`), builds the
+    mask's `included?` predicate (`axiswiseIncluded`), and hands both to `AxiswiseFn.applyCore` —
+    the SAME single softmax/normalize/L2 implementation the SOURCE `AxiswiseFn.apply` uses,
+    differing only in which predicate language it evaluates. -/
+def runDenseAxiswise (c : CheckedAxiswisePlan) (store : Array DenseTensor) :
+    Except PositionalInputError DenseTensor := do
+  unless c.storageKind == .float64 do
+    throw (.storageKindMismatch .float64 c.storageKind)
+  let src ← validateNonlinSourceOf c.raw.sourceSlot c.raw.shape store
+  let included? ← axiswiseIncluded c.raw
   return c.raw.fn.applyCore c.raw.axisPos included? src
+
+/-- Run one checked axiswise operation over a native binary32 store: the sibling of
+    `runDenseAxiswise`, guarded `.float32` as its FIRST statement, sharing its source validation and
+    mask handling, and applying the native binary32 row engine `AxiswiseFn.applyCore32`. -/
+def runDenseAxiswise32 (c : CheckedAxiswisePlan) (store : Array DenseTensor32) :
+    Except PositionalInputError DenseTensor32 := do
+  unless c.storageKind == .float32 do
+    throw (.storageKindMismatch .float32 c.storageKind)
+  let src ← validateNonlinSourceOf c.raw.sourceSlot c.raw.shape store
+  let included? ← axiswiseIncluded c.raw
+  return c.raw.fn.applyCore32 c.raw.axisPos included? src
 
 end LeanNCD.Eval.Plan

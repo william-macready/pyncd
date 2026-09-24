@@ -99,10 +99,10 @@ inductive PlanError
     `PlanStepError` itself does (it needs `ScanPlanError`), but this vocabulary needs nothing from
     that layer.
 
-    `.assign` is carried for completeness of the vocabulary — `PlanStep.kind` is total — and is
-    deliberately NOT a producer of `f32UnsupportedStep`: an assignment is exactly the one step kind
-    an `f32` graph admits. Derives the same four classes `PlanStepError` does so that type's own
-    derivations keep working. -/
+    `.assign`, `.pointwise`, and `.axiswise` are carried for completeness of the vocabulary —
+    `PlanStep.kind` is total — and are deliberately NOT producers of `f32UnsupportedStep`: those are
+    exactly the step kinds an `f32` graph admits (the nonlinearity pair since F32-B). Derives the
+    same four classes `PlanStepError` does so that type's own derivations keep working. -/
 inductive PlanStepKind
   | assign | scatter | scan | pointwise | axiswise
   deriving DecidableEq, BEq, Repr, Inhabited
