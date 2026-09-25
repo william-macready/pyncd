@@ -33,8 +33,10 @@ def row32 (xs : List Float) : DenseTensor32 := ⟨[xs.length], xs.toArray.map Fl
 /-- The exact bits of every element. -/
 def bitsOf (t : DenseTensor32) : Array UInt32 := t.data.map Float32.toBits
 
-/-- Binary64-then-narrow: widen `t`, apply the binary64 function `f`, narrow the result once. -/
-def narrowed (f : DenseTensor → DenseTensor) (t : DenseTensor32) : DenseTensor32 :=
+/-- Binary64-then-narrow: widen `t`, apply the binary64 function `f`, narrow the result once.
+    `private`: no cross-file caller (checked repo-wide) — every other file's own narrowed-contrast
+    helper (`narrowLane`, `narrowAll`, the `Adapter32Test`/`KernelDense32Test` twins) is its own. -/
+private def narrowed (f : DenseTensor → DenseTensor) (t : DenseTensor32) : DenseTensor32 :=
   let w := f ⟨t.shape, t.data.map Float32.toFloat⟩
   ⟨w.shape, w.data.map Float.toFloat32⟩
 
@@ -61,7 +63,9 @@ def gelu32 (x : Float32) : Float32 :=
     (x + Float32.ofBits 0x3d372713 * Float32.pow x 3.0)))
 def leaky32 (x : Float32) : Float32 := if x ≥ 0.0 then x else Float32.ofBits 0x3c23d70a * x
 
-def direct : PointwiseFn → Float32 → Float32
+/-- `private`: no cross-file caller (checked repo-wide); this fixture's own independent formula,
+    never reused as a production dispatch table. -/
+private def direct : PointwiseFn → Float32 → Float32
   | .relu => relu32 | .sigmoid => sig32 | .tanh => Float32.tanh | .gelu => gelu32
   | .leakyrelu => leaky32
 
@@ -69,12 +73,14 @@ def direct : PointwiseFn → Float32 → Float32
 
 Lanes `L`: `0.7f`, `1058161516`, `-1.1875`, `-1.25`, `-0`, `NaN`, `2.0`. -/
 
-def L : List UInt32 :=
+-- `private`: no cross-file caller (checked repo-wide) — unlike `expLanes`/`logLanes`/`sinLanes`/
+-- `cosLanes` below, which fixtures 2.4/2.10 do reuse qualified.
+private def L : List UInt32 :=
   [1060320051, 1058161516, 3214409728, 3214934016, 2147483648, 2143289344, 1073741824]
-def lanes : DenseTensor32 := v32 L
+private def lanes : DenseTensor32 := v32 L
 
-/-- Native bits of lane `i` of `pf.apply32`. -/
-def lane (pf : PointwiseFn) (i : Nat) : UInt32 := (bitsOf (pf.apply32 lanes))[i]!
+/-- Native bits of lane `i` of `pf.apply32`. `private`: no cross-file caller. -/
+private def lane (pf : PointwiseFn) (i : Nat) : UInt32 := (bitsOf (pf.apply32 lanes))[i]!
 /-- Narrowed-contrast bits of lane `i` (binary64 `pf.apply`, then one rounding). -/
 def narrowLane (pf : PointwiseFn) (i : Nat) : UInt32 :=
   (bitsOf (narrowed pf.apply lanes))[i]!
@@ -106,7 +112,8 @@ def narrowLane (pf : PointwiseFn) (i : Nat) : UInt32 :=
 On the 64-point grid `(i − 32)/8 + 1/16`, `i < 64` (every point exact in binary32), each
 `PointwiseFn.apply32` equals its direct formula bit for bit. -/
 
-def grid : DenseTensor32 :=
+-- `private`: no cross-file caller (checked repo-wide).
+private def grid : DenseTensor32 :=
   ⟨[64], (List.range 64).toArray.map fun i => ((i.toFloat - 32.0) / 8.0 + 0.0625).toFloat32⟩
 
 #guard pointwiseFns.all fun pf =>
