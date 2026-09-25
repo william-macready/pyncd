@@ -33,7 +33,7 @@ Does not own: evaluation semantics (`../Eval/`) or the acset bridge (`../Bridge/
 
 Cross-layer imports, each deliberate:
 - `Structural.lean` → `Eval.Contract` — a spike exception, solely so `Stmt.uids_eq` and six `specsX_map_uid_eq` lemmas can state their RHS against `Eval.Contract`'s real UID collectors. Not a precedent; reverting it means deleting the import with those lemmas.
-- `Eval/*` normally imports only `DSL.Ast`/`DSL.Compile`/`DSL.TraverseAxes`/`Pipeline.ScheduledValidation`. Exceptions: `Eval/Plan/Compile.lean` imports `Pipeline.Lowering` (reusing `idxToRow`), and `Eval/Plan/Signature.lean` imports `Pipeline.Structural`.
+- `Eval/*` normally imports only `DSL.Ast`/`DSL.Compile`/`DSL.TraverseAxes`/`Pipeline.Types`/`Pipeline.ScheduledValidation`. Exceptions: `Eval/Plan/Compile.lean` imports `Pipeline.Lowering` (reusing `idxToRow`), and `Eval/Plan/Signature.lean` imports `Pipeline.Structural`.
 - `Bridge/AcsetCodec.lean`/`Realize.lean` import only `DSL.Target`; `Bridge/Agreement.lean` imports `DSL.Compile` and `Pipeline.RouteSpec`.
 
 ## Public API
