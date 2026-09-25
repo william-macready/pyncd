@@ -1,0 +1,74 @@
+[
+  {
+    "label": "G1 (binary64 gate: collision arm overwrites instead of throwing)",
+    "task": "1",
+    "file": "LeanNCD/Eval/Plan/Dense.lean",
+    "old": "          | some firstSrc => throw (.scatterCollision oc firstSrc (sc.map Int.toNat))",
+    "new": "          | some _ => data := data.set! fi val",
+    "targets": ["Eval.Plan.ScatterDenseTest"],
+    "expect": ["posErrOf collisionSigs collisionScatter collisionStore =="]
+  },
+  {
+    "label": "G2 (binary64 gate: placement bias dropped)",
+    "task": "1",
+    "file": "LeanNCD/Eval/Plan/Dense.lean",
+    "old": "  let placement : AffineMap := { coeffs := s.outCoeffs, bias := s.outBias }",
+    "new": "  let placement : AffineMap := { coeffs := s.outCoeffs, bias := s.outBias.map (fun _ => 0) }",
+    "targets": ["Eval.Plan.ScatterDenseTest"],
+    "expect": ["(placed #[6] #[#[2]] #[1]) (storeFor #[6])) ==", "(placed #[5] #[#[1]] #[2]) (storeFor #[5])) =="]
+  },
+  {
+    "label": "K1 (shared checker core: f32 destination uses the f64 algebra table)",
+    "task": "1",
+    "file": "LeanNCD/Eval/Plan/Check.lean",
+    "old": "    | .float32 => admittedAlgebrasForF32 destSig.dtype",
+    "new": "    | .float32 => admittedAlgebrasFor destSig.dtype",
+    "targets": ["Eval.Plan.KernelDense32Test"],
+    "expect": ["isOk (checkAssignF32 f32Sigs f32Plan)"]
+  },
+  {
+    "label": "S2 (checkPlan capability loop admits an f32 scan)",
+    "task": "2",
+    "file": "LeanNCD/Eval/Plan/EvalPlan.lean",
+    "old": "      | .scan _      => throw (.f32UnsupportedStep ni .scan)",
+    "new": "      | .scan _      => pure ()",
+    "targets": ["Eval.Plan.GraphCheckTest"],
+    "expect": ["errOf (checkPlan f32ScanPlan) == some (PlanStepError.f32UnsupportedStep 0 PlanStepKind.scan)"]
+  },
+  {
+    "label": "S1 (Step 0c admits an f32 scan)",
+    "task": "3",
+    "file": "LeanNCD/Eval/Plan/Compile.lean",
+    "old": "    | .scan nm .. => throw (.unsupportedDtype s!\"{nm}: f32 scan\")",
+    "new": "    | .scan _ .. => pure ()",
+    "targets": ["Eval.Plan.CompileTest"],
+    "expect": ["causeOf (prepareEvalPlan f32ScanProg f32ScanSig) =="]
+  },
+  {
+    "label": "S3 (Step 0c skipped: Step A answers first)",
+    "task": "3",
+    "file": "LeanNCD/Eval/Plan/Compile.lean",
+    "old": "  if storage == .float32 then\n    match f32CapabilityCheck sched.stmts with",
+    "new": "  if false then\n    match f32CapabilityCheck sched.stmts with",
+    "targets": ["Eval.Plan.CompileTest"],
+    "expect": ["fixture FW2a: Step 0c did not precede Step A", "causeOf (prepareEvalPlan f32ScanProg f32ScanSig) =="]
+  },
+  {
+    "label": "C1 (compiler placement bias dropped; binary64 witness)",
+    "task": "3",
+    "file": "LeanNCD/Eval/Plan/Compile.lean",
+    "old": "        biasAcc := biasAcc.push bias",
+    "new": "        biasAcc := biasAcc.push 0",
+    "targets": ["Eval.Plan.ScatterCompileTest"],
+    "expect": ["Option.map (fun x => x.outBias) shiftedScatter == some #[1]"]
+  },
+  {
+    "label": "C1b (compiler placement bias dropped; the binary32 oracle disagrees) [prototype-observed; run only after Scatter32OracleTest exists]",
+    "task": "3",
+    "file": "LeanNCD/Eval/Plan/Compile.lean",
+    "old": "        biasAcc := biasAcc.push bias",
+    "new": "        biasAcc := biasAcc.push 0",
+    "targets": ["Eval.Plan.Scatter32OracleTest"],
+    "expect": ["BINARY32 SCATTER ORACLE FAILED: O2 shifted stride (placement bias): scatter [6]/#[1266683904, 0, 1050253722, 0, 1050253722, 0]"]
+  }
+]
