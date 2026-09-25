@@ -809,8 +809,11 @@ run_cmd do
 
 `NonlinCompileTest`'s sigmoid donor (`H[i] := sigmoid(W[i, j] · x[j])`) as an f32 `tlprog!`, with
 `axis i : ℕ = 2`, `axis j : ℕ = 1`. `W = [0.7f, 1058161516]` (bits `1060320051`/`1058161516`) and
-`x = [1]`, so `H = sigmoid(W)` lane for lane. `H` must be `[1059786330, 1059297860]` — §2.6's native
-binary32 `sigmoid` lanes — against the binary64 twin's observed `[1059786331, 1059297859]`.
+`x = [1]`, so `H = sigmoid(W)` lane for lane. `H` must be `[1059786330, 1059297860]`, which are
+§2.6's native binary32 `sigmoid` lanes. Binary64-then-narrow gives `[1059786331, 1059297859]` on
+the same inputs. This fixture does NOT run a binary64 twin to assert that contrast.
+`Nonlin32Test` fixture 1.2 and `NonlinDense32Test` fixture 3.7 assert it for the function and the
+checked graph. The hardcoded native bits here already reject whole-plan narrowing.
 
 Also: the f32 PREPARED plan, handed to the BINARY64 named adapter (`runPreparedDense`), must be
 refused with `PlanRunCause.storageKindMismatch .float64 .float32` — `AdapterTest`'s own Fixture 21
@@ -852,7 +855,11 @@ run_cmd do
       unless f.cause == .storageKindMismatch .float64 .float32 do
         throwError s!"f32 sigmoid: wrong cause refusing the Float adapter: {repr f.cause}"
 
-/-! ## Fixture 4.7 (F32-B Task 4): end-to-end normalize -/
+/-! ## Fixture 4.7 (F32-B Task 4): end-to-end normalize
+
+`Y = normalize([2²⁴, 1, 1])` must be the native binary32 row `[1065353216, 864026624, 864026624]`.
+Binary64-then-narrow gives `[1065353214, 864026622, 864026622]`. That contrast is asserted by
+`Nonlin32Test` fixture 1.4, not by a binary64 twin here. -/
 
 def f32NormalizeProg : TLProgram := tlprog!{
   axis q : ℕ = 1

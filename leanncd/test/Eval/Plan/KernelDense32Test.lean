@@ -436,8 +436,9 @@ def f32UnaryPow2Store : Array DenseTensor32 :=
 /-! ### Fixture 2.3: pad-then-apply
 
 `unaryPlan .exp 1` retagged, over `[0, 3.0, -2.5, -0.25]`. The final read (`X[3+1] = X[4]`) is out
-of bounds, so it zero-pads to native `+0` BEFORE `exp` runs — an apply-before-pad reading would
-instead read `X[3] = -0.25` a second time and report `exp(-0.25)` there. -/
+of bounds, so it zero-pads to native `+0` BEFORE `exp` runs, giving `exp(+0) = 1` (`1065353216`).
+An apply-before-pad reading would apply `exp` only to in-bounds reads and pad the RESULT, so
+`exp` would never run on that read. The lane would then be `+0` (bits `0`). -/
 
 def f32PadStore : Array DenseTensor32 :=
   #[ t32 [4] #[0, 1077936128, 3223322624, 3196059648], t32 [4] #[] ]
@@ -515,7 +516,8 @@ def f32RecipNegZeroStore : Array DenseTensor32 :=
 
 `unaryPlan .log 1` retagged, over `unaryPow2Store`'s bits: the final read (`X[3+1] = X[4]`) is out
 of bounds and zero-pads to `+0` BEFORE `log` runs, so `log(+0)` is a genuine domain violation.
-An apply-before-pad reading would instead read `X[3] = 8` again and report no error at all. -/
+An apply-before-pad reading would never call `log` on that read, because it pads the RESULT to `+0`
+after the fact. So it would report no error at all. -/
 
 #guard posErrOf32 unaryF32Sigs2 (f32UnaryPlan .log 1) f32UnaryPow2Store ==
   some (.unaryDomain32 .log 0 0)

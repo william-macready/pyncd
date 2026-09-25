@@ -89,7 +89,10 @@ def ax32ErrOf (store : Array DenseTensor32) : Option PositionalInputError :=
   == some (.storageMismatch 0 [2,2] 3)
 #guard ax32ErrOf #[ t32 [2,2] #[1065353216, 1077936128, 1073741824, 1073741824] ] == none
 
-/-- Block 6: `sigmoid` over the three lanes `0.7f`, bits `1058161516`, and `-1.25`, natively. -/
+/-- Block 6: `sigmoid` over the three lanes `0.7f`, bits `1058161516`, and `-3.0`, natively. The
+    third lane was `-1.25` in block 6. Its `exp(1.25)` step is 0.428 ulp from a representable value
+    (0.072 from a rounding boundary), which is too close to be portable (§1.1). `exp(3.0)` is
+    0.018 ulp from one, the same portable step fixture 1.7 already pins. -/
 def sigs32 : Array TensorSignature :=
   #[ { shape := #[3], dtype := .f32 }, { shape := #[3], dtype := .f32 } ]
 def sigmoid3 : RawPointwisePlan :=
@@ -97,8 +100,8 @@ def sigmoid3 : RawPointwisePlan :=
 
 #guard match checkPointwiseF32 sigs32 sigmoid3 with
   | .ok c => (runDensePointwise32 c
-      #[t32 [3] #[1060320051, 1058161516, 3214934016]]).toOption.map
-        (·.data.map Float32.toBits) == some #[1059786330, 1059297860, 1046743937]
+      #[t32 [3] #[1060320051, 1058161516, 3225419776]]).toOption.map
+        (·.data.map Float32.toBits) == some #[1059786330, 1059297860, 1027752354]
   | .error _ => false
 
 /-!
