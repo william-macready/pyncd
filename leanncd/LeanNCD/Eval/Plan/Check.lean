@@ -160,8 +160,10 @@ def constMatchesDtype : ScalarDType → ScalarConst → Bool
     `Array Float` worker. The binary32 graph is not a relaxation of this predicate — it has its own
     checker (`checkAssignF32` below) with its own admission rule (`dtypeAdmittedF32`), its own
     algebra table, and its own storage-kind evidence, so no global relaxation of `dtypeAdmitted` is
-    needed or allowed. `checkScanPlan` (`Scan.lean`) and `checkPointwise`/`checkAxiswise`
-    (`Nonlin.lean`) share this predicate and stay Float-backed for the same reason. -/
+    needed or allowed. `checkScanPlan` (`Scan.lean`) shares this predicate and stays Float-backed for
+    the same reason (scan is F32-C, still unadmitted). `checkPointwise`/`checkAxiswise`
+    (`Nonlin.lean`) do NOT share it: they gate on `nonlinDtypeFor kind` via `checkNonlinIOCore`, and,
+    since F32-B, each has a native binary32 sibling (`checkPointwiseF32`/`checkAxiswiseF32`). -/
 def dtypeAdmitted : ScalarDType → Bool
   | .f64 | .bool => true
   | .f32 => false

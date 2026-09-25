@@ -611,7 +611,13 @@ of platform. The assertion is RELATIONAL (the native `Float32.exp` applied direc
 never a hardcoded bit pattern), and the precondition is the same one `Nonlin32Test.witness`
 enforces: at least one lane must separate that native result from binary64-then-narrow, checked here
 against the SAME three values through the ordinary binary64 named runner (`runPreparedDense`), or
-this fixture could not tell the two apart. -/
+this fixture could not tell the two apart.
+
+The native outputs are recorded here in a comment ONLY (observed on the authoring platform,
+matching `Nonlin32Test` fixture 1.8's first two `exp` lanes), never asserted as a literal — that
+would pin this libm's exact rounding error: `E[0] = exp(A[1]) → 1067808354`,
+`E[1] = exp(A[2]) → 1068064150` (`A[3]` is out of range, so `E[2] = exp(+0) = 1.0f → 1065353216`
+regardless of platform). -/
 
 def f32ExpOobProg : TLProgram := tlprog!{
   axis i : ℕ = 3

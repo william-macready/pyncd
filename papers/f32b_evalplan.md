@@ -1,5 +1,13 @@
 # Native binary32 unary factors and nonlinearities (slice F32-B)
 
+> **✅ EXECUTED AND LANDED — this plan is a completed record, not pending work.** All five tasks are
+> implemented and merged. The "Status" line immediately below is the **authoring-time snapshot** and
+> is retained verbatim, along with every fixture/mutation count and table cell in this document, as
+> the record of what was planned and verified before execution — do not read it as a current
+> statement about the tree. For what the slice actually delivered, read §6.5 (observed results).
+> Tables A and B in §3.5 were re-verified cell by cell against final source by Task 5 and needed no
+> correction; treat them as complete, not as a still-open deliverable.
+
 **Status: IMPLEMENTATION PLAN — authored 2026-09-23, independently reviewed twice the same day
 (§8), not started.** No Lean source file has been changed by this plan. Its design decisions are closed (§9). It is the first follow-on to the completed f32 slice
 ([`f32_evalplan.md`](f32_evalplan.md), "F32-A" below), and item 1 of that plan's §1.3 deferred list
@@ -824,6 +832,21 @@ F32-A Task 4 fixture 9 pinned, one site at a time. Every site in `Compile.lean` 
 | `checkNonlinIO`'s two `.f64` literals | yes | **fixed by Task 3** (`nonlinDtypeFor kind`) | 3.1, 3.2, M5 |
 | `floatOps`/`float32Ops` `decodeConst` cross-tag arms | yes (fail-loud) | **forbidden**, unchanged by this slice | not re-pinned here |
 
+**Task 5 re-verification (2026-09-24).** Both tables above were re-derived cell by cell against
+final source — every named worker/checker read directly, not restated from a task report:
+`runDensePointwise`/`runDenseAxiswise` guard first with `storageKindMismatch` before
+`missingSlot`/`validateNonlinSourceOf`; their `…32` siblings guard the mirror direction the same
+way; `checkPointwiseF32`/`checkAxiswiseF32` dispatch through `checkNonlinIOCore`, and
+`nonlinDtypeFor .float32 = .f32` exactly (a `.bool` slot is `dtypeNotAdmitted`, never admitted);
+`checkPlanBlock` rejects `.float32` as `storageKindNotAdmitted`, and `runDenseBlock` still calls the
+unguarded Float `runDensePointwise`/`runDenseAxiswise` directly, safely, only because that upstream
+guard exists; `runDenseScatter` still gathers through the Float-only `denseValueAt`; `checkF32Stmt`'s
+`.assign` arm is a no-op (Task 4); and the plain top-level `.pointwise`/`.axiswise` arms of
+`prepareEvalPlan` Step D push `destDtype`/`algebraForDest` at both the internal and published slot
+(Task 4), while `compileScan`'s own base/step arms still push a literal `.f64` (F32-C's obligation,
+unreachable today, correctly unchanged). No cell in either table needed correction; the plan's
+own claims were accurate at authoring time and remain accurate after all four tasks landed.
+
 ### 3.6 The libm witness pattern
 
 A witness fixture (block 5's `witness`) asserts two things. First, the implementation equals the
@@ -1555,6 +1578,197 @@ separately. Then run two whole-branch reviews with different lenses:
    that no scan or scatter path acquired binary32 evidence.
 
 The slice is complete only when both reviews are clean or every finding is adjudicated.
+
+### 6.5 Observed results (close-out record, 2026-09-24)
+
+Added by Task 5. Everything in this subsection is an **observation**, not a plan: each figure was
+read from a command's own output or from the task report it summarizes, not restated from a task
+brief.
+
+#### 6.5.1 Commits
+
+Oldest first. Each task's implementation and tests landed as one reviewable unit (Task 1 and Task 3
+each split test-pin/implementation across two commits; Task 4 landed as one).
+
+| Task | Commits |
+|---|---|
+| 1 — math core | `deb83e4` (pin the binary64 golden table on the unmodified tree), `7ac321b` (native binary32 nonlinearity formulas and unary domain) |
+| 2 — unary | `7db7891` (admit checked binary32 inline unary factors end to end), `12dc59b` (cover checked binary32 inline unary factors) |
+| 3 — checked nonlinearity | `3157f3a` (check and run binary32 pointwise and axiswise natively), `ab32c4f` (record binary32 nonlinearity evidence and workers in Eval AGENTS) |
+| 4 — compiler + named | `2a74725` (compile binary32 nonlinearities with real dtype/algebra) |
+| 5 — docs/audit | this close-out |
+
+#### 6.5.2 Mutation cycles — 40 planned, 40 run, all PASS
+
+Every cycle ran through `leanncd/scripts/mutation-cycle.sh`, whose `PASS` verdict means
+`mutation_exit ≠ 0 && restored_build_exit = 0` — the fixture genuinely failed under the mutation and
+genuinely passed after restore. No task ran more or fewer cycles than §5 budgeted.
+
+| Task | Planned | Run | Result |
+|---|---:|---:|---|
+| 1 | 16 | 16 | All PASS (M1–M11, M12a–d, M13) |
+| 2 | 6 | 6 | All PASS; M3 broke a wider set than the brief's literal prediction (also hit `sqrt`'s domain payload) — adjudicated in review as a stronger, not weaker, discriminator (progress ledger, Task 2) |
+| 3 | 11 | 11 | All PASS (M1–M4, M5, M6–M7, M8–M9, M10, M11) |
+| 4 | 7 | 7 | All PASS (M1–M7); M5 targeted `algebraForDest`'s shared `.f64` arm, a stronger substitution than the brief's literal "preactivation step" phrasing — adjudicated as equivalent-or-stronger, not a gap |
+| 5 | 0 | 0 | n/a — doc-only task |
+| **total** | **40** | **40** | |
+
+Per-cycle mutation text, the observed failing fixture, and the restored-pass observation are recorded
+in each task's report under `.superpowers/sdd/f32b_evalplan/task-N-report.md`. Two Task 1 minors
+noted there: the mutation script prints only which fixture failed, not the exact predicted wrong
+bit value, for M2/M3/M4/M7/M8/M10/M11 — the inference is sound (only one code path can produce the
+failure), but the exact wrong value was not re-observed independently for those seven.
+
+#### 6.5.3 Fixture groups — 37 planned, 37 delivered
+
+| Task | Planned | Delivered |
+|---|---:|---:|
+| 1 | 8 | 8 |
+| 2 | 11 | 11 |
+| 3 | 11 | 11 |
+| 4 | 7 | 7 |
+| 5 | 0 | 0 (doc-only) |
+| **total** | **37** | **37** |
+
+No group was dropped, merged, or renumbered.
+
+#### 6.5.4 Builds
+
+Each task ran its own targeted set, the four regression gates, and (this task) a full `lake build`
+plus `JaxExperiment`, on a clean tree after all doc/code edits below:
+
+| Gate | Result |
+|---|---|
+| Full default `lake build` | Build completed successfully (8670 jobs) |
+| `JaxExperiment` (separate target) | Build completed successfully (8514 jobs) |
+
+The binary64 reference corpora are **unchanged across all four implementation tasks and this
+close-out**, as §6.2 requires:
+
+```
+DifferentialTest sweep: total=3832 accepted=3832 rejected=0 categories=[]
+DifferentialTest scan corpus: total=17 accepted=17 unsupportedNonlin=0 unsupportedAgg=0
+```
+
+`CapabilityError`'s live/producer-less split was re-derived from source (every constructor's throw
+sites grepped directly, not restated): **10 live / 16 total / 6 producer-less, unchanged** — the two
+retired payload shapes (`"{nm}: f32 nonlinearity"`, `"{nm}: f32 unary factor {ti}:{fi}"`) moved to no
+producer under the still-live `unsupportedDtype` constructor rather than removing a constructor.
+Two more constructors became producer-less outside this enum: `PlanError.unaryNotAdmittedForDtype`
+and `PositionalInputError.unaryNotAdmittedForStorage`; one became newly live:
+`PositionalInputError.unaryDomain32` (`float32Ops.applyUnary`, `Dense.lean`).
+
+#### 6.5.5 Reviews
+
+Per §6.0, each of Tasks 1–4 received an independent review of its complete commit before its
+dependent task started (mid-tier for Task 2, strong for Tasks 1/3, per §6.0's own guidance; Task 4
+also got a strong-tier review in practice), and every finding was resolved or explicitly adjudicated:
+
+| Task | Verdict | Findings |
+|---|---|---|
+| 1 | Approved | 0 Critical, 0 Important, 5 Minor (all deferred to this task's triage) |
+| 2 | Approved | 0 Critical, 0 Important, 2 Minor (deferred), 1 ruling (M3's stronger-than-specified discriminator) |
+| 3 | Approved | 0 Critical, 0 Important, 5 Minor (deferred) |
+| 4 | Approved | 0 Critical, 0 Important, 2 Minor (both cosmetic, deferred) |
+
+All four tasks landed clean (no Critical or Important finding at any stage). §6.4's whole-branch
+final reviews are this task's own self-review (§6.4 item 2's "boundary lens" and item 1's "numerical
+lens" obligations are folded into this task's tables-A/B re-verification and §2.6/§4.5 spot-checks
+respectively, since Task 5's own scope is doc/audit-only per §5 and no reviewer beyond this task's
+self-review was dispatched for it, consistent with "a reviewer can reject this task while approving
+Task 4").
+
+Minor findings carried into this task's triage (from the four tasks' ledger entries), and their
+disposition:
+
+- `Check.lean:162-164`'s `dtypeAdmitted` doc claimed `checkPointwise`/`checkAxiswise` "share this
+  predicate" with `checkScanPlan` and stay Float-backed. **Fixed**: false since before Task 3
+  (those checkers never used `dtypeAdmitted`) and doubly false now that `checkPointwiseF32`/
+  `checkAxiswiseF32` exist; `checkScanPlan`'s own half of the claim was true and is kept.
+- `ScatterCheckTest.lean:207-209`'s rationale said nonlinearity checkers stay Float-backed because
+  "no binary32 worker" exists for them. **Confirmed stale and fixed**: narrowed the "block, scan,
+  scatter, and nonlinearity checkers" list to just the scatter checker this fixture is actually
+  about, and added a parenthetical noting block/scan still share the "no worker" reason (F32-C)
+  while nonlinearity no longer does (`checkPointwiseF32`/`checkAxiswiseF32` exist since F32-B). A
+  comment-only change; the fixture's own assertion is unaffected.
+- `EvalPlan.lean`'s `localCheck` `.assign` comment ("`checkAssignF32` rejects inline unary") —
+  **already fixed by Task 4** (verified against current source: the comment now correctly
+  describes storage-kind-selected dispatch, including the inline-unary admission).
+- `Error.lean`'s `storageKindMismatch` producer-list doc — **already fixed by Task 4** (verified:
+  lists `runDensePointwise`/`runDenseAxiswise` and their binary32 siblings as producers).
+- `CheckedEvalPlan`'s doc (`EvalPlan.lean`) listed only the binary64 checkers. **Fixed** this task:
+  now names `checkAssignF32`/`checkPointwiseF32`/`checkAxiswiseF32` alongside their binary64
+  siblings.
+- `Error.lean:213-216` `applyChecked`'s doc self-contradicted ("one arm" vs. "both"). **Fixed** this
+  task: reworded to state a new operator needs an arm in each of `applyChecked`/`applyChecked32`.
+- `KernelDense32Test.lean:3-6`'s import comment was truncated mid-sentence. **Fixed** this task.
+- Fixture 2.10 didn't record observed native bits in a comment (parallel to 1.8's precedent).
+  **Fixed** this task: added, values cross-checked against `Nonlin32Test` fixture 1.8's own
+  recorded `exp` lanes (the first two of which fixture 2.10 reuses).
+- `Eval/AGENTS.md`'s "Add a new nonlinearity" row said the legacy evaluator needs "an `applyNonlin`
+  case" for a new function. **Confirmed stale and fixed**: `applyNonlin` dispatches on the
+  RESOLVED SHAPE (`.identity`/`.pointwise`/`.axiswise`), not per function — verified against
+  `Eval/Nonlin.lean`'s `applyNonlin` definition. A new `PointwiseFn`/`AxiswiseFn` case needs no
+  `applyNonlin` arm at all.
+- `Nonlin32Test.lean`'s public helper names (`L`, `lanes`, `lane`, `direct`, `grid`, `narrowed`) were
+  flagged as generic. **Fixed**: all six are confirmed (repo-wide grep) to have zero cross-file
+  callers, unlike `expLanes`/`logLanes`/`sinLanes`/`cosLanes`/`witness`/`viaChecked32`, which Task
+  2's fixtures do reuse qualified — so the six were scoped `private`, a clean, low-risk change.
+- The `*T` entries (`reluT`…`l2normalizeT`) are independent one-line bodies parallel to
+  `PointwiseFn.apply`/`AxiswiseFn.applyCore`, so fixture 1.1 does not pin every `*T` individually
+  against a tag-swap mutation. **Evaluated, not fixed.** This is a real correctness-adjacent gap in
+  principle, but: (a) it predates F32-B entirely (the `*T` split is F32-A/nonlinearity-thread
+  architecture, listed as a Task 1 reviewer Minor here only because Task 1 touched the same file);
+  (b) redefining each `*T` as e.g. `PointwiseFn.apply .relu` is a production-code change to the
+  LEGACY EVALUATOR's dispatch, `Eval/Nonlin.lean`, with its own blast radius (`Eval.lean`,
+  `Scan.lean` callers) that neither this task's Files list nor its fixture/mutation budget (0/0)
+  covers; (c) closing it properly needs either a production refactor + full regression + its own
+  reviewed commit, or a new fixture pinning all five `*T` bodies against `apply`, which is new
+  fixture-authoring work Task 5's brief scopes out ("0 fixture groups planned"). Left open,
+  explicitly, for a future task with its own review budget rather than folded in here
+  unreviewed — closing a real gap silently inside a doc/audit task would violate this repo's own
+  "surgical changes" and "checkpoint after every significant step" rules.
+
+#### 6.5.6 Documentation sweep (§6.3)
+
+A case-insensitive repo-wide search for `f32`/`binary32` over Markdown returned **21 files**
+(excluding this plan's own SDD ledger under `.superpowers/sdd/`), classified as:
+
+- **updated as current documentation (6)** — `papers/backend_missing_functionality.md` (split the
+  "Binary32 beyond the assignment fragment" row, re-derived and recorded the `CapabilityError`
+  count and the new producer-less/live constructors, added the §1.1 libm finding beside the
+  F32-JAX mention), `papers/wave_f_capability_manifest.md` (its scan-kernel row and its Binary32
+  table row both wrongly implied nonlinearity/unary were still F32-B-deferred), `papers/eval_ir.md`
+  (`runDensePlan32` was documented as assignment-steps-only, stale since Task 3),
+  `papers/unary_factor_functions.md` (banner wrongly said binary32 unary is rejected), this
+  document (§3.5 re-verification note, §6.5, completed-record banner), and
+  `papers/f32_evalplan.md` (§1.3 item 1 and §1.4 item 1 each got a one-line "Landed by
+  `f32b_evalplan.md`" pointer only, per this task's own file scope — the record is not otherwise
+  edited);
+- **given a completed-record banner (1)** — `papers/f32b_evalplan_handoff.md`;
+- **historical/superseded record, correctly unmodernized, no change needed (2)** —
+  `papers/f32_evalplan_handoff.md` (already carries F32-A's own completed-record banner);
+  `leanncd/docs/superpowers/plans/2026-09-12-lhs-scatter-in-scans.md` (already banners itself as
+  predating F32-C's scan-scatter rejection, which this slice does not touch);
+- **not about this slice's boundary, no change needed (12)** — `leanncd/LeanNCD/DSL/AGENTS.md`
+  (source-declaration/parser-token facts, unaffected by nonlinearity/unary admission),
+  `docs/superpowers/specs/2026-08-21-nonlinearity-in-scans-design.md` (pre-F32-A spec, one passing
+  mention), `papers/boolean_predicate_output_evalplan.md`, `papers/copilot_code_analysis.md`,
+  `papers/jax_signature_evidence_ownership_spike_results.md`, `papers/post_audit_roadmap.md`,
+  `papers/predicate_boolean_backend_parity.md`, `papers/restructure_suggestions.md`,
+  `papers/scatter_affine_lhs_writes.md`, `papers/wave_c_capability_manifest.md`,
+  `papers/wave_c_evalplan_proposal.md`, `papers/wave_f_scanplan_proposal.md` — each mentions `f32`
+  only for a capability this slice does not move (scatter, predicate/Boolean output, dead-code
+  provenance, or a pre-F32-A design decision); the ones with a general "f32 rejected/none" claim
+  are about scatter or predicate output specifically, both still correctly rejected/unaffected
+  after F32-B (F32-D and the predicate/Boolean rule are untouched by this slice).
+
+The retired-payload-word grep (`f32 nonlinearity`, `f32 unary factor`, `unaryNotAdmittedForDtype`,
+`unaryNotAdmittedForStorage`) found no hit outside: this plan's own design text (self-describing,
+correct), `f32_evalplan.md` (excluded from edits by this task's own scope), the two files above
+already fixed, and the production `.lean` sites (`Error.lean`'s retired-payload doc comments,
+`Eval/AGENTS.md`, `KernelCheckTest.lean`) which already correctly describe the producer-less/retired
+status — verified, not assumed. No `File.lean:NNN` citation was introduced by any edit in this task.
 
 ## 7. Success criteria and stop conditions
 

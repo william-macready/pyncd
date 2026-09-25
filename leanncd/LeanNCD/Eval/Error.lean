@@ -210,9 +210,10 @@ inductive UnaryDomainOp
     re-attaches its `EvalContext` (`EvalError.unaryDomain`), the checked-plan `gatherFactorWith`
     (`Eval/Plan/Dense.lean`, through the binary64 `floatOps.applyUnary`) attaches a positional slot
     (`PositionalInputError.unaryDomain`). Adding a future unary operator is one `UnaryOp`
-    constructor and one arm here; both evaluators inherit it and parity holds by construction.
-    This is the binary64 home; its native binary32 sibling `UnaryOp.applyChecked32` sits directly
-    below with the same domain predicates, so a new operator needs an arm in both. -/
+    constructor and one arm in EACH of this function and its native binary32 sibling below
+    (`UnaryOp.applyChecked32`, same domain predicates); both evaluators then inherit it and parity
+    holds by construction. This is the binary64 home; `UnaryOp.applyChecked32` sits directly
+    below. -/
 def _root_.LeanNCD.UnaryOp.applyChecked : LeanNCD.UnaryOp → Float → Except UnaryDomainOp Float
   | .log,   v => if v ≤ 0.0 then .error .log else .ok (Float.log v)
   | .sqrt,  v => if v < 0.0 then .error .sqrt else .ok (Float.sqrt v)

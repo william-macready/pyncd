@@ -3,7 +3,7 @@ import Eval.Plan.KernelDenseTest   -- every plan here is one of its plans with t
 import Eval.Nonlin32Test           -- fixture 2.4 reuses its platform witness lane lists (f32 slice
                                     -- Task 2, conflict-scan note C5), qualified rather than opened:
                                     -- its own helper names (`L`, `lanes`, `lane`, ...) are generic
-                                    -- enough to risk shadowing this file's
+                                    -- enough to risk shadowing this file's own local definitions.
 
 /-!
 # Native binary32 local execution (f32 slice, Task 3)

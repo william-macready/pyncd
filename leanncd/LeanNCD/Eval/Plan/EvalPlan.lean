@@ -74,8 +74,10 @@ def PlanStep.destinationSlots : PlanStep → Array TensorSlot
   | .axiswise a => #[a.destinationSlot]
 
 /-- Evidence that a `RawEvalPlan`'s wiring is sound, generalized to `PlanStep`: every step is
-    locally checked (via `checkAssign`, `checkScanPlan`, `checkPointwise`, or `checkAxiswise`),
-    input slots are in-range/unique/ordered, no step's destination overwrites an existing slot,
+    locally checked (via `checkAssign`/`checkAssignF32`, `checkScanPlan`, and
+    `checkPointwise`/`checkAxiswise` or their binary32 siblings `checkPointwiseF32`/
+    `checkAxiswiseF32`, selected by the graph's storage kind), input slots are
+    in-range/unique/ordered, no step's destination overwrites an existing slot,
     every read is from an input or an earlier destination, and every non-input slot is produced
     exactly once. A scan step's MULTIPLE destination slots are all marked produced together,
     atomically with respect to this outer-graph tracking — matching the scan's own atomic commit
