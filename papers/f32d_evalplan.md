@@ -23,7 +23,7 @@ A top-level `.scatter` step in a `.float32` graph, executed natively in binary32
 `tlprog!` source (`prepareEvalPlan`) through `checkPlan` (`checkScatterF32`), `runDensePlan32`
 (`runDenseScatter32`), and the named boundary `runPreparedDense32`. This includes a scatter whose
 RHS carries an inline unary read factor (F32-B §1.3 assigned that case here), a Boolean-tagged
-source inside a binary32 graph (it rides the graph carrier exactly as for assignments), and a
+source read (it rides the binary32 carrier exactly as for assignments; fixture 1.8), and a
 binary32 scatter that reads a preceding binary32 assignment's or nonlinearity's result.
 
 ### 1.2 Still refused, unchanged (owner in brackets)
@@ -208,7 +208,7 @@ Task 3's completion note re-derives both tables against the merged tree, cell by
 
 | Task | Deliverable | Fixtures | Mutation cycles | Expected turns | Dispatch |
 |---|---|---|---|---|---|
-| 1 | carrier-parametric scatter checker + worker (`Check.lean`, `Dense.lean`) | 7 (18 `#guard`s, one new file) | G1, G2 (each run before AND after the edit), K1 + predicted P1-1..P1-4 = 9 runs | ~45–60 | one |
+| 1 | carrier-parametric scatter checker + worker (`Check.lean`, `Dense.lean`) | 8 (16 `#guard`s, one new file) | G1, G2 (each run before AND after the edit) + P1-1..P1-4 = 8 runs | ~45–60 | one |
 | 2 | graph admission (`EvalPlan.lean`, `Dense32.lean`) | 3 re-points + 3 new (`GraphCheckTest`, `EvalPlan32Test`) | S2 + predicted P2-1..P2-3 = 4 | ~35–45 | one |
 | 3 | source admission (`Compile.lean`), the oracle, CompileTest re-points, docs | 4 re-point groups + 5 oracle cases | S1, S3, C1, C1b + predicted P3-1, P3-2 = 6 | ~80–100 | **two** (phase 1 production + fixtures green; phase 2 cycles + docs), `split-handoff-template.md` |
 
@@ -386,6 +386,7 @@ Do not retype it; it is the file that was compiled and run (record §3). What it
 | 1.5 | `maxScatter` (algebra → `admittedAlgebraF32Max`) | `-∞` fill decoded by `float32Ops`: `4286578688` in the odd cells |
 | 1.6 | `collisionScatter` retagged | `scatterCollision [0] [0, 0] [0, 1]` |
 | 1.7 | `srcCompute` with `contextShape := #[1]` | each door's guard precedes `validateContext`/`validateStore` (wrong carrier → `storageKindMismatch`; right carrier → `contextShapeMismatch #[1] []`) |
+| 1.8 | `KernelDense32Test` fixture 16 `boolSourceSigs32`, as a scatter | a `.bool`-tagged source is gathered unchanged: `[1048576000, 0, 1056964608, 0, 1065353216, 0]` |
 
 **Step 6 — `ScatterCheckTest.lean` fixture 9, prose only** (`rg -n "fixture 9" …`). Its guards stay
 and stay true (`checkScatter` is still the binary64 checker). Replace the rationale "top-level binary32
@@ -397,7 +398,7 @@ carrier's evidence." Also replace "`checkScatter` calls ORDINARY `checkAssign`, 
 `checkAssignF32`" with "`checkScatter` runs the shared core at `.float64`".
 
 **Step 7 — cycles.** `bash leanncd/scripts/mutation-manifest.sh --task 1 leanncd papers/f32d_mutations.json`
-(G1, G2, K1: all PASS). Then append and run the four predicted cycles, all on `Dense.lean`/`Check.lean`,
+(G1, G2: both PASS). Then append and run the four predicted cycles, all on `Dense.lean`/`Check.lean`,
 target `Eval.Plan.ScatterDense32Test`:
 
 | Label | old → new | Prototype: fixture that broke |
@@ -482,15 +483,18 @@ are rejections" → "The scan case is a rejection; the scatter case is an accept
 ```
 
 (c) The index witness, re-pointed: insert immediately before the `-- Axiswise.` comment (after the
-scan case's binary64 control). Correct reports `3 .scan`; a filtered sublist of refused kinds would
-report `0`, and a loop that still refused scatter would report `2 .scatter`.
+scan case's binary64 control). Correct reports `3 .scan`; a loop keeping the LAST rejection would
+report `4`, a filtered sublist of refused kinds `0`, and a loop that still refused scatter `2 .scatter`.
+Its binary64 twin reports `duplicateDestination 2 1 3`, not a capability error.
 
 <!-- block:t2-g14c -->
 ```lean
 /-- Fixture 14's index witness, re-pointed by F32-D: `f32UnsupportedStepOrder` (now accepted) with
-    `f32Scan` appended at outer index 3. -/
+    `f32Scan` appended TWICE, at outer indices 3 and 4, so first-rejection-wins (3) and
+    last-rejection-wins (4) disagree. -/
 def f32StepOrderWithScan : RawEvalPlan :=
-  { f32UnsupportedStepOrder with steps := f32UnsupportedStepOrder.steps.push (.scan f32Scan) }
+  { f32UnsupportedStepOrder with
+    steps := f32UnsupportedStepOrder.steps ++ #[.scan f32Scan, .scan f32Scan] }
 
 #guard errOf (checkPlan f32StepOrderWithScan) == some (.f32UnsupportedStep 3 .scan)
 
@@ -499,7 +503,7 @@ def f32StepOrderWithScan : RawEvalPlan :=
     tensorSigs := f32StepOrderWithScan.tensorSigs.map (fun s => { s with dtype := .f64 })
     steps := #[ .assign (idNode 1 0)
               , .pointwise { sourceSlot := 1, destinationSlot := 2, shape := #[2], fn := .relu }
-              , .scatter (stepOrderScatter admittedAlgebra), .scan f32Scan ] }))
+              , .scatter (stepOrderScatter admittedAlgebra), .scan f32Scan, .scan f32Scan ] }))
 ```
 
 **Step 4 — `EvalPlan32Test.lean`.** Add `import Eval.Plan.GraphCheckTest` and, after the existing
@@ -576,7 +580,7 @@ Do not retype it. Its module docstring states the design and its limits (§3.5).
 | O2 | `Out[2*i + 1] := A[i] · B[i]` | `2i+1`, `[6]` | `[0, 1266683904, 0, 1050253722, 0, 1050253722]` | placement bias (C1b) |
 | O3 | `Y[i, i] := A[i] + B[i]` | `(i, i)`, `[3, 3]` | `[1266679808, 0, 0, 0, 1050253722, 0, 0, 0, 1077936128]` | diagonal (no `.affine` slot) |
 | O4 | `Out[2*i, 2*j] := X[i, j]` | `(2i, 2j)`, `[4, 6]` | 24 lanes (in the file) | two extents; swapped rows would differ |
-| O5 | `W[i] := A[i]·A[i]` then `Out[2*i] := W[i] + B[i]` | `2i`, `[6]` | `[1266683904, 0, 1092616192, 0, 1067450368, 0]` | a rounded f32 assignment feeding the scatter; carrier contrast (binary64 `16785410`) |
+| O5 | `W[i] := A[i]·A[i]` then `Out[2*i] := W[i] + B[i] + Z[i]` | `2i`, `[6]` | `[0, 0, 1093140480, 0, 1069547520, 0]` | the scatter's OWN rounding: lane 0 is `0` natively, `1065353216` with the scatter half in binary64 over native `W` (the file's contrast), `1073741824` whole-program binary64 |
 
 O2/O3/O4 are not carrier discriminators (one rounding each, so binary64-then-narrow agrees); they
 pin placement.

@@ -219,6 +219,21 @@ P3-4 (finiteness dropped) fails the overflow guard only; P3-1 fails 15(c)'s two 
 (`O1 … prepare failed`); P3-2 fails 15(c) ×2, both refusals, 2.9 forward, FW2 relu-alone, FW2a
 (`got capability … "Y: f32 scatter"`), oracle O1.
 
+**Group 2 — evidence strength.** (a) O5 redesigned (supersedes §3's O5 values): the old
+`Out[2*i] := W[i] + B[i]` could not tell carriers apart in the scatter itself — native lane 0 and
+"scatter half in binary64, then narrow" were both `1266683904`; only whole-program binary64 gave
+`1266683905`, all from the F32-A assignment `W`. New RHS `W[i] + B[i] + Z[i]`, `Z = [-16785408, 0.5,
+0.25]`: native `[0, 0, 1093140480, 0, 1069547520, 0]`; scatter half alone in binary64 over the native
+`W = [1266683904, 1091567616, 1048576000]` (observed from the F32-A assignment) → `[1.0, 0, 10.5, 0,
+1.5, 0]`, narrowed lane 0 `1065353216`; whole program in binary64 → `[2.0, …]`, lane 0 `1073741824`.
+The file's O5 contrast is now the scatter-half reading. (b) `f32StepOrderWithScan` with two scans
+(outer 3, 4) → `f32UnsupportedStep 3 .scan`; binary64 twin → `duplicateDestination 2 1 3`. (c)
+Fixture 1.8 (Boolean-tagged source, `checkScatterF32` + `runDenseScatter32`) → `[1048576000, 0,
+1056964608, 0, 1065353216, 0]`. (d) K1 DROPPED: under its mutation `KernelCheckTest`,
+`KernelDenseTest` and `KernelDense32Test` fail, and `ScatterDense32Test` is never built (it imports
+`KernelDense32Test` for `t32`), so K1 cannot guard any fixture this slice adds; the manifest is now
+7 entries. (e) `ScatterDense32Test.lean` has 16 `#guard`s (`grep -c '^#guard'`), 8 fixtures.
+
 ## 6. Not verified
 
 - **The real modules were never compiled with the edits.** Everything rests on the prototype being

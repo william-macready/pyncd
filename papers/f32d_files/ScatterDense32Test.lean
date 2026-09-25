@@ -171,4 +171,15 @@ def ctxChecked64 : Option CheckedScatterPlan :=
 #guard (ctxChecked64.map (fun c => match runDenseScatter c #[] with
   | .error e => some e | .ok _ => none)) == some (some (.contextShapeMismatch #[1] []))
 
+/-! ## Fixture 1.8 — a Boolean-tagged source rides the binary32 carrier
+(donor: `KernelDense32Test` fixture 16's `boolSourceSigs32`/`boolSourceStore32`, as a scatter).
+`.bool` is an algebra tag, not a carrier: the source lives in the same `Array Float32` store and is
+gathered dtype-blind, so `0.25`/`0.5` are placed unchanged, not rounded to `{0, 1}`. -/
+def boolSrcSigs32 : Array TensorSignature :=
+  #[ { shape := #[3], dtype := .bool }, { shape := #[6], dtype := .f32 } ]
+
+#guard shapeBitsOf (run32 boolSrcSigs32 (upScatter32 admittedAlgebraF32)
+    #[ t32 [3] #[1048576000, 1056964608, 1065353216], t32 [6] #[] ])
+  == some ([6], #[1048576000, 0, 1056964608, 0, 1065353216, 0])
+
 end LeanNCD.Eval.Plan.ScatterDense32Test

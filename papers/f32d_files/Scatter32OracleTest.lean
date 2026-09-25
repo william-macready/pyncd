@@ -18,8 +18,10 @@ no code with the scatter path:
    SA1-SA3), with every other cell `+0` (bits `0`).
 
 Placement copies values under `.rejectCollisions`, so these two must agree bit for bit. Each case
-also pins its observed bits, and the two carrier-discriminating cases (O1, O5) require at least one
-lane where binary64-then-narrow differs from the native result.
+also pins its observed bits, and the two carrier-discriminating cases require at least one lane
+where a binary64 reading, narrowed, differs from the native result: O1 the whole program in
+binary64, O5 the SCATTER STATEMENT ALONE in binary64 over the native binary32 `W` (so the scatter's
+own arithmetic, not only the preceding assignment's, must be binary32).
 
 What this cannot catch, by construction: a defect in the traversal both legs share
 (`denseValueAtWith`, `float32Ops`, `residualizeAssignment`); the destination-extent convention (the
@@ -89,8 +91,8 @@ structure OracleCase where
   place : List Nat → List Nat
   inputs : NamedDenseEnv32
   observed : Array UInt32
-  /-- For a carrier-discriminating case: the same program with ordinary (binary64) declarations
-      and its inputs widened, run through `runPreparedDense`. -/
+  /-- For a carrier-discriminating case: a binary64 program (ordinary declarations) and widened
+      inputs, run through `runPreparedDense`; its `outName`, narrowed, must differ in some lane. -/
   contrast64 : Option (TLProgram × HashMap String DenseTensor) := none
 
 def run64 (p : TLProgram) (inputs : HashMap String DenseTensor) (nm : String) :
@@ -140,10 +142,16 @@ def o1Vals : List (String × List Nat × List Float32) :=
   [("A", [3], [281474976710656.0, 4.0, 9.0]), ("B", [3], [1.0, 1.0, 1.0]),
    ("Z", [3], [-16777216.0, 0.5, 0.25])]
 
-/-- O5 values: `W = A·A` rounds `4097² = 16785409` to `16785408` natively; `+ 1` stays there
-    (ties-to-even), while binary64 reaches `16785410`, which narrows exactly. -/
+/-- O5 values. Lane 0: `W = A·A` rounds `4097² = 16785409` to `16785408` natively; the scatter's
+    `(W + 1) + Z` then rounds `16785409` back to `16785408` (ties-to-even) and cancels to `+0`. The
+    scatter half alone in binary64 over that native `W` gives `1`; the whole program in binary64
+    gives `2`. -/
 def o5Vals : List (String × List Nat × List Float32) :=
-  [("A", [3], [4097.0, 3.0, 0.5]), ("B", [3], [1.0, 1.0, 1.0])]
+  [("A", [3], [4097.0, 3.0, 0.5]), ("B", [3], [1.0, 1.0, 1.0]), ("Z", [3], [-16785408.0, 0.5, 0.25])]
+
+/-- O5's contrast inputs: the native binary32 `W` (`A·A` as the F32-A assignment rounds it), `B`, `Z`. -/
+def o5ScatterHalfVals : List (String × List Nat × List Float32) :=
+  [("W", [3], [16785408.0, 9.0, 0.25]), ("B", [3], [1.0, 1.0, 1.0]), ("Z", [3], [-16785408.0, 0.5, 0.25])]
 
 def oracleCases : List OracleCase :=
   [ { name := "O1 strided, unary, carrier-discriminating"
@@ -208,23 +216,22 @@ def oracleCases : List OracleCase :=
   , { name := "O5 assignment then scatter, carrier-discriminating"
     , scatterProg := tlprog!{
         axis i : ℕ = 3
-        tensor f32 A(i), B(i), W(i), Out(i)
+        tensor f32 A(i), B(i), Z(i), W(i), Out(i)
         W[i] := A[i] · A[i]
-        Out[2*i] := W[i] + B[i] }
+        Out[2*i] := W[i] + B[i] + Z[i] }
     , outName := "Out"
     , twinProg := tlprog!{
         axis i : ℕ = 3
-        tensor f32 A(i), B(i), W(i), Src(i)
+        tensor f32 A(i), B(i), Z(i), W(i), Src(i)
         W[i] := A[i] · A[i]
-        Src[i] := W[i] + B[i] }
+        Src[i] := W[i] + B[i] + Z[i] }
     , twinName := "Src", destShape := [6], place := fun c => c.map (2 * ·)
     , inputs := env32 o5Vals
-    , observed := #[1266683904, 0, 1092616192, 0, 1067450368, 0]
+    , observed := #[0, 0, 1093140480, 0, 1069547520, 0]
     , contrast64 := some (tlprog!{
         axis i : ℕ = 3
-        tensor A(i), B(i), W(i), Out(i)
-        W[i] := A[i] · A[i]
-        Out[2*i] := W[i] + B[i] }, env64 o5Vals) } ]
+        tensor W(i), B(i), Z(i), Out(i)
+        Out[2*i] := W[i] + B[i] + Z[i] }, env64 o5ScatterHalfVals) } ]
 
 #guard oracleCases.length == 5
 

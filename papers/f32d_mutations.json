@@ -18,15 +18,6 @@
     "expect": ["(placed #[6] #[#[2]] #[1]) (storeFor #[6])) ==", "(placed #[5] #[#[1]] #[2]) (storeFor #[5])) =="]
   },
   {
-    "label": "K1 (shared checker core: f32 destination uses the f64 algebra table)",
-    "task": "1",
-    "file": "LeanNCD/Eval/Plan/Check.lean",
-    "old": "    | .float32 => admittedAlgebrasForF32 destSig.dtype",
-    "new": "    | .float32 => admittedAlgebrasFor destSig.dtype",
-    "targets": ["Eval.Plan.KernelDense32Test"],
-    "expect": ["isOk (checkAssignF32 f32Sigs f32Plan)"]
-  },
-  {
     "label": "S2 (checkPlan capability loop admits an f32 scan)",
     "task": "2",
     "file": "LeanNCD/Eval/Plan/EvalPlan.lean",
