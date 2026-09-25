@@ -95,6 +95,8 @@
       "Bash(bash /Users/williammacready/code/python/pyncd/leanncd/scripts/mutate-and-build.sh *)",
       "Bash(bash leanncd/scripts/mutation-cycle.sh *)",
       "Bash(bash /Users/williammacready/code/python/pyncd/leanncd/scripts/mutation-cycle.sh *)",
+      "Bash(bash leanncd/scripts/mutation-manifest.sh *)",
+      "Bash(bash /Users/williammacready/code/python/pyncd/leanncd/scripts/mutation-manifest.sh *)",
       "Bash(bash leanncd/scripts/lean-file.sh *)",
       "Bash(bash /Users/williammacready/code/python/pyncd/leanncd/scripts/lean-file.sh *)",
       "Bash(bash leanncd/scripts/lake-build.sh *)",

@@ -70,6 +70,13 @@ The repository permissions allow both relative and primary-checkout absolute inv
 wrapper so mutation cycles and Lake builds do not require confirmation. If a mutation requires
 multiple files, multiple intentional matches, a non-Lake command, or verification beyond build
 failure, extend the wrapper for that case instead of using an ad hoc mutate/restore command.
+When a plan ships its cycles as a JSON manifest, run them all with
+`bash leanncd/scripts/mutation-manifest.sh [--task <id>] [--out <table.md>] <leanncd-dir> <manifest.json>`:
+each entry goes through `mutation-cycle.sh` unchanged, plus a byte-identical restore check and optional
+`expect` strings that must appear in the mutated build's log, proving it broke for the intended reason.
+It prints a markdown results table for the close-out record. `--check` validates a manifest (schema,
+every old-string unique) without building; the script's header documents the format.
+
 The controlling session should invoke mutation cycles directly rather than delegating the shell
 command to a subagent: subagent permission scope is loaded from the creator session's worktree,
 which may predate these allow rules even when the target implementation worktree contains them.

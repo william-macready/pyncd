@@ -62,6 +62,9 @@ build_status=$?
 set -e
 
 grep -E "error:|Build completed" "$logfile" | head || true
+# Optional: keep the full mutated-build log for a caller that checks WHY the build broke
+# (mutation-manifest.sh's `expect` strings). Unset by default; behaviour is otherwise unchanged.
+if [[ -n "${MUTATION_LOG:-}" ]]; then cp -- "$logfile" "$MUTATION_LOG"; fi
 
 echo "--- lake build exit code: $build_status (restoring $file now) ---"
 exit "$build_status"

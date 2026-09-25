@@ -1,6 +1,6 @@
 ---
 name: slice-plan
-description: Authoring discipline for leanncd slice implementation plans (Wave C/F slices, or any subagent-driven-development plan in this repo) — verifying plan code, paths, and prose claims before they ship; covering the recurring-defect siblings a diff review structurally cannot see; right-sizing tasks by fixture count so dispatch overhead does not dominate; and where review budget actually pays. Use when writing or revising an implementation plan for leanncd, before executing it.
+description: Authoring discipline for leanncd slice implementation plans (Wave C/F slices, or any subagent-driven-development plan in this repo) — verifying plan code, paths, and prose claims before they ship; covering the recurring-defect siblings a diff review structurally cannot see; right-sizing tasks by fixture count so dispatch overhead does not dominate; budgeting implementer context (reading windows, mutation manifests, a live plan kept apart from its record); and where review budget actually pays. Use when writing or revising an implementation plan for leanncd, before executing it.
 ---
 
 # Writing a leanncd slice plan
@@ -296,6 +296,67 @@ leg already agreed, which is the position where it can teach the least. Schedule
 while the implementation it checks is still being actively built, so a disagreement arrives when
 someone still has the context to act on it.
 
+## 5. Budget the implementer's context, not just the task count
+
+§3 sizes tasks by dispatch count. The F32 slices measured the other axis: **what a dispatch costs is
+turns × context per turn**, and a plan decides most of the second factor. Measured from the session
+transcripts (input tokens summed over turns, mostly cache reads):
+
+| | F32-A | F32-B |
+|---|---:|---:|
+| Execution, total | ~458M | ~173M |
+| Implementer dispatches | ~296M (5) | ~123M (5) |
+| All per-task reviews and re-reviews | ~20M | ~9M |
+| Costliest dispatch | Task 2: 107M, 261 turns, context peak 601k | Task 5 (docs, 0 fixtures): 40M, 185 turns |
+
+Reviews are not where the money goes. Implementers are. F32-B was cheaper mainly because it
+needed **zero** per-task fix rounds (F32-A: three, plus a 31M final fix wave), which is what its two
+pre-execution adversarial plan reviews (~27M) bought. Keep those. The rest of this section is about
+what F32-B still wasted.
+
+**Give reading windows, not file names.** F32-B Task 2 pulled 405k characters into context through
+Read: whole-file reads of `Plan/Compile.lean` (54k), `Eval/AGENTS.md` (53k), and `Plan/Error.lean`
+(42k), each carried through every later turn of a 111-turn session. Implementers also ran 15–70
+greps each, re-finding facts the plan had already measured and then written as prose. **Rule: each
+task's brief lists every symbol it touches as `identifier @ file`, and tells the implementer to
+`rg -n <identifier>` and read a window, never a whole file over ~20k characters.** The author has
+already found these symbols, so writing them down costs nothing.
+
+**Intent-layer nodes are paid per Edit, not per read.** The intent-layer pre-edit hook injects the
+covering AGENTS.md's Pitfalls/Checks/Patterns/Context sections on *every* Edit or Write. The old
+`Eval/AGENTS.md` injected ~6.1k characters per edit, and F32-B Task 3 made 45 edits under it
+(~270k characters, each carried forward). Split and trimmed on 2026-09-25, `Eval/` now injects
+~1.4k and `Eval/Plan/` ~0.7k. **Rule: if a slice's tasks will edit under a node whose injected
+sections exceed ~3k characters, trim that node before execution starts.** Detail belongs in
+Contracts, which is not injected. Measure with
+`awk '/^## /{s=($0=="## Pitfalls"||$0=="## Checks"||$0=="## Patterns"||$0=="## Context")} s' <node> | wc -c`.
+`DSL/AGENTS.md` is ~15.4k today.
+
+**Ship mutation cycles as a manifest the author has already run.** The author observes every
+mutation's failure while writing the plan, yet F32-B Task 4's implementer re-read
+`mutation-cycle.sh`'s usage, wrote its own wrapper, and ran about ten manual `CompileTest` builds
+getting multi-line old-strings right. **Rule: the plan's cycles live in `papers/<plan>_mutations.json`,
+run by `leanncd/scripts/mutation-manifest.sh`.** Each entry's `expect` strings are copied from the
+author's observed failure, so a mutation that breaks the build for the wrong reason FAILs. Validate
+it at authoring time with `--check` (schema, and every old-string unique, with no build). Each task
+then says `mutation-manifest.sh --task N`, and `--out` gives the close-out its results table.
+
+**Keep the live plan separate from the record.** F32-A's and F32-B's plans are ~2,150 lines each.
+About 470 of F32-B's are close-out and authoring-verification history (§6.5, §8), which no
+implementer needs. The F32-B drafter read all of F32-A's plan (~177k characters): context peaked at
+612k and the draft cost 50M. **Rule: close-out and verification records go in a separate
+`papers/<plan>_record.md`, and the live plan holds only what is needed to execute it.** Aim for ≤800
+lines; that is a target, not a measurement. The next slice's drafter starts from a short carry-forward
+list (inherited (c) cells, deferred items, named obligations), re-derived per §1, rather than the
+previous plan.
+
+**Script the documentation task; don't give it a heavyweight dispatch.** F32-B Task 5 had no
+fixtures and was still the second most expensive dispatch (40M: 23 plan reads, 70 greps). **Rule:
+write the stale-value sweep, the enum/throw-site counts, and the mutation results table into the
+plan as commands.** Then fold the remaining prose into the last code task, or give it to a
+mid-tier model. The completion record's *claims* still get §1's diff-it-yourself check, and §3's
+housekeeping-plus-claims note still applies.
+
 ## Authoring checklist
 
 - [ ] Every Lean block compiled via `check-snippet.sh` (fragments concatenated
@@ -352,3 +413,14 @@ someone still has the context to act on it.
       compiler that `import LeanNCD` couldn't reach and neither AGENTS.md
       mentioned — invisible until a later audit slice (C6) fixed it. Don't
       defer this to "someone will notice eventually."
+- [ ] Every task's brief lists the symbols it touches as `identifier @ file` (plus a
+      "window-read, don't whole-file-read" instruction) so the implementer doesn't re-grep for
+      what the author already found.
+- [ ] Every AGENTS.md node covering files the slice edits injects ≤ ~3k characters of
+      Pitfalls/Checks/Patterns/Context per edit; trim it before execution if not (§5).
+- [ ] Mutation cycles are in `papers/<plan>_mutations.json` with `expect` strings copied from
+      observed failures, and `mutation-manifest.sh --check` passes on it.
+- [ ] Close-out and authoring-verification records go in `papers/<plan>_record.md`, not the live
+      plan; the live plan is ≤ ~800 lines.
+- [ ] Documentation-sweep steps are written as commands (value-grep, counts, `--out` results
+      table), and the docs work is not a heavyweight dispatch of its own.
