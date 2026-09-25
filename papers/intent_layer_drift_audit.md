@@ -161,6 +161,11 @@ Derived from §3.1, where a blind prune would have deleted a live hazard warning
 
 ## 5. Outstanding
 
+> **Resolved 2026-09-25** for both nodes: `Eval/AGENTS.md` split into itself plus `Eval/Plan/AGENTS.md`
+> (§2's false claims, omissions, and `allRowKinds` addressed), and `DSL/AGENTS.md` rewritten (no line
+> citations remain; §3.3's `Signature.lean` import and `declaredAxisSizes` claims corrected). The
+> `leanncd/AGENTS.md` and code-side docstring items below are still open.
+
 - **`Eval/AGENTS.md`**: the `allRowKinds` omission (§2.1) — highest value, it defeats the node's own
   purpose; the five FALSE claims (§2.3); the three omissions (§2.4); narration pruning.
 - **`DSL/AGENTS.md`**: the 11 wrong line-number citations (§3.2); the remaining STALE rows; the

@@ -330,7 +330,7 @@ covering AGENTS.md's Pitfalls/Checks/Patterns/Context sections on *every* Edit o
 sections exceed ~3k characters, trim that node before execution starts.** Detail belongs in
 Contracts, which is not injected. Measure with
 `awk '/^## /{s=($0=="## Pitfalls"||$0=="## Checks"||$0=="## Patterns"||$0=="## Context")} s' <node> | wc -c`.
-`DSL/AGENTS.md` is ~15.4k today.
+`DSL/AGENTS.md` was ~15.4k until the same day's trim, now ~0.9k.
 
 **Ship mutation cycles as a manifest the author has already run.** The author observes every
 mutation's failure while writing the plan, yet F32-B Task 4's implementer re-read
