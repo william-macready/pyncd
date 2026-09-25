@@ -63,9 +63,14 @@ ulp; a binary64 error merely "far below one binary32 ulp" would give a much larg
 binary32 inputs in [2⁻⁴, 2⁴) (every 37th bit pattern), native and binary64-then-narrow disagreed
 this often:
 
-| Primitive | `exp` | `log` | `sin` | `cos` | `tanh` | `sqrt` | `recip` (`1/x`) |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| Disagreements | 10,955 | 265 | 31,283 | 16,528 | 27,882 | **0** | **0** |
+| Primitive | `exp` | `log` | `sin` | `cos` | `tanh` | `pow` (`x³`) | `sqrt` | `recip` (`1/x`) |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Disagreements | 10,955 | 265 | 31,283 | 16,528 | 27,882 | 11,501 | **0** | **0** |
+
+The `pow` column was added after the second independent final review (§6.5.7). It measures the only
+`powf` call in the slice, `gelu`'s cube: `Float32.pow x 3` against `(x.toFloat ^ 3.0).toFloat32`,
+by the same method as the other columns. It was re-run in full, and the same run reproduced the
+`exp` column's 10,955 as a control.
 
 `sqrt` and division are correctly rounded in both carriers. The zero counts match the known result
 that double rounding is harmless when both operands are in the narrow format of precision p and the
@@ -859,6 +864,13 @@ fails with a message naming exactly that, and the remedy is re-running the §8 w
 plan whose inputs depend on the platform libm, and they are labeled as such in the test files.
 Every other value fixture uses portable lanes (§1.1).
 
+The same limit holds for a transcendental *inside* a composite. The portable composite lanes
+cannot tell the record's native `expf`/`powf` from binary64-then-narrow of that one primitive with
+every other step still native binary32. Only the whole-formula narrowing is rejected by them. So
+`sigmoid` (whose `exp` step `softmax` shares) and `gelu` (whose only `powf` is the cube) each get a
+composite witness. Its alternative is the formula with that one field narrowed, not the widened
+formula. The second independent final review found this gap (§6.5.7).
+
 ## 4. Implementation tasks
 
 Task boundaries are chosen so that each task can be rejected, or rolled back, on its own:
@@ -1614,6 +1626,9 @@ genuinely passed after restore. No task ran more or fewer cycles than §5 budget
 | 5 | 0 | 0 | n/a — doc-only task |
 | **total** | **40** | **40** | |
 
+Two more cycles, R2-M1 and R2-M2, were added after the second independent review. They are outside
+this budget and are recorded in §6.5.7.
+
 Per-cycle mutation text, the observed failing fixture, and the restored-pass observation are recorded
 in each task's report under `.superpowers/sdd/f32b_evalplan/task-N-report.md`. Two Task 1 minors
 noted there: the mutation script prints only which fixture failed, not the exact predicted wrong
@@ -1678,7 +1693,8 @@ this writing, **one** independent review has been run — by a fresh reviewing a
 of the five tasks' implementation, covering both §6.4 item 1's numerical lens and item 2's boundary
 lens in a single pass; the findings triaged in the list below are its output. A **second** independent
 review is still pending and will be run separately by the controlling session before the slice is
-marked complete. Task 5's own tables-A/B re-verification and §2.6/§4.5 spot-checks (this section, and
+marked complete. (Update: the second independent review has now run. It found one load-bearing
+coverage gap and three Minor findings, and all four are closed in §6.5.7.) Task 5's own tables-A/B re-verification and §2.6/§4.5 spot-checks (this section, and
 §3.5's re-verification above) are useful corroboration, but they are this task's own self-review, not
 one of §6.4's two required independent reviews, and are not counted toward satisfying it.
 
@@ -1793,6 +1809,67 @@ correct), `f32_evalplan.md` (excluded from edits by this task's own scope), the 
 already fixed, and the production `.lean` sites (`Error.lean`'s retired-payload doc comments,
 `Eval/AGENTS.md`, `KernelCheckTest.lean`) which already correctly describe the producer-less/retired
 status — verified, not assumed. No `File.lean:NNN` citation was introduced by any edit in this task.
+
+#### 6.5.7 Second independent review: the composite `exp`/`pow` gap (closed)
+
+The second independent whole-branch review found one load-bearing coverage gap and three Minor
+findings. All four are closed. Commits: `d5994c7` (the gap) and `753f8d5` (the Minors).
+
+**The gap.** Two fields of `float32NonlinOps` (`Eval/Nonlin.lean`) had no witness: `exp`, used by
+`sigmoid` and `softmax`, and `pow`, used only by `gelu`'s cube. Fixture 1.8's `exp` witness covers
+`UnaryOp.applyChecked32`, a separate code path. The composite fixtures were chosen to be
+libm-portable, so by construction they cannot tell native `expf`/`powf` from that one primitive
+narrowed from binary64 (§3.6). Before the fix, this was confirmed by running
+`mutation-cycle.sh` over the full default targets (`LeanNCD Tests`) with each field replaced by
+its narrowed simulation (`fun x => (Float.exp x.toFloat).toFloat32`, and
+`fun a b => (a.toFloat ^ b.toFloat).toFloat32`). Both mutants built green, with
+`Build completed successfully (8670 jobs)` and both corpora unchanged. D1's "never narrowed"
+guarantee was therefore unpinned for these two fields.
+
+**The fix.** `Nonlin32Test` fixture 1.8 gains two composite witnesses, `sigmoid (record exp)` and
+`gelu (record pow)`. Both go through `witnessVs`, which is `witness` generalized to an explicit
+alternative; the existing five witnesses call it unchanged. Each fixture asserts that
+`PointwiseFn.apply32` equals the direct native formula on every lane, after a live precondition
+that some lane separates native from the formula with only that one primitive narrowed. The lanes
+are:
+
+| Witness | Input bits | Native output bits (comment only) | Alternative's output |
+|---|---|---|---|
+| `sigmoidExpLanes` | `1040214460, 1040227085, 1040277686, 1040378989` | `1057489900, 1057490686, 1057493836, 1057500141` | one ulp off on every lane |
+| `geluPowLanes` | `1061450927, 1064289633, 1065046830, 1065471434` | `1058598916, 1061545720, 1062357744, 1062945309` | one ulp off on every lane |
+
+Like the other witnesses, the native outputs are recorded in comments only. The lanes are
+platform-dependent, and §3.6's remedy applies if the precondition ever fails. The `pow` column of
+§1.1's table (11,501 of 1,813,754) was re-measured in full for this fix.
+
+**Mutation cycles** (targets `Eval.Nonlin32Test`, all through `mutation-cycle.sh`):
+
+| Cycle | Mutation | Failed at | Restored |
+|---|---|---|---|
+| R2-M1 | `exp := Float32.exp` → narrowed `exp` | `sigmoid (record exp): implementation is not the native binary32 routine` (only this fixture) | PASS |
+| R2-M2 | `pow := Float32.pow` → narrowed `pow` | `gelu (record pow): implementation is not the native binary32 routine` (only this fixture) | PASS |
+| R2-P (liveness, uncounted) | `sigmoidExpLanes := [3225419776]` (`-3.0`, a non-separating lane) | the precondition's own "no lane separates native binary32 from sigmoid with a binary64-then-narrow exp" message | PASS |
+
+**The Minors.**
+
+- `NonlinDense32Test` block 6's third lane `-1.25` has an `exp(1.25)` step 0.428 ulp from
+  representable, only 0.072 ulp from a rounding boundary. That breaks the portability claim for
+  non-witness fixtures (§1.1). It is now `-3.0` (bits `3225419776` → `1027752354`), whose
+  `exp(3.0)` step is 0.018 ulp from representable. The §4 Task 3 block 6 text above still shows
+  the original lane, as the authored record.
+- `KernelDense32Test` fixtures 2.3/2.6: their comments said apply-before-pad would "read `X[3]` a
+  second time". The actual mechanism is that it pads the *result*, so the unary op never runs on
+  the out-of-bounds read: `+0` in 2.3, no domain error in 2.6. Comment-only fix.
+- `Adapter32Test` fixtures 4.6/4.7: 4.6 claimed "the binary64 twin's observed" bits without
+  running a twin. It now says the contrast is asserted by fixtures 1.2 and 3.7, and 4.7 names
+  fixture 1.4 for its contrast. Comment-only fix. The hardcoded native bits already reject
+  whole-plan narrowing.
+
+**Builds after both commits.** The full default `lake build` reported `Build completed
+successfully (8670 jobs)`, with `DifferentialTest sweep: total=3832 accepted=3832 rejected=0
+categories=[]` and `DifferentialTest scan corpus: total=17 accepted=17 unsupportedNonlin=0
+unsupportedAgg=0`, both unchanged. The four touched test modules also built green as their own
+targets. No production source changed.
 
 ## 7. Success criteria and stop conditions
 
