@@ -138,5 +138,8 @@
         ]
       }
     ]
+  },
+  "enabledPlugins": {
+    "rai@RelationalAI": false
   }
 }

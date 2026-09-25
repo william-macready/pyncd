@@ -12,11 +12,11 @@ Does not own: the routing/compile proofs themselves (`../DSL/Pipeline/RouteSpec.
 | Interpret a compiled DAG as a categorical morphism | `Realize.lean` → `realize`, `ThreadedComposed.WellFormed` |
 | Does every compiled program satisfy realize's precondition? | `Agreement.lean` → `compile_wellFormed` |
 | Encode/decode `ThreadedComposed` ↔ acset tables | `AcsetCodec.lean` → `fromThreadedComposed` (encode), `toThreadedComposed` (decode) |
-| Round-trip theorem (decode∘encode = id) | `AcsetCodec.lean:1569` → `toThreadedComposed_fromThreadedComposed` |
+| Round-trip theorem (decode∘encode = id) | `AcsetCodec.lean` → `toThreadedComposed_fromThreadedComposed` |
 | Realize an acset instance directly (CSV path) | `SBr.lean` → `realizeSBr` |
-| DSL-path and CSV-path agree | `Agreement.lean:407` → `realize_fromThreadedComposed_agree` (Prop 8) |
-| Extra shape invariant the round-trip needs beyond `WellFormed` | `AcsetCodec.lean:524` → `ThreadedComposed.WellShaped` |
-| Two-slot axis name/id encoding | `AcsetCodec.lean:124-139` → `nameUidFor3`/`encodeAxisSizes` |
+| DSL-path and CSV-path agree | `Agreement.lean` → `realize_fromThreadedComposed_agree` (Prop 8) |
+| Extra shape invariant the round-trip needs beyond `WellFormed` | `AcsetCodec.lean` → `ThreadedComposed.WellShaped` |
+| Two-slot axis name/id encoding | `AcsetCodec.lean` → `nameUidFor3`/`encodeAxisSizes` |
 
 ### Key Relationships
 Bridge imports `Base.Br`/`Base.BrWiring`/`Base.SizeExpr` (math tower), `DSL.Target`/`DSL.Compile`/`DSL.Pipeline.RouteSpec` (pipeline), `Acset.SBrInstance` (schema). Only `LeanNCD.lean` imports Bridge — safe to change internals as long as the four exported theorems/defs below keep their signatures.
@@ -33,7 +33,7 @@ Bridge imports `Base.Br`/`Base.BrWiring`/`Base.SizeExpr` (math tower), `DSL.Targ
 | `realize_fromThreadedComposed_agree` / `agree_dom`/`agree_cod` | top-level correctness claim of the whole bridge (Prop 8/8′) | — |
 
 ### Core Types
-`ThreadedComposed`/`Acset.SBrInstance` are defined elsewhere (`../DSL/Target`, `../Acset/SBrInstance`) — Bridge adds `.WellFormed` (`Realize.lean:139`) and `.WellShaped` (`AcsetCodec.lean:524`) predicates on top.
+`ThreadedComposed`/`Acset.SBrInstance` are defined elsewhere (`../DSL/Target`, `../Acset/SBrInstance`) — Bridge adds `.WellFormed` (`Realize.lean`) and `.WellShaped` (`AcsetCodec.lean`) predicates on top.
 
 ## Entry Points
 | Task | Start Here |
@@ -44,22 +44,21 @@ Bridge imports `Base.Br`/`Base.BrWiring`/`Base.SizeExpr` (math tower), `DSL.Targ
 | Realize straight from a CSV-backed acset instance | `SBr.lean::realizeSBr` |
 
 ## Contracts
-- **`realize` is total and sorry-free under `WellFormed`** — no bare `sorry` in `Realize.lean` (the one grep hit at line 24 is a prose "no `sorry`" comment).
-- **Every compiled program is `WellFormed`**: `compile_wellFormed` (`Agreement.lean:379`) assembles `wf_typeMatch` (routed reads match step inputs — depends on `RouteSpec.buildStep_output_fixedAxes`, see `../DSL/AGENTS.md`), `wf_singleOutput` (weakened to `≥1` output for multi-output scans), `wf_topo` (reads ⊆ live pool — see Pitfalls), plus `wellFormedDom` (carried by construction from `route`'s fail-loud guard).
-- **The acset round-trip needs `WellFormed ∧ WellShaped`**, not `WellFormed` alone (`AcsetCodec.lean:1569`) — `WellShaped` (routing/step-count agreement, reindexing-matrix dimensions) exists because the presentation types dropped the dependent `StMat` typing that would otherwise enforce it (`../DSL/Target.lean:63`).
-- **`Realize.lean`, `AcsetCodec.lean`, `SBr.lean`, `Agreement.lean` are all sorry-free** (verified by reading, not just grep — `SORRY_INVENTORY.md` lines 310-322 confirms this independently).
-
-## Patterns
-- **`AcsetCodec.lean`'s round-trip proof is staged across lettered Tasks** (visible in commits): Task A (`fromThreadedComposed`, pure bookkeeping, no proof obligations) → Task B (`toThreadedComposed`, total, degrades gracefully on garbage input) → Task C (the round-trip theorem, built bottom-up: isolation infra → per-field round trips → per-slot inversion → per-step assembly → final theorem) → Task D (`realizeSBr`) → Task E (Prop 8, trivial once C+D exist).
-- **Generic per-field isolation lemma**: `from_field_filter` (`AcsetCodec.lean:444`) is the reusable higher-order lemma every per-field round-trip theorem instantiates. **Anyone adding a new acset table field should reuse this, not re-derive a bespoke proof.**
-- **Two-slot axis encoding** (`nameUidFor3` alongside `axisUidFor3`): axis identity and axis name are independent entries keyed by the same `Nat.pair`-derived id, so name recovery is unconditional (fix `a94e725` — the original one-slot design conflated the two).
-- **Unary `Nat`-string encoding chosen deliberately over decimal** (`AcsetCodec.lean:27`) — decimal string round-trip lemmas don't exist ready-made in Mathlib/Batteries; unary-length + `Nat.pair`/`unpair` round-trip trivially. Don't "simplify" to decimal without re-deriving those lemmas.
+- **`realize` is total and sorry-free under `WellFormed`** — `Realize.lean`'s only grep hit for `sorry` is a prose "no `sorry`" comment.
+- **Every compiled program is `WellFormed`**: `compile_wellFormed` (`Agreement.lean`) assembles `wf_typeMatch` (routed reads match step inputs — depends on `RouteSpec.buildStep_output_fixedAxes`, see `../DSL/AGENTS.md`), `wf_singleOutput` (weakened to `≥1` output for multi-output scans), `wf_topo` (reads ⊆ live pool), plus `wellFormedDom` (carried by construction from `route`'s fail-loud guard). A change to `slotWeave`'s ordering in `../DSL/Pipeline/` ripples into `wf_typeMatch`/`compile_wellFormed`.
+- **`wf_topo`/`topo_bound` is a soundness tripwire.** As first stated it was false (`897d515`): true cycles, and coupled-scan self-recurrence (a scan step reading its own just-produced output). A plain "fail loud on cycle" guard also rejected valid coupled scans and was reverted. It holds now via a `routableInOrder` guard plus excluding self-reads from `inputReadFactors` (`../DSL/Pipeline/RouteSpec.lean`); a change to scan/scheduling logic can silently make it false again.
+- **The acset round-trip needs `WellFormed ∧ WellShaped`**, not `WellFormed` alone (`toThreadedComposed_fromThreadedComposed`, `AcsetCodec.lean`). `WellShaped` (routing/step-count agreement, reindexing-matrix dimensions) exists because the presentation types in `../DSL/Target.lean` dropped the dependent `StMat` typing that would otherwise enforce it.
+- **`Realize.lean`, `AcsetCodec.lean`, `SBr.lean`, `Agreement.lean` are all sorry-free** (by reading, confirmed independently by `SORRY_INVENTORY.md`). `LeanNCD.lean`'s top-of-file comment still lists "the `Bridge` realize/agreement bodies" among staged sorries — it is stale.
+- **Proof structure.** `AcsetCodec.lean`'s round trip is built bottom-up: `fromThreadedComposed` (pure bookkeeping) → `toThreadedComposed` (total, degrades gracefully on garbage) → isolation infrastructure → per-field round trips → per-slot inversion → per-step assembly → the final theorem; then `realizeSBr` and Prop 8. **A new acset table field reuses `from_field_filter`**, the generic per-field isolation lemma, rather than a bespoke proof.
+- **Two-slot axis encoding**: `nameUidFor3` beside `axisUidFor3` — axis identity and axis name are independent entries keyed by one `Nat.pair`-derived id, so name recovery is unconditional (the one-slot design conflated them; fix `a94e725`).
+- **Nat strings are unary, deliberately** (`natToUnary`/`unaryToNat`): decimal string round-trip lemmas don't exist ready-made in Mathlib/Batteries, while unary length + `Nat.pair`/`unpair` round-trip trivially. Don't switch to decimal without re-deriving those lemmas.
+- **`AcsetCodec.lean` is NOT byte-faithful to Python's `pyncd/acset/instances.py`** — `brOpIdx`/`brOpOfIdx` are an internal 0–14 tag unrelated to Python's `OpTag`. Round-trip fidelity here does not imply Python-CSV fidelity (`../Acset/`'s separate, weaker guarantee).
+- **`brOpOfIdx?` is the single total table and `brOpOfIdx` derives from it**, so the two cannot drift. A `| _ => .contract` default used to be reachable from CSV (a missing `EquationRow` gives `"" ⇒ 0 ⇒ .contract`, silently turning a garbled relu/softmax/scatter/scan tag into a plain contraction). Guarded by three `#guard`s (mutual inverse over `0..14`, two out-of-range). Keep `brOpOfIdx?_brOpIdx` proved by `cases op <;> rfl`, not `simp [brOpOfIdx]`, which widens the axiom set to `[propext]`.
+- **The boundary decoders are still unaudited** (semantic-payload finding #6): `realizeStMat` zero-fill, `realizeBrBaseP`, `AcsetCodec` decode defaults, `realizeSBr` → empty identity are the same class of meaning-changing default the `brOpOfIdx` fix closed, and have not been probed. Do not assume that fix generalised to them.
+- **`brCancelPoint` (`../Base/Br.lean`) is upstream context, not a Bridge blocker** — `realize`/`Agreement`/`AcsetCodec` do not depend on it.
 
 ## Pitfalls
-- **`wf_topo`/`topo_bound` was FALSE as originally stated** (`897d515`): two real counterexamples — true cycles (no acyclicity check originally) and coupled-scan self-recurrence (a scan step reading its own just-produced output, which the monotonic-pool model doesn't yet contain at that point). A naive "fail loud on cycle" guard was tried and reverted because it also rejected valid coupled scans. Now resolved via a `routableInOrder` guard + excluding self-reads from `inputReadFactors` (in `../DSL/Pipeline/RouteSpec.lean`). **A future change to scan/scheduling logic can silently make `topo_bound` false again — this is a real soundness tripwire.**
-- **`RouteSpec.buildStep_output_fixedAxes` (outside Bridge/) is load-bearing for `wf_typeMatch`** — a change to `slotWeave`'s ordering convention in `../DSL/Pipeline/RouteSpec.lean` would ripple into `wf_typeMatch`/`compile_wellFormed` here.
-- **`AcsetCodec.lean` is intentionally NOT byte-faithful to Python's `pyncd/acset/instances.py`** — `brOpIdx`/`brOpOfIdx` are an internal 0-14 tag unrelated to Python's `OpTag` cardinality. Round-trip-fidelity here does not imply Python-CSV-fidelity (that's `../Acset/`'s separate, weaker guarantee).
-- **`brOpOfIdx?` is the single total table; `brOpOfIdx` DERIVES from it** — so the two cannot drift. Until 2026-07-30 `brOpOfIdx`'s final arm was `| _ => .contract`, and that default was **reachable from CSV**: `decodeStep` takes the tag via `unaryToNat` of a raw string, and a **missing `EquationRow` yields `"" ⇒ 0 ⇒ .contract`**, so a garbled relu/softmax/scatter/scan tag silently became a plain contraction with no error (audit finding **D**). Guarded by three `#guard`s (mutual-inverse over `0..14`, plus two out-of-range). Keep `brOpOfIdx?_brOpIdx` proved by `cases op <;> rfl`, **not** `simp [brOpOfIdx]` — the `simp` form widens the axiom set from axiom-free to `[propext]`.
-- **⚠️ The boundary DECODERS are still unaudited** — finding **#6** (`realizeStMat` zero-fill, `realizeBrBaseP`, `AcsetCodec` decode defaults, `realizeSBr` → empty identity) is the same *class* of meaning-changing default that D turned out to be, but has **not been probed**. Assigned to Stage-5 bridge hardening. Do not assume the D fix generalised to them.
-- **`LeanNCD.lean`'s top-of-file doc comment is stale** — it still lists "the `Bridge` realize/agreement bodies" among deliberate staged sorries, but both are now fully sorry-free (Tasks C/D/E landed after that comment was written). `SORRY_INVENTORY.md` itself flags this class of staleness. Don't trust file-level doc summaries at face value — read the actual file.
-- **`brCancelPoint` (`../Base/Br.lean`, see that dir's AGENTS.md) is upstream context, not a Bridge/ blocker** — `realize`/`Agreement`/`AcsetCodec` do NOT depend on it.
+- **`topo_bound` can silently become false again** after any scan/scheduling change — see Contracts before touching `routableInOrder` or `inputReadFactors`.
+- **Round-trip fidelity ≠ Python-CSV fidelity** — `brOpIdx` tags are internal.
+- **Don't trust file-level doc summaries** (e.g. `LeanNCD.lean`'s sorry list) — read the file.
+- **Decoders may still hide meaning-changing defaults** (finding #6, unaudited).
