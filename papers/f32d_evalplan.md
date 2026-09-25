@@ -33,7 +33,8 @@ binary32 scatter that reads a preceding binary32 assignment's or nonlinearity's 
 | every scan form, including scan-local scatter | Step 0c `"{nm}: f32 scan"`; `checkPlan` `f32UnsupportedStep i .scan`; `runDensePlan32` `.scan` arm | F32-C |
 | a scatter nonlinearity (`relu`, `softmax`, …) on ANY dtype | Step A `unsupportedNonlin "{nm}: scatter nonlinearity"` | policy — not a gap |
 | a collision policy other than `.rejectCollisions`, either carrier | Step A `scatterOptsNotAdmitted`; `checkScatter`/`checkScatterF32` `scatterReduceNotAdmitted` | policy |
-| a non-zero or tropical source `fill` | `scatterFillOrFail` (no `Int` denotes `∓∞`) | policy |
+| a source `fill` ≠ the algebra's identity, or one that rounds to `±∞` in binary32 | `scatterFillOrFail`: the `.f32` arm also requires `(Float32.ofInt fill).isFinite` (15(c) refusals) | policy |
+| a binary64 source `fill` that rounds to `-∞` (e.g. `-(2^1024)` on `maxreduce`) | NOT refused: `Float.ofInt` overflows to the `-∞` bits `admittedAlgebraMax.reduceId` holds, so the `.f64` arm admits it (pre-existing; binary64 is preserved bit for bit, so unchanged here) | **none yet** — a binary64 gap |
 | any f32 plan on JAX | plan-level `.float64` gate at every JAX door | F32-JAX |
 | any f32 program on the legacy evaluator | `EvalError.unsupportedDtype` | permanent |
 | mixed f32/f64 in one graph | Step 0b; `mixedStorageKinds` | F32-E (contingent) |
@@ -119,7 +120,8 @@ manifest's G1/G2 cycles mutate two of those lines and must still pass after the 
   `c.plan.compute.destinationSlot`, mirroring `runDensePlan`'s arm.
 - `Compile.lean`: `checkF32Stmt` is deleted (after the change every arm would be `pure ()`), and
   `f32CapabilityCheck`'s `.plain` arm becomes `.plain _ => pure ()`. `scatterFillOrFail`'s
-  `.f32 _ => false` becomes `.f32 bits => bits == (Float32.ofInt fill).toBits` (native, bits).
+  `.f32 _ => false` becomes `.f32 bits => (Float32.ofInt fill).isFinite && bits == …toBits` (native,
+  bits; finiteness refuses an integer that overflows to the `-∞`/`+∞` identity of a tropical algebra).
   Step D's scatter branch needs NO change: it already selects `destDtype` and
   `algebraForDest destDtype rhs.agg` from the destination's declaration.
 
@@ -153,8 +155,8 @@ DISAGREE on O2, not merely fail a pinned literal.
 `float32Ops`, `residualizeAssignment` (pinned separately by F32-A/B bit fixtures and Task 1's 1.4);
 (2) the destination-extent convention (the oracle takes `destShape` as given); (3) collisions and
 out-of-range placement (every case is in range and collision-free — all surface syntax can
-express); (4) any non-zero or tropical `fill` (source admits only sum-product fill `0`; Task 1's 1.5
-pins `-∞` programmatically). It is also only as broad as its five programs.
+express); (4) any non-zero or tropical `fill` (binary32 source admits only fill `0` on sum-product: `fill := 1`
+and the overflowing `-(2^128)` are refused, 15(c) refusals; Task 1's 1.5 pins `-∞` programmatically). It is also only as broad as its five programs.
 
 **Scheduling.** It is Task 3 phase 1's FIRST step, written before the compiler edit and observed
 failing (`BINARY32 SCATTER ORACLE FAILED: O1 strided, unary, carrier-discriminating: prepare
@@ -176,7 +178,7 @@ holds. Fixture ids refer to §5.
 | f32 scatter with inline unary factor | **required** (O1) | **required** (1.4) | **forbidden** (1.7) | **required** `float32Ops.applyUnary` via the shared traversal (1.4, O1) | **required** (O1) | **forbidden** | **forbidden** |
 | scatter nonlinearity, any dtype | **forbidden** Step A (3.3) | never compiled | — | — | — | — | — |
 | non-default collision policy, either carrier | **forbidden** Step A (existing) | **forbidden** `scatterReduceNotAdmitted` in the shared core (ScatterCheckTest binary64; 1.3 binary32) | **(c)** `.overwrite/.sum/.max/.min` arms of `runDenseScatterWith`: unreachable behind that clause; now via `ops.binOp` | same **(c)** | — | — | — |
-| tropical / non-zero fill, f32 | **forbidden** from source (`scatterFillOrFail`) | **required**, programmatic: fill must equal `reduceId` (1.3) | — | **required** `ops.decodeConst` (1.5) | — | — | — |
+| tropical / non-zero / overflowing fill, f32 | **forbidden** from source (`scatterFillOrFail`; 15(c) refusals, P3-3, P3-4) | **required**, programmatic: fill must equal `reduceId` (1.3) | — | **required** `ops.decodeConst` (1.5) | — | — | — |
 | out-of-range placement (programmatic only) | unreachable | admitted by design (reference parity) | **required** silent skip (ScatterDenseTest pins) | **(c)** same shared `inBoundsPerDim` skip, no binary32 fixture; carrier-free integer code | — | — | — |
 | f64 scatter (preservation) | unchanged | **required** `checkScatter` records `.float64` (1.2) | **required** (G64 gate, G1/G2) | **forbidden** `runDenseScatter32` guard first (1.7) | unchanged | scatter refused categorically, unchanged | unchanged |
 | f32 scan-local scatter | **forbidden** `"{nm}: f32 scan"` (15(d), 3.2) | **forbidden** `f32UnsupportedStep i .scan` (2.x, S2) | **(c)** `runDenseScan` Float-only — F32-C | none | none | **forbidden** | **forbidden** |
@@ -189,7 +191,7 @@ holds. Fixture ids refer to §5.
 | `denseValueAt a [] store sc` (Float traversal) @ `runDenseScatter` | yes | **fixed** → `denseValueAtWith ops` | 1.4 |
 | `prev + val`, `Max.max`, `Min.min` reduce arms | no | **(c)** → `ops.binOp` | — (unreachable) |
 | `checkAssign` call @ `checkScatter` | yes | **fixed** → `checkAssignCore kind` | 1.2, 1.3 |
-| `.f32 _ => false` @ `scatterFillOrFail` | yes | **fixed** → native `Float32.ofInt` bits | 3.1, P3-1 |
+| `.f32 _ => false` @ `scatterFillOrFail` | yes | **fixed** → native `Float32.ofInt` bits, finite only | 15(c), P3-1, P3-3, P3-4 |
 | `destDtype`/`algebraForDest` @ Step D scatter branch | yes | **required**, already correct | 3.1 second guard, oracle |
 | scatter-branch `resolveSource`'s `getD … dtype := .f64` | yes | **(c)** totality formality: contributes `.shape` only, and every key is validated by the `slotOf.contains` loop above it | — |
 
@@ -601,11 +603,15 @@ def f32CapabilityCheck (stmts : List ScanStmt) : Except CapabilityError Unit := 
 
 In `scatterFillOrFail` replace the two-line "unreachable" comment and `| .f32 _    => false` with the
 line below; in its docstring's "Admitted:" sentence add "and a binary32 sum-product scatter with
-`fill = 0` (binary32 `+0`, bits `0`, compared as native `Float32.ofInt` bits)".
+`fill = 0` (binary32 `+0`, bits `0`, compared as native `Float32.ofInt` bits)"; and in the clause
+"which an `Int` fill cannot denote at all" (anchor `rg -n "fill cannot denote at"`) insert after
+"all": " (binary32 additionally requires the converted value to be finite, since
+`Float32.ofInt (-(2^128))` IS `-∞`; the binary64 arm has the same overflow at `2^1024` and does not
+refuse it — a pre-existing gap)".
 
 <!-- block:t3-fill -->
 ```lean
-    | .f32 bits => bits == (Float32.ofInt fill).toBits
+    | .f32 bits => (Float32.ofInt fill).isFinite && bits == (Float32.ofInt fill).toBits
 ```
 
 Prose in `Compile.lean`: the f32 section docstring's "each names the DEFERRED SLICE that will admit
@@ -630,6 +636,33 @@ keep, it is still true for scans. `Error.lean`'s `unsupportedDtype` docstring: m
         && s.destShape == #[6] && p.plan.raw.tensorSigs[s.compute.destinationSlot]?.map (·.dtype) == some .f32
     | _ => false))
   == some true
+```
+
+Then append the two refusals the new `.f32` arm must make (cycles P3-3, P3-4 fail without them):
+
+<!-- block:t3-15c-refuse -->
+```lean
+-- 15(c) refusals. A fill the algebra's identity does not equal (`1` on sum-product) is refused...
+def f32ScatterFill1Prog : ScheduledProgram :=
+  { f32ScatterProg with
+    stmts := [.plain (.scatter "Y" [.affine (.scale 2 axI1)]
+      { body := { terms := [{ factors := [.read "X" [.axis axI1]] }] }, nonlin := .identity }
+      { fill := 1, reduce := .rejectCollisions })] }
+
+#guard causeOf (prepareEvalPlan f32ScatterFill1Prog f32IdentitySig) ==
+  some { cause := .capability (.scatterOptsNotAdmitted "Y: fill"), warnings := [] }
+
+-- ...and so is an integer past binary32's range: `Float32.ofInt (-(2^128))` rounds to `-∞`, which IS
+-- `admittedAlgebraF32Max.reduceId` bit for bit (4286578688), so only the finiteness test refuses it.
+def f32ScatterOverflowFillProg : ScheduledProgram :=
+  { f32ScatterProg with
+    stmts := [.plain (.scatter "Y" [.affine (.scale 2 axI1)]
+      { body := { terms := [{ factors := [.read "X" [.axis axI1]] }] }, nonlin := .identity
+      , agg := .max }
+      { fill := -(2^128), reduce := .rejectCollisions })] }
+
+#guard causeOf (prepareEvalPlan f32ScatterOverflowFillProg f32IdentitySig) ==
+  some { cause := .capability (.scatterOptsNotAdmitted "Y: fill"), warnings := [] }
 ```
 
 (b) Fixture 2.9: in the forward-order guard change `"Y: f32 scatter"` to `"S: f32 scan"` (the
@@ -707,8 +740,10 @@ your log exactly, STOP). Then append and run (targets `Eval.Plan.CompileTest Eva
 
 | Label | old → new | Prototype: what broke |
 |---|---|---|
-| P3-1 | `\| .f32 bits => bits == (Float32.ofInt fill).toBits` → `\| .f32 _ => false` | 15(c) both guards; oracle `O1 … prepare failed` |
+| P3-1 | the `.f32 bits => …` arm → `\| .f32 _ => false` | 15(c) both guards; oracle `O1 … prepare failed` |
 | P3-2 | `\| .plain _ => pure ()` → `\| .plain (.scatter nm ..) => throw (.unsupportedDtype s!"{nm}: f32 scatter")` then `\| .plain _ => pure ()` | 15(c) both, 2.9 forward, FW2 relu-alone, FW2a (`got capability … "Y: f32 scatter"`), oracle O1 |
+| P3-3 | the `.f32 bits => …` arm → `\| .f32 bits => true` | both 15(c) refusals |
+| P3-4 | drop the `isFinite &&` conjunct | the overflow refusal only |
 
 **Step 6 — full manifest.** Run every entry (no `--task`), `--out` to a scratch table; 8/8 plus
 your appended 9 predicted cycles must PASS. Paste the table into your report.
@@ -820,8 +855,10 @@ step 8's value-greps).
    instance bound the seam deliberately avoids.
 4. **`checkF32Stmt` is deleted** rather than left with three `pure ()` arms: it would be dead code
    this change made dead. `f32CapabilityCheck` keeps arm-by-arm matching over `ScanStmt`.
-5. **`scatterFillOrFail`'s f32 arm uses native `Float32.ofInt` and compares bits**, the same
-   discipline as the `.f64` arm; `(Float.ofInt fill).toFloat32` would be binary64-then-narrow.
+5. **`scatterFillOrFail`'s f32 arm uses native `Float32.ofInt`, compares bits, and requires a finite
+   value**: `(Float.ofInt fill).toFloat32` would be binary64-then-narrow, and without finiteness
+   `-(2^128)` would silently read as `-∞` (controller's decision). The `.f64` arm's same overflow is
+   pre-existing and left alone (§1.2).
 6. **Oracle = twin assignment + source-derived placement**, scheduled as Task 3's first step
    (§3.5). A from-scratch evaluator was not built: placement under `.rejectCollisions` has no
    arithmetic, and the arithmetic half is exactly the F32-A path with its own bit fixtures.

@@ -148,7 +148,7 @@ import Eval.Plan.CompileTest
 namespace LeanNCD.Eval.Plan.P.T3
 open LeanNCD LeanNCD.Eval.Plan Std
 open LeanNCD.Eval.Plan.CompileTest (f32ScatterProg f32IdentitySig f32ScatterThenScanProg
-  f32ScanThenScatterProg f32ScatterReluProg f32ScanProg f32ScanSig errOf)
+  f32ScanThenScatterProg f32ScatterReluProg f32ScanProg f32ScanSig errOf axI1)
 def causeOf (r : Except PlanCompileFailure PreparedPlan) : Option PlanCompileFailure :=
   match r with | .ok _ => none | .error e => some e
 -- 2.9's edited forward guard, and its unchanged reverse guard
@@ -156,7 +156,7 @@ def causeOf (r : Except PlanCompileFailure PreparedPlan) : Option PlanCompileFai
   some { cause := .capability (.unsupportedDtype "S: f32 scan"), warnings := [] }
 #guard causeOf (prepareEvalPlan f32ScanThenScatterProg f32IdentitySig) ==
   some { cause := .capability (.unsupportedDtype "S: f32 scan"), warnings := [] }
-""" + blocks["t3-15c"] + blocks["t3-29"] + blocks["t3-fw2"] + "end LeanNCD.Eval.Plan.P.T3\n"
+""" + blocks["t3-15c"] + blocks["t3-15c-refuse"] + blocks["t3-29"] + blocks["t3-fw2"] + "end LeanNCD.Eval.Plan.P.T3\n"
 rc |= snippet("t3compile", t3)
 
 # red: the oracle against the REAL, unmodified tree

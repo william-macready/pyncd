@@ -198,6 +198,27 @@ P3-1 targeted the CompileTest re-points only.
 - `backend_missing_functionality.md`'s 10/16/6 `CapabilityError` split: `unsupportedDtype` keeps
   live producers (mixed, f32 scan), so the split does not move.
 
+## 5b. Adversarial-review fixes (2026-09-25), measured on real-split copies
+
+Method: the reviewer's `rv_build.py` applies every plan edit to FULL copies of the real modules
+(real namespace and module split, `leanncd/spikes/F32DRV_*.lean`) and compiles them in dependency
+order (must end `ALL COMPILED`); a companion runner applies one manifest mutation at a time to those
+copies, compiles the mutated module and its dependents into a private `.olean` dir shadowing the
+clean ones, and records the log (`spikes/mut_<label>.log`). Both scripts live in the session
+scratchpad, not the repo.
+
+**Group 1 — fill.** `Float32.ofInt (-(2^128))` → bits `4286578688`, `isFinite = false`;
+`admittedAlgebraF32Max.reduceId = .f32 4286578688`. `Float.ofInt (-(2^1024))` → bits
+`18442240474082181120`, not finite, and a hand-built binary64 `maxreduce` scatter with that fill IS
+admitted by `prepareEvalPlan` today (`fill = .f64 18442240474082181120`, `admittedAlgebraMax`,
+`.float64`): a pre-existing binary64 gap, left unchanged (plan §1.2). Before the finiteness
+conjunct, the binary32 analogue (`-(2^128)`) was likewise admitted with `fill = .f32 4286578688`.
+With the plan's arm: `fill := 1` → `scatterOptsNotAdmitted "Y: fill"`; `-(2^128)` on `agg := .max`
+→ `scatterOptsNotAdmitted "Y: fill"`. Cycles: P3-3 (`.f32 bits => true`) fails both refusal guards;
+P3-4 (finiteness dropped) fails the overflow guard only; P3-1 fails 15(c)'s two guards and the oracle
+(`O1 … prepare failed`); P3-2 fails 15(c) ×2, both refusals, 2.9 forward, FW2 relu-alone, FW2a
+(`got capability … "Y: f32 scatter"`), oracle O1.
+
 ## 6. Not verified
 
 - **The real modules were never compiled with the edits.** Everything rests on the prototype being
