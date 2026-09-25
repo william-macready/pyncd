@@ -57,10 +57,15 @@ does `leaky32` its slope (`0.01` = `0x3c23d70a`); the remaining literals (`0`, `
 exact in binary32. -/
 
 def relu32 (x : Float32) : Float32 := max 0.0 x
-def sig32 (x : Float32) : Float32 := 1.0 / (1.0 + Float32.exp (-x))
-def gelu32 (x : Float32) : Float32 :=
+/-- `sigmoid` with its one transcendental passed in. Fixture 1.8's composite witness also uses it,
+    to substitute a narrowed `exp`. -/
+def sig32With (exp : Float32 → Float32) (x : Float32) : Float32 := 1.0 / (1.0 + exp (-x))
+def sig32 : Float32 → Float32 := sig32With Float32.exp
+/-- `gelu` with its cube (`pow x 3`) passed in. Fixture 1.8's composite witness also uses it. -/
+def gelu32With (pow : Float32 → Float32 → Float32) (x : Float32) : Float32 :=
   0.5 * x * (1.0 + Float32.tanh (Float32.ofBits 0x3f4c422a *
-    (x + Float32.ofBits 0x3d372713 * Float32.pow x 3.0)))
+    (x + Float32.ofBits 0x3d372713 * pow x 3.0)))
+def gelu32 : Float32 → Float32 := gelu32With Float32.pow
 def leaky32 (x : Float32) : Float32 := if x ≥ 0.0 then x else Float32.ofBits 0x3c23d70a * x
 
 /-- `private`: no cross-file caller (checked repo-wide); this fixture's own independent formula,
@@ -201,18 +206,33 @@ are deliberately not asserted: that would pin this libm's exact rounding error.
 - `sin`  → `1048714903, 1048734709, 1048758472, 1048885130`
 - `cos`  → `1064615103, 1062293444, 1061004150, 1060050850`
 - `tanh` → `1048281192, 1048655277, 1049659241, 1049693157`
+
+The two COMPOSITE witnesses cover the record's `exp` and `pow` fields as `sigmoid` and `gelu` use
+them. That `exp` is a different code path from `UnaryOp.applyChecked32`'s, which the `exp` witness
+above covers. The portable composite lanes of fixtures 1.2–1.5 cannot tell native `expf`/`powf`
+from that ONE primitive narrowed from binary64 with every other step still binary32 (§1.1). So the
+alternative here is the direct formula with only that primitive narrowed. It is not the widened
+formula.
+
+- `sigmoid` (narrowed `exp`) → `1057489900, 1057490686, 1057493836, 1057500141`
+- `gelu` (narrowed `pow`)    → `1058598916, 1061545720, 1062357744, 1062945309`
 -/
 
-/-- Fail unless `impl` equals `native` on every lane and some lane separates `native` from
-    binary64 `wide`-then-narrow. -/
-def witness (label : String) (impl native : Float32 → Float32) (wide : Float → Float)
+/-- Fail unless `impl` equals `native` on every lane and some lane separates `native` from `alt`
+    (described as `altName` in the failure message). -/
+def witnessVs (label altName : String) (impl native alt : Float32 → Float32)
     (lanes : List UInt32) : Lean.Elab.Command.CommandElabM Unit := do
   let x (b : UInt32) := Float32.ofBits b
-  unless lanes.any (fun b => (native (x b)).toBits != (wide (x b).toFloat).toFloat32.toBits) do
-    throwError s!"{label}: no lane separates native binary32 from binary64-then-narrow on this \
+  unless lanes.any (fun b => (native (x b)).toBits != (alt (x b)).toBits) do
+    throwError s!"{label}: no lane separates native binary32 from {altName} on this \
 platform's libm; choose new witness lanes (the fixture would otherwise pin nothing)"
   unless lanes.all (fun b => (impl (x b)).toBits == (native (x b)).toBits) do
     throwError s!"{label}: implementation is not the native binary32 routine"
+
+/-- `witnessVs` against binary64 `wide`-then-narrow of the whole routine. -/
+def witness (label : String) (impl native : Float32 → Float32) (wide : Float → Float)
+    (lanes : List UInt32) : Lean.Elab.Command.CommandElabM Unit :=
+  witnessVs label "binary64-then-narrow" impl native (fun v => (wide v.toFloat).toFloat32) lanes
 
 /-- `applyChecked32` as a total function for the witness (the witness lanes are all in-domain; a
     domain error would surface as a quiet NaN, which cannot equal a finite native output). -/
@@ -231,5 +251,20 @@ run_cmd witness "log" (viaChecked32 .log) Float32.log Float.log logLanes
 run_cmd witness "sin" (viaChecked32 .sin) Float32.sin Float.sin sinLanes
 run_cmd witness "cos" (viaChecked32 .cos) Float32.cos Float.cos cosLanes
 run_cmd witness "tanh" tanhVia32 Float32.tanh Float.tanh tanhLanes
+
+/-- Lane `v` of `pf.apply32`, the production path through the module's `float32NonlinOps`. -/
+def pointwiseVia32 (pf : PointwiseFn) (v : Float32) : Float32 := (pf.apply32 ⟨[1], #[v]⟩).data[0]!
+
+-- The composite witnesses. The sigmoid lanes are in `[0.1254, 0.1279]`, where the separating step
+-- is `exp(-x)`. The gelu lanes are in `[0.767, 1.015]`, where it is the cube `x³`.
+def sigmoidExpLanes : List UInt32 := [1040214460, 1040227085, 1040277686, 1040378989]
+def geluPowLanes : List UInt32 := [1061450927, 1064289633, 1065046830, 1065471434]
+
+run_cmd (witnessVs "sigmoid (record exp)" "sigmoid with a binary64-then-narrow exp"
+  (pointwiseVia32 .sigmoid) sig32 (sig32With fun v => (Float.exp v.toFloat).toFloat32)
+  sigmoidExpLanes)
+run_cmd (witnessVs "gelu (record pow)" "gelu with a binary64-then-narrow pow"
+  (pointwiseVia32 .gelu) gelu32 (gelu32With fun a b => (a.toFloat ^ b.toFloat).toFloat32)
+  geluPowLanes)
 
 end LeanNCD.Eval.Nonlin32Test
