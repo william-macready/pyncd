@@ -1681,27 +1681,30 @@ Task 4").
 Minor findings carried into this task's triage (from the four tasks' ledger entries), and their
 disposition:
 
-- `Check.lean:162-164`'s `dtypeAdmitted` doc claimed `checkPointwise`/`checkAxiswise` "share this
+- `Check.lean`'s `dtypeAdmitted` doc claimed `checkPointwise`/`checkAxiswise` "share this
   predicate" with `checkScanPlan` and stay Float-backed. **Fixed**: false since before Task 3
   (those checkers never used `dtypeAdmitted`) and doubly false now that `checkPointwiseF32`/
   `checkAxiswiseF32` exist; `checkScanPlan`'s own half of the claim was true and is kept.
-- `ScatterCheckTest.lean:207-209`'s rationale said nonlinearity checkers stay Float-backed because
-  "no binary32 worker" exists for them. **Confirmed stale and fixed**: narrowed the "block, scan,
-  scatter, and nonlinearity checkers" list to just the scatter checker this fixture is actually
-  about, and added a parenthetical noting block/scan still share the "no worker" reason (F32-C)
-  while nonlinearity no longer does (`checkPointwiseF32`/`checkAxiswiseF32` exist since F32-B). A
-  comment-only change; the fixture's own assertion is unaffected.
+- `ScatterCheckTest.lean`'s fixture-9 rationale said nonlinearity checkers stay Float-backed
+  because "no binary32 worker" exists for them. **Confirmed stale and fixed**: narrowed the
+  "block, scan, scatter, and nonlinearity checkers" list to just the scatter checker this fixture
+  is actually about, and added a parenthetical noting block/scan still share the "no worker"
+  reason (F32-C) while nonlinearity no longer does (`checkPointwiseF32`/`checkAxiswiseF32` exist
+  since F32-B). A comment-only change; the fixture's own assertion is unaffected.
 - `EvalPlan.lean`'s `localCheck` `.assign` comment ("`checkAssignF32` rejects inline unary") —
   **already fixed by Task 4** (verified against current source: the comment now correctly
   describes storage-kind-selected dispatch, including the inline-unary admission).
-- `Error.lean`'s `storageKindMismatch` producer-list doc — **already fixed by Task 4** (verified:
-  lists `runDensePointwise`/`runDenseAxiswise` and their binary32 siblings as producers).
+- `Error.lean`'s (`Plan/Error.lean`) `storageKindMismatch` producer-list doc — **already fixed by
+  Task 4** (verified: lists `runDensePointwise`/`runDenseAxiswise` and their binary32 siblings as
+  producers).
 - `CheckedEvalPlan`'s doc (`EvalPlan.lean`) listed only the binary64 checkers. **Fixed** this task:
   now names `checkAssignF32`/`checkPointwiseF32`/`checkAxiswiseF32` alongside their binary64
   siblings.
-- `Error.lean:213-216` `applyChecked`'s doc self-contradicted ("one arm" vs. "both"). **Fixed** this
-  task: reworded to state a new operator needs an arm in each of `applyChecked`/`applyChecked32`.
-- `KernelDense32Test.lean:3-6`'s import comment was truncated mid-sentence. **Fixed** this task.
+- `Error.lean`'s (`Eval/Error.lean`) `applyChecked`'s doc self-contradicted ("one arm" vs. "both").
+  **Fixed** this task: reworded to state a new operator needs an arm in each of
+  `applyChecked`/`applyChecked32`.
+- `KernelDense32Test.lean`'s `Nonlin32Test` import comment was truncated mid-sentence. **Fixed**
+  this task.
 - Fixture 2.10 didn't record observed native bits in a comment (parallel to 1.8's precedent).
   **Fixed** this task: added, values cross-checked against `Nonlin32Test` fixture 1.8's own
   recorded `exp` lanes (the first two of which fixture 2.10 reuses).
