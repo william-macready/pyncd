@@ -1102,9 +1102,11 @@ def f32ScanThenScatterProg : ScheduledProgram :=
 
 `prepareEvalPlan` promises that an f32 program reports its OWN f32 reason (Step 0c) and a mixed one
 its mixed-storage reason (Step 0b) ahead of the dtype-blind `capabilityPreflight` (Step A). Fixtures
-14/15/17 cannot observe that order: each of their programs is one `capabilityPreflight` admits, so
-Step A would have no competing answer. This one gives it one — fixture 15(c)'s f32 scatter with a
-`relu` on it, which Step A rejects on its own as a scatter nonlinearity. -/
+4.3, 15, and 2.9 (formerly 14, 15, and 17 — 14's relevant half became Fixture 4.3 in Task 4, and 17
+was re-pointed as Fixture 2.9 in Task 2) cannot observe that order: each of their programs is one
+`capabilityPreflight` admits, so Step A would have no competing answer. This one gives it one —
+fixture 15(c)'s f32 scatter with a `relu` on it, which Step A rejects on its own as a scatter
+nonlinearity. -/
 
 def f32ScatterReluProg : ScheduledProgram :=
   { f32IdentitySched with

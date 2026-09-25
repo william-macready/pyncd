@@ -605,9 +605,11 @@ run_cmd do
 
 `DifferentialTest`'s `expOobProg` shape (`E[i] := exp(A[i + 1])`, `axis i : ℕ = 3`) as an f32
 `tlprog!`, through the FULL named adapter pipeline (`prepare32`/`runPreparedDense32`), over
-`Nonlin32Test`'s own platform witness lanes for `exp` at `A[1]`/`A[2]` (conflict-scan note C5: the
-same lane list, not a hand-typed copy) — `A[3]` is out of range, so `E[2] = exp(+0) = 1` regardless
-of platform. The assertion is RELATIONAL (the native `Float32.exp` applied directly to each input,
+values matching, by value, `Nonlin32Test`'s own platform witness lanes for `exp` at `A[1]`/`A[2]`
+(conflict-scan note C5) — hand-typed here as `Float32.ofBits` literals, not an import-based reuse
+(this file does not import `Eval.Nonlin32Test`), but the same two bit patterns as the first two
+entries of that file's `expLanes` — `A[3]` is out of range, so `E[2] = exp(+0) = 1` regardless of
+platform. The assertion is RELATIONAL (the native `Float32.exp` applied directly to each input,
 never a hardcoded bit pattern), and the precondition is the same one `Nonlin32Test.witness`
 enforces: at least one lane must separate that native result from binary64-then-narrow, checked here
 against the SAME three values through the ordinary binary64 named runner (`runPreparedDense`), or

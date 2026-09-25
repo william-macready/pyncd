@@ -839,8 +839,9 @@ final source — every named worker/checker read directly, not restated from a t
 way; `checkPointwiseF32`/`checkAxiswiseF32` dispatch through `checkNonlinIOCore`, and
 `nonlinDtypeFor .float32 = .f32` exactly (a `.bool` slot is `dtypeNotAdmitted`, never admitted);
 `checkPlanBlock` rejects `.float32` as `storageKindNotAdmitted`, and `runDenseBlock` still calls the
-unguarded Float `runDensePointwise`/`runDenseAxiswise` directly, safely, only because that upstream
-guard exists; `runDenseScatter` still gathers through the Float-only `denseValueAt`; `checkF32Stmt`'s
+Float (self-guarding) `runDensePointwise`/`runDenseAxiswise` directly, safely, only because that
+upstream guard exists (their own `storageKindMismatch` guard is simply never triggered here, since
+`checkPlanBlock` never admits `.float32`); `runDenseScatter` still gathers through the Float-only `denseValueAt`; `checkF32Stmt`'s
 `.assign` arm is a no-op (Task 4); and the plain top-level `.pointwise`/`.axiswise` arms of
 `prepareEvalPlan` Step D push `destDtype`/`algebraForDest` at both the internal and published slot
 (Task 4), while `compileScan`'s own base/step arms still push a literal `.f64` (F32-C's obligation,
@@ -1671,12 +1672,15 @@ also got a strong-tier review in practice), and every finding was resolved or ex
 | 3 | Approved | 0 Critical, 0 Important, 5 Minor (deferred) |
 | 4 | Approved | 0 Critical, 0 Important, 2 Minor (both cosmetic, deferred) |
 
-All four tasks landed clean (no Critical or Important finding at any stage). §6.4's whole-branch
-final reviews are this task's own self-review (§6.4 item 2's "boundary lens" and item 1's "numerical
-lens" obligations are folded into this task's tables-A/B re-verification and §2.6/§4.5 spot-checks
-respectively, since Task 5's own scope is doc/audit-only per §5 and no reviewer beyond this task's
-self-review was dispatched for it, consistent with "a reviewer can reject this task while approving
-Task 4").
+All four tasks landed clean (no Critical or Important finding at any stage). §6.4 requires **two**
+independent whole-branch reviews, with different lenses, before the slice counts as complete. As of
+this writing, **one** independent review has been run — by a fresh reviewing agent uninvolved in any
+of the five tasks' implementation, covering both §6.4 item 1's numerical lens and item 2's boundary
+lens in a single pass; the findings triaged in the list below are its output. A **second** independent
+review is still pending and will be run separately by the controlling session before the slice is
+marked complete. Task 5's own tables-A/B re-verification and §2.6/§4.5 spot-checks (this section, and
+§3.5's re-verification above) are useful corroboration, but they are this task's own self-review, not
+one of §6.4's two required independent reviews, and are not counted toward satisfying it.
 
 Minor findings carried into this task's triage (from the four tasks' ledger entries), and their
 disposition:
@@ -1720,17 +1724,34 @@ disposition:
 - The `*T` entries (`reluT`…`l2normalizeT`) are independent one-line bodies parallel to
   `PointwiseFn.apply`/`AxiswiseFn.applyCore`, so fixture 1.1 does not pin every `*T` individually
   against a tag-swap mutation. **Evaluated, not fixed.** This is a real correctness-adjacent gap in
-  principle, but: (a) it predates F32-B entirely (the `*T` split is F32-A/nonlinearity-thread
-  architecture, listed as a Task 1 reviewer Minor here only because Task 1 touched the same file);
-  (b) redefining each `*T` as e.g. `PointwiseFn.apply .relu` is a production-code change to the
-  LEGACY EVALUATOR's dispatch, `Eval/Nonlin.lean`, with its own blast radius (`Eval.lean`,
-  `Scan.lean` callers) that neither this task's Files list nor its fixture/mutation budget (0/0)
-  covers; (c) closing it properly needs either a production refactor + full regression + its own
-  reviewed commit, or a new fixture pinning all five `*T` bodies against `apply`, which is new
-  fixture-authoring work Task 5's brief scopes out ("0 fixture groups planned"). Left open,
-  explicitly, for a future task with its own review budget rather than folded in here
-  unreviewed — closing a real gap silently inside a doc/audit task would violate this repo's own
-  "surgical changes" and "checkpoint after every significant step" rules.
+  principle. An earlier pass through this record deferred it on two claims that a final independent
+  review found to be false, and they are corrected here rather than repeated: (a) this is **not**
+  inherited from before F32-B. Before Task 1 (`7ac321b`), `PointwiseFn.apply`'s match dispatched
+  THROUGH `reluT`/`sigmoidT`/`tanhT`/`geluT`/`leakyReluT`, and `AxiswiseFn.applyCore` dispatched
+  THROUGH `softmaxT`/`normalizeT`/`l2normalizeT` — so pinning `apply`/`applyCore` (fixture 1.1) also
+  transitively pinned every `*T`. Task 1's refactor (the shared `pointwiseWith`/`axiswiseRowWith`
+  formulas over `NonlinScalarOps`) is what made the two families independent parallel callers of the
+  same formula rather than one calling the other — new in this slice, not pre-existing. (b) there is
+  **no** blast radius into `Eval.lean`/`Scan.lean` callers: a repo-wide grep finds zero production
+  callers of any `*T` function. Five of the eight (`sigmoidT`, `tanhT`, `geluT`, `leakyReluT`,
+  `l2normalizeT`) have zero callers anywhere in the repo. The other three (`reluT`, `softmaxT`,
+  `normalizeT`) are used only by three pre-existing `#guard`s in `test/Eval/NonlinTest.lean` (lines
+  7, 10, 16), which would incidentally catch a tag-swap mutation in those three specific functions
+  only. The conclusion — defer, since nothing calls these in production so a tag-swap mutation
+  changes no production output — is still correct; only the reasoning above it was wrong. (A future
+  task could close the residual test-coverage gap cheaply: one `#guard` per `*T` pinning it against
+  `apply`/`applyCore` on an existing golden input, which would also cover the five functions with no
+  coverage of their own body today.)
+
+  Separately, worth recording: root `CLAUDE.md` Rule 3 ("remove code your own changes made unused")
+  is in tension with keeping all eight `*T` functions, since after Task 1's refactor nothing in this
+  repo calls five of them. The plan's own keep-it rule wins here, and this is the reason why: Rule 3
+  targets an internal helper a change orphaned, not a named public entry. `reluT`…`l2normalizeT` are
+  public API of `Eval/Nonlin.lean` (§3.1: "the existing public Float entries keep their names and
+  signatures" — nothing pre-existing is deleted), which an external caller outside this repo's
+  visible call graph could already depend on by name. Deleting public API on the strength of a
+  repo-wide grep finding no *internal* caller is a materially different, larger decision than
+  removing an orphaned private helper, and is out of scope for a doc-only close-out.
 
 #### 6.5.6 Documentation sweep (§6.3)
 

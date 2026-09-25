@@ -118,8 +118,10 @@ private def float32Ops : ScalarKernelOps Float32 :=
     `Coordinates.lean`): testing the flat offset instead can alias distinct invalid coordinates onto
     a valid address (proposal §8.3). A `unary` function is applied to the gathered value AFTER the
     out-of-bounds zero-pad (so an out-of-bounds read contributes `f(0)`, matching the reference
-    `gather`), and can fail loud — on a binary64 domain violation (`log`/`sqrt`/`recip`) or, for a
-    carrier with no unary implementation at all, on the operation itself.
+    `gather`), and can fail loud on a domain violation (`log`/`sqrt`/`recip`) in EITHER carrier —
+    binary64 via `unaryDomain`, binary32 via `unaryDomain32` — since both `ScalarKernelOps`
+    instantiations (`floatOps`, `float32Ops`) supply a real `applyUnary` today; there is no current
+    carrier that takes a "no unary implementation" branch.
 
     The zero-pad is the CARRIER's own exact zero (`ops.zero`), never the algebra's reduction
     identity: a padded read is a FACTOR value flowing through `factorOp`, which is what makes a
