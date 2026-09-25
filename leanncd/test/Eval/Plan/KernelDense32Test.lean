@@ -1,5 +1,9 @@
 import LeanNCD.Eval.Plan.Dense
 import Eval.Plan.KernelDenseTest   -- every plan here is one of its plans with the dtype/algebra changed
+import Eval.Nonlin32Test           -- fixture 2.4 reuses its platform witness lane lists (f32 slice
+                                    -- Task 2, conflict-scan note C5), qualified rather than opened:
+                                    -- its own helper names (`L`, `lanes`, `lane`, ...) are generic
+                                    -- enough to risk shadowing this file's own local definitions.
 
 /-!
 # Native binary32 local execution (f32 slice, Task 3)
@@ -395,5 +399,156 @@ def boolSourceStore32 : Array DenseTensor32 :=
 -- silently rounded to `{0, 1}` on its way into a real binary32 destination.
 #guard bitsOf (run32 boolSourceSigs32 boolSourceToF32 boolSourceStore32)
   == some #[1048576000, 1048576000, 1048576000, 1048576000]
+
+/-! ## Checked binary32 inline unary factors, end to end (f32 slice, Task 2)
+
+`checkAssignF32` now admits an inline unary read structurally, and `float32Ops.applyUnary`
+(`Dense.lean`) applies it for real through `UnaryOp.applyChecked32` — every fixture below runs the
+FULL checked-plan pipeline (`run32`: `checkAssignF32` then `runDenseAssign32`), never
+`applyChecked32` directly, so a checker regression or a plan-wiring bug would show up here too. -/
+
+def unaryF32Sigs2 : Array TensorSignature :=
+  #[ { shape := #[4], dtype := .f32 }, { shape := #[4], dtype := .f32 } ]
+
+/-- `KernelDenseTest.unaryPlan op bias`, retagged binary32. -/
+def f32UnaryPlan (op : UnaryOp) (bias : Int) : AssignPlan :=
+  { KernelDenseTest.unaryPlan op bias with algebra := admittedAlgebraF32 }
+
+/-! ### Fixture 2.2: the domain-partial ops over `unaryPow2Store`, retagged
+
+`unaryPow2Store`'s four values (`[1, 2, 4, 8]`, all exact in binary32) as native bits, run through
+each of the three domain-partial ops (`log`, `sqrt`, `recip`) at bias 0. Every lane is in-domain, so
+this pins the ARITHMETIC alone (no pad, no rejection). Expected bits agree with
+`Nonlin32Test.unaryBits` at these same inputs — the checked plan's algebra multiplies by `factorId`
+= binary32 `1`, so `Y[i] = op(X[i])` exactly; not re-derived independently, since both paths bottom
+out in the same `UnaryOp.applyChecked32`. -/
+
+def f32UnaryPow2Store : Array DenseTensor32 :=
+  #[ t32 [4] #[1065353216, 1073741824, 1082130432, 1090519040], t32 [4] #[] ]
+
+#guard bitsOf (run32 unaryF32Sigs2 (f32UnaryPlan .log 0) f32UnaryPow2Store) ==
+  some #[0, 1060205080, 1068593688, 1074075026]
+#guard bitsOf (run32 unaryF32Sigs2 (f32UnaryPlan .sqrt 0) f32UnaryPow2Store) ==
+  some #[1065353216, 1068827891, 1073741824, 1077216499]
+#guard bitsOf (run32 unaryF32Sigs2 (f32UnaryPlan .recip 0) f32UnaryPow2Store) ==
+  some #[1065353216, 1056964608, 1048576000, 1040187392]
+
+/-! ### Fixture 2.3: pad-then-apply
+
+`unaryPlan .exp 1` retagged, over `[0, 3.0, -2.5, -0.25]`. The final read (`X[3+1] = X[4]`) is out
+of bounds, so it zero-pads to native `+0` BEFORE `exp` runs, giving `exp(+0) = 1` (`1065353216`).
+An apply-before-pad reading would apply `exp` only to in-bounds reads and pad the RESULT, so
+`exp` would never run on that read. The lane would then be `+0` (bits `0`). -/
+
+def f32PadStore : Array DenseTensor32 :=
+  #[ t32 [4] #[0, 1077936128, 3223322624, 3196059648], t32 [4] #[] ]
+
+#guard bitsOf (run32 unaryF32Sigs2 (f32UnaryPlan .exp 1) f32PadStore) ==
+  some #[1101049646, 1034427438, 1061642109, 1065353216]
+
+/-! ### Fixture 2.4: worker witnesses (PLATFORM-DEPENDENT)
+
+`unaryPlan op 0` retagged, over `Nonlin32Test`'s own platform witness lanes for `exp`/`log`/`sin`/
+`cos` (conflict-scan note C5: the SAME lane lists, not a second hand-typed copy) — every output lane
+must equal the native binary32 routine applied directly to that lane, AND at least one lane must
+separate that native result from binary64-then-narrow on this platform's libm, the same
+precondition `Nonlin32Test.witness` enforces, so this fixture could not pass vacuously if the two
+carriers ever agreed everywhere. -/
+
+private def witness32 (label : String) (op : UnaryOp) (native : Float32 → Float32)
+    (wide : Float → Float) (lanes : List UInt32) : Lean.Elab.Command.CommandElabM Unit := do
+  let x (b : UInt32) := Float32.ofBits b
+  unless lanes.any (fun b => (native (x b)).toBits != (wide (x b).toFloat).toFloat32.toBits) do
+    throwError s!"{label}: no lane separates native binary32 from binary64-then-narrow on this \
+platform's libm; choose new witness lanes (the fixture would otherwise pin nothing)"
+  let store : Array DenseTensor32 := #[ t32 [4] lanes.toArray, t32 [4] #[] ]
+  match bitsOf (run32 unaryF32Sigs2 (f32UnaryPlan op 0) store) with
+  | none => throwError s!"{label}: run32 failed"
+  | some got =>
+      let expected := lanes.toArray.map (fun b => (native (x b)).toBits)
+      unless got == expected do
+        throwError s!"{label}: checked-plan output is not the native binary32 routine: \
+{repr got} vs {repr expected}"
+
+run_cmd witness32 "exp" .exp Float32.exp Float.exp LeanNCD.Eval.Nonlin32Test.expLanes
+run_cmd witness32 "log" .log Float32.log Float.log LeanNCD.Eval.Nonlin32Test.logLanes
+run_cmd witness32 "sin" .sin Float32.sin Float.sin LeanNCD.Eval.Nonlin32Test.sinLanes
+run_cmd witness32 "cos" .cos Float32.cos Float.cos LeanNCD.Eval.Nonlin32Test.cosLanes
+
+/-- `posErrOf` (`KernelDenseTest.lean`)'s binary32 sibling: the checked plan's runtime failure, or
+    `none` if either phase succeeds/is skipped. -/
+def posErrOf32 (sigs : Array TensorSignature) (a : AssignPlan) (store : Array DenseTensor32) :
+    Option PositionalInputError :=
+  match checkAssignF32 sigs a with
+  | .error _ => none
+  | .ok c => match runDenseAssign32 c store with
+             | .error e => some e
+             | .ok _ => none
+
+/-! ### Fixture 2.5: domain payloads
+
+Three runtime domain violations, each pinning `unaryDomain32`'s exact payload against
+`unaryPlan .sqrt 0`/`.recip 0` retagged. -/
+
+-- `sqrt` over `[1, -4, -9, 4]`: the FIRST violation (`-4`) wins, not the second (`-9`).
+def f32SqrtBadStore : Array DenseTensor32 :=
+  #[ t32 [4] #[1065353216, 3229614080, 3239051264, 1082130432], t32 [4] #[] ]
+
+#guard posErrOf32 unaryF32Sigs2 (f32UnaryPlan .sqrt 0) f32SqrtBadStore ==
+  some (.unaryDomain32 .sqrt 3229614080 0)
+
+-- `recip` over `[2, 0, 4, 8]`.
+def f32RecipBadStore : Array DenseTensor32 :=
+  #[ t32 [4] #[1073741824, 0, 1082130432, 1090519040], t32 [4] #[] ]
+
+#guard posErrOf32 unaryF32Sigs2 (f32UnaryPlan .recip 0) f32RecipBadStore ==
+  some (.unaryDomain32 .recip 0 0)
+
+-- `recip` over `[2, -0, 4, 8]`: the payload is the gathered value's OWN bits, sign included — `-0`,
+-- not `+0`.
+def f32RecipNegZeroStore : Array DenseTensor32 :=
+  #[ t32 [4] #[1073741824, 2147483648, 1082130432, 1090519040], t32 [4] #[] ]
+
+#guard posErrOf32 unaryF32Sigs2 (f32UnaryPlan .recip 0) f32RecipNegZeroStore ==
+  some (.unaryDomain32 .recip 2147483648 0)
+
+/-! ### Fixture 2.6: pad-then-apply, on the REJECTING side
+
+`unaryPlan .log 1` retagged, over `unaryPow2Store`'s bits: the final read (`X[3+1] = X[4]`) is out
+of bounds and zero-pads to `+0` BEFORE `log` runs, so `log(+0)` is a genuine domain violation.
+An apply-before-pad reading would never call `log` on that read, because it pads the RESULT to `+0`
+after the fact. So it would report no error at all. -/
+
+#guard posErrOf32 unaryF32Sigs2 (f32UnaryPlan .log 1) f32UnaryPow2Store ==
+  some (.unaryDomain32 .log 0 0)
+
+/-! ### Fixture 2.7: slot locator
+
+`unaryPlan .sqrt 0`, retargeted at `sourceSlot := 1`/`destinationSlot := 2` over a three-entry
+`.f32` table whose slot 0 is an unread `#[4]` input — so the reported slot (`1`) is distinguishable
+from a constant `0` the checker or worker might otherwise default to. -/
+
+def slotLocatorSigs32 : Array TensorSignature :=
+  #[ { shape := #[4], dtype := .f32 }, { shape := #[4], dtype := .f32 }, { shape := #[4], dtype := .f32 } ]
+
+def slotLocatorRead : ReadPlan :=
+  { sourceSlot := 1, map := { coeffs := #[#[1]], bias := #[0] }
+  , sourceShape := #[4], oobPolicy := .zeroPad, unary := some .sqrt }
+
+def f32SlotLocatorPlan : AssignPlan :=
+  { contextShape := #[], destinationSlot := 2, outputShape := #[4]
+  , terms := #[{ iterationShape := #[4], contextPos := #[], outputPos := #[0], reductionPos := #[]
+               , factors := #[.read slotLocatorRead] }]
+  , algebra := admittedAlgebraF32 }
+
+/-- Slot 0: an unread `#[4]` input (its values never matter). Slot 1: `[1, -4, 4, 9]`. Slot 2: the
+    destination. -/
+def slotLocatorStore32 : Array DenseTensor32 :=
+  #[ t32 [4] #[0, 0, 0, 0]
+   , t32 [4] #[1065353216, 3229614080, 1082130432, 1091567616]
+   , t32 [4] #[] ]
+
+#guard posErrOf32 slotLocatorSigs32 f32SlotLocatorPlan slotLocatorStore32 ==
+  some (.unaryDomain32 .sqrt 3229614080 1)
 
 end LeanNCD.Eval.Plan.KernelDense32Test

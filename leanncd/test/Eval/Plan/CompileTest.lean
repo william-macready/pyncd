@@ -498,19 +498,29 @@ def contractSig : InputSignature := InputSignature.ofDenseInputs contractInputs
 
 def contractPrepared : Option PreparedPlan := (prepareEvalPlan contractSched contractSig).toOption
 
-/-- `PlanStep` field-access helper: every fixture in this file uses `nonlin := .identity` and no
-    `.scan` node, so `prepareEvalPlan`'s Step D only ever emits `.assign` steps for them (the
-    `.identity` branch's single-step, no-internal-slot path — Thread 4's Task 3 only chains a second
-    `.pointwise`/`.axiswise` step for a nonlin-bearing statement, none of which appear here) — made
-    explicit here (fails the assertion, since `AssignPlan` derives `Inhabited`) rather than silently
-    defaulting or re-projecting a field that no longer exists directly on `PlanStep`. -/
+/-- `PlanStep` field-access helper. Through Task 4.3, every fixture in this file used
+    `nonlin := .identity` and no `.scan` node, so `prepareEvalPlan`'s Step D only ever emitted
+    `.assign` steps for them; F32-B Task 4's flipped fixtures (4.1-4.3, below) are the first in this
+    file whose plan carries a SECOND, nonlinear step, but this helper is only ever applied to a
+    plan's step 0 — the preactivation `.assign` every `.pointwise`/`.axiswise` statement still emits
+    first — never to the nonlinearity step itself, so the two panicking arms below remain
+    unreached. Made explicit here (fails the assertion, since `AssignPlan` derives `Inhabited`)
+    rather than silently defaulting or re-projecting a field that no longer exists directly on
+    `PlanStep`. -/
 def assignStep : PlanStep → AssignPlan
   | .assign a => a
   | .scan _ => panic! "unreachable: CompileTest fixtures are scan-free by construction"
   | .scatter _ =>
       panic! "unreachable: CompileTest fixtures declare no scatter statement and no affine LHS slot"
   | .pointwise _ | .axiswise _ =>
-      panic! "unreachable: CompileTest fixtures never compile to a nonlinearity step"
+      panic! "unreachable: assignStep is only ever applied to a plan's step 0"
+
+/-- `PlanStep` KIND, for the flipped nonlin fixtures (F32-B Task 4) that need to pin the exact
+    `[assign, pointwise]`/`[assign, axiswise]` two-step shape rather than just one step's fields —
+    the same helper `NonlinCompileTest.stepKind` defines in its own namespace. -/
+def stepKind : PlanStep → String
+  | .assign _ => "assign" | .scatter _ => "scatter" | .scan _ => "scan"
+  | .pointwise _ => "pointwise" | .axiswise _ => "axiswise"
 
 #guard contractPrepared.map (fun p => (assignStep p.plan.raw.steps[0]!).terms[0]!.iterationShape) == some #[2, 3]
 #guard contractPrepared.map (fun p => (assignStep p.plan.raw.steps[0]!).terms[0]!.outputPos) == some #[0]
@@ -839,31 +849,53 @@ def f32WrongInputSig : InputSignature :=
 #guard causeOf (prepareEvalPlan f32IdentitySched f32WrongInputSig) ==
   some { cause := .inputSignature (.dtypeMismatch "X" .f32 .f64), warnings := [] }
 
-/-! #### Fixture 14 (source half): nonlinearity is checked BEFORE factors
+/-! #### Fixture 4.3 (F32-B Task 4, was Fixture 14 source half): the nonlinearity/unary pairing now
+    compiles all the way through
 
 `f32BadOrderProg` is fixture 11 carrying BOTH a pointwise nonlinearity on the destination AND an
-inline unary read in the same plain assignment. Either alone is rejected; this fixture pins which
-one is REPORTED, so swapping the two capability checks fails it. -/
+inline unary read in the same plain assignment. Before f32 slice Task 2 this pinned WHICH of two
+rejections was reported (order); Task 2 retired the unary-read half (Fixture 2.8), leaving only the
+nonlinearity rejection this fixture used to pin. F32-B Task 4 retires that too — `checkF32Stmt`'s
+nonlinearity match is gone — so this program now compiles: step 0 is the preactivation `.assign`
+whose lone factor is the unary `log` read (admitted structurally since Task 2), step 1 is the
+`.pointwise .relu` chain Step D emits with `algebraForDest`'s f32 algebra, and every signature (X,
+the internal preactivation slot, Y) is `.f32`. -/
 def f32BadOrderProg : ScheduledProgram :=
   { f32IdentitySched with
     stmts := [.plain (.assign "Y" [.free axI1]
       { body := { terms := [{ factors := [.unaryFn .log "X" [.axis axI1]] }] }
       , nonlin := .pointwise .relu })] }
 
-#guard causeOf (prepareEvalPlan f32BadOrderProg f32IdentitySig) ==
-  some { cause := .capability (.unsupportedDtype "Y: f32 nonlinearity"), warnings := [] }
+def f32BadOrderPrepared : Option PreparedPlan :=
+  (prepareEvalPlan f32BadOrderProg f32IdentitySig).toOption
 
-/-! #### Fixture 15: the four deferred source forms, each with its exact payload
+#guard f32BadOrderPrepared.map (·.plan.storageKind) == some LeanNCD.StorageKind.float32
+
+#guard f32BadOrderPrepared.map (fun p => p.plan.raw.tensorSigs.map (·.dtype))
+  == some #[ScalarDType.f32, ScalarDType.f32, ScalarDType.f32]
+
+#guard f32BadOrderPrepared.map (fun p => p.plan.raw.steps.map stepKind)
+  == some #["assign", "pointwise"]
+
+#guard f32BadOrderPrepared.map
+    (fun p => match (assignStep p.plan.raw.steps[0]!).terms[0]!.factors with
+      | #[.read r] => r.unary == some .log
+      | _ => false)
+  == some true
+
+/-! #### Fixture 15: the three (was four) deferred source forms, each with its exact payload
 
 Every one is an otherwise-valid homogeneous f32 source program built from a concrete existing
 donor, called through `prepareEvalPlan`, and required to fail at the SOURCE capability tier — before
 raw plan construction, so none of them can reach `checkPlan` (the compiler-bug channel) or any
-worker. -/
+worker. Nonlinearity (formerly (a) below) is no longer one of them as of F32-B Task 4 — see Fixture
+4.1 just past this section. -/
 
--- (a) axiswise: the identity statement over a `·`-markable axis, with a softmax. The marked axis
--- must be `.real`-kinded (`CompileError.normAxisNotReal`), which `identitySched`'s own `axI1` is
--- not — so this case declares its own `s : ℝ`, exactly as `NonlinCompileTest.axiswiseSched` does,
--- and is otherwise the same one-read f32 identity assignment.
+-- (a) axiswise — RETIRED as a Fixture 15 rejection (F32-B Task 4): see Fixture 4.1 below, which
+-- flips this exact donor to acceptance. The marked axis must be `.real`-kinded
+-- (`CompileError.normAxisNotReal`), which `identitySched`'s own `axI1` is not — so this case
+-- declares its own `s : ℝ`, exactly as `NonlinCompileTest.axiswiseSched` does, and is otherwise the
+-- same one-read f32 identity assignment.
 def f32AxS : AxisSpec := { name := "s", uid := 1102, kind := .real }
 
 def f32AxiswiseProg : ScheduledProgram :=
@@ -875,11 +907,86 @@ def f32AxiswiseProg : ScheduledProgram :=
   , env := {}, extNames := insert "X" (∅ : Finset String)
   , explicitSizes := (({} : HashMap UID Nat).insert f32AxS.uid 3) }
 
-#guard causeOf (prepareEvalPlan f32AxiswiseProg f32IdentitySig) ==
-  some { cause := .capability (.unsupportedDtype "Y: f32 nonlinearity"), warnings := [] }
+/-! #### Fixture 4.1 (F32-B Task 4): the axiswise nonlinearity now compiles to real evidence
 
--- (b) inline unary: `identitySched` with an always-true Iverson placed FIRST, so the reported
--- all-factor index is `1` rather than the Iverson-filtered read index `0`.
+`f32AxiswiseProg` (Fixture 15(a)'s exact donor) flips from a Step 0c rejection to acceptance:
+`.float32` storage, `[f32, f32, f32]` signatures (X, the internal preactivation slot, Y), a
+two-step `[assign, axiswise]` chain whose PREACTIVATION step carries `admittedAlgebraF32` (never the
+f64 `admittedAlgebra`), and `Y` materialized at slot 2 — the published slot, not the internal one. -/
+def f32AxiswisePrepared : Option PreparedPlan :=
+  (prepareEvalPlan f32AxiswiseProg f32IdentitySig).toOption
+
+#guard f32AxiswisePrepared.map (·.plan.storageKind) == some LeanNCD.StorageKind.float32
+
+#guard f32AxiswisePrepared.map (fun p => p.plan.raw.tensorSigs.map (·.dtype))
+  == some #[ScalarDType.f32, ScalarDType.f32, ScalarDType.f32]
+
+#guard f32AxiswisePrepared.map (fun p => p.plan.raw.steps.map stepKind)
+  == some #["assign", "axiswise"]
+
+#guard f32AxiswisePrepared.map (fun p => (assignStep p.plan.raw.steps[0]!).algebra)
+  == some admittedAlgebraF32
+
+#guard f32AxiswisePrepared.map (fun p => p.bindings.materializedNames.map (·.slot))
+  == some #[2]
+
+/-! #### Fixture 4.2 (F32-B Task 4): the pointwise nonlinearity, same claims, the other arm
+
+`f32IdentitySched`'s own one-read identity assignment with `nonlin := .pointwise .relu` in place of
+`.identity` — the same claims as Fixture 4.1 just above, over the `.pointwise` arm instead of
+`.axiswise`. -/
+def f32PointwiseSched : ScheduledProgram :=
+  { f32IdentitySched with
+    stmts := [.plain (.assign "Y" [.free axI1]
+      { body := { terms := [{ factors := [.read "X" [.axis axI1]] }] }
+      , nonlin := .pointwise .relu })] }
+
+def f32PointwisePrepared : Option PreparedPlan :=
+  (prepareEvalPlan f32PointwiseSched f32IdentitySig).toOption
+
+#guard f32PointwisePrepared.map (·.plan.storageKind) == some LeanNCD.StorageKind.float32
+
+#guard f32PointwisePrepared.map (fun p => p.plan.raw.tensorSigs.map (·.dtype))
+  == some #[ScalarDType.f32, ScalarDType.f32, ScalarDType.f32]
+
+#guard f32PointwisePrepared.map (fun p => p.plan.raw.steps.map stepKind)
+  == some #["assign", "pointwise"]
+
+#guard f32PointwisePrepared.map (fun p => (assignStep p.plan.raw.steps[0]!).algebra)
+  == some admittedAlgebraF32
+
+#guard f32PointwisePrepared.map (fun p => p.bindings.materializedNames.map (·.slot))
+  == some #[2]
+
+/-! #### Fixture 4.4 (F32-B Task 4), pointwise half: binary64 byte-identity
+
+`identitySched`'s own statement with `nonlin := .pointwise .relu` in place of `.identity`. Its decls
+name only `axI1` — `X`/`Y` stay undeclared and default to `.f64` (`dtypeOfDecl none = .f64`) — so
+this is the CONTROL the six-site fix needs: `algebraForDest`/`dtypeOfDecl` must reproduce the
+PRE-Task-4 literal `.f64`/`algebraForAgg` behavior for an ordinary binary64 graph exactly, not merely
+build the binary32 evidence Fixtures 4.1/4.2 pin. The axiswise half of this same control lives in
+`NonlinCompileTest.lean`, beside the `axiswiseIsolatedPrepared` donor it reuses. -/
+def f64PointwiseSched : ScheduledProgram :=
+  { identitySched with
+    stmts := [.plain (.assign "Y" [.free axI1]
+      { body := { terms := [{ factors := [.read "X" [.axis axI1]] }] }
+      , nonlin := .pointwise .relu })] }
+
+def f64PointwisePrepared : Option PreparedPlan :=
+  (prepareEvalPlan f64PointwiseSched identitySig).toOption
+
+#guard f64PointwisePrepared.map (·.plan.storageKind) == some LeanNCD.StorageKind.float64
+
+#guard f64PointwisePrepared.map (fun p => p.plan.raw.tensorSigs.map (·.dtype))
+  == some #[ScalarDType.f64, ScalarDType.f64, ScalarDType.f64]
+
+#guard f64PointwisePrepared.map (fun p => (assignStep p.plan.raw.steps[0]!).algebra)
+  == some admittedAlgebra
+
+-- (b) inline unary — RETIRED as a Fixture 15 rejection (f32 slice, Task 2): see Fixture 2.8 below,
+-- which flips this exact donor to acceptance. An always-true Iverson still sits FIRST, so the
+-- factor-index shape a locator would have needed to distinguish is preserved even though there is
+-- no longer a locator to test.
 def f32UnaryProg : ScheduledProgram :=
   { f32IdentitySched with
     stmts := [.plain (.assign "Y" [.free axI1]
@@ -888,8 +995,27 @@ def f32UnaryProg : ScheduledProgram :=
           , .unaryFn .log "X" [.axis axI1] ] }] }
       , nonlin := .identity })] }
 
-#guard causeOf (prepareEvalPlan f32UnaryProg f32IdentitySig) ==
-  some { cause := .capability (.unsupportedDtype "Y: f32 unary factor 0:1"), warnings := [] }
+/-! #### Fixture 2.8 (f32 slice, Task 2): the deferred inline-unary form is now ACCEPTED
+
+`f32UnaryProg` — Fixture 15(b)'s exact donor, an Iverson factor 0 ahead of an inline `log` read
+factor 1 — flips from a Step 0c rejection to acceptance: `checkAssignF32` (`Check.lean`) now admits
+an inline unary read structurally, and `residualizeAssignment` compiles it into a real `.assign`
+step whose factor 1 carries `unary := some .log`, factor 0 the lowered positional Iverson. -/
+#guard ((prepareEvalPlan f32UnaryProg f32IdentitySig).toOption.map (·.plan.storageKind))
+  == some LeanNCD.StorageKind.float32
+
+#guard ((prepareEvalPlan f32UnaryProg f32IdentitySig).toOption.map (·.plan.raw.steps.size))
+  == some 1
+
+#guard ((prepareEvalPlan f32UnaryProg f32IdentitySig).toOption.map
+    (fun p => (assignStep p.plan.raw.steps[0]!).algebra))
+  == some admittedAlgebraF32
+
+#guard ((prepareEvalPlan f32UnaryProg f32IdentitySig).toOption.map
+    (fun p => match (assignStep p.plan.raw.steps[0]!).terms[0]!.factors with
+      | #[.iverson _, .read r] => r.unary == some .log
+      | _ => false))
+  == some true
 
 -- (c) top-level scatter: the identity schedule's free LHS replaced by the strided affine slot
 -- `Out[2*i]`, presented as the `Stmt.scatter` node `lowerArith` would produce for it.
@@ -927,34 +1053,60 @@ def f32ScanSig : InputSignature :=
 #guard causeOf (prepareEvalPlan f32ScanProg f32ScanSig) ==
   some { cause := .capability (.unsupportedDtype "S: f32 scan"), warnings := [] }
 
-/-! #### Fixture 17: top-level statements are traversed in SOURCE order
+/-! #### Fixture 2.9 (f32 slice, Task 2): re-pointing Fixture 17 — top-level statements are still
+    traversed in SOURCE order
 
-A two-statement f32 program whose FIRST plain assignment carries an inline unary and whose SECOND
-carries a pointwise nonlinearity. The required answer is the first statement's UNARY payload, so a
-reverse traversal — or a whole-program pass that prioritises the nonlinearity category regardless of
-statement position — fails this fixture. -/
-def f32SourceOrderProg : ScheduledProgram :=
-  { decls := [ .axis axI1 (some 3), .typedTensor .f32 "X" [axI1]
-             , .typedTensor .f32 "Y" [axI1], .typedTensor .f32 "Z" [axI1] ]
-  , stmts := [ .plain (.assign "Y" [.free axI1]
-                 { body := { terms := [{ factors := [.unaryFn .log "X" [.axis axI1]] }] }
-                 , nonlin := .identity })
-             , .plain (.assign "Z" [.free axI1]
-                 { body := { terms := [{ factors := [.read "Y" [.axis axI1]] }] }
-                 , nonlin := .pointwise .relu }) ]
-  , env := {}, extNames := insert "X" (∅ : Finset String)
-  , explicitSizes := (({} : HashMap UID Nat).insert axI1.uid 3) }
+The ORIGINAL Fixture 17 paired an inline unary (now admitted, Fixture 2.8) against a pointwise
+nonlinearity to pin which one `f32CapabilityCheck` reports first; that pairing no longer has two
+rejections to choose between; the inline-unary half is silently accepted. Re-pointed onto a
+different pair of deferred forms that both still reject: `f32ScatterProg`'s (Fixture 15c) top-level
+scatter statement and `f32ScanProg`'s (Fixture 15d) scan node, concatenated into one program with
+the union of their declarations. The two donors both declare an external `X`, so the scan's is
+renamed `Xs` throughout (declaration, read, `extNames`) to keep the union well-formed.
 
-#guard causeOf (prepareEvalPlan f32SourceOrderProg f32IdentitySig) ==
-  some { cause := .capability (.unsupportedDtype "Y: f32 unary factor 0:0"), warnings := [] }
+Both subcases were observed on today's tree with `f32IdentitySig` as the signature — Step 0c
+(`f32CapabilityCheck`) runs before Step B (external signature validation), so the signature naming
+only `X` is never consulted for the missing `S0`/`Xs` entries; this fixture is therefore written and
+green independent of Task 2's code change. -/
+def f32ScatterThenScanProg : ScheduledProgram :=
+  { decls := f32IdentitySched.decls ++
+      [ .iter f32ScanAxL 3, .typedTensor .f32 "S0" [], .typedTensor .f32 "Xs" [f32ScanAxL]
+      , .typedTensor .f32 "S" [f32ScanAxL] ]
+  , stmts :=
+      [ f32ScatterProg.stmts[0]!
+      , .scan "S" [f32ScanAxL]
+          [ .assign "S" [.iterAt f32ScanAxL 0]
+              { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := .identity } ]
+          [ .assign "S" [.iterNext f32ScanAxL]
+              { body := { terms := [ { factors := [.read "S" [.axis f32ScanAxL]] }
+                                   , { factors := [.read "Xs" [.axis f32ScanAxL]] } ] }
+              , nonlin := .identity } ]
+          false ]
+  , env := {}
+  , extNames := insert "X" (insert "S0" (insert "Xs" (∅ : Finset String)))
+  , explicitSizes := f32IdentitySched.explicitSizes.insert f32ScanAxL.uid 3 }
+
+-- Forward order: the scatter statement comes first, so ITS rejection is reported.
+#guard causeOf (prepareEvalPlan f32ScatterThenScanProg f32IdentitySig) ==
+  some { cause := .capability (.unsupportedDtype "Y: f32 scatter"), warnings := [] }
+
+-- Reversed order: the scan node comes first, so the reported rejection flips too — pinning that the
+-- traversal is SOURCE order, not a fixed scatter-before-scan (or any other) category priority.
+def f32ScanThenScatterProg : ScheduledProgram :=
+  { f32ScatterThenScanProg with stmts := f32ScatterThenScanProg.stmts.reverse }
+
+#guard causeOf (prepareEvalPlan f32ScanThenScatterProg f32IdentitySig) ==
+  some { cause := .capability (.unsupportedDtype "S: f32 scan"), warnings := [] }
 
 /-! #### Fixture FW2 (final-review fix wave): Steps 0c and 0b run BEFORE Step A
 
 `prepareEvalPlan` promises that an f32 program reports its OWN f32 reason (Step 0c) and a mixed one
 its mixed-storage reason (Step 0b) ahead of the dtype-blind `capabilityPreflight` (Step A). Fixtures
-14/15/17 cannot observe that order: each of their programs is one `capabilityPreflight` admits, so
-Step A would have no competing answer. This one gives it one — fixture 15(c)'s f32 scatter with a
-`relu` on it, which Step A rejects on its own as a scatter nonlinearity. -/
+4.3, 15, and 2.9 (formerly 14, 15, and 17 — 14's relevant half became Fixture 4.3 in Task 4, and 17
+was re-pointed as Fixture 2.9 in Task 2) cannot observe that order: each of their programs is one
+`capabilityPreflight` admits, so Step A would have no competing answer. This one gives it one —
+fixture 15(c)'s f32 scatter with a `relu` on it, which Step A rejects on its own as a scatter
+nonlinearity. -/
 
 def f32ScatterReluProg : ScheduledProgram :=
   { f32IdentitySched with

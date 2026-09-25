@@ -94,11 +94,10 @@ private def floatOps : ScalarKernelOps Float :=
     the graph's real tensors, and Boolean-tagged runtime values keep literal `min`/`max` behavior
     exactly as they do in binary64 (they are not coerced to exact zero/one).
 
-    `applyUnary` refuses UNCONDITIONALLY. Native binary32 `log`/`exp`/`sqrt`/`recip` are slice
-    F32-B, and routing an f32 read through the binary64 helper would be false f32. The branch is
-    unreachable for any checked evidence this worker can be handed — `checkAssignF32` rejects an
-    inline unary read in a binary32 graph (`PlanError.unaryNotAdmittedForDtype`) — so this is a
-    fail-loud floor under that checker clause, not a live rejection path. -/
+    `applyUnary` delegates to the shared `UnaryOp.applyChecked32` (`Eval/Error.lean`, f32 slice
+    Task 1), the native binary32 sibling of `floatOps`'s own `UnaryOp.applyChecked` — never the
+    binary64 helper with a widen/narrow at either end, which would be false f32 (f32 slice Task 2).
+    It keeps its own `UInt32` `unaryDomain32` payload, the binary32 sibling of `unaryDomain`. -/
 private def float32Ops : ScalarKernelOps Float32 :=
   { decodeConst := fun c => match c with
       | .f32 bits => .ok (Float32.ofBits bits)
@@ -112,14 +111,17 @@ private def float32Ops : ScalarKernelOps Float32 :=
       | .mul => .ok (fun a b => a * b)
       | .min => .ok (fun a b => Min.min a b)
       | .max => .ok (fun a b => Max.max a b)
-  , applyUnary := fun op _ slot => .error (.unaryNotAdmittedForStorage .float32 op slot) }
+  , applyUnary := fun op x slot =>
+      (op.applyChecked32 x).mapError (fun dop => .unaryDomain32 dop (Float32.toBits x) slot) }
 
 /-- Gather one factor. Every source dimension is range-tested BEFORE flattening (`inBoundsPerDim`,
     `Coordinates.lean`): testing the flat offset instead can alias distinct invalid coordinates onto
     a valid address (proposal §8.3). A `unary` function is applied to the gathered value AFTER the
     out-of-bounds zero-pad (so an out-of-bounds read contributes `f(0)`, matching the reference
-    `gather`), and can fail loud — on a binary64 domain violation (`log`/`sqrt`/`recip`) or, for a
-    carrier with no unary implementation at all, on the operation itself.
+    `gather`), and can fail loud on a domain violation (`log`/`sqrt`/`recip`) in EITHER carrier —
+    binary64 via `unaryDomain`, binary32 via `unaryDomain32` — since both `ScalarKernelOps`
+    instantiations (`floatOps`, `float32Ops`) supply a real `applyUnary` today; there is no current
+    carrier that takes a "no unary implementation" branch.
 
     The zero-pad is the CARRIER's own exact zero (`ops.zero`), never the algebra's reduction
     identity: a padded read is a FACTOR value flowing through `factorOp`, which is what makes a

@@ -223,6 +223,22 @@ def axiswiseIsolatedPrepared : Option PreparedPlan :=
 #guard axiswiseIsolatedPrepared.map (fun p => p.plan.raw.steps.size) == some 2
 #guard axiswiseIsolatedPrepared.map (fun p => p.plan.raw.steps.map stepKind) == some #["assign", "axiswise"]
 
+/-! #### Fixture 4.4 (F32-B Task 4), axiswise half: binary64 byte-identity
+
+`axiswiseSched`'s own declarations name no `.typedTensor`/`.tensor` at all for `A`/`Y`, so both stay
+undeclared and default to `.f64` (`dtypeOfDecl none = .f64`) — `axiswiseIsolatedPrepared` just above
+is therefore ALREADY the binary64 control this task's six-site fix needs for the `.axiswise` arm: its
+preactivation step's algebra is exactly `admittedAlgebra` (never the f32 `admittedAlgebraF32`) and
+every one of its three signatures is `.f64`. The pointwise half of this same control lives in
+`CompileTest.lean`'s `f64PointwisePrepared`. -/
+#guard axiswiseIsolatedPrepared.map
+    (fun p => match p.plan.raw.steps[0]! with
+      | .assign a => a.algebra
+      | _ => admittedAlgebraF32)   -- unreachable: step 0 is always the preactivation `.assign`
+  == some admittedAlgebra
+#guard axiswiseIsolatedPrepared.map (fun p => p.plan.raw.tensorSigs.map (·.dtype))
+  == some #[ScalarDType.f64, ScalarDType.f64, ScalarDType.f64]
+
 -- The reality for real source text. There is now exactly ONE splitting layer, not two: the
 -- schedule `compileToScheduled` hands to `prepareEvalPlan` is LOGICAL (§2.1 — `splitNonlins` left
 -- the production chain; the private producer/consumer pair is built inside `route`, which the Eval

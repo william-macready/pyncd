@@ -204,9 +204,11 @@ re-read as the constant coordinate `0` with extent `1`. -/
 
 `upSigs`/`upScatter` above — the accepted strided upsample — with every signature and every scalar
 constant moved to binary32. `checkScatter` must STILL reject it: top-level binary32 scatter is slice
-F32-D, so there is no f32 scatter worker, and the whole point of keeping the existing block, scan,
-scatter, and nonlinearity checkers Float-backed is that direct construction cannot acquire evidence
-for an operation with no binary32 worker.
+F32-D, so there is no f32 scatter worker, and the whole point of keeping the scatter checker
+Float-backed is that direct construction cannot acquire evidence for an operation with no binary32
+worker. (Block and scan checkers stay Float-backed for the same "no binary32 worker" reason — F32-C.
+The nonlinearity checkers no longer do: `checkPointwiseF32`/`checkAxiswiseF32` exist since F32-B, so
+this rationale does not generalize to them any more.)
 
 The rejection comes from the shared `checkAssign` core on the compute half (`dtypeNotAdmitted` at
 the DESTINATION slot, which `checkScatter` reaches first), not from a scatter-specific clause —

@@ -605,7 +605,7 @@ def mixedRadixDomainSize (D : Array Nat) : Nat := D.foldl (· * ·) 1
     then rests on a longer chain that lives in another file: `checkNonlinIO` (`Nonlin.lean`) forcing
     `srcSig.shape == declared shape == destSig.shape`, AND every arm of `PointwiseFn.apply`/
     `AxiswiseFn.apply` (`Eval/Nonlin.lean`) being shape-preserving — the axiswise arms via
-    `perRowCore`, which only writes into an existing `acc` and never rebuilds a shape. All arms
+    `perRowCoreWith`, which only writes into an existing `acc` and never rebuilds a shape. All arms
     were audited and the invariant holds today.
 
     **If a future `AxiswiseFn` constructor ever reduces along its axis** (a `sum`/`argmax` that drops

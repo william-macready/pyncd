@@ -236,4 +236,114 @@ def axiswiseMaskWidthMismatch : RawAxiswisePlan :=
 -- it given today's single-valued f64-only dtype vocabulary (same as
 -- checkAssign's own precedent).
 
+-- ============================================================================
+-- F32-B Task 3: the binary32 checkers `checkPointwiseF32`/`checkAxiswiseF32`
+-- ============================================================================
+
+/-- Retag every `.f64` signature `.f32`, leaving `.bool` alone — the row sweep's one edit. -/
+def retag32 (sigs : Array TensorSignature) : Array TensorSignature :=
+  sigs.map fun s => if s.dtype == .f64 then { s with dtype := .f32 } else s
+
+def storagePw : Except NonlinPlanError CheckedPointwisePlan → Option LeanNCD.StorageKind
+  | .ok c => some c.storageKind | .error _ => none
+
+def storageAx : Except NonlinPlanError CheckedAxiswisePlan → Option LeanNCD.StorageKind
+  | .ok c => some c.storageKind | .error _ => none
+
+-- Fixture 3.1: the retagged baseline is accepted by the binary32 checkers, as `.float32` evidence.
+#guard storagePw (checkPointwiseF32 (retag32 baselineSigs) baselinePointwise)
+  == some LeanNCD.StorageKind.float32
+#guard storageAx (checkAxiswiseF32 (retag32 baselineSigs) baselineAxiswise)
+  == some LeanNCD.StorageKind.float32
+
+-- Control: the binary64 checkers on the untouched baseline record `.float64`, so the binary32
+-- acceptance is not an implementation that stamps one kind on everything.
+#guard storagePw (checkPointwise baselineSigs baselinePointwise) == some LeanNCD.StorageKind.float64
+#guard storageAx (checkAxiswise baselineSigs baselineAxiswise) == some LeanNCD.StorageKind.float64
+
+-- Fixture 3.2: the row sweep. Every row fixture above, `.f64` retagged `.f32`, through the binary32
+-- checkers, gives the same constructor and payload (exact payloads here, where rows 6-8 above
+-- match with wildcards).
+
+-- Rows 1-2: slot range, both kinds.
+#guard match checkPointwiseF32 (retag32 baselineSigs) pointwiseSourceSlotOob with
+  | .error (.slotOutOfRange 99 2) => true
+  | _ => false
+#guard match checkAxiswiseF32 (retag32 baselineSigs) axisiwiseSourceSlotOob with
+  | .error (.slotOutOfRange 99 2) => true
+  | _ => false
+#guard match checkPointwiseF32 (retag32 baselineSigs) pointwiseDestSlotOob with
+  | .error (.slotOutOfRange 99 2) => true
+  | _ => false
+#guard match checkAxiswiseF32 (retag32 baselineSigs) axisiwiseDestSlotOob with
+  | .error (.slotOutOfRange 99 2) => true
+  | _ => false
+
+-- Rows 3-4: a Boolean source / destination is still refused at its own slot.
+#guard match checkPointwiseF32 (retag32 sourceBoolSigs) pointwiseSourceBoolDtype with
+  | .error (.dtypeNotAdmitted 0 .bool) => true
+  | _ => false
+#guard match checkAxiswiseF32 (retag32 sourceBoolSigs) axisiwiseSourceBoolDtype with
+  | .error (.dtypeNotAdmitted 0 .bool) => true
+  | _ => false
+#guard match checkPointwiseF32 (retag32 destBoolSigs) pointwiseDestBoolDtype with
+  | .error (.dtypeNotAdmitted 1 .bool) => true
+  | _ => false
+#guard match checkAxiswiseF32 (retag32 destBoolSigs) axisiwiseDestBoolDtype with
+  | .error (.dtypeNotAdmitted 1 .bool) => true
+  | _ => false
+
+-- Rows 6-7: shape.
+#guard match checkPointwiseF32 (retag32 sourceShapeMismatchSigs) pointwiseSourceShapeMismatch with
+  | .error (.sourceShapeMismatch #[3] #[2]) => true
+  | _ => false
+#guard match checkAxiswiseF32 (retag32 sourceShapeMismatchSigs) axisiwiseSourceShapeMismatch with
+  | .error (.sourceShapeMismatch #[3] #[2]) => true
+  | _ => false
+#guard match checkPointwiseF32 (retag32 destShapeMismatchSigs) pointwiseDestShapeMismatch with
+  | .error (.destinationShapeMismatch #[3] #[2]) => true
+  | _ => false
+#guard match checkAxiswiseF32 (retag32 destShapeMismatchSigs) axisiwiseDestShapeMismatch with
+  | .error (.destinationShapeMismatch #[3] #[2]) => true
+  | _ => false
+
+-- Row 8: axis position.
+#guard match checkAxiswiseF32 (retag32 axisPositionOobSigs) axisiwiseAxisPositionOob with
+  | .error (.axisPositionOutOfRange 2 1) => true
+  | _ => false
+
+-- Row 10: mask width.
+#guard match checkAxiswiseF32 (retag32 baselineSigs) axiswiseMaskWidthMismatch with
+  | .error (.maskWidthMismatch 1 3) => true
+  | _ => false
+
+-- Block 6's extra row: an `f64` source in a direct binary32 check is refused at the SOURCE slot (the
+-- destination guard ran first and passed), for both kinds.
+def f64SourceSigs : Array TensorSignature :=
+  #[ { shape := #[3], dtype := .f64 }, { shape := #[3], dtype := .f32 } ]
+def sigmoid3 : RawPointwisePlan :=
+  { sourceSlot := 0, destinationSlot := 1, shape := #[3], fn := .sigmoid }
+
+#guard match checkPointwiseF32 f64SourceSigs sigmoid3 with
+  | .error (.dtypeNotAdmitted 0 .f64) => true
+  | _ => false
+#guard match checkAxiswiseF32 f64SourceSigs { baselineAxiswise with shape := #[3] } with
+  | .error (.dtypeNotAdmitted 0 .f64) => true
+  | _ => false
+
+-- The legacy binary64 entries were not widened: on the retagged baseline they refuse the binary32
+-- DESTINATION (checked first), `dtypeNotAdmitted 1 .f32`.
+#guard match checkPointwise (retag32 baselineSigs) baselinePointwise with
+  | .error (.dtypeNotAdmitted 1 .f32) => true
+  | _ => false
+#guard match checkAxiswise (retag32 baselineSigs) baselineAxiswise with
+  | .error (.dtypeNotAdmitted 1 .f32) => true
+  | _ => false
+
+-- Fixture 3.3: the evidence constructors stay private, so evidence carrying a storage kind can come
+-- only from a checker. Only observable ACROSS modules — inside `Nonlin.lean` the private
+-- constructor is visible.
+#check_failure (⟨baselinePointwise, .float32⟩ : CheckedPointwisePlan)
+#check_failure (⟨baselineAxiswise, .float32⟩ : CheckedAxiswisePlan)
+
 end LeanNCD.Eval.Plan.NonlinCheckTest

@@ -384,29 +384,24 @@ BEFORE `capabilityPreflight`, so an f32 program outside this slice's fragment re
 reason rather than a generic capability one.
 
 Every payload is `CapabilityError.unsupportedDtype` with the stable `"{name}: …"` shapes the plan
-fixes; each names the DEFERRED SLICE that will admit it (F32-B nonlinearity/unary, F32-C scan,
-F32-D scatter) rather than claiming the construct is invalid. -/
+fixes; each names the DEFERRED SLICE that will admit it (F32-C scan, F32-D scatter) rather than
+claiming the construct is invalid. -/
 
 /-- One top-level statement's binary32 capability check, in the plan's declared sub-construct order:
-    a scatter is refused as a whole statement kind; within a plain assignment NONLINEARITY is checked
-    BEFORE factors, so an assignment carrying both a pointwise nonlinearity and an inline unary read
-    reports the nonlinearity. The unary locator is the ORIGINAL all-factor index within its term — an
-    Iverson ahead of the read does not shift it down — matching `checkAssignF32`'s own
-    `unaryNotAdmittedForDtype` locator one layer down. -/
+    a scatter is refused as a whole statement kind. Neither a plain assignment's nonlinearity NOR its
+    inline unary read factors are checked at this tier any more (F32-B Tasks 2 and 4): Step D
+    (`prepareEvalPlan`) emits a real `.pointwise`/`.axiswise` chain with the destination's own
+    dtype/algebra, `checkAssignF32` (`Check.lean`) admits an inline unary read structurally, and the
+    binary32 dense workers (`Dense.lean`'s `float32Ops.applyUnary`, `Nonlin.lean`'s
+    `runDensePointwise32`/`runDenseAxiswise32`) apply them for real, failing loud on a runtime domain
+    violation exactly like their binary64 counterparts do. The retired factor loop's own locator
+    sentence and its "NONLINEARITY is checked BEFORE factors" order claim retired with Task 2 — there
+    was nothing left to order once factors were no longer checked here at all, and now the
+    nonlinearity rejection that claim referred to is gone too. -/
 def checkF32Stmt : Stmt → Except CapabilityError Unit
   | .scatter nm _ _ _ => throw (.unsupportedDtype s!"{nm}: f32 scatter")
   | .recurMorphism _ .. => pure ()   -- `capabilityPreflight` refuses this outright, dtype-blind
-  | .assign nm _ rhs => do
-      match rhs.nonlin with
-      | .identity => pure ()
-      | .pointwise _ | .axiswise .. => throw (.unsupportedDtype s!"{nm}: f32 nonlinearity")
-      let terms := rhs.body.terms
-      for h : ti in [0 : terms.length] do
-        let t := terms[ti]
-        for h2 : fi in [0 : t.factors.length] do
-          match t.factors[fi] with
-          | .unaryFn .. => throw (.unsupportedDtype s!"{nm}: f32 unary factor {ti}:{fi}")
-          | .read .. | .iverson _ => pure ()
+  | .assign _ _ _ => pure ()
 
 /-- The whole-schedule binary32 capability pass: top-level scheduled statements in SOURCE order,
     first rejection wins. A `.scan`/`.scanPre` node is refused as an unsupported OUTER step kind
@@ -1730,13 +1725,18 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
         | .pointwise pf =>
             -- Two-step chain (§3): `.assign` publishes into the INTERNAL slot `destSlot`, not
             -- `nm`'s eventual published slot; `.pointwise` reads it and writes `publishedSlot`,
-            -- which is what `nm` resolves to for every later reader. Always `f64`: a predicate
-            -- destination can never reach this branch (`checkPredicateOutput` forces
-            -- `nonlin = .identity` for one), so no destination-dtype derivation is needed here.
-            tensorSigsAcc := tensorSigsAcc.push { shape := outputShape, dtype := .f64 }
+            -- which is what `nm` resolves to for every later reader. Task 4 (F32-B): the
+            -- DESTINATION's own declaration (never any source factor's) selects the internal
+            -- slot's dtype, the published slot's dtype, AND (via `algebraForDest`) the
+            -- preactivation `.assign`'s algebra — exactly the `.identity` arm's derivation,
+            -- extended across the two-step chain. A predicate destination can never reach this
+            -- branch (`checkPredicateOutput` forces `nonlin = .identity` for one), so `destDtype`
+            -- is always `.f64` or `.f32` here, never `.bool`.
+            let destDtype := dtypeOfDecl (declEnv[nm]?)
+            tensorSigsAcc := tensorSigsAcc.push { shape := outputShape, dtype := destDtype }
             let publishedSlot := tensorSigsAcc.size
-            tensorSigsAcc := tensorSigsAcc.push { shape := outputShape, dtype := .f64 }
-            stepsAcc := stepsAcc.push (.assign assignPlan)
+            tensorSigsAcc := tensorSigsAcc.push { shape := outputShape, dtype := destDtype }
+            stepsAcc := stepsAcc.push (.assign { assignPlan with algebra := algebraForDest destDtype rhs.agg })
             stepsAcc := stepsAcc.push (.pointwise
               { sourceSlot := destSlot, destinationSlot := publishedSlot
               , shape := outputShape, fn := pf })
@@ -1747,10 +1747,14 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
             -- returns `none`. `getD 0` is a totality formality, not a real fallback, matching this
             -- file's own `getD`-on-an-already-validated-value idiom elsewhere.
             let axisPos := axisPos?.getD 0
-            tensorSigsAcc := tensorSigsAcc.push { shape := outputShape, dtype := .f64 }
+            -- Task 4 (F32-B): same destination-dtype derivation as the `.pointwise` arm above —
+            -- internal slot, published slot, and preactivation algebra all follow `nm`'s own
+            -- declaration through `dtypeOfDecl`/`algebraForDest`.
+            let destDtype := dtypeOfDecl (declEnv[nm]?)
+            tensorSigsAcc := tensorSigsAcc.push { shape := outputShape, dtype := destDtype }
             let publishedSlot := tensorSigsAcc.size
-            tensorSigsAcc := tensorSigsAcc.push { shape := outputShape, dtype := .f64 }
-            stepsAcc := stepsAcc.push (.assign assignPlan)
+            tensorSigsAcc := tensorSigsAcc.push { shape := outputShape, dtype := destDtype }
+            stepsAcc := stepsAcc.push (.assign { assignPlan with algebra := algebraForDest destDtype rhs.agg })
             -- Mask policy: local non-seeded output basis (`retainedUids` — a top-level statement has
             -- no seeded scan axes, so these are exactly its output axes), empty pins, both internal
             -- to `lowerMaskPredicate`.

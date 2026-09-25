@@ -70,11 +70,14 @@ inductive PlanError
   | scatterReduceNotAdmitted      (reduce : LeanNCD.CollisionReduce)
   /-- An inline unary read factor inside an assignment whose graph storage kind has no unary
       implementation. Located at the ORIGINAL all-factor index (an Iverson ahead of the read does
-      not shift it down), matching every other per-factor locator in this family. The only producer
-      is `checkAssignF32` (`Check.lean`): binary32 unary math is deferred to slice F32-B, so an
-      `f32` graph rejects the factor at the checker rather than letting a Float32 worker invent a
-      `Float`-backed approximation. Carries the DTYPE rather than the storage kind: it is the
-      destination's own declared dtype the rejection is about, matching `dtypeNotAdmitted`. -/
+      not shift it down), matching every other per-factor locator in this family. RETAINED
+      PRODUCER-LESS as of the f32 slice's Task 2: `checkAssignF32` (`Check.lean`) admitted binary32
+      unary math end to end (native `Float32.log`/`exp`/`sqrt`/`recip`/`sin`/`cos` through
+      `float32Ops.applyUnary`, `Dense.lean`), so no current carrier lacks an inline-unary
+      implementation. Kept for a FUTURE carrier that genuinely has none — the same discipline every
+      other producer-less constructor in this file follows (§9.2) — rather than deleted, which would
+      be a semantic version change. Carries the DTYPE rather than the storage kind: it is the
+      destination's own declared dtype the rejection would be about, matching `dtypeNotAdmitted`. -/
   | unaryNotAdmittedForDtype      (termIndex factorIndex : Nat) (dtype : ScalarDType)
   /-- One signature table names two different REAL storage kinds. `slot` is the FIRST signature slot
       whose real storage kind disagrees with the kind an earlier slot established; `first` is the
@@ -96,10 +99,10 @@ inductive PlanError
     `PlanStepError` itself does (it needs `ScanPlanError`), but this vocabulary needs nothing from
     that layer.
 
-    `.assign` is carried for completeness of the vocabulary — `PlanStep.kind` is total — and is
-    deliberately NOT a producer of `f32UnsupportedStep`: an assignment is exactly the one step kind
-    an `f32` graph admits. Derives the same four classes `PlanStepError` does so that type's own
-    derivations keep working. -/
+    `.assign`, `.pointwise`, and `.axiswise` are carried for completeness of the vocabulary —
+    `PlanStep.kind` is total — and are deliberately NOT producers of `f32UnsupportedStep`: those are
+    exactly the step kinds an `f32` graph admits (the nonlinearity pair since F32-B). Derives the
+    same four classes `PlanStepError` does so that type's own derivations keep working. -/
 inductive PlanStepKind
   | assign | scatter | scan | pointwise | axiswise
   deriving DecidableEq, BEq, Repr, Inhabited
@@ -141,6 +144,14 @@ inductive PositionalInputError
       rejected it stays distinguishable — same constructor, same meaning, different reporter. -/
   | storeArityMismatch (expected actual : Nat)
   | unaryDomain     (op : UnaryDomainOp) (valueBits : UInt64) (slot : TensorSlot)
+  /-- The BINARY32 sibling of `unaryDomain`: a checked binary32 read's inline unary factor rejected
+      the value it gathered. `valueBits` is a `UInt32` `Float32.toBits` payload — a binary32 fact,
+      never widened — and `slot` is the read's positional source slot, matching `unaryDomain`'s own
+      locator. The only producer is the `Float32` scalar kernel's unary callback (`Dense.lean`,
+      f32 slice Task 2), which delegates to `UnaryOp.applyChecked32` (`Eval/Error.lean`) exactly as
+      `floatOps.applyUnary` delegates to `UnaryOp.applyChecked` for this constructor's binary64
+      sibling. -/
+  | unaryDomain32   (op : UnaryDomainOp) (valueBits : UInt32) (slot : TensorSlot)
   -- A positional Iverson predicate leaf's coefficient width disagrees with the term's iteration
   -- basis at RUNTIME. Unreachable for any plan `checkAssign` admits (its `.iverson` width check
   -- already forces every leaf width == `iterationShape.size`); carried so the Dense predicate
@@ -169,22 +180,28 @@ inductive PositionalInputError
       `runDensePlan` (`EvalPlan.lean`) — BEFORE context, store, arity, or any input is read, so
       binary32 evidence can never be executed as binary64. Their empty-context wrappers
       (`runDenseAssign`) inherit the guard rather than repeating it; guarding only the wrappers
-      would be insufficient, since a direct caller can invoke `runDenseAssignAt`. -/
+      would be insufficient, since a direct caller can invoke `runDenseAssignAt`. The nonlinearity
+      workers `runDensePointwise`/`runDenseAxiswise` (binary64) and their siblings
+      `runDensePointwise32`/`runDenseAxiswise32` (binary32, `Nonlin.lean`) are producers too (F32-B
+      Task 3): each raises the same guard, in the same carrier direction, as its FIRST statement,
+      before their shared source-slot validation runs. -/
   | storageKindMismatch (expected actual : LeanNCD.StorageKind)
   /-- A carrier whose scalar runtime has NO implementation of inline unary math was asked to apply
       one. `kind` is that carrier, `op` the requested operation, `slot` the read's source slot.
 
-      The only producer is the `Float32` scalar kernel's unary callback (`Dense.lean`), and it is
-      deliberately unreachable in this slice: `checkAssignF32` rejects an inline unary read in a
-      binary32 graph outright (`PlanError.unaryNotAdmittedForDtype`), so no checked f32 evidence
-      carries one. It exists because the kernel seam's unary member is FALLIBLE rather than total —
-      a carrier without binary32 `log`/`exp`/`sqrt`/`recip` must be able to say so, instead of being
-      forced to invent an answer or to route the value through the binary64 helper, which would be
-      false f32.
+      RETAINED PRODUCER-LESS as of the f32 slice's Task 2: `float32Ops.applyUnary` (`Dense.lean`)
+      now delegates to `UnaryOp.applyChecked32` and applies native binary32
+      `log`/`exp`/`sqrt`/`recip`/`sin`/`cos` for real, so the `Float32` carrier — this constructor's
+      only prior producer — no longer refuses unconditionally. It exists because the kernel seam's
+      unary member is FALLIBLE rather than total — a carrier without inline unary math at all must
+      be able to say so, instead of being forced to invent an answer or to route the value through
+      the binary64 helper, which would be false to that carrier's own precision — and is kept for a
+      FUTURE carrier that genuinely has none, the same discipline every other producer-less
+      constructor in this file follows (§9.2).
 
-      Deliberately NOT a reuse of `unaryDomain`: that constructor's `valueBits` is a `UInt64`
-      `Float.toBits` payload, i.e. a binary64 fact, and this rejection is not a domain violation at
-      all — it is "this carrier does not implement the operation", which has no offending value. -/
+      Deliberately NOT a reuse of `unaryDomain`/`unaryDomain32`: those constructors' `valueBits` are
+      the OFFENDING VALUE's own bits, and this rejection is not a domain violation at all — it is
+      "this carrier does not implement the operation", which has no offending value. -/
   | unaryNotAdmittedForStorage (kind : LeanNCD.StorageKind) (op : LeanNCD.UnaryOp)
                                (slot : TensorSlot)
   deriving DecidableEq, BEq, Repr, Inhabited
@@ -217,9 +234,15 @@ inductive CapabilityError
         established. An undeclared external is a real f64 tensor, so an f32 graph reading one is
         mixed and lands here.
       * Step 0c (`f32CapabilityCheck`) — a homogeneous-f32 schedule using a construct binary32
-        execution defers to a later slice, one context per construct: `"{name}: f32 scan"`,
-        `"{name}: f32 scatter"`, `"{name}: f32 nonlinearity"`, and
-        `"{name}: f32 unary factor {termIndex}:{factorIndex}"` (original all-factor index).
+        execution defers to a later slice, one context per construct: `"{name}: f32 scan"` and
+        `"{name}: f32 scatter"`. The former THIRD and FOURTH contexts, `"{name}: f32 nonlinearity"`
+        and `"{name}: f32 unary factor {termIndex}:{factorIndex}"`, have NO PRODUCER LEFT as of
+        F32-B Tasks 4 and 2 respectively: `checkF32Stmt`'s nonlinearity match and its factor loop
+        that threw them are both deleted, a `.pointwise`/`.axiswise` statement is now structurally
+        admitted at Step 0c with `prepareEvalPlan`'s Step D emitting its real dtype/algebra, an
+        inline unary read is likewise admitted, and `checkAssignF32` (`Check.lean`) admits both too
+        — retained here producer-less for the same reason every other retired context/constructor
+        in this file is (§9.2), not deleted.
 
       Task 1's temporary blanket `"f32 execution not yet admitted"` context is GONE: a homogeneous
       f32 schedule inside this slice's fragment now compiles to checked binary32 evidence. -/

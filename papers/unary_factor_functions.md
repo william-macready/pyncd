@@ -8,10 +8,14 @@
 > snapshot** and is retained verbatim, along with every build count and fixture value in it, as the
 > record of what was verified before execution — do not read it as a current statement about the
 > tree. Two later capability facts this plan predates: `CapabilityError.unaryFactor` is retained
-> producer-less, and an inline unary factor is **rejected** in a binary32 graph
-> (`unaryNotAdmittedForDtype` at the checker, `CapabilityError.unsupportedDtype` at source tier),
-> because native `Float32` transcendentals are slice F32-B — see
-> [`f32_evalplan.md`](f32_evalplan.md).
+> producer-less, and an inline unary factor is now **admitted** in a binary32 graph too
+> (`checkAssignF32`, applied natively through `UnaryOp.applyChecked32`/`float32Ops.applyUnary`) —
+> this was rejected (`PlanError.unaryNotAdmittedForDtype` at the checker,
+> `CapabilityError.unsupportedDtype "{nm}: f32 unary factor {ti}:{fi}"` at source tier) until slice
+> F32-B landed it; see [`f32b_evalplan.md`](f32b_evalplan.md) (native `Float32` transcendentals,
+> exact binary32 constants, same domain rules as binary64, a new `PositionalInputError.unaryDomain32`
+> payload on a runtime domain violation). `f32_evalplan.md` (F32-A) is the plan that first admitted
+> the binary32 assignment fragment and deferred this row.
 
 **Status (authoring-time snapshot, superseded — see the banner above):** **Plan — verified, not yet
 executed.** Every code block and fixture value below was

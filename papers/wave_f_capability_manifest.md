@@ -34,10 +34,13 @@ this branch, that kernel is:
   (`dtypeNotAdmitted` inside the binary64 checker; and, ahead of it, `f32CapabilityCheck` refuses
   every scan form in a binary32 schedule as `CapabilityError.unsupportedDtype`). Binary32 execution
   now exists — the f32 slice added a native `Float32` carrier, a separate `checkAssignF32` checker,
-  the `runDense*32` workers, and a `pack32`/`unpack32`/`runPreparedDense32` named boundary — but it
-  covers the **scan-free assignment fragment only**. Scans, scan-local scatter, nonlinearities, and
-  inline unary factors are explicitly deferred (slices F32-B/C/D), so nothing on this page is
-  binary32 today. See [`f32_evalplan.md`](f32_evalplan.md);
+  the `runDense*32` workers, and a `pack32`/`unpack32`/`runPreparedDense32` named boundary, and
+  since (`f32b_evalplan.md`, F32-B) it covers binary32 nonlinearities and inline unary factors too —
+  but only in the **scan-free assignment fragment**. Every scan form and scan-local scatter are
+  still refused outright as `"{name}: f32 scan"` (F32-C, still deferred); that whole-statement
+  rejection is what keeps nonlinearity/inline-unary out of a scan body too, independent of F32-B's
+  status, so nothing on THIS page (the scan kernel) is binary32 today. See
+  [`f32_evalplan.md`](f32_evalplan.md), [`f32b_evalplan.md`](f32b_evalplan.md);
 - **algebras** — destination-selected (`admittedAlgebrasFor`): real sum-product plus the two tropical
   semirings `AggOp.max`/`.min` compile to (`admittedAlgebraMax`/`Min`) for an `f64` destination, and
   Boolean conjunction/disjunction (`admittedAlgebraBool`, `min`/`max` over the same Float storage)
@@ -234,7 +237,7 @@ Wave F" table:
 | Unary factor functions | **Admitted** (`unary_factor_functions.md`): `checkFactor`/`ReadPlan.unary` admit a unary factor (`log`/`exp`/`sin`/`cos`/`sqrt`/`recip`) in ordinary assignments and inside scan `base`/`recur` blocks, applied after gather/pad by Dense. The experimental JAX backend's `checkJaxAssignSupport` still rejects an inline unary read with a located typed error — Dense executes it, JAX does not. |
 | Max/min aggregation | **Admitted** (max/min-aggregation thread): `checkAggOp` admits `.max`/`.min`; the compiler selects the tropical algebra (`algebraForAgg`) and Dense reduces with `max`/`min` seeded at `−∞`/`+∞`. `unsupportedAgg == 0` in the `DifferentialTest.lean` scan corpus. |
 | Scatter and affine LHS writes | **Admitted for S-A and S-B's bounded subset:** top-level affine/diagonal scatter, plus positive one-axis affine base/recurrence placement in non-advancing scan-state dimensions. Still rejected: constant/multi-axis/context-affine and scratch placement, predicate/nonlinear scatter, non-default fill/reduction, nonpositive scale, negative bias, inconsistent extents, and overlap. |
-| Binary32 (`f32`) | **Admitted for the scan-free assignment fragment only** (`f32_evalplan.md`): a native `Float32` carrier, a `checkAssignF32` sibling of `checkAssign` over one shared core, `runDenseAssignAt32`/`runDensePlan32`, and a `pack32`/`unpack32`/`runPreparedDense32` named boundary. A graph selects ONE real precision; `bool` is a tag over it. **Nothing on this page is binary32**: every scan form, scan-local scatter, top-level scatter, nonlinearities, and inline unary factors are refused in a binary32 schedule as `CapabilityError.unsupportedDtype` (slices F32-B/C/D), and the experimental JAX backend rejects an f32 plan at every entry (F32-JAX). |
+| Binary32 (`f32`) | **Admitted for the scan-free assignment fragment** (`f32_evalplan.md`), now including pointwise/axiswise nonlinearities and inline unary read factors, natively (`f32b_evalplan.md`, F32-B): a native `Float32` carrier, `checkAssignF32`/`checkPointwiseF32`/`checkAxiswiseF32` siblings of the binary64 checkers over shared cores, `runDenseAssignAt32`/`runDensePointwise32`/`runDenseAxiswise32`/`runDensePlan32`, and a `pack32`/`unpack32`/`runPreparedDense32` named boundary. A graph selects ONE real precision; `bool` is a tag over it. **Nothing on THIS page (the scan kernel) is binary32**: every scan form and scan-local scatter are still refused in a binary32 schedule as `CapabilityError.unsupportedDtype "{name}: f32 scan"` (F32-C), and top-level scatter likewise (F32-D); the experimental JAX backend rejects an f32 plan at every entry (F32-JAX). |
 | Mixed `f32`/`f64` in one schedule | Still rejected, and *contingently* so rather than merely deferred: the project invariant is one real precision per graph, so mixed precision is refused (`unsupportedDtype`), never implicitly converted. |
 | `complex64`/`complex128` | Still absent, and blocked on a scalar-domain decision rather than on plumbing — see `backend_missing_functionality.md`'s difficulty rationale. JAX's ability to store complex arrays is not Tensor Logic complex support. |
 | Dynamic / value-dependent shapes | Still rejected at the checked-plan preparation boundary, and untouched by the f32 slice — the two were one row here until the f32 slice split them, and they share nothing. |
@@ -261,6 +264,11 @@ open; those are separate problems that happened to share a row. The remaining st
 are the listed out-of-fragment scatter geometries/policies, every binary32 construct outside that
 assignment fragment, mixed `f32`/`f64` schedules, complex dtypes, dynamic shapes, and
 `.scanPre`/callbacks/predicate-dispatch scan bodies.*
+
+*Update (F32-B shipped, `f32b_evalplan.md`): binary32 nonlinearities and inline unary factors,
+listed above as still-rejected "outside that assignment fragment", are now admitted natively — see
+the Binary32 row. Only binary32 scan (including scan-local scatter, F32-C), top-level scatter
+(F32-D), mixed `f32`/`f64` (F32-E), and JAX (F32-JAX) remain rejected.*
 
 The next semantic-expansion work after Wave F should be a named **checked local-kernel capability
 wave**, extending `AssignPlan`, its checker, and Dense interpretation one operation family at a time,

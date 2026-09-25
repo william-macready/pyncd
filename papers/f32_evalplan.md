@@ -106,7 +106,7 @@ f64 tensors do not coexist in one graph.
 1. **F32-B — unary and nonlinear math.** Add native `Float32.log/exp/sin/cos/sqrt`, pointwise
    functions, and axiswise row algorithms. This needs a binary32 domain-error payload and separate
    numerical fixtures for each approximation/order; routing through current `Float` helpers would
-   be false f32.
+   be false f32. **Landed by `f32b_evalplan.md`.**
 2. **F32-C — scans and scan-state scatter.** Add native binary32 block and scan stores, snapshots,
    base overlays, state writes, and histories. This is separate because scan storage and write paths
    have their own checker/evidence and recurring geometry-risk surface.
@@ -147,7 +147,7 @@ on" claim against the code when that slice's plan is written.
    axiswise functions all live here. The TL attention example `softmax(where s ≤ q)(Q[q, d] · K[s,
    d])` cannot run in f32 without it. It depends on no other follow-on slice, and its hard part is
    self-contained: native `Float32` transcendentals, a binary32 domain-error payload, and separate
-   numerical fixtures for each approximation.
+   numerical fixtures for each approximation. **Landed by `f32b_evalplan.md`.**
 2. **F32-D second.** Also independent. It needs a binary32 scatter oracle independent of the legacy
    binary64 scatter evaluator, plus native fill and placement execution. B and D can swap freely;
    put D first only if scatter/GNN-style models matter more than attention and MLPs.

@@ -234,10 +234,12 @@ cross-checked against the legacy evaluator producing the SAME list on the same b
 this is not a vacuously-passing empty comparison — and must arrive unchanged in the successful
 `EvalReport32` AND on the reachable `missingEnvBinding "X"` failure against an empty environment.
 
-No `PlanRunCause.execution` fixture is claimed: `AdapterTest`'s Check 16 establishes that cause is
-unreachable once packing has succeeded (pack validates presence, shape and storage of every input
-slot using the same predicates the worker re-applies), and `pack32`/`runDensePlan32` reproduce that
-pairing exactly. -/
+No `PlanRunCause.execution` fixture is claimed here: `AdapterTest`'s Check 16 (corrected, f32 slice
+Task 2 — see its own doc comment) establishes only that `pack`/`pack32` rule out every *shape/arity/
+storage* cause before the worker runs, which `pack32`/`runDensePlan32` reproduce exactly; a RUNTIME
+domain violation inside the worker (an inline unary factor's `log`/`sqrt`/`recip`) is a different
+matter and genuinely reaches `.execution` in both carriers — Fixture 2.11 below pins the binary32
+half of that reachability, its `AdapterTest` twin the binary64 half. -/
 
 def f32WarnProg : TLProgram := tlprog!{
   axis i : ℕ = 4
@@ -598,5 +600,286 @@ run_cmd do
   | .ok pairs =>
       unless pairs == #[("Q", ScalarDType.bool), ("Y", ScalarDType.f32)] do
         throwError s!"f32 bool materialized signatures wrong: {repr pairs}"
+
+/-! ## Fixture 2.10 (f32 slice, Task 2): end-to-end witness (PLATFORM-DEPENDENT)
+
+`DifferentialTest`'s `expOobProg` shape (`E[i] := exp(A[i + 1])`, `axis i : ℕ = 3`) as an f32
+`tlprog!`, through the FULL named adapter pipeline (`prepare32`/`runPreparedDense32`), over
+values matching, by value, `Nonlin32Test`'s own platform witness lanes for `exp` at `A[1]`/`A[2]`
+(conflict-scan note C5) — hand-typed here as `Float32.ofBits` literals, not an import-based reuse
+(this file does not import `Eval.Nonlin32Test`), but the same two bit patterns as the first two
+entries of that file's `expLanes` — `A[3]` is out of range, so `E[2] = exp(+0) = 1` regardless of
+platform. The assertion is RELATIONAL (the native `Float32.exp` applied directly to each input,
+never a hardcoded bit pattern), and the precondition is the same one `Nonlin32Test.witness`
+enforces: at least one lane must separate that native result from binary64-then-narrow, checked here
+against the SAME three values through the ordinary binary64 named runner (`runPreparedDense`), or
+this fixture could not tell the two apart.
+
+The native outputs are recorded here in a comment ONLY (observed on the authoring platform,
+matching `Nonlin32Test` fixture 1.8's first two `exp` lanes), never asserted as a literal — that
+would pin this libm's exact rounding error: `E[0] = exp(A[1]) → 1067808354`,
+`E[1] = exp(A[2]) → 1068064150` (`A[3]` is out of range, so `E[2] = exp(+0) = 1.0f → 1065353216`
+regardless of platform). -/
+
+def f32ExpOobProg : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  tensor f32 A(i), E(i)
+  E[i] := exp(A[i + 1])
+}
+
+def f32ExpOobInputs : NamedDenseEnv32 :=
+  ({} : NamedDenseEnv32).insert "A"
+    ⟨[3], #[Float32.ofBits 0, Float32.ofBits 1048801280, Float32.ofBits 1049583616]⟩
+
+/-- The binary64 twin, same source values widened — used only to compute this fixture's
+    narrowed-contrast precondition. `AdapterTest` has no `TLProgram`-to-`PreparedPlan` helper of its
+    own either, so this follows its `warnProg` fixtures' inline `compileToScheduled`/`prepareEvalPlan`
+    pattern rather than adding one. -/
+def expOobProgF64 : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  E[i] := exp(A[i + 1])
+}
+
+def expOobInputsF64 : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "A"
+    ⟨[3], #[(0 : Float), (Float32.ofBits 1048801280).toFloat, (Float32.ofBits 1049583616).toFloat]⟩
+
+run_cmd do
+  let prepared ← match prepare32 f32ExpOobProg f32ExpOobInputs with
+    | .ok p => pure p
+    | .error e => throwError s!"f32 exp-oob: {e}"
+  match runPreparedDense32 prepared f32ExpOobInputs with
+  | .error e => throwError s!"f32 exp-oob run failed: {repr e.cause}"
+  | .ok report =>
+    match report.env["E"]? with
+    | none => throwError "f32 exp-oob: E missing from result env"
+    | some e32 =>
+      let native : Array UInt32 :=
+        #[ Float32.exp (Float32.ofBits 1048801280), Float32.exp (Float32.ofBits 1049583616)
+         , Float32.exp (Float32.ofBits 0) ].map Float32.toBits
+      unless e32.data.map Float32.toBits == native do
+        throwError s!"f32 exp-oob: E is not the native binary32 exp applied directly: \
+{repr (e32.data.map Float32.toBits)} vs {repr native}"
+      -- the materialized dtype is `.f32`.
+      match matDtypes prepared with
+      | .error e => throwError s!"f32 exp-oob: {e}"
+      | .ok pairs =>
+          unless pairs == #[("E", ScalarDType.f32)] do
+            throwError s!"f32 exp-oob materialized signatures wrong: {repr pairs}"
+      -- Precondition: the binary64 twin, same values, through `runPreparedDense`, narrowed once —
+      -- must disagree with the native result above in at least one lane.
+      match expOobProgF64.compileToScheduled.run 0 with
+      | .error e _ => throwError s!"f32 exp-oob: binary64 twin compile failed: {repr e}"
+      | .ok sched _ =>
+        match prepareEvalPlan sched (InputSignature.ofDenseInputs expOobInputsF64) with
+        | .error f =>
+            throwError s!"f32 exp-oob: binary64 twin prepare failed: {renderCompileCause f.cause}"
+        | .ok prepared64 =>
+          match runPreparedDense prepared64 expOobInputsF64 with
+          | .error e => throwError s!"f32 exp-oob: binary64 twin run failed: {repr e.cause}"
+          | .ok report64 =>
+            match report64.env["E"]? with
+            | none => throwError "f32 exp-oob: binary64 twin E missing"
+            | some e64 =>
+                let narrowed := e64.data.map (fun x => x.toFloat32.toBits)
+                unless (List.range 3).any (fun i => native[i]! != narrowed[i]!) do
+                  throwError s!"f32 exp-oob: no lane separates native binary32 exp from \
+binary64-then-narrow on this platform's libm; choose new witness lanes (the fixture would \
+otherwise pin nothing)"
+
+/-! ## Fixture 2.11 (f32 slice, Task 2): end-to-end domain error, binary32 half
+
+Fixture 2.10's donor with `log` in place of `exp` and `A = [1, 2, 4]` — every VALID lane is in
+domain, so the failure is purely about the PADDED lane (`A[3]`, out of range, zero-pads to `+0`, and
+`log(+0)` is a genuine domain violation). This is the first fixture anywhere to pin warnings on an
+`.execution` failure: `AdapterTest`'s binary64 twin pins the same shape on the other carrier. -/
+
+def f32LogDomainProg : TLProgram := tlprog!{
+  axis i : ℕ = 3
+  tensor f32 A(i), E(i)
+  E[i] := log(A[i + 1])
+}
+
+def f32LogDomainInputs : NamedDenseEnv32 :=
+  ({} : NamedDenseEnv32).insert "A" ⟨[3], #[(1.0 : Float32), 2.0, 4.0]⟩
+
+run_cmd do
+  let prepared ← match prepare32 f32LogDomainProg f32LogDomainInputs with
+    | .ok p => pure p
+    | .error e => throwError s!"f32 log-domain: {e}"
+  -- The fixture's own teeth: a genuinely non-empty, single-entry warning list to preserve, not a
+  -- vacuously-passing empty one.
+  unless prepared.warnings.length == 1 do
+    throwError s!"fixture is broken: expected exactly one preparation warning, got: \
+{prepared.warnings.map toString}"
+  match runPreparedDense32 prepared f32LogDomainInputs with
+  | .ok _ => throwError "expected a binary32 domain-error failure"
+  | .error failure =>
+      unless failure.cause == .execution (.unaryDomain32 .log 0 0) do
+        throwError s!"f32 log-domain: wrong cause: {repr failure.cause}"
+      unless failure.warnings == prepared.warnings do
+        throwError s!"f32 log-domain: warnings dropped/changed on an execution failure: \
+{failure.warnings.map toString}"
+
+/-! ## Fixture 4.5 (F32-B Task 4): end-to-end causal attention, the named binary32 fragment now
+    covers a masked-axiswise nonlinearity
+
+`EvalExamplesTest`'s masked-attention donor (`A[q, s.] := softmax(where s ≤ q)(Q[q, d] · K[s, d])`)
+as an f32 `tlprog!`, with `axis q : ℕ = 3`, `axis d : ℕ = 1` — `s` stays undeclared and is inferred
+from `K`'s own signature shape, exactly as `q`/`d` would be even if declared. `Q = [1, 1, 1]`,
+`K = [0, 0, 2.5]`: every score row is `Q[q,·] · K[·,·] = K` (`Q` is uniformly `1`), so row `q` is the
+CAUSAL softmax of `[0, 0, 2.5]` restricted to `s ≤ q`:
+
+* row 0 — only `s = 0` unmasked, singleton softmax `= 1` exactly: `[1, 0, 0]`;
+* row 1 — `s ∈ {0, 1}` unmasked, both scores `0`, softmax `= [0.5, 0.5]` exactly: `[0.5, 0.5, 0]`;
+* row 2 — every `s` unmasked, the full `[0, 0, 2.5]` row — §2.6's own discriminating softmax
+  lane, native bits `[1032873795, 1032873795, 1062987311]`.
+
+The binary64 twin (same values, ordinary declarations, through `runPreparedDense`) must agree on
+rows 0/1 exactly (no rounding freedom at `0`/power-of-two denominators) and narrow row 2 to
+`[1032873796, 1032873796, 1062987311]` — §2.6's own discriminator, one ULP off the native row. -/
+
+def f32AttnProg : TLProgram := tlprog!{
+  axis q : ℕ = 3
+  axis d : ℕ = 1
+  tensor f32 Q(q, d), K(s, d), A(q, s)
+  A[q, s.] := softmax(where s ≤ q)(Q[q, d] · K[s, d])
+}
+
+def f32AttnInputs : NamedDenseEnv32 :=
+  (({} : NamedDenseEnv32).insert "Q" ⟨[3,1], #[(1.0 : Float32), 1.0, 1.0]⟩).insert
+    "K" ⟨[3,1], #[(0.0 : Float32), 0.0, 2.5]⟩
+
+/-- The binary64 twin: same source shape and values, ordinary declarations. -/
+def f64AttnProg : TLProgram := tlprog!{
+  axis q : ℕ = 3
+  axis d : ℕ = 1
+  tensor Q(q, d), K(s, d), A(q, s)
+  A[q, s.] := softmax(where s ≤ q)(Q[q, d] · K[s, d])
+}
+
+def f64AttnInputs : HashMap String DenseTensor :=
+  (({} : HashMap String DenseTensor).insert "Q" ⟨[3,1], #[1.0, 1.0, 1.0]⟩).insert
+    "K" ⟨[3,1], #[0.0, 0.0, 2.5]⟩
+
+run_cmd do
+  let prepared ← match prepare32 f32AttnProg f32AttnInputs with
+    | .ok p => pure p
+    | .error e => throwError s!"f32 attn: {e}"
+  unless prepared.plan.storageKind == LeanNCD.StorageKind.float32 do
+    throwError s!"f32 attn: storage kind is {repr prepared.plan.storageKind}, not float32"
+  match runPreparedDense32 prepared f32AttnInputs with
+  | .error e => throwError s!"f32 attn run failed: {repr e.cause}"
+  | .ok report =>
+      unless expect32 report.env "A" [3,3]
+          #[ 1065353216, 0, 0
+           , 1056964608, 1056964608, 0
+           , 1032873795, 1032873795, 1062987311 ] do
+        throwError s!"f32 attn A wrong: {repr (bitsOf report.env "A")}"
+  match matDtypes prepared with
+  | .error e => throwError s!"f32 attn: {e}"
+  | .ok pairs =>
+      unless pairs == #[("A", ScalarDType.f32)] do
+        throwError s!"f32 attn materialized signatures wrong: {repr pairs}"
+  -- The binary64 twin, through the ordinary Float named runner, narrowed row 2 must be one ULP
+  -- off the native row above — the discriminator this fixture exists to pin.
+  match f64AttnProg.compileToScheduled.run 0 with
+  | .error e _ => throwError s!"f32 attn: binary64 twin compile failed: {repr e}"
+  | .ok sched _ =>
+    match prepareEvalPlan sched (InputSignature.ofDenseInputs f64AttnInputs) with
+    | .error f => throwError s!"f32 attn: binary64 twin prepare failed: {renderCompileCause f.cause}"
+    | .ok prepared64 =>
+      match runPreparedDense prepared64 f64AttnInputs with
+      | .error e => throwError s!"f32 attn: binary64 twin run failed: {repr e.cause}"
+      | .ok report64 =>
+        match report64.env["A"]? with
+        | none => throwError "f32 attn: binary64 twin A missing"
+        | some a64 =>
+            let narrowed := a64.data.map (fun x => x.toFloat32.toBits)
+            unless narrowed[0]! == 1065353216 && narrowed[1]! == 0 && narrowed[2]! == 0 do
+              throwError s!"f32 attn: binary64 twin row 0 disagrees: {repr narrowed}"
+            unless narrowed[3]! == 1056964608 && narrowed[4]! == 1056964608 && narrowed[5]! == 0 do
+              throwError s!"f32 attn: binary64 twin row 1 disagrees: {repr narrowed}"
+            unless narrowed[6]! == 1032873796 && narrowed[7]! == 1032873796
+                && narrowed[8]! == 1062987311 do
+              throwError s!"f32 attn: binary64 twin narrowed row 2 wrong: {repr narrowed}"
+
+/-! ## Fixture 4.6 (F32-B Task 4): end-to-end sigmoid, and the Float adapter's refusal of a real
+    nonlinear f32 plan
+
+`NonlinCompileTest`'s sigmoid donor (`H[i] := sigmoid(W[i, j] · x[j])`) as an f32 `tlprog!`, with
+`axis i : ℕ = 2`, `axis j : ℕ = 1`. `W = [0.7f, 1058161516]` (bits `1060320051`/`1058161516`) and
+`x = [1]`, so `H = sigmoid(W)` lane for lane. `H` must be `[1059786330, 1059297860]`, which are
+§2.6's native binary32 `sigmoid` lanes. Binary64-then-narrow gives `[1059786331, 1059297859]` on
+the same inputs. This fixture does NOT run a binary64 twin to assert that contrast.
+`Nonlin32Test` fixture 1.2 and `NonlinDense32Test` fixture 3.7 assert it for the function and the
+checked graph. The hardcoded native bits here already reject whole-plan narrowing.
+
+Also: the f32 PREPARED plan, handed to the BINARY64 named adapter (`runPreparedDense`), must be
+refused with `PlanRunCause.storageKindMismatch .float64 .float32` — `AdapterTest`'s own Fixture 21
+pins this guard for a plain-identity f32 plan; this is the same guard firing on a plan whose step
+graph is a real two-step `.pointwise` chain, a combination Step D could not even PRODUCE before this
+task (an f32 destination with a nonlinearity used to force `.f64` on the published slot, which
+`deriveStorageKind` would then reject as mixed before any adapter door is reached). -/
+
+def f32SigmoidProg : TLProgram := tlprog!{
+  axis i : ℕ = 2
+  axis j : ℕ = 1
+  tensor f32 W(i, j), x(j), H(i)
+  H[i] := sigmoid(W[i, j] · x[j])
+}
+
+def f32SigmoidInputs : NamedDenseEnv32 :=
+  (({} : NamedDenseEnv32).insert "W" ⟨[2,1], #[Float32.ofBits 1060320051, Float32.ofBits 1058161516]⟩).insert
+    "x" ⟨[1], #[(1.0 : Float32)]⟩
+
+/-- A well-shaped ordinary (binary64) environment for the SAME plan's slots, used only to probe the
+    Float adapter's own refusal — the plan is rejected before either buffer is read. -/
+def f32SigmoidWellShapedF64 : HashMap String DenseTensor :=
+  (({} : HashMap String DenseTensor).insert "W" ⟨[2,1], #[0.0, 0.0]⟩).insert "x" ⟨[1], #[0.0]⟩
+
+run_cmd do
+  let prepared ← match prepare32 f32SigmoidProg f32SigmoidInputs with
+    | .ok p => pure p
+    | .error e => throwError s!"f32 sigmoid: {e}"
+  unless prepared.plan.storageKind == LeanNCD.StorageKind.float32 do
+    throwError s!"f32 sigmoid: storage kind is {repr prepared.plan.storageKind}, not float32"
+  match runPreparedDense32 prepared f32SigmoidInputs with
+  | .error e => throwError s!"f32 sigmoid run failed: {repr e.cause}"
+  | .ok report =>
+      unless expect32 report.env "H" [2] #[1059786330, 1059297860] do
+        throwError s!"f32 sigmoid H wrong: {repr (bitsOf report.env "H")}"
+  match runPreparedDense prepared f32SigmoidWellShapedF64 with
+  | .ok _ => throwError "expected runPreparedDense to refuse an f32 prepared plan"
+  | .error f =>
+      unless f.cause == .storageKindMismatch .float64 .float32 do
+        throwError s!"f32 sigmoid: wrong cause refusing the Float adapter: {repr f.cause}"
+
+/-! ## Fixture 4.7 (F32-B Task 4): end-to-end normalize
+
+`Y = normalize([2²⁴, 1, 1])` must be the native binary32 row `[1065353216, 864026624, 864026624]`.
+Binary64-then-narrow gives `[1065353214, 864026622, 864026622]`. That contrast is asserted by
+`Nonlin32Test` fixture 1.4, not by a binary64 twin here. -/
+
+def f32NormalizeProg : TLProgram := tlprog!{
+  axis q : ℕ = 1
+  tensor f32 A(q, s), Y(q, s)
+  Y[q, s.] := normalize(A[q, s])
+}
+
+def f32NormalizeInputs : NamedDenseEnv32 :=
+  ({} : NamedDenseEnv32).insert "A" ⟨[1,3], #[(16777216.0 : Float32), 1.0, 1.0]⟩
+
+run_cmd do
+  let prepared ← match prepare32 f32NormalizeProg f32NormalizeInputs with
+    | .ok p => pure p
+    | .error e => throwError s!"f32 normalize: {e}"
+  unless prepared.plan.storageKind == LeanNCD.StorageKind.float32 do
+    throwError s!"f32 normalize: storage kind is {repr prepared.plan.storageKind}, not float32"
+  match runPreparedDense32 prepared f32NormalizeInputs with
+  | .error e => throwError s!"f32 normalize run failed: {repr e.cause}"
+  | .ok report =>
+      unless expect32 report.env "Y" [1,3] #[1065353216, 864026624, 864026624] do
+        throwError s!"f32 normalize Y wrong: {repr (bitsOf report.env "Y")}"
 
 end LeanNCD.Eval.Plan.Adapter32Test
