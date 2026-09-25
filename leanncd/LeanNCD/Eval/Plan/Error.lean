@@ -180,7 +180,11 @@ inductive PositionalInputError
       `runDensePlan` (`EvalPlan.lean`) — BEFORE context, store, arity, or any input is read, so
       binary32 evidence can never be executed as binary64. Their empty-context wrappers
       (`runDenseAssign`) inherit the guard rather than repeating it; guarding only the wrappers
-      would be insufficient, since a direct caller can invoke `runDenseAssignAt`. -/
+      would be insufficient, since a direct caller can invoke `runDenseAssignAt`. The nonlinearity
+      workers `runDensePointwise`/`runDenseAxiswise` (binary64) and their siblings
+      `runDensePointwise32`/`runDenseAxiswise32` (binary32, `Nonlin.lean`) are producers too (F32-B
+      Task 3): each raises the same guard, in the same carrier direction, as its FIRST statement,
+      before their shared source-slot validation runs. -/
   | storageKindMismatch (expected actual : LeanNCD.StorageKind)
   /-- A carrier whose scalar runtime has NO implementation of inline unary math was asked to apply
       one. `kind` is that carrier, `op` the requested operation, `slot` the read's source slot.
@@ -230,11 +234,13 @@ inductive CapabilityError
         established. An undeclared external is a real f64 tensor, so an f32 graph reading one is
         mixed and lands here.
       * Step 0c (`f32CapabilityCheck`) — a homogeneous-f32 schedule using a construct binary32
-        execution defers to a later slice, one context per construct: `"{name}: f32 scan"`,
-        `"{name}: f32 scatter"`, and `"{name}: f32 nonlinearity"`. The former fourth context,
-        `"{name}: f32 unary factor {termIndex}:{factorIndex}"`, has NO PRODUCER LEFT as of the f32
-        slice's Task 2: `checkF32Stmt`'s factor loop that threw it is deleted, an inline unary read
-        is now structurally admitted at Step 0c, and `checkAssignF32` (`Check.lean`) admits it too
+        execution defers to a later slice, one context per construct: `"{name}: f32 scan"` and
+        `"{name}: f32 scatter"`. The former THIRD and FOURTH contexts, `"{name}: f32 nonlinearity"`
+        and `"{name}: f32 unary factor {termIndex}:{factorIndex}"`, have NO PRODUCER LEFT as of
+        F32-B Tasks 4 and 2 respectively: `checkF32Stmt`'s nonlinearity match and its factor loop
+        that threw them are both deleted, a `.pointwise`/`.axiswise` statement is now structurally
+        admitted at Step 0c with `prepareEvalPlan`'s Step D emitting its real dtype/algebra, an
+        inline unary read is likewise admitted, and `checkAssignF32` (`Check.lean`) admits both too
         — retained here producer-less for the same reason every other retired context/constructor
         in this file is (§9.2), not deleted.
 

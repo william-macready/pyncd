@@ -246,9 +246,9 @@ def checkPlan (raw : RawEvalPlan) : Except PlanStepError CheckedEvalPlan := do
           -- The graph's own storage kind selects the assignment checker. `checkAssignF32` is a
           -- SIBLING of `checkAssign` through one shared private core (`Check.lean`), not a relaxed
           -- mode of it: it admits `.f32`/`.bool` instead of `.f64`/`.bool`, requires an f32 algebra,
-          -- rejects inline unary, and stamps `.float32` on the evidence it returns. Every other
-          -- clause — shape, partition, affine, policy, all-factor indices — is literally the same
-          -- code, so the two cannot drift.
+          -- and stamps `.float32` on the evidence it returns. Every other clause — shape,
+          -- partition, affine, policy, all-factor indices, and (since F32-B Task 2) admission of an
+          -- inline unary read factor — is literally the same code, so the two cannot drift.
           | .assign a =>
               match (match storageKind with
                      | .float64 => checkAssign raw.tensorSigs a
