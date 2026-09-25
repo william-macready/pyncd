@@ -357,6 +357,20 @@ plan as commands.** Then fold the remaining prose into the last code task, or gi
 mid-tier model. The completion record's *claims* still get §1's diff-it-yourself check, and §3's
 housekeeping-plus-claims note still applies.
 
+**Split long implementer dispatches at the production/fixture boundary.** An implementer's
+context only grows: F32-B Task 2 went from 45k to 411k tokens over 111 turns, so its late turns cost
+about 9× its early ones. Simulated on the real per-turn contexts, splitting each F32-B implementer
+at its midpoint — with the second agent restarting from its base context plus a 25k handoff —
+saves 47M of 122M (38%). That is an upper bound (it assumes the second agent re-reads nothing);
+expect 15–25%. **Rule: a task the plan expects to run past ~60 implementer turns is executed as two
+dispatches.** Phase 1 writes the production code and commits it green; phase 2 gets
+`split-handoff-template.md` (the commit SHA, the brief's `identifier @ file` list, the task's
+manifest entries, ≤10 lines of phase-1 notes) and writes the fixtures and runs the cycles. It stays
+one task: one reviewer runs after phase 2, over both commits. Keep a task as one dispatch when its
+fixtures cannot be written without the production reasoning still in context (for example, when
+fixture values are derived as the code is written). That is also the signal that the task is not
+yet specified well enough for its brief.
+
 ## Authoring checklist
 
 - [ ] Every Lean block compiled via `check-snippet.sh` (fragments concatenated
@@ -424,3 +438,6 @@ housekeeping-plus-claims note still applies.
       plan; the live plan is ≤ ~800 lines.
 - [ ] Documentation-sweep steps are written as commands (value-grep, counts, `--out` results
       table), and the docs work is not a heavyweight dispatch of its own.
+- [ ] Any task expected to exceed ~60 implementer turns is marked for a two-dispatch split
+      (production commit, then fixtures + cycles via `split-handoff-template.md`), with its
+      phase-2 `identifier @ file` list written out.
