@@ -162,7 +162,8 @@ Does not own: the Python implementation (`../data_structure/`, `../acset/`, etc.
 | Math tower | `LeanNCD/Base/AGENTS.md` | `ColoredPROP`, `St` (affine morphisms), `Br` (free strict SMC), `SizeExpr` |
 | DSL + routing | `LeanNCD/DSL/AGENTS.md` | `tl!{...}` parse/elaborate/compile/route pipeline (largest, most active subsystem) |
 | Bridge | `LeanNCD/Bridge/AGENTS.md` | `realize`, acset codec + round-trip proofs, DSL/CSV agreement — highest-churn subsystem |
-| Evaluation | `LeanNCD/Eval/AGENTS.md` | reference-semantics interpreter + the Portfolio test suite; `Eval/Plan/` adds a checked, positional plan IR with its own source compiler and Dense interpreter (Wave C) |
+| Evaluation | `LeanNCD/Eval/AGENTS.md` | reference-semantics interpreter + the Portfolio test suite |
+| Checked plan backend | `LeanNCD/Eval/Plan/AGENTS.md` | checked, positional plan IR: source compiler, checkers, binary64/binary32 dense workers, adapters, JAX executable phase |
 | Acset schema | `LeanNCD/Acset/AGENTS.md` | row-table schema + CSV text mechanics (mirrors Python `acset/`) |
 | Algebra | `LeanNCD/Algebra/AGENTS.md` | algebra-functor signatures (`Algebra`/`TargetActegory`); deliberately no concrete instance yet |
 
@@ -175,7 +176,8 @@ Small subsystems (no dedicated node — each <170 lines, single-file or near it)
 | Base | `LeanNCD/Base/AGENTS.md` | `brCancelPoint`/BrNF situation, St hexagon gap |
 | DSL | `LeanNCD/DSL/AGENTS.md` | 8-phase pipeline, Track A routing proofs, `readArityOk` gap |
 | Bridge | `LeanNCD/Bridge/AGENTS.md` | round-trip Task A-E staging, `wf_topo` history |
-| Eval | `LeanNCD/Eval/AGENTS.md` | scatterOutDim/scatterOutShape sync contract, Portfolio test patterns, `Eval/Plan/` checked-plan IR (Wave C) |
+| Eval | `LeanNCD/Eval/AGENTS.md` | `LHSSlot.outExtent` sync contract, fail-loud sizing, Portfolio test patterns |
+| Eval/Plan | `LeanNCD/Eval/Plan/AGENTS.md` | storage-kind guards, current binary32 boundary, write-geometry exhaustiveness, JAX gates |
 | Acset | `LeanNCD/Acset/AGENTS.md` | schema/CSV split from Bridge's round-trip proofs |
 | Algebra | `LeanNCD/Algebra/AGENTS.md` | the R=Bool XOR-ring trap |
 
@@ -253,7 +255,7 @@ Small subsystems (no dedicated node — each <170 lines, single-file or near it)
 - **The R=Bool XOR-ring trap** (`Algebra/AGENTS.md`) — Mathlib's `Bool` ring instance is XOR, not `(∨,∧)`; `Mat Bool` typechecks but computes the wrong thing.
 - **Top-level, inferred, and checked-scan scatter extents must share `LHSSlot.outExtent`** (`Eval/AGENTS.md`) — a real, previously-shipped duplicate-formula soundness bug is fixed; `scatterOutShape`, `scatterOutputShapes`, and checked scan geometry's `scatterDestExtent` adapter now converge on the stride-aligned rule.
 - **`brCancelPoint` (`Base/`) is a known-hard, well-scoped open sorry**, not a mystery — it needs a non-bijective gs-monoidal/cospan model; the bijective-wiring approach (`spikes/BrNF.lean`) is proven inadequate. Nothing load-bearing (Bridge/Eval/DSL) depends on it.
-- **"Boolean outputs are admitted" ≠ "the backend has a Boolean carrier, or JAX runs them"** — in the checked `Eval/Plan/` backend `ScalarDType.bool` is a semantic algebra/signature tag over the unchanged `Array Float` storage (destination selects the algebra; source/destination dtypes need not match; runtime values are NOT validated as 0/1), and the experimental `jax_bridge` backend rejects Boolean semantics outright. See `LeanNCD/Eval/AGENTS.md` Contracts and `papers/boolean_predicate_output_evalplan.md`.
+- **"Boolean outputs are admitted" ≠ "the backend has a Boolean carrier, or JAX runs them"** — in the checked `Eval/Plan/` backend `ScalarDType.bool` is a semantic algebra/signature tag over the graph's real carrier — `Float` or `Float32` storage (destination selects the algebra; source/destination dtypes need not match; runtime values are NOT validated as 0/1), and the experimental `jax_bridge` backend rejects Boolean semantics outright. See `LeanNCD/Eval/Plan/AGENTS.md` Contracts and `papers/boolean_predicate_output_evalplan.md`.
 - **A checked-plan scan `where=` mask can't see the live scan axis** (`lowerMaskPredicate`, `Eval/Plan/Compile.lean`) — its basis is deliberately the statement's non-seeded output axes only, so a mask referencing the scan's own `.iterAt`/`.iterNext` axis densifies that axis to a constant 0 instead of erroring. This means the top-level pyncd `CLAUDE.md`'s "causal masking goes through `softmax(..., where=predicate)`" guidance does not carry over to a scan recurrence in the checked backend — that specific shape compiles and runs silently wrong, not rejected. Tested/documented as an intentional Slice 5 scope limit, not a bug (`papers/predicate_boolean_backend_parity.md`, `backend_missing_functionality.md`'s masks/predicates entry).
 
 ### Boundaries
