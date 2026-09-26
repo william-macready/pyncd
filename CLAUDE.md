@@ -68,9 +68,11 @@ If code can answer, code answers.
 ## Rule 6 — Token budgets are not advisory
 Budgets are cumulative input tokens (each turn's full context, summed over turns), measured with
 `python3 .claude/skills/slice-plan/token-report.py <session-id>`. Numbers are from F32-B (2026-09-25).
-- Implementer dispatch: context peak ≤ ~250k and ≤ ~60 turns. A task expected to exceed either is
-  split in its plan (`slice-plan` §5); one that exceeds it unexpectedly says so in its report.
+- Any dispatch (implementer, drafter, reviewer, fixer): context peak ≤ ~250k and ≤ ~60 turns. A task expected to exceed either is
+  split in its plan (`slice-plan` §5; authoring: §6); one that exceeds it unexpectedly says so in its report.
 - Slice execution: ≤ ~175M total. The close-out records the measured total and explains an overrun.
+- Slice authoring (draft + reviews + fixes): target ≤ ~50M — a target, not yet measured; F32-D spent
+  ~73M before `slice-plan` §6 existed.
 Surface the breach. Do not silently overrun.
 
 ## Rule 7 — Surface conflicts, don't average them
