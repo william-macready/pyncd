@@ -53,6 +53,17 @@ or `scatterPlacementOrFail`. The scan compiler lowers placement into its own sta
 shares only the carrier-free extent function `scatterDestExtent @ Check.lean`. F32-C must build a
 binary32 state-write path in `runDenseScan @ Scan.lean` itself (`runDenseBlock`/`runDenseScan` stay (c)).
 
+**Where the two slices DO connect: F32-C's oracle.** The existing scan oracle,
+`independentRun @ test/Eval/PropertyOracle/ScanUnroll.lean`, unrolls a scan into a scan-free program,
+keeping scatter statements as scatters, and runs it through the LEGACY `evalScheduled`, which refuses
+f32 permanently. F32-C's natural binary32 oracle is the same unroll run through the CHECKED binary32
+path (`prepareEvalPlan` → `runPreparedDense32`), which can run those scatters only because of this
+slice. It would call this slice's harness helpers `compile32`/`run32`/`env32`
+(`papers/f32d_files/Scatter32OracleTest.lean`); lift them into a shared test module when F32-C adds
+that second caller, not here. **Unverified, for F32-C to settle first:** `evalScheduled` accepts
+placements the checked compiler refuses at top level (e.g. constant-affine), so some unrolled
+scan-local scatters may fall outside this slice's admitted fragment.
+
 ---
 
 ## 2. Global constraints (exact values)
@@ -801,7 +812,9 @@ gets fixed.
 **Step 9 — papers** (find each with the `rg` shown; edit only those lines):
 - `papers/f32_evalplan.md`: `rg -n "F32-D — top-level scatter|F32-D second|probably reuses F32-D" papers/f32_evalplan.md`
   — §1.3 item 3 and §1.4 item 2: append "**Landed by `f32d_evalplan.md`.**"; §1.4 item 3's
-  "unverified" bullet → state §1.3 of this plan's finding (no shared path; only `scatterDestExtent`).
+  "unverified" bullet → state §1.3 of this plan's finding (no shared path; only `scatterDestExtent`),
+  and its oracle paragraph: F32-C's binary32 oracle is `independentRun`'s unroll run through the
+  checked binary32 path, which needs this slice's top-level scatter (fragment coverage unverified).
 - `papers/f32b_evalplan.md`: `rg -n "F32-D" papers/f32b_evalplan.md` — §1.3's F32-D bullet: append
   "Landed by `f32d_evalplan.md`, except the nonlinearity, which is refused for every dtype
   (policy)"; the two §3.5 table rows marked **F32-D**: append "closed by F32-D (see

@@ -8,8 +8,8 @@ record) unless a value disagrees.
 
 | Item | Value |
 |---|---|
-| Plan | `papers/f32d_evalplan.md`, 860 lines |
-| Plan SHA-256 at handoff | `42b30db2ff8d213915d976250d97a21014771cbe80cd4662b635aadb91d51005` |
+| Plan | `papers/f32d_evalplan.md`, 873 lines |
+| Plan SHA-256 at handoff | `5b80a90d24ce786a9bcf297b0f3f2769f19d6ab9bc8fe391f6dc9878a665254d` |
 | Base | `main` at `6303e9f`; F32-A and F32-B complete and merged |
 | Manifests | `papers/f32d_mutations.json` (7 cycles on code that exists today, `--check` OK); `papers/f32d_mutations_post.json` (11 cycles on code each task adds, validated against post-edit copies) |
 | Files to copy, not retype | `papers/f32d_files/ScatterDense32Test.lean`, `papers/f32d_files/Scatter32OracleTest.lean` |
