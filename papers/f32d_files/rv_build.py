@@ -20,6 +20,7 @@ def fix_imports(s):
     for t in TESTS: s = re.sub(rf"^import Eval\.Plan\.{t}\b", f"import F32DRV_{t}", s, flags=re.M)
     return s
 src = {m: rd(f"LeanNCD/Eval/Plan/{m}.lean") for m in PROD}
+ORIG = dict(src)
 # ---- Task 1
 c = src["Check"]
 i = c.index("/-- Evidence that one `ScatterPlan` satisfies every local invariant.")
@@ -31,12 +32,14 @@ d = src["Dense"]
 i = d.index("def runDenseScatter (c : CheckedScatterPlan) (store : Array DenseTensor) :")
 j = d.index("  return { shape := destShape, data := data }\n", i) + len("  return { shape := destShape, data := data }\n")
 src["Dense"] = d[:i] + B["t1-dense"] + d[j:]
+SNAP = {1: dict(src)}
 # ---- Task 2
 e = src["EvalPlan"]
 e = rep(e, "      | .scatter _   => throw (.f32UnsupportedStep ni .scatter)\n", B["t2-cap"], "t2-cap")
 e = rep(e, "          | .scatter s =>\n              match checkScatter raw.tensorSigs s with\n              | .error e => throw (.assign (.nodeError ni e))\n", B["t2-local"], "t2-local")
 src["EvalPlan"] = e
 src["Dense32"] = rep(src["Dense32"], "    | .scatter _ => throw (.storageKindMismatch .float32 .float64)\n", B["t2-dense32"], "t2-d32")
+SNAP[2] = dict(src)
 # ---- Task 3
 k = src["Compile"]
 i = k.index("/-- One top-level statement's binary32 capability check"); j = k.index("  | .assign _ _ _ => pure ()\n\n", i) + len("  | .assign _ _ _ => pure ()\n\n")
@@ -45,6 +48,7 @@ i = k.index("/-- The whole-schedule binary32 capability pass"); j = k.index("   
 k = k[:i] + B["t3-cap"] + k[j:]
 k = rep(k, "    -- unreachable: only a `.float32` schedule selects an f32 algebra, and Step 0c (`checkF32Stmt`)\n    -- refuses every f32 top-level scatter as `unsupportedDtype \"{nm}: f32 scatter\"` before Step D\n    | .f32 _    => false\n", B["t3-fill"], "t3-fill")
 src["Compile"] = k
+SNAP[3] = dict(src)
 for m in PROD: open(f"{SP}/F32DRV_{m}.lean", "w").write(fix_imports(src[m]))
 # ---- tests
 T = {t: rd(f"test/Eval/Plan/{t}.lean") for t in ["KernelCheckTest", "KernelDenseTest", "KernelDense32Test", "ScatterDenseTest", "GraphCheckTest", "EvalPlan32Test", "CompileTest"]}
@@ -73,6 +77,33 @@ ct = ct[:i] + B["t3-fw2"] + ct[j:]
 T["CompileTest"] = ct
 for t in TESTS: open(f"{SP}/F32DRV_{t}.lean", "w").write(fix_imports(T[t]))
 print("files written")
+# --emit-patches DIR: one git-style patch per task (code blocks only; the plan's prose docstring edits
+# and lakefile registration stay manual), applied in order 1, 2, 3 on top of the base commit.
+if "--emit-patches" in sys.argv:
+    import difflib
+    out_dir = sys.argv[sys.argv.index("--emit-patches") + 1]; os.makedirs(out_dir, exist_ok=True)
+    TEST_TASK = {"ScatterDense32Test": 1, "GraphCheckTest": 2, "EvalPlan32Test": 2,
+                 "CompileTest": 3, "Scatter32OracleTest": 3}
+    def diff(path, a, b):
+        if a == b: return ""
+        old = "/dev/null" if a is None else "a/" + path
+        lines = difflib.unified_diff([] if a is None else a.splitlines(True), b.splitlines(True),
+                                     old, "b/" + path)
+        head = f"diff --git a/{path} b/{path}\n" + ("new file mode 100644\n" if a is None else "")
+        return head + "".join(lines)
+    prev = ORIG
+    for n in (1, 2, 3):
+        body = "".join(diff(f"leanncd/LeanNCD/Eval/Plan/{m}.lean", prev[m], SNAP[n][m]) for m in PROD)
+        for t, owner in TEST_TASK.items():
+            if owner != n: continue
+            p = f"leanncd/test/Eval/Plan/{t}.lean"
+            base = open(LN + "/test/Eval/Plan/" + t + ".lean").read() if os.path.exists(LN + "/test/Eval/Plan/" + t + ".lean") else None
+            body += diff(p, base, T[t])
+        open(f"{out_dir}/task{n}.patch", "w").write(body); prev = SNAP[n]
+        print(f"wrote {out_dir}/task{n}.patch ({body.count(chr(10))} lines)")
+    unowned = [t for t in T if t not in TEST_TASK and T[t] != open(LN + "/test/Eval/Plan/" + t + ".lean").read()]
+    if unowned: print("UNOWNED TEST EDITS:", unowned); sys.exit(2)
+    sys.exit(0)
 ORDER = ["Check", "Dense", "Block", "Scan", "EvalPlan", "Dense32", "Prepared", "Compile", "Adapter", "Adapter32",
          "KernelCheckTest", "KernelDenseTest", "KernelDense32Test", "ScatterDenseTest", "ScatterDense32Test",
          "GraphCheckTest", "EvalPlan32Test", "CompileTest", "Scatter32OracleTest"]

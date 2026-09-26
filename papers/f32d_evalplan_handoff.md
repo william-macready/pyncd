@@ -8,10 +8,11 @@ record) unless a value disagrees.
 
 | Item | Value |
 |---|---|
-| Plan | `papers/f32d_evalplan.md`, 873 lines |
-| Plan SHA-256 at handoff | `5b80a90d24ce786a9bcf297b0f3f2769f19d6ab9bc8fe391f6dc9878a665254d` |
+| Plan | `papers/f32d_evalplan.md`, 877 lines |
+| Plan SHA-256 at handoff | `bec8a895e3c9f322822a11c2e000e652a75a4363e8ee31d7576508da8c319263` |
 | Base | `main` at `6303e9f`; F32-A and F32-B complete and merged |
 | Manifests | `papers/f32d_mutations.json` (7 cycles on code that exists today, `--check` OK); `papers/f32d_mutations_post.json` (11 cycles on code each task adds, validated against post-edit copies) |
+| Patches | `papers/f32d_patches/task{1,2,3}.patch`: every code block, cumulative, `git apply` in task order. Verified: all three apply to `main` in sequence and the result is byte-identical (modulo import names) to the copies `rv_build.py` compiled `ALL COMPILED`. Prose edits and `lakefile.toml` registration stay manual. |
 | Files to copy, not retype | `papers/f32d_files/ScatterDense32Test.lean`, `papers/f32d_files/Scatter32OracleTest.lean` |
 | Authoring | Drafted, then two independent adversarial reviews (source truth; test strength), a fix pass, and a verification round aimed at the fixes. 1 Critical found and fixed (no fixture for the binary32 fill-refusal direction). |
 | Verified how | Every plan edit applied to full copies of the REAL modules (real namespace and module split) and compiled, all changed tests green: `papers/f32d_files/rv_build.py` → `ALL COMPILED`. Every value observed, never hand-derived. |
@@ -39,7 +40,8 @@ broke.
 | 3 | Sonnet, **two dispatches** (phase 1: production + fixtures green; phase 2: cycles + scripted docs) via `.claude/skills/slice-plan/split-handoff-template.md` | Opus, after phase 2, over both commits | the compiler admission and the oracle |
 | Final | — | **two** Opus whole-branch reviewers, different lenses (soundness of every f32 scatter door; docs/value-grep truth) | skill §4: the tier that finds what diffs cannot show |
 
-Every brief pastes the task's `identifier @ file` list from the plan; implementers `rg -n` and read
+Each implementer's first code step is `git apply papers/f32d_patches/taskN.patch` (then the plan's
+prose edits), not transcription. Every brief pastes the task's `identifier @ file` list from the plan; implementers `rg -n` and read
 windows, never a whole file over ~20k characters. Mutation cycles are never hand-written:
 `bash leanncd/scripts/mutation-manifest.sh --task N --out <table.md> <leanncd-dir> <manifest>` on
 both manifests, pasting the table into the report. After each dispatch, run

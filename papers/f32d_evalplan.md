@@ -4,7 +4,11 @@
 **Companions:** `papers/f32d_record.md` (what was measured while authoring, how, and what was not
 verified); `papers/f32d_mutations.json` and `papers/f32d_mutations_post.json` (the mutation cycles, run by
 `leanncd/scripts/mutation-manifest.sh`); `papers/f32d_files/` (the two new test files, compiled and
-run while authoring, to be copied, not retyped). You do not need to read the record.
+run while authoring, to be copied, not retyped); `papers/f32d_patches/task{1,2,3}.patch` (every
+production and test CODE block below, applied cumulatively in task order with `git apply` — generated
+by `papers/f32d_files/rv_build.py --emit-patches` from the exact text that compiled; they create the
+two new test files too). Prose/docstring edits and `lakefile.toml` registration are NOT in the
+patches and stay as written below. You do not need to read the record.
 
 **How to read code in this repo during execution.** Every task lists the symbols it touches as
 `identifier @ file`. Run `rg -n <identifier> <file>` and read a ~40-60 line window. **Never read a

@@ -1,0 +1,128 @@
+diff --git a/leanncd/LeanNCD/Eval/Plan/EvalPlan.lean b/leanncd/LeanNCD/Eval/Plan/EvalPlan.lean
+--- a/leanncd/LeanNCD/Eval/Plan/EvalPlan.lean
++++ b/leanncd/LeanNCD/Eval/Plan/EvalPlan.lean
+@@ -196,7 +196,7 @@
+     for h : ni in [0 : raw.steps.size] do
+       match raw.steps[ni] with
+       | .assign _    => pure ()
+-      | .scatter _   => throw (.f32UnsupportedStep ni .scatter)
++      | .scatter _   => pure ()
+       | .scan _      => throw (.f32UnsupportedStep ni .scan)
+       | .pointwise _ => pure ()
+       | .axiswise _  => pure ()
+@@ -264,7 +264,9 @@
+           -- resulting `.assign` evidence would make `runDensePlan` publish the source-shaped compute
+           -- result under the destination slot instead of the scattered tensor.
+           | .scatter s =>
+-              match checkScatter raw.tensorSigs s with
++              match (match storageKind with
++                     | .float64 => checkScatter raw.tensorSigs s
++                     | .float32 => checkScatterF32 raw.tensorSigs s) with
+               | .error e => throw (.assign (.nodeError ni e))
+               | .ok c => pure (.scatter c)
+           | .scan s =>
+diff --git a/leanncd/LeanNCD/Eval/Plan/Dense32.lean b/leanncd/LeanNCD/Eval/Plan/Dense32.lean
+--- a/leanncd/LeanNCD/Eval/Plan/Dense32.lean
++++ b/leanncd/LeanNCD/Eval/Plan/Dense32.lean
+@@ -64,7 +64,8 @@
+   for node in c.checkedNodes do
+     match node with
+     | .assign a => store := store.set! a.plan.destinationSlot (← runDenseAssign32 a store)
+-    | .scatter _ => throw (.storageKindMismatch .float32 .float64)
++    | .scatter s =>
++        store := store.set! s.plan.compute.destinationSlot (← runDenseScatter32 s store)
+     | .scan _ => throw (.storageKindMismatch .float32 .float64)
+     | .pointwise p =>
+         store := store.set! p.raw.destinationSlot (← runDensePointwise32 p store)
+diff --git a/leanncd/test/Eval/Plan/GraphCheckTest.lean b/leanncd/test/Eval/Plan/GraphCheckTest.lean
+--- a/leanncd/test/Eval/Plan/GraphCheckTest.lean
++++ b/leanncd/test/Eval/Plan/GraphCheckTest.lean
+@@ -336,7 +336,7 @@
+               , .pointwise { sourceSlot := 1, destinationSlot := 2, shape := #[2], fn := .relu }
+               , .scatter (stepOrderScatter admittedAlgebraF32) ] }
+ 
+-#guard errOf (checkPlan f32UnsupportedStepOrder) == some (.f32UnsupportedStep 2 .scatter)
++#guard storageOf (checkPlan f32UnsupportedStepOrder) == some LeanNCD.StorageKind.float32
+ 
+ -- Control: the same graph in binary64 (signatures and both algebras retagged) is ACCEPTED, so the
+ -- scatter above is well-formed and the rejection is the capability verdict alone.
+@@ -385,11 +385,8 @@
+   { tensorSigs := #[ { shape := #[3], dtype := .f32 }, { shape := #[6], dtype := .f32 } ]
+   , inputSlots := #[0], steps := #[.scatter f32Scatter] }
+ 
+-#guard errOf (checkPlan f32ScatterPlan) == some (.f32UnsupportedStep 0 .scatter)
+-
+-#guard !(isF32Unsupported 0 .scatter (checkPlan
+-  { f32ScatterPlan with
+-    tensorSigs := #[ { shape := #[3], dtype := .f64 }, { shape := #[6], dtype := .f64 } ] }))
++#guard storageOf (checkPlan f32ScatterPlan) == some LeanNCD.StorageKind.float32
++
+ 
+ -- Scan. `linearScan`'s geometry verbatim: outer slots `0 = S0` (scalar), `1 = X : [3]`,
+ -- `2 = S : [3]`; `historyExtents := #[3]`, so `stepExtents = #[2]`.
+@@ -440,6 +437,22 @@
+     tensorSigs := #[ { shape := #[], dtype := .f64 }, { shape := #[3], dtype := .f64 }
+                    , { shape := #[3], dtype := .f64 } ] }))
+ 
++/-- Fixture 14's index witness, re-pointed by F32-D: `f32UnsupportedStepOrder` (now accepted) with
++    `f32Scan` appended TWICE, at outer indices 3 and 4, so first-rejection-wins (3) and
++    last-rejection-wins (4) disagree. -/
++def f32StepOrderWithScan : RawEvalPlan :=
++  { f32UnsupportedStepOrder with
++    steps := f32UnsupportedStepOrder.steps ++ #[.scan f32Scan, .scan f32Scan] }
++
++#guard errOf (checkPlan f32StepOrderWithScan) == some (.f32UnsupportedStep 3 .scan)
++
++#guard !(isF32Unsupported 3 .scan (checkPlan
++  { f32StepOrderWithScan with
++    tensorSigs := f32StepOrderWithScan.tensorSigs.map (fun s => { s with dtype := .f64 })
++    steps := #[ .assign (idNode 1 0)
++              , .pointwise { sourceSlot := 1, destinationSlot := 2, shape := #[2], fn := .relu }
++              , .scatter (stepOrderScatter admittedAlgebra), .scan f32Scan, .scan f32Scan ] }))
++
+ -- Axiswise. `baselineAxiswise`'s own field values (`softmax` over axis 0, shape `#[2]`).
+ def f32AxiswiseStep : RawAxiswisePlan :=
+   { sourceSlot := 0, destinationSlot := 1, shape := #[2], axisPos := 0, fn := .softmax }
+diff --git a/leanncd/test/Eval/Plan/EvalPlan32Test.lean b/leanncd/test/Eval/Plan/EvalPlan32Test.lean
+--- a/leanncd/test/Eval/Plan/EvalPlan32Test.lean
++++ b/leanncd/test/Eval/Plan/EvalPlan32Test.lean
+@@ -1,4 +1,5 @@
+ import LeanNCD.Eval.Plan.Dense32
++import Eval.Plan.GraphCheckTest
+ import Eval.Plan.KernelDense32Test   -- fixture 2's plans, reused as this file's graph twin
+ 
+ /-!
+@@ -12,6 +13,7 @@
+ namespace LeanNCD.Eval.Plan.EvalPlan32Test
+ open LeanNCD.Eval LeanNCD.Eval.Plan
+ open LeanNCD.Eval.Plan.KernelDense32Test (t32)
++open LeanNCD.Eval.Plan.GraphCheckTest (f32ScatterPlan f32UnsupportedStepOrder)
+ 
+ def runGraph32 (raw : RawEvalPlan) (inputs : Array DenseTensor32) :
+     Except String (Array DenseTensor32) :=
+@@ -151,4 +153,25 @@
+ #guard planErr32 f32ProductChain #[ t32 [] #[], t32 [] #[3414167552] ]
+   == some (.storageMismatch 0 [] 0)
+ 
++/-! ## F32-D fixtures 2.1–2.3: binary32 scatter through the graph worker
++
++Donors: `GraphCheckTest.f32ScatterPlan` (fixture 16, `Out[2*i] := X[i]`) and
++`GraphCheckTest.f32UnsupportedStepOrder` (`[assign, pointwise relu, scatter]`). -/
++
++-- 2.1: `X = [1, 2, 3]` lands at 0, 2, 4 of slot 1; the odd cells keep `fill = +0`.
++#guard bitsAt (runGraph32 f32ScatterPlan #[ t32 [3] #[0x3f800000, 0x40000000, 0x40400000] ]) 1
++  == some #[1065353216, 0, 1073741824, 0, 1077936128, 0]
++
++-- 2.2: the scatter reads the preceding pointwise result. `X = [1.5, 2.5]` land at 0 and 2 of slot 3;
++-- `X = [1.5, -2.5]` shows relu ran before the scatter read (lane 1 becomes `+0`).
++#guard bitsAt (runGraph32 f32UnsupportedStepOrder #[ t32 [2] #[0x3fc00000, 0x40200000] ]) 3
++  == some #[1069547520, 0, 1075838976, 0]
++#guard bitsAt (runGraph32 f32UnsupportedStepOrder #[ t32 [2] #[0x3fc00000, 0xc0200000] ]) 3
++  == some #[1069547520, 0, 0, 0]
++
++-- 2.3: the binary64 graph worker refuses the binary32 scatter graph FIRST (before arity: no inputs).
++#guard (match checkPlan f32ScatterPlan with
++  | .ok c => match runDensePlan c #[] with | .error e => some e | .ok _ => none
++  | .error _ => none) == some (.storageKindMismatch .float64 .float32)
++
+ end LeanNCD.Eval.Plan.EvalPlan32Test
