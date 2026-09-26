@@ -1,0 +1,247 @@
+[
+  {
+    "label": "Q1 (runDenseScan32 storage-kind guard deleted)",
+    "task": "1",
+    "file": "LeanNCD/Eval/Plan/Scan.lean",
+    "old": "    (outerStore : Array DenseTensor32) : Except PositionalInputError (Array DenseTensor32) := do\n  unless c.storageKind == .float32 do\n    throw (.storageKindMismatch .float32 c.storageKind)\n",
+    "new": "    (outerStore : Array DenseTensor32) : Except PositionalInputError (Array DenseTensor32) := do\n",
+    "targets": [
+      "Eval.Plan.ScanDense32Test"
+    ],
+    "expect": [
+      "ScanDense32Test.lean:66:0: Expression"
+    ]
+  },
+  {
+    "label": "Q2 (runDenseScan storage-kind guard deleted)",
+    "task": "1",
+    "file": "LeanNCD/Eval/Plan/Scan.lean",
+    "old": "def runDenseScan (sigs : Array TensorSignature) (c : CheckedScanPlan) (outerStore : Array DenseTensor) :\n    Except PositionalInputError (Array DenseTensor) := do\n  unless c.storageKind == .float64 do\n    throw (.storageKindMismatch .float64 c.storageKind)\n",
+    "new": "def runDenseScan (sigs : Array TensorSignature) (c : CheckedScanPlan) (outerStore : Array DenseTensor) :\n    Except PositionalInputError (Array DenseTensor) := do\n",
+    "targets": [
+      "Eval.Plan.ScanDense32Test"
+    ],
+    "expect": [
+      "ScanDense32Test.lean:68:0: Expression"
+    ]
+  },
+  {
+    "label": "Q3 (runDenseBlock32 storage-kind guard deleted)",
+    "task": "1",
+    "file": "LeanNCD/Eval/Plan/Block.lean",
+    "old": "def runDenseBlock32 (c : CheckedPlanBlock) (ctx : List Int) (inputs : Array DenseTensor32) :\n    Except PositionalInputError (Array DenseTensor32) := do\n  unless c.storageKind == .float32 do\n    throw (.storageKindMismatch .float32 c.storageKind)\n",
+    "new": "def runDenseBlock32 (c : CheckedPlanBlock) (ctx : List Int) (inputs : Array DenseTensor32) :\n    Except PositionalInputError (Array DenseTensor32) := do\n",
+    "targets": [
+      "Eval.Plan.ScanDense32Test"
+    ],
+    "expect": [
+      "ScanDense32Test.lean:82:0: Expression"
+    ]
+  },
+  {
+    "label": "Q4 (runDenseBlock storage-kind guard deleted)",
+    "task": "1",
+    "file": "LeanNCD/Eval/Plan/Block.lean",
+    "old": "def runDenseBlock (c : CheckedPlanBlock) (ctx : List Int) (inputs : Array DenseTensor) :\n    Except PositionalInputError (Array DenseTensor) := do\n  unless c.storageKind == .float64 do\n    throw (.storageKindMismatch .float64 c.storageKind)\n",
+    "new": "def runDenseBlock (c : CheckedPlanBlock) (ctx : List Int) (inputs : Array DenseTensor) :\n    Except PositionalInputError (Array DenseTensor) := do\n",
+    "targets": [
+      "Eval.Plan.ScanDense32Test"
+    ],
+    "expect": [
+      "ScanDense32Test.lean:81:0: Expression"
+    ]
+  },
+  {
+    "label": "Q5 (checkScanCore stamps .float64 whatever the kind)",
+    "task": "1",
+    "file": "LeanNCD/Eval/Plan/Scan.lean",
+    "old": "CheckedScanPlan.mk raw sigs checkedBase checkedStep stepExtents kind",
+    "new": "CheckedScanPlan.mk raw sigs checkedBase checkedStep stepExtents .float64",
+    "targets": [
+      "Eval.Plan.ScanDense32Test"
+    ],
+    "expect": [
+      "ScanDense32Test.lean:53:0: Expression",
+      "ScanDense32Test.lean:98:0: Expression"
+    ]
+  },
+  {
+    "label": "Q6 (state admission ignores kind)",
+    "task": "1",
+    "file": "LeanNCD/Eval/Plan/Scan.lean",
+    "old": "unless scanDtypeAdmitted kind stateSig.dtype do",
+    "new": "unless dtypeAdmitted stateSig.dtype do",
+    "targets": [
+      "Eval.Plan.ScanDense32Test"
+    ],
+    "expect": [
+      "ScanDense32Test.lean:53:0: Expression",
+      "ScanDense32Test.lean:62:0: Expression"
+    ]
+  },
+  {
+    "label": "Q7 (f32 scan checks its blocks as binary64)",
+    "task": "1",
+    "file": "LeanNCD/Eval/Plan/Scan.lean",
+    "old": "    | .float32 => checkPlanBlockF32\n",
+    "new": "    | .float32 => checkPlanBlock\n",
+    "targets": [
+      "Eval.Plan.ScanDense32Test"
+    ],
+    "expect": [
+      "ScanDense32Test.lean:53:0: Expression",
+      "ScanDense32Test.lean:73:0: Expression"
+    ]
+  },
+  {
+    "label": "Q8 (bool-only block exemption dropped)",
+    "task": "1",
+    "file": "LeanNCD/Eval/Plan/Block.lean",
+    "old": "unless k == kind || block.tensorSigs.all (·.dtype == .bool) do",
+    "new": "unless k == kind do",
+    "targets": [
+      "Eval.Plan.ScanDense32Test"
+    ],
+    "expect": [
+      "ScanDense32Test.lean:89:0: Expression",
+      "ScanDense32Test.lean:221:0: Expression"
+    ]
+  },
+  {
+    "label": "Q9 (f32 block assignment checked as binary64)",
+    "task": "1",
+    "file": "LeanNCD/Eval/Plan/Block.lean",
+    "old": "| .float32 => checkAssignF32 block.tensorSigs a) with",
+    "new": "| .float32 => checkAssign block.tensorSigs a) with",
+    "targets": [
+      "Eval.Plan.ScanDense32Test"
+    ],
+    "expect": [
+      "ScanDense32Test.lean:53:0: Expression",
+      "ScanDense32Test.lean:79:0: Expression"
+    ]
+  },
+  {
+    "label": "Q10 (f32 block pointwise checked as binary64)",
+    "task": "1",
+    "file": "LeanNCD/Eval/Plan/Block.lean",
+    "old": "| .float32 => checkPointwiseF32 block.tensorSigs p) with",
+    "new": "| .float32 => checkPointwise block.tensorSigs p) with",
+    "targets": [
+      "Eval.Plan.ScanDense32Test"
+    ],
+    "expect": [
+      "ScanDense32Test.lean:224:0: Expression",
+      "ScanDense32Test.lean:253:0: Expression"
+    ]
+  },
+  {
+    "label": "Q11 (f32 block axiswise checked as binary64)",
+    "task": "1",
+    "file": "LeanNCD/Eval/Plan/Block.lean",
+    "old": "| .float32 => checkAxiswiseF32 block.tensorSigs a) with",
+    "new": "| .float32 => checkAxiswise block.tensorSigs a) with",
+    "targets": [
+      "Eval.Plan.ScanDense32Test"
+    ],
+    "expect": [
+      "ScanDense32Test.lean:256:0: Expression",
+      "ScanDense32Test.lean:258:0: Expression"
+    ]
+  },
+  {
+    "label": "Q12 (binary32 state zero-init is +1, not +0)",
+    "task": "1",
+    "file": "LeanNCD/Eval/Plan/Scan.lean",
+    "old": "runDenseScanWith (0.0 : Float32) runDenseBlock32",
+    "new": "runDenseScanWith (1.0 : Float32) runDenseBlock32",
+    "targets": [
+      "Eval.Plan.ScanDense32Test"
+    ],
+    "expect": [
+      "ScanDense32Test.lean:219:0: Expression",
+      "ScanDense32Test.lean:268:0: Expression"
+    ]
+  },
+  {
+    "label": "Q13 (checkPlan checks an f32 scan with the binary64 checker)",
+    "task": "2",
+    "file": "LeanNCD/Eval/Plan/EvalPlan.lean",
+    "old": "| .float32 => checkScanPlanF32 raw.tensorSigs s) with",
+    "new": "| .float32 => checkScanPlan raw.tensorSigs s) with",
+    "targets": [
+      "Eval.Plan.ScanDense32Test"
+    ],
+    "expect": [
+      "ScanDense32Test.lean:97:0: Expression",
+      "ScanDense32Test.lean:218:0: Expression"
+    ]
+  },
+  {
+    "label": "Q14 (runDensePlan32 scan arm refuses again)",
+    "task": "2",
+    "file": "LeanNCD/Eval/Plan/Dense32.lean",
+    "old": "    | .scan c => store ← runDenseScan32 raw.tensorSigs c store",
+    "new": "    | .scan _ => throw (.storageKindMismatch .float32 .float64)",
+    "targets": [
+      "Eval.Plan.ScanDense32Test"
+    ],
+    "expect": [
+      "ScanDense32Test.lean:98:0: Expression",
+      "ScanDense32Test.lean:218:0: Expression"
+    ]
+  },
+  {
+    "label": "Q15 (base pointwise result slot back to .f64)",
+    "task": "3",
+    "file": "LeanNCD/Eval/Plan/Compile.lean",
+    "old": "          baseSigs := baseSigs.push { shape := outputShape, dtype := destDtype }\n          baseSteps := baseSteps.push (.assign plan)\n          baseSteps := baseSteps.push (.pointwise",
+    "new": "          baseSigs := baseSigs.push { shape := outputShape, dtype := .f64 }\n          baseSteps := baseSteps.push (.assign plan)\n          baseSteps := baseSteps.push (.pointwise",
+    "targets": [
+      "Eval.Plan.ScanDense32Test"
+    ],
+    "expect": [
+      "ScanDense32Test.lean:253:0: Expression"
+    ]
+  },
+  {
+    "label": "Q16 (base axiswise result slot back to .f64)",
+    "task": "3",
+    "file": "LeanNCD/Eval/Plan/Compile.lean",
+    "old": "          baseSigs := baseSigs.push { shape := outputShape, dtype := destDtype }\n          baseSteps := baseSteps.push (.assign plan)\n          -- Mask policy",
+    "new": "          baseSigs := baseSigs.push { shape := outputShape, dtype := .f64 }\n          baseSteps := baseSteps.push (.assign plan)\n          -- Mask policy",
+    "targets": [
+      "Eval.Plan.ScanDense32Test"
+    ],
+    "expect": [
+      "ScanDense32Test.lean:258:0: Expression"
+    ]
+  },
+  {
+    "label": "Q17 (step pointwise result slot back to .f64)",
+    "task": "3",
+    "file": "LeanNCD/Eval/Plan/Compile.lean",
+    "old": "          stepSigs := stepSigs.push { shape := outputShape, dtype := destDtype }\n          stepSteps := stepSteps.push (.assign plan)\n          stepSteps := stepSteps.push (.pointwise",
+    "new": "          stepSigs := stepSigs.push { shape := outputShape, dtype := .f64 }\n          stepSteps := stepSteps.push (.assign plan)\n          stepSteps := stepSteps.push (.pointwise",
+    "targets": [
+      "Eval.Plan.ScanDense32Test"
+    ],
+    "expect": [
+      "ScanDense32Test.lean:224:0: Expression",
+      "ScanDense32Test.lean:267:0: Expression"
+    ]
+  },
+  {
+    "label": "Q18 (step axiswise result slot back to .f64)",
+    "task": "3",
+    "file": "LeanNCD/Eval/Plan/Compile.lean",
+    "old": "          stepSigs := stepSigs.push { shape := outputShape, dtype := destDtype }\n          stepSteps := stepSteps.push (.assign plan)\n          -- Mask policy",
+    "new": "          stepSigs := stepSigs.push { shape := outputShape, dtype := .f64 }\n          stepSteps := stepSteps.push (.assign plan)\n          -- Mask policy",
+    "targets": [
+      "Eval.Plan.ScanDense32Test"
+    ],
+    "expect": [
+      "ScanDense32Test.lean:256:0: Expression"
+    ]
+  }
+]
