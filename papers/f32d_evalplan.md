@@ -201,7 +201,7 @@ Task 3 step 4 (phase 1) re-derives both tables against the tree, cell by cell.
 |---|---|---|---|---|---|
 | 1 | carrier-parametric scatter checker + worker (`Check.lean`, `Dense.lean`) | 8 (16 `#guard`s, one new file) | G1, G2 (each run before AND after the edit) + P1-1..P1-4 = 8 runs | ~45–60 | one |
 | 2 | graph admission (`EvalPlan.lean`, `Dense32.lean`) | 3 re-points + 3 new (`GraphCheckTest`, `EvalPlan32Test`) | S2 + P2-1..P2-3 = 4 | ~35–45 | one |
-| 3 | source admission (`Compile.lean`), the oracle, CompileTest re-points, docs | 4 re-point groups + 5 oracle cases | S1, S3, C1, C1b + P3-1..P3-4 = 8 | ~80–100 | **two** (phase 1 production + fixtures green; phase 2 cycles + docs), `split-handoff-template.md` |
+| 3 | source admission (`Compile.lean`), the oracle, CompileTest re-points, docs | 4 re-point groups + 4 new guards (the two 15(c) fill refusals, the two-scan 2.9 pin) + 5 oracle cases | S1, S3, C1, C1b + P3-1..P3-4 = 8 | ~80–100 | **two** (phase 1 production + fixtures green; phase 2 cycles + docs), `split-handoff-template.md` |
 
 Two manifests. `papers/f32d_mutations.json` (7) mutates code that exists today.
 `papers/f32d_mutations_post.json` (11: P1-1..4, P2-1..3, P3-1..4) mutates code this slice ADDS; its
@@ -304,7 +304,13 @@ stays, now on `runDenseScatterWith`; in it replace "through the shared `denseVal
 "through the shared `denseValueAtWith ops`", and "they are written to the reference's own equations
 (not to each other)" (`rg -n "written to the reference's own"`) with "they go through the carrier's
 `ops.binOp` (`.add`/`.max`/`.min`), the reference's equations,". In `denseValueAt`'s docstring
-replace "and the only one `runDenseScatter` uses" with "used by `runDenseAssignAt`".
+replace "and the only one `runDenseScatter` uses" with "used by `runDenseAssignAt`". Also in the moved
+docstring (it is false for the binary64 fill overflow, plan §1.2): replace "so the reference layer
+cannot express `±∞` at all and fills every unwritten cell" (`rg -n "cannot express"`) with "so the
+reference layer can express `±∞` only through an `Int` that overflows `Float.ofInt` (e.g.
+`-(2^1024)`), and for every fill source syntax can write it fills every unwritten cell", and
+"provably disagree on every unwritten cell" (`rg -n "provably disagree"`) with "disagree on every
+unwritten cell whenever the reference fill is finite (always, from source)".
 
 <!-- block:t1-dense -->
 ```lean
@@ -609,10 +615,12 @@ def f32CapabilityCheck (stmts : List ScanStmt) : Except CapabilityError Unit := 
 In `scatterFillOrFail` replace the two-line "unreachable" comment and `| .f32 _    => false` with the
 line below; in its docstring's "Admitted:" sentence add "and a binary32 sum-product scatter with
 `fill = 0` (binary32 `+0`, bits `0`, compared as native `Float32.ofInt` bits)"; and in the clause
-"which an `Int` fill cannot denote at all" (anchor `rg -n "fill cannot denote at"`) insert after
-"all": " (binary32 additionally requires the converted value to be finite, since
-`Float32.ofInt (-(2^128))` IS `-∞`; the binary64 arm has the same overflow at `2^1024` and does not
-refuse it — a pre-existing gap)".
+replace the whole "Rejected:" sentence — from "Rejected: a" through "no admissible fill exists for
+one." (anchor `rg -n "fill cannot denote at"`) — with: "Rejected: a `maxreduce`/`minreduce` scatter,
+whose identity is `∓∞`, which no FINITE `Int` fill denotes. The binary32 arm enforces that by also
+requiring `Float32.ofInt fill` to be finite, since `Float32.ofInt (-(2^128))` IS `-∞`. The binary64
+arm does not: `Float.ofInt (-(2^1024))` overflows to `-∞` and is admitted, a pre-existing gap this
+function does not close (`papers/f32d_evalplan.md` §1.2)."
 
 <!-- block:t3-fill -->
 ```lean

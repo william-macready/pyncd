@@ -121,6 +121,9 @@ why the prototype modules import only what the real modules import, and why the 
 
 ### 4.1 Real tree, through `mutation-manifest.sh` (7/7)
 
+> **Superseded by §5b(d)** (review fix pass, 2026-09-25): K1 was dropped. The live real-tree set is
+> G1, G2, S2, S1, S3, C1, C1b; the table below is the authoring-time record.
+
 | Mutation | Cycle (broke, then restored build green) | File byte-identical | Expected failure seen | Result |
 |---|---|---|---|---|
 | G1 (binary64 gate: collision arm overwrites instead of throwing) | yes | yes | yes | PASS |
@@ -290,9 +293,9 @@ lines by moving §6 Risks, §9 Decisions and the oracle-scheduling note here (§
 
 Each task's dominant risk and its pin: the move into `runDenseScatterWith` (G64 + G1/G2 before and
 after); a guard placed after validation (1.7, P1-1/P1-2); the real compiler emitting a different f32
-plan than the prototype (15(c)'s second guard, the oracle's pinned bits, §8); a re-pointed order
+plan than the prototype (15(c)'s second guard, the oracle's pinned bits, plan §8); a re-pointed order
 fixture that stops pinning order (each re-point names the wrong answers it rejects; S2, S3, P2-1,
-P3-2); an oracle sharing code with its subject (§3.5; C1b); a stale document nobody opened (Task 3
+P3-2); an oracle sharing code with its subject (plan §3.5; C1b); a stale document nobody opened (Task 3
 step 8's value-greps).
 
 ### Oracle scheduling
@@ -317,9 +320,9 @@ lifted, and Step 0c is the last door.
 5. **`scatterFillOrFail`'s f32 arm uses native `Float32.ofInt`, compares bits, and requires a finite
    value**: `(Float.ofInt fill).toFloat32` would be binary64-then-narrow, and without finiteness
    `-(2^128)` would silently read as `-∞` (controller's decision). The `.f64` arm's same overflow is
-   pre-existing and left alone (§1.2).
+   pre-existing and left alone (plan §1.2).
 6. **Oracle = twin assignment + source-derived placement**, scheduled as Task 3's first step
-   (§3.5). A from-scratch evaluator was not built: placement under `.rejectCollisions` has no
+   (plan §3.5). A from-scratch evaluator was not built: placement under `.rejectCollisions` has no
    arithmetic, and the arithmetic half is exactly the F32-A path with its own bit fixtures.
 7. **FW2's witness becomes `[relu scatter, f32 scan]`**, not an f32 scan alone: Step A must have a
    competing answer or the order is unpinned. **2.9's source-order pin moves to two scans**; the
