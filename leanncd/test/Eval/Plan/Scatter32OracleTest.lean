@@ -25,9 +25,12 @@ own arithmetic, not only the preceding assignment's, must be binary32).
 
 What this cannot catch, by construction: a defect in the traversal both legs share
 (`denseValueAtWith`, `float32Ops`, `residualizeAssignment`); the destination-extent convention (the
-oracle takes `destShape` as given); collision and out-of-range behaviour (every case is
-collision-free and in range, which is all surface syntax can express); and any non-zero or tropical
-`fill` (source syntax admits only sum-product fill `0`).
+oracle takes `destShape` as given); collision and out-of-range behaviour (every case in THIS oracle
+is collision-free and in range — collisions and out-of-range placement are both expressible from
+OTHER surface syntax: collisions via an RHS-only axis with extent > 1, e.g. `Out[2*i] := X[i]·Y[j]`
+(`ScatterCompileTest` S8), out-of-range via the zero-coefficient degeneracy `Out[0*i]`
+(`ScatterCompileTest` S9)); and any non-zero or tropical `fill` (source syntax admits only
+sum-product fill `0`).
 -/
 
 namespace LeanNCD.Eval.Plan.Scatter32OracleTest

@@ -883,13 +883,15 @@ def f32BadOrderPrepared : Option PreparedPlan :=
       | _ => false)
   == some true
 
-/-! #### Fixture 15: the three (was four) deferred source forms, each with its exact payload
+/-! #### Fixture 15: originally four deferred source forms — only (d) still rejects at Step 0c
 
-Every one is an otherwise-valid homogeneous f32 source program built from a concrete existing
-donor, called through `prepareEvalPlan`, and required to fail at the SOURCE capability tier — before
-raw plan construction, so none of them can reach `checkPlan` (the compiler-bug channel) or any
-worker. Nonlinearity (formerly (a) below) is no longer one of them as of F32-B Task 4 — see Fixture
-4.1 just past this section. -/
+Each below is an otherwise-valid homogeneous f32 source program built from a concrete existing
+donor, called through `prepareEvalPlan`. Originally all four were required to fail at the SOURCE
+capability tier — before raw plan construction, so none of them could reach `checkPlan` (the
+compiler-bug channel) or any worker. Since then: (a) axiswise and (b) inline unary were retired as
+Step 0c rejections in F32-B Task 4 / the f32 slice Task 2 respectively (they are now accepted forms,
+pinned by Fixtures 4.1 and 2.8); (c) top-level scatter is accepted as of F32-D (pinned just below,
+"ACCEPTED since F32-D"). Only (d) scan remains a genuine Step 0c rejection today. -/
 
 -- (a) axiswise — RETIRED as a Fixture 15 rejection (F32-B Task 4): see Fixture 4.1 below, which
 -- flips this exact donor to acceptance. The marked axis must be `.real`-kinded

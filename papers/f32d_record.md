@@ -274,6 +274,9 @@ lines by moving §6 Risks, §9 Decisions and the oracle-scheduling note here (§
 
 ## 6. Not verified
 
+**Update, post-execution:** every item below was verified during execution — see §7 for the build
+count, manifest tables, and doc edits actually observed.
+
 - ~~The real modules were never compiled with the edits.~~ Superseded 2026-09-25 (§5b): every plan
   edit was applied to full real-split copies (real namespace and module split) and compiled, with
   every test module in the chain. Still not done: `lake build` of the actual tree with the edits,
@@ -368,7 +371,7 @@ selection identical to the plain branch).
 | scatter nonlinearity, any dtype | **forbidden** Step A (`checkNonlinScatter`) | never compiled | — | — | — | — | — |
 | non-default collision policy, either carrier | **forbidden** Step A (existing) | **forbidden** `scatterReduceNotAdmitted` in `checkScatterCore` (both kinds) | **(c)** `.overwrite/.sum/.max/.min` arms of `runDenseScatterWith`: unreachable behind that clause; via `ops.binOp` | same **(c)** | — | — | — |
 | tropical / non-zero / overflowing fill, f32 | **forbidden** from source (`scatterFillOrFail`'s `.f32` arm; 15(c) refusals `f32ScatterFill1Prog`/`f32ScatterOverflowFillProg`) | **required**, programmatic: fill must equal `reduceId` (`checkScatterCore`) | — | **required** `ops.decodeConst` (in `runDenseScatterWith`) | — | — | — |
-| out-of-range placement (programmatic only) | unreachable | admitted by design (reference parity) | **required** silent skip (ScatterDenseTest pins) | **(c)** same shared `inBoundsPerDim` skip, no binary32 fixture; carrier-free integer code | — | — | — |
+| out-of-range placement (general case programmatic; the empty-destination case is source-reachable) | **reachable** from source via the zero-coefficient degeneracy (`Out[0*i]`, `ScatterCompileTest` S9) — the resulting empty destination (`destShape := #[0]`) makes every coordinate fail `inBoundsPerDim`; other out-of-range shapes remain programmatic-only (hand-constructed `ScatterPlan`) | admitted by design (reference parity) | **required** silent skip (ScatterDenseTest pins) | **(c)** same shared `inBoundsPerDim` skip, no binary32 fixture; carrier-free integer code | — | — | — |
 | f64 scatter (preservation) | unchanged | **required** `checkScatter` records `.float64` (`checkScatterCore .float64`) | **required** (G64 gate, G1/G2) | **forbidden** `runDenseScatter32` guard first | unchanged | scatter refused categorically, unchanged | unchanged |
 | f32 scan-local scatter | **forbidden** `"{nm}: f32 scan"` (`f32CapabilityCheck`'s `.scan`/`.scanPre` arms) | **forbidden** `f32UnsupportedStep i .scan` (`EvalPlan.lean`) | **(c)** `runDenseScan` Float-only — F32-C | none | none | **forbidden** | **forbidden** |
 
@@ -384,8 +387,20 @@ selection identical to the plain branch).
 | `destDtype`/`algebraForDest` @ Step D scatter branch | yes | **required**, already correct (unchanged by Task 3) | 3.1 second guard, oracle |
 | scatter-branch `resolveSource`'s `getD … dtype := .f64` | yes | **(c)** totality formality: contributes `.shape` only, every key validated by the `slotOf.contains` loop above it | — |
 
-No corrections were needed: every cell in both tables, as re-checked against the Task 3 phase 1
-tree, matches the plan's original claim.
+**Update, final whole-branch review (2026-09-26):** one cell required correction. The
+"out-of-range placement" row's Source column originally read "unreachable" (label: "programmatic
+only"). `ScatterCompileTest` S9 (`Out[0*i]`, the zero-coefficient degeneracy) is genuinely
+surface-reachable and elaborates to an empty destination (`destShape := #[0]`), so every placement
+coordinate fails `inBoundsPerDim` — this IS the out-of-range-placement case, and it is reached from
+source, not only constructed programmatically. Behavior is unaffected: the skip is shared,
+carrier-free integer code, identical for binary32 and binary64 (the **(c)** classification's sharing
+argument still holds). No binary32-specific fixture pins this exact path directly (only via S9's
+general parity check); that is a genuine, low-priority test gap left for a future task, not addressed
+here (this is a docs-only fix). The table above has been updated to reflect this; the docstring in
+`Scatter32OracleTest.lean`'s "What this cannot catch" section was also corrected to scope its
+collision-free/in-range claim to the oracle's own five cases rather than to all surface syntax.
+Every other cell in both tables, as re-checked against the Task 3 phase 1 tree, matches the plan's
+original claim.
 
 ### Task 3 phase 2 — cycles, docs close-out, and final counts
 

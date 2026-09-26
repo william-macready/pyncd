@@ -129,7 +129,7 @@ inductive PlanStepError
   | scan   (stepIndex : Nat) (cause : ScanPlanError)
   | nonlin (stepIndex : Nat) (cause : NonlinPlanError)
   /-- A `.float32` graph contains a step kind binary32 execution does not admit. Binary32 admits
-      assignments and the two nonlinearity operations (F32-B); scan
+      assignments, the two nonlinearity operations (F32-B), and top-level scatter (F32-D); scan
       (and scan-local scatter) is F32-C. Carries the ORIGINAL outer step
       index — not an index into the assignments-only sublist — and a closed `PlanStepKind`
       (`Error.lean`) rather than a rendered string.
@@ -142,8 +142,9 @@ inductive PlanStepError
   deriving DecidableEq, BEq, Repr, Inhabited
 
 /-- Which constructor a `PlanStep` is, as the closed diagnostic payload `f32UnsupportedStep`
-    carries. Total over `PlanStep`; the `.assign`, `.pointwise`, and `.axiswise` answers are never
-    actually reported by that error, since those are exactly the kinds a binary32 graph admits. -/
+    carries. Total over `PlanStep`; the `.assign`, `.pointwise`, `.axiswise`, and `.scatter` answers
+    are never actually reported by that error, since those are exactly the kinds a binary32 graph
+    admits. -/
 def PlanStep.kind : PlanStep → PlanStepKind
   | .assign _    => .assign
   | .scatter _   => .scatter

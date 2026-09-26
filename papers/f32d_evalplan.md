@@ -1,5 +1,16 @@
 # F32-D: native binary32 top-level scatter — implementation plan
 
+> **✅ EXECUTED AND LANDED — this plan is a completed record, not pending work.** All three tasks are
+> implemented and merged (`e76efe4`, `7344378`, `fb5725a`, plus close-out/doc commits through
+> `476c4c5`). The "Status" line immediately below is the **authoring-time snapshot** and is retained
+> verbatim, along with every fixture/mutation count and table cell in this document, as the record of
+> what was planned and verified before execution — do not read it as a current statement about the
+> tree. For what the slice actually delivered, read `papers/f32d_record.md` §7 (build count, manifest
+> tables, and doc edits actually observed during execution). §4's Tables A and B were re-derived cell
+> by cell against final source by Task 3 phase 1 (record §7); one cell ("out-of-range placement") was
+> then corrected during the final whole-branch review — see the record's Task 3 phase 1 section for
+> what changed and why behavior is unaffected. Every other cell needed no correction.
+
 **Status:** authored 2026-09-25 on branch `plan/f32d` from `main` at `6303e9f`. Not executed.
 **Companions:** `papers/f32d_record.md` (what was measured while authoring, how, and what was not
 verified); `papers/f32d_mutations.json` and `papers/f32d_mutations_post.json` (the mutation cycles, run by
@@ -38,7 +49,7 @@ binary32 scatter that reads a preceding binary32 assignment's or nonlinearity's 
 | a scatter nonlinearity (`relu`, `softmax`, …) on ANY dtype | Step A `unsupportedNonlin "{nm}: scatter nonlinearity"` | policy — not a gap |
 | a collision policy other than `.rejectCollisions`, either carrier | Step A `scatterOptsNotAdmitted`; `checkScatter`/`checkScatterF32` `scatterReduceNotAdmitted` | policy |
 | a source `fill` ≠ the algebra's identity, or one that rounds to `±∞` in binary32 | `scatterFillOrFail`: the `.f32` arm also requires `(Float32.ofInt fill).isFinite` (15(c) refusals) | policy |
-| a binary64 source `fill` that rounds to `-∞` (e.g. `-(2^1024)` on `maxreduce`) | NOT refused: `Float.ofInt` overflows to the `-∞` bits `admittedAlgebraMax.reduceId` holds, so the `.f64` arm admits it (pre-existing; binary64 is preserved bit for bit, so unchanged here; `runDenseScatter`'s docstring claim that the reference "cannot express `±∞` at all" shares the error and is left for the owner) | **none yet** — a binary64 gap |
+| a binary64 source `fill` that rounds to `-∞` (e.g. `-(2^1024)` on `maxreduce`) | NOT refused: `Float.ofInt` overflows to the `-∞` bits `admittedAlgebraMax.reduceId` holds, so the `.f64` arm admits it (pre-existing; binary64 is preserved bit for bit, so unchanged here). `runDenseScatterWith`'s docstring previously claimed the reference "cannot express `±∞` at all" — that FALSE docstring claim was fixed in Task 1 step 3 (now reads "can express `±∞` only through an `Int` that overflows `Float.ofInt`"). The underlying binary64 admission gap itself (this row) is a separate matter and remains open, still with no owner | **none yet** — a binary64 gap |
 | any f32 plan on JAX | plan-level `.float64` gate at every JAX door | F32-JAX |
 | any f32 program on the legacy evaluator | `EvalError.unsupportedDtype` | permanent |
 | mixed f32/f64 in one graph | Step 0b; `mixedStorageKinds` | F32-E (contingent) |
@@ -181,7 +192,7 @@ holds. Fixture ids refer to §5.
 | scatter nonlinearity, any dtype | **forbidden** Step A (3.3) | never compiled | — | — | — | — | — |
 | non-default collision policy, either carrier | **forbidden** Step A (existing) | **forbidden** `scatterReduceNotAdmitted` in the shared core (ScatterCheckTest binary64; 1.3 binary32) | **(c)** `.overwrite/.sum/.max/.min` arms of `runDenseScatterWith`: unreachable behind that clause; now via `ops.binOp` | same **(c)** | — | — | — |
 | tropical / non-zero / overflowing fill, f32 | **forbidden** from source (`scatterFillOrFail`; 15(c) refusals, P3-3, P3-4) | **required**, programmatic: fill must equal `reduceId` (1.3) | — | **required** `ops.decodeConst` (1.5) | — | — | — |
-| out-of-range placement (programmatic only) | unreachable | admitted by design (reference parity) | **required** silent skip (ScatterDenseTest pins) | **(c)** same shared `inBoundsPerDim` skip, no binary32 fixture; carrier-free integer code | — | — | — |
+| out-of-range placement (general case programmatic; the empty-destination case is source-reachable) | **reachable** from source via the zero-coefficient degeneracy (`Out[0*i]`, `ScatterCompileTest` S9) — the resulting empty destination (`destShape := #[0]`) makes every coordinate fail `inBoundsPerDim`; other out-of-range shapes remain programmatic-only (hand-constructed `ScatterPlan`) | admitted by design (reference parity) | **required** silent skip (ScatterDenseTest pins) | **(c)** same shared `inBoundsPerDim` skip, no binary32 fixture; carrier-free integer code | — | — | — |
 | f64 scatter (preservation) | unchanged | **required** `checkScatter` records `.float64` (1.2) | **required** (G64 gate, G1/G2) | **forbidden** `runDenseScatter32` guard first (1.7) | unchanged | scatter refused categorically, unchanged | unchanged |
 | f32 scan-local scatter | **forbidden** `"{nm}: f32 scan"` (15(d), 3.2) | **forbidden** `f32UnsupportedStep i .scan` (2.x, S2) | **(c)** `runDenseScan` Float-only — F32-C | none | none | **forbidden** | **forbidden** |
 

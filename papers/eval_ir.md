@@ -352,8 +352,9 @@ nodes and pre-built recurrence morphisms, `iterAt`/`iterNext` slots outside a sc
 with no advancing axis. `capabilityPreflight` is no longer the only site that can raise a
 `CapabilityError`: it is dtype-blind by construction, so `prepareEvalPlan` additionally rejects a
 schedule mixing `f32` and `f64` real tensors (Step 0b, from `scheduleStorageKind`) and — for a
-binary32 schedule only — every construct outside the binary32 assignment fragment
-(Step 0c, `f32CapabilityCheck`). Both report `CapabilityError.unsupportedDtype`, and both run before
+binary32 schedule only — every scan form
+(Step 0c, `f32CapabilityCheck`; assign, pointwise, axiswise, and top-level scatter are all admitted
+since F32-D). Both report `CapabilityError.unsupportedDtype`, and both run before
 `capabilityPreflight` so an f32 program gets its own f32 reason rather than a generic capability one.
 Preflight no longer rejects predicate declarations or Iverson factors: source
 Iverson factors lower via `lowerFactorPredicate` and a Boolean declared output is a signature/algebra
