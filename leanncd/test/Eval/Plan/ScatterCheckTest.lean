@@ -200,19 +200,19 @@ re-read as the constant coordinate `0` with extent `1`. -/
 #guard scatterDestExtent #[3] #[2] 1 == some 6
 #guard scatterDestExtent #[3] #[-1] 0 == some 0
 
-/-! ## f32 slice Task 2, fixture 9: `checkScatter` stays Float-backed
+/-! ## f32 slice Task 2, fixture 9: `checkScatter` stays the binary64 checker
 
 `upSigs`/`upScatter` above — the accepted strided upsample — with every signature and every scalar
-constant moved to binary32. `checkScatter` must STILL reject it: top-level binary32 scatter is slice
-F32-D, so there is no f32 scatter worker, and the whole point of keeping the scatter checker
-Float-backed is that direct construction cannot acquire evidence for an operation with no binary32
-worker. (Block and scan checkers stay Float-backed for the same "no binary32 worker" reason — F32-C.
-The nonlinearity checkers no longer do: `checkPointwiseF32`/`checkAxiswiseF32` exist since F32-B, so
-this rationale does not generalize to them any more.)
+constant moved to binary32. `checkScatter` must STILL reject it: `checkScatter` is the binary64
+checker; binary32 evidence comes only from its sibling `checkScatterF32` (`ScatterDense32Test`),
+and each worker door refuses the other carrier's evidence. (Block and scan checkers stay
+Float-backed because they have no binary32 worker — F32-C. The nonlinearity checkers no longer do:
+`checkPointwiseF32`/`checkAxiswiseF32` exist since F32-B, so this rationale does not generalize to
+them any more.)
 
-The rejection comes from the shared `checkAssign` core on the compute half (`dtypeNotAdmitted` at
+The rejection comes from the shared checker core on the compute half (`dtypeNotAdmitted` at
 the DESTINATION slot, which `checkScatter` reaches first), not from a scatter-specific clause —
-which is exactly right: `checkScatter` calls ORDINARY `checkAssign`, never `checkAssignF32`. -/
+which is exactly right: `checkScatter` runs the shared core at `.float64`. -/
 
 def upSigsF32 : Array TensorSignature :=
   #[ { shape := #[3], dtype := .f32 }

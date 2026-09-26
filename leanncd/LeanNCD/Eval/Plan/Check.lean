@@ -336,8 +336,8 @@ def checkAssign (sigs : Array TensorSignature) (a : AssignPlan)
     storage kinds, and every worker and adapter door checks that kind before touching a buffer.
 
     `destSigShape?` is retained for signature parity with `checkAssign`; this slice's only caller
-    (`checkPlan`, `EvalPlan.lean`) passes `none`, since a binary32 scatter — the one construct that
-    needs it — is deferred to slice F32-D. -/
+    (`checkPlan`, `EvalPlan.lean`) passes `none`, since a binary32 scatter reaches the core through
+    `checkScatterF32`, which passes `some s.destShape` to `checkAssignCore` directly. -/
 def checkAssignF32 (sigs : Array TensorSignature) (a : AssignPlan)
     (destSigShape? : Option (Array Nat) := none) :
     Except PlanError CheckedAssignPlan :=
@@ -345,24 +345,29 @@ def checkAssignF32 (sigs : Array TensorSignature) (a : AssignPlan)
 
 /-! ## The scatter checker (S-A Task 3)
 
-`checkPlan`'s `.scatter` local check (`EvalPlan.lean`) calls `checkScatter` and publishes its
-`CheckedScatterPlan` as `CheckedPlanStepEvidence.scatter` (S-A Task 2 wired this; the transient
+`checkPlan`'s `.scatter` local check (`EvalPlan.lean`) calls `checkScatter` (or, in a `.float32`
+graph, `checkScatterF32`) and publishes its `CheckedScatterPlan` as
+`CheckedPlanStepEvidence.scatter` (S-A Task 2 wired this; the transient
 unconditional rejection that stood in its place between Tasks 3 and 2 is gone). A `checkScatter`
 failure surfaces as `PlanStepError.assign (.nodeError ni e)`, like `checkAssign`'s — that
 constructor names the error's SHAPE (a plain `PlanError`, which is what this function returns), not
 the step's kind. A scatter step is still unreachable from source syntax; that is Task 5.
 -/
 
-/-- Evidence that one `ScatterPlan` satisfies every local invariant. Same `private mk ::` boundary
-    as `CheckedAssignPlan`: `checkScatter` is the only way to obtain one, projections stay public.
+/-- Evidence that one `ScatterPlan` satisfies every local invariant, TOGETHER WITH the storage kind
+    it was validated for. Same `private mk ::` boundary as `CheckedAssignPlan`: `checkScatter`
+    (`.float64`) and `checkScatterF32` (`.float32`) are the only ways to obtain one, and each scatter
+    worker door (`runDenseScatter`, `runDenseScatter32`) refuses the other carrier's evidence as its
+    first statement.
 
-    Deliberately stores ONLY the raw plan — not the `CheckedAssignPlan` `checkAssign` returned for
-    the compute half. A scatter's worker is source-driven and must not be able to hand that evidence
-    to `runDenseAssign`: doing so publishes the SOURCE-shaped compute result under the destination's
-    name, which is the exact silent-wrong-answer failure the rejected "widen `AssignPlan`" design was
-    measured to produce. -/
+    Deliberately stores ONLY the raw plan and its kind — not the `CheckedAssignPlan` the core
+    returned for the compute half. A scatter's worker is source-driven and must not be able to hand
+    that evidence to `runDenseAssign`: doing so publishes the SOURCE-shaped compute result under the
+    destination's name, which is the exact silent-wrong-answer failure the rejected "widen
+    `AssignPlan`" design was measured to produce. -/
 structure CheckedScatterPlan where private mk ::
   raw : ScatterPlan
+  storageKind : LeanNCD.StorageKind
   deriving Repr
 
 /-- Trusted accessor for the validated payload. -/
@@ -391,7 +396,7 @@ def scatterDestExtent (srcShape : Array Nat) (row : Array Int) (bias : Int) : Op
 
 /-- Validate one raw `ScatterPlan` against the positional signature table.
 
-    Clause order: the compute half through the shared `checkAssign` core, then the two scalar
+    Clause order: the compute half through `checkAssignCore kind`, then the two scalar
     coherence clauses (`fill`, `reduce`), then the placement map's rank and its per-dimension width
     and extent — global facts before the loop, the same shape `checkAssign` itself uses.
 
@@ -401,12 +406,12 @@ def scatterDestExtent (srcShape : Array Nat) (row : Array Int) (bias : Int) : Op
     to a scatter's compute half unchanged (the destination dtype selects the algebra; each term's
     `outputProjection` pins to the source domain).
 
-    `fill`'s dtype needs no separate check: the algebra-admission clause inside `checkAssign` already
+    `fill`'s dtype needs no separate check: the algebra-admission clause inside `checkAssignCore kind` already
     forces `compute.algebra` into the destination dtype's own row of `admittedAlgebrasFor`, whose
     every member carries that dtype's constants, so `fill == compute.algebra.reduceId` makes the
     fill's dtype track the destination's transitively. Writing a second `constMatchesDtype` check
-    here would be a second, weaker copy of that guard. `ScalarConst.f32` is unreachable in a checked
-    plan for the same reason.
+    here would be a second, weaker copy of that guard. Under `.float32` the same argument runs
+    over `admittedAlgebrasForF32`, so a coherent fill is an `.f32` or `.bool` constant.
 
     `s.compute.contextShape` is NOT checked here: a scatter is admitted only as a top-level step, and
     `checkPlan`'s own `contextCheck` arm already discharges that obligation on the nested plan's
@@ -425,9 +430,9 @@ def scatterDestExtent (srcShape : Array Nat) (row : Array Int) (bias : Int) : Op
     while that worker is unwritten: the shape is unreachable from surface syntax, since
     `elabTLLHSSlot` (`DSL/Elab.lean`) parses only non-negative numeral coefficients and biases in an
     affine LHS slot, so only a programmatic `ScatterPlan` can express it. -/
-def checkScatter (sigs : Array TensorSignature) (s : ScatterPlan) :
-    Except PlanError CheckedScatterPlan := do
-  let _ ← checkAssign sigs s.compute (some s.destShape)
+private def checkScatterCore (kind : LeanNCD.StorageKind) (sigs : Array TensorSignature)
+    (s : ScatterPlan) : Except PlanError CheckedScatterPlan := do
+  let _ ← checkAssignCore kind sigs s.compute (some s.destShape)
   unless s.fill == s.compute.algebra.reduceId do
     throw (.scatterFillNotIdentity s.fill s.compute.algebra.reduceId)
   match s.reduce with
@@ -447,7 +452,20 @@ def checkScatter (sigs : Array TensorSignature) (s : ScatterPlan) :
     | some derived =>
         unless declared == derived do
           throw (.scatterDestExtentMismatch d declared derived)
-  return CheckedScatterPlan.mk s
+  return CheckedScatterPlan.mk s kind
+
+/-- The FLOAT64 scatter checker: the S-A policy, unchanged in every clause, now naming its storage
+    kind on the evidence it returns. Still rejects `f32` at the destination and at every read. -/
+def checkScatter (sigs : Array TensorSignature) (s : ScatterPlan) :
+    Except PlanError CheckedScatterPlan :=
+  checkScatterCore .float64 sigs s
+
+/-- The FLOAT32 scatter checker, through the same private core: identical fill, collision-policy,
+    and placement clauses, with the compute half checked by `checkAssignCore .float32` (f32/bool
+    dtypes, `admittedAlgebrasForF32`). A sibling of `checkScatter`, never a relaxation of it. -/
+def checkScatterF32 (sigs : Array TensorSignature) (s : ScatterPlan) :
+    Except PlanError CheckedScatterPlan :=
+  checkScatterCore .float32 sigs s
 
 -- `CheckedEvalPlan`/`checkPlan` used to live here (C3), but now that the outer graph can contain a
 -- `.scan` step, both relocated to `EvalPlan.lean` — the only module that can see both the local

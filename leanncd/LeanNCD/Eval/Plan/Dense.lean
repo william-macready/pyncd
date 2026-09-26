@@ -248,7 +248,7 @@ private def denseValueAtWith {α : Type} (ops : ScalarKernelOps α) (a : AssignP
   -- evaluator's `Combine.combine`/`unit0`.
   return foldScalars reduceOp reduceId termAccs
 
-/-- The BINARY64 specialization of `denseValueAtWith`, and the only one `runDenseScatter` uses. -/
+/-- The BINARY64 specialization of `denseValueAtWith`, used by `runDenseAssignAt`. -/
 private def denseValueAt (a : AssignPlan) (ctx : List Int) (store : Array DenseTensor)
     (oc : List Int) : Except PositionalInputError Float :=
   denseValueAtWith floatOps a ctx store oc
@@ -329,7 +329,7 @@ from source syntax; that is Task 5.
 /-- Execute one checked scatter over a positional store. SOURCE-driven, which is the whole structural
     difference from `runDenseAssignAt`: that worker enumerates its DESTINATION and pulls one value per
     destination cell, while this one enumerates `compute.outputShape` — the source iteration domain —
-    evaluates the compute half there through the shared `denseValueAt`, and PUSHES the value to
+    evaluates the compute half there through the shared `denseValueAtWith ops`, and PUSHES the value to
     `outCoeffs · sourceCoordinate + outBias`. Unwritten destination cells keep `fill`.
 
     Reproduces `Eval/Scatter.lean`'s `evalScatter` equation for equation **for the real sum-product
@@ -355,11 +355,13 @@ from source syntax; that is Task 5.
     **A TROPICAL-algebra scatter's unwritten cells diverge from the reference BY DESIGN, and that
     divergence is permanent.** The scoping of the parity claim above is load-bearing, not hedging:
     the reference's `ScatterOpts.fill` is an `Int` (`DSL/Ast.lean`) which `evalScatter` widens with
-    `Float.ofInt`, so the reference layer cannot express `±∞` at all and fills every unwritten cell
-    with an integer-valued Float — `0.0` in practice, its default. `checkScatter` meanwhile forces
-    `fill == compute.algebra.reduceId`, which for `admittedAlgebraMax`/`Min` IS `∓∞`, and the checked
-    plan's `fill : ScalarConst` can carry it. So on a max/min scatter the two implementations
-    provably disagree on every unwritten cell, and this worker is the correct one: filling with `0.0`
+    `Float.ofInt`, so the reference layer can express `±∞` only through an `Int` that overflows
+    `Float.ofInt` (e.g. `-(2^1024)`), and for every fill source syntax can write it fills every
+    unwritten cell with an integer-valued Float — `0.0` in practice, its default. `checkScatter`
+    meanwhile forces `fill == compute.algebra.reduceId`, which for `admittedAlgebraMax`/`Min` IS
+    `∓∞`, and the checked plan's `fill : ScalarConst` can carry it. So on a max/min scatter the two
+    implementations disagree on every unwritten cell whenever the reference fill is finite (always,
+    from source), and this worker is the correct one: filling with `0.0`
     under max-product would let a spurious zero win the reduction over an all-negative cell, the
     exact incoherence `PlanError.scatterFillNotIdentity` exists to reject. `ScatterDenseTest`'s
     tropical-`fill` fixture pins the checked-layer value and records the divergence; a differential
@@ -369,11 +371,11 @@ from source syntax; that is Task 5.
     `writtenBy` maps a destination flat index to the FIRST source coordinate that wrote there, and
     exists only to name both halves of a conflict in `scatterCollision` — the reference's own reason
     for carrying it. `.rejectCollisions` is the only policy `checkScatter` admits, so the four arms
-    beside it are unreachable for any `CheckedScatterPlan`; they are written to the reference's own
-    equations (not to each other) so that admitting one later is a checker change alone. -/
-def runDenseScatter (c : CheckedScatterPlan) (store : Array DenseTensor) :
-    Except PositionalInputError DenseTensor := do
-  let s := c.plan
+    beside it are unreachable for any `CheckedScatterPlan`; they go through the carrier's
+    `ops.binOp` (`.add`/`.max`/`.min`), the reference's equations, so that admitting one later is a
+    checker change alone. -/
+private def runDenseScatterWith {α : Type} (ops : ScalarKernelOps α) (s : ScatterPlan)
+    (store : Array (DenseTensorOf α)) : Except PositionalInputError (DenseTensorOf α) := do
   let a := s.compute
   -- A scatter is admitted only as a top-level step, so its compute half runs at the empty context —
   -- the same coordinate `runDenseAssign` supplies. Validated rather than assumed: `checkScatter`
@@ -385,11 +387,11 @@ def runDenseScatter (c : CheckedScatterPlan) (store : Array DenseTensor) :
   -- The placement map's fields already ARE `AffineMap`'s, row per destination dimension and width per
   -- source position, so `applyAffine` applies as-is — no second affine evaluator.
   let placement : AffineMap := { coeffs := s.outCoeffs, bias := s.outBias }
-  let fill ← floatOps.decodeConst s.fill
-  let mut data : Array Float := Array.replicate (destShape.foldl (· * ·) 1) fill
+  let fill ← ops.decodeConst s.fill
+  let mut data : Array α := Array.replicate (destShape.foldl (· * ·) 1) fill
   let mut writtenBy : Std.HashMap Nat (List Nat) := {}
   for sc in allCoords a.outputShape.toList do
-    let val ← denseValueAt a [] store sc
+    let val ← denseValueAtWith ops a [] store sc
     let dc := applyAffine placement sc
     if inBoundsPerDim destShape dc then
       let oc := dc.map Int.toNat
@@ -403,10 +405,28 @@ def runDenseScatter (c : CheckedScatterPlan) (store : Array DenseTensor) :
               writtenBy := writtenBy.insert fi (sc.map Int.toNat)
               data := data.set! fi val
       | .overwrite => data := data.set! fi val
-      | .sum => data := data.set! fi (prev + val)
-      | .max => data := data.set! fi (Max.max prev val)
-      | .min => data := data.set! fi (Min.min prev val)
+      | .sum => data := data.set! fi ((← ops.binOp .add) prev val)
+      | .max => data := data.set! fi ((← ops.binOp .max) prev val)
+      | .min => data := data.set! fi ((← ops.binOp .min) prev val)
   return { shape := destShape, data := data }
+
+/-- Execute one checked BINARY64 scatter. **The storage-kind guard is first**, before the context
+    and store checks: binary32 evidence executed here would answer a binary32 question in binary64
+    with no diagnostic anywhere. -/
+def runDenseScatter (c : CheckedScatterPlan) (store : Array DenseTensor) :
+    Except PositionalInputError DenseTensor := do
+  unless c.storageKind == .float64 do
+    throw (.storageKindMismatch .float64 c.storageKind)
+  runDenseScatterWith floatOps c.plan store
+
+/-- Execute one checked BINARY32 scatter, natively: `fill` decoded by `float32Ops`, every compute
+    value from the shared traversal over `float32Ops`, nothing widened. **The storage-kind guard is
+    first**, the mirror of `runDenseScatter`'s. -/
+def runDenseScatter32 (c : CheckedScatterPlan) (store : Array DenseTensor32) :
+    Except PositionalInputError DenseTensor32 := do
+  unless c.storageKind == .float32 do
+    throw (.storageKindMismatch .float32 c.storageKind)
+  runDenseScatterWith float32Ops c.plan store
 
 -- `runDensePlan` used to live here (C3), but now that a checked outer graph can contain a `.scan`
 -- node (whose worker is `runDenseScan`, `Scan.lean`), it relocated to `EvalPlan.lean` — the only
