@@ -34,7 +34,7 @@ binary32 scatter that reads a preceding binary32 assignment's or nonlinearity's 
 | a scatter nonlinearity (`relu`, `softmax`, …) on ANY dtype | Step A `unsupportedNonlin "{nm}: scatter nonlinearity"` | policy — not a gap |
 | a collision policy other than `.rejectCollisions`, either carrier | Step A `scatterOptsNotAdmitted`; `checkScatter`/`checkScatterF32` `scatterReduceNotAdmitted` | policy |
 | a source `fill` ≠ the algebra's identity, or one that rounds to `±∞` in binary32 | `scatterFillOrFail`: the `.f32` arm also requires `(Float32.ofInt fill).isFinite` (15(c) refusals) | policy |
-| a binary64 source `fill` that rounds to `-∞` (e.g. `-(2^1024)` on `maxreduce`) | NOT refused: `Float.ofInt` overflows to the `-∞` bits `admittedAlgebraMax.reduceId` holds, so the `.f64` arm admits it (pre-existing; binary64 is preserved bit for bit, so unchanged here) | **none yet** — a binary64 gap |
+| a binary64 source `fill` that rounds to `-∞` (e.g. `-(2^1024)` on `maxreduce`) | NOT refused: `Float.ofInt` overflows to the `-∞` bits `admittedAlgebraMax.reduceId` holds, so the `.f64` arm admits it (pre-existing; binary64 is preserved bit for bit, so unchanged here; `runDenseScatter`'s docstring claim that the reference "cannot express `±∞` at all" shares the error and is left for the owner) | **none yet** — a binary64 gap |
 | any f32 plan on JAX | plan-level `.float64` gate at every JAX door | F32-JAX |
 | any f32 program on the legacy evaluator | `EvalError.unsupportedDtype` | permanent |
 | mixed f32/f64 in one graph | Step 0b; `mixedStorageKinds` | F32-E (contingent) |
@@ -51,8 +51,7 @@ contain zero references to `ScatterPlan`, `checkScatter`, `runDenseScatter`, `sc
 or `scatterPlacementOrFail`. The scan compiler lowers placement into its own state-write rows
 (`scanPlacementRows @ Compile.lean`), checks fill with its own integer test (`opts.fill != 0`), and
 shares only the carrier-free extent function `scatterDestExtent @ Check.lean`. F32-C must build a
-binary32 state-write path in `runDenseScan @ Scan.lean` itself. The (c) cells `runDenseBlock` and
-`runDenseScan` (Float-only, safe only behind the `.scan` refusals) are unchanged by this slice.
+binary32 state-write path in `runDenseScan @ Scan.lean` itself (`runDenseBlock`/`runDenseScan` stay (c)).
 
 ---
 
@@ -80,9 +79,6 @@ binary32 state-write path in `runDenseScan @ Scan.lean` itself. The (c) cells `r
 - **Retained, not deleted:** `PlanStepKind.scatter` (still a `PlanStep` kind; it just stops being an
   `f32UnsupportedStep` payload), `CapabilityError.unsupportedDtype` (still live: mixed storage, f32
   scan), the `"{nm}: f32 scatter"` context's doc entry in `Error.lean` (re-worded as producer-less).
-- **Throw-site counts after the slice** (re-count in Task 3 step 10): `.unsupportedDtype s!` in
-  `Compile.lean` 4 → **3**; `f32UnsupportedStep ni` in `EvalPlan.lean` 2 → **1**;
-  `throw (.storageKindMismatch .float32 .float64)` in `Dense32.lean` 2 → **1**.
 - **Build:** `bash leanncd/scripts/lake-build.sh <leanncd-dir>` ends `Build completed successfully`
   (baseline **8670 jobs** at `6303e9f`; the two new test modules should add 2, record the actual).
 - **New test modules must be registered** in `leanncd/lakefile.toml`'s `Tests` `globs`, beside
@@ -127,11 +123,8 @@ manifest's G1/G2 cycles mutate two of those lines and must still pass after the 
 
 ### 3.4 How the values in this plan were obtained
 
-The production edits of all three tasks were applied to namespace-renamed copies of `Check.lean`,
-`Dense.lean`, `EvalPlan.lean`, `Dense32.lean`, `Prepared.lean`, `Compile.lean`, `Adapter.lean`, and
-`Adapter32.lean` in gitignored `leanncd/spikes/` (namespace `LeanNCD.Eval.Plan.P`), compiled, and
-every fixture below was run against them. The blocks below ARE that text. Details:
-`f32d_record.md` §2.
+Every block below was applied to copies of the real modules and every fixture run against them —
+both prototype copies and full real-split copies (method and values: `f32d_record.md` §2, §5b).
 
 ### 3.5 The independent binary32 oracle (Task 3)
 
@@ -151,17 +144,11 @@ enables: Step 0c's scatter admission, Step D's scatter branch (`scatterPlacement
 Measured on the prototype: dropping the compiler's placement bias (manifest C1/C1b) makes the oracle
 DISAGREE on O2, not merely fail a pinned literal.
 
-**What it cannot catch:** (1) a defect in the traversal both legs share — `denseValueAtWith`,
-`float32Ops`, `residualizeAssignment` (pinned separately by F32-A/B bit fixtures and Task 1's 1.4);
-(2) the destination-extent convention (the oracle takes `destShape` as given); (3) collisions and
-out-of-range placement (every case is in range and collision-free — all surface syntax can
-express); (4) any non-zero or tropical `fill` (binary32 source admits only fill `0` on sum-product: `fill := 1`
-and the overflowing `-(2^128)` are refused, 15(c) refusals; Task 1's 1.5 pins `-∞` programmatically). It is also only as broad as its five programs.
-
-**Scheduling.** It is Task 3 phase 1's FIRST step, written before the compiler edit and observed
-failing (`BINARY32 SCATTER ORACLE FAILED: O1 strided, unary, carrier-discriminating: prepare
-failed`, observed on today's tree). That is the earliest point it can run at all: it needs Step 0c
-lifted, and Step 0c is the last door.
+**What it cannot catch:** (1) a defect in the traversal both legs share (`denseValueAtWith`,
+`float32Ops`, `residualizeAssignment`; pinned by F32-A/B bit fixtures and 1.4); (2) the
+destination-extent convention; (3) collisions and out-of-range placement; (4) a non-zero, tropical,
+or overflowing `fill` (refused from binary32 source: 15(c) refusals; 1.5 pins `-∞` directly). It is
+only as broad as its five programs. It is Task 3 phase 1's FIRST step (the earliest it can run).
 
 ---
 
@@ -174,7 +161,7 @@ holds. Fixture ids refer to §5.
 
 | Case | Source (Step 0c / A) | `checkPlan` / direct checkers | Float workers | binary32 workers | Named adapters | JAX | Legacy |
 |---|---|---|---|---|---|---|---|
-| f32 top-level scatter (sum-product, fill 0) | **required** (3.1 15(c) flip; oracle O1–O5) | **required** `checkScatterF32` (2.1, 1.1); `checkScatter` on an f32 table `dtypeNotAdmitted 1 .f32` (ScatterCheckTest fixture 9, unchanged) | **forbidden** — `runDenseScatter` guard first (1.7); `runDensePlan` guard first (2.3) | **required** `runDenseScatter32` (1.1–1.6), `runDensePlan32` arm (2.1, 2.2) | **required**, unchanged cores at `Float32` (oracle) | **forbidden**, plan-level gate first (ExecutableTest fixtures 23/24, unchanged) | **forbidden**, permanently |
+| f32 top-level scatter (sum-product, fill 0) | **required** (3.1 15(c) flip; oracle O1–O5) | **required** `checkScatterF32` (2.1, 1.1); `checkScatter` on an f32 table `dtypeNotAdmitted 1 .f32` (ScatterCheckTest fixture 9, unchanged) | **forbidden** — `runDenseScatter` guard first (1.7); `runDensePlan` guard first (2.3) | **required** `runDenseScatter32` (1.1–1.8), `runDensePlan32` arm (2.1, 2.2) | **required**, unchanged cores at `Float32` (oracle) | **forbidden**, plan-level gate first (ExecutableTest fixtures 23/24, unchanged) | **forbidden**, permanently |
 | f32 scatter with inline unary factor | **required** (O1) | **required** (1.4) | **forbidden** (1.7) | **required** `float32Ops.applyUnary` via the shared traversal (1.4, O1) | **required** (O1) | **forbidden** | **forbidden** |
 | scatter nonlinearity, any dtype | **forbidden** Step A (3.3) | never compiled | — | — | — | — | — |
 | non-default collision policy, either carrier | **forbidden** Step A (existing) | **forbidden** `scatterReduceNotAdmitted` in the shared core (ScatterCheckTest binary64; 1.3 binary32) | **(c)** `.overwrite/.sum/.max/.min` arms of `runDenseScatterWith`: unreachable behind that clause; now via `ops.binOp` | same **(c)** | — | — | — |
@@ -199,8 +186,12 @@ holds. Fixture ids refer to §5.
 `runDenseScatter32`, `runDensePlan`, `runDensePlan32`, `runDenseBlock`, `runDenseScan` (workers);
 `checkPlan`, `checkPlanBlock`, `checkScanPlan`, `checkScatter`, `checkScatterF32` (checkers);
 `packBodyOf`, `unpackBodyOf`, `runPreparedDenseOf` (adapter cores, unchanged, carrier-generic);
+`rawPublicationSlots @ Prepared.lean`'s `.scatter s` arm (publishes `s.compute.destinationSlot`:
+carrier-free, **required**, unchanged; pinned by the oracle reading `Out` from the published env);
+`assignPlans @ experiments/jax_bridge/EvalPlanAffineCorpus.lean`'s `.scatter _ … => none`
+(carrier-free, binary64 corpus only, unchanged);
 `requireFloat64Plan`/`validateAndConstructExecutable` (JAX, unchanged); `evalScheduled` (legacy).
-Task 3's completion note re-derives both tables against the merged tree, cell by cell.
+Task 3 step 4 (phase 1) re-derives both tables against the tree, cell by cell.
 
 ---
 
@@ -296,18 +287,24 @@ def checkScatterF32 (sigs : Array TensorSignature) (s : ScatterPlan) :
 ```
 
 Docstring edits, same file (the long docstring now sits on `checkScatterCore`): "the compute half
-through the shared `checkAssign` core" → "…through `checkAssignCore kind`"; replace the sentence
-"`ScalarConst.f32` is unreachable in a checked plan for the same reason." with "Under `.float32` the
-same argument runs over `admittedAlgebrasForF32`, so a coherent fill is an `.f32` or `.bool`
-constant." In `checkAssignF32`'s docstring, replace "since a binary32 scatter — the one construct
-that needs it — is deferred to slice F32-D" with "a binary32 scatter reaches the core through
-`checkScatterF32`, which passes `some s.destShape` to `checkAssignCore` directly".
+through the shared `checkAssign` core" → "…through `checkAssignCore kind`"; "the algebra-admission
+clause inside `checkAssign` already" → "…inside `checkAssignCore kind` already"; replace the
+sentence "`ScalarConst.f32` is unreachable in a checked plan for the same reason." (line-wrapped;
+find it with `rg -n "is unreachable in a checked"`) with "Under `.float32` the same argument runs
+over `admittedAlgebrasForF32`, so a coherent fill is an `.f32` or `.bool` constant." In
+`checkAssignF32`'s docstring (`rg -n "the one construct that"`), replace "since a binary32 scatter —
+the one construct that needs it — is deferred to slice F32-D" with "a binary32 scatter reaches the
+core through `checkScatterF32`, which passes `some s.destShape` to `checkAssignCore` directly". In
+the "The scatter checker (S-A Task 3)" section comment, "calls `checkScatter` and publishes its" →
+"calls `checkScatter` (or, in a `.float32` graph, `checkScatterF32`) and publishes its".
 
 **Step 3 — `Dense.lean`.** Replace `def runDenseScatter` (from its signature line through
 `return { shape := destShape, data := data }`) with the block below. The long docstring above it
 stays, now on `runDenseScatterWith`; in it replace "through the shared `denseValueAt`" with
-"through the shared `denseValueAtWith ops`". In `denseValueAt`'s docstring replace "and the only one
-`runDenseScatter` uses" with "used by `runDenseAssignAt`".
+"through the shared `denseValueAtWith ops`", and "they are written to the reference's own equations
+(not to each other)" (`rg -n "written to the reference's own"`) with "they go through the carrier's
+`ops.binOp` (`.add`/`.max`/`.min`), the reference's equations,". In `denseValueAt`'s docstring
+replace "and the only one `runDenseScatter` uses" with "used by `runDenseAssignAt`".
 
 <!-- block:t1-dense -->
 ```lean
@@ -396,7 +393,11 @@ scatter checker Float-backed is that direct construction cannot acquire evidence
 with no binary32 worker" with: "`checkScatter` is the binary64 checker; binary32 evidence comes only
 from its sibling `checkScatterF32` (`ScatterDense32Test`), and each worker door refuses the other
 carrier's evidence." Also replace "`checkScatter` calls ORDINARY `checkAssign`, never
-`checkAssignF32`" with "`checkScatter` runs the shared core at `.float64`".
+`checkAssignF32`" with "`checkScatter` runs the shared core at `.float64`"; "The rejection comes from
+the shared `checkAssign` core" → "…from the shared checker core"; the heading "`checkScatter` stays
+Float-backed" → "`checkScatter` stays the binary64 checker"; and in the parenthetical "(Block and scan
+checkers stay Float-backed for the same … reason" → "…stay Float-backed because they have no
+binary32 worker".
 
 **Step 7 — cycles** (after the production edits, before committing):
 
@@ -451,9 +452,14 @@ operations (F32-B), and top-level scatter (F32-D); scan (F32-C) is refused"; the
 `f32UnsupportedStep`'s docstring → drop "scatter is slice F32-D".
 
 **Step 2 — `Dense32.lean`.** Replace `| .scatter _ => throw (.storageKindMismatch .float32 .float64)`
-with the block below. In `runDensePlan32`'s docstring and the module docstring, "scatter and scan
-evidence is refused" becomes "scan evidence is refused"; scatter now runs `runDenseScatter32`, which
-re-checks its evidence's kind first.
+with the block below. In `runDensePlan32`'s docstring (the module docstring does not mention
+scatter): "Assignments and the two nonlinearity operations run natively; scatter and scan evidence
+is refused" → "Assignments, the two nonlinearity operations, and top-level scatter run natively;
+scan evidence is refused"; add `.scatter` running `runDenseScatter32` (F32-D) to the list of arms
+that re-check their evidence's kind; "rejects a `.scatter`/`.scan` step" → "rejects a `.scan` step";
+"those arms are unreachable" → "that arm is unreachable"; "both of those checkers (`checkScatter`,
+`checkScanPlan`) are Float-backed" → "its checker `checkScanPlan` is Float-backed"; "(F32-C/D)" →
+"(F32-C)".
 
 <!-- block:t2-dense32 -->
 ```lean
@@ -561,7 +567,6 @@ docstring @ `Error.lean`; `f32ScatterProg`, `f32ScatterThenScanProg`, `f32ScanTh
 register `"Eval.Plan.Scatter32OracleTest"` in `lakefile.toml` after `"Eval.Plan.Adapter32Test"`, and
 build it: it must FAIL with `BINARY32 SCATTER ORACLE FAILED: O1 strided, unary,
 carrier-discriminating: prepare failed` (observed on today's tree). If it fails any other way, STOP.
-(The twin tensor is `Src`, not `T`: `T(` and `C(` are DSL tokens inside `tlprog!`.)
 
 ```bash
 cp papers/f32d_files/Scatter32OracleTest.lean leanncd/test/Eval/Plan/Scatter32OracleTest.lean
@@ -618,7 +623,10 @@ Prose in `Compile.lean`: the f32 section docstring's "each names the DEFERRED SL
 it (F32-C scan, F32-D scatter)" → "(F32-C scan)"; Step 0c's comment in `prepareEvalPlan` drop
 "top-level scatter"; the header comment that says Step 0c `f32CapabilityCheck` refuses constructs —
 keep, it is still true for scans. `Error.lean`'s `unsupportedDtype` docstring: move
-`"{name}: f32 scatter"` into the "NO PRODUCER LEFT" sentence ("as of F32-D").
+`"{name}: f32 scatter"` into the "NO PRODUCER LEFT" sentence ("as of F32-D"), and after
+"`checkF32Stmt`'s nonlinearity match and its factor loop" add "(`checkF32Stmt` itself deleted by
+F32-D)". `scatterCollision`'s docstring: "Raised by `runDenseScatter` (`Dense.lean`)" → "Raised by
+`runDenseScatterWith` (`Dense.lean`, behind both `runDenseScatter` and `runDenseScatter32`)".
 
 **Step 3 — `CompileTest.lean` re-points** (all observed on the prototype):
 
@@ -729,7 +737,9 @@ run_cmd do
 ```
 
 **Step 4 — build** the whole tree (§2 build command): green, including the oracle (all five cases
-agree). Commit: `feat(leanncd): admit binary32 top-level scatter from source (F32-D Task 3)`.
+agree). Then re-derive both §4 tables against your tree, cell by cell (`rg`/read each door the cell
+names; skill §1; no line numbers), and append the result to `papers/f32d_record.md` §7 in this
+commit — phase 2 does no production reasoning. Commit: `feat(leanncd): admit binary32 top-level scatter from source (F32-D Task 3)`.
 Hand phase 2 the SHA via `split-handoff-template.md` with this task's symbol list above.
 
 #### Phase 2 (cycles + documentation, one commit)
@@ -742,6 +752,8 @@ papers/f32d_mutations_post.json` (P3-1..P3-4): all PASS.
 and 11/11 PASS. Paste both tables into your report.
 
 **Step 7 — `Plan/AGENTS.md`** (injected sections are 692 chars; keep them under 3k). Code Map:
+`Compile.lean` row → "Step 0c `checkF32Stmt` capability pass, `f32CapabilityCheck`" becomes "Step 0c
+`f32CapabilityCheck` capability pass";
 `Check.lean` row → "`checkScatter`/`checkScatterF32` over one private `checkScatterCore kind` →
 `CheckedScatterPlan` (records `storageKind`)"; `Dense.lean` row → replace the "`runDenseScatter` is
 **Float-only** …" sentence with "Scatter doors: `runDenseScatter` (guarded `.float64`) and
@@ -762,13 +774,21 @@ rg -n "F32-D" leanncd papers --glob '!papers/f32d_*'
 rg -n "f32UnsupportedStep [0-9a-z]+ \.scatter|scatter[^\n]*storageKindMismatch \.float32 \.float64" leanncd papers --glob '!papers/f32d_*'
 rg -n "runDenseScatter[^3W]*(Float-only|Float-backed)|Float-backed[^\n]*checkScatter|checkScatter[^\n]*Float-backed" leanncd papers --glob '!papers/f32d_*'
 rg -n "mixed storage, f32 scan, and f32 scatter|mixed storage, f32 scan, f32" papers --glob '!papers/f32d_*'
+rg -n "checkF32Stmt|F32-C/D" leanncd papers --glob '!papers/f32d_*'
+rg -U -n "rejects a .\.scatter./.\.scan. step|.checkScatter.,\s+.checkScanPlan.\) are Float-backed|calls .checkScatter. and publishes|Raised by .runDenseScatter. \(|written to the reference's own\s+equations|clause inside .checkAssign. already|ScalarConst\.f32. is unreachable in a checked\s+plan|binary32 scatter\s+—\s+the one construct" leanncd/LeanNCD leanncd/test
 ```
+
+The last grep hits nine wrapped stale sentences on today's tree (all edited by steps above: Task 1
+steps 2–3, Task 2 step 2, Task 3 step 2); after the slice it must print nothing.
 
 Allowed to remain: the legacy evaluator's own docs (`Eval/Eval.lean`, `Eval/Scan.lean`,
 `test/Eval/ScanTest.lean` fixtures 11/12, `Eval/AGENTS.md`) — the legacy evaluator refuses f32
 permanently; historical close-out sections of `f32_evalplan.md`/`f32b_evalplan.md` (append a dated
-note, never rewrite history); the new `"{name}: f32 scatter"` producer-less mention in `Error.lean`.
-Every other hit gets fixed.
+note, never rewrite history); the new `"{name}: f32 scatter"` producer-less mention in `Error.lean`;
+`checkF32Stmt` in `f32_evalplan.md`/`f32b_evalplan.md` (history). `checkF32Stmt` hits in
+`CompileTest.lean` (the `f32BadOrderProg` prose) and `backend_missing_functionality.md` (the
+retired-contexts sentence) get "(`checkF32Stmt` itself deleted by F32-D)" appended. Every other hit
+gets fixed.
 
 **Step 9 — papers** (find each with the `rg` shown; edit only those lines):
 - `papers/f32_evalplan.md`: `rg -n "F32-D — top-level scatter|F32-D second|probably reuses F32-D" papers/f32_evalplan.md`
@@ -789,7 +809,7 @@ Every other hit gets fixed.
 - `papers/eval_ir.md`: `rg -n "float32. graph" papers/eval_ir.md` — `.scatter` is now reachable for a
   `.float32` graph; only `.scan` is rejected.
 
-**Step 10 — counts** (must match §2): 
+**Step 10 — counts** (before the slice: 4 / 2 / 2):
 
 ```bash
 rg -c '\.unsupportedDtype s!' leanncd/LeanNCD/Eval/Plan/Compile.lean          # 3
@@ -798,28 +818,24 @@ rg -c 'throw \(\.storageKindMismatch \.float32 \.float64\)' leanncd/LeanNCD/Eval
 ```
 
 **Step 11 — completion note.** Append to `papers/f32d_record.md` §7: the three counts, the full
-manifest table, the build job count, and both §4 tables re-derived cell by cell against the merged
-tree (diff each claim yourself — skill §1; no line numbers). Then run step 8's greps once more.
+manifest tables and the build job count (phase 1 already appended the §4 re-derivation). Then run
+step 8's greps once more.
 Commit: `docs(leanncd): close out F32-D (binary32 top-level scatter)`.
 
 ---
 
-## 6. Risks
+## 6. Risks and decisions
 
-Each task's dominant risk and its pin: the move into `runDenseScatterWith` (G64 + G1/G2 before and
-after); a guard placed after validation (1.7, P1-1/P1-2); the real compiler emitting a different f32
-plan than the prototype (15(c)'s second guard, the oracle's pinned bits, §8); a re-pointed order
-fixture that stops pinning order (each re-point names the wrong answers it rejects; S2, S3, P2-1,
-P3-2); an oracle sharing code with its subject (§3.5; C1b); a stale document nobody opened (Task 3
-step 8's value-greps).
+Rationale, not instruction: `papers/f32d_record.md` §6b (eleven decisions, none needing the user;
+each risk names the fixture that pins it).
 
 ## 7. Definition of done
 
 1. `bash leanncd/scripts/lake-build.sh leanncd` → `Build completed successfully` (8670 + new modules
    jobs; record the number). No `sorry`, no edited binary64 scatter guards (§2).
 2. `mutation-manifest.sh` over both manifests (7 + 11 entries) → all PASS, tables in the record.
-3. Step 10 counts are 3 / 1 / 1; step 8 greps return only the allowed hits.
-4. Both §4 tables re-derived against the merged tree in the record's completion note.
+3. Step 10 counts are 3 / 1 / 1 (from 4 / 2 / 2); step 8 greps return only the allowed hits.
+4. Both §4 tables re-derived against the tree in the record's completion note (Task 3 step 4).
 5. The final whole-branch review (two lenses: soundness of the guard/evidence boundary; oracle
    independence and docs truthfulness) is clean or adjudicated. Merge to local `main` per Rule 13;
    do not push.
@@ -834,34 +850,3 @@ step 8's value-greps).
   disagrees after step 2.
 - A manifest entry fails with "expected text not in mutated build log".
 - A (c) cell in §4 turns out to be reachable.
-
-## 9. Decisions (none needs the user)
-
-1. **Storage kind on the evidence, kind parameter on a private core** — the F32-A/B shape
-   (Plan/AGENTS.md "a new carrier follows the f32 shape"). Alternative, a second
-   `CheckedScatterPlan32` type: rejected, it would duplicate every consumer arm.
-2. **`runDenseScatter` keeps its name and signature**, gaining only the guard; `runDenseScatter32`
-   is new. No caller changes (`runDensePlan` still calls `runDenseScatter`).
-3. **Unreachable reduce arms go through `ops.binOp`**, not deleted and not Float-typed: keeps S-A's
-   "admitting one later is a checker change alone", now for both carriers, without an `[Add α]`
-   instance bound the seam deliberately avoids.
-4. **`checkF32Stmt` is deleted** rather than left with three `pure ()` arms: it would be dead code
-   this change made dead. `f32CapabilityCheck` keeps arm-by-arm matching over `ScanStmt`.
-5. **`scatterFillOrFail`'s f32 arm uses native `Float32.ofInt`, compares bits, and requires a finite
-   value**: `(Float.ofInt fill).toFloat32` would be binary64-then-narrow, and without finiteness
-   `-(2^128)` would silently read as `-∞` (controller's decision). The `.f64` arm's same overflow is
-   pre-existing and left alone (§1.2).
-6. **Oracle = twin assignment + source-derived placement**, scheduled as Task 3's first step
-   (§3.5). A from-scratch evaluator was not built: placement under `.rejectCollisions` has no
-   arithmetic, and the arithmetic half is exactly the F32-A path with its own bit fixtures.
-7. **FW2's witness becomes `[relu scatter, f32 scan]`**, not an f32 scan alone: Step A must have a
-   competing answer or the order is unpinned. **2.9's source-order pin moves to two scans**; the
-   scatter-then-scan pair stays as the "scatter admitted, traversal continues" witness.
-8. **No new JAX fixture.** An f32 scatter plan is refused by the same plan-level gate as every f32
-   plan, before any per-step check; `ExecutableTest` fixtures 23/24 already pin that order on the
-   shape (zero steps) where a wrong gate would be invisible elsewhere.
-9. **No `DifferentialTest` change**: there is no binary32 legacy leg to compare against.
-10. **The oracle has its own `compile32`/`run32`** rather than un-privatizing `Adapter32Test`'s
-    `prepare32`: it keeps the oracle file self-contained and avoids importing that test's chain.
-11. **The third task is split into two dispatches** (skill §5): its fixtures are fully specified here,
-    so phase 2 needs no production reasoning, only the cycles and the scripted docs.

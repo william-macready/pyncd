@@ -255,20 +255,83 @@ texts too (`manifest OK: 7 entries, 7 selected, every old-string unique`), and G
 C1b each fail with every `expect` present on the post-edit copies (C1 not run there: its target
 `ScatterCompileTest` is not among the copied modules).
 
+**Group 4 — docs sweep.** `rg -n checkF32Stmt` (excluding `papers/f32d_*`) today: the three
+`Compile.lean` code/comment sites the slice deletes, `Error.lean` (retired-contexts history),
+`Plan/AGENTS.md` `Compile.lean` row, `CompileTest.lean` `f32BadOrderProg` prose,
+`backend_missing_functionality.md` retired-contexts sentence, and history in
+`f32_evalplan.md`/`f32b_evalplan.md` — each now assigned an edit or an allow-list entry. The
+multi-line `rg -U` in step 8 hits exactly nine wrapped stale sentences today (Dense32 ×3 incl.
+`F32-C/D`, Check ×4, Error ×1, Dense ×1); after the prose edits it should print nothing (predicted —
+the prose edits are specified, not performed). `rawPublicationSlots @ Prepared.lean` and
+`assignPlans @ experiments/jax_bridge/EvalPlanAffineCorpus.lean` read: both carrier-free. Found in
+passing, NOT fixed: `runDenseScatter`'s docstring says the reference "cannot express `±∞` at all",
+false for the same `Float.ofInt` overflow as the binary64 fill gap (plan §1.2). Plan trimmed to 852
+lines by moving §6 Risks, §9 Decisions and the oracle-scheduling note here (§6b).
+
 ## 6. Not verified
 
-- **The real modules were never compiled with the edits.** Everything rests on the prototype being
-  the same text in the same import context. The two things that could differ: (a) a name the copy
-  resolved to its own `P.` version where the real module would see a different one (none known —
-  every copied definition is textually the real one); (b) instance or `private` visibility effects
-  across the real `import` graph. The plan's STOP-on-mismatch rule covers both.
-- C1b's `expect` string and the P-cycles' failures were observed on the prototype only.
-- That G1/G2/K1/S1/S2/S3/C1 still PASS after the slice (predicted, §4.1).
+- ~~The real modules were never compiled with the edits.~~ Superseded 2026-09-25 (§5b): every plan
+  edit was applied to full real-split copies (real namespace and module split) and compiled, with
+  every test module in the chain. Still not done: `lake build` of the actual tree with the edits,
+  and C1 on the post-edit copies (its target `ScatterCompileTest` was not copied).
+- The P-cycles and C1b were re-observed on the real-split copies (§5b) with a runner that mirrors,
+  but is not, `mutation-manifest.sh`/`lake build`; the restore-and-rebuild half was not run by it.
+- That C1 still PASSes after the slice (G1/G2/S1/S2/S3/C1b re-observed on post-edit copies, §5b;
+  K1 dropped).
 - The post-slice build job count (predicted 8672).
 - The documentation edits (Task 3 steps 7–9) are specified, not performed; the sweep commands were
   written against today's tree but not run as a "before" baseline beyond the grep in §5.
 - Turn estimates in the plan's task table are judgement, not measurement.
 
-## 7. Completion note (appended by Task 3 step 11)
+## 6b. Decisions and risks (moved from the plan, 2026-09-25; none needs the user)
+
+### Risks
+
+Each task's dominant risk and its pin: the move into `runDenseScatterWith` (G64 + G1/G2 before and
+after); a guard placed after validation (1.7, P1-1/P1-2); the real compiler emitting a different f32
+plan than the prototype (15(c)'s second guard, the oracle's pinned bits, §8); a re-pointed order
+fixture that stops pinning order (each re-point names the wrong answers it rejects; S2, S3, P2-1,
+P3-2); an oracle sharing code with its subject (§3.5; C1b); a stale document nobody opened (Task 3
+step 8's value-greps).
+
+### Oracle scheduling
+
+**Scheduling.** It is Task 3 phase 1's FIRST step, written before the compiler edit and observed
+failing (`BINARY32 SCATTER ORACLE FAILED: O1 strided, unary, carrier-discriminating: prepare
+failed`, observed on today's tree). That is the earliest point it can run at all: it needs Step 0c
+lifted, and Step 0c is the last door.
+
+### Decisions
+
+1. **Storage kind on the evidence, kind parameter on a private core** — the F32-A/B shape
+   (Plan/AGENTS.md "a new carrier follows the f32 shape"). Alternative, a second
+   `CheckedScatterPlan32` type: rejected, it would duplicate every consumer arm.
+2. **`runDenseScatter` keeps its name and signature**, gaining only the guard; `runDenseScatter32`
+   is new. No caller changes (`runDensePlan` still calls `runDenseScatter`).
+3. **Unreachable reduce arms go through `ops.binOp`**, not deleted and not Float-typed: keeps S-A's
+   "admitting one later is a checker change alone", now for both carriers, without an `[Add α]`
+   instance bound the seam deliberately avoids.
+4. **`checkF32Stmt` is deleted** rather than left with three `pure ()` arms: it would be dead code
+   this change made dead. `f32CapabilityCheck` keeps arm-by-arm matching over `ScanStmt`.
+5. **`scatterFillOrFail`'s f32 arm uses native `Float32.ofInt`, compares bits, and requires a finite
+   value**: `(Float.ofInt fill).toFloat32` would be binary64-then-narrow, and without finiteness
+   `-(2^128)` would silently read as `-∞` (controller's decision). The `.f64` arm's same overflow is
+   pre-existing and left alone (§1.2).
+6. **Oracle = twin assignment + source-derived placement**, scheduled as Task 3's first step
+   (§3.5). A from-scratch evaluator was not built: placement under `.rejectCollisions` has no
+   arithmetic, and the arithmetic half is exactly the F32-A path with its own bit fixtures.
+7. **FW2's witness becomes `[relu scatter, f32 scan]`**, not an f32 scan alone: Step A must have a
+   competing answer or the order is unpinned. **2.9's source-order pin moves to two scans**; the
+   scatter-then-scan pair stays as the "scatter admitted, traversal continues" witness.
+8. **No new JAX fixture.** An f32 scatter plan is refused by the same plan-level gate as every f32
+   plan, before any per-step check; `ExecutableTest` fixtures 23/24 already pin that order on the
+   shape (zero steps) where a wrong gate would be invisible elsewhere.
+9. **No `DifferentialTest` change**: there is no binary32 legacy leg to compare against.
+10. **The oracle has its own `compile32`/`run32`** rather than un-privatizing `Adapter32Test`'s
+    `prepare32`: it keeps the oracle file self-contained and avoids importing that test's chain.
+11. **The third task is split into two dispatches** (skill §5): its fixtures are fully specified here,
+    so phase 2 needs no production reasoning, only the cycles and the scripted docs.
+
+## 7. Completion note (appended by Task 3 steps 4 and 11)
 
 _(empty until executed)_
