@@ -1,0 +1,101 @@
+[
+  {
+    "label": "P1-1 (runDenseScatter storage-kind guard deleted)",
+    "task": "1",
+    "file": "LeanNCD/Eval/Plan/Dense.lean",
+    "old": "def runDenseScatter (c : CheckedScatterPlan) (store : Array DenseTensor) :\n    Except PositionalInputError DenseTensor := do\n  unless c.storageKind == .float64 do\n    throw (.storageKindMismatch .float64 c.storageKind)\n",
+    "new": "def runDenseScatter (c : CheckedScatterPlan) (store : Array DenseTensor) :\n    Except PositionalInputError DenseTensor := do\n",
+    "targets": ["Eval.Plan.ScatterDense32Test"],
+    "expect": ["ctxChecked32 ==", "some (some (PositionalInputError.storageKindMismatch StorageKind.float64 StorageKind.float32))"]
+  },
+  {
+    "label": "P1-2 (runDenseScatter32 storage-kind guard deleted)",
+    "task": "1",
+    "file": "LeanNCD/Eval/Plan/Dense.lean",
+    "old": "def runDenseScatter32 (c : CheckedScatterPlan) (store : Array DenseTensor32) :\n    Except PositionalInputError DenseTensor32 := do\n  unless c.storageKind == .float32 do\n    throw (.storageKindMismatch .float32 c.storageKind)\n",
+    "new": "def runDenseScatter32 (c : CheckedScatterPlan) (store : Array DenseTensor32) :\n    Except PositionalInputError DenseTensor32 := do\n",
+    "targets": ["Eval.Plan.ScatterDense32Test"],
+    "expect": ["ctxChecked64 ==", "some (some (PositionalInputError.storageKindMismatch StorageKind.float32 StorageKind.float64))"]
+  },
+  {
+    "label": "P1-3 (checkScatterCore stamps .float64 whatever the kind)",
+    "task": "1",
+    "file": "LeanNCD/Eval/Plan/Check.lean",
+    "old": "  return CheckedScatterPlan.mk s kind\n",
+    "new": "  return CheckedScatterPlan.mk s .float64\n",
+    "targets": ["Eval.Plan.ScatterDense32Test"],
+    "expect": ["kindOf (checkScatterF32 (sigsFor32 #[6]) (upScatter32 admittedAlgebraF32)) == some StorageKind.float32", "shapeBitsOf (run32 (sigsFor32 #[6]) (upScatter32 admittedAlgebraF32Max) store32) =="]
+  },
+  {
+    "label": "P1-4 (shared worker's fill not decoded: always ops.zero; the binary64 max-fill fixture fails first)",
+    "task": "1",
+    "file": "LeanNCD/Eval/Plan/Dense.lean",
+    "old": "  let fill ← ops.decodeConst s.fill\n",
+    "new": "  let fill := ops.zero\n",
+    "targets": ["Eval.Plan.ScatterDenseTest"],
+    "expect": ["shapeDataOf (runScatter (sigsFor #[6]) maxScatter (storeFor #[6])) =="]
+  },
+  {
+    "label": "P2-1 (checkPlan capability loop refuses scatter again)",
+    "task": "2",
+    "file": "LeanNCD/Eval/Plan/EvalPlan.lean",
+    "old": "      | .scatter _   => pure ()\n",
+    "new": "      | .scatter _   => throw (.f32UnsupportedStep ni .scatter)\n",
+    "targets": ["Eval.Plan.GraphCheckTest", "Eval.Plan.EvalPlan32Test"],
+    "expect": ["storageOf (checkPlan f32ScatterPlan) == some StorageKind.float32", "errOf (checkPlan f32StepOrderWithScan) == some (PlanStepError.f32UnsupportedStep 3 PlanStepKind.scan)"]
+  },
+  {
+    "label": "P2-2 (binary32 localCheck arm calls checkScatter)",
+    "task": "2",
+    "file": "LeanNCD/Eval/Plan/EvalPlan.lean",
+    "old": "                     | .float32 => checkScatterF32 raw.tensorSigs s) with\n",
+    "new": "                     | .float32 => checkScatter raw.tensorSigs s) with\n",
+    "targets": ["Eval.Plan.GraphCheckTest", "Eval.Plan.EvalPlan32Test"],
+    "expect": ["storageOf (checkPlan f32ScatterPlan) == some StorageKind.float32", "storageOf (checkPlan f32UnsupportedStepOrder) == some StorageKind.float32"]
+  },
+  {
+    "label": "P2-3 (runDensePlan32 scatter arm a no-op)",
+    "task": "2",
+    "file": "LeanNCD/Eval/Plan/Dense32.lean",
+    "old": "    | .scatter s =>\n        store := store.set! s.plan.compute.destinationSlot (← runDenseScatter32 s store)\n",
+    "new": "    | .scatter _ => pure ()\n",
+    "targets": ["Eval.Plan.GraphCheckTest", "Eval.Plan.EvalPlan32Test"],
+    "expect": ["bitsAt (runGraph32 f32ScatterPlan #[t32 [3] #[1065353216, 1073741824, 1077936128]]) 1 ==", "bitsAt (runGraph32 f32UnsupportedStepOrder #[t32 [2] #[1069547520, 3223322624]]) 3 == some #[1069547520, 0, 0, 0]"]
+  },
+  {
+    "label": "P3-1 (scatterFillOrFail f32 arm refuses everything again)",
+    "task": "3",
+    "file": "LeanNCD/Eval/Plan/Compile.lean",
+    "old": "    | .f32 bits => (Float32.ofInt fill).isFinite && bits == (Float32.ofInt fill).toBits",
+    "new": "    | .f32 _ => false",
+    "targets": ["Eval.Plan.CompileTest", "Eval.Plan.Scatter32OracleTest"],
+    "expect": ["Option.map (fun x => x.plan.storageKind) (prepareEvalPlan f32ScatterProg f32IdentitySig).toOption ==", "BINARY32 SCATTER ORACLE FAILED: O1 strided, unary, carrier-discriminating: prepare failed"]
+  },
+  {
+    "label": "P3-2 (Step 0c refuses f32 top-level scatter again)",
+    "task": "3",
+    "file": "LeanNCD/Eval/Plan/Compile.lean",
+    "old": "    | .plain _ => pure ()\n",
+    "new": "    | .plain (.scatter nm ..) => throw (.unsupportedDtype s!\"{nm}: f32 scatter\")\n    | .plain _ => pure ()\n",
+    "targets": ["Eval.Plan.CompileTest", "Eval.Plan.Scatter32OracleTest"],
+    "expect": ["fixture FW2a: Step 0c did not precede Step A — got capability LeanNCD.Eval.Plan.CapabilityError.unsupportedDtype \"Y: f32 scatter\"", "causeOf (prepareEvalPlan f32ScatterThenScanProg f32IdentitySig) =="]
+  },
+  {
+    "label": "P3-3 (scatterFillOrFail f32 arm admits everything)",
+    "task": "3",
+    "file": "LeanNCD/Eval/Plan/Compile.lean",
+    "old": "    | .f32 bits => (Float32.ofInt fill).isFinite && bits == (Float32.ofInt fill).toBits",
+    "new": "    | .f32 bits => true",
+    "targets": ["Eval.Plan.CompileTest", "Eval.Plan.Scatter32OracleTest"],
+    "expect": ["causeOf (prepareEvalPlan f32ScatterFill1Prog f32IdentitySig) ==", "causeOf (prepareEvalPlan f32ScatterOverflowFillProg f32IdentitySig) =="]
+  },
+  {
+    "label": "P3-4 (scatterFillOrFail f32 arm drops the finiteness test)",
+    "task": "3",
+    "file": "LeanNCD/Eval/Plan/Compile.lean",
+    "old": "    | .f32 bits => (Float32.ofInt fill).isFinite && bits == (Float32.ofInt fill).toBits",
+    "new": "    | .f32 bits => bits == (Float32.ofInt fill).toBits",
+    "targets": ["Eval.Plan.CompileTest", "Eval.Plan.Scatter32OracleTest"],
+    "expect": ["causeOf (prepareEvalPlan f32ScatterOverflowFillProg f32IdentitySig) =="]
+  }
+]

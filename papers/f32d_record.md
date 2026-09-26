@@ -234,6 +234,27 @@ Fixture 1.8 (Boolean-tagged source, `checkScatterF32` + `runDenseScatter32`) →
 `KernelDense32Test` for `t32`), so K1 cannot guard any fixture this slice adds; the manifest is now
 7 entries. (e) `ScatterDense32Test.lean` has 16 `#guard`s (`grep -c '^#guard'`), 8 fixtures.
 
+**Group 3 — manifests.** `papers/f32d_mutations_post.json` (11 entries) was written from the
+observed failures of the companion runner on the real-split copies; every `expect` string was
+re-checked present in its mutated log (11/11). Observed shape differences from the prototype table
+in §4.2, which the post manifest encodes: P1-4 breaks the BINARY64 `ScatterDenseTest` max-fill guard
+first (shared worker), so `ScatterDense32Test` (which imports it) is not built and 1.5 cannot report
+— target is `Eval.Plan.ScatterDenseTest`; under P2-1/P2-2 `GraphCheckTest` fails first, so
+`EvalPlan32Test` (2.1–2.3) is not built — expects name `GraphCheckTest` guards only; P1-3 now also
+fails fixture 1.8. Uniqueness: a scratch tree mirroring `LeanNCD/Eval/Plan/<File>.lean` and
+`test/Eval/Plan/…` with the post-edit texts →
+
+```
+manifest OK: 11 entries, 11 selected, every old-string unique
+```
+
+(and `--task 1/2/3`: 4, 3, 4 selected, all unique; the P1-1/P1-2 anchors include the
+`def runDenseScatter…`/`def runDenseScatter32…` signature lines because the guard text alone also
+occurs at the assignment doors). The pre-slice manifest's old-strings are unique in the post-edit
+texts too (`manifest OK: 7 entries, 7 selected, every old-string unique`), and G1, G2, S2, S1, S3,
+C1b each fail with every `expect` present on the post-edit copies (C1 not run there: its target
+`ScatterCompileTest` is not among the copied modules).
+
 ## 6. Not verified
 
 - **The real modules were never compiled with the edits.** Everything rests on the prototype being

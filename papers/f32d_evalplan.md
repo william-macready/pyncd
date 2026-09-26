@@ -2,7 +2,7 @@
 
 **Status:** authored 2026-09-25 on branch `plan/f32d` from `main` at `6303e9f`. Not executed.
 **Companions:** `papers/f32d_record.md` (what was measured while authoring, how, and what was not
-verified); `papers/f32d_mutations.json` (the mutation cycles, run by
+verified); `papers/f32d_mutations.json` and `papers/f32d_mutations_post.json` (the mutation cycles, run by
 `leanncd/scripts/mutation-manifest.sh`); `papers/f32d_files/` (the two new test files, compiled and
 run while authoring, to be copied, not retyped). You do not need to read the record.
 
@@ -209,14 +209,15 @@ Task 3's completion note re-derives both tables against the merged tree, cell by
 | Task | Deliverable | Fixtures | Mutation cycles | Expected turns | Dispatch |
 |---|---|---|---|---|---|
 | 1 | carrier-parametric scatter checker + worker (`Check.lean`, `Dense.lean`) | 8 (16 `#guard`s, one new file) | G1, G2 (each run before AND after the edit) + P1-1..P1-4 = 8 runs | ~45–60 | one |
-| 2 | graph admission (`EvalPlan.lean`, `Dense32.lean`) | 3 re-points + 3 new (`GraphCheckTest`, `EvalPlan32Test`) | S2 + predicted P2-1..P2-3 = 4 | ~35–45 | one |
-| 3 | source admission (`Compile.lean`), the oracle, CompileTest re-points, docs | 4 re-point groups + 5 oracle cases | S1, S3, C1, C1b + predicted P3-1, P3-2 = 6 | ~80–100 | **two** (phase 1 production + fixtures green; phase 2 cycles + docs), `split-handoff-template.md` |
+| 2 | graph admission (`EvalPlan.lean`, `Dense32.lean`) | 3 re-points + 3 new (`GraphCheckTest`, `EvalPlan32Test`) | S2 + P2-1..P2-3 = 4 | ~35–45 | one |
+| 3 | source admission (`Compile.lean`), the oracle, CompileTest re-points, docs | 4 re-point groups + 5 oracle cases | S1, S3, C1, C1b + P3-1..P3-4 = 8 | ~80–100 | **two** (phase 1 production + fixtures green; phase 2 cycles + docs), `split-handoff-template.md` |
 
-"Predicted" cycles: their old-strings are code that does not exist yet, so they cannot be in the
-manifest. Each was run against the prototype and broke exactly the fixture named (record §4). After
-your production commit, append each as a manifest entry (`task`, `file`, `old`, `new`, `targets`,
-and `expect` COPIED from your own observed build log), run it, and keep it. In those tables `\|` is a
-Markdown escape; the source has a plain `|`.
+Two manifests. `papers/f32d_mutations.json` (7) mutates code that exists today.
+`papers/f32d_mutations_post.json` (11: P1-1..4, P2-1..3, P3-1..4) mutates code this slice ADDS; its
+old-strings are unique in the post-edit files and its `expect` strings were copied from failures
+observed on full real-split copies of the edited modules (record §5b). After each task's production
+edits, run `mutation-manifest.sh --task N` on both. Do not hand-author or edit entries; a mismatch
+is a STOP (§8).
 
 ---
 
@@ -397,16 +398,16 @@ from its sibling `checkScatterF32` (`ScatterDense32Test`), and each worker door 
 carrier's evidence." Also replace "`checkScatter` calls ORDINARY `checkAssign`, never
 `checkAssignF32`" with "`checkScatter` runs the shared core at `.float64`".
 
-**Step 7 — cycles.** `bash leanncd/scripts/mutation-manifest.sh --task 1 leanncd papers/f32d_mutations.json`
-(G1, G2: both PASS). Then append and run the four predicted cycles, all on `Dense.lean`/`Check.lean`,
-target `Eval.Plan.ScatterDense32Test`:
+**Step 7 — cycles** (after the production edits, before committing):
 
-| Label | old → new | Prototype: fixture that broke |
-|---|---|---|
-| P1-1 | delete the `unless c.storageKind == .float64 do` guard (2 lines) in `runDenseScatter` | 1.7, first guard (got `contextShapeMismatch`) |
-| P1-2 | delete the `.float32` guard (2 lines) in `runDenseScatter32` | 1.7, third guard |
-| P1-3 | `return CheckedScatterPlan.mk s kind` → `… s .float64` | 1.1, 1.2 first guard, 1.4 (binary32 guard), 1.5, 1.6, 1.7 first two guards |
-| P1-4 | `let fill ← ops.decodeConst s.fill` → `let fill := ops.zero` | 1.5 only |
+```bash
+bash leanncd/scripts/mutation-manifest.sh --task 1 leanncd papers/f32d_mutations.json       # G1, G2
+bash leanncd/scripts/mutation-manifest.sh --task 1 leanncd papers/f32d_mutations_post.json  # P1-1..P1-4
+```
+
+All six PASS. P1-4 (fill always `ops.zero`) is caught by the BINARY64 `ScatterDenseTest` max-fill
+fixture: the worker is shared and `ScatterDense32Test` imports `ScatterDenseTest`, so 1.5 never
+builds under that mutation — expected, not a gap.
 
 **Commit:** `feat(leanncd): carrier-parametric checked scatter (F32-D Task 1)`.
 
@@ -534,14 +535,9 @@ Donors: `GraphCheckTest.f32ScatterPlan` (fixture 16, `Out[2*i] := X[i]`) and
   | .error _ => none) == some (.storageKindMismatch .float64 .float32)
 ```
 
-**Step 5 — cycles.** `mutation-manifest.sh --task 2 …` (S2: PASS). Append and run the predicted
-cycles (targets `Eval.Plan.GraphCheckTest Eval.Plan.EvalPlan32Test`):
-
-| Label | old → new | Prototype: fixtures that broke |
-|---|---|---|
-| P2-1 | capability arm `\| .scatter _   => pure ()` → `\| .scatter _   => throw (.f32UnsupportedStep ni .scatter)` | (a), (b), (c) first guard, 2.1, 2.2 (both), 2.3 |
-| P2-2 | `\| .float32 => checkScatterF32 raw.tensorSigs s) with` → `\| .float32 => checkScatter raw.tensorSigs s) with` | (a), (b), 2.1, 2.2 (both), 2.3 |
-| P2-3 | the two-line `runDensePlan32` `.scatter s =>` arm → `\| .scatter _ => pure ()` | 2.1, 2.2 (both) |
+**Step 5 — cycles.** `mutation-manifest.sh --task 2 leanncd papers/f32d_mutations.json` (S2) and
+`mutation-manifest.sh --task 2 leanncd papers/f32d_mutations_post.json` (P2-1..P2-3): all PASS.
+Under P2-1/P2-2 `GraphCheckTest` fails first, so `EvalPlan32Test` (which imports it) is not built.
 
 **Commit:** `feat(leanncd): admit binary32 scatter in checkPlan and runDensePlan32 (F32-D Task 2)`.
 
@@ -739,18 +735,11 @@ Hand phase 2 the SHA via `split-handoff-template.md` with this task's symbol lis
 #### Phase 2 (cycles + documentation, one commit)
 
 **Step 5 — cycles.** `mutation-manifest.sh --task 3 --out <scratch>/t3.md leanncd papers/f32d_mutations.json`
-(S1, S3, C1, C1b: all PASS; C1b's `expect` was observed on the prototype — if it does not match
-your log exactly, STOP). Then append and run (targets `Eval.Plan.CompileTest Eval.Plan.Scatter32OracleTest`):
+(S1, S3, C1, C1b) and `mutation-manifest.sh --task 3 --out <scratch>/t3p.md leanncd
+papers/f32d_mutations_post.json` (P3-1..P3-4): all PASS.
 
-| Label | old → new | Prototype: what broke |
-|---|---|---|
-| P3-1 | the `.f32 bits => …` arm → `\| .f32 _ => false` | 15(c) both guards; oracle `O1 … prepare failed` |
-| P3-2 | `\| .plain _ => pure ()` → `\| .plain (.scatter nm ..) => throw (.unsupportedDtype s!"{nm}: f32 scatter")` then `\| .plain _ => pure ()` | 15(c) both, 2.9 forward, FW2 relu-alone, FW2a (`got capability … "Y: f32 scatter"`), oracle O1 |
-| P3-3 | the `.f32 bits => …` arm → `\| .f32 bits => true` | both 15(c) refusals |
-| P3-4 | drop the `isFinite &&` conjunct | the overflow refusal only |
-
-**Step 6 — full manifest.** Run every entry (no `--task`), `--out` to a scratch table; 8/8 plus
-your appended 9 predicted cycles must PASS. Paste the table into your report.
+**Step 6 — full manifests.** Run both manifests with no `--task`, `--out` to scratch tables: 7/7
+and 11/11 PASS. Paste both tables into your report.
 
 **Step 7 — `Plan/AGENTS.md`** (injected sections are 692 chars; keep them under 3k). Code Map:
 `Check.lean` row → "`checkScatter`/`checkScatterF32` over one private `checkScatterCore kind` →
@@ -828,8 +817,7 @@ step 8's value-greps).
 
 1. `bash leanncd/scripts/lake-build.sh leanncd` → `Build completed successfully` (8670 + new modules
    jobs; record the number). No `sorry`, no edited binary64 scatter guards (§2).
-2. `mutation-manifest.sh` over the whole manifest (8 authored + 9 appended) → all PASS, table in
-   the record.
+2. `mutation-manifest.sh` over both manifests (7 + 11 entries) → all PASS, tables in the record.
 3. Step 10 counts are 3 / 1 / 1; step 8 greps return only the allowed hits.
 4. Both §4 tables re-derived against the merged tree in the record's completion note.
 5. The final whole-branch review (two lenses: soundness of the guard/evidence boundary; oracle
