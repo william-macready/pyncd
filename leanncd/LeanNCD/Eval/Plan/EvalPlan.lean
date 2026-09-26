@@ -129,7 +129,7 @@ inductive PlanStepError
   | scan   (stepIndex : Nat) (cause : ScanPlanError)
   | nonlin (stepIndex : Nat) (cause : NonlinPlanError)
   /-- A `.float32` graph contains a step kind binary32 execution does not admit. Binary32 admits
-      assignments and the two nonlinearity operations (F32-B); scatter is slice F32-D, and scan
+      assignments and the two nonlinearity operations (F32-B); scan
       (and scan-local scatter) is F32-C. Carries the ORIGINAL outer step
       index — not an index into the assignments-only sublist — and a closed `PlanStepKind`
       (`Error.lean`) rather than a rendered string.
@@ -188,15 +188,15 @@ def checkPlan (raw : RawEvalPlan) : Except PlanStepError CheckedEvalPlan := do
     | .ok k => pure k
     | .error e => throw (.assign e)
   -- CAPABILITY SECOND, for a `.float32` graph only, over `raw.steps` in ORIGINAL order: binary32
-  -- admits assignments and the two nonlinearity operations (F32-B); scatter (F32-D) and scan
-  -- (F32-C) are refused. Matched arm by arm rather than through a catch-all so admitting one of
+  -- admits assignments, the two nonlinearity operations (F32-B), and top-level scatter (F32-D); scan
+  -- (F32-C) is refused. Matched arm by arm rather than through a catch-all so admitting one of
   -- these kinds later is a deliberate edit at its own arm; indexed over `raw.steps` itself, never a
   -- filtered sublist, so the reported index is the outer-graph one.
   if storageKind == .float32 then
     for h : ni in [0 : raw.steps.size] do
       match raw.steps[ni] with
       | .assign _    => pure ()
-      | .scatter _   => throw (.f32UnsupportedStep ni .scatter)
+      | .scatter _   => pure ()
       | .scan _      => throw (.f32UnsupportedStep ni .scan)
       | .pointwise _ => pure ()
       | .axiswise _  => pure ()
@@ -257,14 +257,17 @@ def checkPlan (raw : RawEvalPlan) : Except PlanStepError CheckedEvalPlan := do
                      | .float32 => checkAssignF32 raw.tensorSigs a) with
               | .error e => throw (.assign (.nodeError ni e))
               | .ok c => pure (.assign c)
-          -- `checkScatter` runs the compute half through `checkAssign` itself, under
-          -- `destSigShape? := some s.destShape` — which is the whole reason this arm cannot be
-          -- `checkAssign raw.tensorSigs s.compute`: the registered destination signature carries the
-          -- DESTINATION extent while `s.compute.outputShape` is the SOURCE iteration domain, and the
-          -- resulting `.assign` evidence would make `runDensePlan` publish the source-shaped compute
-          -- result under the destination slot instead of the scattered tensor.
+          -- The graph's own storage kind selects the scatter checker, exactly as `.assign` above.
+          -- `checkScatter`/`checkScatterF32` run the compute half through `checkAssign`/`checkAssignF32`
+          -- themselves, under `destSigShape? := some s.destShape` — which is the whole reason this arm
+          -- cannot be `checkAssign raw.tensorSigs s.compute`: the registered destination signature
+          -- carries the DESTINATION extent while `s.compute.outputShape` is the SOURCE iteration
+          -- domain, and the resulting `.assign` evidence would make `runDensePlan` publish the
+          -- source-shaped compute result under the destination slot instead of the scattered tensor.
           | .scatter s =>
-              match checkScatter raw.tensorSigs s with
+              match (match storageKind with
+                     | .float64 => checkScatter raw.tensorSigs s
+                     | .float32 => checkScatterF32 raw.tensorSigs s) with
               | .error e => throw (.assign (.nodeError ni e))
               | .ok c => pure (.scatter c)
           | .scan s =>

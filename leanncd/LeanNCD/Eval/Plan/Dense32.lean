@@ -26,17 +26,17 @@ namespace LeanNCD.Eval.Plan
     binary64 question in binary32; a guard placed after the arity check would instead report
     `arityMismatch` for a plan whose buffers this worker must never touch.
 
-    **Assignments and the two nonlinearity operations run natively; scatter and scan evidence is
-    refused as binary64 evidence.** `.assign` runs `runDenseAssign32`, and `.pointwise`/`.axiswise`
-    run `runDensePointwise32`/`runDenseAxiswise32` (F32-B), each of which re-checks its own
-    evidence's storage kind as its first statement. The refusal is not a placeholder: `checkPlan`
-    rejects a `.scatter`/`.scan` step in a `.float32` graph outright
-    (`PlanStepError.f32UnsupportedStep`), so those arms are unreachable for any `CheckedEvalPlan`
-    whose `storageKind` is `.float32` — and, independently, both of those checkers (`checkScatter`,
-    `checkScanPlan`) are Float-backed by design, so such evidence genuinely IS binary64 evidence.
+    **Assignments, the two nonlinearity operations, and top-level scatter run natively; scan
+    evidence is refused as binary64 evidence.** `.assign` runs `runDenseAssign32`, `.pointwise`/
+    `.axiswise` run `runDensePointwise32`/`runDenseAxiswise32` (F32-B), and `.scatter` runs
+    `runDenseScatter32` (F32-D), each of which re-checks its own evidence's storage kind as its
+    first statement. The refusal is not a placeholder: `checkPlan` rejects a `.scan` step in a
+    `.float32` graph outright (`PlanStepError.f32UnsupportedStep`), so that arm is unreachable for
+    any `CheckedEvalPlan` whose `storageKind` is `.float32` — and, independently, its checker
+    `checkScanPlan` is Float-backed by design, so such evidence genuinely IS binary64 evidence.
     `storageKindMismatch .float32 .float64` therefore states the literal truth about what arrived
     rather than inventing a new diagnostic for a state the checker already prevents. Matched arm by
-    arm rather than through a catch-all so admitting one of these kinds in a later slice (F32-C/D)
+    arm rather than through a catch-all so admitting one of these kinds in a later slice (F32-C)
     is a deliberate edit at its own arm.
 
     Signature dtypes are not re-examined here, exactly as `runDensePlan` does not re-examine its own:
@@ -64,7 +64,8 @@ def runDensePlan32 (c : CheckedEvalPlan) (inputs : Array DenseTensor32) :
   for node in c.checkedNodes do
     match node with
     | .assign a => store := store.set! a.plan.destinationSlot (← runDenseAssign32 a store)
-    | .scatter _ => throw (.storageKindMismatch .float32 .float64)
+    | .scatter s =>
+        store := store.set! s.plan.compute.destinationSlot (← runDenseScatter32 s store)
     | .scan _ => throw (.storageKindMismatch .float32 .float64)
     | .pointwise p =>
         store := store.set! p.raw.destinationSlot (← runDensePointwise32 p store)

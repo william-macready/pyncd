@@ -1,5 +1,6 @@
 import LeanNCD.Eval.Plan.Dense32
 import Eval.Plan.KernelDense32Test   -- fixture 2's plans, reused as this file's graph twin
+import Eval.Plan.GraphCheckTest
 
 /-!
 # Native binary32 graph execution (f32 slice, Task 3)
@@ -12,6 +13,7 @@ contrast wherever the claim is about rounding rather than about wiring.
 namespace LeanNCD.Eval.Plan.EvalPlan32Test
 open LeanNCD.Eval LeanNCD.Eval.Plan
 open LeanNCD.Eval.Plan.KernelDense32Test (t32)
+open LeanNCD.Eval.Plan.GraphCheckTest (f32ScatterPlan f32UnsupportedStepOrder)
 
 def runGraph32 (raw : RawEvalPlan) (inputs : Array DenseTensor32) :
     Except String (Array DenseTensor32) :=
@@ -150,5 +152,26 @@ def planErr32 (raw : RawEvalPlan) (inputs : Array DenseTensor32) : Option Positi
 -- Control: malformed storage (shape agrees, buffer length does not) is likewise reported.
 #guard planErr32 f32ProductChain #[ t32 [] #[], t32 [] #[3414167552] ]
   == some (.storageMismatch 0 [] 0)
+
+/-! ## F32-D fixtures 2.1–2.3: binary32 scatter through the graph worker
+
+Donors: `GraphCheckTest.f32ScatterPlan` (fixture 16, `Out[2*i] := X[i]`) and
+`GraphCheckTest.f32UnsupportedStepOrder` (`[assign, pointwise relu, scatter]`). -/
+
+-- 2.1: `X = [1, 2, 3]` lands at 0, 2, 4 of slot 1; the odd cells keep `fill = +0`.
+#guard bitsAt (runGraph32 f32ScatterPlan #[ t32 [3] #[0x3f800000, 0x40000000, 0x40400000] ]) 1
+  == some #[1065353216, 0, 1073741824, 0, 1077936128, 0]
+
+-- 2.2: the scatter reads the preceding pointwise result. `X = [1.5, 2.5]` land at 0 and 2 of slot 3;
+-- `X = [1.5, -2.5]` shows relu ran before the scatter read (lane 1 becomes `+0`).
+#guard bitsAt (runGraph32 f32UnsupportedStepOrder #[ t32 [2] #[0x3fc00000, 0x40200000] ]) 3
+  == some #[1069547520, 0, 1075838976, 0]
+#guard bitsAt (runGraph32 f32UnsupportedStepOrder #[ t32 [2] #[0x3fc00000, 0xc0200000] ]) 3
+  == some #[1069547520, 0, 0, 0]
+
+-- 2.3: the binary64 graph worker refuses the binary32 scatter graph FIRST (before arity: no inputs).
+#guard (match checkPlan f32ScatterPlan with
+  | .ok c => match runDensePlan c #[] with | .error e => some e | .ok _ => none
+  | .error _ => none) == some (.storageKindMismatch .float64 .float32)
 
 end LeanNCD.Eval.Plan.EvalPlan32Test

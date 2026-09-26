@@ -310,14 +310,15 @@ def f32PointwisePlan : RawEvalPlan :=
 
 A VALID f32 assignment at step 0, a VALID f32 pointwise node at step 1, and a scatter at step 2
 (F32-B fixture 3.11 re-pointed this from the `[assign, pointwise]` graph that reported index 1,
-now that pointwise is admitted). The reported error must be `f32UnsupportedStep 2 .scatter`: the
-original outer index. A capability pass over only the not-yet-admitted step kinds (a filtered
-sublist) would report `0`, and one over only the assignments would report `1`.
+now that pointwise is admitted; F32-D now admits the scatter too). The graph is therefore ACCEPTED
+as `.float32` outright — there is no remaining step kind for `f32UnsupportedStep` to report an
+index for. The original-outer-index claim moves to `f32StepOrderWithScan` below (Fixture 14's
+index witness, re-pointed), which appends scan steps this graph still lacks.
 
 The scatter is `f32Scatter`'s shape (fixture 16 below) renumbered to read the pointwise destination
-(slot 2, `[2]`) and write a fresh `f32` slot 3 (`[4]`, `Out[2*i] := Z[i]`). The capability pass runs
-before any wiring or local check, so the verdict does not depend on that geometry; it is built
-well-formed anyway, which the binary64 control below pins. -/
+(slot 2, `[2]`) and write a fresh `f32` slot 3 (`[4]`, `Out[2*i] := Z[i]`). Acceptance now requires
+the whole graph to pass wiring and local checks too, not just the capability loop; the binary64
+control below pins that it is well-formed. -/
 def stepOrderScatter (alg : ContractionAlgebra) : ScatterPlan :=
   { compute := { contextShape := #[], destinationSlot := 3, outputShape := #[2]
                , terms := #[{ iterationShape := #[2], contextPos := #[], outputPos := #[0]
@@ -336,7 +337,7 @@ def f32UnsupportedStepOrder : RawEvalPlan :=
               , .pointwise { sourceSlot := 1, destinationSlot := 2, shape := #[2], fn := .relu }
               , .scatter (stepOrderScatter admittedAlgebraF32) ] }
 
-#guard errOf (checkPlan f32UnsupportedStepOrder) == some (.f32UnsupportedStep 2 .scatter)
+#guard storageOf (checkPlan f32UnsupportedStepOrder) == some LeanNCD.StorageKind.float32
 
 -- Control: the same graph in binary64 (signatures and both algebras retagged) is ACCEPTED, so the
 -- scatter above is well-formed and the rejection is the capability verdict alone.
@@ -359,10 +360,11 @@ S0`; `S[iterNext l] := S[l] + X[l]`), and `NonlinCheckTest`'s `baselineAxiswise`
 0). Together with fixture 8's pointwise case these exhaust `PlanStep`'s four non-assignment
 constructors.
 
-The scatter and scan cases are rejections. Each is paired with the same graph under a BINARY64
-table, which must NOT report `f32UnsupportedStep` — otherwise the fixture would pass for an
-implementation that refused these step kinds unconditionally rather than for binary32 specifically.
-The axiswise case is an ACCEPTANCE since F32-B Task 3 (fixture 3.10). -/
+The scan case is a rejection; the scatter case is an acceptance since F32-D. The scan case is
+paired with the same graph under a BINARY64 table, which must NOT report `f32UnsupportedStep` —
+otherwise the fixture would pass for an implementation that refused this step kind unconditionally
+rather than for binary32 specifically. The axiswise case is an ACCEPTANCE since F32-B Task 3
+(fixture 3.10). -/
 
 def isF32Unsupported (i : Nat) (k : PlanStepKind) : Except PlanStepError CheckedEvalPlan → Bool
   | .error (.f32UnsupportedStep i' k') => i == i' && k == k'
@@ -385,11 +387,7 @@ def f32ScatterPlan : RawEvalPlan :=
   { tensorSigs := #[ { shape := #[3], dtype := .f32 }, { shape := #[6], dtype := .f32 } ]
   , inputSlots := #[0], steps := #[.scatter f32Scatter] }
 
-#guard errOf (checkPlan f32ScatterPlan) == some (.f32UnsupportedStep 0 .scatter)
-
-#guard !(isF32Unsupported 0 .scatter (checkPlan
-  { f32ScatterPlan with
-    tensorSigs := #[ { shape := #[3], dtype := .f64 }, { shape := #[6], dtype := .f64 } ] }))
+#guard storageOf (checkPlan f32ScatterPlan) == some LeanNCD.StorageKind.float32
 
 -- Scan. `linearScan`'s geometry verbatim: outer slots `0 = S0` (scalar), `1 = X : [3]`,
 -- `2 = S : [3]`; `historyExtents := #[3]`, so `stepExtents = #[2]`.
@@ -439,6 +437,22 @@ def f32ScanPlan : RawEvalPlan :=
   { f32ScanPlan with
     tensorSigs := #[ { shape := #[], dtype := .f64 }, { shape := #[3], dtype := .f64 }
                    , { shape := #[3], dtype := .f64 } ] }))
+
+/-- Fixture 14's index witness, re-pointed by F32-D: `f32UnsupportedStepOrder` (now accepted) with
+    `f32Scan` appended TWICE, at outer indices 3 and 4, so first-rejection-wins (3) and
+    last-rejection-wins (4) disagree. -/
+def f32StepOrderWithScan : RawEvalPlan :=
+  { f32UnsupportedStepOrder with
+    steps := f32UnsupportedStepOrder.steps ++ #[.scan f32Scan, .scan f32Scan] }
+
+#guard errOf (checkPlan f32StepOrderWithScan) == some (.f32UnsupportedStep 3 .scan)
+
+#guard !(isF32Unsupported 3 .scan (checkPlan
+  { f32StepOrderWithScan with
+    tensorSigs := f32StepOrderWithScan.tensorSigs.map (fun s => { s with dtype := .f64 })
+    steps := #[ .assign (idNode 1 0)
+              , .pointwise { sourceSlot := 1, destinationSlot := 2, shape := #[2], fn := .relu }
+              , .scatter (stepOrderScatter admittedAlgebra), .scan f32Scan, .scan f32Scan ] }))
 
 -- Axiswise. `baselineAxiswise`'s own field values (`softmax` over axis 0, shape `#[2]`).
 def f32AxiswiseStep : RawAxiswisePlan :=
