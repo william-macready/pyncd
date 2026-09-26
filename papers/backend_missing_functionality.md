@@ -161,9 +161,8 @@ what the ranking tracks.
 4. **Binary32 beyond the assignment fragment** — bounded, one deferred slice per construct. F32-B
    (nonlinearity and inline unary) and F32-D (top-level scatter) have landed (`f32b_evalplan.md`,
    `f32d_evalplan.md`); F32-C (scans including scan-local scatter) and F32-JAX remain. Each is
-   genuinely bounded
-   because the carrier, the checked evidence, the algebras, the storage-kind gates at every
-   worker/adapter/JAX door, and the named public boundary already exist; what each slice adds is
+   genuinely bounded because the carrier, the checked evidence, the algebras, the storage-kind
+   gates at every worker/adapter/JAX door, and the named public boundary already exist; what each slice adds is
    that construct's own binary32 numerics plus its fixtures. The cost is not plumbing but
    *numerical truthfulness*: routing an f32 value through the existing binary64 helper would be
    false f32, so each slice needs its own bit-level fixtures.
