@@ -204,8 +204,9 @@ Method: the reviewer's `rv_build.py` applies every plan edit to FULL copies of t
 (real namespace and module split, `leanncd/spikes/F32DRV_*.lean`) and compiles them in dependency
 order (must end `ALL COMPILED`); a companion runner applies one manifest mutation at a time to those
 copies, compiles the mutated module and its dependents into a private `.olean` dir shadowing the
-clean ones, and records the log (`spikes/mut_<label>.log`). Both scripts live in the session
-scratchpad, not the repo.
+clean ones, and records the log (`spikes/mut_<label>.log`). Both scripts are preserved as
+`papers/f32d_files/rv_build.py` and `papers/f32d_files/mut_run.py` (authoring-time tools; execution
+uses the real `lake-build.sh`/`mutation-manifest.sh`).
 
 **Group 1 — fill.** `Float32.ofInt (-(2^128))` → bits `4286578688`, `isFinite = false`;
 `admittedAlgebraF32Max.reduceId = .f32 4286578688`. `Float.ofInt (-(2^1024))` → bits
