@@ -1508,9 +1508,9 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
     | .ok k => pure k
   -- Step 0c: binary32 source capability, for a `.float32` schedule only, over the top-level
   -- statements in source order. Placed BEFORE Step A so an f32 program outside this slice's
-  -- fragment (nonlinearity, inline unary, any scan form) reports its own f32
-  -- reason with the deferred slice named, rather than reaching a dtype-blind generic capability
-  -- rejection or — worse — Step E's `checkPlan`, which is the compiler-bug channel.
+  -- fragment (any scan form) reports its own f32 reason with the deferred slice named, rather
+  -- than reaching a dtype-blind generic capability rejection or — worse — Step E's `checkPlan`,
+  -- which is the compiler-bug channel.
   if storage == .float32 then
     match f32CapabilityCheck sched.stmts with
     | .error e => throw { cause := .capability e, warnings := [] }

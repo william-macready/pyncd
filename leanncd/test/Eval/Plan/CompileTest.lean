@@ -1088,11 +1088,14 @@ def f32ScanSig : InputSignature :=
 
 The ORIGINAL Fixture 17 paired an inline unary (now admitted, Fixture 2.8) against a pointwise
 nonlinearity to pin which one `f32CapabilityCheck` reports first; that pairing no longer has two
-rejections to choose between; the inline-unary half is silently accepted. Re-pointed onto a
-different pair of deferred forms that both still reject: `f32ScatterProg`'s (Fixture 15c) top-level
-scatter statement and `f32ScanProg`'s (Fixture 15d) scan node, concatenated into one program with
-the union of their declarations. The two donors both declare an external `X`, so the scan's is
-renamed `Xs` throughout (declaration, read, `extNames`) to keep the union well-formed.
+rejections to choose between; the inline-unary half is silently accepted. Re-pointed onto a pair of
+`f32ScatterProg`'s (Fixture 15c) top-level scatter statement and `f32ScanProg`'s (Fixture 15d) scan
+node, concatenated into one program with the union of their declarations. Since F32-D the scatter
+half is ACCEPTED, not rejected — only the scan still rejects, so this pair no longer pins source
+order by itself: either arrangement reaches the scan and reports its rejection. The two donors both
+declare an external `X`, so the scan's is renamed `Xs` throughout (declaration, read, `extNames`) to
+keep the union well-formed. The actual source-order pin, since F32-D, comes from `f32TwoScanProg`
+below (a scan against a second scan, first-rejection-wins).
 
 Both subcases were observed on today's tree with `f32IdentitySig` as the signature — Step 0c
 (`f32CapabilityCheck`) runs before Step B (external signature validation), so the signature naming
@@ -1120,8 +1123,9 @@ def f32ScatterThenScanProg : ScheduledProgram :=
 #guard causeOf (prepareEvalPlan f32ScatterThenScanProg f32IdentitySig) ==
   some { cause := .capability (.unsupportedDtype "S: f32 scan"), warnings := [] }
 
--- Reversed order: the scan node comes first, so the reported rejection flips too — pinning that the
--- traversal is SOURCE order, not a fixed scatter-before-scan (or any other) category priority.
+-- Reversed order: since F32-D the scatter is accepted regardless of position, so the reported
+-- rejection does NOT flip — both orders report the scan's rejection. This pair no longer pins
+-- source order; `f32TwoScanProg` below does that instead.
 def f32ScanThenScatterProg : ScheduledProgram :=
   { f32ScatterThenScanProg with stmts := f32ScatterThenScanProg.stmts.reverse }
 
