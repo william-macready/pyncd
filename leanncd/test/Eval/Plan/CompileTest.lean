@@ -1017,16 +1017,46 @@ step whose factor 1 carries `unary := some .log`, factor 0 the lowered positiona
       | _ => false))
   == some true
 
--- (c) top-level scatter: the identity schedule's free LHS replaced by the strided affine slot
--- `Out[2*i]`, presented as the `Stmt.scatter` node `lowerArith` would produce for it.
+-- (c) top-level scatter: ACCEPTED since F32-D — the identity schedule's free LHS replaced by the
+-- strided affine slot `Out[2*i]`, presented as the `Stmt.scatter` node `lowerArith` would produce
+-- for it.
 def f32ScatterProg : ScheduledProgram :=
   { f32IdentitySched with
     stmts := [.plain (.scatter "Y" [.affine (.scale 2 axI1)]
       { body := { terms := [{ factors := [.read "X" [.axis axI1]] }] }, nonlin := .identity }
       { fill := 0, reduce := .rejectCollisions })] }
 
-#guard causeOf (prepareEvalPlan f32ScatterProg f32IdentitySig) ==
-  some { cause := .capability (.unsupportedDtype "Y: f32 scatter"), warnings := [] }
+#guard ((prepareEvalPlan f32ScatterProg f32IdentitySig).toOption.map (·.plan.storageKind))
+  == some LeanNCD.StorageKind.float32
+
+#guard ((prepareEvalPlan f32ScatterProg f32IdentitySig).toOption.map (fun p =>
+    match p.plan.raw.steps with
+    | #[.scatter s] => s.fill == .f32 0 && s.compute.algebra == admittedAlgebraF32
+        && s.destShape == #[6] && p.plan.raw.tensorSigs[s.compute.destinationSlot]?.map (·.dtype) == some .f32
+    | _ => false))
+  == some true
+
+-- 15(c) refusals. A fill the algebra's identity does not equal (`1` on sum-product) is refused...
+def f32ScatterFill1Prog : ScheduledProgram :=
+  { f32ScatterProg with
+    stmts := [.plain (.scatter "Y" [.affine (.scale 2 axI1)]
+      { body := { terms := [{ factors := [.read "X" [.axis axI1]] }] }, nonlin := .identity }
+      { fill := 1, reduce := .rejectCollisions })] }
+
+#guard causeOf (prepareEvalPlan f32ScatterFill1Prog f32IdentitySig) ==
+  some { cause := .capability (.scatterOptsNotAdmitted "Y: fill"), warnings := [] }
+
+-- ...and so is an integer past binary32's range: `Float32.ofInt (-(2^128))` rounds to `-∞`, which IS
+-- `admittedAlgebraF32Max.reduceId` bit for bit (4286578688), so only the finiteness test refuses it.
+def f32ScatterOverflowFillProg : ScheduledProgram :=
+  { f32ScatterProg with
+    stmts := [.plain (.scatter "Y" [.affine (.scale 2 axI1)]
+      { body := { terms := [{ factors := [.read "X" [.axis axI1]] }] }, nonlin := .identity
+      , agg := .max }
+      { fill := -(2^128), reduce := .rejectCollisions })] }
+
+#guard causeOf (prepareEvalPlan f32ScatterOverflowFillProg f32IdentitySig) ==
+  some { cause := .capability (.scatterOptsNotAdmitted "Y: fill"), warnings := [] }
 
 -- (d) scan: `ScanCompileTest.selfRecurSched`'s statement with binary32 declarations for its two
 -- externals and its state. The scan's representative name is `S`.
@@ -1086,9 +1116,9 @@ def f32ScatterThenScanProg : ScheduledProgram :=
   , extNames := insert "X" (insert "S0" (insert "Xs" (∅ : Finset String)))
   , explicitSizes := f32IdentitySched.explicitSizes.insert f32ScanAxL.uid 3 }
 
--- Forward order: the scatter statement comes first, so ITS rejection is reported.
+-- Forward order: the scatter is admitted since F32-D, so the traversal continues to the scan.
 #guard causeOf (prepareEvalPlan f32ScatterThenScanProg f32IdentitySig) ==
-  some { cause := .capability (.unsupportedDtype "Y: f32 scatter"), warnings := [] }
+  some { cause := .capability (.unsupportedDtype "S: f32 scan"), warnings := [] }
 
 -- Reversed order: the scan node comes first, so the reported rejection flips too — pinning that the
 -- traversal is SOURCE order, not a fixed scatter-before-scan (or any other) category priority.
@@ -1098,15 +1128,43 @@ def f32ScanThenScatterProg : ScheduledProgram :=
 #guard causeOf (prepareEvalPlan f32ScanThenScatterProg f32IdentitySig) ==
   some { cause := .capability (.unsupportedDtype "S: f32 scan"), warnings := [] }
 
+-- Since F32-D the scatter above is admitted, so source order is pinned between two SCANS instead:
+-- `f32ScanProg`'s node and a renamed clone (`T`, `T0`, `Xt`, axis `m`).
+def f32ScanAxM : AxisSpec := ⟨"m", 7, .nat⟩
+
+def f32TwoScanProg : ScheduledProgram :=
+  { decls := f32ScanProg.decls ++
+      [ .iter f32ScanAxM 3, .typedTensor .f32 "T0" [], .typedTensor .f32 "Xt" [f32ScanAxM]
+      , .typedTensor .f32 "T" [f32ScanAxM] ]
+  , stmts := [ f32ScanProg.stmts[0]!
+             , .scan "T" [f32ScanAxM]
+                 [ .assign "T" [.iterAt f32ScanAxM 0]
+                     { body := { terms := [{ factors := [.read "T0" []] }] }, nonlin := .identity } ]
+                 [ .assign "T" [.iterNext f32ScanAxM]
+                     { body := { terms := [ { factors := [.read "T" [.axis f32ScanAxM]] }
+                                          , { factors := [.read "Xt" [.axis f32ScanAxM]] } ] }
+                     , nonlin := .identity } ]
+                 false ]
+  , env := {}
+  , extNames := insert "S0" (insert "X" (insert "T0" (insert "Xt" (∅ : Finset String))))
+  , explicitSizes := f32ScanProg.explicitSizes.insert f32ScanAxM.uid 3 }
+
+#guard causeOf (prepareEvalPlan f32TwoScanProg f32ScanSig) ==
+  some { cause := .capability (.unsupportedDtype "S: f32 scan"), warnings := [] }
+#guard causeOf (prepareEvalPlan { f32TwoScanProg with stmts := f32TwoScanProg.stmts.reverse } f32ScanSig) ==
+  some { cause := .capability (.unsupportedDtype "T: f32 scan"), warnings := [] }
+
 /-! #### Fixture FW2 (final-review fix wave): Steps 0c and 0b run BEFORE Step A
 
 `prepareEvalPlan` promises that an f32 program reports its OWN f32 reason (Step 0c) and a mixed one
 its mixed-storage reason (Step 0b) ahead of the dtype-blind `capabilityPreflight` (Step A). Fixtures
 4.3, 15, and 2.9 (formerly 14, 15, and 17 — 14's relevant half became Fixture 4.3 in Task 4, and 17
 was re-pointed as Fixture 2.9 in Task 2) cannot observe that order: each of their programs is one
-`capabilityPreflight` admits, so Step A would have no competing answer. This one gives it one —
-fixture 15(c)'s f32 scatter with a `relu` on it, which Step A rejects on its own as a scatter
-nonlinearity. -/
+`capabilityPreflight` admits, so Step A would have no competing answer. The witness is now the relu
+scatter followed by fixture 2.9's scan: Step A's competing answer is the scatter nonlinearity, Step
+0c's is the scan (since F32-D admits the scatter itself, fixture 15(c)'s f32 scatter with a `relu`
+on it — `f32ScatterReluProg` — now reaches Step A on its own, so it alone no longer witnesses this
+order). -/
 
 def f32ScatterReluProg : ScheduledProgram :=
   { f32IdentitySched with
@@ -1118,15 +1176,26 @@ def f32ScatterReluProg : ScheduledProgram :=
 #guard errOf (capabilityPreflight f32ScatterReluProg)
   == some (.unsupportedNonlin "Y: scatter nonlinearity")
 
--- FW2a: through `prepareEvalPlan` the Step 0c payload arrives instead. `run_cmd`, so a reordering
--- NAMES the capability cause it reported instead.
+-- Since F32-D Step 0c admits the scatter itself, so on its own this program reaches Step A.
+#guard causeOf (prepareEvalPlan f32ScatterReluProg f32IdentitySig) ==
+  some { cause := .capability (.unsupportedNonlin "Y: scatter nonlinearity"), warnings := [] }
+
+-- The witness: the relu scatter, then fixture 2.9's f32 scan. Step A alone reports the scatter.
+def f32ScatterReluThenScanProg : ScheduledProgram :=
+  { f32ScatterThenScanProg with
+    stmts := [f32ScatterReluProg.stmts[0]!, f32ScatterThenScanProg.stmts[1]!] }
+
+#guard errOf (capabilityPreflight f32ScatterReluThenScanProg)
+  == some (.unsupportedNonlin "Y: scatter nonlinearity")
+
+-- FW2a: through `prepareEvalPlan` Step 0c's scan payload arrives instead.
 run_cmd do
-  match prepareEvalPlan f32ScatterReluProg f32IdentitySig with
-  | .error { cause := .capability (.unsupportedDtype "Y: f32 scatter"), warnings := [] } => pure ()
+  match prepareEvalPlan f32ScatterReluThenScanProg f32IdentitySig with
+  | .error { cause := .capability (.unsupportedDtype "S: f32 scan"), warnings := [] } => pure ()
   | .error { cause := .capability c, .. } =>
       throwError s!"fixture FW2a: Step 0c did not precede Step A — got capability {repr c}"
   | .error _ => throwError "fixture FW2a: rejected, but not at the capability tier"
-  | .ok _ => throwError "fixture FW2a: accepted an f32 scatter"
+  | .ok _ => throwError "fixture FW2a: accepted an f32 scan"
 
 -- FW2b: the same statement in a MIXED schedule (`X` ordinary, `Y` f32 — fixture 12's declaration
 -- set). Step 0c never runs for a non-`.float32` schedule, so this pins Step 0b ahead of Step A.

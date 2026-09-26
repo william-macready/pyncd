@@ -338,4 +338,51 @@ lifted, and Step 0c is the last door.
 
 ## 7. Completion note (appended by Task 3 steps 4 and 11)
 
-_(empty until executed)_
+### Task 3 phase 1 — §4 table re-derivation against the post-Task-3 tree
+
+Both tables below were re-derived cell by cell against the tree at the end of Task 3 phase 1 (build
+green, 8672 jobs, oracle O1–O5 passing) — every door named was located with `rg`/read (no line
+numbers) and its current behavior compared to the plan's claim. No cell disagreed with §4's
+original text; both tables are reproduced here as the re-derivation's result (identical to
+`f32d_evalplan.md` §4, now confirmed live rather than prospective). Doors actually opened during
+the re-derivation: `f32CapabilityCheck` (`Compile.lean`, admits `.plain` unconditionally, still
+refuses `.scan`/`.scanPre`); `scatterFillOrFail`'s `.f32` arm (native `Float32.ofInt` bits, finite
+check); `checkScatter`/`checkScatterF32` over `checkScatterCore kind` (`Check.lean`); `checkScatter`
+on an f32 table (`ScatterCheckTest` fixture 9, `dtypeNotAdmitted`, untouched by this task);
+`runDenseScatter`/`runDenseScatter32` over `runDenseScatterWith` (`Dense.lean`, each guards its own
+`storageKind` first); `runDensePlan`'s own `.float64` guard (`EvalPlan.lean`) and `runDensePlan32`'s
+`.scatter`/`.scan` arms (`Dense32.lean`, `.scan` still `storageKindMismatch .float32 .float64`);
+`ExecutableTest` fixtures 23/24 (plan-level JAX gate, untouched); `f32UnsupportedStep ni .scan`
+(`EvalPlan.lean`); `scatterReduceNotAdmitted` and the `.overwrite/.sum/.max/.min` arms of
+`runDenseScatterWith` (still unreachable behind that check, both carriers, via `ops.binOp`);
+`denseValueAtWith`'s inline-unary path (`ops.applyUnary`, shared by both carriers); Step D's scatter
+branch (`resolveSource`'s `getD … dtype := .f64` totality formality, `destDtype`/`algebraForDest`
+selection identical to the plain branch).
+
+**Table A — case × door (re-derived, unchanged from the plan)**
+
+| Case | Source (Step 0c / A) | `checkPlan` / direct checkers | Float workers | binary32 workers | Named adapters | JAX | Legacy |
+|---|---|---|---|---|---|---|---|
+| f32 top-level scatter (sum-product, fill 0) | **required** (`f32CapabilityCheck` admits `.plain` unconditionally; 15(c) flip; oracle O1–O5) | **required** `checkScatterF32` over `checkScatterCore .float32`; `checkScatter` on an f32 table `dtypeNotAdmitted 1 .f32` (ScatterCheckTest fixture 9, unchanged) | **forbidden** — `runDenseScatter` guard first; `runDensePlan` guard first | **required** `runDenseScatter32` (guard first, then `runDenseScatterWith float32Ops`), `runDensePlan32`'s `.scatter` arm | **required**, unchanged cores at `Float32` (oracle) | **forbidden**, plan-level gate first (ExecutableTest fixtures 23/24, unchanged) | **forbidden**, permanently |
+| f32 scatter with inline unary factor | **required** (O1) | **required** (`checkAssignCore .float32` inside `checkScatterCore`) | **forbidden** (guard first) | **required** `float32Ops.applyUnary` via `denseValueAtWith`'s shared traversal (O1) | **required** (O1) | **forbidden** | **forbidden** |
+| scatter nonlinearity, any dtype | **forbidden** Step A (`checkNonlinScatter`) | never compiled | — | — | — | — | — |
+| non-default collision policy, either carrier | **forbidden** Step A (existing) | **forbidden** `scatterReduceNotAdmitted` in `checkScatterCore` (both kinds) | **(c)** `.overwrite/.sum/.max/.min` arms of `runDenseScatterWith`: unreachable behind that clause; via `ops.binOp` | same **(c)** | — | — | — |
+| tropical / non-zero / overflowing fill, f32 | **forbidden** from source (`scatterFillOrFail`'s `.f32` arm; 15(c) refusals `f32ScatterFill1Prog`/`f32ScatterOverflowFillProg`) | **required**, programmatic: fill must equal `reduceId` (`checkScatterCore`) | — | **required** `ops.decodeConst` (in `runDenseScatterWith`) | — | — | — |
+| out-of-range placement (programmatic only) | unreachable | admitted by design (reference parity) | **required** silent skip (ScatterDenseTest pins) | **(c)** same shared `inBoundsPerDim` skip, no binary32 fixture; carrier-free integer code | — | — | — |
+| f64 scatter (preservation) | unchanged | **required** `checkScatter` records `.float64` (`checkScatterCore .float64`) | **required** (G64 gate, G1/G2) | **forbidden** `runDenseScatter32` guard first | unchanged | scatter refused categorically, unchanged | unchanged |
+| f32 scan-local scatter | **forbidden** `"{nm}: f32 scan"` (`f32CapabilityCheck`'s `.scan`/`.scanPre` arms) | **forbidden** `f32UnsupportedStep i .scan` (`EvalPlan.lean`) | **(c)** `runDenseScan` Float-only — F32-C | none | none | **forbidden** | **forbidden** |
+
+**Table B — a binary64 literal at an arm binary32 now reaches (re-derived, unchanged from the plan)**
+
+| Site | Reached by f32 after this slice? | Class | Pin |
+|---|---|---|---|
+| `floatOps.decodeConst s.fill` @ `runDenseScatter` | yes | **fixed** → `ops.decodeConst` (parametric in `runDenseScatterWith`) | 1.5, P1-4 |
+| `denseValueAt a [] store sc` (Float traversal) @ `runDenseScatter` | yes | **fixed** → `denseValueAtWith ops` | 1.4 |
+| `prev + val`, `Max.max`, `Min.min` reduce arms | no | **(c)** → `ops.binOp` | — (unreachable behind `scatterReduceNotAdmitted`) |
+| `checkAssign` call @ `checkScatter` | yes | **fixed** → `checkAssignCore kind` (inside `checkScatterCore`) | 1.2, 1.3 |
+| `.f32 _ => false` @ `scatterFillOrFail` | yes | **fixed** → native `Float32.ofInt` bits, finite only (Task 3 step 2) | 15(c), P3-1, P3-3, P3-4 |
+| `destDtype`/`algebraForDest` @ Step D scatter branch | yes | **required**, already correct (unchanged by Task 3) | 3.1 second guard, oracle |
+| scatter-branch `resolveSource`'s `getD … dtype := .f64` | yes | **(c)** totality formality: contributes `.shape` only, every key validated by the `slotOf.contains` loop above it | — |
+
+No corrections were needed: every cell in both tables, as re-checked against the Task 3 phase 1
+tree, matches the plan's original claim.

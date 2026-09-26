@@ -158,7 +158,8 @@ inductive PositionalInputError
   -- evaluator fails loud rather than silently, if ever handed an unchecked plan.
   | predicateWidthMismatch (expected : Nat) (actual : Nat)
   /-- Two SOURCE coordinates of a scatter place a value at the same DESTINATION coordinate under
-      `CollisionReduce.rejectCollisions`. Raised by `runDenseScatter` (`Dense.lean`), and a runtime
+      `CollisionReduce.rejectCollisions`. Raised by `runDenseScatterWith` (`Dense.lean`, behind
+      both `runDenseScatter` and `runDenseScatter32`), and a runtime
       concern rather than a `PlanError` by construction: whether a placement map is injective over a
       given source domain is not decidable from the plan's rank/width/extent clauses, which is why
       `checkScatter` admits a non-injective map (rank-0 destination, an all-zero placement row) and
@@ -234,11 +235,12 @@ inductive CapabilityError
         established. An undeclared external is a real f64 tensor, so an f32 graph reading one is
         mixed and lands here.
       * Step 0c (`f32CapabilityCheck`) — a homogeneous-f32 schedule using a construct binary32
-        execution defers to a later slice, one context per construct: `"{name}: f32 scan"` and
-        `"{name}: f32 scatter"`. The former THIRD and FOURTH contexts, `"{name}: f32 nonlinearity"`
-        and `"{name}: f32 unary factor {termIndex}:{factorIndex}"`, have NO PRODUCER LEFT as of
-        F32-B Tasks 4 and 2 respectively: `checkF32Stmt`'s nonlinearity match and its factor loop
-        that threw them are both deleted, a `.pointwise`/`.axiswise` statement is now structurally
+        execution defers to a later slice, one context per construct: `"{name}: f32 scan"`. The
+        former SECOND, THIRD, and FOURTH contexts, `"{name}: f32 scatter"`, `"{name}: f32
+        nonlinearity"`, and `"{name}: f32 unary factor {termIndex}:{factorIndex}"`, have NO
+        PRODUCER LEFT as of F32-D and F32-B Tasks 4 and 2 respectively: `checkF32Stmt`'s
+        nonlinearity match and its factor loop (`checkF32Stmt` itself deleted by F32-D) that threw
+        them are both deleted, a `.pointwise`/`.axiswise` statement is now structurally
         admitted at Step 0c with `prepareEvalPlan`'s Step D emitting its real dtype/algebra, an
         inline unary read is likewise admitted, and `checkAssignF32` (`Check.lean`) admits both too
         — retained here producer-less for the same reason every other retired context/constructor

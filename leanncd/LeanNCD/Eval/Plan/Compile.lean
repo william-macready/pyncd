@@ -384,33 +384,20 @@ BEFORE `capabilityPreflight`, so an f32 program outside this slice's fragment re
 reason rather than a generic capability one.
 
 Every payload is `CapabilityError.unsupportedDtype` with the stable `"{name}: …"` shapes the plan
-fixes; each names the DEFERRED SLICE that will admit it (F32-C scan, F32-D scatter) rather than
+fixes; each names the DEFERRED SLICE that will admit it (F32-C scan) rather than
 claiming the construct is invalid. -/
 
-/-- One top-level statement's binary32 capability check, in the plan's declared sub-construct order:
-    a scatter is refused as a whole statement kind. Neither a plain assignment's nonlinearity NOR its
-    inline unary read factors are checked at this tier any more (F32-B Tasks 2 and 4): Step D
-    (`prepareEvalPlan`) emits a real `.pointwise`/`.axiswise` chain with the destination's own
-    dtype/algebra, `checkAssignF32` (`Check.lean`) admits an inline unary read structurally, and the
-    binary32 dense workers (`Dense.lean`'s `float32Ops.applyUnary`, `Nonlin.lean`'s
-    `runDensePointwise32`/`runDenseAxiswise32`) apply them for real, failing loud on a runtime domain
-    violation exactly like their binary64 counterparts do. The retired factor loop's own locator
-    sentence and its "NONLINEARITY is checked BEFORE factors" order claim retired with Task 2 — there
-    was nothing left to order once factors were no longer checked here at all, and now the
-    nonlinearity rejection that claim referred to is gone too. -/
-def checkF32Stmt : Stmt → Except CapabilityError Unit
-  | .scatter nm _ _ _ => throw (.unsupportedDtype s!"{nm}: f32 scatter")
-  | .recurMorphism _ .. => pure ()   -- `capabilityPreflight` refuses this outright, dtype-blind
-  | .assign _ _ _ => pure ()
-
 /-- The whole-schedule binary32 capability pass: top-level scheduled statements in SOURCE order,
-    first rejection wins. A `.scan`/`.scanPre` node is refused as an unsupported OUTER step kind
-    without descending into its blocks — this plan makes no precedence claim against an
-    independently invalid scan body, and a scan's own statements are not top-level statements. -/
+    first rejection wins. Every top-level statement kind is admitted (assignments since F32-A, their
+    nonlinearities and inline unary factors since F32-B, top-level scatter since F32-D; a
+    `.recurMorphism` is refused dtype-blind by `capabilityPreflight`). A `.scan`/`.scanPre` node is
+    refused as an unsupported OUTER step kind without descending into its blocks — this makes no
+    precedence claim against an independently invalid scan body, and a scan's own statements are
+    not top-level statements. -/
 def f32CapabilityCheck (stmts : List ScanStmt) : Except CapabilityError Unit := do
   for sc in stmts do
     match sc with
-    | .plain s => checkF32Stmt s
+    | .plain _ => pure ()
     | .scan nm .. => throw (.unsupportedDtype s!"{nm}: f32 scan")
     | .scanPre nm .. => throw (.unsupportedDtype s!"{nm}: f32 scan")
 
@@ -604,20 +591,21 @@ private def scatterPlacementOrFail (srcUids : List UID) (srcShape : Array Nat)
 
     Admitted: `agg = .sum` with `fill = 0` (real sum-product's identity IS `0.0`, which is exactly
     what `lowerArith` hard-codes), and a predicate destination with `fill = 0` (the Boolean identity
-    `false` decodes to `0.0`, `Dense.lean`'s `floatOps.decodeConst`). Rejected: a
-    `maxreduce`/`minreduce` scatter, whose identity is `∓∞` and which an `Int` fill cannot denote at
-    all — so the rejection is not a gap to close later but the honest report that no admissible fill
-    exists for one. Comparison is on the stored BITS, not on decoded `Float`s, so it cannot be
-    perturbed by float equality's own conventions. -/
+    `false` decodes to `0.0`, `Dense.lean`'s `floatOps.decodeConst`), and a binary32 sum-product
+    scatter with `fill = 0` (binary32 `+0`, bits `0`, compared as native `Float32.ofInt` bits).
+    Rejected: a `maxreduce`/`minreduce` scatter, whose identity is `∓∞`, which no FINITE `Int` fill
+    denotes. The binary32 arm enforces that by also requiring `Float32.ofInt fill` to be finite,
+    since `Float32.ofInt (-(2^128))` IS `-∞`. The binary64 arm does not: `Float.ofInt (-(2^1024))`
+    overflows to `-∞` and is admitted, a pre-existing gap this function does not close
+    (`papers/f32d_evalplan.md` §1.2). Comparison is on the stored BITS, not on decoded `Float`s, so
+    it cannot be perturbed by float equality's own conventions. -/
 private def scatterFillOrFail (context : String) (algebra : ContractionAlgebra) (fill : Int) :
     Except CapabilityError ScalarConst :=
   let identity := algebra.reduceId
   let agrees : Bool := match identity with
     | .f64 bits => bits == Float.toBits (Float.ofInt fill)
     | .bool b   => fill == (if b then 1 else 0)
-    -- unreachable: only a `.float32` schedule selects an f32 algebra, and Step 0c (`checkF32Stmt`)
-    -- refuses every f32 top-level scatter as `unsupportedDtype "{nm}: f32 scatter"` before Step D
-    | .f32 _    => false
+    | .f32 bits => (Float32.ofInt fill).isFinite && bits == (Float32.ofInt fill).toBits
   if agrees then pure identity else throw (.scatterOptsNotAdmitted context)
 
 /-- First UID that recurs later in the list. Mirrors `Prepared.lean`'s `firstDuplicateName` and
@@ -1520,7 +1508,7 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
     | .ok k => pure k
   -- Step 0c: binary32 source capability, for a `.float32` schedule only, over the top-level
   -- statements in source order. Placed BEFORE Step A so an f32 program outside this slice's
-  -- fragment (nonlinearity, inline unary, top-level scatter, any scan form) reports its own f32
+  -- fragment (nonlinearity, inline unary, any scan form) reports its own f32
   -- reason with the deferred slice named, rather than reaching a dtype-blind generic capability
   -- rejection or — worse — Step E's `checkPlan`, which is the compiler-bug channel.
   if storage == .float32 then
