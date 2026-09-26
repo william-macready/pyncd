@@ -111,7 +111,8 @@ f64 tensors do not coexist in one graph.
    base overlays, state writes, and histories. This is separate because scan storage and write paths
    have their own checker/evidence and recurring geometry-risk surface.
 3. **F32-D — top-level scatter.** Add native binary32 fill and placement execution, after defining
-   a binary32 oracle independent of the legacy binary64 scatter evaluator.
+   a binary32 oracle independent of the legacy binary64 scatter evaluator. **Landed by
+   `f32d_evalplan.md`.**
 4. **F32-E — contingent explicit conversions.** No f32↔f64 plan step is planned under the
    single-real-precision invariant. If that invariant changes, conversions require a separate slice;
    mixed precision remains rejected rather than converted implicitly. Boolean tensors already follow
@@ -150,11 +151,18 @@ on" claim against the code when that slice's plan is written.
    numerical fixtures for each approximation. **Landed by `f32b_evalplan.md`.**
 2. **F32-D second.** Also independent. It needs a binary32 scatter oracle independent of the legacy
    binary64 scatter evaluator, plus native fill and placement execution. B and D can swap freely;
-   put D first only if scatter/GNN-style models matter more than attention and MLPs.
+   put D first only if scatter/GNN-style models matter more than attention and MLPs. **Landed by
+   `f32d_evalplan.md`.**
 3. **F32-C third.** It builds on both:
    - scans admit nonlinear bodies, so an f32 scan with a nonlinear body needs F32-B;
-   - scan-local scatter probably reuses F32-D's fill and placement write path. This is unverified;
-     confirm it when planning F32-C.
+   - scan-local scatter does NOT reuse F32-D's fill and placement write path (`f32d_evalplan.md`
+     §1.3 finding): `Scan.lean`/`Block.lean` share only the carrier-free extent function
+     `scatterDestExtent`; F32-C must build its own binary32 state-write path in `runDenseScan`.
+
+   F32-C's binary32 oracle is `independentRun`'s unroll run through the checked binary32 path
+   (`prepareEvalPlan` → `runPreparedDense32`), which needs this slice's top-level scatter to run the
+   unrolled scan-local scatters at all (fragment coverage against `evalScheduled`'s wider placement
+   admission is unverified).
 
    It is also the largest risk surface (block and scan stores, snapshots, base overlays, state
    writes, histories). Expect it to split into two slices, as binary64 scatter did.

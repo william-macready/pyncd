@@ -386,3 +386,98 @@ selection identical to the plain branch).
 
 No corrections were needed: every cell in both tables, as re-checked against the Task 3 phase 1
 tree, matches the plan's original claim.
+
+### Task 3 phase 2 — cycles, docs close-out, and final counts
+
+**Step 10 counts** (before this slice: 4 / 2 / 2):
+
+- `rg -c '\.unsupportedDtype s!' leanncd/LeanNCD/Eval/Plan/Compile.lean` → **3**
+- `rg -c 'f32UnsupportedStep ni' leanncd/LeanNCD/Eval/Plan/EvalPlan.lean` → **1**
+- `rg -c 'throw \(\.storageKindMismatch \.float32 \.float64\)' leanncd/LeanNCD/Eval/Plan/Dense32.lean` → **1**
+
+All three match the plan's expected 3 / 1 / 1.
+
+**Mutation cycles — task-scoped (Step 5)**
+
+`mutation-manifest.sh --task 3 leanncd papers/f32d_mutations.json` (S1, S3, C1, C1b):
+
+| Mutation | Cycle (broke, then restored build green) | File byte-identical | Expected failure seen | Result |
+|---|---|---|---|---|
+| S1 (Step 0c admits an f32 scan) | yes | yes | yes | PASS |
+| S3 (Step 0c skipped: Step A answers first) | yes | yes | yes | PASS |
+| C1 (compiler placement bias dropped; binary64 witness) | yes | yes | yes | PASS |
+| C1b (compiler placement bias dropped; the binary32 oracle disagrees) [prototype-observed; run only after Scatter32OracleTest exists] | yes | yes | yes | PASS |
+
+4/4 cycles passed.
+
+`mutation-manifest.sh --task 3 leanncd papers/f32d_mutations_post.json` (P3-1..P3-4):
+
+| Mutation | Cycle (broke, then restored build green) | File byte-identical | Expected failure seen | Result |
+|---|---|---|---|---|
+| P3-1 (scatterFillOrFail f32 arm refuses everything again) | yes | yes | yes | PASS |
+| P3-2 (Step 0c refuses f32 top-level scatter again) | yes | yes | yes | PASS |
+| P3-3 (scatterFillOrFail f32 arm admits everything) | yes | yes | yes | PASS |
+| P3-4 (scatterFillOrFail f32 arm drops the finiteness test) | yes | yes | yes | PASS |
+
+4/4 cycles passed.
+
+**Mutation cycles — whole-slice, no `--task` filter (Step 6)**
+
+`mutation-manifest.sh leanncd papers/f32d_mutations.json` (all 7 entries, now that Tasks 1, 2, and 3
+are all landed):
+
+| Mutation | Cycle (broke, then restored build green) | File byte-identical | Expected failure seen | Result |
+|---|---|---|---|---|
+| G1 (binary64 gate: collision arm overwrites instead of throwing) | yes | yes | yes | PASS |
+| G2 (binary64 gate: placement bias dropped) | yes | yes | yes | PASS |
+| S2 (checkPlan capability loop admits an f32 scan) | yes | yes | yes | PASS |
+| S1 (Step 0c admits an f32 scan) | yes | yes | yes | PASS |
+| S3 (Step 0c skipped: Step A answers first) | yes | yes | yes | PASS |
+| C1 (compiler placement bias dropped; binary64 witness) | yes | yes | yes | PASS |
+| C1b (compiler placement bias dropped; the binary32 oracle disagrees) [prototype-observed; run only after Scatter32OracleTest exists] | yes | yes | yes | PASS |
+
+7/7 cycles passed.
+
+`mutation-manifest.sh leanncd papers/f32d_mutations_post.json` (all 11 entries):
+
+| Mutation | Cycle (broke, then restored build green) | File byte-identical | Expected failure seen | Result |
+|---|---|---|---|---|
+| P1-1 (runDenseScatter storage-kind guard deleted) | yes | yes | yes | PASS |
+| P1-2 (runDenseScatter32 storage-kind guard deleted) | yes | yes | yes | PASS |
+| P1-3 (checkScatterCore stamps .float64 whatever the kind) | yes | yes | yes | PASS |
+| P1-4 (shared worker's fill not decoded: always ops.zero; the binary64 max-fill fixture fails first) | yes | yes | yes | PASS |
+| P2-1 (checkPlan capability loop refuses scatter again) | yes | yes | yes | PASS |
+| P2-2 (binary32 localCheck arm calls checkScatter) | yes | yes | yes | PASS |
+| P2-3 (runDensePlan32 scatter arm a no-op) | yes | yes | yes | PASS |
+| P3-1 (scatterFillOrFail f32 arm refuses everything again) | yes | yes | yes | PASS |
+| P3-2 (Step 0c refuses f32 top-level scatter again) | yes | yes | yes | PASS |
+| P3-3 (scatterFillOrFail f32 arm admits everything) | yes | yes | yes | PASS |
+| P3-4 (scatterFillOrFail f32 arm drops the finiteness test) | yes | yes | yes | PASS |
+
+11/11 cycles passed.
+
+**Build.** `bash leanncd/scripts/lake-build.sh leanncd` → `Build completed successfully (8672 jobs)`
+— unchanged from Task 3 phase 1 (phase 2 adds no new modules, only docs and mutation cycles that
+restore the tree each time).
+
+**Value-grep (Step 8), final sweep.** Every `rg` command the plan lists was re-run after all edits in
+this commit. The nine-sentence `-U` sweep (`rg -U -n "rejects a .\.scatter./.\.scan. step|…"
+leanncd/LeanNCD leanncd/test`) already printed nothing before this commit (Tasks 1–3 phase 1 had
+already fixed all nine) and still prints nothing after it. The `"mixed storage, f32 scan, and f32
+scatter"` grep, which had two hits in `backend_missing_functionality.md` before this commit, now
+prints nothing. Every remaining `"f32 scatter"`/`"F32-D"`/`"checkF32Stmt"` hit left in the tree is
+one of the allowed exceptions (the legacy evaluator's own docs and fixtures, historical prose in
+`f32_evalplan.md`/`f32b_evalplan.md`, the producer-less mention in `Error.lean`, or current
+production/test prose correctly describing the now-landed feature) or carries the
+"(`checkF32Stmt` itself deleted by F32-D)" addendum (`CompileTest.lean`'s `f32BadOrderProg` prose,
+`backend_missing_functionality.md`'s retired-contexts sentence).
+
+**Files changed in this commit:** `leanncd/LeanNCD/Eval/Plan/AGENTS.md` (Code Map, Contracts,
+Pitfalls, Entry Points), `leanncd/test/Eval/Plan/CompileTest.lean` (addendum to the `f32BadOrderProg`
+prose only), `papers/f32_evalplan.md`, `papers/f32b_evalplan.md`,
+`papers/backend_missing_functionality.md`, `papers/wave_f_capability_manifest.md`,
+`papers/scatter_affine_lhs_writes.md`, `papers/eval_ir.md`, `papers/f32d_record.md` (this note).
+
+F32-D is closed: binary32 top-level scatter is admitted natively from source through
+`runDensePlan32`, with its own independent oracle (`Scatter32OracleTest`, O1–O5), gate G64
+unaffected, and every mutation cycle in both manifests green.

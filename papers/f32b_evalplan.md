@@ -156,7 +156,8 @@ diagnostic:
   block, and scan-local scatter. Still `unsupportedDtype "{nm}: f32 scan"` at Step 0c and
   `f32UnsupportedStep i .scan` at `checkPlan`.
 - **F32-D:** top-level scatter, including one whose RHS carries a unary factor or a nonlinearity.
-  Still `"{nm}: f32 scatter"` and `f32UnsupportedStep i .scatter`.
+  Still `"{nm}: f32 scatter"` and `f32UnsupportedStep i .scatter`. Landed by `f32d_evalplan.md`,
+  except the nonlinearity, which is refused for every dtype (policy).
 - **F32-E:** mixed-precision conversions. There are none, by the single-real-precision invariant.
 - **F32-JAX:** the plan-level `.float64` gate at all eight JAX doors is unchanged, and an f32 plan
   never reaches a per-step check there.
@@ -808,7 +809,7 @@ the binary32 nonlinearity evidence and unary-factor evidence.
 | f64 pointwise/axiswise in f64 graph | unchanged | **required** — Float checkers, `.float64` evidence (3.1 control) | **required** — guard passes (existing `NonlinDenseTest`, `BlockTest`, scan corpus) | **forbidden** — `…32` guards, `storageKindMismatch .float32 .float64` before `missingSlot` (3.5, M3/M4) | unchanged | unchanged policy | unchanged |
 | Bool slot at an f32 nonlinearity | n/a from source (`checkPredicateOutput`) | **forbidden** — `dtypeNotAdmitted slot .bool` (3.2 row sweep) | — | — | — | — | — |
 | f32 nonlinearity/unary inside a scan block | **forbidden** — Step 0c `"{nm}: f32 scan"` (existing 15(d)) | **forbidden** — `f32UnsupportedStep i .scan`; `checkPlanBlock` `storageKindNotAdmitted .float32` | **(c)** — `runDenseBlock` calls the Float nonlinearity workers; safe because `checkPlanBlock` never admits `.float32` and those workers now guard too. **F32-C** | none | none | **forbidden** | **forbidden** |
-| f32 unary/nonlinearity in a top-level scatter | **forbidden** — `"{nm}: f32 scatter"` (existing 15(c)) | **forbidden** — `f32UnsupportedStep i .scatter` | **(c)** — `runDenseScatter` gathers through the Float `denseValueAt` only; safe because `checkPlan` refuses the step kind. **F32-D** | none | none | **forbidden** | **forbidden** |
+| f32 unary/nonlinearity in a top-level scatter | **forbidden** — `"{nm}: f32 scatter"` (existing 15(c)) | **forbidden** — `f32UnsupportedStep i .scatter` | **(c)** — `runDenseScatter` gathers through the Float `denseValueAt` only; safe because `checkPlan` refuses the step kind. **F32-D**, closed by F32-D (see `f32d_evalplan.md` §4) | none | none | **forbidden** | **forbidden** |
 
 Doors to open during the audit even when they are absent from a task diff:
 
@@ -831,7 +832,7 @@ F32-A Task 4 fixture 9 pinned, one site at a time. Every site in `Compile.lean` 
 | plain `.pointwise` arm: 2 × `dtype := .f64` + preactivation `algebraForAgg` | **yes** | **fixed by Task 4** | 4.2, M1/M2/M6 |
 | plain `.axiswise` arm: same 3 sites | **yes** | **fixed by Task 4** | 4.1, M3/M4/M7 |
 | `residualizeAssignment`'s default `algebraForAgg agg` | only through the arms above, which override it | **(c)** — overridden at every top-level call site after Task 4; scan call sites override it with `algebraForDest` already | 4.1–4.4 |
-| `.plain (.scatter …)` arm; `scatterFillOrFail`'s `.f32 _ => false` | no — Step 0c scatter arm | **(c)**, guarded by Step 0c. **F32-D** | existing CompileTest 15(c), FW2 |
+| `.plain (.scatter …)` arm; `scatterFillOrFail`'s `.f32 _ => false` | no — Step 0c scatter arm | **(c)**, guarded by Step 0c. **F32-D**, closed by F32-D (see `f32d_evalplan.md` §4) | existing CompileTest 15(c), FW2 |
 | `compileScan` base/step nonlinear result slots, literal `.f64` | no — Step 0c scan arm | **(c)**, guarded by Step 0c. **F32-C** must switch both to `destDtype` | existing CompileTest 15(d) |
 | `getD … { shape := #[], dtype := .f64 }` defaults: `compileScan`'s `stateDtypes`/`outerSigs`/`sigsNow`/`baseSigs`/`stepSigs` lookups, and `prepareEvalPlan`'s Step D external `sig.tensors.getD`, both `resolveSource` closures (plain and scatter arms), and scan-state publication `compiled.stateSigs.getD` | the plain `resolveSource` and the external lookup are reached by every f32 program; the `compileScan`, scatter-arm, and scan-publication lookups are not (Step 0c) | **(c)** totality formalities: every key is validated before use (the plain `resolveSource` by the `slotOf.contains` assertion above it), each `resolveSource` default contributes only `.shape`, and the external lookup publishes the validated `ts.dtype`, never the default | — (unreachable defaults) |
 | `checkNonlinIO`'s two `.f64` literals | yes | **fixed by Task 3** (`nonlinDtypeFor kind`) | 3.1, 3.2, M5 |

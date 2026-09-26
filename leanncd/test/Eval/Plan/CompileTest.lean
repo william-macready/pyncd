@@ -856,7 +856,7 @@ def f32WrongInputSig : InputSignature :=
 inline unary read in the same plain assignment. Before f32 slice Task 2 this pinned WHICH of two
 rejections was reported (order); Task 2 retired the unary-read half (Fixture 2.8), leaving only the
 nonlinearity rejection this fixture used to pin. F32-B Task 4 retires that too — `checkF32Stmt`'s
-nonlinearity match is gone — so this program now compiles: step 0 is the preactivation `.assign`
+nonlinearity match is gone (`checkF32Stmt` itself deleted by F32-D) — so this program now compiles: step 0 is the preactivation `.assign`
 whose lone factor is the unary `log` read (admitted structurally since Task 2), step 1 is the
 `.pointwise .relu` chain Step D emits with `algebraForDest`'s f32 algebra, and every signature (X,
 the internal preactivation slot, Y) is `.f32`. -/

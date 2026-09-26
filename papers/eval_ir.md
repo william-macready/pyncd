@@ -123,10 +123,10 @@ shared carrier-polymorphic core (`packBodyOf`/`unpackBodyOf`), whose first state
 only the two composite runners (`runPreparedDense`/`runPreparedDense32`, through
 `runPreparedDenseOf`) check storage kind before `checkPreparedBindings`. `runDensePlan32` covers
 assignment steps and the two nonlinearity operations (`runDensePointwise32`/`runDenseAxiswise32`,
-F32-B) — the binary32 slice is scoped to the scan-free assignment fragment (now including
-nonlinearities and inline unary factors), and scatter/scan evidence is refused as binary64 evidence
-(`.scatter`/`.scan` are unreachable for a `.float32` graph; `checkPlan` rejects them outright before
-any plan exists). The container types
+F32-B), and top-level scatter (`runDenseScatter32`, F32-D) — the binary32 slice is scoped to the
+scan-free fragment (now including nonlinearities, inline unary factors, and top-level scatter), and
+only `.scan` evidence is refused as binary64 evidence (`.scan` is unreachable for a `.float32`
+graph; `checkPlan` rejects it outright before any plan exists). The container types
 (`DenseTensorOf`/`NamedDenseEnvOf`/`EvalReportOf`) are generic in the element type with the original
 Float names retained as aliases, so no existing Float API changed.
 

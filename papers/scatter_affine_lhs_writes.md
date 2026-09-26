@@ -375,6 +375,11 @@ max/min, contextful assignment). "Checked-plan admits, JAX declines" is the docu
 > ("`{nm}: f32 scatter`") and is deferred to slice F32-D. The rest of the section — the fill/reduce
 > monoid argument, the `ScalarConst`-not-`Int` rule, and the exhaustive-`CollisionReduce` rule — is
 > unaffected and still stands.
+>
+> **Update (2026-09-25, F32-D landed, `f32d_evalplan.md`):** top-level binary32 scatter is now
+> admitted natively — `admittedAlgebrasForF32` is reachable for a scatter's compute half through
+> `checkScatterF32`, and fill coherence is enforced via `Float32.ofInt fill` finiteness. This
+> section's fill/reduce monoid argument and `CollisionReduce` exhaustiveness claims are unaffected.
 
 Collision-`sum` is wanted eventually but deferred. It is deferrable **without rework** under three
 rules, and one of them is load-bearing.
