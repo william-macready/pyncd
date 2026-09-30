@@ -883,7 +883,7 @@ def f32BadOrderPrepared : Option PreparedPlan :=
       | _ => false)
   == some true
 
-/-! #### Fixture 15: originally four deferred source forms — only (d) still rejects at Step 0c
+/-! #### Fixture 15: originally four deferred source forms — all four accepted since F32-C
 
 Each below is an otherwise-valid homogeneous f32 source program built from a concrete existing
 donor, called through `prepareEvalPlan`. Originally all four were required to fail at the SOURCE
@@ -891,7 +891,7 @@ capability tier — before raw plan construction, so none of them could reach `c
 compiler-bug channel) or any worker. Since then: (a) axiswise and (b) inline unary were retired as
 Step 0c rejections in F32-B Task 4 / the f32 slice Task 2 respectively (they are now accepted forms,
 pinned by Fixtures 4.1 and 2.8); (c) top-level scatter is accepted as of F32-D (pinned just below,
-"ACCEPTED since F32-D"). Only (d) scan remains a genuine Step 0c rejection today. -/
+"ACCEPTED since F32-D"); (d) scan is accepted as of F32-C, which deleted Step 0c itself. -/
 
 -- (a) axiswise — RETIRED as a Fixture 15 rejection (F32-B Task 4): see Fixture 4.1 below, which
 -- flips this exact donor to acceptance. The marked axis must be `.real`-kinded
@@ -1082,27 +1082,27 @@ def f32ScanSig : InputSignature :=
   InputSignature.mk ((({} : HashMap String TensorSignature).insert "S0"
     { shape := #[], dtype := .f32 }).insert "X" { shape := #[3], dtype := .f32 })
 
-#guard causeOf (prepareEvalPlan f32ScanProg f32ScanSig) ==
-  some { cause := .capability (.unsupportedDtype "S: f32 scan"), warnings := [] }
+-- F32-C: admitted.
+#guard causeOf (prepareEvalPlan f32ScanProg f32ScanSig) == none
 
-/-! #### Fixture 2.9 (f32 slice, Task 2): re-pointing Fixture 17 — top-level statements are still
-    traversed in SOURCE order
+/-! #### Fixture 2.9 (f32 slice, Task 2): re-pointing Fixture 17 — formerly pinned SOURCE-order
+    traversal (lost since F32-C, see below)
 
 The ORIGINAL Fixture 17 paired an inline unary (now admitted, Fixture 2.8) against a pointwise
 nonlinearity to pin which one `f32CapabilityCheck` reports first; that pairing no longer has two
 rejections to choose between; the inline-unary half is silently accepted. Re-pointed onto a pair of
 `f32ScatterProg`'s (Fixture 15c) top-level scatter statement and `f32ScanProg`'s (Fixture 15d) scan
-node, concatenated into one program with the union of their declarations. Since F32-D the scatter
-half is ACCEPTED, not rejected — only the scan still rejects, so this pair no longer pins source
-order by itself: either arrangement reaches the scan and reports its rejection. The two donors both
+node, concatenated into one program with the union of their declarations. The two donors both
 declare an external `X`, so the scan's is renamed `Xs` throughout (declaration, read, `extNames`) to
-keep the union well-formed. The actual source-order pin, since F32-D, comes from `f32TwoScanProg`
-below (a scan against a second scan, first-rejection-wins).
+keep the union well-formed.
 
-Both subcases were observed on today's tree with `f32IdentitySig` as the signature — Step 0c
-(`f32CapabilityCheck`) runs before Step B (external signature validation), so the signature naming
-only `X` is never consulted for the missing `S0`/`Xs` entries; this fixture is therefore written and
-green independent of Task 2's code change. -/
+**This fixture NO LONGER PINS SOURCE ORDER (since F32-C).** F32-D admitted the scatter half; F32-C
+admitted the scan half and deleted Step 0c (`f32CapabilityCheck`), the source-order capability
+pass whose first-rejection-wins traversal this pair (and `f32TwoScanProg` below) used to pin. Both
+statements now pass Steps 0b and A, so Step B (external signature validation) answers for both
+orders: `f32IdentitySig` names only `X`, and in first-seen-read order (Step B's) the first external
+it lacks is `S0` whichever statement comes first. No binary32 source-order capability traversal
+remains to pin. -/
 def f32ScatterThenScanProg : ScheduledProgram :=
   { decls := f32IdentitySched.decls ++
       [ .iter f32ScanAxL 3, .typedTensor .f32 "S0" [], .typedTensor .f32 "Xs" [f32ScanAxL]
@@ -1121,21 +1121,21 @@ def f32ScatterThenScanProg : ScheduledProgram :=
   , extNames := insert "X" (insert "S0" (insert "Xs" (∅ : Finset String)))
   , explicitSizes := f32IdentitySched.explicitSizes.insert f32ScanAxL.uid 3 }
 
--- Forward order: the scatter is admitted since F32-D, so the traversal continues to the scan.
+-- Forward order. F32-C: Step 0c no longer exists; Step B reports the signature `f32IdentitySig` lacks.
 #guard causeOf (prepareEvalPlan f32ScatterThenScanProg f32IdentitySig) ==
-  some { cause := .capability (.unsupportedDtype "S: f32 scan"), warnings := [] }
+  some { cause := .inputSignature (.missingSignature "S0"), warnings := [] }
 
--- Reversed order: since F32-D the scatter is accepted regardless of position, so the reported
--- rejection does NOT flip — both orders report the scan's rejection. This pair no longer pins
--- source order; `f32TwoScanProg` below does that instead.
+-- Reversed order: the same Step B answer — the payload does not depend on statement order.
 def f32ScanThenScatterProg : ScheduledProgram :=
   { f32ScatterThenScanProg with stmts := f32ScatterThenScanProg.stmts.reverse }
 
 #guard causeOf (prepareEvalPlan f32ScanThenScatterProg f32IdentitySig) ==
-  some { cause := .capability (.unsupportedDtype "S: f32 scan"), warnings := [] }
+  some { cause := .inputSignature (.missingSignature "S0"), warnings := [] }
 
--- Since F32-D the scatter above is admitted, so source order is pinned between two SCANS instead:
--- `f32ScanProg`'s node and a renamed clone (`T`, `T0`, `Xt`, axis `m`).
+-- F32-D moved the source-order pin onto two SCANS: `f32ScanProg`'s node and a renamed clone (`T`,
+-- `T0`, `Xt`, axis `m`), first-rejection-wins at Step 0c. Since F32-C both scans are admitted and
+-- Step 0c is deleted, so this pair NO LONGER PINS SOURCE ORDER either: both orders reach Step B,
+-- which reports `T0`, the first-read external `f32ScanSig` lacks in either order.
 def f32ScanAxM : AxisSpec := ⟨"m", 7, .nat⟩
 
 def f32TwoScanProg : ScheduledProgram :=
@@ -1156,21 +1156,21 @@ def f32TwoScanProg : ScheduledProgram :=
   , explicitSizes := f32ScanProg.explicitSizes.insert f32ScanAxM.uid 3 }
 
 #guard causeOf (prepareEvalPlan f32TwoScanProg f32ScanSig) ==
-  some { cause := .capability (.unsupportedDtype "S: f32 scan"), warnings := [] }
+  some { cause := .inputSignature (.missingSignature "T0"), warnings := [] }
 #guard causeOf (prepareEvalPlan { f32TwoScanProg with stmts := f32TwoScanProg.stmts.reverse } f32ScanSig) ==
-  some { cause := .capability (.unsupportedDtype "T: f32 scan"), warnings := [] }
+  some { cause := .inputSignature (.missingSignature "T0"), warnings := [] }
 
-/-! #### Fixture FW2 (final-review fix wave): Steps 0c and 0b run BEFORE Step A
+/-! #### Fixture FW2 (final-review fix wave): Step 0b runs BEFORE Step A (Step 0c deleted by F32-C)
 
-`prepareEvalPlan` promises that an f32 program reports its OWN f32 reason (Step 0c) and a mixed one
+`prepareEvalPlan` promised that an f32 program reports its OWN f32 reason (Step 0c) and a mixed one
 its mixed-storage reason (Step 0b) ahead of the dtype-blind `capabilityPreflight` (Step A). Fixtures
 4.3, 15, and 2.9 (formerly 14, 15, and 17 — 14's relevant half became Fixture 4.3 in Task 4, and 17
 was re-pointed as Fixture 2.9 in Task 2) cannot observe that order: each of their programs is one
-`capabilityPreflight` admits, so Step A would have no competing answer. The witness is now the relu
-scatter followed by fixture 2.9's scan: Step A's competing answer is the scatter nonlinearity, Step
-0c's is the scan (since F32-D admits the scatter itself, fixture 15(c)'s f32 scatter with a `relu`
-on it — `f32ScatterReluProg` — now reaches Step A on its own, so it alone no longer witnesses this
-order). -/
+`capabilityPreflight` admits, so Step A would have no competing answer. The FW2a witness was the relu
+scatter followed by fixture 2.9's scan, Step A's answer (the scatter nonlinearity) competing with
+Step 0c's (the scan). Since F32-C deleted Step 0c, FW2a no longer witnesses a 0c-before-A order;
+it now pins that Step A answers ahead of Step B (the program also lacks `S0` in `f32IdentitySig`).
+FW2b still pins Step 0b ahead of Step A. -/
 
 def f32ScatterReluProg : ScheduledProgram :=
   { f32IdentitySched with
@@ -1182,7 +1182,7 @@ def f32ScatterReluProg : ScheduledProgram :=
 #guard errOf (capabilityPreflight f32ScatterReluProg)
   == some (.unsupportedNonlin "Y: scatter nonlinearity")
 
--- Since F32-D Step 0c admits the scatter itself, so on its own this program reaches Step A.
+-- Since F32-D the scatter itself is admitted before Step A, so on its own this program reaches it.
 #guard causeOf (prepareEvalPlan f32ScatterReluProg f32IdentitySig) ==
   some { cause := .capability (.unsupportedNonlin "Y: scatter nonlinearity"), warnings := [] }
 
@@ -1194,17 +1194,12 @@ def f32ScatterReluThenScanProg : ScheduledProgram :=
 #guard errOf (capabilityPreflight f32ScatterReluThenScanProg)
   == some (.unsupportedNonlin "Y: scatter nonlinearity")
 
--- FW2a: through `prepareEvalPlan` Step 0c's scan payload arrives instead.
-run_cmd do
-  match prepareEvalPlan f32ScatterReluThenScanProg f32IdentitySig with
-  | .error { cause := .capability (.unsupportedDtype "S: f32 scan"), warnings := [] } => pure ()
-  | .error { cause := .capability c, .. } =>
-      throwError s!"fixture FW2a: Step 0c did not precede Step A — got capability {repr c}"
-  | .error _ => throwError "fixture FW2a: rejected, but not at the capability tier"
-  | .ok _ => throwError "fixture FW2a: accepted an f32 scan"
+-- FW2a. F32-C: with Step 0c gone, Step A answers (the relu scatter), ahead of Step B's missing `S0`.
+#guard causeOf (prepareEvalPlan f32ScatterReluThenScanProg f32IdentitySig) ==
+  some { cause := .capability (.unsupportedNonlin "Y: scatter nonlinearity"), warnings := [] }
 
 -- FW2b: the same statement in a MIXED schedule (`X` ordinary, `Y` f32 — fixture 12's declaration
--- set). Step 0c never runs for a non-`.float32` schedule, so this pins Step 0b ahead of Step A.
+-- set). This pins Step 0b ahead of Step A.
 def f32MixedScatterReluProg : ScheduledProgram :=
   { f32ScatterReluProg with
     decls := [.axis axI1 (some 3), .typedTensor .f32 "Y" [axI1], .tensor "X" [axI1]] }

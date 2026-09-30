@@ -227,25 +227,23 @@ inductive CapabilityError
                                              -- (checkAggOp admits max/min since they compile to the
                                              -- tropical algebras); kept per §9.2, like scanNode
   | booleanOutput        (context : String)
-  /-- A schedule the compiler will not compile FOR ITS DERIVED STORAGE KIND. Both producers are in
+  /-- A schedule the compiler will not compile FOR ITS DERIVED STORAGE KIND. Its producer is in
       `prepareEvalPlan` (never in `capabilityPreflight`, which is per-declaration and per-statement
-      and cannot see a schedule-wide derivation):
+      and cannot see a schedule-wide derivation); since F32-C only Step 0b remains:
 
       * Step 0b — a MIXED f32/f64 schedule, context `"{name}: mixed f32/f64 storage in one
         schedule"`, naming the first USED name that disagrees with the kind an earlier used name
         established. An undeclared external is a real f64 tensor, so an f32 graph reading one is
         mixed and lands here.
-      * Step 0c (`f32CapabilityCheck`) — a homogeneous-f32 schedule using a construct binary32
-        execution defers to a later slice, one context per construct: `"{name}: f32 scan"`. The
-        former SECOND, THIRD, and FOURTH contexts, `"{name}: f32 scatter"`, `"{name}: f32
-        nonlinearity"`, and `"{name}: f32 unary factor {termIndex}:{factorIndex}"`, have NO
-        PRODUCER LEFT as of F32-D and F32-B Tasks 4 and 2 respectively: `checkF32Stmt`'s
-        nonlinearity match and its factor loop (`checkF32Stmt` itself deleted by F32-D) that threw
-        them are both deleted, a `.pointwise`/`.axiswise` statement is now structurally
-        admitted at Step 0c with `prepareEvalPlan`'s Step D emitting its real dtype/algebra, an
-        inline unary read is likewise admitted, and `checkAssignF32` (`Check.lean`) admits both too
-        — retained here producer-less for the same reason every other retired context/constructor
-        in this file is (§9.2), not deleted.
+      * Step 0c (`f32CapabilityCheck`, DELETED by F32-C) — formerly a homogeneous-f32 schedule
+        using a deferred construct, one context per construct. All FOUR contexts this bullet ever
+        produced — `"{name}: f32 scan"`, `"{name}: f32 scatter"`, `"{name}: f32 nonlinearity"`,
+        `"{name}: f32 unary factor {termIndex}:{factorIndex}"` — have NO PRODUCER LEFT as of F32-C,
+        F32-D, and F32-B Tasks 4 and 2 respectively: every top-level statement kind a `.float32`
+        schedule can name is structurally admitted at Step 0c's former position, with
+        `prepareEvalPlan`'s later steps emitting each kind's real dtype/algebra. Retained here
+        producer-less for the same reason every other retired context/constructor in this file is
+        (§9.2), not deleted.
 
       Task 1's temporary blanket `"f32 execution not yet admitted"` context is GONE: a homogeneous
       f32 schedule inside this slice's fragment now compiles to checked binary32 evidence. -/
