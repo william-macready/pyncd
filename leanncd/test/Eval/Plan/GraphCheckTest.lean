@@ -360,11 +360,11 @@ S0`; `S[iterNext l] := S[l] + X[l]`), and `NonlinCheckTest`'s `baselineAxiswise`
 0). Together with fixture 8's pointwise case these exhaust `PlanStep`'s four non-assignment
 constructors.
 
-The scan case is a rejection; the scatter case is an acceptance since F32-D. The scan case is
-paired with the same graph under a BINARY64 table, which must NOT report `f32UnsupportedStep` —
-otherwise the fixture would pass for an implementation that refused this step kind unconditionally
-rather than for binary32 specifically. The axiswise case is an ACCEPTANCE since F32-B Task 3
-(fixture 3.10). -/
+The scatter case is an acceptance since F32-D; the scan case is ALSO an acceptance, since F32-C. The
+scan case is paired with the same graph under a BINARY64 table, which must NOT report
+`f32UnsupportedStep` — otherwise the fixture would pass for an implementation that refused this step
+kind unconditionally rather than for binary32 specifically. The axiswise case is an ACCEPTANCE since
+F32-B Task 3 (fixture 3.10). -/
 
 def isF32Unsupported (i : Nat) (k : PlanStepKind) : Except PlanStepError CheckedEvalPlan → Bool
   | .error (.f32UnsupportedStep i' k') => i == i' && k == k'
@@ -440,9 +440,12 @@ def f32ScanPlan : RawEvalPlan :=
     tensorSigs := #[ { shape := #[], dtype := .f64 }, { shape := #[3], dtype := .f64 }
                    , { shape := #[3], dtype := .f64 } ] }))
 
-/-- Fixture 14's index witness, re-pointed by F32-D: `f32UnsupportedStepOrder` (now accepted) with
-    `f32Scan` appended TWICE, at outer indices 3 and 4, so first-rejection-wins (3) and
-    last-rejection-wins (4) disagree. -/
+/-- Fixture 14's index witness, re-pointed by F32-D and again by F32-C: `f32UnsupportedStepOrder`
+    (now accepted) with `f32Scan` appended TWICE, at outer indices 3 and 4. With no capability
+    refusal left to fire (F32-C admits `.scan` outright), both scans instead write the same
+    destination slot 2, so `checkStepGraph`'s wiring check reports
+    `.assign (.duplicateDestination 2 1 3)` — a genuinely different failure than the old capability
+    verdict, reached only because nothing upstream of wiring rejects the step first. -/
 def f32StepOrderWithScan : RawEvalPlan :=
   { f32UnsupportedStepOrder with
     steps := f32UnsupportedStepOrder.steps ++ #[.scan f32Scan, .scan f32Scan] }
