@@ -282,7 +282,18 @@ structure CheckedScanPlan where private mk ::
   checkedBase : CheckedPlanBlock
   checkedStep : CheckedPlanBlock
   stepExtents : Array Nat
+  /-- The carrier this scan was checked for, set only by `checkScanPlan` (`.float64`) and
+      `checkScanPlanF32` (`.float32`); both blocks carry the same kind. `runDenseScan`/
+      `runDenseScan32` refuse a mismatch as their FIRST statement. -/
+  storageKind : LeanNCD.StorageKind
   deriving Repr
+
+/-- The per-slot dtype admission rule for one carrier: `dtypeAdmitted` (binary64) or
+    `dtypeAdmittedF32` (binary32), both from `Check.lean`. -/
+private def scanDtypeAdmitted (kind : LeanNCD.StorageKind) (dt : ScalarDType) : Bool :=
+  match kind with
+  | .float64 => dtypeAdmitted dt
+  | .float32 => dtypeAdmittedF32 dt
 
 /-- Validate a block's captures against its own declared `inputs`: every capture's `inputSlot` is
     one of the block's inputs, every input has exactly one capture, every capture's own block-local
@@ -319,7 +330,7 @@ structure CheckedScanPlan where private mk ::
     **Do not relax or relocate `checkPlanBlock`'s storage gate on the belief that this clause still
     catches unread `f32` captures — it does not.** If that gate ever moves, restore a real producer
     here (and a fixture for it) in the same change. -/
-private def checkCaptures (sigs : Array TensorSignature) (block : RawPlanBlock)
+private def checkCaptures (kind : LeanNCD.StorageKind) (sigs : Array TensorSignature) (block : RawPlanBlock)
     (captures : Array BlockCapture) (numStates : Nat) (states : Array StateSlot) (isBase : Bool) :
     Except ScanPlanError Unit := do
   let mut boundInputs : Array Bool := Array.replicate block.tensorSigs.size false
@@ -332,7 +343,7 @@ private def checkCaptures (sigs : Array TensorSignature) (block : RawPlanBlock)
     if boundInputs.getD c.inputSlot false then throw (.duplicateCaptureInput isBase c.inputSlot)
     boundInputs := boundInputs.set! c.inputSlot true
     let actual := block.tensorSigs.getD c.inputSlot { shape := #[], dtype := .f64 }
-    unless dtypeAdmitted actual.dtype do
+    unless scanDtypeAdmitted kind actual.dtype do
       throw (.captureDtypeNotAdmitted isBase i c.inputSlot actual.dtype)
     match c.source with
     | .external outerSlot =>
@@ -480,8 +491,8 @@ private def checkWrites (sigs : Array TensorSignature) (block : RawPlanBlock)
     passes either way; `ScanTest.lean`'s `stepBlockNonlinBetweenAssignsG` is the one that pins the
     difference, by putting a nonlinear step between two assignments so the offending assignment sits
     at block-step index 2 and filtered index 1. -/
-def checkScanPlan (sigs : Array TensorSignature) (raw : RawScanPlan) :
-    Except ScanPlanError CheckedScanPlan := do
+private def checkScanCore (kind : LeanNCD.StorageKind) (sigs : Array TensorSignature)
+    (raw : RawScanPlan) : Except ScanPlanError CheckedScanPlan := do
   if raw.states.isEmpty then throw .noStates else pure ()
   if raw.historyExtents.isEmpty then throw .noAdvancingAxes else pure ()
   for h : i in [0 : raw.historyExtents.size] do
@@ -509,7 +520,7 @@ def checkScanPlan (sigs : Array TensorSignature) (raw : RawScanPlan) :
     -- existing write equality gives every block output dtype admission transitively — that
     -- write-side check would be unreachable, so it is documented rather than coded (see
     -- `checkWrites`).
-    unless dtypeAdmitted stateSig.dtype do
+    unless scanDtypeAdmitted kind stateSig.dtype do
       throw (.stateDtypeNotAdmitted si st.destSlot stateSig.dtype)
     let mut dimSeen : Array Bool := Array.replicate stateSig.shape.size false
     for h2 : i in [0 : st.advancingDims.size] do
@@ -530,10 +541,13 @@ def checkScanPlan (sigs : Array TensorSignature) (raw : RawScanPlan) :
   unless raw.baseBlock.contextShape == #[] do throw (.baseBlockContextNotEmpty raw.baseBlock.contextShape)
   unless raw.stepBlock.contextShape == stepExtents do
     throw (.stepBlockContextMismatch stepExtents raw.stepBlock.contextShape)
-  let checkedBase ← (checkPlanBlock raw.baseBlock).mapError .baseBlockError
-  let checkedStep ← (checkPlanBlock raw.stepBlock).mapError .stepBlockError
-  checkCaptures sigs raw.baseBlock raw.baseCaptures raw.states.size raw.states true
-  checkCaptures sigs raw.stepBlock raw.stepCaptures raw.states.size raw.states false
+  let checkBlock := match kind with
+    | .float64 => checkPlanBlock
+    | .float32 => checkPlanBlockF32
+  let checkedBase ← (checkBlock raw.baseBlock).mapError .baseBlockError
+  let checkedStep ← (checkBlock raw.stepBlock).mapError .stepBlockError
+  checkCaptures kind sigs raw.baseBlock raw.baseCaptures raw.states.size raw.states true
+  checkCaptures kind sigs raw.stepBlock raw.stepCaptures raw.states.size raw.states false
   let baseRowsByState ← checkWrites sigs raw.baseBlock raw.baseWrites raw.states true
   let stepRowsByState ← checkWrites sigs raw.stepBlock raw.stepWrites raw.states false
   for h : si in [0 : raw.states.size] do
@@ -561,7 +575,17 @@ def checkScanPlan (sigs : Array TensorSignature) (raw : RawScanPlan) :
                 let st := raw.states.getD si default
                 unless stateReadCausal st.advancingDims t.contextPos f do
                   throw (.causalityFailure si ai ti fi)
-  return CheckedScanPlan.mk raw sigs checkedBase checkedStep stepExtents
+  return CheckedScanPlan.mk raw sigs checkedBase checkedStep stepExtents kind
+
+/-- Check a scan for the binary64 carrier. -/
+def checkScanPlan (sigs : Array TensorSignature) (raw : RawScanPlan) :
+    Except ScanPlanError CheckedScanPlan :=
+  checkScanCore .float64 sigs raw
+
+/-- Check a scan for the binary32 carrier: the same core, under `.float32`. -/
+def checkScanPlanF32 (sigs : Array TensorSignature) (raw : RawScanPlan) :
+    Except ScanPlanError CheckedScanPlan :=
+  checkScanCore .float32 sigs raw
 
 /-- `rank_D(q) = sum_i q[i] * product_{j<i} D[j]` (proposal §6.6): axis `0` varies fastest. -/
 def mixedRadixRank (D : Array Nat) (q : Array Nat) : Nat :=
@@ -643,14 +667,14 @@ def mixedRadixDomainSize (D : Array Nat) : Nat := D.foldl (· * ·) 1
       fixed it (this function returns a `DenseTensor`, not an `Except`, so it could only silently
       drop the write) — it belongs in `checkWrites` beside `outputRowExtentsAgree`, which is where it
       now lives. -/
-private def commitWrite (target : DenseTensor) (w : StateWriteMap) (blockStore : Array DenseTensor)
-    (ctx : List Int) : DenseTensor := Id.run do
+private def commitWrite {α : Type} (zero : α) (target : DenseTensorOf α) (w : StateWriteMap)
+    (blockStore : Array (DenseTensorOf α)) (ctx : List Int) : DenseTensorOf α := Id.run do
   let out := blockStore.getD w.outputSlot { shape := [], data := #[] }
   let mut target := target
   for oc in allCoords out.shape do
     let iter := ctx ++ oc
     let coord := (applyAffine w.map iter).map Int.toNat
-    let v := out.data.getD (flatIndex out.shape (oc.map Int.toNat)) 0.0
+    let v := out.data.getD (flatIndex out.shape (oc.map Int.toNat)) zero
     target := { target with data := target.data.set! (flatIndex target.shape coord) v }
   return target
 
@@ -694,25 +718,28 @@ private def commitWrite (target : DenseTensor) (w : StateWriteMap) (blockStore :
     built at exactly `raw.tensorSigs.size` and handed here unchanged) and the signature tie above:
     a differently-sized store is evidence the caller built it against a different table, which is
     the same lie the tie rejects. -/
-def runDenseScan (sigs : Array TensorSignature) (c : CheckedScanPlan) (outerStore : Array DenseTensor) :
-    Except PositionalInputError (Array DenseTensor) := do
+private def runDenseScanWith {α : Type} (zero : α)
+    (runBlock : CheckedPlanBlock → List Int → Array (DenseTensorOf α) →
+      Except PositionalInputError (Array (DenseTensorOf α)))
+    (sigs : Array TensorSignature) (c : CheckedScanPlan) (outerStore : Array (DenseTensorOf α)) :
+    Except PositionalInputError (Array (DenseTensorOf α)) := do
   unless sigs == c.sigs do throw (.signatureContextMismatch c.sigs sigs)
   unless outerStore.size == c.sigs.size do
     throw (.storeArityMismatch c.sigs.size outerStore.size)
   let raw := c.raw
-  let mut states : Array DenseTensor := raw.states.map (fun st =>
+  let mut states : Array (DenseTensorOf α) := raw.states.map (fun st =>
     let sig := c.sigs.getD st.destSlot { shape := #[], dtype := .f64 }
-    { shape := sig.shape.toList, data := Array.replicate (sig.shape.toList.foldl (· * ·) 1) 0.0 })
+    { shape := sig.shape.toList, data := Array.replicate (sig.shape.toList.foldl (· * ·) 1) zero })
   let baseExternalInputs ← raw.baseBlock.inputs.mapM (fun inputSlot =>
     match raw.baseCaptures.find? (fun cap => cap.inputSlot == inputSlot) with
     | none => throw (PositionalInputError.arityMismatch 0 0)  -- unreachable: checked (checkCaptures)
     | some cap => match cap.source with
       | .external slot => pure (outerStore.getD slot { shape := [], data := #[] })
       | .state _ => throw (PositionalInputError.arityMismatch 0 0))  -- unreachable: checked
-  let baseStore ← runDenseBlock c.checkedBase [] baseExternalInputs
+  let baseStore ← runBlock c.checkedBase [] baseExternalInputs
   for w in raw.baseWrites do
     let target := states.getD w.stateIndex { shape := [], data := #[] }
-    states := states.set! w.stateIndex (commitWrite target w baseStore [])
+    states := states.set! w.stateIndex (commitWrite zero target w baseStore [])
   let domainSize := mixedRadixDomainSize c.stepExtents
   for r in [0 : domainSize] do
     let q := mixedRadixUnrank c.stepExtents r
@@ -724,15 +751,30 @@ def runDenseScan (sigs : Array TensorSignature) (c : CheckedScanPlan) (outerStor
         | .external slot => pure (outerStore.getD slot { shape := [], data := #[] })
         | .state si => pure (oldStates.getD si { shape := [], data := #[] }))
     let ctx : List Int := q.toList.map Int.ofNat
-    let stepStore ← runDenseBlock c.checkedStep ctx stepInputs
+    let stepStore ← runBlock c.checkedStep ctx stepInputs
     let mut nextStates := states
     for w in raw.stepWrites do
       let target := nextStates.getD w.stateIndex { shape := [], data := #[] }
-      nextStates := nextStates.set! w.stateIndex (commitWrite target w stepStore ctx)
+      nextStates := nextStates.set! w.stateIndex (commitWrite zero target w stepStore ctx)
     states := nextStates
   let mut result := outerStore
   for h : si in [0 : raw.states.size] do
     result := result.set! raw.states[si].destSlot (states.getD si { shape := [], data := #[] })
   return result
+
+/-- Execute a checked BINARY64 scan. Storage-kind guard first, before the signature tie. -/
+def runDenseScan (sigs : Array TensorSignature) (c : CheckedScanPlan) (outerStore : Array DenseTensor) :
+    Except PositionalInputError (Array DenseTensor) := do
+  unless c.storageKind == .float64 do
+    throw (.storageKindMismatch .float64 c.storageKind)
+  runDenseScanWith 0.0 runDenseBlock sigs c outerStore
+
+/-- Execute a checked BINARY32 scan: the same worker, native `Float32` state and `+0` zero
+    initialization, `runDenseBlock32` for both blocks. Storage-kind guard first. -/
+def runDenseScan32 (sigs : Array TensorSignature) (c : CheckedScanPlan)
+    (outerStore : Array DenseTensor32) : Except PositionalInputError (Array DenseTensor32) := do
+  unless c.storageKind == .float32 do
+    throw (.storageKindMismatch .float32 c.storageKind)
+  runDenseScanWith (0.0 : Float32) runDenseBlock32 sigs c outerStore
 
 end LeanNCD.Eval.Plan
