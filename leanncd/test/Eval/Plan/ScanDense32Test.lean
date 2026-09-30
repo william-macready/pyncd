@@ -89,4 +89,15 @@ def boolOnlyBlock : RawPlanBlock :=
 #guard ((checkPlanBlockF32 boolOnlyBlock).toOption.map (·.storageKind)) == some LeanNCD.StorageKind.float32
 #guard ((checkPlanBlock boolOnlyBlock).toOption.map (·.storageKind)) == some LeanNCD.StorageKind.float64
 
+/-! ## Part B — graph level. Donor: `GraphCheckTest.f32ScanPlan` (same scan as `linearScanF32`). -/
+
+def f32LinearPlan : RawEvalPlan :=
+  { tensorSigs := outerSigsF32, inputSlots := #[0, 1], steps := #[.scan linearScanF32] }
+def g32 : Option CheckedEvalPlan := (checkPlan f32LinearPlan).toOption
+#guard g32.map (·.storageKind) == some LeanNCD.StorageKind.float32
+#guard (g32.bind fun c => bits32 (runDensePlan32 c #[store32[0]!, store32[1]!]) 2)
+  == some [0x4B800000, 0x4B800000, 0x4B800000]
+#guard (g32.bind fun c => err64 (runDensePlan c #[store64[0]!, store64[1]!]))
+  == some (.storageKindMismatch .float64 .float32)
+
 end LeanNCD.Eval.Plan.ScanDense32Test

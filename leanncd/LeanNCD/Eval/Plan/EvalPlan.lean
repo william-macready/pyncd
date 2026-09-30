@@ -128,9 +128,10 @@ inductive PlanStepError
   | assign (cause : PlanError)
   | scan   (stepIndex : Nat) (cause : ScanPlanError)
   | nonlin (stepIndex : Nat) (cause : NonlinPlanError)
-  /-- A `.float32` graph contains a step kind binary32 execution does not admit. Binary32 admits
-      assignments, the two nonlinearity operations (F32-B), and top-level scatter (F32-D); scan
-      (and scan-local scatter) is F32-C. Carries the ORIGINAL outer step
+  /-- A `.float32` graph contains a step kind binary32 execution does not admit. Since F32-C, every
+      top-level statement kind a `.float32` schedule can name is admitted; this constructor is
+      retained producer-less (closed-family discipline, `PlanStepKind.scatter`'s F32-D precedent).
+      Carries the ORIGINAL outer step
       index — not an index into the assignments-only sublist — and a closed `PlanStepKind`
       (`Error.lean`) rather than a rendered string.
 
@@ -144,7 +145,7 @@ inductive PlanStepError
 /-- Which constructor a `PlanStep` is, as the closed diagnostic payload `f32UnsupportedStep`
     carries. Total over `PlanStep`; the `.assign`, `.pointwise`, `.axiswise`, and `.scatter` answers
     are never actually reported by that error, since those are exactly the kinds a binary32 graph
-    admits. -/
+    admits. Since F32-C, `.scan` joins them: `f32UnsupportedStep` has no live producer at all. -/
 def PlanStep.kind : PlanStep → PlanStepKind
   | .assign _    => .assign
   | .scatter _   => .scatter
@@ -188,19 +189,6 @@ def checkPlan (raw : RawEvalPlan) : Except PlanStepError CheckedEvalPlan := do
   let storageKind ← match deriveStorageKind raw.tensorSigs with
     | .ok k => pure k
     | .error e => throw (.assign e)
-  -- CAPABILITY SECOND, for a `.float32` graph only, over `raw.steps` in ORIGINAL order: binary32
-  -- admits assignments, the two nonlinearity operations (F32-B), and top-level scatter (F32-D); scan
-  -- (F32-C) is refused. Matched arm by arm rather than through a catch-all so admitting one of
-  -- these kinds later is a deliberate edit at its own arm; indexed over `raw.steps` itself, never a
-  -- filtered sublist, so the reported index is the outer-graph one.
-  if storageKind == .float32 then
-    for h : ni in [0 : raw.steps.size] do
-      match raw.steps[ni] with
-      | .assign _    => pure ()
-      | .scatter _   => pure ()
-      | .scan _      => throw (.f32UnsupportedStep ni .scan)
-      | .pointwise _ => pure ()
-      | .axiswise _  => pure ()
   let mut nodes : Array (WiringNode PlanStepError CheckedPlanStepEvidence) := #[]
   for h : ni in [0 : raw.steps.size] do
     let step := raw.steps[ni]
@@ -272,7 +260,9 @@ def checkPlan (raw : RawEvalPlan) : Except PlanStepError CheckedEvalPlan := do
               | .error e => throw (.assign (.nodeError ni e))
               | .ok c => pure (.scatter c)
           | .scan s =>
-              match checkScanPlan raw.tensorSigs s with
+              match (match storageKind with
+                     | .float64 => checkScanPlan raw.tensorSigs s
+                     | .float32 => checkScanPlanF32 raw.tensorSigs s) with
               | .error e => throw (.scan ni e)
               | .ok c => pure (.scan c)
           -- The two nonlinearity arms select their checker by the graph's storage kind exactly as

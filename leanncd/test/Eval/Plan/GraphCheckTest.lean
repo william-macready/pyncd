@@ -431,7 +431,9 @@ def f32ScanPlan : RawEvalPlan :=
                    , { shape := #[3], dtype := .f32 } ]
   , inputSlots := #[0, 1], steps := #[.scan f32Scan] }
 
-#guard errOf (checkPlan f32ScanPlan) == some (.f32UnsupportedStep 0 .scan)
+-- F32-C: admitted.
+#guard errOf (checkPlan f32ScanPlan) == none
+#guard storageOf (checkPlan f32ScanPlan) == some LeanNCD.StorageKind.float32
 
 #guard !(isF32Unsupported 0 .scan (checkPlan
   { f32ScanPlan with
@@ -445,7 +447,8 @@ def f32StepOrderWithScan : RawEvalPlan :=
   { f32UnsupportedStepOrder with
     steps := f32UnsupportedStepOrder.steps ++ #[.scan f32Scan, .scan f32Scan] }
 
-#guard errOf (checkPlan f32StepOrderWithScan) == some (.f32UnsupportedStep 3 .scan)
+-- F32-C: no capability refusal remains; the two scans' shared destination is now what fires.
+#guard errOf (checkPlan f32StepOrderWithScan) == some (.assign (.duplicateDestination 2 1 3))
 
 #guard !(isF32Unsupported 3 .scan (checkPlan
   { f32StepOrderWithScan with
