@@ -243,5 +243,45 @@
     "expect": [
       "ScanDense32Test.lean:256:0: Expression"
     ]
+  },
+  {
+    "label": "Q19 (checkPlan's scan-scratch fallback deleted: bool-only outer graph defaults to .float64)",
+    "task": "final",
+    "file": "LeanNCD/Eval/Plan/EvalPlan.lean",
+    "old": "    if raw.tensorSigs.all (·.dtype == .bool) then\n",
+    "new": "    if false then\n",
+    "targets": [
+      "Eval.Plan.ScanDense32Test"
+    ],
+    "expect": [
+      "ScanDense32Test.lean:293:0: Expression",
+      "ScanDense32Test.lean:294:0: Expression"
+    ]
+  },
+  {
+    "label": "Q20 (scan-scratch fallback overrides a real outer table)",
+    "task": "final",
+    "file": "LeanNCD/Eval/Plan/EvalPlan.lean",
+    "old": "        | _ => none).getD storageKind\n    else storageKind\n",
+    "new": "        | _ => none).getD storageKind\n    else (raw.steps.findSome? fun\n        | .scan s => (s.baseBlock.tensorSigs ++ s.stepBlock.tensorSigs).findSome?\n            (fun sig => storageConstraintOfDtype sig.dtype)\n        | _ => none).getD storageKind\n",
+    "targets": [
+      "Eval.Plan.ScanDense32Test"
+    ],
+    "expect": [
+      "ScanDense32Test.lean:316:0: Expression"
+    ]
+  },
+  {
+    "label": "Q21 (bool-only outer graph with a scan is .float32 whatever its blocks hold)",
+    "task": "final",
+    "file": "LeanNCD/Eval/Plan/EvalPlan.lean",
+    "old": "            (fun sig => storageConstraintOfDtype sig.dtype)\n",
+    "new": "            (fun _ => some .float32)\n",
+    "targets": [
+      "Eval.Plan.ScanDense32Test"
+    ],
+    "expect": [
+      "ScanDense32Test.lean:298:0: Expression"
+    ]
   }
 ]

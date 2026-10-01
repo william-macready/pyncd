@@ -348,6 +348,10 @@ too, for no behavioral difference — the top-level graph checker has no analogu
 top-level bool-only graph legitimately IS `.float64` (nothing else could make it f32). Do not change
 this decision without a fixture showing the exemption is wrong.
 
+> **Correction (2026-09-30):** the top-level claim in this step is wrong — f32 scan scratch CAN make
+> a bool-only-outer graph f32. The block-level decision stands; see §6 item 1's correction for the
+> graph-level fix.
+
 **Step 6 — G1/G2 again**, now against the moved code (`runDenseScanWith`/`runDenseBlockWith`):
 ```bash
 bash leanncd/scripts/mutation-manifest.sh leanncd papers/f32c_mutations.json
@@ -585,6 +589,27 @@ Rationale for each, not instruction — cross-referenced to where it is pinned:
    `deriveStorageKind`'s default because it is a narrower change (one gate, two files touched instead
    of three) with an identical observable result, and the top-level graph checker has no analogous
    bug to fix in parallel. Pinned by A6, C4, Q8.
+
+   > **Correction (2026-09-30, final whole-branch review finding 1).** "The top-level graph checker
+   > has no analogous bug" — and Task 1 Step 5's "a top-level bool-only graph legitimately IS
+   > `.float64` (nothing else could make it f32)" — were WRONG. A scan's block-local scratch lives
+   > only in that scan's block tables, never in `RawEvalPlan.tensorSigs`, so a predicate-only outer
+   > table plus a `tensor f32` scratch (`T := P[l]; P[l+1] := T`) is a homogeneous-f32 schedule that
+   > Step 0b (`scheduleStorageKind`, which counts scratch via `ScanStmt.writes`) derives as
+   > `.float32`, while `checkPlan` took `deriveStorageKind`'s `.float64` default for the bool-only
+   > outer table, ran `checkScanPlan`, and its step block refused the scratch —
+   > `invalidPlan (.scan 0 (.stepBlockError (.storageKindNotAdmitted .float32)))`, the compiler-bug
+   > channel. Before this slice Step 0c refused the shape as a typed `"f32 scan"` capability error;
+   > deleting Step 0c (decision 2) exposed the disagreement. **Fixed** in `checkPlan`
+   > (`EvalPlan.lean`) by the same principle as the block-level exemption, one level up: when the
+   > outer table is bool-only, the graph takes the kind of the FIRST real slot of any scan block
+   > (steps in order, base before step), else the `.float64` default; an outer table with a real
+   > slot stays authoritative, so a disagreeing block is still refused by its own gate. This agrees
+   > with Step 0b on every schedule Step 0b admits. `deriveStorageKind` and `checkPlanBlockCore` are
+   > unchanged. Pinned by `ScanDense32Test` Part E (E1 admitted + bits `0x3F800000` ×3; E2 the f64
+   > sibling stays `.float64`; E3 four mixing refusals) and new mutation cycles Q19–Q21 in
+   > `f32c_mutations_post.json` (now 21 entries; §7 item 2's "18 entries … all 20" is therefore 23
+   > as of this fix). The original text above is kept as written.
 2. **Delete Step 0c and the capability loop rather than keep them as an inert extension point
    (§8.2 / Task 3 phase 1).** F32-D's precedent for `checkF32Stmt`. The alternative (keep as dead
    code) has no fixture that could ever exercise it, which this repo's conventions treat as a smell,

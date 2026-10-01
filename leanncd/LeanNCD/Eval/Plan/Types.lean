@@ -15,8 +15,9 @@ open Std
 /-- Closed concrete-storage dtype vocabulary. `f64` and `f32` are the two REAL carriers; `bool` is a
     *semantic algebra/signature tag over whichever real carrier its graph selects*, not a third
     carrier (`admittedAlgebraBool`, `Check.lean`). Which real carrier a graph selects is
-    `deriveStorageKind`'s answer over the whole signature table, and a table naming both is rejected
-    (`PlanError.mixedStorageKinds`) rather than converted.
+    `deriveStorageKind`'s answer over the whole signature table (for a bool-only outer table,
+    `checkPlan` asks its scan blocks' tables instead, where scan scratch lives), and a table naming
+    both is rejected (`PlanError.mixedStorageKinds`) rather than converted.
 
     `f32` is no longer a reserved tag: the f32 slice's Task 2 gave it a checker (`checkAssignF32`),
     an algebra table (`admittedAlgebrasF32`), and checked evidence stamped `.float32`. It remains

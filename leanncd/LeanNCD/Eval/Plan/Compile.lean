@@ -1470,7 +1470,8 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
   -- A HOMOGENEOUS f32 schedule is now ADMITTED and specialized through the binary32 checker (the f32
   -- slice's Task 2 replaced Task 1's temporary blanket stop here). `storage` selects Step B's
   -- signature-admission rule below, Step D's destination algebra (`algebraForDest`), and Step E's
-  -- graph checker (`checkPlan` derives the same kind from the signature table it builds).
+  -- graph checker (`checkPlan` derives the same kind from the plan it builds: its outer signature
+  -- table, or — when that table is bool-only — its scan blocks' tables, where scan scratch lives).
   let storage ← match scheduleStorageKind declEnv sched.stmts with
     | .error nm =>
         throw { cause := .capability

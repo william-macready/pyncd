@@ -267,4 +267,74 @@ def agrees (p : ScheduledProgram) (inputs : NamedDenseEnv32) : Bool :=
 #guard agrees (linProg (.pointwise .relu)) reluIn
 #guard agrees scatProg scatIn
 
+/-! ## Part E — a graph whose ONLY real tensor is scan-local scratch (F32-C final review, finding 1).
+The outer table is predicate-only (`P0`, `P`); the one real tensor is the step block's scratch `T`,
+which no outer signature names. `T := P[l]; P[l+1] := T` relays `P0 = 1` through scratch. Before
+the fix, `checkPlan` took `deriveStorageKind`'s `.float64` DEFAULT for the bool-only outer table, ran
+the binary64 scan checker, and its step block refused the f32 scratch (`storageKindNotAdmitted
+.float32`) through `invalidPlan` — though Step 0b had already derived `.float32` for the schedule. -/
+def scratchProg (tDecl : Decl) : ScheduledProgram :=
+  { decls := [ .iter lA 3, .predicate "P0" [], .predicate "P" [lA], tDecl ]
+  , stmts := [ .scan "P" [lA]
+      [ .assign "P" [.iterAt lA 0] { body := { terms := [{ factors := [.read "P0" []] }] }, nonlin := .identity } ]
+      [ .assign "T" [] { body := { terms := [{ factors := [.read "P" [.axis lA]] }] }, nonlin := .identity }
+      , .assign "P" [.iterNext lA] { body := { terms := [{ factors := [.read "T" []] }] }, nonlin := .identity } ]
+      false ]
+  , env := {}, extNames := insert "P0" ∅
+  , explicitSizes := (({} : HashMap UID Nat).insert lA.uid 3) }
+def scratchIn : NamedDenseEnv32 := ({} : NamedDenseEnv32).insert "P0" ⟨[], #[1.0]⟩
+def scratchIn64 : NamedDenseEnv := ({} : NamedDenseEnv).insert "P0" ⟨[], #[1.0]⟩
+def scratchPrep32 : Option PreparedPlan :=
+  let p := scratchProg (.typedTensor .f32 "T" [])
+  (InputSignature.ofDenseInputs32ForDecls p.decls scratchIn).toOption.bind
+    fun sig => (prepareEvalPlan p sig).toOption
+
+-- E1: admitted as binary32, and runs natively to the relayed `1.0` at every history entry
+#guard scratchPrep32.map (·.plan.storageKind) == some LeanNCD.StorageKind.float32
+#guard (run32 (scratchProg (.typedTensor .f32 "T" [])) scratchIn "P").toOption
+  == some [0x3F800000, 0x3F800000, 0x3F800000]
+-- E2: the kind comes from the scratch's DECLARED dtype, not from "bool-only outer ⇒ binary32":
+-- the same program with `tensor T` (f64) stays binary64
+#guard (let p := scratchProg (.tensor "T" [])
+        (InputSignature.ofDenseInputsForDecls p.decls scratchIn64).toOption.bind
+          fun sig => (prepareEvalPlan p sig).toOption.map (·.plan.storageKind))
+  == some LeanNCD.StorageKind.float64
+
+/- E3: the fallback never admits real f32/f64 mixing (owned by F32-E, plan §1.2). Each control
+edits E1's own compiled plan, so the edit is the only difference. -/
+def scratchRaw : RawEvalPlan := (scratchPrep32.map (·.plan.raw)).getD default
+def checkErr (r : RawEvalPlan) : Option PlanStepError :=
+  match checkPlan r with | .error e => some e | .ok _ => none
+def f64Sig : TensorSignature := { shape := #[], dtype := .f64 }
+-- (a) f32 AND f64 slots directly visible in the outer table: `mixedStorageKinds`, as before
+#guard checkErr { scratchRaw with
+    tensorSigs := scratchRaw.tensorSigs ++ #[{ shape := #[], dtype := .f32 }, f64Sig]
+  , inputSlots := scratchRaw.inputSlots ++ #[2, 3] }
+  == some (.assign (.mixedStorageKinds 3 .f32 .f64))
+-- (b) a real outer slot stays authoritative: one f64 outer input makes the graph binary64, and the
+-- f32 scratch is refused by its own block's gate rather than overriding the outer table
+#guard checkErr { scratchRaw with
+    tensorSigs := scratchRaw.tensorSigs.push f64Sig, inputSlots := scratchRaw.inputSlots.push 2 }
+  == some (.scan 0 (.stepBlockError (.storageKindNotAdmitted .float32)))
+-- (c) bool-only outer table, blocks that disagree: the FIRST real block slot (an f64 base-block
+-- input) sets the kind, and the f32 step block is refused
+#guard checkErr { scratchRaw with steps := scratchRaw.steps.map fun
+    | .scan s => .scan { s with baseBlock := { s.baseBlock with
+        tensorSigs := s.baseBlock.tensorSigs.push f64Sig, inputs := s.baseBlock.inputs.push 2 } }
+    | st => st }
+  == some (.scan 0 (.stepBlockError (.storageKindNotAdmitted .float32)))
+-- (d) at the source level, the same scratch beside an f64 outer tensor is a mixed schedule,
+-- refused at Step 0b as a typed capability error (naming `T`, the first name disagreeing with `Y`)
+#guard (let p0 := scratchProg (.typedTensor .f32 "T" [])
+        let p : ScheduledProgram :=
+          { p0 with decls := p0.decls ++ [.tensor "Y" [], .tensor "Z" []]
+                  , stmts := .plain (.assign "Z" [] { body := { terms := [{ factors := [.read "Y" []] }] }
+                                                    , nonlin := .identity }) :: p0.stmts
+                  , extNames := insert "Y" p0.extNames }
+        match (InputSignature.ofDenseInputsForDecls p.decls (scratchIn64.insert "Y" ⟨[], #[3.0]⟩)) with
+        | .error _ => none
+        | .ok sig => match prepareEvalPlan p sig with
+          | .error f => some f.cause | .ok _ => none)
+  == some (.capability (.unsupportedDtype "T: mixed f32/f64 storage in one schedule"))
+
 end LeanNCD.Eval.Plan.ScanDense32Test

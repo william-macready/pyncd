@@ -86,7 +86,10 @@ structure CheckedEvalPlan where private mk ::
   raw          : RawEvalPlan
   checkedNodes : Array CheckedPlanStepEvidence
   /-- The single storage kind this plan's COMPLETE signature table commits to
-      (`deriveStorageKind`, `Check.lean`), derived before any step is checked. Recorded on the
+      (`deriveStorageKind`, `Check.lean`), derived before any step is checked — or, when that table
+      is bool-only, the kind of the first real slot in any scan block's table (scan-local scratch;
+      see `checkPlan`), so a graph whose only real tensor is scan scratch is not mis-stamped with
+      `deriveStorageKind`'s `.float64` default. Recorded on the
       evidence rather than re-derived per consumer so a plan-level door can gate on it without a
       signature table in hand — which is what the experimental JAX entries need, since an
       all-input, zero-step `.float32` plan has no node for a per-node check to inspect and the
@@ -189,6 +192,25 @@ def checkPlan (raw : RawEvalPlan) : Except PlanStepError CheckedEvalPlan := do
   let storageKind ← match deriveStorageKind raw.tensorSigs with
     | .ok k => pure k
     | .error e => throw (.assign e)
+  -- An outer table with no real (non-`bool`) slot constrains no carrier (`deriveStorageKind`'s
+  -- `.float64` is only its default), but the graph may still hold real content the outer table
+  -- cannot see: a scan's block-local SCRATCH lives only in that scan's own block tables. Such a
+  -- graph takes its kind from the FIRST real slot of any scan block (steps in order, base block
+  -- before step block) — the graph-level generalization of `checkPlanBlockCore`'s bool-only
+  -- exemption (`Block.lean`), and the same answer `prepareEvalPlan`'s Step 0b (`Compile.lean`)
+  -- gives, since it counts scan scratch too. Without it, a predicate-only outer graph whose only
+  -- real tensor is `tensor f32` scratch was checked as `.float64` and its own step block then
+  -- refused (`storageKindNotAdmitted .float32`) through the compiler-bug channel. An outer table
+  -- WITH a real slot stays authoritative, so this never overrides it: a block disagreeing with it
+  -- (or with the kind a bool-only outer graph took from an earlier block) is still refused by that
+  -- block's own storage-kind gate inside the scan checker.
+  let storageKind :=
+    if raw.tensorSigs.all (·.dtype == .bool) then
+      (raw.steps.findSome? fun
+        | .scan s => (s.baseBlock.tensorSigs ++ s.stepBlock.tensorSigs).findSome?
+            (fun sig => storageConstraintOfDtype sig.dtype)
+        | _ => none).getD storageKind
+    else storageKind
   let mut nodes : Array (WiringNode PlanStepError CheckedPlanStepEvidence) := #[]
   for h : ni in [0 : raw.steps.size] do
     let step := raw.steps[ni]
