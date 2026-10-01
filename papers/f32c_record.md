@@ -348,3 +348,82 @@ returns no hits, confirming zero live throw sites either way.
      98, 218, 219, 221, 224, 253, 256, 258, 267, 268 — still contains the text the manifest expects).
      `papers/f32c_record.md`'s own Q17 note reworded to attribute the Part D failure to the WORKER
      leg (`run32`) breaking under the mutation, not to the oracle detecting a live mismatch.
+
+## Final whole-branch review fix wave (commits `1b701c9`, `0cfb90a`)
+
+The final two-lens review (lens a: storage-kind guard/evidence boundary soundness) constructed and
+built a probe program disproving §6 decision 1's own rationale: a bool-only outer table (predicates
+only) with a scan whose step block writes real-dtype scan-local scratch was wrongly routed to the
+`invalidPlan` compiler-bug channel, because `checkPlan`'s graph-level storage-kind derivation (from
+`raw.tensorSigs`) cannot see scan-local scratch and defaulted to `.float64`, while `prepareEvalPlan`'s
+own Step 0b (which counts scan scratch) had already derived `.float32` for the same schedule.
+
+**Fix** (`EvalPlan.lean`): when the outer table is bool-only, `checkPlan` now falls back to the first
+real dtype found in any scan step's `baseBlock`/`stepBlock` tensorSigs (reusing the pre-existing
+`storageConstraintOfDtype` helper), generalizing the same bool-only exemption Task 1 already applies
+at the block level, one level up. A real outer slot stays authoritative — the fallback only fires when
+`raw.tensorSigs.all (·.dtype == .bool)` — so genuine f32/f64 mixing is still refused exactly as before
+(`mixedStorageKinds`, F32-E's scope, unaffected).
+
+**New coverage:** `ScanDense32Test.lean` Part E (E1: the scratch-only f32 program now admitted,
+`storageKind == .float32`, bits `0x3F800000`×3; E2: the f64 scratch sibling stays `.float64`, proving
+the kind tracks the scratch's real dtype, not "bool-only ⇒ auto-f32"; E3a–d: four negative controls —
+visible f32+f64 mixing still `mixedStorageKinds`; a real outer slot stays authoritative over a
+disagreeing block; block search order (base before step); source-level Step 0b still catches a
+genuinely mixed schedule). Three new mutation cycles Q19–Q21 in `papers/f32c_mutations_post.json`
+(fallback deleted; fallback overriding a real outer table; fallback ignoring block content) — all
+independently verified by the scoped re-review to mutate the actual fix code in the claimed way.
+
+**Plan correction:** `papers/f32c_evalplan.md` §5 Task 3 phase 1 Step 5 and §6 item 1 both carry dated
+(2026-09-30) append-only corrections — the original wrong rationale is kept, not rewritten.
+
+**Docs fixed in the same fix wave (final-review Minors 2–4):** `Scan.lean`'s `checkCaptures`/
+`CheckedScanPlan`/`checkWrites` docstrings and the `checkScanCore` state-loop comment now describe
+both the `.float64` and `.float32` doors (previously binary64-only text, a plan-level miss from Task
+1 Step 4); `backend_missing_functionality.md`'s stale F32-B-row claim and re-derivation date fixed;
+`GraphCheckTest.lean` fixture 16's docstring now explains its two `isF32Unsupported` guards are
+vacuous/historical (kept, not deleted, per closed-family-discipline precedent) now that
+`f32UnsupportedStep` has no producer. One additional stale docstring found and fixed during this wave:
+`Dense32.lean`'s `runDensePlan32` doc, made stale by the Finding-1 fix itself.
+
+**Final manifest total: 23/23 PASS** — `f32c_mutations.json` 2/2 (G1/G2, re-run clean, binary64
+preservation unaffected by the graph-level fix) + `f32c_mutations_post.json` 21/21 (the original 18 +
+new Q19–Q21), both with no `--task` filter. Final build: `Build completed successfully (8673 jobs)`,
+unchanged (doc/logic additions here add no new module).
+
+**Scoped re-review verdict:** all four fix-wave findings ADDRESSED, no new Critical/Important
+breakage — independently confirmed the foundational `checkPlan` change cannot reclassify any
+pre-existing admitted binary64 program (every such program's first real block slot was already f64 or
+absent, by construction of what the old block gate used to admit) and cannot affect any outer table
+that already carries a real slot (the fallback is syntactically gated to the bool-only case only).
+Three out-of-scope Minor observations parked, not blocking: `f32c_record.md`'s own stale 20/20 count
+(this section fixes it); `Scan.lean:476`'s causality docstring names only the binary64 door (accurate
+in substance, incomplete in naming); `Compile.lean`'s Step E comment says a compiled scan "meets
+`checkScanPlan`" without naming the f32 sibling for f32 graphs (same class of minor doc incompleteness
+as Finding 2, not re-opened here).
+
+## Rule 6 token accounting (measured, `token-report.py 3e15be7b-6194-4fb4-acbf-4f8d8e11d1c9`)
+
+**Slice execution total: 98.4M ctx** — well under the ~175M slice-execution budget (CLAUDE.md Rule 6),
+despite two per-dispatch overruns surfaced honestly rather than silently absorbed:
+
+- Task 3 phase 2's implementer dispatch ran 154 turns / 27.2M ctx (peak 280k), well past the ~60-turn
+  / ~250k-peak per-dispatch guideline — it combined a full 20-cycle manifest re-run, a six-pattern doc
+  grep across the whole repo, four paper edits, and three carried-forward findings in one dispatch.
+  In hindsight this should have been split per `slice-plan` §5/§6 rather than batched; flagged in the
+  SDD ledger at the time, not discovered only at close-out.
+- The final-review fix wave's recovery dispatch ("Complete stalled F32-C fix verification") ran 75
+  turns / 8.1M ctx after a prior dispatch ("Fix F32-C final review findings", 42 turns, within budget)
+  stalled on an infrastructure failure (600s watchdog) mid-build, not a token/turn issue — the recovery
+  dispatch's extra turns were spent re-verifying a prior agent's uncommitted work before building on it,
+  not re-doing design work.
+- Every other dispatch (implementers, task reviewers, the final whole-branch reviewer, the fix-wave
+  re-review) stayed within or close to the ~60-turn / ~250k-peak guideline.
+
+Per-dispatch ledger (turns / ctx / peak), from the measured report: Task 1 implement 45t/3.7M/106k +
+4t/0.2M/51k (resumed after the mutation-manifest ruling); Task 1 review 6t/0.4M/90k; Task 2 implement
+42t/3.7M/126k; Task 2 review 17t/1.4M/107k; Task 2 fix re-review 4t/0.1M/41k; Task 3 phase 1 implement
+70t/8.0M/172k; Task 3 phase 1 review 10t/0.8M/103k; Task 3 phase 2 implement 154t/27.2M/280k; Task 3
+phase 2 review 19t/1.8M/116k; final whole-branch review 36t/5.1M/207k; fix-wave attempt 42t/4.6M/159k
+(stalled); fix-wave recovery 75t/8.1M/161k; fix-wave re-review 21t/1.9M/109k; controller (this session)
+152t/31.3M/341k.
