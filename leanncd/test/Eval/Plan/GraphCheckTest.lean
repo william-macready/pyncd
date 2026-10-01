@@ -361,10 +361,18 @@ S0`; `S[iterNext l] := S[l] + X[l]`), and `NonlinCheckTest`'s `baselineAxiswise`
 constructors.
 
 The scatter case is an acceptance since F32-D; the scan case is ALSO an acceptance, since F32-C. The
-scan case is paired with the same graph under a BINARY64 table, which must NOT report
-`f32UnsupportedStep` — otherwise the fixture would pass for an implementation that refused this step
-kind unconditionally rather than for binary32 specifically. The axiswise case is an ACCEPTANCE since
-F32-B Task 3 (fixture 3.10). -/
+axiswise case is an ACCEPTANCE since F32-B Task 3 (fixture 3.10).
+
+**The two `#guard !(isF32Unsupported …)` controls below are now VACUOUS, kept as structural
+documentation rather than regression guards.** They pair the scan case with the same graph under a
+BINARY64 table and assert it does NOT report `f32UnsupportedStep` — originally so the fixture could
+not pass for an implementation that refused `.scan` unconditionally rather than for binary32
+specifically. Since F32-C, `f32UnsupportedStep` has no producer anywhere (`checkPlan`'s `.scan`
+refusal, its last producer, is deleted), so `isF32Unsupported` is `false` on every `checkPlan`
+result and these guards cannot fail. They are retained, not deleted, under the same closed-family
+discipline that retains the producer-less constructor itself: they record where the binary32-only
+refusal used to be distinguished from an unconditional one. If `f32UnsupportedStep` ever regains a
+producer, they become live guards again unchanged. -/
 
 def isF32Unsupported (i : Nat) (k : PlanStepKind) : Except PlanStepError CheckedEvalPlan → Bool
   | .error (.f32UnsupportedStep i' k') => i == i' && k == k'

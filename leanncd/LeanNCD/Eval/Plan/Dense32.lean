@@ -33,9 +33,10 @@ namespace LeanNCD.Eval.Plan
     catch-all, so a future admission remains a deliberate edit at its own arm.
 
     Signature dtypes are not re-examined here, exactly as `runDensePlan` does not re-examine its own:
-    `checkPlan`'s `deriveStorageKind` already committed the WHOLE table to `.float32`, which admits
-    `f32` and `bool` signatures and nothing else, and that commitment is what `c.storageKind`
-    records. Only the shape and the native buffer length are runtime facts, and both are checked. -/
+    `checkPlan` already committed the WHOLE table to `.float32` (through `deriveStorageKind`, or —
+    for a bool-only table — through its scan blocks' first real slot), which admits `f32` and
+    `bool` signatures and nothing else, and that commitment is what `c.storageKind` records. Only
+    the shape and the native buffer length are runtime facts, and both are checked. -/
 def runDensePlan32 (c : CheckedEvalPlan) (inputs : Array DenseTensor32) :
     Except PositionalInputError (Array DenseTensor32) := do
   unless c.storageKind == .float32 do

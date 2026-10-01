@@ -80,7 +80,7 @@ claim does. **Before trusting a row, re-derive it against those sites on the cur
 `wave_f_capability_manifest.md` table went stale this way when the nonlinearity thread closed
 nonlinear scans and updated the proposal but not the manifest's copy.
 
-Last re-derived against the tree: **2026-09-23** (f32 slice final-review fix wave; the 2026-09-21 counts below were re-checked and are unchanged, and the Step D site above was added).
+Last re-derived against the tree: **2026-09-30** (F32-C, re-derived in its Task 3 and again independently by its final whole-branch review; the counts below are unchanged, and `unsupportedDtype`'s only remaining producer is Step 0b's mixed-storage check — see the F32-C update below). Previously 2026-09-23 (f32 slice final-review fix wave; the 2026-09-21 counts were re-checked and unchanged, and the Step D site above was added).
 
 Static throw-site inspection at that date finds **10 live producer families** —
 `scatterOrAffineLhs`, `unsupportedLhsSlot`, `unsupportedNonlin`, `multiAxisScatterLhs`,
@@ -360,7 +360,7 @@ fragment.
   `"{nm}: f32 nonlinearity"` and `"{nm}: f32 unary factor {ti}:{fi}"` have no producer left —
   `checkF32Stmt`'s nonlinearity match and factor loop that threw them are both deleted
   (`checkF32Stmt` itself deleted by F32-D) — but the constructor itself stays live for mixed
-  storage and f32 scan, so the 10/16/6 count above is unchanged.
+  storage (and, until F32-C closed it, f32 scan), so the 10/16/6 count above is unchanged.
   **Deliberately still rejected, with its own located `CapabilityError.unsupportedDtype`**: a
   schedule mixing `f32` with `f64` (F32-E, contingent — see the rationale above). Top-level scatter
   is admitted since F32-D; every scan form, including scan-local scatter, is admitted since F32-C

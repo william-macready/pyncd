@@ -262,18 +262,21 @@ inductive ScanPlanError
     capture/write obligation in proposal §7.3 holds, and causality holds for every state read.
     `stepExtents` is retained rather than recomputed by every consumer.
 
-    `sigs` is the complete OUTER signature table `checkScanPlan` validated this plan against, stored
+    `sigs` is the complete OUTER signature table `checkScanPlan` (binary64) or `checkScanPlanF32`
+    (binary32) validated this plan against, stored
     here for the same reason `Executable.lean`'s `JaxKernel.signatureContext` stores its own: every
     fact this evidence asserts — each state's complete shape, each capture's signature agreement,
     each write's free extents and pinned literals — is a fact about THAT table and about no other.
     A worker handed a different table would allocate and index against extents nothing checked
-    (`runDenseScan` reads state shapes straight out of it), so the table is part of the evidence
-    rather than a runtime parameter the caller re-chooses. The field is readable but, like every
-    other field here, only WRITABLE through `checkScanPlan` (`private mk ::`).
+    (`runDenseScan`/`runDenseScan32` read state shapes straight out of it), so the table is part of
+    the evidence rather than a runtime parameter the caller re-chooses. The field is readable but,
+    like every other field here, only WRITABLE through `checkScanPlan`/`checkScanPlanF32` — both
+    thin applications of the one `checkScanCore` (`private mk ::`).
 
     There is deliberately no separate `CausalityCertificate` type or field: the certificate IS
-    `checkScanPlan`'s own causality loop over `stateReadCausal`, and a `CheckedScanPlan` value's
-    existence — obtainable only through `checkScanPlan`, since `mk` is `private` — is itself the
+    `checkScanCore`'s own causality loop over `stateReadCausal`, and a `CheckedScanPlan` value's
+    existence — obtainable only through `checkScanPlan`/`checkScanPlanF32`, since `mk` is
+    `private` — is itself the
     evidence a worker relies on. Storing a redundant marker field would add a second thing to keep
     in sync with the check that already ran. -/
 structure CheckedScanPlan where private mk ::
@@ -301,35 +304,39 @@ private def scanDtypeAdmitted (kind : LeanNCD.StorageKind) (dt : ScalarDType) : 
     capture. `numStates`/`states`/`isBase` parameterize the two call sites identically rather than
     duplicating this function.
 
-    **Dtype admission — CURRENTLY PRODUCER-LESS, and retained deliberately.** `dtypeAdmitted`
-    (`Check.lean` — the same predicate `checkAssign` applies to a destination and to every read) is
-    checked here, on the block-local input signature, before the capture's source-specific
-    obligations. It is a property of the capture itself, not of where the value comes from, and it
-    is an obligation the signature EQUALITY below cannot express: a capture whose outer and
-    block-local signatures are both `f32` agrees with itself perfectly while naming a dtype no
-    binary64 worker implements.
+    **Dtype admission — CURRENTLY PRODUCER-LESS, and retained deliberately.** The carrier's own
+    admission predicate, `scanDtypeAdmitted kind` (`dtypeAdmitted` for binary64,
+    `dtypeAdmittedF32` for binary32, both `Check.lean` — the same predicates
+    `checkAssign`/`checkAssignF32` apply to a destination and to every read), is checked here, on
+    the block-local input signature, before the capture's source-specific obligations. It is a
+    property of the capture itself, not of where the value comes from, and it is an obligation the
+    signature EQUALITY below cannot express: a capture whose outer and block-local signatures are
+    both `f32` agrees with itself perfectly while naming a dtype no binary64 worker implements
+    (and, under binary32, both `f64` likewise).
 
-    **But `captureDtypeNotAdmitted` can no longer fire, and a future author must not treat this
-    clause as a live backstop.** The f32 slice's Task 2 gave `checkPlanBlock` (`Block.lean`) a
-    WHOLE-TABLE storage-kind gate (`deriveStorageKind`) that runs before that function's outputs,
-    wiring, and per-step work — and `checkScanPlan` below calls `checkPlanBlock` on BOTH blocks
-    before it calls this function. Any block table containing an `f32` slot therefore derives
-    `.float32` (or, mixed with an `f64` slot, `mixedStorageKinds`) and is refused first, as
-    `baseBlockError`/`stepBlockError`. Since `dtypeAdmitted` rejects only `.f32`, nothing reaches
-    the throw below any more.
+    **But `captureDtypeNotAdmitted` can no longer fire under EITHER carrier, and a future author
+    must not treat this clause as a live backstop.** The f32 slice's Task 2 gave the block checker
+    (`Block.lean`) a WHOLE-TABLE storage-kind gate (`deriveStorageKind`) that runs before its
+    outputs, wiring, and per-step work — and `checkScanCore` below calls the kind's block checker
+    (`checkPlanBlock` for binary64, `checkPlanBlockF32` for binary32) on BOTH blocks before it
+    calls this function. Any block table containing a real slot of the OTHER carrier's dtype
+    (`f32` under binary64, `f64` under binary32) therefore derives that other kind (or, mixed,
+    `mixedStorageKinds`) and is refused first, as `baseBlockError`/`stepBlockError`. Since each
+    carrier's predicate rejects exactly the other carrier's real dtype (`dtypeAdmitted` only
+    `.f32`, `dtypeAdmittedF32` only `.f64`), nothing reaches the throw below any more.
 
     That block-level verdict is STRICTLY STRONGER than this clause was: it needs no capture list at
-    all, so it also covers an `f32` block slot that is neither read nor captured — including the
-    shape this clause was originally written for, a block input that is only captured (never read,
-    or serving as the block's own output through the input-is-output shortcut) and so reaches no
-    `checkAssign`. `ScanTest.lean`'s review fixture 9 pins that stronger verdict, and names
-    `captureDtypeNotAdmitted` directly so the payload shape stays exercised; the constructor is
-    retained on `ScanPlanError` per this repo's closed-family discipline, like every other shipped
-    producer-less constructor.
+    all, so it also covers a wrong-carrier block slot that is neither read nor captured — including
+    the shape this clause was originally written for, a block input that is only captured (never
+    read, or serving as the block's own output through the input-is-output shortcut) and so
+    reaches no per-step assignment check. `ScanTest.lean`'s review fixture 9 pins that stronger
+    verdict (for binary64), and names `captureDtypeNotAdmitted` directly so the payload shape stays
+    exercised; the constructor is retained on `ScanPlanError` per this repo's closed-family
+    discipline, like every other shipped producer-less constructor.
 
-    **Do not relax or relocate `checkPlanBlock`'s storage gate on the belief that this clause still
-    catches unread `f32` captures — it does not.** If that gate ever moves, restore a real producer
-    here (and a fixture for it) in the same change. -/
+    **Do not relax or relocate the block checker's storage gate on the belief that this clause
+    still catches unread wrong-carrier captures — it does not.** If that gate ever moves, restore a
+    real producer here (and a fixture for it) in the same change. -/
 private def checkCaptures (kind : LeanNCD.StorageKind) (sigs : Array TensorSignature) (block : RawPlanBlock)
     (captures : Array BlockCapture) (numStates : Nat) (states : Array StateSlot) (isBase : Bool) :
     Except ScanPlanError Unit := do
@@ -393,8 +400,9 @@ private def checkCaptures (kind : LeanNCD.StorageKind) (sigs : Array TensorSigna
     as the dtype error, not a rank error, so a caller always sees the more fundamental disagreement
     first.
 
-    **Why no write-side dtype ADMISSION check.** `checkScanPlan`'s state loop runs first and rejects
-    any state whose own dtype is not `dtypeAdmitted` (`stateDtypeNotAdmitted`), and the equality just
+    **Why no write-side dtype ADMISSION check.** `checkScanCore`'s state loop runs first and rejects
+    any state whose own dtype the scan's carrier does not admit (`scanDtypeAdmitted kind`:
+    `dtypeAdmitted` or `dtypeAdmittedF32`; `stateDtypeNotAdmitted`), and the equality just
     described forces every write's block-local output dtype to equal its state's; `blockOutputNotWritten`
     forces every declared block output to have such a write. So "every block output dtype is admitted"
     already holds for anything reaching here, and coding the check anyway would be logic no fixture
@@ -510,13 +518,15 @@ private def checkScanCore (kind : LeanNCD.StorageKind) (sigs : Array TensorSigna
     unless st.advancingDims.size == numAxes do
       throw (.advancingDimCountMismatch si numAxes st.advancingDims.size)
     let stateSig := sigs.getD st.destSlot { shape := #[], dtype := .f64 }
-    -- The state's own dtype must be one a worker implements, checked HERE — before any write or
-    -- capture obligation compares against it. `checkWrites`' `writeDtypeMismatch` and
-    -- `checkCaptures`' `captureSignatureMismatch` are both EQUALITY checks: a state and its block
-    -- output that are both `f32` satisfy them exactly while naming a dtype `Dense` would execute as
-    -- binary64 over the same `Array Float` storage. Nothing else on the scan path asks: a state
-    -- destination is an OUTER slot, so `checkPlanBlock`'s per-step `checkAssign` (which does apply
-    -- `dtypeAdmitted`) never sees it. Because this runs first, an admitted state dtype plus the
+    -- The state's own dtype must be one the scan's carrier (`kind`) implements, checked HERE —
+    -- before any write or capture obligation compares against it. `checkWrites`'
+    -- `writeDtypeMismatch` and `checkCaptures`' `captureSignatureMismatch` are both EQUALITY
+    -- checks: a state and its block output that are both `f32` satisfy them exactly while naming a
+    -- dtype `Dense` would execute as binary64 over its `Array Float` storage (and, under
+    -- `.float32`, two `f64`s likewise for `Dense32`'s binary32 storage). Nothing else on the scan
+    -- path asks: a state destination is an OUTER slot, so the block checker's per-step
+    -- `checkAssign`/`checkAssignF32` (which do apply the carrier's admission predicate) never sees
+    -- it. Because this runs first, an admitted state dtype plus the
     -- existing write equality gives every block output dtype admission transitively — that
     -- write-side check would be unreachable, so it is documented rather than coded (see
     -- `checkWrites`).
