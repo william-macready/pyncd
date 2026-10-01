@@ -351,11 +351,13 @@ Capability preflight returns a typed `CapabilityError` for scatters or affine LH
 nodes and pre-built recurrence morphisms, `iterAt`/`iterNext` slots outside a scan node, and scans
 with no advancing axis. `capabilityPreflight` is no longer the only site that can raise a
 `CapabilityError`: it is dtype-blind by construction, so `prepareEvalPlan` additionally rejects a
-schedule mixing `f32` and `f64` real tensors (Step 0b, from `scheduleStorageKind`) and — for a
-binary32 schedule only — every scan form
-(Step 0c, `f32CapabilityCheck`; assign, pointwise, axiswise, and top-level scatter are all admitted
-since F32-D). Both report `CapabilityError.unsupportedDtype`, and both run before
-`capabilityPreflight` so an f32 program gets its own f32 reason rather than a generic capability one.
+schedule mixing `f32` and `f64` real tensors (Step 0b, from `scheduleStorageKind`). Step 0c
+(`f32CapabilityCheck`), which used to reject every deferred binary32 construct one context at a
+time, is DELETED as of F32-C: assign, pointwise, axiswise, and top-level scatter were already
+admitted natively since F32-D, and every scan form is now admitted natively too (F32-C), so nothing
+remains for Step 0c to reject. Step 0b's mixed-storage check still reports
+`CapabilityError.unsupportedDtype` and still runs before `capabilityPreflight` so an f32 program gets
+its own f32 reason rather than a generic capability one.
 Preflight no longer rejects predicate declarations or Iverson factors: source
 Iverson factors lower via `lowerFactorPredicate` and a Boolean declared output is a signature/algebra
 tag (Task 4), so `maskOrPredicate` and `booleanOutput` are both retained with no producer left.

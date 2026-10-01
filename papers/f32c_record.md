@@ -148,5 +148,203 @@ validated all 18 entries, every old-string unique, now that the patch's final te
 
 4/4 cycles passed. Mutated-build failures (`ScanDense32Test` guards): Q15 → C5's base-relu guard,
 Q16 → C7 (base softmax), Q17 → C2's relu guard AND Part D's `agrees (linProg (.pointwise .relu))
-reluIn` (the independent oracle catches this mutation on its own), Q18 → C6 (step softmax). The earlier deferred cycles (Q5, Q8,
+reluIn` (the Part D `agrees` guard also fails, since the worker leg's — `run32`'s — mutated behavior
+is itself rejected/differs, not because the oracle caught a live value mismatch between two agreeing
+legs), Q18 → C6 (step softmax). The earlier deferred cycles (Q5, Q8,
 Q10–Q14) and G1/G2 are Task 3 phase 2's full re-run, not run here.
+
+## Task 3 phase 2 — documentation sweep (close-out)
+
+Tree: `worktree-f32c-scans-plan` at `c2fcec4` plus this phase's doc-only commit. Purely mechanical
+per the plan's own framing: every edit a value-grep and a line replacement, no production code
+touched (verified: `git diff --stat` against `c2fcec4` shows only `.md` files, `AGENTS.md`, and
+docstring/comment-only `.lean` edits — no `#guard`, no executable code line changed).
+
+### Step 1 — full manifest run, both manifests, 20/20 PASS
+
+**`papers/f32c_mutations.json` (G1/G2 — binary64 preservation gate, final confirmation after Tasks
+2–3):**
+
+| Mutation | Cycle (broke, then restored build green) | File byte-identical | Expected failure seen | Result |
+|---|---|---|---|---|
+| G1 (scan signature tie dropped: runDenseScan accepts a stale/wrong signature table) | yes | yes | yes | PASS |
+| G2 (block arity check dropped: runDenseBlock accepts a wrong-arity input array) | yes | yes | yes | PASS |
+
+2/2 cycles passed.
+
+**`papers/f32c_mutations_post.json` (Q1–Q18 — full re-run, no `--task` filter):**
+
+| Mutation | Cycle (broke, then restored build green) | File byte-identical | Expected failure seen | Result |
+|---|---|---|---|---|
+| Q1 (runDenseScan32 storage-kind guard deleted) | yes | yes | yes | PASS |
+| Q2 (runDenseScan storage-kind guard deleted) | yes | yes | yes | PASS |
+| Q3 (runDenseBlock32 storage-kind guard deleted) | yes | yes | yes | PASS |
+| Q4 (runDenseBlock storage-kind guard deleted) | yes | yes | yes | PASS |
+| Q5 (checkScanCore stamps .float64 whatever the kind) | yes | yes | yes | PASS |
+| Q6 (state admission ignores kind) | yes | yes | yes | PASS |
+| Q7 (f32 scan checks its blocks as binary64) | yes | yes | yes | PASS |
+| Q8 (bool-only block exemption dropped) | yes | yes | yes | PASS |
+| Q9 (f32 block assignment checked as binary64) | yes | yes | yes | PASS |
+| Q10 (f32 block pointwise checked as binary64) | yes | yes | yes | PASS |
+| Q11 (f32 block axiswise checked as binary64) | yes | yes | yes | PASS |
+| Q12 (binary32 state zero-init is +1, not +0) | yes | yes | yes | PASS |
+| Q13 (checkPlan checks an f32 scan with the binary64 checker) | yes | yes | yes | PASS |
+| Q14 (runDensePlan32 scan arm refuses again) | yes | yes | yes | PASS |
+| Q15 (base pointwise result slot back to .f64) | yes | yes | yes | PASS |
+| Q16 (base axiswise result slot back to .f64) | yes | yes | yes | PASS |
+| Q17 (step pointwise result slot back to .f64) | yes | yes | yes | PASS |
+| Q18 (step axiswise result slot back to .f64) | yes | yes | yes | PASS |
+
+18/18 cycles passed. **Total 20/20.** Q5, Q8, Q10–Q14 — the cycles deferred in Tasks 1–2 specifically
+because their `expect` line numbers only exist once the full `ScanDense32Test.lean` (Parts A–D)
+exists — are the real, first-time verification point for those entries; all passed with no
+work-around needed.
+
+### Step 2 — `Plan/AGENTS.md`
+
+Code Map: `Block.lean` and `Scan.lean` rows extended with their checker/worker-core pairing
+(`checkPlanBlock`/`checkPlanBlockF32` over `checkPlanBlockCore kind`; `runDenseBlock`/
+`runDenseBlock32` over `runDenseBlockWith`; the `Scan.lean` mirrors). Contracts' "Current binary32
+boundary" bullet rewritten: no step kind is refused by capability any more; points at
+`f32c_evalplan.md` §1.2 for what remains refused by policy/backend, and names `ScanDense32Test` Part
+D (`oracle32`) as the scan oracle. Pitfalls' "A (c) cell is a guard dependency" sentence named
+`runDenseBlock`/`runDenseScan` as Float-only examples, which is now false for that pair specifically
+(carrier-parametric since Task 1); replaced with a still-true example found in the file:
+`captureDtypeNotAdmitted` under `.float32`, confirmed producer-less by this slice's own §4
+re-derivation (precision note 2, above). Two more stale AGENTS.md lines were caught only by Step 3's
+own sweep of this same file and fixed alongside: the `Dense32.lean` row ("`.scan` refused as
+`storageKindMismatch`") and the `Compile.lean` row ("Step 0c `f32CapabilityCheck` capability pass",
+with no mention it is deleted).
+
+### Step 3 — value-grep sweep, every document
+
+All six greps re-run after every fix, from the worktree root:
+
+```bash
+rg -n "F32-C" leanncd papers --glob '!papers/f32c_*' --glob '!papers/f32d_*' --glob '!papers/f32b_*'
+rg -n "f32 scan" leanncd/LeanNCD leanncd/test papers --glob '!papers/f32c_*'
+rg -n "f32UnsupportedStep [0-9a-z]+ \.scan|scan[^\n]*storageKindMismatch \.float32 \.float64" leanncd papers --glob '!papers/f32c_*'
+rg -n "checkScanPlan[^\n]*Float-backed|Float-backed[^\n]*checkScanPlan|runDenseScan[^3W][^\n]*Float-only|runDenseBlock[^3W][^\n]*Float-only" leanncd papers --glob '!papers/f32c_*'
+rg -n "f32CapabilityCheck" leanncd papers --glob '!papers/f32c_*'
+rg -n "scan is F32-C|scan.*still unadmitted|scan evidence is refused" leanncd/LeanNCD leanncd/test
+```
+
+Hit counts (final, post-fix): 17 / 16 / 6 / 5 / 12 / 0 lines respectively. Every leanncd (live-code)
+hit was read in context and is one of:
+
+- **accurate, current-state prose** this slice itself wrote (e.g. `EvalPlan.lean`'s and `Error.lean`'s
+  `f32UnsupportedStep` docstrings, `AGENTS.md`'s rewritten Contracts bullet, `Dense32.lean`'s own
+  module doc, `GraphCheckTest.lean`'s F32-C acceptance comments, `CompileTest.lean`'s re-pointed
+  fixture prose) — these say "admitted since F32-C" / "deleted" / "no longer", not "still rejected";
+- the **explicitly allowed, unedited** cases: the legacy evaluator's own files (`Eval/Scan.lean`,
+  `test/Eval/ScanTest.lean` fixture 13), and the new producer-less `"{name}: f32 scan"` mention in
+  `Error.lean`;
+- **two real stale hits found and fixed** beyond the six carried-forward findings (not pre-enumerated
+  by Task 3 phase 1 or the brief, caught only by this sweep):
+  1. `leanncd/test/Eval/Plan/ScanTest.lean`'s fixture-10 docstring claimed "every binary32 scan form
+     is slice F32-C, so there is no f32 scan worker" — false now; reworded to state `checkScanPlan`
+     stays deliberately Float-backed beside its new sibling `checkScanPlanF32`, matching
+     `checkAssign`/`checkPointwise`/`checkAxiswise`'s own pattern. The fixture's actual `#guard`
+     (checkScanPlan still rejects an all-f32 table) is unchanged and still true.
+  2. `leanncd/test/Eval/Plan/ScatterCheckTest.lean`'s fixture-9 docstring said block/scan checkers
+     "stay Float-backed because they have no binary32 worker — F32-C", which no longer generalizes
+     now that `checkPlanBlockF32`/`checkScanPlanF32` exist; reworded to say every local/graph checker
+     now has a binary32 sibling, `checkScatterF32` included.
+  3. `papers/wave_f_capability_manifest.md`'s dtypes bullet asserted "`f32` is still rejected
+     outright in a scan" immediately above a sentence (already edited into this same bullet) saying
+     the opposite — a self-contradiction the plan's enumerated edit alone would have introduced;
+     rewritten so the whole bullet reads consistently: `checkScanPlan`'s binary64-only kernel never
+     changed, but an f32 schedule no longer routes through it at all, admitted instead via
+     `checkScanPlanF32`/`runDenseScan32` since F32-C.
+- All historical/plan-authoring prose in `f32_evalplan.md` (§1.3/§1.4 outside the two edited items,
+  and the dated-"COMPLETED 2026-09-21" §3.5 sibling-audit table), `f32_evalplan_handoff.md`, and every
+  `f32b_evalplan.md`/`f32d_evalplan.md`/`f32d_*` hit, is a historical close-out or already-merged
+  slice's own planning record describing a past boundary — left unrewritten per the brief's own rule
+  (append a dated note, never rewrite history); none of them was asked for by this phase's Step 4,
+  and none asserts anything false about the CURRENT tree.
+
+Final re-run (post-fix) of all six greps: **no hit beyond the allowed/accurate set above.**
+
+### Step 4 — papers
+
+- `f32_evalplan.md`: §1.3 item 2 and §1.4 item 3 both got "**Landed by `f32c_evalplan.md`.**"; the
+  "largest risk surface… expect it to split into two slices" sentence got "It did not need to — one
+  slice, three tasks (see `f32c_evalplan.md` §1.5)."
+- `f32d_evalplan.md`: §1.3's "Where the two slices DO connect" paragraph got "**Settled by
+  `f32c_evalplan.md` §1.3: moot**…"; the harness-lift sentence got "The lift did not happen — see
+  `f32c_evalplan.md` §1.3."
+- `backend_missing_functionality.md`: the "Binary32 beyond the assignment fragment" table row and
+  rationale item 4 rewritten to "now fully closed" (F32-B + F32-D + F32-C); the "Deliberately still
+  rejected" bullet under "Already closed" no longer lists scan; the "(mixed storage, f32 scan)"
+  mention annotated "closed by F32-C"; a new "Update (F32-C shipped…)" paragraph added mirroring the
+  existing F32-B one. The 10/16/6 split was **re-derived, not assumed**: `unsupportedDtype` was
+  already counted as one live FAMILY (not per producer-site), and Step 0b's mixed-storage throw keeps
+  that family live after F32-C removes its scan producer — **confirmed unchanged at 10/16/6.**
+- `wave_f_capability_manifest.md`: the "still refused outright … (F32-C, still deferred)" sentence →
+  "admitted natively since F32-C"; the Binary32 row's "Nothing on THIS page… is binary32" sentence
+  rewritten to state scan is now admitted (`checkScanPlanF32`/`runDenseScan32`, independent oracle);
+  the "Only binary32 scan …, F32-C" clause now lists scan among the admitted, not the still-open.
+  (Also fixed per Step 3: the dtypes bullet's internal contradiction, see above.)
+- `eval_ir.md`: the Step 0c description now states it is DELETED since F32-C, with assign/pointwise/
+  axiswise/scatter (F32-D) and now scan (F32-C) all admitted, leaving nothing for it to reject.
+
+### Step 5 — counts (before/after)
+
+Before-slice baselines (measured on the pre-Task-1 tree, commit `19ea6ba`, where the plan was
+authored — re-measured now, not assumed from the plan text):
+
+```bash
+rg -c 'unsupportedDtype s!"{nm}: f32 scan"' leanncd/LeanNCD/Eval/Plan/Compile.lean    # 2
+rg -c 'f32UnsupportedStep' leanncd/LeanNCD/Eval/Plan/EvalPlan.lean                     # 3
+rg -c '\.scan _ => throw (\.storageKindMismatch \.float32 \.float64)' \
+  leanncd/LeanNCD/Eval/Plan/Dense32.lean                                               # 1
+```
+
+After-slice (measured now, on the full post-Task-3/phase-2 tree):
+
+```bash
+rg -c 'unsupportedDtype s!"\{nm\}: f32 scan"' leanncd/LeanNCD/Eval/Plan/Compile.lean   # 0
+rg -c 'f32UnsupportedStep' leanncd/LeanNCD/Eval/Plan/EvalPlan.lean                      # 3
+rg -c '\.scan _ => throw \(\.storageKindMismatch \.float32 \.float64\)' \
+  leanncd/LeanNCD/Eval/Plan/Dense32.lean                                                # 0
+```
+
+| Site | Before | After | Matches plan? |
+|---|---|---|---|
+| `Compile.lean` f32-scan `unsupportedDtype` throw sites | 2 | 0 | yes — "both deleted" |
+| `Dense32.lean` `.scan` `storageKindMismatch` arm | 1 | 0 | yes — "→0" |
+| `EvalPlan.lean` `f32UnsupportedStep` text occurrences | 3 | 3 | **no — plan said "→2"** |
+
+**Discrepancy, reported not forced to match:** the plan predicted the `EvalPlan.lean` grep would drop
+from 3 to 2 once "the throw site" was removed. That throw site (`| .scan _ => throw
+(.f32UnsupportedStep ni .scan)` in `checkPlan`) WAS removed — but in Task 2 (`85b0114`), not Task 3;
+`git diff 85b0114 c2fcec4 -- leanncd/LeanNCD/Eval/Plan/EvalPlan.lean` is empty, so Task 3/phase 2 made
+no change to this file at all. The baseline count of 3 (decl + one docstring line + the throw site)
+dropped to 2 when the throw site was deleted, but Task 2 *also* added a second docstring line
+("Since F32-C, `.scan` joins them: `f32UnsupportedStep` has no live producer at all.") containing the
+same substring, bringing the raw text-occurrence count back up to 3 net. The three live occurrences
+today are: the constructor declaration (line 142) and two docstring sentences (lines 145, 148) — zero
+throw sites. This is a textual-count artifact of an accurate, intentional doc addition, not a missed
+deletion or a build-correctness issue; `rg -n 'throw.*f32UnsupportedStep' leanncd/LeanNCD/Eval/Plan/EvalPlan.lean`
+returns no hits, confirming zero live throw sites either way.
+
+### Step 6 — final numbers
+
+- **Manifest total: 20/20 PASS** (2 G-cycles + 18 Q-cycles; tables above).
+- **Grep sweep: clean** — six greps re-run post-fix, every hit triaged, no stale claim remains (Step
+  3 above).
+- **Final whole-project build:** `bash leanncd/scripts/lake-build.sh leanncd` →
+  `Build completed successfully (8673 jobs)` — identical job count to Task 3 phase 1's own build
+  (doc-only changes add no modules).
+- **Carried-forward findings from earlier task reviews:** all three addressed —
+  1. `Block.lean`'s `BlockError.storageKindNotAdmitted` docstring and `checkPlanBlockCore`'s
+     docstring both rewritten to state the actual kind-mismatch gate (with the bool-only exemption),
+     not "only `.float64` admitted"/"a `.float32` table is unconditionally rejected".
+  2. `Error.lean`'s `PlanStepKind` docstring: `.scan` added to the list of kinds that are
+     "deliberately NOT producers of `f32UnsupportedStep`", with "scan since F32-C" appended.
+  3. `ScanDense32Test.lean`'s module header and `oracle32`'s docstring reworded to drop "PROTOTYPE"/
+     "Oracle prototype" framing, **without changing the file's line count** (confirmed: still 270
+     lines; spot-checked that every mutation-manifest `expect` line number — 66, 68, 81, 82, 89, 97,
+     98, 218, 219, 221, 224, 253, 256, 258, 267, 268 — still contains the text the manifest expects).
+     `papers/f32c_record.md`'s own Q17 note reworded to attribute the Part D failure to the WORKER
+     leg (`run32`) breaking under the mutation, not to the oracle detecting a live mismatch.

@@ -3,10 +3,10 @@ import Eval.PropertyOracle.ScanUnroll
 import LeanNCD.Eval.Plan.Adapter32
 
 /-!
-# F32-C prototype: native binary32 scans (plan level, graph level, source level) and an
+# Native binary32 scans (plan level, graph level, source level) — landed by F32-C — and an
 # independent binary32 scan oracle (the S-B unrolling run through the CHECKED binary32 path).
 
-PROTOTYPE — authored by the F32-C explore/prototype dispatch; values below were observed, not derived.
+Production test coverage for `papers/f32c_evalplan.md`; values below were observed against the built tree.
 -/
 
 namespace LeanNCD.Eval.Plan.ScanDense32Test
@@ -170,7 +170,7 @@ def run32 (p : ScheduledProgram) (inputs : NamedDenseEnv32) (nm : String) : Exce
     | some t => pure (t.data.toList.map Float32.toBits)
     | none => throw "missing"
 
-/-- Oracle prototype: unroll the one scan, declare every undeclared leaf `tensor f32`, run the
+/-- Independent oracle: unroll the one scan, declare every undeclared leaf `tensor f32`, run the
     scan-free program through the CHECKED binary32 path, reconstruct history (exact widening), and
     narrow back. -/
 def oracle32 (p : ScheduledProgram) (inputs : NamedDenseEnv32) : Except String (String × List UInt32) := do

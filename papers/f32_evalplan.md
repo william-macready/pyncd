@@ -109,7 +109,8 @@ f64 tensors do not coexist in one graph.
    be false f32. **Landed by `f32b_evalplan.md`.**
 2. **F32-C — scans and scan-state scatter.** Add native binary32 block and scan stores, snapshots,
    base overlays, state writes, and histories. This is separate because scan storage and write paths
-   have their own checker/evidence and recurring geometry-risk surface.
+   have their own checker/evidence and recurring geometry-risk surface. **Landed by
+   `f32c_evalplan.md`.**
 3. **F32-D — top-level scatter.** Add native binary32 fill and placement execution, after defining
    a binary32 oracle independent of the legacy binary64 scatter evaluator. **Landed by
    `f32d_evalplan.md`.**
@@ -153,7 +154,7 @@ on" claim against the code when that slice's plan is written.
    binary64 scatter evaluator, plus native fill and placement execution. B and D can swap freely;
    put D first only if scatter/GNN-style models matter more than attention and MLPs. **Landed by
    `f32d_evalplan.md`.**
-3. **F32-C third.** It builds on both:
+3. **F32-C third. Landed by `f32c_evalplan.md`.** It builds on both:
    - scans admit nonlinear bodies, so an f32 scan with a nonlinear body needs F32-B;
    - scan-local scatter does NOT reuse F32-D's fill and placement write path (`f32d_evalplan.md`
      §1.3 finding): `Scan.lean`/`Block.lean` share only the carrier-free extent function
@@ -165,7 +166,8 @@ on" claim against the code when that slice's plan is written.
    admission is unverified).
 
    It is also the largest risk surface (block and scan stores, snapshots, base overlays, state
-   writes, histories). Expect it to split into two slices, as binary64 scatter did.
+   writes, histories). Expect it to split into two slices, as binary64 scatter did. It did not need
+   to — one slice, three tasks (see `f32c_evalplan.md` §1.5).
 4. **F32-JAX: independent, schedule by demand.** It only has to cover what the binary64 JAX backend
    covers, which is context-free assignments, and that already runs in f32. So it does not wait on
    B, C, or D. Start it with a short feasibility spike: bit-exact binary32 agreement with XLA is

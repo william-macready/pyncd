@@ -49,9 +49,10 @@ inductive BlockError
   | blockContextMismatch  (nodeIndex : Nat) (expected actual : Array Nat)
   | nonlin (nodeIndex : Nat) (cause : NonlinPlanError)
   | nonlinearSourceNotLocalAssignment (nodeIndex : Nat) (sourceSlot : TensorSlot)
-  /-- This block's own signature table derives a storage kind no block worker implements. Only
-      `.float64` is: `runDenseBlock` below allocates an `Array DenseTensor` store and dispatches to
-      the Float workers, and blocks exist only inside a scan, whose binary32 support is slice F32-C.
+  /-- This block's own signature table derives a storage kind that does not match the kind being
+      checked for. Both `.float64` (`checkPlanBlock`/`runDenseBlock`) and `.float32`
+      (`checkPlanBlockF32`/`runDenseBlock32`) are implemented block workers since F32-C; an all-`bool`
+      table is exempted (`checkPlanBlockCore`'s gate below) because it constrains no carrier.
 
       Its own constructor rather than a `wiring (.dtypeNotAdmitted ...)`: this is a WHOLE-TABLE
       verdict, not a statement about one slot, and it is load-bearing exactly where no per-slot
@@ -194,9 +195,11 @@ def checkStepGraph {E C : Type} (n : Nat) (inputs : Array TensorSlot) (liftWirin
     before the shared loop.
 
     Before any of that, the block's COMPLETE signature table must derive a single admitted storage
-    kind (`deriveStorageKind`, `Check.lean`): a mixed table is `wiring (.mixedStorageKinds ...)` and
-    a `.float32` table is `storageKindNotAdmitted .float32`. See the inline comment at the top of the
-    body for why this cannot be delegated to the per-node checks. -/
+    kind (`deriveStorageKind`, `Check.lean`): a mixed table is `wiring (.mixedStorageKinds ...)`, and
+    a table whose derived kind does not match the kind being checked for is `storageKindNotAdmitted
+    <derived kind>` — except an all-`bool` table, which constrains no carrier and is admitted under
+    either kind. See the inline comment at the top of the body for why this cannot be delegated to
+    the per-node checks. -/
 private def checkPlanBlockCore (kind : LeanNCD.StorageKind) (block : RawPlanBlock) :
     Except BlockError CheckedPlanBlock := do
   -- STORAGE KIND FIRST, from this block's COMPLETE signature table, before outputs, wiring, or any
