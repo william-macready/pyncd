@@ -262,18 +262,21 @@ inductive ScanPlanError
     capture/write obligation in proposal §7.3 holds, and causality holds for every state read.
     `stepExtents` is retained rather than recomputed by every consumer.
 
-    `sigs` is the complete OUTER signature table `checkScanPlan` validated this plan against, stored
+    `sigs` is the complete OUTER signature table `checkScanPlan` (binary64) or `checkScanPlanF32`
+    (binary32) validated this plan against, stored
     here for the same reason `Executable.lean`'s `JaxKernel.signatureContext` stores its own: every
     fact this evidence asserts — each state's complete shape, each capture's signature agreement,
     each write's free extents and pinned literals — is a fact about THAT table and about no other.
     A worker handed a different table would allocate and index against extents nothing checked
-    (`runDenseScan` reads state shapes straight out of it), so the table is part of the evidence
-    rather than a runtime parameter the caller re-chooses. The field is readable but, like every
-    other field here, only WRITABLE through `checkScanPlan` (`private mk ::`).
+    (`runDenseScan`/`runDenseScan32` read state shapes straight out of it), so the table is part of
+    the evidence rather than a runtime parameter the caller re-chooses. The field is readable but,
+    like every other field here, only WRITABLE through `checkScanPlan`/`checkScanPlanF32` — both
+    thin applications of the one `checkScanCore` (`private mk ::`).
 
     There is deliberately no separate `CausalityCertificate` type or field: the certificate IS
-    `checkScanPlan`'s own causality loop over `stateReadCausal`, and a `CheckedScanPlan` value's
-    existence — obtainable only through `checkScanPlan`, since `mk` is `private` — is itself the
+    `checkScanCore`'s own causality loop over `stateReadCausal`, and a `CheckedScanPlan` value's
+    existence — obtainable only through `checkScanPlan`/`checkScanPlanF32`, since `mk` is
+    `private` — is itself the
     evidence a worker relies on. Storing a redundant marker field would add a second thing to keep
     in sync with the check that already ran. -/
 structure CheckedScanPlan where private mk ::
@@ -282,7 +285,18 @@ structure CheckedScanPlan where private mk ::
   checkedBase : CheckedPlanBlock
   checkedStep : CheckedPlanBlock
   stepExtents : Array Nat
+  /-- The carrier this scan was checked for, set only by `checkScanPlan` (`.float64`) and
+      `checkScanPlanF32` (`.float32`); both blocks carry the same kind. `runDenseScan`/
+      `runDenseScan32` refuse a mismatch as their FIRST statement. -/
+  storageKind : LeanNCD.StorageKind
   deriving Repr
+
+/-- The per-slot dtype admission rule for one carrier: `dtypeAdmitted` (binary64) or
+    `dtypeAdmittedF32` (binary32), both from `Check.lean`. -/
+private def scanDtypeAdmitted (kind : LeanNCD.StorageKind) (dt : ScalarDType) : Bool :=
+  match kind with
+  | .float64 => dtypeAdmitted dt
+  | .float32 => dtypeAdmittedF32 dt
 
 /-- Validate a block's captures against its own declared `inputs`: every capture's `inputSlot` is
     one of the block's inputs, every input has exactly one capture, every capture's own block-local
@@ -290,36 +304,40 @@ structure CheckedScanPlan where private mk ::
     capture. `numStates`/`states`/`isBase` parameterize the two call sites identically rather than
     duplicating this function.
 
-    **Dtype admission — CURRENTLY PRODUCER-LESS, and retained deliberately.** `dtypeAdmitted`
-    (`Check.lean` — the same predicate `checkAssign` applies to a destination and to every read) is
-    checked here, on the block-local input signature, before the capture's source-specific
-    obligations. It is a property of the capture itself, not of where the value comes from, and it
-    is an obligation the signature EQUALITY below cannot express: a capture whose outer and
-    block-local signatures are both `f32` agrees with itself perfectly while naming a dtype no
-    binary64 worker implements.
+    **Dtype admission — CURRENTLY PRODUCER-LESS, and retained deliberately.** The carrier's own
+    admission predicate, `scanDtypeAdmitted kind` (`dtypeAdmitted` for binary64,
+    `dtypeAdmittedF32` for binary32, both `Check.lean` — the same predicates
+    `checkAssign`/`checkAssignF32` apply to a destination and to every read), is checked here, on
+    the block-local input signature, before the capture's source-specific obligations. It is a
+    property of the capture itself, not of where the value comes from, and it is an obligation the
+    signature EQUALITY below cannot express: a capture whose outer and block-local signatures are
+    both `f32` agrees with itself perfectly while naming a dtype no binary64 worker implements
+    (and, under binary32, both `f64` likewise).
 
-    **But `captureDtypeNotAdmitted` can no longer fire, and a future author must not treat this
-    clause as a live backstop.** The f32 slice's Task 2 gave `checkPlanBlock` (`Block.lean`) a
-    WHOLE-TABLE storage-kind gate (`deriveStorageKind`) that runs before that function's outputs,
-    wiring, and per-step work — and `checkScanPlan` below calls `checkPlanBlock` on BOTH blocks
-    before it calls this function. Any block table containing an `f32` slot therefore derives
-    `.float32` (or, mixed with an `f64` slot, `mixedStorageKinds`) and is refused first, as
-    `baseBlockError`/`stepBlockError`. Since `dtypeAdmitted` rejects only `.f32`, nothing reaches
-    the throw below any more.
+    **But `captureDtypeNotAdmitted` can no longer fire under EITHER carrier, and a future author
+    must not treat this clause as a live backstop.** The f32 slice's Task 2 gave the block checker
+    (`Block.lean`) a WHOLE-TABLE storage-kind gate (`deriveStorageKind`) that runs before its
+    outputs, wiring, and per-step work — and `checkScanCore` below calls the kind's block checker
+    (`checkPlanBlock` for binary64, `checkPlanBlockF32` for binary32) on BOTH blocks before it
+    calls this function. Any block table containing a real slot of the OTHER carrier's dtype
+    (`f32` under binary64, `f64` under binary32) therefore derives that other kind (or, mixed,
+    `mixedStorageKinds`) and is refused first, as `baseBlockError`/`stepBlockError`. Since each
+    carrier's predicate rejects exactly the other carrier's real dtype (`dtypeAdmitted` only
+    `.f32`, `dtypeAdmittedF32` only `.f64`), nothing reaches the throw below any more.
 
     That block-level verdict is STRICTLY STRONGER than this clause was: it needs no capture list at
-    all, so it also covers an `f32` block slot that is neither read nor captured — including the
-    shape this clause was originally written for, a block input that is only captured (never read,
-    or serving as the block's own output through the input-is-output shortcut) and so reaches no
-    `checkAssign`. `ScanTest.lean`'s review fixture 9 pins that stronger verdict, and names
-    `captureDtypeNotAdmitted` directly so the payload shape stays exercised; the constructor is
-    retained on `ScanPlanError` per this repo's closed-family discipline, like every other shipped
-    producer-less constructor.
+    all, so it also covers a wrong-carrier block slot that is neither read nor captured — including
+    the shape this clause was originally written for, a block input that is only captured (never
+    read, or serving as the block's own output through the input-is-output shortcut) and so
+    reaches no per-step assignment check. `ScanTest.lean`'s review fixture 9 pins that stronger
+    verdict (for binary64), and names `captureDtypeNotAdmitted` directly so the payload shape stays
+    exercised; the constructor is retained on `ScanPlanError` per this repo's closed-family
+    discipline, like every other shipped producer-less constructor.
 
-    **Do not relax or relocate `checkPlanBlock`'s storage gate on the belief that this clause still
-    catches unread `f32` captures — it does not.** If that gate ever moves, restore a real producer
-    here (and a fixture for it) in the same change. -/
-private def checkCaptures (sigs : Array TensorSignature) (block : RawPlanBlock)
+    **Do not relax or relocate the block checker's storage gate on the belief that this clause
+    still catches unread wrong-carrier captures — it does not.** If that gate ever moves, restore a
+    real producer here (and a fixture for it) in the same change. -/
+private def checkCaptures (kind : LeanNCD.StorageKind) (sigs : Array TensorSignature) (block : RawPlanBlock)
     (captures : Array BlockCapture) (numStates : Nat) (states : Array StateSlot) (isBase : Bool) :
     Except ScanPlanError Unit := do
   let mut boundInputs : Array Bool := Array.replicate block.tensorSigs.size false
@@ -332,7 +350,7 @@ private def checkCaptures (sigs : Array TensorSignature) (block : RawPlanBlock)
     if boundInputs.getD c.inputSlot false then throw (.duplicateCaptureInput isBase c.inputSlot)
     boundInputs := boundInputs.set! c.inputSlot true
     let actual := block.tensorSigs.getD c.inputSlot { shape := #[], dtype := .f64 }
-    unless dtypeAdmitted actual.dtype do
+    unless scanDtypeAdmitted kind actual.dtype do
       throw (.captureDtypeNotAdmitted isBase i c.inputSlot actual.dtype)
     match c.source with
     | .external outerSlot =>
@@ -382,8 +400,9 @@ private def checkCaptures (sigs : Array TensorSignature) (block : RawPlanBlock)
     as the dtype error, not a rank error, so a caller always sees the more fundamental disagreement
     first.
 
-    **Why no write-side dtype ADMISSION check.** `checkScanPlan`'s state loop runs first and rejects
-    any state whose own dtype is not `dtypeAdmitted` (`stateDtypeNotAdmitted`), and the equality just
+    **Why no write-side dtype ADMISSION check.** `checkScanCore`'s state loop runs first and rejects
+    any state whose own dtype the scan's carrier does not admit (`scanDtypeAdmitted kind`:
+    `dtypeAdmitted` or `dtypeAdmittedF32`; `stateDtypeNotAdmitted`), and the equality just
     described forces every write's block-local output dtype to equal its state's; `blockOutputNotWritten`
     forces every declared block output to have such a write. So "every block output dtype is admitted"
     already holds for anything reaching here, and coding the check anyway would be logic no fixture
@@ -480,8 +499,8 @@ private def checkWrites (sigs : Array TensorSignature) (block : RawPlanBlock)
     passes either way; `ScanTest.lean`'s `stepBlockNonlinBetweenAssignsG` is the one that pins the
     difference, by putting a nonlinear step between two assignments so the offending assignment sits
     at block-step index 2 and filtered index 1. -/
-def checkScanPlan (sigs : Array TensorSignature) (raw : RawScanPlan) :
-    Except ScanPlanError CheckedScanPlan := do
+private def checkScanCore (kind : LeanNCD.StorageKind) (sigs : Array TensorSignature)
+    (raw : RawScanPlan) : Except ScanPlanError CheckedScanPlan := do
   if raw.states.isEmpty then throw .noStates else pure ()
   if raw.historyExtents.isEmpty then throw .noAdvancingAxes else pure ()
   for h : i in [0 : raw.historyExtents.size] do
@@ -499,17 +518,19 @@ def checkScanPlan (sigs : Array TensorSignature) (raw : RawScanPlan) :
     unless st.advancingDims.size == numAxes do
       throw (.advancingDimCountMismatch si numAxes st.advancingDims.size)
     let stateSig := sigs.getD st.destSlot { shape := #[], dtype := .f64 }
-    -- The state's own dtype must be one a worker implements, checked HERE — before any write or
-    -- capture obligation compares against it. `checkWrites`' `writeDtypeMismatch` and
-    -- `checkCaptures`' `captureSignatureMismatch` are both EQUALITY checks: a state and its block
-    -- output that are both `f32` satisfy them exactly while naming a dtype `Dense` would execute as
-    -- binary64 over the same `Array Float` storage. Nothing else on the scan path asks: a state
-    -- destination is an OUTER slot, so `checkPlanBlock`'s per-step `checkAssign` (which does apply
-    -- `dtypeAdmitted`) never sees it. Because this runs first, an admitted state dtype plus the
+    -- The state's own dtype must be one the scan's carrier (`kind`) implements, checked HERE —
+    -- before any write or capture obligation compares against it. `checkWrites`'
+    -- `writeDtypeMismatch` and `checkCaptures`' `captureSignatureMismatch` are both EQUALITY
+    -- checks: a state and its block output that are both `f32` satisfy them exactly while naming a
+    -- dtype `Dense` would execute as binary64 over its `Array Float` storage (and, under
+    -- `.float32`, two `f64`s likewise for `Dense32`'s binary32 storage). Nothing else on the scan
+    -- path asks: a state destination is an OUTER slot, so the block checker's per-step
+    -- `checkAssign`/`checkAssignF32` (which do apply the carrier's admission predicate) never sees
+    -- it. Because this runs first, an admitted state dtype plus the
     -- existing write equality gives every block output dtype admission transitively — that
     -- write-side check would be unreachable, so it is documented rather than coded (see
     -- `checkWrites`).
-    unless dtypeAdmitted stateSig.dtype do
+    unless scanDtypeAdmitted kind stateSig.dtype do
       throw (.stateDtypeNotAdmitted si st.destSlot stateSig.dtype)
     let mut dimSeen : Array Bool := Array.replicate stateSig.shape.size false
     for h2 : i in [0 : st.advancingDims.size] do
@@ -530,10 +551,13 @@ def checkScanPlan (sigs : Array TensorSignature) (raw : RawScanPlan) :
   unless raw.baseBlock.contextShape == #[] do throw (.baseBlockContextNotEmpty raw.baseBlock.contextShape)
   unless raw.stepBlock.contextShape == stepExtents do
     throw (.stepBlockContextMismatch stepExtents raw.stepBlock.contextShape)
-  let checkedBase ← (checkPlanBlock raw.baseBlock).mapError .baseBlockError
-  let checkedStep ← (checkPlanBlock raw.stepBlock).mapError .stepBlockError
-  checkCaptures sigs raw.baseBlock raw.baseCaptures raw.states.size raw.states true
-  checkCaptures sigs raw.stepBlock raw.stepCaptures raw.states.size raw.states false
+  let checkBlock := match kind with
+    | .float64 => checkPlanBlock
+    | .float32 => checkPlanBlockF32
+  let checkedBase ← (checkBlock raw.baseBlock).mapError .baseBlockError
+  let checkedStep ← (checkBlock raw.stepBlock).mapError .stepBlockError
+  checkCaptures kind sigs raw.baseBlock raw.baseCaptures raw.states.size raw.states true
+  checkCaptures kind sigs raw.stepBlock raw.stepCaptures raw.states.size raw.states false
   let baseRowsByState ← checkWrites sigs raw.baseBlock raw.baseWrites raw.states true
   let stepRowsByState ← checkWrites sigs raw.stepBlock raw.stepWrites raw.states false
   for h : si in [0 : raw.states.size] do
@@ -561,7 +585,17 @@ def checkScanPlan (sigs : Array TensorSignature) (raw : RawScanPlan) :
                 let st := raw.states.getD si default
                 unless stateReadCausal st.advancingDims t.contextPos f do
                   throw (.causalityFailure si ai ti fi)
-  return CheckedScanPlan.mk raw sigs checkedBase checkedStep stepExtents
+  return CheckedScanPlan.mk raw sigs checkedBase checkedStep stepExtents kind
+
+/-- Check a scan for the binary64 carrier. -/
+def checkScanPlan (sigs : Array TensorSignature) (raw : RawScanPlan) :
+    Except ScanPlanError CheckedScanPlan :=
+  checkScanCore .float64 sigs raw
+
+/-- Check a scan for the binary32 carrier: the same core, under `.float32`. -/
+def checkScanPlanF32 (sigs : Array TensorSignature) (raw : RawScanPlan) :
+    Except ScanPlanError CheckedScanPlan :=
+  checkScanCore .float32 sigs raw
 
 /-- `rank_D(q) = sum_i q[i] * product_{j<i} D[j]` (proposal §6.6): axis `0` varies fastest. -/
 def mixedRadixRank (D : Array Nat) (q : Array Nat) : Nat :=
@@ -643,14 +677,14 @@ def mixedRadixDomainSize (D : Array Nat) : Nat := D.foldl (· * ·) 1
       fixed it (this function returns a `DenseTensor`, not an `Except`, so it could only silently
       drop the write) — it belongs in `checkWrites` beside `outputRowExtentsAgree`, which is where it
       now lives. -/
-private def commitWrite (target : DenseTensor) (w : StateWriteMap) (blockStore : Array DenseTensor)
-    (ctx : List Int) : DenseTensor := Id.run do
+private def commitWrite {α : Type} (zero : α) (target : DenseTensorOf α) (w : StateWriteMap)
+    (blockStore : Array (DenseTensorOf α)) (ctx : List Int) : DenseTensorOf α := Id.run do
   let out := blockStore.getD w.outputSlot { shape := [], data := #[] }
   let mut target := target
   for oc in allCoords out.shape do
     let iter := ctx ++ oc
     let coord := (applyAffine w.map iter).map Int.toNat
-    let v := out.data.getD (flatIndex out.shape (oc.map Int.toNat)) 0.0
+    let v := out.data.getD (flatIndex out.shape (oc.map Int.toNat)) zero
     target := { target with data := target.data.set! (flatIndex target.shape coord) v }
   return target
 
@@ -694,25 +728,28 @@ private def commitWrite (target : DenseTensor) (w : StateWriteMap) (blockStore :
     built at exactly `raw.tensorSigs.size` and handed here unchanged) and the signature tie above:
     a differently-sized store is evidence the caller built it against a different table, which is
     the same lie the tie rejects. -/
-def runDenseScan (sigs : Array TensorSignature) (c : CheckedScanPlan) (outerStore : Array DenseTensor) :
-    Except PositionalInputError (Array DenseTensor) := do
+private def runDenseScanWith {α : Type} (zero : α)
+    (runBlock : CheckedPlanBlock → List Int → Array (DenseTensorOf α) →
+      Except PositionalInputError (Array (DenseTensorOf α)))
+    (sigs : Array TensorSignature) (c : CheckedScanPlan) (outerStore : Array (DenseTensorOf α)) :
+    Except PositionalInputError (Array (DenseTensorOf α)) := do
   unless sigs == c.sigs do throw (.signatureContextMismatch c.sigs sigs)
   unless outerStore.size == c.sigs.size do
     throw (.storeArityMismatch c.sigs.size outerStore.size)
   let raw := c.raw
-  let mut states : Array DenseTensor := raw.states.map (fun st =>
+  let mut states : Array (DenseTensorOf α) := raw.states.map (fun st =>
     let sig := c.sigs.getD st.destSlot { shape := #[], dtype := .f64 }
-    { shape := sig.shape.toList, data := Array.replicate (sig.shape.toList.foldl (· * ·) 1) 0.0 })
+    { shape := sig.shape.toList, data := Array.replicate (sig.shape.toList.foldl (· * ·) 1) zero })
   let baseExternalInputs ← raw.baseBlock.inputs.mapM (fun inputSlot =>
     match raw.baseCaptures.find? (fun cap => cap.inputSlot == inputSlot) with
     | none => throw (PositionalInputError.arityMismatch 0 0)  -- unreachable: checked (checkCaptures)
     | some cap => match cap.source with
       | .external slot => pure (outerStore.getD slot { shape := [], data := #[] })
       | .state _ => throw (PositionalInputError.arityMismatch 0 0))  -- unreachable: checked
-  let baseStore ← runDenseBlock c.checkedBase [] baseExternalInputs
+  let baseStore ← runBlock c.checkedBase [] baseExternalInputs
   for w in raw.baseWrites do
     let target := states.getD w.stateIndex { shape := [], data := #[] }
-    states := states.set! w.stateIndex (commitWrite target w baseStore [])
+    states := states.set! w.stateIndex (commitWrite zero target w baseStore [])
   let domainSize := mixedRadixDomainSize c.stepExtents
   for r in [0 : domainSize] do
     let q := mixedRadixUnrank c.stepExtents r
@@ -724,15 +761,30 @@ def runDenseScan (sigs : Array TensorSignature) (c : CheckedScanPlan) (outerStor
         | .external slot => pure (outerStore.getD slot { shape := [], data := #[] })
         | .state si => pure (oldStates.getD si { shape := [], data := #[] }))
     let ctx : List Int := q.toList.map Int.ofNat
-    let stepStore ← runDenseBlock c.checkedStep ctx stepInputs
+    let stepStore ← runBlock c.checkedStep ctx stepInputs
     let mut nextStates := states
     for w in raw.stepWrites do
       let target := nextStates.getD w.stateIndex { shape := [], data := #[] }
-      nextStates := nextStates.set! w.stateIndex (commitWrite target w stepStore ctx)
+      nextStates := nextStates.set! w.stateIndex (commitWrite zero target w stepStore ctx)
     states := nextStates
   let mut result := outerStore
   for h : si in [0 : raw.states.size] do
     result := result.set! raw.states[si].destSlot (states.getD si { shape := [], data := #[] })
   return result
+
+/-- Execute a checked BINARY64 scan. Storage-kind guard first, before the signature tie. -/
+def runDenseScan (sigs : Array TensorSignature) (c : CheckedScanPlan) (outerStore : Array DenseTensor) :
+    Except PositionalInputError (Array DenseTensor) := do
+  unless c.storageKind == .float64 do
+    throw (.storageKindMismatch .float64 c.storageKind)
+  runDenseScanWith 0.0 runDenseBlock sigs c outerStore
+
+/-- Execute a checked BINARY32 scan: the same worker, native `Float32` state and `+0` zero
+    initialization, `runDenseBlock32` for both blocks. Storage-kind guard first. -/
+def runDenseScan32 (sigs : Array TensorSignature) (c : CheckedScanPlan)
+    (outerStore : Array DenseTensor32) : Except PositionalInputError (Array DenseTensor32) := do
+  unless c.storageKind == .float32 do
+    throw (.storageKindMismatch .float32 c.storageKind)
+  runDenseScanWith (0.0 : Float32) runDenseBlock32 sigs c outerStore
 
 end LeanNCD.Eval.Plan

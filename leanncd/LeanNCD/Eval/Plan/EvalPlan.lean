@@ -86,7 +86,10 @@ structure CheckedEvalPlan where private mk ::
   raw          : RawEvalPlan
   checkedNodes : Array CheckedPlanStepEvidence
   /-- The single storage kind this plan's COMPLETE signature table commits to
-      (`deriveStorageKind`, `Check.lean`), derived before any step is checked. Recorded on the
+      (`deriveStorageKind`, `Check.lean`), derived before any step is checked — or, when that table
+      is bool-only, the kind of the first real slot in any scan block's table (scan-local scratch;
+      see `checkPlan`), so a graph whose only real tensor is scan scratch is not mis-stamped with
+      `deriveStorageKind`'s `.float64` default. Recorded on the
       evidence rather than re-derived per consumer so a plan-level door can gate on it without a
       signature table in hand — which is what the experimental JAX entries need, since an
       all-input, zero-step `.float32` plan has no node for a per-node check to inspect and the
@@ -128,9 +131,10 @@ inductive PlanStepError
   | assign (cause : PlanError)
   | scan   (stepIndex : Nat) (cause : ScanPlanError)
   | nonlin (stepIndex : Nat) (cause : NonlinPlanError)
-  /-- A `.float32` graph contains a step kind binary32 execution does not admit. Binary32 admits
-      assignments, the two nonlinearity operations (F32-B), and top-level scatter (F32-D); scan
-      (and scan-local scatter) is F32-C. Carries the ORIGINAL outer step
+  /-- A `.float32` graph contains a step kind binary32 execution does not admit. Since F32-C, every
+      top-level statement kind a `.float32` schedule can name is admitted; this constructor is
+      retained producer-less (closed-family discipline, `PlanStepKind.scatter`'s F32-D precedent).
+      Carries the ORIGINAL outer step
       index — not an index into the assignments-only sublist — and a closed `PlanStepKind`
       (`Error.lean`) rather than a rendered string.
 
@@ -144,7 +148,7 @@ inductive PlanStepError
 /-- Which constructor a `PlanStep` is, as the closed diagnostic payload `f32UnsupportedStep`
     carries. Total over `PlanStep`; the `.assign`, `.pointwise`, `.axiswise`, and `.scatter` answers
     are never actually reported by that error, since those are exactly the kinds a binary32 graph
-    admits. -/
+    admits. Since F32-C, `.scan` joins them: `f32UnsupportedStep` has no live producer at all. -/
 def PlanStep.kind : PlanStep → PlanStepKind
   | .assign _    => .assign
   | .scatter _   => .scatter
@@ -188,19 +192,25 @@ def checkPlan (raw : RawEvalPlan) : Except PlanStepError CheckedEvalPlan := do
   let storageKind ← match deriveStorageKind raw.tensorSigs with
     | .ok k => pure k
     | .error e => throw (.assign e)
-  -- CAPABILITY SECOND, for a `.float32` graph only, over `raw.steps` in ORIGINAL order: binary32
-  -- admits assignments, the two nonlinearity operations (F32-B), and top-level scatter (F32-D); scan
-  -- (F32-C) is refused. Matched arm by arm rather than through a catch-all so admitting one of
-  -- these kinds later is a deliberate edit at its own arm; indexed over `raw.steps` itself, never a
-  -- filtered sublist, so the reported index is the outer-graph one.
-  if storageKind == .float32 then
-    for h : ni in [0 : raw.steps.size] do
-      match raw.steps[ni] with
-      | .assign _    => pure ()
-      | .scatter _   => pure ()
-      | .scan _      => throw (.f32UnsupportedStep ni .scan)
-      | .pointwise _ => pure ()
-      | .axiswise _  => pure ()
+  -- An outer table with no real (non-`bool`) slot constrains no carrier (`deriveStorageKind`'s
+  -- `.float64` is only its default), but the graph may still hold real content the outer table
+  -- cannot see: a scan's block-local SCRATCH lives only in that scan's own block tables. Such a
+  -- graph takes its kind from the FIRST real slot of any scan block (steps in order, base block
+  -- before step block) — the graph-level generalization of `checkPlanBlockCore`'s bool-only
+  -- exemption (`Block.lean`), and the same answer `prepareEvalPlan`'s Step 0b (`Compile.lean`)
+  -- gives, since it counts scan scratch too. Without it, a predicate-only outer graph whose only
+  -- real tensor is `tensor f32` scratch was checked as `.float64` and its own step block then
+  -- refused (`storageKindNotAdmitted .float32`) through the compiler-bug channel. An outer table
+  -- WITH a real slot stays authoritative, so this never overrides it: a block disagreeing with it
+  -- (or with the kind a bool-only outer graph took from an earlier block) is still refused by that
+  -- block's own storage-kind gate inside the scan checker.
+  let storageKind :=
+    if raw.tensorSigs.all (·.dtype == .bool) then
+      (raw.steps.findSome? fun
+        | .scan s => (s.baseBlock.tensorSigs ++ s.stepBlock.tensorSigs).findSome?
+            (fun sig => storageConstraintOfDtype sig.dtype)
+        | _ => none).getD storageKind
+    else storageKind
   let mut nodes : Array (WiringNode PlanStepError CheckedPlanStepEvidence) := #[]
   for h : ni in [0 : raw.steps.size] do
     let step := raw.steps[ni]
@@ -272,7 +282,9 @@ def checkPlan (raw : RawEvalPlan) : Except PlanStepError CheckedEvalPlan := do
               | .error e => throw (.assign (.nodeError ni e))
               | .ok c => pure (.scatter c)
           | .scan s =>
-              match checkScanPlan raw.tensorSigs s with
+              match (match storageKind with
+                     | .float64 => checkScanPlan raw.tensorSigs s
+                     | .float32 => checkScanPlanF32 raw.tensorSigs s) with
               | .error e => throw (.scan ni e)
               | .ok c => pure (.scan c)
           -- The two nonlinearity arms select their checker by the graph's storage kind exactly as

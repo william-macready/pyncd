@@ -47,9 +47,8 @@ def checkDecl : Decl → Except CapabilityError Unit
                                  -- precision does this whole graph run in), not a per-declaration
                                  -- one: an f32 declaration nothing uses constrains nothing. Mixed
                                  -- precision is rejected by `prepareEvalPlan`'s Step 0b storage
-                                 -- derivation, and the constructs binary32 defers to later slices
-                                 -- by its Step 0c `f32CapabilityCheck` — both of which need the
-                                 -- schedule-wide kind this per-declaration pass cannot see.
+                                 -- derivation, which needs the schedule-wide kind this
+                                 -- per-declaration pass cannot see.
   | .linear ..    => pure ()
   | .predicate .. => pure ()
   | .axis ..      => pure ()
@@ -372,34 +371,6 @@ def capabilityPreflight (sched : ScheduledProgram) : Except CapabilityError Unit
           if slotsBecomeScatter slots then
             throw (.unloweredScatterAssign s!"{nm}: scatter-shaped LHS reached as an unlowered assign")
       | .recurMorphism .. => pure ()
-
-/-! ## Binary32 source capability (f32 slice, Task 2)
-
-The constructs a HOMOGENEOUS-f32 schedule is refused for, checked once over the top-level scheduled
-statements in SOURCE order. Deliberately a second pass beside `capabilityPreflight` rather than more
-arms inside it: `capabilityPreflight` is dtype-blind by construction (it never sees `decls` except
-for the two scatter-shape post-checks), and these rejections are about the schedule's derived
-STORAGE KIND, which only `prepareEvalPlan`'s Step 0b knows. It runs AFTER storage derivation and
-BEFORE `capabilityPreflight`, so an f32 program outside this slice's fragment reports its own f32
-reason rather than a generic capability one.
-
-Every payload is `CapabilityError.unsupportedDtype` with the stable `"{name}: …"` shapes the plan
-fixes; each names the DEFERRED SLICE that will admit it (F32-C scan) rather than
-claiming the construct is invalid. -/
-
-/-- The whole-schedule binary32 capability pass: top-level scheduled statements in SOURCE order,
-    first rejection wins. Every top-level statement kind is admitted (assignments since F32-A, their
-    nonlinearities and inline unary factors since F32-B, top-level scatter since F32-D; a
-    `.recurMorphism` is refused dtype-blind by `capabilityPreflight`). A `.scan`/`.scanPre` node is
-    refused as an unsupported OUTER step kind without descending into its blocks — this makes no
-    precedence claim against an independently invalid scan body, and a scan's own statements are
-    not top-level statements. -/
-def f32CapabilityCheck (stmts : List ScanStmt) : Except CapabilityError Unit := do
-  for sc in stmts do
-    match sc with
-    | .plain _ => pure ()
-    | .scan nm .. => throw (.unsupportedDtype s!"{nm}: f32 scan")
-    | .scanPre nm .. => throw (.unsupportedDtype s!"{nm}: f32 scan")
 
 open Std
 open LeanNCD.Eval (ShapeError EvalWarning EvalError EvalFailure termAxisUIDs)
@@ -1165,10 +1136,10 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
     -- the `.assign` step's own algebra — `checkPredicateOutput` (re-established at `prepareEvalPlan`'s
     -- Step 0 for every base/recurrence statement) already forces a predicate destination's own
     -- statement to `nonlin = .identity`, so the `.pointwise`/`.axiswise` branches below can never
-    -- actually be reached with `destDtype = .bool`; their OWN result-slot pushes stay literal `.f64`
-    -- exactly as before this task (an `f64` destination reaching either nonlinear branch is common —
-    -- every `enumScanCases` template-2/relu-scan fixture does — and mutation-tests that literal
-    -- independently of anything Boolean).
+    -- actually be reached with `destDtype = .bool`. Their OWN result-slot pushes also take
+    -- `destDtype` since F32-C (so an `.f32` destination gets an `.f32` result slot; an `f64` one
+    -- still gets `.f64` — the common case, reached by every `enumScanCases` template-2/relu-scan
+    -- fixture).
     let destDtype := dtypeOfDecl (declEnv[nm]?)
     let plan := { plan with algebra := algebraForDest destDtype rhs.agg }
     baseSigs := baseSigs.push { shape := outputShape, dtype := destDtype }
@@ -1181,7 +1152,7 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
           pure preSlot
       | .pointwise pf => do
           let resSlot := baseSigs.size
-          baseSigs := baseSigs.push { shape := outputShape, dtype := .f64 }
+          baseSigs := baseSigs.push { shape := outputShape, dtype := destDtype }
           baseSteps := baseSteps.push (.assign plan)
           baseSteps := baseSteps.push (.pointwise
             { sourceSlot := preSlot, destinationSlot := resSlot, shape := outputShape, fn := pf })
@@ -1191,7 +1162,7 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
           -- returns `none`); `retainedAxisPos` maps its all-slots index to the output-axis index.
           let axisPos := retainedAxisPos slots (axisPos?.getD 0)
           let resSlot := baseSigs.size
-          baseSigs := baseSigs.push { shape := outputShape, dtype := .f64 }
+          baseSigs := baseSigs.push { shape := outputShape, dtype := destDtype }
           baseSteps := baseSteps.push (.assign plan)
           -- Mask policy: local non-seeded output basis (`outputUids` — this base block's
           -- `.free`/`.freeNorm` axes; the seeded `.iterAt` scan axis is absent), empty pins,
@@ -1283,7 +1254,7 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
           pure preSlot
       | .pointwise pf => do
           let resSlot := stepSigs.size
-          stepSigs := stepSigs.push { shape := outputShape, dtype := .f64 }
+          stepSigs := stepSigs.push { shape := outputShape, dtype := destDtype }
           stepSteps := stepSteps.push (.assign plan)
           stepSteps := stepSteps.push (.pointwise
             { sourceSlot := preSlot, destinationSlot := resSlot, shape := outputShape, fn := pf })
@@ -1291,7 +1262,7 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
       | .axiswise fn m => do
           let axisPos := retainedAxisPos slots (axisPos?.getD 0)
           let resSlot := stepSigs.size
-          stepSigs := stepSigs.push { shape := outputShape, dtype := .f64 }
+          stepSigs := stepSigs.push { shape := outputShape, dtype := destDtype }
           stepSteps := stepSteps.push (.assign plan)
           -- Mask policy: local non-seeded output basis (`outputUids` — this recurrence's
           -- `.free`/`.freeNorm` axes; the seeded `.iterNext` scan axis is absent, so a mask over it
@@ -1499,22 +1470,14 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
   -- A HOMOGENEOUS f32 schedule is now ADMITTED and specialized through the binary32 checker (the f32
   -- slice's Task 2 replaced Task 1's temporary blanket stop here). `storage` selects Step B's
   -- signature-admission rule below, Step D's destination algebra (`algebraForDest`), and Step E's
-  -- graph checker (`checkPlan` derives the same kind from the signature table it builds).
+  -- graph checker (`checkPlan` derives the same kind from the plan it builds: its outer signature
+  -- table, or — when that table is bool-only — its scan blocks' tables, where scan scratch lives).
   let storage ← match scheduleStorageKind declEnv sched.stmts with
     | .error nm =>
         throw { cause := .capability
                   (.unsupportedDtype s!"{nm}: mixed f32/f64 storage in one schedule")
               , warnings := [] }
     | .ok k => pure k
-  -- Step 0c: binary32 source capability, for a `.float32` schedule only, over the top-level
-  -- statements in source order. Placed BEFORE Step A so an f32 program outside this slice's
-  -- fragment (any scan form) reports its own f32 reason with the deferred slice named, rather
-  -- than reaching a dtype-blind generic capability rejection or — worse — Step E's `checkPlan`,
-  -- which is the compiler-bug channel.
-  if storage == .float32 then
-    match f32CapabilityCheck sched.stmts with
-    | .error e => throw { cause := .capability e, warnings := [] }
-    | .ok () => pure ()
   -- Step A: capability preflight.
   match capabilityPreflight sched with
   | .error e => throw { cause := .capability e, warnings := [] }

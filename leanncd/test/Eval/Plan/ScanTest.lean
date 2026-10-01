@@ -2912,9 +2912,10 @@ run_cmd do
 
 `linearScan` above — the accepted linear self-recurrence — with its state, its captures, and its
 block results all moved to binary32. `checkScanPlan` must STILL reject it, retaining
-`stateDtypeNotAdmitted`: every binary32 scan form is slice F32-C, so there is no f32 scan worker,
-and the existing scan checker is deliberately left Float-backed so direct construction cannot
-acquire evidence for one. -/
+`stateDtypeNotAdmitted`: binary32 scans are admitted through the sibling `checkScanPlanF32` (added by
+F32-C), never through `checkScanPlan` itself, which stays deliberately Float-backed so direct
+construction cannot acquire `.float64` evidence for an f32 table — exactly as `checkAssign`/
+`checkPointwise`/`checkAxiswise` already do beside their own binary32 siblings. -/
 
 def outerSigsF32 : Array TensorSignature :=
   #[{ shape := #[], dtype := .f32 }, { shape := #[3], dtype := .f32 }, { shape := #[3], dtype := .f32 }]

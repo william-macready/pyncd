@@ -49,9 +49,10 @@ inductive BlockError
   | blockContextMismatch  (nodeIndex : Nat) (expected actual : Array Nat)
   | nonlin (nodeIndex : Nat) (cause : NonlinPlanError)
   | nonlinearSourceNotLocalAssignment (nodeIndex : Nat) (sourceSlot : TensorSlot)
-  /-- This block's own signature table derives a storage kind no block worker implements. Only
-      `.float64` is: `runDenseBlock` below allocates an `Array DenseTensor` store and dispatches to
-      the Float workers, and blocks exist only inside a scan, whose binary32 support is slice F32-C.
+  /-- This block's own signature table derives a storage kind that does not match the kind being
+      checked for. Both `.float64` (`checkPlanBlock`/`runDenseBlock`) and `.float32`
+      (`checkPlanBlockF32`/`runDenseBlock32`) are implemented block workers since F32-C; an all-`bool`
+      table is exempted (`checkPlanBlockCore`'s gate below) because it constrains no carrier.
 
       Its own constructor rather than a `wiring (.dtypeNotAdmitted ...)`: this is a WHOLE-TABLE
       verdict, not a statement about one slot, and it is load-bearing exactly where no per-slot
@@ -76,6 +77,10 @@ private def firstDuplicateSlot : List TensorSlot → Option TensorSlot
 structure CheckedPlanBlock where private mk ::
   raw          : RawPlanBlock
   checkedNodes : Array CheckedBlockStepEvidence
+  /-- The carrier this block was checked for, set only by `checkPlanBlock` (`.float64`) and
+      `checkPlanBlockF32` (`.float32`). `runDenseBlock`/`runDenseBlock32` refuse a mismatch as their
+      FIRST statement. -/
+  storageKind  : LeanNCD.StorageKind
   deriving Repr
 
 /-- One node of a shared availability/production-order wiring loop, generalized from `checkPlan`'s
@@ -190,10 +195,13 @@ def checkStepGraph {E C : Type} (n : Nat) (inputs : Array TensorSlot) (liftWirin
     before the shared loop.
 
     Before any of that, the block's COMPLETE signature table must derive a single admitted storage
-    kind (`deriveStorageKind`, `Check.lean`): a mixed table is `wiring (.mixedStorageKinds ...)` and
-    a `.float32` table is `storageKindNotAdmitted .float32`. See the inline comment at the top of the
-    body for why this cannot be delegated to the per-node checks. -/
-def checkPlanBlock (block : RawPlanBlock) : Except BlockError CheckedPlanBlock := do
+    kind (`deriveStorageKind`, `Check.lean`): a mixed table is `wiring (.mixedStorageKinds ...)`, and
+    a table whose derived kind does not match the kind being checked for is `storageKindNotAdmitted
+    <derived kind>` — except an all-`bool` table, which constrains no carrier and is admitted under
+    either kind. See the inline comment at the top of the body for why this cannot be delegated to
+    the per-node checks. -/
+private def checkPlanBlockCore (kind : LeanNCD.StorageKind) (block : RawPlanBlock) :
+    Except BlockError CheckedPlanBlock := do
   -- STORAGE KIND FIRST, from this block's COMPLETE signature table, before outputs, wiring, or any
   -- per-step local check. Two reasons it cannot be left to the per-node `checkAssign` calls below:
   -- an all-input, zero-step block has no per-node check at all (nothing would reject it, and the
@@ -204,8 +212,12 @@ def checkPlanBlock (block : RawPlanBlock) : Except BlockError CheckedPlanBlock :
   let n := block.tensorSigs.size
   match deriveStorageKind block.tensorSigs with
   | .error e => throw (.wiring e)
-  | .ok .float64 => pure ()
-  | .ok kind => throw (.storageKindNotAdmitted kind)
+  -- A table with no real (non-`bool`) slot constrains no carrier (`deriveStorageKind` reports its
+  -- `.float64` default), so it is admitted under either kind: an all-predicate block inside an
+  -- f32 scan rides the binary32 carrier exactly as a `[f32, bool]` graph does.
+  | .ok k =>
+      unless k == kind || block.tensorSigs.all (·.dtype == .bool) do
+        throw (.storageKindNotAdmitted k)
   for h : i in [0 : block.outputs.size] do
     let s := block.outputs[i]
     unless s < n do throw (.wiring (.slotOutOfRange s n))
@@ -248,15 +260,22 @@ def checkPlanBlock (block : RawPlanBlock) : Except BlockError CheckedPlanBlock :
               unless precedingAssignments.contains a.sourceSlot do
                 throw (.nonlinearSourceNotLocalAssignment ni a.sourceSlot)
       , localCheck := match step with
-          | .assign a => match checkAssign block.tensorSigs a with
+          | .assign a =>
+              match (match kind with
+                     | .float64 => checkAssign block.tensorSigs a
+                     | .float32 => checkAssignF32 block.tensorSigs a) with
               | .error e => throw (.wiring (.nodeError ni e))
               | .ok c => pure (.assign c)
           | .pointwise p =>
-              match checkPointwise block.tensorSigs p with
+              match (match kind with
+                     | .float64 => checkPointwise block.tensorSigs p
+                     | .float32 => checkPointwiseF32 block.tensorSigs p) with
               | .error e => throw (.nonlin ni e)
               | .ok c => pure (.pointwise c)
           | .axiswise a =>
-              match checkAxiswise block.tensorSigs a with
+              match (match kind with
+                     | .float64 => checkAxiswise block.tensorSigs a
+                     | .float32 => checkAxiswiseF32 block.tensorSigs a) with
               | .error e => throw (.nonlin ni e)
               | .ok c => pure (.axiswise c) }
     match step with
@@ -264,7 +283,15 @@ def checkPlanBlock (block : RawPlanBlock) : Except BlockError CheckedPlanBlock :
         precedingAssignmentDestinations.push a.destinationSlot
     | .pointwise _ | .axiswise _ => pure ()
   let checkedNodes ← checkStepGraph n block.inputs BlockError.wiring nodes
-  return CheckedPlanBlock.mk block checkedNodes
+  return CheckedPlanBlock.mk block checkedNodes kind
+
+/-- Check a block for the binary64 carrier. -/
+def checkPlanBlock (block : RawPlanBlock) : Except BlockError CheckedPlanBlock :=
+  checkPlanBlockCore .float64 block
+
+/-- Check a block for the binary32 carrier: the same core, under `.float32`. -/
+def checkPlanBlockF32 (block : RawPlanBlock) : Except BlockError CheckedPlanBlock :=
+  checkPlanBlockCore .float32 block
 
 /-- Execute one checked block at a fixed enclosing-scan context coordinate. Positional store is
     local to this invocation — sized to the block's own `tensorSigs`, not the outer plan's.
@@ -272,14 +299,21 @@ def checkPlanBlock (block : RawPlanBlock) : Except BlockError CheckedPlanBlock :
     `runDenseAssignAt`/`runDensePointwise`/`runDenseAxiswise` — exactly as `runDensePlan` does for
     the outer graph; this is the only place a local block step is evaluated. No Dense math is
     defined here, only the wiring to workers `Dense.lean` and `Nonlin.lean` already provide. -/
-def runDenseBlock (c : CheckedPlanBlock) (ctx : List Int) (inputs : Array DenseTensor) :
-    Except PositionalInputError (Array DenseTensor) := do
+private def runDenseBlockWith {α : Type}
+    (assignAt : CheckedAssignPlan → List Int → Array (DenseTensorOf α) →
+      Except PositionalInputError (DenseTensorOf α))
+    (pointwise : CheckedPointwisePlan → Array (DenseTensorOf α) →
+      Except PositionalInputError (DenseTensorOf α))
+    (axiswise : CheckedAxiswisePlan → Array (DenseTensorOf α) →
+      Except PositionalInputError (DenseTensorOf α))
+    (c : CheckedPlanBlock) (ctx : List Int) (inputs : Array (DenseTensorOf α)) :
+    Except PositionalInputError (Array (DenseTensorOf α)) := do
   let raw := c.raw
   unless inputs.size == raw.inputs.size do
     throw (.arityMismatch raw.inputs.size inputs.size)
   let n := raw.tensorSigs.size
-  let placeholder : DenseTensor := { shape := [], data := #[] }
-  let mut store : Array DenseTensor := Array.replicate n placeholder
+  let placeholder : DenseTensorOf α := { shape := [], data := #[] }
+  let mut store : Array (DenseTensorOf α) := Array.replicate n placeholder
   for h : i in [0 : raw.inputs.size] do
     let slot := raw.inputs[i]
     let t := inputs[i]!
@@ -292,11 +326,25 @@ def runDenseBlock (c : CheckedPlanBlock) (ctx : List Int) (inputs : Array DenseT
   for node in c.checkedNodes do
     match node with
     | .assign a =>
-        store := store.set! a.plan.destinationSlot (← runDenseAssignAt a ctx store)
+        store := store.set! a.plan.destinationSlot (← assignAt a ctx store)
     | .pointwise p =>
-        store := store.set! p.raw.destinationSlot (← runDensePointwise p store)
+        store := store.set! p.raw.destinationSlot (← pointwise p store)
     | .axiswise a =>
-        store := store.set! a.raw.destinationSlot (← runDenseAxiswise a store)
+        store := store.set! a.raw.destinationSlot (← axiswise a store)
   return store
+
+def runDenseBlock (c : CheckedPlanBlock) (ctx : List Int) (inputs : Array DenseTensor) :
+    Except PositionalInputError (Array DenseTensor) := do
+  unless c.storageKind == .float64 do
+    throw (.storageKindMismatch .float64 c.storageKind)
+  runDenseBlockWith runDenseAssignAt runDensePointwise runDenseAxiswise c ctx inputs
+
+/-- Execute one checked BINARY32 block: the same wiring as `runDenseBlock`, dispatching to the
+    native binary32 workers. Storage-kind guard first. -/
+def runDenseBlock32 (c : CheckedPlanBlock) (ctx : List Int) (inputs : Array DenseTensor32) :
+    Except PositionalInputError (Array DenseTensor32) := do
+  unless c.storageKind == .float32 do
+    throw (.storageKindMismatch .float32 c.storageKind)
+  runDenseBlockWith runDenseAssignAt32 runDensePointwise32 runDenseAxiswise32 c ctx inputs
 
 end LeanNCD.Eval.Plan

@@ -80,7 +80,7 @@ claim does. **Before trusting a row, re-derive it against those sites on the cur
 `wave_f_capability_manifest.md` table went stale this way when the nonlinearity thread closed
 nonlinear scans and updated the proposal but not the manifest's copy.
 
-Last re-derived against the tree: **2026-09-23** (f32 slice final-review fix wave; the 2026-09-21 counts below were re-checked and are unchanged, and the Step D site above was added).
+Last re-derived against the tree: **2026-09-30** (F32-C, re-derived in its Task 3 and again independently by its final whole-branch review; the counts below are unchanged, and `unsupportedDtype`'s only remaining producer is Step 0b's mixed-storage check — see the F32-C update below). Previously 2026-09-23 (f32 slice final-review fix wave; the 2026-09-21 counts were re-checked and unchanged, and the Step D site above was added).
 
 Static throw-site inspection at that date finds **10 live producer families** —
 `scatterOrAffineLhs`, `unsupportedLhsSlot`, `unsupportedNonlin`, `multiAxisScatterLhs`,
@@ -98,12 +98,21 @@ constructors.
 F32-B (`f32b_evalplan.md`) admits binary32 nonlinearities and inline unary factors end to end, but
 this moves no `CapabilityError` count: those two payload shapes (`"{nm}: f32 nonlinearity"`,
 `"{nm}: f32 unary factor {ti}:{fi}"`) simply stop being produced under the still-live
-`unsupportedDtype` constructor, which keeps its other producers (mixed storage, f32 scan). The 10 /
+`unsupportedDtype` constructor, which keeps its other producers (mixed storage, f32 scan — the
+latter closed by F32-C, see below). The 10 /
 16 / 6 split above is unchanged after F32-B. What DOES change, outside this
 enum: `PlanError.unaryNotAdmittedForDtype` and `PositionalInputError.unaryNotAdmittedForStorage`
 both become producer-less (retained, not deleted — F32-A's rule), and
 `PositionalInputError.unaryDomain32` becomes newly live (`float32Ops.applyUnary`, `Dense.lean`), the
 binary32 sibling of `unaryDomain`.
+
+**Update (F32-C shipped, `f32c_evalplan.md`):** native binary32 scans (including scan-local scatter)
+are now admitted end to end too. The `"{nm}: f32 scan"` payload shape has no producer left — Step 0c
+(`f32CapabilityCheck`), the one-payload-per-deferred-construct producer, is deleted entirely — so
+`unsupportedDtype` keeps exactly one live producer now: the mixed `f32`/`f64` schedule check
+(Step 0b). Re-derived, not assumed: the 10 / 16 / 6 split above is still unchanged after F32-C —
+`unsupportedDtype` was already counted as one live FAMILY regardless of how many producer sites fed
+it, and Step 0b's mixed-storage throw keeps that family live.
 
 ## Missing capabilities
 
@@ -118,7 +127,7 @@ yardstick), not a measured figure — see the rationale below the table.
 | Foundational / modeling-contradiction | **`.scanPre` + recurrence / callback morphisms** — the pre-built step-morphism escape hatch | `recurrenceOrCallback` | `checkScanStmt` / `checkStmt` | partial (`Stmt.recurMorphism`) |
 | Foundational | **Dynamic / value-dependent shapes** — extents that are not statically known | `dynamicShape` (producer-less/unreachable) | no throw site exists; the whole compiler resolves extents at compile time, so there is nothing yet to reject *at* | n/a (no surface syntax) |
 | Foundational (scalar-domain decision first) | **`complex64` / `complex128`** — complex-valued tensors | none yet; a complex declaration has no source spelling to reject | n/a | ✗ |
-| Bounded per construct | **Binary32 beyond the assignment fragment** — every scan form (including scan-local scatter, F32-C). *(F32-B has closed the other two members of this row, f32 nonlinearities and inline unary factors, and F32-D has closed top-level scatter — see "Already closed".)* | `unsupportedDtype` | `f32CapabilityCheck` (Step 0c), one payload per deferred slice | ✗, permanently — the reference dense interpreter is binary64-only and refuses **any** f32 graph (`EvalError.unsupportedDtype`), so these rows have no reference oracle to differential-test against |
+| Bounded per construct | **Binary32 beyond the assignment fragment** — now fully closed. F32-B closed the nonlinearity/inline-unary-factor pair, F32-D closed top-level scatter, and F32-C closes the last member, every scan form including scan-local scatter — see "Already closed". | `unsupportedDtype` (producer-less for this row now; the constructor itself stays live for the unrelated mixed-storage producer, Step 0b) | none — `f32CapabilityCheck` (Step 0c), the one-payload-per-deferred-construct producer, is deleted | ✗, permanently — the reference dense interpreter is binary64-only and refuses **any** f32 graph (`EvalError.unsupportedDtype`), so this row never had a reference oracle to differential-test against |
 | Bounded, contingent | **Mixed `f32`/`f64` in one schedule** — an explicit precision conversion | `unsupportedDtype` | `prepareEvalPlan` Step 0b, on `scheduleStorageKind` disagreement | n/a (no conversion semantics anywhere) |
 
 ### Difficulty ranking rationale (hardest → easiest)
@@ -158,14 +167,15 @@ what the ranking tracks.
    JAX x64 — but **JAX's ability to store a complex array is not Tensor Logic support for complex
    tensors** and must never be reported as such. Bit-level parity would also require measuring
    XLA's own operation order before any claim of agreement.
-4. **Binary32 beyond the assignment fragment** — bounded, one deferred slice per construct. F32-B
-   (nonlinearity and inline unary) and F32-D (top-level scatter) have landed (`f32b_evalplan.md`,
-   `f32d_evalplan.md`); F32-C (scans including scan-local scatter) and F32-JAX remain. Each is
-   genuinely bounded because the carrier, the checked evidence, the algebras, the storage-kind
-   gates at every worker/adapter/JAX door, and the named public boundary already exist; what each slice adds is
-   that construct's own binary32 numerics plus its fixtures. The cost is not plumbing but
-   *numerical truthfulness*: routing an f32 value through the existing binary64 helper would be
-   false f32, so each slice needs its own bit-level fixtures.
+4. **Binary32 beyond the assignment fragment** — now fully closed. F32-B (nonlinearity and inline
+   unary), F32-D (top-level scatter), and F32-C (every scan form including scan-local scatter) have
+   all landed (`f32b_evalplan.md`, `f32d_evalplan.md`, `f32c_evalplan.md`). Each was genuinely
+   bounded because the carrier, the checked evidence, the algebras, the storage-kind gates at every
+   worker/adapter/JAX door, and the named public boundary already existed; what each slice added was
+   that construct's own binary32 numerics plus its fixtures. The cost was not plumbing but
+   *numerical truthfulness*: routing an f32
+   value through the existing binary64 helper would have been false f32, so each slice needed its own
+   bit-level fixtures.
 5. **Mixed `f32`/`f64` in one schedule** — contingent, not merely deferred. The project invariant is
    that a graph selects one real precision, so mixed precision is *rejected rather than converted*
    and no conversion plan step is planned. If that invariant is ever changed, explicit conversions
@@ -350,10 +360,11 @@ fragment.
   `"{nm}: f32 nonlinearity"` and `"{nm}: f32 unary factor {ti}:{fi}"` have no producer left —
   `checkF32Stmt`'s nonlinearity match and factor loop that threw them are both deleted
   (`checkF32Stmt` itself deleted by F32-D) — but the constructor itself stays live for mixed
-  storage and f32 scan, so the 10/16/6 count above is unchanged.
-  **Deliberately still rejected, each with its own located `CapabilityError.unsupportedDtype`**:
-  every scan form including scan-local scatter (F32-C), and a schedule mixing `f32` with `f64`
-  (F32-E, contingent — see the rationale above). Top-level scatter is admitted since F32-D. The JAX
+  storage (and, until F32-C closed it, f32 scan), so the 10/16/6 count above is unchanged.
+  **Deliberately still rejected, with its own located `CapabilityError.unsupportedDtype`**: a
+  schedule mixing `f32` with `f64` (F32-E, contingent — see the rationale above). Top-level scatter
+  is admitted since F32-D; every scan form, including scan-local scatter, is admitted since F32-C
+  (`f32c_evalplan.md`). The JAX
   backend stays
   reference64-only (F32-JAX). **F32-JAX finding (F32-B §1.1):** on the authoring platform, native
   binary32 transcendentals (`expf`/`logf`/`sinf`/`cosf`/`tanhf`) are measurably NOT correctly

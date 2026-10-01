@@ -1,0 +1,20 @@
+[
+  {
+    "label": "G1 (scan signature tie dropped: runDenseScan accepts a stale/wrong signature table)",
+    "task": "1",
+    "file": "LeanNCD/Eval/Plan/Scan.lean",
+    "old": "  unless sigs == c.sigs do throw (.signatureContextMismatch c.sigs sigs)\n",
+    "new": "",
+    "targets": ["Eval.Plan.ScanTest"],
+    "expect": ["review fixture 12: an all-f64 substitute table was accepted", "review fixture 17: the store arity check pre-empted the signature tie"]
+  },
+  {
+    "label": "G2 (block arity check dropped: runDenseBlock accepts a wrong-arity input array)",
+    "task": "1",
+    "file": "LeanNCD/Eval/Plan/Block.lean",
+    "old": "  unless inputs.size == raw.inputs.size do\n    throw (.arityMismatch raw.inputs.size inputs.size)\n",
+    "new": "",
+    "targets": ["Eval.Plan.BlockTest"],
+    "expect": ["arity mismatch: wrong error"]
+  }
+]

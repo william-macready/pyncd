@@ -1,0 +1,93 @@
+diff --git a/leanncd/LeanNCD/Eval/Plan/Dense32.lean b/leanncd/LeanNCD/Eval/Plan/Dense32.lean
+index 0242b15..f83d50c 100644
+--- a/leanncd/LeanNCD/Eval/Plan/Dense32.lean
++++ b/leanncd/LeanNCD/Eval/Plan/Dense32.lean
+@@ -66,7 +66,7 @@ def runDensePlan32 (c : CheckedEvalPlan) (inputs : Array DenseTensor32) :
+     | .assign a => store := store.set! a.plan.destinationSlot (← runDenseAssign32 a store)
+     | .scatter s =>
+         store := store.set! s.plan.compute.destinationSlot (← runDenseScatter32 s store)
+-    | .scan _ => throw (.storageKindMismatch .float32 .float64)
++    | .scan c => store ← runDenseScan32 raw.tensorSigs c store
+     | .pointwise p =>
+         store := store.set! p.raw.destinationSlot (← runDensePointwise32 p store)
+     | .axiswise a =>
+diff --git a/leanncd/LeanNCD/Eval/Plan/EvalPlan.lean b/leanncd/LeanNCD/Eval/Plan/EvalPlan.lean
+index b0e95eb..0446e1d 100644
+--- a/leanncd/LeanNCD/Eval/Plan/EvalPlan.lean
++++ b/leanncd/LeanNCD/Eval/Plan/EvalPlan.lean
+@@ -188,19 +188,6 @@ def checkPlan (raw : RawEvalPlan) : Except PlanStepError CheckedEvalPlan := do
+   let storageKind ← match deriveStorageKind raw.tensorSigs with
+     | .ok k => pure k
+     | .error e => throw (.assign e)
+-  -- CAPABILITY SECOND, for a `.float32` graph only, over `raw.steps` in ORIGINAL order: binary32
+-  -- admits assignments, the two nonlinearity operations (F32-B), and top-level scatter (F32-D); scan
+-  -- (F32-C) is refused. Matched arm by arm rather than through a catch-all so admitting one of
+-  -- these kinds later is a deliberate edit at its own arm; indexed over `raw.steps` itself, never a
+-  -- filtered sublist, so the reported index is the outer-graph one.
+-  if storageKind == .float32 then
+-    for h : ni in [0 : raw.steps.size] do
+-      match raw.steps[ni] with
+-      | .assign _    => pure ()
+-      | .scatter _   => pure ()
+-      | .scan _      => throw (.f32UnsupportedStep ni .scan)
+-      | .pointwise _ => pure ()
+-      | .axiswise _  => pure ()
+   let mut nodes : Array (WiringNode PlanStepError CheckedPlanStepEvidence) := #[]
+   for h : ni in [0 : raw.steps.size] do
+     let step := raw.steps[ni]
+@@ -272,7 +259,9 @@ def checkPlan (raw : RawEvalPlan) : Except PlanStepError CheckedEvalPlan := do
+               | .error e => throw (.assign (.nodeError ni e))
+               | .ok c => pure (.scatter c)
+           | .scan s =>
+-              match checkScanPlan raw.tensorSigs s with
++              match (match storageKind with
++                     | .float64 => checkScanPlan raw.tensorSigs s
++                     | .float32 => checkScanPlanF32 raw.tensorSigs s) with
+               | .error e => throw (.scan ni e)
+               | .ok c => pure (.scan c)
+           -- The two nonlinearity arms select their checker by the graph's storage kind exactly as
+diff --git a/leanncd/test/Eval/Plan/GraphCheckTest.lean b/leanncd/test/Eval/Plan/GraphCheckTest.lean
+index 5df994c..132d26c 100644
+--- a/leanncd/test/Eval/Plan/GraphCheckTest.lean
++++ b/leanncd/test/Eval/Plan/GraphCheckTest.lean
+@@ -431,7 +431,9 @@ def f32ScanPlan : RawEvalPlan :=
+                    , { shape := #[3], dtype := .f32 } ]
+   , inputSlots := #[0, 1], steps := #[.scan f32Scan] }
+ 
+-#guard errOf (checkPlan f32ScanPlan) == some (.f32UnsupportedStep 0 .scan)
++-- F32-C: admitted.
++#guard errOf (checkPlan f32ScanPlan) == none
++#guard storageOf (checkPlan f32ScanPlan) == some LeanNCD.StorageKind.float32
+ 
+ #guard !(isF32Unsupported 0 .scan (checkPlan
+   { f32ScanPlan with
+@@ -445,7 +447,8 @@ def f32StepOrderWithScan : RawEvalPlan :=
+   { f32UnsupportedStepOrder with
+     steps := f32UnsupportedStepOrder.steps ++ #[.scan f32Scan, .scan f32Scan] }
+ 
+-#guard errOf (checkPlan f32StepOrderWithScan) == some (.f32UnsupportedStep 3 .scan)
++-- F32-C: no capability refusal remains; the two scans' shared destination is now what fires.
++#guard errOf (checkPlan f32StepOrderWithScan) == some (.assign (.duplicateDestination 2 1 3))
+ 
+ #guard !(isF32Unsupported 3 .scan (checkPlan
+   { f32StepOrderWithScan with
+diff --git a/leanncd/test/Eval/Plan/ScanDense32Test.lean b/leanncd/test/Eval/Plan/ScanDense32Test.lean
+index 493c29e..d33cd5e 100644
+--- a/leanncd/test/Eval/Plan/ScanDense32Test.lean
++++ b/leanncd/test/Eval/Plan/ScanDense32Test.lean
+@@ -89,4 +89,15 @@ def boolOnlyBlock : RawPlanBlock :=
+ #guard ((checkPlanBlockF32 boolOnlyBlock).toOption.map (·.storageKind)) == some LeanNCD.StorageKind.float32
+ #guard ((checkPlanBlock boolOnlyBlock).toOption.map (·.storageKind)) == some LeanNCD.StorageKind.float64
+ 
++/-! ## Part B — graph level. Donor: `GraphCheckTest.f32ScanPlan` (same scan as `linearScanF32`). -/
++
++def f32LinearPlan : RawEvalPlan :=
++  { tensorSigs := outerSigsF32, inputSlots := #[0, 1], steps := #[.scan linearScanF32] }
++def g32 : Option CheckedEvalPlan := (checkPlan f32LinearPlan).toOption
++#guard g32.map (·.storageKind) == some LeanNCD.StorageKind.float32
++#guard (g32.bind fun c => bits32 (runDensePlan32 c #[store32[0]!, store32[1]!]) 2)
++  == some [0x4B800000, 0x4B800000, 0x4B800000]
++#guard (g32.bind fun c => err64 (runDensePlan c #[store64[0]!, store64[1]!]))
++  == some (.storageKindMismatch .float64 .float32)
++
+ end LeanNCD.Eval.Plan.ScanDense32Test

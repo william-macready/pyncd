@@ -360,11 +360,19 @@ S0`; `S[iterNext l] := S[l] + X[l]`), and `NonlinCheckTest`'s `baselineAxiswise`
 0). Together with fixture 8's pointwise case these exhaust `PlanStep`'s four non-assignment
 constructors.
 
-The scan case is a rejection; the scatter case is an acceptance since F32-D. The scan case is
-paired with the same graph under a BINARY64 table, which must NOT report `f32UnsupportedStep` —
-otherwise the fixture would pass for an implementation that refused this step kind unconditionally
-rather than for binary32 specifically. The axiswise case is an ACCEPTANCE since F32-B Task 3
-(fixture 3.10). -/
+The scatter case is an acceptance since F32-D; the scan case is ALSO an acceptance, since F32-C. The
+axiswise case is an ACCEPTANCE since F32-B Task 3 (fixture 3.10).
+
+**The two `#guard !(isF32Unsupported …)` controls below are now VACUOUS, kept as structural
+documentation rather than regression guards.** They pair the scan case with the same graph under a
+BINARY64 table and assert it does NOT report `f32UnsupportedStep` — originally so the fixture could
+not pass for an implementation that refused `.scan` unconditionally rather than for binary32
+specifically. Since F32-C, `f32UnsupportedStep` has no producer anywhere (`checkPlan`'s `.scan`
+refusal, its last producer, is deleted), so `isF32Unsupported` is `false` on every `checkPlan`
+result and these guards cannot fail. They are retained, not deleted, under the same closed-family
+discipline that retains the producer-less constructor itself: they record where the binary32-only
+refusal used to be distinguished from an unconditional one. If `f32UnsupportedStep` ever regains a
+producer, they become live guards again unchanged. -/
 
 def isF32Unsupported (i : Nat) (k : PlanStepKind) : Except PlanStepError CheckedEvalPlan → Bool
   | .error (.f32UnsupportedStep i' k') => i == i' && k == k'
@@ -431,21 +439,27 @@ def f32ScanPlan : RawEvalPlan :=
                    , { shape := #[3], dtype := .f32 } ]
   , inputSlots := #[0, 1], steps := #[.scan f32Scan] }
 
-#guard errOf (checkPlan f32ScanPlan) == some (.f32UnsupportedStep 0 .scan)
+-- F32-C: admitted.
+#guard errOf (checkPlan f32ScanPlan) == none
+#guard storageOf (checkPlan f32ScanPlan) == some LeanNCD.StorageKind.float32
 
 #guard !(isF32Unsupported 0 .scan (checkPlan
   { f32ScanPlan with
     tensorSigs := #[ { shape := #[], dtype := .f64 }, { shape := #[3], dtype := .f64 }
                    , { shape := #[3], dtype := .f64 } ] }))
 
-/-- Fixture 14's index witness, re-pointed by F32-D: `f32UnsupportedStepOrder` (now accepted) with
-    `f32Scan` appended TWICE, at outer indices 3 and 4, so first-rejection-wins (3) and
-    last-rejection-wins (4) disagree. -/
+/-- Fixture 14's index witness, re-pointed by F32-D and again by F32-C: `f32UnsupportedStepOrder`
+    (now accepted) with `f32Scan` appended TWICE, at outer indices 3 and 4. With no capability
+    refusal left to fire (F32-C admits `.scan` outright), both scans instead write the same
+    destination slot 2, so `checkStepGraph`'s wiring check reports
+    `.assign (.duplicateDestination 2 1 3)` — a genuinely different failure than the old capability
+    verdict, reached only because nothing upstream of wiring rejects the step first. -/
 def f32StepOrderWithScan : RawEvalPlan :=
   { f32UnsupportedStepOrder with
     steps := f32UnsupportedStepOrder.steps ++ #[.scan f32Scan, .scan f32Scan] }
 
-#guard errOf (checkPlan f32StepOrderWithScan) == some (.f32UnsupportedStep 3 .scan)
+-- F32-C: no capability refusal remains; the two scans' shared destination is now what fires.
+#guard errOf (checkPlan f32StepOrderWithScan) == some (.assign (.duplicateDestination 2 1 3))
 
 #guard !(isF32Unsupported 3 .scan (checkPlan
   { f32StepOrderWithScan with

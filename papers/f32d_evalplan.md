@@ -75,9 +75,12 @@ f32 permanently. F32-C's natural binary32 oracle is the same unroll run through 
 path (`prepareEvalPlan` → `runPreparedDense32`), which can run those scatters only because of this
 slice. It would call this slice's harness helpers `compile32`/`run32`/`env32`
 (`papers/f32d_files/Scatter32OracleTest.lean`); lift them into a shared test module when F32-C adds
-that second caller, not here. **Unverified, for F32-C to settle first:** `evalScheduled` accepts
-placements the checked compiler refuses at top level (e.g. constant-affine), so some unrolled
-scan-local scatters may fall outside this slice's admitted fragment.
+that second caller, not here. The lift did not happen — see `f32c_evalplan.md` §1.3. **Unverified,
+for F32-C to settle first:** `evalScheduled` accepts placements the checked compiler refuses at top
+level (e.g. constant-affine), so some unrolled scan-local scatters may fall outside this slice's
+admitted fragment. **Settled by `f32c_evalplan.md` §1.3: moot** (every scan-local scatter placement
+the checked scan compiler admits unrolls to a top-level scatter the checked binary32 compiler also
+admits).
 
 ---
 
