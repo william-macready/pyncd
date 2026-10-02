@@ -96,6 +96,19 @@ NO-GO for einsum. The spike described **two** f32-rejecting gates; the prototype
   §9 open item 2 on "einsum helper", not "dtype-specific". `buildAssignFixture` runs
   `runDenseAssign`, so f32 fails loud there ("Dense run failed"); its binary32 counterpart is the
   driver-local `buildAssignFixture32` (Task 2).
+- **Rendered `affineReference` plan data carries no storage-kind tag (plan-review finding, §4 Table
+  B).** The Python runtime's `dtype` parameter is the caller's explicit choice, defaulting to
+  `jnp.float64`; nothing on the data side refuses a binary32 plan run under the wrong `dtype`. Every
+  caller this slice ships passes `dtype=jnp.float32` correctly, so no evidence claim is affected —
+  this is a caller-convention note for anyone building a NEW caller later, not a defect in what
+  ships. Not fixed, by the same "don't validate scenarios that don't happen" judgement this repo
+  applies elsewhere.
+- **`KNOWN_DIVERGENT` pins the UNION of divergent positions across eager and jit, not which mode
+  diverges where (plan-review finding).** The real behavior (confirmed three times independently,
+  §3.6) is that eager diverges only at the subnormal position and jit only at the signed-zero
+  position — the test's assertion is slightly looser than the phenomenon it pins. Not tightened
+  here: the loose form still fails loud on any unexpected position or on the divergence
+  disappearing, which is the property that matters for this label's claim.
 
 ### 1.5 One slice, two tasks (adopted from prototype §8)
 
@@ -370,6 +383,7 @@ divergence, not ignored.
 | `jnp.float64` / `int64` constants @ runtime | yes | **fixed** → `dtype` / `_index_dtype()` | P1–P6 |
 | `Float.toBits` @ `pyTensorEntry` / `renderInputConstants` | no | **(c)**: only binary64 drivers and the einsum-gated `renderInputConstants` reach them; f32 uses the driver-local `pyTensorEntry32` | fixture 22/25 (`renderInputConstants` refuses) |
 | `runDenseAssign` @ `buildAssignFixture` | f32 fails loud ("Dense run failed") | **(c)**: a binary64-only helper | §1.4 |
+| rendered `affineReference` plan DATA (`generateNamed`/`renderAffinePlanNamed` JSON: `dest`, `output_shape`, `terms`) carries no storage-kind tag | yes — this is new: before this slice no f32 plan could reach rendering at all | **(c), not fixed**: `run_named`/`run_assign`/`run_plan_positional`'s `dtype` parameter defaults to `jnp.float64`, and `_require_dtype` only checks that INPUTS match the CALLER's requested `dtype`, never the plan's own declared storage kind. Every caller in this slice's own harness (`EvalPlanAffineSmoke32.lean`'s four routes) passes `dtype=jnp.float32` explicitly for an f32 plan, so no evidence-bearing path is affected — `ExecutionEvidence` is a Lean-side claim, never re-derived from the Python side. A caller OUTSIDE this harness that forgets the `dtype=` argument on an f32 plan's data gets a silent binary64 run, no error. Plan-review finding (§9); not fixed here (adding a storage-kind tag to the rendered data plus a runtime check would be new machinery for a misuse no existing caller commits) | — (caller-convention gap, not evidence-bearing) |
 
 **Doors to open during the audit even though no diff shows them:**
 
@@ -468,9 +482,50 @@ and line-count-checked by this write-up dispatch (§2).
    ```
    The paragraph's last sentence ("Running the binary64 checker over binary32 evidence …") stays.
 
+5. **Two more stale spots the plan-review pass found, missed by edit 4 because they're a different
+   paragraph/docstring.** Both in `Executable.lean`, neither line-anchored.
+   - The SAME section's FIRST paragraph (`rg -n "implements exactly ONE assignment semantics"`):
+     ```text
+     The experimental JAX backend implements exactly ONE assignment semantics: a real `f64` destination
+     under real sum-product, gathering plain (non-unary) `f64` reads, at NO runtime context coordinate.
+     ```
+     becomes
+     ```text
+     The experimental JAX backend implements exactly ONE assignment semantics per storage kind: a real
+     destination under real sum-product (`jaxRealCarrier kind`), gathering plain (non-unary) reads of
+     that same real dtype, at NO runtime context coordinate.
+     ```
+   - `validateAffineTable`'s docstring (`rg -n "and be stamped"`), its two-line tail:
+     ```text
+     contextful assignment can never reach the structural table check and be stamped
+     `orderedReference64`.
+     ```
+     becomes
+     ```text
+     contextful assignment can never reach the structural table check and be stamped
+     with a reference label (`orderedReference64`/`orderedReference32`).
+     ```
+6. **`ExecutableTest.lean`'s `emptyPlanCandidate` comment (lines 111–113), stale since gate 3's
+   removal.** THIS file IS line-anchored (`wc -l test/Eval/Plan/ExecutableTest.lean` must stay
+   **1887** after this edit — unlike edits 1–5, which don't touch this file). Replace the exact
+   3 lines:
+   ```text
+   -- A zero-step plan candidate: `aggregateEvidenceList #[] = .orderedReference64` (proved `by simp
+   -- [aggregateEvidenceList]` — neither `rfl` nor `decide` close it, see field note below), so
+   -- `evidence := .orderedReference64` is the only value that type-checks here.
+   ```
+   with exactly 3 lines:
+   ```text
+   -- A zero-step plan candidate: `aggregateEvidenceList kind #[] = orderedReferenceFor kind` (proved
+   -- `by simp [aggregateEvidenceList]` — neither `rfl` nor `decide` close it, see field note below),
+   -- so `evidence := orderedReferenceFor plan.plan.storageKind` is the only value that type-checks.
+   ```
+
 Then rebuild: `lake build JaxExperiment Eval.Plan.ExecutableTest` should be green. Re-run the two
 `EvalPlanCodegen`-anchored cycles below the edits:
 `mutation-manifest.sh leanncd papers/f32_jax_mutations_post.json J12 J15` should give 2/2 PASS.
+Re-run J3 too (edit 6 touches the same file J3's new `expect` line cites):
+`mutation-manifest.sh leanncd papers/f32_jax_mutations_post.json J3` should give 1/1 PASS.
 
 **Step 4: value-grep the Lean tree** (only the allowed hits should remain):
 ```bash
@@ -683,8 +738,11 @@ only the wrapping.
   (`JaxCodegenError.unsupportedStorageKind`) and in `validateEinsum`.
   ```
 - **`backend_missing_functionality.md`** has two edits:
-  - after the paragraph ending "…the empty evidence fold is `orderedReference64`." (`rg -n "rejects
-    a \`.float32\` plan at all eight"`), add an update line in the file's own convention;
+  - after the paragraph ending "…the empty evidence fold is `orderedReference64`." (`rg -n "empty
+    evidence fold is \`orderedReference64\`"` — **not** a search on "rejects a `.float32` plan at all
+    eight", the paragraph's own opening clause: that phrase is hard-wrapped across two lines in the
+    file, 344–345, so a single-line `rg` pattern on it returns nothing; the plan-review pass caught
+    this), add an update line in the file's own convention;
   - replace `The JAX backend stays reference64-only (F32-JAX).` (`rg -n "reference64-only
     \(F32-JAX\)"`, wrapped across lines) with the second line below:
   ```text
@@ -748,6 +806,17 @@ Rationale only; each item is argued where it is cited.
    because the claim then says exactly what was measured.
 6. **Line-anchored expects** (§2): the plan's one fragile coupling. Every prose edit to an anchored
    file is line-for-line, and was verified so.
+7. **Plan-review pass (before merge, before execution): no Critical finding; the independent
+   subnormal/signed-zero repro held up a third time.** Four findings were folded into this plan
+   rather than left for execution to discover: the `EvalPlanCodegen.lean`-step3 edit list grew two
+   more stale-docstring spots (items 5–6) found adjacent to the ones already caught; §4 Table B
+   gained the caller-convention row on the Python runtime's `dtype` default (owned, not fixed, per
+   §3.1's same reuse-scope judgement); J3's `expect` array gained the f32-specific line its own
+   Table A citation already claimed, closing a gap between what the manifest enforced and what the
+   plan asserted; and Task 2 phase 2's `backend_missing_functionality.md` anchor was swapped for one
+   that isn't broken by that file's own line-wrapping. None required re-running the ~13-minute
+   corpus pass or the ~45-minute manifest — all four are plan-text or mutation-manifest edits, not
+   code changes to either patch.
 
 ## 7. Definition of done
 
@@ -800,6 +869,10 @@ The authoring overran its budget. These counts are the dispatches' own reports, 
   verifying its own prose edits (the build, J12/J15, `git apply --check`, the manifest `--check`),
   with no re-exploration. The overrun came from command-guard rejections (blocked `git checkout`,
   compound shell commands) and from assembling and trimming the plan itself.
+- **Plan-review dispatch:** ~73 turns, also over the cap, re-verifying patches/build/manifest plus
+  an independent from-scratch reproduction of the subnormal/signed-zero finding. No Critical found;
+  4 Important findings were fixed directly into this plan afterward (text/manifest edits only, §6
+  item 7) by the orchestrating session, not a further dispatch.
 
 The execution budget (Rule 6: ≤ ~175M for the slice) is measured at close-out and recorded in
 `f32_jax_record.md`.
