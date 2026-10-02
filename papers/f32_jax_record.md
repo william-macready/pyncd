@@ -75,16 +75,16 @@ names the fixture; "J" the mutation cycle that kills a regression of it. `EPC` =
 | Case | f32 einsum | f32 affine | Evidence in tree |
 |---|---|---|---|
 | assign-only valid | **F** `unsupportedStorageKind .float32`: plan doors (`generateForward`, `generateNamed .einsumOnly`, `renderInputConstants`, `lowerPlan`), EPC fixtures 22 and 25 (J8); standalone doors `lowerAssign`/`loweringToEinsumCandidate`, EPC fixture 22 (J9, J10); validator door `einsumStorageAdmitted` in `validateEinsum`, ET einsum-kernel guard (J1) | **R `orderedReference32`**: `renderAffinePlanNamed`, `renderAffinePlanPositional`, `generateNamed .affineReference`, `lowerCheckPlanToCandidate` (+ `validateAndConstructExecutable`) in EPC fixture 22 (J11, J12); `renderAffineAssign`/`loweringToAffineTableCandidate` standalone in EPC fixture 22; kernel label in ET `validateAndConstructKernel ... .orderedReference32` guard (J2, J6) | verified |
-| bool destination | F storage (plan-level einsum gate precedes support) | **F `destinationDType 7 2 .bool`**, ET `f32BoolDestAssign` (J3) | verified |
-| bool source | F storage (EPC `f32BoolSourcePrepared?`, `generateNamed .einsumOnly`) | **F `unsupportedSourceDType 0 0 0 .bool`** at `generateNamed .affineReference`, `renderAffinePlanPositional`, `lowerCheckPlanToCandidate`, EPC `f32BoolSourcePrepared?` (J13) | verified |
-| unary read | F storage | **F `unaryFactor 7 0 0`**, ET (J5) | verified |
-| tropical algebra | F storage | **F `unsupportedAlgebra 7 admittedAlgebraF32Max`**, ET (J4) | verified |
-| Iverson factor | F storage (EPC `f32IversonPrepared?`) | **F `iversonFactor 0 0 1`** at `generateNamed .affineReference`, `lowerCheckPlanToCandidate`, EPC `f32IversonPrepared?` (J15) | verified |
-| contextful | **F storage** at `lowerAssign`, `loweringToEinsumCandidate`, EPC `f32CtxAssign` | **F `unsupportedContext 0 #[2]`** at `renderAffineAssign`, `loweringToAffineTableCandidate`, EPC `f32CtxAssign` (J14) | verified |
-| zero-pad label-extent mismatch | **F storage** at `lowerAssign`, EPC `f32PadAssign` (storage precedes `labelExtentMismatch`) | **R**, kernel `orderedReference32`, EPC `f32PadAssign` (J6) | verified |
+| bool destination | no dedicated fixture; F by gate order (`requireModeStorage` precedes `requireJaxSupport`) and redundantly by the support policy; the generic gate is pinned by J8/J9 on fixture 22 | **F `destinationDType 7 2 .bool`**, ET `f32BoolDestAssign` (J3) | verified |
+| bool source | F storage (EPC `f32BoolSourcePrepared?`, `generateNamed .einsumOnly`; J8) | **F `unsupportedSourceDType 0 0 0 .bool`** at `generateNamed .affineReference`, `renderAffinePlanPositional`, `lowerCheckPlanToCandidate`, EPC `f32BoolSourcePrepared?` (J13) | verified |
+| unary read | no dedicated fixture; F by gate order (`requireModeStorage` precedes `requireJaxSupport`) and redundantly by the support policy; the generic gate is pinned by J8/J9 on fixture 22 | **F `unaryFactor 7 0 0`**, ET (J5) | verified |
+| tropical algebra | no dedicated fixture; F by gate order (`requireModeStorage` precedes `requireJaxSupport`) and redundantly by the support policy; the generic gate is pinned by J8/J9 on fixture 22 | **F `unsupportedAlgebra 7 admittedAlgebraF32Max`**, ET (J4) | verified |
+| Iverson factor | F storage (EPC `f32IversonPrepared?`, `generateNamed .einsumOnly`; J8) | **F `iversonFactor 0 0 1`** at `generateNamed .affineReference`, `lowerCheckPlanToCandidate`, EPC `f32IversonPrepared?` (J15) | verified |
+| contextful | **F storage** at `lowerAssign` (J9), `loweringToEinsumCandidate` (J10), EPC `f32CtxAssign` | **F `unsupportedContext 0 #[2]`** at `renderAffineAssign`, `loweringToAffineTableCandidate`, EPC `f32CtxAssign` (J14) | verified |
+| zero-pad label-extent mismatch | **F storage** at `lowerAssign`, EPC `f32PadAssign` (storage precedes `labelExtentMismatch`; J9) | **R**, kernel `orderedReference32`, EPC `f32PadAssign` (guard not in J6's targets; the shared label is killed by J6 through ET's `f32DestAssign` kernel guard) | verified |
 | zero-step plan | **F storage**, plan-level only: EPC fixture 25 (J8) | **R `orderedReference32`**: EPC fixture 23 (`lowerCheckPlanToCandidate`, J12) and ET fixture 23 (`validateAndConstructExecutable (emptyPlanCandidate p)`, J7); ET `aggregateEvidenceList .float32 #[]` | verified |
-| positional route | F storage (`lowerPlan`, EPC fixtures 22) | **R** `renderAffinePlanPositional`, EPC fixtures 22 and 25 (J11) | verified (Python exactness: Task 2) |
-| standalone-assign route | F storage (`lowerAssign`, per fixture) | **R**, kernel `orderedReference32`, EPC fixture 22 and `f32PadAssign` (J2, J6) | verified (Python exactness: Task 2) |
+| positional route | F storage (`lowerPlan`, EPC fixture 22; J8) | **R** `renderAffinePlanPositional`, EPC fixtures 22 and 25 (J11) | verified (Python exactness: Task 2) |
+| standalone-assign route | F storage (`lowerAssign`, per fixture: EPC fixture 22 standalone, `f32CtxAssign`, `f32PadAssign`; J9; `loweringToEinsumCandidate` on fixture 22 and `f32CtxAssign`; J10) | **R**, kernel `orderedReference32`, EPC fixture 22 and `f32PadAssign` (J2, J6) | verified (Python exactness: Task 2) |
 
 Also verified: EPC fixture 24 (`f32BadBindingPrepared?`) reaches `invalidBindings (.materializedSlot (.slotOutOfRange 99 2))`
 under f32, the same as its binary64 control, so binding validation is not skipped; ET fixture 24 says the same
@@ -104,6 +104,17 @@ through `validateAndConstructExecutable`.
 | `runDenseAssign` @ `buildAssignFixture` | f32 fails loud | (c): binary64-only helper | see observation below | plan §1.4 |
 | rendered `affineReference` plan DATA carries no storage-kind tag | yes | (c), not fixed (plan §4 Table B, last row) | unchanged: no tag in `renderAffinePlanNamed` output; `renderAffineTerm` and `requireNoIverson` are dtype-free | caller-convention gap |
 | `jnp.float64` / `int64` constants @ runtime | yes | Task 2 | `evalplan_affine_runtime.py` still has its binary64 literals at this commit, as expected before Task 2 parametrizes it | Task 2 (P1-P6) |
+
+Fix round 1 (reviewer finding): the plan's section 4 sentence "No SI cell, and no gap left. Every f32 cell
+names a dedicated fixture and a mutation that kills it" is overstated for three cells: the f32-einsum
+cells for bool destination, unary read and tropical algebra have no dedicated einsum-door fixture. The
+`f32BoolDestAssign`, unary and `admittedAlgebraF32Max` guards in ET test only `checkJaxAssignSupport`.
+They are not SI (the einsum doors refuse by gate order, redundantly by the support policy), and the
+generic gate is pinned by J8/J9 on fixture 22. J-cycle attribution above was read off the per-cycle
+mutated-build logs of the step 2 manifest run: J8 fails EPC fixtures 22 (plan-level and standalone), 25,
+`f32BoolSourcePrepared?`, `f32IversonPrepared?`, `f32CtxAssign` and `f32PadAssign`; J9 fails fixture 22
+standalone, `f32CtxAssign` and `f32PadAssign`; J10 fails fixture 22 standalone and `f32CtxAssign`; J1
+fails ET's f32 einsum-kernel guard (the validator door).
 
 Observation (no stop): `buildAssignFixture` calls the binary64 `checkAssign sigs a` first, so an f32
 table fails with "check failed" (`dtypeNotAdmitted`) before it would reach "Dense run failed" as the plan's
