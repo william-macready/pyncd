@@ -320,3 +320,7 @@ this phase; `--check` first: "15 entries, 15 selected, every old-string unique".
   (`wc -l` still 1991 / 1887), `lake build JaxExperiment Eval.Plan.ExecutableTest` was green (8,515 jobs),
   `run-evalplan-affine32.sh` (default `100 1`) reproduced the 56-fixture / 160-check line, and the full
   manifest re-ran: 15/15 PASS, no leftover mutation.
+
+## 8. Execution budget (CLAUDE.md Rule 6)
+
+Measured with `token-report.py` on the controller session (cumulative input tokens): **38.9M total**, against the ≤ ~175M slice-execution budget. Dispatch turns: Task 1 implementer 64 (over the ~60-turn cap, ~5.4M ctx), Task 2 phase 1 implementer 37, Task 2 phase 2 implementer 67 (includes the final-review fix wave; over the cap), reviewers 5–56 turns. All dispatch context peaks ≤ 201k (cap ~250k). The two over-cap implementer dispatches were dominated by long background runs and the mutation-manifest waits, not exploration. The full mutation manifest finished in minutes rather than the ~45 min the plan estimated (warm caches).
