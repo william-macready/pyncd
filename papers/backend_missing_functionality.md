@@ -346,6 +346,7 @@ fragment.
   binding validation, evidence aggregation, or any Python emission — the zero-step, all-input f32
   plan is the case that makes a plan-level gate necessary, since every per-node check is vacuous
   there and the empty evidence fold is `orderedReference64`.
+  **Update (F32-JAX shipped, `f32_jax_evalplan.md`):** the `affineReference` mode now runs binary32 (`orderedReference32`); `einsumOnly` stays refused at every door.
   **Update (F32-B shipped, `f32b_evalplan.md`):** f32 pointwise/axiswise nonlinearities and inline
   unary read factors are now admitted end to end too, natively in binary32 (native libm
   transcendentals, exact binary32 constants, same operation tree as the binary64 formula — never a
@@ -364,9 +365,7 @@ fragment.
   **Deliberately still rejected, with its own located `CapabilityError.unsupportedDtype`**: a
   schedule mixing `f32` with `f64` (F32-E, contingent — see the rationale above). Top-level scatter
   is admitted since F32-D; every scan form, including scan-local scatter, is admitted since F32-C
-  (`f32c_evalplan.md`). The JAX
-  backend stays
-  reference64-only (F32-JAX). **F32-JAX finding (F32-B §1.1):** on the authoring platform, native
+  (`f32c_evalplan.md`). The JAX backend's `affineReference` mode runs binary32 since F32-JAX (`orderedReference32`); `einsumOnly` stays binary64-only. **F32-JAX finding (F32-B §1.1):** on the authoring platform, native
   binary32 transcendentals (`expf`/`logf`/`sinf`/`cosf`/`tanhf`) are measurably NOT correctly
   rounded — they disagree with correctly-rounded binary64-then-narrow on up to ~1.7% of inputs by
   one ulp (`sin` the worst, `log` the best short of `sqrt`/`recip`, which are exact in both). F32-B

@@ -66,17 +66,27 @@ def testPrivateConstructor (sigs : Array TensorSignature) (candidate : JaxKernel
 -- identity for "all" (ordered-ref). `#guard`s (not just compile-only defs) verify the actual
 -- expected outcome, matching `CompileTest.lean`'s convention elsewhere in this directory.
 def testAggregateAll : ExecutionEvidence :=
-  aggregateEvidenceList #[.orderedReference64, .orderedReference64]
+  aggregateEvidenceList .float64 #[.orderedReference64, .orderedReference64]
 
 def testAggregateMixed : ExecutionEvidence :=
-  aggregateEvidenceList #[.orderedReference64, .optimizationExperiment]
+  aggregateEvidenceList .float64 #[.orderedReference64, .optimizationExperiment]
 
 def testAggregateEmpty : ExecutionEvidence :=
-  aggregateEvidenceList #[]
+  aggregateEvidenceList .float64 #[]
 
 #guard testAggregateAll == .orderedReference64
 #guard testAggregateMixed == .optimizationExperiment
 #guard testAggregateEmpty == .orderedReference64
+
+-- F32-JAX: the fold is keyed off the plan's storage kind. A binary32 plan's empty fold is its OWN
+-- reference claim (`orderedReference32`), all-binary32 steps aggregate to it, and a step carrying
+-- the OTHER kind's reference label is no reference claim at all (`optimizationExperiment`) — the
+-- cross-kind cell is what pins that the fold compares against `orderedReferenceFor kind` rather
+-- than "any ordered reference".
+#guard aggregateEvidenceList .float32 #[] == .orderedReference32
+#guard aggregateEvidenceList .float32 #[.orderedReference32, .orderedReference32] == .orderedReference32
+#guard aggregateEvidenceList .float32 #[.orderedReference64] == .optimizationExperiment
+#guard aggregateEvidenceList .float64 #[.orderedReference32] == .optimizationExperiment
 
 -- `JaxExecutable`'s constructor is `private mk ::` (`Executable.lean`), same discipline as
 -- `JaxKernel` in Task 2 — cannot be invoked from this file. Deliberately commented out; must
@@ -98,9 +108,9 @@ def testAggregateEmpty : ExecutionEvidence :=
 -- with it commented out, exercising only the positive half (construction via
 -- `validateAndConstructExecutable` works).
 
--- A zero-step plan candidate: `aggregateEvidenceList #[] = .orderedReference64` (proved `by simp
--- [aggregateEvidenceList]` — neither `rfl` nor `decide` close it, see field note below), so
--- `evidence := .orderedReference64` is the only value that type-checks here.
+-- A zero-step plan candidate: `aggregateEvidenceList kind #[] = orderedReferenceFor kind` (proved
+-- `by simp [aggregateEvidenceList]` — neither `rfl` nor `decide` close it, see field note below),
+-- so `evidence := orderedReferenceFor plan.plan.storageKind` is the only value that type-checks.
 --
 -- Field note: unlike `JaxKernel`'s analogous `aligned := rfl` (Task 2, a direct match on the
 -- candidate's constructor, which unifies definitionally), `aggregateEvidenceList` goes through
@@ -112,7 +122,7 @@ def testAggregateEmpty : ExecutionEvidence :=
 def emptyPlanCandidate (plan : PreparedPlan) : JaxExecutableCandidate :=
   { source := plan
     steps := #[]
-    evidence := .orderedReference64
+    evidence := orderedReferenceFor plan.plan.storageKind
     aggregated := by simp [aggregateEvidenceList] }
 
 -- Test that the plan-level validator is the only way to construct a `JaxExecutable`: it either
@@ -279,7 +289,7 @@ def testValidPlanCandidate : Bool :=
           let steps := #[someKernel]
           let candidate : JaxExecutableCandidate :=
             { source := prepared, steps
-            , evidence := aggregateEvidenceList (steps.map (·.evidence))
+            , evidence := aggregateEvidenceList prepared.plan.storageKind (steps.map (·.evidence))
             , aggregated := rfl }
           match validateAndConstructExecutable candidate with
           | .ok _ => true
@@ -319,7 +329,7 @@ def testValidPlanCandidateEvidence : Bool :=
           let steps := #[someKernel]
           let candidate : JaxExecutableCandidate :=
             { source := prepared, steps
-            , evidence := aggregateEvidenceList (steps.map (·.evidence))
+            , evidence := aggregateEvidenceList prepared.plan.storageKind (steps.map (·.evidence))
             , aggregated := rfl }
           candidate.evidence == .orderedReference64
 
@@ -342,7 +352,7 @@ def testMalformedPlanCandidateRejected : Bool :=
       let steps : Array SomeJaxKernel := #[]
       let candidate : JaxExecutableCandidate :=
         { source := prepared, steps
-        , evidence := aggregateEvidenceList (steps.map (·.evidence))
+        , evidence := aggregateEvidenceList prepared.plan.storageKind (steps.map (·.evidence))
         , aggregated := rfl }
       match validateAndConstructExecutable candidate with
       | .ok _ => false      -- must NOT validate (steps.size = 0 ≠ source's 1 raw step)
@@ -413,7 +423,7 @@ def testMixedKernelPlanEvidence : Bool :=
           let steps := #[someAffine, someEinsum]
           let candidate : JaxExecutableCandidate :=
             { source := prepared, steps
-            , evidence := aggregateEvidenceList (steps.map (·.evidence))
+            , evidence := aggregateEvidenceList prepared.plan.storageKind (steps.map (·.evidence))
             , aggregated := rfl }
           match validateAndConstructExecutable candidate with
           | .ok _ => candidate.evidence == .optimizationExperiment
@@ -536,7 +546,7 @@ private def preparedOf (raw : RawEvalPlan) (inputs materialized : Array SlotBind
 private def executableAccepted (prepared : PreparedPlan) (steps : Array SomeJaxKernel) : Bool :=
   let candidate : JaxExecutableCandidate :=
     { source := prepared, steps
-    , evidence := aggregateEvidenceList (steps.map (·.evidence))
+    , evidence := aggregateEvidenceList prepared.plan.storageKind (steps.map (·.evidence))
     , aggregated := rfl }
   match validateAndConstructExecutable candidate with
   | .ok _ => true
@@ -1368,7 +1378,7 @@ def twoInExecutableWith (bindings : PlanBindings) :
         let steps := #[someKernel]
         some (validateAndConstructExecutable
           { source := { plan := checkedPlan, bindings, warnings := [] }
-          , steps, evidence := aggregateEvidenceList (steps.map (·.evidence))
+          , steps, evidence := aggregateEvidenceList checkedPlan.storageKind (steps.map (·.evidence))
           , aggregated := rfl })
     | _ => none
 
@@ -1464,7 +1474,7 @@ def mixedExecutableWith (bindings : PlanBindings) :
         let steps := #[someAffine, someEinsum]
         some (validateAndConstructExecutable
           { source := { plan := checkedPlan, bindings, warnings := [] }
-          , steps, evidence := aggregateEvidenceList (steps.map (·.evidence))
+          , steps, evidence := aggregateEvidenceList checkedPlan.storageKind (steps.map (·.evidence))
           , aggregated := rfl })
       | _, _ => none
     | _, _ => none
@@ -1536,7 +1546,7 @@ def mixedCandidateWith (materialized : Array SlotBinding) : Option JaxExecutable
         some { source := { plan := checkedPlan
                          , bindings := { requiredInputs, materializedNames := materialized }
                          , warnings := [] }
-             , steps, evidence := aggregateEvidenceList (steps.map (·.evidence))
+             , steps, evidence := aggregateEvidenceList checkedPlan.storageKind (steps.map (·.evidence))
              , aggregated := rfl }
       | _, _ => none
     | _, _, _ => none
@@ -1624,7 +1634,7 @@ def idStepCandidate (raw : RawEvalPlan) : Option JaxExecutableCandidate :=
                        , bindings := { requiredInputs
                                      , materializedNames := #[{ name := "y", slot := 1 }] }
                        , warnings := [] }
-           , steps, evidence := aggregateEvidenceList (steps.map (·.evidence))
+           , steps, evidence := aggregateEvidenceList checkedPlan.storageKind (steps.map (·.evidence))
            , aggregated := rfl }
   | _, _, _ => none
 
@@ -1660,8 +1670,13 @@ def idStepCandidate (raw : RawEvalPlan) : Option JaxExecutableCandidate :=
 retagged f32 throughout. Zero steps is the load-bearing shape: `emptyPlanCandidate` builds a
 candidate whose `steps` is `#[]`, `aggregateEvidenceList #[]` is `orderedReference64` (the identity
 of the "all" fold), and every per-step obligation in `JaxExecutableWellFormed` is vacuously
-satisfied — so without a PLAN-LEVEL storage gate this candidate validates and hands out a
+satisfied — so without a PLAN-LEVEL storage gate this candidate validated and handed out a
 reference64 executable for a binary32 plan.
+
+Slice F32-JAX replaced that gate with storage-keyed aggregation (`aggregateEvidenceList kind`):
+the same zero-step candidate now validates with `orderedReference32`, its own truthful claim, and
+fixtures 23 and 24 are re-pointed to pin exactly that (and that binding validation is no longer
+skipped for it).
 
 This file deliberately does not import the experimental `JaxExperiment` library, so fixture 23's two
 halves are built independently there and here, as the plan requires. -/
@@ -1688,13 +1703,16 @@ def f32ZeroStepPrepared : Option PreparedPlan :=
               && (checkPreparedBindings p).toOption.isSome
   | none => false)
 
--- Fixture 23: the zero-step f32 candidate is refused with the plan-level storage error rather than
--- acquiring `orderedReference64`.
+-- Fixture 23 (re-pointed by F32-JAX): the zero-step f32 candidate validates, and its evidence is
+-- the BINARY32 reference claim — never `orderedReference64`. Before F32-JAX a plan-level storage
+-- gate refused it; the evidence fold is now keyed off the plan's storage kind instead
+-- (`aggregateEvidenceList`), so this is the cell that pins that keying at the one shape where no
+-- per-step label exists to carry it.
 #guard (match f32ZeroStepPrepared with
   | some p =>
       (match validateAndConstructExecutable (emptyPlanCandidate p) with
-       | .error (.unsupportedStorageKind k) => k == LeanNCD.StorageKind.float32
-       | _ => false)
+       | .ok e => e.evidence == .orderedReference32
+       | .error _ => false)
   | none => false)
 
 -- Control: the identical zero-step plan in BINARY64 validates, so fixture 23 is about the storage
@@ -1716,13 +1734,14 @@ def f64ZeroStepRaw : RawEvalPlan :=
   | some p => testValidateExecutable p
   | none => false)
 
--- Fixture 24: the same f32 plan with an out-of-range materialized binding (slot 99 over a two-slot
--- table). The storage gate must precede binding validation.
+-- Fixture 24 (re-pointed by F32-JAX): the same f32 plan with an out-of-range materialized binding
+-- (slot 99 over a two-slot table) now reaches binding validation exactly as its binary64 control
+-- below does — a binary32 plan gets the SAME located `invalidBindings` cause, not a free pass.
 #guard (match preparedOfLocal f32ZeroStepRaw
       #[{ name := "x", slot := 0 }, { name := "y", slot := 1 }] #[{ name := "z", slot := 99 }] with
   | some p =>
       (match validateAndConstructExecutable (emptyPlanCandidate p) with
-       | .error (.unsupportedStorageKind k) => k == LeanNCD.StorageKind.float32
+       | .error (.invalidBindings (.materializedSlot (.slotOutOfRange 99 2))) => true
        | _ => false)
   | none => false)
 
@@ -1756,8 +1775,10 @@ backend's reference64-only policy. Both outcomes reject; only one is true, and t
 entries' whole contract is that the supplied table is the caller's SEMANTIC AUTHORITY — an
 `invalidSignatureContext` here is an accusation against the caller, not a capability statement.
 
-Task 5 adds no JAX execution for binary32 (slice F32-JAX owns that): `orderedReference64`, the
-`UInt64` transport, the Python runtimes, and every operation rendering are untouched. -/
+Slice F32-JAX then ADMITTED this assignment (`jaxRealCarrier`): the guards after the two checker
+guards below are re-pointed to require support, `orderedReference32` on the affine kernel, and a
+refused einsum kernel; the located-refusal claim moves to the Boolean-destination binary32 fixture
+that follows them. -/
 
 def f32DestSigs : Array TensorSignature :=
   #[ { shape := #[3], dtype := .f32 }    -- slot 0 — the identity read's source
@@ -1767,8 +1788,8 @@ def f32DestSigs : Array TensorSignature :=
 def f32DestAssign : AssignPlan :=
   { idAssign with destinationSlot := 2, algebra := admittedAlgebraF32 }
 
--- The BINARY32 checker admits it, so the rejection below is the JAX support policy talking and not
--- a malformed fixture.
+-- The BINARY32 checker admits it, so the guards below test the JAX support policy and not a
+-- malformed fixture.
 #guard (match checkAssignF32 f32DestSigs f32DestAssign with
   | .ok _ => true
   | .error _ => false)
@@ -1780,23 +1801,87 @@ def f32DestAssign : AssignPlan :=
   | .error e => e == PlanError.dtypeNotAdmitted 2 .f32
   | .ok _ => false)
 
--- The claim itself: the located destination dtype, at the changed node index and the changed slot.
+-- F32-JAX re-point: the binary32 assignment is now SUPPORTED by the policy (`jaxRealCarrier`
+-- selects `(.f32, admittedAlgebraF32)` from the evidence's own storage kind) ...
 #guard (match checkAssignF32 f32DestSigs f32DestAssign with
   | .error _ => false
   | .ok checked =>
       match checkJaxAssignSupport f32DestSigs 7 checked with
-      | .error e => e == JaxSupportError.destinationDType 7 2 .f32
-      | .ok _ => false)
+      | .ok _ => true
+      | .error _ => false)
 
--- The kernel validator — the other standalone entry over the same helper — reports the same located
--- refusal (at its own fixed node index 0) wrapped in `.unsupported`, so no binary32 kernel, evidence
--- label, or executable can be constructed from this assignment either.
+-- ... its affine-table kernel validates with the BINARY32 reference claim — not
+-- `orderedReference64` (`candidateEvidenceLabel` keys off the evidence's storage kind) ...
 #guard (match checkAssignF32 f32DestSigs f32DestAssign with
   | .error _ => false
   | .ok checked =>
       match validateAndConstructKernel f32DestSigs
           (.affineTable { semanticAssignment := checked, tables := #[#[idTable3]] }) with
-      | .error e => e == JaxKernelValidationError.unsupported (.destinationDType 0 2 .f32)
+      | .ok k => k.evidence == .orderedReference32
+      | .error _ => false)
+
+-- ... and its einsum kernel is REFUSED (`einsumStorageAdmitted`): `einsumOnly` stays binary64-only
+-- because `jnp.einsum` is not bit-exact against the binary32 left fold. The operand row
+-- `#[0, 0]`/`outputAxes #[0]` is exactly the identity read's correct einsum shape (the binary64
+-- control below validates the same row over `idAssign`), so the storage kind is the only reason.
+#guard (match checkAssignF32 f32DestSigs f32DestAssign with
+  | .error _ => false
+  | .ok checked =>
+      match validateAndConstructKernel f32DestSigs
+          (.einsum { semanticAssignment := checked, destination := 2
+                   , operands := #[#[0, 0]], outputAxes := #[0] }) with
+      | .error e => e == JaxKernelValidationError.invalidCandidate
+      | .ok _ => false)
+
+-- Binary64 control for the einsum refusal: the identical operand row over `idAssign` validates.
+#guard (match checkAssign idSigs idAssign with
+  | .error _ => false
+  | .ok checked =>
+      match validateAndConstructKernel idSigs
+          (.einsum { semanticAssignment := checked, destination := 1
+                   , operands := #[#[0, 0]], outputAxes := #[0] }) with
+      | .ok k => k.evidence == .optimizationExperiment
+      | .error _ => false)
+
+/-! ### F32-JAX: the shape restrictions stay refused under the binary32 carrier
+
+The original claim of fixture 1 — a refusal is the LOCATED policy error, never
+`invalidSignatureContext` — moves onto a binary32 graph whose destination is Boolean (slot 2 retagged
+`bool`, algebra `admittedAlgebraBool`, node index 7). The binary32 checker admits it; the policy
+refuses it at the changed slot and node. A relaxation that accepted "any non-f64 dtype", or that
+dropped the destination check for `.float32` evidence, would let this through. -/
+
+def f32BoolDestSigs : Array TensorSignature :=
+  #[ { shape := #[3], dtype := .f32 }, { shape := #[3], dtype := .f32 }
+   , { shape := #[3], dtype := .bool } ]
+
+def f32BoolDestAssign : AssignPlan :=
+  { idAssign with destinationSlot := 2, algebra := admittedAlgebraBool }
+
+#guard (match checkAssignF32 f32BoolDestSigs f32BoolDestAssign with
+  | .error _ => false
+  | .ok checked =>
+      match checkJaxAssignSupport f32BoolDestSigs 7 checked with
+      | .error e => e == JaxSupportError.destinationDType 7 2 .bool
+      | .ok _ => false)
+
+-- Tropical binary32 max-product over the same all-f32 table: refused as the located algebra, so
+-- the policy compares against binary32 SUM-product (`admittedAlgebraF32`), not "any f32 algebra".
+#guard (match checkAssignF32 f32DestSigs { f32DestAssign with algebra := admittedAlgebraF32Max } with
+  | .error _ => false
+  | .ok checked =>
+      match checkJaxAssignSupport f32DestSigs 7 checked with
+      | .error e => e == JaxSupportError.unsupportedAlgebra 7 admittedAlgebraF32Max
+      | .ok _ => false)
+
+-- A unary read under binary32: refused at its original term/factor locator.
+#guard (match checkAssignF32 f32DestSigs
+    { f32DestAssign with terms := #[{ f32DestAssign.terms[0]! with
+        factors := #[.read { idRead with unary := some .exp }] }] } with
+  | .error _ => false
+  | .ok checked =>
+      match checkJaxAssignSupport f32DestSigs 7 checked with
+      | .error e => e == JaxSupportError.unaryFactor 7 0 0
       | .ok _ => false)
 
 end LeanNCD.Eval.Plan.ExecutableTest

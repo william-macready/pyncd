@@ -120,7 +120,7 @@ f64 tensors do not coexist in one graph.
    the graph's real carrier and need no precision conversion merely to coexist with f32 or f64.
 5. **F32-JAX.** Add a new evidence label and `jnp.float32` artifact/runtime only with bit-level
    differential evidence. The current experimental JAX boundary remains reference64-only and
-   rejects f32 before candidate construction or Python emission.
+   rejects f32 before candidate construction or Python emission. **Landed by `f32_jax_evalplan.md`.**
 6. **Complex-A — executable scalar contract.** Extend `TensorElementType`, `ScalarDType`,
    `ScalarConst`, and `TensorStorageKind` with `complex64` (two binary32 components) and
    `complex128` (two binary64 components). The installed Mathlib `Complex` is a pair of mathematical
@@ -172,7 +172,7 @@ on" claim against the code when that slice's plan is written.
    covers, which is context-free assignments, and that already runs in f32. So it does not wait on
    B, C, or D. Start it with a short feasibility spike: bit-exact binary32 agreement with XLA is
    uncertain, because XLA's reduction order and fused multiply-add can differ from the checked
-   backend's left fold. If bit-exact agreement is unattainable, the evidence-label design changes.
+   backend's left fold. If bit-exact agreement is unattainable, the evidence-label design changes. **Landed by `f32_jax_evalplan.md`.**
 5. **Making `f32` the default comes last**, after B, C, D, and F32-JAX. Flipping the default is
    mechanically small: plain `tensor`, `linear`, and undeclared names map to binary64 in
    `storageConstraintOfDecl` (`DSL/Ast.lean`) and `dtypeOfDecl` (`Eval/Plan/Signature.lean`). But
@@ -267,6 +267,8 @@ storage-aware
 checker and then report its existing located destination-dtype rejection. It must not misclassify
 the plan as an invalid signature context, expose `orderedReference64`, generate `UInt64` payloads,
 or emit Python.
+
+> **Superseded by F32-JAX (2026-10):** `affineReference` runs binary32 under `orderedReference32`.
 
 ### 2.4 Native Lean 4.30 evidence and discriminating values
 

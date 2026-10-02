@@ -1,6 +1,6 @@
 # Lean-JAX bridge experiments
 
-This directory holds five isolated experiment runners, none of which changes LeanNCD's dependencies
+This directory holds six isolated experiment runners, none of which changes LeanNCD's dependencies
 or toolchain:
 
 - **`run.sh`**: upstream `NetSpec` -> generated JAX. Evaluates the
@@ -15,6 +15,9 @@ or toolchain:
   checker-produced affine lookup tables -> the ordered JAX reference runtime.
 - **`run-evalplan-affine-corpus.sh`**: all 3,832 `PropertyOracle.enumPrograms` cases through the same
   affine reference, with eager full-output comparison and JIT feature representatives.
+- **`run-evalplan-affine32.sh`**: the binary32 counterpart (slice F32-JAX): named, corpus,
+  standalone-assign and positional fixtures retagged `.float32` through the same ordered runtime
+  (`dtype=jnp.float32`, x64 disabled), compared bit for bit with the Lean binary32 reference.
 - **`run-scaling-probe.sh`**: one mid-sized (64x64, 4,096-coordinate) contraction through the same
   affine reference, measured against native `jnp.einsum` computing the same contraction — not a
   permanent test, a one-off measurement for `papers/jax_evalplan_architecture.md` §7.6 row 2.
@@ -120,7 +123,8 @@ materialized output. The generated `.cache/` artifacts remain ignored.
 
 Measured on the JAX CPU backend, 2026-08-10 and re-measured 2026-08-12:
 
-- 3,832 source/eager cases, zero mismatches (both runs);
+- 3,832 source/eager cases, zero mismatches (both runs; normal-range inputs only — see
+  the subnormal/signed-zero limit below);
 - 45 distinct generated feature masks and 65 JIT checks (45 representatives + 20 curated);
 - 3,424,195-byte generated module (identical size on both runs; the runner records `artifact_bytes`
   only, so this is consistent with a deterministic generator but does not prove it — no digest is kept);
@@ -152,12 +156,51 @@ EvalPlanAffineSmoke.lean <out>` regenerates the 20-fixture curated module (11,50
 verifier leg was not re-run, so no new eager/JIT timings are recorded here). `BridgeSmoke.lean`
 needs the upstream `Jax` module fetched by `run.sh` and does not elaborate standalone.
 
+### Binary32 (`orderedReference32`, slice F32-JAX)
+
+`affineReference` also runs binary32 plans, under its own label `orderedReference32`. The scope is
+the same as binary64's: assign-only and context-free, with the rejection table below unchanged.
+`einsumOnly` stays binary64-only and refuses every `.float32` plan: the codegen doors with
+`unsupportedStorageKind .float32`, the validator door (`validateEinsum`) with `invalidCandidate`: a spike (`papers/f32_jax_spike_results.md`) found `jnp.einsum`
+diverging from the Lean binary32 left fold by up to 122 ULP on a 64x64 contraction, identically
+eager and under `jit`, while the affine tables matched exactly.
+
+`evalplan_affine_runtime.py` is one parametrized implementation: `dtype` defaults to `jnp.float64`,
+so every binary64 caller is unchanged; `_require_dtype` checks the inputs and never casts; the
+float32 path runs with `jax_enable_x64` disabled (asserted in `evalplan_affine_smoke32.py`). The
+binary64 curated module is `cmp`-identical (11,509 bytes) and the 3,832-case corpus still gives zero
+mismatches at 3,424,195 bytes (normal-range inputs only, like every claim here; see the
+subnormal/signed-zero limit below).
+
+`EvalPlanAffineSmoke32.lean` and `evalplan_affine_smoke32.py` exercise four routes: the named
+`PreparedPlan` route (7 fixtures: the 6 spike fixtures plus `termSum64`), the corpus route (all
+`enumPrograms` cases retagged `.typedTensor .f32`), the standalone-assign route (8 fixtures,
+including `f32Identity` and the zero-pad `f32Pad`) and the positional-plan route (2 fixtures,
+`f32ProductChain` and `f32ReductionGraph`). Measured, stride 1 with JIT on every case
+(`./run-evalplan-affine32.sh 1 1`; Python 3.13.12, JAX/JAXlib 0.10.0, NumPy 2.5.2, CPU):
+
+- 3,849 fixtures (3,832 corpus + 7 named + 8 standalone-assign + 2 positional), 11,746 eager/JIT
+  output checks (5,873 each), bit-identical to the Lean binary32 reference except the pinned
+  `KNOWN_DIVERGENT` positions of `f32Identity` (`[1, 2]`, the subnormal/signed-zero limit below);
+- 3,657,456-byte generated module; 530.2 s eager and 191.0 s JIT.
+
+**This is structural coverage, not proof of fold-order fidelity.** The generator's inputs are the
+integers 1-4, whose products and sums are exact in binary32, so a reassociated fold would agree on
+all 3,832 corpus cases. Fold-order fidelity rests on the magnitude and cancellation fixtures
+(`reduction64`, `termSum64`, `factorProduct3`, `contraction64x64`); the Python mutation cycles P1-P3
+are killed by `reduction64`, `termSum64` and `factorProduct3` respectively.
+
+JIT is checked on every case, unlike the binary64 corpus runner's 45 representatives. The measured
+cost (about 3 minutes of JIT) is acceptable and a per-case claim is strictly stronger than a sample.
+`./run-evalplan-affine32.sh [STRIDE [JIT_STRIDE]]` keeps both knobs: the defaults are `100 1` (a
+39-case corpus sample, every case JIT-checked), and `1 1` is the full-corpus run above.
+
 ### What this backend REJECTS (Task 4.5, 2026-09-03)
 
 The checked Dense backend admits several semantics this experimental JAX backend implements no
 rendering for. They are now rejected with a located, typed `JaxCodegenError` **before** any Python is
-emitted, any candidate is built, or any `ExecutionEvidence` label exists — never silently stamped
-`orderedReference64`:
+emitted, any candidate is built, or any `ExecutionEvidence` label exists — never silently stamped with a reference
+label (`orderedReference64`/`orderedReference32`):
 
 | Assignment feature | Dense checked plan | JAX render | JAX candidate evidence |
 |---|---|---|---|
@@ -169,6 +212,9 @@ emitted, any candidate is built, or any `ExecutionEvidence` label exists — nev
 | Iverson factor | required | forbidden (`iversonFactor`, original all-factor index) | forbidden |
 | contextful assignment (`AssignPlan.contextShape` non-empty) | required | forbidden (`unsupportedContext`) | forbidden |
 | zero-padded read shorter than its iteration basis | required | `einsumOnly` forbidden (`labelExtentMismatch`); `affineReference` required | einsum forbidden, affine required |
+
+Every row holds unchanged under a `.float32` plan for `affineReference` (same located errors), and
+under `einsumOnly` every binary32 plan is refused first with `unsupportedStorageKind .float32`.
 
 **There is no JAX Boolean execution and none is planned here** — this is a fail-loud support
 boundary, not a semantic gap in the checked backend, which executes all eight rows correctly. The
@@ -232,8 +278,17 @@ Rejections at a plan level carry the real outer step index, not `0`.
 Generated cases cover nonzero bias, non-unit/multi-axis coefficient rows, multiple factors/terms,
 reduction domains, multiple graph nodes, and internal reads. Curated cases uniquely supply
 negative-coordinate invalidity, zero-coefficient rows, zero extents, empty factors, and empty terms.
-These are empirical binary64 results for the measured CPU platform, not a proof about every XLA
-platform. Scan lowering remains future work.
+These are empirical results for the measured CPU platform, not a proof about every XLA
+platform, and they hold for normal-range values only, in both precisions. XLA's CPU backend
+flushes subnormal operands and results of arithmetic to zero (eager and under `jax.jit`;
+`--xla_cpu_enable_fast_math=false` does not change it), and under `jax.jit` it simplifies the
+reduction seed `+0 + x` to `x`, so a `-0` survives where the ordered left fold returns `+0`.
+Neither corpus contains a subnormal or a `-0` input, which is why neither run sees it; the
+binary32 standalone fixture `f32Identity` (`[+0, -0, least subnormal]`) does, and
+`evalplan_affine_smoke32.py` pins that divergence exactly (`KNOWN_DIVERGENT`) instead of
+excluding it. `orderedReference64` and `orderedReference32` carry the same limit. It is not
+fixed: that would mean defeating XLA's flush-to-zero and its algebraic simplifier, and no XLA
+flag that does either was found. Scan lowering remains future work.
 
 ## Scaling probe
 

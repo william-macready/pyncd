@@ -47,7 +47,8 @@ The experimental bridge evaluates all 3,832 accepted **Wave C** programs—the l
 LeanNCD's affine, sum-product execution language—through the checked `EvalPlan` boundary. A checked
 plan is one whose local tensor operations and graph wiring have passed Lean's semantic validators.
 Every **materialized output**, meaning a source-visible tensor reconstructed from the final positional
-store, agrees bit-for-bit with the Lean Dense evaluator in eager JAX on the measured CPU platform.
+store, agrees bit-for-bit with the Lean Dense evaluator in eager JAX on the measured CPU platform, for normal-range values
+(subnormals and jit signed zero are a measured XLA CPU limit, Section 5.4).
 Representatives for the corpus's structural feature classes also run under `jax.jit`, and curated
 fixtures cover integer-affine coordinate maps, empty tensors, graph order, scalar fold order, and
 selected gradients.
@@ -851,6 +852,9 @@ only during execution after requiring
 [`jax_enable_x64`](#ref-jax-x64), avoiding cached float32 identities. The runtime avoids `jnp.sum` and
 generalized reductions whose tree order XLA may choose.
 
+Since slice F32-JAX this runtime is parametrized by `dtype` (default `jnp.float64`, so the description
+above is the binary64 path): a float32 run needs no x64 and uses int32 indices.
+
 Its entry points are `run_assign`, positional graph execution with a full slot store, and named
 execution through `requiredInputs` and ordered materialized bindings. Each node writes its destination
 before later nodes run; Python traverses the static graph while JAX traces array operations.
@@ -989,8 +993,8 @@ fixtures — not the corpus — carry the boundary cases. Neither speaks to scal
 **Reproducibility, and a gap this evidence has already hit.** Generated artifacts remain in ignored
 `.cache` storage. `JaxExperiment` is a non-default Lean library built explicitly by its runners and
 does not enter LeanNCD's normal dependency surface; its `globs` cover only the reusable
-`EvalPlanCodegen`, so all four executable drivers — `EvalPlanSmoke`, `EvalPlanAffineSmoke`,
-`EvalPlanAffineCorpus`, and `BridgeSmoke` — belong to no Lake target and are typechecked only when a
+`EvalPlanCodegen`, so the executable drivers — `EvalPlanSmoke`, `EvalPlanAffineSmoke`,
+`EvalPlanAffineCorpus`, `EvalPlanAffineSmoke32` (slice F32-JAX), `ScalingProbe`, and `BridgeSmoke` — belong to no Lake target and are typechecked only when a
 runner invokes `lake env lean --run`.
 
 That gap has already cost evidence. Wave F F1 added `TermPlan.contextPos` and
@@ -1013,6 +1017,11 @@ The supported claim is deliberately bounded:
 This does not establish cross-platform equivalence, scan or nonlinear semantics, production-scale
 performance, or proof-level correctness of JAX/XLA. Those limits are exactly what the adoption gates
 below exist to close before any successor design may claim more than this bridge already has.
+
+Nor does it establish agreement on subnormal or signed-zero values. Measured since (slice
+F32-JAX): XLA's CPU backend flushes subnormal operands and results to zero, and under `jax.jit`
+simplifies a `+0` reduction seed away, so the agreement holds for normal-range values whose folds
+never rely on `+0 + -0 = +0`, in binary64 and binary32 alike (`leanncd/experiments/jax_bridge/README.md`).
 
 ## 6. Adoption plan and gates
 

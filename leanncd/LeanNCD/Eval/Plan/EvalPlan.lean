@@ -91,9 +91,10 @@ structure CheckedEvalPlan where private mk ::
       see `checkPlan`), so a graph whose only real tensor is scan scratch is not mis-stamped with
       `deriveStorageKind`'s `.float64` default. Recorded on the
       evidence rather than re-derived per consumer so a plan-level door can gate on it without a
-      signature table in hand — which is what the experimental JAX entries need, since an
-      all-input, zero-step `.float32` plan has no node for a per-node check to inspect and the
-      empty evidence fold would otherwise aggregate to `orderedReference64`. -/
+      signature table in hand — which is what the experimental JAX entries and the JAX evidence
+      fold (`aggregateEvidenceList`) need: an all-input, zero-step plan has no node for a per-node
+      check to inspect, so only this field can select its storage-specific gate or reference
+      claim (`orderedReference32` for a zero-step `.float32` plan, never `orderedReference64`). -/
   storageKind  : LeanNCD.StorageKind
   deriving Repr
 

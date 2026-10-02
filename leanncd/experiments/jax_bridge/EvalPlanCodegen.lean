@@ -11,7 +11,7 @@ them (plan "Two explicit lowerings"):
 
 * `einsumOnly` — the completed smoke path. Recognizes a projection-only contraction and emits a real
   `jnp.einsum` call, rejecting every non-projection read with a closed `JaxCodegenError`.
-* `affineReference` — accepts the context-free `f64` sum-product, assignment-only fragment, with
+* `affineReference` — accepts the context-free `f64`/`f32` sum-product, assign-only fragment, with
   every present factor a plain affine read. It precomputes exact per-factor affine lookup tables
   (safe index + validity mask) in Lean using the shared coordinate primitives
   (`Eval.Plan.Coordinates`), and emits static plan DATA that the committed generic runtime
@@ -91,20 +91,40 @@ inductive JaxCodegenError
   -- assignment (`checkAssign` re-run under it fails): a caller-supplied table is that entry's
   -- semantic authority, so it is rejected outright rather than consulted for its dtype tags alone.
   | invalidSignatureContext (nodeIndex : Nat) (cause : PlanError)
-  -- f32 slice, Task 2 — the PLAN-LEVEL storage gate every candidate/generator/renderer entry here
-  -- runs FIRST, before node iteration, before prepared-binding validation, and before any Python or
-  -- constants text is produced. This backend is reference64-only: its fixtures and runtimes encode
-  -- `UInt64` bits and assert `np.float64`/`jnp.float64`, and there is no binary32 evidence label
-  -- (slice F32-JAX). Deliberately NOT a per-node check: an all-input, zero-step `.float32` plan has
-  -- no node to visit at all, so only a plan-level gate can reject it. Carries the plan's own kind.
+  -- The storage gate (`requireModeStorage`) every entry here runs FIRST, before node iteration,
+  -- before prepared-binding validation, and before any Python or constants text is produced. Since
+  -- slice F32-JAX it is MODE-aware: `affineReference` renders `.float32` (`orderedReference32`),
+  -- `einsumOnly` stays binary64-only (`einsumStorageAdmitted`). Plan-level at plan entries — an
+  -- all-input, zero-step `.float32` plan has no node to visit, so only a plan-level gate can refuse
+  -- it under `einsumOnly` — and per-assignment at the standalone einsum entries. Carries the kind.
   | unsupportedStorageKind (actual : LeanNCD.StorageKind)
   deriving DecidableEq, BEq, Repr, Inhabited
 
-/-- The one shared plan-level storage gate every entry below opens with. Defined once so a new
-    entry point has an obvious thing to call and the eight existing doors cannot drift. -/
-def requireFloat64Plan (c : CheckedEvalPlan) : Except JaxCodegenError Unit :=
-  if c.storageKind == .float64 then .ok ()
-  else .error (.unsupportedStorageKind c.storageKind)
+/-- The two lowerings, chosen by the caller — never a silent fallback. -/
+inductive LoweringMode
+  | einsumOnly
+  | affineReference
+  deriving DecidableEq, BEq, Repr, Inhabited
+
+/-- Which storage kinds each lowering renders (slice F32-JAX). `affineReference` renders both: its
+    tables are dtype-free and the ordered runtime folds in the input's own precision, measured
+    bit-exact against the binary32 left fold (`papers/f32_jax_spike_results.md`, 12/12).
+    `einsumOnly` defers to production `einsumStorageAdmitted` (binary64 only — `jnp.einsum` is not
+    bit-exact in binary32), the same predicate `validateEinsum` conjoins, so emitter and validator
+    cannot disagree. No wildcard arm on the affine side: a later carrier must decide here. -/
+def modeAdmitsStorage : LoweringMode → LeanNCD.StorageKind → Bool
+  | .einsumOnly, k => einsumStorageAdmitted k
+  | .affineReference, .float64 => true
+  | .affineReference, .float32 => true
+
+/-- The one shared storage gate every entry below opens with, now MODE-AWARE (slice F32-JAX; it was
+    `requireFloat64Plan`). A plan-level entry passes its plan's `storageKind`, so an all-input,
+    zero-step plan — which has no node for a per-node check to visit — still meets it; a standalone
+    `einsumOnly` entry passes its checked assignment's own `storageKind`. -/
+def requireModeStorage (mode : LoweringMode) (kind : LeanNCD.StorageKind) :
+    Except JaxCodegenError Unit :=
+  if modeAdmitsStorage mode kind then .ok ()
+  else .error (.unsupportedStorageKind kind)
 
 /-- Map the production support gate's located error into this module's own closed diagnostic
     vocabulary. One-to-one; no case is collapsed and no locator is dropped. -/
@@ -299,6 +319,9 @@ structure NodeLowering where
     mismatch correctly. -/
 def lowerAssign (sigs : Array TensorSignature) (nodeIndex : Nat) (checked : CheckedAssignPlan) :
     Except JaxCodegenError NodeLowering := do
+  -- Standalone einsum door (slice F32-JAX): once the support policy admits binary32, this is the
+  -- ONLY thing keeping a binary32 assignment out of `jnp.einsum` here.
+  requireModeStorage .einsumOnly checked.storageKind
   requireJaxSupport sigs nodeIndex checked
   let a := checked.plan
   unless a.terms.size > 0 do throw (.emptyAssign nodeIndex)
@@ -319,8 +342,8 @@ def lowerAssign (sigs : Array TensorSignature) (nodeIndex : Nat) (checked : Chec
     spike decision GO B) — there is deliberately no way for a caller to supply a parallel,
     same-shape all-real table here. -/
 def lowerPlan (c : CheckedEvalPlan) : Except JaxCodegenError (Array NodeLowering) := do
-  -- Plan-level storage gate, before node iteration (`requireFloat64Plan`).
-  requireFloat64Plan c
+  -- Plan-level storage gate, before node iteration (einsum: binary64 only).
+  requireModeStorage .einsumOnly c.storageKind
   let sigs := c.raw.tensorSigs
   let mut nodes : Array NodeLowering := #[]
   for h : ni in [0 : c.checkedNodes.size] do
@@ -386,7 +409,7 @@ private def generateForwardChecked (plan : PreparedPlan) (checked : CheckedPrepa
 /-- The full `forward(inputs)` function body, generated entirely from a validated `PreparedPlan`. -/
 def generateForward (plan : PreparedPlan) : Except JaxCodegenError String := do
   -- Plan-level storage gate, before prepared-binding validation and before any Python is emitted.
-  requireFloat64Plan plan.plan
+  requireModeStorage .einsumOnly plan.plan.storageKind
   let checked ← match checkPreparedBindings plan with
     | .ok checked => pure checked
     | .error e => throw (.invalidBindings e)
@@ -421,8 +444,9 @@ private def renderInputConstantsRaw (raw : RawEvalPlan) (requiredInputs : Array 
 def renderInputConstants (plan : PreparedPlan) (inputs : HashMap String DenseTensor) :
     Except JaxCodegenError String := do
   -- Plan-level storage gate, before prepared-binding validation and before any constants text.
-  -- `INPUT_BITS` is `Float.toBits` — binary64 payloads — so this must never run for an f32 plan.
-  requireFloat64Plan plan.plan
+  -- `INPUT_BITS` is `Float.toBits` — binary64 payloads — so this must never run for an f32 plan;
+  -- it is the einsum smoke's constants renderer, so it takes the einsum gate.
+  requireModeStorage .einsumOnly plan.plan.storageKind
   let checked ← match checkPreparedBindings plan with
     | .ok checked => pure checked
     | .error e => throw (.invalidBindings e)
@@ -546,7 +570,7 @@ private def renderBindingList (bs : Array SlotBinding) : String :=
 def renderAffinePlanPositional (c : CheckedEvalPlan) : Except JaxCodegenError String := do
   -- Plan-level storage gate, before node iteration. One of the two entries here with no
   -- pre-existing check of its own to race against.
-  requireFloat64Plan c
+  requireModeStorage .affineReference c.storageKind
   let nodes ← renderAffineNodesArray c
   return "{\"num_slots\": " ++ toString c.raw.tensorSigs.size ++
     ", \"input_slots\": " ++ pyNatListLit c.raw.inputSlots ++
@@ -557,7 +581,7 @@ def renderAffinePlanPositional (c : CheckedEvalPlan) : Except JaxCodegenError St
     source/corpus boundary. -/
 def renderAffinePlanNamed (plan : PreparedPlan) : Except JaxCodegenError String := do
   -- Plan-level storage gate, before prepared-binding validation and before node iteration.
-  requireFloat64Plan plan.plan
+  requireModeStorage .affineReference plan.plan.storageKind
   let checked ← match checkPreparedBindings plan with
     | .ok checked => pure checked
     | .error e => throw (.invalidBindings e)
@@ -606,15 +630,9 @@ def buildAssignFixture (name : String) (sigs : Array TensorSignature) (a : Assig
 
 /-! ## 7. Explicit mode selection -/
 
-/-- The two lowerings, chosen by the caller — never a silent fallback. -/
-inductive LoweringMode
-  | einsumOnly
-  | affineReference
-  deriving DecidableEq, BEq, Repr, Inhabited
-
 /-- Generate the named-plan representation for a source/corpus `PreparedPlan` under an explicit
     mode. `einsumOnly` returns the `forward(inputs)` body (or a closed `JaxCodegenError` rejection);
-    `affineReference` returns static plan DATA only for the context-free `f64` sum-product,
+    `affineReference` returns static plan DATA only for the context-free `f64`/`f32` sum-product,
     assignment-only plain-read fragment described at the top of this file; every unsupported
     category fails loud with its located `JaxCodegenError`. -/
 def generateNamed (mode : LoweringMode) (plan : PreparedPlan) :
@@ -622,7 +640,7 @@ def generateNamed (mode : LoweringMode) (plan : PreparedPlan) :
   -- Plan-level storage gate, explicitly here as well as on both dispatch targets. Stated rather
   -- than inherited so this named door appears in its own right in the door-guard sweep: a later
   -- mode added to `LoweringMode` cannot reach a renderer without passing it.
-  requireFloat64Plan plan.plan
+  requireModeStorage mode plan.plan.storageKind
   match mode with
   | .einsumOnly       => generateForward plan
   | .affineReference  => renderAffinePlanNamed plan
@@ -686,6 +704,7 @@ def loweringToAffineTableCandidate (sigs : Array TensorSignature) (nodeIndex : N
 -/
 def loweringToEinsumCandidate (sigs : Array TensorSignature) (nodeIndex : Nat)
     (assign : CheckedAssignPlan) : Except JaxCodegenError EinsumExperimentKernelCandidate := do
+  requireModeStorage .einsumOnly assign.storageKind
   requireJaxSupport sigs nodeIndex assign
   requireNoIverson nodeIndex assign.plan
   match assign.plan.terms[0]? with
@@ -725,8 +744,9 @@ def lowerCheckPlanToCandidate (plan : PreparedPlan) :
     Except JaxCodegenError JaxExecutableCandidate := do
   -- Plan-level storage gate, before prepared-binding validation and before node iteration. This is
   -- the zero-step case's load-bearing door on this side: with no steps, the loop below is vacuous
-  -- and `aggregateEvidenceList #[]` is `orderedReference64`.
-  requireFloat64Plan plan.plan
+  -- and `aggregateEvidenceList kind #[]` is that kind's reference claim. This routes through
+  -- `affineReference` only, so it takes that mode's gate.
+  requireModeStorage .affineReference plan.plan.storageKind
   match checkPreparedBindings plan with
   | .error e => throw (.invalidBindings e)
   | .ok _ => pure ()
@@ -746,7 +766,7 @@ def lowerCheckPlanToCandidate (plan : PreparedPlan) :
     -- source-shaped compute result and stamp it with this step's index.
     | .scatter _ | .scan _ | .pointwise _ | .axiswise _ => throw (.unsupportedStep ni)
   return { source := plan, steps
-         , evidence := aggregateEvidenceList (steps.map (·.evidence))
+         , evidence := aggregateEvidenceList plan.plan.storageKind (steps.map (·.evidence))
          , aggregated := rfl }
 
 /-! ## 9. Candidate routing tests (Thread 5, Task 5)
@@ -1677,19 +1697,19 @@ def ctxFreePrepared? : Option PreparedPlan :=
   unless (outcome.splitOn "Dense run failed").length == 2 do
     throw (IO.userError s!"buildAssignFixture did not reject the contextful assignment: {outcome}")
 
-/-! ## f32 slice Task 2, fixtures 22-25: the plan-level JAX storage gates
+/-! ## f32 slice Task 2, fixtures 22-25: the JAX storage gates (re-pointed by F32-JAX)
 
-This backend is reference64-only and stays so until slice F32-JAX: its fixtures and Python runtimes
-encode `UInt64` bits and assert `np.float64`/`jnp.float64`, and `ExecutionEvidence` has no binary32
-label. Every candidate/generator/renderer entry here therefore refuses a `.float32` checked plan
-BEFORE iterating nodes, before validating prepared bindings, and before producing any text.
+Before slice F32-JAX this backend was reference64-only and refused every `.float32` checked plan
+at every candidate/generator/renderer entry, before iterating nodes, validating prepared bindings,
+or producing any text. Since F32-JAX the gate is mode-aware (`requireModeStorage`): `einsumOnly`
+still refuses binary32 at every door; `affineReference` renders it under `orderedReference32`.
 
 Fixture 22 uses a NONEMPTY f32 plan (`GraphCheckTest`'s fixture-6 graph, rebuilt locally — this
-library cannot import the default-build test modules), so the gate races a real per-node
-destination-dtype rejection. Fixture 23 uses the ZERO-STEP, all-input plan, where per-node checks
-are vacuous and `aggregateEvidenceList #[]` is `orderedReference64`. Fixture 24 rebuilds fixture 23
-with an out-of-range materialized binding, so the gate races `invalidBindings`. Fixture 25 feeds
-fixture 23's valid plan to every remaining renderer/generator. -/
+library cannot import the default-build test modules) and pins both halves, at the plan-level and
+the standalone doors. Fixture 23 uses the ZERO-STEP, all-input plan, where per-node checks are
+vacuous and the empty fold is the plan's own claim (`orderedReference32`). Fixture 24 rebuilds
+fixture 23 with an out-of-range materialized binding, now reaching `invalidBindings`. Fixture 25
+feeds fixture 23's valid plan to every remaining renderer/generator. -/
 
 /-- Fixture 22's donor: the one-node f32 graph `Y[i] := X[i]`, `i : 2` — `GraphCheckTest`'s
     `f32OneNodePlan`, rebuilt here field for field. -/
@@ -1740,60 +1760,110 @@ def f32BadBindingPrepared? : Option PreparedPlan :=
 def codegenErr (r : Except JaxCodegenError String) : Option JaxCodegenError :=
   match r with | .error e => some e | .ok _ => none
 
-/-! ### Fixture 22: the gate precedes node iteration
+/-! ### Fixture 22 (re-pointed by F32-JAX): the gate is MODE-AWARE
 
-The nonempty plan's single node would be rejected by `checkJaxAssignSupport` as
-`unsupportedDestDType 0 1 .f32` if the loop were ever entered. Requiring the STORAGE error instead
-is what pins that the gate runs first. Every plan-level candidate/generator/renderer entry is fed
-the plan, `renderInputConstants` included — its fixture inputs below are shape- and
-storage-conforming, so nothing but the gate can be what rejects it. -/
+The nonempty f32 plan `Y[i] := X[i]`. Every `einsumOnly` door still refuses it with the storage
+error — plan-level (`generateForward`, `generateNamed .einsumOnly`, `lowerPlan`,
+`renderInputConstants`) AND standalone (`lowerAssign`, `loweringToEinsumCandidate`). The standalone
+pair is the door that needs its OWN reason now: the support policy admits binary32, so without
+`requireModeStorage .einsumOnly` there, nothing would stop a binary32 assignment reaching
+`jnp.einsum`. Every `affineReference` door renders it, and the candidate carries
+`orderedReference32`. -/
 
 def f32NonemptyInputs : HashMap String DenseTensor :=
   HashMap.ofList [("x", { shape := [2], data := #[1.0, 2.0] })]
 
+/-- The f32 plan's single checked assignment, and the plan's own table (the plan-level authority). -/
+def f32NonemptyAssign? : Option (Array TensorSignature × CheckedAssignPlan) :=
+  match f32NonemptyPrepared? with
+  | some p =>
+      match p.plan.checkedNodes[0]? with
+      | some (CheckedPlanStepEvidence.assign a) => some (p.plan.raw.tensorSigs, a)
+      | _ => none
+  | none => none
+
 #guard (match f32NonemptyPrepared? with
   | some p =>
       codegenErr (generateForward p) == some (.unsupportedStorageKind .float32) &&
-      codegenErr (renderAffinePlanNamed p) == some (.unsupportedStorageKind .float32) &&
-      codegenErr (renderAffinePlanPositional p.plan) == some (.unsupportedStorageKind .float32) &&
       codegenErr (generateNamed .einsumOnly p) == some (.unsupportedStorageKind .float32) &&
-      codegenErr (generateNamed .affineReference p) == some (.unsupportedStorageKind .float32) &&
       codegenErr (renderInputConstants p f32NonemptyInputs)
         == some (.unsupportedStorageKind .float32) &&
       (match lowerPlan p.plan with
        | .error e => e == .unsupportedStorageKind .float32
-       | .ok _ => false) &&
-      (match lowerCheckPlanToCandidate p with
-       | .error e => e == .unsupportedStorageKind .float32
        | .ok _ => false)
   | none => false)
 
-/-! ### Fixture 23: the zero-step, all-input plan is positively rejected
+-- The standalone einsum doors, refused for the storage kind ALONE: the same assignment passes the
+-- support policy (`requireJaxSupport` is `.ok`) and renders through the standalone affine door.
+#guard (match f32NonemptyAssign? with
+  | some (sigs, a) =>
+      (match requireJaxSupport sigs 0 a with | .ok _ => true | .error _ => false) &&
+      (match lowerAssign sigs 0 a with
+       | .error e => e == .unsupportedStorageKind .float32
+       | .ok _ => false) &&
+      (match loweringToEinsumCandidate sigs 0 a with
+       | .error e => e == .unsupportedStorageKind .float32
+       | .ok _ => false) &&
+      (match renderAffineAssign sigs a with | .ok _ => true | .error _ => false) &&
+      (match loweringToAffineTableCandidate sigs 0 a with | .ok _ => true | .error _ => false)
+  | none => false)
 
-`lowerCheckPlanToCandidate` on this plan has no node to visit at all; without the gate it would
-build a candidate whose evidence is the empty fold's identity, `orderedReference64`. -/
+-- Every affine door renders the f32 plan; the plan-level candidate is `orderedReference32`, and the
+-- production executable validator accepts it with the same claim.
+#guard (match f32NonemptyPrepared? with
+  | some p =>
+      (match renderAffinePlanNamed p with | .ok _ => true | .error _ => false) &&
+      (match renderAffinePlanPositional p.plan with | .ok _ => true | .error _ => false) &&
+      (match generateNamed .affineReference p with | .ok _ => true | .error _ => false) &&
+      (match lowerCheckPlanToCandidate p with
+       | .ok c =>
+           c.evidence == .orderedReference32 &&
+           (match validateAndConstructExecutable c with
+            | .ok e => e.evidence == .orderedReference32
+            | .error _ => false)
+       | .error _ => false)
+  | none => false)
+
+-- The f32 affine render is byte-identical to the f64 sibling's: the tables are dtype-free, so the
+-- binary32 claim rests entirely on the runtime folding in the inputs' own precision.
+def f64OneNodeRaw : RawEvalPlan :=
+  { f32OneNodeRaw with tensorSigs := f32OneNodeSigs.map (fun s => { s with dtype := .f64 })
+                     , steps := #[PlanStep.assign { f32OneNodeAssign with algebra := admittedAlgebra }] }
+
+#guard (match f32NonemptyPrepared?,
+              preparedOf f64OneNodeRaw #[{ name := "x", slot := 0 }] #[{ name := "y", slot := 1 }] with
+  | some p32, some p64 =>
+      p64.plan.storageKind == .float64 &&
+      (renderAffinePlanNamed p32).toOption == (renderAffinePlanNamed p64).toOption &&
+      (renderAffinePlanNamed p64).toOption.isSome
+  | _, _ => false)
+
+/-! ### Fixture 23 (re-pointed by F32-JAX): the zero-step, all-input plan gets ITS OWN claim
+
+`lowerCheckPlanToCandidate` on this plan has no node to visit; the empty fold is the plan's own
+reference claim, `orderedReference32` — never `orderedReference64`. -/
 
 #guard (match f32ZeroStepPrepared? with
   | some p =>
       (match lowerCheckPlanToCandidate p with
-       | .error e => e == .unsupportedStorageKind .float32
-       | .ok _ => false)
+       | .ok c => c.evidence == .orderedReference32
+       | .error _ => false)
   | none => false)
 
-/-! ### Fixture 24: the gate precedes prepared-binding validation
+/-! ### Fixture 24 (re-pointed by F32-JAX): binding validation is not skipped for binary32
 
-Same zero-step plan, now with a materialized binding naming slot 99 over a two-slot table. Without
-the gate ahead of `checkPreparedBindings` this reports `invalidBindings`. -/
+Same zero-step plan with a materialized binding naming slot 99 over a two-slot table: the affine
+door now reaches `checkPreparedBindings` and reports the SAME located cause as the binary64
+control below. -/
 
 #guard (match f32BadBindingPrepared? with
   | some p =>
       (match lowerCheckPlanToCandidate p with
-       | .error e => e == .unsupportedStorageKind .float32
+       | .error e => e == .invalidBindings (.materializedSlot (.slotOutOfRange 99 2))
        | .ok _ => false)
   | none => false)
 
--- Control: the SAME out-of-range binding over a BINARY64 zero-step plan does report
--- `invalidBindings`, so fixture 24's requirement is about order and not about an unreachable check.
+-- Control: the SAME out-of-range binding over a BINARY64 zero-step plan reports `invalidBindings`.
 def f64ZeroStepRaw : RawEvalPlan :=
   { tensorSigs := #[ { shape := #[3], dtype := .f64 }, { shape := #[3], dtype := .f64 } ]
   , inputSlots := #[0, 1], steps := #[] }
@@ -1806,11 +1876,11 @@ def f64ZeroStepRaw : RawEvalPlan :=
        | .ok _ => false)
   | none => false)
 
-/-! ### Fixture 25: every renderer/generator entry, and NO emitted text
+/-! ### Fixture 25 (re-pointed by F32-JAX): the zero-step plan through every renderer
 
-The valid fixture-23 plan through both renderers, `generateForward`, both `generateNamed` modes, and
-`renderInputConstants`. Each returns the storage error; `codegenErr` returning `some` is exactly the
-claim that no Python body and no constants table was produced. -/
+Every `einsumOnly` door still refuses the zero-step f32 plan — the case where no per-node check
+exists, so only the plan-level `requireModeStorage .einsumOnly` can — and every `affineReference`
+door renders it. -/
 
 def f32ZeroStepInputs : HashMap String DenseTensor :=
   HashMap.ofList [("x", { shape := [3], data := #[1.0, 2.0, 3.0] })
@@ -1818,23 +1888,104 @@ def f32ZeroStepInputs : HashMap String DenseTensor :=
 
 #guard (match f32ZeroStepPrepared? with
   | some p =>
-      codegenErr (renderAffinePlanNamed p) == some (.unsupportedStorageKind .float32) &&
-      codegenErr (renderAffinePlanPositional p.plan) == some (.unsupportedStorageKind .float32) &&
       codegenErr (generateForward p) == some (.unsupportedStorageKind .float32) &&
       codegenErr (generateNamed .einsumOnly p) == some (.unsupportedStorageKind .float32) &&
-      codegenErr (generateNamed .affineReference p) == some (.unsupportedStorageKind .float32) &&
       codegenErr (renderInputConstants p f32ZeroStepInputs)
-        == some (.unsupportedStorageKind .float32)
+        == some (.unsupportedStorageKind .float32) &&
+      (match renderAffinePlanNamed p with | .ok _ => true | .error _ => false) &&
+      (match renderAffinePlanPositional p.plan with | .ok _ => true | .error _ => false) &&
+      (match generateNamed .affineReference p with | .ok _ => true | .error _ => false)
   | none => false)
 
--- Control: the binary64 zero-step sibling with a well-formed sidecar renders and lowers, so none of
--- the entries above is refusing the zero-step SHAPE rather than the storage kind.
+-- Control: the binary64 zero-step sibling with a well-formed sidecar renders and lowers in both
+-- modes, so none of the einsum refusals above is refusing the zero-step SHAPE.
 #guard (match preparedOf f64ZeroStepRaw
       #[{ name := "x", slot := 0 }, { name := "y", slot := 1 }] #[] with
   | some p =>
       (match renderAffinePlanPositional p.plan with | .ok _ => true | .error _ => false) &&
       (match generateForward p with | .ok _ => true | .error _ => false) &&
-      (match lowerCheckPlanToCandidate p with | .ok _ => true | .error _ => false)
+      (match lowerCheckPlanToCandidate p with
+       | .ok c => c.evidence == .orderedReference64
+       | .error _ => false)
   | none => false)
+
+/-! ### F32-JAX: the remaining binary32 cells, each a retag of its binary64 donor
+
+`retag32Sigs` turns every `f64` slot `f32` (a `bool` slot stays `bool`); `retag32Assign` swaps the
+binary64 sum-product for `admittedAlgebraF32`. Nothing else changes, so each fixture below differs
+from its donor in the storage kind ALONE. Every `einsumOnly` door refuses each of them with the
+storage error first (`requireModeStorage` precedes the support gate); the `affineReference`
+outcome is the donor's own. -/
+
+def retag32Sigs (sigs : Array TensorSignature) : Array TensorSignature :=
+  sigs.map (fun s => if s.dtype == .f64 then { s with dtype := .f32 } else s)
+
+def retag32Assign (a : AssignPlan) : AssignPlan := { a with algebra := admittedAlgebraF32 }
+
+def retag32Raw (raw : RawEvalPlan) : RawEvalPlan :=
+  { raw with tensorSigs := retag32Sigs raw.tensorSigs
+           , steps := raw.steps.map (fun s => match s with
+               | .assign a => .assign (retag32Assign a)
+               | s => s) }
+
+private def f32StorageError : JaxCodegenError := .unsupportedStorageKind .float32
+
+/-- Bool SOURCE (clone `boolSourceRaw`): a binary32 graph, so the plan records `.float32`; the affine
+    door reports the donor's located `unsupportedSourceDType 0 0 0 .bool`. -/
+def f32BoolSourcePrepared? : Option PreparedPlan :=
+  preparedOf (retag32Raw boolSourceRaw) #[{ name := "x", slot := 0 }] #[{ name := "y", slot := 1 }]
+
+#guard (match f32BoolSourcePrepared? with
+  | some p =>
+      p.plan.storageKind == .float32 &&
+      rejectedWith (.unsupportedSourceDType 0 0 0 .bool) (generateNamed .affineReference p) &&
+      rejectedWith (.unsupportedSourceDType 0 0 0 .bool) (renderAffinePlanPositional p.plan) &&
+      rejectedWith (.unsupportedSourceDType 0 0 0 .bool) (lowerCheckPlanToCandidate p) &&
+      rejectedWith f32StorageError (generateNamed .einsumOnly p)
+  | none => false)
+
+/-- Iverson factor (clone `idIversonRaw`): the affine door keeps the ORIGINAL all-factor index `1`. -/
+def f32IversonPrepared? : Option PreparedPlan :=
+  preparedOf (retag32Raw idIversonRaw) #[{ name := "x", slot := 0 }] #[{ name := "y", slot := 1 }]
+
+#guard (match f32IversonPrepared? with
+  | some p =>
+      p.plan.storageKind == .float32 &&
+      rejectedWith (.iversonFactor 0 0 1) (generateNamed .affineReference p) &&
+      rejectedWith (.iversonFactor 0 0 1) (lowerCheckPlanToCandidate p) &&
+      rejectedWith f32StorageError (generateNamed .einsumOnly p)
+  | none => false)
+
+/-- Contextful assignment (clone `ctxAssign`), through the standalone doors that are the only way a
+    contextful assignment reaches this backend (`checkPlan` refuses a contextful top-level step). -/
+def f32CtxSigs : Array TensorSignature := retag32Sigs ctxSigs
+def f32CtxAssign : AssignPlan := retag32Assign ctxAssign
+
+#guard (match checkAssignF32 f32CtxSigs f32CtxAssign with
+  | .error _ => false
+  | .ok checked =>
+      checked.storageKind == .float32 &&
+      rejectedWith ctxError (renderAffineAssign f32CtxSigs checked) &&
+      rejectedWith ctxError (loweringToAffineTableCandidate f32CtxSigs 0 checked) &&
+      rejectedWith f32StorageError (lowerAssign f32CtxSigs 0 checked) &&
+      rejectedWith f32StorageError (loweringToEinsumCandidate f32CtxSigs 0 checked))
+
+/-- Zero-pad label-extent mismatch (clone `padAssign 2`): `einsumOnly` refuses it for the storage
+    kind (before it could reach `labelExtentMismatch`), `affineReference` renders it and its kernel
+    validates as `orderedReference32`. Executed bit-exactly in Python by `EvalPlanAffineSmoke32`'s
+    standalone-assign route (`f32Pad`). -/
+def f32PadSigs : Array TensorSignature := retag32Sigs (padSigs 2)
+def f32PadAssign : AssignPlan := retag32Assign (padAssign 2)
+
+#guard (match checkAssignF32 f32PadSigs f32PadAssign with
+  | .error _ => false
+  | .ok checked =>
+      rejectedWith f32StorageError (lowerAssign f32PadSigs 0 checked) &&
+      (match renderAffineAssign f32PadSigs checked with | .ok _ => true | .error _ => false) &&
+      (match loweringToAffineTableCandidate f32PadSigs 0 checked with
+       | .error _ => false
+       | .ok c => match validateAndConstructKernel f32PadSigs (.affineTable c) with
+           | .ok k => k.evidence == .orderedReference32
+           | .error _ => false))
 
 end JaxBridge

@@ -147,17 +147,12 @@ an assignment the backend cannot render — a Boolean destination or source, a t
 algebra, an inline unary read, an Iverson factor, a CONTEXTFUL assignment (non-empty
 `AssignPlan.contextShape`, which neither lowering has a kernel parameter for), or, in `einsumOnly`
 mode, a zero-padded read whose source extent disagrees with its own iteration extent — is rejected
-with its own located typed error before any Python is emitted. It is also **binary64-only**: its
-fixtures and Python runtimes encode `UInt64` bits and assert `np.float64`/`jnp.float64`, and there is
-no binary32 evidence label at all, so a `.float32` plan is refused at every candidate, generator, and
-renderer entry (`JaxCodegenError.unsupportedStorageKind` /
-`JaxExecutableValidationError.unsupportedStorageKind`). That gate is deliberately PLAN-level rather
-than per-node: an all-input, zero-step f32 plan has no node to inspect and the empty evidence fold is
-`orderedReference64`, so only a plan-level gate can reject it. The standalone assignment entries
-additionally re-check the caller's signature table with the checker matching the evidence's own
-storage kind, so a binary32 assignment is refused as a located `destinationDType`, not misreported as
-a caller signature-table defect. A `jnp.float32` artifact and a binary32 evidence label are slice
-F32-JAX. What is still missing is the end-to-end wiring: nothing consumes a
+with its own located typed error before any Python is emitted. Since slice F32-JAX its `affineReference` mode also runs binary32 under its own label,
+`orderedReference32` (evidence keyed by the plan's storage kind through `orderedReferenceFor`, so
+a zero-step f32 plan folds to `orderedReference32`, never `orderedReference64`); `einsumOnly`
+stays binary64-only, refused at every plan-level and standalone einsum door
+(`JaxCodegenError.unsupportedStorageKind`) and in `validateEinsum`.
+What is still missing is the end-to-end wiring: nothing consumes a
 validated `SomeJaxExecutable` to emit Python, and no JAX runtime is exercised by this project's
 build. See [Section 3.3.2](#332-experimental-jax-evaluator) for the status of each component.
 
