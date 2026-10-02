@@ -1,0 +1,203 @@
+[
+  {
+    "label": "J1 (einsumStorageAdmitted admits float32)",
+    "task": "1",
+    "file": "LeanNCD/Eval/Plan/Executable.lean",
+    "old": "  | .float64 => true\n  | .float32 => false\n",
+    "new": "  | .float64 => true\n  | .float32 => true\n",
+    "targets": [
+      "Eval.Plan.ExecutableTest"
+    ],
+    "expect": [
+      "ExecutableTest.lean:1827:0: Expression"
+    ]
+  },
+  {
+    "label": "J2 (jaxRealCarrier float32 arm reverted to binary64)",
+    "task": "1",
+    "file": "LeanNCD/Eval/Plan/Executable.lean",
+    "old": "  | .float32 => (.f32, admittedAlgebraF32)\n",
+    "new": "  | .float32 => (.f64, admittedAlgebra)\n",
+    "targets": [
+      "Eval.Plan.ExecutableTest"
+    ],
+    "expect": [
+      "ExecutableTest.lean:1806:0: Expression",
+      "ExecutableTest.lean:1815:0: Expression"
+    ]
+  },
+  {
+    "label": "J3 (destination dtype check widened to admit bool)",
+    "task": "1",
+    "file": "LeanNCD/Eval/Plan/Executable.lean",
+    "old": "      unless destSig.dtype == realDType do\n",
+    "new": "      unless destSig.dtype == realDType || destSig.dtype == .bool do\n",
+    "targets": [
+      "Eval.Plan.ExecutableTest"
+    ],
+    "expect": [
+      "ExecutableTest.lean:586:0: Expression",
+      "ExecutableTest.lean:1861:0: Expression"
+    ]
+  },
+  {
+    "label": "J4 (algebra check widened to any binary32 algebra)",
+    "task": "1",
+    "file": "LeanNCD/Eval/Plan/Executable.lean",
+    "old": "  unless a.algebra == realAlgebra do\n",
+    "new": "  unless a.algebra == realAlgebra || admittedAlgebrasF32.contains a.algebra do\n",
+    "targets": [
+      "Eval.Plan.ExecutableTest"
+    ],
+    "expect": [
+      "ExecutableTest.lean:1870:0: Expression"
+    ]
+  },
+  {
+    "label": "J5 (unary check skipped for float32 evidence)",
+    "task": "1",
+    "file": "LeanNCD/Eval/Plan/Executable.lean",
+    "old": "        unless f.unary.isNone do\n",
+    "new": "        unless f.unary.isNone || kind == .float32 do\n",
+    "targets": [
+      "Eval.Plan.ExecutableTest"
+    ],
+    "expect": [
+      "ExecutableTest.lean:1878:0: Expression"
+    ]
+  },
+  {
+    "label": "J6 (affine kernel label hardcoded to orderedReference64)",
+    "task": "1",
+    "file": "LeanNCD/Eval/Plan/Executable.lean",
+    "old": "  | .affineTable k => orderedReferenceFor k.semanticAssignment.storageKind\n",
+    "new": "  | .affineTable _ => .orderedReference64\n",
+    "targets": [
+      "Eval.Plan.ExecutableTest"
+    ],
+    "expect": [
+      "ExecutableTest.lean:1815:0: Expression"
+    ]
+  },
+  {
+    "label": "J7 (aggregation not keyed off storage kind)",
+    "task": "1",
+    "file": "LeanNCD/Eval/Plan/Executable.lean",
+    "old": "  if evidences.all (\u00b7 == orderedReferenceFor kind) then orderedReferenceFor kind\n",
+    "new": "  if evidences.all (\u00b7 == .orderedReference64) then .orderedReference64\n",
+    "targets": [
+      "Eval.Plan.ExecutableTest"
+    ],
+    "expect": [
+      "ExecutableTest.lean:86:0: Expression",
+      "ExecutableTest.lean:87:0: Expression"
+    ]
+  },
+  {
+    "label": "J8 (einsumOnly mode admits every storage kind)",
+    "task": "1",
+    "file": "experiments/jax_bridge/EvalPlanCodegen.lean",
+    "old": "  | .einsumOnly, k => einsumStorageAdmitted k\n",
+    "new": "  | .einsumOnly, _ => true\n",
+    "targets": [
+      "JaxExperiment"
+    ],
+    "expect": [
+      "EvalPlanCodegen.lean:1785:0: Expression",
+      "EvalPlanCodegen.lean:1798:0: Expression"
+    ]
+  },
+  {
+    "label": "J9 (lowerAssign standalone storage gate deleted)",
+    "task": "1",
+    "file": "experiments/jax_bridge/EvalPlanCodegen.lean",
+    "old": "  requireModeStorage .einsumOnly checked.storageKind\n  requireJaxSupport sigs nodeIndex checked\n",
+    "new": "  requireJaxSupport sigs nodeIndex checked\n",
+    "targets": [
+      "JaxExperiment"
+    ],
+    "expect": [
+      "EvalPlanCodegen.lean:1797:0: Expression"
+    ]
+  },
+  {
+    "label": "J10 (loweringToEinsumCandidate storage gate deleted)",
+    "task": "1",
+    "file": "experiments/jax_bridge/EvalPlanCodegen.lean",
+    "old": "  requireModeStorage .einsumOnly assign.storageKind\n",
+    "new": "",
+    "targets": [
+      "JaxExperiment"
+    ],
+    "expect": [
+      "EvalPlanCodegen.lean:1797:0: Expression"
+    ]
+  },
+  {
+    "label": "J11 (affineReference refuses float32)",
+    "task": "1",
+    "file": "experiments/jax_bridge/EvalPlanCodegen.lean",
+    "old": "  | .affineReference, .float32 => true\n",
+    "new": "  | .affineReference, .float32 => false\n",
+    "targets": [
+      "JaxExperiment"
+    ],
+    "expect": [
+      "EvalPlanCodegen.lean:1813:0: Expression",
+      "EvalPlanCodegen.lean:1833:0: Expression"
+    ]
+  },
+  {
+    "label": "J12 (lowerCheckPlanToCandidate aggregates under binary64)",
+    "task": "1",
+    "file": "experiments/jax_bridge/EvalPlanCodegen.lean",
+    "old": "         , evidence := aggregateEvidenceList plan.plan.storageKind (steps.map (\u00b7.evidence))\n",
+    "new": "         , evidence := aggregateEvidenceList .float64 (steps.map (\u00b7.evidence))\n",
+    "targets": [
+      "JaxExperiment"
+    ],
+    "expect": [
+      "EvalPlanCodegen.lean:770:25: Type mismatch"
+    ]
+  },
+  {
+    "label": "J13 (bool source admitted under float32 evidence)",
+    "task": "1",
+    "file": "LeanNCD/Eval/Plan/Executable.lean",
+    "old": "            unless srcSig.dtype == realDType do\n",
+    "new": "            unless srcSig.dtype == realDType || (kind == .float32 && srcSig.dtype == .bool) do\n",
+    "targets": [
+      "JaxExperiment"
+    ],
+    "expect": [
+      "EvalPlanCodegen.lean:1938:0: Expression"
+    ]
+  },
+  {
+    "label": "J14 (context check skipped for float32 evidence)",
+    "task": "1",
+    "file": "LeanNCD/Eval/Plan/Executable.lean",
+    "old": "  unless a.contextShape.isEmpty do\n",
+    "new": "  unless a.contextShape.isEmpty || kind == .float32 do\n",
+    "targets": [
+      "JaxExperiment"
+    ],
+    "expect": [
+      "EvalPlanCodegen.lean:1964:0: Expression"
+    ]
+  },
+  {
+    "label": "J15 (affine Iverson rejection dropped)",
+    "task": "1",
+    "file": "experiments/jax_bridge/EvalPlanCodegen.lean",
+    "old": "    | .iverson _ => throw (.iversonFactor nodeIndex termIndex fi)\n    | .read f => facStrs := facStrs.push (renderAffineFactor t.iterationShape f)\n",
+    "new": "    | .iverson _ => pure ()\n    | .read f => facStrs := facStrs.push (renderAffineFactor t.iterationShape f)\n",
+    "targets": [
+      "JaxExperiment"
+    ],
+    "expect": [
+      "EvalPlanCodegen.lean:1137:0: Expression",
+      "EvalPlanCodegen.lean:1951:0: Expression"
+    ]
+  }
+]
