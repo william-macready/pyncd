@@ -7,7 +7,7 @@ import Eval.Plan.KernelDense32Test
 import Eval.Plan.EvalPlan32Test
 
 /-!
-# Binary32 `affineReference` smoke + corpus slice driver (slice F32-JAX prototype)
+# Binary32 `affineReference` smoke + corpus slice driver (slice F32-JAX)
 
 Every fixture crosses the real binary32 source boundary (`compileToScheduled →
 InputSignature.ofDenseInputs32ForDecls → prepareEvalPlan → runPreparedDense32`) and is rendered by

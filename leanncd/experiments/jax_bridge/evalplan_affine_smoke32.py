@@ -1,9 +1,10 @@
-"""Binary32 `affineReference` bit-exactness check (slice F32-JAX prototype).
+"""Binary32 `affineReference` bit-exactness check (slice F32-JAX).
 
 Loads `generated_evalplan_affine_smoke32.py` (from `EvalPlanAffineSmoke32.lean`) and runs every
 fixture through the SAME committed runtime as binary64 (`evalplan_affine_runtime.py`, `dtype=
 jnp.float32`), eagerly and under `jax.jit`, requiring every materialized output's `Float32.toBits`
-pattern to equal the Lean checked binary32 reference (`runPreparedDense32`) exactly.
+pattern to equal the Lean checked binary32 reference (`runPreparedDense32`) exactly, except the
+positions pinned in `KNOWN_DIVERGENT` (the XLA CPU subnormal/signed-zero limit of `f32Identity`).
 
 `jax_enable_x64` is NEVER enabled in this process (asserted), so no float64 can arise anywhere: this
 is genuine binary32 execution, not a narrowed binary64 run.

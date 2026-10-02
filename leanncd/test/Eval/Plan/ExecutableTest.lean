@@ -1788,8 +1788,8 @@ def f32DestSigs : Array TensorSignature :=
 def f32DestAssign : AssignPlan :=
   { idAssign with destinationSlot := 2, algebra := admittedAlgebraF32 }
 
--- The BINARY32 checker admits it, so the rejection below is the JAX support policy talking and not
--- a malformed fixture.
+-- The BINARY32 checker admits it, so the guards below test the JAX support policy and not a
+-- malformed fixture.
 #guard (match checkAssignF32 f32DestSigs f32DestAssign with
   | .ok _ => true
   | .error _ => false)

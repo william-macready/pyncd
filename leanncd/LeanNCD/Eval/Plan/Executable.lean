@@ -37,8 +37,8 @@ decision GO B):
   complete `Array TensorSignature` and treats it as its semantic authority: the assignment checker
   matching the evidence's own storage kind (`checkAssign` / `checkAssignF32`) is re-run under it, so
   a structurally incompatible table fails as `invalidSignatureContext` instead of being silently
-  consulted for dtype only, and a binary32 assignment fails as the located `destinationDType` rather
-  than as a signature-context defect. Plan-level entry points accept no such parameter; they derive
+  consulted for dtype only, and a refusal the binary32 policy does earn is reported as its located
+  policy error rather than as a signature-context defect. Plan-level entry points accept no such parameter; they derive
   `PreparedPlan.plan.raw.tensorSigs`.
 * The raw candidate records store NO signatures. `JaxKernel` stores the validated table
   (`signatureContext`) together with `valid : JaxKernelWellFormed signatureContext candidate`, and
@@ -186,8 +186,8 @@ policy. Plan-level entry points never accept a caller table; they derive
 
 Binary32 is admitted here since slice F32-JAX (`jaxRealCarrier` keys the policy's real carrier off
 the evidence's storage kind); a refusal it does earn (a Boolean destination, say) comes FROM THE
-SUPPORT POLICY as a located error, not from the re-run. Running the binary64 checker over binary32 evidence would report the graph's own,
-correct carrier as a caller table defect — a true rejection for a false reason. -/
+SUPPORT POLICY as a located error, not from the re-run. Running the binary64 checker over binary32
+evidence would report the graph's own, correct carrier as a caller table defect — a true rejection for a false reason. -/
 
 /-- Every located way the experimental JAX backend refuses an otherwise-checked assignment.
 

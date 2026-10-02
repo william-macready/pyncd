@@ -1,6 +1,6 @@
 # Lean-JAX bridge experiments
 
-This directory holds five isolated experiment runners, none of which changes LeanNCD's dependencies
+This directory holds six isolated experiment runners, none of which changes LeanNCD's dependencies
 or toolchain:
 
 - **`run.sh`**: upstream `NetSpec` -> generated JAX. Evaluates the
@@ -15,6 +15,9 @@ or toolchain:
   checker-produced affine lookup tables -> the ordered JAX reference runtime.
 - **`run-evalplan-affine-corpus.sh`**: all 3,832 `PropertyOracle.enumPrograms` cases through the same
   affine reference, with eager full-output comparison and JIT feature representatives.
+- **`run-evalplan-affine32.sh`**: the binary32 counterpart (slice F32-JAX): named, corpus,
+  standalone-assign and positional fixtures retagged `.float32` through the same ordered runtime
+  (`dtype=jnp.float32`, x64 disabled), compared bit for bit with the Lean binary32 reference.
 - **`run-scaling-probe.sh`**: one mid-sized (64x64, 4,096-coordinate) contraction through the same
   affine reference, measured against native `jnp.einsum` computing the same contraction — not a
   permanent test, a one-off measurement for `papers/jax_evalplan_architecture.md` §7.6 row 2.
@@ -157,8 +160,8 @@ needs the upstream `Jax` module fetched by `run.sh` and does not elaborate stand
 
 `affineReference` also runs binary32 plans, under its own label `orderedReference32`. The scope is
 the same as binary64's: assign-only and context-free, with the rejection table below unchanged.
-`einsumOnly` stays binary64-only and refuses every `.float32` plan at every door
-(`unsupportedStorageKind .float32`): a spike (`papers/f32_jax_spike_results.md`) found `jnp.einsum`
+`einsumOnly` stays binary64-only and refuses every `.float32` plan: the codegen doors with
+`unsupportedStorageKind .float32`, the validator door (`validateEinsum`) with `invalidCandidate`: a spike (`papers/f32_jax_spike_results.md`) found `jnp.einsum`
 diverging from the Lean binary32 left fold by up to 122 ULP on a 64x64 contraction, identically
 eager and under `jit`, while the affine tables matched exactly.
 
@@ -184,8 +187,8 @@ including `f32Identity` and the zero-pad `f32Pad`) and the positional-plan route
 **This is structural coverage, not proof of fold-order fidelity.** The generator's inputs are the
 integers 1-4, whose products and sums are exact in binary32, so a reassociated fold would agree on
 all 3,832 corpus cases. Fold-order fidelity rests on the magnitude and cancellation fixtures
-(`reduction64`, `termSum64`, `factorProduct3`, `contraction64x64`), which the Python mutation cycles
-kill.
+(`reduction64`, `termSum64`, `factorProduct3`, `contraction64x64`); the Python mutation cycles P1-P3
+are killed by `reduction64`, `termSum64` and `factorProduct3` respectively.
 
 JIT is checked on every case, unlike the binary64 corpus runner's 45 representatives. The measured
 cost (about 3 minutes of JIT) is acceptable and a per-case claim is strictly stronger than a sample.

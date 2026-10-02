@@ -852,6 +852,9 @@ only during execution after requiring
 [`jax_enable_x64`](#ref-jax-x64), avoiding cached float32 identities. The runtime avoids `jnp.sum` and
 generalized reductions whose tree order XLA may choose.
 
+Since slice F32-JAX this runtime is parametrized by `dtype` (default `jnp.float64`, so the description
+above is the binary64 path): a float32 run needs no x64 and uses int32 indices.
+
 Its entry points are `run_assign`, positional graph execution with a full slot store, and named
 execution through `requiredInputs` and ordered materialized bindings. Each node writes its destination
 before later nodes run; Python traverses the static graph while JAX traces array operations.
@@ -990,8 +993,8 @@ fixtures — not the corpus — carry the boundary cases. Neither speaks to scal
 **Reproducibility, and a gap this evidence has already hit.** Generated artifacts remain in ignored
 `.cache` storage. `JaxExperiment` is a non-default Lean library built explicitly by its runners and
 does not enter LeanNCD's normal dependency surface; its `globs` cover only the reusable
-`EvalPlanCodegen`, so all four executable drivers — `EvalPlanSmoke`, `EvalPlanAffineSmoke`,
-`EvalPlanAffineCorpus`, and `BridgeSmoke` — belong to no Lake target and are typechecked only when a
+`EvalPlanCodegen`, so the executable drivers — `EvalPlanSmoke`, `EvalPlanAffineSmoke`,
+`EvalPlanAffineCorpus`, `EvalPlanAffineSmoke32` (slice F32-JAX), `ScalingProbe`, and `BridgeSmoke` — belong to no Lake target and are typechecked only when a
 runner invokes `lake env lean --run`.
 
 That gap has already cost evidence. Wave F F1 added `TermPlan.contextPos` and

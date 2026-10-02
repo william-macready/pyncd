@@ -84,7 +84,7 @@ names the fixture; "J" the mutation cycle that kills a regression of it. `EPC` =
 | zero-pad label-extent mismatch | **F storage** at `lowerAssign`, EPC `f32PadAssign` (storage precedes `labelExtentMismatch`; J9) | **R**, kernel `orderedReference32`, EPC `f32PadAssign` (guard not in J6's targets; the shared label is killed by J6 through ET's `f32DestAssign` kernel guard) | verified. Python (§6.5): `f32Pad` bit-identical, eager and JIT; P5 (mask ignored) kills it, the padded cell reading `0x40a00000` for `0x00000000` |
 | zero-step plan | **F storage**, plan-level only: EPC fixture 25 (J8) | **R `orderedReference32`**: EPC fixture 23 (`lowerCheckPlanToCandidate`, J12) and ET fixture 23 (`validateAndConstructExecutable (emptyPlanCandidate p)`, J7); ET `aggregateEvidenceList .float32 #[]` | verified |
 | positional route | F storage (`lowerPlan`, EPC fixture 22; J8) | **R** `renderAffinePlanPositional`, EPC fixtures 22 and 25 (J11) | verified. Python (§6.5): bit-identical to the Lean binary32 reference, eager and JIT; `f32ProductChain` is killed by P6 (`TypeError`, nodes reversed); `f32ReductionGraph` is killed by no P-cycle (it passes under reversal) |
-| standalone-assign route | F storage (`lowerAssign`, per fixture: EPC fixture 22 standalone, `f32CtxAssign`, `f32PadAssign`; J9; `loweringToEinsumCandidate` on fixture 22 and `f32CtxAssign`; J10) | **R**, kernel `orderedReference32`. The kernel label is guarded by ET's `f32DestAssign` guards (J6 kills the label; J2 kills the support policy beside it); EPC fixture 22's standalone render and `f32PadAssign` render are not named by any cycle's `expect` (J8-J10 kill only their einsum-side refusals) | verified. Python (§6.5): 7 of 8 standalone-assign fixtures bit-identical to the Lean binary32 reference, eager and JIT; `f32Identity` is the pinned §3.6 divergence (`KNOWN_DIVERGENT` positions [1, 2]); P3 kills `f32FactorOrder`, P5 kills `f32Pad` |
+| standalone-assign route | F storage (`lowerAssign`, per fixture: EPC fixture 22 standalone, `f32CtxAssign`, `f32PadAssign`; J9; `loweringToEinsumCandidate` on fixture 22 and `f32CtxAssign`; J10) | **R**, kernel `orderedReference32`. The kernel label is guarded by ET's `f32DestAssign` guards (J6 kills the label; J2 kills the support policy beside it); EPC fixture 22's standalone affine render and `f32PadAssign`'s affine render have no cycle that kills them: J8 (`expect` names EPC:1798) and J9/J10 (EPC:1797) name the same guards but fail only their einsum conjuncts, so removing the affine conjunct would survive every cycle | verified. Python (§6.5): 7 of 8 standalone-assign fixtures bit-identical to the Lean binary32 reference, eager and JIT; `f32Identity` is the pinned §3.6 divergence (`KNOWN_DIVERGENT` positions [1, 2]); P3 kills `f32FactorOrder`, P5 kills `f32Pad` |
 
 Also verified: EPC fixture 24 (`f32BadBindingPrepared?`) reaches `invalidBindings (.materializedSlot (.slotOutOfRange 99 2))`
 under f32, the same as its binary64 control, so binding validation is not skipped; ET fixture 24 says the same
@@ -115,6 +115,8 @@ mutated-build logs of the step 2 manifest run: J8 fails EPC fixtures 22 (plan-le
 `f32BoolSourcePrepared?`, `f32IversonPrepared?`, `f32CtxAssign` and `f32PadAssign`; J9 fails fixture 22
 standalone, `f32CtxAssign` and `f32PadAssign`; J10 fails fixture 22 standalone and `f32CtxAssign`; J1
 fails ET's f32 einsum-kernel guard (the validator door).
+
+Two Table A attributions are reasoning- or log-derived, not named in any cycle's `expect`: J7 for ET fixture 23 (`validateAndConstructExecutable (emptyPlanCandidate p)`; J7's `expect` names only the two `aggregateEvidenceList` guards at the head of ET) and J11 for EPC fixture 25 (J11's `expect` names the two non-empty-plan affine guards of fixture 22).
 
 Observation (no stop): `buildAssignFixture` calls the binary64 `checkAssign sigs a` first, so an f32
 table fails with "check failed" (`dtypeNotAdmitted`) before it would reach "Dense run failed" as the plan's
@@ -217,7 +219,7 @@ kinds={'named': 3839, 'assign': 8, 'positional': 2} eager_checks=5873 jit_checks
 | Row | Python outcome | Fixture | P-cycle |
 |---|---|---|---|
 | positional route | bit-identical to the Lean binary32 reference, eager and JIT, in the 56-fixture and the 3,849-fixture runs (`kinds` shows `'positional': 2`) | `f32ProductChain`, `f32ReductionGraph` | P6 kills `f32ProductChain` (`TypeError: reshape requires ndarray or scalar arguments, got <class 'NoneType'> at position 0.`). `f32ReductionGraph` is not killed by P6. |
-| standalone-assign route | bit-identical, eager and JIT, for all 8 (`'assign': 8`); `f32Identity` matches except the pinned KNOWN_DIVERGENT positions [1, 2] | `f32Identity`, `f32ReductionRounding`, `f32MultiplicationRounding`, `f32FactorOrder`, `f32Efp`, `f32Zerd`, `f32TermOrder`, `f32Pad` | P3 kills `f32FactorOrder`; P5 kills `f32Pad`. P1 and P2 do not kill any standalone-assign fixture; they are killed only by the named `reduction64` and `termSum64`. |
+| standalone-assign route | 7 of 8 bit-identical, eager and JIT (`'assign': 8` ran); `f32Identity` is the pinned exception, matching except its KNOWN_DIVERGENT positions [1, 2] | `f32Identity`, `f32ReductionRounding`, `f32MultiplicationRounding`, `f32FactorOrder`, `f32Efp`, `f32Zerd`, `f32TermOrder`, `f32Pad` | P3 kills `f32FactorOrder`; P5 kills `f32Pad`. P1 and P2 do not kill any standalone-assign fixture; they are killed only by the named `reduction64` and `termSum64`. |
 | zero-pad label-extent mismatch | bit-identical to the Lean reference, eager and JIT; the padded cell (index 2) is `0x00000000`, and the mutant shows the unpadded gather value `0x40a00000` there | `f32Pad` | P5 (mask ignored): `f32Pad eager result: not bit-identical at 2: 0x40a00000 vs 0x00000000` |
 
 Table B, last row (`jnp.float64` / `int64` constants at runtime): now resolved. `evalplan_affine_runtime.py`
@@ -303,3 +305,18 @@ this phase; `--check` first: "15 entries, 15 selected, every old-string unique".
 | `lake build JaxExperiment` | 8,514 | green |
 
 `wc -l`: `EvalPlanCodegen.lean` 1991, `ExecutableTest.lean` 1887, unchanged.
+
+### 7.5 Definition-of-Done residue (final review fix wave)
+
+- **No `sorry`.** `rg -n -w "sorry"` over the Lean files in the branch diff against `559311a`
+  (`EvalPlan.lean`, `Executable.lean`, `EvalPlanAffineSmoke32.lean`, `EvalPlanCodegen.lean`,
+  `AxisABoundaryProbe.lean`, `ExecutableTest.lean`) returns comment and docstring hits only (EPC:774;
+  ET:10, 12, 13, 31, 96, 139, 140, 261, 533); none is a proof term.
+- **Binary64 drivers unchanged.** `EvalPlanSmoke.lean`, `EvalPlanAffineSmoke.lean`,
+  `EvalPlanAffineCorpus.lean` and `ScalingProbe.lean` do not appear in the branch diff, and their Python
+  callers (`evalplan_smoke.py`, `evalplan_affine_smoke.py`, `evalplan_affine_corpus.py`,
+  `scaling_probe.py`) pass no `dtype=` to the runtime, so they run on its `jnp.float64` default.
+- **Final-review fix wave re-verification.** After the prose edits to `Executable.lean` and `ExecutableTest.lean`
+  (`wc -l` still 1991 / 1887), `lake build JaxExperiment Eval.Plan.ExecutableTest` was green (8,515 jobs),
+  `run-evalplan-affine32.sh` (default `100 1`) reproduced the 56-fixture / 160-check line, and the full
+  manifest re-ran: 15/15 PASS, no leftover mutation.
