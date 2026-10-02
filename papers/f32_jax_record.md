@@ -125,3 +125,101 @@ Doors opened with no diff showing them: `validateAffineTable` (via `jaxSupportOk
 literal), `requireNoIverson` and `renderAffineTerm` (no dtype literal), `einsumTermLabelExtents` (reached only
 after `requireModeStorage` in `lowerAssign`), `buildAssignFixture` (above). The Python smoke/corpus/scaling
 callers are Task 2's.
+
+## 6. Task 2 phase 1: runtime parametrization, binary32 harness, evidence runs
+
+Environment: Python 3.13.12, JAX/JAXlib 0.10.0, NumPy 2.5.2, CPU (`setup-python.sh` run fresh in this
+worktree; `.cache/` is gitignored). The patch `papers/f32_jax_files/task2.patch` applied cleanly (4 files,
+563 insertions, 22 deletions). One comment fix after applying: the header of `run-evalplan-affine32.sh`
+now reads "the 7 named fixtures (6 spike + `termSum64`), 8 standalone-assign and 2 positional fixtures,
+plus every STRIDE-th PropertyOracle corpus case".
+
+### 6.1 Build and binary64 preservation (all as observed in the prototype)
+
+- `lake build`: 8,673 jobs; `lake build JaxExperiment`: 8,514 jobs. Both unchanged (no new Lake module).
+  `EvalPlanAffineSmoke32.lean` has no Lake target; it is typechecked by `run-evalplan-affine32.sh` only
+  (the script's own `lake build` prints 8,671 jobs for its three targets).
+- `run-evalplan-affine.sh` before the patch (baseline) and after it both pass. The generated
+  `.cache/generated_evalplan_affine_smoke.py` is `cmp`-identical across the two runs, 11,509 bytes.
+- `run-evalplan.sh` passes ("Lean checked plan -> generated jnp.einsum -> JAX evaluation smoke test
+  passed").
+- `run-evalplan-affine-corpus.sh` (binary64, full corpus): `source_cases=3832 eager_mismatches=0
+  feature_masks=45 jit_cases=65 (corpus_representatives=45, curated=20)`, `artifact_bytes=3424195
+  generation_seconds=18.627 eager_seconds=508.287 jit_seconds=5.415`. Counts and bytes match the
+  recorded values exactly; timings differ naturally (observed in the prototype: 26.8 / 575.8 / 6.4 s).
+
+### 6.2 Binary32 stride-100 run (`./run-evalplan-affine32.sh`, defaults `100 1`)
+
+```
+Generated ...generated_evalplan_affine_smoke32.py: 7 named + 8 assign + 2 positional + 39 corpus (stride 100 of 3832)
+known XLA CPU divergence reproduced exactly: f32Identity positions [1, 2]
+kinds={'named': 46, 'assign': 8, 'positional': 2} eager_checks=80 jit_checks=80 (jit_stride=1) eager_seconds=7.971 jit_seconds=2.376
+56 binary32 fixtures, 160 eager/jit output checks: bit-identical to the Lean binary32 reference except the pinned KNOWN_DIVERGENT positions (x64 disabled)
+```
+
+### 6.3 Python mutation cycles P1-P6 (`papers/f32_jax_files/python_mutations.py`, run against the stride-100 module)
+
+The driver prints `(returncode, last line)` and has no verdict exit code; each row was checked by hand
+against the plan. Every mutant has returncode 1; the unmutated and restored runs have returncode 0.
+
+| Mutant | (returncode, last line) |
+|---|---|
+| unmutated | `0`, `56 binary32 fixtures, 160 eager/jit output checks: bit-identical to the Lean binary32 reference except the pinned KNOWN_DIVERGENT positions (x64 disabled)` |
+| P1 reduction via `jnp.sum(mat, axis=1)` | `1`, `AssertionError: reduction64 eager Y: not bit-identical at 0: 0x41f80000 vs 0x00000000` |
+| P2 term sum via `jnp.sum(stacked, axis=0)` | `1`, `AssertionError: termSum64 eager Y: not bit-identical at 0: 0x41f80000 vs 0x00000000` |
+| P3 factor product reversed | `1`, `AssertionError: factorProduct3 eager Y: not bit-identical at 1: 0xbf5b3ca1 vs 0xbf5b3ca5` |
+| P4 `_require_dtype` input check off | `1`, `AssertionError: float32 dtype accepted float16 inputs` |
+| P5 zero-pad mask ignored | `1`, `AssertionError: f32Pad eager result: not bit-identical at 2: 0x40a00000 vs 0x00000000` |
+| P6 positional nodes reversed | `1`, `TypeError: reshape requires ndarray or scalar arguments, got <class 'NoneType'> at position 0.` |
+| restored | `0`, the same `56 binary32 fixtures, 160 ...` line as unmutated |
+
+The P6 line is the brief's string followed by the library's own suffix ` at position 0.`.
+
+P2 is real, not an equivalent mutant: XLA CPU sums a stacked axis sequentially up to 32 terms and in
+blocks at 64, so only `termSum64` kills it. Every other fixture (including the standalone-assign
+`f32TermOrder`) passes under P2; see the attribution probe below.
+
+Per-fixture attribution probe (scratch script, not committed; eager only, the 8 standalone-assign and 2
+positional fixtures of the same generated module, one run per mutant). It exists because the driver stops at
+the first failing fixture and the named fixtures run first, so the table above says nothing about which
+assign/positional fixture would fail:
+
+| Mutant | assign/positional fixtures that fail | all others |
+|---|---|---|
+| P1, P2, P4 | none (killed only by the named fixtures `reduction64`, `termSum64`, and the dtype probes in `main`) | pass |
+| P3 | `f32FactorOrder`: `result: not bit-identical at 0: 0xc81f7053 vs 0xc81f7054` | pass |
+| P5 | `f32Pad`: `result: not bit-identical at 2: 0x40a00000 vs 0x00000000` | pass |
+| P6 | `f32ProductChain`: `TypeError: reshape requires ndarray or scalar arguments, got <class 'NoneType'> at position 0.`; `f32ReductionGraph` passes under reversal | pass |
+
+### 6.4 THE EVIDENCE GATE: full corpus, stride 1, JIT on every case (`./run-evalplan-affine32.sh 1 1`)
+
+Every fixture is JIT-checked, unlike the binary64 runner's 45 representatives. That is deliberate: the
+measured cost (about 3 min of JIT) is acceptable, and a per-case JIT claim is strictly stronger than a
+representative sample. The runner keeps `JIT_STRIDE`, so a routine run may sample, but this slice's
+evidence claim is this run.
+
+```
+Generated ...generated_evalplan_affine_smoke32.py: 7 named + 8 assign + 2 positional + 3832 corpus (stride 1 of 3832)
+known XLA CPU divergence reproduced exactly: f32Identity positions [1, 2]
+kinds={'named': 3839, 'assign': 8, 'positional': 2} eager_checks=5873 jit_checks=5873 (jit_stride=1) eager_seconds=530.213 jit_seconds=190.982
+3849 binary32 fixtures, 11746 eager/jit output checks: bit-identical to the Lean binary32 reference except the pinned KNOWN_DIVERGENT positions (x64 disabled)
+```
+
+- 3,849 fixtures = 3,832 corpus + 7 named + 8 standalone-assign + 2 positional; 11,746 checks (5,873 eager
+  + 5,873 JIT); 0 mismatches outside the pinned `f32Identity [1, 2]`.
+- Generated module `.cache/generated_evalplan_affine_smoke32.py`: 3,657,456 bytes (`wc -c`).
+- Wall-clock for the whole script, including the three `lake build`s and generation: 784 s (about 13 min).
+  Eager 530.2 s, JIT 191.0 s (prototype: 524.8 s and 190.7 s). Timings are recorded, not matched.
+
+### 6.5 Python cells of Table A (the `verified (Python exactness: Task 2)` rows)
+
+| Row | Python outcome | Fixture | P-cycle |
+|---|---|---|---|
+| positional route | bit-identical to the Lean binary32 reference, eager and JIT, in the 56-fixture and the 3,849-fixture runs (`kinds` shows `'positional': 2`) | `f32ProductChain`, `f32ReductionGraph` | P6 kills `f32ProductChain` (`TypeError: reshape requires ndarray or scalar arguments, got <class 'NoneType'> at position 0.`). `f32ReductionGraph` is not killed by P6. |
+| standalone-assign route | bit-identical, eager and JIT, for all 8 (`'assign': 8`); `f32Identity` matches except the pinned KNOWN_DIVERGENT positions [1, 2] | `f32Identity`, `f32ReductionRounding`, `f32MultiplicationRounding`, `f32FactorOrder`, `f32Efp`, `f32Zerd`, `f32TermOrder`, `f32Pad` | P3 kills `f32FactorOrder`; P5 kills `f32Pad`. P1 and P2 do not kill any standalone-assign fixture; they are killed only by the named `reduction64` and `termSum64`. |
+| zero-pad label-extent mismatch | bit-identical to the Lean reference, eager and JIT; the padded cell (index 2) is `0x00000000`, and the mutant shows the unpadded gather value `0x40a00000` there | `f32Pad` | P5 (mask ignored): `f32Pad eager result: not bit-identical at 2: 0x40a00000 vs 0x00000000` |
+
+Table B, last row (`jnp.float64` / `int64` constants at runtime): now resolved. `evalplan_affine_runtime.py`
+takes `dtype` (default `jnp.float64`, so every existing caller is unchanged), `_require_dtype` never casts
+(P4 kills its removal), and the float32 path runs with `jax_enable_x64` disabled (asserted in
+`evalplan_affine_smoke32.py`).
