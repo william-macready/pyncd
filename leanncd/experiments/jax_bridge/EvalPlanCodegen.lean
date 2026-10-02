@@ -91,9 +91,9 @@ inductive JaxCodegenError
   -- assignment (`checkAssign` re-run under it fails): a caller-supplied table is that entry's
   -- semantic authority, so it is rejected outright rather than consulted for its dtype tags alone.
   | invalidSignatureContext (nodeIndex : Nat) (cause : PlanError)
-  -- The storage gate (`requireModeStorage`) every entry here runs FIRST, before node iteration,
-  -- before prepared-binding validation, and before any Python or constants text is produced. Since
-  -- slice F32-JAX it is MODE-aware: `affineReference` renders `.float32` (`orderedReference32`),
+  -- The storage gate (`requireModeStorage`) every einsum entry and every plan-level entry runs
+  -- FIRST, before node iteration, prepared-binding validation, and any Python or constants text.
+  -- Since F32-JAX it is MODE-aware: `affineReference` renders `.float32` (`orderedReference32`),
   -- `einsumOnly` stays binary64-only (`einsumStorageAdmitted`). Plan-level at plan entries — an
   -- all-input, zero-step `.float32` plan has no node to visit, so only a plan-level gate can refuse
   -- it under `einsumOnly` — and per-assignment at the standalone einsum entries. Carries the kind.
@@ -117,10 +117,10 @@ def modeAdmitsStorage : LoweringMode → LeanNCD.StorageKind → Bool
   | .affineReference, .float64 => true
   | .affineReference, .float32 => true
 
-/-- The one shared storage gate every entry below opens with, now MODE-AWARE (slice F32-JAX; it was
-    `requireFloat64Plan`). A plan-level entry passes its plan's `storageKind`, so an all-input,
-    zero-step plan — which has no node for a per-node check to visit — still meets it; a standalone
-    `einsumOnly` entry passes its checked assignment's own `storageKind`. -/
+/-- The one shared storage gate every einsum entry and every plan-level entry opens with, now
+    MODE-AWARE (slice F32-JAX; it was `requireFloat64Plan`). A plan-level entry passes its plan's
+    `storageKind`, so an all-input, zero-step plan — which has no node for a per-node check to
+    visit — still meets it; a standalone einsum entry passes its checked assignment's own kind. -/
 def requireModeStorage (mode : LoweringMode) (kind : LeanNCD.StorageKind) :
     Except JaxCodegenError Unit :=
   if modeAdmitsStorage mode kind then .ok ()
