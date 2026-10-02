@@ -47,7 +47,8 @@ The experimental bridge evaluates all 3,832 accepted **Wave C** programs—the l
 LeanNCD's affine, sum-product execution language—through the checked `EvalPlan` boundary. A checked
 plan is one whose local tensor operations and graph wiring have passed Lean's semantic validators.
 Every **materialized output**, meaning a source-visible tensor reconstructed from the final positional
-store, agrees bit-for-bit with the Lean Dense evaluator in eager JAX on the measured CPU platform.
+store, agrees bit-for-bit with the Lean Dense evaluator in eager JAX on the measured CPU platform, for normal-range values
+(subnormals and jit signed zero are a measured XLA CPU limit, Section 5.4).
 Representatives for the corpus's structural feature classes also run under `jax.jit`, and curated
 fixtures cover integer-affine coordinate maps, empty tensors, graph order, scalar fold order, and
 selected gradients.
@@ -1013,6 +1014,11 @@ The supported claim is deliberately bounded:
 This does not establish cross-platform equivalence, scan or nonlinear semantics, production-scale
 performance, or proof-level correctness of JAX/XLA. Those limits are exactly what the adoption gates
 below exist to close before any successor design may claim more than this bridge already has.
+
+Nor does it establish agreement on subnormal or signed-zero values. Measured since (slice
+F32-JAX): XLA's CPU backend flushes subnormal operands and results to zero, and under `jax.jit`
+simplifies a `+0` reduction seed away, so the agreement holds for normal-range values whose folds
+never rely on `+0 + -0 = +0`, in binary64 and binary32 alike (`leanncd/experiments/jax_bridge/README.md`).
 
 ## 6. Adoption plan and gates
 

@@ -98,6 +98,10 @@ namespace LeanNCD.Eval.Plan
       binary32 left fold (`runPreparedDense32`) — slice F32-JAX. A separate label, never a
       reinterpretation of `orderedReference64`: the two claims name different reference workers
     - `optimizationExperiment`: einsum or other optimization, no reference claim
+
+    Both reference claims are MEASURED on XLA CPU, not proved, and for normal-range values only:
+    XLA flushes subnormals to zero, and under `jax.jit` drops a `+0` reduction seed (a `-0` then
+    survives where the left fold gives `+0`). See `experiments/jax_bridge/README.md`.
 -/
 inductive ExecutionEvidence where
   | orderedReference64 : ExecutionEvidence

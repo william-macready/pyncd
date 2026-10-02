@@ -70,7 +70,7 @@ Each cell was checked by opening the named door with `rg -n` (no line numbers ci
 names the fixture; "J" the mutation cycle that kills a regression of it. `EPC` = `EvalPlanCodegen.lean`,
 `ET` = `ExecutableTest.lean`. **No SI cell found.**
 
-### Table A: case × door (Lean-side cells; Python cells are appended by Task 2)
+### Table A: case × door (Lean-side cells; the Python outcome of the three Python-run rows is folded into their last cell, from §6.5)
 
 | Case | f32 einsum | f32 affine | Evidence in tree |
 |---|---|---|---|
@@ -81,10 +81,10 @@ names the fixture; "J" the mutation cycle that kills a regression of it. `EPC` =
 | tropical algebra | no dedicated fixture; F by gate order (`requireModeStorage` precedes `requireJaxSupport`) and redundantly by the support policy; the generic gate is pinned by J8/J9 on fixture 22 | **F `unsupportedAlgebra 7 admittedAlgebraF32Max`**, ET (J4) | verified |
 | Iverson factor | F storage (EPC `f32IversonPrepared?`, `generateNamed .einsumOnly`; J8) | **F `iversonFactor 0 0 1`** at `generateNamed .affineReference`, `lowerCheckPlanToCandidate`, EPC `f32IversonPrepared?` (J15) | verified |
 | contextful | **F storage** at `lowerAssign` (J9), `loweringToEinsumCandidate` (J10), EPC `f32CtxAssign` | **F `unsupportedContext 0 #[2]`** at `renderAffineAssign`, `loweringToAffineTableCandidate`, EPC `f32CtxAssign` (J14) | verified |
-| zero-pad label-extent mismatch | **F storage** at `lowerAssign`, EPC `f32PadAssign` (storage precedes `labelExtentMismatch`; J9) | **R**, kernel `orderedReference32`, EPC `f32PadAssign` (guard not in J6's targets; the shared label is killed by J6 through ET's `f32DestAssign` kernel guard) | verified |
+| zero-pad label-extent mismatch | **F storage** at `lowerAssign`, EPC `f32PadAssign` (storage precedes `labelExtentMismatch`; J9) | **R**, kernel `orderedReference32`, EPC `f32PadAssign` (guard not in J6's targets; the shared label is killed by J6 through ET's `f32DestAssign` kernel guard) | verified. Python (§6.5): `f32Pad` bit-identical, eager and JIT; P5 (mask ignored) kills it, the padded cell reading `0x40a00000` for `0x00000000` |
 | zero-step plan | **F storage**, plan-level only: EPC fixture 25 (J8) | **R `orderedReference32`**: EPC fixture 23 (`lowerCheckPlanToCandidate`, J12) and ET fixture 23 (`validateAndConstructExecutable (emptyPlanCandidate p)`, J7); ET `aggregateEvidenceList .float32 #[]` | verified |
-| positional route | F storage (`lowerPlan`, EPC fixture 22; J8) | **R** `renderAffinePlanPositional`, EPC fixtures 22 and 25 (J11) | verified (Python exactness: Task 2) |
-| standalone-assign route | F storage (`lowerAssign`, per fixture: EPC fixture 22 standalone, `f32CtxAssign`, `f32PadAssign`; J9; `loweringToEinsumCandidate` on fixture 22 and `f32CtxAssign`; J10) | **R**, kernel `orderedReference32`, EPC fixture 22 and `f32PadAssign` (J2, J6) | verified (Python exactness: Task 2) |
+| positional route | F storage (`lowerPlan`, EPC fixture 22; J8) | **R** `renderAffinePlanPositional`, EPC fixtures 22 and 25 (J11) | verified. Python (§6.5): bit-identical to the Lean binary32 reference, eager and JIT; `f32ProductChain` is killed by P6 (`TypeError`, nodes reversed); `f32ReductionGraph` is killed by no P-cycle (it passes under reversal) |
+| standalone-assign route | F storage (`lowerAssign`, per fixture: EPC fixture 22 standalone, `f32CtxAssign`, `f32PadAssign`; J9; `loweringToEinsumCandidate` on fixture 22 and `f32CtxAssign`; J10) | **R**, kernel `orderedReference32`. The kernel label is guarded by ET's `f32DestAssign` guards (J6 kills the label; J2 kills the support policy beside it); EPC fixture 22's standalone render and `f32PadAssign` render are not named by any cycle's `expect` (J8-J10 kill only their einsum-side refusals) | verified. Python (§6.5): 7 of 8 standalone-assign fixtures bit-identical to the Lean binary32 reference, eager and JIT; `f32Identity` is the pinned §3.6 divergence (`KNOWN_DIVERGENT` positions [1, 2]); P3 kills `f32FactorOrder`, P5 kills `f32Pad` |
 
 Also verified: EPC fixture 24 (`f32BadBindingPrepared?`) reaches `invalidBindings (.materializedSlot (.slotOutOfRange 99 2))`
 under f32, the same as its binary64 control, so binding validation is not skipped; ET fixture 24 says the same
@@ -176,8 +176,9 @@ against the plan. Every mutant has returncode 1; the unmutated and restored runs
 The P6 line is the brief's string followed by the library's own suffix ` at position 0.`.
 
 P2 is real, not an equivalent mutant: XLA CPU sums a stacked axis sequentially up to 32 terms and in
-blocks at 64, so only `termSum64` kills it. Every other fixture (including the standalone-assign
-`f32TermOrder`) passes under P2; see the attribution probe below.
+blocks at 64, so only `termSum64` kills it. Every other standalone-assign and positional
+fixture passes under P2 (per the scratch probe below); among the named fixtures only `termSum64` kills it (prototype
+§6 P2 probe).
 
 Per-fixture attribution probe (scratch script, not committed; eager only, the 8 standalone-assign and 2
 positional fixtures of the same generated module, one run per mutant). It exists because the driver stops at
@@ -223,3 +224,82 @@ Table B, last row (`jnp.float64` / `int64` constants at runtime): now resolved. 
 takes `dtype` (default `jnp.float64`, so every existing caller is unchanged), `_require_dtype` never casts
 (P4 kills its removal), and the float32 path runs with `jax_enable_x64` disabled (asserted in
 `evalplan_affine_smoke32.py`).
+
+## 7. Task 2 phase 2: documentation sweep and close-out
+
+### 7.1 Caveat hit list (step 3)
+
+`rg -n -i "subnormal|flush|signed zero"` over the README, `Executable.lean`, `Plan/AGENTS.md` and
+`jax_evalplan_architecture.md`. Before the sweep the only hits were two non-caveat uses in the
+architecture doc (transport "preserving signed zero", and the future-contract "must state testable
+treatment of ... signed zero"). After:
+
+- `README.md`: the subsection's `KNOWN_DIVERGENT` bullet, the binary64 corpus bullet ("normal-range
+  inputs only"), and the anchor paragraph (flush, `-0` seed, `f32Identity`, "same limit" for both labels);
+- `Executable.lean`: the `ExecutionEvidence` docstring ("XLA flushes subnormals to zero");
+- `Plan/AGENTS.md`: the new Pitfalls bullet;
+- `jax_evalplan_architecture.md`: the executive summary ("subnormals and jit signed zero are a measured
+  XLA CPU limit, Section 5.4") and the Section 5.4 paragraph ("Nor does it establish agreement on subnormal
+  or signed-zero values"), plus the two pre-existing non-caveat hits.
+
+Every file in that grep now has a caveat hit. `3,832` claims: the binary64 ones sit in the caveat's
+scope (README corpus bullet, architecture executive summary and Section 5.4, which contains the new
+paragraph); the binary32 one (3,849 = 3,832 + 17 fixtures) is in the new README subsection.
+
+### 7.2 Value-grep (step 5), allowed hits only
+
+`rg -n "reference64-only|rejects an f32 plan|rejects a \`\.float32\` plan|requireFloat64Plan|JaxExecutableValidationError\.unsupportedStorageKind|no binary32 evidence label|binary32 evidence label are slice" leanncd papers --glob '!papers/f32_jax_*' --glob '!papers/f32b_*' --glob '!papers/f32c_*' --glob '!papers/f32d_*' --glob '!leanncd/docs/**'`
+gave 11 hits, all allowed:
+
+- Task 1 step 4's three: `EvalPlanCodegen.lean` (`requireModeStorage` docstring; fixtures 22-25 header
+  "Before slice F32-JAX this backend was reference64-only") and `ExecutableTest.lean` (fixture-1
+  docstring's historical narration);
+- `f32_evalplan.md`: line 122 (the §1.3 item 5, now ending "Landed by `f32_jax_evalplan.md`"), line 257
+  (§2.3, now followed by the Superseded note), and lines 382, 575, 576, 951, 1695, 1897, all slice-time
+  design body of the F32-A plan (the slice-time body the brief allows; only §2.3 carries the note, so
+  these six are historical text with no adjacent update line).
+
+`backend_missing_functionality.md`'s historical "rejects a `.float32` plan at all eight" paragraph
+no longer matches the grep (its pattern is hard-wrapped) and is followed by its update line.
+
+### 7.3 Final mutation manifest (plan section 7 Definition of Done item 2), full run, no `--task`
+
+`mutation-manifest.sh --out ... leanncd papers/f32_jax_mutations_post.json`, run after every edit of
+this phase; `--check` first: "15 entries, 15 selected, every old-string unique".
+
+| Mutation | Cycle (broke, then restored build green) | File byte-identical | Expected failure seen | Result |
+|---|---|---|---|---|
+| J1 (einsumStorageAdmitted admits float32) | yes | yes | yes | PASS |
+| J2 (jaxRealCarrier float32 arm reverted to binary64) | yes | yes | yes | PASS |
+| J3 (destination dtype check widened to admit bool) | yes | yes | yes | PASS |
+| J4 (algebra check widened to any binary32 algebra) | yes | yes | yes | PASS |
+| J5 (unary check skipped for float32 evidence) | yes | yes | yes | PASS |
+| J6 (affine kernel label hardcoded to orderedReference64) | yes | yes | yes | PASS |
+| J7 (aggregation not keyed off storage kind) | yes | yes | yes | PASS |
+| J8 (einsumOnly mode admits every storage kind) | yes | yes | yes | PASS |
+| J9 (lowerAssign standalone storage gate deleted) | yes | yes | yes | PASS |
+| J10 (loweringToEinsumCandidate storage gate deleted) | yes | yes | yes | PASS |
+| J11 (affineReference refuses float32) | yes | yes | yes | PASS |
+| J12 (lowerCheckPlanToCandidate aggregates under binary64) | yes | yes | yes | PASS |
+| J13 (bool source admitted under float32 evidence) | yes | yes | yes | PASS |
+| J14 (context check skipped for float32 evidence) | yes | yes | yes | PASS |
+| J15 (affine Iverson rejection dropped) | yes | yes | yes | PASS |
+
+15/15 cycles passed. `git status` afterwards showed no leftover mutation (only this phase's edits).
+
+### 7.4 Run summaries and final build job counts
+
+- Task 1 (sections 1-5): storage-keyed gates and `orderedReference32`; 15/15 mutation cycles, J12/J15/J3
+  re-run after the prose edits; sibling-door audit with no SI cell.
+- Task 2 phase 1 (section 6): runtime parametrized (binary64 `cmp`-identical, corpus 0 mismatches at
+  3,424,195 bytes); stride-100 run 56 fixtures / 160 checks; P1-P6 all kill; the evidence gate, stride 1 with
+  JIT on every case: 3,849 fixtures, 11,746 eager/JIT checks, 0 mismatches outside pinned `f32Identity [1, 2]`.
+- Task 2 phase 2: caveat sweep, binary32 README subsection, boundary docs; final manifest 15/15.
+
+| Command (final tree, after this phase's edits) | Jobs | Result |
+|---|---|---|
+| `lake build JaxExperiment Eval.Plan.ExecutableTest` (before the manifest) | 8,515 | green |
+| `lake build` | 8,673 | green |
+| `lake build JaxExperiment` | 8,514 | green |
+
+`wc -l`: `EvalPlanCodegen.lean` 1991, `ExecutableTest.lean` 1887, unchanged.
