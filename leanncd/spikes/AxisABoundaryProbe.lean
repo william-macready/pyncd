@@ -260,7 +260,8 @@ outputAxes={repr einsumCand.outputAxes}"
             Lean.logInfo s!"S8 step-0 kernel validated, evidence={repr k0.evidence}"
             let cand : JaxExecutableCandidate :=
               { source := prepared, steps := #[k0, k0]
-              , evidence := aggregateEvidenceList (#[k0, k0].map (·.evidence))
+              , evidence := aggregateEvidenceList prepared.plan.storageKind
+                  (#[k0, k0].map (·.evidence))
               , aggregated := rfl }
             match validateAndConstructExecutable cand with
             | .ok _ => Lean.logInfo "S8 executable ACCEPTED a kernel reused at a .pointwise step (!!)"
