@@ -13,14 +13,20 @@ redoing the setup by hand:
 
 ## Invoking Lake
 
-From the repository root, invoke Lake through Elan from inside the Lean subproject:
+Always build through the wrapper, passing the target checkout's `leanncd/` directory (primary checkout
+or any worktree) and optional Lake targets:
 
 ```bash
-cd leanncd && "$HOME/.elan/bin/lake" build
+bash leanncd/scripts/lake-build.sh /path/to/checkout/leanncd [target...]
 ```
 
-Do not assume `lake` is on `PATH`, and do not run it from the repository root: the Lake
-configuration lives under `leanncd/`. Replace `build` with the desired target or Lake command.
+The wrapper runs from inside `leanncd/`, so that checkout's pinned `lean-toolchain` is honoured, and it
+uses the absolute Elan `lake` (not on `PATH`). Repository permissions allow its relative and
+primary-checkout absolute forms. **Do not hand-roll the invocation.** Running `lake` from the repository
+root (no `lean-toolchain` there) resolves the Elan DEFAULT toolchain, not the project's, and can rebuild
+and clobber `.lake` package oleans (once overwrote ~109 Batteries oleans in a worktree); a compound
+`cd leanncd && lake build` is also rejected by the agent shell harness. Other Lake commands: extend the
+wrapper deliberately rather than bypassing it.
 
 ### Single-file typechecks: always use the wrapper
 
@@ -132,7 +138,7 @@ while still exiting 0. Check `rsync --version` if unsure; don't trust a
 "completed, exit 0" report alone — verify the `.olean` count in the
 destination afterward.
 
-After syncing, run `cd leanncd && "$HOME/.elan/bin/lake" build` — it will only need to compile the
+After syncing, run `bash leanncd/scripts/lake-build.sh <checkout>/leanncd` — it will only need to compile the
 handful of `LeanNCD`-specific modules (and whatever the new worktree's edits
 touch), typically well under a minute instead of hours.
 
@@ -140,7 +146,7 @@ touch), typically well under a minute instead of hours.
 
 `EnterWorktree` branches from `origin/<default-branch>`, **not** from local
 `main`. This repo's local `main` routinely runs far ahead of `origin/main`
-(21 commits at the time of writing), so a new worktree silently starts on
+(it is never pushed unless asked), so a new worktree silently starts on
 stale code — and every edit you make is against the wrong base.
 
 This has been hit repeatedly and was always caught by eyeballing `git log`,
@@ -196,8 +202,8 @@ Small subsystems (no dedicated node — each <170 lines, single-file or near it)
 | Check current sorry/proof status authoritatively | `SORRY_INVENTORY.md` (more current than scattered doc comments) |
 | Understand the `realize` bridge problem in depth | `realize.md` (companion to `SORRY_INVENTORY.md`) |
 | Design history / past decisions | `docs/superpowers/plans/`, `docs/superpowers/specs/` |
-| Build the project | `cd leanncd && "$HOME/.elan/bin/lake" build` (see Mathlib cold-build pitfall above) |
-| Run the test suite | `cd leanncd && "$HOME/.elan/bin/lake" build` (Tests is a default target — `lakefile.toml`'s `globs` list elaborates every test module, firing all `#guard`/example/`#print axioms` checks) |
+| Build the project | `bash leanncd/scripts/lake-build.sh <checkout>/leanncd` (see "Invoking Lake" and the Mathlib cold-build pitfall above) |
+| Run the test suite | the same `lake-build.sh` command (Tests is a default target — `lakefile.toml`'s `globs` list elaborates every test module, firing all `#guard`/example/`#print axioms` checks) |
 | Experimental/scratch work | `spikes/` — gitignored except thirteen tracked files, all off the default build: `spikes/BrNF.lean` (for its wiring-combinator technique) and the twelve pre-Scatter audit probes (`spikes/Axis*Probe.lean` plus their `.output.txt` captures). ⚠️ The ignore pattern is `spikes/*`, **not** `spikes/` — a directory-pattern ignore short-circuits before per-file `!` negations are consulted for *untracked* paths, so `!spikes/<file>` only works under the `spikes/*` form. `!spikes/BrNF.lean` appeared to work under the old `spikes/` form only because that file was `git mv`'d while already tracked and so never faced the ignore check at all. |
 | What the checked-plan backend does NOT support, and the write-geometry/boundary audit of it | `../papers/backend_missing_functionality.md` is the active inventory. `../papers/pre_scatter_backend_audit.md` is the pre-Scatter findings record; its `[snippet]` evidence is the twelve tracked `spikes/Axis*Probe.lean` files, but its scatter boundary is superseded by the shipped S-A/S-B implementation. |
 | Scatter/affine-write design and current boundary | `../papers/scatter_affine_lhs_writes.md`. S-A admits top-level scatter; S-B admits positive one-axis affine placement in non-advancing scan-state dimensions for both base and recurrence writes. The checked worker remains `AssignPlan` compute followed by `StateWriteMap` placement—there is no `BlockStep.scatter`. |

@@ -118,8 +118,9 @@ open a menu or ask for confirmation:
   whole-branch review clean or its findings adjudicated — **merge to local `main`**, delete the
   branch, and remove the worktree. Do not present the merge/PR/keep menu; merging locally is the
   established choice.
-- **Plan scope.** One implementation plan per slice (C2, then C3, …), not one spanning several.
-  Write the next slice's plan only when the previous one has landed.
+- **Plan scope.** One implementation plan per slice, not one spanning several. Write the next
+  slice's plan only when the previous one has landed. A change that qualifies for the Direct path
+  (`.claude/skills/slice-plan/` section 0) gets no plan document at all.
 - **Executing a plan.** Run every task to completion without pausing between them. No "shall I
   continue?" checkpoints — the per-task review is the checkpoint.
 - **Committing.** Commit freely as work lands, following the repo's message conventions.
@@ -136,6 +137,14 @@ Still ask, or still stop, for these:
   deleting others' branches or worktrees, `git clean -fdx` over a shared checkout.
 
 Rule 12 still governs: report faithfully what happened, including anything skipped or parked.
+
+## Rule 14 — Scope gate: side issues are not part of the task until the user says so
+When exploration turns up something the stated goal does not need (a cleanup, an oracle tightening,
+a pre-existing divergence), do not start it. State in a line: what it is, whether the goal requires
+it, and a rough cost in dispatches. Park it, or ask. Rule 13's durable authorizations cover
+executing an agreed task, not widening it. Pick the process weight for any change before dispatching
+(`.claude/skills/slice-plan/` section 0): small guard additions take the Direct path, not the full
+slice pipeline.
 
 ## Intent Layer
 
@@ -187,7 +196,6 @@ Small utility dirs (no dedicated node — see README for their one-line purpose)
 - **`.normalize()` is sum-normalization, not `LayerNorm`** — a documented, easy-to-assume-wrong trap in `torch_compile/`.
 - **No `causal_softmax` operator exists** — attempted and reverted (one episode, touching both `data_structure/` and `torch_compile/`). Causal masking goes through `softmax(..., where=predicate)`. Check git history (`e29fdac`) before re-adding dedicated causal-attention support.
 - **Golden-file test fixtures under `tests/cset_serialization/` are gitignored, generated artifacts** — a fresh clone fails `test_cset_roundtrip.py` until `python tests/generate_cset_serialization.py` is run once.
-- **`leanncd/`'s TL surface syntax used to make whitespace SEMANTIC in an LHS slot** — `G[j, l +1]` vs `G[j, l + 1]` used to elaborate differently (recurrence vs. shifted write) and silently pick the wrong one. Fixed (#5b): both spacings now elaborate identically, and the axis must be declared `iter l = N` or the compiler rejects it (`CompileError.scanAxisNotIter`) — a compile-time error, not silent misbehavior. See `leanncd/LeanNCD/DSL/AGENTS.md`.
 
 ### Boundaries
 

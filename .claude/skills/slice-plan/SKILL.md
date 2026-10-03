@@ -1,6 +1,6 @@
 ---
 name: slice-plan
-description: Authoring discipline for leanncd slice implementation plans (Wave C/F slices, or any subagent-driven-development plan in this repo) — verifying plan code, paths, and prose claims before they ship; covering the recurring-defect siblings a diff review structurally cannot see; right-sizing tasks by fixture count; budgeting implementer AND authoring context (reading windows, mutation manifests, per-task patches, a live plan kept apart from its record); and where review budget actually pays. Use when writing or revising an implementation plan for leanncd, before executing it.
+description: Process-weight gate (direct test-first vs full plan pipeline) and authoring discipline for leanncd slice implementation plans (any subagent-driven-development plan in this repo) — verifying plan code, paths, and prose claims before they ship; covering the recurring-defect siblings a diff review structurally cannot see; right-sizing tasks by fixture count; budgeting implementer AND authoring context (reading windows, mutation manifests, per-task patches, a live plan kept apart from its record); and where review budget actually pays. Use when writing or revising an implementation plan for leanncd, before executing it.
 ---
 
 # Writing a leanncd slice plan
@@ -9,6 +9,28 @@ Rules learned from measured failures in Waves C and F and the F32 slices. Apply 
 after a plan ships they are too late. Each rule's measured example and full reasoning is in
 `REFERENCE.md` under the same section number — read it only when a rule leaves you unsure. Setting
 up a worktree to *execute* a plan is `.claude/skills/new-slice/`.
+
+## 0. Pick the process weight first — a gate, not a dispatch-time judgment
+
+Flagged three times and re-learned on the reference-alignment slice (see memory
+`feedback-scale-process-to-task-risk`): a pipeline built for new capabilities
+(plan, prototype, per-task patches, mutation manifest, capped dispatches) was applied to what
+were mostly small guard additions, and cost about a dozen dispatches. Before dispatching anything,
+write ONE line naming the path and why.
+
+| Path | Use when | What it is |
+|---|---|---|
+| **Direct** | a localized change to existing behaviour (new rejections/guards, fixes, renames, docs); no new capability or subsystem; no soundness surface a differential oracle cannot already see; about 6 work items or fewer | One test-first implementer, at most ~3 work items per dispatch. Per item: a pinning fixture, an accept-neighbour fixture (the nearest legal program), a hand mutation check reported in the commit body, one commit. Docs by value-grep sweep. One whole-branch review (two lenses if the change can wrongly reject valid programs). **You** run the full build before merging. No plan document, patches, notes file, or new manifest entries. |
+| **Full** | a new capability or subsystem; a soundness surface; about 6+ tasks or dependent slices | Sections 1–6 below. |
+
+Also decide at the same moment:
+- **Required for the goal?** A side issue found while exploring is not part of the task until the
+  user says so (CLAUDE.md Rule 14). Park it with a one-line cost estimate.
+- **Audit first** when a task must mirror another component's rule (e.g. make evaluator A reject
+  what checker B rejects): run the read-only audit of B's exact predicate and the programs it
+  accepts BEFORE launching the implementer, not alongside it. On reference-alignment the audit
+  found that a naive "same pinned coordinate" overlap rule would have rejected legal strided bases;
+  the implementer had to be corrected mid-flight.
 
 ## 1. Verify everything the plan asserts (REFERENCE §1)
 
@@ -61,6 +83,13 @@ Cost is turns × context per turn; reviews are cheap, implementers are not.
 - Documentation sweeps are written as commands; they don't get a heavyweight dispatch.
 - A task expected past ~60 implementer turns runs as two dispatches (production commit, then
   fixtures + cycles) using `split-handoff-template.md`.
+- Size dispatches by work items, not diff lines: at most ~3 checks/shapes per implementer dispatch.
+  On reference-alignment most dispatches ran past the 60-turn cap, largely waiting on builds: run
+  long builds in the background and wait for the notification instead of polling.
+- Before merging, the controller runs the mutation manifest (`mutation-manifest.sh`, not just
+  `--check`) and the full build itself; agents' "green" reports have hidden a wrong `expect`
+  string and unvalidated manifest edits.
+- Every brief opens with the shell-harness preamble in `.claude/skills/new-slice/`.
 
 ## 6. Budget the authoring itself
 
