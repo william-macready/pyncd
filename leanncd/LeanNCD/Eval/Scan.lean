@@ -102,6 +102,71 @@ def writeScanStmtSlice (out : DenseTensor) (seed : HashMap UID Int) (s : Stmt)
     else
       cur) out
 
+/-- One state dimension of a base write, read off its LHS slot. This is the reference's OWN
+    classification (it deliberately does not call the checked backend's `classifyWriteRow`): a
+    pinned literal, a free face spanning the dimension, a positive-scale strided placement, or
+    anything else (never separates two writes). -/
+private inductive BaseDim
+  | pinned (lit : Int)
+  | face
+  | strided (scale offset : Int)
+  | other
+
+private def baseDimOf : LHSSlot → BaseDim
+  | .iterAt _ n => .pinned n
+  | .free _ | .freeNorm _ | .iterNext _ => .face
+  | .affine e =>
+      let (c0, cf) := idxAffineForm e
+      match SizeSolve.normalizeCoeffs cf with
+      | []        => .pinned c0
+      | [(c, _)]  => if c > 0 && c0 ≥ 0 then .strided c c0 else .other
+      | _         => .other
+
+/-- Whether one dimension forces two base writes apart: different pinned literals, or two strided
+    placements of equal positive scale whose offsets differ modulo that scale. Everything else is
+    conservatively overlapping. -/
+private def baseDimsSeparate : BaseDim → BaseDim → Bool
+  | .pinned a, .pinned b => a != b
+  | .strided sa oa, .strided sb ob => sa > 0 && sa == sb && oa % sa != ob % sb
+  | _, _ => false
+
+/-- A base write touches a scan boundary iff the slot carrying some scan axis is `.iterAt _ 0`.
+    A base that omits a scan axis from its LHS altogether is a different fault (the checked
+    backend's `advancingAxisNotInLhs`) and is left alone here. -/
+private def baseTouchesBoundary (axUids : List UID) (slots : List LHSSlot) : Bool :=
+  let dims := axUids.map (fun u => slots.findIdx? (fun sl => sl.axisUID? == some u))
+  dims.any Option.isNone ||
+    dims.any (fun d? => match d?.bind (fun d => slots[d]?) with
+      | some (.iterAt _ n) => n == 0
+      | _ => false)
+
+/-- Static structural validation of a scan, run by `evalScan` BEFORE any state is allocated, so
+    every rejection precedes evaluation. A scan with several faults reports the FIRST of these, in
+    this order (it mirrors the checked backend's phase order in `Plan/Compile.lean`: placement
+    classification, then per-state geometry, then base-block reads, then base-write placement):
+    0. a non-assign base statement (`baseMustBeAssign`, hoisted here so it keeps precedence);
+    1. `baseWriteNotAtBoundary`, in `base` order;
+    2. `baseWritesOverlap`, states in first-base order, then the first pair `(a, b)`, `a < b`, in
+       `base` order. -/
+def checkScanStructure (scanName : String) (axes : List AxisSpec) (stateNames : List String)
+    (base : List Stmt) : Except EvalError Unit := do
+  let axUids := axes.map (·.uid)
+  for s in base do
+    match s with
+    | .recurMorphism .. => throw (.invalidScanNode .baseMustBeAssign)
+    | _ => pure ()
+  for (s, bi) in base.zipIdx do
+    unless baseTouchesBoundary axUids s.slots do
+      throw (.baseWriteNotAtBoundary scanName s.lhsName bi)
+  for st in stateNames do
+    let mine := base.zipIdx.filter (fun (s, _) => s.lhsName == st)
+    for (sa, ia) in mine do
+      for (sb, ib) in mine do
+        if ia < ib &&
+            !((sa.slots.zip sb.slots).any
+              (fun (x, y) => baseDimsSeparate (baseDimOf x) (baseDimOf y))) then
+          throw (.baseWritesOverlap scanName st ia ib)
+
 /-- Evaluate a ScanStmt → the scanned state tensors. Multi-axis (n-D) scans iterate the cartesian
     product of `[0 … L_a − 2]` over every advancing axis. Boundary semantics (zero-default): the
     step writes only fully-advanced cells (every advancing index `+1 ≥ 1`); boundary cells (any
@@ -117,7 +182,7 @@ def evalScan (decls : List Decl) (env : HashMap String DenseTensor) (sizes : Has
     ScanStmt → Except EvalError (List (String × DenseTensor))
   | .plain _      => .error (.invalidScanNode .plainNotHandledHere)
   | .scanPre nm _ _ => .error (.unsupportedRecurMorphism .evalScanNode nm)
-  | .scan _ axes base recur _ => do
+  | .scan scanName axes base recur _ => do
       rejectUnsupportedStorage decls ((base ++ recur).flatMap stmtStorageNames)
       if axes.isEmpty then .error (.invalidScanNode .noIterationAxis) else
       let axUids := axes.map (·.uid)
@@ -141,6 +206,7 @@ def evalScan (decls : List Decl) (env : HashMap String DenseTensor) (sizes : Has
           match s with
           | .scatter _ _ _ _ => throw (.invalidScanNode .onlyAssignInSlice)
           | _ => pure ()
+      checkScanStructure scanName axes stateNames base
       -- 1. allocate each state tensor (zeros at full shape) from its base slots.
       let mut work := env
       for s in base do

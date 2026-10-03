@@ -5,6 +5,13 @@ open Std
 private def ax (nm : String) (u : Nat) : AxisSpec := { name := nm, uid := u, kind := .real }
 private def tensorOf (shape : List Nat) (xs : List Float) : DenseTensor := ⟨shape, xs.toArray⟩
 
+-- helpers of the reference-alignment structural-rejection fixtures at the end of this file
+private def raRhs (nm : String) (idx : List IdxExpr) : RHSExpr :=
+  { body := { terms := [{ factors := [.read nm idx] }] }, nonlin := .identity }
+
+private def raAccepted (outs : List (String × DenseTensor)) : String :=
+  s!"expected a rejection, but the scan was accepted: {outs.map (fun (n, t) => (n, t.shape, t.data))}"
+
 -- LINEAR scan, single state: S[j,0] := X[j]; S[j,l+1] := S[j,l] · A[j]   (elementwise, no contraction)
 --   X = [1, 10] (j=0,1), A = [2, 3], L = 3  ⇒  S[:,0]=[1,10], S[:,1]=[2,30], S[:,2]=[4,90].
 run_cmd do
@@ -325,12 +332,13 @@ run_cmd do
   let recur : Stmt := .assign "dp" [.iterNext r, .iterNext c]
     { body := { terms := [{ factors := [.read "dp" [.axis r, .axis c]] }, { factors := [.read "T" [.axis r, .axis c]] }] },
       nonlin := .identity }
+  -- FLIPPED (reference-alignment, shape 5): this used to assert last-write-wins, dp = [1,1,0,2]
+  -- (old value, observed). The reference now refuses overlapping base writes outright, matching
+  -- the checked backend's `baseWritesOverlap`; there is no declared-order precedence.
   match evalScan [] env sizes (.scan "dp" [r, c] [baseFace, collidingPoint] [recur] false) with
-  | .error e => throwError (toString e)
-  | .ok outs => match outs.find? (·.1 == "dp") with
-    | some (_, dp) => unless DenseTensor.approxEq dp (tensorOf [2,2] [1,1,0,2]) do
-        throwError s!"collision mutation wrong: {repr dp.data}"
-    | none => throwError "no dp"
+  | .error (.baseWritesOverlap "dp" "dp" 0 1) => pure ()
+  | .error e => throwError s!"collision mutation: wrong rejection: {e}"
+  | .ok outs => throwError (raAccepted outs)
 
 -- S-B 1: a strided base computes X[j] densely, places it at even state coordinates, then a dense
 -- recurrence copies the complete six-cell state slice through history.
@@ -556,5 +564,88 @@ run_cmd do
   | Except.error (.shape (.unsizedAxis 9 (.scanIteration "l"))) => pure ()
   | Except.error e => throwError s!"fixture 13 control: expected the unsized-iteration error, got {e}"
   | Except.ok _ => throwError "fixture 13 control: the planted unsized iteration axis was not reported"
+
+/-! ### Reference-alignment, scan group: structural rejections
+
+The checked backend rejects these scans on principle (`ScanCompileError`); the reference used to
+evaluate them to a silently wrong or order-dependent value. Each REJECT fixture pins the typed
+`EvalError` constructor and payload, and sits next to an ACCEPT fixture for its nearest legal
+neighbour so the guard cannot be satisfied by rejecting more than it should. Accepted values were
+observed from a real run, never hand-derived. -/
+
+-- Shape 4. REJECT donor: "COUPLED scan" fixture above, cloned to ONE state `h` with lag 2
+--   (`h[l+1] := h[l] + h[l-1]`), change: add a second base pinned at index 1 (`h1 = 5`, L = 4).
+--   The step overwrites index 1, so the seed `5` is silently lost (the old reference answered
+--   [1, 1, 2, 3], identical to the run without that base).
+run_cmd do
+  let l := ax "l" 9
+  let env : HashMap String DenseTensor :=
+    (({} : HashMap String DenseTensor).insert "H0" (tensorOf [] [1])).insert "H1" (tensorOf [] [5])
+  let sizes := (({} : HashMap UID Nat).insert 9 4)
+  let recur : Stmt := .assign "h" [.iterNext l]
+    { body := { terms := [{ factors := [.read "h" [.axis l]] }, { factors := [.read "h" [.shift l (-1)]] }] }, nonlin := .identity }
+  let b0 : Stmt := .assign "h" [.iterAt l 0] (raRhs "H0" [])
+  let b1 : Stmt := .assign "h" [.iterAt l 1] (raRhs "H1" [])
+  match evalScan [] env sizes (.scan "h" [l] [b0, b1] [recur] false) with
+  | .error (.baseWriteNotAtBoundary "h" "h" 1) => pure ()
+  | .error e => throwError s!"shape 4: wrong rejection: {e}"
+  | .ok outs => throwError (raAccepted outs)
+  -- ACCEPT neighbour: same program with only the boundary base (clone, drop `b1`).
+  match evalScan [] env sizes (.scan "h" [l] [b0] [recur] false) with
+  | .error e => throwError s!"shape 4 accept: {e}"
+  | .ok outs => match outs.find? (·.1 == "h") with
+    | some (_, h) => unless DenseTensor.approxEq h (tensorOf [4] [1, 1, 2, 3]) do
+        throwError s!"shape 4 accept: lag-2 scan wrong: {repr h.data}"
+    | none => throwError "shape 4 accept: no h"
+
+-- Shape 4, ACCEPT neighbour in 2-D. Donor: none in this file (first 2-D scan here); the base is
+--   pinned at index 1 on `c` but at index 0 on `r`, so it DOES touch the boundary and is legal.
+--   `G[0, 1] := Y[0]`, recurrence `G[r+1, c+1] := G[r, c]`, r = c = 3.
+run_cmd do
+  let r := ax "r" 1; let c := ax "c" 2
+  let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "Y" (tensorOf [3] [10, 20, 30])
+  let sizes := (({} : HashMap UID Nat).insert 1 3).insert 2 3
+  let recur : Stmt := .assign "G" [.iterNext r, .iterNext c] (raRhs "G" [.axis r, .axis c])
+  let pt : Stmt := .assign "G" [.iterAt r 0, .iterAt c 1] (raRhs "Y" [.const 0])
+  match evalScan [] env sizes (.scan "G" [r, c] [pt] [recur] false) with
+  | .error e => throwError s!"shape 4 2-D accept: {e}"
+  | .ok outs => match outs.find? (·.1 == "G") with
+    | some (_, G) => unless DenseTensor.approxEq G (tensorOf [3, 3] [0, 10, 0, 0, 0, 10, 0, 0, 0]) do
+        throwError s!"shape 4 2-D accept: wrong: {repr G.data}"
+    | none => throwError "shape 4 2-D accept: no G"
+
+-- Shape 5. 2-D state G[r, c] (axes r, c; r = c = 3), recurrence `G[r+1, c+1] := G[r, c]`.
+--   `face0` = `G[r, 0] := Z[r]` (column 0), `row0` = `G[0, c] := Y[c]` (row 0), `pt` = `G[0, 1] := Y[0]`.
+--   Z[0] = 1 and Y[0] = 10 differ, so at the shared corner G[0, 0] "last write wins" (10) and
+--   "first wins" (1) disagree: the decided behaviour is a refusal with NO declared-order precedence.
+private def raFaceEnv : HashMap String DenseTensor :=
+  (({} : HashMap String DenseTensor).insert "Z" (tensorOf [3] [1, 2, 3])).insert "Y" (tensorOf [3] [10, 20, 30])
+
+run_cmd do
+  let r := ax "r" 1; let c := ax "c" 2
+  let sizes := (({} : HashMap UID Nat).insert 1 3).insert 2 3
+  let recur : Stmt := .assign "G" [.iterNext r, .iterNext c] (raRhs "G" [.axis r, .axis c])
+  let face0 : Stmt := .assign "G" [.free r, .iterAt c 0] (raRhs "Z" [.axis r])
+  let row0 : Stmt := .assign "G" [.iterAt r 0, .free c] (raRhs "Y" [.axis c])
+  let pt : Stmt := .assign "G" [.iterAt r 0, .iterAt c 1] (raRhs "Y" [.const 0])
+  -- REJECT: corner overlap (row 0 x column 0 share G[0, 0]).
+  match evalScan [] raFaceEnv sizes (.scan "G" [r, c] [face0, row0] [recur] false) with
+  | .error (.baseWritesOverlap "G" "G" 0 1) => pure ()
+  | .error e => throwError s!"shape 5 corner: wrong rejection: {e}"
+  | .ok outs => throwError (raAccepted outs)
+  -- REJECT: exact duplicate (clone, change: second base is a copy of the first).
+  match evalScan [] raFaceEnv sizes (.scan "G" [r, c] [face0, face0] [recur] false) with
+  | .error (.baseWritesOverlap "G" "G" 0 1) => pure ()
+  | .error e => throwError s!"shape 5 duplicate: wrong rejection: {e}"
+  | .ok outs => throwError (raAccepted outs)
+  -- ACCEPT neighbour: disjoint face + point (clone of the corner fixture, change: `row0` -> `pt`,
+  --   whose column pin 1 differs from the face's column pin 0).
+  match evalScan [] raFaceEnv sizes (.scan "G" [r, c] [face0, pt] [recur] false) with
+  | .error e => throwError s!"shape 5 accept: {e}"
+  | .ok outs => match outs.find? (·.1 == "G") with
+    | some (_, G) =>
+        unless DenseTensor.approxEq G (tensorOf [3, 3] [1, 10, 0, 2, 1, 10, 3, 2, 1]) do
+          throwError s!"shape 5 accept: wrong: {repr G.data}"
+    | none => throwError "shape 5 accept: no G"
 
 end LeanNCD.Eval

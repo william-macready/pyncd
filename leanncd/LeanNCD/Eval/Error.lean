@@ -293,6 +293,20 @@ inductive EvalError
       name in used-name order for `evalScheduled`, and the destination-then-read-sources order for
       the direct entries. -/
   | unsupportedDtype (name : String)
+  -- Scan-structure refusals (reference-alignment, scan group). Each is a scan program the checked
+  -- backend already rejects on principle (the `ScanCompileError` of the same name) and which the
+  -- reference used to evaluate to a silently wrong or order-dependent value. All are raised by
+  -- `evalScan`'s up-front `checkScanStructure` BEFORE any state is allocated; its documented check
+  -- order decides which one wins when a program has several faults. `scan` is the scan node's
+  -- name; every index is a 0-based position in the scan's `base` or `recur` list.
+  /-- A base write touches no scan boundary: none of its scan-axis slots is `.iterAt _ 0`, so the
+      seed it writes (e.g. a base pinned only at history index 1) is lost or order-dependent. -/
+  | baseWriteNotAtBoundary (scan state : String) (baseIdx : Nat)
+  /-- Two base writes of the SAME state may cover a common cell: no dimension separates them (by
+      distinct pinned literals, or equal positive strides with different offset residues). Exact
+      duplicates and a corner shared by a row-0 and a column-0 face are both refused; there is no
+      declared-order precedence. -/
+  | baseWritesOverlap (scan state : String) (firstBase secondBase : Nat)
 
 /-- The sole renderer for `EvalError` — reproduces every pre-4h message byte-for-byte.
     `.unaryDomain`'s `context` is deliberately NOT rendered (its `EvalContext` carries strictly
@@ -337,6 +351,12 @@ def EvalError.render : EvalError → String
   | .unsupportedDtype name =>
       s!"unsupported dtype: tensor {name} is declared f32, which the Float (binary64) reference \
 evaluator does not implement"
+  | .baseWriteNotAtBoundary scan state baseIdx =>
+      s!"evalScan {scan}: base statement {baseIdx} for state {state} writes no scan boundary \
+(no scan-axis slot is pinned at index 0)"
+  | .baseWritesOverlap scan state a b =>
+      s!"evalScan {scan}: base statements {a} and {b} for state {state} may write the same cell \
+(no dimension separates them)"
 
 instance : ToString EvalError := ⟨EvalError.render⟩
 
