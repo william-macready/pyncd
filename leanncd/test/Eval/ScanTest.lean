@@ -1038,4 +1038,73 @@ run_cmd do
   | .error e => throwError s!"shape 11 scan accept: {e}"
   | .ok _ => pure ()
 
+-- Shape 1 (top-level max/min scatter whose fill is not the aggregation identity). REJECT donor:
+--   ScatterTest "upsample"/"4g regression" scatter, here as an `evalPlain` `.scatter` statement
+--   `Out[2*i] := maxreduce(X[i])`, X = [-1,-2,-3]; the old reference filled the gaps with 0 and
+--   returned [-1,0,-2,0,-3,0], which is NOT the max identity. The checked path refuses every
+--   top-level max/min scatter (`scatterFillOrFail`: no finite fill is -inf).
+run_cmd do
+  let i := ax "i" 1
+  let X := tensorOf [3] [-1, -2, -3]
+  let opts : ScatterOpts := { fill := 0, reduce := .rejectCollisions }
+  let rhsAgg (agg : AggOp) : RHSExpr := { mkRhs "X" [.axis i] .identity with agg := agg }
+  let stmtAgg (agg : AggOp) : Stmt := .scatter "Out" [.affine (.scale 2 i)] (rhsAgg agg) opts
+  match mkPlain (stmtAgg .max) [("X", X)] [(1, 3)] with
+  | .error (.scatterFillNotIdentity "Out" .max) => pure ()
+  | .error e => throwError s!"shape 1 max: wrong rejection: {e}"
+  | .ok (_, Out) => throwError s!"shape 1 max: accepted: {repr Out.data}"
+  match mkPlain (stmtAgg .min) [("X", X)] [(1, 3)] with
+  | .error (.scatterFillNotIdentity "Out" .min) => pure ()
+  | .error e => throwError s!"shape 1 min: wrong rejection: {e}"
+  | .ok (_, Out) => throwError s!"shape 1 min: accepted: {repr Out.data}"
+  -- ACCEPT neighbour (clone, change: agg .max -> .sum): a sum scatter's identity IS the fill 0.
+  match mkPlain (stmtAgg .sum) [("X", X)] [(1, 3)] with
+  | .error e => throwError s!"shape 1 accept (sum): {e}"
+  | .ok (_, Out) =>
+      unless Out.data == #[-1, 0, -2, 0, -3, 0] do throwError s!"shape 1 accept (sum): {repr Out.data}"
+  -- ACCEPT: the one fill that denotes -inf (`Float.ofInt (-(2^1024))` overflows) agrees with the
+  --   identity, exactly as `scatterFillOrFail`'s binary64 arm does; the gaps then hold -inf.
+  let optsInf : ScatterOpts := { fill := -(2 ^ 1024), reduce := .rejectCollisions }
+  match mkPlain (.scatter "Out" [.affine (.scale 2 i)] (rhsAgg .max) optsInf) [("X", X)] [(1, 3)] with
+  | .error e => throwError s!"shape 1 accept (-inf fill): {e}"
+  | .ok (_, Out) =>
+      unless Out.get! [0] == -1 && Out.get! [1] == -1.0 / 0.0 && Out.get! [4] == -3 do
+        throwError s!"shape 1 accept (-inf fill): {repr Out.data}"
+
+-- Shape 1, the `+`-joined two-term max (the only case where a scatter max is meaningful: no gap
+--   cells when the terms cover every output cell). Donor: ScatterTest '4g regression' (A = [1,5,2],
+--   B = [10,-1,-1], `Out[i] := A[i] + B[i]` with agg .max, per-position max [10,5,2]). The checked
+--   rule refuses it all the same: the algebra comes from `agg`, and `scatterFillOrFail` never looks
+--   at coverage, so the reference refuses it too (stricter than meaningful, but checked-aligned).
+--   The same scan-LOCAL scatter stays accepted (below).
+run_cmd do
+  let i := ax "i" 1
+  let env := [("A", tensorOf [3] [1, 5, 2]), ("B", tensorOf [3] [10, -1, -1])]
+  let rhs : RHSExpr :=
+    { body := { terms := [{ factors := [.read "A" [.axis i]] }, { factors := [.read "B" [.axis i]] }] }
+      nonlin := .identity, agg := .max }
+  let opts : ScatterOpts := { fill := 0, reduce := .rejectCollisions }
+  match mkPlain (.scatter "Out" [.affine (.axis i)] rhs opts) env [(1, 3)] with
+  | .error (.scatterFillNotIdentity "Out" .max) => pure ()
+  | .error e => throwError s!"shape 1 joined: wrong rejection: {e}"
+  | .ok (_, Out) => throwError s!"shape 1 joined: accepted: {repr Out.data}"
+  -- ACCEPT: the SCAN-LOCAL max-reduce scatter (the checked path accepts it; the check is not in
+  --   `evalScatter` nor in the scan arm): slice `S[2*j, 0]` with agg .max over X = [3, 7].
+  let j := ax "j" 2; let l := ax "l" 9
+  let seed : HashMap UID Int := ({} : HashMap UID Int).insert 9 0
+  let senv : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X" (tensorOf [2] [3, 7])
+  let ssizes := (({} : HashMap UID Nat).insert 2 2).insert 9 3
+  let sstmt : Stmt := .scatter "S" [.affine (.scale 2 j), .iterAt l 0]
+    { mkRhs "X" [.axis j] .identity with agg := .max } opts
+  match evalStmtSliceSeeded [] senv ssizes seed sstmt with
+  | .error e => throwError s!"shape 1 scan-local max scatter: {e}"
+  | .ok (_, t) =>
+      unless t.data == #[3, 7] do throwError s!"shape 1 scan-local max scatter: {repr t.data}"
+  -- ACCEPT: a plain max over a CONTRACTION axis (not a scatter): `Y[q] := maxreduce(A[q, r])`.
+  let q := ax "q" 3; let r := ax "r" 4
+  match mkPlain (.assign "Y" [.free q] { mkRhs "A" [.axis q, .axis r] .identity with agg := .max })
+      [("A", tensorOf [2, 2] [1, 9, 4, 2])] [(3, 2), (4, 2)] with
+  | .error e => throwError s!"shape 1 accept (plain max): {e}"
+  | .ok (_, Y) => unless Y.data == #[9, 4] do throwError s!"shape 1 accept (plain max): {repr Y.data}"
+
 end LeanNCD.Eval

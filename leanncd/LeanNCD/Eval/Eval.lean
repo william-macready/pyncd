@@ -20,6 +20,24 @@ def scatterOutShape (sizes : HashMap UID Nat) (slots : List LHSSlot) : Except Ev
     | some n => pure n
     | none   => throw (.shape (.unsizedScatterOutput sl)))
 
+/-- A TOP-LEVEL scatter with a tropical aggregation must fill unwritten cells with that
+    aggregation's identity. Mirrors the checked backend's `scatterFillOrFail` (`Plan/Compile.lean`)
+    for `.max`/`.min`: the identity is `∓∞`, which no finite `Int` fill denotes, so in practice every
+    top-level `maxreduce`/`minreduce` scatter is refused (`Out[2*i] := maxreduce(X[i])` filled its
+    gaps with 0, giving `[-1,0,-2,0,-3,0]` for `X = [-1,-2,-3]`). Compared on the stored bits, like
+    the checked rule, so the one fill that overflows to the identity (`Float.ofInt (-(2^1024))`) is
+    admitted by both. A `.sum` scatter is not examined here (its non-zero-fill refusal is a
+    different shape). Deliberately NOT in `evalScatter` — a SCAN-LOCAL max-reduce scatter is legal
+    (no gap cells survive in scan state) and the direct `evalScatter` unit tests call it with `.max`.
+    It runs in `evalPlain`'s scatter arm, the only top-level entry. -/
+def checkScatterFill (stmtName : String) (agg : AggOp) (fill : Int) : Except EvalError Unit :=
+  match agg with
+  | .sum => pure ()
+  | .max | .min =>
+      let identity : Float := if agg == .max then -1.0 / 0.0 else 1.0 / 0.0
+      if Float.toBits (Float.ofInt fill) == Float.toBits identity then pure ()
+      else throw (.scatterFillNotIdentity stmtName agg)
+
 /-- Evaluate one `.plain` stmt → (name, tensor).
 
     The storage refusal (`rejectUnsupportedStorage`, `Contract.lean`) is installed at the ENTRY,
@@ -40,6 +58,7 @@ def evalPlain (decls : List Decl) (env : HashMap String DenseTensor) (sizes : Ha
       let rn ← resolveNonlin rhs.nonlin slots axisUids
       return (nm, applyNonlin rn axisUids pre)
   | .scatter nm slots rhs opts =>
+      checkScatterFill nm rhs.agg opts.fill
       let outShape ← scatterOutShape sizes slots
       evalScatter env sizes nm slots rhs opts outShape
   | .recurMorphism nm _ _ => .error (.unsupportedRecurMorphism .evalPlain nm)
