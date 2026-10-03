@@ -54,5 +54,19 @@
     "old": "      | none => scratch := (nm, ri) :: scratch",
     "new": "      | none => scratch := [(nm, ri)]",
     "targets": ["Eval.ScanTest"],
-    "expect": ["expected a rejection, but the scan was accepted", "[2, 3]"] }
+    "expect": ["expected a rejection, but the scan was accepted", "[2, 3]"] },
+  { "label": "RA-S8a (extent comparison disabled)",
+    "task": "scan-6-10",
+    "file": "LeanNCD/Eval/Scan.lean",
+    "old": "              if p != a then throw (.inconsistentStateExtent scanName st d p a)",
+    "new": "              if false && p != a then throw (.inconsistentStateExtent scanName st d p a)",
+    "targets": ["Eval.ScanTest"],
+    "expect": ["expected a rejection, but the scan was accepted", "[6, 3]"] },
+  { "label": "RA-S8b (only the first base is compared against the result)",
+    "task": "scan-6-10",
+    "file": "LeanNCD/Eval/Scan.lean",
+    "old": "    let placements := base.filter (·.lhsName == st) ++ result",
+    "new": "    let placements := (base.filter (·.lhsName == st)).take 1 ++ result",
+    "targets": ["Eval.ScanTest"],
+    "expect": ["expected a rejection, but the scan was accepted", "[4, 3]"] }
 ]

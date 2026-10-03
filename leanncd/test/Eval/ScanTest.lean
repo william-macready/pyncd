@@ -736,4 +736,53 @@ run_cmd do
         throwError s!"shape 7 accept: wrong: {repr S.data}"
     | none => throwError "shape 7 accept: no S"
 
+-- Shape 8. REJECT donor: the shape 6 scatter fixture, cloned to ONE stride-2 base scatter
+--   `S[2*j,0] := X[j]` (j = 3, so 6 wide) and an ordinary result `S[k,l+1] := S[k,l]` over a
+--   declared axis `k` (L = 3), change: `k` is 5 or 7 instead of 6. The old reference allocated the
+--   BASE shape and silently cropped the result: a [6,3] state, identical for k = 5, 6 and 7.
+run_cmd do
+  let j := ax "j" 1; let k := ax "k" 2; let l := ax "l" 9
+  let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X" (tensorOf [3] [1, 2, 3])
+  let opts : ScatterOpts := { fill := 0, reduce := .rejectCollisions }
+  let b : Stmt := .scatter "S" [.affine (.scale 2 j), .iterAt l 0] (raRhs "X" [.axis j]) opts
+  let r : Stmt := .assign "S" [.free k, .iterNext l] (raRhs "S" [.axis k, .axis l])
+  let run (kk : Nat) := evalScan [] env ((({} : HashMap UID Nat).insert 1 3).insert 2 kk |>.insert 9 3)
+    (.scan "S" [l] [b] [r] false)
+  match run 5 with
+  | .error (.inconsistentStateExtent "S" "S" 0 6 5) => pure ()
+  | .error e => throwError s!"shape 8 k=5: wrong rejection: {e}"
+  | .ok outs => throwError (raAccepted outs)
+  match run 7 with
+  | .error (.inconsistentStateExtent "S" "S" 0 6 7) => pure ()
+  | .error e => throwError s!"shape 8 k=7: wrong rejection: {e}"
+  | .ok outs => throwError (raAccepted outs)
+  -- ACCEPT neighbour: k = 6 = 2 * j (clone, change: k).
+  match run 6 with
+  | .error e => throwError s!"shape 8 accept: {e}"
+  | .ok outs => match outs.find? (·.1 == "S") with
+    | some (_, S) =>
+        unless DenseTensor.approxEq S (tensorOf [6, 3] [1, 1, 1, 0, 0, 0, 2, 2, 2, 0, 0, 0, 3, 3, 3, 0, 0, 0]) do
+          throwError s!"shape 8 accept: wrong: {repr S.data}"
+    | none => throwError "shape 8 accept: no S"
+  -- EVERY base counts, not just the first: a second base `S[2*m+1,0] := Y[m]` (residue-disjoint
+  --   from the first, so shapes 4/5 stay quiet) is 4 wide for m = 2, and the first base and the
+  --   result agree at 6. The old reference let the LAST base's shape win ([4,3], cropping the
+  --   first base's rows). Accept neighbour: m = 3 makes it 6 wide.
+  let m := ax "m" 3
+  let b2 : Stmt := .scatter "S" [.affine (.affine 1 [(2, m)]), .iterAt l 0] (raRhs "Y" [.axis m]) opts
+  let env2 := env.insert "Y" (tensorOf [3] [10, 20, 30])
+  let run2 (mm : Nat) := evalScan [] env2 (((({} : HashMap UID Nat).insert 1 3).insert 2 6).insert 3 mm |>.insert 9 3)
+    (.scan "S" [l] [b, b2] [r] false)
+  match run2 2 with
+  | .error (.inconsistentStateExtent "S" "S" 0 6 4) => pure ()
+  | .error e => throwError s!"shape 8 second base: wrong rejection: {e}"
+  | .ok outs => throwError (raAccepted outs)
+  match run2 3 with
+  | .error e => throwError s!"shape 8 second base accept: {e}"
+  | .ok outs => match outs.find? (·.1 == "S") with
+    | some (_, S) =>
+        unless DenseTensor.approxEq S (tensorOf [6, 3] [1, 1, 1, 10, 10, 10, 2, 2, 2, 20, 20, 20, 3, 3, 3, 30, 30, 30]) do
+          throwError s!"shape 8 second base accept: wrong: {repr S.data}"
+    | none => throwError "shape 8 second base accept: no S"
+
 end LeanNCD.Eval

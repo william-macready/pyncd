@@ -159,6 +159,32 @@ private def checkRecurProducers (scanName : String) (stateNames : List String)
       | some first => throw (.duplicateScratchProducer scanName nm first ri)
       | none => scratch := (nm, ri) :: scratch
 
+/-- Shape 8 (and, once added, 9): per-state geometry. Each state's placements are its base
+    statements in `base` order, then its (first) result statement; every placement's declared
+    extents (`scanStateShape`: history extent on scan-axis slots, the shared LHS-slot extent
+    elsewhere, e.g. `2*n` for a stride-2 write) must equal the FIRST placement's, dimension by
+    dimension. The old reference allocated each base's shape in turn, so a later base overwrote an
+    earlier one's zeros and a mismatched extent silently cropped writes. This needs the inferred
+    `sizes`, which `evalScan` already holds when it calls the check, so it is still raised before any
+    state is allocated. Placements of different rank are skipped (the checked backend's
+    `inconsistentStateRank`, not in scope). -/
+private def checkStatePlacements (scanName : String) (sizes : HashMap UID Nat)
+    (stateNames : List String) (base recur : List Stmt) : Except EvalError Unit := do
+  for st in stateNames do
+    let result := (recur.filter (fun s => s.lhsName == st && match s with
+      | .recurMorphism .. => false
+      | _ => true)).take 1
+    let placements := base.filter (·.lhsName == st) ++ result
+    let mut expected : Option (List Nat) := none
+    for s in placements do
+      let shape ← scanStateShape sizes s.slots
+      match expected with
+      | none => expected := some shape
+      | some prev =>
+          if prev.length == shape.length then
+            for ((p, a), d) in (prev.zip shape).zipIdx do
+              if p != a then throw (.inconsistentStateExtent scanName st d p a)
+
 /-- Static structural validation of a scan, run by `evalScan` BEFORE any state is allocated, so
     every rejection precedes evaluation. A scan with several faults reports the FIRST of these, in
     this order (it mirrors the checked backend's phase order in `Plan/Compile.lean`: recurrence
@@ -166,17 +192,20 @@ private def checkRecurProducers (scanName : String) (stateNames : List String)
     0. a non-assign base statement (`baseMustBeAssign`, hoisted here so it keeps precedence);
     1. `duplicateStateResult` / `duplicateScratchProducer`, over the `recur` list in order (the
        repeat at the lowest later index wins, whichever kind it is);
-    2. `baseWriteNotAtBoundary`, in `base` order;
-    3. `baseWritesOverlap`, states in first-base order, then the first pair `(a, b)`, `a < b`, in
+    2. `inconsistentStateExtent`, states in first-base order, each placement (bases, then the
+       result) against the state's first placement, lowest dimension first;
+    3. `baseWriteNotAtBoundary`, in `base` order;
+    4. `baseWritesOverlap`, states in first-base order, then the first pair `(a, b)`, `a < b`, in
        `base` order. -/
-def checkScanStructure (scanName : String) (axes : List AxisSpec) (stateNames : List String)
-    (base recur : List Stmt) : Except EvalError Unit := do
+def checkScanStructure (scanName : String) (axes : List AxisSpec) (sizes : HashMap UID Nat)
+    (stateNames : List String) (base recur : List Stmt) : Except EvalError Unit := do
   let axUids := axes.map (·.uid)
   for s in base do
     match s with
     | .recurMorphism .. => throw (.invalidScanNode .baseMustBeAssign)
     | _ => pure ()
   checkRecurProducers scanName stateNames recur
+  checkStatePlacements scanName sizes stateNames base recur
   for (s, bi) in base.zipIdx do
     unless baseTouchesBoundary axUids s.slots do
       throw (.baseWriteNotAtBoundary scanName s.lhsName bi)
@@ -228,7 +257,7 @@ def evalScan (decls : List Decl) (env : HashMap String DenseTensor) (sizes : Has
           match s with
           | .scatter _ _ _ _ => throw (.invalidScanNode .onlyAssignInSlice)
           | _ => pure ()
-      checkScanStructure scanName axes stateNames base recur
+      checkScanStructure scanName axes sizes stateNames base recur
       -- 1. allocate each state tensor (zeros at full shape) from its base slots.
       let mut work := env
       for s in base do

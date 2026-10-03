@@ -318,6 +318,11 @@ inductive EvalError
       Top-level duplicate writes outside a scan are unaffected. `firstRecur`/`secondRecur` are
       0-based positions in the scan's `recur` list. -/
   | duplicateScratchProducer (scan name : String) (firstRecur secondRecur : Nat)
+  /-- A state's placements declare different extents: dimension `dim` is `expected` wide in the
+      state's first placement (its first base write) but `actual` wide in a later base write or in
+      the recurrence result, e.g. a stride-2 base `S[2*j,0]` (6 wide for `j = 3`) against a result
+      `S[k,l+1]` with `k = 5` or `7`. The old reference silently cropped or zero-extended. -/
+  | inconsistentStateExtent (scan state : String) (dim expected actual : Nat)
 
 /-- The sole renderer for `EvalError` — reproduces every pre-4h message byte-for-byte.
     `.unaryDomain`'s `context` is deliberately NOT rendered (its `EvalContext` carries strictly
@@ -372,6 +377,9 @@ evaluator does not implement"
       s!"evalScan {scan}: recurrence statements {a} and {b} both produce the result of state {state}"
   | .duplicateScratchProducer scan name a b =>
       s!"evalScan {scan}: recurrence statements {a} and {b} both produce the scratch {name}"
+  | .inconsistentStateExtent scan state dim expected actual =>
+      s!"evalScan {scan}: state {state} dimension {dim} is {expected} wide in its first placement \
+but {actual} wide in a later one"
 
 instance : ToString EvalError := ⟨EvalError.render⟩
 
