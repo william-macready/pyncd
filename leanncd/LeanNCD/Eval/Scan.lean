@@ -227,7 +227,14 @@ private def checkBaseReads (scanName : String) (stateNames : List String)
     3. `stateReadInBaseBlock`, in `base` order;
     4. `baseWriteNotAtBoundary`, in `base` order;
     5. `baseWritesOverlap`, states in first-base order, then the first pair `(a, b)`, `a < b`, in
-       `base` order. -/
+       `base` order.
+
+    Two orderings differ from the checked backend and are deliberately left so. The reduction-
+    marker checks (`checkNormMarkers`) run at statement evaluation, AFTER this structure check: a
+    scan with both a marker fault and a structure fault reports the structure constructor first,
+    while the checked backend reports the marker fault first. And on a top-level max/min scatter
+    with an unsized destination the reference reports the fill error (`scatterFillNotIdentity`)
+    before the shape error, while the checked path reports the shape error first. -/
 def checkScanStructure (scanName : String) (axes : List AxisSpec) (sizes : HashMap UID Nat)
     (stateNames : List String) (base recur : List Stmt) : Except EvalError Unit := do
   let axUids := axes.map (·.uid)

@@ -1,9 +1,9 @@
 # Reference-alignment prototype notes
 
-## Scan group (dispatch 1 of 2) -- PARTIAL: shapes 4 and 5 done; shapes 6-10 NOT started
+## Scan group, dispatch 1 -- HISTORY (shapes 4 and 5); the "Final state" section at the end supersedes any status below
 
-Status: stopped at the turn budget (about 60 turns; the full `lake build` alone cost ~25 minutes of wall
-clock and several turns of waiting). Commit 1 landed; shapes 6, 7, 8, 9, 10 remain.
+Status at the time: stopped at the turn budget (about 60 turns; the full `lake build` alone cost ~25 minutes of
+wall clock and several turns of waiting). Commit 1 landed; shapes 6-10 were built by later dispatches.
 
 ### Environment trap (cost ~5 turns)
 `lake` run from the worktree root (no `lean-toolchain`) resolves the elan DEFAULT toolchain (v4.34.1), not

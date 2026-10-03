@@ -428,7 +428,7 @@ statement observes an earlier sibling's just-written value, so permuting two sib
 changes the result. F0 also pinned a multi-base-write collision fixture showing that the legacy
 evaluator silently applied last-write-wins where the checked worker is required to reject
 (**closed by the reference-alignment slice: the reference now rejects overlapping base writes**; the
-Gauss-Seidel defect remains). Both defects were recorded deliberately; the checked scan worker that would satisfy this
+Gauss-Seidel defect remains). These defects were recorded deliberately; the checked scan worker that would satisfy this
 subsection is the F3 target and has no code. A scan backend must therefore not be validated against
 the legacy evaluator as an oracle — the two disagree by design until F3 lands.
 

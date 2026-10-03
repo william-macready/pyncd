@@ -352,9 +352,11 @@ def capabilityPreflight (sched : ScheduledProgram) : Except CapabilityError Unit
   for s in sched.stmts do checkScanStmt s
   -- Post-pass over the statements: two scatter-shaped forms silently diverge from the reference and
   -- are refused here (see the two constructor docstrings). A predicate/bool scatter DESTINATION is a
-  -- third algebra `evalScatter` (`Eval/Scatter.lean`) can't compute — it picks its algebra from
-  -- `rhs.agg` alone and never sees `decls` — so it is rejected when the destination is
-  -- `.predicate`-declared (a simple linear scan over `sched.decls`, which carries few predicates).
+  -- third algebra that `evalScatter` (`Eval/Scatter.lean`) COULD not compute — it used to pick its
+  -- algebra from `rhs.agg` alone and never saw `decls`; since reference-alignment it is dtype-aware,
+  -- and the rejection is kept until the checked Boolean scatter is verified against it — so it is
+  -- rejected when the destination is `.predicate`-declared (a simple linear scan over `sched.decls`,
+  -- which carries few predicates).
   -- A scatter-shaped `.assign` (LHS `slotsBecomeScatter`) is an UNLOWERED scatter — `lowerArith`
   -- turns every such assign into `Stmt.scatter` on the source path, so this fires only on a
   -- hand-built schedule — and is refused regardless of dtype, since neither backend agrees on an

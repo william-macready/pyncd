@@ -858,13 +858,18 @@ run_cmd do
       | _, _ => throwError "shape 10 accept: missing A or B"
 
 -- CHECK ORDER (multi-fault). Each program has TWO faults; the first listed check in
---   `checkScanStructure`'s documented order must win, so flipping any adjacent pair changes the
---   constructor. Scalar-over-`j` state `S` (j = 2, k = 5, L = 3), donor: shape 6/7/8/9/10 fixtures.
+--   `checkScanStructure`'s documented order must win. Scalar-over-`j` state `S` (j = 2, k = 5,
+--   L = 3), donor: shape 6/7/8/9/10 fixtures. The scan is named "scn" and its state "S", so a
+--   payload that swapped the two strings would fail. Pairs pinned (and ONLY these):
 --   (a) shape 6 over 4: two results AND a base pinned at index 1 only.
 --   (b) shape 6 over 8: two results, the first of which is 5 wide against a 2-wide base.
 --   (c) shape 7 over 6, and 6 over 7: whichever repeat appears first in `recur` order wins.
 --   (d) shape 9 over 10: a zero-scale base that also reads the state.
 --   (e) shape 10 over 4: a base reading the state AND pinned at index 1 only.
+--   (f) shape 4 over 5: two bases both pinned at index 1 (so also overlapping each other).
+--   (g) shape 8 over 10: a base reading the state whose extent (2) differs from the result's (5).
+--   (h) shape 9 over 8: a zero-scale base against a result of a different extent.
+--   (i) `baseMustBeAssign` over shape 6: a non-assign base AND a duplicated result.
 run_cmd do
   let j := ax "j" 1; let k := ax "k" 2; let l := ax "l" 9
   let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X0" (tensorOf [2] [1, 10])
@@ -875,32 +880,70 @@ run_cmd do
   let step : Stmt := .assign "S" [.free j, .iterNext l] (raRhs "S" [.axis j, .axis l])
   let stepK : Stmt := .assign "S" [.free k, .iterNext l] (raRhs "S" [.axis k, .axis l])
   let tS : Stmt := .assign "T" [.free j] (raRhs "S" [.axis j, .axis l])
-  let scanOf (b r : List Stmt) := evalScan [] env sizes (.scan "S" [l] b r false)
+  let scanOf (b r : List Stmt) := evalScan [] env sizes (.scan "scn" [l] b r false)
   match scanOf [b1] [step, step] with
-  | .error (.duplicateStateResult "S" "S" 0 1) => pure ()
+  | .error (.duplicateStateResult "scn" "S" 0 1) => pure ()
   | .error e => throwError s!"order (a): wrong rejection: {e}"
   | .ok outs => throwError (raAccepted outs)
   match scanOf [b0] [stepK, stepK] with
-  | .error (.duplicateStateResult "S" "S" 0 1) => pure ()
+  | .error (.duplicateStateResult "scn" "S" 0 1) => pure ()
   | .error e => throwError s!"order (b): wrong rejection: {e}"
   | .ok outs => throwError (raAccepted outs)
   match scanOf [b0] [tS, tS, step, step] with
-  | .error (.duplicateScratchProducer "S" "T" 0 1) => pure ()
+  | .error (.duplicateScratchProducer "scn" "T" 0 1) => pure ()
   | .error e => throwError s!"order (c) scratch first: wrong rejection: {e}"
   | .ok outs => throwError (raAccepted outs)
   match scanOf [b0] [step, step, tS, tS] with
-  | .error (.duplicateStateResult "S" "S" 0 1) => pure ()
+  | .error (.duplicateStateResult "scn" "S" 0 1) => pure ()
   | .error e => throwError s!"order (c) state first: wrong rejection: {e}"
   | .ok outs => throwError (raAccepted outs)
   let zeroReads : Stmt := .scatter "S" [.affine (.scale 0 j), .iterAt l 0] (raRhs "S" [.axis j, .const 0]) opts
   match scanOf [zeroReads] [step] with
-  | .error (.scanWriteRowNotAdmitted "S" "S" true 0 0) => pure ()
+  | .error (.scanWriteRowNotAdmitted "scn" "S" true 0 0) => pure ()
   | .error e => throwError s!"order (d): wrong rejection: {e}"
   | .ok outs => throwError (raAccepted outs)
   let readsAt1 : Stmt := .assign "S" [.free j, .iterAt l 1] (raRhs "S" [.axis j, .const 0])
   match scanOf [readsAt1] [step] with
-  | .error (.stateReadInBaseBlock "S" 0 "S") => pure ()
+  | .error (.stateReadInBaseBlock "scn" 0 "S") => pure ()
   | .error e => throwError s!"order (e): wrong rejection: {e}"
+  | .ok outs => throwError (raAccepted outs)
+  match scanOf [b1, b1] [step] with
+  | .error (.baseWriteNotAtBoundary "scn" "S" 0) => pure ()
+  | .error e => throwError s!"order (f): wrong rejection: {e}"
+  | .ok outs => throwError (raAccepted outs)
+  let readsAt0 : Stmt := .assign "S" [.free j, .iterAt l 0] (raRhs "S" [.axis j, .const 0])
+  match scanOf [readsAt0] [stepK] with
+  | .error (.inconsistentStateExtent "scn" "S" 0 2 5) => pure ()
+  | .error e => throwError s!"order (g): wrong rejection: {e}"
+  | .ok outs => throwError (raAccepted outs)
+  let zeroBase : Stmt := .assign "S" [.affine (.scale 0 j), .iterAt l 0] (raRhs "X0" [.axis j])
+  match scanOf [zeroBase] [stepK] with
+  | .error (.scanWriteRowNotAdmitted "scn" "S" true 0 0) => pure ()
+  | .error e => throwError s!"order (h): wrong rejection: {e}"
+  | .ok outs => throwError (raAccepted outs)
+  match scanOf [.recurMorphism "S" l default] [step, step] with
+  | .error (.invalidScanNode .baseMustBeAssign) => pure ()
+  | .error e => throwError s!"order (i): wrong rejection: {e}"
+  | .ok outs => throwError (raAccepted outs)
+
+-- Strided overlap (shape 5, REJECT). Donor: the S-B 3 even/odd interleave (`S[2*j,0]`/`S[2*j+1,0]`,
+--   residue-disjoint, ACCEPTED above); change: the second base is `S[2*j+2,0]`, the same residue at
+--   the same scale, so the two bases genuinely overwrite each other's rows. The scan is named "scn"
+--   and the state "S": the payload is `(scan, state, first base, second base)`.
+run_cmd do
+  let j := ax "j" 1; let o := ax "o" 2; let m := ax "m" 3; let l := ax "l" 9
+  let env : HashMap String DenseTensor :=
+    (({} : HashMap String DenseTensor).insert "E" (tensorOf [3] [1, 2, 3])).insert "F" (tensorOf [2] [10, 20])
+  -- `S[2*j]` (j = 3) and `S[2*m+2]` (m = 2) are both 6 wide, so only the overlap check can fire.
+  let sizes := (((({} : HashMap UID Nat).insert 1 3).insert 2 6).insert 3 2).insert 9 2
+  let opts : ScatterOpts := { fill := 0, reduce := .rejectCollisions }
+  let evenBase : Stmt := .scatter "S" [.affine (.scale 2 j), .iterAt l 0] (raRhs "E" [.axis j]) opts
+  let shifted : Stmt :=
+    .scatter "S" [.affine (.affine 2 [(2, m)]), .iterAt l 0] (raRhs "F" [.axis m]) opts
+  let recur : Stmt := .assign "S" [.free o, .iterNext l] (raRhs "S" [.axis o, .axis l])
+  match evalScan [] env sizes (.scan "scn" [l] [evenBase, shifted] [recur] false) with
+  | .error (.baseWritesOverlap "scn" "S" 0 1) => pure ()
+  | .error e => throwError s!"strided overlap: wrong rejection: {e}"
   | .ok outs => throwError (raAccepted outs)
 
 -- Shapes 3 + 11 (reduction-marker agreement). Helper: one statement through `evalPlain`.
