@@ -702,4 +702,38 @@ run_cmd do
           throwError s!"shape 6 scatter accept: wrong: {repr S.data}"
     | none => throwError "shape 6 scatter accept: no S"
 
+-- Shape 7. REJECT donor: the shape 6 fixture, cloned to a 2-wide state `S[j,l]` (j = 2, L = 3,
+--   base `S[j,0] := X0[j]`, X0 = [1, 10]), change: the step block is `T := S[l]; U := T; T := X0;
+--   S[l+1] := U + T`. `T` is produced at recurrence positions 0 and 2 with a READ of it between,
+--   so only a count over the whole block (not adjacent pairs) sees it. The old reference ran `T`
+--   as a mutable variable and answered [1,2,3, 10,20,30] (U saw the first T, the sum the second).
+run_cmd do
+  let j := ax "j" 1; let l := ax "l" 9
+  let env : HashMap String DenseTensor :=
+    ({} : HashMap String DenseTensor).insert "X0" (tensorOf [2] [1, 10])
+  let sizes := (({} : HashMap UID Nat).insert 1 2).insert 9 3
+  let b : Stmt := .assign "S" [.free j, .iterAt l 0] (raRhs "X0" [.axis j])
+  let t0 : Stmt := .assign "T" [.free j] (raRhs "S" [.axis j, .axis l])
+  let u1 : Stmt := .assign "U" [.free j] (raRhs "T" [.axis j])
+  let t2 : Stmt := .assign "T" [.free j] (raRhs "X0" [.axis j])
+  let v2 : Stmt := .assign "V" [.free j] (raRhs "X0" [.axis j])
+  let sum (x y : String) : Stmt := .assign "S" [.free j, .iterNext l]
+    { body := { terms := [{ factors := [.read x [.axis j]] }, { factors := [.read y [.axis j]] }] }, nonlin := .identity }
+  match evalScan [] env sizes (.scan "S" [l] [b] [t0, u1, t2, sum "U" "T"] false) with
+  | .error (.duplicateScratchProducer "S" "T" 0 2) => pure ()
+  | .error e => throwError s!"shape 7: wrong rejection: {e}"
+  | .ok outs => throwError (raAccepted outs)
+  -- ADJACENT duplicate (clone, change: `T := S[l]; T := X0; S[l+1] := T + T`, no read between).
+  match evalScan [] env sizes (.scan "S" [l] [b] [t0, t2, sum "T" "T"] false) with
+  | .error (.duplicateScratchProducer "S" "T" 0 1) => pure ()
+  | .error e => throwError s!"shape 7 adjacent: wrong rejection: {e}"
+  | .ok outs => throwError (raAccepted outs)
+  -- ACCEPT neighbour: the second producer renamed (clone, change: `t2` -> `v2`, sum `U + V`).
+  match evalScan [] env sizes (.scan "S" [l] [b] [t0, u1, v2, sum "U" "V"] false) with
+  | .error e => throwError s!"shape 7 accept: {e}"
+  | .ok outs => match outs.find? (·.1 == "S") with
+    | some (_, S) => unless DenseTensor.approxEq S (tensorOf [2, 3] [1, 2, 3, 10, 20, 30]) do
+        throwError s!"shape 7 accept: wrong: {repr S.data}"
+    | none => throwError "shape 7 accept: no S"
+
 end LeanNCD.Eval

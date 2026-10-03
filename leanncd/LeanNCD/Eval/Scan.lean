@@ -140,25 +140,32 @@ private def baseTouchesBoundary (axUids : List UID) (slots : List LHSSlot) : Boo
       | some (.iterAt _ n) => n == 0
       | _ => false)
 
-/-- Shape 6, and (once added) 7: producers of one scan's recurrence block, counted over the WHOLE
-    `recur` list in order, the first repeat winning. A recurrence statement whose destination is a
-    state (an assign OR a scatter) is that state's result and may appear once. -/
+/-- Shapes 6 and 7: producers of one scan's recurrence block, counted over the WHOLE `recur` list
+    in order (reads in between do not reset the count), the first repeat winning. A statement whose
+    destination is a state (an assign OR a scatter) is that state's result; any other destination is
+    a per-step scratch. Each may be produced once. -/
 private def checkRecurProducers (scanName : String) (stateNames : List String)
     (recur : List Stmt) : Except EvalError Unit := do
   let mut results : List (String × Nat) := []
+  let mut scratch : List (String × Nat) := []
   for (s, ri) in recur.zipIdx do
     let nm := s.lhsName
     if stateNames.contains nm then
       match results.lookup nm with
       | some first => throw (.duplicateStateResult scanName nm first ri)
       | none => results := (nm, ri) :: results
+    else
+      match scratch.lookup nm with
+      | some first => throw (.duplicateScratchProducer scanName nm first ri)
+      | none => scratch := (nm, ri) :: scratch
 
 /-- Static structural validation of a scan, run by `evalScan` BEFORE any state is allocated, so
     every rejection precedes evaluation. A scan with several faults reports the FIRST of these, in
     this order (it mirrors the checked backend's phase order in `Plan/Compile.lean`: recurrence
     classification, then per-state geometry, then base-block reads, then base-write placement):
     0. a non-assign base statement (`baseMustBeAssign`, hoisted here so it keeps precedence);
-    1. `duplicateStateResult`, over the `recur` list in order;
+    1. `duplicateStateResult` / `duplicateScratchProducer`, over the `recur` list in order (the
+       repeat at the lowest later index wins, whichever kind it is);
     2. `baseWriteNotAtBoundary`, in `base` order;
     3. `baseWritesOverlap`, states in first-base order, then the first pair `(a, b)`, `a < b`, in
        `base` order. -/
