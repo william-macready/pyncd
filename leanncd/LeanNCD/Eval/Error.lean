@@ -293,6 +293,64 @@ inductive EvalError
       name in used-name order for `evalScheduled`, and the destination-then-read-sources order for
       the direct entries. -/
   | unsupportedDtype (name : String)
+  -- Scan-structure refusals (reference-alignment, scan group). Each is a scan program the checked
+  -- backend already rejects on principle (the `ScanCompileError` of the same name) and which the
+  -- reference used to evaluate to a silently wrong or order-dependent value. All are raised by
+  -- `evalScan`'s up-front `checkScanStructure` BEFORE any state is allocated; its documented check
+  -- order decides which one wins when a program has several faults. `scan` is the scan node's
+  -- name; every index is a 0-based position in the scan's `base` or `recur` list.
+  /-- A base write touches no scan boundary: none of its scan-axis slots is `.iterAt _ 0`, so the
+      seed it writes (e.g. a base pinned only at history index 1) is lost or order-dependent. -/
+  | baseWriteNotAtBoundary (scan state : String) (baseIdx : Nat)
+  /-- Two base writes of the SAME state may cover a common cell: no dimension separates them (by
+      distinct pinned literals, or equal positive strides with different offset residues). Exact
+      duplicates and a corner shared by a row-0 and a column-0 face are both refused; there is no
+      declared-order precedence. -/
+  | baseWritesOverlap (scan state : String) (firstBase secondBase : Nat)
+  /-- Two recurrence statements both produce the result of the SAME state, whether they are
+      assigns or scatters (two parity-split scatters `S[2*j,l+1]`, `S[2*j+1,l+1]` count). The old
+      reference let the second silently win. `firstRecur`/`secondRecur` are 0-based positions in
+      the scan's `recur` list. -/
+  | duplicateStateResult (scan state : String) (firstRecur secondRecur : Nat)
+  /-- Two recurrence statements of one scan produce the same per-step scratch `name`, counted over
+      the WHOLE block including statements that read it in between (`T := S; U := T; T := X; ...`):
+      the old reference ran `T` as a mutable variable, whose value depended on statement order.
+      Top-level duplicate writes outside a scan are unaffected. `firstRecur`/`secondRecur` are
+      0-based positions in the scan's `recur` list. -/
+  | duplicateScratchProducer (scan name : String) (firstRecur secondRecur : Nat)
+  /-- A state's placements declare different extents: dimension `dim` is `expected` wide in the
+      state's first placement (its first base write) but `actual` wide in a later base write or in
+      the recurrence result, e.g. a stride-2 base `S[2*j,0]` (6 wide for `j = 3`) against a result
+      `S[k,l+1]` with `k = 5` or `7`. The old reference silently cropped or zero-extended. -/
+  | inconsistentStateExtent (scan state : String) (dim expected actual : Nat)
+  /-- A state placement carries an `.affine` slot that names no source axis, e.g. the zero-scale
+      write `S[0*j,0]` (normalized coefficients empty): it addresses one fixed row, which the old
+      reference turned into an empty `[0, ..]` state. `stmtIndex` is the position in the scan's
+      `base` list when `isBase`, else in `recur`; `dim` is the slot's 0-based LHS position. Only
+      this row shape is refused here (the checked backend's other non-admitted rows are not). -/
+  | scanWriteRowNotAdmitted (scan name : String) (isBase : Bool) (stmtIndex dim : Nat)
+  /-- Base statement `baseIdx` reads a scan state (its own or another's). Base writes run in
+      declaration order over a shared environment, so the value read depended on whether the
+      reading base came before or after the state's own base. `state` is the first state name read,
+      in right-hand-side order. -/
+  | stateReadInBaseBlock (scan : String) (baseIdx : Nat) (state : String)
+  -- Reduction-marker refusals (reference-alignment, marker group), raised by `checkNormMarkers`
+  -- (`Nonlin.lean`) at the entry of every statement evaluator. Positions are 0-based indices into
+  -- the statement's WHOLE LHS slot list (iteration slots included), exactly as the checked
+  -- backend's `NonlinCompileError` payloads count them.
+  /-- A `.` reduction marker on a statement whose nonlinearity is not axiswise (identity or
+      pointwise): the marker has no reduction to belong to, and the old reference ignored it.
+      `pos` is the first marked slot. Includes scatters (`Out[2*i, j.] := X[i, j]`). -/
+  | unmarkedReductionAxis (stmt : String) (pos : Nat)
+  /-- An axiswise statement marks two or more reduction axes. The old reference normalised along
+      the FIRST silently. `firstPos`/`secondPos` are the first two marked slots. -/
+  | multipleMarkedReductionAxes (stmt : String) (firstPos secondPos : Nat)
+  /-- A top-level scatter aggregates with `max`/`min` but fills unwritten cells with a finite value,
+      which is not that aggregation's identity (`∓∞`). The old reference filled with 0, so
+      `Out[2*i] := maxreduce(X[i])` returned `[-1,0,-2,0,-3,0]` for `X = [-1,-2,-3]`. Raised by
+      `checkScatterFill` (`Eval.lean`) in `evalPlain`'s scatter arm only; scan-local scatters are
+      exempt. -/
+  | scatterFillNotIdentity (stmt : String) (agg : AggOp)
 
 /-- The sole renderer for `EvalError` — reproduces every pre-4h message byte-for-byte.
     `.unaryDomain`'s `context` is deliberately NOT rendered (its `EvalContext` carries strictly
@@ -337,6 +395,32 @@ def EvalError.render : EvalError → String
   | .unsupportedDtype name =>
       s!"unsupported dtype: tensor {name} is declared f32, which the Float (binary64) reference \
 evaluator does not implement"
+  | .baseWriteNotAtBoundary scan state baseIdx =>
+      s!"evalScan {scan}: base statement {baseIdx} for state {state} writes no scan boundary \
+(no scan-axis slot is pinned at index 0)"
+  | .baseWritesOverlap scan state a b =>
+      s!"evalScan {scan}: base statements {a} and {b} for state {state} may write the same cell \
+(no dimension separates them)"
+  | .duplicateStateResult scan state a b =>
+      s!"evalScan {scan}: recurrence statements {a} and {b} both produce the result of state {state}"
+  | .duplicateScratchProducer scan name a b =>
+      s!"evalScan {scan}: recurrence statements {a} and {b} both produce the scratch {name}"
+  | .inconsistentStateExtent scan state dim expected actual =>
+      s!"evalScan {scan}: state {state} dimension {dim} is {expected} wide in its first placement \
+but {actual} wide in a later one"
+  | .scanWriteRowNotAdmitted scan name isBase idx dim =>
+      s!"evalScan {scan}: {if isBase then "base" else "recurrence"} statement {idx} for {name} has an \
+affine slot at dimension {dim} that names no source axis"
+  | .stateReadInBaseBlock scan baseIdx state =>
+      s!"evalScan {scan}: base statement {baseIdx} reads scan state {state}"
+  | .unmarkedReductionAxis stmt pos =>
+      s!"{stmt}: LHS slot {pos} is marked (·) as a reduction axis but the statement is not axiswise"
+  | .multipleMarkedReductionAxes stmt a b =>
+      s!"{stmt}: LHS slots {a} and {b} are both marked (·) as reduction axes; an axiswise \
+statement marks exactly one"
+  | .scatterFillNotIdentity stmt agg =>
+      s!"evalPlain: scatter {stmt} aggregates with {if agg == .max then "max" else "min"} but fills \
+unwritten cells with a finite value, not the {if agg == .max then "-inf" else "+inf"} identity"
 
 instance : ToString EvalError := ⟨EvalError.render⟩
 

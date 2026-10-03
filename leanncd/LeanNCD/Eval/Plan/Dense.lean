@@ -366,7 +366,9 @@ from source syntax; that is Task 5.
     exact incoherence `PlanError.scatterFillNotIdentity` exists to reject. `ScatterDenseTest`'s
     tropical-`fill` fixture pins the checked-layer value and records the divergence; a differential
     corpus must therefore not treat a tropical scatter as a parity-checked entry without special
-    casing the unwritten cells.
+    casing the unwritten cells. (Since reference-alignment the reference REFUSES a top-level
+    max/min scatter from source, as `scatterFillNotIdentity`, so the divergence is no longer
+    observable through `TLProgram.eval`; it remains for direct `evalScatter` calls and raw plans.)
 
     `writtenBy` maps a destination flat index to the FIRST source coordinate that wrote there, and
     exists only to name both halves of a conflict in `scatterCollision` — the reference's own reason

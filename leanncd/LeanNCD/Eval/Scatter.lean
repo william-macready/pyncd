@@ -8,7 +8,8 @@ open Std
 def scatterSourceAxes (slots : List LHSSlot) (rhs : RHSExpr) : List UID :=
   (slots.flatMap (fun sl => idxAxisUIDs sl.outIdx) ++ readAxisUIDs rhs).eraseDups
 
-/-- Evaluate a scatter stmt. `outShape` is the output dims (caller supplies, from the decl/inference).
+/-- Evaluate a scatter stmt. `decls` selects the algebra for a `predicate` destination (Boolean
+    `(∧, ∃)`, via `combineFor`); a real destination is unchanged. `outShape` is the output dims (caller supplies, from the decl/inference).
     Each source coord → rhs value (per the 4b `Combine` selected by `rhs.agg` — `.sum`/`.max`/
     `.min` combine terms, not a hardcoded real sum) → written to the affine output coord. Output
     is initialised to `opts.fill`; see `opts.reduce`'s own doc comment for the collision policy.
@@ -17,7 +18,7 @@ def scatterSourceAxes (slots : List LHSSlot) (rhs : RHSExpr) : List UID :=
     `.overwrite` keeps the last write; `.sum`/`.max`/`.min` fold every write (including the first)
     starting from `opts.fill`. Non-colliding coordinates behave identically under every policy.
     Out-of-range output coordinates are skipped. -/
-def evalScatter (env : HashMap String DenseTensor) (sizes : HashMap UID Nat)
+def evalScatter (decls : List Decl) (env : HashMap String DenseTensor) (sizes : HashMap UID Nat)
     (nm : String) (slots : List LHSSlot) (rhs : RHSExpr) (opts : ScatterOpts) (outShape : List Nat) :
     Except EvalError (String × DenseTensor) := do
   -- Defensive check (belt-and-suspenders — Spike-3 Stage-0 policy, SHORT-TERM not permanent):
@@ -40,10 +41,12 @@ def evalScatter (env : HashMap String DenseTensor) (sizes : HashMap UID Nat)
   -- RHS aggregation: select the Combine record from rhs.agg (4b), not a hardcoded real
   -- sum-of-products — a maxreduce/minreduce scatter RHS must use tropical max/min, not silently
   -- compute a real sum instead (Wave-C corroborating example, fixed here).
-  let c : Combine := match rhs.agg with
-    | .max => Combine.max
-    | .min => Combine.min
-    | .sum => Combine.real
+  -- Dtype-aware, like every other worker: `combineFor` selects the Boolean `(∧, ∃)` algebra for a
+  -- `predicate`-declared destination, so a Boolean scatter's values stay {0,1}.
+  let c : Combine := combineFor decls nm rhs.agg
+  -- The `.sum` COLLISION policy folds writes with `+`; into a predicate that would leave {0,1}, so
+  -- there it folds with the Boolean `∃` (max) instead.
+  let boolDest := isPredicateDest decls nm
   let mut out := DenseTensor.ofFn outShape (fun _ => Float.ofInt opts.fill)
   -- Tracks, per output flat-index, the FIRST source coordinate that wrote there — used only to
   -- name the conflicting pair when `.rejectCollisions` fires; every other policy ignores it.
@@ -75,7 +78,7 @@ def evalScatter (env : HashMap String DenseTensor) (sizes : HashMap UID Nat)
               writtenBy := writtenBy.insert fi sc
               out := out.set! oc val
       | .overwrite => out := out.set! oc val
-      | .sum        => out := out.set! oc (prev + val)
+      | .sum        => out := out.set! oc (if boolDest then Max.max prev val else prev + val)
       | .max        => out := out.set! oc (Max.max prev val)
       | .min        => out := out.set! oc (Min.min prev val)
   return (nm, out)

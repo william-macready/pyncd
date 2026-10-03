@@ -48,6 +48,12 @@ def legacyAccepts (p : TLProgram) (inputs : HashMap String DenseTensor) : Bool :
   | .ok _ => true
   | .error _ => false
 
+/-- The legacy evaluator's typed rejection of a program, `none` if it accepts it. -/
+def legacyErrorOf (p : TLProgram) (inputs : HashMap String DenseTensor) : Option EvalError :=
+  match TLProgram.eval p inputs with
+  | .ok _ => none
+  | .error f => some f.error
+
 /-- Compile one `TLProgram` through the Thread-4 pipeline (source → `ScheduledProgram` →
     `prepareEvalPlan` → `runPreparedDense`) and compare one named output against `expect` via
     `DenseTensor.approxEq`. Mirrors `Harness.lean`'s `evalEqB`, but through the compiled-plan path
@@ -282,9 +288,10 @@ def softmaxProgPrepared : Option PreparedPlan := Id.run do
 
 /-! ## Section 4 — deliberate legacy-narrowing fixtures (§3)
 
-Two program shapes the legacy evaluator (`evalScheduled`/`resolveNonlin`) silently accepts, that
-`prepareEvalPlan` now rejects — proving the delta is real, understood, and intentional, not a
-differential-testing surprise Task 5 would otherwise discover unexplained. -/
+Two program shapes the legacy evaluator (`evalScheduled`/`resolveNonlin`) once silently accepted
+and `prepareEvalPlan` rejected — a deliberate delta. Reference-alignment (shapes 3/11) closed it:
+the legacy leg below now asserts the reference's own typed rejection (`checkNormMarkers`), the
+checked leg is unchanged. The prose in each fixture's comment describes the OLD behaviour. -/
 
 -- Legacy-narrowing #1: a spurious `.freeNorm` marker on an otherwise-`.pointwise` statement
 -- (clones the `relu` fixture above, marking `i`). `resolveNonlin`'s `.pointwise` branch never
@@ -294,7 +301,11 @@ def spuriousMarkerPointwise : TLProgram := tlprog!{ H[i.] := relu(W[i, j] · x[j
 def spuriousMarkerPointwiseInputs : HashMap String DenseTensor :=
   HashMap.ofList [("W", tl [2,2] [1,-1, -2,1]), ("x", tl [2] [1,1])]
 
-#guard legacyAccepts spuriousMarkerPointwise spuriousMarkerPointwiseInputs
+-- FLIPPED (reference-alignment, shapes 3/11): the reference used to ACCEPT this (`legacyAccepts`);
+-- it now rejects it with the typed `checkNormMarkers` error, and the checked leg is unchanged.
+#guard match legacyErrorOf spuriousMarkerPointwise spuriousMarkerPointwiseInputs with
+  | some (.unmarkedReductionAxis "H" 0) => true
+  | _ => false
 #guard sourceCompileCauseOf spuriousMarkerPointwise spuriousMarkerPointwiseInputs
   == some (.nonlin (.unmarkedReductionAxis "H" 0))
 
@@ -307,7 +318,11 @@ def doubleMarkerAxiswise : TLProgram := tlprog!{ Y[q., s.] := normalize(A[q, s])
 def doubleMarkerAxiswiseInputs : HashMap String DenseTensor :=
   HashMap.ofList [("A", tl [2,2] [1,3, 2,2])]
 
-#guard legacyAccepts doubleMarkerAxiswise doubleMarkerAxiswiseInputs
+-- FLIPPED (reference-alignment, shapes 3/11): was `legacyAccepts`; the reference now rejects the
+-- ambiguity with the typed `checkNormMarkers` error, and the checked leg is unchanged.
+#guard match legacyErrorOf doubleMarkerAxiswise doubleMarkerAxiswiseInputs with
+  | some (.multipleMarkedReductionAxes "Y" 0 1) => true
+  | _ => false
 #guard sourceCompileCauseOf doubleMarkerAxiswise doubleMarkerAxiswiseInputs
   == some (.nonlin (.multipleMarkedReductionAxes "Y" 0 1))
 

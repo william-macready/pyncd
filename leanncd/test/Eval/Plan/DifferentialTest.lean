@@ -582,10 +582,11 @@ fixture there is executed through the public named API and compared against `eva
 
 Scope note (proposal §10, Law 1). Parity is claimed only for "the source fragment whose checked
 Jacobi semantics is observationally equal to the legacy worker". The legacy scan worker
-(`LeanNCD/Eval/Scan.lean`) is known nonconforming in two ways F0 pinned: it applies Gauss-Seidel
+(`LeanNCD/Eval/Scan.lean`) is known nonconforming in the way F0 pinned (it used to be two): it applies Gauss-Seidel
 rather than Jacobi update (a later `recur` statement observes an earlier sibling's just-written
-value), and it silently applies last-write-wins where the checked worker rejects colliding
-multi-base-writes. Neither is reachable from any fixture below — verified, not assumed:
+value). (It ALSO used to apply last-write-wins where the checked worker rejects colliding
+multi-base-writes; reference-alignment made the reference reject those too, so only the Gauss-Seidel
+difference remains.) Neither was reachable from any fixture below — verified, not assumed:
 
 * Gauss-Seidel is only observable when a later recurrence statement reads a STATE at a coordinate an
   earlier sibling already wrote this step. The multi-statement recurrences here

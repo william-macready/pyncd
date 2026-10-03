@@ -426,8 +426,9 @@ current legacy scan evaluator (`LeanNCD/Eval/Scan.lean`) is **known nonconformin
 Jacobi/Gauss-Seidel discriminator fixture in `test/Eval/ScanTest.lean` showing that a later `recur`
 statement observes an earlier sibling's just-written value, so permuting two sibling recurrences
 changes the result. F0 also pinned a multi-base-write collision fixture showing that the legacy
-evaluator silently applies last-write-wins where the checked worker is required to reject. Both
-defects are recorded deliberately and remain unfixed; the checked scan worker that would satisfy this
+evaluator silently applied last-write-wins where the checked worker is required to reject
+(**closed by the reference-alignment slice: the reference now rejects overlapping base writes**; the
+Gauss-Seidel defect remains). These defects were recorded deliberately; the checked scan worker that would satisfy this
 subsection is the F3 target and has no code. A scan backend must therefore not be validated against
 the legacy evaluator as an oracle — the two disagree by design until F3 lands.
 

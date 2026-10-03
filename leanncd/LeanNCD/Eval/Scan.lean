@@ -53,6 +53,10 @@ def scanScatterSourceAxes (slots : List LHSSlot) : List AxisSpec :=
 def evalStmtSliceSeeded (decls : List Decl) (env : HashMap String DenseTensor) (sizes : HashMap UID Nat)
     (seed : HashMap UID Int) (s : Stmt) : Except EvalError (String × DenseTensor) := do
   rejectUnsupportedStorage decls (stmtStorageNames s)
+  -- Marker agreement covers the scatter arm too, which never reaches `resolveNonlin`.
+  match s with
+  | .assign nm slots rhs | .scatter nm slots rhs _ => checkNormMarkers nm rhs.nonlin slots
+  | .recurMorphism .. => pure ()
   match s with
   | .assign nm slots rhs =>
       let (_, slice) ← evalAssignDtypedSeeded decls env sizes seed nm slots rhs
@@ -102,6 +106,157 @@ def writeScanStmtSlice (out : DenseTensor) (seed : HashMap UID Int) (s : Stmt)
     else
       cur) out
 
+/-- One state dimension of a base write, read off its LHS slot. This is the reference's OWN
+    classification (it deliberately does not call the checked backend's `classifyWriteRow`): a
+    pinned literal, a free face spanning the dimension, a positive-scale strided placement, or
+    anything else (never separates two writes). -/
+private inductive BaseDim
+  | pinned (lit : Int)
+  | face
+  | strided (scale offset : Int)
+  | other
+
+private def baseDimOf : LHSSlot → BaseDim
+  | .iterAt _ n => .pinned n
+  | .free _ | .freeNorm _ | .iterNext _ => .face
+  | .affine e =>
+      let (c0, cf) := idxAffineForm e
+      match SizeSolve.normalizeCoeffs cf with
+      | []        => .pinned c0
+      | [(c, _)]  => if c > 0 && c0 ≥ 0 then .strided c c0 else .other
+      | _         => .other
+
+/-- Whether one dimension forces two base writes apart: different pinned literals, or two strided
+    placements of equal positive scale whose offsets differ modulo that scale. Everything else is
+    conservatively overlapping. -/
+private def baseDimsSeparate : BaseDim → BaseDim → Bool
+  | .pinned a, .pinned b => a != b
+  | .strided sa oa, .strided sb ob => sa > 0 && sa == sb && oa % sa != ob % sb
+  | _, _ => false
+
+/-- A base write touches a scan boundary iff the slot carrying some scan axis is `.iterAt _ 0`.
+    A base that omits a scan axis from its LHS altogether is a different fault (the checked
+    backend's `advancingAxisNotInLhs`) and is left alone here. -/
+private def baseTouchesBoundary (axUids : List UID) (slots : List LHSSlot) : Bool :=
+  let dims := axUids.map (fun u => slots.findIdx? (fun sl => sl.axisUID? == some u))
+  dims.any Option.isNone ||
+    dims.any (fun d? => match d?.bind (fun d => slots[d]?) with
+      | some (.iterAt _ n) => n == 0
+      | _ => false)
+
+/-- Shapes 6 and 7: producers of one scan's recurrence block, counted over the WHOLE `recur` list
+    in order (reads in between do not reset the count), the first repeat winning. A statement whose
+    destination is a state (an assign OR a scatter) is that state's result; any other destination is
+    a per-step scratch. Each may be produced once. -/
+private def checkRecurProducers (scanName : String) (stateNames : List String)
+    (recur : List Stmt) : Except EvalError Unit := do
+  let mut results : List (String × Nat) := []
+  let mut scratch : List (String × Nat) := []
+  for (s, ri) in recur.zipIdx do
+    let nm := s.lhsName
+    if stateNames.contains nm then
+      match results.lookup nm with
+      | some first => throw (.duplicateStateResult scanName nm first ri)
+      | none => results := (nm, ri) :: results
+    else
+      match scratch.lookup nm with
+      | some first => throw (.duplicateScratchProducer scanName nm first ri)
+      | none => scratch := (nm, ri) :: scratch
+
+/-- Whether a slot is an affine placement with no source axis (`S[0*j, 0]`: its normalized
+    coefficients are empty, so it names no output axis and writes a single fixed row). -/
+private def affineWithoutSource : LHSSlot → Bool
+  | .affine e => (SizeSolve.normalizeCoeffs (idxAffineForm e).2).isEmpty
+  | _ => false
+
+/-- Shapes 9 and 8: per-state geometry. Each state's placements are its base statements in `base`
+    order, then its (first) result statement. For each placement, in that order:
+    9. every `.affine` slot must name a source axis (`scanWriteRowNotAdmitted`; the old reference
+       allocated an empty `[0, ..]` state for `S[0*j,0]`). `stmtIndex` is the position in `base`
+       (`isBase`) or `recur`; `dim` is the slot's position in the LHS;
+    8. its declared extents (`scanStateShape`: history extent on scan-axis slots, the shared
+       LHS-slot extent elsewhere, e.g. `2*n` for a stride-2 write) must equal the FIRST
+       placement's, dimension by dimension (`inconsistentStateExtent`). The old reference
+       allocated each base's shape in turn, so a later base overwrote an earlier one's zeros and a
+       mismatched extent silently cropped writes. This needs the inferred `sizes`, which `evalScan`
+       already holds when it calls the check, so it is still raised before any state is allocated.
+       Placements of different rank are skipped (the checked backend's `inconsistentStateRank`,
+       not in scope). -/
+private def checkStatePlacements (scanName : String) (sizes : HashMap UID Nat)
+    (stateNames : List String) (base recur : List Stmt) : Except EvalError Unit := do
+  for st in stateNames do
+    let result := (recur.zipIdx.filter (fun (s, _) => s.lhsName == st && match s with
+      | .recurMorphism .. => false
+      | _ => true)).take 1
+    let placements : List (Bool × Nat × Stmt) :=
+      (base.zipIdx.filter (fun (s, _) => s.lhsName == st)).map (fun (s, i) => (true, i, s)) ++
+      result.map (fun (s, i) => (false, i, s))
+    let mut expected : Option (List Nat) := none
+    for (isBase, idx, s) in placements do
+      for (sl, d) in s.slots.zipIdx do
+        if affineWithoutSource sl then
+          throw (.scanWriteRowNotAdmitted scanName st isBase idx d)
+      let shape ← scanStateShape sizes s.slots
+      match expected with
+      | none => expected := some shape
+      | some prev =>
+          if prev.length == shape.length then
+            for ((p, a), d) in (prev.zip shape).zipIdx do
+              if p != a then throw (.inconsistentStateExtent scanName st d p a)
+
+/-- Shape 10: no base statement may read a scan state (the checked backend's
+    `stateReadInBaseBlock`). The first offending base in `base` order wins, then its first state
+    read in right-hand-side order. -/
+private def checkBaseReads (scanName : String) (stateNames : List String)
+    (base : List Stmt) : Except EvalError Unit := do
+  for (s, bi) in base.zipIdx do
+    for (rn, _) in s.readFactors do
+      if stateNames.contains rn then
+        throw (.stateReadInBaseBlock scanName bi rn)
+
+/-- Static structural validation of a scan, run by `evalScan` BEFORE any state is allocated, so
+    every rejection precedes evaluation. A scan with several faults reports the FIRST of these, in
+    this order (it mirrors the checked backend's phase order in `Plan/Compile.lean`: recurrence
+    classification, then per-state geometry, then base-block reads, then base-write placement):
+    0. a non-assign base statement (`baseMustBeAssign`, hoisted here so it keeps precedence);
+    1. `duplicateStateResult` / `duplicateScratchProducer`, over the `recur` list in order (the
+       repeat at the lowest later index wins, whichever kind it is);
+    2. `scanWriteRowNotAdmitted` then `inconsistentStateExtent`, states in first-base order, each
+       placement in turn (bases, then the result; the extent against the state's first placement,
+       lowest dimension first);
+    3. `stateReadInBaseBlock`, in `base` order;
+    4. `baseWriteNotAtBoundary`, in `base` order;
+    5. `baseWritesOverlap`, states in first-base order, then the first pair `(a, b)`, `a < b`, in
+       `base` order.
+
+    Two orderings differ from the checked backend and are deliberately left so. The reduction-
+    marker checks (`checkNormMarkers`) run at statement evaluation, AFTER this structure check: a
+    scan with both a marker fault and a structure fault reports the structure constructor first,
+    while the checked backend reports the marker fault first. And on a top-level max/min scatter
+    with an unsized destination the reference reports the fill error (`scatterFillNotIdentity`)
+    before the shape error, while the checked path reports the shape error first. -/
+def checkScanStructure (scanName : String) (axes : List AxisSpec) (sizes : HashMap UID Nat)
+    (stateNames : List String) (base recur : List Stmt) : Except EvalError Unit := do
+  let axUids := axes.map (·.uid)
+  for s in base do
+    match s with
+    | .recurMorphism .. => throw (.invalidScanNode .baseMustBeAssign)
+    | _ => pure ()
+  checkRecurProducers scanName stateNames recur
+  checkStatePlacements scanName sizes stateNames base recur
+  checkBaseReads scanName stateNames base
+  for (s, bi) in base.zipIdx do
+    unless baseTouchesBoundary axUids s.slots do
+      throw (.baseWriteNotAtBoundary scanName s.lhsName bi)
+  for st in stateNames do
+    let mine := base.zipIdx.filter (fun (s, _) => s.lhsName == st)
+    for (sa, ia) in mine do
+      for (sb, ib) in mine do
+        if ia < ib &&
+            !((sa.slots.zip sb.slots).any
+              (fun (x, y) => baseDimsSeparate (baseDimOf x) (baseDimOf y))) then
+          throw (.baseWritesOverlap scanName st ia ib)
+
 /-- Evaluate a ScanStmt → the scanned state tensors. Multi-axis (n-D) scans iterate the cartesian
     product of `[0 … L_a − 2]` over every advancing axis. Boundary semantics (zero-default): the
     step writes only fully-advanced cells (every advancing index `+1 ≥ 1`); boundary cells (any
@@ -117,7 +272,7 @@ def evalScan (decls : List Decl) (env : HashMap String DenseTensor) (sizes : Has
     ScanStmt → Except EvalError (List (String × DenseTensor))
   | .plain _      => .error (.invalidScanNode .plainNotHandledHere)
   | .scanPre nm _ _ => .error (.unsupportedRecurMorphism .evalScanNode nm)
-  | .scan _ axes base recur _ => do
+  | .scan scanName axes base recur _ => do
       rejectUnsupportedStorage decls ((base ++ recur).flatMap stmtStorageNames)
       if axes.isEmpty then .error (.invalidScanNode .noIterationAxis) else
       let axUids := axes.map (·.uid)
@@ -141,6 +296,7 @@ def evalScan (decls : List Decl) (env : HashMap String DenseTensor) (sizes : Has
           match s with
           | .scatter _ _ _ _ => throw (.invalidScanNode .onlyAssignInSlice)
           | _ => pure ()
+      checkScanStructure scanName axes sizes stateNames base recur
       -- 1. allocate each state tensor (zeros at full shape) from its base slots.
       let mut work := env
       for s in base do

@@ -287,24 +287,29 @@ fragment.
   evidence), and `runDenseScatter` (`Dense.lean`) executes it source-driven, placing each computed
   value through `outCoeffs`/`outBias` into a `fill`-initialized destination and rejecting coincident
   writes. **Closure is scoped to a REAL-sum-product destination** (`agg = .sum` on an `f64` or
-  undeclared destination): the reference `evalScatter` (`Eval/Scatter.lean`) selects its algebra
-  from `rhs.agg` alone and never consults `decls`, so a Boolean/predicate-declared scatter
+  undeclared destination): the reference `evalScatter` (`Eval/Scatter.lean`) then selected its
+  algebra from `rhs.agg` alone and never consulted `decls`, so a Boolean/predicate-declared scatter
   destination silently diverged from the reference (checked backend selected `admittedAlgebraBool`;
-  reference computed real sum) and is now REJECTED at capability tier as `predicateScatterDest`,
-  same way a tropical fill is refused — the honest report that no reference match exists, deferred
-  to a future slice where the reference is taught to be dtype-aware. The parity gate is the curated
+  reference computed real sum) and was REJECTED at capability tier as `predicateScatterDest`,
+  same way a tropical fill is refused — the honest report that no reference match existed, deferred
+  to a future slice where the reference is taught to be dtype-aware (done by the reference-alignment
+  slice; see the update below). The parity gate is the curated
   `scatterPrograms` corpus (`DifferentialTest.lean`, 9 accepted programs), checked bit-for-bit
   against the reference `Eval/Scatter.lean` evaluator over the real sum-product algebra. Still
   rejected, deliberately: a constant-affine slot (`Out[3]`, `scatterOrAffineLhs`), a multi-axis slot
   (`Out[i+j]`, `multiAxisScatterLhs`), a collision policy other than reject-on-collision
   (`scatterOptsNotAdmitted`), a non-identity nonlinearity on a scatter (`unsupportedScatterNonlin`),
   and a Boolean/predicate destination (`predicateScatterDest`); a tropical-algebra scatter's
-  unwritten cells provably diverge from the reference by design and is not a parity-corpus entry.
+  unwritten cells used to diverge from the reference (fill 0, not `∓∞`) and is not a parity-corpus
+  entry. **Update (reference-alignment slice):** the reference now REJECTS a top-level
+  `maxreduce`/`minreduce` scatter too (`scatterFillNotIdentity`), so the divergence is closed by a
+  shared refusal, and `evalScatter` is now dtype-aware for predicate destinations (`combineFor`);
+  the checked `predicateScatterDest` rejection is kept until the checked Boolean scatter is verified.
   The experimental `jax_bridge` backend rejects a `.scatter` step categorically (`unsupportedStep`)
   — there is no JAX scatter execution.
   **Not** included: Boolean/predicate scatter destinations — deferred, rejected at capability tier
-  as `predicateScatterDest` rather than admitted; closing them requires teaching the reference
-  `evalScatter` to be dtype-aware.
+  as `predicateScatterDest` rather than admitted; closing them required teaching the reference
+  `evalScatter` to be dtype-aware (done), and now needs the checked Boolean scatter verified.
   Closed by `scatter_affine_lhs_writes.md`.
 - **Affine scatter writes into scan state (S-B)** — positive one-axis affine placement with
   nonnegative bias is admitted in non-advancing state dimensions in both base and recurrence phases.

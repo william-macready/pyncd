@@ -329,8 +329,10 @@ def checkScanStmt : ScanStmt → Except CapabilityError Unit
     diverge from the reference evaluator:
 
     * a well-formed `Stmt.scatter` whose DESTINATION is `predicate`/`bool`-declared
-      (`predicateScatterDest`) — the reference `evalScatter` is not dtype-aware, so a Boolean
-      destination runs real sum-product there while the checked backend runs Boolean min/max. A
+      (`predicateScatterDest`) — the reference `evalScatter` WAS not dtype-aware (it now is, via
+      `combineFor`; reference-alignment), so a Boolean destination used to run real sum-product
+      there while the checked backend runs Boolean min/max. The rejection is KEPT: lifting it needs
+      the checked scatter runner's Boolean algebra verified against the reference first. A
       `.tensor`/`f64` scatter is fine and passes. The destination-declaration lookup scans
       `sched.decls` directly (not the cached `sched.env`), matching `.predicate` — the same
       classification `dtypeOfDecl` (`Signature.lean`) applies at Step D.
@@ -350,9 +352,11 @@ def capabilityPreflight (sched : ScheduledProgram) : Except CapabilityError Unit
   for s in sched.stmts do checkScanStmt s
   -- Post-pass over the statements: two scatter-shaped forms silently diverge from the reference and
   -- are refused here (see the two constructor docstrings). A predicate/bool scatter DESTINATION is a
-  -- third algebra `evalScatter` (`Eval/Scatter.lean`) can't compute — it picks its algebra from
-  -- `rhs.agg` alone and never sees `decls` — so it is rejected when the destination is
-  -- `.predicate`-declared (a simple linear scan over `sched.decls`, which carries few predicates).
+  -- third algebra that `evalScatter` (`Eval/Scatter.lean`) COULD not compute — it used to pick its
+  -- algebra from `rhs.agg` alone and never saw `decls`; since reference-alignment it is dtype-aware,
+  -- and the rejection is kept until the checked Boolean scatter is verified against it — so it is
+  -- rejected when the destination is `.predicate`-declared (a simple linear scan over `sched.decls`,
+  -- which carries few predicates).
   -- A scatter-shaped `.assign` (LHS `slotsBecomeScatter`) is an UNLOWERED scatter — `lowerArith`
   -- turns every such assign into `Stmt.scatter` on the source path, so this fires only on a
   -- hand-built schedule — and is refused regardless of dtype, since neither backend agrees on an

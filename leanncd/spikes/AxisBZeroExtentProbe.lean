@@ -66,13 +66,13 @@ def probePlain (label : String) (s : Stmt) : String :=
 -- (`if (outCoordZ.zip outShape).all (fun (z, d) => 0 ≤ z && z < (d : Int))`): with `d = 0` the
 -- guard is false at EVERY source coordinate, so every write is skipped — the same
 -- "out-of-range output coordinates are skipped" rule that exists for genuine overspill.
-#eval match evalScatter envX sizesI "Out" [.affine (.shift axI (-9))] readX {} [0] with
+#eval match evalScatter [] envX sizesI "Out" [.affine (.shift axI (-9))] readX {} [0] with
   | .error e => s!"S23f (evalScatter at outShape [0]): ERROR: {toString e}"
   | .ok (nm, t) => s!"S23f (evalScatter at outShape [0]): .ok; {nm} = {repr t.shape}/{repr t.data}"
 
 -- The collision policy cannot fire either: `.rejectCollisions` is only reached INSIDE the bounds
 -- guard, so four source coordinates all landing "on" a zero-extent output collide with nothing.
-#eval match evalScatter envX sizesI "Out" [.affine (.shift axI (-9))] readX
+#eval match evalScatter [] envX sizesI "Out" [.affine (.shift axI (-9))] readX
         { fill := 0, reduce := .rejectCollisions } [0] with
   | .error e => s!"S23g (zero extent + rejectCollisions): ERROR: {toString e}"
   | .ok (nm, t) => s!"S23g (zero extent + rejectCollisions): .ok; {nm} = {repr t.shape}"
@@ -123,12 +123,12 @@ def probeChain (label : String) (sc : Stmt) : String :=
 Measured: the non-identity-nonlin gate still fires at a zero extent (so the ordering is
 nonlin-before-shape), and an unsized SOURCE axis still fails loud at a zero extent. -/
 
-#eval match evalScatter envX sizesI "Out" [.affine (.shift axI (-9))]
+#eval match evalScatter [] envX sizesI "Out" [.affine (.shift axI (-9))]
         { readX with nonlin := .pointwise .relu } {} [0] with
   | .error e => s!"S25a (zero extent + relu): ERROR: {toString e}"
   | .ok (nm, t) => s!"S25a (zero extent + relu): .ok; {nm} = {repr t.shape}"
 
-#eval match evalScatter envX ({} : HashMap UID Nat) "Out" [.affine (.shift axI (-9))] readX {} [0] with
+#eval match evalScatter [] envX ({} : HashMap UID Nat) "Out" [.affine (.shift axI (-9))] readX {} [0] with
   | .error e => s!"S25b (zero extent + UNSIZED source axis): ERROR: {toString e}"
   | .ok (nm, t) => s!"S25b (zero extent + UNSIZED source axis): .ok; {nm} = {repr t.shape}"
 

@@ -281,16 +281,19 @@ inductive CapabilityError
       scatter destination is NOT reachable from this constructor: it is rejected upstream by
       `predicateScatterDest` (below) at the same tier, before `scatterFillOrFail` is called at all.
       (Prior claim that a predicate destination with `fill = 0` was "coherent and admitted" was
-      wrong — the reference `evalScatter` (`Eval/Scatter.lean`) selects its algebra from `rhs.agg`
-      only, never seeing `decls`, so a Boolean scatter destination silently diverged from the
-      reference in real sum arithmetic; the fix routes the rejection through the capability tier
-      instead.) -/
+      wrong — the reference `evalScatter` (`Eval/Scatter.lean`) then selected its algebra from
+      `rhs.agg` only, never seeing `decls`, so a Boolean scatter destination silently diverged from
+      the reference in real sum arithmetic; the fix routed the rejection through the capability tier
+      instead. The reference is now dtype-aware (reference-alignment), and the reference ALSO
+      rejects a top-level `maxreduce`/`minreduce` scatter, as `scatterFillNotIdentity`.) -/
   | scatterOptsNotAdmitted (context : String)
   /-- A top-level scatter's DESTINATION is `predicate`/`bool`-declared. The reference evaluator
-      `evalScatter` (`Eval/Scatter.lean`) is not dtype-aware: it selects its algebra from `rhs.agg`
-      only (`.sum ⇒ Combine.real`, real sum-product), so a Boolean destination would run real
-      sum-product in the reference while the checked backend's `algebraForDest` selects
-      `admittedAlgebraBool` — a silent divergence with no diagnostic. Rejected here, at capability
+      `evalScatter` (`Eval/Scatter.lean`) WAS not dtype-aware (reference-alignment made it so, via
+      `combineFor`): it selected its algebra from `rhs.agg` only (`.sum ⇒ Combine.real`, real
+      sum-product), so a Boolean destination ran real sum-product in the reference while the
+      checked backend's `algebraForDest` selects `admittedAlgebraBool` — a silent divergence with no
+      diagnostic. The rejection below is KEPT until the checked runner's Boolean scatter is
+      verified against the now-dtype-aware reference. Rejected here, at capability
       tier, with a source locator naming the destination — the same way a `maxreduce`/`minreduce`
       scatter (whose fill cannot denote `∓∞`) is refused, and for the same reason: no reference
       semantics can match it, so the honest report is "not in the fragment", not a differential
@@ -303,9 +306,10 @@ inductive CapabilityError
       `unloweredScatterAssign` (below) regardless of destination dtype, since an unlowered
       scatter-shaped assign is malformed for a reason that does not depend on the destination's
       declaration. S-A supports only real-sum-product and the two tropical semirings (rejected via
-      `scatterOptsNotAdmitted`); a predicate scatter destination is a third algebra with no reference
-      match, and closing it means teaching the reference to be dtype-aware, not admitting it in the
-      checked backend alone. -/
+      `scatterOptsNotAdmitted`); a predicate scatter destination is a third algebra that had no
+      reference match, and closing it meant teaching the reference to be dtype-aware (done), not
+      admitting it in the checked backend alone; admitting it now needs the checked runner's Boolean
+      scatter verified against the reference. -/
   | predicateScatterDest (context : String)
   /-- A scatter-shaped LHS (`slotsBecomeScatter` — an affine `Out[2*i]` or diagonal `Out[i, i]`
       write) reached capability preflight as a `Stmt.assign` node rather than a `Stmt.scatter`. The
