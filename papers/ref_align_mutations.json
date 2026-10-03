@@ -65,8 +65,8 @@
   { "label": "RA-S8b (only the first base is compared against the result)",
     "task": "scan-6-10",
     "file": "LeanNCD/Eval/Scan.lean",
-    "old": "    let placements := base.filter (·.lhsName == st) ++ result",
-    "new": "    let placements := (base.filter (·.lhsName == st)).take 1 ++ result",
+    "old": "      (base.zipIdx.filter (fun (s, _) => s.lhsName == st)).map (fun (s, i) => (true, i, s)) ++",
+    "new": "      ((base.zipIdx.filter (fun (s, _) => s.lhsName == st)).take 1).map (fun (s, i) => (true, i, s)) ++",
     "targets": ["Eval.ScanTest"],
     "expect": ["expected a rejection, but the scan was accepted", "[4, 3]"] }
 ]

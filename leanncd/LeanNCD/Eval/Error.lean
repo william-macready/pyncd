@@ -323,6 +323,12 @@ inductive EvalError
       the recurrence result, e.g. a stride-2 base `S[2*j,0]` (6 wide for `j = 3`) against a result
       `S[k,l+1]` with `k = 5` or `7`. The old reference silently cropped or zero-extended. -/
   | inconsistentStateExtent (scan state : String) (dim expected actual : Nat)
+  /-- A state placement carries an `.affine` slot that names no source axis, e.g. the zero-scale
+      write `S[0*j,0]` (normalized coefficients empty): it addresses one fixed row, which the old
+      reference turned into an empty `[0, ..]` state. `stmtIndex` is the position in the scan's
+      `base` list when `isBase`, else in `recur`; `dim` is the slot's 0-based LHS position. Only
+      this row shape is refused here (the checked backend's other non-admitted rows are not). -/
+  | scanWriteRowNotAdmitted (scan name : String) (isBase : Bool) (stmtIndex dim : Nat)
 
 /-- The sole renderer for `EvalError` — reproduces every pre-4h message byte-for-byte.
     `.unaryDomain`'s `context` is deliberately NOT rendered (its `EvalContext` carries strictly
@@ -380,6 +386,9 @@ evaluator does not implement"
   | .inconsistentStateExtent scan state dim expected actual =>
       s!"evalScan {scan}: state {state} dimension {dim} is {expected} wide in its first placement \
 but {actual} wide in a later one"
+  | .scanWriteRowNotAdmitted scan name isBase idx dim =>
+      s!"evalScan {scan}: {if isBase then "base" else "recurrence"} statement {idx} for {name} has an \
+affine slot at dimension {dim} that names no source axis"
 
 instance : ToString EvalError := ⟨EvalError.render⟩
 

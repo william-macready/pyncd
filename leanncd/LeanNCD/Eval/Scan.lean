@@ -159,24 +159,39 @@ private def checkRecurProducers (scanName : String) (stateNames : List String)
       | some first => throw (.duplicateScratchProducer scanName nm first ri)
       | none => scratch := (nm, ri) :: scratch
 
-/-- Shape 8 (and, once added, 9): per-state geometry. Each state's placements are its base
-    statements in `base` order, then its (first) result statement; every placement's declared
-    extents (`scanStateShape`: history extent on scan-axis slots, the shared LHS-slot extent
-    elsewhere, e.g. `2*n` for a stride-2 write) must equal the FIRST placement's, dimension by
-    dimension. The old reference allocated each base's shape in turn, so a later base overwrote an
-    earlier one's zeros and a mismatched extent silently cropped writes. This needs the inferred
-    `sizes`, which `evalScan` already holds when it calls the check, so it is still raised before any
-    state is allocated. Placements of different rank are skipped (the checked backend's
-    `inconsistentStateRank`, not in scope). -/
+/-- Whether a slot is an affine placement with no source axis (`S[0*j, 0]`: its normalized
+    coefficients are empty, so it names no output axis and writes a single fixed row). -/
+private def affineWithoutSource : LHSSlot → Bool
+  | .affine e => (SizeSolve.normalizeCoeffs (idxAffineForm e).2).isEmpty
+  | _ => false
+
+/-- Shapes 9 and 8: per-state geometry. Each state's placements are its base statements in `base`
+    order, then its (first) result statement. For each placement, in that order:
+    9. every `.affine` slot must name a source axis (`scanWriteRowNotAdmitted`; the old reference
+       allocated an empty `[0, ..]` state for `S[0*j,0]`). `stmtIndex` is the position in `base`
+       (`isBase`) or `recur`; `dim` is the slot's position in the LHS;
+    8. its declared extents (`scanStateShape`: history extent on scan-axis slots, the shared
+       LHS-slot extent elsewhere, e.g. `2*n` for a stride-2 write) must equal the FIRST
+       placement's, dimension by dimension (`inconsistentStateExtent`). The old reference
+       allocated each base's shape in turn, so a later base overwrote an earlier one's zeros and a
+       mismatched extent silently cropped writes. This needs the inferred `sizes`, which `evalScan`
+       already holds when it calls the check, so it is still raised before any state is allocated.
+       Placements of different rank are skipped (the checked backend's `inconsistentStateRank`,
+       not in scope). -/
 private def checkStatePlacements (scanName : String) (sizes : HashMap UID Nat)
     (stateNames : List String) (base recur : List Stmt) : Except EvalError Unit := do
   for st in stateNames do
-    let result := (recur.filter (fun s => s.lhsName == st && match s with
+    let result := (recur.zipIdx.filter (fun (s, _) => s.lhsName == st && match s with
       | .recurMorphism .. => false
       | _ => true)).take 1
-    let placements := base.filter (·.lhsName == st) ++ result
+    let placements : List (Bool × Nat × Stmt) :=
+      (base.zipIdx.filter (fun (s, _) => s.lhsName == st)).map (fun (s, i) => (true, i, s)) ++
+      result.map (fun (s, i) => (false, i, s))
     let mut expected : Option (List Nat) := none
-    for s in placements do
+    for (isBase, idx, s) in placements do
+      for (sl, d) in s.slots.zipIdx do
+        if affineWithoutSource sl then
+          throw (.scanWriteRowNotAdmitted scanName st isBase idx d)
       let shape ← scanStateShape sizes s.slots
       match expected with
       | none => expected := some shape
@@ -192,8 +207,9 @@ private def checkStatePlacements (scanName : String) (sizes : HashMap UID Nat)
     0. a non-assign base statement (`baseMustBeAssign`, hoisted here so it keeps precedence);
     1. `duplicateStateResult` / `duplicateScratchProducer`, over the `recur` list in order (the
        repeat at the lowest later index wins, whichever kind it is);
-    2. `inconsistentStateExtent`, states in first-base order, each placement (bases, then the
-       result) against the state's first placement, lowest dimension first;
+    2. `scanWriteRowNotAdmitted` then `inconsistentStateExtent`, states in first-base order, each
+       placement in turn (bases, then the result; the extent against the state's first placement,
+       lowest dimension first);
     3. `baseWriteNotAtBoundary`, in `base` order;
     4. `baseWritesOverlap`, states in first-base order, then the first pair `(a, b)`, `a < b`, in
        `base` order. -/

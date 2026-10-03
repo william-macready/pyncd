@@ -785,4 +785,41 @@ run_cmd do
           throwError s!"shape 8 second base accept: wrong: {repr S.data}"
     | none => throwError "shape 8 second base accept: no S"
 
+-- Shape 9. REJECT donor: the shape 8 fixture, change: the base is the ZERO-SCALE write
+--   `S[0*j,0] := X[j]` (names no source axis) with `k = 3`. The old reference allocated an EMPTY
+--   `[0,3]` state and returned it. Variants: the same row as the SECOND base (index 1), and as the
+--   recurrence RESULT placement (`isBase = false`).
+run_cmd do
+  let j := ax "j" 1; let k := ax "k" 2; let l := ax "l" 9
+  let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X" (tensorOf [3] [1, 2, 3])
+  let sizes := ((({} : HashMap UID Nat).insert 1 3).insert 2 3).insert 9 3
+  let opts : ScatterOpts := { fill := 0, reduce := .rejectCollisions }
+  let wr (c : Int) (lit : Nat) : Stmt :=
+    .scatter "S" [.affine (.scale c j), .iterAt l lit] (raRhs "X" [.axis j]) opts
+  let r : Stmt := .assign "S" [.free k, .iterNext l] (raRhs "S" [.axis k, .axis l])
+  match evalScan [] env sizes (.scan "S" [l] [wr 0 0] [r] false) with
+  | .error (.scanWriteRowNotAdmitted "S" "S" true 0 0) => pure ()
+  | .error e => throwError s!"shape 9: wrong rejection: {e}"
+  | .ok outs => throwError (raAccepted outs)
+  -- second base (clone, change: a legal stride-2 base first, k = 6; the zero-scale base second).
+  let sizes6 := ((({} : HashMap UID Nat).insert 1 3).insert 2 6).insert 9 3
+  match evalScan [] env sizes6 (.scan "S" [l] [wr 2 0, wr 0 0] [r] false) with
+  | .error (.scanWriteRowNotAdmitted "S" "S" true 1 0) => pure ()
+  | .error e => throwError s!"shape 9 second base: wrong rejection: {e}"
+  | .ok outs => throwError (raAccepted outs)
+  -- result placement (clone, change: the result is the zero-scale scatter).
+  let rz : Stmt := .scatter "S" [.affine (.scale 0 j), .iterNext l] (raRhs "S" [.axis j, .axis l]) opts
+  match evalScan [] env sizes6 (.scan "S" [l] [wr 2 0] [rz] false) with
+  | .error (.scanWriteRowNotAdmitted "S" "S" false 0 0) => pure ()
+  | .error e => throwError s!"shape 9 result: wrong rejection: {e}"
+  | .ok outs => throwError (raAccepted outs)
+  -- ACCEPT neighbour: scale 1 instead of 0 (clone, change: `wr 0 0` -> `wr 1 0`).
+  match evalScan [] env sizes (.scan "S" [l] [wr 1 0] [r] false) with
+  | .error e => throwError s!"shape 9 accept: {e}"
+  | .ok outs => match outs.find? (·.1 == "S") with
+    | some (_, S) =>
+        unless DenseTensor.approxEq S (tensorOf [3, 3] [1, 1, 1, 2, 2, 2, 3, 3, 3]) do
+          throwError s!"shape 9 accept: wrong: {repr S.data}"
+    | none => throwError "shape 9 accept: no S"
+
 end LeanNCD.Eval
