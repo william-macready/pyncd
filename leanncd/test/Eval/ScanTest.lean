@@ -648,4 +648,58 @@ run_cmd do
           throwError s!"shape 5 accept: wrong: {repr G.data}"
     | none => throwError "shape 5 accept: no G"
 
+-- Shape 6. REJECT donor: "COUPLED scan" fixture, cloned to ONE scalar state `S` (L = 3, base
+--   `S[0] := C`, C = 1), change: TWO results with different bodies, `rA: S[l+1] := S[l]` and
+--   `rB: S[l+1] := S[l] + S[l]`. Single-result runs give [1,1,1] (rA) and [1,2,4] (rB), so
+--   "second wins" (old behaviour, [1,2,4]) and "first wins" differ: refusal pins neither.
+run_cmd do
+  let l := ax "l" 9
+  let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "C" (tensorOf [] [1])
+  let sizes := (({} : HashMap UID Nat).insert 9 3)
+  let b : Stmt := .assign "S" [.iterAt l 0] (raRhs "C" [])
+  let rA : Stmt := .assign "S" [.iterNext l] (raRhs "S" [.axis l])
+  let rB : Stmt := .assign "S" [.iterNext l]
+    { body := { terms := [{ factors := [.read "S" [.axis l]] }, { factors := [.read "S" [.axis l]] }] }, nonlin := .identity }
+  match evalScan [] env sizes (.scan "S" [l] [b] [rA, rB] false) with
+  | .error (.duplicateStateResult "S" "S" 0 1) => pure ()
+  | .error e => throwError s!"shape 6: wrong rejection: {e}"
+  | .ok outs => throwError (raAccepted outs)
+  -- ACCEPT neighbour: the same scan with only the second result (clone, drop `rA`).
+  match evalScan [] env sizes (.scan "S" [l] [b] [rB] false) with
+  | .error e => throwError s!"shape 6 accept: {e}"
+  | .ok outs => match outs.find? (·.1 == "S") with
+    | some (_, S) => unless DenseTensor.approxEq S (tensorOf [3] [1, 2, 4]) do
+        throwError s!"shape 6 accept: wrong: {repr S.data}"
+    | none => throwError "shape 6 accept: no S"
+
+-- Shape 6, scan-local SCATTER results (probe C13). Donor: the fixture above, change: state `S`
+--   is 6 wide, two parity-split base scatters `S[2*j,0] := X[j]`, `S[2*j+1,0] := Y[j]` (residue-
+--   disjoint, legal) and two parity-split scatter results `S[2*j,l+1] := S[2*j,l]`,
+--   `S[2*j+1,l+1] := S[2*j+1,l]` (j = 3, L = 3). Each result alone is legal and leaves the other
+--   parity frozen at its base; the pair is a duplicate result for the state, whatever the cells.
+run_cmd do
+  let j := ax "j" 1; let l := ax "l" 9
+  let env : HashMap String DenseTensor :=
+    (({} : HashMap String DenseTensor).insert "X" (tensorOf [3] [1, 2, 3])).insert "Y" (tensorOf [3] [10, 20, 30])
+  let sizes := (({} : HashMap UID Nat).insert 1 3).insert 9 3
+  let ev := IdxExpr.scale 2 j
+  let od := IdxExpr.affine 1 [(2, j)]
+  let opts : ScatterOpts := { fill := 0, reduce := .rejectCollisions }
+  let bE : Stmt := .scatter "S" [.affine ev, .iterAt l 0] (raRhs "X" [.axis j]) opts
+  let bO : Stmt := .scatter "S" [.affine od, .iterAt l 0] (raRhs "Y" [.axis j]) opts
+  let rE : Stmt := .scatter "S" [.affine ev, .iterNext l] (raRhs "S" [ev, .axis l]) opts
+  let rO : Stmt := .scatter "S" [.affine od, .iterNext l] (raRhs "S" [od, .axis l]) opts
+  match evalScan [] env sizes (.scan "S" [l] [bE, bO] [rE, rO] false) with
+  | .error (.duplicateStateResult "S" "S" 0 1) => pure ()
+  | .error e => throwError s!"shape 6 scatter: wrong rejection: {e}"
+  | .ok outs => throwError (raAccepted outs)
+  -- ACCEPT neighbour: only the even-parity result (clone, drop `rO`).
+  match evalScan [] env sizes (.scan "S" [l] [bE, bO] [rE] false) with
+  | .error e => throwError s!"shape 6 scatter accept: {e}"
+  | .ok outs => match outs.find? (·.1 == "S") with
+    | some (_, S) =>
+        unless DenseTensor.approxEq S (tensorOf [6, 3] [1, 1, 1, 10, 0, 0, 2, 2, 2, 20, 0, 0, 3, 3, 3, 30, 0, 0]) do
+          throwError s!"shape 6 scatter accept: wrong: {repr S.data}"
+    | none => throwError "shape 6 scatter accept: no S"
+
 end LeanNCD.Eval

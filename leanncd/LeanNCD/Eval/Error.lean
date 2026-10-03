@@ -307,6 +307,11 @@ inductive EvalError
       duplicates and a corner shared by a row-0 and a column-0 face are both refused; there is no
       declared-order precedence. -/
   | baseWritesOverlap (scan state : String) (firstBase secondBase : Nat)
+  /-- Two recurrence statements both produce the result of the SAME state, whether they are
+      assigns or scatters (two parity-split scatters `S[2*j,l+1]`, `S[2*j+1,l+1]` count). The old
+      reference let the second silently win. `firstRecur`/`secondRecur` are 0-based positions in
+      the scan's `recur` list. -/
+  | duplicateStateResult (scan state : String) (firstRecur secondRecur : Nat)
 
 /-- The sole renderer for `EvalError` — reproduces every pre-4h message byte-for-byte.
     `.unaryDomain`'s `context` is deliberately NOT rendered (its `EvalContext` carries strictly
@@ -357,6 +362,8 @@ evaluator does not implement"
   | .baseWritesOverlap scan state a b =>
       s!"evalScan {scan}: base statements {a} and {b} for state {state} may write the same cell \
 (no dimension separates them)"
+  | .duplicateStateResult scan state a b =>
+      s!"evalScan {scan}: recurrence statements {a} and {b} both produce the result of state {state}"
 
 instance : ToString EvalError := ⟨EvalError.render⟩
 

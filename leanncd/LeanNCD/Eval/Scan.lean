@@ -140,21 +140,36 @@ private def baseTouchesBoundary (axUids : List UID) (slots : List LHSSlot) : Boo
       | some (.iterAt _ n) => n == 0
       | _ => false)
 
+/-- Shape 6, and (once added) 7: producers of one scan's recurrence block, counted over the WHOLE
+    `recur` list in order, the first repeat winning. A recurrence statement whose destination is a
+    state (an assign OR a scatter) is that state's result and may appear once. -/
+private def checkRecurProducers (scanName : String) (stateNames : List String)
+    (recur : List Stmt) : Except EvalError Unit := do
+  let mut results : List (String × Nat) := []
+  for (s, ri) in recur.zipIdx do
+    let nm := s.lhsName
+    if stateNames.contains nm then
+      match results.lookup nm with
+      | some first => throw (.duplicateStateResult scanName nm first ri)
+      | none => results := (nm, ri) :: results
+
 /-- Static structural validation of a scan, run by `evalScan` BEFORE any state is allocated, so
     every rejection precedes evaluation. A scan with several faults reports the FIRST of these, in
-    this order (it mirrors the checked backend's phase order in `Plan/Compile.lean`: placement
+    this order (it mirrors the checked backend's phase order in `Plan/Compile.lean`: recurrence
     classification, then per-state geometry, then base-block reads, then base-write placement):
     0. a non-assign base statement (`baseMustBeAssign`, hoisted here so it keeps precedence);
-    1. `baseWriteNotAtBoundary`, in `base` order;
-    2. `baseWritesOverlap`, states in first-base order, then the first pair `(a, b)`, `a < b`, in
+    1. `duplicateStateResult`, over the `recur` list in order;
+    2. `baseWriteNotAtBoundary`, in `base` order;
+    3. `baseWritesOverlap`, states in first-base order, then the first pair `(a, b)`, `a < b`, in
        `base` order. -/
 def checkScanStructure (scanName : String) (axes : List AxisSpec) (stateNames : List String)
-    (base : List Stmt) : Except EvalError Unit := do
+    (base recur : List Stmt) : Except EvalError Unit := do
   let axUids := axes.map (·.uid)
   for s in base do
     match s with
     | .recurMorphism .. => throw (.invalidScanNode .baseMustBeAssign)
     | _ => pure ()
+  checkRecurProducers scanName stateNames recur
   for (s, bi) in base.zipIdx do
     unless baseTouchesBoundary axUids s.slots do
       throw (.baseWriteNotAtBoundary scanName s.lhsName bi)
@@ -206,7 +221,7 @@ def evalScan (decls : List Decl) (env : HashMap String DenseTensor) (sizes : Has
           match s with
           | .scatter _ _ _ _ => throw (.invalidScanNode .onlyAssignInSlice)
           | _ => pure ()
-      checkScanStructure scanName axes stateNames base
+      checkScanStructure scanName axes stateNames base recur
       -- 1. allocate each state tensor (zeros at full shape) from its base slots.
       let mut work := env
       for s in base do
