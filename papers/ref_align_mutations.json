@@ -40,7 +40,7 @@
     "old": "    let nm := s.lhsName\n    if stateNames.contains nm then\n      match results.lookup nm with",
     "new": "    let nm := s.lhsName\n    if stateNames.contains nm && !(match s with | .scatter .. => true | _ => false) then\n      match results.lookup nm with",
     "targets": ["Eval.ScanTest"],
-    "expect": ["expected a rejection, but the scan was accepted", "[6, 3]"] },
+    "expect": ["shape 6 scatter: wrong rejection", "both produce the scratch S"] },
   { "label": "RA-S7a (duplicate scratch producer never detected)",
     "task": "scan-6-10",
     "file": "LeanNCD/Eval/Scan.lean",

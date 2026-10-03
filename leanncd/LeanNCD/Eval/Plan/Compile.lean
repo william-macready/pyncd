@@ -329,8 +329,10 @@ def checkScanStmt : ScanStmt → Except CapabilityError Unit
     diverge from the reference evaluator:
 
     * a well-formed `Stmt.scatter` whose DESTINATION is `predicate`/`bool`-declared
-      (`predicateScatterDest`) — the reference `evalScatter` is not dtype-aware, so a Boolean
-      destination runs real sum-product there while the checked backend runs Boolean min/max. A
+      (`predicateScatterDest`) — the reference `evalScatter` WAS not dtype-aware (it now is, via
+      `combineFor`; reference-alignment), so a Boolean destination used to run real sum-product
+      there while the checked backend runs Boolean min/max. The rejection is KEPT: lifting it needs
+      the checked scatter runner's Boolean algebra verified against the reference first. A
       `.tensor`/`f64` scatter is fine and passes. The destination-declaration lookup scans
       `sched.decls` directly (not the cached `sched.env`), matching `.predicate` — the same
       classification `dtypeOfDecl` (`Signature.lean`) applies at Step D.

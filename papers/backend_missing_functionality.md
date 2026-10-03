@@ -299,7 +299,11 @@ fragment.
   (`Out[i+j]`, `multiAxisScatterLhs`), a collision policy other than reject-on-collision
   (`scatterOptsNotAdmitted`), a non-identity nonlinearity on a scatter (`unsupportedScatterNonlin`),
   and a Boolean/predicate destination (`predicateScatterDest`); a tropical-algebra scatter's
-  unwritten cells provably diverge from the reference by design and is not a parity-corpus entry.
+  unwritten cells used to diverge from the reference (fill 0, not `∓∞`) and is not a parity-corpus
+  entry. **Update (reference-alignment slice):** the reference now REJECTS a top-level
+  `maxreduce`/`minreduce` scatter too (`scatterFillNotIdentity`), so the divergence is closed by a
+  shared refusal, and `evalScatter` is now dtype-aware for predicate destinations (`combineFor`);
+  the checked `predicateScatterDest` rejection is kept until the checked Boolean scatter is verified.
   The experimental `jax_bridge` backend rejects a `.scatter` step categorically (`unsupportedStep`)
   — there is no JAX scatter execution.
   **Not** included: Boolean/predicate scatter destinations — deferred, rejected at capability tier

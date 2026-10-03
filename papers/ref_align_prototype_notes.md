@@ -61,11 +61,23 @@ Mutation cycles: 4 (RA-S4a, RA-S4b, RA-S5a, RA-S5b), all PASS (`mutation-manifes
 expect strings observed). RA-S4b needed its `expect` corrected after observation (the first assertion in the block
 fails before the accept assertion is reached).
 
-### Surprises / notes for the next dispatch
-- Hint 5/6 interplay: `stateReadNotCausal` (out of scope) is untouched; no check here reads state indices.
-- Shape 8 plan (not built): compare `scanStateShape sizes slots` of EVERY base placement and the result stmt, mirroring
-  Compile.lean Phase 2 (first placement is `expected`); only compare when ranks are equal.
-- Shape 9 plan: `.affine` slot whose `SizeSolve.normalizeCoeffs` is empty => `scanWriteRowNotAdmitted` (payload carries the slot).
-- Shapes 6/7: count over base AND recur including `.scatter` results (audit item 2) and the whole recur block (item 3).
-- Shape 10: any `rhs.readFactors` name in `stateNames` for a base stmt.
-- Error.lean constructors for 6-10 were drafted and reverted; text is in this conversation's history only.
+### Final state (all 11 shapes and the shape 2 fix landed)
+
+- Shapes 4-10: `checkScanStructure` and its helpers in `LeanNCD/Eval/Scan.lean` (check order documented in its doc
+  comment and pinned by the CHECK ORDER fixture block). Shapes 3/11: `checkNormMarkers` (`Eval/Nonlin.lean`; covers scatter
+  arms and the scan-local scatter arm, not only `resolveNonlin`). Shape 1: `checkScatterFill` (`Eval/Eval.lean`; deliberately
+  not in `evalScatter` or the scan-local arm). Shape 2: `evalScatter` takes `decls` and uses `combineFor`
+  (`isPredicateDest` in `Eval/Contract.lean`); its `.sum` collision policy folds with Boolean OR on a predicate destination.
+- All new fixtures are at the end of `test/Eval/ScanTest.lean`, including the marker and scatter ones. Mutation results for
+  shapes 9 onward are in the commit message bodies; `papers/ref_align_mutations.json` has entries for shapes 4-8 only.
+- Deviations from the checked path, accepted: shape 9's payload omits the checked coefficients/bias; shape 1 rejects EVERY
+  top-level max/min scatter (including a `+`-joined two-term max), mirroring the checked rule.
+- STILL ACCEPTED by the reference and refused by the checked path, deliberately untouched by this slice:
+  (a) a scan-local scatter into a predicate-typed state (checked: `predicateScatterDest`; the reference is already
+  dtype-aware there) — documented as a checked-path refusal; (b) a sum scatter with a non-zero fill (checked:
+  `scatterOptsNotAdmitted`); (c) `S[j,l+1] := S[j,2*l]` (checked: `stateReadNotCausal`; reference returns `[1,1,0]`),
+  deferred as a twelfth shape.
+- The checked `predicateScatterDest` rejection is KEPT. Removing it needs: dropping the throw in `capabilityPreflight`
+  and the constructor, flipping the three predicate-scatter fixtures in `CompileTest.lean` and the name arm in
+  `DifferentialTest.lean`, and verifying the checked scatter runner's Boolean algebra and collision policies against
+  the now-dtype-aware reference.

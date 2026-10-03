@@ -315,10 +315,10 @@ run_cmd do
     | none => throwError "no dp"
 
 -- Collision mutation: shrink the point override so it collides with the face write, both landing
--- on (0,0). Wave F's checker will reject this outright (§5.1); the LEGACY evaluator has no such
--- check and silently applies last-write-wins in declared order (basePoint overwrites baseFace's
--- value at (0,0)). Verified: dp = [[1,1],[0,2]] (row-major [1,1,0,2]) -- (0,0) is now 1 (the
--- point override, applied second), and the recur cell becomes dp[0,0]+T[0,0] = 1+1 = 2.
+-- on (0,0). Wave F's checker rejects this outright (§5.1), and since reference-alignment (shape 5)
+-- so does the reference evaluator. It USED to silently apply last-write-wins in declared order
+-- (basePoint overwrote baseFace's value at (0,0)); observed then: dp = [[1,1],[0,2]] (row-major
+-- [1,1,0,2]). That old value is kept in the FLIPPED note below, not asserted.
 run_cmd do
   let r := ax "r" 1; let c := ax "c" 2
   let rowFace := tensorOf [2] [0, 1]; let one := tensorOf [] [1]; let ones2 := tensorOf [2,2] [1,1,1,1]
