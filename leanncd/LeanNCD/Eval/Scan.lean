@@ -200,6 +200,16 @@ private def checkStatePlacements (scanName : String) (sizes : HashMap UID Nat)
             for ((p, a), d) in (prev.zip shape).zipIdx do
               if p != a then throw (.inconsistentStateExtent scanName st d p a)
 
+/-- Shape 10: no base statement may read a scan state (the checked backend's
+    `stateReadInBaseBlock`). The first offending base in `base` order wins, then its first state
+    read in right-hand-side order. -/
+private def checkBaseReads (scanName : String) (stateNames : List String)
+    (base : List Stmt) : Except EvalError Unit := do
+  for (s, bi) in base.zipIdx do
+    for (rn, _) in s.readFactors do
+      if stateNames.contains rn then
+        throw (.stateReadInBaseBlock scanName bi rn)
+
 /-- Static structural validation of a scan, run by `evalScan` BEFORE any state is allocated, so
     every rejection precedes evaluation. A scan with several faults reports the FIRST of these, in
     this order (it mirrors the checked backend's phase order in `Plan/Compile.lean`: recurrence
@@ -210,8 +220,9 @@ private def checkStatePlacements (scanName : String) (sizes : HashMap UID Nat)
     2. `scanWriteRowNotAdmitted` then `inconsistentStateExtent`, states in first-base order, each
        placement in turn (bases, then the result; the extent against the state's first placement,
        lowest dimension first);
-    3. `baseWriteNotAtBoundary`, in `base` order;
-    4. `baseWritesOverlap`, states in first-base order, then the first pair `(a, b)`, `a < b`, in
+    3. `stateReadInBaseBlock`, in `base` order;
+    4. `baseWriteNotAtBoundary`, in `base` order;
+    5. `baseWritesOverlap`, states in first-base order, then the first pair `(a, b)`, `a < b`, in
        `base` order. -/
 def checkScanStructure (scanName : String) (axes : List AxisSpec) (sizes : HashMap UID Nat)
     (stateNames : List String) (base recur : List Stmt) : Except EvalError Unit := do
@@ -222,6 +233,7 @@ def checkScanStructure (scanName : String) (axes : List AxisSpec) (sizes : HashM
     | _ => pure ()
   checkRecurProducers scanName stateNames recur
   checkStatePlacements scanName sizes stateNames base recur
+  checkBaseReads scanName stateNames base
   for (s, bi) in base.zipIdx do
     unless baseTouchesBoundary axUids s.slots do
       throw (.baseWriteNotAtBoundary scanName s.lhsName bi)

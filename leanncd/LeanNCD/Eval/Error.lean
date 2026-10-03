@@ -329,6 +329,11 @@ inductive EvalError
       `base` list when `isBase`, else in `recur`; `dim` is the slot's 0-based LHS position. Only
       this row shape is refused here (the checked backend's other non-admitted rows are not). -/
   | scanWriteRowNotAdmitted (scan name : String) (isBase : Bool) (stmtIndex dim : Nat)
+  /-- Base statement `baseIdx` reads a scan state (its own or another's). Base writes run in
+      declaration order over a shared environment, so the value read depended on whether the
+      reading base came before or after the state's own base. `state` is the first state name read,
+      in right-hand-side order. -/
+  | stateReadInBaseBlock (scan : String) (baseIdx : Nat) (state : String)
 
 /-- The sole renderer for `EvalError` — reproduces every pre-4h message byte-for-byte.
     `.unaryDomain`'s `context` is deliberately NOT rendered (its `EvalContext` carries strictly
@@ -389,6 +394,8 @@ but {actual} wide in a later one"
   | .scanWriteRowNotAdmitted scan name isBase idx dim =>
       s!"evalScan {scan}: {if isBase then "base" else "recurrence"} statement {idx} for {name} has an \
 affine slot at dimension {dim} that names no source axis"
+  | .stateReadInBaseBlock scan baseIdx state =>
+      s!"evalScan {scan}: base statement {baseIdx} reads scan state {state}"
 
 instance : ToString EvalError := ⟨EvalError.render⟩
 

@@ -822,4 +822,85 @@ run_cmd do
           throwError s!"shape 9 accept: wrong: {repr S.data}"
     | none => throwError "shape 9 accept: no S"
 
+-- Shape 10. REJECT donor: "COUPLED scan" fixture, cloned to two 2-wide states A, B (j = 2, L = 3,
+--   X0 = [1, 10]): `A[j,l+1] := A[j,l]`, `B[j,l+1] := B[j,l] + A[j,l]`, base `A[j,0] := X0[j]`;
+--   change: base `B[j,0] := A[j,0]` READS state A instead of X0. The old reference's value depended
+--   on base statement ORDER (A-before-B seeded B from A's seed, B-before-A from zeros), so BOTH
+--   orders are refused; the payload names the reading base's index.
+run_cmd do
+  let j := ax "j" 1; let l := ax "l" 9
+  let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X0" (tensorOf [2] [1, 10])
+  let sizes := (({} : HashMap UID Nat).insert 1 2).insert 9 3
+  let baseA : Stmt := .assign "A" [.free j, .iterAt l 0] (raRhs "X0" [.axis j])
+  let baseBReadsA : Stmt := .assign "B" [.free j, .iterAt l 0] (raRhs "A" [.axis j, .const 0])
+  let baseB : Stmt := .assign "B" [.free j, .iterAt l 0] (raRhs "X0" [.axis j])
+  let recA : Stmt := .assign "A" [.free j, .iterNext l] (raRhs "A" [.axis j, .axis l])
+  let recB : Stmt := .assign "B" [.free j, .iterNext l]
+    { body := { terms := [{ factors := [.read "B" [.axis j, .axis l]] }, { factors := [.read "A" [.axis j, .axis l]] }] }, nonlin := .identity }
+  match evalScan [] env sizes (.scan "A" [l] [baseA, baseBReadsA] [recA, recB] false) with
+  | .error (.stateReadInBaseBlock "A" 1 "A") => pure ()
+  | .error e => throwError s!"shape 10 A-before-B: wrong rejection: {e}"
+  | .ok outs => throwError (raAccepted outs)
+  match evalScan [] env sizes (.scan "A" [l] [baseBReadsA, baseA] [recA, recB] false) with
+  | .error (.stateReadInBaseBlock "A" 0 "A") => pure ()
+  | .error e => throwError s!"shape 10 B-before-A: wrong rejection: {e}"
+  | .ok outs => throwError (raAccepted outs)
+  -- ACCEPT neighbour: independent bases (clone, change: `baseBReadsA` -> `baseB`, reads X0).
+  match evalScan [] env sizes (.scan "A" [l] [baseA, baseB] [recA, recB] false) with
+  | .error e => throwError s!"shape 10 accept: {e}"
+  | .ok outs =>
+      match outs.find? (·.1 == "A"), outs.find? (·.1 == "B") with
+      | some (_, A), some (_, B) =>
+          unless DenseTensor.approxEq A (tensorOf [2, 3] [1, 1, 1, 10, 10, 10]) do
+            throwError s!"shape 10 accept: A wrong: {repr A.data}"
+          unless DenseTensor.approxEq B (tensorOf [2, 3] [1, 2, 3, 10, 20, 30]) do
+            throwError s!"shape 10 accept: B wrong: {repr B.data}"
+      | _, _ => throwError "shape 10 accept: missing A or B"
+
+-- CHECK ORDER (multi-fault). Each program has TWO faults; the first listed check in
+--   `checkScanStructure`'s documented order must win, so flipping any adjacent pair changes the
+--   constructor. Scalar-over-`j` state `S` (j = 2, k = 5, L = 3), donor: shape 6/7/8/9/10 fixtures.
+--   (a) shape 6 over 4: two results AND a base pinned at index 1 only.
+--   (b) shape 6 over 8: two results, the first of which is 5 wide against a 2-wide base.
+--   (c) shape 7 over 6, and 6 over 7: whichever repeat appears first in `recur` order wins.
+--   (d) shape 9 over 10: a zero-scale base that also reads the state.
+--   (e) shape 10 over 4: a base reading the state AND pinned at index 1 only.
+run_cmd do
+  let j := ax "j" 1; let k := ax "k" 2; let l := ax "l" 9
+  let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X0" (tensorOf [2] [1, 10])
+  let sizes := ((({} : HashMap UID Nat).insert 1 2).insert 2 5).insert 9 3
+  let opts : ScatterOpts := { fill := 0, reduce := .rejectCollisions }
+  let b0 : Stmt := .assign "S" [.free j, .iterAt l 0] (raRhs "X0" [.axis j])
+  let b1 : Stmt := .assign "S" [.free j, .iterAt l 1] (raRhs "X0" [.axis j])
+  let step : Stmt := .assign "S" [.free j, .iterNext l] (raRhs "S" [.axis j, .axis l])
+  let stepK : Stmt := .assign "S" [.free k, .iterNext l] (raRhs "S" [.axis k, .axis l])
+  let tS : Stmt := .assign "T" [.free j] (raRhs "S" [.axis j, .axis l])
+  let scanOf (b r : List Stmt) := evalScan [] env sizes (.scan "S" [l] b r false)
+  match scanOf [b1] [step, step] with
+  | .error (.duplicateStateResult "S" "S" 0 1) => pure ()
+  | .error e => throwError s!"order (a): wrong rejection: {e}"
+  | .ok outs => throwError (raAccepted outs)
+  match scanOf [b0] [stepK, stepK] with
+  | .error (.duplicateStateResult "S" "S" 0 1) => pure ()
+  | .error e => throwError s!"order (b): wrong rejection: {e}"
+  | .ok outs => throwError (raAccepted outs)
+  match scanOf [b0] [tS, tS, step, step] with
+  | .error (.duplicateScratchProducer "S" "T" 0 1) => pure ()
+  | .error e => throwError s!"order (c) scratch first: wrong rejection: {e}"
+  | .ok outs => throwError (raAccepted outs)
+  match scanOf [b0] [step, step, tS, tS] with
+  | .error (.duplicateStateResult "S" "S" 0 1) => pure ()
+  | .error e => throwError s!"order (c) state first: wrong rejection: {e}"
+  | .ok outs => throwError (raAccepted outs)
+  let zeroReads : Stmt := .scatter "S" [.affine (.scale 0 j), .iterAt l 0] (raRhs "S" [.axis j, .const 0]) opts
+  match scanOf [zeroReads] [step] with
+  | .error (.scanWriteRowNotAdmitted "S" "S" true 0 0) => pure ()
+  | .error e => throwError s!"order (d): wrong rejection: {e}"
+  | .ok outs => throwError (raAccepted outs)
+  let readsAt1 : Stmt := .assign "S" [.free j, .iterAt l 1] (raRhs "S" [.axis j, .const 0])
+  match scanOf [readsAt1] [step] with
+  | .error (.stateReadInBaseBlock "S" 0 "S") => pure ()
+  | .error e => throwError s!"order (e): wrong rejection: {e}"
+  | .ok outs => throwError (raAccepted outs)
+
 end LeanNCD.Eval
