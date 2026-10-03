@@ -60,7 +60,7 @@ def evalPlain (decls : List Decl) (env : HashMap String DenseTensor) (sizes : Ha
   | .scatter nm slots rhs opts =>
       checkScatterFill nm rhs.agg opts.fill
       let outShape ← scatterOutShape sizes slots
-      evalScatter env sizes nm slots rhs opts outShape
+      evalScatter decls env sizes nm slots rhs opts outShape
   | .recurMorphism nm _ _ => .error (.unsupportedRecurMorphism .evalPlain nm)
 
 /-- Evaluate a `ScheduledProgram` on concrete inputs. This worker is compiler-independent: callers

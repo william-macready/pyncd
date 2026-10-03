@@ -1107,4 +1107,59 @@ run_cmd do
   | .error e => throwError s!"shape 1 accept (plain max): {e}"
   | .ok (_, Y) => unless Y.data == #[9, 4] do throwError s!"shape 1 accept (plain max): {repr Y.data}"
 
+-- Shape 2 (top-level scatter into a `predicate` destination). `evalScatter` took no declarations,
+--   so it always ran the real (×, Σ) algebra and left {0,1}. Donor: the CompileTest
+--   `predicateScatterDest` program `predicate Out(i); Out[2*i] := E[i] + E[i]`, E = [1,0,1] (the
+--   checked path still REFUSES it, `predicateScatterDest`; this is the reference's own semantics).
+--   The two readings differ: real sum doubles to [2,0,0,0,2,0]; Boolean ∃ keeps [1,0,0,0,1,0].
+private def mkPlainD (decls : List Decl) (stmt : Stmt) (env : List (String × DenseTensor))
+    (sizes : List (Nat × Nat)) : Except EvalError (String × DenseTensor) :=
+  evalPlain decls (HashMap.ofList env) (HashMap.ofList sizes) stmt
+
+run_cmd do
+  let i := ax "i" 1
+  let E := tensorOf [3] [1, 0, 1]
+  let opts : ScatterOpts := { fill := 0, reduce := .rejectCollisions }
+  let rhs : RHSExpr :=
+    { body := { terms := [{ factors := [.read "E" [.axis i]] }, { factors := [.read "E" [.axis i]] }] }
+      nonlin := .identity }
+  let st : Stmt := .scatter "Out" [.affine (.scale 2 i)] rhs opts
+  match mkPlainD [.predicate "Out" [i]] st [("E", E)] [(1, 3)] with
+  | .error e => throwError s!"shape 2 predicate: {e}"
+  | .ok (_, Out) =>
+      unless Out.shape == [6] && Out.data == #[1, 0, 0, 0, 1, 0] do
+        throwError s!"shape 2 predicate: {Out.shape} {repr Out.data}"
+  -- ACCEPT neighbour / contrast (clone, change: declaration `predicate` -> `tensor`): a real
+  --   destination still sums, so the dtype is what changed the answer.
+  match mkPlainD [.tensor "Out" [i]] st [("E", E)] [(1, 3)] with
+  | .error e => throwError s!"shape 2 real twin: {e}"
+  | .ok (_, Out) =>
+      unless Out.data == #[2, 0, 0, 0, 2, 0] do throwError s!"shape 2 real twin: {repr Out.data}"
+  -- The `.sum` COLLISION policy into a predicate: `Out[0] := E[i]` folds three writes (1,0,1).
+  --   Real fold gives 2; the Boolean destination folds with ∃ and stays 1.
+  let collide (decls : List Decl) :=
+    mkPlainD decls (.scatter "Out" [.affine (.const 0)]
+      { body := { terms := [{ factors := [.read "E" [.axis i]] }] }, nonlin := .identity }
+      { fill := 0, reduce := .sum }) [("E", E)] [(1, 3)]
+  match collide [.predicate "Out" [i]] with
+  | .error e => throwError s!"shape 2 collide predicate: {e}"
+  | .ok (_, Out) => unless Out.data == #[1] do throwError s!"shape 2 collide predicate: {repr Out.data}"
+  match collide [] with
+  | .error e => throwError s!"shape 2 collide real: {e}"
+  | .ok (_, Out) => unless Out.data == #[2] do throwError s!"shape 2 collide real: {repr Out.data}"
+
+-- Shape 2, the diagonal shape the Boolean path was always meant for: `predicate Eye(i,j);
+--   Eye[i,i] := V[i]`, V = [1,1,1] is still the identity matrix (unchanged by the fix).
+run_cmd do
+  let i := ax "i" 1; let j := ax "j" 2
+  let V := tensorOf [3] [1, 1, 1]
+  let st : Stmt := .scatter "Eye" [.free i, .free i]
+    { body := { terms := [{ factors := [.read "V" [.axis i]] }] }, nonlin := .identity }
+    { fill := 0, reduce := .rejectCollisions }
+  match mkPlainD [.predicate "Eye" [i, j]] st [("V", V)] [(1, 3)] with
+  | .error e => throwError s!"shape 2 eye: {e}"
+  | .ok (_, Eye) =>
+      unless Eye.shape == [3, 3] && Eye.data == #[1, 0, 0, 0, 1, 0, 0, 0, 1] do
+        throwError s!"shape 2 eye: {Eye.shape} {repr Eye.data}"
+
 end LeanNCD.Eval

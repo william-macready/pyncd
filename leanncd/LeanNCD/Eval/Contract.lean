@@ -170,22 +170,26 @@ def Combine.max : Combine := ⟨(· * ·), fun (a b : Float) => Max.max a b, -1.
     across terms and contracted axes. Identity is `+∞` so all-positive inputs reduce correctly. -/
 def Combine.min : Combine := ⟨(· * ·), fun (a b : Float) => Min.min a b, 1.0 / 0.0, 1.0⟩
 
-/-- Pick the `Combine` for an output given its decl and the RHS aggregation op.
-    Priority: `agg = .max` ⇒ tropical max; `agg = .min` ⇒ tropical min; `predicate` ⇒ bool; else real.
-
-    The `.sum` scan searches TENSOR-BEARING declarations only (`.tensor`/`.linear`/`.predicate`).
+/-- Whether `nm`'s declaration is a `predicate`, i.e. its values are Boolean {0,1}. Searches
+    TENSOR-BEARING declarations only (`.tensor`/`.linear`/`.predicate`), taking the first match.
     `.axis`/`.iter` declarations name an axis, not a tensor, and are excluded from `DeclEnv`
     (`resolveDecls`) — including them here let an earlier `axis Result` hide a later
     `predicate Result` and silently select real sum-product for a Boolean output. -/
+def isPredicateDest (decls : List Decl) (nm : String) : Bool :=
+  match decls.find? (fun d => match d with
+      | .axis _ _ | .iter _ _ => false
+      | _                     => d.name == nm) with
+  | some (.predicate _ _) => true
+  | _                     => false
+
+/-- Pick the `Combine` for an output given its decl and the RHS aggregation op.
+    Priority: `agg = .max` ⇒ tropical max; `agg = .min` ⇒ tropical min; `predicate` ⇒ bool; else real.
+    The `.sum` arm's predicate lookup is `isPredicateDest`. -/
 def combineFor (decls : List Decl) (nm : String) (agg : AggOp) : Combine :=
   match agg with
   | .max => Combine.max
   | .min => Combine.min
-  | .sum => match decls.find? (fun d => match d with
-      | .axis _ _ | .iter _ _ => false
-      | _                     => d.name == nm) with
-      | some (.predicate _ _) => Combine.bool
-      | _                     => Combine.real
+  | .sum => if isPredicateDest decls nm then Combine.bool else Combine.real
 
 /-! ## The storage boundary of the reference evaluator
 
