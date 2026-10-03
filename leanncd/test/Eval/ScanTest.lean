@@ -903,4 +903,139 @@ run_cmd do
   | .error e => throwError s!"order (e): wrong rejection: {e}"
   | .ok outs => throwError (raAccepted outs)
 
+-- Shapes 3 + 11 (reduction-marker agreement). Helper: one statement through `evalPlain`.
+private def mkRhs (nm : String) (idx : List IdxExpr) (nl : Nonlin) : RHSExpr :=
+  { body := { terms := [{ factors := [.read nm idx] }] }, nonlin := nl }
+
+private def mkPlain (stmt : Stmt) (env : List (String × DenseTensor)) (sizes : List (Nat × Nat)) :
+    Except EvalError (String × DenseTensor) :=
+  evalPlain [] (HashMap.ofList env) (HashMap.ofList sizes) stmt
+
+-- Shape 3 (marker on a non-axiswise statement). REJECT donor: "f32 entry-guard" is unrelated, so
+--   the donor is the NonlinCompileTest `spuriousMarkerPointwise` program, cloned from surface
+--   syntax to a hand-built `Stmt`; changes: identity/pointwise/scatter variants. The old reference
+--   ignored the marker, so each of these evaluated exactly as its unmarked twin.
+run_cmd do
+  let i := ax "i" 1; let j := ax "j" 2
+  let X := tensorOf [3] [1, -2, 3]
+  -- plain identity: `Y[i.] := X[i]`
+  match mkPlain (.assign "Y" [.freeNorm i] (mkRhs "X" [.axis i] .identity)) [("X", X)] [(1, 3)] with
+  | .error (.unmarkedReductionAxis "Y" 0) => pure ()
+  | .error e => throwError s!"shape 3 identity: wrong rejection: {e}"
+  | .ok (_, Y) => throwError s!"shape 3 identity: accepted: {repr Y.data}"
+  -- plain pointwise: `Y[i.] := relu(X[i])`
+  match mkPlain (.assign "Y" [.freeNorm i] (mkRhs "X" [.axis i] (.pointwise .relu))) [("X", X)] [(1, 3)] with
+  | .error (.unmarkedReductionAxis "Y" 0) => pure ()
+  | .error e => throwError s!"shape 3 pointwise: wrong rejection: {e}"
+  | .ok (_, Y) => throwError s!"shape 3 pointwise: accepted: {repr Y.data}"
+  -- ACCEPT neighbour (clone, change: pointwise -> axiswise normalize): the marker is the reduction
+  --   axis. `Y[i.] := normalize(X[i])` over X = [1,2,3] gives [1/6, 1/3, 1/2].
+  match mkPlain (.assign "Y" [.freeNorm i] (mkRhs "X" [.axis i] (.axiswise .normalize none)))
+      [("X", tensorOf [3] [1, 2, 3])] [(1, 3)] with
+  | .error e => throwError s!"shape 3 accept: {e}"
+  | .ok (_, Y) =>
+      unless DenseTensor.approxEq Y (tensorOf [3] [1/6, 2/6, 3/6]) do
+        throwError s!"shape 3 accept: wrong: {repr Y.data}"
+  -- marker position is the index into the WHOLE slot list: `Y[i, j.]` -> 1
+  match mkPlain (.assign "Y" [.free i, .freeNorm j] (mkRhs "A" [.axis i, .axis j] .identity))
+      [("A", tensorOf [2, 2] [1, 2, 3, 4])] [(1, 2), (2, 2)] with
+  | .error (.unmarkedReductionAxis "Y" 1) => pure ()
+  | .error e => throwError s!"shape 3 position: wrong rejection: {e}"
+  | .ok (_, Y) => throwError s!"shape 3 position: accepted: {repr Y.data}"
+
+-- Shape 11 (two markers on an axiswise statement). REJECT donor: NonlinCompileTest
+--   `doubleMarkerAxiswise` (`Y[q., s.] := normalize(A[q, s])`, A = [[1,3],[2,2]]), as a `Stmt`.
+--   The old reference reduced along the FIRST marked axis (`q`: columns [1/3,3/5 ; 2/3,2/5]);
+--   marking only `s` reduces rows ([1/4,3/4 ; 1/2,1/2]), so the two readings differ.
+run_cmd do
+  let q := ax "q" 1; let s := ax "s" 2
+  let A := tensorOf [2, 2] [1, 3, 2, 2]
+  let rhs := mkRhs "A" [.axis q, .axis s] (.axiswise .normalize none)
+  match mkPlain (.assign "Y" [.freeNorm q, .freeNorm s] rhs) [("A", A)] [(1, 2), (2, 2)] with
+  | .error (.multipleMarkedReductionAxes "Y" 0 1) => pure ()
+  | .error e => throwError s!"shape 11: wrong rejection: {e}"
+  | .ok (_, Y) => throwError s!"shape 11: accepted: {repr Y.data}"
+  -- ACCEPT neighbour (clone, change: drop the marker on q): reduces along s.
+  match mkPlain (.assign "Y" [.free q, .freeNorm s] rhs) [("A", A)] [(1, 2), (2, 2)] with
+  | .error e => throwError s!"shape 11 accept: {e}"
+  | .ok (_, Y) =>
+      unless DenseTensor.approxEq Y (tensorOf [2, 2] [0.25, 0.75, 0.5, 0.5]) do
+        throwError s!"shape 11 accept: wrong: {repr Y.data}"
+
+-- Shape 3 through the SCATTER arms (the audit finding): `evalPlain`'s scatter arm and the scan-local
+--   scatter arm never call `resolveNonlin`, so a check there alone is blind. REJECT donor: the
+--   "upsample" fixture in ScatterTest (`Out[2*i, 2*j] := X[i,j]`), changed: slot 1 is `.freeNorm j`
+--   (`Out[2*i, j.] := X[i,j]`, one affine slot + one marked free slot).
+run_cmd do
+  let i := ax "i" 1; let j := ax "j" 2
+  let X := tensorOf [2, 2] [1, 2, 3, 4]
+  let rhs := mkRhs "X" [.axis i, .axis j] .identity
+  let opts : ScatterOpts := { fill := 0, reduce := .rejectCollisions }
+  match mkPlain (.scatter "Out" [.affine (.scale 2 i), .freeNorm j] rhs opts) [("X", X)] [(1, 2), (2, 2)] with
+  | .error (.unmarkedReductionAxis "Out" 1) => pure ()
+  | .error e => throwError s!"shape 3 scatter: wrong rejection: {e}"
+  | .ok (_, Out) => throwError s!"shape 3 scatter: accepted: {repr Out.data}"
+  -- ACCEPT neighbour (clone, change: `.freeNorm j` -> `.free j`).
+  match mkPlain (.scatter "Out" [.affine (.scale 2 i), .free j] rhs opts) [("X", X)] [(1, 2), (2, 2)] with
+  | .error e => throwError s!"shape 3 scatter accept: {e}"
+  | .ok (_, Out) =>
+      unless Out.shape == [4, 2] && Out.data == #[1, 2, 0, 0, 3, 4, 0, 0] do
+        throwError s!"shape 3 scatter accept: wrong: {Out.shape} {repr Out.data}"
+  -- scan-local scatter arm, called directly (`evalStmtSliceSeeded`): base `S[2*j, k., 0] := X[j,k]`.
+  let k := ax "k" 3; let l := ax "l" 9
+  let seed : HashMap UID Int := ({} : HashMap UID Int).insert 9 0
+  let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X" X
+  let sizes := ((({} : HashMap UID Nat).insert 2 2).insert 3 2).insert 9 3
+  let sc (m : LHSSlot) : Stmt :=
+    .scatter "S" [.affine (.scale 2 j), m, .iterAt l 0] (mkRhs "X" [.axis j, .axis k] .identity) opts
+  match evalStmtSliceSeeded [] env sizes seed (sc (.freeNorm k)) with
+  | .error (.unmarkedReductionAxis "S" 1) => pure ()
+  | .error e => throwError s!"shape 3 scan scatter: wrong rejection: {e}"
+  | .ok (_, t) => throwError s!"shape 3 scan scatter: accepted: {repr t.data}"
+  match evalStmtSliceSeeded [] env sizes seed (sc (.free k)) with
+  | .error e => throwError s!"shape 3 scan scatter accept: {e}"
+  | .ok _ => pure ()
+
+-- Shapes 3 + 11 inside a scan (scan-local assigns), the realistic trigger: a softmax scan whose BASE
+--   carries a stray marker. REJECT donor: "LINEAR scan" (`S[j,0] := X[j]`, X = [1,10], L = 3 ... ),
+--   changed: base slot `.free j` -> `.freeNorm j` (`S[j.,0] := X0[j]`), and separately a step
+--   with two markers. ACCEPT neighbour: the unmarked base, and a step marked once.
+run_cmd do
+  let j := ax "j" 1; let l := ax "l" 9
+  let env : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "X0" (tensorOf [2] [1, 10])
+  let sizes := (({} : HashMap UID Nat).insert 1 2).insert 9 3
+  let base (m : LHSSlot) : Stmt := .assign "S" [m, .iterAt l 0] (raRhs "X0" [.axis j])
+  let step (m : LHSSlot) (nl : Nonlin) : Stmt :=
+    .assign "S" [m, .iterNext l] (mkRhs "S" [.axis j, .axis l] nl)
+  let soft := Nonlin.axiswise .softmax none
+  let scanOf (b r : Stmt) := evalScan [] env sizes (.scan "S" [l] [b] [r] false)
+  match scanOf (base (.freeNorm j)) (step (.free j) .identity) with
+  | .error (.unmarkedReductionAxis "S" 0) => pure ()
+  | .error e => throwError s!"shape 3 scan base: wrong rejection: {e}"
+  | .ok outs => throwError (raAccepted outs)
+  match scanOf (base (.free j)) (step (.freeNorm j) (.pointwise .relu)) with
+  | .error (.unmarkedReductionAxis "S" 0) => pure ()
+  | .error e => throwError s!"shape 3 scan step: wrong rejection: {e}"
+  | .ok outs => throwError (raAccepted outs)
+  match scanOf (base (.free j)) (step (.free j) .identity) with
+  | .error e => throwError s!"shape 3 scan accept (unmarked): {e}"
+  | .ok _ => pure ()
+  match scanOf (base (.free j)) (step (.freeNorm j) soft) with
+  | .error e => throwError s!"shape 3 scan accept (softmax step): {e}"
+  | .ok _ => pure ()
+  -- two markers on one scan step: both slots are retained axes (`S[p., j., l+1]`)
+  let p := ax "p" 4
+  let env2 := env.insert "X1" (tensorOf [2, 2] [1, 2, 3, 4])
+  let sizes2 := sizes.insert 4 2
+  let base2 : Stmt := .assign "S" [.free p, .free j, .iterAt l 0] (raRhs "X1" [.axis p, .axis j])
+  let step2 (m1 m2 : LHSSlot) : Stmt :=
+    .assign "S" [m1, m2, .iterNext l] (mkRhs "S" [.axis p, .axis j, .axis l] soft)
+  match evalScan [] env2 sizes2 (.scan "S" [l] [base2] [step2 (.freeNorm p) (.freeNorm j)] false) with
+  | .error (.multipleMarkedReductionAxes "S" 0 1) => pure ()
+  | .error e => throwError s!"shape 11 scan: wrong rejection: {e}"
+  | .ok outs => throwError (raAccepted outs)
+  match evalScan [] env2 sizes2 (.scan "S" [l] [base2] [step2 (.free p) (.freeNorm j)] false) with
+  | .error e => throwError s!"shape 11 scan accept: {e}"
+  | .ok _ => pure ()
+
 end LeanNCD.Eval

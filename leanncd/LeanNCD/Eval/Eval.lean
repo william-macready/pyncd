@@ -29,6 +29,10 @@ def scatterOutShape (sizes : HashMap UID Nat) (slots : List LHSSlot) : Except Ev
 def evalPlain (decls : List Decl) (env : HashMap String DenseTensor) (sizes : HashMap UID Nat)
     (s : Stmt) : Except EvalError (String × DenseTensor) := do
   rejectUnsupportedStorage decls (stmtStorageNames s)
+  -- Marker agreement covers BOTH arms: the scatter arm never reaches `resolveNonlin`.
+  match s with
+  | .assign nm slots rhs | .scatter nm slots rhs _ => checkNormMarkers nm rhs.nonlin slots
+  | .recurMorphism .. => pure ()
   match s with
   | .assign nm slots rhs =>
       let (_, pre) ← evalAssignDtyped decls env sizes nm slots rhs    -- contract (dtype-aware)

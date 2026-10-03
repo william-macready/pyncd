@@ -248,6 +248,26 @@ def resolveNonlin (nl : Nonlin) (slots : List LHSSlot) (axisUids : List UID) :
           | none   => throw (.invalidNormAxis .notAmongOutputAxes)
       | none    => throw (.invalidNormAxis .notMarked)
 
+/-- Reduction-marker agreement, run at the ENTRY of every statement evaluator (`evalPlain` for both
+    its assign and scatter arms, `evalStmtSliceSeeded` for every arm of a scan base/recurrence
+    statement) — NOT inside `resolveNonlin`, which scatters never reach. It mirrors the checked
+    backend's `resolveNonlinAxis`: counting `.freeNorm` slots over the WHOLE slot list (iteration
+    slots included, so positions match `NonlinCompileError`'s), an axiswise statement needs exactly
+    one (two or more is `multipleMarkedReductionAxes`) and any other statement needs none (else
+    `unmarkedReductionAxis`). Zero markers on an axiswise statement is NOT raised here:
+    `resolveNonlin` already reports it as `invalidNormAxis .notMarked` (and a scatter's non-identity
+    nonlinearity is refused separately). Check order within a statement: storage refusal, THIS
+    check, then shape/size/evaluation errors. -/
+def checkNormMarkers (stmtName : String) (nl : Nonlin) (slots : List LHSSlot) :
+    Except EvalError Unit :=
+  let marked : List Nat :=
+    slots.zipIdx.filterMap (fun (sl, i) => match sl with | .freeNorm _ => some i | _ => none)
+  match nl, marked with
+  | .axiswise _ _, p1 :: p2 :: _ => throw (.multipleMarkedReductionAxes stmtName p1 p2)
+  | .axiswise _ _, _ => pure ()
+  | _, p :: _ => throw (.unmarkedReductionAxis stmtName p)
+  | _, [] => pure ()
+
 /-- Dispatch: apply a resolved Nonlin. `axisUids` is only consumed by `AxiswiseFn.apply` to build
     the `included?` coordinate map from the source mask; `softmaxT`/`normalizeT`/`l2normalizeT`
     themselves take that `included?` predicate directly. The axis *position* itself already lives

@@ -334,6 +334,17 @@ inductive EvalError
       reading base came before or after the state's own base. `state` is the first state name read,
       in right-hand-side order. -/
   | stateReadInBaseBlock (scan : String) (baseIdx : Nat) (state : String)
+  -- Reduction-marker refusals (reference-alignment, marker group), raised by `checkNormMarkers`
+  -- (`Nonlin.lean`) at the entry of every statement evaluator. Positions are 0-based indices into
+  -- the statement's WHOLE LHS slot list (iteration slots included), exactly as the checked
+  -- backend's `NonlinCompileError` payloads count them.
+  /-- A `.` reduction marker on a statement whose nonlinearity is not axiswise (identity or
+      pointwise): the marker has no reduction to belong to, and the old reference ignored it.
+      `pos` is the first marked slot. Includes scatters (`Out[2*i, j.] := X[i, j]`). -/
+  | unmarkedReductionAxis (stmt : String) (pos : Nat)
+  /-- An axiswise statement marks two or more reduction axes. The old reference normalised along
+      the FIRST silently. `firstPos`/`secondPos` are the first two marked slots. -/
+  | multipleMarkedReductionAxes (stmt : String) (firstPos secondPos : Nat)
 
 /-- The sole renderer for `EvalError` — reproduces every pre-4h message byte-for-byte.
     `.unaryDomain`'s `context` is deliberately NOT rendered (its `EvalContext` carries strictly
@@ -396,6 +407,11 @@ but {actual} wide in a later one"
 affine slot at dimension {dim} that names no source axis"
   | .stateReadInBaseBlock scan baseIdx state =>
       s!"evalScan {scan}: base statement {baseIdx} reads scan state {state}"
+  | .unmarkedReductionAxis stmt pos =>
+      s!"{stmt}: LHS slot {pos} is marked (·) as a reduction axis but the statement is not axiswise"
+  | .multipleMarkedReductionAxes stmt a b =>
+      s!"{stmt}: LHS slots {a} and {b} are both marked (·) as reduction axes; an axiswise \
+statement marks exactly one"
 
 instance : ToString EvalError := ⟨EvalError.render⟩
 

@@ -53,6 +53,10 @@ def scanScatterSourceAxes (slots : List LHSSlot) : List AxisSpec :=
 def evalStmtSliceSeeded (decls : List Decl) (env : HashMap String DenseTensor) (sizes : HashMap UID Nat)
     (seed : HashMap UID Int) (s : Stmt) : Except EvalError (String × DenseTensor) := do
   rejectUnsupportedStorage decls (stmtStorageNames s)
+  -- Marker agreement covers the scatter arm too, which never reaches `resolveNonlin`.
+  match s with
+  | .assign nm slots rhs | .scatter nm slots rhs _ => checkNormMarkers nm rhs.nonlin slots
+  | .recurMorphism .. => pure ()
   match s with
   | .assign nm slots rhs =>
       let (_, slice) ← evalAssignDtypedSeeded decls env sizes seed nm slots rhs
