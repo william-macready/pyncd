@@ -1,3 +1,4 @@
+import Eval.ExplicitF64
 import LeanNCD.DSL.Ast
 import LeanNCD.Eval.Entry
 import Eval.PropertyOracle.Compare
@@ -51,7 +52,7 @@ def template1 (L : Nat) (Aneg : Bool) : ScanCase :=
   let aVals : Array Float := if Aneg then #[-2.0, 3.0] else #[2.0, 3.0]
   let inputs : Std.HashMap String DenseTensor :=
     (({} : Std.HashMap String DenseTensor).insert "X0" ⟨[2], #[1.0, 2.0]⟩).insert "A" ⟨[2], aVals⟩
-  { prog := { decls := [.axis j1 (some 2), .axis l (some L), .tensor "X0" [j1], .tensor "A" [j1]],
+  { prog := { decls := [.axis j1 (some 2), .axis l (some L), .typedTensor .f64 "X0" [j1], .typedTensor .f64 "A" [j1]],
               stmts := [base, recur] },
     inputs := inputs, axes := [l], Ls := [L], base := [base], recur := [recur] }
 
@@ -69,7 +70,7 @@ private def template2 (L : Nat) (Aneg : Bool) : ScanCase :=
   let aVals : Array Float := if Aneg then #[-1.0, -1.0] else #[1.0, 2.0]
   let inputs : Std.HashMap String DenseTensor :=
     (({} : Std.HashMap String DenseTensor).insert "X0" ⟨[2], #[1.0, 1.0]⟩).insert "A" ⟨[2], aVals⟩
-  { prog := { decls := [.axis j2 (some 2), .axis l (some L), .tensor "X0" [j2], .tensor "A" [j2]],
+  { prog := { decls := [.axis j2 (some 2), .axis l (some L), .typedTensor .f64 "X0" [j2], .typedTensor .f64 "A" [j2]],
               stmts := [base, recur] },
     inputs := inputs, axes := [l], Ls := [L], base := [base], recur := [recur] }
 
@@ -91,7 +92,7 @@ def template3 (L : Nat) : ScanCase :=
   let recurH : Stmt := .assign "H" [.iterNext l]
     { body := { terms := [{ factors := [.read "G" [.axis l]] }] }, nonlin := .identity }
   let inputs : Std.HashMap String DenseTensor := (({} : Std.HashMap String DenseTensor).insert "C" ⟨[], #[1.0]⟩)
-  { prog := { decls := [.axis l (some L), .tensor "C" []],
+  { prog := { decls := [.axis l (some L), .typedTensor .f64 "C" []],
               stmts := [baseG, baseH, recurG, recurH] },
     inputs := inputs, axes := [l], Ls := [L], base := [baseG, baseH], recur := [recurG, recurH] }
 
@@ -114,7 +115,7 @@ private def template4 (L : Nat) : ScanCase :=
   let xData : Array Float := ((List.range L).map (fun i => Float.ofNat i + 1.0)).toArray
   let inputs : Std.HashMap String DenseTensor :=
     (({} : Std.HashMap String DenseTensor).insert "C0" ⟨[], #[1.0]⟩).insert "X" ⟨[L], xData⟩
-  { prog := { decls := [.axis l (some L), .tensor "C0" [], .tensor "X" [l]],
+  { prog := { decls := [.axis l (some L), .typedTensor .f64 "C0" [], .typedTensor .f64 "X" [l]],
               stmts := [base, recur] },
     inputs := inputs, axes := [l], Ls := [L], base := [base], recur := [recur] }
 
@@ -139,14 +140,14 @@ def template4Bool (L : Nat) : ScanCase :=
   let xData : Array Float := Array.replicate L 1.0
   let inputs : Std.HashMap String DenseTensor :=
     (({} : Std.HashMap String DenseTensor).insert "C0" ⟨[], #[1.0]⟩).insert "X" ⟨[L], xData⟩
-  { prog := { decls := [.axis l (some L), .tensor "C0" [], .tensor "X" [l], .predicate "S" [l]],
+  { prog := { decls := [.axis l (some L), .typedTensor .f64 "C0" [], .typedTensor .f64 "X" [l], .predicate "S" [l]],
               stmts := [base, recur] },
     inputs := inputs, axes := [l], Ls := [L], base := [base], recur := [recur] }
 
 -- REGRESSION GUARD: `template4Bool`'s history must be all `1.0` — Boolean disjunction of
 -- already-`1.0` values, not a real running sum (which would read `[1, 2, 3]` for `L = 3`).
 run_cmd do
-  match TLProgram.eval (template4Bool 3).prog (template4Bool 3).inputs with
+  match TLProgram.eval (template4Bool 3).prog.explicitF64 (template4Bool 3).inputs with
   | .error e => throwError (toString e)
   | .ok report => match report.env["S"]? with
     | some s => unless denseEq s ⟨[3], #[1.0, 1.0, 1.0]⟩ do
@@ -168,7 +169,7 @@ private def template5 (L : Nat) (useMax : Bool) : ScanCase :=
   let inputs : Std.HashMap String DenseTensor :=
     (({} : Std.HashMap String DenseTensor).insert "X0" ⟨[1], #[2.0]⟩).insert "W" ⟨[1,2], #[1.0, 3.0]⟩
   { prog := { decls := [.axis j5 (some 1), .axis k5 (some 2), .axis l (some L),
-                        .tensor "X0" [j5], .tensor "W" [j5, k5]],
+                        .typedTensor .f64 "X0" [j5], .typedTensor .f64 "W" [j5, k5]],
               stmts := [base, recur] },
     inputs := inputs, axes := [l], Ls := [L], base := [base], recur := [recur] }
 
@@ -188,7 +189,7 @@ def template6 : ScanCase :=
       nonlin := .identity }
   let inputs : Std.HashMap String DenseTensor :=
     (({} : Std.HashMap String DenseTensor).insert "Z" ⟨[2], #[0.0, 0.0]⟩).insert "A" ⟨[2,2], #[1.0,1.0,1.0,1.0]⟩
-  { prog := { decls := [.axis r6 (some 2), .axis c6 (some 2), .tensor "Z" [r6], .tensor "A" [r6, c6]],
+  { prog := { decls := [.axis r6 (some 2), .axis c6 (some 2), .typedTensor .f64 "Z" [r6], .typedTensor .f64 "A" [r6, c6]],
               stmts := [base, recur] },
     inputs := inputs, axes := [r6, c6], Ls := [2, 2], base := [base], recur := [recur] }
 
@@ -198,7 +199,7 @@ def template6 : ScanCase :=
 -- (addition), and Task 2's contract tests only checked well-formedness (`.isSome`), never the
 -- actual value, so it slipped through. Row-major [r][c]: G = [[0,0],[0,1]].
 run_cmd do
-  match TLProgram.eval template6.prog template6.inputs with
+  match TLProgram.eval template6.prog.explicitF64 template6.inputs with
   | .error e => throwError (toString e)
   | .ok report => match report.env["G"]? with
     | some g => unless denseEq g ⟨[2, 2], #[0.0, 0.0, 0.0, 1.0]⟩ do
@@ -214,7 +215,7 @@ def enumScanCases : List ScanCase :=
 
 -- CONTRACT TESTS (fire on build):
 #guard enumScanCases.length == 17   -- 10 (templates 1-3) + 2 (t4) + 4 (t5) + 1 (t6)
-#guard enumScanCases.all (fun c => (TLProgram.eval c.prog c.inputs).toOption.isSome)
+#guard enumScanCases.all (fun c => (TLProgram.eval c.prog.explicitF64 c.inputs).toOption.isSome)
 -- coverage: the 2-D template is present
 #guard enumScanCases.any (fun c => c.axes.length == 2)
 -- coverage: the coupled 2-state template is present (more than one base stmt)

@@ -42,7 +42,7 @@ run_cmd do
 --       name that says what it actually tests. Both spacings converge now, so either would exercise
 --       this same path — kept as `l + 1` since that's what the finding was originally about.
 run_cmd
-  match TLProgram.compile (tlprog!{ tensor X(j)
+  match TLProgram.compile (tlprog!{ tensor f64 X(j)
                                      G[j, 0]     := X[j]
                                      G[j, l + 1] := G[j, l] }) |>.run 0 with
   | .error (.scanAxisNotIter "l") _ => pure ()
@@ -72,7 +72,7 @@ run_cmd (assertEvalError "RJ7 size-conflict"
 --   rejection, but that incidentally dropped the only coverage of this eval-time guard, which is
 --   still reachable from ordinary surface syntax. Restored here under a fresh name.
 run_cmd (assertEvalError "RJ11 orphan-base-case"
-  (tlprog!{ tensor X(j)
+  (tlprog!{ tensor f64 X(j)
             S[j, 0] := X[j] })
   (HashMap.ofList [("X", tl [2] [1,2])])
   "scan node has no iteration axis")

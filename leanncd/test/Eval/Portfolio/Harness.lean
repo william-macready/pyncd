@@ -1,4 +1,5 @@
 import LeanNCD.Eval.Entry
+import Eval.ExplicitF64
 import LSpec
 /-!
 # Portfolio test harness
@@ -25,7 +26,7 @@ def tl (shape : List Nat) (xs : List Float) : DenseTensor := ⟨shape, xs.toArra
 /-- `[N]`: evaluate `prog` on `env`, assert output `key` ≈ `expect`. -/
 def assertEval (nm : String) (prog : TLProgram) (env : HashMap String DenseTensor)
     (key : String) (expect : DenseTensor) : CommandElabM Unit := do
-  match TLProgram.eval prog env with
+  match TLProgram.eval prog.explicitF64 env with
   | .error e => throwError s!"{nm}: eval error: {e}"
   | .ok report => match report.env[key]? with
     | some t =>
@@ -38,7 +39,7 @@ def assertEval (nm : String) (prog : TLProgram) (env : HashMap String DenseTenso
 /-- `[R]`/`[F]`: assert `eval` fails and its error string contains `needle`. -/
 def assertEvalError (nm : String) (prog : TLProgram) (env : HashMap String DenseTensor)
     (needle : String) : CommandElabM Unit := do
-  match TLProgram.eval prog env with
+  match TLProgram.eval prog.explicitF64 env with
   | .ok _ => throwError s!"{nm}: expected eval failure containing '{needle}', but it succeeded"
   | .error e =>
       unless needle.isEmpty || ((toString e).splitOn needle).length > 1 do
@@ -55,7 +56,7 @@ def assertCompileError (nm : String) (prog : TLProgram) : CommandElabM Unit := d
     "masked entry is 0", etc. — when the doc gives a property rather than a full tensor). -/
 def assertEvalPred (nm : String) (prog : TLProgram) (env : HashMap String DenseTensor)
     (key : String) (p : DenseTensor → Bool) (desc : String) : CommandElabM Unit := do
-  match TLProgram.eval prog env with
+  match TLProgram.eval prog.explicitF64 env with
   | .error e => throwError s!"{nm}: eval error: {e}"
   | .ok report => match report.env[key]? with
     | some t => unless p t do throwError s!"{nm}: property failed ({desc}); got {t.data.toList}"
@@ -65,7 +66,7 @@ def assertEvalPred (nm : String) (prog : TLProgram) (env : HashMap String DenseT
     evals end-to-end" cases where an exact value isn't hand-computed). -/
 def assertShape (nm : String) (prog : TLProgram) (env : HashMap String DenseTensor)
     (key : String) (shape : List Nat) : CommandElabM Unit := do
-  match TLProgram.eval prog env with
+  match TLProgram.eval prog.explicitF64 env with
   | .error e => throwError s!"{nm}: eval error: {e}"
   | .ok report => match report.env[key]? with
     | some t => unless t.shape == shape do throwError s!"{nm}: shape {t.shape} ≠ {shape}"
@@ -85,7 +86,7 @@ def rowsSumToOne (t : DenseTensor) : Bool :=
 /-- Pure Bool checker for LSpec `test` blocks: eval and compare output. -/
 def evalEqB (prog : TLProgram) (env : HashMap String DenseTensor)
     (key : String) (expect : DenseTensor) : Bool :=
-  match TLProgram.eval prog env with
+  match TLProgram.eval prog.explicitF64 env with
   | .error _ => false
   | .ok report => match report.env[key]? with
     | some t => t.shape == expect.shape && DenseTensor.approxEq t expect
@@ -94,14 +95,14 @@ def evalEqB (prog : TLProgram) (env : HashMap String DenseTensor)
 /-- Pure Bool checker for LSpec `test` blocks: eval and apply a predicate. -/
 def evalPredB (prog : TLProgram) (env : HashMap String DenseTensor)
     (key : String) (p : DenseTensor → Bool) : Bool :=
-  match TLProgram.eval prog env with
+  match TLProgram.eval prog.explicitF64 env with
   | .error _ => false
   | .ok report => (report.env[key]?.map p).getD false
 
 /-- Pure Bool checker for LSpec `test` blocks: eval and check output shape. -/
 def evalShapeB (prog : TLProgram) (env : HashMap String DenseTensor)
     (key : String) (shape : List Nat) : Bool :=
-  match TLProgram.eval prog env with
+  match TLProgram.eval prog.explicitF64 env with
   | .error _ => false
   | .ok report => (report.env[key]?.map (·.shape == shape)).getD false
 

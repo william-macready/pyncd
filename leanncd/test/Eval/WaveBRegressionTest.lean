@@ -1,3 +1,4 @@
+import Eval.ExplicitF64
 import LeanNCD.Eval.Scan
 namespace LeanNCD.Eval
 open Std
@@ -66,10 +67,10 @@ run_cmd do
     { body := { terms := [{ factors :=
         [.read "F" [.axis t, .axis i], .read "F" [.axis t, .axis j], .read "edge" [.axis i, .axis j]] }] },
       nonlin := .identity }
-  match evalAssignDtyped [.predicate "Result" []] env sizes "Result" [] rhs with
+  match evalAssignDtypedF64 [.predicate "Result" []] env sizes "Result" [] rhs with
   | .error e => throwError s!"Wave-B #3: plain (predicate) path errored: {e}"
   | .ok (_, plainR) =>
-      match evalStmtSliceSeeded [.predicate "Result" []] env sizes {} (.assign "Result" [] rhs) with
+      match evalStmtSliceSeededF64 [.predicate "Result" []] env sizes {} (.assign "Result" [] rhs) with
       | .error e => throwError s!"Wave-B #3: scan-slice path errored: {e}"
       | .ok (_, scanR) =>
           unless DenseTensor.approxEq plainR scanR do

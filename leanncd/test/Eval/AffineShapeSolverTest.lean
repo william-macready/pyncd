@@ -1,3 +1,4 @@
+import Eval.ExplicitF64
 import LeanNCD.Eval.Entry
 
 namespace LeanNCD.Eval
@@ -205,7 +206,7 @@ run_cmd do
   let env : HashMap String DenseTensor :=
     (({} : HashMap String DenseTensor).insert "X" (tensorOf [8] [0,1,2,3,4,5,6,7])).insert "U"
       (tensorOf [4] [10,20,30,40])
-  match TLProgram.eval (tlprog!{ Y[i, j] := X[j - i + 3] · U[i] }) env with
+  match TLProgram.eval (TLProgram.explicitF64 <| tlprog!{ Y[i, j] := X[j - i + 3] · U[i] }) env with
   | .error e => throwError s!"signed eval failed: {e}"
   | .ok report => match report.env["Y"]? with
     | some y =>
@@ -218,7 +219,7 @@ run_cmd do
   let env : HashMap String DenseTensor :=
     (({} : HashMap String DenseTensor).insert "X" (tensorOf [7] [0, 1, 2, 3, 4, 5, 6])).insert "U"
       (tensorOf [9] [0, 10, 20, 30, 40, 50, 60, 70, 80])
-  match TLProgram.eval (tlprog!{ Y[i, j] := X[i + j] + U[i + 2 * j] }) env with
+  match TLProgram.eval (TLProgram.explicitF64 <| tlprog!{ Y[i, j] := X[i + j] + U[i + 2 * j] }) env with
   | .error e => throwError s!"affine eval failed: {e}"
   | .ok report => match report.env["Y"]? with
     | some y =>
@@ -236,7 +237,7 @@ run_cmd do
   let env : HashMap String DenseTensor :=
     (({} : HashMap String DenseTensor).insert "W" (tensorOf [3] [1, 10, 100])).insert "X"
       (tensorOf [8] [1, 2, 3, 4, 5, 6, 7, 8])
-  match TLProgram.eval (tlprog!{ Y[h] := W[k] · X[2 * h + k - 1] }) env with
+  match TLProgram.eval (TLProgram.explicitF64 <| tlprog!{ Y[h] := W[k] · X[2 * h + k - 1] }) env with
   | .error e => throwError s!"window eval failed: {e}"
   | .ok report => match report.env["Y"]? with
     | some y =>

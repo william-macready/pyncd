@@ -12,7 +12,7 @@ run_cmd do
 -- TEST-THE-TESTER (a): a known-good tiny program passes both laws.
 private def i0 : AxisSpec := ⟨"i", 1, .real⟩
 private def goodProg : TLProgram :=
-  { decls := [.axis i0 (some 2), .tensor "A" [i0], .tensor "B" [i0]],
+  { decls := [.axis i0 (some 2), .typedTensor .f64 "A" [i0], .typedTensor .f64 "B" [i0]],
     stmts := [.assign "Y" [.free i0]
       ⟨⟨[⟨[.read "A" [.axis i0]]⟩, ⟨[.read "B" [.axis i0]]⟩]⟩, .identity, .sum⟩] }
 private def goodEnv : Std.HashMap String DenseTensor :=
@@ -23,8 +23,12 @@ private def goodEnv : Std.HashMap String DenseTensor :=
 -- term must be caught by `evalAgreesOn` on `goodProg` (Y = A + B vs a bogus Y = A).
 private def bogusSplit : TLProgram :=
   { goodProg with stmts := [.assign "Y" [.free i0] ⟨⟨[⟨[.read "A" [.axis i0]]⟩]⟩, .identity, .sum⟩] }
+-- Both programs must EVALUATE, so the disagreement below is a VALUE disagreement and not one side
+-- refusing (`evalAgreesOn` is also false for an `ok`/`error` pair).
+#guard (TLProgram.eval goodProg.explicitF64 goodEnv).toOption.isSome
+#guard (TLProgram.eval bogusSplit.explicitF64 goodEnv).toOption.isSome
 #guard ! evalAgreesOn (producedNames goodProg)
-          (TLProgram.eval goodProg goodEnv) (TLProgram.eval bogusSplit goodEnv)
+          (TLProgram.eval goodProg.explicitF64 goodEnv) (TLProgram.eval bogusSplit.explicitF64 goodEnv)
 
 -- TEST-THE-TESTER (c) (Task 5 — reordering teeth, non-vacuous positive): a Y-DEPENDENT
 -- 2-statement program `Y := A + B; Z := Y` passes both laws — in particular, the reordering
@@ -33,7 +37,7 @@ private def bogusSplit : TLProgram :=
 private def yStmt : Stmt :=
   .assign "Y" [.free i0] ⟨⟨[⟨[.read "A" [.axis i0]]⟩, ⟨[.read "B" [.axis i0]]⟩]⟩, .identity, .sum⟩
 private def yDepGoodProg : TLProgram :=
-  { decls := [.axis i0 (some 2), .tensor "A" [i0], .tensor "B" [i0]],
+  { decls := [.axis i0 (some 2), .typedTensor .f64 "A" [i0], .typedTensor .f64 "B" [i0]],
     stmts := [yStmt, .assign "Z" [.free i0] ⟨⟨[⟨[.read "Y" [.axis i0]]⟩]⟩, .identity, .sum⟩] }
 #guard (checkLaws yDepGoodProg goodEnv).isNone
 
@@ -43,7 +47,9 @@ private def yDepGoodProg : TLProgram :=
 private def yDepDifferentProg : TLProgram :=
   { yDepGoodProg with
     stmts := [yStmt, .assign "Z" [.free i0] ⟨⟨[⟨[.read "A" [.axis i0]]⟩]⟩, .identity, .sum⟩] }
+#guard (TLProgram.eval yDepGoodProg.explicitF64 goodEnv).toOption.isSome
+#guard (TLProgram.eval yDepDifferentProg.explicitF64 goodEnv).toOption.isSome
 #guard ! evalAgreesOn (producedNames yDepGoodProg)
-          (TLProgram.eval yDepGoodProg goodEnv) (TLProgram.eval yDepDifferentProg goodEnv)
+          (TLProgram.eval yDepGoodProg.explicitF64 goodEnv) (TLProgram.eval yDepDifferentProg.explicitF64 goodEnv)
 
 end LeanNCD.PropertyOracle

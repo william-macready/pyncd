@@ -15,7 +15,7 @@ open Std LSpec
 --   Row0 softmax([1,0]) = [e/(e+1), 1/(e+1)] = [0.73105857863, 0.26894142137];  Row1 mirror.
 test "AT1 self-attn softmax"
     (evalEqB (tlprog!{
-    tensor A(q, s)
+    tensor f64 A(q, s)
     A[q, s.] := softmax(Q[q, d] · K[s, d])
   })
       (HashMap.ofList [("Q", tl [2,2] [1,0, 0,1]), ("K", tl [2,2] [1,0, 0,1])])
@@ -28,7 +28,7 @@ test "AT1 self-attn softmax"
 --   O[1] = [0.26894·1+0.73106·3, 0.26894·2+0.73106·4] = [2.46211715726, 3.46211715726]
 test "AT3 attn-output"
     (evalEqB (tlprog!{
-    tensor A(q, s)
+    tensor f64 A(q, s)
     A[q, s.] := softmax(Q[q, d] · K[s, d])
     O[q, e]  := A[q, s] · V[s, e]
   })
@@ -41,7 +41,7 @@ test "AT3 attn-output"
 --   shape [1,1,2,2] ⇒ A equals AT1 broadcast into the [1,1,·,·] frame.
 test "AT4 mha-batched"
     (evalEqB (tlprog!{
-    tensor A(b, h, q, s)
+    tensor f64 A(b, h, q, s)
     A[b, h, q, s.] := softmax(Q[b, h, q, d] · K[b, h, s, d])
   })
       (HashMap.ofList [("Q", tl [1,1,2,2] [1,0, 0,1]), ("K", tl [1,1,2,2] [1,0, 0,1])])
@@ -52,7 +52,7 @@ test "AT4 mha-batched"
 --   property: shape [2,3] and each query row sums to 1 (proper distribution over keys).
 test "AT5 cross-attn"
     (evalPredB (tlprog!{
-    tensor A(q, s)
+    tensor f64 A(q, s)
     A[q, s.] := softmax(Q[q, d] · K[s, d])
   })
       (HashMap.ofList [("Q", tl [2,2] [1,0, 0,1]), ("K", tl [3,2] [1,0, 0,1, 1,1])])
@@ -62,7 +62,7 @@ test "AT5 cross-attn"
 --   Row0 softmax([0.5,0]) = [e^0.5/(e^0.5+1), 1/(e^0.5+1)] = [0.62245933120, 0.37754066880]; mirror.
 test "AT6 scaled-scores"
     (evalEqB (tlprog!{
-    tensor A(q, s)
+    tensor f64 A(q, s)
     A[q, s.] := softmax(Q[q, d] · K[s, d] · scale[])
   })
       (HashMap.ofList [("Q", tl [2,2] [1,0, 0,1]), ("K", tl [2,2] [1,0, 0,1]),
@@ -78,15 +78,15 @@ test "AT7 transformer-block"
     Q[q, h, k]       := W_Q[h, k, m] · X[q, m]
     K[s, h, k]       := W_K[h, k, m] · X[s, m]
     V[s, h, k]       := W_V[h, k, m] · X[s, m]
-    tensor S(h, q, s)
+    tensor f64 S(h, q, s)
     S[h, q, s.]      := softmax(where s ≤ q)(Q[q, h, k] · K[s, h, k])
     AttnOut[q, h, k] := S[h, q, s] · V[s, h, k]
     Attn[q, m]       := W_O[m, h, k] · AttnOut[q, h, k]
-    tensor A(q, m)
+    tensor f64 A(q, m)
     A[q, m.]         := normalize(Attn[q, m] + X[q, m])
     F[q, d]          := relu(W_in[d, m] · A[q, m])
     Y[q, m]          := W_out[m, d] · F[q, d]
-    tensor H(q, m)
+    tensor f64 H(q, m)
     H[q, m.]         := normalize(Y[q, m] + A[q, m])
   })
       (HashMap.ofList [("X",    tl [2,2] [1,0, 0,1]),
@@ -104,7 +104,7 @@ test "AT7 transformer-block"
 --   O = [[1.26695639475, 0.73304360525], [0.73304360525, 1.26695639475]].
 test "AT8 generalized-cross-attn"
     (evalEqB (tlprog!{
-    tensor A(q, s)
+    tensor f64 A(q, s)
     A[q, s.] := softmax(Q[q, h] · K[s, h])
     O[q, g]  := A[q, s] · V[s, g]
   })
@@ -129,7 +129,7 @@ test "AT9 linear-attn"
 --   Q=K=I₂, W=I₂ ⇒ scores = I₂ = AT1's scores; rows = [0.73105857863, 0.26894142137] / mirror.
 test "AT10 bilinear-attn"
     (evalEqB (tlprog!{
-    tensor S(q, s)
+    tensor f64 S(q, s)
     S[q, s.] := softmax(Q[q, a] · W[a, b] · K[s, b])
   })
       (HashMap.ofList [("Q", tl [2,2] [1,0, 0,1]), ("W", tl [2,2] [1,0, 0,1]),
@@ -141,7 +141,7 @@ test "AT10 bilinear-attn"
 --   Q (h=2,q=2,d=2), K (s=2,d=2).  Property: A shape [2,2,2] and each (h,q) row sums to 1.
 test "AT11 gqa"
     (evalPredB (tlprog!{
-    tensor A(h, q, s)
+    tensor f64 A(h, q, s)
     A[h, q, s.] := softmax(Q[h, q, d] · K[s, d])
   })
       (HashMap.ofList [("Q", tl [2,2,2] [1,0, 0,1,  1,0, 0,1]), ("K", tl [2,2] [1,0, 0,1])])
@@ -154,7 +154,7 @@ test "AT11 gqa"
 --   So A[0,2]=0 (out of window) and A[2,0]>0 (global token attended from q=2).
 test "AT12 sparse-attn"
     (evalEqB (tlprog!{
-    tensor A(q, s)
+    tensor f64 A(q, s)
     A[q, s.] := softmax(where |q - s| ≤ 1 ∨ s = 0)(Q[q, d] · K[s, d])
   })
       (HashMap.ofList [("Q", tl [3,3] [1,0,0, 0,1,0, 0,0,1]),
