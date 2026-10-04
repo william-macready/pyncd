@@ -241,12 +241,12 @@ private def toF64 : Decl → Decl
   | d => d
 
 /-- The neighbour of a row's declaration list: every complex element type replaced by `.f64`, and
-    every name the program reads or writes (`A`, `B`, `Y`) that is still undeclared spelled `f64`
+    every name any entry's program reads or writes (`A`, `B`, `Y`; the scan's `X`, `S`) that is still undeclared spelled `f64`
     explicitly. Undeclared names are binary32 since the f32 default flip, so without this the
     all-binary64 neighbour would be a mixed f32/f64 schedule and be refused for the wrong reason. -/
 private def neighbour (ds : List Decl) : List Decl :=
   let ds := ds.map toF64
-  ds ++ ["A", "B", "Y"].filterMap fun nm =>
+  ds ++ ["A", "B", "Y", "X", "S"].filterMap fun nm =>
     if ds.any (·.name == nm) then none else some (.typedTensor .f64 nm [i])
 
 private def rhsAB : RHSExpr :=
