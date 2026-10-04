@@ -327,8 +327,8 @@ def checkScanStmt : ScanStmt → Except CapabilityError Unit
   | .scanPre nm .. => throw (.recurrenceOrCallback nm)
 
 /-- Capability preflight over a whole `ScheduledProgram`: decls in order, then stmts in order, first
-    failure wins. `unsupportedDtype`/`dynamicShape` are never thrown below — see `CapabilityError`'s
-    doc comment for why they are structurally unreachable from this entry point specifically.
+    failure wins. `dynamicShape` is never thrown below (see `CapabilityError`'s doc comment);
+    `unsupportedDtype` is thrown here only by `checkDecl`, for a complex element type.
 
     After the per-`ScanStmt` checks, one further pass over every source statement, including scan
     base and recurrence lists, rejects two scatter-shaped forms that would otherwise silently

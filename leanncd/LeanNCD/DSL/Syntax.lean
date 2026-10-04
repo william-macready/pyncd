@@ -20,10 +20,11 @@ open Lean
 
 declare_syntax_cat tl_size
 declare_syntax_cat tl_axis_kind
--- `(behavior := symbol)` is load-bearing: it lets the element-type words be NON-RESERVED
--- (`&"f32"`, `&"f64"` below), so `f32`/`f64` stay ordinary identifiers everywhere else — a user
--- `def f64`, or a tensor named `f64`. Without it the typed `tensor f32 A(i)` forms silently fail to
--- parse.
+-- `(behavior := symbol)` is the load-bearing piece: it lets the element-type words be NON-RESERVED,
+-- so `f32`/`f64` stay ordinary identifiers everywhere else — a user `def f64`, or a tensor named
+-- `f64`. The `&` on each word below states that intent explicitly and is harmless (a plain leading
+-- word is already non-reserved under this attribute). Without the attribute the typed
+-- `tensor f32 A(i)` forms silently fail to parse and the words become reserved.
 declare_syntax_cat tl_elem_type (behavior := symbol)
 declare_syntax_cat tl_axis_spec
 declare_syntax_cat tl_named_shape

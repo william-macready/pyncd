@@ -37,9 +37,11 @@ def elabTLAxisKind : Syntax → MetaM AxisKind
   | `(tl_axis_kind| ℕ)          => return .nat
   | _                           => throwUnsupportedSyntax
 
-/-- The one keyword→`TensorElementType` map. No wildcard default: an unmapped `tl_elem_type`
-    production is an error, not a silent element type. Adding a precision is one `tl_elem_type`
-    grammar line, one `TensorElementType` constructor, and one arm here. -/
+/-- The one element-type-word→`TensorElementType` map (the words are non-reserved symbols, not
+    keywords). No wildcard default: an unmapped `tl_elem_type` production is an error, not a silent
+    element type. Adding a precision is one `tl_elem_type` grammar line, one `TensorElementType`
+    constructor, an arm here, AND arms in `TensorElementType.spelling`/`.isComplex`,
+    `storageConstraintOfDecl` and `dtypeOfDecl` (the compiler enforces those last four). -/
 def elabTLElemType : Syntax → MetaM TensorElementType
   | `(tl_elem_type| f32)        => return .f32
   | `(tl_elem_type| f64)        => return .f64

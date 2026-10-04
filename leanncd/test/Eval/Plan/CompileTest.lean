@@ -18,8 +18,10 @@ its former rejection fixture becomes an accepted-case fixture below (immediately
 donor confirming the NEXT statement is still checked, not skipped). Plus three Thread-4
 accepted-case fixtures pinning what preflight now admits at top level (`.freeNorm`, `.pointwise`,
 unmasked `.axiswise`) that Wave C used to reject.
-the two structurally-unreachable categories (`unsupportedDtype`, `dynamicShape`) are exercised
-directly on the constructor rather than through `capabilityPreflight`. Also covers `prepareEvalPlan`
+the structurally-unreachable category `dynamicShape` is exercised directly on the constructor
+rather than through `capabilityPreflight`; `unsupportedDtype` is reachable there only through
+`checkDecl`'s complex-element-type rejection (table in `test/DSL/ComplexElementTypeTest.lean`),
+its schedule-wide producer being `prepareEvalPlan`'s Step 0b. Also covers `prepareEvalPlan`
 end-to-end on accepted programs — an identity copy, a zero-coefficient contraction, and a
 repeated-assignment (no-dedup) case — every `PlanCompileCause` variant reached through the real
 pipeline (`inputSignature`, `capability`, `shape`), and non-empty preparation warnings surviving a
@@ -449,11 +451,12 @@ def scanScatterSched (base recur : List Stmt) (decls : List Decl := []) : Schedu
           , nonlin := .identity } {})] })
 
 
--- unsupportedDtype: still unreachable via `capabilityPreflight`, which is per-declaration and
--- per-statement — `checkDecl` structurally ADMITS `.typedTensor .f32` (an f32 declaration nothing
--- uses constrains nothing), so the element type is decided one layer up. Its real producer is
--- `prepareEvalPlan`'s schedule-wide storage-kind step (Step 0b), exercised by fixture 15 below and
--- by `ScanCompileTest`'s fixture 14. This guard pins only that preflight itself stays free of it.
+-- unsupportedDtype: `capabilityPreflight` is per-declaration and per-statement — `checkDecl`
+-- structurally ADMITS `.typedTensor .f32` (an f32 declaration nothing uses constrains nothing), so
+-- a REAL element type is decided one layer up, by `prepareEvalPlan`'s schedule-wide storage-kind
+-- step (Step 0b), exercised by fixture 15 below and by `ScanCompileTest`'s fixture 14. (`checkDecl`
+-- does reject a COMPLEX element type; that is pinned in `test/DSL/ComplexElementTypeTest.lean`.)
+-- This guard pins only that preflight stays free of the real-type case.
 #guard isOk (capabilityPreflight
     { acceptedSched with decls := [.typedTensor .f32 "Out" [⟨"i", 0, .nat⟩]] })
 #guard (CapabilityError.unsupportedDtype "unreachable") == CapabilityError.unsupportedDtype "unreachable"

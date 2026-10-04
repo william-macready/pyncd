@@ -16,12 +16,14 @@ structure AxisSpec where
   kind : AxisKind
   deriving DecidableEq, Repr, Lean.ToExpr, Inhabited
 
-/-- The element type written in an EXPLICIT `tensor <ty> A(…)` declaration.
+/-- The element type written in an EXPLICIT `tensor <ty> A(…)` or `linear <ty> W(…)` declaration
+    (`Decl.typedTensor` / `Decl.typedLinear`).
 
     `Decl.tensor` — the spelling with no element type at all — remains the binary64 declaration and
     is unchanged byte-for-byte; this family carries every element type a declaration can name
-    explicitly. Future precisions/complex types are added HERE, as one more constructor, rather
-    than as one more `Decl` constructor per dtype: every exhaustive `Decl` match then keeps a
+    explicitly, including the complex spellings `complex64`/`complex128`, which parse but are
+    rejected (`rejectComplexDecls`). Future precisions are added HERE, as one more constructor,
+    rather than as one more `Decl` constructor per dtype: every exhaustive `Decl` match then keeps a
     single `.typedTensor` arm that dispatches on this type instead of growing with the dtype
     vocabulary. -/
 inductive TensorElementType
@@ -276,12 +278,13 @@ inductive StorageKind
       precision, is what the declaration names, so it constrains nothing and inherits whatever
       precision the rest of the schedule establishes;
     * `.axis`/`.iter` name an axis, not a tensor, and constrain nothing.
-    * a COMPLEX element type has no `StorageKind` at all, and its arms are UNREACHABLE from every
-      entry: `buildDeclEnv` rejects any complex declaration (`rejectComplexDecls`) before a
-      `DeclEnv` exists, and this function's only production caller is `storageConstraintOfName?`
-      over such an env. The arm answers `none` only because the type demands a value; it must
-      never be a real `StorageKind` (complex is a different scalar domain, not a precision), and
-      `none` is NOT a meaningful "precision-neutral" answer here the way it is for `.predicate`.
+    * a COMPLEX element type has no `StorageKind` at all, and its arms are reachable only through
+      an env that did not come from `buildDeclEnv` (which rejects any complex declaration,
+      `rejectComplexDecls`, before an env exists; this function's only production caller is
+      `storageConstraintOfName?` over such an env). The arm answers `none` only because the type
+      demands a value; it must never be a real `StorageKind` (complex is a different scalar domain,
+      not a precision), and `none` is NOT a meaningful "precision-neutral" answer here the way it is
+      for `.predicate`.
 
     The per-NAME rule (which must also answer for an UNDECLARED name) is
     `storageConstraintOfName?` below. -/

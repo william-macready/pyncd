@@ -814,8 +814,8 @@ private def fixtureNames : List String := fixtures.map (·.name)
 #guard fixtureNames.eraseDups.length == 21                                            -- P1
 #guard (fixtures.filter (·.payloadClass == .represented)).length == 11                -- P1
 #guard (fixtures.filter (·.payloadClass != .represented)).length == 10                -- P1
--- G23's third-class-6-door guard, extended to the payload matrix (plan §5's "0 of the 19 payload
--- fixtures" requirement) -- not a P1 shape/count guard, tagged separately.
+-- G23's third-class-6-door guard, extended to the payload matrix (plan §5's "0 of the payload
+-- fixtures" requirement, written when the plan listed 19 of them; the list is longer now) -- not a P1 shape/count guard, tagged separately.
 #guard fixtures.all fun f => !plainIterSlots f.logical                          -- door guard
 
 /-! ### §4.4 P2/P3 — physical conservation, and represented-class route agreement
