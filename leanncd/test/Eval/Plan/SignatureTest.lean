@@ -98,6 +98,20 @@ private def conversionInputs : HashMap String DenseTensor :=
 #guard storageConstraintOfDecl (.typedTensor .f32 "X" []) == some LeanNCD.StorageKind.float32
 #guard storageConstraintOfDecl (.tensor "X" []) == some LeanNCD.StorageKind.float64
 
+-- The typed `linear` form selects precision exactly as `typedTensor` does, for either bias flag. A
+-- classification arm that answered `none` would silently drop the declaration from the schedule's
+-- precision scan (an `f32` linear layer would then be treated as unconstrained, not committed to
+-- binary32); one that answered `.float64` for both would turn `linear f32` into an f64 plan. The
+-- untyped `.linear` stays binary64.
+#guard storageConstraintOfDecl (.typedLinear .f64 "W" [] false) == some LeanNCD.StorageKind.float64
+#guard storageConstraintOfDecl (.typedLinear .f32 "W" [] false) == some LeanNCD.StorageKind.float32
+#guard storageConstraintOfDecl (.typedLinear .f32 "W" [] true) == some LeanNCD.StorageKind.float32
+#guard storageConstraintOfDecl (.linear "W" [] false) == some LeanNCD.StorageKind.float64
+#guard dtypeOfDecl (some (.typedLinear .f64 "W" [] false)) == ScalarDType.f64
+#guard dtypeOfDecl (some (.typedLinear .f32 "W" [] false)) == ScalarDType.f32
+#guard dtypeOfDecl (some (.typedLinear .f32 "W" [] true)) == ScalarDType.f32
+#guard dtypeOfDecl (some (.linear "W" [] false)) == ScalarDType.f64
+
 -- Task 4.3, fixture 3: `GnnScatterTest`'s GN2 shape (`predicate edge(i, j); H[i, f] := edge[i, j]
 -- · X[j, f]`, `test/Eval/Portfolio/GnnScatterTest.lean`) compiled to a schedule, then its
 -- declaration-aware signature constructed directly from `sched.decls`: `edge` (declared predicate)

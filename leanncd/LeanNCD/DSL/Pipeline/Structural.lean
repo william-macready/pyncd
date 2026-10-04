@@ -704,7 +704,8 @@ with `nm`'s declaration. Two cases:
 rest of the pipeline treats that escape hatch. -/
 
 private def Decl.axisCount : Decl → Nat
-  | .tensor _ ax | .typedTensor _ _ ax | .predicate _ ax | .linear _ ax _ => ax.length
+  | .tensor _ ax | .typedTensor _ _ ax | .predicate _ ax | .linear _ ax _
+  | .typedLinear _ _ ax _ => ax.length
   | .axis _ _ => 0   -- axis decls are excluded from DeclEnv; never reached via env lookup
   | .iter _ _ => 0   -- iter decls are ALSO excluded from DeclEnv; never reached via env lookup
 

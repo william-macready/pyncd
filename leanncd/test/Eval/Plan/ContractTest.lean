@@ -35,6 +35,7 @@ def classifyDecl : Decl → Classification
                                    -- `prepareEvalPlan`, not a per-declaration capability one
   | .linear ..    => .accepted    -- bias is fully elaborated into ordinary Stmts by the time a
                                    -- ScheduledProgram exists; identical to `.tensor` for Wave C
+  | .typedLinear .. => .accepted  -- the typed sibling of `.linear`, admitted for the same reasons
   | .predicate .. => .rejected "booleanOutput"
   | .axis ..      => .accepted
   | .iter ..      => .accepted
@@ -134,6 +135,7 @@ section
 #guard classifyDecl (.tensor "X" []) == .accepted
 #guard classifyDecl (.typedTensor .f32 "X" []) == .accepted
 #guard classifyDecl (.linear "W" [] true) == .accepted
+#guard classifyDecl (.typedLinear .f64 "W" [] true) == .accepted
 #guard classifyDecl (.predicate "P" []) == .rejected "booleanOutput"
 #guard classifyDecl (.axis ⟨"i", 0, .nat⟩ (some 3)) == .accepted
 #guard classifyDecl (.iter ⟨"l", 0, .nat⟩ 3) == .accepted

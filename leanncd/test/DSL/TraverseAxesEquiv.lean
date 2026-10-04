@@ -247,6 +247,7 @@ private def Decl.mapUID_ref (f : UData → UData) : Decl → Decl
   | .typedTensor ty nm ax => .typedTensor ty nm (ax.map (AxisSpec.mapUID f))
   | .predicate nm ax     => .predicate nm (ax.map (AxisSpec.mapUID f))
   | .linear nm ax b      => .linear nm (ax.map (AxisSpec.mapUID f)) b
+  | .typedLinear ty nm ax b => .typedLinear ty nm (ax.map (AxisSpec.mapUID f)) b
   | .axis ax n           => .axis (AxisSpec.mapUID f ax) n
   | .iter ax n           => .iter (AxisSpec.mapUID f ax) n
 
@@ -276,6 +277,10 @@ theorem Decl.mapUID_eq_ref (f : UData → UData) (d : Decl) :
       simp only [Decl.mapUID, Decl.traverseAxes, Decl.mapUID_ref]
       show Decl.linear nm (Traversable.traverse (m := Id) (AxisSpec.mapUID f) ax) b = Decl.linear nm (ax.map (AxisSpec.mapUID f)) b
       rw [hMap ax]
+  | typedLinear ty nm ax b =>
+      simp only [Decl.mapUID, Decl.traverseAxes, Decl.mapUID_ref]
+      show Decl.typedLinear ty nm (Traversable.traverse (m := Id) (AxisSpec.mapUID f) ax) b = Decl.typedLinear ty nm (ax.map (AxisSpec.mapUID f)) b
+      rw [hMap ax]
   | axis ax n => rfl
   | iter ax n => rfl
 
@@ -291,6 +296,14 @@ private def bumpUID : UData → UData := fun u => { u with uid := u.uid + 100 }
 -- the collecting direction over the same declaration: every axis, in traversal order.
 #guard (Decl.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)
     (.typedTensor .f32 "A" [⟨"i", 1, .real⟩, ⟨"j", 2, .real⟩])).run == [1, 2]
+
+-- The same pair of guards for the typed LINEAR constructor, with the bias flag set so a traversal
+-- arm that rebuilt the declaration with `bias := false` (or as the untyped `.linear`, losing the
+-- element type) is caught: every axis UID rewritten, element type, name and bias carried through.
+#guard Decl.mapUID bumpUID (.typedLinear .f64 "W" [⟨"i", 1, .real⟩, ⟨"j", 2, .real⟩] true)
+  == Decl.typedLinear .f64 "W" [⟨"i", 101, .real⟩, ⟨"j", 102, .real⟩] true
+#guard (Decl.traverseAxes (f := ConstL (List UID)) (fun a => ⟨[a.uid]⟩)
+    (.typedLinear .f64 "W" [⟨"i", 1, .real⟩, ⟨"j", 2, .real⟩] true)).run == [1, 2]
 
 private def Stmt.mapUID_ref (f : UData → UData) : Stmt → Stmt
   | .assign nm ls r      => .assign nm (ls.map (LHSSlot.mapUID_ref f)) (RHSExpr.mapUID_ref f r)

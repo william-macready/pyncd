@@ -34,7 +34,8 @@ inductive Decl
   | typedTensor : TensorElementType → String → List AxisSpec → Decl
   | predicate : String → List AxisSpec → Decl
   | linear    : String → List AxisSpec → (bias : Bool) → Decl
-  | axis      : AxisSpec → Option Nat → Decl   -- `axis l : ℕ = 3`: declares an axis's dtype + optional pinned size
+  | typedLinear : TensorElementType → String → List AxisSpec → (bias : Bool) → Decl
+  | axis     : AxisSpec → Option Nat → Decl   -- `axis l : ℕ = 3`: declares an axis's dtype + optional pinned size
   | iter      : AxisSpec → Nat → Decl          -- `iter l = 3`: the ONLY way to declare a scan iteration
                                                  -- axis (#5b) — pinned-only (no `Option`), kind is always
                                                  -- `.nat` (forced at elaboration, `Elab.lean`), never `ℝ`
@@ -181,7 +182,7 @@ structure TLProgram where
     skips them when building the tensor-keyed `DeclEnv`.) -/
 def Decl.name : Decl → String
   | .tensor n _ => n | .typedTensor _ n _ => n
-  | .predicate n _ => n | .linear n _ _ => n | .axis ax _ => ax.name
+  | .predicate n _ => n | .linear n _ _ => n | .typedLinear _ n _ _ => n | .axis ax _ => ax.name
   | .iter ax _  => ax.name
 
 /-- Declaration environment built by resolveDecls (`String` has BEq+Hashable). -/
@@ -193,7 +194,7 @@ abbrev DeclEnv := Std.HashMap String Decl
     `rejectUnsupportedStorage`).
 
     `.axis`/`.iter` name an axis, not a tensor, and stay out of the env; `.tensor`,
-    `.typedTensor`, `.linear`, and `.predicate` are tensor-bearing and land in it. A second
+    `.typedTensor`, `.linear`, `.typedLinear`, and `.predicate` are tensor-bearing and land in it. A second
     tensor-bearing declaration of an already-declared name is REJECTED rather than silently
     overwriting the first: last-wins insertion left a `DeclEnv` lookup (which saw the LAST
     declaration) and a linear `decls` scan (`Eval.combineFor`, which sees the FIRST) able to
@@ -225,8 +226,8 @@ inductive StorageKind
 
 /-- The storage constraint one declaration places on a schedule, or `none` if it places none.
 
-    * an explicit `.typedTensor .f32` commits to `.float32`, and `.typedTensor .f64` (the explicit
-      spelling of the default) to `.float64`;
+    * an explicit `.typedTensor`/`.typedLinear` commits to the storage its element type names:
+      `.f32` to `.float32`, and `.f64` (the explicit spelling of the default) to `.float64`;
     * `.tensor` and `.linear` are the binary64 spellings and commit to `.float64`;
     * `.predicate` is PRECISION-NEUTRAL — a Boolean tensor is `{0,1}` data whose algebra, not its
       precision, is what the declaration names, so it constrains nothing and inherits whatever
@@ -238,6 +239,8 @@ inductive StorageKind
 def storageConstraintOfDecl : Decl → Option StorageKind
   | .typedTensor .f32 _ _ => some .float32
   | .typedTensor .f64 _ _ => some .float64
+  | .typedLinear .f32 _ _ _ => some .float32
+  | .typedLinear .f64 _ _ _ => some .float64
   | .tensor _ _           => some .float64
   | .linear _ _ _         => some .float64
   | .predicate _ _        => none

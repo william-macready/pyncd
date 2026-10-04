@@ -89,6 +89,10 @@ syntax "tensor"    tl_elem_type tl_named_shape,+           : tl_decl
 syntax "predicate" tl_named_shape,+                        : tl_decl
 -- `linear W_in(dff, d), W_out(d, dff) bias` — one or more linear layer items.
 syntax "linear"    tl_linear_item,+                        : tl_decl
+-- `linear f64 W(a, b) bias, V(c, d)` — the same grouped form with an EXPLICIT element type, which
+-- then applies to every item in the group. A `linear f64(a, b)` item NAMED `f64` is still the plain
+-- form above (the element type must be followed by a further item).
+syntax "linear"    tl_elem_type tl_linear_item,+           : tl_decl
 -- `axis l : ℕ = 3, s : ℕ = 2` — one or more axis items, comma-separated.
 -- Each item may independently have or omit the `= size` pin.
 syntax "axis"      tl_axis_decl_item,+                     : tl_decl

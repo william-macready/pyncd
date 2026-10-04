@@ -50,6 +50,7 @@ def checkDecl : Decl → Except CapabilityError Unit
                                  -- derivation, which needs the schedule-wide kind this
                                  -- per-declaration pass cannot see.
   | .linear ..    => pure ()
+  | .typedLinear .. => pure ()   -- same schedule-wide reasoning as `.typedTensor` above
   | .predicate .. => pure ()
   | .axis ..      => pure ()
   | .iter ..      => pure ()

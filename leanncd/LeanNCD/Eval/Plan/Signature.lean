@@ -51,6 +51,8 @@ def InputSignature.ofDenseInputs (inputs : HashMap String DenseTensor) : InputSi
 def dtypeOfDecl : Option Decl → ScalarDType
   | some (.typedTensor .f32 _ _) => .f32
   | some (.typedTensor .f64 _ _) => .f64
+  | some (.typedLinear .f32 _ _ _) => .f32
+  | some (.typedLinear .f64 _ _ _) => .f64
   | some (.predicate _ _) => .bool
   | some (.tensor _ _) => .f64
   | some (.linear _ _ _) => .f64

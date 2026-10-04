@@ -78,4 +78,41 @@ private def namedF32prog : TLProgram := tlprog!{
 }
 #guard namedF32prog.decls == [Decl.tensor "f32" [ax0 "i"]]
 
+/-! ## The typed linear form (`linear f64 W(a, b) bias, V(c, d)`) -/
+
+-- Grouped, with and without `bias`: the element type applies to EVERY item in the group, and each
+-- item keeps its own axis list and its own bias flag.
+private def typedLinProg : TLProgram := tlprog!{
+  linear f64 W(a, b) bias, V(c, d)
+  Y[a] := W[a, b] · X[b]
+}
+
+#guard typedLinProg.decls ==
+  [ Decl.typedLinear .f64 "W" [ax0 "a", ax0 "b"] true
+  , Decl.typedLinear .f64 "V" [ax0 "c", ax0 "d"] false ]
+#guard typedLinProg.stmts.length == 1
+
+private def typedLinF32Prog : TLProgram := tlprog!{
+  linear f32 W(a, b)
+  Y[a] := W[a, b] · X[b]
+}
+#guard typedLinF32Prog.decls == [Decl.typedLinear .f32 "W" [ax0 "a", ax0 "b"] false]
+
+-- The same group with the element type removed is still the untyped `Decl.linear`, unchanged
+-- (binary64): the typed form is a separate constructor, not a reinterpretation of the old one.
+private def plainLinProg : TLProgram := tlprog!{
+  linear W(a, b) bias, V(c, d)
+  Y[a] := W[a, b] · X[b]
+}
+#guard plainLinProg.decls ==
+  [ Decl.linear "W" [ax0 "a", ax0 "b"] true, Decl.linear "V" [ax0 "c", ax0 "d"] false ]
+
+-- A linear item NAMED `f64` (no element type) is a plain linear named `f64`, exactly as for
+-- `tensor`: the typed rule needs a further item after the element type.
+private def namedF64LinProg : TLProgram := tlprog!{
+  linear f64(a, b)
+  Y[a] := f64[a, b] · X[b]
+}
+#guard namedF64LinProg.decls == [Decl.linear "f64" [ax0 "a", ax0 "b"] false]
+
 end LeanNCD
