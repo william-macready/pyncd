@@ -836,6 +836,52 @@ def f32MixedUndeclaredSched : ScheduledProgram :=
   some { cause := .capability (.unsupportedDtype "Y: mixed f32/f64 storage in one schedule")
        , warnings := [] }
 
+/-! #### Explicit `tensor f64` is the default spelling, spelled out
+
+`identitySched` with its declarations written `.typedTensor .f64` must prepare to the SAME checked
+binary64 plan as the unannotated `.tensor` spelling — same slot signatures, same algebra, same
+`.float64` evidence. An `f64` arm that selected the f32 carrier (or any other plan) would pass the
+parse and classification guards and fail exactly here. -/
+
+def f64IdentitySched : ScheduledProgram :=
+  { identitySched with
+    decls := [.axis axI1 (some 3), .typedTensor .f64 "X" [axI1], .typedTensor .f64 "Y" [axI1]] }
+
+def plainIdentitySched : ScheduledProgram :=
+  { identitySched with
+    decls := [.axis axI1 (some 3), .tensor "X" [axI1], .tensor "Y" [axI1]] }
+
+def f64IdentityPrepared : Option PreparedPlan :=
+  (prepareEvalPlan f64IdentitySched identitySig).toOption
+def plainIdentityPrepared : Option PreparedPlan :=
+  (prepareEvalPlan plainIdentitySched identitySig).toOption
+
+#guard f64IdentityPrepared.isSome
+#guard f64IdentityPrepared.map (·.plan.raw.tensorSigs) ==
+  some #[ { shape := #[3], dtype := .f64 }, { shape := #[3], dtype := .f64 } ]
+#guard f64IdentityPrepared.map (·.plan.raw.tensorSigs) ==
+  plainIdentityPrepared.map (·.plan.raw.tensorSigs)
+#guard f64IdentityPrepared.map (·.plan.storageKind) == some LeanNCD.StorageKind.float64
+#guard f64IdentityPrepared.map (·.plan.storageKind) == plainIdentityPrepared.map (·.plan.storageKind)
+#guard f64IdentityPrepared.map (fun p => (assignStep p.plan.raw.steps[0]!).algebra) == some admittedAlgebra
+#guard f64IdentityPrepared.map (·.plan.raw.steps.size) == plainIdentityPrepared.map (·.plan.raw.steps.size)
+
+-- The declaration-aware binary64 constructor accepts `f64`-declared names over `Array Float`
+-- buffers (it is the f32 spelling that needs the binary32 constructor) and emits `.f64` signatures.
+#guard match InputSignature.ofDenseInputsForDecls f64IdentitySched.decls identityInputs with
+  | .ok sig => (sig.tensors["X"]?).map (·.dtype) == some ScalarDType.f64
+  | .error _ => false
+
+-- Mixing `tensor f32` with `tensor f64` is rejected exactly as f32 + undeclared/`tensor` is above:
+-- `X` (f64) is the first real constraint in used-name order, `Y` (f32) the first conflict.
+def f32f64MixedSched : ScheduledProgram :=
+  { identitySched with
+    decls := [.axis axI1 (some 3), .typedTensor .f64 "X" [axI1], .typedTensor .f32 "Y" [axI1]] }
+
+#guard causeOf (prepareEvalPlan f32f64MixedSched identitySig) ==
+  some { cause := .capability (.unsupportedDtype "Y: mixed f32/f64 storage in one schedule")
+       , warnings := [] }
+
 /-! #### Fixture 13: an f64 signature supplied for an f32-declared external
 
 Fixture 11 with the input signature alone changed. The schedule is homogeneous f32, so Step B's

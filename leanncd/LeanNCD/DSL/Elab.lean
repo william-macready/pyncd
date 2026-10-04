@@ -42,6 +42,7 @@ def elabTLAxisKind : Syntax → MetaM AxisKind
     grammar line, one `TensorElementType` constructor, and one arm here. -/
 def elabTLElemType : Syntax → MetaM TensorElementType
   | `(tl_elem_type| f32)        => return .f32
+  | `(tl_elem_type| f64)        => return .f64
   | _                           => throwUnsupportedSyntax
 
 partial def elabTLAxisSpec : Syntax → MetaM AxisSpec

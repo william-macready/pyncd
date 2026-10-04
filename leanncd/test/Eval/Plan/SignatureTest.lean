@@ -89,6 +89,15 @@ private def conversionInputs : HashMap String DenseTensor :=
 #guard dtypeOfDecl (some (.typedTensor .f32 "X" [])) == ScalarDType.f32
 #guard dtypeOfDecl (some (.tensor "X" [])) == ScalarDType.f64
 
+-- `tensor f64` is the explicit spelling of the default, so it classifies exactly as `.tensor` does:
+-- `.float64` storage and `.f64` dtype. Mapping it to `.float32`/`.f32` (a copy of the f32 arm) is
+-- the silent-precision-change failure these guards exist for; the f32 arm is pinned alongside so
+-- neither can be satisfied by answering one constant for every typed tensor.
+#guard dtypeOfDecl (some (.typedTensor .f64 "X" [])) == ScalarDType.f64
+#guard storageConstraintOfDecl (.typedTensor .f64 "X" []) == some LeanNCD.StorageKind.float64
+#guard storageConstraintOfDecl (.typedTensor .f32 "X" []) == some LeanNCD.StorageKind.float32
+#guard storageConstraintOfDecl (.tensor "X" []) == some LeanNCD.StorageKind.float64
+
 -- Task 4.3, fixture 3: `GnnScatterTest`'s GN2 shape (`predicate edge(i, j); H[i, f] := edge[i, j]
 -- · X[j, f]`, `test/Eval/Portfolio/GnnScatterTest.lean`) compiled to a schedule, then its
 -- declaration-aware signature constructed directly from `sched.decls`: `edge` (declared predicate)

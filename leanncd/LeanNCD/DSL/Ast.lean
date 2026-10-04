@@ -26,6 +26,7 @@ structure AxisSpec where
     vocabulary. -/
 inductive TensorElementType
   | f32
+  | f64
   deriving DecidableEq, Repr, Lean.ToExpr, Inhabited
 
 inductive Decl
@@ -224,7 +225,8 @@ inductive StorageKind
 
 /-- The storage constraint one declaration places on a schedule, or `none` if it places none.
 
-    * an explicit `.typedTensor .f32` commits to `.float32`;
+    * an explicit `.typedTensor .f32` commits to `.float32`, and `.typedTensor .f64` (the explicit
+      spelling of the default) to `.float64`;
     * `.tensor` and `.linear` are the binary64 spellings and commit to `.float64`;
     * `.predicate` is PRECISION-NEUTRAL — a Boolean tensor is `{0,1}` data whose algebra, not its
       precision, is what the declaration names, so it constrains nothing and inherits whatever
@@ -235,6 +237,7 @@ inductive StorageKind
     `storageConstraintOfName?` below. -/
 def storageConstraintOfDecl : Decl → Option StorageKind
   | .typedTensor .f32 _ _ => some .float32
+  | .typedTensor .f64 _ _ => some .float64
   | .tensor _ _           => some .float64
   | .linear _ _ _         => some .float64
   | .predicate _ _        => none

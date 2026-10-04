@@ -20,7 +20,11 @@ open Lean
 
 declare_syntax_cat tl_size
 declare_syntax_cat tl_axis_kind
-declare_syntax_cat tl_elem_type
+-- `(behavior := symbol)` is load-bearing: it lets the element-type words be NON-RESERVED
+-- (`&"f32"`, `&"f64"` below), so `f32`/`f64` stay ordinary identifiers everywhere else — a user
+-- `def f64`, or a tensor named `f64`. Without it the typed `tensor f32 A(i)` forms silently fail to
+-- parse.
+declare_syntax_cat tl_elem_type (behavior := symbol)
 declare_syntax_cat tl_axis_spec
 declare_syntax_cat tl_named_shape
 declare_syntax_cat tl_axis_decl_item
@@ -73,7 +77,8 @@ syntax ident "(" tl_axis_spec,* ")" "bias" : tl_linear_item
 -- Tensor ELEMENT types, in their own closed category so the element-type vocabulary is one
 -- grammar rule per type and one `elabTLElemType` arm — a future precision or complex type extends
 -- `TensorElementType` and this category, never `tl_decl` or `Decl`.
-syntax "f32" : tl_elem_type
+syntax &"f32" : tl_elem_type
+syntax &"f64" : tl_elem_type
 
 -- `tensor A(q, m), B(x, y)` — one or more named shapes, comma-separated, no colon.
 syntax "tensor"    tl_named_shape,+                        : tl_decl
