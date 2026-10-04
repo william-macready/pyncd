@@ -20,6 +20,19 @@ name's use site — its first write's LHS slots, else its first read's index lis
 pipeline rank-checks a declared name against `Decl.axisCount` (`checkReadRanksIn`); the axes'
 identities otherwise carry no meaning (only `assignUIDs` reads them, by name, and they are names
 the program already uses).
+
+Three consequences to know:
+* The added declarations change the ORDER in which `assignUIDs` first meets axis names, so the
+  numeric UIDs it mints may change; which axes SHARE a UID cannot (UIDs are minted per distinct
+  axis name).
+* A name with no derivable axis (its use site has a position with no axis and the statements
+  mention no axis anywhere, e.g. `Y[0] := X[0]`, or a name only a `recurMorphism` writes) stays
+  UNDECLARED, so a later refusal stays loud rather than a wrong-rank declaration.
+* The declared rank is the name's FIRST write's slot count and is then enforced on every access.
+  A contrived undeclared name written twice with different slot counts, or a non-scatter LHS read at
+  a rank other than its slot count, was accepted before and is rejected now. No test has such a
+  program, so "semantics-neutral" holds for every program in the tests, not strictly for all
+  programs.
 -/
 namespace LeanNCD.Eval.ExplicitF64
 open LeanNCD
