@@ -118,7 +118,7 @@ private def f32Unused : TLProgram := tlprog!{
 /-! ## Complex mixed with a real precision reports the COMPLEX rejection
 
 `rejectComplexDecls` runs first inside `buildDeclEnv`, so complex wins over everything that
-follows it — on the source path there is no mixed-precision rejection at all (the f32 + undeclared
+follows it — on the source path there is no mixed-precision rejection at all (the f32 + explicit
 f64 neighbour below compiles), and on the checked backend the f32/f64 mix is `prepareEvalPlan`'s
 later Step 0b. The complex declaration is placed SECOND to show order in `decls` does not let the
 real one win. -/
@@ -189,8 +189,9 @@ into the `RouteSpec` proofs); the env-taking helpers `storageConstraintOfName?`,
 classify a complex destination as real — every public evaluator entry that calls them is guarded
 above. `Acset/`, `Bridge/`, and the `run*` plan executors read no `Decl`.
 
-Each row's NEIGHBOUR is the same list with every complex element type replaced by `.f64`: it must
-be accepted, or (the `+f32` row, whose neighbour mixes f32 and f64) fail as it always did, never
+Each row's NEIGHBOUR is the same list with every complex element type replaced by `.f64` and every
+other name the program touches declared `f64` explicitly (an undeclared name is binary32 since the
+f32 default flip, which would make the neighbour a mixed-precision schedule): it must be accepted, or (the `+f32` row, whose neighbour mixes f32 and f64) fail as it always did, never
 with the complex rejection. -/
 
 namespace Table
@@ -238,6 +239,15 @@ private def toF64 : Decl → Decl
   | .typedTensor ty nm ax => .typedTensor (if ty.isComplex then .f64 else ty) nm ax
   | .typedLinear ty nm ax b => .typedLinear (if ty.isComplex then .f64 else ty) nm ax b
   | d => d
+
+/-- The neighbour of a row's declaration list: every complex element type replaced by `.f64`, and
+    every name the program reads or writes (`A`, `B`, `Y`) that is still undeclared spelled `f64`
+    explicitly. Undeclared names are binary32 since the f32 default flip, so without this the
+    all-binary64 neighbour would be a mixed f32/f64 schedule and be refused for the wrong reason. -/
+private def neighbour (ds : List Decl) : List Decl :=
+  let ds := ds.map toF64
+  ds ++ ["A", "B", "Y"].filterMap fun nm =>
+    if ds.any (·.name == nm) then none else some (.typedTensor .f64 nm [i])
 
 private def rhsAB : RHSExpr :=
   { body := { terms := [{ factors := [.read "A" [.axis i], .read "B" [.axis i]] }] }
@@ -325,7 +335,7 @@ private def neighbourFailures : List (String × String) :=
   entries.flatMap fun (nm, run) =>
     rows.filterMap fun r =>
       let mixedF32 := r.decls.any (· == .typedTensor .f32 "A" [i])
-      let good := match run (r.decls.map toF64) with
+      let good := match run (neighbour r.decls) with
         | .ok => true
         | .other => mixedF32
         | _ => false
