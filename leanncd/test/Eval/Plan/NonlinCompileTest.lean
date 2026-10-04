@@ -45,13 +45,13 @@ def sourceCompileCauseOf (p : TLProgram) (inputs : HashMap String DenseTensor) :
     a program — used by the legacy-narrowing fixtures, which need to show `evalScheduled` accepts
     what `prepareEvalPlan` now rejects. -/
 def legacyAccepts (p : TLProgram) (inputs : HashMap String DenseTensor) : Bool :=
-  match TLProgram.eval p inputs with
+  match TLProgram.eval p.explicitF64 inputs with
   | .ok _ => true
   | .error _ => false
 
 /-- The legacy evaluator's typed rejection of a program, `none` if it accepts it. -/
 def legacyErrorOf (p : TLProgram) (inputs : HashMap String DenseTensor) : Option EvalError :=
-  match TLProgram.eval p inputs with
+  match TLProgram.eval p.explicitF64 inputs with
   | .ok _ => none
   | .error f => some f.error
 
@@ -344,7 +344,7 @@ uniform row). Softmax excludes masked entries from the row MAXIMUM as well as th
 /-- The legacy reference evaluator's output tensor for one named key, `none` on any failure. -/
 def sourceEvalOf (p : TLProgram) (inputs : HashMap String DenseTensor) (key : String) :
     Option DenseTensor :=
-  match TLProgram.eval p inputs with
+  match TLProgram.eval p.explicitF64 inputs with
   | .error _ => none
   | .ok report => report.env[key]?
 
