@@ -83,6 +83,18 @@ inductive CompileError
                                                              -- `decls`) could disagree about its
                                                              -- kind. Names the duplicated tensor
                                                              -- only — no declaration index
+  | unsupportedElementType : String → String → CompileError  -- declaration name, SPELLED element
+                                                             -- type (`"complex64"`/`"complex128"`).
+                                                             -- A complex scalar DOMAIN is spelled
+                                                             -- but has no semantics anywhere, and
+                                                             -- the categorical branch erases the
+                                                             -- element type (sound only for real
+                                                             -- precisions), so every complex
+                                                             -- declaration — used or not — is
+                                                             -- rejected by `buildDeclEnv`
+                                                             -- (`DSL/Ast.lean`). Strings, not
+                                                             -- `TensorElementType`: this module
+                                                             -- cannot import the AST
   deriving Repr, DecidableEq, BEq, Inhabited
 
 /-- Combined error + UID-counter monad (`EStateM ε σ α = σ → Result ε σ α`, Lean core). Mints fresh

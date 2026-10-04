@@ -20,7 +20,12 @@ open Lean
 
 declare_syntax_cat tl_size
 declare_syntax_cat tl_axis_kind
-declare_syntax_cat tl_elem_type
+-- `(behavior := symbol)` is the load-bearing piece: it lets the element-type words be NON-RESERVED,
+-- so `f32`/`f64` stay ordinary identifiers everywhere else — a user `def f64`, or a tensor named
+-- `f64`. The `&` on each word below states that intent explicitly and is harmless (a plain leading
+-- word is already non-reserved under this attribute). Without the attribute the typed
+-- `tensor f32 A(i)` forms silently fail to parse and the words become reserved.
+declare_syntax_cat tl_elem_type (behavior := symbol)
 declare_syntax_cat tl_axis_spec
 declare_syntax_cat tl_named_shape
 declare_syntax_cat tl_axis_decl_item
@@ -73,7 +78,12 @@ syntax ident "(" tl_axis_spec,* ")" "bias" : tl_linear_item
 -- Tensor ELEMENT types, in their own closed category so the element-type vocabulary is one
 -- grammar rule per type and one `elabTLElemType` arm — a future precision or complex type extends
 -- `TensorElementType` and this category, never `tl_decl` or `Decl`.
-syntax "f32" : tl_elem_type
+syntax &"f32" : tl_elem_type
+syntax &"f64" : tl_elem_type
+-- Complex element types, JAX/NumPy TOTAL-bit naming (`complex64` = 2 × f32, `complex128` = 2 × f64).
+-- SPELLED only: every declaration using one is rejected (`CompileError.unsupportedElementType`).
+syntax &"complex64" : tl_elem_type
+syntax &"complex128" : tl_elem_type
 
 -- `tensor A(q, m), B(x, y)` — one or more named shapes, comma-separated, no colon.
 syntax "tensor"    tl_named_shape,+                        : tl_decl
@@ -84,6 +94,10 @@ syntax "tensor"    tl_elem_type tl_named_shape,+           : tl_decl
 syntax "predicate" tl_named_shape,+                        : tl_decl
 -- `linear W_in(dff, d), W_out(d, dff) bias` — one or more linear layer items.
 syntax "linear"    tl_linear_item,+                        : tl_decl
+-- `linear f64 W(a, b) bias, V(c, d)` — the same grouped form with an EXPLICIT element type, which
+-- then applies to every item in the group. A `linear f64(a, b)` item NAMED `f64` is still the plain
+-- form above (the element type must be followed by a further item).
+syntax "linear"    tl_elem_type tl_linear_item,+           : tl_decl
 -- `axis l : ℕ = 3, s : ℕ = 2` — one or more axis items, comma-separated.
 -- Each item may independently have or omit the `= size` pin.
 syntax "axis"      tl_axis_decl_item,+                     : tl_decl

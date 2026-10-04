@@ -109,8 +109,8 @@ binary32 sibling of `unaryDomain`.
 **Update (F32-C shipped, `f32c_evalplan.md`):** native binary32 scans (including scan-local scatter)
 are now admitted end to end too. The `"{nm}: f32 scan"` payload shape has no producer left — Step 0c
 (`f32CapabilityCheck`), the one-payload-per-deferred-construct producer, is deleted entirely — so
-`unsupportedDtype` keeps exactly one live producer now: the mixed `f32`/`f64` schedule check
-(Step 0b). Re-derived, not assumed: the 10 / 16 / 6 split above is still unchanged after F32-C —
+`unsupportedDtype` keeps two live producers now: the mixed `f32`/`f64` schedule check
+(Step 0b), and `checkDecl`'s rejection of a complex (`complex64`/`complex128`) element type. Re-derived, not assumed: the 10 / 16 / 6 split above is still unchanged after F32-C —
 `unsupportedDtype` was already counted as one live FAMILY regardless of how many producer sites fed
 it, and Step 0b's mixed-storage throw keeps that family live.
 

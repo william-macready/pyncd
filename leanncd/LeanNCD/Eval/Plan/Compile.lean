@@ -43,12 +43,18 @@ namespace LeanNCD.Eval.Plan
     version change (§9.2). -/
 def checkDecl : Decl → Except CapabilityError Unit
   | .tensor ..    => pure ()
-  | .typedTensor .. => pure ()   -- an explicit element type is a SCHEDULE-wide question (which
-                                 -- precision does this whole graph run in), not a per-declaration
-                                 -- one: an f32 declaration nothing uses constrains nothing. Mixed
-                                 -- precision is rejected by `prepareEvalPlan`'s Step 0b storage
-                                 -- derivation, which needs the schedule-wide kind this
-                                 -- per-declaration pass cannot see.
+  -- An explicit element type is decided by `isComplex`, so a FUTURE complex type fails closed here.
+  -- A COMPLEX element type is a per-declaration rejection, used or not: no backend has a complex
+  -- carrier. Unreachable inside `prepareEvalPlan` (Step 0's `buildDeclEnv` rejects it first, as
+  -- `sourceInvariant (.unsupportedElementType …)`); reachable from a direct `capabilityPreflight`
+  -- call, which must not report a complex schedule as admitted. A REAL element type is a
+  -- SCHEDULE-wide question (which precision does this whole graph run in), not a per-declaration
+  -- one: an f32 declaration nothing uses constrains nothing. Mixed precision is rejected by
+  -- `prepareEvalPlan`'s Step 0b storage derivation, which needs the schedule-wide kind this
+  -- per-declaration pass cannot see.
+  | .typedTensor ty nm _ | .typedLinear ty nm _ _ =>
+      if ty.isComplex then throw (.unsupportedDtype s!"{nm}: {ty.spelling} element type")
+      else pure ()
   | .linear ..    => pure ()
   | .predicate .. => pure ()
   | .axis ..      => pure ()
@@ -321,8 +327,8 @@ def checkScanStmt : ScanStmt → Except CapabilityError Unit
   | .scanPre nm .. => throw (.recurrenceOrCallback nm)
 
 /-- Capability preflight over a whole `ScheduledProgram`: decls in order, then stmts in order, first
-    failure wins. `unsupportedDtype`/`dynamicShape` are never thrown below — see `CapabilityError`'s
-    doc comment for why they are structurally unreachable from this entry point specifically.
+    failure wins. `dynamicShape` is never thrown below (see `CapabilityError`'s doc comment);
+    `unsupportedDtype` is thrown here only by `checkDecl`, for a complex element type.
 
     After the per-`ScanStmt` checks, one further pass over every source statement, including scan
     base and recurrence lists, rejects two scatter-shaped forms that would otherwise silently

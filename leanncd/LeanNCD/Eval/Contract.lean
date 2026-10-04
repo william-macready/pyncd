@@ -171,7 +171,8 @@ def Combine.max : Combine := ⟨(· * ·), fun (a b : Float) => Max.max a b, -1.
 def Combine.min : Combine := ⟨(· * ·), fun (a b : Float) => Min.min a b, 1.0 / 0.0, 1.0⟩
 
 /-- Whether `nm`'s declaration is a `predicate`, i.e. its values are Boolean {0,1}. Searches
-    TENSOR-BEARING declarations only (`.tensor`/`.linear`/`.predicate`), taking the first match.
+    TENSOR-BEARING declarations only (everything but `.axis`/`.iter`: `.tensor`, `.typedTensor`,
+    `.linear`, `.typedLinear`, `.predicate`), taking the first match.
     `.axis`/`.iter` declarations name an axis, not a tensor, and are excluded from `DeclEnv`
     (`resolveDecls`) — including them here let an earlier `axis Result` hide a later
     `predicate Result` and silently select real sum-product for a Boolean output. -/

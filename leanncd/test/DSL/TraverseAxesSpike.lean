@@ -368,7 +368,7 @@ theorem traverseAxes_const_eq_specsStmt (s : Stmt) :
     source of truth. Keep byte-identical to `Structural.lean:64-66` by inspection. -/
 private def specsDecl' : Decl → List AxisSpec
   | .tensor _ ax => ax | .typedTensor _ _ ax => ax
-  | .predicate _ ax => ax | .linear _ ax _ => ax
+  | .predicate _ ax => ax | .linear _ ax _ => ax | .typedLinear _ _ ax _ => ax
   | .axis ax _ => [ax]
   | .iter ax _ => [ax]
 
@@ -394,6 +394,7 @@ theorem traverseAxes_const_eq_specsDecl (d : Decl) :
   | typedTensor ty nm ax => exact core ax
   | predicate nm ax => exact core ax
   | linear nm ax b => exact core ax
+  | typedLinear ty nm ax b => exact core ax
   | axis ax n => rfl
   | iter ax n => rfl
 

@@ -33,7 +33,7 @@ run_cmd do
       unless decide ("W" ∈ rp.extNames) && decide ("X" ∈ rp.extNames) do
         throwError "W,X should be external"
       unless ¬ decide ("Y" ∈ rp.extNames) do throwError "Y must not be external (it is produced)"
-  | .error e _ => throwError s!"resolveDecls errored (only duplicateTensorDecl is possible): {repr e}"
+  | .error e _ => throwError s!"resolveDecls errored (only unsupportedElementType or duplicateTensorDecl is possible): {repr e}"
 
 -- a `tensor` decl lands in env.
 run_cmd do

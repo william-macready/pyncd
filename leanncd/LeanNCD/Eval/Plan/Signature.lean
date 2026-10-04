@@ -29,9 +29,10 @@ def InputSignature.ofDenseInputs (inputs : HashMap String DenseTensor) : InputSi
   { tensors := inputs.toList.foldl
       (fun acc (nm, t) => acc.insert nm { shape := t.shape.toArray, dtype := .f64 }) {} }
 
-/-- The top-level destination/signature dtype a declaration commits its name to: `f32` for exactly
-    an explicit `tensor f32 …` declaration, `bool` for exactly a `.predicate` declaration, `f64` for
-    every other declaration AND for no declaration at all (an undeclared external name). Shared by
+/-- The top-level destination/signature dtype a declaration commits its name to: `f32` for an
+    explicit `f32` declaration (`tensor f32 …` or `linear f32 …`), `bool` for exactly a `.predicate`
+    declaration, `f64` for every other declaration (including explicit `tensor f64 …`/`linear f64 …`)
+    AND for no declaration at all (an undeclared external name). Shared by
     `ofDenseInputsForDecls` below (the external-signature side) and `Compile.lean`'s
     `prepareEvalPlan` (the produced/destination side, Step B and Step D) — one rule, not two
     independently-drifting copies.
@@ -47,9 +48,20 @@ def InputSignature.ofDenseInputs (inputs : HashMap String DenseTensor) : InputSi
 
     Exhaustive, with no wildcard arm, exactly like `storageConstraintOfDecl` (`DSL/Ast.lean`): a
     future `TensorElementType` or `Decl` constructor must fail to compile here rather than silently
-    classify as `f64`. -/
+    classify as `f64`.
+
+    The COMPLEX arms are UNREACHABLE for any `DeclEnv` built by `buildDeclEnv` (`DSL/Ast.lean`),
+    which rejects any complex declaration first; a hand-forged env is outside the threat model.
+    `ScalarDType` has no complex constructor, so the arm must still name one; it names `.bool` as a
+    placeholder — never `.f32`/`.f64`, because a complex tensor is not a real tensor of either
+    precision. -/
 def dtypeOfDecl : Option Decl → ScalarDType
   | some (.typedTensor .f32 _ _) => .f32
+  | some (.typedTensor .f64 _ _) => .f64
+  | some (.typedLinear .f32 _ _ _) => .f32
+  | some (.typedLinear .f64 _ _ _) => .f64
+  | some (.typedTensor .complex64 _ _) | some (.typedTensor .complex128 _ _)
+  | some (.typedLinear .complex64 _ _ _) | some (.typedLinear .complex128 _ _ _) => .bool  -- UNREACHABLE
   | some (.predicate _ _) => .bool
   | some (.tensor _ _) => .f64
   | some (.linear _ _ _) => .f64
@@ -80,8 +92,8 @@ def declEnvOrThrow (decls : List Decl) : Except InputSignatureBuildError DeclEnv
     names a caller actually supplied buffers for.
 
     One rule, stated once: a name's declaration either constrains its precision
-    (`storageConstraintOfName?`, `DSL/Ast.lean` — `.typedTensor .f32` ⇒ `.float32`,
-    `.tensor`/`.linear` ⇒ `.float64`, and an UNDECLARED name ⇒ `.float64`, mirroring
+    (`storageConstraintOfName?`, `DSL/Ast.lean` — `.typedTensor .f32`/`.typedLinear .f32` ⇒
+    `.float32`, `.typedTensor .f64`/`.typedLinear .f64`/`.tensor`/`.linear` ⇒ `.float64`, and an UNDECLARED name ⇒ `.float64`, mirroring
     `dtypeOfDecl none = .f64`) or constrains nothing at all (a `.predicate`, whose declaration names
     the tensor's ALGEBRA rather than its precision). A constrained name whose declaration disagrees
     with the constructor's own carrier is rejected BY NAME; an unconstrained one is admitted on

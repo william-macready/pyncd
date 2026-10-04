@@ -18,8 +18,10 @@ its former rejection fixture becomes an accepted-case fixture below (immediately
 donor confirming the NEXT statement is still checked, not skipped). Plus three Thread-4
 accepted-case fixtures pinning what preflight now admits at top level (`.freeNorm`, `.pointwise`,
 unmasked `.axiswise`) that Wave C used to reject.
-the two structurally-unreachable categories (`unsupportedDtype`, `dynamicShape`) are exercised
-directly on the constructor rather than through `capabilityPreflight`. Also covers `prepareEvalPlan`
+the structurally-unreachable category `dynamicShape` is exercised directly on the constructor
+rather than through `capabilityPreflight`; `unsupportedDtype` is reachable there only through
+`checkDecl`'s complex-element-type rejection (table in `test/DSL/ComplexElementTypeTest.lean`),
+its schedule-wide producer being `prepareEvalPlan`'s Step 0b. Also covers `prepareEvalPlan`
 end-to-end on accepted programs — an identity copy, a zero-coefficient contraction, and a
 repeated-assignment (no-dedup) case — every `PlanCompileCause` variant reached through the real
 pipeline (`inputSignature`, `capability`, `shape`), and non-empty preparation warnings surviving a
@@ -449,11 +451,12 @@ def scanScatterSched (base recur : List Stmt) (decls : List Decl := []) : Schedu
           , nonlin := .identity } {})] })
 
 
--- unsupportedDtype: still unreachable via `capabilityPreflight`, which is per-declaration and
--- per-statement — `checkDecl` structurally ADMITS `.typedTensor .f32` (an f32 declaration nothing
--- uses constrains nothing), so the element type is decided one layer up. Its real producer is
--- `prepareEvalPlan`'s schedule-wide storage-kind step (Step 0b), exercised by fixture 15 below and
--- by `ScanCompileTest`'s fixture 14. This guard pins only that preflight itself stays free of it.
+-- unsupportedDtype: `capabilityPreflight` is per-declaration and per-statement — `checkDecl`
+-- structurally ADMITS `.typedTensor .f32` (an f32 declaration nothing uses constrains nothing), so
+-- a REAL element type is decided one layer up, by `prepareEvalPlan`'s schedule-wide storage-kind
+-- step (Step 0b), exercised by fixture 15 below and by `ScanCompileTest`'s fixture 14. (`checkDecl`
+-- does reject a COMPLEX element type; that is pinned in `test/DSL/ComplexElementTypeTest.lean`.)
+-- This guard pins only that preflight stays free of the real-type case.
 #guard isOk (capabilityPreflight
     { acceptedSched with decls := [.typedTensor .f32 "Out" [⟨"i", 0, .nat⟩]] })
 #guard (CapabilityError.unsupportedDtype "unreachable") == CapabilityError.unsupportedDtype "unreachable"
@@ -833,6 +836,119 @@ def f32MixedUndeclaredSched : ScheduledProgram :=
   { identitySched with decls := [.axis axI1 (some 3), .typedTensor .f32 "Y" [axI1]] }
 
 #guard causeOf (prepareEvalPlan f32MixedUndeclaredSched identitySig) ==
+  some { cause := .capability (.unsupportedDtype "Y: mixed f32/f64 storage in one schedule")
+       , warnings := [] }
+
+/-! #### Explicit `tensor f64` is the default spelling, spelled out
+
+`identitySched` with its declarations written `.typedTensor .f64` must prepare to the SAME checked
+binary64 plan as the unannotated `.tensor` spelling — same slot signatures, same algebra, same
+`.float64` evidence. An `f64` arm that selected the f32 carrier (or any other plan) would pass the
+parse and classification guards and fail exactly here. -/
+
+def f64IdentitySched : ScheduledProgram :=
+  { identitySched with
+    decls := [.axis axI1 (some 3), .typedTensor .f64 "X" [axI1], .typedTensor .f64 "Y" [axI1]] }
+
+def plainIdentitySched : ScheduledProgram :=
+  { identitySched with
+    decls := [.axis axI1 (some 3), .tensor "X" [axI1], .tensor "Y" [axI1]] }
+
+def f64IdentityPrepared : Option PreparedPlan :=
+  (prepareEvalPlan f64IdentitySched identitySig).toOption
+def plainIdentityPrepared : Option PreparedPlan :=
+  (prepareEvalPlan plainIdentitySched identitySig).toOption
+
+#guard f64IdentityPrepared.isSome
+#guard f64IdentityPrepared.map (·.plan.raw.tensorSigs) ==
+  some #[ { shape := #[3], dtype := .f64 }, { shape := #[3], dtype := .f64 } ]
+#guard f64IdentityPrepared.map (·.plan.raw.tensorSigs) ==
+  plainIdentityPrepared.map (·.plan.raw.tensorSigs)
+#guard f64IdentityPrepared.map (·.plan.storageKind) == some LeanNCD.StorageKind.float64
+#guard f64IdentityPrepared.map (·.plan.storageKind) == plainIdentityPrepared.map (·.plan.storageKind)
+#guard f64IdentityPrepared.map (fun p => (assignStep p.plan.raw.steps[0]!).algebra) == some admittedAlgebra
+#guard f64IdentityPrepared.map (·.plan.raw.steps.size) == plainIdentityPrepared.map (·.plan.raw.steps.size)
+
+-- The declaration-aware binary64 constructor accepts `f64`-declared names over `Array Float`
+-- buffers (it is the f32 spelling that needs the binary32 constructor) and emits `.f64` signatures.
+#guard match InputSignature.ofDenseInputsForDecls f64IdentitySched.decls identityInputs with
+  | .ok sig => (sig.tensors["X"]?).map (·.dtype) == some ScalarDType.f64
+  | .error _ => false
+
+-- Mixing `tensor f32` with `tensor f64` is rejected exactly as f32 + undeclared/`tensor` is above:
+-- `X` (f64) is the first real constraint in used-name order, `Y` (f32) the first conflict.
+def f32f64MixedSched : ScheduledProgram :=
+  { identitySched with
+    decls := [.axis axI1 (some 3), .typedTensor .f64 "X" [axI1], .typedTensor .f32 "Y" [axI1]] }
+
+#guard causeOf (prepareEvalPlan f32f64MixedSched identitySig) ==
+  some { cause := .capability (.unsupportedDtype "Y: mixed f32/f64 storage in one schedule")
+       , warnings := [] }
+
+/-! #### The typed `linear` declaration selects precision like `typedTensor`
+
+`identitySched` again, with `X` and `Y` declared as LINEAR layers. `linear f32` must prepare to a
+binary32 plan (and to nothing else), `linear f64` and the untyped `linear` to the SAME binary64
+plan. A `.typedLinear` that `checkDecl`/`storageConstraintOfDecl`/`dtypeOfDecl` mishandled shows up
+here as a wrong carrier, a dropped constraint, or a rejected schedule. -/
+
+def f32LinearSched : ScheduledProgram :=
+  { identitySched with
+    decls := [.axis axI1 (some 3), .typedLinear .f32 "X" [axI1] false, .typedLinear .f32 "Y" [axI1] true] }
+
+def f64LinearSched : ScheduledProgram :=
+  { identitySched with
+    decls := [.axis axI1 (some 3), .typedLinear .f64 "X" [axI1] false, .typedLinear .f64 "Y" [axI1] true] }
+
+def plainLinearSched : ScheduledProgram :=
+  { identitySched with
+    decls := [.axis axI1 (some 3), .linear "X" [axI1] false, .linear "Y" [axI1] true] }
+
+def f32LinearSig : InputSignature :=
+  match InputSignature.ofDenseInputs32ForDecls f32LinearSched.decls identityInputs32 with
+  | .ok sig => sig
+  | .error _ => InputSignature.mk ({} : HashMap String TensorSignature)
+
+def f32LinearPrepared : Option PreparedPlan :=
+  (prepareEvalPlan f32LinearSched f32LinearSig).toOption
+def f64LinearPrepared : Option PreparedPlan :=
+  (prepareEvalPlan f64LinearSched identitySig).toOption
+def plainLinearPrepared : Option PreparedPlan :=
+  (prepareEvalPlan plainLinearSched identitySig).toOption
+
+-- `linear f32`: accepted, binary32 signatures on both slots, `.float32` evidence, f32 algebra.
+#guard (f32LinearSig.tensors["X"]?).map (·.dtype) == some ScalarDType.f32
+#guard f32LinearPrepared.map (·.plan.raw.tensorSigs) ==
+  some #[ { shape := #[3], dtype := .f32 }, { shape := #[3], dtype := .f32 } ]
+#guard f32LinearPrepared.map (·.plan.storageKind) == some LeanNCD.StorageKind.float32
+#guard f32LinearPrepared.map (fun p => (assignStep p.plan.raw.steps[0]!).algebra) ==
+  some admittedAlgebraF32
+
+-- `linear f64` is the explicit spelling of untyped `linear`: the same checked binary64 plan.
+#guard f64LinearPrepared.isSome
+#guard f64LinearPrepared.map (·.plan.storageKind) == some LeanNCD.StorageKind.float64
+#guard f64LinearPrepared.map (·.plan.raw.tensorSigs) == plainLinearPrepared.map (·.plan.raw.tensorSigs)
+#guard f64LinearPrepared.map (·.plan.storageKind) == plainLinearPrepared.map (·.plan.storageKind)
+
+-- Untyped `linear` is unchanged: binary64 evidence and the binary64 algebra.
+#guard plainLinearPrepared.map (·.plan.storageKind) == some LeanNCD.StorageKind.float64
+#guard plainLinearPrepared.map (fun p => (assignStep p.plan.raw.steps[0]!).algebra) ==
+  some admittedAlgebra
+
+-- Mixing a `linear f32` destination with an f64 external is rejected exactly like the f32 `tensor`
+-- case above, whichever spelling the f64 side uses (`.linear` and `.typedLinear .f64`).
+def f32LinearMixedSched : ScheduledProgram :=
+  { identitySched with
+    decls := [.axis axI1 (some 3), .linear "X" [axI1] false, .typedLinear .f32 "Y" [axI1] false] }
+
+#guard causeOf (prepareEvalPlan f32LinearMixedSched identitySig) ==
+  some { cause := .capability (.unsupportedDtype "Y: mixed f32/f64 storage in one schedule")
+       , warnings := [] }
+
+#guard causeOf (prepareEvalPlan
+    { f32LinearMixedSched with
+      decls := [.axis axI1 (some 3), .typedLinear .f64 "X" [axI1] false, .typedLinear .f32 "Y" [axI1] false] }
+    identitySig) ==
   some { cause := .capability (.unsupportedDtype "Y: mixed f32/f64 storage in one schedule")
        , warnings := [] }
 

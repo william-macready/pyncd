@@ -30,11 +30,15 @@ inductive Classification
     vs Boolean) relevant to Wave C's fragment boundary. -/
 def classifyDecl : Decl → Classification
   | .tensor ..    => .accepted
+  | .typedTensor .complex64 .. | .typedTensor .complex128 ..
+  | .typedLinear .complex64 .. | .typedLinear .complex128 .. => .rejected "unsupportedDtype"
+                                   -- as production `checkDecl`: complex is per-declaration
   | .typedTensor .. => .accepted  -- structurally admitted, exactly as production `checkDecl` does:
                                    -- the element type is a SCHEDULE-wide question decided in
                                    -- `prepareEvalPlan`, not a per-declaration capability one
   | .linear ..    => .accepted    -- bias is fully elaborated into ordinary Stmts by the time a
                                    -- ScheduledProgram exists; identical to `.tensor` for Wave C
+  | .typedLinear .. => .accepted  -- the typed sibling of `.linear`, admitted for the same reasons
   | .predicate .. => .rejected "booleanOutput"
   | .axis ..      => .accepted
   | .iter ..      => .accepted
@@ -134,6 +138,9 @@ section
 #guard classifyDecl (.tensor "X" []) == .accepted
 #guard classifyDecl (.typedTensor .f32 "X" []) == .accepted
 #guard classifyDecl (.linear "W" [] true) == .accepted
+#guard classifyDecl (.typedLinear .f64 "W" [] true) == .accepted
+#guard classifyDecl (.typedTensor .complex64 "Z" []) == .rejected "unsupportedDtype"
+#guard classifyDecl (.typedLinear .complex128 "Z" [] false) == .rejected "unsupportedDtype"
 #guard classifyDecl (.predicate "P" []) == .rejected "booleanOutput"
 #guard classifyDecl (.axis ⟨"i", 0, .nat⟩ (some 3)) == .accepted
 #guard classifyDecl (.iter ⟨"l", 0, .nat⟩ 3) == .accepted

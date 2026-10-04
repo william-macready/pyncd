@@ -531,8 +531,10 @@ def elaborateAffineReindexings (sp : ScheduledProgram) : List (List StMatP) :=
 
 /-- Pure core of Phase 8: compute the step list and routing table from a `ScheduledProgram`.
     Computes `nameToStep` and `extIndex` once (PASS 1), then folds `buildStep` over `stmts`
-    (PASS 2). Guarded by `routableInOrder`: cyclic dataflow is rejected up front. -/
-def routeCore (sp : ScheduledProgram) : Except CompileError (List BrBaseP × List (List Wire)) :=
+    (PASS 2). Guarded by `routableInOrder`: cyclic dataflow is rejected up front. It does not read
+    declarations: a complex-typed declaration passes through unrejected, so any caller other than
+    `route` must go through `physicalizeForRoute` or call `rejectComplexDecls` first. -/
+def routeCore(sp : ScheduledProgram) : Except CompileError (List BrBaseP × List (List Wire)) :=
   if routableInOrder sp.stmts then do
     -- PASS 2: fold buildStep over all stmts, using the PASS-1 maps (`buildNameToStep`/`buildExtIndex`).
     let pairs ← sp.stmts.mapM

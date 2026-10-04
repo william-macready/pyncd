@@ -227,9 +227,12 @@ inductive CapabilityError
                                              -- (checkAggOp admits max/min since they compile to the
                                              -- tropical algebras); kept per §9.2, like scanNode
   | booleanOutput        (context : String)
-  /-- A schedule the compiler will not compile FOR ITS DERIVED STORAGE KIND. Its producer is in
-      `prepareEvalPlan` (never in `capabilityPreflight`, which is per-declaration and per-statement
-      and cannot see a schedule-wide derivation); since F32-C only Step 0b remains:
+  /-- A schedule the compiler will not compile FOR ITS DERIVED STORAGE KIND. Its schedule-wide
+      producer is in `prepareEvalPlan` (`capabilityPreflight` is per-declaration and per-statement
+      and cannot see a schedule-wide derivation); since F32-C only Step 0b remains of those. The one
+      per-declaration producer is `checkDecl` (reached via `capabilityPreflight`): a complex element
+      type, context `"{name}: {spelling} element type"` — unreachable inside `prepareEvalPlan`, whose
+      Step 0 `buildDeclEnv` rejects it first as `sourceInvariant (.unsupportedElementType …)`.
 
       * Step 0b — a MIXED f32/f64 schedule, context `"{name}: mixed f32/f64 storage in one
         schedule"`, naming the first USED name that disagrees with the kind an earlier used name
@@ -436,7 +439,8 @@ inductive InputSignatureError
     Two genuinely different malformations, checked in this order:
 
     * `declaration` — the supplied `decls` list is itself malformed, wrapping `buildDeclEnv`'s own
-      `CompileError` (in practice `duplicateTensorDecl`) unchanged rather than restating it. It is
+      `CompileError` (in practice `unsupportedElementType` for a complex declaration, checked
+      first, or `duplicateTensorDecl`) unchanged rather than restating it. It is
       FIRST because the declaration environment is the authority every later question is asked of:
       a list that declares one name twice has no single answer to "what precision is this name?",
       so reporting a carrier disagreement derived from a last-wins reading of it would name a

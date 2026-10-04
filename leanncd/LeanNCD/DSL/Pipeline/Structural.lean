@@ -640,7 +640,8 @@ def externalReadNames (stmts : List Stmt) : Finset String :=
 
 /-- Build the declaration environment and classify external-input names.
     `extNames` = names READ in some stmt but never PRODUCED (never a stmt LHS), via the shared
-    `externalReadNames` rule above. Throws only `duplicateTensorDecl` (from `buildDeclEnv`). -/
+    `externalReadNames` rule above. Throws only what `buildDeclEnv` throws: `unsupportedElementType`
+    (a complex declaration, checked first) or `duplicateTensorDecl`. -/
 def resolveDecls (lp : LabeledProgram) : FreshM ResolvedProgram := do
   let env : DeclEnv ← match buildDeclEnv lp.decls with
     | .ok e   => pure e
@@ -704,7 +705,8 @@ with `nm`'s declaration. Two cases:
 rest of the pipeline treats that escape hatch. -/
 
 private def Decl.axisCount : Decl → Nat
-  | .tensor _ ax | .typedTensor _ _ ax | .predicate _ ax | .linear _ ax _ => ax.length
+  | .tensor _ ax | .typedTensor _ _ ax | .predicate _ ax | .linear _ ax _
+  | .typedLinear _ _ ax _ => ax.length
   | .axis _ _ => 0   -- axis decls are excluded from DeclEnv; never reached via env lookup
   | .iter _ _ => 0   -- iter decls are ALSO excluded from DeclEnv; never reached via env lookup
 

@@ -37,11 +37,16 @@ def elabTLAxisKind : Syntax → MetaM AxisKind
   | `(tl_axis_kind| ℕ)          => return .nat
   | _                           => throwUnsupportedSyntax
 
-/-- The one keyword→`TensorElementType` map. No wildcard default: an unmapped `tl_elem_type`
-    production is an error, not a silent element type. Adding a precision is one `tl_elem_type`
-    grammar line, one `TensorElementType` constructor, and one arm here. -/
+/-- The one element-type-word→`TensorElementType` map (the words are non-reserved symbols, not
+    keywords). No wildcard default: an unmapped `tl_elem_type` production is an error, not a silent
+    element type. Adding a precision is one `tl_elem_type` grammar line, one `TensorElementType`
+    constructor, an arm here, AND arms in `TensorElementType.spelling`/`.isComplex`,
+    `storageConstraintOfDecl` and `dtypeOfDecl` (the compiler enforces those last four). -/
 def elabTLElemType : Syntax → MetaM TensorElementType
   | `(tl_elem_type| f32)        => return .f32
+  | `(tl_elem_type| f64)        => return .f64
+  | `(tl_elem_type| complex64)  => return .complex64
+  | `(tl_elem_type| complex128) => return .complex128
   | _                           => throwUnsupportedSyntax
 
 partial def elabTLAxisSpec : Syntax → MetaM AxisSpec
@@ -54,13 +59,13 @@ private def elabTLNamedShape : Syntax → MetaM (String × List AxisSpec)
       return (identStr x, ← specs.getElems.toList.mapM elabTLAxisSpec)
   | _ => throwUnsupportedSyntax
 
-private def elabTLLinearItem : Syntax → MetaM Decl
+/-- One linear item as `(name, axes, bias)`, shared by the plain and the typed `linear` forms so
+    only the constructor differs between them. -/
+private def elabTLLinearItem : Syntax → MetaM (String × List AxisSpec × Bool)
   | `(tl_linear_item| $x:ident ( $specs,* )) => do
-      return .linear (identStr x)
-        (← specs.getElems.toList.mapM elabTLAxisSpec) false
+      return (identStr x, ← specs.getElems.toList.mapM elabTLAxisSpec, false)
   | `(tl_linear_item| $x:ident ( $specs,* ) bias) => do
-      return .linear (identStr x)
-        (← specs.getElems.toList.mapM elabTLAxisSpec) true
+      return (identStr x, ← specs.getElems.toList.mapM elabTLAxisSpec, true)
   | _ => throwUnsupportedSyntax
 
 private def elabTLAxisDeclItem : Syntax → MetaM Decl
@@ -87,7 +92,12 @@ partial def elabTLDecl : Syntax → MetaM (List Decl)
       let pairs ← items.getElems.toList.mapM elabTLNamedShape
       return pairs.map fun (nm, axes) => .predicate nm axes
   | `(tl_decl| linear $items:tl_linear_item,*) => do
-      items.getElems.toList.mapM elabTLLinearItem
+      let parts ← items.getElems.toList.mapM elabTLLinearItem
+      return parts.map fun (nm, axes, hasBias) => .linear nm axes hasBias
+  | `(tl_decl| linear $ty:tl_elem_type $items:tl_linear_item,*) => do
+      let elemTy ← elabTLElemType ty
+      let parts ← items.getElems.toList.mapM elabTLLinearItem
+      return parts.map fun (nm, axes, hasBias) => .typedLinear elemTy nm axes hasBias
   | `(tl_decl| axis $items:tl_axis_decl_item,*) => do
       items.getElems.toList.mapM elabTLAxisDeclItem
   | `(tl_decl| iter $items:tl_iter_decl_item,*) => do
