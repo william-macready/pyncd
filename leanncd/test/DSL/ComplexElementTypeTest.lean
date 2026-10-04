@@ -1,5 +1,10 @@
 -- test/DSL/ComplexElementTypeTest.lean
 import LeanNCD.DSL.Compile
+import LeanNCD.Eval.Entry
+import LeanNCD.Eval.Scan
+import LeanNCD.Eval.Scatter
+import LeanNCD.Eval.Plan.Compile
+import LeanNCD.Eval.Plan.Signature
 
 /-!
 # Complex element types are SPELLED but REJECTED
@@ -149,5 +154,196 @@ private def c64Dup : TLProgram := tlprog!{
   Y[i] := A[i]
 }
 #guard bothReject c64Dup (.unsupportedElementType "A" "complex64")
+
+/-! ## Every entry, every case: the case × entry table
+
+Rows are the six declaration cases. Columns are every public entry that reads `Decl`s, found by
+grepping for `List Decl`/`ScheduledProgram`/`DeclEnv` parameters. `R` = rejected, `R*` = rejected
+through more than one guard (removing the first still rejects). `evalScheduled`'s `+f32` cell is
+plain `R`: without `validateScheduled`'s rejection its f32 refusal (`unsupportedDtype "A"`) fires
+before `evalPlain`'s guard. `prepareEvalPlan`'s second guard (`checkDecl`) reports a capability
+error, not the `sourceInvariant` one. Every cell is checked by
+`rejectionFailures` below, which runs every entry on every row.
+
+| entry | guard | t c64 | t c128 | lin c64 | unused | +f32 | +f64 |
+|---|---|---|---|---|---|---|---|
+| `TLProgram.compile` | `resolveDecls`→`buildDeclEnv`, then `route` | R* | R* | R* | R* | R* | R* |
+| `TLProgram.compileToScheduled` | `resolveDecls`→`buildDeclEnv` | R | R | R | R | R | R |
+| `Eval.TLProgram.eval` | via `compileToScheduled`, then `evalScheduled` | R* | R* | R* | R* | R* | R* |
+| `route` (hand-built logical schedule) | `physicalizeForRoute`→`rejectComplexDecls` | R | R | R | R | R | R |
+| `validateScheduled` | `buildDeclEnv` | R | R | R | R | R | R |
+| `evalScheduled` | `validateScheduled`, then `evalPlain`'s guard | R* | R* | R* | R* | R | R* |
+| `prepareEvalPlan` | Step 0 `validateScheduled` (`sourceInvariant`), then `checkDecl` | R* | R* | R* | R* | R* | R* |
+| `capabilityPreflight` | `checkDecl` (`unsupportedDtype "<name>: <spelling> element type"`) | R | R | R | R | R | R |
+| `ofDenseInputsForDecls` / `ofDenseInputs32ForDecls` | `declEnvOrThrow`→`buildDeclEnv` (`.declaration`) | R | R | R | R | R | R |
+| `evalPlain`, `evalAssignDtyped(Seeded)`, `evalStmtSliceSeeded`, `evalScan` | `rejectUnsupportedStorage`→`buildDeclEnv` (`.compile`) | R | R | R | R | R | R |
+| `evalScatter` | `rejectComplexDecls` (`.compile`) | R | R | R | R | R | R |
+
+Not entries, so no cell (named gaps; each needs a hand-built `DeclEnv`, or a physical program, that
+skipped `buildDeclEnv`): `routeCore` (the physical stage behind `route`; a guard there would ripple
+into the `RouteSpec` proofs); the env-taking helpers `storageConstraintOfName?`,
+`scheduleStorageKind`, `scheduleFloat32Name?`, `checkDeclCarriers`, `checkScheduledReadRanks`,
+`checkScheduledDtypes`, and the individual source phases (`checkDtypes`, …) on a hand-built
+`ResolvedProgram`; and `combineFor`/`isPredicateDest`, which scan `decls` linearly and would
+classify a complex destination as real — every public evaluator entry that calls them is guarded
+above. `Acset/`, `Bridge/`, and the `run*` plan executors read no `Decl`.
+
+Each row's NEIGHBOUR is the same list with every complex element type replaced by `.f64`: it must
+be accepted, or (the `+f32` row, whose neighbour mixes f32 and f64) fail as it always did, never
+with the complex rejection. -/
+
+namespace Table
+open Std Eval Eval.Plan
+
+private def i : AxisSpec := { name := "i", uid := 1, kind := .real }
+
+/-- What an entry did with a declaration list. -/
+inductive Obs
+  | ok
+  | complex (nm ty : String)          -- `CompileError.unsupportedElementType`, in any wrapper
+  | capability (context : String)     -- `CapabilityError.unsupportedDtype`
+  | other
+  deriving BEq, Repr
+
+private def ofCompile : Except CompileError α → Obs
+  | .ok _ => .ok
+  | .error (.unsupportedElementType nm ty) => .complex nm ty
+  | .error _ => .other
+
+private def ofEval : Except EvalError α → Obs
+  | .ok _ => .ok
+  | .error (.compile (.unsupportedElementType nm ty)) => .complex nm ty
+  | .error _ => .other
+
+private def ofFresh : EStateM.Result CompileError Nat α → Obs
+  | .ok _ _ => .ok
+  | .error e _ => ofCompile (Except.error e : Except CompileError Unit)
+
+structure Row where
+  decls : List Decl
+  nm : String
+  ty : String
+
+private def rows : List Row :=
+  [ ⟨[.typedTensor .complex64 "A" [i]], "A", "complex64"⟩
+  , ⟨[.typedTensor .complex128 "A" [i]], "A", "complex128"⟩
+  , ⟨[.typedLinear .complex64 "A" [i] false], "A", "complex64"⟩
+  , ⟨[.typedTensor .complex128 "Unused" [i]], "Unused", "complex128"⟩
+  , ⟨[.typedTensor .f32 "A" [i], .typedTensor .complex64 "B" [i]], "B", "complex64"⟩
+  , ⟨[.typedTensor .f64 "A" [i], .typedTensor .complex128 "B" [i]], "B", "complex128"⟩ ]
+
+private def toF64 : Decl → Decl
+  | .typedTensor ty nm ax => .typedTensor (if ty.isComplex then .f64 else ty) nm ax
+  | .typedLinear ty nm ax b => .typedLinear (if ty.isComplex then .f64 else ty) nm ax b
+  | d => d
+
+private def rhsAB : RHSExpr :=
+  { body := { terms := [{ factors := [.read "A" [.axis i], .read "B" [.axis i]] }] }
+  , nonlin := .identity }
+private def stmtY : Stmt := .assign "Y" [.free i] rhsAB
+private def prog (decls : List Decl) : TLProgram := { decls, stmts := [stmtY] }
+private def sched (decls : List Decl) : ScheduledProgram :=
+  { decls, stmts := [.plain stmtY], env := {}, extNames := {"A", "B"}, explicitSizes := {} }
+private def vec2 : DenseTensor := ⟨[2], #[1.0, 2.0]⟩
+private def inputs : HashMap String DenseTensor :=
+  (({} : HashMap String DenseTensor).insert "A" vec2).insert "B" vec2
+private def sizes : HashMap UID Nat := ({} : HashMap UID Nat).insert 1 2
+
+-- `ScanTest.lean`'s S-B 1 scan, fully sized: `S[2*j, 0] := X[j]; S[o, l+1] := S[o, l]`.
+private def sj : AxisSpec := { name := "j", uid := 11, kind := .real }
+private def so : AxisSpec := { name := "o", uid := 12, kind := .real }
+private def sl : AxisSpec := { name := "l", uid := 19, kind := .nat }
+private def scanNode : ScanStmt :=
+  .scan "S" [sl]
+    [.scatter "S" [.affine (.scale 2 sj), .iterAt sl 0]
+      { body := { terms := [{ factors := [.read "X" [.axis sj]] }] }, nonlin := .identity }
+      { fill := 0, reduce := .rejectCollisions }]
+    [.assign "S" [.free so, .iterNext sl]
+      { body := { terms := [{ factors := [.read "S" [.axis so, .axis sl]] }] }, nonlin := .identity }]
+    false
+private def scanEnv : HashMap String DenseTensor :=
+  ({} : HashMap String DenseTensor).insert "X" ⟨[3], #[1.0, 2.0, 3.0]⟩
+private def scanSizes : HashMap UID Nat :=
+  ((({} : HashMap UID Nat).insert 11 3).insert 12 6).insert 19 3
+
+/-- Every entry point that reads declarations, by name. -/
+private def entries : List (String × (List Decl → Obs)) :=
+  [ ("compile", fun ds => ofFresh ((prog ds).compile.run 0))
+  , ("compileToScheduled", fun ds => ofFresh ((prog ds).compileToScheduled.run 0))
+  , ("TLProgram.eval", fun ds => match LeanNCD.Eval.TLProgram.eval (prog ds) inputs with
+      | .ok _ => .ok
+      | .error f => ofEval (Except.error f.error : Except EvalError Unit))
+  , ("route", fun ds => ofFresh ((route (sched ds)).run 0))
+  , ("validateScheduled", fun ds => ofCompile (validateScheduled (sched ds)))
+  , ("evalScheduled", fun ds => match evalScheduled (sched ds) inputs with
+      | .ok _ => .ok
+      | .error f => ofEval (Except.error f.error : Except EvalError Unit))
+  , ("prepareEvalPlan", fun ds =>
+      match prepareEvalPlan (sched ds) (InputSignature.ofDenseInputs inputs) with
+      | .ok _ => .ok
+      | .error { cause := .sourceInvariant (.unsupportedElementType nm ty), .. } => .complex nm ty
+      | .error _ => .other)
+  , ("capabilityPreflight", fun ds => match capabilityPreflight (sched ds) with
+      | .ok _ => .ok
+      | .error (.unsupportedDtype ctx) => .capability ctx
+      | .error _ => .other)
+  , ("ofDenseInputsForDecls", fun ds => match InputSignature.ofDenseInputsForDecls ds inputs with
+      | .ok _ => .ok
+      | .error (.declaration (.unsupportedElementType nm ty)) => .complex nm ty
+      | .error _ => .other)
+  , ("ofDenseInputs32ForDecls", fun ds =>
+      match InputSignature.ofDenseInputs32ForDecls ds ({} : HashMap String DenseTensor32) with
+      | .ok _ => .ok
+      | .error (.declaration (.unsupportedElementType nm ty)) => .complex nm ty
+      | .error _ => .other)
+  , ("evalPlain", fun ds => ofEval (evalPlain ds inputs sizes stmtY))
+  , ("evalAssignDtyped", fun ds => ofEval (evalAssignDtyped ds inputs sizes "Y" [.free i] rhsAB))
+  , ("evalAssignDtypedSeeded", fun ds =>
+      ofEval (evalAssignDtypedSeeded ds inputs sizes {} "Y" [.free i] rhsAB))
+  , ("evalStmtSliceSeeded", fun ds => ofEval (evalStmtSliceSeeded ds inputs sizes {} stmtY))
+  , ("evalScatter", fun ds => ofEval (evalScatter ds inputs sizes "Y" [.affine (.scale 2 i)] rhsAB
+      { fill := 0, reduce := .rejectCollisions } [4]))
+  , ("evalScan", fun ds => ofEval (evalScan ds scanEnv scanSizes scanNode)) ]
+
+/-- The rejection each entry must report for a row: the typed `CompileError` (in the entry's own
+    wrapper), or `capabilityPreflight`'s capability context naming the declaration and spelling. -/
+private def expected (entry : String) (r : Row) : Obs :=
+  if entry == "capabilityPreflight" then .capability s!"{r.nm}: {r.ty} element type"
+  else .complex r.nm r.ty
+
+/-- The failing (entry, row) cells; `[]` means every cell of the table holds. -/
+private def rejectionFailures : List (String × String) :=
+  entries.flatMap fun (nm, run) =>
+    rows.filterMap fun r =>
+      if run r.decls == expected nm r then none else some (nm, r.nm ++ ":" ++ r.ty)
+
+/-- The failing neighbour cells: an all-binary64 neighbour must be ACCEPTED; the `+f32` row's
+    neighbour may fail as before (`.other`), but never with a complex or capability rejection. -/
+private def neighbourFailures : List (String × String) :=
+  entries.flatMap fun (nm, run) =>
+    rows.filterMap fun r =>
+      let mixedF32 := r.decls.any (· == .typedTensor .f32 "A" [i])
+      let good := match run (r.decls.map toF64) with
+        | .ok => true
+        | .other => mixedF32
+        | _ => false
+      if good then none else some (nm, r.nm ++ ":" ++ r.ty)
+
+#guard entries.length == 16
+#guard rejectionFailures == []
+#guard neighbourFailures == []
+
+/-! ### Complex + f32 at the checked backend: the complex rejection, not the mixed-precision stop
+
+The neighbour (complex → f64) is `prepareEvalPlan`'s Step 0b mixed f32/f64 rejection; with the
+complex declaration in place, Step 0 rejects first. -/
+
+#guard match prepareEvalPlan (sched [.typedTensor .f32 "A" [i], .typedTensor .f64 "B" [i]])
+    (InputSignature.ofDenseInputs inputs) with
+  | .error { cause := .capability (.unsupportedDtype "B: mixed f32/f64 storage in one schedule"), .. } =>
+      true
+  | _ => false
+
+end Table
 
 end LeanNCD.ComplexElementTypeTest

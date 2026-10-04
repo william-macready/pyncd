@@ -43,6 +43,14 @@ namespace LeanNCD.Eval.Plan
     version change (§9.2). -/
 def checkDecl : Decl → Except CapabilityError Unit
   | .tensor ..    => pure ()
+  -- A COMPLEX element type, by contrast, is a per-declaration rejection, used or not: no backend
+  -- has a complex carrier. Unreachable inside `prepareEvalPlan` (Step 0's `buildDeclEnv` rejects it
+  -- first, as `sourceInvariant (.unsupportedElementType …)`); reachable from a direct
+  -- `capabilityPreflight` call, which must not report a complex schedule as admitted.
+  | .typedTensor .complex64 nm _ | .typedLinear .complex64 nm _ _ =>
+      throw (.unsupportedDtype s!"{nm}: complex64 element type")
+  | .typedTensor .complex128 nm _ | .typedLinear .complex128 nm _ _ =>
+      throw (.unsupportedDtype s!"{nm}: complex128 element type")
   | .typedTensor .. => pure ()   -- an explicit element type is a SCHEDULE-wide question (which
                                  -- precision does this whole graph run in), not a per-declaration
                                  -- one: an f32 declaration nothing uses constrains nothing. Mixed

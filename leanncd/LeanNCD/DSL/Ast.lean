@@ -217,7 +217,10 @@ def Decl.elementType? : Decl → Option TensorElementType
     Called first by `buildDeclEnv`, which every declaration-reading entry already runs (the source
     pipeline's `resolveDecls`, `validateScheduled` — hence `evalScheduled` and `prepareEvalPlan` —
     the direct evaluator guard `rejectUnsupportedStorage`, and the declaration-aware signature
-    constructors). -/
+    constructors). The entries that read declarations WITHOUT building an environment call it
+    directly: `physicalizeForRoute` (public `route`) and `Eval.evalScatter`; `capabilityPreflight`'s
+    `checkDecl` rejects the same declarations in its own error family. The full case × entry table
+    is `test/DSL/ComplexElementTypeTest.lean`. -/
 def rejectComplexDecls (decls : List Decl) : Except CompileError Unit :=
   decls.forM fun d => match d.elementType? with
     | some ty => if ty.isComplex then throw (.unsupportedElementType d.name ty.spelling) else pure ()

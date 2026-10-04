@@ -21,6 +21,11 @@ def scatterSourceAxes (slots : List LHSSlot) (rhs : RHSExpr) : List UID :=
 def evalScatter (decls : List Decl) (env : HashMap String DenseTensor) (sizes : HashMap UID Nat)
     (nm : String) (slots : List LHSSlot) (rhs : RHSExpr) (opts : ScatterOpts) (outShape : List Nat) :
     Except EvalError (String × DenseTensor) := do
+  -- A complex declaration has no binary64 reading; this public entry builds no `DeclEnv`, so it
+  -- cannot inherit `buildDeclEnv`'s rejection and applies the same rule directly.
+  match rejectComplexDecls decls with
+  | .error e => throw (.compile e)
+  | .ok () => pure ()
   -- Defensive check (belt-and-suspenders — Spike-3 Stage-0 policy, SHORT-TERM not permanent):
   -- the surface compiler's `checkScatterNonlin` (DSL/Pipeline/Structural.lean) is the primary gate
   -- rejecting a non-identity scatter nonlinearity, but a programmatic caller can build this AST

@@ -447,9 +447,14 @@ structure PhysicalRouteProgram where
 
 /-- The ONLY constructor for `PhysicalRouteProgram`: build exactly (rejecting §2.4 class 6), then
     check layout, exits, and freshness. Physical topology is deliberately NOT checked here — see
-    the section note above; `routeCore`'s own `routableInOrder` is the single gate for it. -/
+    the section note above; `routeCore`'s own `routableInOrder` is the single gate for it.
+
+    A complex-typed declaration is rejected FIRST (`rejectComplexDecls`, `DSL/Ast.lean`): routing
+    erases element types, which is sound only for a real precision, and a hand-built logical
+    schedule reaches public `route` without ever passing `buildDeclEnv`. -/
 def physicalizeForRoute (logical : ScheduledProgram) :
     Except CompileError PhysicalRouteProgram := do
+  rejectComplexDecls logical.decls
   let sourceNames := routeNameInventory logical
   match hRaw : physicalizeRaw logical with
   | .error e => throw e
