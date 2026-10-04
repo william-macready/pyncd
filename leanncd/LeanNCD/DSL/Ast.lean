@@ -27,6 +27,8 @@ structure AxisSpec where
 inductive TensorElementType
   | f32
   | f64
+  | complex64    -- 2 × f32 (JAX/NumPy TOTAL-bit naming). Spelled only: rejected by `buildDeclEnv`
+  | complex128   -- 2 × f64. Spelled only: rejected by `buildDeclEnv`
   deriving DecidableEq, Repr, Lean.ToExpr, Inhabited
 
 inductive Decl
@@ -188,6 +190,39 @@ def Decl.name : Decl → String
 /-- Declaration environment built by resolveDecls (`String` has BEq+Hashable). -/
 abbrev DeclEnv := Std.HashMap String Decl
 
+/-- The surface word for an element type, as written in `tensor <ty> A(…)` — the payload of
+    `CompileError.unsupportedElementType`. -/
+def TensorElementType.spelling : TensorElementType → String
+  | .f32 => "f32" | .f64 => "f64" | .complex64 => "complex64" | .complex128 => "complex128"
+
+/-- Whether the element type is a complex scalar DOMAIN rather than a real precision. Exhaustive:
+    a new element type must decide here. -/
+def TensorElementType.isComplex : TensorElementType → Bool
+  | .f32 | .f64 => false
+  | .complex64 | .complex128 => true
+
+/-- The element type a declaration names explicitly, if any. Exhaustive, no wildcard. -/
+def Decl.elementType? : Decl → Option TensorElementType
+  | .typedTensor ty _ _ | .typedLinear ty _ _ _ => some ty
+  | .tensor .. | .linear .. | .predicate .. | .axis .. | .iter .. => none
+
+/-- Reject every complex-typed declaration — USED OR NOT — naming the first in `decls` order.
+
+    Complex is a different scalar domain, not another real precision (`papers/f32_evalplan.md`
+    §1.1–§1.3): the categorical branch erases the element type, which is sound only for `f32`/`f64`,
+    so a complex declaration reaching lowering would silently compile as if real. Nothing in the
+    compiler or either evaluator gives a complex tensor a meaning, so even an unused one is refused
+    rather than allowed to "constrain nothing" the way an unused `tensor f32` does.
+
+    Called first by `buildDeclEnv`, which every declaration-reading entry already runs (the source
+    pipeline's `resolveDecls`, `validateScheduled` — hence `evalScheduled` and `prepareEvalPlan` —
+    the direct evaluator guard `rejectUnsupportedStorage`, and the declaration-aware signature
+    constructors). -/
+def rejectComplexDecls (decls : List Decl) : Except CompileError Unit :=
+  decls.forM fun d => match d.elementType? with
+    | some ty => if ty.isComplex then throw (.unsupportedElementType d.name ty.spelling) else pure ()
+    | none    => pure ()
+
 /-- The one tensor-declaration classification rule, shared by `resolveDecls` (source pipeline),
     `Eval.Plan.prepareEvalPlan` (checked backend, over a possibly hand-built `ScheduledProgram`'s
     own `decls`), and the direct legacy-evaluator entries (`Eval/Contract.lean`'s
@@ -205,8 +240,13 @@ abbrev DeclEnv := Std.HashMap String Decl
     `Structural.lean` imports `Eval.Contract` (the one deliberate cross-layer import), so the
     direct evaluator entries cannot reach it there without closing a
     `ScheduledValidation → Structural → Eval.Contract` cycle. `Ast.lean` is the lowest module every
-    caller — source pipeline, checked backend, and reference evaluator — already reaches. -/
-def buildDeclEnv (decls : List Decl) : Except CompileError DeclEnv :=
+    caller — source pipeline, checked backend, and reference evaluator — already reaches.
+
+    It also rejects every COMPLEX-typed declaration first (`rejectComplexDecls`, below), so no
+    `DeclEnv` it returns ever holds one — the precondition under which the complex arms of
+    `storageConstraintOfDecl` and `Eval.Plan.dtypeOfDecl` are unreachable. -/
+def buildDeclEnv (decls : List Decl) : Except CompileError DeclEnv := do
+  rejectComplexDecls decls
   decls.foldlM (fun (m : DeclEnv) d => match d with
     | .axis _ _ => pure m
     | .iter _ _ => pure m
@@ -233,6 +273,12 @@ inductive StorageKind
       precision, is what the declaration names, so it constrains nothing and inherits whatever
       precision the rest of the schedule establishes;
     * `.axis`/`.iter` name an axis, not a tensor, and constrain nothing.
+    * a COMPLEX element type has no `StorageKind` at all, and its arms are UNREACHABLE from every
+      entry: `buildDeclEnv` rejects any complex declaration (`rejectComplexDecls`) before a
+      `DeclEnv` exists, and this function's only production caller is `storageConstraintOfName?`
+      over such an env. The arm answers `none` only because the type demands a value; it must
+      never be a real `StorageKind` (complex is a different scalar domain, not a precision), and
+      `none` is NOT a meaningful "precision-neutral" answer here the way it is for `.predicate`.
 
     The per-NAME rule (which must also answer for an UNDECLARED name) is
     `storageConstraintOfName?` below. -/
@@ -241,6 +287,8 @@ def storageConstraintOfDecl : Decl → Option StorageKind
   | .typedTensor .f64 _ _ => some .float64
   | .typedLinear .f32 _ _ _ => some .float32
   | .typedLinear .f64 _ _ _ => some .float64
+  | .typedTensor .complex64 _ _ | .typedTensor .complex128 _ _
+  | .typedLinear .complex64 _ _ _ | .typedLinear .complex128 _ _ _ => none   -- UNREACHABLE (above)
   | .tensor _ _           => some .float64
   | .linear _ _ _         => some .float64
   | .predicate _ _        => none

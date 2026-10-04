@@ -112,6 +112,17 @@ private def conversionInputs : HashMap String DenseTensor :=
 #guard dtypeOfDecl (some (.typedLinear .f32 "W" [] true)) == ScalarDType.f32
 #guard dtypeOfDecl (some (.linear "W" [] false)) == ScalarDType.f64
 
+-- The COMPLEX arms of both classifiers are unreachable in production (`buildDeclEnv` rejects every
+-- complex declaration first — `DSL/ComplexElementTypeTest.lean`), but the types force a value, and
+-- that value must NEVER be a real precision: complex is a different scalar domain, and a real answer
+-- is exactly what would let a bypassing caller compile a complex tensor as if it were real.
+private def complexDecls : List Decl :=
+  [ .typedTensor .complex64 "Z" [], .typedTensor .complex128 "Z" []
+  , .typedLinear .complex64 "Z" [] true, .typedLinear .complex128 "Z" [] false ]
+#guard complexDecls.all (fun d => storageConstraintOfDecl d == none)
+#guard complexDecls.all (fun d =>
+  dtypeOfDecl (some d) != ScalarDType.f32 && dtypeOfDecl (some d) != ScalarDType.f64)
+
 -- Task 4.3, fixture 3: `GnnScatterTest`'s GN2 shape (`predicate edge(i, j); H[i, f] := edge[i, j]
 -- · X[j, f]`, `test/Eval/Portfolio/GnnScatterTest.lean`) compiled to a schedule, then its
 -- declaration-aware signature constructed directly from `sched.decls`: `edge` (declared predicate)

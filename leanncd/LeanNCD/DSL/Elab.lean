@@ -43,7 +43,9 @@ def elabTLAxisKind : Syntax → MetaM AxisKind
 def elabTLElemType : Syntax → MetaM TensorElementType
   | `(tl_elem_type| f32)        => return .f32
   | `(tl_elem_type| f64)        => return .f64
-  | _                           => throwUnsupportedSyntax
+  | `(tl_elem_type| complex64)  => return .complex64
+  | `(tl_elem_type| complex128) => return .complex128
+  | _                          => throwUnsupportedSyntax
 
 partial def elabTLAxisSpec : Syntax → MetaM AxisSpec
   | `(tl_axis_spec| $x:ident) =>

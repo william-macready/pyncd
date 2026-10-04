@@ -47,12 +47,20 @@ def InputSignature.ofDenseInputs (inputs : HashMap String DenseTensor) : InputSi
 
     Exhaustive, with no wildcard arm, exactly like `storageConstraintOfDecl` (`DSL/Ast.lean`): a
     future `TensorElementType` or `Decl` constructor must fail to compile here rather than silently
-    classify as `f64`. -/
+    classify as `f64`.
+
+    The COMPLEX arms are UNREACHABLE: every caller looks a name up in a `DeclEnv` built by
+    `buildDeclEnv` (`DSL/Ast.lean`), which rejects any complex declaration first. `ScalarDType` has
+    no complex constructor, so the arm must still name one; it names `.bool` — never `.f32`/`.f64`,
+    because a complex tensor is not a real tensor of either precision — and a bypassing caller that
+    supplied a real external buffer for it would then fail Step B's dtype check rather than run. -/
 def dtypeOfDecl : Option Decl → ScalarDType
   | some (.typedTensor .f32 _ _) => .f32
   | some (.typedTensor .f64 _ _) => .f64
   | some (.typedLinear .f32 _ _ _) => .f32
   | some (.typedLinear .f64 _ _ _) => .f64
+  | some (.typedTensor .complex64 _ _) | some (.typedTensor .complex128 _ _)
+  | some (.typedLinear .complex64 _ _ _) | some (.typedLinear .complex128 _ _ _) => .bool  -- UNREACHABLE
   | some (.predicate _ _) => .bool
   | some (.tensor _ _) => .f64
   | some (.linear _ _ _) => .f64

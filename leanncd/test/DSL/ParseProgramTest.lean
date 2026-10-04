@@ -115,4 +115,37 @@ private def namedF64LinProg : TLProgram := tlprog!{
 }
 #guard namedF64LinProg.decls == [Decl.linear "f64" [ax0 "a", ax0 "b"] false]
 
+/-! ## The complex element-type spellings (`complex64`, `complex128`)
+
+JAX/NumPy TOTAL-bit names. They ELABORATE like `f32`/`f64` (one `TensorElementType` constructor
+each); every such declaration is then rejected at compile (`ComplexElementTypeTest.lean`). -/
+
+-- `f32prog` with the element type changed: one shape, then a two-shape group.
+private def c64prog : TLProgram := tlprog!{
+  tensor complex64 A(i)
+  Y[i] := A[i]
+}
+#guard c64prog.decls == [Decl.typedTensor .complex64 "A" [ax0 "i"]]
+
+private def c128prog : TLProgram := tlprog!{
+  tensor complex128 A(i), B(j)
+  Y[i] := A[i]
+}
+#guard c128prog.decls ==
+  [Decl.typedTensor .complex128 "A" [ax0 "i"], Decl.typedTensor .complex128 "B" [ax0 "j"]]
+
+-- `typedLinF32Prog` with the element type changed, plus `bias`.
+private def c64LinProg : TLProgram := tlprog!{
+  linear complex64 W(a, b) bias
+  Y[a] := W[a, b] · X[b]
+}
+#guard c64LinProg.decls == [Decl.typedLinear .complex64 "W" [ax0 "a", ax0 "b"] true]
+
+-- A tensor NAMED `complex128` (no element type) is a plain tensor, exactly as for `f64`.
+private def namedC128prog : TLProgram := tlprog!{
+  tensor complex128(i)
+  Y[i] := complex128[i]
+}
+#guard namedC128prog.decls == [Decl.tensor "complex128" [ax0 "i"]]
+
 end LeanNCD

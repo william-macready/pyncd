@@ -79,6 +79,10 @@ syntax ident "(" tl_axis_spec,* ")" "bias" : tl_linear_item
 -- `TensorElementType` and this category, never `tl_decl` or `Decl`.
 syntax &"f32" : tl_elem_type
 syntax &"f64" : tl_elem_type
+-- Complex element types, JAX/NumPy TOTAL-bit naming (`complex64` = 2 × f32, `complex128` = 2 × f64).
+-- SPELLED only: every declaration using one is rejected (`CompileError.unsupportedElementType`).
+syntax &"complex64" : tl_elem_type
+syntax &"complex128" : tl_elem_type
 
 -- `tensor A(q, m), B(x, y)` — one or more named shapes, comma-separated, no colon.
 syntax "tensor"    tl_named_shape,+                        : tl_decl
