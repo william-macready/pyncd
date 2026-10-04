@@ -1,3 +1,4 @@
+import Eval.ExplicitF64
 import LeanNCD.DSL.Ast
 import LeanNCD.Eval.Entry
 
@@ -28,8 +29,8 @@ private def idxChoices (a : AxisSpec) : List IdxExpr := [.axis a, .shift a 1, .s
 /-- Input tensors: A, B, both 1-D over axis `i` (kept small). `P` is a 2-D tensor over
     `[i, j]`, used only by the contraction programs below — it is what finally puts the
     `j` axis to work. -/
-private def inputDecls : List Decl := [.tensor "A" [i], .tensor "B" [i]]
-private def pDecl : Decl := .tensor "P" [i, j]
+private def inputDecls : List Decl := [.typedTensor .f64 "A" [i], .typedTensor .f64 "B" [i]]
+private def pDecl : Decl := .typedTensor .f64 "P" [i, j]
 
 /-- Read-factor choices for a 1-D output over axis i: A or B, each with each idx choice. -/
 private def readChoices : List Factor :=
@@ -161,7 +162,7 @@ def enumPrograms : List (TLProgram × Std.HashMap String DenseTensor) :=
 #guard enumPrograms.length > 0
 #guard enumPrograms.length ≤ 5000
 -- (2) EVERY baseline compiles+evals to `.ok` (generator produces only well-formed programs):
-#guard enumPrograms.all (fun (p, env) => (TLProgram.eval p env).toOption.isSome)
+#guard enumPrograms.all (fun (p, env) => (TLProgram.eval p.explicitF64 env).toOption.isSome)
 -- (3) coverage: at least one multi-term RHS and at least one affine read are generated:
 #guard enumPrograms.any (fun (p, _) =>
   p.stmts.any (fun | .assign _ _ r => r.body.terms.length ≥ 2 | _ => false))

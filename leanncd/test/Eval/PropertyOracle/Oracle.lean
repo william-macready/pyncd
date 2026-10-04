@@ -11,18 +11,18 @@ open LeanNCD LeanNCD.Eval
     program's produced names). -/
 def checkLaws (p : TLProgram) (env : Std.HashMap String DenseTensor) : Option String :=
   let names := producedNames p
-  let base := TLProgram.eval p env
+  let base := TLProgram.eval p.explicitF64 env
   match base with
   | .error e => some s!"baseline did not evaluate (generator well-formedness gap): {e}\n{repr p}"
   | .ok _ =>
       -- reordering: every permutation must agree with the baseline
       let reorderBad := (programPermutations p).find? (fun p' =>
-        ! evalAgreesOn names base (TLProgram.eval p' env))
+        ! evalAgreesOn names base (TLProgram.eval p'.explicitF64 env))
       match reorderBad with
       | some p' => some s!"REORDERING law violated.\nbase: {repr p}\nperm: {repr p'}"
       | none =>
         -- materialization: the split must agree with the baseline
-        if evalAgreesOn names base (TLProgram.eval (materializeSplit p) env) then none
+        if evalAgreesOn names base (TLProgram.eval (materializeSplit p).explicitF64 env) then none
         else some s!"MATERIALIZATION law violated.\nbase: {repr p}\nsplit: {repr (materializeSplit p)}"
 
 /-- Run both laws over the whole generator; `none` if all pass, else the first failure message. -/

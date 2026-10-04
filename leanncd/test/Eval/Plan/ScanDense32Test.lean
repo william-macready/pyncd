@@ -294,8 +294,8 @@ def scratchPrep32 : Option PreparedPlan :=
 #guard (run32 (scratchProg (.typedTensor .f32 "T" [])) scratchIn "P").toOption
   == some [0x3F800000, 0x3F800000, 0x3F800000]
 -- E2: the kind comes from the scratch's DECLARED dtype, not from "bool-only outer ⇒ binary32":
--- the same program with `tensor T` (f64) stays binary64
-#guard (let p := scratchProg (.tensor "T" [])
+-- the same program with `T` spelled `f64` explicitly stays binary64
+#guard (let p := scratchProg (.typedTensor .f64 "T" [])
         (InputSignature.ofDenseInputsForDecls p.decls scratchIn64).toOption.bind
           fun sig => (prepareEvalPlan p sig).toOption.map (·.plan.storageKind))
   == some LeanNCD.StorageKind.float64
@@ -327,7 +327,7 @@ def f64Sig : TensorSignature := { shape := #[], dtype := .f64 }
 -- refused at Step 0b as a typed capability error (naming `T`, the first name disagreeing with `Y`)
 #guard (let p0 := scratchProg (.typedTensor .f32 "T" [])
         let p : ScheduledProgram :=
-          { p0 with decls := p0.decls ++ [.tensor "Y" [], .tensor "Z" []]
+          { p0 with decls := p0.decls ++ [.typedTensor .f64 "Y" [], .typedTensor .f64 "Z" []]
                   , stmts := .plain (.assign "Z" [] { body := { terms := [{ factors := [.read "Y" []] }] }
                                                     , nonlin := .identity }) :: p0.stmts
                   , extNames := insert "Y" p0.extNames }

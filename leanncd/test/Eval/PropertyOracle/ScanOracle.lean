@@ -50,7 +50,7 @@ def checkScanLaw (c : ScanCase) : Option String :=
   | .ok sched =>
       let names := scannedStateNames sched
       if names.isEmpty then some "generated case publishes no scan state at all" else
-      match evalScheduled sched c.inputs, independentRun sched c.inputs with
+      match evalScheduledF64 sched c.inputs, independentRun sched c.inputs with
       | .error e, _ => some s!"the legacy evaluator rejected a generated case: {e.error}"
       | _, .error m => some s!"the independent unrolling failed: {m}"
       | .ok legacy, .ok indep => statesAgree "SCAN-UNROLL law violated" names legacy.env indep
@@ -118,7 +118,7 @@ private def compiledScans : List ScheduledProgram :=
     `DifferentialTest`; this smaller corpus remains pinned separately so its Task 4 assertions do not
     get silently replaced. -/
 private def checkScanScatterLaw (c : ScanScatterOracleCase) : Option String :=
-  match evalScheduled c.sched c.inputs, independentRun c.sched c.inputs with
+  match evalScheduledF64 c.sched c.inputs, independentRun c.sched c.inputs with
   | .error e, _ => some s!"{c.label}: legacy evaluator failed: {e.error}"
   | _, .error m => some s!"{c.label}: independent oracle failed: {m}"
   | .ok legacy, .ok indep =>
@@ -168,7 +168,8 @@ private def corruptedT1 (f : List Stmt → List Stmt) : Except String DenseTenso
   let leafSizes := un'.sizes.foldl (fun m (u, n) => m.insert u n) sched.explicitSizes
   let leafEnv ← match evalScheduled
       { sched with stmts := un'.stmts.map ScanStmt.plain
-                   , decls := sched.decls ++ un'.axisDecls ++ un'.decls
+                   , decls := LeanNCD.Eval.ExplicitF64.explicitF64Decls
+                       (sched.decls ++ un'.axisDecls ++ un'.decls) un'.stmts
                    , explicitSizes := leafSizes } (template1 3 false).inputs with
     | .ok r    => pure r.env
     | .error e => .error s!"corrupted leaf program failed: {e.error}"

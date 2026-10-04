@@ -868,7 +868,9 @@ def independentRun (sched : ScheduledProgram) (inputs : HashMap String DenseTens
   for sc in sched.stmts do
     match sc with
     | .plain s =>
-        match evalScheduled { sched with stmts := [.plain s] } env with
+        match evalScheduled { sched with stmts := [.plain s]
+                                       , decls := LeanNCD.Eval.ExplicitF64.explicitF64Decls
+                                           sched.decls [s] } env with
         | .ok r    => env := r.env
         | .error e => .error s!"independent run: plain statement `{s.lhsName}` failed: {e.error}"
     | .scan _ _ base recur _ => do
@@ -887,7 +889,8 @@ def independentRun (sched : ScheduledProgram) (inputs : HashMap String DenseTens
         let leafSizes := un.sizes.foldl (fun m (u, n) => m.insert u n) sizes
         let leafEnv ←
             match evalScheduled { sched with stmts := un.stmts.map ScanStmt.plain
-                                            , decls := sched.decls ++ un.axisDecls ++ un.decls
+                                            , decls := LeanNCD.Eval.ExplicitF64.explicitF64Decls
+                                                (sched.decls ++ un.axisDecls ++ un.decls) un.stmts
                                             , explicitSizes := leafSizes } env with
           | .ok r    => pure r.env
           | .error e => .error s!"independent run: the unrolled scan-free program failed: {e.error}"
@@ -1098,7 +1101,7 @@ private def interleaveCase : ScanScatterOracleCase :=
   { label := "even/odd interleave"
   , sched := sbSchedule
       [.axis sbJ (some 3), .axis sbO (some 6), .iter sbL 2,
-       .tensor "E" [sbJ], .tensor "O" [sbJ]]
+       .typedTensor .f64 "E" [sbJ], .typedTensor .f64 "O" [sbJ]]
       (sbSizes1 3 6 2) (insert "E" (insert "O" ∅)) [evenBase, oddBase] [recur]
   , inputs := (({} : HashMap String DenseTensor).insert "E" ⟨[3], #[1, 2, 3]⟩).insert
       "O" ⟨[3], #[10, 20, 30]⟩
@@ -1113,7 +1116,7 @@ private def stridedRecurrenceCase : ScanScatterOracleCase :=
     { fill := 0, reduce := .rejectCollisions }
   { label := "strided recurrence"
   , sched := sbSchedule
-      [.axis sbJ (some 3), .axis sbO (some 6), .iter sbL 3, .tensor "X" [sbO]]
+      [.axis sbJ (some 3), .axis sbO (some 6), .iter sbL 3, .typedTensor .f64 "X" [sbO]]
       (sbSizes1 3 6 3) (insert "X" ∅) [base] [recur]
   , inputs := ({} : HashMap String DenseTensor).insert "X" ⟨[6], #[1,2,3,4,5,6]⟩
   , expected := ⟨[6,3], #[1,0,0, 2,1,0, 3,0,0, 4,3,0, 5,0,0, 6,5,0]⟩ }
@@ -1130,7 +1133,7 @@ private def contractionCase : ScanScatterOracleCase :=
   { label := "RHS contraction"
   , sched := sbSchedule
       [.axis sbJ (some 3), .axis sbK none, .axis sbO (some 6), .iter sbL 2,
-       .tensor "X" [sbJ, sbK], .tensor "W" [sbK]]
+       .typedTensor .f64 "X" [sbJ, sbK], .typedTensor .f64 "W" [sbK]]
       (sbSizes1 3 6 2) (insert "X" (insert "W" ∅)) [base] [recur]
   , inputs := (({} : HashMap String DenseTensor).insert
       "X" ⟨[3,2], #[1,10, 2,20, 3,30]⟩).insert "W" ⟨[2], #[1,2]⟩
@@ -1145,7 +1148,7 @@ private def nonTrailingCase : ScanScatterOracleCase :=
       nonlin := .identity }
   { label := "non-trailing advancing dimension"
   , sched := sbSchedule
-      [.axis sbJ (some 3), .axis sbO (some 6), .iter sbL 3, .tensor "X" [sbJ]]
+      [.axis sbJ (some 3), .axis sbO (some 6), .iter sbL 3, .typedTensor .f64 "X" [sbJ]]
       (sbSizes1 3 6 3) (insert "X" ∅) [base] [recur]
   , inputs := ({} : HashMap String DenseTensor).insert "X" ⟨[3], #[4,5,6]⟩
   , expected := ⟨[3,6], #[0,4,0,5,0,6, 0,4,0,5,0,6, 0,4,0,5,0,6]⟩ }
@@ -1164,7 +1167,7 @@ private def twoAffineCase : ScanScatterOracleCase :=
   { label := "two affine non-advancing dimensions"
   , sched := sbSchedule
       [.axis sbJ (some 2), .axis sbK (some 2), .axis sbO (some 4), .axis sbP (some 4),
-       .iter sbL 2, .tensor "X" [sbJ, sbK]]
+       .iter sbL 2, .typedTensor .f64 "X" [sbJ, sbK]]
       sizes (insert "X" ∅) [base] [recur]
   , inputs := ({} : HashMap String DenseTensor).insert "X" ⟨[2,2], #[1,2,3,4]⟩
   , expected := ⟨[4,4,2],
@@ -1185,7 +1188,7 @@ private def overlappingBaseSchedule : ScheduledProgram :=
       nonlin := .identity }
   sbSchedule
     [.axis sbJ (some 3), .axis sbO (some 6), .iter sbL 2,
-     .tensor "E" [sbJ], .tensor "O" [sbJ]]
+     .typedTensor .f64 "E" [sbJ], .typedTensor .f64 "O" [sbJ]]
     (sbSizes1 3 6 2) (insert "E" (insert "O" ∅)) [first, second] [recur]
 
 /-- The five Task 4 S-B oracle fixtures, exported for `ScanOracle`'s feature-presence guards. -/
