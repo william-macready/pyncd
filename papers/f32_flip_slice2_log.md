@@ -8,3 +8,4 @@
 - S3 measured (VERIFIED by targeted builds with the flip): failing assertions SignatureTest 8, CompileTest 71, ScanCompileTest 101, NonlinCompileTest 48, ScatterCompileTest 48, Scatter32OracleTest 1. Table in papers/f32_flip_files/plan_modules.md.
 - S3 NonlinCompileTest: explicitF64 at the compile/eval helpers and axiswiseSched took 48 -> 12 -> 0 failures. VERIFIED green by targeted build of Eval.Plan.NonlinCompileTest (two commits).
 - Stopped over the tool-call budget. NOT DONE: SignatureTest/CompileTest/ScanCompileTest/ScatterCompileTest/Scatter32OracleTest fixes, all of S4 (no full build; Adapter/Adapter32/DifferentialTest unmeasured, 3832/3832 and 17/17 NOT re-verified). See RESULTS.md.
+- Plan authored from artifacts (no builds): leanncd/docs/superpowers/plans/2026-10-04-f32-flip-slice2.md plus papers/f32_flip_slice2_record.md; patch application onto 574a633 and all test-module counts remain unverified until execution.
