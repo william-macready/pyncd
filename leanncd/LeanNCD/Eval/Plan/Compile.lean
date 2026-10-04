@@ -43,22 +43,19 @@ namespace LeanNCD.Eval.Plan
     version change (§9.2). -/
 def checkDecl : Decl → Except CapabilityError Unit
   | .tensor ..    => pure ()
-  -- A COMPLEX element type, by contrast, is a per-declaration rejection, used or not: no backend
-  -- has a complex carrier. Unreachable inside `prepareEvalPlan` (Step 0's `buildDeclEnv` rejects it
-  -- first, as `sourceInvariant (.unsupportedElementType …)`); reachable from a direct
-  -- `capabilityPreflight` call, which must not report a complex schedule as admitted.
-  | .typedTensor .complex64 nm _ | .typedLinear .complex64 nm _ _ =>
-      throw (.unsupportedDtype s!"{nm}: complex64 element type")
-  | .typedTensor .complex128 nm _ | .typedLinear .complex128 nm _ _ =>
-      throw (.unsupportedDtype s!"{nm}: complex128 element type")
-  | .typedTensor .. => pure ()   -- an explicit element type is a SCHEDULE-wide question (which
-                                 -- precision does this whole graph run in), not a per-declaration
-                                 -- one: an f32 declaration nothing uses constrains nothing. Mixed
-                                 -- precision is rejected by `prepareEvalPlan`'s Step 0b storage
-                                 -- derivation, which needs the schedule-wide kind this
-                                 -- per-declaration pass cannot see.
+  -- An explicit element type is decided by `isComplex`, so a FUTURE complex type fails closed here.
+  -- A COMPLEX element type is a per-declaration rejection, used or not: no backend has a complex
+  -- carrier. Unreachable inside `prepareEvalPlan` (Step 0's `buildDeclEnv` rejects it first, as
+  -- `sourceInvariant (.unsupportedElementType …)`); reachable from a direct `capabilityPreflight`
+  -- call, which must not report a complex schedule as admitted. A REAL element type is a
+  -- SCHEDULE-wide question (which precision does this whole graph run in), not a per-declaration
+  -- one: an f32 declaration nothing uses constrains nothing. Mixed precision is rejected by
+  -- `prepareEvalPlan`'s Step 0b storage derivation, which needs the schedule-wide kind this
+  -- per-declaration pass cannot see.
+  | .typedTensor ty nm _ | .typedLinear ty nm _ _ =>
+      if ty.isComplex then throw (.unsupportedDtype s!"{nm}: {ty.spelling} element type")
+      else pure ()
   | .linear ..    => pure ()
-  | .typedLinear .. => pure ()   -- same schedule-wide reasoning as `.typedTensor` above
   | .predicate .. => pure ()
   | .axis ..      => pure ()
   | .iter ..      => pure ()

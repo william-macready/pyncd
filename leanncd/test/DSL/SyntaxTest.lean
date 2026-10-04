@@ -16,6 +16,11 @@ namespace LeanNCD
 private def f32 : Nat := 1
 private def f64 : Nat := 1
 #guard f32 + f64 == 2
+-- Element words as the ITEM name of a typed declaration and as an AXIS name still parse
+-- (elaborated values: `ParseProgramTest.lean`).
+#check (`(tl_decl| tensor f32 f32(i)) : Lean.MacroM _)
+#check (`(tl_decl| linear f64 f64(a, b)) : Lean.MacroM _)
+#check (`(tl_decl| tensor A(f32, i)) : Lean.MacroM _)
 -- The complex words (spelled, then rejected at compile — `ComplexElementTypeTest.lean`) follow the
 -- same non-reserved form: they parse as element types AND stay ordinary identifiers.
 #check (`(tl_decl| tensor complex64 A(i)) : Lean.MacroM _)

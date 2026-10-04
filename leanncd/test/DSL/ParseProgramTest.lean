@@ -78,6 +78,21 @@ private def namedF32prog : TLProgram := tlprog!{
 }
 #guard namedF32prog.decls == [Decl.tensor "f32" [ax0 "i"]]
 
+-- The typed form whose ITEM is named like an element word: the first word is the element type, the
+-- second the name (the typed rule consumes the element type first, so no ambiguity).
+private def typedNamedF32prog : TLProgram := tlprog!{
+  tensor f32 f32(i)
+  Y[i] := f32[i]
+}
+#guard typedNamedF32prog.decls == [Decl.typedTensor .f32 "f32" [ax0 "i"]]
+
+-- Element words are legal AXIS names too (they are ordinary identifiers).
+private def axisNamedF32prog : TLProgram := tlprog!{
+  tensor A(f32, i)
+  Y[f32, i] := A[f32, i]
+}
+#guard axisNamedF32prog.decls == [Decl.tensor "A" [ax0 "f32", ax0 "i"]]
+
 /-! ## The typed linear form (`linear f64 W(a, b) bias, V(c, d)`) -/
 
 -- Grouped, with and without `bias`: the element type applies to EVERY item in the group, and each
@@ -114,6 +129,13 @@ private def namedF64LinProg : TLProgram := tlprog!{
   Y[a] := f64[a, b] · X[b]
 }
 #guard namedF64LinProg.decls == [Decl.linear "f64" [ax0 "a", ax0 "b"] false]
+
+-- The typed linear form whose ITEM is named `f64`: element type first, then the name.
+private def typedNamedF64LinProg : TLProgram := tlprog!{
+  linear f64 f64(a, b)
+  Y[a] := f64[a, b] · X[b]
+}
+#guard typedNamedF64LinProg.decls == [Decl.typedLinear .f64 "f64" [ax0 "a", ax0 "b"] false]
 
 /-! ## The complex element-type spellings (`complex64`, `complex128`)
 

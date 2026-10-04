@@ -157,27 +157,28 @@ private def c64Dup : TLProgram := tlprog!{
 
 /-! ## Every entry, every case: the case × entry table
 
-Rows are the six declaration cases. Columns are every public entry that reads `Decl`s, found by
+Columns are the seven declaration cases. Rows are every public entry that reads `Decl`s, found by
 grepping for `List Decl`/`ScheduledProgram`/`DeclEnv` parameters. `R` = rejected, `R*` = rejected
 through more than one guard (removing the first still rejects). `evalScheduled`'s `+f32` cell is
 plain `R`: without `validateScheduled`'s rejection its f32 refusal (`unsupportedDtype "A"`) fires
 before `evalPlain`'s guard. `prepareEvalPlan`'s second guard (`checkDecl`) reports a capability
-error, not the `sourceInvariant` one. Every cell is checked by
-`rejectionFailures` below, which runs every entry on every row.
+error, not the `sourceInvariant` one. `rejectionFailures` below runs every entry on every case and
+asserts each cell's FINAL rejection (which error the entry reports); it does NOT assert whether a
+cell is guarded once or by several guards, so `R` vs `R*` is documentation, not a checked claim.
 
-| entry | guard | t c64 | t c128 | lin c64 | unused | +f32 | +f64 |
-|---|---|---|---|---|---|---|---|
-| `TLProgram.compile` | `resolveDecls`→`buildDeclEnv`, then `route` | R* | R* | R* | R* | R* | R* |
-| `TLProgram.compileToScheduled` | `resolveDecls`→`buildDeclEnv` | R | R | R | R | R | R |
-| `Eval.TLProgram.eval` | via `compileToScheduled`, then `evalScheduled` | R* | R* | R* | R* | R* | R* |
-| `route` (hand-built logical schedule) | `physicalizeForRoute`→`rejectComplexDecls` | R | R | R | R | R | R |
-| `validateScheduled` | `buildDeclEnv` | R | R | R | R | R | R |
-| `evalScheduled` | `validateScheduled`, then `evalPlain`'s guard | R* | R* | R* | R* | R | R* |
-| `prepareEvalPlan` | Step 0 `validateScheduled` (`sourceInvariant`), then `checkDecl` | R* | R* | R* | R* | R* | R* |
-| `capabilityPreflight` | `checkDecl` (`unsupportedDtype "<name>: <spelling> element type"`) | R | R | R | R | R | R |
-| `ofDenseInputsForDecls` / `ofDenseInputs32ForDecls` | `declEnvOrThrow`→`buildDeclEnv` (`.declaration`) | R | R | R | R | R | R |
-| `evalPlain`, `evalAssignDtyped(Seeded)`, `evalStmtSliceSeeded`, `evalScan` | `rejectUnsupportedStorage`→`buildDeclEnv` (`.compile`) | R | R | R | R | R | R |
-| `evalScatter` | `rejectComplexDecls` (`.compile`) | R | R | R | R | R | R |
+| entry | guard | t c64 | t c128 | lin c64 | lin c128 | unused | +f32 | +f64 |
+|---|---|---|---|---|---|---|---|---|
+| `TLProgram.compile` | `resolveDecls`→`buildDeclEnv`, then `route` | R* | R* | R* | R* | R* | R* | R* |
+| `TLProgram.compileToScheduled` | `resolveDecls`→`buildDeclEnv` | R | R | R | R | R | R | R |
+| `Eval.TLProgram.eval` | via `compileToScheduled`, then `evalScheduled` | R* | R* | R* | R* | R* | R* | R* |
+| `route` (hand-built logical schedule) | `physicalizeForRoute`→`rejectComplexDecls` | R | R | R | R | R | R | R |
+| `validateScheduled` | `buildDeclEnv` | R | R | R | R | R | R | R |
+| `evalScheduled` | `validateScheduled`, then `evalPlain`'s guard | R* | R* | R* | R* | R* | R | R* |
+| `prepareEvalPlan` | Step 0 `validateScheduled` (`sourceInvariant`), then `checkDecl` | R* | R* | R* | R* | R* | R* | R* |
+| `capabilityPreflight` | `checkDecl` (`unsupportedDtype "<name>: <spelling> element type"`) | R | R | R | R | R | R | R |
+| `ofDenseInputsForDecls` / `ofDenseInputs32ForDecls` | `declEnvOrThrow`→`buildDeclEnv` (`.declaration`) | R | R | R | R | R | R | R |
+| `evalPlain`, `evalAssignDtyped(Seeded)`, `evalStmtSliceSeeded`, `evalScan` | `rejectUnsupportedStorage`→`buildDeclEnv` (`.compile`) | R | R | R | R | R | R | R |
+| `evalScatter` | `rejectComplexDecls` (`.compile`) | R | R | R | R | R | R | R |
 
 Not entries, so no cell (named gaps; each needs a hand-built `DeclEnv`, or a physical program, that
 skipped `buildDeclEnv`): `routeCore` (the physical stage behind `route`; a guard there would ripple
@@ -228,6 +229,7 @@ private def rows : List Row :=
   [ ⟨[.typedTensor .complex64 "A" [i]], "A", "complex64"⟩
   , ⟨[.typedTensor .complex128 "A" [i]], "A", "complex128"⟩
   , ⟨[.typedLinear .complex64 "A" [i] false], "A", "complex64"⟩
+  , ⟨[.typedLinear .complex128 "A" [i] false], "A", "complex128"⟩
   , ⟨[.typedTensor .complex128 "Unused" [i]], "Unused", "complex128"⟩
   , ⟨[.typedTensor .f32 "A" [i], .typedTensor .complex64 "B" [i]], "B", "complex64"⟩
   , ⟨[.typedTensor .f64 "A" [i], .typedTensor .complex128 "B" [i]], "B", "complex128"⟩ ]
@@ -330,13 +332,16 @@ private def neighbourFailures : List (String × String) :=
       if good then none else some (nm, r.nm ++ ":" ++ r.ty)
 
 #guard entries.length == 16
+#guard rows.length == 7
 #guard rejectionFailures == []
 #guard neighbourFailures == []
 
-/-! ### Complex + f32 at the checked backend: the complex rejection, not the mixed-precision stop
+/-! ### The f32 + f64 neighbour still gets its mixed-precision rejection
 
-The neighbour (complex → f64) is `prepareEvalPlan`'s Step 0b mixed f32/f64 rejection; with the
-complex declaration in place, Step 0 rejects first. -/
+Pins only that the `+f32` row's neighbour (the complex declaration replaced by f64) is still
+refused by `prepareEvalPlan`'s Step 0b mixed f32/f64 storage rejection, a capability error rather
+than the complex one. That the complex declaration's own rejection comes first is asserted by the
+`+f32` row of `rejectionFailures` above, not here. -/
 
 #guard match prepareEvalPlan (sched [.typedTensor .f32 "A" [i], .typedTensor .f64 "B" [i]])
     (InputSignature.ofDenseInputs inputs) with
