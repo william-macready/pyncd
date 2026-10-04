@@ -9,3 +9,4 @@
 - S3 NonlinCompileTest: explicitF64 at the compile/eval helpers and axiswiseSched took 48 -> 12 -> 0 failures. VERIFIED green by targeted build of Eval.Plan.NonlinCompileTest (two commits).
 - Stopped over the tool-call budget. NOT DONE: SignatureTest/CompileTest/ScanCompileTest/ScatterCompileTest/Scatter32OracleTest fixes, all of S4 (no full build; Adapter/Adapter32/DifferentialTest unmeasured, 3832/3832 and 17/17 NOT re-verified). See RESULTS.md.
 - Plan authored from artifacts (no builds): leanncd/docs/superpowers/plans/2026-10-04-f32-flip-slice2.md plus papers/f32_flip_slice2_record.md; patch application onto 574a633 and all test-module counts remain unverified until execution.
+- plan-review fixes applied to the slice-2 plan (F1 flip #4 is a dead consistency edit and the mutation target moves to flip #3, F2 first action restores artifacts from the prototype branch, F3-F8 and F10 as adjudicated; F9 resolved by F1); plan is 405 lines.
