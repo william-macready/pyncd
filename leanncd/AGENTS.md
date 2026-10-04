@@ -259,6 +259,12 @@ Small subsystems (no dedicated node — each <170 lines, single-file or near it)
   pinned by a rejection fixture, never a value-parity entry. Two bugs, opposite lessons: broaden
   source-generated coverage; keep hand-built tests to rejection/isolation.
 
+- **Eval-based tests (the binary64 reference evaluator) declare `f64` explicitly, via
+  `test/Eval/ExplicitF64.lean`.** `explicitF64Decls`/`TLProgram.explicitF64` and the `…F64` entry
+  wrappers declare only UNDECLARED names `f64`; they never rewrite an existing declaration, so
+  plain `tensor`/`linear` declarations in tests are re-spelled `f64` at the source. This is what keeps
+  those tests binary64 once the f32 default flip makes plain/undeclared tensors binary32.
+
 ### Global Pitfalls
 
 - **`lake env lean <file>` checks against stale `.olean`s for anything that file imports** — see
