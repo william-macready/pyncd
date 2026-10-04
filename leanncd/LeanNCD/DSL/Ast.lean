@@ -35,7 +35,7 @@ inductive Decl
   | predicate : String → List AxisSpec → Decl
   | linear    : String → List AxisSpec → (bias : Bool) → Decl
   | typedLinear : TensorElementType → String → List AxisSpec → (bias : Bool) → Decl
-  | axis     : AxisSpec → Option Nat → Decl   -- `axis l : ℕ = 3`: declares an axis's dtype + optional pinned size
+  | axis      : AxisSpec → Option Nat → Decl   -- `axis l : ℕ = 3`: declares an axis's dtype + optional pinned size
   | iter      : AxisSpec → Nat → Decl          -- `iter l = 3`: the ONLY way to declare a scan iteration
                                                  -- axis (#5b) — pinned-only (no `Option`), kind is always
                                                  -- `.nat` (forced at elaboration, `Elab.lean`), never `ℝ`
