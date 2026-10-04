@@ -23,6 +23,10 @@ private def goodEnv : Std.HashMap String DenseTensor :=
 -- term must be caught by `evalAgreesOn` on `goodProg` (Y = A + B vs a bogus Y = A).
 private def bogusSplit : TLProgram :=
   { goodProg with stmts := [.assign "Y" [.free i0] ⟨⟨[⟨[.read "A" [.axis i0]]⟩]⟩, .identity, .sum⟩] }
+-- Both programs must EVALUATE, so the disagreement below is a VALUE disagreement and not one side
+-- refusing (`evalAgreesOn` is also false for an `ok`/`error` pair).
+#guard (TLProgram.eval goodProg.explicitF64 goodEnv).toOption.isSome
+#guard (TLProgram.eval bogusSplit.explicitF64 goodEnv).toOption.isSome
 #guard ! evalAgreesOn (producedNames goodProg)
           (TLProgram.eval goodProg.explicitF64 goodEnv) (TLProgram.eval bogusSplit.explicitF64 goodEnv)
 
@@ -43,6 +47,8 @@ private def yDepGoodProg : TLProgram :=
 private def yDepDifferentProg : TLProgram :=
   { yDepGoodProg with
     stmts := [yStmt, .assign "Z" [.free i0] ⟨⟨[⟨[.read "A" [.axis i0]]⟩]⟩, .identity, .sum⟩] }
+#guard (TLProgram.eval yDepGoodProg.explicitF64 goodEnv).toOption.isSome
+#guard (TLProgram.eval yDepDifferentProg.explicitF64 goodEnv).toOption.isSome
 #guard ! evalAgreesOn (producedNames yDepGoodProg)
           (TLProgram.eval yDepGoodProg.explicitF64 goodEnv) (TLProgram.eval yDepDifferentProg.explicitF64 goodEnv)
 

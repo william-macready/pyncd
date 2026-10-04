@@ -196,10 +196,13 @@ private def t1Reference : Option DenseTensor :=
   | .ok bad, some good => !denseEq bad good
   | _, _ => false
 
--- Deleting a base leaf entirely is caught by the completeness check, which is what keeps the
--- `ofFn` zero default from absorbing a lost or misplaced leaf.
+-- Deleting a base leaf entirely is not absorbed as a zero default. OBSERVED: the failure that fires
+-- first is NOT `reconstructHistory`'s completeness check but the leaf evaluator's own
+-- missing-input refusal (leaf `S_1` reads the deleted leaf, which is then an unknown tensor). The
+-- guard pins that exact text, so it cannot be satisfied by an unrelated refusal (e.g. an
+-- `unsupportedDtype` after the default storage flips to binary32).
 #guard match corruptedT1 (fun ss => ss.filter (fun s => s.lhsName != stateLeafName "S" [0])) with
-  | .error _ => true
+  | .error m => m == s!"corrupted leaf program failed: evalAssign: unknown tensor {stateLeafName "S" [0]}"
   | .ok _    => false
 
 end LeanNCD.PropertyOracle

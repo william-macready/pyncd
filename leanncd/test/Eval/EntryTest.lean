@@ -151,7 +151,7 @@ run_cmd do
       throwError s!"expected the f32 rejection to precede the shape failure, got: {failure}"
   | .ok _ => throwError "expected the f32 contraction to be refused before size inference"
 
--- Control: the SAME program in the untyped (f64) spelling does reach size inference and fails
+-- Control: the SAME program spelled `tensor f64` does reach size inference and fails
 -- there — so (c)'s claim is about precedence, not about the shape failure being absent.
 run_cmd do
   match TLProgram.eval (TLProgram.explicitF64 <| tlprog!{

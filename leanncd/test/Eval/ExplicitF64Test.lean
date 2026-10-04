@@ -68,15 +68,82 @@ private def f32Dest : TLProgram := tlprog!{
   | .error f => match f.error with | .unsupportedDtype "y" => true | _ => false
   | .ok _ => false
 
--- Predicate, plain-`tensor`, and axis declarations are preserved verbatim and not re-declared.
+-- Axis, iter, predicate, plain-`tensor`, and `f32` declarations are preserved verbatim, in order,
+-- and not re-declared; only the undeclared names are appended after them.
+private def axI : AxisSpec := ⟨"i", 1, .real⟩
+private def axJ : AxisSpec := ⟨"j", 2, .real⟩
+private def axK : AxisSpec := ⟨"k", 3, .real⟩
+private def axL : AxisSpec := ⟨"l", 4, .nat⟩
 private def mixedDecls : List Decl :=
-  [.predicate "P" [], .tensor "T" [], .typedTensor .f32 "F" []]
+  [.axis axI (some 2), .iter axL 3, .predicate "P" [], .tensor "T" [], .typedTensor .f32 "F" []]
 private def mixedStmts : List Stmt :=
   (tlprog!{ Z[] := P[] · T[] · F[] · U[] }).stmts
-#guard (explicitF64Decls mixedDecls mixedStmts).take 3 == mixedDecls
-#guard ((explicitF64Decls mixedDecls mixedStmts).drop 3).map (·.name) == ["Z", "U"]
+#guard (explicitF64Decls mixedDecls mixedStmts).take 5 == mixedDecls
+#guard ((explicitF64Decls mixedDecls mixedStmts).drop 5).map (·.name) == ["Z", "U"]
+
+/-! ### Helper edge cases, each on a statement list built directly so the one thing it varies is
+the only thing it varies. -/
+
+/-- `Y[ls] := n[es]` as a one-factor assignment. -/
+private def asg (y : String) (ls : List LHSSlot) (n : String) (es : List IdxExpr) : Stmt :=
+  .assign y ls ⟨⟨[⟨[.read n es]⟩]⟩, .identity, .sum⟩
+
+/-- The declarations `explicitF64Decls decls stmts` appends. -/
+private def added (decls : List Decl) (stmts : List Stmt) : List Decl :=
+  (explicitF64Decls decls stmts).drop decls.length
 
 -- A malformed declaration list (duplicate) is returned unchanged, so the evaluator reports it.
-#guard explicitF64Decls [.tensor "Y" [], .tensor "Y" []] [] == [.tensor "Y" [], .tensor "Y" []]
+-- The statement list is NON-EMPTY and reads undeclared names (`Z`, and the written `W`): a helper
+-- that skipped its error branch and appended anyway would return a longer list.
+#guard explicitF64Decls [.tensor "Y" [], .tensor "Y" []] [asg "W" [] "Z" []]
+  == [.tensor "Y" [], .tensor "Y" []]
+
+-- (a) Idempotent: a second pass finds every derivable name already declared (and a name with no
+-- derivable axis stays undeclared on both passes).
+#guard explicitF64Decls (explicitF64Decls [] matvec.stmts) matvec.stmts
+  == explicitF64Decls [] matvec.stmts
+#guard explicitF64Decls (explicitF64Decls mixedDecls mixedStmts) mixedStmts
+  == explicitF64Decls mixedDecls mixedStmts
+#guard explicitF64Decls (explicitF64Decls [] [asg "Y" [.affine (.const 0)] "X" [.const 0]])
+    [asg "Y" [.affine (.const 0)] "X" [.const 0]]
+  == explicitF64Decls [] [asg "Y" [.affine (.const 0)] "X" [.const 0]]
+
+-- (b) A name that occurs several times in `stmtStorageNames` order is declared exactly ONCE (read
+-- twice in one statement, and written-then-read across statements); the result stays well formed.
+private def dupStmts : List Stmt :=
+  [ .assign "Y" [.free axI] ⟨⟨[⟨[.read "A" [.axis axI, .axis axJ], .read "A" [.axis axJ, .axis axK]]⟩]⟩, .identity, .sum⟩
+  , asg "Z" [.free axI] "Y" [.axis axI] ]
+#guard (added [] dupStmts).map (·.name) == ["Y", "A", "Z"]
+#guard (buildDeclEnv (explicitF64Decls [] dupStmts)).toOption.isSome
+
+-- (c) The first WRITE decides a name's axes, not the first read: `N` is read as `N[i]` before it is
+-- written as `N[j]`; the declaration carries `j` (the write's axis), not `i` (the read's).
+private def readThenWrite : List Stmt :=
+  [asg "Out" [.free axI] "N" [.axis axI], asg "N" [.free axJ] "W" [.axis axJ]]
+#guard (added [] readThenWrite).find? (·.name == "N") == some (.typedTensor .f64 "N" [axJ])
+
+-- (d) Slots with no plain `free` axis still give the right RANK: a scatter `.affine` LHS slot, a
+-- scan `.iterAt`/`.iterNext` slot, and an `.affine (.const _)` slot that names no axis of its own.
+private def slotStmts : List Stmt :=
+  [ .scatter "Sc" [.affine (.scale 2 axI), .affine (.shift axJ 1)] ⟨⟨[⟨[.read "X" [.axis axI, .axis axJ]]⟩]⟩, .identity, .sum⟩ {}
+  , asg "G" [.free axJ, .iterAt axL 0] "G0" [.axis axJ]
+  , asg "H" [.iterNext axL, .free axJ] "G" [.axis axJ, .axis axL]
+  , asg "K" [.free axI, .affine (.const 0)] "M" [.axis axI, .axis axI] ]
+#guard (added [] slotStmts).filterMap (fun d => match d with
+    | .typedTensor .f64 n ax => some (n, ax.length) | _ => none)
+  == [("Sc", 2), ("X", 2), ("G", 2), ("G0", 1), ("H", 2), ("K", 2), ("M", 2)]
+#guard (added [] slotStmts).find? (·.name == "Sc") == some (.typedTensor .f64 "Sc" [axI, axJ])
+
+-- (e) A name with no usable axis anywhere in the statements stays UNDECLARED (a later refusal stays
+-- loud rather than a wrong-rank declaration).
+#guard explicitF64Decls [] [asg "Y" [.affine (.const 0)] "X" [.const 0]] == []
+
+-- (f) A predicate used as a DESTINATION keeps its `.predicate` declaration unchanged.
+#guard explicitF64Decls [.predicate "P" [axI]] [asg "P" [.free axI] "A" [.axis axI]]
+  == [.predicate "P" [axI], .typedTensor .f64 "A" [axI]]
+
+-- (g) A `%`-prefixed generated name is declared like any other name.
+#guard added [] [asg "%T_0" [.free axI] "%U_1" [.axis axI]]
+  == [.typedTensor .f64 "%T_0" [axI], .typedTensor .f64 "%U_1" [axI]]
 
 end LeanNCD.Eval.ExplicitF64Test

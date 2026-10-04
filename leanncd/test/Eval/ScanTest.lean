@@ -70,7 +70,8 @@ run_cmd do
 -- plain errors (handled by evalScheduled, not evalScan)
 run_cmd do
   match evalScanF64 [] {} {} (.plain (.assign "x" [] { body := { terms := [] }, nonlin := .identity })) with
-  | .error _ => pure ()
+  | .error (.invalidScanNode .plainNotHandledHere) => pure ()
+  | .error e => throwError s!"expected invalidScanNode plainNotHandledHere, got {e}"
   | .ok _ => throwError "expected plain to error"
 
 -- 4c: a predicate contraction inside a one-step "scan" (empty seed) must agree with the plain
@@ -201,7 +202,8 @@ run_cmd do
   let base : Stmt := .assign "S" [.iterAt l 0] { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := .identity }
   let recur : Stmt := .assign "S" [.iterNext l] { body := { terms := [{ factors := [.read "S" [.axis l]] }] }, nonlin := .identity }
   match evalScanF64 [] env sizes (.scan "S" [l] [base] [recur] false) with
-  | .error _ => pure ()
+  | .error (.invalidSeed "S" 9 0 0) => pure ()
+  | .error e => throwError s!"extent-zero: expected invalidSeed \"S\" (uid 9) 0 0, got {e}"
   | .ok _ => throwError "extent-zero: expected an error (out-of-range base coordinate), got ok"
 
 -- Zero pin: S[j, iterAt l 0] := W[j, l]. The base RHS reads W indexed by the SAME axis it pins to
