@@ -194,6 +194,20 @@ on" claim against the code when that slice's plan is written.
    - **a decision for the paths outside the checked backend.** The legacy evaluator, the Python
      bridge, and the tsncd/pyncd JSON path all assume f64 today.
 
+   > **Progress (2026-10-04).** The prerequisites above landed in two slices, both on `main`.
+   > (1) The additive spellings (merge `4d3f613`): `tensor f64` / `linear f64`, a typed `linear`
+   > form (`Decl.typedLinear`), and `complex64` / `complex128` spelled but rejected everywhere with
+   > `CompileError.unsupportedElementType`; `tl_elem_type` is now a non-reserved
+   > `(behavior := symbol)` category, so the element-type words stay ordinary identifiers.
+   > (2) The test-side migration lever (merge `574a633`): `test/Eval/ExplicitF64.lean` makes the
+   > eval-based tests write `f64` explicitly, so they stay binary64 regression gates; no production
+   > file changed. **Not yet done:** the flip itself (plain `tensor`, `linear` and undeclared names
+   > become f32) and the checked-backend test migration; its plan is on branch
+   > `f32-flip-slice2-proto`. Decisions taken: the reference evaluator stays binary64-only and keeps
+   > refusing f32; the bool-only defaults (`deriveStorageKind`, `scheduleStorageKind`) are NOT
+   > flipped, because `Eval.Plan.AdapterTest` runs an all-predicate plan through the `Float` runner;
+   > no program-level default pragma; mixed precision stays rejected.
+
 Resulting order: **F32-B (optionally with the `f64` keyword) → F32-D → F32-C → F32-JAX → a
 default-flip-and-migration slice.** F32-E stays contingent on the single-real-precision invariant
 changing.
