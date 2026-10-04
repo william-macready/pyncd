@@ -36,7 +36,7 @@ run_cmd do
 -- RSN2  an identity-nonlin scatter still compiles/evaluates fine (2× upsample; X at even coords,
 --   0 elsewhere — same shape as the SC1 pattern in GnnScatterTest).
 run_cmd (assertEval "RSN2 identity-scatter-still-works"
-  (tlprog!{ tensor Out(i, j)
+  (tlprog!{ tensor f64 Out(i, j)
             Out[2 * i, 2 * j] := X[i, j] })
   (HashMap.ofList [("X", tl [2,2] [1,2, 3,4])])
   "Out" (tl [4,4] [1,0,2,0, 0,0,0,0, 3,0,4,0, 0,0,0,0]))

@@ -68,7 +68,7 @@ test "GN5 degree-normalized"
 
 -- SC1  reduce a scatter output to a scalar. total = Σ Out = Σ X = 1+2+3+4 = 10.
 test "SC1 reduce-to-scalar"
-    (evalEqB (tlprog!{ tensor Out(i, j)
+    (evalEqB (tlprog!{ tensor f64 Out(i, j)
             Out[2 * i, 2 * j] := X[i, j]
             total[] := Out[a, b] })
       (HashMap.ofList [("X", tl [2,2] [1,2, 3,4])])
@@ -77,7 +77,7 @@ test "SC1 reduce-to-scalar"
 -- SC2  elementwise square of a scatter output. Nonzeros at even coords 1,2,3,4 ⇒ squares
 --   1,4,9,16 in place (Σ = 30); structural zeros square to 0.
 test "SC2 elementwise-square"
-    (evalEqB (tlprog!{ tensor Out(i, j)
+    (evalEqB (tlprog!{ tensor f64 Out(i, j)
             Out[2 * i, 2 * j] := X[i, j]
             Sq[a, b] := Out[a, b] · Out[a, b] })
       (HashMap.ofList [("X", tl [2,2] [1,2, 3,4])])
@@ -86,7 +86,7 @@ test "SC2 elementwise-square"
 -- SC3  relu on a scatter output. X = [[1,-2],[-3,4]] placed at even coords; negatives clamp:
 --   (0,0)=1, (0,2)=-2→0, (2,0)=-3→0, (2,2)=4 ⇒ 1,0,0,4 at evens.
 test "SC3 relu"
-    (evalEqB (tlprog!{ tensor Out(i, j)
+    (evalEqB (tlprog!{ tensor f64 Out(i, j)
             Out[2 * i, 2 * j] := X[i, j]
             R[a, b] := relu(Out[a, b]) })
       (HashMap.ofList [("X", tl [2,2] [1,-2, -3,4])])
@@ -95,7 +95,7 @@ test "SC3 relu"
 -- SC4  contraction consuming a scatter output. W = ones(4×2) ⇒ each column of Z = row-sums of
 --   Out = [3,0,7,0] (row0 sums 1+2, row2 sums 3+4). Z is 4×2.
 test "SC4 matmul"
-    (evalEqB (tlprog!{ tensor Out(i, j)
+    (evalEqB (tlprog!{ tensor f64 Out(i, j)
             Out[2 * i, 2 * j] := X[i, j]
             Z[a, c] := Out[a, b] · W[b, c] })
       (HashMap.ofList [("X", tl [2,2] [1,2, 3,4]), ("W", tl [4,2] [1,1, 1,1, 1,1, 1,1])])
@@ -104,7 +104,7 @@ test "SC4 matmul"
 -- SC5  affine/strided read of a scatter output. Wk = [1,1] ⇒ Y[a,b] = Out[a,b] + Out[a+1,b];
 --   valid extent 3×4. Y[0]=[1,0,2,0], Y[1]=Y[2]=[3,0,4,0].
 test "SC5 conv"
-    (evalEqB (tlprog!{ tensor Out(i, j)
+    (evalEqB (tlprog!{ tensor f64 Out(i, j)
             Out[2 * i, 2 * j] := X[i, j]
             Y[a, b] := Wk[p] · Out[a + p, b] })
       (HashMap.ofList [("X", tl [2,2] [1,2, 3,4]), ("Wk", tl [2] [1,1])])
@@ -114,8 +114,8 @@ test "SC5 conv"
 --   nonzeros 1,2,3,4 (at Out coords (0,0),(0,2),(2,0),(2,2)) land at Out2 coords
 --   (0,0),(0,4),(4,0),(4,4) in an 8×8.
 test "SC6 scatter-of-scatter"
-    (evalEqB (tlprog!{ tensor Out(i, j)
-            tensor Out2(a, b)
+    (evalEqB (tlprog!{ tensor f64 Out(i, j)
+            tensor f64 Out2(a, b)
             Out[2 * i, 2 * j] := X[i, j]
             Out2[2 * a, 2 * b] := Out[a, b] })
       (HashMap.ofList [("X", tl [2,2] [1,2, 3,4])])
@@ -132,7 +132,7 @@ test "SC6 scatter-of-scatter"
 -- SC7  diagonal-write scatter consumed in a contraction (row scaling). D = diag(v) = [[2,0],[0,3]];
 --   M = ones ⇒ Y[i,j] = Σₖ D[i,k]·M[k,j] = vᵢ ⇒ [[2,2],[3,3]].
 test "SC7 diag-scatter-then-matmul"
-    (evalEqB (tlprog!{ tensor D(i, j)
+    (evalEqB (tlprog!{ tensor f64 D(i, j)
             D[i, i] := v[i]
             Y[i, j] := D[i, k] · M[k, j] })
       (HashMap.ofList [("v", tl [2] [2,3]), ("M", tl [2,2] [1,1, 1,1])])
@@ -142,8 +142,8 @@ test "SC7 diag-scatter-then-matmul"
 --   those cells as real entries: an all-zero row (rows 1,3) becomes uniform [¼,¼,¼,¼], not
 --   undefined. Property check: every row sums to 1.
 test "SC8 softmax-over-scatter"
-    (evalPredB (tlprog!{ tensor Out(i, j)
-            tensor P(a, b)
+    (evalPredB (tlprog!{ tensor f64 Out(i, j)
+            tensor f64 P(a, b)
             Out[2 * i, 2 * j] := X[i, j]
             P[a, b.] := softmax(Out[a, b]) })
       (HashMap.ofList [("X", tl [2,2] [1,2, 3,4])])

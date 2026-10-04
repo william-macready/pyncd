@@ -59,7 +59,7 @@ test "EC6 trace"
 --   v=[5,6] ⇒ D[i,i]=v[i], off-diagonal 0 ⇒ [[5,0],[0,6]].
 test "EC7 diagonal-write"
     (evalEqB (tlprog!{
-    tensor D(i, j)
+    tensor f64 D(i, j)
     D[i, i] := v[i]
   })
       (HashMap.ofList [("v", tl [2] [5,6])])

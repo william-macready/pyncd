@@ -1,3 +1,4 @@
+import Eval.ExplicitF64
 import LeanNCD.Eval.Contract
 import LeanNCD.Eval.SizeInfer   -- `inferAxisSizes`, used directly below (was transitive via `Eval.Shape`)
 namespace LeanNCD.Eval
@@ -59,18 +60,18 @@ run_cmd do
   | .error e => throwError (toString e)
   | .ok (sizes, _) =>
     -- ℝ (tensor) reading ⇒ scalar 2.0
-    match evalAssignDtyped [.tensor "Result" []] env sizes "Result" [] rhs with
+    match evalAssignDtypedF64 [.typedTensor .f64 "Result" []] env sizes "Result" [] rhs with
     | .error e => throwError (toString e)
     | .ok (_, R) => unless DenseTensor.approxEq R (tensorOf [] [2.0]) do throwError s!"ℝ agg wrong: {repr R.data}"
     -- Boolean (predicate) reading ⇒ ∃ t,i,j with all-1 ⇒ 1.0 (there is such a term)
-    match evalAssignDtyped [.predicate "Result" []] env sizes "Result" [] rhs with
+    match evalAssignDtypedF64 [.predicate "Result" []] env sizes "Result" [] rhs with
     | .error e => throwError (toString e)
     | .ok (_, R) => unless DenseTensor.approxEq R (tensorOf [] [1.0]) do throwError s!"Bool agg wrong: {repr R.data}"
     -- Task 4.1 fixture 5: an EARLIER `.axis` declaration whose axis name is also `Result` must not
     -- hide the later `predicate Result`. `combineFor` scans tensor-bearing declarations only, so
     -- this still selects the Boolean algebra (1.0); a scan over ALL declarations would find the
     -- axis first and silently fall back to real sum-product (2.0).
-    match evalAssignDtyped
+    match evalAssignDtypedF64
         [.axis { name := "Result", uid := 99, kind := .real } none, .predicate "Result" []]
         env sizes "Result" [] rhs with
     | .error e => throwError (toString e)
@@ -94,19 +95,19 @@ run_cmd do
   | .error e => throwError (toString e)
   | .ok (sizes, _) => do
     -- Fixture 8: only the DESTINATION is f32. The deepest entry refuses it, naming `Result`.
-    match evalAssignDtypedSeeded [.typedTensor .f32 "Result" []] env sizes seed "Result" [] rhs with
+    match evalAssignDtypedSeededF64 [.typedTensor .f32 "Result" []] env sizes seed "Result" [] rhs with
     | Except.error (.unsupportedDtype "Result") => pure ()
     | Except.error e => throwError s!"fixture 8 (seeded): wrong error {e}"
     | Except.ok _ => throwError "fixture 8 (seeded): an f32 destination was evaluated as Float"
     -- and the unseeded wrapper inherits exactly that rejection.
-    match evalAssignDtyped [.typedTensor .f32 "Result" []] env sizes "Result" [] rhs with
+    match evalAssignDtypedF64 [.typedTensor .f32 "Result" []] env sizes "Result" [] rhs with
     | Except.error (.unsupportedDtype "Result") => pure ()
     | Except.error e => throwError s!"fixture 8 (unseeded): wrong error {e}"
     | Except.ok _ => throwError "fixture 8 (unseeded): an f32 destination was evaluated as Float"
     -- Fixture 8, dual-invalid subcase: `Result` is ALSO declared tensor-bearing twice. The shared
     -- declaration builder runs first, so the malformed declaration list is what is reported — proof
     -- that this entry reuses `buildDeclEnv` rather than scanning `decls` itself.
-    match evalAssignDtypedSeeded [.typedTensor .f32 "Result" [], .tensor "Result" []]
+    match evalAssignDtypedSeededF64 [.typedTensor .f32 "Result" [], .typedTensor .f64 "Result" []]
         env sizes seed "Result" [] rhs with
     | Except.error (.compile (.duplicateTensorDecl "Result")) => pure ()
     | Except.error e => throwError s!"fixture 8 (dual-invalid): wrong error {e}"
@@ -127,12 +128,12 @@ run_cmd do
   | .error e => throwError (toString e)
   | .ok (sizes, _) => do
     let envNoF : HashMap String DenseTensor := ({} : HashMap String DenseTensor).insert "edge" edge
-    let decls9 : List Decl := [.tensor "Result" [], .typedTensor .f32 "F" [t, i]]
-    match evalAssignDtypedSeeded decls9 envNoF sizes seed "Result" [] rhs with
+    let decls9 : List Decl := [.typedTensor .f64 "Result" [], .typedTensor .f32 "F" [t, i]]
+    match evalAssignDtypedSeededF64 decls9 envNoF sizes seed "Result" [] rhs with
     | Except.error (.unsupportedDtype "F") => pure ()
     | Except.error e => throwError s!"fixture 9 (seeded): wrong error {e}"
     | Except.ok _ => throwError "fixture 9 (seeded): an f32 read source was gathered as Float"
-    match evalAssignDtyped decls9 envNoF sizes "Result" [] rhs with
+    match evalAssignDtypedF64 decls9 envNoF sizes "Result" [] rhs with
     | Except.error (.unsupportedDtype "F") => pure ()
     | Except.error e => throwError s!"fixture 9 (unseeded): wrong error {e}"
     | Except.ok _ => throwError "fixture 9 (unseeded): an f32 read source was gathered as Float"
@@ -149,11 +150,11 @@ run_cmd do
   let rhs : RHSExpr := { body := { terms := [{ factors := [.read "A" [.axis i]] }] }, nonlin := .identity }
   let decls : List Decl := [.typedTensor .f32 "Y" [i], .typedTensor .f32 "A" [i]]
   let seed : HashMap UID Int := {}
-  match evalAssignDtypedSeeded decls env sizes seed "Y" [LHSSlot.free i] rhs with
+  match evalAssignDtypedSeededF64 decls env sizes seed "Y" [LHSSlot.free i] rhs with
   | Except.error (.unsupportedDtype "Y") => pure ()
   | Except.error e => throwError s!"fixture 10 (seeded): wrong error {e}"
   | Except.ok _ => throwError "fixture 10 (seeded): a homogeneous f32 assignment was accepted"
-  match evalAssignDtyped decls env sizes "Y" [LHSSlot.free i] rhs with
+  match evalAssignDtypedF64 decls env sizes "Y" [LHSSlot.free i] rhs with
   | Except.error (.unsupportedDtype "Y") => pure ()
   | Except.error e => throwError s!"fixture 10 (unseeded): wrong error {e}"
   | Except.ok _ => throwError "fixture 10 (unseeded): a homogeneous f32 assignment was accepted"

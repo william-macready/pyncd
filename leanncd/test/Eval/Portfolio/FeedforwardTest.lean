@@ -17,7 +17,7 @@ open Std LSpec
 --   the equations carry no bias term, so the output is the pure two-layer product.)
 test "FF1 mlp-2layer"
     (evalEqB (tlprog!{
-    linear W_in(f, d), W_out(d, f) bias
+    linear f64 W_in(f, d), W_out(d, f) bias
     H[q, f]   := relu(W_in[f, d] · X[q, d])
     Out[q, d] := W_out[d, f] · H[q, f]
   })

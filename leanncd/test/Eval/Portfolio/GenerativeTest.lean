@@ -63,7 +63,7 @@ test "DF4 sinusoidal-embedding"
 -- ME1  gating g[t,e.] := softmax(X·Wg) — property: each router row sums to 1.
 test "ME1 gating"
     (evalPredB (tlprog!{
-    tensor g(t, e)
+    tensor f64 g(t, e)
     g[t, e.] := softmax(X[t, d] · Wg[d, e])
   })
       (HashMap.ofList [("X", tl [1,2] [1,0]), ("Wg", tl [2,2] [1,0,0,1])])
@@ -81,7 +81,7 @@ test "ME2 expert-mlp"
 -- ME3  combine Out[t,f] := g[t,e]·Y[t,e,f], chained on ME1+ME2 — property: shape [1,1].
 test "ME3 combine"
     (evalShapeB (tlprog!{
-    tensor g(t, e)
+    tensor f64 g(t, e)
     g[t, e.] := softmax(X[t, d] · Wg[d, e])
     Y[t, e, f] := relu(We[e, f, d] · X[t, d])
     Out[t, f] := g[t, e] · Y[t, e, f]
@@ -157,7 +157,7 @@ test "CL1 similarity"
 test "CL2 infonce-softmax"
     (evalPredB (tlprog!{
     S[i, j] := Z1[i, d] · Z2[j, d]
-    tensor P(i, j)
+    tensor f64 P(i, j)
     P[i, j.] := softmax(S[i, j])
   })
       (HashMap.ofList [("Z1", tl [2,2] [1,0,0,1]), ("Z2", tl [2,2] [1,0,0,1])])

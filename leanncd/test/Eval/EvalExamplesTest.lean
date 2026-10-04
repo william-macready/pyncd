@@ -1,3 +1,4 @@
+import Eval.ExplicitF64
 import LeanNCD.Eval.Entry
 /-!
 # End-to-end evaluation examples (Milestone I integration test)
@@ -23,7 +24,7 @@ private def tensorOf (shape : List Nat) (xs : List Float) : DenseTensor := ⟨sh
 run_cmd do
   let env : HashMap String DenseTensor :=
     (({} : HashMap String DenseTensor).insert "W" (tensorOf [2,3] [1,2,3, 4,5,6])).insert "X" (tensorOf [3,2] [1,0, 0,1, 1,1])
-  match TLProgram.eval (tlprog!{ Y[i,j] := W[i,k] · X[k,j] }) env with
+  match TLProgram.eval (TLProgram.explicitF64 <| tlprog!{ Y[i,j] := W[i,k] · X[k,j] }) env with
   | .error e => throwError s!"matmul: {e}"
   | .ok report => match report.env["Y"]? with
     | some Y => unless DenseTensor.approxEq Y (tensorOf [2,2] [4,5, 10,11]) do
@@ -37,8 +38,8 @@ run_cmd do
 run_cmd do
   let env : HashMap String DenseTensor :=
     (({} : HashMap String DenseTensor).insert "Q" (tensorOf [2,2] [1,0, 0,1])).insert "K" (tensorOf [2,2] [1,0, 0,1])
-  match TLProgram.eval (tlprog!{
-    tensor A(q, s)
+  match TLProgram.eval (TLProgram.explicitF64 <| tlprog!{
+    tensor f64 A(q, s)
     A[q, s.] := softmax(where s ≤ q)(Q[q, d] · K[s, d])
   }) env with
   | .error e => throwError s!"attn: {e}"
@@ -63,7 +64,7 @@ run_cmd do
   let env : HashMap String DenseTensor :=
     (({} : HashMap String DenseTensor).insert "W" (tensorOf [2,2] [1,0, 0,1])).insert "X"
       (tensorOf [3,5] [0,1,2,3,4, 5,6,7,8,9, 10,11,12,13,14])
-  match TLProgram.eval (tlprog!{ Y[i,j] := W[p,r] · X[i + p, 2 * j + r] }) env with
+  match TLProgram.eval (TLProgram.explicitF64 <| tlprog!{ Y[i,j] := W[p,r] · X[i + p, 2 * j + r] }) env with
   | .error e => throwError s!"conv: {e}"
   | .ok report => match report.env["Y"]? with
     | some Y => unless DenseTensor.approxEq Y (tensorOf [2,2] [6,10, 16,20]) do
@@ -75,8 +76,8 @@ run_cmd do
 run_cmd do
   let env : HashMap String DenseTensor :=
     ({} : HashMap String DenseTensor).insert "X" (tensorOf [2,2] [1,2, 3,4])
-  match TLProgram.eval (tlprog!{
-    tensor Out(i, j)
+  match TLProgram.eval (TLProgram.explicitF64 <| tlprog!{
+    tensor f64 Out(i, j)
     Out[2 * i, 2 * j] := X[i, j]
   }) env with
   | .error e => throwError s!"upsample: {e}"
@@ -95,7 +96,7 @@ run_cmd do
   let env := (((((e0.insert "X" (tensorOf [1] [1.0])).insert "Y" (tensorOf [1] [2.0])).insert "W_G"
       (tensorOf [1,1] [1.0])).insert "U" (tensorOf [1,1] [1.0])).insert "W_H"
       (tensorOf [1,1] [1.0])).insert "V" (tensorOf [1,1] [1.0])
-  match TLProgram.eval (tlprog!{
+  match TLProgram.eval (TLProgram.explicitF64 <| tlprog!{
     iter l = 3
     G[j, 0]    := X[j]
     G[j, l +1] := relu(G[j, l] · W_G[j, k] + H[j, l] · U[j, k])
@@ -117,7 +118,7 @@ run_cmd do
 run_cmd do
   let env : HashMap String DenseTensor :=
     (({} : HashMap String DenseTensor).insert "F" (tensorOf [2,2] [1,2, 3,4])).insert "edge" (tensorOf [2,2] [0,1, 1,0])
-  match TLProgram.eval (tlprog!{
+  match TLProgram.eval (TLProgram.explicitF64 <| tlprog!{
     predicate edge(i, j)
     Result[] := F[t, i] · F[t, j] · edge[i, j]
   }) env with
@@ -132,7 +133,7 @@ run_cmd do
 run_cmd do
   let env : HashMap String DenseTensor :=
     ({} : HashMap String DenseTensor).insert "A" (tensorOf [3,3] [1,2,3, 4,5,6, 7,8,9])
-  match TLProgram.eval (tlprog!{ Band[i, j] := A[i, j] · [|i - j| ≤ 1] }) env with
+  match TLProgram.eval (TLProgram.explicitF64 <| tlprog!{ Band[i, j] := A[i, j] · [|i - j| ≤ 1] }) env with
   | .error e => throwError s!"band: {e}"
   | .ok report => match report.env["Band"]? with
     | some B => unless DenseTensor.approxEq B (tensorOf [3,3] [1,2,0, 4,5,6, 0,8,9]) do
@@ -145,7 +146,7 @@ run_cmd do
 run_cmd do
   let env : HashMap String DenseTensor :=
     ({} : HashMap String DenseTensor).insert "X" (tensorOf [4] [10,20,30,40])
-  match TLProgram.eval (tlprog!{ Y[i] := X[i - 1] }) env with
+  match TLProgram.eval (TLProgram.explicitF64 <| tlprog!{ Y[i] := X[i - 1] }) env with
   | .error e => throwError s!"lookback: {e}"
   | .ok report => match report.env["Y"]? with
     | some Y => unless DenseTensor.approxEq Y (tensorOf [5] [0,10,20,30,40]) do
@@ -157,7 +158,7 @@ run_cmd do
 run_cmd do
   let env : HashMap String DenseTensor :=
     (({} : HashMap String DenseTensor).insert "A" (tensorOf [2] [1,2])).insert "B" (tensorOf [3] [10,20,30])
-  match TLProgram.eval (tlprog!{ Y[i, j] := A[i] · B[j] }) env with
+  match TLProgram.eval (TLProgram.explicitF64 <| tlprog!{ Y[i, j] := A[i] · B[j] }) env with
   | .error e => throwError s!"outer: {e}"
   | .ok report => match report.env["Y"]? with
     | some Y => unless DenseTensor.approxEq Y (tensorOf [2,3] [10,20,30, 20,40,60]) do
@@ -169,7 +170,7 @@ run_cmd do
 run_cmd do
   let env : HashMap String DenseTensor :=
     (({} : HashMap String DenseTensor).insert "W" (tensorOf [2,2] [1,-2, -1,1])).insert "X" (tensorOf [2] [3,1])
-  match TLProgram.eval (tlprog!{ Y[i] := relu(W[i, k] · X[k]) }) env with
+  match TLProgram.eval (TLProgram.explicitF64 <| tlprog!{ Y[i] := relu(W[i, k] · X[k]) }) env with
   | .error e => throwError s!"crelu: {e}"
   | .ok report => match report.env["Y"]? with
     | some Y => unless DenseTensor.approxEq Y (tensorOf [2] [1, 0]) do
@@ -181,8 +182,8 @@ run_cmd do
 run_cmd do
   let env : HashMap String DenseTensor :=
     ({} : HashMap String DenseTensor).insert "A" (tensorOf [2,2] [1,3, 2,2])
-  match TLProgram.eval (tlprog!{
-    tensor Y(q, s)
+  match TLProgram.eval (TLProgram.explicitF64 <| tlprog!{
+    tensor f64 Y(q, s)
     Y[q, s.] := normalize(A[q, s])
   }) env with
   | .error e => throwError s!"normalize: {e}"
@@ -211,19 +212,19 @@ run_cmd do
   let env := env.insert "W_O"   (tensorOf [2,1,2] [1,0, 0,1])
   let env := env.insert "W_in"  (tensorOf [2,2] [1,0, 0,1])
   let env := env.insert "W_out" (tensorOf [2,2] [1,0, 0,1])
-  match TLProgram.eval (tlprog!{
+  match TLProgram.eval (TLProgram.explicitF64 <| tlprog!{
     Q[q, h, k]       := W_Q[h, k, m] · X[q, m]
     K[s, h, k]       := W_K[h, k, m] · X[s, m]
     V[s, h, k]       := W_V[h, k, m] · X[s, m]
-    tensor S(h, q, s)
+    tensor f64 S(h, q, s)
     S[h, q, s.]      := softmax(where s ≤ q)(Q[q, h, k] · K[s, h, k])
     AttnOut[q, h, k] := S[h, q, s] · V[s, h, k]
     Attn[q, m]       := W_O[m, h, k] · AttnOut[q, h, k]
-    tensor A(q, m)
+    tensor f64 A(q, m)
     A[q, m.]         := normalize(Attn[q, m] + X[q, m])
     F[q, d]          := relu(W_in[d, m] · A[q, m])
     Y[q, m]          := W_out[m, d] · F[q, d]
-    tensor H(q, m)
+    tensor f64 H(q, m)
     H[q, m.]         := normalize(Y[q, m] + A[q, m])
   }) env with
   | .error e => throwError s!"transformer: {e}"
@@ -264,10 +265,10 @@ run_cmd do
   let env := env.insert "W_O"   (tensorOf [2,1,2] [1,0, 0,1])
   let env := env.insert "W_in"  (tensorOf [2,2] [1,0, 0,1])
   let env := env.insert "W_out" (tensorOf [2,2] [1,0, 0,1])
-  match TLProgram.eval (tlprog!{
+  match TLProgram.eval (TLProgram.explicitF64 <| tlprog!{
     iter l = 3
     axis s : ℕ = 2
-    tensor S(h, q, s), A(q, m), H(q, m, l)
+    tensor f64 S(h, q, s), A(q, m), H(q, m, l)
     H[q, m, 0]       := X[q, m]
     Q[q, h, k]       := W_Q[h, k, m] · H[q, m, l]
     K[s, h, k]       := W_K[h, k, m] · H[s, m, l]
@@ -326,7 +327,7 @@ run_cmd do
 run_cmd do
   let env : HashMap String DenseTensor :=
     ({} : HashMap String DenseTensor).insert "X" (tensorOf [2,2] [1,2,3,4])
-  match TLProgram.eval (tlprog!{
+  match TLProgram.eval (TLProgram.explicitF64 <| tlprog!{
     Out[2 * i, 2 * j] := X[i, j]
     Y[a, b] := Out[a, b] · Out[a, b]
   }) env with
@@ -344,7 +345,7 @@ run_cmd do
 run_cmd do
   let env : HashMap String DenseTensor :=
     ({} : HashMap String DenseTensor).insert "X" (tensorOf [2] [1,2])
-  match TLProgram.eval (tlprog!{
+  match TLProgram.eval (TLProgram.explicitF64 <| tlprog!{
     Y[i, i] := X[i]
     Z[a, b] := Y[a, b]
   }) env with
@@ -364,7 +365,7 @@ run_cmd do
 run_cmd do
   let env : HashMap String DenseTensor :=
     ({} : HashMap String DenseTensor).insert "X" (tensorOf [3] [1,5,3])
-  match TLProgram.eval (tlprog!{
+  match TLProgram.eval (TLProgram.explicitF64 <| tlprog!{
     Total[] := X[i]
     Peak[] := maxreduce(X[i])
   }) env with

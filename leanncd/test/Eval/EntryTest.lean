@@ -1,3 +1,4 @@
+import Eval.ExplicitF64
 import LeanNCD.Eval.Entry
 
 /-!
@@ -40,7 +41,7 @@ private def isExpectedPadding : List EvalWarning → Bool
 
 -- The warning first produced by `inferAxisSizes` reaches the compiler-independent worker report.
 run_cmd do
-  match paddedProgram.compileToScheduled.run 0 with
+  match paddedProgram.explicitF64.compileToScheduled.run 0 with
   | .error e _ => throwError s!"report worker setup did not compile: {repr e}"
   | .ok sched _ =>
       match evalScheduled sched paddedInputs with
@@ -53,7 +54,7 @@ run_cmd do
 
 -- The source entry returns the same structured warning and full environment.
 run_cmd do
-  match TLProgram.eval paddedProgram paddedInputs with
+  match TLProgram.eval paddedProgram.explicitF64 paddedInputs with
   | .error e => throwError s!"source report evaluation failed: {e}"
   | .ok report =>
       unless isExpectedPadding report.warnings do
@@ -67,7 +68,7 @@ run_cmd do
 run_cmd do
   let env : HashMap String DenseTensor :=
     ({} : HashMap String DenseTensor).insert "X" (DenseTensor.zeros [2])
-  match TLProgram.eval (tlprog!{ Y[i] := X[i] }) env with
+  match TLProgram.eval (TLProgram.explicitF64 <| tlprog!{ Y[i] := X[i] }) env with
   | .error e => throwError s!"warning-free report evaluation failed: {e}"
   | .ok report =>
       unless report.warnings.isEmpty do
@@ -77,7 +78,7 @@ run_cmd do
 -- This program has the same padded affine read as above, then fails immediately because X[0] = 0
 -- is outside log's domain.
 run_cmd do
-  match TLProgram.eval paddedDomainProgram paddedInputs with
+  match TLProgram.eval paddedDomainProgram.explicitF64 paddedInputs with
   | .error failure =>
       match failure.error with
       | .unaryDomain .log value context =>
@@ -94,7 +95,7 @@ run_cmd do
 -- first; the later bare A[k] position conflicts with explicit k=2 versus A's dimension 3.
 run_cmd do
   let inputs := paddedInputs.insert "A" (DenseTensor.zeros [3])
-  match TLProgram.eval paddedConflictProgram inputs with
+  match TLProgram.eval paddedConflictProgram.explicitF64 inputs with
   | .error failure =>
       match failure.error with
       | .shape (.sizeConflict _uid 2 3) =>
@@ -153,8 +154,8 @@ run_cmd do
 -- Control: the SAME program in the untyped (f64) spelling does reach size inference and fails
 -- there — so (c)'s claim is about precedence, not about the shape failure being absent.
 run_cmd do
-  match TLProgram.eval (tlprog!{
-    tensor A(i), B(i)
+  match TLProgram.eval (TLProgram.explicitF64 <| tlprog!{
+    tensor f64 A(i), B(i)
     s[] := A[i] · B[i]
   }) conflictEnv with
   | .error { error := .shape (.solveFailure _), warnings := [] } => pure ()
@@ -163,7 +164,7 @@ run_cmd do
 
 -- Source compilation failures remain typed causes at the entry boundary.
 run_cmd do
-  match TLProgram.eval (tlprog!{
+  match TLProgram.eval (TLProgram.explicitF64 <| tlprog!{
     tensor X(j)
     G[j, 0] := X[j]
     G[j, l + 1] := G[j, l]
@@ -177,7 +178,7 @@ run_cmd do
   let env : HashMap String DenseTensor :=
     (({} : HashMap String DenseTensor).insert "A" (DenseTensor.zeros [3])).insert "B"
       (DenseTensor.zeros [2])
-  match TLProgram.eval (tlprog!{ s[] := A[i] · B[i] }) env with
+  match TLProgram.eval (TLProgram.explicitF64 <| tlprog!{ s[] := A[i] · B[i] }) env with
   | .error { error := .shape (.solveFailure diagnostic), warnings } =>
       unless warnings.isEmpty do
         throwError s!"shape inference failure unexpectedly carried warnings: {warnings.map toString}"

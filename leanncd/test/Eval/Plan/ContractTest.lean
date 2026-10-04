@@ -1,3 +1,4 @@
+import Eval.ExplicitF64
 import LeanNCD.DSL.Ast
 import LeanNCD.DSL.Pipeline.Types
 import LeanNCD.Eval.Entry
@@ -214,7 +215,7 @@ private def negShiftInputs (x0 : Float) : HashMap String DenseTensor :=
 
 -- Baseline: X = [10, 20, 30] → Y = [0, 0, 10] (verified against the real evaluator).
 run_cmd do
-  match TLProgram.eval negShiftProg (negShiftInputs 10.0) with
+  match TLProgram.eval negShiftProg.explicitF64 (negShiftInputs 10.0) with
   | .error e => throwError s!"negShift baseline eval failed: {e}"
   | .ok report =>
       unless expectTensor report.env["Y"]? [3] #[0.0, 0.0, 10.0] do
@@ -223,7 +224,7 @@ run_cmd do
 -- Mutation: only X[0] is ever read (i=2 reads index 0), so changing X[0] must change Y[2];
 -- verified against the real evaluator (10 → 99 flows through to Y[2]).
 run_cmd do
-  match TLProgram.eval negShiftProg (negShiftInputs 99.0) with
+  match TLProgram.eval negShiftProg.explicitF64 (negShiftInputs 99.0) with
   | .error e => throwError s!"negShift mutation eval failed: {e}"
   | .ok report =>
       unless expectTensor report.env["Y"]? [3] #[0.0, 0.0, 99.0] do
@@ -242,7 +243,7 @@ private def multiAxisInputs (x4 : Float) : HashMap String DenseTensor :=
 
 -- Baseline: verified Y = [1,2,3, 3,4,5].
 run_cmd do
-  match TLProgram.eval multiAxisProg (multiAxisInputs 5.0) with
+  match TLProgram.eval multiAxisProg.explicitF64 (multiAxisInputs 5.0) with
   | .error e => throwError s!"multiAxis baseline eval failed: {e}"
   | .ok report =>
       unless expectTensor report.env["Y"]? [2, 3] #[1.0, 2.0, 3.0, 3.0, 4.0, 5.0] do
@@ -250,7 +251,7 @@ run_cmd do
 
 -- Mutation: X[4] is read only by Y[1,2] (2*1+2=4); verified Y[1,2] alone changes to 99.
 run_cmd do
-  match TLProgram.eval multiAxisProg (multiAxisInputs 99.0) with
+  match TLProgram.eval multiAxisProg.explicitF64 (multiAxisInputs 99.0) with
   | .error e => throwError s!"multiAxis mutation eval failed: {e}"
   | .ok report =>
       unless expectTensor report.env["Y"]? [2, 3] #[1.0, 2.0, 3.0, 3.0, 4.0, 99.0] do
@@ -275,7 +276,7 @@ private def zeroCoeffInputs (b1 : Float) : HashMap String DenseTensor :=
 
 -- Baseline: B = [1,2,3], ΣB = 6 → Y = A * 6 = [60, 600] (verified).
 run_cmd do
-  match TLProgram.eval zeroCoeffProg (zeroCoeffInputs 2.0) with
+  match TLProgram.eval zeroCoeffProg.explicitF64 (zeroCoeffInputs 2.0) with
   | .error e => throwError s!"zeroCoeff baseline eval failed: {e}"
   | .ok report =>
       unless expectTensor report.env["Y"]? [2] #[60.0, 600.0] do
@@ -283,7 +284,7 @@ run_cmd do
 
 -- Mutation: B[1] 2 → 20, ΣB = 24 → Y = A * 24 = [240, 2400] (verified).
 run_cmd do
-  match TLProgram.eval zeroCoeffProg (zeroCoeffInputs 20.0) with
+  match TLProgram.eval zeroCoeffProg.explicitF64 (zeroCoeffInputs 20.0) with
   | .error e => throwError s!"zeroCoeff mutation eval failed: {e}"
   | .ok report =>
       unless expectTensor report.env["Y"]? [2] #[240.0, 2400.0] do
@@ -303,7 +304,7 @@ private def fanOutInputs (a0 : Float) : HashMap String DenseTensor :=
 
 -- Baseline: A = [10, 20] → X = [10,20], Y = [10,20], Z = X+Y = [20,40] (verified).
 run_cmd do
-  match TLProgram.eval fanOutProg (fanOutInputs 10.0) with
+  match TLProgram.eval fanOutProg.explicitF64 (fanOutInputs 10.0) with
   | .error e => throwError s!"fanOut baseline eval failed: {e}"
   | .ok report =>
       unless expectTensor report.env["X"]? [2] #[10.0, 20.0] do
@@ -315,7 +316,7 @@ run_cmd do
 
 -- Mutation: A[0] 10 → 99 propagates through both fan-out readers (verified).
 run_cmd do
-  match TLProgram.eval fanOutProg (fanOutInputs 99.0) with
+  match TLProgram.eval fanOutProg.explicitF64 (fanOutInputs 99.0) with
   | .error e => throwError s!"fanOut mutation eval failed: {e}"
   | .ok report =>
       unless expectTensor report.env["Z"]? [2] #[198.0, 40.0] do
@@ -336,7 +337,7 @@ private def repeatAssignInputs (a0 : Float) : HashMap String DenseTensor :=
 
 -- Baseline: last write (B) is what both Y and Z observe (verified).
 run_cmd do
-  match TLProgram.eval repeatAssignProg (repeatAssignInputs 1.0) with
+  match TLProgram.eval repeatAssignProg.explicitF64 (repeatAssignInputs 1.0) with
   | .error e => throwError s!"repeatAssign baseline eval failed: {e}"
   | .ok report =>
       unless expectTensor report.env["Y"]? [2] #[100.0, 200.0] do
@@ -347,7 +348,7 @@ run_cmd do
 -- Mutation: changing A (the discarded first write) must change NOTHING — proves true overwrite,
 -- not e.g. an accidental combine of both writes.
 run_cmd do
-  match TLProgram.eval repeatAssignProg (repeatAssignInputs 999.0) with
+  match TLProgram.eval repeatAssignProg.explicitF64 (repeatAssignInputs 999.0) with
   | .error e => throwError s!"repeatAssign discarded-write eval failed: {e}"
   | .ok report =>
       unless expectTensor report.env["Y"]? [2] #[100.0, 200.0] do
@@ -366,7 +367,7 @@ private def extraInputInputs (unused0 : Float) : HashMap String DenseTensor :=
 
 -- Baseline: verified.
 run_cmd do
-  match TLProgram.eval extraInputProg (extraInputInputs 0.0) with
+  match TLProgram.eval extraInputProg.explicitF64 (extraInputInputs 0.0) with
   | .error e => throwError s!"extraInput baseline eval failed: {e}"
   | .ok report =>
       unless expectTensor report.env["Y"]? [2] #[1.0, 2.0] do
@@ -376,7 +377,7 @@ run_cmd do
 
 -- Mutation: changing the unused input's value passes through unchanged, and Y is unaffected.
 run_cmd do
-  match TLProgram.eval extraInputProg (extraInputInputs 42.0) with
+  match TLProgram.eval extraInputProg.explicitF64 (extraInputInputs 42.0) with
   | .error e => throwError s!"extraInput mutation eval failed: {e}"
   | .ok report =>
       unless expectTensor report.env["Unused"]? [1] #[42.0] do
@@ -389,7 +390,7 @@ run_cmd do
     onto its existing (already correctly UID-resolved) LHS slot, reusing the compiled `env`/
     `explicitSizes` — the same technique `EntryTest.lean` uses `compileToScheduled` for. -/
 private def spliceRhs (prog : TLProgram) (rhs : RHSExpr) : Except CompileError ScheduledProgram := do
-  let sched ← match prog.compileToScheduled.run 0 with
+  let sched ← match prog.explicitF64.compileToScheduled.run 0 with
     | .ok sched _ => pure sched
     | .error e _ => throw e
   match sched.stmts with
@@ -482,7 +483,7 @@ private def zeroRedInputsSize3 : HashMap String DenseTensor :=
 
 -- Baseline: verified, i size 2 → Y = [0, 0].
 run_cmd do
-  match TLProgram.eval zeroRedProgSize2 zeroRedInputsSize2 with
+  match TLProgram.eval zeroRedProgSize2.explicitF64 zeroRedInputsSize2 with
   | .error e => throwError s!"zeroRed baseline eval failed: {e}"
   | .ok report =>
       unless expectTensor report.env["Y"]? [2] #[0.0, 0.0] do
@@ -490,7 +491,7 @@ run_cmd do
 
 -- Mutation: vary the (non-contracted) output axis size 2 → 3; the zero-fill must scale with it.
 run_cmd do
-  match TLProgram.eval zeroRedProgSize3 zeroRedInputsSize3 with
+  match TLProgram.eval zeroRedProgSize3.explicitF64 zeroRedInputsSize3 with
   | .error e => throwError s!"zeroRed size mutation eval failed: {e}"
   | .ok report =>
       unless expectTensor report.env["Y"]? [3] #[0.0, 0.0, 0.0] do
@@ -516,7 +517,7 @@ private def sizeVariantInputsSize1 : HashMap String DenseTensor :=
 
 -- Zero extent: verified shape [0], empty data.
 run_cmd do
-  match TLProgram.eval sizeVariantProgSize0 sizeVariantInputsSize0 with
+  match TLProgram.eval sizeVariantProgSize0.explicitF64 sizeVariantInputsSize0 with
   | .error e => throwError s!"zeroExtent eval failed: {e}"
   | .ok report =>
       unless expectTensor report.env["Y"]? [0] #[] do
@@ -524,7 +525,7 @@ run_cmd do
 
 -- Contrast: size 1 produces one real element (verified), showing zero-extent isn't a fixed result.
 run_cmd do
-  match TLProgram.eval sizeVariantProgSize1 sizeVariantInputsSize1 with
+  match TLProgram.eval sizeVariantProgSize1.explicitF64 sizeVariantInputsSize1 with
   | .error e => throwError s!"size-one eval failed: {e}"
   | .ok report =>
       unless expectTensor report.env["Y"]? [1] #[7.0] do
