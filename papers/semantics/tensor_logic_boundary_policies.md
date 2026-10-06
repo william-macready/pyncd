@@ -117,9 +117,11 @@ have identical outcomes.
 - [Current Lean implementation](#current-lean-implementation)
 - [1. Existing commitments and notation](#1-existing-commitments-and-notation)
 - [2. A candidate read/write resolution interface](#2-a-candidate-readwrite-resolution-interface)
+  - [2.5 Required contract for an admitted profile](#25-required-contract-for-an-admitted-profile)
 - [3. Policy meanings and one-dimensional edge cases](#3-policy-meanings-and-one-dimensional-edge-cases)
 - [4. Shapes, configuration, and multidimensional composition](#4-shapes-configuration-and-multidimensional-composition)
 - [5. Write resolution, occurrence domains, and equations](#5-write-resolution-occurrence-domains-and-equations)
+  - [5.6 Candidate demanded-task contract](#56-candidate-demanded-task-contract)
 - [6. Binding, guards, and strict expression interpretation](#6-binding-guards-and-strict-expression-interpretation)
 - [7. Dependencies, scans, and logical versions](#7-dependencies-scans-and-logical-versions)
 - [8. Compilation, transformations, and differentiation](#8-compilation-transformations-and-differentiation)
@@ -251,12 +253,24 @@ Lower boundary faces (any advancing coordinate equal to zero) remain at their
 initialized value unless a base write supplies them.
 
 These are **in-bounds initialized zeros**, distinct from constants returned by
-an out-of-bounds read. This initialization does not license arbitrary reads
-of future history. The checked scan checker requires every advancing row of
+an out-of-bounds read. The following causality and snapshot guarantees belong
+to the **checked backend**, not to both evaluators. Its scan checker requires
+every advancing row of
 a captured-state read to be `context[q] + b` with $b\le0$
 (`causalAdvancingRow`); non-advancing dimensions retain ordinary zero-padded
 read behavior. Base blocks cannot capture state. Checked recurrence blocks
 observe an immutable pre-step snapshot and commit next-state slices together.
+
+The legacy reference evaluator's `readsIterAhead` check rejects positive
+`.shift` offsets but does not enforce that complete affine-row condition.
+A subsequent review verified a three-cell history with base $S[0]=7$ and
+step $S[l+1]=S[2l]$ for $l\in[2]$: the reference returns $(7,7,0)$, reading
+the last cell's initialized zero before computing it, while the checked
+backend rejects the scaled state read. All accesses in this example are
+in bounds. Its collected equations permit $(7,7,c)$ for arbitrary $c$;
+the reference's procedural choice of zero is not a unique-model result.
+Neither initialization nor boundary policy authorizes reading unpublished
+in-bounds values as zero in the proposed additive reference machine.
 
 Checked base writes must touch a lower boundary, be pairwise disjoint per
 state, and have in-range pinned literals and consistent extents. Admitted
@@ -450,6 +464,52 @@ require additional rules for its evaluation, definedness, and footprint.
 In particular, decide whether that expression is evaluated at in-bounds
 accesses where its value is unused. It must not become a hidden store read.
 
+### 2.5 Required contract for an admitted profile
+
+**Candidate admission contract:** a configurable profile is ready to use only
+when it supplies the following data and satisfies the stated laws. This is
+a checklist for complete profiles, not a choice of one global default.
+The current construction concerns fixed typed constants and value-independent
+geometry; expression-valued parameters require the separate extension in
+Section 2.4.
+
+| Component | Required contract |
+| --- | --- |
+| Configuration | Identify both access rules, typed parameters, ordered slots/axis identities, supported extents, and multidimensional resolution. |
+| Successful resolution | Every `At`/`To` contains a valid coordinate; every `Const` belongs to the declared carrier. All in-bounds accesses agree with the original coordinate. |
+| Rejection mode | Specify structural admission, runtime checking, or which obligations belong to each. Boundary rejection is distinct from dropping, primitive undefinedness, and unavailable values. |
+| Dropped-body demands | Specify drop-before-evaluation or evaluate-and-discard; derive the demanded domain and pending tasks as in Section 5.6. |
+| Error ordering | State any observable priority between configuration/access rejection, readiness, and primitive errors. Do not inherit it accidentally from a backend traversal. |
+| Backend admission | Explicitly report unsupported profiles or geometries; a backend cannot substitute its own boundary rule. |
+
+Two checking contracts can coexist:
+
+- **Structurally admitted:** no write at a guard-admitted raw valuation
+  resolves to `Reject`, and no body read on the selected demanded domain
+  resolves to `Reject`. These are access-admission obligations, not proofs
+  that value-dependent primitives are defined.
+- **Runtime checked:** demanded accesses may resolve to `Reject`, which
+  produces an explicit access-rejection outcome with the tensor, raw
+  coordinate, access mode, and cause. A model requires every guard-admitted
+  raw write to avoid rejection and every read of a demanded body to be
+  admitted, as well as all demanded bodies to be defined; a rejected
+  access is not a successful summand or a primitive result of $\bot$.
+  The profile must define its rejection rule and ordering before use.
+  The core machine's existing failure/progress results do not automatically
+  cover this extra outcome.
+
+Declaration, scope, tuple-rank, constant-type, and writable-role obligations
+remain unconditional. They cannot be suppressed by guards or dropping.
+Extent support must be classified explicitly: an unsupported extent can
+invalidate the configuration, or an admitted configuration can reject actual
+outside accesses. Those are different contracts. An absent body instance
+causes no access resolution, but it does not waive an unconditional
+configuration error.
+
+Likewise, unavailability is an operational readiness condition for `At(p)`,
+not an alternative resolver outcome for an in-bounds coordinate. Nothing
+here turns a missing required input into a constant.
+
 ## 3. Policy meanings and one-dimensional edge cases
 
 ### 3.1 Candidate policy families
@@ -536,6 +596,13 @@ For the first candidate, $n=1$ would give a zero period. Decide whether to
 reject such demanded accesses or define an explicit singleton extension.
 The symmetric candidate maps every integer to $0$ when $n=1$.
 
+If a singleton configuration is admitted, conservative agreement still
+requires read/write resolution at raw coordinate $0$ to be `At(0)`/`To(0)`.
+Its outside queries may be rejected or remapped to zero according to the
+declared convention. Rejecting the entire singleton configuration instead
+is a configuration-admission decision; it must not be described as rejecting
+a valid in-bounds access under an admitted profile.
+
 Also distinguish an arbitrarily extended virtual read from a finite padding
 operator whose backend permits only certain padding widths.
 
@@ -605,6 +672,14 @@ does not automatically determine drop precedence.
 Axis-processing order must not accidentally choose the answer.
 The same issue appears with an empty axis and a remapping policy on another
 axis. Separate configuration validity from demanded-access resolution.
+
+An admitted mixed profile must supply a total, deterministic tuple-level
+combination rule, including corners where several axes propose different
+constants. Requiring a uniform constant, rejecting the configuration, or
+declaring an explicit corner rule are distinct options; none follows from
+Naperian product structure. Any logical priority must be part of the profile,
+not the order in which an implementation happens to inspect axes. The
+combination rule cannot produce a coordinate in an empty coordinate domain.
 
 Policies must attach to resolved ordered slots or explicitly identified axes,
 not to coincidentally equal names or extents.
@@ -721,6 +796,89 @@ $$
 If the same policy returns a read constant $c$ outside $[2]$, an out-of-bounds
 read of $Y$ returns $c$; an in-bounds read of $Y[1]$ returns its collected zero
 after publication. Neither dropped value is retained in a hidden padding cell.
+
+### 5.6 Candidate demanded-task contract
+
+**Candidate schema for admitted geometry:** assume all guard-admitted raw
+writes resolve to `To` or `Drop`, and all reads of demanded bodies are
+admitted. Structural profiles prove these obligations; runtime profiles
+add their explicit rejection rules separately. The schema below specifies
+demand and completion, not a proved extension of the core machine.
+
+Let $\mathcal{O}^{\mathrm{raw}}$ be the finite tagged raw occurrence set.
+Partition it into retained occurrences $\mathcal{R}$, whose writes resolve
+to `To`, and dropped occurrences $\mathcal{D}$, whose writes resolve to
+`Drop`. Each occurrence keeps its statement identity and valuation.
+Let $\mathcal{D}_{\mathrm{eval}}\subseteq\mathcal{D}$ contain exactly those
+dropped occurrences whose profile selects evaluate-and-discard. Define
+
+$$
+\mathcal{Q}=\mathcal{R}\cup\mathcal{D}_{\mathrm{eval}}.
+$$
+
+$\mathcal{Q}$ is the demanded-task set; the union is disjoint because
+$\mathcal{R}$ and $\mathcal{D}$ partition the raw occurrences. Dropped occurrences using
+drop-before-evaluation are absent from it. For $o\in\mathcal{R}$, let
+$\operatorname{dst}_b(o)$ be its resolved address. There is deliberately no
+tensor destination for $o\in\mathcal{D}_{\mathrm{eval}}$.
+
+A candidate complete environment is admissible only when every body
+demanded by $\mathcal{Q}$ has a successful interpretation. Collected
+equations nevertheless use only retained occurrences:
+
+$$
+\rho(T)[p]=
+\bigoplus_{\substack{o\in\mathcal{R}\\
+  \operatorname{dst}_b(o)=(T,p)}}
+\llbracket E_o\rrbracket_{\rho},
+\qquad T\in\mathrm{Def}.
+$$
+
+Here $E_o$ includes its occurrence's valuation. Input agreement and all
+defined tensors remain part of the model. The dropped evaluated values
+do not become extra summands, fills, or writable virtual cells.
+
+For operational realization, extend the pending set to $U\subseteq\mathcal{Q}$
+and use the resolved read footprint of each demanded body:
+
+| Task/rule | Premise | Effect |
+| --- | --- | --- |
+| Retained contribution | A pending retained task is ready and its body succeeds with $v$ | Add $v$ to its destination accumulator and remove that task from $U$. |
+| Evaluate-only task | A pending task in $\mathcal{D}_{\mathrm{eval}}$ is ready and its body succeeds | Remove it from $U$ without changing any accumulator. |
+| Undefined demanded body | Either kind of pending task is ready and its body yields $\bot$ | Explicit terminal primitive failure; do not consume it as zero. |
+| Publication | A defined address is unpublished and no pending retained task targets it | Publish its complete accumulator value, including the empty-sum zero. |
+| Successful completion | $U$ is empty and every address is published | Return the complete environment, then project designated outputs. |
+
+Initialization still validates complete inputs and unconditional structural
+requirements, publishes only input addresses, initializes defined
+accumulators to $0_K$, and sets $U=\mathcal{Q}$.
+An evaluate-only task need not delay a coordinate's publication, because
+it contributes nothing to that fiber. It **must** delay successful program
+completion: even after every coordinate is published, its body can still
+fail. Publishing values is not permission to return a successful result early.
+
+For example, a raw write to an empty defined tensor whose body is
+$\log(0)$ creates no task under drop-before-evaluation, but creates an
+evaluate-only task under evaluate-and-discard. The empty result's lack of
+coordinates does not erase the latter failure.
+
+The finite measure remains a candidate
+
+$$
+|U|+
+|\operatorname{Addr}_{\mathrm{Def}}\setminus\operatorname{dom}(\sigma)|.
+$$
+
+Retained and evaluate-only successful tasks each decrease $|U|$ by one;
+publication decreases the second term. Progress needs an extra case:
+once every address is published, all remaining admitted evaluate-only
+bodies are ready. Their evaluation can succeed or fail, but is not silently
+skipped. Before that point, the coordinate-rank condition applies to the
+resolved reads of retained destination fibers.
+Conservation, model preservation, failure exclusion, and correspondence
+must be proved for this extended task set; they are not obtained merely
+by changing the core machine's occurrence-domain name. Runtime rejection
+needs its additional failure rules and proof obligations as well.
 
 ## 6. Binding, guards, and strict expression interpretation
 
@@ -1101,6 +1259,8 @@ and then multiplying dropped lanes by zero: strict tabulation has already
 demanded those values. Resolve the retained domain first.
 Conversely, evaluate-and-discard needs explicit destinationless evaluation
 tasks or an equivalent demand rule, not simply a retained-domain fold.
+Section 5.6 gives the candidate task/admissibility contract, including the
+requirement that those tasks complete before reporting program success.
 
 Naperian families describe complete values. They do not by themselves
 encode evaluation order, errors, guards, or the occurrence demands of
@@ -1214,6 +1374,8 @@ Proof obligations include:
 6. Occurrence and fiber preservation under remapping or a precise account
    of the chosen dropping semantics.
 7. Dependency-rank progress only where the resolved graph supports it.
+   Evaluate-only tasks and runtime access rejection require their additional
+   progress/failure cases; coordinate publication alone is not global completion.
 8. Primitive-definedness preservation, including complete-array interpretation.
 9. Simulation, output decoding, and storage-reuse correctness for selected kernels.
 
@@ -1237,7 +1399,7 @@ This is a recommendation, not a completed policy selection or implementation pla
 | B03 | Literal versus expression-valued padding constants | Changes demand, footprints, and differentiation. |
 | B04 | Empty-domain and singleton conventions | Prevents fabricated coordinates and division by zero. |
 | B05 | Reflection variant and distance restrictions | Distinguishes actual values and backend compatibility. |
-| B06 | Per-axis composition: constant/reject and drop/reject precedence | Makes read and write corners independent of processing order. |
+| B06 | Per-axis composition: constant/reject, conflicting constants, and drop/reject precedence | Makes read and write corners independent of processing order. |
 | B07 | Virtual extension versus finite padding operations | Separates query semantics from shape and storage changes. |
 | B08 | Permitted read/write pairings, drop timing, and any duality requirement | Changes occurrence domains, definedness, and differentiation obligations. |
 | B09 | Supported non-affine normalization in compilation | Determines proof and rejection obligations, not meaning. |
@@ -1256,6 +1418,10 @@ This is a recommendation, not a completed policy selection or implementation pla
 | An in-bounds source coordinate that is not published | Must wait rather than return the padding constant. |
 | A declared empty input omitted from the environment | Must be rejected even if all demands would return constants. |
 | An ignored write with an undefined body | Distinguishes drop-before-evaluation from evaluate-and-discard. |
+| An evaluated dropped write still pending after every coordinate is published | Prevents reporting success before all demanded bodies are defined. |
+| An empty destination with a dropped $\log(0)$ body | Distinguishes an empty successful tensor from failure of an evaluate-only task. |
+| An admitted singleton reflection profile at raw coordinate zero | Must retain `At(0)`/`To(0)`, regardless of its convention for outside accesses. |
+| Several outside axes with different constant parameters | Requires a declared tuple-level rule rather than accidental traversal priority. |
 | A dropped write whose body contains a rejected read | Tests which read-access obligations survive dropping. |
 | Raw writes to an empty defined tensor | Distinguishes dropping from rejection or invalid remapping without fabricating storage. |
 | Constant reads paired with dropped writes and an unwritten valid coordinate | Distinguishes virtual constants from collected empty-sum zeros. |
