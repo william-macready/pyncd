@@ -13,4 +13,3 @@ spikes/*
 !spikes/AxisBWriteGeometryProbe.output.txt
 !spikes/AxisBZeroExtentProbe.lean
 !spikes/AxisBZeroExtentProbe.output.txt
-!spikes/TensorLogicSemanticCoreSpike.lean
