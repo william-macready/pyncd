@@ -1,5 +1,93 @@
 # Tensor Logic: Boundary Policy Design Questions
 
+## Introduction
+
+A tensor has a finite, declared coordinate domain, but an index expression
+can produce an integer tuple outside that domain. A stencil can ask for
+$X[i-1]$ at $i=0$; a shifted contribution can target $Y[i+1]$ beyond its last
+coordinate. **Boundary value policies specify how such accesses are
+interpreted.** They are part of the mathematical contract of an access,
+not an accidental consequence of a storage library's indexing rules.
+
+This note uses a paired read/write policy. A read policy can reject the
+access, return a fixed scalar, or remap the raw coordinate to a valid one.
+A write policy can reject the access, drop the contribution, or remap its
+destination. Examples include strict access, zero or constant extension,
+clamping, periodic wrapping, and two reflection conventions. Valid
+coordinates retain their ordinary meaning. Read and write rules need not
+be identical: reading a virtual padding constant does not create a mutable
+padding cell to which contributions can be written.
+
+These choices affect more than edge values. Remapping can make several
+distinct contributions target one coordinate, or make a recurrence depend
+on a future coordinate. Dropping before body evaluation can avoid a
+primitive-domain failure that evaluate-and-discard must still report.
+Reading an outside zero and applying `exp` yields one; applying `log` to
+that zero is undefined. A policy must therefore specify access resolution,
+evaluation demands, and its interaction with dependencies, rather than
+merely prescribe an integer-to-array-index conversion.
+
+### Relationship to the core semantic specification
+
+[Tensor Logic: Operational and Denotational Semantics](tensor_logic_semantics.md)
+separates the equations a program defines from their execution and from a
+compiled storage realization. It gives source statements **additive
+contribution semantics**: each tagged statement/valuation occurrence
+produces a contribution, and the final value of a defined coordinate is
+the combination of all occurrences targeting it. It does not interpret
+each statement as an immediate overwrite or a separate final-value equation.
+Padding and out-of-range access are explicitly outside its current fragment;
+this note develops a candidate extension, not a reinterpretation of rules
+already adopted there.
+
+Boundary formalization fits into that separation as follows:
+
+- **Syntax, typing, and elaboration (Part II).** Add explicit policy
+  configuration and boundary-aware accesses, preserving declared signatures,
+  tensor roles, scoped indices, and guard-admitted domains. Check raw tuple
+  rank, configuration validity, and resolved-coordinate validity. Decide
+  which rejection obligations are structural and which are runtime checks;
+  rejection must not silently become padding or dropping.
+- **Denotational meaning (Part III).** Extend expression interpretation so
+  reads select a resolved coordinate or a constant. Replace raw write fibers
+  by resolved destination fibers, retaining the identity and multiplicity
+  of every contributing occurrence. Extend admissible-environment conditions
+  to match the selected drop timing. A model still assigns complete values
+  to every declared tensor, agrees with all supplied inputs, and satisfies
+  the collected equations for every defined coordinate. Empty fibers still
+  give the additive identity, not the outside read constant.
+- **Operational meaning (Part IV).** Compute read footprints from resolved
+  addresses. An outside constant requires no source-coordinate publication,
+  but a resolved in-bounds read must wait for its complete value. Accumulate
+  each retained contribution exactly once and publish a coordinate only
+  after its entire resolved fiber is complete. Drop-before-evaluation can
+  remove body demands; evaluate-and-discard requires additional evaluation
+  obligations for occurrences with no destination. Recheck dependency ranks
+  after remapping rather than assuming an existing scan order is still valid.
+- **Compilation and refinement (Part V).** Require gather/scatter kernels,
+  batching, materialized padding, and buffer reuse to preserve the extended
+  expression meaning, contribution fibers, demanded definedness, publication
+  barriers, and logical versions. Matching a few numerical edge values is
+  not enough to establish this correspondence.
+
+The core denotation is a **model relation**, including for cyclic equations;
+its functional interpretation applies on inputs with a unique complete
+model. The direct executor's progress guarantees apply to the
+coordinate-ranked fragment. Boundary remapping can change both the equations
+and their dependency graph, so coordinate validity alone guarantees neither
+model uniqueness nor a supported execution strategy.
+
+The intended integration is conservative: boundary-aware accesses should
+agree with ordinary accesses in bounds, without turning omitted inputs,
+unpublished values, or undefined primitives into successful zeros. The
+[Naperian construction in Section 8.4](#84-realizing-policies-with-naperian-tensor-definitions)
+keeps tensors as total families over valid coordinates and places policy
+resolution before lookup and contribution collection. The
+[Lean implementation summary](#current-lean-implementation) records today's
+executable baseline; the remaining sections separate proposed policy
+definitions from the decisions and proof obligations still needed to extend
+the formal specification.
+
 ## Purpose and status
 
 This is a working design note for formalizing boundary policies and integrating
@@ -11,6 +99,8 @@ It does not extend the semantics yet, select every policy convention, or
 claim that a compiler implements these policies. Formulas labelled
 **candidate** are proposals to examine, not adopted language rules.
 The existing specification is authoritative where the two documents differ.
+The [current Lean implementation summary](#current-lean-implementation)
+below records the executable baseline, not an adoption of the candidate rules.
 
 The main goal is to make boundary behavior explicit without weakening the
 distinctions between contributions and equations, unavailable and zero values,
@@ -23,6 +113,8 @@ have identical outcomes.
 
 ## Contents
 
+- [Introduction](#introduction)
+- [Current Lean implementation](#current-lean-implementation)
 - [1. Existing commitments and notation](#1-existing-commitments-and-notation)
 - [2. A candidate read/write resolution interface](#2-a-candidate-readwrite-resolution-interface)
 - [3. Policy meanings and one-dimensional edge cases](#3-policy-meanings-and-one-dimensional-edge-cases)
@@ -31,8 +123,180 @@ have identical outcomes.
 - [6. Binding, guards, and strict expression interpretation](#6-binding-guards-and-strict-expression-interpretation)
 - [7. Dependencies, scans, and logical versions](#7-dependencies-scans-and-logical-versions)
 - [8. Compilation, transformations, and differentiation](#8-compilation-transformations-and-differentiation)
+  - [8.4 Realizing policies with Naperian tensor definitions](#84-realizing-policies-with-naperian-tensor-definitions)
 - [9. Integration map and proof obligations](#9-integration-map-and-proof-obligations)
 - [10. Open decisions and discriminating examples](#10-open-decisions-and-discriminating-examples)
+
+## Current Lean implementation
+
+**Reviewed 2026-10-06, against repository revision `3bdd7f9`.** This section
+describes the existing DSL reference evaluator and checked dense `EvalPlan`
+backend. It is a source-and-test review, not a new correctness proof or a claim
+that the additive semantics document has been implemented.
+
+The short version is **implicit zero extension on reads, evaluate-and-discard
+on out-of-range top-level scatter writes, and zero-initialized scan histories
+with explicit base overlays**. These are separate implementation rules, not
+one configurable read/write policy.
+
+**The existing read/top-level-scatter access behavior is captured by the
+candidate Zero/drop profile in Section 3.1, with evaluate-and-discard timing
+from Section 5.2.** Selecting that profile would preserve these boundary
+decisions; the implementation currently fixes them implicitly rather than
+offering a configuration choice. For real sum-product and Boolean logic,
+the numeric-zero pad is $0_K$. For tropical max/min, whose reduction
+identities are $-\infty$/$+\infty$, the exact match is instead the
+**Constant $c$/drop profile with $c=0$**, again with evaluate-and-discard.
+This correspondence covers access resolution and drop timing, not scatter
+collision handling, additive publication, or scan-history initialization.
+
+| Surface | Implemented boundary behavior |
+|---|---|
+| Plain and unary tensor reads | Read the original coordinate if every component is in range; otherwise return scalar zero. |
+| Ordinary assignment | Enumerate the finite output domain and compute every output cell; there is no out-of-range write to resolve. |
+| Top-level affine scatter | Evaluate the RHS first; retain an in-range placement, silently skip an out-of-range placement. |
+| Persistent scan state | Allocate a complete zero-filled history, overlay base slices, then write successor slices in the recurrence interior. |
+| Checked scan writes | Require statically admitted, in-range placement geometry; invalid placement is rejected rather than delegated to a runtime drop policy. |
+
+### Reads: a fixed zero-extension rule
+
+The reference implementation is
+[`gatherRead` and `gather`](../leanncd/LeanNCD/Eval/Gather.lean).
+Indices are evaluated as signed integers. For a correctly ranked read of a
+present tensor, any component $z_d<0$ or $z_d\ge n_d$ makes the **whole scalar
+read** return `0.0`; otherwise the original coordinate is read. Bounds are
+tested before conversion to natural-number storage indices.
+There is no clamping, wrapping, reflection, or shape-changing padding.
+
+The checked IR makes this explicit:
+[`OutOfBoundsPolicy`](../leanncd/LeanNCD/Eval/Plan/Types.lean) has exactly
+one constructor, `zeroPad`;
+[`ReadPlan`](../leanncd/LeanNCD/Eval/Plan/Kernel.lean) carries it;
+[`residualizeAssignment`](../leanncd/LeanNCD/Eval/Plan/Compile.lean) emits it;
+and [`checkAssignCore`](../leanncd/LeanNCD/Eval/Plan/Check.lean) admits it.
+The shared binary64/binary32 worker,
+[`gatherFactorWith`](../leanncd/LeanNCD/Eval/Plan/Dense.lean), uses
+[`inBoundsPerDim`](../leanncd/LeanNCD/Eval/Plan/Coordinates.lean) before
+flattening. A flat-offset-only test would incorrectly alias some invalid
+multidimensional coordinates onto valid cells.
+
+The pad is the carrier's exact zero, **not the selected reduction identity**.
+Boolean reads therefore pad with false (`0`), but max/min reductions also read
+an out-of-range factor as `0`, not as $-\infty$/$+\infty$. A padded zero can
+consequently win a max reduction over negative values.
+
+Unary read functions run **after** padding: an out-of-range `exp(X[...])`
+evaluates to `exp(0) = 1`, while `log(X[...])` or `recip(X[...])` fails its
+domain check at zero. All product factors are evaluated; an Iverson factor
+whose value is zero does not short-circuit another factor's domain error.
+This is not the guard-restricted occurrence domain proposed in Section 6.
+
+Zero-sized source dimensions make every actual read out of range; a rank-zero
+tensor instead has the one coordinate `[]`. Empty output/reduction domains
+can avoid body evaluation entirely. Padding does **not** excuse a missing
+source tensor: the reference assignment/scatter workers validate source names,
+and the checked worker's `validateStore` rejects missing slots, wrong shapes,
+and wrong storage lengths before gathering. These claims concern validated
+programs/checked plans, not arbitrary malformed calls to low-level helpers.
+
+### Writes: finite assignments and evaluate-and-discard scatters
+
+[`evalAssignSeeded`](../leanncd/LeanNCD/Eval/Contract.lean) and
+[`denseValueAtWith`](../leanncd/LeanNCD/Eval/Plan/Dense.lean) compute values
+over a finite output domain, with term-local contraction. They do not enumerate
+raw out-of-range destinations for ordinary assignments.
+
+For top-level scatter,
+[`evalScatter`](../leanncd/LeanNCD/Eval/Scatter.lean) and
+[`runDenseScatterWith`](../leanncd/LeanNCD/Eval/Plan/Dense.lean) enumerate
+source coordinates, evaluate the RHS, then compute and bounds-check the affine
+destination. An invalid destination selects no write and produces no boundary
+diagnostic. Crucially, RHS evaluation has already happened: a domain error
+still fails the operation even when that source occurrence would be discarded.
+In Section 5.2's terminology, this is **evaluate-and-discard**, not
+drop-before-evaluation.
+
+Unwritten cells retain the scatter fill. The low-level reference worker uses
+[`ScatterOpts`](../leanncd/LeanNCD/DSL/Ast.lean)' integer fill (default `0`)
+and supports `rejectCollisions`, `overwrite`, `sum`, `max`, and `min`.
+The checked scatter checker admits **only `rejectCollisions`** and requires
+`fill == compute.algebra.reduceId`. Thus checked real/Boolean scatter holes
+contain zero, while checked tropical max/min scatter holes contain
+$-\infty$/$+\infty$. This differs from direct reference-worker calls with a
+finite tropical fill; the reference source-facing
+[`evalPlain`](../leanncd/LeanNCD/Eval/Eval.lean) rejects an incompatible fill
+rather than silently claiming parity.
+
+Placement extents are also an implementation convention, not policy
+resolution. [`LHSSlot.outExtent`](../leanncd/LeanNCD/DSL/Ast.lean) is the shared
+extent rule. For positive one-axis placement $c i+b$, with $b\ge0$ and source
+extent $n>0$, it returns $cn+\lfloor b/c\rfloor c$. For example, stride-two
+placement over three source cells has extent six, including an unwritten
+trailing cell. Other affine forms use the legacy integer expression converted
+with `Int.toNat`. Programmatic zero/negative-coefficient plans can consequently
+have an empty destination and discard every evaluated source value; negative
+LHS coefficients/biases are not expressible in the current surface grammar.
+
+### Scans: initialized boundaries, not unavailable-value padding
+
+The checked scan IR's
+[`ScanBoundaryPolicy`](../leanncd/LeanNCD/Eval/Plan/RawStep.lean) has exactly
+one constructor, `zeroThenBaseOverlay`. Both
+[`evalScan`](../leanncd/LeanNCD/Eval/Scan.lean) and
+[`runDenseScanWith`](../leanncd/LeanNCD/Eval/Plan/Scan.lean) allocate complete
+histories with carrier zero, then apply explicit base writes.
+For advancing extents $L_a$, recurrence coordinates range over
+$\prod_a[0,L_a-1)$ and successor writes advance every such coordinate by one.
+Lower boundary faces (any advancing coordinate equal to zero) remain at their
+initialized value unless a base write supplies them.
+
+These are **in-bounds initialized zeros**, distinct from constants returned by
+an out-of-bounds read. This initialization does not license arbitrary reads
+of future history. The checked scan checker requires every advancing row of
+a captured-state read to be `context[q] + b` with $b\le0$
+(`causalAdvancingRow`); non-advancing dimensions retain ordinary zero-padded
+read behavior. Base blocks cannot capture state. Checked recurrence blocks
+observe an immutable pre-step snapshot and commit next-state slices together.
+
+Checked base writes must touch a lower boundary, be pairwise disjoint per
+state, and have in-range pinned literals and consistent extents. Admitted
+positive strided placement is confined to non-advancing dimensions. The
+checked commit therefore needs no out-of-range drop rule. The reference
+`writeScanStmtSlice` retains a defensive bounds-and-rank check that skips
+invalid placements after computing the slice; this is not a configurable
+scan boundary policy.
+
+### Evidence and implications for the additive design
+
+Existing fixtures pin negative-index padding in
+[`GatherTest`](../leanncd/test/Eval/GatherTest.lean); carrier-zero tropical
+reads, pad-then-unary evaluation, and empty-source reads in
+[`KernelDenseTest`](../leanncd/test/Eval/Plan/KernelDenseTest.lean); native
+binary32 pad-then-unary behavior in
+[`KernelDense32Test`](../leanncd/test/Eval/Plan/KernelDense32Test.lean);
+out-of-range scatter drops, empty-destination degeneracies, collisions, and
+tropical fills in
+[`ScatterDenseTest`](../leanncd/test/Eval/Plan/ScatterDenseTest.lean); and
+deep-history look-back padding and extent-one/zero cases in
+[`ScanTest`](../leanncd/test/Eval/ScanTest.lean). These fixtures were inspected,
+not rerun for this documentation-only review.
+
+In the candidate resolver notation, an admitted read behaves like
+`At(original coordinate)` or `Const(0)`, and top-level scatter placement like
+`To(original coordinate)` or `Drop`, with evaluate-and-discard. That analogy
+does **not** make the implementation an additive contribution collector:
+ordinary assignments materialize results, scan writes replace designated
+slices, and checked scatter collisions fail instead of combining occurrence
+multiplicities by $\oplus$.
+
+There is no paired access resolver, user-selectable strict/constant/remapping
+policy, or coordinate-publication store in these evaluators. In particular,
+the existing implicit zero reads differ from this note's conservative proposal
+that ordinary accesses remain strict. Adopting that proposal, additive collision
+collection, or drop-before-evaluation would be an intentional behavior change,
+not merely a name for the current implementation. The current code is a
+compatibility baseline for deciding those changes, not authority over the
+new specification.
 
 ## 1. Existing commitments and notation
 
@@ -206,6 +470,13 @@ such as constant reads with strict writes, need equally explicit contracts.
 
 The last two names are descriptive conventions for this note. Compatibility
 with a library requires comparing its definition, not matching a name.
+
+The current Lean read/top-level-scatter boundary behavior instantiates
+**Zero/drop with evaluate-and-discard** for real sum-product and Boolean
+logic. Its tropical numeric-zero padding instantiates **Constant $c$/drop,
+$c=0$, with evaluate-and-discard**, since numeric zero is not the tropical
+additive identity. See the [implementation summary](#current-lean-implementation)
+for the separate collision and scan-initialization rules.
 
 ### 3.2 Clamp and wrap candidates
 
@@ -619,6 +890,302 @@ read/write pairings need not implement this transpose.
 Learnable padding values would have their own derivatives and dependencies.
 These observations concern tensor values, not derivatives of discrete
 indices, extents, or policy choices.
+
+### 8.4 Realizing policies with Naperian tensor definitions
+
+**Candidate semantic construction, not a shipped implementation.** The
+representability approach in [Naperian Typing](NaperianTyping.md) can express
+every policy family in Section 3. It does not select their conventions or
+make them consequences of representability. Keep three layers separate:
+
+1. A tensor is a total family over its **valid coordinate type**.
+2. A configured boundary resolver converts raw integer tuples into tagged
+   access outcomes.
+3. Gather, contribution collection, and execution interpret those outcomes,
+   preserving definedness, multiplicity, and publication requirements.
+
+#### 8.4.1 Valid-coordinate families remain Naperian
+
+For a concrete rank-$k$ shape $P=(n_1,\ldots,n_k)$, define
+
+$$
+I_P=\prod_{d=1}^{k}\operatorname{Fin}(n_d),
+\qquad
+\mathcal{N}_P(A)=(I_P\to A).
+$$
+
+Here each factor is an ordered axis slot with its resolved axis identity,
+not merely an extent. A concrete representation is Naperian when it has
+inverse operations
+
+$$
+\operatorname{lookup}:\mathcal{N}_P(A)\to I_P\to A,
+\qquad
+\operatorname{tabulate}:(I_P\to A)\to\mathcal{N}_P(A).
+$$
+
+For the function representation, these operations are direct evaluation and
+construction. For dense storage, the lookup/tabulate equivalence needs a
+representation proof, including storage length and coordinate ordering.
+Total lookup accepts only $I_P$; it does not accept arbitrary integers and
+then decide what to do with them.
+
+Let $Z_P=\mathbb{Z}^k$ be the correctly ranked raw tuples and
+$\iota_P:I_P\to Z_P$ the embedding that forgets bounds evidence. Boundary
+policies live between $Z_P$ and $I_P$, not inside ordinary lookup.
+Consequently, two accesses to the same tensor can use different policies
+without changing its stored values or its Naperian laws.
+
+If a dimension is empty, $I_P$ is empty and there is exactly one empty
+family $I_P\to A$. No policy can fabricate an element of $I_P$.
+For rank zero, $I_P$ is the singleton empty tuple, so the tensor is a scalar.
+Symbolic shape/axis checks can precede size solving; concrete `Fin` types and
+enumeration evidence require the resolved extents, following the symbolic
+versus concrete split in [Naperian Typing, Section 5.3.1](NaperianTyping.md#531-pass-ordering-symbolic-naperian-typing-vs-affine-size-inference).
+
+#### 8.4.2 Typed resolvers package the configuration
+
+For a scalar carrier $K$, use the tagged types
+
+$$
+\mathsf{ReadOutcome}_P(K)
+=\mathsf{At}(I_P)\sqcup\mathsf{Const}(K)\sqcup\mathsf{Reject},
+$$
+
+$$
+\mathsf{WriteOutcome}_P
+=\mathsf{To}(I_P)\sqcup\mathsf{Drop}\sqcup\mathsf{Reject}.
+$$
+
+A valid policy configuration supplies functions
+
+$$
+r_b:Z_P\to\mathsf{ReadOutcome}_P(K),
+\qquad
+w_b:Z_P\to\mathsf{WriteOutcome}_P,
+$$
+
+and conservative-agreement laws
+
+$$
+r_b(\iota_P(i))=\mathsf{At}(i),
+\qquad
+w_b(\iota_P(i))=\mathsf{To}(i).
+$$
+
+Using $I_P$ in the constructors ensures that a successful remapping carries
+valid-coordinate evidence. It does not prove that a resolver's implementation
+matches its selected formula; that still requires a proof or a checked
+construction. Invalid configuration and demanded-access rejection remain
+distinct from primitive-domain failure.
+
+The profile is additional metadata: chosen read/write rules, constant
+parameters, reflection and singleton conventions, and drop timing. It can
+be attached to accesses, tensors, or ordered slots once B01 is settled.
+For per-slot configuration, a tuple-level resolver must implement B06's
+explicit corner precedence. A product coordinate type does not decide
+whether rejection dominates a constant read or a dropped write.
+
+#### 8.4.3 Boundary-aware gather constructs another Naperian family
+
+Let $J$ be a finite query domain and $a:J\to Z_P$ its raw index map.
+For a complete tensor $T\in\mathcal{N}_P(K)$, define
+
+$$
+\operatorname{gather}_b(T,a)(j)=
+\begin{cases}
+T(i),&r_b(a(j))=\mathsf{At}(i),\\
+c,&r_b(a(j))=\mathsf{Const}(c),\\
+\mathsf{Reject},&r_b(a(j))=\mathsf{Reject}.
+\end{cases}
+$$
+
+The rejection row denotes an access failure, not a member of $K$.
+In the structural profile, require it to be absent on all demanded queries;
+tabulation then constructs an element of $\mathcal{N}_J(K)=(J\to K)$.
+A runtime-checking profile can first represent per-query outcomes as
+$J\to\operatorname{Except}(\mathsf{AccessError},K)$ and traverse the finite
+domain to obtain either an error or a complete $J$-family. Do not confuse
+a family of fallible values with a successfully constructed tensor.
+If diagnostic precedence is observable, traversal order must be specified.
+
+| Read policy | Resolver and Naperian construction |
+| --- | --- |
+| Strict | Convert to $I_P$ only with bounds evidence; reject demanded invalid tuples. |
+| Clamp, wrap, reflect, symmetric | Apply the chosen normalization with a proof that its result lies in $I_P$, then use `At` and lookup. |
+| Zero/drop's read half | Use `At` in bounds and `Const` of the selected additive identity outside. |
+| Constant/drop's read half | Use `At` in bounds and `Const(c)` outside, with $c\in K$. |
+
+When every query resolves to `At`, the resolver gives a total map
+$\eta:J\to I_P$ and gather is ordinary contravariant reindexing:
+
+$$
+\eta^*(T)=T\circ\eta.
+$$
+
+For constant extension, gather is a case split followed by lookup or a
+constant, not merely precomposition with a map into $I_P$. One can factor
+it through the coproduct $I_P\sqcup K$, extending the lookup function by
+$c\mapsto c$. These extra points describe read outcomes; they are not
+writable tensor coordinates.
+
+For example, with shape $[3]$, $T=(2,5,7)$, and query tuples $(-1,0,3)$,
+clamp gives $(2,2,7)$, wrap gives $(7,2,2)$, zero extension gives $(0,2,0)$,
+and constant-nine extension gives $(9,2,9)$. Strict access rejects the
+first and last queries. Each successful complete result is an ordinary
+three-element Naperian family.
+
+These constructions are compatible with Naperian tensors even for an empty
+source: constant reads can still construct a nonempty query family, whereas
+remapping to an empty $I_P$ is impossible. If $J$ itself is empty, there are
+no demanded reads; unconditional configuration checks remain separate.
+Virtual extension does not require storing an infinite integer-indexed
+tensor. Only the actual finite query domain is tabulated.
+
+#### 8.4.4 Additive writes are fiberwise pushforwards
+
+Fix one defined destination tensor with coordinate type $I_P$.
+Let $O$ be the finite **tagged occurrence domain**, including statement
+identity and binder valuation, and let $a:O\to Z_P$ give raw destinations.
+After resolving $w_b(a(o))$, reject any demanded `Reject` according to the
+selected checking profile. On an admitted occurrence set, define
+
+$$
+R=\{o\in O\mid w_b(a(o))=\mathsf{To}(i)\text{ for some }i\},
+\qquad
+d:R\to I_P.
+$$
+
+For defined retained body values $v:R\to K$, additive collection is
+
+$$
+(d_!v)(i)=
+\bigoplus_{\substack{o\in R\\d(o)=i}}v(o).
+$$
+
+This **pushforward** constructs the destination family
+$d_!v\in\mathcal{N}_P(K)$. It requires finite enumeration and the chosen
+additive aggregation, not just lookup/tabulate. It is a direct fiberwise
+fold; no categorical Kan-extension machinery is required to define it.
+Exact commutative-semiring semantics makes finite collection independent of
+enumeration order. A floating-point refinement must separately specify its
+fold order and numerical contract rather than infer associativity from
+Naperian structure.
+
+| Write policy | Retention and destination map |
+| --- | --- |
+| Strict | Retain original in-bounds destinations; reject demanded invalid ones. |
+| Zero/drop or constant/drop | Retain original in-bounds destinations; exclude `Drop` occurrences from $R$. The read constant does not become a write fill. |
+| Clamp, wrap, reflect, symmetric | Retain every admitted occurrence and map it to the normalized coordinate. Sum all members of each resulting fiber. |
+
+For instance, clamping raw writes $(-1,0,1)$ with contributions $(2,3,5)$
+into shape $[2]$ constructs $(5,5)$, not $(3,5)$: the first two occurrences
+remain distinct even though their destinations coincide.
+Empty fibers give $0_K$; an empty destination has no coordinates to fill.
+Naperian representation does not authorize overwrite or collision rejection
+in place of this additive fold. Such behavior is a different write contract.
+
+#### 8.4.5 Drop timing belongs to body evaluation
+
+The retained set $R$ determines collection, but not all definedness demands.
+Let $O$ already include only guard-admitted raw occurrences.
+For drop-before-evaluation, bodies are demanded only on $R$.
+For evaluate-and-discard, bodies are demanded on all of $O$, including
+occurrences resolving to `Drop`; only values belonging to $R$ are collected.
+
+Thus the two profiles can produce the same destination family when every
+body is defined, yet disagree about whether the program is admissible.
+A dropped raw write with body $\log(-1)$ distinguishes them.
+Do not implement drop-before-evaluation by first tabulating every body value
+and then multiplying dropped lanes by zero: strict tabulation has already
+demanded those values. Resolve the retained domain first.
+Conversely, evaluate-and-discard needs explicit destinationless evaluation
+tasks or an equivalent demand rule, not simply a retained-domain fold.
+
+Naperian families describe complete values. They do not by themselves
+encode evaluation order, errors, guards, or the occurrence demands of
+Section 5. Those remain part of expression and machine semantics.
+
+#### 8.4.6 Pointwise lifting and boundary rewrites
+
+For a total scalar function $f:K\to L$ and a genuine coordinate map
+$\eta:J\to I_P$, pointwise lifting commutes with reindexing:
+
+$$
+\operatorname{map}(f)(\eta^*T)=\eta^*(\operatorname{map}(f)(T)).
+$$
+
+For constant extension, the corresponding law changes the constant:
+
+$$
+\operatorname{map}(f)(G_c(T))=G_{f(c)}(\operatorname{map}(f)(T)).
+$$
+
+Here $G_c$ uses a fixed query geometry and constant $c$ at its outside
+queries. Moving $f$ across padding while keeping the same constant requires
+$f(c)=c$ when the carriers coincide. A fixed padding choice across carriers
+is not automatically natural in arbitrary scalar functions.
+For a partial primitive, the rewrite must additionally preserve demanded
+definedness. Zero padding followed by `exp` yields one outside, whereas
+applying `exp` first and then zero padding yields zero outside; zero padding
+followed by `log` fails. Representability does not erase these differences.
+
+#### 8.4.7 Publication and temporal access need additional evidence
+
+A complete history can be represented as a Naperian family over
+$\operatorname{Fin}(L+1)$, but that type permits lookup at **every** history
+coordinate. It does not prove causality. In particular, the illustrative
+`ScanState.history` type in
+[Naperian Typing, Section 5.2](NaperianTyping.md#52-mixin-specific-implementation-strategies-with-dependent-type-optimization)
+does not on its own prevent future reads or enforce the recurrence equations.
+
+During execution, expose only published coordinates, or require readiness
+evidence for a resolved `At(i)`. Constant outcomes need no source-coordinate
+readiness. A missing published value must never become a padding constant
+merely because its coordinate is in bounds.
+Prefix-indexed state access can enforce forward-scan availability; general
+dependency evidence can handle more expressive admitted access patterns.
+
+Resolve policies before validating those dependencies. A time-wrap read can
+map a negative raw index to the final history cell, yielding a well-typed
+coordinate but a dependency cycle. Write remapping also changes destination
+fibers: publication must wait for every retained contribution in the resolved
+fiber, including any remapped into the base region. Naperian typing establishes
+coordinate validity, not acyclic execution or unique cyclic solutions.
+The current zero-then-base-overlay initialization is a separate implemented
+scan rule, not something forced by representability.
+
+#### 8.4.8 Integration with the proposed Naperian layer
+
+The construction can preserve the intended separation in
+[Naperian Typing](NaperianTyping.md):
+
+- `NaperianAxis`/concrete point data identify ordered valid coordinate types;
+  `NaperianFamily` supplies total lookup/tabulate.
+- `ReindexAction` handles actual total coordinate maps. The existing
+  affine `StMatP` vocabulary does not automatically contain clamp, modulo,
+  or reflection; add a checked boundary resolver alongside it, or deliberately
+  enrich the index category and prove its point action.
+- Boundary gather combines typed resolution with lookup/constant/error
+  handling. Configuration includes carrier-appropriate constants and
+  explicit multidimensional precedence.
+- Finite reduction machinery collects writes over resolved fibers, preserving
+  occurrence identity and the selected algebra.
+- Expression-definedness and temporal/publication evidence enforce demand
+  and readiness separately from complete tensor representation.
+
+In particular, the current Lean numeric-zero-read/drop-write behavior can be
+realized by this gather and an evaluate-and-discard demand rule. Reproducing
+its collision rejection would require that separate write contract;
+realizing the proposed additive semantics instead requires the fiberwise
+sum above. No Naperian law makes those contracts equivalent.
+
+The useful proof targets are resolver validity and in-bounds agreement,
+gather/lookup correspondence, fiberwise collection with multiplicity
+preservation, exact drop-demand correspondence, and readiness-preserving
+execution. Only after those are established should optimizations reuse the
+reindexing and pointwise laws; constants, errors, and temporal dependencies
+must remain visible in their hypotheses.
 
 ## 9. Integration map and proof obligations
 
