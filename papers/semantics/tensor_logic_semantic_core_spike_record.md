@@ -12,7 +12,7 @@ The experiment must test reuse, scalar/backend flexibility, and a genuine
 categorical-index connection before selecting production interfaces.
 
 The prototype is
-[`TensorLogicSemanticCoreSpike.lean`](../../leanncd/spikes/TensorLogicSemanticCoreSpike.lean),
+[`TensorLogicSemanticCoreSpike.lean`](../../leanncd/LeanNCD/Semantics/TensorLogicSemanticCoreSpike.lean),
 checked by the non-default `SemanticCoreSpike` Lake target. It is deliberately
 not imported by `LeanNCD`, and default builds do not typecheck it.
 The existing production evaluator and backend capability guards are unchanged.
@@ -28,8 +28,10 @@ The existing production evaluator and backend capability guards are unchanged.
 - `lake-build.sh ... LeanNCD` refreshed project-owned imports successfully.
   It emitted pre-existing `sorry`/lint warnings; this is not a claim that
   every imported categorical declaration is proved.
-- A narrow ignore exception and non-default target make the prototype
-  persistent and reproducible without expanding production imports.
+- The prototype was initially tracked in `spikes/` through an ignore exception.
+  It now lives in `LeanNCD/Semantics/`, where no ignore exception is needed.
+  Its non-default target preserves explicit checking without expanding
+  production imports.
 
 ## Result: the proposed seam is feasible in a bounded fragment
 
@@ -167,7 +169,7 @@ Controller checks passed:
 ```bash
 bash leanncd/scripts/lake-build.sh /path/to/worktree/leanncd SemanticCoreSpike
 bash .claude/skills/slice-plan/check-snippet.sh \
-  leanncd/spikes/TensorLogicSemanticCoreSpike.lean
+  leanncd/LeanNCD/Semantics/TensorLogicSemanticCoreSpike.lean
 bash leanncd/scripts/lake-build.sh /path/to/worktree/leanncd
 ```
 

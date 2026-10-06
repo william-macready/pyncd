@@ -92,5 +92,4 @@ globs = ["EvalPlanCodegen"]
 # Non-default semantic feasibility experiment; not imported by LeanNCD.
 [[lean_lib]]
 name = "SemanticCoreSpike"
-srcDir = "spikes"
-globs = ["TensorLogicSemanticCoreSpike"]
+globs = ["LeanNCD.Semantics.TensorLogicSemanticCoreSpike"]

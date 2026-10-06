@@ -48,7 +48,7 @@ limits explicitly rather than infer them from read stability.
 
 ### S1. Prototype and prove
 
-Artifact: `leanncd/spikes/TensorLogicSemanticCoreSpike.lean`.
+Artifact: `leanncd/LeanNCD/Semantics/TensorLogicSemanticCoreSpike.lean`.
 Keep the prototype separate from `import LeanNCD`.
 
 Before choosing new representations, inspect these existing interfaces in
@@ -77,7 +77,7 @@ An example bridge is not a full functor/actegory construction.
 Artifacts:
 
 - A non-default Lake target for the prototype, without changing default targets.
-- A narrow ignore exception making the off-target prototype persistent.
+- A persistent prototype under `LeanNCD/Semantics/`, separate from scratch files.
 - `papers/semantics/tensor_logic_semantic_core_spike_record.md`.
 
 Use existing Lake wrappers. Compile the source itself and via
