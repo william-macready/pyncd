@@ -48,7 +48,7 @@ limits explicitly rather than infer them from read stability.
 
 ### S1. Prototype and prove
 
-Artifact: `leanncd/LeanNCD/Semantics/TensorLogicSemanticCoreSpike.lean`.
+Artifact: [`TensorLogicSemanticCoreSpike.lean`](../../leanncd/LeanNCD/Semantics/TensorLogicSemanticCoreSpike.lean).
 Keep the prototype separate from `import LeanNCD`.
 
 Before choosing new representations, inspect these existing interfaces in
