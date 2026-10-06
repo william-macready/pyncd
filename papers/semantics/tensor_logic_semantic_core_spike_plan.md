@@ -78,7 +78,7 @@ Artifacts:
 
 - A non-default Lake target for the prototype, without changing default targets.
 - A narrow ignore exception making the off-target prototype persistent.
-- `papers/tensor_logic_semantic_core_spike_record.md`.
+- `papers/semantics/tensor_logic_semantic_core_spike_record.md`.
 
 Use existing Lake wrappers. Compile the source itself and via
 `check-snippet.sh`; the plan deliberately embeds no unverified Lean blocks.

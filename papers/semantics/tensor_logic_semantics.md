@@ -4165,9 +4165,9 @@ execution, and general cyclic solvers require their own explicit extensions.
   Sections 3-4 provide the pure-einsum syntax and global-position semantics;
   Sections 5-7 supply algebraic, nesting, delta, and neutral-operand results.
   Section 17 adapts the relevant foundations to this document's conventions.
-- [Tensor logic and einsum](einsum_tensor_logic.md).
-- [Integer constants and affine index arithmetic](index_arithmetic.md).
-- [Iteration in tensor logic](iteration.md).
+- [Tensor logic and einsum](../einsum_tensor_logic.md).
+- [Integer constants and affine index arithmetic](../index_arithmetic.md).
+- [Iteration in tensor logic](../iteration.md).
 
 Related repository documents describe existing designs or implementations.
 They are context, not substitutes for the definitions in this specification.
