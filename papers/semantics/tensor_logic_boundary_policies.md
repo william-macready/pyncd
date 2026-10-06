@@ -161,7 +161,7 @@ collision handling, additive publication, or scan-history initialization.
 ### Reads: a fixed zero-extension rule
 
 The reference implementation is
-[`gatherRead` and `gather`](../leanncd/LeanNCD/Eval/Gather.lean).
+[`gatherRead` and `gather`](../../leanncd/LeanNCD/Eval/Gather.lean).
 Indices are evaluated as signed integers. For a correctly ranked read of a
 present tensor, any component $z_d<0$ or $z_d\ge n_d$ makes the **whole scalar
 read** return `0.0`; otherwise the original coordinate is read. Bounds are
@@ -169,14 +169,14 @@ tested before conversion to natural-number storage indices.
 There is no clamping, wrapping, reflection, or shape-changing padding.
 
 The checked IR makes this explicit:
-[`OutOfBoundsPolicy`](../leanncd/LeanNCD/Eval/Plan/Types.lean) has exactly
+[`OutOfBoundsPolicy`](../../leanncd/LeanNCD/Eval/Plan/Types.lean) has exactly
 one constructor, `zeroPad`;
-[`ReadPlan`](../leanncd/LeanNCD/Eval/Plan/Kernel.lean) carries it;
-[`residualizeAssignment`](../leanncd/LeanNCD/Eval/Plan/Compile.lean) emits it;
-and [`checkAssignCore`](../leanncd/LeanNCD/Eval/Plan/Check.lean) admits it.
+[`ReadPlan`](../../leanncd/LeanNCD/Eval/Plan/Kernel.lean) carries it;
+[`residualizeAssignment`](../../leanncd/LeanNCD/Eval/Plan/Compile.lean) emits it;
+and [`checkAssignCore`](../../leanncd/LeanNCD/Eval/Plan/Check.lean) admits it.
 The shared binary64/binary32 worker,
-[`gatherFactorWith`](../leanncd/LeanNCD/Eval/Plan/Dense.lean), uses
-[`inBoundsPerDim`](../leanncd/LeanNCD/Eval/Plan/Coordinates.lean) before
+[`gatherFactorWith`](../../leanncd/LeanNCD/Eval/Plan/Dense.lean), uses
+[`inBoundsPerDim`](../../leanncd/LeanNCD/Eval/Plan/Coordinates.lean) before
 flattening. A flat-offset-only test would incorrectly alias some invalid
 multidimensional coordinates onto valid cells.
 
@@ -201,14 +201,14 @@ programs/checked plans, not arbitrary malformed calls to low-level helpers.
 
 ### Writes: finite assignments and evaluate-and-discard scatters
 
-[`evalAssignSeeded`](../leanncd/LeanNCD/Eval/Contract.lean) and
-[`denseValueAtWith`](../leanncd/LeanNCD/Eval/Plan/Dense.lean) compute values
+[`evalAssignSeeded`](../../leanncd/LeanNCD/Eval/Contract.lean) and
+[`denseValueAtWith`](../../leanncd/LeanNCD/Eval/Plan/Dense.lean) compute values
 over a finite output domain, with term-local contraction. They do not enumerate
 raw out-of-range destinations for ordinary assignments.
 
 For top-level scatter,
-[`evalScatter`](../leanncd/LeanNCD/Eval/Scatter.lean) and
-[`runDenseScatterWith`](../leanncd/LeanNCD/Eval/Plan/Dense.lean) enumerate
+[`evalScatter`](../../leanncd/LeanNCD/Eval/Scatter.lean) and
+[`runDenseScatterWith`](../../leanncd/LeanNCD/Eval/Plan/Dense.lean) enumerate
 source coordinates, evaluate the RHS, then compute and bounds-check the affine
 destination. An invalid destination selects no write and produces no boundary
 diagnostic. Crucially, RHS evaluation has already happened: a domain error
@@ -217,18 +217,18 @@ In Section 5.2's terminology, this is **evaluate-and-discard**, not
 drop-before-evaluation.
 
 Unwritten cells retain the scatter fill. The low-level reference worker uses
-[`ScatterOpts`](../leanncd/LeanNCD/DSL/Ast.lean)' integer fill (default `0`)
+[`ScatterOpts`](../../leanncd/LeanNCD/DSL/Ast.lean)' integer fill (default `0`)
 and supports `rejectCollisions`, `overwrite`, `sum`, `max`, and `min`.
 The checked scatter checker admits **only `rejectCollisions`** and requires
 `fill == compute.algebra.reduceId`. Thus checked real/Boolean scatter holes
 contain zero, while checked tropical max/min scatter holes contain
 $-\infty$/$+\infty$. This differs from direct reference-worker calls with a
 finite tropical fill; the reference source-facing
-[`evalPlain`](../leanncd/LeanNCD/Eval/Eval.lean) rejects an incompatible fill
+[`evalPlain`](../../leanncd/LeanNCD/Eval/Eval.lean) rejects an incompatible fill
 rather than silently claiming parity.
 
 Placement extents are also an implementation convention, not policy
-resolution. [`LHSSlot.outExtent`](../leanncd/LeanNCD/DSL/Ast.lean) is the shared
+resolution. [`LHSSlot.outExtent`](../../leanncd/LeanNCD/DSL/Ast.lean) is the shared
 extent rule. For positive one-axis placement $c i+b$, with $b\ge0$ and source
 extent $n>0$, it returns $cn+\lfloor b/c\rfloor c$. For example, stride-two
 placement over three source cells has extent six, including an unwritten
@@ -240,10 +240,10 @@ LHS coefficients/biases are not expressible in the current surface grammar.
 ### Scans: initialized boundaries, not unavailable-value padding
 
 The checked scan IR's
-[`ScanBoundaryPolicy`](../leanncd/LeanNCD/Eval/Plan/RawStep.lean) has exactly
+[`ScanBoundaryPolicy`](../../leanncd/LeanNCD/Eval/Plan/RawStep.lean) has exactly
 one constructor, `zeroThenBaseOverlay`. Both
-[`evalScan`](../leanncd/LeanNCD/Eval/Scan.lean) and
-[`runDenseScanWith`](../leanncd/LeanNCD/Eval/Plan/Scan.lean) allocate complete
+[`evalScan`](../../leanncd/LeanNCD/Eval/Scan.lean) and
+[`runDenseScanWith`](../../leanncd/LeanNCD/Eval/Plan/Scan.lean) allocate complete
 histories with carrier zero, then apply explicit base writes.
 For advancing extents $L_a$, recurrence coordinates range over
 $\prod_a[0,L_a-1)$ and successor writes advance every such coordinate by one.
@@ -269,16 +269,16 @@ scan boundary policy.
 ### Evidence and implications for the additive design
 
 Existing fixtures pin negative-index padding in
-[`GatherTest`](../leanncd/test/Eval/GatherTest.lean); carrier-zero tropical
+[`GatherTest`](../../leanncd/test/Eval/GatherTest.lean); carrier-zero tropical
 reads, pad-then-unary evaluation, and empty-source reads in
-[`KernelDenseTest`](../leanncd/test/Eval/Plan/KernelDenseTest.lean); native
+[`KernelDenseTest`](../../leanncd/test/Eval/Plan/KernelDenseTest.lean); native
 binary32 pad-then-unary behavior in
-[`KernelDense32Test`](../leanncd/test/Eval/Plan/KernelDense32Test.lean);
+[`KernelDense32Test`](../../leanncd/test/Eval/Plan/KernelDense32Test.lean);
 out-of-range scatter drops, empty-destination degeneracies, collisions, and
 tropical fills in
-[`ScatterDenseTest`](../leanncd/test/Eval/Plan/ScatterDenseTest.lean); and
+[`ScatterDenseTest`](../../leanncd/test/Eval/Plan/ScatterDenseTest.lean); and
 deep-history look-back padding and extent-one/zero cases in
-[`ScanTest`](../leanncd/test/Eval/ScanTest.lean). These fixtures were inspected,
+[`ScanTest`](../../leanncd/test/Eval/ScanTest.lean). These fixtures were inspected,
 not rerun for this documentation-only review.
 
 In the candidate resolver notation, an admitted read behaves like
@@ -574,7 +574,7 @@ For example, an input of length $n$ can be copied into a fresh tensor of
 length $n+2p$, with $p\in\mathbb{N}$, by writes at positions $i+p$; the uncovered coordinates can
 receive the existing empty-sum zero.
 This is related to the gather/scatter discussion in
-[Integer constants and affine index arithmetic](index_arithmetic.md#4-gather-and-scatter).
+[Integer constants and affine index arithmetic](../index_arithmetic.md#4-gather-and-scatter).
 Its offset construction does not itself define arbitrary out-of-range reads
 or writes, or make virtual padding constants writable.
 
@@ -894,7 +894,7 @@ indices, extents, or policy choices.
 ### 8.4 Realizing policies with Naperian tensor definitions
 
 **Candidate semantic construction, not a shipped implementation.** The
-representability approach in [Naperian Typing](NaperianTyping.md) can express
+representability approach in [Naperian Typing](../NaperianTyping.md) can express
 every policy family in Section 3. It does not select their conventions or
 make them consequences of representability. Keep three layers separate:
 
@@ -941,7 +941,7 @@ family $I_P\to A$. No policy can fabricate an element of $I_P$.
 For rank zero, $I_P$ is the singleton empty tuple, so the tensor is a scalar.
 Symbolic shape/axis checks can precede size solving; concrete `Fin` types and
 enumeration evidence require the resolved extents, following the symbolic
-versus concrete split in [Naperian Typing, Section 5.3.1](NaperianTyping.md#531-pass-ordering-symbolic-naperian-typing-vs-affine-size-inference).
+versus concrete split in [Naperian Typing, Section 5.3.1](../NaperianTyping.md#531-pass-ordering-symbolic-naperian-typing-vs-affine-size-inference).
 
 #### 8.4.2 Typed resolvers package the configuration
 
@@ -1136,7 +1136,7 @@ A complete history can be represented as a Naperian family over
 $\operatorname{Fin}(L+1)$, but that type permits lookup at **every** history
 coordinate. It does not prove causality. In particular, the illustrative
 `ScanState.history` type in
-[Naperian Typing, Section 5.2](NaperianTyping.md#52-mixin-specific-implementation-strategies-with-dependent-type-optimization)
+[Naperian Typing, Section 5.2](../NaperianTyping.md#52-mixin-specific-implementation-strategies-with-dependent-type-optimization)
 does not on its own prevent future reads or enforce the recurrence equations.
 
 During execution, expose only published coordinates, or require readiness
@@ -1158,7 +1158,7 @@ scan rule, not something forced by representability.
 #### 8.4.8 Integration with the proposed Naperian layer
 
 The construction can preserve the intended separation in
-[Naperian Typing](NaperianTyping.md):
+[Naperian Typing](../NaperianTyping.md):
 
 - `NaperianAxis`/concrete point data identify ordered valid coordinate types;
   `NaperianFamily` supplies total lookup/tabulate.

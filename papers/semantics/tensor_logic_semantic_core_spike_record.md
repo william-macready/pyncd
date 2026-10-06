@@ -12,7 +12,7 @@ The experiment must test reuse, scalar/backend flexibility, and a genuine
 categorical-index connection before selecting production interfaces.
 
 The prototype is
-[`TensorLogicSemanticCoreSpike.lean`](../leanncd/spikes/TensorLogicSemanticCoreSpike.lean),
+[`TensorLogicSemanticCoreSpike.lean`](../../leanncd/spikes/TensorLogicSemanticCoreSpike.lean),
 checked by the non-default `SemanticCoreSpike` Lake target. It is deliberately
 not imported by `LeanNCD`, and default builds do not typecheck it.
 The existing production evaluator and backend capability guards are unchanged.
