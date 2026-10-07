@@ -1,0 +1,494 @@
+diff --git a/leanncd/AGENTS.md b/leanncd/AGENTS.md
+index 4e7e01a..01036b4 100644
+--- a/leanncd/AGENTS.md
++++ b/leanncd/AGENTS.md
+@@ -179,7 +179,7 @@ Does not own: the Python implementation (`../data_structure/`, `../acset/`, etc.
+ | Checked plan backend | `LeanNCD/Eval/Plan/AGENTS.md` | checked, positional plan IR: source compiler, checkers, binary64/binary32 dense workers, adapters, JAX executable phase |
+ | Acset schema | `LeanNCD/Acset/AGENTS.md` | row-table schema + CSV text mechanics (mirrors Python `acset/`) |
+ | Algebra | `LeanNCD/Algebra/AGENTS.md` | algebra-functor signatures (`Algebra`/`TargetActegory`); deliberately no concrete instance yet |
+-| Semantic explorations | `LeanNCD/Semantics/AGENTS.md` | carrier-parametric expression/readiness prototype and restricted formal-index bridge; non-default target |
++| Semantic explorations | `LeanNCD/Semantics/AGENTS.md` | scratch typed expression/readiness validation via `LeanNCD.Semantics` and default semantic fixtures; prior spike retains its non-default target |
+ 
+ Small subsystems (no dedicated node — each <170 lines, single-file or near it): `Core/` (`Graded.lean` — `sh_act`/DGraded machinery consumed by `Algebra`; `Weave.lean` — `weave_unique`, itself a deferred sorry), `Mixins/`, `Props/` (`Generic.lean`), `Seam/` (`Adapter.lean` — strictifies `ColoredPROP` onto Mathlib's `MonoidalCategory`/`SymmetricCategory`, fully sorry-free), `Grothendieck/`, `Exec/` (`Uid.lean` — `CompileError` variants), `Instances/` (`StBr.lean`).
+ 
+diff --git a/leanncd/LeanNCD.lean b/leanncd/LeanNCD.lean
+index 2cfa791..b0d85c6 100644
+--- a/leanncd/LeanNCD.lean
++++ b/leanncd/LeanNCD.lean
+@@ -152,3 +152,4 @@ import LeanNCD.Eval.Plan.RawStep
+ import LeanNCD.Eval.Plan.Block
+ import LeanNCD.Eval.Plan.Scan
+ import LeanNCD.Eval.Plan.EvalPlan
++import LeanNCD.Semantics
+diff --git a/leanncd/LeanNCD/Semantics/AGENTS.md b/leanncd/LeanNCD/Semantics/AGENTS.md
+index 9753b37..d88bea9 100644
+--- a/leanncd/LeanNCD/Semantics/AGENTS.md
++++ b/leanncd/LeanNCD/Semantics/AGENTS.md
+@@ -2,25 +2,48 @@
+ 
+ ## Purpose
+ 
+-Exploratory semantic definitions and proofs, separate from production
+-evaluation and categorical interpretation.
++Expression/readiness semantic validation, separate from the production
++DSL evaluator, execution backends, and categorical interpretation.
+ 
+ ## Current artifact
+ 
++The semantic validation layer `LeanNCD.Semantics` is reachable from `LeanNCD`.
++`Types`, `Expr`, `Interpret`, `Readiness`, and `Completeness` separate typed
++values/declarations/registries, structurally admitted expressions, strict
++interpretation/footprints, structural stability/readiness, and whole-array
++completeness. Default `Tests` includes `Semantics.ExpressionTest`,
++`Semantics.NativeTest`, and `Semantics.ContractTest`.
++
++This is semantic validation, not an execution-backend replacement. Scalar sorts and
++carriers are open; operations are data, not assumed machine-float semiring laws.
++Contexts are typed valuation spaces with product extension, not named affine
++syntax. Read admission is explicit; runtime boundary rejection ordering,
++source checking, syntactic substitution, reindexing laws, writes, scheduling,
++publication, and full categorical/backend interpretation remain deferred.
++See the [implementation plan](../../../papers/semantics/expression_readiness_plan.md)
++and [authoring verification](../../../papers/semantics/expression_readiness_authoring_record.md)
++for clause coverage, observed fixtures, and validation.
++
++`interpret` evaluates complete environments; `evalReady` distinguishes
++unavailable reads from ready undefinedness. `evalWith` is a low-level partial
++computation whose `none` result alone does not distinguish those cases.
++Use the readiness entry, not that helper, to classify execution eligibility.
++
+ [`TensorLogicSemanticCoreSpike.lean`](TensorLogicSemanticCoreSpike.lean) proves
+ read stability and partial-store consistency for a carrier-parametric scalar
+ fragment, with a restricted bridge to an existing formal `StMat`.
+ Its existing namespace `LeanNCD.TensorLogicSemanticCoreSpike` is preserved.
+ The module path is `LeanNCD.Semantics.TensorLogicSemanticCoreSpike`.
+ 
+-The prototype is not imported by `LeanNCD`. Check it explicitly with the
+-repository build wrapper and target `SemanticCoreSpike`; a default build
+-does not cover it.
++The prior spike is not imported by `LeanNCD`, but `Semantics.ContractTest`
++imports it for the existing formal-index witness, so the default `Tests`
++target now checks it indirectly. The explicit `SemanticCoreSpike` target
++remains available for standalone checks.
+ 
+ ## Scope
+ 
+ Read the [plan](../../../papers/semantics/tensor_logic_semantic_core_spike_plan.md)
+ and [results](../../../papers/semantics/tensor_logic_semantic_core_spike_record.md)
+-before extending it. The full array grammar, heterogeneous dtypes, additive
+-program models, publication machine, and complete categorical/backend
+-interpretations remain unimplemented here.
++before extending that spike. The validation layer covers the admitted
++array/heterogeneous expression fragment, but not additive program models,
++publication, or complete categorical/backend interpretations.
+diff --git a/leanncd/lakefile.toml b/leanncd/lakefile.toml
+index 4a47f34..f0d0595 100644
+--- a/leanncd/lakefile.toml
++++ b/leanncd/lakefile.toml
+@@ -77,7 +77,8 @@ globs = ["Base.NumericTest", "Base.StTest", "Base.BrTest", "Base.BrWiringTest",
+          "Eval.Portfolio.TropicalTest", "Eval.Portfolio.TensorNetTest",
+          "Eval.Portfolio.GenerativeTest", "Eval.Portfolio.ClassicalMLTest",
+          "Eval.Portfolio.EdgeCaseTest", "Eval.Portfolio.RejectTest",
+-         "Eval.Portfolio.KnownGapTest", "Eval.Portfolio.ScatterNonlinRejectTest"]
++         "Eval.Portfolio.KnownGapTest", "Eval.Portfolio.ScatterNonlinRejectTest",
++         "Semantics.ExpressionTest", "Semantics.NativeTest", "Semantics.ContractTest"]
+ 
+ # Non-default experimental JAX-bridge codegen library. Deliberately absent from
+ # `defaultTargets`: it only builds when explicitly requested (`lake build JaxExperiment`, as the
+diff --git a/leanncd/test/Semantics/ContractTest.lean b/leanncd/test/Semantics/ContractTest.lean
+new file mode 100644
+index 0000000..3e5a6f7
+--- /dev/null
++++ b/leanncd/test/Semantics/ContractTest.lean
+@@ -0,0 +1,105 @@
++import LeanNCD
++import Semantics.ExpressionTest
++import Semantics.NativeTest
++import LeanNCD.Semantics.TensorLogicSemanticCoreSpike
++
++namespace LeanNCD.Semantics.Fixtures
++
++abbrev Guarded := {i : Fin 3 // i.val < 2}
++def guardedRead : Scalar Guarded :=
++  direct (fun γ => ⟨γ.val.val + 1, by have := γ.property; omega⟩)
++
++#guard interpret ops store guardedRead ⟨0, by decide⟩ == some 5
++#guard interpret ops store guardedRead ⟨1, by decide⟩ == some 7
++#guard match strictPolicy.resolve (fun _ => 3) with
++  | .reject => true | _ => false
++#guard match strictPolicy.resolve (fun _ => -1) with
++  | .reject => true | _ => false
++
++theorem dtype_mismatch_rejected : True := by
++  fail_if_success
++    have wrong : E Unit (.scalar .flag) := direct (fun _ => 0)
++  trivial
++
++theorem shape_mismatch_rejected : True := by
++  fail_if_success
++    have wrong : E Unit (.array .rational emptyShape) := tabulated
++  trivial
++
++theorem unknown_tensor_rejected : True := by
++  fail_if_success
++    have wrong : NativeFixtures.noTensors.Tensor := (1 : Nat)
++  trivial
++
++theorem invalid_coordinate_rejected : True := by
++  fail_if_success
++    have wrong : Fin 3 := ⟨3, by decide⟩
++  trivial
++
++theorem unknown_index_rejected : True := by
++  fail_if_success
++    have wrong : Unit → Int := fun γ => γ.2
++  trivial
++
++@[reducible] def scalarDeclarations : Declarations ScalarSort :=
++  ⟨Unit, fun _ => 8, fun a b _ => by cases a; cases b; rfl,
++    fun _ => ⟨.rational, []⟩⟩
++def scalarPolicy : ReadPolicy ℚ [] :=
++  ⟨fun _ => .at (), by intro p; cases p; rfl⟩
++def scalarTensor : Expr Carrier scalarDeclarations registry Unit (.scalar .rational) :=
++  .read () ⟨scalarPolicy, fun _ => Fin.elim0,
++    fun _ => .at (), by intro _; rfl⟩
++#guard interpret ops (fun _ => 17) scalarTensor () == some 17
++
++def reorderedShape : Shape := [⟨2, 3⟩, ⟨1, 3⟩]
++theorem axis_identity_and_order : ([⟨1, 3⟩, ⟨2, 3⟩] : Shape) ≠ reorderedShape := by decide
++
++def cartesianShape : ArrayShape := ⟨[⟨60, 2⟩, ⟨61, 3⟩], by decide⟩
++def cartesianTab : E Unit (.array .rational cartesianShape) :=
++  .tab cartesianShape (canonicalLayout _)
++    (.binary .mul (direct (fun γ => γ.2.2.1))
++      (.binary .add (.iverson (fun γ => γ.2.1.val == 1)) (.lit 1)))
++def cartesianSelect : Scalar Unit := .at cartesianTab (fun _ => (1, (2, ())))
++#guard scalarObservation cartesianSelect == some 14
++#guard (footprint cartesianTab ()).length == 6
++
++theorem reduction_exact_bound_values :
++    interpret ops store (.reduce 3 (direct (fun γ : Unit × Fin 3 => γ.2))) () =
++      some (∑ i : Fin 3, store ⟨(), point i⟩) := by
++  apply interpret_reduce_sum ops store rfl rfl
++  intro i
++  rfl
++
++theorem empty_reduction_exact_without_body :
++    interpret ops store emptyReduction () = some (∑ i : Fin 0, (Fin.elim0 i : ℚ)) := by
++  apply interpret_reduce_sum ops store rfl rfl
++  intro i
++  exact Fin.elim0 i
++
++#print axioms reduction_exact_bound_values
++#print axioms empty_reduction_exact_without_body
++
++theorem nonselected_lane_obligation (p : PartialStore Carrier declarations)
++    (v : Coord vectorShape.axes → ℚ)
++    (h : evalWith ops p
++      (.tab vectorShape (canonicalLayout _)
++        (.prim (r := registry) Op.recip
++          (fun _ => .iverson (fun γ => γ.2.1.val == 0)))) () = some v) : False := by
++  have hc := (tab_complete _ _ _ _ _ _ _).mp h (point 1)
++  have hn : evalWith ops p
++      (.prim (r := registry) Op.recip
++        (fun _ => .iverson (fun γ : Unit × Coord vectorShape.axes => γ.2.1.val == 0)))
++      ((), point 1) = none := rfl
++  rw [hn] at hc
++  contradiction
++
++def signedRaw (x : Int) : Int := -2 * x + 3
++theorem existing_stmat_seam (x : Int) :
++    signedRaw x = TensorLogicSemanticCoreSpike.integerCoordinate x :=
++  (TensorLogicSemanticCoreSpike.integerCoordinate_eq x).symm
++
++#guard signedRaw 2 == -1
++#print axioms nonselected_lane_obligation
++#print axioms existing_stmat_seam
++
++end LeanNCD.Semantics.Fixtures
+diff --git a/leanncd/test/Semantics/ExpressionTest.lean b/leanncd/test/Semantics/ExpressionTest.lean
+new file mode 100644
+index 0000000..037fca0
+--- /dev/null
++++ b/leanncd/test/Semantics/ExpressionTest.lean
+@@ -0,0 +1,175 @@
++import LeanNCD.Semantics
++
++namespace LeanNCD.Semantics.Fixtures
++
++inductive ScalarSort
++  | rational | flag
++  deriving DecidableEq
++
++@[reducible] def Carrier : ScalarSort → Type
++  | .rational => ℚ
++  | .flag => Bool
++
++def ops : (s : ScalarSort) → ScalarOps (Carrier s)
++  | .rational => ⟨0, 1, (· + ·), (· * ·)⟩
++  | .flag => ⟨false, true, (· || ·), (· && ·)⟩
++
++@[reducible] def vectorShape : ArrayShape := ⟨[⟨41, 3⟩], by decide⟩
++@[reducible] def emptyShape : ArrayShape := ⟨[⟨42, 0⟩], by decide⟩
++@[reducible] def declarations : Declarations ScalarSort :=
++  ⟨Unit, fun _ => 7, fun a b _ => by cases a; cases b; rfl,
++    fun _ => ⟨.rational, vectorShape.axes⟩⟩
++
++inductive Op
++  | recip | nullary | mixed | rejectEmpty | identityArray
++
++@[reducible] def registry : Registry Carrier where
++  Op := Op
++  arity
++    | .recip | .rejectEmpty | .identityArray => 1
++    | .nullary => 0
++    | .mixed => 2
++  input
++    | .recip => fun _ => .scalar .rational
++    | .nullary => Fin.elim0
++    | .mixed => Fin.cases (.scalar .rational) (fun _ => .scalar .flag)
++    | .rejectEmpty => fun _ => .array .rational emptyShape
++    | .identityArray => fun _ => .array .rational vectorShape
++  output
++    | .identityArray => .array .rational vectorShape
++    | _ => .scalar .rational
++  domain
++    | .recip => fun xs => decide (xs 0 ≠ 0)
++    | .rejectEmpty => fun _ => false
++    | _ => fun _ => true
++  meaning
++    | .recip => fun xs _ => (xs 0)⁻¹
++    | .nullary => fun _ _ => 13
++    | .mixed => fun xs _ => by
++        have a : ℚ := by simpa using xs 0
++        have b : Bool := by simpa using xs 1
++        exact if b then a + 10 else a
++    | .rejectEmpty => fun _ _ => 99
++    | .identityArray => fun xs _ => xs 0
++
++abbrev E (Γ : Type) (τ : Ty ScalarSort) := Expr Carrier declarations registry Γ τ
++abbrev Scalar (Γ : Type) := E Γ (.scalar .rational)
++
++def strictPolicy : ReadPolicy ℚ vectorShape.axes where
++  resolve raw := if h : 0 ≤ raw 0 ∧ raw 0 < 3 then
++    .at (⟨(raw 0).toNat, by change (raw 0).toNat < 3; omega⟩, ()) else .reject
++  inBounds p := by
++    rcases p with ⟨i, u⟩
++    cases u
++    simp [Coord.raw, vectorShape]
++
++def constantPolicy : ReadPolicy ℚ vectorShape.axes where
++  resolve raw := if h : 0 ≤ raw 0 ∧ raw 0 < 3 then
++    .at (⟨(raw 0).toNat, by change (raw 0).toNat < 3; omega⟩, ()) else .const 9
++  inBounds p := by
++    rcases p with ⟨i, u⟩
++    cases u
++    simp [Coord.raw, vectorShape]
++
++def wrapPolicy : ReadPolicy ℚ vectorShape.axes where
++  resolve raw := .at (⟨(raw 0 % 3).toNat, by change (raw 0 % 3).toNat < 3; omega⟩, ())
++  inBounds p := by
++    rcases p with ⟨i, u⟩
++    cases u
++    simp [Coord.raw, vectorShape, Int.emod_eq_of_lt, i.isLt]
++
++def point (i : Fin 3) : Coord vectorShape.axes := (i, ())
++
++def direct {Γ : Type} (index : Γ → Fin 3) : Scalar Γ :=
++  .read () ⟨strictPolicy, fun γ => Coord.raw (point (index γ)),
++    fun γ => .at (point (index γ)), fun _ => strictPolicy.inBounds _⟩
++
++def constRead : Scalar Unit :=
++  .read () ⟨constantPolicy, fun _ _ => -1, fun _ => .const 9, by intro _; rfl⟩
++def remapRead : Scalar Unit :=
++  .read () ⟨wrapPolicy, fun _ _ => -1, fun _ => .at (point 2), by intro _; rfl⟩
++def store : Store Carrier declarations := fun a => [2, 5, 7].get a.2.1
++def partialStore : PartialStore Carrier declarations := fun a =>
++  if a.2.1.val = 0 then some 2 else none
++
++def bad {Γ : Type} : Scalar Γ := .prim (r := registry) Op.recip (fun _ => .lit 0)
++def zeroStrict : Scalar Unit := .binary .mul (.lit 0) bad
++def emptyReduction : Scalar Unit := .reduce 0 bad
++def emptyTab : E Unit (.array .rational emptyShape) :=
++  .tab emptyShape (canonicalLayout _) bad
++def outsideEmpty : Scalar Unit := .prim (r := registry) Op.rejectEmpty (fun _ => emptyTab)
++def nullary : Scalar Unit := .prim (r := registry) Op.nullary (fun i => nomatch i)
++def heterogeneous : Scalar Unit := .prim (r := registry) Op.mixed (by
++  intro i
++  refine Fin.cases ?_ (fun j => ?_) i
++  · exact .lit 4
++  · have hj : j = 0 := Subsingleton.elim _ _
++    subst j
++    exact .lit true)
++def strictArgument : Scalar Unit := .prim (r := registry) Op.mixed (by
++  intro i
++  refine Fin.cases ?_ (fun j => ?_) i
++  · exact bad
++  · have hj : j = 0 := Subsingleton.elim _ _
++    subst j
++    exact .lit false)
++def tabulated : E Unit (.array .rational vectorShape) :=
++  .tab vectorShape (canonicalLayout _)
++    (.binary .add (direct (fun γ => γ.2.1)) (.lit 1))
++def selected : Scalar Unit := .at tabulated (fun _ => point 1)
++def nonselectedUndefined : Scalar Unit :=
++  .at (.tab vectorShape (canonicalLayout _)
++    (.prim (r := registry) Op.recip (fun _ => .iverson (fun γ => γ.2.1.val == 0))))
++    (fun _ => point 0)
++def arrayPrimitive : Scalar Unit :=
++  .at (.prim (r := registry) Op.identityArray (fun _ => tabulated)) (fun _ => point 2)
++
++def nested : Scalar Unit :=
++  .reduce 2 (.reduce 3
++    (.binary .mul (direct (fun γ => γ.2))
++      (.binary .add (.iverson (fun γ => γ.1.2.val == 1)) (.lit 1))))
++def nestedSwapped : Scalar Unit :=
++  .reduce 2 (.reduce 3
++    (.binary .mul (direct (fun γ => ⟨γ.1.2.val, by omega⟩))
++      (.binary .add (.iverson (fun γ => γ.2.val == 1)) (.lit 1))))
++
++def scalarObservation (e : Scalar Unit) := interpret ops store e ()
++def readyObservation (e : Scalar Unit) : String :=
++  match evalReady ops partialStore e () with
++  | .notReady => "notReady"
++  | .evaluated none => "undefined"
++  | .evaluated (some x) => toString x
++
++#guard scalarObservation (direct (fun _ => 1)) == some 5
++#guard scalarObservation constRead == some 9
++#guard scalarObservation remapRead == some 7
++#guard (footprint constRead ()).isEmpty
++#guard (footprint remapRead ()).map (fun a => a.2.1.val) == [2]
++#guard readyObservation remapRead == "notReady"
++#guard readyObservation (direct (fun _ => 0)) == "2"
++#guard scalarObservation zeroStrict == none
++#guard readyObservation zeroStrict == "undefined"
++#guard scalarObservation emptyReduction == some 0
++#guard (interpret ops store emptyTab ()).isSome
++#guard (footprint emptyTab ()).isEmpty
++#guard scalarObservation outsideEmpty == none
++#guard scalarObservation nullary == some 13
++#guard scalarObservation heterogeneous == some 14
++#guard scalarObservation strictArgument == none
++#guard scalarObservation selected == some 6
++#guard scalarObservation arrayPrimitive == some 8
++#guard scalarObservation nonselectedUndefined == none
++#guard readyObservation selected == "notReady"
++#guard (footprint tabulated ()).map (fun a => a.2.1.val) == [0, 1, 2]
++#guard scalarObservation nested == some 42
++#guard scalarObservation nestedSwapped == some 28
++
++#eval [scalarObservation constRead, scalarObservation remapRead,
++  scalarObservation zeroStrict, scalarObservation emptyReduction,
++  scalarObservation outsideEmpty, scalarObservation nullary,
++  scalarObservation heterogeneous, scalarObservation selected,
++  scalarObservation nonselectedUndefined, scalarObservation nested,
++  scalarObservation nestedSwapped]
++#eval [readyObservation remapRead, readyObservation zeroStrict, readyObservation selected]
++
++end LeanNCD.Semantics.Fixtures
+diff --git a/leanncd/test/Semantics/NativeTest.lean b/leanncd/test/Semantics/NativeTest.lean
+new file mode 100644
+index 0000000..0a6b996
+--- /dev/null
++++ b/leanncd/test/Semantics/NativeTest.lean
+@@ -0,0 +1,69 @@
++import LeanNCD.Semantics
++import LeanNCD.Eval.Error
++import Mathlib.Analysis.Complex.Basic
++
++namespace LeanNCD.Semantics.NativeFixtures
++
++variable {K : Type}
++
++@[reducible] def noTensors : Declarations Unit where
++  Tensor := Empty
++  uid := Empty.elim
++  unique := by intro t; exact Empty.elim t
++  signature := Empty.elim
++
++def emptyStore : Store (fun _ : Unit => K) noTensors := fun a => Empty.elim a.1
++
++@[reducible] def unaryRegistry (fn : K → Option K) : Registry (fun _ : Unit => K) where
++  Op := Unit
++  arity := fun _ => 1
++  input := fun _ _ => .scalar ()
++  output := fun _ => .scalar ()
++  domain := fun _ xs => (fn (xs 0)).isSome
++  meaning := fun _ xs h => (fn (xs 0)).get (by simpa using h)
++
++def rounding (fn : K → Option K) (large one negative : K) :
++    Expr (fun _ : Unit => K) noTensors (unaryRegistry fn) Unit (.scalar ()) :=
++  .binary .add (.binary .add (.lit large) (.lit one)) (.lit negative)
++
++def reciprocal (fn : K → Option K) (x : K) :
++    Expr (fun _ : Unit => K) noTensors (unaryRegistry fn) Unit (.scalar ()) :=
++  .prim (r := unaryRegistry fn) () (fun _ => .lit x)
++
++def fn64 (x : Float) : Option Float := (UnaryOp.applyChecked .recip x).toOption
++def fn32 (x : Float32) : Option Float32 := (UnaryOp.applyChecked32 .recip x).toOption
++def ops64 : ScalarOps Float := ⟨0.0, 1.0, (· + ·), (· * ·)⟩
++def ops32 : ScalarOps Float32 :=
++  ⟨Float32.ofBits 0, Float32.ofBits 0x3f800000, (· + ·), (· * ·)⟩
++def result64 := interpret (fun _ => ops64) emptyStore
++  (rounding fn64 16777216.0 1.0 (-16777216.0)) ()
++def result32 := interpret (fun _ => ops32) emptyStore
++  (rounding fn32 (Float32.ofBits 0x4b800000) (Float32.ofBits 0x3f800000)
++    (Float32.ofBits 0xcb800000)) ()
++
++#guard result64.map Float.toBits == some 0x3ff0000000000000
++#guard result32.map Float32.toBits == some 0x00000000
++#guard (interpret (fun _ => ops64) emptyStore
++  (reciprocal fn64 2.0) ()).map Float.toBits == some 0x3fe0000000000000
++#guard (interpret (fun _ => ops32) emptyStore
++  (reciprocal fn32 (Float32.ofBits 0x40000000)) ()).map Float32.toBits == some 0x3f000000
++#guard !(interpret (fun _ => ops32) emptyStore
++  (reciprocal fn32 (Float32.ofBits 0)) ()).isSome
++
++noncomputable def complexOps : ScalarOps ℂ := ⟨0, 1, (· + ·), (· * ·)⟩
++noncomputable def complexRegistry : Registry (fun _ : Unit => ℂ) :=
++  unaryRegistry (fun x => some x)
++noncomputable def complexSquare :
++    Expr (fun _ : Unit => ℂ) noTensors complexRegistry Unit (.scalar ()) :=
++  .binary .mul (.lit Complex.I) (.lit Complex.I)
++
++theorem complex_square :
++    interpret (fun _ => complexOps) emptyStore complexSquare () =
++      some (-1 : ℂ) := by
++  change some (Complex.I * Complex.I) = _
++  rw [Complex.I_mul_I]
++
++#print axioms complex_square
++#eval (result64.map Float.toBits, result32.map Float32.toBits)
++
++end LeanNCD.Semantics.NativeFixtures
+diff --git a/papers/semantics/tensor_logic_semantic_core_spike_record.md b/papers/semantics/tensor_logic_semantic_core_spike_record.md
+index 52c5e77..a535400 100644
+--- a/papers/semantics/tensor_logic_semantic_core_spike_record.md
++++ b/papers/semantics/tensor_logic_semantic_core_spike_record.md
+@@ -14,7 +14,10 @@ categorical-index connection before selecting production interfaces.
+ The prototype is
+ [`TensorLogicSemanticCoreSpike.lean`](../../leanncd/LeanNCD/Semantics/TensorLogicSemanticCoreSpike.lean),
+ checked by the non-default `SemanticCoreSpike` Lake target. It is deliberately
+-not imported by `LeanNCD`, and default builds do not typecheck it.
++not imported by `LeanNCD`. At the original spike baseline, default builds did
++not typecheck it. The expression/readiness validation slice's
++`Semantics.ContractTest` now imports its formal-index witness, giving it
++indirect default-test coverage without making it a production import.
+ The existing production evaluator and backend capability guards are unchanged.
+ 
+ ## Baseline and setup
+@@ -173,9 +176,10 @@ bash .claude/skills/slice-plan/check-snippet.sh \
+ bash leanncd/scripts/lake-build.sh /path/to/worktree/leanncd
+ ```
+ 
+-The full default build completed successfully with 8,676 jobs. Default
+-targets remain `LeanNCD` and `Tests`; the separately checked spike target
+-is not silently covered by that build.
++The original spike's full default build completed successfully with 8,676
++jobs. Default targets remain `LeanNCD` and `Tests`; at that baseline the spike
++needed its separate check. The later expression/readiness slice adds the
++indirect coverage described above.
+ 
+ Printed axiom dependencies:
+ 

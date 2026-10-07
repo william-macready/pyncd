@@ -1,0 +1,388 @@
+diff --git a/leanncd/LeanNCD/Semantics.lean b/leanncd/LeanNCD/Semantics.lean
+new file mode 100644
+index 0000000..2f78907
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics.lean
+@@ -0,0 +1,2 @@
++import LeanNCD.Semantics.Readiness
++import LeanNCD.Semantics.Completeness
+diff --git a/leanncd/LeanNCD/Semantics/Completeness.lean b/leanncd/LeanNCD/Semantics/Completeness.lean
+new file mode 100644
+index 0000000..9b910d0
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Completeness.lean
+@@ -0,0 +1,197 @@
++import LeanNCD.Semantics.Readiness
++import Mathlib.Algebra.BigOperators.Fin
++
++namespace LeanNCD.Semantics
++
++variable {S : Type} {K : S → Type} {σ : Declarations S} {r : Registry K}
++  {Γ : Type} {s : S}
++
++theorem sequence_sound {n : Nat} {A : Fin n → Type}
++    (f : (i : Fin n) → Option (A i)) (v : (i : Fin n) → A i)
++    (h : sequence f = some v) : ∀ i, f i = some (v i) := by
++  induction n with
++  | zero => exact fun i => Fin.elim0 i
++  | succ n ih =>
++      cases h0 : f 0 with
++      | none => simp [sequence, h0] at h
++      | some x =>
++          cases ht : sequence (fun i => f i.succ) with
++          | none => simp [sequence, h0, ht] at h
++          | some xs =>
++              have hv : Fin.cases x xs = v := by simpa [sequence, h0, ht] using h
++              subst v
++              intro i
++              refine Fin.cases ?_ (fun j => ?_) i
++              · exact h0
++              · exact ih _ _ ht j
++
++theorem sequence_complete {n : Nat} {A : Fin n → Type}
++    (f : (i : Fin n) → Option (A i)) (v : (i : Fin n) → A i)
++    (h : ∀ i, f i = some (v i)) : sequence f = some v := by
++  induction n with
++  | zero =>
++      change some (fun i => nomatch i) = some v
++      apply congrArg some
++      funext i
++      exact Fin.elim0 i
++  | succ n ih =>
++      have ht := ih (fun i => f i.succ) (fun i => v i.succ) (fun i => h i.succ)
++      simp only [sequence, h 0, ht]
++      change some (Fin.cases (v 0) (fun i => v i.succ)) = some v
++      apply congrArg some
++      funext i
++      exact Fin.cases rfl (fun _ => rfl) i
++
++theorem sequence_some_iff {n : Nat} {A : Fin n → Type}
++    (f : (i : Fin n) → Option (A i)) (v : (i : Fin n) → A i) :
++    sequence f = some v ↔ ∀ i, f i = some (v i) :=
++  ⟨sequence_sound f v, sequence_complete f v⟩
++
++theorem tab_complete (ops : (s : S) → ScalarOps (K s))
++    (p : PartialStore K σ) (sh : ArrayShape) (layout : Layout sh.axes)
++    (body : Expr K σ r (Γ × Coord sh.axes) (.scalar s)) (γ : Γ)
++    (v : Coord sh.axes → K s) :
++    evalWith ops p (.tab sh layout body) γ = some v ↔
++      ∀ c, evalWith ops p body (γ, c) = some (v c) := by
++  constructor
++  · intro h
++    cases ht : sequence (fun i => evalWith ops p body (γ, layout.enumerate i)) with
++    | none => simp [evalWith, ht] at h
++    | some xs =>
++        have hv : (fun c => xs (layout.enumerate.symm c)) = v := by
++          simpa [evalWith, ht] using h
++        subst v
++        intro c
++        simpa using sequence_sound _ xs ht (layout.enumerate.symm c)
++  · intro h
++    have ht := sequence_complete
++      (fun i => evalWith ops p body (γ, layout.enumerate i))
++      (fun i => v (layout.enumerate i)) (fun i => h _)
++    simp [evalWith, ht]
++
++theorem foldValues_defined_iff {V : Type} (ops : ScalarOps V)
++    (xs : List (Option V)) :
++    (foldValues ops xs).isSome = true ↔ ∀ x ∈ xs, x.isSome = true := by
++  induction xs with
++  | nil => simp [foldValues]
++  | cons x xs ih =>
++      cases x <;> cases hf : foldValues ops xs <;> simp_all [foldValues]
++
++theorem reduce_defined_iff (ops : (s : S) → ScalarOps (K s))
++    (p : PartialStore K σ) (n : Nat)
++    (body : Expr K σ r (Γ × Fin n) (.scalar s)) (γ : Γ) :
++    (evalWith ops p (.reduce n body) γ).isSome = true ↔
++      ∀ i, (evalWith ops p body (γ, i)).isSome = true := by
++  simp [evalWith, foldValues_defined_iff]
++
++theorem reduce_empty (ops : (s : S) → ScalarOps (K s))
++    (p : PartialStore K σ)
++    (body : Expr K σ r (Γ × Fin 0) (.scalar s)) (γ : Γ) :
++    evalWith ops p (.reduce 0 body) γ = some (ops s).zero := by
++  simp [evalWith, foldValues]
++
++theorem foldValues_some_map_sum {V : Type} [AddCommMonoid V]
++    (ops : ScalarOps V) (zero : ops.zero = 0) (add : ops.add = (· + ·))
++    (xs : List V) :
++    foldValues ops (xs.map some) = some xs.sum := by
++  induction xs with
++  | nil => simp [foldValues, zero]
++  | cons x xs ih => simp [foldValues, ih, add]
++
++/- Only the selected sort needs additive laws; ordered native-float folds
++   and read stability require no algebraic instance. -/
++theorem reduce_sum [AddCommMonoid (K s)]
++    (ops : (s : S) → ScalarOps (K s)) (p : PartialStore K σ)
++    (zero : (ops s).zero = 0) (add : (ops s).add = (· + ·))
++    (n : Nat) (body : Expr K σ r (Γ × Fin n) (.scalar s)) (γ : Γ)
++    (v : Fin n → K s) (body_values : ∀ i, evalWith ops p body (γ, i) = some (v i)) :
++    evalWith ops p (.reduce n body) γ = some (∑ i, v i) := by
++  calc
++    evalWith ops p (.reduce n body) γ =
++        foldValues (ops s) ((List.finRange n).map (fun i => some (v i))) := by
++      simp only [evalWith, body_values]
++    _ = some (((List.finRange n).map v).sum) := by
++      simpa only [List.map_map] using
++        foldValues_some_map_sum (ops s) zero add ((List.finRange n).map v)
++    _ = some (∑ i, v i) := by rw [Fin.sum_univ_def]
++
++theorem interpret_reduce_sum [AddCommMonoid (K s)]
++    (ops : (s : S) → ScalarOps (K s)) (ρ : Store K σ)
++    (zero : (ops s).zero = 0) (add : (ops s).add = (· + ·))
++    (n : Nat) (body : Expr K σ r (Γ × Fin n) (.scalar s)) (γ : Γ)
++    (v : Fin n → K s) (body_values : ∀ i, interpret ops ρ body (γ, i) = some (v i)) :
++    interpret ops ρ (.reduce n body) γ = some (∑ i, v i) :=
++  reduce_sum ops (fun a => some (ρ a)) zero add n body γ v body_values
++
++theorem at_some_iff (ops : (s : S) → ScalarOps (K s))
++    (p : PartialStore K σ) (sh : ArrayShape)
++    (e : Expr K σ r Γ (.array s sh)) (index : Γ → Coord sh.axes)
++    (γ : Γ) (v : K s) :
++    evalWith ops p (.at e index) γ = some v ↔
++      ∃ xs, evalWith ops p e γ = some xs ∧ xs (index γ) = v := by
++  constructor
++  · intro h
++    cases he : evalWith ops p e γ with
++    | none => simp [evalWith, he] at h
++    | some xs => exact ⟨xs, rfl, by simpa [evalWith, he] using h⟩
++  · rintro ⟨xs, he, hv⟩
++    simp [evalWith, he, hv]
++
++theorem registry_apply_some_iff (f : r.Op)
++    (xs : (i : Fin (r.arity f)) → Value K (r.input f i))
++    (v : Value K (r.output f)) :
++    r.apply f xs = some v ↔
++      ∃ h : r.domain f xs = true, r.meaning f xs h = v := by
++  by_cases h : r.domain f xs = true <;> simp [Registry.apply, h]
++
++theorem prim_some_iff (ops : (s : S) → ScalarOps (K s))
++    (p : PartialStore K σ) (f : r.Op)
++    (args : (i : Fin (r.arity f)) → Expr K σ r Γ (r.input f i))
++    (γ : Γ) (v : Value K (r.output f)) :
++    evalWith ops p (.prim f args) γ = some v ↔
++      ∃ xs : (i : Fin (r.arity f)) → Value K (r.input f i),
++        (∀ i, evalWith ops p (args i) γ = some (xs i)) ∧
++          ∃ h : r.domain f xs = true, r.meaning f xs h = v := by
++  constructor
++  · intro h
++    cases hs : sequence (fun i => evalWith ops p (args i) γ) with
++    | none => simp [evalWith, hs] at h
++    | some xs =>
++        exact ⟨xs, sequence_sound _ xs hs,
++          (registry_apply_some_iff f xs v).mp (by simpa [evalWith, hs] using h)⟩
++  · rintro ⟨xs, hargs, hmeaning⟩
++    have hs := sequence_complete (fun i => evalWith ops p (args i) γ) xs hargs
++    simpa [evalWith, hs] using (registry_apply_some_iff f xs v).mpr hmeaning
++
++/- The default supplies a mathematical extension, not an evaluator fallback. -/
++theorem ready_complete_extension (ops : (s : S) → ScalarOps (K s))
++    {τ : Ty S} (p : PartialStore K σ) (e : Expr K σ r Γ τ) (γ : Γ)
++    (ready : Ready p e γ) :
++    ∃ ρ : Store K σ,
++      (∀ a x, p a = some x → ρ a = x) ∧
++        ∀ a ∈ footprint e γ, p a = some (ρ a) := by
++  let ρ : Store K σ := fun a => (p a).getD (ops (σ.signature a.1).sort).zero
++  refine ⟨ρ, ?_, ?_⟩
++  · intro a x hx
++    simp [ρ, hx]
++  · intro a ha
++    cases hp : p a with
++    | none =>
++        have h := ready a ha
++        simp [hp] at h
++    | some x => simp [ρ, hp]
++
++#print axioms sequence_some_iff
++#print axioms tab_complete
++#print axioms foldValues_defined_iff
++#print axioms reduce_defined_iff
++#print axioms reduce_empty
++#print axioms foldValues_some_map_sum
++#print axioms reduce_sum
++#print axioms interpret_reduce_sum
++#print axioms at_some_iff
++#print axioms registry_apply_some_iff
++#print axioms prim_some_iff
++#print axioms ready_complete_extension
++
++end LeanNCD.Semantics
+diff --git a/leanncd/LeanNCD/Semantics/Interpret.lean b/leanncd/LeanNCD/Semantics/Interpret.lean
+new file mode 100644
+index 0000000..f15af7e
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Interpret.lean
+@@ -0,0 +1,68 @@
++import LeanNCD.Semantics.Expr
++
++namespace LeanNCD.Semantics
++
++variable {S : Type} {K : S → Type} {σ : Declarations S} {r : Registry K}
++
++def sequence : {n : Nat} → {A : Fin n → Type} →
++    ((i : Fin n) → Option (A i)) → Option ((i : Fin n) → A i)
++  | 0, _, _ => some (fun i => nomatch i)
++  | _ + 1, _, f => do
++      let x ← f 0
++      let xs ← sequence (fun i => f i.succ)
++      pure (Fin.cases x xs)
++
++def foldValues {V : Type} (ops : ScalarOps V) : List (Option V) → Option V
++  | [] => some ops.zero
++  | x :: xs => do
++      let a ← x
++      let b ← foldValues ops xs
++      pure (ops.add a b)
++
++def footprint : {Γ : Type} → {τ : Ty S} → Expr K σ r Γ τ → Γ → List (Address σ)
++  | _, _, .lit _, _ => []
++  | _, _, .read t access, γ =>
++      match access.resolved γ with
++      | .at p => [⟨t, p⟩]
++      | .const _ => []
++  | _, _, .iverson _, _ => []
++  | _, _, .binary _ l e, γ => footprint l γ ++ footprint e γ
++  | _, _, .reduce n body, γ =>
++      (List.finRange n).flatMap (fun i => footprint body (γ, i))
++  | _, _, .tab _ layout body, γ =>
++      (List.finRange layout.count).flatMap
++        (fun i => footprint body (γ, layout.enumerate i))
++  | _, _, .at e _, γ => footprint e γ
++  | _, _, .prim f args, γ =>
++      (List.finRange (r.arity f)).flatMap (fun i => footprint (args i) γ)
++
++def evalWith (ops : (s : S) → ScalarOps (K s))
++    (store : PartialStore K σ) :
++    {Γ : Type} → {τ : Ty S} → Expr K σ r Γ τ → Γ → Option (Value K τ)
++  | _, _, .lit x, _ => some x
++  | _, _, .read t access, γ =>
++      match access.resolved γ with
++      | .at p => store ⟨t, p⟩
++      | .const c => some c
++  | _, _, .iverson q, γ => some (if q γ then (ops _).one else (ops _).zero)
++  | _, _, .binary b l e, γ => do
++      let x ← evalWith ops store l γ
++      let y ← evalWith ops store e γ
++      pure ((ops _).combine b x y)
++  | _, _, .reduce n body, γ =>
++      foldValues (ops _) ((List.finRange n).map (fun i => evalWith ops store body (γ, i)))
++  | _, _, .tab _ layout body, γ => do
++      let xs ← sequence (fun i => evalWith ops store body (γ, layout.enumerate i))
++      pure (fun p => xs (layout.enumerate.symm p))
++  | _, _, .at e index, γ => do
++      let xs ← evalWith ops store e γ
++      pure (xs (index γ))
++  | _, _, .prim f args, γ => do
++      let xs ← sequence (fun i => evalWith ops store (args i) γ)
++      r.apply f xs
++
++def interpret (ops : (s : S) → ScalarOps (K s)) (store : Store K σ)
++    (e : Expr K σ r Γ τ) (γ : Γ) : Option (Value K τ) :=
++  evalWith ops (fun a => some (store a)) e γ
++
++end LeanNCD.Semantics
+diff --git a/leanncd/LeanNCD/Semantics/Readiness.lean b/leanncd/LeanNCD/Semantics/Readiness.lean
+new file mode 100644
+index 0000000..f69a93c
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Readiness.lean
+@@ -0,0 +1,97 @@
++import LeanNCD.Semantics.Interpret
++
++namespace LeanNCD.Semantics
++
++variable {S : Type} {K : S → Type} {σ : Declarations S} {r : Registry K}
++  {Γ : Type} {τ : Ty S}
++
++theorem evalWith_stable (ops : (s : S) → ScalarOps (K s))
++    (e : Expr K σ r Γ τ) (γ : Γ) (p q : PartialStore K σ)
++    (agree : ∀ a ∈ footprint e γ, p a = q a) :
++    evalWith ops p e γ = evalWith ops q e γ := by
++  induction e with
++  | lit x => rfl
++  | read t access =>
++      cases h : access.resolved γ with
++      | «at» c =>
++          simpa only [evalWith, h] using agree ⟨t, c⟩ (by simp [footprint, h])
++      | const c => simp only [evalWith, h]
++  | iverson pred => rfl
++  | binary b l e ihl ihe =>
++      simp only [evalWith]
++      rw [ihl γ (fun a ha => agree a (List.mem_append_left _ ha)),
++        ihe γ (fun a ha => agree a (List.mem_append_right _ ha))]
++  | reduce n body ih =>
++      simp only [evalWith]
++      congr 1
++      apply List.map_congr_left
++      intro i hi
++      apply ih (γ, i)
++      intro a ha
++      exact agree a (List.mem_flatMap.mpr ⟨i, hi, ha⟩)
++  | tab sh layout body ih =>
++      have hb : (fun i => evalWith ops p body (γ, layout.enumerate i)) =
++          (fun i => evalWith ops q body (γ, layout.enumerate i)) := by
++        funext i
++        apply ih (γ, layout.enumerate i)
++        intro a ha
++        exact agree a (List.mem_flatMap.mpr ⟨i, List.mem_finRange i, ha⟩)
++      simp only [evalWith, hb]
++  | «at» e index ih =>
++      simp only [evalWith]
++      rw [ih γ agree]
++  | prim f args ih =>
++      have hb : (fun i => evalWith ops p (args i) γ) =
++          (fun i => evalWith ops q (args i) γ) := by
++        funext i
++        apply ih i γ
++        intro a ha
++        exact agree a (List.mem_flatMap.mpr ⟨i, List.mem_finRange i, ha⟩)
++      simp only [evalWith, hb]
++
++theorem interpret_stable (ops : (s : S) → ScalarOps (K s))
++    (e : Expr K σ r Γ τ) (γ : Γ) (p q : Store K σ)
++    (agree : ∀ a ∈ footprint e γ, p a = q a) :
++    interpret ops p e γ = interpret ops q e γ :=
++  evalWith_stable ops e γ _ _ (fun a ha => congrArg some (agree a ha))
++
++def Ready (p : PartialStore K σ) (e : Expr K σ r Γ τ) (γ : Γ) : Prop :=
++  ∀ a ∈ footprint e γ, (p a).isSome = true
++
++def checkReads (p : PartialStore K σ) : List (Address σ) → Bool
++  | [] => true
++  | a :: as => (p a).isSome && checkReads p as
++
++inductive ReadyResult (V : Type)
++  | notReady
++  | evaluated : Option V → ReadyResult V
++
++def evalReady (ops : (s : S) → ScalarOps (K s)) (p : PartialStore K σ)
++    (e : Expr K σ r Γ τ) (γ : Γ) : ReadyResult (Value K τ) :=
++  if checkReads p (footprint e γ) then .evaluated (evalWith ops p e γ) else .notReady
++
++theorem checkReads_iff (p : PartialStore K σ) (as : List (Address σ)) :
++    checkReads p as = true ↔ ∀ a ∈ as, (p a).isSome = true := by
++  induction as with
++  | nil => simp [checkReads]
++  | cons a as ih => simp [checkReads, ih]
++
++theorem ready_consistent (ops : (s : S) → ScalarOps (K s))
++    (e : Expr K σ r Γ τ) (γ : Γ) (p : PartialStore K σ) (ρ : Store K σ)
++    (extension : ∀ a ∈ footprint e γ, p a = some (ρ a)) :
++    evalReady ops p e γ = .evaluated (interpret ops ρ e γ) := by
++  have ready : checkReads p (footprint e γ) = true :=
++    (checkReads_iff p _).mpr (fun a ha => by simp [extension a ha])
++  simp only [evalReady, ready, ↓reduceIte]
++  exact congrArg ReadyResult.evaluated (evalWith_stable ops e γ p _ extension)
++
++theorem notReady_iff (ops : (s : S) → ScalarOps (K s))
++    (e : Expr K σ r Γ τ) (γ : Γ) (p : PartialStore K σ) :
++    evalReady ops p e γ = .notReady ↔ ¬ Ready p e γ := by
++  simp [evalReady, Ready, ← checkReads_iff]
++
++#print axioms evalWith_stable
++#print axioms interpret_stable
++#print axioms ready_consistent
++
++end LeanNCD.Semantics
