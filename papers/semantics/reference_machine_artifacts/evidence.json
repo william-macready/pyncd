@@ -1,0 +1,255 @@
+{
+  "status": "compiled_prototype_not_released",
+  "baseline": "53bcbbd610a1791a5a769a40e33fd47b5a3abc7e",
+  "candidate_branch": "reference-machine-soundness-proto",
+  "candidate_worktree": "/Users/williammacready/code/python/pyncd.worktrees/reference-machine-soundness-proto",
+  "candidate_tree": "f5ae8635700b025128567bc7c72eff32deedce6e",
+  "task_commits": {
+    "01-machine": "82eba635c9c25f39e0f94358b9d8d8893070ad62",
+    "02-invariants-soundness": "e70aa2d9dfb8d723a0cabdae38dab2ac2aaa5240",
+    "03-fixtures-integration": "1c99cf0fad676268961e6ba201d15fa718adc1bd"
+  },
+  "task_split": "Requested three independently rejectable groups retained. Machine definitions, generic invariants/soundness, and fixture/integration surfaces are separate compiled commits.",
+  "authority": {
+    "file": "papers/semantics/tensor_logic_semantics.md",
+    "sections": ["24", "25", "26.1", "26.2", "26.3"],
+    "read_windows": [[2949,3008],[3009,3068],[3069,3128],[3129,3188],[3189,3221]]
+  },
+  "representation": {
+    "running_fields": ["published : PartialStore K sigma", "accumulators : P.Accumulator", "pending : P.Pending"],
+    "pending": "Dependent family of finite sets of the exact existing P.Occurrence t tags. Finitely many tensors and finitely many statement/valuation tags; no tag quotient.",
+    "history": "Existential proof-only P.History in StateInvariant, not a public running-state field.",
+    "algebra": "Only forall t : P.Defined, AddCommMonoid (K (sigma.signature t.val).sort). ScalarOps is independent explicit data.",
+    "inputs": "Existing P.Input validation reused verbatim, including tensor-level empty-input presence.",
+    "scheduler": "None. Step and Reaches are logical relations."
+  },
+  "common_theorem_parameters": {
+    "types": "{K : S -> Type} {sigma : Declarations S} {r : Registry K}",
+    "program": "P : Program K sigma r",
+    "operations": "ops : (s : S) -> ScalarOps (K s)",
+    "algebra": "[forall t : P.Defined, AddCommMonoid (K (sigma.signature t.val).sort)]",
+    "input": "eta : P.Input"
+  },
+  "theorems": [
+    {
+      "name": "LeanNCD.Semantics.Program.reachable_invariant",
+      "hypotheses": ["s : P.MachineState", "reached : P.Reaches ops (.running (P.initial eta)) s"],
+      "conclusion": "P.StateInvariant ops eta s",
+      "content": "Input immutability, published defined fiber completion and equality to retained accumulator, exact tagged finite consumed-value conservation, and read-stable consumed outcomes."
+    },
+    {
+      "name": "LeanNCD.Semantics.Program.successful_model",
+      "hypotheses": ["c : P.Running", "success : P.Successful ops eta c"],
+      "conclusion": "P.Models ops eta (P.finalStore c success.2)",
+      "expanded_success": "Reachability from validated initialization AND no pending tags AND every declared address published. No model/rank witness."
+    },
+    {
+      "name": "LeanNCD.Semantics.Program.candidate_preserved",
+      "hypotheses": ["rho : Store K sigma", "model : P.Models ops eta rho", "s : P.MachineState", "reached : P.Reaches ops (.running (P.initial eta)) s"],
+      "conclusion": "P.CandidateAgreement rho s",
+      "content": "Published values agree with every candidate model in running states; failed states imply False."
+    },
+    {
+      "name": "LeanNCD.Semantics.Program.successful_unique",
+      "hypotheses": ["c : P.Running", "success : P.Successful ops eta c"],
+      "conclusion": "forall rho, P.Models ops eta rho -> rho = P.finalStore c success.2"
+    },
+    {
+      "name": "LeanNCD.Semantics.Program.successful_admInput",
+      "hypotheses": ["c : P.Running", "success : P.Successful ops eta c"],
+      "conclusion": "P.AdmInput ops eta"
+    },
+    {
+      "name": "LeanNCD.Semantics.Program.successful_denotation",
+      "hypotheses": ["c : P.Running", "success : P.Successful ops eta c"],
+      "conclusion": "P.denotation ops eta (P.successful_admInput ops eta c success) = P.outputProjection (P.finalStore c success.2)"
+    },
+    {
+      "name": "LeanNCD.Semantics.Program.failed_no_model",
+      "hypotheses": ["t : P.Defined", "o : P.Occurrence t", "c : P.Running", "reached : P.Reaches ops (.running (P.initial eta)) (.failed t o c)"],
+      "conclusion": "not exists rho, P.Models ops eta rho",
+      "restriction": "UNDEFINED requires a pending tag and evalReady = evaluated none; not arbitrary undefined bodies or dependency blocking."
+    }
+  ],
+  "production_files": [
+    "leanncd/LeanNCD/Semantics/Machine.lean",
+    "leanncd/LeanNCD/Semantics/Invariants.lean",
+    "leanncd/LeanNCD/Semantics/Soundness.lean"
+  ],
+  "integration_files": [
+    "leanncd/test/Semantics/ReferenceMachineTest.lean",
+    "leanncd/LeanNCD/Semantics.lean",
+    "leanncd/lakefile.toml",
+    "leanncd/LeanNCD/Semantics/AGENTS.md",
+    "leanncd/AGENTS.md"
+  ],
+  "protected_inputs": [
+    "leanncd/LeanNCD/Semantics/Types.lean",
+    "leanncd/LeanNCD/Semantics/Expr.lean",
+    "leanncd/LeanNCD/Semantics/Interpret.lean",
+    "leanncd/LeanNCD/Semantics/Readiness.lean",
+    "leanncd/LeanNCD/Semantics/Completeness.lean",
+    "leanncd/LeanNCD/Semantics/Collection.lean",
+    "leanncd/LeanNCD/Semantics/Program.lean",
+    "leanncd/LeanNCD/Semantics/Models.lean",
+    "leanncd/test/Semantics/ExpressionTest.lean",
+    "leanncd/test/Semantics/CollectionModelTest.lean",
+    "papers/semantics/tensor_logic_semantics.md",
+    "leanncd/scripts/lake-build.sh",
+    "leanncd/scripts/lean-file.sh",
+    "leanncd/scripts/mutation-manifest.sh",
+    "leanncd/scripts/mutation-cycle.sh",
+    ".claude/skills/new-slice/prepare-worktree.sh"
+  ],
+  "fixture_counts": {
+    "distinct_program_constructions": 12,
+    "named_theorem_assertions": 33,
+    "counting_rule": "Top-level theorem declarations in ReferenceMachineTest only; conjunctions count once. Helpers/reachability witnesses are included; imported donor assertions and #print commands are excluded.",
+    "fixture_namespace": "LeanNCD.Semantics.ReferenceMachineFixtures"
+  },
+  "donor_mapping": [
+    {"construction":"duplicate","donor":"CollectionModelFixtures.duplicate + Fixtures.ops/point","change":"Initialize, consume both statement tags, publish all three coordinates; compare reverse order."},
+    {"construction":"collision","donor":"CollectionModelFixtures.collision","change":"Compare consumes 0,1,2 and 2,1,0; same accumulated family and observed destination-zero sum."},
+    {"construction":"noStatements","donor":"CollectionModelFixtures.noStatements","change":"Explicitly publish unwritten coordinate one."},
+    {"construction":"zP","donor":"CollectionModelFixtures.partialProgram true true","change":"Successfully consume zero and pin exact tag erasure."},
+    {"construction":"badP","donor":"CollectionModelFixtures.partialProgram true false","change":"Reach located UNDEFINED, retain tag, prove terminal and no models."},
+    {"construction":"excludedP","donor":"CollectionModelFixtures.partialProgram false false","change":"Prove no admitted occurrence exists."},
+    {"construction":"dependentP","donor":"CollectionModelFixtures.expressionProgram + Fixtures.direct","change":"Two statements: literal at zero and dependent read into one; populated accumulator does not enable read until publication."},
+    {"construction":"waitingBad","donor":"Fixtures.direct + Fixtures.bad via expressionProgram","change":"Unavailable read plus undefined primitive in same strict body, so readiness must dominate."},
+    {"construction":"cycleP","donor":"Fixtures.direct via expressionProgram","change":"Self-read into zero; publish unrelated empty fibers, prove blocked and a complete model exists."},
+    {"construction":"roleProgram","donor":"CollectionModelFixtures.roleProgram/supplied/presentEmpty","change":"Publish output then nonoutput, pin that only final state completes."},
+    {"construction":"valuationP","donor":"CollectionModelFixtures.expressionProgram/duplicate","change":"One statement, two admitted valuations, identical literal/destination; erasing valuation zero retains valuation one."},
+    {"construction":"scalarRole","donor":"CollectionModelFixtures.roleProgram/roleDeclarations","change":"Replace empty input shape by scalar shape, supply seven; publish a defined scalar and preserve input coordinate."}
+  ],
+  "observed_outputs": {
+    "donor_collection_eval": "[4, 9, 0, 0, 9, 5, 14, 3 / 4]",
+    "reference_ready_eval": "[\"notReady\", \"notReady\", \"undefined\"]",
+    "reference_donor_ready_eval": "[\"undefined\", \"notReady\"]",
+    "kernel_checked_values": {
+      "duplicate_sum":"4",
+      "collision_sum":"9",
+      "unwritten_zero":"some 0",
+      "dependent_waits":"accumulator 2 AND notReady",
+      "dependent_reads_published":"evaluated (some 2)",
+      "input_present_and_defined_absent":"some 7 AND none"
+    },
+    "note":"Numeric duplicate/collision assertions were added only after exact donor #eval outputs were observed. State updates are noncomputable logical functions, so their observations are kernel-checked theorem assertions, not runtime scheduler output."
+  },
+  "case_rule_class_table": [
+    {"case":"pending ready defined body","contribute":"required","publish":"forbidden while its destination fiber has a pending tag","undefined":"forbidden"},
+    {"case":"only first duplicate consumed","contribute":"required for remaining tag when ready","publish":"forbidden at shared destination","undefined":"forbidden for literal"},
+    {"case":"same consumed tag selected again","contribute":"forbidden","publish":"depends on other tags","undefined":"forbidden for consumed tag"},
+    {"case":"unwritten defined coordinate","contribute":"silently ignored: no occurrence exists","publish":"required explicit available-zero transition","undefined":"silently ignored: no occurrence exists"},
+    {"case":"already published coordinate","contribute":"forbidden for its already exhausted fiber on reachable states","publish":"forbidden overwrite","undefined":"forbidden for exhausted fiber"},
+    {"case":"populated but unpublished dependency","contribute":"forbidden for dependent body","publish":"required if the dependency fiber is exhausted","undefined":"forbidden: notReady"},
+    {"case":"successful zero body","contribute":"required, erases exact tag","publish":"forbidden before consume at destination","undefined":"forbidden"},
+    {"case":"pending ready undefined primitive","contribute":"forbidden","publish":"forbidden at that pending destination","undefined":"required, retains tag and snapshot"},
+    {"case":"unavailable read plus undefined primitive","contribute":"forbidden","publish":"not an expression rule","undefined":"forbidden: unavailable read dominates"},
+    {"case":"guard-excluded undefined body","contribute":"silently ignored: no admitted occurrence","publish":"required for empty fiber","undefined":"silently ignored: no admitted occurrence"},
+    {"case":"empty supplied input tensor","contribute":"silently ignored: no defined/input-write occurrence","publish":"forbidden: inputs are not defined targets","undefined":"silently ignored: no coordinates"},
+    {"case":"unpublished nonoutput defined coordinate","contribute":"depends on its pending body tags","publish":"required for completion","undefined":"depends only on pending ready failures"},
+    {"case":"cyclic blocked state with model","contribute":"forbidden: reads unavailable","publish":"forbidden for remaining cyclic destination","undefined":"forbidden: blocking is not undefinedness"},
+    {"case":"failed state","contribute":"forbidden","publish":"forbidden","undefined":"forbidden"}
+  ],
+  "builds": {
+    "baseline_LeanNCD_refresh":"PASS",
+    "targeted_machine_invariants_soundness":"PASS",
+    "Semantics.CollectionModelTest":"PASS",
+    "Semantics.ReferenceMachineTest":"PASS",
+    "default_LeanNCD_and_Tests":"PASS: 8694 jobs",
+    "snippet_verification":"PASS: check-snippet.sh on all three production sources and ReferenceMachineTest, in disposable cwd; scratch files removed by wrapper."
+  },
+  "axiom_inventory": {
+    "printed_generic_theorems":["reachable_invariant","successful_model","candidate_preserved","successful_unique","successful_admInput","successful_denotation","failed_no_model"],
+    "each_generic_theorem":["propext","Classical.choice","Quot.sound"],
+    "printed_fixtures":["duplicate_model_without_witness","failure_excludes_models","cycle_blocked"],
+    "each_printed_fixture":["propext","Classical.choice","Quot.sound"],
+    "new_sorry_axioms_native_decide":false,
+    "baseline_warnings":"Full build retains pre-existing sorry warnings in Base.St, Base.Br, Core.Weave and Instances.StBr; those do not appear in the new theorem inventories."
+  },
+  "mutations": {
+    "manifest":"papers/semantics/reference_machine_mutations_post.json",
+    "unique_observed_cycles":12,
+    "semantic_runtime_fixture_kills":0,
+    "kernel_proof_rejections":12,
+    "byte_identical_restores":12,
+    "restored_green_builds":12,
+    "classification":{
+      "M01":"publication barrier premise proof rejection",
+      "M02":"no-overwrite premise proof rejection",
+      "M03":"pending/double-consume premise proof rejection",
+      "M04":"defined evaluation premise proof rejection",
+      "M05":"erasure conservation proof rejection",
+      "M06":"value update conservation proof rejection",
+      "M07":"retained prior-sum conservation proof rejection",
+      "M08":"published value/accumulator agreement proof rejection",
+      "M09":"retained accumulator invariant proof rejection",
+      "M10":"ready-failure reachability invariant proof rejection",
+      "M11":"complete-store extraction proof/type rejection at output-only boundary",
+      "M12":"valuation multiplicity / initial consumed-outcome proof rejection"
+    },
+    "expect_method":"Exact error strings copied from actual mutation-manifest discovery failures; final manifest --check PASS; emit-patches.py --observations validates each expect against its own observed mutated log segment. No runtime regression claim.",
+    "future_execution":"After task 02 is applied (Soundness target must exist), run the manifest against that disposable checkout. Task 03 fixtures are not required for these proof-rejection cycles."
+  },
+  "raw_logs_directory":"/Users/williammacready/.copilot/session-state/c6866930-15ab-4eb1-8ab1-0ea2f842808e/files",
+  "raw_logs":["reference-machine-mutations.log","reference-machine-mutations-table.md","reference-machine-full-build.log"],
+  "limitations":[
+    "No measure, termination, ranks, progress/maximal-run completeness, cyclic solver, executable scheduler, executor/backend/DSL change, source elaboration, or full categorical interpretation.",
+    "The forbidden duplicate/overwrite assertions pin constructor eligibility premises (tag membership, empty fiber, unpublished value), not a separate labeled-transition API; legal transition witnesses and generic invariants pin their use.",
+    "The cyclic fixture proves blocking and model existence but does not package reachability of its unrelated empty-fiber publications as a separate theorem.",
+    "Mutation kills happen before fixture execution: all twelve are proof/type rejections, not independent runtime/differential oracle regressions.",
+    "The mutation wrapper retained cycle summaries and exact diagnostic lines in the session log, but deletes its temporary full mutated-build logs. The full default-build verbose log is retained. Final expect strings were checked against observed cycle segments, not by repeating all twelve cycles after populating expect.",
+    "Two new unused-section-variable warnings and one fixture unused-simp warning remain; no correctness check is skipped.",
+    "No written implementation plan, merge, push, release, or controller implementation-source edit. Disposable branch/worktree retained for replay and review.",
+    "Budget measurement helper returned 'no transcript for session'; cumulative/peak tokens cannot be independently measured by that script in this host. No nested agents were used."
+  ],
+  "blockers":[],
+  "checkpoint": {
+    "requested_at": "2026-10-07T16:13:11.598-07:00",
+    "status": "Prototype complete; implementation/exploration stopped. Only this checkpoint persistence follows the request.",
+    "compiled_generic_theorems": [
+      "LeanNCD.Semantics.Program.reachable_invariant",
+      "LeanNCD.Semantics.Program.successful_model",
+      "LeanNCD.Semantics.Program.candidate_preserved",
+      "LeanNCD.Semantics.Program.successful_unique",
+      "LeanNCD.Semantics.Program.successful_admInput",
+      "LeanNCD.Semantics.Program.successful_denotation",
+      "LeanNCD.Semantics.Program.failed_no_model"
+    ],
+    "remaining_generic_proof_obligations": [],
+    "current_failed_checks": [],
+    "task_commits": [
+      "82eba635c9c25f39e0f94358b9d8d8893070ad62",
+      "e70aa2d9dfb8d723a0cabdae38dab2ac2aaa5240",
+      "1c99cf0fad676268961e6ba201d15fa718adc1bd"
+    ],
+    "artifacts": [
+      "papers/semantics/reference_machine_patches/01-machine.patch",
+      "papers/semantics/reference_machine_patches/02-invariants-soundness.patch",
+      "papers/semantics/reference_machine_patches/03-fixtures-integration.patch",
+      "papers/semantics/reference_machine_artifacts/evidence.json",
+      "papers/semantics/reference_machine_artifacts/emit-patches.py",
+      "papers/semantics/reference_machine_artifacts/replay-audit.json",
+      "papers/semantics/reference_machine_mutations_post.json"
+    ],
+    "validation": "Targeted builds, four snippet checks, full default build (8694 jobs), exact candidate-tree sequential patch replay, and artifact consistency passed.",
+    "fixtures": "12 program constructions; 33 named theorem assertions; witness-free success model and ready-failure no-model fixtures kernel-checked.",
+    "mutations": "12 distinct observed cycles; all proof/type rejections; all byte-identical restores and restored builds green. Final expect strings checked against observed cycle segments, not a second execution of the populated manifest.",
+    "axioms": ["propext", "Classical.choice", "Quot.sound"],
+    "controller_followup": "Independent mutation execution and final review remain with the controller; neither is claimed completed here.",
+    "budget_warning": {
+      "harness_reported_tool_calls_at_request": 76,
+      "additional_checkpoint_write_calls": 1,
+      "previous_manual_assistant_tool_turn_estimate": 48,
+      "assessment": "Tool calls and assistant turns are different counts. The earlier manual turn estimate is not host-verified, so compliance with the 60-turn cap cannot be certified. If the harness count is the intended budget counter, 76 exceeds 60 by 16 before this checkpoint write. This possible breach is explicitly surfaced; no further implementation will run.",
+      "context": "Peak/cumulative token usage unavailable: token-report.py found no transcript. No verified context-budget measurement."
+    },
+    "integration": "No merge, push, release, or controller implementation-source edits. Disposable candidate branch/worktree retained."
+  },
+  "budget":{
+    "turn_limit":60,
+    "peak_token_limit_approx":250000,
+    "assistant_tool_turns_at_artifact_closeout":48,
+    "measurement":"token-report.py returned no transcript. The earlier manual estimate of 48 turns is not host-verified; the checkpoint reports 76 tool calls plus one persistence call. Calls are not turns, so compliance with the 60-turn cap cannot be certified. Peak/cumulative token usage is unavailable; see checkpoint.budget_warning."
+  }
+}

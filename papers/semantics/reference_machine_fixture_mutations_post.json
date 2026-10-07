@@ -1,0 +1,158 @@
+[
+  {
+    "label": "F01 duplicate collection expected value",
+    "task": "03-fixtures-integration",
+    "file": "test/Semantics/ReferenceMachineTest.lean",
+    "old": "theorem duplicate_sum : d2.accumulators dt (point 0) = 4",
+    "new": "theorem duplicate_sum : d2.accumulators dt (point 0) = 5",
+    "targets": [
+      "Semantics.ReferenceMachineTest"
+    ],
+    "expect": [
+      "error: test/Semantics/ReferenceMachineTest.lean:37:60: unsolved goals"
+    ]
+  },
+  {
+    "label": "F02 colliding collection expected value",
+    "task": "03-fixtures-integration",
+    "file": "test/Semantics/ReferenceMachineTest.lean",
+    "old": "theorem collision_sum : c012.accumulators ct (point 0) = 9",
+    "new": "theorem collision_sum : c012.accumulators ct (point 0) = 10",
+    "targets": [
+      "Semantics.ReferenceMachineTest"
+    ],
+    "expect": [
+      "error: test/Semantics/ReferenceMachineTest.lean:100:63: unsolved goals"
+    ]
+  },
+  {
+    "label": "F03 unwritten publication expected zero",
+    "task": "03-fixtures-integration",
+    "file": "test/Semantics/ReferenceMachineTest.lean",
+    "old": "theorem unwritten_zero : n1.published ⟨(), point 1⟩ = some 0",
+    "new": "theorem unwritten_zero : n1.published ⟨(), point 1⟩ = some 1",
+    "targets": [
+      "Semantics.ReferenceMachineTest"
+    ],
+    "expect": [
+      "error: test/Semantics/ReferenceMachineTest.lean:114:64: unsolved goals"
+    ]
+  },
+  {
+    "label": "F04 legal zero body made undefined",
+    "task": "03-fixtures-integration",
+    "file": "test/Semantics/ReferenceMachineTest.lean",
+    "old": "@[reducible] def zP := partialProgram true true",
+    "new": "@[reducible] def zP := partialProgram true false",
+    "targets": [
+      "Semantics.ReferenceMachineTest"
+    ],
+    "expect": [
+      "error: test/Semantics/ReferenceMachineTest.lean:123:5: unsolved goals"
+    ]
+  },
+  {
+    "label": "F05 undefined failure body made legal",
+    "task": "03-fixtures-integration",
+    "file": "test/Semantics/ReferenceMachineTest.lean",
+    "old": "@[reducible] def badP := partialProgram true false",
+    "new": "@[reducible] def badP := partialProgram true true",
+    "targets": [
+      "Semantics.ReferenceMachineTest"
+    ],
+    "expect": [
+      "error: test/Semantics/ReferenceMachineTest.lean:132:43: Application type mismatch: The argument"
+    ]
+  },
+  {
+    "label": "F06 excluded undefined valuation admitted",
+    "task": "03-fixtures-integration",
+    "file": "test/Semantics/ReferenceMachineTest.lean",
+    "old": "@[reducible] def excludedP := partialProgram false false",
+    "new": "@[reducible] def excludedP := partialProgram true false",
+    "targets": [
+      "Semantics.ReferenceMachineTest"
+    ],
+    "expect": [
+      "error: test/Semantics/ReferenceMachineTest.lean:143:2: Tactic `contradiction` failed"
+    ]
+  },
+  {
+    "label": "F07 dependent read redirected to unpublished neighbor",
+    "task": "03-fixtures-integration",
+    "file": "test/Semantics/ReferenceMachineTest.lean",
+    "old": "(fun _ s => if s = 0 then .lit 2 else direct (fun _ => 0))",
+    "new": "(fun _ s => if s = 0 then .lit 2 else direct (fun _ => 1))",
+    "targets": [
+      "Semantics.ReferenceMachineTest"
+    ],
+    "expect": [
+      "error: test/Semantics/ReferenceMachineTest.lean:159:95: unsolved goals"
+    ]
+  },
+  {
+    "label": "F08 waiting failure loses unavailable read",
+    "task": "03-fixtures-integration",
+    "file": "test/Semantics/ReferenceMachineTest.lean",
+    "old": "(fun _ _ => .binary .add (direct (fun _ => 0)) bad)",
+    "new": "(fun _ _ => .binary .add (.lit 0) bad)",
+    "targets": [
+      "Semantics.ReferenceMachineTest"
+    ],
+    "expect": [
+      "error: test/Semantics/ReferenceMachineTest.lean:185:0: Not a definitional equality: the left-hand side"
+    ]
+  },
+  {
+    "label": "F09 cyclic read redirected to published neighbor",
+    "task": "03-fixtures-integration",
+    "file": "test/Semantics/ReferenceMachineTest.lean",
+    "old": "@[reducible] def cycleP := expressionProgram 1 (fun _ => 0) true (fun _ _ => direct (fun _ => 0))",
+    "new": "@[reducible] def cycleP := expressionProgram 1 (fun _ => 0) true (fun _ _ => direct (fun _ => 1))",
+    "targets": [
+      "Semantics.ReferenceMachineTest"
+    ],
+    "expect": [
+      "error: test/Semantics/ReferenceMachineTest.lean:213:43: unsolved goals"
+    ]
+  },
+  {
+    "label": "F10 nonoutput omitted from complete fixture",
+    "task": "03-fixtures-integration",
+    "file": "test/Semantics/ReferenceMachineTest.lean",
+    "old": "theorem empty_input_and_nonoutput_complete : roleProgram.Complete r2",
+    "new": "theorem empty_input_and_nonoutput_complete : roleProgram.Complete r1",
+    "targets": [
+      "Semantics.ReferenceMachineTest"
+    ],
+    "expect": [
+      "error: test/Semantics/ReferenceMachineTest.lean:255:4: unsolved goals"
+    ]
+  },
+  {
+    "label": "F11 wrong valuation consumed",
+    "task": "03-fixtures-integration",
+    "file": "test/Semantics/ReferenceMachineTest.lean",
+    "old": "noncomputable def v1 := valuationP.consume v0 vt (vo 0) 2",
+    "new": "noncomputable def v1 := valuationP.consume v0 vt (vo 1) 2",
+    "targets": [
+      "Semantics.ReferenceMachineTest"
+    ],
+    "expect": [
+      "error: test/Semantics/ReferenceMachineTest.lean:273:80: unsolved goals"
+    ]
+  },
+  {
+    "label": "F12 scalar input value contrast",
+    "task": "03-fixtures-integration",
+    "file": "test/Semantics/ReferenceMachineTest.lean",
+    "old": "⟨fun t => if t = 0 then some (fun _ => 7) else none, by intro t; fin_cases t <;> rfl⟩",
+    "new": "⟨fun t => if t = 0 then some (fun _ => 8) else none, by intro t; fin_cases t <;> rfl⟩",
+    "targets": [
+      "Semantics.ReferenceMachineTest"
+    ],
+    "expect": [
+      "error: test/Semantics/ReferenceMachineTest.lean:296:18: Tactic `rfl` failed: The left-hand side"
+    ]
+  }
+]

@@ -1,0 +1,30 @@
+{
+  "baseline": "53bcbbd610a1791a5a769a40e33fd47b5a3abc7e",
+  "candidate_tree": "f5ae8635700b025128567bc7c72eff32deedce6e",
+  "patch_sha256": {
+    "01-machine": "b864ebaca0846d85655431368c952d9c5c7cdcf0213c78bbabe6b17ba767446a",
+    "02-invariants-soundness": "3f5b756c22416ee42a8bb380d3433eddf72845e56e4a931d54e62ddfa6e6f456",
+    "03-fixtures-integration": "6dcdfaf1ef54cb6c8b9c80dc99dff3361cea43beb473c602fea10c4796c81935"
+  },
+  "protected_input_sha256": {
+    "leanncd/LeanNCD/Semantics/Types.lean": "5352d11da1d427edc938999d71323d6a4042016e85da9e86a9fba3047d8db7a0",
+    "leanncd/LeanNCD/Semantics/Expr.lean": "a53a1cdb6344802aac7324d9402ec54cab6f95950ba474c99c5a642b2b5161c7",
+    "leanncd/LeanNCD/Semantics/Interpret.lean": "370eafee43f788e0e84032a4649cf17116ad8169141f071ce009be5b5eb18e4b",
+    "leanncd/LeanNCD/Semantics/Readiness.lean": "740701b0293f75c31cb513748d88cee0d51627f8480be202251a1163ed281c8c",
+    "leanncd/LeanNCD/Semantics/Completeness.lean": "ee6101686eb1319aea27329e2cc0d242090e998fc2ca5d994ac3c9eea802268f",
+    "leanncd/LeanNCD/Semantics/Collection.lean": "c174a9327f6196bec82dec9d543199024674ef3cadfc5110fa8f598925d02377",
+    "leanncd/LeanNCD/Semantics/Program.lean": "f2896c95f748f744b88ad27dd001b9dc126a9cf70de7f0ca06825294f6c938f3",
+    "leanncd/LeanNCD/Semantics/Models.lean": "e97b3045954f8ac856994fe38a058fd75d9450aed57a6bad7a92a284a2763415",
+    "leanncd/test/Semantics/ExpressionTest.lean": "1f02f50be99ccd64a35ba09e99b82278e5c54982088d17f0413b9018e9f59dab",
+    "leanncd/test/Semantics/CollectionModelTest.lean": "6ef9ea957992b1c79a8f2f1f4ba4404de1b7e9e6df0d4047c067434b9999583c",
+    "papers/semantics/tensor_logic_semantics.md": "183a68f8290e06f3808254d5fa78252c409a91a667a68b2e43697ab6006446ab",
+    "leanncd/scripts/lake-build.sh": "6f415e665cbd2f881b276f653a28adfc496d8cea2b8f8853b132c9c26d5d0f01",
+    "leanncd/scripts/lean-file.sh": "9b1c9702296e95de457f274e2f4a1b45d01a0170e2d58435eadb5da644238a67",
+    "leanncd/scripts/mutation-manifest.sh": "5442ae6ac9d21ae12a66504ad400295c4c27eddcf2c39b995b92b274c0d5831d",
+    "leanncd/scripts/mutation-cycle.sh": "618da80986bcc57ae2a93fdb674f10890cfa389d20fc5d6f383a012fc93781e9",
+    ".claude/skills/new-slice/prepare-worktree.sh": "0ca084684de7eee08a99b784db33726dc0394b9c805386687d8b483d5f6d2c28"
+  },
+  "fixture_theorem_count": 33,
+  "mutation_diagnostics_matched": 12,
+  "full_default_build_jobs": 8694
+}

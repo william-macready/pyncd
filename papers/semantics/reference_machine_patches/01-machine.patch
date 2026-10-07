@@ -1,0 +1,95 @@
+diff --git a/leanncd/LeanNCD/Semantics/Machine.lean b/leanncd/LeanNCD/Semantics/Machine.lean
+new file mode 100644
+index 0000000000000000000000000000000000000000..9685fa7cb8e64dea41676e5f7e05f3a65e37cde3
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Machine.lean
+@@ -0,0 +1,89 @@
++import LeanNCD.Semantics.Models
++import LeanNCD.Semantics.Readiness
++
++namespace LeanNCD.Semantics.Program
++
++variable {K : S → Type} {σ : Declarations S} {r : Registry K}
++
++abbrev Accumulator (P : Program K σ r) :=
++  (t : P.Defined) → Coord (σ.signature t.val).axes → K (σ.signature t.val).sort
++
++abbrev Pending (P : Program K σ r) := (t : P.Defined) → Finset (P.Occurrence t)
++
++structure Running (P : Program K σ r) where
++  published : PartialStore K σ
++  accumulators : P.Accumulator
++  pending : P.Pending
++
++inductive MachineState (P : Program K σ r)
++  | running : P.Running → MachineState P
++  | failed : (t : P.Defined) → P.Occurrence t → P.Running → MachineState P
++
++variable (P : Program K σ r) (ops : (s : S) → ScalarOps (K s))
++variable [∀ t : P.Defined, AddCommMonoid (K (σ.signature t.val).sort)]
++
++def initial (η : P.Input) : P.Running where
++  published := fun a => (η.val a.1).map (fun f => f a.2)
++  accumulators := fun _ _ => 0
++  pending := fun _ => Finset.univ
++
++noncomputable def consume (c : P.Running) (t : P.Defined) (o : P.Occurrence t)
++    (v : K (σ.signature t.val).sort) : P.Running := by
++  classical
++  exact ⟨c.published,
++    Function.update c.accumulators t
++      (fun p => c.accumulators t p + if P.destination t o.1 o.2 = p then v else 0),
++    Function.update c.pending t ((c.pending t).erase o)⟩
++
++noncomputable def publish (c : P.Running) (t : P.Defined)
++    (p : Coord (σ.signature t.val).axes) : P.Running := by
++  classical
++  exact ⟨Function.update c.published ⟨t.val, p⟩ (some (c.accumulators t p)),
++    c.accumulators, c.pending⟩
++
++def FiberEmpty (c : P.Running) (t : P.Defined)
++    (p : Coord (σ.signature t.val).axes) : Prop :=
++  ∀ o ∈ c.pending t, P.destination t o.1 o.2 ≠ p
++
++inductive Step : P.MachineState → P.MachineState → Prop
++  | contribute (c : P.Running) (t : P.Defined) (o : P.Occurrence t)
++      (v : K (σ.signature t.val).sort)
++      (pending : o ∈ c.pending t)
++      (evaluated : evalReady ops c.published (P.body t o.1) o.2 = .evaluated (some v)) :
++      Step (.running c) (.running (P.consume c t o v))
++  | publication (c : P.Running) (t : P.Defined)
++      (p : Coord (σ.signature t.val).axes)
++      (unpublished : c.published ⟨t.val, p⟩ = none)
++      (finished : P.FiberEmpty c t p) :
++      Step (.running c) (.running (P.publish c t p))
++  | undefined (c : P.Running) (t : P.Defined) (o : P.Occurrence t)
++      (pending : o ∈ c.pending t)
++      (evaluated : evalReady ops c.published (P.body t o.1) o.2 = .evaluated none) :
++      Step (.running c) (.failed t o c)
++
++inductive Reaches : P.MachineState → P.MachineState → Prop
++  | refl (s) : Reaches s s
++  | tail {a b c} : Reaches a b → P.Step ops b c → Reaches a c
++
++def Complete (c : P.Running) : Prop :=
++  (∀ t, c.pending t = ∅) ∧ ∀ a, (c.published a).isSome = true
++
++def Blocked (c : P.Running) : Prop :=
++  ¬ P.Complete c ∧ ¬ ∃ s, P.Step ops (.running c) s
++
++def Successful (η : P.Input) (c : P.Running) : Prop :=
++  P.Reaches ops (.running (P.initial η)) (.running c) ∧ P.Complete c
++
++def finalStore (c : P.Running) (complete : P.Complete c) : Store K σ :=
++  fun a => (c.published a).get (complete.2 a)
++
++theorem failed_terminal (t : P.Defined) (o : P.Occurrence t) (c : P.Running)
++    (s : P.MachineState) : ¬ P.Step ops (.failed t o c) s := by
++  intro h
++  cases h
++
++theorem finalStore_published (c : P.Running) (complete : P.Complete c) (a : Address σ) :
++    c.published a = some (P.finalStore c complete a) := by
++  exact (Option.some_get (complete.2 a)).symm
++
++end LeanNCD.Semantics.Program
