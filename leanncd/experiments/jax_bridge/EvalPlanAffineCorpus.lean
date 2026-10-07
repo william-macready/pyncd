@@ -109,7 +109,9 @@ private def renderExpected (plan : PreparedPlan) (report : EvalReport) : IO Stri
 
 private def buildCase (index : Nat) (p : TLProgram) (env : HashMap String DenseTensor) :
     IO String := do
-  let sched ← match p.compileToScheduled.run 0 with
+  -- The enumerated programs are unannotated; under the f32 default flip, spell every name `f64`
+  -- (this driver pairs them with Float `ofDenseInputs` and `.affineReference` binary64 evidence).
+  let sched ← match p.explicitF64.compileToScheduled.run 0 with
     | .ok s _ => pure s
     | .error e _ => throw (IO.userError s!"case {index} compile failed: {repr e}")
   let prepared ← match prepareEvalPlan sched (InputSignature.ofDenseInputs env) with

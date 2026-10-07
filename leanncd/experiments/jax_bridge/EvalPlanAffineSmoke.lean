@@ -36,6 +36,7 @@ open JaxBridge
 
 def shiftProg : TLProgram := tlprog!{
   axis i : ℕ = 3
+  tensor f64 A(i), Y(i)
   Y[i] := A[i + 1]
 }
 def shiftInputs : HashMap String DenseTensor :=
@@ -43,6 +44,7 @@ def shiftInputs : HashMap String DenseTensor :=
 
 def scaleProg : TLProgram := tlprog!{
   axis i : ℕ = 3
+  tensor f64 A(i), Y(i)
   Y[i] := A[2 * i]
 }
 def scaleInputs : HashMap String DenseTensor :=
@@ -50,6 +52,7 @@ def scaleInputs : HashMap String DenseTensor :=
 
 def lookbackProg : TLProgram := tlprog!{
   axis i : ℕ = 3
+  tensor f64 A(i), Y(i)
   Y[i] := A[i - 1]
 }
 def lookbackInputs : HashMap String DenseTensor :=
@@ -58,6 +61,7 @@ def lookbackInputs : HashMap String DenseTensor :=
 def multiAxisProg : TLProgram := tlprog!{
   axis i : ℕ = 2
   axis j : ℕ = 2
+  tensor f64 X(i), Y(i, j)
   Y[i, j] := X[2 * i + j]
 }
 def multiAxisInputs : HashMap String DenseTensor :=
@@ -66,6 +70,7 @@ def multiAxisInputs : HashMap String DenseTensor :=
 def termScopeProg : TLProgram := tlprog!{
   axis i : ℕ = 1
   axis j : ℕ = 2
+  tensor f64 A(i), P(i, j), Y(i)
   Y[i] := A[i] + P[i, j]
 }
 def termScopeInputs : HashMap String DenseTensor :=
@@ -76,6 +81,7 @@ def termScopeInputs : HashMap String DenseTensor :=
 def zeroCoeffRowProg : TLProgram := tlprog!{
   axis i : ℕ = 1
   axis j : ℕ = 3
+  tensor f64 A(i), B(j), Y(i)
   Y[i] := A[i] · B[0 * j]
 }
 def zeroCoeffRowInputs : HashMap String DenseTensor :=
@@ -86,6 +92,7 @@ def zeroCoeffRowInputs : HashMap String DenseTensor :=
 def reductionOrderProg : TLProgram := tlprog!{
   axis i : ℕ = 1
   axis j : ℕ = 3
+  tensor f64 P(i, j), Y(i)
   Y[i] := P[i, j]
 }
 def reductionOrderInputs : HashMap String DenseTensor :=
@@ -93,6 +100,7 @@ def reductionOrderInputs : HashMap String DenseTensor :=
 
 def zeroOutputProg : TLProgram := tlprog!{
   axis i : ℕ = 0
+  tensor f64 A(i), Y(i)
   Y[i] := A[i]
 }
 def zeroOutputInputs : HashMap String DenseTensor :=
@@ -101,6 +109,7 @@ def zeroOutputInputs : HashMap String DenseTensor :=
 def zeroReductionProg : TLProgram := tlprog!{
   axis i : ℕ = 2
   axis j : ℕ = 0
+  tensor f64 A(i), B(j), Y(i)
   Y[i] := A[i] · B[j]
 }
 def zeroReductionInputs : HashMap String DenseTensor :=

@@ -46,8 +46,12 @@ def pyTensorEntry32 (t : DenseTensor32) : String :=
     every DECLARED input converts with `Float.toFloat32` (the generator's inputs are small integers,
     exact in binary32); undeclared extra inputs are dropped. Nothing else changes, so the case set is the binary64 corpus's own. -/
 def retag32 (p : TLProgram) (env : HashMap String DenseTensor) : TLProgram × NamedDenseEnv32 :=
+  -- Under the f32 default flip an undeclared name is binary32, not binary64: first spell the
+  -- source corpus's binary64 reading explicitly (`explicitF64`), then retag it to binary32.
+  let p := p.explicitF64
   let decls := p.decls.map fun d => match d with
     | .tensor n ax => .typedTensor .f32 n ax
+    | .typedTensor .f64 n ax => .typedTensor .f32 n ax
     | d => d
   let inDecls := decls.filterMap fun d => match d with
     | .typedTensor _ n _ => some n

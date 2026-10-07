@@ -415,3 +415,22 @@ the `f64` inputs Gen declares):
 Class (ii)/(iii): none observed at measurement time (no pin of the default, no production error); any
 residual after the fix STOPS. The decision criterion is the plan's (A): Gen corpus untouched, pinned
 `3832`/`17` guards untouched.
+
+## Task 6b — jax_bridge drivers under the flip
+
+Compile-only runs (the Python/JAX side was NOT run). Oleans refreshed first with
+`lake-build.sh <wt>/leanncd LeanNCD JaxExperiment` and `... Tests`. No `lean-file.sh` wrapper supports
+`--run`, so a scratchpad wrapper `run-lean.sh` did `cd <wt>/leanncd; lake env lean --run "$@"; echo EXIT=$?`.
+Invocation per driver: `run-lean.sh experiments/jax_bridge/<Driver>.lean <fresh out .py>` (the runner
+scripts' own args: one output path; the corpus runner also runs `EvalPlanAffineSmoke` with a second path).
+
+| driver | before (flipped tree, unedited) | after | fix |
+|---|---|---|---|
+| `EvalPlanSmoke` | exit 1: `affineProg prepare failed: inputSignature: dtypeMismatch "W" f32 f64` | exit 0: `Generated ...`, `shiftedProg correctly rejected: nonzeroAffineBias ...` | `tensor f64 W(i, j), x(j), b(i), Y(i)` / `tensor f64 A(i), Y(i)` declared in both programs |
+| `EvalPlanAffineSmoke` | exit 1: `shift prepare failed: dtypeMismatch "A" f32 f64` | exit 0: `Generated ... with 20 fixtures` | one `tensor f64 ...` line in each of the nine source programs |
+| `EvalPlanAffineCorpus` | exit 1: `case 0 prepare failed: unsupportedDtype "Y: mixed f32/f64 storage in one schedule"` | exit 0: `Generated ... with 3832 cases` | programs come from `enumPrograms` (no `tlprog!`): `buildCase` compiles `p.explicitF64` |
+| `EvalPlanAffineSmoke32` (not in the task's list; found failing) | exit 1: `corpus0 binary32 signature failed: storageKindMismatch "B" float32 float64` | exit 0: `7 named + 8 assign + 2 positional + 39 corpus (stride 100 of 3832)` | `retag32` applies `explicitF64` first and retags `.typedTensor .f64` as well as `.tensor` to f32 |
+
+The Smoke32 failure is a flip casualty: its corpus section assumed undeclared names are binary64.
+README.md states no default for plain/undeclared `tensor` (the audit's lines 10 and 76-77 are
+descriptions of the fixtures), so it is unchanged.
