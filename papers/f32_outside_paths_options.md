@@ -4,6 +4,12 @@ Written for: the repo owner, to decide the last open bullet of `papers/f32_evalp
 item 5 ("a decision for the paths outside the checked backend"). Evidence below comes from reading
 the code on `main` at `2e850b14` (2026-10-07); no runner or build was executed for this note.
 
+## Status
+
+- **Decision 1: option A chosen (2026-10-07).** The legacy evaluator stays the binary64 reference
+  oracle; recorded in `leanncd/LeanNCD/Eval/AGENTS.md` (Contracts) and `papers/f32_evalplan.md` section 1.4.
+- Decision 2 (compile-only check for the JAX drivers): not yet approved. Decision 3: no action.
+
 ## Short answer
 
 The master plan lists three paths that "assume f64 today". Reading them, only one is a real
