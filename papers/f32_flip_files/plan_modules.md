@@ -212,6 +212,63 @@ state name; its only dtype pins are explicit `.f64`/`.bool` signature entries of
 state), so 5b has no class (ii) input unless the capped tail hides some. Fixtures that already pass and
 stay untouched: the rejection fixtures decided before the carrier check.
 
+### Task 5a ScanCompileTest: result and the 5b input (VERIFIED by targeted build)
+
+`Eval.Plan.ScanCompileTest`: >= 100 failing assertions before (capped; 8514 jobs, one failing), 8 after
+(8519 jobs: +5, the added `Eval.ExplicitF64` import's closure incl. `LeanNCD.Eval.Entry`). No class (iii) found.
+Lever: one local helper `explicitF64Sched` (the `CompileTest` body: `explicitF64Decls` over
+`sched.stmts.flatMap ScanStmt.sourceStmts`, so scan-body state names `X`/`S` are declared too), applied
+at `prepared`, `withPrepared`, the `t4run`/`s6Accept`/assert helper bodies, the three constructors
+`rejSched`/`rej2Sched`/`s6Schedule`, and the 11 direct `prepareEvalPlan <named sched>` call sites;
+`t4diff`'s reference leg uses `evalScheduledF64`; `scratchF32Sched`/`scratchUnusedF32Sched` re-spell plain
+`S` as `.typedTensor .f64` at source. Deviation to know for 5b/6: importing `Eval.ExplicitF64` pulls in
+`LeanNCD.Eval.Entry`, hence the TL DSL syntax, which makes `bias` a KEYWORD token; every
+`{ coeffs := .., bias := .. }` literal in this file (37 lines) is now written `«bias» :=`. Any other test
+module that adds that import and builds `AffineMap` literals needs the same.
+
+**Residual failing assertions (the 5b input), 8, all class (i), none class (ii).** Line numbers at the
+5a commit. All 8 are rejection fixtures whose pinned error is raised from a MALFORMED LHS of the written
+state `S`; `explicitF64Decls` infers `S`'s declaration from its first write, so the inferred declaration
+disagrees with the malformed LHS and the source-invariant pass reports `rankMismatch "S" ..` (or, for
+the capability fixture, `scatterOrAffineLhs` in place of `multiAxisScatterLhs`) BEFORE the pinned scan
+or capability error. Fix is per-fixture (declare `S` by hand with the fixture's intended rank, or declare
+only the external `S0`/`X`, and check which pass then reports), not a helper change.
+
+| fixture | lines | pinned cause | observed under the wrapper |
+|---|---|---|---|
+| partial advancing result (`iterNext axL, iterNext axJ` recur) | 869 | `scan (partialAdvancingResult "sc" "S" 0 2 1)` | `sourceInvariant rankMismatch "S" ..` |
+| duplicate context axis (`[axL, axL]`) | 1014 | `scan (duplicateContextAxis "sc" 0 axL.uid)` | not captured (same family) |
+| pinned axis not context | 1038 | `scan (pinnedAxisNotContext "sc" "S" 0 axJ.uid)` | `rankMismatch` family |
+| duplicate axis in LHS, base | 1052 | `scan (duplicateAxisInLhs "sc" "S" true 0 axL.uid)` | `rankMismatch` family |
+| duplicate axis in LHS, recur | 1055 | `scan (duplicateAxisInLhs "sc" "S" false 0 axL.uid)` | `rankMismatch` family |
+| inconsistent state rank | 1074 | `scan (inconsistentStateRank "sc" "S" false 0 1 2)` | `rankMismatch "S" 1 2` |
+| capability before input validation (`capabilityBeforeInputScatter`, `emptySig`) | 1218, 2149 (duplicate guard) | `capability (multiAxisScatterLhs "S: affine LHS slot")` | `capability (scatterOrAffineLhs "S: affine LHS slot")` |
+
+The per-fixture observed causes come from a temporary `dbgTrace` probe in `rej` (since removed); the
+mapping of the seven `rankMismatch`/`scatterOrAffineLhs` lines to individual rows was not captured line
+by line, so treat the "observed" column as the family, not a per-line pin. The `scatterOrAffineLhs`
+vs `multiAxisScatterLhs` difference should be understood before 5b re-pins anything: it is a different
+CAPABILITY constructor for the same scatter once its target name is declared, so check it is not a
+production-side classification difference (class (iii)) rather than a test assumption.
+
+Site table (`rg -n "ofDenseInputs|prepareEvalPlan|compileToScheduled|TLProgram\.eval|evalScheduled|ScheduledProgram|runPreparedDense"`;
+feeds the Task 6 site table). 101 matching lines at the 5a commit (per-token line counts: `ScheduledProgram`
+60, `prepareEvalPlan` 29, `ofDenseInputs` 15, `runPreparedDense` 7, `evalScheduled` 3, `compileToScheduled` 0,
+`TLProgram.eval` 0).
+
+| helper / site family | lines | disposition |
+|---|---|---|
+| `compileToScheduled`, `TLProgram.eval` | 0 | not applicable (hand-built `ScheduledProgram` module) |
+| `ScheduledProgram` literals (about 45 named defs, 3 constructors `rejSched`/`rej2Sched`/`s6Schedule`) | 60 | WRAPPED at the consumer (`explicitF64Sched` at each `prepareEvalPlan`/helper call, or in the constructor): the literals themselves stay undeclared on purpose, `scratchF32Sched`/`scratchUnusedF32Sched` re-spelled `S` f64 |
+| `prepareEvalPlan` | 29 (3 prose) | WRAPPED: `prepared`, `withPrepared`, the assert helpers, 11 direct sites, `rej`/`rej2`/`s6Cause` via the constructors; 8 fixtures still fail (residual above) |
+| `ofDenseInputs` | 15 | not needed: the carrier IS binary64, the side held fixed; the program side is declared `f64` |
+| `runPreparedDense` | 7 | not needed beyond the wrapped schedules (the run legs consume prepared plans) |
+| `evalScheduled` | 3 | `t4diff` WRAPPED (`evalScheduledF64`); the `scratchThenPlainReadSched` `run_cmd` (line 986) not needed (cyclic-dataflow rejection decided before storage) |
+
+Stale prose lines saying the old default: none found (`rg` for `undeclared|defaults? to|dtypeOfDecl|untyped`
+hits only the new helper docstring at line 38 and unrelated "ordinary block slot" uses). Passing fixtures
+left alone: every rejection fixture decided before the carrier check.
+
 | residual | re-pin |
 |---|---|
 | f32 identity control (2) | plain `.tensor` over `f32IdentitySig` pinned `.float32`/`admittedAlgebraF32`; the binary64 control is kept as 2 new assertions on `.typedTensor .f64` over `identitySig` |
