@@ -2334,6 +2334,16 @@ operations are total on complete environments.
 
 ## 19. Contribution collection
 
+Scoped Lean validation of Sections 19–20 lives in
+`LeanNCD.Semantics.Collection`, `Program`, and `Models`: finite Naperian
+function families, generic additive pushforward laws, guard-admitted typed
+occurrences with bounded defined destinations, tensor-presence input
+bindings, and simultaneous model equations. Collection needs additive
+commutative monoids only on defined carriers; expression operations remain
+explicit data. This is not a source checker, raw-write policy resolver,
+solver, backend refinement, or full categorical interpretation.
+Section 19.3's pure-einsum elaboration correspondence remains a proof target.
+
 ### 19.1 Environments with defined contributions
 
 For a structurally well-formed program $P$, define
