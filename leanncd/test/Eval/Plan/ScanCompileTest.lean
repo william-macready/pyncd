@@ -692,13 +692,15 @@ failing for an unrelated reason or in an unrelated phase. -/
 
 def axK2 : AxisSpec := ⟨"k2", 51, .nat⟩
 
-def rejSched (base recur : List Stmt) : ScheduledProgram :=
-  explicitF64Sched
+def rejSchedRaw (base recur : List Stmt) : ScheduledProgram :=
   { decls := [.iter axL 3, .axis axJ (some 2), .axis axK2 (some 5)]
   , stmts := [.scan "sc" [axL] base recur false]
   , env := {}, extNames := insert "S0" (insert "X" (∅ : Finset String))
   , explicitSizes :=
       ((({} : HashMap UID Nat).insert axL.uid 3).insert axJ.uid 2).insert axK2.uid 5 }
+
+def rejSched (base recur : List Stmt) : ScheduledProgram :=
+  explicitF64Sched (rejSchedRaw base recur)
 
 def rejInputs : HashMap String DenseTensor :=
   (({} : HashMap String DenseTensor).insert "S0" ⟨[], #[1.0]⟩).insert "X" ⟨[3], #[1.0, 2.0, 3.0]⟩
@@ -711,6 +713,22 @@ def rejSig : InputSignature := InputSignature.ofDenseInputs rejInputs
     (`none`) is exactly what they assert. -/
 def rej (base recur : List Stmt) : Option PlanCompileCause :=
   causeOf (prepareEvalPlan (rejSched base recur) rejSig)
+
+/-- `rejSig` at the binary32 default: the same shapes, every input `f32`. -/
+def rejSigF32 : InputSignature := InputSignature.mk
+  ((({} : HashMap String TensorSignature).insert "S0" { shape := #[], dtype := .f32 }).insert
+    "X" { shape := #[3], dtype := .f32 })
+
+/-- `rej` for the fixtures whose pinned error is a malformed `S` left-hand side: UNWRAPPED
+    (`rejSchedRaw`, every name undeclared, hence binary32) against the `f32` input signature
+    `rejSigF32`. No binary64 declaration of `S` can serve them: `explicitF64Decls` derives `S`'s
+    rank from its first write, and these fixtures' base and recurrence write `S` at DIFFERENT ranks
+    or with a duplicated/non-context axis (the malformation is the point), so any declared rank
+    reports `rankMismatch "S"` before the pinned scan error; declaring only `S0`/`X` as binary64
+    leaves `S` binary32 and reports `unsupportedDtype "S: mixed f32/f64 storage"`. A whole-binary32
+    schedule has neither problem, and the scan errors pinned here are dtype-independent. -/
+def rejF32 (base recur : List Stmt) : Option PlanCompileCause :=
+  causeOf (prepareEvalPlan (rejSchedRaw base recur) rejSigF32)
 
 def capabilityErr (base recur : List Stmt) : Option CapabilityError :=
   match capabilityPreflight (rejSched base recur) with
@@ -743,6 +761,15 @@ def okRecur : Stmt := .assign "S" [.iterNext axL]
   { body := { terms := [{ factors := [.read "S" [.axis axL]] }] }, nonlin := .identity }
 
 #guard rej [okBase] [okRecur] == none   -- the playground itself must compile
+
+-- The binary32 default, pinned: with NO declaration of `S`, `S0` or `X`, the same playground
+-- compiles against the all-`f32` signature, and every compiled tensor signature — the scan state
+-- `S`'s included — is `f32` (an undeclared name's dtype is `dtypeOfDecl none`). Were the default
+-- binary64 again, `S0`/`X` would mismatch the `f32` signature and the compile would be rejected.
+#guard (prepareEvalPlan (rejSchedRaw [okBase] [okRecur]) rejSigF32).toOption.map
+    (fun p => (p.plan.raw.tensorSigs.size > 0 && p.plan.raw.tensorSigs.all (·.dtype == .f32)))
+  == some true
+#guard rejF32 [okBase] [okRecur] == none
 
 def rej2Sched (base recur : List Stmt) : ScheduledProgram :=
   explicitF64Sched
@@ -866,7 +893,7 @@ def nextL : LHSSlot := .iterNext axL
 -- the same constructor's other direction: a result advancing an axis that is not scan context at
 -- all, so `declared` (2) EXCEEDS the context width (1). Both directions break the canonical all-axis
 -- `+1` geometry identically, which is why they share a constructor.
-#guard rej [okBase] [.assign "S" [.iterNext axL, .iterNext axJ]
+#guard rejF32 [okBase] [.assign "S" [.iterNext axL, .iterNext axJ]
       { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := .identity }]
   == some (.scan (.partialAdvancingResult "sc" "S" 0 2 1))
 
@@ -1012,8 +1039,8 @@ def statePlainReadSched : ScheduledProgram :=
 
 -- the same axis declared twice as scan context.
 #guard causeOf (prepareEvalPlan
-    { rejSched [] [] with
-        stmts := [.scan "sc" [axL, axL] [okBase] [okRecur] false] } rejSig)
+    { rejSchedRaw [] [] with
+        stmts := [.scan "sc" [axL, axL] [okBase] [okRecur] false] } rejSigF32)
   == some (.scan (.duplicateContextAxis "sc" 0 axL.uid))
 
 -- extent zero, discovered only after shape inference.
@@ -1035,7 +1062,7 @@ def zeroExtentSched : ScheduledProgram :=
   == some (.scan (.iterAtInStepBlock "sc" "S" 0 axL.uid))
 
 -- pinning an axis that is not scan context.
-#guard rej [.assign "S" [.iterAt axL 0, .iterAt axJ 0]
+#guard rejF32 [.assign "S" [.iterAt axL 0, .iterAt axJ 0]
       { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := .identity }] [okRecur]
   == some (.scan (.pinnedAxisNotContext "sc" "S" 0 axJ.uid))
 
@@ -1049,10 +1076,10 @@ def zeroExtentSched : ScheduledProgram :=
 -- one axis occupying two LHS positions, on each side: a base statement pinning and freeing the same
 -- axis, and a result advancing the same axis twice (which would otherwise make `advancing.length`
 -- agree with the context width while leaving a context axis unadvanced).
-#guard rej [.assign "S" [.iterAt axL 0, .free axL]
+#guard rejF32 [.assign "S" [.iterAt axL 0, .free axL]
       { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := .identity }] [okRecur]
   == some (.scan (.duplicateAxisInLhs "sc" "S" true 0 axL.uid))
-#guard rej [okBase] [.assign "S" [.iterNext axL, .iterNext axL]
+#guard rejF32 [okBase] [.assign "S" [.iterNext axL, .iterNext axL]
       { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := .identity }]
   == some (.scan (.duplicateAxisInLhs "sc" "S" false 0 axL.uid))
 
@@ -1071,7 +1098,7 @@ def zeroExtentSched : ScheduledProgram :=
   == some (.scan (.inconsistentAdvancingDim "sc" "S" axL.uid 0 1))
 
 -- base and result disagreeing on rank.
-#guard rej [okBase]
+#guard rejF32 [okBase]
     [.assign "S" [.iterNext axL, .free axJ]
       { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := .identity }]
   == some (.scan (.inconsistentStateRank "sc" "S" false 0 1 2))
@@ -1216,7 +1243,7 @@ def capabilityBeforeInputScatter : Stmt :=
     [.affine (.affine 0 [(1, axJ), (1, axK2)]), .iterNext axL]
     { body := { terms := [{ factors := [.read "Missing" []] }] }, nonlin := .identity } {}
 #guard causeOf (prepareEvalPlan
-    (rejSched [okBase] [capabilityBeforeInputScatter]) emptySig)
+    (rejSchedRaw [okBase] [capabilityBeforeInputScatter]) emptySig)
   == some (.capability (.multiAxisScatterLhs "S: affine LHS slot"))
 
 -- Valid syntax, an unsized scan axis (phase C/geometry-sizing) AND an orphan base (phase D pairing):
@@ -2147,7 +2174,7 @@ def s6GeometryBeforeCausal : ScheduledProgram :=
 
 -- Capability remains earlier than missing-input validation for a malformed scan scatter.
 #guard causeOf (prepareEvalPlan
-    (rejSched [okBase] [capabilityBeforeInputScatter]) emptySig) ==
+    (rejSchedRaw [okBase] [capabilityBeforeInputScatter]) emptySig) ==
   some (.capability (.multiAxisScatterLhs "S: affine LHS slot"))
 
 end LeanNCD.Eval.Plan.ScanCompileTest

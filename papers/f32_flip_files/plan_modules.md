@@ -286,3 +286,33 @@ Mutations (each restored by `git checkout --`, then rebuilt green):
   912, 917, 918, 920, 990, 991, 992, 1002, 1493, 1498, 1510, 1519), each "did not evaluate to `true`".
 - `storageConstraintOfName?` undeclared arm back to `.float64` (Ast.lean): CAUGHT, 5 failures (871
   `f32UndeclaredSched`, 883 `f64MixedUndeclaredSched`, 1493/1498/1510 `declaredBSched`).
+
+## Task 5b ScanCompileTest (VERIFIED by targeted build)
+
+The 8 residual assertions (869, 1014, 1038, 1052, 1055, 1074, 1218, 2149 at `380bffc`) are all rejection
+fixtures with a MALFORMED left-hand side of `S`. Probe of the candidate fixes (temporary `#eval`s, removed):
+
+| `S` declaration | partial-advancing / inconsistent-rank / capability fixture result |
+|---|---|
+| `explicitF64Decls` (first-write rank) | `sourceInvariant rankMismatch "S" ..` |
+| hand-declared `tensor f64` at rank 1, 2 or 3 | `rankMismatch "S" 1 2` / `2 1` / `3 1`: NO rank is consistent, because base and recurrence write `S` at different ranks (the malformation is the point) |
+| `S` undeclared, `S0`/`X` declared `f64` | `capability (unsupportedDtype "S: mixed f32/f64 storage in one schedule")` |
+
+So no binary64 declaration reaches the pinned error. Fix: these fixtures run UNWRAPPED (every name undeclared,
+hence binary32) against a new all-`f32` signature `rejSigF32` (same shapes as `rejSig`) via `rejF32`
+(`rejSchedRaw`, the unwrapped body of `rejSched`); the pinned errors are dtype-independent scan/capability
+errors and every pin is unchanged. Capability fixture verdict: NOT class (iii). `capabilityBeforeInputScatter`
+yields the pinned `multiAxisScatterLhs "S: affine LHS slot"` once `S` is not declared at a wrong rank and
+there is no f32/f64 mix (the `scatterOrAffineLhs` seen in 5a came with the wrapper's declared `S`; not isolated further, since the
+pinned form is reached again without it and the production code is untouched).
+No `LeanNCD/` change.
+
+Added pin (the plan expected a `stateSigs` pin; `stateSigs` is `private` to `Compile.lean` and 5a found none):
+the playground with NO declarations compiles against `rejSigF32` and every compiled `tensorSigs` entry, the
+scan state's included, is `.f32`.
+
+Mutation (`dtypeOfDecl` `.tensor`/`.linear`/`none` arms back to `.f64`, restored by `git checkout --`): 8 failing
+assertions in ScanCompileTest, each "did not evaluate to `true`": the new pin (769), its `rejF32` control (772),
+and 6 of the 8 re-homed rejection fixtures (896, 1041, 1065, 1079, 1082, 1101). The two capability fixtures
+(the 1218/2149 pair at `380bffc`) are default-insensitive (`emptySig`, capability decided first). Everything else in the module is
+explicit `f64` after 5a, hence insensitive to the default by construction.
