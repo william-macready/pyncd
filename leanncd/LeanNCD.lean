@@ -152,3 +152,4 @@ import LeanNCD.Eval.Plan.RawStep
 import LeanNCD.Eval.Plan.Block
 import LeanNCD.Eval.Plan.Scan
 import LeanNCD.Eval.Plan.EvalPlan
+import LeanNCD.Semantics
