@@ -77,10 +77,10 @@ def dtypeOfDecl : Option Decl → ScalarDType
     scan (`Eval.combineFor`'s pattern), so this cannot disagree with either about which declaration
     wins when a name is declared more than once (the pitfall `combineFor`'s own doc comment already
     names). The `decls` argument is the authority and is re-validated here: a malformed list (a
-    genuine `duplicateTensorDecl`) never degrades to "every name undeclared, therefore `f64`". A
+    genuine `duplicateTensorDecl`) never degrades to "every name undeclared, therefore `f32`". A
     silent degradation would be exactly the silent semantic drop the fail-loud convention forbids: it
     would hand back an all-real signature for a program that declares a predicate, and the resulting
-    `f64` expectation would then be enforced downstream (`prepareEvalPlan` Step B) against the very
+    `f32` expectation would then be enforced downstream (`prepareEvalPlan` Step B) against the very
     declaration set that is malformed. Callers cannot substitute an already-validated `DeclEnv` and
     skip this: a cached `sched.env` is a pipeline product, not the schedule's authority
     (`prepareEvalPlan`'s Step 0 says the same and rebuilds it from `sched.decls` too). -/
@@ -93,9 +93,9 @@ def declEnvOrThrow (decls : List Decl) : Except InputSignatureBuildError DeclEnv
     names a caller actually supplied buffers for.
 
     One rule, stated once: a name's declaration either constrains its precision
-    (`storageConstraintOfName?`, `DSL/Ast.lean` — `.typedTensor .f32`/`.typedLinear .f32` ⇒
-    `.float32`, `.typedTensor .f64`/`.typedLinear .f64`/`.tensor`/`.linear` ⇒ `.float64`, and an UNDECLARED name ⇒ `.float64`, mirroring
-    `dtypeOfDecl none = .f64`) or constrains nothing at all (a `.predicate`, whose declaration names
+    (`storageConstraintOfName?`, `DSL/Ast.lean` — `.typedTensor .f32`/`.typedLinear .f32`/`.tensor`/
+    `.linear` ⇒ `.float32`, `.typedTensor .f64`/`.typedLinear .f64` ⇒ `.float64`, and an UNDECLARED
+    name ⇒ `.float32`, mirroring `dtypeOfDecl none = .f32`) or constrains nothing at all (a `.predicate`, whose declaration names
     the tensor's ALGEBRA rather than its precision). A constrained name whose declaration disagrees
     with the constructor's own carrier is rejected BY NAME; an unconstrained one is admitted on
     either carrier, which is exactly what lets one Boolean tensor ride along in a binary32 input map
@@ -138,9 +138,10 @@ private def signatureOfDenseInputs {α : Type} (env : DeclEnv)
       {} }
 
 /-- Declaration-aware counterpart of `ofDenseInputs` (Task 4.3), for the BINARY64 carrier: selects
-    `bool` for exactly the names a `.predicate` declaration commits to, `f64` for everything else —
-    a `.tensor`/`.linear` declaration or no declaration at all (an undeclared external name).
-    `ofDenseInputs` stays total because it consults no declaration at all.
+    `bool` for exactly the names a `.predicate` declaration commits to, and otherwise whatever
+    `dtypeOfDecl` answers — `f64` only for an explicit `f64` declaration (a plain `.tensor`/`.linear`
+    declaration or no declaration at all answers `f32`, so those names are refused here by the
+    carrier guard below). `ofDenseInputs` stays total because it consults no declaration at all.
 
     Since the f32 slice's Task 4 it also enforces the CARRIER: a name these binary64 buffers supply
     whose declaration commits it to `.float32` is `storageKindMismatch`, naming the input. Without
@@ -158,15 +159,14 @@ def InputSignature.ofDenseInputsForDecls (decls : List Decl) (inputs : HashMap S
 /-- The BINARY32 sibling of `ofDenseInputsForDecls` (f32 slice, Task 4): the same declaration
     authority, the same `dtypeOfDecl` classification, and the same shape traversal, over NATIVE
     `DenseTensor32` buffers. A name it supplies whose declaration commits it to `.float64` — an
-    ordinary `tensor`/`linear` declaration, or no declaration at all — is `storageKindMismatch`
-    naming that input, the exact mirror of its sibling's guard, rather than a silently `.f32`-marked
-    signature over a buffer the program says is binary64.
+    explicit `tensor f64`/`linear f64` declaration — is `storageKindMismatch` naming that input, the
+    exact mirror of its sibling's guard, rather than a silently `.f32`-marked signature over a
+    buffer the program says is binary64.
 
-    There is no non-declaration-aware binary32 counterpart of `ofDenseInputs`: that constructor can
-    be total precisely because `f64` is the answer for every undeclared name, and `f32` is never the
-    answer for one. An f32 program's every real external is `tensor f32`-declared (an undeclared one
-    constrains the schedule to `.float64` and makes it mixed, `prepareEvalPlan` Step 0b), so a
-    declaration-blind binary32 constructor would have nothing to derive `f32` from. -/
+    There is no non-declaration-aware binary32 counterpart of `ofDenseInputs`: that constructor is
+    total because it hard-codes `f64` for every entry and consults no declaration, so a
+    declaration-blind binary32 sibling would have no declaration to check its buffers against
+    (the carrier guard needs the `DeclEnv`, and a `predicate` name must still be `bool`). -/
 def InputSignature.ofDenseInputs32ForDecls (decls : List Decl)
     (inputs : HashMap String DenseTensor32) : Except InputSignatureBuildError InputSignature := do
   let env : DeclEnv ← declEnvOrThrow decls

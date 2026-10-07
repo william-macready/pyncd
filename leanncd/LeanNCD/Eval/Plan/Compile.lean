@@ -1503,10 +1503,9 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
   -- `dtypeMismatch`, carrying both dtypes so a caller does not have to re-derive either.
   --
   -- For a `.float32` schedule the admission gate is SKIPPED, not re-pointed at `dtypeAdmittedF32`.
-  -- Every real external of an f32 schedule is `tensor f32`-declared and every Boolean one is
-  -- `predicate`-declared — an UNDECLARED external would have constrained storage to `.float64` and
-  -- made Step 0b reject the schedule as mixed — so `dtypeOfDecl` commits every name here to `.f32`
-  -- or `.bool` and the expectation check below is already exhaustive. Pointing the gate at
+  -- Every real external of an f32 schedule is declared `tensor f32`, declared plain `tensor`, or
+  -- undeclared, and every Boolean one is `predicate`-declared, so `dtypeOfDecl` commits every
+  -- name here to `.f32` or `.bool` and the expectation check below is already exhaustive. Pointing the gate at
   -- `dtypeAdmittedF32` would only relabel the one interesting case, a supplied `.f64` signature for
   -- an f32-declared name, from the informative `dtypeMismatch nm .f32 .f64` (two known sides
   -- disagreeing about precision) to a bare "not admitted", losing the expectation.

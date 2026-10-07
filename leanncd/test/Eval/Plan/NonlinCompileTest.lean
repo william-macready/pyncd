@@ -235,8 +235,9 @@ def axiswiseIsolatedPrepared : Option PreparedPlan :=
 
 /-! #### Fixture 4.4 (F32-B Task 4), axiswise half: binary64 byte-identity
 
-`axiswiseSched`'s own declarations name no `.typedTensor`/`.tensor` at all for `A`/`Y`, so both stay
-undeclared and default to `.f64` (`dtypeOfDecl none = .f64`) — `axiswiseIsolatedPrepared` just above
+`axiswiseSched`'s own declarations name no `.typedTensor`/`.tensor` at all for `A`/`Y`, so both would
+be undeclared and default to `.f32` (`dtypeOfDecl none = .f32`); `explicitF64Decls` declares them
+`f64` — `axiswiseIsolatedPrepared` just above
 is therefore ALREADY the binary64 control this task's six-site fix needs for the `.axiswise` arm: its
 preactivation step's algebra is exactly `admittedAlgebra` (never the f32 `admittedAlgebraF32`) and
 every one of its three signatures is `.f64`. The pointwise half of this same control lives in
