@@ -1,0 +1,122 @@
+[
+  {
+    "label": "M01 implementation multiplicity truncation",
+    "expect": ["error: LeanNCD/Semantics/Program.lean:81:2: Type mismatch"],
+    "task": "3",
+    "file": "LeanNCD/Semantics/Program.lean",
+    "old": "  pushforward (fun o : P.Occurrence t => P.destination t o.1 o.2)\n    (P.contribution ops ρ h t)",
+    "new": "  pushforward (fun o : P.Occurrence t => P.destination t o.1 o.2)\n    (fun o => if o.1.val = 0 then P.contribution ops ρ h t o else 0)",
+    "targets": ["Semantics.CollectionModelTest"],
+    "class": "implementation bug; generic grouping obligation and duplicate/collision fixtures"
+  },
+  {
+    "label": "M02 implementation guard demand inversion",
+    "expect": ["error: LeanNCD/Semantics/Program.lean:50:28: Application type mismatch: The argument"],
+    "task": "3",
+    "file": "LeanNCD/Semantics/Program.lean",
+    "old": "  ∀ t o, (P.outcome ops ρ t o).isSome = true",
+    "new": "  ∀ (t : P.Defined) (o : P.Occurrence t), P.guard t o.1 o.2.val = false →\n    (P.outcome ops ρ t o).isSome = true",
+    "targets": ["Semantics.CollectionModelTest"],
+    "class": "implementation invariant rejection; contribution extraction must demand all admitted occurrences"
+  },
+  {
+    "label": "M03 implementation undefined bodies replaced by zero",
+    "expect": ["error: test/Semantics/CollectionModelTest.lean:63:2: 'change' tactic failed, pattern"],
+    "task": "3",
+    "file": "LeanNCD/Semantics/Program.lean",
+    "old": "  interpret ops ρ (P.body t o.1) o.2",
+    "new": "  some (ops (σ.signature t.val).sort).zero",
+    "targets": ["Semantics.CollectionModelTest"],
+    "class": "implementation bug; active zero-times-undefined and heterogeneous/nonlinear observations"
+  },
+  {
+    "label": "M04 implementation forbidden prior seed",
+    "expect": ["error: LeanNCD/Semantics/Program.lean:81:2: Type mismatch"],
+    "task": "3",
+    "file": "LeanNCD/Semantics/Program.lean",
+    "old": "  pushforward (fun o : P.Occurrence t => P.destination t o.1 o.2)\n    (P.contribution ops ρ h t)",
+    "new": "  fun p => ρ ⟨t.val, p⟩ + pushforward\n    (fun o : P.Occurrence t => P.destination t o.1 o.2) (P.contribution ops ρ h t) p",
+    "targets": ["Semantics.CollectionModelTest"],
+    "class": "implementation bug; no-seed law and grouped collection proof"
+  },
+  {
+    "label": "M05 implementation empty input presence bypass",
+    "expect": ["error: test/Semantics/CollectionModelTest.lean:132:2: Tactic `decide` proved that the proposition"],
+    "task": "3",
+    "file": "LeanNCD/Semantics/Models.lean",
+    "old": "  ∀ t, (η t).isSome = P.input t",
+    "new": "  ∀ t, (η t).isSome = P.input t ∨ (canonicalLayout (σ.signature t).axes).count = 0",
+    "targets": ["Semantics.CollectionModelTest"],
+    "class": "implementation bug; omitted declared empty input becomes valid"
+  },
+  {
+    "label": "M06 fixture duplicate statement deletion contrast",
+    "expect": ["error: test/Semantics/CollectionModelTest.lean:40:0: Expression"],
+    "task": "3",
+    "file": "test/Semantics/CollectionModelTest.lean",
+    "old": "def duplicate := vectorProgram 2 (fun _ => 0) (fun _ => 2)",
+    "new": "def duplicate := vectorProgram 1 (fun _ => 0) (fun _ => 2)",
+    "targets": ["Semantics.CollectionModelTest"],
+    "class": "fixture contrast, not implementation mutation"
+  },
+  {
+    "label": "M07 fixture excluded undefined becomes active",
+    "expect": ["error: test/Semantics/CollectionModelTest.lean:58:2: Tactic `contradiction` failed"],
+    "task": "3",
+    "file": "test/Semantics/CollectionModelTest.lean",
+    "old": "theorem excluded_undefined : (partialProgram false false).AdmEnv ops prior := by",
+    "new": "theorem excluded_undefined : (partialProgram true false).AdmEnv ops prior := by",
+    "targets": ["Semantics.CollectionModelTest"],
+    "class": "fixture contrast; guard eligibility nearest neighbor"
+  },
+  {
+    "label": "M08 fixture active undefined becomes legal zero",
+    "expect": ["error: test/Semantics/CollectionModelTest.lean:63:2: 'change' tactic failed, pattern"],
+    "task": "3",
+    "file": "test/Semantics/CollectionModelTest.lean",
+    "old": "theorem active_zero_undefined : ¬ (partialProgram true false).AdmEnv ops prior := by",
+    "new": "theorem active_zero_undefined : ¬ (partialProgram true true).AdmEnv ops prior := by",
+    "targets": ["Semantics.CollectionModelTest"],
+    "class": "fixture contrast; strict undefinedness nearest legal neighbor"
+  },
+  {
+    "label": "M09 fixture extra binding becomes exact binding",
+    "expect": ["error: test/Semantics/CollectionModelTest.lean:135:2: Tactic `decide` proved that the proposition"],
+    "task": "3",
+    "file": "test/Semantics/CollectionModelTest.lean",
+    "old": "theorem defined_binding_rejected : ¬ roleProgram.ValidInput extraDefined := by",
+    "new": "theorem defined_binding_rejected : ¬ roleProgram.ValidInput presentEmpty := by",
+    "targets": ["Semantics.CollectionModelTest"],
+    "class": "fixture contrast; exact input identifier-domain nearest neighbor"
+  },
+  {
+    "label": "M10 fixture nonlinear sum-commutation contrast",
+    "expect": ["error: test/Semantics/CollectionModelTest.lean:90:0: Expression"],
+    "task": "3",
+    "file": "test/Semantics/CollectionModelTest.lean",
+    "old": "interpret ops prior (.prim (r := registry) Op.recip (fun _ => .lit 6)) () == some (1 / 6 : ℚ)",
+    "new": "interpret ops prior (.prim (r := registry) Op.recip (fun _ => .lit 6)) () == some (3 / 4 : ℚ)",
+    "targets": ["Semantics.CollectionModelTest"],
+    "class": "fixture contrast; nonlinear before/after sum are unequal"
+  },
+  {
+    "label": "M11 fixture asymmetric permutation lane contrast",
+    "expect": ["error: test/Semantics/CollectionModelTest.lean:45:0: Expression"],
+    "task": "3",
+    "file": "test/Semantics/CollectionModelTest.lean",
+    "old": "    target (point 2) == 5",
+    "new": "    target (point 2) == 9",
+    "targets": ["Semantics.CollectionModelTest"],
+    "class": "fixture contrast; asymmetric values discriminate destinations"
+  },
+  {
+    "label": "M12 fixture nonoutput equation repaired contrast",
+    "expect": ["error: test/Semantics/CollectionModelTest.lean:159:2: 'change' tactic failed, pattern"],
+    "task": "3",
+    "file": "test/Semantics/CollectionModelTest.lean",
+    "old": "def internalNonzero : Store Carrier roleDeclarations := fun a => if a.1 = 2 then 7 else 0",
+    "new": "def internalNonzero : Store Carrier roleDeclarations := fun _ => 0",
+    "targets": ["Semantics.CollectionModelTest"],
+    "class": "fixture contrast; model versus admissible nonmodel nearest neighbor"
+  }
+]
