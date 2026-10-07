@@ -391,3 +391,27 @@ prose and comments included; matching LINES before the fix: AdapterTest 49, Adap
 | Adapter32Test | `ofDenseInputs` | 4 | not needed: binary64 carrier side held fixed |
 | Adapter32Test | `runPreparedDense` | 37 | not needed (the binary64 runner legs consume the now-f64 twin plans) |
 | Adapter32Test | `evalScheduled`, `ScheduledProgram` | 0 | n.a. |
+
+## Task 6c DifferentialTest (VERIFIED classification, measured before any edit)
+
+Targeted build `Eval.Plan.DifferentialTest` after Task 6a (8526 jobs, one failing). The module is a
+`run_cmd`/`#guard` file (each failing `run_cmd` stops at its first throw, so counts are failing
+COMMANDS and a fixed command may expose later throws inside it; re-measured after the fix). No
+`maximum number of errors` cap hit. 28 failing `run_cmd` plus the `3832` sweep `#guard` (line 212,
+failing because the sweep throws): 29 error lines, under the ~60 split threshold.
+
+Two symptoms, one root cause (undeclared name, now f32, against the binary64 `Float` env or mixed with
+the `f64` inputs Gen declares):
+
+| group | failing lines | n | symptom | class | fix |
+|---|---|---|---|---|---|
+| `checkEntry` callers: Gen sweep + `#guard` 3832 | 197, 212 | 2 | `prepareEvalPlan rejected a program capabilityPreflight accepted` (inputs f64, outputs Y undeclared: mixed schedule) | (i) | `p.explicitF64` in `checkEntry` |
+| hand `TLProgram` fixtures through `planAgrees` (rank2, multiReduction, repeat, plainMax, xent, mutations a/b/c) | 259, 283, 310, 357, 461, 516, 539, 569 | 8 | same | (i) | same (central) |
+| alpha-rename `compileToScheduled` pair | 50 | 1 | `origAlphaProg failed to prepare` | (i) | `.explicitF64` at the two compile sites |
+| scan fixtures through `scanParityCheck`/`scanParity2`/hand `ScheduledProgram`s | 757, 787, 881, 945, 1124, 1153, 1184, 1209, 1505, 1831, 2049, 2058 | 12 | `inputSignature: dtypeMismatch "S0"/"X"/"Init" f32 f64` | (i) | `ScanCompileTest.explicitF64Sched` at the shared parity helpers / schedule defs |
+| scan corpus gate (`ScanGen` 17 cases via `schedOfCase`) | 1027 | 1 | `unsupportedDtype "S: mixed f32/f64 storage in one schedule"` | (i) | `explicitF64Sched` over `schedOfCase` |
+| nonlin / predicate / scatter corpora | 1303, 1347, 1663, 1776, 2023 | 5 | undeclared outputs; `runPreparedDense failed on an accepted program`, `storageKindMismatch "X" float64 float32` | (i) | `p.explicitF64` (via `checkEntry`/`planAgrees`) and `explicitF64Sched` on hand scheds |
+
+Class (ii)/(iii): none observed at measurement time (no pin of the default, no production error); any
+residual after the fix STOPS. The decision criterion is the plan's (A): Gen corpus untouched, pinned
+`3832`/`17` guards untouched.
