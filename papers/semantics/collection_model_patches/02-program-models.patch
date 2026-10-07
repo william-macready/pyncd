@@ -1,0 +1,204 @@
+diff --git a/leanncd/LeanNCD/Semantics/Models.lean b/leanncd/LeanNCD/Semantics/Models.lean
+new file mode 100644
+index 0000000000000000000000000000000000000000..512f9b81fadb99f6a7f6c26228a4e973283c6e5e
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Models.lean
+@@ -0,0 +1,96 @@
++import LeanNCD.Semantics.Program
++
++namespace LeanNCD.Semantics.Program
++
++variable {K : S → Type} {σ : Declarations S} {r : Registry K}
++variable (P : Program K σ r)
++
++abbrev InputBinding := (t : σ.Tensor) →
++  Option (Coord (σ.signature t).axes → K (σ.signature t).sort)
++
++/- Presence is a tensor-level fact even when its coordinate type is empty. -/
++def ValidInput (η : InputBinding (K := K) (σ := σ)) : Prop :=
++  ∀ t, (η t).isSome = P.input t
++
++abbrev Input := {η : InputBinding (K := K) (σ := σ) // P.ValidInput η}
++
++def InputAgreement (η : P.Input) (ρ : Store K σ) : Prop :=
++  ∀ t f, η.val t = some f → ∀ p, ρ ⟨t, p⟩ = f p
++
++variable (ops : (s : S) → ScalarOps (K s))
++variable [∀ t : P.Defined, AddCommMonoid (K (σ.signature t.val).sort)]
++
++def Models (η : P.Input) (ρ : Store K σ) : Prop :=
++  ∃ h : P.AdmEnv ops ρ, P.InputAgreement η ρ ∧
++    ∀ t p, ρ ⟨t.val, p⟩ = P.collect ops ρ h t p
++
++/- This partial operator is defined only on AdmEnv. Its result is a complete
++   store, not necessarily an admissible store; no iteration is specified. -/
++def equationOperator (ρ : Store K σ) (h : P.AdmEnv ops ρ) : Store K σ :=
++  fun a => if hi : P.input a.1 = true then ρ a
++    else P.collect ops ρ h ⟨a.1, Bool.eq_false_iff.mpr hi⟩ a.2
++
++theorem models_fixedpoint (η : P.Input) (ρ : Store K σ) :
++    P.Models ops η ρ ↔ P.InputAgreement η ρ ∧
++      ∃ h : P.AdmEnv ops ρ, P.equationOperator ops ρ h = ρ := by
++  constructor
++  · rintro ⟨h, agree, equations⟩
++    refine ⟨agree, h, ?_⟩
++    funext a
++    dsimp [equationOperator]
++    split_ifs with hi
++    · rfl
++    · exact (equations ⟨a.1, Bool.eq_false_iff.mpr hi⟩ a.2).symm
++  · rintro ⟨agree, h, fixed⟩
++    refine ⟨h, agree, ?_⟩
++    intro t p
++    have cell := congrFun fixed ⟨t.val, p⟩
++    simpa [equationOperator, t.property] using cell.symm
++
++def RelabeledModels {O : P.Defined → Type} [∀ t, Fintype (O t)]
++    (e : ∀ t, O t ≃ P.Occurrence t) (η : P.Input) (ρ : Store K σ) : Prop :=
++  ∃ h : (∀ t o, (P.outcome ops ρ t (e t o)).isSome = true),
++    P.InputAgreement η ρ ∧ ∀ t p, ρ ⟨t.val, p⟩ =
++      P.relabeledCollect ops e ρ ((P.admEnv_relabel ops e ρ).mp h) t p
++
++theorem models_relabel {O : P.Defined → Type} [∀ t, Fintype (O t)]
++    (e : ∀ t, O t ≃ P.Occurrence t) (η : P.Input) (ρ : Store K σ) :
++    P.RelabeledModels ops e η ρ ↔ P.Models ops η ρ := by
++  constructor
++  · rintro ⟨h, agree, equations⟩
++    refine ⟨(P.admEnv_relabel ops e ρ).mp h, agree, ?_⟩
++    intro t p
++    simpa only [collect_relabel] using equations t p
++  · rintro ⟨h, agree, equations⟩
++    refine ⟨(P.admEnv_relabel ops e ρ).mpr h, agree, ?_⟩
++    intro t p
++    simpa only [collect_relabel] using equations t p
++
++def GroupedModels (η : P.Input) (ρ : Store K σ) : Prop :=
++  ∃ h : P.AdmEnv ops ρ, P.InputAgreement η ρ ∧ ∀ t p, ρ ⟨t.val, p⟩ =
++    ∑ s, letI := coordDecidableEq (σ.signature t.val).axes
++      pushforward (P.destination t s)
++        (fun v => P.contribution ops ρ h t ⟨s, v⟩) p
++
++theorem models_grouped (η : P.Input) (ρ : Store K σ) :
++    P.GroupedModels ops η ρ ↔ P.Models ops η ρ := by
++  simp only [GroupedModels, Models, collect_grouped]
++
++def AdmInput (η : P.Input) : Prop := ∃! ρ, P.Models ops η ρ
++
++abbrev Output := (t : {t : σ.Tensor // P.output t = true}) →
++  Coord (σ.signature t.val).axes → K (σ.signature t.val).sort
++
++def outputProjection (ρ : Store K σ) : P.Output := fun t p => ρ ⟨t.val, p⟩
++
++noncomputable def denotation (η : P.Input) (h : P.AdmInput ops η) : P.Output :=
++  P.outputProjection (Classical.choose h)
++
++theorem denotation_of_model (η : P.Input) (h : P.AdmInput ops η)
++    (ρ : Store K σ) (model : P.Models ops η ρ) :
++    P.denotation ops η h = P.outputProjection ρ := by
++  have unique := Classical.choose_spec h
++  have eq := unique.2 ρ model
++  exact congrArg P.outputProjection eq.symm
++
++end LeanNCD.Semantics.Program
+diff --git a/leanncd/LeanNCD/Semantics/Program.lean b/leanncd/LeanNCD/Semantics/Program.lean
+new file mode 100644
+index 0000000000000000000000000000000000000000..c6b5c89d88ef99ccfac6bca0f928829f333f2456
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Program.lean
+@@ -0,0 +1,96 @@
++import LeanNCD.Semantics.Collection
++import LeanNCD.Semantics.Interpret
++
++namespace LeanNCD.Semantics
++
++def coordDecidableEq : (sh : Shape) → DecidableEq (Coord sh)
++  | [] => inferInstance
++  | _ :: sh => @instDecidableEqProd _ _ inferInstance (coordDecidableEq sh)
++
++/- Structural admission is encoded in the types, not a runtime/source checker.
++   Statement identifiers are local to a defined target; duplicate bodies keep
++   distinct identifiers. Valuations are admitted before body demand. -/
++structure Program (K : S → Type) (σ : Declarations S) (r : Registry K) where
++  tensors : Fintype σ.Tensor
++  input : σ.Tensor → Bool
++  output : σ.Tensor → Bool
++  output_defined : ∀ t, output t = true → input t = false
++  statements : {t : σ.Tensor // input t = false} → Nat
++  valuations : (t : {t : σ.Tensor // input t = false}) → Fin (statements t) → Nat
++  guard : (t : {t : σ.Tensor // input t = false}) →
++    (s : Fin (statements t)) → Fin (valuations t s) → Bool
++  destination : (t : {t : σ.Tensor // input t = false}) →
++    (s : Fin (statements t)) → {v : Fin (valuations t s) // guard t s v = true} →
++    Coord (σ.signature t.val).axes
++  body : (t : {t : σ.Tensor // input t = false}) →
++    (s : Fin (statements t)) →
++    Expr K σ r {v : Fin (valuations t s) // guard t s v = true}
++      (.scalar (σ.signature t.val).sort)
++
++namespace Program
++
++variable {K : S → Type} {σ : Declarations S} {r : Registry K}
++
++abbrev Defined (P : Program K σ r) := {t : σ.Tensor // P.input t = false}
++abbrev Occurrence (P : Program K σ r) (t : P.Defined) :=
++  (s : Fin (P.statements t)) × {v : Fin (P.valuations t s) // P.guard t s v = true}
++
++def outcome (P : Program K σ r) (ops : (s : S) → ScalarOps (K s))
++    (ρ : Store K σ) (t : P.Defined) (o : P.Occurrence t) :=
++  interpret ops ρ (P.body t o.1) o.2
++
++def AdmEnv (P : Program K σ r) (ops : (s : S) → ScalarOps (K s))
++    (ρ : Store K σ) : Prop :=
++  ∀ t o, (P.outcome ops ρ t o).isSome = true
++
++def contribution (P : Program K σ r) (ops : (s : S) → ScalarOps (K s))
++    (ρ : Store K σ) (h : P.AdmEnv ops ρ) (t : P.Defined) (o : P.Occurrence t) :
++    K (σ.signature t.val).sort :=
++  (P.outcome ops ρ t o).get (h t o)
++
++variable (P : Program K σ r) (ops : (s : S) → ScalarOps (K s))
++variable [∀ t : P.Defined, AddCommMonoid (K (σ.signature t.val).sort)]
++
++def collect (ρ : Store K σ) (h : P.AdmEnv ops ρ) (t : P.Defined) :
++    Coord (σ.signature t.val).axes → K (σ.signature t.val).sort :=
++  letI := coordDecidableEq (σ.signature t.val).axes
++  pushforward (fun o : P.Occurrence t => P.destination t o.1 o.2)
++    (P.contribution ops ρ h t)
++
++theorem collect_grouped (ρ : Store K σ) (h : P.AdmEnv ops ρ) (t : P.Defined)
++    (p : Coord (σ.signature t.val).axes) :
++    P.collect ops ρ h t p =
++      ∑ s, letI := coordDecidableEq (σ.signature t.val).axes
++        pushforward (P.destination t s)
++          (fun v => P.contribution ops ρ h t ⟨s, v⟩) p := by
++  letI := coordDecidableEq (σ.signature t.val).axes
++  exact pushforward_grouped _ _ _
++
++def relabeledCollect {O : P.Defined → Type} [∀ t, Fintype (O t)]
++    (e : ∀ t, O t ≃ P.Occurrence t) (ρ : Store K σ) (h : P.AdmEnv ops ρ)
++    (t : P.Defined) : Coord (σ.signature t.val).axes → K (σ.signature t.val).sort :=
++  letI := coordDecidableEq (σ.signature t.val).axes
++  pushforward (fun o => P.destination t (e t o).1 (e t o).2)
++    (fun o => P.contribution ops ρ h t (e t o))
++
++theorem collect_relabel {O : P.Defined → Type} [∀ t, Fintype (O t)]
++    (e : ∀ t, O t ≃ P.Occurrence t) (ρ : Store K σ) (h : P.AdmEnv ops ρ)
++    (t : P.Defined) :
++    P.relabeledCollect ops e ρ h t = P.collect ops ρ h t := by
++  letI := coordDecidableEq (σ.signature t.val).axes
++  exact pushforward_relabel (e t)
++    (fun o : P.Occurrence t => P.destination t o.1 o.2)
++    (P.contribution ops ρ h t)
++
++omit [∀ t : P.Defined, AddCommMonoid (K (σ.signature t.val).sort)] in
++theorem admEnv_relabel {O : P.Defined → Type}
++    (e : ∀ t, O t ≃ P.Occurrence t) (ρ : Store K σ) :
++    (∀ t o, (P.outcome ops ρ t (e t o)).isSome = true) ↔ P.AdmEnv ops ρ := by
++  constructor
++  · intro h t o
++    simpa using h t ((e t).symm o)
++  · intro h t o
++    exact h t (e t o)
++
++end Program
++end LeanNCD.Semantics

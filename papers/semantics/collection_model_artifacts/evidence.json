@@ -1,0 +1,175 @@
+{
+  "controller_verification": {
+    "final_plan_reviews": "Categorical/semantic/model lens clean; artifact/type/admission/execution lens has no open findings after confirmed bounded preparation-restriction correction. No candidate code changed.",
+    "protected_input_guards": "Publication worktree and local main unchanged under leanncd and listed specification/Naperian guidance inputs before publication.",
+    "ordered_patch_replay": "All three temporary-index apply --checks passed and final tree matched 3bc1200f3083e62dc86f23983857e185287af67d.",
+    "actual_pinned_mutation_suite": "12/12 passed, with observed expect strings in every entry, byte-identical restoration, and restored green builds; mutation_results.md.",
+    "post_mutation_source_diff": "Empty tracked-source diff against 8c377721298a18d57906f1412fa9703efbd0b4a8.",
+    "full_candidate_build": "Passed, 8690 jobs; all default tests including Semantics.CollectionModelTest, existing warnings retained.",
+    "all_13_theorem_axiom_audit": "check-snippet.sh succeeded; only propext, Quot.sound, Classical.choice, no sorryAx.",
+    "full_publication_baseline_build": "Passed, 8686 jobs in separate plan worktree; no candidate source applied there.",
+    "raw_logs": "Persistent controller session artifacts collection-controller-mutation-final.log, collection-controller-full-build.log, collection-controller-axioms.log, collection-plan-base-build.log."
+  },
+  "dispatch": "AUTHORING A ONLY; prototype/verification, not plan publication",
+  "root": "/Users/williammacready/code/python/pyncd.worktrees/collection-model-proto",
+  "base": "26fcfe6b8b209b8bd05b871705f6b731b1caba0a",
+  "candidate_head": "8c377721298a18d57906f1412fa9703efbd0b4a8",
+  "candidate_policy": "DO NOT MERGE; controller owns review, mutation suite, and separate publication worktree",
+  "task_commits": {
+    "1": ["067a26416040ca0050a12c1a0405ed029a85ef8b"],
+    "2": ["c4181f60ad3e90005e22cb5a8f29fe203bd1b6e2", "53034be98e6af24fda8e26699386784e317a8f04"],
+    "3": ["8c377721298a18d57906f1412fa9703efbd0b4a8"]
+  },
+  "modules": [
+    "leanncd/LeanNCD/Semantics/Collection.lean",
+    "leanncd/LeanNCD/Semantics/Program.lean",
+    "leanncd/LeanNCD/Semantics/Models.lean"
+  ],
+  "task_work_items": {
+    "1": ["Function-family pullback and additive pushforward", "Generic identity/composition and additive homomorphism laws", "Finite relabeling and sigma grouping"],
+    "2": ["Finite typed roles, admitted occurrence tags and strict body demand", "Pushforward-backed collection with grouping and relabeling", "Presence-aware inputs, all equations, fixed points and unique-model output projection"],
+    "3": ["18 bounded collection/admission/model assertions", "Umbrella/default test discovery and scoped documentation", "12 mutation anchors and verification artifact handoff"]
+  },
+  "counts": {
+    "production_theorems": 13,
+    "collection_theorems": 6,
+    "program_theorems": 3,
+    "model_theorems": 4,
+    "fixture_assertions": 18,
+    "fixture_guards": 9,
+    "fixture_theorems": 9,
+    "fixture_proof_helpers_defined_with_def": 5,
+    "fixture_eval_commands": 1,
+    "mutation_entries": 12,
+    "mutation_implementation_entries": 5,
+    "mutation_fixture_contrast_entries": 7,
+    "individual_mutation_cycles_observed_by_prototype": 3,
+    "controller_initial_cycles_passed": 12,
+    "remaining_unobserved_cycles": 0
+  },
+  "theorems": {
+    "LeanNCD.Semantics": [
+      "pushforward_zero", "pushforward_add", "pushforward_id",
+      "pushforward_comp", "pushforward_relabel", "pushforward_grouped"
+    ],
+    "LeanNCD.Semantics.Program": [
+      "collect_grouped", "collect_relabel", "admEnv_relabel",
+      "models_fixedpoint", "models_relabel", "models_grouped", "denotation_of_model"
+    ]
+  },
+  "categorical_claims": {
+    "representation": "Family I K := I -> K, with existing Coord and declarations; no semantic type redesign",
+    "reads": "pullback f v = v composed with f, contravariant",
+    "writes": "pushforward d v i = finite sum over all occurrence tags whose destination equals i, covariant",
+    "laws": "Generic identity/composition, zero/add preservation (pushforwardHom), occurrence equivalence invariance, finite sigma grouping",
+    "program_use": "Program.collect directly calls generic pushforward for each defined tensor; the category organization is not an unused sidecar",
+    "algebra": "AddCommMonoid only on each participating defined carrier; body ScalarOps remain explicit data; no multiplication laws or Float algebra instances",
+    "nonlinearity": "No primitive homomorphism across sums; reciprocal-before sum is 3/4 versus reciprocal-after sum 1/6",
+    "alignment_reference": "papers/NaperianTyping.md, Fiber semantics and reindexing; Reformulated view: Naperian D-graded PROPs",
+    "alignment": "Contravariant reads are precomposition of plain function families. Representability of lifted objects is a separate assumption from strong monoidality and coherence, not a consequence established by this prototype.",
+    "limit": "No full Cat/Functor/Kan-extension, D-graded PROP integration, representability/coherence derivation, or full categorical semantic interpretation claimed. General categorical integration remains deferred."
+  },
+  "model_claims": {
+    "roles": "input Bool partitions finite declared tensor identifiers; defined is the false subtype; output proof requires false input",
+    "tags": "Finite per-target statement identifier and guard-admitted valuation subtype; duplicates remain separate sigma tags",
+    "destinations": "Already bounded Coord values targeting defined tensors only; noninjective maps permitted",
+    "input_presence": "Dependent optional complete tensor families; isSome exactly equals input role even for zero-coordinate tensors",
+    "extra_identifiers": "InputBinding is indexed only by declared identifiers; undeclared extras are structurally unrepresentable, not runtime rejection. Bindings for declared defined identifiers are rejected by ValidInput.",
+    "admissibility": "Every admitted occurrence body must be some, including active zero-valued and non-output bodies; excluded valuations have no occurrence",
+    "collection": "All tagged fiber values summed; empty fiber zero; candidate prior target value not included unless body reads it",
+    "models": "Admissibility, input agreement and every defined coordinate equation, not outputs alone",
+    "equation_operator": "Domain AdmEnv, retains candidate inputs and replaces defined tensors by collection; result has type Store, not admissible subtype",
+    "fixedpoint": "Models iff input agreement and existence of an admissibility witness whose equation operator fixes the store",
+    "functional_meaning": "AdmInput means existence of exactly one complete model; output projection uses Classical.choose, not a solver or constructive execution claim"
+  },
+  "verification": [
+    {
+      "source": "Controller report, not a build run by this dispatch",
+      "worktree": "plan-publication baseline",
+      "base": "26fcfe6b8b209b8bd05b871705f6b731b1caba0a",
+      "jobs": 8686,
+      "status": "independent full build passed; source guards clean"
+    },
+    {
+      "command": "bash /Users/williammacready/code/python/pyncd.worktrees/collection-model-proto/leanncd/scripts/lake-build.sh /Users/williammacready/code/python/pyncd.worktrees/collection-model-proto/leanncd LeanNCD.Semantics.Collection LeanNCD.Semantics.Program LeanNCD.Semantics.Models Semantics.CollectionModelTest",
+      "exit": 0,
+      "log": "targeted-build.log",
+      "observed_eval_values": ["4", "9", "0", "0", "9", "5", "14", "3 / 4"],
+      "note": "Final input proof unfolding change subsequently validated by full default build."
+    },
+    {
+      "command": "bash /Users/williammacready/code/python/pyncd.worktrees/collection-model-proto/leanncd/scripts/lake-build.sh /Users/williammacready/code/python/pyncd.worktrees/collection-model-proto/leanncd",
+      "exit": 0,
+      "jobs": 8690,
+      "log": "full-build.log",
+      "note": "Existing baseline sorry/linter warnings; no sorry/axiom introduced in new modules. No tests silently skipped."
+    },
+    {
+      "command": "bash /Users/williammacready/code/python/pyncd.worktrees/collection-model-proto/leanncd/scripts/mutation-manifest.sh --check /Users/williammacready/code/python/pyncd.worktrees/collection-model-proto/leanncd /Users/williammacready/code/python/pyncd.worktrees/collection-model-proto/papers/semantics/collection_model_mutations_post.json",
+      "exit": 0,
+      "log": "manifest-check.log",
+      "observed": "12 entries, 12 selected, every old-string unique"
+    }
+  ],
+  "fixtures": [
+    {"id": "F01", "kind": "guard", "claim": "duplicate statements sum to 4", "observed": "4", "donor": "NEW tagged vectorProgram; Fixtures.ops and Fixtures.point", "mutations": ["M01", "M06"]},
+    {"id": "F02", "kind": "guard", "claim": "distinct colliding statement tags sum 2+7 to 9", "observed": "9", "donor": "NEW collision; clone vectorProgram with asymmetric values/destinations", "mutations": ["M01"]},
+    {"id": "F03", "kind": "guard", "claim": "untargeted coordinate fiber is zero", "observed": "0", "donor": "clone collision, observe point 1", "mutations": ["M04"]},
+    {"id": "F04", "kind": "guard", "claim": "zero-statement defined tensor is zero", "observed": "0", "donor": "clone vectorProgram with count 0", "mutations": ["M04"]},
+    {"id": "F05", "kind": "guard", "claim": "prior candidate 99 is not an automatic seed; 4 differs from 99+4", "observed": "guard true", "donor": "clone duplicate; NEW prior store 99", "mutations": ["M04"]},
+    {"id": "F06", "kind": "guard", "claim": "swap statement tags 0/2 preserves lane 0=9 and lane 2=5", "observed": ["9", "5"], "donor": "clone collision; NEW occurrenceSwap via Equiv.sigmaCongr", "mutations": ["M11"]},
+    {"id": "F07", "kind": "theorem", "name": "excluded_undefined", "claim": "false guard excludes undefined strict body before demand", "observed": "compiled proof", "donor": "clone Fixtures.zeroStrict/bad with admitted subtype context", "mutations": ["M02", "M07"]},
+    {"id": "F08", "kind": "theorem", "name": "active_zero_undefined", "claim": "active non-output zero-times-undefined body prevents AdmEnv", "observed": "compiled proof", "donor": "clone partialProgram with guard true, legal false", "mutations": ["M02", "M03", "M08"]},
+    {"id": "F09", "kind": "guard", "claim": "nearest legal active zero-times-defined body yields some 0", "observed": "some 0 asserted by compiled guard", "donor": "clone partialProgram with legal true", "mutations": ["M08"]},
+    {"id": "F10", "kind": "guard", "claim": "Boolean argument feeds rational collected value 14", "observed": "14", "donor": "clone Fixtures.heterogeneous/registry Op.mixed", "mutations": ["M03"]},
+    {"id": "F11", "kind": "guard", "claim": "reciprocal-before collection is 3/4; reciprocal-after 6 is some 1/6", "observed": ["3 / 4", "some 1/6 asserted by compiled guard"], "donor": "Fixtures.registry Op.recip; NEW reciprocalProgram", "mutations": ["M03", "M10"]},
+    {"id": "F12", "kind": "theorem", "name": "present_valid", "claim": "complete empty input tensor is present and valid", "observed": "compiled decide proof", "donor": "NEW roleDeclarations/roleProgram; Fixtures.emptyShape", "mutations": ["M09"]},
+    {"id": "F13", "kind": "theorem", "name": "omitted_empty_rejected", "claim": "omitted declared empty input rejected independently of cells", "observed": "compiled decide proof", "donor": "clone presentEmpty binding, replace optional family by none", "mutations": ["M05"]},
+    {"id": "F14", "kind": "theorem", "name": "defined_binding_rejected", "claim": "extra bindings for declared defined identifiers rejected", "observed": "compiled decide proof", "donor": "clone presentEmpty, supply complete defined tensors", "mutations": ["M09"]},
+    {"id": "F15", "kind": "theorem", "name": "nonoutput_not_model", "claim": "non-output internal value 7 violates its zero-fiber equation", "observed": "compiled proof", "donor": "NEW internalNonzero; roleProgram zero-statement tensor", "mutations": ["M12"]},
+    {"id": "F16", "kind": "theorem", "name": "admissible_not_model", "claim": "same candidate is admissible but not a model", "observed": "compiled conjunction proof", "donor": "clone nonoutput_not_model plus role_admitted", "mutations": ["M12"]},
+    {"id": "F17", "kind": "theorem", "name": "zero_model", "claim": "nearest legal zero store satisfies all defined equations", "observed": "compiled proof", "donor": "clone internalNonzero with zero store", "mutations": ["M12"]},
+    {"id": "F18", "kind": "theorem", "name": "zero_fixedpoint", "claim": "zero model fixes the partial equation operator", "observed": "compiled proof through generic models_fixedpoint", "donor": "clone zero_model, apply models_fixedpoint", "mutations": ["M12"]}
+  ],
+  "mutation_evidence": {
+    "suite_run": false,
+    "ownership": "Controller must run actual mutation-manifest suite before shipping; all verification tasks are 3.",
+    "observed": [
+      {"label": "M01", "log": "M01-observation.log", "mutation_exit": 1, "restored_build_exit": 0, "kill": "Generic collect_grouped/collect_relabel proof obligations, NOT direct numeric guard execution", "expect_copied_from_log": true},
+      {"label": "M03", "log": "M03-observation.log", "mutation_exit": 1, "restored_build_exit": 0, "kill": "active_zero_undefined proof fails and multiple numerical guards fail", "expect_copied_from_log": true},
+      {"label": "M05", "log": "M05-observation.log", "mutation_exit": 1, "restored_build_exit": 0, "kill": "omitted_empty_rejected decide proof fails", "expect_copied_from_log": true}
+    ],
+    "unobserved": [],
+    "controller_observation": "Controller ran the complete 12-entry suite successfully, observed each mutated failure and restored pass, and copied the nine previously missing expect strings from its actual log.",
+    "controller_initial_log": "Controller session artifact collection-controller-mutation-initial.log",
+    "controller_pinned_replay": "Passed 12/12; every entry includes an observed expect string and all expected failures were seen. Final result table: mutation_results.md.",
+    "unobserved_policy": "The prototype originally left nine entries unobserved without fabricated expect strings; the controller has now observed all nine and pinned their intended failures.",
+    "guard_inversion_class": "M02 intentionally challenges the dependent contribution-definedness obligation; expected static rejection is not a runtime/source-checker claim."
+  },
+  "patches": {
+    "directory": "papers/semantics/collection_model_patches",
+    "order": ["01-finite-pushforward.patch", "02-program-models.patch", "03-fixtures-integration.patch"],
+    "generator": "emit-patches.py",
+    "method": "git diff --full-index --binary between compiled commits; temporary-index sequential apply and exact final tree comparison",
+    "verification": "PASS: all three sequential apply --check operations; replayed tree equals candidate tree",
+    "candidate_tree": "3bc1200f3083e62dc86f23983857e185287af67d",
+    "log": "patch-check.log"
+  },
+  "limitations": [
+    "Guard/destination admission and undeclared identifiers are structural typed contracts, not runtime/source validation.",
+    "No raw write resolution, dropping/evaluate-only policies, implicit contraction, substitution, scheduling/publication, cyclic solver, or backend/numerical refinement.",
+    "No general unique-model existence theorem and no pure-einsum elaboration correspondence proof.",
+    "Model operator codomain permits nonadmissible results by type, but no dedicated log-style fixture of that phenomenon was added within the 18-assertion bound.",
+    "Heterogeneous primitive arguments verified; Boolean OR collection was not added and no XOR instance was introduced.",
+    "Pinned controller suite replay and both final plan review lenses completed. No unobserved failure anchors or open review findings remain; future implementation verification is separate."
+  ],
+  "budget": {
+    "target_turns": 45,
+    "absolute_turn_cap": 60,
+    "context_peak_cap_tokens": 250000,
+    "measurement_command": "python3 .claude/skills/slice-plan/token-report.py 76f0a853-0a37-48fc-b4da-e9b7b5f49bfe",
+    "measurement_result": "no transcript for session; no measured cumulative token total available",
+    "estimate": "Approximately 45 tool-bearing turns for dispatch A plus about five alignment follow-up turns; slightly above the ~45 target, below the 60 absolute cap. Context peak well below 250k. Figures are estimates, not transcript measurements.",
+    "disclosure": "Measured budget unavailable, not claimed as measured; no absolute budget breach known."
+  }
+}
