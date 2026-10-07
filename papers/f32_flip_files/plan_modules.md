@@ -45,3 +45,34 @@ at the lines the prototype named. Class (iii): none.
 | 137 | `gn2Prog` `run_cmd`: `X` dtype `f64` via `ofDenseInputsForDecls sched.decls` over a Float env | `X` undeclared -> `.float32`, `storageKindMismatch "X" .float64 .float32` | (i) | compile `gn2Prog.explicitF64` (undeclared names declared `tensor f64`) |
 | 426 | `ofDenseInputs32ForDecls [.typedTensor .f32 "X" [], .tensor "Z" []]` rejects `Z` with `(.float32, .float64)` | plain `tensor Z` is now binary32, so there is no disagreement over the f32 carrier | (i) | re-spell `.typedTensor .f64 "Z" []` at source (the fixture's point is an explicit binary64 declaration among f32 ones) |
 | 443 | `ofDenseInputs32ForDecls [.tensor "X" []] soleInput32` rejects | plain `tensor X` is binary32, so the native Float32 buffer is accepted | (ii) | re-pin to ACCEPT (`f32` signature, shape `[2, 3]`); ADD the nearest still-rejecting neighbour `[.typedTensor .f64 "X" []]` -> `storageKindMismatch "X" .float32 .float64` |
+
+## Task 3 scatter modules (VERIFIED classification)
+
+Targeted builds after Task 1 (default flipped). `Eval.Plan.ScatterCompileTest`: exactly 48 failing
+assertions (39 `#guard`, 9 `run_cmd` throws), one `lake` job failure. `Eval.Plan.Scatter32OracleTest`:
+1 failing assertion. Class (iii): none. No fixture in `ScatterCompileTest` declares any tensor: every
+program is `tlprog!{ Out[...] := X[...] }` with undeclared names, so all of them are now `.float32`
+and meet the `Float` (binary64) carrier through `InputSignature.ofDenseInputs` -> `prepareEvalPlan`
+rejects (`storageKindMismatch`). Fix is the lever at the two helper bodies that call
+`compileToScheduled` (undeclared names, so `explicitF64`, not source re-spelling).
+
+| module | lines | assertions | what failed | class | fix |
+|---|---|---|---|---|---|
+| ScatterCompileTest | 106, 112-131 (S1) | 11 `#guard` via `upsamplePrepared`/`upsampleScatter` (-> `preparedOf` -> `schedOf`) | `preparedOf` is `none`: `prepareEvalPlan` rejects the unwrapped schedule | (i) | `schedOf` compiles `p.explicitF64` |
+| ScatterCompileTest | 143-145 (S2), 154-156 (S3), 169-172 (S4), 186-187 (S5), 208/212/214 (S6), 231-234 (S7), 261-268 (S8), 292-296 (S9) | 28 `#guard` via `preparedOf` | same | (i) | same (`schedOf`) |
+| ScatterCompileTest | 133, 146, 157, 173, 190, 216, 235, 269, 297 | 9 `run_cmd` `assertScatterParity` ("prepareEvalPlan rejected a source-compiled scatter program") | helper calls `prog.compileToScheduled` directly, not through `schedOf` | (i) | `assertScatterParity` compiles `prog.explicitF64`; its `evalScheduled sched env` leg reuses that same `sched`, so no separate change |
+| Scatter32OracleTest | 241-245 `run_cmd` (case O1, first failure; O5 shares the helper and would fail next) | 1 reported | `run64` builds a binary64 `InputSignature.ofDenseInputsForDecls` for the O1/O5 `contrast64` programs, whose plain `tensor A(i), ...` is now binary32: `storageKindMismatch "B" .float64 .float32` | (i) | re-spell `tensor f64` AT SOURCE in the two `contrast64` programs (O1 line 175, O5 line 236); f32 legs (`compile32`/`run32`, `tensor f32 ...`) untouched |
+
+Site table (rg `ofDenseInputs|prepareEvalPlan|compileToScheduled|TLProgram.eval|evalScheduled|ScheduledProgram|runPreparedDense`;
+feeds the Task 6 site table):
+
+| module | line | site | changed? |
+|---|---|---|---|
+| ScatterCompileTest | 42 | `schedOf`: `p.compileToScheduled` | YES `p.explicitF64.compileToScheduled` |
+| ScatterCompileTest | 50 | `preparedOf`: `prepareEvalPlan sched (ofDenseInputs env)` | no (sched comes from `schedOf`) |
+| ScatterCompileTest | 72 | `assertScatterParity`: `prog.compileToScheduled` | YES `prog.explicitF64.compileToScheduled` |
+| ScatterCompileTest | 75, 80, 83 | `prepareEvalPlan`/`runPreparedDense`/`evalScheduled` over that `sched` | no |
+| ScatterCompileTest | 3, 15-19, 37-38, 201 | doc comments only | no |
+| Scatter32OracleTest | 41, 44, 47, 55 | `compile32`/`run32` binary32 leg | no (`tensor f32` declared; default irrelevant) |
+| Scatter32OracleTest | 103, 106, 109, 112 | `run64` binary64 leg | no code change; its inputs (the O1/O5 `contrast64` programs) now spell `tensor f64` |
+| Scatter32OracleTest | 12, 98 | doc comments | line 98 "(ordinary declarations)" -> "(`tensor f64` declarations)" |
