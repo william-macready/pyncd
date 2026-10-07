@@ -40,14 +40,20 @@ def pyTensorEntry32 (t : DenseTensor32) : String :=
   "{\"shape\": " ++ pyShapeTuple t.shape.toArray ++
   ", \"dtype\": \"float32\", \"bits\": " ++ pyUInt32ListLit (t.data.map Float32.toBits) ++ "}"
 
-/-- Rebuild a source fixture for the binary32 graph: every `.tensor` declaration becomes
-    `.typedTensor .f32` (axes unchanged), every undeclared statement output gets a binary32
-    declaration over its own LHS axes, and
+/-- Rebuild a source fixture for the binary32 graph: first `p.explicitF64` spells the corpus's
+    binary64 reading out (it declares every undeclared used name, outputs included,
+    `.typedTensor .f64`); then every `.tensor` and `.typedTensor .f64` declaration becomes
+    `.typedTensor .f32` (axes unchanged), every statement output still lacking a declaration gets a
+    binary32 one over its own LHS axes, and
     every DECLARED input converts with `Float.toFloat32` (the generator's inputs are small integers,
     exact in binary32); undeclared extra inputs are dropped. Nothing else changes, so the case set is the binary64 corpus's own. -/
 def retag32 (p : TLProgram) (env : HashMap String DenseTensor) : TLProgram × NamedDenseEnv32 :=
+  -- Under the f32 default flip an undeclared name is binary32, not binary64: first spell the
+  -- source corpus's binary64 reading explicitly (`explicitF64`), then retag it to binary32.
+  let p := p.explicitF64
   let decls := p.decls.map fun d => match d with
     | .tensor n ax => .typedTensor .f32 n ax
+    | .typedTensor .f64 n ax => .typedTensor .f32 n ax
     | d => d
   let inDecls := decls.filterMap fun d => match d with
     | .typedTensor _ n _ => some n

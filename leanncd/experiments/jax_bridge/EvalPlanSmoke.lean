@@ -21,6 +21,7 @@ namespace LeanNCD.Eval.Plan.JaxSmoke
 open LeanNCD LeanNCD.Eval LeanNCD.Eval.Plan Std
 
 def affineProg : TLProgram := tlprog!{
+  tensor f64 W(i, j), x(j), b(i), Y(i)
   Y[i] := W[i, j] · x[j] + b[i]
 }
 
@@ -32,6 +33,7 @@ def affineInputs : HashMap String DenseTensor :=
 
 def shiftedProg : TLProgram := tlprog!{
   axis i : ℕ = 3
+  tensor f64 A(i), Y(i)
   Y[i] := A[i + 1]
 }
 

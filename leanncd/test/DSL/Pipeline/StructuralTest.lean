@@ -167,9 +167,18 @@ run_cmd do
   | .ok (.ok .float32) => pure ()
   | .ok r => throwError s!"f32-plus-predicate graph: expected .ok .float32, got {repr r}"
 
--- (b) the same graph in the untyped (f64) spelling selects `.float64`.
+-- (b) the same graph in the untyped spelling selects `.float32`: plain `tensor` is the binary32
+--     default (the f32 default flip), so it agrees with the f32 spelling in (a).
 run_cmd do
   match storageOf [.tensor "Y" [axS], .tensor "X" [axS], .predicate "P" [axS]] "Y" ["X", "P"] with
+  | .error m => throwError m
+  | .ok (.ok .float32) => pure ()
+  | .ok r => throwError s!"untyped-plus-predicate graph: expected .ok .float32, got {repr r}"
+
+-- (b') the same graph with the EXPLICIT binary64 spelling selects `.float64`.
+run_cmd do
+  match storageOf [.typedTensor .f64 "Y" [axS], .typedTensor .f64 "X" [axS], .predicate "P" [axS]]
+      "Y" ["X", "P"] with
   | .error m => throwError m
   | .ok (.ok .float64) => pure ()
   | .ok r => throwError s!"f64-plus-predicate graph: expected .ok .float64, got {repr r}"
@@ -188,7 +197,7 @@ run_cmd do
 --     deliberately ordered `C`, `B`, `A`).
 run_cmd do
   match storageOf
-      [ .tensor "C" [axS], .tensor "B" [axS], .typedTensor .f32 "A" [axS]
+      [ .typedTensor .f64 "C" [axS], .typedTensor .f64 "B" [axS], .typedTensor .f32 "A" [axS]
       , .typedTensor .f32 "D" [axS] ]
       "D" ["A", "B", "C"] with
   | .error m => throwError m

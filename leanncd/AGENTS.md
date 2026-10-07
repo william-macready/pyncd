@@ -222,7 +222,8 @@ Use shared validators and typed diagnostics rather than divergent copies.
 Read [the detailed patterns](AGENTS_REFERENCE.md#patterns) before changing
 shared evaluation rules or parity fixtures. The full requirements, examples,
 and explicit-f64 coverage are preserved there; this summary limits automatic
-context injection.
+context injection. The default element type is binary32 (`f64` is the explicit
+spelling): see the last bullet there before writing an eval-based test.
 
 ### Global Pitfalls
 

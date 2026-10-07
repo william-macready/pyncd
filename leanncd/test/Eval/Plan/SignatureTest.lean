@@ -1,5 +1,6 @@
 import LeanNCD.Eval.Plan.Signature
 import LeanNCD.Eval.Entry
+import Eval.ExplicitF64
 
 /-!
 # Wave C C1 signature-boundary tests
@@ -12,7 +13,8 @@ later failure.
 The declaration-aware constructor `InputSignature.ofDenseInputsForDecls` is
 `Except InputSignatureBuildError`-valued (whole-branch review finding 1, retyped by the f32 slice's
 Task 4 so a carrier disagreement has somewhere to go), so its fixtures below come in three flavours
-over the SAME input map: declared-predicate (`bool`), undeclared (`f64`), and malformed `decls`
+over the SAME input map: declared-predicate (`bool`), declared `tensor f64` (`f64`; an undeclared
+name is binary32 and is a carrier rejection over the `Float` map), and malformed `decls`
 (rejected with `buildDeclEnv`'s own `duplicateTensorDecl`, now wrapped as
 `.declaration (.duplicateTensorDecl …)`) — the last is what distinguishes a genuine rejection from
 the silent `f64` degradation the old `.toOption.getD {}` fallback produced.
@@ -39,12 +41,19 @@ private def conversionInputs : HashMap String DenseTensor :=
   | .ok sig => sig.tensors["X"]? == some ({ shape := #[2, 3], dtype := .bool } : TensorSignature)
   | .error _ => false
 
--- Task 4.3, fixture 2: the SAME fixture with no declaration at all — `f64`, and the existing
+-- Task 4.3, fixture 2: the SAME fixture with `X` declared `tensor f64` — `f64`, and the existing
 -- `ofDenseInputs` guard just above stays byte-for-byte unchanged (it is not declaration-aware and
--- this task does not touch it).
-#guard match InputSignature.ofDenseInputsForDecls [] conversionInputs with
+-- this task does not touch it). Under the binary32 default an UNDECLARED `X` is `float32`, so the
+-- `f64` signature needs the explicit binary64 spelling.
+#guard match InputSignature.ofDenseInputsForDecls [.typedTensor .f64 "X" []] conversionInputs with
   | .ok sig => sig.tensors["X"]? == some ({ shape := #[2, 3], dtype := .f64 } : TensorSignature)
   | .error _ => false
+
+-- The default's own pin: with no declaration `X` is binary32, which the `Float` (binary64) carrier
+-- cannot supply, so the call is a named carrier rejection rather than an `f64` signature.
+#guard match InputSignature.ofDenseInputsForDecls [] conversionInputs with
+  | .error (.storageKindMismatch "X" .float64 .float32) => true
+  | _ => false
 
 -- Whole-branch review finding 1: a MALFORMED `decls` list fails loud with `buildDeclEnv`'s own
 -- error, instead of degrading to "no declaration at all" and silently yielding the `f64` signature
@@ -87,30 +96,31 @@ private def conversionInputs : HashMap String DenseTensor :=
 -- an `Array Float` buffer for an `f32`-declared name a named carrier rejection rather than an
 -- `f32`-labelled signature over binary64 data.
 #guard dtypeOfDecl (some (.typedTensor .f32 "X" [])) == ScalarDType.f32
-#guard dtypeOfDecl (some (.tensor "X" [])) == ScalarDType.f64
+#guard dtypeOfDecl (some (.tensor "X" [])) == ScalarDType.f32
 
--- `tensor f64` is the explicit spelling of the default, so it classifies exactly as `.tensor` does:
--- `.float64` storage and `.f64` dtype. Mapping it to `.float32`/`.f32` (a copy of the f32 arm) is
--- the silent-precision-change failure these guards exist for; the f32 arm is pinned alongside so
--- neither can be satisfied by answering one constant for every typed tensor.
+-- Plain `tensor` is binary32 (the default); `tensor f64` is the explicit binary64 spelling, so
+-- `.typedTensor .f64` classifies `.float64` storage and `.f64` dtype. Mapping it to
+-- `.float32`/`.f32` (a copy of the f32 arm) is the silent-precision-change failure these guards
+-- exist for; the f32 arm is pinned alongside so neither can be satisfied by answering one constant
+-- for every typed tensor.
 #guard dtypeOfDecl (some (.typedTensor .f64 "X" [])) == ScalarDType.f64
 #guard storageConstraintOfDecl (.typedTensor .f64 "X" []) == some LeanNCD.StorageKind.float64
 #guard storageConstraintOfDecl (.typedTensor .f32 "X" []) == some LeanNCD.StorageKind.float32
-#guard storageConstraintOfDecl (.tensor "X" []) == some LeanNCD.StorageKind.float64
+#guard storageConstraintOfDecl (.tensor "X" []) == some LeanNCD.StorageKind.float32
 
 -- The typed `linear` form selects precision exactly as `typedTensor` does, for either bias flag. A
 -- classification arm that answered `none` would silently drop the declaration from the schedule's
 -- precision scan (an `f32` linear layer would then be treated as unconstrained, not committed to
 -- binary32); one that answered `.float64` for both would turn `linear f32` into an f64 plan. The
--- untyped `.linear` stays binary64.
+-- untyped `.linear` is binary32 (the default; `.typedLinear .f64` is the binary64 spelling).
 #guard storageConstraintOfDecl (.typedLinear .f64 "W" [] false) == some LeanNCD.StorageKind.float64
 #guard storageConstraintOfDecl (.typedLinear .f32 "W" [] false) == some LeanNCD.StorageKind.float32
 #guard storageConstraintOfDecl (.typedLinear .f32 "W" [] true) == some LeanNCD.StorageKind.float32
-#guard storageConstraintOfDecl (.linear "W" [] false) == some LeanNCD.StorageKind.float64
+#guard storageConstraintOfDecl (.linear "W" [] false) == some LeanNCD.StorageKind.float32
 #guard dtypeOfDecl (some (.typedLinear .f64 "W" [] false)) == ScalarDType.f64
 #guard dtypeOfDecl (some (.typedLinear .f32 "W" [] false)) == ScalarDType.f32
 #guard dtypeOfDecl (some (.typedLinear .f32 "W" [] true)) == ScalarDType.f32
-#guard dtypeOfDecl (some (.linear "W" [] false)) == ScalarDType.f64
+#guard dtypeOfDecl (some (.linear "W" [] false)) == ScalarDType.f32
 
 -- The COMPLEX arms of both classifiers are unreachable in production (`buildDeclEnv` rejects every
 -- complex declaration first — `DSL/ComplexElementTypeTest.lean`), but the types force a value, and
@@ -126,7 +136,8 @@ private def complexDecls : List Decl :=
 -- Task 4.3, fixture 3: `GnnScatterTest`'s GN2 shape (`predicate edge(i, j); H[i, f] := edge[i, j]
 -- · X[j, f]`, `test/Eval/Portfolio/GnnScatterTest.lean`) compiled to a schedule, then its
 -- declaration-aware signature constructed directly from `sched.decls`: `edge` (declared predicate)
--- is `bool`, `X` (undeclared) is `f64`.
+-- is `bool`, `X` is `f64`. The program is compiled through `explicitF64` (every undeclared name
+-- declared `tensor f64`), because an undeclared `X` is binary32 and the `Float` map below is not.
 private def gn2Prog : TLProgram := tlprog!{ predicate edge(i, j)
   H[i, f] := edge[i, j] · X[j, f] }
 
@@ -135,7 +146,7 @@ private def gn2Inputs : HashMap String DenseTensor :=
     "X" ⟨[2, 2], #[1.0, 2.0, 3.0, 4.0]⟩
 
 run_cmd do
-  match gn2Prog.compileToScheduled.run 0 with
+  match gn2Prog.explicitF64.compileToScheduled.run 0 with
   | .error e _ => throwError s!"GN2 clone compile failed: {repr e}"
   | .ok sched _ =>
       let sig ← match InputSignature.ofDenseInputsForDecls sched.decls gn2Inputs with
@@ -418,13 +429,13 @@ private def conversionInputs32 : HashMap String DenseTensor32 :=
       sig.tensors["Z"]? == some ({ shape := #[2, 3], dtype := .f32 } : TensorSignature)
   | .error _ => false
 
--- Fixture 2: fixture 1 with ONE declaration made an ordinary `tensor` (the binary64 spelling). The
+-- Fixture 2: fixture 1 with ONE declaration made `tensor f64` (the binary64 spelling). The
 -- constructor must LOCATE the disagreement by name rather than marking `Z` `f32` because its
 -- neighbours are, or marking it `f64` because its declaration says so while packing a binary32
 -- buffer behind it. `X` is still legally f32, so this cannot be satisfied by a constructor that
 -- rejects any mixed declaration list wholesale.
 #guard match InputSignature.ofDenseInputs32ForDecls
-    [.typedTensor .f32 "X" [], .tensor "Z" []] conversionInputs32 with
+    [.typedTensor .f32 "X" [], .typedTensor .f64 "Z" []] conversionInputs32 with
   | .error (.storageKindMismatch "Z" .float32 .float64) => true
   | _ => false
 
@@ -433,16 +444,21 @@ private def conversionInputs32 : HashMap String DenseTensor32 :=
 #guard match InputSignature.ofDenseInputsForDecls [.typedTensor .f32 "X" []] conversionInputs with
   | .error (.storageKindMismatch "X" .float64 .float32) => true
   | _ => false
--- (b) the BINARY32 constructor handed a native Float32 buffer whose declaration is ordinary
--- `tensor`. A ONE-name map, so the reported name is the map's only entry rather than whichever of
--- two offenders the hash order happens to reach first.
+-- (b) the BINARY32 constructor handed a native Float32 buffer whose declaration is `tensor f64`.
+-- A ONE-name map, so the reported name is the map's only entry rather than whichever of two
+-- offenders the hash order happens to reach first.
 private def soleInput32 : HashMap String DenseTensor32 :=
   ({} : HashMap String DenseTensor32).insert "X"
     ⟨[2, 3], (#[0, 0, 0, 0, 0, 0] : Array UInt32).map Float32.ofBits⟩
 
-#guard match InputSignature.ofDenseInputs32ForDecls [.tensor "X" []] soleInput32 with
+#guard match InputSignature.ofDenseInputs32ForDecls [.typedTensor .f64 "X" []] soleInput32 with
   | .error (.storageKindMismatch "X" .float32 .float64) => true
   | _ => false
+-- Its acceptance counterpart: an ordinary `tensor` is binary32 now, so the same native Float32
+-- buffer is ACCEPTED with an `f32` signature (the old pin here was a rejection).
+#guard match InputSignature.ofDenseInputs32ForDecls [.tensor "X" []] soleInput32 with
+  | .ok sig => sig.tensors["X"]? == some ({ shape := #[2, 3], dtype := .f32 } : TensorSignature)
+  | .error _ => false
 -- Fixture FW3 (final-review fix wave): the two guards above are the ONLY way in — the guardless
 -- shared traversal behind both constructors is private. While public, `signatureOfDenseInputs` at
 -- `α := Float` over `tensor f32 X` returned an `.f32` signature for `Array Float` buffers — a door

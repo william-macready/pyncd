@@ -207,6 +207,17 @@ on" claim against the code when that slice's plan is written.
    > refusing f32; the bool-only defaults (`deriveStorageKind`, `scheduleStorageKind`) are NOT
    > flipped, because `Eval.Plan.AdapterTest` runs an all-predicate plan through the `Float` runner;
    > no program-level default pragma; mixed precision stays rejected.
+   >
+   > **LANDED, 2026-10-07: slice 2 of the flip (merge to `main`; record
+   > `papers/f32_flip_slice2_record.md`).** Plain `tensor`, `linear` and undeclared names are now
+   > binary32 at the four sites (`storageConstraintOfDecl`, `storageConstraintOfName?`,
+   > `dtypeOfDecl`, and the dead scan-state fallback in `compileScan`); `f64` is the explicit
+   > spelling. The checked-backend tests are migrated (the `DifferentialTest` 3832/3832 and scan
+   > 17/17 guards unchanged); `DefaultF32Test` pins that an unannotated program equals its explicit
+   > `f32` twin end to end. Parked, with owners and costs, in the plan's section 1 "Deliberately NOT
+   > done" table: the bool-only defaults, direct `evalScatter` having no f32 refusal, binary32
+   > `einsumOnly` JAX evidence, and the unprobed nonlinearities. The paths outside the checked backend
+   > (bullet above) are still undecided.
 
 Resulting order: **F32-B (optionally with the `f64` keyword) → F32-D → F32-C → F32-JAX → a
 default-flip-and-migration slice.** F32-E stays contingent on the single-real-precision invariant

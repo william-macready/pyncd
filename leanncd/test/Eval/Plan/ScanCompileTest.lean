@@ -1,6 +1,7 @@
 import LeanNCD.Eval.Plan.Compile
 import LeanNCD.Eval.Plan.Adapter
 import LeanNCD.Eval.Eval
+import Eval.ExplicitF64
 
 /-!
 # Wave F F4 Task 3: source scan admission and residualization tests
@@ -26,10 +27,20 @@ Four parts:
 -/
 
 namespace LeanNCD.Eval.Plan.ScanCompileTest
-open LeanNCD LeanNCD.Eval.Plan
+open LeanNCD LeanNCD.Eval.Plan LeanNCD.Eval.ExplicitF64
 open Std
 
 /-! ## Part 0: shared helpers -/
+
+/-- `sched` with every UNDECLARED tensor name declared `tensor f64` (`explicitF64Decls` over the
+    schedule's source statements, scan bodies included, so the scan state names `X`/`S` are
+    declared too). The fixtures below pair names with the binary64 `Float` carrier
+    (`InputSignature.ofDenseInputs`, `runPreparedDense`); since the f32 default flip an undeclared
+    name is binary32, so a fixture that is not about the default states binary64 explicitly. A
+    declared name (plain `tensor`, `f32`, `predicate`) is left exactly as written. Same helper as
+    `CompileTest.explicitF64Sched`. -/
+def explicitF64Sched (sched : ScheduledProgram) : ScheduledProgram :=
+  { sched with decls := explicitF64Decls sched.decls (sched.stmts.flatMap ScanStmt.sourceStmts) }
 
 def causeOf : Except PlanCompileFailure PreparedPlan → Option PlanCompileCause
   | .ok _ => none | .error e => some e.cause
@@ -55,14 +66,14 @@ def assignAt (p : PreparedPlan) (i : Nat) : Option AssignPlan :=
 
 def prepared (sched : ScheduledProgram) (inputs : HashMap String DenseTensor) :
     Option PreparedPlan :=
-  (prepareEvalPlan sched (InputSignature.ofDenseInputs inputs)).toOption
+  (prepareEvalPlan (explicitF64Sched sched) (InputSignature.ofDenseInputs inputs)).toOption
 
 /-- Assert that a fixture compiles, and hand its `PreparedPlan` to `k`. Reports the real compile
     cause on failure rather than a bare `none`, which is what makes an unexpected rejection
     diagnosable instead of merely red. -/
 def withPrepared (name : String) (sched : ScheduledProgram) (inputs : HashMap String DenseTensor)
     (k : PreparedPlan → Except String Unit) : Except String Unit :=
-  match prepareEvalPlan sched (InputSignature.ofDenseInputs inputs) with
+  match prepareEvalPlan (explicitF64Sched sched) (InputSignature.ofDenseInputs inputs) with
   | .error e => .error s!"{name}: expected acceptance, got {render e.cause}"
   | .ok p => k p
 
@@ -132,12 +143,12 @@ def selfRecurExpected : RawScanPlan :=
             { contextShape := #[], destinationSlot := 1, outputShape := #[]
             , terms := #[{ iterationShape := #[], contextPos := #[], outputPos := #[]
                          , reductionPos := #[]
-                         , factors := #[.read { sourceSlot := 0, map := { coeffs := #[], bias := #[] }, sourceShape := #[], oobPolicy := .zeroPad }] }]
+                         , factors := #[.read { sourceSlot := 0, map := { coeffs := #[], «bias» := #[] }, sourceShape := #[], oobPolicy := .zeroPad }] }]
             , algebra := admittedAlgebra }]
       , outputs := #[1] }
   , baseCaptures := #[{ inputSlot := 0, source := .external 0 }]
   , baseWrites := #[{ outputSlot := 1, stateIndex := 0
-                    , map := { coeffs := #[#[]], bias := #[0] } }]
+                    , map := { coeffs := #[#[]], «bias» := #[0] } }]
   , stepBlock :=
       { contextShape := #[2]
       , tensorSigs := #[{ shape := #[3], dtype := .f64 }, { shape := #[3], dtype := .f64 }
@@ -148,15 +159,15 @@ def selfRecurExpected : RawScanPlan :=
             { contextShape := #[2], destinationSlot := 2, outputShape := #[]
             , terms := #[
                 { iterationShape := #[2], contextPos := #[0], outputPos := #[], reductionPos := #[]
-                , factors := #[.read { sourceSlot := 0, map := { coeffs := #[#[1]], bias := #[0] }, sourceShape := #[3], oobPolicy := .zeroPad }] }
+                , factors := #[.read { sourceSlot := 0, map := { coeffs := #[#[1]], «bias» := #[0] }, sourceShape := #[3], oobPolicy := .zeroPad }] }
               , { iterationShape := #[2], contextPos := #[0], outputPos := #[], reductionPos := #[]
-                , factors := #[.read { sourceSlot := 1, map := { coeffs := #[#[1]], bias := #[0] }, sourceShape := #[3], oobPolicy := .zeroPad }] }]
+                , factors := #[.read { sourceSlot := 1, map := { coeffs := #[#[1]], «bias» := #[0] }, sourceShape := #[3], oobPolicy := .zeroPad }] }]
             , algebra := admittedAlgebra }]
       , outputs := #[2] }
   , stepCaptures := #[{ inputSlot := 0, source := .state 0 }
                      , { inputSlot := 1, source := .external 1 }]
   , stepWrites := #[{ outputSlot := 2, stateIndex := 0
-                    , map := { coeffs := #[#[1]], bias := #[1] } }]
+                    , map := { coeffs := #[#[1]], «bias» := #[1] } }]
   , historyExtents := #[3]
   , iterationOrder := .axisZeroFastest
   , boundaryPolicy := .zeroThenBaseOverlay
@@ -241,17 +252,17 @@ def coupledCheck : Except String Unit :=
         -- dimension 1 by context position 0 (`r`) — each a single `1` at its OWN context column
         -- with bias 1, and the permutation visible directly in the coefficient rows.
         expectEq "B: H step write" (s.stepWrites.getD 1 default).map
-          { coeffs := #[#[0, 1], #[1, 0]], bias := #[1, 1] }
+          { coeffs := #[#[0, 1], #[1, 0]], «bias» := #[1, 1] }
         -- G's step write: `G[r+1, j, c+1]` — dimensions 0 and 2 are advancing rows at context
         -- columns 0 and 1 respectively (bias 1 each), while the interior free `j` row passes output
         -- position 0 through at column `numAxes + 0 = 2` with bias 0.
         expectEq "B: G step write" (s.stepWrites.getD 0 default).map
-          { coeffs := #[#[1, 0, 0], #[0, 0, 1], #[0, 1, 0]], bias := #[1, 0, 1] }
+          { coeffs := #[#[1, 0, 0], #[0, 0, 1], #[0, 1, 0]], «bias» := #[1, 0, 1] }
         -- base writes: `G[0, j, 0]` (two pinned rows, one free) and `H[0, 0]` (fully pinned).
         expectEq "B: G base write" (s.baseWrites.getD 0 default).map
-          { coeffs := #[#[0], #[1], #[0]], bias := #[0, 0, 0] }
+          { coeffs := #[#[0], #[1], #[0]], «bias» := #[0, 0, 0] }
         expectEq "B: H base write" (s.baseWrites.getD 1 default).map
-          { coeffs := #[#[], #[]], bias := #[0, 0] }
+          { coeffs := #[#[], #[]], «bias» := #[0, 0] }
         -- step captures: first-seen read order over the recurrence list is `G`, `W`, `H`.
         expectEq "B: step captures" s.stepCaptures
           #[{ inputSlot := 0, source := .state 0 }
@@ -312,7 +323,7 @@ def scratchCheck : Except String Unit :=
         -- and the result assignment reads `T` at its own local slot, not at a capture.
         expectEq "C: result reads scratch slot"
           (((s.stepBlock.steps.getD 1 default).assign?.getD default).terms.getD 0 default).factors
-          #[.read { sourceSlot := 2, map := { coeffs := #[], bias := #[] }, sourceShape := #[], oobPolicy := .zeroPad }]
+          #[.read { sourceSlot := 2, map := { coeffs := #[], «bias» := #[] }, sourceShape := #[], oobPolicy := .zeroPad }]
         checkerAgrees "C" p 0)
 
 run_cmd match scratchCheck with | .ok _ => pure () | .error m => throwError m
@@ -367,18 +378,18 @@ not participate at all, so the otherwise-f64 program stays accepted. -/
 
 def scratchF32Sched : ScheduledProgram :=
   { scratchSched with
-    decls := [.iter axM 3, .tensor "S" [axM], .typedTensor .f32 "T" []] }
+    decls := [.iter axM 3, .typedTensor .f64 "S" [axM], .typedTensor .f32 "T" []] }
 
-#guard causeOf (prepareEvalPlan scratchF32Sched (InputSignature.ofDenseInputs scratchInputs)) ==
+#guard causeOf (prepareEvalPlan (explicitF64Sched scratchF32Sched) (InputSignature.ofDenseInputs scratchInputs)) ==
   some (.capability (.unsupportedDtype "T: mixed f32/f64 storage in one schedule"))
 
 /-- Control: `Unused` is f32 but appears in no read and no write, so it constrains nothing. -/
 def scratchUnusedF32Sched : ScheduledProgram :=
   { scratchSched with
-    decls := [.iter axM 3, .tensor "S" [axM], .typedTensor .f32 "Unused" []] }
+    decls := [.iter axM 3, .typedTensor .f64 "S" [axM], .typedTensor .f32 "Unused" []] }
 
 run_cmd
-  match prepareEvalPlan scratchUnusedF32Sched (InputSignature.ofDenseInputs scratchInputs) with
+  match prepareEvalPlan (explicitF64Sched scratchUnusedF32Sched) (InputSignature.ofDenseInputs scratchInputs) with
   | .ok _ => pure ()
   | .error e =>
       throwError s!"fixture 14 control: an UNUSED f32 declaration changed the verdict: {render e.cause}"
@@ -422,11 +433,11 @@ def contractCheck : Except String Unit :=
         expectEq "D-E: reductionPos" t.reductionPos #[1]
         -- `S[l]`: one row (rank-1 state history), `1` on the context column.
         expectEq "D-E: state read map" (t.factors.getD 0 default).readOrDefault.map
-          { coeffs := #[#[1, 0]], bias := #[0] }
+          { coeffs := #[#[1, 0]], «bias» := #[0] }
         -- `M[k, l]`: read at the CURRENT coordinate — row 0 selects `k`, row 1 selects `l` with no
         -- bias — against `M`'s full declared shape, which is the history length, not the step count.
         expectEq "D-E: external read map" (t.factors.getD 1 default).readOrDefault.map
-          { coeffs := #[#[0, 1], #[1, 0]], bias := #[0, 0] }
+          { coeffs := #[#[0, 1], #[1, 0]], «bias» := #[0, 0] }
         expectEq "D-E: external read shape" (t.factors.getD 1 default).readOrDefault.sourceShape #[2, 4]
         checkerAgrees "D-E" p 0)
 
@@ -462,9 +473,9 @@ def deepHistoryCheck : Except String Unit :=
     | some s => do
         let a := (s.stepBlock.steps.getD 0 default).assign?.getD default
         expectEq "F: immediate read" ((a.terms.getD 0 default).factors.getD 0 default).readOrDefault.map
-          { coeffs := #[#[1]], bias := #[0] }
+          { coeffs := #[#[1]], «bias» := #[0] }
         expectEq "F: look-back read" ((a.terms.getD 1 default).factors.getD 0 default).readOrDefault.map
-          { coeffs := #[#[1]], bias := #[-2] }
+          { coeffs := #[#[1]], «bias» := #[-2] }
         expectEq "F: zero padding" ((a.terms.getD 1 default).factors.getD 0 default).readOrDefault.oobPolicy
           .zeroPad
         -- both reads share ONE state capture; a second capture of the same state would break the
@@ -537,15 +548,15 @@ def axisPosCheck : Except String Unit :=
           { shape := #[2, 3], dtype := .f64 }
         -- base write `S[j, 0]`: row 0 passes free output position 0 through, row 1 is pinned to 0.
         expectEq "H: base write" (s.baseWrites.getD 0 default).map
-          { coeffs := #[#[1], #[0]], bias := #[0, 0] }
+          { coeffs := #[#[1], #[0]], «bias» := #[0, 0] }
         -- step write `S[j, l+1]`: row 0 is the free pass-through at column `numAxes + 0 = 1`,
         -- row 1 is the advancing row at context column 0 with bias 1.
         expectEq "H: step write" (s.stepWrites.getD 0 default).map
-          { coeffs := #[#[0, 1], #[1, 0]], bias := #[0, 1] }
+          { coeffs := #[#[0, 1], #[1, 0]], «bias» := #[0, 1] }
         -- causality is checked at the state's OWN advancing dimension (1), not at dimension 0.
         expectEq "H: state read map"
           ((((s.stepBlock.steps.getD 0 default).assign?.getD default).terms.getD 0 default).factors.getD 0 default).readOrDefault.map
-          { coeffs := #[#[0, 1], #[1, 0]], bias := #[0, 0] }
+          { coeffs := #[#[0, 1], #[1, 0]], «bias» := #[0, 0] }
         checkerAgrees "H" p 0)
 
 run_cmd match axisPosCheck with | .ok _ => pure () | .error m => throwError m
@@ -593,16 +604,16 @@ def multiBaseCheck : Except String Unit :=
         expectEq "I-J: base write states" (s.baseWrites.map (·.stateIndex)) #[0, 0]
         -- face `dp[0, c]`: row 0 pinned to 0, row 1 the free pass-through.
         expectEq "I-J: face write" (s.baseWrites.getD 0 default).map
-          { coeffs := #[#[0], #[1]], bias := #[0, 0] }
+          { coeffs := #[#[0], #[1]], «bias» := #[0, 0] }
         -- point `dp[1, 0]`: both rows pinned, no free positions, so both rows are width 0.
         expectEq "I-J: point write" (s.baseWrites.getD 1 default).map
-          { coeffs := #[#[], #[]], bias := #[1, 0] }
+          { coeffs := #[#[], #[]], «bias» := #[1, 0] }
         -- the pin substitution: `1 + 2r + 4r` at `r = 1` collapses to bias 7 over an EMPTY basis.
         let pointTerm := ((s.baseBlock.steps.getD 1 default).assign?.getD default).terms.getD 0 default
         expectEq "I-J: pinned basis is empty" pointTerm.iterationShape #[]
         expectEq "I-J: pinned axis is not contracted" pointTerm.reductionPos #[]
         expectEq "I-J: pinned bias accumulation" (pointTerm.factors.getD 0 default).readOrDefault.map
-          { coeffs := #[#[]], bias := #[7] }
+          { coeffs := #[#[]], «bias» := #[7] }
         -- the face write's own assignment keeps `c` as a real free output axis of extent 3.
         expectEq "I-J: face output shape"
           ((s.baseBlock.steps.getD 0 default).assign?.getD default).outputShape #[3]
@@ -681,12 +692,15 @@ failing for an unrelated reason or in an unrelated phase. -/
 
 def axK2 : AxisSpec := ⟨"k2", 51, .nat⟩
 
-def rejSched (base recur : List Stmt) : ScheduledProgram :=
+def rejSchedRaw (base recur : List Stmt) : ScheduledProgram :=
   { decls := [.iter axL 3, .axis axJ (some 2), .axis axK2 (some 5)]
   , stmts := [.scan "sc" [axL] base recur false]
   , env := {}, extNames := insert "S0" (insert "X" (∅ : Finset String))
   , explicitSizes :=
       ((({} : HashMap UID Nat).insert axL.uid 3).insert axJ.uid 2).insert axK2.uid 5 }
+
+def rejSched (base recur : List Stmt) : ScheduledProgram :=
+  explicitF64Sched (rejSchedRaw base recur)
 
 def rejInputs : HashMap String DenseTensor :=
   (({} : HashMap String DenseTensor).insert "S0" ⟨[], #[1.0]⟩).insert "X" ⟨[3], #[1.0, 2.0, 3.0]⟩
@@ -699,6 +713,22 @@ def rejSig : InputSignature := InputSignature.ofDenseInputs rejInputs
     (`none`) is exactly what they assert. -/
 def rej (base recur : List Stmt) : Option PlanCompileCause :=
   causeOf (prepareEvalPlan (rejSched base recur) rejSig)
+
+/-- `rejSig` at the binary32 default: the same shapes, every input `f32`. -/
+def rejSigF32 : InputSignature := InputSignature.mk
+  ((({} : HashMap String TensorSignature).insert "S0" { shape := #[], dtype := .f32 }).insert
+    "X" { shape := #[3], dtype := .f32 })
+
+/-- `rej` for the fixtures whose pinned error is a malformed `S` left-hand side: UNWRAPPED
+    (`rejSchedRaw`, every name undeclared, hence binary32) against the `f32` input signature
+    `rejSigF32`. No binary64 declaration of `S` can serve them: `explicitF64Decls` derives `S`'s
+    rank from its first write, and these fixtures' base and recurrence write `S` at DIFFERENT ranks
+    or with a duplicated/non-context axis (the malformation is the point), so any declared rank
+    reports `rankMismatch "S"` before the pinned scan error; declaring only `S0`/`X` as binary64
+    leaves `S` binary32 and reports `unsupportedDtype "S: mixed f32/f64 storage"`. A whole-binary32
+    schedule has neither problem, and the scan errors pinned here are dtype-independent. -/
+def rejF32 (base recur : List Stmt) : Option PlanCompileCause :=
+  causeOf (prepareEvalPlan (rejSchedRaw base recur) rejSigF32)
 
 def capabilityErr (base recur : List Stmt) : Option CapabilityError :=
   match capabilityPreflight (rejSched base recur) with
@@ -732,7 +762,17 @@ def okRecur : Stmt := .assign "S" [.iterNext axL]
 
 #guard rej [okBase] [okRecur] == none   -- the playground itself must compile
 
+-- The binary32 default, pinned: with NO declaration of `S`, `S0` or `X`, the same playground
+-- compiles against the all-`f32` signature, and every compiled tensor signature — the scan state
+-- `S`'s included — is `f32` (an undeclared name's dtype is `dtypeOfDecl none`). Were the default
+-- binary64 again, `S0`/`X` would mismatch the `f32` signature and the compile would be rejected.
+#guard (prepareEvalPlan (rejSchedRaw [okBase] [okRecur]) rejSigF32).toOption.map
+    (fun p => (p.plan.raw.tensorSigs.size > 0 && p.plan.raw.tensorSigs.all (·.dtype == .f32)))
+  == some true
+#guard rejF32 [okBase] [okRecur] == none
+
 def rej2Sched (base recur : List Stmt) : ScheduledProgram :=
+  explicitF64Sched
   { decls := [.iter axR 3, .iter axC 3]
   , stmts := [.scan "sc2" [axR, axC] base recur false]
   , env := {}, extNames := insert "ROW" (∅ : Finset String)
@@ -853,7 +893,7 @@ def nextL : LHSSlot := .iterNext axL
 -- the same constructor's other direction: a result advancing an axis that is not scan context at
 -- all, so `declared` (2) EXCEEDS the context width (1). Both directions break the canonical all-axis
 -- `+1` geometry identically, which is why they share a constructor.
-#guard rej [okBase] [.assign "S" [.iterNext axL, .iterNext axJ]
+#guard rejF32 [okBase] [.assign "S" [.iterNext axL, .iterNext axJ]
       { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := .identity }]
   == some (.scan (.partialAdvancingResult "sc" "S" 0 2 1))
 
@@ -871,7 +911,7 @@ def partialSetSched : ScheduledProgram :=
   , explicitSizes :=
       (((({} : HashMap UID Nat).insert axR.uid 3).insert axC.uid 3).insert axJ.uid 2) }
 
-#guard causeOf (prepareEvalPlan partialSetSched rej2Sig)
+#guard causeOf (prepareEvalPlan (explicitF64Sched partialSetSched) rej2Sig)
   == some (.scan (.partialAdvancingResult "sc2" "dp" 0 2 2))
 
 -- two producers for one scratch name.
@@ -938,7 +978,7 @@ def lateNopeSched : ScheduledProgram :=
                    { body := { terms := [{ factors := [.read "S0" []] }] }
                    , nonlin := .identity }) ] }
 
-#guard causeOf (prepareEvalPlan lateNopeSched rejSig)
+#guard causeOf (prepareEvalPlan (explicitF64Sched lateNopeSched) rejSig)
   == some (.sourceInvariant
        (.cyclicDataflow "scheduled program: statements are not in producer-before-consumer order"))
 
@@ -964,7 +1004,7 @@ def scratchThenPlainReadSched : ScheduledProgram :=
                    { body := { terms := [{ factors := [.read "NOPE" []] }] }
                    , nonlin := .identity }) ] }
 
-#guard causeOf (prepareEvalPlan scratchThenPlainReadSched rejSig)
+#guard causeOf (prepareEvalPlan (explicitF64Sched scratchThenPlainReadSched) rejSig)
   == some (.sourceInvariant
        (.cyclicDataflow "scheduled program: statements are not in producer-before-consumer order"))
 
@@ -987,7 +1027,7 @@ def statePlainReadSched : ScheduledProgram :=
             { body := { terms := [{ factors := [.read "S" [.axis axL]] }] }
             , nonlin := .identity }) ]) }
 
-#guard causeOf (prepareEvalPlan statePlainReadSched rejSig) == none
+#guard causeOf (prepareEvalPlan (explicitF64Sched statePlainReadSched) rejSig) == none
 -- and it reads `S`'s materialized slot, not an input slot: `S0` is the only name this program reads
 -- without producing, so it alone owns input slot 0; slot 1 is `pre`'s published state `P` and slot 2
 -- is `sc`'s published state `S`. A slot-zero fallback would show up here as `#[0]`.
@@ -999,8 +1039,8 @@ def statePlainReadSched : ScheduledProgram :=
 
 -- the same axis declared twice as scan context.
 #guard causeOf (prepareEvalPlan
-    { rejSched [] [] with
-        stmts := [.scan "sc" [axL, axL] [okBase] [okRecur] false] } rejSig)
+    { rejSchedRaw [] [] with
+        stmts := [.scan "sc" [axL, axL] [okBase] [okRecur] false] } rejSigF32)
   == some (.scan (.duplicateContextAxis "sc" 0 axL.uid))
 
 -- extent zero, discovered only after shape inference.
@@ -1009,7 +1049,7 @@ def zeroExtentSched : ScheduledProgram :=
   , stmts := [.scan "sc" [axL] [okBase] [okRecur] false]
   , env := {}, extNames := insert "S0" (∅ : Finset String)
   , explicitSizes := (({} : HashMap UID Nat).insert axL.uid 0) }
-#guard causeOf (prepareEvalPlan zeroExtentSched rejSig)
+#guard causeOf (prepareEvalPlan (explicitF64Sched zeroExtentSched) rejSig)
   == some (.scan (.scanAxisZeroExtent "sc" 0 axL.uid))
 
 -- `.iterNext` in a base statement / `.iterAt` in a recurrence statement: both syntactically admitted
@@ -1022,7 +1062,7 @@ def zeroExtentSched : ScheduledProgram :=
   == some (.scan (.iterAtInStepBlock "sc" "S" 0 axL.uid))
 
 -- pinning an axis that is not scan context.
-#guard rej [.assign "S" [.iterAt axL 0, .iterAt axJ 0]
+#guard rejF32 [.assign "S" [.iterAt axL 0, .iterAt axJ 0]
       { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := .identity }] [okRecur]
   == some (.scan (.pinnedAxisNotContext "sc" "S" 0 axJ.uid))
 
@@ -1036,10 +1076,10 @@ def zeroExtentSched : ScheduledProgram :=
 -- one axis occupying two LHS positions, on each side: a base statement pinning and freeing the same
 -- axis, and a result advancing the same axis twice (which would otherwise make `advancing.length`
 -- agree with the context width while leaving a context axis unadvanced).
-#guard rej [.assign "S" [.iterAt axL 0, .free axL]
+#guard rejF32 [.assign "S" [.iterAt axL 0, .free axL]
       { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := .identity }] [okRecur]
   == some (.scan (.duplicateAxisInLhs "sc" "S" true 0 axL.uid))
-#guard rej [okBase] [.assign "S" [.iterNext axL, .iterNext axL]
+#guard rejF32 [okBase] [.assign "S" [.iterNext axL, .iterNext axL]
       { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := .identity }]
   == some (.scan (.duplicateAxisInLhs "sc" "S" false 0 axL.uid))
 
@@ -1058,7 +1098,7 @@ def zeroExtentSched : ScheduledProgram :=
   == some (.scan (.inconsistentAdvancingDim "sc" "S" axL.uid 0 1))
 
 -- base and result disagreeing on rank.
-#guard rej [okBase]
+#guard rejF32 [okBase]
     [.assign "S" [.iterNext axL, .free axJ]
       { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := .identity }]
   == some (.scan (.inconsistentStateRank "sc" "S" false 0 1 2))
@@ -1203,7 +1243,7 @@ def capabilityBeforeInputScatter : Stmt :=
     [.affine (.affine 0 [(1, axJ), (1, axK2)]), .iterNext axL]
     { body := { terms := [{ factors := [.read "Missing" []] }] }, nonlin := .identity } {}
 #guard causeOf (prepareEvalPlan
-    (rejSched [okBase] [capabilityBeforeInputScatter]) emptySig)
+    (rejSchedRaw [okBase] [capabilityBeforeInputScatter]) emptySig)
   == some (.capability (.multiAxisScatterLhs "S: affine LHS slot"))
 
 -- Valid syntax, an unsized scan axis (phase C/geometry-sizing) AND an orphan base (phase D pairing):
@@ -1214,7 +1254,7 @@ def shapeBeforePairingSched : ScheduledProgram :=
   , stmts := [.scan "sc" [axL] [okBase] [] false]
   , env := {}, extNames := insert "S0" (∅ : Finset String)
   , explicitSizes := {} }
-#guard causeOf (prepareEvalPlan shapeBeforePairingSched rejSig)
+#guard causeOf (prepareEvalPlan (explicitF64Sched shapeBeforePairingSched) rejSig)
   == some (.shape (.unsizedAxis axL.uid (.scanIteration "l")))
 -- and the SAME program with `l` pinned does report the pairing failure, proving the fixture above
 -- is really about precedence and not about the pairing check being absent.
@@ -1241,7 +1281,7 @@ def t4rhs2 (a : String) (ai : List IdxExpr) (b : String) (bi : List IdxExpr)
     failure rather than a bare `none`. -/
 def t4run (name : String) (sched : ScheduledProgram) (inputs : HashMap String DenseTensor)
     (outName : String) (expected : DenseTensor) : Except String Unit :=
-  match prepareEvalPlan sched (InputSignature.ofDenseInputs inputs) with
+  match prepareEvalPlan (explicitF64Sched sched) (InputSignature.ofDenseInputs inputs) with
   | .error e => .error s!"{name}: expected acceptance, got {render e.cause}"
   | .ok p =>
     match runPreparedDense p inputs with
@@ -1258,7 +1298,7 @@ def t4run (name : String) (sched : ScheduledProgram) (inputs : HashMap String De
     acceptance check for shapes whose legacy value is not one of the pinned §0.4 numbers). -/
 def t4shape (name : String) (sched : ScheduledProgram) (inputs : HashMap String DenseTensor)
     (outName : String) (expectedShape : List Nat) : Except String Unit :=
-  match prepareEvalPlan sched (InputSignature.ofDenseInputs inputs) with
+  match prepareEvalPlan (explicitF64Sched sched) (InputSignature.ofDenseInputs inputs) with
   | .error e => .error s!"{name}: expected acceptance, got {render e.cause}"
   | .ok p =>
     match runPreparedDense p inputs with
@@ -1279,7 +1319,7 @@ def t4diff (name : String) (sched : ScheduledProgram) (inputs : HashMap String D
   match t4run name sched inputs outName expected with
   | .error m => .error m
   | .ok _ =>
-    match evalScheduled sched inputs with
+    match evalScheduledF64 sched inputs with
     | .error _ => .error s!"{name}: source (reference) eval failed"
     | .ok report =>
       match report.env[outName]? with
@@ -1439,7 +1479,7 @@ on a context axis, and a preactivation write source are all rejected at their na
 /-- Compile a source scan and return its failure cause (`none` if accepted, itself a fixture failure
     for the negative cases). -/
 def t4cause (sched : ScheduledProgram) (inputs : HashMap String DenseTensor) : Option PlanCompileCause :=
-  causeOf (prepareEvalPlan sched (InputSignature.ofDenseInputs inputs))
+  causeOf (prepareEvalPlan (explicitF64Sched sched) (InputSignature.ofDenseInputs inputs))
 
 /-! ### Fixture 6 — nonlinear scratch consumed by a later scratch (= OracleFixtureSeed.fixture5)
 `T := relu(S[l]·A[l])`; `U := T·B[l]`; `S[l+1] := U`, `X=1`, `A=[2,-3,4]`, `B=[3,2,1]` ⇒ `S=[1,6,0]`.
@@ -1862,6 +1902,7 @@ def s6Decls : List Decl :=
   .axis s6q (some 2), .axis s6m (some 4)]
 
 def s6Schedule (name := "S") (base recur : List Stmt) : ScheduledProgram :=
+ explicitF64Sched
  { decls := s6Decls, stmts := [.scan name [s6l] base recur false]
  , env := {}, extNames := {"X3", "X6", "Y3", "Z32"}, explicitSizes := {} }
 
@@ -1872,7 +1913,7 @@ def s6Accept (label : String) (sched : ScheduledProgram) (scanIndex : Nat)
    (stateSig : TensorSignature) (baseShapes stepShapes : Array (Array Nat))
    (baseMaps stepMaps : Array AffineMap) (outName : String) (expected : DenseTensor) :
    Except String Unit := do
- let p ← match prepareEvalPlan sched (InputSignature.ofDenseInputs s6Inputs) with
+ let p ← match prepareEvalPlan (explicitF64Sched sched) (InputSignature.ofDenseInputs s6Inputs) with
    | .ok p => pure p
    | .error e => throw s!"{label}: expected acceptance, got {render e.cause}"
  let s ← match scanAt p scanIndex with
@@ -1907,8 +1948,8 @@ def s6BaseStride : ScheduledProgram := s6Schedule
 def s6BaseStrideCheck : Except String Unit :=
  s6Accept "S-B/base stride" s6BaseStride 0 { shape := #[6, 3], dtype := .f64 }
    #[#[3]] #[#[6]]
-   #[{ coeffs := #[#[2], #[0]], bias := #[0, 0] }]
-   #[{ coeffs := #[#[0, 1], #[1, 0]], bias := #[0, 1] }]
+   #[{ coeffs := #[#[2], #[0]], «bias» := #[0, 0] }]
+   #[{ coeffs := #[#[0, 1], #[1, 0]], «bias» := #[0, 1] }]
    "S" ⟨[6, 3], #[1, 1, 1, 0, 0, 0, 2, 2, 2, 0, 0, 0, 3, 3, 3, 0, 0, 0]⟩
 run_cmd match s6BaseStrideCheck with | .ok _ => pure () | .error m => throwError m
 
@@ -1920,8 +1961,8 @@ def s6StepStride : ScheduledProgram := s6Schedule
 def s6StepStrideCheck : Except String Unit :=
  s6Accept "S-B/step stride" s6StepStride 0 { shape := #[6, 3], dtype := .f64 }
    #[#[6]] #[#[3]]
-   #[{ coeffs := #[#[1], #[0]], bias := #[0, 0] }]
-   #[{ coeffs := #[#[0, 2], #[1, 0]], bias := #[1, 1] }]
+   #[{ coeffs := #[#[1], #[0]], «bias» := #[0, 0] }]
+   #[{ coeffs := #[#[0, 2], #[1, 0]], «bias» := #[1, 1] }]
    "S" ⟨[6, 3], #[1, 0, 0, 2, 1, 0, 3, 0, 0, 4, 3, 0, 5, 0, 0, 6, 5, 0]⟩
 run_cmd match s6StepStrideCheck with | .ok _ => pure () | .error m => throwError m
 
@@ -1935,9 +1976,9 @@ def s6Interleave : ScheduledProgram := s6Schedule
 def s6InterleaveCheck : Except String Unit :=
  s6Accept "S-B/interleave" s6Interleave 0 { shape := #[6, 3], dtype := .f64 }
    #[#[3], #[3]] #[#[6]]
-   #[ { coeffs := #[#[2], #[0]], bias := #[0, 0] }
-    , { coeffs := #[#[2], #[0]], bias := #[1, 0] } ]
-   #[{ coeffs := #[#[0, 1], #[1, 0]], bias := #[0, 1] }]
+   #[ { coeffs := #[#[2], #[0]], «bias» := #[0, 0] }
+    , { coeffs := #[#[2], #[0]], «bias» := #[1, 0] } ]
+   #[{ coeffs := #[#[0, 1], #[1, 0]], «bias» := #[0, 1] }]
    "S" ⟨[6, 3], #[1, 1, 1, 4, 4, 4, 2, 2, 2, 5, 5, 5, 3, 3, 3, 6, 6, 6]⟩
 run_cmd match s6InterleaveCheck with | .ok _ => pure () | .error m => throwError m
 
@@ -1950,8 +1991,8 @@ def s6ContractBase : ScheduledProgram := s6Schedule
 def s6ContractBaseCheck : Except String Unit :=
  s6Accept "S-B/contract before place" s6ContractBase 0 { shape := #[6, 3], dtype := .f64 }
    #[#[3]] #[#[6]]
-   #[{ coeffs := #[#[2], #[0]], bias := #[0, 0] }]
-   #[{ coeffs := #[#[0, 1], #[1, 0]], bias := #[0, 1] }]
+   #[{ coeffs := #[#[2], #[0]], «bias» := #[0, 0] }]
+   #[{ coeffs := #[#[0, 1], #[1, 0]], «bias» := #[0, 1] }]
    "S" ⟨[6, 3], Array.replicate 18 0⟩
 run_cmd match s6ContractBaseCheck with | .ok _ => pure () | .error m => throwError m
 
@@ -1963,16 +2004,16 @@ def s6ScanFirst : ScheduledProgram := s6Schedule
 def s6ScanFirstCheck : Except String Unit :=
  s6Accept "S-B/scan first" s6ScanFirst 0 { shape := #[3, 6], dtype := .f64 }
    #[#[3]] #[#[6]]
-   #[{ coeffs := #[#[0], #[2]], bias := #[0, 0] }]
-   #[{ coeffs := #[#[1, 0], #[0, 1]], bias := #[1, 0] }]
+   #[{ coeffs := #[#[0], #[2]], «bias» := #[0, 0] }]
+   #[{ coeffs := #[#[1, 0], #[0, 1]], «bias» := #[1, 0] }]
    "S" ⟨[3, 6], #[1, 0, 2, 0, 3, 0, 1, 0, 2, 0, 3, 0, 1, 0, 2, 0, 3, 0]⟩
 run_cmd match s6ScanFirstCheck with | .ok _ => pure () | .error m => throwError m
 
 def s6ScanLastCheck : Except String Unit :=
  s6Accept "S-B/scan last" s6BaseStride 0 { shape := #[6, 3], dtype := .f64 }
    #[#[3]] #[#[6]]
-   #[{ coeffs := #[#[2], #[0]], bias := #[0, 0] }]
-   #[{ coeffs := #[#[0, 1], #[1, 0]], bias := #[0, 1] }]
+   #[{ coeffs := #[#[2], #[0]], «bias» := #[0, 0] }]
+   #[{ coeffs := #[#[0, 1], #[1, 0]], «bias» := #[0, 1] }]
    "S" ⟨[6, 3], #[1, 1, 1, 0, 0, 0, 2, 2, 2, 0, 0, 0, 3, 3, 3, 0, 0, 0]⟩
 run_cmd match s6ScanLastCheck with | .ok _ => pure () | .error m => throwError m
 
@@ -1986,8 +2027,8 @@ def s6TwoAffine : ScheduledProgram := s6Schedule
 def s6TwoAffineCheck : Except String Unit :=
  s6Accept "S-B/two affine dims" s6TwoAffine 0 { shape := #[4, 6, 3], dtype := .f64 }
    #[#[2, 3]] #[#[4, 6]]
-   #[{ coeffs := #[#[2, 0], #[0, 2], #[0, 0]], bias := #[1, 0, 0] }]
-   #[{ coeffs := #[#[0, 1, 0], #[0, 0, 1], #[1, 0, 0]], bias := #[0, 0, 1] }]
+   #[{ coeffs := #[#[2, 0], #[0, 2], #[0, 0]], «bias» := #[1, 0, 0] }]
+   #[{ coeffs := #[#[0, 1, 0], #[0, 0, 1], #[1, 0, 0]], «bias» := #[0, 0, 1] }]
    "S" ⟨[4, 6, 3], Array.replicate 72 0⟩
 run_cmd match s6TwoAffineCheck with | .ok _ => pure () | .error m => throwError m
 
@@ -2004,7 +2045,7 @@ def s6TwoScans : ScheduledProgram :=
 def s6TwoScanInputs : HashMap String DenseTensor :=
  (s6Inputs.insert "S0" ⟨[], #[5]⟩).insert "X" ⟨[3], #[1, 2, 3]⟩
 def s6TwoScansCheck : Except String Unit := do
- let p ← match prepareEvalPlan s6TwoScans (InputSignature.ofDenseInputs s6TwoScanInputs) with
+ let p ← match prepareEvalPlan (explicitF64Sched s6TwoScans) (InputSignature.ofDenseInputs s6TwoScanInputs) with
    | .ok p => pure p | .error e => throw s!"S-B/two scans: {render e.cause}"
  let s ← match scanAt p 1 with | some s => pure s | none => throw "S-B/two scans: missing scan"
  expectEq "S-B/two scans: state signature"
@@ -2017,9 +2058,9 @@ def s6TwoScansCheck : Except String Unit := do
    (((s.stepBlock.steps.getD 0 default).assign?).map (·.outputShape)) (some #[6])
  expectEq "S-B/two scans: block kind" (s6AllAssign s.baseBlock.steps && s6AllAssign s.stepBlock.steps) true
  expectEq "S-B/two scans: base map" (s.baseWrites.getD 0 default).map
-   { coeffs := #[#[2], #[0]], bias := #[0, 0] }
+   { coeffs := #[#[2], #[0]], «bias» := #[0, 0] }
  expectEq "S-B/two scans: step map" (s.stepWrites.getD 0 default).map
-   { coeffs := #[#[0, 1], #[1, 0]], bias := #[0, 1] }
+   { coeffs := #[#[0, 1], #[1, 0]], «bias» := #[0, 1] }
  checkerAgrees "S-B/two scans" p 1
  match runPreparedDense p s6TwoScanInputs with
  | .error e => throw s!"S-B/two scans run: {repr e.cause}"
@@ -2117,7 +2158,7 @@ def s6LocatorSchedule : ScheduledProgram := s6Schedule "loc"
   , s6SameResidueBase ]
   [ .assign "S" [.free s6k, .iterNext s6l] (s6rhs "S" [.axis s6k, .axis s6l])
   , .assign "T" [.iterNext s6l] (s6rhs "T" [.axis s6l]) ]
-#guard causeOf (prepareEvalPlan s6LocatorSchedule (InputSignature.ofDenseInputs s6Inputs)) ==
+#guard causeOf (prepareEvalPlan (explicitF64Sched s6LocatorSchedule) (InputSignature.ofDenseInputs s6Inputs)) ==
   some (.scan (.baseWritesOverlap "loc" "S" 0 2))
 
 def s6z : AxisSpec := ⟨"s6z", 6006, .real⟩
@@ -2127,13 +2168,13 @@ def s6GeometryBeforeCausal : ScheduledProgram :=
       [s6Scatter "S" (.affine (.scale (-2) s6j)) (.iterNext s6l) "S"
         [.scale (-2) s6j, .shift s6l 1]] with
     decls := .axis s6z (some 0) :: s6Decls }
-#guard causeOf (prepareEvalPlan s6GeometryBeforeCausal
+#guard causeOf (prepareEvalPlan (explicitF64Sched s6GeometryBeforeCausal)
     (InputSignature.ofDenseInputs s6Inputs)) ==
   some (.scan (.scanWriteRowNotAdmitted "order" "S" false 0 0 #[0, -2] 0))
 
 -- Capability remains earlier than missing-input validation for a malformed scan scatter.
 #guard causeOf (prepareEvalPlan
-    (rejSched [okBase] [capabilityBeforeInputScatter]) emptySig) ==
+    (rejSchedRaw [okBase] [capabilityBeforeInputScatter]) emptySig) ==
   some (.capability (.multiAxisScatterLhs "S: affine LHS slot"))
 
 end LeanNCD.Eval.Plan.ScanCompileTest

@@ -251,11 +251,13 @@ def f32WarnProg : TLProgram := tlprog!{
 def f32WarnInputs : NamedDenseEnv32 :=
   ({} : NamedDenseEnv32).insert "X" ⟨[6], #[(1.0 : Float32), 2.0, 3.0, 4.0, 5.0, 6.0]⟩
 
-/-- The same program in the untyped (binary64) spelling, with the same values — the legacy
-    evaluator's own input, used only to cross-check that the warning list below is real. -/
+/-- The same program in the explicit `tensor f64` (binary64) spelling, with the same values — the
+    legacy evaluator's own input, used only to cross-check that the warning list below is real. An
+    undeclared name is binary32 now, which the binary64 legacy evaluator refuses. -/
 def warnProgF64 : TLProgram := tlprog!{
   axis i : ℕ = 4
   axis j : ℕ = 3
+  tensor f64 X(i), Y(i, j)
   Y[i, j] := X[2 * i + j]
 }
 
@@ -305,8 +307,8 @@ destination `Y`. The inputs are `[2²⁴, 1, −2²⁴]`.
 
 Left-to-right in binary32: `2²⁴ + 1` is not representable and rounds back to `2²⁴`, so the third
 term cancels it exactly and `Y = +0` (bits `0`). In binary64 the same fold gives `2²⁴ + 1 = 16777217`
-and `Y = 1`. The binary64 half below runs the SAME transformed program in its ordinary-tensor
-spelling through `runPreparedDense`, so the contrast is measured rather than asserted — this is the
+and `Y = 1`. The binary64 half below runs the SAME transformed program in its explicit
+`tensor f64` spelling through `runPreparedDense`, so the contrast is measured rather than asserted — this is the
 fixture that a widen-to-binary64-then-narrow execution leg cannot pass. -/
 
 def f32ReductionProg : TLProgram := tlprog!{
@@ -318,10 +320,10 @@ def f32ReductionProg : TLProgram := tlprog!{
 def f32ReductionInputs : NamedDenseEnv32 :=
   ({} : NamedDenseEnv32).insert "B" ⟨[3], #[(16777216.0 : Float32), 1.0, -16777216.0]⟩
 
-/-- The same program, ordinary (binary64) declarations and the same three values. -/
+/-- The same program, explicit `tensor f64` (binary64) declarations and the same three values. -/
 def f64ReductionProg : TLProgram := tlprog!{
   axis j : ℕ = 3
-  tensor B(j), Y()
+  tensor f64 B(j), Y()
   Y[] := B[j]
 }
 
@@ -637,6 +639,7 @@ def f32ExpOobInputs : NamedDenseEnv32 :=
     pattern rather than adding one. -/
 def expOobProgF64 : TLProgram := tlprog!{
   axis i : ℕ = 3
+  tensor f64 A(i), E(i)
   E[i] := exp(A[i + 1])
 }
 
@@ -735,7 +738,7 @@ CAUSAL softmax of `[0, 0, 2.5]` restricted to `s ≤ q`:
 * row 2 — every `s` unmasked, the full `[0, 0, 2.5]` row — §2.6's own discriminating softmax
   lane, native bits `[1032873795, 1032873795, 1062987311]`.
 
-The binary64 twin (same values, ordinary declarations, through `runPreparedDense`) must agree on
+The binary64 twin (same values, explicit `tensor f64` declarations, through `runPreparedDense`) must agree on
 rows 0/1 exactly (no rounding freedom at `0`/power-of-two denominators) and narrow row 2 to
 `[1032873796, 1032873796, 1062987311]` — §2.6's own discriminator, one ULP off the native row. -/
 
@@ -750,11 +753,11 @@ def f32AttnInputs : NamedDenseEnv32 :=
   (({} : NamedDenseEnv32).insert "Q" ⟨[3,1], #[(1.0 : Float32), 1.0, 1.0]⟩).insert
     "K" ⟨[3,1], #[(0.0 : Float32), 0.0, 2.5]⟩
 
-/-- The binary64 twin: same source shape and values, ordinary declarations. -/
+/-- The binary64 twin: same source shape and values, explicit `tensor f64` declarations. -/
 def f64AttnProg : TLProgram := tlprog!{
   axis q : ℕ = 3
   axis d : ℕ = 1
-  tensor Q(q, d), K(s, d), A(q, s)
+  tensor f64 Q(q, d), K(s, d), A(q, s)
   A[q, s.] := softmax(where s ≤ q)(Q[q, d] · K[s, d])
 }
 

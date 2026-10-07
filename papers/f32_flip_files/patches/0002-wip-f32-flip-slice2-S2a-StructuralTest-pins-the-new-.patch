@@ -1,0 +1,60 @@
+From 6a6c6ed7acf82da58348dc625434dcf0a12c7f28 Mon Sep 17 00:00:00 2001
+From: William Macready <william.macready@gmail.com>
+Date: Sun, 4 Oct 2026 15:28:44 -0700
+Subject: [PATCH 2/7] wip(f32-flip-slice2): S2a StructuralTest pins the new
+ default
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+---
+ leanncd/test/DSL/Pipeline/StructuralTest.lean | 13 +++++++++++--
+ papers/f32_flip_slice2_log.md                 |  3 +++
+ 2 files changed, 14 insertions(+), 2 deletions(-)
+
+diff --git a/leanncd/test/DSL/Pipeline/StructuralTest.lean b/leanncd/test/DSL/Pipeline/StructuralTest.lean
+index e8c18a6..d66eb49 100644
+--- a/leanncd/test/DSL/Pipeline/StructuralTest.lean
++++ b/leanncd/test/DSL/Pipeline/StructuralTest.lean
+@@ -167,10 +167,19 @@ run_cmd do
+   | .ok (.ok .float32) => pure ()
+   | .ok r => throwError s!"f32-plus-predicate graph: expected .ok .float32, got {repr r}"
+ 
+--- (b) the same graph in the untyped (f64) spelling selects `.float64`.
++-- (b) the same graph in the untyped spelling selects `.float32`: plain `tensor` is the binary32
++--     default (the f32 default flip), so it agrees with the f32 spelling in (a).
+ run_cmd do
+   match storageOf [.tensor "Y" [axS], .tensor "X" [axS], .predicate "P" [axS]] "Y" ["X", "P"] with
+   | .error m => throwError m
++  | .ok (.ok .float32) => pure ()
++  | .ok r => throwError s!"untyped-plus-predicate graph: expected .ok .float32, got {repr r}"
++
++-- (b') the same graph with the EXPLICIT binary64 spelling selects `.float64`.
++run_cmd do
++  match storageOf [.typedTensor .f64 "Y" [axS], .typedTensor .f64 "X" [axS], .predicate "P" [axS]]
++      "Y" ["X", "P"] with
++  | .error m => throwError m
+   | .ok (.ok .float64) => pure ()
+   | .ok r => throwError s!"f64-plus-predicate graph: expected .ok .float64, got {repr r}"
+ 
+@@ -188,7 +197,7 @@ run_cmd do
+ --     deliberately ordered `C`, `B`, `A`).
+ run_cmd do
+   match storageOf
+-      [ .tensor "C" [axS], .tensor "B" [axS], .typedTensor .f32 "A" [axS]
++      [ .typedTensor .f64 "C" [axS], .typedTensor .f64 "B" [axS], .typedTensor .f32 "A" [axS]
+       , .typedTensor .f32 "D" [axS] ]
+       "D" ["A", "B", "C"] with
+   | .error m => throwError m
+diff --git a/papers/f32_flip_slice2_log.md b/papers/f32_flip_slice2_log.md
+index 1e78357..994b259 100644
+--- a/papers/f32_flip_slice2_log.md
++++ b/papers/f32_flip_slice2_log.md
+@@ -1,3 +1,6 @@
+ # f32 flip slice 2 prototype log
+ 
+ - S1: applied the 4 one-line flips (Ast storageConstraintOfDecl tensor/linear + storageConstraintOfName? undeclared, Signature dtypeOfDecl tensor/linear/none, Compile.lean line 1410 stateSigs fallback) plus the old-default docstrings/comment. CLAIMED only, targeted build of LeanNCD pending (next entry).
++- S1 VERIFIED: targeted `lake build LeanNCD` with the flip: "Build completed successfully (8546 jobs)".
++- S2a (StructuralTest): CLAIMED edit only (b: untyped -> .float32, new b': explicit f64 -> .float64, d: B/C spelled f64); build pending.
++- S2b (ComplexElementTypeTest): CLAIMED edit only (new `neighbour` helper declares undeclared A/B/Y f64 explicitly; docs); build pending.
+-- 
+2.50.1 (Apple Git-155)
+

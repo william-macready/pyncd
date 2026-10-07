@@ -236,8 +236,8 @@ inductive CapabilityError
 
       * Step 0b — a MIXED f32/f64 schedule, context `"{name}: mixed f32/f64 storage in one
         schedule"`, naming the first USED name that disagrees with the kind an earlier used name
-        established. An undeclared external is a real f64 tensor, so an f32 graph reading one is
-        mixed and lands here.
+        established. An undeclared external is a real f32 tensor, so an f64 graph reading one is
+        mixed and lands here (every real external of an f64 graph must be declared `tensor f64`).
       * Step 0c (`f32CapabilityCheck`, DELETED by F32-C) — formerly a homogeneous-f32 schedule
         using a deferred construct, one context per construct. All FOUR contexts this bullet ever
         produced — `"{name}: f32 scan"`, `"{name}: f32 scatter"`, `"{name}: f32 nonlinearity"`,

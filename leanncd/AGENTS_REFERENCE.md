@@ -47,10 +47,12 @@ small. Read the relevant rules before editing their covered surfaces.
   pinned by a rejection fixture, never a value-parity entry. Two bugs, opposite lessons: broaden
   source-generated coverage; keep hand-built tests to rejection/isolation.
 
-- **Most eval-based tests declare `f64` explicitly (`test/Eval/ExplicitF64.lean`).**
-  `explicitF64Decls`/`TLProgram.explicitF64` and the `…F64` wrappers declare only UNDECLARED names
-  `f64`; plain `tensor`/`linear` are re-spelled `f64` at the source. Covered: Harness/Portfolio,
-  EvalExamplesTest, EntryTest, AffineShapeSolverTest, ScanTest, ContractTest, WaveBRegressionTest,
-  Plan/ContractTest, PropertyOracle/*, ScanDense32Test. NOT covered (slice-2 of the f32 default
-  flip): Plan CompileTest, ScanCompileTest, ScatterCompileTest, NonlinCompileTest, AdapterTest,
-  Adapter32Test, DifferentialTest still call the evaluator unwrapped.
+- **The default is binary32; `f64` is the explicit binary64 spelling.** Plain `tensor`/`linear` and
+  undeclared names are binary32 (`storageConstraintOfDecl`, `storageConstraintOfName?`,
+  `dtypeOfDecl`); the bool-only defaults (`deriveStorageKind`, `scheduleStorageKind`) and the
+  reference evaluator are unchanged, so unannotated programs hit the four documented regressions
+  (see `LeanNCD/Eval/Plan/AGENTS.md` Pitfalls). Eval-based tests that need binary64 declare `f64`
+  (`test/Eval/ExplicitF64.lean`): `explicitF64Decls`/`TLProgram.explicitF64` and the `…F64`
+  wrappers declare only UNDECLARED names `f64`; plain `tensor`/`linear` are re-spelled `f64` at the
+  source. Importing `Eval.ExplicitF64` pulls in the TL DSL syntax, which makes `bias` a keyword
+  token, so any `AffineMap` literal in such a module needs `«bias» :=`.

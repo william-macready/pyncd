@@ -1407,7 +1407,7 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
     , boundaryPolicy := .zeroThenBaseOverlay
     , snapshotPolicy := .immutablePreStep }
   let stateSigs : Array TensorSignature := (Array.range stateNames.size).map (fun si =>
-    { shape := stateShapes.getD si #[], dtype := stateDtypes.getD si .f64 })
+    { shape := stateShapes.getD si #[], dtype := stateDtypes.getD si .f32 })
   return { raw, stateNames, stateSigs }
 
 def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
@@ -1473,9 +1473,9 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
   -- A MIXED f32/f64 schedule is rejected outright, naming the first used name that disagrees with
   -- the kind an earlier used name established: nothing in this compiler or either worker expresses
   -- a per-tensor precision boundary, so a mixed graph has no defined meaning to compile. An
-  -- UNDECLARED external is a real f64 tensor (`storageConstraintOfName?`, `DSL/Ast.lean`, mirroring
-  -- `dtypeOfDecl none = .f64`), so an f32 graph reading one is mixed and is rejected here — every
-  -- real external in an f32 graph must be declared `tensor f32`.
+  -- UNDECLARED external is a real f32 tensor (`storageConstraintOfName?`, `DSL/Ast.lean`, mirroring
+  -- `dtypeOfDecl none = .f32`), so an f64 graph reading one is mixed and is rejected here — every
+  -- real external in an f64 graph must be declared `tensor f64`.
   --
   -- A HOMOGENEOUS f32 schedule is now ADMITTED and specialized through the binary32 checker (the f32
   -- slice's Task 2 replaced Task 1's temporary blanket stop here). `storage` selects Step B's
@@ -1503,10 +1503,9 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
   -- `dtypeMismatch`, carrying both dtypes so a caller does not have to re-derive either.
   --
   -- For a `.float32` schedule the admission gate is SKIPPED, not re-pointed at `dtypeAdmittedF32`.
-  -- Every real external of an f32 schedule is `tensor f32`-declared and every Boolean one is
-  -- `predicate`-declared — an UNDECLARED external would have constrained storage to `.float64` and
-  -- made Step 0b reject the schedule as mixed — so `dtypeOfDecl` commits every name here to `.f32`
-  -- or `.bool` and the expectation check below is already exhaustive. Pointing the gate at
+  -- Every real external of an f32 schedule is declared `tensor f32`, declared plain `tensor`, or
+  -- undeclared, and every Boolean one is `predicate`-declared, so `dtypeOfDecl` commits every
+  -- name here to `.f32` or `.bool` and the expectation check below is already exhaustive. Pointing the gate at
   -- `dtypeAdmittedF32` would only relabel the one interesting case, a supplied `.f64` signature for
   -- an f32-declared name, from the informative `dtypeMismatch nm .f32 .f64` (two known sides
   -- disagreeing about precision) to a bare "not admitted", losing the expectation.
