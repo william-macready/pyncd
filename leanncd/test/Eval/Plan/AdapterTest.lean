@@ -28,11 +28,14 @@ private def expectTensor (t : Option DenseTensor) (shape : List Nat) (data : Arr
 -- Example 1: contraction, reused from Task 2's own worked example (`Y[i] := A[i]·B[j]`
 -- contracted over `j`). Baseline verified against the real evaluator: A=[10,100], B=[1,2,3],
 -- ΣB=6 ⇒ Y = A·6 = [60, 600].
-private def zeroCoeffProg : TLProgram := tlprog!{
+-- (`.explicitF64`: this file's fixtures run over the binary64 `Float` carrier, and an undeclared
+-- name is now binary32, so every undeclared tensor name is declared `tensor f64` here — the lever of
+-- `test/Eval/ExplicitF64.lean`.)
+private def zeroCoeffProg : TLProgram := (tlprog!{
   axis i : ℕ = 2
   axis j : ℕ = 3
   Y[i] := A[i] · B[j]
-}
+}).explicitF64
 
 private def zeroCoeffInputs : HashMap String DenseTensor :=
   (({} : HashMap String DenseTensor).insert "A" ⟨[2], #[10.0, 100.0]⟩).insert
@@ -52,11 +55,11 @@ private def undersizedDataInputs : HashMap String DenseTensor :=
 -- teeth. Baseline verified against the real evaluator: A=[10,100], B=[1,2], ΣB=3 ⇒ W = A·3 =
 -- [30, 300] (the swapped-slot alternative would be B·ΣA = B·110 = [110, 220] — confirmed
 -- different, by hand-substitution of the same verified arithmetic).
-private def swapProg : TLProgram := tlprog!{
+private def swapProg : TLProgram := (tlprog!{
   axis i : ℕ = 2
   axis j : ℕ = 2
   W[i] := A[i] · B[j]
-}
+}).explicitF64
 
 private def swapInputs : HashMap String DenseTensor :=
   (({} : HashMap String DenseTensor).insert "A" ⟨[2], #[10.0, 100.0]⟩).insert "B" ⟨[2], #[1.0, 2.0]⟩
@@ -64,11 +67,11 @@ private def swapInputs : HashMap String DenseTensor :=
 -- Example 3: an undersized read (`X` shape [6], reads up to index 8) — triggers a real
 -- `paddedAccess` `EvalWarning`, so the "warnings preserved through pack/run" checks below have a
 -- genuinely non-empty list to preserve, not a vacuously-passing empty one.
-private def warnProg : TLProgram := tlprog!{
+private def warnProg : TLProgram := (tlprog!{
   axis i : ℕ = 4
   axis j : ℕ = 3
   Y[i, j] := X[2 * i + j]
-}
+}).explicitF64
 
 private def warnInputs : HashMap String DenseTensor :=
   ({} : HashMap String DenseTensor).insert "X" ⟨[6], #[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]⟩
@@ -452,7 +455,7 @@ private def scanEnvPlus (extra : String) (t : DenseTensor) : HashMap String Dens
 -- starts from the caller's own `env`, so a leak would show up as an extra key, which "the expected
 -- states are present" could never detect.
 run_cmd do
-  match prepareEvalPlan ScanCompileTest.scratchSched
+  match prepareEvalPlan (ScanCompileTest.explicitF64Sched ScanCompileTest.scratchSched)
       (InputSignature.ofDenseInputs ScanCompileTest.scratchInputs) with
   | .error f => throwError s!"scan prepare failed: {renderCompileCause f.cause}"
   | .ok prepared =>
@@ -462,7 +465,8 @@ run_cmd do
       | .error e => throwError s!"scan round-trip run failed: {repr e.cause}"
       | .ok report =>
           -- the state history, against the legacy evaluator's own answer for the same schedule.
-          match evalScheduled ScanCompileTest.scratchSched ScanCompileTest.scratchInputs with
+          match evalScheduled (ScanCompileTest.explicitF64Sched ScanCompileTest.scratchSched)
+              ScanCompileTest.scratchInputs with
           | .error e => throwError s!"legacy evaluator failed on the scan fixture: {e.error}"
           | .ok legacy =>
               match report.env["S"]?, legacy.env["S"]? with
@@ -484,7 +488,7 @@ run_cmd do
 -- populations are covered: `S0` is captured by the BASE block, `K` by the STEP block — two
 -- different `ScanCapture` sources that nonetheless resolve through the same outer `inputSlots`.
 run_cmd do
-  match prepareEvalPlan ScanCompileTest.scratchSched
+  match prepareEvalPlan (ScanCompileTest.explicitF64Sched ScanCompileTest.scratchSched)
       (InputSignature.ofDenseInputs ScanCompileTest.scratchInputs) with
   | .error f => throwError s!"scan prepare failed: {renderCompileCause f.cause}"
   | .ok prepared =>
@@ -545,13 +549,14 @@ def scanWarnInputs : HashMap String DenseTensor :=
     "X" ⟨[3], #[1.0, 2.0, 3.0]⟩).insert "V" ⟨[4], #[5.0, 6.0, 7.0, 8.0]⟩
 
 run_cmd do
-  match prepareEvalPlan scanWarnSched (InputSignature.ofDenseInputs scanWarnInputs) with
+  match prepareEvalPlan (ScanCompileTest.explicitF64Sched scanWarnSched)
+      (InputSignature.ofDenseInputs scanWarnInputs) with
   | .error f => throwError s!"scan-warning prepare failed: {renderCompileCause f.cause}"
   | .ok prepared =>
       unless prepared.warnings.length == 2 do
         throwError s!"fixture is broken: expected exactly two preparation warnings, got \
 {prepared.warnings.map toString}"
-      match evalScheduled scanWarnSched scanWarnInputs with
+      match evalScheduled (ScanCompileTest.explicitF64Sched scanWarnSched) scanWarnInputs with
       | .error e => throwError s!"legacy evaluator failed on the scan-warning fixture: {e.error}"
       | .ok legacy =>
           unless legacy.warnings == prepared.warnings do
@@ -603,7 +608,8 @@ run_cmd do
       , ("coupled", ScanCompileTest.coupledSched, ScanCompileTest.coupledInputs)
       , ("multiBase", ScanCompileTest.multiBaseSched, ScanCompileTest.multiBaseInputs)
       , ("twoScans", ScanCompileTest.twoScanSched, ScanCompileTest.twoScanInputs) ] do
-    match prepareEvalPlan sched (InputSignature.ofDenseInputs inputs) with
+    match prepareEvalPlan (ScanCompileTest.explicitF64Sched sched)
+        (InputSignature.ofDenseInputs inputs) with
     | .error f => throwError s!"{name}: prepare failed: {renderCompileCause f.cause}"
     | .ok prepared =>
         match pack prepared inputs with
@@ -875,10 +881,10 @@ domain violation). Corrects the two stale "`PlanRunCause.execution` is unreachab
 that makes it concrete on THIS carrier — `Adapter32Test`'s Fixture 2.11 is the binary32 twin. This is
 also the first fixture anywhere to pin warnings on an `.execution` failure. -/
 
-private def logDomainProg : TLProgram := tlprog!{
+private def logDomainProg : TLProgram := (tlprog!{
   axis i : ℕ = 3
   E[i] := log(A[i + 1])
-}
+}).explicitF64
 
 private def logDomainInputs : HashMap String DenseTensor :=
   ({} : HashMap String DenseTensor).insert "A" ⟨[3], #[1.0, 2.0, 4.0]⟩
