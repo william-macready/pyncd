@@ -1,0 +1,75 @@
+import LeanNCD.Semantics.Types
+import Mathlib.Algebra.BigOperators.Group.Finset.Basic
+import Mathlib.Algebra.BigOperators.Group.Finset.Piecewise
+
+namespace LeanNCD.Semantics
+
+/- Naperian families are functions. Reads pull back contravariantly;
+   finite additive writes push forward covariantly. -/
+abbrev Family (I K : Type) := I → K
+
+def pullback {I J K : Type} (f : I → J) (v : Family J K) : Family I K := v ∘ f
+
+variable {O I J K : Type} [Fintype O] [AddCommMonoid K]
+
+def pushforward [DecidableEq I] (d : O → I) (v : Family O K) : Family I K :=
+  fun i => ∑ o, if d o = i then v o else 0
+
+theorem pushforward_zero [DecidableEq I] (d : O → I) :
+    pushforward d (0 : Family O K) = 0 := by
+  funext i
+  simp [pushforward]
+
+theorem pushforward_add [DecidableEq I] (d : O → I) (v w : Family O K) :
+    pushforward d (v + w) = pushforward d v + pushforward d w := by
+  funext i
+  simp only [pushforward, Pi.add_apply]
+  rw [← Finset.sum_add_distrib]
+  apply Finset.sum_congr rfl
+  intro o _
+  split_ifs <;> simp
+
+def pushforwardHom [DecidableEq I] (d : O → I) : Family O K →+ Family I K where
+  toFun := pushforward d
+  map_zero' := pushforward_zero d
+  map_add' := pushforward_add d
+
+theorem pushforward_id [DecidableEq O] (v : Family O K) :
+    pushforward id v = v := by
+  funext o
+  exact Finset.sum_ite_eq_of_mem' Finset.univ o v (Finset.mem_univ o)
+
+theorem pushforward_comp [Fintype I] [DecidableEq I] [DecidableEq J]
+    (d : O → I) (e : I → J) (v : Family O K) :
+    pushforward e (pushforward d v) = pushforward (e ∘ d) v := by
+  funext j
+  simp only [pushforward, Function.comp_apply]
+  have distribute (i : I) :
+      (if e i = j then ∑ o, if d o = i then v o else 0 else 0) =
+      ∑ o, if e i = j then (if d o = i then v o else 0) else 0 := by
+    by_cases h : e i = j <;> simp [h]
+  simp_rw [distribute]
+  rw [Finset.sum_comm]
+  apply Finset.sum_congr rfl
+  intro o _
+  have swap (i : I) :
+      (if e i = j then (if d o = i then v o else 0) else 0) =
+      if d o = i then (if e i = j then v o else 0) else 0 := by
+    split_ifs <;> rfl
+  simp_rw [swap]
+  exact Finset.sum_ite_eq_of_mem Finset.univ (d o) _ (Finset.mem_univ _)
+
+theorem pushforward_relabel {O' : Type} [Fintype O'] [DecidableEq I]
+    (e : O' ≃ O) (d : O → I) (v : Family O K) :
+    pushforward (d ∘ e) (v ∘ e) = pushforward d v := by
+  funext i
+  exact Equiv.sum_comp e (fun o => if d o = i then v o else 0)
+
+theorem pushforward_grouped {A : Type} [Fintype A] {B : A → Type}
+    [∀ a, Fintype (B a)] [DecidableEq I]
+    (d : ((a : A) × B a) → I) (v : Family ((a : A) × B a) K) (i : I) :
+    pushforward d v i = ∑ a, pushforward (fun b => d ⟨a, b⟩)
+      (fun b => v ⟨a, b⟩) i := by
+  simp only [pushforward, Fintype.sum_sigma]
+
+end LeanNCD.Semantics
