@@ -125,3 +125,59 @@ is never consulted): `dupDeclSched`, `predDupSched`, `predTwoStmtSched`, `predUn
 fixture and `rankScanDestinationSched`, `plainAxisKindSched`/`scanAxisKindSched` rejection fixtures.
 They stay as written: wrapping them would change which pass reports the error (`rankProducedSched`'s
 point is an UNDECLARED produced name).
+
+### Task 4a CompileTest: result and the 4b input (VERIFIED by targeted build)
+
+`Eval.Plan.CompileTest` builds: 71 failing assertions before (8518 jobs, one failing), 15 after
+(8519 jobs: the added `Eval.ExplicitF64` import is the one new job). Every remaining failure is a
+class (ii) pin from the classification table, no (i) left, none (iii). Lever added: one local helper
+`explicitF64Sched` (`explicitF64Decls` over `sched.stmts.flatMap ScanStmt.sourceStmts`, the same body
+`evalScheduledF64` uses), applied at the schedule definitions; `warnProg.explicitF64` at both
+`compileToScheduled` calls. Plain `tensor` re-spelled `.typedTensor .f64` at source in
+`predSchedWith`, `predRealDestSched`, `scanPredSchedWith`, `rankScanSched`, `plainAxisKindSched` (`X`),
+`validAxisKindSched` (`Y`), `f32MixedDeclOrderSched`/`f32MixedScatterReluProg` (`X`), and the valid
+read-rank sibling. One non-obvious fix: the warnings `run_cmd` APPENDS a statement writing `Z`
+(undeclared, so binary32, beside the `f64` `X`): it failed with a mixed-precision capability error and
+empty warnings, not an unsized axis, until `combined` itself went through `explicitF64Sched`.
+`identitySched`/`identitySig`/`identityInputs`/`contractSched`/`repeatSched` keep their names (the
+`Adapter32Test` donor uses `identitySched`, `identitySig`, `identityInputs`; it was NOT rebuilt here,
+since Task 6 re-measures it, and `CompileTest` does not build clean until 4b).
+
+**Residual failing assertions (the 4b input), 15, all class (ii).** Line numbers are at the 4a commit.
+
+| fixture | lines | n | pinned to the old default | direction under the flip |
+|---|---|---|---|---|
+| f32 identity "Control: the SAME program in the untyped (f64) spelling" | 804, 809 | 2 | plain `.tensor X/Y` records `.float64` and `admittedAlgebra` | plain is f32: re-pin `.float32`/`admittedAlgebraF32`, or spell the control `f64` |
+| `f32MixedUndeclaredSched` | 856 | 1 | undeclared `X` is the f64 side of a mixed schedule: `unsupportedDtype "Y: mixed ..."` | INVERTS: undeclared `X` is f32, no conflict; the mixing needs `X` declared `f64` (state the direction in the comment) |
+| `plainIdentitySched` vs `f64IdentitySched` | 883, 886, 888 | 3 | plain `.tensor` equals explicit `f64` (`tensorSigs`, `storageKind`, step count) | plain is f32: pin equal to the `f32` spelling, keep an `f64` neighbour |
+| `plainLinearSched` vs `f64LinearSched`/f32 | 948, 949, 952, 953 | 4 | plain `.linear` equals `linear f64`, `.float64`, `admittedAlgebra` | same as above for `linear` |
+| `f32LinearMixedSched` | 962 | 1 | plain `.linear X` as "the f64 side" of a mixed schedule | plain is f32: no mix; use `.typedLinear .f64` (the second half already does) |
+| `declaredBSched` family | 1443, 1448, 1460, 1469 | 4 | `A`/`Y` undeclared expect `f64`: baseline accept (`declaredBCorrectSig`, `A: f64`), `B`'s own `.bool` slot, `declaredBWrongSigB` and Variant 2 `dtypeMismatch "A" .f64 .bool` | undeclared `A` is f32; the `f64` `A` signature is a `dtypeMismatch`/`storageKindMismatch`; either declare `A`/`Y` `f64` (then the pins stand, prose changes) or re-pin to `.f32` |
+
+Passing but STALE PROSE for 4b (comments that now say something false; no assertion change needed):
+`#guard ... carrying a scatter destination "(an ordinary tensor, or undeclared, both yielding f64 under
+dtypeOfDecl)"` (~line 454); the `badDtypeSig` comment "`X` is undeclared in `identitySched` ... `dtypeOfDecl
+none = .f64`" (~733; `X` is now declared `f64` by `explicitF64Sched`); `f32MixedDeclOrderSched` doc
+"`X` (ordinary, f64)" (~835) and the FW2b comment "(`X` ordinary, `Y` f32)" (~1335); the
+`f64PointwiseSched` doc "`X`/`Y` stay undeclared and default to `.f64` (`dtypeOfDecl none = .f64`)"
+(~1100, the plan's `axI1` fixture: it now runs on explicit `f64` declarations inherited from
+`identitySched`, so it is a binary64 CONTROL; rewrite the prose, no re-pin); the `declaredBSched` doc
+"`A` stays undeclared (expects `f64`)" (~1434, part of the residual above).
+
+Site table (`rg -n "ofDenseInputs|prepareEvalPlan|compileToScheduled|TLProgram\.eval|evalScheduled|ScheduledProgram|runPreparedDense"`;
+feeds the Task 6 site table). 235 matching lines at the 4a commit: 203 code, 32 comment/docstring
+(a line can carry two tokens, so per-token counts below add to more than 235).
+
+| helper / site family | code lines | disposition |
+|---|---|---|
+| `compileToScheduled` | 2 (`warnBaselinePrepared`, the warnings `run_cmd`) | WRAPPED: `warnProg.explicitF64` |
+| `TLProgram.eval` | 0 | not applicable (this module never calls the legacy evaluator) |
+| `ScheduledProgram` literals, wrapped (`explicitF64Sched`) | `identitySched`, `contractSched`, `multiReductionSched`, `repeatSched` (+ `repeatSchedRaw`), `repeatPredSched`, `sameShapeSched` (`extraCachedSched` inherits), `orderedTwinSched`, `cacheSchedWith` (`cacheUnsizedSched`), `axShadowSched`, the warnings `combined`, the valid read-rank sibling | WRAPPED |
+| `ScheduledProgram` literals, `f64` re-spelled at source | `predSchedWith`, `predRealDestSched`, `scanPredSchedWith`, `rankScanSched`, `plainAxisKindSched` + `validAxisKindSched`, `f32MixedDeclOrderSched`, `f32MixedScatterReluProg` | WRAPPED AT SOURCE (not by the helper: they declare `f32`/predicates or name the plain tensor) |
+| `ScheduledProgram` literals declaring `f32` (`f32*Sched`/`f32*Prog`, 17 defs) | all `f32*` fixtures | not needed: homogeneous f32, carrier is `DenseTensor32` or no inputs |
+| `ScheduledProgram` literals pinning the default (class ii) | `f32MixedUndeclaredSched`, `plainIdentitySched`, `plainLinearSched`, `f32LinearMixedSched`, `declaredBSched` | NOT wrapped on purpose (F cell), 4b |
+| rejection-only literals decided before the storage step | `acceptedSched` (preflight only), `unsizedSched`, `predicateSourceSched`/`predicateAggSched`, `outOfOrderSched`, `selfReadSched`, `dupDeclSched`, `predDupSched`/`predUnreadableSched`/`predTwoStmtSched`, `rank*Sched` rejection fixtures, `scanAxisKindSched`, `dtypeSourceOrderSched` | not needed: error precedes the carrier check, wrapping would change which pass reports it (S cell by nature, every one asserts an exact earlier cause) |
+| `ofDenseInputs` (18 code lines) | `identitySig`, `contractSig`, `multiReductionSig`, `repeatSig`, `cacheSig`, `dupDeclSig`, the `topologyInputs`/`scanPredInputs`/`rankInputs`/`axisKindInputs` call sites | not needed: the carrier IS binary64, it is the side held fixed; the program side is declared `f64` |
+| `prepareEvalPlan` (90 code lines) | one call per assertion over the schedules above | not needed: arguments are the wrapped/declared schedules (the 15 residual are the class (ii) rows) |
+| `evalScheduled` (26 code lines) | the reference leg of `assertPredicateParity`/`assertScanPredicateParity`/`assertReadRankParity`/`assertAxisKindParity` and the valid siblings | not needed beyond the schedules: the valid siblings now evaluate (were `unsupportedDtype ... declared f32`) |
+| `runPreparedDense` (3 code lines) | `orderedTwin` run_cmd, `cachePreparedWith 4` run_cmd | not needed (schedule wrapped) |

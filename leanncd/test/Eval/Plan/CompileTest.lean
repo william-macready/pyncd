@@ -1,6 +1,7 @@
 import LeanNCD.Eval.Entry
 import LeanNCD.Eval.Plan.Compile
 import LeanNCD.Eval.Plan.Adapter   -- `runPreparedDense`: the explicitSizes-authority fixture runs its plan
+import Eval.ExplicitF64
 
 /-!
 # Wave C C4 capability preflight tests
@@ -36,10 +37,19 @@ defaulting to a scalar `f64` signature.
 -/
 
 namespace LeanNCD.Eval.Plan.CompileTest
-open LeanNCD LeanNCD.Eval.Plan
+open LeanNCD LeanNCD.Eval.Plan LeanNCD.Eval.ExplicitF64
 open Std
 
-def isOk : Except CapabilityError Unit → Bool
+/-- `sched` with every UNDECLARED tensor name declared `tensor f64` (`explicitF64Decls` over the
+    schedule's source statements, scan bodies included). Hand-built schedules below pair names
+    with the binary64 `Float` carrier (`InputSignature.ofDenseInputs`, `evalScheduled`,
+    `runPreparedDense`); since the f32 default flip an undeclared name is binary32, so a fixture
+    that is not about the default states binary64 explicitly. A declared name (plain `tensor`,
+    `f32`, `predicate`) is left exactly as written. -/
+def explicitF64Sched (sched : ScheduledProgram) : ScheduledProgram :=
+  { sched with decls := explicitF64Decls sched.decls (sched.stmts.flatMap ScanStmt.sourceStmts) }
+
+def isOk: Except CapabilityError Unit → Bool
   | .ok _ => true | .error _ => false
 
 def errOf : Except CapabilityError Unit → Option CapabilityError
@@ -469,7 +479,10 @@ def scanScatterSched (base recur : List Stmt) (decls : List Decl := []) : Schedu
 
 -- Example 1: identity copy `Y[i] := X[i]`, axis i : ℕ = 3.
 def axI1 : AxisSpec := { name := "i", uid := 1, kind := .nat }
+-- `X`/`Y` are written without a declaration; `explicitF64Sched` declares them `tensor f64`, since
+-- the `Float` signature below (`identitySig`) is binary64 and an undeclared name is binary32.
 def identitySched : ScheduledProgram :=
+  explicitF64Sched
   { decls := [.axis axI1 (some 3)]
   , stmts := [.plain (.assign "Y" [.free axI1]
       { body := { terms := [{ factors := [.read "X" [.axis axI1]] }] }, nonlin := .identity })]
@@ -487,6 +500,7 @@ def identitySig : InputSignature := InputSignature.ofDenseInputs identityInputs
 def axI2 : AxisSpec := { name := "i", uid := 1, kind := .nat }
 def axJ2 : AxisSpec := { name := "j", uid := 2, kind := .nat }
 def contractSched : ScheduledProgram :=
+  explicitF64Sched
   { decls := [.axis axI2 (some 2), .axis axJ2 (some 3)]
   , stmts := [.plain (.assign "Y" [.free axI2]
       { body := { terms := [{ factors := [.read "A" [.axis axI2], .read "B" [.axis axJ2]] }] }
@@ -546,7 +560,8 @@ def axI2b : AxisSpec := { name := "i", uid := 1, kind := .nat }
 def axJ2b : AxisSpec := { name := "j", uid := 2, kind := .nat }
 def axK2b : AxisSpec := { name := "k", uid := 3, kind := .nat }
 def multiReductionSched : ScheduledProgram :=
-  { decls := [.axis axI2b (some 2), .axis axJ2b (some 2), .axis axK2b (some 2)]
+  explicitF64Sched
+  { decls :=[.axis axI2b (some 2), .axis axJ2b (some 2), .axis axK2b (some 2)]
   , stmts := [.plain (.assign "Y" [.free axI2b]
       { body := { terms := [{ factors :=
           [ .read "A" [.axis axI2b, .axis axJ2b]
@@ -588,7 +603,7 @@ def multiReductionPrepared : Option PreparedPlan :=
 
 -- Example 3: repeated assignment `Y[i]:=A[i]; Y[i]:=B[i]; Z[i]:=Y[i]`, axis i : ℕ = 2.
 def axI3 : AxisSpec := { name := "i", uid := 1, kind := .nat }
-def repeatSched : ScheduledProgram :=
+def repeatSchedRaw : ScheduledProgram :=
   { decls := [.axis axI3 (some 2)]
   , stmts :=
       [ .plain (.assign "Y" [.free axI3]
@@ -599,6 +614,9 @@ def repeatSched : ScheduledProgram :=
           { body := { terms := [{ factors := [.read "Y" [.axis axI3]] }] }, nonlin := .identity }) ]
   , env := {}, extNames := insert "A" (insert "B" (∅ : Finset String))
   , explicitSizes := (({} : HashMap UID Nat).insert axI3.uid 2) }
+/-- `repeatSchedRaw` with its undeclared names declared `f64`. The raw literal is kept apart because
+    `repeatPredSched` below declares `Y` a predicate: it cannot append to an already-wrapped list. -/
+def repeatSched : ScheduledProgram := explicitF64Sched repeatSchedRaw
 def repeatInputs : HashMap String DenseTensor :=
   (({} : HashMap String DenseTensor).insert "A" (⟨[2], #[1.0, 2.0]⟩ : DenseTensor)).insert
     "B" (⟨[2], #[100.0, 200.0]⟩ : DenseTensor)
@@ -626,7 +644,7 @@ def repeatYSlots : Option (Array TensorSlot) :=
 -- `dtypeOfDecl` reads the constructor, so the plan, its five slots, and the dtype ordering below
 -- are unchanged.)
 def repeatPredSched : ScheduledProgram :=
-  { repeatSched with decls := repeatSched.decls ++ [.predicate "Y" [axI3]] }
+  explicitF64Sched { repeatSchedRaw with decls := repeatSchedRaw.decls ++ [.predicate "Y" [axI3]] }
 #guard (prepareEvalPlan repeatPredSched repeatSig).toOption.isSome
 def repeatPredPrepared : Option PreparedPlan := (prepareEvalPlan repeatPredSched repeatSig).toOption
 /-- `materializedSignatures` under an `Option` — annotated so the `#guard` matches below can use
@@ -820,7 +838,7 @@ first conflicting name is `Y`. A declaration-order scan would name `X` instead. 
 
 def f32MixedDeclOrderSched : ScheduledProgram :=
   { identitySched with
-    decls := [.axis axI1 (some 3), .typedTensor .f32 "Y" [axI1], .tensor "X" [axI1]] }
+    decls := [.axis axI1 (some 3), .typedTensor .f32 "Y" [axI1], .typedTensor .f64 "X" [axI1]] }
 
 #guard causeOf (prepareEvalPlan f32MixedDeclOrderSched identitySig) ==
   some { cause := .capability (.unsupportedDtype "Y: mixed f32/f64 storage in one schedule")
@@ -1318,7 +1336,7 @@ def f32ScatterReluThenScanProg : ScheduledProgram :=
 -- set). This pins Step 0b ahead of Step A.
 def f32MixedScatterReluProg : ScheduledProgram :=
   { f32ScatterReluProg with
-    decls := [.axis axI1 (some 3), .typedTensor .f32 "Y" [axI1], .tensor "X" [axI1]] }
+    decls := [.axis axI1 (some 3), .typedTensor .f32 "Y" [axI1], .typedTensor .f64 "X" [axI1]] }
 
 #guard errOf (capabilityPreflight f32MixedScatterReluProg)
   == some (.unsupportedNonlin "Y: scatter nonlinearity")
@@ -1392,6 +1410,7 @@ def predicateAggSched : ScheduledProgram :=
     The cached map is left in place and honest — this fixture is about external NAMES, and its
     `explicitSizes`-authority sibling lives at the end of this file. -/
 def sameShapeSched : ScheduledProgram :=
+  explicitF64Sched
   { contractSched with
       decls := [.axis axI2 (some 2), .axis axJ2 (some 2)]
     , extNames := insert "A" (∅ : Finset String)   -- `B` omitted from the cached set
@@ -1414,7 +1433,9 @@ def sameShapePrepared : Option PreparedPlan := (prepareEvalPlan sameShapeSched s
     authoritative external-name derivation (not the cached, incomplete set) reaches
     declaration-aware Boolean validation. `A` stays undeclared (expects `f64`). -/
 def declaredBSched : ScheduledProgram :=
-  { sameShapeSched with decls := sameShapeSched.decls ++ [.predicate "B" [axJ2]] }
+  -- `A`/`Y` stay undeclared here (class (ii), Task 4b): the declaration list is spelled out, not
+  -- `sameShapeSched.decls ++ ..`, because `sameShapeSched` now declares `B` (and `A`, `Y`) `f64`.
+  { sameShapeSched with decls := [.axis axI2 (some 2), .axis axJ2 (some 2), .predicate "B" [axJ2]] }
 def declaredBCorrectSig : InputSignature :=
   InputSignature.mk
     ((({} : HashMap String TensorSignature).insert "A" { shape := #[2], dtype := .f64 }).insert
@@ -1548,7 +1569,7 @@ run_cmd do
     not a blanket rejection of programs whose statements read a locally produced tensor. External
     binding order is first-seen over the ORDERED statements, so `B` (read first) precedes `A`. -/
 def orderedTwinSched : ScheduledProgram :=
-  { outOfOrderSched with stmts := outOfOrderStmts.reverse }
+  explicitF64Sched { outOfOrderSched with stmts := outOfOrderStmts.reverse }
 def orderedTwinPrepared : Option PreparedPlan :=
   (prepareEvalPlan orderedTwinSched sameShapeSig).toOption
 
@@ -1600,15 +1621,18 @@ def axUnsized2 : AxisSpec := { name := "k", uid := 1000, kind := .nat }
 
 -- statement 1 alone, for cross-check that the combined program's warnings didn't change.
 def warnBaselinePrepared : Option PreparedPlan := Id.run do
-  match warnProg.compileToScheduled.run 0 with
+  match warnProg.explicitF64.compileToScheduled.run 0 with
   | .error _ _ => none
   | .ok sched _ => (prepareEvalPlan sched (InputSignature.ofDenseInputs warnInputs)).toOption
 
 run_cmd do
-  match warnProg.compileToScheduled.run 0 with
+  match warnProg.explicitF64.compileToScheduled.run 0 with
   | .error e _ => throwError s!"warnProg compile failed: {repr e}"
   | .ok sched _ =>
-    let combined : ScheduledProgram :=
+    -- The appended statement writes `Z`, undeclared (binary32 since the flip) beside the `f64` `X`
+    -- the compile above declared: `explicitF64Sched` declares it `f64` so the program is still
+    -- homogeneous and the failure is the unsized axis, not a mixed-precision capability error.
+    let combined : ScheduledProgram := explicitF64Sched
       { sched with
           decls := sched.decls ++ [.axis axUnsized2 none]
           stmts := sched.stmts ++ [.plain (.assign "Z" [.free axUnsized2]
@@ -1643,7 +1667,8 @@ def axICache : AxisSpec := { name := "i", uid := 1, kind := .nat }
 def axJCache : AxisSpec := { name := "j", uid := 2, kind := .nat }
 
 def cacheSchedWith (cachedI : Nat) : ScheduledProgram :=
-  { decls := [.axis axICache (some 3), .axis axJCache (some 2)]
+  explicitF64Sched
+  { decls :=[.axis axICache (some 3), .axis axJCache (some 2)]
   , stmts := [.plain (.assign "Y" [.free axICache]
       { body := { terms := [{ factors := [.read "X" [.axis axJCache]] }] }, nonlin := .identity })]
   , env := {}, extNames := insert "X" (∅ : Finset String)
@@ -1695,7 +1720,7 @@ run_cmd do
 -- the fabricated entry, so the axis falls to ordinary inference — which fails loud here rather than
 -- honouring a size the source never declares.
 def cacheUnsizedSched : ScheduledProgram :=
-  { cacheSchedWith 4 with decls := [.axis axICache none, .axis axJCache (some 2)] }
+  explicitF64Sched { cacheSchedWith 4 with decls := [.axis axICache none, .axis axJCache (some 2)] }
 
 #guard match causeOf (prepareEvalPlan cacheUnsizedSched cacheSig) with
   | some f => f.cause == .shape (.unsizedAxis axICache.uid (.assignOutput "Y"))
@@ -1738,6 +1763,7 @@ def dupDeclSched : ScheduledProgram :=
     (Task 4.1's own fixture pins that at `evalAssignDtyped`, in `test/Eval/ContractTest.lean`; this
     one pins it through the whole `evalScheduled` boundary, past the new validation). -/
 def axShadowSched : ScheduledProgram :=
+  explicitF64Sched
   { dupDeclSched with
       decls := [ .axis axIDup (some 2)
                , .axis { name := "Y", uid := 77, kind := .real } none
@@ -1802,7 +1828,7 @@ def predStmt (dest : String) (nl : Nonlin) (ag : AggOp) : ScanStmt :=
 /-- `predicate Y(i)` plus the donor statement. `Y` is the only tensor-bearing declaration besides the
     two inputs, so `buildDeclEnv` succeeds and every rejection below is the per-statement rule's. -/
 def predSchedWith (nl : Nonlin) (ag : AggOp) : ScheduledProgram :=
-  { decls := [.axis axIDup (some 2), .tensor "A" [axIDup], .tensor "B" [axIDup]
+  { decls := [.axis axIDup (some 2), .typedTensor .f64 "A" [axIDup], .typedTensor .f64 "B" [axIDup]
              , .predicate "Y" [axIDup]]
   , stmts := [predStmt "Y" nl ag]
   , env := {}, extNames := insert "A" (insert "B" (∅ : Finset String))
@@ -1922,8 +1948,8 @@ run_cmd do
 -- declaration and not on the nonlinearity alone.
 def predRealDestSched : ScheduledProgram :=
   { predSchedWith (.pointwise .relu) .sum with
-      decls := [.axis axIDup (some 2), .tensor "A" [axIDup], .tensor "B" [axIDup]
-               , .tensor "Y" [axIDup]] }
+      decls := [.axis axIDup (some 2), .typedTensor .f64 "A" [axIDup], .typedTensor .f64 "B" [axIDup]
+               , .typedTensor .f64 "Y" [axIDup]] }
 
 run_cmd do
   match evalScheduled predRealDestSched dupDeclInputs with
@@ -1956,8 +1982,8 @@ def scanRecur (nl : Nonlin) (ag : AggOp) : Stmt :=
 
 def scanPredSchedWith (baseNl : Nonlin) (baseAg : AggOp) (recurNl : Nonlin) (recurAg : AggOp) :
     ScheduledProgram :=
-  { decls := [.axis axJScan (some 1), .iter axLScan 3, .tensor "X" [axJScan]
-             , .tensor "A" [axJScan], .predicate "S" [axJScan, axLScan]]
+  { decls := [.axis axJScan (some 1), .iter axLScan 3, .typedTensor .f64 "X" [axJScan]
+             , .typedTensor .f64 "A" [axJScan], .predicate "S" [axJScan, axLScan]]
   , stmts := [.scan "S" [axLScan] [scanBase baseNl baseAg] [scanRecur recurNl recurAg] false]
   , env := {}, extNames := insert "X" (insert "A" (∅ : Finset String))
   , explicitSizes := ((({} : HashMap UID Nat).insert axJScan.uid 1).insert axLScan.uid 3) }
@@ -2183,7 +2209,8 @@ run_cmd do
 -- The VALID sibling: the same donor with a correctly-ranked read. Accepted by both entries, and the
 -- value is the real one — the new validation costs no legal program.
 run_cmd do
-  let valid := rankSched [.axis axIRank (some 2), .tensor "X" [axIRank]] [.axis axIRank]
+  let valid := explicitF64Sched
+    (rankSched [.axis axIRank (some 2), .typedTensor .f64 "X" [axIRank]] [.axis axIRank])
   match evalScheduled valid rankInputs with
   | .error failure => throwError s!"valid read-rank sibling rejected by evalScheduled: {failure.error}"
   | .ok report =>
@@ -2248,8 +2275,8 @@ def rankScanRecur (readIdx : List IdxExpr) : Stmt :=
     , nonlin := .identity }
 
 def rankScanSched (baseIdx recurIdx : List IdxExpr) : ScheduledProgram :=
-  { decls := [.axis axJRankScan (some 2), .iter axLRankScan 3, .tensor "A" [axJRankScan]
-             , .tensor "S" [axJRankScan, axLRankScan]]
+  { decls := [.axis axJRankScan (some 2), .iter axLRankScan 3, .typedTensor .f64 "A" [axJRankScan]
+             , .typedTensor .f64 "S" [axJRankScan, axLRankScan]]
   , stmts := [.scan "S" [axLRankScan] [rankScanBase baseIdx] [rankScanRecur recurIdx] false]
   , env := {}, extNames := insert "A" (∅ : Finset String)
   , explicitSizes := ((({} : HashMap UID Nat).insert axJRankScan.uid 2).insert axLRankScan.uid 3) }
@@ -2350,7 +2377,7 @@ def assertAxisKindParity (label : String) (sched : ScheduledProgram) (expected :
 
 def plainAxisKindSched (ax : AxisSpec) (slot : LHSSlot) (outDecl : Decl)
     (nonlin : Nonlin := .identity) : ScheduledProgram :=
-  { decls := [.axis ax (some 2), .tensor "X" [ax], outDecl]
+  { decls := [.axis ax (some 2), .typedTensor .f64 "X" [ax], outDecl]
   , stmts := [.plain (.assign outDecl.name [slot]
       { body := { terms := [{ factors := [.read "X" [.axis ax]] }] }, nonlin })]
   , env := {}, extNames := insert "X" ∅
@@ -2436,7 +2463,7 @@ run_cmd do
 -- Valid sibling: a real normalization axis remains accepted and executable at both boundaries.
 def realNormAxis : AxisSpec := { name := "realNorm", uid := 36, kind := .real }
 def validAxisKindSched : ScheduledProgram :=
-  plainAxisKindSched realNormAxis (.freeNorm realNormAxis) (.tensor "Y" [realNormAxis])
+  plainAxisKindSched realNormAxis (.freeNorm realNormAxis) (.typedTensor .f64 "Y" [realNormAxis])
     (.axiswise .softmax none)
 
 run_cmd do
