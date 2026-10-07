@@ -14,7 +14,10 @@ categorical-index connection before selecting production interfaces.
 The prototype is
 [`TensorLogicSemanticCoreSpike.lean`](../../leanncd/LeanNCD/Semantics/TensorLogicSemanticCoreSpike.lean),
 checked by the non-default `SemanticCoreSpike` Lake target. It is deliberately
-not imported by `LeanNCD`, and default builds do not typecheck it.
+not imported by `LeanNCD`. At the original spike baseline, default builds did
+not typecheck it. The expression/readiness validation slice's
+`Semantics.ContractTest` now imports its formal-index witness, giving it
+indirect default-test coverage without making it a production import.
 The existing production evaluator and backend capability guards are unchanged.
 
 ## Baseline and setup
@@ -173,9 +176,10 @@ bash .claude/skills/slice-plan/check-snippet.sh \
 bash leanncd/scripts/lake-build.sh /path/to/worktree/leanncd
 ```
 
-The full default build completed successfully with 8,676 jobs. Default
-targets remain `LeanNCD` and `Tests`; the separately checked spike target
-is not silently covered by that build.
+The original spike's full default build completed successfully with 8,676
+jobs. Default targets remain `LeanNCD` and `Tests`; at that baseline the spike
+needed its separate check. The later expression/readiness slice adds the
+indirect coverage described above.
 
 Printed axiom dependencies:
 
