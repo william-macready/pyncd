@@ -30,9 +30,10 @@ def InputSignature.ofDenseInputs (inputs : HashMap String DenseTensor) : InputSi
       (fun acc (nm, t) => acc.insert nm { shape := t.shape.toArray, dtype := .f64 }) {} }
 
 /-- The top-level destination/signature dtype a declaration commits its name to: `f32` for an
-    explicit `f32` declaration (`tensor f32 …` or `linear f32 …`), `bool` for exactly a `.predicate`
-    declaration, `f64` for every other declaration (including explicit `tensor f64 …`/`linear f64 …`)
-    AND for no declaration at all (an undeclared external name). Shared by
+    explicit `f32` declaration (`tensor f32 …` or `linear f32 …`), for a plain `tensor`/`linear`
+    declaration AND for no declaration at all (an undeclared external name); `bool` for exactly a
+    `.predicate` declaration; `f64` for an explicit `tensor f64 …`/`linear f64 …` and for
+    `.axis`/`.iter` (which name no tensor). Shared by
     `ofDenseInputsForDecls` below (the external-signature side) and `Compile.lean`'s
     `prepareEvalPlan` (the produced/destination side, Step B and Step D) — one rule, not two
     independently-drifting copies.
@@ -63,11 +64,11 @@ def dtypeOfDecl : Option Decl → ScalarDType
   | some (.typedTensor .complex64 _ _) | some (.typedTensor .complex128 _ _)
   | some (.typedLinear .complex64 _ _ _) | some (.typedLinear .complex128 _ _ _) => .bool  -- UNREACHABLE
   | some (.predicate _ _) => .bool
-  | some (.tensor _ _) => .f64
-  | some (.linear _ _ _) => .f64
+  | some (.tensor _ _) => .f32
+  | some (.linear _ _ _) => .f32
   | some (.axis _ _) => .f64
   | some (.iter _ _) => .f64
-  | none => .f64
+  | none => .f32
 
 /-- Rebuild the declaration environment a declaration-aware constructor answers every question
     against, or fail loud with `buildDeclEnv`'s own `CompileError` wrapped in the constructor's error

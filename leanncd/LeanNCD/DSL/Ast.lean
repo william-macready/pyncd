@@ -272,8 +272,8 @@ inductive StorageKind
 /-- The storage constraint one declaration places on a schedule, or `none` if it places none.
 
     * an explicit `.typedTensor`/`.typedLinear` commits to the storage its element type names:
-      `.f32` to `.float32`, and `.f64` (the explicit spelling of the default) to `.float64`;
-    * `.tensor` and `.linear` are the binary64 spellings and commit to `.float64`;
+      `.f32` to `.float32`, and `.f64` (the explicit binary64 spelling) to `.float64`;
+    * `.tensor` and `.linear` are the default (binary32) spellings and commit to `.float32`;
     * `.predicate` is PRECISION-NEUTRAL — a Boolean tensor is `{0,1}` data whose algebra, not its
       precision, is what the declaration names, so it constrains nothing and inherits whatever
       precision the rest of the schedule establishes;
@@ -295,20 +295,20 @@ def storageConstraintOfDecl : Decl → Option StorageKind
   | .typedLinear .f64 _ _ _ => some .float64
   | .typedTensor .complex64 _ _ | .typedTensor .complex128 _ _
   | .typedLinear .complex64 _ _ _ | .typedLinear .complex128 _ _ _ => none   -- UNREACHABLE (above)
-  | .tensor _ _           => some .float64
-  | .linear _ _ _         => some .float64
+  | .tensor _ _           => some .float32
+  | .linear _ _ _         => some .float32
   | .predicate _ _        => none
   | .axis _ _             => none
   | .iter _ _             => none
 
 /-- The storage constraint a USED tensor name places on a schedule, under a declaration
-    environment. An UNDECLARED name is a real f64 tensor — the same default `dtypeOfDecl`
-    (`Eval/Plan/Signature.lean`) applies to `none` — so it constrains storage to `.float64`; a
+    environment. An UNDECLARED name is a real f32 tensor — the same default `dtypeOfDecl`
+    (`Eval/Plan/Signature.lean`) applies to `none` — so it constrains storage to `.float32`; a
     declared name defers to `storageConstraintOfDecl`. -/
 def storageConstraintOfName? (env : DeclEnv) (nm : String) : Option StorageKind :=
   match env[nm]? with
   | some d => storageConstraintOfDecl d
-  | none   => some .float64
+  | none   => some .float32
 
 /-- The tensor name a stmt writes to (its LHS). -/
 def Stmt.lhsName : Stmt → String
