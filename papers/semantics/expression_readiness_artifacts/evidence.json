@@ -1,0 +1,1069 @@
+{
+  "dispatch": "A: explore and verified scratch prototype; not a production slice or final plan",
+  "baseline": "44296ad56e11b3b296c265119466b91aef8200e0",
+  "worktree": "/Users/williammacready/code/python/pyncd.worktrees/expression-readiness-authoring",
+  "namespace": "LeanNCD.Semantics",
+  "status": "Real split/proofs/fixtures verified; direct controller mutation cycles and observed-expectation manifest replay all 27/27 passed. Final plan writing/reviews pending.",
+  "patches": [
+    {
+      "path": "papers/semantics/expression_readiness_patches/01-types-expr.patch",
+      "task": "1",
+      "files": [
+        "leanncd/LeanNCD/Semantics/Types.lean",
+        "leanncd/LeanNCD/Semantics/Expr.lean"
+      ],
+      "sha256": "8d8187f579558757dfdb36d889a1aa9af262b035727c4cf8d9209cca2c363fce"
+    },
+    {
+      "path": "papers/semantics/expression_readiness_patches/02-interpretation-readiness.patch",
+      "task": "2",
+      "files": [
+        "leanncd/LeanNCD/Semantics/Interpret.lean",
+        "leanncd/LeanNCD/Semantics/Readiness.lean",
+        "leanncd/LeanNCD/Semantics/Completeness.lean",
+        "leanncd/LeanNCD/Semantics.lean"
+      ],
+      "sha256": "beccb485d85221cfeb072feffcd3f45d2c95587a6edd1338effc44f3a3457111"
+    },
+    {
+      "path": "papers/semantics/expression_readiness_patches/03-fixtures-integration.patch",
+      "task": "3",
+      "files": [
+        "leanncd/test/Semantics/ExpressionTest.lean",
+        "leanncd/test/Semantics/NativeTest.lean",
+        "leanncd/test/Semantics/ContractTest.lean",
+        "leanncd/LeanNCD.lean",
+        "leanncd/lakefile.toml",
+        "leanncd/AGENTS.md",
+        "leanncd/LeanNCD/Semantics/AGENTS.md",
+        "papers/semantics/tensor_logic_semantic_core_spike_record.md"
+      ],
+      "sha256": "d65394550f86a8eb29e668783b7f8bf6ce42f68548d44494f76dd535f5e0aebe"
+    }
+  ],
+  "patch_application": "Three mechanically exported implementation-only patches; no raw build log or authoring evidence included in candidate implementation patches. Rehearsal pending.",
+  "budget": {
+    "hard_cap_tool_bearing_turns": 55,
+    "checkpoint": "near turn 45, before final native/admission validation",
+    "peak_context_cap": "approximately 250k tokens",
+    "measurement_command": "python3 /Users/williammacready/code/python/pyncd.worktrees/expression-readiness-authoring/.claude/skills/slice-plan/token-report.py b7b54e50-2051-42c5-be3e-9a26cfe9ee84",
+    "measurement_output": "no transcript for session b7b54e50-2051-42c5-be3e-9a26cfe9ee84",
+    "limitation": "Claude transcript meter does not measure this Copilot SDK session; peak/cumulative tokens unmeasured. No observed turn-cap breach."
+  },
+  "files": [
+    {
+      "path": "leanncd/LeanNCD/Semantics/Types.lean",
+      "symbols": [
+        "Axis",
+        "Coord",
+        "RawCoord",
+        "Coord.raw",
+        "Layout",
+        "canonicalLayout",
+        "ArrayShape",
+        "Ty",
+        "Value",
+        "ScalarOps",
+        "Signature",
+        "Declarations",
+        "Address",
+        "Store",
+        "PartialStore",
+        "ReadOutcome",
+        "Resolved",
+        "ReadPolicy",
+        "AdmittedRead",
+        "Registry",
+        "Registry.apply"
+      ]
+    },
+    {
+      "path": "leanncd/LeanNCD/Semantics/Expr.lean",
+      "symbols": [
+        "Bin",
+        "ScalarOps.combine",
+        "Expr"
+      ]
+    },
+    {
+      "path": "leanncd/LeanNCD/Semantics/Interpret.lean",
+      "symbols": [
+        "sequence",
+        "foldValues",
+        "footprint",
+        "evalWith",
+        "interpret"
+      ]
+    },
+    {
+      "path": "leanncd/LeanNCD/Semantics/Readiness.lean",
+      "symbols": [
+        "evalWith_stable",
+        "interpret_stable",
+        "Ready",
+        "checkReads",
+        "ReadyResult",
+        "evalReady",
+        "checkReads_iff",
+        "ready_consistent",
+        "notReady_iff"
+      ]
+    },
+    {
+      "path": "leanncd/LeanNCD/Semantics/Completeness.lean",
+      "symbols": [
+        "sequence_sound",
+        "sequence_complete",
+        "sequence_some_iff",
+        "tab_complete"
+      ]
+    },
+    {
+      "path": "leanncd/LeanNCD/Semantics.lean",
+      "purpose": "umbrella imports Readiness and Completeness"
+    },
+    {
+      "path": "leanncd/test/Semantics/ExpressionTest.lean",
+      "namespace": "LeanNCD.Semantics.Fixtures"
+    },
+    {
+      "path": "leanncd/test/Semantics/NativeTest.lean",
+      "namespace": "LeanNCD.Semantics.NativeFixtures"
+    },
+    {
+      "path": "leanncd/test/Semantics/ContractTest.lean",
+      "namespace": "LeanNCD.Semantics.Fixtures"
+    },
+    {
+      "path": "leanncd/LeanNCD.lean",
+      "purpose": "root import exposes umbrella"
+    },
+    {
+      "path": "leanncd/lakefile.toml",
+      "purpose": "three semantic test modules added to default Tests globs"
+    },
+    {
+      "path": "leanncd/AGENTS.md",
+      "purpose": "discoverability downlink"
+    },
+    {
+      "path": "leanncd/LeanNCD/Semantics/AGENTS.md",
+      "purpose": "scratch status, scope, validation guidance"
+    }
+  ],
+  "builds": [
+    {
+      "command": "bash /Users/williammacready/code/python/pyncd.worktrees/expression-readiness-authoring/leanncd/scripts/lake-build.sh /Users/williammacready/code/python/pyncd.worktrees/expression-readiness-authoring/leanncd LeanNCD.Semantics",
+      "outcome": "exit 0; 2947 jobs, before adding Completeness and fixtures"
+    },
+    {
+      "command": "bash /Users/williammacready/code/python/pyncd.worktrees/expression-readiness-authoring/leanncd/scripts/lake-build.sh /Users/williammacready/code/python/pyncd.worktrees/expression-readiness-authoring/leanncd > /Users/williammacready/code/python/pyncd.worktrees/expression-readiness-authoring/papers/semantics/expression_readiness_authoring_build.log 2>&1",
+      "outcome": "exit 0; Build completed successfully (8686 jobs); all new modules and fixtures built through default targets",
+      "log": "papers/semantics/expression_readiness_authoring_build.log",
+      "skipped": "No default-target tests intentionally skipped. Mutation cycles not run by explicit instruction."
+    },
+    {
+      "command": "bash /Users/williammacready/code/python/pyncd.worktrees/expression-readiness-authoring/leanncd/scripts/lake-build.sh /Users/williammacready/code/python/pyncd.worktrees/expression-readiness-authoring/leanncd Semantics.ExpressionTest Semantics.NativeTest Semantics.ContractTest",
+      "outcome": "Intermediate checks exposed fixture elaboration failures, subsequently fixed and covered by the successful default build. Use this exact command for targeted follow-up."
+    }
+  ],
+  "representation": {
+    "scalar_sorts": "Open S : Type and K : S -> Type. Scalars and arrays both retain their sort. Fixed-K prose specializes S to Unit.",
+    "shape": "Ordered List Axis; each Axis carries existing UID and Nat extent. Coord is the full nested product of Fin extents; rank zero is Unit. ArrayShape excludes rank zero but permits zero extents.",
+    "coordinate_interface": "Layout carries a Fin count equivalence to the actual Cartesian coordinate type, not an unchecked list. canonicalLayout recursively uses mathlib finProdFinEquiv. Alternative enumeration/storage adapters must supply an equivalence.",
+    "declarations": "Typed declaration keys with UID injectivity and total signatures. Every Expr.read key is already declared. This is not a source name lookup table or parser/checker.",
+    "scope": "A typed valuation space Γ; reduction extends Γ by Fin n, tabulation by full Coord. Guarded contexts are subtypes; binders remain product positions, NOT AxisUID identities.",
+    "index_language": "RawCoord is a correctly ranked signed Int tuple. AdmittedRead retains raw query, value-independent resolver, resolved At/Const outcome, and admission equality. Callbacks are semantic index maps/predicates, NOT checked affine syntax.",
+    "selection": "Expr.at takes an already bounded typed coordinate map. A raw-index-to-bounded selection adapter is deferred; boundedness is supplied structurally rather than repaired at runtime.",
+    "registry": "Typed arbitrary-arity dependent argument family, result type, Bool domain, and proof-indexed meaning. Nullary calls share the same rule. Domain/meaning have no store parameter. Executable examples supply decidable domains; arbitrary mathematical domains can be represented noncomputably.",
+    "results": "Option Value means successful value versus mathematical undefinedness. ReadyResult.notReady is separate from evaluated none. Runtime rejection and backend diagnostics are not modeled.",
+    "strictness": "sequence traverses the complete finite domain before returning a total function. at evaluates the full array expression. Scalar combination and primitive argument sequencing propagate undefinedness; no zero annihilation shortcut.",
+    "numerical_refinement": "ScalarOps is operation data, without algebraic laws. Reductions use increasing enumeration and a strict right fold. Exact semiring specialization and native ordered numerical interpretation are distinct; no Float/Float32/complex64 CommSemiring instance.",
+    "footprint": "List representation retains duplicates; membership determines readiness, so duplicate addresses do not create additional availability conditions. Bound domains and all primitive operands are traversed; constants have no source address.",
+    "extra_split": "Completeness.lean separates the independent clause equivalence from Readiness. This additional small module is justified by the different proof obligation."
+  },
+  "clauses": [
+    {
+      "prose": "13.2; 14.2",
+      "code": [
+        "Ty",
+        "Value",
+        "Signature",
+        "Registry",
+        "Expr"
+      ],
+      "claim": "typed admitted scalar/array values and arbitrary primitive signatures"
+    },
+    {
+      "prose": "13.3; 13.4; 14.1",
+      "code": [
+        "Expr.reduce",
+        "Expr.tab",
+        "Guarded",
+        "nested",
+        "nestedSwapped"
+      ],
+      "claim": "semantic binding by product extension, including nested-binder distinction; not syntactic substitution"
+    },
+    {
+      "prose": "18.1; 18.2",
+      "code": [
+        "evalWith",
+        "Expr.lit",
+        "Expr.read",
+        "Expr.iverson",
+        "Expr.binary"
+      ],
+      "claim": "tagged undefinedness and strict scalar lifting"
+    },
+    {
+      "prose": "18.3",
+      "code": [
+        "foldValues",
+        "sequence",
+        "tab_complete",
+        "emptyReduction",
+        "emptyTab",
+        "cartesianTab"
+      ],
+      "claim": "empty identities and complete finite Cartesian arrays"
+    },
+    {
+      "prose": "18.4",
+      "code": [
+        "Expr.at",
+        "Registry.apply",
+        "sequence_some_iff",
+        "nonselected_lane_obligation"
+      ],
+      "claim": "strict whole-array selection and all-argument primitive definedness"
+    },
+    {
+      "prose": "23.2; 23.3",
+      "code": [
+        "footprint",
+        "evalWith_stable",
+        "interpret_stable",
+        "ready_consistent",
+        "notReady_iff"
+      ],
+      "claim": "structural stability, including undefinedness, and partial-store consistency"
+    },
+    {
+      "prose": "boundary 2.5; 8.4.1-8.4.3; 8.4.7",
+      "code": [
+        "ReadPolicy",
+        "AdmittedRead",
+        "constRead",
+        "remapRead"
+      ],
+      "claim": "valid-coordinate At, typed Const, explicit raw admission and resolved-coordinate readiness"
+    },
+    {
+      "prose": "boundary 5.6",
+      "code": [
+        "ReadyResult"
+      ],
+      "claim": "readiness interface only; demanded tasks, writes, collection and publication deliberately deferred"
+    }
+  ],
+  "theorems": [
+    {
+      "symbol": "evalWith_stable",
+      "statement": "For every typed constructor, including dependent primitive operand families, partial stores equal on footprint e γ yield equal evalWith results, including none.",
+      "axioms": [
+        "propext",
+        "Quot.sound"
+      ]
+    },
+    {
+      "symbol": "interpret_stable",
+      "statement": "Complete stores equal on all resolved footprint addresses yield equal whole interpretation.",
+      "axioms": [
+        "propext",
+        "Quot.sound"
+      ]
+    },
+    {
+      "symbol": "ready_consistent",
+      "statement": "If p a = some (ρ a) for every a in footprint e γ, evalReady ops p e γ = evaluated (interpret ops ρ e γ). Agreement outside the footprint is unnecessary.",
+      "axioms": [
+        "propext",
+        "Quot.sound"
+      ]
+    },
+    {
+      "symbol": "sequence_some_iff",
+      "statement": "sequence f = some v iff every typed argument/coordinate i satisfies f i = some (v i).",
+      "axioms": [
+        "propext",
+        "Quot.sound"
+      ]
+    },
+    {
+      "symbol": "tab_complete",
+      "statement": "evalWith ops p (tab sh layout body) γ = some v iff every actual Cartesian coordinate c has body result some (v c).",
+      "axioms": [
+        "propext",
+        "Quot.sound"
+      ]
+    },
+    {
+      "symbol": "nonselected_lane_obligation",
+      "statement": "A successful full vector whose body reciprocates an Iverson true only at coordinate 0 is impossible; coordinate 1 independently forces undefinedness.",
+      "axioms": [
+        "propext",
+        "Classical.choice",
+        "Quot.sound"
+      ]
+    },
+    {
+      "symbol": "existing_stmat_seam",
+      "statement": "signedRaw x = prior spike integerCoordinate x, whose definition evaluates the actual realized StMat.",
+      "axioms": [
+        "propext",
+        "Classical.choice",
+        "Quot.sound"
+      ]
+    },
+    {
+      "symbol": "NativeFixtures.complex_square",
+      "statement": "interpret complexSquare = some (-1 : mathematical Complex).",
+      "axioms": [
+        "propext",
+        "Classical.choice",
+        "Quot.sound"
+      ]
+    }
+  ],
+  "fixtures": [
+    {
+      "category": "in-bounds and scalar tensor reads",
+      "names": [
+        "direct",
+        "scalarTensor"
+      ],
+      "observations": [
+        "vector coordinate 1 gives some 5",
+        "rank-zero named tensor gives some 17"
+      ],
+      "method": "executed #guard",
+      "donor": "new specification fixtures; no existing donor",
+      "mutations": [
+        "read-value"
+      ]
+    },
+    {
+      "category": "constant versus remapped read",
+      "names": [
+        "constRead",
+        "remapRead"
+      ],
+      "observations": [
+        "signed -1 constant gives some 9 and empty footprint",
+        "signed -1 wraps to coordinate 2, some 7, footprint [2]"
+      ],
+      "method": "executed #guard/#eval",
+      "donor": "new boundary/spec fixtures; no existing donor",
+      "mutations": [
+        "const-footprint",
+        "resolved-versus-raw"
+      ]
+    },
+    {
+      "category": "missing resolved address and no default",
+      "names": [
+        "partialStore",
+        "readyObservation",
+        "remapRead"
+      ],
+      "observations": [
+        "only coordinate 0 present; remapped coordinate 2 gives notReady, NOT zero or value at 0"
+      ],
+      "method": "executed",
+      "donor": "spike partialStore is a design donor, not a copied oracle",
+      "mutations": [
+        "read-footprint",
+        "missing-default"
+      ]
+    },
+    {
+      "category": "strict zero and primitive operands",
+      "names": [
+        "zeroStrict",
+        "strictArgument"
+      ],
+      "observations": [
+        "0 times reciprocal(0) is none",
+        "ready zeroStrict is evaluated undefined",
+        "mixed primitive with undefined rational operand is none despite false flag"
+      ],
+      "method": "executed",
+      "donor": "spike zeroStrict design donor; heterogeneous fixture new",
+      "mutations": [
+        "operand-undefined"
+      ]
+    },
+    {
+      "category": "empty reduction",
+      "names": [
+        "emptyReduction"
+      ],
+      "observations": [
+        "unreachable undefined body yields some 0"
+      ],
+      "method": "executed",
+      "donor": "spike emptyBad; KernelDense empty fixtures are existing scalar/empty donors, NOT additivity oracles",
+      "mutations": [
+        "empty-identity"
+      ]
+    },
+    {
+      "category": "empty tab and outside primitive",
+      "names": [
+        "emptyTab",
+        "outsideEmpty"
+      ],
+      "observations": [
+        "empty array succeeds and has empty footprint",
+        "primitive on successful empty array rejects by its own domain"
+      ],
+      "method": "executed",
+      "donor": "new array specification fixtures; no existing donor",
+      "mutations": [
+        "empty-primitive-domain"
+      ]
+    },
+    {
+      "category": "nested and Cartesian binders",
+      "names": [
+        "nested",
+        "nestedSwapped",
+        "cartesianTab",
+        "cartesianSelect"
+      ],
+      "observations": [
+        "nested=some 42; swapped=some 28",
+        "2x3 tab selection at (1,2)=some 14; footprint length 6"
+      ],
+      "method": "executed",
+      "donor": "new specification fixtures; no existing donor",
+      "mutations": [
+        "bound-footprint",
+        "binder-position"
+      ]
+    },
+    {
+      "category": "complete arrays and nonselected undefined lane",
+      "names": [
+        "selected",
+        "nonselectedUndefined",
+        "arrayPrimitive",
+        "nonselected_lane_obligation"
+      ],
+      "observations": [
+        "example X+1 vector selection gives some 6",
+        "array identity primitive then selection gives some 8",
+        "selecting defined lane 0 cannot bypass undefined lane 1",
+        "partial vector containing only lane 0 is notReady even when selecting lane 1"
+      ],
+      "method": "executed guards plus independent kernel-checked tab_complete consequence",
+      "donor": "new specification fixtures; no existing donor",
+      "mutations": [
+        "tab-footprint",
+        "selection-footprint",
+        "whole-array-obligation"
+      ]
+    },
+    {
+      "category": "nullary and heterogeneous primitives",
+      "names": [
+        "nullary",
+        "heterogeneous",
+        "strictArgument",
+        "arrayPrimitive"
+      ],
+      "observations": [
+        "nullary=some 13",
+        "rational 4 and Bool true yield some 14",
+        "array-valued primitive preserves complete input"
+      ],
+      "method": "executed",
+      "donor": "new specification fixtures; no existing donor",
+      "mutations": [
+        "nullary-domain",
+        "heterogeneous-operand"
+      ]
+    },
+    {
+      "category": "declared type shape coordinate and scope rejection",
+      "names": [
+        "dtype_mismatch_rejected",
+        "shape_mismatch_rejected",
+        "unknown_tensor_rejected",
+        "invalid_coordinate_rejected",
+        "unknown_index_rejected",
+        "axis_identity_and_order"
+      ],
+      "observations": [
+        "fail_if_success tests confirm Lean refuses mismatched types/shapes, a tensor key in an empty declaration context, invalid Fin coordinate, and out-of-context projection",
+        "axis identity/order inequality checked"
+      ],
+      "method": "kernel/elaboration rejection, NOT runtime source checker diagnostics",
+      "donor": "new structural specification fixtures; no existing donor",
+      "mutations": [
+        "dtype-admission",
+        "shape-admission",
+        "unknown-admission",
+        "coordinate-admission",
+        "scope-admission",
+        "axis-order"
+      ]
+    },
+    {
+      "category": "guard-admitted valuations and signed raw indices",
+      "names": [
+        "guardedRead",
+        "strictPolicy",
+        "signedRaw",
+        "existing_stmat_seam"
+      ],
+      "observations": [
+        "i in {0,1} makes i+1 read values 5 and 7",
+        "raw 3 and -1 explicitly Reject under strict policy",
+        "signedRaw 2=-1; actual StMat equality kernel-checked"
+      ],
+      "method": "executed signed/reject guards and noncomputable seam theorem",
+      "donor": "new guarded fixture; prior spike actual signed_coordinate/integerCoordinate_eq reused",
+      "mutations": [
+        "guard-coordinate",
+        "strict-reject",
+        "signed-seam"
+      ]
+    },
+    {
+      "category": "native rounding and checked primitive APIs",
+      "names": [
+        "NativeFixtures.result32",
+        "NativeFixtures.result64",
+        "NativeFixtures.fn32",
+        "NativeFixtures.fn64"
+      ],
+      "observations": [
+        "(2^24+1)-2^24: native f32 bits 0, native f64 bits 4607182418800017408 (one)",
+        "reciprocal(2): f32 bits 0x3f000000, f64 bits 0x3fe0000000000000",
+        "native f32 reciprocal(0) undefined"
+      ],
+      "method": "executed #guard/#eval",
+      "donor": "spike rounding32/rounding64 and native reciprocal fixtures; KernelDense32 native scalar donors not additivity oracles",
+      "mutations": [
+        "native-rounding"
+      ]
+    },
+    {
+      "category": "carrier flexibility and mathematical Complex",
+      "names": [
+        "Carrier",
+        "heterogeneous",
+        "NativeFixtures.complexSquare",
+        "NativeFixtures.complex_square"
+      ],
+      "observations": [
+        "single registry has rational and Bool operands",
+        "separate same-syntax native f32/f64 instantiations",
+        "mathematical I*I=-1 kernel checked, NOT executed complex64"
+      ],
+      "method": "executed rational/Bool/native; noncomputable Complex proof",
+      "donor": "spike complexOps/I_mul_I design donor; heterogeneous fixture new",
+      "mutations": [
+        "complex-operation",
+        "heterogeneous-operand"
+      ]
+    }
+  ],
+  "mutation_protocol": {
+    "verification_task": "3",
+    "prerequisites": "All three patches, including fixture modules/default globs, must be applied before running these cycles. Source ownership is recorded separately and is not an execution dependency.",
+    "observations": "27 direct cycles passed, then the shipped observed-expectation manifest passed 27/27 on independent patch rehearsal with byte-identical restore checks.",
+    "classification": "Implementation/proof mutations versus type-admission contrast and fixture-contract perturbations are distinct; do not call all 27 implementation regressions."
+  },
+  "mutations": [
+    {
+      "label": "read-footprint",
+      "classification": "implementation/proof",
+      "cycle_exit": 0,
+      "restored_pass": true,
+      "expect": [
+        "LeanNCD/Semantics/Readiness.lean",
+        "unsolved goals"
+      ]
+    },
+    {
+      "label": "const-footprint",
+      "classification": "implementation/proof",
+      "cycle_exit": 0,
+      "restored_pass": true,
+      "expect": [
+        "test/Semantics/ExpressionTest.lean",
+        "Expression",
+        "(footprint constRead ()).isEmpty"
+      ]
+    },
+    {
+      "label": "resolved-versus-raw",
+      "classification": "implementation/proof",
+      "cycle_exit": 0,
+      "restored_pass": true,
+      "expect": [
+        "LeanNCD/Semantics/Readiness.lean",
+        "Type mismatch: After simplification, term"
+      ]
+    },
+    {
+      "label": "missing-default",
+      "classification": "implementation/proof",
+      "cycle_exit": 0,
+      "restored_pass": true,
+      "expect": [
+        "LeanNCD/Semantics/Readiness.lean",
+        "unsolved goals"
+      ]
+    },
+    {
+      "label": "read-value",
+      "classification": "fixture/contract perturbation",
+      "cycle_exit": 0,
+      "restored_pass": true,
+      "expect": [
+        "test/Semantics/ExpressionTest.lean",
+        "Expression",
+        "scalarObservation (direct fun x => 1) == some 5"
+      ]
+    },
+    {
+      "label": "operand-undefined",
+      "classification": "implementation/proof",
+      "cycle_exit": 0,
+      "restored_pass": true,
+      "expect": [
+        "test/Semantics/ExpressionTest.lean",
+        "Expression",
+        "scalarObservation zeroStrict == none"
+      ]
+    },
+    {
+      "label": "empty-identity",
+      "classification": "implementation/proof",
+      "cycle_exit": 0,
+      "restored_pass": true,
+      "expect": [
+        "LeanNCD/Semantics/Completeness.lean",
+        "unsolved goals",
+        "case nil"
+      ]
+    },
+    {
+      "label": "empty-primitive-domain",
+      "classification": "fixture/contract perturbation",
+      "cycle_exit": 0,
+      "restored_pass": true,
+      "expect": [
+        "test/Semantics/ExpressionTest.lean",
+        "Expression",
+        "scalarObservation outsideEmpty == none"
+      ]
+    },
+    {
+      "label": "bound-footprint",
+      "classification": "implementation/proof",
+      "cycle_exit": 0,
+      "restored_pass": true,
+      "expect": [
+        "LeanNCD/Semantics/Readiness.lean",
+        "Application type mismatch: The argument"
+      ]
+    },
+    {
+      "label": "binder-position",
+      "classification": "fixture/contract perturbation",
+      "cycle_exit": 0,
+      "restored_pass": true,
+      "expect": [
+        "test/Semantics/ExpressionTest.lean",
+        "Expression",
+        "scalarObservation nested == some 42"
+      ]
+    },
+    {
+      "label": "tab-footprint",
+      "classification": "implementation/proof",
+      "cycle_exit": 0,
+      "restored_pass": true,
+      "expect": [
+        "LeanNCD/Semantics/Readiness.lean",
+        "Application type mismatch: The argument"
+      ]
+    },
+    {
+      "label": "selection-footprint",
+      "classification": "implementation/proof",
+      "cycle_exit": 0,
+      "restored_pass": true,
+      "expect": [
+        "LeanNCD/Semantics/Readiness.lean",
+        "Application type mismatch: The argument"
+      ]
+    },
+    {
+      "label": "whole-array-obligation",
+      "classification": "implementation/proof",
+      "cycle_exit": 0,
+      "restored_pass": true,
+      "expect": [
+        "LeanNCD/Semantics/Readiness.lean",
+        "unsolved goals",
+        "case tab"
+      ]
+    },
+    {
+      "label": "nullary-domain",
+      "classification": "fixture/contract perturbation",
+      "cycle_exit": 0,
+      "restored_pass": true,
+      "expect": [
+        "test/Semantics/ExpressionTest.lean",
+        "Expression",
+        "scalarObservation nullary == some 13"
+      ]
+    },
+    {
+      "label": "heterogeneous-operand",
+      "classification": "fixture/contract perturbation",
+      "cycle_exit": 0,
+      "restored_pass": true,
+      "expect": [
+        "test/Semantics/ExpressionTest.lean",
+        "Expression",
+        "scalarObservation heterogeneous == some 14"
+      ]
+    },
+    {
+      "label": "dtype-admission",
+      "classification": "type-admission contrast",
+      "cycle_exit": 0,
+      "restored_pass": true,
+      "expect": [
+        "test/Semantics/ContractTest.lean",
+        "The tactic provided to `fail_if_success` succeeded but was expected to fail:",
+        "have wrong : E Unit (.scalar .rational) := direct (fun _ => 0)"
+      ]
+    },
+    {
+      "label": "shape-admission",
+      "classification": "type-admission contrast",
+      "cycle_exit": 0,
+      "restored_pass": true,
+      "expect": [
+        "test/Semantics/ContractTest.lean",
+        "The tactic provided to `fail_if_success` succeeded but was expected to fail:",
+        "have wrong : E Unit (.array .rational vectorShape) := tabulated"
+      ]
+    },
+    {
+      "label": "unknown-admission",
+      "classification": "type-admission contrast",
+      "cycle_exit": 0,
+      "restored_pass": true,
+      "expect": [
+        "test/Semantics/ContractTest.lean",
+        "The tactic provided to `fail_if_success` succeeded but was expected to fail:",
+        "have wrong : declarations.Tensor := ()"
+      ]
+    },
+    {
+      "label": "coordinate-admission",
+      "classification": "type-admission contrast",
+      "cycle_exit": 0,
+      "restored_pass": true,
+      "expect": [
+        "test/Semantics/ContractTest.lean",
+        "The tactic provided to `fail_if_success` succeeded but was expected to fail:",
+        "have wrong : Fin 3 := ⟨2, by decide⟩"
+      ]
+    },
+    {
+      "label": "scope-admission",
+      "classification": "type-admission contrast",
+      "cycle_exit": 0,
+      "restored_pass": true,
+      "expect": [
+        "test/Semantics/ContractTest.lean",
+        "The tactic provided to `fail_if_success` succeeded but was expected to fail:",
+        "have wrong : Unit → Int := fun _ => 0"
+      ]
+    },
+    {
+      "label": "axis-order",
+      "classification": "fixture/contract perturbation",
+      "cycle_exit": 0,
+      "restored_pass": true,
+      "expect": [
+        "test/Semantics/ContractTest.lean",
+        "Tactic `decide` proved that the proposition"
+      ]
+    },
+    {
+      "label": "guard-coordinate",
+      "classification": "fixture/contract perturbation",
+      "cycle_exit": 0,
+      "restored_pass": true,
+      "expect": [
+        "test/Semantics/ContractTest.lean",
+        "Expression",
+        "interpret ops store guardedRead ⟨0, ⋯⟩ == some 5"
+      ]
+    },
+    {
+      "label": "strict-reject",
+      "classification": "fixture/contract perturbation",
+      "cycle_exit": 0,
+      "restored_pass": true,
+      "expect": [
+        "test/Semantics/ContractTest.lean",
+        "Expression",
+        "match strictPolicy.resolve fun x => 3 with"
+      ]
+    },
+    {
+      "label": "signed-seam",
+      "classification": "fixture/contract perturbation",
+      "cycle_exit": 0,
+      "restored_pass": true,
+      "expect": [
+        "test/Semantics/ContractTest.lean",
+        "Type mismatch"
+      ]
+    },
+    {
+      "label": "native-rounding",
+      "classification": "fixture/contract perturbation",
+      "cycle_exit": 0,
+      "restored_pass": true,
+      "expect": [
+        "test/Semantics/NativeTest.lean",
+        "Expression",
+        "Option.map Float32.toBits result32 == some 0"
+      ]
+    },
+    {
+      "label": "complex-operation",
+      "classification": "fixture/contract perturbation",
+      "cycle_exit": 0,
+      "restored_pass": true,
+      "expect": [
+        "test/Semantics/NativeTest.lean",
+        "'change' tactic failed, pattern"
+      ]
+    },
+    {
+      "label": "primitive-undefined-operand",
+      "classification": "implementation/proof",
+      "cycle_exit": 0,
+      "restored_pass": true,
+      "expect": [
+        "LeanNCD/Semantics/Readiness.lean",
+        "unsolved goals",
+        "case prim"
+      ]
+    }
+  ],
+  "reuse": [
+    "Actual LeanNCD.UID alias, not a new incompatible identifier implementation.",
+    "Actual UnaryOp.applyChecked and applyChecked32 for native reciprocal domain/meaning; wrappers preserve native carrier precision.",
+    "Actual mathlib finProdFinEquiv supplies Cartesian enumeration equivalence.",
+    "Prior spike integerCoordinate_eq establishes a restricted actual realized StMat seam; prior spike remains untouched.",
+    "Read stability proof follows the spike's structural-induction pattern but is new code over the typed array/heterogeneous grammar.",
+    "Check-evidence pattern is analogous to existing StMatP.validate/wellFormed, but no new source adapter or affine normalizer is claimed."
+  ],
+  "scope_and_limitations": [
+    "No final implementation plan, production release, nested agents, commits, push, merge, or existing eval-worker changes.",
+    "No source parser/checker/DSL adapter, named affine syntax checking, full capture-avoiding substitution, or structural context reindex/weakening/renaming laws. Nested binders are discriminated explicitly.",
+    "No runtime rejection/error ordering contract. Reject exists at resolver level; Expr.read requires admission excluding Reject on its valuation context.",
+    "No primitive diagnostics priority beyond abstract undefinedness; readiness preflight is an abstract eligibility distinction, not a backend diagnostic promise.",
+    "No write policy, demanded-task collection, evaluate-only task execution, publication, additive occurrence semantics, input binding/model enumeration, scheduler, JAX, full D-graded Algebra/coherence, or fake general categorical functor.",
+    "No f32/f64 semiring-law claim and no complex64 implementation. Mathematical Complex proof is noncomputable.",
+    "Alternative dense coordinate representations require checked equivalences/storage proofs; this prototype uses complete function arrays.",
+    "No mutation outcomes claimed; parent must run the unique anchors directly and observe actual logs before drafting a manifest."
+  ],
+  "suggested_task_boundaries": [
+    {
+      "id": "1",
+      "name": "Typed admitted expression presentation",
+      "patch": "01-types-expr.patch",
+      "check": "LeanNCD.Semantics.Expr",
+      "fixture_cases": 0,
+      "mutations": 0,
+      "coverage": "Typed construction; no new existing-worker behavior; all behavioral/admission fixtures follow in task3."
+    },
+    {
+      "id": "2",
+      "name": "Strict interpretation and clause/locality proofs",
+      "patch": "02-interpretation-readiness.patch",
+      "check": "LeanNCD.Semantics",
+      "fixture_cases": 0,
+      "mutations": 0,
+      "coverage": "Generic kernel-checked proofs, including exact reduction hypotheses and complete-extension witness. Concrete instantiations follow in task3."
+    },
+    {
+      "id": "3",
+      "name": "Discriminating fixtures and public integration",
+      "patch": "03-fixtures-integration.patch",
+      "check": "Semantics.ExpressionTest Semantics.NativeTest Semantics.ContractTest; full default build",
+      "mutations": 27,
+      "work_items": [
+        "strict expression/binder/array and clause instantiations",
+        "boundary/type-admission/categorical contrasts",
+        "native-carrier and public/default discovery plus controller validation"
+      ],
+      "budget": "Split execution into fixture/public integration and mutation/full-review phases if predicted above60turns; parent runs long validation once, no polling."
+    }
+  ],
+  "supplemental_clause_proofs": {
+    "file": "leanncd/LeanNCD/Semantics/Completeness.lean",
+    "names": [
+      "foldValues_defined_iff",
+      "reduce_defined_iff",
+      "reduce_empty",
+      "foldValues_some_map_sum",
+      "reduce_sum",
+      "interpret_reduce_sum",
+      "at_some_iff",
+      "registry_apply_some_iff",
+      "prim_some_iff",
+      "ready_complete_extension"
+    ],
+    "exact_sum_hypotheses": "Only selected sort requires AddCommMonoid; zero and add must agree; successful body values supplied. No reverse inference from aggregate to summands.",
+    "ready_extension_scope": "Mathematical witness fills absent cells; evalReady remains unchanged and never uses this as runtime fallback.",
+    "targeted_build": "Semantics.ContractTest passed; full default build passed 8686 jobs",
+    "new_fixtures": [
+      "reduction_exact_bound_values",
+      "empty_reduction_exact_without_body"
+    ],
+    "budget": "fresh follow-up, 17 tool-turn batches; peak/cumulative token telemetry unmeasured"
+  },
+  "controller_budget": {
+    "source": "Copilot SDK session.usage_checkpoint promptCacheBreakState; controller only",
+    "latest_observed_checkpoint": {
+      "timestamp": "2026-10-06T19:15:24.548Z",
+      "prompt_tokens": 453827
+    },
+    "maximum_observed_prompt_tokens": 453827,
+    "approximate_context_target": 250000,
+    "controller_context_overrun_observed": true,
+    "limitations": [
+      "Historical controller snapshots, not isolated authoring-dispatch usage.",
+      "No reliable cumulative authoring total or per-custom-agent token telemetry supplied.",
+      "Prescribed Claude token-report script found no matching transcript."
+    ],
+    "mitigation": "Substantive prototype and plan-writing work runs in separate fresh contexts, each explicitly capped; record overrun rather than claim full budget compliance."
+  },
+  "implementation_artifact_files": [
+    "leanncd/LeanNCD/Semantics/Types.lean",
+    "leanncd/LeanNCD/Semantics/Expr.lean",
+    "leanncd/LeanNCD/Semantics/Interpret.lean",
+    "leanncd/LeanNCD/Semantics/Readiness.lean",
+    "leanncd/LeanNCD/Semantics/Completeness.lean",
+    "leanncd/LeanNCD/Semantics.lean",
+    "leanncd/test/Semantics/ExpressionTest.lean",
+    "leanncd/test/Semantics/NativeTest.lean",
+    "leanncd/test/Semantics/ContractTest.lean",
+    "leanncd/LeanNCD.lean",
+    "leanncd/lakefile.toml",
+    "leanncd/AGENTS.md",
+    "leanncd/LeanNCD/Semantics/AGENTS.md",
+    "papers/semantics/tensor_logic_semantic_core_spike_record.md"
+  ],
+  "integration_coverage_change": "The default Semantics.ContractTest imports the prior spike for its StMat witness. Root LeanNCD does not import that spike, but Tests checks it indirectly. Candidate local guidance and historical spike record now qualify the previous non-default-only coverage claim.",
+  "final_patch_replay": {
+    "baseline": "44296ad56e11b3b296c265119466b91aef8200e0",
+    "tree": "2bca1c43db13dc6078aaa45a43ff4e489fe2de2e",
+    "ordered_checks_passed": [
+      "papers/semantics/expression_readiness_patches/00-context-preflight.patch",
+      "papers/semantics/expression_readiness_patches/01-types-expr.patch",
+      "papers/semantics/expression_readiness_patches/02-interpretation-readiness.patch",
+      "papers/semantics/expression_readiness_patches/03-fixtures-integration.patch"
+    ],
+    "files_match_verified_staged_snapshot": true,
+    "lean_and_config_bytes_match_successful_physical_rehearsal": true,
+    "file_sha256": {
+      "leanncd/AGENTS.md": "3d5cae91130e02fb673e79b42f7e38d1213b4c64d1337049831fa67ce5e3d632",
+      "leanncd/AGENTS_REFERENCE.md": "128a0520aed9dd25bf96092295636389dd6acb25f2d4a995289d0625705e76a0",
+      "leanncd/LeanNCD/Semantics/Types.lean": "5352d11da1d427edc938999d71323d6a4042016e85da9e86a9fba3047d8db7a0",
+      "leanncd/LeanNCD/Semantics/Expr.lean": "a53a1cdb6344802aac7324d9402ec54cab6f95950ba474c99c5a642b2b5161c7",
+      "leanncd/LeanNCD/Semantics/Interpret.lean": "370eafee43f788e0e84032a4649cf17116ad8169141f071ce009be5b5eb18e4b",
+      "leanncd/LeanNCD/Semantics/Readiness.lean": "740701b0293f75c31cb513748d88cee0d51627f8480be202251a1163ed281c8c",
+      "leanncd/LeanNCD/Semantics/Completeness.lean": "ee6101686eb1319aea27329e2cc0d242090e998fc2ca5d994ac3c9eea802268f",
+      "leanncd/LeanNCD/Semantics.lean": "4e894e396c409d9922a4fd56e435e3498fd79cdc902e6307539ddead5ecb6a97",
+      "leanncd/test/Semantics/ExpressionTest.lean": "1f02f50be99ccd64a35ba09e99b82278e5c54982088d17f0413b9018e9f59dab",
+      "leanncd/test/Semantics/NativeTest.lean": "c15ac7a734bd2d55e8d4e8604a3649d98e874f6c4c93ede00a4c0cfe8c17a422",
+      "leanncd/test/Semantics/ContractTest.lean": "b86ee697211d0c7f43644bc9542e51321801b6338a9364cae6fc50cfd03ad355",
+      "leanncd/LeanNCD.lean": "d3ccbcf7f4659401916857d4e955409eba1e3be1083cb92440331fd0a576b1f0",
+      "leanncd/lakefile.toml": "784b47aa0794424e582674f3b18d3c4494b5e37178515879f46f7067e6d938e1",
+      "leanncd/LeanNCD/Semantics/AGENTS.md": "c89635ce1073b90d59c9c159c7cb79685955b7be559af2a22d180bd8257d015d",
+      "papers/semantics/tensor_logic_semantic_core_spike_record.md": "13ab5e7f3cccfb4676de9164fabc4e0d0f21d9039dede0621321a0f2c5dc2b1a"
+    },
+    "note": "Context preflight and later coverage clarification affect only guidance/docs. Code/config are byte-identical to independently compiled rehearsal; final manifest passed 27/27 there."
+  },
+  "context_preflight": {
+    "patch": "papers/semantics/expression_readiness_patches/00-context-preflight.patch",
+    "files": [
+      "leanncd/AGENTS.md",
+      "leanncd/AGENTS_REFERENCE.md"
+    ],
+    "original_hook_chars": 6957,
+    "full_patterns_preserved_verbatim": true,
+    "summary_only_in_root": true,
+    "controller_only_before_task1": true,
+    "base_after_preflight_tree": "f35aeb74a079aaf7f89a4da2422af4ce0293ba46",
+    "prepared_hook_chars": 2882,
+    "sha256": "41829db84334b1dfad07b895698a79cb8565fb3aed53eb9e2e2eaf5c089133cd"
+  },
+  "fixture_counts": {
+    "ExpressionTest": {
+      "guard_assertions": 23,
+      "named_theorems": 0
+    },
+    "NativeTest": {
+      "guard_assertions": 5,
+      "named_theorems": 1
+    },
+    "ContractTest": {
+      "guard_assertions": 8,
+      "named_theorems": 10
+    }
+  },
+  "module_counts": {
+    "Types": {
+      "lines": 108,
+      "named_theorems": 0
+    },
+    "Expr": {
+      "lines": 32,
+      "named_theorems": 0
+    },
+    "Interpret": {
+      "lines": 68,
+      "named_theorems": 0
+    },
+    "Readiness": {
+      "lines": 97,
+      "named_theorems": 5
+    },
+    "Completeness": {
+      "lines": 197,
+      "named_theorems": 14
+    }
+  },
+  "mutation_results": "papers/semantics/expression_readiness_artifacts/mutation_results.md",
+  "mutation_manifest": "papers/semantics/expression_readiness_mutations_post.json"
+}
