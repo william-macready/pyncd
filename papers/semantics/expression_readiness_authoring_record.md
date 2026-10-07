@@ -4,8 +4,10 @@
 
 Fresh-context authoring dispatch B writes the
 [live execution plan](expression_readiness_plan.md) from verified artifacts only.
-This is not implementation release, a final code review, or a publication record.
-Final review status: **PENDING**, controlled by the parent.
+This records plan authoring and its final reviews, not implementation release
+or execution close-out.
+Final review status: **CLEAR** in both lenses; the execution-feasibility
+finding was corrected and confirmed resolved.
 Controller final artifact verification is **DONE**, as confirmed in the follow-up
 handoff; this does not mark either final review lens complete.
 No implementation files are released on this plan branch by this dispatch.
@@ -96,9 +98,12 @@ mandatory. Meaningful protected-path changes or conflicts stop for controller
 adjudication, with no passive port/rebase. Execution commands use inherited artifacts;
 no copy from the old pin or ephemeral authoring checkout is required.
 
-**Medium correction PENDING reviewer confirmation.** Parent will actually replay
-the guards against the artifact-only commit before publication. Dispatch B has
-validated only the document changes, not run those guards or claimed their success.
+**Medium correction confirmed resolved** by the execution reviewer, with no
+remaining blocker in the corrected scope. Parent replayed clean-status, ancestry,
+and protected-source guards against actual artifact-only commit `5d81b7b`.
+All inherited patches then applied in order with strict `--whitespace=error`
+checking in an isolated index. Dispatch B validated the document changes;
+these execution checks were performed separately by the parent.
 All existing pinned replay/build/mutation results remain rehearsal provenance.
 
 ## Verification results inherited from verified execution
@@ -113,12 +118,19 @@ All existing pinned replay/build/mutation results remain rehearsal provenance.
 | Final manifest, actual execution | 27/27 pass; intended failure seen; restored build green; file byte-identical | Independent rehearsal final mutation results, not merely `--check`. |
 | Axiom audit | Standard `propext`, `Quot.sound`, `Classical.choice` only; no `sorryAx` confirmed | Verified proof output and parent handoff. |
 | Exported interfaces | All correctly compiled exported interfaces rechecked with `check-snippet.sh` from `import LeanNCD` | Parent's final verification handoff; no new Lean block authored here. |
+| Published-artifact source guards | Clean status, baseline ancestor, unchanged protected source/specification inputs; inherited patches cleanly apply | Actual artifact-only draft commit, not merely the old pinned rehearsal. |
 
 The early umbrella count of 2,947 jobs predates `Completeness` and final fixtures.
 It is not substituted for the final T2 result. The old spike's historical 8,676-job
 build is likewise historical, not the current full default result.
 Existing dependency warnings remain flagged; green build is not a warning-free claim.
 Dispatch B performs documentation validation, not another Lean build.
+
+Generated unified-diff containers include literal single-space context lines
+that a repository-wide `git diff --check` flags when the containers themselves
+are added. Their bytes were preserved rather than stripped. Non-patch documents
+and data pass whitespace checking; applying the final patches with
+`--whitespace=error` also passed, checking the actual implementation additions.
 
 ### Exact fixture accounting
 
@@ -226,7 +238,26 @@ follow-on work with dispatch counts not yet sized, not an authorized task here.
   source patches instead of copied Lean; live execution plan separate from this record;
   T3 can split integration and validation into fresh contexts within the SAME task.
 
-## Authoring checklist and pending gates
+## Final review outcomes
+
+The semantic/proof reviewer inspected the plan, record, all four patches,
+mutation evidence, compiled source/test modules, and specification anchors.
+No blocking or non-blocking issue was found. In particular, the reviewer
+confirmed strict array/argument interpretation, selected-sort exact-sum
+hypotheses, witness-only filling, honest source-checker and categorical limits,
+and the numerical/fixture provenance.
+
+The execution-feasibility reviewer found one Medium issue: the original
+exact-commit preparation gate conflicted with normal publication. Its
+correction was re-reviewed and confirmed resolved, with no remaining blocker
+in the corrected scope. Navigation links were also corrected before completion.
+
+These were read-only reviews, not additional build or mutation runs.
+The list representation of footprints is an explicit refinement of set
+membership; no minimal-dependence or occurrence-deduplication claim is made.
+Neither reviewer certified all starting semantics or production backends.
+
+## Authoring checklist and execution gates
 
 - [x] Two-stage authoring: verified prototype, then fresh-context write-up.
 - [x] Mechanical ordered patches identified; hashes/inventories checked in dispatch B.
@@ -250,13 +281,18 @@ follow-on work with dispatch counts not yet sized, not an authorized task here.
   All 32 surviving links resolve in the current repository; no ephemeral prototype links.
   ASCII only; no Lean fences or numeric Lean line citations.
 - [x] Historical context breach and missing telemetry surfaced.
-- [ ] Medium execution-base correction: reviewer confirmation and parent guard replay
+- [x] Medium execution-base correction: reviewer confirmation and parent guard replay
   against the artifact-only commit before publication.
-- [ ] Parent final review lens 1: semantic/proof fidelity, findings and adjudication.
-- [ ] Parent final review lens 2: types/backend/categorical/reuse, findings and adjudication.
-- [ ] Controller accepts authoring documents and controls any publication.
+- [x] Parent final review lens 1: semantic/proof fidelity; no blocking or
+  non-blocking issues. Token peak and aggregate usage unmeasured.
+- [x] Parent final review lens 2: execution feasibility, types/backend/reuse;
+  Medium base gate corrected and confirmed resolved. Read-only review, no rerun
+  of builds or mutations; cumulative reviewer usage 12/25 tool-bearing turns,
+  token peak unmeasured.
+- [x] Controller accepts the verified authoring documents and controls plan-only publication.
 - [ ] At execution: controller runs all 27 cycles and full default build on the execution branch.
 - [ ] At execution close-out: measured costs where available, breaches/limits, all review outcomes.
 
-**Review status remains PENDING.** Verified rehearsal is not execution-branch
-completion and not a substitute for either whole-branch review.
+**Authoring is complete; both final review lenses are clear.** Verified
+rehearsal and reviews are not execution-branch completion. The future
+implementation must still run its own controller validation and close-out.

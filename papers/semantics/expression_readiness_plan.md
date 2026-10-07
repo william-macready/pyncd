@@ -1,5 +1,10 @@
 # Expression/readiness semantic validation slice
 
+**Authoring verification complete.** Both final review lenses are clear; the
+execution-base finding was corrected and confirmed resolved. This plan ships
+verified artifacts, not a released implementation. See the authoring record
+for exact evidence and limits.
+
 ## 1. Goal and process
 
 **Full path:** a new typed expression presentation and proof surface require
@@ -18,7 +23,7 @@ Mechanical patches are the code source of truth. Do not hand-transcribe Lean.
 Candidate files not yet created in this plan-only tree are shown as monospaced
 repository-relative planned paths; use the corresponding patch links for their code.
 Use [the authoring record](expression_readiness_authoring_record.md) for provenance,
-verification history, telemetry limitations, and pending review status.
+verification history, telemetry limitations, and final review outcomes.
 Final reviews and publication remain controller responsibilities.
 
 ## 2. Global constraints and claim boundaries

@@ -3,7 +3,7 @@
   "baseline": "44296ad56e11b3b296c265119466b91aef8200e0",
   "worktree": "/Users/williammacready/code/python/pyncd.worktrees/expression-readiness-authoring",
   "namespace": "LeanNCD.Semantics",
-  "status": "Real split/proofs/fixtures verified; direct controller mutation cycles and observed-expectation manifest replay all 27/27 passed. Final plan writing/reviews pending.",
+  "status": "Authoring verification complete. Both final review lenses clear; Medium execution-base gate corrected and confirmed resolved. Planning artifacts only; no candidate implementation released.",
   "patches": [
     {
       "path": "papers/semantics/expression_readiness_patches/01-types-expr.patch",
@@ -41,7 +41,7 @@
       "sha256": "d65394550f86a8eb29e668783b7f8bf6ce42f68548d44494f76dd535f5e0aebe"
     }
   ],
-  "patch_application": "Three mechanically exported implementation-only patches; no raw build log or authoring evidence included in candidate implementation patches. Rehearsal pending.",
+  "patch_application": "Controller preflight00 then three mechanically exported implementation-only patches; final ordered replay and source/config byte match verified. Also checked inherited patches with --whitespace=error from actual artifact-only draft commit5d81b7b.",
   "budget": {
     "hard_cap_tool_bearing_turns": 55,
     "checkpoint": "near turn 45, before final native/admission validation",
@@ -1065,5 +1065,19 @@
     }
   },
   "mutation_results": "papers/semantics/expression_readiness_artifacts/mutation_results.md",
-  "mutation_manifest": "papers/semantics/expression_readiness_mutations_post.json"
+  "mutation_manifest": "papers/semantics/expression_readiness_mutations_post.json",
+  "final_reviews": {
+    "semantic_proof": "No blocking or non-blocking issue; full plan/artifact/candidate-source/spec review, read-only.",
+    "execution_feasibility": "One Medium exact-pin preparation gate corrected; follow-up confirms resolved, no remaining blocker in corrected scope.",
+    "navigation": "20 prototype-only source links replaced by exact planned paths and real patch links.",
+    "limitations": "No review reran builds/mutations or certified whole semantics/backends; token peaks/aggregate usage unmeasured."
+  },
+  "artifact_only_guard_replay": {
+    "commit": "5d81b7b",
+    "clean_status": true,
+    "baseline_ancestor": true,
+    "protected_paths_unchanged": true,
+    "ordered_inherited_patch_application": true,
+    "strict_source_whitespace": true
+  }
 }
