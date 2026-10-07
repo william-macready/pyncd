@@ -187,6 +187,31 @@ feeds the Task 6 site table). 235 matching lines at the 4a commit: 203 code, 32 
 `Eval.Plan.CompileTest` builds green (8519 jobs), 0 failing assertions; all 15 residuals re-pinned, none
 class (iii), no change under `leanncd/LeanNCD/`.
 
+## Task 5a ScanCompileTest (VERIFIED classification)
+
+Targeted build `Eval.Plan.ScanCompileTest` after Task 4 (default flipped), before any edit: 101 `^error:
+test/Eval/Plan/ScanCompileTest.lean` lines, of which 100 are failing assertions (60 `#guard` "Expression",
+40 `run_cmd`/`Except` throws) and the 101st is Lean's `maximum number of errors (100)` marker. The count is
+therefore a CAP, not a measurement: the true count is >= 100 (the last reported failure is line 2102 of
+2139). Class (iii): none seen. The module is a `prepareEvalPlan`-over-hand-built-`ScheduledProgram` file:
+there is no `compileToScheduled`/`TLProgram.eval`; every fixture declares only `iter`/`axis` decls and
+leaves every tensor name undeclared, and the carrier is the binary64 `Float` `DenseTensor` env
+(`InputSignature.ofDenseInputs`). Every failure is the same shared root cause: undeclared names are now
+`.float32`, so the first reached check is `inputSignature.dtypeMismatch`/`storageKindMismatch`.
+
+| group | failing lines (pre-edit) | n | what failed | class | 5a fix |
+|---|---|---|---|---|---|
+| acceptance fixtures through `withPrepared` (A selfRecur ... S-B two scans; T4.x, T5.3 checked path) | 178-2030 (the "expected acceptance, got inputSignature: ...dtypeMismatch" family) | ~39 | undeclared `X`/`S`/`A`/... vs `Float` carrier | (i) | `explicitF64Sched` in `prepared`/`withPrepared` and the `t4run`/`s6Accept` helper bodies |
+| fixture 14 `scratchF32Sched` + its control `scratchUnusedF32Sched` | 372, 380 | 2 | plain `.tensor "S"` is now f32: the mixed f32/f64 point (T f32 beside S f64) is lost | (i) | re-spell `S` `.typedTensor .f64` at source (the point is the T-vs-S mix, not the default) |
+| rejection playground `rej`/`rej2` (`rejSched`/`rej2Sched`), `rejScratchNope`, `{ rejSched ... with stmts }` one-offs, `partialSetSched`, `lateNopeSched`, ... | 733-1221 | ~48 | pinned scan/capability cause now preempted by the input-signature dtype check on the undeclared externals `S0`/`X`/`ROW` | (i) | wrap the constructors `rejSched`/`rej2Sched` and the direct `prepareEvalPlan` call sites |
+| scatter (`s6*`) rejection family via `s6Cause` and the `s6Schedule` accept helpers | 2043-2102 (+ tail) | ~10 | same | (i) | wrap `s6Schedule` and direct call sites |
+| T5.3 differential `t4diff` | the "source (reference) eval failed" family | 5 | `evalScheduled` over the undeclared source schedule: `unsupportedDtype` | (i) | `evalScheduledF64` |
+
+Class (ii): none in the observed failures (the module pins no `dtypeOfDecl`/`stateSigs` of an undeclared
+state name; its only dtype pins are explicit `.f64`/`.bool` signature entries of declared-by-the-fixture
+state), so 5b has no class (ii) input unless the capped tail hides some. Fixtures that already pass and
+stay untouched: the rejection fixtures decided before the carrier check.
+
 | residual | re-pin |
 |---|---|
 | f32 identity control (2) | plain `.tensor` over `f32IdentitySig` pinned `.float32`/`admittedAlgebraF32`; the binary64 control is kept as 2 new assertions on `.typedTensor .f64` over `identitySig` |
