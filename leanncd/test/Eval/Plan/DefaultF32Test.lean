@@ -140,6 +140,30 @@ def predScan : ScheduledProgram :=
   , env := {}, extNames := insert "P0" (insert "Y" ∅)
   , explicitSizes := (({} : HashMap UID Nat).insert lA.uid 3) }
 
+/-- Probe (a): a predicate-only external `M` feeding a real scan state `S` (undeclared after the
+    flip): the only external is Boolean, the state is real scratch built from it. -/
+def predExtScan : ScheduledProgram :=
+  { decls := [ .iter lA 3, .predicate "M" [], .typedTensor .f32 "S" [lA] ]
+  , stmts := [ .scan "S" [lA]
+      [ .assign "S" [.iterAt lA 0] { body := { terms := [{ factors := [.read "M" []] }] }, nonlin := .identity } ]
+      [ .assign "S" [.iterNext lA] { body := { terms := [{ factors := [.read "S" [.axis lA]] }] }, nonlin := .identity } ]
+      false ]
+  , env := {}, extNames := insert "M" ∅
+  , explicitSizes := (({} : HashMap UID Nat).insert lA.uid 3) }
+
+/-- Probe (c): a real scan state with an external real initial value and an external predicate
+    mask in the step, `S[l+1] := S[l] · P[l]`. -/
+def maskScan : ScheduledProgram :=
+  { decls := [ .iter lA 3, .typedTensor .f32 "S0" [], .predicate "P" [lA], .typedTensor .f32 "S" [lA] ]
+  , stmts := [ .scan "S" [lA]
+      [ .assign "S" [.iterAt lA 0] { body := { terms := [{ factors := [.read "S0" []] }] }, nonlin := .identity } ]
+      [ .assign "S" [.iterNext lA]
+          { body := { terms := [{ factors := [.read "S" [.axis lA], .read "P" [.axis lA]] }] }
+          , nonlin := .identity } ]
+      false ]
+  , env := {}, extNames := insert "S0" (insert "P" ∅)
+  , explicitSizes := (({} : HashMap UID Nat).insert lA.uid 3) }
+
 def corpus : List Case :=
   [ ⟨"contract", .inl tlprog!{
         axis i : ℕ = 2
@@ -185,7 +209,9 @@ def corpus : List Case :=
   , ⟨"lin-scan", .inr linScan, env32 [("S0", [], #[16777216]), ("X", [3], #[1, 1, 1])]⟩
   , ⟨"scatter-scan", .inr scatScan,
       env32 [("X", [3, 2], #[16777216, 1, 2, 20, 3, 30]), ("W", [2], #[1, 1])]⟩
-  , ⟨"pred-scan", .inr predScan, env32 [("P0", [], #[1]), ("Y", [], #[3])]⟩ ]
+  , ⟨"pred-scan", .inr predScan, env32 [("P0", [], #[1]), ("Y", [], #[3])]⟩
+  , ⟨"pred-ext-scan", .inr predExtScan, env32 [("M", [], #[1])]⟩
+  , ⟨"mask-scan", .inr maskScan, env32 [("S0", [], #[2]), ("P", [3], #[1, 0, 1])]⟩ ]
 
 /-! ## The equivalence -/
 
@@ -205,7 +231,7 @@ run_cmd do
       throwError s!"{c.name}: explicit-f32 program not accepted as float32: {e.accepted} {e.prep.take 300}"
   unless bad.isEmpty do
     throwError s!"unannotated ≠ explicit f32 on {bad.size} variant(s):\n{String.intercalate "\n" bad.toList}"
-  unless corpus.length == 10 && accepted == 10 do
+  unless corpus.length == 12 && accepted == 12 do
     throwError s!"corpus drifted: {corpus.length} programs, {accepted} accepted"
 
 end LeanNCD.Eval.Plan.DefaultF32Test
