@@ -1,6 +1,7 @@
 import LeanNCD.Eval.Entry
 import LeanNCD.Eval.Plan.Compile
 import LeanNCD.Eval.Plan.Adapter   -- `runPreparedDense`: every fixture below executes its own plan
+import Eval.ExplicitF64
 
 /-!
 # S-A Task 5 — source reachability of `PlanStep.scatter`
@@ -26,7 +27,7 @@ non-identity nonlinearity, an unimplemented collision policy) live beside their 
 -/
 
 namespace LeanNCD.Eval.Plan.ScatterCompileTest
-open LeanNCD LeanNCD.Eval.Plan
+open LeanNCD LeanNCD.Eval.Plan LeanNCD.Eval.ExplicitF64
 open Std
 
 /-- A dense tensor from a shape and row-major data (the portfolio harness's `tl`, reproduced rather
@@ -37,9 +38,10 @@ def dt (shape : List Nat) (xs : List Float) : DenseTensor := ⟨shape, xs.toArra
     source validation … `lowerArith` … `schedule`). Going through `compileToScheduled` rather
     than hand-writing a `ScheduledProgram` is the whole point of this file: a hand-built schedule
     could present a `Stmt.scatter` that `lowerArith` would never produce, which proves nothing about
-    source reachability. -/
+    source reachability. The fixtures declare no tensors, so `explicitF64` declares their names
+    `f64`: undeclared names are binary32 since the default flip, and the inputs here are `Float`. -/
 def schedOf (p : TLProgram) : Option ScheduledProgram :=
-  match p.compileToScheduled.run 0 with
+  match p.explicitF64.compileToScheduled.run 0 with
   | .ok s _ => some s
   | .error _ _ => none
 
@@ -69,7 +71,7 @@ open Lean Elab Command in
     machinery existed. -/
 def assertScatterParity (nm : String) (prog : TLProgram) (env : HashMap String DenseTensor)
     (key : String) (expect : DenseTensor) : CommandElabM Unit := do
-  let sched ← match prog.compileToScheduled.run 0 with
+  let sched ← match prog.explicitF64.compileToScheduled.run 0 with
     | .ok s _ => pure s
     | .error e _ => throwError s!"{nm}: source compilation failed: {repr e}"
   let prepared ← match prepareEvalPlan sched (InputSignature.ofDenseInputs env) with

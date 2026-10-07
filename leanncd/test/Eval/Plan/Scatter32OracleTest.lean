@@ -94,7 +94,7 @@ structure OracleCase where
   place : List Nat → List Nat
   inputs : NamedDenseEnv32
   observed : Array UInt32
-  /-- For a carrier-discriminating case: a binary64 program (ordinary declarations) and widened
+  /-- For a carrier-discriminating case: a binary64 program (`tensor f64` declarations) and widened
       inputs, run through `runPreparedDense`; its `outName`, narrowed, must differ in some lane. -/
   contrast64 : Option (TLProgram × HashMap String DenseTensor) := none
 
@@ -172,7 +172,7 @@ def oracleCases : List OracleCase :=
     , observed := #[0, 0, 1080033280, 0, 1082654720, 0]
     , contrast64 := some (tlprog!{
         axis i : ℕ = 3
-        tensor A(i), B(i), Z(i), Out(i)
+        tensor f64 A(i), B(i), Z(i), Out(i)
         Out[2*i] := sqrt(A[i]) + B[i] + Z[i] }, env64 o1Vals) }
   , { name := "O2 shifted stride (placement bias)"
     , scatterProg := tlprog!{
@@ -233,7 +233,7 @@ def oracleCases : List OracleCase :=
     , observed := #[0, 0, 1093140480, 0, 1069547520, 0]
     , contrast64 := some (tlprog!{
         axis i : ℕ = 3
-        tensor W(i), B(i), Z(i), Out(i)
+        tensor f64 W(i), B(i), Z(i), Out(i)
         Out[2*i] := W[i] + B[i] + Z[i] }, env64 o5ScatterHalfVals) } ]
 
 #guard oracleCases.length == 5
