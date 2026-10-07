@@ -48,7 +48,8 @@ private def alphaInputs2 : HashMap String DenseTensor :=
   ({} : HashMap String DenseTensor).insert "X2" ⟨[2], #[7.0, 9.0]⟩
 
 run_cmd do
-  match origAlphaProg.compileToScheduled.run 0, renamedAlphaProg.compileToScheduled.run 0 with
+  match origAlphaProg.explicitF64.compileToScheduled.run 0,
+        renamedAlphaProg.explicitF64.compileToScheduled.run 0 with
   | .error e _, _ => throwError s!"origAlphaProg compile failed: {repr e}"
   | _, .error e _ => throwError s!"renamedAlphaProg compile failed: {repr e}"
   | .ok sched1 _, .ok sched2 _ =>
@@ -126,7 +127,10 @@ private inductive SweepOutcome
     disagreement is a real bug and aborts the whole sweep with a diagnostic message. -/
 private def checkEntry (p : TLProgram) (env : HashMap String DenseTensor)
     (declAware : Bool := false) : Except String SweepOutcome := do
-  let sched ← match p.compileToScheduled.run 0 with
+  -- Gen's inputs are declared `f64` while its outputs are undeclared (binary32 by default), which
+  -- would make the schedule mixed; `p.explicitF64` is Gen's own guard (`Gen.lean` line 165) applied
+  -- at the run site, so the corpus itself stays unchanged.
+  let sched ← match p.explicitF64.compileToScheduled.run 0 with
     | .ok sched _ => pure sched
     | .error e _ => throw s!"generator produced a program that fails to compile: {repr e}"
   -- `declAware` (Task 4.5) selects the declaration-aware input signature, which is REQUIRED for a
@@ -217,7 +221,7 @@ rejected={total - accepted} categories={rejCounts.toList}"
 
 private def envOf (p : TLProgram) (env : HashMap String DenseTensor) :
     Except String (HashMap String DenseTensor) := do
-  let sched ← match p.compileToScheduled.run 0 with
+  let sched ← match p.explicitF64.compileToScheduled.run 0 with
     | .ok s _ => pure s
     | .error e _ => throw s!"compile failed: {repr e}"
   match evalScheduled sched env with
@@ -311,7 +315,7 @@ run_cmd do
   match planAgrees repeatProg repeatProgInputs with
   | .error e => throwError s!"repeated-assignment case: {e}"
   | .ok () => pure ()
-  match repeatProg.compileToScheduled.run 0 with
+  match repeatProg.explicitF64.compileToScheduled.run 0 with
   | .error e _ => throwError s!"repeatProg compile failed: {repr e}"
   | .ok sched _ =>
       match prepareEvalPlan sched (InputSignature.ofDenseInputs repeatProgInputs) with
@@ -359,7 +363,7 @@ run_cmd do
   match planAgrees maxPlainProg plainAggInputs with
   | .error e => throwError s!"plain max case: {e}"
   | .ok () => pure ()
-  match maxPlainProg.compileToScheduled.run 0 with
+  match maxPlainProg.explicitF64.compileToScheduled.run 0 with
   | .error e _ => throwError s!"maxPlainProg compile failed: {repr e}"
   | .ok sched _ =>
       match prepareEvalPlan sched (InputSignature.ofDenseInputs plainAggInputs) with
@@ -377,7 +381,7 @@ run_cmd do
   match planAgrees minPlainProg plainAggInputs with
   | .error e => throwError s!"plain min case: {e}"
   | .ok () => pure ()
-  match minPlainProg.compileToScheduled.run 0 with
+  match minPlainProg.explicitF64.compileToScheduled.run 0 with
   | .error e _ => throwError s!"minPlainProg compile failed: {repr e}"
   | .ok sched _ =>
       match prepareEvalPlan sched (InputSignature.ofDenseInputs plainAggInputs) with
@@ -443,7 +447,7 @@ private def checkedPlanOutputEq (label : String) (p : TLProgram)
   match planAgrees p inputs with
   | .error e => throw s!"{label}: {e}"
   | .ok () => pure ()
-  match p.compileToScheduled.run 0 with
+  match p.explicitF64.compileToScheduled.run 0 with
   | .error e _ => throw s!"{label} compile failed: {repr e}"
   | .ok sched _ =>
       match prepareEvalPlan sched (InputSignature.ofDenseInputs inputs) with
@@ -633,10 +637,13 @@ private def scanScratchNames (sched : ScheduledProgram) : List String :=
     what makes this a genuine differential rather than a consistency check. Warnings are compared
     only between legs 1 and 2: the unrolling replaces every scan-axis index with a literal, so which
     reads are STATICALLY out of extent legitimately changes, while the VALUES may not. -/
-private def scanParityCheck (name : String) (sched : ScheduledProgram)
+private def scanParityCheck (name : String) (sched0 : ScheduledProgram)
     (inputs : HashMap String DenseTensor) (expectedScratch : List String)
     (expectedMaterialized : Option (List (String × DenseTensor)) := none) :
     Except String Unit := do
+  -- Since the f32 default flip an undeclared name is binary32; this parity check pairs the schedule
+  -- with the binary64 `Float` carrier, so it declares the undeclared names `f64` first.
+  let sched := ScanCompileTest.explicitF64Sched sched0
   -- (6a) the scratch set this fixture is asserted to have.
   let scratch := scanScratchNames sched
   unless scratch == expectedScratch do
@@ -882,9 +889,10 @@ run_cmd do
   match scanParityCheck "alpha/renamedScan" renamedScanSched renamedScanInputs ["Tmp"] with
   | .error m => throwError s!"alpha-renamed scan failed its own parity check:\n{m}"
   | .ok () => pure ()
-  match prepareEvalPlan ScanCompileTest.scratchSched
+  match prepareEvalPlan (ScanCompileTest.explicitF64Sched ScanCompileTest.scratchSched)
           (InputSignature.ofDenseInputs ScanCompileTest.scratchInputs),
-        prepareEvalPlan renamedScanSched (InputSignature.ofDenseInputs renamedScanInputs) with
+        prepareEvalPlan (ScanCompileTest.explicitF64Sched renamedScanSched)
+          (InputSignature.ofDenseInputs renamedScanInputs) with
   | .error _, _ => throwError "alpha: the original scan fixture failed to prepare"
   | _, .error _ => throwError "alpha: the renamed scan fixture failed to prepare"
   | .ok p1, .ok p2 =>
@@ -946,7 +954,8 @@ run_cmd do
   match scanParityCheck "sameAxisName" sameAxisNameSched sameAxisNameInputs [] with
   | .error m => throwError s!"same-axis-name scan case: {m}"
   | .ok () => pure ()
-  match prepareEvalPlan sameAxisNameSched (InputSignature.ofDenseInputs sameAxisNameInputs) with
+  match prepareEvalPlan (ScanCompileTest.explicitF64Sched sameAxisNameSched)
+      (InputSignature.ofDenseInputs sameAxisNameInputs) with
   | .error _ => throwError "sameAxisName: prepare failed (already reported above)"
   | .ok p =>
       match (p.plan.raw.steps[0]? : Option PlanStep) with
@@ -980,7 +989,7 @@ private inductive ScanCaseOutcome
     can reach execution at all, and it is the arm that demands full parity. -/
 private def checkScanCase (i : Nat) (c : LeanNCD.PropertyOracle.ScanCase) :
     Except String ScanCaseOutcome := do
-  let sched ← match c.prog.compileToScheduled.run 0 with
+  let sched ← match c.prog.explicitF64.compileToScheduled.run 0 with
     | .ok s _ => pure s
     | .error e _ => throw s!"scan case {i}: the generator produced a program that fails to \
 compile: {repr e}"
@@ -1112,7 +1121,7 @@ def scanScatterPrograms : List ScanScatterEntry :=
 
 private def checkScanScatterProgram (entry : ScanScatterEntry) : Except String Unit := do
   let (name, prog, inputs, expected) := entry
-  let sched ← match prog.compileToScheduled.run 0 with
+  let sched ← match prog.explicitF64.compileToScheduled.run 0 with
     | .ok s _ => pure s
     | .error e _ => throw s!"{name}: source compilation failed: {repr e}"
   let scanCount := sched.stmts.countP (fun s => match s with | .scan .. => true | _ => false)
@@ -1146,7 +1155,7 @@ private def canceledLhsAxisSchedule : ScheduledProgram :=
       nonlin := .identity }
   { decls :=
       [.axis sbCancelJ (some 3), .axis sbCancelQ (some 2), .axis sbCancelK (some 6),
-       .iter sbCancelL 3, .tensor "X" [sbCancelJ, sbCancelQ]]
+       .iter sbCancelL 3, .typedTensor .f64 "X" [sbCancelJ, sbCancelQ]]
   , stmts := [.scan "S" [sbCancelL] [base] [recur] false]
   , env := {}, extNames := {"X"}, explicitSizes := {} }
 
@@ -1173,7 +1182,7 @@ private def crossSlotCanceledSchedule : ScheduledProgram :=
       nonlin := .identity }
   { decls :=
       [.axis sbCancelJ (some 3), .axis sbCancelQ (some 2), .iter sbCancelL 2,
-       .tensor "X" [sbCancelJ, sbCancelQ]]
+       .typedTensor .f64 "X" [sbCancelJ, sbCancelQ]]
   , stmts := [.scan "S" [sbCancelL] [base] [recur] false]
   , env := {}, extNames := {"X"}, explicitSizes := {} }
 
@@ -1202,7 +1211,7 @@ private def canceledUnsizedLhsSchedule : ScheduledProgram :=
       nonlin := .identity }
   { decls :=
       [.axis sbCancelJ (some 3), .axis sbCancelQ none, .axis sbCancelK (some 6),
-       .iter sbCancelL 3, .tensor "X" [sbCancelJ]]
+       .iter sbCancelL 3, .typedTensor .f64 "X" [sbCancelJ]]
   , stmts := [.scan "S" [sbCancelL] [base] [recur] false]
   , env := {}, extNames := {"X"}, explicitSizes := {} }
 
@@ -1210,12 +1219,13 @@ run_cmd do
   let inputs : HashMap String DenseTensor := HashMap.ofList [("X", tlSB [3] [1,2,3])]
   let canceled :=
     LHSSlot.affine (.affine 0 [(2, sbCancelJ), (1, sbCancelQ), (-1, sbCancelQ)])
-  match prepareEvalPlan canceledUnsizedLhsSchedule (InputSignature.ofDenseInputs inputs) with
+  match prepareEvalPlan (ScanCompileTest.explicitF64Sched canceledUnsizedLhsSchedule)
+      (InputSignature.ofDenseInputs inputs) with
   | .ok _ => throwError "canceled LHS-only UID was not a checked-plan sizing obligation"
   | .error e =>
       unless e.cause == .shape (.unsizedScatterOutput canceled) do
         throwError "canceled LHS-only UID produced the wrong checked-plan error"
-  match evalScheduled canceledUnsizedLhsSchedule inputs with
+  match evalScheduled (ScanCompileTest.explicitF64Sched canceledUnsizedLhsSchedule) inputs with
   | .ok _ => throwError "canceled LHS-only UID was not a legacy sizing obligation"
   | .error { error := .shape (.unsizedScatterOutput slot), .. } =>
       unless decide (slot = canceled) do
@@ -1284,7 +1294,7 @@ private def checkNonlinFixture (name : String) (p : TLProgram) (inputs : HashMap
   match planAgrees p inputs with
   | .error e => throw s!"{name}: differential leg failed: {e}"
   | .ok () => pure ()
-  let sched ← match p.compileToScheduled.run 0 with
+  let sched ← match p.explicitF64.compileToScheduled.run 0 with
     | .ok s _ => pure s
     | .error e _ => throw s!"{name}: compile failed: {repr e}"
   let prepared ← match prepareEvalPlan sched (InputSignature.ofDenseInputs inputs) with
@@ -1479,8 +1489,11 @@ private def pinCtxInputs : HashMap String DenseTensor :=
     oracle's scan-free unrolling explicitly does not admit predicate factors inside a scan ("outside
     the oracle's fragment"), so the checked positional plan vs the reference interpreter is the
     genuine two-implementation differential available for a source Iverson inside a scan. -/
-private def scanParity2 (name : String) (sched : ScheduledProgram)
+private def scanParity2 (name : String) (sched0 : ScheduledProgram)
     (inputs : HashMap String DenseTensor) : Except String Unit := do
+  -- Undeclared names are binary32 since the f32 default flip; this pairs `sched0` with the
+  -- binary64 `Float` carrier, so declare them `f64` first.
+  let sched := ScanCompileTest.explicitF64Sched sched0
   let prepared ← match prepareEvalPlan sched (InputSignature.ofDenseInputs inputs) with
     | .ok p => pure p
     | .error f => throw s!"{name}: prepareEvalPlan rejected an admitted scan fixture: \
@@ -1513,7 +1526,7 @@ run_cmd do
   | .error m => throwError s!"scan recurrence Iverson: {m}"
   | .ok () => pure ()
   -- fixture 6's observed source value: [S0, 0, 0] — the predicate genuinely gates the carry.
-  match evalScheduled recurIversonSched recurIversonInputs with
+  match evalScheduled (ScanCompileTest.explicitF64Sched recurIversonSched) recurIversonInputs with
   | .error e => throwError s!"scan recurrence Iverson reference eval: {e.error}"
   | .ok r => match r.env["S"]? with
     | some t => unless denseEq t ⟨[3], #[5.0, 0.0, 0.0]⟩ do
@@ -1619,7 +1632,7 @@ def predicatePrograms :
       "Y", tl54 [2,3] [0, 0.4, 0.6, 0, 0.5, 0.5])
   , ("AT12 sparse-attn",
       tlprog!{ axis q : ℕ = 3, s : ℕ = 3, d : ℕ = 3
-        tensor A(q, s)
+        tensor f64 A(q, s)
         A[q, s.] := softmax(where |q - s| ≤ 1 ∨ s = 0)(Q[q, d] · K[s, d]) },
       (({} : HashMap String DenseTensor).insert "Q" (tl54 [3,3] [1,0,0, 0,1,0, 0,0,1])).insert
         "K" (tl54 [3,3] [1,0,0, 0,1,0, 0,0,1]),
@@ -1728,19 +1741,19 @@ def scatterPrograms :
       HashMap.ofList [("X", tl54 [3] [1,2,3])], "Out",
       tl54 [6] [1,0,4,0,9,0])
   , ("SA6 scatter output reduced to scalar",
-      tlprog!{ tensor Out(i, j)
+      tlprog!{ tensor f64 Out(i, j)
                Out[2*i, 2*j] := X[i, j]
                total[] := Out[a, b] },
       HashMap.ofList [("X", tl54 [2,2] [1,2, 3,4])], "total",
       tl54 [] [10])
   , ("SA7 affine read of scatter output",
-      tlprog!{ tensor Out(i, j)
+      tlprog!{ tensor f64 Out(i, j)
                Out[2*i, 2*j] := X[i, j]
                Y[a, b] := Wk[p] · Out[a + p, b] },
       HashMap.ofList [("X", tl54 [2,2] [1,2, 3,4]), ("Wk", tl54 [2] [1,1])], "Y",
       tl54 [3,4] [1,0,2,0, 3,0,4,0, 3,0,4,0])
   , ("SA8 diagonal scatter into contraction",
-      tlprog!{ tensor D(i, j)
+      tlprog!{ tensor f64 D(i, j)
                D[i, i] := v[i]
                Y[i, j] := D[i, k] · M[k, j] },
       HashMap.ofList [("v", tl54 [2] [2,3]), ("M", tl54 [2,2] [1,1, 1,1])], "Y",
@@ -1833,7 +1846,8 @@ run_cmd do
   match scanParityCheck "T5.4 recurIverson[l=0]" oracleRecurIversonSched oracleRecurIversonInputs [] with
   | .ok () => pure ()
   | .error m => throwError s!"T5.4 recurrence Iverson three-way: {m}"
-  match evalScheduled oracleRecurIversonSched oracleRecurIversonInputs with
+  match evalScheduled (ScanCompileTest.explicitF64Sched oracleRecurIversonSched)
+      oracleRecurIversonInputs with
   | .ok r => match r.env["S"]? with
     | some t => unless denseEq t ⟨[3], #[5.0, 5.0, 0.0]⟩ do
         throwError s!"T5.4 recurrence Iverson value changed: {repr t.data}"
@@ -1999,7 +2013,7 @@ run_cmd do
 
 private def checkBoolScalar (name : String) (inputs : HashMap String DenseTensor) (expected : Float) :
     Except String Unit := do
-  match boolScalarProg.compileToScheduled.run 0 with
+  match boolScalarProg.explicitF64.compileToScheduled.run 0 with
   | .error e _ => throw s!"{name}: compile failed: {repr e}"
   | .ok sched _ =>
       let sig ← match InputSignature.ofDenseInputsForDecls sched.decls inputs with
