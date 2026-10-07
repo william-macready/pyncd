@@ -181,3 +181,26 @@ feeds the Task 6 site table). 235 matching lines at the 4a commit: 203 code, 32 
 | `prepareEvalPlan` (90 code lines) | one call per assertion over the schedules above | not needed: arguments are the wrapped/declared schedules (the 15 residual are the class (ii) rows) |
 | `evalScheduled` (26 code lines) | the reference leg of `assertPredicateParity`/`assertScanPredicateParity`/`assertReadRankParity`/`assertAxisKindParity` and the valid siblings | not needed beyond the schedules: the valid siblings now evaluate (were `unsupportedDtype ... declared f32`) |
 | `runPreparedDense` (3 code lines) | `orderedTwin` run_cmd, `cachePreparedWith 4` run_cmd | not needed (schedule wrapped) |
+
+### Task 4b CompileTest: result (VERIFIED by build and two mutations)
+
+`Eval.Plan.CompileTest` builds green (8519 jobs), 0 failing assertions; all 15 residuals re-pinned, none
+class (iii), no change under `leanncd/LeanNCD/`.
+
+| residual | re-pin |
+|---|---|
+| f32 identity control (2) | plain `.tensor` over `f32IdentitySig` pinned `.float32`/`admittedAlgebraF32`; the binary64 control is kept as 2 new assertions on `.typedTensor .f64` over `identitySig` |
+| `f32MixedUndeclaredSched` (1) | renamed `f32UndeclaredSched`: f32 `Y` + undeclared `X` is homogeneous, accepted `.float32`. The inverted mismatch is new `f64MixedUndeclaredSched` (declared `f64` `Y` + undeclared f32 `X`): `Y: mixed f32/f64` |
+| `plainIdentitySched` (3) | plain pinned equal to `f32IdentityPrepared` (sigs, storageKind) and `.float32`; added plain != `f64` (tensorSigs) |
+| `plainLinearSched` (4) | plain `.linear` over `f32LinearSig` equals `linear f32` (sigs, `.float32`, `admittedAlgebraF32`); `linear f64` pinned explicitly (sigs, algebra) and != plain (sigs, storageKind) |
+| `f32LinearMixedSched` (1) | renamed `f32LinearPlainXSched`: plain `.linear X` + `linear f32 Y` is homogeneous `.float32`; plain X + `linear f64` Y is the (new) mismatch; the explicit `f64` X + f32 Y rejection is kept |
+| `declaredBSched` (4) | `A`/`Y` stay undeclared and now expect `.f32`: signatures `A: f32`, Variant 2 `dtypeMismatch "A" .f32 .bool` |
+
+Stale prose rewritten: lines ~452 (scatter dest), ~733 (`badDtypeSig`), ~850 (`f32MixedDeclOrderSched`), fixture 12 undeclared
+comment, ~1148 (`f64PointwiseSched`: now an explicit-`f64` control), ~1383 (FW2b), `declaredBSched` doc.
+
+Mutations (each restored by `git checkout --`, then rebuilt green):
+- `dtypeOfDecl` `.tensor`/`.linear`/`none` arms back to `.f64`: CompileTest fails 15 assertions (lines 805, 810, 871,
+  912, 917, 918, 920, 990, 991, 992, 1002, 1493, 1498, 1510, 1519), each "did not evaluate to `true`".
+- `storageConstraintOfName?` undeclared arm back to `.float64` (Ast.lean): CAUGHT, 5 failures (871
+  `f32UndeclaredSched`, 883 `f64MixedUndeclaredSched`, 1493/1498/1510 `declaredBSched`).
