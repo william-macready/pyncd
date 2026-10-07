@@ -21,10 +21,13 @@ namespace LeanNCD.Eval.Plan
 open Std LeanNCD.Eval
 
 /-- Derive an `InputSignature` from concrete Dense inputs. Every entry gets `ScalarDType.f64`,
-    Wave C's only admitted dtype — this function cannot fail, since every `DenseTensor` already
-    carries a concrete `List Nat` shape. Unchanged by Task 4.3: callers that already know their
-    program declares no predicate-typed name keep this simpler, non-declaration-aware constructor;
-    `ofDenseInputsForDecls` below is the declaration-aware counterpart. -/
+    the dtype of the `Float` carrier — this function cannot fail, since every `DenseTensor` already
+    carries a concrete `List Nat` shape. Since the f32 default flip a plain or undeclared name is
+    binary32, so these binary64 signatures fit only a program whose real names are all declared
+    `f64`: for an UNANNOTATED program `prepareEvalPlan` rejects them at Step B with
+    `dtypeMismatch nm .f32 .f64`. Use this constructor for explicitly-`f64` programs that declare
+    no predicate-typed name; for unannotated or `f32` programs use `ofDenseInputs32ForDecls` with
+    `runPreparedDense32`. `ofDenseInputsForDecls` below is the declaration-aware counterpart. -/
 def InputSignature.ofDenseInputs (inputs : HashMap String DenseTensor) : InputSignature :=
   { tensors := inputs.toList.foldl
       (fun acc (nm, t) => acc.insert nm { shape := t.shape.toArray, dtype := .f64 }) {} }

@@ -128,7 +128,7 @@ private inductive SweepOutcome
 private def checkEntry (p : TLProgram) (env : HashMap String DenseTensor)
     (declAware : Bool := false) : Except String SweepOutcome := do
   -- Gen's inputs are declared `f64` while its outputs are undeclared (binary32 by default), which
-  -- would make the schedule mixed; `p.explicitF64` is Gen's own guard (`Gen.lean` line 165) applied
+  -- would make the schedule mixed; `p.explicitF64` is the form Gen's `enumPrograms` baseline-compiles `#guard` uses, applied
   -- at the run site, so the corpus itself stays unchanged.
   let sched ← match p.explicitF64.compileToScheduled.run 0 with
     | .ok sched _ => pure sched

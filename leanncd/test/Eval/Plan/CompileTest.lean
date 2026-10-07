@@ -49,7 +49,7 @@ open Std
 def explicitF64Sched (sched : ScheduledProgram) : ScheduledProgram :=
   { sched with decls := explicitF64Decls sched.decls (sched.stmts.flatMap ScanStmt.sourceStmts) }
 
-def isOk: Except CapabilityError Unit → Bool
+def isOk : Except CapabilityError Unit → Bool
   | .ok _ => true | .error _ => false
 
 def errOf : Except CapabilityError Unit → Option CapabilityError
@@ -561,7 +561,7 @@ def axJ2b : AxisSpec := { name := "j", uid := 2, kind := .nat }
 def axK2b : AxisSpec := { name := "k", uid := 3, kind := .nat }
 def multiReductionSched : ScheduledProgram :=
   explicitF64Sched
-  { decls :=[.axis axI2b (some 2), .axis axJ2b (some 2), .axis axK2b (some 2)]
+  { decls := [.axis axI2b (some 2), .axis axJ2b (some 2), .axis axK2b (some 2)]
   , stmts := [.plain (.assign "Y" [.free axI2b]
       { body := { terms := [{ factors :=
           [ .read "A" [.axis axI2b, .axis axJ2b]
@@ -1718,7 +1718,7 @@ def axJCache : AxisSpec := { name := "j", uid := 2, kind := .nat }
 
 def cacheSchedWith (cachedI : Nat) : ScheduledProgram :=
   explicitF64Sched
-  { decls :=[.axis axICache (some 3), .axis axJCache (some 2)]
+  { decls := [.axis axICache (some 3), .axis axJCache (some 2)]
   , stmts := [.plain (.assign "Y" [.free axICache]
       { body := { terms := [{ factors := [.read "X" [.axis axJCache]] }] }, nonlin := .identity })]
   , env := {}, extNames := insert "X" (∅ : Finset String)
