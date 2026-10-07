@@ -1,0 +1,326 @@
+diff --git a/leanncd/LeanNCD/Semantics/Invariants.lean b/leanncd/LeanNCD/Semantics/Invariants.lean
+new file mode 100644
+index 0000000000000000000000000000000000000000..b52289195c0efac9f926b6257c6f6e57cbde4fff
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Invariants.lean
+@@ -0,0 +1,194 @@
++import LeanNCD.Semantics.Machine
++
++namespace LeanNCD.Semantics.Program
++
++open scoped Classical
++
++variable {K : S → Type} {σ : Declarations S} {r : Registry K}
++
++def Extends (p q : PartialStore K σ) : Prop :=
++  ∀ a v, p a = some v → q a = some v
++
++def Agrees (p : PartialStore K σ) (ρ : Store K σ) : Prop :=
++  ∀ a v, p a = some v → ρ a = v
++
++theorem agrees_of_extends {p q : PartialStore K σ} {ρ : Store K σ}
++    (extend : Extends p q) (agree : Agrees q ρ) : Agrees p ρ :=
++  fun a v h => agree a v (extend a v h)
++
++theorem evaluated_consistent (ops : (s : S) → ScalarOps (K s))
++    (p : PartialStore K σ) (ρ : Store K σ) (e : Expr K σ r Γ τ) (γ : Γ)
++    (v : Option (Value K τ))
++    (evaluated : evalReady ops p e γ = .evaluated v) (agree : Agrees p ρ) :
++    interpret ops ρ e γ = v := by
++  have reads : checkReads p (footprint e γ) = true := by
++    cases h : checkReads p (footprint e γ) <;> simp_all [evalReady]
++  have extension : ∀ a ∈ footprint e γ, p a = some (ρ a) := by
++    intro a ha
++    have someValue := (checkReads_iff p _).mp reads a ha
++    cases h : p a with
++    | none => simp [h] at someValue
++    | some x => rw [agree a x h]
++  have eq := ready_consistent ops e γ p ρ extension
++  rw [evaluated] at eq
++  exact (ReadyResult.evaluated.inj eq).symm
++
++abbrev History (P : Program K σ r) :=
++  (t : P.Defined) → P.Occurrence t → K (σ.signature t.val).sort
++
++variable (P : Program K σ r) (ops : (s : S) → ScalarOps (K s))
++variable [∀ t : P.Defined, AddCommMonoid (K (σ.signature t.val).sort)]
++
++noncomputable def spent (U : P.Pending) (values : P.History) (t : P.Defined)
++    (p : Coord (σ.signature t.val).axes) : K (σ.signature t.val).sort := by
++  classical
++  exact ∑ o, if o ∈ U t then 0 else
++    if P.destination t o.1 o.2 = p then values t o else 0
++
++noncomputable def record (values : P.History) (t : P.Defined) (o : P.Occurrence t)
++    (v : K (σ.signature t.val).sort) : P.History := by
++  classical
++  exact Function.update values t (Function.update (values t) o v)
++
++theorem spent_consume_same (c : P.Running) (values : P.History) (t : P.Defined)
++    (o : P.Occurrence t) (v : K (σ.signature t.val).sort) (pending : o ∈ c.pending t)
++    (p : Coord (σ.signature t.val).axes) :
++    P.spent (P.consume c t o v).pending (P.record values t o v) t p =
++      P.spent c.pending values t p + if P.destination t o.1 o.2 = p then v else 0 := by
++  classical
++  simp only [spent, consume, record, Function.update_self]
++  have term (i : P.Occurrence t) :
++      (if i ∈ (c.pending t).erase o then 0 else
++        if P.destination t i.1 i.2 = p then Function.update (values t) o v i else 0) =
++      (if i ∈ c.pending t then 0 else
++        if P.destination t i.1 i.2 = p then values t i else 0) +
++      (if i = o then (if P.destination t o.1 o.2 = p then v else 0) else 0) := by
++    by_cases h : i = o
++    · subst i
++      simp [pending]
++    · simp [Finset.mem_erase, Function.update, h]
++  simp_rw [term]
++  rw [Finset.sum_add_distrib]
++  simp
++
++structure Invariant (η : P.Input) (c : P.Running) (values : P.History) : Prop where
++  inputs : ∀ t f, η.val t = some f → ∀ p, c.published ⟨t, p⟩ = some (f p)
++  published : ∀ t p v, c.published ⟨t.val, p⟩ = some v →
++    P.FiberEmpty c t p ∧ v = c.accumulators t p
++  conservation : ∀ t p, c.accumulators t p = P.spent c.pending values t p
++  consumed : ∀ t o, o ∉ c.pending t → ∀ ρ, Agrees c.published ρ →
++    P.outcome ops ρ t o = some (values t o)
++
++theorem initial_invariant (η : P.Input) :
++    P.Invariant ops η (P.initial η) (fun _ _ => 0) := by
++  classical
++  refine ⟨?_, ?_, ?_, ?_⟩
++  · intro t f hf p
++    simp [initial, hf]
++  · intro t p v hv
++    have valid := η.property t.val
++    rw [t.property] at valid
++    have empty : η.val t.val = none := by
++      cases h : η.val t.val <;> simp_all
++    simp [initial, empty] at hv
++  · intro t p
++    simp [initial, spent]
++  · intro t o ho
++    exact False.elim (ho (Finset.mem_univ o))
++
++theorem publish_extends (c : P.Running) (t : P.Defined)
++    (p : Coord (σ.signature t.val).axes) (unpublished : c.published ⟨t.val, p⟩ = none) :
++    Extends c.published (P.publish c t p).published := by
++  classical
++  intro a v hv
++  by_cases h : a = ⟨t.val, p⟩
++  · subst a
++    rw [unpublished] at hv
++    contradiction
++  · simpa [publish, Function.update, h] using hv
++
++theorem consume_invariant (η : P.Input) (c : P.Running) (values : P.History)
++    (inv : P.Invariant ops η c values) (t : P.Defined) (o : P.Occurrence t)
++    (v : K (σ.signature t.val).sort) (pending : o ∈ c.pending t)
++    (evaluated : evalReady ops c.published (P.body t o.1) o.2 = .evaluated (some v)) :
++    P.Invariant ops η (P.consume c t o v) (P.record values t o v) := by
++  classical
++  refine ⟨inv.inputs, ?_, ?_, ?_⟩
++  · intro t' p w hw
++    obtain ⟨fiber, eq⟩ := inv.published t' p w hw
++    by_cases ht : t' = t
++    · subst t'
++      have different := fiber o pending
++      refine ⟨?_, ?_⟩
++      · intro o' ho'
++        apply fiber o'
++        simpa [consume] using (Finset.mem_of_mem_erase (by simpa [consume] using ho'))
++      · simpa [consume, different] using eq
++    · simpa [FiberEmpty, consume, ht] using And.intro fiber eq
++  · intro t' p
++    by_cases ht : t' = t
++    · subst t'
++      rw [P.spent_consume_same c values t o v pending p]
++      simpa [consume] using congrArg
++        (fun x => x + if P.destination t o.1 o.2 = p then v else 0)
++        (inv.conservation t p)
++    · simpa [spent, consume, record, ht] using inv.conservation t' p
++  · intro t' o' ho' ρ agree
++    by_cases ht : t' = t
++    · subst t'
++      by_cases he : o' = o
++      · subst o'
++        simpa [record] using evaluated_consistent ops c.published ρ
++          (P.body t o.1) o.2 (some v) evaluated agree
++      · have old : o' ∉ c.pending t := by
++          simpa [consume, he] using ho'
++        simpa [record, he] using inv.consumed t o' old ρ agree
++    · have old : o' ∉ c.pending t' := by simpa [consume, ht] using ho'
++      simpa [record, ht] using inv.consumed t' o' old ρ agree
++
++theorem publish_invariant (η : P.Input) (c : P.Running) (values : P.History)
++    (inv : P.Invariant ops η c values) (t : P.Defined)
++    (p : Coord (σ.signature t.val).axes) (unpublished : c.published ⟨t.val, p⟩ = none)
++    (finished : P.FiberEmpty c t p) :
++    P.Invariant ops η (P.publish c t p) values := by
++  classical
++  refine ⟨?_, ?_, inv.conservation, ?_⟩
++  · intro u f hf q
++    exact P.publish_extends c t p unpublished ⟨u, q⟩ (f q) (inv.inputs u f hf q)
++  · intro t' q v hv
++    by_cases h : (⟨t'.val, q⟩ : Address σ) = ⟨t.val, p⟩
++    · have ht : t' = t := Subtype.ext (congrArg Sigma.fst h)
++      subst t'
++      have hp : q = p := by simpa using h
++      subst q
++      have value : v = c.accumulators t p := by simpa [publish] using hv.symm
++      exact ⟨finished, value⟩
++    · apply inv.published t' q v
++      simpa [publish, Function.update, h] using hv
++  · intro u o ho ρ agree
++    exact inv.consumed u o ho ρ
++      (agrees_of_extends (P.publish_extends c t p unpublished) agree)
++
++def StateInvariant (η : P.Input) : P.MachineState → Prop
++  | .running c => ∃ values, P.Invariant ops η c values
++  | .failed t o c => ∃ values, P.Invariant ops η c values ∧ o ∈ c.pending t ∧
++      evalReady ops c.published (P.body t o.1) o.2 = .evaluated none
++
++theorem reachable_invariant (η : P.Input) {s : P.MachineState}
++    (reached : P.Reaches ops (.running (P.initial η)) s) :
++    P.StateInvariant ops η s := by
++  induction reached with
++  | refl => exact ⟨_, P.initial_invariant ops η⟩
++  | tail reached step ih =>
++    cases step with
++    | contribute c t o v pending evaluated =>
++      obtain ⟨values, inv⟩ := ih
++      exact ⟨_, P.consume_invariant ops η c values inv t o v pending evaluated⟩
++    | publication c t p unpublished finished =>
++      obtain ⟨values, inv⟩ := ih
++      exact ⟨_, P.publish_invariant ops η c values inv t p unpublished finished⟩
++    | undefined c t o pending evaluated =>
++      obtain ⟨values, inv⟩ := ih
++      exact ⟨values, inv, pending, evaluated⟩
++
++end LeanNCD.Semantics.Program
+diff --git a/leanncd/LeanNCD/Semantics/Soundness.lean b/leanncd/LeanNCD/Semantics/Soundness.lean
+new file mode 100644
+index 0000000000000000000000000000000000000000..a8882d25f6626bd7e655b5631547967b7748b7fb
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Soundness.lean
+@@ -0,0 +1,120 @@
++import LeanNCD.Semantics.Invariants
++
++namespace LeanNCD.Semantics.Program
++
++open scoped Classical
++
++variable {K : S → Type} {σ : Declarations S} {r : Registry K}
++variable (P : Program K σ r) (ops : (s : S) → ScalarOps (K s))
++variable [∀ t : P.Defined, AddCommMonoid (K (σ.signature t.val).sort)]
++
++theorem finalStore_agrees (c : P.Running) (complete : P.Complete c) :
++    Agrees c.published (P.finalStore c complete) := by
++  intro a v hv
++  have eq := P.finalStore_published c complete a
++  rw [hv] at eq
++  exact (Option.some.inj eq).symm
++
++theorem successful_model (η : P.Input) (c : P.Running) (success : P.Successful ops η c) :
++    P.Models ops η (P.finalStore c success.2) := by
++  obtain ⟨values, inv⟩ := P.reachable_invariant ops η success.1
++  have consumed (t : P.Defined) (o : P.Occurrence t) :
++      P.outcome ops (P.finalStore c success.2) t o = some (values t o) :=
++    inv.consumed t o (by simp [success.2.1 t]) _ (P.finalStore_agrees c success.2)
++  have admitted : P.AdmEnv ops (P.finalStore c success.2) := by
++    intro t o
++    simp [consumed t o]
++  refine ⟨admitted, ?_, ?_⟩
++  · intro t f hf p
++    exact P.finalStore_agrees c success.2 ⟨t, p⟩ (f p) (inv.inputs t f hf p)
++  · intro t p
++    have pub := (inv.published t p _ (P.finalStore_published c success.2 ⟨t.val, p⟩)).2
++    rw [pub, inv.conservation]
++    have value (o : P.Occurrence t) :
++        P.contribution ops (P.finalStore c success.2) admitted t o = values t o := by
++      simp [contribution, consumed t o]
++    simp [spent, success.2.1, collect, pushforward, value]
++
++theorem finished_accumulator (η : P.Input) (c : P.Running) (values : P.History)
++    (inv : P.Invariant ops η c values) (ρ : Store K σ) (agree : Agrees c.published ρ)
++    (admitted : P.AdmEnv ops ρ) (t : P.Defined)
++    (p : Coord (σ.signature t.val).axes) (finished : P.FiberEmpty c t p) :
++    c.accumulators t p = P.collect ops ρ admitted t p := by
++  rw [inv.conservation]
++  simp only [spent, collect, pushforward]
++  apply Finset.sum_congr rfl
++  intro o _
++  by_cases pending : o ∈ c.pending t
++  · simp [pending, finished o pending]
++  · have body := inv.consumed t o pending ρ agree
++    have value : P.contribution ops ρ admitted t o = values t o := by
++      simp [contribution, body]
++    simp [pending, value]
++
++def CandidateAgreement (ρ : Store K σ) : P.MachineState → Prop
++  | .running c => Agrees c.published ρ
++  | .failed _ _ _ => False
++
++theorem candidate_preserved (η : P.Input) (ρ : Store K σ) (model : P.Models ops η ρ)
++    {s : P.MachineState} (reached : P.Reaches ops (.running (P.initial η)) s) :
++    P.CandidateAgreement ρ s := by
++  obtain ⟨admitted, inputs, equations⟩ := model
++  induction reached with
++  | refl =>
++    intro a v hv
++    cases hf : η.val a.1 with
++    | none => simp [initial, hf] at hv
++    | some f =>
++      have value : f a.2 = v := by simpa [initial, hf] using hv
++      exact (inputs a.1 f hf a.2).trans value
++  | tail reached step ih =>
++    cases step with
++    | contribute c t o v pending evaluated => exact ih
++    | publication c t p unpublished finished =>
++      obtain ⟨values, inv⟩ := P.reachable_invariant ops η reached
++      have collected := P.finished_accumulator ops η c values inv ρ ih admitted t p finished
++      have value : c.accumulators t p = ρ ⟨t.val, p⟩ :=
++        collected.trans (equations t p).symm
++      intro a v hv
++      by_cases h : a = ⟨t.val, p⟩
++      · subst a
++        have eq : c.accumulators t p = v := by simpa [publish] using hv
++        exact value.symm.trans eq
++      · exact ih a v (by simpa [publish, Function.update, h] using hv)
++    | undefined c t o pending evaluated =>
++      have body := evaluated_consistent ops c.published ρ (P.body t o.1) o.2 none evaluated ih
++      have defined := admitted t o
++      simp [outcome, body] at defined
++
++theorem successful_unique (η : P.Input) (c : P.Running) (success : P.Successful ops η c) :
++    ∀ ρ, P.Models ops η ρ → ρ = P.finalStore c success.2 := by
++  intro ρ model
++  have agree := P.candidate_preserved ops η ρ model success.1
++  funext a
++  exact agree a _ (P.finalStore_published c success.2 a)
++
++theorem successful_admInput (η : P.Input) (c : P.Running) (success : P.Successful ops η c) :
++    P.AdmInput ops η :=
++  ⟨P.finalStore c success.2, P.successful_model ops η c success,
++    P.successful_unique ops η c success⟩
++
++theorem successful_denotation (η : P.Input) (c : P.Running) (success : P.Successful ops η c) :
++    P.denotation ops η (P.successful_admInput ops η c success) =
++      P.outputProjection (P.finalStore c success.2) :=
++  P.denotation_of_model ops η _ _ (P.successful_model ops η c success)
++
++theorem failed_no_model (η : P.Input) (t : P.Defined) (o : P.Occurrence t) (c : P.Running)
++    (reached : P.Reaches ops (.running (P.initial η)) (.failed t o c)) :
++    ¬ ∃ ρ, P.Models ops η ρ := by
++  rintro ⟨ρ, model⟩
++  exact P.candidate_preserved ops η ρ model reached
++
++#print axioms reachable_invariant
++#print axioms successful_model
++#print axioms candidate_preserved
++#print axioms successful_unique
++#print axioms successful_admInput
++#print axioms successful_denotation
++#print axioms failed_no_model
++
++end LeanNCD.Semantics.Program

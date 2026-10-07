@@ -1,0 +1,93 @@
+[
+  {
+    "label": "M01 publication barrier removed", "task": "02-invariants-soundness",
+    "file": "LeanNCD/Semantics/Machine.lean",
+    "old": "(finished : P.FiberEmpty c t p) :", "new": "(finished : True) :",
+    "targets": ["LeanNCD.Semantics.Soundness"],
+    "expect": ["Invariants.lean:189:71: Application type mismatch"]
+  },
+  {
+    "label": "M02 published overwrite allowed", "task": "02-invariants-soundness",
+    "file": "LeanNCD/Semantics/Machine.lean",
+    "old": "(unpublished : c.published ⟨t.val, p⟩ = none)\n      (finished",
+    "new": "(unpublished : True)\n      (finished",
+    "targets": ["LeanNCD.Semantics.Soundness"],
+    "expect": ["Invariants.lean:189:59: Application type mismatch"]
+  },
+  {
+    "label": "M03 double consumption allowed", "task": "02-invariants-soundness",
+    "file": "LeanNCD/Semantics/Machine.lean",
+    "old": "(pending : o ∈ c.pending t)\n      (evaluated : evalReady ops c.published (P.body t o.1) o.2 = .evaluated (some v))",
+    "new": "(pending : True)\n      (evaluated : evalReady ops c.published (P.body t o.1) o.2 = .evaluated (some v))",
+    "targets": ["LeanNCD.Semantics.Soundness"],
+    "expect": ["Invariants.lean:186:61: Application type mismatch"]
+  },
+  {
+    "label": "M04 undefined consumed as value", "task": "02-invariants-soundness",
+    "file": "LeanNCD/Semantics/Machine.lean",
+    "old": "(evaluated : evalReady ops c.published (P.body t o.1) o.2 = .evaluated (some v))",
+    "new": "(evaluated : evalReady ops c.published (P.body t o.1) o.2 = .evaluated none)",
+    "targets": ["LeanNCD.Semantics.Soundness"],
+    "expect": ["Invariants.lean:186:69: Application type mismatch"]
+  },
+  {
+    "label": "M05 consumed tag not erased", "task": "02-invariants-soundness",
+    "file": "LeanNCD/Semantics/Machine.lean",
+    "old": "Function.update c.pending t ((c.pending t).erase o)",
+    "new": "Function.update c.pending t (c.pending t)",
+    "targets": ["LeanNCD.Semantics.Soundness"],
+    "expect": ["Invariants.lean:70:11: `simp` made no progress"]
+  },
+  {
+    "label": "M06 zero contribution substituted", "task": "02-invariants-soundness",
+    "file": "LeanNCD/Semantics/Machine.lean",
+    "old": "then v else 0),", "new": "then 0 else 0),",
+    "targets": ["LeanNCD.Semantics.Soundness"],
+    "expect": ["Invariants.lean:132:6: Type mismatch: After simplification"]
+  },
+  {
+    "label": "M07 prior accumulator discarded", "task": "02-invariants-soundness",
+    "file": "LeanNCD/Semantics/Machine.lean",
+    "old": "c.accumulators t p + if P.destination", "new": "0 + if P.destination",
+    "targets": ["LeanNCD.Semantics.Soundness"],
+    "expect": ["Invariants.lean:126:8: Type mismatch: After simplification"]
+  },
+  {
+    "label": "M08 publication substitutes zero", "task": "02-invariants-soundness",
+    "file": "LeanNCD/Semantics/Machine.lean",
+    "old": "(some (c.accumulators t p)),", "new": "(some (0 : K (σ.signature t.val).sort)),",
+    "targets": ["LeanNCD.Semantics.Soundness"],
+    "expect": ["Invariants.lean:164:48: Type mismatch: After simplification"]
+  },
+  {
+    "label": "M09 publication clears accumulators", "task": "02-invariants-soundness",
+    "file": "LeanNCD/Semantics/Machine.lean",
+    "old": "c.accumulators, c.pending⟩", "new": "(fun _ _ => 0), c.pending⟩",
+    "targets": ["LeanNCD.Semantics.Soundness"],
+    "expect": ["Invariants.lean:155:18: Application type mismatch"]
+  },
+  {
+    "label": "M10 blocked read raised as failure", "task": "02-invariants-soundness",
+    "file": "LeanNCD/Semantics/Machine.lean",
+    "old": "(evaluated : evalReady ops c.published (P.body t o.1) o.2 = .evaluated none) :",
+    "new": "(evaluated : evalReady ops c.published (P.body t o.1) o.2 = .notReady) :",
+    "targets": ["LeanNCD.Semantics.Soundness"],
+    "expect": ["Invariants.lean:192:35: Application type mismatch"]
+  },
+  {
+    "label": "M11 completion checks only outputs", "task": "02-invariants-soundness",
+    "file": "LeanNCD/Semantics/Machine.lean",
+    "old": "∧ ∀ a, (c.published a).isSome = true",
+    "new": "∧ ∀ a, P.output a.1 = true → (c.published a).isSome = true",
+    "targets": ["LeanNCD.Semantics.Soundness"],
+    "expect": ["Machine.lean:78:31: Application type mismatch"]
+  },
+  {
+    "label": "M12 valuation tags collapsed", "task": "02-invariants-soundness",
+    "file": "LeanNCD/Semantics/Machine.lean",
+    "old": "pending := fun _ => Finset.univ",
+    "new": "pending := fun _ => Finset.univ.filter (fun o => o.2.val.val = 0)",
+    "targets": ["LeanNCD.Semantics.Soundness"],
+    "expect": ["Invariants.lean:97:25: Application type mismatch"]
+  }
+]

@@ -1,0 +1,15 @@
+{
+  "prototype_base": "53bcbbd610a1791a5a769a40e33fd47b5a3abc7e",
+  "rehearsal_base": "2e850b14aa6eb91f05373a6a9afea98c55a6ed80",
+  "rehearsal_candidate_tree": "f7a2f59ab5659a3b8c8436ff90edf2e58dfae946",
+  "protected_inputs_equal": 16,
+  "source_restored": true,
+  "patch_sha256": {
+    "01-machine.patch": "b864ebaca0846d85655431368c952d9c5c7cdcf0213c78bbabe6b17ba767446a",
+    "02-invariants-soundness.patch": "3f5b756c22416ee42a8bb380d3433eddf72845e56e4a931d54e62ddfa6e6f456",
+    "03-fixtures-integration.patch": "6dcdfaf1ef54cb6c8b9c80dc99dff3361cea43beb473c602fea10c4796c81935"
+  },
+  "production_mutations_passed": 12,
+  "fixture_contrasts_passed": 12,
+  "candidate_full_build_jobs": 8695
+}
