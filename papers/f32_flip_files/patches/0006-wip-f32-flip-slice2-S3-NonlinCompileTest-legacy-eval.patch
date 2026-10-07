@@ -1,0 +1,43 @@
+From fdd046e746d18352e6d621151f541d6f6b42d45c Mon Sep 17 00:00:00 2001
+From: William Macready <william.macready@gmail.com>
+Date: Sun, 4 Oct 2026 15:31:44 -0700
+Subject: [PATCH 6/7] wip(f32-flip-slice2): S3 NonlinCompileTest legacy
+ evaluator calls use explicitF64 (unverified)
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+---
+ leanncd/test/Eval/Plan/NonlinCompileTest.lean | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/leanncd/test/Eval/Plan/NonlinCompileTest.lean b/leanncd/test/Eval/Plan/NonlinCompileTest.lean
+index 217b4af..9ff767a 100644
+--- a/leanncd/test/Eval/Plan/NonlinCompileTest.lean
++++ b/leanncd/test/Eval/Plan/NonlinCompileTest.lean
+@@ -45,13 +45,13 @@ def sourceCompileCauseOf (p : TLProgram) (inputs : HashMap String DenseTensor) :
+     a program — used by the legacy-narrowing fixtures, which need to show `evalScheduled` accepts
+     what `prepareEvalPlan` now rejects. -/
+ def legacyAccepts (p : TLProgram) (inputs : HashMap String DenseTensor) : Bool :=
+-  match TLProgram.eval p inputs with
++  match TLProgram.eval p.explicitF64 inputs with
+   | .ok _ => true
+   | .error _ => false
+ 
+ /-- The legacy evaluator's typed rejection of a program, `none` if it accepts it. -/
+ def legacyErrorOf (p : TLProgram) (inputs : HashMap String DenseTensor) : Option EvalError :=
+-  match TLProgram.eval p inputs with
++  match TLProgram.eval p.explicitF64 inputs with
+   | .ok _ => none
+   | .error f => some f.error
+ 
+@@ -344,7 +344,7 @@ uniform row). Softmax excludes masked entries from the row MAXIMUM as well as th
+ /-- The legacy reference evaluator's output tensor for one named key, `none` on any failure. -/
+ def sourceEvalOf (p : TLProgram) (inputs : HashMap String DenseTensor) (key : String) :
+     Option DenseTensor :=
+-  match TLProgram.eval p inputs with
++  match TLProgram.eval p.explicitF64 inputs with
+   | .error _ => none
+   | .ok report => report.env[key]?
+ 
+-- 
+2.50.1 (Apple Git-155)
+

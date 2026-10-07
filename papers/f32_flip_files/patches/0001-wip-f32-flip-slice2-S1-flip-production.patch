@@ -1,0 +1,126 @@
+From fd470d837aa9f8aeacbad80314454ac20f228deb Mon Sep 17 00:00:00 2001
+From: William Macready <william.macready@gmail.com>
+Date: Sun, 4 Oct 2026 15:26:24 -0700
+Subject: [PATCH 1/7] wip(f32-flip-slice2): S1 flip (production)
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+---
+ leanncd/LeanNCD/DSL/Ast.lean             | 14 +++++++-------
+ leanncd/LeanNCD/Eval/Plan/Compile.lean   |  8 ++++----
+ leanncd/LeanNCD/Eval/Plan/Signature.lean | 13 +++++++------
+ papers/f32_flip_slice2_log.md            |  3 +++
+ 4 files changed, 21 insertions(+), 17 deletions(-)
+ create mode 100644 papers/f32_flip_slice2_log.md
+
+diff --git a/leanncd/LeanNCD/DSL/Ast.lean b/leanncd/LeanNCD/DSL/Ast.lean
+index 695513d..a762865 100644
+--- a/leanncd/LeanNCD/DSL/Ast.lean
++++ b/leanncd/LeanNCD/DSL/Ast.lean
+@@ -272,8 +272,8 @@ inductive StorageKind
+ /-- The storage constraint one declaration places on a schedule, or `none` if it places none.
+ 
+     * an explicit `.typedTensor`/`.typedLinear` commits to the storage its element type names:
+-      `.f32` to `.float32`, and `.f64` (the explicit spelling of the default) to `.float64`;
+-    * `.tensor` and `.linear` are the binary64 spellings and commit to `.float64`;
++      `.f32` to `.float32`, and `.f64` (the explicit binary64 spelling) to `.float64`;
++    * `.tensor` and `.linear` are the default (binary32) spellings and commit to `.float32`;
+     * `.predicate` is PRECISION-NEUTRAL — a Boolean tensor is `{0,1}` data whose algebra, not its
+       precision, is what the declaration names, so it constrains nothing and inherits whatever
+       precision the rest of the schedule establishes;
+@@ -295,20 +295,20 @@ def storageConstraintOfDecl : Decl → Option StorageKind
+   | .typedLinear .f64 _ _ _ => some .float64
+   | .typedTensor .complex64 _ _ | .typedTensor .complex128 _ _
+   | .typedLinear .complex64 _ _ _ | .typedLinear .complex128 _ _ _ => none   -- UNREACHABLE (above)
+-  | .tensor _ _           => some .float64
+-  | .linear _ _ _         => some .float64
++  | .tensor _ _           => some .float32
++  | .linear _ _ _         => some .float32
+   | .predicate _ _        => none
+   | .axis _ _             => none
+   | .iter _ _             => none
+ 
+ /-- The storage constraint a USED tensor name places on a schedule, under a declaration
+-    environment. An UNDECLARED name is a real f64 tensor — the same default `dtypeOfDecl`
+-    (`Eval/Plan/Signature.lean`) applies to `none` — so it constrains storage to `.float64`; a
++    environment. An UNDECLARED name is a real f32 tensor — the same default `dtypeOfDecl`
++    (`Eval/Plan/Signature.lean`) applies to `none` — so it constrains storage to `.float32`; a
+     declared name defers to `storageConstraintOfDecl`. -/
+ def storageConstraintOfName? (env : DeclEnv) (nm : String) : Option StorageKind :=
+   match env[nm]? with
+   | some d => storageConstraintOfDecl d
+-  | none   => some .float64
++  | none   => some .float32
+ 
+ /-- The tensor name a stmt writes to (its LHS). -/
+ def Stmt.lhsName : Stmt → String
+diff --git a/leanncd/LeanNCD/Eval/Plan/Compile.lean b/leanncd/LeanNCD/Eval/Plan/Compile.lean
+index 617f267..5d0089a 100644
+--- a/leanncd/LeanNCD/Eval/Plan/Compile.lean
++++ b/leanncd/LeanNCD/Eval/Plan/Compile.lean
+@@ -1407,7 +1407,7 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
+     , boundaryPolicy := .zeroThenBaseOverlay
+     , snapshotPolicy := .immutablePreStep }
+   let stateSigs : Array TensorSignature := (Array.range stateNames.size).map (fun si =>
+-    { shape := stateShapes.getD si #[], dtype := stateDtypes.getD si .f64 })
++    { shape := stateShapes.getD si #[], dtype := stateDtypes.getD si .f32 })
+   return { raw, stateNames, stateSigs }
+ 
+ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
+@@ -1473,9 +1473,9 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
+   -- A MIXED f32/f64 schedule is rejected outright, naming the first used name that disagrees with
+   -- the kind an earlier used name established: nothing in this compiler or either worker expresses
+   -- a per-tensor precision boundary, so a mixed graph has no defined meaning to compile. An
+-  -- UNDECLARED external is a real f64 tensor (`storageConstraintOfName?`, `DSL/Ast.lean`, mirroring
+-  -- `dtypeOfDecl none = .f64`), so an f32 graph reading one is mixed and is rejected here — every
+-  -- real external in an f32 graph must be declared `tensor f32`.
++  -- UNDECLARED external is a real f32 tensor (`storageConstraintOfName?`, `DSL/Ast.lean`, mirroring
++  -- `dtypeOfDecl none = .f32`), so an f64 graph reading one is mixed and is rejected here — every
++  -- real external in an f64 graph must be declared `tensor f64`.
+   --
+   -- A HOMOGENEOUS f32 schedule is now ADMITTED and specialized through the binary32 checker (the f32
+   -- slice's Task 2 replaced Task 1's temporary blanket stop here). `storage` selects Step B's
+diff --git a/leanncd/LeanNCD/Eval/Plan/Signature.lean b/leanncd/LeanNCD/Eval/Plan/Signature.lean
+index 8025cbb..0e691fe 100644
+--- a/leanncd/LeanNCD/Eval/Plan/Signature.lean
++++ b/leanncd/LeanNCD/Eval/Plan/Signature.lean
+@@ -30,9 +30,10 @@ def InputSignature.ofDenseInputs (inputs : HashMap String DenseTensor) : InputSi
+       (fun acc (nm, t) => acc.insert nm { shape := t.shape.toArray, dtype := .f64 }) {} }
+ 
+ /-- The top-level destination/signature dtype a declaration commits its name to: `f32` for an
+-    explicit `f32` declaration (`tensor f32 …` or `linear f32 …`), `bool` for exactly a `.predicate`
+-    declaration, `f64` for every other declaration (including explicit `tensor f64 …`/`linear f64 …`)
+-    AND for no declaration at all (an undeclared external name). Shared by
++    explicit `f32` declaration (`tensor f32 …` or `linear f32 …`), for a plain `tensor`/`linear`
++    declaration AND for no declaration at all (an undeclared external name); `bool` for exactly a
++    `.predicate` declaration; `f64` for an explicit `tensor f64 …`/`linear f64 …` and for
++    `.axis`/`.iter` (which name no tensor). Shared by
+     `ofDenseInputsForDecls` below (the external-signature side) and `Compile.lean`'s
+     `prepareEvalPlan` (the produced/destination side, Step B and Step D) — one rule, not two
+     independently-drifting copies.
+@@ -63,11 +64,11 @@ def dtypeOfDecl : Option Decl → ScalarDType
+   | some (.typedTensor .complex64 _ _) | some (.typedTensor .complex128 _ _)
+   | some (.typedLinear .complex64 _ _ _) | some (.typedLinear .complex128 _ _ _) => .bool  -- UNREACHABLE
+   | some (.predicate _ _) => .bool
+-  | some (.tensor _ _) => .f64
+-  | some (.linear _ _ _) => .f64
++  | some (.tensor _ _) => .f32
++  | some (.linear _ _ _) => .f32
+   | some (.axis _ _) => .f64
+   | some (.iter _ _) => .f64
+-  | none => .f64
++  | none => .f32
+ 
+ /-- Rebuild the declaration environment a declaration-aware constructor answers every question
+     against, or fail loud with `buildDeclEnv`'s own `CompileError` wrapped in the constructor's error
+diff --git a/papers/f32_flip_slice2_log.md b/papers/f32_flip_slice2_log.md
+new file mode 100644
+index 0000000..1e78357
+--- /dev/null
++++ b/papers/f32_flip_slice2_log.md
+@@ -0,0 +1,3 @@
++# f32 flip slice 2 prototype log
++
++- S1: applied the 4 one-line flips (Ast storageConstraintOfDecl tensor/linear + storageConstraintOfName? undeclared, Signature dtypeOfDecl tensor/linear/none, Compile.lean line 1410 stateSigs fallback) plus the old-default docstrings/comment. CLAIMED only, targeted build of LeanNCD pending (next entry).
+-- 
+2.50.1 (Apple Git-155)
+
