@@ -76,3 +76,52 @@ feeds the Task 6 site table):
 | Scatter32OracleTest | 41, 44, 47, 55 | `compile32`/`run32` binary32 leg | no (`tensor f32` declared; default irrelevant) |
 | Scatter32OracleTest | 103, 106, 109, 112 | `run64` binary64 leg | no code change; its inputs (the O1/O5 `contrast64` programs) now spell `tensor f64` |
 | Scatter32OracleTest | 12, 98 | doc comments | line 98 "(ordinary declarations)" -> "(`tensor f64` declarations)" |
+
+## Task 4a CompileTest (VERIFIED classification)
+
+Targeted build `Eval.Plan.CompileTest` after Task 3 (default flipped), before any edit to the module:
+exactly 71 failing assertions (`^error: test/Eval/Plan/CompileTest.lean` lines; 61 `#guard`, 10
+`run_cmd` throws), the one `lake` job failure. Class (iii): none. The module is a hand-built-schedule
+file: every fixture is its own `ScheduledProgram` literal, so there is no single compile wrapper (the
+only `compileToScheduled` calls are `warnBaselinePrepared` and the `warnProg` `run_cmd`); the helper
+level is the schedule definitions themselves. Many assertions share one schedule, so 71 failures
+collapse to 20 groups. Split: class (i) 56 assertions (lever at the schedule definition), class (ii)
+15 assertions (they pin the old default; 4b).
+
+| group (fixture) | failing lines | n | what failed | class | 4a fix |
+|---|---|---|---|---|---|
+| `identitySched` (undeclared `X`/`Y`) | 481, 721, 728 | 3 | `prepareEvalPlan identitySched identitySig` rejects: `X` is `.float32`, the carrier is `Float` (`storageKindMismatch`); 721/728 then fail the same way rather than reach their Step-B cause. Their prose ("`X` is undeclared ... `dtypeOfDecl none = .f64`") is stale once `X` is declared `f64` | (i) | `explicitF64Sched` over the literal; prose rewrite is 4b |
+| `f64PointwiseSched` (`identitySched` with a relu; "X/Y stay undeclared and default to `.f64`") | 1096, 1098, 1101 | 3 | inherits `identitySched`'s undeclared names | (i) now, prose stale (the plan's named `axI1` fixture) | none beyond `identitySched`; it becomes an explicit-`f64` control; prose rewrite is 4b |
+| `contractSched` | 500, 528-533, 535 | 8 | undeclared `A`/`B`/`Y` over `Float` | (i) | `explicitF64Sched` |
+| `multiReductionSched` | 563, 568, 570, 572, 574, 577, 581, 585 | 8 | same, `A`/`B`/`C`/`Y` | (i) | `explicitF64Sched` |
+| `repeatSched` | 606, 610, 613 | 3 | same, `A`/`B`/`Y`/`Z` | (i) | `explicitF64Sched` |
+| `repeatPredSched` (`repeatSched` + `predicate Y`) | 630, 639, 652, 659, 670, 681, 690, 694 | 8 | same, `A`/`B`/`Z`; `Y` is a predicate | (i) | `explicitF64Sched` over a literal decl list (it cannot append to an already-wrapped `repeatSched.decls`: duplicate `Y`) |
+| `sameShapeSched` | 1405, 1408 | 2 | same, undeclared `A`/`B`/`Y` | (i) | `explicitF64Sched` |
+| `extraCachedSched` (`sameShapeSched` donor) | 1459, 1461 | 2 | inherits | (i) | inherits |
+| `orderedTwinSched` | 1555, 1557, 1561 | 3 | undeclared `A`/`B`/`Y`/`Z` over `Float` | (i) | `explicitF64Sched` |
+| `warnProg` compile (`warnBaselinePrepared`, the warnings `run_cmd`) | 1607 | 1 | `X`/`Y` undeclared in the `tlprog!` source | (i) | `warnProg.explicitF64.compileToScheduled` at both calls |
+| `cacheSchedWith` | 1661, 1663, 1665, 1666, 1673, 1700 | 6 | undeclared `X`/`Y` over `Float` | (i) | `explicitF64Sched` |
+| `axShadowSched` (valid axis-shadow sibling) | 1746 | 1 | `A`/`B` undeclared; `evalScheduled` refuses (`unsupportedDtype`, declared `f32`) | (i) | `explicitF64Sched` (`Y` is a predicate: skipped) |
+| `predSchedWith`, valid sibling | 1906 | 1 | plain `tensor A`/`B` now `f32` | (i) | re-spell `.typedTensor .f64` at source |
+| `predRealDestSched`, control | 1928 | 1 | plain `tensor A`/`B`/`Y` | (i) | re-spell `.typedTensor .f64` at source |
+| `scanPredSchedWith`, valid Boolean scan sibling | 2017 | 1 | plain `tensor X`/`A` | (i) | re-spell at source |
+| read-rank valid sibling (`rankSched`) | 2185 | 1 | plain `tensor X`, undeclared `Y` | (i) | `explicitF64Sched` plus re-spell `X` |
+| `rankScanSched` valid scan sibling | 2314 | 1 | plain `tensor A`/`S` | (i) | re-spell at source |
+| `validAxisKindSched` (`plainAxisKindSched`) | 2442 | 1 | plain `tensor X`/`Y` | (i) | re-spell at source (helper's `X`, the valid sibling's `Y`) |
+| `f32MixedDeclOrderSched` (declaration order: `Y` f32, `X` "ordinary") | 825 | 1 | plain `tensor X` is now f32: no mix, no rejection | (i) | re-spell `X` `.typedTensor .f64` (the point is used-name ORDER, not the default) |
+| `f32MixedScatterReluProg` (FW2b, Step 0b before Step A) | 1326 | 1 | same, plain `tensor X` | (i) | re-spell `X` `.typedTensor .f64` |
+| f32 identity "Control: the SAME program in the untyped (f64) spelling" | 786, 791 | 2 | plain `.tensor X/Y` pinned `.float64`/`admittedAlgebra`: now f32 | (ii) | 4b: re-pin to the new meaning (or spell `f64`), stale prose |
+| `f32MixedUndeclaredSched` ("An undeclared external therefore stays f64") | 838 | 1 | undeclared `X` pinned as the f64 side of a mixed schedule: now f32, no conflict | (ii) | 4b: the mismatch direction inverts |
+| `plainIdentitySched` vs `f64IdentitySched` | 865, 868, 870 | 3 | plain `.tensor` pinned equal to explicit `f64` | (ii) | 4b |
+| `plainLinearSched` vs `f64LinearSched` ("untyped `linear` is unchanged") | 930, 931, 934, 935 | 4 | plain `.linear` pinned equal to explicit `linear f64` / `.float64` / `admittedAlgebra` | (ii) | 4b |
+| `f32LinearMixedSched` (plain `.linear X` as "the f64 side") | 944 | 1 | plain `.linear` is f32: no mix | (ii) | 4b |
+| `declaredBSched` ("`A` stays undeclared (expects `f64`)") | 1422, 1427, 1439, 1448 | 4 | undeclared `A`/`Y` + `f64` signature; Variant 2 pins `dtypeMismatch "A" .f64 .bool` | (ii) | 4b (the plan's named Boolean-validation fixture); 4a keeps `A`/`Y` undeclared by giving it its own decl list |
+
+Counts: (i) 3+3+8+8+3+8+2+2+3+1+6+1+1+1+1+1+1+1+1+1 = 56; (ii) 2+1+3+4+1+4 = 15; total 71.
+
+Fixtures that already PASS and stay untouched (rejection fixtures decided before the storage step, so the carrier
+is never consulted): `dupDeclSched`, `predDupSched`, `predTwoStmtSched`, `predUnreadableSched`, the
+`assertPredicateParity` rejection family, `selfReadSched`, `outOfOrderSched`, every `rank*` rejection
+fixture and `rankScanDestinationSched`, `plainAxisKindSched`/`scanAxisKindSched` rejection fixtures.
+They stay as written: wrapping them would change which pass reports the error (`rankProducedSched`'s
+point is an UNDECLARED produced name).
