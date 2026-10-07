@@ -1,5 +1,6 @@
 import LeanNCD.Eval.Entry
 import LeanNCD.Eval.Plan.Adapter
+import Eval.ExplicitF64
 
 /-!
 # Thread 4 (nonlinearity) Task 3 — source compiler tests
@@ -17,7 +18,7 @@ this file is compile-tier only, downstream of preflight.
 -/
 
 namespace LeanNCD.Eval.Plan.NonlinCompileTest
-open LeanNCD LeanNCD.Eval LeanNCD.Eval.Plan
+open LeanNCD LeanNCD.Eval LeanNCD.Eval.Plan LeanNCD.Eval.ExplicitF64
 open Std
 
 /-- Local tensor-literal helper, mirroring `Eval/Portfolio/Harness.lean`'s `tl` (not imported here
@@ -36,7 +37,7 @@ def compileCauseOf (r : Except PlanCompileFailure PreparedPlan) : Option PlanCom
     fixture below is expected to fail source compilation itself. -/
 def sourceCompileCauseOf (p : TLProgram) (inputs : HashMap String DenseTensor) :
     Option PlanCompileCause :=
-  match p.compileToScheduled.run 0 with
+  match p.explicitF64.compileToScheduled.run 0 with
   | .error _ _ => none
   | .ok sched _ => compileCauseOf (prepareEvalPlan sched (InputSignature.ofDenseInputs inputs))
 
@@ -44,13 +45,13 @@ def sourceCompileCauseOf (p : TLProgram) (inputs : HashMap String DenseTensor) :
     a program — used by the legacy-narrowing fixtures, which need to show `evalScheduled` accepts
     what `prepareEvalPlan` now rejects. -/
 def legacyAccepts (p : TLProgram) (inputs : HashMap String DenseTensor) : Bool :=
-  match TLProgram.eval p inputs with
+  match TLProgram.eval p.explicitF64 inputs with
   | .ok _ => true
   | .error _ => false
 
 /-- The legacy evaluator's typed rejection of a program, `none` if it accepts it. -/
 def legacyErrorOf (p : TLProgram) (inputs : HashMap String DenseTensor) : Option EvalError :=
-  match TLProgram.eval p inputs with
+  match TLProgram.eval p.explicitF64 inputs with
   | .ok _ => none
   | .error f => some f.error
 
@@ -61,7 +62,7 @@ def legacyErrorOf (p : TLProgram) (inputs : HashMap String DenseTensor) : Option
     `.assign → .pointwise`/`.axiswise` chain end-to-end, not just that it type-checks. -/
 def compiledEqB (p : TLProgram) (inputs : HashMap String DenseTensor) (key : String)
     (expect : DenseTensor) : Bool :=
-  match p.compileToScheduled.run 0 with
+  match p.explicitF64.compileToScheduled.run 0 with
   | .error _ _ => false
   | .ok sched _ =>
       match prepareEvalPlan sched (InputSignature.ofDenseInputs inputs) with
@@ -85,9 +86,12 @@ def axQ1 : AxisSpec := { name := "q", uid := 101, kind := .nat }
 def axS1 : AxisSpec := { name := "s", uid := 102, kind := .real }
 
 def axiswiseSched (slots : List LHSSlot) (nonlin : Nonlin) : ScheduledProgram :=
-  { decls := [.axis axQ1 (some 2), .axis axS1 (some 2)]
-  , stmts := [.plain (.assign "Y" slots
-      { body := { terms := [{ factors := [.read "A" [.axis axQ1, .axis axS1]] }] }, nonlin })]
+  let stmt : Stmt := .assign "Y" slots
+    { body := { terms := [{ factors := [.read "A" [.axis axQ1, .axis axS1]] }] }, nonlin }
+  -- `A`/`Y` are declared `f64` explicitly: undeclared names are binary32 since the default flip,
+  -- while `axiswiseSig` (the `Float` carrier) is binary64.
+  { decls := explicitF64Decls [.axis axQ1 (some 2), .axis axS1 (some 2)] [stmt]
+  , stmts := [.plain stmt]
   , env := {}, extNames := insert "A" (∅ : Finset String)
   , explicitSizes := ((({} : HashMap UID Nat).insert axQ1.uid 2).insert axS1.uid 2) }
 
@@ -257,7 +261,7 @@ def reluProg : TLProgram := tlprog!{ H[i] := relu(W[i, j] · x[j]) }
 def reluProgInputs : HashMap String DenseTensor :=
   HashMap.ofList [("W", tl [2,2] [1,-1, -2,1]), ("x", tl [2] [1,1])]
 def reluProgPrepared : Option PreparedPlan := Id.run do
-  match reluProg.compileToScheduled.run 0 with
+  match reluProg.explicitF64.compileToScheduled.run 0 with
   | .error _ _ => none
   | .ok sched _ => (prepareEvalPlan sched (InputSignature.ofDenseInputs reluProgInputs)).toOption
 
@@ -276,7 +280,7 @@ def softmaxProg : TLProgram := tlprog!{ Y[q, s.] := softmax(A[q, s]) }
 def softmaxProgInputs : HashMap String DenseTensor :=
   HashMap.ofList [("A", tl [2,2] [0, 0, 0, Float.log 3])]
 def softmaxProgPrepared : Option PreparedPlan := Id.run do
-  match softmaxProg.compileToScheduled.run 0 with
+  match softmaxProg.explicitF64.compileToScheduled.run 0 with
   | .error _ _ => none
   | .ok sched _ => (prepareEvalPlan sched (InputSignature.ofDenseInputs softmaxProgInputs)).toOption
 
@@ -340,7 +344,7 @@ uniform row). Softmax excludes masked entries from the row MAXIMUM as well as th
 /-- The legacy reference evaluator's output tensor for one named key, `none` on any failure. -/
 def sourceEvalOf (p : TLProgram) (inputs : HashMap String DenseTensor) (key : String) :
     Option DenseTensor :=
-  match TLProgram.eval p inputs with
+  match TLProgram.eval p.explicitF64 inputs with
   | .error _ => none
   | .ok report => report.env[key]?
 
