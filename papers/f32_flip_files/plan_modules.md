@@ -316,3 +316,41 @@ assertions in ScanCompileTest, each "did not evaluate to `true`": the new pin (7
 and 6 of the 8 re-homed rejection fixtures (896, 1041, 1065, 1079, 1082, 1101). The two capability fixtures
 (the 1218/2149 pair at `380bffc`) are default-insensitive (`emptySig`, capability decided first). Everything else in the module is
 explicit `f64` after 5a, hence insensitive to the default by construction.
+
+## Task 6a AdapterTest + Adapter32Test (VERIFIED classification, measured before any edit)
+
+Targeted builds after Task 5 (default flipped), before any edit. Both modules are `run_cmd`/`throwError`
+files: each failing `run_cmd` stops at its first throw, so the counts below are failing COMMANDS and a
+fixed command may expose later throws inside it (re-measured after the fix). No `maximum number of
+errors` cap hit. Total 13 failing, under the ~60 split threshold, so both modules are fixed in this
+dispatch. No class (iii): no `storageKindMismatch` in AdapterTest (its all-predicate `predIdentityProg`
+run_cmd, the Rule 14 parked item, passes), and the one `storageKindMismatch` in Adapter32Test is an
+`InputSignature.ofDenseInputsForDecls` over an undeclared binary64 twin (class (i), not a default of
+`deriveStorageKind`).
+
+`Eval.Plan.AdapterTest` (8521 jobs, one failing): 9 failing `run_cmd`, every one
+`inputSignature: dtypeMismatch "A" f32 f64` (undeclared names now f32 vs the binary64 `Float` env).
+
+| group | failing lines | n | what failed | class | fix |
+|---|---|---|---|---|---|
+| `zeroCoeffProg` (round trip incl. unwrapped `TLProgram.eval`; six-fixture batch) | 95, 181 | 2 | undeclared `A`/`B`/`Y` | (i) | `.explicitF64` on the `tlprog!` def |
+| `swapProg` | 294 | 1 | same | (i) | same |
+| `warnProg` (incl. unwrapped `TLProgram.eval`) | 382 | 1 | same | (i) | same |
+| `ScanCompileTest.scratchSched` fixtures (Checks 11, 12) | 454, 486 | 2 | undeclared scan names, carrier f64 | (i) | `ScanCompileTest.explicitF64Sched` at the call sites |
+| `scanWarnSched` (incl. unwrapped `evalScheduled`) | 547 | 1 | same | (i) | wrap at the call sites (the public def stays undeclared: `DifferentialTest` reuses it) |
+| Check 16 loop over scratch/coupled/multiBase/twoScans | 600 | 1 | same | (i) | wrap `sched` inside the loop |
+| `logDomainProg` | 886 | 1 | undeclared `A`/`E` | (i) | `.explicitF64` on the def |
+
+`Eval.Plan.Adapter32Test` (8522 jobs, one failing): 4 failing `run_cmd`, all class (i) in the BINARY64
+TWIN legs (the f32 legs declare `tensor f32` and are green).
+
+| failing line | fixture | what failed | class | fix |
+|---|---|---|---|---|
+| 265 | fixture 7 `warnProgF64`, unwrapped `TLProgram.eval` | undeclared `X`/`Y`: `unsupported dtype: tensor X is declared f32` | (i) | declare `tensor f64 X(i), Y(i, j)` at source |
+| 331 | fixture 8 `f64ReductionProg` | plain `tensor B(j), Y()` is f32, `ofDenseInputsForDecls` over the f64 env: `storageKindMismatch` | (i) | `tensor f64 B(j), Y()` at source |
+| 647 | fixture 2.10 `expOobProgF64` | undeclared twin vs f64 env: `dtypeMismatch` | (i) | declare `tensor f64 A(i), E(i)` |
+| 765 | fixture 4.5 `f64AttnProg` | plain `tensor Q(q, d), K(s, d), A(q, s)` | (i) | `tensor f64 ...` |
+
+Class (ii): none observed. The module pins no `.float64`-default (`dtypeOfDecl`/`storageKind` of an
+undeclared name); every dtype pin it makes sits on an explicit `tensor f32` program. The CompileTest
+donor (fixture 10) did not fail: Task 4's helper changes held.
