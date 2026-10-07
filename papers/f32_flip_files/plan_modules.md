@@ -29,3 +29,19 @@ fixing those cuts nearly all assertions. NonlinCompileTest: 48 -> 12 after the c
 
 None observed. Only Nonlin (fully) and the SignatureTest pins were read; the 4 other modules were
 not examined, so this is not a clean bill for them.
+
+## Task 2 SignatureTest (VERIFIED classification)
+
+Targeted build `Eval.Plan.SignatureTest` after Task 1 (default flipped): exactly 8 failing assertions,
+at the lines the prototype named. Class (iii): none.
+
+| line | assertion | what failed | class | fix |
+|---|---|---|---|---|
+| 45 | `ofDenseInputsForDecls [] conversionInputs` -> `X` is an `f64` signature | undeclared `X` is now `.float32`; the `Float` carrier is binary64, so the call is a `storageKindMismatch`. The fixture is the Float-buffer -> `f64`-signature conversion baseline (the third outcome beside bool and rejected) | (i) | declare `.typedTensor .f64 "X" []` so the f64 conversion pin stays; ADD the undeclared neighbour pinned to `.error (.storageKindMismatch "X" .float64 .float32)` (the new default, class (ii)) |
+| 90 | `dtypeOfDecl (some (.tensor "X" [])) == .f64` | plain `tensor` is now binary32 | (ii) | re-pin `.f32`; comment that `.typedTensor .f64` is the binary64 spelling |
+| 99 | `storageConstraintOfDecl (.tensor "X" []) == some .float64` | same | (ii) | re-pin `.float32` |
+| 109 | `storageConstraintOfDecl (.linear "W" [] false) == some .float64` | same | (ii) | re-pin `.float32` |
+| 113 | `dtypeOfDecl (some (.linear "W" [] false)) == .f64` | same | (ii) | re-pin `.f32` |
+| 137 | `gn2Prog` `run_cmd`: `X` dtype `f64` via `ofDenseInputsForDecls sched.decls` over a Float env | `X` undeclared -> `.float32`, `storageKindMismatch "X" .float64 .float32` | (i) | compile `gn2Prog.explicitF64` (undeclared names declared `tensor f64`) |
+| 426 | `ofDenseInputs32ForDecls [.typedTensor .f32 "X" [], .tensor "Z" []]` rejects `Z` with `(.float32, .float64)` | plain `tensor Z` is now binary32, so there is no disagreement over the f32 carrier | (i) | re-spell `.typedTensor .f64 "Z" []` at source (the fixture's point is an explicit binary64 declaration among f32 ones) |
+| 443 | `ofDenseInputs32ForDecls [.tensor "X" []] soleInput32` rejects | plain `tensor X` is binary32, so the native Float32 buffer is accepted | (ii) | re-pin to ACCEPT (`f32` signature, shape `[2, 3]`); ADD the nearest still-rejecting neighbour `[.typedTensor .f64 "X" []]` -> `storageKindMismatch "X" .float32 .float64` |
