@@ -354,3 +354,40 @@ TWIN legs (the f32 legs declare `tensor f32` and are green).
 Class (ii): none observed. The module pins no `.float64`-default (`dtypeOfDecl`/`storageKind` of an
 undeclared name); every dtype pin it makes sits on an explicit `tensor f32` program. The CompileTest
 donor (fixture 10) did not fail: Task 4's helper changes held.
+
+### Task 6a AdapterTest + Adapter32Test: result and the Task 6 site table input (VERIFIED by targeted build and mutation)
+
+After: `Eval.Plan.AdapterTest` green (8521 jobs), `Eval.Plan.Adapter32Test` green (8522 jobs). 13 failing
+`run_cmd` before (9 + 4), 0 after; all class (i), no class (ii), no class (iii). No `LeanNCD/` change. Levers:
+AdapterTest `TLProgram.explicitF64` on the four `tlprog!` defs plus `ScanCompileTest.explicitF64Sched` at the
+scan call sites (scratch, coupled, multiBase, twoScans, `scanWarnSched`: public def left undeclared for
+`DifferentialTest`); Adapter32Test `tensor f64` at source on the four binary64 twins (`warnProgF64`,
+`f64ReductionProg`, `expOobProgF64`, `f64AttnProg`). No `bias` keyword issue: neither module adds the
+`Eval.ExplicitF64` import itself (AdapterTest already gets it via `ScanCompileTest`, Adapter32Test needs none).
+
+Mutation (`dtypeOfDecl` `.tensor`/`.linear`/`none` arms back to `.f64`, restored by `git checkout --`):
+neither module has a failing assertion. Both are explicit (`f64` twins, `f32` programs) after the fix, so
+they are default-insensitive by construction. Run with mutated production oleans (`lake build
+LeanNCD.Eval.Plan.Adapter LeanNCD.Eval.Entry`, 8517 jobs) then `lean <module>` directly, because the
+upstream test modules (`ScanCompileTest`, `GraphCheckTest`) themselves fail under the mutation and would
+block a lake build of the downstream module; the same harness on `CompileTest` reproduced its 15 known
+failures (805, 810, 871, ...), so the silence is not a harness artifact.
+
+Site table (token counts of `rg -o "ofDenseInputs|prepareEvalPlan|compileToScheduled|TLProgram\.eval|evalScheduled|ScheduledProgram|runPreparedDense"`,
+prose and comments included; matching LINES before the fix: AdapterTest 49, Adapter32Test 53):
+
+| module | helper / site family | tokens | disposition |
+|---|---|---|---|
+| AdapterTest | `compileToScheduled` (zeroCoeff x2, swap, warn, predIdentity, logDomain) | 6 | wrapped at the source `tlprog!` def (`.explicitF64`); predIdentity declares its predicate, not needed |
+| AdapterTest | `TLProgram.eval` (zeroCoeff, warn) | 2 | wrapped (the progs are `.explicitF64`) |
+| AdapterTest | `prepareEvalPlan` | 12 | wrapped: 5 scan sites via `ScanCompileTest.explicitF64Sched`; 6 `compileToScheduled` sites via the progs; `predIdentity` not needed |
+| AdapterTest | `evalScheduled` (scratchSched, `scanWarnSched`) | 2 | wrapped (`explicitF64Sched` at the call) |
+| AdapterTest | `ofDenseInputs` | 11 | not needed: the carrier IS binary64, the side held fixed |
+| AdapterTest | `runPreparedDense` | 22 | not needed beyond the wrapped schedules (consumes prepared plans) |
+| AdapterTest | `ScheduledProgram` (`scanWarnSched` literal) | 1 | not wrapped on purpose: public, reused by `DifferentialTest`; wrapped at the AdapterTest consumers only |
+| Adapter32Test | `compileToScheduled` | 5 | n.a. for f32 legs (declared `tensor f32`); the 3 binary64 twin sites fixed by `tensor f64` at source |
+| Adapter32Test | `TLProgram.eval` (`warnProgF64`) | 1 | fixed at source (`tensor f64 X(i), Y(i, j)`) |
+| Adapter32Test | `prepareEvalPlan` | 9 | not needed beyond the twin-source fixes |
+| Adapter32Test | `ofDenseInputs` | 4 | not needed: binary64 carrier side held fixed |
+| Adapter32Test | `runPreparedDense` | 37 | not needed (the binary64 runner legs consume the now-f64 twin plans) |
+| Adapter32Test | `evalScheduled`, `ScheduledProgram` | 0 | n.a. |
