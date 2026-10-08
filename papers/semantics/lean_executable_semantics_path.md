@@ -586,7 +586,67 @@ store $\rho$, not evaluation by a Lean driver. Denotation agreement reuses
 `successful_denotation`; it is not a new equation solver. Failing schedules
 may still identify different first undefined occurrences.
 
-### 4.6 Existing validation and its limits
+### 4.6 The computable reference executor
+
+The executor refines the transition relation of [Section 4.3](#43-reference-transitions-and-conservation)
+without redefining it. It lives in
+[`ExecutableState`](../../leanncd/LeanNCD/Semantics/ExecutableState.lean),
+[`ExecutableSelection`](../../leanncd/LeanNCD/Semantics/ExecutableSelection.lean),
+[`ReferenceExecutor`](../../leanncd/LeanNCD/Semantics/ReferenceExecutor.lean), and the
+closed exact-rational profile
+[`RationalReference`](../../leanncd/LeanNCD/Semantics/RationalReference.lean).
+[Section 5.1](#51-landed-computable-reference-machine-refinement) describes the
+API and its supplied inputs. This subsection maps the specification's
+[Part IV](tensor_logic_semantics.md#part-iv-operational-semantics) clauses to
+the definitions that realize them.
+
+| Specification clause | Lean | What it fixes |
+| --- | --- | --- |
+| [Section 24.2](tensor_logic_semantics.md#242-initial-configuration): validate inputs before initialization | `validate`, `validate_accepts`, `validate_preserves`, `validate_error`, `runValidated`, `runValidated_error` | Every tensor's presence must match its role: an absent input, or a supplied defined tensor, is rejected rather than zero-filled, and an empty input must still be present. The first offender in the supplied tensor order is returned. Coordinate shapes are enforced by dependent types, not checked at runtime. |
+| [Sections 25.1-25.3](tensor_logic_semantics.md#25-execution-rules-and-terminal-outcomes): CONTRIBUTE, PUBLISH, UNDEFINED | `Event`, `Event.Legal`, `Event.effect`, `Event.legal_step` | The three constructors are the three rules. `Event.Legal` restates their premises (pending tag and ready value; unpublished address and empty pending fiber; ready undefined body). An `undefined` event reaches `failed t o c`, which keeps the exact pre-failure snapshot `c`. |
+| Updates in Sections 25.1-25.2 | `consume`, `publish`, `consume_agrees`, `publish_agrees` | The computational updates equal the noncomputable `Program.consume` and `Program.publish`. |
+| [Section 23.3](tensor_logic_semantics.md#233-stable-evaluation-from-a-partial-store): waiting is not a ready $\bot$; rules fire in any order | `attempt`, `scan`, `select`, `Schedule` | An attempt is empty when the occurrence is not pending, is not ready, or its publication barrier is unmet. A ready undefined body is an `undefined` event, never a skip. The schedule is a priority order only; selection restarts at its first key after every event, so reversing it changes priority, not the set of eligible edges. |
+| [Section 25.4](tensor_logic_semantics.md#254-completion-and-dependency-blocking): complete and blocked | `completeDecidable`, `fiberDecidable`, `select_none_iff`, `Outcome` | Selection returns nothing exactly when no legal `Step` exists. A noncomplete state with no selection is `blocked`; it is neither success nor an undefined-operation failure. |
+| Section 23.3: available and missing addresses | `observations`, `Observation` | For each pending occurrence, either the actual missing footprint addresses or its ready `Option` value. This inspects the current state; it is not a log of every scan. |
+| [Lemma 26.4](tensor_logic_semantics.md#264-finite-execution-and-progress-for-ranked-programs): the finite measure | `initialBudget`, `initialBudget_agrees`, `runFuel_not_exhausted`, `run_not_exhausted` | The default budget equals the initial `stateMeasure`, which is $\mu+1$ on running states. Any fuel at least the current measure suffices, so the default run is never exhausted. |
+
+The executor's theorems are the following. Each reuses the soundness and
+progress results of Sections 4.4 and 4.5; none is a new equation solver.
+
+| Theorem | Mathematical conclusion | Spec result |
+| --- | --- | --- |
+| `Event.legal_step` | Every selected event is a legal `Step` | Sections 25.1-25.3 |
+| `select_none_iff` | Selection is empty exactly when there is no legal `Step`: completeness as well as soundness of the selector | Section 25.4 |
+| `Execution.reaches` | The typed event path forgets to the existing `Reaches` relation | Section 25 |
+| `run_not_exhausted` | The default run never ends in debug exhaustion | Lemma 26.4 |
+| `result_success`, `result_model`, `result_unique`, `result_denotation` | A complete outcome of a run from initialization is `Successful`; its whole-store environment is the unique model and the denotation agrees | Theorem 26.3 |
+| `result_failure` | A failed outcome of a run from initialization implies $\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})=\varnothing$ | Theorem 26.3 |
+| `result_not_blocked` | Given a `RankCertificate`, a run from initialization does not end blocked | Theorem 26.5 |
+| `run_ranked_dichotomy` | Given a `RankCertificate`, the default run is complete, or failed with no model | Theorem 26.6 |
+
+The exact-rational profile has carrier $\mathbb{Q}$ with zero, one, addition,
+and multiplication, and a closed registry of `reciprocal` (domain: nonzero) and
+`square`. There is no translation of arbitrary backend operations and no
+fallback for unsupported ones.
+
+What this does not claim:
+
+- **No synthesis or checking.** The `Schedule` carries kernel-checked
+  duplicate-freedom and coverage, but it is supplied. The coordinate rank is
+  proof data. Neither is computed or checked at runtime.
+- **No no-model claim outside initialization.** `runFuel` on an arbitrary state,
+  blocked endpoints, and exhausted endpoints say nothing about whether a model
+  exists. Blocking is not undefinedness.
+- **No schedule independence beyond whole stores.** Successful schedules agree
+  on the complete environment; failure selection, diagnostics, and event traces
+  may differ.
+- **No new representation claims.** Stores are function-valued. There is no
+  dense storage, scalar renderer, source correspondence, or backend refinement,
+  so Part V of the specification is untouched.
+- **A parked runtime gap.** The generic executor retains heterogeneous carriers,
+  but the runtime fixtures do not cover heterogeneous non-additive inputs.
+
+### 4.7 Existing validation and its limits
 
 The execution records distinguish observed computation, proof checking,
 mutation controls, and unsupported claims:
@@ -647,7 +707,9 @@ categorical interpretation or source correspondence.
 
 ### 5.1 Landed: computable reference-machine refinement
 
-The executor implements the existing relation rather than redefining it:
+The executor implements the existing relation rather than redefining it. The
+correspondence to the specification and its theorems is tabulated in
+[Section 4.6](#46-the-computable-reference-executor):
 
 1. [ExecutableState](../../leanncd/LeanNCD/Semantics/ExecutableState.lean)
    supplies computational equality, canonical finite presentations, updates
