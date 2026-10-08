@@ -23,23 +23,23 @@ def envX4 : Std.HashMap String DenseTensor :=
 /-! ## S26 — `Out[0*i] := X[i]` from real surface syntax -/
 
 def progZeroScale : TLProgram := tlprog!{
-  tensor X(i)
-  tensor Out(i)
+  tensor f64 X(i)
+  tensor f64 Out(i)
   axis i : ℕ = 4
   Out[0*i] := X[i]
 }
 
 def progZeroAffine : TLProgram := tlprog!{
-  tensor X(i)
-  tensor Out(i)
+  tensor f64 X(i)
+  tensor f64 Out(i)
   axis i : ℕ = 4
   Out[0*i + 0] := X[i]
 }
 
 -- CONTROL: the upsample the feature is actually for.
 def progStride2 : TLProgram := tlprog!{
-  tensor X(i)
-  tensor Out(i)
+  tensor f64 X(i)
+  tensor f64 Out(i)
   axis i : ℕ = 4
   Out[2*i] := X[i]
 }
@@ -65,18 +65,18 @@ def probeProg (label : String) (p : TLProgram) : String :=
 -- Does the zero-extent output get REJECTED once something reads it? (S24's question, at the
 -- surface.) `Y[k] := Out[k]` forces the sizing fixpoint to size `k` from the published shape.
 def progZeroRead : TLProgram := tlprog!{
-  tensor X(i)
-  tensor Out(i)
-  tensor Y(k)
+  tensor f64 X(i)
+  tensor f64 Out(i)
+  tensor f64 Y(k)
   axis i : ℕ = 4
   Out[0*i] := X[i]
   Y[k] := Out[k]
 }
 
 def progStrideRead : TLProgram := tlprog!{
-  tensor X(i)
-  tensor Out(i)
-  tensor Y(k)
+  tensor f64 X(i)
+  tensor f64 Out(i)
+  tensor f64 Y(k)
   axis i : ℕ = 4
   Out[2*i] := X[i]
   Y[k] := Out[k]

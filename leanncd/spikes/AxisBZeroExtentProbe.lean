@@ -26,7 +26,11 @@ def sizesI : HashMap UID Nat := ({} : HashMap UID Nat).insert 1 4
 def readX : RHSExpr :=
   { body := { terms := [{ factors := [.read "X" [.axis axI]] }] }, nonlin := .identity }
 
-def declsX : List Decl := [.tensor "X" [axI], .tensor "Out" [axI]]
+def declsX : List Decl := [.typedTensor .f64 "X" [axI], .typedTensor .f64 "Out" [axI]]
+
+-- Explicit binary64 declarations for the direct `evalScatter` calls: the reference evaluator
+-- refuses undeclared names (binary32 after the f32 default flip), and plain `.tensor` likewise.
+def f64Decls : List Decl := ["Out", "X"].map (fun n => Decl.typedTensor .f64 n [])
 
 -- Four scatter statements, one per negative affine form B1's S15 measured as `some 0`,
 -- plus one positive control (`.scale 2 i`, extent 8).
@@ -66,13 +70,13 @@ def probePlain (label : String) (s : Stmt) : String :=
 -- (`if (outCoordZ.zip outShape).all (fun (z, d) => 0 ≤ z && z < (d : Int))`): with `d = 0` the
 -- guard is false at EVERY source coordinate, so every write is skipped — the same
 -- "out-of-range output coordinates are skipped" rule that exists for genuine overspill.
-#eval match evalScatter [] envX sizesI "Out" [.affine (.shift axI (-9))] readX {} [0] with
+#eval match evalScatter f64Decls envX sizesI "Out" [.affine (.shift axI (-9))] readX {} [0] with
   | .error e => s!"S23f (evalScatter at outShape [0]): ERROR: {toString e}"
   | .ok (nm, t) => s!"S23f (evalScatter at outShape [0]): .ok; {nm} = {repr t.shape}/{repr t.data}"
 
 -- The collision policy cannot fire either: `.rejectCollisions` is only reached INSIDE the bounds
 -- guard, so four source coordinates all landing "on" a zero-extent output collide with nothing.
-#eval match evalScatter [] envX sizesI "Out" [.affine (.shift axI (-9))] readX
+#eval match evalScatter f64Decls envX sizesI "Out" [.affine (.shift axI (-9))] readX
         { fill := 0, reduce := .rejectCollisions } [0] with
   | .error e => s!"S23g (zero extent + rejectCollisions): ERROR: {toString e}"
   | .ok (nm, t) => s!"S23g (zero extent + rejectCollisions): .ok; {nm} = {repr t.shape}"
@@ -109,7 +113,7 @@ def probeChain (label : String) (sc : Stmt) : String :=
     | .error e => s!"{label}: scatter ERROR: {toString e}"
     | .ok (nm, t) =>
         let env2 := envX.insert nm t
-        match evalPlain [.tensor "Out" [axK], .tensor "Y" [axK]] env2 sz downstream with
+        match evalPlain [.typedTensor .f64 "Out" [axK], .typedTensor .f64 "Y" [axK]] env2 sz downstream with
         | .error e => s!"{label}: downstream ERROR: {toString e}"
         | .ok (nm2, t2) => s!"{label}: .ok; {nm} = {repr t.shape}, {nm2} = {repr t2.shape}/{repr t2.data}"
 
@@ -123,12 +127,12 @@ def probeChain (label : String) (sc : Stmt) : String :=
 Measured: the non-identity-nonlin gate still fires at a zero extent (so the ordering is
 nonlin-before-shape), and an unsized SOURCE axis still fails loud at a zero extent. -/
 
-#eval match evalScatter [] envX sizesI "Out" [.affine (.shift axI (-9))]
+#eval match evalScatter f64Decls envX sizesI "Out" [.affine (.shift axI (-9))]
         { readX with nonlin := .pointwise .relu } {} [0] with
   | .error e => s!"S25a (zero extent + relu): ERROR: {toString e}"
   | .ok (nm, t) => s!"S25a (zero extent + relu): .ok; {nm} = {repr t.shape}"
 
-#eval match evalScatter [] envX ({} : HashMap UID Nat) "Out" [.affine (.shift axI (-9))] readX {} [0] with
+#eval match evalScatter f64Decls envX ({} : HashMap UID Nat) "Out" [.affine (.shift axI (-9))] readX {} [0] with
   | .error e => s!"S25b (zero extent + UNSIZED source axis): ERROR: {toString e}"
   | .ok (nm, t) => s!"S25b (zero extent + UNSIZED source axis): .ok; {nm} = {repr t.shape}"
 

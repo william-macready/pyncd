@@ -164,6 +164,19 @@ def maskScan : ScheduledProgram :=
   , env := {}, extNames := insert "S0" (insert "P" ∅)
   , explicitSizes := (({} : HashMap UID Nat).insert lA.uid 3) }
 
+/-- Audit shape (1): an all-predicate OUTER table whose only real tensor is the step block's scratch
+    `T` (clone of `ScanDense32Test.scratchProg`): the outer signature names no real tensor, so the
+    storage kind must come from the scratch's declaration — or from its absence, which is binary32. -/
+def predScratchScan : ScheduledProgram :=
+  { decls := [ .iter lA 3, .predicate "P0" [], .predicate "P" [lA], .typedTensor .f32 "T" [] ]
+  , stmts := [ .scan "P" [lA]
+      [ .assign "P" [.iterAt lA 0] { body := { terms := [{ factors := [.read "P0" []] }] }, nonlin := .identity } ]
+      [ .assign "T" [] { body := { terms := [{ factors := [.read "P" [.axis lA]] }] }, nonlin := .identity }
+      , .assign "P" [.iterNext lA] { body := { terms := [{ factors := [.read "T" []] }] }, nonlin := .identity } ]
+      false ]
+  , env := {}, extNames := insert "P0" ∅
+  , explicitSizes := (({} : HashMap UID Nat).insert lA.uid 3) }
+
 def corpus : List Case :=
   [ ⟨"contract", .inl tlprog!{
         axis i : ℕ = 2
@@ -182,6 +195,34 @@ def corpus : List Case :=
         tensor f32 W(i, j), x(j), H(i)
         H[i] := relu(W[i, j] · x[j]) },
       env32 [("W", [2, 2], #[1, -1, -2, 1]), ("x", [2], #[1, 1])]⟩
+  , ⟨"sigmoid", .inl tlprog!{
+        axis i : ℕ = 2
+        axis j : ℕ = 2
+        tensor f32 W(i, j), x(j), H(i)
+        H[i] := sigmoid(W[i, j] · x[j]) },
+      env32 [("W", [2, 2], #[1, -1, -2, 1]), ("x", [2], #[1, 1])]⟩
+  , ⟨"tanh", .inl tlprog!{
+        axis i : ℕ = 2
+        axis j : ℕ = 2
+        tensor f32 W(i, j), x(j), H(i)
+        H[i] := tanh(W[i, j] · x[j]) },
+      env32 [("W", [2, 2], #[1, -1, -2, 1]), ("x", [2], #[1, 1])]⟩
+  , ⟨"gelu", .inl tlprog!{
+        axis i : ℕ = 2
+        axis j : ℕ = 2
+        tensor f32 W(i, j), x(j), H(i)
+        H[i] := gelu(W[i, j] · x[j]) },
+      env32 [("W", [2, 2], #[1, -1, -2, 1]), ("x", [2], #[1, 1])]⟩
+  , ⟨"exp", .inl tlprog!{
+        axis i : ℕ = 2
+        tensor f32 A(i), Y(i)
+        Y[i] := exp(A[i]) },
+      env32 [("A", [2], #[0.5, -1.5])]⟩
+  , ⟨"log", .inl tlprog!{
+        axis i : ℕ = 2
+        tensor f32 A(i), Y(i)
+        Y[i] := log(A[i]) },
+      env32 [("A", [2], #[0.5, 3])]⟩
   , ⟨"softmax", .inl tlprog!{
         axis q : ℕ = 2
         axis s : ℕ = 3
@@ -211,6 +252,7 @@ def corpus : List Case :=
       env32 [("X", [3, 2], #[16777216, 1, 2, 20, 3, 30]), ("W", [2], #[1, 1])]⟩
   , ⟨"pred-scan", .inr predScan, env32 [("P0", [], #[1]), ("Y", [], #[3])]⟩
   , ⟨"pred-ext-scan", .inr predExtScan, env32 [("M", [], #[1])]⟩
+  , ⟨"pred-scratch-scan", .inr predScratchScan, env32 [("P0", [], #[1])]⟩
   , ⟨"mask-scan", .inr maskScan, env32 [("S0", [], #[2]), ("P", [3], #[1, 0, 1])]⟩ ]
 
 /-! ## The equivalence -/
@@ -229,9 +271,12 @@ run_cmd do
     -- would make the equivalence vacuous
     unless e.accepted == some (toString (repr LeanNCD.StorageKind.float32)) do
       throwError s!"{c.name}: explicit-f32 program not accepted as float32: {e.accepted} {e.prep.take 300}"
+    -- ... and runs to exact bits (a `run:` error would make the bit comparison vacuous)
+    if e.out.startsWith "run:" then
+      throwError s!"{c.name}: explicit-f32 program accepted but its run failed: {e.out}"
   unless bad.isEmpty do
     throwError s!"unannotated ≠ explicit f32 on {bad.size} variant(s):\n{String.intercalate "\n" bad.toList}"
-  unless corpus.length == 12 && accepted == 12 do
+  unless corpus.length == 18 && accepted == 18 do
     throwError s!"corpus drifted: {corpus.length} programs, {accepted} accepted"
 
 end LeanNCD.Eval.Plan.DefaultF32Test

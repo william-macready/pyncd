@@ -323,6 +323,15 @@ def f64Sig : TensorSignature := { shape := #[], dtype := .f64 }
         tensorSigs := s.baseBlock.tensorSigs.push f64Sig, inputs := s.baseBlock.inputs.push 2 } }
     | st => st }
   == some (.scan 0 (.stepBlockError (.storageKindNotAdmitted .float32)))
+-- (e) SOURCE-UNREACHABLE (pins the boundary): ONE block whose real slots mix `.f32` and `.f64`. The
+-- scratch's own step block gets an extra `f64` input beside its `f32` scratch; the outer table is
+-- bool-only, so the kind comes from the blocks. The block's own table is refused at wiring
+-- (`mixedStorageKinds`), before any `storageKindNotAdmitted` gate could see it.
+#guard checkErr { scratchRaw with steps := scratchRaw.steps.map fun
+    | .scan s => .scan { s with stepBlock := { s.stepBlock with
+        tensorSigs := s.stepBlock.tensorSigs.push f64Sig, inputs := s.stepBlock.inputs.push 2 } }
+    | st => st }
+  == some (.scan 0 (.stepBlockError (.wiring (.mixedStorageKinds 3 .f32 .f64))))
 -- (d) at the source level, the same scratch beside an f64 outer tensor is a mixed schedule,
 -- refused at Step 0b as a typed capability error (naming `T`, the first name disagreeing with `Y`)
 #guard (let p0 := scratchProg (.typedTensor .f32 "T" [])

@@ -31,6 +31,7 @@ private def expect (t : Option DenseTensor) : String :=
 private def swapProg : TLProgram := tlprog!{
   axis i : ℕ = 2
   axis j : ℕ = 2
+  tensor f64 A(i), B(j), W(i)
   W[i] := A[i] · B[j]
 }
 
@@ -71,6 +72,7 @@ run_cmd do
 -- `checkPreparedBindings`?
 private def oneInputProg : TLProgram := tlprog!{
   axis i : ℕ = 2
+  tensor f64 A(i), V(i)
   V[i] := A[i]
 }
 
@@ -124,6 +126,7 @@ private def predProg : TLProgram := tlprog!{
   axis i : ℕ = 2
   axis j : ℕ = 2
   predicate P(i)
+  tensor f64 X(i), Y(j)
   P[i] := X[i] · Y[j]
 }
 
@@ -156,11 +159,13 @@ run_cmd do
 private def boolInputProg : TLProgram := tlprog!{
   axis i : ℕ = 2
   predicate Z(i)
+  tensor f64 Q(i)
   Q[i] := Z[i] · Z[i]
 }
 
 private def realInputProg : TLProgram := tlprog!{
   axis i : ℕ = 2
+  tensor f64 Z(i), Q(i)
   Q[i] := Z[i] · Z[i]
 }
 
@@ -223,6 +228,7 @@ run_cmd do
 -- `Y[i] := relu(X[i])` lowers to `.assign → .pointwise`, so step 1 has no JAX kernel at all.
 private def nonlinProg : TLProgram := tlprog!{
   axis i : ℕ = 2
+  tensor f64 X(i), Y(i)
   Y[i] := relu(X[i])
 }
 
@@ -295,6 +301,7 @@ run_cmd do
 private def warnProg : TLProgram := tlprog!{
   axis i : ℕ = 4
   axis j : ℕ = 3
+  tensor f64 X(i), Y(i, j)
   Y[i, j] := X[2 * i + j]
 }
 
@@ -344,6 +351,7 @@ private def twoStmtProg : TLProgram := tlprog!{
   axis i : ℕ = 2
   axis j : ℕ = 2
   predicate P(i)
+  tensor f64 X(i), Y(j), R(i)
   R[i] := X[i] · Y[j]
   P[i] := X[i] · Y[j]
 }

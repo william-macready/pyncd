@@ -81,10 +81,27 @@ mutation-harness steps); by raw tool-call count T4a, T5a, T5b, T6a, T6c also exc
   ScatterNonlinRejectTest callers re-spelled with explicit `f64` declarations).
 - Dead fallbacks in `Compile.lean` still say `.f64` (the `.state si` arm, `compiled.stateSigs.getD`): verified dead
   by review A, no behaviour difference; about 0.2 dispatch if wanted for consistency.
+  **CLOSED** (both dtype fallbacks now `.f32`; dead, so unpinned by any assertion).
 - `PropertyOracle/ScanUnroll.lean` public `schedOfCase` is unwrapped (site table S cell); about 1 small dispatch.
+  **CLOSED** (`schedOfCase` declares undeclared names `f64`; a `run_cmd` pins that the plain evaluator accepts it).
 - CompileTest rejection fixtures keep a plain `.tensor "Y"` (now f32) beside an explicit-f64 `X`; their pinned errors
   fire first, so they are not vacuous (review B).
-- Everything in the plan's section 1 "Deliberately NOT done" table (bool-only defaults, binary32 `einsumOnly`, mixed
-  precision, unprobed nonlinearities, bridge/JSON/legacy paths) is unchanged.
+- Other nonlinearities (`sigmoid`, `tanh`, `gelu`, `exp`, `log`) unprobed under the default.
+  **CLOSED, measured**: all five are accepted as binary32 and the plain and undeclared spellings equal the explicit
+  `f32` twin on the whole outcome, exact bits included; they joined the pinned `DefaultF32Test` corpus (12 to 17).
+  No class (iii) finding. (`exp`/`log` are inline unary factors, not `Nonlin` constructors; `leakyrelu` is still unprobed.)
+- Audit UNVERIFIED shape (1), an all-predicate outer table plus real scan-local scratch.
+  **CLOSED, measured**: `ScanDense32Test` Part E already built it with an explicit scratch declaration; the
+  undeclared and plain scratch now agree with the explicit twin (accepted `.float32`, bit-equal); the corpus entry
+  `pred-scratch-scan` pins it (17 to 18). Step-0b, `checkPlan` and the scan-block derivation agree.
+- Audit UNVERIFIED shape (2), a hand-built single block mixing `.f32` and `.f64` real slots.
+  **CLOSED, measured**: refused, but earlier than the reading predicted: at block wiring as
+  `mixedStorageKinds`, not `storageKindNotAdmitted` (the gate that reading named). Pinned in `ScanDense32Test` (e)
+  as source-unreachable; mutation-tested by disabling the `deriveStorageKind` conflict check.
+- Sibling spikes `AxisABoundaryProbe` and `AxisBSurfaceZeroExtentProbe` (same defect family as `AxisBZeroExtentProbe`)
+  ran undeclared names. **CLOSED**: both now spell `tensor f64` at the source programs and reproduce their committed
+  `.output.txt` captures byte-identically (captures untouched).
+- Everything else in the plan's section 1 "Deliberately NOT done" table (bool-only defaults, binary32 `einsumOnly`,
+  mixed precision, bridge/JSON/legacy paths) is unchanged.
 
 Nothing was pushed. Branch `f32-flip-slice2-proto` (local plus an origin backup) is kept until the merge.
