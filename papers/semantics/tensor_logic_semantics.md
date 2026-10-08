@@ -45,8 +45,50 @@ For the implementation path, see
 [From Tensor Logic semantics to a Lean executable reference](lean_executable_semantics_path.md).
 It maps this document's notation and mathematical clauses to the landed Lean
 definitions and proofs, explains their category-theoretic organization, and
-separates existing semantic validation from the remaining ranked-progress,
+separates existing semantic validation from the remaining
 executable-reference, source-correspondence, and backend-refinement work.
+
+### Semantics at a glance
+
+The development rests on five ideas. Part I fixes the notation, and each
+item names the section that makes it precise. The colors are explained in the
+next subsection.
+
+1. **Occurrences (§9, §13).** A statement $\textcolor{#9D75C4}{s}$ generates one
+   occurrence $(\textcolor{#9D75C4}{s},\textcolor{#5688C7}{\nu})$ for each
+   admissible valuation $\textcolor{#5688C7}{\nu}\in\textcolor{#5688C7}{D}_{\textcolor{#9D75C4}{s}}$.
+   It is addressed to $\textcolor{#9D75C4}{\mathop{\mathrm{dst}}\nolimits}(\textcolor{#9D75C4}{o})=(T_{\textcolor{#9D75C4}{s}},\textcolor{#5688C7}{\phi}_{\textcolor{#9D75C4}{s}}(\textcolor{#5688C7}{\nu}))$
+   and carries a body value $\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}$,
+   which can be undefined ($\textcolor{#398B83}{\bot}$).
+2. **Collection (§19).** All occurrences addressed to a coordinate are
+   combined, none deduplicated, and an empty fiber gives $0_K$:
+   $$
+   \textcolor{#398B83}{\mathop{\mathrm{Collect}}\nolimits}_{\textcolor{#9D75C4}{P}}(\textcolor{#398B83}{\rho})(T)[p]
+   =\bigoplus_{(\textcolor{#9D75C4}{s},\textcolor{#5688C7}{\nu})\in\textcolor{#9D75C4}{\mathcal{C}}_{\textcolor{#9D75C4}{P}}(T,p)}
+   \textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}.
+   $$
+3. **Meaning (§20).** A model on inputs $\textcolor{#398B83}{\eta}$ is a complete
+   environment that extends $\textcolor{#398B83}{\eta}$, has every actual body defined, and satisfies
+   $\textcolor{#398B83}{\rho}(T)=\textcolor{#398B83}{\mathop{\mathrm{Collect}}\nolimits}_{\textcolor{#9D75C4}{P}}(\textcolor{#398B83}{\rho})(T)$ for every defined tensor $T$.
+   The denotation $\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{P}\textcolor{#398B83}{\rrbracket}(\textcolor{#398B83}{\eta})$ is the output part of the model when
+   $\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})$ has exactly one element.
+4. **Execution (§24–25).** A configuration $(\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{\alpha},\textcolor{#A87C28}{U})$ holds published values,
+   accumulators, and pending occurrences. Three rules fire in any order their
+   premises allow:
+   $\textcolor{#A87C28}{\mathrm{CONTRIBUTE}}$ adds a pending occurrence's value to its destination's
+   accumulator once every address in its read footprint is published;
+   $\textcolor{#A87C28}{\mathrm{PUBLISH}}$ makes a coordinate readable once no pending occurrence
+   targets it; $\textcolor{#A87C28}{\mathrm{UNDEFINED}}$ ends the run in an explicit failure when a
+   ready body is undefined.
+5. **Correspondence (§26, §31).** For programs with a coordinate rank
+   certificate, every maximal run succeeds exactly when $\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})$ is a
+   singleton and then returns that model; otherwise it fails explicitly.
+   A valid compiled plan refines this machine.
+
+In the boundary example of Section 11.1, `T[0,c] = C[c]` and `T[r,0] = R[r]`
+give the corner two occurrences, so $T[0,0]=C[0]+R[0]$. Interior coordinates
+have empty fibers and receive $0$, and the corner is not readable until both
+occurrences have been consumed.
 
 ### Notation color key
 
@@ -120,9 +162,12 @@ machine-number representations are outside the specified fragment. Part V treats
 physical storage reuse within an exact-value memory model; it does not
 silently replace the scalar carrier by floating-point values.
 
-The lemmas and theorems have mathematical arguments, not kernel-checked Lean
-proofs. Compiler correctness is conditional on the stated certificates and
-kernel contracts; it is not a claim that an existing compiler satisfies them.
+Every lemma and theorem here carries a mathematical argument. Which of them
+are also kernel-checked in Lean is recorded in
+[Proof status and numbered results](#proof-status-and-numbered-results). The
+Part V compilation results have no Lean proof. Compiler correctness is
+conditional on the stated certificates and kernel contracts; it is not a claim
+that an existing compiler satisfies them.
 Structural well-formedness alone establishes neither existence of a model
 nor an executable dependency order.
 
@@ -133,12 +178,47 @@ tagged contributions. The paper uses one-based intervals with positive
 extents; this specification permits zero extents. Correspondence arguments
 must preserve that difference rather than exclude empty domains implicitly.
 
+### Proof status and numbered results
+
+The lemmas, propositions, theorems, and corollaries below are labeled where
+they are stated. Other sections cite them by label. Labels are numbered
+sequentially within each top-level section and are not subsection numbers:
+"Theorem 26.5" is in Section 26.4, and "Section 26.3" names a section.
+
+| Result | Statement | Lean status (`LeanNCD.Semantics`) |
+| --- | --- | --- |
+| Proposition 19.1 | Pure-einsum elaboration correspondence | Open. The generic pushforward laws are proved (`pushforward_*` in `Collection`); the theorem relating source elaboration to them is not. |
+| Proposition 19.2 | Source-order invariance | Partial. The occurrence-relabeling form is proved (`models_relabel`); the statement-permutation corollary is not stated. |
+| Lemma 23.1 | Read stability | Proved: `evalWith_stable`, `interpret_stable` (`Readiness`). |
+| Lemma 26.1 | Conservation invariants | Proved: `reachable_invariant` covers items 2 and 4 and the accumulator formula, with `initial_invariant`, `consume_invariant`, `publish_invariant` (`Invariants`). Monotone publication (item 3) has only the one-step lemma `publish_extends`. |
+| Lemma 26.2 | Preservation of every candidate model | Partly proved: `candidate_preserved` (`Soundness`) gives the store-agreement clause. The accumulator clause follows from the `Invariant` fields and `finished_accumulator`; it is not stated separately in Lean. |
+| Theorem 26.3 | A successful run gives the unique model; a failed run excludes every model | Proved: `successful_model`, `successful_unique`, `successful_admInput`, `successful_denotation`, `failed_no_model` (`Soundness`). |
+| Lemma 26.4 | Finite execution | Proved: `step_wellFounded`, `no_infinite_chain`, `running_trace_bound`, `failed_trace_bound` (`Measure`). |
+| Theorem 26.5 | Ranked progress | Proved: `ranked_progress`, `ranked_not_blocked` (`Progress`). |
+| Theorem 26.6 | Ranked correspondence | Proved: `maximal_dichotomy`, `model_maximal_success`, `no_model_maximal_failure`, `initialization_iff_singleton`, `successful_schedules_agree` (`Progress`). |
+| Corollary 26.7 | Ranked uniqueness | Follows from `model_maximal_success`, `maximal_extension` and `successful_unique`; no separately named theorem. |
+| Lemma 31.2 | Terminal adequacy of a valid plan | Not formalized. |
+| Theorem 31.3 | Compiled correctness | Not formalized. |
+| Lemma 32.1 | Batched accumulation refines individual steps | Not formalized. |
+
+The Lean results concern the reference machine as a transition relation over
+abstract finite carriers and primitives. The rank certificate is supplied as
+data; there is no rank synthesis, executable scheduler, or source checker.
+Items 1 and 2 of the proof targets in Section 28 (well-definedness of typed
+interpretation, and renaming and substitution) are not numbered statements;
+the companion document records what covers them. The table reflects
+[the Lean path document](lean_executable_semantics_path.md) as of its
+2026-10-08 snapshot, which is authoritative for what has landed. Update both
+together.
+
 ## Table of contents
 
 - [Status and purpose](#status-and-purpose)
   - [Roadmap and reading guide](#roadmap-and-reading-guide)
+  - [Semantics at a glance](#semantics-at-a-glance)
   - [Notation color key](#notation-color-key)
   - [Semantic scope](#semantic-scope)
+  - [Proof status and numbered results](#proof-status-and-numbered-results)
 - [Part I: Background notation](#part-i-background-notation)
   - [1. Numbers, finite sets, and functions](#1-numbers-finite-sets-and-functions)
   - [2. Scalar algebras and finite combination](#2-scalar-algebras-and-finite-combination)
@@ -1088,8 +1168,13 @@ Primitive interpretations are deterministic mathematical functions of
 their arguments on $\textcolor{#398B83}{\mathcal{D}}_f$. They have no hidden store reads or side
 effects. Computable implementations and domain tests are separate requirements.
 
-For example, real ReLU has one scalar argument and result. Softmax for
-$m>0$ has one argument and result of type $\mathbb{R}^{[m]}$.
+For example, real ReLU has one scalar argument and result. Softmax is
+registered for every $m\ge0$, with one argument and result of type
+$\mathbb{R}^{[m]}$. Its domain of definition is all of $\mathbb{R}^{[m]}$
+when $m>0$ and is empty when $m=0$, matching the nonempty requirement of
+Section 8. Because softmax is registered at $m=0$, a statement whose slice
+domain is empty type checks; having no occurrences, it never demands the
+application. A demanded application to an empty array is undefined.
 A user-supplied $F:\mathbb{R}^{[d]}\to\mathbb{R}^{[d]}$ can be a registered
 array operator, with its domain specified in the same way.
 
@@ -1373,6 +1458,11 @@ construct a complete array on a prefix of a named tensor's domain.
 These rules use compatible declared coordinate domains, not name-based
 axis matching or an implicit transpose. An implementation mapping must
 retain any axis identities and explicitly justified identifications.
+Because $\textcolor{#5688C7}{I}_a=[n_a]$ is a set of integers (Section 3.1), these
+judgments see only coordinate ranges: two axes of equal extent are
+indistinguishable to them. Distinguishing such axes is the job of domain
+resolution (assumed before elaboration in Section 15.1) and the
+implementation mapping, not of the core rules.
 
 The core permits an explicitly restricted index domain. For example,
 with $A$ of shape $(3)$, $B$ of shape $(5)$, and $i\in[3]$, the reads
@@ -1601,6 +1691,7 @@ tensor, use a separate named intermediate, as in Section 11.3.
 Nonrectangular slices, guards depending on marked slice variables, and other
 operator shapes require explicit core expressions or an explicit surface-language
 extension. They are not assigned an implicit meaning by this abbreviation.
+A causal mask is such a guard; Section 16.7 gives its core forms.
 
 ### 15.5 Structural checks after elaboration
 
@@ -1722,7 +1813,7 @@ move its activation boundary.
 ### 16.4 A strided convolution and an in-bounds guard
 
 Let inputs $X,W$ have shapes $(h,w)$ and $(a,b)$, and let $Y$ be a defined
-tensor whose declared output domain contains $i,j$ values satisfying
+tensor whose declared output domain is such that every $(i,j)$ in it satisfies
 
 $$
 i+a\le h,\qquad 2j+b\le w.
@@ -1750,15 +1841,16 @@ W[p,r]\otimes X[i+p,2j+r],
 $$
 
 where the displayed $i,j$ binders abbreviate their declared domains.
-Alternatively, those inequalities can be the statement guard, leaving
-other output coordinates without contributions. That specifies a
+Alternatively, with a larger declared output domain, those inequalities can
+be the statement guard, leaving other output coordinates without contributions. That specifies a
 guarded computation, not zero-padded convolution.
 
 ### 16.5 Softmax over an attention slice
 
 Work over exact reals. Let inputs $\textcolor{#9D75C4}{Q},K_{\mathrm{key}}$ have shapes
 $(q_0,d)$ and $(\textcolor{#5688C7}{s}_0,d)$, and let the defined tensor $A$ have shape
-$(q_0,\textcolor{#5688C7}{s}_0)$, with $\textcolor{#5688C7}{s}_0>0$:
+$(q_0,\textcolor{#5688C7}{s}_0)$. If $\textcolor{#5688C7}{s}_0=0$, the statement below has no
+occurrences and nothing is evaluated:
 
 ```text
 A[q,s.] = softmax(Q[q,k] Key[s,k])
@@ -1802,6 +1894,62 @@ For $N=0$, this statement has no occurrences, while the base statements
 still apply at time zero. For $N>0$, its apparent self-reference by tensor
 name does not prevent the coordinate-level dependency analysis in Section 23 from
 recognizing a forward scan.
+
+### 16.7 A causal mask is not a marked slice
+
+Keep the inputs and shapes of Section 16.5, but normalize over only the keys
+$t\le q$ for each query $q$. The marked-slice abbreviation of Section 15.4 does
+not apply: the mask $\textcolor{#5688C7}{s}\le q$ is a guard that depends on the marked variable
+$\textcolor{#5688C7}{s}$. A mask inside the argument of $\mathop{\mathrm{softmax}}\nolimits$ does not work either.
+That argument is a complete array on $[\textcolor{#5688C7}{s}_0]$, and multiplying an
+entry by $\mathbf{1}_{t\le q}$ turns it into $0$. Then $\exp(0)=1$, so the key
+is still normalized over, and exact reals have no $-\infty$ to use instead.
+
+The core expresses the mask with scalar primitives. Register $\exp$, which is
+total on $\mathbb{R}$, and division, defined where the divisor is nonzero
+(Section 8). Abbreviate the explicit reduction
+$S(q,t)=\bigoplus_{k\in[d]}\textcolor{#9D75C4}{Q}[q,k]\otimes K_{\mathrm{key}}[t,k]$. For
+$q\in[q_0]$ and $\textcolor{#5688C7}{s}\in[\textcolor{#5688C7}{s}_0]$, one statement suffices:
+
+$$
+A[q,\textcolor{#5688C7}{s}]\textcolor{#9D75C4}{\mathrel{+}=}
+\mathop{\mathrm{div}}\nolimits\left(
+\mathbf{1}_{\textcolor{#5688C7}{s}\le q}\otimes\exp(S(q,\textcolor{#5688C7}{s})),\;
+\bigoplus_{t\in[\textcolor{#5688C7}{s}_0]}\mathbf{1}_{t\le q}\otimes\exp(S(q,t))
+\right).
+$$
+
+Every read is in bounds for every lifted valuation. Because $\exp$ is total,
+multiplying by the Iverson value is safe here, unlike the logarithm of
+Section 21.3: the masked bodies are defined and contribute $0$. For
+$\textcolor{#5688C7}{s}_0>0$ the denominator is at least $\exp(S(q,0))>0$, because $0\le q$ always holds,
+so every division is defined and $A[q,\textcolor{#5688C7}{s}]=0$ for $\textcolor{#5688C7}{s}>q$. For
+$\textcolor{#5688C7}{s}_0=0$ there are no occurrences.
+
+An equivalent form uses guards, so masked bodies are never evaluated. Let $\mathit{Den}$ be
+a defined tensor of shape $(q_0)$:
+
+$$
+\begin{aligned}
+&\text{for }q\in[q_0],t\in[\textcolor{#5688C7}{s}_0]\text{ where }t\le q:
+&&\mathit{Den}[q]\textcolor{#9D75C4}{\mathrel{+}=}\exp(S(q,t)),\\
+&\text{for }q\in[q_0],\textcolor{#5688C7}{s}\in[\textcolor{#5688C7}{s}_0]\text{ where }\textcolor{#5688C7}{s}\le q:
+&&A[q,\textcolor{#5688C7}{s}]\textcolor{#9D75C4}{\mathrel{+}=}\mathop{\mathrm{div}}\nolimits(\exp(S(q,\textcolor{#5688C7}{s})),\mathit{Den}[q]).
+\end{aligned}
+$$
+
+Entries with $\textcolor{#5688C7}{s}>q$ have empty fibers and are $0$. $\mathit{Den}[q]$ is read as a
+named tensor, so its whole fiber is collected before any division is ready
+(Section 25.2).
+
+The two forms differ on fully masked rows. Replace $t\le q$ by the strict mask
+$t<q$, and assume $q_0>0$ and $\textcolor{#5688C7}{s}_0>0$. Row $q=0$ then has no unmasked key.
+In the first form the denominator at $q=0$ is a sum of $\textcolor{#5688C7}{s}_0$ masked zeros,
+equal to $0_K$, so the division is undefined at an actual occurrence and the
+program has no model (the machine ends in
+$\textcolor{#A87C28}{\mathsf{Failed}}$). In the guarded form row $0$ has no
+occurrence of $A$, so $A[0,\textcolor{#5688C7}{s}]=0$ is defined. This is the guard-versus-multiplier
+distinction of Section 21.3 again.
 
 ## 17. Pure einsum semantics and transformation foundations
 
@@ -1946,7 +2094,8 @@ then combines the finite sums. Empty domains and repeated output
 indices must be included in the proof.
 
 Section 19.3 states this correspondence using the core interpretation.
-It remains a Lean proof obligation, not a completed formal theorem.
+It remains a Lean proof obligation (Proposition 19.1), not a completed formal
+theorem.
 
 The formula cannot be extended to nonlinear bodies by moving an
 operator inside the products or sums. For example,
@@ -2115,10 +2264,10 @@ array or retain index information, but this does not create that domain
 from nothing. Domains remain supplied by signatures and binders.
 
 This is particularly important for differentiation. Over exact reals,
-with $W$ of shape $(d,\textcolor{#9D75C4}{e})$ and $x$ of shape $(\textcolor{#9D75C4}{e})$,
+with $W$ of shape $(d,e)$ and $x$ of shape $(e)$,
 
 $$
-F[i]=\sum_{j\in[\textcolor{#9D75C4}{e}]}W[i,j]x[j]
+F[i]=\sum_{j\in[e]}W[i,j]x[j]
 $$
 
 has the coordinate derivative
@@ -2128,7 +2277,7 @@ $$
 =\textcolor{#398B83}{\delta}_{[d]}[i,a]x[b].
 $$
 
-The derivative has coordinate domain $[d]\times[d]\times[\textcolor{#9D75C4}{e}]$ for
+The derivative has coordinate domain $[d]\times[d]\times[e]$ for
 $(i,a,b)$, even though $W$ no longer appears as an operand in its value
 expression. Those domains must survive any transformation.
 
@@ -2385,15 +2534,10 @@ operations are total on complete environments.
 
 ## 19. Contribution collection
 
-Scoped Lean validation of Sections 19–20 lives in
-`LeanNCD.Semantics.Collection`, `Program`, and `Models`: finite Naperian
-function families, generic additive pushforward laws, guard-admitted typed
-occurrences with bounded defined destinations, tensor-presence input
-bindings, and simultaneous model equations. Collection needs additive
-commutative monoids only on defined carriers; expression operations remain
-explicit data. This is not a source checker, raw-write policy resolver,
-solver, backend refinement, or full categorical interpretation.
-Section 19.3's pure-einsum elaboration correspondence remains a proof target.
+The Lean status of Sections 19–20 is recorded in
+[Proof status and numbered results](#proof-status-and-numbered-results).
+Section 19.3's pure-einsum elaboration correspondence (Proposition 19.1)
+remains a proof target.
 
 ### 19.1 Environments with defined contributions
 
@@ -2469,8 +2613,9 @@ the input environment must provide every designated input value.
 
 ### 19.3 Correspondence with pure einsum
 
+**Proposition 19.1 (pure-einsum correspondence).**
 For the normalized pure-einsum statement of Section 17.3,
-the desired local correspondence is
+the intended local correspondence is
 
 $$
 \textcolor{#398B83}{V}_{\textcolor{#9D75C4}{s}}^{\textcolor{#398B83}{\rho}}[p]=\textcolor{#398B83}{V}_{\textcolor{#5688C7}{L}}[p]
@@ -2497,6 +2642,7 @@ theorem. The proof description here is not a kernel-checked proof.
 
 ### 19.4 Source order and nonlinear boundaries
 
+**Proposition 19.2 (source-order invariance).**
 Permuting source statements while preserving their bodies, binders,
 guards, and distinct occurrence identities leaves
 $\textcolor{#398B83}{\mathop{\mathrm{AdmEnv}}\nolimits}(\textcolor{#9D75C4}{P})$ and collected values unchanged, up to the
@@ -2934,7 +3080,7 @@ For typed stores, complete extensions exist: assign, for example, $0_K$ to
 unspecified coordinates. This is a mathematical extension for defining an
 interpretation, not operational permission to read missing values as zero.
 
-**Read-stability lemma.** If two complete environments agree on
+**Lemma 23.1 (read stability).** If two complete environments agree on
 $\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{E},\textcolor{#5688C7}{\nu})$, their interpretations of $\textcolor{#9D75C4}{E}$ at $\textcolor{#5688C7}{\nu}$ are
 equal, including the possibility that both results are $\textcolor{#398B83}{\bot}$.
 
@@ -3185,12 +3331,13 @@ Section 26 shows that a ranked program cannot reach such a state.
 
 The claims below concern configurations reachable from
 $\textcolor{#A87C28}{\mathop{\mathrm{Init}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})$ for well-typed $\textcolor{#398B83}{\eta}$.
-They are mathematical claims with proof arguments, not already verified
-Lean declarations.
+They are stated with proof arguments. Their Lean counterparts for the
+reference machine as a transition relation are listed in
+[Proof status and numbered results](#proof-status-and-numbered-results).
 
 ### 26.1 Basic conservation invariants
 
-Induction on transitions establishes:
+**Lemma 26.1 (conservation).** Induction on transitions establishes:
 
 1. $\textcolor{#A87C28}{U}\subseteq\textcolor{#9D75C4}{\mathcal{O}}_{\textcolor{#9D75C4}{P}}$ and every successful contribution step removes
    one previously pending occurrence. No occurrence is consumed twice.
@@ -3216,6 +3363,7 @@ distinct terms because they have distinct tagged occurrences.
 
 ### 26.2 Preservation of every candidate model
 
+**Lemma 26.2 (preservation of every candidate model).**
 Fix any $\textcolor{#398B83}{\rho}\in\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})$.
 At every reachable running configuration:
 
@@ -3230,7 +3378,7 @@ $$
 $$
 
 Initially the store agrees on inputs and every sum is empty.
-For a ready occurrence, read stability makes its ready evaluation equal
+For a ready occurrence, read stability (Lemma 23.1) makes its ready evaluation equal
 to its interpretation in $\textcolor{#398B83}{\rho}$, which is defined since $\textcolor{#398B83}{\rho}$ is a model.
 A contribution step therefore preserves the accumulator formula.
 At publication the sum contains all of $\textcolor{#9D75C4}{\mathcal{C}}_{\textcolor{#9D75C4}{P}}(a)$ and equals
@@ -3239,7 +3387,7 @@ An undefined-operation step is impossible in the presence of such a model.
 
 ### 26.3 Successful execution gives the unique model
 
-Suppose
+**Theorem 26.3 (successful runs give the unique model).** Suppose
 $\textcolor{#A87C28}{\mathop{\mathrm{Init}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})\textcolor{#A87C28}{\Downarrow}\textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sigma}}$.
 Every occurrence was consumed successfully. Its footprint was available
 when it was consumed, and published values never changed.
@@ -3252,7 +3400,7 @@ $$
 \textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sigma}}\in\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta}).
 $$
 
-For any other model $\textcolor{#398B83}{\rho}$, Section 26.2 gives
+For any other model $\textcolor{#398B83}{\rho}$, Lemma 26.2 gives
 $\textcolor{#A87C28}{\sigma}\textcolor{#A87C28}{\sqsubseteq}\textcolor{#398B83}{\rho}$ at the complete final store. Since the store has
 every address, $\textcolor{#398B83}{\rho}=\textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sigma}}$. Thus
 
@@ -3266,13 +3414,14 @@ No rank certificate is needed for this implication: any successful run
 has this meaning.
 Similarly, if a run reaches $\textcolor{#A87C28}{\mathsf{Failed}}(\textcolor{#9D75C4}{o},\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{\alpha},\textcolor{#A87C28}{U})$,
 then $\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})=\varnothing$.
-Otherwise Section 26.2 and read stability would force the failed ready
+Otherwise Lemma 26.2 and read stability would force the failed ready
 body to be defined in a model, a contradiction.
 This failure claim does not apply to dependency blocking.
 
 ### 26.4 Finite execution and progress for ranked programs
 
-For a running configuration define the natural-number measure
+**Lemma 26.4 (finite execution).** For a running configuration define the
+natural-number measure
 
 $$
 \textcolor{#A87C28}{\mu}(\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{\alpha},\textcolor{#A87C28}{U})
@@ -3290,7 +3439,8 @@ A **maximal run** continues until no transition is enabled; a finite
 prefix stopped by a scheduler is not automatically maximal.
 No fairness assumption is needed because the rules permit no stuttering steps.
 
-Assume a rank certificate exists. In any reachable, noncomplete
+**Theorem 26.5 (ranked progress).** Assume a rank certificate exists.
+In any reachable, noncomplete
 running configuration there is an unpublished defined address:
 if all were published, the invariants would also force $\textcolor{#A87C28}{U}=\varnothing$.
 Choose one of minimum rank. All its dependencies are already published,
@@ -3300,7 +3450,8 @@ either $\textcolor{#A87C28}{\mathrm{CONTRIBUTE}}$ or $\textcolor{#A87C28}{\mathr
 If it has none, $\textcolor{#A87C28}{\mathrm{PUBLISH}}$ is enabled.
 This proves progress and excludes blocking.
 
-Combining progress, finite execution, and Section 26.3 gives the
+**Theorem 26.6 (ranked correspondence).** Combining Theorem 26.5,
+Lemma 26.4, and Theorem 26.3 gives the
 operational/denotational correspondence for the ranked fragment:
 
 $$
@@ -3313,10 +3464,16 @@ In more detail, every maximal run either succeeds or explicitly fails.
 If a model exists, model preservation excludes failure, so every maximal
 run succeeds and returns that unique model. If no model exists,
 successful completion is impossible, so every maximal run fails.
-Ranked programs cannot have several models on the same input.
 
-Therefore the direct executor realizes exactly the partial function of
-Section 20.3 for ranked programs. Successful schedules produce the same
+**Corollary 26.7 (ranked uniqueness).** A ranked program has at most one
+model on any well-typed input: a model forces every maximal run to succeed,
+and a successful run has a unique model by Theorem 26.3.
+
+Therefore every maximal run of the reference machine, under any schedule,
+realizes exactly the partial function of
+Section 20.3 for ranked programs. The machine is a transition relation;
+choosing a schedule is a separate, computable artifact.
+Successful schedules produce the same
 environment, even if they consume contributions and publish unrelated
 addresses in different orders. On a failing input, schedules may report
 different undefined occurrences; the first diagnostic is not claimed to
@@ -3481,17 +3638,22 @@ The foundational proof targets are:
 2. Interpretation and footprints respect bound-variable renaming and
    well-scoped, domain-respecting capture-avoiding substitution.
 3. Read stability justifies ready evaluation independently of a chosen
-   complete extension.
+   complete extension (Lemma 23.1).
 4. Core elaboration preserves pure-einsum values, domains, and multiplicity,
-   including empty domains and repeated output indices.
+   including empty domains and repeated output indices (Proposition 19.1).
 5. Source-statement permutation preserves the model relation and successful
-   execution results under corresponding occurrence relabeling.
-6. The transition invariants and model-preservation claims hold.
+   execution results under corresponding occurrence relabeling
+   (Proposition 19.2).
+6. The transition invariants and model-preservation claims hold
+   (Lemmas 26.1 and 26.2, Theorem 26.3).
 7. The finite measure and rank certificate establish termination and
-   progress; the resulting executor computes exactly the unique model
-   or explicitly fails on a ranked program.
+   progress; every maximal run of the reference machine computes exactly the
+   unique model or explicitly fails on a ranked program
+   (Lemma 26.4, Theorems 26.5 and 26.6, Corollary 26.7).
 
 The arguments in Part IV establish the reference-machine properties.
+[Proof status and numbered results](#proof-status-and-numbered-results)
+records which are also proved in Lean.
 Part V supplies the compilation/refinement layer: it defines plan contracts
 and the relation between logical states and reusable storage.
 General cyclic solvers remain a separately justified extension, not an
@@ -3516,7 +3678,9 @@ refinement problem.
 
 ### 29.1 Plans, commands, and annotations
 
-Fix a structurally well-formed program $\textcolor{#9D75C4}{P}$ in the coordinate-ranked fragment.
+Fix a structurally well-formed program $\textcolor{#9D75C4}{P}$ in the coordinate-ranked fragment
+(the rank certificate of Section 23.4, which a schedule certificate already
+implies; see the end of Section 29.3).
 An execution plan $\textcolor{#C16C86}{\Pi}$ records the source signature and tensor roles
 $(\textcolor{#5688C7}{\mathrm{In}},\textcolor{#5688C7}{\mathrm{Def}},\textcolor{#5688C7}{\mathrm{Out}})$,
 a finite buffer collection $\textcolor{#C16C86}{\mathcal{B}}$ with capacities, and a finite
@@ -3611,6 +3775,16 @@ They do not establish body-definedness on every input.
 Storage annotations have additional representation obligations in
 Section 30. Schedule validity alone does not prove a correct kernel,
 layout, or aliasing discipline.
+
+A schedule satisfying conditions 1-4 itself yields a coordinate rank. Let
+$r(a)=0$ for input addresses and, for defined $a$, let $r(a)$ be one plus the
+position in the expanded annotation sequence of the block publishing $a$.
+If $b\in\textcolor{#A87C28}{\mathop{\mathrm{Dep}}\nolimits}(a)$ is defined, then $b\in\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{o})$ for some
+$\textcolor{#9D75C4}{o}\in\textcolor{#9D75C4}{\mathcal{C}}_{\textcolor{#9D75C4}{P}}(a)$. So $b$ is published before the group containing
+$\textcolor{#9D75C4}{o}$ (condition 3), and that group precedes the publication of $a$
+(condition 4), giving $r(b)<r(a)$. If $b$ is an input,
+$r(b)=0<r(a)$. The ranked-fragment hypothesis is therefore implied by a
+valid schedule.
 
 For example, grouping both copies of `T[i] = X[i]` into one kernel is
 permitted, but the group still contains both occurrence identities.
@@ -3718,7 +3892,7 @@ a\notin\mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma}),
 \textcolor{#A87C28}{\mathsf{acc}}(a)\in\mathop{\mathrm{dom}}\nolimits(\textcolor{#C16C86}{\lambda}_{\textcolor{#C16C86}{\mathsf{C}}}).
 $$
 
-An untouched accumulator has the known value $0_K$ by Section 26.1 and
+An untouched accumulator has the known value $0_K$ by Lemma 26.1 and
 need not yet occupy a slot. Before a kernel updates or reads its physical
 accumulator, it must materialize that zero or prove an equivalent
 initial-write operation. Uninitialized memory is never used as a zero.
@@ -3795,16 +3969,35 @@ or silently supply zeros at missing nonempty output coordinates.
 
 ### 31.1 Acceptance and explicit rejection
 
-Write $\textcolor{#9D75C4}{P}\vdash\textcolor{#C16C86}{\Pi}\ \textcolor{#C16C86}{\mathsf{valid}}$ for a plan with the schedule,
-representation, and kernel certificates specified here.
-A proposed compiler may return an accepted plan with those certificates,
+**Definition 31.1 (valid plan).** Write
+$\textcolor{#9D75C4}{P}\vdash\textcolor{#C16C86}{\Pi}\ \textcolor{#C16C86}{\mathsf{valid}}$ when the plan
+satisfies all of the following.
+
+1. **Schedule.** The coverage and order conditions 1-4 of Section 29.3.
+2. **Initialization.** The initialization obligation of Section 31.2.
+3. **Step simulation.** The successful-step simulation obligation of
+   Section 31.2, including the representation requirements and the output
+   decoder of Sections 30.2-30.4.
+4. **Failure matching.** Every $\textcolor{#C16C86}{\mathsf{PlanFailed}}(\textcolor{#9D75C4}{o})$ has a matching
+   reference segment (Section 31.3).
+5. **Progress.** The concrete progress and kernel-termination obligation of
+   Section 31.3.
+
+Condition 1 is a static check on the plan. Conditions 2-5 quantify over all
+well-typed inputs and reachable related states, and conditions 3-5 are
+discharged kernel by kernel. Terminal adequacy is not a sixth condition; it
+follows from the others (Lemma 31.2). The rank certificate of Section 23.4,
+assumed in Section 29.1, is implied by condition 1 (end of Section 29.3).
+
+A proposed compiler may return an accepted plan satisfying
+Definition 31.1,
 or explicitly reject an invalid source, unsupported dependency form,
 unsupported primitive, or unjustified storage strategy.
 
 Rejection does not assert that the program has no model.
 Compiler completeness for every ranked program is not required by this
 specification. Compiler **soundness** requires that every accepted plan
-satisfy its certificates for all well-typed inputs, with semantic failures
+satisfy Definition 31.1 for all well-typed inputs, with semantic failures
 handled as below.
 
 ### 31.2 Initial states and successful-step simulation
@@ -3851,34 +4044,63 @@ $$
 
 Thus the reported semantic failure is caused by an actual ready,
 undefined source occurrence. A generic kernel exception is not automatically
-such a proof. Resource exhaustion or hardware faults require separate
-explicit implementation errors; they do not establish absence of a model.
+such a proof. Resource exhaustion or hardware faults are separate explicit
+**implementation errors**: a third terminal outcome, distinct from success and
+from matched semantic failure, that does not establish absence of a model.
+The **error-free profile** consists of the runs in which no implementation
+error occurs. Concrete progress below, and the converse direction of
+Theorem 31.3, are stated for that profile.
 
-Concrete progress requires that every reachable running state with
-$\textcolor{#C16C86}{\mathsf{pc}}<m$ can execute its next command successfully or report a
+Concrete progress requires that, in the error-free profile, every reachable
+running state with $\textcolor{#C16C86}{\mathsf{pc}}<m$ can execute its next command successfully or report a
 matched semantic failure. It cannot merely wait forever for an unmet
 completion premise that the schedule certificate should have supplied.
 Kernel and domain-test implementations must terminate on their stated
 preconditions. Since every successful command advances the bounded program
 counter, maximal plan runs are then finite, including storage-only steps.
 
-At $\textcolor{#C16C86}{\mathsf{pc}}=m$, terminal adequacy requires the related reference state
-to be complete and
+**Lemma 31.2 (terminal adequacy).** Let
+$\textcolor{#9D75C4}{P}\vdash\textcolor{#C16C86}{\Pi}\ \textcolor{#C16C86}{\mathsf{valid}}$, and let a concrete run from
+$\textcolor{#C16C86}{\mathop{\mathrm{Start}}\nolimits}_{\textcolor{#C16C86}{\Pi}}(\textcolor{#398B83}{\eta})$ reach
+$\textcolor{#C16C86}{\mathsf{pc}}=m$ in $\textcolor{#C16C86}{\mathsf{C}}$. Then the related reference state
+$\textcolor{#A87C28}{\mathsf{Conf}}=(\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{\alpha},\textcolor{#A87C28}{U})$ is complete and
 
 $$
 \textcolor{#C16C86}{\mathop{\mathrm{Decode}}\nolimits}_{\textcolor{#C16C86}{\Pi}}(\textcolor{#C16C86}{\mathsf{C}})=\textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sigma}}|_{\textcolor{#5688C7}{\mathrm{Out}}}.
 $$
 
+*Argument.* The run executed every command. By the agreement clause of the
+representation relation (Section 30.4, item 2), $\textcolor{#A87C28}{\mathsf{Conf}}$ has consumed and
+published exactly what the annotations of the whole command sequence account
+for. By coverage conditions 1 and 2 of Section 29.3 these exhaust
+$\textcolor{#9D75C4}{\mathcal{O}}_{\textcolor{#9D75C4}{P}}$ and $\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\mathrm{Def}}}$. So $\textcolor{#A87C28}{U}=\varnothing$,
+every defined address is published, and the input addresses were published
+initially; hence $\mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma})=\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}$. Every output
+address lies in $\textcolor{#A87C28}{\mathop{\mathrm{Need}}\nolimits}_{\mathrm{pub}}$ (Section 30.2), so its $\textcolor{#A87C28}{\mathsf{pub}}$ resource
+is mapped, and the decoder requirement of Section 30.4 together with the memory
+equation of Section 30.2 gives
+$\textcolor{#C16C86}{\mathop{\mathrm{Decode}}\nolimits}_{\textcolor{#C16C86}{\Pi}}(\textcolor{#C16C86}{\mathsf{C}})(T)[p]=\textcolor{#C16C86}{M}[\textcolor{#C16C86}{\lambda}_{\textcolor{#C16C86}{\mathsf{C}}}(\textcolor{#A87C28}{\mathsf{pub}}((T,p)))]=\textcolor{#A87C28}{\sigma}(T,p)$.
+
 Write
 $\textcolor{#C16C86}{\mathop{\mathrm{Start}}\nolimits}_{\textcolor{#C16C86}{\Pi}}(\textcolor{#398B83}{\eta})\textcolor{#C16C86}{\Downarrow}_{\textcolor{#C16C86}{\Pi}}\textcolor{#398B83}{\zeta}$
-for a finite concrete run ending at such a successful final state with
+for a finite concrete run ending at $\textcolor{#C16C86}{\mathsf{pc}}=m$ with
 decoded output environment $\textcolor{#398B83}{\zeta}$.
 No decoded success is permitted after a failed command.
 
 ### 31.4 The compiled-correctness theorem
 
-For $\textcolor{#9D75C4}{P}\vdash\textcolor{#C16C86}{\Pi}\ \textcolor{#C16C86}{\mathsf{valid}}$ in this ranked profile and well-typed $\textcolor{#398B83}{\eta}$,
-the preceding obligations yield
+**Theorem 31.3 (compiled correctness).** Let
+$\textcolor{#9D75C4}{P}\vdash\textcolor{#C16C86}{\Pi}\ \textcolor{#C16C86}{\mathsf{valid}}$ and let $\textcolor{#398B83}{\eta}$ be
+well-typed.
+
+- (a) If a run reaches decoded success $\textcolor{#398B83}{\zeta}$, then
+  $\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})$ is a singleton $\{\textcolor{#398B83}{\rho}\}$
+  and $\textcolor{#398B83}{\zeta}=\textcolor{#398B83}{\rho}|_{\textcolor{#5688C7}{\mathrm{Out}}}$.
+- (b) If a run ends in $\textcolor{#C16C86}{\mathsf{PlanFailed}}(\textcolor{#9D75C4}{o})$, then
+  $\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})=\varnothing$.
+- (c) In the error-free profile, an error-free maximal run exists, every
+  such run ends in decoded success or $\textcolor{#C16C86}{\mathsf{PlanFailed}}$, and the converse
+  of (a) holds:
 
 $$
 \textcolor{#C16C86}{\mathop{\mathrm{Start}}\nolimits}_{\textcolor{#C16C86}{\Pi}}(\textcolor{#398B83}{\eta})\textcolor{#C16C86}{\Downarrow}_{\textcolor{#C16C86}{\Pi}}\textcolor{#398B83}{\zeta}
@@ -3888,31 +4110,42 @@ $$
 \ \land\ \textcolor{#398B83}{\zeta}=\textcolor{#398B83}{\rho}|_{\textcolor{#5688C7}{\mathrm{Out}}}.
 $$
 
-Equivalently, successful plan inputs are precisely
+Equivalently, in the error-free profile, successful plan inputs are precisely
 $\textcolor{#398B83}{\mathop{\mathrm{AdmInput}}\nolimits}(\textcolor{#9D75C4}{P})$, and on that domain the decoded output equals
 $\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{P}\textcolor{#398B83}{\rrbracket}(\textcolor{#398B83}{\eta})$. The model-set formulation avoids applying
 the partial denotation outside its domain.
 
-For the forward direction, initialization and successful-step simulation
-produce a reachable reference state; terminal adequacy makes it complete.
-Section 26.3 then gives the unique model and the stated decoded output.
-A matched concrete failure instead implies
-$\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})=\varnothing$.
+*Argument.* For (a), initialization and successful-step simulation
+produce a reachable reference state; Lemma 31.2 makes it complete and
+identifies the decoded output with $\textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sigma}}|_{\textcolor{#5688C7}{\mathrm{Out}}}$.
+Theorem 26.3 then gives the unique model and the stated decoded output.
+For (b), a matched concrete failure gives a reference run ending in
+$\textcolor{#A87C28}{\mathsf{Failed}}$, so $\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})=\varnothing$ by
+Theorem 26.3.
 
-For the reverse direction, a model excludes matched failure by
-Section 26.2. Concrete progress, terminating kernels, and the finite command
-counter force a successful final state, whose decoder returns that model's
-outputs. If there is no model, successful finishing is impossible, so every
-maximal valid-plan run reports a matched semantic failure.
+For (c), concrete progress, terminating kernels, and the finite command
+counter give an error-free maximal run, and every error-free maximal run
+ends in decoded success or matched failure. If a model exists, Lemma 26.2
+excludes matched failure, so the run ends in decoded success with output
+$\textcolor{#398B83}{\rho}|_{\textcolor{#5688C7}{\mathrm{Out}}}$ by (a). If no model exists, success is
+impossible by (a), so every error-free maximal run reports a matched semantic
+failure.
 
-The theorem is conditional on the stated certificates. It is a compiler
-proof specification with a mathematical argument, not a claim that a
-particular compiler or kernel has already been verified.
+Outside the error-free profile a valid plan can end in an implementation error
+even when a model exists; (a) and (b) are unaffected.
+
+The theorem is conditional on Definition 31.1. Its hypotheses are exactly
+those conditions; the generic steps (Lemma 31.2 above and, for batched
+kernels, Lemma 32.1 in Section 32.1) are argued on paper, while conditions
+3-5 remain an obligation on each kernel. It is a compiler proof specification with a mathematical
+argument, not a claim that a particular compiler or kernel has already been
+verified.
 
 ## 32. Batched collection and array kernels
 
 ### 32.1 Why exact batched accumulation refines individual steps
 
+**Lemma 32.1 (batched accumulation refines individual steps).**
 For a ready group $G$ with all successful values $v_{\textcolor{#9D75C4}{o}}$, define
 
 $$
@@ -4239,7 +4472,7 @@ of their individual components.
 | $\textcolor{#C16C86}{\lambda}_{\textcolor{#C16C86}{\mathsf{C}}}$ | Partial resource-to-slot layout view |
 | $\textcolor{#C16C86}{\mathcal{R}}_{\textcolor{#C16C86}{\Pi}}$ | Concrete/reference representation relation |
 | $\textcolor{#C16C86}{\mathop{\mathrm{Start}}\nolimits}_{\textcolor{#C16C86}{\Pi}},\textcolor{#C16C86}{\mathop{\mathrm{Decode}}\nolimits}_{\textcolor{#C16C86}{\Pi}}$ | Concrete initialization and whole-output decoding |
-| $\textcolor{#9D75C4}{P}\vdash\textcolor{#C16C86}{\Pi}\ \textcolor{#C16C86}{\mathsf{valid}}$ | Certified schedule, representation, and kernel validity |
+| $\textcolor{#9D75C4}{P}\vdash\textcolor{#C16C86}{\Pi}\ \textcolor{#C16C86}{\mathsf{valid}}$ | Valid plan: certified schedule, representation, and kernel behavior (Definition 31.1) |
 | $\textcolor{#C16C86}{\longrightarrow}_{\textcolor{#C16C86}{\Pi}},\textcolor{#C16C86}{\Downarrow}_{\textcolor{#C16C86}{\Pi}}$ | Concrete plan-step and decoded successful-execution relations |
 | $\textcolor{#C16C86}{\mathsf{PlanFailed}}(\textcolor{#9D75C4}{o})$ | Terminal concrete failure matched to an undefined source occurrence |
 
