@@ -67,6 +67,12 @@ The executor operates on directly constructed admitted core programs.
 A source elaborator is necessary for comparing source programs with production,
 not for first running and debugging the core semantics.
 
+The next-phase [source correspondence + differential debugging plan](source_correspondence_plan.md)
+specifies the first complete source slice. It is a design plan with a verified
+partial prototype, **not execution-ready**; its front gate lists the remaining
+rehearsal and review requirements. Authoring receipts are in the separate
+[source correspondence record](source_correspondence_record.md).
+
 ## 2. One notation, two presentations
 
 Use the specification's notation throughout:

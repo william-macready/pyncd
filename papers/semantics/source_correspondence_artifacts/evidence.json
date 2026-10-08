@@ -1,0 +1,627 @@
+{
+  "phase": "Authoring Phase A, partial scoped prototype; NOT an execution-ready slice",
+  "base": "1e7be327c26bd102ffaebe38917976369bc19c59",
+  "prototype_location": "/Users/williammacready/code/python/pyncd.worktrees/source-correspondence-prototype-57a40649",
+  "prototype_head": "284c7df2d169377d6029ae2a277c8a119929bbf1",
+  "production_DSL_Eval_edited": false,
+  "plan_written": false,
+  "merged": false,
+  "remote_operations": false,
+  "tasks": [
+    {
+      "boundary": "UID resolution, positional enumeration, and nested Expr reduction interpretation",
+      "commit": "76265762e18951399d64b6b087173cd8d03a3708",
+      "files": [
+        "leanncd/LeanNCD/Semantics/Source/Context.lean",
+        "leanncd/LeanNCD/Semantics/Source/Lowering.lean"
+      ],
+      "patch": "papers/semantics/source_correspondence_patches/0001-feat-semantics-prototype-UID-contexts-and-core-contr.patch",
+      "patch_sha256": "b492b2647813b63a399ec3d7fa42382e250b89cab079179ae254481fe3da31b6"
+    },
+    {
+      "boundary": "Checked normalized products and single-target Program/global-fiber correspondence",
+      "commit": "bd934a8eeaeda27503c25a328eaafe5a32af8e84",
+      "files": [
+        "leanncd/LeanNCD/Semantics/Source/Admission.lean",
+        "leanncd/LeanNCD/Semantics/Source/Statement.lean"
+      ],
+      "patch": "papers/semantics/source_correspondence_patches/0002-feat-semantics-prototype-pure-einsum-Program-corresp.patch",
+      "patch_sha256": "5810526e3721761b20642199c3429aaac6505e49dc9921fdcdec61d2dc3e4a09"
+    },
+    {
+      "boundary": "Rational differential fixtures, admission controls, and public/default integration",
+      "commit": "284c7df2d169377d6029ae2a277c8a119929bbf1",
+      "files": [
+        "leanncd/LeanNCD/Semantics.lean",
+        "leanncd/LeanNCD/Semantics/AGENTS.md",
+        "leanncd/LeanNCD/Semantics/Source.lean",
+        "leanncd/lakefile.toml",
+        "leanncd/test/Semantics/SourceCorrespondenceTest.lean"
+      ],
+      "patch": "papers/semantics/source_correspondence_patches/0003-test-semantics-verify-rational-source-correspondence.patch",
+      "patch_sha256": "a0a4305dd9f903e9dad7544156ccbe2826dc6509f6e488f42f2f040a132e92e0"
+    }
+  ],
+  "symbol_inventory": [
+    {
+      "kind": "structure",
+      "identifier": "Context",
+      "file": "leanncd/LeanNCD/Semantics/Source/Context.lean"
+    },
+    {
+      "kind": "inductive",
+      "identifier": "Ref",
+      "file": "leanncd/LeanNCD/Semantics/Source/Context.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "Ref.get",
+      "file": "leanncd/LeanNCD/Semantics/Source/Context.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "Ref.uid",
+      "file": "leanncd/LeanNCD/Semantics/Source/Context.lean"
+    },
+    {
+      "kind": "inductive",
+      "identifier": "Diagnostic",
+      "file": "leanncd/LeanNCD/Semantics/Source/Context.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "checkContext",
+      "file": "leanncd/LeanNCD/Semantics/Source/Context.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "resolveRef",
+      "file": "leanncd/LeanNCD/Semantics/Source/Context.lean"
+    },
+    {
+      "kind": "inductive",
+      "identifier": "Slots",
+      "file": "leanncd/LeanNCD/Semantics/Source/Context.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "Slots.project",
+      "file": "leanncd/LeanNCD/Semantics/Source/Context.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "resolveSlots",
+      "file": "leanncd/LeanNCD/Semantics/Source/Context.lean"
+    },
+    {
+      "kind": "abbrev",
+      "identifier": "NamedVal",
+      "file": "leanncd/LeanNCD/Semantics/Source/Context.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "namedEquiv",
+      "file": "leanncd/LeanNCD/Semantics/Source/Context.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "appendEquiv",
+      "file": "leanncd/LeanNCD/Semantics/Source/Context.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "strictResolve",
+      "file": "leanncd/LeanNCD/Semantics/Source/Context.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "strictPolicy",
+      "file": "leanncd/LeanNCD/Semantics/Source/Context.lean"
+    },
+    {
+      "kind": "instance",
+      "identifier": "coordFinite",
+      "file": "leanncd/LeanNCD/Semantics/Source/Lowering.lean"
+    },
+    {
+      "kind": "instance",
+      "identifier": "coordEq",
+      "file": "leanncd/LeanNCD/Semantics/Source/Lowering.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "semiringOps",
+      "file": "leanncd/LeanNCD/Semantics/Source/Lowering.lean"
+    },
+    {
+      "kind": "structure",
+      "identifier": "Read",
+      "file": "leanncd/LeanNCD/Semantics/Source/Lowering.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "readExpr",
+      "file": "leanncd/LeanNCD/Semantics/Source/Lowering.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "product",
+      "file": "leanncd/LeanNCD/Semantics/Source/Lowering.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "operandProduct",
+      "file": "leanncd/LeanNCD/Semantics/Source/Lowering.lean"
+    },
+    {
+      "kind": "theorem",
+      "identifier": "interpret_product",
+      "file": "leanncd/LeanNCD/Semantics/Source/Lowering.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "contract",
+      "file": "leanncd/LeanNCD/Semantics/Source/Lowering.lean"
+    },
+    {
+      "kind": "theorem",
+      "identifier": "fold_some",
+      "file": "leanncd/LeanNCD/Semantics/Source/Lowering.lean"
+    },
+    {
+      "kind": "theorem",
+      "identifier": "interpret_contract",
+      "file": "leanncd/LeanNCD/Semantics/Source/Lowering.lean"
+    },
+    {
+      "kind": "structure",
+      "identifier": "RawRead",
+      "file": "leanncd/LeanNCD/Semantics/Source/Admission.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "admitRead",
+      "file": "leanncd/LeanNCD/Semantics/Source/Admission.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "admitTerm",
+      "file": "leanncd/LeanNCD/Semantics/Source/Admission.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "admitOutput",
+      "file": "leanncd/LeanNCD/Semantics/Source/Admission.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "admitPure",
+      "file": "leanncd/LeanNCD/Semantics/Source/Admission.lean"
+    },
+    {
+      "kind": "structure",
+      "identifier": "Term",
+      "file": "leanncd/LeanNCD/Semantics/Source/Statement.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "termBody",
+      "file": "leanncd/LeanNCD/Semantics/Source/Statement.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "sumBody",
+      "file": "leanncd/LeanNCD/Semantics/Source/Statement.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "termValue",
+      "file": "leanncd/LeanNCD/Semantics/Source/Statement.lean"
+    },
+    {
+      "kind": "theorem",
+      "identifier": "interpret_sumBody",
+      "file": "leanncd/LeanNCD/Semantics/Source/Statement.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "elaborate",
+      "file": "leanncd/LeanNCD/Semantics/Source/Statement.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "target",
+      "file": "leanncd/LeanNCD/Semantics/Source/Statement.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "occurrenceEquiv",
+      "file": "leanncd/LeanNCD/Semantics/Source/Statement.lean"
+    },
+    {
+      "kind": "theorem",
+      "identifier": "elaborate_admitted",
+      "file": "leanncd/LeanNCD/Semantics/Source/Statement.lean"
+    },
+    {
+      "kind": "theorem",
+      "identifier": "collect_elaborate",
+      "file": "leanncd/LeanNCD/Semantics/Source/Statement.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "canonicalFiber",
+      "file": "leanncd/LeanNCD/Semantics/Source/Statement.lean"
+    },
+    {
+      "kind": "theorem",
+      "identifier": "pure_correspondence",
+      "file": "leanncd/LeanNCD/Semantics/Source/Statement.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "declarations",
+      "file": "leanncd/test/Semantics/SourceCorrespondenceTest.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "schedule",
+      "file": "leanncd/test/Semantics/SourceCorrespondenceTest.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "observe",
+      "file": "leanncd/test/Semantics/SourceCorrespondenceTest.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "check",
+      "file": "leanncd/test/Semantics/SourceCorrespondenceTest.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "i",
+      "file": "leanncd/test/Semantics/SourceCorrespondenceTest.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "j",
+      "file": "leanncd/test/Semantics/SourceCorrespondenceTest.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "z",
+      "file": "leanncd/test/Semantics/SourceCorrespondenceTest.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "pureRun",
+      "file": "leanncd/test/Semantics/SourceCorrespondenceTest.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "matrixShapes",
+      "file": "leanncd/test/Semantics/SourceCorrespondenceTest.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "matrixStore",
+      "file": "leanncd/test/Semantics/SourceCorrespondenceTest.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "scalarStore",
+      "file": "leanncd/test/Semantics/SourceCorrespondenceTest.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "emptyShapes",
+      "file": "leanncd/test/Semantics/SourceCorrespondenceTest.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "emptyStore",
+      "file": "leanncd/test/Semantics/SourceCorrespondenceTest.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "diagonalShapes",
+      "file": "leanncd/test/Semantics/SourceCorrespondenceTest.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "diagonalStore",
+      "file": "leanncd/test/Semantics/SourceCorrespondenceTest.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "biasShapes",
+      "file": "leanncd/test/Semantics/SourceCorrespondenceTest.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "biasStore",
+      "file": "leanncd/test/Semantics/SourceCorrespondenceTest.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "biasRun",
+      "file": "leanncd/test/Semantics/SourceCorrespondenceTest.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "diagnostic",
+      "file": "leanncd/test/Semantics/SourceCorrespondenceTest.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "checkAdmission",
+      "file": "leanncd/test/Semantics/SourceCorrespondenceTest.lean"
+    },
+    {
+      "kind": "def",
+      "identifier": "sameName",
+      "file": "leanncd/test/Semantics/SourceCorrespondenceTest.lean"
+    }
+  ],
+  "verified_claims": [
+    "UID resolution ignores printed names and enforces full finite slot extents.",
+    "Context uniqueness prevents duplicate UID binders; repeated slots reuse a Ref.",
+    "PositionalVal (currently named NamedVal) is equivalent to typed Coord by namedEquiv.",
+    "appendEquiv splits global typed valuations into output and contracted valuations.",
+    "interpret_product and interpret_contract reach existing typed Expr, not an oracle AST.",
+    "sumBody contracts each term independently before addition.",
+    "elaborate builds an existing Program with one statement and one defined target.",
+    "pure_correspondence connects actual nested Expr interpretation and Program.collect to independent canonicalFiber.",
+    "collect_elaborate uses existing Program.collect_relabel.",
+    "Full destination coordinates retain repeated-output off-diagonal empty fibers.",
+    "All six runtime fixtures compare real runValidated results with independently evaluated global fibers."
+  ],
+  "proof_dependencies": [
+    "propext",
+    "Classical.choice",
+    "Quot.sound"
+  ],
+  "proof_dependency_note": "Standard Lean/Mathlib proof dependencies only. No new axioms, sorry, unsafe, noncomputable definitions, Classical computational execution, or model witnesses.",
+  "observed_fixtures": [
+    {
+      "fixture": "distinct-UID-same-name-extent",
+      "observed": "(\"complete\", [some 26])"
+    },
+    {
+      "fixture": "shared-variable-diagonal",
+      "observed": "(\"complete\", [some 13])"
+    },
+    {
+      "fixture": "scalar-rank-zero",
+      "observed": "(\"complete\", [some 21])"
+    },
+    {
+      "fixture": "empty-contraction-nonempty-output",
+      "observed": "(\"complete\", [some 0, some 0])"
+    },
+    {
+      "fixture": "repeated-output-full-shape",
+      "observed": "(\"complete\", [some 5, some 0, some 0, some 9])"
+    },
+    {
+      "fixture": "two-term-local-bias",
+      "observed": "(\"complete\", [some 9, some 9])"
+    },
+    {
+      "fixture": "UID-lookup-distinct",
+      "observed": "none"
+    },
+    {
+      "fixture": "UID-lookup-repeated",
+      "observed": "none"
+    },
+    {
+      "fixture": "duplicate-context",
+      "observed": "some (LeanNCD.Semantics.Source.Diagnostic.duplicateContext)"
+    },
+    {
+      "fixture": "full-slot-domain",
+      "observed": "some (LeanNCD.Semantics.Source.Diagnostic.domain 10 3 2)"
+    },
+    {
+      "fixture": "output-only-pure",
+      "observed": "some (LeanNCD.Semantics.Source.Diagnostic.outputOnly 10)"
+    },
+    {
+      "fixture": "broadcast-general",
+      "observed": "none"
+    },
+    {
+      "fixture": "ordered-output-domains",
+      "observed": "some (LeanNCD.Semantics.Source.Diagnostic.domain 13 2 3)"
+    },
+    {
+      "fixture": "ordered-output-accept",
+      "observed": "none"
+    }
+  ],
+  "fixture_donors": {
+    "read_policy_and_nested_reductions": "ExpressionTest.direct/nested",
+    "collection_and_multiplicity": "CollectionModelTest.vectorProgram/collision",
+    "schedule_run_and_observation": "ExecutableReferenceTest.program/schedule/summarize/checkSmoke"
+  },
+  "mutations": [
+    {
+      "label": "M1 independent UIDs become one diagonal binder",
+      "task": "fixtures",
+      "file": "test/Semantics/SourceCorrespondenceTest.lean",
+      "old": "(pureRun matrixShapes [] [i, j] [] [\u27e81, [10, 11]\u27e9] matrixStore)",
+      "new": "(pureRun matrixShapes [] [i] [] [\u27e81, [10, 10]\u27e9] matrixStore)",
+      "targets": [
+        "+Semantics.SourceCorrespondenceTest"
+      ],
+      "expect": [
+        "distinct-UID-same-name-extent: expected",
+        "some 13"
+      ],
+      "observed_failure": "error: test/Semantics/SourceCorrespondenceTest.lean:104:0: distinct-UID-same-name-extent: expected (\"complete\", [some 26]), got (\"complete\", [some 13])",
+      "restored_byte_identical": true,
+      "restored_build_passed": true,
+      "classification": "fixture-input semantic discriminator, not implementation mutation"
+    },
+    {
+      "label": "M2 diagonal becomes independent variables",
+      "task": "fixtures",
+      "file": "test/Semantics/SourceCorrespondenceTest.lean",
+      "old": "(pureRun matrixShapes [] [i] [] [\u27e81, [10, 10]\u27e9] matrixStore)",
+      "new": "(pureRun matrixShapes [] [i, j] [] [\u27e81, [10, 11]\u27e9] matrixStore)",
+      "targets": [
+        "+Semantics.SourceCorrespondenceTest"
+      ],
+      "expect": [
+        "shared-variable-diagonal: expected",
+        "some 26"
+      ],
+      "observed_failure": "error: test/Semantics/SourceCorrespondenceTest.lean:107:0: shared-variable-diagonal: expected (\"complete\", [some 13]), got (\"complete\", [some 26])",
+      "restored_byte_identical": true,
+      "restored_build_passed": true,
+      "classification": "fixture-input semantic discriminator, not implementation mutation"
+    },
+    {
+      "label": "M3 scalar operand multiplicity removed",
+      "task": "fixtures",
+      "file": "test/Semantics/SourceCorrespondenceTest.lean",
+      "old": "(pureRun scalarShapes [] [] [] [\u27e81, []\u27e9, \u27e82, []\u27e9] scalarStore)",
+      "new": "(pureRun scalarShapes [] [] [] [\u27e81, []\u27e9] scalarStore)",
+      "targets": [
+        "+Semantics.SourceCorrespondenceTest"
+      ],
+      "expect": [
+        "scalar-rank-zero: expected",
+        "some 3"
+      ],
+      "observed_failure": "error: test/Semantics/SourceCorrespondenceTest.lean:115:0: scalar-rank-zero: expected (\"complete\", [some 21]), got (\"complete\", [some 3])",
+      "restored_byte_identical": true,
+      "restored_build_passed": true,
+      "classification": "fixture-input semantic discriminator, not implementation mutation"
+    },
+    {
+      "label": "M4 zero contraction extent becomes singleton",
+      "task": "fixtures",
+      "file": "test/Semantics/SourceCorrespondenceTest.lean",
+      "old": "@[reducible] def z : Axis := \u27e812, 0\u27e9",
+      "new": "@[reducible] def z : Axis := \u27e812, 1\u27e9",
+      "targets": [
+        "+Semantics.SourceCorrespondenceTest"
+      ],
+      "expect": [
+        "empty-contraction-nonempty-output: expected",
+        "some 1"
+      ],
+      "observed_failure": "error: test/Semantics/SourceCorrespondenceTest.lean:123:0: empty-contraction-nonempty-output: expected (\"complete\", [some 0, some 0]), got (\"complete\", [some 1, some 1])",
+      "restored_byte_identical": true,
+      "restored_build_passed": true,
+      "classification": "fixture-input semantic discriminator, not implementation mutation"
+    },
+    {
+      "label": "M5 bias incorrectly contracted",
+      "task": "fixtures",
+      "file": "test/Semantics/SourceCorrespondenceTest.lean",
+      "old": "admitTerm (\u03c3 := declarations biasShapes) [i] [] [\u27e83, [10]\u27e9]",
+      "new": "admitTerm (\u03c3 := declarations biasShapes) [i] [j] [\u27e83, [10]\u27e9, \u27e82, [11]\u27e9]",
+      "targets": [
+        "+Semantics.SourceCorrespondenceTest"
+      ],
+      "expect": [
+        "two-term-local-bias: expected",
+        "some 16"
+      ],
+      "observed_failure": "error: test/Semantics/SourceCorrespondenceTest.lean:151:0: two-term-local-bias: expected (\"complete\", [some 9, some 9]), got (\"complete\", [some 16, some 16])",
+      "restored_byte_identical": true,
+      "restored_build_passed": true,
+      "classification": "fixture-input semantic discriminator, not implementation mutation"
+    },
+    {
+      "label": "M6 repeated output becomes full independent outer product",
+      "task": "fixtures",
+      "file": "test/Semantics/SourceCorrespondenceTest.lean",
+      "old": "(pureRun diagonalShapes [i] [] [10, 10] [\u27e81, [10]\u27e9] diagonalStore)",
+      "new": "(pureRun diagonalShapes [i, j] [] [10, 11] [\u27e81, [10]\u27e9, \u27e81, [11]\u27e9] diagonalStore)",
+      "targets": [
+        "+Semantics.SourceCorrespondenceTest"
+      ],
+      "expect": [
+        "repeated-output-full-shape: expected",
+        "some 45"
+      ],
+      "observed_failure": "error: test/Semantics/SourceCorrespondenceTest.lean:135:0: repeated-output-full-shape: expected (\"complete\", [some 5, some 0, some 0, some 9]), got (\"complete\", [some 25, some 45, some 45, some 81])",
+      "restored_byte_identical": true,
+      "restored_build_passed": true,
+      "classification": "fixture-input semantic discriminator, not implementation mutation"
+    }
+  ],
+  "validation": {
+    "target": "+Semantics.SourceCorrespondenceTest",
+    "fixture_build": "passed",
+    "full_default_build": "passed, 8710 jobs",
+    "mutations": "6/6 cycles passed with intended failures and byte-identical restoration",
+    "ordered_patch_replay": "passed with temporary index; reconstructed tree equals prototype HEAD",
+    "replay_tree": "13b3b5f268a96bb57d8dd405602162041e81d0bd",
+    "warnings": "Existing imported Semantics warnings remain; no new prototype warnings in successful fixture build.",
+    "logs": [
+      "fixtures.log",
+      "full-build.log",
+      "mutations.log",
+      "mutations-summary.txt"
+    ]
+  },
+  "unsupported_items": [
+    "UID-keyed dependent valuation-to-Coord equivalence is UNVERIFIED: NamedVal is positional, despite its current name; do not advertise named UID valuation correctness.",
+    "Capture-avoiding binder renaming and variable substitution are UNVERIFIED and NOT implemented, even for the admitted reduction fragment.",
+    "Source statement permutation preserving tags is UNVERIFIED: only one statement is generated. Existing collect_relabel is used for valuation enumeration, not a multi-statement permutation theorem.",
+    "No schedule event-order invariance claim.",
+    "Explicit supplied out/bound partitions are checked, not automatically synthesized from a single unordered resolved source context.",
+    "No theorem proving raw admission computes the exact source support partition; runtime guards enforce the supplied fragment.",
+    "No production TLProgram/Factor adapter or production differential leg: parent owns DSL/Eval audit and probes.",
+    "Diagnostics identify UIDs/domains but do not yet carry source statement/term/factor/slot provenance or spans.",
+    "Single defined target with every other tensor input; arbitrary supplied roles and multi-statement targets need a later adapter.",
+    "Read factors only; optional reciprocal factors omitted. Empty-product identity is core lowering, not an invented DSL source literal.",
+    "No affine maps, guards, Iverson factors, marked slices, scans, dimension inference, parser changes, dtype expansion, floats, or backend proof.",
+    "No implementation-level mutation coverage; six completed cycles mutate fixture source inputs.",
+    "No whole-branch external review was requested or performed for this detached authoring prototype."
+  ],
+  "fresh_dispatch_guidance": [
+    "Use task patches mechanically; do not transcribe Lean code into a plan.",
+    "Complete UID-keyed valuation and scoped substitution seams before labeling the first full slice execution-ready.",
+    "Add multi-statement tag-preserving permutation, source-linked provenance, and explicit-role adapter tasks.",
+    "Combine parent production audit/probes with this independent core evidence; never hide cross-statement production collection divergence."
+  ],
+  "paths_verified": [
+    "/Users/williammacready/code/python/pyncd.worktrees/source-correspondence-prototype-57a40649/leanncd/LeanNCD/Semantics.lean",
+    "/Users/williammacready/code/python/pyncd.worktrees/source-correspondence-prototype-57a40649/leanncd/LeanNCD/Semantics/AGENTS.md",
+    "/Users/williammacready/code/python/pyncd.worktrees/source-correspondence-prototype-57a40649/leanncd/LeanNCD/Semantics/Collection.lean",
+    "/Users/williammacready/code/python/pyncd.worktrees/source-correspondence-prototype-57a40649/leanncd/LeanNCD/Semantics/ExecutableState.lean",
+    "/Users/williammacready/code/python/pyncd.worktrees/source-correspondence-prototype-57a40649/leanncd/LeanNCD/Semantics/Expr.lean",
+    "/Users/williammacready/code/python/pyncd.worktrees/source-correspondence-prototype-57a40649/leanncd/LeanNCD/Semantics/Interpret.lean",
+    "/Users/williammacready/code/python/pyncd.worktrees/source-correspondence-prototype-57a40649/leanncd/LeanNCD/Semantics/Program.lean",
+    "/Users/williammacready/code/python/pyncd.worktrees/source-correspondence-prototype-57a40649/leanncd/LeanNCD/Semantics/RationalReference.lean",
+    "/Users/williammacready/code/python/pyncd.worktrees/source-correspondence-prototype-57a40649/leanncd/LeanNCD/Semantics/ReferenceExecutor.lean",
+    "/Users/williammacready/code/python/pyncd.worktrees/source-correspondence-prototype-57a40649/leanncd/LeanNCD/Semantics/Source.lean",
+    "/Users/williammacready/code/python/pyncd.worktrees/source-correspondence-prototype-57a40649/leanncd/LeanNCD/Semantics/Source/Admission.lean",
+    "/Users/williammacready/code/python/pyncd.worktrees/source-correspondence-prototype-57a40649/leanncd/LeanNCD/Semantics/Source/Context.lean",
+    "/Users/williammacready/code/python/pyncd.worktrees/source-correspondence-prototype-57a40649/leanncd/LeanNCD/Semantics/Source/Lowering.lean",
+    "/Users/williammacready/code/python/pyncd.worktrees/source-correspondence-prototype-57a40649/leanncd/LeanNCD/Semantics/Source/Statement.lean",
+    "/Users/williammacready/code/python/pyncd.worktrees/source-correspondence-prototype-57a40649/leanncd/LeanNCD/Semantics/Types.lean",
+    "/Users/williammacready/code/python/pyncd.worktrees/source-correspondence-prototype-57a40649/leanncd/lakefile.toml",
+    "/Users/williammacready/code/python/pyncd.worktrees/source-correspondence-prototype-57a40649/leanncd/test/Semantics/CollectionModelTest.lean",
+    "/Users/williammacready/code/python/pyncd.worktrees/source-correspondence-prototype-57a40649/leanncd/test/Semantics/ExecutableReferenceTest.lean",
+    "/Users/williammacready/code/python/pyncd.worktrees/source-correspondence-prototype-57a40649/leanncd/test/Semantics/ExpressionTest.lean",
+    "/Users/williammacready/code/python/pyncd.worktrees/source-correspondence-prototype-57a40649/leanncd/test/Semantics/SourceCorrespondenceTest.lean",
+    "/Users/williammacready/code/python/pyncd.worktrees/source-correspondence-prototype-57a40649/papers/semantics/lean_executable_semantics_path.md",
+    "/Users/williammacready/code/python/pyncd.worktrees/source-correspondence-prototype-57a40649/papers/semantics/tensor_logic_semantics.md"
+  ],
+  "budget": {
+    "turn_limit": "~60",
+    "context_peak_limit": "~250k",
+    "token_report_attempt": "no transcript for session 57a40649-2fd4-4710-b619-902d9b8b78de",
+    "measured_usage": null,
+    "breach_detected": false,
+    "qualification": "Telemetry unavailable; cannot certify measured cumulative tokens or context peak. Stopped within the visible approximate turn allowance."
+  }
+}

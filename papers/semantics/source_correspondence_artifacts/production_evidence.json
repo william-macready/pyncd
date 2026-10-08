@@ -1,0 +1,34 @@
+{
+  "base": "1e7be327c26bd102ffaebe38917976369bc19c59",
+  "profile": "Explicit f64 source declarations, scalar read sum-products, pinned finite domains, integer-valued inputs",
+  "probe": "papers/semantics/source_correspondence_artifacts/production_probe.lean",
+  "log": "papers/semantics/source_correspondence_artifacts/production_probe.log",
+  "validation": "lean-file.sh passed after correcting reserved helper names and application layout",
+  "evidence_strength": "Observed production outputs, not a proved source adapter or an automated semantic-to-production differential test",
+  "observations": [
+    {"fixture": "matmul", "shape": [2, 2], "legacy": [4, 5, 10, 11], "checked": [4, 5, 10, 11], "warnings": []},
+    {"fixture": "term-local-bias", "shape": [2], "legacy": [13, 24], "checked": [13, 24], "warnings": []},
+    {"fixture": "diagonal-read", "shape": [], "legacy": [13], "checked": [13], "warnings": []},
+    {"fixture": "diagonal-write", "shape": [2, 2], "legacy": [5, 0, 0, 9], "checked": [5, 0, 0, 9], "warnings": []},
+    {"fixture": "empty-contraction", "shape": [2], "legacy": [0, 0], "checked": [0, 0], "warnings": []},
+    {"fixture": "scalar", "shape": [], "legacy": [21], "checked": [21], "warnings": []},
+    {"fixture": "within-statement-duplicates", "shape": [2], "legacy": [10, 18], "checked": [10, 18], "warnings": []},
+    {"fixture": "cross-statement-known-contract", "shape": [2], "legacy": [2, 4], "checked": [2, 4], "warnings": [], "classification": "Known contract difference; not shared-fragment parity"},
+    {"fixture": "default-dtype-outside-f64-profile", "legacy_error": "EvalError.unsupportedDtype for A, f32", "checked_error": "PlanCompileCause.inputSignature (InputSignatureError.dtypeMismatch A f32 f64)", "classification": "Explicit f64 is required; never silently rewrite source declarations"}
+  ],
+  "audited_symbols": [
+    {"identifier": "assignUIDs", "file": "leanncd/LeanNCD/DSL/Pipeline/Structural.lean", "fact": "Source axis names intentionally resolve to UIDs; the resolved semantic adapter must not remint UIDs by display name"},
+    {"identifier": "TLProgram.compileToScheduled", "file": "leanncd/LeanNCD/DSL/Compile.lean", "fact": "Logical compile pipeline retains source statements and invokes full structural checking and scheduling"},
+    {"identifier": "TLProgram.eval", "file": "leanncd/LeanNCD/Eval/Entry.lean", "fact": "Source evaluator compiles then invokes evalScheduled; typed failure and warning preservation"},
+    {"identifier": "evalAssignSeeded", "file": "leanncd/LeanNCD/Eval/Contract.lean", "fact": "Per-term contraction; no union contraction across all additive terms"},
+    {"identifier": "gatherRead", "file": "leanncd/LeanNCD/Eval/Gather.lean", "fact": "Ordinary production reads can zero-pad; semantic adapter must admit bounded reads and never adopt that fallback"},
+    {"identifier": "prepareEvalPlan", "file": "leanncd/LeanNCD/Eval/Plan/Compile.lean", "fact": "Checked production preparation must remain a separate comparison leg"},
+    {"identifier": "runPreparedDense", "file": "leanncd/LeanNCD/Eval/Plan/Adapter.lean", "fact": "Named checked binary64 execution boundary"},
+    {"identifier": "storageConstraintOfName?", "file": "leanncd/LeanNCD/DSL/Ast.lean", "fact": "Current plain and undeclared real names default to f32; earlier Ast and DSL AGENTS comments still contain contradictory f64 wording"}
+  ],
+  "deferred": [
+    "The stale f64 comments in Ast.lean and DSL/AGENTS.md do not block planning; estimated one Direct documentation dispatch if separately authorized",
+    "No claim of bitwise floating-point schedule independence or backend refinement",
+    "No implementation-level production mutation was performed during this observational probe"
+  ]
+}

@@ -1,0 +1,108 @@
+=== M1 independent UIDs become one diagonal binder MUTATE ===
+--- mutated test/Semantics/SourceCorrespondenceTest.lean: '(pureRun matrixShapes [] [i, j] [] [⟨1, [10, 11]⟩] matrixStore)' -> '(pureRun matrixShapes [] [i] [] [⟨1, [10, 10]⟩] matrixStore)' ---
+error: test/Semantics/SourceCorrespondenceTest.lean:104:0: distinct-UID-same-name-extent: expected ("complete", [some 26]), got ("complete", [some 13])
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring test/Semantics/SourceCorrespondenceTest.lean now) ---
+=== M1 independent UIDs become one diagonal binder MUTATE exit=1 ===
+=== M1 independent UIDs become one diagonal binder RESTORED BUILD ===
+info: test/Semantics/SourceCorrespondenceTest.lean:171:0: output-only-pure: some (LeanNCD.Semantics.Source.Diagnostic.outputOnly 10)
+info: test/Semantics/SourceCorrespondenceTest.lean:174:0: broadcast-general: none
+info: test/Semantics/SourceCorrespondenceTest.lean:176:0: ordered-output-domains: some (LeanNCD.Semantics.Source.Diagnostic.domain 13 2 3)
+info: test/Semantics/SourceCorrespondenceTest.lean:179:0: ordered-output-accept: none
+Build completed successfully (2964 jobs).
+=== M1 independent UIDs become one diagonal binder SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+M1 independent UIDs become one diagonal binder: PASS
+=== M1 independent UIDs become one diagonal binder MANIFEST VERDICT: PASS ===
+=== M2 diagonal becomes independent variables MUTATE ===
+--- mutated test/Semantics/SourceCorrespondenceTest.lean: '(pureRun matrixShapes [] [i] [] [⟨1, [10, 10]⟩] matrixStore)' -> '(pureRun matrixShapes [] [i, j] [] [⟨1, [10, 11]⟩] matrixStore)' ---
+error: test/Semantics/SourceCorrespondenceTest.lean:107:0: shared-variable-diagonal: expected ("complete", [some 13]), got ("complete", [some 26])
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring test/Semantics/SourceCorrespondenceTest.lean now) ---
+=== M2 diagonal becomes independent variables MUTATE exit=1 ===
+=== M2 diagonal becomes independent variables RESTORED BUILD ===
+info: test/Semantics/SourceCorrespondenceTest.lean:171:0: output-only-pure: some (LeanNCD.Semantics.Source.Diagnostic.outputOnly 10)
+info: test/Semantics/SourceCorrespondenceTest.lean:174:0: broadcast-general: none
+info: test/Semantics/SourceCorrespondenceTest.lean:176:0: ordered-output-domains: some (LeanNCD.Semantics.Source.Diagnostic.domain 13 2 3)
+info: test/Semantics/SourceCorrespondenceTest.lean:179:0: ordered-output-accept: none
+Build completed successfully (2964 jobs).
+=== M2 diagonal becomes independent variables SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+M2 diagonal becomes independent variables: PASS
+=== M2 diagonal becomes independent variables MANIFEST VERDICT: PASS ===
+=== M3 scalar operand multiplicity removed MUTATE ===
+--- mutated test/Semantics/SourceCorrespondenceTest.lean: '(pureRun scalarShapes [] [] [] [⟨1, []⟩, ⟨2, []⟩] scalarStore)' -> '(pureRun scalarShapes [] [] [] [⟨1, []⟩] scalarStore)' ---
+error: test/Semantics/SourceCorrespondenceTest.lean:115:0: scalar-rank-zero: expected ("complete", [some 21]), got ("complete", [some 3])
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring test/Semantics/SourceCorrespondenceTest.lean now) ---
+=== M3 scalar operand multiplicity removed MUTATE exit=1 ===
+=== M3 scalar operand multiplicity removed RESTORED BUILD ===
+info: test/Semantics/SourceCorrespondenceTest.lean:171:0: output-only-pure: some (LeanNCD.Semantics.Source.Diagnostic.outputOnly 10)
+info: test/Semantics/SourceCorrespondenceTest.lean:174:0: broadcast-general: none
+info: test/Semantics/SourceCorrespondenceTest.lean:176:0: ordered-output-domains: some (LeanNCD.Semantics.Source.Diagnostic.domain 13 2 3)
+info: test/Semantics/SourceCorrespondenceTest.lean:179:0: ordered-output-accept: none
+Build completed successfully (2964 jobs).
+=== M3 scalar operand multiplicity removed SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+M3 scalar operand multiplicity removed: PASS
+=== M3 scalar operand multiplicity removed MANIFEST VERDICT: PASS ===
+=== M4 zero contraction extent becomes singleton MUTATE ===
+--- mutated test/Semantics/SourceCorrespondenceTest.lean: '@[reducible] def z : Axis := ⟨12, 0⟩' -> '@[reducible] def z : Axis := ⟨12, 1⟩' ---
+error: test/Semantics/SourceCorrespondenceTest.lean:123:0: empty-contraction-nonempty-output: expected ("complete", [some 0, some 0]), got ("complete", [some 1, some 1])
+error: test/Semantics/SourceCorrespondenceTest.lean:182:0: Expression
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring test/Semantics/SourceCorrespondenceTest.lean now) ---
+=== M4 zero contraction extent becomes singleton MUTATE exit=1 ===
+=== M4 zero contraction extent becomes singleton RESTORED BUILD ===
+info: test/Semantics/SourceCorrespondenceTest.lean:171:0: output-only-pure: some (LeanNCD.Semantics.Source.Diagnostic.outputOnly 10)
+info: test/Semantics/SourceCorrespondenceTest.lean:174:0: broadcast-general: none
+info: test/Semantics/SourceCorrespondenceTest.lean:176:0: ordered-output-domains: some (LeanNCD.Semantics.Source.Diagnostic.domain 13 2 3)
+info: test/Semantics/SourceCorrespondenceTest.lean:179:0: ordered-output-accept: none
+Build completed successfully (2964 jobs).
+=== M4 zero contraction extent becomes singleton SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+M4 zero contraction extent becomes singleton: PASS
+=== M4 zero contraction extent becomes singleton MANIFEST VERDICT: PASS ===
+=== M5 bias incorrectly contracted MUTATE ===
+--- mutated test/Semantics/SourceCorrespondenceTest.lean: 'admitTerm (σ := declarations biasShapes) [i] [] [⟨3, [10]⟩]' -> 'admitTerm (σ := declarations biasShapes) [i] [j] [⟨3, [10]⟩, ⟨2, [11]⟩]' ---
+error: test/Semantics/SourceCorrespondenceTest.lean:151:0: two-term-local-bias: expected ("complete", [some 9, some 9]), got ("complete", [some 16, some 16])
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring test/Semantics/SourceCorrespondenceTest.lean now) ---
+=== M5 bias incorrectly contracted MUTATE exit=1 ===
+=== M5 bias incorrectly contracted RESTORED BUILD ===
+info: test/Semantics/SourceCorrespondenceTest.lean:171:0: output-only-pure: some (LeanNCD.Semantics.Source.Diagnostic.outputOnly 10)
+info: test/Semantics/SourceCorrespondenceTest.lean:174:0: broadcast-general: none
+info: test/Semantics/SourceCorrespondenceTest.lean:176:0: ordered-output-domains: some (LeanNCD.Semantics.Source.Diagnostic.domain 13 2 3)
+info: test/Semantics/SourceCorrespondenceTest.lean:179:0: ordered-output-accept: none
+Build completed successfully (2964 jobs).
+=== M5 bias incorrectly contracted SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+M5 bias incorrectly contracted: PASS
+=== M5 bias incorrectly contracted MANIFEST VERDICT: PASS ===
+=== M6 repeated output becomes full independent outer product MUTATE ===
+--- mutated test/Semantics/SourceCorrespondenceTest.lean: '(pureRun diagonalShapes [i] [] [10, 10] [⟨1, [10]⟩] diagonalStore)' -> '(pureRun diagonalShapes [i, j] [] [10, 11] [⟨1, [10]⟩, ⟨1, [11]⟩] diagonalStore)' ---
+error: test/Semantics/SourceCorrespondenceTest.lean:135:0: repeated-output-full-shape: expected ("complete", [some 5, some 0, some 0, some 9]), got ("complete", [some 25, some 45, some 45, some 81])
+error: Lean exited with code 1
+error: build failed
+--- lake build exit code: 1 (restoring test/Semantics/SourceCorrespondenceTest.lean now) ---
+=== M6 repeated output becomes full independent outer product MUTATE exit=1 ===
+=== M6 repeated output becomes full independent outer product RESTORED BUILD ===
+info: test/Semantics/SourceCorrespondenceTest.lean:171:0: output-only-pure: some (LeanNCD.Semantics.Source.Diagnostic.outputOnly 10)
+info: test/Semantics/SourceCorrespondenceTest.lean:174:0: broadcast-general: none
+info: test/Semantics/SourceCorrespondenceTest.lean:176:0: ordered-output-domains: some (LeanNCD.Semantics.Source.Diagnostic.domain 13 2 3)
+info: test/Semantics/SourceCorrespondenceTest.lean:179:0: ordered-output-accept: none
+Build completed successfully (2964 jobs).
+=== M6 repeated output becomes full independent outer product SUMMARY: mutation_exit=1 restore_hash_exit=0 restored_build_exit=0 ===
+M6 repeated output becomes full independent outer product: PASS
+=== M6 repeated output becomes full independent outer product MANIFEST VERDICT: PASS ===
+
+| Mutation | Cycle (broke, then restored build green) | File byte-identical | Expected failure seen | Result |
+|---|---|---|---|---|
+| M1 independent UIDs become one diagonal binder | yes | yes | yes | PASS |
+| M2 diagonal becomes independent variables | yes | yes | yes | PASS |
+| M3 scalar operand multiplicity removed | yes | yes | yes | PASS |
+| M4 zero contraction extent becomes singleton | yes | yes | yes | PASS |
+| M5 bias incorrectly contracted | yes | yes | yes | PASS |
+| M6 repeated output becomes full independent outer product | yes | yes | yes | PASS |
+
+6/6 cycles passed.

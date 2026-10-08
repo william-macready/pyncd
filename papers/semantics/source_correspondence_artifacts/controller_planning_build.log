@@ -1,0 +1,931 @@
+ℹ [8480/8565] Replayed LeanNCD.Semantics.Readiness
+info: LeanNCD/Semantics/Readiness.lean:93:0: 'LeanNCD.Semantics.evalWith_stable' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Readiness.lean:94:0: 'LeanNCD.Semantics.interpret_stable' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Readiness.lean:95:0: 'LeanNCD.Semantics.ready_consistent' depends on axioms: [propext, Quot.sound]
+ℹ [8481/8565] Replayed LeanNCD.Semantics.Completeness
+info: LeanNCD/Semantics/Completeness.lean:184:0: 'LeanNCD.Semantics.sequence_some_iff' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Completeness.lean:185:0: 'LeanNCD.Semantics.tab_complete' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Completeness.lean:186:0: 'LeanNCD.Semantics.foldValues_defined_iff' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Completeness.lean:187:0: 'LeanNCD.Semantics.reduce_defined_iff' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Completeness.lean:188:0: 'LeanNCD.Semantics.reduce_empty' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Completeness.lean:189:0: 'LeanNCD.Semantics.foldValues_some_map_sum' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Completeness.lean:190:0: 'LeanNCD.Semantics.reduce_sum' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Completeness.lean:191:0: 'LeanNCD.Semantics.interpret_reduce_sum' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Completeness.lean:192:0: 'LeanNCD.Semantics.at_some_iff' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Completeness.lean:193:0: 'LeanNCD.Semantics.registry_apply_some_iff' depends on axioms: [propext]
+info: LeanNCD/Semantics/Completeness.lean:194:0: 'LeanNCD.Semantics.prim_some_iff' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Completeness.lean:195:0: 'LeanNCD.Semantics.ready_complete_extension' depends on axioms: [propext, Quot.sound]
+⚠ [8485/8565] Replayed LeanNCD.Semantics.Machine
+warning: LeanNCD/Semantics/Machine.lean:85:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.finalStore_published`:
+  [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+⚠ [8486/8565] Replayed LeanNCD.Semantics.Invariants
+warning: LeanNCD/Semantics/Invariants.lean:99:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.publish_extends`:
+  [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+ℹ [8487/8565] Replayed LeanNCD.Semantics.Soundness
+info: LeanNCD/Semantics/Soundness.lean:112:0: 'LeanNCD.Semantics.Program.reachable_invariant' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Soundness.lean:113:0: 'LeanNCD.Semantics.Program.successful_model' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Soundness.lean:114:0: 'LeanNCD.Semantics.Program.candidate_preserved' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Soundness.lean:115:0: 'LeanNCD.Semantics.Program.successful_unique' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Soundness.lean:116:0: 'LeanNCD.Semantics.Program.successful_admInput' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Soundness.lean:117:0: 'LeanNCD.Semantics.Program.successful_denotation' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Soundness.lean:118:0: 'LeanNCD.Semantics.Program.failed_no_model' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [8489/8565] Replayed LeanNCD.Semantics.Measure
+info: LeanNCD/Semantics/Measure.lean:144:0: 'LeanNCD.Semantics.Program.initial_measure' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:145:0: 'LeanNCD.Semantics.Program.consume_measure' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:146:0: 'LeanNCD.Semantics.Program.publish_measure' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:147:0: 'LeanNCD.Semantics.Program.step_wellFounded' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:148:0: 'LeanNCD.Semantics.Program.trace_bound' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:149:0: 'LeanNCD.Semantics.Program.running_trace_bound' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:150:0: 'LeanNCD.Semantics.Program.failed_trace_bound' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:151:0: 'LeanNCD.Semantics.Program.no_infinite_chain' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [8490/8565] Replayed LeanNCD.Semantics.Progress
+info: LeanNCD/Semantics/Progress.lean:182:0: 'LeanNCD.Semantics.Program.ranked_progress' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:183:0: 'LeanNCD.Semantics.Program.ranked_not_blocked' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:184:0: 'LeanNCD.Semantics.Program.terminal_extension' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:185:0: 'LeanNCD.Semantics.Program.maximal_extension' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:186:0: 'LeanNCD.Semantics.Program.maximal_dichotomy' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:187:0: 'LeanNCD.Semantics.Program.model_maximal_success' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:188:0: 'LeanNCD.Semantics.Program.no_model_maximal_failure' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:189:0: 'LeanNCD.Semantics.Program.initialization_iff_singleton' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:190:0: 'LeanNCD.Semantics.Program.successful_schedules_agree' depends on axioms: [propext, Classical.choice, Quot.sound]
+⚠ [8491/8565] Replayed LeanNCD.Semantics.ExecutableState
+warning: LeanNCD/Semantics/ExecutableState.lean:51:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Executor.validate_error`:
+  [DecidableEq σ.Tensor]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq σ.Tensor] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+warning: LeanNCD/Semantics/ExecutableState.lean:83:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Executor.publish_agrees`:
+  [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+warning: LeanNCD/Semantics/ExecutableState.lean:87:8: Used `tac1 <;> tac2` where `(tac1; tac2)` would suffice
+
+Note: This linter can be disabled with `set_option linter.unnecessarySeqFocus false`
+warning: LeanNCD/Semantics/ExecutableState.lean:94:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Executor.initialBudget_agrees`:
+  [DecidableEq σ.Tensor]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq σ.Tensor] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+⚠ [8493/8704] Replayed LeanNCD.Semantics.ExecutableSelection
+warning: LeanNCD/Semantics/ExecutableSelection.lean:69:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Executor.scan_none`:
+  [DecidableEq σ.Tensor]
+  [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq σ.Tensor] [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+info: LeanNCD/Semantics/ExecutableSelection.lean:120:0: 'LeanNCD.Semantics.Program.Executor.select_none_iff' depends on axioms: [propext, Classical.choice, Quot.sound]
+⚠ [8494/8704] Replayed LeanNCD.Semantics.ReferenceExecutor
+warning: LeanNCD/Semantics/ReferenceExecutor.lean:10:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Executor.validate_accepts`:
+  [DecidableEq σ.Tensor]
+  [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq σ.Tensor] [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+warning: LeanNCD/Semantics/ReferenceExecutor.lean:19:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Executor.validate_preserves`:
+  [DecidableEq σ.Tensor]
+  [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq σ.Tensor] [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+info: LeanNCD/Semantics/ReferenceExecutor.lean:187:0: 'LeanNCD.Semantics.Program.Executor.run_not_exhausted' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/ReferenceExecutor.lean:188:0: 'LeanNCD.Semantics.Program.Executor.run_ranked_dichotomy' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/ReferenceExecutor.lean:189:0: 'LeanNCD.Semantics.Program.Executor.result_model' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/ReferenceExecutor.lean:190:0: 'LeanNCD.Semantics.Program.Executor.result_failure' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [8498/8704] Replayed DSL.SyntaxTest
+info: test/DSL/SyntaxTest.lean:6:0: do
+  let info ← Lean.MonadRef.mkInfoFromRefPos
+  let scp ← Lean.getCurrMacroScope
+  let quotCtx ← Lean.MonadQuotation.getContext
+  pure
+      {
+        raw :=
+          Lean.Syntax.node2 info `LeanNCD.tl_declTensor_ (Lean.Syntax.atom info "tensor")
+            (Lean.Syntax.node1 info `null
+              (Lean.Syntax.node4 info `LeanNCD.«tl_named_shape_(_)»
+                (Lean.Syntax.ident info "A".toRawSubstring' (Lean.addMacroScope quotCtx `A scp) [])
+                (Lean.Syntax.atom info "(")
+                (Lean.Syntax.node1 info `null
+                  (Lean.Syntax.node1 info `LeanNCD.tl_axis_spec_
+                    (Lean.Syntax.ident info "i".toRawSubstring' (Lean.addMacroScope quotCtx `i scp) [])))
+                (Lean.Syntax.atom info ")"))) } : Lean.MacroM (Lean.TSyntax `tl_decl)
+info: test/DSL/SyntaxTest.lean:10:0: do
+  let info ← Lean.MonadRef.mkInfoFromRefPos
+  let scp ← Lean.getCurrMacroScope
+  let quotCtx ← Lean.MonadQuotation.getContext
+  pure
+      {
+        raw :=
+          Lean.Syntax.node3 info `LeanNCD.tl_declTensor__ (Lean.Syntax.atom info "tensor")
+            (Lean.Syntax.node1 info `LeanNCD.tl_elem_typeF32 (Lean.Syntax.atom info "f32"))
+            (Lean.Syntax.node1 info `null
+              (Lean.Syntax.node4 info `LeanNCD.«tl_named_shape_(_)»
+                (Lean.Syntax.ident info "A".toRawSubstring' (Lean.addMacroScope quotCtx `A scp) [])
+                (Lean.Syntax.atom info "(")
+                (Lean.Syntax.node1 info `null
+                  (Lean.Syntax.node1 info `LeanNCD.tl_axis_spec_
+                    (Lean.Syntax.ident info "i".toRawSubstring' (Lean.addMacroScope quotCtx `i scp) [])))
+                (Lean.Syntax.atom info ")"))) } : Lean.MacroM (Lean.TSyntax `tl_decl)
+info: test/DSL/SyntaxTest.lean:11:0: do
+  let info ← Lean.MonadRef.mkInfoFromRefPos
+  let scp ← Lean.getCurrMacroScope
+  let quotCtx ← Lean.MonadQuotation.getContext
+  pure
+      {
+        raw :=
+          Lean.Syntax.node3 info `LeanNCD.tl_declTensor__ (Lean.Syntax.atom info "tensor")
+            (Lean.Syntax.node1 info `LeanNCD.tl_elem_typeF64 (Lean.Syntax.atom info "f64"))
+            (Lean.Syntax.node1 info `null
+              (Lean.Syntax.node4 info `LeanNCD.«tl_named_shape_(_)»
+                (Lean.Syntax.ident info "A".toRawSubstring' (Lean.addMacroScope quotCtx `A scp) [])
+                (Lean.Syntax.atom info "(")
+                (Lean.Syntax.node1 info `null
+                  (Lean.Syntax.node1 info `LeanNCD.tl_axis_spec_
+                    (Lean.Syntax.ident info "i".toRawSubstring' (Lean.addMacroScope quotCtx `i scp) [])))
+                (Lean.Syntax.atom info ")"))) } : Lean.MacroM (Lean.TSyntax `tl_decl)
+info: test/DSL/SyntaxTest.lean:21:0: do
+  let info ← Lean.MonadRef.mkInfoFromRefPos
+  let scp ← Lean.getCurrMacroScope
+  let quotCtx ← Lean.MonadQuotation.getContext
+  pure
+      {
+        raw :=
+          Lean.Syntax.node3 info `LeanNCD.tl_declTensor__ (Lean.Syntax.atom info "tensor")
+            (Lean.Syntax.node1 info `LeanNCD.tl_elem_typeF32 (Lean.Syntax.atom info "f32"))
+            (Lean.Syntax.node1 info `null
+              (Lean.Syntax.node4 info `LeanNCD.«tl_named_shape_(_)»
+                (Lean.Syntax.ident info "f32".toRawSubstring' (Lean.addMacroScope quotCtx `f32 scp)
+                  [Lean.Syntax.Preresolved.decl
+                      ((((((Lean.Name.anonymous.mkStr "_private").mkStr "DSL").mkStr "SyntaxTest").mkNum 0).mkStr
+                            "LeanNCD").mkStr
+                        "f32")
+                      []])
+                (Lean.Syntax.atom info "(")
+                (Lean.Syntax.node1 info `null
+                  (Lean.Syntax.node1 info `LeanNCD.tl_axis_spec_
+                    (Lean.Syntax.ident info "i".toRawSubstring' (Lean.addMacroScope quotCtx `i scp) [])))
+                (Lean.Syntax.atom info ")"))) } : Lean.MacroM (Lean.TSyntax `tl_decl)
+info: test/DSL/SyntaxTest.lean:22:0: do
+  let info ← Lean.MonadRef.mkInfoFromRefPos
+  let scp ← Lean.getCurrMacroScope
+  let quotCtx ← Lean.MonadQuotation.getContext
+  pure
+      {
+        raw :=
+          Lean.Syntax.node3 info `LeanNCD.tl_declLinear__ (Lean.Syntax.atom info "linear")
+            (Lean.Syntax.node1 info `LeanNCD.tl_elem_typeF64 (Lean.Syntax.atom info "f64"))
+            (Lean.Syntax.node1 info `null
+              (Lean.Syntax.node4 info `LeanNCD.«tl_linear_item_(_)»
+                (Lean.Syntax.ident info "f64".toRawSubstring' (Lean.addMacroScope quotCtx `f64 scp)
+                  [Lean.Syntax.Preresolved.decl
+                      ((((((Lean.Name.anonymous.mkStr "_private").mkStr "DSL").mkStr "SyntaxTest").mkNum 0).mkStr
+                            "LeanNCD").mkStr
+                        "f64")
+                      []])
+                (Lean.Syntax.atom info "(")
+                (Lean.Syntax.node3 info `null
+                  (Lean.Syntax.node1 info `LeanNCD.tl_axis_spec_
+                    (Lean.Syntax.ident info "a".toRawSubstring' (Lean.addMacroScope quotCtx `a scp) []))
+                  (Lean.Syntax.atom info ",")
+                  (Lean.Syntax.node1 info `LeanNCD.tl_axis_spec_
+                    (Lean.Syntax.ident info "b".toRawSubstring' (Lean.addMacroScope quotCtx `b scp) [])))
+                (Lean.Syntax.atom info ")"))) } : Lean.MacroM (Lean.TSyntax `tl_decl)
+info: test/DSL/SyntaxTest.lean:23:0: do
+  let info ← Lean.MonadRef.mkInfoFromRefPos
+  let scp ← Lean.getCurrMacroScope
+  let quotCtx ← Lean.MonadQuotation.getContext
+  pure
+      {
+        raw :=
+          Lean.Syntax.node2 info `LeanNCD.tl_declTensor_ (Lean.Syntax.atom info "tensor")
+            (Lean.Syntax.node1 info `null
+              (Lean.Syntax.node4 info `LeanNCD.«tl_named_shape_(_)»
+                (Lean.Syntax.ident info "A".toRawSubstring' (Lean.addMacroScope quotCtx `A scp) [])
+                (Lean.Syntax.atom info "(")
+                (Lean.Syntax.node3 info `null
+                  (Lean.Syntax.node1 info `LeanNCD.tl_axis_spec_
+                    (Lean.Syntax.ident info "f32".toRawSubstring' (Lean.addMacroScope quotCtx `f32 scp)
+                      [Lean.Syntax.Preresolved.decl
+                          ((((((Lean.Name.anonymous.mkStr "_private").mkStr "DSL").mkStr "SyntaxTest").mkNum 0).mkStr
+                                "LeanNCD").mkStr
+                            "f32")
+                          []]))
+                  (Lean.Syntax.atom info ",")
+                  (Lean.Syntax.node1 info `LeanNCD.tl_axis_spec_
+                    (Lean.Syntax.ident info "i".toRawSubstring' (Lean.addMacroScope quotCtx `i scp) [])))
+                (Lean.Syntax.atom info ")"))) } : Lean.MacroM (Lean.TSyntax `tl_decl)
+info: test/DSL/SyntaxTest.lean:26:0: do
+  let info ← Lean.MonadRef.mkInfoFromRefPos
+  let scp ← Lean.getCurrMacroScope
+  let quotCtx ← Lean.MonadQuotation.getContext
+  pure
+      {
+        raw :=
+          Lean.Syntax.node3 info `LeanNCD.tl_declTensor__ (Lean.Syntax.atom info "tensor")
+            (Lean.Syntax.node1 info `LeanNCD.tl_elem_typeComplex64 (Lean.Syntax.atom info "complex64"))
+            (Lean.Syntax.node1 info `null
+              (Lean.Syntax.node4 info `LeanNCD.«tl_named_shape_(_)»
+                (Lean.Syntax.ident info "A".toRawSubstring' (Lean.addMacroScope quotCtx `A scp) [])
+                (Lean.Syntax.atom info "(")
+                (Lean.Syntax.node1 info `null
+                  (Lean.Syntax.node1 info `LeanNCD.tl_axis_spec_
+                    (Lean.Syntax.ident info "i".toRawSubstring' (Lean.addMacroScope quotCtx `i scp) [])))
+                (Lean.Syntax.atom info ")"))) } : Lean.MacroM (Lean.TSyntax `tl_decl)
+info: test/DSL/SyntaxTest.lean:27:0: do
+  let info ← Lean.MonadRef.mkInfoFromRefPos
+  let scp ← Lean.getCurrMacroScope
+  let quotCtx ← Lean.MonadQuotation.getContext
+  pure
+      {
+        raw :=
+          Lean.Syntax.node3 info `LeanNCD.tl_declTensor__ (Lean.Syntax.atom info "tensor")
+            (Lean.Syntax.node1 info `LeanNCD.tl_elem_typeComplex128 (Lean.Syntax.atom info "complex128"))
+            (Lean.Syntax.node1 info `null
+              (Lean.Syntax.node4 info `LeanNCD.«tl_named_shape_(_)»
+                (Lean.Syntax.ident info "A".toRawSubstring' (Lean.addMacroScope quotCtx `A scp) [])
+                (Lean.Syntax.atom info "(")
+                (Lean.Syntax.node1 info `null
+                  (Lean.Syntax.node1 info `LeanNCD.tl_axis_spec_
+                    (Lean.Syntax.ident info "i".toRawSubstring' (Lean.addMacroScope quotCtx `i scp) [])))
+                (Lean.Syntax.atom info ")"))) } : Lean.MacroM (Lean.TSyntax `tl_decl)
+info: test/DSL/SyntaxTest.lean:31:0: do
+  let info ← Lean.MonadRef.mkInfoFromRefPos
+  let scp ← Lean.getCurrMacroScope
+  let quotCtx ← Lean.MonadQuotation.getContext
+  pure
+      {
+        raw :=
+          Lean.Syntax.node2 info `LeanNCD.tl_declAxis_ (Lean.Syntax.atom info "axis")
+            (Lean.Syntax.node1 info `null
+              (Lean.Syntax.node5 info `LeanNCD.«tl_axis_decl_item_:_=_»
+                (Lean.Syntax.ident info "l".toRawSubstring' (Lean.addMacroScope quotCtx `l scp) [])
+                (Lean.Syntax.atom info ":") (Lean.Syntax.node1 info `LeanNCD.tl_axis_kindℕ (Lean.Syntax.atom info "ℕ"))
+                (Lean.Syntax.atom info "=")
+                (Lean.Syntax.node1 info `num (Lean.Syntax.atom info "3")))) } : Lean.MacroM (Lean.TSyntax `tl_decl)
+info: test/DSL/SyntaxTest.lean:32:0: do
+  let info ← Lean.MonadRef.mkInfoFromRefPos
+  let scp ← Lean.getCurrMacroScope
+  let quotCtx ← Lean.MonadQuotation.getContext
+  pure
+      {
+        raw :=
+          Lean.Syntax.node6 info `LeanNCD.«tl_stmt_[_]:=_»
+            (Lean.Syntax.ident info "A".toRawSubstring' (Lean.addMacroScope quotCtx `A scp) [])
+            (Lean.Syntax.atom info "[")
+            (Lean.Syntax.node3 info `null
+              (Lean.Syntax.node1 info `LeanNCD.tl_lhs_slot_
+                (Lean.Syntax.ident info "q".toRawSubstring' (Lean.addMacroScope quotCtx `q scp) []))
+              (Lean.Syntax.atom info ",")
+              (Lean.Syntax.node2 info `LeanNCD.«tl_lhs_slot_.»
+                (Lean.Syntax.ident info "s".toRawSubstring' (Lean.addMacroScope quotCtx `s scp) [])
+                (Lean.Syntax.atom info ".")))
+            (Lean.Syntax.atom info "]") (Lean.Syntax.atom info ":=")
+            (Lean.Syntax.node4 info `LeanNCD.«tl_rhs_(_)»
+              (Lean.Syntax.node2 info `LeanNCD.«tl_nonlin_(Where_)»
+                (Lean.Syntax.node1 info `LeanNCD.tl_axiswise_kwSoftmax (Lean.Syntax.atom info "softmax"))
+                (Lean.Syntax.node info `null #[]))
+              (Lean.Syntax.atom info "(")
+              (Lean.Syntax.node1 info `LeanNCD.tl_sum_expr_
+                (Lean.Syntax.node1 info `LeanNCD.tl_prod_term_
+                  (Lean.Syntax.node4 info `LeanNCD.«tl_factor_[_]»
+                    (Lean.Syntax.ident info "Q".toRawSubstring' (Lean.addMacroScope quotCtx `Q scp) [])
+                    (Lean.Syntax.atom info "[")
+                    (Lean.Syntax.node3 info `null
+                      (Lean.Syntax.node1 info `LeanNCD.tl_idx_expr_
+                        (Lean.Syntax.ident info "q".toRawSubstring' (Lean.addMacroScope quotCtx `q scp) []))
+                      (Lean.Syntax.atom info ",")
+                      (Lean.Syntax.node1 info `LeanNCD.tl_idx_expr_
+                        (Lean.Syntax.ident info "d".toRawSubstring' (Lean.addMacroScope quotCtx `d scp) [])))
+                    (Lean.Syntax.atom info "]"))))
+              (Lean.Syntax.atom info ")")) } : Lean.MacroM (Lean.TSyntax `tl_stmt)
+info: test/DSL/SyntaxTest.lean:33:0: do
+  let info ← Lean.MonadRef.mkInfoFromRefPos
+  let scp ← Lean.getCurrMacroScope
+  let quotCtx ← Lean.MonadQuotation.getContext
+  pure
+      {
+        raw :=
+          Lean.Syntax.node6 info `LeanNCD.«tl_stmt_[_]:=_»
+            (Lean.Syntax.ident info "Y".toRawSubstring' (Lean.addMacroScope quotCtx `Y scp) [])
+            (Lean.Syntax.atom info "[")
+            (Lean.Syntax.node3 info `null
+              (Lean.Syntax.node1 info `LeanNCD.tl_lhs_slot_
+                (Lean.Syntax.ident info "i".toRawSubstring' (Lean.addMacroScope quotCtx `i scp) []))
+              (Lean.Syntax.atom info ",")
+              (Lean.Syntax.node1 info `LeanNCD.tl_lhs_slot_
+                (Lean.Syntax.ident info "j".toRawSubstring' (Lean.addMacroScope quotCtx `j scp) [])))
+            (Lean.Syntax.atom info "]") (Lean.Syntax.atom info ":=")
+            (Lean.Syntax.node1 info `LeanNCD.tl_rhs_
+              (Lean.Syntax.node1 info `LeanNCD.tl_sum_expr_
+                (Lean.Syntax.node3 info `LeanNCD.«tl_prod_term_·_»
+                  (Lean.Syntax.node1 info `LeanNCD.tl_prod_term_
+                    (Lean.Syntax.node4 info `LeanNCD.«tl_factor_[_]»
+                      (Lean.Syntax.ident info "W".toRawSubstring' (Lean.addMacroScope quotCtx `W scp) [])
+                      (Lean.Syntax.atom info "[")
+                      (Lean.Syntax.node3 info `null
+                        (Lean.Syntax.node1 info `LeanNCD.tl_idx_expr_
+                          (Lean.Syntax.ident info "i".toRawSubstring' (Lean.addMacroScope quotCtx `i scp) []))
+                        (Lean.Syntax.atom info ",")
+                        (Lean.Syntax.node1 info `LeanNCD.tl_idx_expr_
+                          (Lean.Syntax.ident info "k".toRawSubstring' (Lean.addMacroScope quotCtx `k scp) [])))
+                      (Lean.Syntax.atom info "]")))
+                  (Lean.Syntax.atom info "·")
+                  (Lean.Syntax.node4 info `LeanNCD.«tl_factor_[_]»
+                    (Lean.Syntax.ident info "X".toRawSubstring' (Lean.addMacroScope quotCtx `X scp) [])
+                    (Lean.Syntax.atom info "[")
+                    (Lean.Syntax.node3 info `null
+                      (Lean.Syntax.node1 info `LeanNCD.tl_idx_expr_
+                        (Lean.Syntax.ident info "k".toRawSubstring' (Lean.addMacroScope quotCtx `k scp) []))
+                      (Lean.Syntax.atom info ",")
+                      (Lean.Syntax.node1 info `LeanNCD.tl_idx_expr_
+                        (Lean.Syntax.ident info "j".toRawSubstring' (Lean.addMacroScope quotCtx `j scp) [])))
+                    (Lean.Syntax.atom info "]"))))) } : Lean.MacroM (Lean.TSyntax `tl_stmt)
+info: test/DSL/SyntaxTest.lean:34:0: do
+  let info ← Lean.MonadRef.mkInfoFromRefPos
+  let scp ← Lean.getCurrMacroScope
+  let quotCtx ← Lean.MonadQuotation.getContext
+  pure
+      {
+        raw :=
+          Lean.Syntax.node3 info `LeanNCD.«tl_bool_expr_≤_»
+            (Lean.Syntax.node1 info `LeanNCD.tl_pred_term_
+              (Lean.Syntax.node1 info `LeanNCD.tl_idx_expr_
+                (Lean.Syntax.ident info "s".toRawSubstring' (Lean.addMacroScope quotCtx `s scp) [])))
+            (Lean.Syntax.atom info "≤")
+            (Lean.Syntax.node1 info `LeanNCD.tl_pred_term_
+              (Lean.Syntax.node1 info `LeanNCD.tl_idx_expr_
+                (Lean.Syntax.ident info "q".toRawSubstring' (Lean.addMacroScope quotCtx `q scp)
+                  []))) } : Lean.MacroM (Lean.TSyntax `tl_bool_expr)
+info: test/DSL/SyntaxTest.lean:35:0: do
+  let info ← Lean.MonadRef.mkInfoFromRefPos
+  let scp ← Lean.getCurrMacroScope
+  let quotCtx ← Lean.MonadQuotation.getContext
+  pure
+      {
+        raw :=
+          Lean.Syntax.node4 info `LeanNCD.«tl_rhs_(_)»
+            (Lean.Syntax.node2 info `LeanNCD.«tl_nonlin_(Where_)»
+              (Lean.Syntax.node1 info `LeanNCD.tl_axiswise_kwSoftmax (Lean.Syntax.atom info "softmax"))
+              (Lean.Syntax.node4 info `null (Lean.Syntax.atom info "(") (Lean.Syntax.atom info "where")
+                (Lean.Syntax.node3 info `LeanNCD.«tl_bool_expr_≤_»
+                  (Lean.Syntax.node1 info `LeanNCD.tl_pred_term_
+                    (Lean.Syntax.node1 info `LeanNCD.tl_idx_expr_
+                      (Lean.Syntax.ident info "s".toRawSubstring' (Lean.addMacroScope quotCtx `s scp) [])))
+                  (Lean.Syntax.atom info "≤")
+                  (Lean.Syntax.node1 info `LeanNCD.tl_pred_term_
+                    (Lean.Syntax.node1 info `LeanNCD.tl_idx_expr_
+                      (Lean.Syntax.ident info "q".toRawSubstring' (Lean.addMacroScope quotCtx `q scp) []))))
+                (Lean.Syntax.atom info ")")))
+            (Lean.Syntax.atom info "(")
+            (Lean.Syntax.node1 info `LeanNCD.tl_sum_expr_
+              (Lean.Syntax.node3 info `LeanNCD.«tl_prod_term_·_»
+                (Lean.Syntax.node1 info `LeanNCD.tl_prod_term_
+                  (Lean.Syntax.node4 info `LeanNCD.«tl_factor_[_]»
+                    (Lean.Syntax.ident info "Q".toRawSubstring' (Lean.addMacroScope quotCtx `Q scp) [])
+                    (Lean.Syntax.atom info "[")
+                    (Lean.Syntax.node3 info `null
+                      (Lean.Syntax.node1 info `LeanNCD.tl_idx_expr_
+                        (Lean.Syntax.ident info "q".toRawSubstring' (Lean.addMacroScope quotCtx `q scp) []))
+                      (Lean.Syntax.atom info ",")
+                      (Lean.Syntax.node1 info `LeanNCD.tl_idx_expr_
+                        (Lean.Syntax.ident info "d".toRawSubstring' (Lean.addMacroScope quotCtx `d scp) [])))
+                    (Lean.Syntax.atom info "]")))
+                (Lean.Syntax.atom info "·")
+                (Lean.Syntax.node4 info `LeanNCD.«tl_factor_[_]»
+                  (Lean.Syntax.ident info "K".toRawSubstring' (Lean.addMacroScope quotCtx `K scp) [])
+                  (Lean.Syntax.atom info "[")
+                  (Lean.Syntax.node3 info `null
+                    (Lean.Syntax.node1 info `LeanNCD.tl_idx_expr_
+                      (Lean.Syntax.ident info "s".toRawSubstring' (Lean.addMacroScope quotCtx `s scp) []))
+                    (Lean.Syntax.atom info ",")
+                    (Lean.Syntax.node1 info `LeanNCD.tl_idx_expr_
+                      (Lean.Syntax.ident info "d".toRawSubstring' (Lean.addMacroScope quotCtx `d scp) [])))
+                  (Lean.Syntax.atom info "]"))))
+            (Lean.Syntax.atom info ")") } : Lean.MacroM (Lean.TSyntax `tl_rhs)
+ℹ [8510/8704] Replayed Semantics.ExpressionTest
+info: test/Semantics/ExpressionTest.lean:167:0: [some 9, some 7, none, some 0, none, some 13, some 14, some 6, none, some 42, some 28]
+info: test/Semantics/ExpressionTest.lean:173:0: ["notReady", "undefined", "notReady"]
+ℹ [8511/8704] Replayed Semantics.CollectionModelTest
+info: test/Semantics/CollectionModelTest.lean:93:0: [4, 9, 0, 0, 9, 5, 14, 3 / 4]
+⚠ [8512/8704] Replayed Semantics.ReferenceMachineTest
+warning: test/Semantics/ReferenceMachineTest.lean:202:60: This simp argument is unused:
+  ops
+
+Hint: Omit it from the simp argument list.
+  simp [collect, pushforward, contribution, outcome, interpret, evalWith,
+  ̵  ̵ ̵ ̵ ̵ ̵cycleP,
+  ̲  ̲ ̲ ̲ ̲ ̲expressionProgram, cycleStore, direct, point,̵ ̵o̵p̵s̵]
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+info: test/Semantics/ReferenceMachineTest.lean:302:0: ["notReady", "notReady", "undefined"]
+info: test/Semantics/ReferenceMachineTest.lean:306:0: ["undefined", "notReady"]
+info: test/Semantics/ReferenceMachineTest.lean:307:0: 'LeanNCD.Semantics.ReferenceMachineFixtures.duplicate_model_without_witness' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: test/Semantics/ReferenceMachineTest.lean:308:0: 'LeanNCD.Semantics.ReferenceMachineFixtures.failure_excludes_models' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: test/Semantics/ReferenceMachineTest.lean:309:0: 'LeanNCD.Semantics.ReferenceMachineFixtures.cycle_blocked' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [8513/8704] Replayed Semantics.RankedMachineTest
+info: test/Semantics/RankedMachineTest.lean:279:0: 'LeanNCD.Semantics.RankedMachineFixtures.historyCertificate' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/RankedMachineTest.lean:280:0: 'LeanNCD.Semantics.RankedMachineFixtures.duplicate_initial_count' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: test/Semantics/RankedMachineTest.lean:281:0: 'LeanNCD.Semantics.RankedMachineFixtures.singleton_initial_count' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: test/Semantics/RankedMachineTest.lean:282:0: 'LeanNCD.Semantics.RankedMachineFixtures.empty_initial_count' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/RankedMachineTest.lean:283:0: 'LeanNCD.Semantics.RankedMachineFixtures.second_schedule' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/RankedMachineTest.lean:284:0: 'LeanNCD.Semantics.RankedMachineFixtures.distinct_first_failures' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: test/Semantics/RankedMachineTest.lean:285:0: 'LeanNCD.Semantics.RankedMachineFixtures.ranked_singleton_correspondence' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+ℹ [8514/8704] Replayed Semantics.ExecutableReferenceTest
+info: test/Semantics/ExecutableReferenceTest.lean:114:0: duplicate: ("complete", 5, [some 4, some 0, some 0], 0)
+info: test/Semantics/ExecutableReferenceTest.lean:116:0: ready-failure: ("failed", 1, [none, none, none], 1)
+info: test/Semantics/ExecutableReferenceTest.lean:118:0: blocked: ("blocked", 2, [none, some 0, some 0], 1)
+info: test/Semantics/ExecutableReferenceTest.lean:190:0: tagged-trace: [("contribution", 7, 0, 0, 1, some 2),
+ ("contribution", 7, 0, 1, 1, some 2),
+ ("contribution", 7, 1, 0, 1, some 5),
+ ("contribution", 7, 1, 1, 1, some 5),
+ ("publication", 7, 0, 0, 1, some 14),
+ ("publication", 7, 0, 0, 0, some 0),
+ ("publication", 7, 0, 0, 2, some 0)]
+info: test/Semantics/ExecutableReferenceTest.lean:195:0: tagged-whole-store: ("complete", [some 0, some 14, some 0], "complete", [some 0, some 14, some 0])
+info: test/Semantics/ExecutableReferenceTest.lean:206:0: tagged-equations: ([0, 14, 0], [0, 14, 0])
+info: test/Semantics/ExecutableReferenceTest.lean:216:0: zero-contribution: ("complete", 4, [some 0, some 0, some 0], 0)
+info: test/Semantics/ExecutableReferenceTest.lean:218:0: empty-fiber: ("complete", 3, [some 0, some 0, some 0], 0)
+info: test/Semantics/ExecutableReferenceTest.lean:243:0: guard-excluded-undefined: ("complete", 3, [some 0, some 0, some 0])
+info: test/Semantics/ExecutableReferenceTest.lean:260:0: nonlinear-boundary: (("complete", 5, [some (3 : Rat)/4, some 0, some 0], 0), (3 : Rat)/4, some (1 : Rat)/6)
+info: test/Semantics/ExecutableReferenceTest.lean:267:0: primitive-square: ("complete", 4, [some 9, some 0, some 0], 0)
+info: test/Semantics/ExecutableReferenceTest.lean:324:0: scalar-input-nonoutput: ("complete", 4, [some 7, some 2, some 3])
+info: test/Semantics/ExecutableReferenceTest.lean:326:0: internal-nonoutput-failure: ("failed", 3, [some 7, some 2, none])
+info: test/Semantics/ExecutableReferenceTest.lean:338:0: input-validation-order: [("error", 0), ("error", 1), ("error", 0), ("error", 2)]
+info: test/Semantics/ExecutableReferenceTest.lean:374:0: empty-input-and-defined: [("complete", 0), ("error", 0), ("complete", 0)]
+info: test/Semantics/ExecutableReferenceTest.lean:380:0: fuel-boundaries: (8, "exhausted", "complete", "complete", "complete", "exhausted")
+info: test/Semantics/ExecutableReferenceTest.lean:388:0: zero-fuel-terminal: ("complete", "failed")
+info: test/Semantics/ExecutableReferenceTest.lean:440:0: coordinate-ranked-chain: ("complete",
+ [some 0, some 3, some 4],
+ [("contribution", 7, 0, 0, 1, some 3),
+  ("publication", 7, 0, 0, 1, some 3),
+  ("contribution", 7, 1, 0, 2, some 4),
+  ("publication", 7, 0, 0, 2, some 4),
+  ("publication", 7, 0, 0, 0, some 0)])
+info: test/Semantics/ExecutableReferenceTest.lean:468:0: strict-zero-cycle-locators: ("blocked",
+ [some 0, none, none],
+ [("unavailable", 7, 1, 0, 2, [(7, 1)], none), ("unavailable", 7, 0, 0, 1, [(7, 2)], none)])
+info: test/Semantics/ExecutableReferenceTest.lean:502:0: failure-retained-snapshot: ("failed",
+ [("publication", 7, 0, 0, 2, some 0), ("contribution", 7, 0, 0, 0, some 2), ("undefined", 7, 1, 0, 0, none)],
+ [none, none, some 0],
+ 2,
+ 1)
+info: test/Semantics/ExecutableReferenceTest.lean:511:0: ready-observations: [("ready", 7, 0, 0, 0, [], some 2), ("ready", 7, 1, 0, 0, [], none)]
+info: test/Semantics/ExecutableReferenceTest.lean:516:0: 'LeanNCD.Semantics.ExecutableReferenceFixtures.chainCertificate' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: test/Semantics/ExecutableReferenceTest.lean:529:0: trace-effect-replay: ("running", [some 0, some 14, some 0], 0)
+ℹ [8517/8704] Replayed LeanNCD.Base.ColoredPROP
+info: LeanNCD/Base/ColoredPROP.lean:99:0: ColoredPROP : Type → Type 1
+info: LeanNCD/Base/ColoredPROP.lean:100:0: @Elemental.elemental : ∀ {ob : Type} {inst : ColoredPROP ob} [self : Elemental ob] {X Y : ob}
+  (f g : SmallCategory.hom X Y),
+  (∀ (x : SmallCategory.hom ColoredPROP.unit X), SmallCategory.comp x f = SmallCategory.comp x g) → f = g
+⚠ [8519/8704] Replayed LeanNCD.Base.St
+warning: LeanNCD/Base/St.lean:171:23: declaration uses `sorry`
+⚠ [8520/8704] Replayed LeanNCD.Base.Br
+warning: LeanNCD/Base/Br.lean:305:8: declaration uses `sorry`
+warning: LeanNCD/Base/Br.lean:426:0: Definition `LeanNCD.brElemental` of class type must be marked with `@[reducible]` or `@[implicit_reducible]`
+⚠ [8523/8704] Replayed LeanNCD.Core.Weave
+warning: LeanNCD/Core/Weave.lean:29:8: declaration uses `sorry`
+⚠ [8529/8704] Replayed LeanNCD.Instances.StBr
+warning: LeanNCD/Instances/StBr.lean:13:23: declaration uses `sorry`
+⚠ [8550/8704] Replayed LeanNCD.Bridge.AcsetCodec
+warning: LeanNCD/Bridge/AcsetCodec.lean:905:10: This simp argument is unused:
+  encodeAxisRows_length
+
+Hint: Omit it from the simp argument list.
+  simp ̵[̵e̵n̵c̵o̵d̵e̵A̵x̵i̵s̵R̵o̵w̵s̵_̵l̵e̵n̵g̵t̵h̵]̵
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Bridge/AcsetCodec.lean:917:17: This simp argument is unused:
+  hwk
+
+Hint: Omit it from the simp argument list.
+  simp only ̵[̵h̵w̵k̵]̵
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Bridge/AcsetCodec.lean:921:17: This simp argument is unused:
+  hwk
+
+Hint: Omit it from the simp argument list.
+  simp only ̵[̵h̵w̵k̵]̵
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+⚠ [8552/8704] Replayed LeanNCD.Bridge.Agreement
+warning: LeanNCD/Bridge/Agreement.lean:99:52: This simp argument is unused:
+  ih
+
+Hint: Omit it from the simp argument list.
+  simp [fixedAxesP, List.map_cons,̵ ̵i̵h̵]
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Bridge/Agreement.lean:122:29: This simp argument is unused:
+  hep
+
+Hint: Omit it from the simp argument list.
+  simp [̵h̵e̵p̵]̵ ̵at hk'
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: LeanNCD/Bridge/Agreement.lean:125:28: This simp argument is unused:
+  hep
+
+Hint: Omit it from the simp argument list.
+  simp only [̵h̵e̵p̵]̵ ̵at hk'
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+ℹ [8585/8704] Replayed Base.StTest
+info: test/Base/StTest.lean:16:0: 'LeanNCD.StMat.id_comp' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Base/StTest.lean:17:0: 'LeanNCD.StMat.comp_id' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Base/StTest.lean:18:0: 'LeanNCD.StMat.comp_assoc' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [8586/8704] Replayed Base.BrTest
+info: test/Base/BrTest.lean:20:0: 'LeanNCD.BrMorph.id_comp' depends on axioms: [propext, Quot.sound]
+info: test/Base/BrTest.lean:21:0: 'LeanNCD.BrMorph.comp_id' depends on axioms: [propext, Quot.sound]
+info: test/Base/BrTest.lean:22:0: 'LeanNCD.BrMorph.assoc' depends on axioms: [propext, Quot.sound]
+info: test/Base/BrTest.lean:23:0: 'LeanNCD.BrMorph.tensor_id' depends on axioms: [propext, Quot.sound]
+info: test/Base/BrTest.lean:24:0: 'LeanNCD.BrMorph.tensor_comp' depends on axioms: [propext, Quot.sound]
+info: test/Base/BrTest.lean:25:0: 'LeanNCD.BrMorph.braid_braid' depends on axioms: [propext, Quot.sound]
+info: test/Base/BrTest.lean:36:0: 'LeanNCD.BrMorph.copyW_coassoc' depends on axioms: [propext, Quot.sound]
+info: test/Base/BrTest.lean:37:0: 'LeanNCD.BrMorph.copyW_counitl' depends on axioms: [propext, Quot.sound]
+info: test/Base/BrTest.lean:38:0: 'LeanNCD.BrMorph.copyW_cocomm' depends on axioms: [propext, Quot.sound]
+info: test/Base/BrTest.lean:39:0: 'LeanNCD.BrMorph.copyW_counitr_heq' depends on axioms: [propext, Quot.sound]
+ℹ [8587/8704] Replayed Base.BrWiringTest
+info: test/Base/BrWiringTest.lean:31:0: 'LeanNCD.BrMorph.rotateToFront' depends on axioms: [propext, Quot.sound]
+info: test/Base/BrWiringTest.lean:32:0: 'LeanNCD.BrMorph.pick' depends on axioms: [propext, Quot.sound]
+info: test/Base/BrWiringTest.lean:33:0: 'LeanNCD.BrMorph.delAll' depends on axioms: [propext, Quot.sound]
+info: test/Base/BrWiringTest.lean:34:0: 'LeanNCD.BrMorph.wiring' depends on axioms: [propext, Quot.sound]
+info: test/Base/BrWiringTest.lean:41:0: 'LeanNCD.BrMorph.pickBy' depends on axioms: [propext, Quot.sound]
+info: test/Base/BrWiringTest.lean:42:0: 'LeanNCD.BrMorph.wiringBy' depends on axioms: [propext, Quot.sound]
+ℹ [8588/8704] Replayed Seam.AdapterTest
+info: test/Seam/AdapterTest.lean:20:0: 'LeanNCD.instCategoryOfColoredPROP' does not depend on any axioms
+ℹ [8589/8704] Replayed Core.GradedTest
+info: test/Core/GradedTest.lean:18:0: @DGradedColoredPROP.act : {D C : Type} →
+  {inst : ColoredPROP D} →
+    {inst_1 : ColoredPROP C} → [self : DGradedColoredPROP D C] → CategoryTheory.Functor (C × Dᵒᵖ) C
+info: test/Core/GradedTest.lean:19:0: @DGradedColoredPROP.sh : {D C : Type} →
+  {inst : ColoredPROP D} → {inst_1 : ColoredPROP C} → [self : DGradedColoredPROP D C] → ColoredPROP.gen C → D
+info: test/Core/GradedTest.lean:20:0: @DGradedColoredPROP.broadcast_gen : ∀ {D C : Type} {inst : ColoredPROP D} {inst_1 : ColoredPROP C}
+  [self : DGradedColoredPROP D C] {X Y : C} (g : SmallCategory.hom X Y),
+  ∃ X' Y' f P lam ρ,
+    g =
+      SmallCategory.comp (SmallCategory.comp lam (DGradedColoredPROP.act.map (f, CategoryTheory.CategoryStruct.id P))) ρ
+info: test/Core/GradedTest.lean:24:0: @ev_p : {D C : Type} →
+  [inst : ColoredPROP D] →
+    [inst_1 : ColoredPROP C] →
+      [inst_2 : DGradedColoredPROP D C] →
+        {P : Dᵒᵖ} →
+          (P ⟶ Opposite.op ColoredPROP.unit) → (X : C) → SmallCategory.hom (DGradedColoredPROP.act.obj (X, P)) X
+info: test/Core/GradedTest.lean:27:0: @ev_p_naturality : ∀ {D C : Type} [inst : ColoredPROP D] [inst_1 : ColoredPROP C] [inst_2 : DGradedColoredPROP D C]
+  {P : Dᵒᵖ} (p : P ⟶ Opposite.op ColoredPROP.unit) {X Y : C} (f : SmallCategory.hom X Y),
+  SmallCategory.comp (DGradedColoredPROP.act.map (f, CategoryTheory.CategoryStruct.id P)) (ev_p p Y) =
+    SmallCategory.comp (ev_p p X) f
+info: test/Core/GradedTest.lean:31:0: 'LeanNCD.ev_p_naturality' depends on axioms: [propext]
+ℹ [8590/8704] Replayed Core.WeaveTest
+info: test/Core/WeaveTest.lean:9:0: @Weave : {D C : Type} →
+  [inst : ColoredPROP D] →
+    [inst_1 : ColoredPROP C] → [DGradedColoredPROP D C] → {X Y : C} → SmallCategory.hom X Y → Type
+info: test/Core/WeaveTest.lean:10:0: @weave_unique : ∀ {D C : Type} [inst : ColoredPROP D] [inst_1 : ColoredPROP C] [Elemental C]
+  [inst_3 : DGradedColoredPROP D C] {X Y : C} (g : SmallCategory.hom X Y), Subsingleton (Weave g)
+ℹ [8591/8704] Replayed Mixins.TemporalTest
+info: test/Mixins/TemporalTest.lean:8:0: @TemporalGraded.L : {D : Type} →
+  (C : Type) → {inst : ColoredPROP D} → {inst_1 : ColoredPROP C} → [self : TemporalGraded D C] → D
+info: test/Mixins/TemporalTest.lean:9:0: @TemporalGraded.iterate : {D C : Type} →
+  {inst : ColoredPROP D} →
+    {inst_1 : ColoredPROP C} →
+      [self : TemporalGraded D C] →
+        (N : ℕ) →
+          (X : C) →
+            SmallCategory.hom X X →
+              SmallCategory.hom X (DGradedColoredPROP.act.obj (X, Opposite.op (TemporalGraded.prefix C N)))
+ℹ [8593/8704] Replayed Grothendieck.SplitTest
+info: test/Grothendieck/SplitTest.lean:8:0: Cˢʰᵃʳᵖ : (C : Type) → [ColoredPROP C] → Type
+info: test/Grothendieck/SplitTest.lean:9:0: Dat : (C : Type) → [inst : ColoredPROP C] → Cˢʰᵃʳᵖ C ⥤ Type
+ℹ [8594/8704] Replayed Algebra.AlgebraTest
+info: test/Algebra/AlgebraTest.lean:9:0: TargetActegory : (D : Type) →
+  (V : Type u_1) →
+    [ColoredPROP D] →
+      [inst : Category.{u_2, u_1} V] → [MonoidalCategory V] → (R : Type) → [CommSemiring R] → Type (max u_1 u_2)
+info: test/Algebra/AlgebraTest.lean:11:0: Algebra : (D C : Type) →
+  (V : Type u_1) →
+    [inst : ColoredPROP D] →
+      [inst_1 : ColoredPROP C] →
+        [inst_2 : Category.{u_2, u_1} V] →
+          [inst_3 : MonoidalCategory V] →
+            [SymmetricCategory V] →
+              (R : Type) →
+                [inst_5 : CommSemiring R] → [DGradedColoredPROP D C] → [TargetActegory D V R] → Type (max u_1 u_2)
+info: test/Algebra/AlgebraTest.lean:12:0: ParaAlgebra : (D C : Type) →
+  (V : Type u_1) →
+    [inst : ColoredPROP D] →
+      [inst_1 : ColoredPROP C] →
+        [inst_2 : Category.{u_2, u_1} V] →
+          [inst_3 : MonoidalCategory V] →
+            [SymmetricCategory V] →
+              (R : Type) →
+                [inst_5 : CommSemiring R] → [DGradedColoredPROP D C] → [TargetActegory D V R] → Type (max u_1 u_2)
+info: test/Algebra/AlgebraTest.lean:28:0: @Algebra.equivar_nat D C V inst✝⁷ inst✝⁶ inst✝⁵ inst✝⁴ inst✝³ R inst✝² inst✝¹ inst✝
+  inst : ∀ {X Y : C} (f : X ⟶ Y) (P : Dᵒᵖ),
+  (Algebra.F D R).map (DGradedColoredPROP.act.map (f, 𝟙 P)) ≫ (Algebra.equivar Y P).hom =
+    (Algebra.equivar X P).hom ≫ (TargetActegory.actV R).map ((Algebra.F D R).map f, 𝟙 P)
+info: test/Algebra/AlgebraTest.lean:29:0: Algebra.equivar_υ : ∀ (X : C),
+  (Algebra.F D R).map (DGradedColoredPROP.υ X).hom =
+    (Algebra.equivar X (Opposite.op ColoredPROP.unit)).hom ≫ (TargetActegory.υ_V ((Algebra.F D R).obj X)).hom
+info: test/Algebra/AlgebraTest.lean:30:0: Algebra.equivar_α : ∀ (X : C) (P Q : Dᵒᵖ),
+  (Algebra.F D R).map (DGradedColoredPROP.α X P Q).hom ≫
+      (Algebra.equivar X (Opposite.op (ColoredPROP.tensor (Opposite.unop Q) (Opposite.unop P)))).hom =
+    (Algebra.equivar (DGradedColoredPROP.act.obj (X, P)) Q).hom ≫
+      (TargetActegory.actV R).map ((Algebra.equivar X P).hom, 𝟙 Q) ≫
+        (TargetActegory.α_V ((Algebra.F D R).obj X) P Q).hom
+info: test/Algebra/AlgebraTest.lean:31:0: Algebra.equivar_δ : ∀ (X Y : C) (P : Dᵒᵖ),
+  (Algebra.F D R).map (DGradedColoredPROP.δ X Y P).hom ≫
+      (Functor.Monoidal.μIso (Algebra.F D R) (DGradedColoredPROP.act.obj (X, P))
+            (DGradedColoredPROP.act.obj (Y, P))).inv ≫
+        MonoidalCategoryStruct.tensorHom (Algebra.equivar X P).hom (Algebra.equivar Y P).hom =
+    (Algebra.equivar (ColoredPROP.tensor X Y) P).hom ≫
+      (TargetActegory.actV R).map ((Functor.Monoidal.μIso (Algebra.F D R) X Y).inv, 𝟙 P) ≫
+        (TargetActegory.δ_V ((Algebra.F D R).obj X) ((Algebra.F D R).obj Y) P).hom
+info: test/Algebra/AlgebraTest.lean:32:0: @Algebra.F_ev_p D C V inst✝⁷ inst✝⁶ inst✝⁵ inst✝⁴ inst✝³ R inst✝² inst✝¹ inst✝
+  inst : ∀ {P : Dᵒᵖ} (p : P ⟶ Opposite.op ColoredPROP.unit) (X : C),
+  (Algebra.F D R).map (ev_p p X) =
+    (Algebra.equivar X P).hom ≫
+      (TargetActegory.actV R).map (𝟙 ((Algebra.F D R).obj X), p) ≫ (TargetActegory.υ_V ((Algebra.F D R).obj X)).hom
+info: test/Algebra/AlgebraTest.lean:41:0: @ParaAlgebra.paraMap D C V inst✝⁷ inst✝⁶ inst✝⁵ inst✝⁴ inst✝³ R inst✝² inst✝¹ inst✝
+  inst : {X Y : C} →
+  (P : C) →
+    (MonoidalCategoryStruct.tensorObj P X ⟶ Y) →
+      (MonoidalCategoryStruct.tensorObj ((Algebra.F D R).obj P) ((Algebra.F D R).obj X) ⟶ (Algebra.F D R).obj Y)
+info: test/Algebra/AlgebraTest.lean:42:0: @ParaAlgebra.paraMap_eq D C V inst✝⁷ inst✝⁶ inst✝⁵ inst✝⁴ inst✝³ R inst✝² inst✝¹ inst✝
+  inst : ∀ {X Y : C} (P : C) (f : MonoidalCategoryStruct.tensorObj P X ⟶ Y),
+  ParaAlgebra.paraMap P f = Functor.LaxMonoidal.μ (Algebra.F D R) P X ≫ (Algebra.F D R).map f
+info: test/Algebra/AlgebraTest.lean:43:0: @ParaAlgebra.weightTie D C V inst✝⁷ inst✝⁶ inst✝⁵ inst✝⁴ inst✝³ R inst✝² inst✝¹ inst✝
+  inst : ∀ {X Y P' P : C} (Δ : P' ⟶ P) (f : MonoidalCategoryStruct.tensorObj P X ⟶ Y),
+  ParaAlgebra.paraMap P' (MonoidalCategoryStruct.tensorHom Δ (𝟙 X) ≫ f) =
+    MonoidalCategoryStruct.tensorHom ((Algebra.F D R).map Δ) (𝟙 ((Algebra.F D R).obj X)) ≫ ParaAlgebra.paraMap P f
+ℹ [8595/8704] Replayed Algebra.ConstructTest
+info: test/Algebra/ConstructTest.lean:6:0: semiring_choice_split : 1 + 1 ≠ 1 ∧ (true || true) = true
+info: test/Algebra/ConstructTest.lean:8:0: 'LeanNCD.semiring_choice_split' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [8596/8704] Replayed Props.GenericTest
+info: test/Props/GenericTest.lean:7:0: @lift_functorial : ∀ {D C : Type} [inst : ColoredPROP D] [inst_1 : ColoredPROP C] [inst_2 : DGradedColoredPROP D C]
+  {X Y Z : C} (f : SmallCategory.hom X Y) (g : SmallCategory.hom Y Z) (P : Dᵒᵖ),
+  DGradedColoredPROP.act.map (SmallCategory.comp f g, 𝟙 P) =
+    SmallCategory.comp (DGradedColoredPROP.act.map (f, 𝟙 P)) (DGradedColoredPROP.act.map (g, 𝟙 P))
+info: test/Props/GenericTest.lean:8:0: @weave_subsingleton : ∀ {D C : Type} [inst : ColoredPROP D] [inst_1 : ColoredPROP C] [inst_2 : DGradedColoredPROP D C]
+  [Elemental C] {X Y : C} (g : SmallCategory.hom X Y), Subsingleton (Weave g)
+info: test/Props/GenericTest.lean:9:0: @scan_batches : {D C : Type} →
+  [inst : ColoredPROP D] →
+    [inst_1 : ColoredPROP C] →
+      [inst_2 : TemporalGraded D C] →
+        ℕ →
+          (X : C) →
+            (P : Dᵒᵖ) →
+              DGradedColoredPROP.act.obj (DGradedColoredPROP.act.obj (X, Opposite.op (TemporalGraded.L C)), P) ≅
+                DGradedColoredPROP.act.obj (X, Opposite.op (TemporalGraded.L C))
+info: test/Props/GenericTest.lean:10:0: @scan_catamorphism : ∀ {D C : Type} [inst : ColoredPROP D] [inst_1 : ColoredPROP C] [inst_2 : TemporalGraded D C]
+  (N : ℕ) (X : C) (step : SmallCategory.hom X X),
+  SmallCategory.comp (TemporalGraded.iterate N X step) (TemporalGraded.restrict ⋯ X) = TemporalGraded.iterate N X step
+info: test/Props/GenericTest.lean:13:0: 'LeanNCD.lift_functorial' depends on axioms: [propext]
+ℹ [8597/8704] Replayed Instances.StBrTest
+info: test/Instances/StBrTest.lean:12:0: lift_functorial : ∀ (f : SmallCategory.hom ?m.4 ?m.5) (g : SmallCategory.hom ?m.5 ?m.6) (P : StObjᵒᵖ),
+  DGradedColoredPROP.act.map (SmallCategory.comp f g, 𝟙 P) =
+    SmallCategory.comp (DGradedColoredPROP.act.map (f, 𝟙 P)) (DGradedColoredPROP.act.map (g, 𝟙 P))
+ℹ [8598/8704] Replayed DSL.SizeExprTest
+info: test/DSL/SizeExprTest.lean:14:0: inferInstance : Lean.ToExpr SizeExpr
+ℹ [8599/8704] Replayed DSL.AstTest
+info: test/DSL/AstTest.lean:18:0: inferInstance : Lean.ToExpr TLProgram
+ℹ [8621/8704] Replayed Bridge.RealizeTest
+info: test/Bridge/RealizeTest.lean:10:0: 'LeanNCD.realizeAxis' does not depend on any axioms
+info: test/Bridge/RealizeTest.lean:11:0: 'LeanNCD.realizeStObj' does not depend on any axioms
+info: test/Bridge/RealizeTest.lean:13:0: 'LeanNCD.intToCoeff' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Bridge/RealizeTest.lean:17:0: 'LeanNCD.realizeWeaveShape' does not depend on any axioms
+info: test/Bridge/RealizeTest.lean:18:0: 'LeanNCD.realizeBrBaseP' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Bridge/RealizeTest.lean:23:0: 'LeanNCD.realize' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [8622/8704] Replayed Bridge.SBrTest
+info: test/Bridge/SBrTest.lean:5:0: 'LeanNCD.realizeSBr' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [8623/8704] Replayed Bridge.AgreementTest
+info: test/Bridge/AgreementTest.lean:8:0: realize_fromThreadedComposed_agree : ∀ (tc : ThreadedComposed) (h : tc.WellFormed),
+  tc.WellShaped → realize tc h = realizeSBr (fromThreadedComposed tc)
+info: test/Bridge/AgreementTest.lean:9:0: agree_dom : ∀ (tc : ThreadedComposed) (h : tc.WellFormed),
+  tc.WellShaped → (realize tc h).fst = (realizeSBr (fromThreadedComposed tc)).fst
+info: test/Bridge/AgreementTest.lean:10:0: agree_cod : ∀ (tc : ThreadedComposed) (h : tc.WellFormed),
+  tc.WellShaped → (realize tc h).snd.fst = (realizeSBr (fromThreadedComposed tc)).snd.fst
+info: test/Bridge/AgreementTest.lean:11:0: 'LeanNCD.realize_fromThreadedComposed_agree' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [8644/8704] Replayed Eval.Plan.SignatureTest
+info: test/Eval/Plan/SignatureTest.lean:466:15: Unknown identifier `signatureOfDenseInputs`
+ℹ [8660/8704] Replayed Eval.Plan.NonlinCheckTest
+info: test/Eval/Plan/NonlinCheckTest.lean:346:16: Invalid `⟨...⟩` notation: Constructor for `LeanNCD.Eval.Plan.CheckedPointwisePlan` is marked as private
+info: test/Eval/Plan/NonlinCheckTest.lean:347:16: Invalid `⟨...⟩` notation: Constructor for `LeanNCD.Eval.Plan.CheckedAxiswisePlan` is marked as private
+ℹ [8674/8704] Replayed Eval.PropertyOracle.Gen
+info: test/Eval/PropertyOracle/Gen.lean:162:0: Gen.lean: two-statement enumeration capped at 40 RHS choices per statement (of 1806 total) to keep enumPrograms bounded
+info: test/Eval/PropertyOracle/Gen.lean:163:0: Gen.lean: two-statement enumeration capped at 40 RHS choices per statement (of 1806 total) to keep enumPrograms bounded
+info: test/Eval/PropertyOracle/Gen.lean:165:0: Gen.lean: two-statement enumeration capped at 40 RHS choices per statement (of 1806 total) to keep enumPrograms bounded
+info: test/Eval/PropertyOracle/Gen.lean:167:0: Gen.lean: two-statement enumeration capped at 40 RHS choices per statement (of 1806 total) to keep enumPrograms bounded
+info: test/Eval/PropertyOracle/Gen.lean:169:0: Gen.lean: two-statement enumeration capped at 40 RHS choices per statement (of 1806 total) to keep enumPrograms bounded
+info: test/Eval/PropertyOracle/Gen.lean:174:0: Gen.lean: two-statement enumeration capped at 40 RHS choices per statement (of 1806 total) to keep enumPrograms bounded
+info: test/Eval/PropertyOracle/Gen.lean:181:0: Gen.lean: two-statement enumeration capped at 40 RHS choices per statement (of 1806 total) to keep enumPrograms bounded
+info: test/Eval/PropertyOracle/Gen.lean:190:0: Gen.lean: two-statement enumeration capped at 40 RHS choices per statement (of 1806 total) to keep enumPrograms bounded
+ℹ [8675/8704] Replayed Eval.Plan.DifferentialTest
+info: test/Eval/Plan/DifferentialTest.lean:201:0: Gen.lean: two-statement enumeration capped at 40 RHS choices per statement (of 1806 total) to keep enumPrograms bounded
+DifferentialTest sweep: total=3832 accepted=3832 rejected=0 categories=[]
+info: test/Eval/Plan/DifferentialTest.lean:216:0: Gen.lean: two-statement enumeration capped at 40 RHS choices per statement (of 1806 total) to keep enumPrograms bounded
+info: test/Eval/Plan/DifferentialTest.lean:1036:0: DifferentialTest scan corpus: total=17 accepted=17 unsupportedNonlin=0 unsupportedAgg=0
+ℹ [8680/8704] Replayed Eval.PropertyOracleTest
+info: test/Eval/PropertyOracleTest.lean:7:0: Gen.lean: two-statement enumeration capped at 40 RHS choices per statement (of 1806 total) to keep enumPrograms bounded
+ℹ [8684/8704] Replayed Eval.Portfolio.LinAlgTest
+info: test/Eval/Portfolio/LinAlgTest.lean:12:0: §2 — Core linear algebra:
+  ✓ ∃: LA1 matvec
+  ✓ ∃: LA3 batched-matmul
+  ✓ ∃: LA4 outer
+  ✓ ∃: LA5 inner
+  ✓ ∃: LA6 gram
+  ✓ ∃: LA7 bilinear
+  ✓ ∃: LA8 hadamard
+  ✓ ∃: LA9 multi-contract
+ℹ [8685/8704] Replayed Eval.Portfolio.FeedforwardTest
+info: test/Eval/Portfolio/FeedforwardTest.lean:12:0: §3 — Feedforward / MLP:
+  ✓ ∃: FF1 mlp-2layer
+  ✓ ∃: FF2 relu-clamp
+  ✓ ∃: FF3 relu-asym
+  ✓ ∃: FF5 sigmoid
+  ✓ ∃: FF6 tanh
+  ✓ ∃: FF7 gelu
+  ✓ ∃: FF8 leakyrelu
+  ✓ ∃: FF4 affine-bias
+ℹ [8686/8704] Replayed Eval.Portfolio.AttentionTest
+info: test/Eval/Portfolio/AttentionTest.lean:13:0: §4 — Attention & transformers:
+  ✓ ∃: AT1 self-attn softmax
+  ✓ ∃: AT3 attn-output
+  ✓ ∃: AT4 mha-batched
+  ✓ ∃: AT5 cross-attn
+  ✓ ∃: AT6 scaled-scores
+  ✓ ∃: AT7 transformer-block
+  ✓ ∃: AT8 generalized-cross-attn
+  ✓ ∃: AT9 linear-attn
+  ✓ ∃: AT10 bilinear-attn
+  ✓ ∃: AT11 gqa
+  ✓ ∃: AT12 sparse-attn
+ℹ [8687/8704] Replayed Eval.Portfolio.ConvPoolTest
+info: test/Eval/Portfolio/ConvPoolTest.lean:14:0: §5 — Convolution & pooling:
+  ✓ ∃: CV1 conv1d
+  ✓ ∃: CV2 conv2d
+  ✓ ∃: CV4 dilated-conv
+  ✓ ∃: CV5 maxpool
+  ✓ ∃: CV6 avgpool
+  ✓ ∃: CV7 sumpool
+  ✓ ∃: CV8 depthwise
+  ✓ ∃: CV9 multichannel
+ℹ [8688/8704] Replayed Eval.Portfolio.NormTest
+info: test/Eval/Portfolio/NormTest.lean:13:0: §6 — Normalization:
+  ✓ ∃: NM1 normalize
+  ✓ ∃: NM2 softmax
+  ✓ ∃: NM3 softmax-stable
+  ✓ ∃: NM4 masked-normalize
+  ✓ ∃: NM5 column-softmax
+ℹ [8689/8704] Replayed Eval.Portfolio.RecurrenceTest
+info: test/Eval/Portfolio/RecurrenceTest.lean:64:0: §7 — Recurrence & scans:
+  ✓ ∃: RC2 rnn
+  ✓ ∃: RC3 prefix-sum
+  ✓ ∃: RC5 maxreduce-in-scan (KG-scanagg, fixed)
+  ✓ ∃: RC6 2d-scan (KG-2dscan, fixed)
+  ✓ ∃: RC7 minreduce-in-scan
+  ✓ ∃: RC8 3d-scan
+  ✓ ∃: RC10 multi-axis maxreduce (KG-scanagg × KG-2dscan)
+ℹ [8690/8704] Replayed Eval.Portfolio.GnnScatterTest
+info: test/Eval/Portfolio/GnnScatterTest.lean:18:0: §8 & §8b — GNN & scatter:
+  ✓ ∃: GN1 dense-message-passing
+  ✓ ∃: GN2 predicate-message-passing
+  ✓ ∃: GN3 degree
+  ✓ ∃: GN4 max-aggregation
+  ✓ ∃: GN5 degree-normalized
+  ✓ ∃: SC1 reduce-to-scalar
+  ✓ ∃: SC2 elementwise-square
+  ✓ ∃: SC3 relu
+  ✓ ∃: SC4 matmul
+  ✓ ∃: SC5 conv
+  ✓ ∃: SC6 scatter-of-scatter
+  ✓ ∃: SC7 diag-scatter-then-matmul
+  ✓ ∃: SC8 softmax-over-scatter
+ℹ [8691/8704] Replayed Eval.Portfolio.RelationalTest
+info: test/Eval/Portfolio/RelationalTest.lean:12:0: §9 — Relational / logic:
+  ✓ ∃: RL1 identity
+  ✓ ∃: RL2 join
+  ✓ ∃: RL3 strict-upper
+  ✓ ∃: RL4 path-count
+  ✓ ∃: RL6 window-and
+  ✓ ∃: RL7 ieq-imul
+  ✓ ∃: RL8 negate-diag
+ℹ [8692/8704] Replayed Eval.Portfolio.StatsLossTest
+info: test/Eval/Portfolio/StatsLossTest.lean:13:0: §10 — Losses, reductions & statistics:
+  ✓ ∃: ST1 sse
+  ✓ ∃: ST2 covariance
+  ✓ ∃: ST3 mean
+  ✓ ∃: ST4 marginalize
+  ✓ ∃: ST5 residual-sub
+  ✓ ∃: ST6 cross-entropy
+ℹ [8693/8704] Replayed Eval.Portfolio.TropicalTest
+info: test/Eval/Portfolio/TropicalTest.lean:16:0: §11 — Tropical / max-times & min-times semirings:
+  ✓ ∃: TR3 best-path
+  ✓ ∃: TR6 min-reduction
+  ✓ ∃: TR7 min-times
+ℹ [8694/8704] Replayed Eval.Portfolio.TensorNetTest
+info: test/Eval/Portfolio/TensorNetTest.lean:12:0: §12 — Tensor networks / decomposition:
+  ✓ ∃: TN1 tensor-train
+  ✓ ∃: TN2 CP-reconstruction
+  ✓ ∃: TN3 frobenius
+  ✓ ∃: TN4 third-moment
+ℹ [8695/8704] Replayed Eval.Portfolio.GenerativeTest
+info: test/Eval/Portfolio/GenerativeTest.lean:13:0: §12b — Advanced & generative domains:
+  ✓ ∃: DF1 forward-process
+  ✓ ∃: DF2 ddpm-posterior
+  ✓ ∃: DF3 denoising-loss
+  ✓ ∃: DF4 sinusoidal-embedding
+  ✓ ∃: ME1 gating
+  ✓ ∃: ME2 expert-mlp
+  ✓ ∃: ME3 combine
+  ✓ ∃: SS1 linear-recurrence
+  ✓ ∃: SS2 output-map
+  ✓ ∃: SS3 diagonal-ssm
+  ✓ ∃: PE1 additive-pe
+  ✓ ∃: CL1 similarity
+  ✓ ∃: CL2 infonce-softmax
+  ✓ ∃: CL3 cosine-similarity
+  ✓ ∃: CL3b l2normalize-zero-row
+  ✓ ∃: CL4 infonce-loss
+ℹ [8696/8704] Replayed Eval.Portfolio.ClassicalMLTest
+info: test/Eval/Portfolio/ClassicalMLTest.lean:22:0: §12c — Classical ML, probabilistic & RL:
+  ✓ ∃: CM1 pairwise-sqdist
+  ✓ ∃: CM1b euclidean-distance
+  ✓ ∃: CM2 factorization-machine
+  ✓ ∃: CM3 value-iteration
+  ✓ ∃: CM4 power-iteration
+  ✓ ∃: CM5 matrix-factorization
+  ✓ ∃: CM6 vae-reparam
+  ✓ ∃: CM9a logistic-regression
+ℹ [8697/8704] Replayed Eval.Portfolio.EdgeCaseTest
+info: test/Eval/Portfolio/EdgeCaseTest.lean:18:0: §15 — Adversarial edge cases:
+  ✓ ∃: EC1 lookback-1
+  ✓ ∃: EC2 lookback-3
+  ✓ ∃: EC3 size1-contract
+  ✓ ∃: EC4 size1-free
+  ✓ ∃: EC5 diagonal-read
+  ✓ ∃: EC6 trace
+  ✓ ∃: EC7 diagonal-write
+  ✓ ∃: EC10 high-rank
+  ✓ ∃: EC11 nary-product
+  ✓ ∃: EC12 affine-reindex
+  ✓ ∃: EC13 precedence
+  ✓ ∃: EC14 rank5-contract
+  ✓ ∃: EC15 per-term-contraction
+ℹ [8701/8704] Replayed Semantics.NativeTest
+info: test/Semantics/NativeTest.lean:66:0: 'LeanNCD.Semantics.NativeFixtures.complex_square' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/NativeTest.lean:67:0: (some 4607182418800017408, some 0)
+ℹ [8702/8704] Replayed LeanNCD.Semantics.TensorLogicSemanticCoreSpike
+info: LeanNCD/Semantics/TensorLogicSemanticCoreSpike.lean:344:0: Except.ok 9
+info: LeanNCD/Semantics/TensorLogicSemanticCoreSpike.lean:345:0: Except.ok 0
+info: LeanNCD/Semantics/TensorLogicSemanticCoreSpike.lean:346:0: Except.error (LeanNCD.TensorLogicSemanticCoreSpike.Failure.domain (LeanNCD.Eval.UnaryDomainOp.recip))
+info: LeanNCD/Semantics/TensorLogicSemanticCoreSpike.lean:347:0: Except.error (LeanNCD.TensorLogicSemanticCoreSpike.Failure.domain (LeanNCD.Eval.UnaryDomainOp.recip))
+info: LeanNCD/Semantics/TensorLogicSemanticCoreSpike.lean:348:0: Except.ok (1 : Rat)/2
+info: LeanNCD/Semantics/TensorLogicSemanticCoreSpike.lean:349:0: Except.error (LeanNCD.TensorLogicSemanticCoreSpike.Failure.unavailable 7)
+info: LeanNCD/Semantics/TensorLogicSemanticCoreSpike.lean:350:0: Except.error (LeanNCD.TensorLogicSemanticCoreSpike.Failure.domain (LeanNCD.Eval.UnaryDomainOp.recip))
+info: LeanNCD/Semantics/TensorLogicSemanticCoreSpike.lean:351:0: Except.error (LeanNCD.TensorLogicSemanticCoreSpike.Failure.unavailable 8)
+info: LeanNCD/Semantics/TensorLogicSemanticCoreSpike.lean:352:0: Except.ok -1
+info: LeanNCD/Semantics/TensorLogicSemanticCoreSpike.lean:353:0: some 4607182418800017408
+info: LeanNCD/Semantics/TensorLogicSemanticCoreSpike.lean:354:0: some 0
+info: LeanNCD/Semantics/TensorLogicSemanticCoreSpike.lean:356:0: 'LeanNCD.TensorLogicSemanticCoreSpike.evalWith_stable' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/TensorLogicSemanticCoreSpike.lean:357:0: 'LeanNCD.TensorLogicSemanticCoreSpike.eval_stable' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/TensorLogicSemanticCoreSpike.lean:358:0: 'LeanNCD.TensorLogicSemanticCoreSpike.ready_consistent' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/TensorLogicSemanticCoreSpike.lean:359:0: 'LeanNCD.TensorLogicSemanticCoreSpike.evalReady_stable' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/TensorLogicSemanticCoreSpike.lean:360:0: 'LeanNCD.TensorLogicSemanticCoreSpike.signed_coordinate' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/TensorLogicSemanticCoreSpike.lean:361:0: 'LeanNCD.TensorLogicSemanticCoreSpike.integerCoordinate_eq' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/TensorLogicSemanticCoreSpike.lean:362:0: 'LeanNCD.TensorLogicSemanticCoreSpike.signedRead_connection' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [8703/8704] Replayed Semantics.ContractTest
+info: test/Semantics/ContractTest.lean:79:0: 'LeanNCD.Semantics.Fixtures.reduction_exact_bound_values' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/ContractTest.lean:80:0: 'LeanNCD.Semantics.Fixtures.empty_reduction_exact_without_body' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound]
+info: test/Semantics/ContractTest.lean:102:0: 'LeanNCD.Semantics.Fixtures.nonselected_lane_obligation' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: test/Semantics/ContractTest.lean:103:0: 'LeanNCD.Semantics.Fixtures.existing_stmat_seam' depends on axioms: [propext, Classical.choice, Quot.sound]
+Build completed successfully (8704 jobs).

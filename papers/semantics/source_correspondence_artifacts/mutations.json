@@ -1,0 +1,56 @@
+[
+  {
+    "label": "M1 independent UIDs become one diagonal binder",
+    "task": "fixtures",
+    "file": "test/Semantics/SourceCorrespondenceTest.lean",
+    "old": "(pureRun matrixShapes [] [i, j] [] [⟨1, [10, 11]⟩] matrixStore)",
+    "new": "(pureRun matrixShapes [] [i] [] [⟨1, [10, 10]⟩] matrixStore)",
+    "targets": ["+Semantics.SourceCorrespondenceTest"],
+    "expect": ["distinct-UID-same-name-extent: expected", "some 13"]
+  },
+  {
+    "label": "M2 diagonal becomes independent variables",
+    "task": "fixtures",
+    "file": "test/Semantics/SourceCorrespondenceTest.lean",
+    "old": "(pureRun matrixShapes [] [i] [] [⟨1, [10, 10]⟩] matrixStore)",
+    "new": "(pureRun matrixShapes [] [i, j] [] [⟨1, [10, 11]⟩] matrixStore)",
+    "targets": ["+Semantics.SourceCorrespondenceTest"],
+    "expect": ["shared-variable-diagonal: expected", "some 26"]
+  },
+  {
+    "label": "M3 scalar operand multiplicity removed",
+    "task": "fixtures",
+    "file": "test/Semantics/SourceCorrespondenceTest.lean",
+    "old": "(pureRun scalarShapes [] [] [] [⟨1, []⟩, ⟨2, []⟩] scalarStore)",
+    "new": "(pureRun scalarShapes [] [] [] [⟨1, []⟩] scalarStore)",
+    "targets": ["+Semantics.SourceCorrespondenceTest"],
+    "expect": ["scalar-rank-zero: expected", "some 3"]
+  },
+  {
+    "label": "M4 zero contraction extent becomes singleton",
+    "task": "fixtures",
+    "file": "test/Semantics/SourceCorrespondenceTest.lean",
+    "old": "@[reducible] def z : Axis := ⟨12, 0⟩",
+    "new": "@[reducible] def z : Axis := ⟨12, 1⟩",
+    "targets": ["+Semantics.SourceCorrespondenceTest"],
+    "expect": ["empty-contraction-nonempty-output: expected", "some 1"]
+  },
+  {
+    "label": "M5 bias incorrectly contracted",
+    "task": "fixtures",
+    "file": "test/Semantics/SourceCorrespondenceTest.lean",
+    "old": "admitTerm (σ := declarations biasShapes) [i] [] [⟨3, [10]⟩]",
+    "new": "admitTerm (σ := declarations biasShapes) [i] [j] [⟨3, [10]⟩, ⟨2, [11]⟩]",
+    "targets": ["+Semantics.SourceCorrespondenceTest"],
+    "expect": ["two-term-local-bias: expected", "some 16"]
+  },
+  {
+    "label": "M6 repeated output becomes full independent outer product",
+    "task": "fixtures",
+    "file": "test/Semantics/SourceCorrespondenceTest.lean",
+    "old": "(pureRun diagonalShapes [i] [] [10, 10] [⟨1, [10]⟩] diagonalStore)",
+    "new": "(pureRun diagonalShapes [i, j] [] [10, 11] [⟨1, [10]⟩, ⟨1, [11]⟩] diagonalStore)",
+    "targets": ["+Semantics.SourceCorrespondenceTest"],
+    "expect": ["repeated-output-full-shape: expected", "some 45"]
+  }
+]
