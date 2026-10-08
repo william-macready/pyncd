@@ -13,7 +13,7 @@ values/declarations/registries, structurally admitted expressions, strict
 interpretation/footprints, structural stability/readiness, and whole-array
 completeness. Default `Tests` includes `Semantics.ExpressionTest`,
 `Semantics.NativeTest`, `Semantics.ContractTest`, `Semantics.CollectionModelTest`,
-and `Semantics.ReferenceMachineTest`.
+`Semantics.ReferenceMachineTest`, and `Semantics.RankedMachineTest`.
 
 `Collection` represents Naperian coordinate families as functions. Pullback
 is contravariant lookup; finite additive pushforward is covariant collection.
@@ -47,7 +47,20 @@ existential proof-only consumed-value history for conservation. `Soundness` prov
 that reached success is a complete model, unique among all models, and projects to
 the existing denotation; a reachable ready failure excludes every model. No rank
 or supplied model witness is needed for successful soundness. Dependency blocking
-is not failure: cyclic solving, progress, measures, and termination are not supplied.
+is not failure: cyclic solving is not supplied.
+
+`Ranks` derives coordinate dependencies directly from each guard-admitted occurrence's
+existing strict footprint; input addresses have empty dependencies. Certificates
+rank addresses, not tensor identifiers. `Measure` counts pending tags and unpublished
+defined addresses (including nonoutputs), proves exact one-step running decreases,
+finite trace bounds, and well-founded termination independently of ranks. An undefined
+step is terminal and may add one transition beyond the initial running measure.
+`Progress` uses ranks and reachable invariants, with no model premise, to exclude
+blocking. Maximal finite runs reach terminal endpoints, not arbitrary stopped prefixes.
+Every reachable prefix has a terminal extension; ranked maximal runs succeed or
+explicitly fail, and initialization reaches a complete store exactly when Models is
+its singleton. Existing soundness supplies model uniqueness and denotation.
+These are noncomputable relations and proofs, not an executable scheduler or rank checker.
 
 [`TensorLogicSemanticCoreSpike.lean`](TensorLogicSemanticCoreSpike.lean) proves
 read stability and partial-store consistency for a carrier-parametric scalar

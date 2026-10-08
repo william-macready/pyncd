@@ -1,0 +1,192 @@
+import LeanNCD.Semantics.Measure
+import LeanNCD.Semantics.Soundness
+
+namespace LeanNCD.Semantics.Program
+
+open scoped Classical
+
+variable {K : S → Type} {σ : Declarations S} {r : Registry K}
+variable (P : Program K σ r) (ops : (s : S) → ScalarOps (K s))
+variable [∀ t : P.Defined, AddCommMonoid (K (σ.signature t.val).sort)]
+
+theorem invariant_input_available (η : P.Input) (c : P.Running) (values : P.History)
+    (inv : P.Invariant ops η c values) (a : Address σ) (input : P.input a.1 = true) :
+    (c.published a).isSome = true := by
+  have valid := η.property a.1
+  rw [input] at valid
+  cases h : η.val a.1 with
+  | none => simp [h] at valid
+  | some f => simp [inv.inputs a.1 f h a.2]
+
+theorem unpublished_of_noncomplete (η : P.Input) (c : P.Running) (values : P.History)
+    (inv : P.Invariant ops η c values) (incomplete : ¬ P.Complete c) :
+    ∃ a : P.DefinedAddress, c.published (P.definedAddress a) = none := by
+  by_contra absent
+  have available (a : Address σ) : (c.published a).isSome = true := by
+    by_cases input : P.input a.1 = true
+    · exact P.invariant_input_available ops η c values inv a input
+    · have h := not_exists.mp absent ⟨⟨a.1, Bool.eq_false_iff.mpr input⟩, a.2⟩
+      cases he : c.published a <;> simp_all [definedAddress]
+  apply incomplete
+  refine ⟨?_, available⟩
+  intro t
+  ext o
+  simp
+  intro pending
+  let p := P.destination t o.1 o.2
+  have pub := available ⟨t.val, p⟩
+  cases h : c.published ⟨t.val, p⟩ with
+  | none => simp [h] at pub
+  | some v => exact (inv.published t p v h).1 o pending rfl
+
+theorem ranked_progress (certificate : P.RankCertificate) (η : P.Input) (c : P.Running)
+    (reached : P.Reaches ops (.running (P.initial η)) (.running c))
+    (incomplete : ¬ P.Complete c) : ∃ s, P.Step ops (.running c) s := by
+  obtain ⟨values, inv⟩ := P.reachable_invariant ops η reached
+  obtain ⟨a₀, ha₀⟩ := P.unpublished_of_noncomplete ops η c values inv incomplete
+  let Q (n : Nat) := ∃ a : P.DefinedAddress,
+    c.published (P.definedAddress a) = none ∧ certificate.rank (P.definedAddress a) = n
+  have existsRank : ∃ n, Q n := ⟨_, a₀, ha₀, rfl⟩
+  obtain ⟨a, absent, rankEq⟩ := Nat.find_spec existsRank
+  have smaller (b : Address σ) (lt : certificate.rank b < certificate.rank (P.definedAddress a)) :
+      (c.published b).isSome = true := by
+    by_cases input : P.input b.1 = true
+    · exact P.invariant_input_available ops η c values inv b input
+    · cases hb : c.published b with
+      | some v => simp
+      | none =>
+        have witness : Q (certificate.rank b) :=
+          ⟨⟨⟨b.1, Bool.eq_false_iff.mpr input⟩, b.2⟩, hb, rfl⟩
+        have least := Nat.find_min' existsRank witness
+        omega
+  rcases a with ⟨t, p⟩
+  by_cases finished : P.FiberEmpty c t p
+  · exact ⟨_, .publication c t p absent finished⟩
+  · obtain ⟨o, pending, dest⟩ : ∃ o ∈ c.pending t, P.destination t o.1 o.2 = p := by
+      simpa [FiberEmpty] using finished
+    have ready : checkReads c.published (footprint (P.body t o.1) o.2) = true := by
+      apply (checkReads_iff _ _).mpr
+      intro b hb
+      apply smaller b
+      apply certificate.decreases
+      exact ⟨t, o, by simp [definedAddress, dest], hb⟩
+    cases value : evalWith ops c.published (P.body t o.1) o.2 with
+    | none => exact ⟨_, .undefined c t o pending (by simp [evalReady, ready, value])⟩
+    | some v => exact ⟨_, .contribute c t o v pending (by simp [evalReady, ready, value])⟩
+
+theorem ranked_not_blocked (certificate : P.RankCertificate) (η : P.Input) (c : P.Running)
+    (reached : P.Reaches ops (.running (P.initial η)) (.running c)) :
+    ¬ P.Blocked ops c := by
+  rintro ⟨incomplete, stuck⟩
+  exact stuck (P.ranked_progress ops certificate η c reached incomplete)
+
+theorem complete_terminal (c : P.Running) (complete : P.Complete c) :
+    ¬ ∃ s, P.Step ops (.running c) s := by
+  rintro ⟨s, step⟩
+  cases step with
+  | contribute c t o v pending _ => simp [complete.1 t] at pending
+  | undefined c t o pending _ => simp [complete.1 t] at pending
+  | publication c t p unpublished _ => simpa [unpublished] using complete.2 ⟨t.val, p⟩
+
+def Terminal (s : P.MachineState) : Prop := ¬ ∃ u, P.Step ops s u
+
+def Maximal (η : P.Input) (s : P.MachineState) : Prop :=
+  P.Reaches ops (.running (P.initial η)) s ∧ P.Terminal ops s
+
+theorem reaches_trans {a b c : P.MachineState}
+    (ab : P.Reaches ops a b) (bc : P.Reaches ops b c) : P.Reaches ops a c := by
+  induction bc with
+  | refl => exact ab
+  | tail _ step ih => exact ih.tail step
+
+theorem terminal_extension (s : P.MachineState) :
+    ∃ u, P.Reaches ops s u ∧ P.Terminal ops u := by
+  induction s using (P.step_wellFounded ops).induction with
+  | h s ih =>
+    by_cases terminal : P.Terminal ops s
+    · exact ⟨s, .refl _, terminal⟩
+    · obtain ⟨b, step⟩ := not_not.mp terminal
+      obtain ⟨u, reached, done⟩ := ih b step
+      exact ⟨u, P.reaches_trans ops ((Reaches.refl s).tail step) reached, done⟩
+
+theorem maximal_extension (η : P.Input) (s : P.MachineState)
+    (reached : P.Reaches ops (.running (P.initial η)) s) :
+    ∃ u, P.Reaches ops s u ∧ P.Maximal ops η u := by
+  obtain ⟨u, extension, terminal⟩ := P.terminal_extension ops s
+  exact ⟨u, extension, P.reaches_trans ops reached extension, terminal⟩
+
+theorem maximal_running_success (certificate : P.RankCertificate) (η : P.Input)
+    (c : P.Running) (maximal : P.Maximal ops η (.running c)) : P.Successful ops η c := by
+  refine ⟨maximal.1, ?_⟩
+  by_contra incomplete
+  exact maximal.2 (P.ranked_progress ops certificate η c maximal.1 incomplete)
+
+theorem maximal_dichotomy (certificate : P.RankCertificate) (η : P.Input)
+    (s : P.MachineState) (maximal : P.Maximal ops η s) :
+    (∃ c, s = .running c ∧ P.Successful ops η c) ∨
+      (∃ t o c, s = .failed t o c ∧ ¬ ∃ ρ, P.Models ops η ρ) := by
+  cases s with
+  | running c => exact .inl ⟨c, rfl, P.maximal_running_success ops certificate η c maximal⟩
+  | failed t o c => exact .inr ⟨t, o, c, rfl, P.failed_no_model ops η t o c maximal.1⟩
+
+theorem model_maximal_success (certificate : P.RankCertificate) (η : P.Input)
+    (ρ : Store K σ) (model : P.Models ops η ρ) (s : P.MachineState)
+    (maximal : P.Maximal ops η s) :
+    ∃ c, ∃ success : P.Successful ops η c,
+      s = .running c ∧ P.finalStore c success.2 = ρ := by
+  rcases P.maximal_dichotomy ops certificate η s maximal with h | h
+  · obtain ⟨c, eq, success⟩ := h
+    exact ⟨c, success, eq, (P.successful_unique ops η c success ρ model).symm⟩
+  · obtain ⟨t, o, c, _, noModel⟩ := h
+    exact False.elim (noModel ⟨ρ, model⟩)
+
+theorem no_model_maximal_failure (certificate : P.RankCertificate) (η : P.Input)
+    (noModel : ¬ ∃ ρ, P.Models ops η ρ) (s : P.MachineState)
+    (maximal : P.Maximal ops η s) : ∃ t o c, s = .failed t o c := by
+  rcases P.maximal_dichotomy ops certificate η s maximal with h | h
+  · obtain ⟨c, _, success⟩ := h
+    exact False.elim (noModel ⟨_, P.successful_model ops η c success⟩)
+  · obtain ⟨t, o, c, eq, _⟩ := h
+    exact ⟨t, o, c, eq⟩
+
+theorem initialization_iff_singleton (certificate : P.RankCertificate) (η : P.Input)
+    (ρ : Store K σ) :
+    (∃ c, ∃ success : P.Successful ops η c, P.finalStore c success.2 = ρ) ↔
+      {ρ' | P.Models ops η ρ'} = {ρ} := by
+  constructor
+  · rintro ⟨c, success, eq⟩
+    ext ρ'
+    constructor
+    · intro model
+      exact (P.successful_unique ops η c success ρ' model).trans eq
+    · intro same
+      have h : ρ' = ρ := same
+      subst ρ'
+      rw [← eq]
+      exact P.successful_model ops η c success
+  · intro singleton
+    have model : P.Models ops η ρ := by
+      have h : ρ ∈ ({ρ' | P.Models ops η ρ'} : Set (Store K σ)) := by
+        rw [singleton]
+        exact Set.mem_singleton ρ
+      exact h
+    obtain ⟨s, _, maximal⟩ := P.maximal_extension ops η (.running (P.initial η)) (.refl _)
+    obtain ⟨c, success, _, eq⟩ := P.model_maximal_success ops certificate η ρ model s maximal
+    exact ⟨c, success, eq⟩
+
+theorem successful_schedules_agree (η : P.Input) (c d : P.Running)
+    (hc : P.Successful ops η c) (hd : P.Successful ops η d) :
+    P.finalStore c hc.2 = P.finalStore d hd.2 :=
+  P.successful_unique ops η d hd _ (P.successful_model ops η c hc)
+
+#print axioms ranked_progress
+#print axioms ranked_not_blocked
+#print axioms terminal_extension
+#print axioms maximal_extension
+#print axioms maximal_dichotomy
+#print axioms model_maximal_success
+#print axioms no_model_maximal_failure
+#print axioms initialization_iff_singleton
+#print axioms successful_schedules_agree
+
+end LeanNCD.Semantics.Program
