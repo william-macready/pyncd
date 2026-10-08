@@ -57,10 +57,33 @@ not for first running and debugging the core semantics.
 ## 2. One notation, two presentations
 
 Use the specification's notation throughout:
-$\Sigma$ for declarations, $\Gamma$ for a variable context, $\nu$ for a
-valuation, $\rho$ for a complete environment, $\eta$ for supplied inputs,
-and $\sigma$ for a partial published store. A machine configuration is
-$(\sigma,\alpha,U)$. $s$ is a statement identifier and $o=(s,\nu)$ an occurrence.
+$\textcolor{#5688C7}{\Sigma}$ for declarations, $\textcolor{#5688C7}{\Gamma}$ for a variable context, $\textcolor{#5688C7}{\nu}$ for a
+valuation, $\textcolor{#398B83}{\rho}$ for a complete environment, $\textcolor{#398B83}{\eta}$ for supplied inputs,
+and $\textcolor{#A87C28}{\sigma}$ for a partial published store. A machine configuration is
+$(\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{\alpha},\textcolor{#A87C28}{U})$. $\textcolor{#9D75C4}{s}$ is a statement identifier and $\textcolor{#9D75C4}{o}=(\textcolor{#9D75C4}{s},\textcolor{#5688C7}{\nu})$ an occurrence.
+
+The mathematics uses the same
+[notation color key](tensor_logic_semantics.md#notation-color-key) as the
+specification, throughout the equations and correspondence tables:
+
+| Color | Semantic role |
+| --- | --- |
+| $\textcolor{#5688C7}{\text{Blue}}$ | Domains, signatures, index binding, and coordinate maps |
+| $\textcolor{#9D75C4}{\text{Purple}}$ | Program syntax and source identities, including tagged occurrences |
+| $\textcolor{#398B83}{\text{Teal}}$ | Denotational values, expression results, and model equations |
+| $\textcolor{#A87C28}{\text{Amber}}$ | Reference execution, published stores, accumulators, and readiness |
+| $\textcolor{#C16C86}{\text{Rose}}$ | Compiled execution and physical representation, reserved for later refinement |
+
+Color follows meaning, not spelling. Local coordinate maps are blue, while
+an expression such as $\textcolor{#9D75C4}{e}$ is purple. Scalar algebra,
+generic category notation, and ordinary mathematical punctuation remain
+neutral. Lean identifiers and code examples retain their literal spelling
+and are not recolored; in particular, the Lean declaration parameter `σ`
+must not be confused with the mathematical published store
+$\textcolor{#A87C28}{\sigma}$. The labels also make the guide usable in
+monochrome. Math colors require no custom macros or CSS: use VS Code's
+built-in Markdown math preview, or a browser Markdown preview with KaTeX
+or MathJax support, as described in the linked color key.
 
 The specification fixes a scalar carrier $K$. Lean generalizes this to a
 family `K : S -> Type`, allowing typed scalar sorts and heterogeneous primitive
@@ -74,22 +97,22 @@ needed. The general Lean interface does not enforce this identification.
 The collection and soundness results use weaker additive hypotheses.
 
 Two naming collisions must not obscure the correspondence: Lean's declaration
-parameter `σ` represents mathematical **$\Sigma$**, not the published store
-$\sigma$; Lean's registry parameter `r` is not the dependency rank
-$r:\operatorname{Addr}_{\Sigma}\to\mathbb N$.
+parameter `σ` represents mathematical **$\textcolor{#5688C7}{\Sigma}$**, not the published store
+$\textcolor{#A87C28}{\sigma}$; Lean's registry parameter `r` is not the dependency rank
+$r:\textcolor{#5688C7}{\operatorname{Addr}}_{\textcolor{#5688C7}{\Sigma}}\to\mathbb N$.
 
 | Mathematics | Lean representation | Specification |
 | --- | --- | --- |
 | Axis identity and extent | `Axis.uid`, `Axis.extent`; ordered `Shape := List Axis` | [3.1](tensor_logic_semantics.md#31-axes-and-identities), [4.1](tensor_logic_semantics.md#41-signatures-and-coordinate-domains) |
-| $\operatorname{Coord}_{\Sigma}(T)$ | `Coord (σ.signature t).axes`, a product of bounded `Fin` coordinates; `Coord [] = Unit` | [4.1](tensor_logic_semantics.md#41-signatures-and-coordinate-domains) |
-| Tensor value $I\to K$ | `Value K (.array s sh) = Coord sh.axes -> K s`; tensor signatures may also have rank zero | [4.2](tensor_logic_semantics.md#42-tensor-values), [13.2](tensor_logic_semantics.md#132-value-types-and-primitive-signatures) |
+| $\textcolor{#5688C7}{\operatorname{Coord}}_{\textcolor{#5688C7}{\Sigma}}(T)$ | `Coord (σ.signature t).axes`, a product of bounded `Fin` coordinates; `Coord [] = Unit` | [4.1](tensor_logic_semantics.md#41-signatures-and-coordinate-domains) |
+| Tensor value $\textcolor{#5688C7}{I}\to K$ | `Value K (.array s sh) = Coord sh.axes -> K s`; tensor signatures may also have rank zero | [4.2](tensor_logic_semantics.md#42-tensor-values), [13.2](tensor_logic_semantics.md#132-value-types-and-primitive-signatures) |
 | Address $(T,p)$ | Dependent pair `Address σ := (t : σ.Tensor) × Coord (σ.signature t).axes` | [5.2](tensor_logic_semantics.md#52-partial-stores-and-available-values) |
-| Complete $\rho$; partial $\sigma$ | `Store K σ`; `PartialStore K σ`, with `Option` at each typed cell | [5](tensor_logic_semantics.md#5-environments-and-stores) |
-| $\Sigma;\Gamma;D\vdash E:\tau$ | `Expr K σ r Γ τ` on an already admitted valuation type | [13](tensor_logic_semantics.md#13-core-syntax-and-binding), [14](tensor_logic_semantics.md#14-structural-well-formedness) |
-| $\operatorname{Result}(\tau)=\tau\sqcup\{\bot\}$ | `Option (Value K τ)`; `some v` is success, `none` is $\bot$ | [18.1](tensor_logic_semantics.md#181-successful-and-undefined-results) |
-| $\llbracket E\rrbracket_{\rho,\nu}$ | `interpret ops ρ e γ` | [18](tensor_logic_semantics.md#18-expression-interpretation-and-definedness) |
-| $\operatorname{Read}(E,\nu)$ | Membership in the list `footprint e γ`; repeated list entries do not change readiness | [23.2](tensor_logic_semantics.md#232-read-footprints-of-expressions) |
-| $\operatorname{Eval}_{\sigma}(E,\nu)$ when ready | `evalReady ops p e γ = .evaluated ...`; `.notReady` means wait | [23.3](tensor_logic_semantics.md#233-stable-evaluation-from-a-partial-store) |
+| Complete $\textcolor{#398B83}{\rho}$; partial $\textcolor{#A87C28}{\sigma}$ | `Store K σ`; `PartialStore K σ`, with `Option` at each typed cell | [5](tensor_logic_semantics.md#5-environments-and-stores) |
+| $\textcolor{#5688C7}{\Sigma};\textcolor{#5688C7}{\Gamma};\textcolor{#5688C7}{D}\vdash \textcolor{#9D75C4}{E}:\textcolor{#5688C7}{\tau}$ | `Expr K σ r Γ τ` on an already admitted valuation type | [13](tensor_logic_semantics.md#13-core-syntax-and-binding), [14](tensor_logic_semantics.md#14-structural-well-formedness) |
+| $\textcolor{#398B83}{\operatorname{Result}}(\textcolor{#5688C7}{\tau})=\textcolor{#5688C7}{\tau}\sqcup\{\textcolor{#398B83}{\bot}\}$ | `Option (Value K τ)`; `some v` is success, `none` is $\textcolor{#398B83}{\bot}$ | [18.1](tensor_logic_semantics.md#181-successful-and-undefined-results) |
+| $\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}\textcolor{#398B83}{\rrbracket}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}$ | `interpret ops ρ e γ` | [18](tensor_logic_semantics.md#18-expression-interpretation-and-definedness) |
+| $\textcolor{#A87C28}{\operatorname{Read}}(\textcolor{#9D75C4}{E},\textcolor{#5688C7}{\nu})$ | Membership in the list `footprint e γ`; repeated list entries do not change readiness | [23.2](tensor_logic_semantics.md#232-read-footprints-of-expressions) |
+| $\textcolor{#A87C28}{\operatorname{Eval}}_{\textcolor{#A87C28}{\sigma}}(\textcolor{#9D75C4}{E},\textcolor{#5688C7}{\nu})$ when ready | `evalReady ops p e γ = .evaluated ...`; `.notReady` means wait | [23.3](tensor_logic_semantics.md#233-stable-evaluation-from-a-partial-store) |
 
 The representations and expression constructors are in
 [`Types.lean`](../../leanncd/LeanNCD/Semantics/Types.lean) and
@@ -126,19 +149,19 @@ but incorrect conclusion: that every operation is a linear tensor morphism.
 
 ### 3.1 Finite coordinate families: representation and contravariance
 
-For an index set $I$, write $K^I=\{v:I\to K\}$. This is the concrete Naperian
-representation: the value functor $A\mapsto A^I=\operatorname{Set}(I,A)$ is
+For an index set $\textcolor{#5688C7}{I}$, write $K^{\textcolor{#5688C7}{I}}=\{\textcolor{#398B83}{v}:\textcolor{#5688C7}{I}\to K\}$. This is the concrete Naperian
+representation: the value functor $A\mapsto A^{\textcolor{#5688C7}{I}}=\operatorname{Set}(\textcolor{#5688C7}{I},A)$ is
 representable, with indexing and tabulation inverse by construction.
 Finite tensor shapes supply products of finite index sets; the rank-zero
 coordinate set is the singleton, not the empty set.
 
-A coordinate map $f:I\to J$ induces a contravariant read map
+A coordinate map $\textcolor{#5688C7}{f}:\textcolor{#5688C7}{I}\to \textcolor{#5688C7}{J}$ induces a contravariant read map
 
 $$
-f^*:K^J\to K^I,\qquad f^*(v)=v\circ f.
+\textcolor{#5688C7}{f}^*:K^{\textcolor{#5688C7}{J}}\to K^{\textcolor{#5688C7}{I}},\qquad \textcolor{#5688C7}{f}^*(\textcolor{#398B83}{v})=\textcolor{#398B83}{v}\circ \textcolor{#5688C7}{f}.
 $$
 
-Thus $I\mapsto K^I$ has the contravariant finite-set organization
+Thus $\textcolor{#5688C7}{I}\mapsto K^{\textcolor{#5688C7}{I}}$ has the contravariant finite-set organization
 $\operatorname{FinSet}^{op}\to\operatorname{Set}$, or into additive commutative
 monoids when $K$ has that structure. In
 [`Collection.lean`](../../leanncd/LeanNCD/Semantics/Collection.lean),
@@ -147,7 +170,7 @@ Named expression reads implement the corresponding lookup directly through
 `AdmittedRead`; they do not call `pullback` as a separate runtime operation.
 
 Products organize binders and array values:
-$K^{I\times J}\cong(K^J)^I$ is ordinary currying. Lean's product valuation
+$K^{\textcolor{#5688C7}{I}\times \textcolor{#5688C7}{J}}\cong(K^{\textcolor{#5688C7}{J}})^{\textcolor{#5688C7}{I}}$ is ordinary currying. Lean's product valuation
 spaces and function-valued arrays realize this structure. A checked layout
 chooses an enumeration; it does not change the coordinate domain.
 
@@ -158,12 +181,12 @@ instantiate the full $D$-graded colored PROP in
 
 ### 3.2 Finite additive pushforward: covariance and multiplicity
 
-Given finite occurrences $O$, a destination map $d:O\to I$, and an additive
+Given finite occurrences $\textcolor{#9D75C4}{O}$, a destination map $\textcolor{#5688C7}{d}:\textcolor{#9D75C4}{O}\to \textcolor{#5688C7}{I}$, and an additive
 commutative monoid $K$, define
 
 $$
-d_!:K^O\to K^I,\qquad
-d_!(v)(p)=\bigoplus_{\substack{o\in O\\d(o)=p}}v(o).
+\textcolor{#5688C7}{d}_!:K^{\textcolor{#9D75C4}{O}}\to K^{\textcolor{#5688C7}{I}},\qquad
+\textcolor{#5688C7}{d}_!(\textcolor{#398B83}{v})(p)=\bigoplus_{\substack{\textcolor{#9D75C4}{o}\in \textcolor{#9D75C4}{O}\\d(\textcolor{#9D75C4}{o})=p}}\textcolor{#398B83}{v}(\textcolor{#9D75C4}{o}).
 $$
 
 This is covariant collection, not overwrite. `pushforward d v` implements it
@@ -171,11 +194,11 @@ as a finite sum with a destination filter. The landed laws are:
 
 | Law | Lean theorem in [Collection](../../leanncd/LeanNCD/Semantics/Collection.lean) |
 | --- | --- |
-| $d_!(0)=0$; $d_!(v\oplus w)=d_!(v)\oplus d_!(w)$ | `pushforward_zero`, `pushforward_add`; packaged as `pushforwardHom` |
+| $\textcolor{#5688C7}{d}_!(0)=0$; $\textcolor{#5688C7}{d}_!(\textcolor{#398B83}{v}\oplus \textcolor{#398B83}{w})=\textcolor{#5688C7}{d}_!(\textcolor{#398B83}{v})\oplus \textcolor{#5688C7}{d}_!(\textcolor{#398B83}{w})$ | `pushforward_zero`, `pushforward_add`; packaged as `pushforwardHom` |
 | $(\operatorname{id})_!=\operatorname{id}$ | `pushforward_id` |
-| $e_!\circ d_!=(e\circ d)_!$ | `pushforward_comp` |
-| $(d\circ q)_!(v\circ q)=d_!(v)$ for an occurrence equivalence $q:O'\cong O$ | `pushforward_relabel` |
-| Collection over $\coprod_s D_s$ equals combination of each statement's fiber collection | `pushforward_grouped` |
+| $\textcolor{#5688C7}{e}_!\circ \textcolor{#5688C7}{d}_!=(\textcolor{#5688C7}{e}\circ \textcolor{#5688C7}{d})_!$ | `pushforward_comp` |
+| $(\textcolor{#5688C7}{d}\circ \textcolor{#5688C7}{q})_!(\textcolor{#398B83}{v}\circ \textcolor{#5688C7}{q})=\textcolor{#5688C7}{d}_!(\textcolor{#398B83}{v})$ for an occurrence equivalence $\textcolor{#5688C7}{q}:\textcolor{#9D75C4}{O}'\cong \textcolor{#9D75C4}{O}$ | `pushforward_relabel` |
+| Collection over $\coprod_{\textcolor{#9D75C4}{s}} \textcolor{#5688C7}{D}_{\textcolor{#9D75C4}{s}}$ equals combination of each statement's fiber collection | `pushforward_grouped` |
 
 Identity and composition give the covariant finite-family organization into
 additive commutative monoids; Lean proves these laws without constructing a
@@ -184,7 +207,7 @@ named pullback-law theorems in this module. No pullback/pushforward adjunction
 or general Kan-extension construction has been formalized.
 
 The coproduct is essential: equal values, duplicate bodies, and colliding
-destinations do not identify the elements of $O$. Relabeling an occurrence
+destinations do not identify the elements of $\textcolor{#9D75C4}{O}$. Relabeling an occurrence
 set is an isomorphism; deleting duplicates is not.
 
 The routing/collection structure also explains the canonical pure-einsum
@@ -193,9 +216,9 @@ Using that section's global valuation space, index strings, and projections,
 write it as
 
 $$
-V_L=(\pi_L)_!
+\textcolor{#398B83}{V}_{\textcolor{#5688C7}{L}}=(\textcolor{#5688C7}{\pi}_{\textcolor{#5688C7}{L}})_!
 \left(\bigotimes_{r=1}^{m}
-  \pi_{L_r}^{*}(\rho(T_r))\right).
+  \textcolor{#5688C7}{\pi}_{\textcolor{#5688C7}{L}_r}^{*}(\textcolor{#398B83}{\rho}(T_r))\right).
 $$
 
 Here each pullback puts an operand on the common global valuation domain;
@@ -208,27 +231,27 @@ elaboration to this formula and the contribution core remains unproved.
 
 ### 3.3 Partial maps organize expression definedness
 
-At fixed $\rho$ and admitted domain $D\subseteq\operatorname{Val}(\Gamma)$,
+At fixed $\textcolor{#398B83}{\rho}$ and admitted domain $\textcolor{#5688C7}{D}\subseteq\textcolor{#5688C7}{\operatorname{Val}}(\textcolor{#5688C7}{\Gamma})$,
 an expression has the mathematical form
 
 $$
-\llbracket E\rrbracket_\rho:
-D\to\operatorname{Result}(\tau),\qquad
-\operatorname{Result}(\tau)=\tau\sqcup\{\bot\}.
+\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}\textcolor{#398B83}{\rrbracket}_{\textcolor{#398B83}{\rho}}:
+\textcolor{#5688C7}{D}\to\textcolor{#398B83}{\operatorname{Result}}(\textcolor{#5688C7}{\tau}),\qquad
+\textcolor{#398B83}{\operatorname{Result}}(\textcolor{#5688C7}{\tau})=\textcolor{#5688C7}{\tau}\sqcup\{\textcolor{#398B83}{\bot}\}.
 $$
 
 This is a partial map of sets, represented by an arrow in the Kleisli category
 of `Option`. Bind propagates undefinedness; pure embeds successful values.
 For primitive $f$, the registry specifies its argument product, domain
-$\mathcal D_f$, and total meaning on that domain. It therefore supplies a
+$\textcolor{#398B83}{\mathcal D}_f$, and total meaning on that domain. It therefore supplies a
 partial map from the argument product to its result type.
 
 Strict assembly uses
 
 $$
-\operatorname{sequence}:
-\prod_i\operatorname{Option}(A_i)
-\to\operatorname{Option}\left(\prod_i A_i\right).
+\textcolor{#398B83}{\operatorname{sequence}}:
+\prod_i\textcolor{#398B83}{\operatorname{Option}}(A_i)
+\to\textcolor{#398B83}{\operatorname{Option}}\left(\prod_i A_i\right).
 $$
 
 All actual components must succeed; the empty product succeeds.
@@ -238,7 +261,7 @@ organization of the definitions, not a landed categorical interpreter or a
 claim that partial maps retain all cartesian-closed structure of sets.
 
 Collection begins **after** every admitted body has a successful value.
-It combines values in $K$, not in `Option K`. In particular, $\bot$ is not
+It combines values in $K$, not in `Option K`. In particular, $\textcolor{#398B83}{\bot}$ is not
 a zero summand and the strict result type is not assumed to be a semiring.
 Arbitrary primitives are partial set maps, not additive homomorphisms:
 $f(x)\oplus f(y)$ cannot be replaced by $f(x\oplus y)$ without a separate
@@ -246,9 +269,9 @@ value-and-definedness theorem.
 
 ### 3.4 State extension organizes operational refinement
 
-Published stores have the extension preorder $\sigma\sqsubseteq\sigma'$:
-every available value in $\sigma$ remains available and unchanged in
-$\sigma'$. This can be viewed as a thin category. Contribution steps leave
+Published stores have the extension preorder $\textcolor{#A87C28}{\sigma}\textcolor{#A87C28}{\sqsubseteq}\textcolor{#A87C28}{\sigma}'$:
+every available value in $\textcolor{#A87C28}{\sigma}$ remains available and unchanged in
+$\textcolor{#A87C28}{\sigma}'$. This can be viewed as a thin category. Contribution steps leave
 the published store unchanged; publication extends it. Ready interpretation
 is stable along such extensions on its footprint.
 
@@ -274,12 +297,12 @@ The constructors map directly to
 
 | Core expression | Lean constructor and interpretation |
 | --- | --- |
-| $c_K$, $T[e_1,\ldots,e_k]$, $\mathbf 1_Q$ | `Expr.lit`, `.read`, `.iverson` |
-| $E_1\oplus E_2$, $E_1\otimes E_2$ | `.binary .add`, `.binary .mul`; both results must succeed |
-| $\bigoplus_{j\in[n]}E$ | `.reduce n body`; ordered `foldValues` over `List.finRange n` |
-| $\operatorname{tab}_J(E)$ | `.tab sh layout body`; `sequence` assembles a complete function array |
-| $\operatorname{at}(E,p)$ | `.at e index`; first obtain the complete array value |
-| $f(E_1,\ldots,E_q)$ | `.prim f args`; assemble all arguments, then `Registry.apply` checks the domain |
+| $c_K$, $T[\textcolor{#9D75C4}{e}_1,\ldots,\textcolor{#9D75C4}{e}_k]$, $\mathbf 1_{\textcolor{#9D75C4}{Q}}$ | `Expr.lit`, `.read`, `.iverson` |
+| $\textcolor{#9D75C4}{E}_1\oplus \textcolor{#9D75C4}{E}_2$, $\textcolor{#9D75C4}{E}_1\otimes \textcolor{#9D75C4}{E}_2$ | `.binary .add`, `.binary .mul`; both results must succeed |
+| $\bigoplus_{j\in[n]}\textcolor{#9D75C4}{E}$ | `.reduce n body`; ordered `foldValues` over `List.finRange n` |
+| $\textcolor{#9D75C4}{\operatorname{tab}}_{\textcolor{#5688C7}{J}}(\textcolor{#9D75C4}{E})$ | `.tab sh layout body`; `sequence` assembles a complete function array |
+| $\textcolor{#9D75C4}{\operatorname{at}}(\textcolor{#9D75C4}{E},p)$ | `.at e index`; first obtain the complete array value |
+| $f(\textcolor{#9D75C4}{E}_1,\ldots,\textcolor{#9D75C4}{E}_q)$ | `.prim f args`; assemble all arguments, then `Registry.apply` checks the domain |
 
 The correspondence is more than constructor naming.
 [`Completeness.lean`](../../leanncd/LeanNCD/Semantics/Completeness.lean)
@@ -297,11 +320,11 @@ For [Section 23.3](tensor_logic_semantics.md#233-stable-evaluation-from-a-partia
 [`Readiness.lean`](../../leanncd/LeanNCD/Semantics/Readiness.lean) proves:
 
 $$
-\rho|_{\operatorname{Read}(E,\nu)}
-=\rho'|_{\operatorname{Read}(E,\nu)}
+\textcolor{#398B83}{\rho}|_{\textcolor{#A87C28}{\operatorname{Read}}(\textcolor{#9D75C4}{E},\textcolor{#5688C7}{\nu})}
+=\textcolor{#398B83}{\rho}'|_{\textcolor{#A87C28}{\operatorname{Read}}(\textcolor{#9D75C4}{E},\textcolor{#5688C7}{\nu})}
 \Longrightarrow
-\llbracket E\rrbracket_{\rho,\nu}
-=\llbracket E\rrbracket_{\rho',\nu}
+\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}\textcolor{#398B83}{\rrbracket}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
+=\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}\textcolor{#398B83}{\rrbracket}_{\textcolor{#398B83}{\rho}',\textcolor{#5688C7}{\nu}}
 \qquad\texttt{interpret\_stable}.
 $$
 
@@ -330,29 +353,29 @@ one entry is selected or another operand is zero.
 [`Program.lean`](../../leanncd/LeanNCD/Semantics/Program.lean) presents
 [Sections 9 and 19](tensor_logic_semantics.md#9-programs-and-contribution-occurrences)
 using local statement tags for each defined tensor. For a fixed target $T$
-and $\rho\in\operatorname{AdmEnv}(P)$, define:
+and $\textcolor{#398B83}{\rho}\in\textcolor{#398B83}{\operatorname{AdmEnv}}(\textcolor{#9D75C4}{P})$, define:
 
 $$
-O_T=\coprod_{\substack{s\in P\\T_s=T}}D_s,
+\textcolor{#9D75C4}{O}_T=\coprod_{\substack{\textcolor{#9D75C4}{s}\in \textcolor{#9D75C4}{P}\\T_{\textcolor{#9D75C4}{s}}=T}}\textcolor{#5688C7}{D}_{\textcolor{#9D75C4}{s}},
 \qquad
-d_T(s,\nu)=\phi_s(\nu),
+\textcolor{#5688C7}{d}_T(\textcolor{#9D75C4}{s},\textcolor{#5688C7}{\nu})=\textcolor{#5688C7}{\phi}_{\textcolor{#9D75C4}{s}}(\textcolor{#5688C7}{\nu}),
 \qquad
-v^\rho_T(s,\nu)=\llbracket E_s\rrbracket_{\rho,\nu}.
+\textcolor{#398B83}{v}^{\textcolor{#398B83}{\rho}}_T(\textcolor{#9D75C4}{s},\textcolor{#5688C7}{\nu})=\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}\textcolor{#398B83}{\rrbracket}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}.
 $$
 
 `P.Occurrence t` is the dependent pair of a statement `Fin` tag and a
-guard-admitted valuation subtype. The mathematical global $\mathcal O_P$
+guard-admitted valuation subtype. The mathematical global $\textcolor{#9D75C4}{\mathcal O}_{\textcolor{#9D75C4}{P}}$
 is correspondingly the disjoint union of these families over defined
 tensors. Guards exclude valuations before body demand.
 
 | Mathematics | Lean |
 | --- | --- |
-| $D_s$ | `{v : Fin (P.valuations t s) // P.guard t s v = true}` |
-| $\phi_s$, $E_s$ | `P.destination t s`, `P.body t s` |
-| $\llbracket E_s\rrbracket_{\rho,\nu}$ | `P.outcome ops ρ t o` |
-| $\rho\in\operatorname{AdmEnv}(P)$ | `P.AdmEnv ops ρ` |
-| Successful value $v^\rho_T(o)$ | `P.contribution ops ρ h t o`, extracted using admission proof `h` |
-| $\operatorname{Collect}_P(\rho)(T)=d_{T!}(v^\rho_T)$ | `P.collect ops ρ h t`, directly defined using `pushforward` |
+| $\textcolor{#5688C7}{D}_{\textcolor{#9D75C4}{s}}$ | `{v : Fin (P.valuations t s) // P.guard t s v = true}` |
+| $\textcolor{#5688C7}{\phi}_{\textcolor{#9D75C4}{s}}$, $\textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}$ | `P.destination t s`, `P.body t s` |
+| $\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}\textcolor{#398B83}{\rrbracket}_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}$ | `P.outcome ops ρ t o` |
+| $\textcolor{#398B83}{\rho}\in\textcolor{#398B83}{\operatorname{AdmEnv}}(\textcolor{#9D75C4}{P})$ | `P.AdmEnv ops ρ` |
+| Successful value $\textcolor{#398B83}{v}^{\textcolor{#398B83}{\rho}}_T(\textcolor{#9D75C4}{o})$ | `P.contribution ops ρ h t o`, extracted using admission proof `h` |
+| $\textcolor{#398B83}{\operatorname{Collect}}_{\textcolor{#9D75C4}{P}}(\textcolor{#398B83}{\rho})(T)=\textcolor{#5688C7}{d}_{T!}(\textcolor{#398B83}{v}^{\textcolor{#398B83}{\rho}}_T)$ | `P.collect ops ρ h t`, directly defined using `pushforward` |
 
 This last equality is the actual organizing implementation, not a categorical
 analogy attached to an imperative collector. `collect_grouped` and
@@ -362,13 +385,13 @@ analogy attached to an imperative collector. `collect_grouped` and
 [Section 20](tensor_logic_semantics.md#20-program-models-and-functional-denotation):
 
 $$
-\rho\in\operatorname{Models}(P,\eta)
+\textcolor{#398B83}{\rho}\in\textcolor{#398B83}{\operatorname{Models}}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})
 \iff
-\rho\in\operatorname{AdmEnv}(P)
-\ \land\ \rho|_{\mathrm{In}}=\eta
+\textcolor{#398B83}{\rho}\in\textcolor{#398B83}{\operatorname{AdmEnv}}(\textcolor{#9D75C4}{P})
+\ \land\ \textcolor{#398B83}{\rho}|_{\textcolor{#5688C7}{\mathrm{In}}}=\textcolor{#398B83}{\eta}
 \ \land\
-\forall T\in\mathrm{Def},p,\
-\rho(T)[p]=\operatorname{Collect}_P(\rho)(T)[p].
+\forall T\in\textcolor{#5688C7}{\mathrm{Def}},p,\
+\textcolor{#398B83}{\rho}(T)[p]=\textcolor{#398B83}{\operatorname{Collect}}_{\textcolor{#9D75C4}{P}}(\textcolor{#398B83}{\rho})(T)[p].
 $$
 
 The Lean predicate is `P.Models ops η ρ`.
@@ -382,7 +405,7 @@ No prior candidate value is a collection seed.
 iteration nor guarantees its result remains admitted.
 `models_relabel` and `models_grouped` preserve the model relation.
 
-`AdmInput` is $\exists!\rho,\operatorname{Models}(P,\eta)$.
+`AdmInput` is $\exists!\textcolor{#398B83}{\rho},\textcolor{#398B83}{\operatorname{Models}}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})$.
 `denotation` is the unique model's `outputProjection`, using
 `Classical.choose`; `denotation_of_model` proves agreement with any supplied
 model under the uniqueness premise. A unique output projection alone is
@@ -396,15 +419,15 @@ presentation of
 
 | Specification | Lean |
 | --- | --- |
-| $(\sigma,\alpha,U)$ | `Running.published`, `.accumulators`, `.pending` |
-| $\operatorname{Init}(P,\eta)$ | `P.initial η`: supplied inputs, zero accumulators, all admitted tags pending |
-| $U\cap\mathcal C_P(T,p)=\varnothing$ | `P.FiberEmpty c t p` |
-| $\mathrm{CONTRIBUTE}$ | `Step.contribute`: selected tag pending, `.evaluated (some v)`; add at its destination and erase that tag |
-| $\mathrm{PUBLISH}$ | `Step.publication`: unpublished defined coordinate, empty pending fiber; publish its retained accumulator |
-| $\mathrm{UNDEFINED}$ | `Step.undefined`: selected tag pending, `.evaluated none`; enter `.failed t o c` with the unchanged snapshot |
-| $\longrightarrow^*$ | `P.Reaches ops` |
+| $(\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{\alpha},\textcolor{#A87C28}{U})$ | `Running.published`, `.accumulators`, `.pending` |
+| $\textcolor{#A87C28}{\operatorname{Init}}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})$ | `P.initial η`: supplied inputs, zero accumulators, all admitted tags pending |
+| $\textcolor{#A87C28}{U}\cap\textcolor{#9D75C4}{\mathcal C}_{\textcolor{#9D75C4}{P}}(T,p)=\varnothing$ | `P.FiberEmpty c t p` |
+| $\textcolor{#A87C28}{\mathrm{CONTRIBUTE}}$ | `Step.contribute`: selected tag pending, `.evaluated (some v)`; add at its destination and erase that tag |
+| $\textcolor{#A87C28}{\mathrm{PUBLISH}}$ | `Step.publication`: unpublished defined coordinate, empty pending fiber; publish its retained accumulator |
+| $\textcolor{#A87C28}{\mathrm{UNDEFINED}}$ | `Step.undefined`: selected tag pending, `.evaluated none`; enter `.failed t o c` with the unchanged snapshot |
+| $\textcolor{#A87C28}{\longrightarrow}^*$ | `P.Reaches ops` |
 | Complete / successful / blocked | `P.Complete`, `P.Successful ops η`, `P.Blocked ops` |
-| Complete $\rho_\sigma$ | `P.finalStore c complete` |
+| Complete $\textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sigma}}$ | `P.finalStore c complete` |
 
 `pending` is a family of finite sets, one per defined tensor, equivalent to
 the global tagged pending set. Zero-valued contributions still erase their
@@ -416,11 +439,11 @@ the designated outputs. `failed_terminal` proves failure has no outgoing step.
 For [Section 26.1](tensor_logic_semantics.md#261-basic-conservation-invariants),
 `Invariant` in
 [`Invariants.lean`](../../leanncd/LeanNCD/Semantics/Invariants.lean) retains
-proof-only consumed values $v_o$ and states
+proof-only consumed values $\textcolor{#398B83}{v}_{\textcolor{#9D75C4}{o}}$ and states
 
 $$
-\alpha(T,p)=
-\bigoplus_{o\in\mathcal C_P(T,p)\setminus U}v_o.
+\textcolor{#A87C28}{\alpha}(T,p)=
+\bigoplus_{\textcolor{#9D75C4}{o}\in\textcolor{#9D75C4}{\mathcal C}_{\textcolor{#9D75C4}{P}}(T,p)\setminus \textcolor{#A87C28}{U}}\textcolor{#398B83}{v}_{\textcolor{#9D75C4}{o}}.
 $$
 
 This is `conservation` via `spent`. `inputs` preserves supplied inputs;
@@ -442,11 +465,11 @@ central implications in
 | Theorem | Mathematical conclusion |
 | --- | --- |
 | `candidate_preserved` | Every candidate model agrees with every reached published store; a reached failed state is incompatible with that model |
-| `successful_model` | Reached completion constructs $\rho_\sigma\in\operatorname{Models}(P,\eta)$ |
-| `successful_unique` | Every model equals that complete $\rho_\sigma$ |
-| `successful_admInput` | Reached success proves $\eta\in\operatorname{AdmInput}(P)$ |
-| `successful_denotation` | $\llbracket P\rrbracket(\eta)=\rho_\sigma|_{\mathrm{Out}}$ |
-| `failed_no_model` | Reached ready-undefined failure implies $\operatorname{Models}(P,\eta)=\varnothing$ |
+| `successful_model` | Reached completion constructs $\textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sigma}}\in\textcolor{#398B83}{\operatorname{Models}}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})$ |
+| `successful_unique` | Every model equals that complete $\textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sigma}}$ |
+| `successful_admInput` | Reached success proves $\textcolor{#398B83}{\eta}\in\textcolor{#398B83}{\operatorname{AdmInput}}(\textcolor{#9D75C4}{P})$ |
+| `successful_denotation` | $\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{P}\textcolor{#398B83}{\rrbracket}(\textcolor{#398B83}{\eta})=\textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sigma}}\vert_{\textcolor{#5688C7}{\mathrm{Out}}}$ |
+| `failed_no_model` | Reached ready-undefined failure implies $\textcolor{#398B83}{\operatorname{Models}}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})=\varnothing$ |
 
 No rank certificate, pre-existing model, or semiring multiplication law is
 required for these results. Collection and conservation need
@@ -499,10 +522,10 @@ These definitions and theorems are not yet supplied by the semantic modules.
 Define dependencies from existing footprints:
 
 $$
-\operatorname{Dep}(a)=
-\bigcup_{o\in\mathcal C_P(a)}\operatorname{Read}(o),
+\textcolor{#A87C28}{\operatorname{Dep}}(a)=
+\bigcup_{\textcolor{#9D75C4}{o}\in\textcolor{#9D75C4}{\mathcal C}_{\textcolor{#9D75C4}{P}}(a)}\textcolor{#A87C28}{\operatorname{Read}}(\textcolor{#9D75C4}{o}),
 \qquad
-b\in\operatorname{Dep}(a)\Longrightarrow r(b)<r(a).
+b\in\textcolor{#A87C28}{\operatorname{Dep}}(a)\Longrightarrow r(b)<r(a).
 $$
 
 Dependencies are on **coordinates**, not tensor names. Finite history cells
@@ -513,14 +536,14 @@ and certifies readiness, not membership in primitive domains.
 Define the measure
 
 $$
-\mu(\sigma,\alpha,U)
-=|U|+
-|\operatorname{Addr}_{\mathrm{Def}}\setminus\operatorname{dom}(\sigma)|.
+\textcolor{#A87C28}{\mu}(\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{\alpha},\textcolor{#A87C28}{U})
+=|\textcolor{#A87C28}{U}|+
+|\textcolor{#5688C7}{\operatorname{Addr}}_{\textcolor{#5688C7}{\mathrm{Def}}}\setminus\operatorname{dom}(\textcolor{#A87C28}{\sigma})|.
 $$
 
 Prove that contribution and publication decrease it by one and failure is
 terminal. This finite-transition bound does not require rank.
-Initially $\mu=|\mathcal O_P|+|\operatorname{Addr}_{\mathrm{Def}}|$, so a run
+Initially $\textcolor{#A87C28}{\mu}=|\textcolor{#9D75C4}{\mathcal O}_{\textcolor{#9D75C4}{P}}|+|\textcolor{#5688C7}{\operatorname{Addr}}_{\textcolor{#5688C7}{\mathrm{Def}}}|$, so a run
 has at most that many non-failure steps; an undefined step is terminal rather
 than another running-state decrease.
 Then use the reachable invariant and a minimum-rank unpublished defined
@@ -540,9 +563,9 @@ Together with existing soundness, the target is:
 This supplies the reverse direction missing from reached-run soundness:
 
 $$
-\operatorname{Init}(P,\eta)\Downarrow\rho
+\textcolor{#A87C28}{\operatorname{Init}}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})\textcolor{#A87C28}{\Downarrow}\textcolor{#398B83}{\rho}
 \quad\Longleftrightarrow\quad
-\operatorname{Models}(P,\eta)=\{\rho\}
+\textcolor{#398B83}{\operatorname{Models}}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})=\{\textcolor{#398B83}{\rho}\}
 \qquad\text{for the coordinate-ranked fragment}.
 $$
 
@@ -660,14 +683,14 @@ finite execution, with proved legal transitions, and:
 
 $$
 \begin{aligned}
-\mathsf{Success}(\rho)
+\textcolor{#A87C28}{\mathsf{Success}}(\textcolor{#398B83}{\rho})
 &\Longrightarrow
-\operatorname{Models}(P,\eta)=\{\rho\}
+\textcolor{#398B83}{\operatorname{Models}}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})=\{\textcolor{#398B83}{\rho}\}
 \ \land\
-\llbracket P\rrbracket(\eta)=\rho|_{\mathrm{Out}},\\
-\mathsf{Failed}(o,\sigma,\alpha,U)
+\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{P}\textcolor{#398B83}{\rrbracket}(\textcolor{#398B83}{\eta})=\textcolor{#398B83}{\rho}|_{\textcolor{#5688C7}{\mathrm{Out}}},\\
+\textcolor{#A87C28}{\mathsf{Failed}}(\textcolor{#9D75C4}{o},\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{\alpha},\textcolor{#A87C28}{U})
 &\Longrightarrow
-\operatorname{Models}(P,\eta)=\varnothing.
+\textcolor{#398B83}{\operatorname{Models}}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})=\varnothing.
 \end{aligned}
 $$
 
