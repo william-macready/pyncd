@@ -182,6 +182,34 @@ def corpus : List Case :=
         tensor f32 W(i, j), x(j), H(i)
         H[i] := relu(W[i, j] · x[j]) },
       env32 [("W", [2, 2], #[1, -1, -2, 1]), ("x", [2], #[1, 1])]⟩
+  , ⟨"sigmoid", .inl tlprog!{
+        axis i : ℕ = 2
+        axis j : ℕ = 2
+        tensor f32 W(i, j), x(j), H(i)
+        H[i] := sigmoid(W[i, j] · x[j]) },
+      env32 [("W", [2, 2], #[1, -1, -2, 1]), ("x", [2], #[1, 1])]⟩
+  , ⟨"tanh", .inl tlprog!{
+        axis i : ℕ = 2
+        axis j : ℕ = 2
+        tensor f32 W(i, j), x(j), H(i)
+        H[i] := tanh(W[i, j] · x[j]) },
+      env32 [("W", [2, 2], #[1, -1, -2, 1]), ("x", [2], #[1, 1])]⟩
+  , ⟨"gelu", .inl tlprog!{
+        axis i : ℕ = 2
+        axis j : ℕ = 2
+        tensor f32 W(i, j), x(j), H(i)
+        H[i] := gelu(W[i, j] · x[j]) },
+      env32 [("W", [2, 2], #[1, -1, -2, 1]), ("x", [2], #[1, 1])]⟩
+  , ⟨"exp", .inl tlprog!{
+        axis i : ℕ = 2
+        tensor f32 A(i), Y(i)
+        Y[i] := exp(A[i]) },
+      env32 [("A", [2], #[0.5, -1.5])]⟩
+  , ⟨"log", .inl tlprog!{
+        axis i : ℕ = 2
+        tensor f32 A(i), Y(i)
+        Y[i] := log(A[i]) },
+      env32 [("A", [2], #[0.5, 3])]⟩
   , ⟨"softmax", .inl tlprog!{
         axis q : ℕ = 2
         axis s : ℕ = 3
@@ -229,9 +257,12 @@ run_cmd do
     -- would make the equivalence vacuous
     unless e.accepted == some (toString (repr LeanNCD.StorageKind.float32)) do
       throwError s!"{c.name}: explicit-f32 program not accepted as float32: {e.accepted} {e.prep.take 300}"
+    -- ... and runs to exact bits (a `run:` error would make the bit comparison vacuous)
+    if e.out.startsWith "run:" then
+      throwError s!"{c.name}: explicit-f32 program accepted but its run failed: {e.out}"
   unless bad.isEmpty do
     throwError s!"unannotated ≠ explicit f32 on {bad.size} variant(s):\n{String.intercalate "\n" bad.toList}"
-  unless corpus.length == 12 && accepted == 12 do
+  unless corpus.length == 17 && accepted == 17 do
     throwError s!"corpus drifted: {corpus.length} programs, {accepted} accepted"
 
 end LeanNCD.Eval.Plan.DefaultF32Test
