@@ -914,10 +914,14 @@ def scannedStateNames (sched : ScheduledProgram) : List String :=
 
 /-- Compile a generated `ScanCase` to the scheduled form both the legacy evaluator and this oracle
     consume. (`assignUIDs` relabels every axis, so the case's own `axes` field must never be used
-    against the compiled program.) -/
+    against the compiled program.) Every undeclared name is spelled `tensor f64` (the reference
+    evaluator is binary64-only and an undeclared name is binary32 by default), exactly as
+    `evalScheduledF64` does over the schedule's source statements. -/
 def schedOfCase (c : ScanCase) : Except String ScheduledProgram :=
   match c.prog.compileToScheduled.run 0 with
-  | .ok s _    => .ok s
+  | .ok s _    =>
+      .ok { s with decls := LeanNCD.Eval.ExplicitF64.explicitF64Decls s.decls
+                              (s.stmts.flatMap ScanStmt.sourceStmts) }
   | .error e _ => .error s!"the generator produced a program that fails to compile: {repr e}"
 
 /-! ## TEST-THE-TESTER
@@ -941,6 +945,17 @@ run_cmd do
         unless denseEq s ⟨[2, 3], #[1.0, 2.0, 4.0, 2.0, 6.0, 18.0]⟩ do
           throwError s!"template1 history wrong: {repr s.shape}/{repr s.data}"
     | none => throwError "template1: no S in the independent environment"
+
+-- Under the f32 default flip an undeclared name is binary32 and the reference evaluator refuses it
+-- (`unsupportedDtype`), so `schedOfCase` itself spells binary64: a caller handing its result straight
+-- to the plain `evalScheduled` (no `evalScheduledF64` wrapper) must be accepted, not refused.
+run_cmd do
+  match schedOfCase (template1 3 false) with
+  | .error m => throwError s!"template1 schedOfCase failed: {m}"
+  | .ok sched =>
+      match evalScheduled sched (template1 3 false).inputs with
+      | .ok _ => pure ()
+      | .error e => throwError s!"schedOfCase result refused by the plain evaluator: {e.error}"
 
 -- Template 6 (2-D grid DP), hand-verified against RC6 (`RecurrenceTest.lean`): the `c = 0` column
 -- is the base face, `G[1,1] = G[0,0] + A[0,0] = 1`, and `G[0,1]` is reached by neither the base nor
