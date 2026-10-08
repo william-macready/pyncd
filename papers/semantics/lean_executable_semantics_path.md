@@ -595,10 +595,54 @@ without redefining it. It lives in
 [`ReferenceExecutor`](../../leanncd/LeanNCD/Semantics/ReferenceExecutor.lean), and the
 closed exact-rational profile
 [`RationalReference`](../../leanncd/LeanNCD/Semantics/RationalReference.lean).
-[Section 5.1](#51-landed-computable-reference-machine-refinement) describes the
-API and its supplied inputs. This subsection maps the specification's
-[Part IV](tensor_logic_semantics.md#part-iv-operational-semantics) clauses to
-the definitions that realize them.
+The first part below describes its definitions and supplied inputs. The
+tables then map the specification's
+[Part IV](tensor_logic_semantics.md#part-iv-operational-semantics) clauses and
+results to them, and the last two parts cover the runtime fixtures and the
+limits of the claim.
+
+#### Definitions and supplied inputs
+
+The executor implements the existing relation rather than redefining it:
+
+1. [ExecutableState](../../leanncd/LeanNCD/Semantics/ExecutableState.lean)
+   supplies computational equality, canonical finite presentations, updates
+   proved equal to `Program.consume` and `Program.publish`, and a budget proved
+   equal to the initial `stateMeasure`. Stores remain functions on dependent
+   coordinates. Only defined carriers need `AddCommMonoid`.
+2. [ExecutableSelection](../../leanncd/LeanNCD/Semantics/ExecutableSelection.lean)
+   checks pending membership, strict `evalReady`, and the exact publication
+   barrier. `select_none_iff` proves that no selection means no existing legal
+   `Step`, not merely that selected steps are sound. Selection restarts at the
+   first supplied key after each event; there is no global contribution-first
+   policy.
+3. [ReferenceExecutor](../../leanncd/LeanNCD/Semantics/ReferenceExecutor.lean)
+   validates tensor-level input presence before initialization, including empty
+   tensors, and returns the first offending tensor in the supplied order.
+   `run` uses the proved sufficient budget. `runFuel` is a debug API that
+   classifies failed, complete, and blocked endpoints before testing fuel for an
+   eligible move. Exhaustion is neither success nor a no-model result.
+4. Typed events retain statement/valuation identities, destinations, and
+   contribution/publication payloads. Failed outcomes retain the exact
+   pre-failure snapshot. `Result.execution` certifies the event path.
+   Blocked outcomes carry unavailable
+   read observations with actual missing addresses; `observations` also exposes
+   ready `Option` values. The trace is not a log of every scan/readiness check.
+
+`Schedule` is supplied data with kernel-checked duplicate-freedom and complete
+coverage of tensors, occurrences, and all defined publication coordinates.
+Computational tensor equality and the program's finite tensor presentation are
+also supplied. Coordinate ranks remain proof data, not a synthesized or runtime
+checked certificate. Reachable ranked blocking is excluded without a model
+premise. Unranked blocking is not undefinedness and does not exclude models.
+
+[RationalReference](../../leanncd/LeanNCD/Semantics/RationalReference.lean)
+offers the closed `Unit`-sort exact-rational profile: zero, one, addition,
+multiplication, reciprocal with nonzero domain, and square. There is no
+unsupported-operation translation or native-registry fallback. Exact-real
+transcendentals and native floating-point execution remain separate work.
+
+#### Correspondence to the specification
 
 | Specification clause | Lean | What it fixes |
 | --- | --- | --- |
@@ -609,6 +653,8 @@ the definitions that realize them.
 | [Section 25.4](tensor_logic_semantics.md#254-completion-and-dependency-blocking): complete and blocked | `completeDecidable`, `fiberDecidable`, `select_none_iff`, `Outcome` | Selection returns nothing exactly when no legal `Step` exists. A noncomplete state with no selection is `blocked`; it is neither success nor an undefined-operation failure. |
 | Section 23.3: available and missing addresses | `observations`, `Observation` | For each pending occurrence, either the actual missing footprint addresses or its ready `Option` value. This inspects the current state; it is not a log of every scan. |
 | [Lemma 26.4](tensor_logic_semantics.md#264-finite-execution-and-progress-for-ranked-programs): the finite measure | `initialBudget`, `initialBudget_agrees`, `runFuel_not_exhausted`, `run_not_exhausted` | The default budget equals the initial `stateMeasure`, which is $\mu+1$ on running states. Any fuel at least the current measure suffices, so the default run is never exhausted. |
+
+#### Theorems
 
 The executor's theorems are the following. Each reuses the soundness and
 progress results of Sections 4.4 and 4.5; none is a new equation solver.
@@ -624,12 +670,33 @@ progress results of Sections 4.4 and 4.5; none is a new equation solver.
 | `result_not_blocked` | Given a `RankCertificate`, a run from initialization does not end blocked | Theorem 26.5 |
 | `run_ranked_dichotomy` | Given a `RankCertificate`, the default run is complete, or failed with no model | Theorem 26.6 |
 
-The exact-rational profile has carrier $\mathbb{Q}$ with zero, one, addition,
-and multiplication, and a closed registry of `reciprocal` (domain: nonzero) and
-`square`. There is no translation of arbitrary backend operations and no
-fallback for unsupported ones.
+#### Fixtures and controls
 
-What this does not claim:
+The 22 actual executor assertions cover admitted examples from
+[Sections 21](tensor_logic_semantics.md#21-worked-denotational-examples)
+and [27](tensor_logic_semantics.md#27-worked-operational-examples) within this
+profile, not every example or source construct. Two statements times two
+valuations retain all four tags and collect `2 + 2 + 5 + 5 = 14` at one
+destination. Literal full-store equations and reversed schedules agree on
+`[0,14,0]`. Reciprocal before collection gives `3/4`, whereas reciprocal after
+addition gives `1/6`; square at `3` gives `9`. Neither independent candidate is
+supplied to the executor to justify progress or success.
+
+The default budget for the tagged fixture is `8`; supplied fuel `6` exhausts,
+`7`, `8`, and `9` complete, and `0` exhausts only when an eligible move remains.
+Already complete or failed endpoints retain their terminal class at zero fuel.
+Other assertions separate missing addresses from destinations, unavailable
+reads from ready undefinedness, input presence from coordinate presence, and
+internal nonoutput failure from output completion.
+
+The 19 mutation controls, their classification, and their limits are summarized
+in [Section 4.7](#47-existing-validation-and-its-limits); the receipts are in
+the [execution record](computable_reference_executor_record.md#8-implementation-execution-2026-10-08).
+Existing generic soundness supplies uniqueness and denotation agreement;
+checking a literal candidate or computing collection alone is not an equation
+solver.
+
+#### What this does not claim
 
 - **No synthesis or checking.** The `Schedule` carries kernel-checked
   duplicate-freedom and coverage, but it is supplied. The coordinate rank is
@@ -683,9 +750,7 @@ three new unused-simp warnings; 14 inherited warnings remain, so validation is
 green, not warning-free.
 
 The executable fixtures run the exact-rational driver and assert 22 named rows,
-including selected transitions, literal whole-store equations, reversed
-schedules, singleton/empty domains, simultaneous invalid inputs, exact fuel
-boundaries, strict missing-address diagnostics, and retained failure state.
+described under [Fixtures and controls](#fixtures-and-controls) in Section 4.6.
 All 19 controls passed with expected failures, byte-identical source restoration,
 and restored green builds: 4 proof/type rejections, 2 production runtime oracle
 kills, and 13 fixture contrasts. The post-mutation full default build passed
@@ -703,80 +768,9 @@ The earlier [semantic-core spike](tensor_logic_semantic_core_spike_record.md)
 and `ContractTest` supply a narrow signed-coordinate `StMat` seam, not a full
 categorical interpretation or source correspondence.
 
-## 5. Computational milestone and remaining work
+## 5. Remaining work, in dependency order
 
-### 5.1 Landed: computable reference-machine refinement
-
-The executor implements the existing relation rather than redefining it. The
-correspondence to the specification and its theorems is tabulated in
-[Section 4.6](#46-the-computable-reference-executor):
-
-1. [ExecutableState](../../leanncd/LeanNCD/Semantics/ExecutableState.lean)
-   supplies computational equality, canonical finite presentations, updates
-   proved equal to `Program.consume` and `Program.publish`, and a budget proved
-   equal to the initial `stateMeasure`. Stores remain functions on dependent
-   coordinates. Only defined carriers need `AddCommMonoid`.
-2. [ExecutableSelection](../../leanncd/LeanNCD/Semantics/ExecutableSelection.lean)
-   checks pending membership, strict `evalReady`, and the exact publication
-   barrier. `select_none_iff` proves that no selection means no existing legal
-   `Step`, not merely that selected steps are sound. Selection restarts at the
-   first supplied key after each event; there is no global contribution-first
-   policy.
-3. [ReferenceExecutor](../../leanncd/LeanNCD/Semantics/ReferenceExecutor.lean)
-   validates tensor-level input presence before initialization, including empty
-   tensors, and returns the first offending tensor in the supplied order.
-   `run` uses the proved sufficient budget. `runFuel` is a debug API that
-   classifies failed, complete, and blocked endpoints before testing fuel for an
-   eligible move. Exhaustion is neither success nor a no-model result.
-4. Typed events retain statement/valuation identities, destinations, and
-   contribution/publication payloads. Failed outcomes retain the exact
-   pre-failure snapshot. `Result.execution` certifies the event path.
-   Blocked outcomes carry unavailable
-   read observations with actual missing addresses; `observations` also exposes
-   ready `Option` values. The trace is not a log of every scan/readiness check.
-
-`Schedule` is supplied data with kernel-checked duplicate-freedom and complete
-coverage of tensors, occurrences, and all defined publication coordinates.
-Computational tensor equality and the program's finite tensor presentation are
-also supplied. Coordinate ranks remain proof data, not a synthesized or runtime
-checked certificate. Reachable ranked blocking is excluded without a model
-premise. Unranked blocking is not undefinedness and does not exclude models.
-
-[RationalReference](../../leanncd/LeanNCD/Semantics/RationalReference.lean)
-offers the closed `Unit`-sort exact-rational profile: zero, one, addition,
-multiplication, reciprocal with nonzero domain, and square. There is no
-unsupported-operation translation or native-registry fallback. Exact-real
-transcendentals and native floating-point execution remain separate work.
-
-### 5.2 Verified: executable core and equation fixtures
-
-The 22 actual executor assertions cover admitted examples from
-[Sections 21](tensor_logic_semantics.md#21-worked-denotational-examples)
-and [27](tensor_logic_semantics.md#27-worked-operational-examples) within this
-profile, not every example or source construct. Two statements times two
-valuations retain all four tags and collect `2 + 2 + 5 + 5 = 14` at one
-destination. Literal full-store equations and reversed schedules agree on
-`[0,14,0]`. Reciprocal before collection gives `3/4`, whereas reciprocal after
-addition gives `1/6`; square at `3` gives `9`. Neither independent candidate is
-supplied to the executor to justify progress or success.
-
-The default budget for the tagged fixture is `8`; supplied fuel `6` exhausts,
-`7`, `8`, and `9` complete, and `0` exhausts only when an eligible move remains.
-Already complete or failed endpoints retain their terminal class at zero fuel.
-Other assertions separate missing addresses from destinations, unavailable
-reads from ready undefinedness, input presence from coordinate presence, and
-internal nonoutput failure from output completion.
-
-The controller ran both mutation manifests and the full build in the actual
-execution worktree. The 19 controls preserve their proof/type, runtime-oracle,
-and fixture-contrast classifications. Their receipts and limitations are in
-the [execution record](computable_reference_executor_record.md#8-implementation-execution-2026-10-08).
-Existing generic soundness supplies uniqueness and denotation agreement;
-checking a literal candidate or computing collection alone is not an equation
-solver. Successful schedule agreement concerns the whole store, not failure
-selection, diagnostics, or trace independence.
-
-### 5.3 Connect named source syntax and the production evaluator
+### 5.1 Connect named source syntax and the production evaluator
 
 For debugging source programs, establish the bridge in
 [Sections 13-17](tensor_logic_semantics.md#part-ii-core-language-and-surface-elaboration)
@@ -808,7 +802,7 @@ difference, not hidden by weakening the oracle or counted as a newly discovered
 regression. First comparisons can use a clearly stated single-definition
 fragment, without discarding collision or within-statement contraction checks.
 
-### 5.4 Later: compiled and numerical refinement
+### 5.2 Later: compiled and numerical refinement
 
 [Part V](tensor_logic_semantics.md#part-v-compilation-and-refinement) supplies
 the next contract beyond a debug-capable reference executor:
