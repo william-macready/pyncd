@@ -41,6 +41,13 @@ revisited across the parts to connect notation, elaboration, equations,
 execution, and storage. Section 35 collects the notation; the references
 identify the mathematical sources and related design documents.
 
+For the implementation path, see
+[From Tensor Logic semantics to a Lean executable reference](lean_executable_semantics_path.md).
+It maps this document's notation and mathematical clauses to the landed Lean
+definitions and proofs, explains their category-theoretic organization, and
+separates existing semantic validation from the remaining ranked-progress,
+executable-reference, source-correspondence, and backend-refinement work.
+
 ### Semantic scope
 
 The specification assumes:
