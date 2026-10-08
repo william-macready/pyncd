@@ -9,8 +9,9 @@ an executable reference that we can debug and validate. It is a roadmap and
 code correspondence guide, not an implementation plan or a new semantic contract.
 The specification remains authoritative.
 
-**Snapshot: 2026-10-07, local main `071323a`.** The expression/readiness,
-collection/model, and reference-machine soundness developments have landed.
+**Snapshot: 2026-10-08, local main `565b17f`.** The expression/readiness,
+collection/model, reference-machine soundness, and coordinate-ranks/finite-measure
+developments have landed, including maximal-run correspondence.
 The public entry is
 [`LeanNCD.Semantics`](../../leanncd/LeanNCD/Semantics.lean), imported by
 [`LeanNCD`](../../leanncd/LeanNCD.lean). They are a semantic validation layer,
@@ -30,7 +31,11 @@ The central distinction is:
   currently noncomputable; fixtures construct runs by proofs, not by a scheduler.
 - **Reached-run soundness is proved.** Any reached success yields the unique
   complete model; any reached ready-undefined failure excludes every model.
-  Progress, termination, and executable scheduling remain to be supplied.
+- **Termination and ranked correspondence are proved.** Every reached prefix
+  has a terminal extension; finite bounds hold without ranks. A coordinate-rank
+  certificate excludes reachable blocking, and every maximal ranked run succeeds
+  or explicitly fails according to model existence. These are relational
+  proofs, not an executable scheduler.
 
 The intended path is therefore:
 
@@ -41,9 +46,9 @@ tagged additive collection + complete model relation              LANDED
                          |
 reference transitions + conservation + reached-run soundness      LANDED
                          |
-coordinate ranks + finite measure + maximal-run correspondence    NEXT
+coordinate ranks + finite measure + maximal-run correspondence    LANDED
                          |
-computable state/step selection + validated reference executor    REMAINING
+computable state/step selection + validated reference executor    NEXT
                          |
 source correspondence + differential debugging                    REMAINING
                          |
@@ -478,12 +483,100 @@ required for these results. Collection and conservation need
 `AddCommMonoid` only on participating defined carriers; body operations
 remain explicit data.
 
-The crucial missing converse is that an appropriate execution reaches such
-a terminal outcome. Blocking is not undefinedness and does not exclude a
-model. In particular, unique-model existence for a cyclic program does not
-establish executability by this machine.
+The converse for coordinate-ranked programs is now proved in
+[Section 4.5](#45-coordinate-ranks-finite-termination-and-correspondence).
+Blocking is still not undefinedness and does not exclude a model.
+In particular, unique-model existence for an unranked cyclic program does
+not establish executability by this machine.
 
-### 4.5 Existing validation and its limits
+### 4.5 Coordinate ranks, finite termination, and correspondence
+
+The [coordinate-ranks/finite-measure plan](coordinate_ranks_finite_measure_plan.md)
+is complete and merged, as recorded in its
+[execution record](coordinate_ranks_finite_measure_execution_record.md).
+The landed definitions and proofs cover
+[Section 23.4](tensor_logic_semantics.md#234-coordinate-dependencies-and-the-ranked-fragment)
+and [Section 26.4](tensor_logic_semantics.md#264-finite-execution-and-progress-for-ranked-programs).
+
+[`Ranks.lean`](../../leanncd/LeanNCD/Semantics/Ranks.lean) derives dependencies
+from the existing footprints:
+
+$$
+\textcolor{#A87C28}{\mathop{\mathrm{Dep}}\nolimits}(a)=
+\bigcup_{\textcolor{#9D75C4}{o}\in\textcolor{#9D75C4}{\mathcal C}_{\textcolor{#9D75C4}{P}}(a)}\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{o}),
+\qquad
+b\in\textcolor{#A87C28}{\mathop{\mathrm{Dep}}\nolimits}(a)\Longrightarrow r(b)<r(a).
+$$
+
+`P.dependencies a` uses guard-admitted occurrences in the exact destination
+fiber; `input_dependencies_empty` excludes dependencies at input addresses.
+`P.RankCertificate` supplies `rank : Address σ -> Nat` and its strict
+`decreases` proof. Dependencies are on **coordinates**, not tensor names:
+different history cells of the same tensor can have increasing ranks.
+All strict operand, binder, and whole-array reads remain in the footprint.
+Rank is independent of input values and certifies readiness, not membership
+in primitive domains. This is a supplied certificate, not rank synthesis,
+a source rank checker, or a proved equivalence with graph acyclicity.
+
+[`Measure.lean`](../../leanncd/LeanNCD/Semantics/Measure.lean) defines
+`pendingCount`, `unpublishedCount`, and their sum `measure`:
+
+$$
+\textcolor{#A87C28}{\mu}(\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{\alpha},\textcolor{#A87C28}{U})
+=|\textcolor{#A87C28}{U}|+
+|\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\mathrm{Def}}}\setminus\mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma})|.
+$$
+
+`DefinedAddress` includes every defined coordinate, including nonoutputs.
+`initial_measure` proves that initially
+$\textcolor{#A87C28}{\mu}=|\textcolor{#9D75C4}{\mathcal O}_{\textcolor{#9D75C4}{P}}|+|\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\mathrm{Def}}}|$.
+`consume_measure`, `publish_measure`, and `running_step_measure` prove
+exact decreases by one, including zero-valued consumption and empty-fiber
+publication. `stateMeasure` is $\mu+1$ for running states and zero for failed
+states, so `step_decreases` also covers the terminal undefined step.
+
+| Finite-execution theorem in [Measure](../../leanncd/LeanNCD/Semantics/Measure.lean) | Conclusion |
+| --- | --- |
+| `step_wellFounded`, `no_infinite_chain` | No infinite chain of legal transitions; no rank or model premise |
+| `running_trace_bound` | A trace ending in a running state has at most its starting $\mu$ transitions |
+| `failed_trace_bound` | A trace ending in failure has at most its starting $\mu+1$ transitions |
+
+`Trace` is a length-indexed proposition, not an executable trace container.
+Failure retains the last running snapshot; it is terminal, not another
+running-state measure decrease.
+
+[`Progress.lean`](../../leanncd/LeanNCD/Semantics/Progress.lean) uses the
+reachable invariant and a minimum-rank unpublished defined coordinate.
+A pending tag in its fiber is ready, enabling contribution or undefinedness;
+an exhausted fiber enables publication. No pre-existing model is required.
+`Terminal` means no outgoing step; `Maximal` means reached from initialization
+and terminal, not an arbitrary finite prefix stopped by a scheduler.
+
+| Correspondence theorem in [Progress](../../leanncd/LeanNCD/Semantics/Progress.lean) | Conclusion |
+| --- | --- |
+| `ranked_progress`, `ranked_not_blocked` | Every reached noncomplete ranked running state has a step and cannot block |
+| `terminal_extension`, `maximal_extension` | Every state has a terminal extension; every reached prefix extends to a maximal endpoint, without rank |
+| `maximal_dichotomy` | Every maximal ranked run succeeds or explicitly fails; failure excludes all models |
+| `model_maximal_success` | If a model exists, every maximal ranked run succeeds with that unique complete model |
+| `no_model_maximal_failure` | If no model exists, every maximal ranked run fails |
+| `initialization_iff_singleton` | Initialization reaches a successful complete store exactly when `Models` is its singleton |
+| `successful_schedules_agree` | Successful runs yield the same complete environment, even without rank |
+
+Together with existing soundness, the landed correspondence is
+
+$$
+\textcolor{#A87C28}{\mathop{\mathrm{Init}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})\textcolor{#A87C28}{\Downarrow}\textcolor{#398B83}{\rho}
+\quad\Longleftrightarrow\quad
+\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})=\{\textcolor{#398B83}{\rho}\}
+\qquad\text{for the coordinate-ranked fragment}.
+$$
+
+Here $\Downarrow$ asserts existence of a reached successful state with complete
+store $\rho$, not evaluation by a Lean driver. Denotation agreement reuses
+`successful_denotation`; it is not a new equation solver. Failing schedules
+may still identify different first undefined occurrences.
+
+### 4.6 Existing validation and its limits
 
 The execution records distinguish observed computation, proof checking,
 mutation controls, and unsupported claims:
@@ -493,6 +586,7 @@ mutation controls, and unsupported claims:
 | Strict expressions/readiness | [ExpressionTest](../../leanncd/test/Semantics/ExpressionTest.lean), [NativeTest](../../leanncd/test/Semantics/NativeTest.lean), [ContractTest](../../leanncd/test/Semantics/ContractTest.lean) | [Expression/readiness execution](expression_readiness_execution_record.md) |
 | Collection/models | [CollectionModelTest](../../leanncd/test/Semantics/CollectionModelTest.lean) | [Collection/model execution](collection_model_execution_record.md) |
 | Reference transitions/soundness | [ReferenceMachineTest](../../leanncd/test/Semantics/ReferenceMachineTest.lean) | [Reference-machine execution](reference_machine_execution_record.md) |
+| Coordinate ranks/termination/correspondence | [RankedMachineTest](../../leanncd/test/Semantics/RankedMachineTest.lean) | [Coordinate-ranks/finite-measure execution](coordinate_ranks_finite_measure_execution_record.md) |
 
 All are discovered by the default `Tests` target. Existing fixtures cover
 strict zero multiplication, empty binders, whole-array selection obligations,
@@ -501,6 +595,21 @@ empty input presence, nonoutput equations, publication barriers, and failure
 versus unavailable reads. The machine fixtures include a proved successful
 run and failure exclusion, but are not runtime executions by a scheduler.
 The cyclic blocked fixture is not separately proved reachable.
+
+The ranked fixtures add 16 acceptance families: same-tensor coordinate history,
+strict masked self-dependency versus guard exclusion, whole-array and binder
+demand, input-dependency exclusion, duplicate/zero consumption counts,
+empty-fiber and nonoutput publication, rank-zero scalar and zero-extent cases,
+ready failure, an unranked model with blocking, stopped-prefix nonmaximality,
+successful schedule agreement, distinct first failures, and singleton
+correspondence. The second successful schedule is supplied by an existential
+proof, not an executable chooser.
+All six selected mutations passed their intended generic kernel-proof rejection
+and byte-identical restoration gates; this is not an independent runtime or
+fixture-only mutation kill for each acceptance family.
+The full default build and integrated-main build passed. The follow-up removed
+three new unused-simp warnings; 14 inherited warnings remain, so validation is
+green, not warning-free.
 
 Native expression fixtures use checked binary32/binary64 primitive APIs and
 observe rounding differences. They do not give machine floats exact additive
@@ -514,69 +623,7 @@ categorical interpretation or source correspondence.
 
 ## 5. Remaining work, in dependency order
 
-### 5.1 Next: ranked progress, finite termination, and correspondence
-
-The immediate proof target is
-[Section 23.4](tensor_logic_semantics.md#234-coordinate-dependencies-and-the-ranked-fragment)
-and [Section 26.4](tensor_logic_semantics.md#264-finite-execution-and-progress-for-ranked-programs).
-These definitions and theorems are not yet supplied by the semantic modules.
-
-Define dependencies from existing footprints:
-
-$$
-\textcolor{#A87C28}{\mathop{\mathrm{Dep}}\nolimits}(a)=
-\bigcup_{\textcolor{#9D75C4}{o}\in\textcolor{#9D75C4}{\mathcal C}_{\textcolor{#9D75C4}{P}}(a)}\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{o}),
-\qquad
-b\in\textcolor{#A87C28}{\mathop{\mathrm{Dep}}\nolimits}(a)\Longrightarrow r(b)<r(a).
-$$
-
-Dependencies are on **coordinates**, not tensor names. Finite history cells
-of the same tensor can have strictly increasing ranks. All strict operand
-and whole-array reads must be retained. Rank is independent of input values
-and certifies readiness, not membership in primitive domains.
-
-Define the measure
-
-$$
-\textcolor{#A87C28}{\mu}(\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{\alpha},\textcolor{#A87C28}{U})
-=|\textcolor{#A87C28}{U}|+
-|\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\mathrm{Def}}}\setminus\mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma})|.
-$$
-
-Prove that contribution and publication decrease it by one and failure is
-terminal. This finite-transition bound does not require rank.
-Initially $\textcolor{#A87C28}{\mu}=|\textcolor{#9D75C4}{\mathcal O}_{\textcolor{#9D75C4}{P}}|+|\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\mathrm{Def}}}|$, so a run
-has at most that many non-failure steps; an undefined step is terminal rather
-than another running-state decrease.
-Then use the reachable invariant and a minimum-rank unpublished defined
-coordinate to prove progress: either its pending fiber has a ready occurrence,
-enabling contribution or undefinedness, or its exhausted fiber enables
-publication. Ranked reachable noncomplete states cannot block.
-
-Together with existing soundness, the target is:
-
-- Every **maximal** ranked run succeeds or explicitly fails; an arbitrary
-  finite prefix stopped by a scheduler is not maximal.
-- If a model exists, every maximal run succeeds with that unique model.
-- If no model exists, every maximal run fails.
-- Successful schedules give the same complete environment. Failing schedules
-  may identify different first undefined occurrences.
-
-This supplies the reverse direction missing from reached-run soundness:
-
-$$
-\textcolor{#A87C28}{\mathop{\mathrm{Init}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})\textcolor{#A87C28}{\Downarrow}\textcolor{#398B83}{\rho}
-\quad\Longleftrightarrow\quad
-\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})=\{\textcolor{#398B83}{\rho}\}
-\qquad\text{for the coordinate-ranked fragment}.
-$$
-
-Acceptance cases should discriminate a ranked same-tensor history, empty-fiber
-publication, a ready undefined primitive, and an unsupported unranked cycle.
-A source rank checker need not enumerate all coordinates: an explicitly
-supplied certificate is sufficient for this semantic proof stage.
-
-### 5.2 Make the reference machine computational
+### 5.1 Next: make the reference machine computational
 
 The next executable capability must implement the relation, not redefine it.
 For a concrete computable profile, supply:
@@ -590,7 +637,7 @@ For a concrete computable profile, supply:
    noncomplete ranked state cannot be incorrectly reported as having no step.
 3. A driver with the proved finite bound and explicit terminal outcomes.
    Derive success/model and failure/no-model correctness from the existing
-   soundness and new progress results. Budget exhaustion must not look like
+   soundness and landed progress results. Budget exhaustion must not look like
    success or prove model nonexistence.
 4. A trace recording selected statement/valuation tags, destinations, readiness,
    contributions, publications, and the exact failure snapshot. Formatting
@@ -609,7 +656,7 @@ supported primitive registry. Real transcendental operators, exact Complex
 proof fixtures, and native floating-point execution have different computational
 requirements. State the profile and reject unsupported cases explicitly.
 
-### 5.3 Validate the executable core against the equations
+### 5.2 Validate the executable core against the equations
 
 Promote suitable existing logical fixtures into **actual executor runs**,
 with assertions on outcomes and intermediate transitions, not only final
@@ -630,7 +677,7 @@ deduplication, early publication, missing-input zero-fill, unavailable-as-zero,
 undefined-as-zero, skipped internal equations, and changed nonlinear boundaries.
 This adds runtime discrimination to the existing proof/type mutation evidence.
 
-### 5.4 Connect named source syntax and the production evaluator
+### 5.3 Connect named source syntax and the production evaluator
 
 For debugging source programs, establish the bridge in
 [Sections 13-17](tensor_logic_semantics.md#part-ii-core-language-and-surface-elaboration)
@@ -662,7 +709,7 @@ difference, not hidden by weakening the oracle or counted as a newly discovered
 regression. First comparisons can use a clearly stated single-definition
 fragment, without discarding collision or within-statement contraction checks.
 
-### 5.5 Later: compiled and numerical refinement
+### 5.4 Later: compiled and numerical refinement
 
 [Part V](tensor_logic_semantics.md#part-v-compilation-and-refinement) supplies
 the next contract beyond a debug-capable reference executor:
@@ -699,9 +746,10 @@ $$
 The driver must reach one of these outcomes on the certified ranked profile;
 invalid input, unsupported capabilities, and unsupported dependency forms are
 explicit admission errors, not successful values.
-The landed soundness work already proves the implications **for reached
-states**. The next proof and executable stages establish that a real Lean
-driver reaches them and exposes enough evidence to debug the path.
+The landed soundness work proves the implications **for reached states**;
+ranked progress and finite termination now prove terminal extensions and the
+maximal-run correspondence. The remaining executable stage must make a real
+Lean driver reach those outcomes and expose enough evidence to debug the path.
 
 The endpoint is an executable realization of the specified equations, not
 zero-seeded fixed-point iteration, a floating-point solver presented as exact
