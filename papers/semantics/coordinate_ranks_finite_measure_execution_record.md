@@ -213,6 +213,16 @@ Evidence: `coordinate_ranks_mutation_results.md`,
 `coordinate-ranks-mutation-run.log`, and `coordinate-ranks-full-build.log`
 in controller session storage. Raw/transient validation logs are not committed.
 
+### Unused-simp follow-up (2026-10-08)
+
+Removed the three redundant simp arguments from `RankedMachineTest.lean`:
+`boundaryP` and `expressionProgram` in `boundary_no_edge`, and `twoBadInitial`
+in `distinct_first_failures`. The theorem statements and linter settings are
+unchanged. Single-file typechecking reproduced all three warnings before the
+fix and passed with zero warnings afterward. The full default build passed
+again (**8,699 jobs**), with only the **14 inherited warnings** remaining.
+The warning counts above describe the original implementation replay.
+
 ## Final reviews, budgets, limitations, and integration
 
 Two final whole-branch reviewers were dispatched with distinct lenses:
