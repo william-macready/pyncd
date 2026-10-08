@@ -5,7 +5,8 @@
 Executed the [verified plan](coordinate_ranks_finite_measure_plan.md) on
 2026-10-08, using the **Full** path for a new proof/soundness capability.
 All three implementation tasks, controller validation gates and both final
-whole-branch reviews have passed. Local integration is pending at this checkpoint.
+whole-branch reviews passed. The implementation is merged to local main, and
+the integrated main's full build is green.
 No remote push is authorized or performed.
 
 This is the implementation record, not the
@@ -248,5 +249,15 @@ fixture for every heterogeneous operand position. Strict typed footprint is
 unchanged. No backend/source/float refactor, runtime oracle, new proof escape,
 or unrelated cleanup was introduced.
 
-Local merge and removal of only this execution branch/worktree: pending.
-No remote push.
+Local integration completed without conflicts:
+`fefd8628066265e29d9ffddc10cd48a051a1c69e` merges the implementation branch into
+local main. Main was clean, the branch was a merged ancestor, and the merge and
+topic trees were identical before this integration-result documentation update.
+The controller also ran the full build in the primary checkout after merging:
+**8,699 jobs passed**, recorded in `coordinate-ranks-integrated-main-build.log`.
+
+Final cleanup is limited to this execution branch/worktree. Its pre-removal
+status was clean; the only ignored path was the preparation/build-owned
+`leanncd/.lake/` cache. The final cleanup/clean-main result is retained in
+controller session storage as `coordinate-ranks-integration.json`.
+No unrelated branch or worktree is selected for removal. No remote push.
