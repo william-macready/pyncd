@@ -1,0 +1,1008 @@
+{
+  "phase": "AUTHORING A2: verified disposable fixture prototype, not integrated production",
+  "status": "FIXTURES_AND_MUTATIONS_VERIFIED; CONTROLLER_AND_FRESH_AUTHORING_PENDING",
+  "worktree": "/Users/williammacready/.copilot/session-state/835c8ec7-4595-4ed3-a54a-048a0d651b33/files/executor-prototype",
+  "base_commit": "4a30ae09c87ef11d778f175a639b71225868170b",
+  "candidate_commit": "be51d96c66c5f823754fd493b39e669237f30258",
+  "candidate_tree": "2eed13a7d4b1b354ad150ab489b3746279070180",
+  "tasks": [
+    {
+      "task": 1,
+      "parent_commit": "4a30ae09c87ef11d778f175a639b71225868170b",
+      "commit": "b1ffa7029d1c3e6a7748a938211ff658461c4c15",
+      "subject": "feat(semantics): add computable state refinements and input validation",
+      "tree": "0a8abb37d8892a93b32794fd3249b5025841b6d6",
+      "patch": "papers/semantics/computable_reference_executor_patches/01.patch",
+      "patch_sha256": "cbba6b0697eafe7a10a77d78e973f85888624090d2cf9d7e5e3e112f05f44a41",
+      "files": [
+        "leanncd/LeanNCD/Semantics/ExecutableState.lean"
+      ],
+      "symbols": {
+        "leanncd/LeanNCD/Semantics/ExecutableState.lean": [
+          "finiteDefined",
+          "finiteCoords",
+          "addressEq",
+          "Key",
+          "Schedule",
+          "Schedule.reverse",
+          "validate",
+          "validate_error",
+          "consume",
+          "publish",
+          "consume_agrees",
+          "publish_agrees",
+          "initialBudget",
+          "initialBudget_agrees",
+          "completeDecidable",
+          "fiberDecidable"
+        ]
+      }
+    },
+    {
+      "task": 2,
+      "parent_commit": "b1ffa7029d1c3e6a7748a938211ff658461c4c15",
+      "commit": "d0bb9a7f275a57c3e321e1ddb5a6c144cef891d5",
+      "subject": "feat(semantics): select exactly the executable reference machine edges",
+      "tree": "ea92a8622e0d2864c0f15f3a126e2534cf6729f3",
+      "patch": "papers/semantics/computable_reference_executor_patches/02.patch",
+      "patch_sha256": "56d85f03707a169e8ee713a7868082f6bc9dd60a204efa1feec67a82d7fece0d",
+      "files": [
+        "leanncd/LeanNCD/Semantics/ExecutableSelection.lean"
+      ],
+      "symbols": {
+        "leanncd/LeanNCD/Semantics/ExecutableSelection.lean": [
+          "Event",
+          "Event.destination",
+          "Event.effect",
+          "Event.Legal",
+          "Event.legal_step",
+          "Move",
+          "attempt",
+          "scan",
+          "scan_none",
+          "select",
+          "select_none_iff",
+          "Observation",
+          "observations"
+        ]
+      }
+    },
+    {
+      "task": 3,
+      "parent_commit": "d0bb9a7f275a57c3e321e1ddb5a6c144cef891d5",
+      "commit": "175c3d07f96196bdecfbc77bd2bfb7c968337c6c",
+      "subject": "feat(semantics): validate and execute finite reference runs",
+      "tree": "ae0431c8d1519dcef0aacc92afc8a4d7268367ff",
+      "patch": "papers/semantics/computable_reference_executor_patches/03.patch",
+      "patch_sha256": "60c969e5fbb2bc701dbd419be77d4e30d4ea78169688744783d6415839243ed6",
+      "files": [
+        "leanncd/AGENTS.md",
+        "leanncd/LeanNCD/Semantics.lean",
+        "leanncd/LeanNCD/Semantics/AGENTS.md",
+        "leanncd/LeanNCD/Semantics/RationalReference.lean",
+        "leanncd/LeanNCD/Semantics/ReferenceExecutor.lean",
+        "leanncd/lakefile.toml",
+        "leanncd/test/Semantics/ExecutableReferenceTest.lean"
+      ],
+      "symbols": {
+        "leanncd/LeanNCD/Semantics.lean": [],
+        "leanncd/LeanNCD/Semantics/RationalReference.lean": [
+          "Carrier",
+          "ops",
+          "Primitive",
+          "registry"
+        ],
+        "leanncd/LeanNCD/Semantics/ReferenceExecutor.lean": [
+          "validate_accepts",
+          "validate_preserves",
+          "Execution",
+          "Execution.reaches",
+          "Outcome",
+          "Outcome.state",
+          "Outcome.isExhausted",
+          "Outcome.kind",
+          "Result",
+          "runFuel",
+          "runFuel_not_exhausted",
+          "run",
+          "run_not_exhausted",
+          "result_success",
+          "result_model",
+          "result_unique",
+          "result_denotation",
+          "result_failure",
+          "result_not_blocked",
+          "run_ranked_dichotomy",
+          "ValidatedResult",
+          "runValidated",
+          "runValidated_error"
+        ],
+        "leanncd/test/Semantics/ExecutableReferenceTest.lean": [
+          "shape",
+          "declarations",
+          "point",
+          "program",
+          "tag",
+          "schedule",
+          "duplicateBody",
+          "failureBody",
+          "strictPolicy",
+          "selfRead",
+          "blockedBody",
+          "summarize",
+          "checkSmoke"
+        ]
+      }
+    },
+    {
+      "task": 4,
+      "parent_commit": "175c3d07f96196bdecfbc77bd2bfb7c968337c6c",
+      "commit": "be51d96c66c5f823754fd493b39e669237f30258",
+      "tree": "2eed13a7d4b1b354ad150ab489b3746279070180",
+      "subject": "test(semantics): verify executable rational reference fixtures",
+      "patch": "papers/semantics/computable_reference_executor_patches/04.patch",
+      "patch_sha256": "153a7339587108557ebda519a9ac400fcd9cf7fe2a4fd7f0fba89e4a523db548",
+      "files": [
+        "leanncd/test/Semantics/ExecutableReferenceTest.lean"
+      ]
+    }
+  ],
+  "patch_replay": [
+    {
+      "task": 1,
+      "reconstructed_tree": "0a8abb37d8892a93b32794fd3249b5025841b6d6",
+      "matches": true,
+      "patch_sha256": "cbba6b0697eafe7a10a77d78e973f85888624090d2cf9d7e5e3e112f05f44a41"
+    },
+    {
+      "task": 2,
+      "reconstructed_tree": "ea92a8622e0d2864c0f15f3a126e2534cf6729f3",
+      "matches": true,
+      "patch_sha256": "56d85f03707a169e8ee713a7868082f6bc9dd60a204efa1feec67a82d7fece0d"
+    },
+    {
+      "task": 3,
+      "reconstructed_tree": "ae0431c8d1519dcef0aacc92afc8a4d7268367ff",
+      "matches": true,
+      "patch_sha256": "60c969e5fbb2bc701dbd419be77d4e30d4ea78169688744783d6415839243ed6"
+    },
+    {
+      "task": 4,
+      "reconstructed_tree": "2eed13a7d4b1b354ad150ab489b3746279070180",
+      "matches": true,
+      "patch_sha256": "153a7339587108557ebda519a9ac400fcd9cf7fe2a4fd7f0fba89e4a523db548"
+    }
+  ],
+  "builds": {
+    "state-build": {
+      "path": "papers/semantics/computable_reference_executor_artifacts/logs/state-build.log",
+      "sha256": "74cf5dddc288d5aaf0a10bd5979d5388ca6020ae20d229ce1d80ad5e1b956784",
+      "status": "PASS"
+    },
+    "selection-build": {
+      "path": "papers/semantics/computable_reference_executor_artifacts/logs/selection-build.log",
+      "sha256": "4a95e328a154f5971b15face6bbb62ec6cbd0ff40ea51ba12dc9a7df4e0313d0",
+      "status": "PASS"
+    },
+    "driver-build": {
+      "path": "papers/semantics/computable_reference_executor_artifacts/logs/driver-build.log",
+      "sha256": "acca460ce8bc09d4e42f202acb6b51d4c315831a7d7b7c0c5b1ab8246a272332",
+      "status": "FAILED"
+    },
+    "smoke-build": {
+      "path": "papers/semantics/computable_reference_executor_artifacts/logs/smoke-build.log",
+      "sha256": "144b0bc5d6e6b3749db7c0b0fd983424820d149710f007ee7de523b617d49f62",
+      "status": "PASS"
+    },
+    "full-build": {
+      "path": "papers/semantics/computable_reference_executor_artifacts/logs/full-build.log",
+      "sha256": "d88015d88692cb24fde6d8ceb536eb240b5111a090337c0dc5b6326dbf5adb56",
+      "status": "PASS"
+    },
+    "budget-report": {
+      "path": "papers/semantics/computable_reference_executor_artifacts/logs/budget-report.log",
+      "sha256": "d84407c377511bdeecd343df41e39311d3e6898ab53bf809c650fc54ff9edc2f",
+      "status": "UNAVAILABLE"
+    },
+    "a2-fixtures": {
+      "path": "papers/semantics/computable_reference_executor_artifacts/logs/a2-fixtures.log",
+      "sha256": "4443bee86cf83595abf2aa50598308cb3a0df5bc006ba4c1dfe63cb33e2c1917",
+      "status": "PASS"
+    },
+    "a2-full-build": {
+      "path": "papers/semantics/computable_reference_executor_artifacts/logs/a2-full-build.log",
+      "sha256": "8325199cef1e0c35d869b208ff317c6459fd596aef6430171106e8b21fa11fdb",
+      "status": "PASS"
+    }
+  },
+  "build_commands": {
+    "state-build": "bash /Users/williammacready/.copilot/session-state/835c8ec7-4595-4ed3-a54a-048a0d651b33/files/executor-prototype/leanncd/scripts/lake-build.sh /Users/williammacready/.copilot/session-state/835c8ec7-4595-4ed3-a54a-048a0d651b33/files/executor-prototype/leanncd LeanNCD.Semantics.ExecutableState",
+    "selection-build": "bash /Users/williammacready/.copilot/session-state/835c8ec7-4595-4ed3-a54a-048a0d651b33/files/executor-prototype/leanncd/scripts/lake-build.sh /Users/williammacready/.copilot/session-state/835c8ec7-4595-4ed3-a54a-048a0d651b33/files/executor-prototype/leanncd LeanNCD.Semantics.ExecutableSelection",
+    "driver-build": "bash /Users/williammacready/.copilot/session-state/835c8ec7-4595-4ed3-a54a-048a0d651b33/files/executor-prototype/leanncd/scripts/lake-build.sh /Users/williammacready/.copilot/session-state/835c8ec7-4595-4ed3-a54a-048a0d651b33/files/executor-prototype/leanncd LeanNCD.Semantics.RationalReference",
+    "smoke-build": "bash /Users/williammacready/.copilot/session-state/835c8ec7-4595-4ed3-a54a-048a0d651b33/files/executor-prototype/leanncd/scripts/lake-build.sh /Users/williammacready/.copilot/session-state/835c8ec7-4595-4ed3-a54a-048a0d651b33/files/executor-prototype/leanncd +Semantics.ExecutableReferenceTest",
+    "full-build": "bash /Users/williammacready/.copilot/session-state/835c8ec7-4595-4ed3-a54a-048a0d651b33/files/executor-prototype/leanncd/scripts/lake-build.sh /Users/williammacready/.copilot/session-state/835c8ec7-4595-4ed3-a54a-048a0d651b33/files/executor-prototype/leanncd",
+    "a2-fixtures": "bash /Users/williammacready/.copilot/session-state/835c8ec7-4595-4ed3-a54a-048a0d651b33/files/executor-prototype/leanncd/scripts/lake-build.sh /Users/williammacready/.copilot/session-state/835c8ec7-4595-4ed3-a54a-048a0d651b33/files/executor-prototype/leanncd +Semantics.ExecutableReferenceTest",
+    "a2-full-build": "bash /Users/williammacready/.copilot/session-state/835c8ec7-4595-4ed3-a54a-048a0d651b33/files/executor-prototype/leanncd/scripts/lake-build.sh /Users/williammacready/.copilot/session-state/835c8ec7-4595-4ed3-a54a-048a0d651b33/files/executor-prototype/leanncd"
+  },
+  "build_history": [
+    "State's first attempt failed on accidental noncomputable instance resolution; explicit Subtype.fintype corrected it.",
+    "Selector's first proof attempt failed to simplify dependent matches; explicit case splits corrected it.",
+    "Saved driver-build.log is the intermediate FAILED dichotomy proof attempt; corrected constructor equalities compiled in smoke/full builds.",
+    "Smoke's first attempt failed on reducibility/type inference and nodup proofs; corrected concrete annotations compiled.",
+    "Final full default LeanNCD + Tests build PASS, 8704 jobs; ordinary pre-existing and unused-section-variable warnings retained."
+  ],
+  "observed_smoke_outputs": [
+    "duplicate: (\"complete\", 5, [some 4, some 0, some 0], 0)",
+    "ready-failure: (\"failed\", 1, [none, none, none], 1)",
+    "blocked: (\"blocked\", 2, [none, some 0, some 0], 1)"
+  ],
+  "smoke_tuple": [
+    "outcome",
+    "transition_count",
+    "whole_three_coordinate_published_store",
+    "pending_tag_count"
+  ],
+  "verified_contracts": {
+    "state_refinement": [
+      "consume_agrees",
+      "publish_agrees"
+    ],
+    "input_validation": [
+      "validate_error",
+      "validate_accepts",
+      "validate_preserves",
+      "runValidated_error"
+    ],
+    "budget": [
+      "initialBudget_agrees",
+      "runFuel_not_exhausted",
+      "run_not_exhausted"
+    ],
+    "selection": [
+      "Event.legal_step",
+      "select_none_iff"
+    ],
+    "trace": [
+      "Execution.reaches",
+      "Result.execution: every event is Legal, including publication payload equality"
+    ],
+    "soundness": [
+      "result_success",
+      "result_model",
+      "result_unique",
+      "result_denotation",
+      "result_failure"
+    ],
+    "ranked_progress": [
+      "result_not_blocked",
+      "run_ranked_dichotomy"
+    ]
+  },
+  "axiom_observations": [
+    "info: LeanNCD/Semantics/ExecutableSelection.lean:120:0: 'LeanNCD.Semantics.Program.Executor.select_none_iff' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "info: LeanNCD/Semantics/ReferenceExecutor.lean:187:0: 'LeanNCD.Semantics.Program.Executor.run_not_exhausted' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "info: LeanNCD/Semantics/ReferenceExecutor.lean:188:0: 'LeanNCD.Semantics.Program.Executor.run_ranked_dichotomy' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "info: LeanNCD/Semantics/ReferenceExecutor.lean:189:0: 'LeanNCD.Semantics.Program.Executor.result_model' depends on axioms: [propext, Classical.choice, Quot.sound]",
+    "info: LeanNCD/Semantics/ReferenceExecutor.lean:190:0: 'LeanNCD.Semantics.Program.Executor.result_failure' depends on axioms: [propext, Classical.choice, Quot.sound]"
+  ],
+  "assumptions_and_decisions": [
+    "Core Program/Expr/read admissions directly constructed; all guards and valuation tags preserved.",
+    "Computational DecidableEq on tensors supplied. Coordinate equality and finite counts use coordDecidableEq/canonicalLayout.",
+    "Ordered Schedule data is supplied with kernel-checked nodup/coverage proofs for every tensor and occurrence/publication key. No order is extracted via Finset.toList (noncomputable). A generic automatic schedule constructor is not provided.",
+    "Schedule.reverse reverses both tensor validation priority and key execution priority. Every selection restarts from the first key.",
+    "Only defined carriers require AddCommMonoid; typed input stores may contain other carriers.",
+    "Input presence is checked on tensors, not addresses; A2 observed legal empty input accepted, omitted empty input rejected, and empty defined tensor complete with zero events.",
+    "RankCertificate is supplied proof data on addresses. Ranked guarantees concern reachable states from valid input; arbitrary-state runFuel has no unqualified rank guarantee.",
+    "Default bound is pending occurrence count plus all defined coordinate counts plus one. Exhaustion is a distinct debug outcome, never a model claim.",
+    "Function-valued stores retained. Exact failure snapshot and pending tag retained; publication never overwrites and requires the exact empty destination fiber.",
+    "Exact rational profile: Unit sort, rational add/multiply/zero/one, closed reciprocal and square primitive registry; no unsupported-op fallback.",
+    "Executable definitions compile as computable definitions. Classical.choice in printed soundness/measure proof dependencies is inherited erased proof content, not a runtime schedule or scalar operation."
+  ],
+  "categorical_rationale": [
+    "Finite schedules/Naperian enumerations are presentations, not a change of semantic equations.",
+    "Strict contravariant reads and covariant additive pushforward over coproducts of tagged occurrences remain in the existing interpretation/collection semantics.",
+    "Partial Option-valued primitive maps are not asserted to preserve sums; nonlinear-before-collection boundaries remain unchanged.",
+    "Published store extension retains the thin-category perspective. Legal computational edges realize the same Step relation; Execution traces are paths.",
+    "No full Cat/Functor/Kan apparatus or categorical-backend-interpreter claim is introduced."
+  ],
+  "remaining_fixture_work": [
+    "Heterogeneous non-additive input carrier fixture from phase A remains outside this closed Unit/rational A2 profile.",
+    "Controller adjudication and fresh phase B authoring from artifacts remain; no plan markdown authored.",
+    "Whole-branch independent review belongs to later production execution, not this prototype dispatch."
+  ],
+  "unproved_core_obligations": [],
+  "core_blockers": [],
+  "not_claimed": [
+    "Overall plan execution readiness or production integration",
+    "Automatic schedule synthesis, source elaboration, rank synthesis/checking, native floats",
+    "Proof/type controls are NOT runtime oracle kills; fixture contrasts are NOT production mutations",
+    "Heterogeneous carrier runtime fixture coverage"
+  ],
+  "budget": {
+    "tool_bearing_turns_upper_bound": 50,
+    "peak_context_limit": 250000,
+    "peak_context_measured": null,
+    "cumulative_tokens_measured": null,
+    "telemetry": "token-report.py: no transcript for this Copilot SDK session; logs/a2-budget-report.log retained",
+    "known_breach": false
+  },
+  "phase_a_history": {
+    "phase": "AUTHORING A: compiled disposable prototype, not integrated production",
+    "status": "COMPILED_CORE_PROTOTYPE; FIXTURE_AND_MUTATION_PHASE_PENDING",
+    "candidate_commit": "175c3d07f96196bdecfbc77bd2bfb7c968337c6c",
+    "candidate_tree": "ae0431c8d1519dcef0aacc92afc8a4d7268367ff",
+    "remaining_fixture_work": [
+      "Full mutation manifest and every regression/parity mutant; none run in phase A.",
+      "Reverse-schedule parity with whole-store comparison, tagged valuation multiplicity, collision, and nonlinear pre/post-collection distinction.",
+      "Tensor input diagnostics: missing/extra ordering and offending tensor, legal rank-zero input, legal empty input, empty defined tensors, nonoutputs.",
+      "Supplied rank certificates in runnable dependent-coordinate examples; ranked undefined failure versus unavailable strict operands.",
+      "Debug low-fuel exhaustion boundaries, zero-fuel already-terminal endpoints, trace tag/destination/value ordering and publication barriers.",
+      "Heterogeneous non-additive input carriers, zero-valued consumed terms, excluded guard valuations, primitive square/reciprocal exact fractions.",
+      "Whole-branch independent review in the later production execution phase; no integration authorization applies to this disposable authoring prototype."
+    ],
+    "not_claimed": [
+      "Mutation coverage or the broader fixture matrix",
+      "Automatic schedule synthesis, source elaboration, rank synthesis/checking, native floats",
+      "Production integration, merge, push, donor changes, planning-code changes"
+    ],
+    "budget": {
+      "tool_bearing_turns": "below 60; manually tracked, no dispatch/subagents",
+      "peak_context_limit": 250000,
+      "peak_context_measured": null,
+      "cumulative_tokens_measured": null,
+      "telemetry": "Claude-only token-report.py found no transcript for this Copilot SDK session; the log is preserved. No zero/estimated usage is represented as a measurement.",
+      "known_breach": false
+    },
+    "assumptions_and_decisions": [
+      "Core Program/Expr/read admissions directly constructed; all guards and valuation tags preserved.",
+      "Computational DecidableEq on tensors supplied. Coordinate equality and finite counts use coordDecidableEq/canonicalLayout.",
+      "Ordered Schedule data is supplied with kernel-checked nodup/coverage proofs for every tensor and occurrence/publication key. No order is extracted via Finset.toList (noncomputable). A generic automatic schedule constructor is not provided.",
+      "Schedule.reverse reverses both tensor validation priority and key execution priority. Every selection restarts from the first key.",
+      "Only defined carriers require AddCommMonoid; typed input stores may contain other carriers.",
+      "Input presence is checked on tensors, not addresses; valid empty inputs are admitted by validate_accepts, but no specific empty-input smoke fixture was run.",
+      "RankCertificate is supplied proof data on addresses. Ranked guarantees concern reachable states from valid input; arbitrary-state runFuel has no unqualified rank guarantee.",
+      "Default bound is pending occurrence count plus all defined coordinate counts plus one. Exhaustion is a distinct debug outcome, never a model claim.",
+      "Function-valued stores retained. Exact failure snapshot and pending tag retained; publication never overwrites and requires the exact empty destination fiber.",
+      "Exact rational profile: Unit sort, rational add/multiply/zero/one, closed reciprocal and square primitive registry; no unsupported-op fallback.",
+      "Executable definitions compile as computable definitions. Classical.choice in printed soundness/measure proof dependencies is inherited erased proof content, not a runtime schedule or scalar operation."
+    ]
+  },
+  "phase_a2": {
+    "groups": 3,
+    "fixtures": [
+      {
+        "name": "duplicate",
+        "group": 1,
+        "donor": "CollectionModelFixtures.duplicate",
+        "clone_change": "existing smoke retained",
+        "observed": "(\"complete\", 5, [some 4, some 0, some 0], 0)",
+        "mutations": [],
+        "failure_modes": []
+      },
+      {
+        "name": "ready-failure",
+        "group": 3,
+        "donor": "CollectionModelFixtures.partialProgram",
+        "clone_change": "existing smoke retained",
+        "observed": "(\"failed\", 1, [none, none, none], 1)",
+        "mutations": [],
+        "failure_modes": []
+      },
+      {
+        "name": "blocked",
+        "group": 3,
+        "donor": "ReferenceMachineFixtures.cycleP",
+        "clone_change": "existing smoke retained",
+        "observed": "(\"blocked\", 2, [none, some 0, some 0], 1)",
+        "mutations": [],
+        "failure_modes": []
+      },
+      {
+        "name": "tagged-trace",
+        "group": 1,
+        "donor": "ReferenceMachineFixtures.valuationP + CollectionModelFixtures.collision",
+        "clone_change": "two statements, two valuations each, destination 1; publication priority first",
+        "observed": "[(\"contribution\", 7, 0, 0, 1, some 2),\n (\"contribution\", 7, 0, 1, 1, some 2),\n (\"contribution\", 7, 1, 0, 1, some 5),\n (\"contribution\", 7, 1, 1, 1, some 5),\n (\"publication\", 7, 0, 0, 1, some 14),\n (\"publication\", 7, 0, 0, 0, some 0),\n (\"publication\", 7, 0, 0, 2, some 0)]",
+        "mutations": [
+          "F1-tagged-body",
+          "F2-tag-projection"
+        ],
+        "failure_modes": [
+          {
+            "label": "F1-tagged-body",
+            "kind": "fixture contrast",
+            "observed_expect": [
+              "error: test/Semantics/ExecutableReferenceTest.lean:190:0: tagged-trace: expected [(\"contribution\", 7, 0, 0, 1, some 2),",
+              "error: test/Semantics/ExecutableReferenceTest.lean:195:0: tagged-whole-store: expected (\"complete\", [some 0, some 14, some 0], \"complete\", [some 0, some 14, some 0]), got (\"complete\", [some 0, some 16, some 0], \"complete\", [some 0, some 16, some 0])",
+              "error: test/Semantics/ExecutableReferenceTest.lean:206:0: tagged-equations: expected ([0, 14, 0], [0, 14, 0]), got ([0, 16, 0], [0, 14, 0])",
+              "error: test/Semantics/ExecutableReferenceTest.lean:529:0: trace-effect-replay: expected (\"running\", [some 0, some 14, some 0], 0), got (\"running\", [some 0, some 16, some 0], 0)"
+            ]
+          },
+          {
+            "label": "F2-tag-projection",
+            "kind": "fixture contrast",
+            "observed_expect": [
+              "error: test/Semantics/ExecutableReferenceTest.lean:190:0: tagged-trace: expected [(\"contribution\", 7, 0, 0, 1, some 2),",
+              "error: test/Semantics/ExecutableReferenceTest.lean:440:0: coordinate-ranked-chain: expected (\"complete\",",
+              "error: test/Semantics/ExecutableReferenceTest.lean:502:0: failure-retained-snapshot: expected (\"failed\","
+            ]
+          }
+        ]
+      },
+      {
+        "name": "tagged-whole-store",
+        "group": 1,
+        "donor": "ExecutableReferenceFixtures.schedule",
+        "clone_change": "reverse complete supplied schedule",
+        "observed": "(\"complete\", [some 0, some 14, some 0], \"complete\", [some 0, some 14, some 0])",
+        "mutations": [
+          "F1-tagged-body"
+        ],
+        "failure_modes": [
+          {
+            "label": "F1-tagged-body",
+            "kind": "fixture contrast",
+            "observed_expect": [
+              "error: test/Semantics/ExecutableReferenceTest.lean:190:0: tagged-trace: expected [(\"contribution\", 7, 0, 0, 1, some 2),",
+              "error: test/Semantics/ExecutableReferenceTest.lean:195:0: tagged-whole-store: expected (\"complete\", [some 0, some 14, some 0], \"complete\", [some 0, some 14, some 0]), got (\"complete\", [some 0, some 16, some 0], \"complete\", [some 0, some 16, some 0])",
+              "error: test/Semantics/ExecutableReferenceTest.lean:206:0: tagged-equations: expected ([0, 14, 0], [0, 14, 0]), got ([0, 16, 0], [0, 14, 0])",
+              "error: test/Semantics/ExecutableReferenceTest.lean:529:0: trace-effect-replay: expected (\"running\", [some 0, some 14, some 0], 0), got (\"running\", [some 0, some 16, some 0], 0)"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "tagged-equations",
+        "group": 1,
+        "donor": "CollectionModelFixtures.collision",
+        "clone_change": "literal complete candidate and collect at all coordinates",
+        "observed": "([0, 14, 0], [0, 14, 0])",
+        "mutations": [
+          "F1-tagged-body"
+        ],
+        "failure_modes": [
+          {
+            "label": "F1-tagged-body",
+            "kind": "fixture contrast",
+            "observed_expect": [
+              "error: test/Semantics/ExecutableReferenceTest.lean:190:0: tagged-trace: expected [(\"contribution\", 7, 0, 0, 1, some 2),",
+              "error: test/Semantics/ExecutableReferenceTest.lean:195:0: tagged-whole-store: expected (\"complete\", [some 0, some 14, some 0], \"complete\", [some 0, some 14, some 0]), got (\"complete\", [some 0, some 16, some 0], \"complete\", [some 0, some 16, some 0])",
+              "error: test/Semantics/ExecutableReferenceTest.lean:206:0: tagged-equations: expected ([0, 14, 0], [0, 14, 0]), got ([0, 16, 0], [0, 14, 0])",
+              "error: test/Semantics/ExecutableReferenceTest.lean:529:0: trace-effect-replay: expected (\"running\", [some 0, some 14, some 0], 0), got (\"running\", [some 0, some 16, some 0], 0)"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "zero-contribution",
+        "group": 1,
+        "donor": "ExecutableReferenceFixtures.duplicateBody",
+        "clone_change": "literal zero, one occurrence",
+        "observed": "(\"complete\", 4, [some 0, some 0, some 0], 0)",
+        "mutations": [
+          "F3-zero-empty-excluded"
+        ],
+        "failure_modes": [
+          {
+            "label": "F3-zero-empty-excluded",
+            "kind": "fixture contrast",
+            "observed_expect": [
+              "error: test/Semantics/ExecutableReferenceTest.lean:216:0: zero-contribution: expected (\"complete\", 2, [some 0, some 0, some 0], 0), got (\"complete\", 4, [some 0, some 0, some 0], 0)",
+              "error: test/Semantics/ExecutableReferenceTest.lean:218:0: empty-fiber: expected (\"complete\", 2, [some 0, some 0, some 0], 0), got (\"complete\", 3, [some 0, some 0, some 0], 0)",
+              "error: test/Semantics/ExecutableReferenceTest.lean:243:0: guard-excluded-undefined: expected (\"complete\", 2, [some 0, some 0, some 0]), got (\"complete\", 3, [some 0, some 0, some 0])"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "empty-fiber",
+        "group": 1,
+        "donor": "CollectionModelFixtures.noStatements",
+        "clone_change": "zero statements, all coordinates published",
+        "observed": "(\"complete\", 3, [some 0, some 0, some 0], 0)",
+        "mutations": [
+          "F3-zero-empty-excluded"
+        ],
+        "failure_modes": [
+          {
+            "label": "F3-zero-empty-excluded",
+            "kind": "fixture contrast",
+            "observed_expect": [
+              "error: test/Semantics/ExecutableReferenceTest.lean:216:0: zero-contribution: expected (\"complete\", 2, [some 0, some 0, some 0], 0), got (\"complete\", 4, [some 0, some 0, some 0], 0)",
+              "error: test/Semantics/ExecutableReferenceTest.lean:218:0: empty-fiber: expected (\"complete\", 2, [some 0, some 0, some 0], 0), got (\"complete\", 3, [some 0, some 0, some 0], 0)",
+              "error: test/Semantics/ExecutableReferenceTest.lean:243:0: guard-excluded-undefined: expected (\"complete\", 2, [some 0, some 0, some 0]), got (\"complete\", 3, [some 0, some 0, some 0])"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "guard-excluded-undefined",
+        "group": 1,
+        "donor": "ExecutableReferenceFixtures.failureBody",
+        "clone_change": "false guard, no admitted valuation",
+        "observed": "(\"complete\", 3, [some 0, some 0, some 0])",
+        "mutations": [
+          "F3-zero-empty-excluded"
+        ],
+        "failure_modes": [
+          {
+            "label": "F3-zero-empty-excluded",
+            "kind": "fixture contrast",
+            "observed_expect": [
+              "error: test/Semantics/ExecutableReferenceTest.lean:216:0: zero-contribution: expected (\"complete\", 2, [some 0, some 0, some 0], 0), got (\"complete\", 4, [some 0, some 0, some 0], 0)",
+              "error: test/Semantics/ExecutableReferenceTest.lean:218:0: empty-fiber: expected (\"complete\", 2, [some 0, some 0, some 0], 0), got (\"complete\", 3, [some 0, some 0, some 0], 0)",
+              "error: test/Semantics/ExecutableReferenceTest.lean:243:0: guard-excluded-undefined: expected (\"complete\", 2, [some 0, some 0, some 0]), got (\"complete\", 3, [some 0, some 0, some 0])"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "nonlinear-boundary",
+        "group": 1,
+        "donor": "CollectionModelFixtures.reciprocalProgram",
+        "clone_change": "closed rational registry; independent 3/4 and 1/6",
+        "observed": "((\"complete\", 5, [some (3 : Rat)/4, some 0, some 0], 0), (3 : Rat)/4, some (1 : Rat)/6)",
+        "mutations": [
+          "R1-reciprocal"
+        ],
+        "failure_modes": [
+          {
+            "label": "R1-reciprocal",
+            "kind": "production runtime oracle kill",
+            "observed_expect": [
+              "error: test/Semantics/ExecutableReferenceTest.lean:260:0: nonlinear-boundary: expected ((\"complete\", 5, [some (3 : Rat)/4, some 0, some 0], 0), (3 : Rat)/4, some (1 : Rat)/6), got ((\"complete\", 5, [some 6, some 0, some 0], 0), 6, some 6)"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "primitive-square",
+        "group": 1,
+        "donor": "ExecutableReferenceFixtures.duplicateBody + RationalReference.registry",
+        "clone_change": "one square primitive applied to literal 3",
+        "observed": "(\"complete\", 4, [some 9, some 0, some 0], 0)",
+        "mutations": [
+          "R2-square"
+        ],
+        "failure_modes": [
+          {
+            "label": "R2-square",
+            "kind": "production runtime oracle kill",
+            "observed_expect": [
+              "error: test/Semantics/ExecutableReferenceTest.lean:267:0: primitive-square: expected (\"complete\", 4, [some 9, some 0, some 0], 0), got (\"complete\", 4, [some 6, some 0, some 0], 0)"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "scalar-input-nonoutput",
+        "group": 2,
+        "donor": "ReferenceMachineFixtures.scalarRole/scalarInput",
+        "clone_change": "closed Unit/rational profile; defined output 2 and internal nonoutput 3",
+        "observed": "(\"complete\", 4, [some 7, some 2, some 3])",
+        "mutations": [
+          "F4-scalar-nonoutput"
+        ],
+        "failure_modes": [
+          {
+            "label": "F4-scalar-nonoutput",
+            "kind": "fixture contrast",
+            "observed_expect": [
+              "error: test/Semantics/ExecutableReferenceTest.lean:324:0: scalar-input-nonoutput: expected (\"complete\", 4, [some 8, some 2, some 4]), got (\"complete\", 4, [some 7, some 2, some 3])",
+              "error: test/Semantics/ExecutableReferenceTest.lean:326:0: internal-nonoutput-failure: expected (\"complete\", 4, [some 7, some 2, some 3]), got (\"failed\", 3, [some 7, some 2, none])"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "internal-nonoutput-failure",
+        "group": 2,
+        "donor": "CollectionModelFixtures.roleProgram",
+        "clone_change": "internal tensor 2 uses reciprocal zero",
+        "observed": "(\"failed\", 3, [some 7, some 2, none])",
+        "mutations": [
+          "F4-scalar-nonoutput"
+        ],
+        "failure_modes": [
+          {
+            "label": "F4-scalar-nonoutput",
+            "kind": "fixture contrast",
+            "observed_expect": [
+              "error: test/Semantics/ExecutableReferenceTest.lean:324:0: scalar-input-nonoutput: expected (\"complete\", 4, [some 8, some 2, some 4]), got (\"complete\", 4, [some 7, some 2, some 3])",
+              "error: test/Semantics/ExecutableReferenceTest.lean:326:0: internal-nonoutput-failure: expected (\"complete\", 4, [some 7, some 2, some 3]), got (\"failed\", 3, [some 7, some 2, none])"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "input-validation-order",
+        "group": 2,
+        "donor": "CollectionModelFixtures.omittedEmpty/extraDefined",
+        "clone_change": "scalar missing/extra; simultaneous violations at 0,1,2; reverse first is 2",
+        "observed": "[(\"error\", 0), (\"error\", 1), (\"error\", 0), (\"error\", 2)]",
+        "mutations": [
+          "F5-input-order"
+        ],
+        "failure_modes": [
+          {
+            "label": "F5-input-order",
+            "kind": "fixture contrast",
+            "observed_expect": [
+              "error: test/Semantics/ExecutableReferenceTest.lean:338:0: input-validation-order: expected [(\"error\", 1), (\"error\", 0), (\"error\", 2), (\"error\", 0)], got [(\"error\", 0), (\"error\", 1), (\"error\", 0), (\"error\", 2)]"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "empty-input-and-defined",
+        "group": 2,
+        "donor": "CollectionModelFixtures.roleProgram/presentEmpty/omittedEmpty",
+        "clone_change": "zero extent for whole tensor; supplied/omitted input and empty defined",
+        "observed": "[(\"complete\", 0), (\"error\", 0), (\"complete\", 0)]",
+        "mutations": [
+          "F6-empty-presence"
+        ],
+        "failure_modes": [
+          {
+            "label": "F6-empty-presence",
+            "kind": "fixture contrast",
+            "observed_expect": [
+              "error: test/Semantics/ExecutableReferenceTest.lean:374:0: empty-input-and-defined: expected [(\"error\", 0), (\"complete\", 0), (\"failed\", 0)], got [(\"complete\", 0), (\"error\", 0), (\"complete\", 0)]"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "fuel-boundaries",
+        "group": 2,
+        "donor": "ExecutableReferenceFixtures.taggedResult",
+        "clone_change": "6 exhausted; 7 exact transition count; mu=8 and mu+1=9 complete; zero exhausted",
+        "observed": "(8, \"exhausted\", \"complete\", \"complete\", \"complete\", \"exhausted\")",
+        "mutations": [
+          "F7-fuel-terminal"
+        ],
+        "failure_modes": [
+          {
+            "label": "F7-fuel-terminal",
+            "kind": "fixture contrast",
+            "observed_expect": [
+              "error: test/Semantics/ExecutableReferenceTest.lean:380:0: fuel-boundaries: expected (7, \"complete\", \"exhausted\", \"exhausted\", \"exhausted\", \"complete\"), got (8, \"exhausted\", \"complete\", \"complete\", \"complete\", \"exhausted\")",
+              "error: test/Semantics/ExecutableReferenceTest.lean:388:0: zero-fuel-terminal: expected (\"exhausted\", \"exhausted\"), got (\"complete\", \"failed\")"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "zero-fuel-terminal",
+        "group": 2,
+        "donor": "ExecutableReferenceFixtures.taggedResult/scalarResult",
+        "clone_change": "already complete and already failed classified before exhaustion",
+        "observed": "(\"complete\", \"failed\")",
+        "mutations": [
+          "F7-fuel-terminal"
+        ],
+        "failure_modes": [
+          {
+            "label": "F7-fuel-terminal",
+            "kind": "fixture contrast",
+            "observed_expect": [
+              "error: test/Semantics/ExecutableReferenceTest.lean:380:0: fuel-boundaries: expected (7, \"complete\", \"exhausted\", \"exhausted\", \"exhausted\", \"complete\"), got (8, \"exhausted\", \"complete\", \"complete\", \"complete\", \"exhausted\")",
+              "error: test/Semantics/ExecutableReferenceTest.lean:388:0: zero-fuel-terminal: expected (\"exhausted\", \"exhausted\"), got (\"complete\", \"failed\")"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "coordinate-ranked-chain",
+        "group": 3,
+        "donor": "ReferenceMachineFixtures.dependentP",
+        "clone_change": "two destinations on same tensor, read coordinate 1 at destination 2; supplied rank",
+        "observed": "(\"complete\",\n [some 0, some 3, some 4],\n [(\"contribution\", 7, 0, 0, 1, some 3),\n  (\"publication\", 7, 0, 0, 1, some 3),\n  (\"contribution\", 7, 1, 0, 2, some 4),\n  (\"publication\", 7, 0, 0, 2, some 4),\n  (\"publication\", 7, 0, 0, 0, some 0)])",
+        "mutations": [
+          "F2-tag-projection",
+          "F10-coordinate-chain"
+        ],
+        "failure_modes": [
+          {
+            "label": "F2-tag-projection",
+            "kind": "fixture contrast",
+            "observed_expect": [
+              "error: test/Semantics/ExecutableReferenceTest.lean:190:0: tagged-trace: expected [(\"contribution\", 7, 0, 0, 1, some 2),",
+              "error: test/Semantics/ExecutableReferenceTest.lean:440:0: coordinate-ranked-chain: expected (\"complete\",",
+              "error: test/Semantics/ExecutableReferenceTest.lean:502:0: failure-retained-snapshot: expected (\"failed\","
+            ]
+          },
+          {
+            "label": "F10-coordinate-chain",
+            "kind": "fixture contrast",
+            "observed_expect": [
+              "error: test/Semantics/ExecutableReferenceTest.lean:440:0: coordinate-ranked-chain: expected (\"complete\","
+            ]
+          }
+        ]
+      },
+      {
+        "name": "strict-zero-cycle-locators",
+        "group": 3,
+        "donor": "ReferenceMachineFixtures.cycleP/waitingBad",
+        "clone_change": "zero times reciprocal unavailable read; missing coordinate differs from destination",
+        "observed": "(\"blocked\",\n [some 0, none, none],\n [(\"unavailable\", 7, 1, 0, 2, [(7, 1)], none), (\"unavailable\", 7, 0, 0, 1, [(7, 2)], none)])",
+        "mutations": [
+          "F8-blocked-locator"
+        ],
+        "failure_modes": [
+          {
+            "label": "F8-blocked-locator",
+            "kind": "fixture contrast",
+            "observed_expect": [
+              "error: test/Semantics/ExecutableReferenceTest.lean:468:0: strict-zero-cycle-locators: expected (\"blocked\","
+            ]
+          }
+        ]
+      },
+      {
+        "name": "failure-retained-snapshot",
+        "group": 3,
+        "donor": "ExecutableReferenceFixtures.failureBody + ReferenceMachineFixtures.badP",
+        "clone_change": "publish coordinate 2, contribute 2 at 0, fail statement 1; exact snapshot retained",
+        "observed": "(\"failed\",\n [(\"publication\", 7, 0, 0, 2, some 0), (\"contribution\", 7, 0, 0, 0, some 2), (\"undefined\", 7, 1, 0, 0, none)],\n [none, none, some 0],\n 2,\n 1)",
+        "mutations": [
+          "F2-tag-projection",
+          "F9-failure-snapshot"
+        ],
+        "failure_modes": [
+          {
+            "label": "F2-tag-projection",
+            "kind": "fixture contrast",
+            "observed_expect": [
+              "error: test/Semantics/ExecutableReferenceTest.lean:190:0: tagged-trace: expected [(\"contribution\", 7, 0, 0, 1, some 2),",
+              "error: test/Semantics/ExecutableReferenceTest.lean:440:0: coordinate-ranked-chain: expected (\"complete\",",
+              "error: test/Semantics/ExecutableReferenceTest.lean:502:0: failure-retained-snapshot: expected (\"failed\","
+            ]
+          },
+          {
+            "label": "F9-failure-snapshot",
+            "kind": "fixture contrast",
+            "observed_expect": [
+              "error: test/Semantics/ExecutableReferenceTest.lean:502:0: failure-retained-snapshot: expected (\"failed\",",
+              "error: test/Semantics/ExecutableReferenceTest.lean:511:0: ready-observations: expected [(\"ready\", 7, 0, 0, 0, [], some 2), (\"ready\", 7, 1, 0, 0, [], none)], got [(\"ready\", 7, 0, 0, 0, [], some 4), (\"ready\", 7, 1, 0, 0, [], none)]"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "ready-observations",
+        "group": 3,
+        "donor": "ReferenceMachineFixtures.readinessLabel",
+        "clone_change": "pending literal some 2 versus pending reciprocal zero none",
+        "observed": "[(\"ready\", 7, 0, 0, 0, [], some 2), (\"ready\", 7, 1, 0, 0, [], none)]",
+        "mutations": [
+          "F9-failure-snapshot"
+        ],
+        "failure_modes": [
+          {
+            "label": "F9-failure-snapshot",
+            "kind": "fixture contrast",
+            "observed_expect": [
+              "error: test/Semantics/ExecutableReferenceTest.lean:502:0: failure-retained-snapshot: expected (\"failed\",",
+              "error: test/Semantics/ExecutableReferenceTest.lean:511:0: ready-observations: expected [(\"ready\", 7, 0, 0, 0, [], some 2), (\"ready\", 7, 1, 0, 0, [], none)], got [(\"ready\", 7, 0, 0, 0, [], some 4), (\"ready\", 7, 1, 0, 0, [], none)]"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "trace-effect-replay",
+        "group": 1,
+        "donor": "ExecutableReferenceFixtures.taggedResult",
+        "clone_change": "fold selected Event.effect only; compare whole store and pending cardinality",
+        "observed": "(\"running\", [some 0, some 14, some 0], 0)",
+        "mutations": [
+          "F1-tagged-body"
+        ],
+        "failure_modes": [
+          {
+            "label": "F1-tagged-body",
+            "kind": "fixture contrast",
+            "observed_expect": [
+              "error: test/Semantics/ExecutableReferenceTest.lean:190:0: tagged-trace: expected [(\"contribution\", 7, 0, 0, 1, some 2),",
+              "error: test/Semantics/ExecutableReferenceTest.lean:195:0: tagged-whole-store: expected (\"complete\", [some 0, some 14, some 0], \"complete\", [some 0, some 14, some 0]), got (\"complete\", [some 0, some 16, some 0], \"complete\", [some 0, some 16, some 0])",
+              "error: test/Semantics/ExecutableReferenceTest.lean:206:0: tagged-equations: expected ([0, 14, 0], [0, 14, 0]), got ([0, 16, 0], [0, 14, 0])",
+              "error: test/Semantics/ExecutableReferenceTest.lean:529:0: trace-effect-replay: expected (\"running\", [some 0, some 14, some 0], 0), got (\"running\", [some 0, some 16, some 0], 0)"
+            ]
+          }
+        ]
+      }
+    ],
+    "scope_matrix": {
+      "input presence": {
+        "validate": {
+          "classification": "required",
+          "mechanism": "ordered tensor find? against isSome != input",
+          "note": "Missing inputs and supplied-defined bindings forbidden, including zero extent."
+        },
+        "attempt": {
+          "classification": "silently-ignored",
+          "mechanism": "intentional separate responsibility",
+          "note": "Accepts Running, not Input; no tensor-level revalidation. Defined keys prohibit writing inputs by type."
+        },
+        "observations": {
+          "classification": "silently-ignored",
+          "mechanism": "intentional separate responsibility",
+          "note": "Diagnostic-only Running view; does not validate bindings."
+        },
+        "runFuel": {
+          "classification": "silently-ignored",
+          "mechanism": "intentional separate responsibility",
+          "note": "Arbitrary-state debug API; runValidated delegates presence to validate, run takes proof-carrying Input. Complete sees input addresses but cannot see empty input presence."
+        }
+      },
+      "occurrence membership": {
+        "validate": {
+          "classification": "silently-ignored",
+          "mechanism": "intentional separate responsibility",
+          "note": "Only tensor binding roles."
+        },
+        "attempt": {
+          "classification": "required",
+          "mechanism": "hp pending membership guard",
+          "note": "Spent tags forbidden; guard admission already in subtype."
+        },
+        "observations": {
+          "classification": "required",
+          "mechanism": "pending membership filter",
+          "note": "Spent tags omitted; admitted tags reported only."
+        },
+        "runFuel": {
+          "classification": "required",
+          "mechanism": "defer to select -> scan -> attempt",
+          "note": "Every selected contribution/undefined legal; selector restarts."
+        }
+      },
+      "readiness": {
+        "validate": {
+          "classification": "silently-ignored",
+          "mechanism": "intentional separate responsibility",
+          "note": "No expression evaluation at tensor binding stage."
+        },
+        "attempt": {
+          "classification": "required",
+          "mechanism": "defer to evalReady",
+          "note": "notReady cannot construct a move."
+        },
+        "observations": {
+          "classification": "required",
+          "mechanism": "defer to evalReady + footprint/filter",
+          "note": "Unavailable reports exact missing typed addresses, ready reports Option."
+        },
+        "runFuel": {
+          "classification": "required",
+          "mechanism": "defer to select -> attempt -> evalReady",
+          "note": "No available move plus incomplete means blocked, not failure."
+        }
+      },
+      "undefinedness": {
+        "validate": {
+          "classification": "silently-ignored",
+          "mechanism": "intentional separate responsibility",
+          "note": "No expression body demand."
+        },
+        "attempt": {
+          "classification": "required",
+          "mechanism": "evaluated none -> undefined event",
+          "note": "Failure only for pending, ready undefined body."
+        },
+        "observations": {
+          "classification": "required",
+          "mechanism": "ready Option payload",
+          "note": "Ready none is preserved diagnostically, not a transition."
+        },
+        "runFuel": {
+          "classification": "required",
+          "mechanism": "defer to attempt -> Event.effect; failed start match",
+          "note": "Failed retains snapshot and tag; terminal failure precedes fuel."
+        }
+      },
+      "destination fiber": {
+        "validate": {
+          "classification": "silently-ignored",
+          "mechanism": "intentional separate responsibility",
+          "note": "No equation or contribution collection."
+        },
+        "attempt": {
+          "classification": "required",
+          "mechanism": "defer to fiberDecidable / FiberEmpty; Event.effect -> consume",
+          "note": "Publication forbidden while any pending occurrence targets that coordinate; consume adds only there."
+        },
+        "observations": {
+          "classification": "silently-ignored",
+          "mechanism": "intentional separate responsibility",
+          "note": "No publication diagnostics or fiber test; body-demand diagnostics only. Locator remains typed occurrence plus missing addresses."
+        },
+        "runFuel": {
+          "classification": "required",
+          "mechanism": "defer to select -> attempt; Event.effect",
+          "note": "Contribution removal and coordinate accumulator update follow legal event."
+        }
+      },
+      "publication eligibility": {
+        "validate": {
+          "classification": "silently-ignored",
+          "mechanism": "intentional separate responsibility",
+          "note": "No machine publication."
+        },
+        "attempt": {
+          "classification": "forbidden",
+          "mechanism": "published match + FiberEmpty",
+          "note": "Input keys unrepresentable, overwrite forbidden, nonempty fiber forbidden; value equals accumulator."
+        },
+        "observations": {
+          "classification": "silently-ignored",
+          "mechanism": "intentional separate responsibility",
+          "note": "Publication keys filterMap to none; intentional, not missing eligibility check."
+        },
+        "runFuel": {
+          "classification": "required",
+          "mechanism": "defer to select -> attempt -> Event.Legal",
+          "note": "Selected publication only; skipped scans are not traced."
+        }
+      },
+      "full-store completion": {
+        "validate": {
+          "classification": "silently-ignored",
+          "mechanism": "intentional separate responsibility",
+          "note": "Presence validation is not a solved-store check."
+        },
+        "attempt": {
+          "classification": "silently-ignored",
+          "mechanism": "intentional separate responsibility",
+          "note": "Local eligibility only; can operate on already-terminal debug Running."
+        },
+        "observations": {
+          "classification": "silently-ignored",
+          "mechanism": "intentional separate responsibility",
+          "note": "Reports pending bodies only, cannot declare completion."
+        },
+        "runFuel": {
+          "classification": "required",
+          "mechanism": "defer to completeDecidable -> Complete",
+          "note": "All pending sets empty AND every typed address published, including nonoutputs; checked before selection/fuel. Zero-coordinate defined tensors vacuously complete."
+        }
+      }
+    },
+    "scope_findings": "No production correctness defect identified. All silently-ignored cells explicitly scoped; validate owns tensor presence, selection owns local steps, runFuel owns full-store terminal classification.",
+    "mutation_manifest": "papers/semantics/computable_reference_executor_mutations_post.json",
+    "mutation_manifest_sha256": "aed82925958f13d22ea59f522312689dff7c7584d514ecb0399aab7c8610af04",
+    "mutation_results": {
+      "controls": 16,
+      "proof_type_rejections": 4,
+      "production_runtime_oracle_kills": 2,
+      "fixture_contrasts": 10,
+      "all_restored_byte_identically": true,
+      "all_restored_targeted_builds_green": true,
+      "table": "papers/semantics/computable_reference_executor_artifacts/a2-mutations.md",
+      "log_sha256": "5f62b55274888d1d926f856011562001ff17e4db55ce281c719ab06dd9279edd"
+    },
+    "mutation_commands": [
+      "python3 /Users/williammacready/.copilot/session-state/835c8ec7-4595-4ed3-a54a-048a0d651b33/files/executor-prototype/papers/semantics/computable_reference_executor_artifacts/a2-artifacts.py discovery",
+      "bash /Users/williammacready/.copilot/session-state/835c8ec7-4595-4ed3-a54a-048a0d651b33/files/executor-prototype/leanncd/scripts/mutation-manifest.sh --check /Users/williammacready/.copilot/session-state/835c8ec7-4595-4ed3-a54a-048a0d651b33/files/executor-prototype/leanncd /Users/williammacready/.copilot/session-state/835c8ec7-4595-4ed3-a54a-048a0d651b33/files/executor-prototype/papers/semantics/computable_reference_executor_mutations_post.json",
+      "python3 /Users/williammacready/.copilot/session-state/835c8ec7-4595-4ed3-a54a-048a0d651b33/files/executor-prototype/papers/semantics/computable_reference_executor_artifacts/a2-artifacts.py verify"
+    ],
+    "harness": "Existing mutation-manifest.sh --check and actual run, invoked by a2-artifacts.py. Both mutate-and-build.sh and mutation-cycle.sh build calls temporarily redirected to absolute lake-build.sh wrapper, finally restored byte-identically; never direct lake execution.",
+    "discarded_attempt": "Initial F4-scalar-nonoutput body rewrite failed in scalarSchedule coverage proofs, not at runtime. Retained logs/a2-mutation-discovery.log. Replaced with expected-record fixture contrast; corrected discovery and final verification observed both intended runtime assertion failures. Not counted as production runtime oracle kill.",
+    "budget_boundary": "stateMeasure is noncomputable: no #eval of it. Kernel example derives initial mu=8 via initialBudget_agrees and decide; actual runs at 6,7,8,9,0 are observed.",
+    "equation_boundary": "taggedCandidate is a complete literal candidate checked by collect at every coordinate; reciprocalCandidate is only an independent prior used for read-free collection/interpret validation. Neither is claimed to synthesize equation solutions.",
+    "axiom_inventory": {
+      "chainCertificate": [
+        "propext",
+        "Classical.choice",
+        "Quot.sound"
+      ],
+      "new_axioms": [],
+      "sorry": false,
+      "native_decide": false,
+      "core_inventory_retained": true
+    },
+    "artifacts_untracked": true,
+    "code_commit_only_test": true
+  }
+}

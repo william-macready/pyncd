@@ -1,0 +1,35 @@
+[
+  {
+    "label": "S1-duplicate-smoke",
+    "task": "4",
+    "file": "test/Semantics/ExecutableReferenceTest.lean",
+    "old": "(\"complete\", 5, [some 4, some 0, some 0], 0)",
+    "new": "(\"complete\", 5, [some 2, some 0, some 0], 0)",
+    "targets": ["+Semantics.ExecutableReferenceTest"],
+    "kind": "fixture contrast",
+    "fixtures": ["duplicate"],
+    "expect": ["duplicate: expected (\"complete\", 5, [some 2, some 0, some 0], 0), got (\"complete\", 5, [some 4, some 0, some 0], 0)"]
+  },
+  {
+    "label": "S2-ready-failure-smoke",
+    "task": "4",
+    "file": "test/Semantics/ExecutableReferenceTest.lean",
+    "old": "(\"failed\", 1, [none, none, none], 1)",
+    "new": "(\"complete\", 1, [some 0, none, none], 0)",
+    "targets": ["+Semantics.ExecutableReferenceTest"],
+    "kind": "fixture contrast",
+    "fixtures": ["ready-failure"],
+    "expect": ["ready-failure: expected (\"complete\", 1, [some 0, none, none], 0), got (\"failed\", 1, [none, none, none], 1)"]
+  },
+  {
+    "label": "S3-blocked-smoke",
+    "task": "4",
+    "file": "test/Semantics/ExecutableReferenceTest.lean",
+    "old": "(\"blocked\", 2, [none, some 0, some 0], 1)",
+    "new": "(\"failed\", 2, [none, some 0, some 0], 1)",
+    "targets": ["+Semantics.ExecutableReferenceTest"],
+    "kind": "fixture contrast",
+    "fixtures": ["blocked"],
+    "expect": ["blocked: expected (\"failed\", 2, [none, some 0, some 0], 1), got (\"blocked\", 2, [none, some 0, some 0], 1)"]
+  }
+]

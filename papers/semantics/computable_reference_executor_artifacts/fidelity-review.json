@@ -1,0 +1,58 @@
+{
+  "review": "whole-planning-package-computability-fidelity-replay",
+  "status": "CLEAN",
+  "scope": "Read-only planning-package review; no production, package, replay, build, staging, or commit mutations.",
+  "base": "4a30ae0",
+  "findings": [],
+  "verified": [
+    "Read the entire live plan and separate record in bounded windows.",
+    "Read all four materialized computational modules and the complete 534-line fixture module.",
+    "Schedules supply nodup and coverage proofs for all tensors and tagged occurrence/publication keys; selection scans supplied lists and restarts after each edge.",
+    "Computational definitions use supplied tensor equality and canonical finite coordinate enumeration; classical declarations seen in new modules are confined to proofs.",
+    "Default fuel counts admitted tagged occurrences and all defined coordinates plus one; complete/failed/blocked classification precedes exhaustion.",
+    "Typed selected events retain occurrence identity, destinations and payloads; blocked observations carry actual missing addresses and failures retain their snapshot.",
+    "Read both manifests and patch-3 public-import/default-test/AGENTS integration hunks; control classes are explicitly distinguished and all cycles occur after patch 4.",
+    "Fixture code discriminates empty tensor input presence, scalar/nonoutput stores and failure, reverse whole-store equality, simultaneous input error order, nonlinear rational meanings, readiness locators, trace ordering and retained failure.",
+    "All four patch SHA256 values match evidence; patch path sets match the four task manifests; all nine retained final deliverable Git blob identities match the exact patch headers.",
+    "Current manifest tasks, replay ledger and final candidate identity equal the evidence ledger; manifest SHA256 is 94e51519f1021fe3c1a51c58bef6679cd22d635016e0f8e92e47e65c804409e7.",
+    "All 22 fixture observations match the retained controller-task4.log values after whitespace-only normalization; source check labels equal the evidence row set; groups count 10, 6 and 6.",
+    "All 22 rows map to at least one of the 19 controls when both manifests are joined; every mutation old string matches exactly once in the retained source.",
+    "Control labels equal controller-verification labels; categories are exactly 4 proof/type rejections, 2 production runtime oracle kills and 13 fixture contrasts.",
+    "Controller mutation tables report all 19 expected failures enforced, byte-identical restoration and restored green targets; all five referenced controller log SHA256 values match.",
+    "All three retained mutation scripts equal base-commit bytes; A2 temporary routing is historical, not a future replay prerequisite.",
+    "The plan requires an isolated prepared worktree from current compatible local main, refuses protected-path conflicts, checks sequential patches and target builds, preserves provenance rather than promising old trees on a new baseline, and stages only explicitly listed paths.",
+    "Public LeanNCD imports Semantics; patch 3 wires the rational entry transitively through all new modules and adds the fixture to the default Tests glob.",
+    "The plan and record retain planning-only status, require later implementation/review/documentation gates before capability markers move, acknowledge new warnings and erased proof axioms, and explicitly exclude source/backend/float/exact-real claims.",
+    "Final planning worktree status equals the initial package-only untracked status; all five future module/test paths remain absent."
+  ],
+  "conclusion": "No high-confidence must-fix computability, fidelity, replay, integration, or planning-package correctness gap identified within the approved directly admitted exact-rational profile.",
+  "acknowledged_boundaries": [
+    "Supplied complete schedules and address-rank certificates, not synthesis or runtime source admission.",
+    "Selected-event traces, not scan logs; legal publication payloads equal retained accumulators even though effect recomputes that value.",
+    "Equation-candidate and ready-observation rows exercise companion semantic/diagnostic APIs; actual executor/store/trace rows independently assert the same concrete fixtures, not a claimed standalone equation solver.",
+    "Fixture contrasts and proof/type rejections are not production runtime oracle kills.",
+    "Heterogeneous non-additive-input runtime fixture remains parked; no scope expansion requested.",
+    "Build/control outcomes are retained controller receipts, not checks rerun by this reviewer; future compatible-main execution remains separately gated."
+  ],
+  "review_actions": {
+    "repository_mutations": false,
+    "replay_mutations": false,
+    "builds_or_tests_run": false,
+    "staging_or_commits": false,
+    "persistent_output": "fidelity-review.json only"
+  },
+  "protocol_deviations": [
+    "One source read window requested lines 61-122 (62 lines), exceeding the requested 60-line maximum by two lines; subsequent windows stayed within the requested maximum."
+  ],
+  "budget": {
+    "manual_tool_rounds": 19,
+    "turn_limit": 35,
+    "peak_token_limit": 250000,
+    "manual_count_basis": "Includes the final report-validation tool round; manually counted tool-bearing assistant rounds, not telemetry.",
+    "token_metrics": "unavailable",
+    "peak_tokens_measured": null,
+    "cumulative_tokens_measured": null,
+    "known_turn_budget_breach": false,
+    "known_context_budget_breach": false
+  }
+}

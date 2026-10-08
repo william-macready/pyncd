@@ -1,0 +1,439 @@
+diff --git a/leanncd/AGENTS.md b/leanncd/AGENTS.md
+index 98a6e55a38f597c7735cc1c85c1d4c5425cf647b..ccf8ae6d15c9f99aecc37711867fc5e6b361ad8d 100644
+--- a/leanncd/AGENTS.md
++++ b/leanncd/AGENTS.md
+@@ -179,7 +179,7 @@ Does not own: the Python implementation (`../data_structure/`, `../acset/`, etc.
+ | Checked plan backend | `LeanNCD/Eval/Plan/AGENTS.md` | checked, positional plan IR: source compiler, checkers, binary64/binary32 dense workers, adapters, JAX executable phase |
+ | Acset schema | `LeanNCD/Acset/AGENTS.md` | row-table schema + CSV text mechanics (mirrors Python `acset/`) |
+ | Algebra | `LeanNCD/Algebra/AGENTS.md` | algebra-functor signatures (`Algebra`/`TargetActegory`); deliberately no concrete instance yet |
+-| Semantic explorations | `LeanNCD/Semantics/AGENTS.md` | typed expression/readiness, finite additive collection/models, relation-only reference-machine soundness, coordinate-ranked progress, finite termination, and maximal-run correspondence via `LeanNCD.Semantics` and default semantic fixtures; no executable scheduler; prior spike retains its non-default target |
++| Semantic explorations | `LeanNCD/Semantics/AGENTS.md` | typed expression/readiness, finite additive collection/models, reference-machine soundness, coordinate-ranked progress, finite termination, and a computable validated reference executor with exact rational primitives via `LeanNCD.Semantics` and default semantic fixtures; prior spike retains its non-default target |
+ 
+ Small subsystems (no dedicated node — each <170 lines, single-file or near it): `Core/` (`Graded.lean` — `sh_act`/DGraded machinery consumed by `Algebra`; `Weave.lean` — `weave_unique`, itself a deferred sorry), `Mixins/`, `Props/` (`Generic.lean`), `Seam/` (`Adapter.lean` — strictifies `ColoredPROP` onto Mathlib's `MonoidalCategory`/`SymmetricCategory`, fully sorry-free), `Grothendieck/`, `Exec/` (`Uid.lean` — `CompileError` variants), `Instances/` (`StBr.lean`).
+ 
+diff --git a/leanncd/LeanNCD/Semantics.lean b/leanncd/LeanNCD/Semantics.lean
+index 0b864194b9616ffc5ed68c9d0b0324204f371630..62302bbe7f70f7024d48cc32f52bc401a6681c31 100644
+--- a/leanncd/LeanNCD/Semantics.lean
++++ b/leanncd/LeanNCD/Semantics.lean
+@@ -3,3 +3,4 @@ import LeanNCD.Semantics.Completeness
+ import LeanNCD.Semantics.Models
+ import LeanNCD.Semantics.Soundness
+ import LeanNCD.Semantics.Progress
++import LeanNCD.Semantics.RationalReference
+diff --git a/leanncd/LeanNCD/Semantics/AGENTS.md b/leanncd/LeanNCD/Semantics/AGENTS.md
+index e19b839d394277b0b5b3838bb0356c7ae3899290..6333554337182289dd6c90ef4ec1374244e109c7 100644
+--- a/leanncd/LeanNCD/Semantics/AGENTS.md
++++ b/leanncd/LeanNCD/Semantics/AGENTS.md
+@@ -7,13 +7,29 @@ separate from the production DSL evaluator and execution backends.
+ 
+ ## Current artifact
+ 
++`ExecutableState`, `ExecutableSelection`, and `ReferenceExecutor` realize the
++same reference `Step` edges computationally, with function-valued typed stores.
++Provide computational tensor equality and a complete, duplicate-free ordered
++`Executor.Schedule` (tensors and tagged occurrence/publication keys).
++`Schedule.reverse` is a debug presentation; selection restarts at the beginning
++after each edge. `runValidated` checks tensor-level input presence before
++initialization, including empty inputs, and returns the first offending tensor.
++`runFuel` is an arbitrary-state debug API: exhausted is not success or failure.
++`run` uses a proved initial bound; supplied address ranks rule out reachable
++blocking, but not ready undefinedness. Outcomes retain endpoints, legal typed
++event traces, and unavailable-read diagnostics. Model/uniqueness/denotation
++theorems concern the whole store, not only outputs. `RationalReference` offers
++exact rational scalar operations and the closed reciprocal/square registry;
++source elaboration, rank synthesis, and native floats are not provided.
++
+ The semantic validation layer `LeanNCD.Semantics` is reachable from `LeanNCD`.
+ `Types`, `Expr`, `Interpret`, `Readiness`, and `Completeness` separate typed
+ values/declarations/registries, structurally admitted expressions, strict
+ interpretation/footprints, structural stability/readiness, and whole-array
+ completeness. Default `Tests` includes `Semantics.ExpressionTest`,
+ `Semantics.NativeTest`, `Semantics.ContractTest`, `Semantics.CollectionModelTest`,
+-`Semantics.ReferenceMachineTest`, and `Semantics.RankedMachineTest`.
++`Semantics.ReferenceMachineTest`, `Semantics.RankedMachineTest`, and
++`Semantics.ExecutableReferenceTest`.
+ 
+ `Collection` represents Naperian coordinate families as functions. Pullback
+ is contravariant lookup; finite additive pushforward is covariant collection.
+@@ -30,7 +46,7 @@ This is semantic validation, not an execution-backend replacement. Scalar sorts
+ carriers are open; operations are data, not assumed machine-float semiring laws.
+ Contexts are typed valuation spaces with product extension, not named affine
+ syntax. Read admission is explicit; runtime boundary rejection ordering,
+-source checking, syntactic substitution, expression reindexing laws, raw writes, scheduling,
++source checking, syntactic substitution, expression reindexing laws, raw writes,
+ and full categorical/backend interpretation remain deferred.
+ See the [implementation plan](../../../papers/semantics/expression_readiness_plan.md)
+ and [authoring verification](../../../papers/semantics/expression_readiness_authoring_record.md)
+diff --git a/leanncd/LeanNCD/Semantics/RationalReference.lean b/leanncd/LeanNCD/Semantics/RationalReference.lean
+new file mode 100644
+index 0000000000000000000000000000000000000000..8766c584d8a7791e97094ae4543c6e15602e1446
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/RationalReference.lean
+@@ -0,0 +1,29 @@
++import LeanNCD.Semantics.ReferenceExecutor
++
++namespace LeanNCD.Semantics.RationalReference
++
++abbrev Carrier (_ : Unit) := ℚ
++
++def ops : (s : Unit) → ScalarOps (Carrier s) :=
++  fun _ => ⟨0, 1, (· + ·), (· * ·)⟩
++
++/- This closed registry is the supported primitive profile. There is no
++   translation of arbitrary backend operations or unsupported-op fallback. -/
++inductive Primitive
++  | reciprocal
++  | square
++  deriving DecidableEq, Repr
++
++@[reducible] def registry : Registry Carrier where
++  Op := Primitive
++  arity := fun _ => 1
++  input := fun _ _ => .scalar ()
++  output := fun _ => .scalar ()
++  domain
++    | .reciprocal => fun xs => decide (xs 0 ≠ 0)
++    | .square => fun _ => true
++  meaning
++    | .reciprocal => fun xs _ => (xs 0)⁻¹
++    | .square => fun xs _ => (xs 0) * (xs 0)
++
++end LeanNCD.Semantics.RationalReference
+diff --git a/leanncd/LeanNCD/Semantics/ReferenceExecutor.lean b/leanncd/LeanNCD/Semantics/ReferenceExecutor.lean
+new file mode 100644
+index 0000000000000000000000000000000000000000..17497faa4cf0dd2ea528765391ce32bb320101ab
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/ReferenceExecutor.lean
+@@ -0,0 +1,192 @@
++import LeanNCD.Semantics.ExecutableSelection
++
++namespace LeanNCD.Semantics.Program.Executor
++
++variable {K : S → Type} {σ : Declarations S} {r : Registry K}
++variable (P : Program K σ r) [DecidableEq σ.Tensor]
++variable [∀ t : P.Defined, AddCommMonoid (K (σ.signature t.val).sort)]
++variable (ops : (s : S) → ScalarOps (K s))
++
++theorem validate_accepts (schedule : Schedule P) (η : P.Input) :
++    validate P schedule η.val = .ok η := by
++  unfold validate
++  split
++  · rename_i t found
++    have bad := List.find?_some found
++    simp [η.property t] at bad
++  · rfl
++
++theorem validate_preserves (schedule : Schedule P)
++    (η : InputBinding (K := K) (σ := σ)) (input : P.Input)
++    (h : validate P schedule η = .ok input) : input.val = η := by
++  unfold validate at h
++  split at h
++  · contradiction
++  · cases h
++    rfl
++
++inductive Execution : List (Event P) → P.MachineState → P.MachineState → Prop
++  | nil (s) : Execution [] s s
++  | cons {c : P.Running} {e : Event P} {events : List (Event P)} {s : P.MachineState}
++      (legal : e.Legal P ops c) (tail : Execution events (e.effect P c) s) :
++      Execution (e :: events) (.running c) s
++
++theorem Execution.reaches {events : List (Event P)} {a b : P.MachineState}
++    (execution : Execution P ops events a b) : P.Reaches ops a b := by
++  induction execution with
++  | nil => exact .refl _
++  | cons legal _ ih =>
++    exact P.reaches_trans ops ((Reaches.refl _).tail (Event.legal_step P ops _ _ legal)) ih
++
++inductive Outcome
++  | complete (c : P.Running) (complete : P.Complete c)
++  | failed (t : P.Defined) (o : P.Occurrence t) (snapshot : P.Running)
++  | blocked (c : P.Running) (observations : List (Observation P)) (blocked : P.Blocked ops c)
++  | exhausted (c : P.Running)
++
++def Outcome.state : Outcome P ops → P.MachineState
++  | .complete c _ | .blocked c _ _ | .exhausted c => .running c
++  | .failed t o c => .failed t o c
++
++def Outcome.isExhausted : Outcome P ops → Bool
++  | .exhausted _ => true
++  | _ => false
++
++def Outcome.kind : Outcome P ops → String
++  | .complete _ _ => "complete"
++  | .failed _ _ _ => "failed"
++  | .blocked _ _ _ => "blocked"
++  | .exhausted _ => "exhausted"
++
++structure Result (start : P.MachineState) where
++  outcome : Outcome P ops
++  events : List (Event P)
++  execution : Execution P ops events start outcome.state
++
++def runFuel (schedule : Schedule P) (fuel : Nat) (start : P.MachineState) :
++    Result P ops start :=
++  match start with
++  | .failed t o c => ⟨.failed t o c, [], .nil _⟩
++  | .running c =>
++    letI := completeDecidable P c
++    if hc : P.Complete c then ⟨.complete c hc, [], .nil _⟩
++    else match hs : select P ops schedule c with
++    | none => ⟨.blocked c (observations P ops schedule c)
++        ⟨hc, (select_none_iff P ops schedule c).mp hs⟩, [], .nil _⟩
++    | some move => match fuel with
++      | 0 => ⟨.exhausted c, [], .nil _⟩
++      | fuel + 1 =>
++        let tail := runFuel schedule fuel (move.event.effect P c)
++        ⟨tail.outcome, move.event :: tail.events, .cons move.legal tail.execution⟩
++
++theorem runFuel_not_exhausted (schedule : Schedule P) (fuel : Nat) (s : P.MachineState)
++    (enough : P.stateMeasure s ≤ fuel) :
++    (runFuel P ops schedule fuel s).outcome.isExhausted = false := by
++  induction fuel generalizing s with
++  | zero =>
++    cases s with
++    | failed => rfl
++    | running c =>
++      simp only [stateMeasure] at enough
++      omega
++  | succ fuel ih =>
++    cases s with
++    | failed => rfl
++    | running c =>
++      unfold runFuel
++      split
++      · rfl
++      · split
++        · rfl
++        · rename_i move selected
++          apply ih
++          have decreases := P.step_decreases ops (move.event.legal_step P ops c move.legal)
++          omega
++
++def run (schedule : Schedule P) (η : P.Input) :
++    Result P ops (.running (P.initial η)) :=
++  runFuel P ops schedule (initialBudget P) (.running (P.initial η))
++
++theorem run_not_exhausted (schedule : Schedule P) (η : P.Input) :
++    (run P ops schedule η).outcome.isExhausted = false :=
++  runFuel_not_exhausted P ops schedule _ _ (le_of_eq (initialBudget_agrees P η).symm)
++
++theorem result_success (η : P.Input) (result : Result P ops (.running (P.initial η)))
++    (c : P.Running) (complete : P.Complete c)
++    (h : result.outcome = .complete c complete) : P.Successful ops η c := by
++  have reached := result.execution.reaches P ops
++  rw [h] at reached
++  exact ⟨reached, complete⟩
++
++theorem result_model (η : P.Input) (result : Result P ops (.running (P.initial η)))
++    (c : P.Running) (complete : P.Complete c) (h : result.outcome = .complete c complete) :
++    P.Models ops η (P.finalStore c complete) :=
++  P.successful_model ops η c (result_success P ops η result c complete h)
++
++theorem result_unique (η : P.Input) (result : Result P ops (.running (P.initial η)))
++    (c : P.Running) (complete : P.Complete c) (h : result.outcome = .complete c complete) :
++    ∀ ρ, P.Models ops η ρ → ρ = P.finalStore c complete :=
++  P.successful_unique ops η c (result_success P ops η result c complete h)
++
++theorem result_denotation (η : P.Input) (result : Result P ops (.running (P.initial η)))
++    (c : P.Running) (complete : P.Complete c) (h : result.outcome = .complete c complete) :
++    P.denotation ops η (P.successful_admInput ops η c
++      (result_success P ops η result c complete h)) = P.outputProjection (P.finalStore c complete) :=
++  P.successful_denotation ops η c (result_success P ops η result c complete h)
++
++theorem result_failure (η : P.Input) (result : Result P ops (.running (P.initial η)))
++    (t : P.Defined) (o : P.Occurrence t) (c : P.Running)
++    (h : result.outcome = .failed t o c) : ¬ ∃ ρ, P.Models ops η ρ := by
++  apply P.failed_no_model ops η t o c
++  have reached := result.execution.reaches P ops
++  rwa [h] at reached
++
++theorem result_not_blocked (certificate : P.RankCertificate) (η : P.Input)
++    (result : Result P ops (.running (P.initial η))) (c : P.Running)
++    (diagnostics : List (Observation P)) (blocked : P.Blocked ops c) :
++    result.outcome ≠ .blocked c diagnostics blocked := by
++  intro h
++  have reached := result.execution.reaches P ops
++  rw [h] at reached
++  exact blocked.2 (P.ranked_progress ops certificate η c reached blocked.1)
++
++theorem run_ranked_dichotomy (schedule : Schedule P) (certificate : P.RankCertificate)
++    (η : P.Input) :
++    (∃ c complete, (run P ops schedule η).outcome = .complete c complete) ∨
++    (∃ t o c, (run P ops schedule η).outcome = .failed t o c ∧
++      ¬ ∃ ρ, P.Models ops η ρ) := by
++  cases h : (run P ops schedule η).outcome with
++  | complete c complete => exact .inl ⟨c, complete, rfl⟩
++  | failed t o c => exact .inr ⟨t, o, c, rfl, result_failure P ops η _ t o c h⟩
++  | blocked c diagnostics blocked =>
++    exact False.elim (result_not_blocked P ops certificate η _ c diagnostics blocked h)
++  | exhausted c =>
++    have noExhaustion := run_not_exhausted P ops schedule η
++    simp [h, Outcome.isExhausted] at noExhaustion
++
++structure ValidatedResult where
++  input : P.Input
++  result : Result P ops (.running (P.initial input))
++
++def runValidated (schedule : Schedule P) (η : InputBinding (K := K) (σ := σ)) :
++    Except σ.Tensor (ValidatedResult P ops) :=
++  match validate P schedule η with
++  | .error t => .error t
++  | .ok input => .ok ⟨input, run P ops schedule input⟩
++
++theorem runValidated_error (schedule : Schedule P)
++    (η : InputBinding (K := K) (σ := σ)) (t : σ.Tensor)
++    (h : runValidated P ops schedule η = .error t) : (η t).isSome ≠ P.input t := by
++  unfold runValidated at h
++  split at h
++  · rename_i found
++    cases h
++    exact validate_error P schedule η t found
++  · contradiction
++
++#print axioms run_not_exhausted
++#print axioms run_ranked_dichotomy
++#print axioms result_model
++#print axioms result_failure
++
++end LeanNCD.Semantics.Program.Executor
+diff --git a/leanncd/lakefile.toml b/leanncd/lakefile.toml
+index a2bcaf978e19e363d81dbc72ca0aea502c7f991c..fade6d082a15031bdf2517886a2101614f5a068f 100644
+--- a/leanncd/lakefile.toml
++++ b/leanncd/lakefile.toml
+@@ -81,7 +81,7 @@ globs = ["Base.NumericTest", "Base.StTest", "Base.BrTest", "Base.BrWiringTest",
+          "Eval.Portfolio.KnownGapTest", "Eval.Portfolio.ScatterNonlinRejectTest",
+          "Semantics.ExpressionTest", "Semantics.NativeTest", "Semantics.ContractTest",
+          "Semantics.CollectionModelTest", "Semantics.ReferenceMachineTest",
+-         "Semantics.RankedMachineTest"]
++         "Semantics.RankedMachineTest", "Semantics.ExecutableReferenceTest"]
+ 
+ # Non-default experimental JAX-bridge codegen library. Deliberately absent from
+ # `defaultTargets`: it only builds when explicitly requested (`lake build JaxExperiment`, as the
+diff --git a/leanncd/test/Semantics/ExecutableReferenceTest.lean b/leanncd/test/Semantics/ExecutableReferenceTest.lean
+new file mode 100644
+index 0000000000000000000000000000000000000000..1f10514a994ab7978f13358670c3c77161d46bc9
+--- /dev/null
++++ b/leanncd/test/Semantics/ExecutableReferenceTest.lean
+@@ -0,0 +1,121 @@
++import LeanNCD.Semantics.RationalReference
++
++namespace LeanNCD.Semantics.ExecutableReferenceFixtures
++
++open Program Program.Executor RationalReference
++
++@[reducible] def shape : Shape := [⟨41, 3⟩]
++
++@[reducible] def declarations : Declarations Unit :=
++  ⟨Unit, fun _ => 7, fun a b _ => by cases a; cases b; rfl,
++    fun _ => ⟨(), shape⟩⟩
++
++def point (i : Fin 3) : Coord shape := (i, ())
++
++/- Donors: CollectionModelFixtures.duplicate/partialProgram and
++   ReferenceMachineFixtures.cycleP. Only the closed reference registry changes. -/
++@[reducible] def program (n : Nat)
++    (body : (Γ : Type) → Fin n → Expr Carrier declarations registry Γ (.scalar ())) :
++    Program Carrier declarations registry where
++  tensors := inferInstance
++  input := fun _ => false
++  output := fun _ => false
++  output_defined := by intros; rfl
++  statements := fun _ => n
++  valuations := fun _ _ => 1
++  guard := fun _ _ _ => true
++  destination := fun _ _ _ => point 0
++  body := fun _ s => body _ s
++
++def tag (n : Nat) (body) (s : Fin n) :
++    (program n body).Occurrence ⟨(), rfl⟩ := ⟨s, ⟨0, rfl⟩⟩
++
++def schedule (n : Nat) (body) : Schedule (program n body) where
++  tensors := [()]
++  tensors_nodup := by simp
++  tensors_complete := by intro t; cases t; simp
++  keys := (List.finRange n).map (fun s => .occurrence ⟨(), rfl⟩ (tag n body s)) ++
++    [.publication ⟨(), rfl⟩ (point 0), .publication ⟨(), rfl⟩ (point 1),
++      .publication ⟨(), rfl⟩ (point 2)]
++  keys_nodup := by
++    classical
++    rw [List.nodup_append]
++    refine ⟨?_, ?_, ?_⟩
++    · apply List.Nodup.map _ (List.nodup_finRange n)
++      intro s u h
++      have eq : tag n body s = tag n body u := by simpa using h
++      exact congrArg Sigma.fst eq
++    · simp [point, List.nodup_cons, Key.publication.injEq, Prod.mk.injEq]
++    · intro a ha b hb eq
++      obtain ⟨s, _, rfl⟩ := List.mem_map.mp ha
++      simp only [List.mem_cons, List.not_mem_nil, or_false] at hb
++      rcases hb with rfl | rfl | rfl <;> cases eq
++  keys_complete := by
++    intro k
++    cases k with
++    | occurrence t o =>
++      rcases t with ⟨⟨⟩, ht⟩
++      rcases o with ⟨s, ⟨v, hv⟩⟩
++      have ev : v = 0 := Subsingleton.elim _ _
++      subst v
++      apply List.mem_append_left
++      exact List.mem_map.mpr ⟨s, List.mem_finRange s, rfl⟩
++    | publication t p =>
++      rcases t with ⟨⟨⟩, ht⟩
++      rcases p with ⟨i, u⟩
++      cases u
++      apply List.mem_append_right
++      fin_cases i <;> simp [point]
++
++def duplicateBody (Γ : Type) (_ : Fin 2) :
++    Expr Carrier declarations registry Γ (.scalar ()) := .lit 2
++
++def failureBody (Γ : Type) (_ : Fin 1) :
++    Expr Carrier declarations registry Γ (.scalar ()) :=
++  .binary .mul (.lit 0) (.prim (r := registry) Primitive.reciprocal (fun _ => .lit 0))
++
++def strictPolicy : ReadPolicy ℚ shape where
++  resolve := fun raw =>
++        if h : 0 ≤ raw 0 ∧ raw 0 < 3 then
++          .at (⟨(raw 0).toNat, by change (raw 0).toNat < 3; omega⟩, ())
++        else .reject
++  inBounds := by
++        rintro ⟨i, u⟩
++        cases u
++        simp [Coord.raw, shape]
++
++def selfRead (Γ : Type) : Expr Carrier declarations registry Γ (.scalar ()) :=
++  .read () ⟨strictPolicy, fun _ => Coord.raw (point 0), fun _ => .at (point 0),
++    fun _ => strictPolicy.inBounds _⟩
++
++def blockedBody (Γ : Type) (_ : Fin 1) := selfRead Γ
++
++def summarize (n : Nat)
++    (body : (Γ : Type) → Fin n → Expr Carrier declarations registry Γ (.scalar ())) :
++    String × Nat × List (Option ℚ) × Nat :=
++  let P := program n body
++  match runValidated P ops (schedule n body) (fun _ => none) with
++  | .error _ => ("invalid-input", 0, [], 0)
++  | .ok result =>
++    let outcome := result.result.outcome
++    let snapshot := match outcome with
++      | .complete c _ | .blocked c _ _ | .exhausted c | .failed _ _ c => c
++    (outcome.kind, result.result.events.length,
++      [snapshot.published ⟨(), point 0⟩, snapshot.published ⟨(), point 1⟩,
++        snapshot.published ⟨(), point 2⟩],
++      (snapshot.pending ⟨(), rfl⟩).card)
++
++def checkSmoke (name : String) (actual expected : String × Nat × List (Option ℚ) × Nat) :
++    IO Unit := do
++  IO.println s!"{name}: {repr actual}"
++  unless actual == expected do
++    throw (IO.userError s!"{name}: expected {repr expected}, got {repr actual}")
++
++#eval checkSmoke "duplicate" (summarize 2 duplicateBody)
++  ("complete", 5, [some 4, some 0, some 0], 0)
++#eval checkSmoke "ready-failure" (summarize 1 failureBody)
++  ("failed", 1, [none, none, none], 1)
++#eval checkSmoke "blocked" (summarize 1 blockedBody)
++  ("blocked", 2, [none, some 0, some 0], 1)
++
++end LeanNCD.Semantics.ExecutableReferenceFixtures

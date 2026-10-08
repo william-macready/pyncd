@@ -1,0 +1,80 @@
+{
+  "status": "VERIFIED_EXECUTION_READY_PLAN; PRODUCTION_UNCHANGED",
+  "base_commit": "4a30ae09c87ef11d778f175a639b71225868170b",
+  "candidate_tree": "2eed13a7d4b1b354ad150ab489b3746279070180",
+  "patches_verified": 4,
+  "materialized_files_verified": 9,
+  "fixture_rows_observed": 22,
+  "all_fixture_rows_have_controls": true,
+  "controls_passed": 19,
+  "control_classes": {
+    "production_runtime": 2,
+    "fixture_contrast": 13,
+    "proof_type": 4
+  },
+  "labels_passed": [
+    "P1-pending",
+    "P2-barrier",
+    "P3-undefined",
+    "P4-effect",
+    "R1-reciprocal",
+    "R2-square",
+    "F1-tagged-body",
+    "F2-tag-projection",
+    "F3-zero-empty-excluded",
+    "F4-scalar-nonoutput",
+    "F5-input-order",
+    "F6-empty-presence",
+    "F7-fuel-terminal",
+    "F8-blocked-locator",
+    "F9-failure-snapshot",
+    "F10-coordinate-chain",
+    "S1-duplicate-smoke",
+    "S2-ready-failure-smoke",
+    "S3-blocked-smoke"
+  ],
+  "mutation_scripts": "unmodified base bytes; repository mutation wrappers invoked directly",
+  "restoration": "all 19 runner receipts report byte-identical restoration; all final materialized deliverables equal patch replay",
+  "full_default_build_jobs": 8704,
+  "logs": {
+    "controller-task3.log": {
+      "path": "/Users/williammacready/.copilot/session-state/835c8ec7-4595-4ed3-a54a-048a0d651b33/files/controller-task3.log",
+      "sha256": "19a7b908598d7f0ea53c3c21ec2c86e2932b920ce76b4f7e6e2bc914301c615b"
+    },
+    "controller-task4.log": {
+      "path": "/Users/williammacready/.copilot/session-state/835c8ec7-4595-4ed3-a54a-048a0d651b33/files/controller-task4.log",
+      "sha256": "4443bee86cf83595abf2aa50598308cb3a0df5bc006ba4c1dfe63cb33e2c1917"
+    },
+    "controller-mutations.log": {
+      "path": "/Users/williammacready/.copilot/session-state/835c8ec7-4595-4ed3-a54a-048a0d651b33/files/controller-mutations.log",
+      "sha256": "5f62b55274888d1d926f856011562001ff17e4db55ce281c719ab06dd9279edd"
+    },
+    "controller-smoke-verified.log": {
+      "path": "/Users/williammacready/.copilot/session-state/835c8ec7-4595-4ed3-a54a-048a0d651b33/files/controller-smoke-verified.log",
+      "sha256": "c36d1301e0c0cdeddb7c544e4404e4a56073dce34429e7ef9d125d363360cd9a"
+    },
+    "controller-full-build.log": {
+      "path": "/Users/williammacready/.copilot/session-state/835c8ec7-4595-4ed3-a54a-048a0d651b33/files/controller-full-build.log",
+      "sha256": "5b2e1439897e15a308c8eba5b984f496fbdce3702aec2bf9023fb860b1082bf4"
+    },
+    "planning-full-build.log": {
+      "path": "/Users/williammacready/.copilot/session-state/835c8ec7-4595-4ed3-a54a-048a0d651b33/files/planning-full-build.log",
+      "sha256": "426e3144b63bda3f5d5d7824b206a95f55a4dad6bc5757ec38706a9aa6de8335"
+    }
+  },
+  "manifest_sha256": "94e51519f1021fe3c1a51c58bef6679cd22d635016e0f8e92e47e65c804409e7",
+  "telemetry": "Claude-only reporter found no Copilot transcript; measured cumulative tokens and peak unavailable",
+  "reviews": {
+    "semantic-review": {
+      "status": "CLEAN",
+      "path": "papers/semantics/computable_reference_executor_artifacts/semantic-review.json",
+      "sha256": "c2eacd87c17dfbca944998e89d7b731d7bbb8a5d1f787032358bc65512125a4e"
+    },
+    "fidelity-review": {
+      "status": "CLEAN",
+      "path": "papers/semantics/computable_reference_executor_artifacts/fidelity-review.json",
+      "sha256": "2f193212e17dd413cde544b3d361eb99a7146618048409bb1f337e6ef3270b9d"
+    }
+  },
+  "planning_baseline_full_build_jobs": 8699
+}
