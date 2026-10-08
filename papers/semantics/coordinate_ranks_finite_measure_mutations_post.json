@@ -1,0 +1,56 @@
+[
+  {
+    "label": "CR1-dependency-omission",
+    "task": "01",
+    "file": "LeanNCD/Semantics/Ranks.lean",
+    "old": "b ∈ footprint (P.body t o.1) o.2}",
+    "new": "b ∈ ([] : List (Address σ))}",
+    "targets": ["Semantics.RankedMachineTest"],
+    "expect": ["error: LeanNCD/Semantics/Progress.lean", "Application type mismatch: The argument"]
+  },
+  {
+    "label": "CR2-nonstrict-rank",
+    "task": "01",
+    "file": "LeanNCD/Semantics/Ranks.lean",
+    "old": "rank b < rank a",
+    "new": "rank b ≤ rank a",
+    "targets": ["Semantics.RankedMachineTest"],
+    "expect": ["Tactic `apply` failed: could not unify the conclusion of `certificate.decreases`"]
+  },
+  {
+    "label": "CR3-defined-address-count-omission",
+    "task": "01",
+    "file": "LeanNCD/Semantics/Measure.lean",
+    "old": "P.pendingCount c + P.unpublishedCount c",
+    "new": "P.pendingCount c",
+    "targets": ["Semantics.RankedMachineTest"],
+    "expect": ["error: LeanNCD/Semantics/Measure.lean", "unsolved goals"]
+  },
+  {
+    "label": "CR4-pending-erasure-omission",
+    "task": "01",
+    "file": "LeanNCD/Semantics/Machine.lean",
+    "old": "Function.update c.pending t ((c.pending t).erase o)",
+    "new": "Function.update c.pending t (c.pending t)",
+    "targets": ["Semantics.RankedMachineTest"],
+    "expect": ["error: LeanNCD/Semantics/Measure.lean", "Type mismatch: After simplification, term"]
+  },
+  {
+    "label": "CR5-stopped-prefix-maximal",
+    "task": "02",
+    "file": "LeanNCD/Semantics/Progress.lean",
+    "old": "P.Reaches ops (.running (P.initial η)) s ∧ P.Terminal ops s",
+    "new": "P.Reaches ops (.running (P.initial η)) s ∧ True",
+    "targets": ["Semantics.RankedMachineTest"],
+    "expect": ["error: LeanNCD/Semantics/Progress.lean", "Function expected at"]
+  },
+  {
+    "label": "CR6-strict-right-read-omission",
+    "task": "03",
+    "file": "LeanNCD/Semantics/Interpret.lean",
+    "old": "| _, _, .binary _ l e, γ => footprint l γ ++ footprint e γ",
+    "new": "| _, _, .binary _ l _, γ => footprint l γ",
+    "targets": ["Semantics.RankedMachineTest"],
+    "expect": ["error: LeanNCD/Semantics/Readiness.lean", "Application type mismatch: The argument"]
+  }
+]

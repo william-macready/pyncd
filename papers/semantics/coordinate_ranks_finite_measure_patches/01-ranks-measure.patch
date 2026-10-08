@@ -1,0 +1,217 @@
+diff --git a/leanncd/LeanNCD/Semantics/Measure.lean b/leanncd/LeanNCD/Semantics/Measure.lean
+new file mode 100644
+index 0000000000000000000000000000000000000000..72da5e2c126f15629dd09a91e5932461e69f52f4
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Measure.lean
+@@ -0,0 +1,153 @@
++import LeanNCD.Semantics.Ranks
++
++namespace LeanNCD.Semantics.Program
++
++open scoped Classical
++
++variable {K : S → Type} {σ : Declarations S} {r : Registry K}
++variable (P : Program K σ r)
++
++noncomputable def pendingCount (c : P.Running) : Nat := ∑ t, (c.pending t).card
++
++noncomputable def unpublishedCount (c : P.Running) : Nat :=
++  ∑ a : P.DefinedAddress, if c.published (P.definedAddress a) = none then 1 else 0
++
++noncomputable def measure (c : P.Running) : Nat :=
++  P.pendingCount c + P.unpublishedCount c
++
++noncomputable def occurrenceCount : Nat := ∑ t : P.Defined, Fintype.card (P.Occurrence t)
++
++variable [∀ t : P.Defined, AddCommMonoid (K (σ.signature t.val).sort)]
++
++theorem initial_measure (η : P.Input) :
++    P.measure (P.initial η) = P.occurrenceCount + Fintype.card P.DefinedAddress := by
++  have absent (t : P.Defined) : η.val t.val = none := by
++    have h := η.property t.val
++    rw [t.property] at h
++    cases he : η.val t.val <;> simp_all
++  simp [measure, pendingCount, unpublishedCount, initial, definedAddress, absent,
++    occurrenceCount]
++
++theorem consume_measure (c : P.Running) (t : P.Defined) (o : P.Occurrence t)
++    (v : K (σ.signature t.val).sort) (pending : o ∈ c.pending t) :
++    P.measure c = P.measure (P.consume c t o v) + 1 := by
++  have term (u : P.Defined) :
++      (c.pending u).card =
++        ((P.consume c t o v).pending u).card + if u = t then 1 else 0 := by
++    by_cases h : u = t
++    · subst u
++      simpa [consume] using (Finset.card_erase_add_one pending).symm
++    · simp [consume, h]
++  have counts : P.pendingCount c = P.pendingCount (P.consume c t o v) + 1 := by
++    unfold pendingCount
++    simp_rw [term]
++    simp [Finset.sum_add_distrib]
++  have same : P.unpublishedCount (P.consume c t o v) = P.unpublishedCount c := rfl
++  unfold measure
++  rw [counts, same]
++  omega
++
++omit [∀ t : P.Defined, AddCommMonoid (K (σ.signature t.val).sort)] in
++theorem publish_measure (c : P.Running) (t : P.Defined)
++    (p : Coord (σ.signature t.val).axes) (unpublished : c.published ⟨t.val, p⟩ = none) :
++    P.measure c = P.measure (P.publish c t p) + 1 := by
++  let chosen : P.DefinedAddress := ⟨t, p⟩
++  have term (a : P.DefinedAddress) :
++      (if c.published (P.definedAddress a) = none then 1 else 0) =
++        (if (P.publish c t p).published (P.definedAddress a) = none then 1 else 0) +
++          if a = chosen then 1 else 0 := by
++    by_cases h : a = chosen
++    · subst a
++      simp [chosen, definedAddress, publish, unpublished]
++    · have ha : P.definedAddress a ≠ ⟨t.val, p⟩ :=
++        fun eq => h (P.definedAddress_injective eq)
++      simp [publish, ha, h]
++  have counts : P.unpublishedCount c = P.unpublishedCount (P.publish c t p) + 1 := by
++    unfold unpublishedCount
++    simp_rw [term]
++    simp [Finset.sum_add_distrib]
++  have same : P.pendingCount (P.publish c t p) = P.pendingCount c := rfl
++  unfold measure
++  rw [counts, same]
++  omega
++
++variable (ops : (s : S) → ScalarOps (K s))
++
++theorem running_step_measure {c d : P.Running}
++    (step : P.Step ops (.running c) (.running d)) : P.measure c = P.measure d + 1 := by
++  cases step with
++  | contribute c t o v pending _ => exact P.consume_measure c t o v pending
++  | publication c t p unpublished _ => exact P.publish_measure c t p unpublished
++
++noncomputable def stateMeasure : P.MachineState → Nat
++  | .running c => P.measure c + 1
++  | .failed _ _ _ => 0
++
++theorem step_decreases {a b : P.MachineState} (step : P.Step ops a b) :
++    P.stateMeasure b < P.stateMeasure a := by
++  cases step with
++  | contribute c t o v pending _ =>
++    have h := P.consume_measure c t o v pending
++    simp only [stateMeasure]
++    omega
++  | publication c t p unpublished _ =>
++    have h := P.publish_measure c t p unpublished
++    simp only [stateMeasure]
++    omega
++  | undefined => simp [stateMeasure]
++
++theorem step_wellFounded : WellFounded (fun b a => P.Step ops a b) :=
++  (InvImage.wf P.stateMeasure Nat.lt_wfRel.wf).mono
++    (fun _ _ h => P.step_decreases ops h)
++
++inductive Trace : Nat → P.MachineState → P.MachineState → Prop
++  | refl (s) : Trace 0 s s
++  | tail {n a b c} : Trace n a b → P.Step ops b c → Trace (n + 1) a c
++
++theorem trace_reaches {n : Nat} {a b : P.MachineState} (trace : P.Trace ops n a b) :
++    P.Reaches ops a b := by
++  induction trace with
++  | refl => exact .refl _
++  | tail _ step ih => exact ih.tail step
++
++theorem trace_bound {n : Nat} {a b : P.MachineState} (trace : P.Trace ops n a b) :
++    n + P.stateMeasure b ≤ P.stateMeasure a := by
++  induction trace with
++  | refl => omega
++  | tail _ step ih =>
++    have h := P.step_decreases ops step
++    omega
++
++theorem running_trace_bound {n : Nat} {c d : P.Running}
++    (trace : P.Trace ops n (.running c) (.running d)) : n ≤ P.measure c := by
++  have h := P.trace_bound ops trace
++  simp only [stateMeasure] at h
++  omega
++
++theorem failed_trace_bound {n : Nat} {c d : P.Running} {t : P.Defined}
++    {o : P.Occurrence t} (trace : P.Trace ops n (.running c) (.failed t o d)) :
++    n ≤ P.measure c + 1 := by
++  simpa [stateMeasure] using P.trace_bound ops trace
++
++theorem no_infinite_chain (f : Nat → P.MachineState) :
++    ¬ ∀ n, P.Step ops (f n) (f (n + 1)) := by
++  intro steps
++  have bound (n : Nat) : P.stateMeasure (f n) + n ≤ P.stateMeasure (f 0) := by
++    induction n with
++    | zero => omega
++    | succ n ih =>
++      have h := P.step_decreases ops (steps n)
++      omega
++  have h := bound (P.stateMeasure (f 0) + 1)
++  omega
++
++#print axioms initial_measure
++#print axioms consume_measure
++#print axioms publish_measure
++#print axioms step_wellFounded
++#print axioms trace_bound
++#print axioms running_trace_bound
++#print axioms failed_trace_bound
++#print axioms no_infinite_chain
++
++end LeanNCD.Semantics.Program
+diff --git a/leanncd/LeanNCD/Semantics/Ranks.lean b/leanncd/LeanNCD/Semantics/Ranks.lean
+new file mode 100644
+index 0000000000000000000000000000000000000000..e1e401893352b100f82d8874bc20f99ca71c1f9c
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Ranks.lean
+@@ -0,0 +1,52 @@
++import LeanNCD.Semantics.Machine
++
++namespace LeanNCD.Semantics.Program
++
++variable {K : S → Type} {σ : Declarations S} {r : Registry K}
++
++abbrev DefinedAddress (P : Program K σ r) :=
++  (t : P.Defined) × Coord (σ.signature t.val).axes
++
++def definedAddress (P : Program K σ r) (a : P.DefinedAddress) : Address σ :=
++  ⟨a.1.val, a.2⟩
++
++theorem definedAddress_injective (P : Program K σ r) :
++    Function.Injective P.definedAddress := by
++  rintro ⟨t, p⟩ ⟨u, q⟩ h
++  have ht : t = u := Subtype.ext (congrArg Sigma.fst h)
++  subst u
++  have hp : p = q := by simpa [definedAddress] using h
++  subst q
++  rfl
++
++def dependencies (P : Program K σ r) (a : Address σ) : Set (Address σ) :=
++  {b | ∃ (t : P.Defined) (o : P.Occurrence t),
++    a = ⟨t.val, P.destination t o.1 o.2⟩ ∧ b ∈ footprint (P.body t o.1) o.2}
++
++theorem input_dependencies_empty (P : Program K σ r) (a : Address σ)
++    (input : P.input a.1 = true) : P.dependencies a = ∅ := by
++  ext b
++  constructor
++  · rintro ⟨t, o, h, _⟩
++    have ht := congrArg Sigma.fst h
++    simp only at ht
++    rw [ht, t.property] at input
++    contradiction
++  · simp
++
++structure RankCertificate (P : Program K σ r) where
++  rank : Address σ → Nat
++  decreases : ∀ a b, b ∈ P.dependencies a → rank b < rank a
++
++noncomputable instance definedFintype (P : Program K σ r) : Fintype P.Defined := by
++  classical
++  letI := P.tensors
++  exact inferInstance
++
++noncomputable instance definedAddressFintype (P : Program K σ r) :
++    Fintype P.DefinedAddress := by
++  letI : ∀ t : P.Defined, Fintype (Coord (σ.signature t.val).axes) :=
++    fun t => Fintype.ofEquiv _ (canonicalLayout (σ.signature t.val).axes).enumerate
++  exact inferInstance
++
++end LeanNCD.Semantics.Program
