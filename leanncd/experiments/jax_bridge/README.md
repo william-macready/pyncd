@@ -22,6 +22,15 @@ or toolchain:
   affine reference, measured against native `jnp.einsum` computing the same contraction — not a
   permanent test, a one-off measurement for `papers/jax_evalplan_architecture.md` §7.6 row 2.
 
+Plus one Lean-only check, not a runner:
+
+- **`check-lean-drivers.sh [STRIDE]`**: builds `LeanNCD JaxExperiment Tests`, then runs the four Lean
+  generators (`EvalPlanSmoke`, `EvalPlanAffineSmoke`, `EvalPlanAffineCorpus`, `EvalPlanAffineSmoke32`)
+  into a temp directory and fails if any exits non-zero. No Python, no JAX. The drivers are outside every
+  Lake target, and a change to a precision default or to an `InputSignature` constructor breaks them at
+  RUN time (a typed `prepareEvalPlan` rejection), so only running them catches it. Run it after such a
+  change; the F32 default flip broke all four silently.
+
 ## `run.sh`: upstream `NetSpec` bridge
 
 The upstream bridge is a code generator, not an in-process Lean/Python FFI:
