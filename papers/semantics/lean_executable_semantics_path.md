@@ -9,9 +9,12 @@ an executable reference that we can debug and validate. It is a roadmap and
 code correspondence guide, not an implementation plan or a new semantic contract.
 The specification remains authoritative.
 
-**Snapshot: 2026-10-08, local main `565b17f`.** The expression/readiness,
+**Snapshot: 2026-10-08, verified executor implementation `6026f0b` on
+local-main baseline `c01cb33`.** The expression/readiness,
 collection/model, reference-machine soundness, and coordinate-ranks/finite-measure
-developments have landed, including maximal-run correspondence.
+developments have landed, including maximal-run correspondence. The computable
+validated reference executor and its exact-rational fixtures are now verified;
+both final whole-branch code-review lenses are clean.
 The public entry is
 [`LeanNCD.Semantics`](../../leanncd/LeanNCD/Semantics.lean), imported by
 [`LeanNCD`](../../leanncd/LeanNCD.lean). They are a semantic validation layer,
@@ -26,16 +29,21 @@ The central distinction is:
 - **Models are a mathematical relation.** `Models` and `AdmInput` are
   propositions; `denotation` selects a unique model nonconstructively. It is
   not an executable equation solver.
-- **The reference machine is currently a relation.** `Step` specifies legal
-  transitions and `Reaches` specifies finite reachability. Its updates are
-  currently noncomputable; fixtures construct runs by proofs, not by a scheduler.
+- **The reference relation now has a computable refinement.** `Step` still
+  specifies legal transitions and `Reaches` finite reachability. The executor
+  refines its noncomputable updates, selects exactly its eligible edges, and
+  retains typed selected-event paths and exact endpoints. It uses function-valued
+  stores and supplied complete ordered schedules, not synthesized schedules.
 - **Reached-run soundness is proved.** Any reached success yields the unique
   complete model; any reached ready-undefined failure excludes every model.
 - **Termination and ranked correspondence are proved.** Every reached prefix
   has a terminal extension; finite bounds hold without ranks. A coordinate-rank
   certificate excludes reachable blocking, and every maximal ranked run succeeds
   or explicitly fails according to model existence. These are relational
-  proofs, not an executable scheduler.
+  proofs. The default executor has a proved sufficient finite budget; a supplied
+  address-rank certificate excludes reachable blocking in that actual run.
+  Exact-rational runtime fixtures distinguish success, ready failure, blocking,
+  invalid input, and debug exhaustion without supplying a model witness.
 
 The intended path is therefore:
 
@@ -48,14 +56,14 @@ reference transitions + conservation + reached-run soundness      LANDED
                          |
 coordinate ranks + finite measure + maximal-run correspondence    LANDED
                          |
-computable state/step selection + validated reference executor    NEXT
+computable state/step selection + validated reference executor    LANDED
                          |
 source correspondence + differential debugging                    REMAINING
                          |
 compiled storage/backend refinement                              LATER
 ```
 
-The executor can first operate on directly constructed admitted core programs.
+The executor operates on directly constructed admitted core programs.
 A source elaborator is necessary for comparing source programs with production,
 not for first running and debugging the core semantics.
 
@@ -286,7 +294,9 @@ The transition graph also generates finite execution paths.
 `Step` and `Reaches` represent edges and finite reachability, respectively;
 `Reaches` is propositional, not an executable trace container or a
 formalized free-category interface. Soundness relates reachable complete
-states to the model relation. A future executor must select these same edges;
+states to the model relation. `Event.Legal` and `Event.legal_step` certify the
+executor's selected edges; `Execution.reaches` forgets its typed event path to
+the existing reachability relation. These are not a new categorical interpreter;
 a future backend must simulate their meaning, even if it batches several
 edges or changes storage representation.
 
@@ -587,12 +597,13 @@ mutation controls, and unsupported claims:
 | Collection/models | [CollectionModelTest](../../leanncd/test/Semantics/CollectionModelTest.lean) | [Collection/model execution](collection_model_execution_record.md) |
 | Reference transitions/soundness | [ReferenceMachineTest](../../leanncd/test/Semantics/ReferenceMachineTest.lean) | [Reference-machine execution](reference_machine_execution_record.md) |
 | Coordinate ranks/termination/correspondence | [RankedMachineTest](../../leanncd/test/Semantics/RankedMachineTest.lean) | [Coordinate-ranks/finite-measure execution](coordinate_ranks_finite_measure_execution_record.md) |
+| Computable validated reference | [ExecutableReferenceTest](../../leanncd/test/Semantics/ExecutableReferenceTest.lean) | [Executor implementation execution](computable_reference_executor_record.md#8-implementation-execution-2026-10-08) |
 
 All are discovered by the default `Tests` target. Existing fixtures cover
 strict zero multiplication, empty binders, whole-array selection obligations,
 heterogeneous primitives, duplicate contributions, colliding destinations,
 empty input presence, nonoutput equations, publication barriers, and failure
-versus unavailable reads. The machine fixtures include a proved successful
+versus unavailable reads. The earlier logical machine fixtures include a proved successful
 run and failure exclusion, but are not runtime executions by a scheduler.
 The cyclic blocked fixture is not separately proved reachable.
 
@@ -611,6 +622,17 @@ The full default build and integrated-main build passed. The follow-up removed
 three new unused-simp warnings; 14 inherited warnings remain, so validation is
 green, not warning-free.
 
+The executable fixtures run the exact-rational driver and assert 22 named rows,
+including selected transitions, literal whole-store equations, reversed
+schedules, singleton/empty domains, simultaneous invalid inputs, exact fuel
+boundaries, strict missing-address diagnostics, and retained failure state.
+All 19 controls passed with expected failures, byte-identical source restoration,
+and restored green builds: 4 proof/type rejections, 2 production runtime oracle
+kills, and 13 fixture contrasts. The post-mutation full default build passed
+(8,704 jobs); unusedSectionVars and unnecessarySeqFocus warnings remain.
+These controls do not claim 19 production-runtime kills or general source
+correspondence. Heterogeneous non-additive-input runtime coverage remains parked.
+
 Native expression fixtures use checked binary32/binary64 primitive APIs and
 observe rounding differences. They do not give machine floats exact additive
 laws or connect a floating-point backend to the complete-model theorem.
@@ -621,61 +643,76 @@ The earlier [semantic-core spike](tensor_logic_semantic_core_spike_record.md)
 and `ContractTest` supply a narrow signed-coordinate `StMat` seam, not a full
 categorical interpretation or source correspondence.
 
-## 5. Remaining work, in dependency order
+## 5. Computational milestone and remaining work
 
-### 5.1 Next: make the reference machine computational
+### 5.1 Landed: computable reference-machine refinement
 
-The next executable capability must implement the relation, not redefine it.
-For a concrete computable profile, supply:
+The executor implements the existing relation rather than redefining it:
 
-1. Computable finite address and occurrence enumeration, equality, and state
-   updates, replacing or refining the current noncomputable presentation.
-   Function-valued arrays may remain extensional or acquire finite storage
-   with a proved lookup/tabulation correspondence.
-2. A step selector that checks pending tags, `evalReady`, and publication
-   barriers. Prove each selected update is a `Step`, and that a reachable
-   noncomplete ranked state cannot be incorrectly reported as having no step.
-3. A driver with the proved finite bound and explicit terminal outcomes.
-   Derive success/model and failure/no-model correctness from the existing
-   soundness and landed progress results. Budget exhaustion must not look like
-   success or prove model nonexistence.
-4. A trace recording selected statement/valuation tags, destinations, readiness,
-   contributions, publications, and the exact failure snapshot. Formatting
-   and finer primitive diagnostics can refine this information without changing
-   definedness or rules.
+1. [ExecutableState](../../leanncd/LeanNCD/Semantics/ExecutableState.lean)
+   supplies computational equality, canonical finite presentations, updates
+   proved equal to `Program.consume` and `Program.publish`, and a budget proved
+   equal to the initial `stateMeasure`. Stores remain functions on dependent
+   coordinates. Only defined carriers need `AddCommMonoid`.
+2. [ExecutableSelection](../../leanncd/LeanNCD/Semantics/ExecutableSelection.lean)
+   checks pending membership, strict `evalReady`, and the exact publication
+   barrier. `select_none_iff` proves that no selection means no existing legal
+   `Step`, not merely that selected steps are sound. Selection restarts at the
+   first supplied key after each event; there is no global contribution-first
+   policy.
+3. [ReferenceExecutor](../../leanncd/LeanNCD/Semantics/ReferenceExecutor.lean)
+   validates tensor-level input presence before initialization, including empty
+   tensors, and returns the first offending tensor in the supplied order.
+   `run` uses the proved sufficient budget. `runFuel` is a debug API that
+   classifies failed, complete, and blocked endpoints before testing fuel for an
+   eligible move. Exhaustion is neither success nor a no-model result.
+4. Typed events retain statement/valuation identities, destinations, and
+   contribution/publication payloads. Failed outcomes retain the exact
+   pre-failure snapshot. `Result.execution` certifies the event path.
+   Blocked outcomes carry unavailable
+   read observations with actual missing addresses; `observations` also exposes
+   ready `Option` values. The trace is not a log of every scan/readiness check.
 
-A deterministic scheduling order makes debugging reproducible; alternative
-legal schedules test independence of successful results. No fairness assumption
-is needed for maximal runs under the finite, nonstuttering rules.
-For unrestricted programs, blocking must remain distinct from undefinedness;
-for the certified ranked profile, reachable blocking is excluded by proof.
+`Schedule` is supplied data with kernel-checked duplicate-freedom and complete
+coverage of tensors, occurrences, and all defined publication coordinates.
+Computational tensor equality and the program's finite tensor presentation are
+also supplied. Coordinate ranks remain proof data, not a synthesized or runtime
+checked certificate. Reachable ranked blocking is excluded without a model
+premise. Unranked blocking is not undefinedness and does not exclude models.
 
-The specification's exact-real carrier is not a promise of an exact-real
-runtime. A first executable oracle can use exact rationals and an explicitly
-supported primitive registry. Real transcendental operators, exact Complex
-proof fixtures, and native floating-point execution have different computational
-requirements. State the profile and reject unsupported cases explicitly.
+[RationalReference](../../leanncd/LeanNCD/Semantics/RationalReference.lean)
+offers the closed `Unit`-sort exact-rational profile: zero, one, addition,
+multiplication, reciprocal with nonzero domain, and square. There is no
+unsupported-operation translation or native-registry fallback. Exact-real
+transcendentals and native floating-point execution remain separate work.
 
-### 5.2 Validate the executable core against the equations
+### 5.2 Verified: executable core and equation fixtures
 
-Promote suitable existing logical fixtures into **actual executor runs**,
-with assertions on outcomes and intermediate transitions, not only final
-output values. Add the worked examples from
+The 22 actual executor assertions cover admitted examples from
 [Sections 21](tensor_logic_semantics.md#21-worked-denotational-examples)
-and [27](tensor_logic_semantics.md#27-worked-operational-examples) within
-the chosen computational profile.
+and [27](tensor_logic_semantics.md#27-worked-operational-examples) within this
+profile, not every example or source construct. Two statements times two
+valuations retain all four tags and collect `2 + 2 + 5 + 5 = 14` at one
+destination. Literal full-store equations and reversed schedules agree on
+`[0,14,0]`. Reciprocal before collection gives `3/4`, whereas reciprocal after
+addition gives `1/6`; square at `3` gives `9`. Neither independent candidate is
+supplied to the executor to justify progress or success.
 
-For small exact cases, compare the returned complete store with independently
-specified expected values and directly check all model equations. Compare
-multiple legal schedules and require agreement on all defined coordinates.
-Neither computation of collection in a supplied candidate environment nor
-verification of one model is by itself an equation solver or uniqueness proof;
-the ranked execution theorems provide that justification.
+The default budget for the tagged fixture is `8`; supplied fuel `6` exhausts,
+`7`, `8`, and `9` complete, and `0` exhausts only when an eligible move remains.
+Already complete or failed endpoints retain their terminal class at zero fuel.
+Other assertions separate missing addresses from destinations, unavailable
+reads from ready undefinedness, input presence from coordinate presence, and
+internal nonoutput failure from output completion.
 
-Controls must fail for the reasons the mathematics requires: occurrence
-deduplication, early publication, missing-input zero-fill, unavailable-as-zero,
-undefined-as-zero, skipped internal equations, and changed nonlinear boundaries.
-This adds runtime discrimination to the existing proof/type mutation evidence.
+The controller ran both mutation manifests and the full build in the actual
+execution worktree. The 19 controls preserve their proof/type, runtime-oracle,
+and fixture-contrast classifications. Their receipts and limitations are in
+the [execution record](computable_reference_executor_record.md#8-implementation-execution-2026-10-08).
+Existing generic soundness supplies uniqueness and denotation agreement;
+checking a literal candidate or computing collection alone is not an equation
+solver. Successful schedule agreement concerns the whole store, not failure
+selection, diagnostics, or trace independence.
 
 ### 5.3 Connect named source syntax and the production evaluator
 
@@ -724,11 +761,11 @@ schedule independence. Full $D$-graded categorical interpretation, general
 cyclic solving, and configurable boundary-policy integration are also separate
 extensions, not prerequisites silently added to the core executor.
 
-## 6. The milestone we are working toward
+## 6. The landed admitted-core milestone
 
-A debug-capable Lean reference is complete for a stated profile when a
-validated input and admitted ranked core program produce an inspectable,
-finite execution, with proved legal transitions, and:
+For the admitted exact-rational profile, a validated input, computational tensor
+equality, complete ordered schedule, and supplied coordinate-rank certificate
+now produce an inspectable finite execution with proved legal transitions, and:
 
 $$
 \begin{aligned}
@@ -743,13 +780,15 @@ $$
 \end{aligned}
 $$
 
-The driver must reach one of these outcomes on the certified ranked profile;
-invalid input, unsupported capabilities, and unsupported dependency forms are
-explicit admission errors, not successful values.
-The landed soundness work proves the implications **for reached states**;
-ranked progress and finite termination now prove terminal extensions and the
-maximal-run correspondence. The remaining executable stage must make a real
-Lean driver reach those outcomes and expose enough evidence to debug the path.
+`run_ranked_dichotomy` proves that the actual default driver reaches one of
+these outcomes. `result_model`, `result_unique`, and `result_denotation` refine
+successful whole-store soundness; `result_failure` requires an event path
+reached from validated initialization. It makes no no-model claim for arbitrary
+debug states, blocking, or exhaustion. Invalid input is rejected before
+initialization. Unsupported operations are outside the closed registry;
+source/rank/schedule admission and synthesis are not new runtime services.
+The generic executor retains heterogeneous carriers; validation does not
+establish the parked non-additive-input runtime fixture.
 
 The endpoint is an executable realization of the specified equations, not
 zero-seeded fixed-point iteration, a floating-point solver presented as exact

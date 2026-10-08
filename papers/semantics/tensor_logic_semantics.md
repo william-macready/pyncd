@@ -45,8 +45,8 @@ For the implementation path, see
 [From Tensor Logic semantics to a Lean executable reference](lean_executable_semantics_path.md).
 It maps this document's notation and mathematical clauses to the landed Lean
 definitions and proofs, explains their category-theoretic organization, and
-separates existing semantic validation from the remaining
-executable-reference, source-correspondence, and backend-refinement work.
+separates the verified admitted exact-rational reference executor from the
+remaining source-correspondence and backend-refinement work.
 
 ### Semantics at a glance
 
@@ -201,9 +201,16 @@ sequentially within each top-level section and are not subsection numbers:
 | Theorem 31.3 | Compiled correctness | Not formalized. |
 | Lemma 32.1 | Batched accumulation refines individual steps | Not formalized. |
 
-The Lean results concern the reference machine as a transition relation over
-abstract finite carriers and primitives. The rank certificate is supplied as
-data; there is no rank synthesis, executable scheduler, or source checker.
+The Lean results above concern the reference machine as a transition relation
+over abstract finite carriers and primitives. Its computable refinement now
+selects those same legal transitions, validates tensor-level input presence,
+and retains typed event paths and exact endpoints. The verified runtime profile
+uses exact rationals with reciprocal and square; successful initialized runs
+give the unique whole-store model, and reached ready failures exclude models.
+The rank certificate and complete ordered schedule are supplied as data;
+there is no rank/schedule synthesis or source checker, and no production/backend
+correspondence is claimed. Arbitrary debug blocking or exhaustion is not a
+no-model result.
 Items 1 and 2 of the proof targets in Section 28 (well-definedness of typed
 interpretation, and renaming and substitution) are not numbered statements;
 the companion document records what covers them. The table reflects

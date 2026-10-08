@@ -76,7 +76,8 @@ blocking. Maximal finite runs reach terminal endpoints, not arbitrary stopped pr
 Every reachable prefix has a terminal extension; ranked maximal runs succeed or
 explicitly fail, and initialization reaches a complete store exactly when Models is
 its singleton. Existing soundness supplies model uniqueness and denotation.
-These are noncomputable relations and proofs, not an executable scheduler or rank checker.
+These modules remain relations and proofs; the executor above refines their
+edges computationally. No runtime rank checker is provided.
 
 [`TensorLogicSemanticCoreSpike.lean`](TensorLogicSemanticCoreSpike.lean) proves
 read stability and partial-store consistency for a carrier-parametric scalar
