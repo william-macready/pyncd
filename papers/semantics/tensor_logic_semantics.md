@@ -50,7 +50,7 @@ executable-reference, source-correspondence, and backend-refinement work.
 
 ### Semantics at a glance
 
-The development rests on five definitions. Part I fixes the notation, and each
+The development rests on five ideas. Part I fixes the notation, and each
 item names the section that makes it precise. The colors are explained in the
 next subsection.
 
@@ -81,8 +81,8 @@ next subsection.
    targets it; $\textcolor{#A87C28}{\mathrm{UNDEFINED}}$ ends the run in an explicit failure when a
    ready body is undefined.
 5. **Correspondence (§26, §31).** For programs with a coordinate rank
-   certificate, a run succeeds exactly when $\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})$ is a
-   singleton and then returns that model. Otherwise it fails explicitly.
+   certificate, every maximal run succeeds exactly when $\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})$ is a
+   singleton and then returns that model; otherwise it fails explicitly.
    A valid compiled plan refines this machine.
 
 In the boundary example of Section 11.1, `T[0,c] = C[c]` and `T[r,0] = R[r]`
@@ -181,21 +181,22 @@ must preserve that difference rather than exclude empty domains implicitly.
 ### Proof status and numbered results
 
 The lemmas, propositions, theorems, and corollaries below are labeled where
-they are stated. Other sections cite them by label. Section numbers such as
-"Section 26.3" still name sections.
+they are stated. Other sections cite them by label. Labels are numbered
+sequentially within each top-level section and are not subsection numbers:
+"Theorem 26.5" is in Section 26.4, and "Section 26.3" names a section.
 
 | Result | Statement | Lean status (`LeanNCD.Semantics`) |
 | --- | --- | --- |
 | Proposition 19.1 | Pure-einsum elaboration correspondence | Open. The generic pushforward laws are proved (`pushforward_*` in `Collection`); the theorem relating source elaboration to them is not. |
 | Proposition 19.2 | Source-order invariance | Partial. The occurrence-relabeling form is proved (`models_relabel`); the statement-permutation corollary is not stated. |
 | Lemma 23.1 | Read stability | Proved: `evalWith_stable`, `interpret_stable` (`Readiness`). |
-| Lemma 26.1 | Conservation invariants | Proved: `reachable_invariant`, with `initial_invariant`, `consume_invariant`, `publish_invariant` (`Invariants`). |
-| Lemma 26.2 | Preservation of every candidate model | Proved: `candidate_preserved` (`Soundness`). |
+| Lemma 26.1 | Conservation invariants | Proved: `reachable_invariant` covers items 2 and 4 and the accumulator formula, with `initial_invariant`, `consume_invariant`, `publish_invariant` (`Invariants`). Monotone publication (item 3) has only the one-step lemma `publish_extends`. |
+| Lemma 26.2 | Preservation of every candidate model | Partly proved: `candidate_preserved` (`Soundness`) gives the store-agreement clause. The accumulator clause follows from the `Invariant` fields and `finished_accumulator`; it is not stated separately in Lean. |
 | Theorem 26.3 | A successful run gives the unique model; a failed run excludes every model | Proved: `successful_model`, `successful_unique`, `successful_admInput`, `successful_denotation`, `failed_no_model` (`Soundness`). |
 | Lemma 26.4 | Finite execution | Proved: `step_wellFounded`, `no_infinite_chain`, `running_trace_bound`, `failed_trace_bound` (`Measure`). |
 | Theorem 26.5 | Ranked progress | Proved: `ranked_progress`, `ranked_not_blocked` (`Progress`). |
 | Theorem 26.6 | Ranked correspondence | Proved: `maximal_dichotomy`, `model_maximal_success`, `no_model_maximal_failure`, `initialization_iff_singleton`, `successful_schedules_agree` (`Progress`). |
-| Corollary 26.7 | Ranked uniqueness | Follows from `model_maximal_success` and `successful_unique`; no separately named theorem. |
+| Corollary 26.7 | Ranked uniqueness | Follows from `model_maximal_success`, `maximal_extension` and `successful_unique`; no separately named theorem. |
 | Lemma 31.2 | Terminal adequacy of a valid plan | Not formalized. |
 | Theorem 31.3 | Compiled correctness | Not formalized. |
 | Lemma 32.1 | Batched accumulation refines individual steps | Not formalized. |
@@ -1171,9 +1172,9 @@ For example, real ReLU has one scalar argument and result. Softmax is
 registered for every $m\ge0$, with one argument and result of type
 $\mathbb{R}^{[m]}$. Its domain of definition is all of $\mathbb{R}^{[m]}$
 when $m>0$ and is empty when $m=0$, matching the nonempty requirement of
-Section 8. A statement whose slice domain is empty has no occurrences and
-never demands it, so it still type checks; a demanded application to an
-empty array is undefined.
+Section 8. Because softmax is registered at $m=0$, a statement whose slice
+domain is empty type checks; having no occurrences, it never demands the
+application. A demanded application to an empty array is undefined.
 A user-supplied $F:\mathbb{R}^{[d]}\to\mathbb{R}^{[d]}$ can be a registered
 array operator, with its domain specified in the same way.
 
@@ -1460,8 +1461,8 @@ retain any axis identities and explicitly justified identifications.
 Because $\textcolor{#5688C7}{I}_a=[n_a]$ is a set of integers (Section 3.1), these
 judgments see only coordinate ranges: two axes of equal extent are
 indistinguishable to them. Distinguishing such axes is the job of domain
-resolution (Section 15.1) and the implementation mapping, not of the core
-rules.
+resolution (assumed before elaboration in Section 15.1) and the
+implementation mapping, not of the core rules.
 
 The core permits an explicitly restricted index domain. For example,
 with $A$ of shape $(3)$, $B$ of shape $(5)$, and $i\in[3]$, the reads
@@ -1840,8 +1841,8 @@ W[p,r]\otimes X[i+p,2j+r],
 $$
 
 where the displayed $i,j$ binders abbreviate their declared domains.
-Alternatively, those inequalities can be the statement guard, leaving
-other output coordinates without contributions. That specifies a
+Alternatively, with a larger declared output domain, those inequalities can
+be the statement guard, leaving other output coordinates without contributions. That specifies a
 guarded computation, not zero-padded convolution.
 
 ### 16.5 Softmax over an attention slice
@@ -1942,9 +1943,10 @@ named tensor, so its whole fiber is collected before any division is ready
 (Section 25.2).
 
 The two forms differ on fully masked rows. Replace $t\le q$ by the strict mask
-$t<q$. Row $q=0$ then has no unmasked key. In the first form the denominator
-at $q=0$ is the empty sum $0_K$, the division is undefined at an actual
-occurrence, and the program has no model (the machine ends in
+$t<q$, and assume $q_0>0$ and $\textcolor{#5688C7}{s}_0>0$. Row $q=0$ then has no unmasked key.
+In the first form the denominator at $q=0$ is a sum of $\textcolor{#5688C7}{s}_0$ masked zeros,
+equal to $0_K$, so the division is undefined at an actual occurrence and the
+program has no model (the machine ends in
 $\textcolor{#A87C28}{\mathsf{Failed}}$). In the guarded form row $0$ has no
 occurrence of $A$, so $A[0,\textcolor{#5688C7}{s}]=0$ is defined. This is the guard-versus-multiplier
 distinction of Section 21.3 again.
@@ -3677,8 +3679,8 @@ refinement problem.
 ### 29.1 Plans, commands, and annotations
 
 Fix a structurally well-formed program $\textcolor{#9D75C4}{P}$ in the coordinate-ranked fragment
-(a hypothesis that a schedule certificate already implies; see the end of
-Section 29.3).
+(the rank certificate of Section 23.4, which a schedule certificate already
+implies; see the end of Section 29.3).
 An execution plan $\textcolor{#C16C86}{\Pi}$ records the source signature and tensor roles
 $(\textcolor{#5688C7}{\mathrm{In}},\textcolor{#5688C7}{\mathrm{Def}},\textcolor{#5688C7}{\mathrm{Out}})$,
 a finite buffer collection $\textcolor{#C16C86}{\mathcal{B}}$ with capacities, and a finite
@@ -3974,7 +3976,8 @@ satisfies all of the following.
 1. **Schedule.** The coverage and order conditions 1-4 of Section 29.3.
 2. **Initialization.** The initialization obligation of Section 31.2.
 3. **Step simulation.** The successful-step simulation obligation of
-   Section 31.2, including the representation requirements of Section 30.
+   Section 31.2, including the representation requirements and the output
+   decoder of Sections 30.2-30.4.
 4. **Failure matching.** Every $\textcolor{#C16C86}{\mathsf{PlanFailed}}(\textcolor{#9D75C4}{o})$ has a matching
    reference segment (Section 31.3).
 5. **Progress.** The concrete progress and kernel-termination obligation of
@@ -3983,8 +3986,8 @@ satisfies all of the following.
 Condition 1 is a static check on the plan. Conditions 2-5 quantify over all
 well-typed inputs and reachable related states, and conditions 3-5 are
 discharged kernel by kernel. Terminal adequacy is not a sixth condition; it
-follows from the others (Lemma 31.2). The rank certificate of Section 29.1 is
-implied by condition 1 (end of Section 29.3).
+follows from the others (Lemma 31.2). The rank certificate of Section 23.4,
+assumed in Section 29.1, is implied by condition 1 (end of Section 29.3).
 
 A proposed compiler may return an accepted plan satisfying
 Definition 31.1,
@@ -4074,7 +4077,8 @@ $\textcolor{#9D75C4}{\mathcal{O}}_{\textcolor{#9D75C4}{P}}$ and $\textcolor{#568
 every defined address is published, and the input addresses were published
 initially; hence $\mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma})=\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}$. Every output
 address lies in $\textcolor{#A87C28}{\mathop{\mathrm{Need}}\nolimits}_{\mathrm{pub}}$ (Section 30.2), so its $\textcolor{#A87C28}{\mathsf{pub}}$ resource
-is mapped, and the memory equation of Section 30.2 gives
+is mapped, and the decoder requirement of Section 30.4 together with the memory
+equation of Section 30.2 gives
 $\textcolor{#C16C86}{\mathop{\mathrm{Decode}}\nolimits}_{\textcolor{#C16C86}{\Pi}}(\textcolor{#C16C86}{\mathsf{C}})(T)[p]=\textcolor{#C16C86}{M}[\textcolor{#C16C86}{\lambda}_{\textcolor{#C16C86}{\mathsf{C}}}(\textcolor{#A87C28}{\mathsf{pub}}((T,p)))]=\textcolor{#A87C28}{\sigma}(T,p)$.
 
 Write
@@ -4094,7 +4098,9 @@ well-typed.
   and $\textcolor{#398B83}{\zeta}=\textcolor{#398B83}{\rho}|_{\textcolor{#5688C7}{\mathrm{Out}}}$.
 - (b) If a run ends in $\textcolor{#C16C86}{\mathsf{PlanFailed}}(\textcolor{#9D75C4}{o})$, then
   $\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})=\varnothing$.
-- (c) In the error-free profile, the converse of (a) also holds:
+- (c) In the error-free profile, an error-free maximal run exists, every
+  such run ends in decoded success or $\textcolor{#C16C86}{\mathsf{PlanFailed}}$, and the converse
+  of (a) holds:
 
 $$
 \textcolor{#C16C86}{\mathop{\mathrm{Start}}\nolimits}_{\textcolor{#C16C86}{\Pi}}(\textcolor{#398B83}{\eta})\textcolor{#C16C86}{\Downarrow}_{\textcolor{#C16C86}{\Pi}}\textcolor{#398B83}{\zeta}
@@ -4110,25 +4116,28 @@ $\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{P}\textcolor{#398B83}{\rrbr
 the partial denotation outside its domain.
 
 *Argument.* For (a), initialization and successful-step simulation
-produce a reachable reference state; Lemma 31.2 makes it complete.
+produce a reachable reference state; Lemma 31.2 makes it complete and
+identifies the decoded output with $\textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sigma}}|_{\textcolor{#5688C7}{\mathrm{Out}}}$.
 Theorem 26.3 then gives the unique model and the stated decoded output.
 For (b), a matched concrete failure gives a reference run ending in
 $\textcolor{#A87C28}{\mathsf{Failed}}$, so $\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})=\varnothing$ by
 Theorem 26.3.
 
-For (c), a model excludes matched failure by
-Lemma 26.2. Concrete progress, terminating kernels, and the finite command
-counter force a successful final state, whose decoder returns that model's
-outputs. If there is no model, successful finishing is impossible by (a), so every
-maximal valid-plan run reports a matched semantic failure.
+For (c), concrete progress, terminating kernels, and the finite command
+counter give an error-free maximal run, and every error-free maximal run
+ends in decoded success or matched failure. If a model exists, Lemma 26.2
+excludes matched failure, so the run ends in decoded success with output
+$\textcolor{#398B83}{\rho}|_{\textcolor{#5688C7}{\mathrm{Out}}}$ by (a). If no model exists, success is
+impossible by (a), so every error-free maximal run reports a matched semantic
+failure.
 
 Outside the error-free profile a valid plan can end in an implementation error
 even when a model exists; (a) and (b) are unaffected.
 
 The theorem is conditional on Definition 31.1. Its hypotheses are exactly
-those conditions; the generic steps (Lemma 31.2 and, for batched kernels,
-Lemma 32.1) are proved above, while conditions 3-5 remain an obligation on
-each kernel. It is a compiler proof specification with a mathematical
+those conditions; the generic steps (Lemma 31.2 above and, for batched
+kernels, Lemma 32.1 in Section 32.1) are argued on paper, while conditions
+3-5 remain an obligation on each kernel. It is a compiler proof specification with a mathematical
 argument, not a claim that a particular compiler or kernel has already been
 verified.
 
@@ -4463,7 +4472,7 @@ of their individual components.
 | $\textcolor{#C16C86}{\lambda}_{\textcolor{#C16C86}{\mathsf{C}}}$ | Partial resource-to-slot layout view |
 | $\textcolor{#C16C86}{\mathcal{R}}_{\textcolor{#C16C86}{\Pi}}$ | Concrete/reference representation relation |
 | $\textcolor{#C16C86}{\mathop{\mathrm{Start}}\nolimits}_{\textcolor{#C16C86}{\Pi}},\textcolor{#C16C86}{\mathop{\mathrm{Decode}}\nolimits}_{\textcolor{#C16C86}{\Pi}}$ | Concrete initialization and whole-output decoding |
-| $\textcolor{#9D75C4}{P}\vdash\textcolor{#C16C86}{\Pi}\ \textcolor{#C16C86}{\mathsf{valid}}$ | Certified schedule, representation, and kernel validity |
+| $\textcolor{#9D75C4}{P}\vdash\textcolor{#C16C86}{\Pi}\ \textcolor{#C16C86}{\mathsf{valid}}$ | Valid plan: certified schedule, representation, and kernel behavior (Definition 31.1) |
 | $\textcolor{#C16C86}{\longrightarrow}_{\textcolor{#C16C86}{\Pi}},\textcolor{#C16C86}{\Downarrow}_{\textcolor{#C16C86}{\Pi}}$ | Concrete plan-step and decoded successful-execution relations |
 | $\textcolor{#C16C86}{\mathsf{PlanFailed}}(\textcolor{#9D75C4}{o})$ | Terminal concrete failure matched to an undefined source occurrence |
 
