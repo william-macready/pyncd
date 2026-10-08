@@ -77,6 +77,8 @@ mutation-harness steps); by raw tool-call count T4a, T5a, T5b, T6a, T6c also exc
 - Direct `Eval.evalScatter` has no f32 refusal (`rejectUnsupportedStorage`): pre-existing for explicit `f32`, now
   reaching every default scatter in direct callers with `decls = []` (ScatterTest, ScatterNonlinRejectTest);
   production callers refuse first. About 1 small Direct-path dispatch.
+  **CLOSED** by the commit `fix(leanncd): evalScatter refuses binary32 names` (guard at the entry; ScatterTest and
+  ScatterNonlinRejectTest callers re-spelled with explicit `f64` declarations).
 - Dead fallbacks in `Compile.lean` still say `.f64` (the `.state si` arm, `compiled.stateSigs.getD`): verified dead
   by review A, no behaviour difference; about 0.2 dispatch if wanted for consistency.
 - `PropertyOracle/ScanUnroll.lean` public `schedOfCase` is unwrapped (site table S cell); about 1 small dispatch.

@@ -26,6 +26,10 @@ def evalScatter (decls : List Decl) (env : HashMap String DenseTensor) (sizes : 
   match rejectComplexDecls decls with
   | .error e => throw (.compile e)
   | .ok () => pure ()
+  -- The reference evaluator is binary64-only: a name committed to binary32 (undeclared included)
+  -- is refused here, at this entry, before the nonlinearity check / gathering — the same per-name
+  -- rule (`rejectUnsupportedStorage`) every sibling entry applies (cf. `evalAssignDtypedSeeded`).
+  rejectUnsupportedStorage decls (nm :: readNames rhs)
   -- Defensive check (belt-and-suspenders — Spike-3 Stage-0 policy, SHORT-TERM not permanent):
   -- the surface compiler's `checkScatterNonlin` (DSL/Pipeline/Structural.lean) is the primary gate
   -- rejecting a non-identity scatter nonlinearity, but a programmatic caller can build this AST
