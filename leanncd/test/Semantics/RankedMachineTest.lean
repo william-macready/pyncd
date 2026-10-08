@@ -78,7 +78,7 @@ def boundaryCertificate : boundaryP.RankCertificate :=
 
 theorem boundary_no_edge (a b : Address declarations) : b ∉ boundaryP.dependencies a := by
   rintro ⟨t, o, _, read⟩
-  simp [boundaryP, expressionProgram, footprint] at read
+  simp [footprint] at read
 
 -- Donors: nested and arrayPrimitive; retain reduction and primitive argument reads.
 @[reducible] def reductionP := expressionProgram 1 (fun _ => 0) true
@@ -263,7 +263,7 @@ theorem distinct_first_failures :
       (.failed twoBadTarget (twoBadTag s) twoBadInitial)) ∧ twoBadTag 0 ≠ twoBadTag 1 := by
   constructor
   · intro s
-    refine ⟨(Reaches.refl _).tail (.undefined _ _ _ (by simp [twoBadInitial, initial]) rfl), ?_⟩
+    refine ⟨(Reaches.refl _).tail (.undefined _ _ _ (by simp [initial]) rfl), ?_⟩
     rintro ⟨u, step⟩
     exact twoBad.failed_terminal ops _ _ _ u step
   · intro eq
