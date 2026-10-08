@@ -12,7 +12,8 @@ The semantic validation layer `LeanNCD.Semantics` is reachable from `LeanNCD`.
 values/declarations/registries, structurally admitted expressions, strict
 interpretation/footprints, structural stability/readiness, and whole-array
 completeness. Default `Tests` includes `Semantics.ExpressionTest`,
-`Semantics.NativeTest`, `Semantics.ContractTest`, and `Semantics.CollectionModelTest`.
+`Semantics.NativeTest`, `Semantics.ContractTest`, `Semantics.CollectionModelTest`,
+and `Semantics.ReferenceMachineTest`.
 
 `Collection` represents Naperian coordinate families as functions. Pullback
 is contravariant lookup; finite additive pushforward is covariant collection.
@@ -30,7 +31,7 @@ carriers are open; operations are data, not assumed machine-float semiring laws.
 Contexts are typed valuation spaces with product extension, not named affine
 syntax. Read admission is explicit; runtime boundary rejection ordering,
 source checking, syntactic substitution, expression reindexing laws, raw writes, scheduling,
-publication, and full categorical/backend interpretation remain deferred.
+and full categorical/backend interpretation remain deferred.
 See the [implementation plan](../../../papers/semantics/expression_readiness_plan.md)
 and [authoring verification](../../../papers/semantics/expression_readiness_authoring_record.md)
 for clause coverage, observed fixtures, and validation.
@@ -39,6 +40,14 @@ for clause coverage, observed fixtures, and validation.
 unavailable reads from ready undefinedness. `evalWith` is a low-level partial
 computation whose `none` result alone does not distinguish those cases.
 Use the readiness entry, not that helper, to classify execution eligibility.
+
+`Machine` gives a relation-only reference machine with immutable published values,
+retained accumulators, and finite tagged pending occurrences. `Invariants` uses
+existential proof-only consumed-value history for conservation. `Soundness` proves
+that reached success is a complete model, unique among all models, and projects to
+the existing denotation; a reachable ready failure excludes every model. No rank
+or supplied model witness is needed for successful soundness. Dependency blocking
+is not failure: cyclic solving, progress, measures, and termination are not supplied.
 
 [`TensorLogicSemanticCoreSpike.lean`](TensorLogicSemanticCoreSpike.lean) proves
 read stability and partial-store consistency for a carrier-parametric scalar
@@ -56,6 +65,6 @@ remains available for standalone checks.
 Read the [plan](../../../papers/semantics/tensor_logic_semantic_core_spike_plan.md)
 and [results](../../../papers/semantics/tensor_logic_semantic_core_spike_record.md)
 before extending that spike. The validation layer covers the admitted
-array/heterogeneous expression fragment and finite additive program models,
-but not pure-einsum elaboration correctness, publication, cyclic solving,
-general unique-model existence, or complete categorical/backend interpretations.
+array/heterogeneous expression fragment, finite additive program models, and
+reference-machine soundness, but not pure-einsum elaboration correctness, cyclic
+solving, general unique-model existence, or complete categorical/backend interpretations.

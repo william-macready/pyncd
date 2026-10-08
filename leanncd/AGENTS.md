@@ -179,7 +179,7 @@ Does not own: the Python implementation (`../data_structure/`, `../acset/`, etc.
 | Checked plan backend | `LeanNCD/Eval/Plan/AGENTS.md` | checked, positional plan IR: source compiler, checkers, binary64/binary32 dense workers, adapters, JAX executable phase |
 | Acset schema | `LeanNCD/Acset/AGENTS.md` | row-table schema + CSV text mechanics (mirrors Python `acset/`) |
 | Algebra | `LeanNCD/Algebra/AGENTS.md` | algebra-functor signatures (`Algebra`/`TargetActegory`); deliberately no concrete instance yet |
-| Semantic explorations | `LeanNCD/Semantics/AGENTS.md` | typed expression/readiness and finite additive collection/models via `LeanNCD.Semantics` and default semantic fixtures; prior spike retains its non-default target |
+| Semantic explorations | `LeanNCD/Semantics/AGENTS.md` | typed expression/readiness, finite additive collection/models, and relation-only reference-machine conservation/soundness via `LeanNCD.Semantics` and default semantic fixtures; prior spike retains its non-default target |
 
 Small subsystems (no dedicated node — each <170 lines, single-file or near it): `Core/` (`Graded.lean` — `sh_act`/DGraded machinery consumed by `Algebra`; `Weave.lean` — `weave_unique`, itself a deferred sorry), `Mixins/`, `Props/` (`Generic.lean`), `Seam/` (`Adapter.lean` — strictifies `ColoredPROP` onto Mathlib's `MonoidalCategory`/`SymmetricCategory`, fully sorry-free), `Grothendieck/`, `Exec/` (`Uid.lean` — `CompileError` variants), `Instances/` (`StBr.lean`).
 
