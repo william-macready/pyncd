@@ -220,8 +220,9 @@ on" claim against the code when that slice's plan is written.
    > (bullet above) were examined on 2026-10-07 (`papers/f32_outside_paths_options.md`): the Python/JSON/CSV/
    > tsncd side carries no element type and sends no tensor declarations to Lean, so it needs no change; the
    > legacy evaluator is DECIDED (option A) to stay the binary64 reference oracle, documented in
-   > `LeanNCD/Eval/AGENTS.md`. Still open and optional: a compile-only check for the `jax_bridge` drivers
-   > (Decision 2, option B, not yet approved).
+   > `LeanNCD/Eval/AGENTS.md`. The `jax_bridge` drivers are now guarded by
+   > `leanncd/experiments/jax_bridge/check-lean-drivers.sh` (Decision 2, option B; Lean side only, run it
+   > after a precision-default, storage-rule or `InputSignature` change).
 
 Resulting order: **F32-B (optionally with the `f64` keyword) → F32-D → F32-C → F32-JAX → a
 default-flip-and-migration slice.** F32-E stays contingent on the single-real-precision invariant

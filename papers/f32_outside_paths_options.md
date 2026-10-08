@@ -8,7 +8,10 @@ the code on `main` at `2e850b14` (2026-10-07); no runner or build was executed f
 
 - **Decision 1: option A chosen (2026-10-07).** The legacy evaluator stays the binary64 reference
   oracle; recorded in `leanncd/LeanNCD/Eval/AGENTS.md` (Contracts) and `papers/f32_evalplan.md` section 1.4.
-- Decision 2 (compile-only check for the JAX drivers): not yet approved. Decision 3: no action.
+- **Decision 2: option B done (2026-10-07).** `leanncd/experiments/jax_bridge/check-lean-drivers.sh` runs the
+  four drivers' Lean side (no Python); with the pre-fix drivers it reports FAIL for all four, on the current
+  tree it passes. It must RUN the drivers, not only typecheck them: the breakage is a run-time rejection.
+  Decision 3: no action.
 
 ## Short answer
 
