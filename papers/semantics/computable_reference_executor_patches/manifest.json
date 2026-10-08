@@ -1,0 +1,173 @@
+{
+  "base_commit": "4a30ae09c87ef11d778f175a639b71225868170b",
+  "candidate_commit": "be51d96c66c5f823754fd493b39e669237f30258",
+  "candidate_tree": "2eed13a7d4b1b354ad150ab489b3746279070180",
+  "tasks": [
+    {
+      "task": 1,
+      "parent_commit": "4a30ae09c87ef11d778f175a639b71225868170b",
+      "commit": "b1ffa7029d1c3e6a7748a938211ff658461c4c15",
+      "subject": "feat(semantics): add computable state refinements and input validation",
+      "tree": "0a8abb37d8892a93b32794fd3249b5025841b6d6",
+      "patch": "papers/semantics/computable_reference_executor_patches/01.patch",
+      "patch_sha256": "cbba6b0697eafe7a10a77d78e973f85888624090d2cf9d7e5e3e112f05f44a41",
+      "files": [
+        "leanncd/LeanNCD/Semantics/ExecutableState.lean"
+      ],
+      "symbols": {
+        "leanncd/LeanNCD/Semantics/ExecutableState.lean": [
+          "finiteDefined",
+          "finiteCoords",
+          "addressEq",
+          "Key",
+          "Schedule",
+          "Schedule.reverse",
+          "validate",
+          "validate_error",
+          "consume",
+          "publish",
+          "consume_agrees",
+          "publish_agrees",
+          "initialBudget",
+          "initialBudget_agrees",
+          "completeDecidable",
+          "fiberDecidable"
+        ]
+      }
+    },
+    {
+      "task": 2,
+      "parent_commit": "b1ffa7029d1c3e6a7748a938211ff658461c4c15",
+      "commit": "d0bb9a7f275a57c3e321e1ddb5a6c144cef891d5",
+      "subject": "feat(semantics): select exactly the executable reference machine edges",
+      "tree": "ea92a8622e0d2864c0f15f3a126e2534cf6729f3",
+      "patch": "papers/semantics/computable_reference_executor_patches/02.patch",
+      "patch_sha256": "56d85f03707a169e8ee713a7868082f6bc9dd60a204efa1feec67a82d7fece0d",
+      "files": [
+        "leanncd/LeanNCD/Semantics/ExecutableSelection.lean"
+      ],
+      "symbols": {
+        "leanncd/LeanNCD/Semantics/ExecutableSelection.lean": [
+          "Event",
+          "Event.destination",
+          "Event.effect",
+          "Event.Legal",
+          "Event.legal_step",
+          "Move",
+          "attempt",
+          "scan",
+          "scan_none",
+          "select",
+          "select_none_iff",
+          "Observation",
+          "observations"
+        ]
+      }
+    },
+    {
+      "task": 3,
+      "parent_commit": "d0bb9a7f275a57c3e321e1ddb5a6c144cef891d5",
+      "commit": "175c3d07f96196bdecfbc77bd2bfb7c968337c6c",
+      "subject": "feat(semantics): validate and execute finite reference runs",
+      "tree": "ae0431c8d1519dcef0aacc92afc8a4d7268367ff",
+      "patch": "papers/semantics/computable_reference_executor_patches/03.patch",
+      "patch_sha256": "60c969e5fbb2bc701dbd419be77d4e30d4ea78169688744783d6415839243ed6",
+      "files": [
+        "leanncd/AGENTS.md",
+        "leanncd/LeanNCD/Semantics.lean",
+        "leanncd/LeanNCD/Semantics/AGENTS.md",
+        "leanncd/LeanNCD/Semantics/RationalReference.lean",
+        "leanncd/LeanNCD/Semantics/ReferenceExecutor.lean",
+        "leanncd/lakefile.toml",
+        "leanncd/test/Semantics/ExecutableReferenceTest.lean"
+      ],
+      "symbols": {
+        "leanncd/LeanNCD/Semantics.lean": [],
+        "leanncd/LeanNCD/Semantics/RationalReference.lean": [
+          "Carrier",
+          "ops",
+          "Primitive",
+          "registry"
+        ],
+        "leanncd/LeanNCD/Semantics/ReferenceExecutor.lean": [
+          "validate_accepts",
+          "validate_preserves",
+          "Execution",
+          "Execution.reaches",
+          "Outcome",
+          "Outcome.state",
+          "Outcome.isExhausted",
+          "Outcome.kind",
+          "Result",
+          "runFuel",
+          "runFuel_not_exhausted",
+          "run",
+          "run_not_exhausted",
+          "result_success",
+          "result_model",
+          "result_unique",
+          "result_denotation",
+          "result_failure",
+          "result_not_blocked",
+          "run_ranked_dichotomy",
+          "ValidatedResult",
+          "runValidated",
+          "runValidated_error"
+        ],
+        "leanncd/test/Semantics/ExecutableReferenceTest.lean": [
+          "shape",
+          "declarations",
+          "point",
+          "program",
+          "tag",
+          "schedule",
+          "duplicateBody",
+          "failureBody",
+          "strictPolicy",
+          "selfRead",
+          "blockedBody",
+          "summarize",
+          "checkSmoke"
+        ]
+      }
+    },
+    {
+      "task": 4,
+      "parent_commit": "175c3d07f96196bdecfbc77bd2bfb7c968337c6c",
+      "commit": "be51d96c66c5f823754fd493b39e669237f30258",
+      "tree": "2eed13a7d4b1b354ad150ab489b3746279070180",
+      "subject": "test(semantics): verify executable rational reference fixtures",
+      "patch": "papers/semantics/computable_reference_executor_patches/04.patch",
+      "patch_sha256": "153a7339587108557ebda519a9ac400fcd9cf7fe2a4fd7f0fba89e4a523db548",
+      "files": [
+        "leanncd/test/Semantics/ExecutableReferenceTest.lean"
+      ]
+    }
+  ],
+  "replay": [
+    {
+      "task": 1,
+      "reconstructed_tree": "0a8abb37d8892a93b32794fd3249b5025841b6d6",
+      "matches": true,
+      "patch_sha256": "cbba6b0697eafe7a10a77d78e973f85888624090d2cf9d7e5e3e112f05f44a41"
+    },
+    {
+      "task": 2,
+      "reconstructed_tree": "ea92a8622e0d2864c0f15f3a126e2534cf6729f3",
+      "matches": true,
+      "patch_sha256": "56d85f03707a169e8ee713a7868082f6bc9dd60a204efa1feec67a82d7fece0d"
+    },
+    {
+      "task": 3,
+      "reconstructed_tree": "ae0431c8d1519dcef0aacc92afc8a4d7268367ff",
+      "matches": true,
+      "patch_sha256": "60c969e5fbb2bc701dbd419be77d4e30d4ea78169688744783d6415839243ed6"
+    },
+    {
+      "task": 4,
+      "reconstructed_tree": "2eed13a7d4b1b354ad150ab489b3746279070180",
+      "matches": true,
+      "patch_sha256": "153a7339587108557ebda519a9ac400fcd9cf7fe2a4fd7f0fba89e4a523db548"
+    }
+  ]
+}

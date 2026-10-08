@@ -1,0 +1,125 @@
+diff --git a/leanncd/LeanNCD/Semantics/ExecutableState.lean b/leanncd/LeanNCD/Semantics/ExecutableState.lean
+new file mode 100644
+index 0000000000000000000000000000000000000000..26515cea85a475428a44629fc1f31becd202a1fc
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/ExecutableState.lean
+@@ -0,0 +1,119 @@
++import LeanNCD.Semantics.Progress
++
++namespace LeanNCD.Semantics.Program.Executor
++
++variable {K : S → Type} {σ : Declarations S} {r : Registry K}
++variable (P : Program K σ r) [DecidableEq σ.Tensor]
++
++@[reducible] def finiteDefined : Fintype P.Defined :=
++  letI := P.tensors
++  Subtype.fintype (fun t => P.input t = false)
++
++@[reducible] def finiteCoords (t : σ.Tensor) : Fintype (Coord (σ.signature t).axes) :=
++  Fintype.ofEquiv _ (canonicalLayout (σ.signature t).axes).enumerate
++
++def addressEq : DecidableEq (Address σ) :=
++  letI : ∀ t, DecidableEq (Coord (σ.signature t).axes) :=
++    fun t => coordDecidableEq (σ.signature t).axes
++  inferInstance
++
++inductive Key (P : Program K σ r)
++  | occurrence (t : P.Defined) (o : P.Occurrence t)
++  | publication (t : P.Defined) (p : Coord (σ.signature t.val).axes)
++
++/- The order is presentation data, never obtained by choosing a finset list.
++   Coverage includes nonoutputs and unwritten coordinates. -/
++structure Schedule (P : Program K σ r) where
++  tensors : List σ.Tensor
++  tensors_nodup : tensors.Nodup
++  tensors_complete : ∀ t, t ∈ tensors
++  keys : List (Key P)
++  keys_nodup : keys.Nodup
++  keys_complete : ∀ k, k ∈ keys
++
++def Schedule.reverse (schedule : Schedule P) : Schedule P where
++  tensors := schedule.tensors.reverse
++  tensors_nodup := by simpa using schedule.tensors_nodup
++  tensors_complete := by simpa using schedule.tensors_complete
++  keys := schedule.keys.reverse
++  keys_nodup := by simpa using schedule.keys_nodup
++  keys_complete := by simpa using schedule.keys_complete
++
++def validate (schedule : Schedule P)
++    (η : InputBinding (K := K) (σ := σ)) : Except σ.Tensor P.Input :=
++  match h : schedule.tensors.find? (fun t => (η t).isSome != P.input t) with
++  | some t => .error t
++  | none => .ok ⟨η, by
++      intro t
++      have clean := List.find?_eq_none.mp h t (schedule.tensors_complete t)
++      simpa using clean⟩
++
++theorem validate_error (schedule : Schedule P)
++    (η : InputBinding (K := K) (σ := σ)) (t : σ.Tensor)
++    (h : validate P schedule η = .error t) : (η t).isSome ≠ P.input t := by
++  unfold validate at h
++  split at h
++  · rename_i found
++    cases h
++    simpa using List.find?_some found
++  · contradiction
++
++variable [∀ t : P.Defined, AddCommMonoid (K (σ.signature t.val).sort)]
++
++def consume (c : P.Running) (t : P.Defined) (o : P.Occurrence t)
++    (v : K (σ.signature t.val).sort) : P.Running :=
++  letI := coordDecidableEq (σ.signature t.val).axes
++  ⟨c.published,
++    Function.update c.accumulators t
++      (fun p => c.accumulators t p + if P.destination t o.1 o.2 = p then v else 0),
++    Function.update c.pending t ((c.pending t).erase o)⟩
++
++def publish (c : P.Running) (t : P.Defined)
++    (p : Coord (σ.signature t.val).axes) : P.Running :=
++  letI := addressEq (σ := σ)
++  ⟨Function.update c.published ⟨t.val, p⟩ (some (c.accumulators t p)),
++    c.accumulators, c.pending⟩
++
++theorem consume_agrees (c : P.Running) (t : P.Defined) (o : P.Occurrence t)
++    (v : K (σ.signature t.val).sort) : consume P c t o v = P.consume c t o v := by
++  classical
++  unfold consume Program.consume
++  congr <;> first | exact Subsingleton.elim _ _ | (funext; split_ifs <;> rfl)
++
++theorem publish_agrees (c : P.Running) (t : P.Defined)
++    (p : Coord (σ.signature t.val).axes) : publish P c t p = P.publish c t p := by
++  classical
++  unfold publish Program.publish
++  congr <;> exact Subsingleton.elim _ _
++
++def initialBudget : Nat :=
++  letI := finiteDefined P
++  (∑ t : P.Defined, Fintype.card (P.Occurrence t)) +
++    (∑ t : P.Defined, (canonicalLayout (σ.signature t.val).axes).count) + 1
++
++theorem initialBudget_agrees (η : P.Input) :
++    initialBudget P = P.stateMeasure (.running (P.initial η)) := by
++  classical
++  letI : ∀ t : P.Defined, Fintype (Coord (σ.signature t.val).axes) :=
++    fun t => finiteCoords t.val
++  have coords (t : P.Defined) :
++      Fintype.card (Coord (σ.signature t.val).axes) =
++        (canonicalLayout (σ.signature t.val).axes).count := by
++    simpa using (Fintype.card_congr (canonicalLayout (σ.signature t.val).axes).enumerate).symm
++  simp only [initialBudget, stateMeasure, P.initial_measure, occurrenceCount,
++    Fintype.card_sigma, coords]
++
++def completeDecidable (c : P.Running) : Decidable (P.Complete c) :=
++  letI := finiteDefined P
++  letI := P.tensors
++  letI : ∀ t, Fintype (Coord (σ.signature t).axes) := finiteCoords
++  letI := addressEq (σ := σ)
++  inferInstanceAs (Decidable ((∀ t, c.pending t = ∅) ∧
++    ∀ a, (c.published a).isSome = true))
++
++def fiberDecidable (c : P.Running) (t : P.Defined)
++    (p : Coord (σ.signature t.val).axes) : Decidable (P.FiberEmpty c t p) :=
++  letI := coordDecidableEq (σ.signature t.val).axes
++  inferInstanceAs (Decidable (∀ o ∈ c.pending t, P.destination t o.1 o.2 ≠ p))
++
++end LeanNCD.Semantics.Program.Executor

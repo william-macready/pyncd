@@ -1,0 +1,302 @@
+[
+  {
+    "label": "P1-pending",
+    "task": "2",
+    "file": "LeanNCD/Semantics/ExecutableSelection.lean",
+    "old": "if hp : o ∈ c.pending t then",
+    "new": "if hp : True then",
+    "targets": [
+      "LeanNCD.Semantics.ExecutableSelection"
+    ],
+    "kind": "proof/type rejection",
+    "fixtures": [],
+    "expect": [
+      "error: LeanNCD/Semantics/ExecutableSelection.lean:51:49: Application type mismatch: The argument"
+    ],
+    "expect_source": "logs/a2-mutation-discovery-verified.log"
+  },
+  {
+    "label": "P2-barrier",
+    "task": "2",
+    "file": "LeanNCD/Semantics/ExecutableSelection.lean",
+    "old": "if hf : P.FiberEmpty c t p then",
+    "new": "if hf : True then",
+    "targets": [
+      "LeanNCD.Semantics.ExecutableSelection"
+    ],
+    "kind": "proof/type rejection",
+    "fixtures": [],
+    "expect": [
+      "error: LeanNCD/Semantics/ExecutableSelection.lean:60:57: Application type mismatch: The argument"
+    ],
+    "expect_source": "logs/a2-mutation-discovery-verified.log"
+  },
+  {
+    "label": "P3-undefined",
+    "task": "2",
+    "file": "LeanNCD/Semantics/ExecutableSelection.lean",
+    "old": "| .evaluated none => some ⟨.undefined t o, hp, he⟩",
+    "new": "| .evaluated none => some ⟨.contribution t o 0, hp, he⟩",
+    "targets": [
+      "LeanNCD.Semantics.ExecutableSelection"
+    ],
+    "kind": "proof/type rejection",
+    "fixtures": [],
+    "expect": [
+      "error: LeanNCD/Semantics/ExecutableSelection.lean:51:58: Application type mismatch: The argument"
+    ],
+    "expect_source": "logs/a2-mutation-discovery-verified.log"
+  },
+  {
+    "label": "P4-effect",
+    "task": "2",
+    "file": "LeanNCD/Semantics/ExecutableSelection.lean",
+    "old": "| .contribution t o v => .running (consume P c t o v)",
+    "new": "| .contribution t o v => .running (consume P c t o 0)",
+    "targets": [
+      "LeanNCD.Semantics.ExecutableSelection"
+    ],
+    "kind": "proof/type rejection",
+    "fixtures": [],
+    "expect": [
+      "error: LeanNCD/Semantics/ExecutableSelection.lean:37:4: Type mismatch: After simplification, term"
+    ],
+    "expect_source": "logs/a2-mutation-discovery-verified.log"
+  },
+  {
+    "label": "R1-reciprocal",
+    "task": "3",
+    "file": "LeanNCD/Semantics/RationalReference.lean",
+    "old": "| .reciprocal => fun xs _ => (xs 0)⁻¹",
+    "new": "| .reciprocal => fun xs _ => xs 0",
+    "targets": [
+      "+Semantics.ExecutableReferenceTest"
+    ],
+    "kind": "production runtime oracle kill",
+    "fixtures": [
+      "nonlinear-boundary"
+    ],
+    "expect": [
+      "error: test/Semantics/ExecutableReferenceTest.lean:260:0: nonlinear-boundary: expected ((\"complete\", 5, [some (3 : Rat)/4, some 0, some 0], 0), (3 : Rat)/4, some (1 : Rat)/6), got ((\"complete\", 5, [some 6, some 0, some 0], 0), 6, some 6)"
+    ],
+    "expect_source": "logs/a2-mutation-discovery-verified.log"
+  },
+  {
+    "label": "R2-square",
+    "task": "3",
+    "file": "LeanNCD/Semantics/RationalReference.lean",
+    "old": "| .square => fun xs _ => (xs 0) * (xs 0)",
+    "new": "| .square => fun xs _ => (xs 0) + (xs 0)",
+    "targets": [
+      "+Semantics.ExecutableReferenceTest"
+    ],
+    "kind": "production runtime oracle kill",
+    "fixtures": [
+      "primitive-square"
+    ],
+    "expect": [
+      "error: test/Semantics/ExecutableReferenceTest.lean:267:0: primitive-square: expected (\"complete\", 4, [some 9, some 0, some 0], 0), got (\"complete\", 4, [some 6, some 0, some 0], 0)"
+    ],
+    "expect_source": "logs/a2-mutation-discovery-verified.log"
+  },
+  {
+    "label": "F1-tagged-body",
+    "task": "4",
+    "file": "test/Semantics/ExecutableReferenceTest.lean",
+    "old": "body := fun _ s => .lit (if s = 0 then 2 else 5)",
+    "new": "body := fun _ s => .lit (if s = 0 then 2 else 6)",
+    "targets": [
+      "+Semantics.ExecutableReferenceTest"
+    ],
+    "kind": "fixture contrast",
+    "fixtures": [
+      "tagged-trace",
+      "tagged-whole-store",
+      "tagged-equations",
+      "trace-effect-replay"
+    ],
+    "expect": [
+      "error: test/Semantics/ExecutableReferenceTest.lean:190:0: tagged-trace: expected [(\"contribution\", 7, 0, 0, 1, some 2),",
+      "error: test/Semantics/ExecutableReferenceTest.lean:195:0: tagged-whole-store: expected (\"complete\", [some 0, some 14, some 0], \"complete\", [some 0, some 14, some 0]), got (\"complete\", [some 0, some 16, some 0], \"complete\", [some 0, some 16, some 0])",
+      "error: test/Semantics/ExecutableReferenceTest.lean:206:0: tagged-equations: expected ([0, 14, 0], [0, 14, 0]), got ([0, 16, 0], [0, 14, 0])",
+      "error: test/Semantics/ExecutableReferenceTest.lean:529:0: trace-effect-replay: expected (\"running\", [some 0, some 14, some 0], 0), got (\"running\", [some 0, some 16, some 0], 0)"
+    ],
+    "expect_source": "logs/a2-mutation-discovery-verified.log"
+  },
+  {
+    "label": "F2-tag-projection",
+    "task": "4",
+    "file": "test/Semantics/ExecutableReferenceTest.lean",
+    "old": "(\"contribution\", declarations.uid t.val, o.1.val, o.2.val.val,\n      (P.destination t o.1 o.2).1.val, some v)",
+    "new": "(\"contribution\", declarations.uid t.val + 1, o.1.val, o.1.val,\n      (P.destination t o.1 o.2).1.val + 1, some v)",
+    "targets": [
+      "+Semantics.ExecutableReferenceTest"
+    ],
+    "kind": "fixture contrast",
+    "fixtures": [
+      "tagged-trace",
+      "coordinate-ranked-chain",
+      "failure-retained-snapshot"
+    ],
+    "expect": [
+      "error: test/Semantics/ExecutableReferenceTest.lean:190:0: tagged-trace: expected [(\"contribution\", 7, 0, 0, 1, some 2),",
+      "error: test/Semantics/ExecutableReferenceTest.lean:440:0: coordinate-ranked-chain: expected (\"complete\",",
+      "error: test/Semantics/ExecutableReferenceTest.lean:502:0: failure-retained-snapshot: expected (\"failed\","
+    ],
+    "expect_source": "logs/a2-mutation-discovery-verified.log"
+  },
+  {
+    "label": "F3-zero-empty-excluded",
+    "task": "4",
+    "file": "test/Semantics/ExecutableReferenceTest.lean",
+    "old": "#eval checkSmoke \"zero-contribution\" (summarize 1 zeroBody)\n  (\"complete\", 4, [some 0, some 0, some 0], 0)\n#eval checkSmoke \"empty-fiber\" (summarize 0 (fun _ s => nomatch s))\n  (\"complete\", 3, [some 0, some 0, some 0], 0)\n\n@[reducible] def excluded : Program Carrier declarations registry :=\n  { program 1 failureBody with\n    guard := fun _ _ _ => false\n    destination := fun _ _ _ => point 0\n    body := fun _ s => failureBody _ s }\ndef excludedSchedule : Schedule excluded where\n  tensors := [()]\n  tensors_nodup := by simp\n  tensors_complete := by intro t; cases t; simp\n  keys := [.publication ⟨(), rfl⟩ (point 0), .publication ⟨(), rfl⟩ (point 1),\n    .publication ⟨(), rfl⟩ (point 2)]\n  keys_nodup := by simp [List.nodup_cons, Key.publication.injEq, point]\n  keys_complete := by\n    intro k\n    cases k with\n    | occurrence t o => exact False.elim (Bool.false_ne_true o.2.property)\n    | publication t p =>\n      rcases t with ⟨⟨⟩, ht⟩\n      rcases p with ⟨i, u⟩\n      cases u\n      fin_cases i <;> simp [point]\ndef excludedResult := run excluded ops excludedSchedule (noInput excluded (fun _ => rfl))\n#eval check \"guard-excluded-undefined\"\n  (excludedResult.outcome.kind, excludedResult.events.length,\n    vectorStore (snapshot excludedResult.outcome))\n  (\"complete\", 3, [some 0, some 0, some 0])\n\n",
+    "new": "#eval checkSmoke \"zero-contribution\" (summarize 1 zeroBody)\n  (\"complete\", 2, [some 0, some 0, some 0], 0)\n#eval checkSmoke \"empty-fiber\" (summarize 0 (fun _ s => nomatch s))\n  (\"complete\", 2, [some 0, some 0, some 0], 0)\n\n@[reducible] def excluded : Program Carrier declarations registry :=\n  { program 1 failureBody with\n    guard := fun _ _ _ => false\n    destination := fun _ _ _ => point 0\n    body := fun _ s => failureBody _ s }\ndef excludedSchedule : Schedule excluded where\n  tensors := [()]\n  tensors_nodup := by simp\n  tensors_complete := by intro t; cases t; simp\n  keys := [.publication ⟨(), rfl⟩ (point 0), .publication ⟨(), rfl⟩ (point 1),\n    .publication ⟨(), rfl⟩ (point 2)]\n  keys_nodup := by simp [List.nodup_cons, Key.publication.injEq, point]\n  keys_complete := by\n    intro k\n    cases k with\n    | occurrence t o => exact False.elim (Bool.false_ne_true o.2.property)\n    | publication t p =>\n      rcases t with ⟨⟨⟩, ht⟩\n      rcases p with ⟨i, u⟩\n      cases u\n      fin_cases i <;> simp [point]\ndef excludedResult := run excluded ops excludedSchedule (noInput excluded (fun _ => rfl))\n#eval check \"guard-excluded-undefined\"\n  (excludedResult.outcome.kind, excludedResult.events.length,\n    vectorStore (snapshot excludedResult.outcome))\n  (\"complete\", 2, [some 0, some 0, some 0])\n\n",
+    "targets": [
+      "+Semantics.ExecutableReferenceTest"
+    ],
+    "kind": "fixture contrast",
+    "fixtures": [
+      "zero-contribution",
+      "empty-fiber",
+      "guard-excluded-undefined"
+    ],
+    "expect": [
+      "error: test/Semantics/ExecutableReferenceTest.lean:216:0: zero-contribution: expected (\"complete\", 2, [some 0, some 0, some 0], 0), got (\"complete\", 4, [some 0, some 0, some 0], 0)",
+      "error: test/Semantics/ExecutableReferenceTest.lean:218:0: empty-fiber: expected (\"complete\", 2, [some 0, some 0, some 0], 0), got (\"complete\", 3, [some 0, some 0, some 0], 0)",
+      "error: test/Semantics/ExecutableReferenceTest.lean:243:0: guard-excluded-undefined: expected (\"complete\", 2, [some 0, some 0, some 0]), got (\"complete\", 3, [some 0, some 0, some 0])"
+    ],
+    "expect_source": "logs/a2-mutation-discovery-verified.log"
+  },
+  {
+    "label": "F4-scalar-nonoutput",
+    "task": "4",
+    "file": "test/Semantics/ExecutableReferenceTest.lean",
+    "old": "#eval check \"scalar-input-nonoutput\" (scalarSummary false)\n  (\"complete\", 4, [some 7, some 2, some 3])\n#eval check \"internal-nonoutput-failure\" (scalarSummary true)\n  (\"failed\", 3, [some 7, some 2, none])\n\n",
+    "new": "#eval check \"scalar-input-nonoutput\" (scalarSummary false)\n  (\"complete\", 4, [some 8, some 2, some 4])\n#eval check \"internal-nonoutput-failure\" (scalarSummary true)\n  (\"complete\", 4, [some 7, some 2, some 3])\n\n",
+    "targets": [
+      "+Semantics.ExecutableReferenceTest"
+    ],
+    "kind": "fixture contrast",
+    "fixtures": [
+      "scalar-input-nonoutput",
+      "internal-nonoutput-failure"
+    ],
+    "expect": [
+      "error: test/Semantics/ExecutableReferenceTest.lean:324:0: scalar-input-nonoutput: expected (\"complete\", 4, [some 8, some 2, some 4]), got (\"complete\", 4, [some 7, some 2, some 3])",
+      "error: test/Semantics/ExecutableReferenceTest.lean:326:0: internal-nonoutput-failure: expected (\"complete\", 4, [some 7, some 2, some 3]), got (\"failed\", 3, [some 7, some 2, none])"
+    ],
+    "expect_source": "logs/a2-mutation-discovery-verified.log"
+  },
+  {
+    "label": "F5-input-order",
+    "task": "4",
+    "file": "test/Semantics/ExecutableReferenceTest.lean",
+    "old": "[(\"error\", 0), (\"error\", 1), (\"error\", 0), (\"error\", 2)]",
+    "new": "[(\"error\", 1), (\"error\", 0), (\"error\", 2), (\"error\", 0)]",
+    "targets": [
+      "+Semantics.ExecutableReferenceTest"
+    ],
+    "kind": "fixture contrast",
+    "fixtures": [
+      "input-validation-order"
+    ],
+    "expect": [
+      "error: test/Semantics/ExecutableReferenceTest.lean:338:0: input-validation-order: expected [(\"error\", 1), (\"error\", 0), (\"error\", 2), (\"error\", 0)], got [(\"error\", 0), (\"error\", 1), (\"error\", 0), (\"error\", 2)]"
+    ],
+    "expect_source": "logs/a2-mutation-discovery-verified.log"
+  },
+  {
+    "label": "F6-empty-presence",
+    "task": "4",
+    "file": "test/Semantics/ExecutableReferenceTest.lean",
+    "old": "[(\"complete\", 0), (\"error\", 0), (\"complete\", 0)]",
+    "new": "[(\"error\", 0), (\"complete\", 0), (\"failed\", 0)]",
+    "targets": [
+      "+Semantics.ExecutableReferenceTest"
+    ],
+    "kind": "fixture contrast",
+    "fixtures": [
+      "empty-input-and-defined"
+    ],
+    "expect": [
+      "error: test/Semantics/ExecutableReferenceTest.lean:374:0: empty-input-and-defined: expected [(\"error\", 0), (\"complete\", 0), (\"failed\", 0)], got [(\"complete\", 0), (\"error\", 0), (\"complete\", 0)]"
+    ],
+    "expect_source": "logs/a2-mutation-discovery-verified.log"
+  },
+  {
+    "label": "F7-fuel-terminal",
+    "task": "4",
+    "file": "test/Semantics/ExecutableReferenceTest.lean",
+    "old": "#eval check \"fuel-boundaries\"\n  (initialBudget tagged,\n    (taggedFuel 6).outcome.kind, (taggedFuel 7).outcome.kind,\n    (taggedFuel 8).outcome.kind, (taggedFuel 9).outcome.kind, (taggedFuel 0).outcome.kind)\n  (8, \"exhausted\", \"complete\", \"complete\", \"complete\", \"exhausted\")\nexample : tagged.stateMeasure (.running (tagged.initial (noInput tagged (fun _ => rfl)))) = 8 := by\n  rw [← initialBudget_agrees tagged]\n  decide\n#eval check \"zero-fuel-terminal\"\n  ((runFuel tagged ops taggedSchedule 0 taggedResult.outcome.state).outcome.kind,\n    (runFuel (scalarRole true) ops (scalarSchedule true) 0\n      (scalarResult true).outcome.state).outcome.kind)\n  (\"complete\", \"failed\")\n\n",
+    "new": "#eval check \"fuel-boundaries\"\n  (initialBudget tagged,\n    (taggedFuel 6).outcome.kind, (taggedFuel 7).outcome.kind,\n    (taggedFuel 8).outcome.kind, (taggedFuel 9).outcome.kind, (taggedFuel 0).outcome.kind)\n  (7, \"complete\", \"exhausted\", \"exhausted\", \"exhausted\", \"complete\")\nexample : tagged.stateMeasure (.running (tagged.initial (noInput tagged (fun _ => rfl)))) = 8 := by\n  rw [← initialBudget_agrees tagged]\n  decide\n#eval check \"zero-fuel-terminal\"\n  ((runFuel tagged ops taggedSchedule 0 taggedResult.outcome.state).outcome.kind,\n    (runFuel (scalarRole true) ops (scalarSchedule true) 0\n      (scalarResult true).outcome.state).outcome.kind)\n  (\"exhausted\", \"exhausted\")\n\n",
+    "targets": [
+      "+Semantics.ExecutableReferenceTest"
+    ],
+    "kind": "fixture contrast",
+    "fixtures": [
+      "fuel-boundaries",
+      "zero-fuel-terminal"
+    ],
+    "expect": [
+      "error: test/Semantics/ExecutableReferenceTest.lean:380:0: fuel-boundaries: expected (7, \"complete\", \"exhausted\", \"exhausted\", \"exhausted\", \"complete\"), got (8, \"exhausted\", \"complete\", \"complete\", \"complete\", \"exhausted\")",
+      "error: test/Semantics/ExecutableReferenceTest.lean:388:0: zero-fuel-terminal: expected (\"exhausted\", \"exhausted\"), got (\"complete\", \"failed\")"
+    ],
+    "expect_source": "logs/a2-mutation-discovery-verified.log"
+  },
+  {
+    "label": "F8-blocked-locator",
+    "task": "4",
+    "file": "test/Semantics/ExecutableReferenceTest.lean",
+    "old": "missing.map (fun a => (declarations.uid a.1, a.2.1.val)), none)",
+    "new": "missing.map (fun a => (declarations.uid a.1, (P.destination t o.1 o.2).1.val)), none)",
+    "targets": [
+      "+Semantics.ExecutableReferenceTest"
+    ],
+    "kind": "fixture contrast",
+    "fixtures": [
+      "strict-zero-cycle-locators"
+    ],
+    "expect": [
+      "error: test/Semantics/ExecutableReferenceTest.lean:468:0: strict-zero-cycle-locators: expected (\"blocked\","
+    ],
+    "expect_source": "logs/a2-mutation-discovery-verified.log"
+  },
+  {
+    "label": "F9-failure-snapshot",
+    "task": "4",
+    "file": "test/Semantics/ExecutableReferenceTest.lean",
+    "old": "if s = 0 then .lit 2 else\n    .prim (r := registry) Primitive.reciprocal (fun _ => .lit 0)",
+    "new": "if s = 0 then .lit 4 else\n    .prim (r := registry) Primitive.reciprocal (fun _ => .lit 0)",
+    "targets": [
+      "+Semantics.ExecutableReferenceTest"
+    ],
+    "kind": "fixture contrast",
+    "fixtures": [
+      "failure-retained-snapshot",
+      "ready-observations"
+    ],
+    "expect": [
+      "error: test/Semantics/ExecutableReferenceTest.lean:502:0: failure-retained-snapshot: expected (\"failed\",",
+      "error: test/Semantics/ExecutableReferenceTest.lean:511:0: ready-observations: expected [(\"ready\", 7, 0, 0, 0, [], some 2), (\"ready\", 7, 1, 0, 0, [], none)], got [(\"ready\", 7, 0, 0, 0, [], some 4), (\"ready\", 7, 1, 0, 0, [], none)]"
+    ],
+    "expect_source": "logs/a2-mutation-discovery-verified.log"
+  },
+  {
+    "label": "F10-coordinate-chain",
+    "task": "4",
+    "file": "test/Semantics/ExecutableReferenceTest.lean",
+    "old": "if s = 0 then .lit 3 else .binary .add (readAt Γ 1) (.lit 1)",
+    "new": "if s = 0 then .lit 3 else .binary .add (readAt Γ 1) (.lit 2)",
+    "targets": [
+      "+Semantics.ExecutableReferenceTest"
+    ],
+    "kind": "fixture contrast",
+    "fixtures": [
+      "coordinate-ranked-chain"
+    ],
+    "expect": [
+      "error: test/Semantics/ExecutableReferenceTest.lean:440:0: coordinate-ranked-chain: expected (\"complete\","
+    ],
+    "expect_source": "logs/a2-mutation-discovery-verified.log"
+  }
+]
