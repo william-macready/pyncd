@@ -1,5 +1,33 @@
 # From Tensor Logic semantics to a Lean executable reference
 
+## Table of contents
+
+- [1. Purpose, authority, and current position](#1-purpose-authority-and-current-position)
+- [2. One notation, two presentations](#2-one-notation-two-presentations)
+  - [Admission is not yet elaboration](#admission-is-not-yet-elaboration)
+- [3. The category-theoretic organization](#3-the-category-theoretic-organization)
+  - [3.1 Finite coordinate families: representation and contravariance](#31-finite-coordinate-families-representation-and-contravariance)
+  - [3.2 Finite additive pushforward: covariance and multiplicity](#32-finite-additive-pushforward-covariance-and-multiplicity)
+  - [3.3 Partial maps organize expression definedness](#33-partial-maps-organize-expression-definedness)
+  - [3.4 State extension organizes operational refinement](#34-state-extension-organizes-operational-refinement)
+- [4. What is implemented and proved](#4-what-is-implemented-and-proved)
+  - [4.1 Strict expressions and stable ready evaluation](#41-strict-expressions-and-stable-ready-evaluation)
+  - [4.2 Occurrences, collection, and models](#42-occurrences-collection-and-models)
+  - [4.3 Reference transitions and conservation](#43-reference-transitions-and-conservation)
+  - [4.4 What reached-run soundness establishes](#44-what-reached-run-soundness-establishes)
+  - [4.5 Coordinate ranks, finite termination, and correspondence](#45-coordinate-ranks-finite-termination-and-correspondence)
+  - [4.6 The computable reference executor](#46-the-computable-reference-executor)
+    - [Definitions and supplied inputs](#definitions-and-supplied-inputs)
+    - [Correspondence to the specification](#correspondence-to-the-specification)
+    - [Theorems](#theorems)
+    - [Fixtures and controls](#fixtures-and-controls)
+    - [What this does not claim](#what-this-does-not-claim)
+  - [4.7 Existing validation and its limits](#47-existing-validation-and-its-limits)
+- [5. Remaining work, in dependency order](#5-remaining-work-in-dependency-order)
+  - [5.1 Connect named source syntax and the production evaluator](#51-connect-named-source-syntax-and-the-production-evaluator)
+  - [5.2 Later: compiled and numerical refinement](#52-later-compiled-and-numerical-refinement)
+- [6. The landed admitted-core milestone](#6-the-landed-admitted-core-milestone)
+
 ## 1. Purpose, authority, and current position
 
 This document connects the mathematics of
