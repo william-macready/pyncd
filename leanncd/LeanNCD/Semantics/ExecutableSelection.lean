@@ -1,0 +1,122 @@
+import LeanNCD.Semantics.ExecutableState
+
+namespace LeanNCD.Semantics.Program.Executor
+
+variable {K : S → Type} {σ : Declarations S} {r : Registry K}
+variable (P : Program K σ r) [DecidableEq σ.Tensor]
+variable [∀ t : P.Defined, AddCommMonoid (K (σ.signature t.val).sort)]
+variable (ops : (s : S) → ScalarOps (K s))
+
+inductive Event (P : Program K σ r)
+  | contribution (t : P.Defined) (o : P.Occurrence t) (v : K (σ.signature t.val).sort)
+  | publication (t : P.Defined) (p : Coord (σ.signature t.val).axes)
+      (v : K (σ.signature t.val).sort)
+  | undefined (t : P.Defined) (o : P.Occurrence t)
+
+def Event.destination : Event P → Address σ
+  | .contribution t o _ | .undefined t o => ⟨t.val, P.destination t o.1 o.2⟩
+  | .publication t p _ => ⟨t.val, p⟩
+
+def Event.effect (c : P.Running) : Event P → P.MachineState
+  | .contribution t o v => .running (consume P c t o v)
+  | .publication t p _ => .running (publish P c t p)
+  | .undefined t o => .failed t o c
+
+def Event.Legal (c : P.Running) : Event P → Prop
+  | .contribution t o v =>
+      o ∈ c.pending t ∧ evalReady ops c.published (P.body t o.1) o.2 = .evaluated (some v)
+  | .publication t p v =>
+      c.published ⟨t.val, p⟩ = none ∧ P.FiberEmpty c t p ∧ v = c.accumulators t p
+  | .undefined t o =>
+      o ∈ c.pending t ∧ evalReady ops c.published (P.body t o.1) o.2 = .evaluated none
+
+theorem Event.legal_step (c : P.Running) (e : Event P) (h : e.Legal P ops c) :
+    P.Step ops (.running c) (e.effect P c) := by
+  cases e with
+  | contribution t o v =>
+    simpa [Event.effect, consume_agrees] using Step.contribute c t o v h.1 h.2
+  | publication t p v =>
+    simpa [Event.effect, publish_agrees] using Step.publication c t p h.1 h.2.1
+  | undefined t o => exact Step.undefined c t o h.1 h.2
+
+structure Move (c : P.Running) where
+  event : Event P
+  legal : event.Legal P ops c
+
+def attempt (c : P.Running) : Key P → Option (Move P ops c)
+  | .occurrence t o =>
+    if hp : o ∈ c.pending t then
+      match he : evalReady ops c.published (P.body t o.1) o.2 with
+      | .notReady => none
+      | .evaluated none => some ⟨.undefined t o, hp, he⟩
+      | .evaluated (some v) => some ⟨.contribution t o v, hp, he⟩
+    else none
+  | .publication t p =>
+    letI := fiberDecidable P c t p
+    match ha : c.published ⟨t.val, p⟩ with
+    | some _ => none
+    | none =>
+      if hf : P.FiberEmpty c t p then
+        some ⟨.publication t p (c.accumulators t p), ha, hf, rfl⟩
+      else none
+
+def scan (c : P.Running) : List (Key P) → Option (Move P ops c)
+  | [] => none
+  | k :: ks => match attempt P ops c k with
+    | some move => some move
+    | none => scan c ks
+
+theorem scan_none (c : P.Running) (keys : List (Key P)) :
+    scan P ops c keys = none ↔ ∀ k ∈ keys, attempt P ops c k = none := by
+  induction keys with
+  | nil => simp [scan]
+  | cons k ks ih =>
+    cases h : attempt P ops c k <;> simp [scan, h, ih]
+
+/- Restart at the beginning after every transition. The supplied order is the
+   sole priority policy; reversing it changes priorities, not eligible edges. -/
+def select (schedule : Schedule P) (c : P.Running) : Option (Move P ops c) :=
+  scan P ops c schedule.keys
+
+theorem select_none_iff (schedule : Schedule P) (c : P.Running) :
+    select P ops schedule c = none ↔ ¬ ∃ s, P.Step ops (.running c) s := by
+  constructor
+  · intro empty
+    have absent := (scan_none P ops c schedule.keys).mp empty
+    rintro ⟨s, step⟩
+    cases step with
+    | contribute c t o v pending evaluated =>
+      have h := absent (.occurrence t o) (schedule.keys_complete _)
+      simp only [attempt, dif_pos pending] at h
+      split at h <;> simp_all
+    | publication c t p unpublished finished =>
+      have h := absent (.publication t p) (schedule.keys_complete _)
+      simp [attempt, finished] at h
+      split at h <;> simp_all
+    | undefined c t o pending evaluated =>
+      have h := absent (.occurrence t o) (schedule.keys_complete _)
+      simp only [attempt, dif_pos pending] at h
+      split at h <;> simp_all
+  · intro terminal
+    cases h : select P ops schedule c with
+    | none => rfl
+    | some move => exact False.elim (terminal ⟨_, move.event.legal_step P ops c move.legal⟩)
+
+inductive Observation (P : Program K σ r)
+  | unavailable (t : P.Defined) (o : P.Occurrence t) (missing : List (Address σ))
+  | ready (t : P.Defined) (o : P.Occurrence t) (value : Option (K (σ.signature t.val).sort))
+
+def observations (schedule : Schedule P) (c : P.Running) : List (Observation P) :=
+  schedule.keys.filterMap fun key => match key with
+    | .publication _ _ => none
+    | .occurrence t o =>
+      if o ∈ c.pending t then
+        match evalReady ops c.published (P.body t o.1) o.2 with
+        | .notReady => some (.unavailable t o
+            ((footprint (P.body t o.1) o.2).filter fun a => (c.published a).isNone))
+        | .evaluated value => some (.ready t o value)
+      else none
+
+#print axioms select_none_iff
+
+end LeanNCD.Semantics.Program.Executor

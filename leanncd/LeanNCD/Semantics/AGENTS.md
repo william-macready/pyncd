@@ -7,13 +7,29 @@ separate from the production DSL evaluator and execution backends.
 
 ## Current artifact
 
+`ExecutableState`, `ExecutableSelection`, and `ReferenceExecutor` realize the
+same reference `Step` edges computationally, with function-valued typed stores.
+Provide computational tensor equality and a complete, duplicate-free ordered
+`Executor.Schedule` (tensors and tagged occurrence/publication keys).
+`Schedule.reverse` is a debug presentation; selection restarts at the beginning
+after each edge. `runValidated` checks tensor-level input presence before
+initialization, including empty inputs, and returns the first offending tensor.
+`runFuel` is an arbitrary-state debug API: exhausted is not success or failure.
+`run` uses a proved initial bound; supplied address ranks rule out reachable
+blocking, but not ready undefinedness. Outcomes retain endpoints, legal typed
+event traces, and unavailable-read diagnostics. Model/uniqueness/denotation
+theorems concern the whole store, not only outputs. `RationalReference` offers
+exact rational scalar operations and the closed reciprocal/square registry;
+source elaboration, rank synthesis, and native floats are not provided.
+
 The semantic validation layer `LeanNCD.Semantics` is reachable from `LeanNCD`.
 `Types`, `Expr`, `Interpret`, `Readiness`, and `Completeness` separate typed
 values/declarations/registries, structurally admitted expressions, strict
 interpretation/footprints, structural stability/readiness, and whole-array
 completeness. Default `Tests` includes `Semantics.ExpressionTest`,
 `Semantics.NativeTest`, `Semantics.ContractTest`, `Semantics.CollectionModelTest`,
-`Semantics.ReferenceMachineTest`, and `Semantics.RankedMachineTest`.
+`Semantics.ReferenceMachineTest`, `Semantics.RankedMachineTest`, and
+`Semantics.ExecutableReferenceTest`.
 
 `Collection` represents Naperian coordinate families as functions. Pullback
 is contravariant lookup; finite additive pushforward is covariant collection.
@@ -30,7 +46,7 @@ This is semantic validation, not an execution-backend replacement. Scalar sorts 
 carriers are open; operations are data, not assumed machine-float semiring laws.
 Contexts are typed valuation spaces with product extension, not named affine
 syntax. Read admission is explicit; runtime boundary rejection ordering,
-source checking, syntactic substitution, expression reindexing laws, raw writes, scheduling,
+source checking, syntactic substitution, expression reindexing laws, raw writes,
 and full categorical/backend interpretation remain deferred.
 See the [implementation plan](../../../papers/semantics/expression_readiness_plan.md)
 and [authoring verification](../../../papers/semantics/expression_readiness_authoring_record.md)
@@ -60,7 +76,8 @@ blocking. Maximal finite runs reach terminal endpoints, not arbitrary stopped pr
 Every reachable prefix has a terminal extension; ranked maximal runs succeed or
 explicitly fail, and initialization reaches a complete store exactly when Models is
 its singleton. Existing soundness supplies model uniqueness and denotation.
-These are noncomputable relations and proofs, not an executable scheduler or rank checker.
+These modules remain relations and proofs; the executor above refines their
+edges computationally. No runtime rank checker is provided.
 
 [`TensorLogicSemanticCoreSpike.lean`](TensorLogicSemanticCoreSpike.lean) proves
 read stability and partial-store consistency for a carrier-parametric scalar

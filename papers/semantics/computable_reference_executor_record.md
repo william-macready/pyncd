@@ -1,4 +1,8 @@
-# Computable reference executor: authoring and validation record
+# Computable reference executor: authoring and execution validation record
+
+Sections 1-7 preserve the historical authoring receipts and their then-pending
+implementation gates. Section 8 records actual execution on current local main;
+authoring verification is not substituted for any execution gate.
 
 ## 1. Status and limits of this record
 
@@ -319,3 +323,124 @@ and pending gates, not this authoring phase.
   documents to the pre-existing untracked package artifacts.
 - No build was run or skipped under a claim of passing: this was documentation
   authoring, with controller build/mutation/review gates explicitly pending.
+
+## 8. Implementation execution, 2026-10-08
+
+### 8.1 Preflight and exact replay
+
+The existing isolated execution worktree was clean before setup. Preparation
+advanced its stale `e13fd6f` base to current local main, ultimately `c01cb33`;
+the intervening main change updated the semantic specification, not protected
+implementation paths. Mathlib was verified warm: 8,101 oleans for 8,094 sources,
+and 224 project oleans. `LeanNCD` was refreshed before patch execution.
+
+All four patch SHA256 values, evidence entries, commit/tree/parent links, and
+allowed header paths matched the manifest. All five new output paths were
+absent; protected existing paths had no staged or unstaged changes.
+The actual hook-injected Patterns and Global Pitfalls bodies remained 2,981
+characters, so no unrelated instruction trimming was needed.
+
+The controller applied the exact patches sequentially, with `git apply --check`
+before each application. These are implementation receipts, not claims of
+reproducing the historical prototype's whole-tree hashes on a newer baseline:
+
+| Task | Execution commit | Target build | Independent task review |
+| --- | --- | --- | --- |
+| 1: computable state | `e4b31cd` | `LeanNCD.Semantics.ExecutableState`, 2,956 jobs | No significant issues |
+| 2: exact selector | `8a31ceb` | `LeanNCD.Semantics.ExecutableSelection`, 2,957 jobs | No significant issues |
+| 3: validated driver/profile/discovery | `16a34b9` | `LeanNCD` and `+Semantics.ExecutableReferenceTest`, 8,566 jobs | No significant issues |
+| 4: broader fixtures | `6026f0b` | `+Semantics.ExecutableReferenceTest`, 2,960 jobs | No significant issues |
+
+After all mutations, all nine distinct implementation/wiring paths still
+matched the final prototype bytes. Existing semantic definitions, production
+DSL/evaluators, and build/mutation scripts were unchanged.
+
+### 8.2 Observed computation and control gates
+
+All 22 distinct named `#eval` assertions ran and passed in the actual execution
+checkout. They retain the three smoke rows and add the 19 rows documented in
+the [plan's fixture table](computable_reference_executor_plan.md#8-fixture-intent-donors-and-discriminating-observations).
+The assertions check full values, traces, payloads, input-error priority, empty
+tensor presence, whole-store/nonoutput completion, strict blocking locators,
+retained failure state, and exact fuel boundaries, not merely row counts.
+
+Both manifests passed `--check`. The controller then ran the actual manifests,
+not only schema checks, with the unmodified repository harness:
+
+| Control | Class | Expected failure seen | Source byte-identical | Restored target green |
+| --- | --- | --- | --- | --- |
+| P1-pending | Proof/type rejection | yes | yes | yes |
+| P2-barrier | Proof/type rejection | yes | yes | yes |
+| P3-undefined | Proof/type rejection | yes | yes | yes |
+| P4-effect | Proof/type rejection | yes | yes | yes |
+| R1-reciprocal | Production runtime oracle kill | yes | yes | yes |
+| R2-square | Production runtime oracle kill | yes | yes | yes |
+| F1-tagged-body | Fixture contrast | yes | yes | yes |
+| F2-tag-projection | Fixture contrast | yes | yes | yes |
+| F3-zero-empty-excluded | Fixture contrast | yes | yes | yes |
+| F4-scalar-nonoutput | Fixture contrast | yes | yes | yes |
+| F5-input-order | Fixture contrast | yes | yes | yes |
+| F6-empty-presence | Fixture contrast | yes | yes | yes |
+| F7-fuel-terminal | Fixture contrast | yes | yes | yes |
+| F8-blocked-locator | Fixture contrast | yes | yes | yes |
+| F9-failure-snapshot | Fixture contrast | yes | yes | yes |
+| F10-coordinate-chain | Fixture contrast | yes | yes | yes |
+| S1-duplicate-smoke | Fixture contrast | yes | yes | yes |
+| S2-ready-failure-smoke | Fixture contrast | yes | yes | yes |
+| S3-blocked-smoke | Fixture contrast | yes | yes | yes |
+
+The combined result is 19/19: 4 proof/type rejections, 2 production runtime
+oracle kills, and 13 fixture contrasts. Every mutated build broke for its
+manifest's expected reason; every restore and restored build passed.
+The full default build passed with 8,704 jobs. No test or control was skipped.
+Detailed build and cycle logs are retained in the controller session artifacts.
+
+### 8.3 Proof audit, scope, and remaining close-out gates
+
+The added modules and test certificate contain no `sorry`, `native_decide`, or
+new axiom declarations. The six printed audits (`select_none_iff`,
+`run_not_exhausted`, `run_ranked_dichotomy`, `result_model`, `result_failure`,
+`chainCertificate`) report only `propext`, `Classical.choice`, and `Quot.sound`.
+These are existing erased proof dependencies, not runtime classical enumeration.
+New unusedSectionVars and unnecessarySeqFocus warnings remain; the build is
+green, not warning-free.
+
+The admitted exact-rational profile retains function-valued stores, supplied
+complete ordered schedules, and supplied coordinate-rank certificates. Success
+and reached failure refine the existing whole-store soundness results. Debug
+blocking/exhaustion carry no unconditional no-model claim. Source correspondence,
+schedule/rank synthesis or checking, dense/backend refinement, native floats,
+exact-real transcendentals, cyclic solving, and full categorical interpretation
+remain excluded. The heterogeneous non-additive-input runtime fixture remains
+parked at an estimated one small fixture dispatch, not silently completed.
+
+Both final whole-branch code reviews are clean:
+
+| Lens | Reviewed baseline / implementation | Result |
+| --- | --- | --- |
+| Semantic soundness | `c01cb33` / `6026f0b`, all nine changed paths | No high-confidence load-bearing findings |
+| Executable fidelity/integration | `c01cb33` / `6026f0b`, all nine changed paths | No significant fidelity/integration defects |
+
+Neither reviewer reran controller builds or mutations. Each persisted evidence
+in controller session artifacts and stayed within the 35-turn review budget;
+exact token telemetry was unavailable. The controller's post-mutation full
+default build also passed (8,704 jobs).
+
+The authoritative roadmap and specification now describe the verified admitted
+rational executor, while retaining source/backend gaps and categorical
+separation. Value/status sweeps distinguished historical authoring and earlier
+relation-only receipts from current capability claims. The soundness documentation
+follow-up was clean. The fidelity follow-up found one factual attribution:
+the exact pre-failure snapshot belongs to the failed outcome, not the undefined
+event. The roadmap now distinguishes these correctly; fix verification and
+the fidelity review are adjudicated clean. Local integration remains pending
+at this checkpoint.
+No remote push is authorized.
+
+The repository token reporter was invoked for Copilot session
+`996f3537-2167-4d8e-b408-13fc5ff025ee` and reported no transcript. Cumulative input
+tokens and peak context are unavailable, not zero or measured budget compliance.
+The final fidelity fix-verification follow-up reported four turns against its
+three-turn local cap, an overrun of one turn. Both initial code reviews and
+documentation follow-ups reported staying within their stated caps. Exact
+context usage and aggregate token-budget compliance remain unmeasured.
