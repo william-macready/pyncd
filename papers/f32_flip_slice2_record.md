@@ -81,7 +81,9 @@ mutation-harness steps); by raw tool-call count T4a, T5a, T5b, T6a, T6c also exc
   ScatterNonlinRejectTest callers re-spelled with explicit `f64` declarations).
 - Dead fallbacks in `Compile.lean` still say `.f64` (the `.state si` arm, `compiled.stateSigs.getD`): verified dead
   by review A, no behaviour difference; about 0.2 dispatch if wanted for consistency.
+  **CLOSED** (both dtype fallbacks now `.f32`; dead, so unpinned by any assertion).
 - `PropertyOracle/ScanUnroll.lean` public `schedOfCase` is unwrapped (site table S cell); about 1 small dispatch.
+  **CLOSED** (`schedOfCase` declares undeclared names `f64`; a `run_cmd` pins that the plain evaluator accepts it).
 - CompileTest rejection fixtures keep a plain `.tensor "Y"` (now f32) beside an explicit-f64 `X`; their pinned errors
   fire first, so they are not vacuous (review B).
 - Everything in the plan's section 1 "Deliberately NOT done" table (bool-only defaults, binary32 `einsumOnly`, mixed
