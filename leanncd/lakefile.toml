@@ -81,7 +81,7 @@ globs = ["Base.NumericTest", "Base.StTest", "Base.BrTest", "Base.BrWiringTest",
          "Eval.Portfolio.KnownGapTest", "Eval.Portfolio.ScatterNonlinRejectTest",
          "Semantics.ExpressionTest", "Semantics.NativeTest", "Semantics.ContractTest",
          "Semantics.CollectionModelTest", "Semantics.ReferenceMachineTest",
-         "Semantics.RankedMachineTest"]
+         "Semantics.RankedMachineTest", "Semantics.ExecutableReferenceTest"]
 
 # Non-default experimental JAX-bridge codegen library. Deliberately absent from
 # `defaultTargets`: it only builds when explicitly requested (`lake build JaxExperiment`, as the
