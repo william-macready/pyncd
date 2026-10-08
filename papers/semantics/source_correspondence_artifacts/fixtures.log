@@ -1,0 +1,116 @@
+ℹ [2949/2964] Replayed LeanNCD.Semantics.Source.Lowering
+info: LeanNCD/Semantics/Source/Lowering.lean:85:0: 'LeanNCD.Semantics.Source.interpret_product' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Source/Lowering.lean:86:0: 'LeanNCD.Semantics.Source.interpret_contract' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [2950/2964] Replayed LeanNCD.Semantics.Source.Statement
+info: LeanNCD/Semantics/Source/Statement.lean:121:0: 'LeanNCD.Semantics.Source.pure_correspondence' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [2953/2964] Replayed LeanNCD.Semantics.Readiness
+info: LeanNCD/Semantics/Readiness.lean:93:0: 'LeanNCD.Semantics.evalWith_stable' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Readiness.lean:94:0: 'LeanNCD.Semantics.interpret_stable' depends on axioms: [propext, Quot.sound]
+info: LeanNCD/Semantics/Readiness.lean:95:0: 'LeanNCD.Semantics.ready_consistent' depends on axioms: [propext, Quot.sound]
+⚠ [2954/2964] Replayed LeanNCD.Semantics.Machine
+warning: LeanNCD/Semantics/Machine.lean:85:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.finalStore_published`:
+  [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+ℹ [2956/2964] Replayed LeanNCD.Semantics.Measure
+info: LeanNCD/Semantics/Measure.lean:144:0: 'LeanNCD.Semantics.Program.initial_measure' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:145:0: 'LeanNCD.Semantics.Program.consume_measure' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:146:0: 'LeanNCD.Semantics.Program.publish_measure' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:147:0: 'LeanNCD.Semantics.Program.step_wellFounded' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:148:0: 'LeanNCD.Semantics.Program.trace_bound' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:149:0: 'LeanNCD.Semantics.Program.running_trace_bound' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:150:0: 'LeanNCD.Semantics.Program.failed_trace_bound' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Measure.lean:151:0: 'LeanNCD.Semantics.Program.no_infinite_chain' depends on axioms: [propext, Classical.choice, Quot.sound]
+⚠ [2957/2964] Replayed LeanNCD.Semantics.Invariants
+warning: LeanNCD/Semantics/Invariants.lean:99:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.publish_extends`:
+  [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+ℹ [2958/2964] Replayed LeanNCD.Semantics.Soundness
+info: LeanNCD/Semantics/Soundness.lean:112:0: 'LeanNCD.Semantics.Program.reachable_invariant' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Soundness.lean:113:0: 'LeanNCD.Semantics.Program.successful_model' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Soundness.lean:114:0: 'LeanNCD.Semantics.Program.candidate_preserved' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Soundness.lean:115:0: 'LeanNCD.Semantics.Program.successful_unique' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Soundness.lean:116:0: 'LeanNCD.Semantics.Program.successful_admInput' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Soundness.lean:117:0: 'LeanNCD.Semantics.Program.successful_denotation' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Soundness.lean:118:0: 'LeanNCD.Semantics.Program.failed_no_model' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [2959/2964] Replayed LeanNCD.Semantics.Progress
+info: LeanNCD/Semantics/Progress.lean:182:0: 'LeanNCD.Semantics.Program.ranked_progress' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:183:0: 'LeanNCD.Semantics.Program.ranked_not_blocked' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:184:0: 'LeanNCD.Semantics.Program.terminal_extension' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:185:0: 'LeanNCD.Semantics.Program.maximal_extension' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:186:0: 'LeanNCD.Semantics.Program.maximal_dichotomy' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:187:0: 'LeanNCD.Semantics.Program.model_maximal_success' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:188:0: 'LeanNCD.Semantics.Program.no_model_maximal_failure' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:189:0: 'LeanNCD.Semantics.Program.initialization_iff_singleton' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/Progress.lean:190:0: 'LeanNCD.Semantics.Program.successful_schedules_agree' depends on axioms: [propext, Classical.choice, Quot.sound]
+⚠ [2960/2964] Replayed LeanNCD.Semantics.ExecutableState
+warning: LeanNCD/Semantics/ExecutableState.lean:51:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Executor.validate_error`:
+  [DecidableEq σ.Tensor]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq σ.Tensor] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+warning: LeanNCD/Semantics/ExecutableState.lean:83:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Executor.publish_agrees`:
+  [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+warning: LeanNCD/Semantics/ExecutableState.lean:87:8: Used `tac1 <;> tac2` where `(tac1; tac2)` would suffice
+
+Note: This linter can be disabled with `set_option linter.unnecessarySeqFocus false`
+warning: LeanNCD/Semantics/ExecutableState.lean:94:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Executor.initialBudget_agrees`:
+  [DecidableEq σ.Tensor]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq σ.Tensor] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+⚠ [2961/2964] Replayed LeanNCD.Semantics.ExecutableSelection
+warning: LeanNCD/Semantics/ExecutableSelection.lean:69:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Executor.scan_none`:
+  [DecidableEq σ.Tensor]
+  [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq σ.Tensor] [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+info: LeanNCD/Semantics/ExecutableSelection.lean:120:0: 'LeanNCD.Semantics.Program.Executor.select_none_iff' depends on axioms: [propext, Classical.choice, Quot.sound]
+⚠ [2962/2964] Replayed LeanNCD.Semantics.ReferenceExecutor
+warning: LeanNCD/Semantics/ReferenceExecutor.lean:10:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Executor.validate_accepts`:
+  [DecidableEq σ.Tensor]
+  [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq σ.Tensor] [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+warning: LeanNCD/Semantics/ReferenceExecutor.lean:19:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.Executor.validate_preserves`:
+  [DecidableEq σ.Tensor]
+  [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)]
+consider restructuring your `variable` declarations so that the variables are not in scope or explicitly omit them:
+  omit [DecidableEq σ.Tensor] [(t : P.Defined) → AddCommMonoid (K (σ.signature ↑t).sort)] in theorem ...
+
+Note: This linter can be disabled with `set_option linter.unusedSectionVars false`
+info: LeanNCD/Semantics/ReferenceExecutor.lean:187:0: 'LeanNCD.Semantics.Program.Executor.run_not_exhausted' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/ReferenceExecutor.lean:188:0: 'LeanNCD.Semantics.Program.Executor.run_ranked_dichotomy' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/ReferenceExecutor.lean:189:0: 'LeanNCD.Semantics.Program.Executor.result_model' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: LeanNCD/Semantics/ReferenceExecutor.lean:190:0: 'LeanNCD.Semantics.Program.Executor.result_failure' depends on axioms: [propext, Classical.choice, Quot.sound]
+ℹ [2964/2964] Built Semantics.SourceCorrespondenceTest (2.7s)
+info: test/Semantics/SourceCorrespondenceTest.lean:104:0: distinct-UID-same-name-extent: ("complete", [some 26])
+info: test/Semantics/SourceCorrespondenceTest.lean:107:0: shared-variable-diagonal: ("complete", [some 13])
+info: test/Semantics/SourceCorrespondenceTest.lean:115:0: scalar-rank-zero: ("complete", [some 21])
+info: test/Semantics/SourceCorrespondenceTest.lean:123:0: empty-contraction-nonempty-output: ("complete", [some 0, some 0])
+info: test/Semantics/SourceCorrespondenceTest.lean:135:0: repeated-output-full-shape: ("complete", [some 5, some 0, some 0, some 9])
+info: test/Semantics/SourceCorrespondenceTest.lean:151:0: two-term-local-bias: ("complete", [some 9, some 9])
+info: test/Semantics/SourceCorrespondenceTest.lean:166:0: UID-lookup-distinct: none
+info: test/Semantics/SourceCorrespondenceTest.lean:167:0: UID-lookup-repeated: none
+info: test/Semantics/SourceCorrespondenceTest.lean:168:0: duplicate-context: some (LeanNCD.Semantics.Source.Diagnostic.duplicateContext)
+info: test/Semantics/SourceCorrespondenceTest.lean:169:0: full-slot-domain: some (LeanNCD.Semantics.Source.Diagnostic.domain 10 3 2)
+info: test/Semantics/SourceCorrespondenceTest.lean:171:0: output-only-pure: some (LeanNCD.Semantics.Source.Diagnostic.outputOnly 10)
+info: test/Semantics/SourceCorrespondenceTest.lean:174:0: broadcast-general: none
+info: test/Semantics/SourceCorrespondenceTest.lean:176:0: ordered-output-domains: some (LeanNCD.Semantics.Source.Diagnostic.domain 13 2 3)
+info: test/Semantics/SourceCorrespondenceTest.lean:179:0: ordered-output-accept: none
+Build completed successfully (2964 jobs).

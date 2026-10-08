@@ -1,0 +1,232 @@
+From 76265762e18951399d64b6b087173cd8d03a3708 Mon Sep 17 00:00:00 2001
+From: William Macready <william.macready@gmail.com>
+Date: Thu, 8 Oct 2026 14:58:34 -0700
+Subject: [PATCH 1/3] feat(semantics): prototype UID contexts and core
+ contraction lowering
+
+Authoring-only detached prototype. Resolve bare UID strings with explicit full slot domains and prove read-product and nested core-reduction interpretation over a generic semiring. Positional valuation equivalence is not yet a UID-keyed valuation theorem.
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+---
+ leanncd/LeanNCD/Semantics/Source/Context.lean | 113 ++++++++++++++++++
+ .../LeanNCD/Semantics/Source/Lowering.lean    |  88 ++++++++++++++
+ 2 files changed, 201 insertions(+)
+ create mode 100644 leanncd/LeanNCD/Semantics/Source/Context.lean
+ create mode 100644 leanncd/LeanNCD/Semantics/Source/Lowering.lean
+
+diff --git a/leanncd/LeanNCD/Semantics/Source/Context.lean b/leanncd/LeanNCD/Semantics/Source/Context.lean
+new file mode 100644
+index 0000000..a227c86
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Source/Context.lean
+@@ -0,0 +1,113 @@
++import LeanNCD.Semantics.Program
++
++namespace LeanNCD.Semantics.Source
++
++structure Context where
++  axes : Shape
++  unique : (axes.map Axis.uid).Nodup
++
++inductive Ref : Shape → Nat → Type
++  | here {a sh} : Ref (a :: sh) a.extent
++  | there {a sh n} : Ref sh n → Ref (a :: sh) n
++
++def Ref.get : Ref sh n → Coord sh → Fin n
++  | .here, p => p.1
++  | .there i, p => i.get p.2
++
++def Ref.uid : {sh : Shape} → Ref sh n → UID
++  | a :: _, .here => a.uid
++  | _ :: _, .there i => i.uid
++
++inductive Diagnostic
++  | duplicateContext
++  | unbound (uid : UID)
++  | domain (uid : UID) (expected actual : Nat)
++  | rank (expected actual : Nat)
++  | unusedBinder (uid : UID)
++  | outputContext
++  | emptyOperands
++  | outputOnly (uid : UID)
++  deriving Repr, DecidableEq
++
++def checkContext (sh : Shape) : Except Diagnostic {c : Context // c.axes = sh} :=
++  if h : (sh.map Axis.uid).Nodup then .ok ⟨⟨sh, h⟩, rfl⟩ else .error .duplicateContext
++
++def resolveRef : (sh : Shape) → (uid : UID) → (n : Nat) →
++    Except Diagnostic (Ref sh n)
++  | [], uid, _ => .error (.unbound uid)
++  | a :: sh, uid, n =>
++    if a.uid = uid then
++      if h : a.extent = n then .ok (h ▸ Ref.here)
++      else .error (.domain uid n a.extent)
++    else (resolveRef sh uid n).map Ref.there
++
++inductive Slots (ctx : Shape) : Shape → Type
++  | nil : Slots ctx []
++  | cons {a sh} : Ref ctx a.extent → Slots ctx sh → Slots ctx (a :: sh)
++
++def Slots.project : Slots ctx sh → Coord ctx → Coord sh
++  | .nil, _ => ()
++  | .cons i rest, v => (i.get v, rest.project v)
++
++def resolveSlots (ctx : Shape) : (sh : Shape) → List UID →
++    Except Diagnostic (Slots ctx sh)
++  | [], [] => .ok .nil
++  | a :: sh, uid :: ids => do
++      let i ← resolveRef ctx uid a.extent
++      let rest ← resolveSlots ctx sh ids
++      pure (.cons i rest)
++  | sh, ids => .error (.rank sh.length ids.length)
++
++abbrev NamedVal (sh : Shape) := (i : Fin sh.length) → Fin (sh.get i).extent
++
++def namedEquiv : (sh : Shape) → NamedVal sh ≃ Coord sh
++  | [] =>
++    { toFun := fun _ => ()
++      invFun := fun _ i => nomatch i
++      left_inv := by intro v; funext i; exact Fin.elim0 i
++      right_inv := by intro v; cases v; rfl }
++  | _ :: sh =>
++    { toFun := fun v => (v 0, (namedEquiv sh) (fun i => v i.succ))
++      invFun := fun p => Fin.cases p.1 ((namedEquiv sh).symm p.2)
++      left_inv := by
++        intro v
++        funext i
++        refine Fin.cases ?_ (fun j => ?_) i
++        · rfl
++        · exact congrFun ((namedEquiv sh).left_inv (fun i => v i.succ)) j
++      right_inv := by
++        rintro ⟨i, p⟩
++        simp }
++
++def appendEquiv : (out rest : Shape) → Coord (out ++ rest) ≃ Coord out × Coord rest
++  | [], _ =>
++    { toFun := fun p => ((), p)
++      invFun := Prod.snd
++      left_inv := fun _ => rfl
++      right_inv := by rintro ⟨u, p⟩; cases u; rfl }
++  | a :: out, rest =>
++    { toFun := fun p => let q := appendEquiv out rest p.2; ((p.1, q.1), q.2)
++      invFun := fun p => (p.1.1, (appendEquiv out rest).symm (p.1.2, p.2))
++      left_inv := by intro p; simp
++      right_inv := by rintro ⟨⟨i, o⟩, c⟩; simp }
++
++def strictResolve : (sh : Shape) → RawCoord sh → ReadOutcome K (Coord sh)
++  | [], _ => .at ()
++  | a :: sh, raw =>
++    if h : 0 ≤ raw 0 ∧ raw 0 < a.extent then
++      match strictResolve (K := K) sh (fun i => raw i.succ) with
++      | .at p => .at (⟨(raw 0).toNat, by omega⟩, p)
++      | _ => .reject
++    else .reject
++
++def strictPolicy (sh : Shape) : ReadPolicy K sh where
++  resolve := strictResolve sh
++  inBounds := by
++    intro p
++    induction sh with
++    | nil => cases p; rfl
++    | cons a sh ih =>
++      rcases p with ⟨i, p⟩
++      simp [strictResolve, Coord.raw, ih p]
++
++end LeanNCD.Semantics.Source
+diff --git a/leanncd/LeanNCD/Semantics/Source/Lowering.lean b/leanncd/LeanNCD/Semantics/Source/Lowering.lean
+new file mode 100644
+index 0000000..82c33f8
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Source/Lowering.lean
+@@ -0,0 +1,88 @@
++import LeanNCD.Semantics.Source.Context
++import Mathlib.Data.List.FinRange
++
++namespace LeanNCD.Semantics.Source
++
++instance coordFinite : (sh : Shape) → Fintype (Coord sh)
++  | [] => inferInstance
++  | _ :: sh => letI := coordFinite sh; inferInstance
++
++instance coordEq (sh : Shape) : DecidableEq (Coord sh) := coordDecidableEq sh
++
++variable {K : Type} [Semiring K] {σ : Declarations Unit}
++  {r : Registry (fun _ : Unit => K)}
++
++def semiringOps : (s : Unit) → ScalarOps K := fun _ => ⟨0, 1, (· + ·), (· * ·)⟩
++
++structure Read (ctx : Shape) (σ : Declarations Unit) where
++  tensor : σ.Tensor
++  slots : Slots ctx (σ.signature tensor).axes
++
++def readExpr (read : Read ctx σ) (env : Γ → Coord ctx) :
++    Expr (fun _ => K) σ r Γ (.scalar ()) :=
++  .read read.tensor
++    ⟨strictPolicy _, fun γ => Coord.raw (read.slots.project (env γ)),
++      fun γ => .at (read.slots.project (env γ)), fun _ => (strictPolicy _).inBounds _⟩
++
++def product (reads : List (Read ctx σ)) (env : Γ → Coord ctx) :
++    Expr (fun _ => K) σ r Γ (.scalar ())
++  := match reads with
++  | [] => .lit 1
++  | read :: reads => .binary .mul (readExpr read env) (product reads env)
++
++def operandProduct (ρ : Store (fun _ => K) σ) (reads : List (Read ctx σ))
++    (v : Coord ctx) : K :=
++  (reads.map (fun read => ρ ⟨read.tensor, read.slots.project v⟩)).prod
++
++theorem interpret_product (ρ : Store (fun _ => K) σ) (reads : List (Read ctx σ))
++    (env : Γ → Coord ctx) (γ : Γ) :
++    interpret semiringOps ρ (product (r := r) reads env) γ =
++      some (operandProduct ρ reads (env γ)) := by
++  induction reads with
++  | nil => rfl
++  | cons read reads ih =>
++    unfold interpret at ih
++    simp [product, readExpr, interpret, evalWith, ScalarOps.combine,
++      semiringOps, operandProduct, ih]
++
++def contract (bound : Shape) (reads : List (Read ctx σ))
++    (env : Γ → Coord bound → Coord ctx) : Expr (fun _ => K) σ r Γ (.scalar ()) :=
++  match bound with
++  | [] => product reads (fun γ => env γ ())
++  | a :: rest =>
++    .reduce a.extent (contract rest reads (fun γ p => env γ.1 (γ.2, p)))
++
++theorem fold_some (xs : List K) :
++    foldValues (semiringOps ()) (xs.map some) = some xs.sum := by
++  induction xs with
++  | nil => rfl
++  | cons x xs ih =>
++    simp only [List.map_cons, foldValues, ih]
++    rfl
++
++theorem interpret_contract (ρ : Store (fun _ => K) σ) (bound : Shape)
++    (reads : List (Read ctx σ)) (env : Γ → Coord bound → Coord ctx) (γ : Γ) :
++    interpret semiringOps ρ (contract (r := r) bound reads env) γ =
++      some (∑ p : Coord bound, operandProduct ρ reads (env γ p)) := by
++  induction bound generalizing Γ with
++  | nil => simpa [contract] using interpret_product (r := r) ρ reads (fun γ => env γ ()) γ
++  | cons a rest ih =>
++    simp only [contract, interpret, evalWith]
++    change foldValues (semiringOps ())
++      ((List.finRange a.extent).map (fun i =>
++        interpret semiringOps ρ
++          (contract rest reads (fun γ p => env γ.1 (γ.2, p))) (γ, i))) = _
++    simp_rw [ih]
++    have h := fold_some ((List.finRange a.extent).map (fun i =>
++      ∑ x, operandProduct ρ reads (env γ (i, x))))
++    simp only [List.map_map, Function.comp_def] at h
++    rw [h]
++    congr 1
++    simpa [List.finRange, List.sum_ofFn] using
++      (Fintype.sum_prod_type (fun p : Fin a.extent × Coord rest =>
++        operandProduct ρ reads (env γ p))).symm
++
++#print axioms interpret_product
++#print axioms interpret_contract
++
++end LeanNCD.Semantics.Source
+-- 
+2.50.1 (Apple Git-155)
+

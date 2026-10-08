@@ -1,0 +1,195 @@
+From bd934a8eeaeda27503c25a328eaafe5a32af8e84 Mon Sep 17 00:00:00 2001
+From: William Macready <william.macready@gmail.com>
+Date: Thu, 8 Oct 2026 14:58:48 -0700
+Subject: [PATCH 2/3] feat(semantics): prototype pure-einsum Program
+ correspondence
+
+Lower checked bare UID products and term-local contractions into existing typed Expr and a single-defined-target Program. Prove collection equals the independent canonical global-fiber formula via output/contracted valuation equivalence. Reuse Program.collect_relabel; no production DSL or Eval edits.
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+---
+ .../LeanNCD/Semantics/Source/Admission.lean   |  41 ++++++
+ .../LeanNCD/Semantics/Source/Statement.lean   | 123 ++++++++++++++++++
+ 2 files changed, 164 insertions(+)
+ create mode 100644 leanncd/LeanNCD/Semantics/Source/Admission.lean
+ create mode 100644 leanncd/LeanNCD/Semantics/Source/Statement.lean
+
+diff --git a/leanncd/LeanNCD/Semantics/Source/Admission.lean b/leanncd/LeanNCD/Semantics/Source/Admission.lean
+new file mode 100644
+index 0000000..1e1f387
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Source/Admission.lean
+@@ -0,0 +1,41 @@
++import LeanNCD.Semantics.Source.Statement
++
++namespace LeanNCD.Semantics.Source
++
++structure RawRead (σ : Declarations Unit) where
++  tensor : σ.Tensor
++  indices : List UID
++
++variable {σ : Declarations Unit}
++
++def admitRead (ctx : Shape) (read : RawRead σ) : Except Diagnostic (Read ctx σ) := do
++  let slots ← resolveSlots ctx (σ.signature read.tensor).axes read.indices
++  pure ⟨read.tensor, slots⟩
++
++def admitTerm (out bound : Shape) (reads : List (RawRead σ)) :
++    Except Diagnostic (Term out σ) := do
++  let context ← checkContext (out ++ bound)
++  let support := reads.flatMap RawRead.indices
++  for a in bound do
++    unless a.uid ∈ support do throw (.unusedBinder a.uid)
++  let admitted ← reads.mapM (admitRead (out ++ bound))
++  pure ⟨bound, context.val, context.property, admitted⟩
++
++def admitOutput (dst : σ.Tensor) (out : Shape) (indices : List UID) :
++    Except Diagnostic (Slots out (σ.signature dst).axes) := do
++  let _ ← checkContext out
++  unless indices.toFinset = (out.map Axis.uid).toFinset do throw .outputContext
++  resolveSlots out (σ.signature dst).axes indices
++
++def admitPure (dst : σ.Tensor) (out bound : Shape) (indices : List UID)
++    (reads : List (RawRead σ)) :
++    Except Diagnostic (Slots out (σ.signature dst).axes × Term out σ) := do
++  let slots ← admitOutput dst out indices
++  if reads.isEmpty then throw .emptyOperands
++  let support := reads.flatMap RawRead.indices
++  for uid in indices do
++    unless uid ∈ support do throw (.outputOnly uid)
++  let term ← admitTerm out bound reads
++  pure (slots, term)
++
++end LeanNCD.Semantics.Source
+diff --git a/leanncd/LeanNCD/Semantics/Source/Statement.lean b/leanncd/LeanNCD/Semantics/Source/Statement.lean
+new file mode 100644
+index 0000000..d0bce54
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Source/Statement.lean
+@@ -0,0 +1,123 @@
++import LeanNCD.Semantics.Source.Lowering
++
++namespace LeanNCD.Semantics.Source
++
++variable {K : Type} [Semiring K] {σ : Declarations Unit}
++  {r : Registry (fun _ : Unit => K)}
++
++structure Term (out : Shape) (σ : Declarations Unit) where
++  bound : Shape
++  context : Context
++  context_axes : context.axes = out ++ bound
++  reads : List (Read (out ++ bound) σ)
++
++def termBody (term : Term out σ) (env : Γ → Coord out) :
++    Expr (fun _ => K) σ r Γ (.scalar ()) :=
++  contract term.bound term.reads
++    (fun γ c => (appendEquiv out term.bound).symm (env γ, c))
++
++def sumBody (terms : List (Term out σ)) (env : Γ → Coord out) :
++    Expr (fun _ => K) σ r Γ (.scalar ()) :=
++  match terms with
++  | [] => .lit 0
++  | term :: terms => .binary .add (termBody term env) (sumBody terms env)
++
++def termValue (ρ : Store (fun _ => K) σ) (term : Term out σ) (v : Coord out) : K :=
++  ∑ c : Coord term.bound,
++    operandProduct ρ term.reads ((appendEquiv out term.bound).symm (v, c))
++
++theorem interpret_sumBody (ρ : Store (fun _ => K) σ) (terms : List (Term out σ))
++    (env : Γ → Coord out) (γ : Γ) :
++    interpret semiringOps ρ (sumBody (r := r) terms env) γ =
++      some ((terms.map (fun term => termValue ρ term (env γ))).sum) := by
++  induction terms with
++  | nil => rfl
++  | cons term terms ih =>
++    have ht := interpret_contract (r := r) ρ term.bound term.reads
++      (fun γ c => (appendEquiv out term.bound).symm (env γ, c)) γ
++    unfold interpret at ih ht
++    simp [sumBody, termBody, interpret, evalWith, ih, ht, ScalarOps.combine,
++      semiringOps, termValue]
++
++variable [DecidableEq σ.Tensor] [Fintype σ.Tensor]
++
++@[reducible] def elaborate (dst : σ.Tensor) (out : Shape) (slots : Slots out (σ.signature dst).axes)
++    (terms : List (Term out σ)) : Program (fun _ => K) σ r where
++  tensors := inferInstance
++  input := fun t => decide (t ≠ dst)
++  output := fun t => decide (t = dst)
++  output_defined := by intro t h; simp_all
++  statements := fun _ => 1
++  valuations := fun _ _ => (canonicalLayout out).count
++  guard := fun _ _ _ => true
++  destination := fun t _ v => by
++    have h : t.val = dst := by simpa using t.property
++    rw [h]
++    exact slots.project ((canonicalLayout out).enumerate v.val)
++  body := fun _ _ =>
++    sumBody terms (fun v => (canonicalLayout out).enumerate v.val)
++
++def target (dst : σ.Tensor) (out : Shape) (slots) (terms : List (Term out σ)) :
++    (elaborate (K := K) (r := r) dst out slots terms).Defined := ⟨dst, by simp⟩
++
++def occurrenceEquiv (dst : σ.Tensor) (out : Shape) (slots) (terms : List (Term out σ)) :
++    Coord out ≃ (elaborate (K := K) (r := r) dst out slots terms).Occurrence
++      (target dst out slots terms) where
++  toFun := fun v => ⟨0, ⟨(canonicalLayout out).enumerate.symm v, rfl⟩⟩
++  invFun := fun o => (canonicalLayout out).enumerate o.2.val
++  left_inv := by intro v; simp
++  right_inv := by
++    rintro ⟨s, ⟨v, h⟩⟩
++    have hs : s = 0 := Subsingleton.elim _ _
++    subst s
++    simp
++
++theorem elaborate_admitted (ρ : Store (fun _ => K) σ) (dst : σ.Tensor)
++    (out : Shape) (slots) (terms : List (Term out σ)) :
++    (elaborate (r := r) dst out slots terms).AdmEnv semiringOps ρ := by
++  intro t o
++  simp only [Program.outcome, elaborate]
++  rw [interpret_sumBody]
++  rfl
++
++theorem collect_elaborate (ρ : Store (fun _ => K) σ) (dst : σ.Tensor)
++    (out : Shape) (slots) (terms : List (Term out σ))
++    (p : Coord (σ.signature dst).axes) :
++    (elaborate (r := r) dst out slots terms).collect semiringOps ρ
++      (elaborate_admitted ρ dst out slots terms) (target dst out slots terms) p =
++    ∑ v : Coord out, if slots.project v = p then
++      (terms.map (fun term => termValue ρ term v)).sum else 0 := by
++  let P := elaborate (K := K) (r := r) dst out slots terms
++  let t := target (K := K) (r := r) dst out slots terms
++  let e := occurrenceEquiv (K := K) (r := r) dst out slots terms
++  have h := P.collect_relabel semiringOps (fun _ => e) ρ
++    (elaborate_admitted ρ dst out slots terms) t
++  rw [← congrFun h p]
++  simp only [Program.relabeledCollect, pushforward]
++  apply Finset.sum_congr rfl
++  intro v _
++  simp [P, t, e, target, occurrenceEquiv, elaborate, Program.contribution,
++    Program.outcome, interpret_sumBody]
++
++def canonicalFiber (ρ : Store (fun _ => K) σ) (term : Term out σ)
++    (slots : Slots out sh) (p : Coord sh) : K :=
++  ∑ v : Coord (out ++ term.bound),
++    if slots.project ((appendEquiv out term.bound) v).1 = p then
++      operandProduct ρ term.reads v else 0
++
++theorem pure_correspondence (ρ : Store (fun _ => K) σ) (dst : σ.Tensor)
++    (out : Shape) (slots) (term : Term out σ) (p : Coord (σ.signature dst).axes) :
++    (elaborate (r := r) dst out slots [term]).collect semiringOps ρ
++      (elaborate_admitted ρ dst out slots [term]) (target dst out slots [term]) p =
++      canonicalFiber ρ term slots p := by
++  rw [collect_elaborate]
++  unfold canonicalFiber
++  rw [← Equiv.sum_comp (appendEquiv out term.bound).symm]
++  rw [Fintype.sum_prod_type]
++  apply Finset.sum_congr rfl
++  intro v _
++  by_cases h : slots.project v = p <;> simp [h, termValue]
++
++#print axioms pure_correspondence
++
++end LeanNCD.Semantics.Source
+-- 
+2.50.1 (Apple Git-155)
+

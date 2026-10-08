@@ -1,0 +1,264 @@
+From 284c7df2d169377d6029ae2a277c8a119929bbf1 Mon Sep 17 00:00:00 2001
+From: William Macready <william.macready@gmail.com>
+Date: Thu, 8 Oct 2026 14:58:57 -0700
+Subject: [PATCH 3/3] test(semantics): verify rational source correspondence
+ fixtures
+
+Observe six fixtures through runValidated and compare with independent global fibers. Include UID/domain/profile admission controls and full-domain diagonal output. All six mutation cycles failed at their intended fixture and restored byte-identically; the full default build passed. These are fixture-input mutations, not lowering implementation mutation coverage.
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+---
+ leanncd/LeanNCD/Semantics.lean                |   1 +
+ leanncd/LeanNCD/Semantics/AGENTS.md           |  11 ++
+ leanncd/LeanNCD/Semantics/Source.lean         |   1 +
+ leanncd/lakefile.toml                         |   3 +-
+ .../Semantics/SourceCorrespondenceTest.lean   | 184 ++++++++++++++++++
+ 5 files changed, 199 insertions(+), 1 deletion(-)
+ create mode 100644 leanncd/LeanNCD/Semantics/Source.lean
+ create mode 100644 leanncd/test/Semantics/SourceCorrespondenceTest.lean
+
+diff --git a/leanncd/LeanNCD/Semantics.lean b/leanncd/LeanNCD/Semantics.lean
+index 62302bb..aad8fb8 100644
+--- a/leanncd/LeanNCD/Semantics.lean
++++ b/leanncd/LeanNCD/Semantics.lean
+@@ -4,3 +4,4 @@ import LeanNCD.Semantics.Models
+ import LeanNCD.Semantics.Soundness
+ import LeanNCD.Semantics.Progress
+ import LeanNCD.Semantics.RationalReference
++import LeanNCD.Semantics.Source
+diff --git a/leanncd/LeanNCD/Semantics/AGENTS.md b/leanncd/LeanNCD/Semantics/AGENTS.md
+index 9fb29ad..30365e8 100644
+--- a/leanncd/LeanNCD/Semantics/AGENTS.md
++++ b/leanncd/LeanNCD/Semantics/AGENTS.md
+@@ -7,6 +7,17 @@ separate from the production DSL evaluator and execution backends.
+ 
+ ## Current artifact
+ 
++`Source` is an authoring prototype, not a production DSL adapter. It resolves
++bare UID read/output strings against supplied finite contexts and lowers read
++products plus term-local contractions to existing `Expr`/`Program`.
++`Source.pure_correspondence` connects nested-reduction interpretation and
++collection to an independent global-fiber formula over a generic semiring.
++The single-defined-target profile makes every other tensor an input.
++UID-keyed valuation equivalence, capture-avoiding source substitution,
++multi-statement permutation, and the production adapter are not supplied.
++`Semantics.SourceCorrespondenceTest` compares exact rational reference execution
++with that formula; no supplied model witness is used.
++
+ `ExecutableState`, `ExecutableSelection`, and `ReferenceExecutor` realize the
+ same reference `Step` edges computationally, with function-valued typed stores.
+ Provide computational tensor equality and a complete, duplicate-free ordered
+diff --git a/leanncd/LeanNCD/Semantics/Source.lean b/leanncd/LeanNCD/Semantics/Source.lean
+new file mode 100644
+index 0000000..a34d22a
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Source.lean
+@@ -0,0 +1 @@
++import LeanNCD.Semantics.Source.Admission
+diff --git a/leanncd/lakefile.toml b/leanncd/lakefile.toml
+index fade6d0..82b2519 100644
+--- a/leanncd/lakefile.toml
++++ b/leanncd/lakefile.toml
+@@ -81,7 +81,8 @@ globs = ["Base.NumericTest", "Base.StTest", "Base.BrTest", "Base.BrWiringTest",
+          "Eval.Portfolio.KnownGapTest", "Eval.Portfolio.ScatterNonlinRejectTest",
+          "Semantics.ExpressionTest", "Semantics.NativeTest", "Semantics.ContractTest",
+          "Semantics.CollectionModelTest", "Semantics.ReferenceMachineTest",
+-         "Semantics.RankedMachineTest", "Semantics.ExecutableReferenceTest"]
++         "Semantics.RankedMachineTest", "Semantics.ExecutableReferenceTest",
++         "Semantics.SourceCorrespondenceTest"]
+ 
+ # Non-default experimental JAX-bridge codegen library. Deliberately absent from
+ # `defaultTargets`: it only builds when explicitly requested (`lake build JaxExperiment`, as the
+diff --git a/leanncd/test/Semantics/SourceCorrespondenceTest.lean b/leanncd/test/Semantics/SourceCorrespondenceTest.lean
+new file mode 100644
+index 0000000..4b1f5a1
+--- /dev/null
++++ b/leanncd/test/Semantics/SourceCorrespondenceTest.lean
+@@ -0,0 +1,184 @@
++import LeanNCD.Semantics.Source.Admission
++import LeanNCD.Semantics.RationalReference
++
++namespace LeanNCD.Semantics.SourceFixtures
++
++open Source Program Program.Executor RationalReference
++
++@[reducible] def declarations (shapes : Fin 4 → Shape) : Declarations Unit :=
++  ⟨Fin 4, Fin.val, fun _ _ h => Fin.ext h, fun t => ⟨(), shapes t⟩⟩
++
++def schedule (shapes : Fin 4 → Shape) (out : Shape)
++    (slots : Slots out (shapes 0)) (terms : List (Term out (declarations shapes))) :
++    Schedule (elaborate (σ := declarations shapes) (K := ℚ) (r := registry) 0 out slots terms) where
++  tensors := List.finRange 4
++  tensors_nodup := List.nodup_finRange _
++  tensors_complete := List.mem_finRange
++  keys :=
++    (List.finRange (canonicalLayout out).count).map
++      (fun v => .occurrence (target (σ := declarations shapes) 0 out slots terms) ⟨0, ⟨v, rfl⟩⟩) ++
++    (List.finRange (canonicalLayout (shapes 0)).count).map
++      (fun p => .publication (target (σ := declarations shapes) 0 out slots terms)
++        ((canonicalLayout (shapes 0)).enumerate p))
++  keys_nodup := by
++    rw [List.nodup_append]
++    refine ⟨?_, ?_, ?_⟩
++    · apply List.Nodup.map _ (List.nodup_finRange _)
++      intro a b h
++      cases h
++      rfl
++    · apply List.Nodup.map _ (List.nodup_finRange _)
++      intro a b h
++      have hp := Key.publication.inj h
++      exact (canonicalLayout _).enumerate.injective (eq_of_heq hp.2)
++    · intro a ha b hb h
++      obtain ⟨v, _, rfl⟩ := List.mem_map.mp ha
++      obtain ⟨p, _, rfl⟩ := List.mem_map.mp hb
++      cases h
++  keys_complete := by
++    intro k
++    have targetEq (t : (elaborate (σ := declarations shapes) (K := ℚ)
++        (r := registry) 0 out slots terms).Defined) :
++        t = target (σ := declarations shapes) 0 out slots terms := by
++      apply Subtype.ext
++      simpa using t.property
++    cases k with
++    | occurrence t o =>
++      have ht := targetEq t
++      subst t
++      rcases o with ⟨s, ⟨v, hv⟩⟩
++      have hs : s = 0 := Subsingleton.elim _ _
++      subst s
++      exact List.mem_append_left _ (List.mem_map.mpr ⟨v, List.mem_finRange v, rfl⟩)
++    | publication t p =>
++      have ht := targetEq t
++      subst t
++      apply List.mem_append_right
++      exact List.mem_map.mpr
++        ⟨(canonicalLayout (shapes 0)).enumerate.symm p, List.mem_finRange _,
++          by simp⟩
++
++def observe (shapes : Fin 4 → Shape) (out : Shape)
++    (slots : Slots out (shapes 0)) (terms : List (Term out (declarations shapes)))
++    (ρ : Store Carrier (declarations shapes)) : String × List (Option ℚ) :=
++  let P := elaborate (σ := declarations shapes) (K := ℚ) (r := registry) 0 out slots terms
++  match runValidated P ops (schedule shapes out slots terms)
++      (fun t => if t = 0 then none else some (fun p => ρ ⟨t, p⟩)) with
++  | .error t => (s!"invalid-input-{t.val}", [])
++  | .ok result =>
++    let outcome := result.result.outcome
++    let snapshot := match outcome with
++      | .complete c _ | .blocked c _ _ | .exhausted c | .failed _ _ c => c
++    let actual := (outcome.kind, (List.finRange (canonicalLayout (shapes 0)).count).map
++      (fun i => snapshot.published ⟨0, (canonicalLayout (shapes 0)).enumerate i⟩))
++    let oracle := (List.finRange (canonicalLayout (shapes 0)).count).map
++      (fun i => some ((terms.map (fun term =>
++        canonicalFiber ρ term slots ((canonicalLayout (shapes 0)).enumerate i))).sum))
++    if actual == ("complete", oracle) then actual else ("oracle-mismatch", actual.2)
++
++def check (label : String) (actual expected : String × List (Option ℚ)) : IO Unit := do
++  IO.println s!"{label}: {repr actual}"
++  unless actual == expected do
++    throw (IO.userError s!"{label}: expected {repr expected}, got {repr actual}")
++
++@[reducible] def i : Axis := ⟨10, 2⟩
++@[reducible] def j : Axis := ⟨11, 2⟩
++@[reducible] def z : Axis := ⟨12, 0⟩
++
++def pureRun (shapes : Fin 4 → Shape) (out bound : Shape)
++    (indices : List UID) (reads : List (RawRead (declarations shapes)))
++    (ρ : Store Carrier (declarations shapes)) : String × List (Option ℚ) :=
++  match admitPure (σ := declarations shapes) 0 out bound indices reads with
++  | .error e => (s!"source-error-{repr e}", [])
++  | .ok (slots, term) => observe shapes out slots [term] ρ
++
++@[reducible] def matrixShapes : Fin 4 → Shape :=
++  fun t => if t = 1 then [i, j] else []
++
++def matrixStore : Store Carrier (declarations matrixShapes) := fun a =>
++  if h : a.1 = 1 then
++    let p : Coord [i, j] := by simpa [matrixShapes, h] using a.2
++    (1 + 10 * p.1.val + p.2.1.val : Nat)
++  else 0
++
++#eval check "distinct-UID-same-name-extent"
++  (pureRun matrixShapes [] [i, j] [] [⟨1, [10, 11]⟩] matrixStore)
++  ("complete", [some 26])
++#eval check "shared-variable-diagonal"
++  (pureRun matrixShapes [] [i] [] [⟨1, [10, 10]⟩] matrixStore)
++  ("complete", [some 13])
++
++@[reducible] def scalarShapes : Fin 4 → Shape := fun _ => []
++def scalarStore : Store Carrier (declarations scalarShapes) := fun a =>
++  if a.1 = 1 then 3 else if a.1 = 2 then 7 else 0
++
++#eval check "scalar-rank-zero"
++  (pureRun scalarShapes [] [] [] [⟨1, []⟩, ⟨2, []⟩] scalarStore)
++  ("complete", [some 21])
++
++@[reducible] def emptyShapes : Fin 4 → Shape :=
++  fun t => if t = 0 then [i] else if t = 1 then [i, z] else []
++def emptyStore : Store Carrier (declarations emptyShapes) := fun _ => 1
++
++#eval check "empty-contraction-nonempty-output"
++  (pureRun emptyShapes [i] [z] [10] [⟨1, [10, 12]⟩] emptyStore)
++  ("complete", [some 0, some 0])
++
++@[reducible] def diagonalShapes : Fin 4 → Shape :=
++  fun t => if t = 0 then [i, i] else if t = 1 then [i] else []
++def diagonalStore : Store Carrier (declarations diagonalShapes) := fun a =>
++  if h : a.1 = 1 then
++    let p : Coord [i] := by simpa [diagonalShapes, h] using a.2
++    if p.1 = 0 then 5 else 9
++  else 0
++
++#eval check "repeated-output-full-shape"
++  (pureRun diagonalShapes [i] [] [10, 10] [⟨1, [10]⟩] diagonalStore)
++  ("complete", [some 5, some 0, some 0, some 9])
++
++@[reducible] def biasShapes : Fin 4 → Shape :=
++  fun t => if t = 0 ∨ t = 3 then [i] else if t = 1 then [i, j] else [j]
++def biasStore : Store Carrier (declarations biasShapes) := fun a =>
++  if a.1 = 3 then 7 else 1
++
++def biasRun : String × List (Option ℚ) :=
++  match admitOutput (σ := declarations biasShapes) 0 [i] [10],
++      admitTerm (σ := declarations biasShapes) [i] [j] [⟨1, [10, 11]⟩, ⟨2, [11]⟩],
++      admitTerm (σ := declarations biasShapes) [i] [] [⟨3, [10]⟩] with
++  | .ok slots, .ok contraction, .ok bias => observe biasShapes [i] slots [contraction, bias] biasStore
++  | .error e, _, _ | _, .error e, _ | _, _, .error e => (s!"source-error-{repr e}", [])
++
++#eval check "two-term-local-bias" biasRun ("complete", [some 9, some 9])
++
++def diagnostic {A : Type} : Except Diagnostic A → Option Diagnostic
++  | .ok _ => none
++  | .error e => some e
++
++def checkAdmission (label : String) {A : Type} (result : Except Diagnostic A)
++    (expected : Option Diagnostic) : IO Unit := do
++  let actual := diagnostic result
++  IO.println s!"{label}: {repr actual}"
++  unless actual == expected do throw (IO.userError s!"{label}: unexpected admission result")
++
++def sameName : List UData := [⟨10, some "i"⟩, ⟨11, some "i"⟩]
++#guard (sameName.map UData.name) = [some "i", some "i"]
++#guard (sameName.map UData.uid) = [10, 11]
++#eval checkAdmission "UID-lookup-distinct" (resolveSlots [i, j] [i, j] [10, 11]) none
++#eval checkAdmission "UID-lookup-repeated" (resolveSlots [i, j] [i, j] [10, 10]) none
++#eval checkAdmission "duplicate-context" (checkContext [i, i]) (some .duplicateContext)
++#eval checkAdmission "full-slot-domain" (resolveSlots [i] [⟨99, 3⟩] [10])
++  (some (.domain 10 3 2))
++#eval checkAdmission "output-only-pure"
++  (admitPure (σ := declarations emptyShapes) 0 [i] [] [10] [⟨2, []⟩])
++  (some (.outputOnly 10))
++#eval checkAdmission "broadcast-general"
++  (admitTerm (σ := declarations emptyShapes) [i] [] [⟨2, []⟩]) none
++#eval checkAdmission "ordered-output-domains"
++  (resolveSlots [i, ⟨13, 3⟩] [i, ⟨99, 3⟩] [13, 10])
++  (some (.domain 13 2 3))
++#eval checkAdmission "ordered-output-accept"
++  (resolveSlots [i, ⟨13, 3⟩] [i, ⟨99, 3⟩] [10, 13]) none
++#guard (canonicalLayout []).count = 1
++#guard (canonicalLayout [z]).count = 0
++
++end LeanNCD.Semantics.SourceFixtures
+-- 
+2.50.1 (Apple Git-155)
+
