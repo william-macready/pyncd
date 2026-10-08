@@ -192,10 +192,10 @@ sequentially within each top-level section and are not subsection numbers:
 | Lemma 23.1 | Read stability | Proved: `evalWith_stable`, `interpret_stable` (`Readiness`). |
 | Lemma 26.1 | Conservation invariants | Proved: `reachable_invariant` covers items 2 and 4 and the accumulator formula, with `initial_invariant`, `consume_invariant`, `publish_invariant` (`Invariants`). Monotone publication (item 3) has only the one-step lemma `publish_extends`. |
 | Lemma 26.2 | Preservation of every candidate model | Partly proved: `candidate_preserved` (`Soundness`) gives the store-agreement clause. The accumulator clause follows from the `Invariant` fields and `finished_accumulator`; it is not stated separately in Lean. |
-| Theorem 26.3 | A successful run gives the unique model; a failed run excludes every model | Proved: `successful_model`, `successful_unique`, `successful_admInput`, `successful_denotation`, `failed_no_model` (`Soundness`). |
-| Lemma 26.4 | Finite execution | Proved: `step_wellFounded`, `no_infinite_chain`, `running_trace_bound`, `failed_trace_bound` (`Measure`). |
-| Theorem 26.5 | Ranked progress | Proved: `ranked_progress`, `ranked_not_blocked` (`Progress`). |
-| Theorem 26.6 | Ranked correspondence | Proved: `maximal_dichotomy`, `model_maximal_success`, `no_model_maximal_failure`, `initialization_iff_singleton`, `successful_schedules_agree` (`Progress`). |
+| Theorem 26.3 | A successful run gives the unique model; a failed run excludes every model | Proved: `successful_model`, `successful_unique`, `successful_admInput`, `successful_denotation`, `failed_no_model` (`Soundness`). Executor level: `result_model`, `result_unique`, `result_denotation`, `result_failure` (`ReferenceExecutor`). |
+| Lemma 26.4 | Finite execution | Proved: `step_wellFounded`, `no_infinite_chain`, `running_trace_bound`, `failed_trace_bound` (`Measure`). Executor level: `initialBudget_agrees`, `run_not_exhausted` (`ExecutableState`, `ReferenceExecutor`). |
+| Theorem 26.5 | Ranked progress | Proved: `ranked_progress`, `ranked_not_blocked` (`Progress`). Executor level: `result_not_blocked`. |
+| Theorem 26.6 | Ranked correspondence | Proved: `maximal_dichotomy`, `model_maximal_success`, `no_model_maximal_failure`, `initialization_iff_singleton`, `successful_schedules_agree` (`Progress`). Executor level: `run_ranked_dichotomy`. |
 | Corollary 26.7 | Ranked uniqueness | Follows from `model_maximal_success`, `maximal_extension` and `successful_unique`; no separately named theorem. |
 | Lemma 31.2 | Terminal adequacy of a valid plan | Not formalized. |
 | Theorem 31.3 | Compiled correctness | Not formalized. |
@@ -3479,7 +3479,9 @@ and a successful run has a unique model by Theorem 26.3.
 Therefore every maximal run of the reference machine, under any schedule,
 realizes exactly the partial function of
 Section 20.3 for ranked programs. The machine is a transition relation;
-choosing a schedule is a separate, computable artifact.
+choosing a schedule is a separate, computable artifact. The Lean executor is
+one such artifact, for an exact-rational profile with a supplied schedule
+(see [the Lean path document](lean_executable_semantics_path.md#46-the-computable-reference-executor)).
 Successful schedules produce the same
 environment, even if they consume contributions and publish unrelated
 addresses in different orders. On a failing input, schedules may report
