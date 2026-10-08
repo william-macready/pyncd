@@ -1,0 +1,60 @@
+{
+  "scope": "Independent controller verification of plan artifacts; not an implementation release",
+  "prototype_base": "a2be7b9048ccfc70ab9d74cb19c5e5ee79861357",
+  "rehearsal_base": "e13fd6f30303c3caec8ad470652b59907d3bbf2b",
+  "baseline_temporary_index": {
+    "status": "PASS",
+    "method": "Check patch SHA-256 against evidence.json; sequential git apply --cached --check and --cached in a temporary index initialized from the prototype base; compare write-tree with each actual task commit tree",
+    "task_trees_verified": 3,
+    "candidate_tree": "0ce025c588da2687a519bde099cb5eadd8e2295a"
+  },
+  "compatible_main_replay": {
+    "status": "PASS",
+    "protected_input_hashes_verified": 31,
+    "initial_status_clean_including_untracked": true,
+    "generated_outputs_absent_including_symlinks": 4,
+    "sequential_immediate_git_apply_checks": 3,
+    "authorized_files_equal_candidate": 8,
+    "unrelated_main_advances_preserved": true,
+    "post_mutation_protected_and_candidate_bytes_verified": true
+  },
+  "builds": {
+    "targeted": "PASS: Semantics.RankedMachineTest",
+    "full_after_actual_mutations": "PASS: default lake-build.sh, 8699 jobs",
+    "public_import": "PASS: check-snippet.sh with import LeanNCD and #check RankCertificate, measure, ranked_progress, initialization_iff_singleton",
+    "printed_axiom_inventories_verified": 31,
+    "allowed_axioms": ["propext", "Classical.choice", "Quot.sound"],
+    "new_modules_and_fixture_proof_escape_scan": "PASS: no sorry, sorryAx, native_decide or axiom declarations",
+    "warnings": "Existing unrelated sorry/linter warnings, plus three new unused-simp warnings in RankedMachineTest; no warning-free claim"
+  },
+  "mutation_manifest": {
+    "schema_and_unique_old_strings": "PASS: 6 selected",
+    "actual_cycles": [
+      {"label": "CR1-dependency-omission", "result": "PASS"},
+      {"label": "CR2-nonstrict-rank", "result": "PASS"},
+      {"label": "CR3-defined-address-count-omission", "result": "PASS"},
+      {"label": "CR4-pending-erasure-omission", "result": "PASS"},
+      {"label": "CR5-stopped-prefix-maximal", "result": "PASS"},
+      {"label": "CR6-strict-right-read-omission", "result": "PASS"}
+    ],
+    "all_cycles_broke_then_restored_green": true,
+    "all_files_byte_identical_after_restoration": true,
+    "all_expected_failure_strings_observed": true,
+    "oracle": "Kernel-proof rejection, often upstream of fixture elaboration; not six isolated runtime fixture kills"
+  },
+  "retained_session_log_sha256": {
+    "rank-controller-targeted.log": "547102d36f9b6b65779677075b468c67c5fa4ed8f34befb49c549969378b8cf0",
+    "rank-controller-full.log": "b8ba97e71045c6e23696908a0f41a05bdc6e8cb22f7e2f1eed12a70915d620f2",
+    "rank-controller-mutations.log": "33bfe006e3af5edfc0af17f878adec2195c73a1193e15899a47aa401915e8982",
+    "rank-controller-mutations.md": "3ea6fd62be62a60d5476d815832904e0d4eb8b9fa273ee1db6e983a1fc61ded2"
+  },
+  "session_logs": "Retained in controller session storage, not repository execution prerequisites",
+  "budget": "token-report.py found no Claude transcript for this Copilot session; measured peak/cumulative token usage unavailable, not certified",
+  "final_reviews": {
+    "semantic_proof_contracts": "CLEAN; no substantive finding",
+    "replay_fixture_process_safety": "CLEAN; no substantive finding",
+    "review_read_window_breach": "Replay reviewer disclosed one 64-line read against a 60-line cap",
+    "dispositions": "Recorded in the separate authoring record; no source or patch fixes required"
+  },
+  "readiness": "Verified and execution-ready; prototype implementation not released"
+}

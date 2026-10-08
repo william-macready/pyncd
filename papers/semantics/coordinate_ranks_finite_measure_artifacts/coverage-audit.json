@@ -1,0 +1,67 @@
+{
+  "scope": "Disposable Phase A prototype, not a production release or implementation plan.",
+  "fixture_families": [
+    {"case": "same tensor, different coordinates", "donors": ["ReferenceMachineFixtures.dependentP", "Fixtures.direct"], "witnesses": ["historyCertificate", "history_unstuck"]},
+    {"case": "strict zero self-read versus excluded guard", "donors": ["ReferenceMachineFixtures.cycleP", "Fixtures.zeroStrict", "CollectionModelFixtures.expressionProgram"], "witnesses": ["maskedSelf", "masked_self_edge", "masked_self_no_certificate", "excludedSelfCertificate"]},
+    {"case": "whole array, off selected coordinate", "donors": ["Fixtures.selected", "Fixtures.tabulated"], "witnesses": ["selectedP", "off_selected_edge"]},
+    {"case": "resolved constant boundary has no edge", "donors": ["Fixtures.constRead", "Fixtures.constantPolicy"], "witnesses": ["boundaryP", "boundaryCertificate", "boundary_no_edge"]},
+    {"case": "strict reduction and primitive operands", "donors": ["Fixtures.nested", "Fixtures.arrayPrimitive"], "witnesses": ["reductionP", "primitiveP", "reduction_edge", "primitive_off_selected_edge"]},
+    {"case": "input dependencies empty", "donors": ["ReferenceMachineFixtures.scalarRole"], "witnesses": ["input_has_no_dependencies"]},
+    {"case": "rank zero scalar singleton", "donors": ["ReferenceMachineFixtures.scalarRole"], "witnesses": ["singletonDeclarations", "singletonP", "singletonInput", "singletonCertificate", "singleton_rank_zero", "singleton_initial_count"]},
+    {"case": "zero extent has no addresses", "donors": ["singletonP", "Fixtures.emptyShape"], "witnesses": ["emptyDeclarations", "emptyP", "emptyInputP", "emptyCertificate", "zero_extent_no_addresses", "zero_extent_initial_complete", "empty_initial_count"]},
+    {"case": "duplicate tagged initial measure and exact consume", "donors": ["ReferenceMachineFixtures.d0", "ReferenceMachineFixtures.d1", "ReferenceMachineFixtures.dtag"], "witnesses": ["duplicateCertificate", "duplicate_initial_count", "duplicate_consume_count"]},
+    {"case": "zero value, empty fiber, nonoutput publication", "donors": ["ReferenceMachineFixtures.z0", "ReferenceMachineFixtures.z1", "ReferenceMachineFixtures.n0", "ReferenceMachineFixtures.n1", "ReferenceMachineFixtures.r1", "ReferenceMachineFixtures.r2"], "witnesses": ["zero_consumption_decreases", "empty_fiber_decreases", "nonoutput_decreases"]},
+    {"case": "ready undefined maximal failure excludes model", "donors": ["ReferenceMachineFixtures.badP", "ReferenceMachineFixtures.located_failure", "ReferenceMachineFixtures.failure_excludes_models"], "witnesses": ["failureCertificate", "ready_failure_maximal", "ready_failure_no_model"]},
+    {"case": "unranked blocking with mathematical model", "donors": ["ReferenceMachineFixtures.cycle_model", "ReferenceMachineFixtures.cycle_blocked"], "witnesses": ["cycle_model_and_blocked"]},
+    {"case": "arbitrary stopped prefix is not maximal", "donors": ["ReferenceMachineFixtures.d0", "ReferenceMachineFixtures.duplicate_success"], "witnesses": ["stopped_prefix_not_maximal"]},
+    {"case": "two different first success steps, identical complete store", "donors": ["ReferenceMachineFixtures.duplicate_success", "ReferenceMachineFixtures.duplicate_model_without_witness"], "witnesses": ["second_schedule"]},
+    {"case": "different first undefined occurrences allowed", "donors": ["CollectionModelFixtures.duplicate", "Fixtures.bad"], "witnesses": ["twoBad", "twoBadTarget", "twoBadTag", "twoBadInput", "twoBadInitial", "distinct_first_failures"]},
+    {"case": "initialization iff model singleton", "donors": ["singletonP", "Program.initialization_iff_singleton"], "witnesses": ["ranked_singleton_correspondence"]}
+  ],
+  "generic_construction_donor": {
+    "footprintFreeCertificate": "Program.RankCertificate with literal/empty footprint witnesses from expressionProgram; constant zero address ranks",
+    "cardinality_equivalences": "Types.canonicalLayout and Fixtures.point; explicit equivalences pin proof-observed counts, not an executable measure"
+  },
+  "step_case_class_audit": {
+    "columns": ["pending-tag", "ready-some", "ready-none", "unavailable-read", "unpublished-cell", "empty-fiber", "zero-value", "output-flag", "certificate", "model-witness"],
+    "rows": {
+      "contribute": ["required", "required", "forbidden", "forbidden", "silently ignored", "silently ignored", "required: erase even at zero", "silently ignored", "silently ignored", "silently ignored"],
+      "publication": ["forbidden in destination fiber", "silently ignored", "silently ignored", "silently ignored", "required", "required", "required: publish even at zero", "silently ignored", "silently ignored", "silently ignored"],
+      "undefined": ["required", "forbidden", "required", "forbidden", "silently ignored", "silently ignored", "silently ignored", "silently ignored", "silently ignored", "silently ignored"]
+    },
+    "ignored_cell_justification": {
+      "contribute/undefined unpublished-cell": "No extra premise; reachable published invariant implies a pending tag's destination is unpublished.",
+      "contribute/undefined empty-fiber": "Not a constructor premise; the pending tag proves its destination fiber nonempty.",
+      "publication readiness": "No expression is evaluated; publication depends only on exhausted pending fiber and unpublished status.",
+      "output-flag": "All declared defined addresses are counted and eventually published, including nonoutputs.",
+      "certificate/model-witness": "Step and finite bounds are independent of both. Certificate enters ranked progress only, and no model enters progress.",
+      "undefined zero-value": "No value exists; terminal failure retains the pending tag and configuration."
+    }
+  },
+  "footprint_case_class_audit": {
+    "columns": ["own-edge", "all-strict-child-reads", "all-binder-coordinates", "selected-coordinate-only", "rejected-valuations"],
+    "rows": {
+      "lit": ["forbidden", "silently ignored: no children", "silently ignored: no binder", "silently ignored", "forbidden"],
+      "iverson": ["forbidden", "silently ignored: value-free predicate", "silently ignored: no binder", "silently ignored", "forbidden"],
+      "read-resolved-at": ["required: resolved source coordinate", "silently ignored: no children", "silently ignored: no binder", "silently ignored", "forbidden"],
+      "read-resolved-const": ["forbidden", "silently ignored: no children", "silently ignored: no binder", "silently ignored", "forbidden"],
+      "read-reject": ["forbidden: no admitted constructor witness", "silently ignored", "silently ignored", "silently ignored", "forbidden"],
+      "binary": ["forbidden: only child edges", "required: both operands, including zero multiplication", "silently ignored: no binder", "forbidden", "forbidden"],
+      "reduce": ["forbidden: only child edges", "required", "required: every finite binder coordinate", "forbidden", "forbidden"],
+      "tab": ["forbidden: only child edges", "required", "required: every layout coordinate", "forbidden", "forbidden"],
+      "at": ["forbidden: only child edges", "required: entire array expression", "required: inherited tabulation demand", "forbidden", "forbidden"],
+      "prim": ["forbidden: only child edges", "required: every typed argument including whole arrays", "required: inherited array demand", "forbidden", "forbidden"]
+    },
+    "dependency_contributor_audit": {
+      "admitted-occurrence-in-destination-fiber": "required",
+      "occurrence-in-other-destination-fiber": "forbidden",
+      "guard-rejected-valuation": "forbidden",
+      "duplicate-read-address": "silently ignored as set multiplicity, not erased demand",
+      "input-address-as-destination": "forbidden; inputs have empty dependencies",
+      "input-address-as-source": "required when present in footprint; initially available"
+    }
+  },
+  "mutation_evidence_kind": "All six cycles are rejection of changed mathematical definitions by existing/new kernel-checked proofs, not runtime fixture oracles. Fixture-isolated mutations were not performed.",
+  "missing_requested_fixture_families": [],
+  "excluded_work": ["executable scheduler", "source checker", "backend/source/float refactor", "graph acyclicity equivalence checker", "rank synthesis"]
+}

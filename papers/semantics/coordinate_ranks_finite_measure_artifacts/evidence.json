@@ -1,0 +1,521 @@
+{
+  "phase": "A verified disposable prototype",
+  "base": "a2be7b9048ccfc70ab9d74cb19c5e5ee79861357",
+  "candidate": "426fe581c65e3478b9894de9ee414bba4a272e0d",
+  "candidate_tree": "0ce025c588da2687a519bde099cb5eadd8e2295a",
+  "tasks": [
+    {
+      "task": "01-ranks-measure",
+      "commit": "2de6c4d2a2d37043d22fed1cf5d608497450a517",
+      "parent": "a2be7b9048ccfc70ab9d74cb19c5e5ee79861357",
+      "files": [
+        "leanncd/LeanNCD/Semantics/Ranks.lean",
+        "leanncd/LeanNCD/Semantics/Measure.lean"
+      ],
+      "patch": "/Users/williammacready/code/python/pyncd.worktrees/coordinate-ranks-finite-measure-plan/papers/semantics/coordinate_ranks_finite_measure_patches/01-ranks-measure.patch",
+      "sha256": "b3e5ee2c527bbfa2b61e878af91d8ef531e42bd13893a04f7ea3faf7637b1e8e",
+      "symbols": {
+        "leanncd/LeanNCD/Semantics/Ranks.lean": [
+          "DefinedAddress",
+          "definedAddress",
+          "definedAddress_injective",
+          "dependencies",
+          "input_dependencies_empty",
+          "RankCertificate",
+          "definedFintype",
+          "definedAddressFintype"
+        ],
+        "leanncd/LeanNCD/Semantics/Measure.lean": [
+          "pendingCount",
+          "unpublishedCount",
+          "measure",
+          "occurrenceCount",
+          "initial_measure",
+          "consume_measure",
+          "publish_measure",
+          "running_step_measure",
+          "stateMeasure",
+          "step_decreases",
+          "step_wellFounded",
+          "Trace",
+          "trace_reaches",
+          "trace_bound",
+          "running_trace_bound",
+          "failed_trace_bound",
+          "no_infinite_chain"
+        ]
+      }
+    },
+    {
+      "task": "02-progress-correspondence",
+      "commit": "08297501d4e1f8310b4f5901861b2683fc79e600",
+      "parent": "2de6c4d2a2d37043d22fed1cf5d608497450a517",
+      "files": [
+        "leanncd/LeanNCD/Semantics/Progress.lean"
+      ],
+      "patch": "/Users/williammacready/code/python/pyncd.worktrees/coordinate-ranks-finite-measure-plan/papers/semantics/coordinate_ranks_finite_measure_patches/02-progress-correspondence.patch",
+      "sha256": "1c8a2151cd839ae72a1eb48784e5f7b71dcc5f1413b7371e34e6691bb815d74f",
+      "symbols": {
+        "leanncd/LeanNCD/Semantics/Progress.lean": [
+          "invariant_input_available",
+          "unpublished_of_noncomplete",
+          "ranked_progress",
+          "ranked_not_blocked",
+          "complete_terminal",
+          "Terminal",
+          "Maximal",
+          "reaches_trans",
+          "terminal_extension",
+          "maximal_extension",
+          "maximal_running_success",
+          "maximal_dichotomy",
+          "model_maximal_success",
+          "no_model_maximal_failure",
+          "initialization_iff_singleton",
+          "successful_schedules_agree"
+        ]
+      }
+    },
+    {
+      "task": "03-fixtures-integration",
+      "commit": "426fe581c65e3478b9894de9ee414bba4a272e0d",
+      "parent": "08297501d4e1f8310b4f5901861b2683fc79e600",
+      "files": [
+        "leanncd/test/Semantics/RankedMachineTest.lean",
+        "leanncd/LeanNCD/Semantics.lean",
+        "leanncd/lakefile.toml",
+        "leanncd/LeanNCD/Semantics/AGENTS.md",
+        "leanncd/AGENTS.md"
+      ],
+      "patch": "/Users/williammacready/code/python/pyncd.worktrees/coordinate-ranks-finite-measure-plan/papers/semantics/coordinate_ranks_finite_measure_patches/03-fixtures-integration.patch",
+      "sha256": "e7b84cb0029430df7f83aa02c49d95d5c993daf43ea7293ae51de726757cada0",
+      "symbols": {
+        "leanncd/test/Semantics/RankedMachineTest.lean": [
+          "footprintFreeCertificate",
+          "historyCertificate",
+          "history_unstuck",
+          "masked_self_edge",
+          "masked_self_no_certificate",
+          "excludedSelfCertificate",
+          "off_selected_edge",
+          "boundaryCertificate",
+          "boundary_no_edge",
+          "reduction_edge",
+          "primitive_off_selected_edge",
+          "input_has_no_dependencies",
+          "duplicateCertificate",
+          "failureCertificate",
+          "singletonInput",
+          "singletonCertificate",
+          "singleton_rank_zero",
+          "emptyInputP",
+          "emptyCertificate",
+          "zero_extent_no_addresses",
+          "zero_extent_initial_complete",
+          "duplicate_initial_count",
+          "duplicate_consume_count",
+          "zero_consumption_decreases",
+          "empty_fiber_decreases",
+          "nonoutput_decreases",
+          "singleton_initial_count",
+          "empty_initial_count",
+          "ready_failure_maximal",
+          "ready_failure_no_model",
+          "cycle_model_and_blocked",
+          "stopped_prefix_not_maximal",
+          "second_schedule",
+          "twoBadTarget",
+          "twoBadTag",
+          "twoBadInput",
+          "twoBadInitial",
+          "distinct_first_failures",
+          "ranked_singleton_correspondence"
+        ],
+        "leanncd/LeanNCD/Semantics.lean": []
+      }
+    }
+  ],
+  "sequential_temporary_index_replay": "PASS: exact tree at every task boundary",
+  "builds": [
+    {
+      "kind": "baseline",
+      "targets": [
+        "LeanNCD"
+      ],
+      "exit_code": 0,
+      "log": "/Users/williammacready/.copilot/session-state/0ca01b23-7dcd-4fea-913a-44fb225ad1c6/files/coordinate-baseline.log",
+      "sha256": "836b620e03c6831fffb2d7205cafd94f0a70b14da04ab7c382e9d8f623419e17",
+      "warnings_count": 13
+    },
+    {
+      "kind": "targeted",
+      "targets": [
+        "Semantics.RankedMachineTest"
+      ],
+      "exit_code": 0,
+      "log": "/Users/williammacready/.copilot/session-state/0ca01b23-7dcd-4fea-913a-44fb225ad1c6/files/coordinate-targeted.log",
+      "sha256": "7749e3bf7ae8e7242515a50a0e38e907cd8203a03b7366fc19a85a267416f2ca",
+      "warnings_count": 6
+    },
+    {
+      "kind": "full",
+      "targets": [
+        "LeanNCD",
+        "Tests"
+      ],
+      "exit_code": 0,
+      "log": "/Users/williammacready/.copilot/session-state/0ca01b23-7dcd-4fea-913a-44fb225ad1c6/files/coordinate-full.log",
+      "sha256": "0192ebbf8703582aaab8671809aea2ca0e44546abd9b1eb6d578116b3e5a9b3c",
+      "warnings_count": 17
+    },
+    {
+      "kind": "mutations",
+      "targets": [
+        "Semantics.RankedMachineTest"
+      ],
+      "exit_code": 0,
+      "log": "/Users/williammacready/.copilot/session-state/0ca01b23-7dcd-4fea-913a-44fb225ad1c6/files/coordinate-mutations-observed.log",
+      "sha256": "33bfe006e3af5edfc0af17f878adec2195c73a1193e15899a47aa401915e8982",
+      "warnings_count": 0
+    },
+    {
+      "kind": "post_mutation_full",
+      "targets": [
+        "LeanNCD",
+        "Tests"
+      ],
+      "exit_code": 0,
+      "log": "/Users/williammacready/.copilot/session-state/0ca01b23-7dcd-4fea-913a-44fb225ad1c6/files/coordinate-post-mutation-full.log",
+      "sha256": "e9dc81133f5a83640bc2ac07ba78c694938548b7c0bcb0de3b945b205fc82bf5",
+      "warnings_count": 17
+    }
+  ],
+  "proof_axioms": {
+    "LeanNCD.Semantics.Program.reachable_invariant": [
+      "propext",
+      "Classical.choice",
+      "Quot.sound"
+    ],
+    "LeanNCD.Semantics.Program.successful_model": [
+      "propext",
+      "Classical.choice",
+      "Quot.sound"
+    ],
+    "LeanNCD.Semantics.Program.candidate_preserved": [
+      "propext",
+      "Classical.choice",
+      "Quot.sound"
+    ],
+    "LeanNCD.Semantics.Program.successful_unique": [
+      "propext",
+      "Classical.choice",
+      "Quot.sound"
+    ],
+    "LeanNCD.Semantics.Program.successful_admInput": [
+      "propext",
+      "Classical.choice",
+      "Quot.sound"
+    ],
+    "LeanNCD.Semantics.Program.successful_denotation": [
+      "propext",
+      "Classical.choice",
+      "Quot.sound"
+    ],
+    "LeanNCD.Semantics.Program.failed_no_model": [
+      "propext",
+      "Classical.choice",
+      "Quot.sound"
+    ],
+    "LeanNCD.Semantics.Program.initial_measure": [
+      "propext",
+      "Classical.choice",
+      "Quot.sound"
+    ],
+    "LeanNCD.Semantics.Program.consume_measure": [
+      "propext",
+      "Classical.choice",
+      "Quot.sound"
+    ],
+    "LeanNCD.Semantics.Program.publish_measure": [
+      "propext",
+      "Classical.choice",
+      "Quot.sound"
+    ],
+    "LeanNCD.Semantics.Program.step_wellFounded": [
+      "propext",
+      "Classical.choice",
+      "Quot.sound"
+    ],
+    "LeanNCD.Semantics.Program.trace_bound": [
+      "propext",
+      "Classical.choice",
+      "Quot.sound"
+    ],
+    "LeanNCD.Semantics.Program.running_trace_bound": [
+      "propext",
+      "Classical.choice",
+      "Quot.sound"
+    ],
+    "LeanNCD.Semantics.Program.failed_trace_bound": [
+      "propext",
+      "Classical.choice",
+      "Quot.sound"
+    ],
+    "LeanNCD.Semantics.Program.no_infinite_chain": [
+      "propext",
+      "Classical.choice",
+      "Quot.sound"
+    ],
+    "LeanNCD.Semantics.Program.ranked_progress": [
+      "propext",
+      "Classical.choice",
+      "Quot.sound"
+    ],
+    "LeanNCD.Semantics.Program.ranked_not_blocked": [
+      "propext",
+      "Classical.choice",
+      "Quot.sound"
+    ],
+    "LeanNCD.Semantics.Program.terminal_extension": [
+      "propext",
+      "Classical.choice",
+      "Quot.sound"
+    ],
+    "LeanNCD.Semantics.Program.maximal_extension": [
+      "propext",
+      "Classical.choice",
+      "Quot.sound"
+    ],
+    "LeanNCD.Semantics.Program.maximal_dichotomy": [
+      "propext",
+      "Classical.choice",
+      "Quot.sound"
+    ],
+    "LeanNCD.Semantics.Program.model_maximal_success": [
+      "propext",
+      "Classical.choice",
+      "Quot.sound"
+    ],
+    "LeanNCD.Semantics.Program.no_model_maximal_failure": [
+      "propext",
+      "Classical.choice",
+      "Quot.sound"
+    ],
+    "LeanNCD.Semantics.Program.initialization_iff_singleton": [
+      "propext",
+      "Classical.choice",
+      "Quot.sound"
+    ],
+    "LeanNCD.Semantics.Program.successful_schedules_agree": [
+      "propext",
+      "Classical.choice",
+      "Quot.sound"
+    ],
+    "LeanNCD.Semantics.RankedMachineFixtures.historyCertificate": [
+      "propext",
+      "Classical.choice",
+      "Quot.sound"
+    ],
+    "LeanNCD.Semantics.RankedMachineFixtures.duplicate_initial_count": [
+      "propext",
+      "Classical.choice",
+      "Quot.sound"
+    ],
+    "LeanNCD.Semantics.RankedMachineFixtures.singleton_initial_count": [
+      "propext",
+      "Classical.choice",
+      "Quot.sound"
+    ],
+    "LeanNCD.Semantics.RankedMachineFixtures.empty_initial_count": [
+      "propext",
+      "Classical.choice",
+      "Quot.sound"
+    ],
+    "LeanNCD.Semantics.RankedMachineFixtures.second_schedule": [
+      "propext",
+      "Classical.choice",
+      "Quot.sound"
+    ],
+    "LeanNCD.Semantics.RankedMachineFixtures.distinct_first_failures": [
+      "propext",
+      "Classical.choice",
+      "Quot.sound"
+    ],
+    "LeanNCD.Semantics.RankedMachineFixtures.ranked_singleton_correspondence": [
+      "propext",
+      "Classical.choice",
+      "Quot.sound"
+    ]
+  },
+  "counts": {
+    "task_commits": 3,
+    "patches": 3,
+    "changed_files": 8,
+    "fixture_families": 16,
+    "fixture_declarations": 49,
+    "fixture_theorems": 25,
+    "fixture_definitions_and_abbreviations": 24,
+    "program_construction_definitions": 8,
+    "program_instances": 9,
+    "mutation_cycles": 6,
+    "printed_axiom_inventories": 31,
+    "protected_inputs": 31
+  },
+  "protected_input_sha256": {
+    ".claude/settings.json": "4e2b072ca9423459d9656e3699c001d5060748676afb4ed4e33d8e0f15db8b14",
+    "leanncd/LeanNCD/Semantics/Collection.lean": "c174a9327f6196bec82dec9d543199024674ef3cadfc5110fa8f598925d02377",
+    "leanncd/LeanNCD/Semantics/Completeness.lean": "ee6101686eb1319aea27329e2cc0d242090e998fc2ca5d994ac3c9eea802268f",
+    "leanncd/LeanNCD/Semantics/Expr.lean": "a53a1cdb6344802aac7324d9402ec54cab6f95950ba474c99c5a642b2b5161c7",
+    "leanncd/LeanNCD/Semantics/Interpret.lean": "370eafee43f788e0e84032a4649cf17116ad8169141f071ce009be5b5eb18e4b",
+    "leanncd/LeanNCD/Semantics/Invariants.lean": "c105128354f692474fb31efd0caeae2e1535450305391bcb7b8c9bd849e188d4",
+    "leanncd/LeanNCD/Semantics/Machine.lean": "66122fcc988daed012c95d0000711844ac06a1204cfbdb6db8b0d9a071f8c031",
+    "leanncd/LeanNCD/Semantics/Models.lean": "e97b3045954f8ac856994fe38a058fd75d9450aed57a6bad7a92a284a2763415",
+    "leanncd/LeanNCD/Semantics/Program.lean": "f2896c95f748f744b88ad27dd001b9dc126a9cf70de7f0ca06825294f6c938f3",
+    "leanncd/LeanNCD/Semantics/Readiness.lean": "740701b0293f75c31cb513748d88cee0d51627f8480be202251a1163ed281c8c",
+    "leanncd/LeanNCD/Semantics/Soundness.lean": "d80bb778ec18cc139e16159db2f1e318d7940bdad0ce609eb88cb2223d5b8dcd",
+    "leanncd/LeanNCD/Semantics/TensorLogicSemanticCoreSpike.lean": "7d268337098e655442158b05726461141aab50a6beb9c1d8cf72f405012b51a6",
+    "leanncd/LeanNCD/Semantics/Types.lean": "5352d11da1d427edc938999d71323d6a4042016e85da9e86a9fba3047d8db7a0",
+    "leanncd/scripts/lake-build.sh": "6f415e665cbd2f881b276f653a28adfc496d8cea2b8f8853b132c9c26d5d0f01",
+    "leanncd/scripts/lean-file.sh": "9b1c9702296e95de457f274e2f4a1b45d01a0170e2d58435eadb5da644238a67",
+    "leanncd/scripts/mutate-and-build.sh": "9574c98fe6cf0f510e3d0e5eed7d8c1a11e459b6953fe590f0e6659bff403af0",
+    "leanncd/scripts/mutation-cycle.sh": "618da80986bcc57ae2a93fdb674f10890cfa389d20fc5d6f383a012fc93781e9",
+    "leanncd/scripts/mutation-manifest.sh": "5442ae6ac9d21ae12a66504ad400295c4c27eddcf2c39b995b92b274c0d5831d",
+    "leanncd/test/Semantics/CollectionModelTest.lean": "6ef9ea957992b1c79a8f2f1f4ba4404de1b7e9e6df0d4047c067434b9999583c",
+    "leanncd/test/Semantics/ContractTest.lean": "b86ee697211d0c7f43644bc9542e51321801b6338a9364cae6fc50cfd03ad355",
+    "leanncd/test/Semantics/ExpressionTest.lean": "1f02f50be99ccd64a35ba09e99b82278e5c54982088d17f0413b9018e9f59dab",
+    "leanncd/test/Semantics/NativeTest.lean": "c15ac7a734bd2d55e8d4e8604a3649d98e874f6c4c93ede00a4c0cfe8c17a422",
+    "leanncd/test/Semantics/ReferenceMachineTest.lean": "cbaaf442ad5f126691aeeaf9db56cf3c05da57d48e160379ec45088a996c4307",
+    "papers/semantics/lean_executable_semantics_path.md": "e309e62c97e4850d1ce8f0912c777537fd4562fa00104e68eeac9138bf8f931c",
+    "papers/semantics/reference_machine_artifacts/controller_fixture_mutation_results.md": "abdae24382a9772a16bdba22edc9dde271b9102c74a7f6c98f8cb9cb30bac650",
+    "papers/semantics/reference_machine_artifacts/controller_mutation_results.md": "c4bfa7a11a4314c658371ff6dd2b0f9b023d96e61d9bffa83967d3b2a40bb0ff",
+    "papers/semantics/reference_machine_artifacts/controller_replay_audit.json": "6fd5d7c0585f80dcb18fcbc6caecb1d13913ef7cb650ff6a7dd77aca150cf5a3",
+    "papers/semantics/reference_machine_artifacts/emit-patches.py": "69755fc89a87bd42835ded99b8730244a9ec266bff3bb259854fe5f827afb97b",
+    "papers/semantics/reference_machine_artifacts/evidence.json": "58ff0b23c29e8f0da7d0447b01a0909878621e8d988ef84356a2a08cada99044",
+    "papers/semantics/reference_machine_artifacts/replay-audit.json": "bf67e124aac9cd6446cac0185f0677e7b32fb5fa57b149c17f59f5072f07ad53",
+    "papers/semantics/tensor_logic_semantics.md": "b86832a24ef988b828339d42b0a3fc0b9a68f32c8efe12cc2aa1908c41adeae5"
+  },
+  "fixture_donors_and_audit": "coverage-audit.json",
+  "observed_values": {
+    "method": "equalities elaborated by actual targeted/full Lean proof builds; not executable relation evaluation",
+    "duplicate_initial_count": 5,
+    "duplicate_consume_count": 4,
+    "singleton_initial_count": 1,
+    "empty_initial_count": 0,
+    "singleton_rank_zero": 0,
+    "exact_zero_consumption_empty_fiber_nonoutput_decrease": 1
+  },
+  "mutation_manifest": {
+    "path": "/Users/williammacready/code/python/pyncd.worktrees/coordinate-ranks-finite-measure-plan/papers/semantics/coordinate_ranks_finite_measure_mutations_post.json",
+    "sha256": "82fa84a0f02c453fda0aec66a8896e4da7f5fc522d7201eea4c393531794f2a1",
+    "runnable": true,
+    "cycles": [
+      {
+        "label": "CR1-dependency-omission",
+        "result": "PASS",
+        "evidence_kind": "kernel proof rejection, not runtime oracle",
+        "expect_observed": [
+          "error: LeanNCD/Semantics/Progress.lean",
+          "Application type mismatch: The argument"
+        ]
+      },
+      {
+        "label": "CR2-nonstrict-rank",
+        "result": "PASS",
+        "evidence_kind": "kernel proof rejection, not runtime oracle",
+        "expect_observed": [
+          "Tactic `apply` failed: could not unify the conclusion of `certificate.decreases`"
+        ]
+      },
+      {
+        "label": "CR3-defined-address-count-omission",
+        "result": "PASS",
+        "evidence_kind": "kernel proof rejection, not runtime oracle",
+        "expect_observed": [
+          "error: LeanNCD/Semantics/Measure.lean",
+          "unsolved goals"
+        ]
+      },
+      {
+        "label": "CR4-pending-erasure-omission",
+        "result": "PASS",
+        "evidence_kind": "kernel proof rejection, not runtime oracle",
+        "expect_observed": [
+          "error: LeanNCD/Semantics/Measure.lean",
+          "Type mismatch: After simplification, term"
+        ]
+      },
+      {
+        "label": "CR5-stopped-prefix-maximal",
+        "result": "PASS",
+        "evidence_kind": "kernel proof rejection, not runtime oracle",
+        "expect_observed": [
+          "error: LeanNCD/Semantics/Progress.lean",
+          "Function expected at"
+        ]
+      },
+      {
+        "label": "CR6-strict-right-read-omission",
+        "result": "PASS",
+        "evidence_kind": "kernel proof rejection, not runtime oracle",
+        "expect_observed": [
+          "error: LeanNCD/Semantics/Readiness.lean",
+          "Application type mismatch: The argument"
+        ]
+      }
+    ]
+  },
+  "guidance": {
+    "leanncd/AGENTS.md": {
+      "base_total_characters": 23171,
+      "base_injectible_named_section_characters": {
+        "### Patterns": 456,
+        "### Global Pitfalls": 2525
+      },
+      "relevant_semantics_guidance_characters": 279,
+      "unrelated_guidance_trimmed": false
+    },
+    "leanncd/LeanNCD/Semantics/AGENTS.md": {
+      "base_total_characters": 4158,
+      "base_injectible_named_section_characters": {},
+      "relevant_semantics_guidance_characters": 0,
+      "unrelated_guidance_trimmed": false
+    }
+  },
+  "warnings": [
+    "warning: LeanNCD/Semantics/Machine.lean:85:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.finalStore_published`:",
+    "warning: LeanNCD/Semantics/Invariants.lean:99:0: automatically included section variable(s) unused in theorem `LeanNCD.Semantics.Program.publish_extends`:",
+    "warning: test/Semantics/ReferenceMachineTest.lean:202:60: This simp argument is unused:",
+    "warning: LeanNCD/Base/St.lean:171:23: declaration uses `sorry`",
+    "warning: LeanNCD/Base/Br.lean:305:8: declaration uses `sorry`",
+    "warning: LeanNCD/Base/Br.lean:426:0: Definition `LeanNCD.brElemental` of class type must be marked with `@[reducible]` or `@[implicit_reducible]`",
+    "warning: LeanNCD/Core/Weave.lean:29:8: declaration uses `sorry`",
+    "warning: LeanNCD/Instances/StBr.lean:13:23: declaration uses `sorry`",
+    "warning: LeanNCD/Bridge/AcsetCodec.lean:905:10: This simp argument is unused:",
+    "warning: LeanNCD/Bridge/AcsetCodec.lean:917:17: This simp argument is unused:",
+    "warning: LeanNCD/Bridge/AcsetCodec.lean:921:17: This simp argument is unused:",
+    "warning: LeanNCD/Bridge/Agreement.lean:99:52: This simp argument is unused:",
+    "warning: LeanNCD/Bridge/Agreement.lean:122:29: This simp argument is unused:",
+    "warning: LeanNCD/Bridge/Agreement.lean:125:28: This simp argument is unused:",
+    "warning: test/Semantics/RankedMachineTest.lean:81:8: This simp argument is unused:",
+    "warning: test/Semantics/RankedMachineTest.lean:81:19: This simp argument is unused:",
+    "warning: test/Semantics/RankedMachineTest.lean:266:62: This simp argument is unused:"
+  ],
+  "unresolved_issues": [],
+  "limitations": [
+    "No executable scheduler, source checker, rank synthesis or acyclicity equivalence.",
+    "Second success schedule uses a proved terminal extension from a different first step; no computed schedule is advertised.",
+    "Mutation failures are proof rejection, not isolated runtime fixture failure.",
+    "Full build has pre-existing sorry/linter warnings outside this slice; new printed inventories are standard axioms only.",
+    "token-report.py returned 'no transcript for session'; token usage cannot be measured by that tool.",
+    "Semantics AGENTS has no Pitfalls/Checks/Patterns/Context headings; parent named sections include unrelated material and were not trimmed."
+  ],
+  "budget": {
+    "turn_limit": 60,
+    "peak_token_limit_approx": 250000,
+    "dispatch_turns_upper_bound": 60,
+    "reported_breach": false,
+    "measured_token_usage": null,
+    "qualification": "Within turn cap; peak/cumulative usage unavailable from token-report.py. No known context breach."
+  },
+  "no_push_no_merge": true
+}
