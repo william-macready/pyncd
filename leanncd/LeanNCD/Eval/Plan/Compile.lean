@@ -1222,7 +1222,7 @@ private def compileScan (sizes : HashMap UID Nat) (warnings : List EvalWarning)
     -- `stateDtypes`), not a hardcoded `.f64` — a Boolean state's pre-step snapshot must itself carry
     -- `.bool`, or `checkCaptures`' full-`TensorSignature` comparison against the (later-published)
     -- outer state signature would reject every predicate-state recurrence as `captureSignatureMismatch`.
-    | .state si => { shape := stateShapes.getD si #[], dtype := stateDtypes.getD si .f64 }
+    | .state si => { shape := stateShapes.getD si #[], dtype := stateDtypes.getD si .f32 }
     | .external outerSlot => outerSigs.getD outerSlot { shape := #[], dtype := .f64 })
   let mut stepSteps : Array BlockStep := #[]
   let mut stepAssignPlans : Array AssignPlan := #[]
@@ -1738,7 +1738,7 @@ def prepareEvalPlan (sched : ScheduledProgram) (sig : InputSignature) :
           let nm := compiled.stateNames[si]
           let destSlot := tensorSigsAcc.size
           tensorSigsAcc :=
-            tensorSigsAcc.push (compiled.stateSigs.getD si { shape := #[], dtype := .f64 })
+            tensorSigsAcc.push (compiled.stateSigs.getD si { shape := #[], dtype := .f32 })
           materializedAcc := materializedAcc.push { name := nm, slot := destSlot }
           slotOf := slotOf.insert nm destSlot
     | .scanPre nm .. =>
