@@ -57,8 +57,8 @@ mathematical assumption. The same roles are used throughout the document:
 | --- | --- | --- | --- |
 | $\textcolor{#5688C7}{\text{Blue}}$ | Domains, signatures, and index binding | $\textcolor{#5688C7}{\Gamma},\textcolor{#5688C7}{\nu},\textcolor{#5688C7}{\Sigma},\textcolor{#5688C7}{I},\textcolor{#5688C7}{\phi}$ | Which coordinates and index assignment? |
 | $\textcolor{#9D75C4}{\text{Purple}}$ | Program syntax and source identities | $\textcolor{#9D75C4}{P},\textcolor{#9D75C4}{s},\textcolor{#9D75C4}{E},\textcolor{#9D75C4}{\mathcal{O}},\textcolor{#9D75C4}{\mathrel{+}=}$ | What does the source program say? |
-| $\textcolor{#398B83}{\text{Teal}}$ | Denotational values and equations | $\textcolor{#398B83}{\rho},\textcolor{#398B83}{\eta},\textcolor{#398B83}{V},\textcolor{#398B83}{\operatorname{Collect}},\textcolor{#398B83}{\operatorname{Models}}$ | What values and equations does it mean? |
-| $\textcolor{#A87C28}{\text{Amber}}$ | Reference execution and readiness | $\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{\alpha},\textcolor{#A87C28}{U},\textcolor{#A87C28}{\operatorname{Read}},\textcolor{#A87C28}{\longrightarrow}$ | What is available or executable now? |
+| $\textcolor{#398B83}{\text{Teal}}$ | Denotational values and equations | $\textcolor{#398B83}{\rho},\textcolor{#398B83}{\eta},\textcolor{#398B83}{V},\textcolor{#398B83}{\mathop{\mathrm{Collect}}\nolimits},\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}$ | What values and equations does it mean? |
+| $\textcolor{#A87C28}{\text{Amber}}$ | Reference execution and readiness | $\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{\alpha},\textcolor{#A87C28}{U},\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits},\textcolor{#A87C28}{\longrightarrow}$ | What is available or executable now? |
 | $\textcolor{#C16C86}{\text{Rose}}$ | Compiled execution and physical representation | $\textcolor{#C16C86}{\Pi},\textcolor{#C16C86}{\mathsf{C}},\textcolor{#C16C86}{M},\textcolor{#C16C86}{\xi},\textcolor{#C16C86}{\lambda}$ | How is it scheduled and stored? |
 
 In particular, an index valuation $\textcolor{#5688C7}{\nu}$, a complete
@@ -80,11 +80,16 @@ execution order.
 
 The labels and grouped notation reference also work in monochrome.
 Colors use standard `\textcolor{#RRGGBB}{...}` commands inside math, without
-custom macros, HTML styling, or workspace settings. Read this document in
+custom macros, HTML styling, or workspace settings. Named operators use
+`\mathop{\mathrm{Name}}\nolimits` to preserve upright operator text, spacing,
+and side-positioned subscripts without `\operatorname`, which GitHub blocks.
+Read this document in
 VS Code's Markdown preview with the built-in `markdown.math.enabled`
 setting enabled (the default), or in a browser Markdown preview supporting
 KaTeX or MathJax. Plain Markdown without a math renderer displays the
-source notation rather than typesetting it.
+source notation rather than typesetting it. GitHub also imposes a per-page
+math-rendering complexity limit; this long document can exceed it even with
+supported macros. Use the local preview to render the complete specification.
 
 ### Semantic scope
 
@@ -386,7 +391,7 @@ $$
 \textcolor{#5688C7}{\Gamma}=(i_1:\textcolor{#5688C7}{I}_{i_1},\ldots,i_k:\textcolor{#5688C7}{I}_{i_k}).
 $$
 
-Write $\textcolor{#5688C7}{\operatorname{vars}}(\textcolor{#5688C7}{\Gamma})=\{i_1,\ldots,i_k\}$ for the set of
+Write $\textcolor{#5688C7}{\mathop{\mathrm{vars}}\nolimits}(\textcolor{#5688C7}{\Gamma})=\{i_1,\ldots,i_k\}$ for the set of
 variable identities declared in the context.
 The affine core uses scalar integer indices. Tuple coordinates are formed
 from several such indices; they are not single integer index variables.
@@ -407,9 +412,9 @@ A valuation $\textcolor{#5688C7}{\nu}$ for $\textcolor{#5688C7}{\Gamma}$ assigns
 declared domain. The set of all such valuations is
 
 $$
-\textcolor{#5688C7}{\operatorname{Val}}(\textcolor{#5688C7}{\Gamma})
+\textcolor{#5688C7}{\mathop{\mathrm{Val}}\nolimits}(\textcolor{#5688C7}{\Gamma})
 =
-\prod_{i\in\textcolor{#5688C7}{\operatorname{vars}}(\textcolor{#5688C7}{\Gamma})}\textcolor{#5688C7}{I}_i.
+\prod_{i\in\textcolor{#5688C7}{\mathop{\mathrm{vars}}\nolimits}(\textcolor{#5688C7}{\Gamma})}\textcolor{#5688C7}{I}_i.
 $$
 
 Here the product is a dependent family of assignments keyed by variable
@@ -425,7 +430,7 @@ $\textcolor{#5688C7}{\nu}=\{i\mapsto1,j\mapsto2\}$ evaluates $i+j$ to $3$.
 An admissible iteration domain can be a subset
 
 $$
-\textcolor{#5688C7}{D}\subseteq\textcolor{#5688C7}{\operatorname{Val}}(\textcolor{#5688C7}{\Gamma}),
+\textcolor{#5688C7}{D}\subseteq\textcolor{#5688C7}{\mathop{\mathrm{Val}}\nolimits}(\textcolor{#5688C7}{\Gamma}),
 $$
 
 such as the valuations satisfying an explicit guard. A guard restricts
@@ -444,14 +449,14 @@ For a rank-$k$ tensor $T$, write
 $$
 \textcolor{#5688C7}{\Sigma}(T)=(\textcolor{#5688C7}{I}_{T,1},\ldots,\textcolor{#5688C7}{I}_{T,k};K),
 \qquad
-\textcolor{#5688C7}{\operatorname{Coord}}_{\textcolor{#5688C7}{\Sigma}}(T)
+\textcolor{#5688C7}{\mathop{\mathrm{Coord}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}(T)
 =\textcolor{#5688C7}{I}_{T,1}\times\cdots\times \textcolor{#5688C7}{I}_{T,k}.
 $$
 
 Its numerical shape is
 
 $$
-\textcolor{#5688C7}{\operatorname{shape}}_{\textcolor{#5688C7}{\Sigma}}(T)
+\textcolor{#5688C7}{\mathop{\mathrm{shape}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}(T)
 =(|\textcolor{#5688C7}{I}_{T,1}|,\ldots,|\textcolor{#5688C7}{I}_{T,k}|).
 $$
 
@@ -460,7 +465,7 @@ Shape equality alone does not establish a semantic correspondence between
 axes.
 
 **Example.** If $T$ has row domain $[5]$ and column domain $[4]$, then
-$\textcolor{#5688C7}{\operatorname{shape}}_{\textcolor{#5688C7}{\Sigma}}(T)=(5,4)$ and $(3,2)$ is a valid coordinate.
+$\textcolor{#5688C7}{\mathop{\mathrm{shape}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}(T)=(5,4)$ and $(3,2)$ is a valid coordinate.
 $(5,2)$ is not.
 
 ### 4.2 Tensor values
@@ -468,12 +473,12 @@ $(5,2)$ is not.
 A tensor value for $T$ is a total function
 
 $$
-\textcolor{#398B83}{V}_T:\textcolor{#5688C7}{\operatorname{Coord}}_{\textcolor{#5688C7}{\Sigma}}(T)\to K.
+\textcolor{#398B83}{V}_T:\textcolor{#5688C7}{\mathop{\mathrm{Coord}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}(T)\to K.
 $$
 
 Write $\textcolor{#398B83}{V}_T[p]$ for its value at coordinate tuple $p$.
 The set of such functions can also be written
-$K^{\textcolor{#5688C7}{\operatorname{Coord}}_{\textcolor{#5688C7}{\Sigma}}(T)}$.
+$K^{\textcolor{#5688C7}{\mathop{\mathrm{Coord}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}(T)}$.
 
 The zero tensor is the function $\textcolor{#398B83}{\mathbf{0}}_T$ given by
 
@@ -504,7 +509,7 @@ A complete tensor environment $\textcolor{#398B83}{\rho}$ assigns each tensor id
 a value with the signature prescribed by $\textcolor{#5688C7}{\Sigma}$:
 
 $$
-\textcolor{#398B83}{\rho}(T):\textcolor{#5688C7}{\operatorname{Coord}}_{\textcolor{#5688C7}{\Sigma}}(T)\to K.
+\textcolor{#398B83}{\rho}(T):\textcolor{#5688C7}{\mathop{\mathrm{Coord}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}(T)\to K.
 $$
 
 The notation $\textcolor{#398B83}{\rho}(T)[p]$ means "coordinate $p$ of the value assigned to $T$."
@@ -526,25 +531,25 @@ designated inputs.
 For operational reasoning, a tensor address is a pair
 
 $$
-a=(T,p),\qquad p\in\textcolor{#5688C7}{\operatorname{Coord}}_{\textcolor{#5688C7}{\Sigma}}(T).
+a=(T,p),\qquad p\in\textcolor{#5688C7}{\mathop{\mathrm{Coord}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}(T).
 $$
 
-Let $\textcolor{#5688C7}{\operatorname{Addr}}_{\textcolor{#5688C7}{\Sigma}}$ be the set of all such addresses, tagged
+Let $\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}$ be the set of all such addresses, tagged
 by tensor identifier. Coordinates of different tensors are different
 addresses even if their tuples coincide.
 
 A partial store is written
 
 $$
-\textcolor{#A87C28}{\sigma}:\textcolor{#5688C7}{\operatorname{Addr}}_{\textcolor{#5688C7}{\Sigma}}\rightharpoonup K.
+\textcolor{#A87C28}{\sigma}:\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}\rightharpoonup K.
 $$
 
 The hooked arrow denotes a partial function.
-$\operatorname{dom}(\textcolor{#A87C28}{\sigma})$ is the set of addresses at which a value is
+$\mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma})$ is the set of addresses at which a value is
 available.
 
 An absent value is **not** the same as an available zero. For example,
-$(T,p)\notin\operatorname{dom}(\textcolor{#A87C28}{\sigma})$ does not imply
+$(T,p)\notin\mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma})$ does not imply
 $\textcolor{#A87C28}{\sigma}(T,p)=0_K$.
 
 Write $\textcolor{#A87C28}{\sigma}[(T,p)\mapsto v]$ for the store updated at that address.
@@ -565,14 +570,14 @@ identifiers, with capacity $m_{\textcolor{#C16C86}{\beta}}\in\mathbb{N}$ for eac
 $\textcolor{#C16C86}{\beta}\in\textcolor{#C16C86}{\mathcal{B}}$. Define
 
 $$
-\textcolor{#C16C86}{\operatorname{Slot}}_{\textcolor{#C16C86}{\mathcal{B}}}
+\textcolor{#C16C86}{\mathop{\mathrm{Slot}}\nolimits}_{\textcolor{#C16C86}{\mathcal{B}}}
 =\{(\textcolor{#C16C86}{\beta},k)\mid\textcolor{#C16C86}{\beta}\in\textcolor{#C16C86}{\mathcal{B}},\ k\in[m_{\textcolor{#C16C86}{\beta}}]\}.
 $$
 
 A physical slot $\textcolor{#C16C86}{\xi}=(\textcolor{#C16C86}{\beta},k)$ is tagged by its buffer identifier, just
 as a logical address is tagged by its tensor identifier.
 An exact-value memory is a partial map
-$\textcolor{#C16C86}{M}:\textcolor{#C16C86}{\operatorname{Slot}}_{\textcolor{#C16C86}{\mathcal{B}}}\rightharpoonup K$.
+$\textcolor{#C16C86}{M}:\textcolor{#C16C86}{\mathop{\mathrm{Slot}}\nolimits}_{\textcolor{#C16C86}{\mathcal{B}}}\rightharpoonup K$.
 An uninitialized slot is not a stored zero. A capacity-zero buffer has
 no slots.
 
@@ -620,7 +625,7 @@ $$
  \textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{e}_k\rrbracket_{\textcolor{#5688C7}{\nu}}).
 $$
 
-Calling this a map into $\textcolor{#5688C7}{\operatorname{Coord}}_{\textcolor{#5688C7}{\Sigma}}(T)$ asserts that the
+Calling this a map into $\textcolor{#5688C7}{\mathop{\mathrm{Coord}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}(T)$ asserts that the
 tuple is in range throughout the stated domain. Otherwise, it is merely an
 integer-tuple-valued expression requiring a boundary policy.
 
@@ -705,7 +710,7 @@ when it accepts values in $\textcolor{#398B83}{\mathcal{D}}_f$ rather than all o
 
 For exact real arithmetic:
 
-- $\operatorname{ReLU}(x)=\max(0,x)$ is defined for every real $x$.
+- $\mathop{\mathrm{ReLU}}\nolimits(x)=\max(0,x)$ is defined for every real $x$.
 - Real $\log(x)$ requires $x>0$.
 - Real $\sqrt{x}$ requires $x\ge0$.
 - Division by $z$ requires $z\ne0$.
@@ -715,7 +720,7 @@ $[m]$ is a function from $\mathbb{R}^{[m]}$ to
 $\mathbb{R}^{[m]}$:
 
 $$
-\operatorname{softmax}(x)[j]
+\mathop{\mathrm{softmax}}\nolimits(x)[j]
 =
 \frac{\exp(x[j])}{\sum_{k\in[m]}\exp(x[k])}.
 $$
@@ -760,8 +765,8 @@ For each core statement, use the data:
 
 - $T_{\textcolor{#9D75C4}{s}}$: destination tensor identifier.
 - $\textcolor{#5688C7}{\Gamma}_{\textcolor{#9D75C4}{s}}$: context of free contribution variables.
-- $\textcolor{#5688C7}{D}_{\textcolor{#9D75C4}{s}}\subseteq\textcolor{#5688C7}{\operatorname{Val}}(\textcolor{#5688C7}{\Gamma}_{\textcolor{#9D75C4}{s}})$: admissible valuations.
-- $\textcolor{#5688C7}{\phi}_{\textcolor{#9D75C4}{s}}:\textcolor{#5688C7}{D}_{\textcolor{#9D75C4}{s}}\to\textcolor{#5688C7}{\operatorname{Coord}}_{\textcolor{#5688C7}{\Sigma}}(T_{\textcolor{#9D75C4}{s}})$: write map.
+- $\textcolor{#5688C7}{D}_{\textcolor{#9D75C4}{s}}\subseteq\textcolor{#5688C7}{\mathop{\mathrm{Val}}\nolimits}(\textcolor{#5688C7}{\Gamma}_{\textcolor{#9D75C4}{s}})$: admissible valuations.
+- $\textcolor{#5688C7}{\phi}_{\textcolor{#9D75C4}{s}}:\textcolor{#5688C7}{D}_{\textcolor{#9D75C4}{s}}\to\textcolor{#5688C7}{\mathop{\mathrm{Coord}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}(T_{\textcolor{#9D75C4}{s}})$: write map.
 - $\textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}$: body expression, with free variables in $\textcolor{#5688C7}{\Gamma}_{\textcolor{#9D75C4}{s}}$.
 
 Part II gives the syntax that supplies these data. The write map is derived
@@ -786,7 +791,7 @@ distinguishes otherwise identical valuations.
 Its destination is
 
 $$
-\textcolor{#9D75C4}{\operatorname{dst}}(\textcolor{#9D75C4}{o})=(T_{\textcolor{#9D75C4}{s}},\textcolor{#5688C7}{\phi}_{\textcolor{#9D75C4}{s}}(\textcolor{#5688C7}{\nu})).
+\textcolor{#9D75C4}{\mathop{\mathrm{dst}}\nolimits}(\textcolor{#9D75C4}{o})=(T_{\textcolor{#9D75C4}{s}},\textcolor{#5688C7}{\phi}_{\textcolor{#9D75C4}{s}}(\textcolor{#5688C7}{\nu})).
 $$
 
 **Example: different occurrences, different destinations.** Let $X$ have
@@ -796,7 +801,7 @@ shape $(2)$ and $Y$ shape $(3)$:
 s_1: Y[i+1] = X[i]    # i in [2]
 ```
 
-| Contribution occurrence $\textcolor{#9D75C4}{o}=(\textcolor{#9D75C4}{s},\textcolor{#5688C7}{\nu})$ | Destination $\textcolor{#9D75C4}{\operatorname{dst}}(\textcolor{#9D75C4}{o})$ |
+| Contribution occurrence $\textcolor{#9D75C4}{o}=(\textcolor{#9D75C4}{s},\textcolor{#5688C7}{\nu})$ | Destination $\textcolor{#9D75C4}{\mathop{\mathrm{dst}}\nolimits}(\textcolor{#9D75C4}{o})$ |
 | --- | --- |
 | $(\textcolor{#9D75C4}{s}_1,\{i\mapsto0\})$ | $(Y,(1))$, the entry `Y[1]` |
 | $(\textcolor{#9D75C4}{s}_1,\{i\mapsto1\})$ | $(Y,(2))$, the entry `Y[2]` |
@@ -864,7 +869,7 @@ Use the following interpretation notation, made precise in Part III:
   it may be undefined.
 - $\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{P}\textcolor{#398B83}{\rrbracket}(\textcolor{#398B83}{\eta})$: the partial input-output denotation,
   defined when $\textcolor{#398B83}{\eta}$ has a unique complete model, as specified in Section 20.3.
-- $\textcolor{#398B83}{\operatorname{Models}}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})$: environments satisfying a program's
+- $\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})$: environments satisfying a program's
   collected equations on the supplied inputs.
 
 Expression interpretation and program-model satisfaction are different
@@ -941,13 +946,13 @@ collected values:
 They respectively give
 
 $$
-T[i]=\operatorname{ReLU}(A[i])+\operatorname{ReLU}(B[i])
+T[i]=\mathop{\mathrm{ReLU}}\nolimits(A[i])+\mathop{\mathrm{ReLU}}\nolimits(B[i])
 $$
 
 and
 
 $$
-T[i]=\operatorname{ReLU}(A[i]+B[i]).
+T[i]=\mathop{\mathrm{ReLU}}\nolimits(A[i]+B[i]).
 $$
 
 For $A[i]=1$ and $B[i]=-1$, the first is $1$ and the second is $0$.
@@ -988,15 +993,15 @@ Use:
 - $\textcolor{#A87C28}{\mathsf{Conf}}\textcolor{#A87C28}{\longrightarrow}\textcolor{#A87C28}{\mathsf{Conf}}'$ for one execution step.
 - $\textcolor{#A87C28}{\longrightarrow}^{*}$ for zero or more execution steps.
 - $\textcolor{#A87C28}{\mathsf{Conf}}\textcolor{#A87C28}{\Downarrow}\textcolor{#398B83}{\rho}$ for termination with result environment $\textcolor{#398B83}{\rho}$.
-- $\textcolor{#A87C28}{\operatorname{Dep}}(a)$ for the tensor addresses required to evaluate the
+- $\textcolor{#A87C28}{\mathop{\mathrm{Dep}}\nolimits}(a)$ for the tensor addresses required to evaluate the
   contributions at address $a$, as defined in Section 23.
-- $r:\textcolor{#5688C7}{\operatorname{Addr}}_{\textcolor{#5688C7}{\Sigma}}\to\mathbb{N}$ for a dependency rank when
+- $r:\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}\to\mathbb{N}$ for a dependency rank when
   a finite acyclic ordering exists.
 
 The rank condition used in Part IV is
 
 $$
-b\in\textcolor{#A87C28}{\operatorname{Dep}}(a)\Longrightarrow r(b)<r(a).
+b\in\textcolor{#A87C28}{\mathop{\mathrm{Dep}}\nolimits}(a)\Longrightarrow r(b)<r(a).
 $$
 
 This is notation for a sufficient well-founded ordering, not a claim that all
@@ -1103,8 +1108,8 @@ The core expression constructors are:
 | $\textcolor{#9D75C4}{E}_1\oplus \textcolor{#9D75C4}{E}_2$ | Combination of two scalar expressions |
 | $\textcolor{#9D75C4}{E}_1\otimes \textcolor{#9D75C4}{E}_2$ | Multiplication of two scalar expressions |
 | $\bigoplus_{j\in \textcolor{#5688C7}{I}_j}\textcolor{#9D75C4}{E}$ | Scalar reduction; binds $j$ in $\textcolor{#9D75C4}{E}$ |
-| $\textcolor{#9D75C4}{\operatorname{tab}}_{j_1\in \textcolor{#5688C7}{I}_1,\ldots,j_m\in \textcolor{#5688C7}{I}_m}(\textcolor{#9D75C4}{E})$ | Array construction; binds all $j_1,\ldots,j_m$ in a scalar body |
-| $\textcolor{#9D75C4}{\operatorname{at}}(\textcolor{#9D75C4}{E},(\textcolor{#9D75C4}{e}_1,\ldots,\textcolor{#9D75C4}{e}_m))$ | Selects a scalar coordinate from an array expression |
+| $\textcolor{#9D75C4}{\mathop{\mathrm{tab}}\nolimits}_{j_1\in \textcolor{#5688C7}{I}_1,\ldots,j_m\in \textcolor{#5688C7}{I}_m}(\textcolor{#9D75C4}{E})$ | Array construction; binds all $j_1,\ldots,j_m$ in a scalar body |
+| $\textcolor{#9D75C4}{\mathop{\mathrm{at}}\nolimits}(\textcolor{#9D75C4}{E},(\textcolor{#9D75C4}{e}_1,\ldots,\textcolor{#9D75C4}{e}_m))$ | Selects a scalar coordinate from an array expression |
 | $f(\textcolor{#9D75C4}{E}_1,\ldots,\textcolor{#9D75C4}{E}_q)$ | Applies a primitive with its declared input and output types |
 
 The number of indices in a named read must match its tensor rank. A scalar
@@ -1123,7 +1128,7 @@ $X[0]=2$, $X[1]=5$, and $X[2]=7$.
 The array expression
 
 $$
-\textcolor{#398B83}{V}=\textcolor{#9D75C4}{\operatorname{tab}}_{j\in[3]}(X[j]+1)
+\textcolor{#398B83}{V}=\textcolor{#9D75C4}{\mathop{\mathrm{tab}}\nolimits}_{j\in[3]}(X[j]+1)
 $$
 
 constructs all three entries: $\textcolor{#398B83}{V}[0]=3$, $\textcolor{#398B83}{V}[1]=6$, and $\textcolor{#398B83}{V}[2]=8$.
@@ -1131,7 +1136,7 @@ The bound variable $j$ visits each coordinate; it is not summed out.
 Selection then gives
 
 $$
-\textcolor{#9D75C4}{\operatorname{at}}(\textcolor{#398B83}{V},(1))=6.
+\textcolor{#9D75C4}{\mathop{\mathrm{at}}\nolimits}(\textcolor{#398B83}{V},(1))=6.
 $$
 
 Here $(1)$ is the one-coordinate tuple for a vector, and $\textcolor{#398B83}{V}$ is an expository
@@ -1142,7 +1147,7 @@ one scalar from that array.
 **Example: a history slice.**
 
 $$
-\textcolor{#9D75C4}{\operatorname{tab}}_{j\in[d]}(H[j,l])
+\textcolor{#9D75C4}{\mathop{\mathrm{tab}}\nolimits}_{j\in[d]}(H[j,l])
 $$
 
 is an array expression of type $K^{[d]}$, with $l$ free and $j$ bound.
@@ -1151,8 +1156,8 @@ It makes the shorthand $H[:,l]$ from Part I explicit.
 **Example: a scalar selected from an array computation.**
 
 $$
-\textcolor{#9D75C4}{\operatorname{at}}\left(
-F\left(\textcolor{#9D75C4}{\operatorname{tab}}_{j\in[d]}(H[j,l])\right),(i)
+\textcolor{#9D75C4}{\mathop{\mathrm{at}}\nolimits}\left(
+F\left(\textcolor{#9D75C4}{\mathop{\mathrm{tab}}\nolimits}_{j\in[d]}(H[j,l])\right),(i)
 \right)
 $$
 
@@ -1164,11 +1169,11 @@ All bound variables have identities distinct from the variables already
 in scope. Printed names can be changed consistently to satisfy this
 freshness convention.
 
-For an expression $\textcolor{#9D75C4}{E}$, $\textcolor{#9D75C4}{\operatorname{FV}}(\textcolor{#9D75C4}{E})$ denotes its free variables.
+For an expression $\textcolor{#9D75C4}{E}$, $\textcolor{#9D75C4}{\mathop{\mathrm{FV}}\nolimits}(\textcolor{#9D75C4}{E})$ denotes its free variables.
 For example,
 
 $$
-\textcolor{#9D75C4}{\operatorname{FV}}\left(\bigoplus_{k\in \textcolor{#5688C7}{I}_k}W[i,k]\otimes X[k,j]\right)
+\textcolor{#9D75C4}{\mathop{\mathrm{FV}}\nolimits}\left(\bigoplus_{k\in \textcolor{#5688C7}{I}_k}W[i,k]\otimes X[k,j]\right)
 =\{i,j\}.
 $$
 
@@ -1212,7 +1217,7 @@ The guard is optional, with omitted guard meaning $\mathrm{true}$.
 The guard and output indices determine the data introduced in Section 9:
 
 $$
-\textcolor{#5688C7}{D}_{\textcolor{#9D75C4}{s}}=\{\textcolor{#5688C7}{\nu}\in\textcolor{#5688C7}{\operatorname{Val}}(\textcolor{#5688C7}{\Gamma}_{\textcolor{#9D75C4}{s}})
+\textcolor{#5688C7}{D}_{\textcolor{#9D75C4}{s}}=\{\textcolor{#5688C7}{\nu}\in\textcolor{#5688C7}{\mathop{\mathrm{Val}}\nolimits}(\textcolor{#5688C7}{\Gamma}_{\textcolor{#9D75C4}{s}})
        \mid\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{Q}_{\textcolor{#9D75C4}{s}}\rrbracket_{\textcolor{#5688C7}{\nu}}=\mathrm{true}\},
 $$
 
@@ -1273,7 +1278,7 @@ $$
 \textcolor{#5688C7}{\Sigma};\textcolor{#5688C7}{\Gamma};\textcolor{#5688C7}{D}\vdash \textcolor{#9D75C4}{E}:\textcolor{#5688C7}{\tau},
 $$
 
-where $\textcolor{#5688C7}{D}\subseteq\textcolor{#5688C7}{\operatorname{Val}}(\textcolor{#5688C7}{\Gamma})$.
+where $\textcolor{#5688C7}{D}\subseteq\textcolor{#5688C7}{\mathop{\mathrm{Val}}\nolimits}(\textcolor{#5688C7}{\Gamma})$.
 The marker $\mathrm{pred}$ classifies index predicates; it is not a scalar
 type. The primitive registry and scalar algebra are fixed parameters.
 
@@ -1289,7 +1294,7 @@ $$
 \textcolor{#5688C7}{D}^{+j}
 =
 \{\textcolor{#5688C7}{\nu}[j\mapsto k]\mid\textcolor{#5688C7}{\nu}\in \textcolor{#5688C7}{D},\ k\in \textcolor{#5688C7}{I}_j\}
-\subseteq\textcolor{#5688C7}{\operatorname{Val}}(\textcolor{#5688C7}{\Gamma},j:\textcolor{#5688C7}{I}_j).
+\subseteq\textcolor{#5688C7}{\mathop{\mathrm{Val}}\nolimits}(\textcolor{#5688C7}{\Gamma},j:\textcolor{#5688C7}{I}_j).
 $$
 
 For several fresh variables, lift successively. This accounts for every
@@ -1351,12 +1356,12 @@ The expression rules are:
 | Constructor | Required premises and result |
 | --- | --- |
 | $c_K$ | $c_K\in K$; result $K$ |
-| $T[\textcolor{#9D75C4}{e}_1,\ldots,\textcolor{#9D75C4}{e}_k]$ | $T$ is declared, rank is $k$, indices are well-scoped, and their tuple belongs to $\textcolor{#5688C7}{\operatorname{Coord}}_{\textcolor{#5688C7}{\Sigma}}(T)$ for every $\textcolor{#5688C7}{\nu}\in \textcolor{#5688C7}{D}$; result $K$ |
+| $T[\textcolor{#9D75C4}{e}_1,\ldots,\textcolor{#9D75C4}{e}_k]$ | $T$ is declared, rank is $k$, indices are well-scoped, and their tuple belongs to $\textcolor{#5688C7}{\mathop{\mathrm{Coord}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}(T)$ for every $\textcolor{#5688C7}{\nu}\in \textcolor{#5688C7}{D}$; result $K$ |
 | $\mathbf{1}_{\textcolor{#9D75C4}{Q}}$ | $\textcolor{#5688C7}{\Gamma}\vdash \textcolor{#9D75C4}{Q}:\mathrm{pred}$; result $K$ |
 | $\textcolor{#9D75C4}{E}_1\oplus \textcolor{#9D75C4}{E}_2$, $\textcolor{#9D75C4}{E}_1\otimes \textcolor{#9D75C4}{E}_2$ | Both operands have type $K$ under the same $\textcolor{#5688C7}{\Sigma},\textcolor{#5688C7}{\Gamma},\textcolor{#5688C7}{D}$; result $K$ |
 | $\bigoplus_{j\in \textcolor{#5688C7}{I}_j}\textcolor{#9D75C4}{E}$ | The body has type $K$ under $\textcolor{#5688C7}{\Sigma};\textcolor{#5688C7}{\Gamma},j:\textcolor{#5688C7}{I}_j;\textcolor{#5688C7}{D}^{+j}$; result $K$ |
-| $\textcolor{#9D75C4}{\operatorname{tab}}_{j_1\in \textcolor{#5688C7}{I}_1,\ldots,j_m\in \textcolor{#5688C7}{I}_m}(\textcolor{#9D75C4}{E})$ | The body has type $K$ under the extended context and lifted domain; result $K^{\textcolor{#5688C7}{I}_1\times\cdots\times \textcolor{#5688C7}{I}_m}$ |
-| $\textcolor{#9D75C4}{\operatorname{at}}(\textcolor{#9D75C4}{E},(\textcolor{#9D75C4}{e}_1,\ldots,\textcolor{#9D75C4}{e}_m))$ | $\textcolor{#9D75C4}{E}$ has the matching array type, the indices are well-scoped, and the selected tuple is in its coordinate domain for every $\textcolor{#5688C7}{\nu}\in \textcolor{#5688C7}{D}$; result $K$ |
+| $\textcolor{#9D75C4}{\mathop{\mathrm{tab}}\nolimits}_{j_1\in \textcolor{#5688C7}{I}_1,\ldots,j_m\in \textcolor{#5688C7}{I}_m}(\textcolor{#9D75C4}{E})$ | The body has type $K$ under the extended context and lifted domain; result $K^{\textcolor{#5688C7}{I}_1\times\cdots\times \textcolor{#5688C7}{I}_m}$ |
+| $\textcolor{#9D75C4}{\mathop{\mathrm{at}}\nolimits}(\textcolor{#9D75C4}{E},(\textcolor{#9D75C4}{e}_1,\ldots,\textcolor{#9D75C4}{e}_m))$ | $\textcolor{#9D75C4}{E}$ has the matching array type, the indices are well-scoped, and the selected tuple is in its coordinate domain for every $\textcolor{#5688C7}{\nu}\in \textcolor{#5688C7}{D}$; result $K$ |
 | $f(\textcolor{#9D75C4}{E}_1,\ldots,\textcolor{#9D75C4}{E}_q)$ | Each operand has the corresponding type from $\textcolor{#9D75C4}{\mathcal{F}}$ under the same $\textcolor{#5688C7}{\Sigma},\textcolor{#5688C7}{\Gamma},\textcolor{#5688C7}{D}$; result is the declared output type |
 
 Tabulation and reduction lift $\textcolor{#5688C7}{D}$ over the whole declared binder domain,
@@ -1386,7 +1391,7 @@ A statement is structurally well-formed when:
 1. Its destination belongs to $\textcolor{#5688C7}{\mathrm{Def}}$.
 2. Its guard and output indices are well-scoped under $\textcolor{#5688C7}{\Gamma}_{\textcolor{#9D75C4}{s}}$.
 3. Its output arity matches the destination rank.
-4. $\textcolor{#5688C7}{\phi}_{\textcolor{#9D75C4}{s}}(\textcolor{#5688C7}{\nu})\in\textcolor{#5688C7}{\operatorname{Coord}}_{\textcolor{#5688C7}{\Sigma}}(T_{\textcolor{#9D75C4}{s}})$ for every $\textcolor{#5688C7}{\nu}\in \textcolor{#5688C7}{D}_{\textcolor{#9D75C4}{s}}$.
+4. $\textcolor{#5688C7}{\phi}_{\textcolor{#9D75C4}{s}}(\textcolor{#5688C7}{\nu})\in\textcolor{#5688C7}{\mathop{\mathrm{Coord}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}(T_{\textcolor{#9D75C4}{s}})$ for every $\textcolor{#5688C7}{\nu}\in \textcolor{#5688C7}{D}_{\textcolor{#9D75C4}{s}}$.
 5. $\textcolor{#5688C7}{\Sigma};\textcolor{#5688C7}{\Gamma}_{\textcolor{#9D75C4}{s}};\textcolor{#5688C7}{D}_{\textcolor{#9D75C4}{s}}\vdash \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}:K$.
 
 A program is structurally well-formed when its declarations, role
@@ -1480,10 +1485,10 @@ scope for arbitrary nested surface expressions.
 Explicit core scalar expressions can also be written as a statement body,
 with their binders and primitive signatures checked directly rather than
 adding implicit contractions. The slice shorthand $T[:,l]$ expands to
-$\textcolor{#9D75C4}{\operatorname{tab}}_{j\in \textcolor{#5688C7}{I}_{T,1}}(T[j,l])$ for a fresh $j$;
+$\textcolor{#9D75C4}{\mathop{\mathrm{tab}}\nolimits}_{j\in \textcolor{#5688C7}{I}_{T,1}}(T[j,l])$ for a fresh $j$;
 the corresponding rule for several colon slots tabulates their declared
 domains in slot order. Selection from an array expression, such as
-$F(T[:,l])[i]$, expands to $\textcolor{#9D75C4}{\operatorname{at}}$ as in Section 13.3.
+$F(T[:,l])[i]$, expands to $\textcolor{#9D75C4}{\mathop{\mathrm{at}}\nolimits}$ as in Section 13.3.
 The fixed indices must remain well-scoped and in bounds.
 
 ### 15.2 Statement variables and term-local contraction
@@ -1501,10 +1506,10 @@ Write the surface additive body as a finite list of product terms
 $t_1,\ldots,t_h$. For term $t_b$, define its contracted-variable set
 
 $$
-C_b=\textcolor{#9D75C4}{\operatorname{FV}}(t_b)\setminus\textcolor{#5688C7}{\operatorname{vars}}(\textcolor{#5688C7}{\Gamma}_{\textcolor{#9D75C4}{s}}),
+C_b=\textcolor{#9D75C4}{\mathop{\mathrm{FV}}\nolimits}(t_b)\setminus\textcolor{#5688C7}{\mathop{\mathrm{vars}}\nolimits}(\textcolor{#5688C7}{\Gamma}_{\textcolor{#9D75C4}{s}}),
 $$
 
-where $\textcolor{#5688C7}{\operatorname{vars}}(\textcolor{#5688C7}{\Gamma}_{\textcolor{#9D75C4}{s}})$ is the context's variable-identity set
+where $\textcolor{#5688C7}{\mathop{\mathrm{vars}}\nolimits}(\textcolor{#5688C7}{\Gamma}_{\textcolor{#9D75C4}{s}})$ is the context's variable-identity set
 from Section 3.2. Each contracted variable has its own resolved
 domain.
 
@@ -1575,9 +1580,9 @@ contribution body at the original output coordinates is
 
 $$
 \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}=
-\textcolor{#9D75C4}{\operatorname{at}}\left(
+\textcolor{#9D75C4}{\mathop{\mathrm{at}}\nolimits}\left(
 f\left(
-\textcolor{#9D75C4}{\operatorname{tab}}_{h_1\in \textcolor{#5688C7}{I}_1,\ldots,h_m\in \textcolor{#5688C7}{I}_m}
+\textcolor{#9D75C4}{\mathop{\mathrm{tab}}\nolimits}_{h_1\in \textcolor{#5688C7}{I}_1,\ldots,h_m\in \textcolor{#5688C7}{I}_m}
 \left(B_{\textcolor{#9D75C4}{s}}[j_1:=h_1,\ldots,j_m:=h_m]\right)
 \right),
 (j_1,\ldots,j_m)
@@ -1662,7 +1667,7 @@ elaborates to the rank-zero contribution
 $$
 \text{for }():
 \quad
-\operatorname{Trace}[]\textcolor{#9D75C4}{\mathrel{+}=}
+\mathop{\mathrm{Trace}}\nolimits[]\textcolor{#9D75C4}{\mathrel{+}=}
 \bigoplus_{i\in[n]}\textcolor{#9D75C4}{M}[i,i].
 $$
 
@@ -1707,10 +1712,10 @@ retains three contribution occurrences at coordinate $0$.
 Its intended collected value is
 
 $$
-Y[0]=\sum_{i\in[3]}\operatorname{ReLU}(X[i]),
+Y[0]=\sum_{i\in[3]}\mathop{\mathrm{ReLU}}\nolimits(X[i]),
 $$
 
-not $\operatorname{ReLU}(\sum_i X[i])$.
+not $\mathop{\mathrm{ReLU}}\nolimits(\sum_i X[i])$.
 Simplifying $i-i$ must not change the statement's binding structure or
 move its activation boundary.
 
@@ -1763,9 +1768,9 @@ A[q,s.] = softmax(Q[q,k] Key[s,k])
 slice domain $[\textcolor{#5688C7}{s}_0]$. The core body for $q\in[q_0],\textcolor{#5688C7}{s}\in[\textcolor{#5688C7}{s}_0]$ is
 
 $$
-\textcolor{#9D75C4}{\operatorname{at}}\left(
-\operatorname{softmax}\left(
-\textcolor{#9D75C4}{\operatorname{tab}}_{t\in[\textcolor{#5688C7}{s}_0]}
+\textcolor{#9D75C4}{\mathop{\mathrm{at}}\nolimits}\left(
+\mathop{\mathrm{softmax}}\nolimits\left(
+\textcolor{#9D75C4}{\mathop{\mathrm{tab}}\nolimits}_{t\in[\textcolor{#5688C7}{s}_0]}
 \left(\sum_{k\in[d]}\textcolor{#9D75C4}{Q}[q,k]K_{\mathrm{key}}[t,k]\right)
 \right),(\textcolor{#5688C7}{s})
 \right).
@@ -1784,8 +1789,8 @@ $$
 \text{for }i\in[d],l\in[N]:
 \quad
 H[i,l+1]\textcolor{#9D75C4}{\mathrel{+}=}
-\textcolor{#9D75C4}{\operatorname{at}}\left(
-F\left(\textcolor{#9D75C4}{\operatorname{tab}}_{j\in[d]}(H[j,l])\right),(i)
+\textcolor{#9D75C4}{\mathop{\mathrm{at}}\nolimits}\left(
+F\left(\textcolor{#9D75C4}{\mathop{\mathrm{tab}}\nolimits}_{j\in[d]}(H[j,l])\right),(i)
 \right).
 $$
 
@@ -1829,7 +1834,7 @@ Let $\textcolor{#5688C7}{\Gamma}_{\mathrm{all}}$ contain every distinct variable
 operand strings, once, with its resolved domain. This is a context
 in the sense of Section 3, not a concatenation retaining duplicates.
 Its valuations are the paper's global index assignments, expressed
-using our existing $\textcolor{#5688C7}{\operatorname{Val}}$ notation.
+using our existing $\textcolor{#5688C7}{\mathop{\mathrm{Val}}\nolimits}$ notation.
 
 For a string $\textcolor{#5688C7}{L}=(j_1,\ldots,j_k)$, define
 
@@ -1839,11 +1844,11 @@ $$
 \textcolor{#5688C7}{\pi}_{\textcolor{#5688C7}{L}}(\textcolor{#5688C7}{\nu})=(\textcolor{#5688C7}{\nu}(j_1),\ldots,\textcolor{#5688C7}{\nu}(j_k)).
 $$
 
-Thus $\textcolor{#5688C7}{\pi}_{\textcolor{#5688C7}{L}}:\textcolor{#5688C7}{\operatorname{Val}}(\textcolor{#5688C7}{\Gamma}_{\mathrm{all}})\to \textcolor{#5688C7}{J}_{\textcolor{#5688C7}{L}}$ is a
+Thus $\textcolor{#5688C7}{\pi}_{\textcolor{#5688C7}{L}}:\textcolor{#5688C7}{\mathop{\mathrm{Val}}\nolimits}(\textcolor{#5688C7}{\Gamma}_{\mathrm{all}})\to \textcolor{#5688C7}{J}_{\textcolor{#5688C7}{L}}$ is a
 coordinate projection. Equal-domain compatibility ensures that
-$\textcolor{#5688C7}{J}_{\textcolor{#5688C7}{L}_r}=\textcolor{#5688C7}{\operatorname{Coord}}_{\textcolor{#5688C7}{\Sigma}}(T_r)$ for each operand.
+$\textcolor{#5688C7}{J}_{\textcolor{#5688C7}{L}_r}=\textcolor{#5688C7}{\mathop{\mathrm{Coord}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}(T_r)$ for each operand.
 The destination condition similarly gives
-$\textcolor{#5688C7}{J}_{\textcolor{#5688C7}{L}}=\textcolor{#5688C7}{\operatorname{Coord}}_{\textcolor{#5688C7}{\Sigma}}(T_{\textcolor{#9D75C4}{s}})$. A larger declared destination
+$\textcolor{#5688C7}{J}_{\textcolor{#5688C7}{L}}=\textcolor{#5688C7}{\mathop{\mathrm{Coord}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}(T_{\textcolor{#9D75C4}{s}})$. A larger declared destination
 would instead describe a core computation with additional empty fibers,
 not this standard pure-einsum profile.
 
@@ -1865,7 +1870,7 @@ $$
 \textcolor{#398B83}{V}_{\textcolor{#5688C7}{L}}[p]
 =
 \bigoplus_{\substack{
- \textcolor{#5688C7}{\nu}\in\textcolor{#5688C7}{\operatorname{Val}}(\textcolor{#5688C7}{\Gamma}_{\mathrm{all}})\\
+ \textcolor{#5688C7}{\nu}\in\textcolor{#5688C7}{\mathop{\mathrm{Val}}\nolimits}(\textcolor{#5688C7}{\Gamma}_{\mathrm{all}})\\
  \textcolor{#5688C7}{\pi}_{\textcolor{#5688C7}{L}}(\textcolor{#5688C7}{\nu})=p
 }}
 \;\bigotimes_{r=1}^{m}
@@ -1921,7 +1926,7 @@ Partition the global variables into:
 - The remaining variables, contracted in the body.
 
 Use guard $\mathrm{true}$, an output map $\textcolor{#5688C7}{\phi}_{\textcolor{#9D75C4}{s}}$ given by the same
-tuple projection on $\textcolor{#5688C7}{\operatorname{Val}}(\textcolor{#5688C7}{\Gamma}_{\textcolor{#9D75C4}{s}})$, and body
+tuple projection on $\textcolor{#5688C7}{\mathop{\mathrm{Val}}\nolimits}(\textcolor{#5688C7}{\Gamma}_{\textcolor{#9D75C4}{s}})$, and body
 
 $$
 \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}=
@@ -1947,10 +1952,10 @@ The formula cannot be extended to nonlinear bodies by moving an
 operator inside the products or sums. For example,
 
 $$
-\operatorname{ReLU}\left(\sum_k W[i,k]X[k]\right)
+\mathop{\mathrm{ReLU}}\nolimits\left(\sum_k W[i,k]X[k]\right)
 $$
 
-is not generally the sum of $\operatorname{ReLU}(W[i,k]X[k])$.
+is not generally the sum of $\mathop{\mathrm{ReLU}}\nolimits(W[i,k]X[k])$.
 The operator boundary fixed in Sections 13 and 15 remains authoritative.
 
 ### 17.4 Delta tensors and diagonal identities
@@ -2155,7 +2160,7 @@ For an expression value type $\textcolor{#5688C7}{\tau}$ from Section 13.2, defi
 space
 
 $$
-\textcolor{#398B83}{\operatorname{Result}}(\textcolor{#5688C7}{\tau})=\textcolor{#5688C7}{\tau}\sqcup\{\textcolor{#398B83}{\bot}\}.
+\textcolor{#398B83}{\mathop{\mathrm{Result}}\nolimits}(\textcolor{#5688C7}{\tau})=\textcolor{#5688C7}{\tau}\sqcup\{\textcolor{#398B83}{\bot}\}.
 $$
 
 This is a tagged disjoint union. A member of $\textcolor{#5688C7}{\tau}$ is a successful
@@ -2171,7 +2176,7 @@ $\textcolor{#5688C7}{\Sigma};\textcolor{#5688C7}{\Gamma};\textcolor{#5688C7}{D}\
 $\textcolor{#5688C7}{\nu}\in \textcolor{#5688C7}{D}$, define
 
 $$
-\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}\in\textcolor{#398B83}{\operatorname{Result}}(\textcolor{#5688C7}{\tau}).
+\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}\in\textcolor{#398B83}{\mathop{\mathrm{Result}}\nolimits}(\textcolor{#5688C7}{\tau}).
 $$
 
 Index expressions and predicates have the total interpretations already
@@ -2228,7 +2233,7 @@ For a scalar tensor, its index tuple is empty.
 For $\star\in\{\oplus,\otimes\}$, define the strict lifting
 
 $$
-\textcolor{#398B83}{\operatorname{lift}}_2(\star,u,v)
+\textcolor{#398B83}{\mathop{\mathrm{lift}}\nolimits}_2(\star,u,v)
 =
 \begin{cases}
 u\star v,&u,v\text{ are successful scalar values},\\
@@ -2241,7 +2246,7 @@ Then
 $$
 \textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}_1\star \textcolor{#9D75C4}{E}_2\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
 =
-\textcolor{#398B83}{\operatorname{lift}}_2\left(
+\textcolor{#398B83}{\mathop{\mathrm{lift}}\nolimits}_2\left(
  \star,\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}_1\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}},
  \textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}_2\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
 \right).
@@ -2249,7 +2254,7 @@ $$
 
 Both operands must be defined, even when one is $0_K$.
 This lifting is not an assertion that
-$\textcolor{#398B83}{\operatorname{Result}}(K)$ itself forms the scalar semiring.
+$\textcolor{#398B83}{\mathop{\mathrm{Result}}\nolimits}(K)$ itself forms the scalar semiring.
 For instance, multiplying a successful zero by $\textcolor{#398B83}{\bot}$ gives $\textcolor{#398B83}{\bot}$,
 not a successful zero.
 
@@ -2284,7 +2289,7 @@ The tabulation result is
 
 $$
 \textcolor{#398B83}{\llbracket}
-\textcolor{#9D75C4}{\operatorname{tab}}_{j_1\in \textcolor{#5688C7}{I}_1,\ldots,j_m\in \textcolor{#5688C7}{I}_m}(\textcolor{#9D75C4}{E})
+\textcolor{#9D75C4}{\mathop{\mathrm{tab}}\nolimits}_{j_1\in \textcolor{#5688C7}{I}_1,\ldots,j_m\in \textcolor{#5688C7}{I}_m}(\textcolor{#9D75C4}{E})
 \rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
 =
 \begin{cases}
@@ -2306,7 +2311,7 @@ $p=(\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{e}_1\rrbracket_{\textcol
 Then
 
 $$
-\textcolor{#398B83}{\llbracket}\textcolor{#9D75C4}{\operatorname{at}}(\textcolor{#9D75C4}{E},(\textcolor{#9D75C4}{e}_1,\ldots,\textcolor{#9D75C4}{e}_m))\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
+\textcolor{#398B83}{\llbracket}\textcolor{#9D75C4}{\mathop{\mathrm{at}}\nolimits}(\textcolor{#9D75C4}{E},(\textcolor{#9D75C4}{e}_1,\ldots,\textcolor{#9D75C4}{e}_m))\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
 =
 \begin{cases}
 \textcolor{#398B83}{V}[p],&\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}\downarrow \textcolor{#398B83}{V},\\
@@ -2360,8 +2365,8 @@ If $X$ has shape $(2)$ with $\textcolor{#398B83}{\rho}(X)[0]=4$ and $\textcolor{
 
 $$
 \textcolor{#398B83}{\llbracket}
-\textcolor{#9D75C4}{\operatorname{at}}\left(
- \textcolor{#9D75C4}{\operatorname{tab}}_{j\in[2]}(\log(X[j])),(0)
+\textcolor{#9D75C4}{\mathop{\mathrm{at}}\nolimits}\left(
+ \textcolor{#9D75C4}{\mathop{\mathrm{tab}}\nolimits}_{j\in[2]}(\log(X[j])),(0)
 \right)
 \rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
 =\textcolor{#398B83}{\bot}.
@@ -2395,7 +2400,7 @@ Section 19.3's pure-einsum elaboration correspondence remains a proof target.
 For a structurally well-formed program $\textcolor{#9D75C4}{P}$, define
 
 $$
-\textcolor{#398B83}{\operatorname{AdmEnv}}(\textcolor{#9D75C4}{P})
+\textcolor{#398B83}{\mathop{\mathrm{AdmEnv}}\nolimits}(\textcolor{#9D75C4}{P})
 =
 \left\{
 \textcolor{#398B83}{\rho}\ \middle|\
@@ -2417,7 +2422,7 @@ In contrast, a present zero-valued contribution must still be defined.
 
 ### 19.2 Statement contributions and collected tensors
 
-For $\textcolor{#398B83}{\rho}\in\textcolor{#398B83}{\operatorname{AdmEnv}}(\textcolor{#9D75C4}{P})$, define the contribution tensor
+For $\textcolor{#398B83}{\rho}\in\textcolor{#398B83}{\mathop{\mathrm{AdmEnv}}\nolimits}(\textcolor{#9D75C4}{P})$, define the contribution tensor
 of one statement:
 
 $$
@@ -2425,7 +2430,7 @@ $$
 =
 \bigoplus_{\substack{\textcolor{#5688C7}{\nu}\in \textcolor{#5688C7}{D}_{\textcolor{#9D75C4}{s}}\\\textcolor{#5688C7}{\phi}_{\textcolor{#9D75C4}{s}}(\textcolor{#5688C7}{\nu})=p}}
 \textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}},
-\qquad p\in\textcolor{#5688C7}{\operatorname{Coord}}_{\textcolor{#5688C7}{\Sigma}}(T_{\textcolor{#9D75C4}{s}}).
+\qquad p\in\textcolor{#5688C7}{\mathop{\mathrm{Coord}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}(T_{\textcolor{#9D75C4}{s}}).
 $$
 
 Each term here is a successful scalar value; $\textcolor{#398B83}{\bot}$ is never treated
@@ -2435,7 +2440,7 @@ An empty fiber gives $0_K$.
 For every defined tensor $T$, define its collected value:
 
 $$
-\textcolor{#398B83}{\operatorname{Collect}}_{\textcolor{#9D75C4}{P}}(\textcolor{#398B83}{\rho})(T)[p]
+\textcolor{#398B83}{\mathop{\mathrm{Collect}}\nolimits}_{\textcolor{#9D75C4}{P}}(\textcolor{#398B83}{\rho})(T)[p]
 =
 \bigoplus_{(\textcolor{#9D75C4}{s},\textcolor{#5688C7}{\nu})\in\textcolor{#9D75C4}{\mathcal{C}}_{\textcolor{#9D75C4}{P}}(T,p)}
 \textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}.
@@ -2444,7 +2449,7 @@ $$
 Equivalently, partitioning the occurrences by statement gives
 
 $$
-\textcolor{#398B83}{\operatorname{Collect}}_{\textcolor{#9D75C4}{P}}(\textcolor{#398B83}{\rho})(T)[p]
+\textcolor{#398B83}{\mathop{\mathrm{Collect}}\nolimits}_{\textcolor{#9D75C4}{P}}(\textcolor{#398B83}{\rho})(T)[p]
 =
 \bigoplus_{\substack{\textcolor{#9D75C4}{s}\in \textcolor{#9D75C4}{P}\\T_{\textcolor{#9D75C4}{s}}=T}}\textcolor{#398B83}{V}_{\textcolor{#9D75C4}{s}}^{\textcolor{#398B83}{\rho}}[p].
 $$
@@ -2494,7 +2499,7 @@ theorem. The proof description here is not a kernel-checked proof.
 
 Permuting source statements while preserving their bodies, binders,
 guards, and distinct occurrence identities leaves
-$\textcolor{#398B83}{\operatorname{AdmEnv}}(\textcolor{#9D75C4}{P})$ and collected values unchanged, up to the
+$\textcolor{#398B83}{\mathop{\mathrm{AdmEnv}}\nolimits}(\textcolor{#9D75C4}{P})$ and collected values unchanged, up to the
 corresponding relabeling of occurrences.
 Finite commutative combination justifies this property.
 Deleting a duplicate statement does not generally preserve it.
@@ -2528,15 +2533,15 @@ in $\textcolor{#5688C7}{\mathrm{In}}$, and its identifier domain is exactly $\te
 For such an $\textcolor{#398B83}{\eta}$, define
 
 $$
-\textcolor{#398B83}{\operatorname{Models}}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})
+\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})
 =
 \left\{
-\textcolor{#398B83}{\rho}\in\textcolor{#398B83}{\operatorname{AdmEnv}}(\textcolor{#9D75C4}{P})\ \middle|\
+\textcolor{#398B83}{\rho}\in\textcolor{#398B83}{\mathop{\mathrm{AdmEnv}}\nolimits}(\textcolor{#9D75C4}{P})\ \middle|\
 \begin{array}{l}
 \textcolor{#398B83}{\rho}|_{\textcolor{#5688C7}{\mathrm{In}}}=\textcolor{#398B83}{\eta},\ \text{and}\\
-\textcolor{#398B83}{\rho}(T)[p]=\textcolor{#398B83}{\operatorname{Collect}}_{\textcolor{#9D75C4}{P}}(\textcolor{#398B83}{\rho})(T)[p]\\
+\textcolor{#398B83}{\rho}(T)[p]=\textcolor{#398B83}{\mathop{\mathrm{Collect}}\nolimits}_{\textcolor{#9D75C4}{P}}(\textcolor{#398B83}{\rho})(T)[p]\\
 \text{for every }T\in\textcolor{#5688C7}{\mathrm{Def}}
-\text{ and }p\in\textcolor{#5688C7}{\operatorname{Coord}}_{\textcolor{#5688C7}{\Sigma}}(T)
+\text{ and }p\in\textcolor{#5688C7}{\mathop{\mathrm{Coord}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}(T)
 \end{array}
 \right\}.
 $$
@@ -2555,7 +2560,7 @@ That set can be empty, a singleton, or contain several environments.
 The same definition can be expressed using the partial map
 
 $$
-\textcolor{#398B83}{\Phi}_{\textcolor{#9D75C4}{P}}:\textcolor{#398B83}{\operatorname{AdmEnv}}(\textcolor{#9D75C4}{P})\to
+\textcolor{#398B83}{\Phi}_{\textcolor{#9D75C4}{P}}:\textcolor{#398B83}{\mathop{\mathrm{AdmEnv}}\nolimits}(\textcolor{#9D75C4}{P})\to
 \{\text{complete, signature-respecting environments}\},
 $$
 
@@ -2565,13 +2570,13 @@ $$
 \textcolor{#398B83}{\Phi}_{\textcolor{#9D75C4}{P}}(\textcolor{#398B83}{\rho})(T)=
 \begin{cases}
 \textcolor{#398B83}{\rho}(T),&T\in\textcolor{#5688C7}{\mathrm{In}},\\
-\textcolor{#398B83}{\operatorname{Collect}}_{\textcolor{#9D75C4}{P}}(\textcolor{#398B83}{\rho})(T),&T\in\textcolor{#5688C7}{\mathrm{Def}}.
+\textcolor{#398B83}{\mathop{\mathrm{Collect}}\nolimits}_{\textcolor{#9D75C4}{P}}(\textcolor{#398B83}{\rho})(T),&T\in\textcolor{#5688C7}{\mathrm{Def}}.
 \end{cases}
 $$
 
 It is partial relative to the space of all complete environments,
-because its domain is $\textcolor{#398B83}{\operatorname{AdmEnv}}(\textcolor{#9D75C4}{P})$.
-Its result need not itself belong to $\textcolor{#398B83}{\operatorname{AdmEnv}}(\textcolor{#9D75C4}{P})$.
+because its domain is $\textcolor{#398B83}{\mathop{\mathrm{AdmEnv}}\nolimits}(\textcolor{#9D75C4}{P})$.
+Its result need not itself belong to $\textcolor{#398B83}{\mathop{\mathrm{AdmEnv}}\nolimits}(\textcolor{#9D75C4}{P})$.
 For example, for the scalar statement `T[] = log(T[])`, a candidate
 value $T=1$ makes the contribution defined, but $\textcolor{#398B83}{\Phi}_{\textcolor{#9D75C4}{P}}$ produces
 $T=0$, at which the same contribution is undefined.
@@ -2590,9 +2595,9 @@ introduced by this characterization.
 
 ### 20.3 Functional admissibility
 
-Let $\textcolor{#398B83}{\operatorname{Input}}_{\textcolor{#5688C7}{\Sigma}}$ denote the well-typed input
+Let $\textcolor{#398B83}{\mathop{\mathrm{Input}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}$ denote the well-typed input
 environments for the program's designated inputs, and let
-$\textcolor{#398B83}{\operatorname{Output}}_{\textcolor{#5688C7}{\Sigma}}$ denote the corresponding value
+$\textcolor{#398B83}{\mathop{\mathrm{Output}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}$ denote the corresponding value
 environments on $\textcolor{#5688C7}{\mathrm{Out}}$.
 The fixed program's role sets are implicit in this notation; $\textcolor{#5688C7}{\Sigma}$
 alone does not determine which identifiers are inputs or outputs.
@@ -2600,14 +2605,14 @@ alone does not determine which identifiers are inputs or outputs.
 Define the set of **functionally admissible inputs** by
 
 $$
-\textcolor{#398B83}{\operatorname{AdmInput}}(\textcolor{#9D75C4}{P})
+\textcolor{#398B83}{\mathop{\mathrm{AdmInput}}\nolimits}(\textcolor{#9D75C4}{P})
 =
-\{\textcolor{#398B83}{\eta}\in\textcolor{#398B83}{\operatorname{Input}}_{\textcolor{#5688C7}{\Sigma}}
-\mid\textcolor{#398B83}{\operatorname{Models}}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})
+\{\textcolor{#398B83}{\eta}\in\textcolor{#398B83}{\mathop{\mathrm{Input}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}
+\mid\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})
 \text{ contains exactly one environment}\}.
 $$
 
-For $\textcolor{#398B83}{\eta}\in\textcolor{#398B83}{\operatorname{AdmInput}}(\textcolor{#9D75C4}{P})$ with unique model $\textcolor{#398B83}{\rho}_{\textcolor{#398B83}{\eta}}$,
+For $\textcolor{#398B83}{\eta}\in\textcolor{#398B83}{\mathop{\mathrm{AdmInput}}\nolimits}(\textcolor{#9D75C4}{P})$ with unique model $\textcolor{#398B83}{\rho}_{\textcolor{#398B83}{\eta}}$,
 define
 
 $$
@@ -2618,17 +2623,17 @@ This gives a partial function
 
 $$
 \textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{P}\textcolor{#398B83}{\rrbracket}:
-\textcolor{#398B83}{\operatorname{Input}}_{\textcolor{#5688C7}{\Sigma}}
-\rightharpoonup\textcolor{#398B83}{\operatorname{Output}}_{\textcolor{#5688C7}{\Sigma}}.
+\textcolor{#398B83}{\mathop{\mathrm{Input}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}
+\rightharpoonup\textcolor{#398B83}{\mathop{\mathrm{Output}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}.
 $$
 
-Here the function domain is precisely $\textcolor{#398B83}{\operatorname{AdmInput}}(\textcolor{#9D75C4}{P})$.
+Here the function domain is precisely $\textcolor{#398B83}{\mathop{\mathrm{AdmInput}}\nolimits}(\textcolor{#9D75C4}{P})$.
 If an application specifies an input class
-$\textcolor{#398B83}{\mathcal{A}}\subseteq\textcolor{#398B83}{\operatorname{Input}}_{\textcolor{#5688C7}{\Sigma}}$, total functional
+$\textcolor{#398B83}{\mathcal{A}}\subseteq\textcolor{#398B83}{\mathop{\mathrm{Input}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}$, total functional
 meaning on that class requires
 
 $$
-\textcolor{#398B83}{\mathcal{A}}\subseteq\textcolor{#398B83}{\operatorname{AdmInput}}(\textcolor{#9D75C4}{P}).
+\textcolor{#398B83}{\mathcal{A}}\subseteq\textcolor{#398B83}{\mathop{\mathrm{AdmInput}}\nolimits}(\textcolor{#9D75C4}{P}).
 $$
 
 The unique-model criterion is deliberately stronger than uniqueness
@@ -2677,9 +2682,9 @@ Every body is defined. For every candidate environment extending
 the inputs, the collected values are
 
 $$
-\textcolor{#398B83}{\operatorname{Collect}}_{\textcolor{#9D75C4}{P}}(\textcolor{#398B83}{\rho})(T)[0]=4,
+\textcolor{#398B83}{\mathop{\mathrm{Collect}}\nolimits}_{\textcolor{#9D75C4}{P}}(\textcolor{#398B83}{\rho})(T)[0]=4,
 \qquad
-\textcolor{#398B83}{\operatorname{Collect}}_{\textcolor{#9D75C4}{P}}(\textcolor{#398B83}{\rho})(T)[1]=10.
+\textcolor{#398B83}{\mathop{\mathrm{Collect}}\nolimits}_{\textcolor{#9D75C4}{P}}(\textcolor{#398B83}{\rho})(T)[1]=10.
 $$
 
 The model equations therefore force the unique output $T=(4,10)$.
@@ -2694,15 +2699,15 @@ of its declared domain.
 
 At a fixed coordinate with numerical inputs $A[i]=1$, $B[i]=-1$,
 two statements targeting $T$ with bodies
-$\operatorname{ReLU}(A[i])$ and $\operatorname{ReLU}(B[i])$
+$\mathop{\mathrm{ReLU}}\nolimits(A[i])$ and $\mathop{\mathrm{ReLU}}\nolimits(B[i])$
 force $T[i]=1$.
 
 If those inputs instead contribute to `Pre`, and the only contribution
-to $T[i]$ is $\operatorname{ReLU}(\operatorname{Pre}[i])$, the model
+to $T[i]$ is $\mathop{\mathrm{ReLU}}\nolimits(\mathop{\mathrm{Pre}}\nolimits[i])$, the model
 equations force
 
 $$
-\operatorname{Pre}[i]=0,\qquad T[i]=0.
+\mathop{\mathrm{Pre}}\nolimits[i]=0,\qquad T[i]=0.
 $$
 
 The distinction follows from collected equations, not from the order
@@ -2734,7 +2739,7 @@ $$
 
 Now $i=1$ is an actual occurrence. Its body is undefined, so no
 environment extending these inputs belongs to
-$\textcolor{#398B83}{\operatorname{AdmEnv}}(\textcolor{#9D75C4}{P})$ and the program has no model on this input.
+$\textcolor{#398B83}{\mathop{\mathrm{AdmEnv}}\nolimits}(\textcolor{#9D75C4}{P})$ and the program has no model on this input.
 The zero multiplier does not repair the logarithm's domain failure.
 
 ### 21.4 Three different cyclic equation systems
@@ -2832,21 +2837,21 @@ Fix a structurally well-formed core program $\textcolor{#9D75C4}{P}$. Its roles 
 address set:
 
 $$
-\textcolor{#5688C7}{\operatorname{Addr}}_{\textcolor{#5688C7}{\mathrm{In}}}
-=\{(T,p)\in\textcolor{#5688C7}{\operatorname{Addr}}_{\textcolor{#5688C7}{\Sigma}}\mid T\in\textcolor{#5688C7}{\mathrm{In}}\},
+\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\mathrm{In}}}
+=\{(T,p)\in\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}\mid T\in\textcolor{#5688C7}{\mathrm{In}}\},
 \qquad
-\textcolor{#5688C7}{\operatorname{Addr}}_{\textcolor{#5688C7}{\mathrm{Def}}}
-=\{(T,p)\in\textcolor{#5688C7}{\operatorname{Addr}}_{\textcolor{#5688C7}{\Sigma}}\mid T\in\textcolor{#5688C7}{\mathrm{Def}}\}.
+\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\mathrm{Def}}}
+=\{(T,p)\in\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}\mid T\in\textcolor{#5688C7}{\mathrm{Def}}\}.
 $$
 
 Recall the destination function from Section 9.2: for
 $\textcolor{#9D75C4}{o}=(\textcolor{#9D75C4}{s},\textcolor{#5688C7}{\nu})\in\textcolor{#9D75C4}{\mathcal{O}}_{\textcolor{#9D75C4}{P}}$,
 
 $$
-\textcolor{#9D75C4}{\operatorname{dst}}(\textcolor{#9D75C4}{o})=(T_{\textcolor{#9D75C4}{s}},\textcolor{#5688C7}{\phi}_{\textcolor{#9D75C4}{s}}(\textcolor{#5688C7}{\nu})).
+\textcolor{#9D75C4}{\mathop{\mathrm{dst}}\nolimits}(\textcolor{#9D75C4}{o})=(T_{\textcolor{#9D75C4}{s}},\textcolor{#5688C7}{\phi}_{\textcolor{#9D75C4}{s}}(\textcolor{#5688C7}{\nu})).
 $$
 
-For $a=(T,p)\in\textcolor{#5688C7}{\operatorname{Addr}}_{\textcolor{#5688C7}{\mathrm{Def}}}$, abbreviate
+For $a=(T,p)\in\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\mathrm{Def}}}$, abbreviate
 $\textcolor{#9D75C4}{\mathcal{C}}_{\textcolor{#9D75C4}{P}}(a)=\textcolor{#9D75C4}{\mathcal{C}}_{\textcolor{#9D75C4}{P}}(T,p)$.
 These are the existing tagged occurrences and fibers, not new contributions.
 
@@ -2854,48 +2859,48 @@ These are the existing tagged occurrences and fibers, not new contributions.
 
 For a structurally valid expression at an admissible valuation $\textcolor{#5688C7}{\nu}$,
 define its **read footprint**
-$\textcolor{#A87C28}{\operatorname{Read}}(\textcolor{#9D75C4}{E},\textcolor{#5688C7}{\nu})\subseteq\textcolor{#5688C7}{\operatorname{Addr}}_{\textcolor{#5688C7}{\Sigma}}$ recursively.
+$\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{E},\textcolor{#5688C7}{\nu})\subseteq\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}$ recursively.
 This set records which named coordinates must be available before the
 expression is interpreted by the direct executor:
 
 $$
-\textcolor{#A87C28}{\operatorname{Read}}(c_K,\textcolor{#5688C7}{\nu})
-=\textcolor{#A87C28}{\operatorname{Read}}(\mathbf{1}_{\textcolor{#9D75C4}{Q}},\textcolor{#5688C7}{\nu})=\varnothing,
+\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(c_K,\textcolor{#5688C7}{\nu})
+=\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\mathbf{1}_{\textcolor{#9D75C4}{Q}},\textcolor{#5688C7}{\nu})=\varnothing,
 $$
 
 $$
-\textcolor{#A87C28}{\operatorname{Read}}(T[\textcolor{#9D75C4}{e}_1,\ldots,\textcolor{#9D75C4}{e}_k],\textcolor{#5688C7}{\nu})
+\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(T[\textcolor{#9D75C4}{e}_1,\ldots,\textcolor{#9D75C4}{e}_k],\textcolor{#5688C7}{\nu})
 =\{(T,(\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{e}_1\rrbracket_{\textcolor{#5688C7}{\nu}},\ldots,
         \textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{e}_k\rrbracket_{\textcolor{#5688C7}{\nu}}))\},
 $$
 
 $$
-\textcolor{#A87C28}{\operatorname{Read}}(\textcolor{#9D75C4}{E}_1\star \textcolor{#9D75C4}{E}_2,\textcolor{#5688C7}{\nu})
-=\textcolor{#A87C28}{\operatorname{Read}}(\textcolor{#9D75C4}{E}_1,\textcolor{#5688C7}{\nu})\cup\textcolor{#A87C28}{\operatorname{Read}}(\textcolor{#9D75C4}{E}_2,\textcolor{#5688C7}{\nu}),
+\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{E}_1\star \textcolor{#9D75C4}{E}_2,\textcolor{#5688C7}{\nu})
+=\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{E}_1,\textcolor{#5688C7}{\nu})\cup\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{E}_2,\textcolor{#5688C7}{\nu}),
 \qquad\star\in\{\oplus,\otimes\},
 $$
 
 $$
-\textcolor{#A87C28}{\operatorname{Read}}\left(\bigoplus_{j\in \textcolor{#5688C7}{I}_j}\textcolor{#9D75C4}{E},\textcolor{#5688C7}{\nu}\right)
-=\bigcup_{k\in \textcolor{#5688C7}{I}_j}\textcolor{#A87C28}{\operatorname{Read}}(\textcolor{#9D75C4}{E},\textcolor{#5688C7}{\nu}[j\mapsto k]),
+\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}\left(\bigoplus_{j\in \textcolor{#5688C7}{I}_j}\textcolor{#9D75C4}{E},\textcolor{#5688C7}{\nu}\right)
+=\bigcup_{k\in \textcolor{#5688C7}{I}_j}\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{E},\textcolor{#5688C7}{\nu}[j\mapsto k]),
 $$
 
 $$
-\textcolor{#A87C28}{\operatorname{Read}}\left(
- \textcolor{#9D75C4}{\operatorname{tab}}_{j_1\in \textcolor{#5688C7}{I}_1,\ldots,j_m\in \textcolor{#5688C7}{I}_m}(\textcolor{#9D75C4}{E}),\textcolor{#5688C7}{\nu}
+\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}\left(
+ \textcolor{#9D75C4}{\mathop{\mathrm{tab}}\nolimits}_{j_1\in \textcolor{#5688C7}{I}_1,\ldots,j_m\in \textcolor{#5688C7}{I}_m}(\textcolor{#9D75C4}{E}),\textcolor{#5688C7}{\nu}
 \right)
 =\bigcup_{p\in \textcolor{#5688C7}{I}_1\times\cdots\times \textcolor{#5688C7}{I}_m}
-  \textcolor{#A87C28}{\operatorname{Read}}(\textcolor{#9D75C4}{E},\textcolor{#5688C7}{\nu}_p),
+  \textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{E},\textcolor{#5688C7}{\nu}_p),
 $$
 
 $$
-\textcolor{#A87C28}{\operatorname{Read}}(\textcolor{#9D75C4}{\operatorname{at}}(\textcolor{#9D75C4}{E},(\textcolor{#9D75C4}{e}_1,\ldots,\textcolor{#9D75C4}{e}_m)),\textcolor{#5688C7}{\nu})
-=\textcolor{#A87C28}{\operatorname{Read}}(\textcolor{#9D75C4}{E},\textcolor{#5688C7}{\nu}),
+\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{\mathop{\mathrm{at}}\nolimits}(\textcolor{#9D75C4}{E},(\textcolor{#9D75C4}{e}_1,\ldots,\textcolor{#9D75C4}{e}_m)),\textcolor{#5688C7}{\nu})
+=\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{E},\textcolor{#5688C7}{\nu}),
 $$
 
 $$
-\textcolor{#A87C28}{\operatorname{Read}}(f(\textcolor{#9D75C4}{E}_1,\ldots,\textcolor{#9D75C4}{E}_q),\textcolor{#5688C7}{\nu})
-=\bigcup_{r=1}^{q}\textcolor{#A87C28}{\operatorname{Read}}(\textcolor{#9D75C4}{E}_r,\textcolor{#5688C7}{\nu}).
+\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(f(\textcolor{#9D75C4}{E}_1,\ldots,\textcolor{#9D75C4}{E}_q),\textcolor{#5688C7}{\nu})
+=\bigcup_{r=1}^{q}\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{E}_r,\textcolor{#5688C7}{\nu}).
 $$
 
 Here $\textcolor{#5688C7}{\nu}_p$ is the simultaneous valuation extension from Section 18.3.
@@ -2922,7 +2927,7 @@ the store's available values:
 
 $$
 \textcolor{#A87C28}{\sigma}(a)=\textcolor{#398B83}{\rho}(T)[p]
-\quad\text{for every }a=(T,p)\in\operatorname{dom}(\textcolor{#A87C28}{\sigma}).
+\quad\text{for every }a=(T,p)\in\mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma}).
 $$
 
 For typed stores, complete extensions exist: assign, for example, $0_K$ to
@@ -2930,7 +2935,7 @@ unspecified coordinates. This is a mathematical extension for defining an
 interpretation, not operational permission to read missing values as zero.
 
 **Read-stability lemma.** If two complete environments agree on
-$\textcolor{#A87C28}{\operatorname{Read}}(\textcolor{#9D75C4}{E},\textcolor{#5688C7}{\nu})$, their interpretations of $\textcolor{#9D75C4}{E}$ at $\textcolor{#5688C7}{\nu}$ are
+$\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{E},\textcolor{#5688C7}{\nu})$, their interpretations of $\textcolor{#9D75C4}{E}$ at $\textcolor{#5688C7}{\nu}$ are
 equal, including the possibility that both results are $\textcolor{#398B83}{\bot}$.
 
 The proof is structural induction on $\textcolor{#9D75C4}{E}$. Reads use the stipulated
@@ -2941,44 +2946,44 @@ A primitive uses equal argument results and the same domain
 $\textcolor{#398B83}{\mathcal{D}}_f$, hence has equal definedness and value.
 
 When
-$\textcolor{#A87C28}{\operatorname{Read}}(\textcolor{#9D75C4}{E},\textcolor{#5688C7}{\nu})\subseteq\operatorname{dom}(\textcolor{#A87C28}{\sigma})$,
+$\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{E},\textcolor{#5688C7}{\nu})\subseteq\mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma})$,
 define the ready evaluation
 
 $$
-\textcolor{#A87C28}{\operatorname{Eval}}_{\textcolor{#A87C28}{\sigma}}(\textcolor{#9D75C4}{E},\textcolor{#5688C7}{\nu})
+\textcolor{#A87C28}{\mathop{\mathrm{Eval}}\nolimits}_{\textcolor{#A87C28}{\sigma}}(\textcolor{#9D75C4}{E},\textcolor{#5688C7}{\nu})
 =\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}
 \quad\text{for any complete }\textcolor{#398B83}{\rho}\text{ with }\textcolor{#A87C28}{\sigma}\textcolor{#A87C28}{\sqsubseteq}\textcolor{#398B83}{\rho}.
 $$
 
 Read stability makes the choice irrelevant. This result belongs to
-$\textcolor{#398B83}{\operatorname{Result}}(\textcolor{#5688C7}{\tau})$ for an expression of type $\textcolor{#5688C7}{\tau}$.
-Write $\textcolor{#A87C28}{\operatorname{Eval}}_{\textcolor{#A87C28}{\sigma}}(\textcolor{#9D75C4}{E},\textcolor{#5688C7}{\nu})\downarrow v$ for a successful
+$\textcolor{#398B83}{\mathop{\mathrm{Result}}\nolimits}(\textcolor{#5688C7}{\tau})$ for an expression of type $\textcolor{#5688C7}{\tau}$.
+Write $\textcolor{#A87C28}{\mathop{\mathrm{Eval}}\nolimits}_{\textcolor{#A87C28}{\sigma}}(\textcolor{#9D75C4}{E},\textcolor{#5688C7}{\nu})\downarrow v$ for a successful
 result. If the footprint is not available, ready evaluation is not invoked:
 the occurrence waits. Waiting is distinct from a ready result of $\textcolor{#398B83}{\bot}$.
 
 ### 23.4 Coordinate dependencies and the ranked fragment
 
 For $\textcolor{#9D75C4}{o}=(\textcolor{#9D75C4}{s},\textcolor{#5688C7}{\nu})$, abbreviate
-$\textcolor{#A87C28}{\operatorname{Read}}(\textcolor{#9D75C4}{o})=\textcolor{#A87C28}{\operatorname{Read}}(\textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}},\textcolor{#5688C7}{\nu})$.
+$\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{o})=\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}},\textcolor{#5688C7}{\nu})$.
 Define
 
 $$
-\textcolor{#A87C28}{\operatorname{Dep}}(a)
-=\bigcup_{\textcolor{#9D75C4}{o}\in\textcolor{#9D75C4}{\mathcal{C}}_{\textcolor{#9D75C4}{P}}(a)}\textcolor{#A87C28}{\operatorname{Read}}(\textcolor{#9D75C4}{o})
-\quad(a\in\textcolor{#5688C7}{\operatorname{Addr}}_{\textcolor{#5688C7}{\mathrm{Def}}}),
+\textcolor{#A87C28}{\mathop{\mathrm{Dep}}\nolimits}(a)
+=\bigcup_{\textcolor{#9D75C4}{o}\in\textcolor{#9D75C4}{\mathcal{C}}_{\textcolor{#9D75C4}{P}}(a)}\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{o})
+\quad(a\in\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\mathrm{Def}}}),
 $$
 
-and set $\textcolor{#A87C28}{\operatorname{Dep}}(a)=\varnothing$ for input addresses.
+and set $\textcolor{#A87C28}{\mathop{\mathrm{Dep}}\nolimits}(a)=\varnothing$ for input addresses.
 
 The **coordinate-ranked fragment** consists of programs with a certificate
-$r:\textcolor{#5688C7}{\operatorname{Addr}}_{\textcolor{#5688C7}{\Sigma}}\to\mathbb{N}$ satisfying
+$r:\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}\to\mathbb{N}$ satisfying
 
 $$
-b\in\textcolor{#A87C28}{\operatorname{Dep}}(a)\Longrightarrow r(b)<r(a).
+b\in\textcolor{#A87C28}{\mathop{\mathrm{Dep}}\nolimits}(a)\Longrightarrow r(b)<r(a).
 $$
 
 Equivalently, the finite directed graph with edges $b\to a$ for
-$b\in\textcolor{#A87C28}{\operatorname{Dep}}(a)$ is acyclic.
+$b\in\textcolor{#A87C28}{\mathop{\mathrm{Dep}}\nolimits}(a)$ is acyclic.
 This graph and its certificate are independent of input values: indices,
 guards, and binder domains do not depend on tensor values.
 The certificate ensures dependency progress, not primitive definedness.
@@ -3004,9 +3009,9 @@ $$
 
 where:
 
-- $\textcolor{#A87C28}{\sigma}:\textcolor{#5688C7}{\operatorname{Addr}}_{\textcolor{#5688C7}{\Sigma}}\rightharpoonup K$ is the store of
+- $\textcolor{#A87C28}{\sigma}:\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}\rightharpoonup K$ is the store of
   **published, complete** coordinate values.
-- $\textcolor{#A87C28}{\alpha}:\textcolor{#5688C7}{\operatorname{Addr}}_{\textcolor{#5688C7}{\mathrm{Def}}}\to K$ is the accumulator map.
+- $\textcolor{#A87C28}{\alpha}:\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\mathrm{Def}}}\to K$ is the accumulator map.
   An accumulator may contain only some of a coordinate's contributions.
 - $\textcolor{#A87C28}{U}\subseteq\textcolor{#9D75C4}{\mathcal{O}}_{\textcolor{#9D75C4}{P}}$ is the set of pending occurrences, not yet
   successfully consumed.
@@ -3028,22 +3033,22 @@ changing the rules below.
 
 ### 24.2 Initial configuration
 
-For $\textcolor{#398B83}{\eta}\in\textcolor{#398B83}{\operatorname{Input}}_{\textcolor{#5688C7}{\Sigma}}$, initialize
+For $\textcolor{#398B83}{\eta}\in\textcolor{#398B83}{\mathop{\mathrm{Input}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}$, initialize
 
 $$
-\textcolor{#A87C28}{\operatorname{Init}}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})
+\textcolor{#A87C28}{\mathop{\mathrm{Init}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})
 =(\textcolor{#A87C28}{\sigma}_{\textcolor{#398B83}{\eta}},\textcolor{#A87C28}{\alpha}_0,\textcolor{#9D75C4}{\mathcal{O}}_{\textcolor{#9D75C4}{P}}),
 $$
 
 where
 
 $$
-\operatorname{dom}(\textcolor{#A87C28}{\sigma}_{\textcolor{#398B83}{\eta}})=\textcolor{#5688C7}{\operatorname{Addr}}_{\textcolor{#5688C7}{\mathrm{In}}},
+\mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma}_{\textcolor{#398B83}{\eta}})=\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\mathrm{In}}},
 \qquad
 \textcolor{#A87C28}{\sigma}_{\textcolor{#398B83}{\eta}}(T,p)=\textcolor{#398B83}{\eta}(T)[p],
 \qquad
 \textcolor{#A87C28}{\alpha}_0(a)=0_K
-\quad(a\in\textcolor{#5688C7}{\operatorname{Addr}}_{\textcolor{#5688C7}{\mathrm{Def}}}).
+\quad(a\in\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\mathrm{Def}}}).
 $$
 
 No defined address is initially published.
@@ -3066,15 +3071,15 @@ an execution priority.
 
 ### 25.1 Consume a defined contribution
 
-For $\textcolor{#9D75C4}{o}=(\textcolor{#9D75C4}{s},\textcolor{#5688C7}{\nu})$ and $a=\textcolor{#9D75C4}{\operatorname{dst}}(\textcolor{#9D75C4}{o})$:
+For $\textcolor{#9D75C4}{o}=(\textcolor{#9D75C4}{s},\textcolor{#5688C7}{\nu})$ and $a=\textcolor{#9D75C4}{\mathop{\mathrm{dst}}\nolimits}(\textcolor{#9D75C4}{o})$:
 
 $$
 \frac{
 \textcolor{#9D75C4}{o}\in \textcolor{#A87C28}{U}
 \qquad
-\textcolor{#A87C28}{\operatorname{Read}}(\textcolor{#9D75C4}{o})\subseteq\operatorname{dom}(\textcolor{#A87C28}{\sigma})
+\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{o})\subseteq\mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma})
 \qquad
-\textcolor{#A87C28}{\operatorname{Eval}}_{\textcolor{#A87C28}{\sigma}}(\textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}},\textcolor{#5688C7}{\nu})\downarrow v
+\textcolor{#A87C28}{\mathop{\mathrm{Eval}}\nolimits}_{\textcolor{#A87C28}{\sigma}}(\textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}},\textcolor{#5688C7}{\nu})\downarrow v
 }{
 (\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{\alpha},\textcolor{#A87C28}{U})
 \textcolor{#A87C28}{\longrightarrow}
@@ -3091,8 +3096,8 @@ rule applies. A successful zero-valued body still consumes its occurrence.
 
 $$
 \frac{
-a\in\textcolor{#5688C7}{\operatorname{Addr}}_{\textcolor{#5688C7}{\mathrm{Def}}}\setminus
-      \operatorname{dom}(\textcolor{#A87C28}{\sigma})
+a\in\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\mathrm{Def}}}\setminus
+      \mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma})
 \qquad
 \textcolor{#A87C28}{U}\cap\textcolor{#9D75C4}{\mathcal{C}}_{\textcolor{#9D75C4}{P}}(a)=\varnothing
 }{
@@ -3120,9 +3125,9 @@ $$
 \frac{
 \textcolor{#9D75C4}{o}\in \textcolor{#A87C28}{U}
 \qquad
-\textcolor{#A87C28}{\operatorname{Read}}(\textcolor{#9D75C4}{o})\subseteq\operatorname{dom}(\textcolor{#A87C28}{\sigma})
+\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{o})\subseteq\mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma})
 \qquad
-\textcolor{#A87C28}{\operatorname{Eval}}_{\textcolor{#A87C28}{\sigma}}(\textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}},\textcolor{#5688C7}{\nu})=\textcolor{#398B83}{\bot}
+\textcolor{#A87C28}{\mathop{\mathrm{Eval}}\nolimits}_{\textcolor{#A87C28}{\sigma}}(\textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}},\textcolor{#5688C7}{\nu})=\textcolor{#398B83}{\bot}
 }{
 (\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{\alpha},\textcolor{#A87C28}{U})
 \textcolor{#A87C28}{\longrightarrow}
@@ -3148,7 +3153,7 @@ A running configuration is **complete** when
 $$
 \textcolor{#A87C28}{U}=\varnothing,
 \qquad
-\operatorname{dom}(\textcolor{#A87C28}{\sigma})=\textcolor{#5688C7}{\operatorname{Addr}}_{\textcolor{#5688C7}{\Sigma}}.
+\mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma})=\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}.
 $$
 
 It then determines a complete environment $\textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sigma}}$ by
@@ -3162,7 +3167,7 @@ $$
 \textcolor{#A87C28}{\mathsf{Conf}}\textcolor{#A87C28}{\Downarrow}\textcolor{#398B83}{\rho}
 \quad\Longleftrightarrow\quad
 \textcolor{#A87C28}{\mathsf{Conf}}\textcolor{#A87C28}{\longrightarrow}^{*}(\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{\alpha},\varnothing)
-\text{ with }\operatorname{dom}(\textcolor{#A87C28}{\sigma})=\textcolor{#5688C7}{\operatorname{Addr}}_{\textcolor{#5688C7}{\Sigma}}
+\text{ with }\mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma})=\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}
 \text{ and }\textcolor{#398B83}{\rho}=\textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sigma}}.
 $$
 
@@ -3179,7 +3184,7 @@ Section 26 shows that a ranked program cannot reach such a state.
 ## 26. Conservation, termination, and correspondence
 
 The claims below concern configurations reachable from
-$\textcolor{#A87C28}{\operatorname{Init}}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})$ for well-typed $\textcolor{#398B83}{\eta}$.
+$\textcolor{#A87C28}{\mathop{\mathrm{Init}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})$ for well-typed $\textcolor{#398B83}{\eta}$.
 They are mathematical claims with proof arguments, not already verified
 Lean declarations.
 
@@ -3211,7 +3216,7 @@ distinct terms because they have distinct tagged occurrences.
 
 ### 26.2 Preservation of every candidate model
 
-Fix any $\textcolor{#398B83}{\rho}\in\textcolor{#398B83}{\operatorname{Models}}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})$.
+Fix any $\textcolor{#398B83}{\rho}\in\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})$.
 At every reachable running configuration:
 
 $$
@@ -3235,7 +3240,7 @@ An undefined-operation step is impossible in the presence of such a model.
 ### 26.3 Successful execution gives the unique model
 
 Suppose
-$\textcolor{#A87C28}{\operatorname{Init}}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})\textcolor{#A87C28}{\Downarrow}\textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sigma}}$.
+$\textcolor{#A87C28}{\mathop{\mathrm{Init}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})\textcolor{#A87C28}{\Downarrow}\textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sigma}}$.
 Every occurrence was consumed successfully. Its footprint was available
 when it was consumed, and published values never changed.
 Read stability therefore identifies its recorded value with its
@@ -3244,7 +3249,7 @@ All contribution bodies are defined there, and each published accumulator
 is their complete fiber sum. Hence
 
 $$
-\textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sigma}}\in\textcolor{#398B83}{\operatorname{Models}}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta}).
+\textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sigma}}\in\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta}).
 $$
 
 For any other model $\textcolor{#398B83}{\rho}$, Section 26.2 gives
@@ -3252,7 +3257,7 @@ $\textcolor{#A87C28}{\sigma}\textcolor{#A87C28}{\sqsubseteq}\textcolor{#398B83}{
 every address, $\textcolor{#398B83}{\rho}=\textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sigma}}$. Thus
 
 $$
-\textcolor{#398B83}{\operatorname{Models}}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})=\{\textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sigma}}\},
+\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})=\{\textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sigma}}\},
 \qquad
 \textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{P}\textcolor{#398B83}{\rrbracket}(\textcolor{#398B83}{\eta})=\textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sigma}}|_{\textcolor{#5688C7}{\mathrm{Out}}}.
 $$
@@ -3260,7 +3265,7 @@ $$
 No rank certificate is needed for this implication: any successful run
 has this meaning.
 Similarly, if a run reaches $\textcolor{#A87C28}{\mathsf{Failed}}(\textcolor{#9D75C4}{o},\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{\alpha},\textcolor{#A87C28}{U})$,
-then $\textcolor{#398B83}{\operatorname{Models}}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})=\varnothing$.
+then $\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})=\varnothing$.
 Otherwise Section 26.2 and read stability would force the failed ready
 body to be defined in a model, a contradiction.
 This failure claim does not apply to dependency blocking.
@@ -3272,14 +3277,14 @@ For a running configuration define the natural-number measure
 $$
 \textcolor{#A87C28}{\mu}(\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{\alpha},\textcolor{#A87C28}{U})
 =|\textcolor{#A87C28}{U}|+
-\left|\textcolor{#5688C7}{\operatorname{Addr}}_{\textcolor{#5688C7}{\mathrm{Def}}}\setminus
-             \operatorname{dom}(\textcolor{#A87C28}{\sigma})\right|.
+\left|\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\mathrm{Def}}}\setminus
+             \mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma})\right|.
 $$
 
 A contribution step decreases its first term by one. A publication step
 decreases its second term by one. An undefined-operation step is terminal.
 Thus every run has at most
-$|\textcolor{#9D75C4}{\mathcal{O}}_{\textcolor{#9D75C4}{P}}|+|\textcolor{#5688C7}{\operatorname{Addr}}_{\textcolor{#5688C7}{\mathrm{Def}}}|$
+$|\textcolor{#9D75C4}{\mathcal{O}}_{\textcolor{#9D75C4}{P}}|+|\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\mathrm{Def}}}|$
 non-failure steps and cannot have infinitely many transitions.
 A **maximal run** continues until no transition is enabled; a finite
 prefix stopped by a scheduler is not automatically maximal.
@@ -3299,9 +3304,9 @@ Combining progress, finite execution, and Section 26.3 gives the
 operational/denotational correspondence for the ranked fragment:
 
 $$
-\textcolor{#A87C28}{\operatorname{Init}}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})\textcolor{#A87C28}{\Downarrow}\textcolor{#398B83}{\rho}
+\textcolor{#A87C28}{\mathop{\mathrm{Init}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})\textcolor{#A87C28}{\Downarrow}\textcolor{#398B83}{\rho}
 \quad\Longleftrightarrow\quad
-\textcolor{#398B83}{\operatorname{Models}}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})=\{\textcolor{#398B83}{\rho}\}.
+\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})=\{\textcolor{#398B83}{\rho}\}.
 $$
 
 In more detail, every maximal run either succeeds or explicitly fails.
@@ -3330,10 +3335,10 @@ T[]   = relu(Pre[])
 ```
 
 After consuming only the first contribution,
-$\textcolor{#A87C28}{\alpha}(\operatorname{Pre},())=1$, but
-$(\operatorname{Pre},())\notin\operatorname{dom}(\textcolor{#A87C28}{\sigma})$.
+$\textcolor{#A87C28}{\alpha}(\mathop{\mathrm{Pre}}\nolimits,())=1$, but
+$(\mathop{\mathrm{Pre}}\nolimits,())\notin\mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma})$.
 The contribution to $T$ is not ready. Consuming the second gives
-$\textcolor{#A87C28}{\alpha}(\operatorname{Pre},())=0$; publication now makes the completed
+$\textcolor{#A87C28}{\alpha}(\mathop{\mathrm{Pre}}\nolimits,())=0$; publication now makes the completed
 zero readable. ReLU then contributes zero to $T$, which can be published.
 Reversing the first two consumption steps gives the same result.
 
@@ -3383,8 +3388,8 @@ dependency cycle: the bound body has no instances.
 For Section 11.4, the recurrence body at $(i,l)$ has the core form
 
 $$
-\textcolor{#9D75C4}{\operatorname{at}}\left(
-F\left(\textcolor{#9D75C4}{\operatorname{tab}}_{j\in[d]}(H[j,l])\right),(i)
+\textcolor{#9D75C4}{\mathop{\mathrm{at}}\nolimits}\left(
+F\left(\textcolor{#9D75C4}{\mathop{\mathrm{tab}}\nolimits}_{j\in[d]}(H[j,l])\right),(i)
 \right).
 $$
 
@@ -3527,7 +3532,7 @@ its logical action. The basic action contracts are:
 - $\textcolor{#C16C86}{\mathsf{Accumulate}}(G)$, for a finite set
   $G\subseteq\textcolor{#9D75C4}{\mathcal{O}}_{\textcolor{#9D75C4}{P}}$ of tagged contribution occurrences.
 - $\textcolor{#C16C86}{\mathsf{Publish}}(B)$, for a finite block
-  $B\subseteq\textcolor{#5688C7}{\operatorname{Addr}}_{\textcolor{#5688C7}{\mathrm{Def}}}$ of coordinates.
+  $B\subseteq\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\mathrm{Def}}}$ of coordinates.
 - $\textcolor{#C16C86}{\mathsf{Storage}}(\textcolor{#C16C86}{\theta})$, for a declared storage operation $\textcolor{#C16C86}{\theta}$
   such as initialization, copying, relocation, or retirement, with no
   change to the reference configuration.
@@ -3550,7 +3555,7 @@ For $\textcolor{#C16C86}{\mathsf{Accumulate}}(G)$ at $(\textcolor{#A87C28}{\sigm
 $$
 G\subseteq \textcolor{#A87C28}{U},
 \qquad
-\textcolor{#A87C28}{\operatorname{Read}}(\textcolor{#9D75C4}{o})\subseteq\operatorname{dom}(\textcolor{#A87C28}{\sigma})
+\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{o})\subseteq\mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma})
 \quad\text{for every }\textcolor{#9D75C4}{o}\in G.
 $$
 
@@ -3561,7 +3566,7 @@ $$
 \textcolor{#A87C28}{\alpha}'(a)
 =\textcolor{#A87C28}{\alpha}(a)\oplus
  \bigoplus_{\textcolor{#9D75C4}{o}\in G\cap\textcolor{#9D75C4}{\mathcal{C}}_{\textcolor{#9D75C4}{P}}(a)}v_{\textcolor{#9D75C4}{o}}
-\quad(a\in\textcolor{#5688C7}{\operatorname{Addr}}_{\textcolor{#5688C7}{\mathrm{Def}}}).
+\quad(a\in\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\mathrm{Def}}}).
 $$
 
 The contract leaves $\textcolor{#A87C28}{\sigma}$ unchanged. If a body is undefined, the kernel
@@ -3572,7 +3577,7 @@ Section 32 specifies the correspondence for both cases.
 For $\textcolor{#C16C86}{\mathsf{Publish}}(B)$, require
 
 $$
-B\cap\operatorname{dom}(\textcolor{#A87C28}{\sigma})=\varnothing,
+B\cap\mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma})=\varnothing,
 \qquad
 \textcolor{#A87C28}{U}\cap\textcolor{#9D75C4}{\mathcal{C}}_{\textcolor{#9D75C4}{P}}(a)=\varnothing
 \quad\text{for every }a\in B.
@@ -3592,8 +3597,8 @@ must satisfy:
 1. Its accumulation groups are pairwise disjoint and their union is
    $\textcolor{#9D75C4}{\mathcal{O}}_{\textcolor{#9D75C4}{P}}$.
 2. Its publication blocks are pairwise disjoint and their union is
-   $\textcolor{#5688C7}{\operatorname{Addr}}_{\textcolor{#5688C7}{\mathrm{Def}}}$.
-3. Every defined address in $\textcolor{#A87C28}{\operatorname{Read}}(\textcolor{#9D75C4}{o})$ is published before
+   $\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\mathrm{Def}}}$.
+3. Every defined address in $\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{o})$ is published before
    the group containing $\textcolor{#9D75C4}{o}$. Input addresses are supplied initially.
 4. Every occurrence in $\textcolor{#9D75C4}{\mathcal{C}}_{\textcolor{#9D75C4}{P}}(a)$ is in an accumulation group
    before the block publishing $a$.
@@ -3641,7 +3646,7 @@ Command execution must be defined by the chosen kernels; the action
 annotations specify obligations on that execution, not a substitute for
 implementing the kernels.
 
-Write $\textcolor{#C16C86}{\operatorname{Start}}_{\textcolor{#C16C86}{\Pi}}(\textcolor{#398B83}{\eta})$ for concrete initialization from
+Write $\textcolor{#C16C86}{\mathop{\mathrm{Start}}\nolimits}_{\textcolor{#C16C86}{\Pi}}(\textcolor{#398B83}{\eta})$ for concrete initialization from
 the same well-typed input environment as the reference machine.
 It validates input identifiers and shapes and installs the required
 input values and initial metadata. An omitted empty input is still an error.
@@ -3650,15 +3655,15 @@ input values and initial metadata. An omitted empty input is still an error.
 
 Distinguish two kinds of logical resource:
 
-- $\textcolor{#A87C28}{\mathsf{pub}}(a)$, for $a\in\operatorname{dom}(\textcolor{#A87C28}{\sigma})$: the immutable
+- $\textcolor{#A87C28}{\mathsf{pub}}(a)$, for $a\in\mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma})$: the immutable
   published value $\textcolor{#A87C28}{\sigma}(a)$.
 - $\textcolor{#A87C28}{\mathsf{acc}}(a)$, for
-  $a\in\textcolor{#5688C7}{\operatorname{Addr}}_{\textcolor{#5688C7}{\mathrm{Def}}}\setminus\operatorname{dom}(\textcolor{#A87C28}{\sigma})$:
+  $a\in\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\mathrm{Def}}}\setminus\mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma})$:
   an unpublished accumulator value $\textcolor{#A87C28}{\alpha}(a)$.
 
 For a related concrete and reference state, a layout view
 $\textcolor{#C16C86}{\lambda}_{\textcolor{#C16C86}{\mathsf{C}}}$ partially maps these resources to
-$\textcolor{#C16C86}{\operatorname{Slot}}_{\textcolor{#C16C86}{\mathcal{B}}}$.
+$\textcolor{#C16C86}{\mathop{\mathrm{Slot}}\nolimits}_{\textcolor{#C16C86}{\mathcal{B}}}$.
 The layout is justified by plan metadata and proof annotations; it may
 be known from the command position.
 Whenever a resource is mapped:
@@ -3670,8 +3675,8 @@ $$
 $$
 
 with the respective side conditions
-$a\in\operatorname{dom}(\textcolor{#A87C28}{\sigma})$ and
-$a\notin\operatorname{dom}(\textcolor{#A87C28}{\sigma})$.
+$a\in\mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma})$ and
+$a\notin\mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma})$.
 Every mapped slot is initialized. The simple profile here requires
 $\textcolor{#C16C86}{\lambda}_{\textcolor{#C16C86}{\mathsf{C}}}$ to be injective on its domain: distinct simultaneously
 represented resources occupy distinct slots.
@@ -3680,18 +3685,18 @@ More permissive aliasing needs a separate justification.
 Define the output address set
 
 $$
-\textcolor{#5688C7}{\operatorname{Addr}}_{\textcolor{#5688C7}{\mathrm{Out}}}
-=\{(T,p)\in\textcolor{#5688C7}{\operatorname{Addr}}_{\textcolor{#5688C7}{\Sigma}}\mid T\in\textcolor{#5688C7}{\mathrm{Out}}\}.
+\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\mathrm{Out}}}
+=\{(T,p)\in\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}\mid T\in\textcolor{#5688C7}{\mathrm{Out}}\}.
 $$
 
 At $(\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{\alpha},\textcolor{#A87C28}{U})$, every published address in
 
 $$
-\textcolor{#A87C28}{\operatorname{Need}}_{\mathrm{pub}}(\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{U})
-=\operatorname{dom}(\textcolor{#A87C28}{\sigma})\cap
+\textcolor{#A87C28}{\mathop{\mathrm{Need}}\nolimits}_{\mathrm{pub}}(\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{U})
+=\mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma})\cap
  \left(
- \textcolor{#5688C7}{\operatorname{Addr}}_{\textcolor{#5688C7}{\mathrm{Out}}}
- \cup\bigcup_{\textcolor{#9D75C4}{o}\in \textcolor{#A87C28}{U}}\textcolor{#A87C28}{\operatorname{Read}}(\textcolor{#9D75C4}{o})
+ \textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\mathrm{Out}}}
+ \cup\bigcup_{\textcolor{#9D75C4}{o}\in \textcolor{#A87C28}{U}}\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{o})
  \right)
 $$
 
@@ -3701,16 +3706,16 @@ remaining contribution's already-published sources remain represented.
 A plan may retain extra resources for its own storage operations.
 Any such operation's actual reads must also have valid representations.
 
-For $a\in\textcolor{#5688C7}{\operatorname{Addr}}_{\textcolor{#5688C7}{\mathrm{Def}}}$, an unpublished address
+For $a\in\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\mathrm{Def}}}$, an unpublished address
 that has already received a contribution must
 retain a mapped accumulator:
 
 $$
-a\notin\operatorname{dom}(\textcolor{#A87C28}{\sigma}),
+a\notin\mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma}),
 \quad
 \textcolor{#9D75C4}{\mathcal{C}}_{\textcolor{#9D75C4}{P}}(a)\setminus \textcolor{#A87C28}{U}\ne\varnothing
 \quad\Longrightarrow\quad
-\textcolor{#A87C28}{\mathsf{acc}}(a)\in\operatorname{dom}(\textcolor{#C16C86}{\lambda}_{\textcolor{#C16C86}{\mathsf{C}}}).
+\textcolor{#A87C28}{\mathsf{acc}}(a)\in\mathop{\mathrm{dom}}\nolimits(\textcolor{#C16C86}{\lambda}_{\textcolor{#C16C86}{\mathsf{C}}}).
 $$
 
 An untouched accumulator has the known value $0_K$ by Section 26.1 and
@@ -3740,7 +3745,7 @@ $\textcolor{#A87C28}{\mathsf{acc}}(a)$ to $\textcolor{#A87C28}{\mathsf{pub}}(a)$
 The reference accumulator remains in the proof state.
 
 Retirement removes a physical representation, not the address from
-$\operatorname{dom}(\textcolor{#A87C28}{\sigma})$. Reuse does not identify the old and new logical
+$\mathop{\mathrm{dom}}\nolimits(\textcolor{#A87C28}{\sigma})$. Reuse does not identify the old and new logical
 addresses. Buffer ownership and ordered coordinates must follow $\textcolor{#5688C7}{\Sigma}$;
 matching printed axis names or equal extents is not a layout proof.
 
@@ -3771,12 +3776,12 @@ Ghost information may witness this relation but may not supply kernel
 reads or returned values.
 
 At $\textcolor{#C16C86}{\mathsf{pc}}=m$, a successful output decoder
-$\textcolor{#C16C86}{\operatorname{Decode}}_{\textcolor{#C16C86}{\Pi}}(\textcolor{#C16C86}{\mathsf{C}})$ must reconstruct the whole declared
+$\textcolor{#C16C86}{\mathop{\mathrm{Decode}}\nolimits}_{\textcolor{#C16C86}{\Pi}}(\textcolor{#C16C86}{\mathsf{C}})$ must reconstruct the whole declared
 output environment from concrete representations and signature metadata.
 For every output coordinate:
 
 $$
-\textcolor{#C16C86}{\operatorname{Decode}}_{\textcolor{#C16C86}{\Pi}}(\textcolor{#C16C86}{\mathsf{C}})(T)[p]
+\textcolor{#C16C86}{\mathop{\mathrm{Decode}}\nolimits}_{\textcolor{#C16C86}{\Pi}}(\textcolor{#C16C86}{\mathsf{C}})(T)[p]
 =\textcolor{#C16C86}{M}[\textcolor{#C16C86}{\lambda}_{\textcolor{#C16C86}{\mathsf{C}}}(\textcolor{#A87C28}{\mathsf{pub}}((T,p)))].
 $$
 
@@ -3808,7 +3813,7 @@ The initialization obligation is
 
 $$
 \textcolor{#C16C86}{\mathcal{R}}_{\textcolor{#C16C86}{\Pi}}(
- \textcolor{#C16C86}{\operatorname{Start}}_{\textcolor{#C16C86}{\Pi}}(\textcolor{#398B83}{\eta}),\textcolor{#A87C28}{\operatorname{Init}}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})).
+ \textcolor{#C16C86}{\mathop{\mathrm{Start}}\nolimits}_{\textcolor{#C16C86}{\Pi}}(\textcolor{#398B83}{\eta}),\textcolor{#A87C28}{\mathop{\mathrm{Init}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})).
 $$
 
 For each successful concrete step, require
@@ -3861,11 +3866,11 @@ At $\textcolor{#C16C86}{\mathsf{pc}}=m$, terminal adequacy requires the related 
 to be complete and
 
 $$
-\textcolor{#C16C86}{\operatorname{Decode}}_{\textcolor{#C16C86}{\Pi}}(\textcolor{#C16C86}{\mathsf{C}})=\textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sigma}}|_{\textcolor{#5688C7}{\mathrm{Out}}}.
+\textcolor{#C16C86}{\mathop{\mathrm{Decode}}\nolimits}_{\textcolor{#C16C86}{\Pi}}(\textcolor{#C16C86}{\mathsf{C}})=\textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sigma}}|_{\textcolor{#5688C7}{\mathrm{Out}}}.
 $$
 
 Write
-$\textcolor{#C16C86}{\operatorname{Start}}_{\textcolor{#C16C86}{\Pi}}(\textcolor{#398B83}{\eta})\textcolor{#C16C86}{\Downarrow}_{\textcolor{#C16C86}{\Pi}}\textcolor{#398B83}{\zeta}$
+$\textcolor{#C16C86}{\mathop{\mathrm{Start}}\nolimits}_{\textcolor{#C16C86}{\Pi}}(\textcolor{#398B83}{\eta})\textcolor{#C16C86}{\Downarrow}_{\textcolor{#C16C86}{\Pi}}\textcolor{#398B83}{\zeta}$
 for a finite concrete run ending at such a successful final state with
 decoded output environment $\textcolor{#398B83}{\zeta}$.
 No decoded success is permitted after a failed command.
@@ -3876,15 +3881,15 @@ For $\textcolor{#9D75C4}{P}\vdash\textcolor{#C16C86}{\Pi}\ \textcolor{#C16C86}{\
 the preceding obligations yield
 
 $$
-\textcolor{#C16C86}{\operatorname{Start}}_{\textcolor{#C16C86}{\Pi}}(\textcolor{#398B83}{\eta})\textcolor{#C16C86}{\Downarrow}_{\textcolor{#C16C86}{\Pi}}\textcolor{#398B83}{\zeta}
+\textcolor{#C16C86}{\mathop{\mathrm{Start}}\nolimits}_{\textcolor{#C16C86}{\Pi}}(\textcolor{#398B83}{\eta})\textcolor{#C16C86}{\Downarrow}_{\textcolor{#C16C86}{\Pi}}\textcolor{#398B83}{\zeta}
 \quad\Longleftrightarrow\quad
 \exists\textcolor{#398B83}{\rho}\;.\;
-\textcolor{#398B83}{\operatorname{Models}}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})=\{\textcolor{#398B83}{\rho}\}
+\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})=\{\textcolor{#398B83}{\rho}\}
 \ \land\ \textcolor{#398B83}{\zeta}=\textcolor{#398B83}{\rho}|_{\textcolor{#5688C7}{\mathrm{Out}}}.
 $$
 
 Equivalently, successful plan inputs are precisely
-$\textcolor{#398B83}{\operatorname{AdmInput}}(\textcolor{#9D75C4}{P})$, and on that domain the decoded output equals
+$\textcolor{#398B83}{\mathop{\mathrm{AdmInput}}\nolimits}(\textcolor{#9D75C4}{P})$, and on that domain the decoded output equals
 $\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{P}\textcolor{#398B83}{\rrbracket}(\textcolor{#398B83}{\eta})$. The model-set formulation avoids applying
 the partial denotation outside its domain.
 
@@ -3892,7 +3897,7 @@ For the forward direction, initialization and successful-step simulation
 produce a reachable reference state; terminal adequacy makes it complete.
 Section 26.3 then gives the unique model and the stated decoded output.
 A matched concrete failure instead implies
-$\textcolor{#398B83}{\operatorname{Models}}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})=\varnothing$.
+$\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})=\varnothing$.
 
 For the reverse direction, a model excludes matched failure by
 Section 26.2. Concrete progress, terminating kernels, and the finite command
@@ -3942,8 +3947,8 @@ complete arguments, primitive domains, and complete-array selection.
 In particular, computing only the selected coordinate of
 
 $$
-\textcolor{#9D75C4}{\operatorname{at}}\left(
-\textcolor{#9D75C4}{\operatorname{tab}}_{j\in[2]}(\log(X[j])),(0)
+\textcolor{#9D75C4}{\mathop{\mathrm{at}}\nolimits}\left(
+\textcolor{#9D75C4}{\mathop{\mathrm{tab}}\nolimits}_{j\in[2]}(\log(X[j])),(0)
 \right)
 $$
 
@@ -4017,7 +4022,7 @@ slice remains stored.
 If $H$ is internal and the designated output is defined by
 
 $$
-\operatorname{Last}[i]\textcolor{#9D75C4}{\mathrel{+}=}H[i,N],
+\mathop{\mathrm{Last}}\nolimits[i]\textcolor{#9D75C4}{\mathrel{+}=}H[i,N],
 \qquad i\in[d],
 $$
 
@@ -4047,7 +4052,7 @@ history can be:
 | Construct and publish $H_0$ | $H_0=5$, live | Free |
 | Construct and publish $H_1$ | Old $H_0$, now retireable | $H_1=12$, live |
 | Retire $H_0$; construct and publish $H_2$ | $H_2=26$, live | Old $H_1$, now retireable |
-| Retire $H_1$; construct and publish `Last` | $H_2$ can retire after the copy | $\operatorname{Last}=26$, retained output |
+| Retire $H_1$; construct and publish `Last` | $H_2$ can retire after the copy | $\mathop{\mathrm{Last}}\nolimits=26$, retained output |
 
 Each construction zero-initializes its destination accumulator before
 adding the prescribed contributions. Input storage is separate from the
@@ -4063,7 +4068,7 @@ though it still represented $H_0$.
 ### 33.3 Full-history outputs change the retention obligation
 
 If instead $H\in\textcolor{#5688C7}{\mathrm{Out}}$, every published slice belongs to
-$\textcolor{#A87C28}{\operatorname{Need}}_{\mathrm{pub}}$. The two-buffer plan cannot simply
+$\textcolor{#A87C28}{\mathop{\mathrm{Need}}\nolimits}_{\mathrm{pub}}$. The two-buffer plan cannot simply
 discard earlier slices and return only $H_N$.
 
 It may still reuse working buffers if each completed slice is first copied
@@ -4143,19 +4148,19 @@ of their individual components.
 | $()$ | Empty tuple; the sole rank-zero coordinate |
 | $a,\textcolor{#5688C7}{I}_a,n_a$ | Axis, its coordinate range, and extent |
 | $\textcolor{#5688C7}{\Gamma},\textcolor{#5688C7}{\nu}$ | Index context and valuation |
-| $\textcolor{#5688C7}{\operatorname{Val}}(\textcolor{#5688C7}{\Gamma})$ | All valuations for that context |
+| $\textcolor{#5688C7}{\mathop{\mathrm{Val}}\nolimits}(\textcolor{#5688C7}{\Gamma})$ | All valuations for that context |
 | $\textcolor{#5688C7}{\Gamma}_{\mathrm{all}}$ | All distinct variables of a pure einsum with resolved domains |
 | $\textcolor{#5688C7}{L},\textcolor{#5688C7}{L}_r$ | Output and operand index strings |
 | $J_{\textcolor{#5688C7}{L}},\textcolor{#5688C7}{\pi}_{\textcolor{#5688C7}{L}}$ | A string's coordinate domain and projection from a global valuation |
-| $\textcolor{#5688C7}{\operatorname{vars}}(\textcolor{#5688C7}{\Gamma})$ | Variable-identity set of an index context |
+| $\textcolor{#5688C7}{\mathop{\mathrm{vars}}\nolimits}(\textcolor{#5688C7}{\Gamma})$ | Variable-identity set of an index context |
 | $\textcolor{#5688C7}{D}^{+j}$ | A valuation domain lifted over a fresh binder |
 | $\textcolor{#5688C7}{D}_{\textcolor{#9D75C4}{s}}$ | Admissible free-variable valuations for statement $\textcolor{#9D75C4}{s}$ |
 | $\textcolor{#5688C7}{\Sigma}$ | Tensor signature |
 | $\textcolor{#5688C7}{\mathrm{In}},\textcolor{#5688C7}{\mathrm{Def}},\textcolor{#5688C7}{\mathrm{Out}}$ | Input, defined, and designated output identifiers |
-| $\textcolor{#5688C7}{\operatorname{Coord}}_{\textcolor{#5688C7}{\Sigma}}(T)$ | Coordinate domain of tensor $T$ |
+| $\textcolor{#5688C7}{\mathop{\mathrm{Coord}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}(T)$ | Coordinate domain of tensor $T$ |
 | $(T,p)$ | Tensor address |
-| $\textcolor{#5688C7}{\operatorname{Addr}}_{\textcolor{#5688C7}{\mathrm{In}}},\textcolor{#5688C7}{\operatorname{Addr}}_{\textcolor{#5688C7}{\mathrm{Def}}}$ | Input and defined address partitions |
-| $\textcolor{#5688C7}{\operatorname{Addr}}_{\textcolor{#5688C7}{\mathrm{Out}}}$ | All declared output coordinates |
+| $\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\mathrm{In}}},\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\mathrm{Def}}}$ | Input and defined address partitions |
+| $\textcolor{#5688C7}{\mathop{\mathrm{Addr}}\nolimits}_{\textcolor{#5688C7}{\mathrm{Out}}}$ | All declared output coordinates |
 | $\textcolor{#5688C7}{\tau},\textcolor{#9D75C4}{\mathcal{F}}$ | Expression value type and primitive registry |
 | $\textcolor{#5688C7}{\Sigma};\textcolor{#5688C7}{\Gamma};\textcolor{#5688C7}{D}\vdash \textcolor{#9D75C4}{E}:\textcolor{#5688C7}{\tau}$ | Structural expression judgment under a signature, index context, and admissible valuation domain |
 
@@ -4163,15 +4168,15 @@ of their individual components.
 
 | Symbol | Meaning |
 | --- | --- |
-| $\textcolor{#9D75C4}{\operatorname{FV}}(\textcolor{#9D75C4}{E})$ | Free variables of an expression |
+| $\textcolor{#9D75C4}{\mathop{\mathrm{FV}}\nolimits}(\textcolor{#9D75C4}{E})$ | Free variables of an expression |
 | $\textcolor{#9D75C4}{E}[i:=\textcolor{#9D75C4}{e}]$ | Capture-avoiding index substitution |
-| $\textcolor{#9D75C4}{\operatorname{dst}}(\textcolor{#9D75C4}{o})$ | Destination address of contribution occurrence $\textcolor{#9D75C4}{o}$ |
+| $\textcolor{#9D75C4}{\mathop{\mathrm{dst}}\nolimits}(\textcolor{#9D75C4}{o})$ | Destination address of contribution occurrence $\textcolor{#9D75C4}{o}$ |
 | $\textcolor{#5688C7}{\phi}_{\textcolor{#9D75C4}{s}}$ | Statement's write map |
 | $\textcolor{#9D75C4}{E}_{\textcolor{#9D75C4}{s}}$ | Statement's contribution expression |
 | $(\textcolor{#9D75C4}{s},\textcolor{#5688C7}{\nu})$ | Tagged contribution occurrence |
 | $\textcolor{#9D75C4}{\mathcal{O}}_{\textcolor{#9D75C4}{P}}$ | All contribution occurrences of program $\textcolor{#9D75C4}{P}$ |
 | $\textcolor{#9D75C4}{\mathcal{C}}_{\textcolor{#9D75C4}{P}}(T,p)$ | Occurrences addressing coordinate $p$ of $T$ |
-| $\textcolor{#9D75C4}{\operatorname{tab}},\textcolor{#9D75C4}{\operatorname{at}}$ | Array construction and scalar coordinate selection |
+| $\textcolor{#9D75C4}{\mathop{\mathrm{tab}}\nolimits},\textcolor{#9D75C4}{\mathop{\mathrm{at}}\nolimits}$ | Array construction and scalar coordinate selection |
 | $C_b,B_{\textcolor{#9D75C4}{s}}$ | Contracted variables of a surface term and elaborated additive body |
 
 ### Scalar foundations, denotational values, and equations
@@ -4184,41 +4189,41 @@ of their individual components.
 | $0_K,1_K$ | Additive and multiplicative identities |
 | $\textcolor{#398B83}{V}_{\textcolor{#5688C7}{L}}$ | Canonical pure-einsum result tensor |
 | $\textcolor{#398B83}{\rho},\textcolor{#398B83}{\eta}$ | Complete tensor environment and input environment |
-| $\textcolor{#398B83}{\operatorname{Result}}(\textcolor{#5688C7}{\tau}),\textcolor{#398B83}{\bot}$ | Successful typed values or an undefined result |
+| $\textcolor{#398B83}{\mathop{\mathrm{Result}}\nolimits}(\textcolor{#5688C7}{\tau}),\textcolor{#398B83}{\bot}$ | Successful typed values or an undefined result |
 | $\textcolor{#398B83}{\llbracket} \textcolor{#9D75C4}{E}\rrbracket_{\textcolor{#398B83}{\rho},\textcolor{#5688C7}{\nu}}\downarrow v$ | Expression interpretation is defined with value $v$ |
-| $\textcolor{#398B83}{\operatorname{lift}}_2$ | Strict lifting of a scalar binary operation to results |
+| $\textcolor{#398B83}{\mathop{\mathrm{lift}}\nolimits}_2$ | Strict lifting of a scalar binary operation to results |
 | $\textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sigma}}$ | Complete environment reconstructed from a complete store |
 | $\textcolor{#398B83}{\zeta}$ | Decoded output environment |
 | $\textcolor{#398B83}{\Delta}_G$ | Exact fiber aggregate for a successful ready occurrence group |
-| $\textcolor{#398B83}{\operatorname{AdmEnv}}(\textcolor{#9D75C4}{P})$ | Complete environments on which all actual contributions are defined |
+| $\textcolor{#398B83}{\mathop{\mathrm{AdmEnv}}\nolimits}(\textcolor{#9D75C4}{P})$ | Complete environments on which all actual contributions are defined |
 | $\textcolor{#398B83}{V}_{\textcolor{#9D75C4}{s}}^{\textcolor{#398B83}{\rho}}$ | Contribution tensor of statement $\textcolor{#9D75C4}{s}$ in environment $\textcolor{#398B83}{\rho}$ |
-| $\textcolor{#398B83}{\operatorname{Collect}}_{\textcolor{#9D75C4}{P}}(\textcolor{#398B83}{\rho})$ | Values collected for all defined tensors |
+| $\textcolor{#398B83}{\mathop{\mathrm{Collect}}\nolimits}_{\textcolor{#9D75C4}{P}}(\textcolor{#398B83}{\rho})$ | Values collected for all defined tensors |
 | $\textcolor{#398B83}{\Phi}_{\textcolor{#9D75C4}{P}}$ | Partial equation operator preserving inputs and collecting defined tensors |
-| $\textcolor{#398B83}{\operatorname{Input}}_{\textcolor{#5688C7}{\Sigma}},\textcolor{#398B83}{\operatorname{Output}}_{\textcolor{#5688C7}{\Sigma}}$ | Value environments on the program's designated input and output identifiers |
-| $\textcolor{#398B83}{\operatorname{AdmInput}}(\textcolor{#9D75C4}{P})$ | Well-typed inputs admitting exactly one complete model |
+| $\textcolor{#398B83}{\mathop{\mathrm{Input}}\nolimits}_{\textcolor{#5688C7}{\Sigma}},\textcolor{#398B83}{\mathop{\mathrm{Output}}\nolimits}_{\textcolor{#5688C7}{\Sigma}}$ | Value environments on the program's designated input and output identifiers |
+| $\textcolor{#398B83}{\mathop{\mathrm{AdmInput}}\nolimits}(\textcolor{#9D75C4}{P})$ | Well-typed inputs admitting exactly one complete model |
 | $\mathbf{1}_{\textcolor{#9D75C4}{Q}}$ | Iverson value of predicate $\textcolor{#9D75C4}{Q}$ |
 | $\textcolor{#398B83}{\delta}_J$ | Equality-indicator tensor on $J\times J$ |
 | $\mathbf{1}_J$ | All-ones tensor on coordinate domain $J$ |
 | $\textcolor{#398B83}{\mathcal{D}}_f$ | Domain of definition of primitive $f$ |
 | $H_l$ | Logical history slice $H[:,l]$ |
 | $\textcolor{#398B83}{\llbracket}\cdot\textcolor{#398B83}{\rrbracket}$ | Interpretation brackets, with parameters as specified |
-| $\textcolor{#398B83}{\operatorname{Models}}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})$ | Complete environments satisfying the collected equations on inputs $\textcolor{#398B83}{\eta}$ |
+| $\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})$ | Complete environments satisfying the collected equations on inputs $\textcolor{#398B83}{\eta}$ |
 
 ### Reference execution and readiness
 
 | Symbol | Meaning |
 | --- | --- |
 | $\textcolor{#A87C28}{\sigma}$ | Partial store of available coordinate values |
-| $\textcolor{#A87C28}{\operatorname{Read}}(\textcolor{#9D75C4}{E},\textcolor{#5688C7}{\nu}),\textcolor{#A87C28}{\operatorname{Read}}(\textcolor{#9D75C4}{o})$ | Read footprints of an expression instance and an occurrence |
-| $\textcolor{#A87C28}{\operatorname{Dep}}(a),r$ | Coordinate dependency set and strictly increasing dependency rank |
+| $\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{E},\textcolor{#5688C7}{\nu}),\textcolor{#A87C28}{\mathop{\mathrm{Read}}\nolimits}(\textcolor{#9D75C4}{o})$ | Read footprints of an expression instance and an occurrence |
+| $\textcolor{#A87C28}{\mathop{\mathrm{Dep}}\nolimits}(a),r$ | Coordinate dependency set and strictly increasing dependency rank |
 | $\textcolor{#A87C28}{\sigma}\textcolor{#A87C28}{\sqsubseteq}\textcolor{#398B83}{\rho}$ | The complete environment agrees with every published store value |
-| $\textcolor{#A87C28}{\operatorname{Eval}}_{\textcolor{#A87C28}{\sigma}}(\textcolor{#9D75C4}{E},\textcolor{#5688C7}{\nu})$ | Expression result from an available footprint, independent of complete extension |
+| $\textcolor{#A87C28}{\mathop{\mathrm{Eval}}\nolimits}_{\textcolor{#A87C28}{\sigma}}(\textcolor{#9D75C4}{E},\textcolor{#5688C7}{\nu})$ | Expression result from an available footprint, independent of complete extension |
 | $\textcolor{#A87C28}{\alpha},\textcolor{#A87C28}{U}$ | Defined-coordinate accumulators and pending occurrence set |
-| $\textcolor{#A87C28}{\operatorname{Init}}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})$ | Initial store, zero accumulators, and all pending occurrences |
+| $\textcolor{#A87C28}{\mathop{\mathrm{Init}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})$ | Initial store, zero accumulators, and all pending occurrences |
 | $\textcolor{#A87C28}{\mathsf{Failed}}(\textcolor{#9D75C4}{o},\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{\alpha},\textcolor{#A87C28}{U})$ | Terminal undefined-contribution error with its occurrence and state |
 | $\textcolor{#A87C28}{\mu}$ | Number of pending occurrences plus unpublished defined coordinates |
 | $\textcolor{#A87C28}{\mathsf{pub}}(a),\textcolor{#A87C28}{\mathsf{acc}}(a)$ | Published-value and unpublished-accumulator resource identities |
-| $\textcolor{#A87C28}{\operatorname{Need}}_{\mathrm{pub}}(\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{U})$ | Published coordinates required by remaining contributions or outputs |
+| $\textcolor{#A87C28}{\mathop{\mathrm{Need}}\nolimits}_{\mathrm{pub}}(\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{U})$ | Published coordinates required by remaining contributions or outputs |
 | $\textcolor{#A87C28}{\mathsf{Conf}},\textcolor{#A87C28}{\longrightarrow},\textcolor{#A87C28}{\Downarrow}$ | Machine configuration, execution-step relation, and successful termination |
 
 ### Compiled execution and physical representation
@@ -4226,14 +4231,14 @@ of their individual components.
 | Symbol | Meaning |
 | --- | --- |
 | $\textcolor{#C16C86}{\mathcal{B}},m_{\textcolor{#C16C86}{\beta}}$ | Physical buffer identifiers and their capacities |
-| $\textcolor{#C16C86}{\operatorname{Slot}}_{\textcolor{#C16C86}{\mathcal{B}}},\textcolor{#C16C86}{\xi}$ | Physical slot set and a slot $(\textcolor{#C16C86}{\beta},k)$ |
+| $\textcolor{#C16C86}{\mathop{\mathrm{Slot}}\nolimits}_{\textcolor{#C16C86}{\mathcal{B}}},\textcolor{#C16C86}{\xi}$ | Physical slot set and a slot $(\textcolor{#C16C86}{\beta},k)$ |
 | $\textcolor{#C16C86}{M}$ | Partial exact-value memory on physical slots |
 | $\textcolor{#C16C86}{\Pi},\textcolor{#C16C86}{\kappa}_t$ | Execution plan and a kernel command with logical annotations |
 | $\textcolor{#C16C86}{\mathsf{Accumulate}}(G),\textcolor{#C16C86}{\mathsf{Publish}}(B),\textcolor{#C16C86}{\mathsf{Storage}}(\textcolor{#C16C86}{\theta})$ | Batched contribution, block publication, and representation-only action contracts |
 | $\textcolor{#C16C86}{\mathsf{C}},\textcolor{#C16C86}{\mathsf{pc}},\textcolor{#C16C86}{\chi}$ | Concrete state, command position, and plan control/layout metadata |
 | $\textcolor{#C16C86}{\lambda}_{\textcolor{#C16C86}{\mathsf{C}}}$ | Partial resource-to-slot layout view |
 | $\textcolor{#C16C86}{\mathcal{R}}_{\textcolor{#C16C86}{\Pi}}$ | Concrete/reference representation relation |
-| $\textcolor{#C16C86}{\operatorname{Start}}_{\textcolor{#C16C86}{\Pi}},\textcolor{#C16C86}{\operatorname{Decode}}_{\textcolor{#C16C86}{\Pi}}$ | Concrete initialization and whole-output decoding |
+| $\textcolor{#C16C86}{\mathop{\mathrm{Start}}\nolimits}_{\textcolor{#C16C86}{\Pi}},\textcolor{#C16C86}{\mathop{\mathrm{Decode}}\nolimits}_{\textcolor{#C16C86}{\Pi}}$ | Concrete initialization and whole-output decoding |
 | $\textcolor{#9D75C4}{P}\vdash\textcolor{#C16C86}{\Pi}\ \textcolor{#C16C86}{\mathsf{valid}}$ | Certified schedule, representation, and kernel validity |
 | $\textcolor{#C16C86}{\longrightarrow}_{\textcolor{#C16C86}{\Pi}},\textcolor{#C16C86}{\Downarrow}_{\textcolor{#C16C86}{\Pi}}$ | Concrete plan-step and decoded successful-execution relations |
 | $\textcolor{#C16C86}{\mathsf{PlanFailed}}(\textcolor{#9D75C4}{o})$ | Terminal concrete failure matched to an undefined source occurrence |
