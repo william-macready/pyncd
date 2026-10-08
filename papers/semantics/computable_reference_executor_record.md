@@ -444,3 +444,22 @@ The final fidelity fix-verification follow-up reported four turns against its
 three-turn local cap, an overrun of one turn. Both initial code reviews and
 documentation follow-ups reported staying within their stated caps. Exact
 context usage and aggregate token-budget compliance remain unmeasured.
+
+### 8.4 Local integration receipt
+
+Local main was clean and an ancestor of the reviewed implementation before
+integration. Merge `6a27bb2` incorporated the completed branch with `--no-ff`;
+the controller confirmed identical main/topic trees and merge ancestry.
+The integrated-main full default build passed with 8,704 jobs, and all 22
+fixture assertions were observed there again. No test or control was skipped.
+
+The merged topic branch was deleted. The execution ledger was archived to
+controller session artifacts and its temporary repository directory removed.
+The active VS Code worktree is retained clean at detached HEAD rather than
+deleting the workspace while this session uses it. This is the only parked
+worktree-cleanup step; no other user's branches or worktrees were touched.
+Local main remains ahead of origin; no remote push occurred.
+
+The pending integration wording in Section 8.3 describes the earlier checkpoint.
+All implementation, validation, review, documentation, and local integration
+gates are now complete, with the scope and budget limitations above retained.
