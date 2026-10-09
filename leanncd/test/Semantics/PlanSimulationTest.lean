@@ -125,4 +125,9 @@ example : ∀ x, x ∈ twice.accFlat :=
     rcases h with rfl | rfl | rfl | rfl <;> exact ⟨_, rfl⟩)
     twice_pub_complete twice_order4
 
+#print axioms tagged_R_every_pc
+#print axioms failure_matched
+#print axioms twice_order4
+#print axioms twice_not_disjoint
+
 end LeanNCD.Semantics.PlanFixtures

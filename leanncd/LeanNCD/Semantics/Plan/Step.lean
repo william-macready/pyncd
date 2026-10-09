@@ -154,4 +154,7 @@ def runFrom (pc : Nat) (M : Memory K σ) : List (Command P) → PlanOutcome P
 
 def runPlan (M : Memory K σ) : PlanOutcome P := π.runFrom ops 0 M π.commands
 
+#print axioms validateInput_accepts
+#print axioms validateInput_error
+
 end LeanNCD.Semantics.Program.Plan
