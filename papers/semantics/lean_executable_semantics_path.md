@@ -792,10 +792,10 @@ about runs hold over ℚ through the rational profile of Section 4.6.
 | Specification clause | Lean | What it fixes |
 | --- | --- | --- |
 | [Sections 3.2-3.3](tensor_logic_semantics.md#32-index-variables-and-contexts): variables are identities, order is irrelevant | [`Context`](../../leanncd/LeanNCD/Semantics/Source/Context.lean), `UIDVal`, `uidCoordEquiv`, `Ref.sameUID_lookup`, `UIDTransport`, `reenumerateTransport` | A valuation is a dependent function keyed by axis identity, equivalent to ordered coordinates. Two refs with the same identity read the same value, which gives diagonals. A domain-preserving bijection of identities, or any reordering of the axis list, transports valuations and lookups. |
-| [Section 13.4](tensor_logic_semantics.md#134-scope-freshness-and-substitution): freshness and renaming | `BinderScope`, `renameBinders_noCapture`, `requestedBinders_*`, `indexPullback_id`, `indexPullback_comp` | Generated identities land outside the support; everything else is fixed. Pullback along an index map is contravariant, and a non-injective map yields equal coordinates. A requested renaming applies only when injective and fresh; otherwise every generated identity falls back to the default freshening. There is no substitution $E[i:=e]$, and admission never renames. |
-| [Section 15.1](tensor_logic_semantics.md#151-explicit-inputs-to-elaboration): resolution | `resolveRef`, `resolveSlots`, `adaptSource`, `UnsupportedSource` ([Adapter](../../leanncd/LeanNCD/Semantics/Source/Adapter.lean)) | Slots resolve by identity and must match the declared extent exactly. Refusals are typed (unbound, domain, rank, and the unsupported forms above). Roles come from explicit specs, not names. |
+| [Section 13.4](tensor_logic_semantics.md#134-scope-freshness-and-substitution): freshness and renaming | `BinderScope`, `renameBinders_noCapture`, `requestedBinders_*`, `indexPullback_id`, `indexPullback_comp`, `indexPullback_repeated` | Generated identities land outside the support; everything else is fixed. Pullback along an index map is contravariant, and a non-injective map yields equal coordinates. A requested renaming applies only when injective and fresh; otherwise every generated identity falls back to the default freshening. There is no substitution $E[i:=e]$, and admission never renames. |
+| [Section 15.1](tensor_logic_semantics.md#151-explicit-inputs-to-elaboration): resolution | `resolveRef` ([Context](../../leanncd/LeanNCD/Semantics/Source/Context.lean)), `resolveSourceSlots` ([Admission](../../leanncd/LeanNCD/Semantics/Source/Admission.lean)), `adaptSource`, `UnsupportedSource` ([Adapter](../../leanncd/LeanNCD/Semantics/Source/Adapter.lean)) | Slots resolve by identity and must match the declared extent exactly. Refusals are typed (unbound, domain, rank, and the unsupported forms above). Roles come from explicit specs, not names. |
 | [Section 15.2](tensor_logic_semantics.md#152-statement-variables-and-term-local-contraction): term-local contraction | `SupportPartition`, `admitTerm`, `interpret_product`, `interpret_contract` ([Admission](../../leanncd/LeanNCD/Semantics/Source/Admission.lean), [Lowering](../../leanncd/LeanNCD/Semantics/Source/Lowering.lean)) | The contracted variables of a term are its read identities not in the output, in declaration order, with a coverage and disjointness proof. A body is a nested sum of products. |
-| [Section 14.3](tensor_logic_semantics.md#143-statement-and-program-rules): statement conditions | `admitStatement`, `admitOutput` | Conditions 1 and 3 are checked (writable target, arity). Conditions 4 and 5 hold by construction because extents match exactly. Condition 2 is vacuous since guards have no syntax. |
+| [Section 14.3](tensor_logic_semantics.md#143-statement-and-program-rules): statement conditions | `admitStatement`, `admitOutput` | Conditions 1 and 3 are checked (writable target, arity). Conditions 4 and 5 hold by construction because extents match exactly. Condition 2 holds by construction for output indices, which are scoped by the output identities; its guard part is vacuous since guards have no syntax. |
 | [Sections 13.6 and 15.5](tensor_logic_semantics.md#136-core-programs): programs keep every occurrence | `AdmittedSource.program`, `program_*`, `IdentifiedSource`, `originalLocalEquiv`, `occurrenceIdentity` ([Program](../../leanncd/LeanNCD/Semantics/Source/Program.lean), [Provenance](../../leanncd/LeanNCD/Semantics/Source/Provenance.lean)) | A defined tensor collects every statement that targets it, in source order, with no merging. Original statement identities are retained and are in bijection with the program's occurrence tags. |
 
 Several choices sharpen the specification:
@@ -807,8 +807,9 @@ Several choices sharpen the specification:
 - **Admission is stricter than the core read rule.** Prefix reads, which
   Section 14.2 allows, are refused; "in bounds" means exact extent equality.
 - **The fragment exceeds the standard pure-einsum profile.** Broadcast terms
-  (an output variable no read uses), empty products, and empty term lists are
-  admitted. Section 15.1 excludes these from the standard profile.
+  (an output variable no read uses), empty products, empty term lists, and
+  sums of several terms are admitted. Section 15.1 excludes these from the
+  standard profile, which is a single product.
 - **Open choices are fixed.** The statement context follows the order in which
   output identities first occur, contraction follows declaration order, and
   freshening offsets by a base outside the support.
@@ -828,9 +829,9 @@ Several choices sharpen the specification:
 
 Proposition 19.1 is thereby proved for this fragment, including repeated slots,
 empty contractions, zero extents, factor order, multiplicity, broadcast and
-zero-factor terms, and sums of several terms. Not proved: the link from the
-admitted reads and indices back to the raw source text holds by construction;
-the nested reduction tree is always built in declaration order, so independence
+zero-factor terms, and sums of several terms. The link from the
+admitted reads and indices back to the raw source text is not proved; it holds
+by construction. Also not proved: the nested reduction tree is always built in declaration order, so independence
 from the order of nested reductions (Section 15.2) is shown only for
 re-enumeration of the global axes; and nothing outside the fragment is covered.
 
@@ -876,30 +877,34 @@ executed fixtures and mutation controls, and every claim below is of that kind.
   accumulators, and per-occurrence contributions ([Diagnostics](../../leanncd/LeanNCD/Semantics/Source/Diagnostics.lean)).
   Native legs are compared on output tensors only, against bits derived from the
   oracle. Classification runs in a fixed order and distinguishes reference
-  incompleteness, oracle unavailability, discrepancies, known contract
-  differences, unsupported profiles, native unavailability or failure, and
+  incompleteness, oracle unavailability, comparison refusals, discrepancies,
+  known contract differences, unsupported profiles, native unavailability or failure, and
   four-leg parity. A refusal is never counted as parity.
 - **Localization.** Reference-versus-oracle differences are localized to body,
-  collection, readiness, publication, or backend arithmetic. Native internals
+  collection, or publication. Readiness and backend arithmetic are never
+  localized: readiness is not compared and native internals
   are `noBackendInternalHook`, and term values are explicitly unobserved
   ([Observation](../../leanncd/LeanNCD/Semantics/Source/Observation.lean)); causal evidence is never invented.
   Admission errors abort the comparison rather than classify.
 - **Numerical profile.** [`checkProfile`](../../leanncd/LeanNCD/Semantics/Source/NumericalProfile.lean) requires
-  explicit `f64` declarations, one definition per left-hand side, a bijective
-  name-to-identity relation, and exact values that are integers of magnitude at
-  most $2^{20}$, bounding inputs, products, partial sums, and events. Comparison
+  explicit `f64` declarations, one definition per left-hand side, and exact
+  values that are integers of magnitude at most $2^{20}$, bounding inputs,
+  products, partial sums, and events. Comparison
   is exact bit equality, with $\pm 0$ equal but original bits kept. The argument
   that binary64 arithmetic is exact on this range is informal, not formalized,
   and the profile is not a floating-point semantics.
 - **Known contract differences.** Production overwrites when several statements
   define one left-hand side, while the specification, the reference leg, and the
   oracle collect additively. The comparison classifies such programs as a known
-  difference and never compares their values; fixtures F14 and F15 observe
+  difference and never compares their native output values, though reference
+  and oracle still agree; fixtures F14 and F15 observe
   `[2,4]` against `[7,13]`, and `[5,9]` against `[12,22]`. An untyped tensor
-  defaults to f32 and is classified the same way. Production cannot represent two
-  axes with the same name and different identities, so that case is native-unavailable.
-- **Evidence.** 79 named fixtures, including a generated corpus of exactly 18
-  programs, and 39 implementation mutations: 18 proof-protected kills and 21
+  defaults to f32 and is classified the same way. Production resolves axes by name, so
+  `NativeLegs.checkIdentity` refuses a program whose names and identities are not
+  in bijection (the same name for distinct identities, or the reverse); that case
+  is native-unavailable, not an unsupported profile.
+- **Evidence.** 79 named fixtures (one of them, F16, evaluates a generated corpus
+  of exactly 18 programs) and 39 implementation mutations: 18 proof-protected kills and 21
   executable-fixture kills, not 39 runtime differential samples. Six historical
   input contrasts were replayed on the pinned seed. The controller full build
   passed with 8,763 jobs, and both whole-branch reviews were clean
@@ -907,13 +912,14 @@ executed fixtures and mutation controls, and every claim below is of that kind.
 
 #### What the source layer does not claim
 
-- **No substitution or renaming by admission.** Proof target 2 is covered only
-  for identity-keyed valuations and binder freshening.
+- **No substitution or renaming by admission.** Proof target 2 is only partially
+  addressed, for identity-keyed valuations and binder freshening; no theorem says
+  interpretation or footprints are invariant under renaming.
 - **No general elaboration.** Everything outside the fragment is refused, and
   the Adapter drops the linear bias flag, element types as semantics, and names.
 - **No proof for the oracle or the comparison.** There is no theorem about
   `compareSource`, the numerical profile, or the native legs, and no backend
-  refinement result. Part V of the specification is untouched.
+  refinement result. No Part V result is formalized.
 - **No floating-point correctness.** f32 and f64 are metadata in the exact
   semantics; the bit comparison holds only on the bounded-integer, f64-declared,
   single-definition profile.
@@ -989,7 +995,7 @@ remaining source work is broader than that finite bare-slot fragment: scans,
 marked arrays and slices, affine writes, guards and Iverson factors, nonlinear
 primitives and their before-versus-after-collection boundary, unpinned dimension
 inference, general expression substitution with renaming applied by admission,
-and rank and schedule synthesis. Three proof targets inside the fragment are
+and rank synthesis, plus schedule construction for programs outside the fragment. Three proof targets inside the fragment are
 also open: linking admitted reads back to raw source text, independence from the
 order of nested reductions beyond re-enumeration, and successful-execution
 results under source permutation.
@@ -1004,7 +1010,7 @@ production divergence for multiple statements defining one left-hand side:
 production does not yet implement the specification's cross-statement additive
 collection. The reference and oracle legs do collect additively. The comparison
 classifies such programs as a known contract difference and never compares their
-values, so the divergence is tracked explicitly rather than hidden by weakening
+native output values, so the divergence is tracked explicitly rather than hidden by weakening
 the oracle or counted as a newly discovered regression.
 
 ### 5.2 Later: compiled and numerical refinement
@@ -1047,7 +1053,7 @@ successful whole-store soundness; `result_failure` requires an event path
 reached from validated initialization. It makes no no-model claim for arbitrary
 debug states, blocking, or exhaustion. Invalid input is rejected before
 initialization. Unsupported operations are outside the closed registry;
-source/rank/schedule admission and synthesis are not new runtime services.
+rank synthesis is not provided, and source admission and schedule construction exist only for the bounded fragment of Section 4.7.
 The generic executor retains heterogeneous carriers; validation does not
 establish the parked non-additive-input runtime fixture.
 

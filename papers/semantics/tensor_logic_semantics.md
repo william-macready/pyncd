@@ -185,8 +185,8 @@ sequentially within each top-level section and are not subsection numbers:
 
 | Result | Statement | Lean status (`LeanNCD.Semantics`) |
 | --- | --- | --- |
-| Proposition 19.1 | Pure-einsum elaboration correspondence | Proved for the bounded source fragment (read-only sums of products over bare slots, over any semiring): `Term.collectedBody_correspondence`, `AdmittedSource.collect_correspondence`, `AdmittedSource.models_iff_global` (`Source`). Open beyond it: the link from admitted reads back to raw source text holds by construction only, and affine slots, guards, marked slices, and nonlinear bodies are outside the fragment. |
-| Proposition 19.2 | Source-order invariance | Partial. The occurrence-relabeling form is proved generically (`models_relabel`) and for source programs under any statement permutation: `StatementPermutation.models`, `.collect`, `.admEnv`, `.identities` (`Source.Permutation`). Not stated: the form about successful execution results (Section 28, target 5). |
+| Proposition 19.1 | Pure-einsum elaboration correspondence | Proved for the bounded source fragment (read-only sums of products over bare slots, over any semiring): `Term.collectedBody_correspondence`, `AdmittedSource.collect_correspondence`, `AdmittedSource.models_iff_global` (`Source.Correspondence`, `Source.ProgramCorrespondence`). Open beyond it: the link from admitted reads back to raw source text holds by construction only, and affine slots, guards, marked slices, and nonlinear bodies are outside the fragment. |
+| Proposition 19.2 | Source-order invariance | Proved for the bounded source fragment: the occurrence-relabeling form generically (`models_relabel`) and for source programs under any statement permutation (`StatementPermutation.models`, `.collect`, `.admEnv`, `.identities` in `Source.Permutation`). Open beyond the fragment and for re-admitted permuted source text. The form about successful execution results (Section 28, target 5) is not stated. |
 | Lemma 23.1 | Read stability | Proved: `evalWith_stable`, `interpret_stable` (`Readiness`). |
 | Lemma 26.1 | Conservation invariants | Proved: `reachable_invariant` (`Invariants`) yields `Invariant.published` (item 4), `Invariant.consumed` (item 5), `Invariant.conservation` (accumulator formula), and `Invariant.inputs` (inputs unchanged, part of item 3), with `initial_invariant`, `consume_invariant`, `publish_invariant`. Items 1 and 2 follow from the step premises and typing (item 1 via the pending premise and `Finset.erase`). Monotone publication has only the one-step lemma `publish_extends`; the invariant does not need more. |
 | Lemma 26.2 | Preservation of every candidate model | Partial. Parts (b) and (c) are `candidate_preserved` (`Soundness`), which also makes failed states incompatible with a model. For part (a), the finished-fiber case is `finished_accumulator`; the partial-fiber sum follows from `Invariant.conservation` and `Invariant.consumed` and is not stated separately in Lean. |
@@ -199,8 +199,8 @@ sequentially within each top-level section and are not subsection numbers:
 | Theorem 31.3 | Compiled correctness | Not formalized. |
 | Lemma 32.1 | Batched accumulation refines individual steps | Not formalized. |
 
-The Lean results above concern the reference machine as a transition relation
-over abstract finite carriers and primitives. Its computable refinement now
+The Lean results for Sections 23-26 concern the reference machine as a transition
+relation over abstract finite carriers and primitives. Its computable refinement now
 selects those same legal transitions, validates tensor-level input presence,
 and retains typed event paths and exact endpoints. The verified runtime profile
 uses exact rationals with reciprocal and square; successful initialized runs
@@ -213,11 +213,12 @@ refinement is claimed. Arbitrary debug blocking or exhaustion is not a
 no-model result.
 
 The bounded source layer admits finite read-only sums of products over bare
-slots with identity-keyed valuations, and proves Proposition 19.1 and the
-model and collection forms of Proposition 19.2 for that fragment. Its
+slots with identity-keyed valuations, and proves Propositions 19.1 and 19.2
+for that fragment. Its
 differential comparison of four evaluation legs (an independent exact oracle,
 the rational executor, legacy evaluation, and the checked dense backend) is
-executed evidence, not theorems: 79 named fixtures and 39 mutation controls.
+executed evidence, not theorems. The slice as a whole is validated by 79 named
+fixtures and 39 mutation controls (18 proof-protected and 21 executable).
 Its numerical profile claims exact bit agreement only for programs with
 f64-declared integral values of magnitude at most $2^{20}$ and one definition
 per left-hand side; it is not a floating-point semantics. Proof target 2 is
@@ -3769,7 +3770,8 @@ The foundational proof targets are:
    proved in Lean for the bounded source fragment).
 5. Source-statement permutation preserves the model relation and successful
    execution results under corresponding occurrence relabeling
-   (Proposition 19.2).
+   (Proposition 19.2; the model and collection forms are proved in Lean for the
+   bounded source fragment, the execution-result form is not stated).
 6. The transition invariants and model-preservation claims hold
    (Lemmas 26.1 and 26.2, Theorem 26.3).
 7. The finite measure and rank certificate establish termination and
