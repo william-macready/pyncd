@@ -1,0 +1,5 @@
+import Semantics.SourceDiagnosticPayloadTest
+import Semantics.SourceDiagnosticExecutionTest
+import Semantics.SourceDiagnosticComparisonTest
+import Semantics.SourceDiagnosticAdmissionTest
+import Semantics.SourceDiagnosticNativeTest

@@ -1,0 +1,21 @@
+FINALWHOLEBRANCH lens 1: SOUNDNESS/BINDING/ELABORATION/PROVENANCE/SCHEDULE
+Baseline: d0f8462
+Immutable reviewed tree: 3d057e1f9a0894dd7318ba28fae50b7d89dc8015
+
+Verdict: wholebranch lens1 clean.
+No significant issues found in the reviewed changes.
+
+This is a static integrated code/proof review of the supplied immutable copy.
+No live worktree code was read, built, edited, mutated, or staged.
+No delegation or peer coordination was performed.
+Deep native/profile arithmetic belongs to the separate lens 2 review.
+Excluded generated readiness patch artifacts were not transcription-reviewed.
+
+Controller gates remain unverified by this review: full 39-cycle manifest
+expected-text/byte-restoration receipt, final full build, and ordered patch replay.
+The reported 79-fixture/18-generated-program aggregate and per-task mutation
+receipts are prior controller evidence, not validations rerun by this reviewer.
+Historical six input contrasts are not counted as implementation mutation kills.
+
+Review completed before the 30-turn checkpoint and within the 45-turn cap.
+No context-budget breach observed; independent peak telemetry was not collected.

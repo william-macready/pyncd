@@ -1,0 +1,556 @@
+[
+  {
+    "label": "T1-UID-position-alias (V1)",
+    "task": "T1",
+    "file": "LeanNCD/Semantics/Source/Context.lean",
+    "old": "def UIDVal.lookupRef (v : UIDVal c) (r : Ref c.axes n) : Fin n :=\n  Fin.cast ((c.domain_uidEquiv r.index).trans r.index_extent) (v (r.key c))",
+    "new": "def UIDVal.lookupRef (v : UIDVal c) (r : Ref c.axes n) : Fin n :=\n  let first : Fin c.axes.length :=\n    \u27e80, lt_of_le_of_lt (Nat.zero_le r.index.val) r.index.isLt\u27e9\n  if h : c.domain (c.uidEquiv first) = n then\n    Fin.cast h (v (c.uidEquiv first))\n  else\n    Fin.cast ((c.domain_uidEquiv r.index).trans r.index_extent) (v (r.key c))",
+    "targets": [
+      "+Semantics.SourceBindingUIDTest"
+    ],
+    "expect": [
+      "\u2191(v.lookupRef r) = \u2191(v.lookupRef s)"
+    ]
+  },
+  {
+    "label": "T1-UID-wrong-inverse-permutation (V3)",
+    "task": "T1",
+    "file": "LeanNCD/Semantics/Source/Context.lean",
+    "old": "      invFun := fun u => \u27e8u.val, (p.map Axis.uid).mem_iff.mpr u.property\u27e9",
+    "new": "      invFun := fun u => c.uidEquiv (Fin.cast p.length_eq.symm\n        ((c.reenumerate axes p).uidEquiv.symm u))",
+    "targets": [
+      "+Semantics.SourceBindingUIDTest"
+    ],
+    "expect": [
+      "(c.reenumerate axes p).uidEquiv.symm u",
+      "but is expected to have type"
+    ]
+  },
+  {
+    "label": "V5 requested freshness omits output/free support (intended proof: BinderScope.requested_fresh)",
+    "task": "T1",
+    "file": "LeanNCD/Semantics/Source/Context.lean",
+    "old": "abbrev BinderScope.RequestFresh (s : BinderScope c) (request : UID \u2192 UID) : Prop :=\n  (s.generated.dedup.map request).Nodup \u2227 \u2200 u \u2208 s.generated, request u \u2209 s.support\n\ntheorem BinderScope.requestFresh_of_injective (s : BinderScope c) (request : UID \u2192 UID)\n    (hi : \u2200 u \u2208 s.generated, \u2200 w \u2208 s.generated, request u = request w \u2192 u = w)\n    (hf : \u2200 u \u2208 s.generated, request u \u2209 s.support) : s.RequestFresh request := by",
+    "new": "abbrev BinderScope.RequestFresh (s : BinderScope c) (request : UID \u2192 UID) : Prop :=\n  (s.generated.dedup.map request).Nodup \u2227 \u2200 u \u2208 s.generated, request u \u2209 s.source ++ s.generated\n\ntheorem BinderScope.requestFresh_of_injective (s : BinderScope c) (request : UID \u2192 UID)\n    (hi : \u2200 u \u2208 s.generated, \u2200 w \u2208 s.generated, request u = request w \u2192 u = w)\n    (hf : \u2200 u \u2208 s.generated, request u \u2209 s.source ++ s.generated) : s.RequestFresh request := by",
+    "targets": [
+      "+Semantics.SourceBindingRenameTest"
+    ],
+    "expect": [
+      "request u \u2209 s.source ++ s.generated",
+      "request u \u2209 s.support"
+    ]
+  },
+  {
+    "label": "V6 domain check removed (intended contract: resolveUID domain witness)",
+    "task": "T1",
+    "file": "LeanNCD/Semantics/Source/Context.lean",
+    "old": "    if hd : c.domain u = n then .ok \u27e8u, rfl, hd\u27e9\n    else .error (.domain uid n (c.domain u))",
+    "new": "    .ok \u27e8u, rfl, by rfl\u27e9",
+    "targets": [
+      "+Semantics.SourceBindingRenameTest"
+    ],
+    "expect": [
+      "\u22a2 c.domain u = n"
+    ]
+  },
+  {
+    "label": "T2 prefix-domain acceptance (A1)",
+    "task": "T2",
+    "file": "LeanNCD/Semantics/Source/Context.lean",
+    "old": "if h : a.extent = n then .ok (h \u25b8 Ref.here)",
+    "new": "if h : n \u2264 a.extent then .ok Ref.here",
+    "targets": [
+      "+Semantics.SourceAdmissionDomainsTest"
+    ],
+    "expect": [
+      "Ref.here",
+      "Ref (a :: sh) n",
+      "Except.ok Ref.here"
+    ]
+  },
+  {
+    "label": "T2 output slot reorder (A3/A4)",
+    "task": "T2",
+    "file": "LeanNCD/Semantics/Source/Admission.lean",
+    "old": "slots.zipIdx.mapM fun (slot, i) => do",
+    "new": "slots.zipIdx.reverse.mapM fun (slot, i) => do",
+    "targets": [
+      "+Semantics.SourceAdmissionDomainsTest",
+      "+Semantics.SourceAdmissionSupportTest"
+    ],
+    "expect": [
+      "match a3 with",
+      "did not evaluate to `true`"
+    ]
+  },
+  {
+    "label": "T2 support over-contraction (A5/B4)",
+    "task": "T2",
+    "file": "LeanNCD/Semantics/Source/Admission.lean",
+    "old": "  let bound := source.axes.filter\n    (fun a => a.uid \u2208 support \u2227 a.uid \u2209 out.axes.map Axis.uid)",
+    "new": "  let bound := source.axes.filter\n    (fun a => a.uid \u2209 out.axes.map Axis.uid)",
+    "targets": [
+      "+Semantics.SourceAdmissionSupportTest"
+    ],
+    "expect": [
+      "bound = List.filter (fun a => decide (a.uid \u2208 support \u2227 a.uid \u2209 List.map Axis.uid out.axes)) source.axes"
+    ]
+  },
+  {
+    "label": "T2 duplicate resolved axis declaration shadow (A9; A9/A10 duplicate-declaration family)",
+    "task": "T2",
+    "file": "LeanNCD/Semantics/Source/Adapter.lean",
+    "old": "      if a.uid \u2208 axes.map Axis.uid then\n        throw (sourceError .declarations origin (.duplicateAxis a.uid))",
+    "new": "      axes := axes.filter (fun prior => prior.uid != a.uid)",
+    "targets": [
+      "+Semantics.SourceAdmissionDeclarationsTest"
+    ],
+    "expect": [
+      "  A9\n",
+      "unexpected duplicate axis admission"
+    ]
+  },
+  {
+    "label": "T2 A11 (write role guard removed; writable contract protected)",
+    "task": "T2",
+    "file": "LeanNCD/Semantics/Source/Admission.lean",
+    "old": "    if hw : (source.table.entry dst).role \u2260 .input then",
+    "new": "    if hw : True then",
+    "targets": [
+      "+Semantics.SourceAdmissionRolesTest"
+    ],
+    "expect": [
+      "(source.table.entry dst).role \u2260 TensorRole.input"
+    ]
+  },
+  {
+    "label": "T2 A12 (absent domain inferred from input shape)",
+    "task": "T2",
+    "file": "LeanNCD/Semantics/Source/Adapter.lean",
+    "old": "  let context \u2190 checkAxes snapshot.resolved.decls",
+    "new": "  let inferredDecls := snapshot.resolved.decls.map fun d =>\n    match d with\n    | .axis a none =>\n      let size := snapshot.resolved.decls.zipIdx.findSome? fun (decl, ordinal) =>\n        match decl, snapshot.inputs.find? (fun b => b.declaration == ordinal) with\n        | .tensor _ axes, some binding\n        | .typedTensor _ _ axes, some binding =>\n          (axes.zipIdx.find? (fun (axis, _) => axis.uid == a.uid)).bind fun (_, slot) =>\n            binding.shape[slot]?\n        | _, _ => none\n      .axis a size\n    | _ => d\n  let context \u2190 checkAxes inferredDecls",
+    "targets": [
+      "+Semantics.SourceAdmissionRolesTest"
+    ],
+    "expect": [
+      "  a12\n",
+      "did not evaluate to `true`"
+    ]
+  },
+  {
+    "label": "T2 inputs: fabricate missing declared input bindings (A13/A14)",
+    "task": "T2",
+    "file": "LeanNCD/Semantics/Source/Adapter.lean",
+    "old": "    | none => throw (sourceError .inputs origin (.missingInput entry.declaration))",
+    "new": "    | none => pure (\u27e8entry.declaration, entry.axes.map Axis.extent,\n        List.replicate (canonicalLayout entry.axes).count 0\u27e9 : InputBinding)",
+    "targets": [
+      "+Semantics.SourceAdmissionInputsTest"
+    ],
+    "expect": [
+      "match a13 with",
+      "match a14 with",
+      "did not evaluate to `true`"
+    ]
+  },
+  {
+    "label": "T2 inputs: skip shape rejection and repair short payloads (A15/A16)",
+    "task": "T2",
+    "file": "LeanNCD/Semantics/Source/Adapter.lean",
+    "old": "  let expected := entry.axes.map Axis.extent\n  if expected != binding.shape then\n    throw (sourceError .inputs origin (.shape expected binding.shape))\n  if hl : binding.values.length = (canonicalLayout entry.axes).count then\n    pure \u27e8binding.values, hl\u27e9\n  else\n    throw (sourceError .inputs origin\n      (.length (canonicalLayout entry.axes).count binding.values.length))",
+    "new": "  if hl : binding.values.length = (canonicalLayout entry.axes).count then\n    pure \u27e8binding.values, hl\u27e9\n  else\n    pure \u27e8List.replicate (canonicalLayout entry.axes).count 0, by simp\u27e9",
+    "targets": [
+      "+Semantics.SourceAdmissionInputsTest",
+      "+Semantics.SourceAdmissionRefusalsTest"
+    ],
+    "expect": [
+      "match a15 with",
+      "match A16 with",
+      "did not evaluate to `true`"
+    ]
+  },
+  {
+    "label": "T3-P1 first-statement single-target role shortcut",
+    "task": "T3",
+    "file": "LeanNCD/Semantics/Source/Program.lean",
+    "old": "def AdmittedSource.isInput (source : AdmittedSource) (t : source.source.table.declarations.Tensor) :\n    Bool :=\n  decide ((source.source.table.entry t).role = .input)",
+    "new": "def AdmittedSource.isInput (source : AdmittedSource) (t : source.source.table.declarations.Tensor) :\n    Bool :=\n  match source.statements.head? with\n  | some statement => decide (t \u2260 statement.output.tensor)\n  | none => true",
+    "targets": [
+      "+Semantics.SourceProgramIdentityTest"
+    ],
+    "expect": [
+      "\u00ac(source.source.table.entry t).role = TensorRole.input",
+      "unsolved goals"
+    ]
+  },
+  {
+    "label": "T3-P3 attached original tag overwritten by permuted ordinal",
+    "task": "T3",
+    "file": "LeanNCD/Semantics/Source/Permutation.lean",
+    "old": "  statements := List.ofFn (fun i => source.statements.get (e i))",
+    "new": "  statements := List.ofFn (fun i => { (source.statements.get (e i)) with original := i.val })",
+    "targets": [
+      "+Semantics.SourceProgramIdentityTest"
+    ],
+    "expect": [
+      "{ original := \u2191i, output := source.statements[\u2191(e \u27e8\u2191i, \u22ef\u27e9)].output",
+      "unsolved goals"
+    ]
+  },
+  {
+    "label": "T3-P4 (deduplicate original occurrences by output and ordered operand signature)",
+    "task": "T3",
+    "file": "LeanNCD/Semantics/Source/Program.lean",
+    "old": "  (List.finRange source.statements.length).filterMap fun i =>\n    if h : (source.statements.get i).output.tensor = t then some \u27e8i, h\u27e9 else none",
+    "new": "  (List.finRange source.statements.length).filterMap fun i =>\n    if h : (source.statements.get i).output.tensor = t then\n      if (source.statements.take i.val).any (fun prior =>\n        prior.output.tensor.val == t.val &&\n        prior.output.indices == (source.statements.get i).output.indices &&\n        prior.terms.map (fun term => term.sourceReads.map\n          (fun read => (read.read.tensor.val, read.indices))) ==\n          (source.statements.get i).terms.map (fun term => term.sourceReads.map\n            (fun read => (read.read.tensor.val, read.indices)))) then none\n      else some \u27e8i, h\u27e9\n    else none",
+    "targets": [
+      "+Semantics.SourceProgramCollectionTest"
+    ],
+    "expect": [
+      "List.take (\u2191i) source.statements",
+      "dif_pos h"
+    ]
+  },
+  {
+    "label": "T3-P5 (omit publications for nonoutput defined tensors)",
+    "task": "T3",
+    "file": "LeanNCD/Semantics/Source/Schedule.lean",
+    "old": "  ((sourceDefined source).sigma (sourceCoordinates source)).map fun x => .publication x.1 x.2",
+    "new": "  (((sourceDefined source).sigma (sourceCoordinates source)).filter\n    (fun x => (elaborateSource source).output x.1.val)).map fun x => .publication x.1 x.2",
+    "targets": [
+      "+Semantics.SourceProgramCollectionTest"
+    ],
+    "expect": [
+      "\u27e8t, p\u27e9 \u2208\n    List.filter (fun x => (elaborateSource source).output \u2191x.fst)"
+    ]
+  },
+  {
+    "label": "T3-P6 (omit the entire coordinate domain of tensors without statements)",
+    "task": "T3",
+    "file": "LeanNCD/Semantics/Source/Schedule.lean",
+    "old": "  let layout := canonicalLayout (source.source.table.declarations.signature t.val).axes\n  (List.finRange layout.count).map layout.enumerate",
+    "new": "  let layout := canonicalLayout (source.source.table.declarations.signature t.val).axes\n  if (elaborateSource source).statements t = 0 then []\n  else (List.finRange layout.count).map layout.enumerate",
+    "targets": [
+      "+Semantics.SourceProgramCollectionTest"
+    ],
+    "expect": [
+      "\u22a2 p \u2208 sourceCoordinates source t"
+    ]
+  },
+  {
+    "label": "T3-P9 exact nested read footprint loses all inner reads",
+    "task": "T3",
+    "file": "LeanNCD/Semantics/Source/Statement.lean",
+    "old": "    (List.finRange a.extent).flatMap fun i => reductionReads rest (fun p => reads (i, p))",
+    "new": "    if rest.isEmpty then\n      (List.finRange a.extent).flatMap fun i => reductionReads rest (fun p => reads (i, p))\n    else []",
+    "targets": [
+      "+Semantics.SourceProgramGeometryTest"
+    ],
+    "expect": [
+      "footprint (contract rest reads",
+      "if rest.isEmpty = true then",
+      "else []"
+    ]
+  },
+  {
+    "label": "T4-B2-BOUNDARY (lose the zero contraction bound)",
+    "task": "T4",
+    "file": "LeanNCD/Semantics/Source/Lowering.lean",
+    "old": "    .reduce a.extent (contract rest reads (fun \u03b3 p => env \u03b3.1 (\u03b3.2, p)))",
+    "new": "    if a.extent = 0 then .lit 1 else\n      .reduce a.extent (contract rest reads (fun \u03b3 p => env \u03b3.1 (\u03b3.2, p)))",
+    "targets": [
+      "+Semantics.SourceCorrespondenceBoundaryTest"
+    ],
+    "expect": [
+      "if a.extent = 0 then Expr.lit 1",
+      "some (\u2211 p, operandProduct \u03c1 reads (env \u03b3 p))"
+    ]
+  },
+  {
+    "label": "T4-B3-BOUNDARY (change one repeated destination slot)",
+    "task": "T4",
+    "file": "LeanNCD/Semantics/Source/Statement.lean",
+    "old": "    Coord (source.table.declarations.signature statement.output.tensor).axes :=\n  statement.output.slots.project x",
+    "new": "    Coord (source.table.declarations.signature statement.output.tensor).axes :=\n  let changeFirst : (sh : Shape) \u2192 Coord sh \u2192 Coord sh := fun\n    | [], p => p\n    | _ :: _, p => (Fin.rev p.1, p.2)\n  changeFirst _ (statement.output.slots.project x)",
+    "targets": [
+      "+Semantics.SourceCorrespondenceBoundaryTest"
+    ],
+    "expect": [
+      "AdmittedOutput.projection statement.output v",
+      "statement.destination ((uidCoordEquiv statement.output.context)"
+    ]
+  },
+  {
+    "label": "T4-B4-bias-reduced-over-another-term-bound",
+    "task": "T4",
+    "file": "LeanNCD/Semantics/Source/Statement.lean",
+    "old": "  sumBody statement.terms env",
+    "new": "  let bound := ((statement.terms.find? fun term => !term.partition.bound.isEmpty).map\n    (fun term => term.partition.bound)).getD []\n  (statement.terms.map fun term =>\n    if term.partition.bound.isEmpty then\n      .binary .mul\n        (contract bound ([] : List (Read [] source.table.declarations))\n          (fun (_ : \u0393) _ => ()))\n        (term.body env)\n    else term.body env).foldr (fun body rest => .binary .add body rest) (.lit 0)",
+    "targets": [
+      "+Semantics.SourceCorrespondenceCollectionTest"
+    ],
+    "expect": [
+      "interpret_sumBody statement.terms \u03c1 env \u03b3",
+      "footprint (statement.body env)"
+    ]
+  },
+  {
+    "label": "T4-B6-drop-second-target-local-statement-occurrences",
+    "task": "T4",
+    "file": "LeanNCD/Semantics/Program.lean",
+    "old": "  pushforward (fun o : P.Occurrence t => P.destination t o.1 o.2)\n    (P.contribution ops \u03c1 h t)",
+    "new": "  pushforward (fun o : P.Occurrence t => P.destination t o.1 o.2)\n    (fun o => if o.1.val = 1 then 0 else P.contribution ops \u03c1 h t o)",
+    "targets": [
+      "+Semantics.SourceCorrespondenceCollectionTest"
+    ],
+    "expect": [
+      "pushforward_relabel (e t)",
+      "P.relabeledCollect ops e \u03c1 h t = P.collect ops \u03c1 h t"
+    ]
+  },
+  {
+    "label": "T5-F11-F12-final-only-envelope (supplementary payload profile guard)",
+    "task": "T5",
+    "file": "LeanNCD/Semantics/Source/NumericalProfile.lean",
+    "old": "  let checked \u2190 checkOracle source result",
+    "new": "  let rows \u2190 (Debug.normalizeOracle source result).mapError\n    (fun error => .receipt { origin := error.origin } (.normalization error))\n  let mut values := []\n  for tensor in result.tensors do\n    for (value, cell) in tensor.values.zipIdx do\n      values := values ++ [\u2190 checkValue\n        { origin := { side := .declaration, declaration := some tensor.declaration },\n          cell := some cell } .tensorCell value]\n  let checked := (rows, values)",
+    "targets": [
+      "+LeanNCD.Semantics.Source.NumericalProfile",
+      "+Semantics.SourceDiagnosticPayloadTest"
+    ],
+    "expect": [
+      "\n  supplementaryProfileHazards\n",
+      "did not evaluate to `true`"
+    ]
+  },
+  {
+    "label": "T5-D6-trace-index-zip-without-occurrence-key-normalization",
+    "task": "T5",
+    "file": "LeanNCD/Semantics/Source/Observation.lean",
+    "old": "  rows.mergeSort fun a b => occurrenceKeyLE a.key b.key",
+    "new": "  rows",
+    "targets": [
+      "+Semantics.SourceDiagnosticExecutionTest"
+    ],
+    "expect": [
+      "\n  D6\n",
+      "did not evaluate to `true`"
+    ]
+  },
+  {
+    "label": "T5-D7 wrong differing coordinate",
+    "task": "T5",
+    "file": "LeanNCD/Semantics/Source/Differential.lean",
+    "old": "    else pure (.disagreement (.cell binding coordinate expected comparison))",
+    "new": "    else pure (.disagreement (.cell binding (List.replicate coordinate.length 0) expected comparison))",
+    "targets": [
+      "+Semantics.SourceDiagnosticComparisonTest"
+    ],
+    "expect": [
+      "\n  D7\n",
+      "did not evaluate to `true`"
+    ]
+  },
+  {
+    "label": "T5-D8 prefix shape comparison",
+    "task": "T5",
+    "file": "LeanNCD/Semantics/Source/Diagnostics.lean",
+    "old": "      if l.shape != r.shape then return .disagreement (.shape l r)",
+    "new": "      if l.shape != r.shape && l.values.take r.values.length != r.values then\n        return .disagreement (.shape l r)",
+    "targets": [
+      "+Semantics.SourceDiagnosticComparisonTest"
+    ],
+    "expect": [
+      "\n  D8\n",
+      "did not evaluate to `true`"
+    ]
+  },
+  {
+    "label": "T5-D9 original source ordinal dropped",
+    "task": "T5",
+    "file": "LeanNCD/Semantics/Source/Observation.lean",
+    "old": "  \u27e8\u27e8tag.original, outputAssignments tag.statement o.2.val\u27e9, o.1.val,",
+    "new": "  \u27e8\u27e8o.1.val, outputAssignments tag.statement o.2.val\u27e9, o.1.val,",
+    "targets": [
+      "+Semantics.SourceDiagnosticComparisonTest"
+    ],
+    "expect": [
+      "\n  D9\n",
+      "did not evaluate to `true`"
+    ]
+  },
+  {
+    "label": "T5 checked compile/preparation/runtime renderer causes collapsed (D11-D13)",
+    "task": "T5",
+    "file": "LeanNCD/Semantics/Source/Differential.lean",
+    "old": "  | .sourceCompilation error =>\n    s!\"checked sourceCompilation: cause={repr error.cause}\\nwarningAvailability={repr error.warnings}\\nmappings={repr error.mappings}\"\n  | .preparation error =>\n    s!\"checked preparation: cause={renderPreparationCause error.original.cause}\\nwarnings={error.original.warnings.map toString}\\nmappings={repr error.mappings}\"\n  | .runtime error =>\n    s!\"checked runtime: cause={repr error.original.cause}\\nwarnings={error.original.warnings.map toString}\\nmappings={repr error.mappings}\"",
+    "new": "  | .sourceCompilation _ | .preparation _ | .runtime _ =>\n    \"checked failure: cause=backendFailure\"",
+    "targets": [
+      "Semantics.SourceDiagnosticAdmissionTest",
+      "Semantics.SourceDiagnosticNativeTest"
+    ],
+    "expect": [
+      "\n  D11\n",
+      "\n  D12\n",
+      "\n  D13\n",
+      "did not evaluate to `true`"
+    ]
+  },
+  {
+    "label": "T5-D15 successful native observation discards stored warnings",
+    "task": "T5",
+    "file": "LeanNCD/Semantics/Source/NativeLegs.lean",
+    "old": "  return \u27e8report, .ok outputs, .unobserved .noBackendInternalHook\u27e9",
+    "new": "  return \u27e8{ report with warnings := [] }, .ok outputs, .unobserved .noBackendInternalHook\u27e9",
+    "targets": [
+      "+Semantics.SourceDiagnosticNativeTest"
+    ],
+    "expect": [
+      "\n  D15\n",
+      "did not evaluate to `true`"
+    ]
+  },
+  {
+    "label": "T5-D14 guessed native body causal localization without a hook",
+    "task": "T5",
+    "file": "LeanNCD/Semantics/Source/Differential.lean",
+    "old": "def nativeLocalization : Localization :=\n  { body := .unobserved .noBackendInternalHook,",
+    "new": "def nativeLocalization : Localization :=\n  { body := .observedDisagreement,",
+    "targets": [
+      "+Semantics.SourceDiagnosticNativeTest"
+    ],
+    "expect": [
+      "\n  D14\n",
+      "did not evaluate to `true`"
+    ]
+  },
+  {
+    "label": "T6-F4 diagonal write wrongly refused by repeated-output UID guard",
+    "task": "T6",
+    "file": "LeanNCD/Semantics/Source/NumericalProfile.lean",
+    "old": "    unless output.elementType == .f64 do\n      throw (.structural (.usedDType statement.output.origin output.name output.elementType))",
+    "new": "    unless output.elementType == .f64 && (statement.output.indices.length == statement.output.indices.dedup.length) do\n      throw (.structural (.usedDType statement.output.origin output.name output.elementType))",
+    "targets": [
+      "+Semantics.SourceDiagnosticNativeTest",
+      "+Semantics.SourceDifferentialGeometryTest"
+    ],
+    "expect": [
+      "\n  F4\n",
+      "did not evaluate to `true`"
+    ]
+  },
+  {
+    "label": "T6-F5 independent oracle zero-domain assignment made singleton",
+    "task": "T6",
+    "file": "LeanNCD/Semantics/Source/Oracle.lean",
+    "old": "    (List.range a.extent).flatMap fun i => (assignments rest).map ((a.uid, i) :: \u00b7)",
+    "new": "    (List.range (max 1 a.extent)).flatMap fun i => (assignments rest).map ((a.uid, i) :: \u00b7)",
+    "targets": [
+      "+Semantics.SourceOracleTest",
+      "+Semantics.SourceDifferentialGeometryTest"
+    ],
+    "expect": [
+      "\n  F5\n",
+      "did not evaluate to `true`"
+    ]
+  },
+  {
+    "label": "T6-F8 independent oracle packing transposed",
+    "task": "T6",
+    "file": "LeanNCD/Semantics/Source/Oracle.lean",
+    "old": "  go shape coordinate 0 0",
+    "new": "  go shape.reverse coordinate.reverse 0 0",
+    "targets": [
+      "+Semantics.SourceDifferentialIdentityTest"
+    ],
+    "expect": [
+      "\n  F8\n",
+      "did not evaluate to `true`"
+    ]
+  },
+  {
+    "label": "T6-F7 source sum-product terms deduplicated before original term indexing",
+    "task": "T6",
+    "file": "LeanNCD/Semantics/Source/Admission.lean",
+    "old": "      let terms \u2190 rhs.body.terms.zipIdx.mapM fun (term, i) => do",
+    "new": "      let terms \u2190 rhs.body.terms.dedup.zipIdx.mapM fun (term, i) => do",
+    "targets": [
+      "+Semantics.SourceDifferentialIdentityTest"
+    ],
+    "expect": [
+      "\n  F7\n",
+      "did not evaluate to `true`"
+    ]
+  },
+  {
+    "label": "T6-zero-normalization-removed (F11 comparison-only injected signed-zero observation)",
+    "task": "T6",
+    "file": "LeanNCD/Semantics/Source/NumericalProfile.lean",
+    "old": "def normalizeZeroBits (bits : UInt64) : UInt64 :=\n  if bits &&& 0x7fffffffffffffff == 0 then 0 else bits",
+    "new": "def normalizeZeroBits (bits : UInt64) : UInt64 :=\n  bits",
+    "targets": [
+      "+LeanNCD.Semantics.Source.NumericalProfile",
+      "+Semantics.SourceDifferentialNumericalTest"
+    ],
+    "expect": [
+      "\n  F11\n",
+      "did not evaluate to `true`"
+    ]
+  },
+  {
+    "label": "T6-policy-f32-source-silently-rewritten-to-f64 (F13)",
+    "task": "T6",
+    "file": "LeanNCD/Semantics/Source/NativeLegs.lean",
+    "old": "def NativeSource.program (source : NativeSource) : TLProgram :=\n  \u27e8source.snapshot.resolved.decls, source.snapshot.resolved.stmts\u27e9",
+    "new": "def NativeSource.program (source : NativeSource) : TLProgram :=\n  \u27e8source.snapshot.resolved.decls.map (fun declaration => match declaration with\n    | .tensor name axes | .typedTensor .f32 name axes => .typedTensor .f64 name axes\n    | other => other), source.snapshot.resolved.stmts\u27e9",
+    "targets": [
+      "+Semantics.SourceDifferentialPolicyTest"
+    ],
+    "expect": [
+      "\n  F13\n",
+      "did not evaluate to `true`"
+    ]
+  },
+  {
+    "label": "T6-policy-multiple-definitions-falsely-marked-shared (F14/F15)",
+    "task": "T6",
+    "file": "LeanNCD/Semantics/Source/NumericalProfile.lean",
+    "old": "    unless previous.isEmpty do\n      throw (.structural (.crossStatementOverwrite output.declaration\n        (previous.map Prod.snd ++ [statement.output.origin])))",
+    "new": "    unless previous.isEmpty || previous.all (fun definition => definition.1 == output.declaration) do\n      throw (.structural (.crossStatementOverwrite output.declaration\n        (previous.map Prod.snd ++ [statement.output.origin])))",
+    "targets": [
+      "+Semantics.SourceDifferentialPolicyTest"
+    ],
+    "expect": [
+      "\n  F14\n",
+      "\n  F15\n",
+      "did not evaluate to `true`"
+    ]
+  },
+  {
+    "label": "T6-F18 independent oracle slots merge actual UID into first assignment",
+    "task": "T6",
+    "file": "LeanNCD/Semantics/Source/Oracle.lean",
+    "old": "    match assignment.find? (fun p => p.1 == uid) with",
+    "new": "    match assignment.head? with",
+    "targets": [
+      "+Semantics.SourceDifferentialCorpusTest"
+    ],
+    "expect": [
+      "\n  F18\n",
+      "did not evaluate to `true`"
+    ]
+  },
+  {
+    "label": "T6-F17-P6 publication scan drops final coordinate of every defined domain",
+    "task": "T6",
+    "file": "LeanNCD/Semantics/Source/Schedule.lean",
+    "old": "  ((sourceDefined source).sigma (sourceCoordinates source)).map fun x => .publication x.1 x.2",
+    "new": "  ((sourceDefined source).sigma (fun t => (sourceCoordinates source t).dropLast)).map fun x => .publication x.1 x.2",
+    "targets": [
+      "+Semantics.SourceDifferentialCorpusTest"
+    ],
+    "expect": [
+      "sourceCoordinates_complete source t p",
+      "p \u2208 (sourceCoordinates source t).dropLast"
+    ]
+  }
+]

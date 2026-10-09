@@ -2,28 +2,29 @@
 
 ## 1. Status and front gate
 
-**Full path: new source capability and proof surface. DESIGN PLAN WITH VERIFIED
-PARTIAL PROTOTYPE; NOT EXECUTION-READY.** Authoring Phase B, 2026-10-08.
-Production stays unchanged. This is one plan for the first complete slice:
+**Full path: new source capability and proof surface. IMPLEMENTED;
+EXECUTION-READY, ALL CONTROLLER GATES PASS.** Originally authored
+2026-10-08; verification completed 2026-10-09. Production DSL/Eval stays unchanged.
+This is one plan for the first complete slice:
 UID-based source elaboration, pure-einsum correspondence, source-linked
 diagnostics, and differential tests for bounded scalar read sum-products.
 
-**Do not dispatch implementation from this document yet.** These required seams
-have not been prototyped:
+Authorized implementation completed all 79 named fixtures, exactly 18 generated
+F16 cases, and all 39 intended implementation mutations. T1-T5 per-task reviews
+and both final whole-branch lenses are clean. T2 additionally has three verified
+Direct acceptance regression families and hand checks. The controller observed
+39/39 expected failures with byte-identical restoration and restored green
+builds, then ran the full build successfully (8,763 jobs). The six fresh task
+patches replay exactly from base `d0f8462`, including final documentation.
 
-- True UID-keyed dependent valuations, their coordinate bijection, and
-  capture-avoiding generated-binder renaming/index substitution.
-- Automatically computed term support partitions and a resolved production-AST
-  adapter with explicit tensor roles, multiple statements, and stable provenance.
-- General multi-tensor elaboration, tag-preserving statement permutation, and
-  complete computational source-generated schedules.
-- Public diagnostic/differential APIs, independent input packing/oracle tests,
-  the exact production numerical profile, and implementation-mutation kills.
-
-Readiness completion must rehearse these seams on the real module split, emit
-new per-task patches, observe every new fixture family, mutate implementations,
-and pass the two review lenses below. The retained patches are seed evidence,
-**not** a recipe to apply three patches and declare this slice finished.
+The observed implementation receipts and explicit limitations are tracked in the
+[record](source_correspondence_record.md) and
+[controller receipts](source_correspondence_artifacts/controller_closeout.txt).
+The fresh series runs from
+[T1](source_correspondence_readiness_patches/0001-uid-binding.patch) through
+[T6](source_correspondence_readiness_patches/0006-final-differential-corpus.patch).
+The three older seed patches remain historical evidence, **not** a complete
+implementation recipe.
 
 Authority: corrected [semantics](tensor_logic_semantics.md), Proposition 19.1;
 [roadmap](lean_executable_semantics_path.md); retained
@@ -38,7 +39,7 @@ and [patch 3](source_correspondence_patches/0003-test-semantics-verify-rational-
 
 ## 2. Accepted endpoint and hard scope
 
-The future public import is `LeanNCD`. A caller supplies a resolved finite source
+The public import is `LeanNCD`. A caller supplies a resolved finite source
 program, explicit tensor roles/shapes, all declared inputs, and optional debug
 fuel. Admission either returns a typed, source-linked error or an existing typed
 `Program` plus identity/provenance maps and a deterministic complete `Schedule`.
@@ -94,6 +95,15 @@ UID assignments along a domain-preserving map, including repeated lookup slots.
 Reject domain-changing substitutions. This is not a theorem about arbitrary
 DSL expressions, nonlinear binding, or all source substitution.
 
+Generated-binder freshening also accepts requested replacement UIDs. A request
+may collide with protected source/output/free support; admission must not require
+the requested identities to be fresh already. Such requests are freshened into
+an injective, domain-preserving transport without moving protected identities.
+The collision policy must be explicit and tested by V5.
+The rehearsed policy honors all generated targets when they are injective and
+outside the full support; otherwise it deterministically freshens the entire
+generated group. Nongenerated identities are never renamed.
+
 Attach original statement ordinals **before** any grouping or reordering.
 Term/factor/slot ordinals are within that original statement. Maintain inverse
 maps between original identities and target-local typed statement tags.
@@ -127,6 +137,11 @@ Repeated output UIDs share a value but retain repeated destination slots.
 Keep tensor role, logical domain, input shape, and buffer-length validation
 separate; all declared inputs must be present, including unused/empty tensors.
 No production zero-padding is imported into semantic read admission.
+Finite pinned declarations admit both nat and real axis metadata; bare use-site
+kinds are not identity/domain checks, since the parser uses real placeholders.
+Compatible tensor/linear declarations retain their real dtype and original
+declaration identity, including both linear bias flags. Unsupported expression
+forms and complex/predicate declarations remain explicit refusals.
 
 T2 must deliver a case-by-class audit: required / forbidden / silently ignored
 for axis/tensor/binder declarations, output slots, read slots, support, roles,
@@ -280,9 +295,13 @@ independence theorem. Arbitrary rational core runs remain available.
 ## 5. Task graph, files, and bounded dispatches
 
 All paths in this section are repository-relative. Existing donor/core/production
-paths are checked in the planning tree. The entire `Semantics/Source/` tree and
-`SourceCorrespondenceTest.lean` are **future outputs**, present only in the seed
-patches. Additional proposed files below do not yet exist.
+paths are checked in the planning tree. `Source.Context`, `Source.Adapter`,
+`Source.Admission`, the generic `Source.Lowering` donor, and the binding fixtures
+now exist in the rehearsal tree, along with general Program/schedule,
+provenance/permutation, an independent oracle, genuine generalized
+correspondence, typed diagnostics, an exact numerical profile, and four-leg
+comparison modules and all fixture families. The final controller/review gates
+pass; the historical seed patches alone never completed this work.
 Production DSL/Eval files are read-only donors, not mutation targets.
 
 | Task | Prerequisites | Three implementation work items | Planned fixtures / implementation cycles | Risk / split |
@@ -294,8 +313,11 @@ Production DSL/Eval files are read-only donors, not mutation targets.
 | T5 diagnostics/harness | T2, T3, T4 | Typed observations; source renderer; four-leg/profile comparison | 15 / 8 | High; API then fixture bundles |
 | T6 corpus/review/docs | T1, T2, T3, T4, T5 | Deterministic corpus; implementation cycles; integrated review/docs | 18 / 9 | High; corpus bundles then integration |
 
-Totals: **79 named fixture entrypoints and 39 implementation-mutation cycles**,
-all planned/unobserved. F16 additionally expands exactly 18 generated cases.
+Planned totals: **79 named fixture entrypoints and 39 implementation-mutation
+cycles**. All named entrypoints and intended cycles have observed receipts in
+the record, along with three supplemental Direct acceptance families/hand
+checks. Final controller/review gates pass. F16 additionally expands
+exactly 18 generated cases.
 These counts do not include the six completed fixture-input contrasts.
 No fixture dispatch takes more than three numbered fixture IDs/families.
 Split larger tasks into successive bundles of at most three; a reviewer may
@@ -309,14 +331,18 @@ reads over 20k characters. Seed symbols refer to compiled patches, not current
 planning-tree definitions. Proposed identifiers are specifications, not verified
 exports. Final readiness briefs must replace proposed locators with observed ones.
 
-- **T1:** seed `Context`, `Ref.get`, `resolveRef`, `Slots.project`, `NamedVal`,
-  `namedEquiv`, `appendEquiv` @ `leanncd/LeanNCD/Semantics/Source/Context.lean`;
-  proposed `UIDVal`, `uidCoordEquiv`, `renameBinders`, `indexPullback` @ same file.
-  Tests: future `leanncd/test/Semantics/SourceBindingTest.lean`.
+- **T1:** observed `Context`, `Ref.get`, `resolveRef`, `Slots.project`,
+  `PositionalVal`, `positionalCoordEquiv`, `appendEquiv`, `UIDVal`,
+  `uidCoordEquiv`, `renameBinders`, `renameBindersRequested`,
+  `requestedBinderTransport`, `indexPullback` @
+  `leanncd/LeanNCD/Semantics/Source/Context.lean`.
+  Tests: `leanncd/test/Semantics/SourceBindingTest.lean`.
 - **T2:** seed `admitRead`, `admitTerm`, `admitOutput`, `admitPure` @
   `leanncd/LeanNCD/Semantics/Source/Admission.lean`;
-  proposed `resolveSource`, `SourceOrigin`, `supportPartition` @ future
+  observed `resolveSource`, `SourceOrigin`, `adaptSource` @
   `leanncd/LeanNCD/Semantics/Source/Adapter.lean`;
+  `supportPartition`, `admitSource`, `admitRawSource` @
+  `leanncd/LeanNCD/Semantics/Source/Admission.lean`;
   `assignUIDs` / resolution seam @ `leanncd/LeanNCD/DSL/Pipeline/Structural.lean`;
   `Factor` @ `leanncd/LeanNCD/DSL/Ast.lean`.
   Tests: future `leanncd/test/Semantics/SourceAdmissionTest.lean`.

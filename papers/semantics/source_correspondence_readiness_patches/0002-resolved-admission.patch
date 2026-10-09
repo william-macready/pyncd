@@ -1,0 +1,2362 @@
+diff --git a/leanncd/AGENTS.md b/leanncd/AGENTS.md
+index 1cb84738..942ba7ae 100644
+--- a/leanncd/AGENTS.md
++++ b/leanncd/AGENTS.md
+@@ -200,7 +200,7 @@ Small subsystems (no dedicated node — each <170 lines, single-file or near it)
+ | Task | Start Here |
+ |------|------------|
+ | Understand overall architecture (two tracks + bridge) | `LeanNCD.lean`'s header doc comment (note: has some stale spots, cross-check against code — see Base/AGENTS.md Pitfalls) |
+-| UID-keyed semantic coordinates, index pullbacks, and generated-binder freshness | `LeanNCD/Semantics/Source/Context.lean`, reachable through `LeanNCD`; source admission remains separate |
++| UID-keyed semantic binding and finite read-only source admission | `LeanNCD/Semantics/Source/Context.lean` and `Source/Admission.lean`, reachable through `LeanNCD`; general source-generated execution remains separate |
+ | Check current sorry/proof status authoritatively | `SORRY_INVENTORY.md` (more current than scattered doc comments) |
+ | Understand the `realize` bridge problem in depth | `realize.md` (companion to `SORRY_INVENTORY.md`) |
+ | Design history / past decisions | `docs/superpowers/plans/`, `docs/superpowers/specs/` |
+diff --git a/leanncd/LeanNCD/Semantics/AGENTS.md b/leanncd/LeanNCD/Semantics/AGENTS.md
+index edb23d8e..7f53933c 100644
+--- a/leanncd/LeanNCD/Semantics/AGENTS.md
++++ b/leanncd/LeanNCD/Semantics/AGENTS.md
+@@ -36,8 +36,17 @@ equivalences, full-domain index pullbacks, and generated-only alpha transport.
+ Requested generated identities are honored when fresh and injective; a collision
+ or duplicate target freshens the whole generated group, leaving protected
+ identities fixed. `Semantics.SourceBindingTest` checks the binding contract in
+-the default build. Source admission and execution are not yet supplied by this
+-binding layer; see the [source plan](../../../papers/semantics/source_correspondence_plan.md).
++the default build.
++`Source.Adapter` / `Source.Admission` admit resolved snapshots and raw parsed
++programs through the existing resolver, preserving original declaration and
++statement identities. The finite bare-slot fragment accepts pinned nat/real
++axes and real tensor/linear declarations, with explicit roles, all input
++bindings (including unused/empty tensors), exact domains and shape/lengths,
++and term-local contraction support. `Semantics.SourceAdmissionTest` includes
++the original admission fixtures and the parsed/real/linear acceptance
++regressions. General source-generated Program/schedule execution and source
++correspondence are not yet supplied; see the
++[source plan](../../../papers/semantics/source_correspondence_plan.md).
+ 
+ `Collection` represents Naperian coordinate families as functions. Pullback
+ is contravariant lookup; finite additive pushforward is covariant collection.
+@@ -53,8 +62,8 @@ nonlinear body primitives do not acquire sum-preservation laws.
+ This is semantic validation, not an execution-backend replacement. Scalar sorts and
+ carriers are open; operations are data, not assumed machine-float semiring laws.
+ Contexts are typed valuation spaces with product extension, not named affine
+-syntax. Read admission is explicit; runtime boundary rejection ordering,
+-source checking, syntactic substitution, expression reindexing laws, raw writes,
++syntax. Read admission is explicit; general source checking beyond the finite
++read-only fragment, syntactic substitution, expression reindexing laws, raw writes,
+ and full categorical/backend interpretation remain deferred.
+ See the [implementation plan](../../../papers/semantics/expression_readiness_plan.md)
+ and [authoring verification](../../../papers/semantics/expression_readiness_authoring_record.md)
+diff --git a/leanncd/LeanNCD/Semantics/Source.lean b/leanncd/LeanNCD/Semantics/Source.lean
+index 4395849e..40cdd5c6 100644
+--- a/leanncd/LeanNCD/Semantics/Source.lean
++++ b/leanncd/LeanNCD/Semantics/Source.lean
+@@ -1 +1,3 @@
+ import LeanNCD.Semantics.Source.Context
++import LeanNCD.Semantics.Source.Adapter
++import LeanNCD.Semantics.Source.Admission
+diff --git a/leanncd/LeanNCD/Semantics/Source/Adapter.lean b/leanncd/LeanNCD/Semantics/Source/Adapter.lean
+new file mode 100644
+index 00000000..e0ccdc10
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Source/Adapter.lean
+@@ -0,0 +1,270 @@
++import LeanNCD.Semantics.Source.Context
++import LeanNCD.DSL.Pipeline.Structural
++import LeanNCD.Semantics.RationalReference
++
++namespace LeanNCD.Semantics.Source
++
++inductive SourceSide
++  | program | declaration | input | output | read
++  deriving DecidableEq, Repr
++
++structure SourceOrigin where
++  side : SourceSide := .program
++  declaration : Option Nat := none
++  statement : Option Nat := none
++  term : Option Nat := none
++  factor : Option Nat := none
++  slot : Option Nat := none
++  deriving DecidableEq, Repr
++
++inductive SourceStage
++  | resolution | declarations | signatures | inputs | statement | output | read | support
++  deriving DecidableEq, Repr
++
++inductive TensorRole
++  | input | defined | output
++  deriving DecidableEq, Repr
++
++inductive UnsupportedSource
++  | iteration | predicate | complex
++  | scatter | recurMorphism | marked | scanSlot | affine
++  | nonSum | nonIdentity | iverson | unary
++  deriving DecidableEq, Repr
++
++inductive SourceCause
++  | resolution (error : CompileError)
++  | unsupported (form : UnsupportedSource)
++  | duplicateAxis (uid : UID)
++  | duplicateTensor (name : String)
++  | duplicateSpec (declaration : Nat)
++  | duplicateInput (declaration : Nat)
++  | missingDomain (uid : UID)
++  | unbound (uid : UID)
++  | axisKind (uid : UID) (actual : AxisKind)
++  | undeclaredTensor (name : String)
++  | missingSpec (declaration : Nat)
++  | unexpectedSpec (declaration : Nat)
++  | missingInput (declaration : Nat)
++  | unexpectedInput (declaration : Nat)
++  | role (expected actual : TensorRole)
++  | shape (expected actual : List Nat)
++  | length (expected actual : Nat)
++  | domain (uid : UID) (expected actual : Nat)
++  | rank (expected actual : Nat)
++  | context (error : Diagnostic)
++  deriving Repr
++
++structure SourceDiagnostic where
++  stage : SourceStage
++  cause : SourceCause
++  origin : SourceOrigin
++  deriving Repr
++
++def sourceError (stage : SourceStage) (origin : SourceOrigin) (cause : SourceCause) :
++    SourceDiagnostic := ⟨stage, cause, origin⟩
++
++structure TensorSpec where
++  declaration : Nat
++  role : TensorRole
++  shape : List Nat
++  deriving Repr
++
++structure InputBinding where
++  declaration : Nat
++  shape : List Nat
++  values : List ℚ
++  deriving Repr
++
++structure SourceSnapshot where
++  resolved : ResolvedProgram
++  specs : List TensorSpec
++  inputs : List InputBinding
++
++private def tensorName : Decl → Option String
++  | .tensor name _ | .typedTensor _ name _ | .predicate name _
++    | .linear name _ _ | .typedLinear _ name _ _ => some name
++  | .axis .. | .iter .. => none
++
++private def resolutionOrigin (raw : TLProgram) : CompileError → SourceOrigin
++  | .duplicateTensorDecl name =>
++    { side := .declaration, declaration :=
++      ((raw.decls.zipIdx.filter (fun (d, _) => tensorName d == some name))[1]?).map Prod.snd }
++  | .unsupportedElementType name spelling =>
++    { side := .declaration, declaration :=
++      (raw.decls.zipIdx.find? (fun (d, _) =>
++        d.name == name && d.elementType?.any (fun ty => ty.spelling == spelling))).map Prod.snd }
++  | _ => {}
++
++/-- Raw name binding is performed exactly once, by the production resolution seam. -/
++def resolveSource (raw : TLProgram) (specs : List TensorSpec) (inputs : List InputBinding) :
++    Except SourceDiagnostic SourceSnapshot :=
++  match (do
++    let labeled ← assignUIDs raw
++    resolveDecls labeled : FreshM ResolvedProgram).run 0 with
++  | .ok resolved _ => .ok ⟨resolved, specs, inputs⟩
++  | .error e _ => .error (sourceError .resolution (resolutionOrigin raw e) (.resolution e))
++
++structure TensorEntry where
++  declaration : Nat
++  name : String
++  elementType : TensorElementType
++  role : TensorRole
++  axes : Shape
++  deriving Repr
++
++structure TensorTable where
++  entries : List TensorEntry
++
++def TensorTable.declarations (table : TensorTable) : Declarations Unit where
++  Tensor := Fin table.entries.length
++  uid := Fin.val
++  unique := Fin.val_injective
++  signature := fun t => ⟨(), (table.entries.get t).axes⟩
++
++def TensorTable.find (table : TensorTable) (name : String) :
++    Option table.declarations.Tensor :=
++  (List.finRange table.entries.length).find? (fun i => (table.entries.get i).name == name)
++
++def TensorTable.entry (table : TensorTable) (t : table.declarations.Tensor) : TensorEntry :=
++  table.entries.get t
++
++structure InputBuffer (axes : Shape) where
++  values : List ℚ
++  length : values.length = (canonicalLayout axes).count
++
++def InputBuffer.value (buffer : InputBuffer axes) (p : Coord axes) : ℚ :=
++  buffer.values.get ⟨((canonicalLayout axes).enumerate.symm p).val, by
++    rw [buffer.length]
++    exact ((canonicalLayout axes).enumerate.symm p).isLt⟩
++
++structure CheckedInputs (table : TensorTable) where
++  buffers : (t : table.declarations.Tensor) →
++    (table.entry t).role = .input → InputBuffer (table.entry t).axes
++
++structure AdaptedSource where
++  context : Context
++  table : TensorTable
++  inputs : CheckedInputs table
++  statements : List (Nat × Stmt)
++
++private def axisOrigin (i : Nat) : SourceOrigin :=
++  { side := .declaration, declaration := some i }
++
++private def checkAxes (decls : List Decl) : Except SourceDiagnostic Context := do
++  let mut axes : Shape := []
++  for (i, d) in decls.zipIdx |>.map (fun (d, i) => (i, d)) do
++    let origin := axisOrigin i
++    match d with
++    | .axis a size =>
++      if a.uid ∈ axes.map Axis.uid then
++        throw (sourceError .declarations origin (.duplicateAxis a.uid))
++      match size with
++      | none => throw (sourceError .declarations origin (.missingDomain a.uid))
++      | some n => axes := axes ++ [⟨a.uid, n⟩]
++    | .iter _ _ => throw (sourceError .declarations origin (.unsupported .iteration))
++    | .tensor .. | .typedTensor .. | .predicate .. | .linear .. | .typedLinear .. => pure ()
++  (checkContext axes).mapError (fun e => sourceError .declarations {} (.context e))
++    |>.map Subtype.val
++
++def sourceAxis (c : Context) (stage : SourceStage) (origin : SourceOrigin)
++    (a : AxisSpec) : Except SourceDiagnostic Axis := do
++  match c.axes.find? (fun b => b.uid == a.uid) with
++  | none => throw (sourceError stage origin (.unbound a.uid))
++  | some b => pure b
++
++private def tensorDecl (origin : SourceOrigin) :
++    Decl → Except SourceDiagnostic (Option (String × TensorElementType × List AxisSpec))
++  | .axis .. => .ok none
++  | .iter .. => .error (sourceError .declarations origin (.unsupported .iteration))
++  | .tensor name axes | .linear name axes _ => .ok (some (name, .f32, axes))
++  | .typedTensor ty name axes | .typedLinear ty name axes _ =>
++    match ty with
++    | .f32 | .f64 => .ok (some (name, ty, axes))
++    | .complex64 | .complex128 =>
++      .error (sourceError .declarations origin (.unsupported .complex))
++  | .predicate .. => .error (sourceError .declarations origin (.unsupported .predicate))
++
++private def checkTable (c : Context) (decls : List Decl) (specs : List TensorSpec) :
++    Except SourceDiagnostic TensorTable := do
++  let mut seen : List Nat := []
++  for spec in specs do
++    let origin := axisOrigin spec.declaration
++    if spec.declaration ∈ seen then
++      throw (sourceError .signatures origin (.duplicateSpec spec.declaration))
++    seen := seen ++ [spec.declaration]
++  let mut entries : List TensorEntry := []
++  for (d, i) in decls.zipIdx do
++    let origin := axisOrigin i
++    match ← tensorDecl origin d with
++    | none => pure ()
++    | some (name, ty, axes) =>
++      if entries.any (fun t => t.name == name) then
++        throw (sourceError .declarations origin (.duplicateTensor name))
++      let mut shape : Shape := []
++      for (a, j) in axes.zipIdx do
++        shape := shape ++ [← sourceAxis c .declarations { origin with slot := some j } a]
++      let spec ← match specs.find? (fun s => s.declaration == i) with
++        | none => throw (sourceError .signatures origin (.missingSpec i))
++        | some s => pure s
++      if shape.map Axis.extent != spec.shape then
++        throw (sourceError .signatures origin (.shape (shape.map Axis.extent) spec.shape))
++      entries := entries ++ [⟨i, name, ty, spec.role, shape⟩]
++  for spec in specs do
++    unless entries.any (fun t => t.declaration == spec.declaration) do
++      throw (sourceError .signatures (axisOrigin spec.declaration)
++        (.unexpectedSpec spec.declaration))
++  pure ⟨entries⟩
++
++private def inputBuffer (entry : TensorEntry) (bindings : List InputBinding) :
++    Except SourceDiagnostic (InputBuffer entry.axes) := do
++  let origin : SourceOrigin := { side := .input, declaration := some entry.declaration }
++  let binding ← match bindings.find? (fun b => b.declaration == entry.declaration) with
++    | none => throw (sourceError .inputs origin (.missingInput entry.declaration))
++    | some b => pure b
++  let expected := entry.axes.map Axis.extent
++  if expected != binding.shape then
++    throw (sourceError .inputs origin (.shape expected binding.shape))
++  if hl : binding.values.length = (canonicalLayout entry.axes).count then
++    pure ⟨binding.values, hl⟩
++  else
++    throw (sourceError .inputs origin
++      (.length (canonicalLayout entry.axes).count binding.values.length))
++
++private def inputBuffers (bindings : List InputBinding) :
++    (entries : List TensorEntry) →
++    Except SourceDiagnostic ((t : Fin entries.length) →
++      (entries.get t).role = .input → InputBuffer (entries.get t).axes)
++  | [] => .ok (fun t => nomatch t)
++  | entry :: entries => do
++    let head ← if h : entry.role = .input then do
++      let buffer ← inputBuffer entry bindings
++      pure (fun (_ : entry.role = .input) => buffer)
++    else
++      pure (fun (hi : entry.role = .input) => False.elim (h hi))
++    let rest ← inputBuffers bindings entries
++    pure (Fin.cases head rest)
++
++private def checkInputs (table : TensorTable) (bindings : List InputBinding) :
++    Except SourceDiagnostic (CheckedInputs table) := do
++  let mut seen : List Nat := []
++  for binding in bindings do
++    let origin : SourceOrigin := { side := .input, declaration := some binding.declaration }
++    if binding.declaration ∈ seen then
++      throw (sourceError .inputs origin (.duplicateInput binding.declaration))
++    seen := seen ++ [binding.declaration]
++    match table.entries.find? (fun t => t.declaration == binding.declaration) with
++    | none => throw (sourceError .inputs origin (.unexpectedInput binding.declaration))
++    | some t =>
++      if t.role != .input then throw (sourceError .inputs origin (.role .input t.role))
++  let buffers ← inputBuffers bindings table.entries
++  pure ⟨buffers⟩
++
++/-- Neither the cached environment nor external-name classification determines semantic roles. -/
++def adaptSource (snapshot : SourceSnapshot) : Except SourceDiagnostic AdaptedSource := do
++  let context ← checkAxes snapshot.resolved.decls
++  let table ← checkTable context snapshot.resolved.decls snapshot.specs
++  let inputs ← checkInputs table snapshot.inputs
++  pure ⟨context, table, inputs,
++    snapshot.resolved.stmts.zipIdx |>.map (fun (s, i) => (i, s))⟩
++
++end LeanNCD.Semantics.Source
+diff --git a/leanncd/LeanNCD/Semantics/Source/Admission.lean b/leanncd/LeanNCD/Semantics/Source/Admission.lean
+new file mode 100644
+index 00000000..8c63e320
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Source/Admission.lean
+@@ -0,0 +1,361 @@
++import LeanNCD.Semantics.Source.Adapter
++import LeanNCD.Semantics.Source.Lowering
++
++namespace LeanNCD.Semantics.Source
++
++def Slots.uids : Slots ctx sh → List UID
++  | .nil => []
++  | .cons r rest => r.uid :: rest.uids
++
++def Slots.keys (c : Context) : Slots c.axes sh → List c.Key
++  | .nil => []
++  | .cons r rest => r.key c :: rest.keys c
++
++theorem Slots.keys_uids (c : Context) (slots : Slots c.axes sh) :
++    (slots.keys c).map Subtype.val = slots.uids := by
++  induction slots with
++  | nil => rfl
++  | cons r rest ih => simp [Slots.keys, Slots.uids, Ref.key_uid, ih]
++
++theorem Slots.support (c : Context) (slots : Slots c.axes sh) :
++    slots.uids ⊆ c.axes.map Axis.uid := by
++  rw [← slots.keys_uids c]
++  intro uid h
++  obtain ⟨u, _, rfl⟩ := List.mem_map.mp h
++  exact u.property
++
++theorem resolveRef_uid (sh : Shape) (uid : UID) (n : Nat) (r : Ref sh n)
++    (h : resolveRef sh uid n = .ok r) : r.uid = uid := by
++  induction sh with
++  | nil => simp [resolveRef] at h
++  | cons a sh ih =>
++    unfold resolveRef at h
++    split at h
++    · rename_i hu
++      split at h
++      · rename_i hd
++        subst n
++        simp only [Except.ok.injEq] at h
++        subst r
++        exact hu
++      · simp at h
++    · cases hr : resolveRef sh uid n with
++      | error e => simp [hr, Except.map] at h
++      | ok s =>
++        simp [hr, Except.map] at h
++        subst r
++        exact ih s hr
++
++private def liftDiagnostic (stage : SourceStage) (origin : SourceOrigin) :
++    Diagnostic → SourceDiagnostic
++  | .unbound uid => sourceError stage origin (.unbound uid)
++  | .domain uid expected actual => sourceError stage origin (.domain uid expected actual)
++  | .rank expected actual => sourceError stage origin (.rank expected actual)
++  | e => sourceError stage origin (.context e)
++
++/-- Check common slots left to right before reporting total rank at the first unmatched slot. -/
++def resolveSourceSlots (ctx : Shape) (stage : SourceStage) (origin : SourceOrigin)
++    (shape : Shape) (ids : List UID) :
++    Except SourceDiagnostic {slots : Slots ctx shape // slots.uids = ids} :=
++  go shape ids 0
++where
++  go : (sh : Shape) → (us : List UID) → Nat →
++      Except SourceDiagnostic {slots : Slots ctx sh // slots.uids = us}
++    | [], [], _ => .ok ⟨.nil, rfl⟩
++    | a :: sh, uid :: us, i => do
++      let here := { origin with slot := some i }
++      let r ← match h : resolveRef ctx uid a.extent with
++        | .error e => .error (liftDiagnostic stage here e)
++        | .ok r => .ok (⟨r, resolveRef_uid ctx uid a.extent r h⟩ :
++            {r : Ref ctx a.extent // r.uid = uid})
++      let rest ← go sh us (i + 1)
++      pure ⟨.cons r.val rest.val, by simp [Slots.uids, r.property, rest.property]⟩
++    | _, _, i => .error (sourceError stage { origin with slot := some i }
++        (.rank shape.length ids.length))
++
++theorem Slots.project_pullback (src dst : Context) (m : IndexMap src dst)
++    (hm : ∀ u, (m.map u).val = u.val) (a : Slots src.axes sh) (b : Slots dst.axes sh)
++    (h : a.uids = b.uids) (v : UIDVal dst) :
++    a.project (uidCoordEquiv src (indexPullback m v)) =
++      b.project (uidCoordEquiv dst v) := by
++  induction a with
++  | nil => cases b; rfl
++  | cons r rest ih =>
++    cases b with
++    | cons s tail =>
++      have hs : r.uid = s.uid := (List.cons.inj h).1
++      have hk : m.map (r.key src) = s.key dst := by
++        apply Subtype.ext
++        rw [hm, Ref.key_uid, Ref.key_uid, hs]
++      apply Prod.ext
++      · rw [Slots.project, Slots.project, Ref.get_uidCoordEquiv, Ref.get_uidCoordEquiv]
++        apply Fin.ext
++        change (v (m.map (r.key src))).val = (v (s.key dst)).val
++        exact congrArg (fun u => (v u).val) hk
++      · exact ih tail (List.cons.inj h).2
++
++def firstUIDs (ids : List UID) : List UID := ids.reverse.dedup.reverse
++
++def outputContext (c : Context) (keys : List c.Key) : Context where
++  axes := keys.reverse.dedup.reverse.map (fun u => ⟨u.val, c.domain u⟩)
++  unique := by
++    simp only [List.map_map, Function.comp_def]
++    exact (List.nodup_map_iff Subtype.val_injective).mpr
++      (List.nodup_reverse.mpr (List.nodup_dedup _))
++
++theorem outputContext_order (c : Context) (keys : List c.Key) :
++    (outputContext c keys).axes.map Axis.uid = firstUIDs (keys.map Subtype.val) := by
++  simp only [outputContext, firstUIDs, List.map_map, Function.comp_def,
++    List.map_reverse]
++  simpa only [List.map_reverse] using congrArg List.reverse
++    (List.dedup_map_of_injective Subtype.val_injective keys.reverse).symm
++
++structure IdentityEmbedding (src dst : Context) where
++  map : IndexMap src dst
++  uid : ∀ u, (map.map u).val = u.val
++
++def identityEmbedding (src dst : Context) (origin : SourceOrigin) :
++    Except SourceDiagnostic (IdentityEmbedding src dst) :=
++  match h : resolveIndexMap src dst id with
++  | .error e => .error (liftDiagnostic .support origin e)
++  | .ok m => .ok ⟨m, fun u => resolveIndexMap_uid src dst id m h u⟩
++
++structure RawRead (σ : Declarations Unit) where
++  tensor : σ.Tensor
++  indices : List UID
++  origin : SourceOrigin
++
++structure CheckedRead (c : Context) (σ : Declarations Unit) where
++  read : Read c.axes σ
++  indices : List UID
++  linked : read.slots.uids = indices
++  origin : SourceOrigin
++
++def admitRead (c : Context) (read : RawRead σ) :
++    Except SourceDiagnostic (CheckedRead c σ) := do
++  let slots ← resolveSourceSlots c.axes .read read.origin
++    (σ.signature read.tensor).axes read.indices
++  pure ⟨⟨read.tensor, slots.val⟩, read.indices, slots.property, read.origin⟩
++
++structure SupportPartition (source out : Context) (support : List UID) where
++  bound : Shape
++  exact : bound = source.axes.filter
++    (fun a => a.uid ∈ support ∧ a.uid ∉ out.axes.map Axis.uid)
++  context : Context
++  context_axes : context.axes = out.axes ++ bound
++  embedding : IdentityEmbedding context source
++
++theorem SupportPartition.disjoint (p : SupportPartition source out support)
++    (a : Axis) (ha : a ∈ out.axes) (b : Axis) (hb : b ∈ p.bound) : a.uid ≠ b.uid := by
++  rw [p.exact] at hb
++  have hn := (List.mem_filter.mp hb).2
++  simp only [decide_eq_true_eq] at hn
++  intro he
++  exact hn.2 (he ▸ List.mem_map.mpr ⟨a, ha, rfl⟩)
++
++theorem SupportPartition.exactSupport (p : SupportPartition source out support) (uid : UID) :
++    uid ∈ p.bound.map Axis.uid ↔
++      uid ∈ source.axes.map Axis.uid ∧ uid ∈ support ∧ uid ∉ out.axes.map Axis.uid := by
++  rw [p.exact]
++  simp only [List.mem_map, List.mem_filter, decide_eq_true_eq]
++  aesop
++
++theorem SupportPartition.coverage (p : SupportPartition source out support)
++    (h : support ⊆ source.axes.map Axis.uid) (uid : UID) :
++    uid ∈ p.context.axes.map Axis.uid ↔ uid ∈ out.axes.map Axis.uid ∨ uid ∈ support := by
++  rw [p.context_axes, List.map_append, List.mem_append]
++  rw [p.exactSupport]
++  have := h (a := uid)
++  tauto
++
++def supportPartition (source out : Context) (support : List UID) (origin : SourceOrigin) :
++    Except SourceDiagnostic (SupportPartition source out support) := do
++  for uid in support do
++    unless uid ∈ source.axes.map Axis.uid do
++      throw (sourceError .support origin (.unbound uid))
++  let bound := source.axes.filter
++    (fun a => a.uid ∈ support ∧ a.uid ∉ out.axes.map Axis.uid)
++  let context ← (checkContext (out.axes ++ bound)).mapError
++    (liftDiagnostic .support origin)
++  let embedding ← identityEmbedding context.val source origin
++  pure ⟨bound, rfl, context.val, context.property, embedding⟩
++
++inductive TermClass
++  | pure | broadcast
++  deriving DecidableEq, Repr
++
++structure LocalizedRead (ctx : Context) (read : CheckedRead source σ) where
++  slots : Slots ctx.axes (σ.signature read.read.tensor).axes
++  linked : slots.uids = read.indices
++
++def LocalizedRead.read {read : CheckedRead source σ}
++    (localized : LocalizedRead ctx read) : Read ctx.axes σ :=
++  ⟨read.read.tensor, localized.slots⟩
++
++theorem LocalizedRead.projection {read : CheckedRead source σ}
++    (localized : LocalizedRead ctx read)
++    (embedding : IdentityEmbedding ctx source) (v : UIDVal source) :
++    localized.slots.project (uidCoordEquiv ctx (indexPullback embedding.map v)) =
++      read.read.slots.project (uidCoordEquiv source v) :=
++  Slots.project_pullback _ _ embedding.map embedding.uid _ _
++    (localized.linked.trans read.linked.symm) v
++
++private def localizeReads (ctx : Context) :
++    (reads : List (CheckedRead source σ)) →
++    Except SourceDiagnostic ((i : Fin reads.length) → LocalizedRead ctx (reads.get i))
++  | [] => .ok (fun i => nomatch i)
++  | read :: reads => do
++    let slots ← resolveSourceSlots ctx.axes .read read.origin
++      (σ.signature read.read.tensor).axes read.indices
++    let rest ← localizeReads ctx reads
++    pure (Fin.cases ⟨slots.val, slots.property⟩ rest)
++
++structure Term (source out : Context) (σ : Declarations Unit) where
++  origin : SourceOrigin
++  sourceReads : List (CheckedRead source σ)
++  support : List UID
++  support_reads : sourceReads.flatMap CheckedRead.indices = support
++  partition : SupportPartition source out support
++  reads : (i : Fin sourceReads.length) → LocalizedRead partition.context (sourceReads.get i)
++  support_bound : support ⊆ source.axes.map Axis.uid
++  classification : TermClass
++  pure_iff : classification = .pure ↔ out.axes.map Axis.uid ⊆ support
++
++def admitTerm (source out : Context) (origin : SourceOrigin) (raw : List (RawRead σ)) :
++    Except SourceDiagnostic (Term source out σ) := do
++  let global ← raw.mapM (admitRead source)
++  let support := global.flatMap CheckedRead.indices
++  have hs : support ⊆ source.axes.map Axis.uid := by
++    intro uid h
++    obtain ⟨read, _, hu⟩ := List.mem_flatMap.mp h
++    rw [← read.linked] at hu
++    exact read.read.slots.support source hu
++  let partition ← supportPartition source out support origin
++  let reads ← localizeReads partition.context global
++  let classification := if out.axes.map Axis.uid ⊆ support then .pure else .broadcast
++  pure ⟨origin, global, support, rfl, partition, reads, hs, classification, by
++    simp only [classification]; split <;> simp_all⟩
++
++def Term.operands (term : Term source out σ) : List (Read term.partition.context.axes σ) :=
++  List.ofFn (fun i => (term.reads i).read)
++
++theorem Term.read_projection (term : Term source out σ) (i : Fin term.sourceReads.length)
++    (v : UIDVal source) :
++    (term.reads i).slots.project
++      (uidCoordEquiv term.partition.context (indexPullback term.partition.embedding.map v)) =
++      (term.sourceReads.get i).read.slots.project (uidCoordEquiv source v) :=
++  (term.reads i).projection term.partition.embedding v
++
++structure AdmittedOutput (source : Context) (σ : Declarations Unit) where
++  tensor : σ.Tensor
++  indices : List UID
++  origin : SourceOrigin
++  context : Context
++  order : context.axes.map Axis.uid = firstUIDs indices
++  slots : Slots context.axes (σ.signature tensor).axes
++  linked : slots.uids = indices
++  sourceSlots : Slots source.axes (σ.signature tensor).axes
++  source_linked : sourceSlots.uids = indices
++  embedding : IdentityEmbedding context source
++
++def admitOutput (source : Context) (dst : σ.Tensor) (ids : List UID) (origin : SourceOrigin) :
++    Except SourceDiagnostic {output : AdmittedOutput source σ // output.tensor = dst} := do
++  let global ← resolveSourceSlots source.axes .output origin (σ.signature dst).axes ids
++  let context := outputContext source (global.val.keys source)
++  let embedding ← identityEmbedding context source origin
++  let slots ← resolveSourceSlots context.axes .output origin (σ.signature dst).axes ids
++  pure ⟨⟨dst, ids, origin, context, by
++    rw [outputContext_order, Slots.keys_uids, global.property],
++    slots.val, slots.property, global.val, global.property, embedding⟩, rfl⟩
++
++theorem AdmittedOutput.projection (output : AdmittedOutput source σ) (v : UIDVal source) :
++    output.slots.project
++      (uidCoordEquiv output.context (indexPullback output.embedding.map v)) =
++      output.sourceSlots.project (uidCoordEquiv source v) :=
++  Slots.project_pullback _ _ output.embedding.map output.embedding.uid _ _
++    (output.linked.trans output.source_linked.symm) v
++
++def admitPure (term : Term source out σ) : Bool := term.classification == .pure
++
++private def readIndices (c : Context) (origin : SourceOrigin) (es : List IdxExpr) :
++    Except SourceDiagnostic (List UID) :=
++  es.zipIdx.mapM fun (e, i) => do
++    let here := { origin with slot := some i }
++    match e with
++    | .axis a => let _ ← sourceAxis c .read here a; pure a.uid
++    | .const _ | .scale .. | .shift .. | .affine .. =>
++      throw (sourceError .read here (.unsupported .affine))
++
++private def outputIndices (c : Context) (origin : SourceOrigin) (slots : List LHSSlot) :
++    Except SourceDiagnostic (List UID) :=
++  slots.zipIdx.mapM fun (slot, i) => do
++    let here := { origin with slot := some i }
++    match slot with
++    | .free a => let _ ← sourceAxis c .output here a; pure a.uid
++    | .freeNorm _ => throw (sourceError .output here (.unsupported .marked))
++    | .iterAt .. | .iterNext _ => throw (sourceError .output here (.unsupported .scanSlot))
++    | .affine _ => throw (sourceError .output here (.unsupported .affine))
++
++private def astRead (source : AdaptedSource) (origin : SourceOrigin) :
++    Factor → Except SourceDiagnostic (RawRead source.table.declarations)
++  | .read name es => do
++    let tensor ← match source.table.find name with
++      | none => throw (sourceError .read origin (.undeclaredTensor name))
++      | some t => pure t
++    let linkedOrigin := { origin with
++      declaration := some (source.table.entry tensor).declaration }
++    let ids ← readIndices source.context linkedOrigin es
++    pure ⟨tensor, ids, linkedOrigin⟩
++  | .iverson _ => .error (sourceError .read origin (.unsupported .iverson))
++  | .unaryFn .. => .error (sourceError .read origin (.unsupported .unary))
++
++structure AdmittedStatement (source : AdaptedSource) where
++  original : Nat
++  output : AdmittedOutput source.context source.table.declarations
++  writable : (source.table.entry output.tensor).role ≠ .input
++  terms : List (Term source.context output.context source.table.declarations)
++
++def admitStatement (source : AdaptedSource) (original : Nat) :
++    Stmt → Except SourceDiagnostic (AdmittedStatement source)
++  | .scatter .. => .error (sourceError .statement { statement := some original }
++      (.unsupported .scatter))
++  | .recurMorphism .. => .error (sourceError .statement { statement := some original }
++      (.unsupported .recurMorphism))
++  | .assign name slots rhs => do
++    let origin : SourceOrigin := { side := .output, statement := some original }
++    if rhs.agg != .sum then throw (sourceError .statement origin (.unsupported .nonSum))
++    if rhs.nonlin != .identity then
++      throw (sourceError .statement origin (.unsupported .nonIdentity))
++    let dst ← match source.table.find name with
++      | none => throw (sourceError .output origin (.undeclaredTensor name))
++      | some t => pure t
++    let origin := { origin with declaration := some (source.table.entry dst).declaration }
++    if hw : (source.table.entry dst).role ≠ .input then
++      let ids ← outputIndices source.context origin slots
++      let checkedOutput ← admitOutput source.context dst ids origin
++      let output := checkedOutput.val
++      let terms ← rhs.body.terms.zipIdx.mapM fun (term, i) => do
++        let termOrigin := { origin with side := .read, declaration := none, term := some i }
++        let reads ← term.factors.zipIdx.mapM fun (factor, j) =>
++          astRead source { termOrigin with factor := some j } factor
++        admitTerm source.context output.context termOrigin reads
++      pure ⟨original, output, by rw [checkedOutput.property]; exact hw, terms⟩
++    else
++      throw (sourceError .output origin (.role .defined (source.table.entry dst).role))
++
++structure AdmittedSource where
++  source : AdaptedSource
++  statements : List (AdmittedStatement source)
++
++def admitSource (snapshot : SourceSnapshot) : Except SourceDiagnostic AdmittedSource := do
++  let source ← adaptSource snapshot
++  let statements ← source.statements.mapM fun (i, statement) =>
++    admitStatement source i statement
++  pure ⟨source, statements⟩
++
++def admitRawSource (raw : TLProgram) (specs : List TensorSpec) (inputs : List InputBinding) :
++    Except SourceDiagnostic AdmittedSource := do
++  let snapshot ← resolveSource raw specs inputs
++  admitSource snapshot
++
++end LeanNCD.Semantics.Source
+diff --git a/leanncd/LeanNCD/Semantics/Source/Lowering.lean b/leanncd/LeanNCD/Semantics/Source/Lowering.lean
+new file mode 100644
+index 00000000..8577432f
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Source/Lowering.lean
+@@ -0,0 +1,85 @@
++import LeanNCD.Semantics.Source.Context
++import Mathlib.Data.List.FinRange
++
++namespace LeanNCD.Semantics.Source
++
++instance coordFinite : (sh : Shape) → Fintype (Coord sh)
++  | [] => inferInstance
++  | _ :: sh => letI := coordFinite sh; inferInstance
++
++instance coordEq (sh : Shape) : DecidableEq (Coord sh) := coordDecidableEq sh
++
++variable {K : Type} [Semiring K] {σ : Declarations Unit}
++  {r : Registry (fun _ : Unit => K)}
++
++def semiringOps : (s : Unit) → ScalarOps K := fun _ => ⟨0, 1, (· + ·), (· * ·)⟩
++
++structure Read (ctx : Shape) (σ : Declarations Unit) where
++  tensor : σ.Tensor
++  slots : Slots ctx (σ.signature tensor).axes
++
++def readExpr (read : Read ctx σ) (env : Γ → Coord ctx) :
++    Expr (fun _ => K) σ r Γ (.scalar ()) :=
++  .read read.tensor
++    ⟨strictPolicy _, fun γ => Coord.raw (read.slots.project (env γ)),
++      fun γ => .at (read.slots.project (env γ)), fun _ => (strictPolicy _).inBounds _⟩
++
++def product (reads : List (Read ctx σ)) (env : Γ → Coord ctx) :
++    Expr (fun _ => K) σ r Γ (.scalar ()) :=
++  match reads with
++  | [] => .lit 1
++  | read :: reads => .binary .mul (readExpr read env) (product reads env)
++
++def operandProduct (ρ : Store (fun _ => K) σ) (reads : List (Read ctx σ))
++    (v : Coord ctx) : K :=
++  (reads.map (fun read => ρ ⟨read.tensor, read.slots.project v⟩)).prod
++
++theorem interpret_product (ρ : Store (fun _ => K) σ) (reads : List (Read ctx σ))
++    (env : Γ → Coord ctx) (γ : Γ) :
++    interpret semiringOps ρ (product (r := r) reads env) γ =
++      some (operandProduct ρ reads (env γ)) := by
++  induction reads with
++  | nil => rfl
++  | cons read reads ih =>
++    unfold interpret at ih
++    simp [product, readExpr, interpret, evalWith, ScalarOps.combine,
++      semiringOps, operandProduct, ih]
++
++def contract (bound : Shape) (reads : List (Read ctx σ))
++    (env : Γ → Coord bound → Coord ctx) : Expr (fun _ => K) σ r Γ (.scalar ()) :=
++  match bound with
++  | [] => product reads (fun γ => env γ ())
++  | a :: rest =>
++    .reduce a.extent (contract rest reads (fun γ p => env γ.1 (γ.2, p)))
++
++theorem fold_some (xs : List K) :
++    foldValues (semiringOps ()) (xs.map some) = some xs.sum := by
++  induction xs with
++  | nil => rfl
++  | cons x xs ih =>
++    simp only [List.map_cons, foldValues, ih]
++    rfl
++
++theorem interpret_contract (ρ : Store (fun _ => K) σ) (bound : Shape)
++    (reads : List (Read ctx σ)) (env : Γ → Coord bound → Coord ctx) (γ : Γ) :
++    interpret semiringOps ρ (contract (r := r) bound reads env) γ =
++      some (∑ p : Coord bound, operandProduct ρ reads (env γ p)) := by
++  induction bound generalizing Γ with
++  | nil => simpa [contract] using interpret_product (r := r) ρ reads (fun γ => env γ ()) γ
++  | cons a rest ih =>
++    simp only [contract, interpret, evalWith]
++    change foldValues (semiringOps ())
++      ((List.finRange a.extent).map (fun i =>
++        interpret semiringOps ρ
++          (contract rest reads (fun γ p => env γ.1 (γ.2, p))) (γ, i))) = _
++    simp_rw [ih]
++    have h := fold_some ((List.finRange a.extent).map (fun i =>
++      ∑ x, operandProduct ρ reads (env γ (i, x))))
++    simp only [List.map_map, Function.comp_def] at h
++    rw [h]
++    congr 1
++    simpa [List.finRange, List.sum_ofFn] using
++      (Fintype.sum_prod_type (fun p : Fin a.extent × Coord rest =>
++        operandProduct ρ reads (env γ p))).symm
++
++end LeanNCD.Semantics.Source
+diff --git a/leanncd/lakefile.toml b/leanncd/lakefile.toml
+index effc80af..dbea2be2 100644
+--- a/leanncd/lakefile.toml
++++ b/leanncd/lakefile.toml
+@@ -83,7 +83,12 @@ globs = ["Base.NumericTest", "Base.StTest", "Base.BrTest", "Base.BrWiringTest",
+          "Semantics.CollectionModelTest", "Semantics.ReferenceMachineTest",
+          "Semantics.RankedMachineTest", "Semantics.ExecutableReferenceTest",
+          "Semantics.SourceBindingUIDTest", "Semantics.SourceBindingRenameTest",
+-         "Semantics.SourceBindingBoundaryTest", "Semantics.SourceBindingTest"]
++         "Semantics.SourceBindingBoundaryTest", "Semantics.SourceBindingTest",
++         "Semantics.SourceAdmissionFixtures", "Semantics.SourceAdmissionDomainsTest",
++         "Semantics.SourceAdmissionSupportTest", "Semantics.SourceAdmissionDeclarationsTest",
++         "Semantics.SourceAdmissionRolesTest", "Semantics.SourceAdmissionInputsTest",
++         "Semantics.SourceAdmissionRefusalsTest", "Semantics.SourceAdmissionTest",
++         "Semantics.SourceAdmissionAcceptanceTest"]
+ 
+ # Non-default experimental JAX-bridge codegen library. Deliberately absent from
+ # `defaultTargets`: it only builds when explicitly requested (`lake build JaxExperiment`, as the
+diff --git a/leanncd/test/Semantics/SourceAdmissionAcceptanceTest.lean b/leanncd/test/Semantics/SourceAdmissionAcceptanceTest.lean
+new file mode 100644
+index 00000000..b97c500b
+--- /dev/null
++++ b/leanncd/test/Semantics/SourceAdmissionAcceptanceTest.lean
+@@ -0,0 +1,266 @@
++import Semantics.SourceAdmissionFixtures
++import LeanNCD.DSL.Elab
++
++open LeanNCD LeanNCD.Semantics LeanNCD.Semantics.Source
++open SourceAdmissionFixtures
++
++namespace SourceAdmissionAcceptanceTest
++
++private def a (kind : AxisKind) : AxisSpec := ⟨"a", 7, kind⟩
++
++private def copySnapshot (kind : AxisKind) (ty : TensorElementType)
++    (values : List ℚ) : SourceSnapshot :=
++  { resolved := {
++      decls := [.axis (a kind) (some 2), .typedTensor ty "X" [a kind],
++        .typedTensor ty "Y" [a kind]]
++      stmts := [.assign "Y" [.free (a kind)] (rhs [[.read "X" [.axis (a kind)]]])]
++      env := {}, extNames := ∅ }
++    specs := [⟨1, .input, [2]⟩, ⟨2, .output, [2]⟩]
++    inputs := [⟨1, [2], values⟩] }
++
++private def metadataView (s : SourceSnapshot) :
++    Option (List (Nat × String × TensorElementType × TensorRole × List (UID × Nat)) ×
++      List (Nat × List ℚ)) := do
++  let admitted ← (admitSource s).toOption
++  let source := admitted.source
++  let entries := source.table.entries.map fun t =>
++    (t.declaration, t.name, t.elementType, t.role, t.axes.map fun ax => (ax.uid, ax.extent))
++  let buffers := (List.finRange source.table.entries.length).filterMap fun t =>
++    if h : (source.table.entry t).role = .input then
++      some ((source.table.entry t).declaration, (source.inputs.buffers t h).values)
++    else none
++  pure (entries, buffers)
++
++private def origins (s : SourceSnapshot) : Option (List SourceOrigin) := do
++  let admitted ← (admitSource s).toOption
++  pure (admitted.statements.flatMap fun st =>
++    st.terms.flatMap fun term => term.sourceReads.map (·.origin))
++
++private def readOrigin : SourceOrigin :=
++  { side := .read, declaration := some 1, statement := some 0,
++    term := some 0, factor := some 0 }
++
++private def metadataAccepted (s : SourceSnapshot) (uid : UID)
++    (ty : TensorElementType) (values : List ℚ) : Bool :=
++  metadataView s == some
++    ([(1, "X", ty, .input, [(uid, 2)]), (2, "Y", ty, .output, [(uid, 2)])],
++     [(1, values)])
++
++private def copyAccepted (s : SourceSnapshot) (uid : UID)
++    (ty : TensorElementType) (values : List ℚ) : Bool :=
++  metadataAccepted s uid ty values &&
++    admissionView s == some
++      ([uid], [(1, .input, [2]), (2, .output, [2])],
++       [⟨0, [uid], [uid], [⟨[], .pure, [(some 0, some 0, [uid])]⟩]⟩]) &&
++    origins s == some [readOrigin]
++
++def FinitePinnedRealCopy : Bool :=
++  copyAccepted (copySnapshot .real .f64 [3, 5]) 7 .f64 [3, 5] &&
++    copyAccepted (copySnapshot .nat .f64 [3, 5]) 7 .f64 [3, 5] &&
++    copyAccepted (copySnapshot .real .f32 [1 / 3, 5 / 7]) 7 .f32 [1 / 3, 5 / 7]
++
++#guard FinitePinnedRealCopy
++#eval FinitePinnedRealCopy
++
++private def parsedRaw : TLProgram := tlprog!{
++  axis a : ℕ = 2
++  tensor f64 X(a), Y(a)
++  Y[a] := X[a]
++}
++
++private def parsedSpecs : List TensorSpec := [⟨1, .input, [2]⟩, ⟨2, .output, [2]⟩]
++private def parsedInputs : List InputBinding := [⟨1, [2], [3, 5]⟩]
++
++-- The actual parser and public resolver retain real-kind use-site placeholders.
++private def parsedMetadata : Bool :=
++  let use : AxisSpec := ⟨"a", 0, .real⟩
++  parsedRaw.decls == [.axis ⟨"a", 0, .nat⟩ (some 2),
++    .typedTensor .f64 "X" [use], .typedTensor .f64 "Y" [use]] &&
++    parsedRaw.stmts == [.assign "Y" [.free use] (rhs [[.read "X" [.axis use]]])] &&
++    match resolveSource parsedRaw parsedSpecs parsedInputs with
++    | .error _ => false
++    | .ok s =>
++      let resolvedUse : AxisSpec := ⟨"a", 1, .real⟩
++      s.resolved.decls == [.axis ⟨"a", 1, .nat⟩ (some 2),
++        .typedTensor .f64 "X" [resolvedUse], .typedTensor .f64 "Y" [resolvedUse]] &&
++        s.resolved.stmts == [
++          .assign "Y" [.free resolvedUse] (rhs [[.read "X" [.axis resolvedUse]]])] &&
++        s.specs.map (·.declaration) == [1, 2] &&
++        s.inputs.map (·.declaration) == [1]
++
++#guard parsedMetadata
++
++def ParsedRawNatCopy : Bool :=
++  parsedMetadata &&
++    (admitRawSource parsedRaw parsedSpecs parsedInputs).toOption.isSome &&
++    match resolveSource parsedRaw parsedSpecs parsedInputs with
++    | .error _ => false
++    | .ok s => copyAccepted s 1 .f64 [3, 5]
++
++#guard ParsedRawNatCopy
++#eval ParsedRawNatCopy
++
++private def sumProductSnapshot (input : Decl) (ty : TensorElementType) : SourceSnapshot :=
++  let s := copySnapshot .nat ty [1 / 3, 5 / 7]
++  { s with resolved := { s.resolved with
++      decls := [.axis (a .nat) (some 2), input, .typedTensor ty "Y" [a .nat]]
++      stmts := [.assign "Y" [.free (a .nat)] (rhs [
++        [.read "X" [.axis (a .nat)], .read "X" [.axis (a .nat)]],
++        [.read "X" [.axis (a .nat)]]])] } }
++
++private def sumProductAccepted (input : Decl) (ty : TensorElementType) : Bool :=
++  let s := sumProductSnapshot input ty
++  metadataAccepted s 7 ty [1 / 3, 5 / 7] &&
++    s.resolved.decls[1]? == some input &&
++    admissionView s == some
++      ([7], [(1, .input, [2]), (2, .output, [2])],
++       [⟨0, [7], [7], [
++         ⟨[], .pure, [(some 0, some 0, [7]), (some 0, some 1, [7])]⟩,
++         ⟨[], .pure, [(some 1, some 0, [7])]⟩]⟩]) &&
++    origins s == some [readOrigin, { readOrigin with factor := some 1 },
++      { readOrigin with term := some 1 }]
++
++def RealLinearSumProduct : Bool :=
++  [false, true].all (fun hasBias =>
++    sumProductAccepted (.linear "X" [a .nat] hasBias) .f32 &&
++      sumProductAccepted (.typedLinear .f32 "X" [a .nat] hasBias) .f32 &&
++      sumProductAccepted (.typedLinear .f64 "X" [a .nat] hasBias) .f64) &&
++    sumProductAccepted (.tensor "X" [a .nat]) .f32 &&
++    sumProductAccepted (.typedTensor .f32 "X" [a .nat]) .f32 &&
++    sumProductAccepted (.typedTensor .f64 "X" [a .nat]) .f64
++
++#guard RealLinearSumProduct
++#eval RealLinearSumProduct
++
++private def diagnosticSummary (result : Except SourceDiagnostic AdmittedSource) : String :=
++  match result with
++  | .error diagnostic => reprStr diagnostic
++  | .ok _ => "accepted"
++
++#eval diagnosticSummary (admitSource (copySnapshot .real .f64 [3, 5]))
++#eval diagnosticSummary (admitRawSource parsedRaw parsedSpecs parsedInputs)
++#eval diagnosticSummary (admitSource
++  (sumProductSnapshot (.typedLinear .f64 "X" [a .nat] false) .f64))
++
++private def refuses (s : SourceSnapshot) (stage : SourceStage) (origin : SourceOrigin)
++    (cause : SourceCause → Bool) : Bool :=
++  match admitSource s with
++  | .error diagnostic =>
++    diagnostic.stage == stage && diagnostic.origin == origin && cause diagnostic.cause
++  | .ok _ => false
++
++private def realCopy : SourceSnapshot := copySnapshot .real .f64 [3, 5]
++
++#guard refuses { realCopy with resolved := { realCopy.resolved with
++    decls := [.axis (a .real) none, .typedTensor .f64 "X" [a .real],
++      .typedTensor .f64 "Y" [a .real]] } }
++  .declarations { side := .declaration, declaration := some 0 }
++  (fun | .missingDomain 7 => true | _ => false)
++
++#guard refuses { realCopy with resolved := { realCopy.resolved with
++    decls := [.iter (a .real) 2, .typedTensor .f64 "X" [a .real],
++      .typedTensor .f64 "Y" [a .real]] } }
++  .declarations { side := .declaration, declaration := some 0 }
++  (fun | .unsupported .iteration => true | _ => false)
++
++private def realSlots (slot : LHSSlot) : SourceSnapshot :=
++  { realCopy with resolved := { realCopy.resolved with
++      stmts := [.assign "Y" [slot] (rhs [[.read "X" [.axis (a .real)]]])] } }
++
++#guard refuses (realSlots (.freeNorm (a .real)))
++  .output { side := .output, declaration := some 2, statement := some 0, slot := some 0 }
++  (fun | .unsupported .marked => true | _ => false)
++
++#guard refuses (realSlots (.iterNext (a .real)))
++  .output { side := .output, declaration := some 2, statement := some 0, slot := some 0 }
++  (fun | .unsupported .scanSlot => true | _ => false)
++
++#guard refuses (realSlots (.affine (.shift (a .real) 1)))
++  .output { side := .output, declaration := some 2, statement := some 0, slot := some 0 }
++  (fun | .unsupported .affine => true | _ => false)
++
++#guard refuses { realCopy with resolved := { realCopy.resolved with
++    stmts := [.assign "Y" [.free (a .real)] (rhs [[.read "X" [.shift (a .real) 1]]])] } }
++  .read { readOrigin with slot := some 0 }
++  (fun | .unsupported .affine => true | _ => false)
++
++#guard refuses { realCopy with resolved := { realCopy.resolved with
++    stmts := [.assign "Y" [.free (a .real)] (rhs [
++      [.read "X" [.axis ⟨"a", 99, .real⟩]]])] } }
++  .read { readOrigin with slot := some 0 }
++  (fun | .unbound 99 => true | _ => false)
++
++private def parsedNonSum : TLProgram := tlprog!{
++  axis a : ℕ = 2
++  tensor f64 X(a), Y(a)
++  Y[a] := maxreduce(X[a])
++}
++
++private def parsedNonIdentity : TLProgram := tlprog!{
++  axis a : ℕ = 2
++  tensor f64 X(a), Y(a)
++  Y[a] := relu(X[a])
++}
++
++private def rawRefuses (raw : TLProgram) (form : UnsupportedSource) : Bool :=
++  match admitRawSource raw parsedSpecs parsedInputs with
++  | .error d => d.stage == .statement &&
++      d.origin == { side := .output, statement := some 0 } &&
++      match d.cause with | .unsupported actual => actual == form | _ => false
++  | .ok _ => false
++
++#guard rawRefuses parsedNonSum .nonSum
++#guard rawRefuses parsedNonIdentity .nonIdentity
++
++private def linearCopy : SourceSnapshot :=
++  sumProductSnapshot (.typedLinear .f32 "X" [a .nat] false) .f32
++
++#guard [.complex64, .complex128].all (fun ty =>
++  [Decl.typedLinear ty "X" [a .nat] false, .typedLinear ty "X" [a .nat] true,
++    .typedTensor ty "X" [a .nat]].all (fun decl =>
++    refuses (sumProductSnapshot decl .f32)
++      .declarations { side := .declaration, declaration := some 1 }
++      (fun | .unsupported .complex => true | _ => false)))
++
++#guard refuses (sumProductSnapshot (.predicate "X" [a .nat]) .f32)
++  .declarations { side := .declaration, declaration := some 1 }
++  (fun | .unsupported .predicate => true | _ => false)
++
++private def linearFactor (factor : Factor) : SourceSnapshot :=
++  { linearCopy with resolved := { linearCopy.resolved with
++      stmts := [.assign "Y" [.free (a .nat)] (rhs [[factor]])] } }
++
++#guard refuses (linearFactor
++    (.iverson (.rel .lt (.embed (.axis (a .nat))) (.embed (.const 1)))))
++  .read { side := .read, statement := some 0, term := some 0, factor := some 0 }
++  (fun | .unsupported .iverson => true | _ => false)
++
++#guard refuses (linearFactor (.unaryFn .log "X" [.axis (a .nat)]))
++  .read { side := .read, statement := some 0, term := some 0, factor := some 0 }
++  (fun | .unsupported .unary => true | _ => false)
++
++#guard refuses { linearCopy with specs := [⟨1, .input, [3]⟩, ⟨2, .output, [2]⟩] }
++  .signatures { side := .declaration, declaration := some 1 }
++  (fun | .shape [2] [3] => true | _ => false)
++
++#guard refuses { linearCopy with inputs := [⟨1, [3], [1]⟩] }
++  .inputs { side := .input, declaration := some 1 }
++  (fun | .shape [2] [3] => true | _ => false)
++
++#guard refuses { linearCopy with inputs := [⟨1, [2], [1]⟩] }
++  .inputs { side := .input, declaration := some 1 }
++  (fun | .length 2 1 => true | _ => false)
++
++#guard refuses { linearCopy with specs := [⟨1, .defined, [2]⟩, ⟨2, .output, [2]⟩] }
++  .inputs { side := .input, declaration := some 1 }
++  (fun | .role .input .defined => true | _ => false)
++
++#guard refuses { linearCopy with inputs := [] }
++  .inputs { side := .input, declaration := some 1 }
++  (fun | .missingInput 1 => true | _ => false)
++
++#guard refuses { linearCopy with inputs := [⟨0, [2], [1 / 3, 5 / 7]⟩] }
++  .inputs { side := .input, declaration := some 0 }
++  (fun | .unexpectedInput 0 => true | _ => false)
++
++end SourceAdmissionAcceptanceTest
+diff --git a/leanncd/test/Semantics/SourceAdmissionDeclarationsTest.lean b/leanncd/test/Semantics/SourceAdmissionDeclarationsTest.lean
+new file mode 100644
+index 00000000..71ac7564
+--- /dev/null
++++ b/leanncd/test/Semantics/SourceAdmissionDeclarationsTest.lean
+@@ -0,0 +1,96 @@
++import Semantics.SourceAdmissionFixtures
++
++open LeanNCD LeanNCD.Semantics LeanNCD.Semantics.Source
++open SourceAdmissionFixtures
++
++namespace SourceAdmissionDeclarationsTest
++
++private def identitySnapshot : SourceSnapshot :=
++  { snapshot with
++    resolved := { snapshot.resolved with
++      decls := decls ++ [.tensor "Scalar" []]
++      stmts := stmts ++ [.assign "Scalar" [] (rhs [[]])] }
++    specs := specs ++ [⟨8, .output, []⟩] }
++
++private def statementViewAt (s : SourceSnapshot) (original : Nat) :
++    Option StatementView := do
++  let (_, _, statements) ← admissionView s
++  statements.find? (fun st => st.original == original)
++
++private def statementValues (source : AdaptedSource) (st : AdmittedStatement source) :
++    List (Option ℚ) :=
++  let layout := canonicalLayout st.output.context.axes
++  let store : Store RationalReference.Carrier source.table.declarations := fun _ => 37
++  List.ofFn fun p : Fin layout.count =>
++    foldValues (RationalReference.ops ()) (st.terms.map fun term =>
++      interpret RationalReference.ops store
++        (contract (r := RationalReference.registry) term.partition.bound term.operands
++          (fun (_ : Unit) bound =>
++            term.partition.context_axes.symm ▸
++              (appendEquiv st.output.context.axes term.partition.bound).symm
++                (layout.enumerate p, bound))) ())
++
++private def statementValuesAt (s : SourceSnapshot) (original : Nat) :
++    Option (List (Option ℚ)) := do
++  let admitted ← (admitSource s).toOption
++  let statement ← admitted.statements.find? (fun st => st.original == original)
++  pure (statementValues admitted.source statement)
++
++def A7 : Option (StatementView × List (Option ℚ) × StatementView × List (Option ℚ)) := do
++  let broadcast ← statementViewAt identitySnapshot 1
++  let broadcastValues ← statementValuesAt identitySnapshot 1
++  let scalar ← statementViewAt identitySnapshot 3
++  let scalarValues ← statementValuesAt identitySnapshot 3
++  pure (broadcast, broadcastValues, scalar, scalarValues)
++
++set_option synthInstance.maxSize 512 in
++#guard A7 = some
++  (⟨1, [7, 7], [7], [⟨[], .broadcast, []⟩]⟩, [some 1, some 1],
++   ⟨3, [], [], [⟨[], .pure, []⟩]⟩, [some 1])
++
++#eval A7
++
++def A8 : Option (StatementView × List (Option ℚ)) := do
++  let statement ← statementViewAt snapshot 2
++  let values ← statementValuesAt snapshot 2
++  pure (statement, values)
++
++#guard A8 = some (⟨2, [7], [7], []⟩, [some 0, some 0])
++
++#eval A8
++
++private def duplicateAxisSnapshot : SourceSnapshot :=
++  { snapshot with resolved := { snapshot.resolved with
++    decls := decls ++ [.axis i (some 2)] } }
++
++def A9 : Bool :=
++  match admitSource duplicateAxisSnapshot with
++  | .ok _ => false
++  | .error diagnostic =>
++    match diagnostic.cause with
++    | .duplicateAxis uid =>
++      uid == 7 && diagnostic.stage == .declarations &&
++        diagnostic.origin == { side := .declaration, declaration := some 8 }
++    | _ => false
++
++#guard A9
++
++#eval match admitSource duplicateAxisSnapshot with
++  | .error diagnostic => reprStr diagnostic
++  | .ok _ => "unexpected duplicate axis admission"
++
++private def distinctAxisSnapshot : SourceSnapshot :=
++  { snapshot with resolved := { snapshot.resolved with
++    decls := decls ++ [.axis { i with uid := 13 } (some 2)] } }
++
++#guard (admitSource distinctAxisSnapshot).isOk
++
++#guard (admissionView distinctAxisSnapshot).map (fun (axes, _, _) => axes) =
++  some [7, 3, 11, 13]
++
++set_option synthInstance.maxSize 512 in
++#guard (admissionView distinctAxisSnapshot).map (fun (_, table, statements) =>
++    (table, statements)) =
++  (admissionView snapshot).map (fun (_, table, statements) => (table, statements))
++
++end SourceAdmissionDeclarationsTest
+diff --git a/leanncd/test/Semantics/SourceAdmissionDomainsTest.lean b/leanncd/test/Semantics/SourceAdmissionDomainsTest.lean
+new file mode 100644
+index 00000000..e90ac387
+--- /dev/null
++++ b/leanncd/test/Semantics/SourceAdmissionDomainsTest.lean
+@@ -0,0 +1,126 @@
++import Semantics.SourceAdmissionFixtures
++
++open LeanNCD LeanNCD.Semantics LeanNCD.Semantics.Source
++open SourceAdmissionFixtures
++
++namespace SourceAdmissionDomainsFixtures
++
++private def readSnapshot (first : AxisSpec) : SourceSnapshot :=
++  { snapshot with resolved := { snapshot.resolved with
++      stmts := stmts.take 2 ++
++        [.assign "Y" [.free i] (rhs
++          [[.read "B" [.axis i]],
++           [.read "B" [.axis i], .read "A" [.axis first, .axis k]]])] } }
++
++def a1 : Except SourceDiagnostic AdmittedSource := admitSource (readSnapshot k)
++
++#guard (List.range 3).take 2 = List.range 2
++#guard match a1 with
++  | .error diagnostic =>
++    diagnostic.stage == .read &&
++    diagnostic.origin ==
++      { side := .read, declaration := some 3, statement := some 2,
++        term := some 1, factor := some 1, slot := some 0 } &&
++    match diagnostic.cause with
++    | .domain uid expected actual => uid == 3 && expected == 2 && actual == 3
++    | _ => false
++  | .ok _ => false
++
++#eval a1.map (fun admitted => admitted.statements.map (fun st => st.original))
++
++def a2 := admissionView (readSnapshot i)
++
++set_option synthInstance.maxSize 512 in
++#guard a2 = some
++  ([7, 3, 11],
++   [(3, .input, [2, 3]), (4, .input, [2]), (5, .output, [2]),
++    (6, .input, [0]), (7, .defined, [2, 2])],
++   [⟨0, [7], [7], [⟨[3], .pure, [(some 0, some 0, [7, 3])]⟩,
++                    ⟨[], .pure, [(some 1, some 0, [7])]⟩]⟩,
++    ⟨1, [7, 7], [7], [⟨[], .broadcast, []⟩]⟩,
++    ⟨2, [7], [7], [⟨[], .pure, [(some 0, some 0, [7])]⟩,
++                    ⟨[3], .pure, [(some 1, some 0, [7]),
++                                   (some 1, some 1, [7, 3])]⟩]⟩])
++
++#eval a2
++
++private def outputSnapshot (slots : List LHSSlot) : SourceSnapshot :=
++  { snapshot with
++    resolved := { snapshot.resolved with
++      stmts := stmts.take 2 ++ [.assign "A" slots (rhs [])] }
++    specs := specs.map (fun spec =>
++      if spec.declaration == 3 then { spec with role := .defined } else spec)
++    inputs := inputs.filter (fun binding => binding.declaration != 3) }
++
++-- The final output has both a wrong second domain and an extra third slot.
++def a3 : Except SourceDiagnostic AdmittedSource :=
++  admitSource (outputSnapshot [.free i, .free i, .free k])
++
++#guard match a3 with
++  | .error diagnostic =>
++    diagnostic.stage == .output &&
++    diagnostic.origin ==
++      { side := .output, declaration := some 3, statement := some 2,
++        slot := some 1 } &&
++    match diagnostic.cause with
++    | .domain uid expected actual => uid == 7 && expected == 3 && actual == 2
++    | _ => false
++  | .ok _ => false
++
++#eval a3.map (fun admitted => admitted.statements.map (fun st => st.original))
++
++#guard match admitSource (outputSnapshot [.free k, .free i, .free e]) with
++  | .error diagnostic =>
++    diagnostic.stage == .output &&
++    diagnostic.origin ==
++      { side := .output, declaration := some 3, statement := some 2,
++        slot := some 0 } &&
++    match diagnostic.cause with
++    | .domain uid expected actual => uid == 3 && expected == 2 && actual == 3
++    | _ => false
++  | .ok _ => false
++
++#eval (admitSource (outputSnapshot [.free k, .free i, .free e])).map
++  (fun admitted => admitted.statements.map (fun st => st.original))
++
++#guard match admitSource (outputSnapshot [.free i, .free k, .free e]) with
++  | .error diagnostic =>
++    diagnostic.stage == .output &&
++    diagnostic.origin ==
++      { side := .output, declaration := some 3, statement := some 2,
++        slot := some 2 } &&
++    match diagnostic.cause with
++    | .rank expected actual => expected == 2 && actual == 3
++    | _ => false
++  | .ok _ => false
++
++#eval (admitSource (outputSnapshot [.free i, .free k, .free e])).map
++  (fun admitted => admitted.statements.map (fun st => st.original))
++
++#guard match admitSource (outputSnapshot [.free i]) with
++  | .error diagnostic =>
++    diagnostic.stage == .output &&
++    diagnostic.origin ==
++      { side := .output, declaration := some 3, statement := some 2,
++        slot := some 1 } &&
++    match diagnostic.cause with
++    | .rank expected actual => expected == 2 && actual == 1
++    | _ => false
++  | .ok _ => false
++
++#eval (admitSource (outputSnapshot [.free i])).map
++  (fun admitted => admitted.statements.map (fun st => st.original))
++
++set_option synthInstance.maxSize 512 in
++#guard admissionView (outputSnapshot [.free i, .free k]) = some
++  ([7, 3, 11],
++   [(3, .defined, [2, 3]), (4, .input, [2]), (5, .output, [2]),
++    (6, .input, [0]), (7, .defined, [2, 2])],
++   [⟨0, [7], [7], [⟨[3], .pure, [(some 0, some 0, [7, 3])]⟩,
++                    ⟨[], .pure, [(some 1, some 0, [7])]⟩]⟩,
++    ⟨1, [7, 7], [7], [⟨[], .broadcast, []⟩]⟩,
++    ⟨2, [7, 3], [7, 3], []⟩])
++
++#eval admissionView (outputSnapshot [.free i, .free k])
++
++end SourceAdmissionDomainsFixtures
+diff --git a/leanncd/test/Semantics/SourceAdmissionFixtures.lean b/leanncd/test/Semantics/SourceAdmissionFixtures.lean
+new file mode 100644
+index 00000000..2290ba3c
+--- /dev/null
++++ b/leanncd/test/Semantics/SourceAdmissionFixtures.lean
+@@ -0,0 +1,58 @@
++import LeanNCD.Semantics.Source
++
++open LeanNCD LeanNCD.Semantics LeanNCD.Semantics.Source
++
++namespace SourceAdmissionFixtures
++
++def i : AxisSpec := ⟨"i", 7, .nat⟩
++def k : AxisSpec := ⟨"k", 3, .nat⟩
++def e : AxisSpec := ⟨"empty", 11, .nat⟩
++
++def decls : List Decl :=
++  [.axis i (some 2), .axis k (some 3), .axis e (some 0),
++   .tensor "A" [i, k], .tensor "B" [i], .tensor "Y" [i],
++   .tensor "Empty" [e], .tensor "Diagonal" [i, i]]
++
++def rhs (terms : List (List Factor)) : RHSExpr :=
++  ⟨⟨terms.map ProdTerm.mk⟩, .identity, .sum⟩
++
++def stmts : List Stmt :=
++  [.assign "Y" [.free i] (rhs [[.read "A" [.axis i, .axis k]], [.read "B" [.axis i]]]),
++   .assign "Diagonal" [.free i, .free i] (rhs [[]]),
++   .assign "Y" [.free i] (rhs [])]
++
++def specs : List TensorSpec :=
++  [⟨3, .input, [2, 3]⟩, ⟨4, .input, [2]⟩, ⟨5, .output, [2]⟩,
++   ⟨6, .input, [0]⟩, ⟨7, .defined, [2, 2]⟩]
++
++def inputs : List InputBinding :=
++  [⟨3, [2, 3], [1, 2, 3, 4, 5, 6]⟩, ⟨4, [2], [10, 20]⟩, ⟨6, [0], []⟩]
++
++def snapshot : SourceSnapshot := ⟨⟨decls, stmts, {}, ∅⟩, specs, inputs⟩
++
++structure TermView where
++  bound : List UID
++  classification : TermClass
++  reads : List (Option Nat × Option Nat × List UID)
++  deriving DecidableEq, Repr
++
++structure StatementView where
++  original : Nat
++  slots : List UID
++  context : List UID
++  terms : List TermView
++  deriving DecidableEq, Repr
++
++def admissionView (s : SourceSnapshot) :
++    Option (List UID × List (Nat × TensorRole × List Nat) × List StatementView) :=
++  (admitSource s).toOption.map fun admitted =>
++    (admitted.source.context.axes.map Axis.uid,
++     admitted.source.table.entries.map (fun t => (t.declaration, t.role, t.axes.map Axis.extent)),
++     admitted.statements.map fun st =>
++       (⟨st.original, st.output.indices, st.output.context.axes.map Axis.uid,
++        st.terms.map fun term =>
++          ⟨term.partition.bound.map Axis.uid, term.classification,
++           term.sourceReads.map fun r => (r.origin.term, r.origin.factor, r.indices)⟩⟩ :
++         StatementView))
++
++end SourceAdmissionFixtures
+diff --git a/leanncd/test/Semantics/SourceAdmissionInputsTest.lean b/leanncd/test/Semantics/SourceAdmissionInputsTest.lean
+new file mode 100644
+index 00000000..11d21c47
+--- /dev/null
++++ b/leanncd/test/Semantics/SourceAdmissionInputsTest.lean
+@@ -0,0 +1,109 @@
++import Semantics.SourceAdmissionFixtures
++
++open LeanNCD LeanNCD.Semantics LeanNCD.Semantics.Source SourceAdmissionFixtures
++
++namespace SourceAdmissionInputsFixtures
++
++private def scalarWithUnused : SourceSnapshot :=
++  { snapshot with
++    resolved := { snapshot.resolved with
++      decls := decls ++ [.tensor "Unused" [i], .tensor "Scalar" []]
++      stmts := [.assign "Scalar" [] (rhs [[]])] }
++    specs := specs ++ [⟨8, .input, [2]⟩, ⟨9, .output, []⟩] }
++
++private def scalarWithUnusedBound : SourceSnapshot :=
++  { scalarWithUnused with inputs := inputs ++ [⟨8, [2], [31, 47]⟩] }
++
++private structure InputView where
++  declaration : Nat
++  axes : List (UID × Nat)
++  count : Nat
++  values : List ℚ
++  coordinateValues : List ℚ
++  deriving DecidableEq, Repr
++
++private def inputView (s : SourceSnapshot) : Option (List InputView) :=
++  (admitSource s).toOption.map fun admitted =>
++    (List.finRange admitted.source.table.entries.length).filterMap fun t =>
++      let entry := admitted.source.table.entry t
++      if h : entry.role = .input then
++        let buffer := admitted.source.inputs.buffers t h
++        some ⟨entry.declaration, entry.axes.map (fun a => (a.uid, a.extent)),
++          (canonicalLayout entry.axes).count, buffer.values,
++          (List.finRange (canonicalLayout entry.axes).count).map fun p =>
++            buffer.value ((canonicalLayout entry.axes).enumerate p)⟩
++      else none
++
++private def failure (result : Except SourceDiagnostic α) : Option SourceDiagnostic :=
++  match result with
++  | .error diagnostic => some diagnostic
++  | .ok _ => none
++
++private def expectedInputs : List InputView :=
++  [⟨3, [(7, 2), (3, 3)], 6, [1, 2, 3, 4, 5, 6], [1, 2, 3, 4, 5, 6]⟩,
++   ⟨4, [(7, 2)], 2, [10, 20], [10, 20]⟩,
++   ⟨6, [(11, 0)], 0, [], []⟩]
++
++def a13 := admitSource scalarWithUnused
++
++#guard match a13 with
++  | .error diagnostic =>
++    match diagnostic.cause with
++    | .missingInput declaration =>
++      declaration == 8 && diagnostic.stage == .inputs &&
++        diagnostic.origin == { side := .input, declaration := some 8 }
++    | _ => false
++  | .ok _ => false
++
++#guard inputView scalarWithUnusedBound =
++  some (expectedInputs ++ [⟨8, [(7, 2)], 2, [31, 47], [31, 47]⟩])
++
++set_option synthInstance.maxSize 512 in
++#guard admissionView scalarWithUnusedBound = some
++  ([7, 3, 11],
++   [(3, .input, [2, 3]), (4, .input, [2]), (5, .output, [2]),
++    (6, .input, [0]), (7, .defined, [2, 2]), (8, .input, [2]), (9, .output, [])],
++   [⟨0, [], [], [⟨[], .pure, []⟩]⟩])
++
++#eval failure a13
++#eval inputView scalarWithUnusedBound
++
++private def withoutEmptyBinding : SourceSnapshot :=
++  { snapshot with inputs := inputs.filter (fun binding => binding.declaration != 6) }
++
++def a14 := admitSource withoutEmptyBinding
++
++#guard match a14 with
++  | .error diagnostic =>
++    match diagnostic.cause with
++    | .missingInput declaration =>
++      declaration == 6 && diagnostic.stage == .inputs &&
++        diagnostic.origin == { side := .input, declaration := some 6 }
++    | _ => false
++  | .ok _ => false
++
++#guard inputView { withoutEmptyBinding with inputs := inputs } = some expectedInputs
++
++#eval failure a14
++#eval inputView { withoutEmptyBinding with inputs := inputs }
++
++private def shortMatrixBinding : SourceSnapshot :=
++  { snapshot with inputs := [⟨3, [2, 3], [1, 2, 3, 4, 5]⟩] ++ inputs.drop 1 }
++
++def a15 := admitSource shortMatrixBinding
++
++#guard match a15 with
++  | .error diagnostic =>
++    match diagnostic.cause with
++    | .length expected actual =>
++      expected == 6 && actual == 5 && diagnostic.stage == .inputs &&
++        diagnostic.origin == { side := .input, declaration := some 3 }
++    | _ => false
++  | .ok _ => false
++
++#guard inputView { shortMatrixBinding with inputs := inputs } = some expectedInputs
++
++#eval failure a15
++#eval inputView { shortMatrixBinding with inputs := inputs }
++
++end SourceAdmissionInputsFixtures
+diff --git a/leanncd/test/Semantics/SourceAdmissionRefusalsTest.lean b/leanncd/test/Semantics/SourceAdmissionRefusalsTest.lean
+new file mode 100644
+index 00000000..dab77cbf
+--- /dev/null
++++ b/leanncd/test/Semantics/SourceAdmissionRefusalsTest.lean
+@@ -0,0 +1,106 @@
++import Semantics.SourceAdmissionFixtures
++
++open LeanNCD LeanNCD.Semantics LeanNCD.Semantics.Source
++open SourceAdmissionFixtures
++
++namespace SourceAdmissionRefusalsFixtures
++
++private def wrongShapeAndLength : SourceSnapshot :=
++  { snapshot with
++    inputs := inputs.map fun binding =>
++      if binding.declaration == 3 then
++        { binding with shape := [3, 2], values := [1, 2, 3, 4, 5] }
++      else binding }
++
++def A16 : Except SourceDiagnostic AdmittedSource :=
++  admitSource wrongShapeAndLength
++
++#guard (admissionView snapshot).isSome
++#guard wrongShapeAndLength.inputs.map (fun binding =>
++    (binding.declaration, binding.shape, binding.values.length)) =
++  [(3, [3, 2], 5), (4, [2], 2), (6, [0], 0)]
++
++#guard match A16 with
++  | .error diagnostic =>
++    match diagnostic.cause with
++    | .shape expected actual =>
++      diagnostic.stage == .inputs && expected == [2, 3] && actual == [3, 2] &&
++        diagnostic.origin == { side := .input, declaration := some 3 }
++    | _ => false
++  | .ok _ => false
++
++#guard match admitSource { wrongShapeAndLength with
++    inputs := wrongShapeAndLength.inputs.map fun binding =>
++      if binding.declaration == 3 then { binding with shape := [2, 3] }
++      else binding } with
++  | .error diagnostic =>
++    match diagnostic.cause with
++    | .length expected actual =>
++      diagnostic.stage == .inputs && expected == 6 && actual == 5 &&
++        diagnostic.origin == { side := .input, declaration := some 3 }
++    | _ => false
++  | .ok _ => false
++
++#eval match A16 with
++  | .error diagnostic => IO.println (reprStr diagnostic)
++  | .ok _ => throw (IO.userError "A16: expected shape refusal")
++
++private def scalarSnapshot (factor : Factor) : SourceSnapshot :=
++  { snapshot with
++    resolved := { snapshot.resolved with
++      decls := decls ++ [.tensor "Scalar" []]
++      stmts := stmts ++ [
++        .assign "Scalar" [] (rhs [
++          [.read "A" [.axis i, .axis k]],
++          [.read "A" [.axis i, .axis k], .read "B" [.axis i],
++           factor, .read "B" [.axis i]]])] }
++    specs := specs ++ [⟨8, .output, []⟩] }
++
++-- Distinct nonzero locators separate statement, term, and factor provenance.
++#guard ((admissionView (scalarSnapshot (.read "A" [.axis i, .axis k]))).map
++    fun view => view.2.2.drop 3) = some [
++  (⟨3, [], [], [
++    ⟨[7, 3], .pure, [(some 0, some 0, [7, 3])]⟩,
++    ⟨[7, 3], .pure, [
++      (some 1, some 0, [7, 3]), (some 1, some 1, [7]),
++      (some 1, some 2, [7, 3]), (some 1, some 3, [7])]⟩]⟩ : StatementView)]
++
++#eval ((admissionView (scalarSnapshot (.read "A" [.axis i, .axis k]))).map
++  fun view => view.2.2.drop 3)
++
++def A17 : Except SourceDiagnostic AdmittedSource :=
++  admitSource (scalarSnapshot
++    (.iverson (.rel .lt (.embed (.axis i)) (.embed (.axis k)))))
++
++#guard match A17 with
++  | .error diagnostic =>
++    match diagnostic.cause with
++    | .unsupported .iverson =>
++      diagnostic.stage == .read &&
++        diagnostic.origin == {
++          side := .read, statement := some 3, term := some 1, factor := some 2 }
++    | _ => false
++  | .ok _ => false
++
++#eval match A17 with
++  | .error diagnostic => IO.println (reprStr diagnostic)
++  | .ok _ => throw (IO.userError "A17: expected Iverson refusal")
++
++def A18 : Except SourceDiagnostic AdmittedSource :=
++  admitSource (scalarSnapshot (.unaryFn .log "A" [.axis i, .axis k]))
++
++#guard match A18 with
++  | .error diagnostic =>
++    match diagnostic.cause with
++    | .unsupported .unary =>
++      diagnostic.stage == .read &&
++        diagnostic.origin == {
++          side := .read, statement := some 3, term := some 1, factor := some 2 }
++    | _ => false
++  | .ok _ => false
++
++#eval match A18 with
++  | .error diagnostic => IO.println (reprStr diagnostic)
++  | .ok _ => throw (IO.userError "A18: expected unary refusal")
++
++end SourceAdmissionRefusalsFixtures
+diff --git a/leanncd/test/Semantics/SourceAdmissionRolesTest.lean b/leanncd/test/Semantics/SourceAdmissionRolesTest.lean
+new file mode 100644
+index 00000000..171b7bc8
+--- /dev/null
++++ b/leanncd/test/Semantics/SourceAdmissionRolesTest.lean
+@@ -0,0 +1,141 @@
++import Semantics.SourceAdmissionFixtures
++
++open LeanNCD LeanNCD.Semantics LeanNCD.Semantics.Source
++open SourceAdmissionFixtures
++
++namespace SourceAdmissionRolesFixtures
++
++private def diagnosticIs (result : Except SourceDiagnostic α) (stage : SourceStage)
++    (origin : SourceOrigin) (cause : SourceCause → Bool) : Bool :=
++  match result with
++  | .error d => d.stage == stage && d.origin == origin && cause d.cause
++  | .ok _ => false
++
++private def originals (s : SourceSnapshot) : Except SourceDiagnostic (List Nat) :=
++  (admitSource s).map fun a => a.statements.map (·.original)
++
++private def duplicateSnapshot : SourceSnapshot :=
++  { snapshot with
++    resolved := { snapshot.resolved with decls := decls ++ [.tensor "A" [k]] }
++    specs := specs ++ [⟨8, .defined, [3]⟩] }
++
++private def uniqueSnapshot : SourceSnapshot :=
++  { duplicateSnapshot with
++    resolved := { snapshot.resolved with decls := decls ++ [.tensor "Other" [k]] } }
++
++private def raw (s : SourceSnapshot) : TLProgram :=
++  ⟨s.resolved.decls, s.resolved.stmts⟩
++
++def a10 : Bool :=
++  diagnosticIs (admitSource duplicateSnapshot) .declarations
++    { side := .declaration, declaration := some 8 }
++    (fun c => match c with | .duplicateTensor name => name == "A" | _ => false) &&
++  diagnosticIs (admitRawSource (raw duplicateSnapshot) duplicateSnapshot.specs
++    duplicateSnapshot.inputs) .resolution
++    { side := .declaration, declaration := some 8 }
++    (fun c => match c with
++      | .resolution (.duplicateTensorDecl name) => name == "A"
++      | _ => false) &&
++  (match admitSource uniqueSnapshot with
++    | .error _ => false
++    | .ok a =>
++      a.source.table.entries.map (fun t => (t.declaration, t.name, t.axes.map Axis.extent)) ==
++        [(3, "A", [2, 3]), (4, "B", [2]), (5, "Y", [2]), (6, "Empty", [0]),
++         (7, "Diagonal", [2, 2]), (8, "Other", [3])] &&
++      a.statements.map (·.original) == [0, 1, 2] &&
++      (a.statements.flatMap fun st => st.terms.flatMap fun term =>
++        term.sourceReads.map (·.origin.declaration)) == [some 3, some 4]) &&
++  (match admitRawSource (raw uniqueSnapshot) uniqueSnapshot.specs uniqueSnapshot.inputs with
++    | .error _ => false
++    | .ok a => a.statements.map (·.original) == [0, 1, 2])
++
++#guard a10
++#eval a10
++#eval originals duplicateSnapshot
++#eval (admitRawSource (raw duplicateSnapshot) duplicateSnapshot.specs
++  duplicateSnapshot.inputs).map fun a => a.statements.map (·.original)
++
++private def scalarSnapshot (role : TensorRole) : SourceSnapshot :=
++  { snapshot with
++    resolved := { snapshot.resolved with
++      decls := decls.map fun d => match d with
++        | .tensor "B" _ => .tensor "B" []
++        | .tensor "Y" _ => .tensor "Y" []
++        | _ => d
++      stmts := [.assign "Diagonal" [.free i, .free i] (rhs [[]]),
++        .assign "Y" [] (rhs [[.read "B" []]])] }
++    specs := specs.map fun s =>
++      if s.declaration == 4 then ⟨4, .input, []⟩
++      else if s.declaration == 5 then ⟨5, role, []⟩ else s
++    inputs := (inputs.map fun b =>
++      if b.declaration == 4 then ⟨4, [], [10]⟩ else b) ++
++      (if role == .input then [⟨5, [], [99]⟩] else []) }
++
++def a11 : Bool :=
++  diagnosticIs (admitSource (scalarSnapshot .input)) .output
++    { side := .output, declaration := some 5, statement := some 1 }
++    (fun c => match c with
++      | .role expected actual => expected == .defined && actual == .input
++      | _ => false) &&
++  (match adaptSource (scalarSnapshot .input) with
++    | .error _ => false
++    | .ok a =>
++      a.table.entries.map (fun t => (t.declaration, t.role, t.axes.map Axis.extent)) ==
++        [(3, .input, [2, 3]), (4, .input, []), (5, .input, []), (6, .input, [0]),
++         (7, .defined, [2, 2])]) &&
++  (match admissionView (scalarSnapshot .output), admissionView (scalarSnapshot .defined) with
++    | some (_, _, out), some (_, _, defined) =>
++      out == defined && out ==
++        [⟨0, [7, 7], [7], [⟨[], .broadcast, []⟩]⟩,
++         ⟨1, [], [], [⟨[], .pure, [(some 0, some 0, [])]⟩]⟩]
++    | _, _ => false)
++
++#guard a11
++#eval a11
++#eval originals (scalarSnapshot .input)
++#eval originals (scalarSnapshot .output)
++#eval originals (scalarSnapshot .defined)
++
++private def j : AxisSpec := ⟨"j", 13, .nat⟩
++
++private def matrixSnapshot (domain : Option Nat) : SourceSnapshot :=
++  { snapshot with
++    resolved := { snapshot.resolved with
++      decls := (decls.map fun d => match d with
++        | .axis a _ => if a.uid == k.uid then .axis a domain else d
++        | .tensor "B" _ => .tensor "B" [k, j]
++        | .tensor "Y" _ => .tensor "Y" [i, j]
++        | _ => d) ++ [.axis j (some 4)]
++      stmts := [.assign "Diagonal" [.free i, .free i] (rhs [[]]),
++        .assign "Y" [.free i, .free j]
++          (rhs [[.read "A" [.axis i, .axis k], .read "B" [.axis k, .axis j]]])] }
++    specs := specs.map fun s =>
++      if s.declaration == 4 then ⟨4, .input, [3, 4]⟩
++      else if s.declaration == 5 then ⟨5, .output, [2, 4]⟩ else s
++    inputs := inputs.map fun b =>
++      if b.declaration == 4 then
++        ⟨4, [3, 4], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]⟩ else b }
++
++def a12 : Bool :=
++  diagnosticIs (admitSource (matrixSnapshot none)) .declarations
++    { side := .declaration, declaration := some 1 }
++    (fun c => match c with | .missingDomain uid => uid == 3 | _ => false) &&
++  (matrixSnapshot none).inputs.map (fun b => (b.declaration, b.shape, b.values.length)) ==
++    [(3, [2, 3], 6), (4, [3, 4], 12), (6, [0], 0)] &&
++  (match admissionView (matrixSnapshot (some 3)) with
++    | some (axes, table, statements) =>
++      axes == [7, 3, 11, 13] &&
++      table == [(3, .input, [2, 3]), (4, .input, [3, 4]), (5, .output, [2, 4]),
++        (6, .input, [0]), (7, .defined, [2, 2])] &&
++      statements ==
++        [⟨0, [7, 7], [7], [⟨[], .broadcast, []⟩]⟩,
++         ⟨1, [7, 13], [7, 13],
++          [⟨[3], .pure, [(some 0, some 0, [7, 3]), (some 0, some 1, [3, 13])]⟩]⟩]
++    | none => false)
++
++#guard a12
++#eval a12
++#eval originals (matrixSnapshot none)
++#eval admissionView (matrixSnapshot (some 3))
++
++end SourceAdmissionRolesFixtures
+diff --git a/leanncd/test/Semantics/SourceAdmissionSupportTest.lean b/leanncd/test/Semantics/SourceAdmissionSupportTest.lean
+new file mode 100644
+index 00000000..d3822815
+--- /dev/null
++++ b/leanncd/test/Semantics/SourceAdmissionSupportTest.lean
+@@ -0,0 +1,127 @@
++import Semantics.SourceAdmissionFixtures
++
++open LeanNCD LeanNCD.Semantics LeanNCD.Semantics.Source
++open SourceAdmissionFixtures
++
++namespace SourceAdmissionSupportTest
++
++def A4 : SourceSnapshot :=
++  { snapshot with
++    resolved := { snapshot.resolved with
++      decls := decls ++ [.tensor "Ordered" [k, i, k]]
++      stmts := stmts.take 1 ++
++        [.assign "Ordered" [.free k, .free i, .free k]
++          (rhs [[.read "A" [.axis i, .axis k]]])] }
++    specs := specs ++ [⟨8, .output, [3, 2, 3]⟩] }
++
++def A5 : SourceSnapshot :=
++  { snapshot with
++    resolved := { snapshot.resolved with
++      decls := decls ++ [.tensor "K" [k]]
++      stmts := stmts.take 2 ++
++        [.assign "Y" [.free i]
++          (rhs [[.read "K" [.axis k]], [.read "B" [.axis i]]])] }
++    specs := specs ++ [⟨8, .input, [3]⟩]
++    inputs := inputs ++ [⟨8, [3], [7, 11, 13]⟩] }
++
++def A6 : SourceSnapshot :=
++  { snapshot with resolved := { snapshot.resolved with
++    stmts := stmts ++ [.assign "Y" [.free i]
++      (rhs [[.read "A" [.axis i, .axis k]], [.read "B" [.axis i]]])] } }
++
++private def statementView (s : SourceSnapshot) (index : Nat) : Option StatementView := do
++  let (_, _, statements) ← admissionView s
++  statements[index]?
++
++private structure SupportView where
++  origin : SourceOrigin
++  readOrigins : List SourceOrigin
++  support : List UID
++  bound : List (UID × Nat)
++  context : List (UID × Nat)
++  localReads : List (List UID)
++  pure : Bool
++  deriving DecidableEq, Repr
++
++private def supportView (s : SourceSnapshot) (index : Nat) : Option (List SupportView) := do
++  let admitted ← (admitSource s).toOption
++  let statement ← admitted.statements[index]?
++  pure (statement.terms.map fun term =>
++    ⟨term.origin, term.sourceReads.map CheckedRead.origin, term.support,
++     term.partition.bound.map (fun a => (a.uid, a.extent)),
++     term.partition.context.axes.map (fun a => (a.uid, a.extent)),
++     term.operands.map (fun read => read.slots.uids), admitPure term⟩)
++
++private def projectAt (slots : Slots ctx sh) (index : Nat) : Option (List Int) :=
++  let layout := canonicalLayout ctx
++  if h : index < layout.count then
++    some (List.ofFn (slots.project (layout.enumerate ⟨index, h⟩)).raw)
++  else none
++
++private structure DestinationView where
++  origin : SourceOrigin
++  shape : List Nat
++  context : List (UID × Nat)
++  sourceSlots : List UID
++  slots : List UID
++  projection : Option (List Int)
++  readProjections : List (List (Option (List Int)))
++  deriving DecidableEq, Repr
++
++private def destinationView (s : SourceSnapshot) (index : Nat) :
++    Option DestinationView := do
++  let admitted ← (admitSource s).toOption
++  let statement ← admitted.statements[index]?
++  let output := statement.output
++  pure ⟨output.origin,
++    (admitted.source.table.declarations.signature output.tensor).axes.map Axis.extent,
++    output.context.axes.map (fun a => (a.uid, a.extent)),
++    output.sourceSlots.uids, output.slots.uids, projectAt output.slots 5,
++    statement.terms.map fun term =>
++      term.operands.map fun read => projectAt read.slots 5⟩
++
++#guard statementView A4 1 =
++  some ⟨1, [3, 7, 3], [3, 7],
++    [⟨[], .pure, [(some 0, some 0, [7, 3])]⟩]⟩
++
++#guard destinationView A4 1 = some
++  ⟨⟨.output, some 8, some 1, none, none, none⟩,
++   [3, 2, 3], [(3, 3), (7, 2)], [3, 7, 3], [3, 7, 3],
++   some [2, 1, 2], [[some [1, 2]]]⟩
++
++#guard supportView A4 1 = some
++  [⟨⟨.read, none, some 1, some 0, none, none⟩,
++    [⟨.read, some 3, some 1, some 0, some 0, none⟩],
++    [7, 3], [], [(3, 3), (7, 2)], [[7, 3]], true⟩]
++
++#guard statementView A5 2 =
++  some ⟨2, [7], [7],
++    [⟨[3], .broadcast, [(some 0, some 0, [3])]⟩,
++     ⟨[], .pure, [(some 1, some 0, [7])]⟩]⟩
++
++#guard supportView A5 2 = some
++  [⟨⟨.read, none, some 2, some 0, none, none⟩,
++    [⟨.read, some 8, some 2, some 0, some 0, none⟩],
++    [3], [(3, 3)], [(7, 2), (3, 3)], [[3]], false⟩,
++   ⟨⟨.read, none, some 2, some 1, none, none⟩,
++    [⟨.read, some 4, some 2, some 1, some 0, none⟩],
++    [7], [], [(7, 2)], [[7]], true⟩]
++
++#guard statementView A6 3 =
++  some ⟨3, [7], [7],
++    [⟨[3], .pure, [(some 0, some 0, [7, 3])]⟩,
++     ⟨[], .pure, [(some 1, some 0, [7])]⟩]⟩
++
++#guard supportView A6 3 = some
++  [⟨⟨.read, none, some 3, some 0, none, none⟩,
++    [⟨.read, some 3, some 3, some 0, some 0, none⟩],
++    [7, 3], [(3, 3)], [(7, 2), (3, 3)], [[7, 3]], true⟩,
++   ⟨⟨.read, none, some 3, some 1, none, none⟩,
++    [⟨.read, some 4, some 3, some 1, some 0, none⟩],
++    [7], [], [(7, 2)], [[7]], true⟩]
++
++#eval ("A4", statementView A4 1, destinationView A4 1, supportView A4 1)
++#eval ("A5", statementView A5 2, supportView A5 2)
++#eval ("A6", statementView A6 3, supportView A6 3)
++
++end SourceAdmissionSupportTest
+diff --git a/leanncd/test/Semantics/SourceAdmissionTest.lean b/leanncd/test/Semantics/SourceAdmissionTest.lean
+new file mode 100644
+index 00000000..922d85e7
+--- /dev/null
++++ b/leanncd/test/Semantics/SourceAdmissionTest.lean
+@@ -0,0 +1,7 @@
++import Semantics.SourceAdmissionDomainsTest
++import Semantics.SourceAdmissionSupportTest
++import Semantics.SourceAdmissionDeclarationsTest
++import Semantics.SourceAdmissionRolesTest
++import Semantics.SourceAdmissionInputsTest
++import Semantics.SourceAdmissionRefusalsTest
++import Semantics.SourceAdmissionAcceptanceTest
+diff --git a/papers/semantics/source_correspondence_artifacts/admission_audit.txt b/papers/semantics/source_correspondence_artifacts/admission_audit.txt
+new file mode 100644
+index 00000000..51002631
+--- /dev/null
++++ b/papers/semantics/source_correspondence_artifacts/admission_audit.txt
+@@ -0,0 +1,162 @@
++T2 production admission case x class audit
++2026-10-08; baseline d0f8462; no production DSL/Eval changes.
++
++R = required/checked by the named entry; F = explicitly forbidden/refused;
++I = silently ignored by that donor/production entry, INCLUDING requirements
++delegated to its caller. Mixed cells state the distinctions. No I cell is an
++authority for admission in the new public admitSource/admitRawSource pipeline.
++
++Columns:
++Ref = T1 resolveRef; Slots = T1 resolveSlots;
++Read/Term/Output/Pure = seed patch2 admitRead/admitTerm/admitOutput/admitPure;
++Struct = assignUIDs + resolveDecls + declaredAxisSizes;
++Gather = production gatherRead; Sig = production checked input signatures.
++
++case/class                 Ref       Slots     Read      Term      Output    Pure      Struct    Gather    Sig
++unique pinned axes         I         I         I         R unique  R unique  R unique  I pins    I         I pins
++tensor declarations        I         I         I typed   I typed   I typed   I typed   R/F dup   I env     R/F dup
++binders/term support       I         I         I         R explicit I        R pure    I         I         I
++output slots              I         I         I         I         R domain  R         I         I         I
++read slots                R domain  R rank    R         R         I         R         I bounds  I rank    I reads
++roles                     I         I         I         I         I         I         I ext     I         I ext
++all declared inputs       I         I         I         I         I         I         I unused  I unused  I unused
++input shape then length   I         I         I         I         I         I         I         I zip     R shape/I length
++AST fragment membership   I         I         I erased  I erased  I erased  I erased  I accepted I accepts I
++original provenance       I         I         I         I         I         I         R order/I IDs I      I
++
++Evidence and qualifications:
++- resolveRef checks UID binding and equality of the full extent, not names or
++  overlap. It has no axis declaration kind, pinning, uniqueness, role, or AST.
++  resolveSlots retains repeats and checks common-prefix domains before its
++  remaining-rank error; it silently lacks total rank/provenance in that error.
++- Seed Read delegates to Slots over already typed tensors and erased UID lists.
++  Seed Term checks out++bound uniqueness and every supplied bound UID is read,
++  but accepts a caller's partition; no automatic exact coverage/order proof.
++  Seed Output checks UID-set equality against supplied out, then full slots;
++  it does not derive first-slot enumeration or retain source IDs.
++  Seed Pure requires output UIDs read and forbids empty operands, incorrectly
++  excluding the scalar empty identity case for the intended AST fragment.
++  Every generic entry delegates declarations, roles, bindings and syntax.
++- Struct intentionally resolves RAW axes by display NAME once; resolved axis
++  UIDs must not be reminted. resolveDecls preserves declaration/statement order,
++  rejects duplicate tensor names and all complex element types, but accepts
++  undeclared reads/targets, predicates, linear tensors, nonlinearities and scans.
++  declaredAxisSizes overwrites duplicate axis UIDs and omits unpinned axes.
++  extNames excludes unused/empty inputs and cannot specify roles.
++- Gather computes affine/constant coordinates, substitutes 0 for missing UID
++  lookups, checks zipped source extents, and zero-pads out-of-bounds coordinates.
++  It does not check exact rank, full slot domains, declarations, roles or all
++  input presence. Its env is keyed by tensor name, not semantic axis identity.
++- ofDenseInputs assigns f64 based on the Float carrier. Declaration-aware
++  ofDenseInputsForDecls/32ForDecls reject complex/duplicate declarations and
++  wrong carriers and preserve the declared dtype; they record supplied full
++  shape, but do not establish unused declared input presence, buffer length,
++  finite pinned axis contexts, semantic roles, support, syntax or provenance.
++  Downstream production shape inference is not semantic domain admission.
++
++Disposition of every I cell, by semantic class:
++1. Axis declarations: Adapter.checkAxes visits all declarations, rejects
++   duplicate resolved UID even if equal sizes, unpinned and iter axes.
++   Finite pinned nat AND real axes are accepted for bare free/read slots.
++   sourceAxis binds all referenced/declaration slots by already resolved UID
++   to the full pinned domain, without requiring nat-kind use metadata.
++   Parsed raw programs retain real-kind placeholders; assignUIDs+resolveDecls
++   is still the sole raw resolution seam. No resolved UID or AST kind changes.
++   checkContext protects unique enumeration. Resolved input never assignUIDs.
++2. Tensor declarations: tensorDecl exhaustively handles all Decl constructors.
++   Predicate/complex are refused even unused. Real linear/typedLinear share
++   tensor/typedTensor admission, including both bias flags for ordinary reads;
++   production gatherRead reads supplied tensor values without inserting bias.
++   Untyped tensor/linear preserve f32; explicit f32/f64 preserve their metadata.
++   This rational core allows arbitrary rational values, not Float parity.
++   checkTable rejects duplicate tensor
++   names, duplicate/missing/extraneous specs, unbound declaration axes, exact
++   full logical shape disagreement. Names bind TENSORS only. Tensor := Fin
++   declaration-order entries, uid := Fin.val (proved injective); each entry
++   records its original mixed declaration ordinal. Axis identity remains UID.
++3. Binders/support: admitTerm validates reads in the source context FIRST.
++   supportPartition computes only that term's read-minus-output support via
++   source-context ordered filter, rejects unbound requested support, and builds
++   unique out++bound with an identity UID/domain embedding. No explicit-partition
++   API is the AST admission entry. disjoint/exactSupport/coverage are proofs;
++   Term.support_reads/support_bound and LocalizedRead keep linked typed reads.
++4. Output slots: only free slots accepted. Marked/iterAt/iterNext/affine refused
++   at original slot. admitOutput checks exact domains/rank, computes distinct
++   output UIDs in first-slot order, retains FULL repeated destination slots and
++   source slots, and proves order and global projection preservation.
++5. Read slots: only bare .axis accepted. Const/scale/shift/affine refused at
++   original slot. admitRead wraps T1 resolveRef and constructs T1 Slots with
++   a proved UID-list link; exact domains, total rank and original slot are
++   reported. Repeated slots are legal. strictPolicy, not Gather, supplies reads.
++   LocalizedRead.projection/Term.read_projection preserve global UID projection.
++6. Roles: explicit TensorSpec role is authoritative, never env/extNames.
++   Binding a declared defined/output tensor as input fails role .input actual.
++   Writing an input fails role .defined .input. Defined/output writes allowed;
++   multiple definitions stay distinct and producerless defined tensors are not
++   silently promoted to inputs. No acyclicity/progress promise at this stage.
++7. Inputs: checkInputs rejects duplicate/unknown/noninput binding identities.
++   inputBuffers traverses EVERY declared tensor in stable declaration order.
++   CheckedInputs.buffers is TOTAL on declared input tensors, including zero
++   domains, so T3 need not run another presence checker.
++8. Shape/length: TensorSpec.shape and InputBinding.shape are full logical
++   ordered extent lists, not physical/overlapping/prefix domains. Exact input
++   shape is checked BEFORE exact canonicalLayout.count length. InputBuffer
++   stores length proof and exposes canonical-coordinate rational value access.
++   Dtype metadata is preserved; this is rational semantics, not float parity.
++9. AST forms: admitStatement exhaustively refuses scatter/recurMorphism,
++   non-sum aggregation and nonidentity nonlinearities. outputIndices,
++   readIndices and astRead exhaustively refuse marked/scan/affine, Iverson and
++   unary factors. No constructor is dropped. Empty sums/products are legal;
++   admitPure classifies, rather than rejecting legal broadcasting/empty terms.
++10. Provenance: adaptSource attaches statement zipIdx BEFORE grouping (none in
++    T2); term/factor/slot ordinals are attached inside original statements.
++    Known tensor references record original declaration ordinal. Unsupported
++    tensor-less forms carry declaration none, never an unrelated destination.
++    Raw resolver duplicate/complex failures recover original declaration index
++    from the unchanged raw order; other resolution failures remain program-level
++    with the actual typed CompileError. No AST spans exist or are fabricated.
++
++Validation order (documented first-error contract):
++Resolved: axis declarations in declaration order; spec duplicate identities;
++tensor declarations/signatures in declaration order; extraneous specs;
++binding duplicate/identity/role checks in supplied binding order; every input
++in tensor declaration order (shape before length); statements in original
++order (constructor, aggregation, nonlinearity, target binding/role, output
++syntax/UID, output domains/rank, terms/factors/read syntax/UID,
++then read domains/rank and per-term support).
++For valid bare slots, common slot domains are checked left to right BEFORE
++total rank at the first unmatched slot. Syntax/binding preflight precedes
++this domain pass. Domain expected = declared tensor slot extent; actual =
++resolved slot UID extent. Rank expected/actual = FULL tensor/slot list lengths.
++Raw: production assignUIDs+resolveDecls precede all these checks, intentionally
++retaining production resolution error precedence and typed errors.
++
++Observed smoke pins:
++Read A declared [2,3], slots [k(domain3)] violates domain AND rank:
++  .read/.domain uid3 expected2 actual3, original stmt0/term0/factor0/slot0,
++  tensor original declaration3; rank is not reported first.
++Read A with [i(domain2)] reports total rank2/1 at original slot1.
++Input A shape [3,2] with zero values violates shape AND length:
++  .inputs/.shape [2,3] [3,2], original declaration3.
++Missing unused Empty input (domain0, buffer[]) is missingInput6, not accepted
++  merely because no address exists.
++
++Audit status: no unresolved silently-ignored cell in public AST admission.
++Not claimed: A1-A18 fixture bundles/mutations, general lowering/schedules,
++independent oracle or production numerical equivalence (separate dispatches).
++
++Direct acceptance correction (two HIGH T2 review findings):
++Clause 1 corrected the unsupported nat-only declaration/use-site constraints.
++Clause 2 corrected blanket real linear/typedLinear declaration refusal; both
++bias flags have the same supplied-value plain-read semantics. Complex linear
++declarations still fail explicitly. Validation-order prose no longer promises
++a bare-slot kind guard. Other clauses, full-domain equality, slot ordering,
++roles, presence and provenance are unchanged.
++SourceAdmissionAcceptanceTest exports FinitePinnedRealCopy, ParsedRawNatCopy,
++RealLinearSumProduct. All three observed RED before production changes, then
++GREEN; exact dtype/original declaration/input values/read origins and nearest
++forbidden controls are #guard assertions. Registered acceptance and existing
++SourceAdmissionTest targets passed together (8519 jobs, exit 0).
++Three separate HAND CHECK proposals are in source-t2-acceptance-hand-candidates.json.
++They have not been executed or added to the post-manifest. This is NOT a clean
++T2 review or whole-slice readiness claim; controller follow-up remains required.
+diff --git a/papers/semantics/source_correspondence_mutations_post.json b/papers/semantics/source_correspondence_mutations_post.json
+index 52faf033..4f77a3d9 100644
+--- a/papers/semantics/source_correspondence_mutations_post.json
++++ b/papers/semantics/source_correspondence_mutations_post.json
+@@ -52,5 +52,120 @@
+     "expect": [
+       "\u22a2 c.domain u = n"
+     ]
++  },
++  {
++    "label": "T2 prefix-domain acceptance (A1)",
++    "task": "T2",
++    "file": "LeanNCD/Semantics/Source/Context.lean",
++    "old": "if h : a.extent = n then .ok (h \u25b8 Ref.here)",
++    "new": "if h : n \u2264 a.extent then .ok Ref.here",
++    "targets": [
++      "+Semantics.SourceAdmissionDomainsTest"
++    ],
++    "expect": [
++      "Ref.here",
++      "Ref (a :: sh) n",
++      "Except.ok Ref.here"
++    ]
++  },
++  {
++    "label": "T2 output slot reorder (A3/A4)",
++    "task": "T2",
++    "file": "LeanNCD/Semantics/Source/Admission.lean",
++    "old": "slots.zipIdx.mapM fun (slot, i) => do",
++    "new": "slots.zipIdx.reverse.mapM fun (slot, i) => do",
++    "targets": [
++      "+Semantics.SourceAdmissionDomainsTest",
++      "+Semantics.SourceAdmissionSupportTest"
++    ],
++    "expect": [
++      "match a3 with",
++      "did not evaluate to `true`"
++    ]
++  },
++  {
++    "label": "T2 support over-contraction (A5/B4)",
++    "task": "T2",
++    "file": "LeanNCD/Semantics/Source/Admission.lean",
++    "old": "  let bound := source.axes.filter\n    (fun a => a.uid \u2208 support \u2227 a.uid \u2209 out.axes.map Axis.uid)",
++    "new": "  let bound := source.axes.filter\n    (fun a => a.uid \u2209 out.axes.map Axis.uid)",
++    "targets": [
++      "+Semantics.SourceAdmissionSupportTest"
++    ],
++    "expect": [
++      "bound = List.filter (fun a => decide (a.uid \u2208 support \u2227 a.uid \u2209 List.map Axis.uid out.axes)) source.axes"
++    ]
++  },
++  {
++    "label": "T2 duplicate resolved axis declaration shadow (A9; A9/A10 duplicate-declaration family)",
++    "task": "T2",
++    "file": "LeanNCD/Semantics/Source/Adapter.lean",
++    "old": "      if a.uid \u2208 axes.map Axis.uid then\n        throw (sourceError .declarations origin (.duplicateAxis a.uid))",
++    "new": "      axes := axes.filter (fun prior => prior.uid != a.uid)",
++    "targets": [
++      "+Semantics.SourceAdmissionDeclarationsTest"
++    ],
++    "expect": [
++      "  A9\n",
++      "unexpected duplicate axis admission"
++    ]
++  },
++  {
++    "label": "T2 A11 (write role guard removed; writable contract protected)",
++    "task": "T2",
++    "file": "LeanNCD/Semantics/Source/Admission.lean",
++    "old": "    if hw : (source.table.entry dst).role \u2260 .input then",
++    "new": "    if hw : True then",
++    "targets": [
++      "+Semantics.SourceAdmissionRolesTest"
++    ],
++    "expect": [
++      "(source.table.entry dst).role \u2260 TensorRole.input"
++    ]
++  },
++  {
++    "label": "T2 A12 (absent domain inferred from input shape)",
++    "task": "T2",
++    "file": "LeanNCD/Semantics/Source/Adapter.lean",
++    "old": "  let context \u2190 checkAxes snapshot.resolved.decls",
++    "new": "  let inferredDecls := snapshot.resolved.decls.map fun d =>\n    match d with\n    | .axis a none =>\n      let size := snapshot.resolved.decls.zipIdx.findSome? fun (decl, ordinal) =>\n        match decl, snapshot.inputs.find? (fun b => b.declaration == ordinal) with\n        | .tensor _ axes, some binding\n        | .typedTensor _ _ axes, some binding =>\n          (axes.zipIdx.find? (fun (axis, _) => axis.uid == a.uid)).bind fun (_, slot) =>\n            binding.shape[slot]?\n        | _, _ => none\n      .axis a size\n    | _ => d\n  let context \u2190 checkAxes inferredDecls",
++    "targets": [
++      "+Semantics.SourceAdmissionRolesTest"
++    ],
++    "expect": [
++      "  a12\n",
++      "did not evaluate to `true`"
++    ]
++  },
++  {
++    "label": "T2 inputs: fabricate missing declared input bindings (A13/A14)",
++    "task": "T2",
++    "file": "LeanNCD/Semantics/Source/Adapter.lean",
++    "old": "    | none => throw (sourceError .inputs origin (.missingInput entry.declaration))",
++    "new": "    | none => pure (\u27e8entry.declaration, entry.axes.map Axis.extent,\n        List.replicate (canonicalLayout entry.axes).count 0\u27e9 : InputBinding)",
++    "targets": [
++      "+Semantics.SourceAdmissionInputsTest"
++    ],
++    "expect": [
++      "match a13 with",
++      "match a14 with",
++      "did not evaluate to `true`"
++    ]
++  },
++  {
++    "label": "T2 inputs: skip shape rejection and repair short payloads (A15/A16)",
++    "task": "T2",
++    "file": "LeanNCD/Semantics/Source/Adapter.lean",
++    "old": "  let expected := entry.axes.map Axis.extent\n  if expected != binding.shape then\n    throw (sourceError .inputs origin (.shape expected binding.shape))\n  if hl : binding.values.length = (canonicalLayout entry.axes).count then\n    pure \u27e8binding.values, hl\u27e9\n  else\n    throw (sourceError .inputs origin\n      (.length (canonicalLayout entry.axes).count binding.values.length))",
++    "new": "  if hl : binding.values.length = (canonicalLayout entry.axes).count then\n    pure \u27e8binding.values, hl\u27e9\n  else\n    pure \u27e8List.replicate (canonicalLayout entry.axes).count 0, by simp\u27e9",
++    "targets": [
++      "+Semantics.SourceAdmissionInputsTest",
++      "+Semantics.SourceAdmissionRefusalsTest"
++    ],
++    "expect": [
++      "match a15 with",
++      "match A16 with",
++      "did not evaluate to `true`"
++    ]
+   }
+ ]
+diff --git a/papers/semantics/source_correspondence_plan.md b/papers/semantics/source_correspondence_plan.md
+index 82228bde..71f5c01e 100644
+--- a/papers/semantics/source_correspondence_plan.md
++++ b/papers/semantics/source_correspondence_plan.md
+@@ -8,18 +8,24 @@ Production stays unchanged. This is one plan for the first complete slice:
+ UID-based source elaboration, pure-einsum correspondence, source-linked
+ diagnostics, and differential tests for bounded scalar read sum-products.
+ 
+-**Do not dispatch implementation from this document yet.** These required seams
+-have not been prototyped:
++**Do not dispatch implementation from this document yet.** Readiness rehearsal
++is authorized and in progress: T1 and T2 fixtures, their twelve planned
++implementation kills, and per-task reviews pass. T2 also has three verified
++Direct acceptance regression families and hand checks. Full readiness evidence
++for the following seams remains incomplete:
+ 
+-- True UID-keyed dependent valuations, their coordinate bijection, and
+-  capture-avoiding generated-binder renaming/index substitution.
+-- Automatically computed term support partitions and a resolved production-AST
+-  adapter with explicit tensor roles, multiple statements, and stable provenance.
+ - General multi-tensor elaboration, tag-preserving statement permutation, and
+   complete computational source-generated schedules.
++- Generalized actual normalized-body/global-fiber correspondence and its
++  connection to source-generated complete executions.
+ - Public diagnostic/differential APIs, independent input packing/oracle tests,
+   the exact production numerical profile, and implementation-mutation kills.
+ 
++T1/T2's completed receipts and T3's production phase are tracked in the
++[record](source_correspondence_record.md). The fresh
++[T1 rehearsal patch](source_correspondence_readiness_patches/0001-uid-binding.patch)
++is a reviewed checkpoint, not a complete execution-ready patch series.
++
+ Readiness completion must rehearse these seams on the real module split, emit
+ new per-task patches, observe every new fixture family, mutate implementations,
+ and pass the two review lenses below. The retained patches are seed evidence,
+@@ -136,6 +142,11 @@ Repeated output UIDs share a value but retain repeated destination slots.
+ Keep tensor role, logical domain, input shape, and buffer-length validation
+ separate; all declared inputs must be present, including unused/empty tensors.
+ No production zero-padding is imported into semantic read admission.
++Finite pinned declarations admit both nat and real axis metadata; bare use-site
++kinds are not identity/domain checks, since the parser uses real placeholders.
++Compatible tensor/linear declarations retain their real dtype and original
++declaration identity, including both linear bias flags. Unsupported expression
++forms and complex/predicate declarations remain explicit refusals.
+ 
+ T2 must deliver a case-by-class audit: required / forbidden / silently ignored
+ for axis/tensor/binder declarations, output slots, read slots, support, roles,
+@@ -289,9 +300,11 @@ independence theorem. Arbitrary rational core runs remain available.
+ ## 5. Task graph, files, and bounded dispatches
+ 
+ All paths in this section are repository-relative. Existing donor/core/production
+-paths are checked in the planning tree. The entire `Semantics/Source/` tree and
+-`SourceCorrespondenceTest.lean` are **future outputs**, present only in the seed
+-patches. Additional proposed files below do not yet exist.
++paths are checked in the planning tree. `Source.Context`, `Source.Adapter`,
++`Source.Admission`, the generic `Source.Lowering` donor, and the binding fixtures
++now exist in the rehearsal tree. Generalized Program/schedule/correspondence,
++diagnostic/differential modules and the remaining fixture families are still
++**future outputs**, not completed by the seed patches.
+ Production DSL/Eval files are read-only donors, not mutation targets.
+ 
+ | Task | Prerequisites | Three implementation work items | Planned fixtures / implementation cycles | Risk / split |
+@@ -303,8 +316,10 @@ Production DSL/Eval files are read-only donors, not mutation targets.
+ | T5 diagnostics/harness | T2, T3, T4 | Typed observations; source renderer; four-leg/profile comparison | 15 / 8 | High; API then fixture bundles |
+ | T6 corpus/review/docs | T1, T2, T3, T4, T5 | Deterministic corpus; implementation cycles; integrated review/docs | 18 / 9 | High; corpus bundles then integration |
+ 
+-Totals: **79 named fixture entrypoints and 39 implementation-mutation cycles**,
+-all planned/unobserved. F16 additionally expands exactly 18 generated cases.
++Planned totals: **79 named fixture entrypoints and 39 implementation-mutation
++cycles**. T1/T2's 26 planned entrypoints and twelve cycles have observed receipts
++in the record, along with three supplemental Direct acceptance families/hand
++checks. The remaining work is not counted as verified. F16 additionally expands exactly 18 generated cases.
+ These counts do not include the six completed fixture-input contrasts.
+ No fixture dispatch takes more than three numbered fixture IDs/families.
+ Split larger tasks into successive bundles of at most three; a reviewer may
+@@ -318,14 +333,18 @@ reads over 20k characters. Seed symbols refer to compiled patches, not current
+ planning-tree definitions. Proposed identifiers are specifications, not verified
+ exports. Final readiness briefs must replace proposed locators with observed ones.
+ 
+-- **T1:** seed `Context`, `Ref.get`, `resolveRef`, `Slots.project`, `NamedVal`,
+-  `namedEquiv`, `appendEquiv` @ `leanncd/LeanNCD/Semantics/Source/Context.lean`;
+-  proposed `UIDVal`, `uidCoordEquiv`, `renameBinders`, `indexPullback` @ same file.
+-  Tests: future `leanncd/test/Semantics/SourceBindingTest.lean`.
++- **T1:** observed `Context`, `Ref.get`, `resolveRef`, `Slots.project`,
++  `PositionalVal`, `positionalCoordEquiv`, `appendEquiv`, `UIDVal`,
++  `uidCoordEquiv`, `renameBinders`, `renameBindersRequested`,
++  `requestedBinderTransport`, `indexPullback` @
++  `leanncd/LeanNCD/Semantics/Source/Context.lean`.
++  Tests: `leanncd/test/Semantics/SourceBindingTest.lean`.
+ - **T2:** seed `admitRead`, `admitTerm`, `admitOutput`, `admitPure` @
+   `leanncd/LeanNCD/Semantics/Source/Admission.lean`;
+-  proposed `resolveSource`, `SourceOrigin`, `supportPartition` @ future
++  observed `resolveSource`, `SourceOrigin`, `adaptSource` @
+   `leanncd/LeanNCD/Semantics/Source/Adapter.lean`;
++  `supportPartition`, `admitSource`, `admitRawSource` @
++  `leanncd/LeanNCD/Semantics/Source/Admission.lean`;
+   `assignUIDs` / resolution seam @ `leanncd/LeanNCD/DSL/Pipeline/Structural.lean`;
+   `Factor` @ `leanncd/LeanNCD/DSL/Ast.lean`.
+   Tests: future `leanncd/test/Semantics/SourceAdmissionTest.lean`.
+diff --git a/papers/semantics/source_correspondence_record.md b/papers/semantics/source_correspondence_record.md
+index 931ed42b..4ce4e4fc 100644
+--- a/papers/semantics/source_correspondence_record.md
++++ b/papers/semantics/source_correspondence_record.md
+@@ -274,8 +274,8 @@ registered fixture bundles. Representative observed witnesses:
+ | V7 | Pullback `[1, 0]` to `[0, 1]`; matrix `11` to `2`; repeated lookups `[0, 0]` |
+ | V8 | Empty/zero context enumeration `(1, 0, [[]], [])`; inverse/uniqueness/nonexistence proofs elaborate |
+ 
+-The [post manifest](source_correspondence_mutations_post.json) currently contains
+-**four of the planned 39** implementation cycles. The controller ran all four
++At the T1 checkpoint the [post manifest](source_correspondence_mutations_post.json)
++contained **four of the planned 39** implementation cycles. The controller ran all four
+ with `expect` strings copied from retained complete mutated-build diagnostics.
+ Every expected payload was seen, each source was restored byte-identically, and
+ every restored build passed. The named protected obligations are
+@@ -290,3 +290,56 @@ The T1 read-only readiness review found no significant issues and confirmed the
+ aggregate build and kill classifications. This is a per-task checkpoint, not
+ either final whole-slice review. T2 production rehearsal has started; T2-T6
+ fixtures, the remaining 35 cycles, and the complete readiness gate are pending.
++
++### T2 validation and acceptance correction
++
++The T2 adapter, admission module, and generic read/contract donor compiled.
++The original **18** admission entrypoints passed the controller's aggregate
++build: **8,516 jobs**. No production DSL/Eval module changed.
++Representative discriminating observations:
++
++| Fixture | Actual observation |
++|---|---|
++| A1/A2 | Prefix-sharing domain rejects `domain 3 2 3` at original statement 2/term 1/factor 1/slot 0; exact-domain neighbor admits |
++| A3 | Simultaneous output-domain/rank violation reports `domain 7 3 2` at original statement 2/slot 1 before rank |
++| A4 | Destination `[3, 7, 3]` projects to `[2, 1, 2]`; operand `[7, 3]` projects to `[1, 2]` |
++| A5/A6 | Classification is per term; missing-output term stays broadcast, and bias contraction remains empty |
++| A7/A8 | Direct empty product/sum retain exact rational one/zero identities |
++| A9/A10 | Duplicate axis/tensor rejects at original declaration 8; distinct resolved UID and declaration neighbors admit |
++| A11/A12 | Valid input binding does not mask original statement 1 write-role refusal; unpinned domain is not inferred |
++| A13/A14 | Missing unused nonempty input 8 and empty input 6 both reject; restored bindings expose complete typed buffers |
++| A15/A16 | Exact length rejects `6/5`; simultaneous shape/length violation reports `[2, 3]/[3, 2]` before length |
++| A17/A18 | Iverson/unary refusals retain original statement 3/term 1/factor 2, without fabricated declaration/slot |
++
++All **eight** T2 implementation cycles were observed and rerun by the controller
++through the post manifest with exact expected diagnostics, byte-identical
++restoration, and green restored builds. Three are proof-protected: full-domain
++`Ref` construction, `SupportPartition`'s exact bound witness, and the writable
++target witness. Five fail executable admission fixtures: reordered slots,
++duplicate-axis shadowing, unpinned-size inference, fabricated missing input
++bindings, and shape/length bypass. The post manifest now has **12 of 39**
++observed cycles. An initial invalid inequality-as-equality transport proposal
++was corrected before execution; no syntax failure was counted as a kill.
++
++The T2 review found two HIGH, goal-required acceptance defects: nat-only guards
++rejected finite pinned real axes and actual parser use-site placeholders, and
++blanket linear-declaration refusal rejected ordinary finite read sum-products.
++Both were fixed on the **Direct correction path**, not by narrowing the plan.
++Three supplemental regression families went from semantic RED to GREEN:
++`FinitePinnedRealCopy`, `ParsedRawNatCopy`, and `RealLinearSumProduct` in
++`SourceAdmissionAcceptanceTest`. The parsed fixture uses actual `tlprog!`
++syntax; it is not a hand-built or normalized substitute. Real tensor/linear
++variants retain f32/f64 metadata and original declaration identity, with both
++bias flags and nearest forbidden controls. The corrected aggregate passed
++**8,519 jobs**. These three supplemental families are additional to the
++original 79 planned entrypoints, not retroactively relabeled matrix receipts.
++
++The [admission audit](source_correspondence_artifacts/admission_audit.txt)
++was corrected for finite nat/real declarations, UID-based
++bare use sites, and compatible real linear declarations. Three supplemental
++hand mutation checks observed the named acceptance guards fail when each bug
++was restored, then restored aggregate builds passed. They do not add entries
++to the 39-cycle post manifest. The targeted re-review confirms both HIGH
++findings fixed with no new significant tightly coupled issue or narrowing.
++T2's gate is cleared and T3 production lowering has started. The final whole
++post-manifest rerun on the integrated corrected tree is still required.

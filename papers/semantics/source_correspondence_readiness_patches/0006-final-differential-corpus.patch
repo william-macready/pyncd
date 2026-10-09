@@ -1,0 +1,2625 @@
+diff --git a/leanncd/LeanNCD/Semantics/AGENTS.md b/leanncd/LeanNCD/Semantics/AGENTS.md
+index 7b3ef3f8329cf46b9bcec9c3350325e1b5c1925a..1fe65a59efb9554996d73fb3db21109315d7178f 100644
+--- a/leanncd/LeanNCD/Semantics/AGENTS.md
++++ b/leanncd/LeanNCD/Semantics/AGENTS.md
+@@ -19,8 +19,9 @@ initialization, including empty inputs, and returns the first offending tensor.
+ blocking, but not ready undefinedness. Outcomes retain endpoints, legal typed
+ event traces, and unavailable-read diagnostics. Model/uniqueness/denotation
+ theorems concern the whole store, not only outputs. `RationalReference` offers
+-exact rational scalar operations and the closed reciprocal/square registry;
+-source elaboration, rank synthesis, and native floats are not provided.
++exact rational scalar operations and the closed reciprocal/square registry.
++The source layer below adds bounded read-only elaboration; rank synthesis and
++native floats in the semantic core are not provided.
+ 
+ The semantic validation layer `LeanNCD.Semantics` is reachable from `LeanNCD`.
+ `Types`, `Expr`, `Interpret`, `Readiness`, and `Completeness` separate typed
+@@ -133,6 +134,7 @@ remains available for standalone checks.
+ Read the [plan](../../../papers/semantics/tensor_logic_semantic_core_spike_plan.md)
+ and [results](../../../papers/semantics/tensor_logic_semantic_core_spike_record.md)
+ before extending that spike. The validation layer covers the admitted
+-array/heterogeneous expression fragment, finite additive program models, and
+-reference-machine soundness, but not pure-einsum elaboration correctness, cyclic
+-solving, general unique-model existence, or complete categorical/backend interpretations.
++array/heterogeneous expression fragment, finite additive program models,
++reference-machine soundness, and bounded read-only pure-einsum correspondence.
++General source-expression elaboration, cyclic solving, general unique-model
++existence, and complete categorical/backend interpretations remain outside it.
+diff --git a/leanncd/lakefile.toml b/leanncd/lakefile.toml
+index c2ca1a1ae46426f59294573f6beab23593a48e4d..d7ed757737300826fcd78d672c98166d0b9f6a35 100644
+--- a/leanncd/lakefile.toml
++++ b/leanncd/lakefile.toml
+@@ -99,7 +99,11 @@ globs = ["Base.NumericTest", "Base.StTest", "Base.BrTest", "Base.BrWiringTest",
+          "Semantics.SourceDiagnosticFixtures", "Semantics.SourceDiagnosticPayloadTest",
+          "Semantics.SourceDiagnosticExecutionTest", "Semantics.SourceDiagnosticComparisonTest",
+          "Semantics.SourceDiagnosticAdmissionTest", "Semantics.SourceDiagnosticNativeTest",
+-         "Semantics.SourceDiagnosticTest"]
++         "Semantics.SourceDiagnosticTest", "Semantics.SourceDifferentialFixtures",
++         "Semantics.SourceDifferentialAlgebraTest", "Semantics.SourceDifferentialGeometryTest",
++         "Semantics.SourceDifferentialIdentityTest", "Semantics.SourceDifferentialNumericalTest",
++         "Semantics.SourceDifferentialPolicyTest", "Semantics.SourceDifferentialCorpusTest",
++         "Semantics.SourceDifferentialTest"]
+ 
+ # Non-default experimental JAX-bridge codegen library. Deliberately absent from
+ # `defaultTargets`: it only builds when explicitly requested (`lake build JaxExperiment`, as the
+diff --git a/leanncd/test/Semantics/SourceAdmissionDeclarationsTest.lean b/leanncd/test/Semantics/SourceAdmissionDeclarationsTest.lean
+index 71ac7564608da2baea068a148c0f10b5249378c6..df354550ba2fafd39fcbcb20906cd51be28273f5 100644
+--- a/leanncd/test/Semantics/SourceAdmissionDeclarationsTest.lean
++++ b/leanncd/test/Semantics/SourceAdmissionDeclarationsTest.lean
+@@ -1,4 +1,5 @@
+ import Semantics.SourceAdmissionFixtures
++import LeanNCD.Semantics.RationalReference
+ 
+ open LeanNCD LeanNCD.Semantics LeanNCD.Semantics.Source
+ open SourceAdmissionFixtures
+diff --git a/leanncd/test/Semantics/SourceAdmissionFixtures.lean b/leanncd/test/Semantics/SourceAdmissionFixtures.lean
+index 2290ba3cd6a3eb45c14fb4b82f0cfe3982c564fc..3f4064033700bd9beb41419d1040e416e5d1d0e7 100644
+--- a/leanncd/test/Semantics/SourceAdmissionFixtures.lean
++++ b/leanncd/test/Semantics/SourceAdmissionFixtures.lean
+@@ -1,4 +1,4 @@
+-import LeanNCD.Semantics.Source
++import LeanNCD.Semantics.Source.Admission
+ 
+ open LeanNCD LeanNCD.Semantics LeanNCD.Semantics.Source
+ 
+diff --git a/leanncd/test/Semantics/SourceDifferentialAlgebraTest.lean b/leanncd/test/Semantics/SourceDifferentialAlgebraTest.lean
+new file mode 100644
+index 0000000000000000000000000000000000000000..e2dcb987cbd1a74a7f16ae4b4873c1cf4a14ede0
+--- /dev/null
++++ b/leanncd/test/Semantics/SourceDifferentialAlgebraTest.lean
+@@ -0,0 +1,260 @@
++import Semantics.SourceDifferentialFixtures
++
++open LeanNCD LeanNCD.Semantics LeanNCD.Semantics.Source
++open LeanNCD.Semantics.Source.Debug
++open LeanNCD.Semantics.Source.NativeLegs
++open LeanNCD.Semantics.Source.NumericalProfile
++open LeanNCD.Semantics.Source.Differential
++open SourceAdmissionFixtures SourceDifferentialFixtures
++
++namespace SourceDifferentialAlgebraTest
++
++private def termOrigin (term : Nat) : SourceOrigin :=
++  { side := .read, statement := some 0, term := some term }
++
++private def outputOrigin (declaration : Nat) : SourceOrigin :=
++  { side := .output, declaration := some declaration, statement := some 0 }
++
++private def fiberOccurrence (term : Nat) (assignment : List (UID × Nat))
++    (output : List Nat) (reads : List (Nat × List Nat × ℚ)) (value : ℚ) :
++    Oracle.Occurrence :=
++  ⟨termOrigin term, assignment, output, reads.zipIdx.map (fun (read, factor) =>
++    ⟨{ (termOrigin term) with declaration := some read.1, factor := some factor },
++      read.1, read.2.1, read.2.2⟩), value⟩
++
++private def observedTerm (term : Nat) (bound : Shape)
++    (reads : List (Nat × List UID)) : TermObservation :=
++  ⟨termOrigin term, reads.zipIdx.map (fun (read, factor) =>
++    let origin := { (termOrigin term) with declaration := some read.1, factor := some factor }
++    (origin, read.2.zipIdx.map fun (uid, slot) =>
++      ({ origin with slot := some slot }, uid))),
++    bound, .unobserved .noTermEvaluationHook, .unobserved .noTermEvaluationHook⟩
++
++private def nativeBuffer (observation : NativeObservation) (metadata : TensorOrigin)
++    (bits : Array UInt64) : Bool :=
++  match observation.outputs, observation.report.env[metadata.name]? with
++  | .ok [binding], some raw =>
++    binding.metadata == metadata && binding.shape == metadata.shape &&
++      binding.bits.size == bits.size && binding.bits == bits &&
++      raw.shape == metadata.shape && raw.data.size == bits.size &&
++      raw.data.map Float.toBits == bits &&
++      observation.backendInternals == .unobserved .noBackendInternalHook &&
++      ((renderNativeObservation observation).splitOn
++        s!"warnings={observation.report.warnings.map toString}").length == 2
++  | _, _ => false
++
++private def originalSnapshot (original retained : SourceSnapshot) : Bool :=
++  retained.resolved.decls == original.resolved.decls &&
++    retained.resolved.stmts == original.resolved.stmts &&
++    retained.resolved.extNames == original.resolved.extNames &&
++    retained.resolved.env.toList.isEmpty && original.resolved.env.toList.isEmpty &&
++    retained.specs.map (fun s => (s.declaration, s.role, s.shape)) ==
++      original.specs.map (fun s => (s.declaration, s.role, s.shape)) &&
++    retained.inputs.map (fun b => (b.declaration, b.shape, b.values)) ==
++      original.inputs.map (fun b => (b.declaration, b.shape, b.values))
++
++private def fourLegs (original : SourceSnapshot) (run : ComparisonRun)
++    (uid declaration : Nat) (axes : Shape) (values : List ℚ) (bits : Array UInt64)
++    (assignments : List (List (UID × Nat))) (terms : List TermObservation)
++    (oracleRows : List Oracle.Contribution) (used : List Nat) : Bool :=
++  let shape := axes.map Axis.extent
++  let coordinates := Oracle.coordinates shape
++  if coordinates.length != values.length || assignments.length != values.length ||
++      bits.size != values.length then false
++  else
++    let expected : Debug.TensorObservation :=
++      ⟨uid, declaration, some "Y", .output, axes, shape, values.map some⟩
++    let metadata : TensorOrigin :=
++      ⟨uid, declaration, "Y", { side := .declaration, declaration := some declaration },
++        axes, shape⟩
++    let contributions : List ContributionObservation :=
++      ((coordinates.zip assignments).zip values).map fun ((coordinate, assignment), value) =>
++        ⟨⟨0, assignment⟩, ⟨uid, declaration, coordinate⟩, some value⟩
++    let published := (coordinates.zip values).map fun (coordinate, value) =>
++      ((⟨uid, declaration, coordinate⟩ : AddressObservation), value)
++    match run.classification, run.reference.observe.endpoint, run.oracle,
++        run.referenceComparison, run.profile, run.native with
++    | .fourLegParity, .complete snapshot, .ok oracle, some comparison,
++        .ok profile, .ok native =>
++      let fiberValues := oracleRows.flatMap fun row => row.terms.map fun term =>
++        (term.origin, row.coordinate, term.value)
++      let productValues := oracleRows.flatMap fun row => row.terms.flatMap fun term =>
++        term.occurrences.map fun occurrence =>
++          (term.origin, row.coordinate, occurrence.assignment, occurrence.value)
++      let sourceTerms := run.reference.observe.events.filterMap fun event => match event with
++        | .contribution occurrence _ => some occurrence.terms
++        | _ => none
++      let publications := run.reference.observe.events.filterMap fun event => match event with
++        | .publication address value => some (address, value)
++        | _ => none
++      let agreements := match comparison.body, comparison.collection, comparison.published,
++          run.legacyComparison, run.checkedComparison with
++        | .ok .agreement, .ok .agreement, .ok .agreement,
++            .compared (.ok .agreement), .compared (.ok .agreement) => true
++        | _, _, _, _, _ => false
++      let normalized := match comparison.rows, comparison.tensors with
++        | .ok rows, .ok tensors =>
++          rows.map (·.fullCell) == oracleRows &&
++            oracleContributions rows == contributions &&
++            definedTensors tensors == [expected]
++        | _, _ => false
++      let profileMetadata :=
++        profile.oracle == oracle && profile.rows.map (·.fullCell) == oracleRows &&
++        oracleContributions profile.rows == contributions && profile.actual.isSome &&
++        profile.shared == ⟨used, [(declaration, outputOrigin declaration)]⟩ &&
++        (profile.values.filter (fun v => v.kind == .fiber)).map
++          (fun v => (v.site.origin, v.site.coordinate, v.exact)) == fiberValues &&
++        (profile.values.filter (fun v => v.kind == .product)).map
++          (fun v => (v.site.origin, v.site.coordinate, v.site.assignment, v.exact)) ==
++            productValues &&
++        (profile.values.filter (fun v =>
++          v.kind == .tensorCell && v.site.origin.declaration == some declaration)).map
++          (fun v => (v.site.coordinate, v.exact, v.bits)) ==
++            ((coordinates.zip values).zip bits.toList).map
++              (fun ((coordinate, value), encoding) => (coordinate, value, encoding))
++      let nativeMetadata := match native.identity, native.shared, native.inputs,
++          native.legacy, native.checked with
++        | .ok _, .ok shared, .ok _, .observed legacy, .observed checked mappings =>
++          shared == profile.shared &&
++            originalSnapshot original native.source.snapshot &&
++            native.source.program.decls == original.resolved.decls &&
++            native.source.program.stmts == original.resolved.stmts &&
++            mappings == [⟨"Y", [outputOrigin declaration], some 0⟩] &&
++            nativeBuffer legacy metadata bits && nativeBuffer checked metadata bits
++        | _, _, _, _, _ => false
++      agreements && normalized && profileMetadata && nativeMetadata &&
++        run.fixtureDependencyOrder == some [declaration] &&
++        run.reference.requestedFuel.isNone &&
++        run.reference.source.admitted.source.statements ==
++          original.resolved.stmts.zipIdx.map (fun (statement, index) => (index, statement)) &&
++        definedTensors snapshot.tensors == [expected] &&
++        snapshot.accumulators == published && publications == published &&
++        snapshot.pending.isEmpty && snapshot.unpublished.isEmpty &&
++        canonicalContributions run.reference.observe.events == contributions &&
++        sourceTerms == values.map (fun _ => terms) &&
++        oracle.tensors.filter (fun t => t.role != .input) ==
++          [⟨declaration, "Y", .output, shape, values⟩] &&
++        oracle.contributions == oracleRows &&
++        run.localization.body == .observedAgreement &&
++        run.localization.collection == .observedAgreement &&
++        run.localization.publication == .observedAgreement &&
++        nativeLocalization ==
++          ⟨.unobserved .noBackendInternalHook, .unobserved .noBackendInternalHook,
++            .unobserved .noBackendInternalHook, .unobserved .noBackendInternalHook,
++            .unobserved .noBackendInternalHook⟩
++    | _, _, _, _, _, _ => false
++
++private def matmulRows : List Oracle.Contribution :=
++  ([(0, 0, [1, 2, 3], [1, 0, 1], 4),
++    (0, 1, [1, 2, 3], [0, 1, 1], 5),
++    (1, 0, [4, 5, 6], [1, 0, 1], 10),
++    (1, 1, [4, 5, 6], [0, 1, 1], 11)] :
++      List (Nat × Nat × List ℚ × List ℚ × ℚ)).map
++    fun (row, column, weights, inputs, total) =>
++      let coordinate := [row, column]
++      let occurrences := ((weights.zip inputs).zipIdx).map fun ((w, x), contracted) =>
++        fiberOccurrence 0 [(7, row), (19, column), (3, contracted)]
++          coordinate [(3, [row, contracted], w), (4, [contracted, column], x)] (w * x)
++      ⟨outputOrigin 5, coordinate, [⟨termOrigin 0, occurrences, total⟩], total⟩
++
++def F1 : Bool :=
++  match compareSource matmul (some [5]) with
++  | .ok run =>
++    fourLegs matmul run 2 5 [⟨7, 2⟩, ⟨19, 2⟩] [4, 5, 10, 11]
++      #[0x4010000000000000, 0x4014000000000000, 0x4024000000000000, 0x4026000000000000]
++      [[(7, 0), (19, 0)], [(7, 0), (19, 1)], [(7, 1), (19, 0)], [(7, 1), (19, 1)]]
++      [observedTerm 0 [⟨3, 3⟩] [(3, [7, 3]), (4, [3, 19])]] matmulRows [5, 3, 4]
++  | .error _ => false
++
++#guard F1
++#eval renderSourceComparison (compareSource matmul (some [5]))
++
++private def biasRows : List Oracle.Contribution :=
++  ([(0, [1, 2, 3], 7, 6, 13), (1, [4, 5, 6], 9, 15, 24)] :
++      List (Nat × List ℚ × ℚ × ℚ × ℚ)).map
++    fun (free, weights, biasValue, contraction, total) =>
++      let products := weights.zipIdx.map fun (w, contracted) =>
++        fiberOccurrence 0 [(7, free), (3, contracted)] [free]
++          [(2, [free, contracted], w), (3, [contracted], 1)] w
++      let singleton := fiberOccurrence 1 [(7, free)] [free] [(4, [free], biasValue)] biasValue
++      ⟨outputOrigin 5, [free],
++        [⟨termOrigin 0, products, contraction⟩, ⟨termOrigin 1, [singleton], biasValue⟩], total⟩
++
++def F2 : Bool :=
++  match compareSource biasSnapshot (some [5]) with
++  | .ok run =>
++    fourLegs biasSnapshot run 3 5 [⟨7, 2⟩] [13, 24]
++      #[0x402a000000000000, 0x4038000000000000] [[(7, 0)], [(7, 1)]]
++      [observedTerm 0 [⟨3, 3⟩] [(2, [7, 3]), (3, [3])],
++       observedTerm 1 [] [(4, [7])]] biasRows [5, 2, 3, 4]
++  | .error _ => false
++
++#guard F2
++#eval renderSourceComparison (compareSource biasSnapshot (some [5]))
++
++private def diagonalRows : List Oracle.Contribution :=
++  let occurrences :=
++    [fiberOccurrence 0 [(7, 0)] [] [(1, [0, 0], 2)] 2,
++     fiberOccurrence 0 [(7, 1)] [] [(1, [1, 1], 11)] 11]
++  [⟨outputOrigin 2, [], [⟨termOrigin 0, occurrences, 13⟩], 13⟩]
++
++-- This valid reference neighbor cannot be represented by the native name resolver.
++private def independentSlotNeighbor : SourceSnapshot :=
++  let other : AxisSpec := ⟨"i", 19, .nat⟩
++  ⟨⟨[.axis i (some 2), .axis other (some 2),
++      .typedTensor .f64 "A" [i, other], .typedTensor .f64 "Y" []],
++    [.assign "Y" [] (rhs [[.read "A" [.axis i, .axis other]]])], {}, ∅⟩,
++    [⟨2, .input, [2, 2]⟩, ⟨3, .output, []⟩], [⟨2, [2, 2], [2, 3, 5, 11]⟩]⟩
++
++private def independentRows : List Oracle.Contribution :=
++  let occurrences := ([(0, 0, 2), (0, 1, 3), (1, 0, 5), (1, 1, 11)] :
++      List (Nat × Nat × ℚ)).map
++    fun (left, right, value) =>
++      fiberOccurrence 0 [(7, left), (19, right)] [] [(2, [left, right], value)] value
++  [⟨outputOrigin 3, [], [⟨termOrigin 0, occurrences, 21⟩], 21⟩]
++
++private def refusedIndependentNeighbor : Bool :=
++  match compareSource independentSlotNeighbor (some [3]) with
++  | .ok run =>
++    match run.classification, run.reference.observe.endpoint, run.oracle,
++        run.referenceComparison, run.profile, run.native with
++    | .nativeUnavailable, .complete snapshot, .ok oracle, some comparison,
++        .ok profile, .ok native =>
++      let reference := match comparison.body, comparison.collection, comparison.published with
++        | .ok .agreement, .ok .agreement, .ok .agreement => true
++        | _, _, _ => false
++      let refusal := match native.identity, native.legacy, native.checked with
++        | .error (.sameNameDistinctUID first second),
++            .unavailable (.identity (.sameNameDistinctUID legacyFirst legacySecond)),
++            .unavailable (.identity (.sameNameDistinctUID checkedFirst checkedSecond)) =>
++          first == i && second == (⟨"i", 19, .nat⟩ : AxisSpec) &&
++            legacyFirst == first && legacySecond == second &&
++            checkedFirst == first && checkedSecond == second
++        | _, _, _ => false
++      reference && refusal && profile.actual.isSome && profile.oracle == oracle &&
++        profile.rows.map (·.fullCell) == independentRows &&
++        oracle.contributions == independentRows &&
++        definedTensors snapshot.tensors ==
++          [⟨1, 3, some "Y", .output, [], [], [some 21]⟩] &&
++        snapshot.accumulators == [(⟨1, 3, []⟩, 21)] &&
++        canonicalContributions run.reference.observe.events ==
++          [⟨⟨0, []⟩, ⟨1, 3, []⟩, some 21⟩] &&
++        (match run.legacyComparison, run.checkedComparison with
++        | .unavailable .legNotObserved, .unavailable .legNotObserved => true
++        | _, _ => false)
++    | _, _, _, _, _, _ => false
++  | .error _ => false
++
++def F3 : Bool :=
++  match compareSource diagonalRead (some [2]) with
++  | .ok run =>
++    fourLegs diagonalRead run 1 2 [] [13] #[0x402a000000000000] [[]]
++      [observedTerm 0 [⟨7, 2⟩] [(1, [7, 7])]] diagonalRows [2, 1] &&
++      refusedIndependentNeighbor
++  | .error _ => false
++
++#guard F3
++#eval renderSourceComparison (compareSource diagonalRead (some [2]))
++#eval renderSourceComparison (compareSource independentSlotNeighbor (some [3]))
++
++end SourceDifferentialAlgebraTest
+diff --git a/leanncd/test/Semantics/SourceDifferentialCorpusTest.lean b/leanncd/test/Semantics/SourceDifferentialCorpusTest.lean
+new file mode 100644
+index 0000000000000000000000000000000000000000..6bb0585335e2ba5dd79b19d4e1131d86f77940a5
+--- /dev/null
++++ b/leanncd/test/Semantics/SourceDifferentialCorpusTest.lean
+@@ -0,0 +1,352 @@
++import Semantics.SourceDifferentialFixtures
++
++open LeanNCD LeanNCD.Semantics LeanNCD.Semantics.Source
++open SourceAdmissionFixtures
++
++namespace SourceDifferentialCorpusTest
++
++set_option synthInstance.maxSize 512
++set_option maxRecDepth 4096
++set_option maxHeartbeats 0
++
++inductive Configuration
++  | scalar (factors : Nat)
++  | tensor (rank extent factors : Nat)
++  deriving DecidableEq, Repr
++
++def configurations : List Configuration :=
++  [1, 2].map Configuration.scalar ++
++    [1, 2].flatMap fun rank =>
++      [0, 1, 2, 3].flatMap fun extent =>
++        [1, 2].map (Configuration.tensor rank extent)
++
++private def configurationLabel : Configuration → String
++  | .scalar factors => s!"scalar-f{factors}"
++  | .tensor rank extent factors => s!"rank{rank}-extent{extent}-f{factors}"
++
++private def factorCount : Configuration → Nat
++  | .scalar factors | .tensor _ _ factors => factors
++
++private def fixtureAxes : Configuration → List AxisSpec
++  | .scalar _ => []
++  | .tensor rank _ _ => [i, SourceDifferentialFixtures.j].take rank
++
++private def fixtureShape : Configuration → List Nat
++  | .scalar _ => []
++  | .tensor rank extent _ => List.replicate rank extent
++
++def generatedSnapshot (configuration : Configuration) : SourceSnapshot :=
++  let axes := fixtureAxes configuration
++  let shape := fixtureShape configuration
++  let count := shape.foldl (· * ·) 1
++  let factors := factorCount configuration
++  let label := configurationLabel configuration
++  let name : Nat → String := fun f => s!"A{f}-{label}"
++  let output := s!"Y-{label}"
++  let extent := match configuration with
++    | .scalar _ => 0
++    | .tensor _ extent _ => extent
++  let declarations : List Decl :=
++    axes.map (fun ax => Decl.axis ax (some extent)) ++
++      (List.range factors).map (fun f => .typedTensor .f64 (name f) axes) ++
++      [.typedTensor .f64 output axes]
++  let inputs : List InputBinding := (List.range factors).map fun f =>
++    (⟨axes.length + f, shape,
++      (List.range count).map fun cell =>
++        ((f + 2 + (f + 1) * cell : Nat) : Rat)⟩ : InputBinding)
++  ⟨⟨declarations,
++    [.assign output (axes.map LHSSlot.free)
++      (rhs [(List.range factors).map fun f => .read (name f) (axes.map IdxExpr.axis)])],
++    {}, ∅⟩,
++    (List.range factors).map (fun f => ⟨axes.length + f, .input, shape⟩) ++
++      [⟨axes.length + factors, .output, shape⟩], inputs⟩
++
++-- Expected cells enumerate rank-specific coordinates, not oracle/dense packing helpers.
++private def expectedCells (configuration : Configuration) (cellValue : Nat → Nat) : List Nat :=
++  match configuration with
++  | .scalar _ => [cellValue 0]
++  | .tensor 1 extent _ => (List.range extent).map cellValue
++  | .tensor 2 extent _ =>
++    (List.range extent).flatMap fun row =>
++      (List.range extent).map fun column => cellValue (row * extent + column)
++  | .tensor _ _ _ => []
++
++private def generatedExpected (configuration : Configuration) : List Oracle.Tensor :=
++  let label := configurationLabel configuration
++  let rank := (fixtureAxes configuration).length
++  let shape := fixtureShape configuration
++  let a : List Nat := expectedCells configuration (fun p => p + 2)
++  let b : List Nat := expectedCells configuration (fun p => 2 * p + 3)
++  let output : List Nat := expectedCells configuration fun p =>
++    if factorCount configuration == 1 then p + 2
++    else 2 * p * p + 7 * p + 6
++  [⟨rank, s!"A0-{label}", .input, shape, a.map (fun n => (n : Rat))⟩] ++
++    (if factorCount configuration == 2 then
++      [⟨rank + 1, s!"A1-{label}", .input, shape, b.map (fun n => (n : Rat))⟩]
++    else []) ++
++    [⟨rank + factorCount configuration, s!"Y-{label}", .output, shape,
++      output.map (fun n => (n : Rat))⟩]
++
++structure Receipt where
++  label : String
++  snapshot : SourceSnapshot
++  dependencyOrder : List Nat
++  actual : Except Debug.ExecutionError Differential.ComparisonRun
++
++private def receipt (label : String) (snapshot : SourceSnapshot) (order : List Nat) : Receipt :=
++  ⟨label, snapshot, order, compareSource snapshot (some order)⟩
++
++def F16Receipts : List Receipt :=
++  configurations.map fun configuration =>
++    receipt (s!"F16/{configurationLabel configuration}") (generatedSnapshot configuration)
++      [(fixtureAxes configuration).length + factorCount configuration]
++
++private def referenceExact (run : Differential.ComparisonRun)
++    (expected : List Oracle.Tensor) : Bool :=
++  let actual : List Debug.TensorObservation := run.reference.observe.endpoint.snapshot.tensors
++  let metadata : List (Nat × Option String × TensorRole × List Nat × List (Option Rat)) :=
++    actual.map fun t =>
++      (t.declaration, t.name, t.role, t.shape, t.values)
++  let wanted : List (Nat × Option String × TensorRole × List Nat × List (Option Rat)) :=
++    expected.map fun t =>
++      (t.declaration, some t.name, t.role, t.shape, t.values.map some)
++  let complete := match run.reference.observe.endpoint with
++    | .complete _ => true
++    | _ => false
++  let oracle := match run.oracle with
++    | .ok result => result.tensors == expected
++    | .error _ => false
++  let compared := match run.referenceComparison with
++    | some comparison =>
++      match comparison.published, comparison.collection, comparison.body with
++      | .ok .agreement, .ok .agreement, .ok .agreement => true
++      | _, _, _ => false
++    | none => false
++  complete && decide (metadata = wanted) && oracle && compared
++
++private def smallIntegerBits (value : Rat) : Option UInt64 :=
++  if value.den != 1 || value.num < 0 || value.num > 1024 then none
++  else
++    let n := value.num.toNat
++    if n == 0 then some 0 else
++      let exponent := n.log2
++      some (UInt64.ofNat (exponent + 1023) <<< 52 |||
++        UInt64.ofNat (n - 2 ^ exponent) <<< UInt64.ofNat (52 - exponent))
++
++private def nativeExact (observation : NativeLegs.NativeObservation)
++    (expected : List Oracle.Tensor) : Bool :=
++  match observation.outputs with
++  | .error _ => false
++  | .ok outputs =>
++    let wanted : List Oracle.Tensor := expected.filter (fun t => t.role == .output)
++    outputs.length == wanted.length &&
++      (outputs.zip wanted).all fun (actual, binding) =>
++        actual.metadata.declaration == binding.declaration &&
++        actual.metadata.name == binding.name &&
++        actual.metadata.shape == binding.shape &&
++        actual.shape == binding.shape &&
++        actual.bits.size == binding.values.length &&
++        actual.bits.toList.map some == binding.values.map smallIntegerBits
++
++private def observedNativeExact (run : Differential.ComparisonRun)
++    (expected : List Oracle.Tensor) : Bool :=
++  match run.native with
++  | .error _ => false
++  | .ok native =>
++    let legacy := match native.legacy with
++      | .observed observation => nativeExact observation expected
++      | .unavailable _ | .failure _ => true
++    let checked := match native.checked with
++      | .observed observation _ => nativeExact observation expected
++      | .unavailable _ | .sourceCompilation _ | .preparation _ | .runtime _ => true
++    legacy && checked
++
++-- Rejections remain labeled typed receipts, never successful four-leg samples.
++private def parityOrExplicitRejection (run : Differential.ComparisonRun) : Bool :=
++  match run.classification with
++  | .fourLegParity => true
++  | .unsupportedNumericalProfile _ => true
++  | .nativeUnavailable =>
++    match run.native with
++    | .ok native =>
++      match native.legacy, native.checked with
++      | .unavailable _, _ | _, .unavailable _ => true
++      | _, _ => false
++    | .error _ => false
++  | .nativeFailure =>
++    match run.native with
++    | .ok native =>
++      match native.legacy, native.checked with
++      | .failure _, _ | _, .sourceCompilation _ | _, .preparation _ | _, .runtime _ => true
++      | _, _ => false
++    | .error _ => false
++  | _ => false
++
++private def exactReceipt (r : Receipt) (expected : List Oracle.Tensor) : Bool :=
++  match r.actual with
++  | .error _ => false
++  | .ok run =>
++    run.fixtureDependencyOrder == some r.dependencyOrder &&
++      referenceExact run expected && observedNativeExact run expected &&
++      parityOrExplicitRejection run
++
++def F16 : Bool :=
++  configurations.length == 18 &&
++    decide (configurations.Nodup) &&
++    decide (configurations =
++      [.scalar 1, .scalar 2,
++       .tensor 1 0 1, .tensor 1 0 2, .tensor 1 1 1, .tensor 1 1 2,
++       .tensor 1 2 1, .tensor 1 2 2, .tensor 1 3 1, .tensor 1 3 2,
++       .tensor 2 0 1, .tensor 2 0 2, .tensor 2 1 1, .tensor 2 1 2,
++       .tensor 2 2 1, .tensor 2 2 2, .tensor 2 3 1, .tensor 2 3 2]) &&
++    decide ((configurations.map fun c => (generatedSnapshot c).resolved.decls).Nodup) &&
++    decide ((configurations.map fun c => (generatedSnapshot c).resolved.stmts).Nodup) &&
++    F16Receipts.length == 18 &&
++    (F16Receipts.zip configurations).all fun (r, configuration) =>
++      exactReceipt r (generatedExpected configuration)
++
++private def chain : SourceSnapshot :=
++  ⟨⟨[.axis i (some 2), .axis k (some 3),
++      .typedTensor .f64 "A" [i, k], .typedTensor .f64 "B" [i],
++      .typedTensor .f64 "Y" [i], .typedTensor .f64 "Mid" [i],
++      .typedTensor .f64 "End" [i], .typedTensor .f64 "Spare" [i, k]],
++    [.assign "Y" [.free i] (rhs [[.read "End" [.axis i]], [.read "B" [.axis i]]]),
++     .assign "End" [.free i] (rhs [[.read "Mid" [.axis i], .read "B" [.axis i]]]),
++     .assign "Mid" [.free i] (rhs [[.read "A" [.axis i, .axis k]]])], {}, ∅⟩,
++    [⟨2, .input, [2, 3]⟩, ⟨3, .input, [2]⟩, ⟨4, .output, [2]⟩,
++     ⟨5, .defined, [2]⟩, ⟨6, .output, [2]⟩, ⟨7, .defined, [2, 3]⟩],
++    [⟨2, [2, 3], [1, 2, 3, 4, 5, 6]⟩, ⟨3, [2], [2, 5]⟩]⟩
++
++private def chainExpected : List Oracle.Tensor :=
++  [⟨2, "A", .input, [2, 3], [1, 2, 3, 4, 5, 6]⟩,
++   ⟨3, "B", .input, [2], [2, 5]⟩,
++   ⟨4, "Y", .output, [2], [14, 80]⟩,
++   ⟨5, "Mid", .defined, [2], [6, 15]⟩,
++   ⟨6, "End", .output, [2], [12, 75]⟩,
++   ⟨7, "Spare", .defined, [2, 3], [0, 0, 0, 0, 0, 0]⟩]
++
++def F17Receipt : Receipt :=
++  receipt "F17/consumer-first-chain-and-unwritten-nonoutput" chain [7, 5, 6, 4]
++
++def F17 : Bool :=
++  exactReceipt F17Receipt chainExpected &&
++    match F17Receipt.actual with
++    | .error _ => false
++    | .ok run =>
++      let admitted := run.reference.source.admitted
++      admitted.statements.map (·.original) == [0, 1, 2] &&
++        admitted.statements.map
++          (fun st => (admitted.source.table.entry st.output.tensor).declaration) == [4, 6, 5] &&
++        (run.reference.observe.endpoint.snapshot.tensors.filter
++          (fun t => t.role != .input)).length == 4
++
++private def sameFirst : AxisSpec := ⟨"same", 7, .nat⟩
++private def sameSecond : AxisSpec := ⟨"same", 19, .nat⟩
++
++private def sameNameResolved : SourceSnapshot :=
++  ⟨⟨[.axis sameFirst (some 2), .axis sameSecond (some 3),
++      .typedTensor .f64 "A" [sameFirst, sameSecond],
++      .typedTensor .f64 "B" [sameSecond, sameFirst],
++      .typedTensor .f64 "Y" [sameFirst, sameSecond]],
++    [.assign "Y" [.free sameFirst, .free sameSecond]
++      (rhs [[.read "A" [.axis sameFirst, .axis sameSecond],
++             .read "B" [.axis sameSecond, .axis sameFirst]]])], {}, ∅⟩,
++    [⟨2, .input, [2, 3]⟩, ⟨3, .input, [3, 2]⟩, ⟨4, .output, [2, 3]⟩],
++    [⟨2, [2, 3], [2, 3, 5, 7, 11, 13]⟩,
++     ⟨3, [3, 2], [17, 19, 23, 29, 31, 37]⟩]⟩
++
++private def sameNameExpected : List Oracle.Tensor :=
++  [⟨2, "A", .input, [2, 3], [2, 3, 5, 7, 11, 13]⟩,
++   ⟨3, "B", .input, [3, 2], [17, 19, 23, 29, 31, 37]⟩,
++   ⟨4, "Y", .output, [2, 3], [34, 69, 155, 133, 319, 481]⟩]
++
++def F18Receipt : Receipt :=
++  receipt "F18/resolved-same-name-distinct-UID-reference-only" sameNameResolved [4]
++
++private def identityIsExpected : NativeLegs.IdentityRefusal → Bool
++  | .sameNameDistinctUID first second =>
++    decide (first = sameFirst ∧ second = sameSecond)
++  | .sameUIDDistinctName _ _ => false
++
++private def expectedUIDRows : List (Debug.OccurrenceKey × List Nat × Option Rat) :=
++  [ (⟨0, [(7, 0), (19, 0)]⟩, [0, 0], some 34),
++    (⟨0, [(7, 0), (19, 1)]⟩, [0, 1], some 69),
++    (⟨0, [(7, 0), (19, 2)]⟩, [0, 2], some 155),
++    (⟨0, [(7, 1), (19, 0)]⟩, [1, 0], some 133),
++    (⟨0, [(7, 1), (19, 1)]⟩, [1, 1], some 319),
++    (⟨0, [(7, 1), (19, 2)]⟩, [1, 2], some 481) ]
++
++def F18 : Bool :=
++  match F18Receipt.actual with
++  | .error _ => false
++  | .ok run =>
++    let actual := (Debug.canonicalContributions run.reference.observe.events).map fun row =>
++      (row.key, row.destination.coordinate, row.value)
++    let oracleAssignments := match run.oracle with
++      | .error _ => false
++      | .ok result =>
++        (result.contributions.flatMap
++          (fun contribution => contribution.terms.flatMap (·.occurrences))).map
++          (fun occurrence => (occurrence.assignment, occurrence.output, some occurrence.value)) ==
++        expectedUIDRows.map (fun (key, coordinate, value) =>
++          (key.assignments, coordinate, value))
++    let reads := match run.oracle with
++      | .error _ => false
++      | .ok result =>
++        (result.contributions.flatMap
++          (fun contribution => contribution.terms.flatMap (·.occurrences))).map
++          (fun occurrence => occurrence.reads.map
++            (fun read => (read.declaration, read.coordinate, read.value))) ==
++        ([[(2, [0, 0], 2), (3, [0, 0], 17)],
++          [(2, [0, 1], 3), (3, [1, 0], 23)],
++          [(2, [0, 2], 5), (3, [2, 0], 31)],
++          [(2, [1, 0], 7), (3, [0, 1], 19)],
++          [(2, [1, 1], 11), (3, [1, 1], 29)],
++          [(2, [1, 2], 13), (3, [2, 1], 37)]] :
++          List (List (Nat × List Nat × Rat)))
++    let identity := match run.native with
++      | .error _ => false
++      | .ok native =>
++        let declared := match native.identity with
++          | .error reason => identityIsExpected reason
++          | .ok _ => false
++        let legacy := match native.legacy with
++          | .unavailable (.identity reason) => identityIsExpected reason
++          | _ => false
++        let checked := match native.checked with
++          | .unavailable (.identity reason) => identityIsExpected reason
++          | _ => false
++        declared && legacy && checked
++    let classification := match run.classification with
++      | .nativeUnavailable => true
++      | _ => false
++    referenceExact run sameNameExpected && decide (actual = expectedUIDRows) &&
++      oracleAssignments && reads && identity && classification &&
++      run.reference.source.admitted.source.context.axes.map
++        (fun ax => (ax.uid, ax.extent)) == [(7, 2), (19, 3)] &&
++      run.reference.observe.endpoint.snapshot.tensors.map
++        (fun binding => (binding.tensorUID, binding.axes.map (fun ax => (ax.uid, ax.extent)))) ==
++        [(0, [(7, 2), (19, 3)]), (1, [(19, 3), (7, 2)]), (2, [(7, 2), (19, 3)])]
++
++private def renderReceipt (r : Receipt) : String :=
++  s!"{r.label}\noriginalDecls={repr r.snapshot.resolved.decls}\noriginalStmts={repr r.snapshot.resolved.stmts}\n{renderSourceComparison r.actual}"
++
++def F16ParityLabels : List String :=
++  F16Receipts.filterMap fun r =>
++    match r.actual with
++    | .ok run =>
++      match run.classification with
++      | .fourLegParity => some r.label
++      | _ => none
++    | .error _ => none
++
++#guard F16
++#guard F17
++#guard F18
++
++#eval F16Receipts.map renderReceipt
++#eval F16ParityLabels
++#eval renderReceipt F17Receipt
++#eval renderReceipt F18Receipt
++
++end SourceDifferentialCorpusTest
+diff --git a/leanncd/test/Semantics/SourceDifferentialFixtures.lean b/leanncd/test/Semantics/SourceDifferentialFixtures.lean
+new file mode 100644
+index 0000000000000000000000000000000000000000..3f9bc55c11e718ee4f1113a9de551220bdb3bf9e
+--- /dev/null
++++ b/leanncd/test/Semantics/SourceDifferentialFixtures.lean
+@@ -0,0 +1,54 @@
++import LeanNCD.Semantics.Source.Differential
++import LeanNCD.Semantics.Source.Permutation
++import Semantics.SourceProgramFixtures
++
++open LeanNCD LeanNCD.Semantics LeanNCD.Semantics.Source
++open SourceAdmissionFixtures
++
++namespace SourceDifferentialFixtures
++
++def j : AxisSpec := ⟨"j", 19, .nat⟩
++
++def matmul : SourceSnapshot :=
++  ⟨⟨[.axis i (some 2), .axis j (some 2), .axis k (some 3),
++      .typedTensor .f64 "W" [i, k], .typedTensor .f64 "X" [k, j],
++      .typedTensor .f64 "Y" [i, j]],
++    [.assign "Y" [.free i, .free j]
++      (rhs [[.read "W" [.axis i, .axis k], .read "X" [.axis k, .axis j]]])],
++    {}, ∅⟩,
++    [⟨3, .input, [2, 3]⟩, ⟨4, .input, [3, 2]⟩, ⟨5, .output, [2, 2]⟩],
++    [⟨3, [2, 3], [1, 2, 3, 4, 5, 6]⟩, ⟨4, [3, 2], [1, 0, 0, 1, 1, 1]⟩]⟩
++
++def biasSnapshot : SourceSnapshot :=
++  ⟨⟨[.axis i (some 2), .axis k (some 3),
++      .typedTensor .f64 "W" [i, k], .typedTensor .f64 "X" [k],
++      .typedTensor .f64 "B" [i], .typedTensor .f64 "Y" [i]],
++    [.assign "Y" [.free i]
++      (rhs [[.read "W" [.axis i, .axis k], .read "X" [.axis k]], [.read "B" [.axis i]]])],
++    {}, ∅⟩,
++    [⟨2, .input, [2, 3]⟩, ⟨3, .input, [3]⟩, ⟨4, .input, [2]⟩, ⟨5, .output, [2]⟩],
++    [⟨2, [2, 3], [1, 2, 3, 4, 5, 6]⟩, ⟨3, [3], [1, 1, 1]⟩, ⟨4, [2], [7, 9]⟩]⟩
++
++def diagonalRead : SourceSnapshot :=
++  ⟨⟨[.axis i (some 2), .typedTensor .f64 "A" [i, i], .typedTensor .f64 "Y" []],
++    [.assign "Y" [] (rhs [[.read "A" [.axis i, .axis i]]])], {}, ∅⟩,
++    [⟨1, .input, [2, 2]⟩, ⟨2, .output, []⟩], [⟨1, [2, 2], [2, 3, 5, 11]⟩]⟩
++
++def diagonalWrite : SourceSnapshot :=
++  ⟨⟨[.axis i (some 2), .typedTensor .f64 "A" [i], .typedTensor .f64 "Y" [i, i]],
++    [.assign "Y" [.free i, .free i] (rhs [[.read "A" [.axis i]]])], {}, ∅⟩,
++    [⟨1, .input, [2]⟩, ⟨2, .output, [2, 2]⟩], [⟨1, [2], [5, 9]⟩]⟩
++
++def emptyContraction : SourceSnapshot :=
++  ⟨⟨[.axis i (some 2), .axis k (some 0),
++      .typedTensor .f64 "A" [i, k], .typedTensor .f64 "Y" [i]],
++    [.assign "Y" [.free i] (rhs [[.read "A" [.axis i, .axis k]]])], {}, ∅⟩,
++    [⟨2, .input, [2, 0]⟩, ⟨3, .output, [2]⟩], [⟨2, [2, 0], []⟩]⟩
++
++def scalar : SourceSnapshot :=
++  ⟨⟨[.typedTensor .f64 "A" [], .typedTensor .f64 "B" [], .typedTensor .f64 "Y" []],
++    [.assign "Y" [] (rhs [[.read "A" [], .read "B" []]])], {}, ∅⟩,
++    [⟨0, .input, []⟩, ⟨1, .input, []⟩, ⟨2, .output, []⟩],
++    [⟨0, [], [3]⟩, ⟨1, [], [7]⟩]⟩
++
++end SourceDifferentialFixtures
+diff --git a/leanncd/test/Semantics/SourceDifferentialGeometryTest.lean b/leanncd/test/Semantics/SourceDifferentialGeometryTest.lean
+new file mode 100644
+index 0000000000000000000000000000000000000000..55e700f379c5e73170d6a4df404355f80af3fdba
+--- /dev/null
++++ b/leanncd/test/Semantics/SourceDifferentialGeometryTest.lean
+@@ -0,0 +1,209 @@
++import Semantics.SourceDifferentialFixtures
++
++open LeanNCD LeanNCD.Semantics LeanNCD.Semantics.Source
++open LeanNCD.Semantics.Source.Debug
++open LeanNCD.Semantics.Source.NativeLegs
++open LeanNCD.Semantics.Source.Differential
++open SourceAdmissionFixtures
++
++namespace SourceDifferentialGeometryTest
++
++def diagonalRun := compareSource SourceDifferentialFixtures.diagonalWrite (some [2])
++def emptyRun := compareSource SourceDifferentialFixtures.emptyContraction (some [3])
++def scalarRun := compareSource SourceDifferentialFixtures.scalar (some [2])
++
++private def outputOrigin (declaration : Nat) : SourceOrigin :=
++  { side := .output, declaration := some declaration, statement := some 0 }
++
++private def termOrigin : SourceOrigin :=
++  { side := .read, statement := some 0, term := some 0 }
++
++private def readOrigin (declaration factor : Nat) : SourceOrigin :=
++  { termOrigin with declaration := some declaration, factor := some factor }
++
++private def cell (declaration : Nat) (coordinate : List Nat) (value : ℚ)
++    (occurrences : List Oracle.Occurrence) : Oracle.Contribution :=
++  ⟨outputOrigin declaration, coordinate, [⟨termOrigin, occurrences, value⟩], value⟩
++
++private def contribution (uid : UID) (declaration : Nat)
++    (assignment : List (UID × Nat)) (coordinate : List Nat) (value : ℚ) :
++    ContributionObservation :=
++  ⟨⟨0, assignment⟩, ⟨uid, declaration, coordinate⟩, some value⟩
++
++private def nativeOutput (observation : NativeObservation) (uid : UID)
++    (declaration : Nat) (axes : List (UID × Nat)) (shape : List Nat)
++    (bits : Array UInt64) : Bool :=
++  match observation.outputs, observation.report.env["Y"]?, observation.backendInternals with
++  | .ok [binding], some actual, .unobserved .noBackendInternalHook =>
++    binding.metadata.tensorUID == uid && binding.metadata.declaration == declaration &&
++    binding.metadata.name == "Y" &&
++    binding.metadata.origin == { side := .declaration, declaration := some declaration } &&
++    binding.metadata.axes.map (fun a => (a.uid, a.extent)) == axes &&
++    binding.metadata.shape == shape && binding.shape == shape && actual.shape == shape &&
++    binding.bits.size == bits.size && actual.data.size == bits.size &&
++    binding.bits == bits && actual.data.map Float.toBits == bits
++  | _, _, _ => false
++
++private def geometry (run : ComparisonRun) (inputs : List Oracle.Tensor)
++    (uid : UID) (declaration : Nat) (axes : List (UID × Nat)) (shape : List Nat)
++    (values : List ℚ) (bits : Array UInt64) (cells : List Oracle.Contribution)
++    (normalized : List (Option ContributionObservation)) : Bool :=
++  match run.classification, run.oracle, run.profile, run.native,
++      run.reference.observe.endpoint, run.referenceComparison with
++  | .fourLegParity, .ok oracle, .ok profile, .ok native, .complete final, some comparison =>
++    match comparison.tensors, comparison.rows, native.shared, native.identity, native.inputs,
++        native.legacy, native.checked, definedTensors final.tensors with
++    | .ok tensors, .ok rows, .ok shared, .ok identities, .ok _,
++        .observed legacy, .observed checked mappings, [output] =>
++      let publications := run.reference.observe.events.filterMap fun event =>
++        match event with
++        | .publication address value => some (address, value)
++        | _ => none
++      let expectedPublications : List (AddressObservation × ℚ) := cells.map fun c =>
++        (⟨uid, declaration, c.coordinate⟩, c.value)
++      let original := native.source.program
++      let originalAxes :=
++        original.decls.flatMap (fun d =>
++          (Decl.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) d).run) ++
++        original.stmts.flatMap (fun s =>
++          (Stmt.traverseAxes (f := ConstL (List AxisSpec)) (fun a => ⟨[a]⟩) s).run)
++      shape.foldl (· * ·) 1 == values.length &&
++      cells.length == values.length && normalized.length == cells.length &&
++      bits.size == values.length &&
++      oracle.tensors == inputs ++ [⟨declaration, "Y", .output, shape, values⟩] &&
++      oracle.contributions == cells &&
++      profile.oracle == oracle && profile.rows == rows && profile.actual.isSome &&
++      rows.map (·.fullCell) == cells && rows.map (·.occurrence) == normalized &&
++      canonicalContributions run.reference.observe.events == normalized.filterMap id &&
++      final.tensors == tensors && output.tensorUID == uid &&
++      output.declaration == declaration && output.name == some "Y" &&
++      output.role == .output && output.shape == shape &&
++      output.axes.map (fun a => (a.uid, a.extent)) == axes &&
++      output.values.length == values.length && output.values == values.map some &&
++      publications.length == expectedPublications.length &&
++      expectedPublications.all (fun p => publications.contains p) &&
++      final.pending.isEmpty && final.unpublished.isEmpty &&
++      profile.shared == shared &&
++      shared.usedDeclarations == declaration :: inputs.map (·.declaration) &&
++      shared.definitions == [(declaration, outputOrigin declaration)] &&
++      identities == originalAxes &&
++      (identities.map (·.uid)).reverse.dedup.reverse ==
++        run.reference.source.admitted.source.context.axes.map Axis.uid &&
++      mappings == [⟨"Y", [outputOrigin declaration], some 0⟩] &&
++      nativeOutput legacy uid declaration axes shape bits &&
++      nativeOutput checked uid declaration axes shape bits
++    | _, _, _, _, _, _, _, _ => false
++  | _, _, _, _, _, _ => false
++
++-- Repeated output slots enumerate one UID, but publication still covers the full square.
++def F4 : Bool :=
++  match diagonalRun with
++  | .ok run =>
++    let low := contribution 1 2 [(7, 0)] [0, 0] 5
++    let high := contribution 1 2 [(7, 1)] [1, 1] 9
++    let cells :=
++      [cell 2 [0, 0] 5 [⟨termOrigin, [(7, 0)], [0, 0],
++         [⟨readOrigin 1 0, 1, [0], 5⟩], 5⟩],
++       cell 2 [0, 1] 0 [],
++       cell 2 [1, 0] 0 [],
++       cell 2 [1, 1] 9 [⟨termOrigin, [(7, 1)], [1, 1],
++         [⟨readOrigin 1 0, 1, [1], 9⟩], 9⟩]]
++    geometry run [⟨1, "A", .input, [2], [5, 9]⟩]
++      1 2 [(7, 2), (7, 2)] [2, 2] [5, 0, 0, 9]
++      #[0x4014000000000000, 0, 0, 0x4022000000000000]
++      cells [some low, none, none, some high] &&
++    run.fixtureDependencyOrder == some [2] &&
++    match run.reference.source.admitted.statements with
++    | [statement] =>
++      statement.original == 0 && statement.output.indices == [7, 7] &&
++      statement.output.context.axes.map Axis.uid == [7] &&
++      statement.terms.map (fun term => term.partition.bound.map Axis.uid) == [[]]
++    | _ => false
++  | _ => false
++
++#guard F4
++
++private def zeroOutput : SourceSnapshot :=
++  ⟨⟨[.axis k (some 0), .typedTensor .f64 "A" [k], .typedTensor .f64 "Y" [k]],
++    [.assign "Y" [.free k] (rhs [[.read "A" [.axis k]]])], {}, ∅⟩,
++    [⟨1, .input, [0]⟩, ⟨2, .output, [0]⟩], [⟨1, [0], []⟩]⟩
++
++private def zeroOutputRun := compareSource zeroOutput (some [2])
++
++private def zeroOutputGeometry : Bool :=
++  match zeroOutputRun with
++  | .ok run =>
++    geometry run [⟨1, "A", .input, [0], []⟩]
++      1 2 [(3, 0)] [0] [] #[] [] [] &&
++    run.reference.source.admitted.source.context.axes.map (fun a => (a.uid, a.extent)) ==
++      [(3, 0)]
++  | _ => false
++
++-- An empty contracted fiber contributes zero at each of two existing output occurrences.
++def F5 : Bool :=
++  match emptyRun with
++  | .ok run =>
++    geometry run [⟨2, "A", .input, [2, 0], []⟩]
++      1 3 [(7, 2)] [2] [0, 0] #[0, 0]
++      [cell 3 [0] 0 [], cell 3 [1] 0 []]
++      [some (contribution 1 3 [(7, 0)] [0] 0),
++       some (contribution 1 3 [(7, 1)] [1] 0)] &&
++    run.fixtureDependencyOrder == some [3] &&
++    run.reference.source.admitted.source.context.axes.map (fun a => (a.uid, a.extent)) ==
++      [(7, 2), (3, 0)] &&
++    zeroOutputGeometry &&
++    (match run.native with
++    | .ok native => match native.inputs with
++      | .ok inputs => match inputs.env["A"]? with
++        | some input => input.shape == [2, 0] && input.data.size == 0
++        | none => false
++      | _ => false
++    | _ => false) &&
++    match run.reference.source.admitted.statements with
++    | [statement] =>
++      statement.original == 0 && statement.output.indices == [7] &&
++      statement.output.context.axes.map Axis.uid == [7] &&
++      statement.terms.map (fun term =>
++        term.partition.bound.map (fun a => (a.uid, a.extent))) == [[(3, 0)]]
++    | _ => false
++  | _ => false
++
++#guard F5
++
++private def scalarIdentity : SourceSnapshot :=
++  ⟨⟨[.typedTensor .f64 "Y" []], [.assign "Y" [] (rhs [[]])], {}, ∅⟩,
++    [⟨0, .output, []⟩], []⟩
++
++private def scalarIdentityRun := compareSource scalarIdentity (some [0])
++
++private def scalarIdentityGeometry : Bool :=
++  match scalarIdentityRun with
++  | .ok run =>
++    geometry run [] 0 0 [] [] [1] #[0x3ff0000000000000]
++      [cell 0 [] 1 [⟨termOrigin, [], [], [], 1⟩]]
++      [some (contribution 0 0 [] [] 1)]
++  | _ => false
++
++-- Rank zero has exactly one empty assignment, not zero output cells.
++def F6 : Bool :=
++  match scalarRun with
++  | .ok run =>
++    geometry run [⟨0, "A", .input, [], [3]⟩, ⟨1, "B", .input, [], [7]⟩]
++      2 2 [] [] [21] #[0x4035000000000000]
++      [cell 2 [] 21 [⟨termOrigin, [], [],
++        [⟨readOrigin 0 0, 0, [], 3⟩, ⟨readOrigin 1 1, 1, [], 7⟩], 21⟩]]
++      [some (contribution 2 2 [] [] 21)] &&
++    run.fixtureDependencyOrder == some [2] &&
++    run.reference.source.admitted.source.context.axes.isEmpty &&
++    scalarIdentityGeometry &&
++    match run.reference.source.admitted.statements with
++    | [statement] =>
++      statement.original == 0 && statement.output.indices.isEmpty &&
++      statement.output.context.axes.isEmpty &&
++      statement.terms.map (fun term => term.partition.bound.map Axis.uid) == [[]]
++    | _ => false
++  | _ => false
++
++#guard F6
++
++end SourceDifferentialGeometryTest
+diff --git a/leanncd/test/Semantics/SourceDifferentialIdentityTest.lean b/leanncd/test/Semantics/SourceDifferentialIdentityTest.lean
+new file mode 100644
+index 0000000000000000000000000000000000000000..802d83e8abe4ab2b1f2e5ba0c1a67e3e4bca3740
+--- /dev/null
++++ b/leanncd/test/Semantics/SourceDifferentialIdentityTest.lean
+@@ -0,0 +1,303 @@
++import Semantics.SourceDifferentialFixtures
++
++open LeanNCD LeanNCD.Semantics LeanNCD.Semantics.Source
++open LeanNCD.Semantics.Source.Debug
++open LeanNCD.Semantics.Source.Differential
++open LeanNCD.Semantics.Source.NativeLegs
++open SourceAdmissionFixtures SourceDifferentialFixtures
++
++namespace SourceDifferentialIdentityTest
++
++private def expectedContributions (tensorUID declaration : Nat) (uids : List UID)
++    (cells : List (List Nat × ℚ)) : List ContributionObservation :=
++  cells.map fun (coordinate, value) =>
++    ⟨⟨0, uids.zip coordinate⟩, ⟨tensorUID, declaration, coordinate⟩, some value⟩
++
++private def exactFourLeg (run : ComparisonRun) (tensorUID declaration : Nat)
++    (axes : Shape) (values : List ℚ) (bits : Array UInt64)
++    (contributions : List ContributionObservation) : Bool :=
++  match run.classification, run.oracle, run.native, run.profile, run.referenceComparison with
++  | .fourLegParity, .ok oracle, .ok native, .ok _, some comparison =>
++    match run.reference.observe.endpoint, native.legacy, native.checked,
++        comparison.published, comparison.collection, comparison.body, comparison.rows,
++        native.identity, native.shared, native.inputs with
++    | .complete snapshot, .observed legacy, .observed checked _,
++        .ok .agreement, .ok .agreement, .ok .agreement, .ok rows,
++        .ok _, .ok _, .ok _ =>
++      match legacy.outputs, checked.outputs with
++      | .ok [left], .ok [right] =>
++        let shape := axes.map Axis.extent
++        let count := shape.foldl (· * ·) 1
++        definedTensors snapshot.tensors ==
++          [⟨tensorUID, declaration, some "Y", .output, axes, shape, values.map some⟩] &&
++        oracle.tensors.filter (fun t => t.role != .input) ==
++          [⟨declaration, "Y", .output, shape, values⟩] &&
++        canonicalContributions run.reference.observe.events == contributions &&
++        oracleContributions rows == contributions &&
++        values.length == count && bits.size == count &&
++        left.metadata.tensorUID == tensorUID && left.metadata.declaration == declaration &&
++        left.metadata.name == "Y" && left.metadata.axes == axes &&
++        left.metadata.shape == shape && right.metadata == left.metadata &&
++        left.shape == shape && right.shape == shape &&
++        left.bits.size == count && right.bits.size == count &&
++        left.bits == bits && right.bits == bits
++      | _, _ => false
++    | _, _, _, _, _, _, _, _, _, _ => false
++  | _, _, _, _, _ => false
++
++private def duplicateTerms : SourceSnapshot :=
++  ⟨⟨[.axis i (some 2), .typedTensor .f64 "A" [i], .typedTensor .f64 "Y" [i]],
++    [.assign "Y" [.free i]
++      (rhs [[.read "A" [.axis i]], [.read "A" [.axis i]]])], {}, ∅⟩,
++    [⟨1, .input, [2]⟩, ⟨2, .output, [2]⟩], [⟨1, [2], [5, 9]⟩]⟩
++
++private def duplicateTermOrigins (run : ComparisonRun) : Bool :=
++  match run.reference.source.admitted.statements, run.oracle with
++  | [statement], .ok oracle =>
++    statement.original == 0 &&
++    statement.terms.map (fun t => (t.origin.statement, t.origin.term)) ==
++      [(some 0, some 0), (some 0, some 1)] &&
++    statement.terms.map (fun t => t.sourceReads.map fun r =>
++      (r.origin.statement, r.origin.term, r.origin.factor, r.indices)) ==
++      [[(some 0, some 0, some 0, [7])], [(some 0, some 1, some 0, [7])]] &&
++    oracle.contributions.map (fun c =>
++      (c.origin.statement, c.coordinate, c.terms.map fun t =>
++        (t.origin.statement, t.origin.term, t.value))) ==
++      [(some 0, [0], [(some 0, some 0, 5), (some 0, some 1, 5)]),
++       (some 0, [1], [(some 0, some 0, 9), (some 0, some 1, 9)])]
++  | _, _ => false
++
++def F7 : Bool :=
++  match compareSource duplicateTerms (some [2]) with
++  | .ok run =>
++    duplicateTermOrigins run &&
++    exactFourLeg run 1 2 [⟨7, 2⟩] [10, 18]
++      #[0x4024000000000000, 0x4032000000000000]
++      (expectedContributions 1 2 [7] [([0], 10), ([1], 18)])
++  | .error _ => false
++
++#guard F7
++
++private def k2 : AxisSpec := ⟨"k", 3, .nat⟩
++private def j3 : AxisSpec := ⟨"j", 19, .nat⟩
++
++private def packedMatrix (reordered : Bool) : SourceSnapshot :=
++  let xAxes := if reordered then [j3, k2] else [k2, j3]
++  let xSlots := xAxes.map IdxExpr.axis
++  let xShape := if reordered then [3, 2] else [2, 3]
++  let xValues : List ℚ :=
++    if reordered then [5, 7, 17, 19, 29, 31] else [5, 17, 29, 7, 19, 31]
++  ⟨⟨[.axis j3 (some 3), .axis k2 (some 2), .axis i (some 2),
++      .typedTensor .f64 "W" [i, k2], .typedTensor .f64 "X" xAxes,
++      .typedTensor .f64 "Y" [i, j3]],
++    [.assign "Y" [.free i, .free j3]
++      (rhs [[.read "W" [.axis i, .axis k2], .read "X" xSlots]])], {}, ∅⟩,
++    [⟨3, .input, [2, 2]⟩, ⟨4, .input, xShape⟩, ⟨5, .output, [2, 3]⟩],
++    [⟨3, [2, 2], [2, 3, 11, 13]⟩, ⟨4, xShape, xValues⟩]⟩
++
++private def matrixCells : List (List Nat × ℚ) :=
++  [([0, 0], 31), ([0, 1], 91), ([0, 2], 151),
++   ([1, 0], 146), ([1, 1], 434), ([1, 2], 722)]
++
++private def matrixBits : Array UInt64 :=
++  #[0x403f000000000000, 0x4056c00000000000, 0x4062e00000000000,
++    0x4062400000000000, 0x407b200000000000, 0x4086900000000000]
++
++private def independentPacking (run : ComparisonRun) (reordered : Bool) : Bool :=
++  match run.oracle with
++  | .ok oracle =>
++    match oracle.tensors.filter (fun t => t.role == .input) with
++    | [w, x] =>
++      let shape := if reordered then [3, 2] else [2, 3]
++      let values : List ℚ :=
++        if reordered then [5, 7, 17, 19, 29, 31] else [5, 17, 29, 7, 19, 31]
++      let probes : List (List Nat × ℚ) :=
++        if reordered then
++          [([0, 0], 5), ([0, 1], 7), ([1, 0], 17),
++           ([1, 1], 19), ([2, 0], 29), ([2, 1], 31)]
++        else
++          [([0, 0], 5), ([0, 1], 17), ([0, 2], 29),
++           ([1, 0], 7), ([1, 1], 19), ([1, 2], 31)]
++      let wProbes : List (List Nat × ℚ) :=
++        [([0, 0], 2), ([0, 1], 3), ([1, 0], 11), ([1, 1], 13)]
++      w == ⟨3, "W", .input, [2, 2], [2, 3, 11, 13]⟩ &&
++      x == ⟨4, "X", .input, shape, values⟩ &&
++      probes.all (fun (coordinate, value) =>
++        Oracle.lookup {} shape x coordinate == .ok value) &&
++      wProbes.all
++        (fun (coordinate, value) => Oracle.lookup {} [2, 2] w coordinate == .ok value) &&
++      (if reordered then
++        match Oracle.lookup {} [3, 2] x [3, 0] with
++        | .error error => error.cause == .coordinateBound 0 3 3
++        | .ok _ => false
++       else true)
++    | _ => false
++  | .error _ => false
++
++private def packedMetadata (run : ComparisonRun) (reordered : Bool) : Bool :=
++  let source := run.reference.source.admitted
++  source.source.context.axes == [⟨19, 3⟩, ⟨3, 2⟩, ⟨7, 2⟩] &&
++  source.source.table.entries.map (fun t => (t.declaration, t.axes)) ==
++    [(3, [⟨7, 2⟩, ⟨3, 2⟩]),
++     (4, if reordered then [⟨19, 3⟩, ⟨3, 2⟩] else [⟨3, 2⟩, ⟨19, 3⟩]),
++     (5, [⟨7, 2⟩, ⟨19, 3⟩])] &&
++  source.statements.map (fun s =>
++    (s.original, s.output.indices, s.terms.map fun t => t.sourceReads.map (·.indices))) ==
++    [(0, [7, 19], [[[7, 3], if reordered then [19, 3] else [3, 19]]])]
++
++def F8 : Bool :=
++  match compareSource (packedMatrix false) (some [5]),
++      compareSource (packedMatrix true) (some [5]) with
++  | .ok original, .ok reordered =>
++    let rows := expectedContributions 2 5 [7, 19] matrixCells
++    let values := matrixCells.map Prod.snd
++    exactFourLeg original 2 5 [⟨7, 2⟩, ⟨19, 3⟩] values matrixBits rows &&
++    exactFourLeg reordered 2 5 [⟨7, 2⟩, ⟨19, 3⟩] values matrixBits rows &&
++    independentPacking original false && independentPacking reordered true &&
++    packedMetadata original false && packedMetadata reordered true &&
++    canonicalContributions original.reference.observe.events ==
++      canonicalContributions reordered.reference.observe.events &&
++    values != [67, 101, 127, 302, 454, 590]
++  | _, _ => false
++
++#guard F8
++
++private def alphaContext : Context := ⟨[⟨7, 2⟩, ⟨19, 2⟩, ⟨3, 3⟩], by decide⟩
++
++private def alphaScope : BinderScope alphaContext where
++  source := []
++  output := [7, 19]
++  free := [7, 19]
++  generated := [3]
++  covers := by
++    intro u
++    have h := u.property
++    simp [alphaContext] at h
++    rcases h with h | h | h <;> simp [h]
++  generatedOnly := by
++    intro u hu
++    simp at hu
++    subst u
++    decide
++
++private def renameAxis (a : AxisSpec) : AxisSpec :=
++  if a.uid == 3 then
++    { a with uid := alphaScope.renameUID a.uid, name := "contracted_renamed" }
++  else a
++
++private def renamedMatrix : SourceSnapshot :=
++  { matmul with resolved := { matmul.resolved with
++      decls := matmul.resolved.decls.map (Decl.traverseAxes (f := Id) renameAxis)
++      stmts := matmul.resolved.stmts.map (Stmt.traverseAxes (f := Id) renameAxis) } }
++
++example (u : alphaContext.Key) :
++    (renameBinders alphaContext alphaScope).domain
++        ((binderTransport alphaContext alphaScope).equiv u) = alphaContext.domain u :=
++  (binderTransport alphaContext alphaScope).domain u
++
++private def alphaMetadata (original renamed : ComparisonRun) : Bool :=
++  let before := original.reference.source.admitted
++  let after := renamed.reference.source.admitted
++  before.source.context.axes == alphaContext.axes &&
++  after.source.context.axes == (renameBinders alphaContext alphaScope).axes &&
++  after.source.context.axes == [⟨7, 2⟩, ⟨19, 2⟩, ⟨23, 3⟩] &&
++  before.source.context.axes.map Axis.extent == after.source.context.axes.map Axis.extent &&
++  before.statements.map (·.original) == [0] && after.statements.map (·.original) == [0] &&
++  before.source.table.entries.map (fun t => (t.declaration, t.name, t.role)) ==
++    after.source.table.entries.map (fun t => (t.declaration, t.name, t.role)) &&
++  before.statements.map (fun s => s.output.indices) == [[7, 19]] &&
++  after.statements.map (fun s => s.output.indices) == [[7, 19]] &&
++  before.statements.map (fun s => s.terms.map fun t =>
++    (t.origin, t.partition.bound, t.sourceReads.map (·.indices))) ==
++    [[({ side := .read, statement := some 0, term := some 0 },
++      [⟨3, 3⟩], [[7, 3], [3, 19]])]] &&
++  after.statements.map (fun s => s.terms.map fun t =>
++    (t.origin, t.partition.bound, t.sourceReads.map (·.indices))) ==
++    [[({ side := .read, statement := some 0, term := some 0 },
++      [⟨23, 3⟩], [[7, 23], [23, 19]])]] &&
++  after.source.table.entries.map (·.axes) ==
++    [[⟨7, 2⟩, ⟨23, 3⟩], [⟨23, 3⟩, ⟨19, 2⟩], [⟨7, 2⟩, ⟨19, 2⟩]]
++
++private def parsedOriginal : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  axis j : ℕ = 2
++  axis k : ℕ = 3
++  tensor f64 W(i, k), X(k, j), Y(i, j)
++  Y[i, j] := W[i, k] · X[k, j]
++}
++
++private def parsedRenamed : TLProgram := tlprog!{
++  axis i : ℕ = 2
++  axis j : ℕ = 2
++  axis contracted_renamed : ℕ = 3
++  tensor f64 W(i, contracted_renamed), X(contracted_renamed, j), Y(i, j)
++  Y[i, j] := W[i, contracted_renamed] · X[contracted_renamed, j]
++}
++
++private def parsedNames (run : ComparisonRun) (contractedName : String) : Bool :=
++  match run.native with
++  | .ok native =>
++    match native.identity with
++    | .ok axes =>
++      axes.any (fun a => a.name == contractedName && a.uid == 3) &&
++      axes.all (fun a =>
++        (a.name == "i" && a.uid == 1) || (a.name == "j" && a.uid == 2) ||
++        (a.name == contractedName && a.uid == 3))
++    | .error _ => false
++  | .error _ => false
++
++private def alphaBoundary : Bool :=
++  let capture : SourceSnapshot :=
++    { matmul with resolved := { matmul.resolved with
++        decls := matmul.resolved.decls.map
++          (Decl.traverseAxes (f := Id) (fun a => if a.uid == 3 then i else a))
++        stmts := matmul.resolved.stmts.map
++          (Stmt.traverseAxes (f := Id) (fun a => if a.uid == 3 then i else a)) } }
++  let changedDomain : SourceSnapshot :=
++    { matmul with resolved := { matmul.resolved with
++        decls := [.axis i (some 2), .axis j (some 2), .axis k (some 4),
++          .typedTensor .f64 "W" [i, k], .typedTensor .f64 "X" [k, j],
++          .typedTensor .f64 "Y" [i, j]] } }
++  (match admitSource capture with
++  | .error diagnostic =>
++    match diagnostic.stage, diagnostic.cause with
++    | .declarations, .duplicateAxis 7 => true
++    | _, _ => false
++  | .ok _ => false) &&
++  (match admitSource changedDomain with
++  | .error diagnostic =>
++    match diagnostic.stage, diagnostic.cause with
++    | .signatures, .shape [2, 4] [2, 3] => true
++    | _, _ => false
++  | .ok _ => false)
++
++def F9 : Bool :=
++  match compareSource matmul (some [5]), compareSource renamedMatrix (some [5]),
++      resolveSource parsedOriginal matmul.specs matmul.inputs,
++      resolveSource parsedRenamed matmul.specs matmul.inputs with
++  | .ok original, .ok renamed, .ok parsedBefore, .ok parsedAfter =>
++    let values : List ℚ := [4, 5, 10, 11]
++    let bits := #[0x4010000000000000, 0x4014000000000000,
++      0x4024000000000000, 0x4026000000000000]
++    let cells : List (List Nat × ℚ) :=
++      [([0, 0], 4), ([0, 1], 5), ([1, 0], 10), ([1, 1], 11)]
++    let rows := expectedContributions 2 5 [7, 19] cells
++    exactFourLeg original 2 5 [⟨7, 2⟩, ⟨19, 2⟩] values bits rows &&
++    exactFourLeg renamed 2 5 [⟨7, 2⟩, ⟨19, 2⟩] values bits rows &&
++    alphaMetadata original renamed && alphaBoundary &&
++    canonicalContributions original.reference.observe.events ==
++      canonicalContributions renamed.reference.observe.events &&
++    definedTensors original.reference.observe.endpoint.snapshot.tensors ==
++      definedTensors renamed.reference.observe.endpoint.snapshot.tensors &&
++    (match compareSource parsedBefore (some [5]), compareSource parsedAfter (some [5]) with
++    | .ok before, .ok after =>
++      let parsedRows := expectedContributions 2 5 [1, 2] cells
++      exactFourLeg before 2 5 [⟨1, 2⟩, ⟨2, 2⟩] values bits parsedRows &&
++      exactFourLeg after 2 5 [⟨1, 2⟩, ⟨2, 2⟩] values bits parsedRows &&
++      parsedNames before "k" && parsedNames after "contracted_renamed"
++    | _, _ => false)
++  | _, _, _, _ => false
++
++#guard F9
++
++end SourceDifferentialIdentityTest
+diff --git a/leanncd/test/Semantics/SourceDifferentialNumericalTest.lean b/leanncd/test/Semantics/SourceDifferentialNumericalTest.lean
+new file mode 100644
+index 0000000000000000000000000000000000000000..9711f3f1ce0ef142b71ae3fdcc4fa96032b57cb3
+--- /dev/null
++++ b/leanncd/test/Semantics/SourceDifferentialNumericalTest.lean
+@@ -0,0 +1,290 @@
++import Semantics.SourceDifferentialFixtures
++
++open LeanNCD LeanNCD.Semantics LeanNCD.Semantics.Source
++open LeanNCD.Semantics.Source.Debug LeanNCD.Semantics.Source.NativeLegs
++open LeanNCD.Semantics.Source.Differential LeanNCD.Semantics.Source.NumericalProfile
++open SourceAdmissionFixtures
++
++namespace SourceDifferentialNumericalTest
++
++private def scalarSnapshot (inputs : List ℚ) (terms : List (List Nat)) : SourceSnapshot :=
++  let names := (List.range inputs.length).map fun index => s!"I{index}"
++  ⟨⟨names.map (fun name => .typedTensor .f64 name []) ++ [.typedTensor .f64 "O" []],
++      [.assign "O" [] (rhs (terms.map fun term =>
++        term.map fun index => .read s!"I{index}" []))], {}, ∅⟩,
++    (List.range inputs.length).map (fun index => ⟨index, .input, []⟩) ++
++      [⟨inputs.length, .output, []⟩],
++    inputs.zipIdx.map fun (value, index) => ⟨index, [], [value]⟩⟩
++
++private def referenceCells (run : ComparisonRun) (inputs : List ℚ) (expected : ℚ) : Bool :=
++  match run.reference.actual.result.outcome, run.reference.observe.endpoint,
++      run.oracle, run.referenceComparison with
++  | .complete .., .complete snapshot, .ok oracle, some comparison =>
++    let declarations := List.range (inputs.length + 1)
++    let names := (List.range inputs.length).map (fun index => s!"I{index}") ++ ["O"]
++    let roles := List.replicate inputs.length TensorRole.input ++ [.output]
++    let values := inputs.map (fun value => [value]) ++ [[expected]]
++    run.fixtureDependencyOrder == some [inputs.length] &&
++    snapshot.tensors.map (·.tensorUID) == declarations &&
++    snapshot.tensors.map (·.declaration) == declarations &&
++    snapshot.tensors.map (·.name) == names.map some &&
++    snapshot.tensors.map (·.role) == roles &&
++    snapshot.tensors.map (·.axes) == List.replicate (inputs.length + 1) [] &&
++    snapshot.tensors.map (·.shape) == List.replicate (inputs.length + 1) [] &&
++    snapshot.tensors.map (·.values) == values.map (List.map some) &&
++    oracle.tensors.map (·.declaration) == declarations &&
++    oracle.tensors.map (·.name) == names &&
++    oracle.tensors.map (·.role) == roles &&
++    oracle.tensors.map (·.shape) == List.replicate (inputs.length + 1) [] &&
++    oracle.tensors.map (·.values) == values &&
++    oracle.contributions.map (·.value) == [expected] &&
++    canonicalContributions run.reference.observe.events ==
++      [⟨⟨0, []⟩, ⟨inputs.length, inputs.length, []⟩, some expected⟩] &&
++    (match comparison.published, comparison.collection, comparison.body with
++      | .ok .agreement, .ok .agreement, .ok .agreement => true
++      | _, _, _ => false)
++  | _, _, _, _ => false
++
++private def nativeCells (observation : NativeObservation) (inputBits : List UInt64)
++    (expectedBits : UInt64) : Bool :=
++  match observation.outputs, observation.report.env["O"]? with
++  | .ok [binding], some output =>
++    binding.metadata ==
++      ⟨inputBits.length, inputBits.length, "O",
++        { side := .declaration, declaration := some inputBits.length }, [], []⟩ &&
++    binding.shape == [] && binding.bits.size == 1 && binding.bits == #[expectedBits] &&
++    output.shape == [] && output.data.size == 1 &&
++    output.data.map Float.toBits == #[expectedBits] &&
++    observation.report.env.size == inputBits.length + 1 &&
++    (inputBits.zipIdx.all fun (bits, index) =>
++      match observation.report.env[s!"I{index}"]? with
++      | some input =>
++        input.shape == [] && input.data.size == 1 && input.data.map Float.toBits == #[bits]
++      | none => false)
++  | _, _ => false
++
++private def exactProfile (run : ComparisonRun) (inputs : List ℚ)
++    (inputBits : List UInt64) (expected : ℚ) (bits : UInt64) : Bool :=
++  match run.classification, run.profile, run.native with
++  | .fourLegParity, .ok profile, .ok native =>
++    match run.oracle, native.legacy, native.checked with
++    | .ok oracle, .observed legacy, .observed checked _ =>
++      inputs.length == inputBits.length && referenceCells run inputs expected &&
++      native.source.snapshot.inputs.map (·.values) == inputs.map (fun value => [value]) &&
++      native.source.snapshot.inputs.map (·.declaration) == List.range inputs.length &&
++      native.source.snapshot.inputs.map (·.shape) == List.replicate inputs.length [] &&
++      profile.actual.isSome && profile.oracle == oracle &&
++      (profile.values.filter (fun value => value.kind == .input)).map (·.exact) == inputs &&
++      (profile.values.filter (fun value => value.kind == .input)).map (·.site) ==
++        (List.range inputs.length).map (fun index =>
++          { origin := { side := .input, declaration := some index }, cell := some 0 }) &&
++      (profile.values.filter (fun value => value.kind == .tensorCell)).map (·.exact) ==
++        inputs ++ [expected] &&
++      (profile.values.filter (fun value => value.kind == .tensorCell)).map (·.bits) ==
++        inputBits ++ [bits] &&
++      (profile.values.filter (fun value => value.kind == .coreContribution)).map (·.exact) ==
++        [expected] &&
++      (profile.values.filter (fun value => value.kind == .corePublication)).map (·.exact) ==
++        [expected] &&
++      (profile.values.filter (fun value => value.kind == .coreAccumulator)).map (·.exact) ==
++        [expected] &&
++      nativeCells legacy inputBits bits && nativeCells checked inputBits bits
++    | _, _, _ => false
++  | _, _, _ => false
++
++private def scalarParity (inputs : List ℚ) (terms : List (List Nat))
++    (inputBits : List UInt64) (expected : ℚ) (bits : UInt64) : Bool :=
++  match compareSource (scalarSnapshot inputs terms) (some [inputs.length]) with
++  | .ok run => exactProfile run inputs inputBits expected bits
++  | .error _ => false
++
++def F10 : Bool :=
++  identityCase [[]] 1 0x3ff0000000000000 [[([], 1)]] &&
++  identityCase [] 0 0 []
++where
++  identityCase (terms : List (List Nat)) (expected : ℚ) (bits : UInt64)
++      (fibers : List (List (List ℚ × ℚ))) : Bool :=
++    let snapshot := scalarSnapshot [] terms
++    snapshot.resolved.stmts == [.assign "O" [] (rhs (terms.map fun _ => []))] &&
++    match compareSource snapshot (some [0]) with
++    | .ok run =>
++      exactProfile run [] [] expected bits &&
++      (match run.oracle with
++        | .ok oracle =>
++          oracle.contributions.map (fun row => row.terms.map fun fiber =>
++            fiber.occurrences.map fun occurrence =>
++              (occurrence.reads.map (·.value), occurrence.value)) == [fibers]
++        | .error _ => false)
++    | .error _ => false
++
++-- Only the supplied observation is injected; this is not a backend negative-zero receipt.
++private def injectedNegativeZero : Bool :=
++  match compareSource (scalarSnapshot [0, 7] [[0, 1]]) (some [2]) with
++  | .ok run =>
++    match run.profile, run.native with
++    | .ok profile, .ok native =>
++      match native.legacy with
++      | .observed original =>
++        match original.outputs with
++        | .ok [binding] =>
++          let report := { original.report with
++            env := original.report.env.insert "O" ⟨[], #[Float.ofBits 0x8000000000000000]⟩ }
++          let injected := observeBindings run.reference.source.admitted report
++          let zeros := profile.values.filter fun value =>
++            value.kind == .tensorCell && value.site.origin.declaration == some 2
++          exactProfile run [0, 7] [0, 0x401c000000000000] 0 0 &&
++          injected.outputs == .ok [{ binding with bits := #[0x8000000000000000] }] &&
++          injected.report.warnings == original.report.warnings &&
++          (match injected.report.env["O"]? with
++            | some output =>
++              output.shape == [] && output.data.size == 1 &&
++              output.data.map Float.toBits == #[0x8000000000000000]
++            | none => false) &&
++          (match zeros with
++            | [zero] =>
++              zero.site.coordinate == [] && zero.exact == 0 && zero.integer.value == 0 &&
++              zero.bits == 0 &&
++              compareBits zero.integer 0x8000000000000000 ==
++                ⟨0, 0, 0x8000000000000000, 0⟩ &&
++              (compareBits zero.integer 0x8000000000000000).agrees &&
++              !(compareBits zero.integer 1).agrees
++            | _ => false) &&
++          (match compareNative profile injected with
++            | .ok .agreement => true
++            | _ => false)
++        | _ => false
++      | _ => false
++    | _, _ => false
++  | .error _ => false
++
++def F11 : Bool :=
++  scalarParity [-3, 7] [[0, 1]]
++    [0xc008000000000000, 0x401c000000000000] (-21) 0xc035000000000000 &&
++  scalarParity [0, 7] [[0, 1]] [0, 0x401c000000000000] 0 0 &&
++  ([(1048576, 0x4130000000000000), (1048575, 0x412ffffe00000000),
++    (-1048576, 0xc130000000000000), (-1048575, 0xc12ffffe00000000),
++    (1, 0x3ff0000000000000), (-1, 0xbff0000000000000), (0, 0)] :
++      List (ℚ × UInt64)).all (fun (value, bits) =>
++        scalarParity [value] [[0]] [bits] value bits) &&
++  injectedNegativeZero
++
++private def envelopeNeighbour (inputs : List ℚ) (terms : List (List Nat))
++    (inputBits : List UInt64) (expected : ℚ) (bits : UInt64)
++    (products subsets prefixes bounds : List ℚ) : Bool :=
++  match compareSource (scalarSnapshot inputs terms) (some [inputs.length]) with
++  | .ok run =>
++    exactProfile run inputs inputBits expected bits &&
++    (match run.profile with
++      | .ok profile =>
++        (profile.values.filter (fun value => value.kind == .partialProduct)).map (·.exact) ==
++          products &&
++        (profile.values.filter (fun value => value.kind == .subsetProductBound)).map (·.exact) ==
++          subsets &&
++        (profile.values.filter (fun value => value.kind == .partialStatement)).map (·.exact) ==
++          prefixes &&
++        (profile.values.filter (fun value => value.kind == .statementAbsoluteBound)).map (·.exact) ==
++          bounds
++      | .error _ => false)
++  | .error _ => false
++
++private def envelopeRefusal (inputs : List ℚ) (terms : List (List Nat))
++    (expected : ℚ) (nativeBits : Option (List UInt64 × UInt64))
++    (occurrences : List (List ℚ × ℚ)) (site : Site) (kind : ValueKind)
++    (overshoot : ℚ) : Bool :=
++  let reason : Unsupported := .outsideEnvelope site kind overshoot 1048576
++  match compareSource (scalarSnapshot inputs terms) (some [inputs.length]) with
++  | .ok run =>
++    referenceCells run inputs expected &&
++    (match run.profile, run.classification with
++      | .error actual, .unsupportedNumericalProfile classified =>
++        actual == reason && classified == reason
++      | _, _ => false) &&
++    (if kind == .input then
++      match run.legacyComparison, run.checkedComparison with
++      | .unavailable .legNotObserved, .unavailable .legNotObserved => true
++      | _, _ => false
++    else
++      match run.legacyComparison, run.checkedComparison with
++      | .unavailable (.profile left), .unavailable (.profile right) =>
++        left == reason && right == reason
++      | _, _ => false) &&
++    (match run.oracle with
++      | .ok oracle =>
++        oracle.contributions.map (fun row => row.terms.flatMap fun fiber =>
++          fiber.occurrences.map fun occurrence =>
++            (occurrence.reads.map (·.value), occurrence.value)) == [occurrences]
++      | .error _ => false) &&
++    (match run.native with
++      | .ok native =>
++        native.source.snapshot.inputs.map (·.values) == inputs.map (fun value => [value]) &&
++        native.source.snapshot.inputs.map (·.declaration) == List.range inputs.length &&
++        native.source.snapshot.inputs.map (·.shape) == List.replicate inputs.length [] &&
++        if kind == .input then
++          match native.inputs, native.legacy, native.checked with
++          | .error input, .unavailable (.input legacy), .unavailable (.input checked) =>
++            nativeBits.isNone && input == reason && legacy == reason && checked == reason
++          | _, _, _ => false
++        else
++          match nativeBits, native.inputs, native.legacy, native.checked with
++          | some (inputBits, bits), .ok _, .observed legacy, .observed checked _ =>
++            inputs.length == inputBits.length &&
++            nativeCells legacy inputBits bits && nativeCells checked inputBits bits
++          | _, _, _, _ => false
++      | .error _ => false)
++  | .error _ => false
++
++def F12 : Bool :=
++  limit == 1048576 &&
++  envelopeNeighbour [1024, 1024] [[0, 1]]
++    [0x4090000000000000, 0x4090000000000000] 1048576 0x4130000000000000
++    [1024, 1048576] [1024, 1048576, 1048576] [1048576]
++    [1048576, 1048576] &&
++  envelopeNeighbour [-1024, 1024] [[0, 1]]
++    [0xc090000000000000, 0x4090000000000000] (-1048576) 0xc130000000000000
++    [-1024, -1048576] [1024, 1048576, 1048576] [-1048576]
++    [1048576, 1048576] &&
++  envelopeNeighbour [0, 1024, 1024] [[0, 1, 2]]
++    [0, 0x4090000000000000, 0x4090000000000000] 0 0
++    [0, 0, 0] [1, 1024, 1048576, 1048576] [0] [0, 0] &&
++  envelopeNeighbour [524288, -524288] [[0], [1]]
++    [0x4120000000000000, 0xc120000000000000] 0 0
++    [524288, -524288] [524288, 524288, 524288, 524288] [524288, 0]
++    [524288, 1048576, 1048576] &&
++  envelopeRefusal [1048577] [[0]] 1048577 none
++    [([1048577], 1048577)]
++    { origin := { side := .input, declaration := some 0 }, cell := some 0 }
++    .input 1048577 &&
++  envelopeRefusal [-1048577] [[0]] (-1048577) none
++    [([-1048577], -1048577)]
++    { origin := { side := .input, declaration := some 0 }, cell := some 0 }
++    .input (-1048577) &&
++  envelopeRefusal [1024, 1025] [[0, 1]] 1049600
++    (some ([0x4090000000000000, 0x4090040000000000], 0x4130040000000000))
++    [([1024, 1025], 1049600)]
++    { origin := { side := .read, declaration := some 1, statement := some 0, term := some 0, factor := some 1 } }
++    .partialProduct 1049600 &&
++  envelopeRefusal [1048576, 2, 0] [[0, 1, 2]] 0
++    (some ([0x4130000000000000, 0x4000000000000000, 0], 0))
++    [([1048576, 2, 0], 0)]
++    { origin := { side := .read, declaration := some 1, statement := some 0, term := some 0, factor := some 1 } }
++    .partialProduct 2097152 &&
++  envelopeRefusal [0, 1048576, 2] [[0, 1, 2]] 0
++    (some ([0, 0x4130000000000000, 0x4000000000000000], 0))
++    [([0, 1048576, 2], 0)]
++    { origin := { side := .read, declaration := some 2, statement := some 0, term := some 0, factor := some 2 } }
++    .subsetProductBound 2097152 &&
++  envelopeRefusal [1048576, -1048576] [[0], [1]] 0
++    (some ([0x4130000000000000, 0xc130000000000000], 0))
++    [([1048576], 1048576), ([-1048576], -1048576)]
++    { origin := { side := .read, statement := some 0, term := some 1 } }
++    .statementAbsoluteBound 2097152
++
++#guard F10
++#guard F11
++#guard F12
++
++#eval ("F10 direct AST empty-product one / empty-term-list zero", F10)
++#eval ("F11 actual negative/zero profile; INJECTED negative-zero comparison only", F11)
++#eval ("F12 actual exact boundary and typed intermediate-envelope refusals", F12)
++
++end SourceDifferentialNumericalTest
+diff --git a/leanncd/test/Semantics/SourceDifferentialPolicyTest.lean b/leanncd/test/Semantics/SourceDifferentialPolicyTest.lean
+new file mode 100644
+index 0000000000000000000000000000000000000000..c548f55b6f7bbc9fee0c746bbc011552ca16a2b5
+--- /dev/null
++++ b/leanncd/test/Semantics/SourceDifferentialPolicyTest.lean
+@@ -0,0 +1,304 @@
++import Semantics.SourceDifferentialFixtures
++import Semantics.SourceDiagnosticFixtures
++
++open LeanNCD LeanNCD.Semantics LeanNCD.Semantics.Source
++open LeanNCD.Semantics.Source.Debug
++open LeanNCD.Semantics.Source.NativeLegs
++open LeanNCD.Semantics.Source.Differential
++open LeanNCD.Semantics.Source.NumericalProfile
++open SourceAdmissionFixtures
++
++namespace SourceDifferentialPolicyTest
++
++private def referenceAgreement (comparison : ReferenceComparison) : Bool :=
++  match comparison.published, comparison.collection, comparison.body with
++  | .ok .agreement, .ok .agreement, .ok .agreement => true
++  | _, _, _ => false
++
++private def completeValues (run : SourceRun)
++    (expected : List (Nat × Nat × List Nat × List Rat)) : Bool :=
++  match run.observe.endpoint with
++  | .complete snapshot =>
++    snapshot.tensors.map (fun t => (t.tensorUID, t.declaration, t.shape, t.values)) ==
++      expected.map (fun (uid, declaration, shape, values) =>
++        (uid, declaration, shape, values.map some)) &&
++      snapshot.pending == [] && snapshot.unpublished == []
++  | _ => false
++
++private def originalNative (native : NativeRun) (snapshot : SourceSnapshot) : Bool :=
++  native.source.snapshot.resolved.decls == snapshot.resolved.decls &&
++    native.source.snapshot.resolved.stmts == snapshot.resolved.stmts &&
++    native.source.program.decls == snapshot.resolved.decls &&
++    native.source.program.stmts == snapshot.resolved.stmts &&
++    native.source.snapshot.inputs.map (fun b => (b.declaration, b.shape, b.values)) ==
++      snapshot.inputs.map (fun b => (b.declaration, b.shape, b.values))
++
++private def observedOutput (actual : NativeObservation) (uid declaration : Nat)
++    (shape : List Nat) (bits : Array UInt64) : Bool :=
++  match actual.outputs, actual.report.env["Y"]? with
++  | .ok [output], some binding =>
++    output.metadata.tensorUID == uid && output.metadata.declaration == declaration &&
++      output.metadata.name == "Y" &&
++      output.metadata.origin == { side := .declaration, declaration := some declaration } &&
++      output.metadata.axes.map Axis.extent == shape && output.metadata.shape == shape &&
++      output.shape == shape && output.bits.size == bits.size && output.bits == bits &&
++      binding.shape == shape && binding.data.size == bits.size &&
++      binding.data.map Float.toBits == bits &&
++      actual.report.warnings == [] &&
++      actual.backendInternals == .unobserved .noBackendInternalHook
++  | _, _ => false
++
++private def defaultF32 : SourceSnapshot :=
++  { SourceDiagnosticFixtures.scalarSnapshot with
++    resolved := { SourceDiagnosticFixtures.scalarSnapshot.resolved with
++      decls := [.tensor "A" [], .tensor "Y" []] } }
++
++private def f32Refusal : Bool :=
++  match compareSource defaultF32 (some [1]) with
++  | .ok run =>
++    let origin : SourceOrigin :=
++      { side := .output, declaration := some 1, statement := some 0 }
++    let condition : StructuralCondition := .usedDType origin "Y" .f32
++    run.fixtureDependencyOrder == some [1] &&
++      completeValues run.reference [(0, 0, [], [3]), (1, 1, [], [3])] &&
++      run.reference.source.admitted.statements.map (·.original) == [0] &&
++      (match run.classification with
++      | .knownContractDifference actual => actual == condition
++      | _ => false) &&
++      (match run.profile with
++      | .error reason => reason == .structural condition
++      | _ => false) &&
++      (match run.oracle, run.referenceComparison with
++      | .ok oracle, some comparison =>
++        oracle.tensors.map (fun t => (t.declaration, t.shape, t.values)) ==
++          [(0, [], [3]), (1, [], [3])] && referenceAgreement comparison
++      | _, _ => false) &&
++      (match run.native with
++      | .ok native =>
++        originalNative native defaultF32 &&
++          native.source.admitted.source.table.entries.map (·.elementType) == [.f32, .f32] &&
++          native.shared == .error (.structural condition) &&
++          (match native.legacy, native.checked with
++          | .failure legacy, .preparation checked =>
++            (match legacy.original.error with
++            | .unsupportedDtype "A" => true
++            | _ => false) &&
++              legacy.phase == .scheduledEvaluation &&
++              checked.original.cause == .inputSignature (.dtypeMismatch "A" .f32 .f64) &&
++              legacy.original.warnings == [] && checked.original.warnings == [] &&
++              legacy.mappings ==
++                [⟨"Y", [{ side := .output, declaration := some 1, statement := some 0 }], none⟩] &&
++              checked.mappings ==
++                [⟨"Y", [{ side := .output, declaration := some 1, statement := some 0 }], some 0⟩] &&
++              (match run.legacyComparison, run.checkedComparison with
++              | .unavailable .legNotObserved, .unavailable .legNotObserved => true
++              | _, _ => false)
++          | _, _ => false)
++      | _ => false)
++  | _ => false
++
++private def f64Neighbor : Bool :=
++  let snapshot := SourceDiagnosticFixtures.scalarSnapshot
++  match compareSource snapshot (some [1]) with
++  | .ok run =>
++    match run.classification, run.profile, run.native, run.oracle with
++    | .fourLegParity, .ok profile, .ok native, .ok oracle =>
++      snapshot.resolved.decls == [.typedTensor .f64 "A" [], .typedTensor .f64 "Y" []] &&
++        snapshot.resolved.stmts == defaultF32.resolved.stmts &&
++        snapshot.inputs.map (fun b => (b.declaration, b.shape, b.values)) ==
++          defaultF32.inputs.map (fun b => (b.declaration, b.shape, b.values)) &&
++        run.fixtureDependencyOrder == some [1] &&
++        completeValues run.reference [(0, 0, [], [3]), (1, 1, [], [3])] &&
++        oracle.tensors.map (fun t => (t.declaration, t.shape, t.values)) ==
++          [(0, [], [3]), (1, [], [3])] &&
++        profile.actual.isSome && originalNative native snapshot &&
++        (match native.shared with | .ok _ => true | _ => false) &&
++        (match run.referenceComparison with
++        | some comparison => referenceAgreement comparison
++        | _ => false) &&
++        (match run.legacyComparison, run.checkedComparison with
++        | .compared (.ok .agreement), .compared (.ok .agreement) => true
++        | _, _ => false) &&
++        (match native.legacy, native.checked with
++        | .observed legacy, .observed checked _ =>
++          observedOutput legacy 1 1 [] #[0x4008000000000000] &&
++            observedOutput checked 1 1 [] #[0x4008000000000000]
++        | _, _ => false)
++    | _, _, _, _ => false
++  | _ => false
++
++def F13 : Bool := f32Refusal && f64Neighbor
++
++private def multiDefinition : SourceSnapshot :=
++  ⟨⟨[.axis i (some 2), .typedTensor .f64 "A" [i],
++      .typedTensor .f64 "B" [i], .typedTensor .f64 "Y" [i]],
++    [.assign "Y" [.free i] (rhs [[.read "A" [.axis i]]]),
++     .assign "Y" [.free i] (rhs [[.read "B" [.axis i]]])], {}, ∅⟩,
++    [⟨1, .input, [2]⟩, ⟨2, .input, [2]⟩, ⟨3, .output, [2]⟩],
++    [⟨1, [2], [5, 9]⟩, ⟨2, [2], [2, 4]⟩]⟩
++
++private def outputOrigin (statement : Nat) : SourceOrigin :=
++  { side := .output, declaration := some 3, statement := some statement }
++
++private def statementContributions (statement : Nat) (values : List Rat) :
++    List ContributionObservation :=
++  values.zipIdx.map fun (value, coordinate) =>
++    ⟨⟨statement, [(7, coordinate)]⟩, ⟨2, 3, [coordinate]⟩, some value⟩
++
++private def overwriteRefusal (run : ComparisonRun) (origins : List SourceOrigin) : Bool :=
++  let condition : StructuralCondition := .crossStatementOverwrite 3 origins
++  (match run.classification with
++  | .knownContractDifference actual => actual == condition
++  | _ => false) &&
++    (match run.profile with
++    | .error reason => reason == .structural condition
++    | _ => false) &&
++    (match run.native with
++    | .ok native => native.shared == .error (.structural condition)
++    | _ => false) &&
++    (match run.legacyComparison, run.checkedComparison with
++    | .unavailable (.profile left), .unavailable (.profile right) =>
++      left == .structural condition && right == .structural condition
++    | _, _ => false)
++
++def F14 : Bool :=
++  match compareSource multiDefinition (some [3]) with
++  | .ok run =>
++    run.fixtureDependencyOrder == some [3] &&
++      overwriteRefusal run [outputOrigin 0, outputOrigin 1] &&
++      completeValues run.reference
++        [(0, 1, [2], [5, 9]), (1, 2, [2], [2, 4]), (2, 3, [2], [7, 13])] &&
++      run.reference.source.admitted.statements.map (·.original) == [0, 1] &&
++      canonicalContributions run.reference.observe.events ==
++        statementContributions 0 [5, 9] ++ statementContributions 1 [2, 4] &&
++      (match run.oracle, run.referenceComparison with
++      | .ok oracle, some comparison =>
++        oracle.tensors.map (fun t => (t.declaration, t.shape, t.values)) ==
++          [(1, [2], [5, 9]), (2, [2], [2, 4]), (3, [2], [7, 13])] &&
++          referenceAgreement comparison
++      | _, _ => false) &&
++      (match run.native with
++      | .ok native =>
++        originalNative native multiDefinition &&
++          native.source.admitted.statements.map (·.original) == [0, 1] &&
++          (match native.legacy, native.checked with
++          | .observed legacy, .observed checked mappings =>
++            observedOutput legacy 2 3 [2] #[0x4000000000000000, 0x4010000000000000] &&
++              observedOutput checked 2 3 [2] #[0x4000000000000000, 0x4010000000000000] &&
++              !mappings.isEmpty && mappings.all (fun mapping =>
++                mapping.name == "Y" && mapping.originals == [outputOrigin 0, outputOrigin 1] &&
++                  mapping.scheduledIndex.isSome)
++          | _, _ => false)
++      | _ => false)
++  | _ => false
++
++private def duplicateDefinition : SourceSnapshot :=
++  { multiDefinition with
++    resolved := { multiDefinition.resolved with stmts :=
++      multiDefinition.resolved.stmts ++
++        [.assign "Y" [.free i] (rhs [[.read "A" [.axis i]]])] } }
++
++-- This path executes already-identified statements; it never re-admits reordered raw syntax.
++private def derivedSourceRun (source : IdentifiedSource) : Except ExecutionError SourceRun := do
++  let actual ← (runSourceDebug source.admitted).mapError fun t =>
++    .inputPresence t.val
++      { side := .input, declaration := some (source.admitted.source.table.entry t).declaration }
++      ((elaborateSource source.admitted).input t)
++      ((sourceInputBinding source.admitted t).isSome)
++  pure ⟨source, actual, none⟩
++
++private def compareDebug (before after : SourceRun) : Bool :=
++  compareContributions (canonicalContributions before.observe.events)
++    (canonicalContributions after.observe.events) == .ok .agreement &&
++    compareTensors before.observe.endpoint.snapshot.tensors
++      after.observe.endpoint.snapshot.tensors == .ok .agreement
++
++private def expectedOccurrence (statement localIndex coordinate donor : Nat) :
++    OccurrenceObservation :=
++  let readOrigin : SourceOrigin :=
++    { side := .read, declaration := some donor, statement := some statement,
++      term := some 0, factor := some 0 }
++  ⟨⟨statement, [(7, coordinate)]⟩, localIndex, ⟨2, 3, [coordinate]⟩,
++    outputOrigin statement,
++    [⟨{ side := .read, statement := some statement, term := some 0 },
++      [(readOrigin, [({ readOrigin with slot := some 0 }, 7)])], [],
++      .unobserved .noTermEvaluationHook, .unobserved .noTermEvaluationHook⟩]⟩
++
++private def contributionEvents (run : SourceRun) : List (OccurrenceObservation × Rat) :=
++  run.observe.events.filterMap fun event => match event with
++    | .contribution occurrence value => some (occurrence, value)
++    | _ => none
++
++private def originalLocals (source : IdentifiedSource) : List (Nat × Nat × Nat) :=
++  (List.finRange source.admitted.statements.length).map fun position =>
++    let original := source.originalEquiv position
++    let localTag := source.originalToLocal original
++    (original.val, localTag.1.val, localTag.2.val)
++
++private def explicitOracle (run : SourceRun) : Bool :=
++  match Oracle.run run.source.admitted (some [3]), Oracle.run run.source.admitted none with
++  | .ok oracle, .error missing =>
++    oracle.tensors.map (fun t => (t.declaration, t.shape, t.values)) ==
++      [(1, [2], [5, 9]), (2, [2], [2, 4]), (3, [2], [12, 22])] &&
++      referenceAgreement (compareReference run oracle) && missing.cause == .missingOrder
++  | _, _ => false
++
++def F15 : Bool :=
++  match compareSource duplicateDefinition (some [3]) with
++  | .ok original =>
++    let before := original.reference
++    let permutation := permuteStatements before.source.admitted
++      { toFun := Fin.rev, invFun := Fin.rev,
++        left_inv := Fin.rev_rev, right_inv := Fin.rev_rev }
++    let identified := StatementPermutation.identified before.source permutation
++    match derivedSourceRun identified with
++    | .ok after =>
++      let expected := statementContributions 0 [5, 9] ++
++        statementContributions 1 [2, 4] ++ statementContributions 2 [5, 9]
++      let whole : List (Nat × Nat × List Nat × List Rat) :=
++        [(0, 1, [2], [5, 9]), (1, 2, [2], [2, 4]), (2, 3, [2], [12, 22])]
++      original.fixtureDependencyOrder == some [3] &&
++        duplicateDefinition.resolved.stmts.length == 3 &&
++        duplicateDefinition.resolved.stmts[0]? == duplicateDefinition.resolved.stmts[2]? &&
++        overwriteRefusal original [outputOrigin 0, outputOrigin 1] &&
++        checkStructure after.source.admitted ==
++          .error (.structural (.crossStatementOverwrite 3 [outputOrigin 2, outputOrigin 1])) &&
++        before.source.admitted.statements.map (·.original) == [0, 1, 2] &&
++        after.source.admitted.statements.map (·.original) == [2, 1, 0] &&
++        originalLocals before.source == [(0, 2, 0), (1, 2, 1), (2, 2, 2)] &&
++        originalLocals after.source == [(2, 2, 0), (1, 2, 1), (0, 2, 2)] &&
++        completeValues before whole && completeValues after whole &&
++        canonicalContributions before.observe.events == expected &&
++        canonicalContributions after.observe.events == expected &&
++        ((canonicalContributions after.observe.events).map (·.key)).eraseDups.length == 6 &&
++        contributionEvents before ==
++          [(expectedOccurrence 0 0 0 1, 5), (expectedOccurrence 0 0 1 1, 9),
++           (expectedOccurrence 1 1 0 2, 2), (expectedOccurrence 1 1 1 2, 4),
++           (expectedOccurrence 2 2 0 1, 5), (expectedOccurrence 2 2 1 1, 9)] &&
++        contributionEvents after ==
++          [(expectedOccurrence 2 0 0 1, 5), (expectedOccurrence 2 0 1 1, 9),
++           (expectedOccurrence 1 1 0 2, 2), (expectedOccurrence 1 1 1 2, 4),
++           (expectedOccurrence 0 2 0 1, 5), (expectedOccurrence 0 2 1 1, 9)] &&
++        compareDebug before after && explicitOracle before && explicitOracle after &&
++        (match original.native with
++        | .ok native =>
++          originalNative native duplicateDefinition &&
++            native.source.admitted.statements.map (·.original) == [0, 1, 2] &&
++            (match native.legacy, native.checked with
++            | .observed legacy, .observed checked mappings =>
++              observedOutput legacy 2 3 [2] #[0x4014000000000000, 0x4022000000000000] &&
++                observedOutput checked 2 3 [2] #[0x4014000000000000, 0x4022000000000000] &&
++                !mappings.isEmpty && mappings.all (fun mapping =>
++                  mapping.name == "Y" &&
++                    mapping.originals == [outputOrigin 0, outputOrigin 1, outputOrigin 2] &&
++                    mapping.scheduledIndex.isSome)
++            | _, _ => false)
++        | _ => false)
++    | _ => false
++  | _ => false
++
++#guard F13
++#guard F14
++#guard F15
++
++end SourceDifferentialPolicyTest
+diff --git a/leanncd/test/Semantics/SourceDifferentialTest.lean b/leanncd/test/Semantics/SourceDifferentialTest.lean
+new file mode 100644
+index 0000000000000000000000000000000000000000..5d77e5302e0c1aa40544f9f2f37e9465e7e4a9d9
+--- /dev/null
++++ b/leanncd/test/Semantics/SourceDifferentialTest.lean
+@@ -0,0 +1,6 @@
++import Semantics.SourceDifferentialAlgebraTest
++import Semantics.SourceDifferentialGeometryTest
++import Semantics.SourceDifferentialIdentityTest
++import Semantics.SourceDifferentialNumericalTest
++import Semantics.SourceDifferentialPolicyTest
++import Semantics.SourceDifferentialCorpusTest
+diff --git a/papers/semantics/lean_executable_semantics_path.md b/papers/semantics/lean_executable_semantics_path.md
+index 45b1cad0af18a067e26562ec0fb676195a7bd97f..d231cf38c5bb8b393c4548d617b4a62fb120c5a5 100644
+--- a/papers/semantics/lean_executable_semantics_path.md
++++ b/papers/semantics/lean_executable_semantics_path.md
+@@ -86,19 +86,24 @@ coordinate ranks + finite measure + maximal-run correspondence    LANDED
+                          |
+ computable state/step selection + validated reference executor    LANDED
+                          |
+-source correspondence + differential debugging                    REMAINING
++bounded source correspondence + differential debugging             LANDED
+                          |
+ compiled storage/backend refinement                              LATER
+ ```
+ 
+-The executor operates on directly constructed admitted core programs.
+-A source elaborator is necessary for comparing source programs with production,
+-not for first running and debugging the core semantics.
+-
+-The next-phase [source correspondence + differential debugging plan](source_correspondence_plan.md)
+-specifies the first complete source slice. It is a design plan with a verified
+-partial prototype, **not execution-ready**; its front gate lists the remaining
+-rehearsal and review requirements. Authoring receipts are in the separate
++The generic executor still accepts directly constructed admitted core programs.
++The `LeanNCD.Semantics.Source` layer additionally admits resolved finite read-only
++sum-products and constructs complete multi-target schedules automatically.
++
++The [source correspondence + differential debugging plan](source_correspondence_plan.md)
++now has implemented and tested source binding, admission, normalized-body/fiber
++proofs, execution-backed whole-store equations, typed diagnostics, and four-leg
++comparison. All 79 named fixtures, exactly 18 generated programs, 39/39
++implementation mutations, the controller full build (8,763 jobs), ordered
++six-patch replay and both final whole-branch review lenses pass. This lands only
++the bounded read-only sum-product fragment, not general backend refinement.
++Exact scope, observed fixtures, mutation classifications and
++historical authoring receipts are in the separate
+ [source correspondence record](source_correspondence_record.md).
+ 
+ ## 2. One notation, two presentations
+@@ -274,9 +279,12 @@ Here each pullback puts an operand on the common global valuation domain;
+ the product is pointwise semiring multiplication; output pushforward combines
+ the assignments in each output fiber. Repeated indices are encoded by the
+ maps, not by informal dimension-name matching. Empty fibers give $0_K$.
+-This is a mathematical decomposition of the specified formula. The generic
+-pushforward is landed, but the theorem connecting source pure-einsum
+-elaboration to this formula and the contribution core remains unproved.
++For the admitted bounded read-only fragment, `Term.collectedBody_correspondence`
++and `AdmittedSource.collect_correspondence` now connect actual normalized
++expressions and `Program.collect` to independently specified original-read
++fibers. Each term's global domain is its read support union output support;
++unused zero-extent declarations do not erase unrelated terms. The generic
++theorems preserve factor order, repeated slots, empty fibers and multiplicity.
+ 
+ ### 3.3 Partial maps organize expression definedness
+ 
+@@ -732,18 +740,19 @@ solver.
+ 
+ #### What this does not claim
+ 
+-- **No synthesis or checking.** The `Schedule` carries kernel-checked
+-  duplicate-freedom and coverage, but it is supplied. The coordinate rank is
+-  proof data. Neither is computed or checked at runtime.
++- **No general synthesis or rank checking.** The generic `Schedule` carries
++  kernel-checked duplicate-freedom and coverage supplied by its caller. The
++  bounded source layer computes that schedule, but does not synthesize or
++  runtime-check address ranks.
+ - **No no-model claim outside initialization.** `runFuel` on an arbitrary state,
+   blocked endpoints, and exhausted endpoints say nothing about whether a model
+   exists. Blocking is not undefinedness.
+ - **No schedule independence beyond whole stores.** Successful schedules agree
+   on the complete environment; failure selection, diagnostics, and event traces
+   may differ.
+-- **No new representation claims.** Stores are function-valued. There is no
+-  dense storage, scalar renderer, source correspondence, or backend refinement,
+-  so Part V of the specification is untouched.
++- **No dense/backend representation claims.** Stores remain function-valued.
++  The separate bounded source layer adds correspondence and scalar diagnostic
++  rendering, not dense-storage simulation or Part V backend refinement.
+ - **A parked runtime gap.** The generic executor retains heterogeneous carriers,
+   but the runtime fixtures do not cover heterogeneous non-additive inputs.
+ 
+@@ -804,29 +813,23 @@ categorical interpretation or source correspondence.
+ 
+ ## 5. Remaining work, in dependency order
+ 
+-### 5.1 Connect named source syntax and the production evaluator
+-
+-For debugging source programs, establish the bridge in
+-[Sections 13-17](tensor_logic_semantics.md#part-ii-core-language-and-surface-elaboration)
+-and [19.3](tensor_logic_semantics.md#193-correspondence-with-pure-einsum).
+-The admitted core already interprets bodies; what remains is to justify how
+-source expressions become those bodies and domains:
+-
+-- Named UID-based contexts, renaming, and capture-avoiding substitution,
+-  related to the existing typed valuation spaces.
+-- Structural checking and elaboration preserving guards, bounded reads/writes,
+-  lifted binder domains, and statement/valuation multiplicity.
+-- Pure-einsum correspondence, including term-local contraction, diagonal
+-  reads/writes, repeated output indices, and empty domains.
+-- Source permutation connected to existing occurrence-relabeling laws;
+-  corresponding successful-execution relabeling still needs a bridge.
+-- Explicit nonlinear boundaries: operator-before-collection and
+-  operator-after-collection are different programs.
+-
+-Then use the executable core as an oracle for the production pipeline on the
+-**shared supported fragment**. Locate discrepancies by layer: source admission,
+-elaboration, body interpretation, occurrence collection, dependency/readiness,
+-publication, or backend arithmetic.
++### 5.1 Beyond the bounded source/debugging fragment
++
++The first source slice implements true UID valuations and domain-preserving
++pullbacks/freshening, resolved/raw admission with original provenance,
++term-local normalization, multi-target execution, genuine pure-einsum fiber
++correspondence, and tag-preserving collection/model permutation laws.
++`compareSource` runs an independent exact oracle, the admitted rational
++executor, legacy evaluation, and the checked dense backend. Shared native
++comparison uses explicit f64 declarations and a checked bounded-integer
++envelope with exact bit comparison, not tolerance or a Float semiring.
++Actual output discrepancies do not invent native internal causal evidence.
++
++Remaining source work is broader than that finite bare-slot fragment: scans,
++marked arrays/slices, affine writes, guards/Iverson factors, nonlinear primitives
++and their before/after-collection boundary, unpinned dimension inference,
++general expression substitution, and schedule/rank synthesis. The slice does
++not claim full source-language elaboration or general numerical refinement.
+ 
+ The [semantic gap audit](tensor_logic_semantic_gap_audit.md) records the known
+ production divergence for multiple statements defining one LHS: production
+diff --git a/papers/semantics/source_correspondence_artifacts/controller_closeout.txt b/papers/semantics/source_correspondence_artifacts/controller_closeout.txt
+new file mode 100644
+index 0000000000000000000000000000000000000000..c0c1749d4e61c68cc990f429156d753aebb2be1d
+--- /dev/null
++++ b/papers/semantics/source_correspondence_artifacts/controller_closeout.txt
+@@ -0,0 +1,46 @@
++Source correspondence final controller receipts -- 2026-10-09
++
++Base: d0f8462
++Reviewed source tree: 3d057e1f9a0894dd7318ba28fae50b7d89dc8015
++No production DSL/Eval edits.
++
++PASS: 79 planned named fixture entrypoints.
++PASS: exactly 18 structurally distinct generated F16 programs.
++PASS: all 39 implementation manifest cycles, expected diagnostics observed,
++      byte-identical restoration, and every restored build green.
++      Classes: 18 proof-protected, 21 executable-fixture kills.
++PASS: independent six historical input contrasts on seed
++      284c7df2d169377d6029ae2a277c8a119929bbf1; not implementation kills.
++PASS: T1-T5 per-task reviews and both final whole-branch lenses.
++PASS: actual-worktree full build, exit 0, 8763 jobs.
++PASS: source tree unchanged from reviewed tree after mutation restoration/build.
++PASS: six fresh ordered task patches reconstruct the staged source/docs tree
++      from d0f8462, excluding their own sidecars; final identities in session
++      source-final-patch-replay.json.
++
++Build command actually run:
++bash /Users/williammacready/code/python/pyncd.worktrees/source-correspondence-debug-plan/leanncd/scripts/lake-build.sh /Users/williammacready/code/python/pyncd.worktrees/source-correspondence-debug-plan/leanncd
++
++The existing full-manifest process was observed to completion, not duplicated.
++Full build log: session source-final-full-build.log (8763 jobs).
++Manifest receipts: controller_post_mutations.md.
++Historical contrast receipts: controller_seed_contrasts.md.
++Static reviews: controller_soundness_review.txt,
++                controller_differential_review.txt.
++
++Existing unrelated warnings/sorries remain; no new Source warnings or errors.
++No skipped controller gate. Protocol injections are not actual backend faults.
++Arbitrary rationals are core-only; strict native comparison uses the checked
++bounded-integer profile and explicit original f64 declarations.
++Unsupported forms/profiles, missing oracle order, blocking, exhaustion,
++f32 failures and known overwrite differences retain explicit classifications.
++Native internal localization without hooks is unobserved.
++
++Budget: earlier parent controller prompt 348992 tokens exceeded ~250k cap.
++Fresh-context close-out is the prescribed split, not a claim of prior compliance.
++Historical input 66646841 is cache-inclusive partial telemetry, not a full total.
++End-to-end total and all dispatch peaks unavailable; no total-budget certification.
++
++Integration: local main only, preserve concurrent specification-document edits.
++No remote push. Final commit/merge hashes, ahead count and branch/worktree removal
++are recorded in session source-final-closeout.txt after integration.
+diff --git a/papers/semantics/source_correspondence_artifacts/controller_differential_review.txt b/papers/semantics/source_correspondence_artifacts/controller_differential_review.txt
+new file mode 100644
+index 0000000000000000000000000000000000000000..5ef242a3e6fb2f61f336b34cb7c744626a25929e
+--- /dev/null
++++ b/papers/semantics/source_correspondence_artifacts/controller_differential_review.txt
+@@ -0,0 +1,76 @@
++FINALWHOLEBRANCH lens2 review checkpoint
++Base: d0f8462
++Immutable tree: 3d057e1f9a0894dd7318ba28fae50b7d89dc8015
++Evidence: source-correspondence-review-snapshot only; immutable git diff --stat.
++No current worktree code read, builds, mutations, delegation, or production edits.
++
++Reviewed so far:
++- Independent Oracle: raw read/output UID support, Cartesian enumeration,
++  checked row-major lookup, full defined tensors, original dependency order.
++- NativeLegs: independent bounded-integer input bits, actual legacy and
++  checked compile/prepare/run entrypoints, identity refusals, output structures.
++- NumericalProfile: receipt shape/source-read linking, subset-product and
++  absolute-addition bounds, inputs, exact core events/accumulators, integer bits.
++- Differential / Observation / Diagnostics: actual validated run retention,
++  canonical original-statement/UID keys, full-cell normalization, strict
++  four-leg classification, structure-before-cell comparison, unobserved hooks.
++- Oracle and differential geometry/numerical/corpus fixtures.
++
++No high-confidence issue identified yet. Review remains in progress:
++diagnostic fixtures, remaining differential fixtures, docs and manifest receipt
++status, and immediate production-backend integration context.
++
++Controller whole-manifest exact expectation / restoration gate is RUNNING;
++full build and fresh ordered replay are pending per the supplied evidence.
++These have not been run or independently verified by this reviewer.
++Budget: below 45 review turns so far; exact cumulative token telemetry unavailable.
++
++FINAL REVIEW RESULT
++Whole-branch lens2 CLEAN for immutable tree
++3d057e1f9a0894dd7318ba28fae50b7d89dc8015 against base d0f8462.
++No significant issues found in the reviewed changes.
++
++Completed remaining lens2 scope:
++- All diagnostic and differential fixture families, including original-source
++  f32 failures, required diagonal writes and duplicate terms, distinct generated
++  programs, asymmetric transpose/packing, full output structure before cells,
++  canonical differing coordinates, signed-zero bits, warnings and phase causes.
++- Immediate unchanged production entrypoints and scalar fold integration.
++  Diagonal assignments are actually lowered to scatters, not passed to the
++  plain repeated-slot evaluator. Native scalar folds multiply factors, reduce
++  each term, then combine terms; the profile's subset and absolute bounds cover
++  these without assuming a Float semiring or a schedule-independence theorem.
++- Runtime profile receipt coverage: all declarations/full tensor buffers,
++  original statement/cell rows and ordered terms/reads, bounded unique complete
++  assignment fibers, original source read coordinates/values, intermediate
++  envelopes, exact validated core contribution/publication/accumulator values.
++- Public source umbrella, default test registration, integrated plan/record/
++  roadmap status, and all 39 post-manifest entries.
++
++Read-only static manifest check observed:
++39 entries and 39 unique labels; task counts T1=4, T2=8, T3=6, T4=4, T5=8, T6=9;
++every target/expect list nonempty; every old replacement matches exactly once
++in the immutable snapshot; no production DSL/Eval mutation target.
++The 18 proof-protected versus 21 executable-fixture distinction is consistent
++with the manifest and task records. This is not fresh mutation execution.
++
++F16 checks exactly two scalar plus sixteen rank/extent/factor configurations
++with distinct declaration and statement ASTs. Explicit rejections remain
++rejections, not four-leg samples. F18 is resolved-source reference evidence,
++not a raw-parser expressibility claim. D3/D13 and output/warning/signed-zero
++injections remain protocol observations, not actual backend-fault or reached
++source-failure receipts. NoModel is not inferred from blocking/unavailability.
++
++Limitations / controller gates:
++No build, mutation, full-manifest replay, ordered patch replay, or current
++worktree/main inspection was performed by this reviewer. New readiness patch
++artifacts were deliberately excluded and not reviewed. Per the supplied
++controller status, whole-manifest exact-expect/byte-restoration/restored-green
++verification was RUNNING, and the full build/fresh ordered replay were pending.
++This clean review does not mark any of those gates completed or authorize
++claiming execution readiness. Lens1 admission/proof review is separate.
++
++Budget: completed below the requested 45-turn cap; no observed budget breach.
++Exact cumulative-input and peak-context telemetry is unavailable, not zero.
++Only this explicitly requested session finding artifact was written; no code,
++snapshot, git state, or shared checkout was modified.
+diff --git a/papers/semantics/source_correspondence_artifacts/controller_post_mutations.md b/papers/semantics/source_correspondence_artifacts/controller_post_mutations.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d8ec1c18d930cfec55c45da26abf2a6d6194aabe
+--- /dev/null
++++ b/papers/semantics/source_correspondence_artifacts/controller_post_mutations.md
+@@ -0,0 +1,43 @@
++| Mutation | Cycle (broke, then restored build green) | File byte-identical | Expected failure seen | Result |
++|---|---|---|---|---|
++| T1-UID-position-alias (V1) | yes | yes | yes | PASS |
++| T1-UID-wrong-inverse-permutation (V3) | yes | yes | yes | PASS |
++| V5 requested freshness omits output/free support (intended proof: BinderScope.requested_fresh) | yes | yes | yes | PASS |
++| V6 domain check removed (intended contract: resolveUID domain witness) | yes | yes | yes | PASS |
++| T2 prefix-domain acceptance (A1) | yes | yes | yes | PASS |
++| T2 output slot reorder (A3/A4) | yes | yes | yes | PASS |
++| T2 support over-contraction (A5/B4) | yes | yes | yes | PASS |
++| T2 duplicate resolved axis declaration shadow (A9; A9/A10 duplicate-declaration family) | yes | yes | yes | PASS |
++| T2 A11 (write role guard removed; writable contract protected) | yes | yes | yes | PASS |
++| T2 A12 (absent domain inferred from input shape) | yes | yes | yes | PASS |
++| T2 inputs: fabricate missing declared input bindings (A13/A14) | yes | yes | yes | PASS |
++| T2 inputs: skip shape rejection and repair short payloads (A15/A16) | yes | yes | yes | PASS |
++| T3-P1 first-statement single-target role shortcut | yes | yes | yes | PASS |
++| T3-P3 attached original tag overwritten by permuted ordinal | yes | yes | yes | PASS |
++| T3-P4 (deduplicate original occurrences by output and ordered operand signature) | yes | yes | yes | PASS |
++| T3-P5 (omit publications for nonoutput defined tensors) | yes | yes | yes | PASS |
++| T3-P6 (omit the entire coordinate domain of tensors without statements) | yes | yes | yes | PASS |
++| T3-P9 exact nested read footprint loses all inner reads | yes | yes | yes | PASS |
++| T4-B2-BOUNDARY (lose the zero contraction bound) | yes | yes | yes | PASS |
++| T4-B3-BOUNDARY (change one repeated destination slot) | yes | yes | yes | PASS |
++| T4-B4-bias-reduced-over-another-term-bound | yes | yes | yes | PASS |
++| T4-B6-drop-second-target-local-statement-occurrences | yes | yes | yes | PASS |
++| T5-F11-F12-final-only-envelope (supplementary payload profile guard) | yes | yes | yes | PASS |
++| T5-D6-trace-index-zip-without-occurrence-key-normalization | yes | yes | yes | PASS |
++| T5-D7 wrong differing coordinate | yes | yes | yes | PASS |
++| T5-D8 prefix shape comparison | yes | yes | yes | PASS |
++| T5-D9 original source ordinal dropped | yes | yes | yes | PASS |
++| T5 checked compile/preparation/runtime renderer causes collapsed (D11-D13) | yes | yes | yes | PASS |
++| T5-D15 successful native observation discards stored warnings | yes | yes | yes | PASS |
++| T5-D14 guessed native body causal localization without a hook | yes | yes | yes | PASS |
++| T6-F4 diagonal write wrongly refused by repeated-output UID guard | yes | yes | yes | PASS |
++| T6-F5 independent oracle zero-domain assignment made singleton | yes | yes | yes | PASS |
++| T6-F8 independent oracle packing transposed | yes | yes | yes | PASS |
++| T6-F7 source sum-product terms deduplicated before original term indexing | yes | yes | yes | PASS |
++| T6-zero-normalization-removed (F11 comparison-only injected signed-zero observation) | yes | yes | yes | PASS |
++| T6-policy-f32-source-silently-rewritten-to-f64 (F13) | yes | yes | yes | PASS |
++| T6-policy-multiple-definitions-falsely-marked-shared (F14/F15) | yes | yes | yes | PASS |
++| T6-F18 independent oracle slots merge actual UID into first assignment | yes | yes | yes | PASS |
++| T6-F17-P6 publication scan drops final coordinate of every defined domain | yes | yes | yes | PASS |
++
++39/39 cycles passed.
+diff --git a/papers/semantics/source_correspondence_artifacts/controller_seed_contrasts.md b/papers/semantics/source_correspondence_artifacts/controller_seed_contrasts.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..8de474c66f6d764a30ca02246ffa2ff5c2aaeaec
+--- /dev/null
++++ b/papers/semantics/source_correspondence_artifacts/controller_seed_contrasts.md
+@@ -0,0 +1,10 @@
++| Mutation | Cycle (broke, then restored build green) | File byte-identical | Expected failure seen | Result |
++|---|---|---|---|---|
++| M1 independent UIDs become one diagonal binder | yes | yes | yes | PASS |
++| M2 diagonal becomes independent variables | yes | yes | yes | PASS |
++| M3 scalar operand multiplicity removed | yes | yes | yes | PASS |
++| M4 zero contraction extent becomes singleton | yes | yes | yes | PASS |
++| M5 bias incorrectly contracted | yes | yes | yes | PASS |
++| M6 repeated output becomes full independent outer product | yes | yes | yes | PASS |
++
++6/6 cycles passed.
+diff --git a/papers/semantics/source_correspondence_artifacts/controller_soundness_review.txt b/papers/semantics/source_correspondence_artifacts/controller_soundness_review.txt
+new file mode 100644
+index 0000000000000000000000000000000000000000..74eef79b2e170098695594794312148757abb470
+--- /dev/null
++++ b/papers/semantics/source_correspondence_artifacts/controller_soundness_review.txt
+@@ -0,0 +1,21 @@
++FINALWHOLEBRANCH lens 1: SOUNDNESS/BINDING/ELABORATION/PROVENANCE/SCHEDULE
++Baseline: d0f8462
++Immutable reviewed tree: 3d057e1f9a0894dd7318ba28fae50b7d89dc8015
++
++Verdict: wholebranch lens1 clean.
++No significant issues found in the reviewed changes.
++
++This is a static integrated code/proof review of the supplied immutable copy.
++No live worktree code was read, built, edited, mutated, or staged.
++No delegation or peer coordination was performed.
++Deep native/profile arithmetic belongs to the separate lens 2 review.
++Excluded generated readiness patch artifacts were not transcription-reviewed.
++
++Controller gates remain unverified by this review: full 39-cycle manifest
++expected-text/byte-restoration receipt, final full build, and ordered patch replay.
++The reported 79-fixture/18-generated-program aggregate and per-task mutation
++receipts are prior controller evidence, not validations rerun by this reviewer.
++Historical six input contrasts are not counted as implementation mutation kills.
++
++Review completed before the 30-turn checkpoint and within the 45-turn cap.
++No context-budget breach observed; independent peak telemetry was not collected.
+diff --git a/papers/semantics/source_correspondence_mutations_post.json b/papers/semantics/source_correspondence_mutations_post.json
+index 06dd186393912ec2d50dec336b4a78faf64c6593..e9696b83cc68f011f22f0984228c8eddcd7170c1 100644
+--- a/papers/semantics/source_correspondence_mutations_post.json
++++ b/papers/semantics/source_correspondence_mutations_post.json
+@@ -422,5 +422,135 @@
+       "\n  D14\n",
+       "did not evaluate to `true`"
+     ]
++  },
++  {
++    "label": "T6-F4 diagonal write wrongly refused by repeated-output UID guard",
++    "task": "T6",
++    "file": "LeanNCD/Semantics/Source/NumericalProfile.lean",
++    "old": "    unless output.elementType == .f64 do\n      throw (.structural (.usedDType statement.output.origin output.name output.elementType))",
++    "new": "    unless output.elementType == .f64 && (statement.output.indices.length == statement.output.indices.dedup.length) do\n      throw (.structural (.usedDType statement.output.origin output.name output.elementType))",
++    "targets": [
++      "+Semantics.SourceDiagnosticNativeTest",
++      "+Semantics.SourceDifferentialGeometryTest"
++    ],
++    "expect": [
++      "\n  F4\n",
++      "did not evaluate to `true`"
++    ]
++  },
++  {
++    "label": "T6-F5 independent oracle zero-domain assignment made singleton",
++    "task": "T6",
++    "file": "LeanNCD/Semantics/Source/Oracle.lean",
++    "old": "    (List.range a.extent).flatMap fun i => (assignments rest).map ((a.uid, i) :: \u00b7)",
++    "new": "    (List.range (max 1 a.extent)).flatMap fun i => (assignments rest).map ((a.uid, i) :: \u00b7)",
++    "targets": [
++      "+Semantics.SourceOracleTest",
++      "+Semantics.SourceDifferentialGeometryTest"
++    ],
++    "expect": [
++      "\n  F5\n",
++      "did not evaluate to `true`"
++    ]
++  },
++  {
++    "label": "T6-F8 independent oracle packing transposed",
++    "task": "T6",
++    "file": "LeanNCD/Semantics/Source/Oracle.lean",
++    "old": "  go shape coordinate 0 0",
++    "new": "  go shape.reverse coordinate.reverse 0 0",
++    "targets": [
++      "+Semantics.SourceDifferentialIdentityTest"
++    ],
++    "expect": [
++      "\n  F8\n",
++      "did not evaluate to `true`"
++    ]
++  },
++  {
++    "label": "T6-F7 source sum-product terms deduplicated before original term indexing",
++    "task": "T6",
++    "file": "LeanNCD/Semantics/Source/Admission.lean",
++    "old": "      let terms \u2190 rhs.body.terms.zipIdx.mapM fun (term, i) => do",
++    "new": "      let terms \u2190 rhs.body.terms.dedup.zipIdx.mapM fun (term, i) => do",
++    "targets": [
++      "+Semantics.SourceDifferentialIdentityTest"
++    ],
++    "expect": [
++      "\n  F7\n",
++      "did not evaluate to `true`"
++    ]
++  },
++  {
++    "label": "T6-zero-normalization-removed (F11 comparison-only injected signed-zero observation)",
++    "task": "T6",
++    "file": "LeanNCD/Semantics/Source/NumericalProfile.lean",
++    "old": "def normalizeZeroBits (bits : UInt64) : UInt64 :=\n  if bits &&& 0x7fffffffffffffff == 0 then 0 else bits",
++    "new": "def normalizeZeroBits (bits : UInt64) : UInt64 :=\n  bits",
++    "targets": [
++      "+LeanNCD.Semantics.Source.NumericalProfile",
++      "+Semantics.SourceDifferentialNumericalTest"
++    ],
++    "expect": [
++      "\n  F11\n",
++      "did not evaluate to `true`"
++    ]
++  },
++  {
++    "label": "T6-policy-f32-source-silently-rewritten-to-f64 (F13)",
++    "task": "T6",
++    "file": "LeanNCD/Semantics/Source/NativeLegs.lean",
++    "old": "def NativeSource.program (source : NativeSource) : TLProgram :=\n  \u27e8source.snapshot.resolved.decls, source.snapshot.resolved.stmts\u27e9",
++    "new": "def NativeSource.program (source : NativeSource) : TLProgram :=\n  \u27e8source.snapshot.resolved.decls.map (fun declaration => match declaration with\n    | .tensor name axes | .typedTensor .f32 name axes => .typedTensor .f64 name axes\n    | other => other), source.snapshot.resolved.stmts\u27e9",
++    "targets": [
++      "+Semantics.SourceDifferentialPolicyTest"
++    ],
++    "expect": [
++      "\n  F13\n",
++      "did not evaluate to `true`"
++    ]
++  },
++  {
++    "label": "T6-policy-multiple-definitions-falsely-marked-shared (F14/F15)",
++    "task": "T6",
++    "file": "LeanNCD/Semantics/Source/NumericalProfile.lean",
++    "old": "    unless previous.isEmpty do\n      throw (.structural (.crossStatementOverwrite output.declaration\n        (previous.map Prod.snd ++ [statement.output.origin])))",
++    "new": "    unless previous.isEmpty || previous.all (fun definition => definition.1 == output.declaration) do\n      throw (.structural (.crossStatementOverwrite output.declaration\n        (previous.map Prod.snd ++ [statement.output.origin])))",
++    "targets": [
++      "+Semantics.SourceDifferentialPolicyTest"
++    ],
++    "expect": [
++      "\n  F14\n",
++      "\n  F15\n",
++      "did not evaluate to `true`"
++    ]
++  },
++  {
++    "label": "T6-F18 independent oracle slots merge actual UID into first assignment",
++    "task": "T6",
++    "file": "LeanNCD/Semantics/Source/Oracle.lean",
++    "old": "    match assignment.find? (fun p => p.1 == uid) with",
++    "new": "    match assignment.head? with",
++    "targets": [
++      "+Semantics.SourceDifferentialCorpusTest"
++    ],
++    "expect": [
++      "\n  F18\n",
++      "did not evaluate to `true`"
++    ]
++  },
++  {
++    "label": "T6-F17-P6 publication scan drops final coordinate of every defined domain",
++    "task": "T6",
++    "file": "LeanNCD/Semantics/Source/Schedule.lean",
++    "old": "  ((sourceDefined source).sigma (sourceCoordinates source)).map fun x => .publication x.1 x.2",
++    "new": "  ((sourceDefined source).sigma (fun t => (sourceCoordinates source t).dropLast)).map fun x => .publication x.1 x.2",
++    "targets": [
++      "+Semantics.SourceDifferentialCorpusTest"
++    ],
++    "expect": [
++      "sourceCoordinates_complete source t p",
++      "p \u2208 (sourceCoordinates source t).dropLast"
++    ]
+   }
+ ]
+diff --git a/papers/semantics/source_correspondence_plan.md b/papers/semantics/source_correspondence_plan.md
+index a42accdf36d9977bc5aa8d1c597a6b7f97d47a48..e69fee405c12b0c0af87bb20a7af545dc1fde60f 100644
+--- a/papers/semantics/source_correspondence_plan.md
++++ b/papers/semantics/source_correspondence_plan.md
+@@ -2,31 +2,29 @@
+ 
+ ## 1. Status and front gate
+ 
+-**Full path: new source capability and proof surface. DESIGN PLAN WITH VERIFIED
+-PARTIAL PROTOTYPE; NOT EXECUTION-READY.** Authoring Phase B, 2026-10-08.
+-Production stays unchanged. This is one plan for the first complete slice:
++**Full path: new source capability and proof surface. IMPLEMENTED;
++EXECUTION-READY, ALL CONTROLLER GATES PASS.** Originally authored
++2026-10-08; verification completed 2026-10-09. Production DSL/Eval stays unchanged.
++This is one plan for the first complete slice:
+ UID-based source elaboration, pure-einsum correspondence, source-linked
+ diagnostics, and differential tests for bounded scalar read sum-products.
+ 
+-**Do not dispatch implementation from this document yet.** Readiness rehearsal
+-is authorized and in progress: T1-T5 fixtures, their thirty planned
+-implementation kills, and per-task reviews pass. T2 also has three verified
+-Direct acceptance regression families and hand checks. Full readiness evidence
+-for the following seams remains incomplete:
+-
+-- The complete named and generated differential corpus, remaining
+-  implementation-mutation kills, fresh patch replay, full-build verification,
+-  documentation close-out, and the two whole-branch review lenses.
+-
+-T1-T5's completed receipts are tracked in the
+-[record](source_correspondence_record.md). The fresh
+-[T1 rehearsal patch](source_correspondence_readiness_patches/0001-uid-binding.patch)
+-is a reviewed checkpoint, not a complete execution-ready patch series.
+-
+-Readiness completion must rehearse these seams on the real module split, emit
+-new per-task patches, observe every new fixture family, mutate implementations,
+-and pass the two review lenses below. The retained patches are seed evidence,
+-**not** a recipe to apply three patches and declare this slice finished.
++Authorized implementation completed all 79 named fixtures, exactly 18 generated
++F16 cases, and all 39 intended implementation mutations. T1-T5 per-task reviews
++and both final whole-branch lenses are clean. T2 additionally has three verified
++Direct acceptance regression families and hand checks. The controller observed
++39/39 expected failures with byte-identical restoration and restored green
++builds, then ran the full build successfully (8,763 jobs). The six fresh task
++patches replay exactly from base `d0f8462`, including final documentation.
++
++The observed implementation receipts and explicit limitations are tracked in the
++[record](source_correspondence_record.md) and
++[controller receipts](source_correspondence_artifacts/controller_closeout.txt).
++The fresh series runs from
++[T1](source_correspondence_readiness_patches/0001-uid-binding.patch) through
++[T6](source_correspondence_readiness_patches/0006-final-differential-corpus.patch).
++The three older seed patches remain historical evidence, **not** a complete
++implementation recipe.
+ 
+ Authority: corrected [semantics](tensor_logic_semantics.md), Proposition 19.1;
+ [roadmap](lean_executable_semantics_path.md); retained
+@@ -41,7 +39,7 @@ and [patch 3](source_correspondence_patches/0003-test-semantics-verify-rational-
+ 
+ ## 2. Accepted endpoint and hard scope
+ 
+-The future public import is `LeanNCD`. A caller supplies a resolved finite source
++The public import is `LeanNCD`. A caller supplies a resolved finite source
+ program, explicit tensor roles/shapes, all declared inputs, and optional debug
+ fuel. Admission either returns a typed, source-linked error or an existing typed
+ `Program` plus identity/provenance maps and a deterministic complete `Schedule`.
+@@ -302,8 +300,8 @@ paths are checked in the planning tree. `Source.Context`, `Source.Adapter`,
+ now exist in the rehearsal tree, along with general Program/schedule,
+ provenance/permutation, an independent oracle, genuine generalized
+ correspondence, typed diagnostics, an exact numerical profile, and four-leg
+-comparison modules. The remaining differential corpus and final gates are
+-still incomplete, not completed by the seed patches.
++comparison modules and all fixture families. The final controller/review gates
++pass; the historical seed patches alone never completed this work.
+ Production DSL/Eval files are read-only donors, not mutation targets.
+ 
+ | Task | Prerequisites | Three implementation work items | Planned fixtures / implementation cycles | Risk / split |
+@@ -316,9 +314,10 @@ Production DSL/Eval files are read-only donors, not mutation targets.
+ | T6 corpus/review/docs | T1, T2, T3, T4, T5 | Deterministic corpus; implementation cycles; integrated review/docs | 18 / 9 | High; corpus bundles then integration |
+ 
+ Planned totals: **79 named fixture entrypoints and 39 implementation-mutation
+-cycles**. T1-T5's 61 planned entrypoints and thirty cycles have observed receipts
+-in the record, along with three supplemental Direct acceptance families/hand
+-checks. The remaining work is not counted as verified. F16 additionally expands exactly 18 generated cases.
++cycles**. All named entrypoints and intended cycles have observed receipts in
++the record, along with three supplemental Direct acceptance families/hand
++checks. Final controller/review gates pass. F16 additionally expands
++exactly 18 generated cases.
+ These counts do not include the six completed fixture-input contrasts.
+ No fixture dispatch takes more than three numbered fixture IDs/families.
+ Split larger tasks into successive bundles of at most three; a reviewer may
+diff --git a/papers/semantics/source_correspondence_record.md b/papers/semantics/source_correspondence_record.md
+index def73baf5d7723981f41f9453828c0c75d597a21..ad536e8c174ed37f69f06114930a3d490e23f17f 100644
+--- a/papers/semantics/source_correspondence_record.md
++++ b/papers/semantics/source_correspondence_record.md
+@@ -1,12 +1,24 @@
+-# Source correspondence: authoring record
++# Source correspondence: authoring and execution record
+ 
+ ## Status and authority
+ 
+-2026-10-08, Authoring Phase B. Written from retained Phase A evidence only;
+-no new implementation/prototype dispatch. The
+-[live plan](source_correspondence_plan.md) is a **design plan with verified
+-partial prototype, NOT execution-ready**. Its six tasks specify the first
+-complete slice, not several future slices.
++**Implemented and controller-verified, 2026-10-09.** All 79 named fixtures,
++exactly 18 generated programs, 39/39 implementation mutation cycles, and the
++controller full build (8,763 jobs) pass. T1-T5 per-task reviews and both final
++whole-branch lenses are clean. Six fresh task patches replay exactly; historical
++seed contrasts independently pass 6/6 and are not implementation kills.
++See the final close-out below and the
++[controller receipts](source_correspondence_artifacts/controller_closeout.txt).
++Only the bounded source fragment described by the plan is completed; production
++DSL/Eval is unchanged. Local integration is authorized by these gates; no remote
++push is performed. The historical phases below retain their original scope.
++
++The original 2026-10-08 Authoring Phase B was written from retained Phase A
++evidence only, with no new implementation/prototype dispatch in that authoring
++phase. The [live plan](source_correspondence_plan.md) subsequently entered
++authorized implementation rehearsal; the checkpoints below record the actual
++code, proofs and verification rather than treating the partial seed as complete.
++Its six tasks specify the first complete slice, not several future slices.
+ 
+ Production is unchanged. Phase B also adds the plan's discoverability link to
+ the roadmap without changing its status markers. No agents, staging, commits,
+@@ -483,3 +495,116 @@ includes cached input (the cache totals are approximately the input total), so
+ they are not added a second time. This is partial historical telemetry, not a
+ current end-to-end total or a peak-context measurement. Current segment and
+ dispatch peaks remain unmeasured until equivalent final telemetry is available.
++
++Subsequent decoding of the SDK's serialized cache checkpoints exposed a
++controller prompt checkpoint of **348,992 tokens**, above the approximately
++250k context cap. This is a confirmed controller-context breach, not a claimed
++compliant peak. Cumulative end-to-end input still cannot be reconstructed from
++the available segment counters without double-counting cache tokens. The
++remaining close-out is handed to a fresh, bounded controller context; no further
++implementation work is assigned to the oversized context.
++
++### T6 fixture and observed-mutation checkpoint
++
++All **79 planned fixture entrypoints** are now verified, including the final
++18 F families. F16 additionally evaluates exactly **18 structurally distinct**
++deterministic programs: two scalar factor-count cases and sixteen rank/extent/
++factor-count cases. Refusals and reference-only cases are never counted as
++four-leg parity. The final aggregate passed **8,564 jobs**.
++
++The corpus pins asymmetric matrix/packing behavior, per-term bias, repeated
++reads and diagonal writes, zero contractions, scalar/AST identities, duplicate
++terms, UID alpha transport, negative/zero comparison policy, inclusive integer
++envelopes and unsafe intermediate refusals, unchanged f32 source failures,
++known overwrite-versus-collection differences, tagged permutations, acyclic
++multi-target publication, and resolved same-name/distinct-UID limitations.
++
++Initial draft syntax/inference problems were repaired without production
++changes. The geometry helper had incorrectly equated the native traversal's
++complete axis-occurrence list with the semantic context's distinct UID list;
++its checks now distinguish both while retaining all value/bit/publication
++assertions. A final mutation run exposed parser keywords entering the
++independent oracle fixture through the shared umbrella import. The shared
++admission donor now imports `Source.Admission` only, and its scalar declaration
++fixture imports `RationalReference` explicitly. Oracle, admission, and final
++differential targets were rerun together and passed. The failed setup/restored
++build was not counted as a mutation kill.
++
++All nine T6 intended mutants were then observed and restored successfully:
++eight executable fixture kills (diagonal refusal, zero-domain singleton,
++transposed independent packing, term deduplication, removed zero normalization,
++silent f32 rewriting, falsely shared multiple definitions, and UID lookup
++merging), and one proof-protected full-publication coverage kill.
++The post manifest contains all **39 observed planned cycles**, with expected
++strings copied from actual failures. Final whole-manifest expected/restoration
++verification, full build, patch replay, and the two independent whole-branch
++review lenses are still pending at this checkpoint.
++
++## Final controller close-out (2026-10-09)
++
++A fresh final controller observed the already-running complete post manifest,
++without launching a duplicate run. Its terminal table reports **39/39 PASS**:
++every intended expected-text diagnostic was seen, every file was restored
++byte-identically, and every restored build was green. These comprise **18
++proof-protected kills and 21 executable-fixture kills**, not 39 runtime
++differential samples. The six historical input contrasts were independently
++replayed on pinned seed `284c7df2d169377d6029ae2a277c8a119929bbf1`: **6/6 PASS**,
++with expected diagnostics, byte restoration and restored builds.
++The tables are retained as
++[implementation mutations](source_correspondence_artifacts/controller_post_mutations.md)
++and [seed contrasts](source_correspondence_artifacts/controller_seed_contrasts.md).
++
++Both independent whole-branch reviews are **CLEAN**, with no finding requiring
++adjudication, against base `d0f8462` and immutable reviewed tree
++`3d057e1f9a0894dd7318ba28fae50b7d89dc8015`. Lens 1 covers binding, elaboration,
++soundness, provenance and schedules; lens 2 covers oracle independence, numerical
++profiles, differential classifications and diagnostics. Their retained reports
++are [lens 1](source_correspondence_artifacts/controller_soundness_review.txt) and
++[lens 2](source_correspondence_artifacts/controller_differential_review.txt).
++These are static reviews, not substitutes for controller execution.
++
++After the manifest finished, this controller ran:
++
++```sh
++bash /Users/williammacready/code/python/pyncd.worktrees/source-correspondence-debug-plan/leanncd/scripts/lake-build.sh /Users/williammacready/code/python/pyncd.worktrees/source-correspondence-debug-plan/leanncd
++```
++
++The actual-worktree full build exited 0: **8,763 jobs**. Existing unrelated
++warnings and `sorry` declarations remain; there were no new Source warnings or
++errors. A source-tree comparison after restoration and after the full build
++confirmed all of `leanncd/` identical to the immutable reviewed tree. Subsequent
++edits are documentation and mechanically generated receipt/patch sidecars only.
++
++The fresh six-patch series is replayed in task order from `d0f8462` with an
++alternate Git index. Its final tree equals the staged implementation and
++documentation tree excluding the patch sidecars, which are staged separately to
++avoid self-reference. Patch 6 is regenerated from the T5 checkpoint
++`4c251da391667c5e2cd44d055322c0bd6b8fb360`. Exact replay identities and patch
++SHA-256 values are retained in the session's final replay receipt; the committed
++patch series is the persistent reproduction artifact.
++
++Local `main` advanced during execution to
++`6e1c2ea0eb9539e23acc69ede59f3e3db5ac1133`. Its changes since `d0f8462` are confined
++to `tensor_logic_semantics.md`, which this branch does not modify. Integration
++preserves that concurrent work; it does not rewrite or force-update history.
++No remote push is performed. Final commit/merge identities and worktree/branch
++cleanup are recorded in the controller's session close-out after integration.
++
++**Limits and honest classifications.** This is finite read-only scalar
++sum-product correspondence, not general backend refinement. The core supports
++arbitrary rationals; strict four-leg comparison requires the checked bounded
++integer profile and explicit original f64 declarations. Missing oracle order,
++unsupported profiles/forms, blocking, debug exhaustion, f32 failures and known
++cross-statement overwrite/collection differences remain explicit, not parity.
++D3/D13 and warning/signed-zero injections are protocol checks, not actual
++backend faults. Native internals without hooks remain unobserved. The parked
++pre-existing f64 AST/DSL comment cleanup is outside this goal.
++
++**Budget breach surfaced, not certified away.** The earlier controller reached
++a measured **348,992-token** prompt, above the approximately 250k cap; this
++close-out used the prescribed fresh-context split. Available historical input
++is **66,646,841 cache-inclusive tokens**, only a partial segment, not the total.
++Do not add cache counters again. End-to-end input, full dispatch peaks and
++compliance with the 175M execution/50M authoring targets remain unmeasured.
++No new implementation/review dispatch or duplicate mutation run was launched
++for close-out.

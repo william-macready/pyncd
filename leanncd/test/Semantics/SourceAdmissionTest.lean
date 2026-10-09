@@ -1,0 +1,7 @@
+import Semantics.SourceAdmissionDomainsTest
+import Semantics.SourceAdmissionSupportTest
+import Semantics.SourceAdmissionDeclarationsTest
+import Semantics.SourceAdmissionRolesTest
+import Semantics.SourceAdmissionInputsTest
+import Semantics.SourceAdmissionRefusalsTest
+import Semantics.SourceAdmissionAcceptanceTest

@@ -1,0 +1,3 @@
+import Semantics.SourceBindingUIDTest
+import Semantics.SourceBindingRenameTest
+import Semantics.SourceBindingBoundaryTest

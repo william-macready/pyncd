@@ -1,0 +1,1944 @@
+diff --git a/leanncd/AGENTS.md b/leanncd/AGENTS.md
+index 13632212..29c68ef1 100644
+--- a/leanncd/AGENTS.md
++++ b/leanncd/AGENTS.md
+@@ -200,7 +200,7 @@ Small subsystems (no dedicated node — each <170 lines, single-file or near it)
+ | Task | Start Here |
+ |------|------------|
+ | Understand overall architecture (two tracks + bridge) | `LeanNCD.lean`'s header doc comment (note: has some stale spots, cross-check against code — see Base/AGENTS.md Pitfalls) |
+-| UID-keyed semantic binding, finite read-only admission and exact source execution | `LeanNCD/Semantics/Source/Context.lean`, `Source/Admission.lean`, and `Source/Schedule.lean`, reachable through `LeanNCD`; generalized correspondence and differential diagnostics remain separate |
++| UID-keyed semantic binding, finite read-only source execution and correspondence | `LeanNCD/Semantics/Source/Context.lean`, `Source/Admission.lean`, `Source/Schedule.lean`, and `Source/ProgramCorrespondence.lean`, reachable through `LeanNCD`; differential diagnostic gates remain separate |
+ | Check current sorry/proof status authoritatively | `SORRY_INVENTORY.md` (more current than scattered doc comments) |
+ | Understand the `realize` bridge problem in depth | `realize.md` (companion to `SORRY_INVENTORY.md`) |
+ | Design history / past decisions | `docs/superpowers/plans/`, `docs/superpowers/specs/` |
+diff --git a/leanncd/LeanNCD/Semantics/AGENTS.md b/leanncd/LeanNCD/Semantics/AGENTS.md
+index b0f13594..f347ed3b 100644
+--- a/leanncd/LeanNCD/Semantics/AGENTS.md
++++ b/leanncd/LeanNCD/Semantics/AGENTS.md
+@@ -53,8 +53,14 @@ admission; `Source.Permutation` preserves tagged collection and whole-store
+ models, not event order. `Source.Oracle` provides an independent exact
+ global-fiber evaluator with explicitly checked fixture dependency order.
+ `Semantics.SourceProgramTest` checks actual executor/oracle parity and endpoint
+-contracts. General source correspondence proofs and source-linked differential
+-diagnostics are not yet supplied; see the
++contracts. `Source.Fiber`, `Source.Correspondence`, and
++`Source.ProgramCorrespondence` prove actual normalized-body and Program
++collection agreement with independently specified original-read global fibers.
++Their relevant UID domains exclude unused axes, preserve term-local contractions
++and repeated destinations, and connect reached rational execution to whole-store
++global equations. `Semantics.SourceCorrespondenceTest` specializes the generic
++proofs to Nat and Rat. Source-linked differential fixture gates remain separate;
++see the
+ [source plan](../../../papers/semantics/source_correspondence_plan.md).
+ 
+ `Collection` represents Naperian coordinate families as functions. Pullback
+diff --git a/leanncd/LeanNCD/Semantics/Source.lean b/leanncd/LeanNCD/Semantics/Source.lean
+index 39848cad..1981c639 100644
+--- a/leanncd/LeanNCD/Semantics/Source.lean
++++ b/leanncd/LeanNCD/Semantics/Source.lean
+@@ -7,3 +7,6 @@ import LeanNCD.Semantics.Source.Oracle
+ import LeanNCD.Semantics.Source.Schedule
+ import LeanNCD.Semantics.Source.Provenance
+ import LeanNCD.Semantics.Source.Permutation
++import LeanNCD.Semantics.Source.Fiber
++import LeanNCD.Semantics.Source.Correspondence
++import LeanNCD.Semantics.Source.ProgramCorrespondence
+diff --git a/leanncd/LeanNCD/Semantics/Source/Correspondence.lean b/leanncd/LeanNCD/Semantics/Source/Correspondence.lean
+new file mode 100644
+index 00000000..26365c16
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Source/Correspondence.lean
+@@ -0,0 +1,129 @@
++import LeanNCD.Semantics.Source.Fiber
++
++namespace LeanNCD.Semantics.Source
++
++variable {K : Type} [Semiring K] {σ : Declarations Unit}
++  {r : Registry (fun _ : Unit => K)}
++
++theorem Term.globalProduct_partition (term : Term source out σ)
++    (ρ : Store (fun _ => K) σ) (v : UIDVal term.globalContext) :
++    term.globalProduct ρ v =
++      operandProduct ρ term.operands
++        (term.environment (term.partitionCoordEquiv v).1 (term.partitionCoordEquiv v).2) := by
++  rw [term.partition_environment]
++  unfold Term.globalProduct operandProduct Term.operands
++  rw [List.map_ofFn]
++  congr 1
++  congr 1
++  funext i
++  congr 1
++  change (⟨(term.sourceReads.get i).read.tensor, _⟩ : Address σ) =
++    ⟨(term.sourceReads.get i).read.tensor, _⟩
++  congr 1
++  exact Slots.projectWithin_transport term.globalEmbedding term.partitionTransport
++    (fun _ => rfl) _ (term.reads i).slots (term.read_global_support i)
++    ((term.reads i).linked.trans (term.sourceReads.get i).linked.symm) v
++
++theorem Term.globalDestination_partition (output : AdmittedOutput source σ)
++    (term : Term source output.context σ) (v : UIDVal term.globalContext) :
++    Term.globalDestination output term v =
++      output.slots.project (term.partitionCoordEquiv v).1 := by
++  let localized : Slots term.partition.context.axes (σ.signature output.tensor).axes :=
++    term.partition.context_axes.symm ▸ output.slots.appendLeft
++  have hl : localized.uids = output.sourceSlots.uids := by
++    rw [Slots.cast_uids, Slots.appendLeft_uids, output.linked, output.source_linked]
++  have hp := Slots.projectWithin_transport term.globalEmbedding term.partitionTransport
++    (fun _ => rfl) output.sourceSlots localized (term.output_global_support output) hl v
++  rw [Slots.cast_project, Slots.appendLeft_project] at hp
++  exact hp
++
++theorem Term.value_eq_globalSlice (term : Term source out σ)
++    (ρ : Store (fun _ => K) σ) (x : Coord out.axes) :
++    term.value ρ x =
++      ∑ v : UIDVal term.globalContext,
++        if (term.partitionCoordEquiv v).1 = x then term.globalProduct ρ v else 0 := by
++  rw [← Equiv.sum_comp term.partitionCoordEquiv.symm
++    (fun v => if (term.partitionCoordEquiv v).1 = x then term.globalProduct ρ v else 0)]
++  simp_rw [term.globalProduct_partition, Equiv.apply_symm_apply]
++  rw [Fintype.sum_prod_type]
++  simp [Term.value]
++
++/-- The actual checked nested reduction, over a total store, equals the relevant UID sum. -/
++theorem Term.body_correspondence (term : Term source out σ)
++    (ρ : Store (fun _ => K) σ) (env : Γ → Coord out.axes) (γ : Γ) :
++    interpret semiringOps ρ (term.body (r := r) env) γ =
++      some (∑ v : UIDVal term.globalContext,
++        if (term.partitionCoordEquiv v).1 = env γ then term.globalProduct ρ v else 0) := by
++  rw [term.interpret_body, term.value_eq_globalSlice]
++
++theorem Term.fiber_partition (output : AdmittedOutput source σ)
++    (term : Term source output.context σ) (ρ : Store (fun _ => K) σ)
++    (p : Coord (σ.signature output.tensor).axes) :
++    term.globalFiber output ρ p =
++      ∑ x : Coord output.context.axes,
++        if output.slots.project x = p then term.value ρ x else 0 := by
++  unfold Term.globalFiber
++  rw [← Equiv.sum_comp term.partitionCoordEquiv.symm
++    (fun v => if Term.globalDestination output term v = p then term.globalProduct ρ v else 0)]
++  simp_rw [Term.globalDestination_partition, Term.globalProduct_partition,
++    Equiv.apply_symm_apply]
++  rw [Fintype.sum_prod_type]
++  apply Finset.sum_congr rfl
++  intro x _
++  by_cases h : output.slots.project x = p <;> simp [h, Term.value]
++
++/-- Finite pushforward of interpreted bodies; undefinedness is not erased. -/
++def Term.collectedBody (output : AdmittedOutput source σ)
++    (term : Term source output.context σ) (ρ : Store (fun _ => K) σ)
++    (p : Coord (σ.signature output.tensor).axes) : Option K :=
++  let layout := canonicalLayout output.context.axes
++  foldValues (semiringOps ())
++    ((List.finRange layout.count).map fun i =>
++      let x := layout.enumerate i
++      if output.slots.project x = p then
++        interpret semiringOps ρ (term.body (r := r) id) x else some 0)
++
++theorem Term.collectedBody_correspondence (output : AdmittedOutput source σ)
++    (term : Term source output.context σ) (ρ : Store (fun _ => K) σ)
++    (p : Coord (σ.signature output.tensor).axes) :
++    term.collectedBody (r := r) output ρ p = some (term.globalFiber output ρ p) := by
++  unfold Term.collectedBody
++  simp_rw [term.interpret_body]
++  simp only [id_eq]
++  have hi : (fun i : Fin (canonicalLayout output.context.axes).count =>
++      if output.slots.project ((canonicalLayout output.context.axes).enumerate i) = p then
++        some (term.value ρ ((canonicalLayout output.context.axes).enumerate i)) else some 0) =
++      (fun i => some (if output.slots.project
++        ((canonicalLayout output.context.axes).enumerate i) = p then
++          term.value ρ ((canonicalLayout output.context.axes).enumerate i) else 0)) := by
++    funext i
++    split <;> rfl
++  have hf := fold_some ((List.finRange (canonicalLayout output.context.axes).count).map
++    (fun i => if output.slots.project
++      ((canonicalLayout output.context.axes).enumerate i) = p then
++        term.value ρ ((canonicalLayout output.context.axes).enumerate i) else 0))
++  simp only [List.map_map, Function.comp_def] at hf
++  rw [hi, hf, List.finRange, List.map_ofFn, List.sum_ofFn]
++  congr 1
++  rw [term.fiber_partition]
++  exact Equiv.sum_comp (canonicalLayout output.context.axes).enumerate
++    (fun x => if output.slots.project x = p then term.value ρ x else 0)
++
++/-- Proposition 19.1, term-level: a pure normalized body pushes forward to its
++original-read global fiber. Program collection is a separate occurrence-relabeling step. -/
++theorem pure_correspondence (output : AdmittedOutput source σ)
++    (term : Term source output.context σ) (h : term.classification = .pure)
++    (ρ : Store (fun _ => K) σ) (p : Coord (σ.signature output.tensor).axes) :
++    term.globalContext = source.select (term.sourceReads.flatMap CheckedRead.indices) ∧
++      term.collectedBody (r := r) output ρ p = some (term.globalFiber output ρ p) :=
++  ⟨term.pure_globalContext h, term.collectedBody_correspondence output ρ p⟩
++
++theorem Term.empty_fiber (output : AdmittedOutput source σ)
++    (term : Term source output.context σ) (ρ : Store (fun _ => K) σ)
++    (p : Coord (σ.signature output.tensor).axes)
++    (h : ∀ x, output.slots.project x ≠ p) :
++    term.globalFiber output ρ p = 0 := by
++  rw [term.fiber_partition]
++  simp [h]
++
++end LeanNCD.Semantics.Source
+diff --git a/leanncd/LeanNCD/Semantics/Source/Fiber.lean b/leanncd/LeanNCD/Semantics/Source/Fiber.lean
+new file mode 100644
+index 00000000..19d4b68f
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Source/Fiber.lean
+@@ -0,0 +1,295 @@
++import LeanNCD.Semantics.Source.Statement
++
++namespace LeanNCD.Semantics.Source
++
++theorem Context.ext_axes (a b : Context) (h : a.axes = b.axes) : a = b := by
++  cases a
++  cases b
++  cases h
++  rfl
++
++instance uidValFinite (c : Context) : Fintype (UIDVal c) :=
++  Fintype.ofEquiv (Coord c.axes) (uidCoordEquiv c).symm
++
++instance uidValEq (c : Context) : DecidableEq (UIDVal c) :=
++  (uidCoordEquiv c).injective.decidableEq
++
++/-- Select original axes in original resolved order, without completing unused domains. -/
++def Context.select (source : Context) (ids : List UID) : Context where
++  axes := source.axes.filter (fun a => a.uid ∈ ids)
++  unique := source.unique.sublist ((List.filter_sublist).map Axis.uid)
++
++theorem Context.select_support (source : Context) (ids : List UID) (uid : UID) :
++    uid ∈ (source.select ids).axes.map Axis.uid ↔
++      uid ∈ source.axes.map Axis.uid ∧ uid ∈ ids := by
++  simp only [Context.select, List.mem_map, List.mem_filter, decide_eq_true_eq]
++  aesop
++
++def Context.selectEmbedding (source : Context) (ids : List UID) :
++    IdentityEmbedding (source.select ids) source where
++  map :=
++    { map := fun u => ⟨u.val, ((source.select_support ids u.val).mp u.property).1⟩
++      domain := by
++        intro u
++        obtain ⟨a, ha, hu⟩ := List.mem_map.mp u.property
++        have hs := (List.mem_filter.mp ha).1
++        exact (source.domain_of_mem _ a hs hu).trans
++          ((source.select ids).domain_of_mem u a ha hu).symm }
++  uid := fun _ => rfl
++
++theorem IdentityEmbedding.support (e : IdentityEmbedding a source) :
++    a.axes.map Axis.uid ⊆ source.axes.map Axis.uid := by
++  intro uid h
++  have hp := (e.map.map ⟨uid, h⟩).property
++  simpa only [e.uid] using hp
++
++/-- Equal UID support of two embedded contexts determines a domain-preserving transport. -/
++def IdentityEmbedding.transport (e : IdentityEmbedding a source)
++    (f : IdentityEmbedding b source)
++    (h : ∀ uid, uid ∈ a.axes.map Axis.uid ↔ uid ∈ b.axes.map Axis.uid) :
++    UIDTransport a b where
++  equiv :=
++    { toFun := fun u => ⟨u.val, (h u.val).mp u.property⟩
++      invFun := fun u => ⟨u.val, (h u.val).mpr u.property⟩
++      left_inv := fun _ => rfl
++      right_inv := fun _ => rfl }
++  domain := by
++    intro u
++    have hk : f.map.map ⟨u.val, (h u.val).mp u.property⟩ = e.map.map u := by
++      apply Subtype.ext
++      rw [f.uid, e.uid]
++    exact (f.map.domain _).symm.trans (hk ▸ e.map.domain u)
++
++@[simp] theorem IdentityEmbedding.transport_uid (e : IdentityEmbedding a source)
++    (f : IdentityEmbedding b source) (h) (u : a.Key) :
++    ((e.transport f h).equiv u).val = u.val := rfl
++
++def Ref.lookupWithin (e : IdentityEmbedding c source) (v : UIDVal c)
++    (r : Ref source.axes n) (h : r.uid ∈ c.axes.map Axis.uid) : Fin n :=
++  Fin.cast (by
++    have hk : e.map.map ⟨r.uid, h⟩ = r.key source := by
++      apply Subtype.ext
++      rw [e.uid, Ref.key_uid]
++    exact (e.map.domain _).symm.trans
++      (hk ▸ (source.domain_uidEquiv r.index).trans r.index_extent))
++    (v ⟨r.uid, h⟩)
++
++def Slots.projectWithin (e : IdentityEmbedding c source) (v : UIDVal c) :
++    (slots : Slots source.axes sh) →
++    (slots.uids ⊆ c.axes.map Axis.uid) → Coord sh
++  | .nil, _ => ()
++  | .cons r rest, h =>
++    (r.lookupWithin e v (h (by simp [Slots.uids])),
++      rest.projectWithin e v (fun _ hu => h (by simp [Slots.uids, hu])))
++
++theorem Slots.projectWithin_transport (e : IdentityEmbedding c source)
++    (t : UIDTransport c d) (ht : ∀ u, (t.equiv u).val = u.val)
++    (slots : Slots source.axes sh) (localized : Slots d.axes sh)
++    (hs : slots.uids ⊆ c.axes.map Axis.uid) (hl : localized.uids = slots.uids)
++    (v : UIDVal c) :
++    slots.projectWithin e v hs =
++      localized.project (uidCoordEquiv d (t.valuationEquiv v)) := by
++  induction slots with
++  | nil => cases localized; rfl
++  | cons r rest ih =>
++    cases localized with
++    | cons s tail =>
++      have hu := (List.cons.inj hl).1
++      have hk : t.equiv ⟨r.uid, hs (by simp [Slots.uids])⟩ = s.key d := by
++        apply Subtype.ext
++        rw [ht, Ref.key_uid, hu]
++      apply Prod.ext
++      · rw [Slots.projectWithin, Slots.project, Ref.get_uidCoordEquiv]
++        apply Fin.ext
++        change (v ⟨r.uid, _⟩).val = (t.valuationEquiv v (s.key d)).val
++        rw [← hk, UIDTransport.lookup]
++      · exact ih tail _ (List.cons.inj hl).2
++
++def Term.globalContext (term : Term source out σ) : Context :=
++  source.select (term.sourceReads.flatMap CheckedRead.indices ++ out.axes.map Axis.uid)
++
++def Term.globalEmbedding (term : Term source out σ) :
++    IdentityEmbedding term.globalContext source :=
++  source.selectEmbedding _
++
++theorem Term.global_support (term : Term source out σ) (uid : UID) :
++    uid ∈ term.globalContext.axes.map Axis.uid ↔
++      uid ∈ term.support ∨ uid ∈ out.axes.map Axis.uid := by
++  rw [Term.globalContext, Context.select_support, term.support_reads, List.mem_append]
++  have ho : out.axes.map Axis.uid ⊆ source.axes.map Axis.uid := by
++    intro u hu
++    apply term.partition.embedding.support
++    rw [term.partition.context_axes, List.map_append, List.mem_append]
++    exact Or.inl hu
++  have hr := term.support_bound (a := uid)
++  have hx := ho (a := uid)
++  tauto
++
++theorem Term.global_order (term : Term source out σ) :
++    term.globalContext.axes = source.axes.filter
++      (fun a => a.uid ∈ term.sourceReads.flatMap CheckedRead.indices ∨
++        a.uid ∈ out.axes.map Axis.uid) := by
++  simp [Term.globalContext, Context.select, List.mem_append]
++
++theorem Term.pure_globalContext (term : Term source out σ)
++    (h : term.classification = .pure) :
++    term.globalContext = source.select (term.sourceReads.flatMap CheckedRead.indices) := by
++  have hp := term.pure_iff.mp h
++  have he : term.globalContext.axes =
++      (source.select (term.sourceReads.flatMap CheckedRead.indices)).axes := by
++    simp only [Term.globalContext, Context.select]
++    congr 1
++    funext a
++    apply decide_eq_decide.mpr
++    simp only [List.mem_append, term.support_reads]
++    constructor
++    · rintro (hr | ho)
++      · exact hr
++      · exact hp ho
++    · exact Or.inl
++  exact Context.ext_axes _ _ he
++
++def Term.partitionTransport (term : Term source out σ) :
++    UIDTransport term.globalContext term.partition.context :=
++  term.globalEmbedding.transport term.partition.embedding (fun uid => by
++    rw [term.global_support, term.partition.coverage term.support_bound]
++    exact or_comm)
++
++def Term.contractedContext (term : Term source out σ) : Context where
++  axes := term.partition.bound
++  unique := term.partition.context.unique.sublist (by
++    rw [term.partition.context_axes, List.map_append]
++    exact List.sublist_append_right ..)
++
++def coordCastEquiv (h : sh = dst) : Coord sh ≃ Coord dst where
++  toFun p := h ▸ p
++  invFun p := h.symm ▸ p
++  left_inv := by cases h; intro p; rfl
++  right_inv := by cases h; intro p; rfl
++
++def Term.partitionCoordEquiv (term : Term source out σ) :
++    UIDVal term.globalContext ≃ Coord out.axes × Coord term.partition.bound :=
++  term.partitionTransport.valuationEquiv.trans
++    ((uidCoordEquiv term.partition.context).trans
++      ((coordCastEquiv term.partition.context_axes).trans
++        (appendEquiv out.axes term.partition.bound)))
++
++/-- A bijection of true UID-dependent valuations, not merely untyped slot values. -/
++def Term.partitionEquiv (term : Term source out σ) :
++    UIDVal term.globalContext ≃ UIDVal out × UIDVal term.contractedContext :=
++  term.partitionCoordEquiv.trans
++    (Equiv.prodCongr (uidCoordEquiv out).symm (uidCoordEquiv term.contractedContext).symm)
++
++def Ref.appendLeft : (r : Ref sh n) → Ref (sh ++ tail) n
++  | .here => .here
++  | .there r => .there r.appendLeft
++
++@[simp] theorem Ref.appendLeft_uid (r : Ref sh n) :
++    (r.appendLeft (tail := tail)).uid = r.uid := by
++  induction r <;> simp [Ref.appendLeft, Ref.uid, *]
++
++theorem Ref.appendLeft_get (r : Ref sh n) (p : Coord (sh ++ tail)) :
++    (r.appendLeft).get p = r.get ((appendEquiv sh tail p).1) := by
++  induction r with
++  | here => rfl
++  | there r ih => exact ih p.2
++
++def Slots.appendLeft : Slots ctx sh → Slots (ctx ++ tail) sh
++  | .nil => .nil
++  | .cons r rest => .cons r.appendLeft rest.appendLeft
++
++@[simp] theorem Slots.appendLeft_uids (slots : Slots ctx sh) :
++    (slots.appendLeft (tail := tail)).uids = slots.uids := by
++  induction slots <;> simp [Slots.appendLeft, Slots.uids, *]
++
++theorem Slots.appendLeft_project (slots : Slots ctx sh) (p : Coord (ctx ++ tail)) :
++    slots.appendLeft.project p = slots.project ((appendEquiv ctx tail p).1) := by
++  induction slots with
++  | nil => rfl
++  | cons r rest ih =>
++    exact Prod.ext (r.appendLeft_get p) ih
++
++theorem Slots.cast_uids (slots : Slots ctx sh) (h : ctx = dst) :
++    (h ▸ slots : Slots dst sh).uids = slots.uids := by
++  cases h
++  rfl
++
++theorem Slots.cast_project (slots : Slots ctx sh) (h : ctx = dst) (p : Coord dst) :
++    (h ▸ slots : Slots dst sh).project p = slots.project (h.symm ▸ p) := by
++  cases h
++  rfl
++
++theorem Term.partition_environment (term : Term source out σ)
++    (v : UIDVal term.globalContext) :
++    term.environment (term.partitionCoordEquiv v).1 (term.partitionCoordEquiv v).2 =
++      uidCoordEquiv term.partition.context (term.partitionTransport.valuationEquiv v) := by
++  change ((coordCastEquiv term.partition.context_axes).trans
++    (appendEquiv out.axes term.partition.bound)).symm
++      (((coordCastEquiv term.partition.context_axes).trans
++        (appendEquiv out.axes term.partition.bound))
++        (uidCoordEquiv term.partition.context (term.partitionTransport.valuationEquiv v))) = _
++  exact Equiv.symm_apply_apply ..
++
++theorem Term.read_global_support (term : Term source out σ) (i : Fin term.sourceReads.length) :
++    (term.sourceReads.get i).read.slots.uids ⊆ term.globalContext.axes.map Axis.uid := by
++  intro uid hu
++  apply (term.global_support uid).mpr
++  left
++  rw [← term.support_reads]
++  apply List.mem_flatMap.mpr
++  exact ⟨term.sourceReads.get i, List.get_mem ..,
++    (term.sourceReads.get i).linked ▸ hu⟩
++
++variable {K : Type} [Semiring K] {σ : Declarations Unit}
++
++/-- Ordered original reads; repeated factors are deliberately retained. -/
++def Term.globalProduct (term : Term source out σ) (ρ : Store (fun _ => K) σ)
++    (v : UIDVal term.globalContext) : K :=
++  (List.ofFn fun i => ρ ⟨(term.sourceReads.get i).read.tensor,
++    (term.sourceReads.get i).read.slots.projectWithin term.globalEmbedding v
++      (term.read_global_support i)⟩).prod
++
++theorem Term.output_global_support (output : AdmittedOutput source σ)
++    (term : Term source output.context σ) :
++    output.sourceSlots.uids ⊆ term.globalContext.axes.map Axis.uid := by
++  intro uid hu
++  apply (term.global_support uid).mpr
++  right
++  rw [output.source_linked] at hu
++  rw [output.order]
++  simpa [firstUIDs] using hu
++
++def Term.globalDestination (output : AdmittedOutput source σ)
++    (term : Term source output.context σ) (v : UIDVal term.globalContext) :
++    Coord (σ.signature output.tensor).axes :=
++  output.sourceSlots.projectWithin term.globalEmbedding v
++    (term.output_global_support output)
++
++def Term.globalFiber (output : AdmittedOutput source σ)
++    (term : Term source output.context σ) (ρ : Store (fun _ => K) σ)
++    (p : Coord (σ.signature output.tensor).axes) : K :=
++  ∑ v : UIDVal term.globalContext,
++    if Term.globalDestination output term v = p then term.globalProduct ρ v else 0
++
++/-- Re-enumeration (and binder UID transport) changes the enumeration, not the sum. -/
++theorem uidFiber_reindex (t : UIDTransport c d) (product : UIDVal c → K)
++    (destination : UIDVal c → Coord sh) (p : Coord sh) :
++    (∑ v : UIDVal d, if destination (t.valuationEquiv.symm v) = p then
++      product (t.valuationEquiv.symm v) else 0) =
++    ∑ v : UIDVal c, if destination v = p then product v else 0 :=
++  Equiv.sum_comp t.valuationEquiv.symm
++    (fun v => if destination v = p then product v else 0)
++
++theorem Term.globalFiber_reenumerate (output : AdmittedOutput source σ)
++    (term : Term source output.context σ) (axes : Shape)
++    (h : term.globalContext.axes.Perm axes) (ρ : Store (fun _ => K) σ)
++    (p : Coord (σ.signature output.tensor).axes) :
++    (∑ v : UIDVal (term.globalContext.reenumerate axes h),
++      if Term.globalDestination output term
++          ((term.globalContext.reenumerateTransport axes h).valuationEquiv.symm v) = p then
++        term.globalProduct ρ
++          ((term.globalContext.reenumerateTransport axes h).valuationEquiv.symm v) else 0) =
++      term.globalFiber output ρ p :=
++  uidFiber_reindex (term.globalContext.reenumerateTransport axes h) _ _ p
++
++end LeanNCD.Semantics.Source
+diff --git a/leanncd/LeanNCD/Semantics/Source/ProgramCorrespondence.lean b/leanncd/LeanNCD/Semantics/Source/ProgramCorrespondence.lean
+new file mode 100644
+index 00000000..4f8b5995
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Source/ProgramCorrespondence.lean
+@@ -0,0 +1,284 @@
++import LeanNCD.Semantics.Source.Correspondence
++import LeanNCD.Semantics.Source.Permutation
++import LeanNCD.Semantics.Source.Schedule
++
++namespace LeanNCD.Semantics.Source
++
++variable {K : Type} [Semiring K] {r : Registry (fun _ : Unit => K)}
++
++def AdmittedStatement.globalFiber (statement : AdmittedStatement source)
++    (ρ : Store (fun _ => K) source.table.declarations)
++    (p : Coord (source.table.declarations.signature statement.output.tensor).axes) : K :=
++  (statement.terms.map (fun term => term.globalFiber statement.output ρ p)).sum
++
++theorem AdmittedStatement.body_correspondence (statement : AdmittedStatement source)
++    (ρ : Store (fun _ => K) source.table.declarations)
++    (env : Γ → Coord statement.output.context.axes) (γ : Γ) :
++    interpret semiringOps ρ (statement.body (r := r) env) γ =
++      some ((statement.terms.map fun term =>
++        ∑ v : UIDVal term.globalContext,
++          if (term.partitionCoordEquiv v).1 = env γ then term.globalProduct ρ v else 0).sum) := by
++  rw [statement.interpret_body]
++  simp_rw [Term.value_eq_globalSlice]
++
++theorem AdmittedStatement.fiber_partition (statement : AdmittedStatement source)
++    (ρ : Store (fun _ => K) source.table.declarations)
++    (p : Coord (source.table.declarations.signature statement.output.tensor).axes) :
++    statement.globalFiber ρ p =
++      ∑ x : Coord statement.output.context.axes,
++        if statement.destination x = p then
++          (statement.terms.map (fun term => term.value ρ x)).sum else 0 := by
++  have linear (terms : List (Term source.context statement.output.context
++      source.table.declarations)) :
++      (terms.map (fun term => term.globalFiber statement.output ρ p)).sum =
++        ∑ x : Coord statement.output.context.axes,
++          if statement.destination x = p then
++            (terms.map (fun term => term.value ρ x)).sum else 0 := by
++    induction terms with
++    | nil => simp
++    | cons term terms ih =>
++      simp only [List.map_cons, List.sum_cons]
++      rw [ih, term.fiber_partition, ← Finset.sum_add_distrib]
++      apply Finset.sum_congr rfl
++      intro x _
++      by_cases h : statement.output.slots.project x = p <;>
++        simp [AdmittedStatement.destination, h]
++  exact linear statement.terms
++
++/-- Every original position contributes separately, using only its own term fibers. -/
++def AdmittedSource.globalFiber (source : AdmittedSource)
++    (ρ : Store (fun _ => K) source.source.table.declarations)
++    (t : source.source.table.declarations.Tensor)
++    (p : Coord (source.source.table.declarations.signature t).axes) : K :=
++  ∑ i : Fin source.statements.length,
++    let statement := source.statements.get i
++    if h : statement.output.tensor = t then
++      statement.globalFiber ρ (h.symm ▸ p) else 0
++
++def StatementTag.globalFiber (tag : StatementTag source t)
++    (ρ : Store (fun _ => K) source.source.table.declarations)
++    (p : Coord (source.source.table.declarations.signature t).axes) : K :=
++  tag.statement.globalFiber ρ (tag.target.symm ▸ p)
++
++theorem AdmittedSource.globalFiber_grouped (source : AdmittedSource)
++    (ρ : Store (fun _ => K) source.source.table.declarations) (t p) :
++    source.globalFiber ρ t p =
++      ((targetStatements source t).map (fun tag => tag.globalFiber ρ p)).sum := by
++  have grouped (indices : List (Fin source.statements.length)) :
++      ((indices.filterMap fun i =>
++        if h : (source.statements.get i).output.tensor = t then
++          some (⟨i, h⟩ : StatementTag source t) else none).map
++            (fun tag => tag.globalFiber ρ p)).sum =
++        (indices.map fun i =>
++          if h : (source.statements.get i).output.tensor = t then
++            (source.statements.get i).globalFiber ρ (h.symm ▸ p) else 0).sum := by
++    induction indices with
++    | nil => rfl
++    | cons i indices ih =>
++      by_cases h : (source.statements.get i).output.tensor = t
++      · simp only [List.filterMap_cons, dif_pos h, List.map_cons, List.sum_cons, ih]
++        rfl
++      · simp only [List.filterMap_cons, dif_neg h, List.map_cons, List.sum_cons, zero_add, ih]
++  rw [targetStatements, grouped]
++  simp only [List.finRange, List.map_ofFn, List.sum_ofFn]
++  rfl
++
++theorem AdmittedSource.total_admEnv (source : AdmittedSource)
++    (ρ : Store (fun _ => K) source.source.table.declarations) :
++    (source.program r).AdmEnv semiringOps ρ := by
++  intro t o
++  unfold Program.outcome
++  rw [source.program_interpret_body]
++  rfl
++
++theorem AdmittedSource.contribution_value (source : AdmittedSource)
++    (ρ : Store (fun _ => K) source.source.table.declarations)
++    (h : (source.program r).AdmEnv semiringOps ρ)
++    (t : (source.program r).Defined) (o : (source.program r).Occurrence t) :
++    (source.program r).contribution semiringOps ρ h t o =
++      ((source.statementTag r t o.1).statement.terms.map
++        (fun term => term.value ρ ((source.statementTag r t o.1).valuation o.2.val))).sum := by
++  unfold Program.contribution Program.outcome
++  simp only [source.program_interpret_body, Option.get_some]
++
++def AdmittedSource.valuationEquiv (source : AdmittedSource)
++    (r : Registry (fun _ : Unit => K)) (t : (source.program r).Defined)
++    (s : Fin ((source.program r).statements t)) :
++    {v : Fin ((source.program r).valuations t s) // (source.program r).guard t s v = true} ≃
++      Coord (source.statementTag r t s).statement.output.context.axes where
++  toFun v := (source.statementTag r t s).valuation v.val
++  invFun x := ⟨(source.statementTag r t s).layout.enumerate.symm x, rfl⟩
++  left_inv v := Subtype.ext ((source.statementTag r t s).layout.enumerate.symm_apply_apply v.val)
++  right_inv x := (source.statementTag r t s).layout.enumerate.apply_symm_apply x
++
++theorem AdmittedSource.collect_statement (source : AdmittedSource)
++    (ρ : Store (fun _ => K) source.source.table.declarations)
++    (h : (source.program r).AdmEnv semiringOps ρ) (t : (source.program r).Defined)
++    (s : Fin ((source.program r).statements t))
++    (p : Coord (source.source.table.declarations.signature t.val).axes) :
++    (letI := coordDecidableEq (source.source.table.declarations.signature t.val).axes;
++      pushforward ((source.program r).destination t s)
++        (fun v => (source.program r).contribution semiringOps ρ h t ⟨s, v⟩) p) =
++      (source.statementTag r t s).globalFiber ρ p := by
++  classical
++  let tag := source.statementTag r t s
++  rw [pushforward]
++  simp_rw [source.contribution_value, source.program_destination]
++  rw [← Equiv.sum_comp (source.valuationEquiv r t s).symm
++    (fun v => if (tag.target ▸ tag.statement.destination (tag.valuation v.val)) = p then
++      (tag.statement.terms.map (fun term => term.value ρ (tag.valuation v.val))).sum else 0)]
++  have hv (x : Coord tag.statement.output.context.axes) :
++      tag.valuation ((source.valuationEquiv r t s).symm x).val = x :=
++    (source.valuationEquiv r t s).apply_symm_apply x
++  simp_rw [hv]
++  change (∑ x : Coord tag.statement.output.context.axes,
++    if (tag.target ▸ tag.statement.destination x) = p then
++      (tag.statement.terms.map (fun term => term.value ρ x)).sum else 0) =
++        tag.globalFiber ρ p
++  unfold StatementTag.globalFiber
++  rw [tag.statement.fiber_partition]
++  apply Finset.sum_congr rfl
++  intro x _
++  have transport (a b : source.source.table.declarations.Tensor) (e : a = b)
++      (x : Coord (source.source.table.declarations.signature a).axes)
++      (y : Coord (source.source.table.declarations.signature b).axes) :
++      (e ▸ x) = y ↔ x = (e.symm ▸ y) := by
++    cases e
++    rfl
++  simp only [transport]
++  split_ifs <;> simp_all
++
++theorem AdmittedSource.collect_correspondence (source : AdmittedSource)
++    (ρ : Store (fun _ => K) source.source.table.declarations)
++    (h : (source.program r).AdmEnv semiringOps ρ) (t : (source.program r).Defined)
++    (p : Coord (source.source.table.declarations.signature t.val).axes) :
++    (source.program r).collect semiringOps ρ h t p = source.globalFiber ρ t.val p := by
++  rw [Program.collect_grouped]
++  simp_rw [source.collect_statement]
++  rw [source.globalFiber_grouped]
++  change (∑ s : Fin (targetStatements source t.val).length,
++      ((targetStatements source t.val).get s).globalFiber ρ p) = _
++  rw [← List.sum_ofFn]
++  change (List.ofFn ((fun tag : StatementTag source t.val => tag.globalFiber ρ p) ∘
++    (targetStatements source t.val).get)).sum = _
++  rw [← List.map_ofFn, List.ofFn_get]
++
++theorem AdmittedSource.collect_relabel_correspondence (source : AdmittedSource)
++    {O : (source.program r).Defined → Type} [∀ t, Fintype (O t)]
++    (e : ∀ t, O t ≃ (source.program r).Occurrence t)
++    (ρ : Store (fun _ => K) source.source.table.declarations)
++    (h : (source.program r).AdmEnv semiringOps ρ) (t : (source.program r).Defined)
++    (p : Coord (source.source.table.declarations.signature t.val).axes) :
++    (source.program r).relabeledCollect semiringOps e ρ h t p =
++      source.globalFiber ρ t.val p := by
++  rw [Program.collect_relabel, source.collect_correspondence]
++
++def IdentifiedSource.originalGlobalFiber (source : IdentifiedSource)
++    (ρ : Store (fun _ => K) source.admitted.source.table.declarations)
++    (t : source.admitted.source.table.declarations.Tensor)
++    (p : Coord (source.admitted.source.table.declarations.signature t).axes) : K :=
++  ∑ i : OriginalStatement source.admitted,
++    let tag := (source.originalTagEquiv i).2
++    if h : (source.originalTagEquiv i).1 = t then tag.globalFiber ρ (h.symm ▸ p) else 0
++
++theorem IdentifiedSource.globalFiber_original (source : IdentifiedSource)
++    (ρ : Store (fun _ => K) source.admitted.source.table.declarations) (t p) :
++    source.admitted.globalFiber ρ t p = source.originalGlobalFiber ρ t p := by
++  unfold IdentifiedSource.originalGlobalFiber
++  let f : OriginalStatement source.admitted → K := fun i =>
++    let tag := (source.originalTagEquiv i).2
++    if h : (source.originalTagEquiv i).1 = t then tag.globalFiber ρ (h.symm ▸ p) else 0
++  change source.admitted.globalFiber ρ t p = ∑ i, f i
++  rw [← Equiv.sum_comp source.originalEquiv f]
++  unfold AdmittedSource.globalFiber
++  apply Finset.sum_congr rfl
++  intro i _
++  change (if h : (source.admitted.statements.get i).output.tensor = t then
++    (source.admitted.statements.get i).globalFiber ρ (h.symm ▸ p) else 0) =
++      (fun j : Fin source.admitted.statements.length =>
++        if h : (source.admitted.statements.get j).output.tensor = t then
++          (source.admitted.statements.get j).globalFiber ρ (h.symm ▸ p) else 0)
++        (source.originalEquiv.symm (source.originalEquiv i))
++  rw [Equiv.symm_apply_apply]
++
++theorem IdentifiedSource.collect_correspondence (source : IdentifiedSource)
++    (ρ : Store (fun _ => K) source.admitted.source.table.declarations)
++    (h : (source.admitted.program r).AdmEnv semiringOps ρ)
++    (t : (source.admitted.program r).Defined)
++    (p : Coord (source.admitted.source.table.declarations.signature t.val).axes) :
++    (source.admitted.program r).collect semiringOps ρ h t p =
++      source.originalGlobalFiber ρ t.val p := by
++  rw [source.admitted.collect_correspondence, source.globalFiber_original]
++
++theorem StatementPermutation.globalFiber (permutation : StatementPermutation source)
++    (ρ : Store (fun _ => K) source.source.table.declarations)
++    (t : (source.program r).Defined)
++    (p : Coord (source.source.table.declarations.signature t.val).axes) :
++    permutation.reordered.globalFiber ρ t.val p = source.globalFiber ρ t.val p := by
++  rw [← permutation.reordered.collect_correspondence (r := r) ρ
++    (permutation.reordered.total_admEnv ρ) t p]
++  rw [permutation.collect r ρ _ (source.total_admEnv ρ),
++    source.collect_correspondence]
++
++def AdmittedSource.GlobalModels (source : AdmittedSource)
++    (η : (source.program r).Input)
++    (ρ : Store (fun _ => K) source.source.table.declarations) : Prop :=
++  (source.program r).InputAgreement η ρ ∧
++    ∀ t : (source.program r).Defined, ∀ p, ρ ⟨t.val, p⟩ = source.globalFiber ρ t.val p
++
++theorem AdmittedSource.models_iff_global (source : AdmittedSource)
++    (η : (source.program r).Input)
++    (ρ : Store (fun _ => K) source.source.table.declarations) :
++    (source.program r).Models semiringOps η ρ ↔ source.GlobalModels η ρ := by
++  constructor
++  · rintro ⟨h, agree, equations⟩
++    exact ⟨agree, fun t p => (equations t p).trans (source.collect_correspondence ρ h t p)⟩
++  · rintro ⟨agree, equations⟩
++    refine ⟨source.total_admEnv ρ, agree, ?_⟩
++    intro t p
++    rw [source.collect_correspondence]
++    exact equations t p
++
++open Program.Executor
++
++/-- The existing result carries Execution from the validated initial state. -/
++abbrev ActualValidatedResult (source : AdmittedSource) :=
++  ValidatedResult (elaborateSource source) RationalReference.ops
++
++theorem sourceResult_globalModel (source : AdmittedSource)
++    (result : ActualValidatedResult source) (c complete)
++    (h : result.result.outcome = .complete c complete) :
++    source.GlobalModels (r := RationalReference.registry) result.input
++      ((elaborateSource source).finalStore c complete) :=
++  (source.models_iff_global _ _).mp (sourceResult_model source result c complete h)
++
++theorem sourceResult_globalEquations (source : AdmittedSource)
++    (result : ActualValidatedResult source) (c complete)
++    (h : result.result.outcome = .complete c complete) :
++    ∀ t : (elaborateSource source).Defined, ∀ p,
++      (elaborateSource source).finalStore c complete ⟨t.val, p⟩ =
++        source.globalFiber ((elaborateSource source).finalStore c complete) t.val p :=
++  (sourceResult_globalModel source result c complete h).2
++
++theorem sourceResult_globalUnique (source : AdmittedSource)
++    (result : ActualValidatedResult source) (c complete)
++    (h : result.result.outcome = .complete c complete) :
++    ∀ ρ, source.GlobalModels (r := RationalReference.registry) result.input ρ →
++      ρ = (elaborateSource source).finalStore c complete := by
++  intro ρ model
++  exact sourceResult_unique source result c complete h ρ ((source.models_iff_global _ _).mpr model)
++
++theorem sourceResult_globalDenotation (source : AdmittedSource)
++    (result : ActualValidatedResult source) (c complete)
++    (h : result.result.outcome = .complete c complete)
++    (t : {t // (elaborateSource source).output t = true})
++    (p : Coord (source.source.table.declarations.signature t.val).axes) :
++    (elaborateSource source).denotation RationalReference.ops result.input
++      ((elaborateSource source).successful_admInput RationalReference.ops result.input c
++        (result_success _ _ result.input result.result c complete h)) t p =
++      source.globalFiber ((elaborateSource source).finalStore c complete) t.val p := by
++  rw [sourceResult_denotation source result c complete h]
++  exact sourceResult_globalEquations source result c complete h
++    ⟨t.val, (elaborateSource source).output_defined t.val t.property⟩ p
++
++end LeanNCD.Semantics.Source
+diff --git a/leanncd/lakefile.toml b/leanncd/lakefile.toml
+index 9682c3de..8d091106 100644
+--- a/leanncd/lakefile.toml
++++ b/leanncd/lakefile.toml
+@@ -92,7 +92,10 @@ globs = ["Base.NumericTest", "Base.StTest", "Base.BrTest", "Base.BrWiringTest",
+          "Semantics.SourceOracleTest", "Semantics.SourceProgramFixtures",
+          "Semantics.SourceProgramOutcomesTest", "Semantics.SourceProgramIdentityTest",
+          "Semantics.SourceProgramCollectionTest", "Semantics.SourceProgramGeometryTest",
+-         "Semantics.SourceProgramTest"]
++         "Semantics.SourceProgramTest", "Semantics.SourceCorrespondenceFixtures",
++         "Semantics.SourceCorrespondenceBoundaryTest",
++         "Semantics.SourceCorrespondenceCollectionTest",
++         "Semantics.SourceCorrespondenceTransportTest", "Semantics.SourceCorrespondenceTest"]
+ 
+ # Non-default experimental JAX-bridge codegen library. Deliberately absent from
+ # `defaultTargets`: it only builds when explicitly requested (`lake build JaxExperiment`, as the
+diff --git a/leanncd/test/Semantics/SourceCorrespondenceBoundaryTest.lean b/leanncd/test/Semantics/SourceCorrespondenceBoundaryTest.lean
+new file mode 100644
+index 00000000..655b6e49
+--- /dev/null
++++ b/leanncd/test/Semantics/SourceCorrespondenceBoundaryTest.lean
+@@ -0,0 +1,235 @@
++import Semantics.SourceCorrespondenceFixtures
++
++open LeanNCD LeanNCD.Semantics LeanNCD.Semantics.Source
++open SourceAdmissionFixtures SourceProgramFixtures SourceCorrespondenceFixtures
++
++namespace SourceCorrespondenceBoundaryTest
++
++private def scalar : SourceSnapshot :=
++  ⟨⟨[.tensor "L" [], .tensor "R" [], .tensor "Scalar" []],
++      [.assign "Scalar" [] (rhs [[.read "L" [], .read "R" []]])], {}, ∅⟩,
++    [⟨0, .input, []⟩, ⟨1, .input, []⟩, ⟨2, .output, []⟩],
++    [⟨0, [], [2 / 3]⟩, ⟨1, [], [5 / 7]⟩]⟩
++
++private def zeroContraction : SourceSnapshot :=
++  ⟨⟨[.axis i (some 2), .axis e (some 0),
++      .tensor "Empty" [e], .tensor "B" [i], .tensor "Y" [i],
++      .tensor "Positive" [i]],
++      [.assign "Y" [.free i]
++        (rhs [[.read "Empty" [.axis e], .read "B" [.axis i]]]),
++       .assign "Positive" [.free i] (rhs [[.read "B" [.axis i]]])], {}, ∅⟩,
++    [⟨2, .input, [0]⟩, ⟨3, .input, [2]⟩,
++      ⟨4, .output, [2]⟩, ⟨5, .output, [2]⟩],
++    [⟨2, [0], []⟩, ⟨3, [2], [2 / 3, 5 / 7]⟩]⟩
++
++private def repeatedOutput : SourceSnapshot :=
++  ⟨⟨[.axis i (some 2), .tensor "L" [i], .tensor "R" [i],
++      .tensor "Diagonal" [i, i]],
++      [.assign "Diagonal" [.free i, .free i]
++        (rhs [[.read "L" [.axis i], .read "R" [.axis i]]])], {}, ∅⟩,
++    [⟨1, .input, [2]⟩, ⟨2, .input, [2]⟩, ⟨3, .output, [2, 2]⟩],
++    [⟨1, [2], [2 / 3, 5 / 7]⟩, ⟨2, [2], [3 / 5, 11 / 13]⟩]⟩
++
++private structure TermView where
++  outputSlots : List UID
++  outputDomain : List (UID × Nat)
++  globalDomain : List (UID × Nat)
++  boundDomain : List (UID × Nat)
++  readSlots : List (List UID)
++  cardinalities : Nat × Nat × Nat
++  twoReadProduct : Bool
++  outerReduction : Option Nat
++  body : List (Option Rat)
++  products : List Rat
++  destinations : List (List Nat)
++  coordinates : List (List Nat)
++  fiberCardinalities : List Nat
++  global : List Rat
++  collected : List (Option Rat)
++  deriving DecidableEq, Repr
++
++private def termViews (snapshot : SourceSnapshot) :
++    Except SourceDiagnostic (List (List TermView)) :=
++  (admitSource snapshot).map fun (source : AdmittedSource) =>
++    let store := ratStore source
++    source.statements.map fun (statement : AdmittedStatement source.source) =>
++      statement.terms.map fun (term : Term source.source.context statement.output.context
++          source.source.table.declarations) =>
++        let output := statement.output
++        let outputLayout := canonicalLayout output.context.axes
++        let globalLayout := canonicalLayout term.globalContext.axes
++        let fullLayout :=
++          canonicalLayout (source.source.table.declarations.signature output.tensor).axes
++        let valuations := (List.finRange globalLayout.count).map fun n =>
++          (uidCoordEquiv term.globalContext).invFun (globalLayout.enumerate.toFun n)
++        let destinations := valuations.map fun v =>
++          coordList _ (term.globalDestination output v)
++        let coordinates := (List.finRange fullLayout.count).map fun n =>
++          coordList _ (fullLayout.enumerate n)
++        let body := term.body (r := RationalReference.registry) id
++        ⟨output.indices, output.context.axes.map (fun a => (a.uid, a.extent)),
++          term.globalContext.axes.map (fun a => (a.uid, a.extent)),
++          term.partition.bound.map (fun a => (a.uid, a.extent)),
++          term.sourceReads.map CheckedRead.indices,
++          (outputLayout.count, globalLayout.count,
++            (canonicalLayout term.partition.bound).count),
++          (match body with
++          | .binary .mul (.read ..) (.binary .mul (.read ..) (.lit one)) => one == 1
++          | _ => false),
++          (match body with | .reduce n _ => some n | _ => none),
++          (List.finRange outputLayout.count).map fun n =>
++            interpret semiringOps store body (outputLayout.enumerate n),
++          valuations.map (term.globalProduct store), destinations, coordinates,
++          coordinates.map (fun p => (destinations.filter (· == p)).length),
++          (List.finRange fullLayout.count).map fun n =>
++            term.globalFiber output store (fullLayout.enumerate n),
++          (List.finRange fullLayout.count).map fun n =>
++            term.collectedBody (r := RationalReference.registry) output store
++              (fullLayout.enumerate n)⟩
++
++private def occurrenceViews (snapshot : SourceSnapshot) :
++    Except SourceDiagnostic (List (Nat × Nat × List Nat × Option Rat × Rat)) :=
++  (admitSource snapshot).map fun source =>
++    let program := elaborateSource source
++    let store := ratStore source
++    (sourceDefined source).flatMap fun t =>
++      (sourceOccurrences source t).map fun o =>
++        ((source.statementTag RationalReference.registry t o.1).original,
++          o.2.val.val, coordList _ (program.destination t o.1 o.2),
++          program.outcome semiringOps store t o,
++          program.contribution semiringOps store (source.total_admEnv store) t o)
++
++private def scalarTerms : List (List TermView) :=
++  [[{ outputSlots := [], outputDomain := [], globalDomain := [], boundDomain := [],
++      readSlots := [[], []], cardinalities := (1, 1, 1),
++      twoReadProduct := true, outerReduction := none,
++      body := [some (10 / 21)], products := [10 / 21], destinations := [[]],
++      coordinates := [[]], fiberCardinalities := [1],
++      global := [10 / 21], collected := [some (10 / 21)] }]]
++
++def B1 : Bool :=
++  (termViews scalar).toOption == some scalarTerms &&
++  (occurrenceViews scalar).toOption == some [(0, 0, [], some (10 / 21), 10 / 21)] &&
++  ((admitSource scalar).toOption.map fun source =>
++    fiberRows RationalReference.registry source (ratStore source)) ==
++      some [⟨2, "Scalar", [], [10 / 21], [10 / 21]⟩] &&
++  (observe scalar).toOption.map (fun o => o.kind) == some .complete &&
++  (observe scalar).toOption.map (fun o => o.tensors) ==
++    some [⟨0, 0, "L", [], [some (2 / 3)]⟩,
++      ⟨1, 1, "R", [], [some (5 / 7)]⟩,
++      ⟨2, 2, "Scalar", [], [some (10 / 21)]⟩]
++
++private def zeroTerms : List (List TermView) :=
++  [[{ outputSlots := [7], outputDomain := [(7, 2)],
++      globalDomain := [(7, 2), (11, 0)], boundDomain := [(11, 0)],
++      readSlots := [[11], [7]], cardinalities := (2, 0, 0),
++      twoReadProduct := false, outerReduction := some 0,
++      body := [some 0, some 0], products := [], destinations := [],
++      coordinates := [[0], [1]], fiberCardinalities := [0, 0],
++      global := [0, 0], collected := [some 0, some 0] }],
++   [{ outputSlots := [7], outputDomain := [(7, 2)],
++      globalDomain := [(7, 2)], boundDomain := [],
++      readSlots := [[7]], cardinalities := (2, 2, 1),
++      twoReadProduct := false, outerReduction := none,
++      body := [some (2 / 3), some (5 / 7)], products := [2 / 3, 5 / 7],
++      destinations := [[0], [1]], coordinates := [[0], [1]],
++      fiberCardinalities := [1, 1], global := [2 / 3, 5 / 7],
++      collected := [some (2 / 3), some (5 / 7)] }]]
++
++def B2 : Bool :=
++  (termViews zeroContraction).toOption == some zeroTerms &&
++  (occurrenceViews zeroContraction).toOption ==
++    some [(0, 0, [0], some 0, 0), (0, 1, [1], some 0, 0),
++      (1, 0, [0], some (2 / 3), 2 / 3), (1, 1, [1], some (5 / 7), 5 / 7)] &&
++  ((admitSource zeroContraction).toOption.map fun source =>
++    fiberRows RationalReference.registry source (ratStore source)) ==
++      some [⟨4, "Y", [2], [0, 0], [0, 0]⟩,
++        ⟨5, "Positive", [2], [2 / 3, 5 / 7], [2 / 3, 5 / 7]⟩] &&
++  (observe zeroContraction).toOption.map (fun o => o.kind) == some .complete &&
++  (observe zeroContraction).toOption.map (fun o => o.tensors) ==
++    some [⟨0, 2, "Empty", [0], []⟩,
++      ⟨1, 3, "B", [2], [some (2 / 3), some (5 / 7)]⟩,
++      ⟨2, 4, "Y", [2], [some 0, some 0]⟩,
++      ⟨3, 5, "Positive", [2], [some (2 / 3), some (5 / 7)]⟩]
++
++private def repeatedTerms : List (List TermView) :=
++  [[{ outputSlots := [7, 7], outputDomain := [(7, 2)],
++      globalDomain := [(7, 2)], boundDomain := [],
++      readSlots := [[7], [7]], cardinalities := (2, 2, 1),
++      twoReadProduct := true, outerReduction := none,
++      body := [some (2 / 5), some (55 / 91)], products := [2 / 5, 55 / 91],
++      destinations := [[0, 0], [1, 1]],
++      coordinates := [[0, 0], [0, 1], [1, 0], [1, 1]],
++      fiberCardinalities := [1, 0, 0, 1], global := [2 / 5, 0, 0, 55 / 91],
++      collected := [some (2 / 5), some 0, some 0, some (55 / 91)] }]]
++
++def B3 : Bool :=
++  (termViews repeatedOutput).toOption == some repeatedTerms &&
++  (occurrenceViews repeatedOutput).toOption ==
++    some [(0, 0, [0, 0], some (2 / 5), 2 / 5),
++      (0, 1, [1, 1], some (55 / 91), 55 / 91)] &&
++  ((admitSource repeatedOutput).toOption.map fun source =>
++    fiberRows RationalReference.registry source (ratStore source)) ==
++      some [⟨3, "Diagonal", [2, 2], [2 / 5, 0, 0, 55 / 91],
++        [2 / 5, 0, 0, 55 / 91]⟩] &&
++  (observe repeatedOutput).toOption.map (fun o => o.kind) == some .complete &&
++  (observe repeatedOutput).toOption.map (fun o => o.tensors) ==
++    some [⟨0, 1, "L", [2], [some (2 / 3), some (5 / 7)]⟩,
++      ⟨1, 2, "R", [2], [some (3 / 5), some (11 / 13)]⟩,
++      ⟨2, 3, "Diagonal", [2, 2], [some (2 / 5), some 0, some 0, some (55 / 91)]⟩]
++
++set_option synthInstance.maxSize 1024 in
++#guard B1
++set_option synthInstance.maxSize 1024 in
++#guard B2
++set_option synthInstance.maxSize 1024 in
++#guard B3
++
++theorem B1_bodyBridge (source : AdmittedSource) (_ : admitSource scalar = .ok source)
++    (s : Fin source.statements.length) (t : Fin (source.statements.get s).terms.length)
++    (p : Coord (source.source.table.declarations.signature
++      (source.statements.get s).output.tensor).axes) :
++    ((source.statements.get s).terms.get t).collectedBody
++      (r := RationalReference.registry) (source.statements.get s).output
++      (ratStore source) p =
++      some (((source.statements.get s).terms.get t).globalFiber
++        (source.statements.get s).output (ratStore source) p) :=
++  ((source.statements.get s).terms.get t).collectedBody_correspondence
++    (source.statements.get s).output (ratStore source) p
++
++theorem B2_bodyBridge (source : AdmittedSource)
++    (_ : admitSource zeroContraction = .ok source)
++    (s : Fin source.statements.length) (t : Fin (source.statements.get s).terms.length)
++    (p : Coord (source.source.table.declarations.signature
++      (source.statements.get s).output.tensor).axes) :
++    ((source.statements.get s).terms.get t).collectedBody
++      (r := RationalReference.registry) (source.statements.get s).output
++      (ratStore source) p =
++      some (((source.statements.get s).terms.get t).globalFiber
++        (source.statements.get s).output (ratStore source) p) :=
++  ((source.statements.get s).terms.get t).collectedBody_correspondence
++    (source.statements.get s).output (ratStore source) p
++
++theorem B3_bodyBridge (source : AdmittedSource)
++    (_ : admitSource repeatedOutput = .ok source)
++    (s : Fin source.statements.length) (t : Fin (source.statements.get s).terms.length)
++    (p : Coord (source.source.table.declarations.signature
++      (source.statements.get s).output.tensor).axes) :
++    ((source.statements.get s).terms.get t).collectedBody
++      (r := RationalReference.registry) (source.statements.get s).output
++      (ratStore source) p =
++      some (((source.statements.get s).terms.get t).globalFiber
++        (source.statements.get s).output (ratStore source) p) :=
++  ((source.statements.get s).terms.get t).collectedBody_correspondence
++    (source.statements.get s).output (ratStore source) p
++
++theorem B3_collectBridge (source : AdmittedSource)
++    (_ : admitSource repeatedOutput = .ok source)
++    (t : (source.program RationalReference.registry).Defined)
++    (p : Coord (source.source.table.declarations.signature t.val).axes) :
++    (source.program RationalReference.registry).collect semiringOps (ratStore source)
++      (source.total_admEnv (ratStore source)) t p =
++      source.globalFiber (ratStore source) t.val p :=
++  source.collect_correspondence (ratStore source) (source.total_admEnv (ratStore source)) t p
++
++end SourceCorrespondenceBoundaryTest
+diff --git a/leanncd/test/Semantics/SourceCorrespondenceCollectionTest.lean b/leanncd/test/Semantics/SourceCorrespondenceCollectionTest.lean
+new file mode 100644
+index 00000000..33e4c395
+--- /dev/null
++++ b/leanncd/test/Semantics/SourceCorrespondenceCollectionTest.lean
+@@ -0,0 +1,261 @@
++import Semantics.SourceCorrespondenceFixtures
++
++open LeanNCD LeanNCD.Semantics LeanNCD.Semantics.Source
++open LeanNCD.Semantics.Program.Executor
++open SourceAdmissionFixtures SourceProgramFixtures SourceCorrespondenceFixtures
++
++namespace SourceCorrespondenceCollectionTest
++
++private structure TermRow (K : Type) where
++  globalAxes : List (UID × Nat)
++  bound : List (UID × Nat)
++  body : List (Option K)
++  collected : List (Option K)
++  global : List K
++  deriving DecidableEq, Repr
++
++private def termRows {K : Type} [Semiring K] (r : Registry (fun _ : Unit => K))
++    (source : AdmittedSource) (ρ : Store (fun _ => K) source.source.table.declarations) :
++    List (List (TermRow K)) :=
++  source.statements.map fun statement =>
++    let output := statement.output
++    let layout := canonicalLayout (source.source.table.declarations.signature output.tensor).axes
++    statement.terms.map fun term =>
++      ⟨term.globalContext.axes.map (fun a => (a.uid, a.extent)),
++        term.partition.bound.map (fun a => (a.uid, a.extent)),
++        (List.finRange (canonicalLayout output.context.axes).count).map fun n =>
++          interpret semiringOps ρ (term.body (r := r) id)
++            ((canonicalLayout output.context.axes).enumerate n),
++        (List.finRange layout.count).map fun n =>
++          term.collectedBody (r := r) output ρ (layout.enumerate n),
++        (List.finRange layout.count).map fun n =>
++          term.globalFiber output ρ (layout.enumerate n)⟩
++
++def j : AxisSpec := ⟨"j", 19, .nat⟩
++
++def B4_snapshot : SourceSnapshot :=
++  ⟨⟨decls ++ [.axis j (some 4), .tensor "C" [i, j]],
++    [.assign "Y" [.free i] (rhs [
++      [.read "A" [.axis i, .axis k]],
++      [.read "C" [.axis i, .axis j]],
++      [.read "A" [.axis i, .axis k], .read "C" [.axis i, .axis j]],
++      [.read "B" [.axis i]]])], {}, ∅⟩,
++    specs ++ [⟨9, .input, [2, 4]⟩],
++    inputs ++ [⟨9, [2, 4], [2, 4, 8, 16, 3, 9, 27, 81]⟩]⟩
++
++private def B4_expectedTerms {K : Type} [Semiring K] : List (List (TermRow K)) :=
++  [[⟨[(7, 2), (3, 3)], [(3, 3)], [some 6, some 15],
++       [some 6, some 15], [6, 15]⟩,
++    ⟨[(7, 2), (19, 4)], [(19, 4)], [some 30, some 120],
++       [some 30, some 120], [30, 120]⟩,
++    ⟨[(7, 2), (3, 3), (19, 4)], [(3, 3), (19, 4)], [some 180, some 1800],
++       [some 180, some 1800], [180, 1800]⟩,
++    ⟨[(7, 2)], [], [some 10, some 20], [some 10, some 20], [10, 20]⟩]]
++
++private def B4_expectedFibers {K : Type} [Semiring K] : List (FiberRow K) :=
++  [⟨5, "Y", [2], [226, 1955], [226, 1955]⟩,
++   ⟨7, "Diagonal", [2, 2], [0, 0, 0, 0], [0, 0, 0, 0]⟩]
++
++def B4 := (admitSource B4_snapshot).toOption.map fun source =>
++  (termRows natRegistry source (natStore source),
++   fiberRows natRegistry source (natStore source),
++   termRows RationalReference.registry source (ratStore source),
++   fiberRows RationalReference.registry source (ratStore source),
++   source.source.context.axes.map (fun a => (a.uid, a.extent)))
++
++set_option synthInstance.maxSize 1024 in
++#guard B4 = some (B4_expectedTerms, B4_expectedFibers,
++  B4_expectedTerms, B4_expectedFibers, [(7, 2), (3, 3), (11, 0), (19, 4)])
++
++theorem B4_nested_body (source : AdmittedSource)
++    (_admission : admitSource B4_snapshot = .ok source)
++    (s : Fin source.statements.length)
++    (n : Fin (source.statements.get s).terms.length)
++    (x : Coord (source.statements.get s).output.context.axes) :
++    let term := (source.statements.get s).terms.get n
++    interpret semiringOps (natStore source) (term.body (r := natRegistry) id) x =
++      some (∑ v : UIDVal term.globalContext,
++        if (term.partitionCoordEquiv v).1 = x then term.globalProduct (natStore source) v else 0) :=
++  ((source.statements.get s).terms.get n).body_correspondence (natStore source) id x
++
++theorem B4_term_fiber (source : AdmittedSource)
++    (_admission : admitSource B4_snapshot = .ok source)
++    (s : Fin source.statements.length)
++    (n : Fin (source.statements.get s).terms.length) (p) :
++    let statement := source.statements.get s
++    let term := statement.terms.get n
++    term.collectedBody (r := RationalReference.registry) statement.output (ratStore source) p =
++      some (term.globalFiber statement.output (ratStore source) p) :=
++  ((source.statements.get s).terms.get n).collectedBody_correspondence
++    (source.statements.get s).output (ratStore source) p
++
++theorem B4_program_fiber (source : AdmittedSource)
++    (_admission : admitSource B4_snapshot = .ok source)
++    (t : (source.program natRegistry).Defined) (p) :
++    (source.program natRegistry).collect semiringOps (natStore source)
++      (source.total_admEnv (natStore source)) t p = source.globalFiber (natStore source) t.val p :=
++  source.collect_correspondence (natStore source) (source.total_admEnv (natStore source)) t p
++
++def B5_snapshot : SourceSnapshot :=
++  ⟨⟨[.axis j (some 4), .axis k (some 3), .axis e (some 0), .axis i (some 2),
++      .tensor "A" [i, k], .tensor "W" [k, j], .tensor "Z" [i, j]],
++    [.assign "Z" [.free i, .free j]
++      (rhs [[.read "A" [.axis i, .axis k], .read "W" [.axis k, .axis j]]])],
++    {}, ∅⟩,
++    [⟨4, .input, [2, 3]⟩, ⟨5, .input, [3, 4]⟩, ⟨6, .output, [2, 4]⟩],
++    [⟨4, [2, 3], [1, 2, 3, 4, 5, 6]⟩,
++     ⟨5, [3, 4], [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37]⟩]⟩
++
++private def B5_values {K : Type} [Semiring K] : List K :=
++  [93, 116, 132, 156, 201, 251, 291, 345]
++
++def B5 := (admitSource B5_snapshot).toOption.map fun source =>
++  (termRows RationalReference.registry source (ratStore source),
++   fiberRows RationalReference.registry source (ratStore source))
++
++#guard B5 = some
++  ([[⟨[(19, 4), (3, 3), (7, 2)], [(3, 3)], (B5_values).map some,
++      (B5_values).map some, B5_values⟩]],
++   [⟨6, "Z", [2, 4], B5_values, B5_values⟩])
++
++private structure LocatorRow where
++  assignment : List (UID × Nat)
++  output : List Nat
++  contracted : List Nat
++  destination : List Nat
++  product : Rat
++  inverse : Bool
++  deriving DecidableEq, Repr
++
++def B5_locators := (admitSource B5_snapshot).toOption.map fun (source : AdmittedSource) =>
++  source.statements.map fun (statement : AdmittedStatement source.source) =>
++    statement.terms.map fun (term : Term source.source.context statement.output.context
++        source.source.table.declarations) =>
++      (List.finRange (canonicalLayout term.globalContext.axes).count).map fun n =>
++        let v : UIDVal term.globalContext := (uidCoordEquiv term.globalContext).invFun
++          ((canonicalLayout term.globalContext.axes).enumerate.toFun n)
++        let xy := term.partitionEquiv v
++        (⟨coordAssignments _ ((uidCoordEquiv term.globalContext).toFun v),
++          coordList _ ((uidCoordEquiv statement.output.context).toFun xy.1),
++          coordList _ ((uidCoordEquiv term.contractedContext).toFun xy.2),
++          coordList _ (term.globalDestination statement.output v),
++          term.globalProduct (ratStore source) v,
++          decide ((uidCoordEquiv term.globalContext).toFun (term.partitionEquiv.symm xy) =
++            (uidCoordEquiv term.globalContext).toFun v)⟩ : LocatorRow)
++
++#guard B5_locators.map (fun rows => rows.flatten.flatten.map LocatorRow.product) =
++  some [2, 8, 22, 55, 69, 138, 3, 12, 26, 65, 87, 174,
++    5, 20, 34, 85, 93, 186, 7, 28, 38, 95, 111, 222]
++#guard B5_locators.map (fun rows => rows.flatten.flatten.all LocatorRow.inverse) = some true
++#guard B5_locators.map (fun rows =>
++  let cells := rows.flatten.flatten
++  (cells[0]?, cells[1]?, cells[6]?, cells[23]?)) = some
++  (some ⟨[(19, 0), (3, 0), (7, 0)], [0, 0], [0], [0, 0], 2, true⟩,
++   some ⟨[(19, 0), (3, 0), (7, 1)], [1, 0], [0], [1, 0], 8, true⟩,
++   some ⟨[(19, 1), (3, 0), (7, 0)], [0, 1], [0], [0, 1], 3, true⟩,
++   some ⟨[(19, 3), (3, 2), (7, 1)], [1, 3], [2], [1, 3], 222, true⟩)
++
++theorem B5_original_fiber (source : AdmittedSource)
++    (_admission : admitSource B5_snapshot = .ok source)
++    (t : (source.program RationalReference.registry).Defined) (p) :
++    (source.program RationalReference.registry).collect semiringOps (ratStore source)
++      (source.total_admEnv (ratStore source)) t p = source.globalFiber (ratStore source) t.val p :=
++  source.collect_correspondence (ratStore source) (source.total_admEnv (ratStore source)) t p
++
++private def duplicate : Stmt :=
++  .assign "Y" [.free i] (rhs [[.read "B" [.axis i], .read "B" [.axis i]]])
++
++def B6_snapshot : SourceSnapshot :=
++  ⟨⟨decls,
++    [.assign "Diagonal" [.free i, .free i] (rhs [[]]),
++     duplicate, duplicate,
++     .assign "Y" [.free i] (rhs [[.read "A" [.axis i, .axis k]]])], {}, ∅⟩,
++    specs, inputs⟩
++
++private def reverse (source : AdmittedSource) : StatementPermutation source :=
++  permuteStatements source
++    { toFun := Fin.rev, invFun := Fin.rev,
++      left_inv := Fin.rev_rev, right_inv := Fin.rev_rev }
++
++private structure CollisionView where
++  rows : List (FiberRow Rat)
++  originals : List (List Rat)
++  ids : List Nat
++  reversedIds : List Nat
++  inverse : List (Nat × Nat × Nat × Nat)
++  contributions : List (List (Nat × List Nat × Rat))
++  reversedRows : List (FiberRow Rat)
++  deriving DecidableEq, Repr
++
++def B6 := (admitIdentifiedSource B6_snapshot).toOption.map fun identified =>
++  let source := identified.admitted
++  let ρ := ratStore source
++  let permutation := reverse source
++  (⟨fiberRows RationalReference.registry source ρ,
++    (sourceDefined source).map fun t =>
++      let layout := canonicalLayout (source.source.table.declarations.signature t.val).axes
++      (List.finRange layout.count).map fun n =>
++        identified.originalGlobalFiber ρ t.val (layout.enumerate n),
++    source.statements.map AdmittedStatement.original,
++    permutation.reordered.statements.map AdmittedStatement.original,
++    (List.finRange source.statements.length).map fun n =>
++      let original := identified.originalEquiv n
++      let tag := identified.originalTagEquiv original
++      (original.val, (identified.originalEquiv.symm original).val,
++        tag.2.original, (identified.originalTagEquiv.symm tag).val),
++    (sourceDefined source).map fun t =>
++      (sourceOccurrences source t).map fun occurrence =>
++        ((source.statementTag RationalReference.registry t occurrence.1).original,
++          coordList _ ((elaborateSource source).destination t occurrence.1 occurrence.2),
++          (elaborateSource source).contribution semiringOps ρ
++            (source.total_admEnv ρ) t occurrence),
++    fiberRows RationalReference.registry permutation.reordered ρ⟩ : CollisionView)
++
++private def B6_expectedRows : List (FiberRow Rat) :=
++  [⟨5, "Y", [2], [206, 815], [206, 815]⟩,
++   ⟨7, "Diagonal", [2, 2], [1, 0, 0, 1], [1, 0, 0, 1]⟩]
++
++set_option synthInstance.maxSize 1024 in
++#guard B6 = some
++  ⟨B6_expectedRows, [[206, 815], [1, 0, 0, 1]], [0, 1, 2, 3], [3, 2, 1, 0],
++    [(0, 0, 0, 0), (1, 1, 1, 1), (2, 2, 2, 2), (3, 3, 3, 3)],
++    [[(1, [0], 100), (1, [1], 400), (2, [0], 100), (2, [1], 400),
++      (3, [0], 6), (3, [1], 15)],
++     [(0, [0, 0], 1), (0, [1, 1], 1)]], B6_expectedRows⟩
++
++#guard (observe B6_snapshot).toOption.map (fun o => (o.kind, o.tensors)) = some
++  (.complete,
++   [⟨0, 3, "A", [2, 3], [some 1, some 2, some 3, some 4, some 5, some 6]⟩,
++    ⟨1, 4, "B", [2], [some 10, some 20]⟩,
++    ⟨2, 5, "Y", [2], [some 206, some 815]⟩,
++    ⟨3, 6, "Empty", [0], []⟩,
++    ⟨4, 7, "Diagonal", [2, 2], [some 1, some 0, some 0, some 1]⟩])
++
++theorem B6_original_collection (source : IdentifiedSource)
++    (_admission : admitIdentifiedSource B6_snapshot = .ok source)
++    (t : (source.admitted.program RationalReference.registry).Defined) (p) :
++    (source.admitted.program RationalReference.registry).collect semiringOps
++      (ratStore source.admitted) (source.admitted.total_admEnv (ratStore source.admitted)) t p =
++        source.originalGlobalFiber (ratStore source.admitted) t.val p :=
++  source.collect_correspondence (ratStore source.admitted)
++    (source.admitted.total_admEnv (ratStore source.admitted)) t p
++
++theorem B6_permutation_fiber (source : IdentifiedSource)
++    (_admission : admitIdentifiedSource B6_snapshot = .ok source)
++    (t : (source.admitted.program RationalReference.registry).Defined) (p) :
++    (reverse source.admitted).reordered.globalFiber (ratStore source.admitted) t.val p =
++      source.originalGlobalFiber (ratStore source.admitted) t.val p := by
++  rw [(reverse source.admitted).globalFiber (r := RationalReference.registry),
++    source.globalFiber_original]
++
++theorem B6_reached_wholeModel (source : AdmittedSource)
++    (_admission : admitSource B6_snapshot = .ok source) (c complete)
++    (h : (run (elaborateSource source) RationalReference.ops (sourceSchedule source)
++      (sourceInput source)).outcome = .complete c complete) :
++    source.GlobalModels (r := RationalReference.registry) (sourceInput source)
++      ((elaborateSource source).finalStore c complete) :=
++  sourceResult_globalModel source
++    ⟨sourceInput source, run (elaborateSource source) RationalReference.ops
++      (sourceSchedule source) (sourceInput source)⟩ c complete h
++
++end SourceCorrespondenceCollectionTest
+diff --git a/leanncd/test/Semantics/SourceCorrespondenceFixtures.lean b/leanncd/test/Semantics/SourceCorrespondenceFixtures.lean
+new file mode 100644
+index 00000000..dd942d7e
+--- /dev/null
++++ b/leanncd/test/Semantics/SourceCorrespondenceFixtures.lean
+@@ -0,0 +1,45 @@
++import LeanNCD.Semantics.Source.ProgramCorrespondence
++import Semantics.SourceProgramFixtures
++
++open LeanNCD LeanNCD.Semantics LeanNCD.Semantics.Source
++
++namespace SourceCorrespondenceFixtures
++
++def natRegistry : Registry (fun _ : Unit => Nat) where
++  Op := Empty
++  arity := fun f => nomatch f
++  input := fun f => nomatch f
++  output := fun f => nomatch f
++  domain := fun f => nomatch f
++  meaning := fun f => nomatch f
++
++def ratStore (source : AdmittedSource) :
++    Store (fun _ => Rat) source.source.table.declarations :=
++  fun a => if h : (source.source.table.entry a.1).role = .input then
++    (source.source.inputs.buffers a.1 h).value a.2 else 7
++
++def natStore (source : AdmittedSource) :
++    Store (fun _ => Nat) source.source.table.declarations :=
++  fun a => (ratStore source a).num.toNat
++
++structure FiberRow (K : Type) where
++  declaration : Nat
++  name : String
++  shape : List Nat
++  collected : List K
++  global : List K
++  deriving DecidableEq, Repr
++
++def fiberRows {K : Type} [Semiring K] (r : Registry (fun _ : Unit => K))
++    (source : AdmittedSource) (ρ : Store (fun _ => K) source.source.table.declarations) :
++    List (FiberRow K) :=
++  (sourceDefined source).map fun t =>
++    let entry := source.source.table.entry t.val
++    let layout := canonicalLayout (source.source.table.declarations.signature t.val).axes
++    ⟨entry.declaration, entry.name, entry.axes.map Axis.extent,
++      (List.finRange layout.count).map fun i =>
++        (source.program r).collect semiringOps ρ (source.total_admEnv ρ) t (layout.enumerate i),
++      (List.finRange layout.count).map fun i =>
++        source.globalFiber ρ t.val (layout.enumerate i)⟩
++
++end SourceCorrespondenceFixtures
+diff --git a/leanncd/test/Semantics/SourceCorrespondenceTest.lean b/leanncd/test/Semantics/SourceCorrespondenceTest.lean
+new file mode 100644
+index 00000000..e51e146f
+--- /dev/null
++++ b/leanncd/test/Semantics/SourceCorrespondenceTest.lean
+@@ -0,0 +1,3 @@
++import Semantics.SourceCorrespondenceBoundaryTest
++import Semantics.SourceCorrespondenceCollectionTest
++import Semantics.SourceCorrespondenceTransportTest
+diff --git a/leanncd/test/Semantics/SourceCorrespondenceTransportTest.lean b/leanncd/test/Semantics/SourceCorrespondenceTransportTest.lean
+new file mode 100644
+index 00000000..e714d959
+--- /dev/null
++++ b/leanncd/test/Semantics/SourceCorrespondenceTransportTest.lean
+@@ -0,0 +1,424 @@
++import Semantics.SourceCorrespondenceFixtures
++
++open LeanNCD LeanNCD.Semantics LeanNCD.Semantics.Source
++open SourceAdmissionFixtures SourceCorrespondenceFixtures SourceProgramFixtures
++
++namespace SourceCorrespondenceTransportTest
++
++private def transportSnapshot : SourceSnapshot :=
++  ⟨⟨[.axis k (some 3), .axis e (some 0), .axis i (some 2),
++      .tensor "A" [i, k], .tensor "Y" [i]],
++    [.assign "Y" [.free i] (rhs [[.read "A" [.axis i, .axis k]]])], {}, ∅⟩,
++    [⟨3, .input, [2, 3]⟩, ⟨4, .output, [2]⟩],
++    [⟨3, [2, 3], [1, 2, 5, 10, 25, 45]⟩]⟩
++
++private def transportSource : AdmittedSource :=
++  (admitSource transportSnapshot).toOption.get (by decide)
++
++private def transportStatement : AdmittedStatement transportSource.source :=
++  transportSource.statements.get ⟨0, by decide⟩
++
++private def transportTerm :
++    Term transportSource.source.context transportStatement.output.context
++      transportSource.source.table.declarations :=
++  transportStatement.terms.get ⟨0, by decide⟩
++
++private def transportRead :
++    CheckedRead transportSource.source.context transportSource.source.table.declarations :=
++  transportTerm.sourceReads.get ⟨0, by decide⟩
++
++private def scope : BinderScope transportTerm.globalContext where
++  source := [11]
++  output := [7]
++  free := []
++  generated := [3]
++  covers := by
++    intro u
++    have h := u.property
++    change u.val ∈ [3, 7] at h
++    simp only [List.mem_cons, List.not_mem_nil, or_false] at h
++    rcases h with h | h <;> simp [h]
++  generatedOnly := by
++    intro u hu
++    simp only [List.mem_cons, List.not_mem_nil, or_false] at hu
++    subst u
++    decide
++
++private def renamedContext := renameBinders transportTerm.globalContext scope
++private def renameTransport : UIDTransport transportTerm.globalContext renamedContext :=
++  binderTransport transportTerm.globalContext scope
++
++private def localRead :
++    {s : Slots transportTerm.globalContext.axes
++      (transportSource.source.table.declarations.signature transportRead.read.tensor).axes //
++      s.uids = transportRead.indices} :=
++  (resolveSourceSlots transportTerm.globalContext.axes .read transportRead.origin
++    (transportSource.source.table.declarations.signature transportRead.read.tensor).axes
++    transportRead.indices).toOption.get (by decide)
++
++private def renamedRead :
++    {s : Slots renamedContext.axes
++      (transportSource.source.table.declarations.signature transportRead.read.tensor).axes //
++      s.uids = transportRead.indices.map scope.renameUID} :=
++  (resolveSourceSlots renamedContext.axes .read transportRead.origin
++    (transportSource.source.table.declarations.signature transportRead.read.tensor).axes
++    (transportRead.indices.map scope.renameUID)).toOption.get (by decide)
++
++private def localDestination :
++    {s : Slots transportTerm.globalContext.axes
++      (transportSource.source.table.declarations.signature transportStatement.output.tensor).axes //
++      s.uids = transportStatement.output.indices} :=
++  (resolveSourceSlots transportTerm.globalContext.axes .output transportStatement.output.origin
++    (transportSource.source.table.declarations.signature transportStatement.output.tensor).axes
++    transportStatement.output.indices).toOption.get (by decide)
++
++private def renamedDestinationSlots :
++    {s : Slots renamedContext.axes
++      (transportSource.source.table.declarations.signature transportStatement.output.tensor).axes //
++      s.uids = transportStatement.output.indices.map scope.renameUID} :=
++  (resolveSourceSlots renamedContext.axes .output transportStatement.output.origin
++    (transportSource.source.table.declarations.signature transportStatement.output.tensor).axes
++    (transportStatement.output.indices.map scope.renameUID)).toOption.get (by decide)
++
++private theorem slots_transport {c d : Context} (t : UIDTransport c d)
++    (f : UID → UID) (ht : ∀ u, (t.equiv u).val = f u.val)
++    (a : Slots c.axes sh) (b : Slots d.axes sh)
++    (h : b.uids = a.uids.map f) (v : UIDVal c) :
++    b.project (uidCoordEquiv d (t.valuationEquiv v)) =
++      a.project (uidCoordEquiv c v) := by
++  induction a with
++  | nil => cases b; rfl
++  | cons r rest ih =>
++    cases b with
++    | cons s tail =>
++      have hu : s.uid = f r.uid := (List.cons.inj h).1
++      have hk : t.equiv (r.key c) = s.key d := by
++        apply Subtype.ext
++        rw [ht, Ref.key_uid, Ref.key_uid, hu]
++      apply Prod.ext
++      · rw [Slots.project, Slots.project, Ref.get_uidCoordEquiv, Ref.get_uidCoordEquiv]
++        apply Fin.ext
++        change (t.valuationEquiv v (s.key d)).val = (v (r.key c)).val
++        rw [← hk, UIDTransport.lookup]
++      · exact ih tail (List.cons.inj h).2
++
++private theorem localized_projection {c source : Context} (e : IdentityEmbedding c source)
++    (a : Slots source.axes sh) (b : Slots c.axes sh)
++    (hs : a.uids ⊆ c.axes.map Axis.uid) (hl : b.uids = a.uids) (v : UIDVal c) :
++    a.projectWithin e v hs = b.project (uidCoordEquiv c v) := by
++  let identity : UIDTransport c c := ⟨Equiv.refl _, fun _ => rfl⟩
++  exact Slots.projectWithin_transport e identity (fun _ => rfl) a b hs hl v
++
++private theorem renamed_read_projection (v : UIDVal transportTerm.globalContext) :
++    renamedRead.val.project (uidCoordEquiv renamedContext (renameTransport.valuationEquiv v)) =
++      transportRead.read.slots.projectWithin transportTerm.globalEmbedding v
++        (transportTerm.read_global_support ⟨0, by decide⟩) := by
++  calc
++    _ = localRead.val.project (uidCoordEquiv transportTerm.globalContext v) := by
++      apply slots_transport renameTransport scope.renameUID
++        (fun u => Context.mapUIDTransport_uid _ _ _ u)
++      rw [renamedRead.property, localRead.property]
++    _ = transportRead.read.slots.projectWithin transportTerm.globalEmbedding v
++        (transportTerm.read_global_support ⟨0, by decide⟩) :=
++      (localized_projection transportTerm.globalEmbedding _ _
++      (transportTerm.read_global_support ⟨0, by decide⟩)
++      (localRead.property.trans transportRead.linked.symm) v).symm
++
++private theorem renamed_destination_projection (v : UIDVal transportTerm.globalContext) :
++    renamedDestinationSlots.val.project
++        (uidCoordEquiv renamedContext (renameTransport.valuationEquiv v)) =
++      Term.globalDestination transportStatement.output transportTerm v := by
++  calc
++    _ = localDestination.val.project (uidCoordEquiv transportTerm.globalContext v) := by
++      apply slots_transport renameTransport scope.renameUID
++        (fun u => Context.mapUIDTransport_uid _ _ _ u)
++      rw [renamedDestinationSlots.property, localDestination.property]
++    _ = _ := (localized_projection transportTerm.globalEmbedding _ _
++      (transportTerm.output_global_support transportStatement.output)
++      (localDestination.property.trans transportStatement.output.source_linked.symm) v).symm
++
++private def renamedProduct {K : Type}
++    (ρ : Store (fun _ => K) transportSource.source.table.declarations)
++    (v : UIDVal renamedContext) : K :=
++  ρ ⟨transportRead.read.tensor, renamedRead.val.project (uidCoordEquiv renamedContext v)⟩
++
++private theorem renamed_product {K : Type} [Semiring K]
++    (ρ : Store (fun _ => K) transportSource.source.table.declarations)
++    (v : UIDVal transportTerm.globalContext) :
++    renamedProduct ρ (renameTransport.valuationEquiv v) = transportTerm.globalProduct ρ v := by
++  change ρ ⟨transportRead.read.tensor,
++    renamedRead.val.project (uidCoordEquiv renamedContext (renameTransport.valuationEquiv v))⟩ =
++      ρ ⟨transportRead.read.tensor,
++        transportRead.read.slots.projectWithin transportTerm.globalEmbedding v
++          (transportTerm.read_global_support ⟨0, by decide⟩)⟩ * 1
++  rw [mul_one, renamed_read_projection]
++
++private def renamedFiber {K : Type} [Semiring K]
++    (ρ : Store (fun _ => K) transportSource.source.table.declarations)
++    (p : Coord
++      (transportSource.source.table.declarations.signature transportStatement.output.tensor).axes) :
++    K :=
++  ∑ v : UIDVal renamedContext,
++    if renamedDestinationSlots.val.project (uidCoordEquiv renamedContext v) = p then
++      renamedProduct ρ v else 0
++
++private theorem renamed_fiber {K : Type} [Semiring K]
++    (ρ : Store (fun _ => K) transportSource.source.table.declarations) (p) :
++    renamedFiber ρ p = transportTerm.globalFiber transportStatement.output ρ p := by
++  have hp (v : UIDVal renamedContext) :
++      renamedProduct ρ v =
++        transportTerm.globalProduct ρ (renameTransport.valuationEquiv.symm v) := by
++    simpa only [Equiv.apply_symm_apply] using
++      renamed_product ρ (renameTransport.valuationEquiv.symm v)
++  have hd (v : UIDVal renamedContext) :
++      renamedDestinationSlots.val.project (uidCoordEquiv renamedContext v) =
++        Term.globalDestination transportStatement.output transportTerm
++          (renameTransport.valuationEquiv.symm v) := by
++    simpa only [Equiv.apply_symm_apply] using
++      renamed_destination_projection (renameTransport.valuationEquiv.symm v)
++  unfold renamedFiber
++  simp_rw [hp, hd]
++  exact uidFiber_reindex renameTransport _ _ p
++
++private theorem partition_left (v : UIDVal transportTerm.globalContext) :
++    transportTerm.partitionEquiv.symm (transportTerm.partitionEquiv v) = v :=
++  transportTerm.partitionEquiv.symm_apply_apply v
++
++private theorem partition_right
++    (v : UIDVal transportStatement.output.context × UIDVal transportTerm.contractedContext) :
++    transportTerm.partitionEquiv (transportTerm.partitionEquiv.symm v) = v :=
++  transportTerm.partitionEquiv.apply_symm_apply v
++
++private def permutation :
++    transportTerm.globalContext.axes.Perm [⟨7, 2⟩, ⟨3, 3⟩] :=
++  List.Perm.swap ..
++
++private def reorderedContext := transportTerm.globalContext.reenumerate _ permutation
++private def reorderTransport := transportTerm.globalContext.reenumerateTransport _ permutation
++
++private def reorderedRead :
++    {s : Slots reorderedContext.axes
++      (transportSource.source.table.declarations.signature transportRead.read.tensor).axes //
++      s.uids = transportRead.indices} :=
++  (resolveSourceSlots reorderedContext.axes .read transportRead.origin
++    (transportSource.source.table.declarations.signature transportRead.read.tensor).axes
++    transportRead.indices).toOption.get (by decide)
++
++private theorem reenumerated_fiber {K : Type} [Semiring K]
++    (ρ : Store (fun _ => K) transportSource.source.table.declarations) (p) :
++    (∑ v : UIDVal reorderedContext,
++      if Term.globalDestination transportStatement.output transportTerm
++          (reorderTransport.valuationEquiv.symm v) = p then
++        transportTerm.globalProduct ρ (reorderTransport.valuationEquiv.symm v) else 0) =
++      transportTerm.globalFiber transportStatement.output ρ p :=
++  transportTerm.globalFiber_reenumerate transportStatement.output _ permutation ρ p
++
++private def partitionRows :=
++  let term := transportTerm
++  (List.finRange (canonicalLayout term.globalContext.axes).count).map fun index =>
++    let v := (uidCoordEquiv term.globalContext).symm
++      ((canonicalLayout term.globalContext.axes).enumerate index)
++    let pair := term.partitionEquiv v
++    (coordList _ (uidCoordEquiv term.globalContext v),
++      coordList _ (uidCoordEquiv transportStatement.output.context pair.1),
++      coordList _ (uidCoordEquiv term.contractedContext pair.2),
++      coordList _ (Term.globalDestination transportStatement.output term v),
++      coordList _ (localRead.val.project (uidCoordEquiv term.globalContext v)),
++      term.globalProduct (natStore transportSource) v,
++      decide (term.partitionEquiv.symm pair = v))
++
++private def independentPartitionRight : Bool :=
++  let output := transportStatement.output.context
++  let bound := transportTerm.contractedContext
++  (List.finRange (canonicalLayout output.axes).count).all fun x =>
++    (List.finRange (canonicalLayout bound.axes).count).all fun y =>
++      let pair := ((uidCoordEquiv output).symm ((canonicalLayout output.axes).enumerate x),
++        (uidCoordEquiv bound).symm ((canonicalLayout bound.axes).enumerate y))
++      decide (transportTerm.partitionEquiv (transportTerm.partitionEquiv.symm pair) = pair)
++
++private def mappedRows :=
++  (List.finRange (canonicalLayout transportTerm.globalContext.axes).count).map fun index =>
++    let v := (uidCoordEquiv transportTerm.globalContext).symm
++      ((canonicalLayout transportTerm.globalContext.axes).enumerate index)
++    let renamed := renameTransport.valuationEquiv v
++    let reordered := reorderTransport.valuationEquiv v
++    (coordAssignments _ (uidCoordEquiv renamedContext renamed),
++      coordList _ (renamedRead.val.project (uidCoordEquiv renamedContext renamed)),
++      coordList _ (reorderedRead.val.project (uidCoordEquiv reorderedContext reordered)),
++      renamedProduct (natStore transportSource) renamed)
++
++private def transportFibers :=
++  let output := transportStatement.output
++  let layout := canonicalLayout
++    (transportSource.source.table.declarations.signature output.tensor).axes
++  (List.finRange layout.count).map fun index =>
++    let p := layout.enumerate index
++    let ρ := natStore transportSource
++    (transportTerm.collectedBody (r := natRegistry) output ρ p,
++      transportTerm.globalFiber output ρ p, renamedFiber ρ p,
++      ∑ v : UIDVal reorderedContext,
++        if Term.globalDestination output transportTerm
++            (reorderTransport.valuationEquiv.symm v) = p then
++          transportTerm.globalProduct ρ (reorderTransport.valuationEquiv.symm v) else 0)
++
++def B7 : Bool :=
++  transportSource.source.context.axes == [⟨3, 3⟩, ⟨11, 0⟩, ⟨7, 2⟩] &&
++  transportTerm.globalContext.axes == [⟨3, 3⟩, ⟨7, 2⟩] &&
++  transportTerm.partition.context.axes == [⟨7, 2⟩, ⟨3, 3⟩] &&
++  transportTerm.contractedContext.axes == [⟨3, 3⟩] &&
++  renamedContext.axes == [⟨15, 3⟩, ⟨7, 2⟩] &&
++  transportTerm.partition.bound.map (fun a => { a with uid := scope.renameUID a.uid }) ==
++    [⟨15, 3⟩] &&
++  renamedRead.val.uids == [7, 15] &&
++  renamedDestinationSlots.val.uids == [7] &&
++  (renameTransport.equiv ⟨7, by decide⟩).val == 7 &&
++  renamedContext.domain (renameTransport.equiv ⟨3, by decide⟩) == 3 &&
++  renamedContext.domain (renameTransport.equiv ⟨7, by decide⟩) == 2 &&
++  (renameBindersRequested transportTerm.globalContext scope (fun _ => 7)).axes ==
++    renamedContext.axes &&
++  reorderedContext.axes == [⟨7, 2⟩, ⟨3, 3⟩] &&
++  partitionRows ==
++    [([0, 0], [0], [0], [0], [0, 0], 1, true),
++     ([0, 1], [1], [0], [1], [1, 0], 10, true),
++     ([1, 0], [0], [1], [0], [0, 1], 2, true),
++     ([1, 1], [1], [1], [1], [1, 1], 25, true),
++     ([2, 0], [0], [2], [0], [0, 2], 5, true),
++     ([2, 1], [1], [2], [1], [1, 2], 45, true)] &&
++  independentPartitionRight &&
++  mappedRows ==
++    [([(15, 0), (7, 0)], [0, 0], [0, 0], 1),
++     ([(15, 0), (7, 1)], [1, 0], [1, 0], 10),
++     ([(15, 1), (7, 0)], [0, 1], [0, 1], 2),
++     ([(15, 1), (7, 1)], [1, 1], [1, 1], 25),
++     ([(15, 2), (7, 0)], [0, 2], [0, 2], 5),
++     ([(15, 2), (7, 1)], [1, 2], [1, 2], 45)] &&
++  transportFibers == [(some 8, 8, 8, 8), (some 80, 80, 80, 80)]
++
++private def nestedSnapshot : SourceSnapshot :=
++  ⟨⟨[.axis i (some 2), .axis k (some 3), .axis e (some 0),
++      .tensor "A" [i, k], .tensor "B" [i], .tensor "S" []],
++    [.assign "S" []
++      (rhs [[.read "A" [.axis i, .axis k], .read "B" [.axis i],
++        .read "A" [.axis i, .axis k]]])], {}, ∅⟩,
++    [⟨3, .input, [2, 3]⟩, ⟨4, .input, [2]⟩, ⟨5, .output, []⟩],
++    [⟨3, [2, 3], [1 / 3, 2 / 3, 5, 10, 25, 45]⟩, ⟨4, [2], [2, 7]⟩]⟩
++
++private def nestedSource : AdmittedSource :=
++  (admitSource nestedSnapshot).toOption.get (by decide)
++
++private def nestedStatement : AdmittedStatement nestedSource.source :=
++  nestedSource.statements.get ⟨0, by decide⟩
++
++private def nestedTerm :
++    Term nestedSource.source.context nestedStatement.output.context
++      nestedSource.source.table.declarations :=
++  nestedStatement.terms.get ⟨0, by decide⟩
++
++private def reductionBounds {K : Type} {σ : Declarations Unit}
++    {r : Registry (fun _ : Unit => K)} :
++    {Γ : Type} → Expr (fun _ => K) σ r Γ (.scalar ()) → List Nat
++  | _, .reduce n body => n :: reductionBounds body
++  | _, .binary _ left right => reductionBounds left ++ reductionBounds right
++  | _, _ => []
++
++private theorem nested_correspondence {K : Type} [Semiring K]
++    (r : Registry (fun _ : Unit => K))
++    (ρ : Store (fun _ => K) nestedSource.source.table.declarations) :
++    (∀ x : Coord nestedStatement.output.context.axes,
++      interpret semiringOps ρ (nestedTerm.body (r := r) id) x =
++        some (∑ v : UIDVal nestedTerm.globalContext,
++          if (nestedTerm.partitionCoordEquiv v).1 = x then
++            nestedTerm.globalProduct ρ v else 0)) ∧
++    (∀ p, nestedTerm.collectedBody (r := r) nestedStatement.output ρ p =
++      some (nestedTerm.globalFiber nestedStatement.output ρ p)) ∧
++    (∀ (t : (nestedSource.program r).Defined) p,
++      (nestedSource.program r).collect semiringOps ρ (nestedSource.total_admEnv ρ) t p =
++        nestedSource.globalFiber ρ t.val p) :=
++  ⟨fun x => nestedTerm.body_correspondence ρ id x,
++    fun p => nestedTerm.collectedBody_correspondence nestedStatement.output ρ p,
++    fun t p => nestedSource.collect_correspondence ρ (nestedSource.total_admEnv ρ) t p⟩
++
++private theorem nested_nat :
++    (∀ x : Coord nestedStatement.output.context.axes,
++      interpret semiringOps (natStore nestedSource) (nestedTerm.body (r := natRegistry) id) x =
++        some (∑ v : UIDVal nestedTerm.globalContext,
++          if (nestedTerm.partitionCoordEquiv v).1 = x then
++            nestedTerm.globalProduct (natStore nestedSource) v else 0)) ∧
++    (∀ p, nestedTerm.collectedBody (r := natRegistry) nestedStatement.output
++      (natStore nestedSource) p =
++        some (nestedTerm.globalFiber nestedStatement.output (natStore nestedSource) p)) ∧
++    (∀ (t : (nestedSource.program natRegistry).Defined) p,
++      (nestedSource.program natRegistry).collect semiringOps (natStore nestedSource)
++        (nestedSource.total_admEnv (natStore nestedSource)) t p =
++          nestedSource.globalFiber (natStore nestedSource) t.val p) :=
++  nested_correspondence natRegistry (natStore nestedSource)
++
++private theorem nested_rat :
++    (∀ x : Coord nestedStatement.output.context.axes,
++      interpret semiringOps (ratStore nestedSource)
++        (nestedTerm.body (r := RationalReference.registry) id) x =
++        some (∑ v : UIDVal nestedTerm.globalContext,
++          if (nestedTerm.partitionCoordEquiv v).1 = x then
++            nestedTerm.globalProduct (ratStore nestedSource) v else 0)) ∧
++    (∀ p, nestedTerm.collectedBody (r := RationalReference.registry) nestedStatement.output
++      (ratStore nestedSource) p =
++        some (nestedTerm.globalFiber nestedStatement.output (ratStore nestedSource) p)) ∧
++    (∀ (t : (nestedSource.program RationalReference.registry).Defined) p,
++      (nestedSource.program RationalReference.registry).collect semiringOps (ratStore nestedSource)
++        (nestedSource.total_admEnv (ratStore nestedSource)) t p =
++          nestedSource.globalFiber (ratStore nestedSource) t.val p) :=
++  nested_correspondence RationalReference.registry (ratStore nestedSource)
++
++private def nestedReads :=
++  (footprint (nestedTerm.body (r := RationalReference.registry) id) ()).map fun a =>
++    ((nestedSource.source.table.entry a.1).declaration,
++      coordList (nestedSource.source.table.declarations.signature a.1).axes a.2)
++
++def B8 : Bool :=
++  nestedSource.source.context.axes == [⟨7, 2⟩, ⟨3, 3⟩, ⟨11, 0⟩] &&
++  nestedTerm.globalContext.axes == [⟨7, 2⟩, ⟨3, 3⟩] &&
++  nestedTerm.partition.bound == [⟨7, 2⟩, ⟨3, 3⟩] &&
++  nestedTerm.sourceReads.map (fun read =>
++    ((nestedSource.source.table.entry read.read.tensor).declaration, read.indices)) ==
++      [(3, [7, 3]), (4, [7]), (3, [7, 3])] &&
++  ratStore nestedSource
++    ⟨(nestedTerm.sourceReads.get ⟨0, by decide⟩).read.tensor, (0, 0, ())⟩ == 1 / 3 &&
++  natStore nestedSource
++    ⟨(nestedTerm.sourceReads.get ⟨0, by decide⟩).read.tensor, (0, 0, ())⟩ == 1 &&
++  reductionBounds (nestedTerm.body (r := natRegistry) id) == [2, 3] &&
++  reductionBounds (nestedTerm.body (r := RationalReference.registry) id) == [2, 3] &&
++  interpret semiringOps (natStore nestedSource) (nestedTerm.body (r := natRegistry) id) () ==
++    some 19310 &&
++  interpret semiringOps (ratStore nestedSource)
++    (nestedTerm.body (r := RationalReference.registry) id) () == some (173710 / 9) &&
++  nestedTerm.collectedBody (r := natRegistry) nestedStatement.output (natStore nestedSource) () ==
++    some 19310 &&
++  nestedTerm.collectedBody (r := RationalReference.registry) nestedStatement.output
++    (ratStore nestedSource) () == some (173710 / 9) &&
++  fiberRows natRegistry nestedSource (natStore nestedSource) ==
++    [⟨5, "S", [], [19310], [19310]⟩] &&
++  fiberRows RationalReference.registry nestedSource (ratStore nestedSource) ==
++    [⟨5, "S", [], [173710 / 9], [173710 / 9]⟩] &&
++  nestedReads ==
++    [(3, [0, 0]), (4, [0]), (3, [0, 0]),
++     (3, [0, 1]), (4, [0]), (3, [0, 1]),
++     (3, [0, 2]), (4, [0]), (3, [0, 2]),
++     (3, [1, 0]), (4, [1]), (3, [1, 0]),
++     (3, [1, 1]), (4, [1]), (3, [1, 1]),
++     (3, [1, 2]), (4, [1]), (3, [1, 2])]
++
++#guard B7
++#guard B8
++#eval ("B7", B7, transportFibers)
++#eval ("B8", B8, fiberRows natRegistry nestedSource (natStore nestedSource),
++  fiberRows RationalReference.registry nestedSource (ratStore nestedSource))
++#print axioms slots_transport
++#print axioms renamed_fiber
++#print axioms partition_left
++#print axioms partition_right
++#print axioms reenumerated_fiber
++#print axioms nested_correspondence
++#print axioms nested_nat
++#print axioms nested_rat
++
++end SourceCorrespondenceTransportTest
+diff --git a/papers/semantics/source_correspondence_mutations_post.json b/papers/semantics/source_correspondence_mutations_post.json
+index 4303b0b4..2db6d383 100644
+--- a/papers/semantics/source_correspondence_mutations_post.json
++++ b/papers/semantics/source_correspondence_mutations_post.json
+@@ -250,5 +250,61 @@
+       "if rest.isEmpty = true then",
+       "else []"
+     ]
++  },
++  {
++    "label": "T4-B2-BOUNDARY (lose the zero contraction bound)",
++    "task": "T4",
++    "file": "LeanNCD/Semantics/Source/Lowering.lean",
++    "old": "    .reduce a.extent (contract rest reads (fun \u03b3 p => env \u03b3.1 (\u03b3.2, p)))",
++    "new": "    if a.extent = 0 then .lit 1 else\n      .reduce a.extent (contract rest reads (fun \u03b3 p => env \u03b3.1 (\u03b3.2, p)))",
++    "targets": [
++      "+Semantics.SourceCorrespondenceBoundaryTest"
++    ],
++    "expect": [
++      "if a.extent = 0 then Expr.lit 1",
++      "some (\u2211 p, operandProduct \u03c1 reads (env \u03b3 p))"
++    ]
++  },
++  {
++    "label": "T4-B3-BOUNDARY (change one repeated destination slot)",
++    "task": "T4",
++    "file": "LeanNCD/Semantics/Source/Statement.lean",
++    "old": "    Coord (source.table.declarations.signature statement.output.tensor).axes :=\n  statement.output.slots.project x",
++    "new": "    Coord (source.table.declarations.signature statement.output.tensor).axes :=\n  let changeFirst : (sh : Shape) \u2192 Coord sh \u2192 Coord sh := fun\n    | [], p => p\n    | _ :: _, p => (Fin.rev p.1, p.2)\n  changeFirst _ (statement.output.slots.project x)",
++    "targets": [
++      "+Semantics.SourceCorrespondenceBoundaryTest"
++    ],
++    "expect": [
++      "AdmittedOutput.projection statement.output v",
++      "statement.destination ((uidCoordEquiv statement.output.context)"
++    ]
++  },
++  {
++    "label": "T4-B4-bias-reduced-over-another-term-bound",
++    "task": "T4",
++    "file": "LeanNCD/Semantics/Source/Statement.lean",
++    "old": "  sumBody statement.terms env",
++    "new": "  let bound := ((statement.terms.find? fun term => !term.partition.bound.isEmpty).map\n    (fun term => term.partition.bound)).getD []\n  (statement.terms.map fun term =>\n    if term.partition.bound.isEmpty then\n      .binary .mul\n        (contract bound ([] : List (Read [] source.table.declarations))\n          (fun (_ : \u0393) _ => ()))\n        (term.body env)\n    else term.body env).foldr (fun body rest => .binary .add body rest) (.lit 0)",
++    "targets": [
++      "+Semantics.SourceCorrespondenceCollectionTest"
++    ],
++    "expect": [
++      "interpret_sumBody statement.terms \u03c1 env \u03b3",
++      "footprint (statement.body env)"
++    ]
++  },
++  {
++    "label": "T4-B6-drop-second-target-local-statement-occurrences",
++    "task": "T4",
++    "file": "LeanNCD/Semantics/Program.lean",
++    "old": "  pushforward (fun o : P.Occurrence t => P.destination t o.1 o.2)\n    (P.contribution ops \u03c1 h t)",
++    "new": "  pushforward (fun o : P.Occurrence t => P.destination t o.1 o.2)\n    (fun o => if o.1.val = 1 then 0 else P.contribution ops \u03c1 h t o)",
++    "targets": [
++      "+Semantics.SourceCorrespondenceCollectionTest"
++    ],
++    "expect": [
++      "pushforward_relabel (e t)",
++      "P.relabeledCollect ops e \u03c1 h t = P.collect ops \u03c1 h t"
++    ]
+   }
+ ]
+diff --git a/papers/semantics/source_correspondence_plan.md b/papers/semantics/source_correspondence_plan.md
+index 5d1d437e..6d358906 100644
+--- a/papers/semantics/source_correspondence_plan.md
++++ b/papers/semantics/source_correspondence_plan.md
+@@ -9,17 +9,15 @@ UID-based source elaboration, pure-einsum correspondence, source-linked
+ diagnostics, and differential tests for bounded scalar read sum-products.
+ 
+ **Do not dispatch implementation from this document yet.** Readiness rehearsal
+-is authorized and in progress: T1-T3 fixtures, their eighteen planned
++is authorized and in progress: T1-T4 fixtures, their twenty-two planned
+ implementation kills, and per-task reviews pass. T2 also has three verified
+ Direct acceptance regression families and hand checks. Full readiness evidence
+ for the following seams remains incomplete:
+ 
+-- Generalized actual normalized-body/global-fiber correspondence and its
+-  connection to source-generated complete executions.
+ - Public diagnostic/differential APIs, independent input packing/oracle tests,
+   the exact production numerical profile, and implementation-mutation kills.
+ 
+-T1-T3's completed receipts are tracked in the
++T1-T4's completed receipts are tracked in the
+ [record](source_correspondence_record.md). The fresh
+ [T1 rehearsal patch](source_correspondence_readiness_patches/0001-uid-binding.patch)
+ is a reviewed checkpoint, not a complete execution-ready patch series.
+@@ -301,9 +299,9 @@ All paths in this section are repository-relative. Existing donor/core/productio
+ paths are checked in the planning tree. `Source.Context`, `Source.Adapter`,
+ `Source.Admission`, the generic `Source.Lowering` donor, and the binding fixtures
+ now exist in the rehearsal tree, along with general Program/schedule,
+-provenance/permutation modules and an independent oracle. Generalized
+-correspondence, diagnostic/differential modules and the remaining fixture families are still
+-**future outputs**, not completed by the seed patches.
++provenance/permutation, an independent oracle, and genuine generalized
++correspondence modules. Diagnostic/differential verification and the remaining
++fixture families are still incomplete, not completed by the seed patches.
+ Production DSL/Eval files are read-only donors, not mutation targets.
+ 
+ | Task | Prerequisites | Three implementation work items | Planned fixtures / implementation cycles | Risk / split |
+@@ -316,7 +314,7 @@ Production DSL/Eval files are read-only donors, not mutation targets.
+ | T6 corpus/review/docs | T1, T2, T3, T4, T5 | Deterministic corpus; implementation cycles; integrated review/docs | 18 / 9 | High; corpus bundles then integration |
+ 
+ Planned totals: **79 named fixture entrypoints and 39 implementation-mutation
+-cycles**. T1-T3's 38 planned entrypoints and eighteen cycles have observed receipts
++cycles**. T1-T4's 46 planned entrypoints and twenty-two cycles have observed receipts
+ in the record, along with three supplemental Direct acceptance families/hand
+ checks. The remaining work is not counted as verified. F16 additionally expands exactly 18 generated cases.
+ These counts do not include the six completed fixture-input contrasts.
+diff --git a/papers/semantics/source_correspondence_record.md b/papers/semantics/source_correspondence_record.md
+index 825f41f8..f82ed7d6 100644
+--- a/papers/semantics/source_correspondence_record.md
++++ b/papers/semantics/source_correspondence_record.md
+@@ -392,3 +392,42 @@ reply; no background work continued overnight. The earlier statement that
+ work was continuing was inaccurate. On 2026-10-09 the controller resumed,
+ ran T3's actual mutation gates, and completed the synchronous per-task review.
+ No commit, local integration, or remote operation has occurred.
++
++### T4 readiness checkpoint
++
++`Fiber`, `Correspondence`, and `ProgramCorrespondence` now prove the genuine
++generic-semiring bridge. The independent global domain is each term's original
++read UID support union output UID support, selected in resolved order; an
++unrelated zero-extent declaration does not erase a nonempty term.
++True UID-dependent valuation bijections connect that domain to output and
++term-local contracted valuations. Products preserve original factor order;
++destinations retain repeated original slots.
++
++Actual normalized expression interpretation and actual `Program.collect` are
++the left sides of the bridge, not aliases for the global formula. The program
++proof uses `collect_grouped` and genuine tag/valuation reindexing.
++`collect_relabel` connects certified original IDs and statement permutations,
++preserving multiplicity. Execution-backed whole-store global equations,
++uniqueness, and output denotation use the existing reached result theorems.
++No Float algebra, supplied model/rank witness, arbitrary successful snapshot,
++or production change was introduced.
++
++All **eight** B fixtures passed the controller aggregate: **8,524 jobs**.
++They cover rank zero, nonempty outputs with zero contraction, repeated-output
++offdiagonal fibers, unequal term-local bounds and bias, asymmetric original
++UID order and slots, original duplicate contribution IDs, domain-preserving
++rename/re-enumeration, and nested body/collection specialization to Nat and Rat.
++The Rat nested observation is `173710/9`; the Nat observation is `19310`.
++Initial test elaboration issues were corrected with explicit dependent binder
++types and a typed `calc` endpoint, without changing production proofs.
++
++All **four** T4 post cycles passed expected diagnostics, byte-identical restore,
++and restored builds. These are proof-protected kills at zero-reduction
++interpretation, full destination projection, term-local body/footprint, and
++`Program.collect_relabel`'s multiplicity equation. The last mutation also
++produced a class-inference diagnostic; that incidental diagnostic is not the
++counted receipt. The per-task review found no significant issue.
++
++Verified planned totals are now **46/79 fixtures** and **22/39 cycles**, plus
++the supplemental acceptance and oracle families. T5 diagnostic/comparison
++fixture gates and T6 corpus/final integration remain outstanding.

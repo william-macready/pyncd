@@ -1,0 +1,3 @@
+import Semantics.SourceCorrespondenceBoundaryTest
+import Semantics.SourceCorrespondenceCollectionTest
+import Semantics.SourceCorrespondenceTransportTest
