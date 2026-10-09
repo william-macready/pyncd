@@ -192,8 +192,8 @@ sequentially within each top-level section and are not subsection numbers:
 | Proposition 19.1 | Pure-einsum elaboration correspondence | Open. The generic pushforward laws are proved (`pushforward_*` in `Collection`); the theorem relating source elaboration to them is not. |
 | Proposition 19.2 | Source-order invariance | Partial. The occurrence-relabeling form is proved (`models_relabel`); the statement-permutation corollary is not stated. |
 | Lemma 23.1 | Read stability | Proved: `evalWith_stable`, `interpret_stable` (`Readiness`). |
-| Lemma 26.1 | Conservation invariants | Proved: `reachable_invariant` (`Invariants`) covers items 4 and 5 (`Invariant.consumed`) and the accumulator formula (`Invariant.conservation`), with `initial_invariant`, `consume_invariant`, `publish_invariant`. Items 1 and 2 hold by typing (item 1 with `Finset.erase`). Monotone publication (item 3) has only the one-step lemma `publish_extends`; the invariant does not need more. |
-| Lemma 26.2 | Preservation of every candidate model | Proved. Part (b) is `candidate_preserved` (`Soundness`). For part (a), the finished-fiber case is `finished_accumulator`; the partial-fiber sum follows from `Invariant.conservation` and `Invariant.consumed` and is not stated separately in Lean. |
+| Lemma 26.1 | Conservation invariants | Proved: `reachable_invariant` (`Invariants`) yields `Invariant.published` (item 4), `Invariant.consumed` (item 5), `Invariant.conservation` (accumulator formula), and `Invariant.inputs` (inputs unchanged, part of item 3), with `initial_invariant`, `consume_invariant`, `publish_invariant`. Items 1 and 2 follow from the step premises and typing (item 1 via the pending premise and `Finset.erase`). Monotone publication has only the one-step lemma `publish_extends`; the invariant does not need more. |
+| Lemma 26.2 | Preservation of every candidate model | Partial. Parts (b) and (c) are `candidate_preserved` (`Soundness`), which also makes failed states incompatible with a model. For part (a), the finished-fiber case is `finished_accumulator`; the partial-fiber sum follows from `Invariant.conservation` and `Invariant.consumed` and is not stated separately in Lean. |
 | Theorem 26.3 | A successful run gives the unique model; a failed run excludes every model | Proved: `successful_model`, `successful_unique`, `successful_admInput`, `successful_denotation`, `failed_no_model` (`Soundness`). Executor level: `result_model`, `result_unique`, `result_denotation`, `result_failure` (`ReferenceExecutor`). |
 | Lemma 26.4 | Finite execution | Proved: `step_wellFounded`, `no_infinite_chain`, `running_trace_bound`, `failed_trace_bound` (`Measure`). Executor level: `initialBudget_agrees`, `run_not_exhausted` (`ExecutableState`, `ReferenceExecutor`). |
 | Theorem 26.5 | Ranked progress | Proved: `ranked_progress`, `ranked_not_blocked` (`Progress`). Executor level: `result_not_blocked`. |
@@ -458,8 +458,8 @@ different fragments of it:
 | Used by | Needs |
 | --- | --- |
 | Contribution collection (Section 19), conservation, soundness, finite execution, and progress (Sections 24-26), and batched accumulation (Section 32.1) | A commutative monoid $(K,\oplus,0_K)$ on the carrier of each defined tensor |
-| Expression interpretation (Section 18), read footprints, read stability (Section 23) | No laws: $\oplus$, $\otimes$, $0_K$, $1_K$ are interpreted operations |
-| Enumeration independence of nested reductions (Section 15.2), the pure-einsum correspondence (Proposition 19.1), Sections 17.1-17.3 | Associativity and commutativity of $\oplus$, and the coherence condition below |
+| Expression interpretation (Section 18), read footprints, read stability (Section 23) | No laws: $\oplus$, $\otimes$, $0_K$, $1_K$ are interpreted operations, and a reduction is the ascending fold of Section 18.3 |
+| Enumeration independence of nested reductions (Section 15.2), the pure-einsum correspondence (Proposition 19.1), Sections 17.1-17.3 | The commutative-monoid laws of $\oplus$ (associativity, commutativity, identity), the coherence condition, and the bracketing convention below |
 | Delta tensors, operand permutation, distribution, neutral operands (Sections 17.4-17.6) | The full semiring laws: $\otimes$ associative and commutative with identity $1_K$, distributivity, and $0_K$ absorbing |
 
 No result of Parts III and IV uses a law of $\otimes$, distributivity, or
@@ -474,12 +474,19 @@ empty reduction contributes the collection identity. This is an assumption on
 the development: the expression-level $\oplus$ and $0_K$ agree with the
 collection monoid. The Lean formalization keeps them as separate data and
 links them by hypothesis; it evaluates a reduction as an ascending fold, which
-equals the finite combination of Section 2.2 exactly when the monoid laws and
+equals the finite combination of Section 2.2 when the monoid laws and
 coherence hold.
 
-A formalization may give each defined tensor its own commutative monoid. No
-result in Parts III-IV compares the monoids of different tensors. This
-document does not use that freedom.
+**Bracketing.** A finite product of an ordered list of factors is the
+left-nested product. The $\bigotimes$ over operands in Section 17.2 and the
+product that Section 15.2 builds from the same factors in the same order use
+this nesting, so relating them uses no law of $\otimes$.
+
+A formalization may give each defined tensor its own commutative monoid when it
+proves only the results of the first row, which assume no coherence. Wherever
+coherence is used, every defined tensor of a sort uses that sort's $\oplus$ and
+$0$. No result compares the monoids of different tensors. This document does
+not use that freedom.
 
 ### 2.4 Scalar sorts
 
@@ -488,12 +495,16 @@ on there being only one. A development may instead fix a family of **sorts**,
 each with a carrier $K_s$ and operations $(\oplus_s,\otimes_s,0_s,1_s)$, and a
 tensor signature (Section 4.1) names the sort of its entries. Then:
 
-- A scalar expression has a sort. Literals, Iverson values, $\oplus$, $\otimes$,
-  reductions, tabulations, and selection stay within one sort.
+- A scalar expression has a sort. Literals, tensor reads, Iverson values,
+  $\oplus$, $\otimes$, reductions, tabulations, and selection stay within one
+  sort, and a tensor read has the sort of the tensor.
+- A contribution body has the sort of its destination tensor.
 - A registered primitive (Section 13.2) may have input and output types in
   different sorts. This is the only way a value changes sort.
-- Collection on a defined tensor uses the monoid of its sort. A sort used only
-  by input tensors needs no $\oplus$ laws.
+- Collection on a defined tensor uses the monoid of its sort. A sort that is
+  the sort of no defined tensor needs no $\oplus$ laws for Sections 19-26;
+  enumeration independence of reductions in such a sort needs
+  $(K_s,\oplus_s,0_s)$ to be a commutative monoid.
 - Every carrier is nonempty, since it contains $0_s$.
 
 The single-carrier text is the case of one sort. Still excluded are implicit
@@ -1356,7 +1367,8 @@ T_{\textcolor{#9D75C4}{s}}[\textcolor{#9D75C4}{e}_{\textcolor{#9D75C4}{s},1},\ld
 $$
 
 $\textcolor{#5688C7}{\Gamma}_{\textcolor{#9D75C4}{s}}$ binds the statement's contribution variables in its guard,
-output indices, and body. The body must have scalar type $K$.
+output indices, and body. The body must have the scalar type of its
+destination tensor ($K$ when there is one sort).
 The guard is optional, with omitted guard meaning $\mathrm{true}$.
 
 The guard and output indices determine the data introduced in Section 9:
@@ -1670,7 +1682,7 @@ reductions. A repeated variable in several factors is bound once and
 has the same value in each occurrence.
 
 Use a fixed enumeration of $C_b$ to produce a concrete syntax tree.
-Associativity and commutativity of $\oplus$, with the coherence condition of
+The commutative-monoid laws of $\oplus$, with the coherence condition of
 Section 2.3, justify independence from that enumeration; floating-point
 execution must separately specify its order.
 Each reduction binder is scoped only over its own term.
@@ -2023,8 +2035,8 @@ The reference operands are complete tensor values from an environment
 $\textcolor{#398B83}{\rho}$. There are no nonlinear operators, guards, or affine access
 maps in this profile. The general core retains those capabilities.
 
-Sections 17.1-17.3 need only associativity and commutativity of $\oplus$
-and the coherence condition of Section 2.3. Sections 17.4-17.6 use the full
+Sections 17.1-17.3 need only the commutative-monoid laws of $\oplus$, the
+coherence condition, and the bracketing convention of Section 2.3. Sections 17.4-17.6 use the full
 semiring laws.
 
 ### 17.1 Index strings and global valuations
@@ -2489,6 +2501,9 @@ $$
 \end{cases}
 $$
 
+Here $\bigoplus_{k\in\textcolor{#5688C7}{I}_j}v_k$ is the fold of $\oplus$ over the ascending enumeration of
+$\textcolor{#5688C7}{I}_j$, which needs no law; it equals the finite combination of
+Section 2.2 under the monoid laws (Section 2.3).
 An empty reduction succeeds with $0_K$. Its body is not interpreted
 at any valuation, so an unreachable primitive application does not
 cause undefinedness.
@@ -2695,8 +2710,9 @@ the pure statement itself has no partial primitive applications.
 The mathematical proof decomposes a global valuation into the values
 of distinct output variables and the remaining contracted variables.
 The core body combines over the latter, while the write fiber combines
-over the former. This uses only associativity and commutativity of
-$\oplus$ and coherence (Section 2.3), not distributivity. The resulting finite
+over the former. This uses only the commutative-monoid laws of
+$\oplus$, coherence, and the bracketing convention (Section 2.3), not
+distributivity. The resulting finite
 combinations enumerate exactly the assignments in $\textcolor{#5688C7}{\pi}_{\textcolor{#5688C7}{L}}^{-1}(\{p\})$.
 
 Repeated output indices can leave an empty fiber, and an empty
@@ -3423,8 +3439,8 @@ reference machine as a transition relation are listed in
    so this is read stability (Lemma 23.1). It needs no model and no admissibility
    hypothesis on $\textcolor{#398B83}{\rho}$.
 
-More explicitly, if $v_{\textcolor{#9D75C4}{o}}$ is the value returned at the step consuming $\textcolor{#9D75C4}{o}$,
-then at each running configuration
+More explicitly, with the recorded values $v_{\textcolor{#9D75C4}{o}}$ of item 5,
+at each running configuration
 
 $$
 \textcolor{#A87C28}{\alpha}(a)=
@@ -3442,7 +3458,7 @@ distinct terms because they have distinct tagged occurrences.
 **Lemma 26.2 (preservation of every candidate model).**
 At every reachable running configuration:
 
-(a) For every complete environment
+(a) For every defined address $a=(T,p)$ and every complete environment
 $\textcolor{#398B83}{\rho}$ with $\textcolor{#A87C28}{\sigma}\textcolor{#A87C28}{\sqsubseteq}\textcolor{#398B83}{\rho}$,
 
 $$
@@ -3462,6 +3478,9 @@ $$
 \textcolor{#A87C28}{\sigma}\textcolor{#A87C28}{\sqsubseteq}\textcolor{#398B83}{\rho}.
 $$
 
+(c) If $\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})\ne\varnothing$, no reachable configuration
+is $\textcolor{#A87C28}{\mathsf{Failed}}$.
+
 *Argument.* Part (a) follows from Lemma 26.1: each term equals the recorded value
 $v_{\textcolor{#9D75C4}{o}}$ by item 5, so the sum is the accumulator formula, and a finished fiber is
 the whole of $\textcolor{#9D75C4}{\mathcal{C}}_{\textcolor{#9D75C4}{P}}(a)$. It needs no model.
@@ -3469,9 +3488,10 @@ Part (b) is by induction on reachability. Initially the store agrees on
 inputs. A contribution step leaves $\textcolor{#A87C28}{\sigma}$ unchanged. At publication, the induction
 hypothesis lets part (a) apply to the model $\textcolor{#398B83}{\rho}$, which is admissible, and the model equation
 gives $\textcolor{#A87C28}{\alpha}(a)=\textcolor{#398B83}{\rho}(T)[p]$; so agreement is preserved.
-An undefined-operation step is impossible in the presence of such a model:
-its ready body would be defined in $\textcolor{#398B83}{\rho}$ and, by read stability, equal to
-its ready evaluation.
+For (c), an undefined-operation step from a reachable configuration, where
+$\textcolor{#A87C28}{\sigma}\textcolor{#A87C28}{\sqsubseteq}\textcolor{#398B83}{\rho}$ by (b) for any model $\textcolor{#398B83}{\rho}$, is impossible: the ready body would be defined in the
+admissible $\textcolor{#398B83}{\rho}$ and, by read stability, equal to its ready evaluation,
+which is $\textcolor{#398B83}{\bot}$.
 
 ### 26.3 Successful execution gives the unique model
 
@@ -3488,7 +3508,7 @@ $$
 \textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sigma}}\in\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta}).
 $$
 
-For any other model $\textcolor{#398B83}{\rho}$, Lemma 26.2 gives
+For any other model $\textcolor{#398B83}{\rho}$, Lemma 26.2(b) gives
 $\textcolor{#A87C28}{\sigma}\textcolor{#A87C28}{\sqsubseteq}\textcolor{#398B83}{\rho}$ at the complete final store. Since the store has
 every address, $\textcolor{#398B83}{\rho}=\textcolor{#398B83}{\rho}_{\textcolor{#A87C28}{\sigma}}$. Thus
 
@@ -3502,7 +3522,7 @@ No rank certificate is needed for this implication: any successful run
 has this meaning.
 Similarly, if a run reaches $\textcolor{#A87C28}{\mathsf{Failed}}(\textcolor{#9D75C4}{o},\textcolor{#A87C28}{\sigma},\textcolor{#A87C28}{\alpha},\textcolor{#A87C28}{U})$,
 then $\textcolor{#398B83}{\mathop{\mathrm{Models}}\nolimits}(\textcolor{#9D75C4}{P},\textcolor{#398B83}{\eta})=\varnothing$.
-Otherwise Lemma 26.2 and read stability would force the failed ready
+Otherwise Lemma 26.2(c) and read stability would force the failed ready
 body to be defined in a model, a contradiction.
 This failure claim does not apply to dependency blocking.
 
@@ -4218,7 +4238,7 @@ Theorem 26.3.
 
 For (c), concrete progress, terminating kernels, and the finite command
 counter give an error-free maximal run, and every error-free maximal run
-ends in decoded success or matched failure. If a model exists, Lemma 26.2
+ends in decoded success or matched failure. If a model exists, Lemma 26.2(c)
 excludes matched failure, so the run ends in decoded success with output
 $\textcolor{#398B83}{\rho}|_{\textcolor{#5688C7}{\mathrm{Out}}}$ by (a). If no model exists, success is
 impossible by (a), so every error-free maximal run reports a matched semantic
