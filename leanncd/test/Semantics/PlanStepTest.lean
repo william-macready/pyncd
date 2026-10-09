@@ -115,6 +115,26 @@ def startRow (η : InputBinding (K := Carrier) (σ := scalarDeclarations)) : Str
     startRow simultaneous]
   [("ok", 99), ("error", 0), ("error", 1), ("error", 0)]
 
+/-! ### routed chainBody: statement 1 reads point 1 (published) and adds 1 -/
+
+def cOcc (s : Fin 2) : OccRef (routed chainBody) := ⟨⟨(), rfl⟩, ⟨s, ⟨0, rfl⟩⟩⟩
+def cAddr (i : Fin 3) : DefAddr (routed chainBody) := ⟨⟨(), rfl⟩, point i⟩
+def cAll : List (DefAddr (routed chainBody)) := [cAddr 0, cAddr 1, cAddr 2]
+def chainPlan : (routed chainBody).Plan :=
+  unitPlan [[.initZero cAll], [.acc [cOcc 0]], [.pub [cAddr 1]], [.acc [cOcc 1]],
+    [.pub [cAddr 0, cAddr 2]]]
+-- Reading an accumulator that is not yet published: the read view hides it.
+def chainEarly : (routed chainBody).Plan :=
+  unitPlan [[.initZero cAll], [.acc [cOcc 1]], [.acc [cOcc 0]], [.pub cAll]]
+
+#eval check "step-chain"
+  (outcomeRow (chainPlan.runPlan ops (Start chainInput)),
+    chainResult.outcome.kind, vectorStore (snapshot chainResult.outcome))
+  (("done", 5, none, [some 0, some 3, some 4]), "complete", [some 0, some 3, some 4])
+#eval check "invalid-read-unpublished"
+  (outcomeRow (chainEarly.runPlan ops (Start chainInput)))
+  ("stuck", 1, none, [some 0, some 0, some 0])
+
 /-! ### Invalid plans: runPlan does not check validity -/
 
 -- Publish before accumulate: the run completes and decodes 14, but the
