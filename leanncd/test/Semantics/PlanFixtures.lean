@@ -30,8 +30,22 @@ def group : List (OccRef taggedOut) := [occ 0 0, occ 0 1, occ 1 0, occ 1 1]
 def groupPerm : List (OccRef taggedOut) := [occ 1 1, occ 0 1, occ 1 0, occ 0 0]
 def block : List (DefAddr taggedOut) := [addr 0, addr 1, addr 2]
 
+/-- A plan over the one-tensor `declarations`; its tensor list is `[()]`. -/
+def unitPlan {P : Program Carrier declarations registry} (cmds : List (Command P)) : P.Plan where
+  tensors := [()]
+  tensors_nodup := by simp
+  tensors_complete := by intro t; cases t; simp
+  commands := cmds
+
+/-- A plan over `scalarDeclarations`; its tensor list is `[0, 1, 2]`. -/
+def scalarPlan (bad : Bool) (cmds : List (Command (scalarRole bad))) : (scalarRole bad).Plan where
+  tensors := [0, 1, 2]
+  tensors_nodup := by decide
+  tensors_complete := by intro t; fin_cases t <;> simp
+  commands := cmds
+
 /-- materialise all three zeros; one batch of all four occurrences; one block. -/
-def plan : taggedOut.Plan := ⟨[[.initZero block], [.acc group], [.pub block]]⟩
+def plan : taggedOut.Plan := unitPlan [[.initZero block], [.acc group], [.pub block]]
 
 def η0 : taggedOut.Input := noInput taggedOut (fun _ => rfl)
 

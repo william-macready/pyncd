@@ -46,7 +46,7 @@ def refRow (pc : Nat) : Option (List ℚ × List (Option ℚ)) :=
    some ([0, 14, 0], [none, none, none]), some ([0, 14, 0], [some 0, some 14, some 0])]
 
 -- Publishing before accumulating violates the fiber premise: post fails.
-def earlyPlan : taggedOut.Plan := ⟨[[.initZero block], [.pub block], [.acc group]]⟩
+def earlyPlan : taggedOut.Plan := unitPlan [[.initZero block], [.pub block], [.acc group]]
 #eval check "refState-early-publish" ((earlyPlan.refState ops η0 2).isSome) false
 
 -- Schedule view: 4 occurrence keys + 3 publication keys, all distinct.

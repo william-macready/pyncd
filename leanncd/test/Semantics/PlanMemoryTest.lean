@@ -29,7 +29,7 @@ def scalarSlot (t : Fin 3) : Slot scalarDeclarations := ⟨t, ⟨0, Nat.zero_lt_
 
 -- R_start on both fixture programs.
 example : plan.R ops η0 0 (Start η0) start0 := plan.R_start ops η0
-example : (⟨[]⟩ : (scalarRole true).Plan).R ops (scalarInput true) 0
+example : (scalarPlan true []).R ops (scalarInput true) 0
     (Start (scalarInput true)) ((scalarRole true).initial (scalarInput true)) :=
   Plan.R_start _ ops _
 

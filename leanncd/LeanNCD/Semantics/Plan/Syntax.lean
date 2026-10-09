@@ -39,7 +39,13 @@ inductive Ann (P : Program K σ r)
 /-- A (possibly fused) command is its finite annotation sequence. -/
 abbrev Command (P : Program K σ r) := List (Ann P)
 
+/-- A plan. `tensors` is the duplicate-free complete tensor list Start uses to
+    validate input presence, exactly as `Executor.Schedule.tensors` serves
+    `Executor.validate`. -/
 structure _root_.LeanNCD.Semantics.Program.Plan (P : Program K σ r) where
+  tensors : List σ.Tensor
+  tensors_nodup : tensors.Nodup
+  tensors_complete : ∀ t, t ∈ tensors
   commands : List (Command P)
 
 namespace Ann
