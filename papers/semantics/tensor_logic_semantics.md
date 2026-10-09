@@ -120,11 +120,6 @@ notation is purple even when it resembles an update; mathematical equality
 remains neutral. Neither color nor source-list position specifies an
 execution order.
 
-The labels and grouped notation reference also work in monochrome.
-Colors use standard `\textcolor{#RRGGBB}{...}` commands inside math, without
-custom macros, HTML styling, or workspace settings. Named operators use
-`\mathop{\mathrm{Name}}\nolimits` to preserve upright operator text, spacing,
-and side-positioned subscripts without `\operatorname`, which GitHub blocks.
 Read this document in
 VS Code's Markdown preview with the built-in `markdown.math.enabled`
 setting enabled (the default), or in a browser Markdown preview supporting
