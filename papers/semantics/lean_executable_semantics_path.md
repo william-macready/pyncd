@@ -831,9 +831,14 @@ Proposition 19.1 is thereby proved for this fragment, including repeated slots,
 empty contractions, zero extents, factor order, multiplicity, broadcast and
 zero-factor terms, and sums of several terms. The link from the
 admitted reads and indices back to the raw source text is not proved; it holds
-by construction. Also not proved: the nested reduction tree is always built in declaration order, so independence
-from the order of nested reductions (Section 15.2) is shown only for
-re-enumeration of the global axes; and nothing outside the fragment is covered.
+by construction. `interpret_contract_reindex` ([Lowering](../../leanncd/LeanNCD/Semantics/Source/Lowering.lean))
+also proves equality of actual nested reduction interpretations under a
+coordinate equivalence, with the read environment transported along it.
+This includes changing binder order while keeping the ordered read product;
+the adapter still constructs reductions in declaration order. The fixtures
+reverse unequal bounds (2 and 3) over Nat and Rat and cover empty bounds and
+zero extents. This is an exact-semiring result, not a floating-point
+reordering guarantee, and nothing outside the fragment is covered.
 
 #### Source order
 
@@ -995,10 +1000,9 @@ remaining source work is broader than that finite bare-slot fragment: scans,
 marked arrays and slices, affine writes, guards and Iverson factors, nonlinear
 primitives and their before-versus-after-collection boundary, unpinned dimension
 inference, general expression substitution with renaming applied by admission,
-and rank synthesis, plus schedule construction for programs outside the fragment. Three proof targets inside the fragment are
-also open: linking admitted reads back to raw source text, independence from the
-order of nested reductions beyond re-enumeration, and successful-execution
-results under source permutation.
+and rank synthesis, plus schedule construction for programs outside the fragment.
+Two proof targets inside the fragment are also open: linking admitted reads
+back to raw source text and successful-execution results under source permutation.
 
 Differential debugging beyond the bounded profile needs a stated criterion for
 non-integral and f32 numerics, native hooks for causal localization, comparison

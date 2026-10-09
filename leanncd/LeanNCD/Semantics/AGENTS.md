@@ -59,8 +59,12 @@ contracts. `Source.Fiber`, `Source.Correspondence`, and
 collection agreement with independently specified original-read global fibers.
 Their relevant UID domains exclude unused axes, preserve term-local contractions
 and repeated destinations, and connect reached rational execution to whole-store
-global equations. `Semantics.SourceCorrespondenceTest` specializes the generic
-proofs to Nat and Rat. `Source.Observation` / `Source.Diagnostics` expose actual
+global equations. `interpret_contract_reindex` in `Source.Lowering` preserves actual
+nested reduction interpretations under coordinate reindexing with transported
+read environments, without changing factor order or claiming float parity.
+`Semantics.SourceCorrespondenceTest` specializes the generic proofs to Nat and
+Rat, including reversed reduction bounds and empty/zero domains.
+`Source.Observation` / `Source.Diagnostics` expose actual
 source-linked endpoints and canonical contribution data. `Source.NumericalProfile`
 checks the exact bounded-integer binary64 comparison profile;
 `Source.NativeLegs` preserves actual legacy/checked phase causes and warnings.

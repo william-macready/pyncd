@@ -374,6 +374,50 @@ private def nestedReads :=
     ((nestedSource.source.table.entry a.1).declaration,
       coordList (nestedSource.source.table.declarations.signature a.1).axes a.2)
 
+private def swapBounds (a b : Axis) : Coord [b, a] ≃ Coord [a, b] where
+  toFun p := (p.2.1, p.1, ())
+  invFun p := (p.2.1, p.1, ())
+  left_inv p := by rcases p with ⟨x, y, ⟨⟩⟩; rfl
+  right_inv p := by rcases p with ⟨x, y, ⟨⟩⟩; rfl
+
+private def reversedNestedBody {K : Type} [Semiring K]
+    (r : Registry (fun _ : Unit => K)) :
+    Expr (fun _ => K) nestedSource.source.table.declarations r Unit (.scalar ()) :=
+  contract [⟨3, 3⟩, ⟨7, 2⟩] nestedTerm.operands
+    (fun _ p => nestedTerm.environment () (swapBounds ⟨7, 2⟩ ⟨3, 3⟩ p))
+
+private theorem nested_reordered {K : Type} [Semiring K]
+    (r : Registry (fun _ : Unit => K))
+    (ρ : Store (fun _ => K) nestedSource.source.table.declarations) :
+    interpret semiringOps ρ (reversedNestedBody r) () =
+      interpret semiringOps ρ (nestedTerm.body (r := r) id) () :=
+  interpret_contract_reindex ρ nestedTerm.partition.bound [⟨3, 3⟩, ⟨7, 2⟩]
+    (swapBounds ⟨7, 2⟩ ⟨3, 3⟩) nestedTerm.operands
+    (fun x => nestedTerm.environment x) ()
+
+example {K : Type} [Semiring K] {σ : Declarations Unit}
+    (r : Registry (fun _ : Unit => K)) (ρ : Store (fun _ => K) σ)
+    (reads : List (Read ctx σ)) (env : Unit → Coord [⟨7, 0⟩, ⟨3, 2⟩] → Coord ctx) :
+    interpret semiringOps ρ
+      (contract (r := r) [⟨3, 2⟩, ⟨7, 0⟩] reads
+        (fun x p => env x (swapBounds ⟨7, 0⟩ ⟨3, 2⟩ p))) () =
+      interpret semiringOps ρ (contract (r := r) [⟨7, 0⟩, ⟨3, 2⟩] reads env) () :=
+  interpret_contract_reindex ρ _ _ (swapBounds ⟨7, 0⟩ ⟨3, 2⟩) reads env ()
+
+example {K : Type} [Semiring K] {σ : Declarations Unit}
+    (r : Registry (fun _ : Unit => K)) (ρ : Store (fun _ => K) σ)
+    (reads : List (Read ctx σ)) (env : Unit → Coord [] → Coord ctx) :
+    interpret semiringOps ρ
+      (contract (r := r) [] reads (fun x p => env x ((Equiv.refl (Coord [])) p))) () =
+      interpret semiringOps ρ (contract (r := r) [] reads env) () :=
+  interpret_contract_reindex ρ [] [] (Equiv.refl _) reads env ()
+
+#guard reductionBounds (reversedNestedBody natRegistry) == [3, 2]
+#guard interpret semiringOps (natStore nestedSource)
+  (reversedNestedBody natRegistry) () == some 19310
+#guard interpret semiringOps (ratStore nestedSource)
+  (reversedNestedBody RationalReference.registry) () == some (173710 / 9)
+
 def B8 : Bool :=
   nestedSource.source.context.axes == [⟨7, 2⟩, ⟨3, 3⟩, ⟨11, 0⟩] &&
   nestedTerm.globalContext.axes == [⟨7, 2⟩, ⟨3, 3⟩] &&
@@ -420,5 +464,6 @@ def B8 : Bool :=
 #print axioms nested_correspondence
 #print axioms nested_nat
 #print axioms nested_rat
+#print axioms nested_reordered
 
 end SourceCorrespondenceTransportTest
