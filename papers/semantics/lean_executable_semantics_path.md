@@ -4,7 +4,7 @@
 
 - [1. Purpose, authority, and current position](#1-purpose-authority-and-current-position)
 - [2. One notation, two presentations](#2-one-notation-two-presentations)
-  - [Admission is not yet elaboration](#admission-is-not-yet-elaboration)
+  - [Core admission and source elaboration](#core-admission-and-source-elaboration)
 - [3. The category-theoretic organization](#3-the-category-theoretic-organization)
   - [3.1 Finite coordinate families: representation and contravariance](#31-finite-coordinate-families-representation-and-contravariance)
   - [3.2 Finite additive pushforward: covariance and multiplicity](#32-finite-additive-pushforward-covariance-and-multiplicity)
@@ -22,9 +22,16 @@
     - [Theorems](#theorems)
     - [Fixtures and controls](#fixtures-and-controls)
     - [What this does not claim](#what-this-does-not-claim)
-  - [4.7 Existing validation and its limits](#47-existing-validation-and-its-limits)
+  - [4.7 Bounded source correspondence and differential debugging](#47-bounded-source-correspondence-and-differential-debugging)
+    - [Binding and admission](#binding-and-admission)
+    - [Pure-einsum correspondence and collection](#pure-einsum-correspondence-and-collection)
+    - [Source order](#source-order)
+    - [Automatic schedules](#automatic-schedules)
+    - [Differential debugging](#differential-debugging)
+    - [What the source layer does not claim](#what-the-source-layer-does-not-claim)
+  - [4.8 Existing validation and its limits](#48-existing-validation-and-its-limits)
 - [5. Remaining work, in dependency order](#5-remaining-work-in-dependency-order)
-  - [5.1 Connect named source syntax and the production evaluator](#51-connect-named-source-syntax-and-the-production-evaluator)
+  - [5.1 Beyond the bounded source fragment](#51-beyond-the-bounded-source-fragment)
   - [5.2 Later: compiled and numerical refinement](#52-later-compiled-and-numerical-refinement)
 - [6. The landed admitted-core milestone](#6-the-landed-admitted-core-milestone)
 
@@ -37,8 +44,8 @@ an executable reference that we can debug and validate. It is a roadmap and
 code correspondence guide, not an implementation plan or a new semantic contract.
 The specification remains authoritative.
 
-**Snapshot: 2026-10-08, verified executor implementation `6026f0b` on
-local-main baseline `c01cb33`.** The expression/readiness,
+**Snapshot: 2026-10-09, bounded source-correspondence implementation `09d8cb42`
+(merged as `6a90baff`) on top of the verified executor (`6026f0b`).** The expression/readiness,
 collection/model, reference-machine soundness, and coordinate-ranks/finite-measure
 developments have landed, including maximal-run correspondence. The computable
 validated reference executor and its exact-rational fixtures are now verified;
@@ -175,13 +182,15 @@ The representations and expression constructors are in
 `Layout.enumerate : Fin count ≃ Coord sh` certifies a complete coordinate
 enumeration, including zero-extent shapes.
 
-### Admission is not yet elaboration
+### Core admission and source elaboration
 
-Lean's `Γ` is a **type of valuations**, rather than a list of named variables.
-Reduction extends it to `Γ × Fin n`; tabulation extends it to
-`Γ × Coord sh.axes`. This realizes the lifted body domains, but does not yet
-formalize named binding, capture-avoiding substitution, or flattening a source
-valuation domain to a finite enumeration.
+In the core, Lean's `Γ` is a **type of valuations**, rather than a list of named
+variables. Reduction extends it to `Γ × Fin n`; tabulation extends it to
+`Γ × Coord sh.axes`. This realizes the lifted body domains. The `Source` layer
+([Section 4.7](#47-bounded-source-correspondence-and-differential-debugging))
+adds identity-keyed valuations and admission for a bounded fragment, but there
+is still no capture-avoiding substitution on expressions, and admission never
+renames binders.
 
 Likewise, `AdmittedRead` supplies a resolved bounded coordinate or a constant,
 with a proof that its read policy agrees with that resolution. The
@@ -192,8 +201,9 @@ adopted clauses of the core specification. A rejecting read cannot inhabit
 the admitted interface at that valuation.
 
 Destinations are already bounded coordinates. These types establish admission
-of the constructed objects, not a runtime checker for malformed source text
-or arbitrary raw write indices.
+of the constructed objects. The `Source` layer checks malformed source text for
+its bounded fragment only; there is no runtime checker for arbitrary raw write
+indices.
 
 ## 3. The category-theoretic organization
 
@@ -732,7 +742,7 @@ reads from ready undefinedness, input presence from coordinate presence, and
 internal nonoutput failure from output completion.
 
 The 19 mutation controls, their classification, and their limits are summarized
-in [Section 4.7](#47-existing-validation-and-its-limits); the receipts are in
+in [Section 4.8](#48-existing-validation-and-its-limits); the receipts are in
 the [execution record](computable_reference_executor_record.md#8-implementation-execution-2026-10-08).
 Existing generic soundness supplies uniqueness and denotation agreement;
 checking a literal candidate or computing collection alone is not an equation
@@ -756,7 +766,164 @@ solver.
 - **A parked runtime gap.** The generic executor retains heterogeneous carriers,
   but the runtime fixtures do not cover heterogeneous non-additive inputs.
 
-### 4.7 Existing validation and its limits
+### 4.7 Bounded source correspondence and differential debugging
+
+The `LeanNCD.Semantics.Source` layer ([Source.lean](../../leanncd/LeanNCD/Semantics/Source.lean)
+and the modules under [`Source/`](../../leanncd/LeanNCD/Semantics/Source/)) connects named, identity-keyed
+source statements to the core of Sections 4.1-4.6, and compares executions of
+the same program. It is the first slice of the source work in
+[Section 5](#5-remaining-work-in-dependency-order), not the general source
+language.
+
+**Fragment.** A statement is `Y[bare slots] = Σ_terms Π_factors A[bare slots]`:
+finite, read-only, scalar, with sum aggregation and no nonlinearity. Every
+output and read slot is a bare variable over a declared axis with a pinned size.
+Repeated slots are allowed. Tensor roles and input buffers are supplied
+explicitly, and every input, including unused and empty ones, needs a buffer.
+Admission refuses everything else, and refuses the whole program if any
+statement is refused: affine and constant indices, guards (there is no syntax),
+Iverson and unary factors, scatter, scans, marked output slots, non-sum
+aggregation, predicates, complex types, and writes to input tensors. The
+generic theorems hold over any `Semiring`, not necessarily commutative. Results
+about runs hold over ℚ through the rational profile of Section 4.6.
+
+#### Binding and admission
+
+| Specification clause | Lean | What it fixes |
+| --- | --- | --- |
+| [Sections 3.2-3.3](tensor_logic_semantics.md#32-index-variables-and-contexts): variables are identities, order is irrelevant | [`Context`](../../leanncd/LeanNCD/Semantics/Source/Context.lean), `UIDVal`, `uidCoordEquiv`, `Ref.sameUID_lookup`, `UIDTransport`, `reenumerateTransport` | A valuation is a dependent function keyed by axis identity, equivalent to ordered coordinates. Two refs with the same identity read the same value, which gives diagonals. A domain-preserving bijection of identities, or any reordering of the axis list, transports valuations and lookups. |
+| [Section 13.4](tensor_logic_semantics.md#134-scope-freshness-and-substitution): freshness and renaming | `BinderScope`, `renameBinders_noCapture`, `requestedBinders_*`, `indexPullback_id`, `indexPullback_comp` | Generated identities land outside the support; everything else is fixed. Pullback along an index map is contravariant, and a non-injective map yields equal coordinates. A requested renaming applies only when injective and fresh; otherwise every generated identity falls back to the default freshening. There is no substitution $E[i:=e]$, and admission never renames. |
+| [Section 15.1](tensor_logic_semantics.md#151-explicit-inputs-to-elaboration): resolution | `resolveRef`, `resolveSlots`, `adaptSource`, `UnsupportedSource` ([Adapter](../../leanncd/LeanNCD/Semantics/Source/Adapter.lean)) | Slots resolve by identity and must match the declared extent exactly. Refusals are typed (unbound, domain, rank, and the unsupported forms above). Roles come from explicit specs, not names. |
+| [Section 15.2](tensor_logic_semantics.md#152-statement-variables-and-term-local-contraction): term-local contraction | `SupportPartition`, `admitTerm`, `interpret_product`, `interpret_contract` ([Admission](../../leanncd/LeanNCD/Semantics/Source/Admission.lean), [Lowering](../../leanncd/LeanNCD/Semantics/Source/Lowering.lean)) | The contracted variables of a term are its read identities not in the output, in declaration order, with a coverage and disjointness proof. A body is a nested sum of products. |
+| [Section 14.3](tensor_logic_semantics.md#143-statement-and-program-rules): statement conditions | `admitStatement`, `admitOutput` | Conditions 1 and 3 are checked (writable target, arity). Conditions 4 and 5 hold by construction because extents match exactly. Condition 2 is vacuous since guards have no syntax. |
+| [Sections 13.6 and 15.5](tensor_logic_semantics.md#136-core-programs): programs keep every occurrence | `AdmittedSource.program`, `program_*`, `IdentifiedSource`, `originalLocalEquiv`, `occurrenceIdentity` ([Program](../../leanncd/LeanNCD/Semantics/Source/Program.lean), [Provenance](../../leanncd/LeanNCD/Semantics/Source/Provenance.lean)) | A defined tensor collects every statement that targets it, in source order, with no merging. Original statement identities are retained and are in bijection with the program's occurrence tags. |
+
+Several choices sharpen the specification:
+
+- **Slot compatibility is by extent.** The variable's identity is never compared
+  with the identity of the axis a tensor slot was declared over, which is
+  consistent with the statement in Section 14.2 that the core judgments see
+  only coordinate ranges.
+- **Admission is stricter than the core read rule.** Prefix reads, which
+  Section 14.2 allows, are refused; "in bounds" means exact extent equality.
+- **The fragment exceeds the standard pure-einsum profile.** Broadcast terms
+  (an output variable no read uses), empty products, and empty term lists are
+  admitted. Section 15.1 excludes these from the standard profile.
+- **Open choices are fixed.** The statement context follows the order in which
+  output identities first occur, contraction follows declaration order, and
+  freshening offsets by a base outside the support.
+- **Bodies are right-nested with trailing units**, for example
+  `t₁ ⊕ (t₂ ⊕ 0)` and `r₁ ⊗ (r₂ ⊗ 1)`. This equals the specification's body in a
+  semiring but is not bitwise identical in IEEE arithmetic.
+
+#### Pure-einsum correspondence and collection
+
+| Specification clause | Lean | What it fixes |
+| --- | --- | --- |
+| [Section 17.1](tensor_logic_semantics.md#171-index-strings-and-global-valuations): $\Gamma_{\mathrm{all}}$ | `Term.globalContext`, `Term.pure_globalContext` ([Fiber](../../leanncd/LeanNCD/Semantics/Source/Fiber.lean)) | A term's global context is its read identities plus its output identities; for a pure term it is exactly its read identities. |
+| [Section 17.2](tensor_logic_semantics.md#172-canonical-fiber-semantics): canonical fiber | `globalProduct`, `globalFiber`, `globalFiber_reenumerate` | The ordered product of the original reads, summed over global valuations whose output projection is the coordinate. Factor order and repeated factors are kept; re-enumerating the global axes does not change the sum. |
+| [Section 17.3 and Proposition 19.1](tensor_logic_semantics.md#193-correspondence-with-pure-einsum): body and fiber | `Term.body_correspondence`, `Term.collectedBody_correspondence`, `pure_correspondence`, `Term.empty_fiber` ([Correspondence](../../leanncd/LeanNCD/Semantics/Source/Correspondence.lean)) | For every admitted output, term, total store, and destination coordinate, the pushed-forward lowered body equals the term's global fiber. Empty fibers are $0$. `pure_correspondence` adds the context identity for pure terms; the work is in `collectedBody_correspondence`, which holds for every term. |
+| [Section 19](tensor_logic_semantics.md#19-contribution-collection): collection | `collect_statement`, `AdmittedSource.collect_correspondence`, `IdentifiedSource.collect_correspondence`, `total_admEnv` ([ProgramCorrespondence](../../leanncd/LeanNCD/Semantics/Source/ProgramCorrespondence.lean)) | `Program.collect` equals the sum over statements targeting the tensor of the sum over their terms of the global fibers. Duplicate statements stay separate, and a tensor with no statements collects $0$. Every store is admissible, since the semiring operations never fail. |
+| [Section 20](tensor_logic_semantics.md#20-program-models-and-functional-denotation): models | `models_iff_global`, `sourceResult_globalModel`, `sourceResult_globalUnique`, `sourceResult_globalDenotation` | `Models` holds exactly when the inputs agree and every defined coordinate equals its global fiber. Over ℚ, a complete validated run is the unique global model and its output is the denotation. |
+
+Proposition 19.1 is thereby proved for this fragment, including repeated slots,
+empty contractions, zero extents, factor order, multiplicity, broadcast and
+zero-factor terms, and sums of several terms. Not proved: the link from the
+admitted reads and indices back to the raw source text holds by construction;
+the nested reduction tree is always built in declaration order, so independence
+from the order of nested reductions (Section 15.2) is shown only for
+re-enumeration of the global axes; and nothing outside the fragment is covered.
+
+#### Source order
+
+| Specification clause | Lean | What it fixes |
+| --- | --- | --- |
+| [Proposition 19.2](tensor_logic_semantics.md#194-source-order-and-nonlinear-boundaries): source-order invariance | `StatementPermutation`, `occurrenceEquiv`, and under it `outcome`, `footprints`, `destinations`, `guards`, `originals`, `identities`, `bodies`, `admEnv`, `contribution`, `collect`, `models` ([Permutation](../../leanncd/LeanNCD/Semantics/Source/Permutation.lean)) | For any list in bijection with the admitted statements, the occurrence relabeling preserves outcomes, footprints, destinations, original identities, admissibility, contributions, collected values, and the model relation. |
+
+Not proved: any statement about runs of a reordered source, whose blocked or
+complete status may differ without a rank certificate (Section 28, target 5,
+asks for successful execution results); the connection to re-admitting a
+permuted source text, which renumbers original identities; and permutation of
+terms or factors.
+
+#### Automatic schedules
+
+`sourceSchedule` ([Schedule](../../leanncd/LeanNCD/Semantics/Source/Schedule.lean)) constructs the executor's
+complete ordered schedule from the admitted source. It lists all tensors, an
+occurrence key for every defined tensor, targeting statement, and output
+valuation, and a publication key for every full-signature coordinate. It is
+kernel-checked duplicate-free and complete (`sourceOccurrenceKeys_*`,
+`sourcePublicationKeys_*`, `sourceTensors_*`), and duplicate statements receive
+distinct keys. `runSource_not_exhausted` shows the default run is never
+exhausted, and `sourceResult_model`, `sourceResult_unique`, and
+`sourceResult_denotation` restate the executor's success results for source
+programs. No rank certificate is synthesized or checked, so a run can end
+blocked.
+
+#### Differential debugging
+
+[`compareSource`](../../leanncd/LeanNCD/Semantics/Source/Differential.lean) has no theorems. Its evidence is
+executed fixtures and mutation controls, and every claim below is of that kind.
+
+- **Legs.** The reference leg is the validated rational executor. An
+  independent exact oracle ([Oracle](../../leanncd/LeanNCD/Semantics/Source/Oracle.lean)) evaluates the same
+  admitted source over ℚ given a supplied dependency order, additively across
+  statements. Two native legs run the unmodified resolved source: legacy
+  evaluation and the checked dense backend ([NativeLegs](../../leanncd/LeanNCD/Semantics/Source/NativeLegs.lean)).
+  The oracle mirrors `globalFiber` but is not proved equal to it, and it shares
+  admission with the reference leg, so an admission bug is common to both.
+- **Comparison.** The reference is compared with the oracle on published values,
+  accumulators, and per-occurrence contributions ([Diagnostics](../../leanncd/LeanNCD/Semantics/Source/Diagnostics.lean)).
+  Native legs are compared on output tensors only, against bits derived from the
+  oracle. Classification runs in a fixed order and distinguishes reference
+  incompleteness, oracle unavailability, discrepancies, known contract
+  differences, unsupported profiles, native unavailability or failure, and
+  four-leg parity. A refusal is never counted as parity.
+- **Localization.** Reference-versus-oracle differences are localized to body,
+  collection, readiness, publication, or backend arithmetic. Native internals
+  are `noBackendInternalHook`, and term values are explicitly unobserved
+  ([Observation](../../leanncd/LeanNCD/Semantics/Source/Observation.lean)); causal evidence is never invented.
+  Admission errors abort the comparison rather than classify.
+- **Numerical profile.** [`checkProfile`](../../leanncd/LeanNCD/Semantics/Source/NumericalProfile.lean) requires
+  explicit `f64` declarations, one definition per left-hand side, a bijective
+  name-to-identity relation, and exact values that are integers of magnitude at
+  most $2^{20}$, bounding inputs, products, partial sums, and events. Comparison
+  is exact bit equality, with $\pm 0$ equal but original bits kept. The argument
+  that binary64 arithmetic is exact on this range is informal, not formalized,
+  and the profile is not a floating-point semantics.
+- **Known contract differences.** Production overwrites when several statements
+  define one left-hand side, while the specification, the reference leg, and the
+  oracle collect additively. The comparison classifies such programs as a known
+  difference and never compares their values; fixtures F14 and F15 observe
+  `[2,4]` against `[7,13]`, and `[5,9]` against `[12,22]`. An untyped tensor
+  defaults to f32 and is classified the same way. Production cannot represent two
+  axes with the same name and different identities, so that case is native-unavailable.
+- **Evidence.** 79 named fixtures, including a generated corpus of exactly 18
+  programs, and 39 implementation mutations: 18 proof-protected kills and 21
+  executable-fixture kills, not 39 runtime differential samples. Six historical
+  input contrasts were replayed on the pinned seed. The controller full build
+  passed with 8,763 jobs, and both whole-branch reviews were clean
+  ([record](source_correspondence_record.md#final-controller-close-out-2026-10-09)).
+
+#### What the source layer does not claim
+
+- **No substitution or renaming by admission.** Proof target 2 is covered only
+  for identity-keyed valuations and binder freshening.
+- **No general elaboration.** Everything outside the fragment is refused, and
+  the Adapter drops the linear bias flag, element types as semantics, and names.
+- **No proof for the oracle or the comparison.** There is no theorem about
+  `compareSource`, the numerical profile, or the native legs, and no backend
+  refinement result. Part V of the specification is untouched.
+- **No floating-point correctness.** f32 and f64 are metadata in the exact
+  semantics; the bit comparison holds only on the bounded-integer, f64-declared,
+  single-definition profile.
+- **No injected-fault claims.** The signed-zero, warning, and two protocol cases
+  were injected, not observed from a real backend, and native nonoutputs are
+  not compared.
+- **No rank synthesis or schedule independence.** Results about completed runs
+  are over ℚ.
+
+### 4.8 Existing validation and its limits
 
 The execution records distinguish observed computation, proof checking,
 mutation controls, and unsupported claims:
@@ -768,6 +935,7 @@ mutation controls, and unsupported claims:
 | Reference transitions/soundness | [ReferenceMachineTest](../../leanncd/test/Semantics/ReferenceMachineTest.lean) | [Reference-machine execution](reference_machine_execution_record.md) |
 | Coordinate ranks/termination/correspondence | [RankedMachineTest](../../leanncd/test/Semantics/RankedMachineTest.lean) | [Coordinate-ranks/finite-measure execution](coordinate_ranks_finite_measure_execution_record.md) |
 | Computable validated reference | [ExecutableReferenceTest](../../leanncd/test/Semantics/ExecutableReferenceTest.lean) | [Executor implementation execution](computable_reference_executor_record.md#8-implementation-execution-2026-10-08) |
+| Bounded source correspondence and differential debugging | [SourceAdmissionTest](../../leanncd/test/Semantics/SourceAdmissionTest.lean), [SourceBindingTest](../../leanncd/test/Semantics/SourceBindingTest.lean), [SourceCorrespondenceTest](../../leanncd/test/Semantics/SourceCorrespondenceTest.lean), [SourceProgramTest](../../leanncd/test/Semantics/SourceProgramTest.lean), [SourceOracleTest](../../leanncd/test/Semantics/SourceOracleTest.lean), [SourceDiagnosticTest](../../leanncd/test/Semantics/SourceDiagnosticTest.lean), [SourceDifferentialTest](../../leanncd/test/Semantics/SourceDifferentialTest.lean) | [Source correspondence record](source_correspondence_record.md) |
 
 All are discovered by the default `Tests` target. Existing fixtures cover
 strict zero multiplication, empty binders, whole-array selection obligations,
@@ -809,35 +977,35 @@ these collection/model fixtures do not establish a Boolean OR instance or
 its execution profile.
 The earlier [semantic-core spike](tensor_logic_semantic_core_spike_record.md)
 and `ContractTest` supply a narrow signed-coordinate `StMat` seam, not a full
-categorical interpretation or source correspondence.
+categorical interpretation or general source correspondence.
 
 ## 5. Remaining work, in dependency order
 
-### 5.1 Beyond the bounded source/debugging fragment
+### 5.1 Beyond the bounded source fragment
 
-The first source slice implements true UID valuations and domain-preserving
-pullbacks/freshening, resolved/raw admission with original provenance,
-term-local normalization, multi-target execution, genuine pure-einsum fiber
-correspondence, and tag-preserving collection/model permutation laws.
-`compareSource` runs an independent exact oracle, the admitted rational
-executor, legacy evaluation, and the checked dense backend. Shared native
-comparison uses explicit f64 declarations and a checked bounded-integer
-envelope with exact bit comparison, not tolerance or a Float semiring.
-Actual output discrepancies do not invent native internal causal evidence.
+The first source slice is described in
+[Section 4.7](#47-bounded-source-correspondence-and-differential-debugging). The
+remaining source work is broader than that finite bare-slot fragment: scans,
+marked arrays and slices, affine writes, guards and Iverson factors, nonlinear
+primitives and their before-versus-after-collection boundary, unpinned dimension
+inference, general expression substitution with renaming applied by admission,
+and rank and schedule synthesis. Three proof targets inside the fragment are
+also open: linking admitted reads back to raw source text, independence from the
+order of nested reductions beyond re-enumeration, and successful-execution
+results under source permutation.
 
-Remaining source work is broader than that finite bare-slot fragment: scans,
-marked arrays/slices, affine writes, guards/Iverson factors, nonlinear primitives
-and their before/after-collection boundary, unpinned dimension inference,
-general expression substitution, and schedule/rank synthesis. The slice does
-not claim full source-language elaboration or general numerical refinement.
+Differential debugging beyond the bounded profile needs a stated criterion for
+non-integral and f32 numerics, native hooks for causal localization, comparison
+of native nonoutputs, and value comparison of multi-definition programs once
+production collects additively.
 
 The [semantic gap audit](tensor_logic_semantic_gap_audit.md) records the known
-production divergence for multiple statements defining one LHS: production
-does not yet implement the specification's cross-statement additive collection.
-The new semantic layer does. This must be tracked as an explicit contract
-difference, not hidden by weakening the oracle or counted as a newly discovered
-regression. First comparisons can use a clearly stated single-definition
-fragment, without discarding collision or within-statement contraction checks.
+production divergence for multiple statements defining one left-hand side:
+production does not yet implement the specification's cross-statement additive
+collection. The reference and oracle legs do collect additively. The comparison
+classifies such programs as a known contract difference and never compares their
+values, so the divergence is tracked explicitly rather than hidden by weakening
+the oracle or counted as a newly discovered regression.
 
 ### 5.2 Later: compiled and numerical refinement
 
@@ -882,6 +1050,11 @@ initialization. Unsupported operations are outside the closed registry;
 source/rank/schedule admission and synthesis are not new runtime services.
 The generic executor retains heterogeneous carriers; validation does not
 establish the parked non-additive-input runtime fixture.
+
+For the bounded source fragment, `sourceResult_model`, `sourceResult_unique`, and
+`sourceResult_denotation` give the same success implications for programs
+admitted from source, and `runSource_not_exhausted` shows that the
+automatically scheduled default run is never exhausted.
 
 The endpoint is an executable realization of the specified equations, not
 zero-seeded fixed-point iteration, a floating-point solver presented as exact

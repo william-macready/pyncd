@@ -45,8 +45,9 @@ For the implementation path, see
 [From Tensor Logic semantics to a Lean executable reference](lean_executable_semantics_path.md).
 It maps this document's notation and mathematical clauses to the landed Lean
 definitions and proofs, explains their category-theoretic organization, and
-separates the verified admitted exact-rational reference executor from the
-remaining source-correspondence and backend-refinement work.
+separates the verified admitted exact-rational reference executor and the
+bounded source-correspondence layer from the remaining general-source and
+backend-refinement work.
 
 ### Semantics at a glance
 
@@ -184,8 +185,8 @@ sequentially within each top-level section and are not subsection numbers:
 
 | Result | Statement | Lean status (`LeanNCD.Semantics`) |
 | --- | --- | --- |
-| Proposition 19.1 | Pure-einsum elaboration correspondence | Open. The generic pushforward laws are proved (`pushforward_*` in `Collection`); the theorem relating source elaboration to them is not. |
-| Proposition 19.2 | Source-order invariance | Partial. The occurrence-relabeling form is proved (`models_relabel`); the statement-permutation corollary is not stated. |
+| Proposition 19.1 | Pure-einsum elaboration correspondence | Proved for the bounded source fragment (read-only sums of products over bare slots, over any semiring): `Term.collectedBody_correspondence`, `AdmittedSource.collect_correspondence`, `AdmittedSource.models_iff_global` (`Source`). Open beyond it: the link from admitted reads back to raw source text holds by construction only, and affine slots, guards, marked slices, and nonlinear bodies are outside the fragment. |
+| Proposition 19.2 | Source-order invariance | Partial. The occurrence-relabeling form is proved generically (`models_relabel`) and for source programs under any statement permutation: `StatementPermutation.models`, `.collect`, `.admEnv`, `.identities` (`Source.Permutation`). Not stated: the form about successful execution results (Section 28, target 5). |
 | Lemma 23.1 | Read stability | Proved: `evalWith_stable`, `interpret_stable` (`Readiness`). |
 | Lemma 26.1 | Conservation invariants | Proved: `reachable_invariant` (`Invariants`) yields `Invariant.published` (item 4), `Invariant.consumed` (item 5), `Invariant.conservation` (accumulator formula), and `Invariant.inputs` (inputs unchanged, part of item 3), with `initial_invariant`, `consume_invariant`, `publish_invariant`. Items 1 and 2 follow from the step premises and typing (item 1 via the pending premise and `Finset.erase`). Monotone publication has only the one-step lemma `publish_extends`; the invariant does not need more. |
 | Lemma 26.2 | Preservation of every candidate model | Partial. Parts (b) and (c) are `candidate_preserved` (`Soundness`), which also makes failed states incompatible with a model. For part (a), the finished-fiber case is `finished_accumulator`; the partial-fiber sum follows from `Invariant.conservation` and `Invariant.consumed` and is not stated separately in Lean. |
@@ -204,15 +205,30 @@ selects those same legal transitions, validates tensor-level input presence,
 and retains typed event paths and exact endpoints. The verified runtime profile
 uses exact rationals with reciprocal and square; successful initialized runs
 give the unique whole-store model, and reached ready failures exclude models.
-The rank certificate and complete ordered schedule are supplied as data;
-there is no rank/schedule synthesis or source checker, and no production/backend
-correspondence is claimed. Arbitrary debug blocking or exhaustion is not a
+For the generic executor the rank certificate and complete ordered schedule
+are supplied as data. The bounded source layer builds its schedule
+automatically but synthesizes and checks no rank, and its admission accepts only
+a bounded fragment rather than general source. No production/backend
+refinement is claimed. Arbitrary debug blocking or exhaustion is not a
 no-model result.
+
+The bounded source layer admits finite read-only sums of products over bare
+slots with identity-keyed valuations, and proves Proposition 19.1 and the
+model and collection forms of Proposition 19.2 for that fragment. Its
+differential comparison of four evaluation legs (an independent exact oracle,
+the rational executor, legacy evaluation, and the checked dense backend) is
+executed evidence, not theorems: 79 named fixtures and 39 mutation controls.
+Its numerical profile claims exact bit agreement only for programs with
+f64-declared integral values of magnitude at most $2^{20}$ and one definition
+per left-hand side; it is not a floating-point semantics. Proof target 2 is
+covered only at the level of identity-keyed valuations and binder freshening;
+there is no substitution on expressions. See
+[the Lean path document](lean_executable_semantics_path.md#47-bounded-source-correspondence-and-differential-debugging).
 Items 1 and 2 of the proof targets in [Section 28](#28-reference-machine-boundaries-and-proof-targets) (well-definedness of typed
 interpretation, and renaming and substitution) are not numbered statements;
 the companion document records what covers them. The table reflects
 [the Lean path document](lean_executable_semantics_path.md) as of its
-2026-10-08 snapshot, which is authoritative for what has landed. Update both
+2026-10-09 snapshot, which is authoritative for what has landed. Update both
 together.
 
 ## Table of contents
@@ -2167,8 +2183,8 @@ then combines the finite sums. Empty domains and repeated output
 indices must be included in the proof.
 
 [Section 19.3](#193-correspondence-with-pure-einsum) states this correspondence using the core interpretation.
-It remains a Lean proof obligation (Proposition 19.1), not a completed formal
-theorem.
+It is proved in Lean for the bounded source fragment (Proposition 19.1);
+beyond that fragment it remains a proof obligation.
 
 The formula cannot be extended to nonlinear bodies by moving an
 operator inside the products or sums. For example,
@@ -2613,7 +2629,7 @@ operations are total on complete environments.
 The Lean status of Sections [19](#19-contribution-collection)–[20](#20-program-models-and-functional-denotation) is recorded in
 [Proof status and numbered results](#proof-status-and-numbered-results).
 [Section 19.3](#193-correspondence-with-pure-einsum)'s pure-einsum elaboration correspondence (Proposition 19.1)
-remains a proof target.
+is proved in Lean for the bounded source fragment only (see the status table).
 
 ### 19.1 Environments with defined contributions
 
@@ -2715,8 +2731,9 @@ contracted domain can leave an empty reduction. Both sides then use
 the same $0_K$ convention. With no variables, the single empty
 valuation yields the scalar operand product.
 
-This supplies a precise target for a Lean elaboration-correctness
-theorem. The proof description here is not a kernel-checked proof.
+The proof description here is a paper argument. A Lean proof exists for the
+bounded source fragment (see the status table); it covers repeated slots, empty
+contractions, zero extents, factor order, and multiplicity.
 
 ### 19.4 Source order and nonlinear boundaries
 
@@ -3748,7 +3765,8 @@ The foundational proof targets are:
 3. Read stability justifies ready evaluation independently of a chosen
    complete extension (Lemma 23.1).
 4. Core elaboration preserves pure-einsum values, domains, and multiplicity,
-   including empty domains and repeated output indices (Proposition 19.1).
+   including empty domains and repeated output indices (Proposition 19.1;
+   proved in Lean for the bounded source fragment).
 5. Source-statement permutation preserves the model relation and successful
    execution results under corresponding occurrence relabeling
    (Proposition 19.2).
