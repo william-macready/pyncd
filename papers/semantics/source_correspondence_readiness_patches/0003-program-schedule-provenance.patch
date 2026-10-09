@@ -1,0 +1,2809 @@
+diff --git a/leanncd/AGENTS.md b/leanncd/AGENTS.md
+index 942ba7ae..13632212 100644
+--- a/leanncd/AGENTS.md
++++ b/leanncd/AGENTS.md
+@@ -200,7 +200,7 @@ Small subsystems (no dedicated node — each <170 lines, single-file or near it)
+ | Task | Start Here |
+ |------|------------|
+ | Understand overall architecture (two tracks + bridge) | `LeanNCD.lean`'s header doc comment (note: has some stale spots, cross-check against code — see Base/AGENTS.md Pitfalls) |
+-| UID-keyed semantic binding and finite read-only source admission | `LeanNCD/Semantics/Source/Context.lean` and `Source/Admission.lean`, reachable through `LeanNCD`; general source-generated execution remains separate |
++| UID-keyed semantic binding, finite read-only admission and exact source execution | `LeanNCD/Semantics/Source/Context.lean`, `Source/Admission.lean`, and `Source/Schedule.lean`, reachable through `LeanNCD`; generalized correspondence and differential diagnostics remain separate |
+ | Check current sorry/proof status authoritatively | `SORRY_INVENTORY.md` (more current than scattered doc comments) |
+ | Understand the `realize` bridge problem in depth | `realize.md` (companion to `SORRY_INVENTORY.md`) |
+ | Design history / past decisions | `docs/superpowers/plans/`, `docs/superpowers/specs/` |
+diff --git a/leanncd/LeanNCD/Semantics/AGENTS.md b/leanncd/LeanNCD/Semantics/AGENTS.md
+index 7f53933c..b0f13594 100644
+--- a/leanncd/LeanNCD/Semantics/AGENTS.md
++++ b/leanncd/LeanNCD/Semantics/AGENTS.md
+@@ -44,8 +44,17 @@ axes and real tensor/linear declarations, with explicit roles, all input
+ bindings (including unused/empty tensors), exact domains and shape/lengths,
+ and term-local contraction support. `Semantics.SourceAdmissionTest` includes
+ the original admission fixtures and the parsed/real/linear acceptance
+-regressions. General source-generated Program/schedule execution and source
+-correspondence are not yet supplied; see the
++regressions. `Source.Statement` / `Source.Program` lower admitted statements into
++term-local typed expressions and role-based multi-target Programs.
++`Source.Schedule` enumerates every occurrence and full defined publication
++domain, and runs the existing validated rational executor with optional debug
++fuel. `Source.Provenance` certifies original-ID inverses from successful
++admission; `Source.Permutation` preserves tagged collection and whole-store
++models, not event order. `Source.Oracle` provides an independent exact
++global-fiber evaluator with explicitly checked fixture dependency order.
++`Semantics.SourceProgramTest` checks actual executor/oracle parity and endpoint
++contracts. General source correspondence proofs and source-linked differential
++diagnostics are not yet supplied; see the
+ [source plan](../../../papers/semantics/source_correspondence_plan.md).
+ 
+ `Collection` represents Naperian coordinate families as functions. Pullback
+diff --git a/leanncd/LeanNCD/Semantics/Source.lean b/leanncd/LeanNCD/Semantics/Source.lean
+index 40cdd5c6..39848cad 100644
+--- a/leanncd/LeanNCD/Semantics/Source.lean
++++ b/leanncd/LeanNCD/Semantics/Source.lean
+@@ -1,3 +1,9 @@
+ import LeanNCD.Semantics.Source.Context
+ import LeanNCD.Semantics.Source.Adapter
+ import LeanNCD.Semantics.Source.Admission
++import LeanNCD.Semantics.Source.Statement
++import LeanNCD.Semantics.Source.Program
++import LeanNCD.Semantics.Source.Oracle
++import LeanNCD.Semantics.Source.Schedule
++import LeanNCD.Semantics.Source.Provenance
++import LeanNCD.Semantics.Source.Permutation
+diff --git a/leanncd/LeanNCD/Semantics/Source/Oracle.lean b/leanncd/LeanNCD/Semantics/Source/Oracle.lean
+new file mode 100644
+index 00000000..2ec9bfae
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Source/Oracle.lean
+@@ -0,0 +1,222 @@
++import LeanNCD.Semantics.Source.Admission
++
++namespace LeanNCD.Semantics.Source.Oracle
++
++inductive Cause
++  | missingOrder
++  | duplicateTarget (declaration : Nat)
++  | unexpectedTarget (declaration : Nat)
++  | omittedTarget (declaration : Nat)
++  | dependencyNotEarlier (declaration : Nat)
++  | missingTensor (declaration : Nat)
++  | missingUID (uid : UID)
++  | shape (expected actual : List Nat)
++  | length (expected actual : Nat)
++  | coordinateRank (expected actual : Nat)
++  | coordinateBound (slot coordinate extent : Nat)
++  | offsetBound (offset length : Nat)
++  deriving DecidableEq, Repr
++
++structure Unavailable where
++  origin : SourceOrigin
++  cause : Cause
++  deriving DecidableEq, Repr
++
++structure Tensor where
++  declaration : Nat
++  name : String
++  role : TensorRole
++  shape : List Nat
++  values : List ℚ
++  deriving DecidableEq, Repr
++
++structure ReadValue where
++  origin : SourceOrigin
++  declaration : Nat
++  coordinate : List Nat
++  value : ℚ
++  deriving DecidableEq, Repr
++
++structure Occurrence where
++  origin : SourceOrigin
++  assignment : List (UID × Nat)
++  output : List Nat
++  reads : List ReadValue
++  value : ℚ
++  deriving DecidableEq, Repr
++
++structure TermFiber where
++  origin : SourceOrigin
++  occurrences : List Occurrence
++  value : ℚ
++  deriving DecidableEq, Repr
++
++structure Contribution where
++  origin : SourceOrigin
++  coordinate : List Nat
++  terms : List TermFiber
++  value : ℚ
++  deriving DecidableEq, Repr
++
++structure Result where
++  tensors : List Tensor
++  contributions : List Contribution
++  deriving DecidableEq, Repr
++
++private def unavailable (origin : SourceOrigin) (cause : Cause) : Unavailable :=
++  ⟨origin, cause⟩
++
++def cellCount (shape : List Nat) : Nat :=
++  shape.foldl (· * ·) 1
++
++def coordinates : List Nat → List (List Nat)
++  | [] => [[]]
++  | n :: rest => (List.range n).flatMap fun i => (coordinates rest).map (i :: ·)
++
++private def offset (origin : SourceOrigin) (shape coordinate : List Nat) :
++    Except Unavailable Nat := do
++  unless coordinate.length == shape.length do
++    throw (unavailable origin (.coordinateRank shape.length coordinate.length))
++  go shape coordinate 0 0
++where
++  go : List Nat → List Nat → Nat → Nat → Except Unavailable Nat
++    | [], [], _, acc => .ok acc
++    | n :: ns, i :: is, slot, acc =>
++      if i < n then go ns is (slot + 1) (acc * n + i)
++      else .error (unavailable { origin with slot := some slot } (.coordinateBound slot i n))
++    | ns, is, _, _ =>
++      .error (unavailable origin (.coordinateRank ns.length is.length))
++
++def lookup (origin : SourceOrigin) (expectedShape : List Nat)
++    (tensor : Tensor) (coordinate : List Nat) : Except Unavailable ℚ := do
++  unless tensor.shape == expectedShape do
++    throw (unavailable origin (.shape expectedShape tensor.shape))
++  unless tensor.values.length == cellCount tensor.shape do
++    throw (unavailable origin (.length (cellCount tensor.shape) tensor.values.length))
++  let i ← offset origin tensor.shape coordinate
++  if h : i < tensor.values.length then
++    pure tensor.values[i]
++  else
++    throw (unavailable origin (.offsetBound i tensor.values.length))
++
++private def slots (origin : SourceOrigin) (assignment : List (UID × Nat))
++    (uids : List UID) : Except Unavailable (List Nat) :=
++  uids.zipIdx.mapM fun (uid, slot) =>
++    match assignment.find? (fun p => p.1 == uid) with
++    | some p => .ok p.2
++    | none => .error (unavailable { origin with slot := some slot } (.missingUID uid))
++
++private def assignments : List Axis → List (List (UID × Nat))
++  | [] => [[]]
++  | a :: rest =>
++    (List.range a.extent).flatMap fun i => (assignments rest).map ((a.uid, i) :: ·)
++
++private def tensorAt (origin : SourceOrigin) (store : List Tensor) (declaration : Nat) :
++    Except Unavailable Tensor :=
++  match store.find? (fun t => t.declaration == declaration) with
++  | some t => .ok t
++  | none => .error (unavailable origin (.missingTensor declaration))
++
++private def checkOrder (admitted : AdmittedSource) (order : List Nat) :
++    Except Unavailable Unit := do
++  let entries := admitted.source.table.entries
++  let targets := (entries.filter (fun t => t.role != .input)).map (·.declaration)
++  let mut seen : List Nat := []
++  for target in order do
++    let origin : SourceOrigin := { side := .declaration, declaration := some target }
++    if target ∈ seen then throw (unavailable origin (.duplicateTarget target))
++    unless target ∈ targets do throw (unavailable origin (.unexpectedTarget target))
++    seen := seen ++ [target]
++  for target in targets do
++    unless target ∈ order do
++      throw (unavailable { side := .declaration, declaration := some target }
++        (.omittedTarget target))
++  let mut earlier := (entries.filter (fun t => t.role == .input)).map (·.declaration)
++  for target in order do
++    for statement in admitted.statements do
++      if (admitted.source.table.entry statement.output.tensor).declaration == target then
++        for term in statement.terms do
++          for read in term.sourceReads do
++            let dependency := (admitted.source.table.entry read.read.tensor).declaration
++            unless dependency ∈ earlier do
++              throw (unavailable read.origin (.dependencyNotEarlier dependency))
++    earlier := earlier ++ [target]
++
++private def initialInputs (admitted : AdmittedSource) : Except Unavailable (List Tensor) := do
++  let mut store := []
++  for t in List.finRange admitted.source.table.entries.length do
++    let entry := admitted.source.table.entry t
++    if h : entry.role = .input then
++      let values := (admitted.source.inputs.buffers t h).values
++      let shape := entry.axes.map (·.extent)
++      unless values.length == cellCount shape do
++        throw (unavailable { side := .input, declaration := some entry.declaration }
++          (.length (cellCount shape) values.length))
++      store := store ++ [⟨entry.declaration, entry.name, entry.role, shape, values⟩]
++  pure store
++
++private def termFiber (admitted : AdmittedSource) (store : List Tensor)
++    (statement : AdmittedStatement admitted.source)
++    (term : Term admitted.source.context statement.output.context
++      admitted.source.table.declarations)
++    (coordinate : List Nat) : Except Unavailable TermFiber := do
++  let support := statement.output.indices ++ term.sourceReads.flatMap (·.indices)
++  let axes := admitted.source.context.axes.filter (fun a => a.uid ∈ support)
++  let mut occurrences := []
++  let mut total : ℚ := 0
++  for assignment in assignments axes do
++    let output ← slots statement.output.origin assignment statement.output.indices
++    if output == coordinate then
++      let mut product : ℚ := 1
++      let mut reads := []
++      for read in term.sourceReads do
++        let entry := admitted.source.table.entry read.read.tensor
++        let tensor ← tensorAt read.origin store entry.declaration
++        let readCoordinate ← slots read.origin assignment read.indices
++        let value ← lookup read.origin (entry.axes.map (·.extent)) tensor readCoordinate
++        reads := reads ++ [⟨read.origin, entry.declaration, readCoordinate, value⟩]
++        product := product * value
++      occurrences := occurrences ++ [⟨term.origin, assignment, output, reads, product⟩]
++      total := total + product
++  pure ⟨term.origin, occurrences, total⟩
++
++private def contribution (admitted : AdmittedSource) (store : List Tensor)
++    (statement : AdmittedStatement admitted.source) (coordinate : List Nat) :
++    Except Unavailable Contribution := do
++  let terms ← statement.terms.mapM (termFiber admitted store statement · coordinate)
++  pure ⟨statement.output.origin, coordinate, terms,
++    terms.foldl (fun sum term => sum + term.value) 0⟩
++
++/-- Exact acyclic fixture evaluator. The order names original tensor declaration ordinals.
++Dependency checking is syntactic and conservative, even for empty fibers. -/
++def run (admitted : AdmittedSource) (dependencyOrder : Option (List Nat)) :
++    Except Unavailable Result := do
++  let order ← match dependencyOrder with
++    | none => throw (unavailable {} .missingOrder)
++    | some order => pure order
++  checkOrder admitted order
++  let mut store ← initialInputs admitted
++  let mut contributions := []
++  for target in order do
++    let origin : SourceOrigin := { side := .declaration, declaration := some target }
++    let entry ← match admitted.source.table.entries.find? (fun t => t.declaration == target) with
++      | some entry => pure entry
++      | none => throw (unavailable origin (.missingTensor target))
++    let shape := entry.axes.map (·.extent)
++    let mut values := []
++    for coordinate in coordinates shape do
++      let mut total : ℚ := 0
++      for statement in admitted.statements do
++        if (admitted.source.table.entry statement.output.tensor).declaration == target then
++          let c ← contribution admitted store statement coordinate
++          contributions := contributions ++ [c]
++          total := total + c.value
++      values := values ++ [total]
++    store := store ++ [⟨entry.declaration, entry.name, entry.role, shape, values⟩]
++  let tensors ← admitted.source.table.entries.mapM fun entry =>
++    tensorAt { side := .declaration, declaration := some entry.declaration } store entry.declaration
++  let canonical := admitted.statements.flatMap fun statement =>
++    contributions.filter (fun c => c.origin.statement == some statement.original)
++  pure ⟨tensors, canonical⟩
++
++end LeanNCD.Semantics.Source.Oracle
+diff --git a/leanncd/LeanNCD/Semantics/Source/Permutation.lean b/leanncd/LeanNCD/Semantics/Source/Permutation.lean
+new file mode 100644
+index 00000000..9ba0917f
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Source/Permutation.lean
+@@ -0,0 +1,238 @@
++import LeanNCD.Semantics.Source.Provenance
++import LeanNCD.Semantics.Models
++
++namespace LeanNCD.Semantics.Source
++
++/-- A bijection of positions transports whole checked statements, including their attached IDs. -/
++structure StatementPermutation (source : AdmittedSource) where
++  statements : List (AdmittedStatement source.source)
++  index : Fin statements.length ≃ Fin source.statements.length
++  get_eq : ∀ i, statements.get i = source.statements.get (index i)
++
++def permuteStatements (source : AdmittedSource)
++    (e : Equiv.Perm (Fin source.statements.length)) : StatementPermutation source where
++  statements := List.ofFn (fun i => source.statements.get (e i))
++  index := (finCongr List.length_ofFn).trans e
++  get_eq i := by simp [Fin.cast]
++
++namespace StatementPermutation
++
++variable {source : AdmittedSource} (p : StatementPermutation source)
++
++def reordered : AdmittedSource := ⟨source.source, p.statements⟩
++
++@[simp] theorem source_unchanged : p.reordered.source = source.source := rfl
++
++def tagEquiv (t : source.source.table.declarations.Tensor) :
++    StatementTag p.reordered t ≃ StatementTag source t where
++  toFun tag := ⟨p.index tag.sourceIndex, by
++    rw [← p.get_eq]; exact tag.target⟩
++  invFun tag := ⟨p.index.symm tag.sourceIndex, by
++    change (p.statements.get _).output.tensor = t
++    rw [p.get_eq, p.index.apply_symm_apply]; exact tag.target⟩
++  left_inv tag := by
++    cases tag
++    simp only [Equiv.symm_apply_apply]
++  right_inv tag := by
++    cases tag
++    simp only [Equiv.apply_symm_apply]
++
++@[simp] theorem tag_statement (t) (tag : StatementTag p.reordered t) :
++    tag.statement = (p.tagEquiv t tag).statement :=
++  p.get_eq tag.sourceIndex
++
++@[simp] theorem tag_original (t) (tag : StatementTag p.reordered t) :
++    (p.tagEquiv t tag).original = tag.original :=
++  congrArg AdmittedStatement.original (p.tag_statement t tag).symm
++
++def localEquiv (t : source.source.table.declarations.Tensor) :
++    Fin (targetStatements p.reordered t).length ≃ Fin (targetStatements source t).length :=
++  (targetTagEquiv p.reordered t).trans
++    ((p.tagEquiv t).trans (targetTagEquiv source t).symm)
++
++theorem local_statement (t) (s : Fin (targetStatements p.reordered t).length) :
++    ((targetStatements p.reordered t).get s).statement =
++      ((targetStatements source t).get (p.localEquiv t s)).statement := by
++  simp [localEquiv, targetTagEquiv]
++
++def identified (source : IdentifiedSource) (p : StatementPermutation source.admitted) :
++    IdentifiedSource where
++  admitted := p.reordered
++  unique := by
++    apply List.nodup_iff_injective_get.mpr
++    intro i j hij
++    let i' : Fin p.statements.length := ⟨i.val, by simpa using i.isLt⟩
++    let j' : Fin p.statements.length := ⟨j.val, by simpa using j.isLt⟩
++    have hids : (p.statements.get i').original = (p.statements.get j').original := by
++      simpa [List.get_eq_getElem] using hij
++    have he : p.index i' = p.index j' := by
++      apply source.originalEquiv.injective
++      apply Subtype.ext
++      rw [source.originalEquiv_val, source.originalEquiv_val,
++        ← p.get_eq i', ← p.get_eq j']
++      exact hids
++    exact Fin.ext (congrArg (fun k : Fin p.statements.length => k.val)
++      (p.index.injective he))
++
++theorem original_index (source : IdentifiedSource) (p : StatementPermutation source.admitted)
++    (i : Fin p.statements.length) :
++    ((identified source p).originalEquiv i).val =
++      (source.originalEquiv (p.index i)).val := by
++  rw [IdentifiedSource.originalEquiv_val, IdentifiedSource.originalEquiv_val]
++  exact congrArg AdmittedStatement.original (p.get_eq i)
++
++private def guardedFinEquiv {n m : Nat} (h : n = m) :
++    {_v : Fin n // true = true} ≃ {_v : Fin m // true = true} :=
++  Equiv.subtypeEquiv (finCongr h) (fun _ => Iff.rfl)
++
++variable {K : Type} [Semiring K] (r : Registry (fun _ : Unit => K))
++
++def occurrenceEquiv (t : (source.program r).Defined) :
++    (p.reordered.program r).Occurrence t ≃ (source.program r).Occurrence t :=
++  Equiv.sigmaCongr (p.localEquiv t.val) fun s =>
++    guardedFinEquiv (congrArg (fun st : AdmittedStatement source.source =>
++      (canonicalLayout st.output.context.axes).count) (p.local_statement t.val s))
++
++private theorem value_transport (a b : AdmittedStatement adapted) (h : a = b)
++    (ρ : Store (fun _ => K) adapted.table.declarations)
++    (v : Fin (canonicalLayout a.output.context.axes).count) :
++    (b.terms.map (fun term => term.value ρ
++      ((canonicalLayout b.output.context.axes).enumerate
++        (finCongr (congrArg (fun st : AdmittedStatement adapted =>
++          (canonicalLayout st.output.context.axes).count) h) v)))).sum =
++      (a.terms.map (fun term => term.value ρ
++        ((canonicalLayout a.output.context.axes).enumerate v))).sum := by
++  cases h
++  rfl
++
++private theorem body_transport (a b : AdmittedStatement adapted) (h : a = b) :
++    HEq (a.body (r := r) (fun v : {_v : Fin (canonicalLayout a.output.context.axes).count //
++      true = true} => (canonicalLayout a.output.context.axes).enumerate v.val))
++      (b.body (r := r) (fun v : {_v : Fin (canonicalLayout b.output.context.axes).count //
++      true = true} => (canonicalLayout b.output.context.axes).enumerate v.val)) := by
++  cases h
++  rfl
++
++theorem bodies (t : (source.program r).Defined)
++    (s : Fin ((p.reordered.program r).statements t)) :
++    HEq ((p.reordered.program r).body t s)
++      ((source.program r).body t (p.localEquiv t.val s)) :=
++  body_transport r _ _ (p.local_statement t.val s)
++
++private theorem footprint_transport (a b : AdmittedStatement adapted) (h : a = b)
++    (v : Fin (canonicalLayout a.output.context.axes).count) :
++    b.terms.flatMap (fun term => term.readFootprint
++      ((canonicalLayout b.output.context.axes).enumerate
++        (finCongr (congrArg (fun st : AdmittedStatement adapted =>
++          (canonicalLayout st.output.context.axes).count) h) v))) =
++      a.terms.flatMap (fun term => term.readFootprint
++        ((canonicalLayout a.output.context.axes).enumerate v)) := by
++  cases h
++  rfl
++
++private theorem destination_transport (a b : AdmittedStatement adapted) (h : a = b)
++    (t : adapted.table.declarations.Tensor) (ha : a.output.tensor = t)
++    (hb : b.output.tensor = t) (v : Fin (canonicalLayout a.output.context.axes).count) :
++    (hb ▸ b.destination ((canonicalLayout b.output.context.axes).enumerate
++      (finCongr (congrArg (fun st : AdmittedStatement adapted =>
++        (canonicalLayout st.output.context.axes).count) h) v))) =
++      (ha ▸ a.destination ((canonicalLayout a.output.context.axes).enumerate v)) := by
++  cases h
++  rfl
++
++theorem outcome (ρ : Store (fun _ => K) source.source.table.declarations)
++    (t : (source.program r).Defined) (o : (p.reordered.program r).Occurrence t) :
++    (source.program r).outcome semiringOps ρ t (p.occurrenceEquiv r t o) =
++      (p.reordered.program r).outcome semiringOps ρ t o := by
++  unfold Program.outcome
++  rw [source.program_interpret_body r ρ t _ _,
++    p.reordered.program_interpret_body r ρ t o.1 o.2]
++  exact congrArg some (value_transport _ _ (p.local_statement t.val o.1) ρ o.2.val)
++
++theorem footprints (t : (source.program r).Defined)
++    (o : (p.reordered.program r).Occurrence t) :
++    footprint ((source.program r).body t (p.occurrenceEquiv r t o).1)
++      (p.occurrenceEquiv r t o).2 =
++      footprint ((p.reordered.program r).body t o.1) o.2 := by
++  simp only [AdmittedSource.program_footprint_body]
++  exact footprint_transport _ _ (p.local_statement t.val o.1) o.2.val
++
++theorem destinations (t : (source.program r).Defined)
++    (o : (p.reordered.program r).Occurrence t) :
++    (source.program r).destination t (p.occurrenceEquiv r t o).1
++      (p.occurrenceEquiv r t o).2 =
++      (p.reordered.program r).destination t o.1 o.2 := by
++  exact destination_transport _ _ (p.local_statement t.val o.1) t.val _ _ o.2.val
++
++theorem guards (t : (source.program r).Defined)
++    (o : (p.reordered.program r).Occurrence t) :
++    (source.program r).guard t (p.occurrenceEquiv r t o).1
++      (p.occurrenceEquiv r t o).2.val =
++      (p.reordered.program r).guard t o.1 o.2.val := rfl
++
++theorem originals (t : (source.program r).Defined)
++    (o : (p.reordered.program r).Occurrence t) :
++    (source.statementTag r t (p.occurrenceEquiv r t o).1).original =
++      (p.reordered.statementTag r t o.1).original :=
++  congrArg AdmittedStatement.original (p.local_statement t.val o.1).symm
++
++private theorem assignments_transport (a b : AdmittedStatement adapted) (h : a = b)
++    (v : Fin (canonicalLayout a.output.context.axes).count) :
++    outputAssignments b (finCongr (congrArg (fun st : AdmittedStatement adapted =>
++      (canonicalLayout st.output.context.axes).count) h) v) = outputAssignments a v := by
++  cases h
++  rfl
++
++theorem identities (t : (source.program r).Defined)
++    (o : (p.reordered.program r).Occurrence t) :
++    (source.statementTag r t (p.occurrenceEquiv r t o).1).occurrenceIdentity
++      (p.occurrenceEquiv r t o).2.val =
++      (p.reordered.statementTag r t o.1).occurrenceIdentity o.2.val := by
++  apply Prod.ext
++  · exact p.originals r t o
++  · exact assignments_transport _ _ (p.local_statement t.val o.1) o.2.val
++
++theorem admEnv (ρ : Store (fun _ => K) source.source.table.declarations) :
++    (p.reordered.program r).AdmEnv semiringOps ρ ↔ (source.program r).AdmEnv semiringOps ρ := by
++  rw [← (source.program r).admEnv_relabel semiringOps (p.occurrenceEquiv r) ρ]
++  simp only [p.outcome]
++  rfl
++
++theorem contribution (ρ : Store (fun _ => K) source.source.table.declarations)
++    (hnew : (p.reordered.program r).AdmEnv semiringOps ρ)
++    (hold : (source.program r).AdmEnv semiringOps ρ)
++    (t : (source.program r).Defined) (o : (p.reordered.program r).Occurrence t) :
++    (source.program r).contribution semiringOps ρ hold t (p.occurrenceEquiv r t o) =
++      (p.reordered.program r).contribution semiringOps ρ hnew t o := by
++  unfold Program.contribution
++  simp only [p.outcome]
++
++theorem collect (ρ : Store (fun _ => K) source.source.table.declarations)
++    (hnew : (p.reordered.program r).AdmEnv semiringOps ρ)
++    (hold : (source.program r).AdmEnv semiringOps ρ)
++    (t : (source.program r).Defined) :
++    (p.reordered.program r).collect semiringOps ρ hnew t =
++      (source.program r).collect semiringOps ρ hold t := by
++  rw [← (source.program r).collect_relabel semiringOps (p.occurrenceEquiv r) ρ hold t]
++  unfold Program.collect Program.relabeledCollect
++  simp only [p.destinations, p.contribution r ρ hnew hold]
++  rfl
++
++theorem models (η : (source.program r).Input)
++    (ρ : Store (fun _ => K) source.source.table.declarations) :
++    (p.reordered.program r).Models semiringOps η ρ ↔
++      (source.program r).Models semiringOps η ρ := by
++  constructor
++  · rintro ⟨h, agree, equations⟩
++    refine ⟨(p.admEnv r ρ).mp h, agree, ?_⟩
++    intro t x
++    rw [← p.collect r ρ h ((p.admEnv r ρ).mp h)]
++    exact equations t x
++  · rintro ⟨h, agree, equations⟩
++    refine ⟨(p.admEnv r ρ).mpr h, agree, ?_⟩
++    intro t x
++    rw [p.collect r ρ ((p.admEnv r ρ).mpr h) h]
++    exact equations t x
++
++end StatementPermutation
++end LeanNCD.Semantics.Source
+diff --git a/leanncd/LeanNCD/Semantics/Source/Program.lean b/leanncd/LeanNCD/Semantics/Source/Program.lean
+new file mode 100644
+index 00000000..2186af46
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Source/Program.lean
+@@ -0,0 +1,121 @@
++import LeanNCD.Semantics.Source.Statement
++
++namespace LeanNCD.Semantics.Source
++
++instance sourceTensorFinite (table : TensorTable) : Fintype table.declarations.Tensor :=
++  inferInstanceAs (Fintype (Fin table.entries.length))
++
++instance sourceTensorEq (table : TensorTable) : DecidableEq table.declarations.Tensor :=
++  inferInstanceAs (DecidableEq (Fin table.entries.length))
++
++def AdmittedSource.isInput (source : AdmittedSource) (t : source.source.table.declarations.Tensor) :
++    Bool :=
++  decide ((source.source.table.entry t).role = .input)
++
++def AdmittedSource.isOutput (source : AdmittedSource) (t : source.source.table.declarations.Tensor) :
++    Bool :=
++  decide ((source.source.table.entry t).role = .output)
++
++structure StatementTag (source : AdmittedSource) (t : source.source.table.declarations.Tensor) where
++  sourceIndex : Fin source.statements.length
++  target : (source.statements.get sourceIndex).output.tensor = t
++
++def StatementTag.statement (tag : StatementTag source t) : AdmittedStatement source.source :=
++  source.statements.get tag.sourceIndex
++
++def StatementTag.original (tag : StatementTag source t) : Nat :=
++  tag.statement.original
++
++def targetStatements (source : AdmittedSource) (t : source.source.table.declarations.Tensor) :
++    List (StatementTag source t) :=
++  (List.finRange source.statements.length).filterMap fun i =>
++    if h : (source.statements.get i).output.tensor = t then some ⟨i, h⟩ else none
++
++theorem StatementTag.mem_targetStatements (tag : StatementTag source t) :
++    tag ∈ targetStatements source t := by
++  rcases tag with ⟨i, h⟩
++  apply List.mem_filterMap.mpr
++  exact ⟨i, List.mem_finRange i, dif_pos h⟩
++
++def StatementTag.layout (tag : StatementTag source t) :
++    Layout tag.statement.output.context.axes :=
++  canonicalLayout tag.statement.output.context.axes
++
++def StatementTag.valuation (tag : StatementTag source t) (v : Fin tag.layout.count) :
++    Coord tag.statement.output.context.axes :=
++  tag.layout.enumerate v
++
++def AdmittedSource.program {K : Type} [Semiring K] (source : AdmittedSource)
++    (r : Registry (fun _ : Unit => K)) :
++    Program (fun _ => K) source.source.table.declarations r where
++  tensors := inferInstance
++  input := source.isInput
++  output := source.isOutput
++  output_defined := by
++    intro t h
++    simp only [AdmittedSource.isOutput, decide_eq_true_eq] at h
++    simp [AdmittedSource.isInput, h]
++  statements := fun t => (targetStatements source t.val).length
++  valuations := fun t s => ((targetStatements source t.val).get s).layout.count
++  guard := fun _ _ _ => true
++  destination := fun t s v =>
++    let tag := (targetStatements source t.val).get s
++    tag.target ▸ tag.statement.destination (tag.valuation v.val)
++  body := fun t s =>
++    let tag := (targetStatements source t.val).get s
++    tag.statement.body (fun v => tag.valuation v.val)
++
++def AdmittedSource.statementTag {K : Type} [Semiring K] (source : AdmittedSource)
++    (r : Registry (fun _ : Unit => K)) (t : (source.program r).Defined)
++    (s : Fin ((source.program r).statements t)) : StatementTag source t.val :=
++  (targetStatements source t.val).get s
++
++theorem AdmittedSource.program_defined_iff {K : Type} [Semiring K] (source : AdmittedSource)
++    (r : Registry (fun _ : Unit => K)) (t : source.source.table.declarations.Tensor) :
++    (source.program r).input t = false ↔ (source.source.table.entry t).role ≠ .input := by
++  simp [AdmittedSource.program, AdmittedSource.isInput]
++
++theorem AdmittedSource.program_output_iff {K : Type} [Semiring K] (source : AdmittedSource)
++    (r : Registry (fun _ : Unit => K)) (t : source.source.table.declarations.Tensor) :
++    (source.program r).output t = true ↔ (source.source.table.entry t).role = .output := by
++  simp [AdmittedSource.program, AdmittedSource.isOutput]
++
++theorem AdmittedSource.program_guard {K : Type} [Semiring K] (source : AdmittedSource)
++    (r : Registry (fun _ : Unit => K)) (t : (source.program r).Defined)
++    (s : Fin ((source.program r).statements t)) (v : Fin ((source.program r).valuations t s)) :
++    (source.program r).guard t s v = true := rfl
++
++theorem AdmittedSource.program_interpret_body {K : Type} [Semiring K] (source : AdmittedSource)
++    (r : Registry (fun _ : Unit => K)) (ρ : Store (fun _ => K) source.source.table.declarations)
++    (t : (source.program r).Defined) (s : Fin ((source.program r).statements t))
++    (v : {v : Fin ((source.program r).valuations t s) // (source.program r).guard t s v = true}) :
++    interpret semiringOps ρ ((source.program r).body t s) v =
++      some (((source.statementTag r t s).statement.terms.map
++        (fun term => term.value ρ ((source.statementTag r t s).valuation v.val))).sum) :=
++  (source.statementTag r t s).statement.interpret_body ρ _ v
++
++theorem AdmittedSource.program_footprint_body {K : Type} [Semiring K] (source : AdmittedSource)
++    (r : Registry (fun _ : Unit => K)) (t : (source.program r).Defined)
++    (s : Fin ((source.program r).statements t))
++    (v : {v : Fin ((source.program r).valuations t s) // (source.program r).guard t s v = true}) :
++    footprint ((source.program r).body t s) v =
++      (source.statementTag r t s).statement.terms.flatMap
++        (fun term => term.readFootprint ((source.statementTag r t s).valuation v.val)) :=
++  (source.statementTag r t s).statement.footprint_body _ v
++
++theorem AdmittedSource.program_destination {K : Type} [Semiring K] (source : AdmittedSource)
++    (r : Registry (fun _ : Unit => K)) (t : (source.program r).Defined)
++    (s : Fin ((source.program r).statements t))
++    (v : {v : Fin ((source.program r).valuations t s) // (source.program r).guard t s v = true}) :
++    (source.program r).destination t s v =
++      (source.statementTag r t s).target ▸
++        (source.statementTag r t s).statement.destination
++          ((source.statementTag r t s).valuation v.val) := rfl
++
++abbrev LoweredSource (source : AdmittedSource) :=
++  Program RationalReference.Carrier source.source.table.declarations RationalReference.registry
++
++def elaborateSource (source : AdmittedSource) : LoweredSource source :=
++  source.program RationalReference.registry
++
++end LeanNCD.Semantics.Source
+diff --git a/leanncd/LeanNCD/Semantics/Source/Provenance.lean b/leanncd/LeanNCD/Semantics/Source/Provenance.lean
+new file mode 100644
+index 00000000..9cb2ffde
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Source/Provenance.lean
+@@ -0,0 +1,188 @@
++import LeanNCD.Semantics.Source.Program
++import Mathlib.Data.List.Sigma
++
++namespace LeanNCD.Semantics.Source
++
++theorem admitStatement_original (source : AdaptedSource) (i : Nat) (stmt : Stmt)
++    (checked : AdmittedStatement source) (h : admitStatement source i stmt = .ok checked) :
++    checked.original = i := by
++  cases stmt <;> simp only [admitStatement, bind, pure, Except.bind, Except.pure,
++    throw, MonadExceptOf.throw, throwThe] at h
++  all_goals repeat' (first | contradiction | split at h)
++  all_goals simp_all
++  all_goals subst checked; rfl
++
++private theorem mapM_originals {α β ε : Type} (f : α → Except ε β)
++    (a : α → Nat) (b : β → Nat)
++    (hf : ∀ x y, f x = .ok y → b y = a x)
++    (xs : List α) (ys : List β) (h : xs.mapM f = .ok ys) :
++    ys.map b = xs.map a := by
++  induction xs generalizing ys with
++  | nil => simpa [pure, Except.pure] using h.symm
++  | cons x xs ih =>
++    simp only [List.mapM_cons, bind, pure, Except.bind, Except.pure] at h
++    cases hx : f x with
++    | error e => simp [hx] at h
++    | ok y =>
++      cases hs : xs.mapM f with
++      | error e => simp [hx, hs] at h
++      | ok zs =>
++        have hy : y :: zs = ys := by simpa [hx, hs] using h
++        subst ys
++        simp [hf x y hx, ih zs hs]
++
++theorem adaptSource_originals (snapshot : SourceSnapshot) (source : AdaptedSource)
++    (h : adaptSource snapshot = .ok source) :
++    (source.statements.map Prod.fst).Nodup := by
++  unfold adaptSource at h
++  simp only [bind, pure, Except.bind, Except.pure] at h
++  repeat' split at h
++  all_goals simp only [Except.ok.injEq, reduceCtorEq] at h
++  all_goals subst source
++  all_goals simpa [List.map_map, Function.comp_def] using
++    List.nodup_zipIdx_map_snd snapshot.resolved.stmts
++
++theorem admitSource_originals (snapshot : SourceSnapshot) (source : AdmittedSource)
++    (h : admitSource snapshot = .ok source) :
++    (source.statements.map AdmittedStatement.original).Nodup := by
++  unfold admitSource at h
++  simp only [bind, pure, Except.bind, Except.pure] at h
++  cases ha : adaptSource snapshot with
++  | error e => simp [ha] at h
++  | ok adapted =>
++    cases hs : adapted.statements.mapM (fun (i, s) => admitStatement adapted i s) with
++    | error e => simp [ha, hs] at h
++    | ok statements =>
++      have he : (⟨adapted, statements⟩ : AdmittedSource) = source := by
++        simpa [ha, hs, Except.bind, Except.pure] using h
++      subst source
++      rw [mapM_originals _ Prod.fst AdmittedStatement.original
++        (fun x y hxy => admitStatement_original adapted x.1 x.2 y hxy) _ _ hs]
++      exact adaptSource_originals snapshot adapted ha
++
++/-- Certification is produced by admission, not assumed of arbitrary admitted records. -/
++structure IdentifiedSource where
++  admitted : AdmittedSource
++  unique : (admitted.statements.map AdmittedStatement.original).Nodup
++
++def admitIdentifiedSource (snapshot : SourceSnapshot) :
++    Except SourceDiagnostic IdentifiedSource :=
++  match h : admitSource snapshot with
++  | .error e => .error e
++  | .ok source => .ok ⟨source, admitSource_originals snapshot source h⟩
++
++def admitRawIdentifiedSource (raw : TLProgram) (specs : List TensorSpec)
++    (inputs : List InputBinding) : Except SourceDiagnostic IdentifiedSource := do
++  let snapshot ← resolveSource raw specs inputs
++  admitIdentifiedSource snapshot
++
++abbrev OriginalStatement (source : AdmittedSource) :=
++  {i : Nat // i ∈ source.statements.map AdmittedStatement.original}
++
++def IdentifiedSource.originalEquiv (source : IdentifiedSource) :
++    Fin source.admitted.statements.length ≃ OriginalStatement source.admitted :=
++  (finCongr (List.length_map (f := AdmittedStatement.original)
++    (as := source.admitted.statements)).symm).trans
++    (List.Nodup.getEquiv _ source.unique)
++
++theorem IdentifiedSource.originalEquiv_val (source : IdentifiedSource)
++    (i : Fin source.admitted.statements.length) :
++    (source.originalEquiv i).val = (source.admitted.statements.get i).original := by
++  simp [IdentifiedSource.originalEquiv]
++
++def statementIndexEquiv (source : AdmittedSource) :
++    Fin source.statements.length ≃
++      (t : source.source.table.declarations.Tensor) × StatementTag source t where
++  toFun i := ⟨(source.statements.get i).output.tensor, ⟨i, rfl⟩⟩
++  invFun tag := tag.2.sourceIndex
++  left_inv _ := rfl
++  right_inv tag := by
++    rcases tag with ⟨t, i, h⟩
++    cases h
++    rfl
++
++instance : DecidableEq (StatementTag source t) :=
++  fun a b => decidable_of_iff (a.sourceIndex = b.sourceIndex) (by
++    constructor
++    · cases a; cases b; intro h; cases h; rfl
++    · intro h; exact congrArg StatementTag.sourceIndex h)
++
++theorem targetStatements_nodup (source : AdmittedSource) (t) :
++    (targetStatements source t).Nodup := by
++  apply List.Nodup.filterMap _ (List.nodup_finRange _)
++  intro a b tag ha hb
++  split at ha <;> simp_all
++  obtain ⟨_, hb⟩ := hb
++  exact (congrArg StatementTag.sourceIndex ha).trans
++    (congrArg StatementTag.sourceIndex hb).symm
++
++def targetTagEquiv (source : AdmittedSource) (t) :
++    Fin (targetStatements source t).length ≃ StatementTag source t :=
++  List.Nodup.getEquivOfForallMemList _ (targetStatements_nodup source t)
++    StatementTag.mem_targetStatements
++
++def IdentifiedSource.originalTagEquiv (source : IdentifiedSource) :
++    OriginalStatement source.admitted ≃
++      (t : source.admitted.source.table.declarations.Tensor) × StatementTag source.admitted t :=
++  source.originalEquiv.symm.trans (statementIndexEquiv source.admitted)
++
++def IdentifiedSource.originalLocalEquiv (source : IdentifiedSource) :
++    OriginalStatement source.admitted ≃
++      (t : source.admitted.source.table.declarations.Tensor) ×
++        Fin (targetStatements source.admitted t).length :=
++  source.originalTagEquiv.trans
++    (Equiv.sigmaCongrRight fun t => (targetTagEquiv source.admitted t).symm)
++
++theorem IdentifiedSource.originalTag_original (source : IdentifiedSource)
++    (i : OriginalStatement source.admitted) :
++    (source.originalTagEquiv i).2.original = i.val := by
++  have h := congrArg Subtype.val (source.originalEquiv.apply_symm_apply i)
++  rw [source.originalEquiv_val] at h
++  exact h
++
++def IdentifiedSource.originalToLocal (source : IdentifiedSource) :=
++  source.originalLocalEquiv
++
++def IdentifiedSource.localToOriginal (source : IdentifiedSource) :=
++  source.originalLocalEquiv.symm
++
++theorem IdentifiedSource.local_original_inverse (source : IdentifiedSource)
++    (i : OriginalStatement source.admitted) :
++    source.localToOriginal (source.originalToLocal i) = i :=
++  source.originalLocalEquiv.symm_apply_apply i
++
++theorem IdentifiedSource.original_local_inverse (source : IdentifiedSource)
++    (tag : (t : source.admitted.source.table.declarations.Tensor) ×
++      Fin (targetStatements source.admitted t).length) :
++    source.originalToLocal (source.localToOriginal tag) = tag :=
++  source.originalLocalEquiv.apply_symm_apply tag
++
++theorem IdentifiedSource.originalTag_coverage (source : IdentifiedSource)
++    (tag : (t : source.admitted.source.table.declarations.Tensor) ×
++      StatementTag source.admitted t) :
++    ∃ i, source.originalTagEquiv i = tag :=
++  source.originalTagEquiv.surjective tag
++
++theorem IdentifiedSource.originalLocal_coverage (source : IdentifiedSource)
++    (tag : (t : source.admitted.source.table.declarations.Tensor) ×
++      Fin (targetStatements source.admitted t).length) :
++    ∃ i, source.originalToLocal i = tag :=
++  source.originalLocalEquiv.surjective tag
++
++def StatementTag.uidValuationEquiv (tag : StatementTag source t) :
++    Fin tag.layout.count ≃ UIDVal tag.statement.output.context :=
++  tag.layout.enumerate.trans (uidCoordEquiv tag.statement.output.context).symm
++
++def outputAssignments (statement : AdmittedStatement adapted)
++    (v : Fin (canonicalLayout statement.output.context.axes).count) : List (UID × Nat) :=
++  let c := statement.output.context
++  let values := (uidCoordEquiv c).symm ((canonicalLayout c.axes).enumerate v)
++  (List.finRange c.axes.length).map fun i =>
++    let u := c.uidEquiv i
++    (u.val, (values u).val)
++
++def StatementTag.occurrenceIdentity (tag : StatementTag source t)
++    (v : Fin tag.layout.count) : Nat × List (UID × Nat) :=
++  (tag.original, outputAssignments tag.statement v)
++
++end LeanNCD.Semantics.Source
+diff --git a/leanncd/LeanNCD/Semantics/Source/Schedule.lean b/leanncd/LeanNCD/Semantics/Source/Schedule.lean
+new file mode 100644
+index 00000000..7a70f806
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Source/Schedule.lean
+@@ -0,0 +1,192 @@
++import LeanNCD.Semantics.Source.Program
++import LeanNCD.Semantics.ReferenceExecutor
++import Mathlib.Data.List.Nodup
++import Mathlib.Data.List.ProdSigma
++
++namespace LeanNCD.Semantics.Source
++
++open Program.Executor
++
++def sourceTensors (source : AdmittedSource) : List source.source.table.declarations.Tensor :=
++  List.finRange source.source.table.entries.length
++
++theorem sourceTensors_nodup (source : AdmittedSource) : (sourceTensors source).Nodup :=
++  List.nodup_finRange _
++
++theorem sourceTensors_complete (source : AdmittedSource)
++    (t : source.source.table.declarations.Tensor) : t ∈ sourceTensors source :=
++  List.mem_finRange t
++
++def sourceDefined (source : AdmittedSource) : List (elaborateSource source).Defined :=
++  (sourceTensors source).filterMap fun t =>
++    if h : (elaborateSource source).input t = false then some ⟨t, h⟩ else none
++
++theorem sourceDefined_nodup (source : AdmittedSource) : (sourceDefined source).Nodup := by
++  apply List.Nodup.filterMap _ (sourceTensors_nodup source)
++  intro a b t ha hb
++  split at ha <;> simp_all
++  obtain ⟨_, hb⟩ := hb
++  exact (congrArg Subtype.val ha).trans (congrArg Subtype.val hb).symm
++
++theorem sourceDefined_complete (source : AdmittedSource)
++    (t : (elaborateSource source).Defined) : t ∈ sourceDefined source := by
++  apply List.mem_filterMap.mpr
++  exact ⟨t.val, sourceTensors_complete source t.val, dif_pos t.property⟩
++
++def sourceValuations (source : AdmittedSource) (t : (elaborateSource source).Defined)
++    (s : Fin ((elaborateSource source).statements t)) :
++    List {v : Fin ((elaborateSource source).valuations t s) //
++      (elaborateSource source).guard t s v = true} :=
++  (List.finRange ((elaborateSource source).valuations t s)).map fun v => ⟨v, rfl⟩
++
++theorem sourceValuations_nodup (source : AdmittedSource) (t s) :
++    (sourceValuations source t s).Nodup :=
++  (List.nodup_finRange _).map (fun _ _ h => congrArg Subtype.val h)
++
++theorem sourceValuations_complete (source : AdmittedSource) (t s v) :
++    v ∈ sourceValuations source t s := by
++  apply List.mem_map.mpr
++  exact ⟨v.val, List.mem_finRange v.val, Subtype.ext rfl⟩
++
++def sourceOccurrences (source : AdmittedSource) (t : (elaborateSource source).Defined) :
++    List ((elaborateSource source).Occurrence t) :=
++  (List.finRange ((elaborateSource source).statements t)).sigma (sourceValuations source t)
++
++theorem sourceOccurrences_nodup (source : AdmittedSource) (t) :
++    (sourceOccurrences source t).Nodup :=
++  (List.nodup_finRange _).sigma (sourceValuations_nodup source t)
++
++theorem sourceOccurrences_complete (source : AdmittedSource) (t o) :
++    o ∈ sourceOccurrences source t :=
++  List.mem_sigma.mpr ⟨List.mem_finRange o.1, sourceValuations_complete source t o.1 o.2⟩
++
++def sourceCoordinates (source : AdmittedSource) (t : (elaborateSource source).Defined) :
++    List (Coord (source.source.table.declarations.signature t.val).axes) :=
++  let layout := canonicalLayout (source.source.table.declarations.signature t.val).axes
++  (List.finRange layout.count).map layout.enumerate
++
++theorem sourceCoordinates_nodup (source : AdmittedSource) (t) :
++    (sourceCoordinates source t).Nodup :=
++  (List.nodup_finRange _).map (canonicalLayout _).enumerate.injective
++
++theorem sourceCoordinates_complete (source : AdmittedSource) (t p) :
++    p ∈ sourceCoordinates source t := by
++  let layout := canonicalLayout (source.source.table.declarations.signature t.val).axes
++  apply List.mem_map.mpr
++  exact ⟨layout.enumerate.symm p, List.mem_finRange _, layout.enumerate.apply_symm_apply p⟩
++
++def sourceOccurrenceKeys (source : AdmittedSource) : List (Key (elaborateSource source)) :=
++  ((sourceDefined source).sigma (sourceOccurrences source)).map fun x => .occurrence x.1 x.2
++
++def sourcePublicationKeys (source : AdmittedSource) : List (Key (elaborateSource source)) :=
++  ((sourceDefined source).sigma (sourceCoordinates source)).map fun x => .publication x.1 x.2
++
++theorem sourceOccurrenceKeys_nodup (source : AdmittedSource) :
++    (sourceOccurrenceKeys source).Nodup := by
++  apply ((sourceDefined_nodup source).sigma (sourceOccurrences_nodup source)).map
++  rintro ⟨t, o⟩ ⟨u, p⟩ h
++  cases h
++  rfl
++
++theorem sourcePublicationKeys_nodup (source : AdmittedSource) :
++    (sourcePublicationKeys source).Nodup := by
++  apply ((sourceDefined_nodup source).sigma (sourceCoordinates_nodup source)).map
++  rintro ⟨t, o⟩ ⟨u, p⟩ h
++  cases h
++  rfl
++
++theorem sourceOccurrenceKeys_complete (source : AdmittedSource) (t o) :
++    Key.occurrence t o ∈ sourceOccurrenceKeys source :=
++  List.mem_map.mpr ⟨⟨t, o⟩, List.mem_sigma.mpr
++    ⟨sourceDefined_complete source t, sourceOccurrences_complete source t o⟩, rfl⟩
++
++theorem sourcePublicationKeys_complete (source : AdmittedSource) (t p) :
++    Key.publication t p ∈ sourcePublicationKeys source :=
++  List.mem_map.mpr ⟨⟨t, p⟩, List.mem_sigma.mpr
++    ⟨sourceDefined_complete source t, sourceCoordinates_complete source t p⟩, rfl⟩
++
++def sourceSchedule (source : AdmittedSource) : Schedule (elaborateSource source) where
++  tensors := sourceTensors source
++  tensors_nodup := sourceTensors_nodup source
++  tensors_complete := sourceTensors_complete source
++  keys := sourceOccurrenceKeys source ++ sourcePublicationKeys source
++  keys_nodup := by
++    rw [List.nodup_append]
++    refine ⟨sourceOccurrenceKeys_nodup source, sourcePublicationKeys_nodup source, ?_⟩
++    intro a ha b hb h
++    obtain ⟨⟨t, o⟩, _, rfl⟩ := List.mem_map.mp ha
++    obtain ⟨⟨u, p⟩, _, rfl⟩ := List.mem_map.mp hb
++    cases h
++  keys_complete := by
++    intro k
++    cases k with
++    | occurrence t o => exact List.mem_append_left _ (sourceOccurrenceKeys_complete source t o)
++    | publication t p => exact List.mem_append_right _ (sourcePublicationKeys_complete source t p)
++
++def sourceInputBinding (source : AdmittedSource) :
++    Program.InputBinding (K := RationalReference.Carrier) (σ := source.source.table.declarations) :=
++  fun t => if h : (source.source.table.entry t).role = .input then
++    some (source.source.inputs.buffers t h).value else none
++
++def sourceInput (source : AdmittedSource) : (elaborateSource source).Input :=
++  ⟨sourceInputBinding source, by
++    intro t
++    by_cases h : (source.source.table.entry t).role = .input <;>
++      simp [sourceInputBinding, elaborateSource, AdmittedSource.program, AdmittedSource.isInput, h]⟩
++
++def runSource (source : AdmittedSource) :
++    Except source.source.table.declarations.Tensor
++      (ValidatedResult (elaborateSource source) RationalReference.ops) :=
++  runValidated (elaborateSource source) RationalReference.ops
++    (sourceSchedule source) (sourceInputBinding source)
++
++theorem runSource_eq (source : AdmittedSource) :
++    runSource source = .ok ⟨sourceInput source,
++      run (elaborateSource source) RationalReference.ops (sourceSchedule source) (sourceInput source)⟩ := by
++  unfold runSource runValidated
++  have accepted : validate (elaborateSource source) (sourceSchedule source)
++      (sourceInputBinding source) = .ok (sourceInput source) :=
++    validate_accepts (elaborateSource source) (sourceSchedule source) (sourceInput source)
++  rw [accepted]
++
++theorem runSource_not_exhausted (source : AdmittedSource) :
++    (run (elaborateSource source) RationalReference.ops (sourceSchedule source)
++      (sourceInput source)).outcome.isExhausted = false :=
++  run_not_exhausted (elaborateSource source) RationalReference.ops _ _
++
++def runSourceDebug (source : AdmittedSource) (fuel : Option Nat := none) :
++    Except source.source.table.declarations.Tensor
++      (ValidatedResult (elaborateSource source) RationalReference.ops) :=
++  match fuel with
++  | none => runSource source
++  | some fuel =>
++    match validate (elaborateSource source) (sourceSchedule source) (sourceInputBinding source) with
++    | .error t => .error t
++    | .ok input => .ok ⟨input,
++        runFuel (elaborateSource source) RationalReference.ops (sourceSchedule source)
++          fuel (.running ((elaborateSource source).initial input))⟩
++
++theorem sourceResult_model (source : AdmittedSource)
++    (result : ValidatedResult (elaborateSource source) RationalReference.ops) (c complete)
++    (h : result.result.outcome = .complete c complete) :
++    (elaborateSource source).Models RationalReference.ops result.input
++      ((elaborateSource source).finalStore c complete) :=
++  result_model _ _ result.input result.result c complete h
++
++theorem sourceResult_unique (source : AdmittedSource)
++    (result : ValidatedResult (elaborateSource source) RationalReference.ops) (c complete)
++    (h : result.result.outcome = .complete c complete) :
++    ∀ ρ, (elaborateSource source).Models RationalReference.ops result.input ρ →
++      ρ = (elaborateSource source).finalStore c complete :=
++  result_unique _ _ result.input result.result c complete h
++
++theorem sourceResult_denotation (source : AdmittedSource)
++    (result : ValidatedResult (elaborateSource source) RationalReference.ops) (c complete)
++    (h : result.result.outcome = .complete c complete) :
++    (elaborateSource source).denotation RationalReference.ops result.input
++      ((elaborateSource source).successful_admInput RationalReference.ops result.input c
++        (result_success _ _ result.input result.result c complete h)) =
++      (elaborateSource source).outputProjection ((elaborateSource source).finalStore c complete) :=
++  result_denotation _ _ result.input result.result c complete h
++
++end LeanNCD.Semantics.Source
+diff --git a/leanncd/LeanNCD/Semantics/Source/Statement.lean b/leanncd/LeanNCD/Semantics/Source/Statement.lean
+new file mode 100644
+index 00000000..775dfce8
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Source/Statement.lean
+@@ -0,0 +1,138 @@
++import LeanNCD.Semantics.Source.Admission
++
++namespace LeanNCD.Semantics.Source
++
++variable {K : Type} [Semiring K] {σ : Declarations Unit}
++  {r : Registry (fun _ : Unit => K)}
++
++def reductionReads : (bound : Shape) → (Coord bound → List (Address σ)) →
++    List (Address σ)
++  | [], reads => reads ()
++  | a :: rest, reads =>
++    (List.finRange a.extent).flatMap fun i => reductionReads rest (fun p => reads (i, p))
++
++theorem footprint_product (reads : List (Read ctx σ)) (env : Γ → Coord ctx) (γ : Γ) :
++    footprint (product (K := K) (r := r) reads env) γ =
++      reads.map (fun read => ⟨read.tensor, read.slots.project (env γ)⟩) := by
++  induction reads with
++  | nil => rfl
++  | cons read reads ih =>
++    simp [product, readExpr, footprint, ih]
++
++theorem footprint_contract (bound : Shape) (reads : List (Read ctx σ))
++    (env : Γ → Coord bound → Coord ctx) (γ : Γ) :
++    footprint (contract (K := K) (r := r) bound reads env) γ =
++      reductionReads bound
++        (fun p => reads.map (fun read => ⟨read.tensor, read.slots.project (env γ p)⟩)) := by
++  induction bound generalizing Γ with
++  | nil => exact footprint_product reads (fun γ => env γ ()) γ
++  | cons a rest ih =>
++    simp only [contract, footprint, reductionReads]
++    congr 1
++    funext i
++    exact ih (fun γ p => env γ.1 (γ.2, p)) (γ, i)
++
++def Term.environment (term : Term source out σ) (x : Coord out.axes)
++    (p : Coord term.partition.bound) : Coord term.partition.context.axes :=
++  term.partition.context_axes.symm ▸
++    (appendEquiv out.axes term.partition.bound).symm (x, p)
++
++def Term.body (term : Term source out σ) (env : Γ → Coord out.axes) :
++    Expr (fun _ => K) σ r Γ (.scalar ()) :=
++  contract term.partition.bound term.operands (fun γ => term.environment (env γ))
++
++def Term.value (term : Term source out σ) (ρ : Store (fun _ => K) σ)
++    (x : Coord out.axes) : K :=
++  ∑ p : Coord term.partition.bound, operandProduct ρ term.operands (term.environment x p)
++
++def Term.readAddresses (term : Term source out σ)
++    (v : Coord term.partition.context.axes) : List (Address σ) :=
++  List.ofFn fun i => ⟨(term.sourceReads.get i).read.tensor, (term.reads i).slots.project v⟩
++
++def Term.readFootprint (term : Term source out σ) (x : Coord out.axes) : List (Address σ) :=
++  reductionReads term.partition.bound (fun p => term.readAddresses (term.environment x p))
++
++theorem Term.interpret_body (term : Term source out σ) (ρ : Store (fun _ => K) σ)
++    (env : Γ → Coord out.axes) (γ : Γ) :
++    interpret semiringOps ρ (term.body (r := r) env) γ = some (term.value ρ (env γ)) :=
++  interpret_contract ρ term.partition.bound term.operands
++    (fun γ => term.environment (env γ)) γ
++
++theorem Term.footprint_body (term : Term source out σ) (env : Γ → Coord out.axes) (γ : Γ) :
++    footprint (term.body (K := K) (r := r) env) γ = term.readFootprint (env γ) := by
++  simpa [Term.body, Term.readFootprint, Term.readAddresses, Term.operands,
++    LocalizedRead.read, List.map_ofFn] using
++    footprint_contract (K := K) (r := r) term.partition.bound term.operands
++      (fun γ => term.environment (env γ)) γ
++
++theorem Term.readAddresses_pullback (term : Term source out σ) (v : UIDVal source) :
++    term.readAddresses
++      (uidCoordEquiv term.partition.context (indexPullback term.partition.embedding.map v)) =
++      term.sourceReads.map
++        (fun read => ⟨read.read.tensor, read.read.slots.project (uidCoordEquiv source v)⟩) := by
++  unfold Term.readAddresses
++  conv_rhs => rw [← List.ofFn_get term.sourceReads, List.map_ofFn]
++  congr 1
++  funext i
++  congr 1
++  exact term.read_projection i v
++
++def sumBody (terms : List (Term source out σ)) (env : Γ → Coord out.axes) :
++    Expr (fun _ => K) σ r Γ (.scalar ()) :=
++  match terms with
++  | [] => .lit 0
++  | term :: terms => .binary .add (term.body env) (sumBody terms env)
++
++theorem interpret_sumBody (terms : List (Term source out σ)) (ρ : Store (fun _ => K) σ)
++    (env : Γ → Coord out.axes) (γ : Γ) :
++    interpret semiringOps ρ (sumBody (r := r) terms env) γ =
++      some ((terms.map (fun term => term.value ρ (env γ))).sum) := by
++  induction terms with
++  | nil => rfl
++  | cons term terms ih =>
++    have ht := term.interpret_body (r := r) ρ env γ
++    unfold interpret at ht ih
++    simp [sumBody, interpret, evalWith, ht, ih,
++      ScalarOps.combine, semiringOps]
++
++theorem footprint_sumBody (terms : List (Term source out σ))
++    (env : Γ → Coord out.axes) (γ : Γ) :
++    footprint (sumBody (K := K) (r := r) terms env) γ =
++      terms.flatMap (fun term => term.readFootprint (env γ)) := by
++  induction terms with
++  | nil => rfl
++  | cons term terms ih =>
++    simp only [sumBody, footprint, Term.footprint_body, List.flatMap_cons, ih]
++
++def AdmittedStatement.body (statement : AdmittedStatement source)
++    (env : Γ → Coord statement.output.context.axes) :
++    Expr (fun _ => K) source.table.declarations r Γ (.scalar ()) :=
++  sumBody statement.terms env
++
++def AdmittedStatement.destination (statement : AdmittedStatement source)
++    (x : Coord statement.output.context.axes) :
++    Coord (source.table.declarations.signature statement.output.tensor).axes :=
++  statement.output.slots.project x
++
++theorem AdmittedStatement.interpret_body (statement : AdmittedStatement source)
++    (ρ : Store (fun _ => K) source.table.declarations)
++    (env : Γ → Coord statement.output.context.axes) (γ : Γ) :
++    interpret semiringOps ρ (statement.body (r := r) env) γ =
++      some ((statement.terms.map (fun term => term.value ρ (env γ))).sum) :=
++  interpret_sumBody statement.terms ρ env γ
++
++theorem AdmittedStatement.footprint_body (statement : AdmittedStatement source)
++    (env : Γ → Coord statement.output.context.axes) (γ : Γ) :
++    footprint (statement.body (K := K) (r := r) env) γ =
++      statement.terms.flatMap (fun term => term.readFootprint (env γ)) :=
++  footprint_sumBody statement.terms env γ
++
++theorem AdmittedStatement.destination_pullback (statement : AdmittedStatement source)
++    (v : UIDVal source.context) :
++    statement.destination
++      (uidCoordEquiv statement.output.context
++        (indexPullback statement.output.embedding.map v)) =
++      statement.output.sourceSlots.project (uidCoordEquiv source.context v) :=
++  statement.output.projection v
++
++end LeanNCD.Semantics.Source
+diff --git a/leanncd/lakefile.toml b/leanncd/lakefile.toml
+index dbea2be2..9682c3de 100644
+--- a/leanncd/lakefile.toml
++++ b/leanncd/lakefile.toml
+@@ -88,7 +88,11 @@ globs = ["Base.NumericTest", "Base.StTest", "Base.BrTest", "Base.BrWiringTest",
+          "Semantics.SourceAdmissionSupportTest", "Semantics.SourceAdmissionDeclarationsTest",
+          "Semantics.SourceAdmissionRolesTest", "Semantics.SourceAdmissionInputsTest",
+          "Semantics.SourceAdmissionRefusalsTest", "Semantics.SourceAdmissionTest",
+-         "Semantics.SourceAdmissionAcceptanceTest"]
++         "Semantics.SourceAdmissionAcceptanceTest",
++         "Semantics.SourceOracleTest", "Semantics.SourceProgramFixtures",
++         "Semantics.SourceProgramOutcomesTest", "Semantics.SourceProgramIdentityTest",
++         "Semantics.SourceProgramCollectionTest", "Semantics.SourceProgramGeometryTest",
++         "Semantics.SourceProgramTest"]
+ 
+ # Non-default experimental JAX-bridge codegen library. Deliberately absent from
+ # `defaultTargets`: it only builds when explicitly requested (`lake build JaxExperiment`, as the
+diff --git a/leanncd/test/Semantics/SourceOracleTest.lean b/leanncd/test/Semantics/SourceOracleTest.lean
+new file mode 100644
+index 00000000..f10bd259
+--- /dev/null
++++ b/leanncd/test/Semantics/SourceOracleTest.lean
+@@ -0,0 +1,205 @@
++import LeanNCD.Semantics.Source.Oracle
++import Semantics.SourceAdmissionFixtures
++
++open LeanNCD LeanNCD.Semantics LeanNCD.Semantics.Source
++open SourceAdmissionFixtures
++
++namespace SourceOracleTest
++
++private def evaluate (s : SourceSnapshot) (order : Option (List Nat)) :
++    Except String Oracle.Result := do
++  let admitted ← (admitSource s).mapError reprStr
++  (Oracle.run admitted order).mapError reprStr
++
++private def values (result : Oracle.Result) (declaration : Nat) : Option (List ℚ) :=
++  (result.tensors.find? (fun t => t.declaration == declaration)).map (·.values)
++
++private def contributionAt (result : Oracle.Result) (statement : Nat) (coordinate : List Nat) :
++    Option Oracle.Contribution :=
++  result.contributions.find? (fun c =>
++    c.origin.statement == some statement && c.coordinate == coordinate)
++
++private def asymmetricCells : List ℚ := [1 / 3, 2 / 3, 5, 10, 25, 45]
++
++private def asymmetric : SourceSnapshot :=
++  { snapshot with
++    resolved := { snapshot.resolved with
++      decls := decls ++ [.tensor "Packed" [i, k], .tensor "Transpose" [k, i]]
++      stmts := stmts ++
++        [.assign "Y" [.free i]
++          (rhs [[.read "A" [.axis i, .axis k]], [.read "B" [.axis i]]]),
++         .assign "Packed" [.free i, .free k] (rhs [[.read "A" [.axis i, .axis k]]]),
++         .assign "Transpose" [.free k, .free i] (rhs [[.read "A" [.axis i, .axis k]]])] }
++    specs := specs ++ [⟨8, .output, [2, 3]⟩, ⟨9, .output, [3, 2]⟩]
++    inputs := [⟨3, [2, 3], asymmetricCells⟩, ⟨4, [2], [10, 20]⟩, ⟨6, [0], []⟩] }
++
++private def readOrigin : SourceOrigin :=
++  { side := .read, declaration := some 3, statement := some 0,
++    term := some 0, factor := some 0 }
++
++private def packingGuards : Bool :=
++  let tensor : Oracle.Tensor := ⟨3, "A", .input, [2, 3], asymmetricCells⟩
++  (Oracle.coordinates [2, 3] ==
++    [[0, 0], [0, 1], [0, 2], [1, 0], [1, 1], [1, 2]]) &&
++  (Oracle.coordinates [] == [[]]) &&
++  (Oracle.coordinates [2, 0, 3] == []) &&
++  ((Oracle.coordinates [2, 3]).mapM (Oracle.lookup readOrigin [2, 3] tensor) ==
++    .ok asymmetricCells) &&
++  (Oracle.lookup readOrigin [2, 3] { tensor with shape := [3, 2] } [0, 0] ==
++    .error ⟨readOrigin, .shape [2, 3] [3, 2]⟩) &&
++  (Oracle.lookup readOrigin [2, 3] { tensor with values := asymmetricCells.take 5 } [0, 0] ==
++    .error ⟨readOrigin, .length 6 5⟩) &&
++  (Oracle.lookup readOrigin [2, 3] tensor [1] ==
++    .error ⟨readOrigin, .coordinateRank 2 1⟩) &&
++  (Oracle.lookup readOrigin [2, 3] tensor [1, 3] ==
++    .error ⟨{ readOrigin with slot := some 1 }, .coordinateBound 1 3 3⟩)
++
++def AsymmetricPackingFiber : Bool :=
++  packingGuards && match evaluate asymmetric (some [5, 7, 8, 9]) with
++  | .error _ => false
++  | .ok result =>
++    values result 8 == some asymmetricCells &&
++    values result 9 == some [1 / 3, 10, 2 / 3, 25, 5, 45] &&
++    values result 5 == some [32, 200] &&
++    result.tensors.map (·.declaration) == [3, 4, 5, 6, 7, 8, 9] &&
++    result.contributions.map (·.origin.statement) ==
++      [some 0, some 0, some 1, some 1, some 1, some 1, some 2, some 2,
++       some 3, some 3, some 4, some 4, some 4, some 4, some 4, some 4,
++       some 5, some 5, some 5, some 5, some 5, some 5] &&
++    match contributionAt result 0 [0], contributionAt result 3 [0],
++        contributionAt result 2 [0] with
++    | some c, some duplicate, some empty =>
++      c.origin == { side := .output, declaration := some 5, statement := some 0 } &&
++      c.value == 16 && duplicate.value == 16 && empty.value == 0 && empty.terms == [] &&
++      match c.terms with
++      | [fiber, bias] =>
++        fiber.value == 6 && bias.value == 10 &&
++        fiber.origin == { side := .read, statement := some 0, term := some 0 } &&
++        fiber.occurrences.map (·.assignment) ==
++          [[(7, 0), (3, 0)], [(7, 0), (3, 1)], [(7, 0), (3, 2)]] &&
++        fiber.occurrences.map (·.output) == [[0], [0], [0]] &&
++        fiber.occurrences.map (·.reads) ==
++          [[⟨readOrigin, 3, [0, 0], 1 / 3⟩],
++           [⟨readOrigin, 3, [0, 1], 2 / 3⟩],
++           [⟨readOrigin, 3, [0, 2], 5⟩]] &&
++        bias.occurrences.map (·.assignment) == [[(7, 0)]]
++      | _ => false
++    | _, _, _ => false
++
++private def boundaries : SourceSnapshot :=
++  { snapshot with
++    resolved := { snapshot.resolved with
++      decls := decls ++ [.tensor "Scalar" [], .tensor "Zero" [e],
++        .tensor "Unwritten" [i], .tensor "D" [i, i],
++        .tensor "Squared" [i], .tensor "ScalarZero" [], .tensor "UnwrittenOutput" [i]]
++      stmts := stmts ++
++        [.assign "Scalar" [] (rhs [[]]),
++         .assign "Zero" [.free e] (rhs [[]]),
++         .assign "Squared" [.free i]
++           (rhs [[.read "D" [.axis i, .axis i],
++             .read "B" [.axis i], .read "B" [.axis i]]]),
++         .assign "ScalarZero" [] (rhs [[.read "Empty" [.axis e]]]),
++         .assign "Scalar" [] (rhs []),
++         .assign "Scalar" [] (rhs [[.read "B" [.axis i]], []])] }
++    specs := specs ++ [⟨8, .output, []⟩, ⟨9, .output, [0]⟩,
++      ⟨10, .defined, [2]⟩, ⟨11, .input, [2, 2]⟩,
++      ⟨12, .output, [2]⟩, ⟨13, .output, []⟩, ⟨14, .output, [2]⟩]
++    inputs := inputs ++ [⟨11, [2, 2], [2, 99, 101, 3]⟩] }
++
++def ScalarZeroRepeatedAndBias : Bool :=
++  match evaluate boundaries (some [5, 7, 8, 9, 10, 12, 13, 14]) with
++  | .error _ => false
++  | .ok result =>
++    values result 5 == some [16, 35] &&
++    values result 7 == some [1, 0, 0, 1] &&
++    values result 8 == some [32] &&
++    values result 9 == some [] &&
++    values result 10 == some [0, 0] &&
++    values result 12 == some [200, 1200] &&
++    values result 13 == some [0] &&
++    values result 14 == some [0, 0] &&
++    match contributionAt result 1 [0, 1], contributionAt result 3 [],
++        contributionAt result 5 [1], contributionAt result 6 [],
++        contributionAt result 7 [], contributionAt result 8 [] with
++    | some offDiagonal, some identity, some repeated,
++        some zero, some emptySum, some bias =>
++      offDiagonal.value == 0 &&
++      offDiagonal.terms.map (·.occurrences) == [[]] &&
++      identity.value == 1 &&
++      identity.terms.map (fun t => t.occurrences.map (·.assignment)) == [[[]]] &&
++      identity.terms.map (fun t => t.occurrences.map (·.reads)) == [[[]]] &&
++      zero.value == 0 && zero.terms.map (·.occurrences) == [[]] &&
++      emptySum.value == 0 && emptySum.terms == [] &&
++      bias.terms.map (·.value) == [30, 1] &&
++      bias.terms.map (fun t => t.occurrences.map (·.assignment)) ==
++        [[[(7, 0)], [(7, 1)]], [[]]] &&
++      match repeated.terms with
++      | [term] =>
++        match term.occurrences with
++        | [occurrence] =>
++          occurrence.value == 1200 &&
++          occurrence.reads.map (·.coordinate) == [[1, 1], [1], [1]] &&
++          occurrence.reads.map (·.value) == [3, 20, 20] &&
++          occurrence.reads.map (·.origin.factor) == [some 0, some 1, some 2]
++        | _ => false
++      | _ => false
++    | _, _, _, _, _, _ => false
++
++private def chain : SourceSnapshot :=
++  { snapshot with
++    resolved := { snapshot.resolved with
++      decls := decls ++ [.tensor "Mid" [i], .tensor "End" [i], .tensor "Unwritten" [i]]
++      stmts := stmts ++
++        [.assign "Mid" [.free i] (rhs [[.read "B" [.axis i]]]),
++         .assign "Mid" [.free i] (rhs [[.read "B" [.axis i]]]),
++         .assign "End" [.free i] (rhs [[.read "Mid" [.axis i], .read "B" [.axis i]]])] }
++    specs := specs ++ [⟨8, .defined, [2]⟩, ⟨9, .output, [2]⟩, ⟨10, .defined, [2]⟩] }
++
++private def dependencyOrigin : SourceOrigin :=
++  { side := .read, declaration := some 8, statement := some 5,
++    term := some 0, factor := some 0 }
++
++private def cycleOrigin : SourceOrigin :=
++  { side := .read, declaration := some 9, statement := some 3,
++    term := some 0, factor := some 0 }
++
++private def cyclic : SourceSnapshot :=
++  { chain with resolved := { chain.resolved with
++      stmts := stmts ++
++        [.assign "Mid" [.free i] (rhs [[.read "End" [.axis i]]]),
++         .assign "Mid" [.free i] (rhs [[.read "B" [.axis i]]]),
++         .assign "End" [.free i] (rhs [[.read "Mid" [.axis i]]])] } }
++
++def ExplicitDependencyOrder : Bool :=
++  match admitSource chain, admitSource cyclic with
++  | .ok admitted, .ok cycle =>
++    (Oracle.run admitted none == .error ⟨{}, .missingOrder⟩) &&
++    (Oracle.run admitted (some [5, 7, 8, 8, 9, 10]) ==
++      .error ⟨{ side := .declaration, declaration := some 8 }, .duplicateTarget 8⟩) &&
++    (Oracle.run admitted (some [5, 7, 8, 9]) ==
++      .error ⟨{ side := .declaration, declaration := some 10 }, .omittedTarget 10⟩) &&
++    (Oracle.run admitted (some [3, 5, 7, 8, 9, 10]) ==
++      .error ⟨{ side := .declaration, declaration := some 3 }, .unexpectedTarget 3⟩) &&
++    (Oracle.run admitted (some [5, 7, 9, 8, 10]) ==
++      .error ⟨dependencyOrigin, .dependencyNotEarlier 8⟩) &&
++    (Oracle.run cycle (some [5, 7, 8, 9, 10]) ==
++      .error ⟨cycleOrigin, .dependencyNotEarlier 9⟩) &&
++    match Oracle.run admitted (some [5, 7, 8, 9, 10]),
++        Oracle.run admitted (some [10, 8, 5, 9, 7]) with
++    | .ok result, .ok reordered =>
++      result == reordered &&
++      values result 8 == some [20, 40] &&
++      values result 9 == some [200, 800] &&
++      values result 10 == some [0, 0] &&
++      result.tensors.map (·.declaration) == [3, 4, 5, 6, 7, 8, 9, 10]
++    | _, _ => false
++  | _, _ => false
++
++#guard AsymmetricPackingFiber
++#eval AsymmetricPackingFiber
++#guard ScalarZeroRepeatedAndBias
++#eval ScalarZeroRepeatedAndBias
++#guard ExplicitDependencyOrder
++#eval ExplicitDependencyOrder
++
++end SourceOracleTest
+diff --git a/leanncd/test/Semantics/SourceProgramCollectionTest.lean b/leanncd/test/Semantics/SourceProgramCollectionTest.lean
+new file mode 100644
+index 00000000..3b6cb824
+--- /dev/null
++++ b/leanncd/test/Semantics/SourceProgramCollectionTest.lean
+@@ -0,0 +1,202 @@
++import Semantics.SourceProgramFixtures
++import LeanNCD.Semantics.Source.Provenance
++
++open LeanNCD LeanNCD.Semantics LeanNCD.Semantics.Source
++open LeanNCD.Semantics.Program.Executor
++open SourceAdmissionFixtures SourceProgramFixtures
++
++namespace SourceProgramCollectionTest
++
++private structure ContributionView where
++  uid : Nat
++  declaration : Nat
++  sourceIndex : Nat
++  identity : Nat × List (UID × Nat)
++  destination : List Nat
++  reads : List (Nat × List Nat)
++  value : Rat
++  deriving DecidableEq, Repr
++
++private structure PublicationView where
++  uid : Nat
++  declaration : Nat
++  coordinate : List Nat
++  value : Rat
++  deriving DecidableEq, Repr
++
++private structure ExecutionView where
++  observation : SourceProgramFixtures.Observation
++  contributions : List ContributionView
++  publications : List PublicationView
++  deriving DecidableEq, Repr
++
++private def execution (snapshot : SourceSnapshot) :
++    Except ObservationError ExecutionView := do
++  let identified ← (admitIdentifiedSource snapshot).mapError ObservationError.admission
++  let source := identified.admitted
++  let result ← (runSource source).mapError fun t =>
++    .validation t.val (source.source.table.entry t).declaration
++  let contributions := result.result.events.filterMap fun event =>
++    match event with
++    | .contribution t o value =>
++      let tag := source.statementTag RationalReference.registry t o.1
++      some (⟨t.val.val, (source.source.table.entry t.val).declaration,
++        tag.sourceIndex.val, tag.occurrenceIdentity o.2.val,
++        coordList _ ((elaborateSource source).destination t o.1 o.2),
++        (footprint ((elaborateSource source).body t o.1) o.2).map
++          (fun a => (a.1.val, coordList _ a.2)), value⟩ : ContributionView)
++    | .publication .. | .undefined .. => none
++  let publications := result.result.events.filterMap fun event =>
++    match event with
++    | .publication t p value =>
++      some (⟨t.val.val, (source.source.table.entry t.val).declaration,
++        coordList _ p, value⟩ : PublicationView)
++    | .contribution .. | .undefined .. => none
++  pure ⟨⟨outcomeKind source result.result.outcome,
++      tensorObservations source result.result.outcome, result.result.events.length⟩,
++    contributions, publications⟩
++
++private def oracleMatches (actual : SourceProgramFixtures.Observation)
++    (oracle : Oracle.Result) : Bool :=
++  actual.tensors.map (fun t => (t.declaration, t.name, t.shape, t.values)) ==
++    oracle.tensors.map (fun t => (t.declaration, t.name, t.shape, t.values.map some))
++
++private def baseTensors (y diagonal : List Rat) : List TensorObservation :=
++  [⟨0, 3, "A", [2, 3], [1, 2, 3, 4, 5, 6].map some⟩,
++   ⟨1, 4, "B", [2], [some 10, some 20]⟩,
++   ⟨2, 5, "Y", [2], y.map some⟩,
++   ⟨3, 6, "Empty", [0], []⟩,
++   ⟨4, 7, "Diagonal", [2, 2], diagonal.map some⟩]
++
++private def duplicateStatement : Stmt :=
++  .assign "Y" [.free i] (rhs [[.read "B" [.axis i], .read "B" [.axis i]]])
++
++private def duplicate : SourceSnapshot :=
++  { snapshot with resolved := { snapshot.resolved with
++      stmts := [duplicateStatement, duplicateStatement] } }
++
++private def oneCopy : SourceSnapshot :=
++  { duplicate with resolved := { duplicate.resolved with stmts := [duplicateStatement] } }
++
++private def duplicateContributions : List ContributionView :=
++  [⟨2, 5, 0, (0, [(7, 0)]), [0], [(1, [0]), (1, [0])], 100⟩,
++   ⟨2, 5, 0, (0, [(7, 1)]), [1], [(1, [1]), (1, [1])], 400⟩,
++   ⟨2, 5, 1, (1, [(7, 0)]), [0], [(1, [0]), (1, [0])], 100⟩,
++   ⟨2, 5, 1, (1, [(7, 1)]), [1], [(1, [1]), (1, [1])], 400⟩]
++
++def P4 : Bool :=
++  match execution duplicate, execution oneCopy with
++  | .ok actual, .ok neighbor =>
++    actual.observation == ⟨.complete, baseTensors [200, 800] [0, 0, 0, 0], 10⟩ &&
++    neighbor.observation == ⟨.complete, baseTensors [100, 400] [0, 0, 0, 0], 8⟩ &&
++    actual.observation.tensors != neighbor.observation.tensors &&
++    actual.contributions == duplicateContributions &&
++    neighbor.contributions == duplicateContributions.take 2 &&
++    actual.publications.filter (fun p => p.declaration == 5) ==
++      [⟨2, 5, [0], 200⟩, ⟨2, 5, [1], 800⟩]
++  | _, _ => false
++
++private def chain : SourceSnapshot :=
++  { snapshot with
++    resolved := { snapshot.resolved with
++      decls := decls ++ [.tensor "Mid" [i, k], .tensor "End" [k, i]]
++      stmts := stmts ++
++        [.assign "End" [.free k, .free i]
++          (rhs [[.read "Mid" [.axis i, .axis k], .read "B" [.axis i]]]),
++         .assign "Mid" [.free i, .free k]
++          (rhs [[.read "A" [.axis i, .axis k], .read "B" [.axis i]]])] }
++    specs := specs ++ [⟨8, .defined, [2, 3]⟩, ⟨9, .output, [3, 2]⟩] }
++
++private def chainTensors : List TensorObservation :=
++  baseTensors [16, 35] [1, 0, 0, 1] ++
++    [⟨5, 8, "Mid", [2, 3], [10, 20, 30, 80, 100, 120].map some⟩,
++     ⟨6, 9, "End", [3, 2], [100, 1600, 200, 2000, 300, 2400].map some⟩]
++
++private def midPublications : List PublicationView :=
++  [⟨5, 8, [0, 0], 10⟩, ⟨5, 8, [0, 1], 20⟩, ⟨5, 8, [0, 2], 30⟩,
++   ⟨5, 8, [1, 0], 80⟩, ⟨5, 8, [1, 1], 100⟩, ⟨5, 8, [1, 2], 120⟩]
++
++private def endContributions : List ContributionView :=
++  [⟨6, 9, 3, (3, [(3, 0), (7, 0)]), [0, 0], [(5, [0, 0]), (1, [0])], 100⟩,
++   ⟨6, 9, 3, (3, [(3, 0), (7, 1)]), [0, 1], [(5, [1, 0]), (1, [1])], 1600⟩,
++   ⟨6, 9, 3, (3, [(3, 1), (7, 0)]), [1, 0], [(5, [0, 1]), (1, [0])], 200⟩,
++   ⟨6, 9, 3, (3, [(3, 1), (7, 1)]), [1, 1], [(5, [1, 1]), (1, [1])], 2000⟩,
++   ⟨6, 9, 3, (3, [(3, 2), (7, 0)]), [2, 0], [(5, [0, 2]), (1, [0])], 300⟩,
++   ⟨6, 9, 3, (3, [(3, 2), (7, 1)]), [2, 1], [(5, [1, 2]), (1, [1])], 2400⟩]
++
++def P5 : Bool :=
++  match execution chain, admitSource chain with
++  | .ok actual, .ok source =>
++    match Oracle.run source (some [5, 7, 8, 9]) with
++    | .error _ => false
++    | .ok oracle =>
++      let consumed := actual.contributions.filter (fun c => c.declaration == 9)
++      actual.observation == ⟨.complete, chainTensors, 36⟩ &&
++      oracleMatches actual.observation oracle &&
++      actual.publications.filter (fun p => p.declaration == 8) == midPublications &&
++      consumed.length == endContributions.length &&
++      endContributions.all (fun c => decide (c ∈ consumed)) &&
++      (source.source.table.entries.filter (fun t => t.declaration == 8)).map
++        (fun t => t.role) == [.defined]
++  | _, _ => false
++
++private def unwritten : SourceSnapshot :=
++  { snapshot with
++    resolved := { snapshot.resolved with
++      decls := decls ++ [.tensor "Unwritten" [i, k], .tensor "UnwrittenScalar" [],
++        .tensor "UnwrittenOutput" [k], .tensor "WrittenNonoutput" [k, i]]
++      stmts := stmts ++
++        [.assign "WrittenNonoutput" [.free k, .free i]
++          (rhs [[.read "A" [.axis i, .axis k]]]),
++         .assign "Y" [.free i] (rhs [[.read "Unwritten" [.axis i, .axis k]]])] }
++    specs := specs ++ [⟨8, .defined, [2, 3]⟩, ⟨9, .defined, []⟩,
++      ⟨10, .output, [3]⟩, ⟨11, .defined, [3, 2]⟩] }
++
++private def unwrittenTensors : List TensorObservation :=
++  baseTensors [16, 35] [1, 0, 0, 1] ++
++    [⟨5, 8, "Unwritten", [2, 3], (List.replicate 6 (0 : Rat)).map some⟩,
++     ⟨6, 9, "UnwrittenScalar", [], [some 0]⟩,
++     ⟨7, 10, "UnwrittenOutput", [3], [some 0, some 0, some 0]⟩,
++     ⟨8, 11, "WrittenNonoutput", [3, 2], [1, 4, 2, 5, 3, 6].map some⟩]
++
++private def unwrittenPublications : List PublicationView :=
++  [⟨5, 8, [0, 0], 0⟩, ⟨5, 8, [0, 1], 0⟩, ⟨5, 8, [0, 2], 0⟩,
++   ⟨5, 8, [1, 0], 0⟩, ⟨5, 8, [1, 1], 0⟩, ⟨5, 8, [1, 2], 0⟩,
++   ⟨6, 9, [], 0⟩, ⟨7, 10, [0], 0⟩, ⟨7, 10, [1], 0⟩, ⟨7, 10, [2], 0⟩]
++
++private def unwrittenConsumption : List ContributionView :=
++  [⟨2, 5, 4, (4, [(7, 0)]), [0], [(5, [0, 0]), (5, [0, 1]), (5, [0, 2])], 0⟩,
++   ⟨2, 5, 4, (4, [(7, 1)]), [1], [(5, [1, 0]), (5, [1, 1]), (5, [1, 2])], 0⟩]
++
++def P6 : Bool :=
++  match execution unwritten, admitSource unwritten with
++  | .ok actual, .ok source =>
++    match Oracle.run source (some [8, 5, 7, 9, 10, 11]) with
++    | .error _ => false
++    | .ok oracle =>
++      actual.observation == ⟨.complete, unwrittenTensors, 36⟩ &&
++      oracleMatches actual.observation oracle &&
++      actual.publications.length == 22 &&
++      actual.publications.filter (fun p =>
++        p.declaration == 8 || p.declaration == 9 || p.declaration == 10) ==
++        unwrittenPublications &&
++      actual.contributions.filter (fun c => c.sourceIndex == 4) == unwrittenConsumption &&
++      (source.source.table.entries.filter (fun t =>
++        t.declaration == 8 || t.declaration == 9 || t.declaration == 10)).map
++        (fun t => t.role) == [.defined, .defined, .output] &&
++      (source.statements.filter (fun st =>
++        let declaration := (source.source.table.entry st.output.tensor).declaration
++        declaration == 8 || declaration == 9 || declaration == 10)).isEmpty
++  | _, _ => false
++
++#guard P4
++#guard P5
++#guard P6
++
++#eval (P4, execution duplicate, execution oneCopy)
++#eval (P5, execution chain,
++  (admitSource chain).map (fun s => Oracle.run s (some [5, 7, 8, 9])))
++#eval (P6, execution unwritten,
++  (admitSource unwritten).map (fun s => Oracle.run s (some [8, 5, 7, 9, 10, 11])))
++
++end SourceProgramCollectionTest
+diff --git a/leanncd/test/Semantics/SourceProgramFixtures.lean b/leanncd/test/Semantics/SourceProgramFixtures.lean
+new file mode 100644
+index 00000000..d6628c04
+--- /dev/null
++++ b/leanncd/test/Semantics/SourceProgramFixtures.lean
+@@ -0,0 +1,72 @@
++import LeanNCD.Semantics.Source.Schedule
++import LeanNCD.Semantics.Source.Oracle
++import Semantics.SourceAdmissionFixtures
++
++open LeanNCD LeanNCD.Semantics LeanNCD.Semantics.Source
++open LeanNCD.Semantics.Program.Executor
++
++namespace SourceProgramFixtures
++
++inductive ObservationError
++  | admission (diagnostic : SourceDiagnostic)
++  | validation (tensorUID declaration : Nat)
++  deriving Repr
++
++inductive OutcomeKind
++  | complete | failed | blocked | exhausted
++  deriving DecidableEq, Repr
++
++structure TensorObservation where
++  uid : Nat
++  declaration : Nat
++  name : String
++  shape : List Nat
++  values : List (Option Rat)
++  deriving DecidableEq, Repr
++
++structure Observation where
++  kind : OutcomeKind
++  tensors : List TensorObservation
++  events : Nat
++  deriving DecidableEq, Repr
++
++def coordList : (sh : Shape) → Coord sh → List Nat
++  | [], _ => []
++  | _ :: sh, p => p.1.val :: coordList sh p.2
++
++def coordAssignments : (sh : Shape) → Coord sh → List (UID × Nat)
++  | [], _ => []
++  | a :: sh, p => (a.uid, p.1.val) :: coordAssignments sh p.2
++
++def published (source : AdmittedSource)
++    (outcome : Outcome (elaborateSource source) RationalReference.ops) :=
++  match outcome with
++  | .complete c _ | .failed _ _ c | .blocked c _ _ | .exhausted c => c.published
++
++def outcomeKind (source : AdmittedSource)
++    (outcome : Outcome (elaborateSource source) RationalReference.ops) : OutcomeKind :=
++  match outcome with
++  | .complete .. => .complete
++  | .failed .. => .failed
++  | .blocked .. => .blocked
++  | .exhausted .. => .exhausted
++
++def tensorObservations (source : AdmittedSource)
++    (outcome : Outcome (elaborateSource source) RationalReference.ops) :
++    List TensorObservation :=
++  (sourceTensors source).map fun t =>
++    let entry := source.source.table.entry t
++    let layout := canonicalLayout (source.source.table.declarations.signature t).axes
++    ⟨t.val, entry.declaration, entry.name, entry.axes.map Axis.extent,
++      (List.finRange layout.count).map fun p =>
++        published source outcome ⟨t, layout.enumerate p⟩⟩
++
++def observe (snapshot : SourceSnapshot) (fuel : Option Nat := none) :
++    Except ObservationError Observation := do
++  let source ← (admitSource snapshot).mapError ObservationError.admission
++  let result ← (runSourceDebug source fuel).mapError fun t =>
++    .validation t.val (source.source.table.entry t).declaration
++  pure ⟨outcomeKind source result.result.outcome,
++    tensorObservations source result.result.outcome, result.result.events.length⟩
++
++end SourceProgramFixtures
+diff --git a/leanncd/test/Semantics/SourceProgramGeometryTest.lean b/leanncd/test/Semantics/SourceProgramGeometryTest.lean
+new file mode 100644
+index 00000000..a3475d67
+--- /dev/null
++++ b/leanncd/test/Semantics/SourceProgramGeometryTest.lean
+@@ -0,0 +1,261 @@
++import Semantics.SourceProgramFixtures
++
++open LeanNCD LeanNCD.Semantics LeanNCD.Semantics.Source
++open LeanNCD.Semantics.Program.Executor
++open SourceAdmissionFixtures SourceProgramFixtures
++
++namespace SourceProgramGeometryTest
++
++private inductive KeyView
++  | occurrence (uid declaration statement valuation : Nat) (coordinate : List Nat)
++  | publication (uid declaration : Nat) (coordinate : List Nat)
++  deriving DecidableEq, Repr
++
++private def keyView (source : AdmittedSource) :
++    Key (elaborateSource source) → KeyView
++  | .occurrence t o =>
++    .occurrence t.val.val (source.source.table.entry t.val).declaration o.1.val o.2.val.val
++      (coordList _ ((source.statementTag RationalReference.registry t o.1).valuation o.2.val))
++  | .publication t p =>
++    .publication t.val.val (source.source.table.entry t.val).declaration (coordList _ p)
++
++private theorem canonicalCoverage (source : AdmittedSource) :
++    (sourceSchedule source).tensors.Nodup ∧
++      (∀ t, t ∈ (sourceSchedule source).tensors) ∧
++      (sourceSchedule source).keys.Nodup ∧
++      (∀ key, key ∈ (sourceSchedule source).keys) :=
++  ⟨(sourceSchedule source).tensors_nodup, (sourceSchedule source).tensors_complete,
++    (sourceSchedule source).keys_nodup, (sourceSchedule source).keys_complete⟩
++
++private def geometry : SourceSnapshot :=
++  ⟨⟨[.axis i (some 2), .axis k (some 3), .axis e (some 0),
++      .tensor "A" [i, k], .tensor "Scalar" [], .tensor "Line" [k],
++      .tensor "Grid" [i, k], .tensor "Dead" [i], .tensor "Zero" [e]],
++      [.assign "Scalar" [] (rhs [[]]),
++       .assign "Line" [.free k] (rhs [[.read "A" [.axis i, .axis k]]]),
++       .assign "Grid" [.free i, .free k] (rhs [[.read "A" [.axis i, .axis k]]]),
++       .assign "Zero" [.free e] (rhs [[]])], {}, ∅⟩,
++    [⟨3, .input, [2, 3]⟩, ⟨4, .defined, []⟩, ⟨5, .output, [3]⟩,
++     ⟨6, .output, [2, 3]⟩, ⟨7, .defined, [2]⟩, ⟨8, .output, [0]⟩],
++    [⟨3, [2, 3], [1, 2, 3, 4, 5, 6]⟩]⟩
++
++private def scheduleObservation :
++    Except SourceDiagnostic (List (Nat × Nat × String × List Nat) × List KeyView) := do
++  let source ← admitSource geometry
++  let schedule := sourceSchedule source
++  pure (schedule.tensors.map (fun t =>
++      let entry := source.source.table.entry t
++      (t.val, entry.declaration, entry.name, entry.axes.map Axis.extent)),
++    schedule.keys.map (keyView source))
++
++private def geometryTensors : List (Nat × Nat × String × List Nat) :=
++  [(0, 3, "A", [2, 3]), (1, 4, "Scalar", []), (2, 5, "Line", [3]),
++   (3, 6, "Grid", [2, 3]), (4, 7, "Dead", [2]), (5, 8, "Zero", [0])]
++
++private def geometryKeys : List KeyView :=
++  [.occurrence 1 4 0 0 [],
++   .occurrence 2 5 0 0 [0], .occurrence 2 5 0 1 [1], .occurrence 2 5 0 2 [2],
++   .occurrence 3 6 0 0 [0, 0], .occurrence 3 6 0 1 [0, 1],
++   .occurrence 3 6 0 2 [0, 2], .occurrence 3 6 0 3 [1, 0],
++   .occurrence 3 6 0 4 [1, 1], .occurrence 3 6 0 5 [1, 2],
++   .publication 1 4 [],
++   .publication 2 5 [0], .publication 2 5 [1], .publication 2 5 [2],
++   .publication 3 6 [0, 0], .publication 3 6 [0, 1], .publication 3 6 [0, 2],
++   .publication 3 6 [1, 0], .publication 3 6 [1, 1], .publication 3 6 [1, 2],
++   .publication 4 7 [0], .publication 4 7 [1]]
++
++def P7 : Bool :=
++  match scheduleObservation with
++  | .error _ => false
++  | .ok (tensors, keys) =>
++    tensors == geometryTensors && keys == geometryKeys &&
++      decide (tensors.Nodup ∧ keys.Nodup)
++
++#guard P7
++#eval P7
++#eval scheduleObservation
++
++private def allInputs : SourceSnapshot :=
++  { snapshot with
++    resolved := { snapshot.resolved with
++      decls := decls ++ [.tensor "Unused" [i], .tensor "Scalar" []]
++      stmts := [.assign "Scalar" [] (rhs [[]])] }
++    specs := specs ++ [⟨8, .input, [2]⟩, ⟨9, .output, []⟩]
++    inputs := inputs ++ [⟨8, [2], [31, 47]⟩] }
++
++private structure InputView where
++  uid : Nat
++  declaration : Nat
++  present : Bool
++  shape : List Nat
++  values : List Rat
++  deriving DecidableEq, Repr
++
++private def inputPresence : Except SourceDiagnostic (List InputView) := do
++  let source ← admitSource allInputs
++  pure ((sourceTensors source).map fun t =>
++    let entry := source.source.table.entry t
++    let layout := canonicalLayout (source.source.table.declarations.signature t).axes
++    match sourceInputBinding source t with
++    | some value =>
++      ⟨t.val, entry.declaration, true, entry.axes.map Axis.extent,
++        (List.finRange layout.count).map fun p => value (layout.enumerate p)⟩
++    | none => ⟨t.val, entry.declaration, false, entry.axes.map Axis.extent, []⟩)
++
++private def expectedPresence : List InputView :=
++  [⟨0, 3, true, [2, 3], [1, 2, 3, 4, 5, 6]⟩,
++   ⟨1, 4, true, [2], [10, 20]⟩, ⟨2, 5, false, [2], []⟩,
++   ⟨3, 6, true, [0], []⟩, ⟨4, 7, false, [2, 2], []⟩,
++   ⟨5, 8, true, [2], [31, 47]⟩, ⟨6, 9, false, [], []⟩]
++
++private def expectedInputStore : SourceProgramFixtures.Observation :=
++  ⟨.complete,
++    [⟨0, 3, "A", [2, 3], [1, 2, 3, 4, 5, 6].map some⟩,
++     ⟨1, 4, "B", [2], [some 10, some 20]⟩,
++     ⟨2, 5, "Y", [2], [some 0, some 0]⟩,
++     ⟨3, 6, "Empty", [0], []⟩,
++     ⟨4, 7, "Diagonal", [2, 2], [some 0, some 0, some 0, some 0]⟩,
++     ⟨5, 8, "Unused", [2], [some 31, some 47]⟩,
++     ⟨6, 9, "Scalar", [], [some 1]⟩], 8⟩
++
++private def omitInput (declaration : Nat) : SourceSnapshot :=
++  { allInputs with
++    inputs := allInputs.inputs.filter (fun binding => binding.declaration != declaration) }
++
++private def omissionKeepsOrigin (declaration : Nat) : Bool :=
++  match observe (omitInput declaration) with
++  | .error (.admission diagnostic) =>
++    match diagnostic.cause with
++    | .missingInput original =>
++      original == declaration && diagnostic.stage == .inputs &&
++        diagnostic.origin == { side := .input, declaration := some declaration }
++    | _ => false
++  | .error (.validation ..) | .ok _ => false
++
++def P8 : Bool :=
++  (match inputPresence with
++    | .error _ => false
++    | .ok actual => actual == expectedPresence) &&
++  (match observe allInputs with
++    | .error _ => false
++    | .ok actual => actual == expectedInputStore) &&
++  omissionKeepsOrigin 8 && omissionKeepsOrigin 6
++
++#guard P8
++#eval P8
++#eval inputPresence
++#eval observe allInputs
++#eval observe (omitInput 8)
++#eval observe (omitInput 6)
++
++private def nested : SourceSnapshot :=
++  ⟨⟨[.axis i (some 2), .axis k (some 3), .axis e (some 0),
++      .tensor "A" [i, k], .tensor "B" [i], .tensor "S" []],
++      [.assign "S" []
++        (rhs [[.read "A" [.axis i, .axis k], .read "B" [.axis i],
++          .read "A" [.axis i, .axis k]]])], {}, ∅⟩,
++    [⟨3, .input, [2, 3]⟩, ⟨4, .input, [2]⟩, ⟨5, .output, []⟩],
++    [⟨3, [2, 3], [1 / 3, 2 / 3, 5, 10, 25, 45]⟩, ⟨4, [2], [2, 7]⟩]⟩
++
++private def reductionBounds {σ : Declarations Unit} :
++    {Γ : Type} → Expr RationalReference.Carrier σ RationalReference.registry Γ (.scalar ()) →
++      List Nat
++  | _, .reduce n body => n :: reductionBounds body
++  | _, .binary _ left right => reductionBounds left ++ reductionBounds right
++  | _, _ => []
++
++private structure AddressView where
++  uid : Nat
++  declaration : Nat
++  coordinate : List Nat
++  deriving DecidableEq, Repr
++
++private structure BodyView where
++  uid : Nat
++  statement : Nat
++  valuation : Nat
++  destination : List Nat
++  binders : List Nat
++  value : Option Rat
++  reads : List AddressView
++  missingReadBlocks : Bool
++  deriving DecidableEq, Repr
++
++private def bodyViews (source : AdmittedSource)
++    (c : (elaborateSource source).Running) (complete : (elaborateSource source).Complete c) :
++    List BodyView :=
++  let p := elaborateSource source
++  let store := p.finalStore c complete
++  (sourceDefined source).flatMap fun t =>
++    (sourceOccurrences source t).map fun o =>
++      let body := p.body t o.1
++      let masked : PartialStore RationalReference.Carrier source.source.table.declarations :=
++        fun a => if a.1.val == 0 && coordList _ a.2 == [1, 2] then none else c.published a
++      ⟨t.val.val, (source.statementTag RationalReference.registry t o.1).original,
++        o.2.val.val, coordList _ (p.destination t o.1 o.2), reductionBounds body,
++        interpret RationalReference.ops store body o.2,
++        (footprint body o.2).map fun a =>
++          ⟨a.1.val, (source.source.table.entry a.1).declaration, coordList _ a.2⟩,
++        match evalReady RationalReference.ops masked body o.2 with
++        | .notReady => true
++        | .evaluated _ => false⟩
++
++private inductive NestedError
++  | observation (error : ObservationError)
++  | oracle (error : Oracle.Unavailable)
++  deriving Repr
++
++private structure NestedView where
++  observation : SourceProgramFixtures.Observation
++  boundAxes : List (List (UID × Nat))
++  bodies : List BodyView
++  oracle : Oracle.Result
++  deriving Repr
++
++private def nestedObservation : Except NestedError NestedView := do
++  let source ← (admitSource nested).mapError (fun d => .observation (.admission d))
++  let result ← (runSource source).mapError fun t =>
++    .observation (.validation t.val (source.source.table.entry t).declaration)
++  let oracle ← (Oracle.run source (some [5])).mapError NestedError.oracle
++  let outcome := result.result.outcome
++  let bodies := match outcome with
++    | .complete c complete => bodyViews source c complete
++    | .failed .. | .blocked .. | .exhausted .. => []
++  pure ⟨⟨outcomeKind source outcome, tensorObservations source outcome,
++      result.result.events.length⟩,
++    source.statements.flatMap (fun st =>
++      st.terms.map fun term => term.partition.bound.map fun a => (a.uid, a.extent)),
++    bodies, oracle⟩
++
++private def nestedReads : List AddressView :=
++  [⟨0, 3, [0, 0]⟩, ⟨1, 4, [0]⟩, ⟨0, 3, [0, 0]⟩,
++   ⟨0, 3, [0, 1]⟩, ⟨1, 4, [0]⟩, ⟨0, 3, [0, 1]⟩,
++   ⟨0, 3, [0, 2]⟩, ⟨1, 4, [0]⟩, ⟨0, 3, [0, 2]⟩,
++   ⟨0, 3, [1, 0]⟩, ⟨1, 4, [1]⟩, ⟨0, 3, [1, 0]⟩,
++   ⟨0, 3, [1, 1]⟩, ⟨1, 4, [1]⟩, ⟨0, 3, [1, 1]⟩,
++   ⟨0, 3, [1, 2]⟩, ⟨1, 4, [1]⟩, ⟨0, 3, [1, 2]⟩]
++
++private def nestedStore : SourceProgramFixtures.Observation :=
++  ⟨.complete,
++    [⟨0, 3, "A", [2, 3], [1 / 3, 2 / 3, 5, 10, 25, 45].map some⟩,
++     ⟨1, 4, "B", [2], [some 2, some 7]⟩,
++     ⟨2, 5, "S", [], [some (173710 / 9)]⟩], 2⟩
++
++def P9 : Bool :=
++  match nestedObservation with
++  | .error _ => false
++  | .ok actual =>
++    actual.observation == nestedStore &&
++    actual.boundAxes == [[(7, 2), (3, 3)]] &&
++    actual.bodies == [⟨2, 0, 0, [], [2, 3], some (173710 / 9), nestedReads, true⟩] &&
++    actual.oracle.tensors ==
++      [⟨3, "A", .input, [2, 3], [1 / 3, 2 / 3, 5, 10, 25, 45]⟩,
++       ⟨4, "B", .input, [2], [2, 7]⟩, ⟨5, "S", .output, [], [173710 / 9]⟩] &&
++    actual.observation.tensors.map (fun t => (t.declaration, t.name, t.shape, t.values)) ==
++      actual.oracle.tensors.map (fun t => (t.declaration, t.name, t.shape, t.values.map some))
++
++#guard P9
++#eval P9
++#eval nestedObservation
++
++end SourceProgramGeometryTest
+diff --git a/leanncd/test/Semantics/SourceProgramIdentityTest.lean b/leanncd/test/Semantics/SourceProgramIdentityTest.lean
+new file mode 100644
+index 00000000..5ecf1edd
+--- /dev/null
++++ b/leanncd/test/Semantics/SourceProgramIdentityTest.lean
+@@ -0,0 +1,330 @@
++import LeanNCD.Semantics.Source.Permutation
++import Semantics.SourceProgramFixtures
++
++open LeanNCD LeanNCD.Semantics LeanNCD.Semantics.Source
++open LeanNCD.Semantics.Program.Executor
++open SourceAdmissionFixtures SourceProgramFixtures
++
++namespace SourceProgramIdentityTest
++
++set_option synthInstance.maxSize 512
++
++private def chain : SourceSnapshot :=
++  { snapshot with
++    resolved := { snapshot.resolved with
++      decls := decls ++ [.tensor "Mid" [i], .tensor "End" [i]]
++      stmts :=
++        [.assign "End" [.free i] (rhs [[.read "Mid" [.axis i], .read "B" [.axis i]]]),
++         .assign "Y" [.free i] (rhs [[.read "End" [.axis i]], [.read "B" [.axis i]]]),
++         .assign "Diagonal" [.free i, .free i] (rhs [[]]),
++         .assign "Mid" [.free i] (rhs [[.read "A" [.axis i, .axis k]]])] }
++    specs := specs ++ [⟨8, .defined, [2]⟩, ⟨9, .output, [2]⟩] }
++
++private def chainTensors : List TensorObservation :=
++  [⟨0, 3, "A", [2, 3], [1, 2, 3, 4, 5, 6].map some⟩,
++   ⟨1, 4, "B", [2], [some 10, some 20]⟩,
++   ⟨2, 5, "Y", [2], [some 70, some 320]⟩,
++   ⟨3, 6, "Empty", [0], []⟩,
++   ⟨4, 7, "Diagonal", [2, 2], [some 1, some 0, some 0, some 1]⟩,
++   ⟨5, 8, "Mid", [2], [some 6, some 15]⟩,
++   ⟨6, 9, "End", [2], [some 60, some 300]⟩]
++
++private def chainOracleTensors : List Oracle.Tensor :=
++  [⟨3, "A", .input, [2, 3], [1, 2, 3, 4, 5, 6]⟩,
++   ⟨4, "B", .input, [2], [10, 20]⟩,
++   ⟨5, "Y", .output, [2], [70, 320]⟩,
++   ⟨6, "Empty", .input, [0], []⟩,
++   ⟨7, "Diagonal", .defined, [2, 2], [1, 0, 0, 1]⟩,
++   ⟨8, "Mid", .defined, [2], [6, 15]⟩,
++   ⟨9, "End", .output, [2], [60, 300]⟩]
++
++private inductive ChainError
++  | observation (error : ObservationError)
++  | oracle (error : Oracle.Unavailable)
++  deriving Repr
++
++private def chainReceipt : Except ChainError (Observation × Oracle.Result) := do
++  let runtime ← (observe chain).mapError ChainError.observation
++  let source ← (admitSource chain).mapError fun e =>
++    .observation (.admission e)
++  let oracle ← (Oracle.run source (some [7, 8, 9, 5])).mapError ChainError.oracle
++  pure (runtime, oracle)
++
++def P1 : Bool :=
++  match chainReceipt with
++  | .error _ => false
++  | .ok (runtime, oracle) =>
++    runtime == ⟨.complete, chainTensors, 18⟩ &&
++    oracle.tensors == chainOracleTensors &&
++    runtime.tensors.map (fun t => (t.declaration, t.name, t.shape, t.values)) ==
++      oracle.tensors.map (fun t => (t.declaration, t.name, t.shape, t.values.map some))
++
++private def interleaved : SourceSnapshot :=
++  { snapshot with
++    resolved := { snapshot.resolved with
++      stmts :=
++        [.assign "Diagonal" [.free i, .free i] (rhs []),
++         .assign "Y" [.free i] (rhs [[.read "B" [.axis i]]]),
++         .assign "Diagonal" [.free i, .free i] (rhs [[]]),
++         .assign "Y" [.free i] (rhs [[.read "B" [.axis i], .read "B" [.axis i]]])] } }
++
++private def identityTensors : List TensorObservation :=
++  [⟨0, 3, "A", [2, 3], [1, 2, 3, 4, 5, 6].map some⟩,
++   ⟨1, 4, "B", [2], [some 10, some 20]⟩,
++   ⟨2, 5, "Y", [2], [some 110, some 420]⟩,
++   ⟨3, 6, "Empty", [0], []⟩,
++   ⟨4, 7, "Diagonal", [2, 2], [some 1, some 0, some 0, some 1]⟩]
++
++private structure TagRow where
++  tensorUID : Nat
++  localIndex : Nat
++  sourceIndex : Nat
++  original : Nat
++  valuations : Nat
++  deriving DecidableEq, Repr
++
++private def tagRows (source : AdmittedSource) : List TagRow :=
++  (sourceDefined source).flatMap fun t =>
++    (List.finRange ((elaborateSource source).statements t)).map fun s =>
++      let tag := source.statementTag RationalReference.registry t s
++      ⟨t.val.val, s.val, tag.sourceIndex.val, tag.original, tag.layout.count⟩
++
++private structure MapRow where
++  original : Nat
++  tensorUID : Nat
++  localIndex : Nat
++  sourceIndex : Nat
++  inverse : Bool
++  deriving DecidableEq, Repr
++
++private def mapRows (source : IdentifiedSource) : List MapRow :=
++  (List.finRange source.admitted.statements.length).map fun index =>
++    let id := source.originalEquiv index
++    let loc := source.originalToLocal id
++    let tag := source.originalTagEquiv id
++    ⟨id.val, loc.1.val, loc.2.val, tag.2.sourceIndex.val,
++      decide (source.localToOriginal loc = id)⟩
++
++private def localRoundtrips (source : IdentifiedSource) : List Bool :=
++  (sourceDefined source.admitted).flatMap fun t =>
++    (List.finRange ((elaborateSource source.admitted).statements t)).map fun s =>
++      let loc := Sigma.mk t.val s
++      decide (source.originalToLocal (source.localToOriginal loc) = loc)
++
++private abbrev OccurrenceKey := Nat × (Nat × List (UID × Nat))
++
++private def occurrenceKey (source : AdmittedSource) (t : (elaborateSource source).Defined)
++    (o : (elaborateSource source).Occurrence t) : OccurrenceKey :=
++  (t.val.val, (source.statementTag RationalReference.registry t o.1).occurrenceIdentity o.2.val)
++
++private def occurrenceKeys (source : AdmittedSource) : List OccurrenceKey :=
++  (sourceDefined source).flatMap fun t =>
++    (sourceOccurrences source t).map (occurrenceKey source t)
++
++private structure ContributionRow where
++  key : OccurrenceKey
++  declaration : Nat
++  destination : List Nat
++  value : Rat
++  deriving DecidableEq, Repr
++
++private def contributionRows (source : AdmittedSource)
++    (events : List (Event (elaborateSource source))) : List ContributionRow :=
++  events.filterMap fun event =>
++    match event with
++    | .contribution t o v => some
++        ⟨occurrenceKey source t o, (source.source.table.entry t.val).declaration,
++          coordList _ ((elaborateSource source).destination t o.1 o.2), v⟩
++    | .publication .. | .undefined .. => none
++
++private def expectedContributions : List ContributionRow :=
++  [⟨(2, (1, [(7, 0)])), 5, [0], 10⟩,
++   ⟨(2, (1, [(7, 1)])), 5, [1], 20⟩,
++   ⟨(2, (3, [(7, 0)])), 5, [0], 100⟩,
++   ⟨(2, (3, [(7, 1)])), 5, [1], 400⟩,
++   ⟨(4, (0, [(7, 0)])), 7, [0, 0], 0⟩,
++   ⟨(4, (0, [(7, 1)])), 7, [1, 1], 0⟩,
++   ⟨(4, (2, [(7, 0)])), 7, [0, 0], 1⟩,
++   ⟨(4, (2, [(7, 1)])), 7, [1, 1], 1⟩]
++
++private def runFor (source : AdmittedSource) (reversed : Bool := false) :
++    Except ObservationError (ValidatedResult (elaborateSource source) RationalReference.ops) :=
++  (if reversed then
++    runValidated (elaborateSource source) RationalReference.ops
++      (sourceSchedule source).reverse (sourceInputBinding source)
++  else runSource source).mapError fun t =>
++    .validation t.val (source.source.table.entry t).declaration
++
++private structure IdentityReceipt where
++  tags : List TagRow
++  maps : List MapRow
++  localInverses : List Bool
++  runtime : Observation
++  contributions : List ContributionRow
++  deriving DecidableEq, Repr
++
++private def identityObservation (source : IdentifiedSource)
++    (result : ValidatedResult (elaborateSource source.admitted) RationalReference.ops) :
++    IdentityReceipt :=
++  ⟨tagRows source.admitted, mapRows source, localRoundtrips source,
++    ⟨outcomeKind source.admitted result.result.outcome,
++      tensorObservations source.admitted result.result.outcome, result.result.events.length⟩,
++    contributionRows source.admitted result.result.events⟩
++
++private def identityReceipt : Except ObservationError IdentityReceipt := do
++  let source ← (admitIdentifiedSource interleaved).mapError ObservationError.admission
++  let result ← runFor source.admitted
++  pure (identityObservation source result)
++
++def P2 : Bool :=
++  match identityReceipt with
++  | .error _ => false
++  | .ok receipt =>
++    receipt.tags == [⟨2, 0, 1, 1, 2⟩, ⟨2, 1, 3, 3, 2⟩,
++      ⟨4, 0, 0, 0, 2⟩, ⟨4, 1, 2, 2, 2⟩] &&
++    receipt.maps == [⟨0, 4, 0, 0, true⟩, ⟨1, 2, 0, 1, true⟩,
++      ⟨2, 4, 1, 2, true⟩, ⟨3, 2, 1, 3, true⟩] &&
++    receipt.localInverses == List.replicate 4 true &&
++    receipt.runtime == ⟨.complete, identityTensors, 14⟩ &&
++    receipt.contributions == expectedContributions
++
++private def reverseStatements (source : AdmittedSource) : StatementPermutation source :=
++  permuteStatements source
++    { toFun := Fin.rev, invFun := Fin.rev,
++      left_inv := Fin.rev_rev, right_inv := Fin.rev_rev }
++
++private structure EventRow where
++  kind : String
++  tensorUID : Nat
++  identity : Option (Nat × List (UID × Nat))
++  destination : List Nat
++  value : Option Rat
++  deriving DecidableEq, Repr
++
++private def eventRow (source : AdmittedSource) : Event (elaborateSource source) → EventRow
++  | .contribution t o v =>
++    ⟨"contribution", t.val.val, some (occurrenceKey source t o).2,
++      coordList _ ((elaborateSource source).destination t o.1 o.2), some v⟩
++  | .publication t p v => ⟨"publication", t.val.val, none, coordList _ p, some v⟩
++  | .undefined t o =>
++    ⟨"undefined", t.val.val, some (occurrenceKey source t o).2,
++      coordList _ ((elaborateSource source).destination t o.1 o.2), none⟩
++
++private def canonicalContributions (keys : List OccurrenceKey) (rows : List ContributionRow) :
++    Option (List ContributionRow) :=
++  keys.mapM fun key => rows.find? (fun row => row.key == key)
++
++private def transportChecks (source : AdmittedSource) : List Bool :=
++  let p := reverseStatements source
++  (sourceDefined source).flatMap fun t =>
++    (sourceOccurrences p.reordered t).map fun o =>
++      let old := p.occurrenceEquiv RationalReference.registry t o
++      decide (occurrenceKey source t old = occurrenceKey p.reordered t o) &&
++      decide (coordList _ ((elaborateSource source).destination t old.1 old.2) =
++        coordList _ ((elaborateSource p.reordered).destination t o.1 o.2))
++
++private structure PermutationReceipt where
++  before : IdentityReceipt
++  after : IdentityReceipt
++  canonicalBefore : Option (List ContributionRow)
++  canonicalAfter : Option (List ContributionRow)
++  keysUnique : Bool
++  transport : List Bool
++  eventsBefore : List EventRow
++  eventsAfter : List EventRow
++  deriving DecidableEq, Repr
++
++private def permutationReceipt : Except ObservationError PermutationReceipt := do
++  let source ← (admitIdentifiedSource interleaved).mapError ObservationError.admission
++  let p := reverseStatements source.admitted
++  let reordered := StatementPermutation.identified source p
++  let beforeResult ← runFor source.admitted
++  let afterResult ← runFor reordered.admitted true
++  let before := identityObservation source beforeResult
++  let after := identityObservation reordered afterResult
++  let keys := occurrenceKeys source.admitted
++  pure ⟨before, after, canonicalContributions keys before.contributions,
++    canonicalContributions keys after.contributions, decide keys.Nodup,
++    transportChecks source.admitted,
++    beforeResult.result.events.map (eventRow source.admitted),
++    afterResult.result.events.map (eventRow reordered.admitted)⟩
++
++def P3 : Bool :=
++  match permutationReceipt with
++  | .error _ => false
++  | .ok receipt =>
++    receipt.before.tags == [⟨2, 0, 1, 1, 2⟩, ⟨2, 1, 3, 3, 2⟩,
++      ⟨4, 0, 0, 0, 2⟩, ⟨4, 1, 2, 2, 2⟩] &&
++    receipt.after.tags == [⟨2, 0, 0, 3, 2⟩, ⟨2, 1, 2, 1, 2⟩,
++      ⟨4, 0, 1, 2, 2⟩, ⟨4, 1, 3, 0, 2⟩] &&
++    receipt.before.maps == [⟨0, 4, 0, 0, true⟩, ⟨1, 2, 0, 1, true⟩,
++      ⟨2, 4, 1, 2, true⟩, ⟨3, 2, 1, 3, true⟩] &&
++    receipt.after.maps == [⟨3, 2, 0, 0, true⟩, ⟨2, 4, 0, 1, true⟩,
++      ⟨1, 2, 1, 2, true⟩, ⟨0, 4, 1, 3, true⟩] &&
++    receipt.before.localInverses == List.replicate 4 true &&
++    receipt.after.localInverses == List.replicate 4 true &&
++    receipt.before.runtime == ⟨.complete, identityTensors, 14⟩ &&
++    receipt.after.runtime == receipt.before.runtime &&
++    receipt.before.contributions.length == 8 && receipt.after.contributions.length == 8 &&
++    receipt.keysUnique &&
++    receipt.canonicalBefore == some expectedContributions &&
++    receipt.canonicalAfter == receipt.canonicalBefore &&
++    receipt.transport == List.replicate 8 true &&
++    receipt.eventsBefore.head? ==
++      some ⟨"contribution", 2, some (1, [(7, 0)]), [0], some 10⟩ &&
++    receipt.eventsAfter.head? == some ⟨"publication", 4, none, [1, 0], some 0⟩ &&
++    receipt.eventsBefore != receipt.eventsAfter
++
++example (source : AdmittedSource) (_hAdmission : admitSource chain = .ok source)
++    (result : ValidatedResult (elaborateSource source) RationalReference.ops)
++    (_hRun : runSource source = .ok result) (c complete)
++    (hComplete : result.result.outcome = .complete c complete) :
++    (elaborateSource source).Models RationalReference.ops result.input
++      ((elaborateSource source).finalStore c complete) :=
++  sourceResult_model source result c complete hComplete
++
++example (source : IdentifiedSource) (id : OriginalStatement source.admitted) :
++    source.localToOriginal (source.originalToLocal id) = id :=
++  source.local_original_inverse id
++
++example (source : IdentifiedSource)
++    (loc : (t : source.admitted.source.table.declarations.Tensor) ×
++      Fin (targetStatements source.admitted t).length) :
++    source.originalToLocal (source.localToOriginal loc) = loc :=
++  source.original_local_inverse loc
++
++example (source : AdmittedSource) (t : (elaborateSource source).Defined)
++    (o : (elaborateSource (reverseStatements source).reordered).Occurrence t) :
++    (source.statementTag RationalReference.registry t
++      ((reverseStatements source).occurrenceEquiv RationalReference.registry t o).1).occurrenceIdentity
++      ((reverseStatements source).occurrenceEquiv RationalReference.registry t o).2.val =
++      ((reverseStatements source).reordered.statementTag RationalReference.registry t o.1).occurrenceIdentity
++        o.2.val :=
++  (reverseStatements source).identities RationalReference.registry t o
++
++example (source : AdmittedSource)
++    (store : Store RationalReference.Carrier source.source.table.declarations)
++    (old : (elaborateSource source).AdmEnv semiringOps store)
++    (new : (elaborateSource (reverseStatements source).reordered).AdmEnv semiringOps store)
++    (t : (elaborateSource source).Defined) :
++    (elaborateSource (reverseStatements source).reordered).collect semiringOps store new t =
++      (elaborateSource source).collect semiringOps store old t :=
++  (reverseStatements source).collect RationalReference.registry store new old t
++
++example (source : AdmittedSource) (input : (elaborateSource source).Input)
++    (store : Store RationalReference.Carrier source.source.table.declarations) :
++    (elaborateSource (reverseStatements source).reordered).Models semiringOps input store ↔
++      (elaborateSource source).Models semiringOps input store :=
++  (reverseStatements source).models RationalReference.registry input store
++
++#eval chainReceipt
++#guard P1
++#eval P1
++#eval identityReceipt
++#guard P2
++#eval P2
++#eval permutationReceipt
++#guard P3
++#eval P3
++
++end SourceProgramIdentityTest
+diff --git a/leanncd/test/Semantics/SourceProgramOutcomesTest.lean b/leanncd/test/Semantics/SourceProgramOutcomesTest.lean
+new file mode 100644
+index 00000000..881fb22a
+--- /dev/null
++++ b/leanncd/test/Semantics/SourceProgramOutcomesTest.lean
+@@ -0,0 +1,293 @@
++import Semantics.SourceProgramFixtures
++
++open LeanNCD LeanNCD.Semantics LeanNCD.Semantics.Source
++open LeanNCD.Semantics.Program.Executor
++open SourceAdmissionFixtures SourceProgramFixtures
++
++namespace SourceProgramOutcomesTest
++
++private inductive KeyView
++  | occurrence (uid declaration statement valuation : Nat) (destination : List Nat)
++  | publication (uid declaration : Nat) (coordinate : List Nat)
++  deriving DecidableEq, Repr
++
++private structure AddressView where
++  uid : Nat
++  declaration : Nat
++  coordinate : List Nat
++  deriving DecidableEq, Repr
++
++private inductive ReadView
++  | unavailable (key : KeyView) (missing : List AddressView)
++  | ready (key : KeyView) (value : Option Rat)
++  deriving DecidableEq, Repr
++
++private inductive EventView
++  | contribution (key : KeyView) (value : Rat)
++  | publication (key : KeyView) (value : Rat)
++  | undefined (key : KeyView)
++  deriving DecidableEq, Repr
++
++private structure EndpointView where
++  observation : SourceProgramFixtures.Observation
++  pending : List KeyView
++  unpublished : List KeyView
++  accumulators : List (AddressView × Rat)
++  reads : List ReadView
++  events : List EventView
++  deriving DecidableEq, Repr
++
++private def keyView (source : AdmittedSource) :
++    Key (elaborateSource source) → KeyView
++  | .occurrence t o =>
++    .occurrence t.val.val (source.source.table.entry t.val).declaration
++      (source.statementTag RationalReference.registry t o.1).original o.2.val.val
++      (coordList _ ((elaborateSource source).destination t o.1 o.2))
++  | .publication t p =>
++    .publication t.val.val (source.source.table.entry t.val).declaration (coordList _ p)
++
++private def addressView (source : AdmittedSource)
++    (a : Address source.source.table.declarations) : AddressView :=
++  ⟨a.1.val, (source.source.table.entry a.1).declaration, coordList _ a.2⟩
++
++private def readView (source : AdmittedSource) :
++    Program.Executor.Observation (elaborateSource source) → ReadView
++  | .unavailable t o missing =>
++    .unavailable (keyView source (.occurrence t o)) (missing.map (addressView source))
++  | .ready t o value => .ready (keyView source (.occurrence t o)) value
++
++private def eventView (source : AdmittedSource) : Event (elaborateSource source) → EventView
++  | .contribution t o value => .contribution (keyView source (.occurrence t o)) value
++  | .publication t p value => .publication (keyView source (.publication t p)) value
++  | .undefined t o => .undefined (keyView source (.occurrence t o))
++
++private def endpoint (snapshot : SourceSnapshot) (fuel : Option Nat := none) :
++    Except ObservationError EndpointView := do
++  let source ← (admitSource snapshot).mapError ObservationError.admission
++  let result ← (runSourceDebug source fuel).mapError fun t =>
++    .validation t.val (source.source.table.entry t).declaration
++  let outcome := result.result.outcome
++  let c := match outcome with
++    | .complete c _ | .failed _ _ c | .blocked c _ _ | .exhausted c => c
++  let pending := (sourceSchedule source).keys.filterMap fun key =>
++    match key with
++    | .occurrence t o => if o ∈ c.pending t then some (keyView source key) else none
++    | .publication _ _ => none
++  let unpublished := (sourceSchedule source).keys.filterMap fun key =>
++    match key with
++    | .occurrence _ _ => none
++    | .publication t p =>
++      if (c.published ⟨t.val, p⟩).isNone then some (keyView source key) else none
++  let accumulators := ((sourceDefined source).sigma (sourceCoordinates source)).map fun a =>
++    (addressView source ⟨a.1.val, a.2⟩, c.accumulators a.1 a.2)
++  let reads := match outcome with
++    | .blocked _ diagnostics _ => diagnostics.map (readView source)
++    | .complete .. | .failed .. | .exhausted .. => []
++  pure ⟨⟨outcomeKind source outcome, tensorObservations source outcome,
++      result.result.events.length⟩, pending, unpublished, accumulators, reads,
++    result.result.events.map (eventView source)⟩
++
++private def endpointIs (snapshot : SourceSnapshot) (fuel : Option Nat)
++    (expected : EndpointView) : Bool :=
++  match endpoint snapshot fuel with
++  | .error _ => false
++  | .ok actual => actual == expected
++
++private def cycle : SourceSnapshot :=
++  ⟨⟨[.axis i (some 2), .axis e (some 0), .tensor "C" [i], .tensor "Empty" [e]],
++      [.assign "C" [.free i] (rhs [[.read "C" [.axis i]]])], {}, ∅⟩,
++    [⟨2, .output, [2]⟩, ⟨3, .input, [0]⟩], [⟨3, [0], []⟩]⟩
++
++private def cycleKeys : List KeyView :=
++  [.occurrence 0 2 0 0 [0], .occurrence 0 2 0 1 [1]]
++
++private def cyclePublications : List KeyView :=
++  [.publication 0 2 [0], .publication 0 2 [1]]
++
++private def cycleExpected : EndpointView :=
++  ⟨⟨.blocked, [⟨0, 2, "C", [2], [none, none]⟩, ⟨1, 3, "Empty", [0], []⟩], 0⟩,
++    cycleKeys, cyclePublications, [(⟨0, 2, [0]⟩, 0), (⟨0, 2, [1]⟩, 0)],
++    [.unavailable (.occurrence 0 2 0 0 [0]) [⟨0, 2, [0]⟩],
++     .unavailable (.occurrence 0 2 0 1 [1]) [⟨0, 2, [1]⟩]], []⟩
++
++private def cycleNeighbor : SourceSnapshot :=
++  { cycle with resolved := { cycle.resolved with
++      stmts := [.assign "C" [.free i] (rhs [[]])] } }
++
++private def cycleNeighborExpected : EndpointView :=
++  ⟨⟨.complete, [⟨0, 2, "C", [2], [some 1, some 1]⟩,
++      ⟨1, 3, "Empty", [0], []⟩], 4⟩,
++    [], [], [(⟨0, 2, [0]⟩, 1), (⟨0, 2, [1]⟩, 1)], [],
++    [.contribution (.occurrence 0 2 0 0 [0]) 1,
++     .contribution (.occurrence 0 2 0 1 [1]) 1,
++     .publication (.publication 0 2 [0]) 1,
++     .publication (.publication 0 2 [1]) 1]⟩
++
++def P10 : Bool :=
++  endpointIs cycle none cycleExpected &&
++  endpointIs cycle (some 0) cycleExpected &&
++  endpointIs cycleNeighbor none cycleNeighborExpected
++
++private def scalar : SourceSnapshot :=
++  ⟨⟨[.axis e (some 0), .tensor "Input" [], .tensor "Empty" [e], .tensor "S" []],
++      [.assign "S" [] (rhs [[.read "Input" [], .read "Input" []]])], {}, ∅⟩,
++    [⟨1, .input, []⟩, ⟨2, .input, [0]⟩, ⟨3, .output, []⟩],
++    [⟨1, [], [3 / 2]⟩, ⟨2, [0], []⟩]⟩
++
++private def scalarTensors (value : Option Rat) : List TensorObservation :=
++  [⟨0, 1, "Input", [], [some (3 / 2)]⟩, ⟨1, 2, "Empty", [0], []⟩,
++   ⟨2, 3, "S", [], [value]⟩]
++
++private def scalarZeroExpected : EndpointView :=
++  ⟨⟨.exhausted, scalarTensors none, 0⟩, [.occurrence 2 3 0 0 []],
++    [.publication 2 3 []], [(⟨2, 3, []⟩, 0)], [], []⟩
++
++private def scalarOneExpected : EndpointView :=
++  ⟨⟨.exhausted, scalarTensors none, 1⟩, [], [.publication 2 3 []],
++    [(⟨2, 3, []⟩, 9 / 4)], [], [.contribution (.occurrence 2 3 0 0 []) (9 / 4)]⟩
++
++private def scalarCompleteExpected : EndpointView :=
++  ⟨⟨.complete, scalarTensors (some (9 / 4)), 2⟩, [], [],
++    [(⟨2, 3, []⟩, 9 / 4)], [],
++    [.contribution (.occurrence 2 3 0 0 []) (9 / 4),
++     .publication (.publication 2 3 []) (9 / 4)]⟩
++
++private def finiteBudget (snapshot : SourceSnapshot) : Except ObservationError Nat := do
++  let source ← (admitSource snapshot).mapError ObservationError.admission
++  pure (initialBudget (elaborateSource source))
++
++def P11 : Bool :=
++  endpointIs scalar (some 0) scalarZeroExpected &&
++  endpointIs scalar (some 1) scalarOneExpected &&
++  endpointIs scalar none scalarCompleteExpected &&
++  endpointIs scalar (some 2) scalarCompleteExpected &&
++  match finiteBudget scalar with
++  | .error _ => false
++  | .ok budget => budget == 3
++
++private def boundaries : SourceSnapshot :=
++  { snapshot with
++    resolved := { snapshot.resolved with
++      decls := decls ++ [.tensor "Scalar" [], .tensor "ZeroOut" [e],
++        .tensor "Unwritten" [i], .tensor "EmptyContract" [i]]
++      stmts :=
++        [.assign "Diagonal" [.free i, .free i] (rhs [[]]),
++         .assign "Scalar" [] (rhs [[]]),
++         .assign "ZeroOut" [.free e] (rhs [[]]),
++         .assign "EmptyContract" [.free i] (rhs [[.read "Empty" [.axis e]]]),
++         .assign "Y" [.free i] (rhs [[.read "Diagonal" [.axis i, .axis i]]])] }
++    specs := specs ++ [⟨8, .defined, []⟩, ⟨9, .output, [0]⟩,
++      ⟨10, .defined, [2]⟩, ⟨11, .defined, [2]⟩] }
++
++private def boundaryKeys : List KeyView :=
++  [.occurrence 2 5 4 0 [0], .occurrence 2 5 4 1 [1],
++   .occurrence 4 7 0 0 [0, 0], .occurrence 4 7 0 1 [1, 1],
++   .occurrence 5 8 1 0 [],
++   .occurrence 8 11 3 0 [0], .occurrence 8 11 3 1 [1],
++   .publication 2 5 [0], .publication 2 5 [1],
++   .publication 4 7 [0, 0], .publication 4 7 [0, 1],
++   .publication 4 7 [1, 0], .publication 4 7 [1, 1],
++   .publication 5 8 [], .publication 7 10 [0], .publication 7 10 [1],
++   .publication 8 11 [0], .publication 8 11 [1]]
++
++private def scheduleRows (snapshot : SourceSnapshot) :
++    Except ObservationError (List Nat × List KeyView × List Bool) := do
++  let source ← (admitSource snapshot).mapError ObservationError.admission
++  pure ((sourceSchedule source).tensors.map Fin.val,
++    (sourceSchedule source).keys.map (keyView source),
++    (sourceTensors source).map fun t => (sourceInputBinding source t).isSome)
++
++private def boundaryTensors : List TensorObservation :=
++  [⟨0, 3, "A", [2, 3], [1, 2, 3, 4, 5, 6].map some⟩,
++   ⟨1, 4, "B", [2], [some 10, some 20]⟩,
++   ⟨2, 5, "Y", [2], [some 1, some 1]⟩,
++   ⟨3, 6, "Empty", [0], []⟩,
++   ⟨4, 7, "Diagonal", [2, 2], [some 1, some 0, some 0, some 1]⟩,
++   ⟨5, 8, "Scalar", [], [some 1]⟩, ⟨6, 9, "ZeroOut", [0], []⟩,
++   ⟨7, 10, "Unwritten", [2], [some 0, some 0]⟩,
++   ⟨8, 11, "EmptyContract", [2], [some 0, some 0]⟩]
++
++def P12 : Bool :=
++  (match scheduleRows boundaries with
++   | .error _ => false
++   | .ok (tensors, keys, presence) =>
++     tensors == List.range 9 && keys == boundaryKeys &&
++     decide keys.Nodup &&
++     presence == [true, true, false, true, false, false, false, false, false]) &&
++  match endpoint boundaries with
++  | .error _ => false
++  | .ok actual =>
++    actual.observation == ⟨.complete, boundaryTensors, 18⟩ &&
++    actual.pending == [] && actual.unpublished == [] && actual.reads == [] &&
++    actual.events.filterMap (fun event => match event with
++      | .publication key value => some (key, value)
++      | .contribution .. | .undefined .. => none) ==
++      [(.publication 4 7 [0, 0], 1), (.publication 2 5 [0], 1),
++       (.publication 4 7 [0, 1], 0), (.publication 4 7 [1, 0], 0),
++       (.publication 4 7 [1, 1], 1), (.publication 2 5 [1], 1),
++       (.publication 5 8 [], 1),
++       (.publication 7 10 [0], 0), (.publication 7 10 [1], 0),
++       (.publication 8 11 [0], 0), (.publication 8 11 [1], 0)]
++
++private theorem boundaryKeys_nodup (source : AdmittedSource)
++    (_admitted : admitSource boundaries = .ok source) :
++    (sourceSchedule source).keys.Nodup :=
++  (sourceSchedule source).keys_nodup
++
++private theorem boundaryKeys_complete (source : AdmittedSource)
++    (_admitted : admitSource boundaries = .ok source)
++    (key : Key (elaborateSource source)) : key ∈ (sourceSchedule source).keys :=
++  (sourceSchedule source).keys_complete key
++
++private theorem boundaryTensors_nodup (source : AdmittedSource)
++    (_admitted : admitSource boundaries = .ok source) :
++    (sourceSchedule source).tensors.Nodup :=
++  (sourceSchedule source).tensors_nodup
++
++private theorem boundaryTensors_complete (source : AdmittedSource)
++    (_admitted : admitSource boundaries = .ok source)
++    (t : source.source.table.declarations.Tensor) :
++    t ∈ (sourceSchedule source).tensors :=
++  (sourceSchedule source).tensors_complete t
++
++private theorem boundaryCoordinates_nodup (source : AdmittedSource)
++    (_admitted : admitSource boundaries = .ok source)
++    (t : (elaborateSource source).Defined) :
++    (sourceCoordinates source t).Nodup :=
++  sourceCoordinates_nodup source t
++
++private theorem boundaryCoordinates_complete (source : AdmittedSource)
++    (_admitted : admitSource boundaries = .ok source)
++    (t : (elaborateSource source).Defined)
++    (p : Coord (source.source.table.declarations.signature t.val).axes) :
++    p ∈ sourceCoordinates source t :=
++  sourceCoordinates_complete source t p
++
++private theorem scalarDefault_not_exhausted (source : AdmittedSource)
++    (_admitted : admitSource scalar = .ok source) :
++    (run (elaborateSource source) RationalReference.ops (sourceSchedule source)
++      (sourceInput source)).outcome.isExhausted = false :=
++  runSource_not_exhausted source
++
++#eval endpoint cycle
++#eval endpoint cycleNeighbor
++#eval endpoint scalar (some 0)
++#eval endpoint scalar (some 1)
++#eval endpoint scalar
++#eval finiteBudget scalar
++#eval scheduleRows boundaries
++#eval endpoint boundaries
++#eval (P10, P11, P12)
++#guard P10
++#guard P11
++#guard P12
++
++#print axioms boundaryKeys_nodup
++#print axioms boundaryKeys_complete
++#print axioms boundaryTensors_nodup
++#print axioms boundaryTensors_complete
++#print axioms boundaryCoordinates_nodup
++#print axioms boundaryCoordinates_complete
++#print axioms scalarDefault_not_exhausted
++
++end SourceProgramOutcomesTest
+diff --git a/leanncd/test/Semantics/SourceProgramTest.lean b/leanncd/test/Semantics/SourceProgramTest.lean
+new file mode 100644
+index 00000000..a6c47a8b
+--- /dev/null
++++ b/leanncd/test/Semantics/SourceProgramTest.lean
+@@ -0,0 +1,4 @@
++import Semantics.SourceProgramIdentityTest
++import Semantics.SourceProgramCollectionTest
++import Semantics.SourceProgramGeometryTest
++import Semantics.SourceProgramOutcomesTest
+diff --git a/papers/semantics/source_correspondence_mutations_post.json b/papers/semantics/source_correspondence_mutations_post.json
+index 4f77a3d9..4303b0b4 100644
+--- a/papers/semantics/source_correspondence_mutations_post.json
++++ b/papers/semantics/source_correspondence_mutations_post.json
+@@ -167,5 +167,88 @@
+       "match A16 with",
+       "did not evaluate to `true`"
+     ]
++  },
++  {
++    "label": "T3-P1 first-statement single-target role shortcut",
++    "task": "T3",
++    "file": "LeanNCD/Semantics/Source/Program.lean",
++    "old": "def AdmittedSource.isInput (source : AdmittedSource) (t : source.source.table.declarations.Tensor) :\n    Bool :=\n  decide ((source.source.table.entry t).role = .input)",
++    "new": "def AdmittedSource.isInput (source : AdmittedSource) (t : source.source.table.declarations.Tensor) :\n    Bool :=\n  match source.statements.head? with\n  | some statement => decide (t \u2260 statement.output.tensor)\n  | none => true",
++    "targets": [
++      "+Semantics.SourceProgramIdentityTest"
++    ],
++    "expect": [
++      "\u00ac(source.source.table.entry t).role = TensorRole.input",
++      "unsolved goals"
++    ]
++  },
++  {
++    "label": "T3-P3 attached original tag overwritten by permuted ordinal",
++    "task": "T3",
++    "file": "LeanNCD/Semantics/Source/Permutation.lean",
++    "old": "  statements := List.ofFn (fun i => source.statements.get (e i))",
++    "new": "  statements := List.ofFn (fun i => { (source.statements.get (e i)) with original := i.val })",
++    "targets": [
++      "+Semantics.SourceProgramIdentityTest"
++    ],
++    "expect": [
++      "{ original := \u2191i, output := source.statements[\u2191(e \u27e8\u2191i, \u22ef\u27e9)].output",
++      "unsolved goals"
++    ]
++  },
++  {
++    "label": "T3-P4 (deduplicate original occurrences by output and ordered operand signature)",
++    "task": "T3",
++    "file": "LeanNCD/Semantics/Source/Program.lean",
++    "old": "  (List.finRange source.statements.length).filterMap fun i =>\n    if h : (source.statements.get i).output.tensor = t then some \u27e8i, h\u27e9 else none",
++    "new": "  (List.finRange source.statements.length).filterMap fun i =>\n    if h : (source.statements.get i).output.tensor = t then\n      if (source.statements.take i.val).any (fun prior =>\n        prior.output.tensor.val == t.val &&\n        prior.output.indices == (source.statements.get i).output.indices &&\n        prior.terms.map (fun term => term.sourceReads.map\n          (fun read => (read.read.tensor.val, read.indices))) ==\n          (source.statements.get i).terms.map (fun term => term.sourceReads.map\n            (fun read => (read.read.tensor.val, read.indices)))) then none\n      else some \u27e8i, h\u27e9\n    else none",
++    "targets": [
++      "+Semantics.SourceProgramCollectionTest"
++    ],
++    "expect": [
++      "List.take (\u2191i) source.statements",
++      "dif_pos h"
++    ]
++  },
++  {
++    "label": "T3-P5 (omit publications for nonoutput defined tensors)",
++    "task": "T3",
++    "file": "LeanNCD/Semantics/Source/Schedule.lean",
++    "old": "  ((sourceDefined source).sigma (sourceCoordinates source)).map fun x => .publication x.1 x.2",
++    "new": "  (((sourceDefined source).sigma (sourceCoordinates source)).filter\n    (fun x => (elaborateSource source).output x.1.val)).map fun x => .publication x.1 x.2",
++    "targets": [
++      "+Semantics.SourceProgramCollectionTest"
++    ],
++    "expect": [
++      "\u27e8t, p\u27e9 \u2208\n    List.filter (fun x => (elaborateSource source).output \u2191x.fst)"
++    ]
++  },
++  {
++    "label": "T3-P6 (omit the entire coordinate domain of tensors without statements)",
++    "task": "T3",
++    "file": "LeanNCD/Semantics/Source/Schedule.lean",
++    "old": "  let layout := canonicalLayout (source.source.table.declarations.signature t.val).axes\n  (List.finRange layout.count).map layout.enumerate",
++    "new": "  let layout := canonicalLayout (source.source.table.declarations.signature t.val).axes\n  if (elaborateSource source).statements t = 0 then []\n  else (List.finRange layout.count).map layout.enumerate",
++    "targets": [
++      "+Semantics.SourceProgramCollectionTest"
++    ],
++    "expect": [
++      "\u22a2 p \u2208 sourceCoordinates source t"
++    ]
++  },
++  {
++    "label": "T3-P9 exact nested read footprint loses all inner reads",
++    "task": "T3",
++    "file": "LeanNCD/Semantics/Source/Statement.lean",
++    "old": "    (List.finRange a.extent).flatMap fun i => reductionReads rest (fun p => reads (i, p))",
++    "new": "    if rest.isEmpty then\n      (List.finRange a.extent).flatMap fun i => reductionReads rest (fun p => reads (i, p))\n    else []",
++    "targets": [
++      "+Semantics.SourceProgramGeometryTest"
++    ],
++    "expect": [
++      "footprint (contract rest reads",
++      "if rest.isEmpty = true then",
++      "else []"
++    ]
+   }
+ ]
+diff --git a/papers/semantics/source_correspondence_plan.md b/papers/semantics/source_correspondence_plan.md
+index 71f5c01e..5d1d437e 100644
+--- a/papers/semantics/source_correspondence_plan.md
++++ b/papers/semantics/source_correspondence_plan.md
+@@ -9,19 +9,17 @@ UID-based source elaboration, pure-einsum correspondence, source-linked
+ diagnostics, and differential tests for bounded scalar read sum-products.
+ 
+ **Do not dispatch implementation from this document yet.** Readiness rehearsal
+-is authorized and in progress: T1 and T2 fixtures, their twelve planned
++is authorized and in progress: T1-T3 fixtures, their eighteen planned
+ implementation kills, and per-task reviews pass. T2 also has three verified
+ Direct acceptance regression families and hand checks. Full readiness evidence
+ for the following seams remains incomplete:
+ 
+-- General multi-tensor elaboration, tag-preserving statement permutation, and
+-  complete computational source-generated schedules.
+ - Generalized actual normalized-body/global-fiber correspondence and its
+   connection to source-generated complete executions.
+ - Public diagnostic/differential APIs, independent input packing/oracle tests,
+   the exact production numerical profile, and implementation-mutation kills.
+ 
+-T1/T2's completed receipts and T3's production phase are tracked in the
++T1-T3's completed receipts are tracked in the
+ [record](source_correspondence_record.md). The fresh
+ [T1 rehearsal patch](source_correspondence_readiness_patches/0001-uid-binding.patch)
+ is a reviewed checkpoint, not a complete execution-ready patch series.
+@@ -302,8 +300,9 @@ independence theorem. Arbitrary rational core runs remain available.
+ All paths in this section are repository-relative. Existing donor/core/production
+ paths are checked in the planning tree. `Source.Context`, `Source.Adapter`,
+ `Source.Admission`, the generic `Source.Lowering` donor, and the binding fixtures
+-now exist in the rehearsal tree. Generalized Program/schedule/correspondence,
+-diagnostic/differential modules and the remaining fixture families are still
++now exist in the rehearsal tree, along with general Program/schedule,
++provenance/permutation modules and an independent oracle. Generalized
++correspondence, diagnostic/differential modules and the remaining fixture families are still
+ **future outputs**, not completed by the seed patches.
+ Production DSL/Eval files are read-only donors, not mutation targets.
+ 
+@@ -317,7 +316,7 @@ Production DSL/Eval files are read-only donors, not mutation targets.
+ | T6 corpus/review/docs | T1, T2, T3, T4, T5 | Deterministic corpus; implementation cycles; integrated review/docs | 18 / 9 | High; corpus bundles then integration |
+ 
+ Planned totals: **79 named fixture entrypoints and 39 implementation-mutation
+-cycles**. T1/T2's 26 planned entrypoints and twelve cycles have observed receipts
++cycles**. T1-T3's 38 planned entrypoints and eighteen cycles have observed receipts
+ in the record, along with three supplemental Direct acceptance families/hand
+ checks. The remaining work is not counted as verified. F16 additionally expands exactly 18 generated cases.
+ These counts do not include the six completed fixture-input contrasts.
+diff --git a/papers/semantics/source_correspondence_record.md b/papers/semantics/source_correspondence_record.md
+index 4ce4e4fc..825f41f8 100644
+--- a/papers/semantics/source_correspondence_record.md
++++ b/papers/semantics/source_correspondence_record.md
+@@ -343,3 +343,52 @@ to the 39-cycle post manifest. The targeted re-review confirms both HIGH
+ findings fixed with no new significant tightly coupled issue or narrowing.
+ T2's gate is cleared and T3 production lowering has started. The final whole
+ post-manifest rerun on the integrated corrected tree is still required.
++
++### T3 readiness checkpoint
++
++General normalized multi-target Programs, computational complete schedules,
++validated exact execution, automatically certified original identities, and
++tag-preserving statement permutations are implemented. Actual body and ordered
++read-footprint proofs preserve term-local binders and multiplicity. Permutation
++collection uses `Program.collect_relabel`; whole-store model invariance does
++not assert event-order invariance. No production DSL/Eval changes were needed.
++
++All **12** P entrypoints passed the controller aggregate: **8,521 jobs**.
++P1/P5/P9 compare actual complete reference runs with the independent exact
++oracle, including shapes and every tensor cell. P2/P3 check nonzero original
++ordinals, both provenance inverses, permutation-stable UID assignments, and
++different event presentations. P4 retains identical additive occurrences;
++P5/P6 publish nonoutputs and full unwritten domains. P7-P9 check unequal
++layouts, complete key coverage, unused/empty input presence, and exact nested
++ordered read footprints. P10-P12 retain actual blocked/exhausted snapshots
++and scalar/empty/repeated-slot full publication domains.
++
++Six T3 post cycles passed observed expectations, byte-identical restoration,
++and restored builds. All are **proof-protected implementation kills**:
++role-derived definedness, original-ID preservation, tagged occurrence coverage,
++nonoutput publication coverage, unwritten coordinate coverage, and exact
++nested footprint correspondence. The first proposed P9 mutation changed
++scalar interpretation as well as reads; it was not counted for the footprint
++requirement. The counted mutation changes `reductionReads` and is rejected
++by `footprint_contract`'s equality with the actual expression footprint.
++The post manifest now has **18 of 39** planned cycles; **38 of 79** planned
++fixture entrypoints have verified receipts, plus the supplemental acceptance
++and independent-oracle families.
++
++The T3 per-task review is clean. General global-fiber correspondence remains
++T4 work, and source-linked diagnostics/four-leg comparison remains T5 work.
++Oracle full-cell fiber rows are not actual occurrence tags: repeated-slot
++offdiagonal cells have no occurrence, while valid zero-contraction output
++assignments do. T5 must normalize that distinction independently.
++
++Budget limitation: the provenance worker reported approximately 59 rounds
++after its helper follow-up, followed by additional coordination replies.
++This may exceed the approximate 60-turn cap; exact telemetry is unavailable.
++It was retired without further work. Later draft bundles use controller-only
++build coordination to avoid acknowledgement churn.
++
++Execution interruption: work stopped after the 2026-10-08 evening status
++reply; no background work continued overnight. The earlier statement that
++work was continuing was inaccurate. On 2026-10-09 the controller resumed,
++ran T3's actual mutation gates, and completed the synchronous per-task review.
++No commit, local integration, or remote operation has occurred.

@@ -1,0 +1,76 @@
+FINALWHOLEBRANCH lens2 review checkpoint
+Base: d0f8462
+Immutable tree: 3d057e1f9a0894dd7318ba28fae50b7d89dc8015
+Evidence: source-correspondence-review-snapshot only; immutable git diff --stat.
+No current worktree code read, builds, mutations, delegation, or production edits.
+
+Reviewed so far:
+- Independent Oracle: raw read/output UID support, Cartesian enumeration,
+  checked row-major lookup, full defined tensors, original dependency order.
+- NativeLegs: independent bounded-integer input bits, actual legacy and
+  checked compile/prepare/run entrypoints, identity refusals, output structures.
+- NumericalProfile: receipt shape/source-read linking, subset-product and
+  absolute-addition bounds, inputs, exact core events/accumulators, integer bits.
+- Differential / Observation / Diagnostics: actual validated run retention,
+  canonical original-statement/UID keys, full-cell normalization, strict
+  four-leg classification, structure-before-cell comparison, unobserved hooks.
+- Oracle and differential geometry/numerical/corpus fixtures.
+
+No high-confidence issue identified yet. Review remains in progress:
+diagnostic fixtures, remaining differential fixtures, docs and manifest receipt
+status, and immediate production-backend integration context.
+
+Controller whole-manifest exact expectation / restoration gate is RUNNING;
+full build and fresh ordered replay are pending per the supplied evidence.
+These have not been run or independently verified by this reviewer.
+Budget: below 45 review turns so far; exact cumulative token telemetry unavailable.
+
+FINAL REVIEW RESULT
+Whole-branch lens2 CLEAN for immutable tree
+3d057e1f9a0894dd7318ba28fae50b7d89dc8015 against base d0f8462.
+No significant issues found in the reviewed changes.
+
+Completed remaining lens2 scope:
+- All diagnostic and differential fixture families, including original-source
+  f32 failures, required diagonal writes and duplicate terms, distinct generated
+  programs, asymmetric transpose/packing, full output structure before cells,
+  canonical differing coordinates, signed-zero bits, warnings and phase causes.
+- Immediate unchanged production entrypoints and scalar fold integration.
+  Diagonal assignments are actually lowered to scatters, not passed to the
+  plain repeated-slot evaluator. Native scalar folds multiply factors, reduce
+  each term, then combine terms; the profile's subset and absolute bounds cover
+  these without assuming a Float semiring or a schedule-independence theorem.
+- Runtime profile receipt coverage: all declarations/full tensor buffers,
+  original statement/cell rows and ordered terms/reads, bounded unique complete
+  assignment fibers, original source read coordinates/values, intermediate
+  envelopes, exact validated core contribution/publication/accumulator values.
+- Public source umbrella, default test registration, integrated plan/record/
+  roadmap status, and all 39 post-manifest entries.
+
+Read-only static manifest check observed:
+39 entries and 39 unique labels; task counts T1=4, T2=8, T3=6, T4=4, T5=8, T6=9;
+every target/expect list nonempty; every old replacement matches exactly once
+in the immutable snapshot; no production DSL/Eval mutation target.
+The 18 proof-protected versus 21 executable-fixture distinction is consistent
+with the manifest and task records. This is not fresh mutation execution.
+
+F16 checks exactly two scalar plus sixteen rank/extent/factor configurations
+with distinct declaration and statement ASTs. Explicit rejections remain
+rejections, not four-leg samples. F18 is resolved-source reference evidence,
+not a raw-parser expressibility claim. D3/D13 and output/warning/signed-zero
+injections remain protocol observations, not actual backend-fault or reached
+source-failure receipts. NoModel is not inferred from blocking/unavailability.
+
+Limitations / controller gates:
+No build, mutation, full-manifest replay, ordered patch replay, or current
+worktree/main inspection was performed by this reviewer. New readiness patch
+artifacts were deliberately excluded and not reviewed. Per the supplied
+controller status, whole-manifest exact-expect/byte-restoration/restored-green
+verification was RUNNING, and the full build/fresh ordered replay were pending.
+This clean review does not mark any of those gates completed or authorize
+claiming execution readiness. Lens1 admission/proof review is separate.
+
+Budget: completed below the requested 45-turn cap; no observed budget breach.
+Exact cumulative-input and peak-context telemetry is unavailable, not zero.
+Only this explicitly requested session finding artifact was written; no code,
+snapshot, git state, or shared checkout was modified.

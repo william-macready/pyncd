@@ -1,0 +1,162 @@
+T2 production admission case x class audit
+2026-10-08; baseline d0f8462; no production DSL/Eval changes.
+
+R = required/checked by the named entry; F = explicitly forbidden/refused;
+I = silently ignored by that donor/production entry, INCLUDING requirements
+delegated to its caller. Mixed cells state the distinctions. No I cell is an
+authority for admission in the new public admitSource/admitRawSource pipeline.
+
+Columns:
+Ref = T1 resolveRef; Slots = T1 resolveSlots;
+Read/Term/Output/Pure = seed patch2 admitRead/admitTerm/admitOutput/admitPure;
+Struct = assignUIDs + resolveDecls + declaredAxisSizes;
+Gather = production gatherRead; Sig = production checked input signatures.
+
+case/class                 Ref       Slots     Read      Term      Output    Pure      Struct    Gather    Sig
+unique pinned axes         I         I         I         R unique  R unique  R unique  I pins    I         I pins
+tensor declarations        I         I         I typed   I typed   I typed   I typed   R/F dup   I env     R/F dup
+binders/term support       I         I         I         R explicit I        R pure    I         I         I
+output slots              I         I         I         I         R domain  R         I         I         I
+read slots                R domain  R rank    R         R         I         R         I bounds  I rank    I reads
+roles                     I         I         I         I         I         I         I ext     I         I ext
+all declared inputs       I         I         I         I         I         I         I unused  I unused  I unused
+input shape then length   I         I         I         I         I         I         I         I zip     R shape/I length
+AST fragment membership   I         I         I erased  I erased  I erased  I erased  I accepted I accepts I
+original provenance       I         I         I         I         I         I         R order/I IDs I      I
+
+Evidence and qualifications:
+- resolveRef checks UID binding and equality of the full extent, not names or
+  overlap. It has no axis declaration kind, pinning, uniqueness, role, or AST.
+  resolveSlots retains repeats and checks common-prefix domains before its
+  remaining-rank error; it silently lacks total rank/provenance in that error.
+- Seed Read delegates to Slots over already typed tensors and erased UID lists.
+  Seed Term checks out++bound uniqueness and every supplied bound UID is read,
+  but accepts a caller's partition; no automatic exact coverage/order proof.
+  Seed Output checks UID-set equality against supplied out, then full slots;
+  it does not derive first-slot enumeration or retain source IDs.
+  Seed Pure requires output UIDs read and forbids empty operands, incorrectly
+  excluding the scalar empty identity case for the intended AST fragment.
+  Every generic entry delegates declarations, roles, bindings and syntax.
+- Struct intentionally resolves RAW axes by display NAME once; resolved axis
+  UIDs must not be reminted. resolveDecls preserves declaration/statement order,
+  rejects duplicate tensor names and all complex element types, but accepts
+  undeclared reads/targets, predicates, linear tensors, nonlinearities and scans.
+  declaredAxisSizes overwrites duplicate axis UIDs and omits unpinned axes.
+  extNames excludes unused/empty inputs and cannot specify roles.
+- Gather computes affine/constant coordinates, substitutes 0 for missing UID
+  lookups, checks zipped source extents, and zero-pads out-of-bounds coordinates.
+  It does not check exact rank, full slot domains, declarations, roles or all
+  input presence. Its env is keyed by tensor name, not semantic axis identity.
+- ofDenseInputs assigns f64 based on the Float carrier. Declaration-aware
+  ofDenseInputsForDecls/32ForDecls reject complex/duplicate declarations and
+  wrong carriers and preserve the declared dtype; they record supplied full
+  shape, but do not establish unused declared input presence, buffer length,
+  finite pinned axis contexts, semantic roles, support, syntax or provenance.
+  Downstream production shape inference is not semantic domain admission.
+
+Disposition of every I cell, by semantic class:
+1. Axis declarations: Adapter.checkAxes visits all declarations, rejects
+   duplicate resolved UID even if equal sizes, unpinned and iter axes.
+   Finite pinned nat AND real axes are accepted for bare free/read slots.
+   sourceAxis binds all referenced/declaration slots by already resolved UID
+   to the full pinned domain, without requiring nat-kind use metadata.
+   Parsed raw programs retain real-kind placeholders; assignUIDs+resolveDecls
+   is still the sole raw resolution seam. No resolved UID or AST kind changes.
+   checkContext protects unique enumeration. Resolved input never assignUIDs.
+2. Tensor declarations: tensorDecl exhaustively handles all Decl constructors.
+   Predicate/complex are refused even unused. Real linear/typedLinear share
+   tensor/typedTensor admission, including both bias flags for ordinary reads;
+   production gatherRead reads supplied tensor values without inserting bias.
+   Untyped tensor/linear preserve f32; explicit f32/f64 preserve their metadata.
+   This rational core allows arbitrary rational values, not Float parity.
+   checkTable rejects duplicate tensor
+   names, duplicate/missing/extraneous specs, unbound declaration axes, exact
+   full logical shape disagreement. Names bind TENSORS only. Tensor := Fin
+   declaration-order entries, uid := Fin.val (proved injective); each entry
+   records its original mixed declaration ordinal. Axis identity remains UID.
+3. Binders/support: admitTerm validates reads in the source context FIRST.
+   supportPartition computes only that term's read-minus-output support via
+   source-context ordered filter, rejects unbound requested support, and builds
+   unique out++bound with an identity UID/domain embedding. No explicit-partition
+   API is the AST admission entry. disjoint/exactSupport/coverage are proofs;
+   Term.support_reads/support_bound and LocalizedRead keep linked typed reads.
+4. Output slots: only free slots accepted. Marked/iterAt/iterNext/affine refused
+   at original slot. admitOutput checks exact domains/rank, computes distinct
+   output UIDs in first-slot order, retains FULL repeated destination slots and
+   source slots, and proves order and global projection preservation.
+5. Read slots: only bare .axis accepted. Const/scale/shift/affine refused at
+   original slot. admitRead wraps T1 resolveRef and constructs T1 Slots with
+   a proved UID-list link; exact domains, total rank and original slot are
+   reported. Repeated slots are legal. strictPolicy, not Gather, supplies reads.
+   LocalizedRead.projection/Term.read_projection preserve global UID projection.
+6. Roles: explicit TensorSpec role is authoritative, never env/extNames.
+   Binding a declared defined/output tensor as input fails role .input actual.
+   Writing an input fails role .defined .input. Defined/output writes allowed;
+   multiple definitions stay distinct and producerless defined tensors are not
+   silently promoted to inputs. No acyclicity/progress promise at this stage.
+7. Inputs: checkInputs rejects duplicate/unknown/noninput binding identities.
+   inputBuffers traverses EVERY declared tensor in stable declaration order.
+   CheckedInputs.buffers is TOTAL on declared input tensors, including zero
+   domains, so T3 need not run another presence checker.
+8. Shape/length: TensorSpec.shape and InputBinding.shape are full logical
+   ordered extent lists, not physical/overlapping/prefix domains. Exact input
+   shape is checked BEFORE exact canonicalLayout.count length. InputBuffer
+   stores length proof and exposes canonical-coordinate rational value access.
+   Dtype metadata is preserved; this is rational semantics, not float parity.
+9. AST forms: admitStatement exhaustively refuses scatter/recurMorphism,
+   non-sum aggregation and nonidentity nonlinearities. outputIndices,
+   readIndices and astRead exhaustively refuse marked/scan/affine, Iverson and
+   unary factors. No constructor is dropped. Empty sums/products are legal;
+   admitPure classifies, rather than rejecting legal broadcasting/empty terms.
+10. Provenance: adaptSource attaches statement zipIdx BEFORE grouping (none in
+    T2); term/factor/slot ordinals are attached inside original statements.
+    Known tensor references record original declaration ordinal. Unsupported
+    tensor-less forms carry declaration none, never an unrelated destination.
+    Raw resolver duplicate/complex failures recover original declaration index
+    from the unchanged raw order; other resolution failures remain program-level
+    with the actual typed CompileError. No AST spans exist or are fabricated.
+
+Validation order (documented first-error contract):
+Resolved: axis declarations in declaration order; spec duplicate identities;
+tensor declarations/signatures in declaration order; extraneous specs;
+binding duplicate/identity/role checks in supplied binding order; every input
+in tensor declaration order (shape before length); statements in original
+order (constructor, aggregation, nonlinearity, target binding/role, output
+syntax/UID, output domains/rank, terms/factors/read syntax/UID,
+then read domains/rank and per-term support).
+For valid bare slots, common slot domains are checked left to right BEFORE
+total rank at the first unmatched slot. Syntax/binding preflight precedes
+this domain pass. Domain expected = declared tensor slot extent; actual =
+resolved slot UID extent. Rank expected/actual = FULL tensor/slot list lengths.
+Raw: production assignUIDs+resolveDecls precede all these checks, intentionally
+retaining production resolution error precedence and typed errors.
+
+Observed smoke pins:
+Read A declared [2,3], slots [k(domain3)] violates domain AND rank:
+  .read/.domain uid3 expected2 actual3, original stmt0/term0/factor0/slot0,
+  tensor original declaration3; rank is not reported first.
+Read A with [i(domain2)] reports total rank2/1 at original slot1.
+Input A shape [3,2] with zero values violates shape AND length:
+  .inputs/.shape [2,3] [3,2], original declaration3.
+Missing unused Empty input (domain0, buffer[]) is missingInput6, not accepted
+  merely because no address exists.
+
+Audit status: no unresolved silently-ignored cell in public AST admission.
+Not claimed: A1-A18 fixture bundles/mutations, general lowering/schedules,
+independent oracle or production numerical equivalence (separate dispatches).
+
+Direct acceptance correction (two HIGH T2 review findings):
+Clause 1 corrected the unsupported nat-only declaration/use-site constraints.
+Clause 2 corrected blanket real linear/typedLinear declaration refusal; both
+bias flags have the same supplied-value plain-read semantics. Complex linear
+declarations still fail explicitly. Validation-order prose no longer promises
+a bare-slot kind guard. Other clauses, full-domain equality, slot ordering,
+roles, presence and provenance are unchanged.
+SourceAdmissionAcceptanceTest exports FinitePinnedRealCopy, ParsedRawNatCopy,
+RealLinearSumProduct. All three observed RED before production changes, then
+GREEN; exact dtype/original declaration/input values/read origins and nearest
+forbidden controls are #guard assertions. Registered acceptance and existing
+SourceAdmissionTest targets passed together (8519 jobs, exit 0).
+Three separate HAND CHECK proposals are in source-t2-acceptance-hand-candidates.json.
+They have not been executed or added to the post-manifest. This is NOT a clean
+T2 review or whole-slice readiness claim; controller follow-up remains required.

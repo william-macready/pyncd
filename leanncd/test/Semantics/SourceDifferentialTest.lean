@@ -1,0 +1,6 @@
+import Semantics.SourceDifferentialAlgebraTest
+import Semantics.SourceDifferentialGeometryTest
+import Semantics.SourceDifferentialIdentityTest
+import Semantics.SourceDifferentialNumericalTest
+import Semantics.SourceDifferentialPolicyTest
+import Semantics.SourceDifferentialCorpusTest

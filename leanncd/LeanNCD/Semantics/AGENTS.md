@@ -19,8 +19,9 @@ initialization, including empty inputs, and returns the first offending tensor.
 blocking, but not ready undefinedness. Outcomes retain endpoints, legal typed
 event traces, and unavailable-read diagnostics. Model/uniqueness/denotation
 theorems concern the whole store, not only outputs. `RationalReference` offers
-exact rational scalar operations and the closed reciprocal/square registry;
-source elaboration, rank synthesis, and native floats are not provided.
+exact rational scalar operations and the closed reciprocal/square registry.
+The source layer below adds bounded read-only elaboration; rank synthesis and
+native floats in the semantic core are not provided.
 
 The semantic validation layer `LeanNCD.Semantics` is reachable from `LeanNCD`.
 `Types`, `Expr`, `Interpret`, `Readiness`, and `Completeness` separate typed
@@ -30,6 +31,44 @@ completeness. Default `Tests` includes `Semantics.ExpressionTest`,
 `Semantics.NativeTest`, `Semantics.ContractTest`, `Semantics.CollectionModelTest`,
 `Semantics.ReferenceMachineTest`, `Semantics.RankedMachineTest`, and
 `Semantics.ExecutableReferenceTest`.
+
+`Source.Context` supplies UID-keyed dependent valuations, coordinate
+equivalences, full-domain index pullbacks, and generated-only alpha transport.
+Requested generated identities are honored when fresh and injective; a collision
+or duplicate target freshens the whole generated group, leaving protected
+identities fixed. `Semantics.SourceBindingTest` checks the binding contract in
+the default build.
+`Source.Adapter` / `Source.Admission` admit resolved snapshots and raw parsed
+programs through the existing resolver, preserving original declaration and
+statement identities. The finite bare-slot fragment accepts pinned nat/real
+axes and real tensor/linear declarations, with explicit roles, all input
+bindings (including unused/empty tensors), exact domains and shape/lengths,
+and term-local contraction support. `Semantics.SourceAdmissionTest` includes
+the original admission fixtures and the parsed/real/linear acceptance
+regressions. `Source.Statement` / `Source.Program` lower admitted statements into
+term-local typed expressions and role-based multi-target Programs.
+`Source.Schedule` enumerates every occurrence and full defined publication
+domain, and runs the existing validated rational executor with optional debug
+fuel. `Source.Provenance` certifies original-ID inverses from successful
+admission; `Source.Permutation` preserves tagged collection and whole-store
+models, not event order. `Source.Oracle` provides an independent exact
+global-fiber evaluator with explicitly checked fixture dependency order.
+`Semantics.SourceProgramTest` checks actual executor/oracle parity and endpoint
+contracts. `Source.Fiber`, `Source.Correspondence`, and
+`Source.ProgramCorrespondence` prove actual normalized-body and Program
+collection agreement with independently specified original-read global fibers.
+Their relevant UID domains exclude unused axes, preserve term-local contractions
+and repeated destinations, and connect reached rational execution to whole-store
+global equations. `Semantics.SourceCorrespondenceTest` specializes the generic
+proofs to Nat and Rat. `Source.Observation` / `Source.Diagnostics` expose actual
+source-linked endpoints and canonical contribution data. `Source.NumericalProfile`
+checks the exact bounded-integer binary64 comparison profile;
+`Source.NativeLegs` preserves actual legacy/checked phase causes and warnings.
+`Source.compareSource` / `Source.renderSourceComparison` compose and render the
+four differential legs with explicit refusals and evidence-limited localization.
+`Semantics.SourceDiagnosticTest` pins payloads, ordering, and protocol cases.
+The differential corpus and final review gates remain separate; see the
+[source plan](../../../papers/semantics/source_correspondence_plan.md).
 
 `Collection` represents Naperian coordinate families as functions. Pullback
 is contravariant lookup; finite additive pushforward is covariant collection.
@@ -45,8 +84,8 @@ nonlinear body primitives do not acquire sum-preservation laws.
 This is semantic validation, not an execution-backend replacement. Scalar sorts and
 carriers are open; operations are data, not assumed machine-float semiring laws.
 Contexts are typed valuation spaces with product extension, not named affine
-syntax. Read admission is explicit; runtime boundary rejection ordering,
-source checking, syntactic substitution, expression reindexing laws, raw writes,
+syntax. Read admission is explicit; general source checking beyond the finite
+read-only fragment, syntactic substitution, expression reindexing laws, raw writes,
 and full categorical/backend interpretation remain deferred.
 See the [implementation plan](../../../papers/semantics/expression_readiness_plan.md)
 and [authoring verification](../../../papers/semantics/expression_readiness_authoring_record.md)
@@ -95,6 +134,7 @@ remains available for standalone checks.
 Read the [plan](../../../papers/semantics/tensor_logic_semantic_core_spike_plan.md)
 and [results](../../../papers/semantics/tensor_logic_semantic_core_spike_record.md)
 before extending that spike. The validation layer covers the admitted
-array/heterogeneous expression fragment, finite additive program models, and
-reference-machine soundness, but not pure-einsum elaboration correctness, cyclic
-solving, general unique-model existence, or complete categorical/backend interpretations.
+array/heterogeneous expression fragment, finite additive program models,
+reference-machine soundness, and bounded read-only pure-einsum correspondence.
+General source-expression elaboration, cyclic solving, general unique-model
+existence, and complete categorical/backend interpretations remain outside it.

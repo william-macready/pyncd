@@ -1,0 +1,1342 @@
+diff --git a/leanncd/AGENTS.md b/leanncd/AGENTS.md
+index ccf8ae6..1cb8473 100644
+--- a/leanncd/AGENTS.md
++++ b/leanncd/AGENTS.md
+@@ -200,6 +200,7 @@ Small subsystems (no dedicated node — each <170 lines, single-file or near it)
+ | Task | Start Here |
+ |------|------------|
+ | Understand overall architecture (two tracks + bridge) | `LeanNCD.lean`'s header doc comment (note: has some stale spots, cross-check against code — see Base/AGENTS.md Pitfalls) |
++| UID-keyed semantic coordinates, index pullbacks, and generated-binder freshness | `LeanNCD/Semantics/Source/Context.lean`, reachable through `LeanNCD`; source admission remains separate |
+ | Check current sorry/proof status authoritatively | `SORRY_INVENTORY.md` (more current than scattered doc comments) |
+ | Understand the `realize` bridge problem in depth | `realize.md` (companion to `SORRY_INVENTORY.md`) |
+ | Design history / past decisions | `docs/superpowers/plans/`, `docs/superpowers/specs/` |
+@@ -221,8 +222,8 @@ Small subsystems (no dedicated node — each <170 lines, single-file or near it)
+ 
+ Use shared validators and typed diagnostics rather than divergent copies.
+ Read [the detailed patterns](AGENTS_REFERENCE.md#patterns) before changing
+-shared evaluation rules or parity fixtures. The full requirements, examples,
+-and explicit-f64 coverage are preserved there; this summary limits automatic
++shared evaluation rules or parity fixtures. Requirements, examples,
++and explicit-f64 coverage live there to limit automatic
+ context injection. The default element type is binary32 (`f64` is the explicit
+ spelling): see the last bullet there before writing an eval-based test.
+ 
+diff --git a/leanncd/LeanNCD/Semantics.lean b/leanncd/LeanNCD/Semantics.lean
+index 62302bb..aad8fb8 100644
+--- a/leanncd/LeanNCD/Semantics.lean
++++ b/leanncd/LeanNCD/Semantics.lean
+@@ -4,3 +4,4 @@ import LeanNCD.Semantics.Models
+ import LeanNCD.Semantics.Soundness
+ import LeanNCD.Semantics.Progress
+ import LeanNCD.Semantics.RationalReference
++import LeanNCD.Semantics.Source
+diff --git a/leanncd/LeanNCD/Semantics/AGENTS.md b/leanncd/LeanNCD/Semantics/AGENTS.md
+index 9fb29ad..edb23d8 100644
+--- a/leanncd/LeanNCD/Semantics/AGENTS.md
++++ b/leanncd/LeanNCD/Semantics/AGENTS.md
+@@ -31,6 +31,14 @@ completeness. Default `Tests` includes `Semantics.ExpressionTest`,
+ `Semantics.ReferenceMachineTest`, `Semantics.RankedMachineTest`, and
+ `Semantics.ExecutableReferenceTest`.
+ 
++`Source.Context` supplies UID-keyed dependent valuations, coordinate
++equivalences, full-domain index pullbacks, and generated-only alpha transport.
++Requested generated identities are honored when fresh and injective; a collision
++or duplicate target freshens the whole generated group, leaving protected
++identities fixed. `Semantics.SourceBindingTest` checks the binding contract in
++the default build. Source admission and execution are not yet supplied by this
++binding layer; see the [source plan](../../../papers/semantics/source_correspondence_plan.md).
++
+ `Collection` represents Naperian coordinate families as functions. Pullback
+ is contravariant lookup; finite additive pushforward is covariant collection.
+ Identity, composition, zero/add preservation, occurrence relabeling, and
+diff --git a/leanncd/LeanNCD/Semantics/Source.lean b/leanncd/LeanNCD/Semantics/Source.lean
+new file mode 100644
+index 0000000..4395849
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Source.lean
+@@ -0,0 +1 @@
++import LeanNCD.Semantics.Source.Context
+diff --git a/leanncd/LeanNCD/Semantics/Source/Context.lean b/leanncd/LeanNCD/Semantics/Source/Context.lean
+new file mode 100644
+index 0000000..5dc796c
+--- /dev/null
++++ b/leanncd/LeanNCD/Semantics/Source/Context.lean
+@@ -0,0 +1,525 @@
++import LeanNCD.Semantics.Program
++import Mathlib.Data.List.NodupEquivFin
++import Mathlib.Data.List.Dedup
++
++namespace LeanNCD.Semantics.Source
++
++structure Context where
++  axes : Shape
++  unique : (axes.map Axis.uid).Nodup
++
++inductive Ref : Shape → Nat → Type
++  | here {a sh} : Ref (a :: sh) a.extent
++  | there {a sh n} : Ref sh n → Ref (a :: sh) n
++
++def Ref.get : Ref sh n → Coord sh → Fin n
++  | .here, p => p.1
++  | .there i, p => i.get p.2
++
++def Ref.uid : {sh : Shape} → Ref sh n → UID
++  | a :: _, .here => a.uid
++  | _ :: _, .there i => i.uid
++
++inductive Diagnostic
++  | duplicateContext
++  | unbound (uid : UID)
++  | domain (uid : UID) (expected actual : Nat)
++  | rank (expected actual : Nat)
++  | unusedBinder (uid : UID)
++  | outputContext
++  | emptyOperands
++  | outputOnly (uid : UID)
++  deriving Repr, DecidableEq
++
++def checkContext (sh : Shape) : Except Diagnostic {c : Context // c.axes = sh} :=
++  if h : (sh.map Axis.uid).Nodup then .ok ⟨⟨sh, h⟩, rfl⟩ else .error .duplicateContext
++
++def resolveRef : (sh : Shape) → (uid : UID) → (n : Nat) →
++    Except Diagnostic (Ref sh n)
++  | [], uid, _ => .error (.unbound uid)
++  | a :: sh, uid, n =>
++    if a.uid = uid then
++      if h : a.extent = n then .ok (h ▸ Ref.here)
++      else .error (.domain uid n a.extent)
++    else (resolveRef sh uid n).map Ref.there
++
++inductive Slots (ctx : Shape) : Shape → Type
++  | nil : Slots ctx []
++  | cons {a sh} : Ref ctx a.extent → Slots ctx sh → Slots ctx (a :: sh)
++
++def Slots.project : Slots ctx sh → Coord ctx → Coord sh
++  | .nil, _ => ()
++  | .cons i rest, v => (i.get v, rest.project v)
++
++def resolveSlots (ctx : Shape) : (sh : Shape) → List UID →
++    Except Diagnostic (Slots ctx sh)
++  | [], [] => .ok .nil
++  | a :: sh, uid :: ids => do
++      let i ← resolveRef ctx uid a.extent
++      let rest ← resolveSlots ctx sh ids
++      pure (.cons i rest)
++  | sh, ids => .error (.rank sh.length ids.length)
++
++abbrev PositionalVal (sh : Shape) := (i : Fin sh.length) → Fin (sh.get i).extent
++
++def positionalCoordEquiv : (sh : Shape) → PositionalVal sh ≃ Coord sh
++  | [] =>
++    { toFun := fun _ => ()
++      invFun := fun _ i => nomatch i
++      left_inv := by intro v; funext i; exact Fin.elim0 i
++      right_inv := by intro v; cases v; rfl }
++  | _ :: sh =>
++    { toFun := fun v => (v 0, (positionalCoordEquiv sh) (fun i => v i.succ))
++      invFun := fun p => Fin.cases p.1 ((positionalCoordEquiv sh).symm p.2)
++      left_inv := by
++        intro v
++        funext i
++        refine Fin.cases ?_ (fun j => ?_) i
++        · rfl
++        · exact congrFun ((positionalCoordEquiv sh).left_inv (fun i => v i.succ)) j
++      right_inv := by
++        rintro ⟨i, p⟩
++        simp }
++
++abbrev Context.Key (c : Context) := {uid : UID // uid ∈ c.axes.map Axis.uid}
++
++def Context.uidEquiv (c : Context) : Fin c.axes.length ≃ c.Key :=
++  (finCongr (List.length_map ..).symm).trans (c.unique.getEquiv _)
++
++@[simp] theorem Context.uidEquiv_val (c : Context) (i : Fin c.axes.length) :
++    (c.uidEquiv i).val = (c.axes.get i).uid := by
++  simp [Context.uidEquiv, List.get_eq_getElem]
++
++def Context.domain (c : Context) (u : c.Key) : Nat :=
++  (c.axes.get (c.uidEquiv.symm u)).extent
++
++@[simp] theorem Context.domain_uidEquiv (c : Context) (i : Fin c.axes.length) :
++    c.domain (c.uidEquiv i) = (c.axes.get i).extent := by
++  simp [Context.domain]
++
++abbrev UIDVal (c : Context) := (u : c.Key) → Fin (c.domain u)
++
++def uidPositionalEquiv (c : Context) : UIDVal c ≃ PositionalVal c.axes where
++  toFun v i := Fin.cast (c.domain_uidEquiv i) (v (c.uidEquiv i))
++  invFun v u := v (c.uidEquiv.symm u)
++  left_inv := by
++    intro v
++    funext u
++    apply Fin.ext
++    exact congrArg (fun u => (v u).val) (c.uidEquiv.apply_symm_apply u)
++  right_inv := by
++    intro v
++    funext i
++    apply Fin.ext
++    exact congrArg (fun i => (v i).val) (c.uidEquiv.symm_apply_apply i)
++
++def uidCoordEquiv (c : Context) : UIDVal c ≃ Coord c.axes :=
++  (uidPositionalEquiv c).trans (positionalCoordEquiv c.axes)
++
++@[simp] theorem uidCoordEquiv_left (c : Context) (v : UIDVal c) :
++    (uidCoordEquiv c).symm (uidCoordEquiv c v) = v :=
++  (uidCoordEquiv c).symm_apply_apply v
++
++@[simp] theorem uidCoordEquiv_right (c : Context) (p : Coord c.axes) :
++    uidCoordEquiv c ((uidCoordEquiv c).symm p) = p :=
++  (uidCoordEquiv c).apply_symm_apply p
++
++def Ref.index : {sh : Shape} → Ref sh n → Fin sh.length
++  | _ :: _, .here => 0
++  | _ :: _, .there r => r.index.succ
++
++@[simp] theorem Ref.index_uid (r : Ref sh n) : (sh.get r.index).uid = r.uid := by
++  induction r with
++  | here => rfl
++  | there r ih => simpa [Ref.index, Ref.uid, List.get_eq_getElem] using ih
++
++@[simp] theorem Ref.index_extent (r : Ref sh n) : (sh.get r.index).extent = n := by
++  induction r with
++  | here => rfl
++  | there r ih => simpa [Ref.index, List.get_eq_getElem] using ih
++
++def Ref.key (c : Context) (r : Ref c.axes n) : c.Key := c.uidEquiv r.index
++
++@[simp] theorem Ref.key_uid (c : Context) (r : Ref c.axes n) :
++    (r.key c).val = r.uid :=
++  (c.uidEquiv_val r.index).trans r.index_uid
++
++def UIDVal.lookupRef (v : UIDVal c) (r : Ref c.axes n) : Fin n :=
++  Fin.cast ((c.domain_uidEquiv r.index).trans r.index_extent) (v (r.key c))
++
++theorem Ref.get_positionalCoordEquiv (r : Ref sh n) (v : PositionalVal sh) :
++    r.get (positionalCoordEquiv sh v) = Fin.cast r.index_extent (v r.index) := by
++  apply Fin.ext
++  induction r with
++  | here => rfl
++  | there r ih => exact ih (fun i => v i.succ)
++
++theorem Ref.get_uidCoordEquiv (c : Context) (r : Ref c.axes n) (v : UIDVal c) :
++    r.get (uidCoordEquiv c v) = v.lookupRef r := by
++  rw [uidCoordEquiv, Equiv.trans_apply, Ref.get_positionalCoordEquiv]
++  apply Fin.ext
++  rfl
++
++theorem Ref.sameUID_lookup (c : Context) (r : Ref c.axes n) (s : Ref c.axes m)
++    (v : UIDVal c) (h : r.uid = s.uid) :
++    (v.lookupRef r).val = (v.lookupRef s).val := by
++  have hk : r.key c = s.key c := Subtype.ext (by simpa using h)
++  exact congrArg (fun u => (v u).val) hk
++
++structure IndexMap (src dst : Context) where
++  map : src.Key → dst.Key
++  domain : ∀ u, dst.domain (map u) = src.domain u
++
++def indexPullback (m : IndexMap src dst) (v : UIDVal dst) : UIDVal src :=
++  fun u => Fin.cast (m.domain u) (v (m.map u))
++
++def IndexMap.id (c : Context) : IndexMap c c := ⟨fun u => u, fun _ => rfl⟩
++
++def IndexMap.comp (m : IndexMap a b) (n : IndexMap b c) : IndexMap a c :=
++  ⟨fun u => n.map (m.map u), fun u => (n.domain (m.map u)).trans (m.domain u)⟩
++
++@[simp] theorem indexPullback_id (c : Context) (v : UIDVal c) :
++    indexPullback (IndexMap.id c) v = v := rfl
++
++theorem indexPullback_comp (m : IndexMap a b) (n : IndexMap b c) (v : UIDVal c) :
++    indexPullback (m.comp n) v = indexPullback m (indexPullback n v) := by
++  funext u
++  apply Fin.ext
++  rfl
++
++@[simp] theorem indexPullback_lookup (m : IndexMap src dst) (v : UIDVal dst)
++    (u : src.Key) :
++    (indexPullback m v u).val = (v (m.map u)).val := rfl
++
++theorem indexPullback_repeated (m : IndexMap src dst) (v : UIDVal dst)
++    (u w : src.Key) (h : m.map u = m.map w) :
++    (indexPullback m v u).val = (indexPullback m v w).val := by
++  exact congrArg (fun u => (v u).val) h
++
++def resolveUID (c : Context) (uid : UID) (n : Nat) :
++    Except Diagnostic {u : c.Key // u.val = uid ∧ c.domain u = n} :=
++  if h : uid ∈ c.axes.map Axis.uid then
++    let u : c.Key := ⟨uid, h⟩
++    if hd : c.domain u = n then .ok ⟨u, rfl, hd⟩
++    else .error (.domain uid n (c.domain u))
++  else .error (.unbound uid)
++
++private def resolveBindings (dst : Context) (f : UID → UID) :
++    (sh : Shape) → Except Diagnostic
++      ((i : Fin sh.length) → {u : dst.Key //
++        u.val = f (sh.get i).uid ∧ dst.domain u = (sh.get i).extent})
++  | [] => .ok (fun i => nomatch i)
++  | a :: sh => do
++      let u ← resolveUID dst (f a.uid) a.extent
++      let rest ← resolveBindings dst f sh
++      pure (Fin.cases u rest)
++
++def resolveIndexMap (src dst : Context) (f : UID → UID) :
++    Except Diagnostic (IndexMap src dst) := do
++  let bindings ← resolveBindings dst f src.axes
++  pure {
++    map := fun u => (bindings (src.uidEquiv.symm u)).val
++    domain := fun u => (bindings (src.uidEquiv.symm u)).property.2
++  }
++
++theorem resolveIndexMap_uid (src dst : Context) (f : UID → UID)
++    (m : IndexMap src dst) (h : resolveIndexMap src dst f = .ok m) (u : src.Key) :
++    (m.map u).val = f u.val := by
++  have hu : (src.axes.get (src.uidEquiv.symm u)).uid = u.val := by
++    simpa using (src.uidEquiv_val (src.uidEquiv.symm u)).symm
++  cases hb : resolveBindings dst f src.axes with
++  | error e => simp [resolveIndexMap, hb] at h
++  | ok bindings =>
++    simp [resolveIndexMap, hb] at h
++    subst m
++    exact (bindings (src.uidEquiv.symm u)).property.1.trans
++      (congrArg f hu)
++
++structure UIDTransport (src dst : Context) where
++  equiv : src.Key ≃ dst.Key
++  domain : ∀ u, dst.domain (equiv u) = src.domain u
++
++def UIDTransport.indexMap (t : UIDTransport src dst) : IndexMap src dst :=
++  ⟨t.equiv, t.domain⟩
++
++def UIDTransport.valuationEquiv (t : UIDTransport src dst) : UIDVal src ≃ UIDVal dst where
++  toFun v u := Fin.cast (by simpa using (t.domain (t.equiv.symm u)).symm)
++    (v (t.equiv.symm u))
++  invFun := indexPullback t.indexMap
++  left_inv := by
++    intro v
++    funext u
++    apply Fin.ext
++    exact congrArg (fun u => (v u).val) (t.equiv.symm_apply_apply u)
++  right_inv := by
++    intro v
++    funext u
++    apply Fin.ext
++    exact congrArg (fun u => (v u).val) (t.equiv.apply_symm_apply u)
++
++@[simp] theorem UIDTransport.lookup (t : UIDTransport src dst) (v : UIDVal src)
++    (u : src.Key) :
++    (t.valuationEquiv v (t.equiv u)).val = (v u).val := by
++  exact congrArg (fun u => (v u).val) (t.equiv.symm_apply_apply u)
++
++theorem Context.domain_of_mem (c : Context) (u : c.Key) (a : Axis)
++    (ha : a ∈ c.axes) (hu : a.uid = u.val) : c.domain u = a.extent := by
++  obtain ⟨i, rfl⟩ := List.mem_iff_get.mp ha
++  have hi : c.uidEquiv i = u := Subtype.ext (by simpa using hu)
++  simpa [hi] using c.domain_uidEquiv i
++
++def Context.reenumerate (c : Context) (axes : Shape) (p : c.axes.Perm axes) : Context :=
++  ⟨axes, (p.map Axis.uid).nodup_iff.mp c.unique⟩
++
++def Context.reenumerateTransport (c : Context) (axes : Shape) (p : c.axes.Perm axes) :
++    UIDTransport c (c.reenumerate axes p) where
++  equiv :=
++    { toFun := fun u => ⟨u.val, (p.map Axis.uid).mem_iff.mp u.property⟩
++      invFun := fun u => ⟨u.val, (p.map Axis.uid).mem_iff.mpr u.property⟩
++      left_inv := fun _ => rfl
++      right_inv := fun _ => rfl }
++  domain := by
++    intro u
++    obtain ⟨a, ha, hu⟩ := List.mem_map.mp u.property
++    exact ((c.reenumerate axes p).domain_of_mem _ a (p.mem_iff.mp ha) hu).trans
++      (c.domain_of_mem u a ha hu).symm
++
++def Context.mapUID (c : Context) (f : UID → UID)
++    (hf : ∀ u ∈ c.axes.map Axis.uid, ∀ w ∈ c.axes.map Axis.uid, f u = f w → u = w) :
++    Context where
++  axes := c.axes.map (fun a => { a with uid := f a.uid })
++  unique := by
++    simpa [List.map_map, Function.comp_def] using c.unique.map_on hf
++
++def Context.mapUIDTransport (c : Context) (f : UID → UID)
++    (hf : ∀ u ∈ c.axes.map Axis.uid, ∀ w ∈ c.axes.map Axis.uid, f u = f w → u = w) :
++    UIDTransport c (c.mapUID f hf) where
++  equiv := c.uidEquiv.symm.trans
++    ((finCongr (by simp [Context.mapUID])).trans (c.mapUID f hf).uidEquiv)
++  domain := by
++    intro u
++    change (c.mapUID f hf).domain
++      ((c.mapUID f hf).uidEquiv ((finCongr _) (c.uidEquiv.symm u))) = c.domain u
++    rw [Context.domain_uidEquiv]
++    simp [Context.mapUID, Context.domain, List.get_eq_getElem, finCongr]
++    rfl
++
++@[simp] theorem Context.mapUIDTransport_uid (c : Context) (f : UID → UID) (hf)
++    (u : c.Key) : ((c.mapUIDTransport f hf).equiv u).val = f u.val := by
++  have hu := c.uidEquiv_val (c.uidEquiv.symm u)
++  simp only [Equiv.apply_symm_apply] at hu
++  change ((c.mapUID f hf).uidEquiv ((finCongr _) (c.uidEquiv.symm u))).val = f u.val
++  rw [Context.uidEquiv_val]
++  simpa [Context.mapUID, List.get_eq_getElem, finCongr] using
++    congrArg f hu.symm
++
++structure BinderScope (c : Context) where
++  source : List UID
++  output : List UID
++  free : List UID
++  generated : List UID
++  covers : ∀ u : c.Key, u.val ∈ source ++ output ++ free ++ generated
++  generatedOnly : ∀ u ∈ generated, u ∉ source ++ output ++ free
++
++def BinderScope.support (s : BinderScope c) : List UID :=
++  s.source ++ s.output ++ s.free ++ s.generated
++
++private def freshBase : List UID → UID
++  | [] => 0
++  | u :: us => max (u + 1) (freshBase us)
++
++private theorem lt_freshBase (u : UID) (us : List UID) (h : u ∈ us) :
++    u < freshBase us := by
++  simp only [UID] at *
++  induction us with
++  | nil => simp at h
++  | cons w ws ih =>
++    rcases List.mem_cons.mp h with rfl | h
++    · simp only [freshBase]; omega
++    · have := ih h
++      simp only [freshBase]
++      omega
++
++def BinderScope.renameUID (s : BinderScope c) (u : UID) : UID :=
++  if u ∈ s.generated then freshBase s.support + u else u
++
++theorem BinderScope.fresh (s : BinderScope c) (u : UID) (h : u ∈ s.generated) :
++    s.renameUID u ∉ s.support := by
++  intro hm
++  have := lt_freshBase (s.renameUID u) s.support hm
++  simp only [BinderScope.renameUID, if_pos h] at this
++  simp only [UID] at *
++  omega
++
++theorem BinderScope.fixed (s : BinderScope c) (u : UID) (h : u ∉ s.generated) :
++    s.renameUID u = u := by simp [BinderScope.renameUID, h]
++
++theorem BinderScope.protected (s : BinderScope c) (u : UID)
++    (h : u ∈ s.source ++ s.output ++ s.free) : s.renameUID u = u := by
++  apply s.fixed
++  intro hg
++  exact s.generatedOnly u hg h
++
++theorem BinderScope.injective (s : BinderScope c) :
++    ∀ u ∈ c.axes.map Axis.uid, ∀ w ∈ c.axes.map Axis.uid,
++      s.renameUID u = s.renameUID w → u = w := by
++  intro u hu w hw heq
++  have hu' := lt_freshBase u s.support (s.covers ⟨u, hu⟩)
++  have hw' := lt_freshBase w s.support (s.covers ⟨w, hw⟩)
++  unfold BinderScope.renameUID at heq
++  simp only [UID] at *
++  split_ifs at heq <;> omega
++
++def renameBinders (c : Context) (s : BinderScope c) : Context :=
++  c.mapUID s.renameUID s.injective
++
++def binderTransport (c : Context) (s : BinderScope c) :
++    UIDTransport c (renameBinders c s) :=
++  c.mapUIDTransport s.renameUID s.injective
++
++theorem renameBinders_noCapture (c : Context) (s : BinderScope c) (u : c.Key)
++    (h : u.val ∈ s.generated) :
++    ((binderTransport c s).equiv u).val ∉ s.support := by
++  change ((c.mapUIDTransport s.renameUID s.injective).equiv u).val ∉ s.support
++  rw [Context.mapUIDTransport_uid]
++  exact s.fresh u.val h
++
++theorem renameBinders_fixed (c : Context) (s : BinderScope c) (u : c.Key)
++    (h : u.val ∉ s.generated) :
++    ((binderTransport c s).equiv u).val = u.val := by
++  change ((c.mapUIDTransport s.renameUID s.injective).equiv u).val = u.val
++  rw [Context.mapUIDTransport_uid]
++  exact s.fixed u.val h
++
++theorem renameBinders_lookup (c : Context) (s : BinderScope c) (v : UIDVal c)
++    (u : c.Key) :
++    ((binderTransport c s).valuationEquiv v ((binderTransport c s).equiv u)).val =
++      (v u).val :=
++  (binderTransport c s).lookup v u
++
++abbrev BinderScope.RequestFresh (s : BinderScope c) (request : UID → UID) : Prop :=
++  (s.generated.dedup.map request).Nodup ∧ ∀ u ∈ s.generated, request u ∉ s.support
++
++theorem BinderScope.requestFresh_of_injective (s : BinderScope c) (request : UID → UID)
++    (hi : ∀ u ∈ s.generated, ∀ w ∈ s.generated, request u = request w → u = w)
++    (hf : ∀ u ∈ s.generated, request u ∉ s.support) : s.RequestFresh request := by
++  have hn : s.generated.dedup.Nodup := List.nodup_dedup _
++  refine ⟨hn.map_on ?_, hf⟩
++  intro u hu w hw heq
++  exact hi u (List.mem_dedup.mp hu) w (List.mem_dedup.mp hw) heq
++
++/-- Honor the whole generated request only if injective and fresh; otherwise use
++the automatic freshening for every generated binder. Nongenerated UIDs stay fixed. -/
++def BinderScope.requestedUID (s : BinderScope c) (request : UID → UID) (u : UID) : UID :=
++  if s.RequestFresh request then
++    if u ∈ s.generated then request u else u
++  else s.renameUID u
++
++theorem BinderScope.requestedUID_honored (s : BinderScope c) (request : UID → UID)
++    (h : s.RequestFresh request) (u : UID) (hg : u ∈ s.generated) :
++    s.requestedUID request u = request u := by
++  simp only [BinderScope.requestedUID, if_pos h, if_pos hg]
++
++theorem BinderScope.requestedUID_fallback (s : BinderScope c) (request : UID → UID)
++    (h : ¬s.RequestFresh request) (u : UID) :
++    s.requestedUID request u = s.renameUID u := by
++  simp only [BinderScope.requestedUID, if_neg h]
++
++theorem BinderScope.requested_fixed (s : BinderScope c) (request : UID → UID)
++    (u : UID) (h : u ∉ s.generated) : s.requestedUID request u = u := by
++  by_cases hf : s.RequestFresh request
++  · simp only [BinderScope.requestedUID, if_pos hf, if_neg h]
++  · rw [s.requestedUID_fallback request hf u]
++    exact s.fixed u h
++
++theorem BinderScope.requested_protected (s : BinderScope c) (request : UID → UID)
++    (u : UID) (h : u ∈ s.source ++ s.output ++ s.free) :
++    s.requestedUID request u = u := by
++  apply s.requested_fixed
++  intro hg
++  exact s.generatedOnly u hg h
++
++theorem BinderScope.requested_fresh (s : BinderScope c) (request : UID → UID)
++    (u : UID) (hg : u ∈ s.generated) : s.requestedUID request u ∉ s.support := by
++  by_cases hf : s.RequestFresh request
++  · rw [s.requestedUID_honored request hf u hg]
++    exact hf.2 u hg
++  · rw [s.requestedUID_fallback request hf u]
++    exact s.fresh u hg
++
++theorem BinderScope.requested_injective (s : BinderScope c) (request : UID → UID) :
++    ∀ u ∈ c.axes.map Axis.uid, ∀ w ∈ c.axes.map Axis.uid,
++      s.requestedUID request u = s.requestedUID request w → u = w := by
++  by_cases hf : s.RequestFresh request
++  · intro u hu w hw heq
++    by_cases hg : u ∈ s.generated <;> by_cases hwg : w ∈ s.generated
++    · simp only [BinderScope.requestedUID, if_pos hf, if_pos hg, if_pos hwg] at heq
++      exact (List.inj_on_of_nodup_map hf.1)
++        (List.mem_dedup.mpr hg) (List.mem_dedup.mpr hwg) heq
++    · simp only [BinderScope.requestedUID, if_pos hf, if_pos hg, if_neg hwg] at heq
++      exact False.elim (hf.2 u hg (heq.symm ▸ s.covers ⟨w, hw⟩))
++    · simp only [BinderScope.requestedUID, if_pos hf, if_neg hg, if_pos hwg] at heq
++      exact False.elim (hf.2 w hwg (heq ▸ s.covers ⟨u, hu⟩))
++    · simpa only [BinderScope.requestedUID, if_pos hf, if_neg hg, if_neg hwg] using heq
++  · simpa only [BinderScope.requestedUID, if_neg hf] using s.injective
++
++def renameBindersRequested (c : Context) (s : BinderScope c) (request : UID → UID) :
++    Context :=
++  c.mapUID (s.requestedUID request) (s.requested_injective request)
++
++def requestedBinderTransport (c : Context) (s : BinderScope c) (request : UID → UID) :
++    UIDTransport c (renameBindersRequested c s request) :=
++  c.mapUIDTransport (s.requestedUID request) (s.requested_injective request)
++
++theorem requestedBinders_noCapture (c : Context) (s : BinderScope c)
++    (request : UID → UID) (u : c.Key) (h : u.val ∈ s.generated) :
++    ((requestedBinderTransport c s request).equiv u).val ∉ s.support := by
++  change ((c.mapUIDTransport _ _).equiv u).val ∉ s.support
++  rw [Context.mapUIDTransport_uid]
++  exact s.requested_fresh request u.val h
++
++theorem requestedBinders_protected (c : Context) (s : BinderScope c)
++    (request : UID → UID) (u : c.Key) (h : u.val ∈ s.source ++ s.output ++ s.free) :
++    ((requestedBinderTransport c s request).equiv u).val = u.val := by
++  change ((c.mapUIDTransport _ _).equiv u).val = u.val
++  rw [Context.mapUIDTransport_uid]
++  exact s.requested_protected request u.val h
++
++theorem requestedBinders_lookup (c : Context) (s : BinderScope c)
++    (request : UID → UID) (v : UIDVal c) (u : c.Key) :
++    ((requestedBinderTransport c s request).valuationEquiv v
++      ((requestedBinderTransport c s request).equiv u)).val = (v u).val :=
++  (requestedBinderTransport c s request).lookup v u
++
++def appendEquiv : (out rest : Shape) → Coord (out ++ rest) ≃ Coord out × Coord rest
++  | [], _ =>
++    { toFun := fun p => ((), p)
++      invFun := Prod.snd
++      left_inv := fun _ => rfl
++      right_inv := by rintro ⟨u, p⟩; cases u; rfl }
++  | a :: out, rest =>
++    { toFun := fun p => let q := appendEquiv out rest p.2; ((p.1, q.1), q.2)
++      invFun := fun p => (p.1.1, (appendEquiv out rest).symm (p.1.2, p.2))
++      left_inv := by intro p; simp
++      right_inv := by rintro ⟨⟨i, o⟩, c⟩; simp }
++
++def strictResolve : (sh : Shape) → RawCoord sh → ReadOutcome K (Coord sh)
++  | [], _ => .at ()
++  | a :: sh, raw =>
++    if h : 0 ≤ raw 0 ∧ raw 0 < a.extent then
++      match strictResolve (K := K) sh (fun i => raw i.succ) with
++      | .at p => .at (⟨(raw 0).toNat, by omega⟩, p)
++      | _ => .reject
++    else .reject
++
++def strictPolicy (sh : Shape) : ReadPolicy K sh where
++  resolve := strictResolve sh
++  inBounds := by
++    intro p
++    induction sh with
++    | nil => cases p; rfl
++    | cons a sh ih =>
++      rcases p with ⟨i, p⟩
++      simp [strictResolve, Coord.raw, ih p]
++
++end LeanNCD.Semantics.Source
+diff --git a/leanncd/lakefile.toml b/leanncd/lakefile.toml
+index fade6d0..effc80a 100644
+--- a/leanncd/lakefile.toml
++++ b/leanncd/lakefile.toml
+@@ -81,7 +81,9 @@ globs = ["Base.NumericTest", "Base.StTest", "Base.BrTest", "Base.BrWiringTest",
+          "Eval.Portfolio.KnownGapTest", "Eval.Portfolio.ScatterNonlinRejectTest",
+          "Semantics.ExpressionTest", "Semantics.NativeTest", "Semantics.ContractTest",
+          "Semantics.CollectionModelTest", "Semantics.ReferenceMachineTest",
+-         "Semantics.RankedMachineTest", "Semantics.ExecutableReferenceTest"]
++         "Semantics.RankedMachineTest", "Semantics.ExecutableReferenceTest",
++         "Semantics.SourceBindingUIDTest", "Semantics.SourceBindingRenameTest",
++         "Semantics.SourceBindingBoundaryTest", "Semantics.SourceBindingTest"]
+ 
+ # Non-default experimental JAX-bridge codegen library. Deliberately absent from
+ # `defaultTargets`: it only builds when explicitly requested (`lake build JaxExperiment`, as the
+diff --git a/leanncd/test/Semantics/SourceBindingBoundaryTest.lean b/leanncd/test/Semantics/SourceBindingBoundaryTest.lean
+new file mode 100644
+index 0000000..0eaa7c3
+--- /dev/null
++++ b/leanncd/test/Semantics/SourceBindingBoundaryTest.lean
+@@ -0,0 +1,153 @@
++import LeanNCD.Semantics.Source
++
++namespace LeanNCD.Semantics.Source.BindingBoundaryFixtures
++
++def matrixContext : Context := ⟨[⟨10, 2⟩, ⟨11, 2⟩], by decide⟩
++def renamedContext : Context := ⟨[⟨19, 2⟩, ⟨23, 2⟩], by decide⟩
++
++def matrixValuation : UIDVal matrixContext :=
++  (uidCoordEquiv matrixContext).symm (⟨1, by decide⟩, ⟨0, by decide⟩, ())
++
++def renamedValuation : UIDVal renamedContext :=
++  (uidCoordEquiv renamedContext).symm (⟨1, by decide⟩, ⟨0, by decide⟩, ())
++
++private def values (c : Context) (v : UIDVal c) : List Nat :=
++  (List.finRange c.axes.length).map (fun i => (uidPositionalEquiv c v i).val)
++
++private def mappedUIDs (m : IndexMap src dst) : List UID :=
++  (List.finRange src.axes.length).map (fun i => (m.map (src.uidEquiv i)).val)
++
++-- Donor M's matrixStore makes the two equal-domain UID assignments distinguishable.
++def matrixValue (v : UIDVal matrixContext) : Nat :=
++  let p := uidCoordEquiv matrixContext v
++  1 + 10 * p.1.val + p.2.1.val
++
++def repeatedSlots : Slots matrixContext.axes [⟨10, 2⟩, ⟨10, 2⟩] :=
++  .cons .here (.cons .here .nil)
++
++def v7 : Except Diagnostic (List (String × List Nat)) := do
++  let swap ← resolveIndexMap matrixContext matrixContext
++    (fun u => if u = 10 then 11 else 10)
++  let rename ← resolveIndexMap matrixContext renamedContext
++    (fun u => if u = 10 then 19 else 23)
++  let repeated ← resolveIndexMap matrixContext matrixContext (fun _ => 11)
++  let pulled := indexPullback swap matrixValuation
++  let slots := repeatedSlots.project (uidCoordEquiv matrixContext pulled)
++  pure [
++    ("source-uids", matrixContext.axes.map Axis.uid),
++    ("target-uids", mappedUIDs swap),
++    ("before", values matrixContext matrixValuation),
++    ("pulled", values matrixContext pulled),
++    ("matrix-before-after", [matrixValue matrixValuation, matrixValue pulled]),
++    ("composed-uids", mappedUIDs (swap.comp rename)),
++    ("composed", values matrixContext (indexPullback (swap.comp rename) renamedValuation)),
++    ("sequential", values matrixContext (indexPullback swap
++      (indexPullback rename renamedValuation))),
++    ("repeated-uids", mappedUIDs repeated),
++    ("repeated-pullback", values matrixContext (indexPullback repeated matrixValuation)),
++    ("repeated-slots", [slots.1.val, slots.2.1.val])]
++
++#guard v7 = .ok [
++  ("source-uids", [10, 11]),
++  ("target-uids", [11, 10]),
++  ("before", [1, 0]),
++  ("pulled", [0, 1]),
++  ("matrix-before-after", [11, 2]),
++  ("composed-uids", [23, 19]),
++  ("composed", [0, 1]),
++  ("sequential", [0, 1]),
++  ("repeated-uids", [11, 11]),
++  ("repeated-pullback", [0, 0]),
++  ("repeated-slots", [0, 0])]
++
++#eval v7
++
++theorem v7_lookup (m : IndexMap matrixContext matrixContext) (u : matrixContext.Key) :
++    (indexPullback m matrixValuation u).val = (matrixValuation (m.map u)).val :=
++  indexPullback_lookup m matrixValuation u
++
++theorem v7_comp (m : IndexMap matrixContext matrixContext)
++    (n : IndexMap matrixContext renamedContext) :
++    indexPullback (m.comp n) renamedValuation =
++      indexPullback m (indexPullback n renamedValuation) :=
++  indexPullback_comp m n renamedValuation
++
++theorem v7_repeated (m : IndexMap matrixContext matrixContext)
++    (u w : matrixContext.Key) (h : m.map u = m.map w) :
++    (indexPullback m matrixValuation u).val = (indexPullback m matrixValuation w).val :=
++  indexPullback_repeated m matrixValuation u w h
++
++-- Donors S/E: rank zero is a singleton; the matrix tail with extent zero is empty.
++def emptyContext : Context := ⟨[], by decide⟩
++def zeroContext : Context := ⟨[⟨10, 2⟩, ⟨12, 0⟩], by decide⟩
++
++def emptyValuation : UIDVal emptyContext := (uidCoordEquiv emptyContext).symm ()
++
++private def enumeratedValues (c : Context) : List (List Nat) :=
++  (List.finRange (canonicalLayout c.axes).count).map (fun i =>
++    values c ((uidCoordEquiv c).symm ((canonicalLayout c.axes).enumerate i)))
++
++def v8 : Nat × Nat × List (List Nat) × List (List Nat) :=
++  ((canonicalLayout emptyContext.axes).count, (canonicalLayout zeroContext.axes).count,
++    enumeratedValues emptyContext, enumeratedValues zeroContext)
++
++#guard v8 = (1, 0, [[]], [])
++#eval v8
++
++theorem v8_empty_roundtrip : uidCoordEquiv emptyContext emptyValuation = () :=
++  uidCoordEquiv_right emptyContext ()
++
++theorem v8_empty_uid_unique (v : UIDVal emptyContext) : v = emptyValuation := by
++  funext u
++  have h := u.property
++  simp [emptyContext] at h
++
++theorem v8_empty_coord_unique (p : Coord emptyContext.axes) : p = () := by
++  cases p
++  rfl
++
++theorem v8_empty_uid_exactly_one : ∃! _v : UIDVal emptyContext, True :=
++  ⟨emptyValuation, trivial, fun v _ => v8_empty_uid_unique v⟩
++
++theorem v8_empty_coord_exactly_one : ∃! _p : Coord emptyContext.axes, True :=
++  ⟨(), trivial, fun p _ => v8_empty_coord_unique p⟩
++
++theorem v8_zero_uid_none : ¬ Nonempty (UIDVal zeroContext) := by
++  rintro ⟨v⟩
++  have impossible : Fin 0 := v.lookupRef (.there .here)
++  exact Fin.elim0 impossible
++
++theorem v8_zero_coord_none : ¬ Nonempty (Coord zeroContext.axes) := by
++  rintro ⟨p⟩
++  exact Fin.elim0 p.2.1
++
++theorem v8_empty_left (v : UIDVal emptyContext) :
++    (uidCoordEquiv emptyContext).symm (uidCoordEquiv emptyContext v) = v :=
++  uidCoordEquiv_left emptyContext v
++
++theorem v8_empty_right (p : Coord emptyContext.axes) :
++    uidCoordEquiv emptyContext ((uidCoordEquiv emptyContext).symm p) = p :=
++  uidCoordEquiv_right emptyContext p
++
++theorem v8_zero_left (v : UIDVal zeroContext) :
++    (uidCoordEquiv zeroContext).symm (uidCoordEquiv zeroContext v) = v :=
++  uidCoordEquiv_left zeroContext v
++
++theorem v8_zero_right (p : Coord zeroContext.axes) :
++    uidCoordEquiv zeroContext ((uidCoordEquiv zeroContext).symm p) = p :=
++  uidCoordEquiv_right zeroContext p
++
++#print axioms v7_lookup
++#print axioms v7_comp
++#print axioms v7_repeated
++#print axioms v8_empty_roundtrip
++#print axioms v8_empty_uid_exactly_one
++#print axioms v8_empty_coord_exactly_one
++#print axioms v8_zero_uid_none
++#print axioms v8_zero_coord_none
++#print axioms v8_empty_left
++#print axioms v8_empty_right
++#print axioms v8_zero_left
++#print axioms v8_zero_right
++
++end LeanNCD.Semantics.Source.BindingBoundaryFixtures
+diff --git a/leanncd/test/Semantics/SourceBindingRenameTest.lean b/leanncd/test/Semantics/SourceBindingRenameTest.lean
+new file mode 100644
+index 0000000..1671a80
+--- /dev/null
++++ b/leanncd/test/Semantics/SourceBindingRenameTest.lean
+@@ -0,0 +1,214 @@
++import LeanNCD.Semantics.Source
++
++namespace LeanNCD.Semantics.Source.BindingRenameFixtures
++
++def context : Context :=
++  ⟨[⟨7, 2⟩, ⟨11, 2⟩, ⟨13, 2⟩, ⟨3, 4⟩, ⟨5, 3⟩], by decide⟩
++
++def scope : BinderScope context where
++  source := [7, 100]
++  output := [11, 101]
++  free := [13, 102]
++  generated := [3, 5]
++  covers := by
++    intro u
++    have h := u.property
++    simp [context] at h
++    simp only [List.mem_append, List.mem_cons, List.not_mem_nil, or_false]
++    rcases h with h | h | h | h | h <;> simp [h]
++  generatedOnly := by
++    intro u hu
++    simp at hu
++    rcases hu with rfl | rfl <;> decide
++
++def valuation : UIDVal context :=
++  (uidCoordEquiv context).symm (1, 0, 1, 2, 1, ())
++
++def readShape : Shape := [⟨3, 4⟩, ⟨5, 3⟩, ⟨11, 2⟩, ⟨13, 2⟩, ⟨7, 2⟩]
++
++def readMetadata (f : UID → UID) : Shape :=
++  readShape.map (fun a => { a with uid := f a.uid })
++
++def readAt (c : Context) (v : UIDVal c) (f : UID → UID) :
++    Except Diagnostic (List Nat × Nat) := do
++  let metadata := readMetadata f
++  let slots ← resolveSlots c.axes metadata (metadata.map Axis.uid)
++  let p := slots.project (uidCoordEquiv c v)
++  let values := [p.1.val, p.2.1.val, p.2.2.1.val, p.2.2.2.1.val, p.2.2.2.2.1.val]
++  let tensorValue := 10000 * p.1.val + 1000 * p.2.1.val + 100 * p.2.2.1.val +
++    10 * p.2.2.2.1.val + p.2.2.2.2.1.val
++  pure (values, tensorValue)
++
++namespace V4
++
++def renamed : Context := renameBinders context scope
++def transport : UIDTransport context renamed := binderTransport context scope
++def transported : UIDVal renamed := transport.valuationEquiv valuation
++def originalRead := readAt context valuation id
++def renamedRead := readAt renamed transported scope.renameUID
++def staleMetadataRead := readAt renamed transported id
++
++#guard context.axes.map Axis.uid = [7, 11, 13, 3, 5]
++#guard renamed.axes = [⟨7, 2⟩, ⟨11, 2⟩, ⟨13, 2⟩, ⟨106, 4⟩, ⟨108, 3⟩]
++#guard renamed.axes.map Axis.extent = context.axes.map Axis.extent
++#guard readMetadata scope.renameUID =
++  [⟨106, 4⟩, ⟨108, 3⟩, ⟨11, 2⟩, ⟨13, 2⟩, ⟨7, 2⟩]
++#guard originalRead = .ok ([2, 1, 0, 1, 1], 21011)
++#guard renamedRead = .ok ([2, 1, 0, 1, 1], 21011)
++#guard renamedRead = originalRead
++#guard staleMetadataRead = .error (.unbound 3)
++#guard (transported.lookupRef (Ref.there (Ref.there (Ref.there Ref.here)))).val = 2
++#guard (transported.lookupRef (Ref.there Ref.here)).val = 0
++
++theorem domain_preserved (u : context.Key) :
++    renamed.domain (transport.equiv u) = context.domain u :=
++  transport.domain u
++
++theorem lookup_preserved (v : UIDVal context) (u : context.Key) :
++    ((transport.valuationEquiv v) (transport.equiv u)).val = (v u).val :=
++  renameBinders_lookup context scope v u
++
++theorem protected_fixed (u : context.Key) (h : u.val ∉ scope.generated) :
++    (transport.equiv u).val = u.val :=
++  renameBinders_fixed context scope u h
++
++#eval ("V4 original/transported/stale metadata reads",
++  originalRead, renamedRead, staleMetadataRead)
++
++end V4
++
++namespace V5
++
++def validRequest (u : UID) : UID := if u = 3 then 203 else 205
++def outputCollision (u : UID) : UID := if u = 3 then 101 else 205
++def freeCollision (u : UID) : UID := if u = 3 then 102 else 205
++def boundOutputCollision (u : UID) : UID := if u = 3 then 11 else 205
++def boundFreeCollision (u : UID) : UID := if u = 3 then 13 else 205
++def duplicateRequest (_ : UID) : UID := 203
++
++def renamed (request : UID → UID) : Context :=
++  renameBindersRequested context scope request
++
++def transport (request : UID → UID) : UIDTransport context (renamed request) :=
++  requestedBinderTransport context scope request
++
++def requestedRead (request : UID → UID) :=
++  readAt (renamed request) ((transport request).valuationEquiv valuation)
++    (scope.requestedUID request)
++
++def outputRead := requestedRead outputCollision
++def freeRead := requestedRead freeCollision
++def validRead := requestedRead validRequest
++def duplicateRead := requestedRead duplicateRequest
++
++#guard scope.RequestFresh validRequest
++#guard ¬scope.RequestFresh outputCollision
++#guard ¬scope.RequestFresh freeCollision
++#guard ¬scope.RequestFresh boundOutputCollision
++#guard ¬scope.RequestFresh boundFreeCollision
++#guard ¬scope.RequestFresh duplicateRequest
++#guard outputCollision 3 = 101
++#guard freeCollision 3 = 102
++#guard 101 ∈ scope.output
++#guard 102 ∈ scope.free
++#guard outputCollision 5 = 205
++#guard 205 ∉ scope.support
++#guard (renamed outputCollision).axes = V4.renamed.axes
++#guard (renamed freeCollision).axes = V4.renamed.axes
++#guard (renamed boundOutputCollision).axes = V4.renamed.axes
++#guard (renamed boundFreeCollision).axes = V4.renamed.axes
++#guard (renamed duplicateRequest).axes = V4.renamed.axes
++#guard (renamed validRequest).axes =
++  [⟨7, 2⟩, ⟨11, 2⟩, ⟨13, 2⟩, ⟨203, 4⟩, ⟨205, 3⟩]
++#guard scope.generated.map (scope.requestedUID outputCollision) = [106, 108]
++#guard scope.generated.map (scope.requestedUID freeCollision) = [106, 108]
++#guard scope.generated.map (scope.requestedUID validRequest) = [203, 205]
++#guard 106 ∉ scope.support
++#guard 108 ∉ scope.support
++#guard (scope.source ++ scope.output ++ scope.free).map
++  (scope.requestedUID outputCollision) = [7, 100, 11, 101, 13, 102]
++#guard (scope.source ++ scope.output ++ scope.free).map
++  (scope.requestedUID freeCollision) = [7, 100, 11, 101, 13, 102]
++#guard (scope.source ++ scope.output ++ scope.free).map
++  (scope.requestedUID validRequest) = [7, 100, 11, 101, 13, 102]
++#guard readMetadata (scope.requestedUID outputCollision) =
++  [⟨106, 4⟩, ⟨108, 3⟩, ⟨11, 2⟩, ⟨13, 2⟩, ⟨7, 2⟩]
++#guard readMetadata (scope.requestedUID validRequest) =
++  [⟨203, 4⟩, ⟨205, 3⟩, ⟨11, 2⟩, ⟨13, 2⟩, ⟨7, 2⟩]
++#guard outputRead = .ok ([2, 1, 0, 1, 1], 21011)
++#guard freeRead = .ok ([2, 1, 0, 1, 1], 21011)
++#guard validRead = .ok ([2, 1, 0, 1, 1], 21011)
++#guard duplicateRead = .ok ([2, 1, 0, 1, 1], 21011)
++#guard requestedRead boundOutputCollision = V4.originalRead
++#guard requestedRead boundFreeCollision = V4.originalRead
++#guard readAt (renamed validRequest) ((transport validRequest).valuationEquiv valuation)
++  validRequest = .error (.domain 205 2 3)
++
++theorem no_capture (request : UID → UID) (u : context.Key)
++    (h : u.val ∈ scope.generated) :
++    ((transport request).equiv u).val ∉ scope.support :=
++  requestedBinders_noCapture context scope request u h
++
++theorem protected_fixed (request : UID → UID) (u : context.Key)
++    (h : u.val ∈ scope.source ++ scope.output ++ scope.free) :
++    ((transport request).equiv u).val = u.val :=
++  requestedBinders_protected context scope request u h
++
++theorem domain_preserved (request : UID → UID) (u : context.Key) :
++    (renamed request).domain ((transport request).equiv u) = context.domain u :=
++  (transport request).domain u
++
++theorem lookup_preserved (request : UID → UID) (v : UIDVal context) (u : context.Key) :
++    (((transport request).valuationEquiv v) ((transport request).equiv u)).val = (v u).val :=
++  requestedBinders_lookup context scope request v u
++
++#eval ("V5 output/free collision, valid and duplicate reads",
++  outputRead, freeRead, validRead, duplicateRead)
++#eval ("V5 atomic fallback and honored axes",
++  (renamed outputCollision).axes, (renamed freeCollision).axes, (renamed validRequest).axes)
++
++end V5
++
++namespace V6
++
++def source4 : Context := ⟨[⟨3, 4⟩], by decide⟩
++def source2 : Context := ⟨[⟨3, 2⟩], by decide⟩
++def target2 : Context := ⟨[⟨19, 2⟩], by decide⟩
++def target4 : Context := ⟨[⟨19, 4⟩], by decide⟩
++def target5 : Context := ⟨[⟨19, 5⟩], by decide⟩
++
++def value2 : UIDVal target2 := (uidCoordEquiv target2).symm (1, ())
++def value4 : UIDVal target4 := (uidCoordEquiv target4).symm (1, ())
++def lastValue4 : UIDVal target4 := (uidCoordEquiv target4).symm (3, ())
++def value5 : UIDVal target5 := (uidCoordEquiv target5).symm (1, ())
++
++def substitutionValues (src dst : Context) (v : UIDVal dst) :
++    Except Diagnostic (List Nat) := do
++  let m ← resolveIndexMap src dst (fun _ => 19)
++  let p := uidPositionalEquiv src (indexPullback m v)
++  pure ((List.finRange src.axes.length).map (fun i => (p i).val))
++
++def smallerDomain := substitutionValues source4 target2 value2
++def largerDomain := substitutionValues source4 target5 value5
++def equalDomain := substitutionValues source4 target4 value4
++def equalDomainLast := substitutionValues source4 target4 lastValue4
++def smallerLegalNeighbor := substitutionValues source2 target2 value2
++def reversedMismatch := substitutionValues source2 target4 value4
++
++#guard (value2 ⟨19, by decide⟩).val = 1
++#guard (value4 ⟨19, by decide⟩).val = 1
++#guard (value5 ⟨19, by decide⟩).val = 1
++#guard smallerDomain = .error (.domain 19 4 2)
++#guard largerDomain = .error (.domain 19 4 5)
++#guard reversedMismatch = .error (.domain 19 2 4)
++#guard equalDomain = .ok [1]
++#guard equalDomainLast = .ok [3]
++#guard smallerLegalNeighbor = .ok [1]
++
++#eval ("V6 unequal full domains and legal neighbors",
++  smallerDomain, largerDomain, reversedMismatch, equalDomain, equalDomainLast,
++  smallerLegalNeighbor)
++
++end V6
++
++end LeanNCD.Semantics.Source.BindingRenameFixtures
+diff --git a/leanncd/test/Semantics/SourceBindingTest.lean b/leanncd/test/Semantics/SourceBindingTest.lean
+new file mode 100644
+index 0000000..3b29abb
+--- /dev/null
++++ b/leanncd/test/Semantics/SourceBindingTest.lean
+@@ -0,0 +1,3 @@
++import Semantics.SourceBindingUIDTest
++import Semantics.SourceBindingRenameTest
++import Semantics.SourceBindingBoundaryTest
+diff --git a/leanncd/test/Semantics/SourceBindingUIDTest.lean b/leanncd/test/Semantics/SourceBindingUIDTest.lean
+new file mode 100644
+index 0000000..59e7bb5
+--- /dev/null
++++ b/leanncd/test/Semantics/SourceBindingUIDTest.lean
+@@ -0,0 +1,183 @@
++import LeanNCD.Semantics.Source
++
++namespace LeanNCD.Semantics.Source.BindingUIDFixtures
++
++@[reducible] def i : Axis := ⟨10, 2⟩
++@[reducible] def j : Axis := ⟨11, 2⟩
++
++def sameName : List UData := [⟨10, some "i"⟩, ⟨11, some "i"⟩]
++
++def sameExtent : Context := ⟨[i, j], by decide⟩
++
++def skewedAssignment : UIDVal sameExtent := fun u =>
++  if h : u.val = 10 then
++    ⟨1, by
++      rw [sameExtent.domain_of_mem u i (by decide) h.symm]
++      decide⟩
++  else
++    ⟨0, by
++      have hu : u.val = 11 := by
++        have hm := u.property
++        simp [sameExtent, i, j] at hm
++        exact hm.resolve_left h
++      rw [sameExtent.domain_of_mem u j (by decide) hu.symm]
++      decide⟩
++
++def firstRef : Ref sameExtent.axes 2 := .here
++def secondRef : Ref sameExtent.axes 2 := .there .here
++
++def slotValues (c : Context) (sh : Shape) (uids : List UID) (v : UIDVal c) :
++    Except Diagnostic (Coord sh) := do
++  let slots ← resolveSlots c.axes sh uids
++  pure (slots.project (uidCoordEquiv c v))
++
++def matrixStore (p : Coord [i, j]) : Nat :=
++  1 + 10 * p.1.val + p.2.1.val
++
++def matrixRead (uids : List UID) : Except Diagnostic Nat := do
++  pure (matrixStore (← slotValues sameExtent [i, j] uids skewedAssignment))
++
++namespace V1
++
++#guard sameName.map UData.name = [some "i", some "i"]
++#guard sameName.map UData.uid = [10, 11]
++#guard i.extent = j.extent
++#guard i.uid ≠ j.uid
++
++def directUIDValues : Nat × Nat :=
++  ((skewedAssignment ⟨10, by decide⟩).val,
++    (skewedAssignment ⟨11, by decide⟩).val)
++
++def referenceValues : Nat × Nat :=
++  ((skewedAssignment.lookupRef firstRef).val,
++    (skewedAssignment.lookupRef secondRef).val)
++
++def distinctSlots := slotValues sameExtent [i, j] [10, 11] skewedAssignment
++def reversedSlots := slotValues sameExtent [i, j] [11, 10] skewedAssignment
++def distinctRead := matrixRead [10, 11]
++def reversedRead := matrixRead [11, 10]
++
++#guard directUIDValues = (1, 0)
++#guard referenceValues = (1, 0)
++#guard referenceValues.1 ≠ referenceValues.2
++#guard distinctSlots = .ok (1, 0, ())
++#guard reversedSlots = .ok (0, 1, ())
++#guard distinctRead = .ok 11
++#guard reversedRead = .ok 2
++#guard distinctRead ≠ matrixRead [10, 10]
++#guard distinctRead ≠ matrixRead [11, 11]
++
++theorem first_lookup :
++    firstRef.get (uidCoordEquiv sameExtent skewedAssignment) =
++      skewedAssignment.lookupRef firstRef :=
++  Ref.get_uidCoordEquiv sameExtent firstRef skewedAssignment
++
++theorem second_lookup :
++    secondRef.get (uidCoordEquiv sameExtent skewedAssignment) =
++      skewedAssignment.lookupRef secondRef :=
++  Ref.get_uidCoordEquiv sameExtent secondRef skewedAssignment
++
++#eval ("V1 UID/reference values and matrix reads",
++  directUIDValues, referenceValues, distinctRead, reversedRead)
++
++end V1
++
++namespace V2
++
++def repeatedFirst := slotValues sameExtent [i, j] [10, 10] skewedAssignment
++def repeatedSecond := slotValues sameExtent [i, j] [11, 11] skewedAssignment
++def diagonalFirst := matrixRead [10, 10]
++def diagonalSecond := matrixRead [11, 11]
++
++#guard repeatedFirst = .ok (1, 1, ())
++#guard repeatedSecond = .ok (0, 0, ())
++#guard diagonalFirst = .ok 12
++#guard diagonalSecond = .ok 1
++
++theorem shared_assignment (v : UIDVal sameExtent)
++    (r s : Ref sameExtent.axes 2) (h : r.uid = s.uid) :
++    (v.lookupRef r).val = (v.lookupRef s).val :=
++  Ref.sameUID_lookup sameExtent r s v h
++
++#eval ("V2 repeated UID matrix reads", diagonalFirst, diagonalSecond)
++
++end V2
++
++namespace V3
++
++def original : Context := ⟨[⟨7, 2⟩, ⟨3, 4⟩], by decide⟩
++def permutation : original.axes.Perm [⟨3, 4⟩, ⟨7, 2⟩] := List.Perm.swap ..
++def reversed : Context := original.reenumerate _ permutation
++def transport : UIDTransport original reversed := original.reenumerateTransport _ permutation
++
++def coordinate : Coord original.axes := (1, 2, ())
++def reversedCoordinate : Coord reversed.axes := (2, 1, ())
++def valuation : UIDVal original := (uidCoordEquiv original).symm coordinate
++def transported : UIDVal reversed := transport.valuationEquiv valuation
++def independentReversed : UIDVal reversed :=
++  (uidCoordEquiv reversed).symm reversedCoordinate
++
++def originalUIDValues : Nat × Nat :=
++  ((valuation ⟨7, by decide⟩).val, (valuation ⟨3, by decide⟩).val)
++def reversedUIDValues : Nat × Nat :=
++  ((transported ⟨7, by decide⟩).val, (transported ⟨3, by decide⟩).val)
++def transportedValues : Nat × Nat :=
++  let p := uidCoordEquiv reversed transported
++  (p.1.val, p.2.1.val)
++def inverseTransportValues : Nat × Nat :=
++  let p := uidCoordEquiv original (transport.valuationEquiv.symm independentReversed)
++  (p.1.val, p.2.1.val)
++
++#guard original.axes.map Axis.extent = [2, 4]
++#guard reversed.axes.map Axis.extent = [4, 2]
++#guard originalUIDValues = (1, 2)
++#guard reversedUIDValues = (1, 2)
++#guard transportedValues = (2, 1)
++#guard inverseTransportValues = (1, 2)
++#guard @Eq (Fin 2 × Fin 4 × Unit) (uidCoordEquiv original valuation) coordinate
++#guard @Eq (Fin 4 × Fin 2 × Unit) (uidCoordEquiv reversed transported) reversedCoordinate
++#guard (valuation.lookupRef (Ref.there Ref.here)).val = 2
++#guard (transported.lookupRef Ref.here).val = 2
++#guard (transported.lookupRef (Ref.there Ref.here)).val = 1
++
++theorem original_coord_left (v : UIDVal original) :
++    (uidCoordEquiv original).symm (uidCoordEquiv original v) = v :=
++  uidCoordEquiv_left original v
++
++theorem original_coord_right (p : Coord original.axes) :
++    uidCoordEquiv original ((uidCoordEquiv original).symm p) = p :=
++  uidCoordEquiv_right original p
++
++theorem reversed_coord_left (v : UIDVal reversed) :
++    (uidCoordEquiv reversed).symm (uidCoordEquiv reversed v) = v :=
++  uidCoordEquiv_left reversed v
++
++theorem reversed_coord_right (p : Coord reversed.axes) :
++    uidCoordEquiv reversed ((uidCoordEquiv reversed).symm p) = p :=
++  uidCoordEquiv_right reversed p
++
++theorem transport_left (v : UIDVal original) :
++    transport.valuationEquiv.symm (transport.valuationEquiv v) = v :=
++  transport.valuationEquiv.symm_apply_apply v
++
++theorem transport_right (v : UIDVal reversed) :
++    transport.valuationEquiv (transport.valuationEquiv.symm v) = v :=
++  transport.valuationEquiv.apply_symm_apply v
++
++#eval ("V3 UID values, forward and inverse Coord transport",
++  originalUIDValues, reversedUIDValues, transportedValues, inverseTransportValues)
++
++end V3
++
++#print axioms V1.first_lookup
++#print axioms V1.second_lookup
++#print axioms V2.shared_assignment
++#print axioms V3.original_coord_left
++#print axioms V3.original_coord_right
++#print axioms V3.reversed_coord_left
++#print axioms V3.reversed_coord_right
++#print axioms V3.transport_left
++#print axioms V3.transport_right
++#print axioms Context.reenumerateTransport
++
++end LeanNCD.Semantics.Source.BindingUIDFixtures
+diff --git a/papers/semantics/source_correspondence_mutations_post.json b/papers/semantics/source_correspondence_mutations_post.json
+new file mode 100644
+index 0000000..52faf03
+--- /dev/null
++++ b/papers/semantics/source_correspondence_mutations_post.json
+@@ -0,0 +1,56 @@
++[
++  {
++    "label": "T1-UID-position-alias (V1)",
++    "task": "T1",
++    "file": "LeanNCD/Semantics/Source/Context.lean",
++    "old": "def UIDVal.lookupRef (v : UIDVal c) (r : Ref c.axes n) : Fin n :=\n  Fin.cast ((c.domain_uidEquiv r.index).trans r.index_extent) (v (r.key c))",
++    "new": "def UIDVal.lookupRef (v : UIDVal c) (r : Ref c.axes n) : Fin n :=\n  let first : Fin c.axes.length :=\n    \u27e80, lt_of_le_of_lt (Nat.zero_le r.index.val) r.index.isLt\u27e9\n  if h : c.domain (c.uidEquiv first) = n then\n    Fin.cast h (v (c.uidEquiv first))\n  else\n    Fin.cast ((c.domain_uidEquiv r.index).trans r.index_extent) (v (r.key c))",
++    "targets": [
++      "+Semantics.SourceBindingUIDTest"
++    ],
++    "expect": [
++      "\u2191(v.lookupRef r) = \u2191(v.lookupRef s)"
++    ]
++  },
++  {
++    "label": "T1-UID-wrong-inverse-permutation (V3)",
++    "task": "T1",
++    "file": "LeanNCD/Semantics/Source/Context.lean",
++    "old": "      invFun := fun u => \u27e8u.val, (p.map Axis.uid).mem_iff.mpr u.property\u27e9",
++    "new": "      invFun := fun u => c.uidEquiv (Fin.cast p.length_eq.symm\n        ((c.reenumerate axes p).uidEquiv.symm u))",
++    "targets": [
++      "+Semantics.SourceBindingUIDTest"
++    ],
++    "expect": [
++      "(c.reenumerate axes p).uidEquiv.symm u",
++      "but is expected to have type"
++    ]
++  },
++  {
++    "label": "V5 requested freshness omits output/free support (intended proof: BinderScope.requested_fresh)",
++    "task": "T1",
++    "file": "LeanNCD/Semantics/Source/Context.lean",
++    "old": "abbrev BinderScope.RequestFresh (s : BinderScope c) (request : UID \u2192 UID) : Prop :=\n  (s.generated.dedup.map request).Nodup \u2227 \u2200 u \u2208 s.generated, request u \u2209 s.support\n\ntheorem BinderScope.requestFresh_of_injective (s : BinderScope c) (request : UID \u2192 UID)\n    (hi : \u2200 u \u2208 s.generated, \u2200 w \u2208 s.generated, request u = request w \u2192 u = w)\n    (hf : \u2200 u \u2208 s.generated, request u \u2209 s.support) : s.RequestFresh request := by",
++    "new": "abbrev BinderScope.RequestFresh (s : BinderScope c) (request : UID \u2192 UID) : Prop :=\n  (s.generated.dedup.map request).Nodup \u2227 \u2200 u \u2208 s.generated, request u \u2209 s.source ++ s.generated\n\ntheorem BinderScope.requestFresh_of_injective (s : BinderScope c) (request : UID \u2192 UID)\n    (hi : \u2200 u \u2208 s.generated, \u2200 w \u2208 s.generated, request u = request w \u2192 u = w)\n    (hf : \u2200 u \u2208 s.generated, request u \u2209 s.source ++ s.generated) : s.RequestFresh request := by",
++    "targets": [
++      "+Semantics.SourceBindingRenameTest"
++    ],
++    "expect": [
++      "request u \u2209 s.source ++ s.generated",
++      "request u \u2209 s.support"
++    ]
++  },
++  {
++    "label": "V6 domain check removed (intended contract: resolveUID domain witness)",
++    "task": "T1",
++    "file": "LeanNCD/Semantics/Source/Context.lean",
++    "old": "    if hd : c.domain u = n then .ok \u27e8u, rfl, hd\u27e9\n    else .error (.domain uid n (c.domain u))",
++    "new": "    .ok \u27e8u, rfl, by rfl\u27e9",
++    "targets": [
++      "+Semantics.SourceBindingRenameTest"
++    ],
++    "expect": [
++      "\u22a2 c.domain u = n"
++    ]
++  }
++]
+diff --git a/papers/semantics/source_correspondence_plan.md b/papers/semantics/source_correspondence_plan.md
+index 19075e2..82228bd 100644
+--- a/papers/semantics/source_correspondence_plan.md
++++ b/papers/semantics/source_correspondence_plan.md
+@@ -94,6 +94,15 @@ UID assignments along a domain-preserving map, including repeated lookup slots.
+ Reject domain-changing substitutions. This is not a theorem about arbitrary
+ DSL expressions, nonlinear binding, or all source substitution.
+ 
++Generated-binder freshening also accepts requested replacement UIDs. A request
++may collide with protected source/output/free support; admission must not require
++the requested identities to be fresh already. Such requests are freshened into
++an injective, domain-preserving transport without moving protected identities.
++The collision policy must be explicit and tested by V5.
++The rehearsed policy honors all generated targets when they are injective and
++outside the full support; otherwise it deterministically freshens the entire
++generated group. Nongenerated identities are never renamed.
++
+ Attach original statement ordinals **before** any grouping or reordering.
+ Term/factor/slot ordinals are within that original statement. Maintain inverse
+ maps between original identities and target-local typed statement tags.
+diff --git a/papers/semantics/source_correspondence_record.md b/papers/semantics/source_correspondence_record.md
+index f2430ab..931ed42 100644
+--- a/papers/semantics/source_correspondence_record.md
++++ b/papers/semantics/source_correspondence_record.md
+@@ -219,3 +219,74 @@ The detached prototype is disposable; retained patches and receipts are the
+ persistent handoff. `emit_evidence.py` is historical provenance code referring
+ to the original authoring locations, not a portable execution/readiness runner.
+ No remote push is authorized or performed.
++
++## Readiness rehearsal in progress
++
++The user authorized readiness rehearsal before implementation on 2026-10-08.
++The isolated execution worktree was fast-forwarded from `e13fd6f` to local
++`main` at `d0f8462`; the preparation script verified its warm Mathlib cache.
++Controller library refresh passed, followed by the full unchanged baseline
++build: **8,704 jobs**. Existing warnings remain; this is not a warning-free
++receipt or a completed source-slice build.
++
++The public resolution seam was exercised without production changes. Direct
++`resolveDecls` retained axis UID `40`; `assignUIDs` followed by `resolveDecls`
++produced UID `1`. Both retained two original same-target statements in order.
++Both classified the read input as external but omitted an unused declared
++input from `extNames`, confirming that explicit semantic input roles cannot
++be derived from that field. Two controller `#guard` checks passed through
++`lean-file.sh`; the named scratch source was removed afterward.
++
++T1 production now has UID-keyed dependent valuations, coordinate equivalences,
++domain-preserving transports/pullbacks, and automatic generated-only freshness
++proofs. Production module and smoke builds passed. These are partial rehearsal
++results, not T1 fixture/mutation completion or an execution-ready declaration.
++
++The V5 fixture rehearsal exposed a real API mismatch: automatic freshening
++accepted no requested replacement identity, so its requested-collision witness
++was unrepresentable. The user explicitly chose to preserve V5 by adding a
++requested-identity freshening entry rather than weakening the fixture.
++That correction is now compiled and verified by the V4-V6 fixtures. Individual fixture Lake
++targets are registered as well as their aggregate; initial target-registration
++failures are not counted as fixture checks or mutation kills.
++
++Root hook guidance initially measured 3,014 characters for Patterns/Pitfalls;
++its reference-summary prose was shortened below 3,000 without dropping rules.
++The semantic guidance node has no matching hook sections.
++The token reporter found no Claude transcript for this Copilot SDK session;
++cumulative input and peak usage remain **unmeasured**, not zero.
++No rehearsal code has been committed, integrated, or pushed.
++
++### T1 readiness checkpoint
++
++All **eight** T1 fixture entrypoints are observed and verified. The controller
++built `+Semantics.SourceBindingTest`: **2,953 jobs**, including the three
++registered fixture bundles. Representative observed witnesses:
++
++| Fixture | Actual observation |
++|---|---|
++| V1 | UID/reference values `(1, 0)`; distinct/reversed matrix reads `11` and `2` |
++| V2 | Shared-UID diagonal matrix reads `12` and `1` |
++| V3 | Forward/inverse reordered coordinates `(2, 1)` and `(1, 2)` |
++| V4 | Original/transported values `[2, 1, 0, 1, 1]` and read `21011`; stale metadata rejects `unbound 3` |
++| V5 | Output/free collisions freshen generated UIDs to `106, 108`; valid requests give `203, 205`; original read remains `21011` |
++| V6 | Rejections `domain 19 4 2`, `domain 19 4 5`, `domain 19 2 4`; legal neighbors return `[1]`, `[3]`, `[1]` |
++| V7 | Pullback `[1, 0]` to `[0, 1]`; matrix `11` to `2`; repeated lookups `[0, 0]` |
++| V8 | Empty/zero context enumeration `(1, 0, [[]], [])`; inverse/uniqueness/nonexistence proofs elaborate |
++
++The [post manifest](source_correspondence_mutations_post.json) currently contains
++**four of the planned 39** implementation cycles. The controller ran all four
++with `expect` strings copied from retained complete mutated-build diagnostics.
++Every expected payload was seen, each source was restored byte-identically, and
++every restored build passed. The named protected obligations are
++`Ref.get_uidCoordEquiv` / `Ref.sameUID_lookup`,
++`Context.reenumerateTransport`'s inverse law,
++`BinderScope.requested_fresh` / `BinderScope.requested_injective`, and
++`resolveUID`'s exact domain witness. These are **proof-protected implementation
++kills**, not runtime differential-fixture kills or the historical six input
++contrasts. No unrelated syntax/import/target failure was counted.
++
++The T1 read-only readiness review found no significant issues and confirmed the
++aggregate build and kill classifications. This is a per-task checkpoint, not
++either final whole-slice review. T2 production rehearsal has started; T2-T6
++fixtures, the remaining 35 cycles, and the complete readiness gate are pending.

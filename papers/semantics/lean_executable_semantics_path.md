@@ -86,19 +86,24 @@ coordinate ranks + finite measure + maximal-run correspondence    LANDED
                          |
 computable state/step selection + validated reference executor    LANDED
                          |
-source correspondence + differential debugging                    REMAINING
+bounded source correspondence + differential debugging             LANDED
                          |
 compiled storage/backend refinement                              LATER
 ```
 
-The executor operates on directly constructed admitted core programs.
-A source elaborator is necessary for comparing source programs with production,
-not for first running and debugging the core semantics.
+The generic executor still accepts directly constructed admitted core programs.
+The `LeanNCD.Semantics.Source` layer additionally admits resolved finite read-only
+sum-products and constructs complete multi-target schedules automatically.
 
-The next-phase [source correspondence + differential debugging plan](source_correspondence_plan.md)
-specifies the first complete source slice. It is a design plan with a verified
-partial prototype, **not execution-ready**; its front gate lists the remaining
-rehearsal and review requirements. Authoring receipts are in the separate
+The [source correspondence + differential debugging plan](source_correspondence_plan.md)
+now has implemented and tested source binding, admission, normalized-body/fiber
+proofs, execution-backed whole-store equations, typed diagnostics, and four-leg
+comparison. All 79 named fixtures, exactly 18 generated programs, 39/39
+implementation mutations, the controller full build (8,763 jobs), ordered
+six-patch replay and both final whole-branch review lenses pass. This lands only
+the bounded read-only sum-product fragment, not general backend refinement.
+Exact scope, observed fixtures, mutation classifications and
+historical authoring receipts are in the separate
 [source correspondence record](source_correspondence_record.md).
 
 ## 2. One notation, two presentations
@@ -274,9 +279,12 @@ Here each pullback puts an operand on the common global valuation domain;
 the product is pointwise semiring multiplication; output pushforward combines
 the assignments in each output fiber. Repeated indices are encoded by the
 maps, not by informal dimension-name matching. Empty fibers give $0_K$.
-This is a mathematical decomposition of the specified formula. The generic
-pushforward is landed, but the theorem connecting source pure-einsum
-elaboration to this formula and the contribution core remains unproved.
+For the admitted bounded read-only fragment, `Term.collectedBody_correspondence`
+and `AdmittedSource.collect_correspondence` now connect actual normalized
+expressions and `Program.collect` to independently specified original-read
+fibers. Each term's global domain is its read support union output support;
+unused zero-extent declarations do not erase unrelated terms. The generic
+theorems preserve factor order, repeated slots, empty fibers and multiplicity.
 
 ### 3.3 Partial maps organize expression definedness
 
@@ -732,18 +740,19 @@ solver.
 
 #### What this does not claim
 
-- **No synthesis or checking.** The `Schedule` carries kernel-checked
-  duplicate-freedom and coverage, but it is supplied. The coordinate rank is
-  proof data. Neither is computed or checked at runtime.
+- **No general synthesis or rank checking.** The generic `Schedule` carries
+  kernel-checked duplicate-freedom and coverage supplied by its caller. The
+  bounded source layer computes that schedule, but does not synthesize or
+  runtime-check address ranks.
 - **No no-model claim outside initialization.** `runFuel` on an arbitrary state,
   blocked endpoints, and exhausted endpoints say nothing about whether a model
   exists. Blocking is not undefinedness.
 - **No schedule independence beyond whole stores.** Successful schedules agree
   on the complete environment; failure selection, diagnostics, and event traces
   may differ.
-- **No new representation claims.** Stores are function-valued. There is no
-  dense storage, scalar renderer, source correspondence, or backend refinement,
-  so Part V of the specification is untouched.
+- **No dense/backend representation claims.** Stores remain function-valued.
+  The separate bounded source layer adds correspondence and scalar diagnostic
+  rendering, not dense-storage simulation or Part V backend refinement.
 - **A parked runtime gap.** The generic executor retains heterogeneous carriers,
   but the runtime fixtures do not cover heterogeneous non-additive inputs.
 
@@ -804,29 +813,23 @@ categorical interpretation or source correspondence.
 
 ## 5. Remaining work, in dependency order
 
-### 5.1 Connect named source syntax and the production evaluator
+### 5.1 Beyond the bounded source/debugging fragment
 
-For debugging source programs, establish the bridge in
-[Sections 13-17](tensor_logic_semantics.md#part-ii-core-language-and-surface-elaboration)
-and [19.3](tensor_logic_semantics.md#193-correspondence-with-pure-einsum).
-The admitted core already interprets bodies; what remains is to justify how
-source expressions become those bodies and domains:
+The first source slice implements true UID valuations and domain-preserving
+pullbacks/freshening, resolved/raw admission with original provenance,
+term-local normalization, multi-target execution, genuine pure-einsum fiber
+correspondence, and tag-preserving collection/model permutation laws.
+`compareSource` runs an independent exact oracle, the admitted rational
+executor, legacy evaluation, and the checked dense backend. Shared native
+comparison uses explicit f64 declarations and a checked bounded-integer
+envelope with exact bit comparison, not tolerance or a Float semiring.
+Actual output discrepancies do not invent native internal causal evidence.
 
-- Named UID-based contexts, renaming, and capture-avoiding substitution,
-  related to the existing typed valuation spaces.
-- Structural checking and elaboration preserving guards, bounded reads/writes,
-  lifted binder domains, and statement/valuation multiplicity.
-- Pure-einsum correspondence, including term-local contraction, diagonal
-  reads/writes, repeated output indices, and empty domains.
-- Source permutation connected to existing occurrence-relabeling laws;
-  corresponding successful-execution relabeling still needs a bridge.
-- Explicit nonlinear boundaries: operator-before-collection and
-  operator-after-collection are different programs.
-
-Then use the executable core as an oracle for the production pipeline on the
-**shared supported fragment**. Locate discrepancies by layer: source admission,
-elaboration, body interpretation, occurrence collection, dependency/readiness,
-publication, or backend arithmetic.
+Remaining source work is broader than that finite bare-slot fragment: scans,
+marked arrays/slices, affine writes, guards/Iverson factors, nonlinear primitives
+and their before/after-collection boundary, unpinned dimension inference,
+general expression substitution, and schedule/rank synthesis. The slice does
+not claim full source-language elaboration or general numerical refinement.
 
 The [semantic gap audit](tensor_logic_semantic_gap_audit.md) records the known
 production divergence for multiple statements defining one LHS: production

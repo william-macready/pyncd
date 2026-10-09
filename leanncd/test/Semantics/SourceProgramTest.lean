@@ -1,0 +1,4 @@
+import Semantics.SourceProgramIdentityTest
+import Semantics.SourceProgramCollectionTest
+import Semantics.SourceProgramGeometryTest
+import Semantics.SourceProgramOutcomesTest

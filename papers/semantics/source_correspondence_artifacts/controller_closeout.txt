@@ -1,0 +1,46 @@
+Source correspondence final controller receipts -- 2026-10-09
+
+Base: d0f8462
+Reviewed source tree: 3d057e1f9a0894dd7318ba28fae50b7d89dc8015
+No production DSL/Eval edits.
+
+PASS: 79 planned named fixture entrypoints.
+PASS: exactly 18 structurally distinct generated F16 programs.
+PASS: all 39 implementation manifest cycles, expected diagnostics observed,
+      byte-identical restoration, and every restored build green.
+      Classes: 18 proof-protected, 21 executable-fixture kills.
+PASS: independent six historical input contrasts on seed
+      284c7df2d169377d6029ae2a277c8a119929bbf1; not implementation kills.
+PASS: T1-T5 per-task reviews and both final whole-branch lenses.
+PASS: actual-worktree full build, exit 0, 8763 jobs.
+PASS: source tree unchanged from reviewed tree after mutation restoration/build.
+PASS: six fresh ordered task patches reconstruct the staged source/docs tree
+      from d0f8462, excluding their own sidecars; final identities in session
+      source-final-patch-replay.json.
+
+Build command actually run:
+bash /Users/williammacready/code/python/pyncd.worktrees/source-correspondence-debug-plan/leanncd/scripts/lake-build.sh /Users/williammacready/code/python/pyncd.worktrees/source-correspondence-debug-plan/leanncd
+
+The existing full-manifest process was observed to completion, not duplicated.
+Full build log: session source-final-full-build.log (8763 jobs).
+Manifest receipts: controller_post_mutations.md.
+Historical contrast receipts: controller_seed_contrasts.md.
+Static reviews: controller_soundness_review.txt,
+                controller_differential_review.txt.
+
+Existing unrelated warnings/sorries remain; no new Source warnings or errors.
+No skipped controller gate. Protocol injections are not actual backend faults.
+Arbitrary rationals are core-only; strict native comparison uses the checked
+bounded-integer profile and explicit original f64 declarations.
+Unsupported forms/profiles, missing oracle order, blocking, exhaustion,
+f32 failures and known overwrite differences retain explicit classifications.
+Native internal localization without hooks is unobserved.
+
+Budget: earlier parent controller prompt 348992 tokens exceeded ~250k cap.
+Fresh-context close-out is the prescribed split, not a claim of prior compliance.
+Historical input 66646841 is cache-inclusive partial telemetry, not a full total.
+End-to-end total and all dispatch peaks unavailable; no total-budget certification.
+
+Integration: local main only, preserve concurrent specification-document edits.
+No remote push. Final commit/merge hashes, ahead count and branch/worktree removal
+are recorded in session source-final-closeout.txt after integration.

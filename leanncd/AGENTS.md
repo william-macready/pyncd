@@ -200,6 +200,8 @@ Small subsystems (no dedicated node — each <170 lines, single-file or near it)
 | Task | Start Here |
 |------|------------|
 | Understand overall architecture (two tracks + bridge) | `LeanNCD.lean`'s header doc comment (note: has some stale spots, cross-check against code — see Base/AGENTS.md Pitfalls) |
+| UID-keyed semantic binding, finite read-only source execution and correspondence | `LeanNCD/Semantics/Source/Context.lean`, `Source/Admission.lean`, `Source/Schedule.lean`, and `Source/ProgramCorrespondence.lean`, reachable through `LeanNCD`; differential diagnostic gates remain separate |
+| Debug finite resolved source or compare exact shared-fragment results | `LeanNCD/Semantics/Source/Diagnostics.lean` (`Debug.sourceDebug`) and `Source/Differential.lean` (`compareSource`); explicit oracle dependency order and bounded-integer profile, with typed refusals |
 | Check current sorry/proof status authoritatively | `SORRY_INVENTORY.md` (more current than scattered doc comments) |
 | Understand the `realize` bridge problem in depth | `realize.md` (companion to `SORRY_INVENTORY.md`) |
 | Design history / past decisions | `docs/superpowers/plans/`, `docs/superpowers/specs/` |
@@ -221,8 +223,8 @@ Small subsystems (no dedicated node — each <170 lines, single-file or near it)
 
 Use shared validators and typed diagnostics rather than divergent copies.
 Read [the detailed patterns](AGENTS_REFERENCE.md#patterns) before changing
-shared evaluation rules or parity fixtures. The full requirements, examples,
-and explicit-f64 coverage are preserved there; this summary limits automatic
+shared evaluation rules or parity fixtures. Requirements, examples,
+and explicit-f64 coverage live there to limit automatic
 context injection. The default element type is binary32 (`f64` is the explicit
 spelling): see the last bullet there before writing an eval-based test.
 
