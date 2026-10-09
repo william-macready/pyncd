@@ -51,7 +51,10 @@ term-local typed expressions and role-based multi-target Programs.
 domain, and runs the existing validated rational executor with optional debug
 fuel. `Source.Provenance` certifies original-ID inverses from successful
 admission; `Source.Permutation` preserves tagged collection and whole-store
-models, not event order. `Source.Oracle` provides an independent exact
+models, not event order. `StatementPermutation.successful_results` also equates
+whole stores of completed rational executions under a statement permutation
+when their inputs agree; it does not assert completion or equal traces.
+`Source.Oracle` provides an independent exact
 global-fiber evaluator with explicitly checked fixture dependency order.
 `Semantics.SourceProgramTest` checks actual executor/oracle parity and endpoint
 contracts. `Source.Fiber`, `Source.Correspondence`, and
@@ -59,8 +62,12 @@ contracts. `Source.Fiber`, `Source.Correspondence`, and
 collection agreement with independently specified original-read global fibers.
 Their relevant UID domains exclude unused axes, preserve term-local contractions
 and repeated destinations, and connect reached rational execution to whole-store
-global equations. `Semantics.SourceCorrespondenceTest` specializes the generic
-proofs to Nat and Rat. `Source.Observation` / `Source.Diagnostics` expose actual
+global equations. `interpret_contract_reindex` in `Source.Lowering` preserves actual
+nested reduction interpretations under coordinate reindexing with transported
+read environments, without changing factor order or claiming float parity.
+`Semantics.SourceCorrespondenceTest` specializes the generic proofs to Nat and
+Rat, including reversed reduction bounds and empty/zero domains.
+`Source.Observation` / `Source.Diagnostics` expose actual
 source-linked endpoints and canonical contribution data. `Source.NumericalProfile`
 checks the exact bounded-integer binary64 comparison profile;
 `Source.NativeLegs` preserves actual legacy/checked phase causes and warnings.

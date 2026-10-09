@@ -82,4 +82,14 @@ theorem interpret_contract (ρ : Store (fun _ => K) σ) (bound : Shape)
       (Fintype.sum_prod_type (fun p : Fin a.extent × Coord rest =>
         operandProduct ρ reads (env γ p))).symm
 
+theorem interpret_contract_reindex (ρ : Store (fun _ => K) σ)
+    (bound reordered : Shape) (e : Coord reordered ≃ Coord bound)
+    (reads : List (Read ctx σ)) (env : Γ → Coord bound → Coord ctx) (γ : Γ) :
+    interpret semiringOps ρ
+      (contract (r := r) reordered reads (fun γ p => env γ (e p))) γ =
+      interpret semiringOps ρ (contract (r := r) bound reads env) γ := by
+  rw [interpret_contract, interpret_contract]
+  congr 1
+  exact Equiv.sum_comp e (fun p => operandProduct ρ reads (env γ p))
+
 end LeanNCD.Semantics.Source

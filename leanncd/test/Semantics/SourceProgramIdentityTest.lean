@@ -317,6 +317,35 @@ example (source : AdmittedSource) (input : (elaborateSource source).Input)
       (elaborateSource source).Models semiringOps input store :=
   (reverseStatements source).models RationalReference.registry input store
 
+example (source : AdmittedSource)
+    (before : Program.Executor.ValidatedResult (elaborateSource source) RationalReference.ops)
+    (after : Program.Executor.ValidatedResult
+      (elaborateSource (reverseStatements source).reordered) RationalReference.ops)
+    (sameInput : after.input = before.input)
+    (oldState : (elaborateSource source).Running)
+    (oldComplete : (elaborateSource source).Complete oldState)
+    (oldSuccess : before.result.outcome = .complete oldState oldComplete)
+    (newState : (elaborateSource (reverseStatements source).reordered).Running)
+    (newComplete : (elaborateSource (reverseStatements source).reordered).Complete newState)
+    (newSuccess : after.result.outcome = .complete newState newComplete) :
+    (elaborateSource source).finalStore oldState oldComplete =
+      (elaborateSource (reverseStatements source).reordered).finalStore newState newComplete :=
+  (reverseStatements source).successful_results before after sameInput
+    oldState oldComplete oldSuccess newState newComplete newSuccess
+
+private def emptyPermutationCompletes : Bool :=
+  match admitSource ⟨⟨[], [], {}, ∅⟩, [], []⟩ with
+  | .error _ => false
+  | .ok source =>
+    let p := permuteStatements source (Equiv.refl _)
+    match runSource source, runSource p.reordered with
+    | .ok before, .ok after =>
+      before.result.outcome.kind == "complete" && after.result.outcome.kind == "complete"
+    | _, _ => false
+
+#guard emptyPermutationCompletes
+#print axioms StatementPermutation.successful_results
+
 #eval chainReceipt
 #guard P1
 #eval P1

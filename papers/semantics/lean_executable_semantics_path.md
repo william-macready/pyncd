@@ -831,9 +831,14 @@ Proposition 19.1 is thereby proved for this fragment, including repeated slots,
 empty contractions, zero extents, factor order, multiplicity, broadcast and
 zero-factor terms, and sums of several terms. The link from the
 admitted reads and indices back to the raw source text is not proved; it holds
-by construction. Also not proved: the nested reduction tree is always built in declaration order, so independence
-from the order of nested reductions (Section 15.2) is shown only for
-re-enumeration of the global axes; and nothing outside the fragment is covered.
+by construction. `interpret_contract_reindex` ([Lowering](../../leanncd/LeanNCD/Semantics/Source/Lowering.lean))
+also proves equality of actual nested reduction interpretations under a
+coordinate equivalence, with the read environment transported along it.
+This includes changing binder order while keeping the ordered read product;
+the adapter still constructs reductions in declaration order. The fixtures
+reverse unequal bounds (2 and 3) over Nat and Rat and cover empty bounds and
+zero extents. This is an exact-semiring result, not a floating-point
+reordering guarantee, and nothing outside the fragment is covered.
 
 #### Source order
 
@@ -841,11 +846,16 @@ re-enumeration of the global axes; and nothing outside the fragment is covered.
 | --- | --- | --- |
 | [Proposition 19.2](tensor_logic_semantics.md#194-source-order-and-nonlinear-boundaries): source-order invariance | `StatementPermutation`, `occurrenceEquiv`, and under it `outcome`, `footprints`, `destinations`, `guards`, `originals`, `identities`, `bodies`, `admEnv`, `contribution`, `collect`, `models` ([Permutation](../../leanncd/LeanNCD/Semantics/Source/Permutation.lean)) | For any list in bijection with the admitted statements, the occurrence relabeling preserves outcomes, footprints, destinations, original identities, admissibility, contributions, collected values, and the model relation. |
 
-Not proved: any statement about runs of a reordered source, whose blocked or
-complete status may differ without a rank certificate (Section 28, target 5,
-asks for successful execution results); the connection to re-admitting a
-permuted source text, which renumbers original identities; and permutation of
-terms or factors.
+No completion guarantee is added for a reordered source without a rank
+certificate. Conditional successful
+result agreement is proved by `StatementPermutation.successful_results`: two
+initialized rational executions, with equal inputs and complete outcomes,
+have equal whole stores. It combines model preservation with successful-run
+uniqueness and does not equate traces or assert that either run completes.
+The fixtures specialize it to statement reversal and execute an identity
+permutation of an empty program. Still unproved: the connection to re-admitting
+a permuted source text, which renumbers original identities, and permutation
+of terms or factors.
 
 #### Automatic schedules
 
@@ -926,8 +936,8 @@ executed fixtures and mutation controls, and every claim below is of that kind.
 - **No injected-fault claims.** The signed-zero, warning, and two protocol cases
   were injected, not observed from a real backend, and native nonoutputs are
   not compared.
-- **No rank synthesis or schedule independence.** Results about completed runs
-  are over ℚ.
+- **No rank synthesis or trace/status independence.** Conditional whole-store
+  agreement under statement permutation is proved for completed runs over ℚ.
 
 ### 4.8 Existing validation and its limits
 
@@ -995,10 +1005,8 @@ remaining source work is broader than that finite bare-slot fragment: scans,
 marked arrays and slices, affine writes, guards and Iverson factors, nonlinear
 primitives and their before-versus-after-collection boundary, unpinned dimension
 inference, general expression substitution with renaming applied by admission,
-and rank synthesis, plus schedule construction for programs outside the fragment. Three proof targets inside the fragment are
-also open: linking admitted reads back to raw source text, independence from the
-order of nested reductions beyond re-enumeration, and successful-execution
-results under source permutation.
+and rank synthesis, plus schedule construction for programs outside the fragment.
+The link from admitted reads back to raw source text remains open.
 
 Differential debugging beyond the bounded profile needs a stated criterion for
 non-integral and f32 numerics, native hooks for causal localization, comparison
