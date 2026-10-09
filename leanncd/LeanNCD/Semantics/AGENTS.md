@@ -67,8 +67,15 @@ checks the exact bounded-integer binary64 comparison profile;
 `Source.compareSource` / `Source.renderSourceComparison` compose and render the
 four differential legs with explicit refusals and evidence-limited localization.
 `Semantics.SourceDiagnosticTest` pins payloads, ordering, and protocol cases.
-The differential corpus and final review gates remain separate; see the
-[source plan](../../../papers/semantics/source_correspondence_plan.md).
+The differential fixtures (including the generated corpus), implementation
+mutation controls, and both final whole-branch reviews have landed. Nothing in
+`Oracle`, `Observation`, `Diagnostics`, `NativeLegs`, `NumericalProfile`, or
+`Differential` is a theorem: the oracle is tested against, not proved equal to,
+`globalFiber`, and bit parity holds only on the bounded-integer, f64-declared,
+single-definition profile. Same-LHS multi-statement programs are a known
+production contract difference and are never compared natively. See the
+[source correspondence record](../../../papers/semantics/source_correspondence_record.md)
+for scope and limits.
 
 `Collection` represents Naperian coordinate families as functions. Pullback
 is contravariant lookup; finite additive pushforward is covariant collection.
